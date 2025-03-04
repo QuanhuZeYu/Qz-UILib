@@ -220,14 +220,16 @@ public class FontManager {
             int start = entry.getValue().get(0);
             int startCopy = start;
             int end = entry.getValue().get(1);
-            int charCount = end - start + 1;
-            int count = (int) Math.ceil((double) charCount / FontTexturePage.CHAR_COUNT);
+            int allCount = end - startCopy + 1; // 总共的数量
+            int count = (int) Math.ceil((double) allCount / FontTexturePage.CHAR_COUNT);
             // 遍历页数次将字符分页装进纹理图
             for (int i = 0; i < count; i++) {
-                int cs = Math.min(FontTexturePage.CHAR_COUNT, charCount) - 1; // 计算需要装入的数量
+                int charCount = end - start + 1;
+                int startCopy2 = start;
+                int cs = Math.min(FontTexturePage.CHAR_COUNT, charCount); // 计算需要装入的数量
                 // 为当前页添加字符
                 FontTexturePage page = new FontTexturePage();
-                for (int j = start; j < start + cs; j++) { // 遍历方式为：以开始指针为起点遍历需要装入数量次
+                for (int j = start; j < startCopy2 + cs; j++) { // 遍历方式为：以开始指针为起点遍历需要装入数量次
                     page.addCharToPage(select, j, FONT_SIZE);
                     start++; // 移动指针，用于下次循环
                 }
@@ -236,5 +238,23 @@ public class FontManager {
                 pages.add(page);
             }
         }
+    }
+
+    // ==================== 方法组：寻找Page和index ====================
+    /**
+     * 寻找码点所在的纹理页
+     * @param codepoint 码点
+     * @return 所在的TexturePage，未找到时会返回null
+     */
+    public FontTexturePage findPage(int codepoint) {
+        for (FontTexturePage page : pages) {
+            int start = page.start;
+            int end = page.end;
+            if (codepoint < start || codepoint > end) continue;
+            if (codepoint >= start || codepoint <= end) {
+                return page;
+            }
+        }
+        return null; // 没有找到时返回空
     }
 }
