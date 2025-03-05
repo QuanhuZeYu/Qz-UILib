@@ -1,5 +1,7 @@
 package club.heiqi.qz_uilib.fontsystem;
 
+import org.lwjgl.opengl.GL11;
+
 import javax.imageio.ImageIO;
 import java.awt.*;
 import java.awt.font.TextLayout;
@@ -7,10 +9,15 @@ import java.awt.geom.Rectangle2D;
 import java.awt.image.BufferedImage;
 import java.io.File;
 import java.io.IOException;
+import java.nio.ByteBuffer;
+import java.util.Arrays;
+import java.util.List;
 
 import static club.heiqi.qz_uilib.MOD_INFO.LOG;
-import static club.heiqi.qz_uilib.fontsystem.FontManager.FONT_SIZE;
 import static club.heiqi.qz_uilib.fontsystem.FontManager.outPutDir;
+import static org.lwjgl.opengl.GL11.*;
+import static org.lwjgl.opengl.GL12.GL_CLAMP_TO_EDGE;
+import static org.lwjgl.opengl.GL30.glGenerateMipmap;
 
 public class FontTexturePage {
     public static int FONT_PIXEL_SIZE = 64;
@@ -29,8 +36,10 @@ public class FontTexturePage {
         return new BufferedImage(TEXTURE_SIZE, TEXTURE_SIZE, BufferedImage.TYPE_INT_ARGB);
     }
 
-    public boolean addCharToPage(Font font, int codePoint, float fontSize) {
+    public boolean addCharToPage(Font font, int codePoint, boolean up) {
         if (start == -1) start = codePoint;
+        int endCopy = end;
+        end = codePoint;
         if (currentY >= TEXTURE_SIZE) return false;
         // 检查代码点合法性
         if (!Character.isValidCodePoint(codePoint)) return false;
@@ -41,16 +50,15 @@ public class FontTexturePage {
             currentX = 0;
             currentY += FONT_PIXEL_SIZE;
             if (currentY + FONT_PIXEL_SIZE > TEXTURE_SIZE) { // 此页装不下的情况
-                end = codePoint;
+                end = endCopy;
                 return false;
             }
         }
         // 生成字符图像
-        BufferedImage charImage = _genCharImage(font, str, fontSize);
+        BufferedImage charImage = _genCharImage(font, str, up);
         Graphics2D g = page.createGraphics();
         try {
             g.drawImage(charImage, currentX, currentY, null);
-            LOG.debug("已在 ({}, {}) 上绘制 {}", currentX, currentY, str);
         } finally {
             g.dispose();
         }
@@ -58,8 +66,7 @@ public class FontTexturePage {
         return true;
     }
 
-    public BufferedImage _genCharImage(Font font, String c, float fontSize) {
-        font = font.deriveFont(fontSize);
+    public BufferedImage _genCharImage(Font font, String c, boolean up) {
         BufferedImage image = new BufferedImage(FONT_PIXEL_SIZE, FONT_PIXEL_SIZE, BufferedImage.TYPE_INT_ARGB);
         Graphics2D g = image.createGraphics();
         // 启用抗锯齿
@@ -68,17 +75,20 @@ public class FontTexturePage {
         g.setColor(Color.WHITE);
         // 获取字体度量信息
         FontMetrics metrics = g.getFontMetrics();
-        // 获取字符的基线位置（相对于图像顶部）
-        int baselineY = metrics.getAscent(); // 实际效果：将基准线放到最底部 -> 也就是会超出原始高度一部分
         // 计算字符边界
         Rectangle2D bounds = new TextLayout(c, font, g.getFontRenderContext()).getBounds();
+        int bx = (int) bounds.getX(); // 起始x
+        int by = (int) bounds.getY();
         int charWidth = (int) bounds.getWidth();
         int charHeight = (int) bounds.getHeight();
+        LOG.debug("字符宽: {} 高: {} 左上角坐标: {}, {}", charWidth, charHeight, bx, by);
         // 水平居中：基于边界宽度
-        int x = (FONT_PIXEL_SIZE - charWidth) / 2;
-        // 垂直居中：将基线对齐到图像中心
-        // 公式：底部基准线抬升1/4图像高度
-        int y = baselineY - (FONT_PIXEL_SIZE/4);
+        int x = 0;
+        int y = FONT_PIXEL_SIZE;
+        if (up) {
+            // 公式：底部基准线抬升1/5图像高度
+            y = FONT_PIXEL_SIZE - (FONT_PIXEL_SIZE/5*1);
+        }
         // 绘制字符
         g.drawString(c, x, y);
         g.dispose();
@@ -97,5 +107,50 @@ public class FontTexturePage {
         } catch (IOException e) {
             LOG.error("保存图像失败\n栈输出: ", e);
         }
+    }
+
+    public void uploadGPU() {
+
+        // 获取像素数组
+        int[] pixels = new int[TEXTURE_SIZE * TEXTURE_SIZE];
+        page.getRGB(0, 0, TEXTURE_SIZE, TEXTURE_SIZE, pixels, 0, TEXTURE_SIZE);
+        // 转换为RGBA ByteBuffer （垂直翻转）
+        ByteBuffer buffer = ByteBuffer.allocateDirect(TEXTURE_SIZE * TEXTURE_SIZE * 4);
+        for (int y = TEXTURE_SIZE - 1; y >=0; y--) { // 从下往上遍历
+            for (int x = 0; x < TEXTURE_SIZE; x++) {
+                int pixel = pixels[y * TEXTURE_SIZE + x];
+                buffer.put((byte) ((pixel >> 16) & 0xFF)); // R
+                buffer.put((byte) ((pixel >> 8) & 0xFF));  // G
+                buffer.put((byte) (pixel & 0xFF));         // B
+                buffer.put((byte) ((pixel >> 24) & 0xFF)); // A
+            }
+        }
+        buffer.flip();
+        textureID = glGenTextures();
+        glBindTexture(GL_TEXTURE_2D, textureID);
+        // 设置纹理参数
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+        // 上传到GPU
+        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, TEXTURE_SIZE, TEXTURE_SIZE, 0,
+            GL_RGBA, GL_UNSIGNED_BYTE, buffer);
+        //生成mipmap
+        glGenerateMipmap(GL_TEXTURE_2D);
+        glBindTexture(GL_TEXTURE_2D, 0);
+    }
+
+    public List<Integer> findChar(int codepoint) {
+        if (codepoint < start || codepoint > end) {
+            LOG.error("该纹理页中不存在 {}", (char) codepoint);
+            return null;
+        }
+        int count = codepoint - start; // 偏移数量
+        int hangCount = (int) ((double) TEXTURE_SIZE / FONT_PIXEL_SIZE);
+        int hang = (int) Math.ceil((double) count / hangCount);
+        int y = hang * (FONT_PIXEL_SIZE); // 字符贴图左上角Y
+        int x = (count - (hangCount * hang)) * FONT_PIXEL_SIZE; // 字符贴图左上角X
+        return Arrays.asList(x, y);
     }
 }

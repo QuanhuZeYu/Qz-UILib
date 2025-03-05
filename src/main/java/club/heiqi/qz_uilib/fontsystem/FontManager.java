@@ -16,6 +16,7 @@ import java.util.List;
 
 import static club.heiqi.qz_uilib.MOD_INFO.LOG;
 import static club.heiqi.qz_uilib.fontsystem.FontTexturePage.FONT_PIXEL_SIZE;
+import static org.lwjgl.opengl.GL11.*;
 
 public class FontManager {
     public static int FONT_SIZE = 100;
@@ -24,9 +25,9 @@ public class FontManager {
     public File fontDir;
     public List<File> fontList = new ArrayList<>();
     public List<Font> fonts = new ArrayList<>();
-    public Font select;
 
-    public List<FontTexturePage> pages = new ArrayList<>();
+    public volatile List<FontTexturePage> pages = new ArrayList<>();
+    public volatile Map<Character, CharInfo> charMap = new HashMap<>();
 
     public FontManager() {
         mcDataDir = Minecraft.getMinecraft().mcDataDir;
@@ -34,10 +35,8 @@ public class FontManager {
         _loadDefaultFont();
         _loadSysFont();
         LOG.debug("字体文件列表: {}", fontList);
-        select = fonts.get(0);
-        FONT_SIZE = _calculateFontSize(select);
         LOG.debug("计算合适字体尺寸为 {}", FONT_SIZE);
-        _genPage();
+        new Thread(this::_genPage).start();
     }
 
     // ==================== 方法组：载入字体 ====================
@@ -64,6 +63,8 @@ public class FontManager {
                 fontList.add(fontFile);
             }
             Font font = _loadTTF(fontFile);
+            float fontSize = _calculateFontSize(font);
+            font = font.deriveFont(fontSize);
             fonts.add(font);
         } catch (IOException e) {
             LOG.error("复制字体文件失败", e);
@@ -111,6 +112,8 @@ public class FontManager {
                             fontList.add(targetFile);
                             try (InputStream is = new FileInputStream(targetFile)) {
                                 Font font = Font.createFont(Font.TRUETYPE_FONT, is);
+                                float fontSize = _calculateFontSize(font);
+                                font = font.deriveFont(fontSize);
                                 fonts.add(font);
                             } catch (IOException e) {
                                 LOG.error("加载 {} 时IO出错", targetFile.getAbsoluteFile());
@@ -150,6 +153,27 @@ public class FontManager {
     }
 
     /**
+     * 检查该字体中是否存在此codepoint
+     */
+    public boolean isSupportChar(Font font, int codepoint) {
+        if (!Character.isValidCodePoint(codepoint)) return false;
+        return font.canDisplay(codepoint);
+    }
+
+    /**
+     * 按顺序遍历返回第一个合适的Font
+     * @param codepoint 码点
+     * @return 合适的Font类
+     */
+    public Font findFont(int codepoint) {
+        for (Font font : fonts) {
+            if (!isSupportChar(font, codepoint)) continue; // 跳过不支持的Font
+            return font;
+        }
+        return fonts.get(0); // 没有找到合适的返回第一个
+    }
+
+    /**
      * 动态调整字体尺寸，直到满足FONT_PIXEL_SIZE
      * @param font 选择的字体
      * @return 满足的字体大小
@@ -157,7 +181,7 @@ public class FontManager {
     public int _calculateFontSize(Font font) {
         font = font.deriveFont((float)FONT_SIZE);
 
-        int targetPixelSize = (int) (FONT_PIXEL_SIZE - ((FONT_PIXEL_SIZE)*0.2));
+        int targetPixelSize = (int) (FONT_PIXEL_SIZE - ((FONT_PIXEL_SIZE)*0.45));
         int targetFontSize = FONT_SIZE;
         char sampleChar = '国';
         // 创建图像和绘图上下文
@@ -214,12 +238,13 @@ public class FontManager {
 
     // 生成纹理页方法
     public void _genPage() {
-        for (Map.Entry<String, List<Integer>> entry : UnicodeRecorder.CATE.entrySet()) {
+        for (Map.Entry<String, List> entry : UnicodeRecorder.CATE.entrySet()) {
             String cate = entry.getKey();
             LOG.debug("正在处理 {} 分类", cate);
-            int start = entry.getValue().get(0);
+            int start = (int) entry.getValue().get(0);
             int startCopy = start;
-            int end = entry.getValue().get(1);
+            int end = (int) entry.getValue().get(1);
+            boolean up = (boolean) entry.getValue().get(2);
             int allCount = end - startCopy + 1; // 总共的数量
             int count = (int) Math.ceil((double) allCount / FontTexturePage.CHAR_COUNT);
             // 遍历页数次将字符分页装进纹理图
@@ -229,18 +254,22 @@ public class FontManager {
                 int cs = Math.min(FontTexturePage.CHAR_COUNT, charCount); // 计算需要装入的数量
                 // 为当前页添加字符
                 FontTexturePage page = new FontTexturePage();
-                for (int j = start; j < startCopy2 + cs; j++) { // 遍历方式为：以开始指针为起点遍历需要装入数量次
-                    page.addCharToPage(select, j, FONT_SIZE);
+                for (int j = start; j < startCopy2 + cs; j++) { // 遍历方式为：以开始指针为起点遍历需要装入数量次 -> j:码点
+                    // 选取合适的Font
+                    Font select = findFont(j);
+                    page.addCharToPage(select, j, up);
                     start++; // 移动指针，用于下次循环
                 }
                 String fileName = cate + "_" + i + ".png"; // 文件名为 分类_分页
                 page._saveImage(fileName);
                 pages.add(page);
+                // 上传纹理页到GPU
+                page.uploadGPU();
             }
         }
     }
 
-    // ==================== 方法组：寻找Page和index ====================
+    // ==================== 方法组：寻找Page和index，以及渲染 ====================
     /**
      * 寻找码点所在的纹理页
      * @param codepoint 码点
@@ -256,5 +285,72 @@ public class FontManager {
             }
         }
         return null; // 没有找到时返回空
+    }
+
+    public CharInfo findChar(int codepoint) {
+        FontTexturePage page = findPage(codepoint);
+        if (page == null) return null;
+        List<Integer> coord = page.findChar(codepoint);
+        int x = coord.get(0), y = coord.get(1);
+        // 计算边界
+        Font font = findFont(codepoint);
+        BufferedImage i = new BufferedImage(1, 1, BufferedImage.TYPE_INT_ARGB);
+        Graphics2D g = i.createGraphics();
+        g.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+        g.setFont(font);
+        Rectangle2D bounds = new TextLayout(String.valueOf((char) codepoint), font, g.getFontRenderContext()).getBounds();
+        int bx = (int) bounds.getX();
+        int width = (int) bounds.getWidth();
+        return new CharInfo(page, x, y, bx, bx + width + bx);
+    }
+
+    /**
+     * 左下角起始
+     * @param c 渲染的字符
+     * @param x 坐标X
+     * @param y 坐标Y
+     */
+    public float renderCharAt(char c, double x, double y) {
+        int codepoint = Character.codePointAt(new char[]{c}, 0);
+        CharInfo ci = charMap.get(c);
+        if (ci == null) {
+            ci = findChar(codepoint);
+            if (ci == null) {
+                LOG.error("没有找到字符 {} 信息 码点: {}", c, Character.codePointAt(new char[]{c}, 0));
+                return 8f;
+            }
+            charMap.put(c, ci);
+        }
+        // 绑定纹理
+        glEnable(GL_TEXTURE_2D);
+        glBindTexture(GL_TEXTURE_2D, ci.page.textureID);
+
+        // 绘制纹理四边形
+        glBegin(GL_QUADS);
+        // 左下角（纹理原点修正）
+        glTexCoord2d(ci.getU1(), ci.getV2());
+        glVertex3d(x, y, 0f);
+        // 右下角
+        glTexCoord2d(ci.getU2(), ci.getV2());
+        glVertex3d(x + 8, y, 0f);
+        // 右上角
+        glTexCoord2d(ci.getU2(), ci.getV1());
+        glVertex3d(x + 8, y + 8, 0f);
+        // 左上角
+        glTexCoord2d(ci.getU1(), ci.getV1());
+        glVertex3d(x, y + 8, 0f);
+        glEnd();
+
+        // 绘制调试边框（可选）
+        glDisable(GL_TEXTURE_2D);
+        glColor3d(1, 0, 0);
+        glBegin(GL_LINE_LOOP);
+        glVertex3d(x, y, 0f);
+        glVertex3d(x + 8, y, 0f);
+        glVertex3d(x + 8, y + 8, 0f);
+        glVertex3d(x, y + 8, 0f);
+        glEnd();
+        glEnable(GL_TEXTURE_2D);
+        return 8;
     }
 }

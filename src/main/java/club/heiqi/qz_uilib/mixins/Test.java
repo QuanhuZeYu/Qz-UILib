@@ -1,5 +1,6 @@
 package club.heiqi.qz_uilib.mixins;
 
+import club.heiqi.qz_uilib.MyMod;
 import club.heiqi.qz_uilib.fontsystem.FontManager;
 import net.minecraft.client.gui.FontRenderer;
 import net.minecraft.client.renderer.texture.TextureManager;
@@ -16,8 +17,10 @@ import static club.heiqi.qz_uilib.MOD_INFO.LOG;
 
 @Mixin(value = FontRenderer.class)
 public abstract class Test {
-
-    private static FontManager fontManager;
+    @Shadow
+    public float posX;
+    @Shadow
+    public float posY;
 
 //    @Inject(
 //        method = "<init>(Lnet/minecraft/client/settings/GameSettings;Lnet/minecraft/util/ResourceLocation;Lnet/minecraft/client/renderer/texture/TextureManager;Z)V",
@@ -37,4 +40,17 @@ public abstract class Test {
 //    public void qz$drawString(String text, int x, int y, int color, boolean dropShadow, CallbackInfoReturnable<Integer> ci) {
 //        ci.cancel();
 //    }
+
+    @Inject(
+        method = "renderUnicodeChar",
+        at = @At("HEAD"),
+        cancellable = true,
+        remap = true
+    )
+    public void qzuilib$renderUnicodeChar(char c, boolean bold, CallbackInfoReturnable<Float> ci) {
+        FontManager fontManager = MyMod.fontManager;
+        if (fontManager == null) return;
+        float f = fontManager.renderCharAt(c, this.posX, this.posY);
+        ci.setReturnValue(f);
+    }
 }
