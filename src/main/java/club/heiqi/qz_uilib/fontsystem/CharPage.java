@@ -60,27 +60,27 @@ public class CharPage {
         }
     }
 
-    public BufferedImage _genCharImage(Font font, Character c) {
+    private BufferedImage _genCharImage(Font font, Character c) {
         BufferedImage image = new BufferedImage(FONT_PIXEL_SIZE, FONT_PIXEL_SIZE, BufferedImage.TYPE_INT_ARGB);
         Graphics2D g = image.createGraphics();
-        // 启用抗锯齿
         g.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
         g.setFont(font);
         g.setColor(Color.WHITE);
-        // 获取字体度量信息
+
         FontMetrics metrics = g.getFontMetrics();
-        // 计算字符边界
-        Rectangle2D bounds = new TextLayout(String.valueOf(c), font, g.getFontRenderContext()).getBounds();
-        int bx = (int) bounds.getX(); // 起始x
+        TextLayout layout = new TextLayout(String.valueOf(c), font, g.getFontRenderContext());
+        Rectangle2D bounds = layout.getBounds();
+
+        int bx = (int) bounds.getX();
         int by = (int) bounds.getY();
         int charWidth = (int) bounds.getWidth();
         int charHeight = (int) bounds.getHeight();
-        LOG.debug("字符宽: {} 高: {} 左上角坐标: {}, {}", charWidth, charHeight, bx, by);
-        // 水平居中：基于边界宽度
-        int x = 0;
-        int y = FONT_PIXEL_SIZE - (FONT_PIXEL_SIZE/5);
-        // 绘制字符
-        g.drawString(String.valueOf(c), x, y);
+
+        // 水平居中 + 垂直基线对齐
+        int x = (FONT_PIXEL_SIZE - charWidth) / 2 - bx;
+        int y = metrics.getAscent() - by;
+
+        layout.draw(g, x, y);
         g.dispose();
         return image;
     }

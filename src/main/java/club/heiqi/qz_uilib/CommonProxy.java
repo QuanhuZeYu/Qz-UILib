@@ -1,12 +1,9 @@
 package club.heiqi.qz_uilib;
 
-import club.heiqi.qz_uilib.fontsystem.FontManager;
 import cpw.mods.fml.common.event.FMLInitializationEvent;
 import cpw.mods.fml.common.event.FMLPostInitializationEvent;
 import cpw.mods.fml.common.event.FMLPreInitializationEvent;
 import cpw.mods.fml.common.event.FMLServerStartingEvent;
-
-import static club.heiqi.qz_uilib.MyMod.fontManager;
 
 public class CommonProxy {
 
@@ -16,7 +13,7 @@ public class CommonProxy {
         Config.synchronizeConfiguration(event.getSuggestedConfigurationFile());
 
         MOD_INFO.LOG.debug("UI库版本" + Tags.VERSION);
-        fontManager = new FontManager();
+
     }
 
     // load "Do your mod setup. Build whatever data structures you care about. Register recipes." (Remove if not needed)

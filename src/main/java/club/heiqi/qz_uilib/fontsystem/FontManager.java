@@ -1,8 +1,14 @@
 package club.heiqi.qz_uilib.fontsystem;
 
+import cpw.mods.fml.common.FMLCommonHandler;
+import cpw.mods.fml.common.event.FMLInitializationEvent;
+import cpw.mods.fml.common.event.FMLPostInitializationEvent;
+import cpw.mods.fml.common.event.FMLPreInitializationEvent;
+import cpw.mods.fml.common.eventhandler.SubscribeEvent;
+import cpw.mods.fml.common.gameevent.TickEvent;
 import net.minecraft.client.Minecraft;
+import org.jetbrains.annotations.Nullable;
 
-import javax.imageio.ImageIO;
 import java.awt.*;
 import java.awt.font.FontRenderContext;
 import java.awt.font.TextLayout;
@@ -11,45 +17,49 @@ import java.awt.image.BufferedImage;
 import java.io.*;
 import java.nio.file.*;
 import java.nio.file.attribute.BasicFileAttributes;
-import java.util.*;
+import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
+import java.util.concurrent.Executors;
+import java.util.concurrent.LinkedBlockingDeque;
+import java.util.concurrent.ThreadPoolExecutor;
+import java.util.concurrent.TimeUnit;
 
 import static club.heiqi.qz_uilib.MOD_INFO.LOG;
-import static club.heiqi.qz_uilib.fontsystem.FontTexturePage.FONT_PIXEL_SIZE;
+import static org.lwjgl.opengl.GL11.*;
 
 public class FontManager {
     public static int FONT_SIZE = 100;
-    public static File outPutDir;
-    private final File mcDataDir;
+    public static int FONT_PIXEL_SIZE = 64;
+    /** MC根目录-- `.minecraft` */
+    public final File mcDataDir;
     public File fontDir;
-    public List<File> fontList = new ArrayList<>();
-    public List<Font> fonts = new ArrayList<>();
-    public Font select;
 
-    public List<FontTexturePage> pages = new ArrayList<>();
+    public volatile List<Font> fonts = new ArrayList<>();
+    public List<CharPage> pages = new ArrayList<>();
+    public Map<Character, CharInfo> highwayCache = new LRUCharCache(); // 高速缓存10000个字符，不常用的自动抛弃
 
     public FontManager() {
         mcDataDir = Minecraft.getMinecraft().mcDataDir;
-        outPutDir = new File(mcDataDir, "图像输出");
-        _loadDefaultFont();
-        _loadSysFont();
-        LOG.debug("字体文件列表: {}", fontList);
-        select = fonts.get(0);
-        FONT_SIZE = _calculateFontSize(select);
-        LOG.debug("计算合适字体尺寸为 {}", FONT_SIZE);
-        _genPage();
+        _initFontDir();
+        new Thread(() -> {
+            _loadDefaultFont();
+            _loadSysFont();
+        }).start();
     }
 
-    // ==================== 方法组：载入字体 ====================
-    public void _loadDefaultFont() {
+    public void _initFontDir() {
         fontDir = new File(mcDataDir, "fonts");
-        File fontFile;
         // 如果fonts文件夹不存在则创建
         if (!fontDir.exists()) {
             if (!fontDir.mkdirs()) {
                 LOG.error("创建文件夹失败: {}", fontDir.getAbsolutePath());
             }
         }
+    }
+
+    public void _loadDefaultFont() {
+        File fontFile;
         // 读取jar包内的字体文件 resources/fonts/霞鹜文楷.ttf
         // 复制到mcDataDir中
         try (InputStream fontStream = getClass().getClassLoader().getResourceAsStream("fonts/霞鹜文楷.ttf")) {
@@ -61,10 +71,11 @@ public class FontManager {
             if (!fontFile.exists()) {
                 Files.copy(fontStream, fontFile.toPath(), StandardCopyOption.REPLACE_EXISTING);
                 LOG.debug("复制字体文件成功: {}", fontFile.getAbsolutePath());
-                fontList.add(fontFile);
             }
             Font font = _loadTTF(fontFile);
-            fonts.add(font);
+            float fontSize = _calculateFontSize(font);
+            font = font.deriveFont(fontSize);
+            fonts.add(font); // 该字体为默认第一位
         } catch (IOException e) {
             LOG.error("复制字体文件失败", e);
             throw new RuntimeException(e);
@@ -73,9 +84,6 @@ public class FontManager {
         }
     }
 
-    /**
-     * 寻找系统字体并加入fontList
-     */
     public void _loadSysFont() {
         String os = System.getProperty("os.name").toLowerCase();
         List<Path> systemFontDirs = new ArrayList<>();
@@ -108,9 +116,10 @@ public class FontManager {
                         String fileName = file.getFileName().toString().toLowerCase();
                         if (fileName.endsWith(".ttf")) {
                             File targetFile = new File(file.toString());
-                            fontList.add(targetFile);
                             try (InputStream is = new FileInputStream(targetFile)) {
                                 Font font = Font.createFont(Font.TRUETYPE_FONT, is);
+                                float fontSize = _calculateFontSize(font);
+                                font = font.deriveFont(fontSize);
                                 fonts.add(font);
                             } catch (IOException e) {
                                 LOG.error("加载 {} 时IO出错", targetFile.getAbsoluteFile());
@@ -136,7 +145,10 @@ public class FontManager {
 
     public Font _loadTTF(File fontFile) throws IOException, FontFormatException {
         try (InputStream is = new FileInputStream(fontFile)) {
-            return Font.createFont(Font.TRUETYPE_FONT, is);
+            Font font = Font.createFont(Font.TRUETYPE_FONT, is);
+            float fontSize = _calculateFontSize(font);
+            font = font.deriveFont(fontSize);
+            return font;
         } catch (FileNotFoundException e) {
             LOG.error("未找到字体文件: {}", fontFile.getAbsoluteFile());
             throw e;
@@ -149,15 +161,10 @@ public class FontManager {
         }
     }
 
-    /**
-     * 动态调整字体尺寸，直到满足FONT_PIXEL_SIZE
-     * @param font 选择的字体
-     * @return 满足的字体大小
-     */
     public int _calculateFontSize(Font font) {
         font = font.deriveFont((float)FONT_SIZE);
 
-        int targetPixelSize = (int) (FONT_PIXEL_SIZE - ((FONT_PIXEL_SIZE)*0.2));
+        int targetPixelSize = (int) (FONT_PIXEL_SIZE - ((FONT_PIXEL_SIZE)*0.45));
         int targetFontSize = FONT_SIZE;
         char sampleChar = '国';
         // 创建图像和绘图上下文
@@ -197,64 +204,119 @@ public class FontManager {
         return targetFontSize;
     }
 
-    // ==================== 方法组：图像操作 ====================
-    public void _saveImage(BufferedImage image) {
-        if (!outPutDir.exists()) {
-            if (!outPutDir.mkdirs()) {
-                LOG.error("创建目录失败: {}", outPutDir.getAbsoluteFile());
-            }
+    public Font findFont(Character c) {
+        for (Font font : fonts) {
+            if (!font.canDisplay(c)) continue; // 跳过不支持的Font
+            return font;
         }
-        File imageFile = new File(outPutDir, "tmp.png");
-        try {
-            ImageIO.write(image, "png", imageFile);
-        } catch (IOException e) {
-            LOG.error("保存图像失败\n栈输出: ", e);
-        }
+        return fonts.get(0); // 没有找到合适的返回第一个
     }
 
-    // 生成纹理页方法
-    public void _genPage() {
-        for (Map.Entry<String, List<Integer>> entry : UnicodeRecorder.CATE.entrySet()) {
-            String cate = entry.getKey();
-            LOG.debug("正在处理 {} 分类", cate);
-            int start = entry.getValue().get(0);
-            int startCopy = start;
-            int end = entry.getValue().get(1);
-            int allCount = end - startCopy + 1; // 总共的数量
-            int count = (int) Math.ceil((double) allCount / FontTexturePage.CHAR_COUNT);
-            // 遍历页数次将字符分页装进纹理图
-            for (int i = 0; i < count; i++) {
-                int charCount = end - start + 1;
-                int startCopy2 = start;
-                int cs = Math.min(FontTexturePage.CHAR_COUNT, charCount); // 计算需要装入的数量
-                // 为当前页添加字符
-                FontTexturePage page = new FontTexturePage();
-                for (int j = start; j < startCopy2 + cs; j++) { // 遍历方式为：以开始指针为起点遍历需要装入数量次
-                    page.addCharToPage(select, j, FONT_SIZE);
-                    start++; // 移动指针，用于下次循环
-                }
-                String fileName = cate + "_" + i + ".png"; // 文件名为 分类_分页
-                page._saveImage(fileName);
-                pages.add(page);
-            }
-        }
-    }
-
-    // ==================== 方法组：寻找Page和index ====================
     /**
-     * 寻找码点所在的纹理页
-     * @param codepoint 码点
-     * @return 所在的TexturePage，未找到时会返回null
+     * 自动创建所需的纹理页和字符贴图
+     * @param c 字符
+     * @return 字符所对应的页
      */
-    public FontTexturePage findPage(int codepoint) {
-        for (FontTexturePage page : pages) {
-            int start = page.start;
-            int end = page.end;
-            if (codepoint < start || codepoint > end) continue;
-            if (codepoint >= start || codepoint <= end) {
-                return page;
+    public CharPage findPage(Character c) {
+        // 先从高速缓存找
+        Object page = highwayCache.get(c);
+        if (page != null) {
+            page = ((CharInfo) page).page;
+        } else {
+            // 高速缓存如果没有再遍历已有的页
+            for (CharPage p : pages) {
+                if (p.findChar(c)) page = p;
+            }
+            // 如果已有的页也没有
+            if (page == null) {
+                // 遍历页尝试添加字符
+                for (CharPage pa : pages) {
+                    if (!pa.addChar(findFont(c), c)) continue;
+                    page = pa;
+                    break;
+                }
+                // 已有页都放不下
+                if (page == null) {
+                    page = new CharPage(); pages.add((CharPage) page);
+                    ((CharPage) page).addChar(findFont(c), c);
+                }
             }
         }
-        return null; // 没有找到时返回空
+        return (CharPage) page;
+    }
+
+    public float renderCharAt(Character c, double x, double y) {
+        CharPage page = findPage(c);
+        CharInfo ci = page.getCharInfo(c);
+        // 得到了对应Page后 1.绑定纹理
+        glBindTexture(GL_TEXTURE_2D, page.textureID);
+        glBegin(GL_QUADS);
+        // 左上角
+        glTexCoord2d(ci.getU1(), ci.getV1());
+        glVertex3d(x, y, 0);
+        // 左下角
+        glTexCoord2d(ci.getU1(), ci.getV2());
+        glVertex3d(x, y+8, 0);
+        // 右下角
+        glTexCoord2d(ci.getU2(), ci.getV2());
+        glVertex3d(x+8, y+8, 0);
+        // 右上角
+        glTexCoord2d(ci.getU2(), ci.getV1());
+        glVertex3d(x+8, y, 0);
+        glEnd();
+        // 绘制红色外边框
+        glDisable(GL_TEXTURE_2D);
+        glColor3d(1, 0, 0);
+        glBegin(GL_LINE_LOOP);
+        glVertex3d(x, y, 0f);
+        glVertex3d(x + 8, y, 0f);
+        glVertex3d(x + 8, y + 8, 0f);
+        glVertex3d(x, y + 8, 0f);
+        glEnd();
+        glEnable(GL_TEXTURE_2D);
+        return 8f;
+    }
+
+    // 记录上一次执行时间
+    private long lastSaveTime = 0;
+    public ThreadPoolExecutor pool = new ThreadPoolExecutor(
+        4,
+        4,
+        0L,
+        TimeUnit.MILLISECONDS,
+        new LinkedBlockingDeque<>(8),
+        Executors.defaultThreadFactory(),
+        new ThreadPoolExecutor.DiscardPolicy()
+    );
+    @SubscribeEvent
+    public void clientTick(TickEvent.RenderTickEvent event) {
+        long currentTime = System.currentTimeMillis();
+        // 每隔10秒执行一次
+        if (currentTime - lastSaveTime >= 10_000) {
+            lastSaveTime = currentTime;
+            for (CharPage page : pages) {
+                pool.execute(() -> page._saveImage(pages.indexOf(page)+".png"));
+            }
+        }
+    }
+    public void _registerClient(
+        @Nullable FMLPreInitializationEvent pre,
+        @Nullable FMLInitializationEvent init,
+        @Nullable FMLPostInitializationEvent post) {
+        if (pre != null) {
+            FMLCommonHandler.instance().bus().register(this);
+        }
+        if (init != null) {
+            for (Font font : fonts) {
+                LOG.debug("已加载字体: {}", font.getName());
+            }
+        }
+    }
+    public void _registerCommon(
+        @Nullable FMLPreInitializationEvent pre,
+        @Nullable FMLInitializationEvent init,
+        @Nullable FMLPostInitializationEvent post) {
+        if (pre != null) {
+        }
     }
 }
