@@ -10,8 +10,8 @@ import java.awt.image.BufferedImage;
 import java.io.File;
 import java.io.IOException;
 import java.nio.ByteBuffer;
-import java.util.ArrayList;
-import java.util.List;
+import java.util.HashMap;
+import java.util.Map;
 
 import static club.heiqi.qz_uilib.MOD_INFO.LOG;
 import static club.heiqi.qz_uilib.fontsystem.FontManager.FONT_PIXEL_SIZE;
@@ -22,11 +22,11 @@ import static org.lwjgl.opengl.GL30.glGenerateMipmap;
 public class CharPage {
     public static int PAGE_SIZE = 2048;
     public static int charCount = (PAGE_SIZE * PAGE_SIZE) / (FONT_PIXEL_SIZE * FONT_PIXEL_SIZE);
-    public int charCounter = 0;
+    public short charCounter = 0;
     public int textureID = -1;
     public BufferedImage img;
     /** 该页存储的字符 */
-    public List<Character> storedChar = new ArrayList<>();
+    public Map<String, CharInfo> storedChar = new HashMap<>();
 
     /**
      * 构造函数创建一张透明空图等待添加字符
@@ -35,7 +35,7 @@ public class CharPage {
         img = new BufferedImage(PAGE_SIZE, PAGE_SIZE, BufferedImage.TYPE_INT_ARGB);
     }
 
-    public boolean addChar(Font font, Character c) {
+    public boolean addChar(Font font, String c) {
         if (charCounter >= charCount) {
             return false;
         }
@@ -48,19 +48,20 @@ public class CharPage {
         int y = 行 * FONT_PIXEL_SIZE;
         try {
             Graphics2D g = img.createGraphics();
-            BufferedImage charImg = _genCharImage(font, c);
-            g.drawImage(charImg, x, y, FONT_PIXEL_SIZE, FONT_PIXEL_SIZE, null);
+            GenCharInfo gci = _genCharImage(font, c);
+            g.drawImage(gci.img, x, y, FONT_PIXEL_SIZE, FONT_PIXEL_SIZE, null);
             g.dispose();
+            storedChar.put(c, gci.info);
             charCounter++;
-            storedChar.add(c);
             uploadGPU();
             return true;
         } catch (Exception e) {
+            charCounter--;
             return false;
         }
     }
 
-    private BufferedImage _genCharImage(Font font, Character c) {
+    private GenCharInfo _genCharImage(Font font, String c) {
         BufferedImage image = new BufferedImage(FONT_PIXEL_SIZE, FONT_PIXEL_SIZE, BufferedImage.TYPE_INT_ARGB);
         Graphics2D g = image.createGraphics();
         g.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
@@ -73,16 +74,17 @@ public class CharPage {
 
         int bx = (int) bounds.getX();
         int by = (int) bounds.getY();
-        int charWidth = (int) bounds.getWidth();
-        int charHeight = (int) bounds.getHeight();
+        short up = (short) (FONT_PIXEL_SIZE * 0.2);
+        short charWidth = (short) bounds.getWidth();
+        short charHeight = (short) bounds.getHeight();
 
         // 水平居中 + 垂直基线对齐
-        int x = (FONT_PIXEL_SIZE - charWidth) / 2 - bx;
-        int y = metrics.getAscent() - by;
+        int x = 0;
+        int y = FONT_PIXEL_SIZE - up;
 
         layout.draw(g, x, y);
         g.dispose();
-        return image;
+        return new GenCharInfo(image, new CharInfo(this, charCounter, charWidth, (short) FONT_PIXEL_SIZE));
     }
 
     public void _saveImage(String fileName) {
@@ -134,23 +136,52 @@ public class CharPage {
         glBindTexture(GL_TEXTURE_2D, 0);
     }
 
-    public boolean findChar(Character c) {
-        for (Character ch : storedChar) {
-            if (ch.equals(c)) {
-                return true;
-            }
+    public void renderCharAt(String c, double x, double y, float size) {
+        CharInfo info = storedChar.get(c);
+        double u1 = info.getU1(), u2 = info.getU2(), v1 = info.getV1(), v2 = info.getV2();
+        glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+        glBindTexture(GL_TEXTURE_2D, textureID);
+        // 绘制
+        glBegin(GL_QUADS);
+        {
+            // 左下
+            glTexCoord2d(u1, v1);
+            glVertex3d(x, y, 0);
+            // 左上
+            glTexCoord2d(u1, v2);
+            glVertex3d(x, y+size, 0);
+            // 右上
+            glTexCoord2d(u2, v2);
+            glVertex3d(x+size, y+size, 0);
+            // 右下
+            glTexCoord2d(u2, v1);
+            glVertex3d(x+size, y, 0);
         }
-        return false;
+        glEnd();
     }
 
-    public CharInfo getCharInfo(Character c) {
-        for (Character ch : storedChar) {
-            if (ch.equals(c)) {
-                // 寻找字符所在索引+1
-                int index = storedChar.indexOf(c);
-                return new CharInfo(this, index);
-            }
+    public void _renderDebugRect(double x, double y, float size) {
+        // 保存当前颜色、线宽等状态
+        glPushAttrib(GL_ALL_ATTRIB_BITS);
+        glColor4f(1, 0, 0, 1);
+        glBegin(GL_LINE_LOOP);
+        {
+            glVertex3d(x, y, 0);
+            glVertex3d(x, y+size, 0);
+            glVertex3d(x+size, y+size, 0);
+            glVertex3d(x+size, y, 0);
         }
-        return null;
+        glEnd();
+        // 恢复之前保存的状态
+        glPopAttrib();
+    }
+
+    public static class GenCharInfo {
+        public BufferedImage img;
+        public CharInfo info;
+        public GenCharInfo(BufferedImage img, CharInfo info) {
+            this.img = img;
+            this.info = info;
+        }
     }
 }

@@ -37,7 +37,7 @@ public class FontManager {
 
     public volatile List<Font> fonts = new ArrayList<>();
     public List<CharPage> pages = new ArrayList<>();
-    public Map<Character, CharInfo> highwayCache = new LRUCharCache(); // 高速缓存10000个字符，不常用的自动抛弃
+    public Map<String, CharInfo> highwayCache = new LRUCharCache(); // 高速缓存10000个字符，不常用的自动抛弃
 
     public FontManager() {
         mcDataDir = Minecraft.getMinecraft().mcDataDir;
@@ -204,9 +204,9 @@ public class FontManager {
         return targetFontSize;
     }
 
-    public Font findFont(Character c) {
+    public Font findFont(int codepoint) {
         for (Font font : fonts) {
-            if (!font.canDisplay(c)) continue; // 跳过不支持的Font
+            if (!font.canDisplay(codepoint)) continue; // 跳过不支持的Font
             return font;
         }
         return fonts.get(0); // 没有找到合适的返回第一个
@@ -217,7 +217,7 @@ public class FontManager {
      * @param c 字符
      * @return 字符所对应的页
      */
-    public CharPage findPage(Character c) {
+    public CharPage findPage(String c) {
         // 先从高速缓存找
         Object page = highwayCache.get(c);
         if (page != null) {
@@ -225,56 +225,38 @@ public class FontManager {
         } else {
             // 高速缓存如果没有再遍历已有的页
             for (CharPage p : pages) {
-                if (p.findChar(c)) page = p;
+                if (p.storedChar.containsKey(c)) page = p;
             }
             // 如果已有的页也没有
             if (page == null) {
-                // 遍历页尝试添加字符
-                for (CharPage pa : pages) {
-                    if (!pa.addChar(findFont(c), c)) continue;
-                    page = pa;
-                    break;
-                }
-                // 已有页都放不下
-                if (page == null) {
-                    page = new CharPage(); pages.add((CharPage) page);
-                    ((CharPage) page).addChar(findFont(c), c);
-                }
+                addChar(c);
+                page = pages.get(pages.size()-1);
             }
         }
         return (CharPage) page;
     }
 
-    public float renderCharAt(Character c, double x, double y) {
-        CharPage page = findPage(c);
-        CharInfo ci = page.getCharInfo(c);
-        // 得到了对应Page后 1.绑定纹理
-        glBindTexture(GL_TEXTURE_2D, page.textureID);
-        glBegin(GL_QUADS);
-        // 左上角
-        glTexCoord2d(ci.getU1(), ci.getV1());
-        glVertex3d(x, y, 0);
-        // 左下角
-        glTexCoord2d(ci.getU1(), ci.getV2());
-        glVertex3d(x, y+8, 0);
-        // 右下角
-        glTexCoord2d(ci.getU2(), ci.getV2());
-        glVertex3d(x+8, y+8, 0);
-        // 右上角
-        glTexCoord2d(ci.getU2(), ci.getV1());
-        glVertex3d(x+8, y, 0);
-        glEnd();
-        // 绘制红色外边框
-        glDisable(GL_TEXTURE_2D);
-        glColor3d(1, 0, 0);
-        glBegin(GL_LINE_LOOP);
-        glVertex3d(x, y, 0f);
-        glVertex3d(x + 8, y, 0f);
-        glVertex3d(x + 8, y + 8, 0f);
-        glVertex3d(x, y + 8, 0f);
-        glEnd();
-        glEnable(GL_TEXTURE_2D);
-        return 8f;
+    public void addChar(String c) {
+        int codepoint = c.charAt(0);
+        boolean success = false;
+        // 遍历页尝试添加字符
+        for (CharPage pa : pages) {
+            success = pa.addChar(findFont(codepoint), c);
+        }
+        // 已有页都放不下
+        if (!success) {
+            CharPage page = new CharPage(); pages.add(page);
+            page.addChar(findFont(codepoint), c);
+        }
+    }
+
+    public float renderCharAt(String c, double x, double y, float size) {
+        CharPage p = findPage(c);
+        int width = p.storedChar.get(c).width;
+        float w = ((float) 8 / FONT_PIXEL_SIZE) * width;
+        p.renderCharAt(c, x, y, size);
+        p._renderDebugRect(x, y, size);
+        return w;
     }
 
     // 记录上一次执行时间

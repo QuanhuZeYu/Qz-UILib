@@ -3,7 +3,7 @@ package club.heiqi.qz_uilib.fontsystem;
 import java.util.LinkedHashMap;
 import java.util.Map;
 
-public class LRUCharCache extends LinkedHashMap<Character, CharInfo> {
+public class LRUCharCache extends LinkedHashMap<String, CharInfo> {
     private static final int MAX_CAPACITY = 10000; // 最大容量
 
     public LRUCharCache() {
@@ -11,7 +11,7 @@ public class LRUCharCache extends LinkedHashMap<Character, CharInfo> {
     }
 
     @Override
-    protected boolean removeEldestEntry(Map.Entry<Character, CharInfo> eldest) {
+    protected boolean removeEldestEntry(Map.Entry<String, CharInfo> eldest) {
         // 当容量超过最大值时，自动移除最久未使用的条目
         return size() > MAX_CAPACITY;
     }

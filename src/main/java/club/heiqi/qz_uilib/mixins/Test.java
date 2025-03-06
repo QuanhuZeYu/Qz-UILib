@@ -48,9 +48,10 @@ public abstract class Test {
         remap = true
     )
     public void qzuilib$renderUnicodeChar(char c, boolean bold, CallbackInfoReturnable<Float> ci) {
+        String ch = Character.toString(c);
         FontManager fontManager = MyMod.fontManager;
         if (fontManager == null) return;
-        float f = fontManager.renderCharAt(c, this.posX, this.posY);
+        float f = fontManager.renderCharAt(ch, this.posX, this.posY, 8f);
         ci.setReturnValue(f);
     }
 }
