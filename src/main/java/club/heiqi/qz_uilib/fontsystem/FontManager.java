@@ -275,7 +275,7 @@ public class FontManager {
         int width = p.storedChar.get(c).width;
         float w = ((float) 8 / FONT_PIXEL_SIZE) * width;
         p.renderCharAt(c, x, y, size);
-        p._renderDebugRect(x, y, size);
+//        p._renderDebugRect(x, y, size);
         return w;
     }
 
@@ -297,7 +297,7 @@ public class FontManager {
         if (currentTime - lastSaveTime >= 1_000) {
             lastSaveTime = currentTime;
             for (CharPage page : pages) {
-                pool.execute(() -> page._saveImage(pages.indexOf(page)+".png"));
+//                pool.execute(() -> page._saveImage(pages.indexOf(page)+".png"));
                 if (page.isDirty) page.uploadGPU();
             }
         }
