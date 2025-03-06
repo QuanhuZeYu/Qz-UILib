@@ -26,14 +26,14 @@ public class CharInfo {
         return (double) (x + FONT_PIXEL_SIZE) / PAGE_SIZE;
     }
 
-    public double getV1() {
+    public double getV1() { // 上
         int y = _calculateLT().get(1);
         return (double) (PAGE_SIZE - y) / PAGE_SIZE;
     }
 
-    public double getV2() {
+    public double getV2() { // 下
         int y = _calculateLT().get(1);
-        y = y + height;
+        y = y + FONT_PIXEL_SIZE;
         return (double) (PAGE_SIZE - y) / PAGE_SIZE;
     }
 

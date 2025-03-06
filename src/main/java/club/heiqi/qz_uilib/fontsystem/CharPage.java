@@ -22,11 +22,12 @@ import static org.lwjgl.opengl.GL30.glGenerateMipmap;
 public class CharPage {
     public static int PAGE_SIZE = 2048;
     public static int charCount = (PAGE_SIZE * PAGE_SIZE) / (FONT_PIXEL_SIZE * FONT_PIXEL_SIZE);
-    public short charCounter = 0;
+    public volatile short charCounter = 0;
     public int textureID = -1;
-    public BufferedImage img;
+    public volatile boolean isDirty = false;
+    public volatile BufferedImage img;
     /** 该页存储的字符 */
-    public Map<String, CharInfo> storedChar = new HashMap<>();
+    public volatile Map<String, CharInfo> storedChar = new HashMap<>();
 
     /**
      * 构造函数创建一张透明空图等待添加字符
@@ -53,7 +54,7 @@ public class CharPage {
             g.dispose();
             storedChar.put(c, gci.info);
             charCounter++;
-            uploadGPU();
+            isDirty = true;
             return true;
         } catch (Exception e) {
             charCounter--;
@@ -73,10 +74,11 @@ public class CharPage {
         Rectangle2D bounds = layout.getBounds();
 
         int bx = (int) bounds.getX();
-        int by = (int) bounds.getY();
+        int by = (int) bounds.getY(); // 左上角Y
         short up = (short) (FONT_PIXEL_SIZE * 0.2);
         short charWidth = (short) bounds.getWidth();
         short charHeight = (short) bounds.getHeight();
+        short height = (short) (FONT_PIXEL_SIZE);
 
         // 水平居中 + 垂直基线对齐
         int x = 0;
@@ -84,7 +86,7 @@ public class CharPage {
 
         layout.draw(g, x, y);
         g.dispose();
-        return new GenCharInfo(image, new CharInfo(this, charCounter, charWidth, (short) FONT_PIXEL_SIZE));
+        return new GenCharInfo(image, new CharInfo(this, charCounter, charWidth, height));
     }
 
     public void _saveImage(String fileName) {
@@ -134,6 +136,8 @@ public class CharPage {
         //生成mipmap
         glGenerateMipmap(GL_TEXTURE_2D);
         glBindTexture(GL_TEXTURE_2D, 0);
+
+        isDirty = false;
     }
 
     public void renderCharAt(String c, double x, double y, float size) {
@@ -166,10 +170,10 @@ public class CharPage {
         glColor4f(1, 0, 0, 1);
         glBegin(GL_LINE_LOOP);
         {
-            glVertex3d(x, y, 0);
-            glVertex3d(x, y+size, 0);
-            glVertex3d(x+size, y+size, 0);
-            glVertex3d(x+size, y, 0);
+            glVertex3d(x, y, -1);
+            glVertex3d(x, y+size, -1);
+            glVertex3d(x+size, y+size, -1);
+            glVertex3d(x+size, y, -1);
         }
         glEnd();
         // 恢复之前保存的状态

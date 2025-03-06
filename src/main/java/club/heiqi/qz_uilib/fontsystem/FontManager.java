@@ -17,13 +17,9 @@ import java.awt.image.BufferedImage;
 import java.io.*;
 import java.nio.file.*;
 import java.nio.file.attribute.BasicFileAttributes;
-import java.util.ArrayList;
+import java.util.*;
 import java.util.List;
-import java.util.Map;
-import java.util.concurrent.Executors;
-import java.util.concurrent.LinkedBlockingDeque;
-import java.util.concurrent.ThreadPoolExecutor;
-import java.util.concurrent.TimeUnit;
+import java.util.concurrent.*;
 
 import static club.heiqi.qz_uilib.MOD_INFO.LOG;
 import static org.lwjgl.opengl.GL11.*;
@@ -35,8 +31,8 @@ public class FontManager {
     public final File mcDataDir;
     public File fontDir;
 
-    public volatile List<Font> fonts = new ArrayList<>();
-    public List<CharPage> pages = new ArrayList<>();
+    public List<Font> fonts = new CopyOnWriteArrayList<>();
+    public List<CharPage> pages = new CopyOnWriteArrayList<>();
     public Map<String, CharInfo> highwayCache = new LRUCharCache(); // 高速缓存10000个字符，不常用的自动抛弃
 
     public FontManager() {
@@ -45,6 +41,7 @@ public class FontManager {
         new Thread(() -> {
             _loadDefaultFont();
             _loadSysFont();
+            _genPreTexture();
         }).start();
     }
 
@@ -161,10 +158,30 @@ public class FontManager {
         }
     }
 
+    public void _genPreTexture() {
+        List<Integer> preL = Arrays.asList(
+            (Integer) UnicodeRecorder.CATE.get(UnicodeRecorder.UnicodeType.英文.类型名).get(0),
+            (Integer) UnicodeRecorder.CATE.get(UnicodeRecorder.UnicodeType.英文.类型名).get(1),
+            (Integer) UnicodeRecorder.CATE.get(UnicodeRecorder.UnicodeType.英文扩展.类型名).get(0),
+            (Integer) UnicodeRecorder.CATE.get(UnicodeRecorder.UnicodeType.英文扩展.类型名).get(1),
+            (Integer) UnicodeRecorder.CATE.get(UnicodeRecorder.UnicodeType.中文Unicode.类型名).get(0),
+            (Integer) UnicodeRecorder.CATE.get(UnicodeRecorder.UnicodeType.中文Unicode.类型名).get(1)
+        );
+        Iterator<Integer> it = preL.iterator();
+        while (it.hasNext()) {
+            int start = it.next();
+            int end = it.next();
+            for (int i = start; i <= end; i++) {
+                if (!Character.isValidCodePoint(i)) continue;
+                addChar(new String(new int[]{i}, 0, 1));
+            }
+        }
+    }
+
     public int _calculateFontSize(Font font) {
         font = font.deriveFont((float)FONT_SIZE);
 
-        int targetPixelSize = (int) (FONT_PIXEL_SIZE - ((FONT_PIXEL_SIZE)*0.45));
+        int targetPixelSize = (int) (FONT_PIXEL_SIZE - ((FONT_PIXEL_SIZE)*0.2));
         int targetFontSize = FONT_SIZE;
         char sampleChar = '国';
         // 创建图像和绘图上下文
@@ -218,14 +235,17 @@ public class FontManager {
      * @return 字符所对应的页
      */
     public CharPage findPage(String c) {
-        // 先从高速缓存找
-        Object page = highwayCache.get(c);
-        if (page != null) {
-            page = ((CharInfo) page).page;
-        } else {
+        // 安全获取 page，若 highwayCache.get(c) 为 null 则 page 也为 null
+        CharPage page = Optional.ofNullable(highwayCache.get(c))
+            .map(entry -> entry.page)
+            .orElse(null);
+        if (page == null) {
             // 高速缓存如果没有再遍历已有的页
             for (CharPage p : pages) {
-                if (p.storedChar.containsKey(c)) page = p;
+                if (p.storedChar.containsKey(c)) {
+                    page = p;
+                    break;
+                }
             }
             // 如果已有的页也没有
             if (page == null) {
@@ -233,7 +253,7 @@ public class FontManager {
                 page = pages.get(pages.size()-1);
             }
         }
-        return (CharPage) page;
+        return page;
     }
 
     public void addChar(String c) {
@@ -274,10 +294,11 @@ public class FontManager {
     public void clientTick(TickEvent.RenderTickEvent event) {
         long currentTime = System.currentTimeMillis();
         // 每隔10秒执行一次
-        if (currentTime - lastSaveTime >= 10_000) {
+        if (currentTime - lastSaveTime >= 1_000) {
             lastSaveTime = currentTime;
             for (CharPage page : pages) {
                 pool.execute(() -> page._saveImage(pages.indexOf(page)+".png"));
+                if (page.isDirty) page.uploadGPU();
             }
         }
     }
