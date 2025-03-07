@@ -27,6 +27,8 @@ import static org.lwjgl.opengl.GL11.*;
 public class FontManager {
     public static int FONT_SIZE = 100;
     public static int FONT_PIXEL_SIZE = 64;
+    public boolean canRender = false;
+    public volatile boolean genDone = false;
     /** MC根目录-- `.minecraft` */
     public final File mcDataDir;
     public File fontDir;
@@ -70,7 +72,7 @@ public class FontManager {
                 LOG.debug("复制字体文件成功: {}", fontFile.getAbsolutePath());
             }
             Font font = _loadTTF(fontFile);
-            float fontSize = _calculateFontSize(font);
+            float fontSize = _calculateFontSize(font, null);
             font = font.deriveFont(fontSize);
             fonts.add(font); // 该字体为默认第一位
         } catch (IOException e) {
@@ -115,7 +117,7 @@ public class FontManager {
                             File targetFile = new File(file.toString());
                             try (InputStream is = new FileInputStream(targetFile)) {
                                 Font font = Font.createFont(Font.TRUETYPE_FONT, is);
-                                float fontSize = _calculateFontSize(font);
+                                float fontSize = _calculateFontSize(font, null);
                                 font = font.deriveFont(fontSize);
                                 fonts.add(font);
                             } catch (IOException e) {
@@ -143,7 +145,7 @@ public class FontManager {
     public Font _loadTTF(File fontFile) throws IOException, FontFormatException {
         try (InputStream is = new FileInputStream(fontFile)) {
             Font font = Font.createFont(Font.TRUETYPE_FONT, is);
-            float fontSize = _calculateFontSize(font);
+            float fontSize = _calculateFontSize(font, null);
             font = font.deriveFont(fontSize);
             return font;
         } catch (FileNotFoundException e) {
@@ -167,37 +169,42 @@ public class FontManager {
             (Integer) UnicodeRecorder.CATE.get(UnicodeRecorder.UnicodeType.中文Unicode.类型名).get(0),
             (Integer) UnicodeRecorder.CATE.get(UnicodeRecorder.UnicodeType.中文Unicode.类型名).get(1)
         );
-        Iterator<Integer> it = preL.iterator();
-        while (it.hasNext()) {
-            int start = it.next();
-            int end = it.next();
-            for (int i = start; i <= end; i++) {
-                if (!Character.isValidCodePoint(i)) continue;
-                addChar(new String(new int[]{i}, 0, 1));
+        try {
+            Iterator<Integer> it = preL.iterator();
+            while (it.hasNext()) {
+                int start = it.next();
+                int end = it.next();
+                for (int i = start; i <= end; i++) {
+                    if (!Character.isValidCodePoint(i)) continue;
+                    addChar(new String(new int[]{i}, 0, 1));
+                }
             }
+        } finally {
+            genDone = true;
         }
     }
 
-    public int _calculateFontSize(Font font) {
+    public int _calculateFontSize(Font font, @Nullable String sampleChar) {
         font = font.deriveFont((float)FONT_SIZE);
 
-        int targetPixelSize = (int) (FONT_PIXEL_SIZE - ((FONT_PIXEL_SIZE)*0.2));
         int targetFontSize = FONT_SIZE;
-        char sampleChar = '国';
+        int targetPixelSize = (int) (FONT_PIXEL_SIZE - ((FONT_PIXEL_SIZE)*0.2));
+        if (sampleChar == null) sampleChar = "䨻";
         // 创建图像和绘图上下文
         BufferedImage i = new BufferedImage(FONT_PIXEL_SIZE, FONT_PIXEL_SIZE, BufferedImage.TYPE_INT_ARGB);
         Graphics2D g2d = i.createGraphics();
         // 设置渲染参数（抗锯齿）
         g2d.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
         g2d.setFont(font);
+        FontMetrics metrics = g2d.getFontMetrics();
         // 获取字体尺寸前先绘制字符
         FontRenderContext frc = g2d.getFontRenderContext();
-        TextLayout layout = new TextLayout(String.valueOf(sampleChar), font, frc);
+        TextLayout layout = new TextLayout(sampleChar, font, frc);
         Rectangle2D bounds = layout.getBounds();
-        int w = (int) bounds.getWidth(), h = (int) bounds.getHeight();
+        int w = (int) bounds.getWidth(), h = (int) bounds.getHeight(), w2 = metrics.charWidth(sampleChar.charAt(0));
         g2d.dispose(); // 必须释放资源，否则绘制不会生效
         // 循环调整字体大小直到符合条件
-        while (w > targetPixelSize || h > targetPixelSize) {
+        while (w > targetPixelSize || h > targetPixelSize || w2 > targetFontSize) {
             targetFontSize--;
             font = font.deriveFont((float) targetFontSize);
             // 重新绘制字符到新图像
@@ -205,18 +212,15 @@ public class FontManager {
             g2d = i.createGraphics();
             g2d.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
             g2d.setFont(font);
+            metrics = g2d.getFontMetrics();
             // 获取实际尺寸
-            bounds = new TextLayout(String.valueOf(sampleChar), font, g2d.getFontRenderContext()).getBounds();
-            w = (int) bounds.getWidth();
-            h = (int) bounds.getHeight();
+            bounds = new TextLayout(sampleChar, font, g2d.getFontRenderContext()).getBounds();
+            w = (int) bounds.getWidth(); h = (int) bounds.getHeight(); w2 = metrics.charWidth(sampleChar.charAt(0));
             // 计算绘制起点坐标
             int x = (int) (((double) (FONT_PIXEL_SIZE - w) /2)-bounds.getX());
             int y = (int) (((double) (FONT_PIXEL_SIZE - h) /2)-bounds.getY());
-            g2d.drawString(String.valueOf(sampleChar), x, y);
+            g2d.drawString(sampleChar, x, y);
             g2d.dispose();
-            /*  if (w <= targetPixelSize && h <= targetPixelSize) { // DEBUG方法
-                _saveImage(i);
-            }   */
         }
         return targetFontSize;
     }
@@ -265,22 +269,26 @@ public class FontManager {
         }
         // 已有页都放不下
         if (!success) {
-            CharPage page = new CharPage(); pages.add(page);
+            CharPage page = new CharPage(this); pages.add(page);
             page.addChar(findFont(codepoint), c);
         }
     }
 
     public float renderCharAt(String c, double x, double y, float size) {
+        if (c.charAt(0) == 0x20) {
+            return 4f;
+        }
         CharPage p = findPage(c);
         int width = p.storedChar.get(c).width;
         float w = ((float) 8 / FONT_PIXEL_SIZE) * width;
         p.renderCharAt(c, x, y, size);
 //        p._renderDebugRect(x, y, size);
-        return w;
+        return (float) (w + 1.5);
     }
 
     // 记录上一次执行时间
     private long lastSaveTime = 0;
+    private long savePngTime = 0;
     public ThreadPoolExecutor pool = new ThreadPoolExecutor(
         4,
         4,
@@ -297,8 +305,15 @@ public class FontManager {
         if (currentTime - lastSaveTime >= 1_000) {
             lastSaveTime = currentTime;
             for (CharPage page : pages) {
-//                pool.execute(() -> page._saveImage(pages.indexOf(page)+".png"));
                 if (page.isDirty) page.uploadGPU();
+            }
+        }
+        if (System.currentTimeMillis() - savePngTime > 10_000) {
+            for (CharPage page: pages) {
+                savePngTime = System.currentTimeMillis();
+                pool.execute(() -> {
+                    page._saveImage(pages.indexOf(page)+".png");
+                });
             }
         }
     }
@@ -313,6 +328,19 @@ public class FontManager {
             for (Font font : fonts) {
                 LOG.debug("已加载字体: {}", font.getName());
             }
+        }
+        if (post != null) {
+            while (!genDone) {
+                try {
+                    wait(1_000);
+                } catch (InterruptedException e) {
+                    throw new RuntimeException(e);
+                }
+            }
+            for (CharPage page : pages) {
+                page.uploadGPU();
+            }
+            canRender = true;
         }
     }
     public void _registerCommon(

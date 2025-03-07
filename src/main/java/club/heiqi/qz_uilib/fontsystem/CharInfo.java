@@ -13,7 +13,7 @@ public class CharInfo {
 
     public CharInfo(CharPage page, short index, short width, short height) {
         this.page = page; this.index = index;
-        this.width = (short) (width + (FONT_PIXEL_SIZE * 0.2)); this.height = height;
+        this.width = width; this.height = height;
     }
 
     public double getU1() {
@@ -26,14 +26,14 @@ public class CharInfo {
         return (double) (x + FONT_PIXEL_SIZE) / PAGE_SIZE;
     }
 
-    public double getV1() { // 上
+    public double getV1() { // 翻转后的下
         int y = _calculateLT().get(1);
         return (double) (PAGE_SIZE - y) / PAGE_SIZE;
     }
 
-    public double getV2() { // 下
+    public double getV2() { // 翻转后的上
         int y = _calculateLT().get(1);
-        y = y + FONT_PIXEL_SIZE;
+        y = y + FONT_PIXEL_SIZE - 1;
         return (double) (PAGE_SIZE - y) / PAGE_SIZE;
     }
 

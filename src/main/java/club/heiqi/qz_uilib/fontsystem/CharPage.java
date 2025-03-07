@@ -21,23 +21,25 @@ import static org.lwjgl.opengl.GL30.glGenerateMipmap;
 
 public class CharPage {
     public static int PAGE_SIZE = 2048;
-    public static int charCount = (PAGE_SIZE * PAGE_SIZE) / (FONT_PIXEL_SIZE * FONT_PIXEL_SIZE);
+    public static int CHAR_COUNT = (PAGE_SIZE * PAGE_SIZE) / (FONT_PIXEL_SIZE * FONT_PIXEL_SIZE);
     public volatile short charCounter = 0;
     public int textureID = -1;
     public volatile boolean isDirty = false;
     public volatile BufferedImage img;
+    public FontManager fontManager;
     /** 该页存储的字符 */
     public volatile Map<String, CharInfo> storedChar = new HashMap<>();
 
     /**
      * 构造函数创建一张透明空图等待添加字符
      */
-    public CharPage() {
+    public CharPage(FontManager fontManager) {
+        this.fontManager = fontManager;
         img = new BufferedImage(PAGE_SIZE, PAGE_SIZE, BufferedImage.TYPE_INT_ARGB);
     }
 
     public boolean addChar(Font font, String c) {
-        if (charCounter >= charCount) {
+        if (charCounter >= CHAR_COUNT) {
             return false;
         }
         // 计算左上角坐标
@@ -81,7 +83,7 @@ public class CharPage {
         short height = (short) (FONT_PIXEL_SIZE);
 
         // 水平居中 + 垂直基线对齐
-        int x = 0;
+        int x = -bx;
         int y = FONT_PIXEL_SIZE - up;
 
         layout.draw(g, x, y);

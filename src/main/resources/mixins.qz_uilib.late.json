@@ -4,9 +4,5 @@
   "package": "club.heiqi.qz_uilib.mixins.late",
   "refmap": "mixins.qz_miner.refmap.json",
   "target": "@env(DEFAULT)",
-  "compatibilityLevel": "JAVA_8",
-  "mixins": [
-  ],
-  "client": [],
-  "server": []
+  "compatibilityLevel": "JAVA_8"
 }

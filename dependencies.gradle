@@ -89,6 +89,7 @@ dependencies {
     // Baubles
     implementation("com.github.GTNewHorizons:LootGames:2.1.4:dev")
     implementation("com.github.GTNewHorizons:EnderIO:2.8.24:dev")
+    implementation("com.github.GTNewHorizons:Angelica:1.0.0-beta35:dev")
 
 
 
@@ -122,5 +123,7 @@ if(useMoreMod) {
         runtimeOnly("com.github.GTNewHorizons:TinkersGregworks:GTNH-1.0.30-pre:dev")
         runtimeOnly("com.github.GTNewHorizons:IguanaTweaksTConstruct:2.5.0:dev")
         runtimeOnly("com.github.GTNewHorizons:Galacticraft:3.2.9-GTNH:dev")
+        runtimeOnly("com.github.GTNewHorizons:ModularUI:1.2.18:dev")
+        runtimeOnly("com.github.GTNewHorizons:ModularUI2:2.2.4-1.7.10:dev")
     }
 }
