@@ -23,18 +23,18 @@ public class CharInfo {
 
     public double getU2() {
         int x = _calculateLT().get(0);
-        return (double) (x + FONT_PIXEL_SIZE) / PAGE_SIZE;
+        return (double) (x + FONT_PIXEL_SIZE - 1) / PAGE_SIZE;
     }
 
     public double getV1() { // 翻转后的下
         int y = _calculateLT().get(1);
-        return (double) (PAGE_SIZE - y) / PAGE_SIZE;
+        return (double) (y) / PAGE_SIZE;
     }
 
     public double getV2() { // 翻转后的上
         int y = _calculateLT().get(1);
         y = y + FONT_PIXEL_SIZE - 1;
-        return (double) (PAGE_SIZE - y) / PAGE_SIZE;
+        return (double) (y) / PAGE_SIZE;
     }
 
     public List<Integer> _calculateLT() {

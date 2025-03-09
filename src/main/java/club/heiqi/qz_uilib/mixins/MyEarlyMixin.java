@@ -17,7 +17,7 @@ public class MyEarlyMixin implements IEarlyMixinLoader, IFMLLoadingPlugin {
 
     @Override
     public List<String> getMixins(Set<String> loadedCoreMods) {
-        return Arrays.asList("Test");
+        return Arrays.asList("QzFontrender");
     }
 
     @Override

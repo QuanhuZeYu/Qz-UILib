@@ -7,13 +7,11 @@ import cpw.mods.fml.common.event.FMLPreInitializationEvent;
 import cpw.mods.fml.common.eventhandler.SubscribeEvent;
 import cpw.mods.fml.common.gameevent.TickEvent;
 import net.minecraft.client.Minecraft;
+import org.apache.logging.log4j.LogManager;
+import org.apache.logging.log4j.Logger;
 import org.jetbrains.annotations.Nullable;
 
 import java.awt.*;
-import java.awt.font.FontRenderContext;
-import java.awt.font.TextLayout;
-import java.awt.geom.Rectangle2D;
-import java.awt.image.BufferedImage;
 import java.io.*;
 import java.nio.file.*;
 import java.nio.file.attribute.BasicFileAttributes;
@@ -21,10 +19,8 @@ import java.util.*;
 import java.util.List;
 import java.util.concurrent.*;
 
-import static club.heiqi.qz_uilib.MOD_INFO.LOG;
-import static org.lwjgl.opengl.GL11.*;
-
 public class FontManager {
+    public static Logger LOG = LogManager.getLogger();
     public static int FONT_SIZE = 100;
     public static int FONT_PIXEL_SIZE = 64;
     public boolean canRender = false;
@@ -33,8 +29,8 @@ public class FontManager {
     public final File mcDataDir;
     public File fontDir;
 
-    public List<Font> fonts = new CopyOnWriteArrayList<>();
-    public List<CharPage> pages = new CopyOnWriteArrayList<>();
+    public volatile List<Font> fonts = new CopyOnWriteArrayList<>();
+    public volatile List<CharPage> pages = new CopyOnWriteArrayList<>();
     public Map<String, CharInfo> highwayCache = new LRUCharCache(); // 高速缓存10000个字符，不常用的自动抛弃
 
     public FontManager() {
@@ -72,8 +68,6 @@ public class FontManager {
                 LOG.debug("复制字体文件成功: {}", fontFile.getAbsolutePath());
             }
             Font font = _loadTTF(fontFile);
-            float fontSize = _calculateFontSize(font, null);
-            font = font.deriveFont(fontSize);
             fonts.add(font); // 该字体为默认第一位
         } catch (IOException e) {
             LOG.error("复制字体文件失败", e);
@@ -81,6 +75,24 @@ public class FontManager {
         } catch (FontFormatException e) {
             throw new RuntimeException(e);
         }
+//        try (InputStream fontStream = getClass().getClassLoader().getResourceAsStream("fonts/NotoColorEmoji-Regular.ttf")) {
+//            if (fontStream == null) {
+//                LOG.error("无法找到字体文件: resources/fonts/霞鹜文楷.ttf");
+//                return;
+//            }
+//            fontFile = new File(fontDir, "NotoColorEmoji-Regular.ttf");
+//            if (!fontFile.exists()) {
+//                Files.copy(fontStream, fontFile.toPath(), StandardCopyOption.REPLACE_EXISTING);
+//                LOG.debug("复制字体文件成功: {}", fontFile.getAbsolutePath());
+//            }
+//            Font font = _loadTTF(fontFile);
+//            fonts.add(font); // 该字体为默认第一位
+//        } catch (IOException e) {
+//            LOG.error("复制字体文件失败", e);
+//            throw new RuntimeException(e);
+//        } catch (FontFormatException e) {
+//            throw new RuntimeException(e);
+//        }
     }
 
     public void _loadSysFont() {
@@ -115,10 +127,8 @@ public class FontManager {
                         String fileName = file.getFileName().toString().toLowerCase();
                         if (fileName.endsWith(".ttf")) {
                             File targetFile = new File(file.toString());
-                            try (InputStream is = new FileInputStream(targetFile)) {
-                                Font font = Font.createFont(Font.TRUETYPE_FONT, is);
-                                float fontSize = _calculateFontSize(font, null);
-                                font = font.deriveFont(fontSize);
+                            try {
+                                Font font = _loadTTF(targetFile);
                                 fonts.add(font);
                             } catch (IOException e) {
                                 LOG.error("加载 {} 时IO出错", targetFile.getAbsoluteFile());
@@ -145,8 +155,7 @@ public class FontManager {
     public Font _loadTTF(File fontFile) throws IOException, FontFormatException {
         try (InputStream is = new FileInputStream(fontFile)) {
             Font font = Font.createFont(Font.TRUETYPE_FONT, is);
-            float fontSize = _calculateFontSize(font, null);
-            font = font.deriveFont(fontSize);
+            font = font.deriveFont((float) (FONT_PIXEL_SIZE-(FONT_PIXEL_SIZE*0.1)));
             return font;
         } catch (FileNotFoundException e) {
             LOG.error("未找到字体文件: {}", fontFile.getAbsoluteFile());
@@ -167,7 +176,11 @@ public class FontManager {
             (Integer) UnicodeRecorder.CATE.get(UnicodeRecorder.UnicodeType.英文扩展.类型名).get(0),
             (Integer) UnicodeRecorder.CATE.get(UnicodeRecorder.UnicodeType.英文扩展.类型名).get(1),
             (Integer) UnicodeRecorder.CATE.get(UnicodeRecorder.UnicodeType.中文Unicode.类型名).get(0),
-            (Integer) UnicodeRecorder.CATE.get(UnicodeRecorder.UnicodeType.中文Unicode.类型名).get(1)
+            (Integer) UnicodeRecorder.CATE.get(UnicodeRecorder.UnicodeType.中文Unicode.类型名).get(1),
+            (Integer) UnicodeRecorder.CATE.get(UnicodeRecorder.UnicodeType.表情符号.类型名).get(0),
+            (Integer) UnicodeRecorder.CATE.get(UnicodeRecorder.UnicodeType.表情符号.类型名).get(1),
+            (Integer) UnicodeRecorder.CATE.get(UnicodeRecorder.UnicodeType.扩展表情符号.类型名).get(0),
+            (Integer) UnicodeRecorder.CATE.get(UnicodeRecorder.UnicodeType.扩展表情符号.类型名).get(1)
         );
         try {
             Iterator<Integer> it = preL.iterator();
@@ -176,7 +189,7 @@ public class FontManager {
                 int end = it.next();
                 for (int i = start; i <= end; i++) {
                     if (!Character.isValidCodePoint(i)) continue;
-                    addChar(new String(new int[]{i}, 0, 1));
+                    addChar(i);
                 }
             }
         } finally {
@@ -184,52 +197,14 @@ public class FontManager {
         }
     }
 
-    public int _calculateFontSize(Font font, @Nullable String sampleChar) {
-        font = font.deriveFont((float)FONT_SIZE);
-
-        int targetFontSize = FONT_SIZE;
-        int targetPixelSize = (int) (FONT_PIXEL_SIZE - ((FONT_PIXEL_SIZE)*0.2));
-        if (sampleChar == null) sampleChar = "䨻";
-        // 创建图像和绘图上下文
-        BufferedImage i = new BufferedImage(FONT_PIXEL_SIZE, FONT_PIXEL_SIZE, BufferedImage.TYPE_INT_ARGB);
-        Graphics2D g2d = i.createGraphics();
-        // 设置渲染参数（抗锯齿）
-        g2d.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
-        g2d.setFont(font);
-        FontMetrics metrics = g2d.getFontMetrics();
-        // 获取字体尺寸前先绘制字符
-        FontRenderContext frc = g2d.getFontRenderContext();
-        TextLayout layout = new TextLayout(sampleChar, font, frc);
-        Rectangle2D bounds = layout.getBounds();
-        int w = (int) bounds.getWidth(), h = (int) bounds.getHeight(), w2 = metrics.charWidth(sampleChar.charAt(0));
-        g2d.dispose(); // 必须释放资源，否则绘制不会生效
-        // 循环调整字体大小直到符合条件
-        while (w > targetPixelSize || h > targetPixelSize || w2 > targetFontSize) {
-            targetFontSize--;
-            font = font.deriveFont((float) targetFontSize);
-            // 重新绘制字符到新图像
-            i = new BufferedImage(FONT_PIXEL_SIZE, FONT_PIXEL_SIZE, BufferedImage.TYPE_INT_ARGB);
-            g2d = i.createGraphics();
-            g2d.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
-            g2d.setFont(font);
-            metrics = g2d.getFontMetrics();
-            // 获取实际尺寸
-            bounds = new TextLayout(sampleChar, font, g2d.getFontRenderContext()).getBounds();
-            w = (int) bounds.getWidth(); h = (int) bounds.getHeight(); w2 = metrics.charWidth(sampleChar.charAt(0));
-            // 计算绘制起点坐标
-            int x = (int) (((double) (FONT_PIXEL_SIZE - w) /2)-bounds.getX());
-            int y = (int) (((double) (FONT_PIXEL_SIZE - h) /2)-bounds.getY());
-            g2d.drawString(sampleChar, x, y);
-            g2d.dispose();
-        }
-        return targetFontSize;
-    }
-
     public Font findFont(int codepoint) {
         for (Font font : fonts) {
             if (!font.canDisplay(codepoint)) continue; // 跳过不支持的Font
             return font;
         }
+        char[] chars = Character.toChars(codepoint);
+        String c = new String(chars);
+        LOG.debug("没有找到 {} 合适的字体", c);
         return fonts.get(0); // 没有找到合适的返回第一个
     }
 
@@ -261,7 +236,7 @@ public class FontManager {
     }
 
     public void addChar(String c) {
-        int codepoint = c.charAt(0);
+        int codepoint = c.codePointAt(0);
         boolean success = false;
         // 遍历页尝试添加字符
         for (CharPage pa : pages) {
@@ -272,6 +247,12 @@ public class FontManager {
             CharPage page = new CharPage(this); pages.add(page);
             page.addChar(findFont(codepoint), c);
         }
+    }
+
+    public void addChar(int codepoint) {
+        char[] chars = Character.toChars(codepoint);
+        String c = new String(chars);
+        addChar(c);
     }
 
     public float renderCharAt(String c, double x, double y, float size) {
@@ -309,12 +290,10 @@ public class FontManager {
             }
         }
         if (System.currentTimeMillis() - savePngTime > 10_000) {
-            for (CharPage page: pages) {
-                savePngTime = System.currentTimeMillis();
-                pool.execute(() -> {
-                    page._saveImage(pages.indexOf(page)+".png");
-                });
-            }
+            savePngTime = System.currentTimeMillis();
+            pool.execute(() -> {
+                pages.get(pages.size()-1)._saveImage(pages.size()-1+".png");
+            });
         }
     }
     public void _registerClient(
@@ -339,6 +318,7 @@ public class FontManager {
             }
             for (CharPage page : pages) {
                 page.uploadGPU();
+                page._saveImage(pages.indexOf(page)+".png");
             }
             canRender = true;
         }

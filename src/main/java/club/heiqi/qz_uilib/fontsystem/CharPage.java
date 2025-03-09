@@ -1,6 +1,8 @@
 package club.heiqi.qz_uilib.fontsystem;
 
 import net.minecraft.client.Minecraft;
+import org.apache.logging.log4j.LogManager;
+import org.apache.logging.log4j.Logger;
 
 import javax.imageio.ImageIO;
 import java.awt.*;
@@ -13,13 +15,13 @@ import java.nio.ByteBuffer;
 import java.util.HashMap;
 import java.util.Map;
 
-import static club.heiqi.qz_uilib.MOD_INFO.LOG;
 import static club.heiqi.qz_uilib.fontsystem.FontManager.FONT_PIXEL_SIZE;
 import static org.lwjgl.opengl.GL11.*;
 import static org.lwjgl.opengl.GL12.GL_CLAMP_TO_EDGE;
 import static org.lwjgl.opengl.GL30.glGenerateMipmap;
 
 public class CharPage {
+    public static Logger LOG = LogManager.getLogger();
     public static int PAGE_SIZE = 2048;
     public static int CHAR_COUNT = (PAGE_SIZE * PAGE_SIZE) / (FONT_PIXEL_SIZE * FONT_PIXEL_SIZE);
     public volatile short charCounter = 0;
@@ -69,26 +71,24 @@ public class CharPage {
         Graphics2D g = image.createGraphics();
         g.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
         g.setFont(font);
-        g.setColor(Color.WHITE);
 
         FontMetrics metrics = g.getFontMetrics();
-        TextLayout layout = new TextLayout(String.valueOf(c), font, g.getFontRenderContext());
+        TextLayout layout = new TextLayout(c, font, g.getFontRenderContext());
         Rectangle2D bounds = layout.getBounds();
 
         int bx = (int) bounds.getX();
-        int by = (int) bounds.getY(); // 左上角Y
-        short up = (short) (FONT_PIXEL_SIZE * 0.2);
+        int by = (int) bounds.getY();
+        int up = (int) (FONT_PIXEL_SIZE*0.1875);
         short charWidth = (short) bounds.getWidth();
         short charHeight = (short) bounds.getHeight();
-        short height = (short) (FONT_PIXEL_SIZE);
 
         // 水平居中 + 垂直基线对齐
-        int x = -bx;
-        int y = FONT_PIXEL_SIZE - up;
+        int x = (int) (-bx + (FONT_PIXEL_SIZE*0.0275)/2);
+        int y = FONT_PIXEL_SIZE-up;
 
         layout.draw(g, x, y);
         g.dispose();
-        return new GenCharInfo(image, new CharInfo(this, charCounter, charWidth, height));
+        return new GenCharInfo(image, new CharInfo(this, charCounter, charWidth, charHeight));
     }
 
     public void _saveImage(String fileName) {
@@ -113,15 +113,15 @@ public class CharPage {
         // 获取像素数组
         int[] pixels = new int[PAGE_SIZE * PAGE_SIZE];
         img.getRGB(0, 0, PAGE_SIZE, PAGE_SIZE, pixels, 0, PAGE_SIZE);
-        // 转换为RGBA ByteBuffer （垂直翻转）
+        // 转换为RGBA ByteBuffer
         ByteBuffer buffer = ByteBuffer.allocateDirect(PAGE_SIZE * PAGE_SIZE * 4);
-        for (int y = PAGE_SIZE - 1; y >=0; y--) { // 从下往上遍历
+        for (int y = 0; y <= PAGE_SIZE - 1; y++) {
             for (int x = 0; x < PAGE_SIZE; x++) {
                 int pixel = pixels[y * PAGE_SIZE + x];
-                buffer.put((byte) ((pixel >> 16) & 0xFF)); // R
-                buffer.put((byte) ((pixel >> 8) & 0xFF));  // G
-                buffer.put((byte) (pixel & 0xFF));         // B
-                buffer.put((byte) ((pixel >> 24) & 0xFF)); // A
+                buffer.put((byte)((pixel >> 16) & 0xFF)); // R
+                buffer.put((byte)((pixel >> 8) & 0xFF));  // G
+                buffer.put((byte)(pixel & 0xFF));         // B
+                buffer.put((byte)((pixel >> 24) & 0xFF)); // A
             }
         }
         buffer.flip();
@@ -131,7 +131,7 @@ public class CharPage {
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR);
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR_MIPMAP_LINEAR);
         // 上传到GPU
         glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, PAGE_SIZE, PAGE_SIZE, 0,
             GL_RGBA, GL_UNSIGNED_BYTE, buffer);
