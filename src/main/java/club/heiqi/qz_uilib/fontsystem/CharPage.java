@@ -1,5 +1,6 @@
 package club.heiqi.qz_uilib.fontsystem;
 
+import club.heiqi.qz_uilib.utils.BufferUtils;
 import io.github.humbleui.skija.Canvas;
 import io.github.humbleui.skija.EncoderPNG;
 import io.github.humbleui.skija.Font;
@@ -11,22 +12,21 @@ import io.github.humbleui.skija.Surface;
 import io.github.humbleui.types.Rect;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
+import org.jetbrains.annotations.NotNull;
 
 import java.io.File;
-import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.nio.file.Files;
-import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.locks.ReentrantLock;
 
-import static club.heiqi.qz_uilib.fontsystem.FontManager.GLOBAL_CACHE;
+import static club.heiqi.qz_uilib.fontsystem.FontManager.GLOBAL_REGULAR_CACHE;
 import static org.lwjgl.opengl.GL11.*;
+import static org.lwjgl.opengl.GL12.GL_BGRA;
 import static org.lwjgl.opengl.GL12.GL_CLAMP_TO_EDGE;
 import static org.lwjgl.opengl.GL30.glGenerateMipmap;
 
@@ -62,7 +62,7 @@ public class CharPage {
         if (curChars.get() >= MAX_CHARS) return false;
         lock.lock();
         isGenning.set(true);
-        CharInfo mark = new CharInfo(null, (short) 0, GRID_SIZE, GRID_SIZE);
+        CharInfo mark = new CharInfo(null, 0, GRID_SIZE, GRID_SIZE, 0);
         cache.put(t, mark);
         try {
             int 每行个数 = PAGE_SIZE / GRID_SIZE;
@@ -82,7 +82,7 @@ public class CharPage {
             isDirty.set(true);
             lock.unlock();
             isGenning.set(false);
-            LOG.debug("{} 处理完毕", t);
+//            LOG.debug("{} 处理完毕", t);
         }
         return true;
     }
@@ -98,29 +98,65 @@ public class CharPage {
             char[] chars = Character.toChars(codepoint);
             String t = new String(chars);
             Font font = fontManager.findValidFont(codepoint);
-            GLOBAL_CACHE.add(t);
+            GLOBAL_REGULAR_CACHE.add(t);
             addChar(t, font);
         }
     }
 
-    public Surface _genChar(String t, Font font) { // 仅addChar可使用该方法
+    public Surface _genChar(String t, @NotNull Font font) { // 仅addChar可使用该方法
         // 1.创建画字体的Surface
         Surface surface = Surface.makeRaster(ImageInfo.makeN32Premul(GRID_SIZE, GRID_SIZE));
         Paint paint = new Paint().setColor(0xFFFFFFFF); // 白色画笔
         Canvas canvas = surface.getCanvas();
         canvas.clear(0x00000000); // 设置透明背景
         Rect rect = font.measureText(t); // 获取边界
-        float left      = rect.getLeft();
+        // 大画布坐标
+        int 每行个数 = PAGE_SIZE / GRID_SIZE;
+        int 行 = curChars.get() / 每行个数;
+        int 列 = curChars.get() % 每行个数;
+        float cx = 列 * GRID_SIZE; // 左X
+        float cy = 行 * GRID_SIZE; // 上Y
+        // 字符信息
         float top       = rect.getTop();
+        float bottom    = rect.getBottom();
+        float left      = rect.getLeft();
         float right     = rect.getRight();
-        float width     = rect.getWidth();
         float height    = rect.getHeight();
+        // 字符画布坐标
+        float offsetY = GRID_SIZE*0.175f; // 纵坐标偏移量
         float x = 0;
-        float y = GRID_SIZE-GRID_SIZE*0.2f;
-        CharInfo c = new CharInfo(this, (short) curChars.get(), right, height);
+        float y = GRID_SIZE-offsetY;
+        // 偏移后的字符信息
+        /*float oTop = top-offsetY;
+        float oBottom = bottom-offsetY;*/
+        // 偏移emoji
+        if (EmojiDetector.containsEmoji(t)) {
+            // emoji中心x坐标
+            // 获取字符实际尺寸[1](@ref)
+            float charWidth = right - left;   // 字符实际宽度
+            float charHeight = bottom - top;  // 字符实际高度
+            // 计算画布中心坐标[2](@ref)
+            float canvasCenterX = GRID_SIZE / 2f;
+            float canvasCenterY = GRID_SIZE / 2f;
+            // 计算字符中心偏移量
+            float charCenterX = left + charWidth / 2f;  // 字符自身中心X
+            float charCenterY = top + charHeight / 2f;  // 字符自身中心Y
+            // 计算最终绘制坐标（将字符中心对齐画布中心）
+            x = canvasCenterX - charCenterX;
+            y = canvasCenterY - charCenterY/* + font.getMetrics().getAscent()/2f*/; // 补偿字体基线
+            /*oTop = top-y;
+            oBottom = bottom-y;*/
+        }
+        /*LOG.debug("{}-{}行{}列 == 大画布 {},{},{},{} 小画布 {},{},{},{}, 小画布原始 {},{},{},{}",
+            t, 行, 列, cx, cx+GRID_SIZE, cy-GRID_SIZE, cy,
+            left, right, oTop, oBottom,
+            left, right, top, bottom);*/
+        // 依次放入 左 右 上小 下大 的坐标
+        CharInfo c = new CharInfo(this, cx, cx+right, cy, cy+GRID_SIZE);
         if (cache.replace(t, c) == null) {
             cache.put(t, c);
         }
+        // 基于左上角坐标绘制
         canvas.drawString(t, x, y, font, paint);
         return surface;
     }
@@ -129,6 +165,10 @@ public class CharPage {
         CharInfo info = cache.get(t);
         if (info == null) return;
         double u1 = info.getU1(), u2 = info.getU2(), v1 = info.getV1(), v2 = info.getV2();
+        float width = info.right - info.left;
+        float height = info.bottom - info.top;
+        width = (width/GRID_SIZE)*size;
+        height = (height/GRID_SIZE)*size;
         glEnable(GL_TEXTURE_2D);
         glEnable(GL_BLEND); // 确保混合已启用
         glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
@@ -136,18 +176,18 @@ public class CharPage {
         // 绘制
         glBegin(GL_QUADS);
         {
-            // 左下
+            // 左上
             glTexCoord2d(u1, v1);
             glVertex3d(x, y, z);
-            // 左上
+            // 左下
             glTexCoord2d(u1, v2);
-            glVertex3d(x, y+size, z);
-            // 右上
-            glTexCoord2d(u2, v2);
-            glVertex3d(x+size, y+size, z);
+            glVertex3d(x, y+height, z);
             // 右下
+            glTexCoord2d(u2, v2);
+            glVertex3d(x+width, y+height, z);
+            // 右上
             glTexCoord2d(u2, v1);
-            glVertex3d(x+size, y, z);
+            glVertex3d(x+width, y, z);
         }
         glEnd();
     }
@@ -198,11 +238,11 @@ public class CharPage {
             glTexImage2D(
                 GL_TEXTURE_2D,
                 0,
-                GL_RGBA,
+                GL_BGRA,
                 PAGE_SIZE,
                 PAGE_SIZE,
                 0,
-                GL_RGBA,
+                GL_BGRA,
                 GL_UNSIGNED_BYTE,
                 pixmap.getBuffer()
             );
@@ -225,10 +265,10 @@ public class CharPage {
         Image image = surface.makeImageSnapshot();
         try {
             Files.write(outFile.toPath(), EncoderPNG.encode(image).getBytes());
-        } catch (IOException e) {
+        } catch (Exception e) {
             LOG.error("{} 保存失败", outFile.getAbsolutePath());
         }
-        LOG.debug("文件已保存至: " + outFile.getAbsolutePath());
+        LOG.debug("文件已保存至: {}", outFile.getAbsolutePath());
     }
 
     public CharInfo getCharInfo(String t) {
