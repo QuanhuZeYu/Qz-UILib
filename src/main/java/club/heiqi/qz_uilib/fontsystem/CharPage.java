@@ -126,9 +126,12 @@ public class CharPage {
         float offsetY = GRID_SIZE*0.175f; // 纵坐标偏移量
         float x = 0;
         float y = GRID_SIZE-offsetY;
-        // 偏移后的字符信息
-        /*float oTop = top-offsetY;
-        float oBottom = bottom-offsetY;*/
+        // 偏移需要靠左的字符
+        if (UnicodeRecorder.needLeft(t)) {
+            x = -left;
+            cx = cx - left;
+            left = 0.0f;
+        }
         // 偏移emoji
         if (EmojiDetector.containsEmoji(t)) {
             // emoji中心x坐标
@@ -171,7 +174,7 @@ public class CharPage {
         height = (height/GRID_SIZE)*size;
         glEnable(GL_TEXTURE_2D);
         glEnable(GL_BLEND); // 确保混合已启用
-        glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+        glBlendFunc(GL_ONE, GL_ONE_MINUS_SRC_ALPHA);
         glBindTexture(GL_TEXTURE_2D, textureID);
         // 绘制
         glBegin(GL_QUADS);

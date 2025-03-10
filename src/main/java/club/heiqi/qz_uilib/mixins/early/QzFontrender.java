@@ -185,4 +185,18 @@ public abstract class QzFontrender {
         }
         ci.cancel();
     }
+
+    @Inject(
+        method = "getCharWidth",
+        at = @At("HEAD"),
+        cancellable = true,
+        remap = true
+    )
+    public void qzuilib$getCharWidth(char character, CallbackInfoReturnable<Integer> ci) {
+        FontManager fontManager = MyMod.fontManager;
+        if (fontManager == null || !fontManager.genDone) return;
+        String t = String.valueOf(character);
+        float width = fontManager.getCharWidth(t);
+        ci.setReturnValue((int) Math.ceil(width));
+    }
 }

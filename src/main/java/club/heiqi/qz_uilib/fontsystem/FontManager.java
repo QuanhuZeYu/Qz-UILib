@@ -125,16 +125,16 @@ public class FontManager {
     public volatile boolean genDone = false;
     public void _genPreTexture() {
         List<Integer> preL = Arrays.asList(
-            (Integer) UnicodeRecorder.CATE.get(UnicodeRecorder.UnicodeType.英文.类型名).get(0),
-            (Integer) UnicodeRecorder.CATE.get(UnicodeRecorder.UnicodeType.英文.类型名).get(1),
-            (Integer) UnicodeRecorder.CATE.get(UnicodeRecorder.UnicodeType.英文扩展.类型名).get(0),
-            (Integer) UnicodeRecorder.CATE.get(UnicodeRecorder.UnicodeType.英文扩展.类型名).get(1),
-            (Integer) UnicodeRecorder.CATE.get(UnicodeRecorder.UnicodeType.中文Unicode.类型名).get(0),
-            (Integer) UnicodeRecorder.CATE.get(UnicodeRecorder.UnicodeType.中文Unicode.类型名).get(1),
-            (Integer) UnicodeRecorder.CATE.get(UnicodeRecorder.UnicodeType.表情符号.类型名).get(0),
-            (Integer) UnicodeRecorder.CATE.get(UnicodeRecorder.UnicodeType.表情符号.类型名).get(1),
-            (Integer) UnicodeRecorder.CATE.get(UnicodeRecorder.UnicodeType.扩展表情符号.类型名).get(0),
-            (Integer) UnicodeRecorder.CATE.get(UnicodeRecorder.UnicodeType.扩展表情符号.类型名).get(1)
+            UnicodeRecorder.CATEGORY_RANGES.get(UnicodeRecorder.UnicodeType.BASIC_LATIN).get(0),
+            UnicodeRecorder.CATEGORY_RANGES.get(UnicodeRecorder.UnicodeType.BASIC_LATIN).get(1),
+            UnicodeRecorder.CATEGORY_RANGES.get(UnicodeRecorder.UnicodeType.LATIN1_SUPPLEMENT).get(0),
+            UnicodeRecorder.CATEGORY_RANGES.get(UnicodeRecorder.UnicodeType.LATIN1_SUPPLEMENT).get(1),
+            UnicodeRecorder.CATEGORY_RANGES.get(UnicodeRecorder.UnicodeType.GENERAL_PUNCTUATION).get(0),
+            UnicodeRecorder.CATEGORY_RANGES.get(UnicodeRecorder.UnicodeType.GENERAL_PUNCTUATION).get(1),
+            UnicodeRecorder.CATEGORY_RANGES.get(UnicodeRecorder.UnicodeType.CJK_UNIFIED_IDEOGRAPHS).get(0),
+            UnicodeRecorder.CATEGORY_RANGES.get(UnicodeRecorder.UnicodeType.CJK_UNIFIED_IDEOGRAPHS).get(1),
+            UnicodeRecorder.CATEGORY_RANGES.get(UnicodeRecorder.UnicodeType.EMOTICONS).get(0),
+            UnicodeRecorder.CATEGORY_RANGES.get(UnicodeRecorder.UnicodeType.EMOTICONS).get(1)
         );
         Iterator<Integer> it = preL.iterator();
         while (it.hasNext()) {
@@ -349,22 +349,42 @@ public class FontManager {
         return charWidth + letterSpacing;
     }
 
+    public void tryUpload() {
+        lastSaveTime = System.currentTimeMillis();
+        for (CharPage page : regularPages) {
+            if (page.isDirty.get()) page.uploadGPU();
+        }
+        for (CharPage page : boldPages) {
+            if (page.isDirty.get()) page.uploadGPU();
+        }
+    }
+
+    public float getCharWidth(String t) {
+        float size = 8f;
+        if (t.equals(" ")) return size / 2;
+        CharPage page = findPageAutoAdd(t);
+        // 1.根据粗体标志选择字体页
+        if (page == null) {
+            LOG.warn("未找到支持字符 '{}' 的字体页", t);
+            return size / 2;
+        }
+        // 2. 获取字符信息
+        CharInfo info = page.getCharInfo(t);
+        if (info == null) {
+            LOG.warn("字符 '{}' 在字体页中无元数据", t);
+            return size / 2;
+        }
+        float width = info.right - info.left;
+        return (width / CharPage.GRID_SIZE) * size;
+    }
+
     // 记录上一次执行时间
     private long lastSaveTime = 0;
     private long savePngTime = 0;
     @SubscribeEvent
     public void clientTick(TickEvent.RenderTickEvent event) {
-        long currentTime = System.currentTimeMillis();
         // 每隔10秒执行一次
-        if (currentTime - lastSaveTime >= 1_000) {
-            lastSaveTime = currentTime;
-            for (CharPage page : regularPages) {
-                if (page.isDirty.get()) page.uploadGPU();
-            }
-            for (CharPage page : boldPages) {
-                if (page.isDirty.get()) page.uploadGPU();
-            }
-        }
+        if (System.currentTimeMillis() - lastSaveTime >= 1_000) tryUpload();
         if (System.currentTimeMillis() - savePngTime > 10_000) {
             savePngTime = System.currentTimeMillis();
 //            for (CharPage page : regularPages) {
