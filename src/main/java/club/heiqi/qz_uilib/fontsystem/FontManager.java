@@ -6,12 +6,13 @@ import cpw.mods.fml.common.event.FMLPostInitializationEvent;
 import cpw.mods.fml.common.event.FMLPreInitializationEvent;
 import cpw.mods.fml.common.eventhandler.SubscribeEvent;
 import cpw.mods.fml.common.gameevent.TickEvent;
-import net.minecraft.client.Minecraft;
+import io.github.humbleui.skija.Font;
+import io.github.humbleui.skija.Typeface;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
+import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
-import java.awt.*;
 import java.io.*;
 import java.nio.file.*;
 import java.nio.file.attribute.BasicFileAttributes;
@@ -21,81 +22,44 @@ import java.util.concurrent.*;
 
 public class FontManager {
     public static Logger LOG = LogManager.getLogger();
-    public static int FONT_SIZE = 100;
-    public static int FONT_PIXEL_SIZE = 64;
-    public boolean canRender = false;
-    public volatile boolean genDone = false;
+    public static float FONT_SCALE = 0.9f;
+    public static float FONT_SIZE = 64*FONT_SCALE;
     /** MC根目录-- `.minecraft` */
     public final File mcDataDir;
-    public File fontDir;
+    public final File fontDir;
 
-    public volatile List<Font> fonts = new CopyOnWriteArrayList<>();
-    public volatile List<CharPage> pages = new CopyOnWriteArrayList<>();
-    public Map<String, CharInfo> highwayCache = new LRUCharCache(); // 高速缓存10000个字符，不常用的自动抛弃
+    public final List<Font> fonts = new CopyOnWriteArrayList<>();
+    public final List<CharPage> pages = new CopyOnWriteArrayList<>();
+    public static List<String> GLOBAL_CACHE = new CopyOnWriteArrayList<>();
+    public final Map<String, CharPage> highwayCache = new LRUCharCache(); // 高速缓存10000个字符，不常用的自动抛弃
 
     public FontManager() {
-        mcDataDir = Minecraft.getMinecraft().mcDataDir;
-        _initFontDir();
-        new Thread(() -> {
-            _loadDefaultFont();
-            _loadSysFont();
-            _genPreTexture();
-        }).start();
-    }
-
-    public void _initFontDir() {
+        mcDataDir = new File(System.getProperty("user.dir"));
         fontDir = new File(mcDataDir, "fonts");
-        // 如果fonts文件夹不存在则创建
-        if (!fontDir.exists()) {
-            if (!fontDir.mkdirs()) {
-                LOG.error("创建文件夹失败: {}", fontDir.getAbsolutePath());
-            }
-        }
+        if (!fontDir.exists()) fontDir.mkdirs();
+        _loadDefault();
+        _loadSystemFonts();
+        _genPreTexture();
     }
 
-    public void _loadDefaultFont() {
-        File fontFile;
-        // 读取jar包内的字体文件 resources/fonts/霞鹜文楷.ttf
-        // 复制到mcDataDir中
-        try (InputStream fontStream = getClass().getClassLoader().getResourceAsStream("fonts/霞鹜文楷.ttf")) {
-            if (fontStream == null) {
-                LOG.error("无法找到字体文件: resources/fonts/霞鹜文楷.ttf");
-                return;
-            }
-            fontFile = new File(fontDir, "霞鹜文楷.ttf");
-            if (!fontFile.exists()) {
-                Files.copy(fontStream, fontFile.toPath(), StandardCopyOption.REPLACE_EXISTING);
-                LOG.debug("复制字体文件成功: {}", fontFile.getAbsolutePath());
-            }
-            Font font = _loadTTF(fontFile);
-            fonts.add(font); // 该字体为默认第一位
+    public void _loadDefault() {
+        _loadResourceFont("LXGWWenKai-Regular.ttf");
+        _loadResourceFont("seguiemj.ttf");
+        _loadTTF(fontDir.toPath());
+    }
+
+    public void _loadResourceFont(String name) {
+        try (InputStream is = FontManager.class.getClassLoader().getResourceAsStream("fonts/"+name)) {
+            if (is == null) throw new IOException();
+            File fontFile = new File(fontDir, name);
+            if (fontFile.exists()) return;
+            Files.copy(is, fontFile.toPath(), StandardCopyOption.REPLACE_EXISTING);
         } catch (IOException e) {
-            LOG.error("复制字体文件失败", e);
-            throw new RuntimeException(e);
-        } catch (FontFormatException e) {
-            throw new RuntimeException(e);
+            LOG.error("载入 {} 时出现错误 {}", name, e);
         }
-//        try (InputStream fontStream = getClass().getClassLoader().getResourceAsStream("fonts/NotoColorEmoji-Regular.ttf")) {
-//            if (fontStream == null) {
-//                LOG.error("无法找到字体文件: resources/fonts/霞鹜文楷.ttf");
-//                return;
-//            }
-//            fontFile = new File(fontDir, "NotoColorEmoji-Regular.ttf");
-//            if (!fontFile.exists()) {
-//                Files.copy(fontStream, fontFile.toPath(), StandardCopyOption.REPLACE_EXISTING);
-//                LOG.debug("复制字体文件成功: {}", fontFile.getAbsolutePath());
-//            }
-//            Font font = _loadTTF(fontFile);
-//            fonts.add(font); // 该字体为默认第一位
-//        } catch (IOException e) {
-//            LOG.error("复制字体文件失败", e);
-//            throw new RuntimeException(e);
-//        } catch (FontFormatException e) {
-//            throw new RuntimeException(e);
-//        }
     }
 
-    public void _loadSysFont() {
+    public void _loadSystemFonts() {
         String os = System.getProperty("os.name").toLowerCase();
         List<Path> systemFontDirs = new ArrayList<>();
         // 根据操作系统设置字体目录
@@ -117,58 +81,128 @@ public class FontManager {
             return;
         }
         for (Path dir : systemFontDirs) {
-            if (!Files.isDirectory(dir)) {
-                continue;
-            }
-            try {
-                Files.walkFileTree(dir, new SimpleFileVisitor<>() {
-                    @Override
-                    public FileVisitResult visitFile(Path file, BasicFileAttributes attrs) {
-                        String fileName = file.getFileName().toString().toLowerCase();
-                        if (fileName.endsWith(".ttf")) {
-                            File targetFile = new File(file.toString());
-                            try {
-                                Font font = _loadTTF(targetFile);
-                                fonts.add(font);
-                            } catch (IOException e) {
-                                LOG.error("加载 {} 时IO出错", targetFile.getAbsoluteFile());
-                            } catch (FontFormatException e) {
-                                LOG.error("字体 {} 格式不支持", targetFile.getName());
-                            }
+            _loadTTF(dir);
+        }
+    }
+
+    public void _loadTTF(Path dir) {
+        if (!Files.isDirectory(dir)) {
+            return;
+        }
+        try {
+            Files.walkFileTree(dir, new SimpleFileVisitor<>() {
+                @Override
+                public FileVisitResult visitFile(Path file, BasicFileAttributes attrs) {
+                    String fileName = file.getFileName().toString().toLowerCase();
+                    if (!fileName.endsWith(".ttf")) return FileVisitResult.CONTINUE;
+                    try {
+                        LOG.debug("正在尝试加载: {}", file.toString());
+                        try (InputStream is = new FileInputStream(file.toFile())) {
+                            java.awt.Font fontAWT = java.awt.Font.createFont(java.awt.Font.TRUETYPE_FONT, is); // 使用java awt加载引发错误来跳过无法加载的字体
+                        } catch (Exception e) {
+                            throw new RuntimeException(e);
                         }
-                        return FileVisitResult.CONTINUE;
+                        Typeface tf = Typeface.makeFromFile(file.toString());
+                        io.github.humbleui.skija.Font font = new io.github.humbleui.skija.Font(tf, FONT_SIZE);
+                        fonts.add(font);
+                    } catch (Exception e) {
+                        LOG.error("无法加载:{}", file.getFileName().toString());
                     }
+                    return FileVisitResult.CONTINUE;
+                }
 
-                    @Override
-                    public FileVisitResult visitFileFailed(Path file, IOException exc) {
-                        LOG.error("访问文件失败: {}", file, exc);
-                        return FileVisitResult.CONTINUE;
-                    }
+            });
+        } catch (IOException e) {
+            LOG.error("遍历文件夹: {} 出错。 {}", dir, e);
+        }
+    }
 
-                });
-            } catch (IOException e) {
-                LOG.error("遍历目录失败: {}", dir, e);
+    public Font findValidFont(int codepoint) {
+        for (Font font : fonts) {
+            if (font.getUTF32Glyph(codepoint) != 0) return font;
+        }
+        return fonts.get(0);
+    }
+
+    @NotNull
+    public CharPage findPageCanAdd() {
+        for (CharPage page : pages) {
+            if (page.canAdd()) return page;
+        }
+        CharPage page = new CharPage(this);
+        pages.add(page);
+        return page;
+    }
+
+    @Nullable
+    public CharPage findPage(String t) {
+        CharPage page = highwayCache.get(t);
+        if (page == null) {
+            for (CharPage p : pages) {
+                if (p.cache.containsKey(t)) {
+                    return p;
+                }
+            }
+        }
+        return null;
+    }
+
+    @Nullable
+    public CharPage findPageAndAdd(String t) {
+        CharPage page = highwayCache.get(t);
+        if (page == null) {
+            for (CharPage p : pages) {
+                if (p.cache.containsKey(t)) {
+                    return p;
+                }
+            }
+            int codepoint = Character.codePointAt(t.toCharArray(), 0);
+            page = addChar(codepoint);
+        }
+        return page;
+    }
+
+    ExecutorService pool = Executors.newFixedThreadPool(2, new DaemonThreadFactory());
+    public List<Future<?>> futures = new CopyOnWriteArrayList<>();
+    public CharPage addChar(int codepoint) {
+        if (!Character.isValidCodePoint(codepoint)) {
+            LOG.error("无效代码点: {}", codepoint);
+            return null;
+        }
+        char[] chars = Character.toChars(codepoint);
+        String t = new String(chars);
+        if (GLOBAL_CACHE.contains(t)) return null;
+        GLOBAL_CACHE.add(t);
+        Font font = findValidFont(codepoint);
+        CharPage page = findPageCanAdd(); // 返回的page一定是没有竞态的纹理页
+        Future<?> future = null;
+        try {
+            LOG.debug("正在提交 {} 的字符生成任务", t);
+            future = pool.submit(() -> {
+                LOG.debug("已提交 {} 的生成任务", t);
+                if (!page.addChar(t,font)) {
+                    LOG.error("{} 生成失败", t);
+                    GLOBAL_CACHE.remove(t);
+                }
+            });
+        } catch (Exception e) {
+            LOG.error("添加任务时出现错误!");
+            GLOBAL_CACHE.remove(t);
+        }
+        futures.add(future);
+        return page;
+    }
+    public void waitAddDone() {
+        for (Future<?> future : futures) {
+            try {
+                future.get();
+            } catch (InterruptedException | ExecutionException e) {
+                LOG.error("等待过程中报错: {}", e);
             }
         }
     }
 
-    public Font _loadTTF(File fontFile) throws IOException, FontFormatException {
-        try (InputStream is = new FileInputStream(fontFile)) {
-            Font font = Font.createFont(Font.TRUETYPE_FONT, is);
-            font = font.deriveFont((float) (FONT_PIXEL_SIZE-(FONT_PIXEL_SIZE*0.1)));
-            return font;
-        } catch (FileNotFoundException e) {
-            LOG.error("未找到字体文件: {}", fontFile.getAbsoluteFile());
-            throw e;
-        } catch (IOException e) {
-            LOG.error("加载 {} 时出错", fontFile.getAbsoluteFile());
-            throw e;
-        } catch (FontFormatException e) {
-            LOG.error("字体: {} 格式错误", fontFile.getAbsoluteFile());
-            throw e;
-        }
-    }
-
+    public volatile boolean genDone = false;
     public void _genPreTexture() {
         List<Integer> preL = Arrays.asList(
             (Integer) UnicodeRecorder.CATE.get(UnicodeRecorder.UnicodeType.英文.类型名).get(0),
@@ -182,103 +216,57 @@ public class FontManager {
             (Integer) UnicodeRecorder.CATE.get(UnicodeRecorder.UnicodeType.扩展表情符号.类型名).get(0),
             (Integer) UnicodeRecorder.CATE.get(UnicodeRecorder.UnicodeType.扩展表情符号.类型名).get(1)
         );
-        try {
-            Iterator<Integer> it = preL.iterator();
-            while (it.hasNext()) {
-                int start = it.next();
-                int end = it.next();
-                for (int i = start; i <= end; i++) {
-                    if (!Character.isValidCodePoint(i)) continue;
-                    addChar(i);
+        Iterator<Integer> it = preL.iterator();
+        while (it.hasNext()) {
+            int start = it.next();
+            int end = it.next();
+            // 多线程生成纹理贴图
+            List<Integer> codepoints = new ArrayList<>();
+            for (int i = start; i <= end; i++) {
+                if (!Character.isValidCodePoint(i)) continue;
+                codepoints.add(i);
+                if (codepoints.size() == CharPage.MAX_CHARS) {
+                    CharPage page = new CharPage(this);
+                    List<Integer> finalCodepoints = codepoints;
+                    Future<?> future = pool.submit(() -> {
+                        page.addChars(finalCodepoints);
+                        pages.add(page);
+                    });
+                    futures.add(future);
+                    codepoints = new ArrayList<>();
                 }
             }
-        } finally {
-            genDone = true;
-        }
-    }
-
-    public Font findFont(int codepoint) {
-        for (Font font : fonts) {
-            if (!font.canDisplay(codepoint)) continue; // 跳过不支持的Font
-            return font;
-        }
-        char[] chars = Character.toChars(codepoint);
-        String c = new String(chars);
-        LOG.debug("没有找到 {} 合适的字体", c);
-        return fonts.get(0); // 没有找到合适的返回第一个
-    }
-
-    /**
-     * 自动创建所需的纹理页和字符贴图
-     * @param c 字符
-     * @return 字符所对应的页
-     */
-    public CharPage findPage(String c) {
-        // 安全获取 page，若 highwayCache.get(c) 为 null 则 page 也为 null
-        CharPage page = Optional.ofNullable(highwayCache.get(c))
-            .map(entry -> entry.page)
-            .orElse(null);
-        if (page == null) {
-            // 高速缓存如果没有再遍历已有的页
-            for (CharPage p : pages) {
-                if (p.storedChar.containsKey(c)) {
-                    page = p;
-                    break;
-                }
-            }
-            // 如果已有的页也没有
-            if (page == null) {
-                addChar(c);
-                page = pages.get(pages.size()-1);
+            if (!codepoints.isEmpty()) {
+                CharPage page = new CharPage(this);
+                List<Integer> finalCodepoints = codepoints;
+                Future<?> future = pool.submit(() -> {
+                    page.addChars(finalCodepoints);
+                    pages.add(page);
+                });
+                futures.add(future);
             }
         }
-        return page;
+        waitAddDone();
+        for (CharPage page : pages) {
+            page.savePNG(String.valueOf(pages.indexOf(page)));
+            page.uploadGPU();
+        }
+        genDone = true;
     }
 
-    public void addChar(String c) {
-        int codepoint = c.codePointAt(0);
-        boolean success = false;
-        // 遍历页尝试添加字符
-        for (CharPage pa : pages) {
-            success = pa.addChar(findFont(codepoint), c);
-        }
-        // 已有页都放不下
-        if (!success) {
-            CharPage page = new CharPage(this); pages.add(page);
-            page.addChar(findFont(codepoint), c);
-        }
-    }
-
-    public void addChar(int codepoint) {
-        char[] chars = Character.toChars(codepoint);
-        String c = new String(chars);
-        addChar(c);
-    }
-
-    public float renderCharAt(String c, double x, double y, float size) {
-        if (c.charAt(0) == 0x20) {
-            return 4f;
-        }
-        CharPage p = findPage(c);
-        int width = p.storedChar.get(c).width;
-        float w = ((float) 8 / FONT_PIXEL_SIZE) * width;
-        p.renderCharAt(c, x, y, size);
-//        p._renderDebugRect(x, y, size);
-        return (float) (w + 1.5);
+    public float renderCharAt(String t, double x, double y, double z, float size) {
+        CharPage page = findPageAndAdd(t);
+        if (page == null) return 4f;
+        CharInfo info = page.getCharInfo(t);
+        if (info == null) return 4f;
+        page.renderCharAt(t, x, y, z, size);
+        highwayCache.put(t, page);
+        return ((info.width/ CharPage.GRID_SIZE)*8f)+2f;
     }
 
     // 记录上一次执行时间
     private long lastSaveTime = 0;
     private long savePngTime = 0;
-    public ThreadPoolExecutor pool = new ThreadPoolExecutor(
-        4,
-        4,
-        0L,
-        TimeUnit.MILLISECONDS,
-        new LinkedBlockingDeque<>(8),
-        Executors.defaultThreadFactory(),
-        new ThreadPoolExecutor.DiscardPolicy()
-    );
     @SubscribeEvent
     public void clientTick(TickEvent.RenderTickEvent event) {
         long currentTime = System.currentTimeMillis();
@@ -286,14 +274,16 @@ public class FontManager {
         if (currentTime - lastSaveTime >= 1_000) {
             lastSaveTime = currentTime;
             for (CharPage page : pages) {
-                if (page.isDirty) page.uploadGPU();
+                if (page.isDirty.get()) page.uploadGPU();
             }
         }
         if (System.currentTimeMillis() - savePngTime > 10_000) {
             savePngTime = System.currentTimeMillis();
-            pool.execute(() -> {
-                pages.get(pages.size()-1)._saveImage(pages.size()-1+".png");
-            });
+            for (CharPage page : pages) {
+                pool.execute(() -> {
+                    page.savePNG(String.valueOf(pages.indexOf(page)));
+                });
+            }
         }
     }
     public void _registerClient(
@@ -304,23 +294,8 @@ public class FontManager {
             FMLCommonHandler.instance().bus().register(this);
         }
         if (init != null) {
-            for (Font font : fonts) {
-                LOG.debug("已加载字体: {}", font.getName());
-            }
         }
         if (post != null) {
-            while (!genDone) {
-                try {
-                    wait(1_000);
-                } catch (InterruptedException e) {
-                    throw new RuntimeException(e);
-                }
-            }
-            for (CharPage page : pages) {
-                page.uploadGPU();
-                page._saveImage(pages.indexOf(page)+".png");
-            }
-            canRender = true;
         }
     }
     public void _registerCommon(
@@ -328,6 +303,23 @@ public class FontManager {
         @Nullable FMLInitializationEvent init,
         @Nullable FMLPostInitializationEvent post) {
         if (pre != null) {
+        }
+    }
+
+
+
+
+
+
+
+    public static class DaemonThreadFactory implements ThreadFactory {
+        private final ThreadFactory defaultFactory = Executors.defaultThreadFactory();
+
+        @Override
+        public Thread newThread(@NotNull Runnable r) {
+            Thread thread = defaultFactory.newThread(r);
+            thread.setDaemon(true); // 设置为守护线程
+            return thread;
         }
     }
 }

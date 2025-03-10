@@ -59,11 +59,9 @@ public abstract class QzFontrender {
     public void qzuilib$renderCharAtPos(int index, char c, boolean b, CallbackInfoReturnable<Float> ci) {
         String ch = Character.toString(c);
         FontManager fontManager = MyMod.fontManager;
-        if (fontManager == null || !fontManager.canRender) {
-            return;
-        }
-        if (fontManager.canRender){
-            float f = fontManager.renderCharAt(ch, this.posX, this.posY, 8f);
+        if (fontManager == null) return;
+        if (fontManager.genDone){
+            float f = fontManager.renderCharAt(ch, this.posX, this.posY, 0d, 8f);
             ci.setReturnValue(f);
             ci.cancel();
         }
