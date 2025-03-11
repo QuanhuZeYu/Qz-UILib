@@ -16,7 +16,7 @@ public class CharInfo {
     }
 
     public double getU2() {
-        return (double) right/PAGE_SIZE;
+        return (double) right /PAGE_SIZE;
     }
 
     public double getV1() { // 上V

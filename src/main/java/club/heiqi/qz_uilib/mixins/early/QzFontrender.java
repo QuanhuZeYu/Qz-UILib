@@ -77,7 +77,7 @@ public abstract class QzFontrender {
             char currentChar = text.charAt(charIndex);
             int formatCodeIndex; // 格式代码标识符（如颜色/样式代码的索引）
             // 处理格式代码（以 § 开头，例如 §a 表示绿色）
-            if (currentChar == 167 /* § 符号的ASCII值 */ && charIndex + 1 < text.length()) {
+            if (currentChar == '§' && charIndex + 1 < text.length()) {
                 // 获取格式代码的类型（小写字母或符号在预设字符串中的位置）
                 formatCodeIndex = "0123456789abcdefklmnor".indexOf( // 总共21位 颜色代码16位 控制符代码5位
                     Character.toLowerCase(text.charAt(charIndex + 1)));
@@ -129,7 +129,7 @@ public abstract class QzFontrender {
                         ((FontRenderer) ((Object) this)).setColor(this.red, this.blue, this.green, this.alpha);
                     }
                 }
-                ++charIndex; // 跳过已处理的格式代码字符（例如 § 后的字母）
+                ++charIndex; // 跳过已处理的格式代码字符（ § 后的字母）
             }
             // 处理普通字符渲染
             else {

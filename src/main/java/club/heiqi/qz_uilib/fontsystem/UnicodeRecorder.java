@@ -30,6 +30,9 @@ public class UnicodeRecorder {
     public static final int MISCELLANEOUS_TECHNICAL_START = 0x2300;
     public static final int MISCELLANEOUS_TECHNICAL_END = 0x23FF;
 
+    public static final int GEOMETRIC_SHAPES_START = 0x25A0;
+    public static final int GEOMETRIC_SHAPES_END = 0x25FF;
+
     public static final int MISCELLANEOUS_SYMBOLS_START = 0x2600;
     public static final int MISCELLANEOUS_SYMBOLS_END = 0x26FF;
 
@@ -61,49 +64,55 @@ public class UnicodeRecorder {
 
     static {
         // 按起始码点排序添加范围
-        addRange(UnicodeType.BASIC_LATIN, BASIC_LATIN_START, BASIC_LATIN_END);
-        addRange(UnicodeType.LATIN1_SUPPLEMENT, LATIN1_SUPPLEMENT_START, LATIN1_SUPPLEMENT_END);
-        addRange(UnicodeType.GENERAL_PUNCTUATION, GENERAL_PUNCTUATION_START, GENERAL_PUNCTUATION_END);
-        addRange(UnicodeType.CURRENCY_SYMBOLS, CURRENCY_SYMBOLS_START, CURRENCY_SYMBOLS_END);
-        addRange(UnicodeType.ARROWS, ARROWS_START, ARROWS_END);
-        addRange(UnicodeType.MATHEMATICAL_OPERATORS, MATHEMATICAL_OPERATORS_START, MATHEMATICAL_OPERATORS_END);
-        addRange(UnicodeType.MISCELLANEOUS_TECHNICAL, MISCELLANEOUS_TECHNICAL_START, MISCELLANEOUS_TECHNICAL_END);
-        addRange(UnicodeType.MISCELLANEOUS_SYMBOLS, MISCELLANEOUS_SYMBOLS_START, MISCELLANEOUS_SYMBOLS_END);
-        addRange(UnicodeType.DINGBATS, DINGBATS_START, DINGBATS_END);
-        addRange(UnicodeType.HIRAGANA, HIRAGANA_START, HIRAGANA_END);
-        addRange(UnicodeType.KATAKANA, KATAKANA_START, KATAKANA_END);
-        addRange(UnicodeType.CJK_UNIFIED_IDEOGRAPHS, CJK_UNIFIED_IDEOGRAPHS_START, CJK_UNIFIED_IDEOGRAPHS_END);
-        addRange(UnicodeType.HALFWIDTH_KATAKANA, HALFWIDTH_KATAKANA_START, HALFWIDTH_KATAKANA_END);
-        addRange(UnicodeType.MISCELLANEOUS_SYMBOLS_AND_PICTOGRAPHS, MISCELLANEOUS_SYMBOLS_AND_PICTOGRAPHS_START, MISCELLANEOUS_SYMBOLS_AND_PICTOGRAPHS_END);
-        addRange(UnicodeType.EMOTICONS, EMOTICONS_START, EMOTICONS_END);
-        addRange(UnicodeType.TRANSPORT_AND_MAP_SYMBOLS, TRANSPORT_AND_MAP_SYMBOLS_START, TRANSPORT_AND_MAP_SYMBOLS_END);
-        addRange(UnicodeType.SUPPLEMENTAL_SYMBOLS_AND_PICTOGRAPHS, SUPPLEMENTAL_SYMBOLS_AND_PICTOGRAPHS_START, SUPPLEMENTAL_SYMBOLS_AND_PICTOGRAPHS_END);
-        addRange(UnicodeType.SYMBOLS_FOR_LEGACY_COMPUTING, SYMBOLS_FOR_LEGACY_COMPUTING_START, SYMBOLS_FOR_LEGACY_COMPUTING_END);
+        addRange(UnicodeType.BASIC_LATIN);
+        addRange(UnicodeType.LATIN1_SUPPLEMENT);
+        addRange(UnicodeType.GENERAL_PUNCTUATION);
+        addRange(UnicodeType.CURRENCY_SYMBOLS);
+        addRange(UnicodeType.ARROWS);
+        addRange(UnicodeType.MATHEMATICAL_OPERATORS);
+        addRange(UnicodeType.MISCELLANEOUS_TECHNICAL);
+        addRange(UnicodeType.GEOMETRIC_SHAPES);
+        addRange(UnicodeType.MISCELLANEOUS_SYMBOLS);
+        addRange(UnicodeType.DINGBATS);
+        addRange(UnicodeType.HIRAGANA);
+        addRange(UnicodeType.KATAKANA);
+        addRange(UnicodeType.CJK_UNIFIED_IDEOGRAPHS);
+        addRange(UnicodeType.HALFWIDTH_KATAKANA);
+        addRange(UnicodeType.MISCELLANEOUS_SYMBOLS_AND_PICTOGRAPHS);
+        addRange(UnicodeType.EMOTICONS);
+        addRange(UnicodeType.TRANSPORT_AND_MAP_SYMBOLS);
+        addRange(UnicodeType.SUPPLEMENTAL_SYMBOLS_AND_PICTOGRAPHS);
+        addRange(UnicodeType.SYMBOLS_FOR_LEGACY_COMPUTING);
     }
 
     public enum UnicodeType {
-        BASIC_LATIN("基本拉丁字母"),
-        LATIN1_SUPPLEMENT("拉丁字母补充-1"),
-        GENERAL_PUNCTUATION("通用标点符号"),
-        CURRENCY_SYMBOLS("货币符号"),
-        ARROWS("箭头符号"),
-        MATHEMATICAL_OPERATORS("数学运算符"),
-        MISCELLANEOUS_TECHNICAL("技术符号"),
-        MISCELLANEOUS_SYMBOLS("杂项符号"),
-        DINGBATS("装饰符号"),
-        HIRAGANA("平假名"),
-        KATAKANA("片假名"),
-        CJK_UNIFIED_IDEOGRAPHS("中日韩统一表意文字"),
-        HALFWIDTH_KATAKANA("半角片假名"),
-        MISCELLANEOUS_SYMBOLS_AND_PICTOGRAPHS("杂项符号和象形图"),
-        EMOTICONS("表情符号"),
-        TRANSPORT_AND_MAP_SYMBOLS("交通与地图符号"),
-        SUPPLEMENTAL_SYMBOLS_AND_PICTOGRAPHS("补充符号与象形图"),
-        SYMBOLS_FOR_LEGACY_COMPUTING("传统计算符号");
+        BASIC_LATIN("基本拉丁字母", BASIC_LATIN_START, BASIC_LATIN_END),
+        LATIN1_SUPPLEMENT("拉丁字母补充-1", LATIN1_SUPPLEMENT_START, LATIN1_SUPPLEMENT_END),
+        GENERAL_PUNCTUATION("通用标点符号", GENERAL_PUNCTUATION_START, GENERAL_PUNCTUATION_END),
+        CURRENCY_SYMBOLS("货币符号", CURRENCY_SYMBOLS_START, CURRENCY_SYMBOLS_END),
+        ARROWS("箭头符号", ARROWS_START, ARROWS_END),
+        MATHEMATICAL_OPERATORS("数学运算符", MATHEMATICAL_OPERATORS_START, MATHEMATICAL_OPERATORS_END),
+        MISCELLANEOUS_TECHNICAL("技术符号", MISCELLANEOUS_TECHNICAL_START, MISCELLANEOUS_TECHNICAL_END),
+        GEOMETRIC_SHAPES("几何形状", GEOMETRIC_SHAPES_START, GEOMETRIC_SHAPES_END),
+        MISCELLANEOUS_SYMBOLS("杂项符号", MISCELLANEOUS_SYMBOLS_START, MISCELLANEOUS_SYMBOLS_END),
+        DINGBATS("装饰符号", DINGBATS_START, DINGBATS_END),
+        HIRAGANA("平假名", HIRAGANA_START, HIRAGANA_END),
+        KATAKANA("片假名", KATAKANA_START, KATAKANA_END),
+        CJK_UNIFIED_IDEOGRAPHS("中日韩统一表意文字", CJK_UNIFIED_IDEOGRAPHS_START, CJK_UNIFIED_IDEOGRAPHS_END),
+        HALFWIDTH_KATAKANA("半角片假名", HALFWIDTH_KATAKANA_START, HALFWIDTH_KATAKANA_END),
+        MISCELLANEOUS_SYMBOLS_AND_PICTOGRAPHS("杂项符号和象形图", MISCELLANEOUS_SYMBOLS_AND_PICTOGRAPHS_START, MISCELLANEOUS_SYMBOLS_AND_PICTOGRAPHS_END),
+        EMOTICONS("表情符号", EMOTICONS_START, EMOTICONS_END),
+        TRANSPORT_AND_MAP_SYMBOLS("交通与地图符号", TRANSPORT_AND_MAP_SYMBOLS_START, TRANSPORT_AND_MAP_SYMBOLS_END),
+        SUPPLEMENTAL_SYMBOLS_AND_PICTOGRAPHS("补充符号与象形图", SUPPLEMENTAL_SYMBOLS_AND_PICTOGRAPHS_START, SUPPLEMENTAL_SYMBOLS_AND_PICTOGRAPHS_END),
+        SYMBOLS_FOR_LEGACY_COMPUTING("传统计算符号", SYMBOLS_FOR_LEGACY_COMPUTING_START, SYMBOLS_FOR_LEGACY_COMPUTING_END);
 
         final String displayName;
-        UnicodeType(String displayName) {
+        final int start;
+        final int end;
+        UnicodeType(String displayName, int start, int end) {
             this.displayName = displayName;
+            this.start = start;
+            this.end = end;
         }
 
         public String getName() {
@@ -114,20 +123,29 @@ public class UnicodeRecorder {
     /**
      * 辅助方法：确保范围顺序正确
      */
-    private static void addRange(UnicodeType type, int start, int end) {
+    private static void addRange(UnicodeType type) {
         CATEGORY_RANGES.put(type, Arrays.asList(
-                Math.min(start, end),
-                Math.max(start, end)));
+                type.start,
+                type.end));
     }
 
     public static final String NEED_LEFT = "qwertyuiopasdfghjklzxcvbnm"+ "!@#$%^&*()-=_+`~[]\\{}|;':\",./<>?" +
         "123456789";
+
+    /**
+     * 需要向左贴到0位置的集合方法判断，需要贴到左侧则返回true
+     * @param t
+     * @return
+     */
     public static boolean needLeft(String t) {
         if (NEED_LEFT.contains(t)) return true;
         int codepoint = t.codePointAt(0);
-        if (codepoint >= CJK_UNIFIED_IDEOGRAPHS_START && codepoint <= CJK_UNIFIED_IDEOGRAPHS_END) {
-            return true;
-        }
+
+        if (codepoint >= GEOMETRIC_SHAPES_START && codepoint <= GEOMETRIC_SHAPES_END) return true;
+        if (codepoint >= MISCELLANEOUS_SYMBOLS_START && codepoint <= MISCELLANEOUS_SYMBOLS_END) return true;
+        if (codepoint >= DINGBATS_START && codepoint <= DINGBATS_END) return true;
+        if (codepoint >= CJK_UNIFIED_IDEOGRAPHS_START && codepoint <= CJK_UNIFIED_IDEOGRAPHS_END) return true;
+
         return false;
     }
 }

@@ -1,6 +1,7 @@
 package club.heiqi.qz_uilib;
 
 import club.heiqi.qz_uilib.fontsystem.FontManager;
+import club.heiqi.qz_uilib.guiInject.GuiScreenListener;
 import cpw.mods.fml.common.Mod;
 import cpw.mods.fml.common.SidedProxy;
 import cpw.mods.fml.common.event.FMLInitializationEvent;
@@ -11,6 +12,7 @@ import cpw.mods.fml.common.event.FMLServerStartingEvent;
 @Mod(modid = MOD_INFO.MODID, version = Tags.VERSION, name = "QzUI库", acceptedMinecraftVersions = "[1.7.10]")
 public class MyMod {
     public static FontManager fontManager;
+    public static GuiScreenListener guiScreenListener;
 
     @SidedProxy(clientSide = "club.heiqi.qz_uilib.ClientProxy", serverSide = "club.heiqi.qz_uilib.CommonProxy")
     public static CommonProxy proxy;

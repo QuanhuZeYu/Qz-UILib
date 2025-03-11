@@ -5,6 +5,7 @@ import cpw.mods.fml.common.event.FMLInitializationEvent;
 import cpw.mods.fml.common.event.FMLPostInitializationEvent;
 import cpw.mods.fml.common.event.FMLPreInitializationEvent;
 import cpw.mods.fml.common.eventhandler.SubscribeEvent;
+import cpw.mods.fml.common.gameevent.PlayerEvent;
 import cpw.mods.fml.common.gameevent.TickEvent;
 import io.github.humbleui.skija.Font;
 import io.github.humbleui.skija.Typeface;
@@ -124,22 +125,18 @@ public class FontManager {
 
     public volatile boolean genDone = false;
     public void _genPreTexture() {
-        List<Integer> preL = Arrays.asList(
-            UnicodeRecorder.CATEGORY_RANGES.get(UnicodeRecorder.UnicodeType.BASIC_LATIN).get(0),
-            UnicodeRecorder.CATEGORY_RANGES.get(UnicodeRecorder.UnicodeType.BASIC_LATIN).get(1),
-            UnicodeRecorder.CATEGORY_RANGES.get(UnicodeRecorder.UnicodeType.LATIN1_SUPPLEMENT).get(0),
-            UnicodeRecorder.CATEGORY_RANGES.get(UnicodeRecorder.UnicodeType.LATIN1_SUPPLEMENT).get(1),
-            UnicodeRecorder.CATEGORY_RANGES.get(UnicodeRecorder.UnicodeType.GENERAL_PUNCTUATION).get(0),
-            UnicodeRecorder.CATEGORY_RANGES.get(UnicodeRecorder.UnicodeType.GENERAL_PUNCTUATION).get(1),
-            UnicodeRecorder.CATEGORY_RANGES.get(UnicodeRecorder.UnicodeType.CJK_UNIFIED_IDEOGRAPHS).get(0),
-            UnicodeRecorder.CATEGORY_RANGES.get(UnicodeRecorder.UnicodeType.CJK_UNIFIED_IDEOGRAPHS).get(1),
-            UnicodeRecorder.CATEGORY_RANGES.get(UnicodeRecorder.UnicodeType.EMOTICONS).get(0),
-            UnicodeRecorder.CATEGORY_RANGES.get(UnicodeRecorder.UnicodeType.EMOTICONS).get(1)
+        List<UnicodeRecorder.UnicodeType> types = Arrays.asList(
+            UnicodeRecorder.UnicodeType.BASIC_LATIN,
+            UnicodeRecorder.UnicodeType.LATIN1_SUPPLEMENT,
+            UnicodeRecorder.UnicodeType.GENERAL_PUNCTUATION,
+            UnicodeRecorder.UnicodeType.CJK_UNIFIED_IDEOGRAPHS,
+            UnicodeRecorder.UnicodeType.EMOTICONS
         );
-        Iterator<Integer> it = preL.iterator();
+        Iterator<UnicodeRecorder.UnicodeType> it = types.iterator();
         while (it.hasNext()) {
-            int start = it.next();
-            int end = it.next();
+            UnicodeRecorder.UnicodeType type = it.next();
+            int start = type.start;
+            int end = type.end;
             // 多线程生成纹理贴图
             List<Integer> codepoints = new ArrayList<>();
             for (int i = start; i <= end; i++) {
@@ -399,6 +396,11 @@ public class FontManager {
 //            }
         }
     }
+    @SubscribeEvent
+    public void onLogOutWorld(PlayerEvent.PlayerLoggedOutEvent event) {
+        pool.shutdownNow();
+    }
+
     public void _registerClient(
         @Nullable FMLPreInitializationEvent pre,
         @Nullable FMLInitializationEvent init,

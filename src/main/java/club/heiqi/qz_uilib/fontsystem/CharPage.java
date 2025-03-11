@@ -115,17 +115,14 @@ public class CharPage {
         float bottom    = rect.getBottom();
         float left      = rect.getLeft();
         float right     = rect.getRight();
+        float width     = rect.getWidth();
         float height    = rect.getHeight();
-        // 字符画布坐标
-        float offsetY = GRID_SIZE*0.175f; // 纵坐标偏移量
-        float x = 0;
-        float y = GRID_SIZE-offsetY;
-        // 偏移需要靠左的字符
-        if (UnicodeRecorder.needLeft(t)) {
-            x = -left;
-            left = 0.0f;
-        }
-        // 偏移emoji
+        float baseLineY = ((float) GRID_SIZE /2) - ((metrics.getAscent() + metrics.getDescent())/2);
+        LOG.debug("{} | 宽{},高{},左{}右{}上{}下{}", width, height, left, right, top, bottom);
+        // 默认使用基于文字视觉中心的居中
+        float x = ((float) GRID_SIZE /2)-(width/2);
+        float y = baseLineY;
+        // emoji使用基于图像外边框的居中
         if (EmojiDetector.containsEmoji(t)) {
             // emoji中心x坐标
             // 获取字符实际尺寸[1](@ref)
@@ -140,15 +137,15 @@ public class CharPage {
             // 计算最终绘制坐标（将字符中心对齐画布中心）
             x = canvasCenterX - charCenterX;
             y = canvasCenterY - charCenterY/* + font.getMetrics().getAscent()/2f*/; // 补偿字体基线
-            /*oTop = top-y;
-            oBottom = bottom-y;*/
         }
+
         /*LOG.debug("{}-{}行{}列 == 大画布 {},{},{},{} 小画布 {},{},{},{}, 小画布原始 {},{},{},{}",
             t, 行, 列, cx, cx+GRID_SIZE, cy-GRID_SIZE, cy,
             left, right, oTop, oBottom,
             left, right, top, bottom);*/
+
         // 依次放入 左 右 上小 下大 的坐标
-        CharInfo c = new CharInfo(this, cx, cx+right, cy, cy+GRID_SIZE);
+        CharInfo c = new CharInfo(this, cx+x+(GRID_SIZE*0.05f), cx+x+width+(GRID_SIZE*0.08f), cy, cy+GRID_SIZE);
         if (cache.replace(t, c) == null) {
             cache.put(t, c);
         }
