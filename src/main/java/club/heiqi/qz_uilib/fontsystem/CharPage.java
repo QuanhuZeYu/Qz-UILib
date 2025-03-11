@@ -1,14 +1,7 @@
 package club.heiqi.qz_uilib.fontsystem;
 
 import club.heiqi.qz_uilib.utils.BufferUtils;
-import io.github.humbleui.skija.Canvas;
-import io.github.humbleui.skija.EncoderPNG;
-import io.github.humbleui.skija.Font;
-import io.github.humbleui.skija.Image;
-import io.github.humbleui.skija.ImageInfo;
-import io.github.humbleui.skija.Paint;
-import io.github.humbleui.skija.Pixmap;
-import io.github.humbleui.skija.Surface;
+import io.github.humbleui.skija.*;
 import io.github.humbleui.types.Rect;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
@@ -103,13 +96,14 @@ public class CharPage {
         }
     }
 
-    public Surface _genChar(String t, @NotNull Font font) { // 仅addChar可使用该方法
+    public Surface _genChar(String t, @NotNull Font font) {
         // 1.创建画字体的Surface
         Surface surface = Surface.makeRaster(ImageInfo.makeN32Premul(GRID_SIZE, GRID_SIZE));
         Paint paint = new Paint().setColor(0xFFFFFFFF); // 白色画笔
         Canvas canvas = surface.getCanvas();
         canvas.clear(0x00000000); // 设置透明背景
         Rect rect = font.measureText(t); // 获取边界
+        FontMetrics metrics = font.getMetrics();
         // 大画布坐标
         int 每行个数 = PAGE_SIZE / GRID_SIZE;
         int 行 = curChars.get() / 每行个数;
@@ -129,7 +123,6 @@ public class CharPage {
         // 偏移需要靠左的字符
         if (UnicodeRecorder.needLeft(t)) {
             x = -left;
-            cx = cx - left;
             left = 0.0f;
         }
         // 偏移emoji
