@@ -12,7 +12,7 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 
 import java.util.Random;
 
-@Mixin(value = FontRenderer.class)
+@Mixin(FontRenderer.class)
 public abstract class QzFontrender {
     @Shadow
     public float posX;

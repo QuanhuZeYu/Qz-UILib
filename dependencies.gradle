@@ -42,10 +42,11 @@ ext {
 
 dependencies {
     implementation('org.joml:joml:1.10.8')
-    implementation("io.github.humbleui:skija-windows-x64:0.116.4")
-//    implementation("io.github.humbleui:skija-macos-arm64:0.116.4")
-//    implementation("io.github.humbleui:skija-linux-x64:0.116.4")
-//    implementation("io.github.humbleui:skija-shared:0.116.4")
+    implementation("io.github.humbleui:skija-shared:0.116.4")
+    implementation "io.github.humbleui:skija-windows-x64:0.116.4"
+    implementation "io.github.humbleui:skija-macos-arm64:0.116.4"
+    implementation "io.github.humbleui:skija-macos-x64:0.116.4"
+    implementation "io.github.humbleui:skija-linux-x64:0.116.4"
 //    implementation('org.lwjgl:lwjgl:3.3.3')
 //    implementation('org.lwjgl:lwjgl-stb:3.3.3')
 //    runtimeOnly('org.lwjgl:lwjgl:3.3.3:natives-windows')
