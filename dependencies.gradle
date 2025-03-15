@@ -38,15 +38,23 @@ ext {
     lwjglVersion = "3.3.3"
 
     natives = "natives-windows"
+    skijaVersion = "0.116.4"
 }
 
 dependencies {
     implementation('org.joml:joml:1.10.8')
+    // Skija 跨平台依赖配置
     implementation("io.github.humbleui:skija-shared:0.116.4")
-    implementation "io.github.humbleui:skija-windows-x64:0.116.4"
-    implementation "io.github.humbleui:skija-macos-arm64:0.116.4"
-    implementation "io.github.humbleui:skija-macos-x64:0.116.4"
-    implementation "io.github.humbleui:skija-linux-x64:0.116.4"
+    /*shadowImplementation("io.github.humbleui:skija-shared:0.116.4")*/
+    implementation("io.github.humbleui:skija-windows-x64:0.116.4")
+    /*shadowImplementation("io.github.humbleui:skija-windows-x64:0.116.4")*/
+    implementation("org.projectlombok:lombok:1.18.36")
+    /*shadowImplementation("org.projectlombok:lombok:1.18.36")*/
+    /*implementation("io.github.humbleui:types:0.2.0")*/
+    /*skijaNative "io.github.humbleui:skija-linux-x64:${skijaVersion}"
+    skijaNative "io.github.humbleui:skija-macos-x64:${skijaVersion}"
+    skijaNative "io.github.humbleui:skija-macos-arm64:${skijaVersion}"*/
+
 //    implementation('org.lwjgl:lwjgl:3.3.3')
 //    implementation('org.lwjgl:lwjgl-stb:3.3.3')
 //    runtimeOnly('org.lwjgl:lwjgl:3.3.3:natives-windows')
@@ -112,6 +120,8 @@ dependencies {
 //    functionalTestImplementation('org.junit.platform:junit-platform-reporting')
 
     runtimeOnlyNonPublishable("com.github.GTNewHorizons:DuraDisplay:1.2.3:dev")
+
+    implementation(fileTree("libs") {include("*.jar", "*.jmod")})
 }
 
 if(useMoreMod) {
@@ -130,5 +140,17 @@ if(useMoreMod) {
 //        runtimeOnly("com.github.GTNewHorizons:Galacticraft:3.2.9-GTNH:dev")
 //        runtimeOnly("com.github.GTNewHorizons:ModularUI:1.2.18:dev")
 //        runtimeOnly("com.github.GTNewHorizons:ModularUI2:2.2.4-1.7.10:dev")
+    }
+}
+
+sourceSets.main.resources {
+    srcDirs += "src/main/resources/skija"
+}
+
+tasks.processResources {
+    // 将平台库文件打包进JAR
+    from("libs") {
+        include "*.jar", "*.jmod"
+        into "META-INF/jni"
     }
 }

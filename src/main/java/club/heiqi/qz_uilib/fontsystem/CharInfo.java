@@ -1,6 +1,5 @@
 package club.heiqi.qz_uilib.fontsystem;
 
-import static club.heiqi.qz_uilib.fontsystem.CharPage.GRID_SIZE;
 import static club.heiqi.qz_uilib.fontsystem.CharPage.PAGE_SIZE;
 
 // 从左往右 从上往下 越来越大
