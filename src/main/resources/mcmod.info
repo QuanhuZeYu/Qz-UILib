@@ -1,0 +1,21 @@
+{
+	"modListVersion": 2,
+	"modList": [{
+		"modid": "${modId}",
+		"name": "Qz-方块信息显示",
+		"description": "用于替代waila+OminiOcular的模组",
+		"version": "${modVersion}",
+		"mcversion": "${minecraftVersion}",
+		"url": "https://github.com/SinTh0r4s/MyMod",
+		"updateUrl": "",
+		"authorList": ["泉户黑崎", "泉户泽雨","SinTho0r4s"],
+		"credits": "",
+		"logoFile": "",
+		"screenshots": [],
+		"parent": "",
+		"requiredMods": [],
+		"dependencies": [],
+		"dependants": [],
+		"useDependencyInformation": false
+	}]
+}
