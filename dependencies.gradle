@@ -37,17 +37,20 @@ dependencies {
 
     implementation("org.apache.commons:commons-configuration2:2.11.0")
     implementation("org.yaml:snakeyaml:2.4")
-    implementation(files("libs/skija-shared-java9-0.116.4.jar"))
-    shadowImplementation(files("libs/skija-shared-java9-0.116.4.jar"))
+    // 文件依赖形式
+    /*implementation(files("libs/skija-shared-java9-0.116.4.jar"))
+    shadowImplementation(files("libs/skija-shared-java9-0.116.4.jar"))*/
+    // 普通依赖
+    implementation("io.github.humbleui:skija-shared:0.116.4")
+    shadowImplementation("io.github.humbleui:skija-shared:0.116.4")
     implementation("io.github.humbleui:skija-windows-x64:0.116.4")
     shadowImplementation("io.github.humbleui:skija-windows-x64:0.116.4")
 
 
     implementation("com.github.GTNewHorizons:GT5-Unofficial:5.09.51.189:dev")
-    runtimeOnlyNonPublishable("com.github.GTNewHorizons:Angelica:1.0.0-beta35:dev")
-    runtimeOnlyNonPublishable("com.github.GTNewHorizons:Angelica:1.0.0-beta35:api")
+    implementation("com.github.GTNewHorizons:Angelica:1.0.0-beta35:dev")
+    implementation("com.github.GTNewHorizons:Angelica:1.0.0-beta35:api")
 
     runtimeOnlyNonPublishable("com.github.GTNewHorizons:NotEnoughItems:2.7.4-GTNH:dev")
-    runtimeOnlyNonPublishable("com.github.GTNewHorizons:DuraDisplay:1.2.3:dev")
     runtimeOnly("com.github.GTNewHorizons:waila:1.8.2:dev")
 }

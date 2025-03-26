@@ -21,13 +21,16 @@ public class FontLoader {
     public static float FONT_SIZE = 12*FONT_SCALE;
     public static List<Font> fonts = new ArrayList<>();
     public static File fontDir;
+    public static boolean loaded = false;
 
-    static {
+    public static void load() {
+        if (loaded) return;
         File mcDir = ConstField.MC_DIR;
         fontDir = new File(mcDir, "fonts");
         if (!fontDir.exists()) fontDir.mkdirs();
         _loadDefault();
         _loadSystemFonts();
+        loaded = true;
     }
 
     public static void _loadDefault() {
@@ -103,5 +106,10 @@ public class FontLoader {
         } catch (IOException e) {
             LOG.error("遍历文件夹: {} 出错。 {}", dir, e);
         }
+    }
+
+    public static Font getDefaultFont() {
+        load();
+        return fonts.get(0);
     }
 }

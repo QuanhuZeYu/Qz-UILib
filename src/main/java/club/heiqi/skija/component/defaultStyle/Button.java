@@ -63,7 +63,7 @@ public class Button extends UIComponent {
         canvas.drawRRect(RRect.makeXYWH(x, y, width, height, 4), paint);
         // 绘制外边框
         canvas.drawRRect(RRect.makeXYWH(x-0.00125f, y-0.00125f, width+2, height+2, 12), strokePaint);
-        Font font = FontLoader.fonts.get(0);
+        Font font = FontLoader.getDefaultFont();
         Vector2f center = new Vector2f(x+width/2, y+height/2);
         Utils.drawStringCenter(canvas, text, font, center, textPaint);
 

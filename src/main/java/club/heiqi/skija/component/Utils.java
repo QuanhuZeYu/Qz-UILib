@@ -1,17 +1,14 @@
 package club.heiqi.skija.component;
 
-import club.heiqi.skija.DirectBufferPool;
 import club.heiqi.skija.font.FontLoader;
 import io.github.humbleui.skija.*;
 import io.github.humbleui.types.Rect;
 import net.minecraft.client.Minecraft;
-import net.minecraft.client.gui.ScaledResolution;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.joml.Vector2f;
 import org.lwjgl.opengl.Display;
 
-import java.lang.reflect.Method;
 import java.nio.ByteBuffer;
 
 import static org.lwjgl.opengl.GL11.*;
@@ -96,9 +93,11 @@ public class Utils {
         Rect dstRect = Rect.makeXYWH(0,0, Display.getWidth(), Display.getHeight());
         // 3.配置采样
         SamplingMode samplingMode = SamplingMode.LINEAR;
+        FilterTileMode clamp = FilterTileMode.CLAMP;
+        if (clamp == null) return;
         // 4.应用模糊
         Paint paint = new Paint();
-        paint.setImageFilter(ImageFilter.makeBlur(blur,blur,FilterTileMode.CLAMP));
+        paint.setImageFilter(ImageFilter.makeBlur(blur,blur, clamp));
         canvas.drawImageRect(image,srcRect,dstRect,samplingMode,paint,true);
         // 释放资源
         image.close(); paint.close();
