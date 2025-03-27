@@ -36,11 +36,14 @@ public class GLCanvas {
     }
 
     public void preFlush() {
-        // 提示安洁莉卡关闭过背面剔除
-        glDisable(GL_CULL_FACE);
         frameBuffer.bind(Display.getWidth(), Display.getHeight());
         skiaStore.backup();
         pixelStore.backup();
+        // 提示安洁莉卡关闭过背面剔除
+        glDisable(GL_CULL_FACE);
+        // 提示安洁莉卡修改过颜色
+        glColor4f(0,0,0,0);
+        // 画布GL重置
         context.resetGLAll();
     }
 
