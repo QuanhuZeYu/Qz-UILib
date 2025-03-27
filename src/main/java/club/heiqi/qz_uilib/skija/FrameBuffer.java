@@ -126,8 +126,6 @@ public class FrameBuffer {
             glViewport(viewport.get(0), viewport.get(1),
                     viewport.get(2), viewport.get(3));
             SkiaStore.glUseProgram.invoke(program);
-            SkiaStore.glEnable.invoke(GL_DEPTH_TEST);
-            SkiaStore.glDepthMask.invoke(false);
 
         } catch (Throwable e) {
             throw new RuntimeException(e);

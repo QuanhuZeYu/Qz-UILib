@@ -1,7 +1,7 @@
 package club.heiqi.qz_uilib.skija.gui;
 
 import club.heiqi.qz_uilib.skija.GLCanvas;
-import club.heiqi.qz_uilib.skija.component.UIComponent;
+import club.heiqi.qz_uilib.skija.gui.component.UIComponent;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.FontRenderer;
 import net.minecraft.client.gui.GuiButton;
@@ -24,6 +24,10 @@ import java.util.*;
  */
 public abstract class BaseGUI extends GuiScreen {
     public static Logger LOG = LogManager.getLogger();
+    /**
+     * 狗操的安洁莉卡，缓存你妈的GUI类，纯你妈傻逼，多调用个init会少块肉是吧？
+     */
+    public boolean isInit = false;
     /**
      * 用栈来表示UI层级, 该字段请勿手动修改, 类的实例化和销毁时会自动更新栈
      */
@@ -62,6 +66,7 @@ public abstract class BaseGUI extends GuiScreen {
      */
     @Override
     public void drawScreen(int mouseX, int mouseY, float partialTicks) {
+        if (!isInit) initGui();
         canvas.render(canvas -> {
             for (UIComponent component : new ArrayList<>(components)) {
                 component.draw(canvas);
@@ -184,8 +189,10 @@ public abstract class BaseGUI extends GuiScreen {
         startTime = System.currentTimeMillis();
         this.width = Display.getWidth(); this.height = Display.getHeight();
         // 向全局记录中添加
-        stack.add(this);
         addComponent();
+        stack.add(this);
+        isInit = true;
+        LOG.info("GUI已初始化, GUI数量:{}", stack.size());
     }
 
     /**
@@ -202,6 +209,9 @@ public abstract class BaseGUI extends GuiScreen {
     public void onGuiClosed() {
         // 在此释放资源
         canvas.dispose();
+        isInit = false;
+        stack.remove(this);
+        LOG.info("GUI资源已清理, GUI数量:{}", stack.size());
     }
 
     /**
@@ -213,6 +223,7 @@ public abstract class BaseGUI extends GuiScreen {
      */
     @Override
     public void setWorldAndResolution(Minecraft mc, int width, int height) {
+        if (isInit) onGuiClosed();
         this.mc = mc;
         this.fontRendererObj = mc.fontRenderer;
         this.width = Display.getWidth();

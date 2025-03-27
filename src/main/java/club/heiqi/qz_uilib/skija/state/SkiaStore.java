@@ -14,8 +14,6 @@ import java.nio.IntBuffer;
 import java.util.HashMap;
 import java.util.Map;
 
-import static org.lwjgl.opengl.GL30.glBindFramebuffer;
-
 
 public class SkiaStore {
     public static Logger LOG = LogManager.getLogger();
@@ -52,7 +50,7 @@ public class SkiaStore {
     private final FloatBuffer currentColor = BufferUtils.createFloatBuffer(4);
     private boolean blendEnabled;
     private int blendSrcRGB, blendDstRGB, blendSrcAlpha, blendDstAlpha;
-    private boolean colorMakR, colorMakG, colorMakB, colorMakA;
+    private boolean colorMaskR, colorMaksG, colorMaskB, colorMaskA;
     // 深度
     private boolean depthTest,depthMask;
     private int depthFunc;
@@ -104,11 +102,6 @@ public class SkiaStore {
         catch (Exception e) {
             throw new RuntimeException("保存器初始化失败" + e);
         }
-    }
-
-
-    public SkiaStore() {
-
     }
 
 
@@ -210,10 +203,10 @@ public class SkiaStore {
             blendDstAlpha = (int) glGetInteger.invoke(GL14.GL_BLEND_DST_ALPHA);
             ByteBuffer buffer1 = BufferUtils.createByteBuffer(4);
             SkiaStore.glGetBooleanBuffer.invoke(GL11.GL_COLOR_WRITEMASK,buffer1);
-            colorMakR = buffer1.get(0)==1;
-            colorMakG = buffer1.get(1)==1;
-            colorMakB = buffer1.get(2)==1;
-            colorMakA = buffer1.get(3)==1;
+            colorMaskR = buffer1.get(0)==1;
+            colorMaksG = buffer1.get(1)==1;
+            colorMaskB = buffer1.get(2)==1;
+            colorMaskA = buffer1.get(3)==1;
             // 深度
             depthTest = (boolean) glIsEnabled.invoke(GL11.GL_DEPTH_TEST);
             depthFunc = (int) glGetInteger.invoke(GL11.GL_DEPTH_FUNC);
@@ -274,7 +267,7 @@ public class SkiaStore {
             setCapability(GL11.GL_BLEND, blendEnabled);
             if (blendEnabled) {
                 glBlendFuncSeparate.invoke(blendSrcRGB, blendDstRGB, blendSrcAlpha, blendDstAlpha);
-                glColorMask.invoke(colorMakR, colorMakG, colorMakB, colorMakA);
+                glColorMask.invoke(colorMaskR, colorMaksG, colorMaskB, colorMaskA);
             }
             // 深度
             setCapability(GL11.GL_DEPTH_TEST, depthTest);

@@ -1,7 +1,7 @@
-package club.heiqi.qz_uilib.skija.component.defaultStyle;
+package club.heiqi.qz_uilib.skija.gui.component.defaultStyle;
 
-import club.heiqi.qz_uilib.skija.component.UIComponent;
-import club.heiqi.qz_uilib.skija.component.Utils;
+import club.heiqi.qz_uilib.skija.gui.component.UIComponent;
+import club.heiqi.qz_uilib.skija.gui.component.Utils;
 import com.google.common.util.concurrent.AtomicDouble;
 import io.github.humbleui.skija.Canvas;
 import io.github.humbleui.skija.Paint;
@@ -87,7 +87,7 @@ public class BackGround extends UIComponent {
             int blue = color & 0xFF;
             // RGBToHSV/HSVToColor
             float[] hsb = Color.RGBtoHSB(red, green, blue, null);
-            hsb[0] = (hsb[0] + (10 / 360f)) % 1.0f; // 将步长转换为0-1范围
+            hsb[0] = (hsb[0] + (5 / 360f)) % 1.0f; // 将步长转换为0-1范围
             int newRGB = Color.HSBtoRGB(hsb[0], hsb[1], hsb[2]);
             colors[i] = (alpha << 24) | (newRGB & 0x00FFFFFF);
         }

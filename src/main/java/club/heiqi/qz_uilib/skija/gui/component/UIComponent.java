@@ -1,4 +1,4 @@
-package club.heiqi.qz_uilib.skija.component;
+package club.heiqi.qz_uilib.skija.gui.component;
 
 import io.github.humbleui.skija.Canvas;
 import org.apache.logging.log4j.LogManager;

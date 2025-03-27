@@ -22,7 +22,7 @@ import java.util.List;
 
 public class FontLoader {
     public static Logger LOG = LogManager.getLogger();
-    public static float FONT_SIZE = 36;
+    public static float FONT_SIZE = 24;
     public static List<Font> fonts = new ArrayList<>();
     public static File fontDir;
     public static boolean loaded = false;
@@ -109,7 +109,7 @@ public class FontLoader {
                     String fileName = file.getFileName().toString().toLowerCase();
                     if (!fileName.endsWith(".ttf")) return FileVisitResult.CONTINUE;
                     try {
-                        LOG.debug("正在尝试加载: {}", file.toString());
+                        LOG.info("正在尝试加载: {}", file.toString());
                         try (InputStream is = new FileInputStream(file.toFile())) {
                             java.awt.Font fontAWT = java.awt.Font.createFont(java.awt.Font.TRUETYPE_FONT, is); // 使用java awt加载引发错误来跳过无法加载的字体
                         } catch (Exception e) {
@@ -140,43 +140,9 @@ public class FontLoader {
 
     public static SamplerState samplerState = new SamplerState();
     public static void _backupGLState() {
-        try {
-            /*// 备份当前激活的纹理单元
-            samplerState.activeTextureUnit = (int) SkiaStore.glGetInteger.invoke(GL13.GL_ACTIVE_TEXTURE);
-            // 查询当前绑定的采样器
-            int curSampler = (int) SkiaStore.glGetInteger.invoke(GL33.GL_SAMPLER_BINDING);
-            samplerState.oldSampler = curSampler;
-            if (curSampler != 0) {
-                samplerState.intParams.put(GL11.GL_TEXTURE_MIN_FILTER, (Integer) SkiaStore.glGetSamplerParameteri.invoke(curSampler,GL11.GL_TEXTURE_MIN_FILTER));
-                samplerState.intParams.put(GL11.GL_TEXTURE_MAG_FILTER,(Integer) SkiaStore.glGetSamplerParameteri.invoke(curSampler,GL11.GL_TEXTURE_MAG_FILTER));
-                samplerState.intParams.put(GL11.GL_TEXTURE_WRAP_S,(Integer) SkiaStore.glGetSamplerParameteri.invoke(curSampler,GL11.GL_TEXTURE_WRAP_S));
-                samplerState.intParams.put(GL11.GL_TEXTURE_WRAP_T,(Integer) SkiaStore.glGetSamplerParameteri.invoke(curSampler,GL11.GL_TEXTURE_WRAP_T));
-            }*/
-            SkiaStore.glBindTexture.invoke(GL11.GL_TEXTURE_2D,0);
-        } catch (Throwable e) {
-            throw new RuntimeException(e);
-        }
         skiaStore.backup();
     }
     public static void _restoreGLState() {
         skiaStore.restore();
-        try {
-            /*SkiaStore.glActiveTexture.invoke(samplerState.activeTextureUnit);
-            // 恢复原始采样器
-            SkiaStore.glBindSampler.invoke(0,samplerState.oldSampler);
-            // 如果采样器存在，恢复参数
-            if (samplerState.oldSampler != 0) {
-                samplerState.intParams.forEach((param,value) -> {
-                    try {
-                        SkiaStore.glSamplerParameteri.invoke(samplerState.oldSampler,param,value);
-                    } catch (Throwable e) {
-                        throw new RuntimeException(e);
-                    }
-                });
-            }*/
-            SkiaStore.glBindSampler.invoke(0,0);
-        } catch (Throwable e) {
-            throw new RuntimeException(e);
-        }
     }
 }

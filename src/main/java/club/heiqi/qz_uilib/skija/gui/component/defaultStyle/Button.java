@@ -1,10 +1,9 @@
-package club.heiqi.qz_uilib.skija.component.defaultStyle;
+package club.heiqi.qz_uilib.skija.gui.component.defaultStyle;
 
-import club.heiqi.qz_uilib.skija.component.UIComponent;
-import club.heiqi.qz_uilib.skija.component.Utils;
+import club.heiqi.qz_uilib.skija.gui.component.UIComponent;
+import club.heiqi.qz_uilib.skija.gui.component.Utils;
 import club.heiqi.qz_uilib.skija.font.FontLoader;
 import io.github.humbleui.skija.Canvas;
-import io.github.humbleui.skija.Color;
 import io.github.humbleui.skija.Font;
 import io.github.humbleui.skija.Paint;
 import io.github.humbleui.types.RRect;
@@ -16,9 +15,13 @@ import org.joml.Vector2f;
 public class Button extends UIComponent {
     public String text = "默认文本";
 
-    public int fillColor = 0xFF3998DB;
-    public int strokeColor = 0x00000000;
-    public int textColor = 0xFFFFFFFF;
+    public final int defaultFillColor = 0xFF3998DB;
+    public final int defaultStrokeColor = 0x00000000;
+    public final int defaultTextColor = 0xFFFFFFFF;
+
+    public int fillColor = defaultFillColor;
+    public int strokeColor = defaultStrokeColor;
+    public int textColor = defaultTextColor;
 
     public Button(float x, float y, float width, float height) {
         super(x, y, width, height);

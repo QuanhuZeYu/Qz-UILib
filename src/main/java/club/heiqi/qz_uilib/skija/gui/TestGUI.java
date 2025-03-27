@@ -1,8 +1,8 @@
 package club.heiqi.qz_uilib.skija.gui;
 
-import club.heiqi.qz_uilib.skija.component.UIComponent;
-import club.heiqi.qz_uilib.skija.component.defaultStyle.BackGround;
-import club.heiqi.qz_uilib.skija.component.defaultStyle.Button;
+import club.heiqi.qz_uilib.skija.gui.component.UIComponent;
+import club.heiqi.qz_uilib.skija.gui.component.defaultStyle.BackGround;
+import club.heiqi.qz_uilib.skija.gui.component.defaultStyle.Button;
 
 public class TestGUI extends BaseGUI {
 

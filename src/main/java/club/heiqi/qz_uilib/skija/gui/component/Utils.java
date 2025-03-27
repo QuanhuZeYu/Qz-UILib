@@ -1,4 +1,4 @@
-package club.heiqi.qz_uilib.skija.component;
+package club.heiqi.qz_uilib.skija.gui.component;
 
 import club.heiqi.qz_uilib.skija.font.FontLoader;
 import io.github.humbleui.skija.*;
@@ -100,12 +100,12 @@ public class Utils {
         // 3.配置采样
         SamplingMode samplingMode = SamplingMode.LINEAR;
         FilterTileMode clamp = FilterTileMode.CLAMP;
-        if (clamp == null) return;
         // 4.应用模糊
-        Paint paint = new Paint();
-        paint.setImageFilter(ImageFilter.makeBlur(blur,blur, clamp));
+        Paint paint = new Paint().setAntiAlias(true);
+        ImageFilter makeBlur = ImageFilter.makeBlur(blur, blur, clamp);
+        paint.setImageFilter(makeBlur);
         canvas.drawImageRect(image,srcRect,dstRect,samplingMode,paint,true);
         // 释放资源
-        image.close(); paint.close();
+        image.close(); paint.close(); makeBlur.close();
     }
 }
