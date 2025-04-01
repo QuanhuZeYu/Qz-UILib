@@ -1,5 +1,7 @@
 package club.heiqi.qz_uilib.skija.state;
 
+import io.github.humbleui.skija.Canvas;
+import io.github.humbleui.skija.Surface;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.lwjgl.BufferUtils;
@@ -20,17 +22,21 @@ public class SkiaStore {
     // 着色器ID
     private int program;
     // 顶点
+    private boolean vertexProgramPointSize,pointSmooth;
     private boolean[] vertexAttribArrayStates;
     private int vaoBinding;
     private int arrayBufferBinding;
     private int elementArrayBufferBinding;
-
+    // 线
+    private float lineWidth;
+    private boolean lineSmooth;
     // 纹理 Binding
     private int activeTextureUnit;
     private final Map<Integer, Integer> textureBindings = new HashMap<>();
     // 视图
     private final int[] viewport = new int[4];
     private final int[] scissorBox = new int[4];
+    private boolean scissorTest;
     // MSAA 多重采样
     private boolean multisampleEnabled;
     // 模板
@@ -44,24 +50,32 @@ public class SkiaStore {
     private boolean fogEnabled;
     private final FloatBuffer fogColor = BufferUtils.createFloatBuffer(1);
     // 面剔除
-    private boolean wasCullFaceEnabled;
+    private boolean cullFaceEnabled;
     private int cullFaceMode, frontFace;
-    // 颜色
+    // 颜色+混合
     private final FloatBuffer currentColor = BufferUtils.createFloatBuffer(4);
-    private boolean blendEnabled;
+    private boolean blendEnabled,frameBufferSRGBEnabled;
     private int blendSrcRGB, blendDstRGB, blendSrcAlpha, blendDstAlpha;
+    private int blendEquation, blendEquationRGB, blendEquationAlpha;
     private boolean colorMaskR, colorMaksG, colorMaskB, colorMaskA;
     // 深度
     private boolean depthTest,depthMask;
     private int depthFunc;
     private final FloatBuffer depthRange = BufferUtils.createFloatBuffer(2);
+    // 多边形
+    private boolean polygonStipple,polygonOffsetFill,polygonSmooth;
+    // LOGIC OP
+    private boolean colorLogicOp,indexLogicOp;
+    // MISC
+    private boolean ditherEnabled;
 
     // 反射方法
-    public static MethodHandle glGetInteger, glGetIntegerBuffer, glGetVertexAttrib, glIsEnabled, glGetFloat;
+    public static MethodHandle glGetInteger, glGetIntegerBuffer, glGetVertexAttrib, glIsEnabled, glGetFloatBuffer;
     public static MethodHandle glUseProgram, glEnableVertexAttribArray, glDisableVertexAttribArray, glBindVertexArray, glBindBuffer,
             glActiveTexture, glBindTexture, glEnable, glDisable, glCullFace, glFrontFace, glColor4f, glBlendFuncSeparate, glColorMask,
             glBlendFunc,glDepthFunc,glDepthMask,glDepthRange,glStencilFuncSeparate,glStencilOpSeparate,glBindSampler,glSamplerParameteri,
-            glGetSamplerParameteri,glGetBoolean,glGetBooleanBuffer,glBindFramebuffer;
+            glGetSamplerParameteri,glGetBoolean,glGetBooleanBuffer,glBindFramebuffer,glPixelStorei,glPushAttrib,glMatrixMode,
+            glPushMatrix,glGetFloat,glLineWidth,glBlendEquation,glBlendEquationSeparate,glTexCoord2f,glVertex3f;
     static {
         try {
             MethodHandles.Lookup lookup = MethodHandles.lookup();
@@ -69,7 +83,8 @@ public class SkiaStore {
             glGetIntegerBuffer = lookup.findStatic(GL11.class, "glGetInteger", MethodType.methodType(void.class,int.class,IntBuffer.class));
             glGetVertexAttrib = lookup.findStatic(GL20.class, "glGetVertexAttrib", MethodType.methodType(void.class,int.class,int.class,IntBuffer.class));
             glIsEnabled = lookup.findStatic(GL11.class, "glIsEnabled", MethodType.methodType(boolean.class,int.class));
-            glGetFloat = lookup.findStatic(GL11.class, "glGetFloat", MethodType.methodType(void.class,int.class,FloatBuffer.class));
+            glGetFloatBuffer = lookup.findStatic(GL11.class, "glGetFloat", MethodType.methodType(void.class,int.class,FloatBuffer.class));
+            glGetFloat = lookup.findStatic(GL11.class, "glGetFloat", MethodType.methodType(float.class,int.class));
             glUseProgram = lookup.findStatic(GL20.class, "glUseProgram", MethodType.methodType(void.class,int.class));
             glEnableVertexAttribArray = lookup.findStatic(GL20.class, "glEnableVertexAttribArray", MethodType.methodType(void.class,int.class));
             glDisableVertexAttribArray = lookup.findStatic(GL20.class, "glDisableVertexAttribArray", MethodType.methodType(void.class,int.class));
@@ -91,6 +106,9 @@ public class SkiaStore {
             glStencilOpSeparate = lookup.findStatic(GL20.class, "glStencilOpSeparate", MethodType.methodType(void.class,int.class,int.class,int.class,int.class));
             glGetBoolean = lookup.findStatic(GL11.class, "glGetBoolean", MethodType.methodType(boolean.class,int.class));
             glGetBooleanBuffer = lookup.findStatic(GL11.class, "glGetBoolean", MethodType.methodType(void.class,int.class,ByteBuffer.class));
+            glLineWidth = lookup.findStatic(GL11.class, "glLineWidth", MethodType.methodType(void.class,float.class));
+            glBlendEquation = lookup.findStatic(GL14.class, "glBlendEquation", MethodType.methodType(void.class,int.class));
+            glBlendEquationSeparate = lookup.findStatic(GL20.class, "glBlendEquationSeparate", MethodType.methodType(void.class,int.class,int.class));
 
             // 提供给外部内部未使用的
             glBlendFunc = lookup.findStatic(GL11.class, "glBlendFunc", MethodType.methodType(void.class,int.class,int.class));
@@ -98,6 +116,12 @@ public class SkiaStore {
             glSamplerParameteri = lookup.findStatic(GL33.class, "glSamplerParameteri", MethodType.methodType(void.class,int.class,int.class,int.class));
             glGetSamplerParameteri = lookup.findStatic(GL33.class, "glGetSamplerParameteri", MethodType.methodType(int.class,int.class,int.class));
             glBindFramebuffer = lookup.findStatic(GL30.class, "glBindFramebuffer", MethodType.methodType(void.class,int.class,int.class));
+            glPixelStorei = lookup.findStatic(GL11.class, "glPixelStorei", MethodType.methodType(void.class,int.class,int.class));
+            glPushAttrib = lookup.findStatic(GL11.class, "glPushAttrib", MethodType.methodType(void.class,int.class));
+            glMatrixMode = lookup.findStatic(GL11.class, "glMatrixMode", MethodType.methodType(void.class,int.class));
+            glPushMatrix = lookup.findStatic(GL11.class, "glPushMatrix", MethodType.methodType(void.class));
+            glTexCoord2f = lookup.findStatic(GL11.class,"glTexCoord2f", MethodType.methodType(void.class,float.class,float.class));
+            glVertex3f = lookup.findStatic(GL11.class, "glVertex3f", MethodType.methodType(void.class,float.class,float.class,float.class));
         }
         catch (Exception e) {
             throw new RuntimeException("保存器初始化失败" + e);
@@ -118,9 +142,14 @@ public class SkiaStore {
                 glGetVertexAttrib.invoke(i, GL20.GL_VERTEX_ATTRIB_ARRAY_ENABLED, enable);
                 vertexAttribArrayStates[i] = enable.get(0) == GL11.GL_TRUE;
             }
+            vertexProgramPointSize = (boolean) glGetBoolean.invoke(GL20.GL_VERTEX_PROGRAM_POINT_SIZE);
+            pointSmooth = (boolean) glGetBoolean.invoke(GL11.GL_POINT_SMOOTH);
             vaoBinding = (int) glGetInteger.invoke(GL30.GL_VERTEX_ARRAY_BINDING);
             arrayBufferBinding = (int) glGetInteger.invoke(GL15.GL_ARRAY_BUFFER_BINDING);
             elementArrayBufferBinding = (int) glGetInteger.invoke(GL15.GL_ELEMENT_ARRAY_BUFFER_BINDING);
+            // 线
+            lineWidth = (float) glGetFloat.invoke(GL11.GL_LINE_WIDTH);
+            lineSmooth = (boolean) glGetBoolean.invoke(GL11.GL_LINE_SMOOTH);
             // 纹理
             activeTextureUnit = (int) glGetInteger.invoke(GL13.GL_ACTIVE_TEXTURE);
             // 备份纹理目标的绑定状态
@@ -141,6 +170,7 @@ public class SkiaStore {
             buffer.clear();
             glGetIntegerBuffer.invoke(GL11.GL_SCISSOR_BOX, buffer);
             buffer.get(scissorBox);
+            scissorTest = (boolean) glGetBoolean.invoke(GL11.GL_SCISSOR_TEST);
             buffer.clear();
             // MSAA
             multisampleEnabled = (boolean) glIsEnabled.invoke(GL13.GL_MULTISAMPLE);
@@ -189,18 +219,23 @@ public class SkiaStore {
             // fixed
             lightingEnabled = (boolean) SkiaStore.glIsEnabled.invoke(GL11.GL_LIGHTING);
             fogEnabled = (boolean) SkiaStore.glIsEnabled.invoke(GL11.GL_FOG);
-            if (fogEnabled) glGetFloat.invoke(GL11.GL_FOG_COLOR, fogColor);
+            if (fogEnabled) glGetFloatBuffer.invoke(GL11.GL_FOG_COLOR, fogColor);
             // 面剔除
-            wasCullFaceEnabled = (boolean) glIsEnabled.invoke(GL11.GL_CULL_FACE);
+            cullFaceEnabled = (boolean) glIsEnabled.invoke(GL11.GL_CULL_FACE);
             cullFaceMode = (int) glGetInteger.invoke(GL11.GL_CULL_FACE_MODE);
             frontFace = (int) glGetInteger.invoke(GL11.GL_FRONT_FACE);
-            // 颜色
-            glGetFloat.invoke(GL11.GL_CURRENT_COLOR,currentColor);
+            // 颜色+混合
+            glGetFloatBuffer.invoke(GL11.GL_CURRENT_COLOR,currentColor);
             blendEnabled = (boolean) glIsEnabled.invoke(GL11.GL_BLEND);
+            frameBufferSRGBEnabled = (boolean) glIsEnabled.invoke(GL30.GL_FRAMEBUFFER_SRGB);
             blendSrcRGB = (int) glGetInteger.invoke(GL14.GL_BLEND_SRC_RGB);
             blendDstRGB = (int) glGetInteger.invoke(GL14.GL_BLEND_DST_RGB);
             blendSrcAlpha = (int) glGetInteger.invoke(GL14.GL_BLEND_SRC_ALPHA);
             blendDstAlpha = (int) glGetInteger.invoke(GL14.GL_BLEND_DST_ALPHA);
+
+            blendEquation = (int) glGetInteger.invoke(GL14.GL_BLEND_EQUATION);
+            blendEquationRGB = (int) glGetInteger.invoke(GL20.GL_BLEND_EQUATION_RGB);
+            blendEquationAlpha = (int) glGetInteger.invoke(GL20.GL_BLEND_EQUATION_ALPHA);
             ByteBuffer buffer1 = BufferUtils.createByteBuffer(4);
             SkiaStore.glGetBooleanBuffer.invoke(GL11.GL_COLOR_WRITEMASK,buffer1);
             colorMaskR = buffer1.get(0)==1;
@@ -211,7 +246,16 @@ public class SkiaStore {
             depthTest = (boolean) glIsEnabled.invoke(GL11.GL_DEPTH_TEST);
             depthFunc = (int) glGetInteger.invoke(GL11.GL_DEPTH_FUNC);
             depthMask = (boolean) SkiaStore.glGetBoolean.invoke(GL11.GL_DEPTH_WRITEMASK);
-            glGetFloat.invoke(GL11.GL_DEPTH_RANGE,depthRange);
+            glGetFloatBuffer.invoke(GL11.GL_DEPTH_RANGE,depthRange);
+            // 多边形
+            polygonStipple = (boolean) glIsEnabled.invoke(GL11.GL_POLYGON_STIPPLE);
+            polygonOffsetFill = (boolean) glIsEnabled.invoke(GL11.GL_POLYGON_OFFSET_FILL);
+            polygonSmooth = (boolean) glIsEnabled.invoke(GL11.GL_POLYGON_SMOOTH);
+            // LOGIC OP
+            colorLogicOp = (boolean) glIsEnabled.invoke(GL11.GL_COLOR_LOGIC_OP);
+            indexLogicOp = (boolean) glIsEnabled.invoke(GL11.GL_INDEX_LOGIC_OP);
+            // MISC
+            ditherEnabled = (boolean) glIsEnabled.invoke(GL11.GL_DITHER);
 
 
             // 最后调用一下空着色器提示安洁莉卡切换过着色器
@@ -223,31 +267,54 @@ public class SkiaStore {
 
     public void restore() {
         try {
+            GL20.glUseProgram(program);
             glUseProgram.invoke(program);
 
             // 顶点数组
             for (int i = 0; i < vertexAttribArrayStates.length; i++) {
-                if (vertexAttribArrayStates[i]) glEnableVertexAttribArray.invoke(i);
-                else glDisableVertexAttribArray.invoke(i);
+                if (vertexAttribArrayStates[i]) {
+                    GL20.glEnableVertexAttribArray(i);
+                    glEnableVertexAttribArray.invoke(i);
+                }
+                else {
+                    GL20.glDisableVertexAttribArray(i);
+                    glDisableVertexAttribArray.invoke(i);
+                }
             }
+            setCapability(GL20.GL_VERTEX_PROGRAM_POINT_SIZE,vertexProgramPointSize);
+            setCapability(GL11.GL_POINT_SMOOTH,pointSmooth);
+            GL30.glBindVertexArray(vaoBinding);
             glBindVertexArray.invoke(vaoBinding);
+            GL15.glBindBuffer(GL15.GL_ARRAY_BUFFER, arrayBufferBinding);
+            GL15.glBindBuffer(GL15.GL_ELEMENT_ARRAY_BUFFER, elementArrayBufferBinding);
             glBindBuffer.invoke(GL15.GL_ARRAY_BUFFER, arrayBufferBinding);
             glBindBuffer.invoke(GL15.GL_ELEMENT_ARRAY_BUFFER, elementArrayBufferBinding);
+            // 线
+            GL11.glLineWidth(lineWidth);
+            SkiaStore.glLineWidth.invoke(lineWidth);
+            setCapability(GL11.GL_LINE_SMOOTH,lineSmooth);
             // 纹理
+            GL13.glActiveTexture(activeTextureUnit); // 恢复活动的纹理单元
             glActiveTexture.invoke(activeTextureUnit); // 恢复活动的纹理单元
             // 恢复各纹理目标绑定
             for (Map.Entry<Integer, Integer> entry : textureBindings.entrySet()) {
                 int target = entry.getKey();
                 int value = entry.getValue();
+                GL11.glBindTexture(target, value);
                 glBindTexture.invoke(target, value);
             }
             // 恢复视图
             GL11.glViewport(viewport[0], viewport[1], viewport[2], viewport[3]);
             GL11.glScissor(scissorBox[0], scissorBox[1], scissorBox[2], scissorBox[3]);
+            setCapability(GL11.GL_SCISSOR_TEST, scissorTest);
             // MSAA
             setCapability(GL13.GL_MULTISAMPLE, multisampleEnabled);
             // 模板
             setCapability(GL11.GL_STENCIL_TEST, stencilTestEnabled);
+            GL20.glStencilFuncSeparate(GL11.GL_FRONT, stencilFuncFront, stencilRefFront, stencilMaskFront);
+            GL20.glStencilOpSeparate(GL11.GL_FRONT, stencilFailFront, depthFailFront, passFront);
+            GL20.glStencilFuncSeparate(GL11.GL_BACK, stencilFuncBack, stencilRefBack, stencilMaskBack);
+            GL20.glStencilOpSeparate(GL11.GL_BACK, stencilFailBack, depthFailBack, passBack);
             glStencilFuncSeparate.invoke(GL11.GL_FRONT, stencilFuncFront, stencilRefFront, stencilMaskFront);
             glStencilOpSeparate.invoke(GL11.GL_FRONT, stencilFailFront, depthFailFront, passFront);
             glStencilFuncSeparate.invoke(GL11.GL_BACK, stencilFuncBack, stencilRefBack, stencilMaskBack);
@@ -255,25 +322,50 @@ public class SkiaStore {
             // fixed
             setCapability(GL11.GL_LIGHTING, lightingEnabled);
             setCapability(GL11.GL_FOG, fogEnabled);
-            if(fogEnabled) GL11.glFogf(GL11.GL_FOG_COLOR, fogColor.get());
+            if(fogEnabled) {
+                GL11.glFogf(GL11.GL_FOG_COLOR, fogColor.get());
+            }
             // 面剔除
             // 提示安洁莉卡关闭过背面剔除
-            setCapability(GL11.GL_CULL_FACE, wasCullFaceEnabled);
+            setCapability(GL11.GL_CULL_FACE, cullFaceEnabled);
+            GL11.glCullFace(cullFaceMode);
+            GL11.glFrontFace(frontFace);
             glCullFace.invoke(cullFaceMode);
             glFrontFace.invoke(frontFace);
 
-            // 颜色
+            // 颜色+混合
+            GL11.glColor4f(currentColor.get(0), currentColor.get(1), currentColor.get(2), currentColor.get(3));
             glColor4f.invoke(currentColor.get(0), currentColor.get(1), currentColor.get(2), currentColor.get(3));
             setCapability(GL11.GL_BLEND, blendEnabled);
+            setCapability(GL30.GL_FRAMEBUFFER_SRGB, frameBufferSRGBEnabled);
             if (blendEnabled) {
+                GL14.glBlendFuncSeparate(blendSrcRGB, blendDstRGB, blendSrcAlpha, blendDstAlpha);
+                GL11.glColorMask(colorMaskR, colorMaksG, colorMaskB, colorMaskA);
                 glBlendFuncSeparate.invoke(blendSrcRGB, blendDstRGB, blendSrcAlpha, blendDstAlpha);
                 glColorMask.invoke(colorMaskR, colorMaksG, colorMaskB, colorMaskA);
+
+                GL14.glBlendEquation(blendEquation);
+                GL20.glBlendEquationSeparate(blendEquationRGB, blendEquationAlpha);
+                glBlendEquation.invoke(blendEquation);
+                glBlendEquationSeparate.invoke(blendEquationRGB, blendEquationAlpha);
             }
             // 深度
             setCapability(GL11.GL_DEPTH_TEST, depthTest);
+            GL11.glDepthFunc(depthFunc);
+            GL11.glDepthMask(depthMask);
+            GL11.glDepthRange(depthRange.get(0), depthRange.get(1));
             glDepthFunc.invoke(depthFunc);
             glDepthMask.invoke(depthMask);
             glDepthRange.invoke(depthRange.get(0), depthRange.get(1));
+            // 多边形
+            setCapability(GL11.GL_POLYGON_STIPPLE,polygonStipple);
+            setCapability(GL11.GL_POLYGON_OFFSET_FILL,polygonOffsetFill);
+            setCapability(GL11.GL_POLYGON_SMOOTH,polygonSmooth);
+            // LOGIC OP
+            setCapability(GL11.GL_COLOR_LOGIC_OP,colorLogicOp);
+            setCapability(GL11.GL_INDEX_LOGIC_OP,indexLogicOp);
+            // MISC
+            setCapability(GL11.GL_DITHER,ditherEnabled);
 
 
         } catch (Throwable e) {
@@ -284,7 +376,17 @@ public class SkiaStore {
 
     // 辅助方法：统一设置开关状态
     private void setCapability(int glEnum, boolean enabled) {
-        if(enabled) GL11.glEnable(glEnum);
-        else GL11.glDisable(glEnum);
+        try {
+            if(enabled) {
+                GL11.glEnable(glEnum);
+                glEnable.invoke(glEnum);
+            }
+            else {
+                GL11.glDisable(glEnum);
+                glDisable.invoke(glEnum);
+            }
+        } catch (Throwable e) {
+            throw new RuntimeException(e);
+        }
     }
 }

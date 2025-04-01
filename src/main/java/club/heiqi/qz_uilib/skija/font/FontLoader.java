@@ -23,6 +23,8 @@ import java.util.List;
 public class FontLoader {
     public static Logger LOG = LogManager.getLogger();
     public static float FONT_SIZE = 24;
+    /**用此值乘上屏幕高度即可得到动态字体大小*/
+    public static float DYNAMIC_FONT_SIZE = 0.0167f;
     public static List<Font> fonts = new ArrayList<>();
     public static File fontDir;
     public static boolean loaded = false;

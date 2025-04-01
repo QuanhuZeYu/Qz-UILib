@@ -39,32 +39,36 @@ public class GLPixelStore {
      * 4. 备份混合状态参数（混合因子和混合方程）
      */
     public void backup() {
-        // Backup pack parameters
-        packSwapBytes = glGetInteger(GL_PACK_SWAP_BYTES);
-        packLsbFirst = glGetInteger(GL_PACK_LSB_FIRST);
-        packRowLength = glGetInteger(GL_PACK_ROW_LENGTH);
-        packImageHeight = glGetInteger(GL_PACK_IMAGE_HEIGHT);
-        packSkipRows = glGetInteger(GL_PACK_SKIP_ROWS);
-        packSkipPixels = glGetInteger(GL_PACK_SKIP_PIXELS);
-        packSkipImages = glGetInteger(GL_PACK_SKIP_IMAGES);
-        packAlignment = glGetInteger(GL_PACK_ALIGNMENT);
+        try {
+            // Backup pack parameters
+            packSwapBytes = (int) SkiaStore.glGetInteger.invoke(GL_PACK_SWAP_BYTES);
+            packLsbFirst = (int) SkiaStore.glGetInteger.invoke(GL_PACK_LSB_FIRST);
+            packRowLength = (int) SkiaStore.glGetInteger.invoke(GL_PACK_ROW_LENGTH);
+            packImageHeight = (int) SkiaStore.glGetInteger.invoke(GL_PACK_IMAGE_HEIGHT);
+            packSkipRows = (int) SkiaStore.glGetInteger.invoke(GL_PACK_SKIP_ROWS);
+            packSkipPixels = (int) SkiaStore.glGetInteger.invoke(GL_PACK_SKIP_PIXELS);
+            packSkipImages = (int) SkiaStore.glGetInteger.invoke(GL_PACK_SKIP_IMAGES);
+            packAlignment = (int) SkiaStore.glGetInteger.invoke(GL_PACK_ALIGNMENT);
 
-        // Backup unpack parameters
-        unpackSwapBytes = glGetInteger(GL_UNPACK_SWAP_BYTES);
-        unpackLsbFirst = glGetInteger(GL_UNPACK_LSB_FIRST);
-        unpackRowLength = glGetInteger(GL_UNPACK_ROW_LENGTH);
-        unpackImageHeight = glGetInteger(GL_UNPACK_IMAGE_HEIGHT);
-        unpackSkipRows = glGetInteger(GL_UNPACK_SKIP_ROWS);
-        unpackSkipPixels = glGetInteger(GL_UNPACK_SKIP_PIXELS);
-        unpackSkipImages = glGetInteger(GL_UNPACK_SKIP_IMAGES);
-        unpackAlignment = glGetInteger(GL_UNPACK_ALIGNMENT);
+            // Backup unpack parameters
+            unpackSwapBytes = (int) SkiaStore.glGetInteger.invoke(GL_UNPACK_SWAP_BYTES);
+            unpackLsbFirst = (int) SkiaStore.glGetInteger.invoke(GL_UNPACK_LSB_FIRST);
+            unpackRowLength = (int) SkiaStore.glGetInteger.invoke(GL_UNPACK_ROW_LENGTH);
+            unpackImageHeight = (int) SkiaStore.glGetInteger.invoke(GL_UNPACK_IMAGE_HEIGHT);
+            unpackSkipRows = (int) SkiaStore.glGetInteger.invoke(GL_UNPACK_SKIP_ROWS);
+            unpackSkipPixels = (int) SkiaStore.glGetInteger.invoke(GL_UNPACK_SKIP_PIXELS);
+            unpackSkipImages = (int) SkiaStore.glGetInteger.invoke(GL_UNPACK_SKIP_IMAGES);
+            unpackAlignment = (int) SkiaStore.glGetInteger.invoke(GL_UNPACK_ALIGNMENT);
 
-        // Compression parameters (OpenGL 4.2+)
-        if (glGetInteger(GL_UNPACK_COMPRESSED_BLOCK_WIDTH) != -1) {
-            unpackCompressedBlockWidth = glGetInteger(GL_UNPACK_COMPRESSED_BLOCK_WIDTH);
-            unpackCompressedBlockHeight = glGetInteger(GL_UNPACK_COMPRESSED_BLOCK_HEIGHT);
-            unpackCompressedBlockDepth = glGetInteger(GL_UNPACK_COMPRESSED_BLOCK_DEPTH);
-            unpackCompressedBlockSize = glGetInteger(GL_UNPACK_COMPRESSED_BLOCK_SIZE);
+            // Compression parameters (OpenGL 4.2+)
+            if ((int) SkiaStore.glGetInteger.invoke(GL_UNPACK_COMPRESSED_BLOCK_WIDTH) != -1) {
+                unpackCompressedBlockWidth = (int) SkiaStore.glGetInteger.invoke(GL_UNPACK_COMPRESSED_BLOCK_WIDTH);
+                unpackCompressedBlockHeight = (int) SkiaStore.glGetInteger.invoke(GL_UNPACK_COMPRESSED_BLOCK_HEIGHT);
+                unpackCompressedBlockDepth = (int) SkiaStore.glGetInteger.invoke(GL_UNPACK_COMPRESSED_BLOCK_DEPTH);
+                unpackCompressedBlockSize = (int) SkiaStore.glGetInteger.invoke(GL_UNPACK_COMPRESSED_BLOCK_SIZE);
+            }
+        } catch (Throwable e) {
+            throw new RuntimeException(e);
         }
     }
 
@@ -78,32 +82,59 @@ public class GLPixelStore {
      * 4. 恢复像素存储参数
      */
     public void restore() {
-        // Restore pack parameters
-        glPixelStorei(GL_PACK_SWAP_BYTES, packSwapBytes);
-        glPixelStorei(GL_PACK_LSB_FIRST, packLsbFirst);
-        glPixelStorei(GL_PACK_ROW_LENGTH, packRowLength);
-        glPixelStorei(GL_PACK_IMAGE_HEIGHT, packImageHeight);
-        glPixelStorei(GL_PACK_SKIP_ROWS, packSkipRows);
-        glPixelStorei(GL_PACK_SKIP_PIXELS, packSkipPixels);
-        glPixelStorei(GL_PACK_SKIP_IMAGES, packSkipImages);
-        glPixelStorei(GL_PACK_ALIGNMENT, packAlignment);
+        try {
+            // Restore pack parameters
+            glPixelStorei(GL_PACK_SWAP_BYTES, packSwapBytes);
+            glPixelStorei(GL_PACK_LSB_FIRST, packLsbFirst);
+            glPixelStorei(GL_PACK_ROW_LENGTH, packRowLength);
+            glPixelStorei(GL_PACK_IMAGE_HEIGHT, packImageHeight);
+            glPixelStorei(GL_PACK_SKIP_ROWS, packSkipRows);
+            glPixelStorei(GL_PACK_SKIP_PIXELS, packSkipPixels);
+            glPixelStorei(GL_PACK_SKIP_IMAGES, packSkipImages);
+            glPixelStorei(GL_PACK_ALIGNMENT, packAlignment);
 
-        // Restore unpack parameters
-        glPixelStorei(GL_UNPACK_SWAP_BYTES, unpackSwapBytes);
-        glPixelStorei(GL_UNPACK_LSB_FIRST, unpackLsbFirst);
-        glPixelStorei(GL_UNPACK_ROW_LENGTH, unpackRowLength);
-        glPixelStorei(GL_UNPACK_IMAGE_HEIGHT, unpackImageHeight);
-        glPixelStorei(GL_UNPACK_SKIP_ROWS, unpackSkipRows);
-        glPixelStorei(GL_UNPACK_SKIP_PIXELS, unpackSkipPixels);
-        glPixelStorei(GL_UNPACK_SKIP_IMAGES, unpackSkipImages);
-        glPixelStorei(GL_UNPACK_ALIGNMENT, unpackAlignment);
+            SkiaStore.glPixelStorei.invoke(GL_PACK_SWAP_BYTES, packSwapBytes);
+            SkiaStore.glPixelStorei.invoke(GL_PACK_LSB_FIRST, packLsbFirst);
+            SkiaStore.glPixelStorei.invoke(GL_PACK_ROW_LENGTH, packRowLength);
+            SkiaStore.glPixelStorei.invoke(GL_PACK_IMAGE_HEIGHT, packImageHeight);
+            SkiaStore.glPixelStorei.invoke(GL_PACK_SKIP_ROWS, packSkipRows);
+            SkiaStore.glPixelStorei.invoke(GL_PACK_SKIP_PIXELS, packSkipPixels);
+            SkiaStore.glPixelStorei.invoke(GL_PACK_SKIP_IMAGES, packSkipImages);
+            SkiaStore.glPixelStorei.invoke(GL_PACK_ALIGNMENT, packAlignment);
 
-        // Restore compression parameters
-        if (unpackCompressedBlockWidth != -1) {
-            glPixelStorei(GL_UNPACK_COMPRESSED_BLOCK_WIDTH, unpackCompressedBlockWidth);
-            glPixelStorei(GL_UNPACK_COMPRESSED_BLOCK_HEIGHT, unpackCompressedBlockHeight);
-            glPixelStorei(GL_UNPACK_COMPRESSED_BLOCK_DEPTH, unpackCompressedBlockDepth);
-            glPixelStorei(GL_UNPACK_COMPRESSED_BLOCK_SIZE, unpackCompressedBlockSize);
+            // Restore unpack parameters
+            glPixelStorei(GL_UNPACK_SWAP_BYTES, unpackSwapBytes);
+            glPixelStorei(GL_UNPACK_LSB_FIRST, unpackLsbFirst);
+            glPixelStorei(GL_UNPACK_ROW_LENGTH, unpackRowLength);
+            glPixelStorei(GL_UNPACK_IMAGE_HEIGHT, unpackImageHeight);
+            glPixelStorei(GL_UNPACK_SKIP_ROWS, unpackSkipRows);
+            glPixelStorei(GL_UNPACK_SKIP_PIXELS, unpackSkipPixels);
+            glPixelStorei(GL_UNPACK_SKIP_IMAGES, unpackSkipImages);
+            glPixelStorei(GL_UNPACK_ALIGNMENT, unpackAlignment);
+
+            SkiaStore.glPixelStorei.invoke(GL_UNPACK_SWAP_BYTES, unpackSwapBytes);
+            SkiaStore.glPixelStorei.invoke(GL_UNPACK_LSB_FIRST, unpackLsbFirst);
+            SkiaStore.glPixelStorei.invoke(GL_UNPACK_ROW_LENGTH, unpackRowLength);
+            SkiaStore.glPixelStorei.invoke(GL_UNPACK_IMAGE_HEIGHT, unpackImageHeight);
+            SkiaStore.glPixelStorei.invoke(GL_UNPACK_SKIP_ROWS, unpackSkipRows);
+            SkiaStore.glPixelStorei.invoke(GL_UNPACK_SKIP_PIXELS, unpackSkipPixels);
+            SkiaStore.glPixelStorei.invoke(GL_UNPACK_SKIP_IMAGES, unpackSkipImages);
+            SkiaStore.glPixelStorei.invoke(GL_UNPACK_ALIGNMENT, unpackAlignment);
+
+            // Restore compression parameters
+            if (unpackCompressedBlockWidth != -1) {
+                glPixelStorei(GL_UNPACK_COMPRESSED_BLOCK_WIDTH, unpackCompressedBlockWidth);
+                glPixelStorei(GL_UNPACK_COMPRESSED_BLOCK_HEIGHT, unpackCompressedBlockHeight);
+                glPixelStorei(GL_UNPACK_COMPRESSED_BLOCK_DEPTH, unpackCompressedBlockDepth);
+                glPixelStorei(GL_UNPACK_COMPRESSED_BLOCK_SIZE, unpackCompressedBlockSize);
+
+                SkiaStore.glPixelStorei.invoke(GL_UNPACK_COMPRESSED_BLOCK_WIDTH, unpackCompressedBlockWidth);
+                SkiaStore.glPixelStorei.invoke(GL_UNPACK_COMPRESSED_BLOCK_HEIGHT, unpackCompressedBlockHeight);
+                SkiaStore.glPixelStorei.invoke(GL_UNPACK_COMPRESSED_BLOCK_DEPTH, unpackCompressedBlockDepth);
+                SkiaStore.glPixelStorei.invoke(GL_UNPACK_COMPRESSED_BLOCK_SIZE, unpackCompressedBlockSize);
+            }
+        } catch (Throwable e) {
+            throw new RuntimeException(e);
         }
     }
 }

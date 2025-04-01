@@ -3,6 +3,7 @@ package club.heiqi.qz_uilib.skija;
 import club.heiqi.qz_uilib.skija.state.GLPixelStore;
 import club.heiqi.qz_uilib.skija.state.SkiaStore;
 import io.github.humbleui.skija.*;
+import net.minecraft.client.Minecraft;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.lwjgl.opengl.Display;
@@ -16,6 +17,7 @@ import static org.lwjgl.opengl.GL11.*;
 public class GLCanvas {
     public static Logger LOG = LogManager.getLogger();
     public static List<GLCanvas> GLOBALS = new ArrayList<>();
+    public List<Consumer<Canvas>> consumers = new ArrayList<>();
     public DirectContext context;
     public Surface surface;
     public BackendRenderTarget renderTarget;
@@ -37,19 +39,19 @@ public class GLCanvas {
         surface = Surface.wrapBackendRenderTarget(context, renderTarget,
                 SurfaceOrigin.BOTTOM_LEFT, SurfaceColorFormat.RGBA_8888,ColorSpace.getSRGB());
         GLOBALS.add(this);
-        LOG.info("画布已创建, 当前画布数量: {}, _ptr:{} {} {}", GLOBALS.size(), context._ptr, renderTarget._ptr, surface._ptr);
+        /*LOG.info("画布已创建, 当前画布数量: {}, _ptr:{} {} {}", GLOBALS.size(), context._ptr, renderTarget._ptr, surface._ptr);*/
     }
 
     public void preFlush() {
         frameBuffer.bind(Display.getWidth(), Display.getHeight());
         skiaStore.backup();
         pixelStore.backup();
-        // 提示安洁莉卡关闭过背面剔除
         glDisable(GL_CULL_FACE);
-        // 提示安洁莉卡修改过颜色
-        glColor4f(0.3485f,0.186f,0.7863f,0.915f);
         // 画布GL重置
+        glClearColor(0,0,0,0);
+        glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
         context.resetGLAll();
+        surface.getCanvas().save();
     }
 
     public void flush() {
@@ -59,19 +61,33 @@ public class GLCanvas {
         frameBuffer.unbind();
     }
 
+    /**
+     * 插队方法，每帧只有一次render方法的调用机会，如果想要在一张画布上额外添加内容，需要在render前使用该方法来附加
+     * 且该方法会附加到render前进行绘制
+     * @param consumer
+     */
+    public void addRender(Consumer<Canvas> consumer) {
+        consumers.add(consumer);
+    }
+
     public void render(Consumer<Canvas> consumer) {
         preFlush();
-        consumer.accept(surface.getCanvas());
+        Canvas canvas = surface.getCanvas();
+        canvas.clear(0x00000000);
+        for (Consumer<Canvas> c : consumers) {
+            c.accept(canvas);
+        }
+        consumers.clear();
+        consumer.accept(canvas);
         flush();
-        frameBuffer.renderToScreen();
         try {
-            SkiaStore.glEnable.invoke(GL_CULL_FACE);
             SkiaStore.glBindSampler.invoke(0,0);
-            SkiaStore.glEnable.invoke(GL_DEPTH_TEST);
-            SkiaStore.glDepthMask.invoke(true);
         } catch (Throwable e) {
             throw new RuntimeException(e);
         }
+        // 将canvas绘制内容绘制到MC画布上
+        int mcFBO = Minecraft.getMinecraft().getFramebuffer().framebufferObject;
+        frameBuffer.renderToFBO(mcFBO);
     }
 
     public void dispose() {
@@ -80,7 +96,7 @@ public class GLCanvas {
         renderTarget.close();
         frameBuffer.dispose();
         GLOBALS.remove(this);
-        LOG.info("画布已清理, 画布数量:{}", GLOBALS.size());
+        /*LOG.info("画布已清理, 画布数量:{}", GLOBALS.size());*/
     }
 
     public void resize() {
