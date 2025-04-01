@@ -33,7 +33,7 @@ public class GameMenu {
             Font font = new Font(FontLoader.getDefaultFont().getTypeface()).setSize(0.0097f* Display.getHeight());
             Vector2f strPos = StringAlignUtils.textTLToTarget(label,font,new Vector2f(0,0));
             canvas1.drawString(label,strPos.x,strPos.y, font,strP);
-            strP.close();
+            strP.close(); font.close();
         });
     }
 
