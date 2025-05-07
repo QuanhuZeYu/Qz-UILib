@@ -6,9 +6,6 @@ import io.github.humbleui.skija.Font;
 import io.github.humbleui.skija.Typeface;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
-import org.lwjgl.opengl.GL11;
-import org.lwjgl.opengl.GL13;
-import org.lwjgl.opengl.GL33;
 
 import java.io.File;
 import java.io.FileInputStream;
@@ -28,10 +25,11 @@ public class FontLoader {
     public static List<Font> fonts = new ArrayList<>();
     public static File fontDir;
     public static boolean loaded = false;
-    public static SkiaStore skiaStore = new SkiaStore();
+    public static SkiaStore skiaStore;
 
     public static void load() {
         if (loaded) return;
+        skiaStore = new SkiaStore();
         _backupGLState();
 
         File mcDir = ConstField.MC_DIR;

@@ -42,6 +42,9 @@ public class GLCanvas {
         /*LOG.info("画布已创建, 当前画布数量: {}, _ptr:{} {} {}", GLOBALS.size(), context._ptr, renderTarget._ptr, surface._ptr);*/
     }
 
+    /**
+     * skija进行绘制前的状态准备备份 并初始化skija的opengl状态
+     */
     public void preFlush() {
         frameBuffer.bind(Display.getWidth(), Display.getHeight());
         skiaStore.backup();
@@ -54,6 +57,9 @@ public class GLCanvas {
         surface.getCanvas().save();
     }
 
+    /**
+     * skija状态立即刷新 更新画布内容到opengl
+     */
     public void flush() {
         context.flush();
         pixelStore.restore();

@@ -11,6 +11,9 @@ import java.nio.FloatBuffer;
 
 import static org.lwjgl.opengl.GL15.glBufferData;
 
+/**
+ * 用于直接在整个窗口区域覆盖一层贴图的快捷工具类
+ */
 public class FullScreenQuad {
     public static final float[] VERTICES = {
             // 位置     纹理坐标
@@ -57,6 +60,10 @@ public class FullScreenQuad {
         GL30.glBindVertexArray(0);
     }
 
+    /**
+     * 只需要绑定好贴图ID后即可使用该方法渲染贴图到全屏区域<br>
+     * 注意：会拉伸到屏幕比例
+     */
     public static void render() {
         GL30.glBindVertexArray(vaoID);
         try {

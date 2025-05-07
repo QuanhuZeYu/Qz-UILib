@@ -46,7 +46,7 @@ public class TestGUI extends BaseGUI {
             String debug3 = "上个鼠标位置记录:("+mouseInfo.prevPos.x+","+mouseInfo.prevPos.y+") | 当前记录:("+mouseInfo.currPos.x+","+mouseInfo.currPos.y+")";
             float leading = font.getMetrics().getLeading();
             float fontHeight = font.getMetrics().getHeight();
-            float spacing = leading+fontHeight;
+            float spacing = leading+fontHeight; // 行间距
             Vector2f debug1Pos = StringAlignUtils.textBLToTarget(debug1,font,new Vector2f(0, Display.getHeight()));
             canvas1.drawString(debug1,debug1Pos.x,debug1Pos.y,font,strPaint);
             canvas1.drawString(debug2,debug1Pos.x,debug1Pos.y-spacing,font,strPaint);

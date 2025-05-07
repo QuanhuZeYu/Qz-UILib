@@ -20,7 +20,7 @@ public class GameMenu {
     public static GLCanvas canvas;
     public long timer = -1;
 
-    @SubscribeEvent
+    /*@SubscribeEvent
     public void onClientTick(TickEvent.RenderTickEvent event) {
         if (timer == -1) {timer = System.currentTimeMillis();}
         if (System.currentTimeMillis() - timer < 1_000) return;
@@ -35,7 +35,7 @@ public class GameMenu {
             canvas1.drawString(label,strPos.x,strPos.y, font,strP);
             strP.close(); font.close();
         });
-    }
+    }*/
 
     public GameMenu register() {
         MinecraftForge.EVENT_BUS.register(this);
