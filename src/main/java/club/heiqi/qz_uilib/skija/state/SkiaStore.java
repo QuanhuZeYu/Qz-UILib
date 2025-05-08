@@ -48,12 +48,12 @@ public class SkiaStore {
     // FIXED_FUNCTION
     private boolean lightingEnabled;
     private boolean fogEnabled;
-    private final FloatBuffer fogColor = BufferUtils.createFloatBuffer(1);
+    private final FloatBuffer fogColor = BufferUtils.createFloatBuffer(16);
     // 面剔除
     private boolean cullFaceEnabled;
     private int cullFaceMode, frontFace;
     // 颜色+混合
-    private final FloatBuffer currentColor = BufferUtils.createFloatBuffer(4);
+    private final FloatBuffer currentColor = BufferUtils.createFloatBuffer(16);
     private boolean blendEnabled,frameBufferSRGBEnabled;
     private int blendSrcRGB, blendDstRGB, blendSrcAlpha, blendDstAlpha;
     private int blendEquation, blendEquationRGB, blendEquationAlpha;
@@ -61,7 +61,7 @@ public class SkiaStore {
     // 深度
     private boolean depthTest,depthMask;
     private int depthFunc;
-    private final FloatBuffer depthRange = BufferUtils.createFloatBuffer(2);
+    private final FloatBuffer depthRange = BufferUtils.createFloatBuffer(16);
     // 多边形
     private boolean polygonStipple,polygonOffsetFill,polygonSmooth;
     // LOGIC OP
@@ -131,137 +131,243 @@ public class SkiaStore {
 
     public void backup() {
         try {
-            program = (int) glGetInteger.invoke(GL20.GL_CURRENT_PROGRAM);
-            // 获取支持的顶点属性最大数量
-            IntBuffer maxAttribs = BufferUtils.createIntBuffer(1);
-            glGetIntegerBuffer.invoke(GL20.GL_MAX_VERTEX_ATTRIBS, maxAttribs);
-            vertexAttribArrayStates = new boolean[maxAttribs.get(0)];
-            // 顶点状态
-            IntBuffer enable = BufferUtils.createIntBuffer(1);
-            for (int i = 0; i < vertexAttribArrayStates.length; i++) {
-                glGetVertexAttrib.invoke(i, GL20.GL_VERTEX_ATTRIB_ARRAY_ENABLED, enable);
-                vertexAttribArrayStates[i] = enable.get(0) == GL11.GL_TRUE;
+            // 1. 备份当前着色器程序
+            try {
+                program = (int) glGetInteger.invoke(GL20.GL_CURRENT_PROGRAM);
+            } catch (Exception e) {
+                throw new RuntimeException("Failed to get current program", e);
             }
-            vertexProgramPointSize = (boolean) glGetBoolean.invoke(GL20.GL_VERTEX_PROGRAM_POINT_SIZE);
-            pointSmooth = (boolean) glGetBoolean.invoke(GL11.GL_POINT_SMOOTH);
-            vaoBinding = (int) glGetInteger.invoke(GL30.GL_VERTEX_ARRAY_BINDING);
-            arrayBufferBinding = (int) glGetInteger.invoke(GL15.GL_ARRAY_BUFFER_BINDING);
-            elementArrayBufferBinding = (int) glGetInteger.invoke(GL15.GL_ELEMENT_ARRAY_BUFFER_BINDING);
-            // 线
-            lineWidth = (float) glGetFloat.invoke(GL11.GL_LINE_WIDTH);
-            lineSmooth = (boolean) glGetBoolean.invoke(GL11.GL_LINE_SMOOTH);
-            // 纹理
-            activeTextureUnit = (int) glGetInteger.invoke(GL13.GL_ACTIVE_TEXTURE);
-            // 备份纹理目标的绑定状态
-            Map<Integer, Integer> bindingToTarget = new HashMap<>();
-            bindingToTarget.put(GL11.GL_TEXTURE_BINDING_2D, GL11.GL_TEXTURE_2D);
-            bindingToTarget.put(GL12.GL_TEXTURE_BINDING_3D, GL12.GL_TEXTURE_3D);
-            bindingToTarget.put(GL13.GL_TEXTURE_BINDING_CUBE_MAP, GL13.GL_TEXTURE_CUBE_MAP);
-            for (Map.Entry<Integer, Integer> entry : bindingToTarget.entrySet()) {
-                int bindingEnum = entry.getKey();
-                int target = entry.getValue();
-                int value = (int) glGetInteger.invoke(bindingEnum);
-                textureBindings.put(target, value);
+
+            // 2. 处理顶点属性数组状态
+            try {
+                IntBuffer maxAttribs = BufferUtils.createIntBuffer(16);
+                glGetIntegerBuffer.invoke(GL20.GL_MAX_VERTEX_ATTRIBS, maxAttribs);
+                vertexAttribArrayStates = new boolean[maxAttribs.get(0)];
+
+                IntBuffer enable = BufferUtils.createIntBuffer(16);
+                for (int i = 0; i < vertexAttribArrayStates.length; i++) {
+                    try {
+                        glGetVertexAttrib.invoke(i, GL20.GL_VERTEX_ATTRIB_ARRAY_ENABLED, enable);
+                        vertexAttribArrayStates[i] = enable.get(0) == GL11.GL_TRUE;
+                        enable.clear();
+                    } catch (Exception e) {
+                        throw new RuntimeException("Failed to get vertex attrib array state for index " + i, e);
+                    }
+                }
+            } catch (Exception e) {
+                throw new RuntimeException("Error processing vertex attributes", e);
             }
-            // 视图
-            IntBuffer buffer = BufferUtils.createIntBuffer(4);
-            glGetIntegerBuffer.invoke(GL11.GL_VIEWPORT, buffer);
-            buffer.get(viewport);
-            buffer.clear();
-            glGetIntegerBuffer.invoke(GL11.GL_SCISSOR_BOX, buffer);
-            buffer.get(scissorBox);
-            scissorTest = (boolean) glGetBoolean.invoke(GL11.GL_SCISSOR_TEST);
-            buffer.clear();
-            // MSAA
-            multisampleEnabled = (boolean) glIsEnabled.invoke(GL13.GL_MULTISAMPLE);
-            // 模板
-            {
+
+            // 3. 顶点相关状态
+            try {
+                vertexProgramPointSize = (boolean) glGetBoolean.invoke(GL20.GL_VERTEX_PROGRAM_POINT_SIZE);
+                pointSmooth = (boolean) glGetBoolean.invoke(GL11.GL_POINT_SMOOTH);
+                vaoBinding = (int) glGetInteger.invoke(GL30.GL_VERTEX_ARRAY_BINDING);
+                arrayBufferBinding = (int) glGetInteger.invoke(GL15.GL_ARRAY_BUFFER_BINDING);
+                elementArrayBufferBinding = (int) glGetInteger.invoke(GL15.GL_ELEMENT_ARRAY_BUFFER_BINDING);
+            } catch (Exception e) {
+                throw new RuntimeException("Error getting vertex related states", e);
+            }
+
+            // 4. 线状态
+            try {
+                lineWidth = (float) glGetFloat.invoke(GL11.GL_LINE_WIDTH);
+                lineSmooth = (boolean) glGetBoolean.invoke(GL11.GL_LINE_SMOOTH);
+            } catch (Exception e) {
+                throw new RuntimeException("Error getting line states", e);
+            }
+
+            // 5. 纹理绑定状态
+            try {
+                activeTextureUnit = (int) glGetInteger.invoke(GL13.GL_ACTIVE_TEXTURE);
+
+                Map<Integer, Integer> bindingToTarget = new HashMap<>();
+                bindingToTarget.put(GL11.GL_TEXTURE_BINDING_2D, GL11.GL_TEXTURE_2D);
+                bindingToTarget.put(GL12.GL_TEXTURE_BINDING_3D, GL12.GL_TEXTURE_3D);
+                bindingToTarget.put(GL13.GL_TEXTURE_BINDING_CUBE_MAP, GL13.GL_TEXTURE_CUBE_MAP);
+
+                for (Map.Entry<Integer, Integer> entry : bindingToTarget.entrySet()) {
+                    try {
+                        int bindingEnum = entry.getKey();
+                        int target = entry.getValue();
+                        int value = (int) glGetInteger.invoke(bindingEnum);
+                        textureBindings.put(target, value);
+                    } catch (Exception e) {
+                        throw new RuntimeException(String.format("Failed to get texture binding for target 0x%X", entry.getValue()), e);
+                    }
+                }
+            } catch (Exception e) {
+                throw new RuntimeException("Error processing texture states", e);
+            }
+
+            // 6. 视图和剪裁状态
+            IntBuffer buffer = BufferUtils.createIntBuffer(16);
+            try {
+                // 视口
+                glGetIntegerBuffer.invoke(GL11.GL_VIEWPORT, buffer);
+                buffer.get(viewport);
+                buffer.clear();
+
+                // 剪裁框
+                glGetIntegerBuffer.invoke(GL11.GL_SCISSOR_BOX, buffer);
+                buffer.get(scissorBox);
+                buffer.clear();
+
+                scissorTest = (boolean) glGetBoolean.invoke(GL11.GL_SCISSOR_TEST);
+            } catch (Exception e) {
+                throw new RuntimeException("Error getting viewport/scissor states", e);
+            }
+
+            // 7. 模板测试状态
+            try {
                 stencilTestEnabled = (boolean) glIsEnabled.invoke(GL11.GL_STENCIL_TEST);
-                // Front
-                glGetIntegerBuffer.invoke(GL11.GL_STENCIL_FUNC, buffer);
-                stencilFuncFront = buffer.get(0);
-                buffer.clear();
-                glGetIntegerBuffer.invoke(GL11.GL_STENCIL_REF, buffer);
-                stencilRefFront = buffer.get(0);
-                buffer.clear();
-                glGetIntegerBuffer.invoke(GL11.GL_STENCIL_VALUE_MASK, buffer);
-                stencilMaskFront = buffer.get(0);
-                buffer.clear();
-                glGetIntegerBuffer.invoke(GL11.GL_STENCIL_FAIL, buffer);
-                stencilFailFront = buffer.get(0);
-                buffer.clear();
-                glGetIntegerBuffer.invoke(GL11.GL_STENCIL_PASS_DEPTH_FAIL, buffer);
-                depthFailFront = buffer.get(0);
-                buffer.clear();
-                glGetIntegerBuffer.invoke(GL11.GL_STENCIL_PASS_DEPTH_PASS, buffer);
-                passFront = buffer.get(0);
-                buffer.clear();
-                // Back（需要OpenGL 2.0+）
-                glGetIntegerBuffer.invoke(GL20.GL_STENCIL_BACK_FUNC, buffer);
-                stencilFuncBack = buffer.get(0);
-                buffer.clear();
-                glGetIntegerBuffer.invoke(GL20.GL_STENCIL_BACK_REF, buffer);
-                stencilRefBack = buffer.get(0);
-                buffer.clear();
-                glGetIntegerBuffer.invoke(GL20.GL_STENCIL_BACK_VALUE_MASK, buffer);
-                stencilMaskBack = buffer.get(0);
-                buffer.clear();
-                glGetIntegerBuffer.invoke(GL20.GL_STENCIL_BACK_FAIL, buffer);
-                stencilFailBack = buffer.get(0);
-                buffer.clear();
-                glGetIntegerBuffer.invoke(GL20.GL_STENCIL_BACK_PASS_DEPTH_FAIL, buffer);
-                depthFailBack = buffer.get(0);
-                buffer.clear();
-                glGetIntegerBuffer.invoke(GL20.GL_STENCIL_BACK_PASS_DEPTH_PASS, buffer);
-                passBack = buffer.get(0);
-                buffer.clear();
+
+                // 前模板参数
+                try {
+                    glGetIntegerBuffer.invoke(GL11.GL_STENCIL_FUNC, buffer);
+                    stencilFuncFront = buffer.get(0);
+                    buffer.clear();
+
+                    glGetIntegerBuffer.invoke(GL11.GL_STENCIL_REF, buffer);
+                    stencilRefFront = buffer.get(0);
+                    buffer.clear();
+
+                    glGetIntegerBuffer.invoke(GL11.GL_STENCIL_VALUE_MASK, buffer);
+                    stencilMaskFront = buffer.get(0);
+                    buffer.clear();
+
+                    glGetIntegerBuffer.invoke(GL11.GL_STENCIL_FAIL, buffer);
+                    stencilFailFront = buffer.get(0);
+                    buffer.clear();
+
+                    glGetIntegerBuffer.invoke(GL11.GL_STENCIL_PASS_DEPTH_FAIL, buffer);
+                    depthFailFront = buffer.get(0);
+                    buffer.clear();
+
+                    glGetIntegerBuffer.invoke(GL11.GL_STENCIL_PASS_DEPTH_PASS, buffer);
+                    passFront = buffer.get(0);
+                    buffer.clear();
+                } catch (Exception e) {
+                    throw new RuntimeException("Error getting front stencil parameters", e);
+                }
+
+                // 后模板参数
+                try {
+                    glGetIntegerBuffer.invoke(GL20.GL_STENCIL_BACK_FUNC, buffer);
+                    stencilFuncBack = buffer.get(0);
+                    buffer.clear();
+
+                    glGetIntegerBuffer.invoke(GL20.GL_STENCIL_BACK_REF, buffer);
+                    stencilRefBack = buffer.get(0);
+                    buffer.clear();
+
+                    glGetIntegerBuffer.invoke(GL20.GL_STENCIL_BACK_VALUE_MASK, buffer);
+                    stencilMaskBack = buffer.get(0);
+                    buffer.clear();
+
+                    glGetIntegerBuffer.invoke(GL20.GL_STENCIL_BACK_FAIL, buffer);
+                    stencilFailBack = buffer.get(0);
+                    buffer.clear();
+
+                    glGetIntegerBuffer.invoke(GL20.GL_STENCIL_BACK_PASS_DEPTH_FAIL, buffer);
+                    depthFailBack = buffer.get(0);
+                    buffer.clear();
+
+                    glGetIntegerBuffer.invoke(GL20.GL_STENCIL_BACK_PASS_DEPTH_PASS, buffer);
+                    passBack = buffer.get(0);
+                    buffer.clear();
+                } catch (Exception e) {
+                    throw new RuntimeException("Error getting back stencil parameters", e);
+                }
+            } catch (Exception e) {
+                throw new RuntimeException("Error processing stencil states", e);
             }
-            // fixed
-            lightingEnabled = (boolean) SkiaStore.glIsEnabled.invoke(GL11.GL_LIGHTING);
-            fogEnabled = (boolean) SkiaStore.glIsEnabled.invoke(GL11.GL_FOG);
-            if (fogEnabled) glGetFloatBuffer.invoke(GL11.GL_FOG_COLOR, fogColor);
-            // 面剔除
-            cullFaceEnabled = (boolean) glIsEnabled.invoke(GL11.GL_CULL_FACE);
-            cullFaceMode = (int) glGetInteger.invoke(GL11.GL_CULL_FACE_MODE);
-            frontFace = (int) glGetInteger.invoke(GL11.GL_FRONT_FACE);
-            // 颜色+混合
-            glGetFloatBuffer.invoke(GL11.GL_CURRENT_COLOR,currentColor);
-            blendEnabled = (boolean) glIsEnabled.invoke(GL11.GL_BLEND);
-            frameBufferSRGBEnabled = (boolean) glIsEnabled.invoke(GL30.GL_FRAMEBUFFER_SRGB);
-            blendSrcRGB = (int) glGetInteger.invoke(GL14.GL_BLEND_SRC_RGB);
-            blendDstRGB = (int) glGetInteger.invoke(GL14.GL_BLEND_DST_RGB);
-            blendSrcAlpha = (int) glGetInteger.invoke(GL14.GL_BLEND_SRC_ALPHA);
-            blendDstAlpha = (int) glGetInteger.invoke(GL14.GL_BLEND_DST_ALPHA);
 
-            blendEquation = (int) glGetInteger.invoke(GL14.GL_BLEND_EQUATION);
-            blendEquationRGB = (int) glGetInteger.invoke(GL20.GL_BLEND_EQUATION_RGB);
-            blendEquationAlpha = (int) glGetInteger.invoke(GL20.GL_BLEND_EQUATION_ALPHA);
-            ByteBuffer buffer1 = BufferUtils.createByteBuffer(4);
-            SkiaStore.glGetBooleanBuffer.invoke(GL11.GL_COLOR_WRITEMASK,buffer1);
-            colorMaskR = buffer1.get(0)==1;
-            colorMaksG = buffer1.get(1)==1;
-            colorMaskB = buffer1.get(2)==1;
-            colorMaskA = buffer1.get(3)==1;
-            // 深度
-            depthTest = (boolean) glIsEnabled.invoke(GL11.GL_DEPTH_TEST);
-            depthFunc = (int) glGetInteger.invoke(GL11.GL_DEPTH_FUNC);
-            depthMask = (boolean) SkiaStore.glGetBoolean.invoke(GL11.GL_DEPTH_WRITEMASK);
-            glGetFloatBuffer.invoke(GL11.GL_DEPTH_RANGE,depthRange);
-            // 多边形
-            polygonStipple = (boolean) glIsEnabled.invoke(GL11.GL_POLYGON_STIPPLE);
-            polygonOffsetFill = (boolean) glIsEnabled.invoke(GL11.GL_POLYGON_OFFSET_FILL);
-            polygonSmooth = (boolean) glIsEnabled.invoke(GL11.GL_POLYGON_SMOOTH);
-            // LOGIC OP
-            colorLogicOp = (boolean) glIsEnabled.invoke(GL11.GL_COLOR_LOGIC_OP);
-            indexLogicOp = (boolean) glIsEnabled.invoke(GL11.GL_INDEX_LOGIC_OP);
-            // MISC
-            ditherEnabled = (boolean) glIsEnabled.invoke(GL11.GL_DITHER);
+            // 8. 混合和颜色状态
+            try {
+                // 当前颜色
+                currentColor.clear();
+                glGetFloatBuffer.invoke(GL11.GL_CURRENT_COLOR, currentColor);
+
+                // 混合状态
+                blendEnabled = (boolean) glIsEnabled.invoke(GL11.GL_BLEND);
+                frameBufferSRGBEnabled = (boolean) glIsEnabled.invoke(GL30.GL_FRAMEBUFFER_SRGB);
+
+                // 混合参数
+                blendSrcRGB = (int) glGetInteger.invoke(GL14.GL_BLEND_SRC_RGB);
+                blendDstRGB = (int) glGetInteger.invoke(GL14.GL_BLEND_DST_RGB);
+                blendSrcAlpha = (int) glGetInteger.invoke(GL14.GL_BLEND_SRC_ALPHA);
+                blendDstAlpha = (int) glGetInteger.invoke(GL14.GL_BLEND_DST_ALPHA);
+
+                // 混合方程
+                blendEquation = (int) glGetInteger.invoke(GL14.GL_BLEND_EQUATION);
+                blendEquationRGB = (int) glGetInteger.invoke(GL20.GL_BLEND_EQUATION_RGB);
+                blendEquationAlpha = (int) glGetInteger.invoke(GL20.GL_BLEND_EQUATION_ALPHA);
+
+                // 颜色掩码
+                ByteBuffer buffer1 = BufferUtils.createByteBuffer(16);
+                SkiaStore.glGetBooleanBuffer.invoke(GL11.GL_COLOR_WRITEMASK, buffer1);
+                colorMaskR = buffer1.get(0) == 1;
+                colorMaksG = buffer1.get(1) == 1;
+                colorMaskB = buffer1.get(2) == 1;
+                colorMaskA = buffer1.get(3) == 1;
+            } catch (Exception e) {
+                throw new RuntimeException("Error getting blend/color states", e);
+            }
 
 
-            // 最后调用一下空着色器提示安洁莉卡切换过着色器
-            /*glUseProgram.invoke(ShaderManager.shaderManagers.get(ShaderName.VOID_SHADER.name()).shaderID);*/
+            // 9. 深度测试状态
+            try {
+                depthTest = (boolean) glIsEnabled.invoke(GL11.GL_DEPTH_TEST);
+                depthFunc = (int) glGetInteger.invoke(GL11.GL_DEPTH_FUNC);
+                depthMask = (boolean) SkiaStore.glGetBoolean.invoke(GL11.GL_DEPTH_WRITEMASK);
+                depthRange.clear();
+                glGetFloatBuffer.invoke(GL11.GL_DEPTH_RANGE, depthRange);
+            } catch (Exception e) {
+                throw new RuntimeException("Error getting depth states", e);
+            }
+
+            // 10. 其他状态
+            try {
+                // 固定功能管线
+                lightingEnabled = (boolean) SkiaStore.glIsEnabled.invoke(GL11.GL_LIGHTING);
+                fogEnabled = (boolean) SkiaStore.glIsEnabled.invoke(GL11.GL_FOG);
+                if (fogEnabled) {
+                    fogColor.clear();
+                    glGetFloatBuffer.invoke(GL11.GL_FOG_COLOR, fogColor);
+                }
+
+                // 面剔除
+                cullFaceEnabled = (boolean) glIsEnabled.invoke(GL11.GL_CULL_FACE);
+                cullFaceMode = (int) glGetInteger.invoke(GL11.GL_CULL_FACE_MODE);
+                frontFace = (int) glGetInteger.invoke(GL11.GL_FRONT_FACE);
+
+                // 多边形模式
+                polygonStipple = (boolean) glIsEnabled.invoke(GL11.GL_POLYGON_STIPPLE);
+                polygonOffsetFill = (boolean) glIsEnabled.invoke(GL11.GL_POLYGON_OFFSET_FILL);
+                polygonSmooth = (boolean) glIsEnabled.invoke(GL11.GL_POLYGON_SMOOTH);
+
+                // 逻辑操作
+                colorLogicOp = (boolean) glIsEnabled.invoke(GL11.GL_COLOR_LOGIC_OP);
+                indexLogicOp = (boolean) glIsEnabled.invoke(GL11.GL_INDEX_LOGIC_OP);
+
+                // 其他功能
+                ditherEnabled = (boolean) glIsEnabled.invoke(GL11.GL_DITHER);
+                multisampleEnabled = (boolean) glIsEnabled.invoke(GL13.GL_MULTISAMPLE);
+            } catch (Exception e) {
+                throw new RuntimeException("Error getting miscellaneous states", e);
+            }
+
+            // 11. 最后操作（保留原始注释）
+        /*try {
+            glUseProgram.invoke(ShaderManager.shaderManagers.get(ShaderName.VOID_SHADER.name()).shaderID);
+        } catch (Exception e) {
+            throw new RuntimeException("Failed to switch to void shader", e);
+        }*/
+        } catch (RuntimeException e) {
+            throw e; // 已经包装过的异常直接抛出
         } catch (Throwable e) {
-            throw new RuntimeException(e);
+            throw new RuntimeException("Unexpected error during backup", e);
         }
     }
 
