@@ -11,4 +11,3 @@
 ### ⚠️ 已知限制
 
   - 需要 OpenGL 3.2+ 兼容显卡
-  - 在集成显卡设备上建议启用 config.forceSoftwareRenderer
