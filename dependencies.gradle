@@ -33,6 +33,9 @@
  *
  * For more details, see https://docs.gradle.org/8.0.1/userguide/java_library_plugin.html#sec:java_library_configurations_graph
  */
+
+def lwjglVersion = "3.4.0-SNAPSHOT"
+
 dependencies {
 
     implementation("org.apache.commons:commons-configuration2:2.11.0")
@@ -41,18 +44,25 @@ dependencies {
     implementation(files("libs/skija-shared-java9-0.116.4.jar"))
     shadowImplementation(files("libs/skija-shared-java9-0.116.4.jar"))
     // 普通依赖
-    /*implementation("io.github.humbleui:skija-shared:0.116.4")
-    shadowImplementation("io.github.humbleui:skija-shared:0.116.4")*/
+    /*implementation("io.github.humbleui:skija-shared:0.116.4")*/
+    /*shadowImplementation("io.github.humbleui:skija-shared:0.116.4")*/
     implementation("io.github.humbleui:skija-windows-x64:0.116.4")
     shadowImplementation("io.github.humbleui:skija-windows-x64:0.116.4")
     // 动画库
     implementation("org.mini2Dx:universal-tween-engine:6.3.3")
     shadowImplementation("org.mini2Dx:universal-tween-engine:6.3.3")
 
-    implementation("com.github.GTNewHorizons:GT5-Unofficial:5.09.51.189:dev")
-    implementation("com.github.GTNewHorizons:Angelica:1.0.0-beta40:dev")
-    implementation("com.github.GTNewHorizons:Angelica:1.0.0-beta40:api")
+    // 游戏mod测试
+    implementation("com.github.GTNewHorizons:GT5-Unofficial:5.09.51.273:dev")
+    implementation("com.github.GTNewHorizons:Angelica:1.0.0-beta41:dev")
+    implementation("com.github.GTNewHorizons:Angelica:1.0.0-beta41:api")
+    implementation("com.github.GTNewHorizons:lwjgl3ify:2.1.12:dev")
+    /*implementation(files("libs/lwjgl3ify-2.1.9-sdl3.11+2a1ae287d0-dirty-dev.jar"))
+    implementation("org.lwjgl:lwjgl-sdl:${lwjglVersion}")
+    implementation("org.lwjgl:lwjgl-sdl:${lwjglVersion}:${lwjgl3Natives}")*/
 
-    runtimeOnlyNonPublishable("com.github.GTNewHorizons:NotEnoughItems:2.7.4-GTNH:dev")
+    runtimeOnly("com.github.GTNewHorizons:NotEnoughItems:2.7.4-GTNH:dev")
     runtimeOnly("com.github.GTNewHorizons:waila:1.8.2:dev")
+    runtimeOnly("com.github.GTNewHorizons:Applied-Energistics-2-Unofficial:rv3-beta-597-GTNH:dev")
+
 }
