@@ -2,6 +2,7 @@ package club.heiqi.qz_uilib.skija.gui;
 
 import club.heiqi.qz_uilib.skija.GLCanvas;
 import club.heiqi.qz_uilib.skija.gui.component.UIComponent;
+import me.eigenraven.lwjgl3ify.api.InputEvents;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.FontRenderer;
 import net.minecraft.client.gui.GuiButton;
@@ -10,8 +11,7 @@ import net.minecraft.item.ItemStack;
 import net.minecraft.util.IIcon;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
-import org.joml.Vector2i;
-import org.lwjgl.input.Keyboard;
+import org.lwjglx.input.Keyboard;
 import org.lwjgl.input.Mouse;
 import org.lwjgl.opengl.Display;
 
@@ -28,11 +28,9 @@ import java.util.*;
  * 需要注意的是窗口缩放会重置该类下所有属性，但是不会重置您自己定义的属性，不过仍然推荐您在{@code onGuiClosed}中定义好清除工作，
  * 由于angelica的诡异机制可能导致GUI类的异常行为，不要在GUI类中定义可长久持有的字段后不清除，angelica会缓存GUI实例导致错误甚至崩溃
  */
-public abstract class BaseGUI extends GuiScreen {
+public abstract class BaseGUI extends GuiScreen implements InputEvents.KeyboardListener {
     public static Logger LOG = LogManager.getLogger();
-    /**
-     * 狗操的angelica，缓存你妈的GUI类，纯你妈傻逼，多调用个init会少块肉是吧？
-     */
+
     public boolean isInit = false;
     /**
      * 用栈来表示UI层级, 该字段请勿手动修改, 类的实例化和销毁时会自动更新栈
@@ -42,7 +40,6 @@ public abstract class BaseGUI extends GuiScreen {
     public boolean init = false;
     public long startTime;
 
-    public MouseInfo mouseInfo = new MouseInfo();
     public KeyboardPressInfo keyboardPressInfo = new KeyboardPressInfo();
     public MouseState mouseState = MouseState.NONE;
 
@@ -54,9 +51,6 @@ public abstract class BaseGUI extends GuiScreen {
         HOLD, // 长按 | 移动时按下
         PRESS, // 按下
         RELEASE, // 释放
-
-        CLICK_MULTI, // 连续点击两次以上
-        CLICKED, // 按下 - 释放 完整动作才算点击 位置容差 5
     }
     public static int HOLD_TIME = 300; // 300ms
     // 所有的组件列表
@@ -65,7 +59,7 @@ public abstract class BaseGUI extends GuiScreen {
 
 
     /**
-     * 绘制 {@code component} 请记得讲组件添加到 {@code components} 中, 否则控件无法更新各类事件
+     * 绘制 {@code component} 请记得将组件添加到 {@code components} 中, 否则控件无法更新各类事件
      * @param mouseX       鼠标X坐标
      * @param mouseY       鼠标Y坐标
      * @param partialTicks 部分刻时间（用于动画插值）
@@ -80,37 +74,48 @@ public abstract class BaseGUI extends GuiScreen {
         });
     }
 
-    public List<UIComponent> hoveredCache = new ArrayList<>();
     /**
-     * 游戏循环更新界面
+     * 游戏循环更新界面 - 逻辑帧更新的屏幕更新
      */
     @Override
     public void updateScreen() {
         super.updateScreen();
+        int mouseX = Mouse.getX();
+        int mouseY = Display.getHeight() - Mouse.getY();
+        // 组件更新 - 依赖输入的组件更新
         for (UIComponent component : new ArrayList<>(components)) {
             component.onTick(); // 自动触发容器中所有组件的更新
-            // 尝试触发onHover
-            if (component.contains(mouseInfo.currPos.x, mouseInfo.currPos.y)) {
-                if (hoveredCache.contains(component)) continue; // 不能return 否则只会停留在最大的父组件上
-                else hoveredCache.add(component);
-                component.onHover(mouseInfo);
-            }
-            else {
-                if (hoveredCache.contains(component)) {
-                    hoveredCache.remove(component);
-                    component.onMouseOut(mouseInfo);
+            // 如果鼠标在组件内部
+            if (component.contains(mouseX,mouseY)) {
+                component.onHoverTick(true);
+                // 如果当前帧是拖拽事件 且之前点击过该组件，则该组件进行拖拽
+                if (mouseState == MouseState.DRAG) {
+                    component.onDragTick();
                 }
+                if (mouseState == MouseState.PRESS) {
+                    component.onPrePressTick(true);
+                    component.onPressTick(true);
+                }
+                if (mouseState == MouseState.RELEASE) {
+                    component.onPreRelease(true);
+                    component.onRelease(true);
+                    component.onPostRelease(true);
+                }
+                // 不可穿透时阻止事件传播到其他组件上
+                if (!component.penetrate) return;
             }
-            // 尝试触发click
-            if (mouseState == MouseState.CLICKED) {
-                component.onClick();
-                LOG.info("{} 触发点击事件", component.getClass().getName());
+            // 鼠标离开或不在组件内部时
+            else {
+                component.onMouseOutTick();
             }
         }
     }
 
 
-
+    /*@Override
+    public void onTextEvent(InputEvents.TextEvent event) {
+        LOG.info(event.text);
+    }*/
 
     /**
      * 处理输入事件（包含键盘和鼠标）
@@ -118,24 +123,7 @@ public abstract class BaseGUI extends GuiScreen {
     @Override
     public void handleInput() {
         if (Mouse.isCreated()) {
-            mouseState = MouseState.NONE;
-            while (Mouse.next()) { // 鼠标事件只在 移动 点击时更新
-                this.handleMouseInput();
-            }
-            // 检查长按未移动
-            if (!mouseInfo.clicked.isEmpty()) {
-                for (Map.Entry<Integer, Long> entry : mouseInfo.clicked.entrySet()) {
-                    int key = entry.getKey();
-                    long time = entry.getValue();
-                    if (System.currentTimeMillis() - time > HOLD_TIME) {
-                        if (mouseState != MouseState.DRAG) mouseState = MouseState.HOLD;
-                        break;
-                    }
-                    else {
-                        if (mouseState != MouseState.DRAG) mouseState = MouseState.PRESS;
-                    }
-                }
-            }
+            this.handleMouseInput();
         }
 
         if (Keyboard.isCreated()) {
@@ -156,7 +144,7 @@ public abstract class BaseGUI extends GuiScreen {
             long time = System.currentTimeMillis();
             char eventCharacter = Keyboard.getEventCharacter();
             int eventKey = Keyboard.getEventKey();
-            /*LOG.info("输入: 编码{}-对应字符{} 名称{}", eventKey, Character.toString(eventCharacter), Keyboard.getKeyName(eventKey));*/
+            //LOG.info("输入: 编码{}-对应字符{} 名称{}", Character.toString(eventCharacter),Keyboard.getKeyName(eventKey));
             if (eventKey == 1) {
                 this.mc.displayGuiScreen(null);
                 this.mc.setIngameFocus();
@@ -177,38 +165,52 @@ public abstract class BaseGUI extends GuiScreen {
      */
     @Override
     public void handleMouseInput() {
-        // 清空状态
-        mouseInfo.releasedKey = -1;
-        mouseInfo.wheelCount = 0;
-        // 👆会被自动清除的信息，具有极强的实时性，不会持久记录，如需使用请确保每帧都访问
-        long currentTime = System.currentTimeMillis();
 
-        int x = Mouse.getEventX();
-        int y = Display.getHeight() - Mouse.getEventY();
-        int key = Mouse.getEventButton();
-        int wheel = Mouse.getEventDWheel();
-        mouseInfo.wheelCount = wheel;
-        // 按键事件
-        if (key != -1) {
-            if (mouseInfo.clicked.containsKey(key)) { // 再次触发即释放
-                mouseInfo.clicked.remove(key);
-                mouseInfo.releasedKey = key; // 记录释放的按键
-                if (mouseState == MouseState.HOLD) mouseState = MouseState.RELEASE;
-                else mouseState = MouseState.CLICKED;
+        while (Mouse.next()) {
+            long currentTime = System.currentTimeMillis();
+            int x = Mouse.getEventX();
+            int y = Display.getHeight() - Mouse.getEventY();
+            int key = Mouse.getEventButton();
+            String name = Mouse.getButtonName(key);
+            int wheel = Mouse.getEventDWheel();
+            int dx = Mouse.getEventDX();
+            int dy = Mouse.getEventDY();
+
+            //LOG.info("x:{},y:{},key:{},name:{},wheel:{},dx:{},dy:{}", x, y, key, name, wheel, dx, dy);
+
+            // 没有按键按下或松开
+            if (key == -1) {
+                mouseState = MouseState.NONE;
             }
-            else { // map中没有该键则是第一次按下
-                mouseInfo.clicked.put(key, currentTime);
-                mouseState = MouseState.PRESS;
+            // 有按键按下或松开
+            else {
+                boolean isRelease = MouseInfo.pressedKeys.containsKey(key);
+                if (isRelease) {
+                    mouseState = MouseState.RELEASE;
+                    MouseInfo.pressedKeys.remove(key);
+                    return;
+                } else {
+                    mouseState = MouseState.PRESS;
+                    MouseInfo.pressedKeys.put(key, currentTime);
+                    return;
+                }
+            }
+
+            // 上一帧鼠标移动
+            if (dx != 0 | dy != 0) {
+                if (!MouseInfo.hasKeyPressed()) {
+                    mouseState = MouseState.MOVE;
+                } else {
+                    mouseState = MouseState.DRAG;
+                }
             }
         }
-        // 纯移动事件
-        else {
-            // 更新坐标
-            mouseInfo.prevPos = mouseInfo.currPos;
-            mouseInfo.currPos = new Vector2i(x, y);
-            mouseState = MouseState.MOVE;
-            if (!mouseInfo.clicked.isEmpty()) { // 如果有持续按压的按键
-                mouseState = MouseState.DRAG;
+        // 鼠标静止
+        if (Mouse.getDX() == 0 && Mouse.getDY() == 0) {
+            if (!MouseInfo.hasKeyHold()) {
+                mouseState = MouseState.NONE;
+            } else {
+                mouseState = MouseState.HOLD;
             }
         }
     }
@@ -227,6 +229,9 @@ public abstract class BaseGUI extends GuiScreen {
         addComponent();
         stack.add(this);
         isInit = true;
+
+        // lwjgl3ify
+        //InputEvents.addKeyboardListener(this);
     }
 
     /**
@@ -246,6 +251,9 @@ public abstract class BaseGUI extends GuiScreen {
         isInit = false;
         stack.remove(this);
         components.clear();
+
+        // lwjgl3ify
+        //InputEvents.removeKeyboardListener(this);
     }
 
     /**
@@ -513,20 +521,6 @@ public abstract class BaseGUI extends GuiScreen {
     }
     // endregion 废弃
 
-
-    public static class MouseInfo {
-        /**记录持续按住的键 键: 按下的时间*/
-        public Map<Integer, Long> clicked = new HashMap<>();
-        public Vector2i prevPos = new Vector2i(Mouse.getEventX(), Display.getHeight() - Mouse.getEventY()); // 上一个坐标位置
-        public Vector2i currPos = new Vector2i(Mouse.getEventX(), Display.getHeight() - Mouse.getEventY()); // 当前的坐标位置
-        public int releasedKey = -1;
-        public int wheelCount = 0;
-
-        public boolean isKeyPressed(int key) {
-            return clicked.containsKey(key);
-        }
-    }
-
     public static class KeyboardPressInfo {
         public Map<Integer, Long> pressed = new HashMap<>();
         public int releasedKey = -1;
@@ -540,6 +534,33 @@ public abstract class BaseGUI extends GuiScreen {
                 }
             }
             return null;
+        }
+    }
+
+    public static class MouseInfo {
+        // 所有按下的键
+        public static Map<Integer,Long> pressedKeys = new HashMap<>();
+
+        /**
+         * 有任意鼠标按键没有被松开都会返回true
+         * @return
+         */
+        public static boolean hasKeyPressed() {
+            return !pressedKeys.isEmpty();
+        }
+
+        /**
+         * 有任意鼠标按键持续按压时间到达HOLD阈值后返回true
+         * @return
+         */
+        public static boolean hasKeyHold() {
+            long currentTime = System.currentTimeMillis();
+            for (Map.Entry<Integer,Long> entry : pressedKeys.entrySet()) {
+                int key = entry.getKey();
+                long timestamp = entry.getValue();
+                if (currentTime - timestamp >= HOLD_TIME) return true;
+            }
+            return false;
         }
     }
 }

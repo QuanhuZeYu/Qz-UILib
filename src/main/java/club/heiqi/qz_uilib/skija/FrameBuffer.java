@@ -20,12 +20,15 @@ import static org.lwjgl.opengl.GL30.*;
 public class FrameBuffer {
     public static Logger LOG = LogManager.getLogger();
     public static final List<FrameBuffer> GLOBAL = new ArrayList<>();
+    public String fboName = "默认";
+    /**纹理环绕方式缓存*/
     public int wrapFunc = GL_REPEAT;
     public int fboID;
     public int colorTextureID;
     public int depthStencilBufferID;
     public int width, height;
 
+    /**用于缓存渲染前的Frame*/
     public int oldFrame;
 
 
@@ -44,7 +47,11 @@ public class FrameBuffer {
         GLOBAL.add(this);
     }
 
+    public FrameBuffer setFBOName(String name) {this.fboName = name; return this;}
+
+    public int initTryCounter = 0;
     public void initFBO() {
+        if (initTryCounter >= 3) throw new RuntimeException("初始化FBO失败");
         try {
             // 生成FBO
             fboID = glGenFramebuffers();
@@ -62,7 +69,7 @@ public class FrameBuffer {
 
             // 创建深度+模板缓冲（渲染缓冲对象）
             depthStencilBufferID = glGenRenderbuffers();
-            glBindFramebuffer(GL_RENDERBUFFER, depthStencilBufferID);
+            glBindRenderbuffer(GL_RENDERBUFFER, depthStencilBufferID);
             glRenderbufferStorage(GL_RENDERBUFFER, GL_DEPTH24_STENCIL8, width, height);
             glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_DEPTH_STENCIL_ATTACHMENT, GL_RENDERBUFFER, depthStencilBufferID);
 
@@ -73,7 +80,10 @@ public class FrameBuffer {
             glBindFramebuffer(GL_FRAMEBUFFER, 0);
             glBindTexture(GL_TEXTURE_2D, 0);
         } catch (Throwable e) {
-            throw new RuntimeException(e);
+            initFBO();
+            initTryCounter++;
+        } finally {
+            initTryCounter = 0;
         }
     }
 

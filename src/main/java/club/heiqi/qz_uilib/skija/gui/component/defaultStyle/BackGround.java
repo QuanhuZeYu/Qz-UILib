@@ -2,10 +2,8 @@ package club.heiqi.qz_uilib.skija.gui.component.defaultStyle;
 
 import aurelienribon.tweenengine.Tween;
 import aurelienribon.tweenengine.TweenAccessor;
-import aurelienribon.tweenengine.TweenManager;
 import aurelienribon.tweenengine.equations.Linear;
 import aurelienribon.tweenengine.equations.Quad;
-import club.heiqi.qz_uilib.skija.gui.BaseGUI;
 import club.heiqi.qz_uilib.skija.gui.component.UIComponent;
 import club.heiqi.qz_uilib.skija.shader.GaussianBlur;
 import io.github.humbleui.skija.Canvas;
@@ -15,9 +13,11 @@ import io.github.humbleui.types.Point;
 import io.github.humbleui.types.RRect;
 import io.github.humbleui.types.Rect;
 import net.minecraft.client.Minecraft;
+import org.joml.Vector2i;
+import org.lwjgl.input.Mouse;
+import org.lwjgl.opengl.Display;
 
 import java.awt.*;
-import java.util.function.Consumer;
 
 public class BackGround extends UIComponent {
     // 模糊效果
@@ -31,59 +31,12 @@ public class BackGround extends UIComponent {
     // 圆角
     public boolean useRound = true;
     public float round = 20;
+    // 边框宽度
+    public float strokeWidth = 2f;
 
 
     public BackGround(float x, float y, float width, float height) {
         super(x, y, width, height);
-    }
-
-    public BackGround setFillColor(int color) {
-        fillColor = color;
-        return this;
-    }
-
-    public BackGround setStrokeColor(int color) {
-        strokeColor = color;
-        return this;
-    }
-
-    /**
-     * 使用默认的动画配置
-     * @return
-     */
-    public BackGround setTween() {
-        // 将对象注册到Tween中
-        Tween.registerAccessor(BackGround.class, new BackGroundTween());
-        // 注册动画
-        Tween.to(this,0,blurAnimTime)
-                .target(blurIntensity).ease(Quad.INOUT).start(manager);
-        Tween.to(this, 1, 5f)
-                .target(1f).ease(Linear.INOUT)
-                .repeat(-1, 0).start(manager);
-        return this;
-    }
-
-    /**
-     * 只需要使用Tween.to设置动画即可
-     * <br>
-     * 示例:<br>
-     *      Tween.to(this,0,blurAnimTime)
-     *                 .target(blurIntensity).ease(Quad.INOUT).start(manager);<br>
-     * 详细使用请参考 {@code Universal Tween Engine 库}
-     * @param consumer
-     * @return
-     */
-    public BackGround setCustomTween(Consumer<TweenManager> consumer) {
-        Tween.registerAccessor(BackGround.class, new BackGroundTween());
-        consumer.accept(manager);
-        return this;
-    }
-
-    /**
-     * 选择是否开启背景模糊效果
-     */
-    public BackGround setBlur(boolean blur) {
-        this.useBlur = blur; return this;
     }
 
     @Override
@@ -104,7 +57,7 @@ public class BackGround extends UIComponent {
         int rgb3 = 0xFF000000 | Color.HSBtoRGB(colorHSB +colorHSB3,1,1);
         Shader shader = Shader.makeLinearGradient(start, end, new int[]{rgb1,rgb2,rgb3});
         Paint paint = new Paint().setAntiAlias(true).setColor(fillColor);
-        Paint paintStroke = new Paint().setShader(shader).setAntiAlias(true).setStroke(true).setStrokeWidth(5);
+        Paint paintStroke = new Paint().setShader(shader).setAntiAlias(true).setStroke(true).setStrokeWidth(strokeWidth);
         if (useRound) {
             canvas.drawRRect(rectR, paint);
             canvas.drawRRect(rectRStroke, paintStroke);
@@ -114,34 +67,75 @@ public class BackGround extends UIComponent {
             canvas.drawRect(rectStroke,paintStroke);
         }
         shader.close(); paint.close(); paintStroke.close();
+        super.draw(canvas);
+    }
+
+    public BackGround setFillColor(int color) {
+        fillColor = color;
+        return this;
+    }
+
+    public BackGround setStrokeColor(int color) {
+        strokeColor = color;
+        return this;
+    }
+
+    public BackGround setStrokeWidth(float width) {
+        strokeWidth = width;
+        return this;
+    }
+
+    /**
+     * 使用默认的动画配置
+     * @return
+     */
+    @Override
+    public BackGround setDefaultTween() {
+        // 将对象注册到Tween中
+        Tween.registerAccessor(BackGround.class, new BackGroundTween());
+        // 注册动画
+        Tween.to(this,0,blurAnimTime)
+            .target(blurIntensity).ease(Quad.INOUT).start(manager);
+        Tween.to(this, 1, 5f)
+            .target(1f).ease(Linear.INOUT)
+            .repeat(-1, 0).start(manager);
+        return this;
+    }
+
+    /**
+     * 选择是否开启背景模糊效果
+     */
+    public BackGround setBlur(boolean blur) {
+        this.useBlur = blur; return this;
+    }
+
+    public Vector2i cacheDragPos;
+    @Override
+    public void onDragTick() {
+        if (!pressed) return;
+        int mouseX = Mouse.getX();
+        int mouseY = Display.getHeight()-Mouse.getY();
+        if (cacheDragPos == null) cacheDragPos = new Vector2i(mouseX,mouseY);
+        // 计算移动向量
+        Vector2i vec = new Vector2i(mouseX,mouseY).sub(cacheDragPos);
+        // 计算新的坐标位置
+        x = x + vec.x; y = y + vec.y;
+        // 使所有子组件跟随移动
+        if (!childs.isEmpty()) {
+            for (UIComponent child : childs) {
+                child.followMove(vec);
+            }
+        }
+        // 移动完毕后重置缓存位置
+        cacheDragPos = new Vector2i(mouseX,mouseY);
     }
 
     @Override
-    public void onClick() {
-
+    public boolean onRelease(boolean transmit) {
+        cacheDragPos = null;
+        super.onRelease(true);
+        return true;
     }
-
-    @Override
-    public void onHover(BaseGUI.MouseInfo mouseInfo) {
-
-    }
-
-    @Override
-    public void onMouseOut(BaseGUI.MouseInfo mouseInfo) {
-
-    }
-
-    @Override
-    public void onPress() {
-
-    }
-
-    @Override
-    public void onTick() {
-        super.onTick();
-    }
-
-
 
 
     // Tween 动画插值

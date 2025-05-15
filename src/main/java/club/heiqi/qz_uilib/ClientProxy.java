@@ -1,8 +1,8 @@
 package club.heiqi.qz_uilib;
 
 import aurelienribon.tweenengine.Tween;
-import club.heiqi.qz_uilib.renderTick.GameMenu;
-import club.heiqi.qz_uilib.renderTick.RenderListener;
+import club.heiqi.qz_uilib.config.Config;
+import club.heiqi.qz_uilib.hook.RenderListener;
 import club.heiqi.qz_uilib.skija.font.FontLoader;
 import club.heiqi.qz_uilib.skija.shader.GaussianBlur;
 import club.heiqi.qz_uilib.test.OpenTestGUI;
@@ -17,9 +17,16 @@ public class ClientProxy extends CommonProxy {
     @Override
     public void preInit(FMLPreInitializationEvent event) {
         super.preInit(event);
+        // 注册配置
+        Config config = new Config();
+        config.init(event.getSuggestedConfigurationFile());
+        config.register();
         /*gameMenu = new GameMenu().register();*/
+        // 渲染事件监听
         new RenderListener().register();
+        // 注册测试GUI
         new OpenTestGUI().register();
+        // 注册着色器
         new GaussianBlur();
         FontLoader.load();
         Tween.setCombinedAttributesLimit(4);

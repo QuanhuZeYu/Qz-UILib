@@ -1,6 +1,8 @@
 package club.heiqi.qz_uilib.mixins;
 import com.gtnewhorizon.gtnhmixins.IEarlyMixinLoader;
 import cpw.mods.fml.relauncher.IFMLLoadingPlugin;
+import net.minecraft.launchwrapper.Launch;
+import net.minecraft.launchwrapper.LaunchClassLoader;
 
 import java.util.Arrays;
 import java.util.List;
@@ -9,6 +11,16 @@ import java.util.Set;
 
 @IFMLLoadingPlugin.MCVersion("1.7.10")
 public class EarlyMixin implements IEarlyMixinLoader, IFMLLoadingPlugin {
+
+    static {
+        try {
+            LaunchClassLoader loader = Launch.classLoader;
+            loader.addTransformerExclusion("io.github.humbleui.");
+        } catch (Exception ignore) {
+
+        }
+    }
+
     @Override
     public String getMixinConfig() {
         return "mixins.qz_uilib.early.json";
@@ -17,7 +29,7 @@ public class EarlyMixin implements IEarlyMixinLoader, IFMLLoadingPlugin {
     @Override
     public List<String> getMixins(Set<String> loadedCoreMods) {
         return Arrays.asList(
-
+            "Minecraft_Mixin"
         );
     }
 

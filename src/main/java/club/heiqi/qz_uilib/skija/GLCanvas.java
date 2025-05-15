@@ -1,5 +1,6 @@
 package club.heiqi.qz_uilib.skija;
 
+import club.heiqi.qz_uilib.skija.state.AngelicaController;
 import club.heiqi.qz_uilib.skija.state.GLPixelStore;
 import club.heiqi.qz_uilib.skija.state.SkiaStore;
 import io.github.humbleui.skija.*;
@@ -33,13 +34,13 @@ public class GLCanvas {
     public void initContext() {
         int width = Display.getWidth(); int height = Display.getHeight();
         frameBuffer = new FrameBuffer(width, height);
-        context = DirectContext.makeGL();
+        if (context == null) context = DirectContext.makeGL();
         renderTarget = BackendRenderTarget.makeGL(width, height,
                 0,8, frameBuffer.fboID, GL_RGBA8);
         surface = Surface.wrapBackendRenderTarget(context, renderTarget,
                 SurfaceOrigin.BOTTOM_LEFT, SurfaceColorFormat.RGBA_8888,ColorSpace.getSRGB());
         GLOBALS.add(this);
-        /*LOG.info("画布已创建, 当前画布数量: {}, _ptr:{} {} {}", GLOBALS.size(), context._ptr, renderTarget._ptr, surface._ptr);*/
+        //LOG.info("画布已创建, 当前画布数量: {}, _ptr:{} {} {}", GLOBALS.size(), context._ptr, renderTarget._ptr, surface._ptr);
     }
 
     /**
@@ -47,14 +48,10 @@ public class GLCanvas {
      */
     public void preFlush() {
         frameBuffer.bind(Display.getWidth(), Display.getHeight());
+        AngelicaController.forceOffGLCache();
         skiaStore.backup();
         pixelStore.backup();
-        glDisable(GL_CULL_FACE);
-        // 画布GL重置
-        glClearColor(0,0,0,0);
-        glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
         context.resetGLAll();
-        surface.getCanvas().save();
     }
 
     /**
@@ -88,8 +85,8 @@ public class GLCanvas {
         flush();
         try {
             SkiaStore.glBindSampler.invoke(0,0);
-        } catch (Throwable e) {
-            throw new RuntimeException(e);
+        } catch (Throwable ignored) {
+
         }
         // 将canvas绘制内容绘制到MC画布上
         int mcFBO = Minecraft.getMinecraft().getFramebuffer().framebufferObject;
@@ -97,7 +94,7 @@ public class GLCanvas {
     }
 
     public void dispose() {
-        context.close();
+        //context.close();
         surface.close();
         renderTarget.close();
         frameBuffer.dispose();

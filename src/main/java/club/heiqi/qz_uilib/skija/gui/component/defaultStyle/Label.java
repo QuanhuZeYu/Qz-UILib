@@ -3,7 +3,6 @@ package club.heiqi.qz_uilib.skija.gui.component.defaultStyle;
 import aurelienribon.tweenengine.TweenAccessor;
 import club.heiqi.qz_uilib.skija.alignment.StringAlignUtils;
 import club.heiqi.qz_uilib.skija.font.FontLoader;
-import club.heiqi.qz_uilib.skija.gui.BaseGUI;
 import club.heiqi.qz_uilib.skija.gui.component.UIComponent;
 import io.github.humbleui.skija.Canvas;
 import io.github.humbleui.skija.Font;
@@ -15,8 +14,11 @@ import java.awt.*;
 
 public class Label extends UIComponent {
     public String text;
+    public StringAlignUtils.Align align = StringAlignUtils.Align.CENTER_TO_TARGET; // 默认中心对齐
     public int defaultStrColor = 0xFFFFFFFF;
+
     public int defaultHoverStrColor = 0xFFFFFFFF;
+
     public int strColor = 0xFFFFFFFF;
 
     public boolean useUnderline = false;
@@ -26,11 +28,14 @@ public class Label extends UIComponent {
      * 默认使用左上角坐标，四个参数均为归一化值
      * @param x
      * @param y
-     * @param width
-     * @param height
+     * @param width 可省略或为0
+     * @param height 可省略或为0
      */
     public Label(float x, float y, float width, float height) {
         super(x, y, width, height);
+    }
+    public Label(float x,float y) {
+        super(x,y,0,0);
     }
 
     public Label setText(String text) {this.text = text; return this;}
@@ -38,32 +43,35 @@ public class Label extends UIComponent {
     public Label setUnderLine(boolean underline) {this.useUnderline = underline; return this;}
     public Label setBold(boolean bold) {this.useBold = bold; return this;}
 
+    public Label setAlign(StringAlignUtils.Align align) {
+        this.align = align;
+        return this;
+    }
+
     @Override
     public void draw(Canvas canvas) {
         Font font = new Font(FontLoader.getDefaultFont().getTypeface()).setSize((0.01f+FontLoader.DYNAMIC_FONT_SIZE)* Display.getHeight());
         Paint strPaint = new Paint().setColor(strColor).setAntiAlias(true);
-        Vector2f strPos = StringAlignUtils.textTLToTarget(text,font,new Vector2f(x,y));
+        Vector2f strPos;
+        switch (align) {
+            case CENTER_TO_TARGET -> {strPos = StringAlignUtils.textCenterToTarget(text,font,new Vector2f(x,y));}
+            case TOP_LEFT_TO_TARGET -> {strPos = StringAlignUtils.textTLToTarget(text,font,new Vector2f(x,y));}
+            case TOP_RIGHT_TO_TARGET -> {strPos = StringAlignUtils.textTRToTarget(text,font,new Vector2f(x,y));}
+            case TOP_CENTER_TO_TARGET -> {strPos = StringAlignUtils.textTopCenterToTarget(text,font,new Vector2f(x,y));}
+            case BOTTOM_LEFT_TO_TARGET -> {strPos = StringAlignUtils.textBLToTarget(text,font,new Vector2f(x,y));}
+            case LEFT_CENTER_TO_TARGET -> {strPos = StringAlignUtils.textLeftCenterToTarget(text,font,new Vector2f(x,y));}
+            case BOTTOM_RIGHT_TO_TARGET -> {strPos = StringAlignUtils.textBRToTarget(text,font,new Vector2f(x,y));}
+            case RIGHT_CENTER_TO_TARGET -> {strPos = StringAlignUtils.textRightCenterToTarget(text,font,new Vector2f(x,y));}
+            case BOTTOM_CENTER_TO_TARGET -> {strPos = StringAlignUtils.textBottomCenterToTarget(text,font,new Vector2f(x,y));}
+            default -> {strPos = StringAlignUtils.textCenterToTarget(text,font,new Vector2f(x,y));}
+        }
         canvas.drawString(text,strPos.x,strPos.y,font,strPaint);
         font.close(); strPaint.close();
+        super.draw(canvas);
     }
 
     @Override
-    public void onClick() {
-
-    }
-
-    @Override
-    public void onHover(BaseGUI.MouseInfo mouseInfo) {
-
-    }
-
-    @Override
-    public void onMouseOut(BaseGUI.MouseInfo mouseInfo) {
-
-    }
-
-    @Override
-    public void onPress() {
+    public void onDragTick() {
 
     }
 

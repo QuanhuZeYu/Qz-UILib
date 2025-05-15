@@ -1,4 +1,4 @@
-package club.heiqi.qz_uilib.renderTick;
+package club.heiqi.qz_uilib.hook;
 
 import club.heiqi.qz_uilib.skija.FrameBuffer;
 import club.heiqi.qz_uilib.skija.GLCanvas;

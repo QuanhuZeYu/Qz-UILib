@@ -5,6 +5,19 @@ import io.github.humbleui.types.Rect;
 import org.joml.Vector2f;
 
 public class StringAlignUtils {
+    public static enum Align {
+        BOTTOM_LEFT_TO_TARGET,
+        TOP_LEFT_TO_TARGET,
+        BOTTOM_RIGHT_TO_TARGET,
+        TOP_RIGHT_TO_TARGET,
+        CENTER_TO_TARGET,
+        TOP_CENTER_TO_TARGET,
+        BOTTOM_CENTER_TO_TARGET,
+        LEFT_CENTER_TO_TARGET,
+        RIGHT_CENTER_TO_TARGET
+        ;
+
+    }
 
     /**
      * 将文字左下角坐标对齐到指定坐标
@@ -65,14 +78,14 @@ public class StringAlignUtils {
     public static Vector2f textLeftCenterToTarget(String text, Font font, Vector2f targetPos) {
         Rect rect = font.measureText(text);
         float offsetX = -rect.getLeft();
-        float offsetY = (-rect.getBottom())/2;
+        float offsetY = (-rect.getTop())/2;
         return new Vector2f(offsetX + targetPos.x, offsetY + targetPos.y);
     }
 
     public static Vector2f textRightCenterToTarget(String text, Font font, Vector2f targetPos) {
         Rect rect = font.measureText(text);
         float offsetX = -rect.getLeft() - rect.getRight();
-        float offsetY = (-rect.getBottom())/2;
+        float offsetY = (-rect.getTop())/2;
         return new Vector2f(offsetX + targetPos.x, offsetY + targetPos.y);
     }
 }

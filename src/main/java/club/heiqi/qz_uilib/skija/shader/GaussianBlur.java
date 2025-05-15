@@ -18,9 +18,12 @@ public class GaussianBlur {
 
     static {
         gaussianBlur = new ShaderManager("高斯模糊着色器","shaders/gaussianBlur/gaussianBlur.vert","shaders/gaussianBlur/gaussianBlur.glsl");
-        downscaleFBO = new FrameBuffer(Display.getWidth()/2, Display.getHeight()/2,GL12.GL_CLAMP_TO_EDGE);
-        pingpongFBOs[0] = new FrameBuffer(Display.getWidth()/2, Display.getHeight()/2,GL12.GL_CLAMP_TO_EDGE);
-        pingpongFBOs[1] = new FrameBuffer(Display.getWidth()/2, Display.getHeight()/2,GL12.GL_CLAMP_TO_EDGE);
+        downscaleFBO = new FrameBuffer(Display.getWidth()/2, Display.getHeight()/2,GL12.GL_CLAMP_TO_EDGE)
+            .setFBOName("高斯模糊降采样FBO");
+        pingpongFBOs[0] = new FrameBuffer(Display.getWidth()/2, Display.getHeight()/2,GL12.GL_CLAMP_TO_EDGE)
+            .setFBOName("高斯模糊乒乓FBO-01");
+        pingpongFBOs[1] = new FrameBuffer(Display.getWidth()/2, Display.getHeight()/2,GL12.GL_CLAMP_TO_EDGE)
+            .setFBOName("高斯模糊乒乓FBO-02");
         horizontalLoc = gaussianBlur.getUniformLocation("horizontal");
         sigmaLoc = gaussianBlur.getUniformLocation("sigma");
     }

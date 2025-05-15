@@ -1,5 +1,8 @@
 package club.heiqi.qz_uilib;
 
+import club.heiqi.qz_uilib.config.Config;
+import org.apache.logging.log4j.Logger;
+
 import java.io.File;
 
 public class ConstField {
@@ -11,4 +14,10 @@ public class ConstField {
     public static final String SERVER_SIDE = "club.heiqi.qz_uilib.CommonProxy";
 
     public static final File MC_DIR = new File(System.getProperty("user.dir"));
+
+    public static void debugLog(Logger logger, String text, Object... args) {
+        if (Config.debugLOG) {
+            logger.info(text, args);
+        }
+    }
 }

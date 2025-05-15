@@ -1,7 +1,5 @@
 package club.heiqi.qz_uilib.skija.state;
 
-import io.github.humbleui.skija.Canvas;
-import io.github.humbleui.skija.Surface;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.lwjgl.BufferUtils;
@@ -54,6 +52,7 @@ public class SkiaStore {
     private int cullFaceMode, frontFace;
     // 颜色+混合
     private final FloatBuffer currentColor = BufferUtils.createFloatBuffer(16);
+    private final FloatBuffer clearColor = BufferUtils.createFloatBuffer(16);
     private boolean blendEnabled,frameBufferSRGBEnabled;
     private int blendSrcRGB, blendDstRGB, blendSrcAlpha, blendDstAlpha;
     private int blendEquation, blendEquationRGB, blendEquationAlpha;
@@ -75,7 +74,7 @@ public class SkiaStore {
             glActiveTexture, glBindTexture, glEnable, glDisable, glCullFace, glFrontFace, glColor4f, glBlendFuncSeparate, glColorMask,
             glBlendFunc,glDepthFunc,glDepthMask,glDepthRange,glStencilFuncSeparate,glStencilOpSeparate,glBindSampler,glSamplerParameteri,
             glGetSamplerParameteri,glGetBoolean,glGetBooleanBuffer,glBindFramebuffer,glPixelStorei,glPushAttrib,glMatrixMode,
-            glPushMatrix,glGetFloat,glLineWidth,glBlendEquation,glBlendEquationSeparate,glTexCoord2f,glVertex3f;
+            glPushMatrix,glGetFloat,glLineWidth,glBlendEquation,glBlendEquationSeparate,glTexCoord2f,glVertex3f,glClearColor;
     static {
         try {
             MethodHandles.Lookup lookup = MethodHandles.lookup();
@@ -122,6 +121,7 @@ public class SkiaStore {
             glPushMatrix = lookup.findStatic(GL11.class, "glPushMatrix", MethodType.methodType(void.class));
             glTexCoord2f = lookup.findStatic(GL11.class,"glTexCoord2f", MethodType.methodType(void.class,float.class,float.class));
             glVertex3f = lookup.findStatic(GL11.class, "glVertex3f", MethodType.methodType(void.class,float.class,float.class,float.class));
+            glClearColor = lookup.findStatic(GL11.class, "glClearColor", MethodType.methodType(void.class,float.class,float.class,float.class,float.class));
         }
         catch (Exception e) {
             throw new RuntimeException("保存器初始化失败" + e);
@@ -288,6 +288,9 @@ public class SkiaStore {
                 // 当前颜色
                 currentColor.clear();
                 glGetFloatBuffer.invoke(GL11.GL_CURRENT_COLOR, currentColor);
+                // Clear颜色
+                clearColor.clear();
+                glGetFloatBuffer.invoke(GL11.GL_COLOR_CLEAR_VALUE, clearColor);
 
                 // 混合状态
                 blendEnabled = (boolean) glIsEnabled.invoke(GL11.GL_BLEND);
@@ -357,13 +360,6 @@ public class SkiaStore {
             } catch (Exception e) {
                 throw new RuntimeException("Error getting miscellaneous states", e);
             }
-
-            // 11. 最后操作（保留原始注释）
-        /*try {
-            glUseProgram.invoke(ShaderManager.shaderManagers.get(ShaderName.VOID_SHADER.name()).shaderID);
-        } catch (Exception e) {
-            throw new RuntimeException("Failed to switch to void shader", e);
-        }*/
         } catch (RuntimeException e) {
             throw e; // 已经包装过的异常直接抛出
         } catch (Throwable e) {
@@ -442,6 +438,9 @@ public class SkiaStore {
             // 颜色+混合
             GL11.glColor4f(currentColor.get(0), currentColor.get(1), currentColor.get(2), currentColor.get(3));
             glColor4f.invoke(currentColor.get(0), currentColor.get(1), currentColor.get(2), currentColor.get(3));
+            /*清除颜色状态*/
+            GL11.glClearColor(clearColor.get(0), clearColor.get(1), clearColor.get(2), clearColor.get(3));
+            glClearColor.invoke(clearColor.get(0), clearColor.get(1), clearColor.get(2), clearColor.get(3));
             setCapability(GL11.GL_BLEND, blendEnabled);
             setCapability(GL30.GL_FRAMEBUFFER_SRGB, frameBufferSRGBEnabled);
             if (blendEnabled) {
