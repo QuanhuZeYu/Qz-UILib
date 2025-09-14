@@ -1,35 +1,8 @@
 package club.heiqi.qz_uilib;
 
-import aurelienribon.tweenengine.Tween;
-import club.heiqi.qz_uilib.config.Config;
-import club.heiqi.qz_uilib.hook.RenderListener;
-import club.heiqi.qz_uilib.skija.font.FontLoader;
-import club.heiqi.qz_uilib.skija.shader.GaussianBlur;
-import club.heiqi.qz_uilib.test.OpenTestGUI;
-import cpw.mods.fml.common.event.FMLPreInitializationEvent;
-import org.apache.logging.log4j.LogManager;
-import org.apache.logging.log4j.Logger;
-
 public class ClientProxy extends CommonProxy {
-    public static Logger LOG = LogManager.getLogger();
-    /*public GameMenu gameMenu;*/
 
-    @Override
-    public void preInit(FMLPreInitializationEvent event) {
-        super.preInit(event);
-        // 注册配置
-        Config config = new Config();
-        config.init(event.getSuggestedConfigurationFile());
-        config.register();
-        /*gameMenu = new GameMenu().register();*/
-        // 渲染事件监听
-        new RenderListener().register();
-        // 注册测试GUI
-        new OpenTestGUI().register();
-        // 注册着色器
-        new GaussianBlur();
-        FontLoader.load();
-        Tween.setCombinedAttributesLimit(4);
-        LOG.info("Qz-UILib初始化完成");
-    }
+    // Override CommonProxy methods here, if you want a different behaviour on the client (e.g. registering renders).
+    // Don't forget to call the super methods as well.
+
 }
