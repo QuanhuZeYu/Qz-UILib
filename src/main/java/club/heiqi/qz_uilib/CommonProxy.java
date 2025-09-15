@@ -1,11 +1,13 @@
 package club.heiqi.qz_uilib;
 
+import club.heiqi.qz_uilib.network.NetworkMain;
 import cpw.mods.fml.common.event.FMLInitializationEvent;
 import cpw.mods.fml.common.event.FMLPostInitializationEvent;
 import cpw.mods.fml.common.event.FMLPreInitializationEvent;
 import cpw.mods.fml.common.event.FMLServerStartingEvent;
 
 public class CommonProxy {
+    public NetworkMain networkMain = new NetworkMain();
 
     // preInit "Run before anything else. Read your config, create blocks, items, etc, and register them with the
     // GameRegistry." (Remove if not needed)
@@ -14,6 +16,8 @@ public class CommonProxy {
 
         MyMod.LOG.info(Config.greeting);
         MyMod.LOG.info("I am MyMod at version " + Tags.VERSION);
+
+        networkMain.registrar();
     }
 
     // load "Do your mod setup. Build whatever data structures you care about. Register recipes." (Remove if not needed)
