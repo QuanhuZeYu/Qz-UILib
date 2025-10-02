@@ -1,14 +1,17 @@
 package club.heiqi.qz_uilib.client;
 
-import org.joml.Matrix4f;
 import org.lwjgl.BufferUtils;
-import org.lwjgl.opengl.*;
+import org.lwjgl.opengl.Display;
+import org.lwjgl.opengl.GL11;
+import org.lwjgl.opengl.GL12;
+import org.lwjgl.opengl.GL30;
+import org.lwjgl.opengl.GL32;
 
+import java.io.Closeable;
 import java.nio.ByteBuffer;
-import java.nio.FloatBuffer;
 import java.nio.IntBuffer;
 
-public class FrameBufferObject {
+public class FrameBufferObject implements Closeable {
     public int fbo;
     public int rbo;
     public int texture;
@@ -16,8 +19,6 @@ public class FrameBufferObject {
     public int depthTexture;
     public int previousFbo;
     public int previousX, previousY, previousWidth, previousHeight;
-    // public FloatBuffer previousOrtho = BufferUtils.createFloatBuffer(16);
-    // public boolean aspectRatioChange = false;
 
     public FrameBufferObject() {
         fbo = GL30.glGenFramebuffers();
@@ -77,6 +78,8 @@ public class FrameBufferObject {
         if (width <= 0 || height <= 0) return;
         if (textureWidth == width && textureHeight == height) return;
 
+        // MyMod.LOG.info("正在缩放FBO");
+
         textureWidth = width;
         textureHeight = height;
 
@@ -98,11 +101,12 @@ public class FrameBufferObject {
     }
 
 
-
     public void bind() {
+        resize(Display.getWidth(), Display.getHeight());
         previousFbo = GL11.glGetInteger(GL30.GL_FRAMEBUFFER_BINDING);
         GL30.glBindFramebuffer(GL30.GL_FRAMEBUFFER, fbo);
 
+        // 更新视口
         IntBuffer buffer = BufferUtils.createIntBuffer(4);
         GL11.glGetInteger(GL11.GL_VIEWPORT, buffer);
         previousX = buffer.get(0);
@@ -110,24 +114,48 @@ public class FrameBufferObject {
         previousWidth = buffer.get(2);
         previousHeight = buffer.get(3);
         GL11.glViewport(0,0,Display.getWidth(),Display.getHeight());
+
+        // 更新矩阵
+        GL11.glMatrixMode(GL11.GL_PROJECTION);
+        GL11.glPushMatrix();
+        GL11.glLoadIdentity();
+        GL11.glOrtho(0, textureWidth, textureHeight, 0, -10000, 10000);
+        GL11.glMatrixMode(GL11.GL_MODELVIEW);
+        GL11.glPushMatrix();
+        GL11.glLoadIdentity();
     }
 
     public void unbind() {
+        // 恢复视口
         GL30.glBindFramebuffer(GL30.GL_FRAMEBUFFER, previousFbo);
         GL11.glViewport(previousX,previousY,previousWidth,previousHeight);
-        // if (aspectRatioChange) {
-        //     GL11.glMatrixMode(GL11.GL_PROJECTION);
-        //     GL11.glLoadMatrix(previousOrtho);
-        //     aspectRatioChange = false;
-        // }
+
+        // 恢复矩阵
+        GL11.glMatrixMode(GL11.GL_PROJECTION);
+        GL11.glPopMatrix();
+        GL11.glMatrixMode(GL11.GL_MODELVIEW);
+        GL11.glPopMatrix();
     }
 
     public void render(int width, int height) {
+        // 设置视口大小
+        IntBuffer buffer = BufferUtils.createIntBuffer(4);
+        GL11.glGetInteger(GL11.GL_VIEWPORT, buffer);
+        previousX = buffer.get(0);
+        previousY = buffer.get(1);
+        previousWidth = buffer.get(2);
+        previousHeight = buffer.get(3);
+        GL11.glViewport(0,0,Display.getWidth(),Display.getHeight());
+
+
         GL11.glPushAttrib(GL11.GL_ALL_ATTRIB_BITS);
         // 启用纹理并绑定FBO纹理
         GL11.glEnable(GL11.GL_TEXTURE_2D);
         GL11.glBindTexture(GL11.GL_TEXTURE_2D, texture);
         GL11.glDisable(GL11.GL_DEPTH_TEST);
+        GL11.glEnable(GL11.GL_BLEND);
+        GL11.glBlendFunc(GL11.GL_SRC_ALPHA, GL11.GL_ONE_MINUS_SRC_ALPHA); // 标准Alpha混合
+        GL11.glDisable(GL11.GL_CULL_FACE);
 
         // 绘制全屏四边形
         GL11.glBegin(GL11.GL_QUADS);
@@ -150,6 +178,9 @@ public class FrameBufferObject {
 
         // 恢复状态
         GL11.glPopAttrib();
+
+        // 恢复视口
+        GL11.glViewport(previousX,previousY,previousWidth,previousHeight);
     }
 
     public void dispose() {
@@ -159,6 +190,11 @@ public class FrameBufferObject {
         if (rbo != 0) {
             GL30.glDeleteRenderbuffers(rbo); // ✅ 释放RBO（如果存在）
         }
+    }
+
+    @Override
+    public void close() {
+        dispose();
     }
 
 
@@ -195,6 +231,90 @@ public class FrameBufferObject {
                 default -> "未知错误: 0x" + Integer.toHexString(status);
             };
             throw new RuntimeException("帧缓冲配置错误: " + error);
+        }
+    }
+
+    public static int getCurrentFboWidth(int currentFbo) {
+        if (currentFbo == 0) {
+            return Display.getWidth();
+        } else {
+            // 检查附件类型
+            int attachmentType = GL30.glGetFramebufferAttachmentParameteri(
+                    GL30.GL_FRAMEBUFFER,
+                    GL30.GL_COLOR_ATTACHMENT0,
+                    GL30.GL_FRAMEBUFFER_ATTACHMENT_OBJECT_TYPE
+            );
+            int attachmentName = GL30.glGetFramebufferAttachmentParameteri(
+                    GL30.GL_FRAMEBUFFER,
+                    GL30.GL_COLOR_ATTACHMENT0,
+                    GL30.GL_FRAMEBUFFER_ATTACHMENT_OBJECT_NAME
+            );
+
+            if (attachmentType == GL11.GL_NONE) {
+                throw new IllegalStateException("No color attachment found");
+            }
+
+            int width = 0;
+            if (attachmentType == GL11.GL_TEXTURE) {
+                // 记录当前绑定
+                int prevTexture = GL11.glGetInteger(GL11.GL_TEXTURE_BINDING_2D);
+                GL11.glBindTexture(GL11.GL_TEXTURE_2D, attachmentName);
+                width = GL11.glGetTexLevelParameteri(GL11.GL_TEXTURE_2D, 0, GL11.GL_TEXTURE_WIDTH);
+                // 恢复绑定
+                GL11.glBindTexture(GL11.GL_TEXTURE_2D, prevTexture);
+            } else if (attachmentType == GL30.GL_RENDERBUFFER) {
+                // 记录当前绑定
+                int prevRenderbuffer = GL11.glGetInteger(GL30.GL_RENDERBUFFER_BINDING);
+                GL30.glBindRenderbuffer(GL30.GL_RENDERBUFFER, attachmentName);
+                width = GL30.glGetRenderbufferParameteri(GL30.GL_RENDERBUFFER, GL30.GL_RENDERBUFFER_WIDTH);
+                // 恢复绑定
+                GL30.glBindRenderbuffer(GL30.GL_RENDERBUFFER, prevRenderbuffer);
+            } else {
+                throw new IllegalStateException("Unsupported attachment type: " + attachmentType);
+            }
+            return width;
+        }
+    }
+
+    public static int getCurrentFboHeight(int currentFbo) {
+        if (currentFbo == 0) {
+            return Display.getHeight();
+        } else {
+            // 检查附件类型
+            int attachmentType = GL30.glGetFramebufferAttachmentParameteri(
+                    GL30.GL_FRAMEBUFFER,
+                    GL30.GL_COLOR_ATTACHMENT0,
+                    GL30.GL_FRAMEBUFFER_ATTACHMENT_OBJECT_TYPE
+            );
+            int attachmentName = GL30.glGetFramebufferAttachmentParameteri(
+                    GL30.GL_FRAMEBUFFER,
+                    GL30.GL_COLOR_ATTACHMENT0,
+                    GL30.GL_FRAMEBUFFER_ATTACHMENT_OBJECT_NAME
+            );
+
+            if (attachmentType == GL11.GL_NONE) {
+                throw new IllegalStateException("No color attachment found");
+            }
+
+            int height = 0;
+            if (attachmentType == GL11.GL_TEXTURE) {
+                // 记录当前绑定
+                int prevTexture = GL11.glGetInteger(GL11.GL_TEXTURE_BINDING_2D);
+                GL11.glBindTexture(GL11.GL_TEXTURE_2D, attachmentName);
+                height = GL11.glGetTexLevelParameteri(GL11.GL_TEXTURE_2D, 0, GL11.GL_TEXTURE_HEIGHT);
+                // 恢复绑定
+                GL11.glBindTexture(GL11.GL_TEXTURE_2D, prevTexture);
+            } else if (attachmentType == GL30.GL_RENDERBUFFER) {
+                // 记录当前绑定
+                int prevRenderbuffer = GL11.glGetInteger(GL30.GL_RENDERBUFFER_BINDING);
+                GL30.glBindRenderbuffer(GL30.GL_RENDERBUFFER, attachmentName);
+                height = GL30.glGetRenderbufferParameteri(GL30.GL_RENDERBUFFER, GL30.GL_RENDERBUFFER_HEIGHT);
+                // 恢复绑定
+                GL30.glBindRenderbuffer(GL30.GL_RENDERBUFFER, prevRenderbuffer);
+            } else {
+                throw new IllegalStateException("Unsupported attachment type: " + attachmentType);
+            }
+            return height;
         }
     }
 }

@@ -1,48 +1,64 @@
 package club.heiqi.qz_uilib.client;
 
 import club.heiqi.qz_uilib.widget.Widget;
+import club.heiqi.qz_uilib.widget.testWidget.TestWidget01;
+import club.heiqi.qz_uilib.widget.testWidget.TestWidgetList01;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiButton;
 import net.minecraft.client.gui.GuiScreen;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
-import org.lwjgl.BufferUtils;
+import org.lwjgl.input.Mouse;
 import org.lwjgl.opengl.Display;
 import org.lwjgl.opengl.GL11;
-import org.lwjgl.util.glu.GLU;
 
-import java.nio.FloatBuffer;
+import java.util.HashSet;
+import java.util.Set;
 
 public class BaseGUI extends GuiScreen {
     public static FrameBufferObject frameBuffer;
     public Logger LOG = LogManager.getLogger();
-    public Widget root = new Widget();
+    /**根组件*/
+    public Widget root = new TestWidgetList01();
+    public int mouseCount = 0;
 
     public BaseGUI() {
         if (frameBuffer == null) frameBuffer = new FrameBufferObject();
+        mouseCount = Mouse.getButtonCount();
     }
 
     @Override
     public void drawScreen(int mouseX, int mouseY, float partialTicks) {
+        Widget.updateTween();
         frameBuffer.bind();
         // 清除fbo内容
         GL11.glClear(GL11.GL_COLOR_BUFFER_BIT | GL11.GL_DEPTH_BUFFER_BIT);
+        GL11.glPushAttrib(GL11.GL_ALL_ATTRIB_BITS);
+        // GL11.glDisable(GL11.GL_FOG);
+        // GL11.glDisable(GL11.GL_LIGHTING);
+        GL11.glDisable(GL11.GL_TEXTURE_2D);
+        // GL11.glDisable(GL11.GL_COLOR_MATERIAL);
+        // GL11.glDisable(GL11.GL_STENCIL_TEST);
+        // GL11.glDisable(GL11.GL_ALPHA_TEST);
+        GL11.glEnable(GL11.GL_BLEND);
+        GL11.glBlendFunc(GL11.GL_SRC_ALPHA, GL11.GL_ONE_MINUS_SRC_ALPHA);
         root.draw();
+        GL11.glPopAttrib();
         frameBuffer.unbind();
 
-        frameBuffer.render(width, height);
+        frameBuffer.render(mcGUIWidth, mcGUIHeight);
     }
 
+    private int mcGUIWidth, mcGUIHeight;
     @Override
     public void setWorldAndResolution(Minecraft mc, int width, int height) {
         this.mc = mc;
         this.fontRendererObj = mc.fontRenderer;
+        this.mcGUIWidth = width;
+        this.mcGUIHeight = height;
         this.width = width;
         this.height = height;
-        if (Display.getWidth() != frameBuffer.textureWidth || Display.getHeight() != frameBuffer.textureHeight) {
-            frameBuffer.resize(Display.getWidth(), Display.getHeight());
-        }
-        LOG.info("w:{} h:{}", width, height);
+        LOG.info("w:{} h:{}", this.width, this.height);
     }
 
     @Override
@@ -51,9 +67,99 @@ public class BaseGUI extends GuiScreen {
     }
 
     @Override
-    protected void actionPerformed(GuiButton button) {
+    protected void actionPerformed(GuiButton button) {}
+
+
+    // ===== 主要的鼠标事件 =====
+    /**按下事件*/
+    @Override
+    protected void mouseClicked(int mouseX, int mouseY, int mouseButton) {
+        // mouseButton: 0 左键 1 中键 2 右键 3~? 侧键等
+        if (root.isMouseInBounds(mouseX, mouseY))
+            root.onPressPrivate(mouseX, mouseY, mouseButton);
 
     }
 
+    /**拖拽事件*/
+    protected void mouseClickMove(int mouseX, int mouseY, Set<Integer> clicked) {
+        // 拖动行为
+        if (root.isMouseInBounds(mouseX, mouseY)) {
+            root.onDragPrivate(mouseX, mouseY, clicked);
+        }
+    }
 
+    /**鼠标释放事件*/
+    @Override
+    protected void mouseMovedOrUp(int mouseX, int mouseY, int state) {
+        if (root.isMouseInBounds(mouseX, mouseY)) {
+            // LOG.info("鼠标在根组件上抬起按钮 x:{} y:{} state:{}", mouseX, mouseY, state);
+            root.onReleasePrivate(mouseX, mouseY, state);
+        }
+    }
+
+    /**纯移动事件*/
+    protected void mouseMoving(int mouseX, int mouseY, Set<Integer> clicked, Set<Integer> hold) {
+        root.onMouseMovingPrivate(mouseX,mouseY, clicked, hold);
+        if (root.isMouseInBounds(mouseX, mouseY)) {
+            root.onHoverPrivate(mouseX,mouseY);
+        }
+        else {
+            root.onLeavePrivate(mouseX,mouseY);
+        }
+    }
+
+    public void mouseWheeling(int x, int y, int dWheel) {
+        if (root.isMouseInBounds(x,y)) {
+            root.onWheelPrivate(x,y,dWheel);
+        }
+    }
+
+    private Set<Integer> mouseButtonClicked = new HashSet<>();
+    private Set<Integer> mouseButtonHold = new HashSet<>();
+    private int cacheX = Mouse.getX(), cacheY = Display.getHeight() - Mouse.getY();
+    @Override
+    public void handleMouseInput() {
+        int mouseX = Mouse.getX();
+        int mouseY = Display.getHeight() - Mouse.getY();
+        int dx = cacheX - mouseX;
+        int dy = cacheY - mouseY;
+        int dWheel = Mouse.getDWheel();
+
+        // 0-左键 1-右键 2-中键 3、4、5......
+        // 检查按键是否按下
+        for (int i = 0; i < mouseCount; i++) {
+            boolean isDown = Mouse.isButtonDown(i);
+            if (isDown) {
+                // 初次按下
+                if (!mouseButtonClicked.contains(i)) {
+                    mouseButtonClicked.add(i);
+                    this.mouseClicked(mouseX,mouseY,i);
+                } else {
+                    mouseButtonHold.add(i);
+                    this.mouseClickMove(mouseX, mouseY, mouseButtonHold);
+                }
+            }
+            else {
+                // 松开
+                if (mouseButtonClicked.contains(i)) {
+                    mouseButtonClicked.remove(i);
+                    mouseButtonHold.remove(i);
+                    this.mouseMovedOrUp(mouseX,mouseY,i);
+                }
+            }
+        }
+        // 检查鼠标是否移动
+        if (dx != 0 || dy != 0) {
+            this.mouseMoving(mouseX, mouseY, mouseButtonClicked, mouseButtonHold);
+            if (!mouseButtonHold.isEmpty()) {
+                this.mouseClickMove(mouseX, mouseY, mouseButtonHold);
+            }
+        }
+        if (dWheel != 0) {
+            this.mouseWheeling(mouseX,mouseY,dWheel);
+        }
+
+        cacheX = mouseX;
+        cacheY = mouseY;
+    }
 }
