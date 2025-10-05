@@ -17,23 +17,21 @@ public class GridLayout extends DefaultLayout {
         // 在网格模式下不使用最佳大小
         float averageWidth = curWidget.width / cols;
         float averageHeight = curWidget.height / rows;
+        // x y 坐标移动记录器
         float currentX = curWidget.x;
         float currentY = curWidget.y;
+        // 行列记录
         int curRow = 0, curCol = 0;
+        // 内边距
         float insideMargins = curWidget.insideMargins;
         float insideMargins2 = insideMargins * 2;
 
         for (Widget child : curWidget.children) {
-            // 子组件的最佳外边距
-            float outMargins = child.outMargins;
-            float outMargins2 = outMargins * 2;
-            float offset = insideMargins + outMargins;
-            float marginsSize = insideMargins2 + outMargins2;
-            child.x = currentX + offset;
-            child.y = currentY + offset;
-            child.width = averageWidth - marginsSize;
-            child.height = averageHeight - marginsSize;
-            currentX += child.width + marginsSize;
+            child.x = currentX + insideMargins + child.localX;
+            child.y = currentY + insideMargins + child.localY;
+            child.width = averageWidth - insideMargins2;
+            child.height = averageHeight - insideMargins2;
+            currentX += child.width + insideMargins2;
 
             // 计算完成递增计算下一个
             curCol++;  // 计算完一个递增列

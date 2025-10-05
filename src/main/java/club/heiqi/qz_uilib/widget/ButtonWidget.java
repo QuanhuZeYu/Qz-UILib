@@ -14,18 +14,24 @@ import java.util.Set;
 public class ButtonWidget extends Widget {
     RoundedRectangle rectangle = new RoundedRectangle();
 
-    public int rectangleColor = 0xffffffff;
+    public int rectangleColor = 0xff484848;
     public int targetColorCache = rectangleColor;
+
+    public Runnable callBack = () -> {};
+
+    public ButtonWidget setCallBack(Runnable callBack) {
+        this.callBack = callBack;
+        return this;
+    }
 
     @Override
     public void drawSelf() {
         super.drawSelf();
-        Minecraft.getMinecraft().fontRenderer.drawStringWithShadow("按钮组件", (int) x, (int) y, 0xffffffff);
 
         rectangle.gen(width, height, 20, 3, new Vector2d(x,y), rectangleColor);
 
         GL11.glDisable(GL11.GL_CULL_FACE);
-        GL11.glDisable(GL11.GL_DEPTH_TEST);
+        // GL11.glDisable(GL11.GL_DEPTH_TEST);
         RenderTool.getInstance().render(
                 rectangle.getVertexArray(),
                 rectangle.getTexCoordArray(),
@@ -41,24 +47,25 @@ public class ButtonWidget extends Widget {
     /**鼠标在内部时会高频触发*/
     @Override
     public void onHover(float x, float y) {
-        setColor(0xffffff00);
+        setColor(0xffc0d8d8);
     }
 
     /**鼠标在外部时会高频触发*/
     @Override
     public void onLeave(float x, float y) {
-        setColor(0xffffffff);
+        setColor(0xff484848);
     }
 
     /**考虑可能高频触发场景*/
     @Override
     public void onPress(float x, float y, int buttonID) {
-        setColor(0xff0000ff);
+        setColor(0xfff0f0f0);
     }
 
     @Override
     public void onRelease(float x, float y, int buttonID) {
-        setColor(0xffffff00);
+        setColor(0xffc0d8d8);
+        callBack.run();
     }
 
     @Override

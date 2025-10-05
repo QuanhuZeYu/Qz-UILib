@@ -13,50 +13,29 @@ public class HorizontalLayout extends DefaultLayout {
         int childCount = curWidget.children.size();
         int perfectElementCount = getPerfectElementCount();
         // 剩余可拉伸元素的平均宽度
-        float averageWidth = (curWidget.width - allPerfectWidth) / (childCount - perfectElementCount);
+        float inside = curWidget.insideMargins;
+        float inside2 = inside * 2;
+        float averageWidth = (curWidget.width - allPerfectWidth) > 0
+                ? (curWidget.width - allPerfectWidth) / (childCount - perfectElementCount)
+                : 0;
 
-        float insideMargins = curWidget.insideMargins;
-        float insideMargins2 = insideMargins * 2;
 
-        // 如果父组件当前宽度足够放下所有完美宽度
-        if (allPerfectWidth <= curWidget.width) {
-            // 移动X指针
-            float currentWidth = curWidget.x;
-            for (Widget child : curWidget.children) {
-                float outMargins = child.outMargins;
-                float outMargins2 = outMargins * 2;
-                float offset = insideMargins + outMargins;
-                float marginSize = insideMargins2 + outMargins2;
+        // 移动X指针
+        float currentX = curWidget.x;
+        for (Widget child : curWidget.children) {
 
-                child.x = currentWidth + offset;
-                child.y = curWidget.y + offset;
-                if (child.perfectWidth != -1) {
-                    child.width = child.perfectWidth;
-                    currentWidth += child.width + marginSize;
-                } else {
-                    child.width = averageWidth - marginSize;
-                    currentWidth += child.width + marginSize;
-                }
-                child.height = curWidget.height - marginSize;
+            child.x = currentX + inside + child.localX;
+            child.y = curWidget.y + inside + child.localY;
+            if (child.perfectWidth != -1) {
+                child.width = child.perfectWidth;
+                currentX += child.width + inside2;
+            } else {
+                child.width = Math.max(0, averageWidth - inside2);
+                currentX += averageWidth;
             }
-        }
-        // 无法容纳所有完美大小 退化到全部平均布局
-        else {
-            averageWidth = curWidget.width / childCount;
-
-            float currentWidth = curWidget.x;
-            for (Widget child : curWidget.children) {
-                float outMargins = child.outMargins;
-                float outMargins2 = outMargins * 2;
-                float offset = insideMargins + outMargins;
-                float marginSize = insideMargins2 + outMargins2;
-
-                child.x = currentWidth + offset;
-                child.y = curWidget.y + offset;
-                child.width = averageWidth - marginSize;
-                child.height = curWidget.height - marginSize;
-                currentWidth += child.width + marginSize;
-            }
+            child.height = curWidget.perfectHeight != -1
+                    ? curWidget.perfectHeight - inside2
+                    : curWidget.height - inside2;
         }
     }
 
@@ -67,10 +46,7 @@ public class HorizontalLayout extends DefaultLayout {
 
         for (Widget child : curWidget.children) {
             if (child.perfectWidth != -1) {
-                float outMargins = child.outMargins;
-                float outMargins2 = outMargins * 2;
-                float marginSize = insideMargins2 + outMargins2;
-                totalWidth += child.perfectWidth + marginSize;
+                totalWidth += child.perfectWidth + insideMargins2;
             }
         }
         return totalWidth;

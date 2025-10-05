@@ -9,8 +9,10 @@ public class CenterLayout extends  DefaultLayout {
         super.applyLayout(widget);
 
         for (Widget child : curWidget.children) {
-            child.x = ((curWidget.x + curWidget.width) / 2) - (child.width / 2);
-            child.y = ((curWidget.y + curWidget.height) / 2) - (child.height / 2);
+            // child.localX = (curWidget.width / 2) - (child.width / 2);
+            // child.localY = (curWidget.height / 2) - (child.height / 2);
+            child.x = curWidget.x + child.localX + (curWidget.width / 2) - (child.width / 2);
+            child.y = curWidget.y + child.localY + (curWidget.height / 2) - (child.height / 2);
         }
     }
 }

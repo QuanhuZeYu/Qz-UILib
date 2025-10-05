@@ -6,8 +6,10 @@ import club.heiqi.qz_uilib.widget.Widget;
 import club.heiqi.qz_uilib.widget.layout.CenterLayout;
 import club.heiqi.qz_uilib.widget.layout.GridLayout;
 import club.heiqi.qz_uilib.widget.layout.HorizontalLayout;
-import club.heiqi.qz_uilib.widget.layout.VerticalLayout;
+import club.heiqi.qz_uilib.widget.layout.SimpleVerticalLayout;
 import org.lwjgl.opengl.Display;
+
+import java.util.Arrays;
 
 public class TestWidget01 extends Widget {
 
@@ -16,9 +18,9 @@ public class TestWidget01 extends Widget {
         this.setSize(Display.getWidth(),Display.getHeight())
                 .setLayout(new CenterLayout());
         this.addChild(
-                new Widget().setLayout(new VerticalLayout()).setSize(1080,1080)
+                new Widget().setLayout(new SimpleVerticalLayout()).setSize(1080,1080)
                         .addChild(new Widget().setPerfectSize(-1, 512)
-                                .addChild(new DraggableWidget().setSize(128,128).setLayout(new VerticalLayout())
+                                .addChild(new DraggableWidget().setSize(128,128).setLayout(new SimpleVerticalLayout())
                                         .addChild(new Widget())
                                         .addChild(new Widget())))
                         .addChild(new Widget().setLayout(new HorizontalLayout())
