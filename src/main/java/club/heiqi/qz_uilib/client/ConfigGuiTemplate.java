@@ -36,6 +36,7 @@ public class ConfigGuiTemplate extends BaseGUI {
 
         ButtonWithTextWidget saveButton = new ButtonWithTextWidget().setText("保存");
         ButtonWithTextWidget cancelButton = new ButtonWithTextWidget().setText("取消");
+        ButtonWithTextWidget cancelAndQuitButton = new ButtonWithTextWidget().setText("取消&退出");
 
         saveButton.setCallBack(() -> {
             for (Map.Entry<String, Runnable> entry : saveOperators.entrySet()) {
@@ -48,10 +49,17 @@ public class ConfigGuiTemplate extends BaseGUI {
         cancelButton.setCallBack(() -> {
             saveOperators.clear();
         });
+        cancelAndQuitButton.setCallBack(() -> {
+            saveOperators.clear();
+            if (parent != null)
+                Minecraft.getMinecraft().displayGuiScreen(parent);
+            else
+                Minecraft.getMinecraft().displayGuiScreen(null);
+        });
 
         Widget buttonGroup = new Widget().setLayout(new HorizontalLayout());
-        saveButton.perfectWidth = cancelButton.perfectWidth = -1;
-        buttonGroup.addChild(saveButton).addChild(cancelButton);
+        saveButton.perfectWidth = cancelButton.perfectWidth = cancelAndQuitButton.perfectWidth = -1;
+        buttonGroup.addChild(saveButton).addChild(cancelButton).addChild(cancelAndQuitButton);
         buttonGroup.setPerfectSize(-1, Math.max(saveButton.perfectHeight, cancelButton.perfectHeight) + buttonGroup.insideMargins*2);
 
         root.setLayout(new VerticalLayout());
