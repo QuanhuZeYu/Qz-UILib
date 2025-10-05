@@ -14,15 +14,21 @@ import java.util.function.Consumer;
 
 public class ConfigGuiTemplate extends BaseGUI {
 
-    public HashMap<String, Runnable> saveOperators = new HashMap<>();
-    public Map<Boolean, Integer> boolColorMap = new HashMap<>();
+    public HashMap<String, Runnable> saveOperators;
+    public Map<Boolean, Integer> boolColorMap;
     public GuiScreen parent;
 
     public ConfigGuiTemplate(GuiScreen parent) {
+        super();
         this.parent = parent;
+    }
+
+    public void initGui() {
+        super.initGui();
+        saveOperators = new HashMap<>();
+        boolColorMap = new HashMap<>();
         boolColorMap.put(false, 0xfff02020);
         boolColorMap.put(true, 0xff20f020);
-
         ListWidget configList = createConfigList();
 
         LabelWidget title = new LabelWidget().setText("配置列表");

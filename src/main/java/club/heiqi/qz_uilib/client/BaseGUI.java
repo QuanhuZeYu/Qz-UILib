@@ -6,6 +6,7 @@ import net.minecraft.client.gui.GuiButton;
 import net.minecraft.client.gui.GuiScreen;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
+import org.lwjgl.input.Keyboard;
 import org.lwjgl.input.Mouse;
 import org.lwjgl.opengl.Display;
 import org.lwjgl.opengl.GL11;
@@ -21,9 +22,7 @@ public class BaseGUI extends GuiScreen {
     public int mouseCount = 0;
 
     public BaseGUI() {
-        if (frameBuffer == null) frameBuffer = new FrameBufferObject();
-        root = new Widget().setSize(Display.getWidth(), Display.getHeight());
-        mouseCount = Mouse.getButtonCount();
+        initGui();
     }
 
     @Override
@@ -78,7 +77,9 @@ public class BaseGUI extends GuiScreen {
 
     @Override
     public void initGui() {
-        super.initGui(); // 空实现
+        if (frameBuffer == null) frameBuffer = new FrameBufferObject();
+        root = new Widget().setSize(Display.getWidth(), Display.getHeight());
+        mouseCount = Mouse.getButtonCount();
     }
 
     @Override
@@ -187,6 +188,10 @@ public class BaseGUI extends GuiScreen {
 
     @Override
     protected void keyTyped(char typedChar, int keyCode) {
+        if (keyCode == Keyboard.KEY_F5) {
+            initGui();
+            return;
+        }
         super.keyTyped(typedChar, keyCode);
         root.onTypePrivate(typedChar, keyCode);
     }
