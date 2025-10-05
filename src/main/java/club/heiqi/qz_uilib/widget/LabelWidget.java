@@ -14,7 +14,6 @@ public class LabelWidget extends Widget {
     public int textColor = 0xffffffff;
     public static final String[] ALIGN = {"center", "left"};
     public String align = ALIGN[0];
-    public float width, height;
     public boolean isHover = false;
 
     public LabelWidget() {
@@ -57,10 +56,19 @@ public class LabelWidget extends Widget {
     @Override
     public void drawSelf() {
         super.drawSelf();
-        ((ReplaceFontRender)fontRenderer).setCharSize(textSize);
+        fontRenderer.setCharSize(textSize);
         float stringWidth = fontRenderer.getStringWidth(text);
-        float x = this.x + (width / 2) - (stringWidth / 2);
-        float y = this.y + (height / 2) - (textSize / 2);
+        float x = this.x, y = this.y;
+        x = this.x;
+        y = this.y + (height / 2) - (textSize / 2);
+        if (align.equals(ALIGN[0])) {
+            x = this.x;
+            y = this.y + (height / 2) - (textSize / 2);
+        }
+        else if (align.equals(ALIGN[1])) {
+            x = this.x + (width / 2) - (stringWidth / 2);
+            y = this.y + (height / 2) - (textSize / 2);
+        }
         fontRenderer.drawString(text, (int) x, (int) y,textColor);
 
         if (isHover)
