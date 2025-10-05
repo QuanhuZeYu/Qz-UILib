@@ -14,6 +14,8 @@ public class Config {
 
     public static boolean useDebug = false;
 
+    public static double wheelCount = 64;
+
     public void init(File configFile) {
         if (config == null) {
             configPath = configFile.getAbsolutePath();
@@ -24,6 +26,8 @@ public class Config {
 
     public void load() {
         useDebug = config.getBoolean("useDebug", Configuration.CATEGORY_GENERAL, false, "GUI Debug Mode");
+
+        wheelCount = config.get(Configuration.CATEGORY_GENERAL, "wheelCount", 64, "控制滚轮一次移动的距离", -Double.MAX_VALUE, Double.MAX_VALUE).getDouble();
 
         if (config.hasChanged()) {
             config.save();

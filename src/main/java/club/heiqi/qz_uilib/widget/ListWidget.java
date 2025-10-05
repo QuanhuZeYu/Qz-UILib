@@ -56,7 +56,7 @@ public class ListWidget extends Widget {
     @Override
     public void onWheel(float x, float y, int dWheel) {
         super.onWheel(x, y, dWheel);
-        int move = dWheel*20;
+        int move = (int) (dWheel*Config.wheelCount);
         // 列表元素可能出现空的情况
         if (!children.isEmpty()) {
             Widget first = children.get(0);

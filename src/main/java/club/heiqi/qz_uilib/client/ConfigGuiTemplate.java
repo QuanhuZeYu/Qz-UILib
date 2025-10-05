@@ -89,60 +89,74 @@ public class ConfigGuiTemplate extends BaseGUI {
                 Widget valueWidget = new Widget();
                 switch (type) {
                     case INTEGER -> {
-                        int initValue = property.getInt();
+                        if (property.isList()) {
+                            // TODO
+                        }
+                        else {
+                            int initValue = property.getInt();
 
-                        IntegerEditWidget edit = new IntegerEditWidget();
-                        edit.content = String.valueOf(initValue);
-                        edit.setPerfectSize(-1,32+edit.insideMargins*2);
-                        valueWidget = edit;
-                        // 设置回调
-                        Consumer<String> onTextChange = (value) -> {
-                            int intValue = edit.getIntValue();
-                            // 确认值在合法范围内
-                            if (intValue >= Integer.parseInt(property.getMinValue()) && intValue <= Integer.parseInt(property.getMaxValue())) {
-                                saveOperators.put(title, () -> {
-                                    property.set(intValue);
-                                });
-                            }
-                        };
-                        edit.setTextChangeCallBack(onTextChange);
+                            IntegerEditWidget edit = new IntegerEditWidget();
+                            edit.content = String.valueOf(initValue);
+                            edit.setPerfectSize(-1, 32 + edit.insideMargins * 2);
+                            valueWidget = edit;
+                            // 设置回调
+                            Consumer<String> onTextChange = (value) -> {
+                                int intValue = edit.getIntValue();
+                                // 确认值在合法范围内
+                                if (intValue >= Integer.parseInt(property.getMinValue()) && intValue <= Integer.parseInt(property.getMaxValue())) {
+                                    saveOperators.put(title, () -> {
+                                        property.set(intValue);
+                                    });
+                                }
+                            };
+                            edit.setTextChangeCallBack(onTextChange);
+                        }
                     }
                     case BOOLEAN -> {
-                        boolean initValue = property.getBoolean();
+                        if (property.isList()) {
+                            // TODO
+                        }
+                        else {
+                            boolean initValue = property.getBoolean();
 
-                        ButtonWithTextWidget edit = new ButtonWithTextWidget();
-                        edit.setText(String.valueOf(initValue)).setTextColor(boolColorMap.get(initValue));
-                        edit.setPerfectSize(-1,32+edit.insideMargins*2);
-                        valueWidget = edit;
-                        edit.setCallBack(() -> {
-                            boolean setValue = false;
-                            if (edit.text.equalsIgnoreCase("false")) {
-                                setValue = true;
-                            }
-                            else {
-                                setValue = false;
-                            }
-                            edit.setText(String.valueOf(setValue)).setTextColor(boolColorMap.get(setValue));
-                            edit.perfectWidth = -1;
-                            final boolean setValue2 = setValue;
-                            saveOperators.put(title, () -> {
-                                property.set(setValue2);
+                            ButtonWithTextWidget edit = new ButtonWithTextWidget();
+                            edit.setText(String.valueOf(initValue)).setTextColor(boolColorMap.get(initValue));
+                            edit.setPerfectSize(-1, 32 + edit.insideMargins * 2);
+                            valueWidget = edit;
+                            edit.setCallBack(() -> {
+                                boolean setValue = false;
+                                if (edit.text.equalsIgnoreCase("false")) {
+                                    setValue = true;
+                                } else {
+                                    setValue = false;
+                                }
+                                edit.setText(String.valueOf(setValue)).setTextColor(boolColorMap.get(setValue));
+                                edit.perfectWidth = -1;
+                                final boolean setValue2 = setValue;
+                                saveOperators.put(title, () -> {
+                                    property.set(setValue2);
+                                });
                             });
-                        });
+                        }
                     }
                     case STRING -> {
-                        String initValue = property.getString();
+                        if (property.isList()) {
+                            // TODO
+                        }
+                        else {
+                            String initValue = property.getString();
 
-                        TextEditWidget edit = new TextEditWidget();
-                        edit.setContent(initValue);
-                        edit.setPerfectSize(-1,32+edit.insideMargins*2);
-                        valueWidget = edit;
-                        Consumer<String> onTextChange = (value) -> {
-                            saveOperators.put(title, () -> {
-                                property.set(value);
-                            });
-                        };
-                        edit.setTextChangeCallBack(onTextChange);
+                            TextEditWidget edit = new TextEditWidget();
+                            edit.setContent(initValue);
+                            edit.setPerfectSize(-1, 32 + edit.insideMargins * 2);
+                            valueWidget = edit;
+                            Consumer<String> onTextChange = (value) -> {
+                                saveOperators.put(title, () -> {
+                                    property.set(value);
+                                });
+                            };
+                            edit.setTextChangeCallBack(onTextChange);
+                        }
                     }
                     case DOUBLE -> {
                         double initValue = property.getDouble();
@@ -164,16 +178,13 @@ public class ConfigGuiTemplate extends BaseGUI {
                         edit.setTextChangeCallBack(onTextChange);
                     }
                 }
-                if (property.isList()) {
-                    // TODO
-                }
                 titleLabel.perfectWidth = valueWidget.perfectWidth = -1;
                 // 元素主体
                 Widget hW = new Widget().setLayout(new HorizontalLayout());
                 hW.addChild(titleLabel);
                 hW.addChild(valueWidget);
                 // 最后记得设置元素最佳大小
-                hW.setPerfectSize(-1,Math.max(titleLabel.perfectHeight, valueWidget.perfectHeight)+hW.insideMargins*2);
+                hW.setPerfectHeight(Arrays.asList(titleLabel,valueWidget));
                 // 添加到列表组件
                 configList.addChild(hW);
             }
