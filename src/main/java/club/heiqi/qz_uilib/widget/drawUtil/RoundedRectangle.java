@@ -3,22 +3,23 @@ package club.heiqi.qz_uilib.widget.drawUtil;
 import org.joml.Vector2d;
 import org.joml.Vector3d;
 
-import java.util.ArrayList;
-
 public class RoundedRectangle extends Shape {
 
-    private double r;
-    private int seg;
+    public double cacheR, factR;
+    public int seg;
     public void gen(double width, double height, double r, int seg, Vector2d offset, int color) {
-        if (!set(width, height, offset, color) && Math.abs(this.r - r) <= 0.01 && this.seg == seg) {
+        if (!set(width, height, offset, color) && Math.abs(this.cacheR - r) <= 0.01 && this.seg == seg) {
             return;
         }
+        // 执行生成
         else {
-            this.r = r;
-            this.seg = seg;
-
+            vertex.clear();
+            index.clear();
+            this.color.clear();
+            texCoord.clear();
             // 钳制r避免意外值
             r = Math.min(Math.min(r, width / 2), height / 2);
+            this.factR = r;
 
             // 计算角度步进
             int totalCount = 4 + seg * 4;

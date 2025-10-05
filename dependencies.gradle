@@ -37,8 +37,8 @@ dependencies {
     //runtimeOnlyNonPublishable("com.github.GTNewHorizons:NotEnoughItems:2.7.69-GTNH:dev")
     implementation('org.joml:joml:1.10.8')
     // https://mvnrepository.com/artifact/org.mini2Dx/universal-tween-engine
-    implementation("org.mini2Dx:universal-tween-engine:6.3.3")
-    implementation(files("libs/qz_fontrender-1.6.10-dev.jar"))
+    shadowImplementation("org.mini2Dx:universal-tween-engine:6.3.3")
+    implementation(files("libs/qz_fontrender-dev.jar"))
 
 
     // 2025-10-2 更新依赖 统一到 整合包280版本中对应

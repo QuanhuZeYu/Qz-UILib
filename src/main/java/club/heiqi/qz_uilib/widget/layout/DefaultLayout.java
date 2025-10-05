@@ -11,31 +11,8 @@ import org.joml.Vector2f;
 public class DefaultLayout {
     public Widget curWidget;
 
-    /**
-     * 父级默认行为只调整子元素大小
-     */
+    /**无任何行为*/
     public void applyLayout(Widget widget) {
         this.curWidget = widget;
-        checkAndSetSize();
-    }
-
-    private void checkAndSetSize() {
-        for (Widget child : curWidget.children) {
-            Vector2f parentSize = child.getParentSize();
-            // 检查最大大小
-            if (child.width > parentSize.x - child.outMargins * 2) {
-                child.width = parentSize.x - child.outMargins * 2;
-            }
-            if (child.height > parentSize.y - child.outMargins * 2) {
-                child.height = parentSize.y - child.outMargins * 2;
-            }
-            // 检查最小大小
-            if (child.width < child.miniumWidth + child.insideMargins * 2) {
-                child.width = child.miniumWidth + child.insideMargins * 2;
-            }
-            if (child.height < child.miniumHeight + child.insideMargins * 2) {
-                child.height = child.miniumHeight + child.insideMargins * 2;
-            }
-        }
     }
 }

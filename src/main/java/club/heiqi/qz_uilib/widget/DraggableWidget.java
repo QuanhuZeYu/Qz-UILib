@@ -44,8 +44,11 @@ public class DraggableWidget extends Widget {
             this.localY = this.localY + offsetY;
 
             // 钳制位置在父组件内部
-            localX = Math.min(Math.max(0, localX), parent.width - parent.insideMargins - width);
-            localY = Math.min(Math.max(0, localY), parent.height - parent.insideMargins - height);
+            float parentWidth = parent==null ? Display.getWidth() : parent.width;
+            float parentHeight = parent==null ? Display.getHeight() : parent.height;
+            float parentInsideM = parent==null ? 0 : parent.insideMargins;
+            localX = Math.min(Math.max(0, localX), parentWidth - parentInsideM - width);
+            localY = Math.min(Math.max(0, localY), parentHeight - parentInsideM - height);
         }
     }
 

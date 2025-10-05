@@ -1,8 +1,6 @@
 package club.heiqi.qz_uilib.client;
 
 import club.heiqi.qz_uilib.widget.Widget;
-import club.heiqi.qz_uilib.widget.testWidget.TestWidget01;
-import club.heiqi.qz_uilib.widget.testWidget.TestWidgetList01;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiButton;
 import net.minecraft.client.gui.GuiScreen;
@@ -19,11 +17,12 @@ public class BaseGUI extends GuiScreen {
     public static FrameBufferObject frameBuffer;
     public Logger LOG = LogManager.getLogger();
     /**根组件*/
-    public Widget root = new TestWidgetList01();
+    public Widget root = null;
     public int mouseCount = 0;
 
     public BaseGUI() {
         if (frameBuffer == null) frameBuffer = new FrameBufferObject();
+        root = new Widget().setSize(Display.getWidth(), Display.getHeight());
         mouseCount = Mouse.getButtonCount();
     }
 
@@ -32,6 +31,7 @@ public class BaseGUI extends GuiScreen {
         Widget.updateTween();
         frameBuffer.bind();
         // 清除fbo内容
+        GL11.glClearColor(0,0,0,0);
         GL11.glClear(GL11.GL_COLOR_BUFFER_BIT | GL11.GL_DEPTH_BUFFER_BIT);
         GL11.glPushAttrib(GL11.GL_ALL_ATTRIB_BITS);
         // GL11.glDisable(GL11.GL_FOG);
@@ -41,12 +41,26 @@ public class BaseGUI extends GuiScreen {
         // GL11.glDisable(GL11.GL_STENCIL_TEST);
         // GL11.glDisable(GL11.GL_ALPHA_TEST);
         GL11.glEnable(GL11.GL_BLEND);
+        GL11.glDisable(GL11.GL_CULL_FACE);
         GL11.glBlendFunc(GL11.GL_SRC_ALPHA, GL11.GL_ONE_MINUS_SRC_ALPHA);
+
+        drawBackground();
+        root.applyLayout();
         root.draw();
         GL11.glPopAttrib();
-        frameBuffer.unbind();
 
+        frameBuffer.unbind();
         frameBuffer.render(mcGUIWidth, mcGUIHeight);
+    }
+
+    public void drawBackground() {
+        GL11.glColor4f(0.4f,0.4f,0.4f,0.8f);
+        GL11.glBegin(GL11.GL_QUADS);
+        GL11.glVertex3f(0,0,0);
+        GL11.glVertex3f(frameBuffer.textureWidth,0,0);
+        GL11.glVertex3f(frameBuffer.textureWidth,frameBuffer.textureHeight,0);
+        GL11.glVertex3f(0,frameBuffer.textureHeight,0);
+        GL11.glEnd();
     }
 
     private int mcGUIWidth, mcGUIHeight;
@@ -58,7 +72,8 @@ public class BaseGUI extends GuiScreen {
         this.mcGUIHeight = height;
         this.width = width;
         this.height = height;
-        LOG.info("w:{} h:{}", this.width, this.height);
+        root.onResize(Display.getWidth(),Display.getHeight());
+        // LOG.info("尺寸发生改变 w:{} h:{}", this.width, this.height);
     }
 
     @Override
@@ -75,8 +90,10 @@ public class BaseGUI extends GuiScreen {
     @Override
     protected void mouseClicked(int mouseX, int mouseY, int mouseButton) {
         // mouseButton: 0 左键 1 中键 2 右键 3~? 侧键等
-        if (root.isMouseInBounds(mouseX, mouseY))
+        if (root.isMouseInBounds(mouseX, mouseY)) {
             root.onPressPrivate(mouseX, mouseY, mouseButton);
+        }
+        root.onPressNotInBoundsPrivate(mouseX,mouseY,mouseButton);
 
     }
 
@@ -161,5 +178,16 @@ public class BaseGUI extends GuiScreen {
 
         cacheX = mouseX;
         cacheY = mouseY;
+    }
+
+    @Override
+    public void handleKeyboardInput() {
+        super.handleKeyboardInput();
+    }
+
+    @Override
+    protected void keyTyped(char typedChar, int keyCode) {
+        super.keyTyped(typedChar, keyCode);
+        root.onTypePrivate(typedChar, keyCode);
     }
 }

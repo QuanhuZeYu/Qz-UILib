@@ -1,5 +1,6 @@
 package club.heiqi.qz_uilib.client;
 
+import club.heiqi.qz_uilib.MyMod;
 import org.lwjgl.BufferUtils;
 import org.lwjgl.opengl.Display;
 import org.lwjgl.opengl.GL11;
@@ -78,7 +79,7 @@ public class FrameBufferObject implements Closeable {
         if (width <= 0 || height <= 0) return;
         if (textureWidth == width && textureHeight == height) return;
 
-        // MyMod.LOG.info("正在缩放FBO");
+        // MyMod.LOG.info("正在缩放FBO w:{} h{}",width,height);
 
         textureWidth = width;
         textureHeight = height;
@@ -177,6 +178,7 @@ public class FrameBufferObject implements Closeable {
         GL11.glEnd();
 
         // 恢复状态
+        GL11.glEnable(GL11.GL_DEPTH_TEST);
         GL11.glPopAttrib();
 
         // 恢复视口
