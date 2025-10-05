@@ -15,6 +15,8 @@ public class LabelWidget extends Widget {
     public static final String[] ALIGN = {"center", "left"};
     public String align = ALIGN[0];
     public boolean isHover = false;
+    /**如果此值设置为true 将会在每帧设置自身大小为字符大小*/
+    public boolean useStringWidth = false;
 
     public LabelWidget() {
         super();
@@ -35,22 +37,35 @@ public class LabelWidget extends Widget {
         height = size;
         return this;
     }
+    public LabelWidget useStringWidth(boolean flag) {
+        useStringWidth = flag;
+        return this;
+    }
     public LabelWidget setTextColor(int color) {
         this.textColor = color;
         return this;
     }
     public LabelWidget setCenterAlign() {
-        align = ALIGN[1];
-        return this;
-    }
-    public LabelWidget setLeftAlign() {
         align = ALIGN[0];
         return this;
     }
-    @Override
+    public LabelWidget setLeftAlign() {
+        align = ALIGN[1];
+        return this;
+    }
     public LabelWidget setPerfectSize(float width, float height) {
         super.setPerfectSize(width, height);
         return this;
+    }
+
+    @Override
+    public void applyLayout() {
+        if (useStringWidth) {
+            fontRenderer.setCharSize(textSize);
+            width = (float) fontRenderer.getStringWidth(text);
+            height = textSize;
+        }
+        super.applyLayout();
     }
 
     @Override
@@ -62,11 +77,11 @@ public class LabelWidget extends Widget {
         x = this.x;
         y = this.y + (height / 2) - (textSize / 2);
         if (align.equals(ALIGN[0])) {
-            x = this.x;
+            x = this.x + (width / 2) - (stringWidth / 2);
             y = this.y + (height / 2) - (textSize / 2);
         }
         else if (align.equals(ALIGN[1])) {
-            x = this.x + (width / 2) - (stringWidth / 2);
+            x = this.x;
             y = this.y + (height / 2) - (textSize / 2);
         }
         fontRenderer.drawString(text, (int) x, (int) y,textColor);
