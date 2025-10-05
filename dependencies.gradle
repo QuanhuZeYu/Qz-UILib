@@ -38,7 +38,7 @@ dependencies {
     implementation('org.joml:joml:1.10.8')
     // https://mvnrepository.com/artifact/org.mini2Dx/universal-tween-engine
     shadowImplementation("org.mini2Dx:universal-tween-engine:6.3.3")
-    implementation(files("libs/qz_fontrender-1.6.10--.1+1c11b3d053-dirty-dev.jar"))
+    implementation(files("libs/qz_fontrender-1.8.1-dev.jar"))
 
 
     // 2025-10-2 更新依赖 统一到 整合包280版本中对应
@@ -49,7 +49,7 @@ dependencies {
     // NEI
     runtimeOnly("com.github.GTNewHorizons:NotEnoughItems:2.7.91-GTNH:dev")
     // Angelica
-//    runtimeOnly("com.github.GTNewHorizons:Angelica:1.0.0-beta57:dev")
+    runtimeOnly("com.github.GTNewHorizons:Angelica:1.0.0-beta57:dev")
     // AE2
     runtimeOnly("com.github.GTNewHorizons:Applied-Energistics-2-Unofficial:rv3-beta-690-GTNH:dev")
     // AppleCore

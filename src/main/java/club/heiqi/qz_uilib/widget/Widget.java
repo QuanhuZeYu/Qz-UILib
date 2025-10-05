@@ -326,7 +326,7 @@ public class Widget implements WidgetEvent {
     }
 
     public <T extends Widget> T setTooltip(String tooltip) {
-        this.tooltip = tooltip;
+        this.tooltip = tooltip != null ? tooltip : "";
         return (T) this;
     }
 
