@@ -73,6 +73,7 @@ public class IntegerSliderWidget extends Widget {
 
         rectangleOutside.gen(width,6,3,1,new Vector2d(x,y+(height-6)/2), 0xfff0f0f0);
         rectangleInside.gen(width-2,6-2,3,1,new Vector2d(x+1,y+((height-5))/2), 0xff484848);
+        GL11.glDisable(GL11.GL_TEXTURE_2D);
         // 绘制中心线条
         RenderTool.getInstance().render(
                 rectangleOutside.getVertexArray(),
