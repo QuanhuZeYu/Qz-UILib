@@ -2,7 +2,7 @@ package club.heiqi.qz_uilib.configGUI;
 
 import club.heiqi.qz_uilib.Config;
 import club.heiqi.qz_uilib.MyMod;
-import club.heiqi.qz_uilib.client.ConfigGuiTemplate;
+import club.heiqi.qz_uilib.gui.ConfigGuiTemplate;
 import net.minecraft.client.gui.GuiScreen;
 import net.minecraftforge.common.config.ConfigCategory;
 import net.minecraftforge.common.config.Configuration;
@@ -14,6 +14,11 @@ public class UILibConfigVersion2 extends ConfigGuiTemplate {
 
     public UILibConfigVersion2(GuiScreen parent) {
         super(parent);
+    }
+
+    @Override
+    public void initGui() {
+        super.initGui();
     }
 
     @Override

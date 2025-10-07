@@ -14,6 +14,10 @@ import org.lwjgl.opengl.GL11;
 import java.util.HashSet;
 import java.util.Set;
 
+/**
+ * 该类已移动至 {@link club.heiqi.qz_uilib.gui.BaseGUI} 下
+ */
+@Deprecated
 public class BaseGUI extends GuiScreen {
     public static FrameBufferObject frameBuffer;
     public Logger LOG = LogManager.getLogger();
