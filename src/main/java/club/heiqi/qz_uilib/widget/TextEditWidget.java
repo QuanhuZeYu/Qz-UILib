@@ -47,6 +47,7 @@ public class TextEditWidget extends Widget implements TextEditEvent {
 
         GL11.glDisable(GL11.GL_CULL_FACE);
         GL11.glEnable(GL11.GL_DEPTH_TEST);
+        GL11.glDisable(GL11.GL_TEXTURE_2D);
         RenderTool.getInstance().render(
                 outBound.getVertexArray(),
                 outBound.getTexCoordArray(),
