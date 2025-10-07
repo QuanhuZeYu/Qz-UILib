@@ -1,5 +1,6 @@
-package club.heiqi.qz_uilib.client;
+package club.heiqi.qz_uilib.gui;
 
+import club.heiqi.qz_uilib.client.FrameBufferObject;
 import club.heiqi.qz_uilib.widget.Widget;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiButton;
@@ -14,10 +15,6 @@ import org.lwjgl.opengl.GL11;
 import java.util.HashSet;
 import java.util.Set;
 
-/**
- * 该类已移动至 {@link club.heiqi.qz_uilib.gui.BaseGUI} 下
- */
-@Deprecated
 public class BaseGUI extends GuiScreen {
     public static FrameBufferObject frameBuffer;
     public Logger LOG = LogManager.getLogger();

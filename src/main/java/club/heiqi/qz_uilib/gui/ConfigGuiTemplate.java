@@ -1,4 +1,4 @@
-package club.heiqi.qz_uilib.client;
+package club.heiqi.qz_uilib.gui;
 
 import club.heiqi.qz_uilib.widget.*;
 import club.heiqi.qz_uilib.widget.layout.HorizontalLayout;
@@ -12,10 +12,6 @@ import org.lwjgl.input.Keyboard;
 import java.util.*;
 import java.util.function.Consumer;
 
-/**
- * 该类已移动至 {@link club.heiqi.qz_uilib.gui.ConfigGuiTemplate} 下
- */
-@Deprecated
 public class ConfigGuiTemplate extends BaseGUI {
 
     public HashMap<String, Runnable> saveOperators;
