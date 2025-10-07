@@ -38,7 +38,7 @@ dependencies {
     implementation('org.joml:joml:1.10.8')
     // https://mvnrepository.com/artifact/org.mini2Dx/universal-tween-engine
     shadowImplementation("org.mini2Dx:universal-tween-engine:6.3.3")
-    implementation(files("libs/qz_fontrender-1.8.2-master+7111a5cf0f-dirty-dev.jar"))
+    implementation(files("libs/qz_fontrender-1.8.3-dev.jar"))
 
 
     // 2025-10-2 更新依赖 统一到 整合包280版本中对应
