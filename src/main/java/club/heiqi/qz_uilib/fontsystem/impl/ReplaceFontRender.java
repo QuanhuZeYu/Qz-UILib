@@ -44,6 +44,8 @@ public class ReplaceFontRender extends FontRenderer {
         curCharSize = Config.charSize;
         CharImageGenerator.getInstance().register();
         // registerResourceManager();
+        this.colorCode = new int[]{ 0, 0xAA, 0xAA00, 0xAAAA, 0xAA0000, 0xAA00AA, 0xFFAA00, 0xAAAAAA, 0x555555, 0x5555FF, 0x55FF55, 0x55FFFF, 0xFF5555, 0xFF55FF, 0xFFFF55, 0xFFFFFF,
+                                    0, 0x2A, 0x2A00, 0x2A2A, 0x2A0000, 0x2A002A, 0x2A2A00, 0x2A2A2A, 0x151515, 0x15153F, 0x153F15, 0x153F3F, 0x3F1515, 0x3F153F, 0x3F3F15, 0x3F3F3F};
     }
 
     public void registerResourceManager() {
@@ -77,7 +79,7 @@ public class ReplaceFontRender extends FontRenderer {
 
     @Override
     public int drawString(String text, int x, int y, int color, boolean dropShadow) {
-        if (text.isEmpty()) return 0;
+        if (text.isEmpty()) return x;
         this.enableAlpha();
         this.resetStyles();
         int xPos;
@@ -530,7 +532,7 @@ public class ReplaceFontRender extends FontRenderer {
         float fx = x;
         float fy = y;
         if (text == null) {
-            return 0;
+            return x;
         }
         else {
             if (this.bidiFlag) {
@@ -548,7 +550,10 @@ public class ReplaceFontRender extends FontRenderer {
                 fy += Config.shadowOffsetY;
             }
 
-            saveAI = (color >> 24 & 255);
+            saveAI = (color >> 24 & 255)/* 255 */;
+            /* if (saveAI < 80) {
+                MyMod.LOG.error("渲染 【{}】 时 是阴影? {}, 透明值过低！", text, shadow);
+            } */
             saveRI = (color >> 16 & 255);
             saveGI = (color >> 8 & 255);
             saveBI = (color & 255);
@@ -557,6 +562,16 @@ public class ReplaceFontRender extends FontRenderer {
             this.posX = fx;
             this.posY = fy;
 
+            // GL11.glPushAttrib(GL11.GL_ALL_ATTRIB_BITS);
+            // GL11.glDisable(GL11.GL_LIGHTING);
+            // GL11.glDisable(GL11.GL_ALPHA_TEST);
+            // GL11.glDisable(GL11.GL_FOG);
+            // GL11.glDisable(GL11.GL_DEPTH_TEST);
+            // GL11.glDisable(GL11.GL_CULL_FACE);
+            boolean isBlendEnabled = GL11.glIsEnabled(GL11.GL_BLEND);
+            GL11.glEnable(GL11.GL_BLEND);
+            GL11.glBlendFunc(GL11.GL_SRC_ALPHA, GL11.GL_ONE_MINUS_SRC_ALPHA);
+            GL11.glEnable(GL11.GL_ALPHA_TEST);
             GL11.glEnable(GL11.GL_TEXTURE_2D);
 
             // 🐕 收集需要渲染的字符 🐱
@@ -564,6 +579,25 @@ public class ReplaceFontRender extends FontRenderer {
             batchRenderer.flush();
             GL11.glDisable(GL11.GL_TEXTURE_2D);
             drawCollect();
+
+            if (Config.debugFontRender) {// debug绘制
+                GL11.glDisable(GL11.GL_DEPTH_TEST);
+                GL11.glColor4f(1, 0, 0, 1);
+                GL11.glBegin(GL11.GL_LINES);
+                GL11.glVertex3f(x, y, 0);
+                GL11.glVertex3f(posX, y, 0);
+                GL11.glVertex3f(posX, y, 0);
+                GL11.glVertex3f(posX, (float) (y + curCharSize), 0);
+                GL11.glVertex3f(posX, (float) (y + curCharSize), 0);
+                GL11.glVertex3f(x, (float) (y + curCharSize), 0);
+                GL11.glVertex3f(x, (float) (y + curCharSize), 0);
+                GL11.glVertex3f(x, y, 0);
+                GL11.glEnd();
+                GL11.glEnable(GL11.GL_DEPTH_TEST);
+            }
+
+            if (!isBlendEnabled)
+                GL11.glDisable(GL11.GL_BLEND);
 
             GL11.glEnable(GL11.GL_TEXTURE_2D);
 
