@@ -159,7 +159,7 @@ public class QzExFontConfigGUI extends BaseGUI {
                 fontSort[i] = sortResult.get(i);
             }
             Config.fontSort = fontSort;
-            Config.config.get(Configuration.CATEGORY_GENERAL, "fontSort", fontSort).set(fontSort);
+            Config.config.get(Config.FONT_SYSTEM, "fontSort", fontSort).set(fontSort);
             Config.config.save();
         });
 
