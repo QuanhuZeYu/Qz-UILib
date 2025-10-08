@@ -1,6 +1,5 @@
 package club.heiqi.qz_uilib.widget;
 
-import club.heiqi.qz_fontrender.fontsystem.impl.ReplaceFontRender;
 import club.heiqi.qz_uilib.widget.api.TextEditEvent;
 import club.heiqi.qz_uilib.widget.drawUtil.RenderTool;
 import club.heiqi.qz_uilib.widget.drawUtil.RoundedRectangle;
@@ -30,7 +29,7 @@ public class TextEditWidget extends Widget implements TextEditEvent {
     public void drawSelf() {
         super.drawSelf();
         drawTextBox();
-        ((ReplaceFontRender)fontRenderer).setCharSize(textSize);
+        fontRenderer.setCharSize(textSize);
         // 横坐标居中
         float x = (float) (this.x + outBound.factR);
         // float stringWidth = fontRenderer.getStringWidth(content);
@@ -38,7 +37,8 @@ public class TextEditWidget extends Widget implements TextEditEvent {
         // 纵坐标居中
         float y = this.y + (height / 2) - (textSize / 2);
         fontRenderer.drawString(content, (int) x, (int) y,textColor);
-        drawCursor();
+        if (isFocused)
+            drawCursor();
     }
 
     public void drawTextBox() {
@@ -66,18 +66,18 @@ public class TextEditWidget extends Widget implements TextEditEvent {
             if (System.currentTimeMillis() - lastCursorShow > 1000) {
                 lastCursorShow = System.currentTimeMillis();
             } else if (System.currentTimeMillis() - lastCursorShow < 500) {
-                ReplaceFontRender fontRender = (ReplaceFontRender) fontRenderer;
-                fontRender.setCharSize(textSize);
+                fontRenderer.setCharSize(textSize);
                 String cursorLeft = content.substring(0, currentCursor);
-                int stringWidth = fontRender.getStringWidth(cursorLeft);
+                int stringWidth = fontRenderer.getStringWidth(cursorLeft);
 
                 // 偏移X坐标
                 float x = (float) (this.x + outBound.factR);
+                GL11.glDisable(GL11.GL_TEXTURE_2D);
                 GL11.glBegin(GL11.GL_QUADS);
-                GL11.glVertex3f(x + stringWidth, y, 0);
-                GL11.glVertex3f(x + stringWidth, y + height, 0);
-                GL11.glVertex3f(x + stringWidth + 1, y + height, 0);
-                GL11.glVertex3f(x + stringWidth + 1, y, 0);
+                GL11.glVertex3f(x + stringWidth, y+3, 0);
+                GL11.glVertex3f(x + stringWidth, y + height-3, 0);
+                GL11.glVertex3f(x + stringWidth + 2, y + height-3, 0);
+                GL11.glVertex3f(x + stringWidth + 2, y+3, 0);
                 GL11.glEnd();
             }
         }

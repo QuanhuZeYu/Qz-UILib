@@ -3,6 +3,8 @@ package club.heiqi.qz_uilib.configGUI;
 import club.heiqi.qz_uilib.Config;
 import club.heiqi.qz_uilib.MyMod;
 import club.heiqi.qz_uilib.gui.ConfigGuiTemplate;
+import club.heiqi.qz_uilib.widget.ButtonWithTextWidget;
+import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiScreen;
 import net.minecraftforge.common.config.ConfigCategory;
 import net.minecraftforge.common.config.Configuration;
@@ -19,6 +21,13 @@ public class UILibConfigVersion2 extends ConfigGuiTemplate {
     @Override
     public void initGui() {
         super.initGui();
+
+        ButtonWithTextWidget sortFontButton = new ButtonWithTextWidget().setText("字体排序");
+        sortFontButton.perfectWidth = -1;
+        sortFontButton.setCallBack(() -> {
+            Minecraft.getMinecraft().displayGuiScreen(new QzExFontConfigGUI(this));
+        });
+        root.addChild(root.children.size()-1, sortFontButton);
     }
 
     @Override

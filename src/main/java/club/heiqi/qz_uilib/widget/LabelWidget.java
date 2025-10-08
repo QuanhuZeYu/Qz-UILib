@@ -1,7 +1,5 @@
 package club.heiqi.qz_uilib.widget;
 
-import club.heiqi.qz_fontrender.fontsystem.impl.ReplaceFontRender;
-import club.heiqi.qz_uilib.widget.layout.VerticalLayout;
 import org.lwjgl.input.Mouse;
 import org.lwjgl.opengl.Display;
 
