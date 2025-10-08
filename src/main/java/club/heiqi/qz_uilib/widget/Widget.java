@@ -8,6 +8,7 @@ import club.heiqi.qz_uilib.widget.api.WidgetEvent;
 import club.heiqi.qz_uilib.widget.layout.DefaultLayout;
 import club.heiqi.qz_uilib.widget.layout.RelativeCoordinateLayout;
 import net.minecraft.client.Minecraft;
+import net.minecraft.util.ResourceLocation;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.joml.Vector2f;
@@ -70,8 +71,8 @@ public class Widget implements WidgetEvent {
         registerTween();
         if (fontRenderer == null) {
             Minecraft mc = Minecraft.getMinecraft();
-            fontRenderer = new ReplaceFontRender(mc.gameSettings, mc.fontRenderer.locationFontTexture, mc.renderEngine, true);
-            ((ReplaceFontRender)fontRenderer).setCharSize(18f);
+            fontRenderer = new ReplaceFontRender(mc.gameSettings, new ResourceLocation("textures/font/ascii.png"), mc.renderEngine, true);
+            fontRenderer.setCharSize(18f);
         }
     }
 
