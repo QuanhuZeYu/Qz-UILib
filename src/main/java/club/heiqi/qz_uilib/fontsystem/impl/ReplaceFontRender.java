@@ -1,6 +1,7 @@
 package club.heiqi.qz_uilib.fontsystem.impl;
 
 import club.heiqi.qz_uilib.Config;
+import club.heiqi.qz_uilib.MyMod;
 import club.heiqi.qz_uilib.fontsystem.*;
 import com.ibm.icu.text.ArabicShaping;
 import com.ibm.icu.text.ArabicShapingException;
@@ -46,7 +47,11 @@ public class ReplaceFontRender extends FontRenderer {
 
     public void registerResourceManager() {
         Minecraft minecraft = Minecraft.getMinecraft();
-        minecraft.mcResourceManager.registerReloadListener(this);
+        try {
+            minecraft.mcResourceManager.registerReloadListener(this);
+        } catch (Exception e) {
+            MyMod.LOG.error("注册资源包重载时出现错误");
+        }
     }
 
     @Override
