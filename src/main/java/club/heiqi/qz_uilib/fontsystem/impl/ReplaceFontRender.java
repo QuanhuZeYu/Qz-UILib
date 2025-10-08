@@ -42,7 +42,7 @@ public class ReplaceFontRender extends FontRenderer {
         super(gameSettings, location, manager, b);
         curCharSize = Config.charSize;
         CharImageGenerator.getInstance().register();
-        registerResourceManager();
+        // registerResourceManager();
     }
 
     public void registerResourceManager() {
