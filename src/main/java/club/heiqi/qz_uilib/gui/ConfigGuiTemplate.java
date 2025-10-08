@@ -31,7 +31,7 @@ public class ConfigGuiTemplate extends BaseGUI {
         boolColorMap.put(true, 0xff20f020);
         ListWidget configList = createConfigList();
 
-        LabelWidget title = new LabelWidget().setText("配置列表");
+        LabelWidget title = new LabelWidget().setTextSize(64).setText("配置列表");
         title.perfectWidth = -1;
 
         ButtonWithTextWidget saveButton = new ButtonWithTextWidget().setText("保存");
@@ -74,8 +74,9 @@ public class ConfigGuiTemplate extends BaseGUI {
 
         for (ConfigCategory category : categories) {
             String categoryName = category.getName();
-            LabelWidget categoryLabel = new LabelWidget().setText(categoryName);
-            categoryLabel.setPerfectSize(-1,64);
+            LabelWidget categoryLabel = new LabelWidget().setTextSize(48).setText(categoryName);
+            categoryLabel.perfectWidth = -1;
+            configList.addChild(categoryLabel);
 
             Set<Map.Entry<String, Property>> entries = category.entrySet();
             for (Map.Entry<String, Property> entry : entries) {

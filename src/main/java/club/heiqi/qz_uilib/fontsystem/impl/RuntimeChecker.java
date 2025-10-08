@@ -1,0 +1,50 @@
+package club.heiqi.qz_uilib.fontsystem.impl;
+
+import club.heiqi.qz_uilib.Config;
+import cpw.mods.fml.common.FMLCommonHandler;
+import cpw.mods.fml.common.eventhandler.SubscribeEvent;
+import cpw.mods.fml.common.gameevent.TickEvent;
+import net.minecraft.client.Minecraft;
+import net.minecraft.client.gui.FontRenderer;
+import net.minecraftforge.common.MinecraftForge;
+
+/**
+ * 用于实时检查需要替换的目标 将目标切换为替换的字体渲染引擎
+ */
+public class RuntimeChecker {
+    /**全局检查器*/
+    public static RuntimeChecker instance;
+    public static RuntimeChecker getInstance() {
+        if (instance == null) {
+            instance = new RuntimeChecker();
+        }
+        return instance;
+    }
+
+    public FontRenderer cachedOriginal;
+    @SubscribeEvent
+    public void OriginalInspector_01(TickEvent.RenderTickEvent renderTick) {
+        // 检查原版渲染器字段
+        if (Minecraft.getMinecraft().fontRenderer instanceof ReplaceFontRender replaced) {
+            if (!Config.replaceOrigin) {
+                Minecraft.getMinecraft().fontRenderer = cachedOriginal;
+            }
+        }
+        else {
+            // 缓存原版的渲染器 或者是其他替换过的 非本模组实现的替换渲染器
+            cachedOriginal = Minecraft.getMinecraft().fontRenderer;
+            // 决定是否执行替换
+            if (Config.replaceOrigin) {
+                // 使用本模组的全局公共渲染器 以便外部调用
+                Minecraft.getMinecraft().fontRenderer = ReplaceFontRender.getInstance();
+            }
+        }
+    }
+
+
+
+    public void register() {
+        MinecraftForge.EVENT_BUS.register(this);
+        FMLCommonHandler.instance().bus().register(this);
+    }
+}

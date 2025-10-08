@@ -7,7 +7,6 @@ import club.heiqi.qz_uilib.widget.ButtonWithTextWidget;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiScreen;
 import net.minecraftforge.common.config.ConfigCategory;
-import net.minecraftforge.common.config.Configuration;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -34,9 +33,11 @@ public class UILibConfigVersion2 extends ConfigGuiTemplate {
     public List<ConfigCategory> getCategory() {
         List<ConfigCategory> result = new ArrayList<>();
 
-        ConfigCategory category = Config.config.getCategory(Configuration.CATEGORY_GENERAL);
+        ConfigCategory category1 = Config.config.getCategory(Config.GENERAL);
+        ConfigCategory category2 = Config.config.getCategory(Config.FONT_SYSTEM.toLowerCase());
 
-        result.add(category);
+        result.add(category1);
+        result.add(category2);
 
         return result;
     }
