@@ -35,6 +35,7 @@ public class ReplaceFontRender extends FontRenderer {
     }
     public double curCharSize;
     public float saveR, saveG, saveB, saveA;
+    public int saveRI, saveGI, saveBI, saveAI;
     public BatchRenderFont batchRenderer = new BatchRenderFont();
 
     public ReplaceFontRender(GameSettings gameSettings, ResourceLocation location, TextureManager manager, boolean b
@@ -325,10 +326,10 @@ public class ReplaceFontRender extends FontRenderer {
         int textLength = text.length();
 
         int fontType = PageManager.NORMAL;
-        int color = (int) (saveA * 255) << 24
-                | (int) (saveR * 255) << 16
-                | (int) (saveG * 255) << 8
-                | (int) (saveB * 255) & 255;
+        int color = saveAI << 24
+                | saveRI << 16
+                | saveGI << 8
+                | saveBI;
 
         for (int i = 0; i < textLength;) {
             int codepoint = text.codePointAt(i);
@@ -353,7 +354,7 @@ public class ReplaceFontRender extends FontRenderer {
                         int colorIndex = "0123456789abcdefklmnor".indexOf(codepoint);
                         if (shadow) colorIndex = colorIndex + 16;
                         color = colorCode[colorIndex];
-                        color = ((int)(saveA * 255)) << 24 | color;
+                        color = (saveAI << 24) | color;
                     }
                     case 'k' -> {
                         randomStyle = true;
@@ -374,19 +375,19 @@ public class ReplaceFontRender extends FontRenderer {
                     case 'r' -> {
                         this.resetStyles();
                         fontType = PageManager.NORMAL;
-                        color = (int) (saveA * 255) << 24
-                                | (int) (saveR * 255) << 16
-                                | (int) (saveG * 255) << 8
-                                | (int) (saveB * 255) & 255;
+                        color = saveAI << 24
+                                | saveRI << 16
+                                | saveGI << 8
+                                | saveBI;
                     }
                     // 任何没有见过的操作符都视作重置！
                     default -> {
                         this.resetStyles();
                         fontType = PageManager.NORMAL;
-                        color = (int) (saveA * 255) << 24
-                                | (int) (saveR * 255) << 16
-                                | (int) (saveG * 255) << 8
-                                | (int) (saveB * 255) & 255;
+                        color = saveAI << 24
+                                | saveRI << 16
+                                | saveGI << 8
+                                | saveBI;
                     }
                 }
 
@@ -547,22 +548,15 @@ public class ReplaceFontRender extends FontRenderer {
                 fy += Config.shadowOffsetY;
             }
 
-            this.alpha = (float)(color >> 24 & 255) / 255.0F;   saveA = alpha;
-            this.red = (float)(color >> 16 & 255) / 255.0F;     saveR = red;
-            this.blue = (float)(color >> 8 & 255) / 255.0F;     saveG = blue;
-            this.green = (float)(color & 255) / 255.0F;         saveB = green;
-            setColor(saveR, saveG, saveB, saveA);
+            saveAI = (color >> 24 & 255);
+            saveRI = (color >> 16 & 255);
+            saveGI = (color >> 8 & 255);
+            saveBI = (color & 255);
+
+            setColor(1, 1, 1, 1);
             this.posX = fx;
             this.posY = fy;
 
-            // GL11.glPushAttrib(GL11.GL_ALL_ATTRIB_BITS);
-            // GL11.glDisable(GL11.GL_LIGHTING);
-            // GL11.glDisable(GL11.GL_ALPHA_TEST);
-            // GL11.glDisable(GL11.GL_FOG);
-            // GL11.glDisable(GL11.GL_DEPTH_TEST);
-            // GL11.glDisable(GL11.GL_CULL_FACE);
-            GL11.glEnable(GL11.GL_BLEND);
-            // GL11.glEnable(GL11.GL_ALPHA_TEST);
             GL11.glEnable(GL11.GL_TEXTURE_2D);
 
             // 🐕 收集需要渲染的字符 🐱
