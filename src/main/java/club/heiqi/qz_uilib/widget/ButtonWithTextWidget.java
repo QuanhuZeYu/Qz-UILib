@@ -3,13 +3,10 @@ package club.heiqi.qz_uilib.widget;
 import aurelienribon.tweenengine.Tween;
 import aurelienribon.tweenengine.TweenAccessor;
 import aurelienribon.tweenengine.equations.Quad;
-import club.heiqi.qz_fontrender.fontsystem.impl.ReplaceFontRender;
 import club.heiqi.qz_uilib.widget.drawUtil.RenderTool;
 import club.heiqi.qz_uilib.widget.drawUtil.RoundedRectangle;
 import org.joml.Vector2d;
 import org.lwjgl.opengl.GL11;
-
-import java.util.Set;
 
 public class ButtonWithTextWidget extends Widget {
     RoundedRectangle rectangle = new RoundedRectangle();

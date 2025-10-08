@@ -2,13 +2,12 @@ package club.heiqi.qz_uilib.widget;
 
 import aurelienribon.tweenengine.Tween;
 import aurelienribon.tweenengine.TweenManager;
-import club.heiqi.qz_fontrender.fontsystem.impl.ReplaceFontRender;
 import club.heiqi.qz_uilib.Config;
+import club.heiqi.qz_uilib.fontsystem.impl.ReplaceFontRender;
 import club.heiqi.qz_uilib.widget.api.WidgetEvent;
 import club.heiqi.qz_uilib.widget.layout.DefaultLayout;
 import club.heiqi.qz_uilib.widget.layout.RelativeCoordinateLayout;
 import net.minecraft.client.Minecraft;
-import net.minecraft.client.gui.FontRenderer;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.joml.Vector2f;
@@ -35,6 +34,7 @@ public class Widget implements WidgetEvent {
     }
     public static long LAST_TIME = System.nanoTime();
     public static Logger LOG = LogManager.getLogger();
+    /**可自定义字符大小的字体渲染器*/
     public static ReplaceFontRender fontRenderer;
     /**绝对坐标X*/
     public float x = 0, y = 0;
@@ -46,7 +46,7 @@ public class Widget implements WidgetEvent {
     /**期望大小，用于布局器选取合适大小; -1表示不限制可被随意拉伸*/
     public float perfectWidth = 64, perfectHeight = 64;
 
-    /**外边距*/
+    /**外边距 暂时未用到*/
     public float outMargins = 4;
     /**内边距*/
     public float insideMargins = 4;

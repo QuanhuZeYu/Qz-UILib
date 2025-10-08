@@ -3,9 +3,10 @@ package club.heiqi.qz_uilib.configGUI;
 import club.heiqi.qz_uilib.Config;
 import club.heiqi.qz_uilib.MyMod;
 import club.heiqi.qz_uilib.gui.ConfigGuiTemplate;
+import club.heiqi.qz_uilib.widget.ButtonWithTextWidget;
+import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiScreen;
 import net.minecraftforge.common.config.ConfigCategory;
-import net.minecraftforge.common.config.Configuration;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -19,15 +20,24 @@ public class UILibConfigVersion2 extends ConfigGuiTemplate {
     @Override
     public void initGui() {
         super.initGui();
+
+        ButtonWithTextWidget sortFontButton = new ButtonWithTextWidget().setText("字体排序");
+        sortFontButton.perfectWidth = -1;
+        sortFontButton.setCallBack(() -> {
+            Minecraft.getMinecraft().displayGuiScreen(new QzExFontConfigGUI(this));
+        });
+        root.addChild(root.children.size()-1, sortFontButton);
     }
 
     @Override
     public List<ConfigCategory> getCategory() {
         List<ConfigCategory> result = new ArrayList<>();
 
-        ConfigCategory category = Config.config.getCategory(Configuration.CATEGORY_GENERAL);
+        ConfigCategory category1 = Config.config.getCategory(Config.GENERAL);
+        ConfigCategory category2 = Config.config.getCategory(Config.FONT_SYSTEM.toLowerCase());
 
-        result.add(category);
+        result.add(category1);
+        result.add(category2);
 
         return result;
     }
