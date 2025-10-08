@@ -536,21 +536,22 @@ public class ReplaceFontRender extends FontRenderer {
                 text = this.bidiReorder(text);
             }
 
-            if ((color & 0b1111_1100_0000_0000_0000_0000_0000_0000) == 0) {
-                color |= 0b1111_1111_0000_0000_0000_0000_0000_0000;
+            if ((color & 0xfc000000) == 0) {
+                color |= 0xff000000;
             }
 
             if (shadow) {
-                color = (color & 0b1111_1100_1111_1100_1111_1100) >> 2 | color & 0b1111_1111_0000_0000_0000_0000_0000_0000;
+                color = (color & 0xfcfcfc) >> 2 | color & 0xff000000;
+                // color = (color & 0b1111_1100_1111_1100_1111_1100) >> 2 | color & 0b1111_1111_0000_0000_0000_0000_0000_0000;
                 fx += Config.shadowOffsetX;
                 fy += Config.shadowOffsetY;
             }
 
-            this.alpha = (float)(color >> 24 & 255) / 255.0F;   saveA = this.alpha;
-            this.red = (float)(color >> 16 & 255) / 255.0F;     saveR = this.red;
-            this.blue = (float)(color >> 8 & 255) / 255.0F;     saveG = this.blue;
-            this.green = (float)(color & 255) / 255.0F;         saveB = this.green;
-            setColor(this.red, this.blue, this.green, this.alpha);
+            this.alpha = (float)(color >> 24 & 255) / 255.0F;   saveA = alpha;
+            this.red = (float)(color >> 16 & 255) / 255.0F;     saveR = red;
+            this.blue = (float)(color >> 8 & 255) / 255.0F;     saveG = blue;
+            this.green = (float)(color & 255) / 255.0F;         saveB = green;
+            setColor(saveR, saveG, saveB, saveA);
             this.posX = fx;
             this.posY = fy;
 
@@ -561,6 +562,7 @@ public class ReplaceFontRender extends FontRenderer {
             // GL11.glDisable(GL11.GL_DEPTH_TEST);
             // GL11.glDisable(GL11.GL_CULL_FACE);
             GL11.glEnable(GL11.GL_BLEND);
+            // GL11.glEnable(GL11.GL_ALPHA_TEST);
             GL11.glEnable(GL11.GL_TEXTURE_2D);
 
             // 🐕 收集需要渲染的字符 🐱
@@ -569,7 +571,6 @@ public class ReplaceFontRender extends FontRenderer {
             GL11.glDisable(GL11.GL_TEXTURE_2D);
             drawCollect();
 
-            // GL11.glDisable(GL11.GL_POLYGON_OFFSET_FILL);
             GL11.glEnable(GL11.GL_TEXTURE_2D);
 
             return (int)Math.ceil(this.posX);

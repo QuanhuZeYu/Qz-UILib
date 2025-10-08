@@ -15,7 +15,8 @@ import cpw.mods.fml.common.event.FMLServerStartingEvent;
         version = Tags.VERSION,
         name = MyMod.MOD_NAME,
         acceptedMinecraftVersions = "[1.7.10]",
-        guiFactory =  "club.heiqi.qz_uilib.configGUI.ConfigGUIFactory"
+        guiFactory =  "club.heiqi.qz_uilib.configGUI.ConfigGUIFactory",
+        acceptableRemoteVersions = "*"
 )
 public class MyMod {
 
