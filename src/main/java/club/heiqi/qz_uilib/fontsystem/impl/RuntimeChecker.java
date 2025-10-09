@@ -1,7 +1,9 @@
 package club.heiqi.qz_uilib.fontsystem.impl;
 
 import club.heiqi.qz_uilib.Config;
+import com.gtnewhorizon.gtnhlib.client.event.RenderTooltipEvent;
 import cpw.mods.fml.common.FMLCommonHandler;
+import cpw.mods.fml.common.eventhandler.EventPriority;
 import cpw.mods.fml.common.eventhandler.SubscribeEvent;
 import cpw.mods.fml.common.gameevent.TickEvent;
 import net.minecraft.client.Minecraft;
@@ -38,6 +40,13 @@ public class RuntimeChecker {
                 // 使用本模组的全局公共渲染器 以便外部调用
                 Minecraft.getMinecraft().fontRenderer = ReplaceFontRender.getInstance();
             }
+        }
+    }
+
+    @SubscribeEvent(priority = EventPriority.HIGHEST)
+    public void replaceRenderToolTipFontRenderer(RenderTooltipEvent event) {
+        if (Config.replaceOrigin) {
+            event.font = ReplaceFontRender.getInstance();
         }
     }
 
