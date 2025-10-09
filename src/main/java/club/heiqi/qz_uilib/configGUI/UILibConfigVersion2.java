@@ -2,6 +2,7 @@ package club.heiqi.qz_uilib.configGUI;
 
 import club.heiqi.qz_uilib.Config;
 import club.heiqi.qz_uilib.MyMod;
+import club.heiqi.qz_uilib.fontsystem.impl.ReplaceFontRender;
 import club.heiqi.qz_uilib.gui.ConfigGuiTemplate;
 import club.heiqi.qz_uilib.widget.ButtonWithTextWidget;
 import net.minecraft.client.Minecraft;
@@ -46,5 +47,7 @@ public class UILibConfigVersion2 extends ConfigGuiTemplate {
     public void saveConfigCallback() {
         MyMod.proxy.config.load();
         Config.config.save();
+        // 保存配置后需要重载的项目 - 字符大小
+        ReplaceFontRender.getInstance().setCharSize(Config.charSize);
     }
 }

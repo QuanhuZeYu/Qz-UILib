@@ -18,6 +18,7 @@ import java.nio.ByteBuffer;
 import java.util.ArrayList;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.locks.ReentrantLock;
 import java.util.function.Consumer;
 
 /**
@@ -37,11 +38,11 @@ public class CharImageGenerator {
     /**多线程结果存放与主线程获取通道 码点：对应生成结果等待回调消费*/
     public ConcurrentHashMap<Integer, ImageAndInfo> normalResults = new ConcurrentHashMap<>(),
             boldResults = new ConcurrentHashMap<>();
+    /**生成字符锁*/
+    public ReentrantLock genSyncLock = new ReentrantLock();
 
-    public void reload(boolean reloadFontManager) {
-        if (reloadFontManager) {
-            FontManager.getInstance().reload((float) (Config.awtCharSize * 0.8f));
-        }
+    public void startReload() {
+        genSyncLock.lock();
 
         normalConsumerHashMap.clear();
         boldConsumerHashMap.clear();
@@ -50,7 +51,11 @@ public class CharImageGenerator {
         boldResults.clear();
     }
 
-    public ImageAndInfo generate(int codepoint, int type, int charSize) {
+    public void endReload() {
+        genSyncLock.unlock();
+    }
+
+    protected ImageAndInfo generate(int codepoint, int type, int charSize) {
         Font font = FontManager.getInstance().findSuitable(codepoint, type);
         String s = new String(Character.toChars(codepoint));
 
@@ -117,6 +122,9 @@ public class CharImageGenerator {
 
     /**注意，consumer运行在主线程，可放心使用*/
     public void generateAsync(int codepoint, int type, int charSize, Consumer<ImageAndInfo> consumer) {
+        if (genSyncLock.isLocked()) {
+            throw new RuntimeException("此时不应该有生成任务！");
+        }
         if (type == PageManager.NORMAL)
             normalConsumerHashMap.put(codepoint, consumer);
         else if (type == PageManager.BOLD)
@@ -127,6 +135,10 @@ public class CharImageGenerator {
             else if (type == PageManager.BOLD)
                 boldResults.put(codepoint, generate(codepoint, type, charSize));
         }, "字符"+new String(Character.toChars(codepoint))+"生成器").start();
+    }
+
+    public boolean canGen() {
+        return !genSyncLock.isLocked();
     }
 
     @SubscribeEvent
