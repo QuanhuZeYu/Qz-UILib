@@ -1,6 +1,6 @@
 package club.heiqi.qz_uilib.gui;
 
-import club.heiqi.qz_uilib.client.FrameBufferObject;
+import club.heiqi.qz_uilib.client.FBOByScreenSize;
 import club.heiqi.qz_uilib.widget.Widget;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiButton;
@@ -16,7 +16,7 @@ import java.util.HashSet;
 import java.util.Set;
 
 public class BaseGUI extends GuiScreen {
-    public static FrameBufferObject frameBuffer;
+    public static FBOByScreenSize frameBuffer;
     public Logger LOG = LogManager.getLogger();
     /**根组件*/
     public Widget root = null;
@@ -78,7 +78,7 @@ public class BaseGUI extends GuiScreen {
 
     @Override
     public void initGui() {
-        if (frameBuffer == null) frameBuffer = new FrameBufferObject();
+        if (frameBuffer == null) frameBuffer = new FBOByScreenSize();
         root = new Widget().setSize(Display.getWidth(), Display.getHeight());
         mouseCount = Mouse.getButtonCount();
     }

@@ -295,6 +295,7 @@ public class FontRenderTool {
         shaderManager.setUniformM4f("modelview", new Matrix4f(modelView));
         shaderManager.setUniformM4f("projection", new Matrix4f(projection));
         shaderManager.setUniformF("colorGain", (float) Config.colorGain);
+        shaderManager.setUniformF("alphaGain", (float) Config.alphaGain);
 
         shaderManager.setUniformVec2("textureSize", new Vector2f((float) (Config.awtCharSize * 64)));
         shaderManager.setUniformF("sigma", (float) Config.sigma);

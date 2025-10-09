@@ -1,6 +1,5 @@
 package club.heiqi.qz_uilib.configGUI;
 
-import club.heiqi.qz_uilib.client.BaseGUI;
 import cpw.mods.fml.client.IModGuiFactory;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiScreen;
