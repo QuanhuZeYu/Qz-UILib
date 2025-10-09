@@ -1,6 +1,5 @@
 package club.heiqi.qz_uilib.client;
 
-import club.heiqi.qz_uilib.MyMod;
 import org.lwjgl.BufferUtils;
 import org.lwjgl.opengl.Display;
 import org.lwjgl.opengl.GL11;
@@ -12,7 +11,10 @@ import java.io.Closeable;
 import java.nio.ByteBuffer;
 import java.nio.IntBuffer;
 
-public class FrameBufferObject implements Closeable {
+/**
+ * 默认屏幕大小的FBO
+ */
+public class FBOByScreenSize implements Closeable {
     public int fbo;
     public int rbo;
     public int texture;
@@ -21,7 +23,7 @@ public class FrameBufferObject implements Closeable {
     public int previousFbo;
     public int previousX, previousY, previousWidth, previousHeight;
 
-    public FrameBufferObject() {
+    public FBOByScreenSize() {
         fbo = GL30.glGenFramebuffers();
         checkFboCreation();
 

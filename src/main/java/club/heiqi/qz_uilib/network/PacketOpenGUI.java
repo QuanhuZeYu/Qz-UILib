@@ -1,7 +1,5 @@
 package club.heiqi.qz_uilib.network;
 
-import club.heiqi.qz_uilib.GUIManager;
-import club.heiqi.qz_uilib.client.BaseGUI;
 import cpw.mods.fml.common.network.simpleimpl.IMessage;
 import cpw.mods.fml.common.network.simpleimpl.IMessageHandler;
 import cpw.mods.fml.common.network.simpleimpl.MessageContext;
@@ -54,8 +52,6 @@ public class PacketOpenGUI implements IMessage {
         public IMessage onMessage(PacketOpenGUI message, MessageContext ctx) {
             if (ctx.side.isClient()) {
                 int windowID = message.compound.getInteger("windowID");
-                BaseGUI gui = GUIManager.getGUIByType(windowID);
-                GUIManager.openGUIByClient(gui);
             }
             return null;
         }

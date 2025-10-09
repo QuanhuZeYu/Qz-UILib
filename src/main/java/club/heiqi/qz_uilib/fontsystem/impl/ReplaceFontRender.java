@@ -33,6 +33,8 @@ public class ReplaceFontRender extends FontRenderer {
         }
         return instance;
     }
+    /**重载全局指示器*/
+    public static boolean inReload = false;
     public double curCharSize;
     public float saveR, saveG, saveB, saveA;
     public int saveRI, saveGI, saveBI, saveAI;
@@ -59,11 +61,22 @@ public class ReplaceFontRender extends FontRenderer {
 
     @Override
     public void onResourceManagerReload(@Nullable IResourceManager p_110549_1_) {
-        reload(true);
+        reload();
     }
-    public void reload(boolean reloadFontManager) {
+    public void reload() {
+        // 重载需要注意顺序问题 1.停止当前所有生成任务 2.重置生成配置项 3.清空纹理页
+        inReload = true;
+        // 停止生成任务 - 通过加锁实现
+        CharImageGenerator.getInstance().startReload();
+
+        // 重新设置字体大小以便生成正确大小的字体
+        FontManager.getInstance().reload((float) (Config.awtCharSize*0.9f));
+        // 清空纹理页
         PageManager.getInstance().reload((int) (Config.awtCharSize * 64), (int) Config.awtCharSize);
-        CharImageGenerator.getInstance().reload(reloadFontManager);
+
+        // 开放字符生成
+        CharImageGenerator.getInstance().endReload();
+        inReload = false;
     }
 
 

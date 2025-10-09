@@ -138,7 +138,7 @@ public class QzExFontConfigGUI extends BaseGUI {
         ButtonWithTextWidget applyButton = new ButtonWithTextWidget().setText("应用配置");
         applyButton.perfectWidth = -1;
         applyButton.setCallBack(() -> {
-            ReplaceFontRender.getInstance().reload(false);
+            ReplaceFontRender.getInstance().reload();
             for (Font font : FontManager.getInstance().fonts) {
                 LOG.info(font.getFontName());
             }

@@ -4,7 +4,8 @@ varying vec2 texCoord;
 varying vec4 Color;
 
 
-uniform sampler2D SamTex;
+uniform sampler2D mainTex;
+uniform sampler2D maskTex;
 uniform vec4 uvBounds = vec4(0.0, 0.0, 1.0, 1.0);
 uniform vec2 textureSize = vec2(2048.0, 2048.0);
 uniform vec2 smoothRange = vec2(0.0, 1.0);
@@ -12,6 +13,7 @@ uniform float sigma = 3.14;
 uniform float blurRadius = 1.0;
 uniform int sampleRadius = 1;
 uniform float colorGain = 0.0;
+uniform float alphaGain = 0.0;
 
 const float PI = 3.14159265359;
 
@@ -68,9 +70,12 @@ void main() {
     sigmaSquared = sigma * sigma;
 
     vec2 texelSize = 1.0 / textureSize;
-    vec4 sampleColor = gaussianBlur(SamTex, texCoord, texelSize);
+    vec4 sampleColor = gaussianBlur(mainTex, texCoord, texelSize);
 
     sampleColor.a = smoothstep(smoothRange.x, smoothRange.y, sampleColor.a);
+    if (sampleColor.a != 0) {
+        sampleColor.a += alphaGain;
+    }
 
     gl_FragColor = vec4((sampleColor.rgb * Color.rgb) + vec3(colorGain), sampleColor.a);
 }

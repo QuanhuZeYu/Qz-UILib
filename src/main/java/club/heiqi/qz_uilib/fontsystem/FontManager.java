@@ -18,7 +18,7 @@ public class FontManager {
     public static FontManager getInstance() {
         synchronized ("创建字体管理器单例锁") {
             if (instance == null) {
-                instance = new FontManager((float) (Config.awtCharSize * 0.8f));
+                instance = new FontManager((float) (Config.awtCharSize * 0.9f));
             }
         }
         return instance;
@@ -37,21 +37,18 @@ public class FontManager {
         sortFont();
     }
 
-    public static ReentrantLock reloadLock = new ReentrantLock();
+    /**
+     * 重载任务为重置字体大小
+     */
     public void reload(float fontSize) {
-        reloadLock.lock();
-        try {
-            this.fontSize = fontSize;
-            ArrayList<Font> collect = new ArrayList<>();
-            for (Font font : fonts) {
-                font = font.deriveFont(fontSize);
-                collect.add(font);
-            }
-            fonts.clear();
-            fonts.addAll(collect);
-        } finally {
-            reloadLock.unlock();
+        this.fontSize = fontSize;
+        ArrayList<Font> collect = new ArrayList<>();
+        for (Font font : fonts) {
+            font = font.deriveFont(fontSize);
+            collect.add(font);
         }
+        fonts.clear();
+        fonts.addAll(collect);
     }
 
     public Font findSuitable(int codepoint, int type) {

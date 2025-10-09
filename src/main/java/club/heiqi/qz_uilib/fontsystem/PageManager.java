@@ -1,6 +1,7 @@
 package club.heiqi.qz_uilib.fontsystem;
 
 import club.heiqi.qz_uilib.Config;
+import club.heiqi.qz_uilib.fontsystem.impl.ReplaceFontRender;
 import com.google.common.cache.Cache;
 import com.google.common.cache.CacheBuilder;
 import io.netty.util.internal.ConcurrentSet;
@@ -8,6 +9,7 @@ import io.netty.util.internal.ConcurrentSet;
 import javax.annotation.Nullable;
 import java.util.BitSet;
 import java.util.HashSet;
+import java.util.concurrent.locks.ReentrantLock;
 import java.util.function.Consumer;
 
 /**获取字符的唯一入口*/
@@ -23,6 +25,7 @@ public class PageManager {
 
     public static final int NORMAL = 0, BOLD = 1;
 
+    /**存储的纹理集页面*/
     public final HashSet<CharPage>  normalPage = new HashSet<>(),
                                     boldPage = new HashSet<>();
     /**正在生成的字符*/
@@ -37,6 +40,14 @@ public class PageManager {
 
     public int textureSize, charSize;
     public int maintain = 3;
+
+
+    public PageManager(int textureSize, int charSize) {
+        this.textureSize = textureSize;
+        this.charSize = charSize;
+        checkCapacity();
+    }
+
 
     public void reload(int textureSize, int charSize) {
         this.textureSize = textureSize;
@@ -60,16 +71,11 @@ public class PageManager {
 
         normalCache.invalidateAll();
         boldCache.invalidateAll();
-
     }
 
-
-    public PageManager(int textureSize, int charSize) {
-        this.textureSize = textureSize;
-        this.charSize = charSize;
-        checkCapacity();
-    }
-
+    /**
+     * 该操作会创建新的纹理页 重载时需要避免调用
+     */
     public void checkCapacity() {
         int canAddCount = 0;
         for (CharPage page : normalPage) {
@@ -159,6 +165,8 @@ public class PageManager {
     }
 
     public void genNormalSignal(int codepoint) {
+        // 正在重载时禁止生成
+        if (ReplaceFontRender.inReload) return;
         normalInGen.add(codepoint);
         // 该consumer会在主线程中反复尝试寻找可添加页面，直到找到可添加的页面后运行该回调
         Consumer<CharImageGenerator.ImageAndInfo> consumer = (iai) -> {
@@ -175,6 +183,9 @@ public class PageManager {
     }
 
     public void genDoneNormal(int codepoint, CharPage page) {
+        if (ReplaceFontRender.inReload) {
+            throw new RuntimeException("重载时不应有字符生成完成！");
+        }
         normalChar.set(codepoint, true);
         normalInGen.remove(codepoint);
         // 加入缓存
@@ -182,6 +193,8 @@ public class PageManager {
     }
 
     public void genBoldSignal(int codepoint) {
+        // 正在重载时禁止生成
+        if (ReplaceFontRender.inReload) return;
         boldInGen.add(codepoint);
         // 该consumer会在主线程中反复尝试寻找可添加页面，直到找到可添加的页面后运行该回调
         Consumer<CharImageGenerator.ImageAndInfo> consumer = (iai) -> {
@@ -198,6 +211,9 @@ public class PageManager {
     }
 
     public void genDoneBold(int codepoint, CharPage page) {
+        if (ReplaceFontRender.inReload) {
+            throw new RuntimeException("重载时不应有字符生成完成！");
+        }
         boldChar.set(codepoint, true);
         boldInGen.remove(codepoint);
         // 加入缓存

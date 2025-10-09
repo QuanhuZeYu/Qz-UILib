@@ -20,7 +20,8 @@ public class Config {
     public static boolean useDebug = false;
     public static double wheelCount = 64;
     /**fontSystem中的配置*/
-    public static double sigma, blurRadius, smoothRangeMin, smoothRangeMax, colorGain, awtCharSize, charSize, spaceWidth, characterSpacing, shadowOffsetX, shadowOffsetY, lineSpacing, renderOffset;
+    public static double sigma, blurRadius, smoothRangeMin, smoothRangeMax, colorGain, awtCharSize, charSize, spaceWidth,
+            characterSpacing, shadowOffsetX, shadowOffsetY, lineSpacing, renderOffset, alphaGain;
     /**fontSystem中的配置*/
     public static String[] fontSort = {};
     public static boolean replaceOrigin, debugFontRender;
@@ -51,6 +52,7 @@ public class Config {
         shadowOffsetY = config.get(FONT_SYSTEM, "shadowOffsetY", 0.3, "投影偏移", -Double.MAX_VALUE, Double.MAX_VALUE).getDouble();
         lineSpacing = config.get(FONT_SYSTEM, "lineSpacing", 0.1, "行间距", -Double.MAX_VALUE, Double.MAX_VALUE).getDouble();
         renderOffset = config.get(FONT_SYSTEM, "renderOffset", 0, "字符渲染向前偏移量(用于解决z-fight问题)", -Double.MAX_VALUE, Double.MAX_VALUE).getDouble();
+        alphaGain = config.get(FONT_SYSTEM, "alphaGain", 0, "字符透明度增益", -Double.MAX_VALUE, Double.MAX_VALUE).getDouble();
 
         fontSort = config.get(FONT_SYSTEM, "fontSort", new String[]{}, "字符排序").getStringList();
         replaceOrigin = config.get(FONT_SYSTEM, "replaceOrigin", false, "是否替换原版字体渲染器").getBoolean();

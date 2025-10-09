@@ -5,7 +5,6 @@ import org.apache.logging.log4j.Logger;
 import org.lwjgl.BufferUtils;
 import org.lwjgl.opengl.GL11;
 import org.lwjgl.opengl.GL13;
-import org.lwjgl.opengl.GL30;
 
 import javax.imageio.ImageIO;
 import java.awt.image.BufferedImage;
@@ -16,14 +15,17 @@ import java.util.HashMap;
 
 public class CharPage {
     public static Logger LOG = LogManager.getLogger();
-    public final int textureID;
+    public final int textureID, maskTextureID;
     public final int textureSize, charSize;
     public final HashMap<Integer, CharInfo> chars = new HashMap<>();
 
     public CharPage(int textureSize, int charSize) {
         this.textureSize = textureSize;
         this.charSize = charSize;
+        // 主纹理
         textureID = GL11.glGenTextures();
+        // 遮罩纹理
+        maskTextureID = GL11.glGenTextures();
         GL11.glBindTexture(GL11.GL_TEXTURE_2D, textureID);
         GL11.glTexImage2D(
                 GL11.GL_TEXTURE_2D,
@@ -35,14 +37,33 @@ public class CharPage {
                 GL11.GL_RGBA,
                 GL11.GL_UNSIGNED_BYTE,
                 (ByteBuffer) null);
-        GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_MIN_FILTER, GL11.GL_LINEAR_MIPMAP_LINEAR);
+        GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_MIN_FILTER, GL11.GL_LINEAR);
         GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_MAG_FILTER, GL11.GL_LINEAR);
         GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_WRAP_S, GL13.GL_CLAMP_TO_BORDER);
         GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_WRAP_T, GL13.GL_CLAMP_TO_BORDER);
 
+        // 新增生成遮罩纹理
+        GL11.glBindTexture(GL11.GL_TEXTURE_2D, maskTextureID);
+        GL11.glTexImage2D(
+                GL11.GL_TEXTURE_2D,
+                0,
+                GL11.GL_RGBA,
+                textureSize,
+                textureSize,
+                0,
+                GL11.GL_RGBA,
+                GL11.GL_UNSIGNED_BYTE,
+                (ByteBuffer) null);
+        GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_MIN_FILTER, GL11.GL_LINEAR);
+        GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_MAG_FILTER, GL11.GL_LINEAR);
+        GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_WRAP_S, GL13.GL_CLAMP_TO_BORDER);
+        GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_WRAP_T, GL13.GL_CLAMP_TO_BORDER);
+
+        // 解绑
         GL11.glBindTexture(GL11.GL_TEXTURE_2D, 0);
     }
 
+    // 新增逻辑：添加字符时还需要为这张纹理同步附加一个遮罩纹理，遮罩纹理通过高斯模糊生成
     public void addChar(ByteBuffer image, CharInfo charInfo) {
         int curCount = getCurCharCount();  // 纹理页中的字符数量
         int x, y;
@@ -67,13 +88,18 @@ public class CharPage {
                 GL11.GL_UNSIGNED_BYTE,
                 image
         );
-        GL30.glGenerateMipmap(GL11.GL_TEXTURE_2D);
-        GL11.glBindTexture(GL11.GL_TEXTURE_2D, 0);
 
         charInfo.x = x;
         charInfo.y = y;
 
         chars.put(charInfo.codepoint, charInfo);
+
+        // 获取高斯模糊后的图像
+        // GaussBluer.getInstance(textureSize, textureSize)
+        //         .doBlur(textureID, maskTextureID, textureSize, textureSize);
+
+        // 解绑
+        GL11.glBindTexture(GL11.GL_TEXTURE_2D, 0);
     }
 
 
