@@ -3,6 +3,7 @@ package club.heiqi.qz_uilib.configGUI;
 import club.heiqi.qz_uilib.Config;
 import club.heiqi.qz_uilib.fontsystem.CharImageGenerator;
 import club.heiqi.qz_uilib.fontsystem.FontManager;
+import club.heiqi.qz_uilib.fontsystem.PageManager;
 import club.heiqi.qz_uilib.fontsystem.impl.ReplaceFontRender;
 import club.heiqi.qz_uilib.gui.BaseGUI;
 import club.heiqi.qz_uilib.widget.*;
@@ -26,7 +27,7 @@ public class QzExFontConfigGUI extends BaseGUI {
     }
 
     public ListWidget createFontList() {
-        FontManager fontManager = CharImageGenerator.getInstance().fontManager;
+        FontManager fontManager = FontManager.getInstance();
 
         // 捕获原始的 LinkedHashSet 引用
         final java.util.LinkedHashSet<Font> originalFontSet = fontManager.fonts;
@@ -138,6 +139,9 @@ public class QzExFontConfigGUI extends BaseGUI {
         applyButton.perfectWidth = -1;
         applyButton.setCallBack(() -> {
             ReplaceFontRender.getInstance().reload(false);
+            for (Font font : FontManager.getInstance().fonts) {
+                LOG.info(font.getFontName());
+            }
             initGui();
         });
 
