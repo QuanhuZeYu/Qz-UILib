@@ -15,7 +15,7 @@ import java.util.HashMap;
 
 public class CharPage {
     public static Logger LOG = LogManager.getLogger();
-    public final int textureID, maskTextureID;
+    public final int textureID;
     public final int textureSize, charSize;
     public final HashMap<Integer, CharInfo> chars = new HashMap<>();
 
@@ -24,26 +24,7 @@ public class CharPage {
         this.charSize = charSize;
         // 主纹理
         textureID = GL11.glGenTextures();
-        // 遮罩纹理
-        maskTextureID = GL11.glGenTextures();
         GL11.glBindTexture(GL11.GL_TEXTURE_2D, textureID);
-        GL11.glTexImage2D(
-                GL11.GL_TEXTURE_2D,
-                0,
-                GL11.GL_RGBA,
-                textureSize,
-                textureSize,
-                0,
-                GL11.GL_RGBA,
-                GL11.GL_UNSIGNED_BYTE,
-                (ByteBuffer) null);
-        GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_MIN_FILTER, GL11.GL_LINEAR);
-        GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_MAG_FILTER, GL11.GL_LINEAR);
-        GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_WRAP_S, GL13.GL_CLAMP_TO_BORDER);
-        GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_WRAP_T, GL13.GL_CLAMP_TO_BORDER);
-
-        // 新增生成遮罩纹理
-        GL11.glBindTexture(GL11.GL_TEXTURE_2D, maskTextureID);
         GL11.glTexImage2D(
                 GL11.GL_TEXTURE_2D,
                 0,
