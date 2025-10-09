@@ -20,16 +20,17 @@ import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.Consumer;
 
+/**
+ * 待优化类，有魔法用法的不规范
+ */
 public class CharImageGenerator {
     public static CharImageGenerator instance;
     public static CharImageGenerator getInstance() {
         if (instance == null) {
             instance = new CharImageGenerator();
-            fontManager = new FontManager((float) (Config.awtCharSize * 0.8f));
         }
         return instance;
     }
-    public static FontManager fontManager;
     /**任务列表 码点：对应回调*/
     public ConcurrentHashMap<Integer, Consumer<ImageAndInfo>> normalConsumerHashMap = new ConcurrentHashMap<>(),
             boldConsumerHashMap = new ConcurrentHashMap<>();
@@ -39,7 +40,7 @@ public class CharImageGenerator {
 
     public void reload(boolean reloadFontManager) {
         if (reloadFontManager) {
-            fontManager.reload((float) (Config.awtCharSize * 0.8f));
+            FontManager.getInstance().reload((float) (Config.awtCharSize * 0.8f));
         }
 
         normalConsumerHashMap.clear();
@@ -50,7 +51,7 @@ public class CharImageGenerator {
     }
 
     public ImageAndInfo generate(int codepoint, int type, int charSize) {
-        Font font = fontManager.findSuitable(codepoint, type);
+        Font font = FontManager.getInstance().findSuitable(codepoint, type);
         String s = new String(Character.toChars(codepoint));
 
         // 创建临时图像获取字体渲染上下文

@@ -55,4 +55,6 @@ dependencies {
     runtimeOnly("com.github.GTNewHorizons:Applied-Energistics-2-Unofficial:rv3-beta-690-GTNH:dev")
     // AppleCore
     runtimeOnly("com.github.GTNewHorizons:AppleCore:3.3.7:dev")
+    // ThaumicHorizons
+    runtimeOnly("com.github.GTNewHorizons:ThaumicHorizons:1.8.0:dev")
 }

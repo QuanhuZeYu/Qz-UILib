@@ -11,8 +11,18 @@ import java.awt.geom.AffineTransform;
 import java.io.File;
 import java.io.IOException;
 import java.util.*;
+import java.util.concurrent.locks.ReentrantLock;
 
 public class FontManager {
+    public static FontManager instance;
+    public static FontManager getInstance() {
+        synchronized ("创建字体管理器单例锁") {
+            if (instance == null) {
+                instance = new FontManager((float) (Config.awtCharSize * 0.8f));
+            }
+        }
+        return instance;
+    }
     public static Logger LOG = LogManager.getLogger();
     public float fontSize;
     /**存储所有可用的awt字体对象*/
@@ -20,23 +30,28 @@ public class FontManager {
 
     public FontManager(float fontSize) {
         this.fontSize = fontSize;
-        // initFontAssets();
+
         loadAssetsFontsTTF();
-        // 不再载入系统字体保持可控性
         loadInstalledFontsTTF();
         // 对字体进行排序
         sortFont();
     }
 
+    public static ReentrantLock reloadLock = new ReentrantLock();
     public void reload(float fontSize) {
-        this.fontSize = fontSize;
-        ArrayList<Font> collect = new ArrayList<>();
-        for (Font font : fonts) {
-            font = font.deriveFont(fontSize);
-            collect.add(font);
+        reloadLock.lock();
+        try {
+            this.fontSize = fontSize;
+            ArrayList<Font> collect = new ArrayList<>();
+            for (Font font : fonts) {
+                font = font.deriveFont(fontSize);
+                collect.add(font);
+            }
+            fonts.clear();
+            fonts.addAll(collect);
+        } finally {
+            reloadLock.unlock();
         }
-        fonts.clear();
-        fonts.addAll(collect);
     }
 
     public Font findSuitable(int codepoint, int type) {
@@ -55,11 +70,7 @@ public class FontManager {
                 return font;
             }
         }
-        return get(0);
-    }
-
-    public Font get(int index) {
-        return (Font) fonts.toArray()[index];
+        return (Font) fonts.toArray()[0];
     }
 
     /**
@@ -90,9 +101,14 @@ public class FontManager {
 
         // 获取所有已安装字体（包括TTF和其他格式）
         Font[] allFonts = ge.getAllFonts();
+        ArrayList<Font> result = new ArrayList<>();
+        for (Font font : allFonts) {
+            font = font.deriveFont(fontSize);
+            result.add(font);
+        }
 
         // 筛选TTF字体并存入列表
-        Collections.addAll(fonts, allFonts);
+        fonts.addAll(result);
     }
 
     public void loadTTF(File[] files) {
@@ -108,6 +124,8 @@ public class FontManager {
     }
 
     public boolean checkFontCanDisplay(Font font, int codepoint) {
+        if (!font.canDisplay(codepoint)) return false;
+
         FontRenderContext frc = new FontRenderContext(new AffineTransform(), true, true);
         // 字形信息
         GlyphVector glyphVector = font.createGlyphVector(frc, new String(Character.toChars(codepoint)));
@@ -181,42 +199,5 @@ public class FontManager {
         // 3. 更新类中的 fonts 字段为排序后的列表
         this.fonts.clear();
         this.fonts.addAll(toSort);
-    }
-
-    public void reload() {
-        fonts.clear();
-        loadAssetsFontsTTF();
-        // loadInstalledFontsTTF();
-    }
-
-    /**
-     * 从文件名中提取开头的数字部分
-     */
-    private Integer extractLeadingNumber(String fileName) {
-        StringBuilder numbers = new StringBuilder();
-
-        // 遍历文件名开头的数字字符
-        for (int i = 0; i < fileName.length(); i++) {
-            char c = fileName.charAt(i);
-            if (Character.isDigit(c)) {
-                numbers.append(c);
-            } else if (numbers.length() > 0) {
-                // 遇到非数字字符且已有数字，停止提取
-                break;
-            }
-        }
-
-        // 如果有数字部分，转换为整数
-        if (numbers.length() > 0) {
-            try {
-                return Integer.parseInt(numbers.toString());
-            } catch (NumberFormatException e) {
-                // 数字格式异常，返回null
-                return null;
-            }
-        }
-
-        // 没有数字部分
-        return null;
     }
 }
