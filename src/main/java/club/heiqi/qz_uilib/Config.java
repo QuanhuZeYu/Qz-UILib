@@ -19,9 +19,10 @@ public class Config {
 
     public static boolean useDebug = false;
     public static double wheelCount = 64;
-    /**fontSystem中的配置*/
-    public static double sigma, blurRadius, smoothRangeMin, smoothRangeMax, colorGain, awtCharSize, charSize, spaceWidth,
-            characterSpacing, shadowOffsetX, shadowOffsetY, lineSpacing, renderOffset, alphaGain;
+    /**fontSystem中的配置 - 加载界面依赖默认值！*/
+    public static double sigma = 1, blurRadius = 1, smoothRangeMin = 0, smoothRangeMax = 1, colorGain = 0,
+            awtCharSize = 64, charSize = 8, spaceWidth = 4, characterSpacing = 0.1, shadowOffsetX = 0.5, shadowOffsetY = 0.5,
+            lineSpacing = 0.1, renderOffset = 0, alphaGain = 0;
     /**fontSystem中的配置*/
     public static String[] fontSort = {};
     public static boolean replaceOrigin, debugFontRender;
@@ -45,11 +46,11 @@ public class Config {
         smoothRangeMax = config.get(FONT_SYSTEM, "smoothRangeMax", 1, "平滑透明度最高阈值", -Double.MAX_VALUE, Double.MAX_VALUE).getDouble();
         colorGain = config.get(FONT_SYSTEM, "colorGain", 0, "亮度增强直接加值", -Double.MAX_VALUE, Double.MAX_VALUE).getDouble();
         awtCharSize = config.get(FONT_SYSTEM, "awtCharSize", 64, "生成字符分辨率", 8, Double.MAX_VALUE).getDouble();
-        charSize = config.get(FONT_SYSTEM, "charSize", 10, "游戏内字体字号", -Double.MAX_VALUE, Double.MAX_VALUE).getDouble();
+        charSize = config.get(FONT_SYSTEM, "charSize", 8, "游戏内字体字号", -Double.MAX_VALUE, Double.MAX_VALUE).getDouble();
         spaceWidth = config.get(FONT_SYSTEM, "spaceWidth", 4, "空格宽度", -Double.MAX_VALUE, Double.MAX_VALUE).getDouble();
         characterSpacing = config.get(FONT_SYSTEM, "characterSpacing", 0.1, "字间距", -Double.MAX_VALUE, Double.MAX_VALUE).getDouble();
-        shadowOffsetX = config.get(FONT_SYSTEM, "shadowOffsetX", 0.3, "投影偏移", -Double.MAX_VALUE, Double.MAX_VALUE).getDouble();
-        shadowOffsetY = config.get(FONT_SYSTEM, "shadowOffsetY", 0.3, "投影偏移", -Double.MAX_VALUE, Double.MAX_VALUE).getDouble();
+        shadowOffsetX = config.get(FONT_SYSTEM, "shadowOffsetX", 0.5, "投影偏移", -Double.MAX_VALUE, Double.MAX_VALUE).getDouble();
+        shadowOffsetY = config.get(FONT_SYSTEM, "shadowOffsetY", 0.5, "投影偏移", -Double.MAX_VALUE, Double.MAX_VALUE).getDouble();
         lineSpacing = config.get(FONT_SYSTEM, "lineSpacing", 0.1, "行间距", -Double.MAX_VALUE, Double.MAX_VALUE).getDouble();
         renderOffset = config.get(FONT_SYSTEM, "renderOffset", 0, "字符渲染向前偏移量(用于解决z-fight问题)", -Double.MAX_VALUE, Double.MAX_VALUE).getDouble();
         alphaGain = config.get(FONT_SYSTEM, "alphaGain", 0, "字符透明度增益", -Double.MAX_VALUE, Double.MAX_VALUE).getDouble();

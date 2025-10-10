@@ -1,9 +1,7 @@
 package club.heiqi.qz_uilib.configGUI;
 
 import club.heiqi.qz_uilib.Config;
-import club.heiqi.qz_uilib.fontsystem.CharImageGenerator;
 import club.heiqi.qz_uilib.fontsystem.FontManager;
-import club.heiqi.qz_uilib.fontsystem.PageManager;
 import club.heiqi.qz_uilib.fontsystem.impl.ReplaceFontRender;
 import club.heiqi.qz_uilib.gui.BaseGUI;
 import club.heiqi.qz_uilib.widget.*;
@@ -11,7 +9,6 @@ import club.heiqi.qz_uilib.widget.layout.HorizontalLayout;
 import club.heiqi.qz_uilib.widget.layout.VerticalLayout;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiScreen;
-import net.minecraftforge.common.config.Configuration;
 import org.lwjgl.opengl.Display;
 
 import java.awt.*;

@@ -137,13 +137,7 @@ public class CharImageGenerator {
         }, "字符"+new String(Character.toChars(codepoint))+"生成器").start();
     }
 
-    public boolean canGen() {
-        return !genSyncLock.isLocked();
-    }
-
-    @SubscribeEvent
-    public void mainThreadCaller(TickEvent.RenderTickEvent event) {
-        if (event.phase != TickEvent.Phase.START) return;  // 只在开始阶段运行
+    public void uploadGPU() {
         // 已经执行过的结果
         ArrayList<Integer> toRemove = new ArrayList<>();
         // 常规: 遍历消费者
@@ -175,15 +169,6 @@ public class CharImageGenerator {
         // 将已经执行的结果移除掉
         for (Integer codepoint : toRemove) {
             boldResults.remove(codepoint);
-        }
-    }
-
-    public boolean isRegister = false;
-    public void register() {
-        if (!isRegister) {
-            FMLCommonHandler.instance().bus().register(this);
-            MinecraftForge.EVENT_BUS.register(this);
-            isRegister = true;
         }
     }
 
