@@ -22,44 +22,38 @@ import java.io.InputStream;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
+import java.util.Random;
 
-public class ReplaceFontRender extends FontRenderer {
+public class ReplaceFontRender {
     /**公用字体渲染器 - 如有特殊需要请自行创建实例避免污染全局状态(字号)<br>(字符页管理器在本类中是全局单例使用 仅字号颜色等是可实例控制的状态)*/
     public static ReplaceFontRender instance;
     public static ReplaceFontRender getInstance() {
         if (instance == null) {
             Minecraft mc = Minecraft.getMinecraft();
-            instance = new ReplaceFontRender(mc.gameSettings, new ResourceLocation("textures/font/ascii.png"), mc.renderEngine, true);
+            instance = new ReplaceFontRender();
         }
         return instance;
     }
     /**重载全局指示器*/
     public static boolean inReload = false;
+    
+    public int[] colorCode;
     public double curCharSize;
     public float saveR, saveG, saveB, saveA;
     public int saveRI, saveGI, saveBI, saveAI;
+    public float posX, posY;
+    public float FONT_HEIGHT = 8;
+    public Random fontRandom = new Random();
     public BatchRenderFont batchRenderer = new BatchRenderFont();
 
-    public ReplaceFontRender(GameSettings gameSettings, ResourceLocation location, TextureManager manager, boolean b
-    ) {
-        super(gameSettings, location, manager, b);
+    public ReplaceFontRender() {
         curCharSize = Config.charSize;
-        CharImageGenerator.getInstance().register();
         // registerResourceManager();
         this.colorCode = new int[]{ 0, 0xAA, 0xAA00, 0xAAAA, 0xAA0000, 0xAA00AA, 0xFFAA00, 0xAAAAAA, 0x555555, 0x5555FF, 0x55FF55, 0x55FFFF, 0xFF5555, 0xFF55FF, 0xFFFF55, 0xFFFFFF,
-                                    0, 0x2A, 0x2A00, 0x2A2A, 0x2A0000, 0x2A002A, 0x2A2A00, 0x2A2A2A, 0x151515, 0x15153F, 0x153F15, 0x153F3F, 0x3F1515, 0x3F153F, 0x3F3F15, 0x3F3F3F};
+                0, 0x2A, 0x2A00, 0x2A2A, 0x2A0000, 0x2A002A, 0x2A2A00, 0x2A2A2A, 0x151515, 0x15153F, 0x153F15, 0x153F3F, 0x3F1515, 0x3F153F, 0x3F3F15, 0x3F3F3F};
     }
 
-    public void registerResourceManager() {
-        Minecraft minecraft = Minecraft.getMinecraft();
-        try {
-            minecraft.mcResourceManager.registerReloadListener(this);
-        } catch (Exception e) {
-            MyMod.LOG.error("注册资源包重载时出现错误");
-        }
-    }
-
-    @Override
+    
     public void onResourceManagerReload(@Nullable IResourceManager p_110549_1_) {
         reload();
     }
@@ -80,21 +74,20 @@ public class ReplaceFontRender extends FontRenderer {
     }
 
 
-    @Override
+    
     public int drawStringWithShadow(String text, int x, int y, int color) {
         return drawString(text, x, y, color, true);
     }
 
-    @Override
+    
     public int drawString(String text, int x, int y, int color) {
         return drawString(text, x, y, color, false);
     }
 
-    @Override
+    
     public int drawString(String text, int x, int y, int color, boolean dropShadow) {
         if (text.isEmpty()) return x;
         this.enableAlpha();
-        this.resetStyles();
         int xPos;
 
         if (dropShadow) {
@@ -108,13 +101,14 @@ public class ReplaceFontRender extends FontRenderer {
         return xPos;
     }
 
-    @Override
+    
     public int getStringWidth(final String text) {
         if (text == null) return 0;
 
         int textLength = text.length();
         double width = 0;
         int fontType = PageManager.NORMAL;
+        boolean randomStyle = false, boldStyle = false, strikethroughStyle = false, underlineStyle = false, italicStyle;
 
         for (int i = 0; i < textLength;) {
             int codepoint = text.codePointAt(i);
@@ -150,12 +144,20 @@ public class ReplaceFontRender extends FontRenderer {
                         italicStyle = true;
                     }
                     case 'r' -> {
-                        this.resetStyles();
+                        randomStyle = false;
+                        boldStyle = false;
+                        italicStyle = false;
+                        underlineStyle = false;
+                        strikethroughStyle = false;
                         fontType = PageManager.NORMAL;
                     }
                     // 任何没有见过的操作符都视作重置！
                     default -> {
-                        this.resetStyles();
+                        randomStyle = false;
+                        boldStyle = false;
+                        italicStyle = false;
+                        underlineStyle = false;
+                        strikethroughStyle = false;
                         fontType = PageManager.NORMAL;
                     }
                 }
@@ -188,7 +190,7 @@ public class ReplaceFontRender extends FontRenderer {
         return (int) Math.ceil(width);
     }
 
-    @Override
+    
     public int getCharWidth(char character) {
         String s = String.valueOf(character);
         int codepoint = s.codePointAt(0);
@@ -202,51 +204,51 @@ public class ReplaceFontRender extends FontRenderer {
         return (int) Math.ceil(info.advance/info.width*this.curCharSize + Config.characterSpacing);
     }
 
-    @Override
+    public boolean unicodeFlag = true;
     public boolean getUnicodeFlag() {
         return this.unicodeFlag;
     }
 
-    @Override
+    public int textColor = 0xffffffff;
     public void drawSplitString(String str, int x, int y, int wrapWidth, int textColor) {
-        this.resetStyles();
         this.textColor = textColor;
         str = trimStringNewline(str);
         renderSplitString(str, x, y, wrapWidth, false);
     }
 
-    @Override
+    public boolean bidiFlag = false;
     public boolean getBidiFlag() {
         return this.bidiFlag;
     }
 
-    @Override
+    
     public List<String> listFormattedStringToWidth(String str, int wrapWidth) {
         return Arrays.asList(wrapFormattedStringToWidth(str, wrapWidth).split("\n"));
     }
 
-    @Override
+    
     public void setBidiFlag(boolean bidiFlag) {
         this.bidiFlag = bidiFlag;
     }
 
-    @Override
+    
     public void setUnicodeFlag(boolean unicodeFlag) {
         this.unicodeFlag = unicodeFlag;
     }
 
-    @Override
+    
     public int splitStringWidth(String text, int wrapWidth) {
         return (int) Math.ceil(curCharSize * this.listFormattedStringToWidth(text, wrapWidth).size());
     }
 
-    @Override
+    
     public String trimStringToWidth(String text, int targetWidth, boolean b) {
         StringBuilder stringbuilder = new StringBuilder();
 
         int textLength = text.length();
         double width = 0;
         int fontType = PageManager.NORMAL;
+        boolean randomStyle = false, boldStyle = false, strikethroughStyle = false, underlineStyle = false, italicStyle;
 
         for (int i = 0; i < textLength;) {
             int codepoint = text.codePointAt(i);
@@ -279,12 +281,20 @@ public class ReplaceFontRender extends FontRenderer {
                         italicStyle = true;
                     }
                     case 'r' -> {
-                        this.resetStyles();
+                        randomStyle = false;
+                        boldStyle = false;
+                        italicStyle = false;
+                        underlineStyle = false;
+                        strikethroughStyle = false;
                         fontType = PageManager.NORMAL;
                     }
                     // 任何没有见过的操作符都视作重置！
                     default -> {
-                        this.resetStyles();
+                        randomStyle = false;
+                        boldStyle = false;
+                        italicStyle = false;
+                        underlineStyle = false;
+                        strikethroughStyle = false;
                         fontType = PageManager.NORMAL;
                     }
                 }
@@ -326,7 +336,7 @@ public class ReplaceFontRender extends FontRenderer {
         return stringbuilder.toString();
     }
 
-    @Override
+    
     public String trimStringToWidth(String p_78269_1_, int p_78269_2_) {
         return this.trimStringToWidth(p_78269_1_, p_78269_2_, false);
     }
@@ -340,6 +350,7 @@ public class ReplaceFontRender extends FontRenderer {
     private void renderStringAtPos_Version2(String text, boolean shadow) {
         int textLength = text.length();
 
+        boolean randomStyle = false, boldStyle = false, strikethroughStyle = false, underlineStyle = false, italicStyle = false;
         int fontType = PageManager.NORMAL;
         int color = saveAI << 24
                 | saveRI << 16
@@ -361,11 +372,11 @@ public class ReplaceFontRender extends FontRenderer {
                 // 执行操作指令
                 switch (codepoint) {
                     case '0', '1', '2', '3', '4', '5', '6', '7', '8', '9', 'a', 'b', 'c', 'd', 'e', 'f'  -> {
-                        this.randomStyle = false;
-                        this.boldStyle = false;
-                        this.strikethroughStyle = false;
-                        this.underlineStyle = false;
-                        this.italicStyle = false;
+                        randomStyle = false;
+                        boldStyle = false;
+                        strikethroughStyle = false;
+                        underlineStyle = false;
+                        italicStyle = false;
                         int colorIndex = "0123456789abcdefklmnor".indexOf(codepoint);
                         if (shadow) colorIndex = colorIndex + 16;
                         color = colorCode[colorIndex];
@@ -388,7 +399,11 @@ public class ReplaceFontRender extends FontRenderer {
                         italicStyle = true;
                     }
                     case 'r' -> {
-                        this.resetStyles();
+                        randomStyle = false;
+                        boldStyle = false;
+                        italicStyle = false;
+                        underlineStyle = false;
+                        strikethroughStyle = false;
                         fontType = PageManager.NORMAL;
                         color = saveAI << 24
                                 | saveRI << 16
@@ -397,7 +412,11 @@ public class ReplaceFontRender extends FontRenderer {
                     }
                     // 任何没有见过的操作符都视作重置！
                     default -> {
-                        this.resetStyles();
+                        randomStyle = false;
+                        boldStyle = false;
+                        italicStyle = false;
+                        underlineStyle = false;
+                        strikethroughStyle = false;
                         fontType = PageManager.NORMAL;
                         color = saveAI << 24
                                 | saveRI << 16
@@ -457,7 +476,7 @@ public class ReplaceFontRender extends FontRenderer {
                     batchRenderer.collectRender(posX, posY, (float) curCharSize, page, info, color, italicStyle);
                 }
 
-                collectDraw(width, lineInfo);
+                collectDraw(width, lineInfo, underlineStyle, strikethroughStyle);
                 i += Character.charCount(codepoint);
             }
         }
@@ -493,15 +512,15 @@ public class ReplaceFontRender extends FontRenderer {
         }
     }
     public ArrayList<LineInfo> lineInfos = new ArrayList<>();
-    private void collectDraw(float width, LineInfo lineInfo) {
-        if (this.underlineStyle) {
+    private void collectDraw(float width, LineInfo lineInfo, boolean underlineStyle, boolean strikethroughStyle) {
+        if (underlineStyle) {
             lineInfo.addVertex(new Vector3d((this.posX + width), (this.posY + this.curCharSize), 0.0d))
                     .addVertex(new Vector3d((this.posX + width), (this.posY + this.curCharSize - 1.0d), 0.0d))
                     .addVertex(new Vector3d((this.posX), (this.posY + this.curCharSize - 1.0d), 0.0d))
                     .addVertex(new Vector3d((this.posX), (this.posY + this.curCharSize), 0.0d));
             lineInfos.add(lineInfo);
         }
-        if (this.strikethroughStyle) {
+        if (strikethroughStyle) {
             lineInfo.addVertex(new Vector3d((this.posX + width), this.posY + (this.curCharSize / 2) + 0.5, 0.0d))
                     .addVertex(new Vector3d((this.posX + width), this.posY + (this.curCharSize / 2) - 0.5, 0.0d))
                     .addVertex(new Vector3d((this.posX), this.posY + (this.curCharSize / 2) - 0.5, 0.0d))
@@ -519,14 +538,6 @@ public class ReplaceFontRender extends FontRenderer {
         lineInfos.clear();
     }
 
-    private void resetStyles() {
-        this.randomStyle = false;
-        this.boldStyle = false;
-        this.italicStyle = false;
-        this.underlineStyle = false;
-        this.strikethroughStyle = false;
-    }
-
     private String bidiReorder(String p_147647_1_) {
         try {
             Bidi bidi = new Bidi((new ArabicShaping(8)).shape(p_147647_1_), 127);
@@ -538,10 +549,18 @@ public class ReplaceFontRender extends FontRenderer {
         }
     }
 
+    public static long lastUpload = System.currentTimeMillis();
+    public void upload() {
+        if (System.currentTimeMillis() - lastUpload > 50) {
+            CharImageGenerator.getInstance().uploadGPU();
+            lastUpload = System.currentTimeMillis();
+        }
+    }
     /**
      * 返回当前X坐标位置 即光标位置
      */
-    private int renderString(String text, int x, int y, int color, boolean shadow) {
+    public int renderString(String text, int x, int y, int color, boolean shadow) {
+        upload();
         float fx = x;
         float fy = y;
         if (text == null) {
@@ -571,7 +590,7 @@ public class ReplaceFontRender extends FontRenderer {
             saveGI = (color >> 8 & 255);
             saveBI = (color & 255);
 
-            setColor(1, 1, 1, 1);
+            GL11.glColor4f(1, 1, 1, 1);
             this.posX = fx;
             this.posY = fy;
 
@@ -627,23 +646,23 @@ public class ReplaceFontRender extends FontRenderer {
 
 
 
-    @Override
+    
     protected void bindTexture(ResourceLocation location) {
 
     }
 
-    @Override
+    
     protected void enableAlpha() {
         GL11.glEnable(GL11.GL_ALPHA_TEST);
     }
 
-    @Override
+    
     protected InputStream getResourceInputStream(ResourceLocation location) throws IOException {
         return Minecraft.getMinecraft().getResourceManager().getResource(location).getInputStream();
     }
 
 
-    @Override
+    
     protected void setColor(float r, float g, float b, float a) {
         GL11.glColor4f(r, g, b, a);
     }
@@ -653,14 +672,14 @@ public class ReplaceFontRender extends FontRenderer {
 
 
 
-    private String trimStringNewline(String text) {
+    public String trimStringNewline(String text) {
         while (text != null && text.endsWith("\n")) {
             text = text.substring(0, text.length() - 1);
         }
         return text;
     }
 
-    private void renderSplitString(String str, int x, int y, int wrapWidth, boolean addShadow) {
+    public void renderSplitString(String str, int x, int y, int wrapWidth, boolean addShadow) {
         List<String> list = this.listFormattedStringToWidth(str, wrapWidth);
 
         for (String s1 : list) {
@@ -669,7 +688,7 @@ public class ReplaceFontRender extends FontRenderer {
         }
     }
 
-    private void renderStringAligned(String s, int x, int y, int wrapWidth, int color, boolean shadow) {
+    public void renderStringAligned(String s, int x, int y, int wrapWidth, int color, boolean shadow) {
         if (s.isEmpty()) return;
         if (this.bidiFlag) {
             int i1 = this.getStringWidth(this.bidiReorder(s));
@@ -679,7 +698,7 @@ public class ReplaceFontRender extends FontRenderer {
         this.renderString(s, x, y, color, shadow);
     }
 
-    private String wrapFormattedStringToWidth(String str, int wrapWidth) {
+    public String wrapFormattedStringToWidth(String str, int wrapWidth) {
         StringBuilder builder = new StringBuilder();
 
         float width = 0;

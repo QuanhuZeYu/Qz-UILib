@@ -71,7 +71,7 @@ public class Widget implements WidgetEvent {
         registerTween();
         if (fontRenderer == null) {
             Minecraft mc = Minecraft.getMinecraft();
-            fontRenderer = new ReplaceFontRender(mc.gameSettings, new ResourceLocation("textures/font/ascii.png"), mc.renderEngine, true);
+            fontRenderer = new ReplaceFontRender();
             fontRenderer.setCharSize(18f);
         }
     }
