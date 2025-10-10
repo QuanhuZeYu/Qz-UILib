@@ -68,7 +68,7 @@ public class RuntimeChecker {
 
 
     public FontRenderer deepCopy(FontRenderer target) {
-        FontRenderer copied = new FontRenderer(Minecraft.getMinecraft().gameSettings, new ResourceLocation(target.locationFontTexture.getResourcePath()), target.renderEngine, target.unicodeFlag);
+        FontRenderer copied = new FontRenderer(Minecraft.getMinecraft().gameSettings, new ResourceLocation("textures/font/ascii.png"), target.renderEngine, target.unicodeFlag);
         return copied;
     }
 
