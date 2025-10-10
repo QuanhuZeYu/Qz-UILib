@@ -1,4 +1,4 @@
-package club.heiqi.qz_uilib.mixins;
+package club.heiqi.qz_uilib.mixins.early;
 
 import com.gtnewhorizon.gtnhmixins.IEarlyMixinLoader;
 import cpw.mods.fml.relauncher.IFMLLoadingPlugin;
@@ -18,9 +18,7 @@ public class EarlyMixins implements IEarlyMixinLoader, IFMLLoadingPlugin {
     @Override
     public List<String> getMixins(Set<String> loadedCoreMods) {
         return Arrays.asList(
-                "MixinFontRenderer",
-                "MixinSmallFontRenderer",
-                "MixinTCFontRenderer"
+                "MixinFontRenderer"
         );
     }
 

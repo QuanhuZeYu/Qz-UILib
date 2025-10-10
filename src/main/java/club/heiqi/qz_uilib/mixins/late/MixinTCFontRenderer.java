@@ -1,28 +1,17 @@
-package club.heiqi.qz_uilib.mixins.early;
+package club.heiqi.qz_uilib.mixins.late;
 
 import club.heiqi.qz_uilib.Config;
 import club.heiqi.qz_uilib.fontsystem.impl.ReplaceFontRender;
-import mantle.client.SmallFontRenderer;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
-import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
+import thaumcraft.client.lib.TCFontRenderer;
 
-import java.util.List;
+@Mixin(TCFontRenderer.class)
+public class MixinTCFontRenderer {
 
-@Mixin(SmallFontRenderer.class)
-public class MixinSmallFontRenderer {
-
-    @Inject(method = "drawSplitString", at = @At("HEAD"), cancellable = true, remap = false)
-    public void drawSplitString(String str, int x, int y, int wrapWidth, int textColor, CallbackInfo ci) {
-        if (Config.replaceOrigin) {
-            ReplaceFontRender.getInstance().drawSplitString(str, x, y, wrapWidth, textColor);
-            ci.cancel();
-        }
-    }
-
-    @Inject(method = "drawString", at = @At("HEAD"), cancellable = true, remap = false)
+    @Inject(method = "drawString(Ljava/lang/String;III)I", at = @At("HEAD"), cancellable = true, remap = false)
     public void drawString(String text, int x, int y, int color, CallbackInfoReturnable<Integer> cir) {
         if (Config.replaceOrigin) {
             cir.setReturnValue(ReplaceFontRender.getInstance().drawString(text, x, y, color));
@@ -57,31 +46,24 @@ public class MixinSmallFontRenderer {
         }
     }
 
-    @Inject(method = "listFormattedStringToWidth", at = @At("HEAD"), cancellable = true, remap = false)
-    public void listFormattedStringToWidth(String str, int wrapWidth, CallbackInfoReturnable<List<String>> cir) {
-        if (Config.replaceOrigin) {
-            cir.setReturnValue(ReplaceFontRender.getInstance().listFormattedStringToWidth(str, wrapWidth));
-        }
-    }
-
-    @Inject(method = "splitStringWidth", at = @At("HEAD"), cancellable = true, remap = false)
-    public void splitStringWidth(String p_78267_1_, int p_78267_2_, CallbackInfoReturnable<Integer> cir) {
-        if (Config.replaceOrigin) {
-            cir.setReturnValue(ReplaceFontRender.getInstance().splitStringWidth(p_78267_1_, p_78267_2_));
-        }
-    }
-
-    @Inject(method = "trimStringToWidth*", at = @At("HEAD"), cancellable = true, remap = false)
+    @Inject(method = "trimStringToWidth(Ljava/lang/String;IZ)Ljava/lang/String;", at = @At("HEAD"), cancellable = true, remap = false)
     public void trimStringToWidth(String p_78262_1_, int p_78262_2_, boolean p_78262_3_, CallbackInfoReturnable<String> cir) {
         if (Config.replaceOrigin) {
             cir.setReturnValue(ReplaceFontRender.getInstance().trimStringToWidth(p_78262_1_, p_78262_2_, p_78262_3_));
         }
     }
 
-    @Inject(method = "trimStringToWidth*", at = @At("HEAD"), cancellable = true, remap = false)
+    @Inject(method = "trimStringToWidth(Ljava/lang/String;I)Ljava/lang/String;", at = @At("HEAD"), cancellable = true, remap = false)
     public void trimStringToWidth(String p_78269_1_, int p_78269_2_, CallbackInfoReturnable<String> cir) {
         if (Config.replaceOrigin) {
             cir.setReturnValue(ReplaceFontRender.getInstance().trimStringToWidth(p_78269_1_, p_78269_2_));
+        }
+    }
+
+    @Inject(method = "renderString", at = @At("HEAD"), cancellable = true, remap = false)
+    public void renderString(String text, int x, int y, int color, boolean shadow, CallbackInfoReturnable<Integer> cir) {
+        if (Config.replaceOrigin) {
+            cir.setReturnValue(ReplaceFontRender.getInstance().renderString(text, x, y, color, shadow));
         }
     }
 }
