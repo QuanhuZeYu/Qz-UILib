@@ -1,7 +1,7 @@
 {
   "required": false,
   "minVersion": "0.8.5-GTNH",
-  "package": "club.heiqi.qz_uilib.mixins",
+  "package": "club.heiqi.qz_uilib.mixins.center",
   "refmap": "mixins.qz_uilib.refmap.json",
   "target": "@env(DEFAULT)",
   "compatibilityLevel": "JAVA_8",
