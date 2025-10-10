@@ -6,7 +6,7 @@
 		"description": "An example mod for Minecraft 1.7.10 with Forge focused on a stable setup.",
 		"version": "${modVersion}",
 		"mcversion": "${minecraftVersion}",
-		"url": "https://github.com/SinTh0r4s/MyMod",
+		"url": "https://github.com/QuanhuZeYu/Qz-UILib",
 		"updateUrl": "",
 		"authorList": ["SinTho0r4s"],
 		"credits": "",
