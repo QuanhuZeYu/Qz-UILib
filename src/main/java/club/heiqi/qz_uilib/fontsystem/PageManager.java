@@ -9,7 +9,6 @@ import io.netty.util.internal.ConcurrentSet;
 import javax.annotation.Nullable;
 import java.util.BitSet;
 import java.util.HashSet;
-import java.util.concurrent.locks.ReentrantLock;
 import java.util.function.Consumer;
 
 /**获取字符的唯一入口*/
@@ -55,10 +54,10 @@ public class PageManager {
 
 
         for (CharPage page : normalPage) {
-            page.dispose();
+            page.close();
         }
         for (CharPage page : boldPage) {
-            page.dispose();
+            page.close();
         }
         normalPage.clear();
         boldPage.clear();

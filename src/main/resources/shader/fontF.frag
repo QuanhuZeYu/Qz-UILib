@@ -66,16 +66,54 @@ vec4 gaussianBlur(sampler2D tex, vec2 uv, vec2 texelSize) {
     return accumulatedColor;
 }
 
+vec3 rgb2hsv(vec3 c) {
+    vec4 K = vec4(0.0, -1.0 / 3.0, 2.0 / 3.0, -1.0);
+    vec4 p = mix(vec4(c.bg, K.wz), vec4(c.gb, K.xy), step(c.b, c.g));
+    vec4 q = mix(vec4(p.xyw, c.r), vec4(c.r, p.yzx), step(p.x, c.r));
+
+    float d = q.x - min(q.w, q.y);
+    float e = 1.0e-10;
+    return vec3(abs(q.z + (q.w - q.y) / (6.0 * d + e)), d / (q.x + e), q.x);
+}
+
+vec3 hsv2rgb(vec3 c) {
+    vec4 K = vec4(1.0, 2.0 / 3.0, 1.0 / 3.0, 3.0);
+    vec3 p = abs(fract(c.xxx + K.xyz) * 6.0 - K.www);
+    return c.z * mix(K.xxx, clamp(p - K.xxx, 0.0, 1.0), c.y);
+}
+
 void main() {
     sigmaSquared = sigma * sigma;
 
     vec2 texelSize = 1.0 / textureSize;
     vec4 sampleColor = gaussianBlur(mainTex, texCoord, texelSize);
 
-    sampleColor.a = smoothstep(smoothRange.x, smoothRange.y, sampleColor.a);
-    if (sampleColor.a != 0) {
-        sampleColor.a += alphaGain;
+    vec4 maskColor = safeSampler(maskTex, texCoord);
+
+    float smoothedAlpha = smoothstep(smoothRange.x, smoothRange.y, sampleColor.a);
+
+    vec3 finalRGB;
+    float finalAlpha;
+
+    if (smoothedAlpha < maskColor.a) {
+        finalRGB = vec3(1);
+        finalAlpha = maskColor.a;
+    } else {
+        finalRGB = sampleColor.rgb;
+        finalAlpha = smoothedAlpha;
     }
 
-    gl_FragColor = vec4((sampleColor.rgb * Color.rgb) + vec3(colorGain), sampleColor.a);
+    if (finalAlpha != 0.0) {
+        finalAlpha = min(finalAlpha + alphaGain, 1.0);
+    }
+
+
+    vec3 hsvColor = rgb2hsv(finalRGB);
+
+    float brightnessMultiplier = 1.0 + colorGain;
+    hsvColor.z = clamp(hsvColor.z * brightnessMultiplier, 0.0, 1.0);
+
+    vec3 processedRGB = hsv2rgb(hsvColor) * Color.rgb;
+
+    gl_FragColor = vec4(processedRGB, finalAlpha);
 }
