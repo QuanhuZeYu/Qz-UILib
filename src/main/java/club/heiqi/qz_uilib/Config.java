@@ -25,7 +25,7 @@ public class Config {
             lineSpacing = 0.1, renderOffset = 0, alphaGain = 0;
     /**fontSystem中的配置*/
     public static String[] fontSort = {};
-    public static boolean replaceOrigin, debugFontRender;
+    public static boolean replaceOrigin, debugFontRender, testRender;
 
     public void init(File configFile) {
         if (config == null) {
@@ -58,6 +58,7 @@ public class Config {
         fontSort = config.get(FONT_SYSTEM, "fontSort", new String[]{}, "字符排序").getStringList();
         replaceOrigin = config.get(FONT_SYSTEM, "replaceOrigin", false, "是否替换原版字体渲染器").getBoolean();
         debugFontRender = config.get(FONT_SYSTEM, "debugFontRender", false, "字体渲染器DEBUG模式").getBoolean();
+        testRender = config.get(FONT_SYSTEM, "testRender", false, "测试着色器").getBoolean();
 
         if (config.hasChanged()) {
             config.save();

@@ -1,11 +1,7 @@
-package club.heiqi.qz_uilib.fontsystem;
+package club.heiqi.qz_uilib.fontsystem.shader;
 
-import club.heiqi.qz_uilib.Config;
-import club.heiqi.qz_uilib.fontsystem.shader.ShaderManager;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
-import org.joml.Matrix4f;
-import org.joml.Vector2f;
 import org.lwjgl.BufferUtils;
 import org.lwjgl.opengl.GL11;
 import org.lwjgl.opengl.GL15;
@@ -15,22 +11,14 @@ import org.lwjgl.opengl.GL30;
 import java.nio.FloatBuffer;
 import java.nio.IntBuffer;
 
-public class FontRenderTool {
+public class RenderToolVAO {
     public static Logger LOG = LogManager.getLogger();
-    public static FontRenderTool instance;
-
-    public static FontRenderTool getInstance() {
-        if (instance == null) {
-            instance = new FontRenderTool();
-        }
-        return instance;
-    }
 
     // VBO: 顶点缓冲对象 | EBO: 索引缓冲对象
     // VAO: 顶点数组对象，在现代OpenGL中必须使用
     public int vao, vbo, tbo, cbo, ebo;
 
-    public FontRenderTool() {
+    public RenderToolVAO() {
         init();
     }
 
@@ -55,18 +43,18 @@ public class FontRenderTool {
 
             // VBO 0: 顶点位置 (Location 0, 3分量)
             GL15.glBindBuffer(GL15.GL_ARRAY_BUFFER, vbo);
-            GL20.glVertexAttribPointer(0, 3, GL11.GL_FLOAT, false, 0, 0L);
-            GL20.glEnableVertexAttribArray(0); // 启用属性！
+            GL20.glVertexAttribPointer(0, 3, GL11.GL_FLOAT, false, Float.BYTES*3, 0L);
+            // GL20.glEnableVertexAttribArray(0); // 启用属性！
 
             // VBO 1: 纹理坐标 (Location 1, 2分量)
             GL15.glBindBuffer(GL15.GL_ARRAY_BUFFER, tbo);
-            GL20.glVertexAttribPointer(1, 2, GL11.GL_FLOAT, false, 0, 0L);
-            GL20.glEnableVertexAttribArray(1); // 启用属性！
+            GL20.glVertexAttribPointer(1, 2, GL11.GL_FLOAT, false, Float.BYTES*2, 0L);
+            // GL20.glEnableVertexAttribArray(1); // 启用属性！
 
             // VBO 2: 颜色 (Location 2, 4分量)
             GL15.glBindBuffer(GL15.GL_ARRAY_BUFFER, cbo);
-            GL20.glVertexAttribPointer(2, 4, GL11.GL_FLOAT, false, 0, 0L);
-            GL20.glEnableVertexAttribArray(2); // 启用属性！
+            GL20.glVertexAttribPointer(2, 4, GL11.GL_FLOAT, false, Float.BYTES*4, 0L);
+            // GL20.glEnableVertexAttribArray(2); // 启用属性！
 
             // EBO 绑定 (索引)
             GL15.glBindBuffer(GL15.GL_ELEMENT_ARRAY_BUFFER, ebo);
@@ -74,7 +62,7 @@ public class FontRenderTool {
             // 解绑：解除 VAO 绑定，同时也会解除 EBO 的绑定（如果EBO绑定到了VAO），VBO 绑定也解除。
             GL30.glBindVertexArray(0);
             GL15.glBindBuffer(GL15.GL_ARRAY_BUFFER, 0);
-            // GL15.glBindBuffer(GL15.GL_ELEMENT_ARRAY_BUFFER, 0); // EBO 绑定状态已随 VAO 解除
+            GL15.glBindBuffer(GL15.GL_ELEMENT_ARRAY_BUFFER, 0); // EBO 绑定状态已随 VAO 解除
         }
     }
 
@@ -141,13 +129,7 @@ public class FontRenderTool {
         }
         return currentBuffer;
     }
-    /**
-     * 渲染方法，使用固定管线和 VBO (Vertex Buffer Object)。
-     * * @param vertex 顶点位置数据 (x, y, z)
-     * @param uv 纹理坐标数据 (u, v)
-     * @param color 颜色数据 (r, g, b, a)
-     * @param index 索引数据
-     */
+
     /**
      * 渲染方法，使用可编程管线和 VAO/VBO。
      * @param vertex 顶点位置数据 (x, y, z)
@@ -160,30 +142,26 @@ public class FontRenderTool {
         GL30.glBindVertexArray(vao);
 
         // --- 数据上传到 VBOs (只需上传数据，不需要再设置属性指针) ---
-
+        GL20.glEnableVertexAttribArray(0);
+        GL20.glEnableVertexAttribArray(1);
+        GL20.glEnableVertexAttribArray(2);
         // 1. 顶点
         GL15.glBindBuffer(GL15.GL_ARRAY_BUFFER, vbo);
         vertexBuffer = checkAndResizeBuffer(vertexBuffer, vertex.length, "顶点");
         vertexBuffer.put(vertex).flip();
         GL15.glBufferData(GL15.GL_ARRAY_BUFFER, vertexBuffer, GL15.GL_DYNAMIC_DRAW);
-        // !!! 删除：GL20.glVertexAttribPointer(0, 3, GL11.GL_FLOAT, false, 0, 0L);
-        // !!! 删除：GL20.glEnableVertexAttribArray(0);
 
         // 2. 纹理坐标
         GL15.glBindBuffer(GL15.GL_ARRAY_BUFFER, tbo);
         texCoordBuffer = checkAndResizeBuffer(texCoordBuffer, uv.length, "纹理坐标");
         texCoordBuffer.put(uv).flip();
         GL15.glBufferData(GL15.GL_ARRAY_BUFFER, texCoordBuffer, GL15.GL_DYNAMIC_DRAW);
-        // !!! 删除：GL20.glVertexAttribPointer(1, 2, GL11.GL_FLOAT, false, 0, 0L);
-        // !!! 删除：GL20.glEnableVertexAttribArray(1);
 
         // 3. 颜色
         GL15.glBindBuffer(GL15.GL_ARRAY_BUFFER, cbo);
         colorBuffer = checkAndResizeBuffer(colorBuffer, color.length, "颜色");
         colorBuffer.put(color).flip();
         GL15.glBufferData(GL15.GL_ARRAY_BUFFER, colorBuffer, GL15.GL_DYNAMIC_DRAW);
-        // !!! 删除：GL20.glVertexAttribPointer(2, 4, GL11.GL_FLOAT, false, 0, 0L);
-        // !!! 删除：GL20.glEnableVertexAttribArray(2);
 
         // 4. 索引 EBO
         GL15.glBindBuffer(GL15.GL_ELEMENT_ARRAY_BUFFER, ebo);
@@ -192,24 +170,23 @@ public class FontRenderTool {
         GL15.glBufferData(GL15.GL_ELEMENT_ARRAY_BUFFER, indexBuffer, GL15.GL_DYNAMIC_DRAW);
 
         // --- Uniform 设置和绘制 (保持不变) ---
-
-        // --- 清理 ---
-
-        // !!! 删除：GL20.glDisableVertexAttribArray(0);
-        // !!! 删除：GL20.glDisableVertexAttribArray(1);
-        // !!! 删除：GL20.glDisableVertexAttribArray(2);
+        GL11.glDrawElements(GL11.GL_TRIANGLES, index.length, GL11.GL_UNSIGNED_INT, 0);
 
         // 解绑
         GL30.glBindVertexArray(0);
         GL15.glBindBuffer(GL15.GL_ARRAY_BUFFER, 0);
         GL15.glBindBuffer(GL15.GL_ELEMENT_ARRAY_BUFFER, 0); // EBO 解绑
+
+        // GL20.glDisableVertexAttribArray(0);
+        // GL20.glDisableVertexAttribArray(1);
+        // GL20.glDisableVertexAttribArray(2);
     }
 
 
     /**
      * 使用外部提供的 FloatBuffer 和 IntBuffer 中的数据进行渲染。
      * 此方法直接将外部 Buffer 内容上传到 VBOs/EBO，避免内部数据拷贝。
-     *
+     * <p>
      * ⚠️ 前提条件：
      * 1. 外部 Buffer 必须已经填充数据，并调用了 .flip()。
      * 2. VAO 必须已经配置好属性指针 (例如，通过调用 setupAttributes())。
@@ -225,7 +202,6 @@ public class FontRenderTool {
             FloatBuffer colorData,
             IntBuffer indexData,
             int indexDataCount) {
-
         // 2. 绑定 VAO (加载已配置的属性状态)
         GL30.glBindVertexArray(vao);
 

@@ -1,8 +1,13 @@
 package club.heiqi.qz_uilib.fontsystem;
 
 import club.heiqi.qz_uilib.Config;
+import club.heiqi.qz_uilib.fontsystem.shader.ShaderManager;
+import org.joml.Matrix4f;
+import org.joml.Vector2f;
 import org.lwjgl.BufferUtils;
 import org.lwjgl.opengl.GL11;
+import org.lwjgl.opengl.GL13;
+import org.lwjgl.opengl.GL20;
 
 import java.nio.FloatBuffer;
 import java.nio.IntBuffer;
@@ -11,6 +16,15 @@ import java.util.HashMap;
 import java.util.Map;
 
 public class BatchRenderFont {
+    public static ShaderManager shaderManager;
+    public static ShaderManager getShaderManagerInstance() {
+        if (shaderManager == null) {
+            shaderManager = new ShaderManager()
+                    .loadFromJar("shader/fontV.vert","shader/fontF.frag", null);
+        }
+        return shaderManager;
+    }
+
     // 每次扩容增加的元素数量，例如 256KB 的 float/int 空间
     public static final int DEFAULT_CAPACITY_INCREMENT = 1024 * 64;
     public int vertexCount = 0; // 记录已提交的逻辑顶点数量 (vertex.length / 3)
@@ -97,7 +111,7 @@ public class BatchRenderFont {
     }
 
     /**键为 纹理ID 值为数据收集指令*/
-    public HashMap<Integer, ArrayList<Runnable>> callRenders = new HashMap<>();
+    public HashMap<CharPage, ArrayList<Runnable>> callRenders = new HashMap<>();
 
     public void collectRender(float x, float y, float charSize, CharPage page, CharInfo info, int inColor, boolean italic) {
 
@@ -155,15 +169,20 @@ public class BatchRenderFont {
                 indexBuffer.put(i + preVertexCount);
             }
         };
-        callRenders.computeIfAbsent(page.textureID, k -> new ArrayList<>()).add(call);
+        callRenders.computeIfAbsent(page, k -> new ArrayList<>()).add(call);
     }
 
     public void flush() {
-        FontRenderTool.getShaderManagerInstance().bind();
-        FontRenderTool.getInstance().setUniform_PipeLine0();
-        for (Map.Entry<Integer, ArrayList<Runnable>> entry : callRenders.entrySet()) {
+        getShaderManagerInstance().bind();
+        setUniform_PipeLine0();
+        for (Map.Entry<CharPage, ArrayList<Runnable>> entry : callRenders.entrySet()) {
 
-            GL11.glBindTexture(GL11.GL_TEXTURE_2D, entry.getKey());
+            GL13.glActiveTexture(GL13.GL_TEXTURE0);
+            GL11.glBindTexture(GL11.GL_TEXTURE_2D, entry.getKey().textureID);
+            shaderManager.setUniformI("mainTex", 0);
+            GL13.glActiveTexture(GL13.GL_TEXTURE1);
+            GL11.glBindTexture(GL11.GL_TEXTURE_2D, entry.getKey().maskID);
+            shaderManager.setUniformI("maskTex", 1);
 
             // 1. 执行所有渲染指令，将数据填充到 Buffers 中
             for (Runnable call : entry.getValue()) {
@@ -186,10 +205,31 @@ public class BatchRenderFont {
 
             // 4. 清理 Buffers 准备下一轮 (Clear)
             clean();
+            GL13.glActiveTexture(GL13.GL_TEXTURE0);
         }
         callRenders.clear();
 
-        FontRenderTool.getShaderManagerInstance().unbind();
+        getShaderManagerInstance().unbind();
+    }
+
+    private final FloatBuffer modelView = BufferUtils.createFloatBuffer(16);
+    private final FloatBuffer projection = BufferUtils.createFloatBuffer(16);
+    public void setUniform_PipeLine0() {
+        modelView.clear(); projection.clear();
+        GL11.glGetFloat(GL11.GL_MODELVIEW_MATRIX, modelView);
+        GL11.glGetFloat(GL11.GL_PROJECTION_MATRIX, projection);
+        modelView.flip(); projection.flip();
+
+        getShaderManagerInstance().setUniformM4f("modelview", new Matrix4f(modelView));
+        getShaderManagerInstance().setUniformM4f("projection", new Matrix4f(projection));
+        getShaderManagerInstance().setUniformF("colorGain", (float) Config.colorGain);
+        getShaderManagerInstance().setUniformF("alphaGain", (float) Config.alphaGain);
+
+        getShaderManagerInstance().setUniformVec2("textureSize", new Vector2f((float) (Config.awtCharSize * 64)));
+        getShaderManagerInstance().setUniformF("sigma", (float) Config.sigma);
+        getShaderManagerInstance().setUniformF("blurRadius", (float) Config.blurRadius);
+        getShaderManagerInstance().setUniformI("sampleRadius", Config.sampleRadius);
+        getShaderManagerInstance().setUniformVec2("smoothRange", new Vector2f((float) Config.smoothRangeMin, (float) Config.smoothRangeMax));
     }
 
     public void clean() {

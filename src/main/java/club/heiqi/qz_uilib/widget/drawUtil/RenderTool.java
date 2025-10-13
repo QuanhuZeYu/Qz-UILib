@@ -33,28 +33,15 @@ public class RenderTool {
     public void init() {
         // 仅检查 VBO, TBO, CBO, EBO
         if (vbo == 0 || tbo == 0 || cbo == 0 || ebo == 0) {
-            // 在固定管线中，我们只创建 VBO 来存储数据
-            // 不创建 VAO (GL30.glGenVertexArrays)
-
             // 顶点 (位置) VBO
             vbo = GL15.glGenBuffers();
-
             // 纹理坐标 TBO
             tbo = GL15.glGenBuffers();
-
             // 颜色 CBO
             cbo = GL15.glGenBuffers();
-
             // 索引 EBO
             ebo = GL15.glGenBuffers();
         }
-
-        // 固定管线不需要 ShaderManager
-        /*
-        if (shaderManager == null) {
-            // ...
-        }
-        */
     }
 
     private static final int ONE_MB_ELEMENTS = 1048576 / 4;

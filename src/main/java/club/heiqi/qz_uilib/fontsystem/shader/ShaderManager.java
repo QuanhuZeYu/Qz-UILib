@@ -19,7 +19,9 @@ import java.io.InputStreamReader;
 import java.nio.FloatBuffer;
 import java.nio.charset.StandardCharsets;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.Map;
+import java.util.Set;
 
 public class ShaderManager {
     public Logger LOG = LogManager.getLogger();
@@ -30,6 +32,9 @@ public class ShaderManager {
 
     public Map<String, Integer> uniforms;
     public Map<String, Integer> attributes;
+    public Map<String, Integer> attribLocations;
+    /** 用于记录已经警告过的不存在的 uniform 变量，避免重复警告 */
+    private final Set<String> missingUniforms;
 
     /** 用于复用矩阵缓冲区 */
     private final FloatBuffer matrixBuffer = BufferUtils.createFloatBuffer(16);
@@ -40,6 +45,8 @@ public class ShaderManager {
     public ShaderManager() {
         uniforms    = new HashMap<>();
         attributes  = new HashMap<>();
+        attribLocations = new HashMap<>();
+        missingUniforms = new HashSet<>(); // 初始化
         initShaderProgram();
     }
 
@@ -47,10 +54,17 @@ public class ShaderManager {
         shaderProgramID = GL20.glCreateProgram();
     }
 
+    public Runnable setLocation = () -> {};
+    public ShaderManager setCustomLocation(Runnable setLocation) {
+        this.setLocation = setLocation;
+        return this;
+    }
     public ShaderManager loadShader(String vertexShaderSource, String fragmentShaderSource, @Nullable String geometrySource) {
         // 清除旧缓存
         uniforms.clear();
         attributes.clear();
+        attribLocations.clear();
+        missingUniforms.clear(); // 在新加载着色器时也清除不存在的 uniform 记录
 
         LOG.info("🚀开始加载着色器⚙");
         vertexShaderID = createShader(vertexShaderSource, GL20.GL_VERTEX_SHADER);
@@ -63,6 +77,9 @@ public class ShaderManager {
         GL20.glAttachShader(shaderProgramID, fragmentShaderID);
         if (geometrySource != null)
             GL20.glAttachShader(shaderProgramID, geometryShaderID);
+
+        // 自定义位置
+        setLocation.run();
 
         // 链接着色器程序
         linkAndValidate();
@@ -139,17 +156,28 @@ public class ShaderManager {
     }
 
     public int getUniformLocation(String name) {
-        // 先从缓存中获取，如果不存在则从OpenGL中获取
+        // 1. 先从缓存中获取 (存在则直接返回)
         if (uniforms.containsKey(name)) {
             return uniforms.get(name);
         }
 
-        int location = GL20.glGetUniformLocation(shaderProgramID, name);
-        if (location == -1) {
-            LOG.warn("Uniform 【{}】不存在", name);
-            return -1; // 返回-1而不是抛出异常
+        // 2. 检查是否是已知的不存在的 uniform
+        if (missingUniforms.contains(name)) {
+            return -1; // 已知不存在，直接返回 -1
         }
 
+        // 3. 缓存中不存在，向 OpenGL 请求 location
+        int location = GL20.glGetUniformLocation(shaderProgramID, name);
+
+        if (location == -1) {
+            // 4. uniform 不存在
+            LOG.warn("Uniform 【{}】不存在或未被使用，已忽略该变量的设置。请检查着色器代码。", name);
+            // 5. 记录到 missingUniforms，避免下次再次警告
+            missingUniforms.add(name);
+            return -1;
+        }
+
+        // 6. uniform 存在，记录到缓存
         uniforms.put(name, location);
         return location;
     }
@@ -199,6 +227,18 @@ public class ShaderManager {
         }
     }
 
+    public int getAttribLocation(String name) {
+        Integer result = attribLocations.get(name);
+        if (result != null) {
+            return result;
+        }
+        else {
+            int location = GL20.glGetAttribLocation(shaderProgramID, name);
+            attribLocations.put(name, location);
+            return location;
+        }
+    }
+
     public void bind() {
         // 避免不必要的状态切换
         if (shaderProgramID == currentShaderID) {
@@ -222,5 +262,7 @@ public class ShaderManager {
         }
         uniforms.clear();
         attributes.clear();
+        attribLocations.clear();
+        missingUniforms.clear();
     }
 }
