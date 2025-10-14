@@ -1,5 +1,6 @@
 package club.heiqi.qz_uilib.client;
 
+import club.heiqi.qz_uilib.MyMod;
 import org.lwjgl.BufferUtils;
 import org.lwjgl.opengl.Display;
 import org.lwjgl.opengl.GL11;
@@ -10,6 +11,7 @@ import org.lwjgl.opengl.GL32;
 import java.io.Closeable;
 import java.nio.ByteBuffer;
 import java.nio.IntBuffer;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
  * 默认屏幕大小的FBO
@@ -104,18 +106,19 @@ public class FBOByScreenSize implements Closeable {
     }
 
 
+    public IntBuffer intBuffer = BufferUtils.createIntBuffer(16);
     public void bind() {
         resize(Display.getWidth(), Display.getHeight());
         previousFbo = GL11.glGetInteger(GL30.GL_FRAMEBUFFER_BINDING);
         GL30.glBindFramebuffer(GL30.GL_FRAMEBUFFER, fbo);
 
         // 更新视口
-        IntBuffer buffer = BufferUtils.createIntBuffer(4);
-        GL11.glGetInteger(GL11.GL_VIEWPORT, buffer);
-        previousX = buffer.get(0);
-        previousY = buffer.get(1);
-        previousWidth = buffer.get(2);
-        previousHeight = buffer.get(3);
+        intBuffer.clear();
+        GL11.glGetInteger(GL11.GL_VIEWPORT, intBuffer);
+        previousX = intBuffer.get(0);
+        previousY = intBuffer.get(1);
+        previousWidth = intBuffer.get(2);
+        previousHeight = intBuffer.get(3);
         GL11.glViewport(0,0,Display.getWidth(),Display.getHeight());
 
         // 更新矩阵
@@ -142,12 +145,12 @@ public class FBOByScreenSize implements Closeable {
 
     public void render(int width, int height) {
         // 设置视口大小
-        IntBuffer buffer = BufferUtils.createIntBuffer(4);
-        GL11.glGetInteger(GL11.GL_VIEWPORT, buffer);
-        previousX = buffer.get(0);
-        previousY = buffer.get(1);
-        previousWidth = buffer.get(2);
-        previousHeight = buffer.get(3);
+        intBuffer.clear();
+        GL11.glGetInteger(GL11.GL_VIEWPORT, intBuffer);
+        previousX = intBuffer.get(0);
+        previousY = intBuffer.get(1);
+        previousWidth = intBuffer.get(2);
+        previousHeight = intBuffer.get(3);
         GL11.glViewport(0,0,Display.getWidth(),Display.getHeight());
 
 
@@ -185,20 +188,6 @@ public class FBOByScreenSize implements Closeable {
 
         // 恢复视口
         GL11.glViewport(previousX,previousY,previousWidth,previousHeight);
-    }
-
-    public void dispose() {
-        GL30.glDeleteFramebuffers(fbo);
-        GL11.glDeleteTextures(texture);
-        GL11.glDeleteTextures(depthTexture); // ✅ 释放深度纹理
-        if (rbo != 0) {
-            GL30.glDeleteRenderbuffers(rbo); // ✅ 释放RBO（如果存在）
-        }
-    }
-
-    @Override
-    public void close() {
-        dispose();
     }
 
 
@@ -319,6 +308,26 @@ public class FBOByScreenSize implements Closeable {
                 throw new IllegalStateException("Unsupported attachment type: " + attachmentType);
             }
             return height;
+        }
+    }
+
+    public AtomicBoolean isClosedManually = new AtomicBoolean(false);
+    public void close() {
+        GL30.glDeleteFramebuffers(fbo);
+        GL11.glDeleteTextures(texture);
+        GL11.glDeleteTextures(depthTexture); // ✅ 释放深度纹理
+        if (rbo != 0) {
+            GL30.glDeleteRenderbuffers(rbo); // ✅ 释放RBO（如果存在）
+        }
+        isClosedManually.set(true);
+    }
+
+    @Override
+    protected void finalize() throws Throwable {
+        super.finalize();
+        if (!isClosedManually.get()) {
+            MyMod.LOG.error("!!!  屏幕大小跟随FBO未被正确释放  !!!");
+            ErrorCleaner.errorCleaners.add(this::close);
         }
     }
 }

@@ -1,13 +1,13 @@
 package club.heiqi.qz_uilib.fontsystem;
 
 import club.heiqi.qz_uilib.Config;
+import club.heiqi.qz_uilib.fontsystem.shader.FBO;
+import club.heiqi.qz_uilib.fontsystem.shader.MultiSampleFBO;
 import club.heiqi.qz_uilib.fontsystem.shader.ShaderManager;
 import org.joml.Matrix4f;
 import org.joml.Vector2f;
 import org.lwjgl.BufferUtils;
-import org.lwjgl.opengl.GL11;
-import org.lwjgl.opengl.GL13;
-import org.lwjgl.opengl.GL20;
+import org.lwjgl.opengl.*;
 
 import java.nio.FloatBuffer;
 import java.nio.IntBuffer;
@@ -23,6 +23,32 @@ public class BatchRenderFont {
                     .loadFromJar("shader/fontV.vert","shader/fontF.frag", null);
         }
         return shaderManager;
+    }
+
+    public static MultiSampleFBO multiSampleFBO;
+    public static MultiSampleFBO getMultiSampleFBO() {
+        if (multiSampleFBO == null) {
+            multiSampleFBO = new MultiSampleFBO(Display.getWidth(), Display.getHeight()).initByDefaultColorAndDepth();
+        }
+        else {
+            if (multiSampleFBO.width != Display.getWidth() || multiSampleFBO.height != Display.getHeight()) {
+                multiSampleFBO.resize(Display.getWidth(), Display.getHeight());
+            }
+        }
+        return multiSampleFBO;
+    }
+
+    public static FBO frameBuffer;
+    public static FBO getFrameBuffer() {
+        if (frameBuffer == null) {
+            frameBuffer = new FBO(Display.getWidth(), Display.getHeight()).initByDefaultColorAndDepth();
+        }
+        else {
+            if (frameBuffer.width != Display.getWidth() || frameBuffer.height != Display.getHeight()) {
+                frameBuffer.resize(Display.getWidth(), Display.getHeight());
+            }
+        }
+        return frameBuffer;
     }
 
     // 每次扩容增加的元素数量，例如 256KB 的 float/int 空间
@@ -173,16 +199,23 @@ public class BatchRenderFont {
     }
 
     public void flush() {
+        int previousTexture = GL11.glGetInteger(GL11.GL_TEXTURE_BINDING_2D);
+        int previousFBO = GL11.glGetInteger(GL30.GL_FRAMEBUFFER_BINDING);
+
+        // 绑定着色器
         getShaderManagerInstance().bind();
         setUniform_PipeLine0();
+        // 绑定多重采样
+        getMultiSampleFBO().bind();
+        GL11.glClear(GL11.GL_COLOR_BUFFER_BIT | GL11.GL_DEPTH_BUFFER_BIT | GL11.GL_STENCIL_BUFFER_BIT);
         for (Map.Entry<CharPage, ArrayList<Runnable>> entry : callRenders.entrySet()) {
 
             GL13.glActiveTexture(GL13.GL_TEXTURE0);
             GL11.glBindTexture(GL11.GL_TEXTURE_2D, entry.getKey().textureID);
-            shaderManager.setUniformI("mainTex", 0);
-            GL13.glActiveTexture(GL13.GL_TEXTURE1);
-            GL11.glBindTexture(GL11.GL_TEXTURE_2D, entry.getKey().maskID);
-            shaderManager.setUniformI("maskTex", 1);
+            // shaderManager.setUniformI("mainTex", 0);
+            // GL13.glActiveTexture(GL13.GL_TEXTURE1);
+            // GL11.glBindTexture(GL11.GL_TEXTURE_2D, entry.getKey().maskID);
+            // shaderManager.setUniformI("maskTex", 1);
 
             // 1. 执行所有渲染指令，将数据填充到 Buffers 中
             for (Runnable call : entry.getValue()) {
@@ -205,11 +238,20 @@ public class BatchRenderFont {
 
             // 4. 清理 Buffers 准备下一轮 (Clear)
             clean();
-            GL13.glActiveTexture(GL13.GL_TEXTURE0);
         }
         callRenders.clear();
 
+        // 解绑着色器
         getShaderManagerInstance().unbind();
+        // 解析多重采样
+        getMultiSampleFBO().resolve(getFrameBuffer().fboID, getFrameBuffer().width, getFrameBuffer().height);
+        GL11.glBindTexture(GL11.GL_TEXTURE_2D, getFrameBuffer().colorTextureID);
+        GL30.glBindFramebuffer(GL30.GL_FRAMEBUFFER, previousFBO);
+        getFrameBuffer().drawDisplayWindow();
+
+        // 恢复纹理
+        GL11.glBindTexture(GL11.GL_TEXTURE_2D, previousTexture);
+        GL30.glBindFramebuffer(GL30.GL_FRAMEBUFFER, previousFBO);
     }
 
     private final FloatBuffer modelView = BufferUtils.createFloatBuffer(16);
@@ -224,10 +266,11 @@ public class BatchRenderFont {
         getShaderManagerInstance().setUniformM4f("projection", new Matrix4f(projection));
         getShaderManagerInstance().setUniformF("colorGain", (float) Config.colorGain);
         getShaderManagerInstance().setUniformF("alphaGain", (float) Config.alphaGain);
+        getShaderManagerInstance().setUniformI("shrink", (int) Config.shrink);
 
         getShaderManagerInstance().setUniformVec2("textureSize", new Vector2f((float) (Config.awtCharSize * 64)));
         getShaderManagerInstance().setUniformF("sigma", (float) Config.sigma);
-        getShaderManagerInstance().setUniformF("blurRadius", (float) Config.blurRadius);
+        getShaderManagerInstance().setUniformF("blurRadius", (float) 1);
         getShaderManagerInstance().setUniformI("sampleRadius", Config.sampleRadius);
         getShaderManagerInstance().setUniformVec2("smoothRange", new Vector2f((float) Config.smoothRangeMin, (float) Config.smoothRangeMax));
     }

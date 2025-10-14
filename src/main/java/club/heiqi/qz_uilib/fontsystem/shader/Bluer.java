@@ -1,5 +1,6 @@
 package club.heiqi.qz_uilib.fontsystem.shader;
 
+import club.heiqi.qz_uilib.Config;
 import club.heiqi.qz_uilib.client.ErrorCleaner;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
@@ -47,9 +48,6 @@ public class Bluer {
     public ShaderManager shaderManager;
     public RenderToolVAO renderTool;
 
-    public int quadVboId; // 顶点缓冲对象 (VBO)
-    public int quadTcoId; // 纹理坐标缓冲对象 (可选，可以合并到 VBO)
-
     public Bluer(int width, int height) {
         vertical = new FBO(width, height).initByDefaultColorAndDepth();
         horizon = new FBO(width, height).initByDefaultColorAndDepth();
@@ -87,6 +85,7 @@ public class Bluer {
         GL11.glBlendFunc(GL11.GL_SRC_ALPHA, GL11.GL_ONE_MINUS_SRC_ALPHA);
         // 激活着色器
         shaderManager.bind();
+        shaderManager.setUniformF("intensityDivisor", (float) Config.intensityDivisor);
         shaderManager.setUniformF("radius", blur);
 
         // BufferedImage frameImage = FrameUtils.getTextureImage(textureID, width, height);
@@ -175,8 +174,7 @@ public class Bluer {
     public void close() {
         vertical.close();
         horizon.close();
-        GL15.glDeleteBuffers(quadVboId);
-        GL15.glDeleteBuffers(quadTcoId);
+        shaderManager.close();
         isCloseManually.set(true);
     }
 
@@ -184,6 +182,7 @@ public class Bluer {
     protected void finalize() throws Throwable {
         super.finalize();
         if (!isCloseManually.get()) {
+            LOG.info("!!!  模糊器未被正确释放  !!!");
             ErrorCleaner.errorCleaners.add(this::close);
         }
     }

@@ -254,7 +254,7 @@ public class ShaderManager {
         currentShaderID = 0;
     }
 
-    public void destroy() {
+    public void close() {
         unbind();
         if (shaderProgramID != 0) {
             GL20.glDeleteProgram(shaderProgramID);

@@ -1,16 +1,20 @@
 package club.heiqi.qz_uilib.fontsystem.shader;
 
+import club.heiqi.qz_uilib.Config;
 import club.heiqi.qz_uilib.client.ErrorCleaner;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
+import org.lwjgl.BufferUtils;
 import org.lwjgl.opengl.*;
 
 import java.nio.ByteBuffer;
+import java.nio.IntBuffer;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 public class FBO {
     public static Logger LOG = LogManager.getLogger();
-    public int fboID, colorTextureID, depthRenderBufferID;
+    public static int MAX_SAMPLE = 0;
+    public int fboID, colorTextureID, colorRenderBufferID, depthRenderBufferID;
     public int width, height;
     /**标记是否是外部的颜色纹理*/
     public boolean isOutSideTexture = false;
@@ -95,6 +99,20 @@ public class FBO {
         GL11.glBindTexture(GL11.GL_TEXTURE_2D, 0);
     }
 
+    public void genMultiSample2DAndAttachColorTexture() {
+        if (MAX_SAMPLE == 0) {
+            MAX_SAMPLE = GL11.glGetInteger(GL30.GL_MAX_SAMPLES);
+        }
+        int sampleCount = Math.min(MAX_SAMPLE, Config.msaa);
+
+        colorRenderBufferID = GL30.glGenRenderbuffers();
+        GL30.glBindRenderbuffer(GL30.GL_RENDERBUFFER, colorRenderBufferID);
+        GL30.glRenderbufferStorageMultisample(GL30.GL_RENDERBUFFER, sampleCount, GL11.GL_RGBA, width, height);
+        GL30.glFramebufferRenderbuffer(GL30.GL_FRAMEBUFFER, GL30.GL_COLOR_ATTACHMENT0, GL30.GL_RENDERBUFFER, colorRenderBufferID);
+
+        check();
+    }
+
     public void attachColorTexture(int textureID) {
         GL11.glBindTexture(GL11.GL_TEXTURE_2D, textureID);
 
@@ -118,6 +136,18 @@ public class FBO {
 
         // 解绑
         GL30.glBindRenderbuffer(GL30.GL_RENDERBUFFER, 0);
+    }
+
+    public void genMultiRenderBufferAndAttachDepthRenderBuffer() {
+        if (MAX_SAMPLE == 0) {
+            MAX_SAMPLE = GL11.glGetInteger(GL30.GL_MAX_SAMPLES);
+        }
+        int sampleCount = Math.min(MAX_SAMPLE, Config.msaa);
+        depthRenderBufferID = GL30.glGenRenderbuffers();
+        GL30.glBindRenderbuffer(GL30.GL_FRAMEBUFFER, depthRenderBufferID);
+
+        GL30.glRenderbufferStorageMultisample(GL30.GL_RENDERBUFFER, sampleCount, GL30.GL_DEPTH24_STENCIL8, width, height);
+        GL30.glFramebufferRenderbuffer(GL30.GL_FRAMEBUFFER, GL30.GL_DEPTH_STENCIL_ATTACHMENT, GL30.GL_RENDERBUFFER, depthRenderBufferID);
     }
 
     /**
@@ -156,6 +186,13 @@ public class FBO {
                     GL11.GL_UNSIGNED_BYTE,
                     (ByteBuffer) null
             );
+            GL30.glFramebufferTexture2D(
+                    GL30.GL_FRAMEBUFFER,
+                    GL30.GL_COLOR_ATTACHMENT0, // 确保这是正确的颜色附件点
+                    GL11.GL_TEXTURE_2D,
+                    colorTextureID,
+                    0 // level
+            );
             GL11.glBindTexture(GL11.GL_TEXTURE_2D, 0);
         }
 
@@ -164,6 +201,12 @@ public class FBO {
             GL30.glBindRenderbuffer(GL30.GL_RENDERBUFFER, depthRenderBufferID);
             // 重新分配存储空间，保持与 genRenderBufferAndAttachDepthRenderBuffer 一致的格式
             GL30.glRenderbufferStorage(GL30.GL_RENDERBUFFER, GL30.GL_DEPTH24_STENCIL8, width, height);
+            GL30.glFramebufferRenderbuffer(
+                    GL30.GL_FRAMEBUFFER,
+                    GL30.GL_DEPTH_STENCIL_ATTACHMENT, // 确保这是正确的深度/模板附件点
+                    GL30.GL_RENDERBUFFER,
+                    depthRenderBufferID
+            );
             GL30.glBindRenderbuffer(GL30.GL_RENDERBUFFER, 0);
         }
 
@@ -175,6 +218,40 @@ public class FBO {
 
         LOG.debug("FBO resized to: {}x{}", width, height);
     }
+
+    public IntBuffer intBuffer = BufferUtils.createIntBuffer(16);
+    public void drawDisplayWindow() {
+        intBuffer.clear();
+        GL11.glGetInteger(GL11.GL_VIEWPORT, intBuffer);
+        int px = intBuffer.get(0);
+        int py = intBuffer.get(1);
+        int pw = intBuffer.get(2);
+        int ph = intBuffer.get(3);
+        GL11.glViewport(0,0,Display.getWidth(),Display.getHeight());
+
+        GL11.glMatrixMode(GL11.GL_PROJECTION);
+        GL11.glPushMatrix();
+        GL11.glLoadIdentity();
+        GL11.glOrtho(0,1,1,0,-30000,30000);
+        GL11.glMatrixMode(GL11.GL_MODELVIEW);
+        GL11.glPushMatrix();
+        GL11.glLoadIdentity();
+
+        GL11.glBegin(GL11.GL_QUADS);
+        GL11.glTexCoord2f(0.0f, 0.0f);  GL11.glVertex3f(0f, 1f, 0);
+        GL11.glTexCoord2f(1.0f, 0.0f);  GL11.glVertex3f(1f, 1f, 0);
+        GL11.glTexCoord2f(1.0f, 1.0f);  GL11.glVertex3f(1f, 0f, 0);
+        GL11.glTexCoord2f(0.0f, 1.0f);  GL11.glVertex3f(0f, 0f, 0);
+        GL11.glEnd();
+
+        GL11.glMatrixMode(GL11.GL_PROJECTION);
+        GL11.glPopMatrix();
+        GL11.glMatrixMode(GL11.GL_MODELVIEW);
+        GL11.glPopMatrix();
+
+        GL11.glViewport(px,py,pw,ph);
+    }
+
 
     public void checkCompletion() {
         int status = GL30.glCheckFramebufferStatus(GL30.GL_FRAMEBUFFER);
@@ -212,19 +289,6 @@ public class FBO {
             throw new RuntimeException("FrameBufferObject creation failed: " + errorMsg);
         }
     }
-
-    public void close() {
-        if (!isOutSideTexture && colorTextureID != 0)
-            GL11.glDeleteTextures(colorTextureID);
-        if (depthRenderBufferID != 0)
-            GL30.glDeleteRenderbuffers(depthRenderBufferID);
-        if (fboID != 0)
-            GL30.glDeleteFramebuffers(fboID);
-
-        // 防止重复清理
-        isClosedManually.set(true);
-    }
-
 
     // region 检查函数
     public static void check(String label) {
@@ -283,6 +347,18 @@ public class FBO {
     }
     // endregion 检查函数
 
+
+    public void close() {
+        if (!isOutSideTexture && colorTextureID != 0)
+            GL11.glDeleteTextures(colorTextureID);
+        if (depthRenderBufferID != 0)
+            GL30.glDeleteRenderbuffers(depthRenderBufferID);
+        if (fboID != 0)
+            GL30.glDeleteFramebuffers(fboID);
+
+        // 防止重复清理
+        isClosedManually.set(true);
+    }
 
     /**
      * 最后的兜底方案，请一定一定要手动调用close方法

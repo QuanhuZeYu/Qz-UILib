@@ -1,6 +1,8 @@
 package club.heiqi.qz_uilib.fontsystem;
 
+import club.heiqi.qz_uilib.Config;
 import club.heiqi.qz_uilib.client.ErrorCleaner;
+import club.heiqi.qz_uilib.client.LateBlur;
 import club.heiqi.qz_uilib.fontsystem.shader.Bluer;
 import club.heiqi.qz_uilib.fontsystem.shader.FrameUtils;
 import org.apache.logging.log4j.LogManager;
@@ -103,9 +105,6 @@ public class CharPage {
 
         // 解绑
         GL11.glBindTexture(GL11.GL_TEXTURE_2D, 0);
-
-        // 执行模糊
-        bluer.blurTexture(textureID, textureSize, textureSize, 2.5f);
     }
 
 
@@ -165,9 +164,12 @@ public class CharPage {
 
     public AtomicBoolean isClosedManually = new AtomicBoolean(false);
     public void close() {
-        GL11.glDeleteTextures(textureID);
-        GL11.glDeleteTextures(maskID);
+        if (textureID != 0)
+            GL11.glDeleteTextures(textureID);
+        if (maskID != 0)
+            GL11.glDeleteTextures(maskID);
         chars.clear();
+        bluer.close();
         isClosedManually.set(true);
     }
 

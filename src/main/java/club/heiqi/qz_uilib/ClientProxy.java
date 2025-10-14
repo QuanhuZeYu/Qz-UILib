@@ -1,6 +1,7 @@
 package club.heiqi.qz_uilib;
 
 import club.heiqi.qz_uilib.client.ErrorCleaner;
+import club.heiqi.qz_uilib.client.LateBlur;
 import club.heiqi.qz_uilib.client.RenderWorldLast;
 import cpw.mods.fml.common.event.FMLPreInitializationEvent;
 
@@ -11,5 +12,6 @@ public class ClientProxy extends CommonProxy {
         super.preInit(event);
         new ErrorCleaner().register();
         new RenderWorldLast().register();
+        new LateBlur().register();
     }
 }

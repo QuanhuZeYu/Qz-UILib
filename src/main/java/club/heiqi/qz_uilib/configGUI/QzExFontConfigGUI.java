@@ -173,6 +173,8 @@ public class QzExFontConfigGUI extends BaseGUI {
 
         // 搜索栏回调
         searchWidget.setTextChangeCallBack((string) -> {
+            // 将输入转换为小写
+            string = string.toLowerCase();
             // list下的每个元素 1->水平组件->2->标题+水平组件
             ArrayList<Widget> results = new ArrayList<>();
             for (Widget child : cacheList.children) {
@@ -180,7 +182,7 @@ public class QzExFontConfigGUI extends BaseGUI {
                 // 查看水平组件的子组件
                 for (Widget widget : child.children) {
                     if (widget instanceof LabelWidget labelWidget) {
-                        if (labelWidget.text.contains(string)) {
+                        if (labelWidget.text.toLowerCase().contains(string)) {
                             results.add(child);
                         }
                     }

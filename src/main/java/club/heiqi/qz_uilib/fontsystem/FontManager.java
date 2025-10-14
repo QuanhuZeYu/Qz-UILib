@@ -151,6 +151,10 @@ public class FontManager {
         if (Config.fontSort.length < 1) return;
 
         String[] sortTarget = Config.fontSort;
+        // 将目标转换为小写
+        for (int i = 0; i < sortTarget.length; i++) {
+            sortTarget[i] = sortTarget[i].toLowerCase();
+        }
         // 待排序数组，排序完后将fonts字段设置为排序后的
         ArrayList<Font> toSort = new ArrayList<>(fonts);
 
@@ -162,34 +166,31 @@ public class FontManager {
         }
 
         // 2. 使用自定义 Comparator 对 toSort 列表进行排序
-        toSort.sort(new Comparator<Font>() {
-            @Override
-            public int compare(Font font1, Font font2) {
-                String name1 = font1.getName();
-                String name2 = font2.getName();
+        toSort.sort((font1, font2) -> {
+            String name1 = font1.getName().toLowerCase();
+            String name2 = font2.getName().toLowerCase();
 
-                // 获取两个字体的排序权重。如果不在 sortOrder 中，则权重设为 0（或一个很大的数）
-                // 约定：目标字体权重从 1 开始，非目标字体权重为 Integer.MAX_VALUE
-                int weight1 = sortOrder.getOrDefault(name1, Integer.MAX_VALUE);
-                int weight2 = sortOrder.getOrDefault(name2, Integer.MAX_VALUE);
+            // 获取两个字体的排序权重。如果不在 sortOrder 中，则权重设为 0（或一个很大的数）
+            // 约定：目标字体权重从 1 开始，非目标字体权重为 Integer.MAX_VALUE
+            int weight1 = sortOrder.getOrDefault(name1, Integer.MAX_VALUE);
+            int weight2 = sortOrder.getOrDefault(name2, Integer.MAX_VALUE);
 
-                // 比较权重
-                if (weight1 != weight2) {
-                    // 权重较小的（在目标数组中索引靠前的）排在前面
-                    return Integer.compare(weight1, weight2);
-                } else {
-                    // 如果权重相同 (都属于目标字体，但不在目标数组中，或者都不是目标字体)
+            // 比较权重
+            if (weight1 != weight2) {
+                // 权重较小的（在目标数组中索引靠前的）排在前面
+                return Integer.compare(weight1, weight2);
+            } else {
+                // 如果权重相同 (都属于目标字体，但不在目标数组中，或者都不是目标字体)
 
-                    // 特别地：如果它们都是目标字体 (weight1 != Integer.MAX_VALUE)，
-                    // 它们应该已经在上面的比较中按照目标顺序排列了。
-                    // 如果它们都不是目标字体 (weight1 == Integer.MAX_VALUE)，
-                    // 保持它们在原列表中的相对顺序（为了实现稳定排序，可以使用字体名称进行二次排序，
-                    // 或依赖于 Java 8+ 的 List.sort/Collections.sort 的稳定特性，
-                    // 但这里我们使用名称作为后备比较）
+                // 特别地：如果它们都是目标字体 (weight1 != Integer.MAX_VALUE)，
+                // 它们应该已经在上面的比较中按照目标顺序排列了。
+                // 如果它们都不是目标字体 (weight1 == Integer.MAX_VALUE)，
+                // 保持它们在原列表中的相对顺序（为了实现稳定排序，可以使用字体名称进行二次排序，
+                // 或依赖于 Java 8+ 的 List.sort/Collections.sort 的稳定特性，
+                // 但这里我们使用名称作为后备比较）
 
-                    // 以字体名称的字典序作为次要排序键，确保排序结果的一致性。
-                    return name1.compareTo(name2);
-                }
+                // 以字体名称的字典序作为次要排序键，确保排序结果的一致性。
+                return name1.compareTo(name2);
             }
         });
 

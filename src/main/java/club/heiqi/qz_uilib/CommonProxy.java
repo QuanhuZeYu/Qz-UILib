@@ -6,6 +6,8 @@ import cpw.mods.fml.common.event.FMLPostInitializationEvent;
 import cpw.mods.fml.common.event.FMLPreInitializationEvent;
 import cpw.mods.fml.common.event.FMLServerStartingEvent;
 
+import java.io.File;
+
 public class CommonProxy {
     public NetworkMain networkMain = new NetworkMain();
     public Config config = new Config();
@@ -13,7 +15,10 @@ public class CommonProxy {
     // preInit "Run before anything else. Read your config, create blocks, items, etc, and register them with the
     // GameRegistry." (Remove if not needed)
     public void preInit(FMLPreInitializationEvent event) {
-        config.init(event.getSuggestedConfigurationFile());
+        String version = Tags.VERSION;
+        String modName = MyMod.MOD_NAME;
+        File suggestedConfigurationFile = new File("config", modName+"_"+version+".cfg");
+        config.init(suggestedConfigurationFile);
         config.registrar();
 
         networkMain.registrar();
