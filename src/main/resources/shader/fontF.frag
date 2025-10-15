@@ -69,6 +69,7 @@ void main() {
     vec4 finalColor = mix(maskColor, mainColor, blendWeight);
     finalColor.rgb = rgb2hsv(finalColor.rgb);
     finalColor.b *= colorGain;
+    finalColor.b = clamp(finalColor.b, 0.0, 1.0);
     finalColor.rgb = hsv2rgb(finalColor.rgb) * Color.rgb;
     finalColor.a = maskColor.a;
 
