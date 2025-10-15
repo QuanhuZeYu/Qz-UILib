@@ -18,10 +18,23 @@ public class BatchRenderFont {
     public static ShaderManager shaderManager;
     public static ShaderManager getShaderManagerInstance() {
         if (shaderManager == null) {
-            shaderManager = new ShaderManager()
-                    .loadFromJar("shader/fontV.vert","shader/fontF.frag", null);
+            shaderManager = new ShaderManager();
+            shaderManager.setCustomLocation(() -> {
+                    GL20.glBindAttribLocation(shaderManager.shaderProgramID, 0, "pos");
+                    GL20.glBindAttribLocation(shaderManager.shaderProgramID, 1, "tex");
+                    GL20.glBindAttribLocation(shaderManager.shaderProgramID, 2, "color");
+                    GL20.glBindAttribLocation(shaderManager.shaderProgramID, 3, "v_uvBounds");
+                })
+                .loadFromJar("shader/fontV.vert","shader/fontF.frag", null);
         }
         return shaderManager;
+    }
+    public static FontRenderTool renderTool;
+    public static FontRenderTool getRenderTool() {
+        if (renderTool == null) {
+            renderTool = new FontRenderTool();
+        }
+        return renderTool;
     }
 
     // 每次扩容增加的元素数量，例如 256KB 的 float/int 空间
@@ -31,12 +44,14 @@ public class BatchRenderFont {
     private int vertDataCount = 0;
     private int texCoordDataCount = 0;
     private int colorDataCount = 0;
+    private int uvBoundsDataCount = 0;
     private int indexDataCount = 0;
 
     // 使用 NIO Buffers 存储原始数据，初始化时使用默认增量
     public FloatBuffer vertexBuffer = BufferUtils.createFloatBuffer(DEFAULT_CAPACITY_INCREMENT * 3);
     public FloatBuffer texCoordBuffer = BufferUtils.createFloatBuffer(DEFAULT_CAPACITY_INCREMENT * 2);
     public FloatBuffer colorBuffer = BufferUtils.createFloatBuffer(DEFAULT_CAPACITY_INCREMENT * 4);
+    public FloatBuffer uvBoundsBuffer = BufferUtils.createFloatBuffer(DEFAULT_CAPACITY_INCREMENT * 4);
     public IntBuffer indexBuffer = BufferUtils.createIntBuffer(DEFAULT_CAPACITY_INCREMENT * 6);
 
     /**
@@ -47,8 +62,7 @@ public class BatchRenderFont {
      * @param requiredColorFloats 颜色所需 float 数量 (r,g,b,a)
      * @param requiredIndexInts 索引所需 int 数量
      */
-    public void checkSize(int requiredVertFloats, int requiredTexFloats, int requiredColorFloats, int requiredIndexInts) {
-
+    public void checkSize(int requiredVertFloats, int requiredTexFloats, int requiredColorFloats, int requiredUVBoundsFloats, int requiredIndexInts) {
         // --- 扩容核心方法 ---
         // 参数：1. 当前 Buffer 2. 扩容增量 3. 需求量
         FloatBuffer newVertex = resizeFloatBuffer(vertexBuffer, 3 * DEFAULT_CAPACITY_INCREMENT, requiredVertFloats);
@@ -59,6 +73,9 @@ public class BatchRenderFont {
 
         FloatBuffer newColor = resizeFloatBuffer(colorBuffer, 4 * DEFAULT_CAPACITY_INCREMENT, requiredColorFloats);
         if (newColor != colorBuffer) colorBuffer = newColor;
+
+        FloatBuffer newUVBounds = resizeFloatBuffer(uvBoundsBuffer, 4 * DEFAULT_CAPACITY_INCREMENT, requiredUVBoundsFloats);
+        if (newUVBounds != uvBoundsBuffer) uvBoundsBuffer = newUVBounds;
 
         IntBuffer newIndex = resizeIntBuffer(indexBuffer, 6 * DEFAULT_CAPACITY_INCREMENT, requiredIndexInts);
         if (newIndex != indexBuffer) indexBuffer = newIndex;
@@ -137,6 +154,10 @@ public class BatchRenderFont {
                     red, green, blue, alpha, red, green, blue, alpha,
                     red, green, blue, alpha, red, green, blue, alpha,
             };
+            float[] uvBounds = new float[] {
+                    u0,v0,u1,v1, u0,v0,u1,v1,
+                    u0,v0,u1,v1, u0,v0,u1,v1,
+            };
             int[] index_offset = new int[] {
                     0, 1, 2, 2, 3, 0
             };
@@ -144,10 +165,11 @@ public class BatchRenderFont {
             int vertLen = vertex.length;
             int texLen = texCoord.length;
             int colorLen = color.length;
+            int uvBoundsLen = uvBounds.length;
             int indexLen = index_offset.length;
 
             // 1. 确保 Buffer 有足够的空间
-            this.checkSize(vertLen, texLen, colorLen, indexLen);
+            this.checkSize(vertLen, texLen, colorLen, uvBoundsLen, indexLen);
 
             // 2. 更新计数值
             int preVertexCount = this.vertexCount;
@@ -156,12 +178,14 @@ public class BatchRenderFont {
             this.vertDataCount += vertLen;
             this.texCoordDataCount += texLen;
             this.colorDataCount += colorLen;
+            this.uvBoundsDataCount += uvBoundsLen;
             this.indexDataCount += indexLen;
 
             // 3. 将数组写入高性能 Buffer 中
             vertexBuffer.put(vertex);
             texCoordBuffer.put(texCoord);
             colorBuffer.put(color);
+            uvBoundsBuffer.put(uvBounds);
 
             // 4. 索引需要加上偏移量
             for (int i : index_offset) {
@@ -194,6 +218,7 @@ public class BatchRenderFont {
             vertexBuffer.flip();
             texCoordBuffer.flip();
             colorBuffer.flip();
+            uvBoundsBuffer.flip();
             indexBuffer.flip();
 
             // 3. 渲染：使用 array() 获取底层数组，并使用 DataCount 限制有效数据长度
@@ -201,6 +226,7 @@ public class BatchRenderFont {
                     vertexBuffer,
                     texCoordBuffer,
                     colorBuffer,
+                    uvBoundsBuffer,
                     indexBuffer,
                     indexDataCount);
 
@@ -229,12 +255,9 @@ public class BatchRenderFont {
         getShaderManagerInstance().setUniformM4f("projection", new Matrix4f(projection));
         getShaderManagerInstance().setUniformF("colorGain", (float) Config.colorGain);
         getShaderManagerInstance().setUniformF("alphaGain", (float) Config.alphaGain);
-        getShaderManagerInstance().setUniformI("shrink", (int) Config.shrink);
+        getShaderManagerInstance().setUniformF("shrink", (int) Config.shrink);
 
         getShaderManagerInstance().setUniformVec2("textureSize", new Vector2f((float) (Config.awtCharSize * 64)));
-        getShaderManagerInstance().setUniformF("sigma", (float) Config.sigma);
-        getShaderManagerInstance().setUniformF("blurRadius", (float) 1);
-        getShaderManagerInstance().setUniformI("sampleRadius", Config.sampleRadius);
     }
 
     public void clean() {
@@ -242,6 +265,7 @@ public class BatchRenderFont {
         vertexBuffer.clear();
         texCoordBuffer.clear();
         colorBuffer.clear();
+        uvBoundsBuffer.clear();
         indexBuffer.clear();
 
         // 重置所有计数器
@@ -249,6 +273,7 @@ public class BatchRenderFont {
         vertDataCount = 0;
         texCoordDataCount = 0;
         colorDataCount = 0;
+        uvBoundsDataCount = 0;
         indexDataCount = 0;
     }
 }

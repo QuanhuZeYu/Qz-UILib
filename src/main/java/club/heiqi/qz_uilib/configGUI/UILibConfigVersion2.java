@@ -36,9 +36,11 @@ public class UILibConfigVersion2 extends ConfigGuiTemplate {
 
         ConfigCategory category1 = Config.config.getCategory(Config.GENERAL);
         ConfigCategory category2 = Config.config.getCategory(Config.FONT_SYSTEM.toLowerCase());
+        ConfigCategory category3 = Config.config.getCategory(Config.FONT_SIZE_SETTING.toLowerCase());
 
         result.add(category1);
         result.add(category2);
+        result.add(category3);
 
         return result;
     }
