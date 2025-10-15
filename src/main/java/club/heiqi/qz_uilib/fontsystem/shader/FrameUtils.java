@@ -1,10 +1,9 @@
 package club.heiqi.qz_uilib.fontsystem.shader;
 
+import club.heiqi.qz_uilib.client.FBO;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
-import org.joml.Vector2i;
 import org.lwjgl.BufferUtils;
-import org.lwjgl.opengl.Display;
 import org.lwjgl.opengl.GL11;
 import org.lwjgl.opengl.GL30;
 

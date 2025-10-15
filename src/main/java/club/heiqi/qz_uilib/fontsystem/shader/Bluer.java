@@ -2,6 +2,7 @@ package club.heiqi.qz_uilib.fontsystem.shader;
 
 import club.heiqi.qz_uilib.Config;
 import club.heiqi.qz_uilib.client.ErrorCleaner;
+import club.heiqi.qz_uilib.client.FBO;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.joml.Matrix4f;
@@ -9,7 +10,6 @@ import org.joml.Vector2f;
 import org.lwjgl.BufferUtils;
 import org.lwjgl.opengl.*;
 
-import java.awt.image.BufferedImage;
 import java.nio.IntBuffer;
 import java.util.concurrent.atomic.AtomicBoolean;
 

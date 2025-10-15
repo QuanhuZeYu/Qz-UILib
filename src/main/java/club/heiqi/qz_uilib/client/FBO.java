@@ -1,7 +1,6 @@
-package club.heiqi.qz_uilib.fontsystem.shader;
+package club.heiqi.qz_uilib.client;
 
 import club.heiqi.qz_uilib.Config;
-import club.heiqi.qz_uilib.client.ErrorCleaner;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.lwjgl.BufferUtils;

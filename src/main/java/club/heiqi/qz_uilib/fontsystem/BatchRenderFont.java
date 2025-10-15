@@ -1,8 +1,7 @@
 package club.heiqi.qz_uilib.fontsystem;
 
 import club.heiqi.qz_uilib.Config;
-import club.heiqi.qz_uilib.fontsystem.shader.FBO;
-import club.heiqi.qz_uilib.fontsystem.shader.MultiSampleFBO;
+import club.heiqi.qz_uilib.client.FBO;
 import club.heiqi.qz_uilib.fontsystem.shader.ShaderManager;
 import org.joml.Matrix4f;
 import org.joml.Vector2f;
@@ -23,19 +22,6 @@ public class BatchRenderFont {
                     .loadFromJar("shader/fontV.vert","shader/fontF.frag", null);
         }
         return shaderManager;
-    }
-
-    public static MultiSampleFBO multiSampleFBO;
-    public static MultiSampleFBO getMultiSampleFBO() {
-        if (multiSampleFBO == null) {
-            multiSampleFBO = new MultiSampleFBO(Display.getWidth(), Display.getHeight()).initByDefaultColorAndDepth();
-        }
-        else {
-            if (multiSampleFBO.width != Display.getWidth() || multiSampleFBO.height != Display.getHeight()) {
-                multiSampleFBO.resize(Display.getWidth(), Display.getHeight());
-            }
-        }
-        return multiSampleFBO;
     }
 
     public static FBO frameBuffer;
@@ -200,14 +186,9 @@ public class BatchRenderFont {
 
     public void flush() {
         int previousTexture = GL11.glGetInteger(GL11.GL_TEXTURE_BINDING_2D);
-        int previousFBO = GL11.glGetInteger(GL30.GL_FRAMEBUFFER_BINDING);
-
         // 绑定着色器
         getShaderManagerInstance().bind();
         setUniform_PipeLine0();
-        // 绑定多重采样
-        getMultiSampleFBO().bind();
-        GL11.glClear(GL11.GL_COLOR_BUFFER_BIT | GL11.GL_DEPTH_BUFFER_BIT | GL11.GL_STENCIL_BUFFER_BIT);
         for (Map.Entry<CharPage, ArrayList<Runnable>> entry : callRenders.entrySet()) {
 
             GL13.glActiveTexture(GL13.GL_TEXTURE0);
@@ -243,15 +224,9 @@ public class BatchRenderFont {
 
         // 解绑着色器
         getShaderManagerInstance().unbind();
-        // 解析多重采样
-        getMultiSampleFBO().resolve(getFrameBuffer().fboID, getFrameBuffer().width, getFrameBuffer().height);
-        GL11.glBindTexture(GL11.GL_TEXTURE_2D, getFrameBuffer().colorTextureID);
-        GL30.glBindFramebuffer(GL30.GL_FRAMEBUFFER, previousFBO);
-        getFrameBuffer().drawDisplayWindow();
 
         // 恢复纹理
         GL11.glBindTexture(GL11.GL_TEXTURE_2D, previousTexture);
-        GL30.glBindFramebuffer(GL30.GL_FRAMEBUFFER, previousFBO);
     }
 
     private final FloatBuffer modelView = BufferUtils.createFloatBuffer(16);
