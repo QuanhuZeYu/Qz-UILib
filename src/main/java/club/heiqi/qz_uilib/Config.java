@@ -20,7 +20,7 @@ public class Config {
     public static boolean useDebug = false;
     public static double wheelCount = 64;
     /**fontSystem中的配置 - 加载界面依赖默认值！*/
-    public static double sigma = 1, blurRadius = 2, smoothRangeMin = 0, smoothRangeMax = 0.5, colorGain = 0.5,
+    public static double sigma = 1, blurRadius = 2, smoothRangeMin = 0, smoothRangeMax = 0.5, colorGain = 1,
             awtCharSize = 64, charSize = 8, spaceWidth = 4, characterSpacing = 0.1, shadowOffsetX = 0.5, shadowOffsetY = 0.5,
             lineSpacing = 0.1, renderOffset = 0, alphaGain = 0.3, shrink = 0.1, intensityDivisor = 5.0;
     /**fontSystem中的配置*/
@@ -46,7 +46,7 @@ public class Config {
         blurRadius = config.get(FONT_SYSTEM, "blurRadius", 2, "蒙版模糊半径", 0, Double.MAX_VALUE).getDouble();
         smoothRangeMin = config.get(FONT_SYSTEM, "smoothRangeMin", 0.0, "蒙版平滑最低阈值", -Double.MAX_VALUE, Double.MAX_VALUE).getDouble();
         smoothRangeMax = config.get(FONT_SYSTEM, "smoothRangeMax", 0.5, "蒙版平滑最高阈值", -Double.MAX_VALUE, Double.MAX_VALUE).getDouble();
-        colorGain = config.get(FONT_SYSTEM, "colorGain", 0.5, "亮度增强", -Double.MAX_VALUE, Double.MAX_VALUE).getDouble();
+        colorGain = config.get(FONT_SYSTEM, "colorGain", 1, "亮度增强，低于1就是变暗", -Double.MAX_VALUE, Double.MAX_VALUE).getDouble();
         awtCharSize = config.get(FONT_SYSTEM, "awtCharSize", 64, "生成字符分辨率", 8, Double.MAX_VALUE).getDouble();
         charSize = config.get(FONT_SYSTEM, "charSize", 8, "游戏内字体字号", -Double.MAX_VALUE, Double.MAX_VALUE).getDouble();
         spaceWidth = config.get(FONT_SYSTEM, "spaceWidth", 4, "空格宽度", -Double.MAX_VALUE, Double.MAX_VALUE).getDouble();
