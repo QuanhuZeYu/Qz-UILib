@@ -39,28 +39,31 @@ dependencies {
     // https://mvnrepository.com/artifact/org.mini2Dx/universal-tween-engine
     shadowImplementation("org.mini2Dx:universal-tween-engine:6.3.3")
     implementation("com.google.guava:guava:33.4.8-jre")
-//    implementation(files("libs/qz_fontrender-1.8.3-dev.jar"))
+    //    implementation(files("libs/qz_fontrender-1.8.3-dev.jar"))
     implementation(files("libs/BetterTooltipBox-v1.1.7-dev.jar"))
 
+
+
+
+    // 2025-10-2 更新依赖 统一到 整合包280版本中对应
     // Mantle
     implementation("com.github.GTNewHorizons:Mantle:0.5.1:dev")
     // Thaumcraft
     implementation('thaumcraft:Thaumcraft:1.7.10-4.2.3.5:dev')
+    // NEI
+    implementation("com.github.GTNewHorizons:NotEnoughItems:2.7.91-GTNH:dev")
+    // AE2
+    implementation("com.github.GTNewHorizons:Applied-Energistics-2-Unofficial:rv3-beta-690-GTNH:dev")
 
-
-    // 2025-10-2 更新依赖 统一到 整合包280版本中对应
+    // 运行测试依赖
     // GT5
     runtimeOnly("com.github.GTNewHorizons:GT5-Unofficial:5.09.51.470:dev")
     // GTNHLIB
     implementation("com.github.GTNewHorizons:GTNHLib:0.6.40:dev")
     // SU
     runtimeOnly("com.github.GTNewHorizons:ServerUtilities:2.1.61:dev")
-    // NEI
-    runtimeOnly("com.github.GTNewHorizons:NotEnoughItems:2.7.91-GTNH:dev")
     // Angelica
     runtimeOnly("com.github.GTNewHorizons:Angelica:1.0.0-beta57:dev")
-    // AE2
-    runtimeOnly("com.github.GTNewHorizons:Applied-Energistics-2-Unofficial:rv3-beta-690-GTNH:dev")
     // AppleCore
     runtimeOnly("com.github.GTNewHorizons:AppleCore:3.3.7:dev")
     // ThaumicHorizons

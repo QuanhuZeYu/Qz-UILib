@@ -1,16 +1,12 @@
 package club.heiqi.qz_uilib.fontsystem.impl;
 
 import club.heiqi.qz_uilib.Config;
-import club.heiqi.qz_uilib.MyMod;
 import club.heiqi.qz_uilib.fontsystem.*;
 import com.ibm.icu.text.ArabicShaping;
 import com.ibm.icu.text.ArabicShapingException;
 import com.ibm.icu.text.Bidi;
 import net.minecraft.client.Minecraft;
-import net.minecraft.client.gui.FontRenderer;
-import net.minecraft.client.renderer.texture.TextureManager;
 import net.minecraft.client.resources.IResourceManager;
-import net.minecraft.client.settings.GameSettings;
 import net.minecraft.util.ResourceLocation;
 import org.joml.Vector3d;
 import org.joml.Vector4f;
@@ -19,10 +15,7 @@ import org.lwjgl.opengl.GL11;
 import javax.annotation.Nullable;
 import java.io.IOException;
 import java.io.InputStream;
-import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.List;
-import java.util.Random;
+import java.util.*;
 
 public class ReplaceFontRender {
     /**公用字体渲染器 - 如有特殊需要请自行创建实例避免污染全局状态(字号)<br>(字符页管理器在本类中是全局单例使用 仅字号颜色等是可实例控制的状态)*/
@@ -744,5 +737,15 @@ public class ReplaceFontRender {
 
     public void resetCharSize() {
         setCharSize(Config.charSize);
+    }
+
+    public Stack<Double> charSizeStack = new Stack<>();
+    public void pushCharSize() {
+        charSizeStack.push(this.curCharSize);
+    }
+
+    public void popCharSize() {
+        Double pop = charSizeStack.pop();
+        setCharSize(pop);
     }
 }

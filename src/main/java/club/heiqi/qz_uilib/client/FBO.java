@@ -27,6 +27,7 @@ public class FBO {
     }
 
     public FBO initByDefaultColorAndDepth() {
+        check("外部检查");
         bind();
         // 附加默认颜色纹理
         genTexture2DAndAttachColorTexture();

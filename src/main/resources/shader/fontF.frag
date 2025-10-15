@@ -2,17 +2,15 @@
 
 varying vec2 texCoord;
 varying vec4 Color;
+varying vec4 uvBounds;
 
 
 uniform sampler2D mainTex;
 uniform sampler2D maskTex;
-uniform vec4 uvBounds = vec4(0.0, 0.0, 1.0, 1.0);
 uniform vec2 textureSize = vec2(2048.0, 2048.0);
 uniform vec2 smoothRange = vec2(0.0, 1.0);
-uniform float sigma = 3.14;
-uniform float blurRadius = 1.0;
-uniform int sampleRadius = 1;
 uniform float colorGain = 0.0;
+uniform float shrink = 1;
 
 const float PI = 3.14159265359;
 
@@ -27,12 +25,10 @@ vec4 safeSampler(sampler2D tex, vec2 uv) {
 }
 
 vec4 safeSamplerMask(sampler2D tex, vec2 uv) {
-    float width = abs(uvBounds.x - uvBounds.y);
-    float height = abs(uvBounds.z - uvBounds.w);
-    float shrinkW = width*0.2;
-    float shrinkH = height*0.2;
-    if (uv.x < (uvBounds.x + shrinkW) || uv.x > (uvBounds.z - shrinkW)
-        || uv.y < (uvBounds.y + shrinkH) || uv.y > (uvBounds.w - shrinkH))
+    float texSizeF =  1 / textureSize.x;
+    float shrinkSize = texSizeF*shrink;
+    if (uv.x < (uvBounds.x + shrinkSize) || uv.x > (uvBounds.z - shrinkSize)
+        || uv.y < (uvBounds.y + shrinkSize) || uv.y > (uvBounds.w - shrinkSize))
     {
         return vec4(0.0);
     }

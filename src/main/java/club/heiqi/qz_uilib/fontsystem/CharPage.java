@@ -110,7 +110,7 @@ public class CharPage {
     }
 
     public void blurPage() {
-        bluer.blurTexture(textureID, textureSize, textureSize, (float) Config.blurRadius);
+        bluer.blurTexture(textureID, textureSize, textureSize, (float) Config.radius);
     }
 
     public boolean canAddChar() {

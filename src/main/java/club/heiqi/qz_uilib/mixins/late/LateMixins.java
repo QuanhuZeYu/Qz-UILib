@@ -20,7 +20,9 @@ public class LateMixins implements ILateMixinLoader {
     public List<String> getMixins(Set<String> loadedMods) {
         return Arrays.asList(
                 "MixinSmallFontRenderer",
-                "MixinTCFontRenderer"
+                "MixinTCFontRenderer",
+                "MixinNEIClientUtils",
+                "MixinStackSizeRenderer"
         );
     }
 }

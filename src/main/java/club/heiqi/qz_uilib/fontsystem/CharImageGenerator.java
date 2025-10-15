@@ -111,7 +111,7 @@ public class CharImageGenerator {
         g2d.setFont(font);
         g2d.setColor(Color.WHITE);
 
-        float x = (float) -boundsX;
+        float x = (float) -boundsX + 2;  // 固定向右偏移2像素避免shrink时截断字符本体
         float y = (float) (-descent + charSize);  // 将图像拉到左上角
         g2d.drawString(s, x, y);
 
