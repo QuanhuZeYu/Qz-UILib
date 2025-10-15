@@ -83,5 +83,32 @@ vec3 hsv2rgb(vec3 c) {
 }
 
 void main() {
-    gl_FragColor = texture2D(mainTex, texCoord);
+    sigmaSquared = sigma * sigma;
+
+    vec2 texelSize = 1.0 / textureSize;
+    vec4 sampleColor = gaussianBlur(mainTex, texCoord, texelSize);
+
+    float smoothedAlpha = smoothstep(smoothRange.x, smoothRange.y, sampleColor.a);
+
+    vec3 finalRGB;
+    float finalAlpha;
+
+
+    finalRGB = sampleColor.rgb;
+    finalAlpha = smoothedAlpha;
+
+
+    if (finalAlpha != 0.0) {
+        finalAlpha = min(finalAlpha + alphaGain, 1.0);
+    }
+
+
+    vec3 hsvColor = rgb2hsv(finalRGB);
+
+    float brightnessMultiplier = 1.0 + colorGain;
+    hsvColor.z = clamp(hsvColor.z * brightnessMultiplier, 0.0, 1.0);
+
+    vec3 processedRGB = hsv2rgb(hsvColor) * Color.rgb;
+
+    gl_FragColor = vec4(processedRGB, finalAlpha);
 }

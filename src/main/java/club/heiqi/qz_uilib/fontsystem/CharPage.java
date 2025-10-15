@@ -68,8 +68,6 @@ public class CharPage {
 
         // 解绑
         GL11.glBindTexture(GL11.GL_TEXTURE_2D, 0);
-
-        bluer = new Bluer(textureSize, textureSize, maskID);
     }
 
     // 新增逻辑：添加字符时还需要为这张纹理同步附加一个遮罩纹理，遮罩纹理通过高斯模糊生成

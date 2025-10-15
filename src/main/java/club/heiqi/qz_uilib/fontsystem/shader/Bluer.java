@@ -45,39 +45,47 @@ public class Bluer {
 
     public FBO vertical;
     public FBO horizon;
-    public ShaderManager shaderManager;
-    public RenderToolVAO renderTool;
+    public static ShaderManager shaderManager;
+    public static RenderToolVAO renderTool;
 
     public Bluer(int width, int height) {
         vertical = new FBO(width, height).initByDefaultColorAndDepth();
         horizon = new FBO(width, height).initByDefaultColorAndDepth();
-        shaderManager = new ShaderManager();
-        shaderManager.setCustomLocation(() -> {
-                    // 0 号位置绑定给 position
-                    GL20.glBindAttribLocation(shaderManager.shaderProgramID, 0, "position");
-                    // 1 号位置绑定给 texCoord
-                    GL20.glBindAttribLocation(shaderManager.shaderProgramID, 1, "texCoord");
-                    // 2 号位置绑定给 color
-                    GL20.glBindAttribLocation(shaderManager.shaderProgramID, 2, "color");
-                })
-                .loadFromJar("shader/gaussV.vert","shader/gaussF.frag",null);
-        renderTool = new RenderToolVAO();
+        if (shaderManager == null) {
+            shaderManager = new ShaderManager();
+            shaderManager.setCustomLocation(() -> {
+                        // 0 号位置绑定给 position
+                        GL20.glBindAttribLocation(shaderManager.shaderProgramID, 0, "position");
+                        // 1 号位置绑定给 texCoord
+                        GL20.glBindAttribLocation(shaderManager.shaderProgramID, 1, "texCoord");
+                        // 2 号位置绑定给 color
+                        GL20.glBindAttribLocation(shaderManager.shaderProgramID, 2, "color");
+                    })
+                    .loadFromJar("shader/gaussV.vert", "shader/gaussF.frag", null);
+        }
+        if (renderTool == null) {
+            renderTool = new RenderToolVAO();
+        }
     }
 
     public Bluer(int width, int height, int resultTexture) {
         vertical = new FBO(width, height).initByOutColorAndGenDepth(resultTexture);
         horizon = new FBO(width, height).initByDefaultColorAndDepth();
-        shaderManager = new ShaderManager();
-        shaderManager.setCustomLocation(() -> {
-                    // 0 号位置绑定给 position
-                    GL20.glBindAttribLocation(shaderManager.shaderProgramID, 0, "position");
-                    // 1 号位置绑定给 texCoord
-                    GL20.glBindAttribLocation(shaderManager.shaderProgramID, 1, "texCoord");
-                    // 2 号位置绑定给 color
-                    GL20.glBindAttribLocation(shaderManager.shaderProgramID, 2, "color");
-                })
-                .loadFromJar("shader/gaussV.vert","shader/gaussF.frag",null);
-        renderTool = new RenderToolVAO();
+        if (shaderManager == null) {
+            shaderManager = new ShaderManager();
+            shaderManager.setCustomLocation(() -> {
+                        // 0 号位置绑定给 position
+                        GL20.glBindAttribLocation(shaderManager.shaderProgramID, 0, "position");
+                        // 1 号位置绑定给 texCoord
+                        GL20.glBindAttribLocation(shaderManager.shaderProgramID, 1, "texCoord");
+                        // 2 号位置绑定给 color
+                        GL20.glBindAttribLocation(shaderManager.shaderProgramID, 2, "color");
+                    })
+                    .loadFromJar("shader/gaussV.vert", "shader/gaussF.frag", null);
+        }
+        if (renderTool == null) {
+            renderTool = new RenderToolVAO();
+        }
     }
 
     public FBO blurTexture(int textureID, int width, int height, float blur) {
