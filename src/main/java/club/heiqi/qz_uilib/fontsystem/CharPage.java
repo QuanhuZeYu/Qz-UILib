@@ -105,6 +105,7 @@ public class CharPage {
         // 解绑
         GL11.glBindTexture(GL11.GL_TEXTURE_2D, 0);
         // 延迟执行模糊
+        blurPage();
         RenderTickListener.someTasks.add(this::blurPage);
     }
 

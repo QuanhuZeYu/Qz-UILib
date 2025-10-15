@@ -24,19 +24,6 @@ public class BatchRenderFont {
         return shaderManager;
     }
 
-    public static FBO frameBuffer;
-    public static FBO getFrameBuffer() {
-        if (frameBuffer == null) {
-            frameBuffer = new FBO(Display.getWidth(), Display.getHeight()).initByDefaultColorAndDepth();
-        }
-        else {
-            if (frameBuffer.width != Display.getWidth() || frameBuffer.height != Display.getHeight()) {
-                frameBuffer.resize(Display.getWidth(), Display.getHeight());
-            }
-        }
-        return frameBuffer;
-    }
-
     // 每次扩容增加的元素数量，例如 256KB 的 float/int 空间
     public static final int DEFAULT_CAPACITY_INCREMENT = 1024 * 64;
     public int vertexCount = 0; // 记录已提交的逻辑顶点数量 (vertex.length / 3)
@@ -193,10 +180,10 @@ public class BatchRenderFont {
 
             GL13.glActiveTexture(GL13.GL_TEXTURE0);
             GL11.glBindTexture(GL11.GL_TEXTURE_2D, entry.getKey().textureID);
-            // shaderManager.setUniformI("mainTex", 0);
-            // GL13.glActiveTexture(GL13.GL_TEXTURE1);
-            // GL11.glBindTexture(GL11.GL_TEXTURE_2D, entry.getKey().maskID);
-            // shaderManager.setUniformI("maskTex", 1);
+            shaderManager.setUniformI("mainTex", 0);
+            GL13.glActiveTexture(GL13.GL_TEXTURE1);
+            GL11.glBindTexture(GL11.GL_TEXTURE_2D, entry.getKey().maskID);
+            shaderManager.setUniformI("maskTex", 1);
 
             // 1. 执行所有渲染指令，将数据填充到 Buffers 中
             for (Runnable call : entry.getValue()) {
@@ -226,6 +213,7 @@ public class BatchRenderFont {
         getShaderManagerInstance().unbind();
 
         // 恢复纹理
+        GL13.glActiveTexture(GL13.GL_TEXTURE0);
         GL11.glBindTexture(GL11.GL_TEXTURE_2D, previousTexture);
     }
 

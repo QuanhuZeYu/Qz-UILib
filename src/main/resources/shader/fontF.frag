@@ -26,43 +26,17 @@ vec4 safeSampler(sampler2D tex, vec2 uv) {
     return texture2D(tex, uv);
 }
 
-
-float gaussianWeight2D_Optimized(vec2 offset) {
-
-    float exponent = -(offset.x * offset.x + offset.y * offset.y) / (2.0 * sigmaSquared);
-
-    return exp(exponent);
-}
-
-vec4 gaussianBlur(sampler2D tex, vec2 uv, vec2 texelSize) {
-    float totalWeight = 0.0;
-    vec4 accumulatedColor = vec4(0.0);
-
-    float stepScale = blurRadius;
-    vec2 baseStep = texelSize * stepScale;
-
-    for (int i = -sampleRadius; i <= sampleRadius; ++i) {
-        for (int j = -sampleRadius; j <= sampleRadius; ++j) {
-
-            vec2 offsetUV = vec2(float(i), float(j)) * baseStep;
-            vec2 sampleUV = uv + offsetUV;
-
-            vec2 offsetNormed = vec2(float(i), float(j)) * stepScale;
-
-            float weight = gaussianWeight2D_Optimized(offsetNormed);
-
-            vec4 sampleColor = safeSampler(tex, sampleUV);
-
-            accumulatedColor += sampleColor * weight;
-            totalWeight += weight;
-        }
+vec4 safeSamplerMask(sampler2D tex, vec2 uv) {
+    float width = abs(uvBounds.x - uvBounds.y);
+    float height = abs(uvBounds.z - uvBounds.w);
+    float shrinkW = width*0.2;
+    float shrinkH = height*0.2;
+    if (uv.x < (uvBounds.x + shrinkW) || uv.x > (uvBounds.z - shrinkW)
+        || uv.y < (uvBounds.y + shrinkH) || uv.y > (uvBounds.w - shrinkH))
+    {
+        return vec4(0.0);
     }
-
-    if (totalWeight > 0.0) {
-        accumulatedColor /= totalWeight;
-    }
-
-    return accumulatedColor;
+    return texture2D(tex, uv);
 }
 
 vec3 rgb2hsv(vec3 c) {
@@ -82,27 +56,21 @@ vec3 hsv2rgb(vec3 c) {
 }
 
 void main() {
-    sigmaSquared = sigma * sigma;
+    vec4 mainColor = safeSampler(mainTex, texCoord);
+    vec4 maskColor = safeSamplerMask(maskTex, texCoord);
 
-    vec2 texelSize = 1.0 / textureSize;
-    vec4 sampleColor = gaussianBlur(mainTex, texCoord, texelSize);
+    const float ALPHA_THRESHOLD_LOW = 0.2;
+    const float ALPHA_THRESHOLD_HIGH = 0.8;
 
-    float smoothedAlpha = smoothstep(smoothRange.x, smoothRange.y, sampleColor.a);
+    float alpha = maskColor.a == 0 ? 0 : mainColor.a;
 
-    vec3 finalRGB;
-    float finalAlpha;
+    float blendWeight = smoothstep(ALPHA_THRESHOLD_LOW, ALPHA_THRESHOLD_HIGH, alpha);
 
+    vec4 finalColor = mix(maskColor, mainColor, blendWeight);
+    finalColor.rgb = rgb2hsv(finalColor.rgb);
+    finalColor.b *= colorGain;
+    finalColor.rgb = hsv2rgb(finalColor.rgb) * Color.rgb;
+    finalColor.a = maskColor.a;
 
-    finalRGB = sampleColor.rgb;
-    finalAlpha = smoothedAlpha;
-
-
-    vec3 hsvColor = rgb2hsv(finalRGB);
-
-    float brightnessMultiplier = 1.0 + colorGain;
-    hsvColor.z = clamp(hsvColor.z * brightnessMultiplier, 0.0, 1.0);
-
-    vec3 processedRGB = hsv2rgb(hsvColor) * Color.rgb;
-
-    gl_FragColor = vec4(processedRGB, finalAlpha);
+    gl_FragColor = finalColor;
 }
