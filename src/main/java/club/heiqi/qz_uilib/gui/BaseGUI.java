@@ -1,22 +1,35 @@
 package club.heiqi.qz_uilib.gui;
 
-import club.heiqi.qz_uilib.client.FBOByScreenSize;
+import club.heiqi.qz_uilib.client.FBO;
 import club.heiqi.qz_uilib.widget.Widget;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiButton;
 import net.minecraft.client.gui.GuiScreen;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
+import org.lwjgl.BufferUtils;
 import org.lwjgl.input.Keyboard;
 import org.lwjgl.input.Mouse;
 import org.lwjgl.opengl.Display;
 import org.lwjgl.opengl.GL11;
 
+import java.nio.IntBuffer;
 import java.util.HashSet;
 import java.util.Set;
 
 public class BaseGUI extends GuiScreen {
-    public static FBOByScreenSize frameBuffer;
+    public static FBO frameBuffer;
+    public static FBO getFrameBuffer() {
+        if (frameBuffer == null) {
+            frameBuffer = new FBO(Display.getWidth(), Display.getHeight()).initByDefaultColorAndDepth();
+        }
+        else {
+            if (frameBuffer.width != Display.getWidth() || frameBuffer.height != Display.getHeight()) {
+                frameBuffer.resize(Display.getWidth(), Display.getHeight());
+            }
+        }
+        return frameBuffer;
+    }
     public Logger LOG = LogManager.getLogger();
     /**根组件*/
     public Widget root = null;
@@ -29,19 +42,27 @@ public class BaseGUI extends GuiScreen {
     @Override
     public void drawScreen(int mouseX, int mouseY, float partialTicks) {
         Widget.updateTween();
-        frameBuffer.bind();
+        IntBuffer intBuffer = BufferUtils.createIntBuffer(16);
+        GL11.glGetInteger(GL11.GL_VIEWPORT, intBuffer);
+        // 初始化各种矩阵
+        GL11.glMatrixMode(GL11.GL_PROJECTION);
+        GL11.glPushMatrix();
+        GL11.glLoadIdentity();
+        GL11.glOrtho(0,Display.getWidth(),Display.getHeight(),0,-30000,30000);
+        GL11.glMatrixMode(GL11.GL_MODELVIEW);
+        GL11.glPushMatrix();
+        GL11.glLoadIdentity();
+        // 设置视口
+        GL11.glViewport(0,0,Display.getWidth(),Display.getHeight());
+
+        getFrameBuffer().bindAndRecordPreviousFBO();
         // 清除fbo内容
         GL11.glClearColor(0,0,0,0);
         GL11.glClear(GL11.GL_COLOR_BUFFER_BIT | GL11.GL_DEPTH_BUFFER_BIT);
         GL11.glPushAttrib(GL11.GL_ALL_ATTRIB_BITS);
-        // GL11.glDisable(GL11.GL_FOG);
-        // GL11.glDisable(GL11.GL_LIGHTING);
         GL11.glDisable(GL11.GL_TEXTURE_2D);
-        // GL11.glDisable(GL11.GL_COLOR_MATERIAL);
-        // GL11.glDisable(GL11.GL_STENCIL_TEST);
-        // GL11.glDisable(GL11.GL_ALPHA_TEST);
-        GL11.glEnable(GL11.GL_BLEND);
         GL11.glDisable(GL11.GL_CULL_FACE);
+        GL11.glEnable(GL11.GL_BLEND);
         GL11.glBlendFunc(GL11.GL_SRC_ALPHA, GL11.GL_ONE_MINUS_SRC_ALPHA);
 
         drawBackground();
@@ -49,27 +70,42 @@ public class BaseGUI extends GuiScreen {
         root.draw();
         GL11.glPopAttrib();
 
-        frameBuffer.unbind();
-        frameBuffer.render(mcGUIWidth, mcGUIHeight);
+        getFrameBuffer().unbindAndRestorePreviousFBO();
+
+        // 恢复矩阵
+        GL11.glMatrixMode(GL11.GL_PROJECTION);
+        GL11.glPopMatrix();
+        GL11.glMatrixMode(GL11.GL_MODELVIEW);
+        GL11.glPopMatrix();
+        // 恢复视口
+        GL11.glViewport(intBuffer.get(0), intBuffer.get(1), intBuffer.get(2), intBuffer.get(3));
+
+
+        GL11.glEnable(GL11.GL_TEXTURE_2D);
+        GL11.glBindTexture(GL11.GL_TEXTURE_2D, getFrameBuffer().colorTextureID);
+        GL11.glEnable(GL11.GL_BLEND);
+        GL11.glBlendFunc(GL11.GL_SRC_ALPHA, GL11.GL_ONE_MINUS_SRC_ALPHA); // 标准Alpha混合
+        GL11.glDisable(GL11.GL_CULL_FACE);
+        GL11.glDisable(GL11.GL_DEPTH_TEST);
+        GL11.glColor4f(1,1,1,1);
+        getFrameBuffer().drawDisplayWindow();
+        GL11.glBindTexture(GL11.GL_TEXTURE_2D, 0);
     }
 
     public void drawBackground() {
         GL11.glColor4f(0.4f,0.4f,0.4f,0.8f);
         GL11.glBegin(GL11.GL_QUADS);
         GL11.glVertex3f(0,0,0);
-        GL11.glVertex3f(frameBuffer.textureWidth,0,0);
-        GL11.glVertex3f(frameBuffer.textureWidth,frameBuffer.textureHeight,0);
-        GL11.glVertex3f(0,frameBuffer.textureHeight,0);
+        GL11.glVertex3f(getFrameBuffer().width,0,0);
+        GL11.glVertex3f(getFrameBuffer().width,getFrameBuffer().height,0);
+        GL11.glVertex3f(0,getFrameBuffer().height,0);
         GL11.glEnd();
     }
 
-    private int mcGUIWidth, mcGUIHeight;
     @Override
     public void setWorldAndResolution(Minecraft mc, int width, int height) {
         this.mc = mc;
         this.fontRendererObj = mc.fontRenderer;
-        this.mcGUIWidth = width;
-        this.mcGUIHeight = height;
         this.width = width;
         this.height = height;
         root.onResize(Display.getWidth(),Display.getHeight());
@@ -78,7 +114,7 @@ public class BaseGUI extends GuiScreen {
 
     @Override
     public void initGui() {
-        if (frameBuffer == null) frameBuffer = new FBOByScreenSize();
+        getFrameBuffer();
         root = new Widget().setSize(Display.getWidth(), Display.getHeight());
         mouseCount = Mouse.getButtonCount();
     }

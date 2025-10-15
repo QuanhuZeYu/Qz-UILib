@@ -1,13 +1,12 @@
 package club.heiqi.qz_uilib.fontsystem;
 
 import club.heiqi.qz_uilib.Config;
+import club.heiqi.qz_uilib.client.FBO;
 import club.heiqi.qz_uilib.fontsystem.shader.ShaderManager;
 import org.joml.Matrix4f;
 import org.joml.Vector2f;
 import org.lwjgl.BufferUtils;
-import org.lwjgl.opengl.GL11;
-import org.lwjgl.opengl.GL13;
-import org.lwjgl.opengl.GL20;
+import org.lwjgl.opengl.*;
 
 import java.nio.FloatBuffer;
 import java.nio.IntBuffer;
@@ -173,6 +172,8 @@ public class BatchRenderFont {
     }
 
     public void flush() {
+        int previousTexture = GL11.glGetInteger(GL11.GL_TEXTURE_BINDING_2D);
+        // 绑定着色器
         getShaderManagerInstance().bind();
         setUniform_PipeLine0();
         for (Map.Entry<CharPage, ArrayList<Runnable>> entry : callRenders.entrySet()) {
@@ -205,11 +206,15 @@ public class BatchRenderFont {
 
             // 4. 清理 Buffers 准备下一轮 (Clear)
             clean();
-            GL13.glActiveTexture(GL13.GL_TEXTURE0);
         }
         callRenders.clear();
 
+        // 解绑着色器
         getShaderManagerInstance().unbind();
+
+        // 恢复纹理
+        GL13.glActiveTexture(GL13.GL_TEXTURE0);
+        GL11.glBindTexture(GL11.GL_TEXTURE_2D, previousTexture);
     }
 
     private final FloatBuffer modelView = BufferUtils.createFloatBuffer(16);
@@ -224,12 +229,12 @@ public class BatchRenderFont {
         getShaderManagerInstance().setUniformM4f("projection", new Matrix4f(projection));
         getShaderManagerInstance().setUniformF("colorGain", (float) Config.colorGain);
         getShaderManagerInstance().setUniformF("alphaGain", (float) Config.alphaGain);
+        getShaderManagerInstance().setUniformI("shrink", (int) Config.shrink);
 
         getShaderManagerInstance().setUniformVec2("textureSize", new Vector2f((float) (Config.awtCharSize * 64)));
         getShaderManagerInstance().setUniformF("sigma", (float) Config.sigma);
-        getShaderManagerInstance().setUniformF("blurRadius", (float) Config.blurRadius);
+        getShaderManagerInstance().setUniformF("blurRadius", (float) 1);
         getShaderManagerInstance().setUniformI("sampleRadius", Config.sampleRadius);
-        getShaderManagerInstance().setUniformVec2("smoothRange", new Vector2f((float) Config.smoothRangeMin, (float) Config.smoothRangeMax));
     }
 
     public void clean() {

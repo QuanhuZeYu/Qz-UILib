@@ -1,15 +1,14 @@
 package club.heiqi.qz_uilib.fontsystem.shader;
 
-import club.heiqi.qz_uilib.client.ErrorCleaner;
+import club.heiqi.qz_uilib.Config;
+import club.heiqi.qz_uilib.client.FBO;
+import club.heiqi.qz_uilib.client.RenderTickListener;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.joml.Matrix4f;
 import org.joml.Vector2f;
-import org.lwjgl.BufferUtils;
 import org.lwjgl.opengl.*;
 
-import java.awt.image.BufferedImage;
-import java.nio.IntBuffer;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 public class Bluer {
@@ -141,7 +140,6 @@ public class Bluer {
         return vertical;
     }
 
-    public IntBuffer intBuffer = BufferUtils.createIntBuffer(16);
     /**
      * 使用 VBO 绘制一个覆盖整个视口的四边形。
      * @param width 目标视口宽度
@@ -155,6 +153,7 @@ public class Bluer {
         Matrix4f modelView = new Matrix4f().identity();
         shaderManager.setUniformM4f("modelView", modelView);
         shaderManager.setUniformM4f("projection", projection);
+        shaderManager.setUniformVec2("smoothRange", new Vector2f((float) Config.smoothRangeMin, (float) Config.smoothRangeMax));
 
         renderTool.render(VERTICES, TEX_COORDS, COLOR, INDEX);
 
@@ -184,7 +183,7 @@ public class Bluer {
     protected void finalize() throws Throwable {
         super.finalize();
         if (!isCloseManually.get()) {
-            ErrorCleaner.errorCleaners.add(this::close);
+            RenderTickListener.errorCleaners.add(this::close);
         }
     }
 }

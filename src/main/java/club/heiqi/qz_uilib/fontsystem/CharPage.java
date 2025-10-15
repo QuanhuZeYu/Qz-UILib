@@ -1,6 +1,7 @@
 package club.heiqi.qz_uilib.fontsystem;
 
-import club.heiqi.qz_uilib.client.ErrorCleaner;
+import club.heiqi.qz_uilib.Config;
+import club.heiqi.qz_uilib.client.RenderTickListener;
 import club.heiqi.qz_uilib.fontsystem.shader.Bluer;
 import club.heiqi.qz_uilib.fontsystem.shader.FrameUtils;
 import org.apache.logging.log4j.LogManager;
@@ -103,11 +104,14 @@ public class CharPage {
 
         // 解绑
         GL11.glBindTexture(GL11.GL_TEXTURE_2D, 0);
-
-        // 执行模糊
-        bluer.blurTexture(textureID, textureSize, textureSize, 2.5f);
+        // 延迟执行模糊
+        blurPage();
+        RenderTickListener.someTasks.add(this::blurPage);
     }
 
+    public void blurPage() {
+        bluer.blurTexture(textureID, textureSize, textureSize, (float) Config.blurRadius);
+    }
 
     public boolean canAddChar() {
         return getCurCharCount() < getMaxCount();
@@ -165,9 +169,12 @@ public class CharPage {
 
     public AtomicBoolean isClosedManually = new AtomicBoolean(false);
     public void close() {
-        GL11.glDeleteTextures(textureID);
-        GL11.glDeleteTextures(maskID);
+        if (textureID != 0)
+            GL11.glDeleteTextures(textureID);
+        if (maskID != 0)
+            GL11.glDeleteTextures(maskID);
         chars.clear();
+        bluer.close();
         isClosedManually.set(true);
     }
 
@@ -176,7 +183,7 @@ public class CharPage {
         super.finalize();
         if (!isClosedManually.get()) {
             LOG.error("!!!  纹理页未正确释放  !!!");
-            ErrorCleaner.errorCleaners.add(this::close);
+            RenderTickListener.errorCleaners.add(this::close);
         }
     }
 }

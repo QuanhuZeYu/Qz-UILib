@@ -8,6 +8,7 @@ uniform sampler2D image;
 uniform vec2 direction;
 uniform float radius;
 uniform vec2 targetResolution;
+uniform vec2 smoothRange = vec2(0.0, 1.0);
 
 
 void main(void) {
@@ -40,5 +41,9 @@ void main(void) {
         totalWeight += weight * 2.0;
     }
 
-    gl_FragColor = (finalColor / totalWeight) * v_color;
+    finalColor = finalColor / totalWeight;
+    finalColor = vec4(1.0,1.0,1.0,finalColor.a);
+    finalColor.a = smoothstep(smoothRange.x, smoothRange.y, finalColor.a);
+
+    gl_FragColor = finalColor * v_color;
 }

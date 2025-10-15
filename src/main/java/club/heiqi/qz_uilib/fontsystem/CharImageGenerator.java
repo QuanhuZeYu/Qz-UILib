@@ -65,7 +65,7 @@ public class CharImageGenerator {
         FontRenderContext frc = tempGraphics.getFontRenderContext();
 
         // 自适应调整
-        double visualWidth, visualHeight;
+        double visualWidth, visualHeight, boundsX;
         float advance, descent;
         boolean retry = false;
         do {
@@ -75,6 +75,7 @@ public class CharImageGenerator {
             // 实际边界大小
             visualWidth = visualBounds.getWidth();
             visualHeight = visualBounds.getHeight();
+            boundsX = visualBounds.getX();
 
             // 获取度量信息
             GlyphMetrics glyphMetrics = glyphVector.getGlyphMetrics(0);
@@ -110,14 +111,14 @@ public class CharImageGenerator {
         g2d.setFont(font);
         g2d.setColor(Color.WHITE);
 
-        float x = (float) 0;
+        float x = (float) -boundsX;
         float y = (float) (-descent + charSize);  // 将图像拉到左上角
         g2d.drawString(s, x, y);
 
         // 释放资源并返回图像
         g2d.dispose();
         tempGraphics.dispose();
-        return new ImageAndInfo(image, new CharInfo(codepoint,0,0,charSize,charSize, advance));
+        return new ImageAndInfo(image, new CharInfo(codepoint,0,0,charSize,charSize, (float) advance));
     }
 
     /**注意，consumer运行在主线程，可放心使用*/

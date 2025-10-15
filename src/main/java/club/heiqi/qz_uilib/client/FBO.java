@@ -1,11 +1,12 @@
-package club.heiqi.qz_uilib.fontsystem.shader;
+package club.heiqi.qz_uilib.client;
 
-import club.heiqi.qz_uilib.client.ErrorCleaner;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
+import org.lwjgl.BufferUtils;
 import org.lwjgl.opengl.*;
 
 import java.nio.ByteBuffer;
+import java.nio.IntBuffer;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 public class FBO {
@@ -29,10 +30,12 @@ public class FBO {
         bind();
         // 附加默认颜色纹理
         genTexture2DAndAttachColorTexture();
-
+        check("生成默认颜色纹理");
         // 附加默认深度和模板
         genRenderBufferAndAttachDepthRenderBuffer();
+        check("生成默认深度模板纹理");
 
+        checkCompletion();
         unbind();
 
         return this;
@@ -176,6 +179,39 @@ public class FBO {
         LOG.debug("FBO resized to: {}x{}", width, height);
     }
 
+    public IntBuffer intBuffer = BufferUtils.createIntBuffer(16);
+    public void drawDisplayWindow() {
+        intBuffer.clear();
+        GL11.glGetInteger(GL11.GL_VIEWPORT, intBuffer);
+        int px = intBuffer.get(0);
+        int py = intBuffer.get(1);
+        int pw = intBuffer.get(2);
+        int ph = intBuffer.get(3);
+        GL11.glViewport(0,0,Display.getWidth(),Display.getHeight());
+
+        GL11.glMatrixMode(GL11.GL_PROJECTION);
+        GL11.glPushMatrix();
+        GL11.glLoadIdentity();
+        GL11.glOrtho(0,1,1,0,-30000,30000);
+        GL11.glMatrixMode(GL11.GL_MODELVIEW);
+        GL11.glPushMatrix();
+        GL11.glLoadIdentity();
+
+        GL11.glBegin(GL11.GL_QUADS);
+        GL11.glTexCoord2f(0.0f, 0.0f);  GL11.glVertex3f(0f, 1f, 0);
+        GL11.glTexCoord2f(1.0f, 0.0f);  GL11.glVertex3f(1f, 1f, 0);
+        GL11.glTexCoord2f(1.0f, 1.0f);  GL11.glVertex3f(1f, 0f, 0);
+        GL11.glTexCoord2f(0.0f, 1.0f);  GL11.glVertex3f(0f, 0f, 0);
+        GL11.glEnd();
+
+        GL11.glMatrixMode(GL11.GL_PROJECTION);
+        GL11.glPopMatrix();
+        GL11.glMatrixMode(GL11.GL_MODELVIEW);
+        GL11.glPopMatrix();
+
+        GL11.glViewport(px,py,pw,ph);
+    }
+
     public void checkCompletion() {
         int status = GL30.glCheckFramebufferStatus(GL30.GL_FRAMEBUFFER);
         if (status != GL30.GL_FRAMEBUFFER_COMPLETE) {
@@ -236,25 +272,6 @@ public class FBO {
             LOG.error("ERROR ID: {}", error);
             LOG.error("ERROR DESC: {}", errorString);
             LOG.error("--------------------------");
-
-            // 建议在这里抛出异常或中断，以便立即定位问题
-            // throw new RuntimeException("OpenGL Error (" + errorString + ") after step: " + label);
-        }
-        else {
-            LOG.info("无异常");
-        }
-    }
-    public static void check() {
-        int error = GL11.glGetError();
-        if (error != GL11.GL_NO_ERROR) {
-            String errorString = getGLErrorString(error);
-            LOG.error("--- OpenGL Error Check ---");
-            LOG.error("ERROR ID: {}", error);
-            LOG.error("ERROR DESC: {}", errorString);
-            LOG.error("--------------------------");
-        }
-        else {
-            LOG.info("无异常");
         }
     }
 
@@ -293,7 +310,7 @@ public class FBO {
         if (!isClosedManually.get()) {
             LOG.error("有对象未被手动释放资源产生了内存泄漏！");
             // 添加到主线程清理
-            ErrorCleaner.errorCleaners.add(this::close);
+            RenderTickListener.errorCleaners.add(this::close);
         }
     }
 }

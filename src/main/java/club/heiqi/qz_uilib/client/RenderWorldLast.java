@@ -2,7 +2,6 @@ package club.heiqi.qz_uilib.client;
 
 import club.heiqi.qz_uilib.Config;
 import club.heiqi.qz_uilib.fontsystem.shader.Bluer;
-import club.heiqi.qz_uilib.fontsystem.shader.FBO;
 import cpw.mods.fml.common.FMLCommonHandler;
 import cpw.mods.fml.common.eventhandler.SubscribeEvent;
 import net.minecraft.client.Minecraft;
