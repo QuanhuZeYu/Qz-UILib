@@ -9,15 +9,22 @@ import org.apache.logging.log4j.Logger;
 
 import java.util.concurrent.LinkedBlockingQueue;
 
-public class ErrorCleaner {
+public class RenderTickListener {
     public static Logger LOG = LogManager.getLogger();
     public static LinkedBlockingQueue<Runnable> errorCleaners = new LinkedBlockingQueue<>();
+    public static LinkedBlockingQueue<Runnable> someTasks = new LinkedBlockingQueue<>();
 
     @SubscribeEvent
     public void onMainThread(TickEvent.RenderTickEvent event) {
         if (!errorCleaners.isEmpty()) {
             LOG.error("!!!  正在清理错误的未释放内存  !!!");
             Runnable runnable = errorCleaners.poll();
+            if (runnable != null) {
+                runnable.run();
+            }
+        }
+        if (!someTasks.isEmpty()) {
+            Runnable runnable = someTasks.poll();
             if (runnable != null) {
                 runnable.run();
             }

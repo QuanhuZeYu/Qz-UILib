@@ -1,6 +1,5 @@
 package club.heiqi.qz_uilib.client;
 
-import club.heiqi.qz_uilib.Config;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.lwjgl.BufferUtils;
@@ -311,7 +310,7 @@ public class FBO {
         if (!isClosedManually.get()) {
             LOG.error("有对象未被手动释放资源产生了内存泄漏！");
             // 添加到主线程清理
-            ErrorCleaner.errorCleaners.add(this::close);
+            RenderTickListener.errorCleaners.add(this::close);
         }
     }
 }

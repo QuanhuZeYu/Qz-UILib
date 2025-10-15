@@ -13,7 +13,6 @@ uniform float sigma = 3.14;
 uniform float blurRadius = 1.0;
 uniform int sampleRadius = 1;
 uniform float colorGain = 0.0;
-uniform float alphaGain = 0.0;
 
 const float PI = 3.14159265359;
 
@@ -96,11 +95,6 @@ void main() {
 
     finalRGB = sampleColor.rgb;
     finalAlpha = smoothedAlpha;
-
-
-    if (finalAlpha != 0.0) {
-        finalAlpha = min(finalAlpha + alphaGain, 1.0);
-    }
 
 
     vec3 hsvColor = rgb2hsv(finalRGB);

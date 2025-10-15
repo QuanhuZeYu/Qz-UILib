@@ -247,7 +247,6 @@ public class BatchRenderFont {
         getShaderManagerInstance().setUniformF("sigma", (float) Config.sigma);
         getShaderManagerInstance().setUniformF("blurRadius", (float) 1);
         getShaderManagerInstance().setUniformI("sampleRadius", Config.sampleRadius);
-        getShaderManagerInstance().setUniformVec2("smoothRange", new Vector2f((float) Config.smoothRangeMin, (float) Config.smoothRangeMax));
     }
 
     public void clean() {

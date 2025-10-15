@@ -1,8 +1,7 @@
 package club.heiqi.qz_uilib.fontsystem;
 
 import club.heiqi.qz_uilib.Config;
-import club.heiqi.qz_uilib.client.ErrorCleaner;
-import club.heiqi.qz_uilib.client.LateBlur;
+import club.heiqi.qz_uilib.client.RenderTickListener;
 import club.heiqi.qz_uilib.fontsystem.shader.Bluer;
 import club.heiqi.qz_uilib.fontsystem.shader.FrameUtils;
 import org.apache.logging.log4j.LogManager;
@@ -68,6 +67,8 @@ public class CharPage {
 
         // 解绑
         GL11.glBindTexture(GL11.GL_TEXTURE_2D, 0);
+
+        bluer = new Bluer(textureSize, textureSize, maskID);
     }
 
     // 新增逻辑：添加字符时还需要为这张纹理同步附加一个遮罩纹理，遮罩纹理通过高斯模糊生成
@@ -103,8 +104,13 @@ public class CharPage {
 
         // 解绑
         GL11.glBindTexture(GL11.GL_TEXTURE_2D, 0);
+        // 延迟执行模糊
+        RenderTickListener.someTasks.add(this::blurPage);
     }
 
+    public void blurPage() {
+        bluer.blurTexture(textureID, textureSize, textureSize, (float) Config.blurRadius);
+    }
 
     public boolean canAddChar() {
         return getCurCharCount() < getMaxCount();
@@ -176,7 +182,7 @@ public class CharPage {
         super.finalize();
         if (!isClosedManually.get()) {
             LOG.error("!!!  纹理页未正确释放  !!!");
-            ErrorCleaner.errorCleaners.add(this::close);
+            RenderTickListener.errorCleaners.add(this::close);
         }
     }
 }

@@ -1,16 +1,14 @@
 package club.heiqi.qz_uilib.fontsystem.shader;
 
 import club.heiqi.qz_uilib.Config;
-import club.heiqi.qz_uilib.client.ErrorCleaner;
 import club.heiqi.qz_uilib.client.FBO;
+import club.heiqi.qz_uilib.client.RenderTickListener;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.joml.Matrix4f;
 import org.joml.Vector2f;
-import org.lwjgl.BufferUtils;
 import org.lwjgl.opengl.*;
 
-import java.nio.IntBuffer;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 public class Bluer {
@@ -45,47 +43,42 @@ public class Bluer {
 
     public FBO vertical;
     public FBO horizon;
-    public static ShaderManager shaderManager;
-    public static RenderToolVAO renderTool;
+    public ShaderManager shaderManager;
+    public RenderToolVAO renderTool;
+
+    public int quadVboId; // 顶点缓冲对象 (VBO)
+    public int quadTcoId; // 纹理坐标缓冲对象 (可选，可以合并到 VBO)
 
     public Bluer(int width, int height) {
         vertical = new FBO(width, height).initByDefaultColorAndDepth();
         horizon = new FBO(width, height).initByDefaultColorAndDepth();
-        if (shaderManager == null) {
-            shaderManager = new ShaderManager();
-            shaderManager.setCustomLocation(() -> {
-                        // 0 号位置绑定给 position
-                        GL20.glBindAttribLocation(shaderManager.shaderProgramID, 0, "position");
-                        // 1 号位置绑定给 texCoord
-                        GL20.glBindAttribLocation(shaderManager.shaderProgramID, 1, "texCoord");
-                        // 2 号位置绑定给 color
-                        GL20.glBindAttribLocation(shaderManager.shaderProgramID, 2, "color");
-                    })
-                    .loadFromJar("shader/gaussV.vert", "shader/gaussF.frag", null);
-        }
-        if (renderTool == null) {
-            renderTool = new RenderToolVAO();
-        }
+        shaderManager = new ShaderManager();
+        shaderManager.setCustomLocation(() -> {
+                    // 0 号位置绑定给 position
+                    GL20.glBindAttribLocation(shaderManager.shaderProgramID, 0, "position");
+                    // 1 号位置绑定给 texCoord
+                    GL20.glBindAttribLocation(shaderManager.shaderProgramID, 1, "texCoord");
+                    // 2 号位置绑定给 color
+                    GL20.glBindAttribLocation(shaderManager.shaderProgramID, 2, "color");
+                })
+                .loadFromJar("shader/gaussV.vert","shader/gaussF.frag",null);
+        renderTool = new RenderToolVAO();
     }
 
     public Bluer(int width, int height, int resultTexture) {
         vertical = new FBO(width, height).initByOutColorAndGenDepth(resultTexture);
         horizon = new FBO(width, height).initByDefaultColorAndDepth();
-        if (shaderManager == null) {
-            shaderManager = new ShaderManager();
-            shaderManager.setCustomLocation(() -> {
-                        // 0 号位置绑定给 position
-                        GL20.glBindAttribLocation(shaderManager.shaderProgramID, 0, "position");
-                        // 1 号位置绑定给 texCoord
-                        GL20.glBindAttribLocation(shaderManager.shaderProgramID, 1, "texCoord");
-                        // 2 号位置绑定给 color
-                        GL20.glBindAttribLocation(shaderManager.shaderProgramID, 2, "color");
-                    })
-                    .loadFromJar("shader/gaussV.vert", "shader/gaussF.frag", null);
-        }
-        if (renderTool == null) {
-            renderTool = new RenderToolVAO();
-        }
+        shaderManager = new ShaderManager();
+        shaderManager.setCustomLocation(() -> {
+                    // 0 号位置绑定给 position
+                    GL20.glBindAttribLocation(shaderManager.shaderProgramID, 0, "position");
+                    // 1 号位置绑定给 texCoord
+                    GL20.glBindAttribLocation(shaderManager.shaderProgramID, 1, "texCoord");
+                    // 2 号位置绑定给 color
+                    GL20.glBindAttribLocation(shaderManager.shaderProgramID, 2, "color");
+                })
+                .loadFromJar("shader/gaussV.vert","shader/gaussF.frag",null);
+        renderTool = new RenderToolVAO();
     }
 
     public FBO blurTexture(int textureID, int width, int height, float blur) {
@@ -93,7 +86,6 @@ public class Bluer {
         GL11.glBlendFunc(GL11.GL_SRC_ALPHA, GL11.GL_ONE_MINUS_SRC_ALPHA);
         // 激活着色器
         shaderManager.bind();
-        shaderManager.setUniformF("intensityDivisor", (float) Config.intensityDivisor);
         shaderManager.setUniformF("radius", blur);
 
         // BufferedImage frameImage = FrameUtils.getTextureImage(textureID, width, height);
@@ -148,7 +140,6 @@ public class Bluer {
         return vertical;
     }
 
-    public IntBuffer intBuffer = BufferUtils.createIntBuffer(16);
     /**
      * 使用 VBO 绘制一个覆盖整个视口的四边形。
      * @param width 目标视口宽度
@@ -162,6 +153,7 @@ public class Bluer {
         Matrix4f modelView = new Matrix4f().identity();
         shaderManager.setUniformM4f("modelView", modelView);
         shaderManager.setUniformM4f("projection", projection);
+        shaderManager.setUniformVec2("smoothRange", new Vector2f((float) Config.smoothRangeMin, (float) Config.smoothRangeMax));
 
         renderTool.render(VERTICES, TEX_COORDS, COLOR, INDEX);
 
@@ -182,7 +174,8 @@ public class Bluer {
     public void close() {
         vertical.close();
         horizon.close();
-        shaderManager.close();
+        GL15.glDeleteBuffers(quadVboId);
+        GL15.glDeleteBuffers(quadTcoId);
         isCloseManually.set(true);
     }
 
@@ -190,8 +183,7 @@ public class Bluer {
     protected void finalize() throws Throwable {
         super.finalize();
         if (!isCloseManually.get()) {
-            LOG.info("!!!  模糊器未被正确释放  !!!");
-            ErrorCleaner.errorCleaners.add(this::close);
+            RenderTickListener.errorCleaners.add(this::close);
         }
     }
 }
