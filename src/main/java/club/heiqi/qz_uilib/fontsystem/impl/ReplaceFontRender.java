@@ -57,7 +57,7 @@ public class ReplaceFontRender {
         CharImageGenerator.getInstance().startReload();
 
         // 重新设置字体大小以便生成正确大小的字体
-        FontManager.getInstance().reload((float) (Config.awtCharSize*0.9f));
+        FontManager.getInstance().reload((float) (Config.awtCharSize*Config.fontScale));
         // 清空纹理页
         PageManager.getInstance().reload((int) (Config.awtCharSize * 64), (int) Config.awtCharSize);
 

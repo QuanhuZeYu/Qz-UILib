@@ -28,7 +28,8 @@ public class Config {
 
     /**字体大小相关配置*/
     public static String FONT_SIZE_SETTING = "fontSizeSetting";
-    public static double awtCharSize = 64, charSize = 8, stackFontSize = 8, neiFontSize = 5, aeFontSize = 5;
+    public static double awtCharSize = 64, charSize = 9, stackFontSize = 8, neiFontSize = 5, aeFontSize = 5,
+            fontScale = 0.8;
 
     public void init(File configFile) {
         if (config == null) {
@@ -54,10 +55,11 @@ public class Config {
         shrink = config.get(FONT_SYSTEM, "shrink", 1, "蒙版层采样收缩乘值-用于解决字符方形边框上有杂色的情况", 0, Double.MAX_VALUE).getDouble();
 
         awtCharSize = config.get(FONT_SIZE_SETTING, "awtCharSize", 64, "生成字符分辨率", 8, Double.MAX_VALUE).getDouble();
-        charSize = config.get(FONT_SIZE_SETTING, "charSize", 8, "游戏内字体字号", -Double.MAX_VALUE, Double.MAX_VALUE).getDouble();
+        charSize = config.get(FONT_SIZE_SETTING, "charSize", 9, "游戏内字体字号", -Double.MAX_VALUE, Double.MAX_VALUE).getDouble();
         stackFontSize = config.get(FONT_SIZE_SETTING, "stackFontSize", 8, "原版物品数量显示大小", 4, Double.MAX_VALUE).getDouble();
         neiFontSize = config.get(FONT_SIZE_SETTING, "neiFontSize", 8, "NEI物品数量显示大小", 4, Double.MAX_VALUE).getDouble();
         aeFontSize = config.get(FONT_SIZE_SETTING, "aeFontSize", 8, "ae物品数量显示大小", 4, Double.MAX_VALUE).getDouble();
+        fontScale = config.get(FONT_SIZE_SETTING, "fontScale", 0.8, "字符生成阶段控制字体大小乘值--用于解决基线偏移问题", 0, 1).getDouble();
 
         fontSort = config.get(FONT_SYSTEM, "fontSort", new String[]{}, "字符排序").getStringList();
         replaceOrigin = config.get(FONT_SYSTEM, "replaceOrigin", false, "是否替换原版字体渲染器").getBoolean();
