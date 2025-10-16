@@ -18,7 +18,7 @@ public class FontManager {
     public static FontManager getInstance() {
         synchronized ("创建字体管理器单例锁") {
             if (instance == null) {
-                instance = new FontManager((float) (Config.awtCharSize * 0.9f));
+                instance = new FontManager((float) (Config.awtCharSize * Config.fontScale));
             }
         }
         return instance;

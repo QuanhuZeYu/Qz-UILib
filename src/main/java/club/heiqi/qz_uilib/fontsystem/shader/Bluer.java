@@ -153,7 +153,6 @@ public class Bluer {
         Matrix4f modelView = new Matrix4f().identity();
         shaderManager.setUniformM4f("modelView", modelView);
         shaderManager.setUniformM4f("projection", projection);
-        shaderManager.setUniformVec2("smoothRange", new Vector2f((float) Config.smoothRangeMin, (float) Config.smoothRangeMax));
 
         renderTool.render(VERTICES, TEX_COORDS, COLOR, INDEX);
 
