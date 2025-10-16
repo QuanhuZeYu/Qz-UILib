@@ -6,7 +6,6 @@ varying vec4 uvBounds;
 
 
 uniform sampler2D mainTex;
-uniform sampler2D maskTex;
 uniform vec2 textureSize = vec2(2048.0, 2048.0);
 uniform vec2 smoothRange = vec2(0.0, 1.0);
 uniform float colorGain = 0.0;
@@ -19,17 +18,6 @@ float sigmaSquared;
 
 vec4 safeSampler(sampler2D tex, vec2 uv) {
     if (uv.x < uvBounds.x || uv.x > uvBounds.z || uv.y < uvBounds.y || uv.y > uvBounds.w) {
-        return vec4(0.0);
-    }
-    return texture2D(tex, uv);
-}
-
-vec4 safeSamplerMask(sampler2D tex, vec2 uv) {
-    float texSizeF =  1 / textureSize.x;
-    float shrinkSize = texSizeF*shrink;
-    if (uv.x < (uvBounds.x + shrinkSize) || uv.x > (uvBounds.z - shrinkSize)
-        || uv.y < (uvBounds.y + shrinkSize) || uv.y > (uvBounds.w - shrinkSize))
-    {
         return vec4(0.0);
     }
     return texture2D(tex, uv);
@@ -53,21 +41,11 @@ vec3 hsv2rgb(vec3 c) {
 
 void main() {
     vec4 mainColor = safeSampler(mainTex, texCoord);
-    vec4 maskColor = safeSamplerMask(maskTex, texCoord);
 
-    const float ALPHA_THRESHOLD_LOW = 0.2;
-    const float ALPHA_THRESHOLD_HIGH = 0.8;
+    mainColor.rgb = rgb2hsv(mainColor.rgb);
+    mainColor.b *= colorGain;
+    mainColor.b = clamp(mainColor.b, 0.0, 1.0);
+    mainColor.rgb = hsv2rgb(mainColor.rgb) * Color.rgb;
 
-    float alpha = maskColor.a == 0 ? 0 : mainColor.a;
-
-    float blendWeight = smoothstep(ALPHA_THRESHOLD_LOW, ALPHA_THRESHOLD_HIGH, alpha);
-
-    vec4 finalColor = mix(maskColor, mainColor, blendWeight);
-    finalColor.rgb = rgb2hsv(finalColor.rgb);
-    finalColor.b *= colorGain;
-    finalColor.b = clamp(finalColor.b, 0.0, 1.0);
-    finalColor.rgb = hsv2rgb(finalColor.rgb) * Color.rgb;
-    finalColor.a = maskColor.a;
-
-    gl_FragColor = finalColor;
+    gl_FragColor = mainColor;
 }

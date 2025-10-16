@@ -20,13 +20,13 @@ public class Config {
     public static boolean useDebug = false;
     public static double wheelCount = 64;
     /**fontSystem中的配置 - 加载界面依赖默认值！*/
-    public static double radius = 3, smoothRangeMin = 0, smoothRangeMax = 0.8, colorGain = 1,
-            spaceWidth = 4, characterSpacing = 0.1, shadowOffsetX = 0.5, shadowOffsetY = 0.5,
-            lineSpacing = 0.1, renderOffset = 0, shrink = 1;
+    public static double colorGain = 1, spaceWidth = 4, characterSpacing = 0.1, shadowOffsetX = 0.5,
+            shadowOffsetY = 0.5, lineSpacing = 0.1, renderOffset = 0, shrink = 1;
     /**fontSystem中的配置*/
     public static String[] fontSort = {};
     public static boolean replaceOrigin, debugFontRender, testRender, centered;
 
+    /**字体大小相关配置*/
     public static String FONT_SIZE_SETTING = "fontSizeSetting";
     public static double awtCharSize = 64, charSize = 8, stackFontSize = 8, neiFontSize = 5, aeFontSize = 5;
 
@@ -44,10 +44,7 @@ public class Config {
 
         msaa = config.get(FONT_SYSTEM, "msaa", 4, "多重采样等级", 1, Integer.MAX_VALUE).getInt();
 
-        radius = config.get(FONT_SYSTEM, "radius", 3, "蒙版模糊半径", 0, Double.MAX_VALUE).getDouble();
-        smoothRangeMin = config.get(FONT_SYSTEM, "smoothRangeMin", 0.0, "蒙版平滑最低阈值", -Double.MAX_VALUE, Double.MAX_VALUE).getDouble();
-        smoothRangeMax = config.get(FONT_SYSTEM, "smoothRangeMax", 0.8, "蒙版平滑最高阈值", -Double.MAX_VALUE, Double.MAX_VALUE).getDouble();
-        colorGain = config.get(FONT_SYSTEM, "colorGain", 1, "亮度增强，低于1就是变暗", -Double.MAX_VALUE, Double.MAX_VALUE).getDouble();
+        colorGain = config.get(FONT_SYSTEM, "colorGain", 10, "亮度增强，低于1就是变暗", -Double.MAX_VALUE, Double.MAX_VALUE).getDouble();
         spaceWidth = config.get(FONT_SYSTEM, "spaceWidth", 4, "空格宽度", -Double.MAX_VALUE, Double.MAX_VALUE).getDouble();
         characterSpacing = config.get(FONT_SYSTEM, "characterSpacing", 0.1, "字间距", -Double.MAX_VALUE, Double.MAX_VALUE).getDouble();
         shadowOffsetX = config.get(FONT_SYSTEM, "shadowOffsetX", 0.5, "投影偏移", -Double.MAX_VALUE, Double.MAX_VALUE).getDouble();

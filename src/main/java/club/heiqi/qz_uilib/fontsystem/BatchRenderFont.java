@@ -201,12 +201,7 @@ public class BatchRenderFont {
         setUniform_PipeLine0();
         for (Map.Entry<CharPage, ArrayList<Runnable>> entry : callRenders.entrySet()) {
 
-            GL13.glActiveTexture(GL13.GL_TEXTURE0);
             GL11.glBindTexture(GL11.GL_TEXTURE_2D, entry.getKey().textureID);
-            shaderManager.setUniformI("mainTex", 0);
-            GL13.glActiveTexture(GL13.GL_TEXTURE1);
-            GL11.glBindTexture(GL11.GL_TEXTURE_2D, entry.getKey().maskID);
-            shaderManager.setUniformI("maskTex", 1);
 
             // 1. 执行所有渲染指令，将数据填充到 Buffers 中
             for (Runnable call : entry.getValue()) {
