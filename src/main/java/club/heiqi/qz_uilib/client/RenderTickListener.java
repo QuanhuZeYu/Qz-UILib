@@ -6,6 +6,7 @@ import cpw.mods.fml.common.gameevent.TickEvent;
 import net.minecraftforge.common.MinecraftForge;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
+import org.lwjgl.opengl.GL11;
 
 import java.util.concurrent.LinkedBlockingQueue;
 

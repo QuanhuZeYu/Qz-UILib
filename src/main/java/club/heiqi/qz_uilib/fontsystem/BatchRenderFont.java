@@ -196,7 +196,6 @@ public class BatchRenderFont {
     }
 
     public void flush() {
-        int previousTexture = GL11.glGetInteger(GL11.GL_TEXTURE_BINDING_2D);
         // 绑定着色器
         getShaderManagerInstance().bind();
         setUniform_PipeLine0();
@@ -240,7 +239,6 @@ public class BatchRenderFont {
 
         // 恢复纹理
         GL13.glActiveTexture(GL13.GL_TEXTURE0);
-        GL11.glBindTexture(GL11.GL_TEXTURE_2D, previousTexture);
     }
 
     private final FloatBuffer modelView = BufferUtils.createFloatBuffer(16);
@@ -254,7 +252,6 @@ public class BatchRenderFont {
         getShaderManagerInstance().setUniformM4f("modelview", new Matrix4f(modelView));
         getShaderManagerInstance().setUniformM4f("projection", new Matrix4f(projection));
         getShaderManagerInstance().setUniformF("colorGain", (float) Config.colorGain);
-        getShaderManagerInstance().setUniformF("alphaGain", (float) Config.alphaGain);
         getShaderManagerInstance().setUniformF("shrink", (int) Config.shrink);
 
         getShaderManagerInstance().setUniformVec2("textureSize", new Vector2f((float) (Config.awtCharSize * 64)));

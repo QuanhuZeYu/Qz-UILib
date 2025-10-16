@@ -33,15 +33,15 @@ public abstract class MixinNEIClientUtils {
     ) {
         callback = () -> {
             ReplaceFontRender replaceFontRender = ReplaceFontRender.getInstance();
-            final int width = GuiDraw.fontRenderer.getStringWidth(text);
+            replaceFontRender.pushCharSize();
+            replaceFontRender.setCharSize(Config.neiFontSize);
+            final int width = replaceFontRender.getStringWidth(text);
             final double offsetX = rect.x + rect.w - width;
-            final double offsetY = rect.y + rect.h - replaceFontRender.FONT_HEIGHT;
+            final double offsetY = rect.y + rect.h - replaceFontRender.FONT_HEIGHT + 2;
 
             GL11.glTranslated(offsetX, offsetY, 0);
 
-            replaceFontRender.pushCharSize();
-            replaceFontRender.setCharSize(Config.stackFontSize);
-            GuiDraw.fontRenderer.drawString(text, 0, 0, color, shadow);
+            replaceFontRender.drawString(text, 0, 0, color, shadow);
             replaceFontRender.popCharSize();
 
             GL11.glTranslated(-1 * offsetX, -1 * offsetY, 0);

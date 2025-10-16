@@ -110,7 +110,9 @@ public class CharPage {
     }
 
     public void blurPage() {
+        GL11.glPushAttrib(GL11.GL_ALL_ATTRIB_BITS);
         bluer.blurTexture(textureID, textureSize, textureSize, (float) Config.radius);
+        GL11.glPopAttrib();
     }
 
     public boolean canAddChar() {

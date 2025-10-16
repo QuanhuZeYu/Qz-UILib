@@ -53,12 +53,12 @@ public abstract class MixinStackSizeRenderer {
 
         ReplaceFontRender replaceFontRender = ReplaceFontRender.getInstance();
         replaceFontRender.pushCharSize();
-        replaceFontRender.setCharSize(Config.stackFontSize);
+        replaceFontRender.setCharSize(Config.aeFontSize);
         if (scale == 1.0f) {
             replaceFontRender.drawStringWithShadow(
                     customText,
                     offsetX + 16 + 1 - replaceFontRender.getStringWidth(customText),
-                    offsetY + 16 - 7,
+                    offsetY + 16 - (int)replaceFontRender.FONT_HEIGHT,
                     16777215);
         } else {
             final float inverseScaleFactor = 1.0f / scale;
@@ -66,7 +66,7 @@ public abstract class MixinStackSizeRenderer {
 
             final int X = (int) (((float) offsetX - shiftX + 16.0f + 1.0f - replaceFontRender.getStringWidth(customText) * scale)
                     * inverseScaleFactor);
-            final int Y = (int) (((float) offsetY - shiftY + 16.0f - 7.0f * scale) * inverseScaleFactor);
+            final int Y = (int) (((float) offsetY + 16 - (int)replaceFontRender.FONT_HEIGHT * scale) * inverseScaleFactor);
 
             replaceFontRender.drawStringWithShadow(customText, X, Y, 16777215);
 
