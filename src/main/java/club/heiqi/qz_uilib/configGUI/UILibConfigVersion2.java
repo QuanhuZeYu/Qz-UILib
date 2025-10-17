@@ -51,5 +51,7 @@ public class UILibConfigVersion2 extends ConfigGuiTemplate {
         Config.config.save();
         // 保存配置后需要重载的项目 - 字符大小
         ReplaceFontRender.getInstance().setCharSize(Config.charSize);
+        // 保存配置后重载字体渲染器
+        ReplaceFontRender.getInstance().reload();
     }
 }
