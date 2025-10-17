@@ -7,7 +7,7 @@ varying vec4 uvBounds;
 
 uniform sampler2D mainTex;
 uniform vec2 textureSize = vec2(2048.0, 2048.0);
-uniform vec2 smoothRange = vec2(0.0, 1.0);
+uniform vec2 smoothRange = vec2(0.0, 0.7);
 uniform float colorGain = 0.0;
 uniform float shrink = 1;
 
@@ -46,6 +46,7 @@ void main() {
     mainColor.b *= colorGain;
     mainColor.b = clamp(mainColor.b, 0.0, 1.0);
     mainColor.rgb = hsv2rgb(mainColor.rgb) * Color.rgb;
+    mainColor.a = smoothstep(smoothRange.x, smoothRange.y, mainColor.a);
 
     gl_FragColor = mainColor;
 }

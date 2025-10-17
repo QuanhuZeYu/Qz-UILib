@@ -21,7 +21,7 @@ public class Config {
     public static double wheelCount = 64;
     /**fontSystem中的配置 - 加载界面依赖默认值！*/
     public static double colorGain = 1, spaceWidth = 4, characterSpacing = 0.1, shadowOffsetX = 0.5,
-            shadowOffsetY = 0.5, lineSpacing = 0.1, renderOffset = 0, shrink = 1;
+            shadowOffsetY = 0.5, lineSpacing = 0.1, renderOffset = 0, shrink = 1, smoothRangeMin = 0, smoothRangeMax = 0.9;
     /**fontSystem中的配置*/
     public static String[] fontSort = {};
     public static boolean replaceOrigin, debugFontRender, testRender, centered;
@@ -45,14 +45,16 @@ public class Config {
 
         msaa = config.get(FONT_SYSTEM, "msaa", 4, "多重采样等级", 1, Integer.MAX_VALUE).getInt();
 
-        colorGain = config.get(FONT_SYSTEM, "colorGain", 10, "亮度增强，低于1就是变暗", -Double.MAX_VALUE, Double.MAX_VALUE).getDouble();
-        spaceWidth = config.get(FONT_SYSTEM, "spaceWidth", 4, "空格宽度", -Double.MAX_VALUE, Double.MAX_VALUE).getDouble();
+        colorGain = config.get(FONT_SYSTEM, "colorGain", 10.0, "亮度增强，低于1就是变暗", -Double.MAX_VALUE, Double.MAX_VALUE).getDouble();
+        spaceWidth = config.get(FONT_SYSTEM, "spaceWidth", 4.0, "空格宽度", -Double.MAX_VALUE, Double.MAX_VALUE).getDouble();
         characterSpacing = config.get(FONT_SYSTEM, "characterSpacing", 0.1, "字间距", -Double.MAX_VALUE, Double.MAX_VALUE).getDouble();
         shadowOffsetX = config.get(FONT_SYSTEM, "shadowOffsetX", 0.5, "投影偏移", -Double.MAX_VALUE, Double.MAX_VALUE).getDouble();
         shadowOffsetY = config.get(FONT_SYSTEM, "shadowOffsetY", 0.5, "投影偏移", -Double.MAX_VALUE, Double.MAX_VALUE).getDouble();
         lineSpacing = config.get(FONT_SYSTEM, "lineSpacing", 0.1, "行间距", -Double.MAX_VALUE, Double.MAX_VALUE).getDouble();
         renderOffset = config.get(FONT_SYSTEM, "renderOffset", 0, "字符渲染向前偏移量(用于解决z-fight问题)", -Double.MAX_VALUE, Double.MAX_VALUE).getDouble();
-        shrink = config.get(FONT_SYSTEM, "shrink", 1, "蒙版层采样收缩乘值-用于解决字符方形边框上有杂色的情况", 0, Double.MAX_VALUE).getDouble();
+        shrink = config.get(FONT_SYSTEM, "shrink", 1.0, "蒙版层采样收缩乘值-用于解决字符方形边框上有杂色的情况", 0, Double.MAX_VALUE).getDouble();
+        smoothRangeMin = config.get(FONT_SYSTEM, "smoothRangeMin", 0.0, "平滑透明度最小阈值，低于此值的透明像素会被设置为0（用于锐化边缘可能造成锯齿感）", 0, Double.MAX_VALUE).getDouble();
+        smoothRangeMax = config.get(FONT_SYSTEM, "smoothRangeMax", 0.9, "平滑透明度最大阈值，高于此值的透明像素会被设置为1（用于增加亮度提升对比清晰化）", 0, Double.MAX_VALUE).getDouble();
 
         awtCharSize = config.get(FONT_SIZE_SETTING, "awtCharSize", 64, "生成字符分辨率", 8, Double.MAX_VALUE).getDouble();
         charSize = config.get(FONT_SIZE_SETTING, "charSize", 9, "游戏内字体字号", -Double.MAX_VALUE, Double.MAX_VALUE).getDouble();
