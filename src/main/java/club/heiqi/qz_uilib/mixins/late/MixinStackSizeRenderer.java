@@ -4,6 +4,7 @@ import appeng.api.config.TerminalFontSize;
 import appeng.client.render.StackSizeRenderer;
 import club.heiqi.qz_uilib.Config;
 import club.heiqi.qz_uilib.fontsystem.impl.ReplaceFontRender;
+import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.FontRenderer;
 import org.lwjgl.opengl.GL11;
 import org.spongepowered.asm.mixin.Mixin;
@@ -51,11 +52,13 @@ public abstract class MixinStackSizeRenderer {
             }
         }
 
+        FontRenderer fontRenderer = Minecraft.getMinecraft().fontRenderer;
         ReplaceFontRender replaceFontRender = ReplaceFontRender.getInstance();
         replaceFontRender.pushCharSize();
         replaceFontRender.setCharSize(Config.aeFontSize);
         if (scale == 1.0f) {
-            replaceFontRender.drawStringWithShadow(
+
+            fontRenderer.drawStringWithShadow(
                     customText,
                     offsetX + 16 + 1 - replaceFontRender.getStringWidth(customText),
                     offsetY + 16 - (int)replaceFontRender.FONT_HEIGHT,
@@ -68,7 +71,7 @@ public abstract class MixinStackSizeRenderer {
                     * inverseScaleFactor);
             final int Y = (int) (((float) offsetY + 16 - (int)replaceFontRender.FONT_HEIGHT * scale) * inverseScaleFactor);
 
-            replaceFontRender.drawStringWithShadow(customText, X, Y, 16777215);
+            fontRenderer.drawStringWithShadow(customText, X, Y, 16777215);
 
             GL11.glScaled(inverseScaleFactor, inverseScaleFactor, inverseScaleFactor);
         }
