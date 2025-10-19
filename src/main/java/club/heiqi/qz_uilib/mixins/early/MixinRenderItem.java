@@ -1,19 +1,14 @@
 package club.heiqi.qz_uilib.mixins.early;
 
 import club.heiqi.qz_uilib.Config;
-import club.heiqi.qz_uilib.MyMod;
 import club.heiqi.qz_uilib.fontsystem.impl.ReplaceFontRender;
 import net.minecraft.client.gui.FontRenderer;
 import net.minecraft.client.renderer.entity.RenderItem;
 import net.minecraft.client.renderer.texture.TextureManager;
 import net.minecraft.item.ItemStack;
-import org.lwjgl.opengl.GL11;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.injection.At;
-import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.Redirect;
-import org.spongepowered.asm.mixin.injection.Slice;
-import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 
 
 @Mixin(RenderItem.class)
@@ -35,14 +30,14 @@ public abstract class MixinRenderItem {
         ReplaceFontRender replaceFontRender = ReplaceFontRender.getInstance();
         replaceFontRender.pushCharSize();
         replaceFontRender.setCharSize(Config.stackFontSize);
-        int stringWidth = replaceFontRender.getStringWidth(text);
+        int stringWidth = fontRenderer.getStringWidth(text);
 
         int newX = itemX + 16 - stringWidth;
         int newY = itemY + 15 - (int)replaceFontRender.FONT_HEIGHT + /*向下移动一个基线距离*/2;
         if (Config.centered) {
             newX = itemX + 8 - (stringWidth / 2);
         }
-        int stringWithShadow = replaceFontRender.drawStringWithShadow(text, newX, newY, 16777215);
+        int stringWithShadow = fontRenderer.drawStringWithShadow(text, newX, newY, 16777215);
 
         replaceFontRender.popCharSize();
 

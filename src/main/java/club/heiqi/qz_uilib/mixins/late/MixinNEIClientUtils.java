@@ -6,6 +6,7 @@ import club.heiqi.qz_uilib.fontsystem.impl.ReplaceFontRender;
 import codechicken.lib.gui.GuiDraw;
 import codechicken.lib.vec.Rectangle4i;
 import codechicken.nei.NEIClientUtils;
+import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.FontRenderer;
 import org.lwjgl.opengl.GL11;
 import org.spongepowered.asm.mixin.Mixin;
@@ -32,16 +33,20 @@ public abstract class MixinNEIClientUtils {
             String text, Rectangle4i rect, float scale, int color, boolean shadow, NEIClientUtils.Alignment alignment
     ) {
         callback = () -> {
+            FontRenderer fontRenderer = Minecraft.getMinecraft().fontRenderer;
             ReplaceFontRender replaceFontRender = ReplaceFontRender.getInstance();
             replaceFontRender.pushCharSize();
             replaceFontRender.setCharSize(Config.neiFontSize);
-            final int width = replaceFontRender.getStringWidth(text);
+
+            final int width = fontRenderer.getStringWidth(text);
             final double offsetX = rect.x + rect.w - width;
             final double offsetY = rect.y + rect.h - replaceFontRender.FONT_HEIGHT + 2;
-
             GL11.glTranslated(offsetX, offsetY, 0);
 
-            replaceFontRender.drawString(text, 0, 0, color, shadow);
+
+            fontRenderer.drawString(text, 0, 0, color, shadow);
+
+
             replaceFontRender.popCharSize();
 
             GL11.glTranslated(-1 * offsetX, -1 * offsetY, 0);
