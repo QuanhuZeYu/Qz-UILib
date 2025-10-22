@@ -11,6 +11,7 @@ import com.ibm.icu.text.Bidi;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.resources.IResourceManager;
 import net.minecraft.util.ResourceLocation;
+import org.apache.commons.lang3.CharUtils;
 import org.joml.Vector3d;
 import org.joml.Vector4f;
 import org.lwjgl.opengl.GL11;
@@ -195,27 +196,17 @@ public class ReplaceFontRender {
         renderSplitString(str, x, y, wrapWidth, false);
     }
 
-    public boolean bidiFlag = false;
-    public boolean getBidiFlag() {
-        return this.bidiFlag;
-    }
-
-    
+    /**
+     * 1.通过指定宽度向字符串内插入换行符 <br/>
+     * 2.通过换行符分割字符串为列表
+     */
     public List<String> listFormattedStringToWidth(String str, int wrapWidth) {
         return Arrays.asList(wrapFormattedStringToWidth(str, wrapWidth).split("\n"));
     }
 
-    
-    public void setBidiFlag(boolean bidiFlag) {
-        this.bidiFlag = bidiFlag;
-    }
-
-    
-    public void setUnicodeFlag(boolean unicodeFlag) {
-        this.unicodeFlag = unicodeFlag;
-    }
-
-    
+    /**
+     * 计算字符串换行后的高度
+     */
     public int splitStringWidth(String text, int wrapWidth) {
         return (int) Math.ceil(curCharSize * this.listFormattedStringToWidth(text, wrapWidth).size());
     }
@@ -539,9 +530,6 @@ public class ReplaceFontRender {
             return x;
         }
         else {
-            if (this.bidiFlag) {
-                text = this.bidiReorder(text);
-            }
 
             if ((color & 0xfc000000) == 0) {
                 color |= 0xff000000;
@@ -640,10 +628,7 @@ public class ReplaceFontRender {
     }
 
 
-
-
-
-
+    /**去除字符串末尾的所有换行符*/
     public String trimStringNewline(String text) {
         while (text != null && text.endsWith("\n")) {
             text = text.substring(0, text.length() - 1);
@@ -651,7 +636,9 @@ public class ReplaceFontRender {
         return text;
     }
 
+    /**自动换行渲染字符串，适配从右向左的文字渲染*/
     public void renderSplitString(String str, int x, int y, int wrapWidth, boolean addShadow) {
+        if (str.isEmpty()) return;
         List<String> list = this.listFormattedStringToWidth(str, wrapWidth);
 
         for (String s1 : list) {
@@ -660,16 +647,14 @@ public class ReplaceFontRender {
         }
     }
 
+    /**左对齐方式渲染字符串，适配从右向左的文字渲染*/
     public void renderStringAligned(String s, int x, int y, int wrapWidth, int color, boolean shadow) {
         if (s.isEmpty()) return;
-        if (this.bidiFlag) {
-            int i1 = this.getStringWidth(this.bidiReorder(s));
-            x = x + wrapWidth - i1;
-        }
 
         this.renderString(s, x, y, color, shadow);
     }
 
+    /**将字符串拆分成多行*/
     public String wrapFormattedStringToWidth(String str, int wrapWidth) {
         StringBuilder builder = new StringBuilder();
 
@@ -698,6 +683,7 @@ public class ReplaceFontRender {
 
             CharPage page = PageManager.getInstance().getPage(codepoint, PageManager.NORMAL);
 
+            // ----- 获取字符宽度 -----
             if (page == null) {
                 width += Config.spaceWidth;
             }
@@ -705,10 +691,14 @@ public class ReplaceFontRender {
                 CharInfo info = page.getCharInfo(codepoint);
                 width += info.advance / info.width * this.curCharSize + Config.characterSpacing;
             }
+            // 到达指定宽度时添加换行并重置宽度计数器
             if (width > wrapWidth) {
                 builder.append("\n");
                 width = 0;
             }
+            // --end 获取字符宽度 end--
+
+            // ----- 添加字符 -----
             builder.append(s);
             i += count;
         }

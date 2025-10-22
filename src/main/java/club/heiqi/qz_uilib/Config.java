@@ -15,13 +15,13 @@ public class Config {
     public static String GENERAL = Configuration.CATEGORY_GENERAL;
     public static String FONT_SYSTEM = "fontSystem";
 
-    public static int msaa = 4;
+    public static int lerpMode = 0;
 
     public static boolean useDebug = false;
     public static double wheelCount = 64;
     /**fontSystem中的配置 - 加载界面依赖默认值！*/
     public static double colorGain = 1, spaceWidth = 4, characterSpacing = 0.1, shadowOffsetX = 0.5,
-            shadowOffsetY = 0.5, lineSpacing = 0.1, renderOffset = 0, shrink = 1, smoothRangeMin = 0, smoothRangeMax = 0.9;
+            shadowOffsetY = 0.5, lineSpacing = 0.1, renderOffset = 0, shrink = 1, smoothRangeMin = 0, smoothRangeMax = 0.9, baseLineOffset = 0;
     /**fontSystem中的配置*/
     public static String[] fontSort = {};
     public static boolean replaceOrigin, debugFontRender, testRender, centered;
@@ -43,7 +43,7 @@ public class Config {
         useDebug = config.getBoolean("useDebug", GENERAL, false, "GUI Debug Mode");
         wheelCount = config.get(GENERAL, "wheelCount", 64, "控制滚轮一次移动的距离", -Double.MAX_VALUE, Double.MAX_VALUE).getDouble();
 
-        msaa = config.get(FONT_SYSTEM, "msaa", 4, "多重采样等级", 1, Integer.MAX_VALUE).getInt();
+        lerpMode = config.get(FONT_SYSTEM, "lerpMode", 0, "插值模式;0-GL_NEAREST_MIPMAP_NEAREST;1-GL_LINEAR_MIPMAP_NEAREST;2-GL_NEAREST_MIPMAP_LINEAR;3-GL_LINEAR_MIPMAP_LINEAR", 0, 3).getInt();
 
         colorGain = config.get(FONT_SYSTEM, "colorGain", 10.0, "亮度增强，低于1就是变暗", -Double.MAX_VALUE, Double.MAX_VALUE).getDouble();
         spaceWidth = config.get(FONT_SYSTEM, "spaceWidth", 4.0, "空格宽度", -Double.MAX_VALUE, Double.MAX_VALUE).getDouble();
@@ -55,6 +55,7 @@ public class Config {
         shrink = config.get(FONT_SYSTEM, "shrink", 1.0, "蒙版层采样收缩乘值-用于解决字符方形边框上有杂色的情况", 0, Double.MAX_VALUE).getDouble();
         smoothRangeMin = config.get(FONT_SYSTEM, "smoothRangeMin", 0.0, "平滑透明度最小阈值，低于此值的透明像素会被设置为0（用于锐化边缘可能造成锯齿感）", 0, Double.MAX_VALUE).getDouble();
         smoothRangeMax = config.get(FONT_SYSTEM, "smoothRangeMax", 0.9, "平滑透明度最大阈值，高于此值的透明像素会被设置为1（用于增加亮度提升对比清晰化）", 0, Double.MAX_VALUE).getDouble();
+        baseLineOffset = config.get(FONT_SYSTEM, "baseLineOffset", 0.0, "基线偏移", -Double.MAX_VALUE, Double.MAX_VALUE).getDouble();
 
         awtCharSize = config.get(FONT_SIZE_SETTING, "awtCharSize", 64, "生成字符分辨率", 8, Double.MAX_VALUE).getDouble();
         charSize = config.get(FONT_SIZE_SETTING, "charSize", 9, "游戏内字体字号", -Double.MAX_VALUE, Double.MAX_VALUE).getDouble();

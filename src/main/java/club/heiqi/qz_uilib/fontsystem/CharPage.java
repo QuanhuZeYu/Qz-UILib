@@ -1,5 +1,6 @@
 package club.heiqi.qz_uilib.fontsystem;
 
+import club.heiqi.qz_uilib.Config;
 import club.heiqi.qz_uilib.client.RenderTickListener;
 import club.heiqi.qz_uilib.fontsystem.shader.FrameUtils;
 import org.apache.logging.log4j.LogManager;
@@ -39,7 +40,14 @@ public class CharPage {
                 GL11.GL_RGBA,
                 GL11.GL_UNSIGNED_BYTE,
                 (ByteBuffer) null);
-        GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_MIN_FILTER, GL11.GL_LINEAR_MIPMAP_NEAREST);
+        int lerpMode;
+        switch (Config.lerpMode) {
+            case 0 -> lerpMode = GL11.GL_NEAREST_MIPMAP_NEAREST;
+            case 1 -> lerpMode = GL11.GL_LINEAR_MIPMAP_NEAREST;
+            case 2 -> lerpMode = GL11.GL_NEAREST_MIPMAP_LINEAR;
+            default -> lerpMode = GL11.GL_LINEAR_MIPMAP_LINEAR;
+        }
+        GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_MIN_FILTER, lerpMode);
         GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_MAG_FILTER, GL11.GL_LINEAR);
         GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_WRAP_S, GL13.GL_CLAMP_TO_BORDER);
         GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_WRAP_T, GL13.GL_CLAMP_TO_BORDER);
