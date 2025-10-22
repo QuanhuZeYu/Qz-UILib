@@ -32,25 +32,30 @@ public abstract class MixinNEIClientUtils {
             // 宿主方法参数 (用于传递给新的 Runnable)
             String text, Rectangle4i rect, float scale, int color, boolean shadow, NEIClientUtils.Alignment alignment
     ) {
-        callback = () -> {
-            FontRenderer fontRenderer = Minecraft.getMinecraft().fontRenderer;
-            ReplaceFontRender replaceFontRender = ReplaceFontRender.getInstance();
-            replaceFontRender.pushCharSize();
-            replaceFontRender.setCharSize(Config.neiFontSize);
+        if (Config.customInvCountFont) {
+            callback = () -> {
+                FontRenderer fontRenderer = Minecraft.getMinecraft().fontRenderer;
+                ReplaceFontRender replaceFontRender = ReplaceFontRender.getInstance();
+                replaceFontRender.pushCharSize();
+                replaceFontRender.setCharSize(Config.neiFontSize);
 
-            final int width = fontRenderer.getStringWidth(text);
-            final double offsetX = rect.x + rect.w - width;
-            final double offsetY = rect.y + rect.h - replaceFontRender.FONT_HEIGHT + 2;
-            GL11.glTranslated(offsetX, offsetY, 0);
-
-
-            fontRenderer.drawString(text, 0, 0, color, shadow);
+                final int width = fontRenderer.getStringWidth(text);
+                final double offsetX = rect.x + rect.w - width;
+                final double offsetY = rect.y + rect.h - replaceFontRender.FONT_HEIGHT + 2;
+                GL11.glTranslated(offsetX, offsetY, 0);
 
 
-            replaceFontRender.popCharSize();
+                fontRenderer.drawString(text, 0, 0, color, shadow);
 
-            GL11.glTranslated(-1 * offsetX, -1 * offsetY, 0);
-        };
-        NEIClientUtils.gl2DRenderContext(callback);
+
+                replaceFontRender.popCharSize();
+
+                GL11.glTranslated(-1 * offsetX, -1 * offsetY, 0);
+            };
+            NEIClientUtils.gl2DRenderContext(callback);
+        }
+        else {
+            NEIClientUtils.gl2DRenderContext(callback);
+        }
     }
 }
