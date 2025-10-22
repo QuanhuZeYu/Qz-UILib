@@ -41,6 +41,8 @@ dependencies {
     implementation("com.google.guava:guava:33.4.8-jre")
     //    implementation(files("libs/qz_fontrender-1.8.3-dev.jar"))
     implementation(files("libs/BetterTooltipBox-v1.1.7-dev.jar"))
+    // https://mvnrepository.com/artifact/org.apache.commons/commons-lang3
+    implementation("org.apache.commons:commons-lang3:3.19.0")
 
 
 

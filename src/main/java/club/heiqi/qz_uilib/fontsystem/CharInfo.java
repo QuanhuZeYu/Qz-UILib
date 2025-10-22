@@ -4,18 +4,22 @@ public class CharInfo {
     public final int codepoint;
     /**字符在纹理页中的坐标*/
     public int x, y;
-    /**字符像素大小*/
+    /**字符格像素大小*/
     public int width, height;
+    /**字符实际大小*/
+    public float charWidth, charHeight;
     /**字符前进量*/
     public final float advance;
 
-    public CharInfo(int codepoint, int x, int y, int width, int height, float advance) {
+    public CharInfo(int codepoint, int x, int y, int width, int height, float advance, float charWidth, float charHeight) {
         this.codepoint = codepoint;
         this.x = x;
         this.y = y;
         this.width = width;
         this.height = height;
         this.advance = advance;
+        this.charWidth = charWidth;
+        this.charHeight = charHeight;
     }
 
     public double getU0(int pageSize) {
