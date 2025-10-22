@@ -247,8 +247,9 @@ public class BatchRenderFont {
         getShaderManagerInstance().setUniformM4f("modelview", new Matrix4f(modelView));
         getShaderManagerInstance().setUniformM4f("projection", new Matrix4f(projection));
         getShaderManagerInstance().setUniformF("colorGain", (float) Config.colorGain);
-        getShaderManagerInstance().setUniformF("shrink", (int) Config.shrink);
         getShaderManagerInstance().setUniformVec2("smoothRange", new Vector2f((float) Config.smoothRangeMin, (float) Config.smoothRangeMax));
+        getShaderManagerInstance().setUniformI("aaMode", Config.aaMode);
+        getShaderManagerInstance().setUniformF("aaStrength", (float) Config.aaStrength/120.0f);
 
         getShaderManagerInstance().setUniformVec2("textureSize", new Vector2f((float) (Config.awtCharSize * 64)));
     }

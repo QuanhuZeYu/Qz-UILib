@@ -30,9 +30,9 @@ public abstract class MixinStackSizeRenderer {
         }
 
         if (fontSize == TerminalFontSize.SMALL) {
-            scale = 1;
-            shiftX = 0;
-            shiftY = 0;
+            scale = 0.5f;
+            shiftX = 2;
+            shiftY = 1;
         } else if (fontSize == TerminalFontSize.LARGE) {
             scale = 0.85f;
         } else if (fontSize == TerminalFontSize.DYNAMIC) {
@@ -52,29 +52,33 @@ public abstract class MixinStackSizeRenderer {
             }
         }
 
-        FontRenderer fontRenderer = Minecraft.getMinecraft().fontRenderer;
-        ReplaceFontRender replaceFontRender = ReplaceFontRender.getInstance();
-        replaceFontRender.pushCharSize();
-        replaceFontRender.setCharSize(Config.aeFontSize);
-        if (scale == 1.0f) {
+        if (Config.customInvCountFont) {
+            ReplaceFontRender replaceFontRender = ReplaceFontRender.getInstance();
+            replaceFontRender.pushCharSize();
+            replaceFontRender.setCharSize(Config.aeFontSize);
+        }
 
-            fontRenderer.drawStringWithShadow(
+        if (scale == 1.0f) {
+            font.drawStringWithShadow(
                     customText,
-                    offsetX + 16 + 1 - replaceFontRender.getStringWidth(customText),
-                    offsetY + 16 - (int)replaceFontRender.FONT_HEIGHT,
+                    offsetX + 16/*格子宽度 右移到右侧*/ + 1/*每个格子间的间隔*/ - font.getStringWidth(customText)/*左移字符串宽度*/,
+                    (int)(offsetY + 16/*下移到格子顶部*/ - (font.FONT_HEIGHT - (font.FONT_HEIGHT * 0.25)))/*上移字符高度 下移1*/,
                     16777215);
         } else {
             final float inverseScaleFactor = 1.0f / scale;
             GL11.glScaled(scale, scale, scale);
 
-            final int X = (int) (((float) offsetX - shiftX + 16.0f + 1.0f - replaceFontRender.getStringWidth(customText) * scale)
+            final int X = (int) (((float) offsetX - shiftX + 16.0f + 1.0f - font.getStringWidth(customText) * scale)
                     * inverseScaleFactor);
-            final int Y = (int) (((float) offsetY + 16 - (int)replaceFontRender.FONT_HEIGHT * scale) * inverseScaleFactor);
+            final int Y = (int) (((float) offsetY - shiftY + 16.0f - (font.FONT_HEIGHT - (font.FONT_HEIGHT * 0.25)) * scale) * inverseScaleFactor);
 
-            fontRenderer.drawStringWithShadow(customText, X, Y, 16777215);
+            font.drawStringWithShadow(customText, X, Y, 16777215);
 
             GL11.glScaled(inverseScaleFactor, inverseScaleFactor, inverseScaleFactor);
         }
-        replaceFontRender.popCharSize();
+
+        if (Config.customInvCountFont) {
+            ReplaceFontRender.getInstance().popCharSize();
+        }
     }
 }
