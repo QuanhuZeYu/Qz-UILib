@@ -14,6 +14,7 @@ import org.lwjgl.opengl.Display;
 import java.awt.*;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Locale;
 
 public class QzExFontConfigGUI extends BaseGUI {
 

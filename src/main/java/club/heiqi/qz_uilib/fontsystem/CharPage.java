@@ -1,15 +1,11 @@
 package club.heiqi.qz_uilib.fontsystem;
 
-import club.heiqi.qz_uilib.Config;
 import club.heiqi.qz_uilib.client.RenderTickListener;
-import club.heiqi.qz_uilib.fontsystem.shader.Bluer;
 import club.heiqi.qz_uilib.fontsystem.shader.FrameUtils;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
-import org.lwjgl.BufferUtils;
 import org.lwjgl.opengl.GL11;
 import org.lwjgl.opengl.GL13;
-import org.lwjgl.opengl.GL20;
 import org.lwjgl.opengl.GL30;
 
 import javax.imageio.ImageIO;
