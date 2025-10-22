@@ -1,6 +1,9 @@
 package club.heiqi.qz_uilib.fontsystem;
 
 import club.heiqi.qz_uilib.Config;
+import club.heiqi.qz_uilib.eventbus.HandlerWrapper;
+import club.heiqi.qz_uilib.eventbus.QZEventBus;
+import club.heiqi.qz_uilib.fontsystem.event.FontReloadEvent;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 
@@ -33,15 +36,19 @@ public class FontManager {
 
         loadAssetsFontsTTF();
         loadInstalledFontsTTF();
-        // 对字体进行排序
-        sortFont();
+        register();
     }
 
     /**
-     * 重载任务为重置字体大小
+     * onReload事件3000优先级为 CharImageGenerator 订阅停止生成任何字符 <br/>
+     * 监听重载事件，在 CharImageGenerator 之后 <br/>
+     * 重新载入时设置字符大小 <br/>
      */
-    public void reload(float fontSize) {
+    public HandlerWrapper onReload = new HandlerWrapper(event -> {
+        FontReloadEvent fontReloadEvent = (FontReloadEvent) event;
+        float fontSize = (float) (fontReloadEvent.fontSize * Config.fontScale);
         this.fontSize = fontSize;
+        // ----- 设置所有字符大小为fontSize -----
         ArrayList<Font> collect = new ArrayList<>();
         for (Font font : fonts) {
             font = font.deriveFont(fontSize);
@@ -49,7 +56,9 @@ public class FontManager {
         }
         fonts.clear();
         fonts.addAll(collect);
-    }
+        // ----- 设置所有字符大小为fontSize -----
+        sortFont();  // 重新排序
+    }, 3010);
 
     public Font findSuitable(int codepoint, int type) {
         for (Font font : fonts) {
@@ -197,5 +206,12 @@ public class FontManager {
         // 3. 更新类中的 fonts 字段为排序后的列表
         this.fonts.clear();
         this.fonts.addAll(toSort);
+    }
+
+    /**
+     * 订阅所有需要的事件
+     */
+    public void register() {
+        QZEventBus.getInstance().register(FontReloadEvent.class, onReload);
     }
 }

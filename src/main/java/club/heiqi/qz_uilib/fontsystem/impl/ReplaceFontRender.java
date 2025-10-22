@@ -1,7 +1,10 @@
 package club.heiqi.qz_uilib.fontsystem.impl;
 
 import club.heiqi.qz_uilib.Config;
+import club.heiqi.qz_uilib.eventbus.QZEventBus;
 import club.heiqi.qz_uilib.fontsystem.*;
+import club.heiqi.qz_uilib.fontsystem.event.FontReloadDoneEvent;
+import club.heiqi.qz_uilib.fontsystem.event.FontReloadEvent;
 import com.ibm.icu.text.ArabicShaping;
 import com.ibm.icu.text.ArabicShapingException;
 import com.ibm.icu.text.Bidi;
@@ -48,25 +51,8 @@ public class ReplaceFontRender {
 
     
     public void onResourceManagerReload(@Nullable IResourceManager p_110549_1_) {
-        reload();
+        ReplaceFontRender.reload();
     }
-    public void reload() {
-        // 重载需要注意顺序问题 1.停止当前所有生成任务 2.重置生成配置项 3.清空纹理页
-        inReload = true;
-        // 停止生成任务 - 通过加锁实现
-        CharImageGenerator.getInstance().startReload();
-
-        // 重新设置字体大小以便生成正确大小的字体
-        FontManager.getInstance().reload((float) (Config.awtCharSize*Config.fontScale));
-        // 清空纹理页
-        PageManager.getInstance().reload((int) (Config.awtCharSize * 64), (int) Config.awtCharSize);
-
-        // 开放字符生成
-        CharImageGenerator.getInstance().endReload();
-        inReload = false;
-    }
-
-
     
     public int drawStringWithShadow(String text, int x, int y, int color) {
         return drawString(text, x, y, color, true);
@@ -542,18 +528,11 @@ public class ReplaceFontRender {
         }
     }
 
-    public static long lastUpload = System.currentTimeMillis();
-    public void upload() {
-        if (System.currentTimeMillis() - lastUpload > 50) {
-            CharImageGenerator.getInstance().uploadGPU();
-            lastUpload = System.currentTimeMillis();
-        }
-    }
     /**
      * 返回当前X坐标位置 即光标位置
      */
     public int renderString(String text, int x, int y, int color, boolean shadow) {
-        upload();
+        PageManager.getInstance().onMainThread(null);
         float fx = x;
         float fy = y;
         if (text == null) {
@@ -754,5 +733,15 @@ public class ReplaceFontRender {
     public void popCharSize() {
         Double pop = charSizeStack.pop();
         setCharSize(pop);
+    }
+    public static void reload() {
+        // 重载需要注意顺序问题 1.停止当前所有生成任务 2.重置生成配置项 3.清空纹理页
+        inReload = true;
+        FontReloadEvent event = new FontReloadEvent((float) Config.awtCharSize);
+        QZEventBus.getInstance().post(event);
+
+        FontReloadDoneEvent fontReloadDoneEvent = new FontReloadDoneEvent();
+        QZEventBus.getInstance().post(fontReloadDoneEvent);
+        inReload = false;
     }
 }
