@@ -1,4 +1,4 @@
-package com.myname.mymodid;
+package club.heiqi.uilib;
 
 public class ClientProxy extends CommonProxy {
 

@@ -1,4 +1,4 @@
-package com.myname.mymodid;
+package club.heiqi.uilib;
 
 import java.io.File;
 
