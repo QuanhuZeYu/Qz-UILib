@@ -28,6 +28,8 @@ public class RenderWorldLast {
                     bluer.resize(Display.getWidth(), Display.getHeight());
                 }
             }
+
+            GL11.glPushAttrib(GL11.GL_ALL_ATTRIB_BITS);
             int previousFBO = GL11.glGetInteger(GL30.GL_FRAMEBUFFER_BINDING);
 
             FBO fbo = bluer.blurTexture(
@@ -76,6 +78,8 @@ public class RenderWorldLast {
             GL11.glOrtho(0,1,1,0,-3000,3000);
             GL11.glMatrixMode(GL11.GL_MODELVIEW);
             GL11.glPopMatrix();
+
+            GL11.glPopAttrib();
         }
     }
 

@@ -18,8 +18,10 @@ public class EarlyMixins implements IEarlyMixinLoader, IFMLLoadingPlugin {
     @Override
     public List<String> getMixins(Set<String> loadedCoreMods) {
         return Arrays.asList(
-                "MixinFontRenderer",
-                "MixinRenderItem"
+                "MixinFontRenderer"
+                // "MixinRenderItem",
+                // "MixinGuiIngameForge",
+                // "MixinTileEntityRendererDispatcher"
         );
     }
 

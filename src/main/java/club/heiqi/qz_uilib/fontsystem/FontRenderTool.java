@@ -1,11 +1,7 @@
 package club.heiqi.qz_uilib.fontsystem;
 
-import club.heiqi.qz_uilib.Config;
-import club.heiqi.qz_uilib.fontsystem.shader.ShaderManager;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
-import org.joml.Matrix4f;
-import org.joml.Vector2f;
 import org.lwjgl.BufferUtils;
 import org.lwjgl.opengl.GL11;
 import org.lwjgl.opengl.GL15;
@@ -83,7 +79,12 @@ public class FontRenderTool {
             // 解绑：解除 VAO 绑定，同时也会解除 EBO 的绑定（如果EBO绑定到了VAO），VBO 绑定也解除。
             GL30.glBindVertexArray(0);
             GL15.glBindBuffer(GL15.GL_ARRAY_BUFFER, 0);
-            // GL15.glBindBuffer(GL15.GL_ELEMENT_ARRAY_BUFFER, 0); // EBO 绑定状态已随 VAO 解除
+            GL15.glBindBuffer(GL15.GL_ELEMENT_ARRAY_BUFFER, 0);
+
+            GL20.glDisableVertexAttribArray(0);
+            GL20.glDisableVertexAttribArray(1);
+            GL20.glDisableVertexAttribArray(2);
+            GL20.glDisableVertexAttribArray(3);
         }
     }
 
@@ -169,8 +170,6 @@ public class FontRenderTool {
         vertexBuffer = checkAndResizeBuffer(vertexBuffer, vertex.length, "顶点");
         vertexBuffer.put(vertex).flip();
         GL15.glBufferData(GL15.GL_ARRAY_BUFFER, vertexBuffer, GL15.GL_DYNAMIC_DRAW);
-        // !!! 删除：GL20.glVertexAttribPointer(0, 3, GL11.GL_FLOAT, false, 0, 0L);
-        // !!! 删除：GL20.glEnableVertexAttribArray(0);
 
         // 2. 纹理坐标
         GL15.glBindBuffer(GL15.GL_ARRAY_BUFFER, tbo);
@@ -223,6 +222,10 @@ public class FontRenderTool {
             FloatBuffer uvBoundsData,
             IntBuffer indexData,
             int indexDataCount) {
+        GL20.glEnableVertexAttribArray(0);
+        GL20.glEnableVertexAttribArray(1);
+        GL20.glEnableVertexAttribArray(2);
+        GL20.glEnableVertexAttribArray(3);
 
         // 2. 绑定 VAO (加载已配置的属性状态)
         GL30.glBindVertexArray(vao);
@@ -260,5 +263,10 @@ public class FontRenderTool {
         // 额外解绑 GL_ARRAY_BUFFER，避免影响后续操作
         GL15.glBindBuffer(GL15.GL_ARRAY_BUFFER, 0);
         GL15.glBindBuffer(GL15.GL_ELEMENT_ARRAY_BUFFER, 0);
+
+        GL20.glDisableVertexAttribArray(0);
+        GL20.glDisableVertexAttribArray(1);
+        GL20.glDisableVertexAttribArray(2);
+        GL20.glDisableVertexAttribArray(3);
     }
 }

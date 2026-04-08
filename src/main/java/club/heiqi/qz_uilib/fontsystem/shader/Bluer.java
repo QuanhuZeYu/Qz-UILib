@@ -1,6 +1,5 @@
 package club.heiqi.qz_uilib.fontsystem.shader;
 
-import club.heiqi.qz_uilib.Config;
 import club.heiqi.qz_uilib.client.FBO;
 import club.heiqi.qz_uilib.client.RenderTickListener;
 import org.apache.logging.log4j.LogManager;

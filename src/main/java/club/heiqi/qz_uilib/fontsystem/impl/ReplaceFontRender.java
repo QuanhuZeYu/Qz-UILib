@@ -11,17 +11,23 @@ import com.ibm.icu.text.Bidi;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.resources.IResourceManager;
 import net.minecraft.util.ResourceLocation;
-import org.apache.commons.lang3.CharUtils;
+import org.apache.logging.log4j.LogManager;
+import org.apache.logging.log4j.Logger;
 import org.joml.Vector3d;
 import org.joml.Vector4f;
 import org.lwjgl.opengl.GL11;
+import org.xml.sax.SAXException;
 
 import javax.annotation.Nullable;
+import javax.xml.parsers.ParserConfigurationException;
+import javax.xml.parsers.SAXParser;
+import javax.xml.parsers.SAXParserFactory;
 import java.io.IOException;
 import java.io.InputStream;
 import java.util.*;
 
 public class ReplaceFontRender {
+    public static Logger LOG = LogManager.getLogger();
     /**公用字体渲染器 - 如有特殊需要请自行创建实例避免污染全局状态(字号)<br>(字符页管理器在本类中是全局单例使用 仅字号颜色等是可实例控制的状态)*/
     public static ReplaceFontRender instance;
     public static ReplaceFontRender getInstance() {
@@ -42,12 +48,19 @@ public class ReplaceFontRender {
     public float FONT_HEIGHT = 8;
     public Random fontRandom = new Random();
     public BatchRenderFont batchRenderer = new BatchRenderFont();
+    public SAXParser parser;
 
     public ReplaceFontRender() {
         curCharSize = Config.charSize;
         // registerResourceManager();
         this.colorCode = new int[]{ 0, 0xAA, 0xAA00, 0xAAAA, 0xAA0000, 0xAA00AA, 0xFFAA00, 0xAAAAAA, 0x555555, 0x5555FF, 0x55FF55, 0x55FFFF, 0xFF5555, 0xFF55FF, 0xFFFF55, 0xFFFFFF,
                 0, 0x2A, 0x2A00, 0x2A2A, 0x2A0000, 0x2A002A, 0x2A2A00, 0x2A2A2A, 0x151515, 0x15153F, 0x153F15, 0x153F3F, 0x3F1515, 0x3F153F, 0x3F3F15, 0x3F3F3F};
+        try {
+            parser = SAXParserFactory.newInstance("renderStringFactor", this.getClass().getClassLoader()).newSAXParser();
+        } catch (ParserConfigurationException | SAXException e) {
+            LOG.error("创建SAX解析器失败");
+            parser = null;
+        }
     }
 
     
@@ -67,7 +80,6 @@ public class ReplaceFontRender {
     
     public int drawString(String text, int x, int y, int color, boolean dropShadow) {
         if (text.isEmpty()) return x;
-        this.enableAlpha();
         int xPos;
 
         if (dropShadow) {
@@ -153,14 +165,14 @@ public class ReplaceFontRender {
             }
 
             else {
-                CharPage page;
+                RenderInfo renderInfo;
                 // 获取字符页
-                page = PageManager.getInstance().getPage(codepoint, fontType);
+                renderInfo = PageManager.getInstance().getRenderInfo(codepoint, fontType);
                 // 字符页正在生成返回空格
-                if (page == null) {
+                if (renderInfo == null) {
                     width += Config.spaceWidth;
                 } else {
-                    CharInfo info = page.getCharInfo(codepoint);  // 流程不错的情况下info不为null
+                    CharInfo info = renderInfo.charInfo;  // 流程不错的情况下info不为null
                     width += ((info.advance / info.width) * this.curCharSize) + Config.characterSpacing;
                 }
 
@@ -176,11 +188,11 @@ public class ReplaceFontRender {
         int codepoint = s.codePointAt(0);
         if (s.equals(" ")) return (int) Config.spaceWidth;
 
-        CharPage page = PageManager.getInstance().getPage(codepoint, 0);
-        if (page == null) {
+        RenderInfo renderInfo = PageManager.getInstance().getRenderInfo(codepoint, PageManager.NORMAL);
+        if (renderInfo == null) {
             return (int) Config.spaceWidth;
         }
-        CharInfo info = page.getCharInfo(codepoint);
+        CharInfo info = renderInfo.charInfo;
         return (int) Math.ceil(info.advance/info.width*this.curCharSize + Config.characterSpacing);
     }
 
@@ -280,15 +292,15 @@ public class ReplaceFontRender {
             }
 
 
-            CharPage page;
+            RenderInfo renderInfo;
             // 获取字符页
-            page = PageManager.getInstance().getPage(codepoint, fontType);
+            renderInfo = PageManager.getInstance().getRenderInfo(codepoint, fontType);
             // 字符页正在生成返回空格
-            if (page == null) {
+            if (renderInfo == null) {
                 width += Config.spaceWidth;
             }
             else {
-                CharInfo info = page.getCharInfo(codepoint);  // info不可为null
+                CharInfo info = renderInfo.charInfo;  // info不可为null
                 width += ((info.advance / info.width) * this.curCharSize) + Config.characterSpacing;
             }
 
@@ -317,7 +329,7 @@ public class ReplaceFontRender {
             "ÇüéâäàåçêëèïîìÄÅÉæÆôöòûùÿÖÜø£Ø×ƒáíóúñÑªº¿®¬½¼¡«»░▒▓│┤╡╢╖╕╣║╗╝╜╛┐└┴┬├─┼╞╟╚╔╩╦╠═╬╧╨╤╥╙╘╒╓╫╪┘┌█▄▌▐▀" +
             "αβΓπΣσμτΦΘΩδ∞∅∈∩≡±≥≤⌠⌡÷≈°∙·√ⁿ²■";
 
-    private void renderStringAtPos_Version2(String text, boolean shadow) {
+    private void collectStringToRender(String text, boolean shadow) {
         int textLength = text.length();
 
         boolean randomStyle = false, boldStyle = false, strikethroughStyle = false, underlineStyle = false, italicStyle = false;
@@ -327,13 +339,17 @@ public class ReplaceFontRender {
                 | saveGI << 8
                 | saveBI;
 
+        boolean inXML = false;
+        StringBuilder xmlCollector = new StringBuilder();
         for (int i = 0; i < textLength;) {
             int codepoint = text.codePointAt(i);
 
-            // 判断该字符是否是操作符 且操作符下一个字符是否存在
+            // 判断该字符是否是操作符 且操作符下一个字符是否存在 1.不存在 2.存在
+            // 在字符串末尾没有操作指令但有操作符，结束流程
             if (codepoint == '§' && i == textLength - 1) {
                 return;
             }
+            // 解析操作指令
             else if (codepoint == '§' && i < textLength - 1) {
                 i++;  // 操作符步进
                 codepoint = text.codePointAt(i);  // 操作指令
@@ -395,56 +411,61 @@ public class ReplaceFontRender {
                     }
                 }
 
-                // 提取下一个字符
-                if (i < textLength) {
-
-                }
-                // 如果已经到达末尾结束
-                else {
+                // 如果操作指令已经到达末尾结束
+                if (i >= textLength) {
                     return;
                 }
             }
             else {
+                // 检查是否到达末尾
+                boolean isLastOne = i >= textLength;
                 float width = 0;
-                CharPage page;
                 LineInfo lineInfo = new LineInfo().setColor(color);
-                // 获取字符页
-                page = PageManager.getInstance().getPage(codepoint, fontType);
-                // 字符页正在生成返回空格
-                if (page == null) {
-                    width = (float) Config.spaceWidth;
-                } else {
-                    // 获取字符的信息
-                    CharInfo info = page.getCharInfo(codepoint);  // info不可为null
+                RenderInfo renderInfo = PageManager.getInstance().getRenderInfo(codepoint, fontType);
+                // 🔛---------- 解析XML 或是直接收集 ----------🔛
+                if (inXML) {
 
-                    // 处理随机化的情况
-                    if (randomStyle) {
-                        // 直接使用原始的字宽而不是随机的字宽
-                        width = (float) (((info.advance / info.width) * this.curCharSize) + Config.characterSpacing);
-                        float randomWidth = 0;
-                        int randomCharCodepoint;
-                        do {
-                            int randomIndex = fontRandom.nextInt(randomSample.length());
-                            randomCharCodepoint = randomSample.charAt(randomIndex);
-                            CharPage randomPage = PageManager.getInstance().getPage(codepoint, fontType);
-                            if (randomPage == null) continue;  // 没生成好等待 找下一个
-                            randomWidth = randomPage.getCharInfo(codepoint).advance;
-                        }
-                        while (Math.abs(info.advance - randomWidth) > 0.05f);
-
-                        CharPage replacePage = PageManager.getInstance().getPage(randomCharCodepoint, PageManager.NORMAL);
-                        // 如果随机化的字符页为空回退到原始字符页
-                        page = replacePage == null ? page : replacePage;
-                        info = replacePage == null ? page.getCharInfo(codepoint) : replacePage.getCharInfo(randomCharCodepoint);
-                    }
-                    else {
-                        width = (float) (((info.advance / info.width) * this.curCharSize) + Config.characterSpacing);
-                    }
-
-                    // TODO 实际渲染环节
-                    // batchRenderer.collect(posX, posY, curCharWidth, curCharWidth, page, info, color, italicStyle);
-                    batchRenderer.collectRender(posX, posY, (float) curCharSize, page, info, color, italicStyle);
                 }
+                else {
+                    // 字符页正在生成返回空格
+                    if (renderInfo == null) {
+                        width = (float) Config.spaceWidth;
+                    }
+                    // 字符页不为空
+                    else {
+                        // 获取字符的信息
+                        CharInfo info = renderInfo.charInfo;  // info不可为null
+
+                        // 处理随机化的情况
+                        if (randomStyle) {
+                            // 直接使用原始的字宽而不是随机的字宽
+                            width = (float) (((info.advance / info.width) * this.curCharSize) + Config.characterSpacing);
+                            float randomWidth = 0;
+                            int randomCharCodepoint;
+                            do {
+                                int randomIndex = fontRandom.nextInt(randomSample.length());
+                                randomCharCodepoint = randomSample.charAt(randomIndex);
+                                RenderInfo randomRenderInfo = PageManager.getInstance().getRenderInfo(codepoint, fontType);
+                                if (randomRenderInfo == null) continue;  // 没生成好等待 找下一个
+                                randomWidth = randomRenderInfo.charInfo.advance;
+                            }
+                            while (Math.abs(info.advance - randomWidth) > 0.05f);
+
+                            RenderInfo replaceRenderInfo = PageManager.getInstance().getRenderInfo(randomCharCodepoint, PageManager.NORMAL);
+                            // 如果随机化的字符页为空回退到原始字符页
+                            renderInfo = replaceRenderInfo == null ? renderInfo : replaceRenderInfo;
+                            info = replaceRenderInfo == null ? renderInfo.charInfo : replaceRenderInfo.charInfo;
+                        }
+                        else {
+                            width = (float) (((info.advance / info.width) * this.curCharSize) + Config.characterSpacing);
+                        }
+
+                        // 🔛---------- 实际收集函数 ----------🔛
+                        batchRenderer.collectRender(posX, posY, (float) curCharSize, renderInfo, color, italicStyle);
+                        // 🔛---------- 实际收集函数 ----------🔛
+                    }
+                }
+
 
                 collectDraw(width, lineInfo, underlineStyle, strikethroughStyle);
                 i += Character.charCount(codepoint);
@@ -465,8 +486,9 @@ public class ReplaceFontRender {
         }
 
         public void draw() {
+            boolean enableTexture2D = GL11.glGetBoolean(GL11.GL_TEXTURE_2D);
+            GL11.glDisable(GL11.GL_TEXTURE_2D);
             GL11.glColor4f(lineColor.x, lineColor.y, lineColor.z, lineColor.w);
-            // GL11.glDisable(GL11.GL_TEXTURE_2D);
             GL11.glBegin(GL11.GL_QUADS);
 
             for (Vector3d vertex : lineVertex) {
@@ -474,6 +496,9 @@ public class ReplaceFontRender {
             }
 
             GL11.glEnd();
+            if (enableTexture2D) {
+                GL11.glEnable(GL11.GL_TEXTURE_2D);
+            }
         }
 
         public LineInfo addVertex(Vector3d v) {
@@ -524,6 +549,7 @@ public class ReplaceFontRender {
      */
     public int renderString(String text, int x, int y, int color, boolean shadow) {
         PageManager.getInstance().onMainThread(null);
+
         float fx = x;
         float fy = y;
         if (text == null) {
@@ -550,81 +576,45 @@ public class ReplaceFontRender {
             saveGI = (color >> 8 & 255);
             saveBI = (color & 255);
 
-            GL11.glColor4f(1, 1, 1, 1);
             this.posX = fx;
             this.posY = fy;
 
-            // GL11.glPushAttrib(GL11.GL_ENABLE_BIT | GL11.GL_DEPTH_BUFFER_BIT | GL11.GL_COLOR_BUFFER_BIT);
-            GL11.glPushAttrib(GL11.GL_ALL_ATTRIB_BITS);
-
-            GL11.glEnable(GL11.GL_BLEND);
-            GL11.glBlendFunc(GL11.GL_SRC_ALPHA, GL11.GL_ONE_MINUS_SRC_ALPHA);
-            // GL11.glEnable(GL11.GL_ALPHA_TEST);
-            GL11.glDisable(GL11.GL_ALPHA_TEST);
-            GL11.glEnable(GL11.GL_TEXTURE_2D);
-
+            GL11.glPushAttrib(GL11.GL_ENABLE_BIT);
             // 🐕 收集需要渲染的字符 🐱
-            this.renderStringAtPos_Version2(text, shadow);
+            batchRenderer.startBatch();
 
-            GL11.glEnable(GL11.GL_BLEND);
-            GL11.glBlendFunc(GL11.GL_SRC_ALPHA, GL11.GL_ONE_MINUS_SRC_ALPHA);
-            GL11.glEnable(GL11.GL_ALPHA_TEST);
-            // GL11.glDisable(GL11.GL_ALPHA_TEST);
-            GL11.glEnable(GL11.GL_TEXTURE_2D);
-            batchRenderer.flush();
-            GL11.glDisable(GL11.GL_TEXTURE_2D);
+            this.collectStringToRender(text, shadow);
+
+            batchRenderer.endBatch();
             drawCollect();
 
             if (Config.debugFontRender) {// debug绘制
-                GL11.glDisable(GL11.GL_DEPTH_TEST);
-                GL11.glColor4f(1, 0, 0, 1);
-                GL11.glBegin(GL11.GL_LINES);
-                GL11.glVertex3f(x, y, 0);
-                GL11.glVertex3f(posX, y, 0);
-                GL11.glVertex3f(posX, y, 0);
-                GL11.glVertex3f(posX, (float) (y + curCharSize), 0);
-                GL11.glVertex3f(posX, (float) (y + curCharSize), 0);
-                GL11.glVertex3f(x, (float) (y + curCharSize), 0);
-                GL11.glVertex3f(x, (float) (y + curCharSize), 0);
-                GL11.glVertex3f(x, y, 0);
-                GL11.glEnd();
-                GL11.glEnable(GL11.GL_DEPTH_TEST);
+                GL11.glPushAttrib(GL11.GL_ENABLE_BIT);
+                {
+                    GL11.glDisable(GL11.GL_DEPTH_TEST);
+                    GL11.glColor4f(1, 0, 0, 1);
+                    GL11.glBegin(GL11.GL_LINES);
+                    GL11.glVertex3f(x, y, 0);
+                    GL11.glVertex3f(posX, y, 0);
+                    GL11.glVertex3f(posX, y, 0);
+                    GL11.glVertex3f(posX, (float) (y + curCharSize), 0);
+                    GL11.glVertex3f(posX, (float) (y + curCharSize), 0);
+                    GL11.glVertex3f(x, (float) (y + curCharSize), 0);
+                    GL11.glVertex3f(x, (float) (y + curCharSize), 0);
+                    GL11.glVertex3f(x, y, 0);
+                    GL11.glEnd();
+                }
+                GL11.glPopAttrib();
             }
 
-            GL11.glPopAttrib();
 
+            GL11.glPopAttrib();
             return (int)Math.ceil(this.posX);
         }
     }
 
-
-
-
-
-
-
-
-
-
-    
-    protected void bindTexture(ResourceLocation location) {
-
-    }
-
-    
-    protected void enableAlpha() {
-        GL11.glEnable(GL11.GL_ALPHA_TEST);
-    }
-
-    
     protected InputStream getResourceInputStream(ResourceLocation location) throws IOException {
         return Minecraft.getMinecraft().getResourceManager().getResource(location).getInputStream();
-    }
-
-
-    
-    protected void setColor(float r, float g, float b, float a) {
-        GL11.glColor4f(r, g, b, a);
     }
 
 
@@ -681,14 +671,14 @@ public class ReplaceFontRender {
                 continue;
             }
 
-            CharPage page = PageManager.getInstance().getPage(codepoint, PageManager.NORMAL);
+            RenderInfo renderInfo = PageManager.getInstance().getRenderInfo(codepoint, PageManager.NORMAL);
 
             // ----- 获取字符宽度 -----
-            if (page == null) {
+            if (renderInfo == null) {
                 width += Config.spaceWidth;
             }
             else {
-                CharInfo info = page.getCharInfo(codepoint);
+                CharInfo info = renderInfo.charInfo;
                 width += info.advance / info.width * this.curCharSize + Config.characterSpacing;
             }
             // 到达指定宽度时添加换行并重置宽度计数器

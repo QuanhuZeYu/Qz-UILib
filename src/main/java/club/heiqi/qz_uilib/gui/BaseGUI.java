@@ -7,13 +7,11 @@ import net.minecraft.client.gui.GuiButton;
 import net.minecraft.client.gui.GuiScreen;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
-import org.lwjgl.BufferUtils;
 import org.lwjgl.input.Keyboard;
 import org.lwjgl.input.Mouse;
 import org.lwjgl.opengl.Display;
 import org.lwjgl.opengl.GL11;
 
-import java.nio.IntBuffer;
 import java.util.HashSet;
 import java.util.Set;
 
@@ -41,9 +39,9 @@ public class BaseGUI extends GuiScreen {
 
     @Override
     public void drawScreen(int mouseX, int mouseY, float partialTicks) {
+        GL11.glPushAttrib(GL11.GL_ALL_ATTRIB_BITS);
+
         Widget.updateTween();
-        IntBuffer intBuffer = BufferUtils.createIntBuffer(16);
-        GL11.glGetInteger(GL11.GL_VIEWPORT, intBuffer);
         // 初始化各种矩阵
         GL11.glMatrixMode(GL11.GL_PROJECTION);
         GL11.glPushMatrix();
@@ -59,16 +57,17 @@ public class BaseGUI extends GuiScreen {
         // 清除fbo内容
         GL11.glClearColor(0,0,0,0);
         GL11.glClear(GL11.GL_COLOR_BUFFER_BIT | GL11.GL_DEPTH_BUFFER_BIT);
-        GL11.glPushAttrib(GL11.GL_ALL_ATTRIB_BITS);
+
         GL11.glDisable(GL11.GL_TEXTURE_2D);
         GL11.glDisable(GL11.GL_CULL_FACE);
         GL11.glEnable(GL11.GL_BLEND);
         GL11.glBlendFunc(GL11.GL_SRC_ALPHA, GL11.GL_ONE_MINUS_SRC_ALPHA);
 
+
         drawBackground();
         root.applyLayout();
         root.draw();
-        GL11.glPopAttrib();
+
 
         getFrameBuffer().unbindAndRestorePreviousFBO();
 
@@ -77,8 +76,6 @@ public class BaseGUI extends GuiScreen {
         GL11.glPopMatrix();
         GL11.glMatrixMode(GL11.GL_MODELVIEW);
         GL11.glPopMatrix();
-        // 恢复视口
-        GL11.glViewport(intBuffer.get(0), intBuffer.get(1), intBuffer.get(2), intBuffer.get(3));
 
 
         GL11.glEnable(GL11.GL_TEXTURE_2D);
@@ -88,8 +85,10 @@ public class BaseGUI extends GuiScreen {
         GL11.glDisable(GL11.GL_CULL_FACE);
         GL11.glDisable(GL11.GL_DEPTH_TEST);
         GL11.glColor4f(1,1,1,1);
-        getFrameBuffer().drawDisplayWindow();
+        getFrameBuffer().displayWidowDraw();
         GL11.glBindTexture(GL11.GL_TEXTURE_2D, 0);
+
+        GL11.glPopAttrib();
     }
 
     public void drawBackground() {

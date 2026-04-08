@@ -1,7 +1,6 @@
 package club.heiqi.qz_uilib.fontsystem;
 
 import club.heiqi.qz_uilib.Config;
-import club.heiqi.qz_uilib.client.FBO;
 import club.heiqi.qz_uilib.fontsystem.shader.ShaderManager;
 import org.joml.Matrix4f;
 import org.joml.Vector2f;
@@ -16,7 +15,7 @@ import java.util.Map;
 
 public class BatchRenderFont {
     public static ShaderManager shaderManager;
-    public static ShaderManager getShaderManagerInstance() {
+    public static ShaderManager getBatchRenderShader() {
         if (shaderManager == null) {
             shaderManager = new ShaderManager();
             shaderManager.setCustomLocation(() -> {
@@ -129,9 +128,41 @@ public class BatchRenderFont {
     /**键为 纹理ID 值为数据收集指令*/
     public HashMap<CharPage, ArrayList<Runnable>> callRenders = new HashMap<>();
 
-    public void collectRender(float x, float y, float charSize, CharPage page, CharInfo info, int inColor, boolean italic) {
+    public int batchDepth = 0;
+    public void startBatch() {
+        batchDepth++;
+        // 收集矩阵
+        modelView.clear(); projection.clear();
+        GL11.glGetFloat(GL11.GL_MODELVIEW_MATRIX, modelView);
+        GL11.glGetFloat(GL11.GL_PROJECTION_MATRIX, projection);
+        modelView.flip(); projection.flip();
+    }
+    public void endBatch() {
+        batchDepth--;
+        if (batchDepth == 0) {
+            flush();
+        }
+        else if (batchDepth < 0) {
+            // throw new UnsupportedOperationException("不支持的操作：BatchRenderFont.endBatch() 调用次数超过 startBatch()");
+            batchDepth = 0;
+        }
+    }
+
+    private final FloatBuffer modelView = BufferUtils.createFloatBuffer(16);
+    private final FloatBuffer projection = BufferUtils.createFloatBuffer(16);
+    /**
+     * 收集渲染指令
+     */
+    public void collectRender(float x, float y, float charSize, RenderInfo renderInfo, int inColor, boolean italic) {
+        Matrix4f modelViewMatrix = new Matrix4f(modelView);
+        Matrix4f projectionMatrix = new Matrix4f(projection);
+
+        CharInfo info = renderInfo.charInfo;
+        CharPage page = renderInfo.page;
 
         Runnable call = () -> {
+            getBatchRenderShader().setUniformM4f("modelview", modelViewMatrix);
+            getBatchRenderShader().setUniformM4f("projection", projectionMatrix);
             float u0 = (float)info.getU0(page.textureSize);
             float u1 = (float)info.getU1(page.textureSize);
             float v0 = (float)info.getV0(page.textureSize);
@@ -196,8 +227,15 @@ public class BatchRenderFont {
     }
 
     public void flush() {
+
+        GL11.glPushAttrib(GL11.GL_ENABLE_BIT | GL11.GL_COLOR_BUFFER_BIT);
+        GL11.glEnable(GL11.GL_ALPHA_TEST);
+        GL11.glEnable(GL11.GL_TEXTURE_2D);
+        GL11.glEnable(GL11.GL_BLEND);
+        GL11.glBlendFunc(GL11.GL_SRC_ALPHA, GL11.GL_ONE_MINUS_SRC_ALPHA);
+
         // 绑定着色器
-        getShaderManagerInstance().bind();
+        getBatchRenderShader().bind();
         setUniform_PipeLine0();
         for (Map.Entry<CharPage, ArrayList<Runnable>> entry : callRenders.entrySet()) {
 
@@ -215,8 +253,8 @@ public class BatchRenderFont {
             uvBoundsBuffer.flip();
             indexBuffer.flip();
 
-            // 3. 渲染：使用 array() 获取底层数组，并使用 DataCount 限制有效数据长度
-            FontRenderTool.getInstance().render(
+            // 3. 渲染
+            getRenderTool().render(
                     vertexBuffer,
                     texCoordBuffer,
                     colorBuffer,
@@ -228,30 +266,22 @@ public class BatchRenderFont {
             clean();
         }
         callRenders.clear();
-
         // 解绑着色器
-        getShaderManagerInstance().unbind();
+        getBatchRenderShader().unbind();
 
-        // 恢复纹理
-        GL13.glActiveTexture(GL13.GL_TEXTURE0);
+
+        GL11.glPopAttrib();
+        GL11.glEnable(GL11.GL_TEXTURE_2D);
     }
 
-    private final FloatBuffer modelView = BufferUtils.createFloatBuffer(16);
-    private final FloatBuffer projection = BufferUtils.createFloatBuffer(16);
     public void setUniform_PipeLine0() {
-        modelView.clear(); projection.clear();
-        GL11.glGetFloat(GL11.GL_MODELVIEW_MATRIX, modelView);
-        GL11.glGetFloat(GL11.GL_PROJECTION_MATRIX, projection);
-        modelView.flip(); projection.flip();
 
-        getShaderManagerInstance().setUniformM4f("modelview", new Matrix4f(modelView));
-        getShaderManagerInstance().setUniformM4f("projection", new Matrix4f(projection));
-        getShaderManagerInstance().setUniformF("colorGain", (float) Config.colorGain);
-        getShaderManagerInstance().setUniformVec2("smoothRange", new Vector2f((float) Config.smoothRangeMin, (float) Config.smoothRangeMax));
-        getShaderManagerInstance().setUniformI("aaMode", Config.aaMode);
-        getShaderManagerInstance().setUniformF("aaStrength", (float) Config.aaStrength/120.0f);
+        getBatchRenderShader().setUniformF("colorGain", (float) Config.colorGain);
+        getBatchRenderShader().setUniformVec2("smoothRange", new Vector2f((float) Config.smoothRangeMin, (float) Config.smoothRangeMax));
+        getBatchRenderShader().setUniformI("aaMode", Config.aaMode);
+        getBatchRenderShader().setUniformF("aaStrength", (float) Config.aaStrength/120.0f);
 
-        getShaderManagerInstance().setUniformVec2("textureSize", new Vector2f((float) (Config.awtCharSize * 64)));
+        getBatchRenderShader().setUniformVec2("textureSize", new Vector2f((float) (Config.awtCharSize * 64)));
     }
 
     public void clean() {

@@ -142,9 +142,9 @@ public class CharPage {
     public CharInfo getCharInfo(int codepoint) {
         CharInfo charInfo = chars.get(codepoint);
         if (charInfo != null) return charInfo;
-        LOG.error("字符 【{}】 不在本纹理页 ({}) 中", new String(Character.toChars(codepoint)), textureID);
+        // LOG.error("字符 【{}】 不在本纹理页 ({}) 中", new String(Character.toChars(codepoint)), textureID);
         // throw new RuntimeException("字符 【"+new String(Character.toChars(codepoint))+"】 不在本纹理页 ("+textureID+") 中");
-        return new CharInfo(0,0,0, (int) Config.awtCharSize, (int) Config.awtCharSize,0,0,0);
+        return new CharInfo(0,0,0, (int) Config.awtCharSize, (int) Config.awtCharSize,0);
     }
 
     @Override

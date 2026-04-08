@@ -50,7 +50,7 @@ public class PageManager {
     public final BitSet normalChar = new BitSet(),
                         boldChar = new BitSet();
     /**存储字符和Page的映射*/
-    public final Cache<Integer, CharPage> normalCache = CacheBuilder.newBuilder().maximumSize(0xffff).build(),
+    public final Cache<Integer, RenderInfo> normalCache = CacheBuilder.newBuilder().maximumSize(0xffff).build(),
                                             boldCache = CacheBuilder.newBuilder().maximumSize(0xffff).build();
 
     public int textureSize, charSize;
@@ -130,17 +130,18 @@ public class PageManager {
 
     /**获取Page唯一入口，可以自动处理添加字符*/
     @Nullable
+    @Deprecated
     public CharPage getPage(int codepoint, int type) {
         magicInit();
         if (type == NORMAL) {
             // 确认已经生成
             if (normalChar.get(codepoint)) {
-                CharPage page = normalCache.getIfPresent(codepoint);
-                if (page != null) return page;
+                RenderInfo render = normalCache.getIfPresent(codepoint);
+                if (render != null) return render.page;
                 else {
                     for (CharPage charPage : normalPage) {
                         if (charPage.isCharInPage(codepoint)) {
-                            normalCache.put(codepoint, charPage);
+                            normalCache.put(codepoint, new RenderInfo(codepoint, charPage, charPage.getCharInfo(codepoint)));
                             return charPage;
                         }
                     }
@@ -163,13 +164,75 @@ public class PageManager {
         else if (type == BOLD) {
             // 确认已经生成
             if (boldChar.get(codepoint)) {
-                CharPage page = boldCache.getIfPresent(codepoint);
-                if (page != null) return page;
+                RenderInfo renderInfo = boldCache.getIfPresent(codepoint);
+                if (renderInfo != null) return renderInfo.page;
                 else {
                     for (CharPage charPage : boldPage) {
                         if (charPage.isCharInPage(codepoint)) {
-                            boldCache.put(codepoint, charPage);
+                            boldCache.put(codepoint, new RenderInfo(codepoint, charPage, charPage.getCharInfo(codepoint)));
                             return charPage;
+                        }
+                    }
+                }
+            }
+            // 没有生成
+            else {
+                // 在生成
+                if (boldInGen.contains(codepoint)) {
+                    return null;
+                }
+                // 没有生成过的字符
+                else {
+                    genBoldSignal(codepoint);
+                    return null;
+                }
+            }
+        }
+        throw new RuntimeException("不支持的字体类型参数");
+    }
+
+    @Nullable
+    public RenderInfo getRenderInfo(int codepoint, int type) {
+        magicInit();
+        if (type == NORMAL) {
+            // 确认已经生成
+            if (normalChar.get(codepoint)) {
+                RenderInfo render = normalCache.getIfPresent(codepoint);
+                if (render != null) return render;
+                else {
+                    for (CharPage charPage : normalPage) {
+                        if (charPage.isCharInPage(codepoint)) {
+                            RenderInfo renderInfo = new RenderInfo(codepoint, charPage, charPage.getCharInfo(codepoint));
+                            normalCache.put(codepoint, renderInfo);
+                            return renderInfo;
+                        }
+                    }
+                }
+            }
+            // 没有生成
+            else {
+                // 在生成
+                if (normalInGen.contains(codepoint)) {
+                    return null;
+                }
+                // 没有生成过的字符
+                else {
+                    genNormalSignal(codepoint);
+                    return null;
+                }
+            }
+        }
+        else if (type == BOLD) {
+            // 确认已经生成
+            if (boldChar.get(codepoint)) {
+                RenderInfo render = boldCache.getIfPresent(codepoint);
+                if (render != null) return render;
+                else {
+                    for (CharPage charPage : boldPage) {
+                        if (charPage.isCharInPage(codepoint)) {
+                            RenderInfo renderInfo = new RenderInfo(codepoint, charPage, charPage.getCharInfo(codepoint));
+                            boldCache.put(codepoint, renderInfo);
+                            return renderInfo;
                         }
                     }
                 }
@@ -210,7 +273,7 @@ public class PageManager {
                         normalChar.set(e.codepoint, true);
                         normalInGen.remove(e.codepoint);
                         // 加入缓存
-                        normalCache.put(e.codepoint, page);
+                        normalCache.put(e.codepoint, new RenderInfo(e.codepoint, page, e.info));
                         break;
                     }
                 }
@@ -222,7 +285,7 @@ public class PageManager {
                         boldChar.set(e.codepoint, true);
                         boldInGen.remove(e.codepoint);
 
-                        boldCache.put(e.codepoint, page);
+                        boldCache.put(e.codepoint, new RenderInfo(e.codepoint, page, e.info));
                         break;
                     }
                 }

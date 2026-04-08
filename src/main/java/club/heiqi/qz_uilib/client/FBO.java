@@ -181,7 +181,7 @@ public class FBO {
     }
 
     public IntBuffer intBuffer = BufferUtils.createIntBuffer(16);
-    public void drawDisplayWindow() {
+    public void displayWidowDraw() {
         intBuffer.clear();
         GL11.glGetInteger(GL11.GL_VIEWPORT, intBuffer);
         int px = intBuffer.get(0);

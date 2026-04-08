@@ -144,8 +144,8 @@ public class CharImageGenerator {
                 codepoint,
                 0,0,
                 charSize,charSize,
-                advance,
-                (float) visualWidth, (float) visualHeight));
+                advance)
+        );
     }
 
     /**订阅生成事件，异步生成字符图像*/
@@ -194,6 +194,6 @@ public class CharImageGenerator {
             System.err.println("Error saving image: " + e.getMessage());
             e.printStackTrace();
         }
-        LOG.info("步进信息: {}, 实际宽度: {}", generated.info.advance, generated.info.charWidth);
+        LOG.info("步进信息: {}", generated.info.advance);
     }
 }
