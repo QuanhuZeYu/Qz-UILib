@@ -10,13 +10,22 @@ import cpw.mods.fml.common.event.FMLPostInitializationEvent;
 import cpw.mods.fml.common.event.FMLPreInitializationEvent;
 import cpw.mods.fml.common.event.FMLServerStartingEvent;
 
-@Mod(modid = MyMod.MODID, version = Tags.VERSION, name = "Qz UILib", acceptedMinecraftVersions = "[1.7.10]")
+@Mod(
+        modid = MyMod.MODID,
+        version = Tags.VERSION,
+        name = "Qz UILib",
+        acceptedMinecraftVersions = "[1.7.10]",
+        guiFactory = MyMod.GUI_FACTORY)
 public class MyMod {
 
     public static final String MODID = "qz_uilib";
+    public static final String MOD_NAME = "Qz UILib";
+    public static final String CLIENT_PROXY = "club.heiqi.uilib.ClientProxy";
+    public static final String COMMON_PROXY = "club.heiqi.uilib.CommonProxy";
+    public static final String GUI_FACTORY = "club.heiqi.uilib.config.ModGuiFactory";
     public static final Logger LOG = LogManager.getLogger(MODID);
 
-    @SidedProxy(clientSide = "club.heiqi.uilib.ClientProxy", serverSide = "club.heiqi.uilib.CommonProxy")
+    @SidedProxy(clientSide = CLIENT_PROXY, serverSide = COMMON_PROXY)
     public static CommonProxy proxy;
 
     @Mod.EventHandler
