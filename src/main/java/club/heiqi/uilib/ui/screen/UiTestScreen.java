@@ -3,7 +3,6 @@ package club.heiqi.uilib.ui.screen;
 import club.heiqi.uilib.ui.control.ButtonWidget;
 import club.heiqi.uilib.ui.control.CharacterPlacementDebugWidget;
 import club.heiqi.uilib.ui.control.DivWidget;
-import club.heiqi.uilib.ui.control.HorizontalStackWidget;
 import club.heiqi.uilib.ui.control.LabelWidget;
 import club.heiqi.uilib.ui.control.MouseStressWidget;
 import club.heiqi.uilib.ui.control.RelativePanelWidget;
@@ -14,8 +13,6 @@ import club.heiqi.uilib.ui.control.ResponsiveProbeWidget;
 import club.heiqi.uilib.ui.control.SegmentedSelectorWidget;
 import club.heiqi.uilib.ui.control.TextInputWidget;
 import club.heiqi.uilib.ui.control.ToggleSwitchWidget;
-import club.heiqi.uilib.ui.control.VerticalStackWidget;
-import club.heiqi.uilib.ui.control.VerticalScrollPanelWidget;
 import club.heiqi.uilib.ui.layout.DivItemStyle;
 import club.heiqi.uilib.ui.layout.UiAnchor;
 import club.heiqi.uilib.ui.layout.UiInsets;
@@ -35,36 +32,21 @@ public class UiTestScreen extends BaseScreen {
     private final ResponsivePageWidget responsiveLayoutPage = new ResponsivePageWidget();
     private final ResponsivePageWidget settingsFormPage = new ResponsivePageWidget();
     private final ResponsivePageWidget focusNavigationPage = new ResponsivePageWidget();
-    private final VerticalScrollPanelWidget settingsScrollPanel = new VerticalScrollPanelWidget();
-    private final VerticalScrollPanelWidget focusScrollPanel = new VerticalScrollPanelWidget();
-
-    private final VerticalStackWidget menuStack = new VerticalStackWidget();
-    private final VerticalStackWidget inputStack = new VerticalStackWidget();
-    private final VerticalStackWidget mouseStack = new VerticalStackWidget();
-    private final VerticalStackWidget characterStack = new VerticalStackWidget();
-    private final VerticalStackWidget responsiveLayoutStack = new VerticalStackWidget();
-    private final VerticalStackWidget settingsStack = new VerticalStackWidget();
-    private final VerticalStackWidget settingsPreviewStack = new VerticalStackWidget();
-    private final VerticalStackWidget focusNavigationStack = new VerticalStackWidget();
-
-    private final HorizontalStackWidget menuPrimaryRow = new HorizontalStackWidget();
-    private final HorizontalStackWidget menuSecondaryRow = new HorizontalStackWidget();
-    private final HorizontalStackWidget menuTertiaryRow = new HorizontalStackWidget();
-    private final HorizontalStackWidget responsiveTopRow = new HorizontalStackWidget();
-    private final HorizontalStackWidget responsiveBottomRow = new HorizontalStackWidget();
-    private final HorizontalStackWidget settingsProfileRow = new HorizontalStackWidget();
-    private final HorizontalStackWidget settingsAuthorRow = new HorizontalStackWidget();
-    private final HorizontalStackWidget settingsPathRow = new HorizontalStackWidget();
-    private final HorizontalStackWidget settingsAnimationRow = new HorizontalStackWidget();
-    private final HorizontalStackWidget settingsDensityRow = new HorizontalStackWidget();
-    private final HorizontalStackWidget settingsFooterRow = new HorizontalStackWidget();
-    private final HorizontalStackWidget focusProfileRow = new HorizontalStackWidget();
-    private final HorizontalStackWidget focusPathRow = new HorizontalStackWidget();
-    private final HorizontalStackWidget focusModeRow = new HorizontalStackWidget();
-    private final HorizontalStackWidget focusActionRow = new HorizontalStackWidget();
 
     private final LabelWidget menuTitleLabel = new LabelWidget("Qz-UILib UI Playground");
     private final LabelWidget menuHintLabel = new LabelWidget("一级菜单本身也由响应式布局驱动，按钮组会随着页面宽度变化自动缩放");
+    private final DivWidget menuDivRoot = new DivWidget().setDirection(DivWidget.Direction.COLUMN)
+            .setGap(18)
+            .setWidthPercent(1.0F)
+            .setOverflowX(DivWidget.Overflow.VISIBLE)
+            .setOverflowY(DivWidget.Overflow.VISIBLE);
+    private final DivWidget menuActionsDiv = new DivWidget().setDirection(DivWidget.Direction.ROW)
+            .setWrap(DivWidget.Wrap.WRAP)
+            .setAlignItems(DivWidget.AlignItems.STRETCH)
+            .setGap(14)
+            .setWidthPercent(1.0F)
+            .setOverflowX(DivWidget.Overflow.VISIBLE)
+            .setOverflowY(DivWidget.Overflow.VISIBLE);
     private final ButtonWidget openInputTestButton = new ButtonWidget("进入文本输入测试");
     private final ButtonWidget openMouseStressButton = new ButtonWidget("进入鼠标极限响应测试");
     private final ButtonWidget openCharacterPlacementButton = new ButtonWidget("进入字符摆放调试");
@@ -75,6 +57,18 @@ public class UiTestScreen extends BaseScreen {
     private final LabelWidget inputTitleLabel = new LabelWidget("文本输入专项测试");
     private final LabelWidget stateLabel = new LabelWidget("等待点击按钮验证输入链路");
     private final LabelWidget inputHintLabel = new LabelWidget("输入测试：点击输入框后直接键入，支持 Unicode 与退格");
+    private final DivWidget inputDivRoot = new DivWidget().setDirection(DivWidget.Direction.COLUMN)
+            .setGap(16)
+            .setWidthPercent(1.0F)
+            .setOverflowX(DivWidget.Overflow.VISIBLE)
+            .setOverflowY(DivWidget.Overflow.VISIBLE);
+    private final DivWidget inputActionDiv = new DivWidget().setDirection(DivWidget.Direction.ROW)
+            .setWrap(DivWidget.Wrap.WRAP)
+            .setAlignItems(DivWidget.AlignItems.STRETCH)
+            .setGap(14)
+            .setWidthPercent(1.0F)
+            .setOverflowX(DivWidget.Overflow.VISIBLE)
+            .setOverflowY(DivWidget.Overflow.VISIBLE);
     private final ButtonWidget testButton = new ButtonWidget("点我切换状态");
     private final TextInputWidget textInputWidget = new TextInputWidget();
     private final LabelWidget inputEchoLabel = new LabelWidget("当前输入：");
@@ -82,11 +76,35 @@ public class UiTestScreen extends BaseScreen {
 
     private final LabelWidget mouseTitleLabel = new LabelWidget("鼠标极限响应专项测试");
     private final LabelWidget mouseHintLabel = new LabelWidget("快速甩动、连点、滚轮滚动，观察是否保持高频刷新");
+    private final DivWidget mouseDivRoot = new DivWidget().setDirection(DivWidget.Direction.COLUMN)
+            .setGap(14)
+            .setWidthPercent(1.0F)
+            .setOverflowX(DivWidget.Overflow.VISIBLE)
+            .setOverflowY(DivWidget.Overflow.VISIBLE);
+    private final DivWidget mouseActionDiv = new DivWidget().setDirection(DivWidget.Direction.ROW)
+            .setWrap(DivWidget.Wrap.WRAP)
+            .setAlignItems(DivWidget.AlignItems.STRETCH)
+            .setGap(14)
+            .setWidthPercent(1.0F)
+            .setOverflowX(DivWidget.Overflow.VISIBLE)
+            .setOverflowY(DivWidget.Overflow.VISIBLE);
     private final MouseStressWidget mouseStressWidget = new MouseStressWidget();
     private final ButtonWidget backFromMouseButton = new ButtonWidget("返回主菜单");
 
     private final LabelWidget characterTitleLabel = new LabelWidget("字符摆放调试页");
     private final LabelWidget characterHintLabel = new LabelWidget("观察文本在容器四角、边缘、中心的落位，并验证相对布局容器自动防止出框");
+    private final DivWidget characterDivRoot = new DivWidget().setDirection(DivWidget.Direction.COLUMN)
+            .setGap(14)
+            .setWidthPercent(1.0F)
+            .setOverflowX(DivWidget.Overflow.VISIBLE)
+            .setOverflowY(DivWidget.Overflow.VISIBLE);
+    private final DivWidget characterActionDiv = new DivWidget().setDirection(DivWidget.Direction.ROW)
+            .setWrap(DivWidget.Wrap.WRAP)
+            .setAlignItems(DivWidget.AlignItems.STRETCH)
+            .setGap(14)
+            .setWidthPercent(1.0F)
+            .setOverflowX(DivWidget.Overflow.VISIBLE)
+            .setOverflowY(DivWidget.Overflow.VISIBLE);
     private final RelativePanelWidget characterPreviewPanel = new RelativePanelWidget();
     private final CharacterPlacementDebugWidget characterPlacementDebugWidget = new CharacterPlacementDebugWidget();
     private final LabelWidget characterClampHintLabel = new LabelWidget("如果子元素给了越界坐标，容器会在绘制前自动 clamp 回边界内");
@@ -95,6 +113,32 @@ public class UiTestScreen extends BaseScreen {
     private final LabelWidget responsiveTitleLabel = new LabelWidget("响应式布局专项测试页");
     private final LabelWidget responsiveHintLabel = new LabelWidget("观察嵌套面板、百分比宽高、自动尺寸控件和锚点布局在不同窗口大小下的变化");
     private final LabelWidget responsiveMetricsLabel = new LabelWidget("当前尺寸信息：");
+    private final DivWidget responsiveDivRoot = new DivWidget().setDirection(DivWidget.Direction.COLUMN)
+            .setGap(14)
+            .setWidthPercent(1.0F)
+            .setOverflowX(DivWidget.Overflow.VISIBLE)
+            .setOverflowY(DivWidget.Overflow.VISIBLE);
+    private final DivWidget responsiveTopDiv = new DivWidget().setDirection(DivWidget.Direction.ROW)
+            .setWrap(DivWidget.Wrap.WRAP)
+            .setAlignItems(DivWidget.AlignItems.STRETCH)
+            .setGap(14)
+            .setWidthPercent(1.0F)
+            .setOverflowX(DivWidget.Overflow.VISIBLE)
+            .setOverflowY(DivWidget.Overflow.VISIBLE);
+    private final DivWidget responsiveBottomDiv = new DivWidget().setDirection(DivWidget.Direction.ROW)
+            .setWrap(DivWidget.Wrap.WRAP)
+            .setAlignItems(DivWidget.AlignItems.STRETCH)
+            .setGap(14)
+            .setWidthPercent(1.0F)
+            .setOverflowX(DivWidget.Overflow.VISIBLE)
+            .setOverflowY(DivWidget.Overflow.VISIBLE);
+    private final DivWidget responsiveActionDiv = new DivWidget().setDirection(DivWidget.Direction.ROW)
+            .setWrap(DivWidget.Wrap.WRAP)
+            .setAlignItems(DivWidget.AlignItems.STRETCH)
+            .setGap(14)
+            .setWidthPercent(1.0F)
+            .setOverflowX(DivWidget.Overflow.VISIBLE)
+            .setOverflowY(DivWidget.Overflow.VISIBLE);
     private final ResponsiveProbeWidget responsiveLeftProbe = new ResponsiveProbeWidget("左侧卡片");
     private final ResponsiveProbeWidget responsiveRightProbe = new ResponsiveProbeWidget("右侧卡片");
     private final ResponsiveProbeWidget responsiveBottomLeftProbe = new ResponsiveProbeWidget("底部左卡片");
@@ -119,11 +163,11 @@ public class UiTestScreen extends BaseScreen {
     private final ToggleSwitchWidget settingsAnimationToggle = new ToggleSwitchWidget("动画开关");
     private final SegmentedSelectorWidget settingsDensitySelector = new SegmentedSelectorWidget("紧凑布局", "舒适布局");
     private final DivWidget settingsDivRoot = new DivWidget().setDirection(DivWidget.Direction.COLUMN).setGap(14).setWidthPercent(1.0F);
-    private final DivWidget settingsProfileDiv = new DivWidget().setDirection(DivWidget.Direction.ROW).setAlignItems(DivWidget.AlignItems.CENTER).setGap(16).setWidthPercent(1.0F);
-    private final DivWidget settingsAuthorDiv = new DivWidget().setDirection(DivWidget.Direction.ROW).setAlignItems(DivWidget.AlignItems.CENTER).setGap(16).setWidthPercent(1.0F);
-    private final DivWidget settingsPathDiv = new DivWidget().setDirection(DivWidget.Direction.ROW).setAlignItems(DivWidget.AlignItems.CENTER).setGap(16).setWidthPercent(1.0F);
-    private final DivWidget settingsAnimationDiv = new DivWidget().setDirection(DivWidget.Direction.ROW).setAlignItems(DivWidget.AlignItems.CENTER).setGap(16).setWidthPercent(1.0F);
-    private final DivWidget settingsDensityDiv = new DivWidget().setDirection(DivWidget.Direction.ROW).setAlignItems(DivWidget.AlignItems.CENTER).setGap(16).setWidthPercent(1.0F);
+    private final DivWidget settingsProfileDiv = new DivWidget().setDirection(DivWidget.Direction.ROW).setWrap(DivWidget.Wrap.WRAP).setAlignItems(DivWidget.AlignItems.CENTER).setGap(16).setWidthPercent(1.0F);
+    private final DivWidget settingsAuthorDiv = new DivWidget().setDirection(DivWidget.Direction.ROW).setWrap(DivWidget.Wrap.WRAP).setAlignItems(DivWidget.AlignItems.CENTER).setGap(16).setWidthPercent(1.0F);
+    private final DivWidget settingsPathDiv = new DivWidget().setDirection(DivWidget.Direction.ROW).setWrap(DivWidget.Wrap.WRAP).setAlignItems(DivWidget.AlignItems.CENTER).setGap(16).setWidthPercent(1.0F);
+    private final DivWidget settingsAnimationDiv = new DivWidget().setDirection(DivWidget.Direction.ROW).setWrap(DivWidget.Wrap.WRAP).setAlignItems(DivWidget.AlignItems.CENTER).setGap(16).setWidthPercent(1.0F);
+    private final DivWidget settingsDensityDiv = new DivWidget().setDirection(DivWidget.Direction.ROW).setWrap(DivWidget.Wrap.WRAP).setAlignItems(DivWidget.AlignItems.CENTER).setGap(16).setWidthPercent(1.0F);
     private final DivWidget settingsPreviewDiv = new DivWidget().setDirection(DivWidget.Direction.COLUMN).setGap(12).setWidthPercent(1.0F);
     private final DivWidget settingsFooterDiv = new DivWidget().setDirection(DivWidget.Direction.ROW).setAlignItems(DivWidget.AlignItems.STRETCH).setWrap(DivWidget.Wrap.WRAP).setGap(14).setWidthPercent(1.0F);
     private final ResponsivePanelWidget settingsPreviewPanel = new ResponsivePanelWidget();
@@ -198,31 +242,6 @@ public class UiTestScreen extends BaseScreen {
         configurePage(responsiveLayoutPage, 0.76F, 0.84F, 720, 560);
         configurePage(settingsFormPage, 0.78F, 0.86F, 760, 620);
         configurePage(focusNavigationPage, 0.72F, 0.78F, 680, 500);
-
-        configureStack(menuStack, 18);
-        configureStack(inputStack, 16);
-        configureStack(mouseStack, 14);
-        configureStack(characterStack, 14);
-        configureStack(responsiveLayoutStack, 14);
-        configureStack(settingsStack, 14);
-        configureStack(settingsPreviewStack, 12);
-        configureStack(focusNavigationStack, 14);
-
-        configureRow(menuPrimaryRow, 14);
-        configureRow(menuSecondaryRow, 14);
-        configureRow(menuTertiaryRow, 14);
-        configureRow(responsiveTopRow, 14);
-        configureRow(responsiveBottomRow, 14);
-        configureRow(settingsProfileRow, 16);
-        configureRow(settingsAuthorRow, 16);
-        configureRow(settingsPathRow, 16);
-        configureRow(settingsAnimationRow, 16);
-        configureRow(settingsDensityRow, 16);
-        configureRow(settingsFooterRow, 14);
-        configureRow(focusProfileRow, 16);
-        configureRow(focusPathRow, 16);
-        configureRow(focusModeRow, 16);
-        configureRow(focusActionRow, 14);
 
         configureLabels();
         configureButtons();
@@ -474,8 +493,6 @@ public class UiTestScreen extends BaseScreen {
         settingsPreviewPanel.setPadding(20).setFillColor(0xAA111721).setBorderColor(0xFF7AA2FF);
         settingsPreviewPanel.setClipChildren(true);
         responsiveArenaPanel.setClipChildren(true);
-        settingsScrollPanel.setPadding(12, 12, 18, 12).setScrollStep(54);
-        focusScrollPanel.setPadding(12, 12, 18, 12).setScrollStep(54);
     }
 
     private void configureLayoutSpecs() {
@@ -489,58 +506,60 @@ public class UiTestScreen extends BaseScreen {
     }
 
     private void assemblePages(Widget root) {
-        menuPrimaryRow.addChild(openInputTestButton);
-        menuPrimaryRow.addChild(openMouseStressButton);
-        menuSecondaryRow.addChild(openCharacterPlacementButton);
-        menuSecondaryRow.addChild(openResponsiveLayoutButton);
-        menuTertiaryRow.addChild(openSettingsFormButton);
-        menuTertiaryRow.addChild(openFocusNavigationButton);
-        menuStack.addChild(menuTitleLabel);
-        menuStack.addChild(menuHintLabel);
-        menuStack.addChild(menuPrimaryRow);
-        menuStack.addChild(menuSecondaryRow);
-        menuStack.addChild(menuTertiaryRow);
-        menuPage.getContent().addChild(menuStack);
+        menuActionsDiv.addChild(openInputTestButton);
+        menuActionsDiv.addChild(openMouseStressButton);
+        menuActionsDiv.addChild(openCharacterPlacementButton);
+        menuActionsDiv.addChild(openResponsiveLayoutButton);
+        menuActionsDiv.addChild(openSettingsFormButton);
+        menuActionsDiv.addChild(openFocusNavigationButton);
+        menuDivRoot.addChild(menuTitleLabel, DivItemStyle.noGrow());
+        menuDivRoot.addChild(menuHintLabel, DivItemStyle.noGrow());
+        menuDivRoot.addChild(menuActionsDiv, DivItemStyle.noGrow());
+        menuPage.getContent().addChild(menuDivRoot);
 
-        inputStack.addChild(inputTitleLabel);
-        inputStack.addChild(stateLabel);
-        inputStack.addChild(inputHintLabel);
-        inputStack.addChild(textInputWidget);
-        inputStack.addChild(inputEchoLabel);
-        inputStack.addChild(testButton);
-        inputStack.addChild(backFromInputButton);
-        inputTestPage.getContent().addChild(inputStack);
+        inputActionDiv.addChild(testButton, DivItemStyle.noGrow());
+        inputActionDiv.addChild(backFromInputButton, DivItemStyle.noGrow());
+        inputDivRoot.addChild(inputTitleLabel, DivItemStyle.noGrow());
+        inputDivRoot.addChild(stateLabel, DivItemStyle.noGrow());
+        inputDivRoot.addChild(inputHintLabel, DivItemStyle.noGrow());
+        inputDivRoot.addChild(textInputWidget, DivItemStyle.noGrow());
+        inputDivRoot.addChild(inputEchoLabel, DivItemStyle.noGrow());
+        inputDivRoot.addChild(inputActionDiv, DivItemStyle.noGrow());
+        inputTestPage.getContent().addChild(inputDivRoot);
 
-        mouseStack.addChild(mouseTitleLabel);
-        mouseStack.addChild(mouseHintLabel);
-        mouseStack.addChild(mouseStressWidget);
-        mouseStack.addChild(backFromMouseButton);
-        mouseStressPage.getContent().addChild(mouseStack);
+        mouseActionDiv.addChild(backFromMouseButton, DivItemStyle.noGrow());
+        mouseDivRoot.addChild(mouseTitleLabel, DivItemStyle.noGrow());
+        mouseDivRoot.addChild(mouseHintLabel, DivItemStyle.noGrow());
+        mouseDivRoot.addChild(mouseStressWidget, DivItemStyle.noGrow());
+        mouseDivRoot.addChild(mouseActionDiv, DivItemStyle.noGrow());
+        mouseStressPage.getContent().addChild(mouseDivRoot);
 
         characterPreviewPanel.addChild(characterPlacementDebugWidget);
-        characterStack.addChild(characterTitleLabel);
-        characterStack.addChild(characterHintLabel);
-        characterStack.addChild(characterPreviewPanel);
-        characterStack.addChild(characterClampHintLabel);
-        characterStack.addChild(backFromCharacterButton);
-        characterPlacementPage.getContent().addChild(characterStack);
+        characterActionDiv.addChild(backFromCharacterButton, DivItemStyle.noGrow());
+        characterDivRoot.addChild(characterTitleLabel, DivItemStyle.noGrow());
+        characterDivRoot.addChild(characterHintLabel, DivItemStyle.noGrow());
+        characterDivRoot.addChild(characterPreviewPanel, DivItemStyle.noGrow());
+        characterDivRoot.addChild(characterClampHintLabel, DivItemStyle.noGrow());
+        characterDivRoot.addChild(characterActionDiv, DivItemStyle.noGrow());
+        characterPlacementPage.getContent().addChild(characterDivRoot);
 
-        responsiveTopRow.addChild(responsiveLeftProbe);
-        responsiveTopRow.addChild(responsiveRightProbe);
-        responsiveBottomRow.addChild(responsiveBottomLeftProbe);
-        responsiveBottomRow.addChild(responsiveBottomRightProbe);
         responsiveArenaPanel.addChild(arenaTopLeftProbe);
         responsiveArenaPanel.addChild(arenaCenterProbe);
         responsiveArenaPanel.addChild(arenaBottomRightProbe);
-        responsiveLayoutStack.addChild(responsiveTitleLabel);
-        responsiveLayoutStack.addChild(responsiveHintLabel);
-        responsiveLayoutStack.addChild(responsiveMetricsLabel);
-        responsiveLayoutStack.addChild(responsiveTopRow);
-        responsiveLayoutStack.addChild(responsiveBottomRow);
-        responsiveLayoutStack.addChild(responsiveArenaPanel);
-        responsiveLayoutStack.addChild(responsiveFooterLabel);
-        responsiveLayoutStack.addChild(backFromResponsiveButton);
-        responsiveLayoutPage.getContent().addChild(responsiveLayoutStack);
+        responsiveTopDiv.addChild(responsiveLeftProbe);
+        responsiveTopDiv.addChild(responsiveRightProbe);
+        responsiveBottomDiv.addChild(responsiveBottomLeftProbe);
+        responsiveBottomDiv.addChild(responsiveBottomRightProbe);
+        responsiveActionDiv.addChild(backFromResponsiveButton, DivItemStyle.noGrow());
+        responsiveDivRoot.addChild(responsiveTitleLabel, DivItemStyle.noGrow());
+        responsiveDivRoot.addChild(responsiveHintLabel, DivItemStyle.noGrow());
+        responsiveDivRoot.addChild(responsiveMetricsLabel, DivItemStyle.noGrow());
+        responsiveDivRoot.addChild(responsiveTopDiv, DivItemStyle.noGrow());
+        responsiveDivRoot.addChild(responsiveBottomDiv, DivItemStyle.noGrow());
+        responsiveDivRoot.addChild(responsiveArenaPanel, DivItemStyle.noGrow());
+        responsiveDivRoot.addChild(responsiveFooterLabel, DivItemStyle.noGrow());
+        responsiveDivRoot.addChild(responsiveActionDiv, DivItemStyle.noGrow());
+        responsiveLayoutPage.getContent().addChild(responsiveDivRoot);
 
         settingsPreviewDiv.addChild(settingsPreviewTitleLabel, DivItemStyle.noGrow());
         settingsPreviewDiv.addChild(settingsPreviewSummaryLabel, DivItemStyle.noGrow());
@@ -654,29 +673,9 @@ public class UiTestScreen extends BaseScreen {
                 .setLayoutSpec(new UiLayoutSpec().setAnchor(UiAnchor.TOP_CENTER));
     }
 
-    private void configureStack(VerticalStackWidget stack, int spacing) {
-        stack.setPadding(20, 20, 20, 20)
-                .setSpacing(spacing)
-                .setLayoutSpec(new UiLayoutSpec()
-                        .setAnchor(UiAnchor.TOP_LEFT)
-                        .setWidth(UiLength.percent(1.0F))
-                        .setHeight(UiLength.percent(1.0F)));
-    }
-
-    private void configureRow(HorizontalStackWidget row, int spacing) {
-        row.setPadding(0)
-                .setSpacing(spacing)
-                .setLayoutSpec(new UiLayoutSpec()
-                        .setAnchor(UiAnchor.TOP_LEFT)
-                        .setWidth(UiLength.percent(1.0F))
-                        .setHeight(UiLength.auto()));
-    }
-
     private void applyAdaptiveChrome() {
         int pagePaddingX = clampValue(viewportWidthHint / 48, 14, 30);
         int pagePaddingY = clampValue(viewportHeightHint / 36, 12, 28);
-        int scrollPadding = clampValue(viewportWidthHint / 72, 8, 12);
-        int scrollRightPadding = clampValue(scrollPadding + 6, 14, 18);
 
         menuPage.setPadding(pagePaddingX, pagePaddingY, pagePaddingX, pagePaddingY);
         inputTestPage.setPadding(pagePaddingX, pagePaddingY, pagePaddingX, pagePaddingY);
@@ -685,42 +684,65 @@ public class UiTestScreen extends BaseScreen {
         responsiveLayoutPage.setPadding(pagePaddingX, pagePaddingY, pagePaddingX, pagePaddingY);
         settingsFormPage.setPadding(pagePaddingX, pagePaddingY, pagePaddingX, pagePaddingY);
         focusNavigationPage.setPadding(pagePaddingX, pagePaddingY, pagePaddingX, pagePaddingY);
-        settingsScrollPanel.setPadding(scrollPadding, scrollPadding, scrollRightPadding, scrollPadding);
-        focusScrollPanel.setPadding(scrollPadding, scrollPadding, scrollRightPadding, scrollPadding);
     }
 
     private void applyMenuLayout() {
         int menuButtonMinWidth = adaptiveWidth(220, 120, 0.16F);
-        menuTitleLabel.setLayoutSpec(new UiLayoutSpec().setWidth(UiLength.percent(1.0F)).setHeight(UiLength.auto()));
-        menuHintLabel.setLayoutSpec(new UiLayoutSpec().setWidth(UiLength.percent(1.0F)).setHeight(UiLength.auto()));
-        openInputTestButton.setLayoutSpec(new UiLayoutSpec().setWidth(UiLength.percent(0.48F)).setHeight(UiLength.auto()).setMinWidth(menuButtonMinWidth));
-        openMouseStressButton.setLayoutSpec(new UiLayoutSpec().setWidth(UiLength.percent(0.48F)).setHeight(UiLength.auto()).setMinWidth(menuButtonMinWidth));
-        openCharacterPlacementButton.setLayoutSpec(new UiLayoutSpec().setWidth(UiLength.percent(0.48F)).setHeight(UiLength.auto()).setMinWidth(menuButtonMinWidth));
-        openResponsiveLayoutButton.setLayoutSpec(new UiLayoutSpec().setWidth(UiLength.percent(0.48F)).setHeight(UiLength.auto()).setMinWidth(menuButtonMinWidth));
-        openSettingsFormButton.setLayoutSpec(new UiLayoutSpec().setWidth(UiLength.percent(0.48F)).setHeight(UiLength.auto()).setMinWidth(menuButtonMinWidth));
-        openFocusNavigationButton.setLayoutSpec(new UiLayoutSpec().setWidth(UiLength.percent(0.48F)).setHeight(UiLength.auto()).setMinWidth(menuButtonMinWidth));
+        menuDivRoot.setLayoutSpec(new UiLayoutSpec().setWidth(UiLength.percent(1.0F)).setHeight(UiLength.auto()).setFill(true));
+        menuTitleLabel.setLayoutSpec(null);
+        menuHintLabel.setLayoutSpec(null);
+        openInputTestButton.setLayoutSpec(null);
+        openMouseStressButton.setLayoutSpec(null);
+        openCharacterPlacementButton.setLayoutSpec(null);
+        openResponsiveLayoutButton.setLayoutSpec(null);
+        openSettingsFormButton.setLayoutSpec(null);
+        openFocusNavigationButton.setLayoutSpec(null);
+
+        menuTitleLabel.setSuggestedSize(-1, -1);
+        menuHintLabel.setSuggestedSize(-1, -1);
+        openInputTestButton.setSuggestedSize(menuButtonMinWidth, openInputTestButton.getPreferredHeight());
+        openMouseStressButton.setSuggestedSize(menuButtonMinWidth, openMouseStressButton.getPreferredHeight());
+        openCharacterPlacementButton.setSuggestedSize(menuButtonMinWidth, openCharacterPlacementButton.getPreferredHeight());
+        openResponsiveLayoutButton.setSuggestedSize(menuButtonMinWidth, openResponsiveLayoutButton.getPreferredHeight());
+        openSettingsFormButton.setSuggestedSize(menuButtonMinWidth, openSettingsFormButton.getPreferredHeight());
+        openFocusNavigationButton.setSuggestedSize(menuButtonMinWidth, openFocusNavigationButton.getPreferredHeight());
     }
 
     private void applyInputLayout() {
         int fieldMinWidth = adaptiveWidth(320, 170, 0.24F);
         int primaryButtonMinWidth = adaptiveWidth(220, 120, 0.16F);
         int secondaryButtonMinWidth = adaptiveWidth(180, 120, 0.14F);
-        inputTitleLabel.setLayoutSpec(new UiLayoutSpec().setWidth(UiLength.percent(1.0F)).setHeight(UiLength.auto()));
-        stateLabel.setLayoutSpec(new UiLayoutSpec().setWidth(UiLength.percent(1.0F)).setHeight(UiLength.auto()));
-        inputHintLabel.setLayoutSpec(new UiLayoutSpec().setWidth(UiLength.percent(1.0F)).setHeight(UiLength.auto()));
-        textInputWidget.setLayoutSpec(new UiLayoutSpec().setWidth(UiLength.percent(1.0F)).setHeight(UiLength.px(42)).setMinWidth(fieldMinWidth));
-        inputEchoLabel.setLayoutSpec(new UiLayoutSpec().setWidth(UiLength.percent(1.0F)).setHeight(UiLength.auto()));
-        testButton.setLayoutSpec(new UiLayoutSpec().setWidth(UiLength.percent(0.40F)).setHeight(UiLength.auto()).setMinWidth(primaryButtonMinWidth));
-        backFromInputButton.setLayoutSpec(new UiLayoutSpec().setWidth(UiLength.percent(0.32F)).setHeight(UiLength.auto()).setMinWidth(secondaryButtonMinWidth));
+        inputDivRoot.setLayoutSpec(new UiLayoutSpec().setWidth(UiLength.percent(1.0F)).setHeight(UiLength.auto()).setFill(true));
+        inputTitleLabel.setLayoutSpec(null);
+        stateLabel.setLayoutSpec(null);
+        inputHintLabel.setLayoutSpec(null);
+        textInputWidget.setLayoutSpec(null);
+        inputEchoLabel.setLayoutSpec(null);
+        testButton.setLayoutSpec(null);
+        backFromInputButton.setLayoutSpec(null);
+
+        inputTitleLabel.setSuggestedSize(-1, -1);
+        stateLabel.setSuggestedSize(-1, -1);
+        inputHintLabel.setSuggestedSize(-1, -1);
+        inputEchoLabel.setSuggestedSize(-1, -1);
+        textInputWidget.setSuggestedSize(fieldMinWidth, textInputWidget.getPreferredHeight());
+        testButton.setSuggestedSize(primaryButtonMinWidth, testButton.getPreferredHeight());
+        backFromInputButton.setSuggestedSize(secondaryButtonMinWidth, backFromInputButton.getPreferredHeight());
     }
 
     private void applyMouseLayout() {
         int panelMinHeight = adaptiveHeight(300, 180, 0.28F);
         int buttonMinWidth = adaptiveWidth(180, 120, 0.14F);
-        mouseTitleLabel.setLayoutSpec(new UiLayoutSpec().setWidth(UiLength.percent(1.0F)).setHeight(UiLength.auto()));
-        mouseHintLabel.setLayoutSpec(new UiLayoutSpec().setWidth(UiLength.percent(1.0F)).setHeight(UiLength.auto()));
-        mouseStressWidget.setLayoutSpec(new UiLayoutSpec().setWidth(UiLength.percent(1.0F)).setHeight(UiLength.percent(0.62F)).setMinHeight(panelMinHeight).setGrow(1.0F));
-        backFromMouseButton.setLayoutSpec(new UiLayoutSpec().setWidth(UiLength.percent(0.32F)).setHeight(UiLength.auto()).setMinWidth(buttonMinWidth));
+        mouseDivRoot.setLayoutSpec(new UiLayoutSpec().setWidth(UiLength.percent(1.0F)).setHeight(UiLength.auto()).setFill(true));
+        mouseTitleLabel.setLayoutSpec(null);
+        mouseHintLabel.setLayoutSpec(null);
+        mouseStressWidget.setLayoutSpec(null);
+        backFromMouseButton.setLayoutSpec(null);
+
+        mouseTitleLabel.setSuggestedSize(-1, -1);
+        mouseHintLabel.setSuggestedSize(-1, -1);
+        mouseStressWidget.setSuggestedSize(-1, panelMinHeight);
+        backFromMouseButton.setSuggestedSize(buttonMinWidth, backFromMouseButton.getPreferredHeight());
     }
 
     private void applyCharacterLayout() {
@@ -728,12 +750,19 @@ public class UiTestScreen extends BaseScreen {
         int debugMinWidth = adaptiveWidth(480, 220, 0.34F);
         int debugMinHeight = adaptiveHeight(260, 150, 0.22F);
         int buttonMinWidth = adaptiveWidth(180, 120, 0.14F);
-        characterTitleLabel.setLayoutSpec(new UiLayoutSpec().setWidth(UiLength.percent(1.0F)).setHeight(UiLength.auto()));
-        characterHintLabel.setLayoutSpec(new UiLayoutSpec().setWidth(UiLength.percent(1.0F)).setHeight(UiLength.auto()));
+        characterDivRoot.setLayoutSpec(new UiLayoutSpec().setWidth(UiLength.percent(1.0F)).setHeight(UiLength.auto()).setFill(true));
+        characterTitleLabel.setLayoutSpec(null);
+        characterHintLabel.setLayoutSpec(null);
         characterPreviewPanel.setLayoutSpec(new UiLayoutSpec().setWidth(UiLength.percent(1.0F)).setHeight(UiLength.percent(0.52F)).setMinHeight(previewMinHeight).setGrow(1.0F));
         characterPlacementDebugWidget.setLayoutSpec(new UiLayoutSpec().setAnchor(UiAnchor.CENTER).setWidth(UiLength.percent(1.08F)).setHeight(UiLength.percent(1.08F)).setMinWidth(debugMinWidth).setMinHeight(debugMinHeight));
-        characterClampHintLabel.setLayoutSpec(new UiLayoutSpec().setWidth(UiLength.percent(1.0F)).setHeight(UiLength.auto()));
-        backFromCharacterButton.setLayoutSpec(new UiLayoutSpec().setWidth(UiLength.percent(0.32F)).setHeight(UiLength.auto()).setMinWidth(buttonMinWidth));
+        characterClampHintLabel.setLayoutSpec(null);
+        backFromCharacterButton.setLayoutSpec(null);
+
+        characterTitleLabel.setSuggestedSize(-1, -1);
+        characterHintLabel.setSuggestedSize(-1, -1);
+        characterPreviewPanel.setSuggestedSize(-1, previewMinHeight);
+        characterClampHintLabel.setSuggestedSize(-1, -1);
+        backFromCharacterButton.setSuggestedSize(buttonMinWidth, backFromCharacterButton.getPreferredHeight());
     }
 
     private void applyResponsiveLayoutPage() {
@@ -745,19 +774,31 @@ public class UiTestScreen extends BaseScreen {
         int arenaCenterMinWidth = adaptiveWidth(220, 120, 0.16F);
         int arenaBottomRightMinWidth = adaptiveWidth(170, 96, 0.13F);
         int buttonMinWidth = adaptiveWidth(180, 120, 0.14F);
-        responsiveTitleLabel.setLayoutSpec(new UiLayoutSpec().setWidth(UiLength.percent(1.0F)).setHeight(UiLength.auto()));
-        responsiveHintLabel.setLayoutSpec(new UiLayoutSpec().setWidth(UiLength.percent(1.0F)).setHeight(UiLength.auto()));
-        responsiveMetricsLabel.setLayoutSpec(new UiLayoutSpec().setWidth(UiLength.percent(1.0F)).setHeight(UiLength.auto()));
-        responsiveLeftProbe.setLayoutSpec(new UiLayoutSpec().setWidth(UiLength.percent(0.48F)).setHeight(UiLength.px(118)).setMinWidth(topProbeMinWidth));
-        responsiveRightProbe.setLayoutSpec(new UiLayoutSpec().setWidth(UiLength.percent(0.48F)).setHeight(UiLength.px(118)).setMinWidth(topProbeMinWidth));
-        responsiveBottomLeftProbe.setLayoutSpec(new UiLayoutSpec().setWidth(UiLength.percent(0.30F)).setHeight(UiLength.px(118)).setMinWidth(bottomLeftMinWidth));
-        responsiveBottomRightProbe.setLayoutSpec(new UiLayoutSpec().setWidth(UiLength.percent(0.58F)).setHeight(UiLength.px(118)).setMinWidth(bottomRightMinWidth));
+        responsiveDivRoot.setLayoutSpec(new UiLayoutSpec().setWidth(UiLength.percent(1.0F)).setHeight(UiLength.auto()).setFill(true));
+        responsiveTitleLabel.setLayoutSpec(null);
+        responsiveHintLabel.setLayoutSpec(null);
+        responsiveMetricsLabel.setLayoutSpec(null);
+        responsiveLeftProbe.setLayoutSpec(null);
+        responsiveRightProbe.setLayoutSpec(null);
+        responsiveBottomLeftProbe.setLayoutSpec(null);
+        responsiveBottomRightProbe.setLayoutSpec(null);
         responsiveArenaPanel.setLayoutSpec(new UiLayoutSpec().setWidth(UiLength.percent(1.0F)).setHeight(UiLength.percent(0.42F)).setMinHeight(arenaMinHeight).setGrow(1.0F));
         arenaTopLeftProbe.setLayoutSpec(new UiLayoutSpec().setAnchor(UiAnchor.TOP_LEFT).setMargin(UiInsets.of(12, 12, 0, 0)).setWidth(UiLength.percent(0.28F)).setHeight(UiLength.px(118)).setMinWidth(arenaTopLeftMinWidth));
         arenaCenterProbe.setLayoutSpec(new UiLayoutSpec().setAnchor(UiAnchor.CENTER).setWidth(UiLength.percent(0.34F)).setHeight(UiLength.px(128)).setMinWidth(arenaCenterMinWidth));
         arenaBottomRightProbe.setLayoutSpec(new UiLayoutSpec().setAnchor(UiAnchor.BOTTOM_RIGHT).setMargin(UiInsets.of(0, 0, 12, 12)).setWidth(UiLength.percent(0.24F)).setHeight(UiLength.px(118)).setMinWidth(arenaBottomRightMinWidth));
-        responsiveFooterLabel.setLayoutSpec(new UiLayoutSpec().setWidth(UiLength.percent(1.0F)).setHeight(UiLength.auto()));
-        backFromResponsiveButton.setLayoutSpec(new UiLayoutSpec().setWidth(UiLength.percent(0.32F)).setHeight(UiLength.auto()).setMinWidth(buttonMinWidth));
+        responsiveFooterLabel.setLayoutSpec(null);
+        backFromResponsiveButton.setLayoutSpec(null);
+
+        responsiveTitleLabel.setSuggestedSize(-1, -1);
+        responsiveHintLabel.setSuggestedSize(-1, -1);
+        responsiveMetricsLabel.setSuggestedSize(-1, -1);
+        responsiveLeftProbe.setSuggestedSize(topProbeMinWidth, 118);
+        responsiveRightProbe.setSuggestedSize(topProbeMinWidth, 118);
+        responsiveBottomLeftProbe.setSuggestedSize(bottomLeftMinWidth, 118);
+        responsiveBottomRightProbe.setSuggestedSize(bottomRightMinWidth, 118);
+        responsiveArenaPanel.setSuggestedSize(-1, arenaMinHeight);
+        responsiveFooterLabel.setSuggestedSize(-1, -1);
+        backFromResponsiveButton.setSuggestedSize(buttonMinWidth, backFromResponsiveButton.getPreferredHeight());
     }
 
     private void applySettingsLayout() {

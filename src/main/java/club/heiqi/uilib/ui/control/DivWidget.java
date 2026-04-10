@@ -66,8 +66,8 @@ public class DivWidget extends Widget {
     private AlignItems alignItems = AlignItems.STRETCH;
     private JustifyContent justifyContent = JustifyContent.START;
     private Wrap wrap = Wrap.NOWRAP;
-    private Overflow overflowX = Overflow.AUTO;
-    private Overflow overflowY = Overflow.AUTO;
+    private Overflow overflowX = Overflow.VISIBLE;
+    private Overflow overflowY = Overflow.VISIBLE;
     private int paddingLeft;
     private int paddingTop;
     private int paddingRight;
@@ -106,7 +106,7 @@ public class DivWidget extends Widget {
         drawSelf(context);
         boolean clipping = hasClippedOverflow();
         if (clipping) {
-            int[] clipRect = getChildClipRect();
+            int[] clipRect = resolveClipRect(context);
             context.pushClip(clipRect[0], clipRect[1], clipRect[2], clipRect[3]);
         }
         try {
@@ -126,12 +126,28 @@ public class DivWidget extends Widget {
 
     @Override
     protected int[] getChildClipRect() {
+        int viewportLeft = getAbsoluteX() + paddingLeft;
+        int viewportTop = getAbsoluteY() + paddingTop;
+        int viewportRight = getAbsoluteX() + getWidth() - paddingRight;
+        int viewportBottom = getAbsoluteY() + getHeight() - paddingBottom;
         return new int[] {
-                getAbsoluteX() + paddingLeft,
-                getAbsoluteY() + paddingTop,
-                getAbsoluteX() + getWidth() - paddingRight,
-                getAbsoluteY() + getHeight() - paddingBottom
+                overflowX == Overflow.VISIBLE ? Integer.MIN_VALUE / 4 : viewportLeft,
+                overflowY == Overflow.VISIBLE ? Integer.MIN_VALUE / 4 : viewportTop,
+                overflowX == Overflow.VISIBLE ? Integer.MAX_VALUE / 4 : viewportRight,
+                overflowY == Overflow.VISIBLE ? Integer.MAX_VALUE / 4 : viewportBottom
         };
+    }
+
+    private int[] resolveClipRect(UiRenderContext context) {
+        int viewportLeft = getAbsoluteX() + paddingLeft;
+        int viewportTop = getAbsoluteY() + paddingTop;
+        int viewportRight = getAbsoluteX() + getWidth() - paddingRight;
+        int viewportBottom = getAbsoluteY() + getHeight() - paddingBottom;
+        int clipLeft = overflowX == Overflow.VISIBLE ? 0 : viewportLeft;
+        int clipRight = overflowX == Overflow.VISIBLE ? context.getScreenWidth() : viewportRight;
+        int clipTop = overflowY == Overflow.VISIBLE ? 0 : viewportTop;
+        int clipBottom = overflowY == Overflow.VISIBLE ? context.getScreenHeight() : viewportBottom;
+        return new int[] { clipLeft, clipTop, clipRight, clipBottom };
     }
 
     @Override
@@ -169,12 +185,12 @@ public class DivWidget extends Widget {
     }
 
     public DivWidget setOverflowX(Overflow overflowX) {
-        this.overflowX = overflowX == null ? Overflow.AUTO : overflowX;
+        this.overflowX = overflowX == null ? Overflow.VISIBLE : overflowX;
         return this;
     }
 
     public DivWidget setOverflowY(Overflow overflowY) {
-        this.overflowY = overflowY == null ? Overflow.AUTO : overflowY;
+        this.overflowY = overflowY == null ? Overflow.VISIBLE : overflowY;
         return this;
     }
 
