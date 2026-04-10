@@ -25,6 +25,7 @@ public class UiTestScreen extends BaseScreen {
     private final ResponsivePanelWidget wrapCard = createCardPanel();
 
     private final LabelWidget viewportMetricsLabel = new LabelWidget("");
+    private final LabelWidget scrollMetricsLabel = new LabelWidget("");
     private final LabelWidget wrapMetricsLabel = new LabelWidget("");
     private final LabelWidget wrapSampleLabel = new LabelWidget("");
     private final LabelWidget actionStateLabel = new LabelWidget("");
@@ -98,6 +99,7 @@ public class UiTestScreen extends BaseScreen {
      */
     private void configureControls() {
         viewportMetricsLabel.setColor(0xFFF6D78E).setShadow(false).setWrap(true).setMaxLines(4);
+        scrollMetricsLabel.setColor(0xFFB5D0FF).setShadow(false).setWrap(true).setMaxLines(4);
         wrapMetricsLabel.setColor(0xFFB5D0FF).setShadow(false).setWrap(true).setMaxLines(6);
         wrapSampleLabel.setColor(0xFFD7E3FF).setShadow(false).setWrap(true).setMaxLines(10);
         actionStateLabel.setColor(0xFFB5D0FF).setShadow(false).setWrap(true).setMaxLines(2);
@@ -139,6 +141,7 @@ public class UiTestScreen extends BaseScreen {
         overviewDiv.addNoGrowChild(createSectionTitle("当前状态"));
         overviewDiv.addNoGrowChild(createBodyLabel("旧测试页已经完全清空。当前只保留这一张最小诊断页，专门验证页面壳尺寸、卡片换行、中文文本最小宽度和父容器约束是否正确。"));
         overviewDiv.addNoGrowChild(viewportMetricsLabel);
+        overviewDiv.addNoGrowChild(scrollMetricsLabel);
         overviewDiv.addNoGrowChild(actionStateLabel);
         overviewCard.addChild(overviewDiv);
 
@@ -195,6 +198,11 @@ public class UiTestScreen extends BaseScreen {
                 + diagnosticPage.getHeight() + "；总览卡片 " + overviewCard.getWidth() + "x" + overviewCard.getHeight()
                 + "；表单卡片 " + formCard.getWidth() + "x" + formCard.getHeight() + "；文本卡片 " + wrapCard.getWidth() + "x"
                 + wrapCard.getHeight() + "。\n如果页面壳仍然明显偏窄，优先检查 `ResponsivePageWidget`；如果卡片宽度异常，优先检查 `ResponsiveContainerWidget` 和最小宽度传播。 ");
+
+        scrollMetricsLabel.setText("滚动偏移 " + diagnosticPage.getScrollOffset() + " / " + diagnosticPage.getMaxScrollOffset()
+                + "；可视内容区 " + diagnosticPage.getVisibleContentWidth() + "x" + diagnosticPage.getVisibleContentHeight()
+                + "；内容区 " + diagnosticPage.getContentWidth() + "x" + diagnosticPage.getContentHeight()
+                + "。如果内容高度已经明显超过可视区，但最大滚动仍为 0，说明页面滚动高度计算仍然有问题。 ");
 
         wrapSampleLabel.setText("诊断文本：当前布局需要同时处理中文说明、English identifier、路径 `assets/qz_uilib/ui/diagnostic` 以及较长的字段值。只要父宽度变化，文本就应该优先自然换行，而不是继续保持单行并把右侧内容裁掉。当前主题为 “"
                 + textOrPlaceholder(themeInput.getText()) + "”，命名空间为 “" + textOrPlaceholder(namespaceInput.getText()) + "”。");
