@@ -4,68 +4,57 @@ import club.heiqi.uilib.ui.control.ButtonWidget;
 import club.heiqi.uilib.ui.control.DivWidget;
 import club.heiqi.uilib.ui.control.InventorySlotGridWidget;
 import club.heiqi.uilib.ui.control.LabelWidget;
+import club.heiqi.uilib.ui.control.ResponsiveContainerWidget;
 import club.heiqi.uilib.ui.control.ResponsivePageWidget;
 import club.heiqi.uilib.ui.control.ResponsivePanelWidget;
-import club.heiqi.uilib.ui.layout.DivItemStyle;
 import club.heiqi.uilib.ui.layout.UiAnchor;
 import club.heiqi.uilib.ui.layout.UiLayoutSpec;
-import club.heiqi.uilib.ui.layout.UiLength;
 import club.heiqi.uilib.ui.widget.Widget;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.inventory.GuiInventory;
 import net.minecraft.entity.player.InventoryPlayer;
 
 /**
- * 响应式背包信息测试页。
+ * 基于 Div 语义 API 的背包概览页。
  */
 public class InventoryOverviewScreen extends BaseScreen {
 
     private final ResponsivePageWidget pagePanel = new ResponsivePageWidget();
-    private final DivWidget pageDivRoot = new DivWidget().setDirection(DivWidget.Direction.COLUMN)
-            .setGap(16)
-            .setWidthPercent(1.0F)
-            .setOverflowX(DivWidget.Overflow.VISIBLE)
-            .setOverflowY(DivWidget.Overflow.VISIBLE);
-    private final LabelWidget titleLabel = new LabelWidget("响应式背包信息测试页");
-    private final LabelWidget hintLabel = new LabelWidget("该页面仅展示快捷栏与主背包物品。格子会按可用宽度自动重排列数，窗口变窄时优先缩小格子并增加换行，剩余高度交给滚动容器承接。");
     private final LabelWidget summaryLabel = new LabelWidget("");
-
-    private final ResponsivePanelWidget hotbarPanel = new ResponsivePanelWidget();
-    private final DivWidget hotbarDiv = new DivWidget().setDirection(DivWidget.Direction.COLUMN)
-            .setGap(12)
-            .setWidthPercent(1.0F)
-            .setOverflowX(DivWidget.Overflow.VISIBLE)
-            .setOverflowY(DivWidget.Overflow.VISIBLE);
     private final LabelWidget hotbarTitleLabel = new LabelWidget("");
-    private final InventorySlotGridWidget hotbarGrid = new InventorySlotGridWidget(0, 9, 9);
-
-    private final ResponsivePanelWidget backpackPanel = new ResponsivePanelWidget();
-    private final DivWidget backpackDiv = new DivWidget().setDirection(DivWidget.Direction.COLUMN)
-            .setGap(12)
-            .setWidthPercent(1.0F)
-            .setOverflowX(DivWidget.Overflow.VISIBLE)
-            .setOverflowY(DivWidget.Overflow.VISIBLE);
     private final LabelWidget backpackTitleLabel = new LabelWidget("");
+    private final InventorySlotGridWidget hotbarGrid = new InventorySlotGridWidget(0, 9, 9);
     private final InventorySlotGridWidget backpackGrid = new InventorySlotGridWidget(9, 27, 9);
-
-    private final DivWidget footerDiv = new DivWidget().setDirection(DivWidget.Direction.ROW)
-            .setWrap(DivWidget.Wrap.WRAP)
-            .setAlignItems(DivWidget.AlignItems.CENTER)
-            .setGap(12)
-            .setWidthPercent(1.0F)
-            .setOverflowX(DivWidget.Overflow.VISIBLE)
-            .setOverflowY(DivWidget.Overflow.VISIBLE);
     private final ButtonWidget backButton = new ButtonWidget("返回原版背包");
+
+    private int viewportWidthHint = 1280;
+    private int viewportHeightHint = 720;
 
     @Override
     protected void buildUi(Widget root) {
-        configurePagePanel();
-        configureDivs();
-        configureLabels();
-        configurePanels();
-        configureLayout();
-        configureActions();
+        configurePage();
+        configureControls();
         assembleUi(root);
+        refreshInventoryText();
+    }
+
+    @Override
+    protected void onResize(int width, int height) {
+        super.onResize(width, height);
+        viewportWidthHint = width;
+        viewportHeightHint = height;
+
+        int pageMargin = Math.max(24, width / 34);
+        int topMargin = Math.max(28, height / 28);
+        ResponsiveContainerWidget rootWidget = (ResponsiveContainerWidget) getRootWidget();
+        rootWidget.setPadding(pageMargin, topMargin, pageMargin, pageMargin);
+
+        int pagePaddingX = clampValue(viewportWidthHint / 48, 14, 28);
+        int pagePaddingY = clampValue(viewportHeightHint / 36, 12, 26);
+        int buttonWidth = adaptiveWidth(220, 140, 0.16F);
+
+        pagePanel.setPadding(pagePaddingX, pagePaddingY, pagePaddingX, pagePaddingY);
+        backButton.setSuggestedSize(buttonWidth, backButton.getPreferredHeight());
         refreshInventoryText();
     }
 
@@ -75,7 +64,7 @@ public class InventoryOverviewScreen extends BaseScreen {
         super.drawScreen(mouseX, mouseY, partialTicks);
     }
 
-    private void configurePagePanel() {
+    private void configurePage() {
         pagePanel.setPadding(24, 22, 24, 22)
                 .setFillColor(0xD0151C25)
                 .setBorderColor(0xFF86A8F0)
@@ -84,49 +73,14 @@ public class InventoryOverviewScreen extends BaseScreen {
                 .setLayoutSpec(new UiLayoutSpec().setAnchor(UiAnchor.TOP_CENTER));
     }
 
-    private void configureDivs() {
-        pageDivRoot.setLayoutSpec(new UiLayoutSpec().setWidth(UiLength.percent(1.0F)).setHeight(UiLength.auto()).setFill(true));
-        hotbarDiv.setLayoutSpec(new UiLayoutSpec().setWidth(UiLength.percent(1.0F)).setHeight(UiLength.auto()).setFill(true));
-        backpackDiv.setLayoutSpec(new UiLayoutSpec().setWidth(UiLength.percent(1.0F)).setHeight(UiLength.auto()).setFill(true));
-    }
+    private void configureControls() {
+        summaryLabel.setColor(0xFFE2ECFF).setShadow(true).setWrap(true).setMaxLines(4);
+        hotbarTitleLabel.setColor(0xFFFFFFFF).setShadow(true).setWrap(true).setMaxLines(2);
+        backpackTitleLabel.setColor(0xFFFFFFFF).setShadow(true).setWrap(true).setMaxLines(2);
 
-    private void configureLabels() {
-        titleLabel.setColor(0xFFFFFFFF).setShadow(true).setWrap(true);
-        hintLabel.setColor(0xFFC8D8F3).setShadow(true).setWrap(true);
-        summaryLabel.setColor(0xFFE2ECFF).setShadow(true).setWrap(true);
-        hotbarTitleLabel.setColor(0xFFFFFFFF).setShadow(true);
-        backpackTitleLabel.setColor(0xFFFFFFFF).setShadow(true);
-    }
-
-    private void configurePanels() {
-        hotbarPanel.setPadding(14)
-                .setFillColor(0xAA111721)
-                .setBorderColor(0xFF7AA2FF);
-        backpackPanel.setPadding(14)
-                .setFillColor(0xAA111721)
-                .setBorderColor(0xFF7AA2FF);
         hotbarGrid.setSlotGap(8).setPreferredSlotSize(34).setSlotSizeRange(18, 50);
         backpackGrid.setSlotGap(8).setPreferredSlotSize(32).setSlotSizeRange(18, 46);
-    }
 
-    private void configureLayout() {
-        hotbarPanel.setLayoutSpec(null);
-        backpackPanel.setLayoutSpec(null);
-        titleLabel.setLayoutSpec(null);
-        hintLabel.setLayoutSpec(null);
-        summaryLabel.setLayoutSpec(null);
-        hotbarTitleLabel.setLayoutSpec(null);
-        backpackTitleLabel.setLayoutSpec(null);
-        hotbarGrid.setLayoutSpec(null);
-        backpackGrid.setLayoutSpec(null);
-        backButton.setLayoutSpec(null);
-
-        hotbarPanel.setSuggestedSize(-1, -1);
-        backpackPanel.setSuggestedSize(-1, -1);
-        backButton.setSuggestedSize(220, backButton.getPreferredHeight());
-    }
-
-    private void configureActions() {
         backButton.setClickHandler(new Runnable() {
             @Override
             public void run() {
@@ -136,31 +90,52 @@ public class InventoryOverviewScreen extends BaseScreen {
     }
 
     private void assembleUi(Widget root) {
-        hotbarDiv.addChild(hotbarTitleLabel, DivItemStyle.noGrow());
-        hotbarDiv.addChild(hotbarGrid, DivItemStyle.noGrow());
-        hotbarPanel.addChild(hotbarDiv);
+        DivWidget pageRoot = new DivWidget().setPageColumn();
+        DivWidget cardFlow = new DivWidget().setContentFlow();
+        DivWidget footer = new DivWidget().setButtonFlow();
 
-        backpackDiv.addChild(backpackTitleLabel, DivItemStyle.noGrow());
-        backpackDiv.addChild(backpackGrid, DivItemStyle.noGrow());
-        backpackPanel.addChild(backpackDiv);
+        ResponsivePanelWidget summaryCard = createCardPanel();
+        DivWidget summaryCardDiv = new DivWidget().setSectionColumn();
+        summaryCard.setSuggestedSize(760, -1);
+        summaryCardDiv.addNoGrowChild(createSectionTitle("背包概览"));
+        summaryCardDiv.addNoGrowChild(createBodyLabel("旧背包测试页已经清空，当前只保留一张更接近真实使用场景的概览页。它和主测试页一样，完全由 Div 语义 API 组织。"));
+        summaryCardDiv.addNoGrowChild(summaryLabel);
+        summaryCard.addChild(summaryCardDiv);
 
-        footerDiv.addChild(backButton, DivItemStyle.noGrow());
+        ResponsivePanelWidget hotbarCard = createCardPanel();
+        DivWidget hotbarCardDiv = new DivWidget().setSectionColumn();
+        hotbarCard.setSuggestedSize(300, -1);
+        hotbarCardDiv.addNoGrowChild(hotbarTitleLabel);
+        hotbarCardDiv.addNoGrowChild(createBodyLabel("快捷栏保持单行展示，格子尺寸会随可用宽度轻微缩放。"));
+        hotbarCardDiv.addNoGrowChild(hotbarGrid);
+        hotbarCard.addChild(hotbarCardDiv);
 
-        pageDivRoot.addChild(titleLabel, DivItemStyle.noGrow());
-        pageDivRoot.addChild(hintLabel, DivItemStyle.noGrow());
-        pageDivRoot.addChild(summaryLabel, DivItemStyle.noGrow());
-        pageDivRoot.addChild(hotbarPanel, DivItemStyle.noGrow());
-        pageDivRoot.addChild(backpackPanel, DivItemStyle.noGrow());
-        pageDivRoot.addChild(footerDiv, DivItemStyle.noGrow());
+        ResponsivePanelWidget backpackCard = createCardPanel();
+        DivWidget backpackCardDiv = new DivWidget().setSectionColumn();
+        backpackCard.setSuggestedSize(420, -1);
+        backpackCardDiv.addNoGrowChild(backpackTitleLabel);
+        backpackCardDiv.addNoGrowChild(createBodyLabel("主背包仍然优先依赖容器收缩与换行，不再把旧测试页里那些额外说明区块堆在同一个页面中。"));
+        backpackCardDiv.addNoGrowChild(backpackGrid);
+        backpackCard.addChild(backpackCardDiv);
 
-        pagePanel.getContent().addChild(pageDivRoot);
+        cardFlow.addFlexChild(hotbarCard);
+        cardFlow.addFlexChild(backpackCard);
+        footer.addNoGrowChild(backButton);
+
+        pageRoot.addNoGrowChild(createTitleLabel("Div 背包概览页"));
+        pageRoot.addNoGrowChild(createBodyLabel("这张页面复用了主测试页同样的结构范式：页面列、卡片流、区块列和按钮流。它现在更像真实背包扩展页，而不是杂糅多种实验内容的旧测试页。"));
+        pageRoot.addNoGrowChild(summaryCard);
+        pageRoot.addNoGrowChild(cardFlow);
+        pageRoot.addNoGrowChild(footer);
+
+        pagePanel.getContent().addChild(pageRoot);
         root.addChild(pagePanel);
     }
 
     private void refreshInventoryText() {
         InventoryPlayer inventory = getPlayerInventory();
         if (inventory == null) {
-            summaryLabel.setText("未找到玩家背包上下文，当前页面无法展示物品数据。");
+            summaryLabel.setText("未找到玩家背包上下文，当前页面无法展示物品数据。\n页面结构仍然使用新的 Div 语义布局。 ");
             hotbarTitleLabel.setText("快捷栏 0 / 9");
             backpackTitleLabel.setText("主背包 0 / 27");
             return;
@@ -168,8 +143,9 @@ public class InventoryOverviewScreen extends BaseScreen {
 
         int hotbarUsed = countOccupiedSlots(inventory, 0, 9);
         int backpackUsed = countOccupiedSlots(inventory, 9, 27);
-        summaryLabel.setText("玩家：" + Minecraft.getMinecraft().thePlayer.getCommandSenderName() + "；快捷栏占用 " + hotbarUsed
-                + " / 9；主背包占用 " + backpackUsed + " / 27。");
+        summaryLabel.setText("玩家：" + Minecraft.getMinecraft().thePlayer.getCommandSenderName() + "；快捷栏占用 "
+                + hotbarUsed + " / 9；主背包占用 " + backpackUsed + " / 27。\n原生窗口 " + width + "x" + height
+                + "，当前页尺寸 " + pagePanel.getWidth() + "x" + pagePanel.getHeight() + "。 ");
         hotbarTitleLabel.setText("快捷栏物品（" + hotbarUsed + " / 9 已占用）");
         backpackTitleLabel.setText("主背包物品（" + backpackUsed + " / 27 已占用）");
     }
@@ -205,5 +181,29 @@ public class InventoryOverviewScreen extends BaseScreen {
             }
         }
         return occupied;
+    }
+
+    private ResponsivePanelWidget createCardPanel() {
+        return new ResponsivePanelWidget().setPadding(18).setFillColor(0xAA111721).setBorderColor(0xFF7AA2FF);
+    }
+
+    private LabelWidget createTitleLabel(String text) {
+        return new LabelWidget(text).setColor(0xFFFFFFFF).setShadow(true).setWrap(true).setMaxLines(2);
+    }
+
+    private LabelWidget createSectionTitle(String text) {
+        return new LabelWidget(text).setColor(0xFFFFFFFF).setShadow(true).setWrap(true).setMaxLines(2);
+    }
+
+    private LabelWidget createBodyLabel(String text) {
+        return new LabelWidget(text).setColor(0xFFD7E3FF).setShadow(true).setWrap(true).setMaxLines(6);
+    }
+
+    private int adaptiveWidth(int preferred, int floor, float viewportRatio) {
+        return clampValue(Math.round(viewportWidthHint * viewportRatio), floor, preferred);
+    }
+
+    private int clampValue(int value, int min, int max) {
+        return Math.max(min, Math.min(value, max));
     }
 }

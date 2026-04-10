@@ -5,6 +5,8 @@ import java.util.List;
 
 import club.heiqi.uilib.ui.event.UiMouseEvent;
 import club.heiqi.uilib.ui.layout.DivItemStyle;
+import club.heiqi.uilib.ui.layout.UiLayoutSpec;
+import club.heiqi.uilib.ui.layout.UiLength;
 import club.heiqi.uilib.ui.render.UiRenderContext;
 import club.heiqi.uilib.ui.widget.Widget;
 
@@ -162,6 +164,185 @@ public class DivWidget extends Widget {
         }
         super.addChild(child);
         return this;
+    }
+
+    @Override
+    public DivWidget setLayoutSpec(UiLayoutSpec layoutSpec) {
+        super.setLayoutSpec(layoutSpec);
+        return this;
+    }
+
+    @Override
+    public DivWidget setSuggestedSize(int suggestedWidth, int suggestedHeight) {
+        super.setSuggestedSize(suggestedWidth, suggestedHeight);
+        return this;
+    }
+
+    /**
+     * 追加固定子项，不参与主轴伸缩。
+     *
+     * @param child 子组件
+     * @return 当前容器
+     */
+    public DivWidget addFixedChild(Widget child) {
+        return addChild(child, DivItemStyle.fixed());
+    }
+
+    /**
+     * 追加不增长的子项，可按需压缩。
+     *
+     * @param child 子组件
+     * @return 当前容器
+     */
+    public DivWidget addNoGrowChild(Widget child) {
+        return addChild(child, DivItemStyle.noGrow());
+    }
+
+    /**
+     * 追加柔性子项，允许按主轴空间自动伸缩。
+     *
+     * @param child 子组件
+     * @return 当前容器
+     */
+    public DivWidget addFlexChild(Widget child) {
+        return addChild(child, DivItemStyle.flex());
+    }
+
+    /**
+     * 将当前 Div 设为页面主内容列。
+     *
+     * @return 当前容器
+     */
+    public DivWidget setPageColumn() {
+        return setDirection(Direction.COLUMN)
+                .setAlignItems(AlignItems.STRETCH)
+                .setJustifyContent(JustifyContent.START)
+                .setWrap(Wrap.NOWRAP)
+                .setGap(16)
+                .setOverflowX(Overflow.VISIBLE)
+                .setOverflowY(Overflow.VISIBLE)
+                .setFillLayout();
+    }
+
+    /**
+     * 将当前 Div 设为卡片内部常用的纵向区块。
+     *
+     * @return 当前容器
+     */
+    public DivWidget setSectionColumn() {
+        return setDirection(Direction.COLUMN)
+                .setAlignItems(AlignItems.STRETCH)
+                .setJustifyContent(JustifyContent.START)
+                .setWrap(Wrap.NOWRAP)
+                .setGap(12)
+                .setOverflowX(Overflow.VISIBLE)
+                .setOverflowY(Overflow.VISIBLE)
+                .setFillLayout();
+    }
+
+    /**
+     * 将当前 Div 设为网页常见的卡片流，适合多个区块横向排布并在窄屏下换行。
+     *
+     * @return 当前容器
+     */
+    public DivWidget setContentFlow() {
+        return setDirection(Direction.ROW)
+                .setAlignItems(AlignItems.STRETCH)
+                .setJustifyContent(JustifyContent.START)
+                .setWrap(Wrap.WRAP)
+                .setGap(16)
+                .setOverflowX(Overflow.VISIBLE)
+                .setOverflowY(Overflow.VISIBLE)
+                .setFillLayout();
+    }
+
+    /**
+     * 将当前 Div 设为网页常见的行内流，元素按行排列并在空间不足时自然换行。
+     *
+     * @return 当前容器
+     */
+    public DivWidget setInlineFlow() {
+        return setDirection(Direction.ROW)
+                .setAlignItems(AlignItems.CENTER)
+                .setJustifyContent(JustifyContent.START)
+                .setWrap(Wrap.WRAP)
+                .setGap(10)
+                .setOverflowX(Overflow.VISIBLE)
+                .setOverflowY(Overflow.VISIBLE)
+                .setFillLayout();
+    }
+
+    /**
+     * 将当前 Div 设为表单行，标签与控件会在窄屏下自动换行。
+     *
+     * @return 当前容器
+     */
+    public DivWidget setFormRow() {
+        return setDirection(Direction.ROW)
+                .setAlignItems(AlignItems.CENTER)
+                .setJustifyContent(JustifyContent.START)
+                .setWrap(Wrap.WRAP)
+                .setGap(16)
+                .setOverflowX(Overflow.VISIBLE)
+                .setOverflowY(Overflow.VISIBLE)
+                .setFillLayout();
+    }
+
+    /**
+     * 将当前 Div 设为按钮流，适合操作按钮组自动换行。
+     *
+     * @return 当前容器
+     */
+    public DivWidget setButtonFlow() {
+        return setDirection(Direction.ROW)
+                .setAlignItems(AlignItems.STRETCH)
+                .setJustifyContent(JustifyContent.START)
+                .setWrap(Wrap.WRAP)
+                .setGap(12)
+                .setOverflowX(Overflow.VISIBLE)
+                .setOverflowY(Overflow.VISIBLE)
+                .setFillLayout();
+    }
+
+    /**
+     * 在外层响应式容器中占满可用宽度，并保持高度自适应。
+     *
+     * @return 当前容器
+     */
+    public DivWidget setFillLayout() {
+        ensureLayoutSpec().setWidth(UiLength.percent(1.0F)).setHeight(UiLength.auto()).setFill(true);
+        return setWidthPercent(1.0F);
+    }
+
+    /**
+     * 设置当前 Div 在外层响应式容器中的纵向增长系数。
+     *
+     * @param grow 增长系数
+     * @return 当前容器
+     */
+    public DivWidget setGrowLayout(float grow) {
+        ensureLayoutSpec().setGrow(grow);
+        return this;
+    }
+
+    /**
+     * 设置当前 Div 在外层响应式容器中的最小高度约束。
+     *
+     * @param minHeight 最小高度
+     * @return 当前容器
+     */
+    public DivWidget setMinHeightLayout(int minHeight) {
+        ensureLayoutSpec().setMinHeight(minHeight);
+        return this;
+    }
+
+    /**
+     * 将当前 Div 设为仅纵向滚动，横向溢出直接裁切。
+     *
+     * @return 当前容器
+     */
+    public DivWidget setVerticalScrollOnly() {
+        return setOverflowX(Overflow.HIDDEN).setOverflowY(Overflow.AUTO);
     }
 
     public DivWidget setDirection(Direction direction) {
@@ -1122,6 +1303,15 @@ public class DivWidget extends Widget {
 
     private float clampPercent(float percent) {
         return percent < 0.0F ? -1.0F : Math.max(0.0F, Math.min(percent, 1.0F));
+    }
+
+    private UiLayoutSpec ensureLayoutSpec() {
+        UiLayoutSpec layoutSpec = getLayoutSpec();
+        if (layoutSpec == null) {
+            layoutSpec = new UiLayoutSpec();
+            super.setLayoutSpec(layoutSpec);
+        }
+        return layoutSpec;
     }
 
     private static class AxisGroup {
