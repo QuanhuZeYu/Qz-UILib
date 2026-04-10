@@ -1,11 +1,12 @@
 package club.heiqi.uilib.ui.screen;
 
 import club.heiqi.uilib.ui.control.ButtonWidget;
+import club.heiqi.uilib.ui.control.DivWidget;
 import club.heiqi.uilib.ui.control.InventorySlotGridWidget;
 import club.heiqi.uilib.ui.control.LabelWidget;
 import club.heiqi.uilib.ui.control.ResponsivePageWidget;
 import club.heiqi.uilib.ui.control.ResponsivePanelWidget;
-import club.heiqi.uilib.ui.control.VerticalStackWidget;
+import club.heiqi.uilib.ui.layout.DivItemStyle;
 import club.heiqi.uilib.ui.layout.UiAnchor;
 import club.heiqi.uilib.ui.layout.UiLayoutSpec;
 import club.heiqi.uilib.ui.layout.UiLength;
@@ -20,24 +21,46 @@ import net.minecraft.entity.player.InventoryPlayer;
 public class InventoryOverviewScreen extends BaseScreen {
 
     private final ResponsivePageWidget pagePanel = new ResponsivePageWidget();
-    private final VerticalStackWidget pageStack = new VerticalStackWidget();
+    private final DivWidget pageDivRoot = new DivWidget().setDirection(DivWidget.Direction.COLUMN)
+            .setGap(16)
+            .setWidthPercent(1.0F)
+            .setOverflowX(DivWidget.Overflow.VISIBLE)
+            .setOverflowY(DivWidget.Overflow.VISIBLE);
     private final LabelWidget titleLabel = new LabelWidget("响应式背包信息测试页");
     private final LabelWidget hintLabel = new LabelWidget("该页面仅展示快捷栏与主背包物品。格子会按可用宽度自动重排列数，窗口变窄时优先缩小格子并增加换行，剩余高度交给滚动容器承接。");
     private final LabelWidget summaryLabel = new LabelWidget("");
+
     private final ResponsivePanelWidget hotbarPanel = new ResponsivePanelWidget();
-    private final VerticalStackWidget hotbarStack = new VerticalStackWidget();
+    private final DivWidget hotbarDiv = new DivWidget().setDirection(DivWidget.Direction.COLUMN)
+            .setGap(12)
+            .setWidthPercent(1.0F)
+            .setOverflowX(DivWidget.Overflow.VISIBLE)
+            .setOverflowY(DivWidget.Overflow.VISIBLE);
     private final LabelWidget hotbarTitleLabel = new LabelWidget("");
     private final InventorySlotGridWidget hotbarGrid = new InventorySlotGridWidget(0, 9, 9);
+
     private final ResponsivePanelWidget backpackPanel = new ResponsivePanelWidget();
-    private final VerticalStackWidget backpackStack = new VerticalStackWidget();
+    private final DivWidget backpackDiv = new DivWidget().setDirection(DivWidget.Direction.COLUMN)
+            .setGap(12)
+            .setWidthPercent(1.0F)
+            .setOverflowX(DivWidget.Overflow.VISIBLE)
+            .setOverflowY(DivWidget.Overflow.VISIBLE);
     private final LabelWidget backpackTitleLabel = new LabelWidget("");
     private final InventorySlotGridWidget backpackGrid = new InventorySlotGridWidget(9, 27, 9);
+
+    private final DivWidget footerDiv = new DivWidget().setDirection(DivWidget.Direction.ROW)
+            .setWrap(DivWidget.Wrap.WRAP)
+            .setAlignItems(DivWidget.AlignItems.CENTER)
+            .setGap(12)
+            .setWidthPercent(1.0F)
+            .setOverflowX(DivWidget.Overflow.VISIBLE)
+            .setOverflowY(DivWidget.Overflow.VISIBLE);
     private final ButtonWidget backButton = new ButtonWidget("返回原版背包");
 
     @Override
     protected void buildUi(Widget root) {
         configurePagePanel();
-        configureStacks();
+        configureDivs();
         configureLabels();
         configurePanels();
         configureLayout();
@@ -61,21 +84,14 @@ public class InventoryOverviewScreen extends BaseScreen {
                 .setLayoutSpec(new UiLayoutSpec().setAnchor(UiAnchor.TOP_CENTER));
     }
 
-    private void configureStacks() {
-        pageStack.setSpacing(16)
-                .setLayoutSpec(new UiLayoutSpec()
-                        .setWidth(UiLength.percent(1.0F))
-                        .setHeight(UiLength.auto())
-                        .setFill(true));
-
-        hotbarStack.setSpacing(12)
-                .setLayoutSpec(new UiLayoutSpec().setWidth(UiLength.percent(1.0F)).setHeight(UiLength.auto()).setFill(true));
-        backpackStack.setSpacing(12)
-                .setLayoutSpec(new UiLayoutSpec().setWidth(UiLength.percent(1.0F)).setHeight(UiLength.auto()).setFill(true));
+    private void configureDivs() {
+        pageDivRoot.setLayoutSpec(new UiLayoutSpec().setWidth(UiLength.percent(1.0F)).setHeight(UiLength.auto()).setFill(true));
+        hotbarDiv.setLayoutSpec(new UiLayoutSpec().setWidth(UiLength.percent(1.0F)).setHeight(UiLength.auto()).setFill(true));
+        backpackDiv.setLayoutSpec(new UiLayoutSpec().setWidth(UiLength.percent(1.0F)).setHeight(UiLength.auto()).setFill(true));
     }
 
     private void configureLabels() {
-        titleLabel.setColor(0xFFFFFFFF).setShadow(true);
+        titleLabel.setColor(0xFFFFFFFF).setShadow(true).setWrap(true);
         hintLabel.setColor(0xFFC8D8F3).setShadow(true).setWrap(true);
         summaryLabel.setColor(0xFFE2ECFF).setShadow(true).setWrap(true);
         hotbarTitleLabel.setColor(0xFFFFFFFF).setShadow(true);
@@ -94,17 +110,20 @@ public class InventoryOverviewScreen extends BaseScreen {
     }
 
     private void configureLayout() {
-        titleLabel.setLayoutSpec(new UiLayoutSpec().setWidth(UiLength.percent(1.0F)).setHeight(UiLength.auto()));
-        hintLabel.setLayoutSpec(new UiLayoutSpec().setWidth(UiLength.percent(1.0F)).setHeight(UiLength.auto()));
-        summaryLabel.setLayoutSpec(new UiLayoutSpec().setWidth(UiLength.percent(1.0F)).setHeight(UiLength.auto()));
-        backButton.setLayoutSpec(new UiLayoutSpec().setWidth(UiLength.auto()).setHeight(UiLength.auto()).setMinWidth(220));
+        hotbarPanel.setLayoutSpec(null);
+        backpackPanel.setLayoutSpec(null);
+        titleLabel.setLayoutSpec(null);
+        hintLabel.setLayoutSpec(null);
+        summaryLabel.setLayoutSpec(null);
+        hotbarTitleLabel.setLayoutSpec(null);
+        backpackTitleLabel.setLayoutSpec(null);
+        hotbarGrid.setLayoutSpec(null);
+        backpackGrid.setLayoutSpec(null);
+        backButton.setLayoutSpec(null);
 
-        hotbarPanel.setLayoutSpec(new UiLayoutSpec().setWidth(UiLength.percent(1.0F)).setHeight(UiLength.auto()));
-        backpackPanel.setLayoutSpec(new UiLayoutSpec().setWidth(UiLength.percent(1.0F)).setHeight(UiLength.auto()));
-        hotbarTitleLabel.setLayoutSpec(new UiLayoutSpec().setWidth(UiLength.percent(1.0F)).setHeight(UiLength.auto()));
-        backpackTitleLabel.setLayoutSpec(new UiLayoutSpec().setWidth(UiLength.percent(1.0F)).setHeight(UiLength.auto()));
-        hotbarGrid.setLayoutSpec(new UiLayoutSpec().setWidth(UiLength.percent(1.0F)).setHeight(UiLength.auto()));
-        backpackGrid.setLayoutSpec(new UiLayoutSpec().setWidth(UiLength.percent(1.0F)).setHeight(UiLength.auto()));
+        hotbarPanel.setSuggestedSize(-1, -1);
+        backpackPanel.setSuggestedSize(-1, -1);
+        backButton.setSuggestedSize(220, backButton.getPreferredHeight());
     }
 
     private void configureActions() {
@@ -117,21 +136,24 @@ public class InventoryOverviewScreen extends BaseScreen {
     }
 
     private void assembleUi(Widget root) {
-        hotbarStack.addChild(hotbarTitleLabel);
-        hotbarStack.addChild(hotbarGrid);
-        hotbarPanel.addChild(hotbarStack);
+        hotbarDiv.addChild(hotbarTitleLabel, DivItemStyle.noGrow());
+        hotbarDiv.addChild(hotbarGrid, DivItemStyle.noGrow());
+        hotbarPanel.addChild(hotbarDiv);
 
-        backpackStack.addChild(backpackTitleLabel);
-        backpackStack.addChild(backpackGrid);
-        backpackPanel.addChild(backpackStack);
+        backpackDiv.addChild(backpackTitleLabel, DivItemStyle.noGrow());
+        backpackDiv.addChild(backpackGrid, DivItemStyle.noGrow());
+        backpackPanel.addChild(backpackDiv);
 
-        pageStack.addChild(titleLabel);
-        pageStack.addChild(hintLabel);
-        pageStack.addChild(summaryLabel);
-        pageStack.addChild(hotbarPanel);
-        pageStack.addChild(backpackPanel);
-        pageStack.addChild(backButton);
-        pagePanel.getContent().addChild(pageStack);
+        footerDiv.addChild(backButton, DivItemStyle.noGrow());
+
+        pageDivRoot.addChild(titleLabel, DivItemStyle.noGrow());
+        pageDivRoot.addChild(hintLabel, DivItemStyle.noGrow());
+        pageDivRoot.addChild(summaryLabel, DivItemStyle.noGrow());
+        pageDivRoot.addChild(hotbarPanel, DivItemStyle.noGrow());
+        pageDivRoot.addChild(backpackPanel, DivItemStyle.noGrow());
+        pageDivRoot.addChild(footerDiv, DivItemStyle.noGrow());
+
+        pagePanel.getContent().addChild(pageDivRoot);
         root.addChild(pagePanel);
     }
 

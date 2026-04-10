@@ -125,7 +125,7 @@ public class UiTestScreen extends BaseScreen {
     private final DivWidget settingsAnimationDiv = new DivWidget().setDirection(DivWidget.Direction.ROW).setAlignItems(DivWidget.AlignItems.CENTER).setGap(16).setWidthPercent(1.0F);
     private final DivWidget settingsDensityDiv = new DivWidget().setDirection(DivWidget.Direction.ROW).setAlignItems(DivWidget.AlignItems.CENTER).setGap(16).setWidthPercent(1.0F);
     private final DivWidget settingsPreviewDiv = new DivWidget().setDirection(DivWidget.Direction.COLUMN).setGap(12).setWidthPercent(1.0F);
-    private final DivWidget settingsFooterDiv = new DivWidget().setDirection(DivWidget.Direction.ROW).setAlignItems(DivWidget.AlignItems.STRETCH).setGap(14).setWidthPercent(1.0F);
+    private final DivWidget settingsFooterDiv = new DivWidget().setDirection(DivWidget.Direction.ROW).setAlignItems(DivWidget.AlignItems.STRETCH).setWrap(DivWidget.Wrap.WRAP).setGap(14).setWidthPercent(1.0F);
     private final ResponsivePanelWidget settingsPreviewPanel = new ResponsivePanelWidget();
     private final LabelWidget settingsPreviewTitleLabel = new LabelWidget("预览与摘要");
     private final LabelWidget settingsPreviewSummaryLabel = new LabelWidget("");
@@ -142,6 +142,39 @@ public class UiTestScreen extends BaseScreen {
     private final TextInputWidget focusPathInput = new TextInputWidget();
     private final ToggleSwitchWidget focusToggle = new ToggleSwitchWidget("键盘交互开关");
     private final SegmentedSelectorWidget focusSelector = new SegmentedSelectorWidget("布局A", "布局B", "布局C");
+    private final DivWidget focusDivRoot = new DivWidget().setDirection(DivWidget.Direction.COLUMN)
+            .setGap(14)
+            .setWidthPercent(1.0F)
+            .setOverflowX(DivWidget.Overflow.VISIBLE)
+            .setOverflowY(DivWidget.Overflow.VISIBLE);
+    private final DivWidget focusProfileDiv = new DivWidget().setDirection(DivWidget.Direction.ROW)
+            .setWrap(DivWidget.Wrap.WRAP)
+            .setAlignItems(DivWidget.AlignItems.CENTER)
+            .setGap(16)
+            .setWidthPercent(1.0F)
+            .setOverflowX(DivWidget.Overflow.VISIBLE)
+            .setOverflowY(DivWidget.Overflow.VISIBLE);
+    private final DivWidget focusPathDiv = new DivWidget().setDirection(DivWidget.Direction.ROW)
+            .setWrap(DivWidget.Wrap.WRAP)
+            .setAlignItems(DivWidget.AlignItems.CENTER)
+            .setGap(16)
+            .setWidthPercent(1.0F)
+            .setOverflowX(DivWidget.Overflow.VISIBLE)
+            .setOverflowY(DivWidget.Overflow.VISIBLE);
+    private final DivWidget focusModeDiv = new DivWidget().setDirection(DivWidget.Direction.ROW)
+            .setWrap(DivWidget.Wrap.WRAP)
+            .setAlignItems(DivWidget.AlignItems.CENTER)
+            .setGap(16)
+            .setWidthPercent(1.0F)
+            .setOverflowX(DivWidget.Overflow.VISIBLE)
+            .setOverflowY(DivWidget.Overflow.VISIBLE);
+    private final DivWidget focusActionDiv = new DivWidget().setDirection(DivWidget.Direction.ROW)
+            .setWrap(DivWidget.Wrap.WRAP)
+            .setAlignItems(DivWidget.AlignItems.STRETCH)
+            .setGap(14)
+            .setWidthPercent(1.0F)
+            .setOverflowX(DivWidget.Overflow.VISIBLE)
+            .setOverflowY(DivWidget.Overflow.VISIBLE);
     private final LabelWidget focusStatusLabel = new LabelWidget("");
     private final ButtonWidget focusPrimaryButton = new ButtonWidget("应用焦点页设置");
     private final ButtonWidget focusSecondaryButton = new ButtonWidget("重置焦点页");
@@ -539,24 +572,23 @@ public class UiTestScreen extends BaseScreen {
         settingsDivRoot.addChild(settingsFooterDiv, DivItemStyle.noGrow());
         settingsFormPage.getContent().addChild(settingsDivRoot);
 
-        focusProfileRow.addChild(focusNameLabel);
-        focusProfileRow.addChild(focusNameInput);
-        focusPathRow.addChild(focusPathLabel);
-        focusPathRow.addChild(focusPathInput);
-        focusModeRow.addChild(focusToggle);
-        focusModeRow.addChild(focusSelector);
-        focusActionRow.addChild(focusPrimaryButton);
-        focusActionRow.addChild(focusSecondaryButton);
-        focusActionRow.addChild(backFromFocusButton);
-        focusNavigationStack.addChild(focusTitleLabel);
-        focusNavigationStack.addChild(focusHintLabel);
-        focusNavigationStack.addChild(focusProfileRow);
-        focusNavigationStack.addChild(focusPathRow);
-        focusNavigationStack.addChild(focusModeRow);
-        focusNavigationStack.addChild(focusStatusLabel);
-        focusNavigationStack.addChild(focusActionRow);
-        focusScrollPanel.getContent().addChild(focusNavigationStack);
-        focusNavigationPage.getContent().addChild(focusScrollPanel);
+        focusProfileDiv.addChild(focusNameLabel, DivItemStyle.fixed());
+        focusProfileDiv.addChild(focusNameInput);
+        focusPathDiv.addChild(focusPathLabel, DivItemStyle.fixed());
+        focusPathDiv.addChild(focusPathInput);
+        focusModeDiv.addChild(focusToggle);
+        focusModeDiv.addChild(focusSelector);
+        focusActionDiv.addChild(focusPrimaryButton, DivItemStyle.noGrow());
+        focusActionDiv.addChild(focusSecondaryButton, DivItemStyle.noGrow());
+        focusActionDiv.addChild(backFromFocusButton, DivItemStyle.noGrow());
+        focusDivRoot.addChild(focusTitleLabel, DivItemStyle.noGrow());
+        focusDivRoot.addChild(focusHintLabel, DivItemStyle.noGrow());
+        focusDivRoot.addChild(focusProfileDiv, DivItemStyle.noGrow());
+        focusDivRoot.addChild(focusPathDiv, DivItemStyle.noGrow());
+        focusDivRoot.addChild(focusModeDiv, DivItemStyle.noGrow());
+        focusDivRoot.addChild(focusStatusLabel, DivItemStyle.noGrow());
+        focusDivRoot.addChild(focusActionDiv, DivItemStyle.noGrow());
+        focusNavigationPage.getContent().addChild(focusDivRoot);
 
         root.addChild(menuPage);
         root.addChild(inputTestPage);
@@ -775,30 +807,33 @@ public class UiTestScreen extends BaseScreen {
     }
 
     private void applyFocusLayout() {
-        int scrollMinHeight = adaptiveHeight(220, 140, 0.22F);
         int labelWidth = adaptiveWidth(220, 120, 0.17F);
         int fieldMinWidth = adaptiveWidth(260, 150, 0.20F);
         int selectorMinWidth = adaptiveWidth(420, 180, 0.28F);
         int buttonMinWidth = adaptiveWidth(180, 120, 0.14F);
-        focusScrollPanel.setLayoutSpec(new UiLayoutSpec().setWidth(UiLength.percent(1.0F)).setHeight(UiLength.auto()).setMinHeight(scrollMinHeight).setGrow(1.0F).setFill(true));
-        focusNavigationStack.setLayoutSpec(new UiLayoutSpec().setWidth(UiLength.percent(1.0F)).setHeight(UiLength.auto()).setFill(true));
-        focusTitleLabel.setLayoutSpec(new UiLayoutSpec().setWidth(UiLength.percent(1.0F)).setHeight(UiLength.auto()));
-        focusHintLabel.setLayoutSpec(new UiLayoutSpec().setWidth(UiLength.percent(1.0F)).setHeight(UiLength.auto()));
-        focusProfileRow.setLayoutSpec(new UiLayoutSpec().setWidth(UiLength.percent(1.0F)).setHeight(UiLength.auto()));
-        focusPathRow.setLayoutSpec(new UiLayoutSpec().setWidth(UiLength.percent(1.0F)).setHeight(UiLength.auto()));
-        focusModeRow.setLayoutSpec(new UiLayoutSpec().setWidth(UiLength.percent(1.0F)).setHeight(UiLength.auto()));
-        focusActionRow.setLayoutSpec(new UiLayoutSpec().setWidth(UiLength.percent(1.0F)).setHeight(UiLength.auto()));
+        focusDivRoot.setLayoutSpec(new UiLayoutSpec().setWidth(UiLength.percent(1.0F)).setHeight(UiLength.auto()).setFill(true));
+        focusTitleLabel.setLayoutSpec(null);
+        focusHintLabel.setLayoutSpec(null);
+        focusNameLabel.setLayoutSpec(null);
+        focusPathLabel.setLayoutSpec(null);
+        focusNameInput.setLayoutSpec(null);
+        focusPathInput.setLayoutSpec(null);
+        focusToggle.setLayoutSpec(null);
+        focusSelector.setLayoutSpec(null);
+        focusStatusLabel.setLayoutSpec(null);
+        focusPrimaryButton.setLayoutSpec(null);
+        focusSecondaryButton.setLayoutSpec(null);
+        backFromFocusButton.setLayoutSpec(null);
 
-        focusNameLabel.setLayoutSpec(new UiLayoutSpec().setWidth(UiLength.px(labelWidth)).setHeight(UiLength.auto()));
-        focusPathLabel.setLayoutSpec(new UiLayoutSpec().setWidth(UiLength.px(labelWidth)).setHeight(UiLength.auto()));
-        focusNameInput.setLayoutSpec(new UiLayoutSpec().setWidth(UiLength.auto()).setHeight(UiLength.px(42)).setMinWidth(fieldMinWidth).setGrow(1.0F));
-        focusPathInput.setLayoutSpec(new UiLayoutSpec().setWidth(UiLength.auto()).setHeight(UiLength.px(42)).setMinWidth(fieldMinWidth).setGrow(1.0F));
-        focusToggle.setLayoutSpec(new UiLayoutSpec().setWidth(UiLength.auto()).setHeight(UiLength.auto()).setMinWidth(fieldMinWidth).setGrow(1.0F).setFill(true));
-        focusSelector.setLayoutSpec(new UiLayoutSpec().setWidth(UiLength.auto()).setHeight(UiLength.auto()).setMinWidth(selectorMinWidth).setGrow(1.0F).setFill(true));
-        focusStatusLabel.setLayoutSpec(new UiLayoutSpec().setWidth(UiLength.percent(1.0F)).setHeight(UiLength.auto()));
-        focusPrimaryButton.setLayoutSpec(new UiLayoutSpec().setWidth(UiLength.auto()).setHeight(UiLength.auto()).setMinWidth(buttonMinWidth).setGrow(1.0F));
-        focusSecondaryButton.setLayoutSpec(new UiLayoutSpec().setWidth(UiLength.auto()).setHeight(UiLength.auto()).setMinWidth(buttonMinWidth).setGrow(1.0F));
-        backFromFocusButton.setLayoutSpec(new UiLayoutSpec().setWidth(UiLength.auto()).setHeight(UiLength.auto()).setMinWidth(buttonMinWidth).setGrow(1.0F));
+        focusNameLabel.setSuggestedSize(labelWidth, -1);
+        focusPathLabel.setSuggestedSize(labelWidth, -1);
+        focusNameInput.setSuggestedSize(fieldMinWidth, focusNameInput.getPreferredHeight());
+        focusPathInput.setSuggestedSize(fieldMinWidth, focusPathInput.getPreferredHeight());
+        focusToggle.setSuggestedSize(fieldMinWidth, focusToggle.getPreferredHeight());
+        focusSelector.setSuggestedSize(selectorMinWidth, focusSelector.getPreferredHeight());
+        focusPrimaryButton.setSuggestedSize(buttonMinWidth, focusPrimaryButton.getPreferredHeight());
+        focusSecondaryButton.setSuggestedSize(buttonMinWidth, focusSecondaryButton.getPreferredHeight());
+        backFromFocusButton.setSuggestedSize(buttonMinWidth, backFromFocusButton.getPreferredHeight());
     }
 
     private int adaptiveWidth(int preferred, int floor, float viewportRatio) {

@@ -5,6 +5,7 @@ import java.util.List;
 
 import org.lwjglx.input.Keyboard;
 
+import club.heiqi.uilib.ui.control.DivWidget;
 import club.heiqi.uilib.ui.control.VerticalScrollPanelWidget;
 import club.heiqi.uilib.ui.event.UiKeyEvent;
 import club.heiqi.uilib.ui.event.UiMouseEvent;
@@ -204,6 +205,8 @@ public class UiInputRouter {
         while (current != null) {
             if (current instanceof VerticalScrollPanelWidget) {
                 ((VerticalScrollPanelWidget) current).scrollDescendantIntoView(widget);
+            } else if (current instanceof DivWidget) {
+                ((DivWidget) current).scrollDescendantIntoView(widget);
             }
             current = current.getParent();
         }
