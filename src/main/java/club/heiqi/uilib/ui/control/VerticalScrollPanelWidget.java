@@ -160,6 +160,12 @@ public class VerticalScrollPanelWidget extends ResponsivePanelWidget {
     }
 
     @Override
+    protected void layoutChildren() {
+        // 滚动面板的内部内容区域由 updateContentBounds() 专门负责定位与定尺寸，
+        // 不能再让父类按普通响应式子项重新布局，否则会覆盖滚动偏移和真实内容高度。
+    }
+
+    @Override
     protected void drawSelf(club.heiqi.uilib.ui.render.UiRenderContext context) {
         super.drawSelf(context);
         ScrollbarMetrics verticalMetrics = getVerticalScrollbarMetrics();
