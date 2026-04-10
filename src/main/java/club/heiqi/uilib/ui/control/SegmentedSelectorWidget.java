@@ -1,5 +1,8 @@
 package club.heiqi.uilib.ui.control;
 
+import org.lwjglx.input.Keyboard;
+
+import club.heiqi.uilib.ui.event.UiKeyEvent;
 import club.heiqi.uilib.ui.event.UiMouseEvent;
 import club.heiqi.uilib.ui.render.UiRenderContext;
 import club.heiqi.uilib.ui.widget.Widget;
@@ -12,6 +15,7 @@ public class SegmentedSelectorWidget extends Widget {
     private final String[] options;
     private int selectedIndex;
     private Runnable changeHandler;
+    private boolean focused;
 
     public SegmentedSelectorWidget(String... options) {
         this.options = options == null ? new String[0] : options;
@@ -30,7 +34,7 @@ public class SegmentedSelectorWidget extends Widget {
             int right = i == optionCount - 1 ? absoluteX + getWidth() : left + optionWidth;
             boolean selected = i == selectedIndex;
             context.fillRect(left, absoluteY, right, absoluteY + getHeight(), selected ? 0xCC436099 : 0xCC252B33);
-            context.drawBorder(left, absoluteY, right, absoluteY + getHeight(), selected ? 0xFFB7D4FF : 0xFF6E7C95);
+            context.drawBorder(left, absoluteY, right, absoluteY + getHeight(), selected ? 0xFFB7D4FF : (focused ? 0xFF9DB7E8 : 0xFF6E7C95));
             String option = i < options.length ? options[i] : "";
             context.drawCenteredText(option, left + (right - left) / 2, textY, 0xFFFFFFFF, true);
         }
@@ -44,11 +48,31 @@ public class SegmentedSelectorWidget extends Widget {
         int localX = event.getMouseX() - getAbsoluteX();
         int optionWidth = Math.max(1, getWidth() / options.length);
         int newIndex = Math.min(options.length - 1, Math.max(0, localX / optionWidth));
-        if (newIndex != selectedIndex) {
-            selectedIndex = newIndex;
-            if (changeHandler != null) {
-                changeHandler.run();
-            }
+        applySelection(newIndex);
+    }
+
+    @Override
+    public boolean isFocusable() {
+        return options.length > 0;
+    }
+
+    @Override
+    public void onFocusChanged(boolean focused) {
+        this.focused = focused;
+    }
+
+    @Override
+    public void onKeyEvent(UiKeyEvent event) {
+        if (options.length == 0 || event.getAction() != UiKeyEvent.Action.PRESSED) {
+            return;
+        }
+        if (event.getKeyCode() == Keyboard.KEY_LEFT) {
+            applySelection(Math.max(0, selectedIndex - 1));
+        } else if (event.getKeyCode() == Keyboard.KEY_RIGHT) {
+            applySelection(Math.min(options.length - 1, selectedIndex + 1));
+        } else if (event.getKeyCode() == Keyboard.KEY_SPACE || event.getKeyCode() == Keyboard.KEY_RETURN
+                || event.getKeyCode() == Keyboard.KEY_NUMPADENTER) {
+            applySelection((selectedIndex + 1) % options.length);
         }
     }
 
@@ -78,5 +102,15 @@ public class SegmentedSelectorWidget extends Widget {
     public SegmentedSelectorWidget setChangeHandler(Runnable changeHandler) {
         this.changeHandler = changeHandler;
         return this;
+    }
+
+    private void applySelection(int newIndex) {
+        if (newIndex == selectedIndex) {
+            return;
+        }
+        selectedIndex = newIndex;
+        if (changeHandler != null) {
+            changeHandler.run();
+        }
     }
 }

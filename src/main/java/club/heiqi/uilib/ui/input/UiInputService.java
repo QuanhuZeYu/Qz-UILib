@@ -226,7 +226,10 @@ public class UiInputService implements InputEvents.KeyboardListener {
         double currentTotalScrollAmount = Mouse.totalScrollAmount;
         double wheelDeltaRaw = currentTotalScrollAmount - previousTotalScrollAmount;
         if (Math.abs(wheelDeltaRaw) > 0.0001D) {
-            int wheelDelta = wheelDeltaRaw > 0.0D ? 120 : -120;
+            int wheelDelta = (int) Math.round(wheelDeltaRaw * 120.0D);
+            if (wheelDelta == 0) {
+                wheelDelta = wheelDeltaRaw > 0.0D ? 1 : -1;
+            }
             mouseEvents.add(new UiMouseEvent(UiMouseEvent.Action.SCROLL, currentMouseX, currentMouseY, -1, wheelDelta,
                     0, 0, now));
         }

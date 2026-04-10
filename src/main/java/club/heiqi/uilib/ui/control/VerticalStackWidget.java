@@ -71,8 +71,11 @@ public class VerticalStackWidget extends ResponsiveContainerWidget {
             if (layoutSpec != null && layoutSpec.isFill() && childWidth.getType() == UiLength.Type.AUTO) {
                 resolvedWidth = availableWidth;
             }
-            resolvedWidth = clamp(resolvedWidth, layoutSpec == null ? 0 : layoutSpec.getMinWidth(),
-                    Math.min(layoutSpec == null ? Integer.MAX_VALUE : layoutSpec.getMaxWidth(), availableWidth));
+            resolvedWidth = fitDimension(
+                    resolvedWidth,
+                    layoutSpec == null ? 0 : layoutSpec.getMinWidth(),
+                    layoutSpec == null ? Integer.MAX_VALUE : layoutSpec.getMaxWidth(),
+                    availableWidth);
             total += child.getPreferredHeightForWidth(resolvedWidth) + margin.getTop() + margin.getBottom();
             count++;
         }

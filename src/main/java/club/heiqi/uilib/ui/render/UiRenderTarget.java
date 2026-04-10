@@ -23,6 +23,7 @@ public class UiRenderTarget {
     private int width;
     private int height;
     private int previousFramebufferId;
+    private boolean attribStatePushed;
 
     /**
      * 确保离屏目标尺寸与当前窗口一致。
@@ -49,7 +50,11 @@ public class UiRenderTarget {
     public void begin() {
         previousViewport.clear();
         GL11.glGetInteger(GL11.GL_VIEWPORT, previousViewport);
+        previousViewport.limit(4);
+        previousViewport.rewind();
         previousFramebufferId = GL11.glGetInteger(GL30.GL_FRAMEBUFFER_BINDING);
+        GL11.glPushAttrib(GL11.GL_ALL_ATTRIB_BITS);
+        attribStatePushed = true;
         GL30.glBindFramebuffer(GL30.GL_FRAMEBUFFER, framebufferId);
         GL11.glViewport(0, 0, width, height);
         GL11.glClearColor(0.0F, 0.0F, 0.0F, 0.0F);
@@ -62,6 +67,10 @@ public class UiRenderTarget {
     public void end() {
         GL30.glBindFramebuffer(GL30.GL_FRAMEBUFFER, previousFramebufferId);
         GL11.glViewport(previousViewport.get(0), previousViewport.get(1), previousViewport.get(2), previousViewport.get(3));
+        if (attribStatePushed) {
+            GL11.glPopAttrib();
+            attribStatePushed = false;
+        }
         previousFramebufferId = 0;
     }
 
@@ -72,22 +81,27 @@ public class UiRenderTarget {
      * @param guiHeight GUI 逻辑高度
      */
     public void drawToScreen(int guiWidth, int guiHeight) {
-        GL11.glEnable(GL11.GL_TEXTURE_2D);
-        GL11.glEnable(GL11.GL_BLEND);
-        GL11.glBlendFunc(GL11.GL_SRC_ALPHA, GL11.GL_ONE_MINUS_SRC_ALPHA);
-        GL11.glDisable(GL11.GL_DEPTH_TEST);
-        GL11.glColor4f(1.0F, 1.0F, 1.0F, 1.0F);
-        GL11.glBindTexture(GL11.GL_TEXTURE_2D, colorTextureId);
+        GL11.glPushAttrib(GL11.GL_ALL_ATTRIB_BITS);
+        try {
+            GL11.glEnable(GL11.GL_TEXTURE_2D);
+            GL11.glEnable(GL11.GL_BLEND);
+            GL11.glBlendFunc(GL11.GL_SRC_ALPHA, GL11.GL_ONE_MINUS_SRC_ALPHA);
+            GL11.glDisable(GL11.GL_DEPTH_TEST);
+            GL11.glColor4f(1.0F, 1.0F, 1.0F, 1.0F);
+            GL11.glBindTexture(GL11.GL_TEXTURE_2D, colorTextureId);
 
-        Tessellator tessellator = Tessellator.instance;
-        tessellator.startDrawingQuads();
-        tessellator.addVertexWithUV(0.0D, guiHeight, 0.0D, 0.0D, 0.0D);
-        tessellator.addVertexWithUV(guiWidth, guiHeight, 0.0D, 1.0D, 0.0D);
-        tessellator.addVertexWithUV(guiWidth, 0.0D, 0.0D, 1.0D, 1.0D);
-        tessellator.addVertexWithUV(0.0D, 0.0D, 0.0D, 0.0D, 1.0D);
-        tessellator.draw();
+            Tessellator tessellator = Tessellator.instance;
+            tessellator.startDrawingQuads();
+            tessellator.addVertexWithUV(0.0D, guiHeight, 0.0D, 0.0D, 0.0D);
+            tessellator.addVertexWithUV(guiWidth, guiHeight, 0.0D, 1.0D, 0.0D);
+            tessellator.addVertexWithUV(guiWidth, 0.0D, 0.0D, 1.0D, 1.0D);
+            tessellator.addVertexWithUV(0.0D, 0.0D, 0.0D, 0.0D, 1.0D);
+            tessellator.draw();
 
-        GL11.glBindTexture(GL11.GL_TEXTURE_2D, 0);
+            GL11.glBindTexture(GL11.GL_TEXTURE_2D, 0);
+        } finally {
+            GL11.glPopAttrib();
+        }
     }
 
     /**

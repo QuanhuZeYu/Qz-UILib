@@ -310,9 +310,8 @@ public class TextLayoutService {
         GlyphMetrics glyphMetrics;
         Rectangle2D visualBounds;
         LineMetrics lineMetrics;
-        boolean retry;
 
-        do {
+        while (true) {
             String text = new String(Character.toChars(codepoint));
             GlyphVector glyphVector = font.createGlyphVector(FONT_RENDER_CONTEXT, text);
             visualBounds = glyphVector.getVisualBounds();
@@ -322,14 +321,20 @@ public class TextLayoutService {
             float baselineY = (float) (-lineMetrics.getDescent() + glyphSize);
             double top = baselineY + visualBounds.getY();
             double bottom = baselineY + visualBounds.getMaxY();
-            retry = visualBounds.getWidth() > glyphSize
+            boolean retry = visualBounds.getWidth() > glyphSize
                     || visualBounds.getHeight() > glyphSize
                     || top < 0.0D
                     || bottom > glyphSize;
-            if (retry) {
-                font = font.deriveFont(Math.max(6.0F, font.getSize2D() - 0.5F));
+            if (!retry) {
+                break;
             }
-        } while (retry);
+
+            float nextSize = Math.max(6.0F, font.getSize2D() - 0.5F);
+            if (nextSize >= font.getSize2D() - 0.001F) {
+                break;
+            }
+            font = font.deriveFont(nextSize);
+        }
 
         double advance = glyphMetrics.getAdvance();
         if (visualBounds.getWidth() > glyphSize / 2.0D) {

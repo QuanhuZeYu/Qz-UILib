@@ -1,5 +1,10 @@
 package club.heiqi.uilib.ui.input;
 
+import java.util.ArrayList;
+import java.util.List;
+
+import org.lwjglx.input.Keyboard;
+
 import club.heiqi.uilib.ui.event.UiKeyEvent;
 import club.heiqi.uilib.ui.event.UiMouseEvent;
 import club.heiqi.uilib.ui.event.UiTextInputEvent;
@@ -57,8 +62,9 @@ public class UiInputRouter {
 
         switch (event.getAction()) {
             case MOVE:
-                if (target != null) {
-                    target.onMouseMove(event);
+                Widget moveTarget = pressedWidget != null ? pressedWidget : target;
+                if (moveTarget != null) {
+                    moveTarget.onMouseMove(event);
                 }
                 break;
             case BUTTON_DOWN:
@@ -88,6 +94,11 @@ public class UiInputRouter {
     }
 
     private void routeKeyEvent(Widget root, UiKeyEvent event) {
+        if (event.getAction() == UiKeyEvent.Action.PRESSED && event.getKeyCode() == Keyboard.KEY_TAB) {
+            focusNextWidget(root, event.isShiftPressed());
+            return;
+        }
+
         Widget target = focusedWidget != null ? focusedWidget : root;
         if (target != null) {
             target.onKeyEvent(event);
@@ -132,6 +143,36 @@ public class UiInputRouter {
         while (current != null) {
             current.onMouseScroll(event);
             current = current.getParent();
+        }
+    }
+
+    private void focusNextWidget(Widget root, boolean reverse) {
+        List<Widget> focusableWidgets = new ArrayList<Widget>();
+        collectFocusableWidgets(root, focusableWidgets);
+        if (focusableWidgets.isEmpty()) {
+            setFocusedWidget(null);
+            return;
+        }
+
+        int currentIndex = focusedWidget == null ? -1 : focusableWidgets.indexOf(focusedWidget);
+        int nextIndex;
+        if (reverse) {
+            nextIndex = currentIndex <= 0 ? focusableWidgets.size() - 1 : currentIndex - 1;
+        } else {
+            nextIndex = currentIndex < 0 || currentIndex >= focusableWidgets.size() - 1 ? 0 : currentIndex + 1;
+        }
+        setFocusedWidget(focusableWidgets.get(nextIndex));
+    }
+
+    private void collectFocusableWidgets(Widget widget, List<Widget> focusableWidgets) {
+        if (widget == null || !widget.isVisible() || !widget.isEnabled()) {
+            return;
+        }
+        if (widget.isFocusable() && widget.getWidth() > 0 && widget.getHeight() > 0) {
+            focusableWidgets.add(widget);
+        }
+        for (Widget child : widget.getChildren()) {
+            collectFocusableWidgets(child, focusableWidgets);
         }
     }
 }

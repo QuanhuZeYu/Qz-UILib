@@ -1,5 +1,8 @@
 package club.heiqi.uilib.ui.control;
 
+import org.lwjglx.input.Keyboard;
+
+import club.heiqi.uilib.ui.event.UiKeyEvent;
 import club.heiqi.uilib.ui.event.UiMouseEvent;
 import club.heiqi.uilib.ui.render.UiRenderContext;
 import club.heiqi.uilib.ui.widget.Widget;
@@ -13,6 +16,7 @@ public class ToggleSwitchWidget extends Widget {
     private boolean checked;
     private Runnable toggleHandler;
     private boolean hovered;
+    private boolean focused;
 
     public ToggleSwitchWidget(String label) {
         this.label = label;
@@ -32,7 +36,7 @@ public class ToggleSwitchWidget extends Widget {
 
         context.drawText(label, absoluteX + 10, textY, 0xFFFFFFFF, true);
         context.fillRect(trackX, trackY, trackX + trackWidth, trackY + trackHeight, checked ? 0xCC3B6EA5 : 0xCC2D3139);
-        context.drawBorder(trackX, trackY, trackX + trackWidth, trackY + trackHeight, hovered ? 0xFFB3D1FF : 0xFF7D8CA3);
+        context.drawBorder(trackX, trackY, trackX + trackWidth, trackY + trackHeight, focused ? 0xFFBFD7FF : (hovered ? 0xFFB3D1FF : 0xFF7D8CA3));
         context.fillRect(thumbX, trackY + 3, thumbX + thumbWidth, trackY + trackHeight - 3, checked ? 0xFFFFFFFF : 0xFFBFC7D6);
     }
 
@@ -51,9 +55,27 @@ public class ToggleSwitchWidget extends Widget {
         if (event.getButton() != 0 || !contains(event.getMouseX(), event.getMouseY())) {
             return;
         }
-        checked = !checked;
-        if (toggleHandler != null) {
-            toggleHandler.run();
+        toggle();
+    }
+
+    @Override
+    public boolean isFocusable() {
+        return true;
+    }
+
+    @Override
+    public void onFocusChanged(boolean focused) {
+        this.focused = focused;
+    }
+
+    @Override
+    public void onKeyEvent(UiKeyEvent event) {
+        if (event.getAction() != UiKeyEvent.Action.PRESSED) {
+            return;
+        }
+        if (event.getKeyCode() == Keyboard.KEY_SPACE || event.getKeyCode() == Keyboard.KEY_RETURN
+                || event.getKeyCode() == Keyboard.KEY_NUMPADENTER) {
+            toggle();
         }
     }
 
@@ -84,5 +106,12 @@ public class ToggleSwitchWidget extends Widget {
     public ToggleSwitchWidget setToggleHandler(Runnable toggleHandler) {
         this.toggleHandler = toggleHandler;
         return this;
+    }
+
+    private void toggle() {
+        checked = !checked;
+        if (toggleHandler != null) {
+            toggleHandler.run();
+        }
     }
 }

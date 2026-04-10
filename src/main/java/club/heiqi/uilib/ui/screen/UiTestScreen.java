@@ -31,6 +31,7 @@ public class UiTestScreen extends BaseScreen {
     private final ResponsivePanelWidget characterPlacementPage = new ResponsivePanelWidget();
     private final ResponsivePanelWidget responsiveLayoutPage = new ResponsivePanelWidget();
     private final ResponsivePanelWidget settingsFormPage = new ResponsivePanelWidget();
+    private final ResponsivePanelWidget focusNavigationPage = new ResponsivePanelWidget();
     private final VerticalScrollPanelWidget settingsScrollPanel = new VerticalScrollPanelWidget();
 
     private final VerticalStackWidget menuStack = new VerticalStackWidget();
@@ -40,6 +41,7 @@ public class UiTestScreen extends BaseScreen {
     private final VerticalStackWidget responsiveLayoutStack = new VerticalStackWidget();
     private final VerticalStackWidget settingsStack = new VerticalStackWidget();
     private final VerticalStackWidget settingsPreviewStack = new VerticalStackWidget();
+    private final VerticalStackWidget focusNavigationStack = new VerticalStackWidget();
 
     private final HorizontalStackWidget menuPrimaryRow = new HorizontalStackWidget();
     private final HorizontalStackWidget menuSecondaryRow = new HorizontalStackWidget();
@@ -52,6 +54,10 @@ public class UiTestScreen extends BaseScreen {
     private final HorizontalStackWidget settingsAnimationRow = new HorizontalStackWidget();
     private final HorizontalStackWidget settingsDensityRow = new HorizontalStackWidget();
     private final HorizontalStackWidget settingsFooterRow = new HorizontalStackWidget();
+    private final HorizontalStackWidget focusProfileRow = new HorizontalStackWidget();
+    private final HorizontalStackWidget focusPathRow = new HorizontalStackWidget();
+    private final HorizontalStackWidget focusModeRow = new HorizontalStackWidget();
+    private final HorizontalStackWidget focusActionRow = new HorizontalStackWidget();
 
     private final LabelWidget menuTitleLabel = new LabelWidget("Qz-UILib UI Playground");
     private final LabelWidget menuHintLabel = new LabelWidget("一级菜单本身也由响应式布局驱动，按钮组会随着页面宽度变化自动缩放");
@@ -60,6 +66,7 @@ public class UiTestScreen extends BaseScreen {
     private final ButtonWidget openCharacterPlacementButton = new ButtonWidget("进入字符摆放调试");
     private final ButtonWidget openResponsiveLayoutButton = new ButtonWidget("进入响应式布局测试");
     private final ButtonWidget openSettingsFormButton = new ButtonWidget("进入设置表单测试");
+    private final ButtonWidget openFocusNavigationButton = new ButtonWidget("进入焦点导航测试");
 
     private final LabelWidget inputTitleLabel = new LabelWidget("文本输入专项测试");
     private final LabelWidget stateLabel = new LabelWidget("等待点击按钮验证输入链路");
@@ -115,10 +122,24 @@ public class UiTestScreen extends BaseScreen {
     private final ButtonWidget settingsResetButton = new ButtonWidget("重置");
     private final ButtonWidget backFromSettingsButton = new ButtonWidget("返回主菜单");
 
+    private final LabelWidget focusTitleLabel = new LabelWidget("键盘焦点导航测试页");
+    private final LabelWidget focusHintLabel = new LabelWidget("使用 Tab 或 Shift+Tab 在输入框、开关、选择器与按钮间切换焦点；用 Enter/Space 激活当前控件，左右方向键切换分段选择。 ");
+    private final LabelWidget focusNameLabel = new LabelWidget("配置名称");
+    private final LabelWidget focusPathLabel = new LabelWidget("资源标识");
+    private final TextInputWidget focusNameInput = new TextInputWidget();
+    private final TextInputWidget focusPathInput = new TextInputWidget();
+    private final ToggleSwitchWidget focusToggle = new ToggleSwitchWidget("键盘交互开关");
+    private final SegmentedSelectorWidget focusSelector = new SegmentedSelectorWidget("布局A", "布局B", "布局C");
+    private final LabelWidget focusStatusLabel = new LabelWidget("");
+    private final ButtonWidget focusPrimaryButton = new ButtonWidget("应用焦点页设置");
+    private final ButtonWidget focusSecondaryButton = new ButtonWidget("重置焦点页");
+    private final ButtonWidget backFromFocusButton = new ButtonWidget("返回主菜单");
+
     private boolean toggled;
     private boolean settingsAnimationsEnabled = true;
     private boolean settingsCompactDensity;
     private String settingsLastAction = "尚未应用";
+    private String focusLastAction = "尚未操作";
     private Widget currentPage;
 
     @Override
@@ -129,6 +150,7 @@ public class UiTestScreen extends BaseScreen {
         configurePage(characterPlacementPage, 0.72F, 0.80F, 620, 520);
         configurePage(responsiveLayoutPage, 0.76F, 0.84F, 720, 560);
         configurePage(settingsFormPage, 0.78F, 0.86F, 760, 620);
+        configurePage(focusNavigationPage, 0.72F, 0.78F, 680, 500);
 
         configureStack(menuStack, 18);
         configureStack(inputStack, 16);
@@ -137,6 +159,7 @@ public class UiTestScreen extends BaseScreen {
         configureStack(responsiveLayoutStack, 14);
         configureStack(settingsStack, 14);
         configureStack(settingsPreviewStack, 12);
+        configureStack(focusNavigationStack, 14);
 
         configureRow(menuPrimaryRow, 14);
         configureRow(menuSecondaryRow, 14);
@@ -149,6 +172,10 @@ public class UiTestScreen extends BaseScreen {
         configureRow(settingsAnimationRow, 16);
         configureRow(settingsDensityRow, 16);
         configureRow(settingsFooterRow, 14);
+        configureRow(focusProfileRow, 16);
+        configureRow(focusPathRow, 16);
+        configureRow(focusModeRow, 16);
+        configureRow(focusActionRow, 14);
 
         configureLabels();
         configureButtons();
@@ -172,6 +199,7 @@ public class UiTestScreen extends BaseScreen {
         refreshEchoText();
         refreshResponsiveMetrics();
         refreshSettingsState();
+        refreshFocusState();
         showPage(currentPage == null ? menuPage : currentPage);
     }
 
@@ -180,6 +208,7 @@ public class UiTestScreen extends BaseScreen {
         refreshEchoText();
         refreshResponsiveMetrics();
         refreshSettingsState();
+        refreshFocusState();
         super.drawScreen(mouseX, mouseY, partialTicks);
     }
 
@@ -214,6 +243,12 @@ public class UiTestScreen extends BaseScreen {
         settingsPreviewTitleLabel.setShadow(true).setColor(0xFFFFFFFF);
         settingsPreviewSummaryLabel.setShadow(true).setColor(0xFFC8D8F3).setWrap(true).setMaxLines(8);
         settingsFooterHintLabel.setShadow(true).setColor(0xFFB5D0FF).setWrap(true).setMaxLines(2);
+
+        focusTitleLabel.setShadow(true).setColor(0xFFFFFFFF);
+        focusHintLabel.setShadow(true).setColor(0xFFD7E3FF).setWrap(true).setMaxLines(3);
+        focusNameLabel.setShadow(true).setColor(0xFFF6D78E);
+        focusPathLabel.setShadow(true).setColor(0xFFF6D78E);
+        focusStatusLabel.setShadow(true).setColor(0xFFB5D0FF).setWrap(true).setMaxLines(3);
     }
 
     private void configureButtons() {
@@ -245,6 +280,12 @@ public class UiTestScreen extends BaseScreen {
             @Override
             public void run() {
                 showPage(settingsFormPage);
+            }
+        });
+        openFocusNavigationButton.setClickHandler(new Runnable() {
+            @Override
+            public void run() {
+                showPage(focusNavigationPage);
             }
         });
 
@@ -296,6 +337,41 @@ public class UiTestScreen extends BaseScreen {
             }
         });
 
+        focusNameInput.setPlaceholder("输入焦点测试名称").setText("Focus Demo");
+        focusPathInput.setPlaceholder("输入焦点测试资源标识").setText("ui/focus/test");
+        focusToggle.setChecked(true).setToggleHandler(new Runnable() {
+            @Override
+            public void run() {
+                focusLastAction = focusToggle.isChecked() ? "已启用键盘交互开关" : "已关闭键盘交互开关";
+                refreshFocusState();
+            }
+        });
+        focusSelector.setSelectedIndex(1).setChangeHandler(new Runnable() {
+            @Override
+            public void run() {
+                focusLastAction = "已切换布局模式到 " + focusSelector.getSelectedOption();
+                refreshFocusState();
+            }
+        });
+        focusPrimaryButton.setClickHandler(new Runnable() {
+            @Override
+            public void run() {
+                focusLastAction = "已应用焦点页设置";
+                refreshFocusState();
+            }
+        });
+        focusSecondaryButton.setClickHandler(new Runnable() {
+            @Override
+            public void run() {
+                focusNameInput.setText("Focus Demo");
+                focusPathInput.setText("ui/focus/test");
+                focusToggle.setChecked(true);
+                focusSelector.setSelectedIndex(1);
+                focusLastAction = "已重置焦点页状态";
+                refreshFocusState();
+            }
+        });
+
         backFromInputButton.setClickHandler(new Runnable() {
             @Override
             public void run() {
@@ -326,6 +402,12 @@ public class UiTestScreen extends BaseScreen {
                 showPage(menuPage);
             }
         });
+        backFromFocusButton.setClickHandler(new Runnable() {
+            @Override
+            public void run() {
+                showPage(menuPage);
+            }
+        });
     }
 
     private void configurePanels() {
@@ -351,6 +433,7 @@ public class UiTestScreen extends BaseScreen {
         applyCharacterLayout();
         applyResponsiveLayoutPage();
         applySettingsLayout();
+        applyFocusLayout();
     }
 
     private void assemblePages(Widget root) {
@@ -435,12 +518,31 @@ public class UiTestScreen extends BaseScreen {
         settingsScrollPanel.getContent().addChild(settingsStack);
         settingsFormPage.addChild(settingsScrollPanel);
 
+        focusProfileRow.addChild(focusNameLabel);
+        focusProfileRow.addChild(focusNameInput);
+        focusPathRow.addChild(focusPathLabel);
+        focusPathRow.addChild(focusPathInput);
+        focusModeRow.addChild(focusToggle);
+        focusModeRow.addChild(focusSelector);
+        focusActionRow.addChild(focusPrimaryButton);
+        focusActionRow.addChild(focusSecondaryButton);
+        focusActionRow.addChild(backFromFocusButton);
+        focusNavigationStack.addChild(focusTitleLabel);
+        focusNavigationStack.addChild(focusHintLabel);
+        focusNavigationStack.addChild(focusProfileRow);
+        focusNavigationStack.addChild(focusPathRow);
+        focusNavigationStack.addChild(focusModeRow);
+        focusNavigationStack.addChild(focusStatusLabel);
+        focusNavigationStack.addChild(focusActionRow);
+        focusNavigationPage.addChild(focusNavigationStack);
+
         root.addChild(menuPage);
         root.addChild(inputTestPage);
         root.addChild(mouseStressPage);
         root.addChild(characterPlacementPage);
         root.addChild(responsiveLayoutPage);
         root.addChild(settingsFormPage);
+        root.addChild(focusNavigationPage);
     }
 
     private void refreshStateText() {
@@ -471,6 +573,14 @@ public class UiTestScreen extends BaseScreen {
         settingsFooterHintLabel.setText("最近操作：" + settingsLastAction);
     }
 
+    private void refreshFocusState() {
+        String name = focusNameInput.getText().isEmpty() ? "<未填写>" : focusNameInput.getText();
+        String path = focusPathInput.getText().isEmpty() ? "<未填写>" : focusPathInput.getText();
+        focusStatusLabel.setText("当前名称：" + name + "；资源：" + path + "；开关："
+                + (focusToggle.isChecked() ? "启用" : "关闭") + "；模式：" + focusSelector.getSelectedOption()
+                + "；最近操作：" + focusLastAction);
+    }
+
     private void showPage(Widget page) {
         currentPage = page;
         menuPage.setVisible(page == menuPage);
@@ -479,6 +589,7 @@ public class UiTestScreen extends BaseScreen {
         characterPlacementPage.setVisible(page == characterPlacementPage);
         responsiveLayoutPage.setVisible(page == responsiveLayoutPage);
         settingsFormPage.setVisible(page == settingsFormPage);
+        focusNavigationPage.setVisible(page == focusNavigationPage);
     }
 
     private void configurePage(ResponsivePanelWidget page, float widthPercent, float heightPercent, int minWidth, int minHeight) {
@@ -516,7 +627,8 @@ public class UiTestScreen extends BaseScreen {
         openMouseStressButton.setLayoutSpec(new UiLayoutSpec().setWidth(UiLength.percent(0.48F)).setHeight(UiLength.auto()).setMinWidth(220));
         openCharacterPlacementButton.setLayoutSpec(new UiLayoutSpec().setWidth(UiLength.percent(0.48F)).setHeight(UiLength.auto()).setMinWidth(220));
         openResponsiveLayoutButton.setLayoutSpec(new UiLayoutSpec().setWidth(UiLength.percent(0.48F)).setHeight(UiLength.auto()).setMinWidth(220));
-        openSettingsFormButton.setLayoutSpec(new UiLayoutSpec().setWidth(UiLength.percent(1.0F)).setHeight(UiLength.auto()).setMinWidth(220));
+        openSettingsFormButton.setLayoutSpec(new UiLayoutSpec().setWidth(UiLength.percent(0.48F)).setHeight(UiLength.auto()).setMinWidth(220));
+        openFocusNavigationButton.setLayoutSpec(new UiLayoutSpec().setWidth(UiLength.percent(0.48F)).setHeight(UiLength.auto()).setMinWidth(220));
     }
 
     private void applyInputLayout() {
@@ -596,5 +708,25 @@ public class UiTestScreen extends BaseScreen {
         settingsApplyButton.setLayoutSpec(new UiLayoutSpec().setWidth(UiLength.auto()).setHeight(UiLength.auto()).setMinWidth(180).setGrow(1.0F));
         settingsResetButton.setLayoutSpec(new UiLayoutSpec().setWidth(UiLength.auto()).setHeight(UiLength.auto()).setMinWidth(180).setGrow(1.0F));
         backFromSettingsButton.setLayoutSpec(new UiLayoutSpec().setWidth(UiLength.auto()).setHeight(UiLength.auto()).setMinWidth(180).setGrow(1.0F));
+    }
+
+    private void applyFocusLayout() {
+        focusTitleLabel.setLayoutSpec(new UiLayoutSpec().setWidth(UiLength.percent(1.0F)).setHeight(UiLength.auto()));
+        focusHintLabel.setLayoutSpec(new UiLayoutSpec().setWidth(UiLength.percent(1.0F)).setHeight(UiLength.auto()));
+        focusProfileRow.setLayoutSpec(new UiLayoutSpec().setWidth(UiLength.percent(1.0F)).setHeight(UiLength.auto()));
+        focusPathRow.setLayoutSpec(new UiLayoutSpec().setWidth(UiLength.percent(1.0F)).setHeight(UiLength.auto()));
+        focusModeRow.setLayoutSpec(new UiLayoutSpec().setWidth(UiLength.percent(1.0F)).setHeight(UiLength.auto()));
+        focusActionRow.setLayoutSpec(new UiLayoutSpec().setWidth(UiLength.percent(1.0F)).setHeight(UiLength.auto()));
+
+        focusNameLabel.setLayoutSpec(new UiLayoutSpec().setWidth(UiLength.px(220)).setHeight(UiLength.auto()));
+        focusPathLabel.setLayoutSpec(new UiLayoutSpec().setWidth(UiLength.px(220)).setHeight(UiLength.auto()));
+        focusNameInput.setLayoutSpec(new UiLayoutSpec().setWidth(UiLength.auto()).setHeight(UiLength.px(42)).setMinWidth(260).setGrow(1.0F));
+        focusPathInput.setLayoutSpec(new UiLayoutSpec().setWidth(UiLength.auto()).setHeight(UiLength.px(42)).setMinWidth(260).setGrow(1.0F));
+        focusToggle.setLayoutSpec(new UiLayoutSpec().setWidth(UiLength.auto()).setHeight(UiLength.auto()).setMinWidth(260).setGrow(1.0F).setFill(true));
+        focusSelector.setLayoutSpec(new UiLayoutSpec().setWidth(UiLength.auto()).setHeight(UiLength.auto()).setMinWidth(420).setGrow(1.0F).setFill(true));
+        focusStatusLabel.setLayoutSpec(new UiLayoutSpec().setWidth(UiLength.percent(1.0F)).setHeight(UiLength.auto()));
+        focusPrimaryButton.setLayoutSpec(new UiLayoutSpec().setWidth(UiLength.auto()).setHeight(UiLength.auto()).setMinWidth(180).setGrow(1.0F));
+        focusSecondaryButton.setLayoutSpec(new UiLayoutSpec().setWidth(UiLength.auto()).setHeight(UiLength.auto()).setMinWidth(180).setGrow(1.0F));
+        backFromFocusButton.setLayoutSpec(new UiLayoutSpec().setWidth(UiLength.auto()).setHeight(UiLength.auto()).setMinWidth(180).setGrow(1.0F));
     }
 }

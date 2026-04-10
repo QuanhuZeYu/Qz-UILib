@@ -53,9 +53,8 @@ public class GlyphGenerator {
         Rectangle2D visualBounds;
         GlyphMetrics glyphMetrics;
         LineMetrics lineMetrics;
-        boolean retry;
 
-        do {
+        while (true) {
             GlyphVector glyphVector = font.createGlyphVector(context, text);
             visualBounds = glyphVector.getVisualBounds();
             glyphMetrics = glyphVector.getGlyphMetrics(0);
@@ -64,14 +63,20 @@ public class GlyphGenerator {
             float baselineY = (float) (-lineMetrics.getDescent() + task.getGlyphSize());
             double top = baselineY + visualBounds.getY();
             double bottom = baselineY + visualBounds.getMaxY();
-            retry = visualBounds.getWidth() > task.getGlyphSize()
+            boolean retry = visualBounds.getWidth() > task.getGlyphSize()
                     || visualBounds.getHeight() > task.getGlyphSize()
                     || top < 0.0D
                     || bottom > task.getGlyphSize();
-            if (retry) {
-                font = font.deriveFont(Math.max(6.0F, font.getSize2D() - 0.5F));
+            if (!retry) {
+                break;
             }
-        } while (retry);
+
+            float nextSize = Math.max(6.0F, font.getSize2D() - 0.5F);
+            if (nextSize >= font.getSize2D() - 0.001F) {
+                break;
+            }
+            font = font.deriveFont(nextSize);
+        }
 
         BufferedImage image = new BufferedImage(task.getGlyphSize(), task.getGlyphSize(), BufferedImage.TYPE_INT_ARGB);
         Graphics2D graphics = image.createGraphics();

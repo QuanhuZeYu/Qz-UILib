@@ -27,6 +27,7 @@ public class Widget {
     private boolean visible = true;
     private boolean enabled = true;
     private boolean clipChildren;
+    private boolean clipHitTest;
     private UiLayoutSpec layoutSpec;
 
     /**
@@ -74,12 +75,24 @@ public class Widget {
      * @return 命中的组件，未命中返回 null
      */
     public Widget findWidgetAt(int mouseX, int mouseY) {
+        return findWidgetAt(mouseX, mouseY, null);
+    }
+
+    private Widget findWidgetAt(int mouseX, int mouseY, int[] inheritedHitClip) {
+        if (inheritedHitClip != null && !containsInRect(mouseX, mouseY, inheritedHitClip)) {
+            return null;
+        }
         if (!visible || !enabled || !contains(mouseX, mouseY)) {
             return null;
         }
+
+        int[] childHitClip = inheritedHitClip;
+        if (clipHitTest) {
+            childHitClip = intersectRect(inheritedHitClip, getChildClipRect());
+        }
         for (int i = children.size() - 1; i >= 0; i--) {
             Widget child = children.get(i);
-            Widget hit = child.findWidgetAt(mouseX, mouseY);
+            Widget hit = child.findWidgetAt(mouseX, mouseY, childHitClip);
             if (hit != null) {
                 return hit;
             }
@@ -191,6 +204,10 @@ public class Widget {
         return clipChildren;
     }
 
+    public boolean isClipHitTest() {
+        return clipHitTest;
+    }
+
     public UiLayoutSpec getLayoutSpec() {
         return layoutSpec;
     }
@@ -281,8 +298,37 @@ public class Widget {
         return this;
     }
 
+    public Widget setClipHitTest(boolean clipHitTest) {
+        this.clipHitTest = clipHitTest;
+        return this;
+    }
+
     public Widget setLayoutSpec(UiLayoutSpec layoutSpec) {
         this.layoutSpec = layoutSpec;
         return this;
+    }
+
+    private boolean containsInRect(int mouseX, int mouseY, int[] rect) {
+        return mouseX >= rect[0] && mouseX < rect[2] && mouseY >= rect[1] && mouseY < rect[3];
+    }
+
+    private int[] intersectRect(int[] first, int[] second) {
+        if (second == null) {
+            return first;
+        }
+        if (first == null) {
+            return new int[] { second[0], second[1], second[2], second[3] };
+        }
+        int left = Math.max(first[0], second[0]);
+        int top = Math.max(first[1], second[1]);
+        int right = Math.min(first[2], second[2]);
+        int bottom = Math.min(first[3], second[3]);
+        if (right < left) {
+            right = left;
+        }
+        if (bottom < top) {
+            bottom = top;
+        }
+        return new int[] { left, top, right, bottom };
     }
 }
