@@ -74,9 +74,9 @@ public class InventoryOverviewScreen extends BaseScreen {
     }
 
     private void configureControls() {
-        summaryLabel.setColor(0xFFE2ECFF).setShadow(true).setWrap(true).setMaxLines(4);
-        hotbarTitleLabel.setColor(0xFFFFFFFF).setShadow(true).setWrap(true).setMaxLines(2);
-        backpackTitleLabel.setColor(0xFFFFFFFF).setShadow(true).setWrap(true).setMaxLines(2);
+        summaryLabel.setColor(0xFFE2ECFF).setShadow(false).setWrap(true).setMaxLines(4);
+        hotbarTitleLabel.setColor(0xFFFFFFFF).setShadow(false).setWrap(true).setMaxLines(2);
+        backpackTitleLabel.setColor(0xFFFFFFFF).setShadow(false).setWrap(true).setMaxLines(2);
 
         hotbarGrid.setSlotGap(8).setPreferredSlotSize(34).setSlotSizeRange(18, 50);
         backpackGrid.setSlotGap(8).setPreferredSlotSize(32).setSlotSizeRange(18, 46);
@@ -188,15 +188,15 @@ public class InventoryOverviewScreen extends BaseScreen {
     }
 
     private LabelWidget createTitleLabel(String text) {
-        return new LabelWidget(text).setColor(0xFFFFFFFF).setShadow(true).setWrap(true).setMaxLines(2);
+        return new LabelWidget(text).setColor(0xFFFFFFFF).setShadow(false).setWrap(true).setMaxLines(2);
     }
 
     private LabelWidget createSectionTitle(String text) {
-        return new LabelWidget(text).setColor(0xFFFFFFFF).setShadow(true).setWrap(true).setMaxLines(2);
+        return new LabelWidget(text).setColor(0xFFFFFFFF).setShadow(false).setWrap(true).setMaxLines(2);
     }
 
     private LabelWidget createBodyLabel(String text) {
-        return new LabelWidget(text).setColor(0xFFD7E3FF).setShadow(true).setWrap(true).setMaxLines(6);
+        return new LabelWidget(text).setColor(0xFFD7E3FF).setShadow(false).setWrap(true).setMaxLines(6);
     }
 
     private int adaptiveWidth(int preferred, int floor, float viewportRatio) {

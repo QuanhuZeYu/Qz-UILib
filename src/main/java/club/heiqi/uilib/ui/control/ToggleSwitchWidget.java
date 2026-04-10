@@ -27,18 +27,25 @@ public class ToggleSwitchWidget extends Widget {
     protected void drawSelf(UiRenderContext context) {
         int absoluteX = getAbsoluteX();
         int absoluteY = getAbsoluteY();
-        int textY = absoluteY + Math.max(4, (getHeight() - context.getTextLineHeight()) / 2);
-        int trackWidth = 70;
-        int trackHeight = 28;
+        int fillColor = focused ? 0xDD131B26 : 0xD910151D;
+        int borderColor = focused ? 0xFF89B4FF : (hovered ? 0xFF607697 : 0xFF35465D);
+        int textY = absoluteY + Math.max(3, (getHeight() - context.getTextLineHeight()) / 2);
+        int trackWidth = 46;
+        int trackHeight = 22;
         int trackX = absoluteX + getWidth() - trackWidth - 10;
         int trackY = absoluteY + (getHeight() - trackHeight) / 2;
-        int thumbWidth = 30;
-        int thumbX = checked ? trackX + trackWidth - thumbWidth - 3 : trackX + 3;
+        int thumbWidth = 18;
+        int thumbX = checked ? trackX + trackWidth - thumbWidth - 2 : trackX + 2;
+        int textWidth = Math.max(0, trackX - absoluteX - 24);
 
-        context.drawText(label, absoluteX + 10, textY, 0xFFFFFFFF, true);
-        context.fillRect(trackX, trackY, trackX + trackWidth, trackY + trackHeight, checked ? 0xCC3B6EA5 : 0xCC2D3139);
-        context.drawBorder(trackX, trackY, trackX + trackWidth, trackY + trackHeight, focused ? 0xFFBFD7FF : (hovered ? 0xFFB3D1FF : 0xFF7D8CA3));
-        context.fillRect(thumbX, trackY + 3, thumbX + thumbWidth, trackY + trackHeight - 3, checked ? 0xFFFFFFFF : 0xFFBFC7D6);
+        context.fillRect(absoluteX, absoluteY, absoluteX + getWidth(), absoluteY + getHeight(), fillColor);
+        context.fillRect(absoluteX + 1, absoluteY + 1, absoluteX + getWidth() - 1, absoluteY + 3, checked ? 0x223A84E5 : 0x1A607697);
+        context.drawBorder(absoluteX, absoluteY, absoluteX + getWidth(), absoluteY + getHeight(), borderColor);
+
+        context.drawText(trimToVisibleText(label, textWidth), absoluteX + 10, textY, checked ? 0xFFF3F7FF : 0xFFB8C5D8, false);
+        context.fillRect(trackX, trackY, trackX + trackWidth, trackY + trackHeight, checked ? 0xFF2F78E6 : 0xFF2A3442);
+        context.drawBorder(trackX, trackY, trackX + trackWidth, trackY + trackHeight, checked ? 0xFF8EC0FF : 0xFF53657D);
+        context.fillRect(thumbX, trackY + 2, thumbX + thumbWidth, trackY + trackHeight - 2, 0xFFF7FAFF);
     }
 
     @Override
@@ -82,17 +89,17 @@ public class ToggleSwitchWidget extends Widget {
 
     @Override
     public int getPreferredWidth() {
-        return 320;
+        return Math.max(184, DefaultFontRendererAdapter.getInstance().getStringWidth(label) * 2 + 84);
     }
 
     @Override
     public int getPreferredHeight() {
-        return 42;
+        return 38;
     }
 
     @Override
     public int getMinContentWidth() {
-        return Math.max(150, DefaultFontRendererAdapter.getInstance().getStringWidth(label) * 2 + 110);
+        return Math.max(124, DefaultFontRendererAdapter.getInstance().getStringWidth(label) * 2 + 74);
     }
 
     public ToggleSwitchWidget setChecked(boolean checked) {
@@ -119,5 +126,19 @@ public class ToggleSwitchWidget extends Widget {
         if (toggleHandler != null) {
             toggleHandler.run();
         }
+    }
+
+    private String trimToVisibleText(String source, int uiWidth) {
+        if (source == null || source.isEmpty()) {
+            return "";
+        }
+        DefaultFontRendererAdapter adapter = DefaultFontRendererAdapter.getInstance();
+        int rawWidth = Math.max(1, Math.round(uiWidth / 2.0F));
+        if (adapter.getStringWidth(source) <= rawWidth) {
+            return source;
+        }
+        int ellipsisWidth = adapter.getStringWidth("...");
+        String trimmed = adapter.trimStringToWidth(source, Math.max(0, rawWidth - ellipsisWidth));
+        return trimmed.isEmpty() ? "..." : trimmed + "...";
     }
 }

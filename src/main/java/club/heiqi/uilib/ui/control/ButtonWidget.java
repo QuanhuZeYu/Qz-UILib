@@ -32,19 +32,28 @@ public class ButtonWidget extends Widget {
     protected void drawSelf(UiRenderContext context) {
         int absoluteX = getAbsoluteX();
         int absoluteY = getAbsoluteY();
-        int fillColor = 0xCC2C313A;
+        int fillColor = 0xDD243041;
+        int borderColor = 0xFF44556E;
+        int accentColor = 0x335D86C5;
         if (pressed) {
-            fillColor = 0xDD3A4352;
+            fillColor = 0xDD1D2938;
+            borderColor = 0xFF3B4B62;
+            accentColor = 0x22486EA7;
         } else if (focused) {
-            fillColor = 0xDD30405A;
+            fillColor = 0xDD2A4161;
+            borderColor = 0xFF9CC3FF;
+            accentColor = 0x447EB1FF;
         } else if (hovered) {
-            fillColor = 0xDD394353;
+            fillColor = 0xDD2C3B51;
+            borderColor = 0xFF5B7293;
+            accentColor = 0x336891D0;
         }
 
         context.fillRect(absoluteX, absoluteY, absoluteX + getWidth(), absoluteY + getHeight(), fillColor);
-        context.drawBorder(absoluteX, absoluteY, absoluteX + getWidth(), absoluteY + getHeight(), focused ? 0xFFBFD7FF : 0xFF8FB3FF);
-        int textY = absoluteY + Math.max(4, (getHeight() - context.getTextLineHeight()) / 2);
-        context.drawCenteredText(text, absoluteX + (getWidth() / 2), textY, 0xFFFFFFFF, true);
+        context.fillRect(absoluteX + 1, absoluteY + 1, absoluteX + getWidth() - 1, absoluteY + 3, accentColor);
+        context.drawBorder(absoluteX, absoluteY, absoluteX + getWidth(), absoluteY + getHeight(), borderColor);
+        int textY = absoluteY + Math.max(3, (getHeight() - context.getTextLineHeight()) / 2);
+        context.drawCenteredText(text, absoluteX + (getWidth() / 2), textY, 0xFFF7FAFF, false);
     }
 
     @Override
@@ -107,17 +116,17 @@ public class ButtonWidget extends Widget {
 
     @Override
     public int getPreferredWidth() {
-        return Math.max(220, DefaultFontRendererAdapter.getInstance().getStringWidth(text) * 2 + 48);
+        return Math.max(148, DefaultFontRendererAdapter.getInstance().getStringWidth(text) * 2 + 36);
     }
 
     @Override
     public int getPreferredHeight() {
-        return 42;
+        return 38;
     }
 
     @Override
     public int getMinContentWidth() {
-        return Math.max(120, DefaultFontRendererAdapter.getInstance().getStringWidth(text) * 2 + 32);
+        return Math.max(92, DefaultFontRendererAdapter.getInstance().getStringWidth(text) * 2 + 24);
     }
 
     protected void triggerClick() {

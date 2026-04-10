@@ -109,11 +109,11 @@ public class UiTestScreen extends BaseScreen {
     }
 
     private void configureActions() {
-        menuMetricsLabel.setColor(0xFFF6D78E).setShadow(true).setWrap(true).setMaxLines(3);
-        layoutSummaryLabel.setColor(0xFFF6D78E).setShadow(true).setWrap(true).setMaxLines(4);
-        formSummaryLabel.setColor(0xFFC8D8F3).setShadow(true).setWrap(true).setMaxLines(8);
-        formActionLabel.setColor(0xFFB5D0FF).setShadow(true).setWrap(true).setMaxLines(2);
-        interactionSummaryLabel.setColor(0xFFB5D0FF).setShadow(true).setWrap(true).setMaxLines(6);
+        menuMetricsLabel.setColor(0xFFF6D78E).setShadow(false).setWrap(true).setMaxLines(3);
+        layoutSummaryLabel.setColor(0xFFF6D78E).setShadow(false).setWrap(true).setMaxLines(4);
+        formSummaryLabel.setColor(0xFFC8D8F3).setShadow(false).setWrap(true).setMaxLines(8);
+        formActionLabel.setColor(0xFFB5D0FF).setShadow(false).setWrap(true).setMaxLines(2);
+        interactionSummaryLabel.setColor(0xFFB5D0FF).setShadow(false).setWrap(true).setMaxLines(6);
 
         openLayoutGuideButton.setClickHandler(new Runnable() {
             @Override
@@ -558,23 +558,23 @@ public class UiTestScreen extends BaseScreen {
     }
 
     private LabelWidget createTitleLabel(String text) {
-        return new LabelWidget(text).setColor(0xFFFFFFFF).setShadow(true).setWrap(true).setMaxLines(2);
+        return new LabelWidget(text).setColor(0xFFFFFFFF).setShadow(false).setWrap(true).setMaxLines(2);
     }
 
     private LabelWidget createSectionTitle(String text) {
-        return new LabelWidget(text).setColor(0xFFFFFFFF).setShadow(true).setWrap(true).setMaxLines(2);
+        return new LabelWidget(text).setColor(0xFFFFFFFF).setShadow(false).setWrap(true).setMaxLines(2);
     }
 
     private LabelWidget createBodyLabel(String text) {
-        return new LabelWidget(text).setColor(0xFFD7E3FF).setShadow(true).setWrap(true).setMaxLines(6);
+        return new LabelWidget(text).setColor(0xFFD7E3FF).setShadow(false).setWrap(true).setMaxLines(6);
     }
 
     private LabelWidget createAccentLabel(String text) {
-        return new LabelWidget(text).setColor(0xFFF6D78E).setShadow(true).setWrap(true).setMaxLines(4);
+        return new LabelWidget(text).setColor(0xFFF6D78E).setShadow(false).setWrap(true).setMaxLines(4);
     }
 
     private LabelWidget createFormLabel(String text) {
-        LabelWidget label = new LabelWidget(text).setColor(0xFFF6D78E).setShadow(true);
+        LabelWidget label = new LabelWidget(text).setColor(0xFFF6D78E).setShadow(false);
         label.setSuggestedSize(156, -1);
         return label;
     }

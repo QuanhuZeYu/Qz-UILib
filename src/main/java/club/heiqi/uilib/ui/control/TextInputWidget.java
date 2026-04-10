@@ -25,16 +25,24 @@ public class TextInputWidget extends Widget {
     protected void drawSelf(UiRenderContext context) {
         int absoluteX = getAbsoluteX();
         int absoluteY = getAbsoluteY();
-        int fillColor = focused ? 0xD9222630 : 0xCC1B1E24;
-        int borderColor = focused ? 0xFF8FB3FF : (hovered ? 0xFF6E88B8 : 0xFF4B5362);
+        int fillColor = focused ? 0xE6131A24 : 0xD910151D;
+        int borderColor = focused ? 0xFF89B4FF : (hovered ? 0xFF607697 : 0xFF35465D);
 
         context.fillRect(absoluteX, absoluteY, absoluteX + getWidth(), absoluteY + getHeight(), fillColor);
+        context.fillRect(absoluteX + 1, absoluteY + 1, absoluteX + getWidth() - 1, absoluteY + 3, focused ? 0x337EB1FF : 0x1A607697);
         context.drawBorder(absoluteX, absoluteY, absoluteX + getWidth(), absoluteY + getHeight(), borderColor);
 
         String displayText = textBuilder.length() > 0 ? textBuilder.toString() : placeholder;
-        int textColor = textBuilder.length() > 0 ? 0xFFFFFFFF : 0xFF7F8794;
-        int textY = absoluteY + Math.max(4, (getHeight() - context.getTextLineHeight()) / 2);
-        context.drawText(trimToVisibleText(displayText, Math.max(1, getWidth() - 20), textBuilder.length() > 0), absoluteX + 10, textY, textColor, false);
+        String visibleText = trimToVisibleText(displayText, Math.max(1, getWidth() - 24), textBuilder.length() > 0);
+        int textColor = textBuilder.length() > 0 ? 0xFFF3F7FF : 0xFF7E8A9D;
+        int textY = absoluteY + Math.max(3, (getHeight() - context.getTextLineHeight()) / 2);
+        int textX = absoluteX + 12;
+        context.drawText(visibleText, textX, textY, textColor, false);
+
+        if (focused && textBuilder.length() > 0) {
+            int caretX = Math.min(absoluteX + getWidth() - 8, textX + context.measureTextWidth(visibleText) + 1);
+            context.fillRect(caretX, absoluteY + 8, caretX + 2, absoluteY + getHeight() - 8, 0xFFD6E5FF);
+        }
     }
 
     @Override
@@ -125,17 +133,17 @@ public class TextInputWidget extends Widget {
     @Override
     public int getPreferredWidth() {
         String sample = placeholder == null || placeholder.isEmpty() ? "输入文本" : placeholder;
-        return Math.max(320, DefaultFontRendererAdapter.getInstance().getStringWidth(sample) * 2 + 28);
+        return Math.max(280, DefaultFontRendererAdapter.getInstance().getStringWidth(sample) * 2 + 36);
     }
 
     @Override
     public int getPreferredHeight() {
-        return 42;
+        return 38;
     }
 
     @Override
     public int getMinContentWidth() {
-        return 120;
+        return 140;
     }
 
     private String trimToVisibleText(String source, int uiWidth, boolean keepTail) {
