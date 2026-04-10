@@ -442,6 +442,7 @@ public class UiTestScreen extends BaseScreen {
         menuSecondaryRow.addChild(openCharacterPlacementButton);
         menuSecondaryRow.addChild(openResponsiveLayoutButton);
         menuTertiaryRow.addChild(openSettingsFormButton);
+        menuTertiaryRow.addChild(openFocusNavigationButton);
         menuStack.addChild(menuTitleLabel);
         menuStack.addChild(menuHintLabel);
         menuStack.addChild(menuPrimaryRow);
@@ -582,6 +583,7 @@ public class UiTestScreen extends BaseScreen {
     }
 
     private void showPage(Widget page) {
+        clearInteractionState();
         currentPage = page;
         menuPage.setVisible(page == menuPage);
         inputTestPage.setVisible(page == inputTestPage);

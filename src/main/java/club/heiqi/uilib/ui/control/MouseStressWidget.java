@@ -68,9 +68,10 @@ public class MouseStressWidget extends Widget {
     }
 
     @Override
-    public void onMouseScroll(UiMouseEvent event) {
+    public boolean onMouseScroll(UiMouseEvent event) {
         scrollEventCount++;
         lastEventNanos = event.getTimeNanos();
+        return false;
     }
 
     private void updateMoveWindow(long eventTimeNanos) {

@@ -102,11 +102,12 @@ public class VerticalScrollPanelWidget extends ResponsivePanelWidget {
     }
 
     @Override
-    public void onMouseScroll(UiMouseEvent event) {
+    public boolean onMouseScroll(UiMouseEvent event) {
         updateContentBounds();
         if (maxScrollOffset <= 0) {
-            return;
+            return false;
         }
+        int previousOffset = scrollOffset;
         int steps = Math.max(1, Math.round(Math.abs(event.getWheelDelta()) / 120.0F));
         int delta = scrollStep * steps;
         if (event.getWheelDelta() > 0) {
@@ -114,6 +115,7 @@ public class VerticalScrollPanelWidget extends ResponsivePanelWidget {
         } else if (event.getWheelDelta() < 0) {
             setScrollOffset(scrollOffset + delta);
         }
+        return scrollOffset != previousOffset;
     }
 
     @Override

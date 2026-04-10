@@ -56,6 +56,13 @@ public class UiInputRouter {
         focusedWidget = null;
     }
 
+    /**
+     * 清空当前悬停、按压与焦点状态。
+     */
+    public void clearInteractionState() {
+        reset();
+    }
+
     private void routeMouseEvent(Widget root, UiMouseEvent event) {
         Widget target = root.findWidgetAt(event.getMouseX(), event.getMouseY());
         updateHoveredWidget(target);
@@ -99,14 +106,20 @@ public class UiInputRouter {
             return;
         }
 
-        Widget target = focusedWidget != null ? focusedWidget : root;
+        Widget target = getActiveFocusedWidget(root);
+        if (target == null) {
+            target = root;
+        }
         if (target != null) {
             target.onKeyEvent(event);
         }
     }
 
     private void routeTextEvent(Widget root, UiTextInputEvent event) {
-        Widget target = focusedWidget != null ? focusedWidget : root;
+        Widget target = getActiveFocusedWidget(root);
+        if (target == null) {
+            target = root;
+        }
         if (target != null) {
             target.onTextInput(event);
         }
@@ -141,9 +154,42 @@ public class UiInputRouter {
     private void dispatchScrollEvent(Widget target, UiMouseEvent event) {
         Widget current = target;
         while (current != null) {
-            current.onMouseScroll(event);
+            if (current.onMouseScroll(event)) {
+                return;
+            }
             current = current.getParent();
         }
+    }
+
+    /**
+     * 仅在焦点组件仍属于当前可交互树时才保留焦点，避免切页后继续把输入发送到隐藏控件。
+     *
+     * @param root 当前界面根组件
+     * @return 有效焦点组件；失效时返回 null
+     */
+    private Widget getActiveFocusedWidget(Widget root) {
+        if (!isWidgetActiveInTree(root, focusedWidget)) {
+            setFocusedWidget(null);
+        }
+        return focusedWidget;
+    }
+
+    private boolean isWidgetActiveInTree(Widget root, Widget widget) {
+        if (root == null || widget == null) {
+            return false;
+        }
+
+        Widget current = widget;
+        while (current != null) {
+            if (!current.isVisible() || !current.isEnabled()) {
+                return false;
+            }
+            if (current == root) {
+                return true;
+            }
+            current = current.getParent();
+        }
+        return false;
     }
 
     private void focusNextWidget(Widget root, boolean reverse) {

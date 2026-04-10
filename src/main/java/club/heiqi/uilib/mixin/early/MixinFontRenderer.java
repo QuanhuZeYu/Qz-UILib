@@ -85,7 +85,7 @@ public abstract class MixinFontRenderer {
     @Inject(method = "trimStringToWidth(Ljava/lang/String;IZ)Ljava/lang/String;", at = @At("HEAD"), cancellable = true)
     public void trimStringToWidth(String text, int width, boolean reverse, CallbackInfoReturnable<String> cir) {
         if (FontConfig.replaceOrigin) {
-            cir.setReturnValue(DefaultFontRendererAdapter.getInstance().trimStringToWidth(text, width));
+            cir.setReturnValue(DefaultFontRendererAdapter.getInstance().trimStringToWidth(text, width, reverse));
         }
     }
 }

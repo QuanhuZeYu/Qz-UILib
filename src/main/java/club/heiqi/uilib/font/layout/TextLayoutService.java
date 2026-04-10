@@ -123,6 +123,7 @@ public class TextLayoutService {
         TextStyle currentStyle = new TextStyle();
         currentStyle.resetAll(0xFFFFFFFF);
         double width = 0.0D;
+        boolean lineHasVisibleContent = false;
 
         for (int i = 0; i < text.length();) {
             int codepoint = text.codePointAt(i);
@@ -148,6 +149,55 @@ public class TextLayoutService {
     }
 
     /**
+     * 按宽度裁剪字符串，可选从尾部保留可见内容。
+     *
+     * @param text 原始文本
+     * @param targetWidth 目标宽度
+     * @param reverse 是否从尾部保留
+     * @return 裁剪结果
+     */
+    public String trimStringToWidth(String text, int targetWidth, boolean reverse) {
+        if (!reverse) {
+            return trimStringToWidth(text, targetWidth);
+        }
+        if (text == null || text.isEmpty() || targetWidth <= 0) {
+            return "";
+        }
+
+        StringBuilder visibleBuilder = new StringBuilder();
+        double width = 0.0D;
+        int startIndex = text.length();
+
+        for (int index = text.length(); index > 0;) {
+            int codepoint = text.codePointBefore(index);
+            int codepointLength = Character.charCount(codepoint);
+            int codepointStart = index - codepointLength;
+            if (codepointLength == 1 && codepointStart > 0 && text.charAt(codepointStart - 1) == '§') {
+                index = codepointStart - 1;
+                continue;
+            }
+
+            TextStyle style = resolveStyleAt(text, codepointStart, 0xFFFFFFFF);
+            double charWidth = measureCodepointWidth(codepoint, style.getFontType());
+            if (width + charWidth > targetWidth) {
+                break;
+            }
+            width += charWidth;
+            visibleBuilder.insert(0, text.substring(codepointStart, index));
+            startIndex = codepointStart;
+            index = codepointStart;
+        }
+
+        if (visibleBuilder.length() == 0) {
+            return "";
+        }
+
+        TextStyle prefixStyle = resolveStyleAt(text, startIndex, 0xFFFFFFFF);
+        String suffix = text.substring(startIndex);
+        return prefixStyle.toFormattingCodes(0xFFFFFFFF) + stripLeadingFormatCodes(suffix);
+    }
+
+    /**
      * 按宽度插入换行符。
      *
      * @param text 文本
@@ -163,6 +213,7 @@ public class TextLayoutService {
         TextStyle currentStyle = new TextStyle();
         currentStyle.resetAll(0xFFFFFFFF);
         double width = 0.0D;
+        boolean lineHasVisibleContent = false;
 
         for (int i = 0; i < text.length();) {
             int codepoint = text.codePointAt(i);
@@ -177,12 +228,15 @@ public class TextLayoutService {
             }
 
             double charWidth = measureCodepointWidth(codepoint, currentStyle.getFontType());
-            if (width + charWidth > wrapWidth && builder.length() > 0) {
+            if (width + charWidth > wrapWidth && lineHasVisibleContent) {
                 builder.append('\n');
+                builder.append(currentStyle.toFormattingCodes(0xFFFFFFFF));
                 width = 0.0D;
+                lineHasVisibleContent = false;
             }
             builder.appendCodePoint(codepoint);
             width += charWidth;
+            lineHasVisibleContent = true;
             i += Character.charCount(codepoint);
         }
         return builder.toString();
@@ -216,6 +270,31 @@ public class TextLayoutService {
             return 0;
         }
         return (int) Math.ceil(FontConfig.charSize * lines.size());
+    }
+
+    private TextStyle resolveStyleAt(String text, int endExclusive, int baseColor) {
+        TextStyle style = new TextStyle();
+        style.resetAll(baseColor);
+        for (int index = 0; index < endExclusive;) {
+            int codepoint = text.codePointAt(index);
+            if (codepoint == '§' && index < endExclusive - 1) {
+                index += Character.charCount(codepoint);
+                char formatCode = text.charAt(index);
+                style.applyFormat(Character.toLowerCase(formatCode), baseColor);
+                index++;
+                continue;
+            }
+            index += Character.charCount(codepoint);
+        }
+        return style;
+    }
+
+    private String stripLeadingFormatCodes(String text) {
+        int index = 0;
+        while (index < text.length() - 1 && text.charAt(index) == '§') {
+            index += 2;
+        }
+        return text.substring(index);
     }
 
     /**

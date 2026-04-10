@@ -106,6 +106,13 @@ public abstract class BaseScreen extends GuiScreen {
     }
 
     /**
+     * 清理界面交互状态，供切页或重建界面时使用。
+     */
+    protected void clearInteractionState() {
+        inputRouter.clearInteractionState();
+    }
+
+    /**
      * 构建界面组件树。
      *
      * @param root 根组件

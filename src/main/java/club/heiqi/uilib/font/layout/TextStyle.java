@@ -9,6 +9,7 @@ public class TextStyle {
 
     private int color = 0xFFFFFFFF;
     private FontType fontType = FontType.NORMAL;
+    private boolean colorExplicit;
     private boolean randomStyle;
     private boolean underline;
     private boolean strikethrough;
@@ -23,6 +24,7 @@ public class TextStyle {
         TextStyle style = new TextStyle();
         style.color = color;
         style.fontType = fontType;
+        style.colorExplicit = colorExplicit;
         style.randomStyle = randomStyle;
         style.underline = underline;
         style.strikethrough = strikethrough;
@@ -42,6 +44,7 @@ public class TextStyle {
             case '8': case '9': case 'a': case 'b': case 'c': case 'd': case 'e': case 'f':
                 resetFlags(baseColor);
                 color = MinecraftColorTable.getColor(code, false, (baseColor >> 24) & 255);
+                colorExplicit = true;
                 break;
             case 'k':
                 randomStyle = true;
@@ -73,6 +76,7 @@ public class TextStyle {
     public void resetAll(int baseColor) {
         color = baseColor;
         fontType = FontType.NORMAL;
+        colorExplicit = false;
         randomStyle = false;
         underline = false;
         strikethrough = false;
@@ -82,6 +86,7 @@ public class TextStyle {
     private void resetFlags(int baseColor) {
         color = baseColor;
         fontType = FontType.NORMAL;
+        colorExplicit = false;
         randomStyle = false;
         underline = false;
         strikethrough = false;
@@ -110,5 +115,35 @@ public class TextStyle {
 
     public boolean isItalic() {
         return italic;
+    }
+
+    /**
+     * 将当前活跃样式编码成原版格式码前缀，用于跨行续传。
+     *
+     * @param baseColor 默认颜色
+     * @return 可直接拼接到文本前面的格式码
+     */
+    public String toFormattingCodes(int baseColor) {
+        StringBuilder builder = new StringBuilder();
+        char colorCode = colorExplicit ? MinecraftColorTable.findCodeByColor(color, (baseColor >> 24) & 255) : 0;
+        if (colorCode != 0) {
+            builder.append('§').append(colorCode);
+        }
+        if (randomStyle) {
+            builder.append("§k");
+        }
+        if (fontType == FontType.BOLD) {
+            builder.append("§l");
+        }
+        if (strikethrough) {
+            builder.append("§m");
+        }
+        if (underline) {
+            builder.append("§n");
+        }
+        if (italic) {
+            builder.append("§o");
+        }
+        return builder.toString();
     }
 }

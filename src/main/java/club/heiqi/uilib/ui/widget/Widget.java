@@ -138,7 +138,15 @@ public class Widget {
 
     public void onMouseUp(UiMouseEvent event) {}
 
-    public void onMouseScroll(UiMouseEvent event) {}
+    /**
+     * 处理滚轮事件。
+     *
+     * @param event 鼠标滚轮事件
+     * @return 是否已消费该事件
+     */
+    public boolean onMouseScroll(UiMouseEvent event) {
+        return false;
+    }
 
     public void onKeyEvent(UiKeyEvent event) {}
 

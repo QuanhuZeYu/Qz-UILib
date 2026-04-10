@@ -70,6 +70,12 @@ public class DefaultFontRendererAdapter implements FontRendererAdapter {
         return fontService.getTextLayoutService().trimStringToWidth(text, targetWidth);
     }
 
+    public String trimStringToWidth(String text, int targetWidth, boolean reverse) {
+        FontService fontService = FontService.getInstance();
+        fontService.initialize();
+        return fontService.getTextLayoutService().trimStringToWidth(text, targetWidth, reverse);
+    }
+
     @Override
     public String wrapFormattedStringToWidth(String text, int wrapWidth) {
         FontService fontService = FontService.getInstance();

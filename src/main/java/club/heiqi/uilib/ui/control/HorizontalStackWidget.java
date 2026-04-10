@@ -63,6 +63,7 @@ public class HorizontalStackWidget extends ResponsiveContainerWidget {
         int tallest = 0;
         int count = getChildren().size();
         int[] resolvedWidths = new int[count];
+        int[] minimumWidths = new int[count];
         UiInsets[] margins = new UiInsets[count];
         int totalFixedWidth = 0;
 
@@ -79,13 +80,14 @@ public class HorizontalStackWidget extends ResponsiveContainerWidget {
                     layoutSpec == null ? Integer.MAX_VALUE : layoutSpec.getMaxWidth(),
                     contentWidth);
             resolvedWidths[index] = resolvedWidth;
+            minimumWidths[index] = Math.min(resolvedWidth, Math.max(0, Math.min(layoutSpec == null ? 0 : layoutSpec.getMinWidth(), contentWidth)));
             totalFixedWidth += resolvedWidth + margin.getLeft() + margin.getRight();
         }
 
         if (count > 1) {
             totalFixedWidth += spacing * (count - 1);
         }
-        shrinkWidthsToFit(resolvedWidths, margins, totalFixedWidth, contentWidth);
+        shrinkWidthsToFit(resolvedWidths, minimumWidths, totalFixedWidth, contentWidth);
 
         for (int index = 0; index < count; index++) {
             Widget child = getChildren().get(index);
@@ -105,6 +107,7 @@ public class HorizontalStackWidget extends ResponsiveContainerWidget {
         int childCount = getChildren().size();
         int[] resolvedWidths = new int[childCount];
         int[] resolvedHeights = new int[childCount];
+        int[] minimumWidths = new int[childCount];
         UiInsets[] margins = new UiInsets[childCount];
         UiAnchor[] anchors = new UiAnchor[childCount];
         UiLayoutSpec[] specs = new UiLayoutSpec[childCount];
@@ -138,6 +141,7 @@ public class HorizontalStackWidget extends ResponsiveContainerWidget {
             resolvedWidth = fitDimension(resolvedWidth, minWidth, maxWidth, contentWidth);
 
             resolvedWidths[index] = resolvedWidth;
+            minimumWidths[index] = Math.min(resolvedWidth, Math.max(0, Math.min(minWidth, contentWidth)));
             resolvedHeights[index] = resolvedHeight;
             totalFixedWidth += resolvedWidth + margins[index].getLeft() + margins[index].getRight();
             totalGrow += layoutSpec == null ? 0.0F : layoutSpec.getGrow();
@@ -150,7 +154,7 @@ public class HorizontalStackWidget extends ResponsiveContainerWidget {
             totalFixedWidth += spacing * (childCount - 1);
         }
 
-        shrinkWidthsToFit(resolvedWidths, margins, totalFixedWidth, contentWidth);
+        shrinkWidthsToFit(resolvedWidths, minimumWidths, totalFixedWidth, contentWidth);
         totalFixedWidth = 0;
         for (int index = 0; index < childCount; index++) {
             totalFixedWidth += resolvedWidths[index] + margins[index].getLeft() + margins[index].getRight();
@@ -199,7 +203,15 @@ public class HorizontalStackWidget extends ResponsiveContainerWidget {
         }
     }
 
-    private void shrinkWidthsToFit(int[] widths, UiInsets[] margins, int totalFixedWidth, int contentWidth) {
+    /**
+     * 先尽量保住每个子项的最小宽度，只有在总最小宽度仍放不下时才继续压缩。
+     *
+     * @param widths 当前子项宽度
+     * @param minimumWidths 子项在当前容器宽度下可接受的最小宽度
+     * @param totalFixedWidth 当前总宽度
+     * @param contentWidth 容器内容宽度
+     */
+    private void shrinkWidthsToFit(int[] widths, int[] minimumWidths, int totalFixedWidth, int contentWidth) {
         int overflow = totalFixedWidth - contentWidth;
         if (overflow <= 0 || widths.length == 0) {
             return;
@@ -213,10 +225,28 @@ public class HorizontalStackWidget extends ResponsiveContainerWidget {
             return;
         }
 
+        overflow = shrinkWidthsByBudget(widths, minimumWidths, overflow);
+        if (overflow <= 0) {
+            return;
+        }
+
+        int[] zeroFloors = new int[widths.length];
+        shrinkWidthsByBudget(widths, zeroFloors, overflow);
+    }
+
+    private int shrinkWidthsByBudget(int[] widths, int[] floors, int overflow) {
+        int shrinkable = 0;
+        for (int index = 0; index < widths.length; index++) {
+            shrinkable += Math.max(0, widths[index] - floors[index]);
+        }
+        if (shrinkable <= 0 || overflow <= 0) {
+            return overflow;
+        }
+
         int removed = 0;
         int lastShrinkIndex = widths.length - 1;
         for (int i = widths.length - 1; i >= 0; i--) {
-            if (widths[i] > 0) {
+            if (widths[i] > floors[i]) {
                 lastShrinkIndex = i;
                 break;
             }
@@ -224,13 +254,16 @@ public class HorizontalStackWidget extends ResponsiveContainerWidget {
 
         for (int index = 0; index < widths.length; index++) {
             int width = widths[index];
-            if (width <= 0) {
+            int floor = floors[index];
+            int availableShrink = Math.max(0, width - floor);
+            if (availableShrink <= 0) {
                 continue;
             }
-            int cut = index == lastShrinkIndex ? overflow - removed : Math.round((overflow * width) / (float) shrinkable);
-            cut = Math.max(0, Math.min(cut, widths[index]));
+            int cut = index == lastShrinkIndex ? overflow - removed : Math.round((overflow * availableShrink) / (float) shrinkable);
+            cut = Math.max(0, Math.min(cut, availableShrink));
             widths[index] -= cut;
             removed += cut;
         }
+        return Math.max(0, overflow - removed);
     }
 }
