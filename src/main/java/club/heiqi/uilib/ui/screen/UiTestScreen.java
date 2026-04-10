@@ -11,6 +11,7 @@ import club.heiqi.uilib.ui.control.TextInputWidget;
 import club.heiqi.uilib.ui.control.ToggleSwitchWidget;
 import club.heiqi.uilib.ui.layout.UiAnchor;
 import club.heiqi.uilib.ui.layout.UiLayoutSpec;
+import club.heiqi.uilib.ui.layout.UiLength;
 import club.heiqi.uilib.ui.widget.Widget;
 
 /**
@@ -23,10 +24,17 @@ public class UiTestScreen extends BaseScreen {
     private final ResponsivePanelWidget overviewCard = createCardPanel();
     private final ResponsivePanelWidget formCard = createCardPanel();
     private final ResponsivePanelWidget wrapCard = createCardPanel();
+    private final ResponsivePanelWidget divScrollCard = createCardPanel();
+    private final DivWidget divScrollProbe = new DivWidget()
+            .setSectionColumn()
+            .setVerticalScrollOnly()
+            .setPadding(14)
+            .setGap(10);
 
     private final LabelWidget viewportMetricsLabel = new LabelWidget("");
     private final LabelWidget scrollMetricsLabel = new LabelWidget("");
     private final LabelWidget wrapMetricsLabel = new LabelWidget("");
+    private final LabelWidget divScrollMetricsLabel = new LabelWidget("");
     private final LabelWidget wrapSampleLabel = new LabelWidget("");
     private final LabelWidget actionStateLabel = new LabelWidget("");
 
@@ -101,8 +109,14 @@ public class UiTestScreen extends BaseScreen {
         viewportMetricsLabel.setColor(0xFFF6D78E).setShadow(false).setWrap(true).setMaxLines(4);
         scrollMetricsLabel.setColor(0xFFB5D0FF).setShadow(false).setWrap(true).setMaxLines(4);
         wrapMetricsLabel.setColor(0xFFB5D0FF).setShadow(false).setWrap(true).setMaxLines(6);
+        divScrollMetricsLabel.setColor(0xFFB5D0FF).setShadow(false).setWrap(true).setMaxLines(5);
         wrapSampleLabel.setColor(0xFFD7E3FF).setShadow(false).setWrap(true).setMaxLines(10);
         actionStateLabel.setColor(0xFFB5D0FF).setShadow(false).setWrap(true).setMaxLines(2);
+
+        formCard.setLayoutSpec(new UiLayoutSpec().setWidth(UiLength.px(460)).setMinWidth(280));
+        wrapCard.setLayoutSpec(new UiLayoutSpec().setWidth(UiLength.px(360)).setMinWidth(260));
+        divScrollCard.setLayoutSpec(new UiLayoutSpec().setWidth(UiLength.percent(1.0F)).setFill(true));
+        divScrollProbe.setLayoutSpec(new UiLayoutSpec().setWidth(UiLength.percent(1.0F)).setHeight(UiLength.px(220)).setMinHeight(220).setMaxHeight(220).setFill(true));
 
         themeInput.setPlaceholder("例如：Qz Layout Probe").setText("Qz Layout Probe").setMaxLength(48);
         namespaceInput.setPlaceholder("例如：qz_uilib").setText("qz_uilib").setMaxLength(48);
@@ -163,13 +177,25 @@ public class UiTestScreen extends BaseScreen {
         wrapDiv.addNoGrowChild(wrapMetricsLabel);
         wrapCard.addChild(wrapDiv);
 
-        cardsFlow.addFlexChild(formCard.setSuggestedSize(460, -1));
-        cardsFlow.addFlexChild(wrapCard.setSuggestedSize(360, -1));
+        DivWidget divScrollCardDiv = new DivWidget().setSectionColumn();
+        divScrollCardDiv.addNoGrowChild(createSectionTitle("统一尺寸契约探针"));
+        divScrollCardDiv.addNoGrowChild(createBodyLabel("这块直接验证 Div 父容器是否开始读取统一的 `UiLayoutSpec`：内部探针使用 `width=100%` 和 `height=220px`，如果仍然不产生内部滚动，就说明尺寸契约仍然割裂。"));
+        for (int index = 1; index <= 10; index++) {
+            divScrollProbe.addNoGrowChild(createBodyLabel("Div 自滚动条目 " + index
+                    + "：这里故意放入重复的中英混排说明，只有当 Div 真正认 `UiLayoutSpec.height=220px` 时，这块区域才会产生稳定的内部滚动，而不是继续随外层页面一起长高。"));
+        }
+        divScrollCardDiv.addNoGrowChild(divScrollProbe);
+        divScrollCardDiv.addNoGrowChild(divScrollMetricsLabel);
+        divScrollCard.addChild(divScrollCardDiv);
+
+        cardsFlow.addFlexChild(formCard);
+        cardsFlow.addFlexChild(wrapCard);
 
         pageRoot.addNoGrowChild(createTitleLabel("布局诊断页"));
         pageRoot.addNoGrowChild(createBodyLabel("如果这一页的两张卡片仍然在不合理的宽度下并排、中文换行异常，或者表单行不按父宽度变化，那么说明底层尺寸链路仍然有问题。"));
         pageRoot.addNoGrowChild(overviewCard.setSuggestedSize(-1, -1));
         pageRoot.addNoGrowChild(cardsFlow);
+        pageRoot.addNoGrowChild(divScrollCard);
 
         diagnosticPage.getContent().addChild(pageRoot);
         root.addChild(diagnosticPage);
@@ -210,6 +236,10 @@ public class UiTestScreen extends BaseScreen {
         wrapMetricsLabel.setText("文本卡片宽度 " + wrapCard.getWidth() + "；当前操作：" + actionStateText
                 + "；宽度档位：" + widthPresetSelector.getSelectedOption()
                 + "。如果中文说明不再把整段文本撑成一个极宽最小值，说明 `LabelWidget#getMinContentWidth()` 的修正已经生效。 ");
+        divScrollMetricsLabel.setText("Div 自滚动偏移 " + divScrollProbe.getVerticalScrollOffset() + " / "
+                + divScrollProbe.getMaxVerticalScrollOffset() + "；可视内容区 " + divScrollProbe.getVisibleContentWidth() + "x"
+                + divScrollProbe.getVisibleContentHeight() + "；内容区 " + divScrollProbe.getContentWidth() + "x"
+                + divScrollProbe.getContentHeight() + "。如果这里终于出现稳定的内部滚动，说明 Div 组件开始真正读取统一的宽高契约。 ");
         actionStateLabel.setText("最近状态：" + actionStateText);
     }
 
@@ -231,7 +261,7 @@ public class UiTestScreen extends BaseScreen {
 
     private LabelWidget createFormLabel(String text) {
         LabelWidget label = new LabelWidget(text).setColor(0xFFF6D78E).setShadow(false);
-        label.setSuggestedSize(156, -1);
+        label.setLayoutSpec(new UiLayoutSpec().setWidth(UiLength.px(156)).setMinWidth(156).setMaxWidth(156));
         return label;
     }
 

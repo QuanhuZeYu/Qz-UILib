@@ -399,11 +399,15 @@ public class DivWidget extends Widget {
 
     public DivWidget setWidthPercent(float widthPercent) {
         this.widthPercent = clampPercent(widthPercent);
+        UiLayoutSpec layoutSpec = ensureLayoutSpec();
+        layoutSpec.setWidth(this.widthPercent >= 0.0F ? UiLength.percent(this.widthPercent) : UiLength.auto());
         return this;
     }
 
     public DivWidget setHeightPercent(float heightPercent) {
         this.heightPercent = clampPercent(heightPercent);
+        UiLayoutSpec layoutSpec = ensureLayoutSpec();
+        layoutSpec.setHeight(this.heightPercent >= 0.0F ? UiLength.percent(this.heightPercent) : UiLength.auto());
         return this;
     }
 
@@ -429,6 +433,22 @@ public class DivWidget extends Widget {
 
     public int getMaxVerticalScrollOffset() {
         return maxVerticalScrollOffset;
+    }
+
+    public int getVisibleContentWidth() {
+        return getViewportWidth();
+    }
+
+    public int getVisibleContentHeight() {
+        return getViewportHeight();
+    }
+
+    public int getContentWidth() {
+        return measureContentWidth();
+    }
+
+    public int getContentHeight() {
+        return measureContentHeight();
     }
 
     @Override
@@ -702,10 +722,10 @@ public class DivWidget extends Widget {
 
         for (int index = 0; index < childCount; index++) {
             Widget child = getChildren().get(index);
-            minWidths[index] = child.getMinContentWidth();
+            minWidths[index] = resolveChildMinWidth(child, innerWidth);
             widths[index] = Math.max(minWidths[index], resolveRowBaseWidth(child, innerWidth));
             totalWidth += widths[index];
-            heights[index] = useMinHeights ? child.getMinContentHeightForWidth(widths[index]) : child.getSuggestedHeightForWidth(widths[index]);
+            heights[index] = resolveRowCrossSize(child, widths[index], innerHeight, useMinHeights, false);
         }
         totalWidth += gap * Math.max(0, childCount - 1);
 
@@ -770,7 +790,7 @@ public class DivWidget extends Widget {
             Widget child = getChildren().get(index);
             widths[index] = resolveColumnCrossSize(child, innerWidth);
             heights[index] = resolveColumnBaseHeight(child, widths[index], innerHeight, false);
-            minHeights[index] = resolveColumnBaseHeight(child, widths[index], innerHeight, true);
+            minHeights[index] = resolveChildMinHeight(child, widths[index], innerHeight);
             widest = Math.max(widest, widths[index]);
             totalHeight += heights[index];
         }
@@ -826,9 +846,9 @@ public class DivWidget extends Widget {
         int[] heights = new int[childCount];
         for (int index = 0; index < childCount; index++) {
             Widget child = getChildren().get(index);
-            minWidths[index] = child.getMinContentWidth();
+            minWidths[index] = resolveChildMinWidth(child, innerWidth);
             widths[index] = Math.max(minWidths[index], resolveRowBaseWidth(child, innerWidth));
-            heights[index] = useMinHeights ? child.getMinContentHeightForWidth(widths[index]) : child.getSuggestedHeightForWidth(widths[index]);
+            heights[index] = resolveRowCrossSize(child, widths[index], 0, useMinHeights, false);
         }
 
         List<AxisGroup> groups = buildWrappedGroups(widths, innerWidth);
@@ -846,8 +866,7 @@ public class DivWidget extends Widget {
             group.mainSize = computeTotal(widths, group.start, group.end);
             group.crossSize = 0;
             for (int index = group.start; index <= group.end; index++) {
-                heights[index] = useMinHeights ? getChildren().get(index).getMinContentHeightForWidth(widths[index])
-                        : getChildren().get(index).getSuggestedHeightForWidth(widths[index]);
+                heights[index] = resolveRowCrossSize(getChildren().get(index), widths[index], 0, useMinHeights, false);
                 group.crossSize = Math.max(group.crossSize, heights[index]);
             }
             if (alignItems == AlignItems.STRETCH) {
@@ -903,7 +922,7 @@ public class DivWidget extends Widget {
             Widget child = getChildren().get(index);
             widths[index] = resolveColumnCrossSize(child, innerWidth);
             heights[index] = resolveColumnBaseHeight(child, widths[index], innerHeight, false);
-            minHeights[index] = resolveColumnBaseHeight(child, widths[index], innerHeight, true);
+            minHeights[index] = resolveChildMinHeight(child, widths[index], innerHeight);
         }
 
         List<AxisGroup> groups = buildWrappedGroups(heights, innerHeight);
@@ -981,49 +1000,129 @@ public class DivWidget extends Widget {
     }
 
     private int resolveRowBaseWidth(Widget child, int innerWidth) {
-        int preferredWidth = child.getSuggestedWidth();
-        if (child instanceof DivWidget) {
-            DivWidget divChild = (DivWidget) child;
-            if (divChild.widthPercent >= 0.0F && innerWidth > 0) {
-                preferredWidth = Math.round(innerWidth * divChild.widthPercent);
-            }
-        }
-        return preferredWidth;
+        return resolveConfiguredWidth(child, innerWidth, child.getSuggestedWidth(), false);
     }
 
     private int resolveRowCrossSize(Widget child, int childWidth, int innerHeight, boolean useMinHeight, boolean actualLayout) {
-        int resolvedHeight = useMinHeight ? child.getMinContentHeightForWidth(childWidth) : child.getSuggestedHeightForWidth(childWidth);
-        if (actualLayout && child instanceof DivWidget) {
-            DivWidget divChild = (DivWidget) child;
-            if (divChild.heightPercent >= 0.0F && innerHeight > 0) {
-                resolvedHeight = Math.max(resolvedHeight, Math.round(innerHeight * divChild.heightPercent));
-            }
-        }
-        return resolvedHeight;
+        int fallback = useMinHeight ? child.getMinContentHeightForWidth(childWidth) : child.getSuggestedHeightForWidth(childWidth);
+        return resolveConfiguredHeight(child, childWidth, innerHeight, fallback, actualLayout);
     }
 
     private int resolveColumnCrossSize(Widget child, int innerWidth) {
-        int preferredWidth = child.getSuggestedWidth();
-        if (child instanceof DivWidget) {
-            DivWidget divChild = (DivWidget) child;
-            if (divChild.widthPercent >= 0.0F && innerWidth > 0) {
-                preferredWidth = Math.round(innerWidth * divChild.widthPercent);
-            }
-        }
-        if (alignItems == AlignItems.STRETCH && innerWidth > 0 && !(child instanceof DivWidget && ((DivWidget) child).widthPercent >= 0.0F)) {
+        boolean hasConfiguredWidth = hasConfiguredWidth(child);
+        int preferredWidth = resolveConfiguredWidth(child, innerWidth, child.getSuggestedWidth(), alignItems == AlignItems.STRETCH);
+        if (alignItems == AlignItems.STRETCH && innerWidth > 0 && !hasConfiguredWidth) {
             preferredWidth = innerWidth;
         }
-        return Math.max(child.getMinContentWidth(), preferredWidth);
+        return Math.max(resolveChildMinWidth(child, innerWidth), preferredWidth);
     }
 
     private int resolveColumnBaseHeight(Widget child, int childWidth, int innerHeight, boolean useMinHeight) {
+        int fallback = useMinHeight ? child.getMinContentHeightForWidth(childWidth) : child.getSuggestedHeightForWidth(childWidth);
+        return resolveConfiguredHeight(child, childWidth, innerHeight, fallback, false);
+    }
+
+    private int resolveChildMinWidth(Widget child, int availableWidth) {
+        UiLayoutSpec layoutSpec = child.getLayoutSpec();
+        int minWidth = hasConfiguredWidth(child) ? 0 : child.getMinContentWidth();
+        if (layoutSpec != null) {
+            minWidth = Math.max(minWidth, layoutSpec.getMinWidth());
+            minWidth = clampToBounds(minWidth, layoutSpec.getMinWidth(), layoutSpec.getMaxWidth());
+        }
+        return Math.max(0, minWidth);
+    }
+
+    private int resolveChildMinHeight(Widget child, int childWidth, int availableHeight) {
+        UiLayoutSpec layoutSpec = child.getLayoutSpec();
+        int minHeight = child.getMinContentHeightForWidth(childWidth);
+        if (hasConfiguredHeight(child)) {
+            minHeight = resolveConfiguredHeight(child, childWidth, availableHeight, minHeight, false);
+        }
+        if (layoutSpec != null) {
+            minHeight = Math.max(minHeight, layoutSpec.getMinHeight());
+            minHeight = clampToBounds(minHeight, layoutSpec.getMinHeight(), layoutSpec.getMaxHeight());
+        }
+        return Math.max(0, minHeight);
+    }
+
+    private int resolveConfiguredWidth(Widget child, int availableWidth, int fallback, boolean allowFill) {
+        UiLayoutSpec layoutSpec = child.getLayoutSpec();
+        UiLength width = resolveWidthLength(child, layoutSpec);
+        int resolvedWidth = fallback;
+        if (width.getType() != UiLength.Type.AUTO) {
+            resolvedWidth = resolveLengthValue(width, availableWidth, fallback);
+        } else if (allowFill && layoutSpec != null && layoutSpec.isFill() && availableWidth > 0) {
+            resolvedWidth = availableWidth;
+        }
+        return clampToBounds(resolvedWidth, layoutSpec == null ? 0 : layoutSpec.getMinWidth(),
+                layoutSpec == null ? Integer.MAX_VALUE : layoutSpec.getMaxWidth());
+    }
+
+    private int resolveConfiguredHeight(Widget child, int childWidth, int availableHeight, int fallback, boolean allowFill) {
+        UiLayoutSpec layoutSpec = child.getLayoutSpec();
+        UiLength height = resolveHeightLength(child, layoutSpec);
+        int resolvedHeight = fallback;
+        if (height.getType() != UiLength.Type.AUTO) {
+            resolvedHeight = resolveLengthValue(height, availableHeight, fallback);
+        } else if (allowFill && layoutSpec != null && layoutSpec.isFill() && availableHeight > 0) {
+            resolvedHeight = availableHeight;
+        }
+        return clampToBounds(resolvedHeight, layoutSpec == null ? 0 : layoutSpec.getMinHeight(),
+                layoutSpec == null ? Integer.MAX_VALUE : layoutSpec.getMaxHeight());
+    }
+
+    private UiLength resolveWidthLength(Widget child, UiLayoutSpec layoutSpec) {
+        if (layoutSpec != null && layoutSpec.getWidth().getType() != UiLength.Type.AUTO) {
+            return layoutSpec.getWidth();
+        }
         if (child instanceof DivWidget) {
             DivWidget divChild = (DivWidget) child;
-            if (divChild.heightPercent >= 0.0F && innerHeight > 0) {
-                return Math.max(1, Math.round(innerHeight * divChild.heightPercent));
+            if (divChild.widthPercent >= 0.0F) {
+                return UiLength.percent(divChild.widthPercent);
             }
         }
-        return useMinHeight ? child.getMinContentHeightForWidth(childWidth) : child.getSuggestedHeightForWidth(childWidth);
+        return UiLength.auto();
+    }
+
+    private UiLength resolveHeightLength(Widget child, UiLayoutSpec layoutSpec) {
+        if (layoutSpec != null && layoutSpec.getHeight().getType() != UiLength.Type.AUTO) {
+            return layoutSpec.getHeight();
+        }
+        if (child instanceof DivWidget) {
+            DivWidget divChild = (DivWidget) child;
+            if (divChild.heightPercent >= 0.0F) {
+                return UiLength.percent(divChild.heightPercent);
+            }
+        }
+        return UiLength.auto();
+    }
+
+    private boolean hasConfiguredWidth(Widget child) {
+        UiLayoutSpec layoutSpec = child.getLayoutSpec();
+        return (layoutSpec != null && layoutSpec.getWidth().getType() != UiLength.Type.AUTO)
+                || (child instanceof DivWidget && ((DivWidget) child).widthPercent >= 0.0F);
+    }
+
+    private boolean hasConfiguredHeight(Widget child) {
+        UiLayoutSpec layoutSpec = child.getLayoutSpec();
+        return (layoutSpec != null && layoutSpec.getHeight().getType() != UiLength.Type.AUTO)
+                || (child instanceof DivWidget && ((DivWidget) child).heightPercent >= 0.0F);
+    }
+
+    private int resolveLengthValue(UiLength length, int availableSpace, int fallback) {
+        if (length == null || length.getType() == UiLength.Type.AUTO) {
+            return fallback;
+        }
+        if (length.getType() == UiLength.Type.PERCENT) {
+            return Math.round(Math.max(0, availableSpace) * length.getValue());
+        }
+        return Math.round(length.getValue());
+    }
+
+    private int clampToBounds(int value, int min, int max) {
+        int safeMin = Math.max(0, min);
+        int safeMax = max <= 0 ? 0 : Math.max(safeMin, max);
+        return Math.max(safeMin, Math.min(value, safeMax));
     }
 
     private int distributeGrowth(int[] sizes, int extra, int start, int end) {
@@ -1209,7 +1308,7 @@ public class DivWidget extends Widget {
         metrics.trackBottom = getAbsoluteY() + getHeight() - paddingBottom - horizontalReserve;
         metrics.trackLength = Math.max(1, metrics.trackBottom - metrics.trackTop);
         metrics.thumbSize = Math.max(SCROLLBAR_MIN_THUMB_SIZE,
-                Math.round(metrics.trackLength * (getViewportHeight() / (float) Math.max(getViewportHeight(), getContentHeight()))));
+                Math.round(metrics.trackLength * (getViewportHeight() / (float) Math.max(getViewportHeight(), measureContentHeight()))));
         int travel = Math.max(0, metrics.trackLength - metrics.thumbSize);
         metrics.thumbTop = metrics.trackTop + Math.round(travel * (verticalScrollOffset / (float) Math.max(1, maxVerticalScrollOffset)));
         metrics.thumbBottom = metrics.thumbTop + metrics.thumbSize;
@@ -1231,7 +1330,7 @@ public class DivWidget extends Widget {
         metrics.trackTop = metrics.trackBottom - SCROLLBAR_TRACK_THICKNESS;
         metrics.trackLength = Math.max(1, metrics.trackRight - metrics.trackLeft);
         metrics.thumbSize = Math.max(SCROLLBAR_MIN_THUMB_SIZE,
-                Math.round(metrics.trackLength * (getViewportWidth() / (float) Math.max(getViewportWidth(), getContentWidth()))));
+                Math.round(metrics.trackLength * (getViewportWidth() / (float) Math.max(getViewportWidth(), measureContentWidth()))));
         int travel = Math.max(0, metrics.trackLength - metrics.thumbSize);
         metrics.thumbLeft = metrics.trackLeft + Math.round(travel * (horizontalScrollOffset / (float) Math.max(1, maxHorizontalScrollOffset)));
         metrics.thumbRight = metrics.thumbLeft + metrics.thumbSize;
@@ -1284,12 +1383,12 @@ public class DivWidget extends Widget {
         return Math.max(0, getHeight() - paddingTop - paddingBottom);
     }
 
-    private int getContentWidth() {
+    private int measureContentWidth() {
         LayoutResult layout = measureLayout(getWidth(), getHeight(), false, false);
         return Math.max(0, layout.requiredWidth - paddingLeft - paddingRight);
     }
 
-    private int getContentHeight() {
+    private int measureContentHeight() {
         LayoutResult layout = measureLayout(getWidth(), getHeight(), false, false);
         return Math.max(0, layout.requiredHeight - paddingTop - paddingBottom);
     }
