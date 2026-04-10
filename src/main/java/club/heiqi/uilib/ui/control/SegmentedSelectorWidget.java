@@ -86,6 +86,11 @@ public class SegmentedSelectorWidget extends Widget {
         return 42;
     }
 
+    @Override
+    public int getMinContentWidth() {
+        return Math.max(150, options.length * 72);
+    }
+
     public SegmentedSelectorWidget setSelectedIndex(int selectedIndex) {
         this.selectedIndex = options.length == 0 ? 0 : Math.max(0, Math.min(options.length - 1, selectedIndex));
         return this;

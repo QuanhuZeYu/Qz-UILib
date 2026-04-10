@@ -116,6 +116,11 @@ public class InventorySlotGridWidget extends Widget {
         return metrics.rowCount * metrics.slotSize + Math.max(0, metrics.rowCount - 1) * slotGap;
     }
 
+    @Override
+    public int getMinContentWidth() {
+        return minSlotSize;
+    }
+
     /**
      * 设置格子间距。
      *

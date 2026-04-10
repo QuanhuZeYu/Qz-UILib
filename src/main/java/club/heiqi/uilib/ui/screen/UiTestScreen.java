@@ -2,6 +2,7 @@ package club.heiqi.uilib.ui.screen;
 
 import club.heiqi.uilib.ui.control.ButtonWidget;
 import club.heiqi.uilib.ui.control.CharacterPlacementDebugWidget;
+import club.heiqi.uilib.ui.control.DivWidget;
 import club.heiqi.uilib.ui.control.HorizontalStackWidget;
 import club.heiqi.uilib.ui.control.LabelWidget;
 import club.heiqi.uilib.ui.control.MouseStressWidget;
@@ -15,6 +16,7 @@ import club.heiqi.uilib.ui.control.TextInputWidget;
 import club.heiqi.uilib.ui.control.ToggleSwitchWidget;
 import club.heiqi.uilib.ui.control.VerticalStackWidget;
 import club.heiqi.uilib.ui.control.VerticalScrollPanelWidget;
+import club.heiqi.uilib.ui.layout.DivItemStyle;
 import club.heiqi.uilib.ui.layout.UiAnchor;
 import club.heiqi.uilib.ui.layout.UiInsets;
 import club.heiqi.uilib.ui.layout.UiLayoutSpec;
@@ -116,6 +118,14 @@ public class UiTestScreen extends BaseScreen {
     private final TextInputWidget settingsPathInput = new TextInputWidget();
     private final ToggleSwitchWidget settingsAnimationToggle = new ToggleSwitchWidget("动画开关");
     private final SegmentedSelectorWidget settingsDensitySelector = new SegmentedSelectorWidget("紧凑布局", "舒适布局");
+    private final DivWidget settingsDivRoot = new DivWidget().setDirection(DivWidget.Direction.COLUMN).setGap(14).setWidthPercent(1.0F);
+    private final DivWidget settingsProfileDiv = new DivWidget().setDirection(DivWidget.Direction.ROW).setAlignItems(DivWidget.AlignItems.CENTER).setGap(16).setWidthPercent(1.0F);
+    private final DivWidget settingsAuthorDiv = new DivWidget().setDirection(DivWidget.Direction.ROW).setAlignItems(DivWidget.AlignItems.CENTER).setGap(16).setWidthPercent(1.0F);
+    private final DivWidget settingsPathDiv = new DivWidget().setDirection(DivWidget.Direction.ROW).setAlignItems(DivWidget.AlignItems.CENTER).setGap(16).setWidthPercent(1.0F);
+    private final DivWidget settingsAnimationDiv = new DivWidget().setDirection(DivWidget.Direction.ROW).setAlignItems(DivWidget.AlignItems.CENTER).setGap(16).setWidthPercent(1.0F);
+    private final DivWidget settingsDensityDiv = new DivWidget().setDirection(DivWidget.Direction.ROW).setAlignItems(DivWidget.AlignItems.CENTER).setGap(16).setWidthPercent(1.0F);
+    private final DivWidget settingsPreviewDiv = new DivWidget().setDirection(DivWidget.Direction.COLUMN).setGap(12).setWidthPercent(1.0F);
+    private final DivWidget settingsFooterDiv = new DivWidget().setDirection(DivWidget.Direction.ROW).setAlignItems(DivWidget.AlignItems.STRETCH).setGap(14).setWidthPercent(1.0F);
     private final ResponsivePanelWidget settingsPreviewPanel = new ResponsivePanelWidget();
     private final LabelWidget settingsPreviewTitleLabel = new LabelWidget("预览与摘要");
     private final LabelWidget settingsPreviewSummaryLabel = new LabelWidget("");
@@ -499,34 +509,35 @@ public class UiTestScreen extends BaseScreen {
         responsiveLayoutStack.addChild(backFromResponsiveButton);
         responsiveLayoutPage.getContent().addChild(responsiveLayoutStack);
 
-        settingsPreviewStack.addChild(settingsPreviewTitleLabel);
-        settingsPreviewStack.addChild(settingsPreviewSummaryLabel);
-        settingsPreviewPanel.addChild(settingsPreviewStack);
-        settingsProfileRow.addChild(settingsProfileLabel);
-        settingsProfileRow.addChild(settingsProfileInput);
-        settingsAuthorRow.addChild(settingsAuthorLabel);
-        settingsAuthorRow.addChild(settingsAuthorInput);
-        settingsPathRow.addChild(settingsPathLabel);
-        settingsPathRow.addChild(settingsPathInput);
-        settingsAnimationRow.addChild(settingsAnimationLabel);
-        settingsAnimationRow.addChild(settingsAnimationToggle);
-        settingsDensityRow.addChild(settingsDensityLabel);
-        settingsDensityRow.addChild(settingsDensitySelector);
-        settingsFooterRow.addChild(settingsApplyButton);
-        settingsFooterRow.addChild(settingsResetButton);
-        settingsFooterRow.addChild(backFromSettingsButton);
-        settingsStack.addChild(settingsTitleLabel);
-        settingsStack.addChild(settingsIntroLabel);
-        settingsStack.addChild(settingsProfileRow);
-        settingsStack.addChild(settingsAuthorRow);
-        settingsStack.addChild(settingsPathRow);
-        settingsStack.addChild(settingsAnimationRow);
-        settingsStack.addChild(settingsDensityRow);
-        settingsStack.addChild(settingsPreviewPanel);
-        settingsStack.addChild(settingsFooterHintLabel);
-        settingsStack.addChild(settingsFooterRow);
-        settingsScrollPanel.getContent().addChild(settingsStack);
-        settingsFormPage.getContent().addChild(settingsScrollPanel);
+        settingsPreviewDiv.addChild(settingsPreviewTitleLabel, DivItemStyle.noGrow());
+        settingsPreviewDiv.addChild(settingsPreviewSummaryLabel, DivItemStyle.noGrow());
+        settingsPreviewPanel.addChild(settingsPreviewDiv);
+
+        settingsProfileDiv.addChild(settingsProfileLabel, DivItemStyle.fixed());
+        settingsProfileDiv.addChild(settingsProfileInput);
+        settingsAuthorDiv.addChild(settingsAuthorLabel, DivItemStyle.fixed());
+        settingsAuthorDiv.addChild(settingsAuthorInput);
+        settingsPathDiv.addChild(settingsPathLabel, DivItemStyle.fixed());
+        settingsPathDiv.addChild(settingsPathInput);
+        settingsAnimationDiv.addChild(settingsAnimationLabel, DivItemStyle.fixed());
+        settingsAnimationDiv.addChild(settingsAnimationToggle);
+        settingsDensityDiv.addChild(settingsDensityLabel, DivItemStyle.fixed());
+        settingsDensityDiv.addChild(settingsDensitySelector);
+        settingsFooterDiv.addChild(settingsApplyButton, DivItemStyle.noGrow());
+        settingsFooterDiv.addChild(settingsResetButton, DivItemStyle.noGrow());
+        settingsFooterDiv.addChild(backFromSettingsButton, DivItemStyle.noGrow());
+
+        settingsDivRoot.addChild(settingsTitleLabel, DivItemStyle.noGrow());
+        settingsDivRoot.addChild(settingsIntroLabel, DivItemStyle.noGrow());
+        settingsDivRoot.addChild(settingsProfileDiv, DivItemStyle.noGrow());
+        settingsDivRoot.addChild(settingsAuthorDiv, DivItemStyle.noGrow());
+        settingsDivRoot.addChild(settingsPathDiv, DivItemStyle.noGrow());
+        settingsDivRoot.addChild(settingsAnimationDiv, DivItemStyle.noGrow());
+        settingsDivRoot.addChild(settingsDensityDiv, DivItemStyle.noGrow());
+        settingsDivRoot.addChild(settingsPreviewPanel);
+        settingsDivRoot.addChild(settingsFooterHintLabel, DivItemStyle.noGrow());
+        settingsDivRoot.addChild(settingsFooterDiv, DivItemStyle.noGrow());
+        settingsFormPage.getContent().addChild(settingsDivRoot);
 
         focusProfileRow.addChild(focusNameLabel);
         focusProfileRow.addChild(focusNameInput);
@@ -718,6 +729,8 @@ public class UiTestScreen extends BaseScreen {
     }
 
     private void applySettingsLayout() {
+        settingsDivRoot.setLayoutSpec(new UiLayoutSpec().setWidth(UiLength.percent(1.0F)).setHeight(UiLength.auto()).setFill(true));
+        settingsPreviewDiv.setLayoutSpec(new UiLayoutSpec().setWidth(UiLength.percent(1.0F)).setHeight(UiLength.auto()).setFill(true));
         int scrollMinHeight = adaptiveHeight(280, 150, 0.24F);
         int labelWidth = adaptiveWidth(220, 120, 0.17F);
         int fieldMinWidth = adaptiveWidth(260, 150, 0.20F);
@@ -727,37 +740,38 @@ public class UiTestScreen extends BaseScreen {
         settingsTitleLabel.setLayoutSpec(new UiLayoutSpec().setWidth(UiLength.percent(1.0F)).setHeight(UiLength.auto()));
         settingsIntroLabel.setLayoutSpec(new UiLayoutSpec().setWidth(UiLength.percent(1.0F)).setHeight(UiLength.auto()));
 
-        settingsProfileRow.setLayoutSpec(new UiLayoutSpec().setWidth(UiLength.percent(1.0F)).setHeight(UiLength.auto()));
-        settingsAuthorRow.setLayoutSpec(new UiLayoutSpec().setWidth(UiLength.percent(1.0F)).setHeight(UiLength.auto()));
-        settingsPathRow.setLayoutSpec(new UiLayoutSpec().setWidth(UiLength.percent(1.0F)).setHeight(UiLength.auto()));
-        settingsAnimationRow.setLayoutSpec(new UiLayoutSpec().setWidth(UiLength.percent(1.0F)).setHeight(UiLength.auto()));
-        settingsDensityRow.setLayoutSpec(new UiLayoutSpec().setWidth(UiLength.percent(1.0F)).setHeight(UiLength.auto()));
-        settingsFooterRow.setLayoutSpec(new UiLayoutSpec().setWidth(UiLength.percent(1.0F)).setHeight(UiLength.auto()));
-        settingsScrollPanel.setLayoutSpec(new UiLayoutSpec().setWidth(UiLength.percent(1.0F)).setHeight(UiLength.auto()).setMinHeight(scrollMinHeight).setGrow(1.0F).setFill(true));
-        settingsStack.setLayoutSpec(new UiLayoutSpec().setWidth(UiLength.percent(1.0F)).setHeight(UiLength.auto()).setFill(true));
-
-        settingsProfileLabel.setLayoutSpec(new UiLayoutSpec().setWidth(UiLength.px(labelWidth)).setHeight(UiLength.auto()));
-        settingsAuthorLabel.setLayoutSpec(new UiLayoutSpec().setWidth(UiLength.px(labelWidth)).setHeight(UiLength.auto()));
-        settingsPathLabel.setLayoutSpec(new UiLayoutSpec().setWidth(UiLength.px(labelWidth)).setHeight(UiLength.auto()));
-        settingsAnimationLabel.setLayoutSpec(new UiLayoutSpec().setWidth(UiLength.px(labelWidth)).setHeight(UiLength.auto()));
-        settingsDensityLabel.setLayoutSpec(new UiLayoutSpec().setWidth(UiLength.px(labelWidth)).setHeight(UiLength.auto()));
-
-        settingsProfileInput.setLayoutSpec(new UiLayoutSpec().setWidth(UiLength.auto()).setHeight(UiLength.px(42)).setMinWidth(fieldMinWidth).setGrow(1.0F));
-        settingsAuthorInput.setLayoutSpec(new UiLayoutSpec().setWidth(UiLength.auto()).setHeight(UiLength.px(42)).setMinWidth(fieldMinWidth).setGrow(1.0F));
-        settingsPathInput.setLayoutSpec(new UiLayoutSpec().setWidth(UiLength.auto()).setHeight(UiLength.px(42)).setMinWidth(fieldMinWidth).setGrow(1.0F));
-
-        settingsAnimationToggle.setLayoutSpec(new UiLayoutSpec().setWidth(UiLength.auto()).setHeight(UiLength.auto()).setMinWidth(fieldMinWidth).setGrow(1.0F).setFill(true));
-        settingsDensitySelector.setLayoutSpec(new UiLayoutSpec().setWidth(UiLength.auto()).setHeight(UiLength.auto()).setMinWidth(selectorMinWidth).setGrow(1.0F).setFill(true));
-
         settingsPreviewPanel.setLayoutSpec(new UiLayoutSpec().setWidth(UiLength.percent(1.0F)).setHeight(UiLength.auto()).setMinHeight(previewMinHeight).setGrow(1.0F));
-        settingsPreviewStack.setLayoutSpec(new UiLayoutSpec().setWidth(UiLength.percent(1.0F)).setHeight(UiLength.percent(1.0F)).setFill(true));
-        settingsPreviewTitleLabel.setLayoutSpec(new UiLayoutSpec().setWidth(UiLength.percent(1.0F)).setHeight(UiLength.auto()));
-        settingsPreviewSummaryLabel.setLayoutSpec(new UiLayoutSpec().setWidth(UiLength.percent(1.0F)).setHeight(UiLength.auto()).setGrow(1.0F));
-        settingsFooterHintLabel.setLayoutSpec(new UiLayoutSpec().setWidth(UiLength.percent(1.0F)).setHeight(UiLength.auto()));
+        settingsPreviewTitleLabel.setLayoutSpec(null);
+        settingsPreviewSummaryLabel.setLayoutSpec(null);
+        settingsFooterHintLabel.setLayoutSpec(null);
+        settingsProfileLabel.setLayoutSpec(null);
+        settingsAuthorLabel.setLayoutSpec(null);
+        settingsPathLabel.setLayoutSpec(null);
+        settingsAnimationLabel.setLayoutSpec(null);
+        settingsDensityLabel.setLayoutSpec(null);
+        settingsProfileInput.setLayoutSpec(null);
+        settingsAuthorInput.setLayoutSpec(null);
+        settingsPathInput.setLayoutSpec(null);
+        settingsAnimationToggle.setLayoutSpec(null);
+        settingsDensitySelector.setLayoutSpec(null);
+        settingsApplyButton.setLayoutSpec(null);
+        settingsResetButton.setLayoutSpec(null);
+        backFromSettingsButton.setLayoutSpec(null);
 
-        settingsApplyButton.setLayoutSpec(new UiLayoutSpec().setWidth(UiLength.auto()).setHeight(UiLength.auto()).setMinWidth(buttonMinWidth).setGrow(1.0F));
-        settingsResetButton.setLayoutSpec(new UiLayoutSpec().setWidth(UiLength.auto()).setHeight(UiLength.auto()).setMinWidth(buttonMinWidth).setGrow(1.0F));
-        backFromSettingsButton.setLayoutSpec(new UiLayoutSpec().setWidth(UiLength.auto()).setHeight(UiLength.auto()).setMinWidth(buttonMinWidth).setGrow(1.0F));
+        settingsProfileLabel.setSuggestedSize(labelWidth, -1);
+        settingsAuthorLabel.setSuggestedSize(labelWidth, -1);
+        settingsPathLabel.setSuggestedSize(labelWidth, -1);
+        settingsAnimationLabel.setSuggestedSize(labelWidth, -1);
+        settingsDensityLabel.setSuggestedSize(labelWidth, -1);
+
+        settingsProfileInput.setSuggestedSize(fieldMinWidth, settingsProfileInput.getPreferredHeight());
+        settingsAuthorInput.setSuggestedSize(fieldMinWidth, settingsAuthorInput.getPreferredHeight());
+        settingsPathInput.setSuggestedSize(fieldMinWidth, settingsPathInput.getPreferredHeight());
+        settingsAnimationToggle.setSuggestedSize(fieldMinWidth, settingsAnimationToggle.getPreferredHeight());
+        settingsDensitySelector.setSuggestedSize(selectorMinWidth, settingsDensitySelector.getPreferredHeight());
+        settingsApplyButton.setSuggestedSize(buttonMinWidth, settingsApplyButton.getPreferredHeight());
+        settingsResetButton.setSuggestedSize(buttonMinWidth, settingsResetButton.getPreferredHeight());
+        backFromSettingsButton.setSuggestedSize(buttonMinWidth, backFromSettingsButton.getPreferredHeight());
     }
 
     private void applyFocusLayout() {

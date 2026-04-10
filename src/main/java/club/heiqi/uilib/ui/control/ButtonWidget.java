@@ -115,6 +115,11 @@ public class ButtonWidget extends Widget {
         return 42;
     }
 
+    @Override
+    public int getMinContentWidth() {
+        return Math.max(120, DefaultFontRendererAdapter.getInstance().getStringWidth(text) * 2 + 32);
+    }
+
     protected void triggerClick() {
         if (clickHandler != null) {
             clickHandler.run();

@@ -7,6 +7,7 @@ import java.util.List;
 import club.heiqi.uilib.ui.event.UiKeyEvent;
 import club.heiqi.uilib.ui.event.UiMouseEvent;
 import club.heiqi.uilib.ui.event.UiTextInputEvent;
+import club.heiqi.uilib.ui.layout.DivItemStyle;
 import club.heiqi.uilib.ui.layout.UiLayoutSpec;
 import club.heiqi.uilib.ui.render.UiRenderContext;
 
@@ -24,11 +25,14 @@ public class Widget {
     private int y;
     private int width;
     private int height;
+    private int suggestedWidth = -1;
+    private int suggestedHeight = -1;
     private boolean visible = true;
     private boolean enabled = true;
     private boolean clipChildren;
     private boolean clipHitTest;
     private UiLayoutSpec layoutSpec;
+    private DivItemStyle divItemStyle;
 
     /**
      * 绘制当前组件与其子组件。
@@ -230,6 +234,15 @@ public class Widget {
     }
 
     /**
+     * 获取组件在自动布局中的建议宽度。
+     *
+     * @return 建议宽度
+     */
+    public int getSuggestedWidth() {
+        return suggestedWidth >= 0 ? suggestedWidth : getPreferredWidth();
+    }
+
+    /**
      * 获取组件期望高度。
      *
      * @return 期望高度
@@ -246,6 +259,35 @@ public class Widget {
      */
     public int getPreferredHeightForWidth(int width) {
         return getPreferredHeight();
+    }
+
+    /**
+     * 获取组件在自动布局中的建议高度。
+     *
+     * @param width 当前宽度
+     * @return 建议高度
+     */
+    public int getSuggestedHeightForWidth(int width) {
+        return suggestedHeight >= 0 ? suggestedHeight : getPreferredHeightForWidth(width);
+    }
+
+    /**
+     * 获取组件在 Div 容器中可压缩到的最小内容宽度。
+     *
+     * @return 最小内容宽度
+     */
+    public int getMinContentWidth() {
+        return 0;
+    }
+
+    /**
+     * 获取组件在 Div 容器中可压缩到的最小内容高度。
+     *
+     * @param width 当前宽度
+     * @return 最小内容高度
+     */
+    public int getMinContentHeightForWidth(int width) {
+        return getPreferredHeightForWidth(width);
     }
 
     /**
@@ -291,6 +333,19 @@ public class Widget {
         return this;
     }
 
+    /**
+     * 设置组件的布局建议尺寸，不会直接改变当前真实布局结果。
+     *
+     * @param suggestedWidth 建议宽度，小于 0 表示回退控件自身测量
+     * @param suggestedHeight 建议高度，小于 0 表示回退控件自身测量
+     * @return 当前组件
+     */
+    public Widget setSuggestedSize(int suggestedWidth, int suggestedHeight) {
+        this.suggestedWidth = suggestedWidth;
+        this.suggestedHeight = suggestedHeight;
+        return this;
+    }
+
     public Widget setVisible(boolean visible) {
         this.visible = visible;
         return this;
@@ -313,6 +368,15 @@ public class Widget {
 
     public Widget setLayoutSpec(UiLayoutSpec layoutSpec) {
         this.layoutSpec = layoutSpec;
+        return this;
+    }
+
+    public DivItemStyle getDivItemStyle() {
+        return divItemStyle;
+    }
+
+    public Widget setDivItemStyle(DivItemStyle divItemStyle) {
+        this.divItemStyle = divItemStyle;
         return this;
     }
 

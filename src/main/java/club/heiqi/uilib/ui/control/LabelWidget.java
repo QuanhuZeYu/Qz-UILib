@@ -75,6 +75,32 @@ public class LabelWidget extends Widget {
         return lineCount * getPreferredHeight();
     }
 
+    @Override
+    public int getMinContentWidth() {
+        if (text == null || text.isEmpty()) {
+            return 0;
+        }
+        if (!wrap) {
+            return getPreferredWidth();
+        }
+
+        DefaultFontRendererAdapter adapter = DefaultFontRendererAdapter.getInstance();
+        int widest = 0;
+        StringBuilder segmentBuilder = new StringBuilder();
+        for (int index = 0; index < text.length();) {
+            int codepoint = text.codePointAt(index);
+            if (Character.isWhitespace(codepoint)) {
+                widest = Math.max(widest, adapter.getStringWidth(segmentBuilder.toString()) * 2);
+                segmentBuilder.setLength(0);
+            } else {
+                segmentBuilder.appendCodePoint(codepoint);
+            }
+            index += Character.charCount(codepoint);
+        }
+        widest = Math.max(widest, adapter.getStringWidth(segmentBuilder.toString()) * 2);
+        return widest;
+    }
+
     public String getText() {
         return text;
     }

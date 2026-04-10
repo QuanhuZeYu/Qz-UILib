@@ -133,6 +133,11 @@ public class TextInputWidget extends Widget {
         return 42;
     }
 
+    @Override
+    public int getMinContentWidth() {
+        return 120;
+    }
+
     private String trimToVisibleText(String source, int uiWidth, boolean keepTail) {
         DefaultFontRendererAdapter adapter = DefaultFontRendererAdapter.getInstance();
         int rawWidth = Math.max(1, Math.round(uiWidth / 2.0F));

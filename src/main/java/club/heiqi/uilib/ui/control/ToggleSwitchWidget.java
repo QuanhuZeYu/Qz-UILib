@@ -2,6 +2,7 @@ package club.heiqi.uilib.ui.control;
 
 import org.lwjglx.input.Keyboard;
 
+import club.heiqi.uilib.font.api.DefaultFontRendererAdapter;
 import club.heiqi.uilib.ui.event.UiKeyEvent;
 import club.heiqi.uilib.ui.event.UiMouseEvent;
 import club.heiqi.uilib.ui.render.UiRenderContext;
@@ -87,6 +88,11 @@ public class ToggleSwitchWidget extends Widget {
     @Override
     public int getPreferredHeight() {
         return 42;
+    }
+
+    @Override
+    public int getMinContentWidth() {
+        return Math.max(150, DefaultFontRendererAdapter.getInstance().getStringWidth(label) * 2 + 110);
     }
 
     public ToggleSwitchWidget setChecked(boolean checked) {
