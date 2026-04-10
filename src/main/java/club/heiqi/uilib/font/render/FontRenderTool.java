@@ -18,6 +18,7 @@ public class FontRenderTool {
     private int uvBuffer;
     private int colorBuffer;
     private int uvBoundsBuffer;
+    private int glyphFlagsBuffer;
     private int indexBuffer;
 
     /**
@@ -35,6 +36,7 @@ public class FontRenderTool {
         uvBuffer = GL15.glGenBuffers();
         colorBuffer = GL15.glGenBuffers();
         uvBoundsBuffer = GL15.glGenBuffers();
+        glyphFlagsBuffer = GL15.glGenBuffers();
         indexBuffer = GL15.glGenBuffers();
 
         GL15.glBindBuffer(GL15.GL_ARRAY_BUFFER, positionBuffer);
@@ -53,6 +55,10 @@ public class FontRenderTool {
         GL20.glVertexAttribPointer(3, 4, GL11.GL_FLOAT, false, 0, 0L);
         GL20.glEnableVertexAttribArray(3);
 
+        GL15.glBindBuffer(GL15.GL_ARRAY_BUFFER, glyphFlagsBuffer);
+        GL20.glVertexAttribPointer(4, 1, GL11.GL_FLOAT, false, 0, 0L);
+        GL20.glEnableVertexAttribArray(4);
+
         GL15.glBindBuffer(GL15.GL_ELEMENT_ARRAY_BUFFER, indexBuffer);
 
         GL30.glBindVertexArray(0);
@@ -67,6 +73,7 @@ public class FontRenderTool {
      * @param uvData 纹理坐标缓冲
      * @param colorData 颜色缓冲
      * @param uvBoundsData UV 边界缓冲
+     * @param glyphFlagsData 字形标记缓冲
      * @param indexData 索引缓冲
      * @param indexCount 索引数量
      */
@@ -75,6 +82,7 @@ public class FontRenderTool {
             FloatBuffer uvData,
             FloatBuffer colorData,
             FloatBuffer uvBoundsData,
+            FloatBuffer glyphFlagsData,
             IntBuffer indexData,
             int indexCount) {
         initialize();
@@ -91,6 +99,9 @@ public class FontRenderTool {
 
         GL15.glBindBuffer(GL15.GL_ARRAY_BUFFER, uvBoundsBuffer);
         GL15.glBufferData(GL15.GL_ARRAY_BUFFER, uvBoundsData, GL15.GL_DYNAMIC_DRAW);
+
+        GL15.glBindBuffer(GL15.GL_ARRAY_BUFFER, glyphFlagsBuffer);
+        GL15.glBufferData(GL15.GL_ARRAY_BUFFER, glyphFlagsData, GL15.GL_DYNAMIC_DRAW);
 
         GL15.glBindBuffer(GL15.GL_ELEMENT_ARRAY_BUFFER, indexBuffer);
         GL15.glBufferData(GL15.GL_ELEMENT_ARRAY_BUFFER, indexData, GL15.GL_DYNAMIC_DRAW);

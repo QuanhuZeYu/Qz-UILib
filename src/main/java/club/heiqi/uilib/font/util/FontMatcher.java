@@ -6,6 +6,7 @@ import java.awt.font.GlyphVector;
 import java.awt.geom.AffineTransform;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.atomic.AtomicLong;
 
 import club.heiqi.uilib.font.FontType;
 
@@ -18,6 +19,8 @@ public class FontMatcher {
 
     private final FontCatalog fontCatalog;
     private final Map<String, Font> matchCache = new ConcurrentHashMap<String, Font>();
+    private final AtomicLong cacheHitCount = new AtomicLong(0L);
+    private final AtomicLong cacheMissCount = new AtomicLong(0L);
 
     /**
      * 创建字体匹配器。
@@ -39,8 +42,10 @@ public class FontMatcher {
         String cacheKey = buildCacheKey(codepoint, fontType);
         Font cachedFont = matchCache.get(cacheKey);
         if (cachedFont != null) {
+            cacheHitCount.incrementAndGet();
             return cachedFont;
         }
+        cacheMissCount.incrementAndGet();
 
         for (Font font : fontCatalog.getFonts()) {
             if (matchesWeight(font, fontType) && canDisplay(font, codepoint)) {
@@ -63,6 +68,24 @@ public class FontMatcher {
      */
     public void clearCache() {
         matchCache.clear();
+    }
+
+    /**
+     * 获取缓存命中次数。
+     *
+     * @return 命中次数
+     */
+    public long getCacheHitCount() {
+        return cacheHitCount.get();
+    }
+
+    /**
+     * 获取缓存未命中次数。
+     *
+     * @return 未命中次数
+     */
+    public long getCacheMissCount() {
+        return cacheMissCount.get();
     }
 
     private boolean matchesWeight(Font font, FontType fontType) {

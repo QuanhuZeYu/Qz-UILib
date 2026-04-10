@@ -3,6 +3,7 @@
 varying vec2 texCoord;
 varying vec4 Color;
 varying vec4 uvBounds;
+varying float glyphFlags;
 
 uniform sampler2D mainTex;
 uniform vec2 smoothRange = vec2(0.0, 0.9);
@@ -109,13 +110,18 @@ void main() {
         tex /= totalWeight;
     }
 
-    vec4 finalColor = vec4(Color.rgb, tex.a * Color.a);
-    finalColor.rgb = rgb2hsv(finalColor.rgb);
-    float originalValue = finalColor.b;
-    float brightnessWeight = smoothstep(0.35, 0.95, originalValue);
-    finalColor.b = mix(originalValue, originalValue * brightnessGain, brightnessWeight);
-    finalColor.b = clamp(finalColor.b, 0.0, 1.0);
-    finalColor.rgb = hsv2rgb(finalColor.rgb);
+    vec4 finalColor;
+    if (glyphFlags > 0.5) {
+        finalColor = vec4(tex.rgb, tex.a * Color.a);
+    } else {
+        finalColor = vec4(Color.rgb, tex.a * Color.a);
+        finalColor.rgb = rgb2hsv(finalColor.rgb);
+        float originalValue = finalColor.b;
+        float brightnessWeight = smoothstep(0.35, 0.95, originalValue);
+        finalColor.b = mix(originalValue, originalValue * brightnessGain, brightnessWeight);
+        finalColor.b = clamp(finalColor.b, 0.0, 1.0);
+        finalColor.rgb = hsv2rgb(finalColor.rgb);
+    }
     finalColor.a = smoothstep(smoothRange.x, smoothRange.y, finalColor.a);
     gl_FragColor = finalColor;
 }

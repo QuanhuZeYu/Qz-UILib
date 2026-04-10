@@ -61,7 +61,13 @@ public class GlyphGenerator {
             glyphMetrics = glyphVector.getGlyphMetrics(0);
             lineMetrics = font.getLineMetrics(text, context);
 
-            retry = visualBounds.getWidth() > task.getGlyphSize() || visualBounds.getHeight() > task.getGlyphSize();
+            float baselineY = (float) (-lineMetrics.getDescent() + task.getGlyphSize());
+            double top = baselineY + visualBounds.getY();
+            double bottom = baselineY + visualBounds.getMaxY();
+            retry = visualBounds.getWidth() > task.getGlyphSize()
+                    || visualBounds.getHeight() > task.getGlyphSize()
+                    || top < 0.0D
+                    || bottom > task.getGlyphSize();
             if (retry) {
                 font = font.deriveFont(Math.max(6.0F, font.getSize2D() - 0.5F));
             }
@@ -85,10 +91,12 @@ public class GlyphGenerator {
             x = (float) (-visualBounds.getX() + 2.0D);
             advance = (float) (advance - visualBounds.getX() + 2.0D);
         }
-        float y = (float) (-lineMetrics.getDescent() + task.getGlyphSize() + FontConfig.renderOffset);
+        float y = (float) (-lineMetrics.getDescent() + task.getGlyphSize());
         graphics.drawString(text, x, y);
         graphics.dispose();
         tempGraphics.dispose();
+
+        boolean coloredGlyph = containsColoredPixels(image);
 
         GlyphInfo glyphInfo = new GlyphInfo(
                 task.getCodepoint(),
@@ -96,7 +104,8 @@ public class GlyphGenerator {
                 task.getGlyphSize(),
                 advance,
                 (float) visualBounds.getWidth(),
-                (float) visualBounds.getHeight());
+                (float) visualBounds.getHeight(),
+                coloredGlyph);
         return new GlyphGenerationResult(task.getCodepoint(), task.getFontType(), image, glyphInfo);
     }
 
@@ -106,5 +115,27 @@ public class GlyphGenerator {
             style = Font.BOLD;
         }
         return baseFont.deriveFont(style, (float) Math.max(glyphSize * FontConfig.fontScale, 6.0D));
+    }
+
+    private boolean containsColoredPixels(BufferedImage image) {
+        int width = image.getWidth();
+        int height = image.getHeight();
+        for (int y = 0; y < height; y++) {
+            for (int x = 0; x < width; x++) {
+                int pixel = image.getRGB(x, y);
+                int alpha = (pixel >> 24) & 0xFF;
+                if (alpha == 0) {
+                    continue;
+                }
+
+                int red = (pixel >> 16) & 0xFF;
+                int green = (pixel >> 8) & 0xFF;
+                int blue = pixel & 0xFF;
+                if (red != green || green != blue) {
+                    return true;
+                }
+            }
+        }
+        return false;
     }
 }

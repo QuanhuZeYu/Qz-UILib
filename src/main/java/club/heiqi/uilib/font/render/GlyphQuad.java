@@ -12,6 +12,7 @@ public class GlyphQuad {
     private final float[] uv;
     private final float[] color;
     private final float[] uvBounds;
+    private final float[] glyphFlags;
     private final int[] index;
 
     /**
@@ -22,14 +23,17 @@ public class GlyphQuad {
      * @param uv 纹理坐标
      * @param color 顶点颜色
      * @param uvBounds UV 边界
+     * @param glyphFlags 字形附加标记
      * @param index 索引数据
      */
-    public GlyphQuad(GlyphPage glyphPage, float[] vertex, float[] uv, float[] color, float[] uvBounds, int[] index) {
+    public GlyphQuad(GlyphPage glyphPage, float[] vertex, float[] uv, float[] color, float[] uvBounds, float[] glyphFlags,
+            int[] index) {
         this.glyphPage = glyphPage;
         this.vertex = vertex;
         this.uv = uv;
         this.color = color;
         this.uvBounds = uvBounds;
+        this.glyphFlags = glyphFlags;
         this.index = index;
     }
 
@@ -51,6 +55,10 @@ public class GlyphQuad {
 
     public float[] getUvBounds() {
         return uvBounds;
+    }
+
+    public float[] getGlyphFlags() {
+        return glyphFlags;
     }
 
     public int[] getIndex() {

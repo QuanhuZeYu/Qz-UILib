@@ -13,6 +13,7 @@ import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.atomic.AtomicLong;
 
 import club.heiqi.uilib.font.FontType;
 import club.heiqi.uilib.font.config.FontConfig;
@@ -32,6 +33,8 @@ public class TextLayoutService {
     private final FontMatcher fontMatcher;
     private final GlyphPageManager glyphPageManager;
     private final Map<String, Double> widthCache = new ConcurrentHashMap<String, Double>();
+    private final AtomicLong widthCacheHitCount = new AtomicLong(0L);
+    private final AtomicLong widthCacheMissCount = new AtomicLong(0L);
 
     /**
      * 创建文本布局服务。
@@ -263,8 +266,10 @@ public class TextLayoutService {
         String cacheKey = buildWidthCacheKey(codepoint, fontType);
         Double cachedWidth = widthCache.get(cacheKey);
         if (cachedWidth != null) {
+            widthCacheHitCount.incrementAndGet();
             return cachedWidth.doubleValue();
         }
+        widthCacheMissCount.incrementAndGet();
 
         GlyphInfo info = glyphPageManager.getGlyphInfo(codepoint, fontType);
         if (info == null) {
@@ -304,14 +309,23 @@ public class TextLayoutService {
 
         GlyphMetrics glyphMetrics;
         Rectangle2D visualBounds;
+        LineMetrics lineMetrics;
         boolean retry;
 
         do {
-            GlyphVector glyphVector = font.createGlyphVector(FONT_RENDER_CONTEXT, new String(Character.toChars(codepoint)));
+            String text = new String(Character.toChars(codepoint));
+            GlyphVector glyphVector = font.createGlyphVector(FONT_RENDER_CONTEXT, text);
             visualBounds = glyphVector.getVisualBounds();
             glyphMetrics = glyphVector.getGlyphMetrics(0);
+            lineMetrics = font.getLineMetrics(text, FONT_RENDER_CONTEXT);
 
-            retry = visualBounds.getWidth() > glyphSize || visualBounds.getHeight() > glyphSize;
+            float baselineY = (float) (-lineMetrics.getDescent() + glyphSize);
+            double top = baselineY + visualBounds.getY();
+            double bottom = baselineY + visualBounds.getMaxY();
+            retry = visualBounds.getWidth() > glyphSize
+                    || visualBounds.getHeight() > glyphSize
+                    || top < 0.0D
+                    || bottom > glyphSize;
             if (retry) {
                 font = font.deriveFont(Math.max(6.0F, font.getSize2D() - 0.5F));
             }
@@ -332,6 +346,24 @@ public class TextLayoutService {
      */
     public void clearCache() {
         widthCache.clear();
+    }
+
+    /**
+     * 获取宽度缓存命中次数。
+     *
+     * @return 命中次数
+     */
+    public long getWidthCacheHitCount() {
+        return widthCacheHitCount.get();
+    }
+
+    /**
+     * 获取宽度缓存未命中次数。
+     *
+     * @return 未命中次数
+     */
+    public long getWidthCacheMissCount() {
+        return widthCacheMissCount.get();
     }
 
     private String buildWidthCacheKey(int codepoint, FontType fontType) {

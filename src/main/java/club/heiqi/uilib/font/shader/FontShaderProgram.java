@@ -45,6 +45,7 @@ public class FontShaderProgram {
             attributeLocations.put("tex", Integer.valueOf(1));
             attributeLocations.put("color", Integer.valueOf(2));
             attributeLocations.put("v_uvBounds", Integer.valueOf(3));
+            attributeLocations.put("v_glyphFlags", Integer.valueOf(4));
             missingUniforms.clear();
             loadProgram();
         }
@@ -201,6 +202,7 @@ public class FontShaderProgram {
         GL20.glBindAttribLocation(shaderProgramId, 1, "tex");
         GL20.glBindAttribLocation(shaderProgramId, 2, "color");
         GL20.glBindAttribLocation(shaderProgramId, 3, "v_uvBounds");
+        GL20.glBindAttribLocation(shaderProgramId, 4, "v_glyphFlags");
         GL20.glLinkProgram(shaderProgramId);
 
         if (GL20.glGetProgrami(shaderProgramId, GL20.GL_LINK_STATUS) == GL11.GL_FALSE) {

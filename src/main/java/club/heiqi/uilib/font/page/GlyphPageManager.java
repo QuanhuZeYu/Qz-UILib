@@ -195,6 +195,33 @@ public class GlyphPageManager {
         return pendingUploads.size();
     }
 
+    /**
+     * 获取已就绪字符数量。
+     *
+     * @return 已就绪字符数量
+     */
+    public int getReadyGlyphCount() {
+        return readyPages.size();
+    }
+
+    /**
+     * 获取普通字符页数量。
+     *
+     * @return 普通字符页数量
+     */
+    public int getNormalPageCount() {
+        return normalPages.size();
+    }
+
+    /**
+     * 获取粗体字符页数量。
+     *
+     * @return 粗体字符页数量
+     */
+    public int getBoldPageCount() {
+        return boldPages.size();
+    }
+
     private void ensureCapacity(FontType fontType) {
         List<GlyphPage> pages = getPages(fontType);
         int availableCount = 0;

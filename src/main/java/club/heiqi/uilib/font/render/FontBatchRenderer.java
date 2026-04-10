@@ -8,6 +8,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
 
 import club.heiqi.uilib.MyMod;
 import club.heiqi.uilib.font.config.FontConfig;
+import club.heiqi.uilib.font.glyph.GlyphInfo;
 import club.heiqi.uilib.font.page.GlyphPage;
 import club.heiqi.uilib.font.page.GlyphPageSlot;
 import club.heiqi.uilib.font.shader.FontShaderProgram;
@@ -33,6 +34,7 @@ public class FontBatchRenderer {
     private final FloatBuffer uvBuffer = BufferUtils.createFloatBuffer(1024 * 64 * 2);
     private final FloatBuffer colorBuffer = BufferUtils.createFloatBuffer(1024 * 64 * 4);
     private final FloatBuffer uvBoundsBuffer = BufferUtils.createFloatBuffer(1024 * 64 * 4);
+    private final FloatBuffer glyphFlagsBuffer = BufferUtils.createFloatBuffer(1024 * 64 * 1);
     private final IntBuffer indexBuffer = BufferUtils.createIntBuffer(1024 * 64 * 6);
     private final FloatBuffer modelViewBuffer = BufferUtils.createFloatBuffer(16);
     private final FloatBuffer projectionBuffer = BufferUtils.createFloatBuffer(16);
@@ -68,6 +70,7 @@ public class FontBatchRenderer {
      * @param charSize 字体显示尺寸
      * @param color 文本颜色
      * @param italic 是否斜体
+     * @param glyphInfo 字符度量信息
      */
     public void collect(
             GlyphPage glyphPage,
@@ -76,7 +79,8 @@ public class FontBatchRenderer {
             float y,
             float charSize,
             int color,
-            boolean italic) {
+            boolean italic,
+            GlyphInfo glyphInfo) {
         initialize();
 
         float textureSize = glyphPage.getTextureSize();
@@ -89,12 +93,13 @@ public class FontBatchRenderer {
         float red = (float) (color >> 16 & 255) / 255.0F;
         float green = (float) (color >> 8 & 255) / 255.0F;
         float blue = (float) (color & 255) / 255.0F;
+        float z = (float) FontConfig.renderOffset;
 
         float[] vertex = new float[] {
-                italic ? x + 2.0F : x, y, 0.0F,
-                x, y + charSize, 0.0F,
-                x + charSize, y + charSize, 0.0F,
-                italic ? x + charSize + 2.0F : x + charSize, y, 0.0F
+                italic ? x + 2.0F : x, y, z,
+                x, y + charSize, z,
+                x + charSize, y + charSize, z,
+                italic ? x + charSize + 2.0F : x + charSize, y, z
         };
         float[] uv = new float[] { u0, v0, u0, v1, u1, v1, u1, v0 };
         float[] vertexColor = new float[] {
@@ -109,6 +114,8 @@ public class FontBatchRenderer {
                 u0, v0, u1, v1,
                 u0, v0, u1, v1
         };
+        float coloredGlyphFlag = glyphInfo != null && glyphInfo.isColoredGlyph() ? 1.0F : 0.0F;
+        float[] glyphFlags = new float[] { coloredGlyphFlag, coloredGlyphFlag, coloredGlyphFlag, coloredGlyphFlag };
         int[] index = new int[] { 0, 1, 2, 2, 3, 0 };
 
         GlyphRenderBatch batch = currentBatches.get(glyphPage);
@@ -116,7 +123,7 @@ public class FontBatchRenderer {
             batch = new GlyphRenderBatch(glyphPage);
             currentBatches.put(glyphPage, batch);
         }
-        batch.addQuad(new GlyphQuad(glyphPage, vertex, uv, vertexColor, uvBounds, index));
+        batch.addQuad(new GlyphQuad(glyphPage, vertex, uv, vertexColor, uvBounds, glyphFlags, index));
         quadCount++;
     }
 
@@ -163,7 +170,8 @@ public class FontBatchRenderer {
                 GL13.glActiveTexture(GL13.GL_TEXTURE0);
                 GL11.glBindTexture(GL11.GL_TEXTURE_2D, page.getTextureId());
                 shaderProgram.setUniformI("mainTex", 0);
-                renderTool.render(vertexBuffer, uvBuffer, colorBuffer, uvBoundsBuffer, indexBuffer, indexBuffer.limit());
+                renderTool.render(vertexBuffer, uvBuffer, colorBuffer, uvBoundsBuffer, glyphFlagsBuffer, indexBuffer,
+                        indexBuffer.limit());
             }
             shaderProgram.unbind();
             GL11.glBindTexture(GL11.GL_TEXTURE_2D, 0);
@@ -226,6 +234,7 @@ public class FontBatchRenderer {
         uvBuffer.clear();
         colorBuffer.clear();
         uvBoundsBuffer.clear();
+        glyphFlagsBuffer.clear();
         indexBuffer.clear();
 
         int vertexOffset = 0;
@@ -234,6 +243,7 @@ public class FontBatchRenderer {
             uvBuffer.put(quad.getUv());
             colorBuffer.put(quad.getColor());
             uvBoundsBuffer.put(quad.getUvBounds());
+            glyphFlagsBuffer.put(quad.getGlyphFlags());
             for (int index : quad.getIndex()) {
                 indexBuffer.put(index + vertexOffset);
             }
@@ -244,6 +254,7 @@ public class FontBatchRenderer {
         uvBuffer.flip();
         colorBuffer.flip();
         uvBoundsBuffer.flip();
+        glyphFlagsBuffer.flip();
         indexBuffer.flip();
     }
 }

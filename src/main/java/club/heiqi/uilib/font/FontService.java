@@ -99,6 +99,7 @@ public class FontService {
         }
 
         glyphPageManager.flushPendingUploads(maxUploadCount);
+        debugLogStats("render_tick");
     }
 
     /**
@@ -118,6 +119,7 @@ public class FontService {
         long now = System.currentTimeMillis();
         lastDrawStageUploadAt = now;
         drawStageUploadTimestamps.addLast(Long.valueOf(now));
+        debugLogStats("draw_stage");
     }
 
     /**
@@ -192,6 +194,25 @@ public class FontService {
         return decorationRenderer;
     }
 
+    /**
+     * 获取当前字体系统运行时统计。
+     *
+     * @return 运行时统计快照
+     */
+    public FontRuntimeStats getRuntimeStats() {
+        return new FontRuntimeStats(
+                glyphPageManager.getPendingUploadCount(),
+                glyphPageManager.getReadyGlyphCount(),
+                glyphPageManager.getNormalPageCount(),
+                glyphPageManager.getBoldPageCount(),
+                drawStageUploadTimestamps.size(),
+                batchRenderer.getQuadCount(),
+                fontMatcher.getCacheHitCount(),
+                fontMatcher.getCacheMissCount(),
+                textLayoutService.getWidthCacheHitCount(),
+                textLayoutService.getWidthCacheMissCount());
+    }
+
     private boolean canRunDrawStageUpload() {
         long now = System.currentTimeMillis();
 
@@ -202,5 +223,12 @@ public class FontService {
             return false;
         }
         return drawStageUploadTimestamps.size() < FontConfig.drawStageUploadLimitPerSecond;
+    }
+
+    private void debugLogStats(String source) {
+        if (!club.heiqi.uilib.Config.useDebug) {
+            return;
+        }
+        MyMod.LOG.info("字体运行统计[{}]: {}", source, getRuntimeStats());
     }
 }

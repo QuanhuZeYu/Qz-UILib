@@ -8,6 +8,7 @@ import club.heiqi.uilib.font.FontType;
 import club.heiqi.uilib.font.config.FontConfig;
 import club.heiqi.uilib.font.glyph.GlyphGenerationPriority;
 import club.heiqi.uilib.font.glyph.GlyphGenerationTask;
+import club.heiqi.uilib.font.glyph.GlyphInfo;
 import club.heiqi.uilib.font.layout.TextLayoutService;
 import club.heiqi.uilib.font.layout.TextSegment;
 import club.heiqi.uilib.font.layout.TextStyle;
@@ -141,7 +142,8 @@ public class DefaultFontRendererAdapter implements FontRendererAdapter {
                     currentX += measuredWidth;
                 } else {
                     int renderColor = shadow ? darkenShadow(style.getColor()) : style.getColor();
-                    fontService.getBatchRenderer().collect(glyphPage, slot, currentX, drawY, (float) FontConfig.charSize, renderColor, style.isItalic());
+                    GlyphInfo glyphInfo = glyphPageManager.getGlyphInfo(renderCodepoint, fontType);
+                    fontService.getBatchRenderer().collect(glyphPage, slot, currentX, drawY, (float) FontConfig.charSize, renderColor, style.isItalic(), glyphInfo);
                     collectDecorations(fontService, currentX, drawY, measuredWidth, style, renderColor);
                     currentX += measuredWidth;
                 }
