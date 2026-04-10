@@ -227,6 +227,20 @@ public class TextLayoutService {
                 continue;
             }
 
+            if (codepoint == '\r' || codepoint == '\n') {
+                i += Character.charCount(codepoint);
+                if (codepoint == '\r' && i < text.length() && text.charAt(i) == '\n') {
+                    i++;
+                }
+                builder.append('\n');
+                if (i < text.length()) {
+                    builder.append(currentStyle.toFormattingCodes(0xFFFFFFFF));
+                }
+                width = 0.0D;
+                lineHasVisibleContent = false;
+                continue;
+            }
+
             double charWidth = measureCodepointWidth(codepoint, currentStyle.getFontType());
             if (width + charWidth > wrapWidth && lineHasVisibleContent) {
                 builder.append('\n');

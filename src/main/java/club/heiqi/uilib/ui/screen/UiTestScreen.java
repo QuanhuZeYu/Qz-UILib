@@ -33,6 +33,7 @@ public class UiTestScreen extends BaseScreen {
     private final ResponsivePanelWidget settingsFormPage = new ResponsivePanelWidget();
     private final ResponsivePanelWidget focusNavigationPage = new ResponsivePanelWidget();
     private final VerticalScrollPanelWidget settingsScrollPanel = new VerticalScrollPanelWidget();
+    private final VerticalScrollPanelWidget focusScrollPanel = new VerticalScrollPanelWidget();
 
     private final VerticalStackWidget menuStack = new VerticalStackWidget();
     private final VerticalStackWidget inputStack = new VerticalStackWidget();
@@ -424,6 +425,7 @@ public class UiTestScreen extends BaseScreen {
         settingsPreviewPanel.setClipChildren(true);
         responsiveArenaPanel.setClipChildren(true);
         settingsScrollPanel.setPadding(12, 12, 18, 12).setScrollStep(54);
+        focusScrollPanel.setPadding(12, 12, 18, 12).setScrollStep(54);
     }
 
     private void configureLayoutSpecs() {
@@ -535,7 +537,8 @@ public class UiTestScreen extends BaseScreen {
         focusNavigationStack.addChild(focusModeRow);
         focusNavigationStack.addChild(focusStatusLabel);
         focusNavigationStack.addChild(focusActionRow);
-        focusNavigationPage.addChild(focusNavigationStack);
+        focusScrollPanel.getContent().addChild(focusNavigationStack);
+        focusNavigationPage.addChild(focusScrollPanel);
 
         root.addChild(menuPage);
         root.addChild(inputTestPage);
@@ -713,6 +716,8 @@ public class UiTestScreen extends BaseScreen {
     }
 
     private void applyFocusLayout() {
+        focusScrollPanel.setLayoutSpec(new UiLayoutSpec().setWidth(UiLength.percent(1.0F)).setHeight(UiLength.auto()).setMinHeight(220).setGrow(1.0F).setFill(true));
+        focusNavigationStack.setLayoutSpec(new UiLayoutSpec().setWidth(UiLength.percent(1.0F)).setHeight(UiLength.auto()).setFill(true));
         focusTitleLabel.setLayoutSpec(new UiLayoutSpec().setWidth(UiLength.percent(1.0F)).setHeight(UiLength.auto()));
         focusHintLabel.setLayoutSpec(new UiLayoutSpec().setWidth(UiLength.percent(1.0F)).setHeight(UiLength.auto()));
         focusProfileRow.setLayoutSpec(new UiLayoutSpec().setWidth(UiLength.percent(1.0F)).setHeight(UiLength.auto()));

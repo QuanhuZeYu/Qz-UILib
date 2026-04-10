@@ -71,6 +71,30 @@ public class VerticalScrollPanelWidget extends ResponsivePanelWidget {
         return content.getY();
     }
 
+    /**
+     * 将目标子组件滚动到当前可视区域内。
+     *
+     * @param target 目标组件
+     */
+    public void scrollDescendantIntoView(Widget target) {
+        if (!isDescendantOfContent(target)) {
+            return;
+        }
+
+        updateContentBounds();
+        int viewportTop = getAbsoluteY() + getPaddingTop();
+        int viewportBottom = getAbsoluteY() + getHeight() - getPaddingBottom();
+        int targetTop = target.getAbsoluteY();
+        int targetBottom = targetTop + target.getHeight();
+
+        if (targetTop < viewportTop) {
+            setScrollOffset(scrollOffset - (viewportTop - targetTop));
+        } else if (targetBottom > viewportBottom) {
+            setScrollOffset(scrollOffset + (targetBottom - viewportBottom));
+        }
+        updateContentBounds();
+    }
+
     @Override
     protected int[] getChildClipRect() {
         return new int[] {
@@ -258,6 +282,17 @@ public class VerticalScrollPanelWidget extends ResponsivePanelWidget {
 
     private boolean containsInRect(int mouseX, int mouseY, int left, int top, int right, int bottom) {
         return mouseX >= left && mouseX < right && mouseY >= top && mouseY < bottom;
+    }
+
+    private boolean isDescendantOfContent(Widget target) {
+        Widget current = target;
+        while (current != null) {
+            if (current == content) {
+                return true;
+            }
+            current = current.getParent();
+        }
+        return false;
     }
 
     /**

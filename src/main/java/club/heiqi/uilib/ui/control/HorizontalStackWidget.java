@@ -178,6 +178,11 @@ public class HorizontalStackWidget extends ResponsiveContainerWidget {
             }
         }
 
+        for (int index = 0; index < childCount; index++) {
+            resolvedHeights[index] = resolveChildHeight(getChildren().get(index), specs[index], margins[index], contentHeight,
+                    resolvedWidths[index]);
+        }
+
         int currentX = contentLeft;
 
         for (int index = 0; index < childCount; index++) {
@@ -265,5 +270,30 @@ public class HorizontalStackWidget extends ResponsiveContainerWidget {
             removed += cut;
         }
         return Math.max(0, overflow - removed);
+    }
+
+    /**
+     * 横向布局在最终宽度确定后，需要按最终宽度重算依赖宽度的高度。
+     *
+     * @param child 子组件
+     * @param layoutSpec 布局规格
+     * @param margin 外边距
+     * @param contentHeight 容器内容高度
+     * @param resolvedWidth 最终宽度
+     * @return 最终高度
+     */
+    private int resolveChildHeight(Widget child, UiLayoutSpec layoutSpec, UiInsets margin, int contentHeight,
+            int resolvedWidth) {
+        UiLength height = layoutSpec == null ? UiLength.auto() : layoutSpec.getHeight();
+        int availableHeight = Math.max(0, contentHeight - margin.getTop() - margin.getBottom());
+        int preferredHeight = child.getPreferredHeightForWidth(resolvedWidth);
+        int resolvedHeight = resolveLength(height, availableHeight, preferredHeight);
+        if (layoutSpec != null && layoutSpec.isFill() && height.getType() == UiLength.Type.AUTO) {
+            resolvedHeight = availableHeight;
+        }
+
+        int minHeight = layoutSpec == null ? 0 : layoutSpec.getMinHeight();
+        int maxHeight = layoutSpec == null ? Integer.MAX_VALUE : layoutSpec.getMaxHeight();
+        return fitDimension(resolvedHeight, minHeight, maxHeight, availableHeight);
     }
 }
