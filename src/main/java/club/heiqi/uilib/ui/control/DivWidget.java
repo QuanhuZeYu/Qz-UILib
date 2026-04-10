@@ -644,6 +644,14 @@ public class DivWidget extends Widget {
             return paddingLeft + paddingRight;
         }
 
+        if (wrap == Wrap.WRAP) {
+            int contentWidth = 0;
+            for (Widget child : getChildren()) {
+                contentWidth = Math.max(contentWidth, child.getMinContentWidth());
+            }
+            return paddingLeft + contentWidth + paddingRight;
+        }
+
         int contentWidth = 0;
         if (direction == Direction.ROW) {
             for (Widget child : getChildren()) {

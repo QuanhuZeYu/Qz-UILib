@@ -19,6 +19,8 @@ public class VerticalScrollPanelWidget extends ResponsivePanelWidget {
     private int horizontalScrollOffset;
     private int maxHorizontalScrollOffset;
     private int scrollStep = 36;
+    private int viewportWidth;
+    private int viewportHeight;
 
     private boolean hoveredVerticalScrollbar;
     private boolean hoveredVerticalThumb;
@@ -76,10 +78,16 @@ public class VerticalScrollPanelWidget extends ResponsivePanelWidget {
     }
 
     public int getVisibleContentWidth() {
+        if (viewportWidth > 0 || getWidth() <= 0) {
+            return viewportWidth;
+        }
         return Math.max(0, getWidth() - getPaddingLeft() - getPaddingRight());
     }
 
     public int getVisibleContentHeight() {
+        if (viewportHeight > 0 || getHeight() <= 0) {
+            return viewportHeight;
+        }
         return Math.max(0, getHeight() - getPaddingTop() - getPaddingBottom());
     }
 
@@ -112,8 +120,8 @@ public class VerticalScrollPanelWidget extends ResponsivePanelWidget {
         updateContentBounds();
         int viewportLeft = getAbsoluteX() + getPaddingLeft();
         int viewportTop = getAbsoluteY() + getPaddingTop();
-        int viewportRight = getAbsoluteX() + getWidth() - getPaddingRight();
-        int viewportBottom = getAbsoluteY() + getHeight() - getPaddingBottom();
+        int viewportRight = viewportLeft + getVisibleContentWidth();
+        int viewportBottom = viewportTop + getVisibleContentHeight();
         int targetLeft = target.getAbsoluteX();
         int targetTop = target.getAbsoluteY();
         int targetRight = targetLeft + target.getWidth();
@@ -135,11 +143,13 @@ public class VerticalScrollPanelWidget extends ResponsivePanelWidget {
 
     @Override
     protected int[] getChildClipRect() {
+        int viewportLeft = getAbsoluteX() + getPaddingLeft();
+        int viewportTop = getAbsoluteY() + getPaddingTop();
         return new int[] {
-                getAbsoluteX() + getPaddingLeft(),
-                getAbsoluteY() + getPaddingTop(),
-                getAbsoluteX() + getWidth() - getPaddingRight(),
-                getAbsoluteY() + getHeight() - getPaddingBottom()
+                viewportLeft,
+                viewportTop,
+                viewportLeft + getVisibleContentWidth(),
+                viewportTop + getVisibleContentHeight()
         };
     }
 
@@ -312,13 +322,35 @@ public class VerticalScrollPanelWidget extends ResponsivePanelWidget {
     }
 
     private void updateContentBounds() {
-        int visibleWidth = getVisibleContentWidth();
-        int visibleHeight = getVisibleContentHeight();
-        int contentWidth = Math.max(visibleWidth, content.getPreferredWidth());
-        int contentHeight = Math.max(visibleHeight, content.getPreferredHeightForWidth(contentWidth));
+        int baseVisibleWidth = Math.max(0, getWidth() - getPaddingLeft() - getPaddingRight());
+        int baseVisibleHeight = Math.max(0, getHeight() - getPaddingTop() - getPaddingBottom());
+        int reservedWidth = 0;
+        int reservedHeight = 0;
+        int contentWidth = baseVisibleWidth;
+        int contentHeight = baseVisibleHeight;
 
-        maxHorizontalScrollOffset = Math.max(0, contentWidth - visibleWidth);
-        maxVerticalScrollOffset = Math.max(0, contentHeight - visibleHeight);
+        for (int pass = 0; pass < 4; pass++) {
+            viewportWidth = Math.max(0, baseVisibleWidth - reservedWidth);
+            viewportHeight = Math.max(0, baseVisibleHeight - reservedHeight);
+            contentWidth = Math.max(viewportWidth, content.getMinContentWidth());
+            contentHeight = Math.max(viewportHeight, content.getPreferredHeightForWidth(contentWidth));
+
+            int nextReservedWidth = contentHeight > viewportHeight ? SCROLLBAR_TRACK_THICKNESS + SCROLLBAR_TRACK_GAP : 0;
+            int nextReservedHeight = contentWidth > viewportWidth ? SCROLLBAR_TRACK_THICKNESS + SCROLLBAR_TRACK_GAP : 0;
+            if (nextReservedWidth == reservedWidth && nextReservedHeight == reservedHeight) {
+                break;
+            }
+            reservedWidth = nextReservedWidth;
+            reservedHeight = nextReservedHeight;
+        }
+
+        viewportWidth = Math.max(0, baseVisibleWidth - reservedWidth);
+        viewportHeight = Math.max(0, baseVisibleHeight - reservedHeight);
+        contentWidth = Math.max(viewportWidth, content.getMinContentWidth());
+        contentHeight = Math.max(viewportHeight, content.getPreferredHeightForWidth(contentWidth));
+
+        maxHorizontalScrollOffset = Math.max(0, contentWidth - viewportWidth);
+        maxVerticalScrollOffset = Math.max(0, contentHeight - viewportHeight);
         setHorizontalScrollOffset(horizontalScrollOffset);
         setVerticalScrollOffset(verticalScrollOffset);
 
@@ -375,11 +407,10 @@ public class VerticalScrollPanelWidget extends ResponsivePanelWidget {
         }
 
         ScrollbarMetrics metrics = new ScrollbarMetrics();
-        int horizontalReserve = maxHorizontalScrollOffset > 0 ? SCROLLBAR_TRACK_THICKNESS + SCROLLBAR_TRACK_GAP : 0;
-        metrics.trackLeft = getAbsoluteX() + getWidth() - getPaddingRight() + SCROLLBAR_TRACK_GAP;
+        metrics.trackLeft = getAbsoluteX() + getPaddingLeft() + getVisibleContentWidth() + SCROLLBAR_TRACK_GAP;
         metrics.trackRight = metrics.trackLeft + SCROLLBAR_TRACK_THICKNESS;
         metrics.trackTop = getAbsoluteY() + getPaddingTop();
-        metrics.trackBottom = getAbsoluteY() + getHeight() - getPaddingBottom() - horizontalReserve;
+        metrics.trackBottom = metrics.trackTop + getVisibleContentHeight();
         metrics.trackLength = Math.max(1, metrics.trackBottom - metrics.trackTop);
         metrics.thumbSize = Math.max(SCROLLBAR_MIN_THUMB_SIZE,
                 Math.round(metrics.trackLength * (getVisibleContentHeight() / (float) Math.max(getVisibleContentHeight(), content.getHeight()))));
@@ -397,10 +428,9 @@ public class VerticalScrollPanelWidget extends ResponsivePanelWidget {
         }
 
         ScrollbarMetrics metrics = new ScrollbarMetrics();
-        int verticalReserve = maxVerticalScrollOffset > 0 ? SCROLLBAR_TRACK_THICKNESS + SCROLLBAR_TRACK_GAP : 0;
         metrics.trackLeft = getAbsoluteX() + getPaddingLeft();
-        metrics.trackRight = getAbsoluteX() + getWidth() - getPaddingRight() - verticalReserve;
-        metrics.trackTop = getAbsoluteY() + getHeight() - getPaddingBottom() + SCROLLBAR_TRACK_GAP;
+        metrics.trackRight = metrics.trackLeft + getVisibleContentWidth();
+        metrics.trackTop = getAbsoluteY() + getPaddingTop() + getVisibleContentHeight() + SCROLLBAR_TRACK_GAP;
         metrics.trackBottom = metrics.trackTop + SCROLLBAR_TRACK_THICKNESS;
         metrics.trackLength = Math.max(1, metrics.trackRight - metrics.trackLeft);
         metrics.thumbSize = Math.max(SCROLLBAR_MIN_THUMB_SIZE,
