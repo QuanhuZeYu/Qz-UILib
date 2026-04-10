@@ -143,6 +143,8 @@ public class UiTestScreen extends BaseScreen {
     private String settingsLastAction = "尚未应用";
     private String focusLastAction = "尚未操作";
     private Widget currentPage;
+    private int viewportWidthHint = 1280;
+    private int viewportHeightHint = 720;
 
     @Override
     protected void buildUi(Widget root) {
@@ -192,10 +194,14 @@ public class UiTestScreen extends BaseScreen {
     @Override
     protected void onResize(int width, int height) {
         super.onResize(width, height);
+        viewportWidthHint = width;
+        viewportHeightHint = height;
         int pageMargin = Math.max(24, width / 34);
         int topMargin = Math.max(28, height / 28);
         ResponsiveContainerWidget rootWidget = (ResponsiveContainerWidget) getRootWidget();
         rootWidget.setPadding(pageMargin, topMargin, pageMargin, pageMargin);
+        applyAdaptiveChrome();
+        configureLayoutSpecs();
 
         refreshStateText();
         refreshEchoText();
@@ -623,60 +629,101 @@ public class UiTestScreen extends BaseScreen {
                         .setHeight(UiLength.auto()));
     }
 
+    private void applyAdaptiveChrome() {
+        int pagePaddingX = clampValue(viewportWidthHint / 48, 14, 30);
+        int pagePaddingY = clampValue(viewportHeightHint / 36, 12, 28);
+        int scrollPadding = clampValue(viewportWidthHint / 72, 8, 12);
+        int scrollRightPadding = clampValue(scrollPadding + 6, 14, 18);
+
+        menuPage.setPadding(pagePaddingX, pagePaddingY, pagePaddingX, pagePaddingY);
+        inputTestPage.setPadding(pagePaddingX, pagePaddingY, pagePaddingX, pagePaddingY);
+        mouseStressPage.setPadding(pagePaddingX, pagePaddingY, pagePaddingX, pagePaddingY);
+        characterPlacementPage.setPadding(pagePaddingX, pagePaddingY, pagePaddingX, pagePaddingY);
+        responsiveLayoutPage.setPadding(pagePaddingX, pagePaddingY, pagePaddingX, pagePaddingY);
+        settingsFormPage.setPadding(pagePaddingX, pagePaddingY, pagePaddingX, pagePaddingY);
+        focusNavigationPage.setPadding(pagePaddingX, pagePaddingY, pagePaddingX, pagePaddingY);
+        settingsScrollPanel.setPadding(scrollPadding, scrollPadding, scrollRightPadding, scrollPadding);
+        focusScrollPanel.setPadding(scrollPadding, scrollPadding, scrollRightPadding, scrollPadding);
+    }
+
     private void applyMenuLayout() {
+        int menuButtonMinWidth = adaptiveWidth(220, 120, 0.16F);
         menuTitleLabel.setLayoutSpec(new UiLayoutSpec().setWidth(UiLength.percent(1.0F)).setHeight(UiLength.auto()));
         menuHintLabel.setLayoutSpec(new UiLayoutSpec().setWidth(UiLength.percent(1.0F)).setHeight(UiLength.auto()));
-        openInputTestButton.setLayoutSpec(new UiLayoutSpec().setWidth(UiLength.percent(0.48F)).setHeight(UiLength.auto()).setMinWidth(220));
-        openMouseStressButton.setLayoutSpec(new UiLayoutSpec().setWidth(UiLength.percent(0.48F)).setHeight(UiLength.auto()).setMinWidth(220));
-        openCharacterPlacementButton.setLayoutSpec(new UiLayoutSpec().setWidth(UiLength.percent(0.48F)).setHeight(UiLength.auto()).setMinWidth(220));
-        openResponsiveLayoutButton.setLayoutSpec(new UiLayoutSpec().setWidth(UiLength.percent(0.48F)).setHeight(UiLength.auto()).setMinWidth(220));
-        openSettingsFormButton.setLayoutSpec(new UiLayoutSpec().setWidth(UiLength.percent(0.48F)).setHeight(UiLength.auto()).setMinWidth(220));
-        openFocusNavigationButton.setLayoutSpec(new UiLayoutSpec().setWidth(UiLength.percent(0.48F)).setHeight(UiLength.auto()).setMinWidth(220));
+        openInputTestButton.setLayoutSpec(new UiLayoutSpec().setWidth(UiLength.percent(0.48F)).setHeight(UiLength.auto()).setMinWidth(menuButtonMinWidth));
+        openMouseStressButton.setLayoutSpec(new UiLayoutSpec().setWidth(UiLength.percent(0.48F)).setHeight(UiLength.auto()).setMinWidth(menuButtonMinWidth));
+        openCharacterPlacementButton.setLayoutSpec(new UiLayoutSpec().setWidth(UiLength.percent(0.48F)).setHeight(UiLength.auto()).setMinWidth(menuButtonMinWidth));
+        openResponsiveLayoutButton.setLayoutSpec(new UiLayoutSpec().setWidth(UiLength.percent(0.48F)).setHeight(UiLength.auto()).setMinWidth(menuButtonMinWidth));
+        openSettingsFormButton.setLayoutSpec(new UiLayoutSpec().setWidth(UiLength.percent(0.48F)).setHeight(UiLength.auto()).setMinWidth(menuButtonMinWidth));
+        openFocusNavigationButton.setLayoutSpec(new UiLayoutSpec().setWidth(UiLength.percent(0.48F)).setHeight(UiLength.auto()).setMinWidth(menuButtonMinWidth));
     }
 
     private void applyInputLayout() {
+        int fieldMinWidth = adaptiveWidth(320, 170, 0.24F);
+        int primaryButtonMinWidth = adaptiveWidth(220, 120, 0.16F);
+        int secondaryButtonMinWidth = adaptiveWidth(180, 120, 0.14F);
         inputTitleLabel.setLayoutSpec(new UiLayoutSpec().setWidth(UiLength.percent(1.0F)).setHeight(UiLength.auto()));
         stateLabel.setLayoutSpec(new UiLayoutSpec().setWidth(UiLength.percent(1.0F)).setHeight(UiLength.auto()));
         inputHintLabel.setLayoutSpec(new UiLayoutSpec().setWidth(UiLength.percent(1.0F)).setHeight(UiLength.auto()));
-        textInputWidget.setLayoutSpec(new UiLayoutSpec().setWidth(UiLength.percent(1.0F)).setHeight(UiLength.px(42)).setMinWidth(320));
+        textInputWidget.setLayoutSpec(new UiLayoutSpec().setWidth(UiLength.percent(1.0F)).setHeight(UiLength.px(42)).setMinWidth(fieldMinWidth));
         inputEchoLabel.setLayoutSpec(new UiLayoutSpec().setWidth(UiLength.percent(1.0F)).setHeight(UiLength.auto()));
-        testButton.setLayoutSpec(new UiLayoutSpec().setWidth(UiLength.percent(0.40F)).setHeight(UiLength.auto()).setMinWidth(220));
-        backFromInputButton.setLayoutSpec(new UiLayoutSpec().setWidth(UiLength.percent(0.32F)).setHeight(UiLength.auto()).setMinWidth(180));
+        testButton.setLayoutSpec(new UiLayoutSpec().setWidth(UiLength.percent(0.40F)).setHeight(UiLength.auto()).setMinWidth(primaryButtonMinWidth));
+        backFromInputButton.setLayoutSpec(new UiLayoutSpec().setWidth(UiLength.percent(0.32F)).setHeight(UiLength.auto()).setMinWidth(secondaryButtonMinWidth));
     }
 
     private void applyMouseLayout() {
+        int panelMinHeight = adaptiveHeight(300, 180, 0.28F);
+        int buttonMinWidth = adaptiveWidth(180, 120, 0.14F);
         mouseTitleLabel.setLayoutSpec(new UiLayoutSpec().setWidth(UiLength.percent(1.0F)).setHeight(UiLength.auto()));
         mouseHintLabel.setLayoutSpec(new UiLayoutSpec().setWidth(UiLength.percent(1.0F)).setHeight(UiLength.auto()));
-        mouseStressWidget.setLayoutSpec(new UiLayoutSpec().setWidth(UiLength.percent(1.0F)).setHeight(UiLength.percent(0.62F)).setMinHeight(300).setGrow(1.0F));
-        backFromMouseButton.setLayoutSpec(new UiLayoutSpec().setWidth(UiLength.percent(0.32F)).setHeight(UiLength.auto()).setMinWidth(180));
+        mouseStressWidget.setLayoutSpec(new UiLayoutSpec().setWidth(UiLength.percent(1.0F)).setHeight(UiLength.percent(0.62F)).setMinHeight(panelMinHeight).setGrow(1.0F));
+        backFromMouseButton.setLayoutSpec(new UiLayoutSpec().setWidth(UiLength.percent(0.32F)).setHeight(UiLength.auto()).setMinWidth(buttonMinWidth));
     }
 
     private void applyCharacterLayout() {
+        int previewMinHeight = adaptiveHeight(300, 180, 0.28F);
+        int debugMinWidth = adaptiveWidth(480, 220, 0.34F);
+        int debugMinHeight = adaptiveHeight(260, 150, 0.22F);
+        int buttonMinWidth = adaptiveWidth(180, 120, 0.14F);
         characterTitleLabel.setLayoutSpec(new UiLayoutSpec().setWidth(UiLength.percent(1.0F)).setHeight(UiLength.auto()));
         characterHintLabel.setLayoutSpec(new UiLayoutSpec().setWidth(UiLength.percent(1.0F)).setHeight(UiLength.auto()));
-        characterPreviewPanel.setLayoutSpec(new UiLayoutSpec().setWidth(UiLength.percent(1.0F)).setHeight(UiLength.percent(0.52F)).setMinHeight(300).setGrow(1.0F));
-        characterPlacementDebugWidget.setLayoutSpec(new UiLayoutSpec().setAnchor(UiAnchor.CENTER).setWidth(UiLength.percent(1.08F)).setHeight(UiLength.percent(1.08F)).setMinWidth(480).setMinHeight(260));
+        characterPreviewPanel.setLayoutSpec(new UiLayoutSpec().setWidth(UiLength.percent(1.0F)).setHeight(UiLength.percent(0.52F)).setMinHeight(previewMinHeight).setGrow(1.0F));
+        characterPlacementDebugWidget.setLayoutSpec(new UiLayoutSpec().setAnchor(UiAnchor.CENTER).setWidth(UiLength.percent(1.08F)).setHeight(UiLength.percent(1.08F)).setMinWidth(debugMinWidth).setMinHeight(debugMinHeight));
         characterClampHintLabel.setLayoutSpec(new UiLayoutSpec().setWidth(UiLength.percent(1.0F)).setHeight(UiLength.auto()));
-        backFromCharacterButton.setLayoutSpec(new UiLayoutSpec().setWidth(UiLength.percent(0.32F)).setHeight(UiLength.auto()).setMinWidth(180));
+        backFromCharacterButton.setLayoutSpec(new UiLayoutSpec().setWidth(UiLength.percent(0.32F)).setHeight(UiLength.auto()).setMinWidth(buttonMinWidth));
     }
 
     private void applyResponsiveLayoutPage() {
+        int topProbeMinWidth = adaptiveWidth(220, 120, 0.16F);
+        int bottomLeftMinWidth = adaptiveWidth(180, 100, 0.14F);
+        int bottomRightMinWidth = adaptiveWidth(260, 140, 0.20F);
+        int arenaMinHeight = adaptiveHeight(320, 190, 0.32F);
+        int arenaTopLeftMinWidth = adaptiveWidth(180, 100, 0.14F);
+        int arenaCenterMinWidth = adaptiveWidth(220, 120, 0.16F);
+        int arenaBottomRightMinWidth = adaptiveWidth(170, 96, 0.13F);
+        int buttonMinWidth = adaptiveWidth(180, 120, 0.14F);
         responsiveTitleLabel.setLayoutSpec(new UiLayoutSpec().setWidth(UiLength.percent(1.0F)).setHeight(UiLength.auto()));
         responsiveHintLabel.setLayoutSpec(new UiLayoutSpec().setWidth(UiLength.percent(1.0F)).setHeight(UiLength.auto()));
         responsiveMetricsLabel.setLayoutSpec(new UiLayoutSpec().setWidth(UiLength.percent(1.0F)).setHeight(UiLength.auto()));
-        responsiveLeftProbe.setLayoutSpec(new UiLayoutSpec().setWidth(UiLength.percent(0.48F)).setHeight(UiLength.px(118)).setMinWidth(220));
-        responsiveRightProbe.setLayoutSpec(new UiLayoutSpec().setWidth(UiLength.percent(0.48F)).setHeight(UiLength.px(118)).setMinWidth(220));
-        responsiveBottomLeftProbe.setLayoutSpec(new UiLayoutSpec().setWidth(UiLength.percent(0.30F)).setHeight(UiLength.px(118)).setMinWidth(180));
-        responsiveBottomRightProbe.setLayoutSpec(new UiLayoutSpec().setWidth(UiLength.percent(0.58F)).setHeight(UiLength.px(118)).setMinWidth(260));
-        responsiveArenaPanel.setLayoutSpec(new UiLayoutSpec().setWidth(UiLength.percent(1.0F)).setHeight(UiLength.percent(0.42F)).setMinHeight(320).setGrow(1.0F));
-        arenaTopLeftProbe.setLayoutSpec(new UiLayoutSpec().setAnchor(UiAnchor.TOP_LEFT).setMargin(UiInsets.of(12, 12, 0, 0)).setWidth(UiLength.percent(0.28F)).setHeight(UiLength.px(118)).setMinWidth(180));
-        arenaCenterProbe.setLayoutSpec(new UiLayoutSpec().setAnchor(UiAnchor.CENTER).setWidth(UiLength.percent(0.34F)).setHeight(UiLength.px(128)).setMinWidth(220));
-        arenaBottomRightProbe.setLayoutSpec(new UiLayoutSpec().setAnchor(UiAnchor.BOTTOM_RIGHT).setMargin(UiInsets.of(0, 0, 12, 12)).setWidth(UiLength.percent(0.24F)).setHeight(UiLength.px(118)).setMinWidth(170));
+        responsiveLeftProbe.setLayoutSpec(new UiLayoutSpec().setWidth(UiLength.percent(0.48F)).setHeight(UiLength.px(118)).setMinWidth(topProbeMinWidth));
+        responsiveRightProbe.setLayoutSpec(new UiLayoutSpec().setWidth(UiLength.percent(0.48F)).setHeight(UiLength.px(118)).setMinWidth(topProbeMinWidth));
+        responsiveBottomLeftProbe.setLayoutSpec(new UiLayoutSpec().setWidth(UiLength.percent(0.30F)).setHeight(UiLength.px(118)).setMinWidth(bottomLeftMinWidth));
+        responsiveBottomRightProbe.setLayoutSpec(new UiLayoutSpec().setWidth(UiLength.percent(0.58F)).setHeight(UiLength.px(118)).setMinWidth(bottomRightMinWidth));
+        responsiveArenaPanel.setLayoutSpec(new UiLayoutSpec().setWidth(UiLength.percent(1.0F)).setHeight(UiLength.percent(0.42F)).setMinHeight(arenaMinHeight).setGrow(1.0F));
+        arenaTopLeftProbe.setLayoutSpec(new UiLayoutSpec().setAnchor(UiAnchor.TOP_LEFT).setMargin(UiInsets.of(12, 12, 0, 0)).setWidth(UiLength.percent(0.28F)).setHeight(UiLength.px(118)).setMinWidth(arenaTopLeftMinWidth));
+        arenaCenterProbe.setLayoutSpec(new UiLayoutSpec().setAnchor(UiAnchor.CENTER).setWidth(UiLength.percent(0.34F)).setHeight(UiLength.px(128)).setMinWidth(arenaCenterMinWidth));
+        arenaBottomRightProbe.setLayoutSpec(new UiLayoutSpec().setAnchor(UiAnchor.BOTTOM_RIGHT).setMargin(UiInsets.of(0, 0, 12, 12)).setWidth(UiLength.percent(0.24F)).setHeight(UiLength.px(118)).setMinWidth(arenaBottomRightMinWidth));
         responsiveFooterLabel.setLayoutSpec(new UiLayoutSpec().setWidth(UiLength.percent(1.0F)).setHeight(UiLength.auto()));
-        backFromResponsiveButton.setLayoutSpec(new UiLayoutSpec().setWidth(UiLength.percent(0.32F)).setHeight(UiLength.auto()).setMinWidth(180));
+        backFromResponsiveButton.setLayoutSpec(new UiLayoutSpec().setWidth(UiLength.percent(0.32F)).setHeight(UiLength.auto()).setMinWidth(buttonMinWidth));
     }
 
     private void applySettingsLayout() {
+        int scrollMinHeight = adaptiveHeight(280, 150, 0.24F);
+        int labelWidth = adaptiveWidth(220, 120, 0.17F);
+        int fieldMinWidth = adaptiveWidth(260, 150, 0.20F);
+        int selectorMinWidth = adaptiveWidth(420, 180, 0.28F);
+        int previewMinHeight = adaptiveHeight(220, 150, 0.20F);
+        int buttonMinWidth = adaptiveWidth(180, 120, 0.14F);
         settingsTitleLabel.setLayoutSpec(new UiLayoutSpec().setWidth(UiLength.percent(1.0F)).setHeight(UiLength.auto()));
         settingsIntroLabel.setLayoutSpec(new UiLayoutSpec().setWidth(UiLength.percent(1.0F)).setHeight(UiLength.auto()));
 
@@ -686,35 +733,40 @@ public class UiTestScreen extends BaseScreen {
         settingsAnimationRow.setLayoutSpec(new UiLayoutSpec().setWidth(UiLength.percent(1.0F)).setHeight(UiLength.auto()));
         settingsDensityRow.setLayoutSpec(new UiLayoutSpec().setWidth(UiLength.percent(1.0F)).setHeight(UiLength.auto()));
         settingsFooterRow.setLayoutSpec(new UiLayoutSpec().setWidth(UiLength.percent(1.0F)).setHeight(UiLength.auto()));
-        settingsScrollPanel.setLayoutSpec(new UiLayoutSpec().setWidth(UiLength.percent(1.0F)).setHeight(UiLength.auto()).setMinHeight(280).setGrow(1.0F).setFill(true));
+        settingsScrollPanel.setLayoutSpec(new UiLayoutSpec().setWidth(UiLength.percent(1.0F)).setHeight(UiLength.auto()).setMinHeight(scrollMinHeight).setGrow(1.0F).setFill(true));
         settingsStack.setLayoutSpec(new UiLayoutSpec().setWidth(UiLength.percent(1.0F)).setHeight(UiLength.auto()).setFill(true));
 
-        settingsProfileLabel.setLayoutSpec(new UiLayoutSpec().setWidth(UiLength.px(220)).setHeight(UiLength.auto()));
-        settingsAuthorLabel.setLayoutSpec(new UiLayoutSpec().setWidth(UiLength.px(220)).setHeight(UiLength.auto()));
-        settingsPathLabel.setLayoutSpec(new UiLayoutSpec().setWidth(UiLength.px(220)).setHeight(UiLength.auto()));
-        settingsAnimationLabel.setLayoutSpec(new UiLayoutSpec().setWidth(UiLength.px(220)).setHeight(UiLength.auto()));
-        settingsDensityLabel.setLayoutSpec(new UiLayoutSpec().setWidth(UiLength.px(220)).setHeight(UiLength.auto()));
+        settingsProfileLabel.setLayoutSpec(new UiLayoutSpec().setWidth(UiLength.px(labelWidth)).setHeight(UiLength.auto()));
+        settingsAuthorLabel.setLayoutSpec(new UiLayoutSpec().setWidth(UiLength.px(labelWidth)).setHeight(UiLength.auto()));
+        settingsPathLabel.setLayoutSpec(new UiLayoutSpec().setWidth(UiLength.px(labelWidth)).setHeight(UiLength.auto()));
+        settingsAnimationLabel.setLayoutSpec(new UiLayoutSpec().setWidth(UiLength.px(labelWidth)).setHeight(UiLength.auto()));
+        settingsDensityLabel.setLayoutSpec(new UiLayoutSpec().setWidth(UiLength.px(labelWidth)).setHeight(UiLength.auto()));
 
-        settingsProfileInput.setLayoutSpec(new UiLayoutSpec().setWidth(UiLength.auto()).setHeight(UiLength.px(42)).setMinWidth(260).setGrow(1.0F));
-        settingsAuthorInput.setLayoutSpec(new UiLayoutSpec().setWidth(UiLength.auto()).setHeight(UiLength.px(42)).setMinWidth(260).setGrow(1.0F));
-        settingsPathInput.setLayoutSpec(new UiLayoutSpec().setWidth(UiLength.auto()).setHeight(UiLength.px(42)).setMinWidth(260).setGrow(1.0F));
+        settingsProfileInput.setLayoutSpec(new UiLayoutSpec().setWidth(UiLength.auto()).setHeight(UiLength.px(42)).setMinWidth(fieldMinWidth).setGrow(1.0F));
+        settingsAuthorInput.setLayoutSpec(new UiLayoutSpec().setWidth(UiLength.auto()).setHeight(UiLength.px(42)).setMinWidth(fieldMinWidth).setGrow(1.0F));
+        settingsPathInput.setLayoutSpec(new UiLayoutSpec().setWidth(UiLength.auto()).setHeight(UiLength.px(42)).setMinWidth(fieldMinWidth).setGrow(1.0F));
 
-        settingsAnimationToggle.setLayoutSpec(new UiLayoutSpec().setWidth(UiLength.auto()).setHeight(UiLength.auto()).setMinWidth(260).setGrow(1.0F).setFill(true));
-        settingsDensitySelector.setLayoutSpec(new UiLayoutSpec().setWidth(UiLength.auto()).setHeight(UiLength.auto()).setMinWidth(420).setGrow(1.0F).setFill(true));
+        settingsAnimationToggle.setLayoutSpec(new UiLayoutSpec().setWidth(UiLength.auto()).setHeight(UiLength.auto()).setMinWidth(fieldMinWidth).setGrow(1.0F).setFill(true));
+        settingsDensitySelector.setLayoutSpec(new UiLayoutSpec().setWidth(UiLength.auto()).setHeight(UiLength.auto()).setMinWidth(selectorMinWidth).setGrow(1.0F).setFill(true));
 
-        settingsPreviewPanel.setLayoutSpec(new UiLayoutSpec().setWidth(UiLength.percent(1.0F)).setHeight(UiLength.auto()).setMinHeight(220).setGrow(1.0F));
+        settingsPreviewPanel.setLayoutSpec(new UiLayoutSpec().setWidth(UiLength.percent(1.0F)).setHeight(UiLength.auto()).setMinHeight(previewMinHeight).setGrow(1.0F));
         settingsPreviewStack.setLayoutSpec(new UiLayoutSpec().setWidth(UiLength.percent(1.0F)).setHeight(UiLength.percent(1.0F)).setFill(true));
         settingsPreviewTitleLabel.setLayoutSpec(new UiLayoutSpec().setWidth(UiLength.percent(1.0F)).setHeight(UiLength.auto()));
         settingsPreviewSummaryLabel.setLayoutSpec(new UiLayoutSpec().setWidth(UiLength.percent(1.0F)).setHeight(UiLength.auto()).setGrow(1.0F));
         settingsFooterHintLabel.setLayoutSpec(new UiLayoutSpec().setWidth(UiLength.percent(1.0F)).setHeight(UiLength.auto()));
 
-        settingsApplyButton.setLayoutSpec(new UiLayoutSpec().setWidth(UiLength.auto()).setHeight(UiLength.auto()).setMinWidth(180).setGrow(1.0F));
-        settingsResetButton.setLayoutSpec(new UiLayoutSpec().setWidth(UiLength.auto()).setHeight(UiLength.auto()).setMinWidth(180).setGrow(1.0F));
-        backFromSettingsButton.setLayoutSpec(new UiLayoutSpec().setWidth(UiLength.auto()).setHeight(UiLength.auto()).setMinWidth(180).setGrow(1.0F));
+        settingsApplyButton.setLayoutSpec(new UiLayoutSpec().setWidth(UiLength.auto()).setHeight(UiLength.auto()).setMinWidth(buttonMinWidth).setGrow(1.0F));
+        settingsResetButton.setLayoutSpec(new UiLayoutSpec().setWidth(UiLength.auto()).setHeight(UiLength.auto()).setMinWidth(buttonMinWidth).setGrow(1.0F));
+        backFromSettingsButton.setLayoutSpec(new UiLayoutSpec().setWidth(UiLength.auto()).setHeight(UiLength.auto()).setMinWidth(buttonMinWidth).setGrow(1.0F));
     }
 
     private void applyFocusLayout() {
-        focusScrollPanel.setLayoutSpec(new UiLayoutSpec().setWidth(UiLength.percent(1.0F)).setHeight(UiLength.auto()).setMinHeight(220).setGrow(1.0F).setFill(true));
+        int scrollMinHeight = adaptiveHeight(220, 140, 0.22F);
+        int labelWidth = adaptiveWidth(220, 120, 0.17F);
+        int fieldMinWidth = adaptiveWidth(260, 150, 0.20F);
+        int selectorMinWidth = adaptiveWidth(420, 180, 0.28F);
+        int buttonMinWidth = adaptiveWidth(180, 120, 0.14F);
+        focusScrollPanel.setLayoutSpec(new UiLayoutSpec().setWidth(UiLength.percent(1.0F)).setHeight(UiLength.auto()).setMinHeight(scrollMinHeight).setGrow(1.0F).setFill(true));
         focusNavigationStack.setLayoutSpec(new UiLayoutSpec().setWidth(UiLength.percent(1.0F)).setHeight(UiLength.auto()).setFill(true));
         focusTitleLabel.setLayoutSpec(new UiLayoutSpec().setWidth(UiLength.percent(1.0F)).setHeight(UiLength.auto()));
         focusHintLabel.setLayoutSpec(new UiLayoutSpec().setWidth(UiLength.percent(1.0F)).setHeight(UiLength.auto()));
@@ -723,15 +775,27 @@ public class UiTestScreen extends BaseScreen {
         focusModeRow.setLayoutSpec(new UiLayoutSpec().setWidth(UiLength.percent(1.0F)).setHeight(UiLength.auto()));
         focusActionRow.setLayoutSpec(new UiLayoutSpec().setWidth(UiLength.percent(1.0F)).setHeight(UiLength.auto()));
 
-        focusNameLabel.setLayoutSpec(new UiLayoutSpec().setWidth(UiLength.px(220)).setHeight(UiLength.auto()));
-        focusPathLabel.setLayoutSpec(new UiLayoutSpec().setWidth(UiLength.px(220)).setHeight(UiLength.auto()));
-        focusNameInput.setLayoutSpec(new UiLayoutSpec().setWidth(UiLength.auto()).setHeight(UiLength.px(42)).setMinWidth(260).setGrow(1.0F));
-        focusPathInput.setLayoutSpec(new UiLayoutSpec().setWidth(UiLength.auto()).setHeight(UiLength.px(42)).setMinWidth(260).setGrow(1.0F));
-        focusToggle.setLayoutSpec(new UiLayoutSpec().setWidth(UiLength.auto()).setHeight(UiLength.auto()).setMinWidth(260).setGrow(1.0F).setFill(true));
-        focusSelector.setLayoutSpec(new UiLayoutSpec().setWidth(UiLength.auto()).setHeight(UiLength.auto()).setMinWidth(420).setGrow(1.0F).setFill(true));
+        focusNameLabel.setLayoutSpec(new UiLayoutSpec().setWidth(UiLength.px(labelWidth)).setHeight(UiLength.auto()));
+        focusPathLabel.setLayoutSpec(new UiLayoutSpec().setWidth(UiLength.px(labelWidth)).setHeight(UiLength.auto()));
+        focusNameInput.setLayoutSpec(new UiLayoutSpec().setWidth(UiLength.auto()).setHeight(UiLength.px(42)).setMinWidth(fieldMinWidth).setGrow(1.0F));
+        focusPathInput.setLayoutSpec(new UiLayoutSpec().setWidth(UiLength.auto()).setHeight(UiLength.px(42)).setMinWidth(fieldMinWidth).setGrow(1.0F));
+        focusToggle.setLayoutSpec(new UiLayoutSpec().setWidth(UiLength.auto()).setHeight(UiLength.auto()).setMinWidth(fieldMinWidth).setGrow(1.0F).setFill(true));
+        focusSelector.setLayoutSpec(new UiLayoutSpec().setWidth(UiLength.auto()).setHeight(UiLength.auto()).setMinWidth(selectorMinWidth).setGrow(1.0F).setFill(true));
         focusStatusLabel.setLayoutSpec(new UiLayoutSpec().setWidth(UiLength.percent(1.0F)).setHeight(UiLength.auto()));
-        focusPrimaryButton.setLayoutSpec(new UiLayoutSpec().setWidth(UiLength.auto()).setHeight(UiLength.auto()).setMinWidth(180).setGrow(1.0F));
-        focusSecondaryButton.setLayoutSpec(new UiLayoutSpec().setWidth(UiLength.auto()).setHeight(UiLength.auto()).setMinWidth(180).setGrow(1.0F));
-        backFromFocusButton.setLayoutSpec(new UiLayoutSpec().setWidth(UiLength.auto()).setHeight(UiLength.auto()).setMinWidth(180).setGrow(1.0F));
+        focusPrimaryButton.setLayoutSpec(new UiLayoutSpec().setWidth(UiLength.auto()).setHeight(UiLength.auto()).setMinWidth(buttonMinWidth).setGrow(1.0F));
+        focusSecondaryButton.setLayoutSpec(new UiLayoutSpec().setWidth(UiLength.auto()).setHeight(UiLength.auto()).setMinWidth(buttonMinWidth).setGrow(1.0F));
+        backFromFocusButton.setLayoutSpec(new UiLayoutSpec().setWidth(UiLength.auto()).setHeight(UiLength.auto()).setMinWidth(buttonMinWidth).setGrow(1.0F));
+    }
+
+    private int adaptiveWidth(int preferred, int floor, float viewportRatio) {
+        return clampValue(Math.round(viewportWidthHint * viewportRatio), floor, preferred);
+    }
+
+    private int adaptiveHeight(int preferred, int floor, float viewportRatio) {
+        return clampValue(Math.round(viewportHeightHint * viewportRatio), floor, preferred);
+    }
+
+    private int clampValue(int value, int min, int max) {
+        return Math.max(min, Math.min(value, max));
     }
 }
