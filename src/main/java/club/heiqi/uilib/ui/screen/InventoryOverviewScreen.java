@@ -15,14 +15,20 @@ import net.minecraft.client.gui.inventory.GuiInventory;
 import net.minecraft.entity.player.InventoryPlayer;
 
 /**
- * 基于 Div 语义 API 的背包概览页。
+ * 当前阶段的最小背包诊断页。
  */
 public class InventoryOverviewScreen extends BaseScreen {
 
     private final ResponsivePageWidget pagePanel = new ResponsivePageWidget();
-    private final LabelWidget summaryLabel = new LabelWidget("");
-    private final LabelWidget hotbarTitleLabel = new LabelWidget("");
-    private final LabelWidget backpackTitleLabel = new LabelWidget("");
+
+    private final ResponsivePanelWidget overviewCard = createCardPanel();
+    private final ResponsivePanelWidget hotbarCard = createCardPanel();
+    private final ResponsivePanelWidget backpackCard = createCardPanel();
+
+    private final LabelWidget overviewMetricsLabel = new LabelWidget("");
+    private final LabelWidget hotbarMetricsLabel = new LabelWidget("");
+    private final LabelWidget backpackMetricsLabel = new LabelWidget("");
+
     private final InventorySlotGridWidget hotbarGrid = new InventorySlotGridWidget(0, 9, 9);
     private final InventorySlotGridWidget backpackGrid = new InventorySlotGridWidget(9, 27, 9);
     private final ButtonWidget backButton = new ButtonWidget("返回原版背包");
@@ -35,7 +41,7 @@ public class InventoryOverviewScreen extends BaseScreen {
         configurePage();
         configureControls();
         assembleUi(root);
-        refreshInventoryText();
+        refreshMetrics();
     }
 
     @Override
@@ -49,34 +55,40 @@ public class InventoryOverviewScreen extends BaseScreen {
         ResponsiveContainerWidget rootWidget = (ResponsiveContainerWidget) getRootWidget();
         rootWidget.setPadding(pageMargin, topMargin, pageMargin, pageMargin);
 
-        int pagePaddingX = clampValue(viewportWidthHint / 48, 14, 28);
-        int pagePaddingY = clampValue(viewportHeightHint / 36, 12, 26);
+        int pagePaddingX = clampValue(viewportWidthHint / 48, 16, 28);
+        int pagePaddingY = clampValue(viewportHeightHint / 36, 14, 24);
         int buttonWidth = adaptiveWidth(220, 140, 0.16F);
 
         pagePanel.setPadding(pagePaddingX, pagePaddingY, pagePaddingX, pagePaddingY);
         backButton.setSuggestedSize(buttonWidth, backButton.getPreferredHeight());
-        refreshInventoryText();
+        refreshMetrics();
     }
 
     @Override
     public void drawScreen(int mouseX, int mouseY, float partialTicks) {
-        refreshInventoryText();
+        refreshMetrics();
         super.drawScreen(mouseX, mouseY, partialTicks);
     }
 
+    /**
+     * 配置页面壳。
+     */
     private void configurePage() {
         pagePanel.setPadding(24, 22, 24, 22)
                 .setFillColor(0xD0151C25)
                 .setBorderColor(0xFF86A8F0)
-                .setSuggestedSize(760, 620)
-                .setViewportRatio(0.86F, 0.90F)
+                .setSuggestedSize(960, 800)
+                .setViewportRatio(0.70F, 0.92F)
                 .setLayoutSpec(new UiLayoutSpec().setAnchor(UiAnchor.TOP_CENTER));
     }
 
+    /**
+     * 配置背包诊断控件。
+     */
     private void configureControls() {
-        summaryLabel.setColor(0xFFE2ECFF).setShadow(false).setWrap(true).setMaxLines(4);
-        hotbarTitleLabel.setColor(0xFFFFFFFF).setShadow(false).setWrap(true).setMaxLines(2);
-        backpackTitleLabel.setColor(0xFFFFFFFF).setShadow(false).setWrap(true).setMaxLines(2);
+        overviewMetricsLabel.setColor(0xFFF6D78E).setShadow(false).setWrap(true).setMaxLines(5);
+        hotbarMetricsLabel.setColor(0xFFD7E3FF).setShadow(false).setWrap(true).setMaxLines(4);
+        backpackMetricsLabel.setColor(0xFFD7E3FF).setShadow(false).setWrap(true).setMaxLines(4);
 
         hotbarGrid.setSlotGap(8).setPreferredSlotSize(34).setSlotSizeRange(18, 50);
         backpackGrid.setSlotGap(8).setPreferredSlotSize(32).setSlotSizeRange(18, 46);
@@ -89,65 +101,60 @@ public class InventoryOverviewScreen extends BaseScreen {
         });
     }
 
+    /**
+     * 构建背包诊断页。
+     */
     private void assembleUi(Widget root) {
         DivWidget pageRoot = new DivWidget().setPageColumn();
-        DivWidget cardFlow = new DivWidget().setContentFlow();
         DivWidget footer = new DivWidget().setButtonFlow();
 
-        ResponsivePanelWidget summaryCard = createCardPanel();
-        DivWidget summaryCardDiv = new DivWidget().setSectionColumn();
-        summaryCard.setSuggestedSize(760, -1);
-        summaryCardDiv.addNoGrowChild(createSectionTitle("背包概览"));
-        summaryCardDiv.addNoGrowChild(createBodyLabel("旧背包测试页已经清空，当前只保留一张更接近真实使用场景的概览页。它和主测试页一样，完全由 Div 语义 API 组织。"));
-        summaryCardDiv.addNoGrowChild(summaryLabel);
-        summaryCard.addChild(summaryCardDiv);
+        DivWidget overviewDiv = new DivWidget().setSectionColumn();
+        overviewDiv.addNoGrowChild(createSectionTitle("当前状态"));
+        overviewDiv.addNoGrowChild(createBodyLabel("旧背包测试页已经完全清空。当前只保留单列背包诊断页，优先确认页面壳、格子网格和纵向滚动不会互相干扰，再重建复杂业务页。"));
+        overviewDiv.addNoGrowChild(overviewMetricsLabel);
+        overviewCard.addChild(overviewDiv);
 
-        ResponsivePanelWidget hotbarCard = createCardPanel();
-        DivWidget hotbarCardDiv = new DivWidget().setSectionColumn();
-        hotbarCard.setSuggestedSize(300, -1);
-        hotbarCardDiv.addNoGrowChild(hotbarTitleLabel);
-        hotbarCardDiv.addNoGrowChild(createBodyLabel("快捷栏保持单行展示，格子尺寸会随可用宽度轻微缩放。"));
-        hotbarCardDiv.addNoGrowChild(hotbarGrid);
-        hotbarCard.addChild(hotbarCardDiv);
+        DivWidget hotbarDiv = new DivWidget().setSectionColumn();
+        hotbarDiv.addNoGrowChild(createSectionTitle("快捷栏探针"));
+        hotbarDiv.addNoGrowChild(hotbarMetricsLabel);
+        hotbarDiv.addNoGrowChild(hotbarGrid);
+        hotbarCard.addChild(hotbarDiv);
 
-        ResponsivePanelWidget backpackCard = createCardPanel();
-        DivWidget backpackCardDiv = new DivWidget().setSectionColumn();
-        backpackCard.setSuggestedSize(420, -1);
-        backpackCardDiv.addNoGrowChild(backpackTitleLabel);
-        backpackCardDiv.addNoGrowChild(createBodyLabel("主背包仍然优先依赖容器收缩与换行，不再把旧测试页里那些额外说明区块堆在同一个页面中。"));
-        backpackCardDiv.addNoGrowChild(backpackGrid);
-        backpackCard.addChild(backpackCardDiv);
+        DivWidget backpackDiv = new DivWidget().setSectionColumn();
+        backpackDiv.addNoGrowChild(createSectionTitle("主背包探针"));
+        backpackDiv.addNoGrowChild(backpackMetricsLabel);
+        backpackDiv.addNoGrowChild(backpackGrid);
+        backpackCard.addChild(backpackDiv);
 
-        cardFlow.addFlexChild(hotbarCard);
-        cardFlow.addFlexChild(backpackCard);
         footer.addNoGrowChild(backButton);
 
-        pageRoot.addNoGrowChild(createTitleLabel("Div 背包概览页"));
-        pageRoot.addNoGrowChild(createBodyLabel("这张页面复用了主测试页同样的结构范式：页面列、卡片流、区块列和按钮流。它现在更像真实背包扩展页，而不是杂糅多种实验内容的旧测试页。"));
-        pageRoot.addNoGrowChild(summaryCard);
-        pageRoot.addNoGrowChild(cardFlow);
+        pageRoot.addNoGrowChild(createTitleLabel("背包诊断页"));
+        pageRoot.addNoGrowChild(createBodyLabel("这里不再做左右两栏或摘要联排，只验证网格控件在可靠父宽度下是否能稳定缩放、换列和滚动。"));
+        pageRoot.addNoGrowChild(overviewCard);
+        pageRoot.addNoGrowChild(hotbarCard);
+        pageRoot.addNoGrowChild(backpackCard);
         pageRoot.addNoGrowChild(footer);
 
         pagePanel.getContent().addChild(pageRoot);
         root.addChild(pagePanel);
     }
 
-    private void refreshInventoryText() {
+    /**
+     * 刷新背包诊断指标。
+     */
+    private void refreshMetrics() {
         InventoryPlayer inventory = getPlayerInventory();
-        if (inventory == null) {
-            summaryLabel.setText("未找到玩家背包上下文，当前页面无法展示物品数据。\n页面结构仍然使用新的 Div 语义布局。 ");
-            hotbarTitleLabel.setText("快捷栏 0 / 9");
-            backpackTitleLabel.setText("主背包 0 / 27");
-            return;
-        }
+        int hotbarUsed = inventory == null ? 0 : countOccupiedSlots(inventory, 0, 9);
+        int backpackUsed = inventory == null ? 0 : countOccupiedSlots(inventory, 9, 27);
 
-        int hotbarUsed = countOccupiedSlots(inventory, 0, 9);
-        int backpackUsed = countOccupiedSlots(inventory, 9, 27);
-        summaryLabel.setText("玩家：" + Minecraft.getMinecraft().thePlayer.getCommandSenderName() + "；快捷栏占用 "
-                + hotbarUsed + " / 9；主背包占用 " + backpackUsed + " / 27。\n原生窗口 " + width + "x" + height
-                + "，当前页尺寸 " + pagePanel.getWidth() + "x" + pagePanel.getHeight() + "。 ");
-        hotbarTitleLabel.setText("快捷栏物品（" + hotbarUsed + " / 9 已占用）");
-        backpackTitleLabel.setText("主背包物品（" + backpackUsed + " / 27 已占用）");
+        overviewMetricsLabel.setText("窗口 " + width + "x" + height + "；页面壳 " + pagePanel.getWidth() + "x" + pagePanel.getHeight()
+                + "；快捷栏卡片 " + hotbarCard.getWidth() + "x" + hotbarCard.getHeight() + "；主背包卡片 "
+                + backpackCard.getWidth() + "x" + backpackCard.getHeight() + "。\n如果单列结构下背包格子仍然异常，优先检查 `InventorySlotGridWidget` 的列数和尺寸测量，而不是继续叠加页面复杂度。 ");
+
+        hotbarMetricsLabel.setText("快捷栏占用 " + hotbarUsed + " / 9；网格尺寸 " + hotbarGrid.getWidth() + "x" + hotbarGrid.getHeight()
+                + "。当前结构只验证单行网格能否在父宽度变化时稳定缩放。 ");
+        backpackMetricsLabel.setText("主背包占用 " + backpackUsed + " / 27；网格尺寸 " + backpackGrid.getWidth() + "x"
+                + backpackGrid.getHeight() + "。如果这里出现裁切或列数异常，再回头修 `InventorySlotGridWidget`。 ");
     }
 
     /**
@@ -184,7 +191,7 @@ public class InventoryOverviewScreen extends BaseScreen {
     }
 
     private ResponsivePanelWidget createCardPanel() {
-        return new ResponsivePanelWidget().setPadding(18).setFillColor(0xAA111721).setBorderColor(0xFF7AA2FF);
+        return new ResponsivePanelWidget().setPadding(20).setFillColor(0xAA111721).setBorderColor(0xFF6E8FCB);
     }
 
     private LabelWidget createTitleLabel(String text) {
@@ -196,7 +203,7 @@ public class InventoryOverviewScreen extends BaseScreen {
     }
 
     private LabelWidget createBodyLabel(String text) {
-        return new LabelWidget(text).setColor(0xFFD7E3FF).setShadow(false).setWrap(true).setMaxLines(6);
+        return new LabelWidget(text).setColor(0xFFD7E3FF).setShadow(false).setWrap(true).setMaxLines(8);
     }
 
     private int adaptiveWidth(int preferred, int floor, float viewportRatio) {

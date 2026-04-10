@@ -14,70 +14,38 @@ import club.heiqi.uilib.ui.layout.UiLayoutSpec;
 import club.heiqi.uilib.ui.widget.Widget;
 
 /**
- * 基于 Div 语义 API 的新版测试界面。
+ * 当前阶段的最小布局诊断页。
  */
 public class UiTestScreen extends BaseScreen {
 
-    private final ResponsivePageWidget menuPage = new ResponsivePageWidget();
-    private final ResponsivePageWidget layoutGuidePage = new ResponsivePageWidget();
-    private final ResponsivePageWidget formDemoPage = new ResponsivePageWidget();
-    private final ResponsivePageWidget interactionPage = new ResponsivePageWidget();
+    private final ResponsivePageWidget diagnosticPage = new ResponsivePageWidget();
 
-    private final ButtonWidget openLayoutGuideButton = new ButtonWidget("查看 Div 语义概览");
-    private final ButtonWidget openFormDemoButton = new ButtonWidget("查看 Div 表单页");
-    private final ButtonWidget openInteractionButton = new ButtonWidget("查看 Div 交互页");
-    private final LabelWidget menuMetricsLabel = new LabelWidget("");
-    private final LabelWidget layoutSummaryLabel = new LabelWidget("");
+    private final ResponsivePanelWidget overviewCard = createCardPanel();
+    private final ResponsivePanelWidget formCard = createCardPanel();
+    private final ResponsivePanelWidget wrapCard = createCardPanel();
 
-    private final TextInputWidget formThemeInput = new TextInputWidget();
-    private final TextInputWidget formNamespaceInput = new TextInputWidget();
-    private final TextInputWidget formAssetPathInput = new TextInputWidget();
-    private final ToggleSwitchWidget formAnimationToggle = new ToggleSwitchWidget("启用");
-    private final SegmentedSelectorWidget formDensitySelector = new SegmentedSelectorWidget("紧凑", "舒适", "宽松");
-    private final LabelWidget formSummaryLabel = new LabelWidget("");
-    private final LabelWidget formActionLabel = new LabelWidget("");
-    private final ButtonWidget applyFormButton = new ButtonWidget("应用配置");
-    private final ButtonWidget resetFormButton = new ButtonWidget("恢复默认");
-    private final ButtonWidget backFromFormButton = new ButtonWidget("返回总览");
+    private final LabelWidget viewportMetricsLabel = new LabelWidget("");
+    private final LabelWidget wrapMetricsLabel = new LabelWidget("");
+    private final LabelWidget wrapSampleLabel = new LabelWidget("");
+    private final LabelWidget actionStateLabel = new LabelWidget("");
 
-    private final TextInputWidget interactionNameInput = new TextInputWidget();
-    private final TextInputWidget interactionPathInput = new TextInputWidget();
-    private final ToggleSwitchWidget interactionKeyboardToggle = new ToggleSwitchWidget("允许");
-    private final SegmentedSelectorWidget interactionModeSelector = new SegmentedSelectorWidget("浏览", "编辑", "调试");
-    private final LabelWidget interactionSummaryLabel = new LabelWidget("");
-    private final ButtonWidget applyInteractionButton = new ButtonWidget("提交状态");
-    private final ButtonWidget resetInteractionButton = new ButtonWidget("重置交互页");
-    private final ButtonWidget backFromInteractionButton = new ButtonWidget("返回总览");
+    private final TextInputWidget themeInput = new TextInputWidget();
+    private final TextInputWidget namespaceInput = new TextInputWidget();
+    private final TextInputWidget pathInput = new TextInputWidget();
+    private final ToggleSwitchWidget wrapToggle = new ToggleSwitchWidget("启用");
+    private final SegmentedSelectorWidget widthPresetSelector = new SegmentedSelectorWidget("窄页", "中页", "宽页");
+    private final ButtonWidget refreshButton = new ButtonWidget("刷新诊断文本");
 
-    private boolean formAnimationsEnabled = true;
-    private int formDensityIndex = 1;
-    private String formLastAction = "尚未提交";
-    private String layoutLastAction = "尚未交互";
-    private String interactionLastAction = "尚未操作";
-    private Widget currentPage;
+    private String actionStateText = "尚未操作";
     private int viewportWidthHint = 1280;
     private int viewportHeightHint = 720;
 
     @Override
     protected void buildUi(Widget root) {
-        configurePage(menuPage, 0.56F, 0.52F, 420, 340);
-        configurePage(layoutGuidePage, 0.82F, 0.86F, 920, 680);
-        configurePage(formDemoPage, 0.78F, 0.84F, 820, 620);
-        configurePage(interactionPage, 0.74F, 0.82F, 760, 580);
-
-        configureActions();
-        assembleMenuPage(root);
-        assembleLayoutGuidePage(root);
-        assembleFormDemoPage(root);
-        assembleInteractionPage(root);
-
-        refreshMenuMetrics();
-        refreshLayoutSummary();
-        refreshFormState();
-        refreshInteractionState();
-
-        currentPage = menuPage;
-        showPage(menuPage);
+        configurePage();
+        configureControls();
+        assembleUi(root);
+        refreshDiagnostics();
     }
 
     @Override
@@ -91,375 +59,126 @@ public class UiTestScreen extends BaseScreen {
         ResponsiveContainerWidget rootWidget = (ResponsiveContainerWidget) getRootWidget();
         rootWidget.setPadding(pageMargin, topMargin, pageMargin, pageMargin);
 
-        applyAdaptiveChrome();
-        applyAdaptiveSizes();
-        refreshMenuMetrics();
-        refreshLayoutSummary();
-        refreshFormState();
-        refreshInteractionState();
-        showPage(currentPage == null ? menuPage : currentPage);
+        int pagePaddingX = clampValue(viewportWidthHint / 48, 16, 28);
+        int pagePaddingY = clampValue(viewportHeightHint / 36, 14, 24);
+        diagnosticPage.setPadding(pagePaddingX, pagePaddingY, pagePaddingX, pagePaddingY);
+
+        int fieldWidth = adaptiveWidth(360, 200, 0.22F);
+        int buttonWidth = adaptiveWidth(200, 140, 0.16F);
+        themeInput.setSuggestedSize(fieldWidth, themeInput.getPreferredHeight());
+        namespaceInput.setSuggestedSize(fieldWidth, namespaceInput.getPreferredHeight());
+        pathInput.setSuggestedSize(fieldWidth, pathInput.getPreferredHeight());
+        wrapToggle.setSuggestedSize(fieldWidth, wrapToggle.getPreferredHeight());
+        widthPresetSelector.setSuggestedSize(fieldWidth, widthPresetSelector.getPreferredHeight());
+        refreshButton.setSuggestedSize(buttonWidth, refreshButton.getPreferredHeight());
+
+        refreshDiagnostics();
     }
 
     @Override
     public void drawScreen(int mouseX, int mouseY, float partialTicks) {
-        refreshLayoutSummary();
-        refreshFormState();
-        refreshInteractionState();
+        refreshDiagnostics();
         super.drawScreen(mouseX, mouseY, partialTicks);
     }
 
-    private void configureActions() {
-        menuMetricsLabel.setColor(0xFFF6D78E).setShadow(false).setWrap(true).setMaxLines(3);
-        layoutSummaryLabel.setColor(0xFFF6D78E).setShadow(false).setWrap(true).setMaxLines(4);
-        formSummaryLabel.setColor(0xFFC8D8F3).setShadow(false).setWrap(true).setMaxLines(8);
-        formActionLabel.setColor(0xFFB5D0FF).setShadow(false).setWrap(true).setMaxLines(2);
-        interactionSummaryLabel.setColor(0xFFB5D0FF).setShadow(false).setWrap(true).setMaxLines(6);
+    /**
+     * 配置页面壳。
+     */
+    private void configurePage() {
+        diagnosticPage.setPadding(24, 22, 24, 22)
+                .setFillColor(0xD0151C25)
+                .setBorderColor(0xFF86A8F0)
+                .setSuggestedSize(920, 760)
+                .setViewportRatio(0.68F, 0.90F)
+                .setLayoutSpec(new UiLayoutSpec().setAnchor(UiAnchor.TOP_CENTER));
+    }
 
-        openLayoutGuideButton.setClickHandler(new Runnable() {
-            @Override
-            public void run() {
-                showPage(layoutGuidePage);
-            }
-        });
-        openFormDemoButton.setClickHandler(new Runnable() {
-            @Override
-            public void run() {
-                showPage(formDemoPage);
-            }
-        });
-        openInteractionButton.setClickHandler(new Runnable() {
-            @Override
-            public void run() {
-                showPage(interactionPage);
-            }
-        });
+    /**
+     * 配置诊断控件。
+     */
+    private void configureControls() {
+        viewportMetricsLabel.setColor(0xFFF6D78E).setShadow(false).setWrap(true).setMaxLines(4);
+        wrapMetricsLabel.setColor(0xFFB5D0FF).setShadow(false).setWrap(true).setMaxLines(6);
+        wrapSampleLabel.setColor(0xFFD7E3FF).setShadow(false).setWrap(true).setMaxLines(10);
+        actionStateLabel.setColor(0xFFB5D0FF).setShadow(false).setWrap(true).setMaxLines(2);
 
-        formThemeInput.setPlaceholder("例如：Qz Native UI").setText("Qz Native UI").setMaxLength(48);
-        formNamespaceInput.setPlaceholder("例如：qz_uilib").setText("qz_uilib").setMaxLength(48);
-        formAssetPathInput.setPlaceholder("例如：assets/qz_uilib/ui").setText("assets/qz_uilib/ui").setMaxLength(96);
-        formAnimationToggle.setChecked(true).setToggleHandler(new Runnable() {
+        themeInput.setPlaceholder("例如：Qz Layout Probe").setText("Qz Layout Probe").setMaxLength(48);
+        namespaceInput.setPlaceholder("例如：qz_uilib").setText("qz_uilib").setMaxLength(48);
+        pathInput.setPlaceholder("例如：assets/qz_uilib/ui/diagnostic").setText("assets/qz_uilib/ui/diagnostic").setMaxLength(96);
+        wrapToggle.setChecked(true).setToggleHandler(new Runnable() {
             @Override
             public void run() {
-                formAnimationsEnabled = formAnimationToggle.isChecked();
-                formLastAction = formAnimationsEnabled ? "已启用界面过渡动画" : "已关闭界面过渡动画";
-                refreshFormState();
+                actionStateText = wrapToggle.isChecked() ? "已开启自动换行提示" : "已关闭自动换行提示";
+                refreshDiagnostics();
             }
         });
-        formDensitySelector.setSelectedIndex(formDensityIndex).setChangeHandler(new Runnable() {
+        widthPresetSelector.setSelectedIndex(1).setChangeHandler(new Runnable() {
             @Override
             public void run() {
-                formDensityIndex = formDensitySelector.getSelectedIndex();
-                formLastAction = "已切换布局密度到 " + formDensitySelector.getSelectedOption();
-                refreshFormState();
+                actionStateText = "已切换宽度档位到 " + widthPresetSelector.getSelectedOption();
+                refreshDiagnostics();
             }
         });
-        applyFormButton.setClickHandler(new Runnable() {
+        refreshButton.setClickHandler(new Runnable() {
             @Override
             public void run() {
-                formLastAction = "已应用当前 Div 表单配置";
-                refreshFormState();
-            }
-        });
-        resetFormButton.setClickHandler(new Runnable() {
-            @Override
-            public void run() {
-                formThemeInput.setText("Qz Native UI");
-                formNamespaceInput.setText("qz_uilib");
-                formAssetPathInput.setText("assets/qz_uilib/ui");
-                formAnimationsEnabled = true;
-                formDensityIndex = 1;
-                formAnimationToggle.setChecked(true);
-                formDensitySelector.setSelectedIndex(formDensityIndex);
-                formLastAction = "已恢复表单默认值";
-                refreshFormState();
-            }
-        });
-        backFromFormButton.setClickHandler(new Runnable() {
-            @Override
-            public void run() {
-                showPage(menuPage);
-            }
-        });
-
-        interactionNameInput.setPlaceholder("例如：Focus Demo").setText("Focus Demo").setMaxLength(48);
-        interactionPathInput.setPlaceholder("例如：ui/focus/demo").setText("ui/focus/demo").setMaxLength(96);
-        interactionKeyboardToggle.setChecked(true).setToggleHandler(new Runnable() {
-            @Override
-            public void run() {
-                interactionLastAction = interactionKeyboardToggle.isChecked() ? "已启用键盘快捷交互" : "已关闭键盘快捷交互";
-                refreshInteractionState();
-            }
-        });
-        interactionModeSelector.setSelectedIndex(1).setChangeHandler(new Runnable() {
-            @Override
-            public void run() {
-                interactionLastAction = "已切换交互模式到 " + interactionModeSelector.getSelectedOption();
-                refreshInteractionState();
-            }
-        });
-        applyInteractionButton.setClickHandler(new Runnable() {
-            @Override
-            public void run() {
-                interactionLastAction = "已提交当前交互页状态";
-                refreshInteractionState();
-            }
-        });
-        resetInteractionButton.setClickHandler(new Runnable() {
-            @Override
-            public void run() {
-                interactionNameInput.setText("Focus Demo");
-                interactionPathInput.setText("ui/focus/demo");
-                interactionKeyboardToggle.setChecked(true);
-                interactionModeSelector.setSelectedIndex(1);
-                interactionLastAction = "已重置交互页状态";
-                refreshInteractionState();
-            }
-        });
-        backFromInteractionButton.setClickHandler(new Runnable() {
-            @Override
-            public void run() {
-                showPage(menuPage);
+                actionStateText = "已刷新当前诊断文本";
+                refreshDiagnostics();
             }
         });
     }
 
-    private void assembleMenuPage(Widget root) {
+    /**
+     * 构建诊断页组件树。
+     */
+    private void assembleUi(Widget root) {
         DivWidget pageRoot = new DivWidget().setPageColumn();
-        ResponsivePanelWidget roadmapPanel = createCardPanel();
-        DivWidget roadmapDiv = new DivWidget().setSectionColumn();
-        DivWidget actionFlow = new DivWidget().setButtonFlow();
+        DivWidget cardsFlow = new DivWidget().setContentFlow();
 
-        actionFlow.addNoGrowChild(openLayoutGuideButton);
-        actionFlow.addNoGrowChild(openFormDemoButton);
-        actionFlow.addNoGrowChild(openInteractionButton);
+        DivWidget overviewDiv = new DivWidget().setSectionColumn();
+        overviewDiv.addNoGrowChild(createSectionTitle("当前状态"));
+        overviewDiv.addNoGrowChild(createBodyLabel("旧测试页已经完全清空。当前只保留这一张最小诊断页，专门验证页面壳尺寸、卡片换行、中文文本最小宽度和父容器约束是否正确。"));
+        overviewDiv.addNoGrowChild(viewportMetricsLabel);
+        overviewDiv.addNoGrowChild(actionStateLabel);
+        overviewCard.addChild(overviewDiv);
 
-        roadmapDiv.addNoGrowChild(createSectionTitle("当前测试集"));
-        roadmapDiv.addNoGrowChild(createBodyLabel("旧的输入、鼠标、字符摆放和响应式试验页已经清空。当前只保留基于 Div 语义 API 重写的三类页面：布局概览、表单页、交互页。"));
-        roadmapDiv.addNoGrowChild(createAccentLabel("目标是让页面代码更像写结构，而不是反复手写底层布局配置。"));
-        roadmapPanel.addChild(roadmapDiv);
+        DivWidget formDiv = new DivWidget().setSectionColumn();
+        formDiv.addNoGrowChild(createSectionTitle("表单约束探针"));
+        formDiv.addNoGrowChild(createBodyLabel("这张卡片只验证 `setFormRow()` 在父宽度变化时能否正确重排。标签列保持固定参考宽度，字段列允许拉伸或换到下一行。"));
+        formDiv.addNoGrowChild(createFormRow("主题名称", themeInput));
+        formDiv.addNoGrowChild(createFormRow("命名空间", namespaceInput));
+        formDiv.addNoGrowChild(createFormRow("资源路径", pathInput));
+        formDiv.addNoGrowChild(createFormRow("换行提示", wrapToggle));
+        formDiv.addNoGrowChild(createFormRow("宽度档位", widthPresetSelector));
+        formDiv.addNoGrowChild(new DivWidget().setButtonFlow().addNoGrowChild(refreshButton));
+        formCard.addChild(formDiv);
 
-        pageRoot.addNoGrowChild(createTitleLabel("Qz-UILib Div Playground"));
-        pageRoot.addNoGrowChild(createBodyLabel("这一轮先推进 Div 组件本身，再用新的语义 API 重写测试页。当前菜单本身也只由页面列、卡片流和按钮流组成。"));
-        pageRoot.addNoGrowChild(menuMetricsLabel);
-        pageRoot.addNoGrowChild(roadmapPanel);
-        pageRoot.addNoGrowChild(actionFlow);
-        pageRoot.addNoGrowChild(createBodyLabel("按 RShift 可随时关闭测试界面；背包入口页也已改为同一套 Div 结构。"));
+        DivWidget wrapDiv = new DivWidget().setSectionColumn();
+        wrapDiv.addNoGrowChild(createSectionTitle("文本换行与最小宽度探针"));
+        wrapDiv.addNoGrowChild(createBodyLabel("这里故意放一段中英混排文本，观察在不同页宽下是否优先正常换行，而不是把整段中文误判为一个不可压缩长词。"));
+        wrapDiv.addNoGrowChild(wrapSampleLabel);
+        wrapDiv.addNoGrowChild(wrapMetricsLabel);
+        wrapCard.addChild(wrapDiv);
 
-        menuPage.getContent().addChild(pageRoot);
-        root.addChild(menuPage);
+        cardsFlow.addFlexChild(formCard.setSuggestedSize(460, -1));
+        cardsFlow.addFlexChild(wrapCard.setSuggestedSize(360, -1));
+
+        pageRoot.addNoGrowChild(createTitleLabel("布局诊断页"));
+        pageRoot.addNoGrowChild(createBodyLabel("如果这一页的两张卡片仍然在不合理的宽度下并排、中文换行异常，或者表单行不按父宽度变化，那么说明底层尺寸链路仍然有问题。"));
+        pageRoot.addNoGrowChild(overviewCard.setSuggestedSize(-1, -1));
+        pageRoot.addNoGrowChild(cardsFlow);
+
+        diagnosticPage.getContent().addChild(pageRoot);
+        root.addChild(diagnosticPage);
     }
 
-    private void assembleLayoutGuidePage(Widget root) {
-        DivWidget pageRoot = new DivWidget().setPageColumn();
-        DivWidget cardFlow = new DivWidget().setContentFlow();
-        ButtonWidget backButton = new ButtonWidget("返回总览");
-        backButton.setClickHandler(new Runnable() {
-            @Override
-            public void run() {
-                showPage(menuPage);
-            }
-        });
-
-        cardFlow.addFlexChild(createPageColumnCard());
-        cardFlow.addFlexChild(createFormRowCard());
-        cardFlow.addFlexChild(createInlineFlowCard());
-
-        pageRoot.addNoGrowChild(createTitleLabel("Div 语义布局概览"));
-        pageRoot.addNoGrowChild(createBodyLabel("这一页集中验证这轮补上的高阶 API：`setPageColumn()`、`setSectionColumn()`、`setContentFlow()`、`setInlineFlow()`、`setFormRow()` 和 `setButtonFlow()`。高层语义只强调文档流、换行和纵向阅读，不再强调横向兜底滚动。"));
-        pageRoot.addNoGrowChild(cardFlow);
-        pageRoot.addNoGrowChild(layoutSummaryLabel);
-
-        DivWidget footer = new DivWidget().setButtonFlow();
-        footer.addNoGrowChild(backButton);
-        pageRoot.addNoGrowChild(footer);
-
-        layoutGuidePage.getContent().addChild(pageRoot);
-        root.addChild(layoutGuidePage);
-    }
-
-    private void assembleFormDemoPage(Widget root) {
-        DivWidget pageRoot = new DivWidget().setPageColumn();
-        DivWidget cardFlow = new DivWidget().setContentFlow();
-        ResponsivePanelWidget formCard = createCardPanel();
-        ResponsivePanelWidget summaryCard = createCardPanel();
-        DivWidget formCardDiv = new DivWidget().setSectionColumn();
-        DivWidget summaryCardDiv = new DivWidget().setSectionColumn();
-        DivWidget actions = new DivWidget().setButtonFlow();
-
-        formCard.setSuggestedSize(420, -1);
-        summaryCard.setSuggestedSize(320, -1);
-
-        formCardDiv.addNoGrowChild(createSectionTitle("表单结构"));
-        formCardDiv.addNoGrowChild(createBodyLabel("所有行都直接写成 `new DivWidget().setFormRow()`，标签列只标记为不增长，输入列保留柔性即可。页面不再维护一大串手写布局配置。"));
-        formCardDiv.addNoGrowChild(createFormRow("主题名称", formThemeInput));
-        formCardDiv.addNoGrowChild(createFormRow("命名空间", formNamespaceInput));
-        formCardDiv.addNoGrowChild(createFormRow("资源路径", formAssetPathInput));
-        formCardDiv.addNoGrowChild(createFormRow("过渡动画", formAnimationToggle));
-        formCardDiv.addNoGrowChild(createFormRow("布局密度", formDensitySelector));
-        formCard.addChild(formCardDiv);
-
-        summaryCardDiv.addNoGrowChild(createSectionTitle("实时摘要"));
-        summaryCardDiv.addNoGrowChild(createBodyLabel("右侧区块不再承担旧测试页那种复杂预览任务，只保留配置摘要与最近操作，让页面层次更干净。"));
-        summaryCardDiv.addNoGrowChild(formSummaryLabel);
-        summaryCardDiv.addNoGrowChild(formActionLabel);
-        summaryCard.addChild(summaryCardDiv);
-
-        cardFlow.addFlexChild(formCard);
-        cardFlow.addFlexChild(summaryCard);
-
-        actions.addNoGrowChild(applyFormButton);
-        actions.addNoGrowChild(resetFormButton);
-        actions.addNoGrowChild(backFromFormButton);
-
-        pageRoot.addNoGrowChild(createTitleLabel("Div 表单页"));
-        pageRoot.addNoGrowChild(createBodyLabel("旧设置测试页已经清空，改成一张更克制的真实表单页，只验证结构、响应式换行和控件交互。"));
-        pageRoot.addNoGrowChild(cardFlow);
-        pageRoot.addNoGrowChild(actions);
-
-        formDemoPage.getContent().addChild(pageRoot);
-        root.addChild(formDemoPage);
-    }
-
-    private void assembleInteractionPage(Widget root) {
-        DivWidget pageRoot = new DivWidget().setPageColumn();
-        DivWidget cardFlow = new DivWidget().setContentFlow();
-        ResponsivePanelWidget focusCard = createCardPanel();
-        ResponsivePanelWidget stateCard = createCardPanel();
-        DivWidget focusCardDiv = new DivWidget().setSectionColumn();
-        DivWidget stateCardDiv = new DivWidget().setSectionColumn();
-        DivWidget actions = new DivWidget().setButtonFlow();
-
-        focusCard.setSuggestedSize(420, -1);
-        stateCard.setSuggestedSize(300, -1);
-
-        focusCardDiv.addNoGrowChild(createSectionTitle("焦点与输入链路"));
-        focusCardDiv.addNoGrowChild(createBodyLabel("用 Tab / Shift+Tab 在以下控件间切换焦点，用 Enter 或 Space 激活控件，左右方向键切换分段选择。"));
-        focusCardDiv.addNoGrowChild(createFormRow("配置名称", interactionNameInput));
-        focusCardDiv.addNoGrowChild(createFormRow("资源标识", interactionPathInput));
-        focusCardDiv.addNoGrowChild(createFormRow("键盘快捷", interactionKeyboardToggle));
-        focusCardDiv.addNoGrowChild(createFormRow("工作模式", interactionModeSelector));
-        focusCard.addChild(focusCardDiv);
-
-        stateCardDiv.addNoGrowChild(createSectionTitle("状态回显"));
-        stateCardDiv.addNoGrowChild(createAccentLabel("这页同时验证文本输入、焦点导航、切换控件和按钮流是否能在同一张 Div 页面里自然协作。"));
-        stateCardDiv.addNoGrowChild(interactionSummaryLabel);
-        stateCard.addChild(stateCardDiv);
-
-        cardFlow.addFlexChild(focusCard);
-        cardFlow.addFlexChild(stateCard);
-
-        actions.addNoGrowChild(applyInteractionButton);
-        actions.addNoGrowChild(resetInteractionButton);
-        actions.addNoGrowChild(backFromInteractionButton);
-
-        pageRoot.addNoGrowChild(createTitleLabel("Div 交互页"));
-        pageRoot.addNoGrowChild(createBodyLabel("旧焦点导航测试页已经并入这张交互页，保留真正有价值的交互验证：焦点顺序、键盘激活、文本输入和状态回显。"));
-        pageRoot.addNoGrowChild(cardFlow);
-        pageRoot.addNoGrowChild(actions);
-
-        interactionPage.getContent().addChild(pageRoot);
-        root.addChild(interactionPage);
-    }
-
-    private ResponsivePanelWidget createPageColumnCard() {
-        ResponsivePanelWidget panel = createCardPanel();
-        DivWidget content = new DivWidget().setSectionColumn();
-        DivWidget actionFlow = new DivWidget().setButtonFlow();
-        ButtonWidget primaryButton = new ButtonWidget("主操作");
-        ButtonWidget secondaryButton = new ButtonWidget("次操作");
-        ButtonWidget tertiaryButton = new ButtonWidget("辅助操作");
-
-        panel.setSuggestedSize(280, -1);
-
-        primaryButton.setClickHandler(new Runnable() {
-            @Override
-            public void run() {
-                layoutLastAction = "点击了页面列中的主操作按钮";
-                refreshLayoutSummary();
-            }
-        });
-        secondaryButton.setClickHandler(new Runnable() {
-            @Override
-            public void run() {
-                layoutLastAction = "点击了页面列中的次操作按钮";
-                refreshLayoutSummary();
-            }
-        });
-        tertiaryButton.setClickHandler(new Runnable() {
-            @Override
-            public void run() {
-                layoutLastAction = "点击了页面列中的辅助操作按钮";
-                refreshLayoutSummary();
-            }
-        });
-
-        actionFlow.addNoGrowChild(primaryButton);
-        actionFlow.addNoGrowChild(secondaryButton);
-        actionFlow.addNoGrowChild(tertiaryButton);
-
-        content.addNoGrowChild(createSectionTitle("1. 页面列"));
-        content.addNoGrowChild(createBodyLabel("`setPageColumn()` 把标题、正文、区块和页脚统一压成纵向流，页面代码只保留结构顺序。"));
-        content.addNoGrowChild(actionFlow);
-        panel.addChild(content);
-        return panel;
-    }
-
-    private ResponsivePanelWidget createFormRowCard() {
-        ResponsivePanelWidget panel = createCardPanel();
-        DivWidget content = new DivWidget().setSectionColumn();
-        TextInputWidget sampleNameInput = new TextInputWidget().setPlaceholder("输入条目名称").setText("Div Showcase");
-        SegmentedSelectorWidget sampleModeSelector = new SegmentedSelectorWidget("A", "B", "C").setSelectedIndex(1);
-        ToggleSwitchWidget sampleToggle = new ToggleSwitchWidget("启用").setChecked(true);
-
-        panel.setSuggestedSize(320, -1);
-        sampleNameInput.setSuggestedSize(240, sampleNameInput.getPreferredHeight());
-        sampleModeSelector.setSuggestedSize(240, sampleModeSelector.getPreferredHeight());
-        sampleToggle.setSuggestedSize(240, sampleToggle.getPreferredHeight());
-
-        content.addNoGrowChild(createSectionTitle("2. 表单行"));
-        content.addNoGrowChild(createBodyLabel("`setFormRow()` 负责标签与控件的横向组合，并在空间不足时自动换行，不再需要为每一行重复写方向、换行和对齐策略。"));
-        content.addNoGrowChild(createFormRow("条目名称", sampleNameInput));
-        content.addNoGrowChild(createFormRow("显示模式", sampleModeSelector));
-        content.addNoGrowChild(createFormRow("显示动画", sampleToggle));
-        panel.addChild(content);
-        return panel;
-    }
-
-    private ResponsivePanelWidget createInlineFlowCard() {
-        ResponsivePanelWidget panel = createCardPanel();
-        DivWidget content = new DivWidget().setSectionColumn();
-        DivWidget chipRow = new DivWidget().setInlineFlow().setPadding(0, 0, 0, 10);
-        String[] chipTexts = new String[] {
-                "Native Scale",
-                "Responsive Page",
-                "Semantic Form Row",
-                "Button Flow",
-                "Inline Wrap",
-                "Inventory Rebuild",
-                "Focus Navigation",
-                "Layout Cleanup"
-        };
-
-        panel.setSuggestedSize(360, -1);
-        for (String chipText : chipTexts) {
-            ButtonWidget chipButton = new ButtonWidget(chipText);
-            chipButton.setClickHandler(new Runnable() {
-                @Override
-                public void run() {
-                    layoutLastAction = "点击了行内换行流中的标签：" + chipText;
-                    refreshLayoutSummary();
-                }
-            });
-            chipRow.addNoGrowChild(chipButton);
-        }
-
-        content.addNoGrowChild(createSectionTitle("3. 行内流与自然换行"));
-        content.addNoGrowChild(createBodyLabel("更像网页的默认体验应该是内容优先换行、向下延展，而不是把横向滚动当成页面级概念。这里的标签流会像网页里的 inline-block 一样自然换行。"));
-        content.addNoGrowChild(chipRow);
-        panel.addChild(content);
-        return panel;
-    }
-
+    /**
+     * 创建一行表单结构。
+     *
+     * @param labelText 标签文本
+     * @param field 字段控件
+     * @return 表单行
+     */
     private DivWidget createFormRow(String labelText, Widget field) {
         LabelWidget label = createFormLabel(labelText);
         DivWidget row = new DivWidget().setFormRow();
@@ -468,93 +187,26 @@ public class UiTestScreen extends BaseScreen {
         return row;
     }
 
-    private void refreshMenuMetrics() {
-        menuMetricsLabel.setText("原生窗口 " + width + "x" + height
-                + "；当前保留 3 张基于 Div 语义 API 的测试页；旧测试页与旧背包测试页已清空重写。");
-    }
+    /**
+     * 刷新诊断文本。
+     */
+    private void refreshDiagnostics() {
+        viewportMetricsLabel.setText("窗口 " + width + "x" + height + "；页面壳 " + diagnosticPage.getWidth() + "x"
+                + diagnosticPage.getHeight() + "；总览卡片 " + overviewCard.getWidth() + "x" + overviewCard.getHeight()
+                + "；表单卡片 " + formCard.getWidth() + "x" + formCard.getHeight() + "；文本卡片 " + wrapCard.getWidth() + "x"
+                + wrapCard.getHeight() + "。\n如果页面壳仍然明显偏窄，优先检查 `ResponsivePageWidget`；如果卡片宽度异常，优先检查 `ResponsiveContainerWidget` 和最小宽度传播。 ");
 
-    private void refreshLayoutSummary() {
-        layoutSummaryLabel.setText("当前窗口 " + width + "x" + height + "；布局概览页尺寸 "
-                + layoutGuidePage.getWidth() + "x" + layoutGuidePage.getHeight() + "；最近操作：" + layoutLastAction);
-    }
+        wrapSampleLabel.setText("诊断文本：当前布局需要同时处理中文说明、English identifier、路径 `assets/qz_uilib/ui/diagnostic` 以及较长的字段值。只要父宽度变化，文本就应该优先自然换行，而不是继续保持单行并把右侧内容裁掉。当前主题为 “"
+                + textOrPlaceholder(themeInput.getText()) + "”，命名空间为 “" + textOrPlaceholder(namespaceInput.getText()) + "”。");
 
-    private void refreshFormState() {
-        formAnimationToggle.setChecked(formAnimationsEnabled);
-        formDensitySelector.setSelectedIndex(formDensityIndex);
-
-        String theme = textOrPlaceholder(formThemeInput.getText());
-        String namespace = textOrPlaceholder(formNamespaceInput.getText());
-        String path = textOrPlaceholder(formAssetPathInput.getText());
-        formSummaryLabel.setText("主题：" + theme + "；命名空间：" + namespace + "；资源路径：" + path
-                + "。动画当前为" + (formAnimationsEnabled ? "启用" : "关闭")
-                + "，布局密度为" + formDensitySelector.getSelectedOption() + "。\n这张页面只保留表单本身与摘要区块，用来验证新的 Div 页面结构是否足够简洁。 ");
-        formActionLabel.setText("最近操作：" + formLastAction);
-    }
-
-    private void refreshInteractionState() {
-        String name = textOrPlaceholder(interactionNameInput.getText());
-        String path = textOrPlaceholder(interactionPathInput.getText());
-        interactionSummaryLabel.setText("名称：" + name + "；资源：" + path + "；键盘快捷："
-                + (interactionKeyboardToggle.isChecked() ? "允许" : "关闭") + "；模式："
-                + interactionModeSelector.getSelectedOption() + "；最近操作：" + interactionLastAction);
-    }
-
-    private void showPage(Widget page) {
-        clearInteractionState();
-        currentPage = page;
-        menuPage.setVisible(page == menuPage);
-        layoutGuidePage.setVisible(page == layoutGuidePage);
-        formDemoPage.setVisible(page == formDemoPage);
-        interactionPage.setVisible(page == interactionPage);
-    }
-
-    private void configurePage(ResponsivePageWidget page, float widthPercent, float heightPercent, int suggestedWidth, int suggestedHeight) {
-        page.setPadding(30, 28, 30, 28)
-                .setSuggestedSize(suggestedWidth, suggestedHeight)
-                .setViewportRatio(widthPercent, heightPercent)
-                .setLayoutSpec(new UiLayoutSpec().setAnchor(UiAnchor.TOP_CENTER));
-    }
-
-    private void applyAdaptiveChrome() {
-        int pagePaddingX = clampValue(viewportWidthHint / 48, 14, 30);
-        int pagePaddingY = clampValue(viewportHeightHint / 36, 12, 28);
-
-        menuPage.setPadding(pagePaddingX, pagePaddingY, pagePaddingX, pagePaddingY);
-        layoutGuidePage.setPadding(pagePaddingX, pagePaddingY, pagePaddingX, pagePaddingY);
-        formDemoPage.setPadding(pagePaddingX, pagePaddingY, pagePaddingX, pagePaddingY);
-        interactionPage.setPadding(pagePaddingX, pagePaddingY, pagePaddingX, pagePaddingY);
-    }
-
-    private void applyAdaptiveSizes() {
-        int menuButtonWidth = adaptiveWidth(260, 140, 0.18F);
-        int inputWidth = adaptiveWidth(320, 170, 0.22F);
-        int buttonWidth = adaptiveWidth(180, 120, 0.14F);
-        int selectorWidth = adaptiveWidth(320, 180, 0.22F);
-
-        openLayoutGuideButton.setSuggestedSize(menuButtonWidth, openLayoutGuideButton.getPreferredHeight());
-        openFormDemoButton.setSuggestedSize(menuButtonWidth, openFormDemoButton.getPreferredHeight());
-        openInteractionButton.setSuggestedSize(menuButtonWidth, openInteractionButton.getPreferredHeight());
-
-        formThemeInput.setSuggestedSize(inputWidth, formThemeInput.getPreferredHeight());
-        formNamespaceInput.setSuggestedSize(inputWidth, formNamespaceInput.getPreferredHeight());
-        formAssetPathInput.setSuggestedSize(inputWidth, formAssetPathInput.getPreferredHeight());
-        formAnimationToggle.setSuggestedSize(inputWidth, formAnimationToggle.getPreferredHeight());
-        formDensitySelector.setSuggestedSize(selectorWidth, formDensitySelector.getPreferredHeight());
-        applyFormButton.setSuggestedSize(buttonWidth, applyFormButton.getPreferredHeight());
-        resetFormButton.setSuggestedSize(buttonWidth, resetFormButton.getPreferredHeight());
-        backFromFormButton.setSuggestedSize(buttonWidth, backFromFormButton.getPreferredHeight());
-
-        interactionNameInput.setSuggestedSize(inputWidth, interactionNameInput.getPreferredHeight());
-        interactionPathInput.setSuggestedSize(inputWidth, interactionPathInput.getPreferredHeight());
-        interactionKeyboardToggle.setSuggestedSize(inputWidth, interactionKeyboardToggle.getPreferredHeight());
-        interactionModeSelector.setSuggestedSize(selectorWidth, interactionModeSelector.getPreferredHeight());
-        applyInteractionButton.setSuggestedSize(buttonWidth, applyInteractionButton.getPreferredHeight());
-        resetInteractionButton.setSuggestedSize(buttonWidth, resetInteractionButton.getPreferredHeight());
-        backFromInteractionButton.setSuggestedSize(buttonWidth, backFromInteractionButton.getPreferredHeight());
+        wrapMetricsLabel.setText("文本卡片宽度 " + wrapCard.getWidth() + "；当前操作：" + actionStateText
+                + "；宽度档位：" + widthPresetSelector.getSelectedOption()
+                + "。如果中文说明不再把整段文本撑成一个极宽最小值，说明 `LabelWidget#getMinContentWidth()` 的修正已经生效。 ");
+        actionStateLabel.setText("最近状态：" + actionStateText);
     }
 
     private ResponsivePanelWidget createCardPanel() {
-        return new ResponsivePanelWidget().setPadding(18).setFillColor(0xAA111721).setBorderColor(0xFF7AA2FF);
+        return new ResponsivePanelWidget().setPadding(20).setFillColor(0xAA111721).setBorderColor(0xFF6E8FCB);
     }
 
     private LabelWidget createTitleLabel(String text) {
@@ -566,11 +218,7 @@ public class UiTestScreen extends BaseScreen {
     }
 
     private LabelWidget createBodyLabel(String text) {
-        return new LabelWidget(text).setColor(0xFFD7E3FF).setShadow(false).setWrap(true).setMaxLines(6);
-    }
-
-    private LabelWidget createAccentLabel(String text) {
-        return new LabelWidget(text).setColor(0xFFF6D78E).setShadow(false).setWrap(true).setMaxLines(4);
+        return new LabelWidget(text).setColor(0xFFD7E3FF).setShadow(false).setWrap(true).setMaxLines(8);
     }
 
     private LabelWidget createFormLabel(String text) {
@@ -579,15 +227,15 @@ public class UiTestScreen extends BaseScreen {
         return label;
     }
 
-    private String textOrPlaceholder(String value) {
-        return value == null || value.isEmpty() ? "<未填写>" : value;
-    }
-
     private int adaptiveWidth(int preferred, int floor, float viewportRatio) {
         return clampValue(Math.round(viewportWidthHint * viewportRatio), floor, preferred);
     }
 
     private int clampValue(int value, int min, int max) {
         return Math.max(min, Math.min(value, max));
+    }
+
+    private String textOrPlaceholder(String value) {
+        return value == null || value.isEmpty() ? "<未填写>" : value;
     }
 }

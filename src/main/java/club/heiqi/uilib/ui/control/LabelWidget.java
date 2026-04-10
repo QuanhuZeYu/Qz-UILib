@@ -84,21 +84,9 @@ public class LabelWidget extends Widget {
             return getPreferredWidth();
         }
 
-        DefaultFontRendererAdapter adapter = DefaultFontRendererAdapter.getInstance();
-        int widest = 0;
-        StringBuilder segmentBuilder = new StringBuilder();
-        for (int index = 0; index < text.length();) {
-            int codepoint = text.codePointAt(index);
-            if (Character.isWhitespace(codepoint)) {
-                widest = Math.max(widest, adapter.getStringWidth(segmentBuilder.toString()) * 2);
-                segmentBuilder.setLength(0);
-            } else {
-                segmentBuilder.appendCodePoint(codepoint);
-            }
-            index += Character.charCount(codepoint);
-        }
-        widest = Math.max(widest, adapter.getStringWidth(segmentBuilder.toString()) * 2);
-        return widest;
+        // 当前文本布局服务按字符粒度换行，中文与大多数符号都可以在单字符处断行，
+        // 因此最小内容宽度不应再按空白分词，否则中文整段会被误判为不可压缩长词。
+        return resolveWrapMinWidth();
     }
 
     public String getText() {
@@ -159,5 +147,22 @@ public class LabelWidget extends Widget {
 
     private int toRawTextWidth(int uiWidth) {
         return Math.max(1, Math.round(uiWidth / 2.0F));
+    }
+
+    private int resolveWrapMinWidth() {
+        DefaultFontRendererAdapter adapter = DefaultFontRendererAdapter.getInstance();
+        int widest = 0;
+        for (int index = 0; index < text.length();) {
+            int codepoint = text.codePointAt(index);
+            if (codepoint == '§' && index < text.length() - 1) {
+                index += 2;
+                continue;
+            }
+            if (!Character.isWhitespace(codepoint)) {
+                widest = Math.max(widest, adapter.getStringWidth(new String(Character.toChars(codepoint))) * 2);
+            }
+            index += Character.charCount(codepoint);
+        }
+        return Math.max(widest, adapter.getStringWidth("字") * 2);
     }
 }

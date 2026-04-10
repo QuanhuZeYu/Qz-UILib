@@ -74,6 +74,33 @@ public class ResponsiveContainerWidget extends RelativePanelWidget {
     }
 
     @Override
+    public int getMinContentWidth() {
+        int contentWidth = 0;
+        for (Widget child : getChildren()) {
+            UiLayoutSpec layoutSpec = child.getLayoutSpec();
+            UiInsets margin = layoutSpec == null ? UiInsets.ZERO : layoutSpec.getMargin();
+            contentWidth = Math.max(contentWidth, margin.getLeft() + child.getMinContentWidth() + margin.getRight());
+        }
+        return getPaddingLeft() + contentWidth + getPaddingRight();
+    }
+
+    @Override
+    public int getMinContentHeightForWidth(int width) {
+        int contentWidth = Math.max(0, width - getPaddingLeft() - getPaddingRight());
+        int contentHeight = 0;
+
+        for (Widget child : getChildren()) {
+            UiLayoutSpec layoutSpec = child.getLayoutSpec();
+            UiInsets margin = layoutSpec == null ? UiInsets.ZERO : layoutSpec.getMargin();
+            int availableWidth = Math.max(0, contentWidth - margin.getLeft() - margin.getRight());
+            int resolvedWidth = resolveMinWidth(child, layoutSpec, availableWidth);
+            int resolvedHeight = child.getMinContentHeightForWidth(resolvedWidth);
+            contentHeight = Math.max(contentHeight, margin.getTop() + resolvedHeight + margin.getBottom());
+        }
+        return getPaddingTop() + contentHeight + getPaddingBottom();
+    }
+
+    @Override
     protected void drawSelf(UiRenderContext context) {}
 
     /**
@@ -87,31 +114,32 @@ public class ResponsiveContainerWidget extends RelativePanelWidget {
 
         for (Widget child : getChildren()) {
             UiLayoutSpec layoutSpec = child.getLayoutSpec();
-            if (layoutSpec == null) {
-                continue;
-            }
-
-            UiInsets margin = layoutSpec.getMargin();
+            UiInsets margin = layoutSpec == null ? UiInsets.ZERO : layoutSpec.getMargin();
             int availableWidth = Math.max(0, contentWidth - margin.getLeft() - margin.getRight());
             int availableHeight = Math.max(0, contentHeight - margin.getTop() - margin.getBottom());
-            int resolvedWidth = resolveLength(layoutSpec.getWidth(), availableWidth, child.getPreferredWidth());
-            if (layoutSpec.isFill() && layoutSpec.getWidth().getType() == UiLength.Type.AUTO) {
+            UiLength width = layoutSpec == null ? UiLength.auto() : layoutSpec.getWidth();
+            UiLength height = layoutSpec == null ? UiLength.auto() : layoutSpec.getHeight();
+            int resolvedWidth = resolveLength(width, availableWidth, child.getPreferredWidth());
+            if (layoutSpec != null && layoutSpec.isFill() && width.getType() == UiLength.Type.AUTO) {
                 resolvedWidth = availableWidth;
             }
 
             int preferredHeight = child.getPreferredHeightForWidth(resolvedWidth);
-            int resolvedHeight = resolveLength(layoutSpec.getHeight(), availableHeight, preferredHeight);
-            if (layoutSpec.isFill() && layoutSpec.getHeight().getType() == UiLength.Type.AUTO) {
+            int resolvedHeight = resolveLength(height, availableHeight, preferredHeight);
+            if (layoutSpec != null && layoutSpec.isFill() && height.getType() == UiLength.Type.AUTO) {
                 resolvedHeight = availableHeight;
             }
 
-            resolvedWidth = fitDimension(resolvedWidth, layoutSpec.getMinWidth(), layoutSpec.getMaxWidth(), availableWidth);
-            resolvedHeight = fitDimension(resolvedHeight, layoutSpec.getMinHeight(), layoutSpec.getMaxHeight(), availableHeight);
+            resolvedWidth = fitDimension(resolvedWidth, layoutSpec == null ? 0 : layoutSpec.getMinWidth(),
+                    layoutSpec == null ? Integer.MAX_VALUE : layoutSpec.getMaxWidth(), availableWidth);
+            resolvedHeight = fitDimension(resolvedHeight, layoutSpec == null ? 0 : layoutSpec.getMinHeight(),
+                    layoutSpec == null ? Integer.MAX_VALUE : layoutSpec.getMaxHeight(), availableHeight);
 
-            int[] anchorPosition = resolveAnchorPosition(layoutSpec.getAnchor(), contentLeft + margin.getLeft(),
+            int[] anchorPosition = resolveAnchorPosition(layoutSpec == null ? UiAnchor.TOP_LEFT : layoutSpec.getAnchor(), contentLeft + margin.getLeft(),
                     contentTop + margin.getTop(), availableWidth, availableHeight, resolvedWidth, resolvedHeight);
 
-            child.setBounds(anchorPosition[0] + layoutSpec.getOffsetX(), anchorPosition[1] + layoutSpec.getOffsetY(),
+            child.setBounds(anchorPosition[0] + (layoutSpec == null ? 0 : layoutSpec.getOffsetX()),
+                    anchorPosition[1] + (layoutSpec == null ? 0 : layoutSpec.getOffsetY()),
                     resolvedWidth, resolvedHeight);
         }
     }
@@ -195,6 +223,17 @@ public class ResponsiveContainerWidget extends RelativePanelWidget {
         int minHeight = layoutSpec == null ? 0 : layoutSpec.getMinHeight();
         int maxHeight = layoutSpec == null ? Integer.MAX_VALUE : layoutSpec.getMaxHeight();
         return fitDimension(resolvedHeight, minHeight, maxHeight, Integer.MAX_VALUE);
+    }
+
+    protected int resolveMinWidth(Widget child, UiLayoutSpec layoutSpec, int availableWidth) {
+        UiLength width = layoutSpec == null ? UiLength.auto() : layoutSpec.getWidth();
+        int resolvedWidth = resolveLength(width, availableWidth, child.getMinContentWidth());
+        if (layoutSpec != null && layoutSpec.isFill() && width.getType() == UiLength.Type.AUTO) {
+            resolvedWidth = availableWidth;
+        }
+        int minWidth = layoutSpec == null ? 0 : layoutSpec.getMinWidth();
+        int maxWidth = layoutSpec == null ? Integer.MAX_VALUE : layoutSpec.getMaxWidth();
+        return fitDimension(Math.max(child.getMinContentWidth(), resolvedWidth), minWidth, maxWidth, availableWidth);
     }
 
     protected int fitDimension(int value, int min, int max, int available) {

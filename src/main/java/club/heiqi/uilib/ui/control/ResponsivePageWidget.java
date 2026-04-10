@@ -101,8 +101,13 @@ public class ResponsivePageWidget extends VerticalScrollPanelWidget {
 
         int ratioWidth = Math.max(1, Math.round(availableWidth * maxWidthRatio));
         int ratioHeight = Math.max(1, Math.round(availableHeight * maxHeightRatio));
-        int resolvedWidth = Math.min(availableWidth, Math.min(suggestedWidth, ratioWidth));
-        int resolvedHeight = Math.min(availableHeight, Math.min(suggestedHeight, ratioHeight));
+
+        // 页面建议尺寸更接近“舒适尺寸下限”，而不是硬性最大宽高；
+        // 否则大屏下页面会被意外锁死在一个过小的卡片宽度里。
+        int resolvedWidth = Math.min(availableWidth, ratioWidth);
+        int resolvedHeight = Math.min(availableHeight, ratioHeight);
+        resolvedWidth = Math.max(resolvedWidth, Math.min(availableWidth, suggestedWidth));
+        resolvedHeight = Math.max(resolvedHeight, Math.min(availableHeight, suggestedHeight));
 
         UiAnchor anchor = layoutSpec == null ? UiAnchor.TOP_CENTER : layoutSpec.getAnchor();
         int[] anchorPosition = resolveAnchorPosition(anchor, contentLeft + margin.getLeft(), contentTop + margin.getTop(),
