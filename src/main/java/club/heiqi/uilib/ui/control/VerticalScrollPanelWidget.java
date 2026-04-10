@@ -4,23 +4,31 @@ import club.heiqi.uilib.ui.event.UiMouseEvent;
 import club.heiqi.uilib.ui.widget.Widget;
 
 /**
- * 纵向滚动面板。
+ * 带双轴滚动兜底的滚动面板。
  */
 public class VerticalScrollPanelWidget extends ResponsivePanelWidget {
 
     private static final int SCROLLBAR_TRACK_GAP = 2;
-    private static final int SCROLLBAR_TRACK_WIDTH = 6;
-    private static final int SCROLLBAR_MIN_THUMB_HEIGHT = 24;
+    private static final int SCROLLBAR_TRACK_THICKNESS = 6;
+    private static final int SCROLLBAR_MIN_THUMB_SIZE = 24;
 
     private final VerticalStackWidget content = new VerticalStackWidget();
 
-    private int scrollOffset;
-    private int maxScrollOffset;
+    private int verticalScrollOffset;
+    private int maxVerticalScrollOffset;
+    private int horizontalScrollOffset;
+    private int maxHorizontalScrollOffset;
     private int scrollStep = 36;
-    private boolean hoveredScrollbar;
-    private boolean hoveredThumb;
-    private boolean draggingThumb;
-    private int dragThumbOffsetY;
+
+    private boolean hoveredVerticalScrollbar;
+    private boolean hoveredVerticalThumb;
+    private boolean draggingVerticalThumb;
+    private int dragVerticalThumbOffset;
+
+    private boolean hoveredHorizontalScrollbar;
+    private boolean hoveredHorizontalThumb;
+    private boolean draggingHorizontalThumb;
+    private int dragHorizontalThumbOffset;
 
     public VerticalScrollPanelWidget() {
         setClampChildrenInside(false);
@@ -52,19 +60,39 @@ public class VerticalScrollPanelWidget extends ResponsivePanelWidget {
     }
 
     public int getScrollOffset() {
-        return scrollOffset;
+        return verticalScrollOffset;
     }
 
     public int getMaxScrollOffset() {
-        return maxScrollOffset;
+        return maxVerticalScrollOffset;
+    }
+
+    public int getHorizontalScrollOffset() {
+        return horizontalScrollOffset;
+    }
+
+    public int getMaxHorizontalScrollOffset() {
+        return maxHorizontalScrollOffset;
+    }
+
+    public int getVisibleContentWidth() {
+        return Math.max(0, getWidth() - getPaddingLeft() - getPaddingRight());
     }
 
     public int getVisibleContentHeight() {
         return Math.max(0, getHeight() - getPaddingTop() - getPaddingBottom());
     }
 
+    public int getContentWidth() {
+        return content.getWidth();
+    }
+
     public int getContentHeight() {
         return content.getHeight();
+    }
+
+    public int getContentX() {
+        return content.getX();
     }
 
     public int getContentY() {
@@ -82,15 +110,25 @@ public class VerticalScrollPanelWidget extends ResponsivePanelWidget {
         }
 
         updateContentBounds();
+        int viewportLeft = getAbsoluteX() + getPaddingLeft();
         int viewportTop = getAbsoluteY() + getPaddingTop();
+        int viewportRight = getAbsoluteX() + getWidth() - getPaddingRight();
         int viewportBottom = getAbsoluteY() + getHeight() - getPaddingBottom();
+        int targetLeft = target.getAbsoluteX();
         int targetTop = target.getAbsoluteY();
+        int targetRight = targetLeft + target.getWidth();
         int targetBottom = targetTop + target.getHeight();
 
+        if (targetLeft < viewportLeft) {
+            setHorizontalScrollOffset(horizontalScrollOffset - (viewportLeft - targetLeft));
+        } else if (targetRight > viewportRight) {
+            setHorizontalScrollOffset(horizontalScrollOffset + (targetRight - viewportRight));
+        }
+
         if (targetTop < viewportTop) {
-            setScrollOffset(scrollOffset - (viewportTop - targetTop));
+            setVerticalScrollOffset(verticalScrollOffset - (viewportTop - targetTop));
         } else if (targetBottom > viewportBottom) {
-            setScrollOffset(scrollOffset + (targetBottom - viewportBottom));
+            setVerticalScrollOffset(verticalScrollOffset + (targetBottom - viewportBottom));
         }
         updateContentBounds();
     }
@@ -114,53 +152,87 @@ public class VerticalScrollPanelWidget extends ResponsivePanelWidget {
     @Override
     protected void drawSelf(club.heiqi.uilib.ui.render.UiRenderContext context) {
         super.drawSelf(context);
-        ScrollbarMetrics metrics = getScrollbarMetrics();
-        if (metrics == null) {
-            return;
+        ScrollbarMetrics verticalMetrics = getVerticalScrollbarMetrics();
+        if (verticalMetrics != null) {
+            int trackColor = hoveredVerticalScrollbar ? 0x66344155 : 0x552B3647;
+            int thumbColor = draggingVerticalThumb ? 0xFFD1E2FF : (hoveredVerticalThumb ? 0xFFB8D0FF : 0xFF8FB3FF);
+            context.fillRect(verticalMetrics.trackLeft, verticalMetrics.trackTop, verticalMetrics.trackRight,
+                    verticalMetrics.trackBottom, trackColor);
+            context.fillRect(verticalMetrics.thumbLeft, verticalMetrics.thumbTop, verticalMetrics.thumbRight,
+                    verticalMetrics.thumbBottom, thumbColor);
         }
 
-        int thumbColor = draggingThumb ? 0xFFD1E2FF : (hoveredThumb ? 0xFFB8D0FF : 0xFF8FB3FF);
-        int trackColor = hoveredScrollbar ? 0x66344155 : 0x552B3647;
-        context.fillRect(metrics.trackLeft, metrics.trackTop, metrics.trackRight, metrics.trackBottom, trackColor);
-        context.fillRect(metrics.trackLeft, metrics.thumbTop, metrics.trackRight, metrics.thumbBottom, thumbColor);
+        ScrollbarMetrics horizontalMetrics = getHorizontalScrollbarMetrics();
+        if (horizontalMetrics != null) {
+            int trackColor = hoveredHorizontalScrollbar ? 0x66344155 : 0x552B3647;
+            int thumbColor = draggingHorizontalThumb ? 0xFFD1E2FF : (hoveredHorizontalThumb ? 0xFFB8D0FF : 0xFF8FB3FF);
+            context.fillRect(horizontalMetrics.trackLeft, horizontalMetrics.trackTop, horizontalMetrics.trackRight,
+                    horizontalMetrics.trackBottom, trackColor);
+            context.fillRect(horizontalMetrics.thumbLeft, horizontalMetrics.thumbTop, horizontalMetrics.thumbRight,
+                    horizontalMetrics.thumbBottom, thumbColor);
+        }
     }
 
     @Override
     public boolean onMouseScroll(UiMouseEvent event) {
         updateContentBounds();
-        if (maxScrollOffset <= 0) {
-            return false;
-        }
-        int previousOffset = scrollOffset;
+        int previousVerticalOffset = verticalScrollOffset;
+        int previousHorizontalOffset = horizontalScrollOffset;
         int steps = Math.max(1, Math.round(Math.abs(event.getWheelDelta()) / 120.0F));
         int delta = scrollStep * steps;
-        if (event.getWheelDelta() > 0) {
-            setScrollOffset(scrollOffset - delta);
-        } else if (event.getWheelDelta() < 0) {
-            setScrollOffset(scrollOffset + delta);
+
+        if (maxVerticalScrollOffset > 0) {
+            if (event.getWheelDelta() > 0) {
+                setVerticalScrollOffset(verticalScrollOffset - delta);
+            } else if (event.getWheelDelta() < 0) {
+                setVerticalScrollOffset(verticalScrollOffset + delta);
+            }
+        } else if (maxHorizontalScrollOffset > 0) {
+            if (event.getWheelDelta() > 0) {
+                setHorizontalScrollOffset(horizontalScrollOffset - delta);
+            } else if (event.getWheelDelta() < 0) {
+                setHorizontalScrollOffset(horizontalScrollOffset + delta);
+            }
         }
-        return scrollOffset != previousOffset;
+        return verticalScrollOffset != previousVerticalOffset || horizontalScrollOffset != previousHorizontalOffset;
     }
 
     @Override
     public void onMouseMove(UiMouseEvent event) {
         updateContentBounds();
-        ScrollbarMetrics metrics = getScrollbarMetrics();
-        if (metrics == null) {
-            hoveredScrollbar = false;
-            hoveredThumb = false;
-            draggingThumb = false;
-            return;
+        ScrollbarMetrics verticalMetrics = getVerticalScrollbarMetrics();
+        ScrollbarMetrics horizontalMetrics = getHorizontalScrollbarMetrics();
+
+        if (verticalMetrics == null) {
+            hoveredVerticalScrollbar = false;
+            hoveredVerticalThumb = false;
+            draggingVerticalThumb = false;
+        } else {
+            hoveredVerticalScrollbar = containsInRect(event.getMouseX(), event.getMouseY(), verticalMetrics.trackLeft,
+                    verticalMetrics.trackTop, verticalMetrics.trackRight, verticalMetrics.trackBottom);
+            hoveredVerticalThumb = containsInRect(event.getMouseX(), event.getMouseY(), verticalMetrics.thumbLeft,
+                    verticalMetrics.thumbTop, verticalMetrics.thumbRight, verticalMetrics.thumbBottom);
+            if (draggingVerticalThumb) {
+                setVerticalScrollFromThumbStart(event.getMouseY() - dragVerticalThumbOffset, verticalMetrics);
+                hoveredVerticalScrollbar = true;
+                hoveredVerticalThumb = true;
+            }
         }
 
-        hoveredScrollbar = containsInRect(event.getMouseX(), event.getMouseY(), metrics.trackLeft, metrics.trackTop,
-                metrics.trackRight, metrics.trackBottom);
-        hoveredThumb = containsInRect(event.getMouseX(), event.getMouseY(), metrics.thumbLeft, metrics.thumbTop,
-                metrics.thumbRight, metrics.thumbBottom);
-        if (draggingThumb) {
-            setScrollFromThumbTop(event.getMouseY() - dragThumbOffsetY, metrics);
-            hoveredThumb = true;
-            hoveredScrollbar = true;
+        if (horizontalMetrics == null) {
+            hoveredHorizontalScrollbar = false;
+            hoveredHorizontalThumb = false;
+            draggingHorizontalThumb = false;
+        } else {
+            hoveredHorizontalScrollbar = containsInRect(event.getMouseX(), event.getMouseY(), horizontalMetrics.trackLeft,
+                    horizontalMetrics.trackTop, horizontalMetrics.trackRight, horizontalMetrics.trackBottom);
+            hoveredHorizontalThumb = containsInRect(event.getMouseX(), event.getMouseY(), horizontalMetrics.thumbLeft,
+                    horizontalMetrics.thumbTop, horizontalMetrics.thumbRight, horizontalMetrics.thumbBottom);
+            if (draggingHorizontalThumb) {
+                setHorizontalScrollFromThumbStart(event.getMouseX() - dragHorizontalThumbOffset, horizontalMetrics);
+                hoveredHorizontalScrollbar = true;
+                hoveredHorizontalThumb = true;
+            }
         }
     }
 
@@ -171,25 +243,42 @@ public class VerticalScrollPanelWidget extends ResponsivePanelWidget {
         }
 
         updateContentBounds();
-        ScrollbarMetrics metrics = getScrollbarMetrics();
-        if (metrics == null || !containsInRect(event.getMouseX(), event.getMouseY(), metrics.trackLeft,
-                metrics.trackTop, metrics.trackRight, metrics.trackBottom)) {
+        ScrollbarMetrics verticalMetrics = getVerticalScrollbarMetrics();
+        if (verticalMetrics != null && containsInRect(event.getMouseX(), event.getMouseY(), verticalMetrics.trackLeft,
+                verticalMetrics.trackTop, verticalMetrics.trackRight, verticalMetrics.trackBottom)) {
+            hoveredVerticalScrollbar = true;
+            if (containsInRect(event.getMouseX(), event.getMouseY(), verticalMetrics.thumbLeft, verticalMetrics.thumbTop,
+                    verticalMetrics.thumbRight, verticalMetrics.thumbBottom)) {
+                draggingVerticalThumb = true;
+                dragVerticalThumbOffset = event.getMouseY() - verticalMetrics.thumbTop;
+                hoveredVerticalThumb = true;
+                return;
+            }
+
+            draggingVerticalThumb = true;
+            dragVerticalThumbOffset = verticalMetrics.thumbSize / 2;
+            setVerticalScrollFromThumbStart(event.getMouseY() - dragVerticalThumbOffset, verticalMetrics);
+            hoveredVerticalThumb = true;
             return;
         }
 
-        hoveredScrollbar = true;
-        if (containsInRect(event.getMouseX(), event.getMouseY(), metrics.thumbLeft, metrics.thumbTop,
-                metrics.thumbRight, metrics.thumbBottom)) {
-            draggingThumb = true;
-            dragThumbOffsetY = event.getMouseY() - metrics.thumbTop;
-            hoveredThumb = true;
-            return;
-        }
+        ScrollbarMetrics horizontalMetrics = getHorizontalScrollbarMetrics();
+        if (horizontalMetrics != null && containsInRect(event.getMouseX(), event.getMouseY(), horizontalMetrics.trackLeft,
+                horizontalMetrics.trackTop, horizontalMetrics.trackRight, horizontalMetrics.trackBottom)) {
+            hoveredHorizontalScrollbar = true;
+            if (containsInRect(event.getMouseX(), event.getMouseY(), horizontalMetrics.thumbLeft,
+                    horizontalMetrics.thumbTop, horizontalMetrics.thumbRight, horizontalMetrics.thumbBottom)) {
+                draggingHorizontalThumb = true;
+                dragHorizontalThumbOffset = event.getMouseX() - horizontalMetrics.thumbLeft;
+                hoveredHorizontalThumb = true;
+                return;
+            }
 
-        draggingThumb = true;
-        dragThumbOffsetY = metrics.thumbHeight / 2;
-        setScrollFromThumbTop(event.getMouseY() - dragThumbOffsetY, metrics);
-        hoveredThumb = true;
+            draggingHorizontalThumb = true;
+            dragHorizontalThumbOffset = horizontalMetrics.thumbSize / 2;
+            setHorizontalScrollFromThumbStart(event.getMouseX() - dragHorizontalThumbOffset, horizontalMetrics);
+            hoveredHorizontalThumb = true;
+        }
     }
 
     @Override
@@ -198,85 +287,129 @@ public class VerticalScrollPanelWidget extends ResponsivePanelWidget {
             return;
         }
 
-        draggingThumb = false;
+        draggingVerticalThumb = false;
+        draggingHorizontalThumb = false;
         updateContentBounds();
-        ScrollbarMetrics metrics = getScrollbarMetrics();
-        if (metrics == null) {
-            hoveredScrollbar = false;
-            hoveredThumb = false;
-            return;
-        }
-        hoveredScrollbar = containsInRect(event.getMouseX(), event.getMouseY(), metrics.trackLeft, metrics.trackTop,
-                metrics.trackRight, metrics.trackBottom);
-        hoveredThumb = containsInRect(event.getMouseX(), event.getMouseY(), metrics.thumbLeft, metrics.thumbTop,
-                metrics.thumbRight, metrics.thumbBottom);
+        ScrollbarMetrics verticalMetrics = getVerticalScrollbarMetrics();
+        ScrollbarMetrics horizontalMetrics = getHorizontalScrollbarMetrics();
+
+        hoveredVerticalScrollbar = verticalMetrics != null && containsInRect(event.getMouseX(), event.getMouseY(),
+                verticalMetrics.trackLeft, verticalMetrics.trackTop, verticalMetrics.trackRight, verticalMetrics.trackBottom);
+        hoveredVerticalThumb = verticalMetrics != null && containsInRect(event.getMouseX(), event.getMouseY(),
+                verticalMetrics.thumbLeft, verticalMetrics.thumbTop, verticalMetrics.thumbRight, verticalMetrics.thumbBottom);
+        hoveredHorizontalScrollbar = horizontalMetrics != null && containsInRect(event.getMouseX(), event.getMouseY(),
+                horizontalMetrics.trackLeft, horizontalMetrics.trackTop, horizontalMetrics.trackRight, horizontalMetrics.trackBottom);
+        hoveredHorizontalThumb = horizontalMetrics != null && containsInRect(event.getMouseX(), event.getMouseY(),
+                horizontalMetrics.thumbLeft, horizontalMetrics.thumbTop, horizontalMetrics.thumbRight, horizontalMetrics.thumbBottom);
     }
 
     @Override
     public void onMouseLeave() {
-        hoveredScrollbar = false;
-        hoveredThumb = false;
+        hoveredVerticalScrollbar = false;
+        hoveredVerticalThumb = false;
+        hoveredHorizontalScrollbar = false;
+        hoveredHorizontalThumb = false;
     }
 
     private void updateContentBounds() {
-        int contentWidth = Math.max(0, getWidth() - getPaddingLeft() - getPaddingRight());
-        int visibleHeight = Math.max(0, getHeight() - getPaddingTop() - getPaddingBottom());
+        int visibleWidth = getVisibleContentWidth();
+        int visibleHeight = getVisibleContentHeight();
+        int contentWidth = Math.max(visibleWidth, content.getPreferredWidth());
         int contentHeight = Math.max(visibleHeight, content.getPreferredHeightForWidth(contentWidth));
-        maxScrollOffset = Math.max(0, contentHeight - visibleHeight);
-        setScrollOffset(scrollOffset);
-        if (maxScrollOffset <= 0) {
-            draggingThumb = false;
-            hoveredScrollbar = false;
-            hoveredThumb = false;
+
+        maxHorizontalScrollOffset = Math.max(0, contentWidth - visibleWidth);
+        maxVerticalScrollOffset = Math.max(0, contentHeight - visibleHeight);
+        setHorizontalScrollOffset(horizontalScrollOffset);
+        setVerticalScrollOffset(verticalScrollOffset);
+
+        if (maxVerticalScrollOffset <= 0) {
+            draggingVerticalThumb = false;
+            hoveredVerticalScrollbar = false;
+            hoveredVerticalThumb = false;
         }
-        content.setBounds(getPaddingLeft(), getPaddingTop() - scrollOffset, contentWidth, contentHeight);
+        if (maxHorizontalScrollOffset <= 0) {
+            draggingHorizontalThumb = false;
+            hoveredHorizontalScrollbar = false;
+            hoveredHorizontalThumb = false;
+        }
+
+        content.setBounds(getPaddingLeft() - horizontalScrollOffset, getPaddingTop() - verticalScrollOffset, contentWidth,
+                contentHeight);
     }
 
-    /**
-     * 统一限制滚动偏移，避免滚轮与拖拽逻辑各自重复 clamp。
-     *
-     * @param scrollOffset 目标滚动偏移
-     */
-    private void setScrollOffset(int scrollOffset) {
-        this.scrollOffset = Math.max(0, Math.min(scrollOffset, maxScrollOffset));
+    private void setVerticalScrollOffset(int scrollOffset) {
+        verticalScrollOffset = Math.max(0, Math.min(scrollOffset, maxVerticalScrollOffset));
     }
 
-    /**
-     * 按滚动条滑块顶部位置反推出内容滚动偏移。
-     *
-     * @param thumbTop 目标滑块顶部
-     * @param metrics  当前滚动条几何信息
-     */
-    private void setScrollFromThumbTop(int thumbTop, ScrollbarMetrics metrics) {
-        int travel = Math.max(0, metrics.trackHeight - metrics.thumbHeight);
-        if (travel <= 0 || maxScrollOffset <= 0) {
-            setScrollOffset(0);
+    private void setHorizontalScrollOffset(int scrollOffset) {
+        horizontalScrollOffset = Math.max(0, Math.min(scrollOffset, maxHorizontalScrollOffset));
+    }
+
+    private void setVerticalScrollFromThumbStart(int thumbTop, ScrollbarMetrics metrics) {
+        int travel = Math.max(0, metrics.trackLength - metrics.thumbSize);
+        if (travel <= 0 || maxVerticalScrollOffset <= 0) {
+            setVerticalScrollOffset(0);
             return;
         }
 
-        int clampedThumbTop = Math.max(metrics.trackTop, Math.min(thumbTop, metrics.trackBottom - metrics.thumbHeight));
+        int clampedThumbTop = Math.max(metrics.trackTop, Math.min(thumbTop, metrics.trackBottom - metrics.thumbSize));
         float progress = (clampedThumbTop - metrics.trackTop) / (float) travel;
-        setScrollOffset(Math.round(maxScrollOffset * progress));
+        setVerticalScrollOffset(Math.round(maxVerticalScrollOffset * progress));
     }
 
-    private ScrollbarMetrics getScrollbarMetrics() {
-        if (maxScrollOffset <= 0) {
+    private void setHorizontalScrollFromThumbStart(int thumbLeft, ScrollbarMetrics metrics) {
+        int travel = Math.max(0, metrics.trackLength - metrics.thumbSize);
+        if (travel <= 0 || maxHorizontalScrollOffset <= 0) {
+            setHorizontalScrollOffset(0);
+            return;
+        }
+
+        int clampedThumbLeft = Math.max(metrics.trackLeft, Math.min(thumbLeft, metrics.trackRight - metrics.thumbSize));
+        float progress = (clampedThumbLeft - metrics.trackLeft) / (float) travel;
+        setHorizontalScrollOffset(Math.round(maxHorizontalScrollOffset * progress));
+    }
+
+    private ScrollbarMetrics getVerticalScrollbarMetrics() {
+        if (maxVerticalScrollOffset <= 0) {
             return null;
         }
 
         ScrollbarMetrics metrics = new ScrollbarMetrics();
+        int horizontalReserve = maxHorizontalScrollOffset > 0 ? SCROLLBAR_TRACK_THICKNESS + SCROLLBAR_TRACK_GAP : 0;
         metrics.trackLeft = getAbsoluteX() + getWidth() - getPaddingRight() + SCROLLBAR_TRACK_GAP;
-        metrics.trackRight = metrics.trackLeft + SCROLLBAR_TRACK_WIDTH;
+        metrics.trackRight = metrics.trackLeft + SCROLLBAR_TRACK_THICKNESS;
         metrics.trackTop = getAbsoluteY() + getPaddingTop();
-        metrics.trackBottom = getAbsoluteY() + getHeight() - getPaddingBottom();
-        metrics.trackHeight = Math.max(1, metrics.trackBottom - metrics.trackTop);
-        metrics.thumbHeight = Math.max(SCROLLBAR_MIN_THUMB_HEIGHT,
-                Math.round(metrics.trackHeight * (metrics.trackHeight / (float) Math.max(metrics.trackHeight, content.getHeight()))));
-        int travel = Math.max(0, metrics.trackHeight - metrics.thumbHeight);
-        metrics.thumbTop = metrics.trackTop + Math.round(travel * (scrollOffset / (float) Math.max(1, maxScrollOffset)));
-        metrics.thumbBottom = metrics.thumbTop + metrics.thumbHeight;
+        metrics.trackBottom = getAbsoluteY() + getHeight() - getPaddingBottom() - horizontalReserve;
+        metrics.trackLength = Math.max(1, metrics.trackBottom - metrics.trackTop);
+        metrics.thumbSize = Math.max(SCROLLBAR_MIN_THUMB_SIZE,
+                Math.round(metrics.trackLength * (getVisibleContentHeight() / (float) Math.max(getVisibleContentHeight(), content.getHeight()))));
+        int travel = Math.max(0, metrics.trackLength - metrics.thumbSize);
+        metrics.thumbTop = metrics.trackTop + Math.round(travel * (verticalScrollOffset / (float) Math.max(1, maxVerticalScrollOffset)));
+        metrics.thumbBottom = metrics.thumbTop + metrics.thumbSize;
         metrics.thumbLeft = metrics.trackLeft;
         metrics.thumbRight = metrics.trackRight;
+        return metrics;
+    }
+
+    private ScrollbarMetrics getHorizontalScrollbarMetrics() {
+        if (maxHorizontalScrollOffset <= 0) {
+            return null;
+        }
+
+        ScrollbarMetrics metrics = new ScrollbarMetrics();
+        int verticalReserve = maxVerticalScrollOffset > 0 ? SCROLLBAR_TRACK_THICKNESS + SCROLLBAR_TRACK_GAP : 0;
+        metrics.trackLeft = getAbsoluteX() + getPaddingLeft();
+        metrics.trackRight = getAbsoluteX() + getWidth() - getPaddingRight() - verticalReserve;
+        metrics.trackTop = getAbsoluteY() + getHeight() - getPaddingBottom() + SCROLLBAR_TRACK_GAP;
+        metrics.trackBottom = metrics.trackTop + SCROLLBAR_TRACK_THICKNESS;
+        metrics.trackLength = Math.max(1, metrics.trackRight - metrics.trackLeft);
+        metrics.thumbSize = Math.max(SCROLLBAR_MIN_THUMB_SIZE,
+                Math.round(metrics.trackLength * (getVisibleContentWidth() / (float) Math.max(getVisibleContentWidth(), content.getWidth()))));
+        int travel = Math.max(0, metrics.trackLength - metrics.thumbSize);
+        metrics.thumbLeft = metrics.trackLeft + Math.round(travel * (horizontalScrollOffset / (float) Math.max(1, maxHorizontalScrollOffset)));
+        metrics.thumbRight = metrics.thumbLeft + metrics.thumbSize;
+        metrics.thumbTop = metrics.trackTop;
+        metrics.thumbBottom = metrics.trackBottom;
         return metrics;
     }
 
@@ -303,11 +436,11 @@ public class VerticalScrollPanelWidget extends ResponsivePanelWidget {
         private int trackTop;
         private int trackRight;
         private int trackBottom;
-        private int trackHeight;
+        private int trackLength;
         private int thumbLeft;
         private int thumbTop;
         private int thumbRight;
         private int thumbBottom;
-        private int thumbHeight;
+        private int thumbSize;
     }
 }

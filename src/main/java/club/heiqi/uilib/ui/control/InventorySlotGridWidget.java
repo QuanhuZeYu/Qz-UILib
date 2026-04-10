@@ -19,9 +19,10 @@ public class InventorySlotGridWidget extends Widget {
 
     private final int startSlot;
     private final int slotCount;
-    private final int columns;
+    private final int preferredColumns;
 
     private int slotGap = 8;
+    private int preferredSlotSize = 34;
     private int minSlotSize = 22;
     private int maxSlotSize = 46;
 
@@ -30,26 +31,25 @@ public class InventorySlotGridWidget extends Widget {
      *
      * @param startSlot 起始槽位
      * @param slotCount 槽位数量
-     * @param columns 列数
+     * @param preferredColumns 期望列数
      */
-    public InventorySlotGridWidget(int startSlot, int slotCount, int columns) {
+    public InventorySlotGridWidget(int startSlot, int slotCount, int preferredColumns) {
         this.startSlot = Math.max(0, startSlot);
         this.slotCount = Math.max(0, slotCount);
-        this.columns = Math.max(1, columns);
+        this.preferredColumns = Math.max(1, preferredColumns);
     }
 
     @Override
     protected void drawSelf(UiRenderContext context) {
-        int slotSize = resolveSlotSize(Math.max(1, getWidth()));
-        int rowCount = getRowCount();
-        int totalWidth = columns * slotSize + Math.max(0, columns - 1) * slotGap;
-        int absoluteX = getAbsoluteX() + Math.max(0, (getWidth() - totalWidth) / 2);
+        GridMetrics metrics = resolveGridMetrics(Math.max(1, getWidth()));
+        int slotSize = metrics.slotSize;
+        int absoluteX = getAbsoluteX() + Math.max(0, (getWidth() - metrics.totalWidth) / 2);
         int absoluteY = getAbsoluteY();
         InventoryPlayer inventory = getPlayerInventory();
 
         for (int slotIndex = 0; slotIndex < slotCount; slotIndex++) {
-            int column = slotIndex % columns;
-            int row = slotIndex / columns;
+            int column = slotIndex % metrics.columnCount;
+            int row = slotIndex / metrics.columnCount;
             int left = absoluteX + column * (slotSize + slotGap);
             int top = absoluteY + row * (slotSize + slotGap);
             ItemStack stack = inventory == null ? null : getStackAt(inventory, slotIndex);
@@ -78,8 +78,8 @@ public class InventorySlotGridWidget extends Widget {
                     continue;
                 }
 
-                int column = slotIndex % columns;
-                int row = slotIndex / columns;
+                int column = slotIndex % metrics.columnCount;
+                int row = slotIndex / metrics.columnCount;
                 int left = absoluteX + column * (slotSize + slotGap);
                 int top = absoluteY + row * (slotSize + slotGap);
                 int itemX = left + Math.max(0, (slotSize - 16) / 2);
@@ -101,7 +101,8 @@ public class InventorySlotGridWidget extends Widget {
 
     @Override
     public int getPreferredWidth() {
-        return columns * 34 + Math.max(0, columns - 1) * slotGap;
+        int columnCount = Math.max(1, Math.min(slotCount, preferredColumns));
+        return columnCount * preferredSlotSize + Math.max(0, columnCount - 1) * slotGap;
     }
 
     @Override
@@ -111,9 +112,8 @@ public class InventorySlotGridWidget extends Widget {
 
     @Override
     public int getPreferredHeightForWidth(int width) {
-        int slotSize = resolveSlotSize(Math.max(1, width));
-        int rowCount = getRowCount();
-        return rowCount * slotSize + Math.max(0, rowCount - 1) * slotGap;
+        GridMetrics metrics = resolveGridMetrics(Math.max(1, width));
+        return metrics.rowCount * metrics.slotSize + Math.max(0, metrics.rowCount - 1) * slotGap;
     }
 
     /**
@@ -140,6 +140,17 @@ public class InventorySlotGridWidget extends Widget {
         return this;
     }
 
+    /**
+     * 设置期望格子尺寸，实际列数会围绕这个尺寸自动重排。
+     *
+     * @param preferredSlotSize 期望格子尺寸
+     * @return 当前控件
+     */
+    public InventorySlotGridWidget setPreferredSlotSize(int preferredSlotSize) {
+        this.preferredSlotSize = Math.max(18, preferredSlotSize);
+        return this;
+    }
+
     private InventoryPlayer getPlayerInventory() {
         Minecraft minecraft = Minecraft.getMinecraft();
         if (minecraft == null || minecraft.thePlayer == null) {
@@ -156,13 +167,35 @@ public class InventorySlotGridWidget extends Widget {
         return inventory.mainInventory[slotIndex];
     }
 
-    private int getRowCount() {
-        return Math.max(1, (slotCount + columns - 1) / columns);
+    private GridMetrics resolveGridMetrics(int width) {
+        GridMetrics metrics = new GridMetrics();
+        metrics.columnCount = resolveColumnCount(width);
+        metrics.rowCount = Math.max(1, (slotCount + metrics.columnCount - 1) / metrics.columnCount);
+        int totalGap = Math.max(0, metrics.columnCount - 1) * slotGap;
+        int rawSlotSize = Math.max(18, (width - totalGap) / metrics.columnCount);
+        metrics.slotSize = Math.max(minSlotSize, Math.min(maxSlotSize, rawSlotSize));
+        metrics.totalWidth = metrics.columnCount * metrics.slotSize + totalGap;
+        return metrics;
     }
 
-    private int resolveSlotSize(int width) {
-        int totalGap = Math.max(0, columns - 1) * slotGap;
-        int slotSize = Math.max(18, (width - totalGap) / columns);
-        return Math.max(minSlotSize, Math.min(maxSlotSize, slotSize));
+    private int resolveColumnCount(int width) {
+        if (slotCount <= 0) {
+            return 1;
+        }
+
+        int fitByPreferredSize = Math.max(1, (width + slotGap) / Math.max(1, preferredSlotSize + slotGap));
+        int fitByMinimumSize = Math.max(1, (width + slotGap) / Math.max(1, minSlotSize + slotGap));
+        int columnCount = Math.max(1, Math.min(slotCount, fitByPreferredSize));
+        return Math.min(columnCount, Math.max(1, Math.min(slotCount, fitByMinimumSize)));
+    }
+
+    /**
+     * 当前宽度下的格子布局结果。
+     */
+    private static class GridMetrics {
+        private int columnCount;
+        private int rowCount;
+        private int slotSize;
+        private int totalWidth;
     }
 }

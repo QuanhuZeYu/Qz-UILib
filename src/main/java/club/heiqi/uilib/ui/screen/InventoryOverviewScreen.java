@@ -3,8 +3,8 @@ package club.heiqi.uilib.ui.screen;
 import club.heiqi.uilib.ui.control.ButtonWidget;
 import club.heiqi.uilib.ui.control.InventorySlotGridWidget;
 import club.heiqi.uilib.ui.control.LabelWidget;
+import club.heiqi.uilib.ui.control.ResponsivePageWidget;
 import club.heiqi.uilib.ui.control.ResponsivePanelWidget;
-import club.heiqi.uilib.ui.control.VerticalScrollPanelWidget;
 import club.heiqi.uilib.ui.control.VerticalStackWidget;
 import club.heiqi.uilib.ui.layout.UiAnchor;
 import club.heiqi.uilib.ui.layout.UiLayoutSpec;
@@ -19,12 +19,11 @@ import net.minecraft.entity.player.InventoryPlayer;
  */
 public class InventoryOverviewScreen extends BaseScreen {
 
-    private final ResponsivePanelWidget pagePanel = new ResponsivePanelWidget();
+    private final ResponsivePageWidget pagePanel = new ResponsivePageWidget();
     private final VerticalStackWidget pageStack = new VerticalStackWidget();
     private final LabelWidget titleLabel = new LabelWidget("响应式背包信息测试页");
-    private final LabelWidget hintLabel = new LabelWidget("该页面仅展示快捷栏与主背包物品，格子会随着页面宽度自动缩放，用于验证 UI 框架接入原版背包数据的效果。");
+    private final LabelWidget hintLabel = new LabelWidget("该页面仅展示快捷栏与主背包物品。格子会按可用宽度自动重排列数，窗口变窄时优先缩小格子并增加换行，剩余高度交给滚动容器承接。");
     private final LabelWidget summaryLabel = new LabelWidget("");
-    private final VerticalScrollPanelWidget contentScrollPanel = new VerticalScrollPanelWidget();
     private final ResponsivePanelWidget hotbarPanel = new ResponsivePanelWidget();
     private final VerticalStackWidget hotbarStack = new VerticalStackWidget();
     private final LabelWidget hotbarTitleLabel = new LabelWidget("");
@@ -54,37 +53,25 @@ public class InventoryOverviewScreen extends BaseScreen {
     }
 
     private void configurePagePanel() {
-        pagePanel.setPadding(30, 28, 30, 28)
+        pagePanel.setPadding(24, 22, 24, 22)
                 .setFillColor(0xD0151C25)
                 .setBorderColor(0xFF86A8F0)
-                .setLayoutSpec(new UiLayoutSpec()
-                        .setAnchor(UiAnchor.TOP_CENTER)
-                        .setWidth(UiLength.percent(0.78F))
-                        .setHeight(UiLength.percent(0.86F))
-                        .setMinWidth(760)
-                        .setMinHeight(560));
+                .setSuggestedSize(760, 620)
+                .setViewportRatio(0.86F, 0.90F)
+                .setLayoutSpec(new UiLayoutSpec().setAnchor(UiAnchor.TOP_CENTER));
     }
 
     private void configureStacks() {
         pageStack.setSpacing(16)
                 .setLayoutSpec(new UiLayoutSpec()
                         .setWidth(UiLength.percent(1.0F))
-                        .setHeight(UiLength.percent(1.0F))
-                        .setFill(true));
-        contentScrollPanel.setPadding(12, 12, 18, 12)
-                .setScrollStep(54)
-                .setLayoutSpec(new UiLayoutSpec()
-                        .setWidth(UiLength.percent(1.0F))
                         .setHeight(UiLength.auto())
-                        .setMinHeight(260)
-                        .setGrow(1.0F)
                         .setFill(true));
 
         hotbarStack.setSpacing(12)
                 .setLayoutSpec(new UiLayoutSpec().setWidth(UiLength.percent(1.0F)).setHeight(UiLength.auto()).setFill(true));
         backpackStack.setSpacing(12)
                 .setLayoutSpec(new UiLayoutSpec().setWidth(UiLength.percent(1.0F)).setHeight(UiLength.auto()).setFill(true));
-        contentScrollPanel.getContent().setSpacing(16);
     }
 
     private void configureLabels() {
@@ -96,14 +83,14 @@ public class InventoryOverviewScreen extends BaseScreen {
     }
 
     private void configurePanels() {
-        hotbarPanel.setPadding(18)
+        hotbarPanel.setPadding(14)
                 .setFillColor(0xAA111721)
                 .setBorderColor(0xFF7AA2FF);
-        backpackPanel.setPadding(18)
+        backpackPanel.setPadding(14)
                 .setFillColor(0xAA111721)
                 .setBorderColor(0xFF7AA2FF);
-        hotbarGrid.setSlotGap(10).setSlotSizeRange(24, 50);
-        backpackGrid.setSlotGap(10).setSlotSizeRange(24, 50);
+        hotbarGrid.setSlotGap(8).setPreferredSlotSize(34).setSlotSizeRange(18, 50);
+        backpackGrid.setSlotGap(8).setPreferredSlotSize(32).setSlotSizeRange(18, 46);
     }
 
     private void configureLayout() {
@@ -138,15 +125,13 @@ public class InventoryOverviewScreen extends BaseScreen {
         backpackStack.addChild(backpackGrid);
         backpackPanel.addChild(backpackStack);
 
-        contentScrollPanel.getContent().addChild(hotbarPanel);
-        contentScrollPanel.getContent().addChild(backpackPanel);
-
         pageStack.addChild(titleLabel);
         pageStack.addChild(hintLabel);
         pageStack.addChild(summaryLabel);
-        pageStack.addChild(contentScrollPanel);
+        pageStack.addChild(hotbarPanel);
+        pageStack.addChild(backpackPanel);
         pageStack.addChild(backButton);
-        pagePanel.addChild(pageStack);
+        pagePanel.getContent().addChild(pageStack);
         root.addChild(pagePanel);
     }
 

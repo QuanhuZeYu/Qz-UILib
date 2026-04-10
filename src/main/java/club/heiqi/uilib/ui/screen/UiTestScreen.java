@@ -7,6 +7,7 @@ import club.heiqi.uilib.ui.control.LabelWidget;
 import club.heiqi.uilib.ui.control.MouseStressWidget;
 import club.heiqi.uilib.ui.control.RelativePanelWidget;
 import club.heiqi.uilib.ui.control.ResponsiveContainerWidget;
+import club.heiqi.uilib.ui.control.ResponsivePageWidget;
 import club.heiqi.uilib.ui.control.ResponsivePanelWidget;
 import club.heiqi.uilib.ui.control.ResponsiveProbeWidget;
 import club.heiqi.uilib.ui.control.SegmentedSelectorWidget;
@@ -25,13 +26,13 @@ import club.heiqi.uilib.ui.widget.Widget;
  */
 public class UiTestScreen extends BaseScreen {
 
-    private final ResponsivePanelWidget menuPage = new ResponsivePanelWidget();
-    private final ResponsivePanelWidget inputTestPage = new ResponsivePanelWidget();
-    private final ResponsivePanelWidget mouseStressPage = new ResponsivePanelWidget();
-    private final ResponsivePanelWidget characterPlacementPage = new ResponsivePanelWidget();
-    private final ResponsivePanelWidget responsiveLayoutPage = new ResponsivePanelWidget();
-    private final ResponsivePanelWidget settingsFormPage = new ResponsivePanelWidget();
-    private final ResponsivePanelWidget focusNavigationPage = new ResponsivePanelWidget();
+    private final ResponsivePageWidget menuPage = new ResponsivePageWidget();
+    private final ResponsivePageWidget inputTestPage = new ResponsivePageWidget();
+    private final ResponsivePageWidget mouseStressPage = new ResponsivePageWidget();
+    private final ResponsivePageWidget characterPlacementPage = new ResponsivePageWidget();
+    private final ResponsivePageWidget responsiveLayoutPage = new ResponsivePageWidget();
+    private final ResponsivePageWidget settingsFormPage = new ResponsivePageWidget();
+    private final ResponsivePageWidget focusNavigationPage = new ResponsivePageWidget();
     private final VerticalScrollPanelWidget settingsScrollPanel = new VerticalScrollPanelWidget();
     private final VerticalScrollPanelWidget focusScrollPanel = new VerticalScrollPanelWidget();
 
@@ -450,7 +451,7 @@ public class UiTestScreen extends BaseScreen {
         menuStack.addChild(menuPrimaryRow);
         menuStack.addChild(menuSecondaryRow);
         menuStack.addChild(menuTertiaryRow);
-        menuPage.addChild(menuStack);
+        menuPage.getContent().addChild(menuStack);
 
         inputStack.addChild(inputTitleLabel);
         inputStack.addChild(stateLabel);
@@ -459,13 +460,13 @@ public class UiTestScreen extends BaseScreen {
         inputStack.addChild(inputEchoLabel);
         inputStack.addChild(testButton);
         inputStack.addChild(backFromInputButton);
-        inputTestPage.addChild(inputStack);
+        inputTestPage.getContent().addChild(inputStack);
 
         mouseStack.addChild(mouseTitleLabel);
         mouseStack.addChild(mouseHintLabel);
         mouseStack.addChild(mouseStressWidget);
         mouseStack.addChild(backFromMouseButton);
-        mouseStressPage.addChild(mouseStack);
+        mouseStressPage.getContent().addChild(mouseStack);
 
         characterPreviewPanel.addChild(characterPlacementDebugWidget);
         characterStack.addChild(characterTitleLabel);
@@ -473,7 +474,7 @@ public class UiTestScreen extends BaseScreen {
         characterStack.addChild(characterPreviewPanel);
         characterStack.addChild(characterClampHintLabel);
         characterStack.addChild(backFromCharacterButton);
-        characterPlacementPage.addChild(characterStack);
+        characterPlacementPage.getContent().addChild(characterStack);
 
         responsiveTopRow.addChild(responsiveLeftProbe);
         responsiveTopRow.addChild(responsiveRightProbe);
@@ -490,7 +491,7 @@ public class UiTestScreen extends BaseScreen {
         responsiveLayoutStack.addChild(responsiveArenaPanel);
         responsiveLayoutStack.addChild(responsiveFooterLabel);
         responsiveLayoutStack.addChild(backFromResponsiveButton);
-        responsiveLayoutPage.addChild(responsiveLayoutStack);
+        responsiveLayoutPage.getContent().addChild(responsiveLayoutStack);
 
         settingsPreviewStack.addChild(settingsPreviewTitleLabel);
         settingsPreviewStack.addChild(settingsPreviewSummaryLabel);
@@ -519,7 +520,7 @@ public class UiTestScreen extends BaseScreen {
         settingsStack.addChild(settingsFooterHintLabel);
         settingsStack.addChild(settingsFooterRow);
         settingsScrollPanel.getContent().addChild(settingsStack);
-        settingsFormPage.addChild(settingsScrollPanel);
+        settingsFormPage.getContent().addChild(settingsScrollPanel);
 
         focusProfileRow.addChild(focusNameLabel);
         focusProfileRow.addChild(focusNameInput);
@@ -538,7 +539,7 @@ public class UiTestScreen extends BaseScreen {
         focusNavigationStack.addChild(focusStatusLabel);
         focusNavigationStack.addChild(focusActionRow);
         focusScrollPanel.getContent().addChild(focusNavigationStack);
-        focusNavigationPage.addChild(focusScrollPanel);
+        focusNavigationPage.getContent().addChild(focusScrollPanel);
 
         root.addChild(menuPage);
         root.addChild(inputTestPage);
@@ -597,14 +598,11 @@ public class UiTestScreen extends BaseScreen {
         focusNavigationPage.setVisible(page == focusNavigationPage);
     }
 
-    private void configurePage(ResponsivePanelWidget page, float widthPercent, float heightPercent, int minWidth, int minHeight) {
+    private void configurePage(ResponsivePageWidget page, float widthPercent, float heightPercent, int suggestedWidth, int suggestedHeight) {
         page.setPadding(30, 28, 30, 28)
-                .setLayoutSpec(new UiLayoutSpec()
-                        .setAnchor(UiAnchor.TOP_CENTER)
-                        .setWidth(UiLength.percent(widthPercent))
-                        .setHeight(UiLength.percent(heightPercent))
-                        .setMinWidth(minWidth)
-                        .setMinHeight(minHeight));
+                .setSuggestedSize(suggestedWidth, suggestedHeight)
+                .setViewportRatio(widthPercent, heightPercent)
+                .setLayoutSpec(new UiLayoutSpec().setAnchor(UiAnchor.TOP_CENTER));
     }
 
     private void configureStack(VerticalStackWidget stack, int spacing) {
