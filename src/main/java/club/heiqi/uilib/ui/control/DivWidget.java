@@ -1021,18 +1021,17 @@ public class DivWidget extends Widget {
                     layoutSpec == null ? 0 : layoutSpec.getMinWidth(),
                     layoutSpec == null ? Integer.MAX_VALUE : layoutSpec.getMaxWidth());
         }
-        return resolveConfiguredWidth(child, innerWidth, measureIntrinsic(child).getWidth(), false);
+        return resolveConfiguredWidth(child, innerWidth, measureIntrinsic(child).getWidth());
     }
 
     private int resolveRowCrossSize(Widget child, int childWidth, int innerHeight, boolean useMinHeight, boolean actualLayout) {
         int fallback = useMinHeight ? child.getMinContentHeightForWidth(childWidth) : measureForWidth(child, childWidth).getHeight();
-        return resolveConfiguredHeight(child, childWidth, innerHeight, fallback, actualLayout);
+        return resolveConfiguredHeight(child, childWidth, innerHeight, fallback);
     }
 
     private int resolveColumnCrossSize(Widget child, int innerWidth) {
         boolean hasConfiguredWidth = hasConfiguredWidth(child);
-        int preferredWidth = resolveConfiguredWidth(child, innerWidth, measureIntrinsic(child).getWidth(),
-                alignItems == AlignItems.STRETCH);
+        int preferredWidth = resolveConfiguredWidth(child, innerWidth, measureIntrinsic(child).getWidth());
         if (alignItems == AlignItems.STRETCH && innerWidth > 0 && !hasConfiguredWidth) {
             preferredWidth = innerWidth;
         }
@@ -1053,7 +1052,7 @@ public class DivWidget extends Widget {
                 fallback = Math.max(fallback, basisHeight);
             }
         }
-        return resolveConfiguredHeight(child, childWidth, innerHeight, fallback, false);
+        return resolveConfiguredHeight(child, childWidth, innerHeight, fallback);
     }
 
     private int resolveChildMinWidth(Widget child, int availableWidth) {
@@ -1070,7 +1069,7 @@ public class DivWidget extends Widget {
         UiLayoutSpec layoutSpec = child.getLayoutSpec();
         int minHeight = child.getMinContentHeightForWidth(childWidth);
         if (hasConfiguredHeight(child)) {
-            minHeight = resolveConfiguredHeight(child, childWidth, availableHeight, minHeight, false);
+            minHeight = resolveConfiguredHeight(child, childWidth, availableHeight, minHeight);
         }
         if (layoutSpec != null) {
             minHeight = Math.max(minHeight, layoutSpec.getMinHeight());
@@ -1079,27 +1078,23 @@ public class DivWidget extends Widget {
         return Math.max(0, minHeight);
     }
 
-    private int resolveConfiguredWidth(Widget child, int availableWidth, int fallback, boolean allowFill) {
+    private int resolveConfiguredWidth(Widget child, int availableWidth, int fallback) {
         UiLayoutSpec layoutSpec = child.getLayoutSpec();
         UiLength width = resolveWidthLength(child, layoutSpec);
         int resolvedWidth = fallback;
         if (width.getType() != UiLength.Type.AUTO) {
             resolvedWidth = resolveLengthValue(width, availableWidth, fallback);
-        } else if (allowFill && layoutSpec != null && layoutSpec.isFill() && availableWidth > 0) {
-            resolvedWidth = availableWidth;
         }
         return clampToBounds(resolvedWidth, layoutSpec == null ? 0 : layoutSpec.getMinWidth(),
                 layoutSpec == null ? Integer.MAX_VALUE : layoutSpec.getMaxWidth());
     }
 
-    private int resolveConfiguredHeight(Widget child, int childWidth, int availableHeight, int fallback, boolean allowFill) {
+    private int resolveConfiguredHeight(Widget child, int childWidth, int availableHeight, int fallback) {
         UiLayoutSpec layoutSpec = child.getLayoutSpec();
         UiLength height = resolveHeightLength(child, layoutSpec);
         int resolvedHeight = fallback;
         if (height.getType() != UiLength.Type.AUTO) {
             resolvedHeight = resolveLengthValue(height, availableHeight, fallback);
-        } else if (allowFill && layoutSpec != null && layoutSpec.isFill() && availableHeight > 0) {
-            resolvedHeight = availableHeight;
         }
         return clampToBounds(resolvedHeight, layoutSpec == null ? 0 : layoutSpec.getMinHeight(),
                 layoutSpec == null ? Integer.MAX_VALUE : layoutSpec.getMaxHeight());
