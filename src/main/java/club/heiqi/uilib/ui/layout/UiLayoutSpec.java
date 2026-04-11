@@ -17,6 +17,7 @@ public class UiLayoutSpec {
     private int offsetX;
     private int offsetY;
     private float grow;
+    private UiAlignSelf alignSelf = UiAlignSelf.AUTO;
     private boolean fill;
 
     public UiAnchor getAnchor() {
@@ -135,6 +136,26 @@ public class UiLayoutSpec {
 
     public UiLayoutSpec setGrow(float grow) {
         this.grow = Math.max(0.0F, grow);
+        return this;
+    }
+
+    /**
+     * 获取子项交叉轴自对齐方式。
+     *
+     * @return 自对齐方式
+     */
+    public UiAlignSelf getAlignSelf() {
+        return alignSelf;
+    }
+
+    /**
+     * 设置子项交叉轴自对齐方式。
+     *
+     * @param alignSelf 自对齐方式
+     * @return 当前规格
+     */
+    public UiLayoutSpec setAlignSelf(UiAlignSelf alignSelf) {
+        this.alignSelf = alignSelf == null ? UiAlignSelf.AUTO : alignSelf;
         return this;
     }
 
