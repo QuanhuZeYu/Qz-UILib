@@ -14,6 +14,7 @@ public class UiLayoutSpec {
     private int maxWidth = Integer.MAX_VALUE;
     private int maxHeight = Integer.MAX_VALUE;
     private float grow;
+    private float shrink = 1.0F;
     private UiAlignSelf alignSelf = UiAlignSelf.AUTO;
 
     public UiInsets getMargin() {
@@ -105,6 +106,15 @@ public class UiLayoutSpec {
 
     public UiLayoutSpec setGrow(float grow) {
         this.grow = Math.max(0.0F, grow);
+        return this;
+    }
+
+    public float getShrink() {
+        return shrink;
+    }
+
+    public UiLayoutSpec setShrink(float shrink) {
+        this.shrink = Math.max(0.0F, shrink);
         return this;
     }
 

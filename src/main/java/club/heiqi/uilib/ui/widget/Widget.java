@@ -7,7 +7,6 @@ import java.util.List;
 import club.heiqi.uilib.ui.event.UiKeyEvent;
 import club.heiqi.uilib.ui.event.UiMouseEvent;
 import club.heiqi.uilib.ui.event.UiTextInputEvent;
-import club.heiqi.uilib.ui.layout.DivItemStyle;
 import club.heiqi.uilib.ui.layout.UiConstraints;
 import club.heiqi.uilib.ui.layout.UiLayoutSpec;
 import club.heiqi.uilib.ui.layout.UiMeasureResult;
@@ -32,7 +31,6 @@ public class Widget {
     private boolean clipChildren;
     private boolean clipHitTest;
     private UiLayoutSpec layoutSpec;
-    private DivItemStyle divItemStyle;
 
     /**
      * 绘制当前组件与其子组件。
@@ -349,15 +347,6 @@ public class Widget {
 
     public Widget setLayoutSpec(UiLayoutSpec layoutSpec) {
         this.layoutSpec = layoutSpec;
-        return this;
-    }
-
-    public DivItemStyle getDivItemStyle() {
-        return divItemStyle;
-    }
-
-    public Widget setDivItemStyle(DivItemStyle divItemStyle) {
-        this.divItemStyle = divItemStyle;
         return this;
     }
 

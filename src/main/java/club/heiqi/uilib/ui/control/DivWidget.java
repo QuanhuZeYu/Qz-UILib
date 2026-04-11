@@ -6,7 +6,6 @@ import java.util.List;
 import club.heiqi.uilib.ui.event.UiMouseEvent;
 import club.heiqi.uilib.ui.layout.UiAlignSelf;
 import club.heiqi.uilib.ui.layout.UiConstraints;
-import club.heiqi.uilib.ui.layout.DivItemStyle;
 import club.heiqi.uilib.ui.layout.UiInsets;
 import club.heiqi.uilib.ui.layout.UiLayoutSpec;
 import club.heiqi.uilib.ui.layout.UiLength;
@@ -161,14 +160,6 @@ public class DivWidget extends Widget {
         return this;
     }
 
-    public DivWidget addChild(Widget child, DivItemStyle style) {
-        if (child != null) {
-            child.setDivItemStyle(style);
-        }
-        super.addChild(child);
-        return this;
-    }
-
     @Override
     public DivWidget setLayoutSpec(UiLayoutSpec layoutSpec) {
         super.setLayoutSpec(layoutSpec);
@@ -182,7 +173,8 @@ public class DivWidget extends Widget {
      * @return 当前容器
      */
     public DivWidget addFixedChild(Widget child) {
-        return addChild(child, DivItemStyle.fixed());
+        applyFlexItemSpec(child, 0.0F, 0.0F);
+        return addChild(child);
     }
 
     /**
@@ -192,7 +184,8 @@ public class DivWidget extends Widget {
      * @return 当前容器
      */
     public DivWidget addNoGrowChild(Widget child) {
-        return addChild(child, DivItemStyle.noGrow());
+        applyFlexItemSpec(child, 0.0F, 1.0F);
+        return addChild(child);
     }
 
     /**
@@ -202,7 +195,8 @@ public class DivWidget extends Widget {
      * @return 当前容器
      */
     public DivWidget addFlexChild(Widget child) {
-        return addChild(child, DivItemStyle.flex());
+        applyFlexItemSpec(child, 1.0F, 1.0F);
+        return addChild(child);
     }
 
     /**
@@ -213,7 +207,8 @@ public class DivWidget extends Widget {
      * @return 当前容器
      */
     public DivWidget addFlexChild(Widget child, float growFactor) {
-        return addChild(child, DivItemStyle.flex(growFactor));
+        applyFlexItemSpec(child, Math.max(0.0F, growFactor), 1.0F);
+        return addChild(child);
     }
 
     /**
@@ -1216,31 +1211,30 @@ public class DivWidget extends Widget {
     }
 
     private float resolveGrowWeight(Widget child) {
-        DivItemStyle style = child.getDivItemStyle();
-        if (style != null && !style.isGrow()) {
-            return 0.0F;
-        }
         UiLayoutSpec layoutSpec = child.getLayoutSpec();
-        if (layoutSpec != null && layoutSpec.getGrow() > 0.0F) {
-            return layoutSpec.getGrow();
-        }
-        if (style == null) {
-            return 1.0F;
-        }
-        return style.getGrowFactor() > 0.0F ? style.getGrowFactor() : 1.0F;
+        return layoutSpec == null ? 0.0F : Math.max(0.0F, layoutSpec.getGrow());
     }
 
     private float resolveShrinkWeight(Widget child, int size, int minSize) {
-        DivItemStyle style = child.getDivItemStyle();
-        if (style != null && !style.isShrink()) {
-            return 0.0F;
-        }
         int availableShrink = Math.max(0, size - minSize);
         if (availableShrink <= 0) {
             return 0.0F;
         }
-        float shrinkFactor = style == null ? 1.0F : (style.getShrinkFactor() > 0.0F ? style.getShrinkFactor() : 1.0F);
+        UiLayoutSpec layoutSpec = child.getLayoutSpec();
+        float shrinkFactor = layoutSpec == null ? 1.0F : layoutSpec.getShrink();
         return availableShrink * shrinkFactor;
+    }
+
+    private void applyFlexItemSpec(Widget child, float grow, float shrink) {
+        if (child == null) {
+            return;
+        }
+        UiLayoutSpec layoutSpec = child.getLayoutSpec();
+        if (layoutSpec == null) {
+            layoutSpec = new UiLayoutSpec();
+            child.setLayoutSpec(layoutSpec);
+        }
+        layoutSpec.setGrow(grow).setShrink(shrink);
     }
 
     private boolean hasStretchChild(int start, int end) {
