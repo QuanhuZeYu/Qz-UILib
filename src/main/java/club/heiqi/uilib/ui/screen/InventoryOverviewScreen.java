@@ -4,7 +4,7 @@ import club.heiqi.uilib.ui.control.ButtonWidget;
 import club.heiqi.uilib.ui.control.DivWidget;
 import club.heiqi.uilib.ui.control.InventorySlotGridWidget;
 import club.heiqi.uilib.ui.control.LabelWidget;
-import club.heiqi.uilib.ui.control.ResponsiveContainerWidget;
+import club.heiqi.uilib.ui.control.RelativePanelWidget;
 import club.heiqi.uilib.ui.control.ResponsivePageWidget;
 import club.heiqi.uilib.ui.control.ResponsivePanelWidget;
 import club.heiqi.uilib.ui.widget.Widget;
@@ -45,7 +45,7 @@ public class InventoryOverviewScreen extends BaseScreen {
 
         int pageMargin = Math.max(24, width / 34);
         int topMargin = Math.max(28, height / 28);
-        ResponsiveContainerWidget rootWidget = (ResponsiveContainerWidget) getRootWidget();
+        RelativePanelWidget rootWidget = (RelativePanelWidget) getRootWidget();
         rootWidget.setPadding(pageMargin, topMargin, pageMargin, pageMargin);
 
         int pagePaddingX = clampValue(width / 48, 16, 28);

@@ -3,7 +3,7 @@ package club.heiqi.uilib.ui.screen;
 import club.heiqi.uilib.ui.control.ButtonWidget;
 import club.heiqi.uilib.ui.control.DivWidget;
 import club.heiqi.uilib.ui.control.LabelWidget;
-import club.heiqi.uilib.ui.control.ResponsiveContainerWidget;
+import club.heiqi.uilib.ui.control.RelativePanelWidget;
 import club.heiqi.uilib.ui.control.ResponsivePageWidget;
 import club.heiqi.uilib.ui.control.ResponsivePanelWidget;
 import club.heiqi.uilib.ui.control.SegmentedSelectorWidget;
@@ -59,7 +59,7 @@ public class UiTestScreen extends BaseScreen {
 
         int pageMargin = Math.max(24, width / 34);
         int topMargin = Math.max(28, height / 28);
-        ResponsiveContainerWidget rootWidget = (ResponsiveContainerWidget) getRootWidget();
+        RelativePanelWidget rootWidget = (RelativePanelWidget) getRootWidget();
         rootWidget.setPadding(pageMargin, topMargin, pageMargin, pageMargin);
 
         int pagePaddingX = clampValue(width / 48, 16, 28);
@@ -208,7 +208,7 @@ public class UiTestScreen extends BaseScreen {
         viewportMetricsLabel.setText("窗口 " + width + "x" + height + "；页面壳 " + diagnosticPage.getWidth() + "x"
                 + diagnosticPage.getHeight() + "；总览卡片 " + overviewCard.getWidth() + "x" + overviewCard.getHeight()
                 + "；表单卡片 " + formCard.getWidth() + "x" + formCard.getHeight() + "；文本卡片 " + wrapCard.getWidth() + "x"
-                + wrapCard.getHeight() + "。\n如果页面壳仍然明显偏窄，优先检查 `ResponsivePageWidget`；如果卡片宽度异常，优先检查 `ResponsiveContainerWidget` 和最小宽度传播。 ");
+                + wrapCard.getHeight() + "。\n如果页面壳仍然明显偏窄，优先检查 `ResponsivePageWidget`；如果卡片宽度异常，优先检查 `DivWidget` 的盒模型计算和最小宽度传播。 ");
 
         scrollMetricsLabel.setText("滚动偏移 " + diagnosticPage.getScrollOffset() + " / " + diagnosticPage.getMaxScrollOffset()
                 + "；可视内容区 " + diagnosticPage.getVisibleContentWidth() + "x" + diagnosticPage.getVisibleContentHeight()

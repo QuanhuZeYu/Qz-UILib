@@ -4,7 +4,7 @@ import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiScreen;
 import org.lwjgl.opengl.GL11;
 
-import club.heiqi.uilib.ui.control.ResponsiveContainerWidget;
+import club.heiqi.uilib.ui.control.RelativePanelWidget;
 import club.heiqi.uilib.ui.input.UiInputFrame;
 import club.heiqi.uilib.ui.input.UiInputRouter;
 import club.heiqi.uilib.ui.input.UiInputService;
@@ -17,7 +17,7 @@ import club.heiqi.uilib.ui.widget.Widget;
  */
 public abstract class BaseScreen extends GuiScreen {
 
-    private final ResponsiveContainerWidget rootWidget = new ResponsiveContainerWidget();
+    private final RelativePanelWidget rootWidget = new RelativePanelWidget().setClampChildrenInside(false);
     private final UiInputRouter inputRouter = new UiInputRouter();
     private final UiRenderTarget renderTarget = new UiRenderTarget();
 
