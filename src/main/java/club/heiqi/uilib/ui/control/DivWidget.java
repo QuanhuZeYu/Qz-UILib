@@ -152,12 +152,6 @@ public class DivWidget extends Widget {
         return this;
     }
 
-    @Override
-    public DivWidget setSuggestedSize(int suggestedWidth, int suggestedHeight) {
-        super.setSuggestedSize(suggestedWidth, suggestedHeight);
-        return this;
-    }
-
     /**
      * 追加固定子项，不参与主轴伸缩。
      *
@@ -518,12 +512,12 @@ public class DivWidget extends Widget {
         int contentWidth = 0;
         if (direction == Direction.ROW) {
             for (Widget child : getChildren()) {
-                contentWidth += child.getSuggestedWidth();
+                contentWidth += child.getPreferredWidth();
             }
             contentWidth += gap * Math.max(0, getChildren().size() - 1);
         } else {
             for (Widget child : getChildren()) {
-                contentWidth = Math.max(contentWidth, child.getSuggestedWidth());
+                contentWidth = Math.max(contentWidth, child.getPreferredWidth());
             }
         }
         return paddingLeft + contentWidth + paddingRight;
@@ -886,17 +880,17 @@ public class DivWidget extends Widget {
     }
 
     private int resolveRowBaseWidth(Widget child, int innerWidth) {
-        return resolveConfiguredWidth(child, innerWidth, child.getSuggestedWidth(), false);
+        return resolveConfiguredWidth(child, innerWidth, child.getPreferredWidth(), false);
     }
 
     private int resolveRowCrossSize(Widget child, int childWidth, int innerHeight, boolean useMinHeight, boolean actualLayout) {
-        int fallback = useMinHeight ? child.getMinContentHeightForWidth(childWidth) : child.getSuggestedHeightForWidth(childWidth);
+        int fallback = useMinHeight ? child.getMinContentHeightForWidth(childWidth) : child.getPreferredHeightForWidth(childWidth);
         return resolveConfiguredHeight(child, childWidth, innerHeight, fallback, actualLayout);
     }
 
     private int resolveColumnCrossSize(Widget child, int innerWidth) {
         boolean hasConfiguredWidth = hasConfiguredWidth(child);
-        int preferredWidth = resolveConfiguredWidth(child, innerWidth, child.getSuggestedWidth(), alignItems == AlignItems.STRETCH);
+        int preferredWidth = resolveConfiguredWidth(child, innerWidth, child.getPreferredWidth(), alignItems == AlignItems.STRETCH);
         if (alignItems == AlignItems.STRETCH && innerWidth > 0 && !hasConfiguredWidth) {
             preferredWidth = innerWidth;
         }
@@ -904,7 +898,7 @@ public class DivWidget extends Widget {
     }
 
     private int resolveColumnBaseHeight(Widget child, int childWidth, int innerHeight, boolean useMinHeight) {
-        int fallback = useMinHeight ? child.getMinContentHeightForWidth(childWidth) : child.getSuggestedHeightForWidth(childWidth);
+        int fallback = useMinHeight ? child.getMinContentHeightForWidth(childWidth) : child.getPreferredHeightForWidth(childWidth);
         return resolveConfiguredHeight(child, childWidth, innerHeight, fallback, false);
     }
 

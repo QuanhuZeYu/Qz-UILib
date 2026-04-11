@@ -74,12 +74,12 @@ public class UiTestScreen extends BaseScreen {
 
         int fieldWidth = adaptiveWidth(360, 200, 0.22F);
         int buttonWidth = adaptiveWidth(200, 140, 0.16F);
-        themeInput.setSuggestedSize(fieldWidth, themeInput.getPreferredHeight());
-        namespaceInput.setSuggestedSize(fieldWidth, namespaceInput.getPreferredHeight());
-        pathInput.setSuggestedSize(fieldWidth, pathInput.getPreferredHeight());
-        wrapToggle.setSuggestedSize(fieldWidth, wrapToggle.getPreferredHeight());
-        widthPresetSelector.setSuggestedSize(fieldWidth, widthPresetSelector.getPreferredHeight());
-        refreshButton.setSuggestedSize(buttonWidth, refreshButton.getPreferredHeight());
+        themeInput.setLayoutSpec(new UiLayoutSpec().setWidth(UiLength.px(fieldWidth)));
+        namespaceInput.setLayoutSpec(new UiLayoutSpec().setWidth(UiLength.px(fieldWidth)));
+        pathInput.setLayoutSpec(new UiLayoutSpec().setWidth(UiLength.px(fieldWidth)));
+        wrapToggle.setLayoutSpec(new UiLayoutSpec().setWidth(UiLength.px(fieldWidth)));
+        widthPresetSelector.setLayoutSpec(new UiLayoutSpec().setWidth(UiLength.px(fieldWidth)));
+        refreshButton.setLayoutSpec(new UiLayoutSpec().setWidth(UiLength.px(buttonWidth)));
 
         refreshDiagnostics();
     }
@@ -97,7 +97,7 @@ public class UiTestScreen extends BaseScreen {
         diagnosticPage.setPadding(24, 22, 24, 22)
                 .setFillColor(0xD0151C25)
                 .setBorderColor(0xFF86A8F0)
-                .setSuggestedSize(920, 760)
+                .setMinViewportSize(920, 760)
                 .setViewportRatio(0.68F, 0.90F)
                 .setLayoutSpec(new UiLayoutSpec().setAnchor(UiAnchor.TOP_CENTER));
     }
@@ -193,7 +193,7 @@ public class UiTestScreen extends BaseScreen {
 
         pageRoot.addNoGrowChild(createTitleLabel("布局诊断页"));
         pageRoot.addNoGrowChild(createBodyLabel("如果这一页的两张卡片仍然在不合理的宽度下并排、中文换行异常，或者表单行不按父宽度变化，那么说明底层尺寸链路仍然有问题。"));
-        pageRoot.addNoGrowChild(overviewCard.setSuggestedSize(-1, -1));
+        pageRoot.addNoGrowChild(overviewCard);
         pageRoot.addNoGrowChild(cardsFlow);
         pageRoot.addNoGrowChild(divScrollCard);
 

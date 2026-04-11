@@ -11,8 +11,8 @@ import club.heiqi.uilib.ui.widget.Widget;
  */
 public class ResponsivePageWidget extends VerticalScrollPanelWidget {
 
-    private int suggestedWidth = 640;
-    private int suggestedHeight = 420;
+    private int minViewportWidth = 640;
+    private int minViewportHeight = 420;
     private float maxWidthRatio = 0.80F;
     private float maxHeightRatio = 0.84F;
 
@@ -41,15 +41,15 @@ public class ResponsivePageWidget extends VerticalScrollPanelWidget {
     }
 
     /**
-     * 设置页面建议尺寸。
+     * 设置页面在响应式布局中的最小视口尺寸。
      *
-     * @param suggestedWidth 建议宽度
-     * @param suggestedHeight 建议高度
+     * @param minViewportWidth 最小页面宽度
+     * @param minViewportHeight 最小页面高度
      * @return 当前页面
      */
-    public ResponsivePageWidget setSuggestedSize(int suggestedWidth, int suggestedHeight) {
-        this.suggestedWidth = Math.max(1, suggestedWidth);
-        this.suggestedHeight = Math.max(1, suggestedHeight);
+    public ResponsivePageWidget setMinViewportSize(int minViewportWidth, int minViewportHeight) {
+        this.minViewportWidth = Math.max(1, minViewportWidth);
+        this.minViewportHeight = Math.max(1, minViewportHeight);
         return this;
     }
 
@@ -102,12 +102,12 @@ public class ResponsivePageWidget extends VerticalScrollPanelWidget {
         int ratioWidth = Math.max(1, Math.round(availableWidth * maxWidthRatio));
         int ratioHeight = Math.max(1, Math.round(availableHeight * maxHeightRatio));
 
-        // 页面建议尺寸更接近“舒适尺寸下限”，而不是硬性最大宽高；
-        // 否则大屏下页面会被意外锁死在一个过小的卡片宽度里。
+        // 页面最小视口尺寸更接近网页里的 min-width / min-height 保护，
+        // 用来避免响应式页面在中等窗口下塌缩得过于激进。
         int resolvedWidth = Math.min(availableWidth, ratioWidth);
         int resolvedHeight = Math.min(availableHeight, ratioHeight);
-        resolvedWidth = Math.max(resolvedWidth, Math.min(availableWidth, suggestedWidth));
-        resolvedHeight = Math.max(resolvedHeight, Math.min(availableHeight, suggestedHeight));
+        resolvedWidth = Math.max(resolvedWidth, Math.min(availableWidth, minViewportWidth));
+        resolvedHeight = Math.max(resolvedHeight, Math.min(availableHeight, minViewportHeight));
 
         UiAnchor anchor = layoutSpec == null ? UiAnchor.TOP_CENTER : layoutSpec.getAnchor();
         int[] anchorPosition = resolveAnchorPosition(anchor, contentLeft + margin.getLeft(), contentTop + margin.getTop(),

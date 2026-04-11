@@ -9,6 +9,7 @@ import club.heiqi.uilib.ui.control.ResponsivePageWidget;
 import club.heiqi.uilib.ui.control.ResponsivePanelWidget;
 import club.heiqi.uilib.ui.layout.UiAnchor;
 import club.heiqi.uilib.ui.layout.UiLayoutSpec;
+import club.heiqi.uilib.ui.layout.UiLength;
 import club.heiqi.uilib.ui.widget.Widget;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.inventory.GuiInventory;
@@ -60,7 +61,7 @@ public class InventoryOverviewScreen extends BaseScreen {
         int buttonWidth = adaptiveWidth(220, 140, 0.16F);
 
         pagePanel.setPadding(pagePaddingX, pagePaddingY, pagePaddingX, pagePaddingY);
-        backButton.setSuggestedSize(buttonWidth, backButton.getPreferredHeight());
+        backButton.setLayoutSpec(new UiLayoutSpec().setWidth(UiLength.px(buttonWidth)));
         refreshMetrics();
     }
 
@@ -77,7 +78,7 @@ public class InventoryOverviewScreen extends BaseScreen {
         pagePanel.setPadding(24, 22, 24, 22)
                 .setFillColor(0xD0151C25)
                 .setBorderColor(0xFF86A8F0)
-                .setSuggestedSize(960, 800)
+                .setMinViewportSize(960, 800)
                 .setViewportRatio(0.70F, 0.92F)
                 .setLayoutSpec(new UiLayoutSpec().setAnchor(UiAnchor.TOP_CENTER));
     }
