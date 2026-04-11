@@ -175,11 +175,11 @@ public class UiTestScreen extends BaseScreen {
         divScrollCardDiv.addNoGrowChild(divScrollMetricsLabel);
         divScrollCard.addChild(divScrollCardDiv);
 
-        cardsFlow.addFlexChild(formCard);
-        cardsFlow.addFlexChild(wrapCard);
+        cardsFlow.addFlexChild(formCard, 1.5F);
+        cardsFlow.addFlexChild(wrapCard, 1.0F);
 
         pageRoot.addNoGrowChild(createTitleLabel("布局诊断页"));
-        pageRoot.addNoGrowChild(createBodyLabel("如果这一页的两张卡片仍然在不合理的宽度下并排、中文换行异常，或者表单行不按父宽度变化，那么说明底层尺寸链路仍然有问题。"));
+        pageRoot.addNoGrowChild(createBodyLabel("如果这一页的两张卡片仍然在不合理的宽度下并排、中文换行异常、表单行不按父宽度变化，或者卡片在宽屏下不能按增长权重自然分配空间，那么说明底层尺寸链路仍然有问题。"));
         pageRoot.addNoGrowChild(overviewCard);
         pageRoot.addNoGrowChild(cardsFlow);
         pageRoot.addNoGrowChild(divScrollCard);

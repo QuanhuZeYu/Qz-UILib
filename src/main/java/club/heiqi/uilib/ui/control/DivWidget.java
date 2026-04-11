@@ -4,9 +4,11 @@ import java.util.ArrayList;
 import java.util.List;
 
 import club.heiqi.uilib.ui.event.UiMouseEvent;
+import club.heiqi.uilib.ui.layout.UiConstraints;
 import club.heiqi.uilib.ui.layout.DivItemStyle;
 import club.heiqi.uilib.ui.layout.UiLayoutSpec;
 import club.heiqi.uilib.ui.layout.UiLength;
+import club.heiqi.uilib.ui.layout.UiMeasureResult;
 import club.heiqi.uilib.ui.render.UiRenderContext;
 import club.heiqi.uilib.ui.widget.Widget;
 
@@ -180,6 +182,17 @@ public class DivWidget extends Widget {
      */
     public DivWidget addFlexChild(Widget child) {
         return addChild(child, DivItemStyle.flex());
+    }
+
+    /**
+     * 追加柔性子项，并指定主轴增长权重。
+     *
+     * @param child 子组件
+     * @param growFactor 增长权重
+     * @return 当前容器
+     */
+    public DivWidget addFlexChild(Widget child, float growFactor) {
+        return addChild(child, DivItemStyle.flex(growFactor));
     }
 
     /**
@@ -512,12 +525,12 @@ public class DivWidget extends Widget {
         int contentWidth = 0;
         if (direction == Direction.ROW) {
             for (Widget child : getChildren()) {
-                contentWidth += child.getPreferredWidth();
+                contentWidth += measureIntrinsic(child).getWidth();
             }
             contentWidth += gap * Math.max(0, getChildren().size() - 1);
         } else {
             for (Widget child : getChildren()) {
-                contentWidth = Math.max(contentWidth, child.getPreferredWidth());
+                contentWidth = Math.max(contentWidth, measureIntrinsic(child).getWidth());
             }
         }
         return paddingLeft + contentWidth + paddingRight;
@@ -530,8 +543,17 @@ public class DivWidget extends Widget {
 
     @Override
     public int getPreferredHeightForWidth(int width) {
-        LayoutResult layout = measureLayout(Math.max(0, width), 0, false, false);
-        return layout.requiredHeight;
+        return measure(UiConstraints.fixedWidth(Math.max(0, width))).getHeight();
+    }
+
+    @Override
+    public UiMeasureResult measure(UiConstraints constraints) {
+        UiConstraints effectiveConstraints = constraints == null ? UiConstraints.unbounded() : constraints;
+        int containerWidth = effectiveConstraints.hasBoundedWidth() ? effectiveConstraints.getMaxWidth() : getPreferredWidth();
+        int containerHeight = effectiveConstraints.hasBoundedHeight() ? effectiveConstraints.getMaxHeight() : 0;
+        LayoutResult layout = measureLayout(Math.max(0, containerWidth), Math.max(0, containerHeight), false, false);
+        return new UiMeasureResult(effectiveConstraints.constrainWidth(layout.requiredWidth),
+                effectiveConstraints.constrainHeight(layout.requiredHeight));
     }
 
     @Override
@@ -880,17 +902,18 @@ public class DivWidget extends Widget {
     }
 
     private int resolveRowBaseWidth(Widget child, int innerWidth) {
-        return resolveConfiguredWidth(child, innerWidth, child.getPreferredWidth(), false);
+        return resolveConfiguredWidth(child, innerWidth, measureIntrinsic(child).getWidth(), false);
     }
 
     private int resolveRowCrossSize(Widget child, int childWidth, int innerHeight, boolean useMinHeight, boolean actualLayout) {
-        int fallback = useMinHeight ? child.getMinContentHeightForWidth(childWidth) : child.getPreferredHeightForWidth(childWidth);
+        int fallback = useMinHeight ? child.getMinContentHeightForWidth(childWidth) : measureForWidth(child, childWidth).getHeight();
         return resolveConfiguredHeight(child, childWidth, innerHeight, fallback, actualLayout);
     }
 
     private int resolveColumnCrossSize(Widget child, int innerWidth) {
         boolean hasConfiguredWidth = hasConfiguredWidth(child);
-        int preferredWidth = resolveConfiguredWidth(child, innerWidth, child.getPreferredWidth(), alignItems == AlignItems.STRETCH);
+        int preferredWidth = resolveConfiguredWidth(child, innerWidth, measureIntrinsic(child).getWidth(),
+                alignItems == AlignItems.STRETCH);
         if (alignItems == AlignItems.STRETCH && innerWidth > 0 && !hasConfiguredWidth) {
             preferredWidth = innerWidth;
         }
@@ -898,7 +921,7 @@ public class DivWidget extends Widget {
     }
 
     private int resolveColumnBaseHeight(Widget child, int childWidth, int innerHeight, boolean useMinHeight) {
-        int fallback = useMinHeight ? child.getMinContentHeightForWidth(childWidth) : child.getPreferredHeightForWidth(childWidth);
+        int fallback = useMinHeight ? child.getMinContentHeightForWidth(childWidth) : measureForWidth(child, childWidth).getHeight();
         return resolveConfiguredHeight(child, childWidth, innerHeight, fallback, false);
     }
 
@@ -999,6 +1022,14 @@ public class DivWidget extends Widget {
         return Math.round(length.getValue());
     }
 
+    private UiMeasureResult measureIntrinsic(Widget child) {
+        return child.measure(UiConstraints.unbounded());
+    }
+
+    private UiMeasureResult measureForWidth(Widget child, int width) {
+        return child.measure(UiConstraints.fixedWidth(Math.max(0, width)));
+    }
+
     private int clampToBounds(int value, int min, int max) {
         int safeMin = Math.max(0, min);
         int safeMax = max <= 0 ? 0 : Math.max(safeMin, max);
@@ -1010,26 +1041,29 @@ public class DivWidget extends Widget {
             return 0;
         }
 
+        float totalGrowWeight = 0.0F;
         int growableCount = 0;
         for (int index = start; index <= end; index++) {
-            DivItemStyle style = getChildren().get(index).getDivItemStyle();
-            if (style == null || style.isGrow()) {
+            float growWeight = resolveGrowWeight(getChildren().get(index));
+            if (growWeight > 0.0F) {
+                totalGrowWeight += growWeight;
                 growableCount++;
             }
         }
-        if (growableCount <= 0) {
+        if (growableCount <= 0 || totalGrowWeight <= 0.0F) {
             return 0;
         }
 
         int applied = 0;
         int growIndex = 0;
         for (int index = start; index <= end; index++) {
-            DivItemStyle style = getChildren().get(index).getDivItemStyle();
-            if (style != null && !style.isGrow()) {
+            float growWeight = resolveGrowWeight(getChildren().get(index));
+            if (growWeight <= 0.0F) {
                 continue;
             }
             growIndex++;
-            int addition = growIndex == growableCount ? extra - applied : extra / growableCount;
+            int addition = growIndex == growableCount ? extra - applied
+                    : Math.round((extra * growWeight) / totalGrowWeight);
             addition = Math.max(0, addition);
             sizes[index] += addition;
             applied += addition;
@@ -1042,44 +1076,33 @@ public class DivWidget extends Widget {
             return 0;
         }
 
-        int shrinkable = 0;
+        float totalShrinkWeight = 0.0F;
         for (int index = start; index <= end; index++) {
-            DivItemStyle style = getChildren().get(index).getDivItemStyle();
-            if (style != null && !style.isShrink()) {
-                continue;
-            }
-            shrinkable += Math.max(0, sizes[index] - minSizes[index]);
+            totalShrinkWeight += resolveShrinkWeight(getChildren().get(index), sizes[index], minSizes[index]);
         }
-        if (shrinkable <= 0) {
+        if (totalShrinkWeight <= 0.0F) {
             return 0;
         }
 
         int removed = 0;
         int remainingShrinkable = 0;
         for (int index = start; index <= end; index++) {
-            DivItemStyle style = getChildren().get(index).getDivItemStyle();
-            if (style != null && !style.isShrink()) {
-                continue;
-            }
-            if (sizes[index] > minSizes[index]) {
+            if (resolveShrinkWeight(getChildren().get(index), sizes[index], minSizes[index]) > 0.0F) {
                 remainingShrinkable++;
             }
         }
 
         int shrinkIndex = 0;
         for (int index = start; index <= end; index++) {
-            DivItemStyle style = getChildren().get(index).getDivItemStyle();
-            if (style != null && !style.isShrink()) {
-                continue;
-            }
             int availableShrink = Math.max(0, sizes[index] - minSizes[index]);
-            if (availableShrink <= 0) {
+            float shrinkWeight = resolveShrinkWeight(getChildren().get(index), sizes[index], minSizes[index]);
+            if (availableShrink <= 0 || shrinkWeight <= 0.0F) {
                 continue;
             }
             shrinkIndex++;
             int cut = shrinkIndex == remainingShrinkable
                     ? overflow - removed
-                    : Math.round((overflow * availableShrink) / (float) shrinkable);
+                    : Math.round((overflow * shrinkWeight) / totalShrinkWeight);
             cut = Math.max(0, Math.min(cut, availableShrink));
             sizes[index] -= cut;
             removed += cut;
@@ -1094,6 +1117,34 @@ public class DivWidget extends Widget {
         }
         total += gap * Math.max(0, end - start);
         return total;
+    }
+
+    private float resolveGrowWeight(Widget child) {
+        DivItemStyle style = child.getDivItemStyle();
+        if (style != null && !style.isGrow()) {
+            return 0.0F;
+        }
+        UiLayoutSpec layoutSpec = child.getLayoutSpec();
+        if (layoutSpec != null && layoutSpec.getGrow() > 0.0F) {
+            return layoutSpec.getGrow();
+        }
+        if (style == null) {
+            return 1.0F;
+        }
+        return style.getGrowFactor() > 0.0F ? style.getGrowFactor() : 1.0F;
+    }
+
+    private float resolveShrinkWeight(Widget child, int size, int minSize) {
+        DivItemStyle style = child.getDivItemStyle();
+        if (style != null && !style.isShrink()) {
+            return 0.0F;
+        }
+        int availableShrink = Math.max(0, size - minSize);
+        if (availableShrink <= 0) {
+            return 0.0F;
+        }
+        float shrinkFactor = style == null ? 1.0F : (style.getShrinkFactor() > 0.0F ? style.getShrinkFactor() : 1.0F);
+        return availableShrink * shrinkFactor;
     }
 
     private int resolveLeadingOffset(int extraSpace, int childCount) {

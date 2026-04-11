@@ -8,7 +8,9 @@ import club.heiqi.uilib.ui.event.UiKeyEvent;
 import club.heiqi.uilib.ui.event.UiMouseEvent;
 import club.heiqi.uilib.ui.event.UiTextInputEvent;
 import club.heiqi.uilib.ui.layout.DivItemStyle;
+import club.heiqi.uilib.ui.layout.UiConstraints;
 import club.heiqi.uilib.ui.layout.UiLayoutSpec;
+import club.heiqi.uilib.ui.layout.UiMeasureResult;
 import club.heiqi.uilib.ui.render.UiRenderContext;
 
 /**
@@ -267,6 +269,19 @@ public class Widget {
      */
     public int getMinContentHeightForWidth(int width) {
         return getPreferredHeightForWidth(width);
+    }
+
+    /**
+     * 在给定约束下测量组件尺寸。
+     *
+     * @param constraints 父容器传入的约束
+     * @return 测量结果
+     */
+    public UiMeasureResult measure(UiConstraints constraints) {
+        UiConstraints effectiveConstraints = constraints == null ? UiConstraints.unbounded() : constraints;
+        int measuredWidth = effectiveConstraints.constrainWidth(getPreferredWidth());
+        int measuredHeight = effectiveConstraints.constrainHeight(getPreferredHeightForWidth(measuredWidth));
+        return new UiMeasureResult(measuredWidth, measuredHeight);
     }
 
     /**
