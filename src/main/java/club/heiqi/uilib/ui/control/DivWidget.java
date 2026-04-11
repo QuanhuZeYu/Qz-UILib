@@ -15,10 +15,6 @@ import club.heiqi.uilib.ui.widget.Widget;
  */
 public class DivWidget extends Widget {
 
-    private static final int SCROLLBAR_TRACK_GAP = 2;
-    private static final int SCROLLBAR_TRACK_THICKNESS = 6;
-    private static final int SCROLLBAR_MIN_THUMB_SIZE = 24;
-
     /**
      * 主轴方向。
      */
@@ -77,22 +73,7 @@ public class DivWidget extends Widget {
     private int gap = 12;
     private float widthPercent = -1.0F;
     private float heightPercent = -1.0F;
-    private int scrollStep = 36;
-
-    private int horizontalScrollOffset;
-    private int verticalScrollOffset;
-    private int maxHorizontalScrollOffset;
-    private int maxVerticalScrollOffset;
-
-    private boolean hoveredVerticalScrollbar;
-    private boolean hoveredVerticalThumb;
-    private boolean draggingVerticalThumb;
-    private int dragVerticalThumbOffset;
-
-    private boolean hoveredHorizontalScrollbar;
-    private boolean hoveredHorizontalThumb;
-    private boolean draggingHorizontalThumb;
-    private int dragHorizontalThumbOffset;
+    private final OverflowScrollState scrollState = new OverflowScrollState();
 
     @Override
     public void render(UiRenderContext context) {
@@ -376,7 +357,7 @@ public class DivWidget extends Widget {
     }
 
     public DivWidget setScrollStep(int scrollStep) {
-        this.scrollStep = Math.max(8, scrollStep);
+        scrollState.setScrollStep(scrollStep);
         return this;
     }
 
@@ -420,19 +401,19 @@ public class DivWidget extends Widget {
     }
 
     public int getHorizontalScrollOffset() {
-        return horizontalScrollOffset;
+        return scrollState.getHorizontalOffset();
     }
 
     public int getVerticalScrollOffset() {
-        return verticalScrollOffset;
+        return scrollState.getVerticalOffset();
     }
 
     public int getMaxHorizontalScrollOffset() {
-        return maxHorizontalScrollOffset;
+        return scrollState.getMaxHorizontalOffset();
     }
 
     public int getMaxVerticalScrollOffset() {
-        return maxVerticalScrollOffset;
+        return scrollState.getMaxVerticalOffset();
     }
 
     public int getVisibleContentWidth() {
@@ -455,65 +436,15 @@ public class DivWidget extends Widget {
     public boolean onMouseScroll(UiMouseEvent event) {
         LayoutResult layout = measureLayout(getWidth(), getHeight(), false, false);
         updateScrollState(layout);
-        int previousHorizontalOffset = horizontalScrollOffset;
-        int previousVerticalOffset = verticalScrollOffset;
-        int steps = Math.max(1, Math.round(Math.abs(event.getWheelDelta()) / 120.0F));
-        int delta = scrollStep * steps;
-
-        if (maxVerticalScrollOffset > 0 && overflowY == Overflow.AUTO) {
-            if (event.getWheelDelta() > 0) {
-                setVerticalScrollOffset(verticalScrollOffset - delta);
-            } else if (event.getWheelDelta() < 0) {
-                setVerticalScrollOffset(verticalScrollOffset + delta);
-            }
-        } else if (maxHorizontalScrollOffset > 0 && overflowX == Overflow.AUTO) {
-            if (event.getWheelDelta() > 0) {
-                setHorizontalScrollOffset(horizontalScrollOffset - delta);
-            } else if (event.getWheelDelta() < 0) {
-                setHorizontalScrollOffset(horizontalScrollOffset + delta);
-            }
-        }
-        return previousHorizontalOffset != horizontalScrollOffset || previousVerticalOffset != verticalScrollOffset;
+        return scrollState.handleWheel(event.getWheelDelta(), overflowY == Overflow.AUTO, overflowX == Overflow.AUTO);
     }
 
     @Override
     public void onMouseMove(UiMouseEvent event) {
         LayoutResult layout = measureLayout(getWidth(), getHeight(), false, false);
         updateScrollState(layout);
-        ScrollbarMetrics verticalMetrics = getVerticalScrollbarMetrics();
-        ScrollbarMetrics horizontalMetrics = getHorizontalScrollbarMetrics();
-
-        if (verticalMetrics == null) {
-            hoveredVerticalScrollbar = false;
-            hoveredVerticalThumb = false;
-            draggingVerticalThumb = false;
-        } else {
-            hoveredVerticalScrollbar = containsInRect(event.getMouseX(), event.getMouseY(), verticalMetrics.trackLeft,
-                    verticalMetrics.trackTop, verticalMetrics.trackRight, verticalMetrics.trackBottom);
-            hoveredVerticalThumb = containsInRect(event.getMouseX(), event.getMouseY(), verticalMetrics.thumbLeft,
-                    verticalMetrics.thumbTop, verticalMetrics.thumbRight, verticalMetrics.thumbBottom);
-            if (draggingVerticalThumb) {
-                setVerticalScrollFromThumbStart(event.getMouseY() - dragVerticalThumbOffset, verticalMetrics);
-                hoveredVerticalScrollbar = true;
-                hoveredVerticalThumb = true;
-            }
-        }
-
-        if (horizontalMetrics == null) {
-            hoveredHorizontalScrollbar = false;
-            hoveredHorizontalThumb = false;
-            draggingHorizontalThumb = false;
-        } else {
-            hoveredHorizontalScrollbar = containsInRect(event.getMouseX(), event.getMouseY(), horizontalMetrics.trackLeft,
-                    horizontalMetrics.trackTop, horizontalMetrics.trackRight, horizontalMetrics.trackBottom);
-            hoveredHorizontalThumb = containsInRect(event.getMouseX(), event.getMouseY(), horizontalMetrics.thumbLeft,
-                    horizontalMetrics.thumbTop, horizontalMetrics.thumbRight, horizontalMetrics.thumbBottom);
-            if (draggingHorizontalThumb) {
-                setHorizontalScrollFromThumbStart(event.getMouseX() - dragHorizontalThumbOffset, horizontalMetrics);
-                hoveredHorizontalScrollbar = true;
-                hoveredHorizontalThumb = true;
-            }
-        }
+        scrollState.updatePointer(event.getMouseX(), event.getMouseY(), getAbsoluteX() + paddingLeft,
+                getAbsoluteY() + paddingTop);
     }
 
     @Override
@@ -524,42 +455,8 @@ public class DivWidget extends Widget {
 
         LayoutResult layout = measureLayout(getWidth(), getHeight(), false, false);
         updateScrollState(layout);
-        ScrollbarMetrics verticalMetrics = getVerticalScrollbarMetrics();
-        if (verticalMetrics != null && containsInRect(event.getMouseX(), event.getMouseY(), verticalMetrics.trackLeft,
-                verticalMetrics.trackTop, verticalMetrics.trackRight, verticalMetrics.trackBottom)) {
-            hoveredVerticalScrollbar = true;
-            if (containsInRect(event.getMouseX(), event.getMouseY(), verticalMetrics.thumbLeft, verticalMetrics.thumbTop,
-                    verticalMetrics.thumbRight, verticalMetrics.thumbBottom)) {
-                draggingVerticalThumb = true;
-                dragVerticalThumbOffset = event.getMouseY() - verticalMetrics.thumbTop;
-                hoveredVerticalThumb = true;
-                return;
-            }
-
-            draggingVerticalThumb = true;
-            dragVerticalThumbOffset = verticalMetrics.thumbSize / 2;
-            setVerticalScrollFromThumbStart(event.getMouseY() - dragVerticalThumbOffset, verticalMetrics);
-            hoveredVerticalThumb = true;
-            return;
-        }
-
-        ScrollbarMetrics horizontalMetrics = getHorizontalScrollbarMetrics();
-        if (horizontalMetrics != null && containsInRect(event.getMouseX(), event.getMouseY(), horizontalMetrics.trackLeft,
-                horizontalMetrics.trackTop, horizontalMetrics.trackRight, horizontalMetrics.trackBottom)) {
-            hoveredHorizontalScrollbar = true;
-            if (containsInRect(event.getMouseX(), event.getMouseY(), horizontalMetrics.thumbLeft,
-                    horizontalMetrics.thumbTop, horizontalMetrics.thumbRight, horizontalMetrics.thumbBottom)) {
-                draggingHorizontalThumb = true;
-                dragHorizontalThumbOffset = event.getMouseX() - horizontalMetrics.thumbLeft;
-                hoveredHorizontalThumb = true;
-                return;
-            }
-
-            draggingHorizontalThumb = true;
-            dragHorizontalThumbOffset = horizontalMetrics.thumbSize / 2;
-            setHorizontalScrollFromThumbStart(event.getMouseX() - dragHorizontalThumbOffset, horizontalMetrics);
-            hoveredHorizontalThumb = true;
-        }
+        scrollState.beginPointerDrag(event.getMouseX(), event.getMouseY(), getAbsoluteX() + paddingLeft,
+                getAbsoluteY() + paddingTop);
     }
 
     @Override
@@ -568,29 +465,15 @@ public class DivWidget extends Widget {
             return;
         }
 
-        draggingVerticalThumb = false;
-        draggingHorizontalThumb = false;
         LayoutResult layout = measureLayout(getWidth(), getHeight(), false, false);
         updateScrollState(layout);
-        ScrollbarMetrics verticalMetrics = getVerticalScrollbarMetrics();
-        ScrollbarMetrics horizontalMetrics = getHorizontalScrollbarMetrics();
-
-        hoveredVerticalScrollbar = verticalMetrics != null && containsInRect(event.getMouseX(), event.getMouseY(),
-                verticalMetrics.trackLeft, verticalMetrics.trackTop, verticalMetrics.trackRight, verticalMetrics.trackBottom);
-        hoveredVerticalThumb = verticalMetrics != null && containsInRect(event.getMouseX(), event.getMouseY(),
-                verticalMetrics.thumbLeft, verticalMetrics.thumbTop, verticalMetrics.thumbRight, verticalMetrics.thumbBottom);
-        hoveredHorizontalScrollbar = horizontalMetrics != null && containsInRect(event.getMouseX(), event.getMouseY(),
-                horizontalMetrics.trackLeft, horizontalMetrics.trackTop, horizontalMetrics.trackRight, horizontalMetrics.trackBottom);
-        hoveredHorizontalThumb = horizontalMetrics != null && containsInRect(event.getMouseX(), event.getMouseY(),
-                horizontalMetrics.thumbLeft, horizontalMetrics.thumbTop, horizontalMetrics.thumbRight, horizontalMetrics.thumbBottom);
+        scrollState.endPointerDrag(event.getMouseX(), event.getMouseY(), getAbsoluteX() + paddingLeft,
+                getAbsoluteY() + paddingTop);
     }
 
     @Override
     public void onMouseLeave() {
-        hoveredVerticalScrollbar = false;
-        hoveredVerticalThumb = false;
-        hoveredHorizontalScrollbar = false;
-        hoveredHorizontalThumb = false;
+        scrollState.clearHoverState();
     }
 
     /**
@@ -614,17 +497,8 @@ public class DivWidget extends Widget {
         int targetRight = targetLeft + target.getWidth();
         int targetBottom = targetTop + target.getHeight();
 
-        if (targetLeft < viewportLeft && overflowX == Overflow.AUTO) {
-            setHorizontalScrollOffset(horizontalScrollOffset - (viewportLeft - targetLeft));
-        } else if (targetRight > viewportRight && overflowX == Overflow.AUTO) {
-            setHorizontalScrollOffset(horizontalScrollOffset + (targetRight - viewportRight));
-        }
-
-        if (targetTop < viewportTop && overflowY == Overflow.AUTO) {
-            setVerticalScrollOffset(verticalScrollOffset - (viewportTop - targetTop));
-        } else if (targetBottom > viewportBottom && overflowY == Overflow.AUTO) {
-            setVerticalScrollOffset(verticalScrollOffset + (targetBottom - viewportBottom));
-        }
+        scrollState.scrollRectIntoView(viewportLeft, viewportTop, viewportRight, viewportBottom, targetLeft, targetTop,
+                targetRight, targetBottom, overflowX == Overflow.AUTO, overflowY == Overflow.AUTO);
     }
 
     @Override
@@ -756,7 +630,8 @@ public class DivWidget extends Widget {
             Widget child = getChildren().get(index);
             int childY = paddingTop + resolveCrossOffset(innerHeight, heights[index]);
             if (applyBounds) {
-                child.setBounds(cursor - horizontalScrollOffset, childY - verticalScrollOffset, widths[index], heights[index]);
+                child.setBounds(cursor - scrollState.getHorizontalOffset(), childY - scrollState.getVerticalOffset(),
+                        widths[index], heights[index]);
             }
             cursor += widths[index];
             if (index < childCount - 1) {
@@ -818,7 +693,8 @@ public class DivWidget extends Widget {
             Widget child = getChildren().get(index);
             int childX = paddingLeft + resolveCrossOffset(innerWidth, widths[index]);
             if (applyBounds) {
-                child.setBounds(childX - horizontalScrollOffset, cursor - verticalScrollOffset, widths[index], heights[index]);
+                child.setBounds(childX - scrollState.getHorizontalOffset(), cursor - scrollState.getVerticalOffset(),
+                        widths[index], heights[index]);
             }
             cursor += heights[index];
             if (index < childCount - 1) {
@@ -888,7 +764,8 @@ public class DivWidget extends Widget {
             for (int index = group.start; index <= group.end; index++) {
                 int childY = cursorY + resolveCrossOffset(group.crossSize, heights[index]);
                 if (applyBounds) {
-                    getChildren().get(index).setBounds(cursorX - horizontalScrollOffset, childY - verticalScrollOffset,
+                    getChildren().get(index).setBounds(cursorX - scrollState.getHorizontalOffset(),
+                            childY - scrollState.getVerticalOffset(),
                             widths[index], heights[index]);
                 }
                 cursorX += widths[index];
@@ -961,7 +838,8 @@ public class DivWidget extends Widget {
             for (int index = group.start; index <= group.end; index++) {
                 int childX = cursorX + resolveCrossOffset(group.crossSize, widths[index]);
                 if (applyBounds) {
-                    getChildren().get(index).setBounds(childX - horizontalScrollOffset, cursorY - verticalScrollOffset,
+                    getChildren().get(index).setBounds(childX - scrollState.getHorizontalOffset(),
+                            cursorY - scrollState.getVerticalOffset(),
                             widths[index], heights[index]);
                 }
                 cursorY += heights[index];
@@ -1256,38 +1134,29 @@ public class DivWidget extends Widget {
     private void updateScrollState(LayoutResult layout) {
         int viewportWidth = getViewportWidth();
         int viewportHeight = getViewportHeight();
-        maxHorizontalScrollOffset = overflowX == Overflow.VISIBLE ? 0 : Math.max(0, layout.requiredWidth - paddingLeft - paddingRight - viewportWidth);
-        maxVerticalScrollOffset = overflowY == Overflow.VISIBLE ? 0 : Math.max(0, layout.requiredHeight - paddingTop - paddingBottom - viewportHeight);
-        setHorizontalScrollOffset(horizontalScrollOffset);
-        setVerticalScrollOffset(verticalScrollOffset);
-
-        if (maxHorizontalScrollOffset <= 0) {
-            draggingHorizontalThumb = false;
-            hoveredHorizontalScrollbar = false;
-            hoveredHorizontalThumb = false;
-        }
-        if (maxVerticalScrollOffset <= 0) {
-            draggingVerticalThumb = false;
-            hoveredVerticalScrollbar = false;
-            hoveredVerticalThumb = false;
-        }
+        int contentWidth = Math.max(0, layout.requiredWidth - paddingLeft - paddingRight);
+        int contentHeight = Math.max(0, layout.requiredHeight - paddingTop - paddingBottom);
+        scrollState.updateState(viewportWidth, viewportHeight, contentWidth, contentHeight, overflowX == Overflow.AUTO,
+                overflowY == Overflow.AUTO);
     }
 
     private void drawScrollbars(UiRenderContext context) {
-        ScrollbarMetrics verticalMetrics = getVerticalScrollbarMetrics();
+        OverflowScrollState.ScrollbarMetrics verticalMetrics = getVerticalScrollbarMetrics();
         if (verticalMetrics != null) {
-            int trackColor = hoveredVerticalScrollbar ? 0x66344155 : 0x552B3647;
-            int thumbColor = draggingVerticalThumb ? 0xFFD1E2FF : (hoveredVerticalThumb ? 0xFFB8D0FF : 0xFF8FB3FF);
+            int trackColor = scrollState.isHoveredVerticalScrollbar() ? 0x66344155 : 0x552B3647;
+            int thumbColor = scrollState.isDraggingVerticalThumb() ? 0xFFD1E2FF
+                    : (scrollState.isHoveredVerticalThumb() ? 0xFFB8D0FF : 0xFF8FB3FF);
             context.fillRect(verticalMetrics.trackLeft, verticalMetrics.trackTop, verticalMetrics.trackRight,
                     verticalMetrics.trackBottom, trackColor);
             context.fillRect(verticalMetrics.thumbLeft, verticalMetrics.thumbTop, verticalMetrics.thumbRight,
                     verticalMetrics.thumbBottom, thumbColor);
         }
 
-        ScrollbarMetrics horizontalMetrics = getHorizontalScrollbarMetrics();
+        OverflowScrollState.ScrollbarMetrics horizontalMetrics = getHorizontalScrollbarMetrics();
         if (horizontalMetrics != null) {
-            int trackColor = hoveredHorizontalScrollbar ? 0x66344155 : 0x552B3647;
-            int thumbColor = draggingHorizontalThumb ? 0xFFD1E2FF : (hoveredHorizontalThumb ? 0xFFB8D0FF : 0xFF8FB3FF);
+            int trackColor = scrollState.isHoveredHorizontalScrollbar() ? 0x66344155 : 0x552B3647;
+            int thumbColor = scrollState.isDraggingHorizontalThumb() ? 0xFFD1E2FF
+                    : (scrollState.isHoveredHorizontalThumb() ? 0xFFB8D0FF : 0xFF8FB3FF);
             context.fillRect(horizontalMetrics.trackLeft, horizontalMetrics.trackTop, horizontalMetrics.trackRight,
                     horizontalMetrics.trackBottom, trackColor);
             context.fillRect(horizontalMetrics.thumbLeft, horizontalMetrics.thumbTop, horizontalMetrics.thumbRight,
@@ -1295,80 +1164,18 @@ public class DivWidget extends Widget {
         }
     }
 
-    private ScrollbarMetrics getVerticalScrollbarMetrics() {
-        if (overflowY != Overflow.AUTO || maxVerticalScrollOffset <= 0) {
+    private OverflowScrollState.ScrollbarMetrics getVerticalScrollbarMetrics() {
+        if (overflowY != Overflow.AUTO) {
             return null;
         }
-
-        ScrollbarMetrics metrics = new ScrollbarMetrics();
-        int horizontalReserve = maxHorizontalScrollOffset > 0 && overflowX == Overflow.AUTO ? SCROLLBAR_TRACK_THICKNESS + SCROLLBAR_TRACK_GAP : 0;
-        metrics.trackRight = getAbsoluteX() + getWidth() - paddingRight;
-        metrics.trackLeft = metrics.trackRight - SCROLLBAR_TRACK_THICKNESS;
-        metrics.trackTop = getAbsoluteY() + paddingTop;
-        metrics.trackBottom = getAbsoluteY() + getHeight() - paddingBottom - horizontalReserve;
-        metrics.trackLength = Math.max(1, metrics.trackBottom - metrics.trackTop);
-        metrics.thumbSize = Math.max(SCROLLBAR_MIN_THUMB_SIZE,
-                Math.round(metrics.trackLength * (getViewportHeight() / (float) Math.max(getViewportHeight(), measureContentHeight()))));
-        int travel = Math.max(0, metrics.trackLength - metrics.thumbSize);
-        metrics.thumbTop = metrics.trackTop + Math.round(travel * (verticalScrollOffset / (float) Math.max(1, maxVerticalScrollOffset)));
-        metrics.thumbBottom = metrics.thumbTop + metrics.thumbSize;
-        metrics.thumbLeft = metrics.trackLeft;
-        metrics.thumbRight = metrics.trackRight;
-        return metrics;
+        return scrollState.getVerticalScrollbarMetrics(getAbsoluteX() + paddingLeft, getAbsoluteY() + paddingTop);
     }
 
-    private ScrollbarMetrics getHorizontalScrollbarMetrics() {
-        if (overflowX != Overflow.AUTO || maxHorizontalScrollOffset <= 0) {
+    private OverflowScrollState.ScrollbarMetrics getHorizontalScrollbarMetrics() {
+        if (overflowX != Overflow.AUTO) {
             return null;
         }
-
-        ScrollbarMetrics metrics = new ScrollbarMetrics();
-        int verticalReserve = maxVerticalScrollOffset > 0 && overflowY == Overflow.AUTO ? SCROLLBAR_TRACK_THICKNESS + SCROLLBAR_TRACK_GAP : 0;
-        metrics.trackLeft = getAbsoluteX() + paddingLeft;
-        metrics.trackRight = getAbsoluteX() + getWidth() - paddingRight - verticalReserve;
-        metrics.trackBottom = getAbsoluteY() + getHeight() - paddingBottom;
-        metrics.trackTop = metrics.trackBottom - SCROLLBAR_TRACK_THICKNESS;
-        metrics.trackLength = Math.max(1, metrics.trackRight - metrics.trackLeft);
-        metrics.thumbSize = Math.max(SCROLLBAR_MIN_THUMB_SIZE,
-                Math.round(metrics.trackLength * (getViewportWidth() / (float) Math.max(getViewportWidth(), measureContentWidth()))));
-        int travel = Math.max(0, metrics.trackLength - metrics.thumbSize);
-        metrics.thumbLeft = metrics.trackLeft + Math.round(travel * (horizontalScrollOffset / (float) Math.max(1, maxHorizontalScrollOffset)));
-        metrics.thumbRight = metrics.thumbLeft + metrics.thumbSize;
-        metrics.thumbTop = metrics.trackTop;
-        metrics.thumbBottom = metrics.trackBottom;
-        return metrics;
-    }
-
-    private void setVerticalScrollFromThumbStart(int thumbTop, ScrollbarMetrics metrics) {
-        int travel = Math.max(0, metrics.trackLength - metrics.thumbSize);
-        if (travel <= 0 || maxVerticalScrollOffset <= 0) {
-            setVerticalScrollOffset(0);
-            return;
-        }
-
-        int clampedThumbTop = Math.max(metrics.trackTop, Math.min(thumbTop, metrics.trackBottom - metrics.thumbSize));
-        float progress = (clampedThumbTop - metrics.trackTop) / (float) travel;
-        setVerticalScrollOffset(Math.round(maxVerticalScrollOffset * progress));
-    }
-
-    private void setHorizontalScrollFromThumbStart(int thumbLeft, ScrollbarMetrics metrics) {
-        int travel = Math.max(0, metrics.trackLength - metrics.thumbSize);
-        if (travel <= 0 || maxHorizontalScrollOffset <= 0) {
-            setHorizontalScrollOffset(0);
-            return;
-        }
-
-        int clampedThumbLeft = Math.max(metrics.trackLeft, Math.min(thumbLeft, metrics.trackRight - metrics.thumbSize));
-        float progress = (clampedThumbLeft - metrics.trackLeft) / (float) travel;
-        setHorizontalScrollOffset(Math.round(maxHorizontalScrollOffset * progress));
-    }
-
-    private void setHorizontalScrollOffset(int scrollOffset) {
-        horizontalScrollOffset = Math.max(0, Math.min(scrollOffset, maxHorizontalScrollOffset));
-    }
-
-    private void setVerticalScrollOffset(int scrollOffset) {
-        verticalScrollOffset = Math.max(0, Math.min(scrollOffset, maxVerticalScrollOffset));
+        return scrollState.getHorizontalScrollbarMetrics(getAbsoluteX() + paddingLeft, getAbsoluteY() + paddingTop);
     }
 
     private boolean hasClippedOverflow() {
@@ -1391,10 +1198,6 @@ public class DivWidget extends Widget {
     private int measureContentHeight() {
         LayoutResult layout = measureLayout(getWidth(), getHeight(), false, false);
         return Math.max(0, layout.requiredHeight - paddingTop - paddingBottom);
-    }
-
-    private boolean containsInRect(int mouseX, int mouseY, int left, int top, int right, int bottom) {
-        return mouseX >= left && mouseX < right && mouseY >= top && mouseY < bottom;
     }
 
     private boolean isDescendant(Widget target) {
@@ -1431,19 +1234,6 @@ public class DivWidget extends Widget {
             this.start = start;
             this.end = end;
         }
-    }
-
-    private static class ScrollbarMetrics {
-        private int trackLeft;
-        private int trackTop;
-        private int trackRight;
-        private int trackBottom;
-        private int trackLength;
-        private int thumbLeft;
-        private int thumbTop;
-        private int thumbRight;
-        private int thumbBottom;
-        private int thumbSize;
     }
 
     private static class LayoutResult {
