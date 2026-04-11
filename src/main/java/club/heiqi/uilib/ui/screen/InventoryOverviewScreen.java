@@ -6,7 +6,6 @@ import club.heiqi.uilib.ui.control.InventorySlotGridWidget;
 import club.heiqi.uilib.ui.control.LabelWidget;
 import club.heiqi.uilib.ui.control.RelativePanelWidget;
 import club.heiqi.uilib.ui.control.ResponsivePageWidget;
-import club.heiqi.uilib.ui.control.ResponsivePanelWidget;
 import club.heiqi.uilib.ui.widget.Widget;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.inventory.GuiInventory;
@@ -19,9 +18,9 @@ public class InventoryOverviewScreen extends BaseScreen {
 
     private final ResponsivePageWidget pagePanel = new ResponsivePageWidget();
 
-    private final ResponsivePanelWidget overviewCard = createCardPanel();
-    private final ResponsivePanelWidget hotbarCard = createCardPanel();
-    private final ResponsivePanelWidget backpackCard = createCardPanel();
+    private final DivWidget overviewCard = createCardPanel();
+    private final DivWidget hotbarCard = createCardPanel();
+    private final DivWidget backpackCard = createCardPanel();
 
     private final LabelWidget overviewMetricsLabel = new LabelWidget("");
     private final LabelWidget hotbarMetricsLabel = new LabelWidget("");
@@ -181,8 +180,8 @@ public class InventoryOverviewScreen extends BaseScreen {
         return occupied;
     }
 
-    private ResponsivePanelWidget createCardPanel() {
-        return new ResponsivePanelWidget().setPadding(20).setFillColor(0xAA111721).setBorderColor(0xFF6E8FCB);
+    private DivWidget createCardPanel() {
+        return new DivWidget().setSectionColumn().setPadding(20).setFillColor(0xAA111721).setBorderColor(0xFF6E8FCB);
     }
 
     private LabelWidget createTitleLabel(String text) {

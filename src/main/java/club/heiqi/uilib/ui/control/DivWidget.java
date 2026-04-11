@@ -87,6 +87,8 @@ public class DivWidget extends Widget {
     private int paddingRight;
     private int paddingBottom;
     private int gap = 12;
+    private int fillColor;
+    private int borderColor;
     private float widthPercent = -1.0F;
     private float heightPercent = -1.0F;
     private final OverflowScrollState scrollState = new OverflowScrollState();
@@ -120,7 +122,14 @@ public class DivWidget extends Widget {
     }
 
     @Override
-    protected void drawSelf(UiRenderContext context) {}
+    protected void drawSelf(UiRenderContext context) {
+        if (fillColor != 0) {
+            context.fillRect(getAbsoluteX(), getAbsoluteY(), getAbsoluteX() + getWidth(), getAbsoluteY() + getHeight(), fillColor);
+        }
+        if (borderColor != 0) {
+            context.drawBorder(getAbsoluteX(), getAbsoluteY(), getAbsoluteX() + getWidth(), getAbsoluteY() + getHeight(), borderColor);
+        }
+    }
 
     @Override
     protected int[] getChildClipRect() {
@@ -400,6 +409,16 @@ public class DivWidget extends Widget {
 
     public DivWidget setGap(int gap) {
         this.gap = Math.max(0, gap);
+        return this;
+    }
+
+    public DivWidget setFillColor(int fillColor) {
+        this.fillColor = fillColor;
+        return this;
+    }
+
+    public DivWidget setBorderColor(int borderColor) {
+        this.borderColor = borderColor;
         return this;
     }
 

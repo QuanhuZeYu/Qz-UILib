@@ -5,7 +5,6 @@ import club.heiqi.uilib.ui.control.DivWidget;
 import club.heiqi.uilib.ui.control.LabelWidget;
 import club.heiqi.uilib.ui.control.RelativePanelWidget;
 import club.heiqi.uilib.ui.control.ResponsivePageWidget;
-import club.heiqi.uilib.ui.control.ResponsivePanelWidget;
 import club.heiqi.uilib.ui.control.SegmentedSelectorWidget;
 import club.heiqi.uilib.ui.control.TextInputWidget;
 import club.heiqi.uilib.ui.control.ToggleSwitchWidget;
@@ -20,10 +19,10 @@ public class UiTestScreen extends BaseScreen {
 
     private final ResponsivePageWidget diagnosticPage = new ResponsivePageWidget();
 
-    private final ResponsivePanelWidget overviewCard = createCardPanel();
-    private final ResponsivePanelWidget formCard = createCardPanel();
-    private final ResponsivePanelWidget wrapCard = createCardPanel();
-    private final ResponsivePanelWidget divScrollCard = createCardPanel();
+    private final DivWidget overviewCard = createCardPanel();
+    private final DivWidget formCard = createCardPanel();
+    private final DivWidget wrapCard = createCardPanel();
+    private final DivWidget divScrollCard = createCardPanel();
     private final DivWidget divScrollProbe = new DivWidget()
             .setSectionColumn()
             .setVerticalScrollOnly()
@@ -228,8 +227,8 @@ public class UiTestScreen extends BaseScreen {
         actionStateLabel.setText("最近状态：" + actionStateText);
     }
 
-    private ResponsivePanelWidget createCardPanel() {
-        return new ResponsivePanelWidget().setPadding(20).setFillColor(0xAA111721).setBorderColor(0xFF6E8FCB);
+    private DivWidget createCardPanel() {
+        return new DivWidget().setSectionColumn().setPadding(20).setFillColor(0xAA111721).setBorderColor(0xFF6E8FCB);
     }
 
     private LabelWidget createTitleLabel(String text) {
