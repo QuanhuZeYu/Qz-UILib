@@ -34,9 +34,6 @@ public class InventoryOverviewScreen extends BaseScreen {
     private final InventorySlotGridWidget backpackGrid = new InventorySlotGridWidget(9, 27, 9);
     private final ButtonWidget backButton = new ButtonWidget("返回原版背包");
 
-    private int viewportWidthHint = 1280;
-    private int viewportHeightHint = 720;
-
     @Override
     protected void buildUi(Widget root) {
         configurePage();
@@ -48,20 +45,16 @@ public class InventoryOverviewScreen extends BaseScreen {
     @Override
     protected void onResize(int width, int height) {
         super.onResize(width, height);
-        viewportWidthHint = width;
-        viewportHeightHint = height;
 
         int pageMargin = Math.max(24, width / 34);
         int topMargin = Math.max(28, height / 28);
         ResponsiveContainerWidget rootWidget = (ResponsiveContainerWidget) getRootWidget();
         rootWidget.setPadding(pageMargin, topMargin, pageMargin, pageMargin);
 
-        int pagePaddingX = clampValue(viewportWidthHint / 48, 16, 28);
-        int pagePaddingY = clampValue(viewportHeightHint / 36, 14, 24);
-        int buttonWidth = adaptiveWidth(220, 140, 0.16F);
+        int pagePaddingX = clampValue(width / 48, 16, 28);
+        int pagePaddingY = clampValue(height / 36, 14, 24);
 
         pagePanel.setPadding(pagePaddingX, pagePaddingY, pagePaddingX, pagePaddingY);
-        backButton.setLayoutSpec(new UiLayoutSpec().setWidth(UiLength.px(buttonWidth)));
         refreshMetrics();
     }
 
@@ -78,8 +71,9 @@ public class InventoryOverviewScreen extends BaseScreen {
         pagePanel.setPadding(24, 22, 24, 22)
                 .setFillColor(0xD0151C25)
                 .setBorderColor(0xFF86A8F0)
-                .setMinViewportSize(960, 800)
-                .setViewportRatio(0.70F, 0.92F)
+                .setViewportWidthRange(720, 1040)
+                .setMinViewportHeight(620)
+                .setViewportRatio(0.94F, 0.92F)
                 .setLayoutSpec(new UiLayoutSpec().setAnchor(UiAnchor.TOP_CENTER));
     }
 
@@ -205,10 +199,6 @@ public class InventoryOverviewScreen extends BaseScreen {
 
     private LabelWidget createBodyLabel(String text) {
         return new LabelWidget(text).setColor(0xFFD7E3FF).setShadow(false).setWrap(true).setMaxLines(8);
-    }
-
-    private int adaptiveWidth(int preferred, int floor, float viewportRatio) {
-        return clampValue(Math.round(viewportWidthHint * viewportRatio), floor, preferred);
     }
 
     private int clampValue(int value, int min, int max) {

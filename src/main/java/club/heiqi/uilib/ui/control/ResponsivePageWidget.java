@@ -13,6 +13,7 @@ public class ResponsivePageWidget extends VerticalScrollPanelWidget {
 
     private int minViewportWidth = 640;
     private int minViewportHeight = 420;
+    private int maxViewportWidth = Integer.MAX_VALUE;
     private float maxWidthRatio = 0.80F;
     private float maxHeightRatio = 0.84F;
 
@@ -49,6 +50,30 @@ public class ResponsivePageWidget extends VerticalScrollPanelWidget {
      */
     public ResponsivePageWidget setMinViewportSize(int minViewportWidth, int minViewportHeight) {
         this.minViewportWidth = Math.max(1, minViewportWidth);
+        this.minViewportHeight = Math.max(1, minViewportHeight);
+        return this;
+    }
+
+    /**
+     * 设置页面宽度区间，语义接近网页容器的 min-width 与 max-width。
+     *
+     * @param minViewportWidth 最小页面宽度
+     * @param maxViewportWidth 最大页面宽度
+     * @return 当前页面
+     */
+    public ResponsivePageWidget setViewportWidthRange(int minViewportWidth, int maxViewportWidth) {
+        this.minViewportWidth = Math.max(1, minViewportWidth);
+        this.maxViewportWidth = Math.max(this.minViewportWidth, maxViewportWidth);
+        return this;
+    }
+
+    /**
+     * 设置页面的最小高度保护。
+     *
+     * @param minViewportHeight 最小页面高度
+     * @return 当前页面
+     */
+    public ResponsivePageWidget setMinViewportHeight(int minViewportHeight) {
         this.minViewportHeight = Math.max(1, minViewportHeight);
         return this;
     }
@@ -104,7 +129,7 @@ public class ResponsivePageWidget extends VerticalScrollPanelWidget {
 
         // 页面最小视口尺寸更接近网页里的 min-width / min-height 保护，
         // 用来避免响应式页面在中等窗口下塌缩得过于激进。
-        int resolvedWidth = Math.min(availableWidth, ratioWidth);
+        int resolvedWidth = Math.min(availableWidth, Math.min(ratioWidth, maxViewportWidth));
         int resolvedHeight = Math.min(availableHeight, ratioHeight);
         resolvedWidth = Math.max(resolvedWidth, Math.min(availableWidth, minViewportWidth));
         resolvedHeight = Math.max(resolvedHeight, Math.min(availableHeight, minViewportHeight));

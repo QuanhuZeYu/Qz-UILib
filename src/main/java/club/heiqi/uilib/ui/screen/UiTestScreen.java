@@ -46,9 +46,6 @@ public class UiTestScreen extends BaseScreen {
     private final ButtonWidget refreshButton = new ButtonWidget("刷新诊断文本");
 
     private String actionStateText = "尚未操作";
-    private int viewportWidthHint = 1280;
-    private int viewportHeightHint = 720;
-
     @Override
     protected void buildUi(Widget root) {
         configurePage();
@@ -60,26 +57,15 @@ public class UiTestScreen extends BaseScreen {
     @Override
     protected void onResize(int width, int height) {
         super.onResize(width, height);
-        viewportWidthHint = width;
-        viewportHeightHint = height;
 
         int pageMargin = Math.max(24, width / 34);
         int topMargin = Math.max(28, height / 28);
         ResponsiveContainerWidget rootWidget = (ResponsiveContainerWidget) getRootWidget();
         rootWidget.setPadding(pageMargin, topMargin, pageMargin, pageMargin);
 
-        int pagePaddingX = clampValue(viewportWidthHint / 48, 16, 28);
-        int pagePaddingY = clampValue(viewportHeightHint / 36, 14, 24);
+        int pagePaddingX = clampValue(width / 48, 16, 28);
+        int pagePaddingY = clampValue(height / 36, 14, 24);
         diagnosticPage.setPadding(pagePaddingX, pagePaddingY, pagePaddingX, pagePaddingY);
-
-        int fieldWidth = adaptiveWidth(360, 200, 0.22F);
-        int buttonWidth = adaptiveWidth(200, 140, 0.16F);
-        themeInput.setLayoutSpec(new UiLayoutSpec().setWidth(UiLength.px(fieldWidth)));
-        namespaceInput.setLayoutSpec(new UiLayoutSpec().setWidth(UiLength.px(fieldWidth)));
-        pathInput.setLayoutSpec(new UiLayoutSpec().setWidth(UiLength.px(fieldWidth)));
-        wrapToggle.setLayoutSpec(new UiLayoutSpec().setWidth(UiLength.px(fieldWidth)));
-        widthPresetSelector.setLayoutSpec(new UiLayoutSpec().setWidth(UiLength.px(fieldWidth)));
-        refreshButton.setLayoutSpec(new UiLayoutSpec().setWidth(UiLength.px(buttonWidth)));
 
         refreshDiagnostics();
     }
@@ -97,8 +83,9 @@ public class UiTestScreen extends BaseScreen {
         diagnosticPage.setPadding(24, 22, 24, 22)
                 .setFillColor(0xD0151C25)
                 .setBorderColor(0xFF86A8F0)
-                .setMinViewportSize(920, 760)
-                .setViewportRatio(0.68F, 0.90F)
+                .setViewportWidthRange(680, 1080)
+                .setMinViewportHeight(560)
+                .setViewportRatio(0.92F, 0.90F)
                 .setLayoutSpec(new UiLayoutSpec().setAnchor(UiAnchor.TOP_CENTER));
     }
 
@@ -113,8 +100,8 @@ public class UiTestScreen extends BaseScreen {
         wrapSampleLabel.setColor(0xFFD7E3FF).setShadow(false).setWrap(true).setMaxLines(10);
         actionStateLabel.setColor(0xFFB5D0FF).setShadow(false).setWrap(true).setMaxLines(2);
 
-        formCard.setLayoutSpec(new UiLayoutSpec().setWidth(UiLength.px(460)).setMinWidth(280));
-        wrapCard.setLayoutSpec(new UiLayoutSpec().setWidth(UiLength.px(360)).setMinWidth(260));
+        formCard.setLayoutSpec(new UiLayoutSpec().setWidth(UiLength.percent(0.55F)).setMinWidth(320).setMaxWidth(620));
+        wrapCard.setLayoutSpec(new UiLayoutSpec().setWidth(UiLength.percent(0.41F)).setMinWidth(260).setMaxWidth(480));
         divScrollCard.setLayoutSpec(new UiLayoutSpec().setWidth(UiLength.percent(1.0F)).setFill(true));
         divScrollProbe.setLayoutSpec(new UiLayoutSpec().setWidth(UiLength.percent(1.0F)).setHeight(UiLength.px(220)).setMinHeight(220).setMaxHeight(220).setFill(true));
 
@@ -263,10 +250,6 @@ public class UiTestScreen extends BaseScreen {
         LabelWidget label = new LabelWidget(text).setColor(0xFFF6D78E).setShadow(false);
         label.setLayoutSpec(new UiLayoutSpec().setWidth(UiLength.px(156)).setMinWidth(156).setMaxWidth(156));
         return label;
-    }
-
-    private int adaptiveWidth(int preferred, int floor, float viewportRatio) {
-        return clampValue(Math.round(viewportWidthHint * viewportRatio), floor, preferred);
     }
 
     private int clampValue(int value, int min, int max) {
