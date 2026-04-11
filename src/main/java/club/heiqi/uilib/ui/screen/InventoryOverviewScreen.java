@@ -95,7 +95,6 @@ public class InventoryOverviewScreen extends BaseScreen {
      * 构建背包诊断页。
      */
     private void assembleUi(Widget root) {
-        DivWidget pageRoot = new DivWidget().setDocumentColumn();
         DivWidget footer = new DivWidget().setToolbar();
 
         DivWidget overviewDiv = new DivWidget().setSection();
@@ -118,14 +117,13 @@ public class InventoryOverviewScreen extends BaseScreen {
 
         footer.addNoGrowChild(backButton);
 
-        pageRoot.addNoGrowChild(createTitleLabel("背包诊断页"));
-        pageRoot.addNoGrowChild(createBodyLabel("这里不再做左右两栏或摘要联排，只验证网格控件在可靠父宽度下是否能稳定缩放、换列和滚动。"));
-        pageRoot.addNoGrowChild(overviewCard);
-        pageRoot.addNoGrowChild(hotbarCard);
-        pageRoot.addNoGrowChild(backpackCard);
-        pageRoot.addNoGrowChild(footer);
+        pagePanel.addDocumentChild(createTitleLabel("背包诊断页"));
+        pagePanel.addDocumentChild(createBodyLabel("这里不再做左右两栏或摘要联排，只验证网格控件在可靠父宽度下是否能稳定缩放、换列和滚动。"));
+        pagePanel.addDocumentChild(overviewCard);
+        pagePanel.addDocumentChild(hotbarCard);
+        pagePanel.addDocumentChild(backpackCard);
+        pagePanel.addDocumentChild(footer);
 
-        pagePanel.getContent().addChild(pageRoot);
         root.addChild(pagePanel);
     }
 

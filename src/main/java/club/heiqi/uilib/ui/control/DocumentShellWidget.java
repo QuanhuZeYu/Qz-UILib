@@ -1,5 +1,7 @@
 package club.heiqi.uilib.ui.control;
 
+import club.heiqi.uilib.ui.widget.Widget;
+
 /**
  * 文档内容壳，作为网页语义包装层暴露页面内容区配置。
  */
@@ -7,6 +9,27 @@ public class DocumentShellWidget extends ScrollViewportWidget {
 
     public DocumentShellWidget() {
         setParentViewportAlignment(FrameAlign.CENTER, FrameAlign.START);
+        getContent().setDocumentColumn();
+    }
+
+    /**
+     * 获取文档主内容容器。
+     *
+     * @return 文档根容器
+     */
+    public DivWidget getDocument() {
+        return getContent();
+    }
+
+    /**
+     * 向文档根容器追加子节点。
+     *
+     * @param child 子组件
+     * @return 当前页面壳
+     */
+    public DocumentShellWidget addDocumentChild(Widget child) {
+        getDocument().addChild(child);
+        return this;
     }
 
     @Override

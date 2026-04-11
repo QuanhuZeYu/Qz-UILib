@@ -132,7 +132,6 @@ public class UiTestScreen extends BaseScreen {
      * 构建诊断页组件树。
      */
     private void assembleUi(Widget root) {
-        DivWidget pageRoot = new DivWidget().setDocumentColumn();
         DivWidget cardsFlow = new DivWidget().setWrapRow();
 
         DivWidget overviewDiv = new DivWidget().setSection();
@@ -175,13 +174,12 @@ public class UiTestScreen extends BaseScreen {
         cardsFlow.addFlexChild(formCard, 1.5F);
         cardsFlow.addFlexChild(wrapCard, 1.0F);
 
-        pageRoot.addNoGrowChild(createTitleLabel("布局诊断页"));
-        pageRoot.addNoGrowChild(createBodyLabel("如果这一页的两张卡片仍然在不合理的宽度下并排、中文换行异常、表单行不按父宽度变化，或者卡片不能同时按 flex-basis 和增长权重自然分配空间，那么说明底层尺寸链路仍然有问题。"));
-        pageRoot.addNoGrowChild(overviewCard);
-        pageRoot.addNoGrowChild(cardsFlow);
-        pageRoot.addNoGrowChild(divScrollCard);
+        diagnosticPage.addDocumentChild(createTitleLabel("布局诊断页"));
+        diagnosticPage.addDocumentChild(createBodyLabel("如果这一页的两张卡片仍然在不合理的宽度下并排、中文换行异常、表单行不按父宽度变化，或者卡片不能同时按 flex-basis 和增长权重自然分配空间，那么说明底层尺寸链路仍然有问题。"));
+        diagnosticPage.addDocumentChild(overviewCard);
+        diagnosticPage.addDocumentChild(cardsFlow);
+        diagnosticPage.addDocumentChild(divScrollCard);
 
-        diagnosticPage.getContent().addChild(pageRoot);
         root.addChild(diagnosticPage);
     }
 
