@@ -1,6 +1,5 @@
 package club.heiqi.uilib.ui.control;
 
-import club.heiqi.uilib.ui.layout.UiAnchor;
 import club.heiqi.uilib.ui.layout.UiInsets;
 import club.heiqi.uilib.ui.layout.UiLayoutSpec;
 import club.heiqi.uilib.ui.render.UiRenderContext;
@@ -134,12 +133,11 @@ public class ResponsivePageWidget extends VerticalScrollPanelWidget {
         resolvedWidth = Math.max(resolvedWidth, Math.min(availableWidth, minViewportWidth));
         resolvedHeight = Math.max(resolvedHeight, Math.min(availableHeight, minViewportHeight));
 
-        UiAnchor anchor = layoutSpec == null ? UiAnchor.TOP_CENTER : layoutSpec.getAnchor();
-        int[] anchorPosition = resolveAnchorPosition(anchor, contentLeft + margin.getLeft(), contentTop + margin.getTop(),
-                availableWidth, availableHeight, resolvedWidth, resolvedHeight);
-        int offsetX = layoutSpec == null ? 0 : layoutSpec.getOffsetX();
-        int offsetY = layoutSpec == null ? 0 : layoutSpec.getOffsetY();
-        setBounds(anchorPosition[0] + offsetX, anchorPosition[1] + offsetY, resolvedWidth, resolvedHeight);
+        // 网页主线中的页面壳更接近块级内容容器：横向居中、纵向从顶部开始，
+        // 不再依赖 legacy anchor / offset 语义参与布局。
+        int resolvedX = contentLeft + margin.getLeft() + Math.max(0, (availableWidth - resolvedWidth) / 2);
+        int resolvedY = contentTop + margin.getTop();
+        setBounds(resolvedX, resolvedY, resolvedWidth, resolvedHeight);
     }
 
     private float clampRatio(float ratio) {

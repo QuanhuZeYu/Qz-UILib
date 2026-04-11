@@ -9,7 +9,6 @@ import club.heiqi.uilib.ui.control.ResponsivePanelWidget;
 import club.heiqi.uilib.ui.control.SegmentedSelectorWidget;
 import club.heiqi.uilib.ui.control.TextInputWidget;
 import club.heiqi.uilib.ui.control.ToggleSwitchWidget;
-import club.heiqi.uilib.ui.layout.UiAnchor;
 import club.heiqi.uilib.ui.layout.UiLayoutSpec;
 import club.heiqi.uilib.ui.layout.UiLength;
 import club.heiqi.uilib.ui.widget.Widget;
@@ -85,8 +84,7 @@ public class UiTestScreen extends BaseScreen {
                 .setBorderColor(0xFF86A8F0)
                 .setViewportWidthRange(680, 1080)
                 .setMinViewportHeight(560)
-                .setViewportRatio(0.92F, 0.90F)
-                .setLayoutSpec(new UiLayoutSpec().setAnchor(UiAnchor.TOP_CENTER));
+                .setViewportRatio(0.92F, 0.90F);
     }
 
     /**
@@ -102,8 +100,8 @@ public class UiTestScreen extends BaseScreen {
 
         formCard.setLayoutSpec(new UiLayoutSpec().setFlexBasis(UiLength.px(460)).setMinWidth(320).setMaxWidth(620));
         wrapCard.setLayoutSpec(new UiLayoutSpec().setFlexBasis(UiLength.px(340)).setMinWidth(260).setMaxWidth(480));
-        divScrollCard.setLayoutSpec(new UiLayoutSpec().setWidth(UiLength.percent(1.0F)).setFill(true));
-        divScrollProbe.setLayoutSpec(new UiLayoutSpec().setWidth(UiLength.percent(1.0F)).setHeight(UiLength.px(220)).setMinHeight(220).setMaxHeight(220).setFill(true));
+        divScrollCard.setLayoutSpec(new UiLayoutSpec().setWidth(UiLength.percent(1.0F)));
+        divScrollProbe.setLayoutSpec(new UiLayoutSpec().setWidth(UiLength.percent(1.0F)).setHeight(UiLength.px(220)).setMinHeight(220).setMaxHeight(220));
 
         themeInput.setPlaceholder("例如：Qz Layout Probe").setText("Qz Layout Probe").setMaxLength(48);
         namespaceInput.setPlaceholder("例如：qz_uilib").setText("qz_uilib").setMaxLength(48);

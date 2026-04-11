@@ -7,9 +7,6 @@ import club.heiqi.uilib.ui.control.LabelWidget;
 import club.heiqi.uilib.ui.control.ResponsiveContainerWidget;
 import club.heiqi.uilib.ui.control.ResponsivePageWidget;
 import club.heiqi.uilib.ui.control.ResponsivePanelWidget;
-import club.heiqi.uilib.ui.layout.UiAnchor;
-import club.heiqi.uilib.ui.layout.UiLayoutSpec;
-import club.heiqi.uilib.ui.layout.UiLength;
 import club.heiqi.uilib.ui.widget.Widget;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.inventory.GuiInventory;
@@ -73,8 +70,7 @@ public class InventoryOverviewScreen extends BaseScreen {
                 .setBorderColor(0xFF86A8F0)
                 .setViewportWidthRange(720, 1040)
                 .setMinViewportHeight(620)
-                .setViewportRatio(0.94F, 0.92F)
-                .setLayoutSpec(new UiLayoutSpec().setAnchor(UiAnchor.TOP_CENTER));
+                .setViewportRatio(0.94F, 0.92F);
     }
 
     /**

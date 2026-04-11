@@ -311,7 +311,7 @@ public class DivWidget extends Widget {
      * @return 当前容器
      */
     public DivWidget setFillLayout() {
-        ensureLayoutSpec().setWidth(UiLength.percent(1.0F)).setHeight(UiLength.auto()).setFill(true);
+        ensureLayoutSpec().setWidth(UiLength.percent(1.0F)).setHeight(UiLength.auto());
         return setWidthPercent(1.0F);
     }
 

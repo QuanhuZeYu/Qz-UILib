@@ -20,10 +20,18 @@ public class UiLayoutSpec {
     private UiAlignSelf alignSelf = UiAlignSelf.AUTO;
     private boolean fill;
 
+    /**
+     * @deprecated 仅保留给旧式定位容器使用，网页主线布局不应再依赖 anchor。
+     */
+    @Deprecated
     public UiAnchor getAnchor() {
         return anchor;
     }
 
+    /**
+     * @deprecated 仅保留给旧式定位容器使用，网页主线布局不应再依赖 anchor。
+     */
+    @Deprecated
     public UiLayoutSpec setAnchor(UiAnchor anchor) {
         this.anchor = anchor == null ? UiAnchor.TOP_LEFT : anchor;
         return this;
@@ -112,19 +120,35 @@ public class UiLayoutSpec {
         return this;
     }
 
+    /**
+     * @deprecated 仅保留给旧式定位容器使用，网页主线布局不应再依赖 offsetX。
+     */
+    @Deprecated
     public int getOffsetX() {
         return offsetX;
     }
 
+    /**
+     * @deprecated 仅保留给旧式定位容器使用，网页主线布局不应再依赖 offsetX。
+     */
+    @Deprecated
     public UiLayoutSpec setOffsetX(int offsetX) {
         this.offsetX = offsetX;
         return this;
     }
 
+    /**
+     * @deprecated 仅保留给旧式定位容器使用，网页主线布局不应再依赖 offsetY。
+     */
+    @Deprecated
     public int getOffsetY() {
         return offsetY;
     }
 
+    /**
+     * @deprecated 仅保留给旧式定位容器使用，网页主线布局不应再依赖 offsetY。
+     */
+    @Deprecated
     public UiLayoutSpec setOffsetY(int offsetY) {
         this.offsetY = offsetY;
         return this;
@@ -159,10 +183,18 @@ public class UiLayoutSpec {
         return this;
     }
 
+    /**
+     * @deprecated 仅保留给旧式响应式容器兼容路径使用，网页主线优先使用 width/height/stretch 语义。
+     */
+    @Deprecated
     public boolean isFill() {
         return fill;
     }
 
+    /**
+     * @deprecated 仅保留给旧式响应式容器兼容路径使用，网页主线优先使用 width/height/stretch 语义。
+     */
+    @Deprecated
     public UiLayoutSpec setFill(boolean fill) {
         this.fill = fill;
         return this;
