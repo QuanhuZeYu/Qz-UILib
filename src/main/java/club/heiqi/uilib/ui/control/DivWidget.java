@@ -16,7 +16,7 @@ import club.heiqi.uilib.ui.widget.Widget;
 /**
  * 类似浏览器 div 的自动排布容器。
  */
-public class DivWidget extends Widget {
+public class DivWidget extends Widget implements UiScrollHost {
 
     /**
      * 主轴方向。

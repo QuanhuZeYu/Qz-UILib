@@ -6,7 +6,7 @@ import java.util.List;
 import org.lwjglx.input.Keyboard;
 
 import club.heiqi.uilib.ui.control.DivWidget;
-import club.heiqi.uilib.ui.control.VerticalScrollPanelWidget;
+import club.heiqi.uilib.ui.control.UiScrollHost;
 import club.heiqi.uilib.ui.event.UiKeyEvent;
 import club.heiqi.uilib.ui.event.UiMouseEvent;
 import club.heiqi.uilib.ui.event.UiTextInputEvent;
@@ -203,10 +203,8 @@ public class UiInputRouter {
     private void ensureWidgetVisible(Widget widget) {
         Widget current = widget == null ? null : widget.getParent();
         while (current != null) {
-            if (current instanceof VerticalScrollPanelWidget) {
-                ((VerticalScrollPanelWidget) current).scrollDescendantIntoView(widget);
-            } else if (current instanceof DivWidget) {
-                ((DivWidget) current).scrollDescendantIntoView(widget);
+            if (current instanceof UiScrollHost) {
+                ((UiScrollHost) current).scrollDescendantIntoView(widget);
             }
             current = current.getParent();
         }

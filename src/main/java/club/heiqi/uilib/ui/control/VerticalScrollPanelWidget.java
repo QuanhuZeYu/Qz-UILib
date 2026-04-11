@@ -6,7 +6,7 @@ import club.heiqi.uilib.ui.widget.Widget;
 /**
  * 带双轴滚动兜底的滚动面板。
  */
-public class VerticalScrollPanelWidget extends RelativePanelWidget {
+public class VerticalScrollPanelWidget extends RelativePanelWidget implements UiScrollHost {
 
     private final DivWidget content = new DivWidget();
     private final OverflowScrollState scrollState = new OverflowScrollState();
