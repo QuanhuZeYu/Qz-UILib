@@ -6,7 +6,7 @@ import club.heiqi.uilib.ui.widget.Widget;
 /**
  * 带双轴滚动兜底的滚动面板。
  */
-public class VerticalScrollPanelWidget extends ResponsivePanelWidget {
+public class VerticalScrollPanelWidget extends RelativePanelWidget {
 
     private final DivWidget content = new DivWidget();
     private final OverflowScrollState scrollState = new OverflowScrollState();
@@ -35,6 +35,24 @@ public class VerticalScrollPanelWidget extends ResponsivePanelWidget {
     @Override
     public VerticalScrollPanelWidget setPadding(int left, int top, int right, int bottom) {
         super.setPadding(left, top, right, bottom);
+        return this;
+    }
+
+    @Override
+    public VerticalScrollPanelWidget setClampChildrenInside(boolean clampChildrenInside) {
+        super.setClampChildrenInside(clampChildrenInside);
+        return this;
+    }
+
+    @Override
+    public VerticalScrollPanelWidget setFillColor(int fillColor) {
+        super.setFillColor(fillColor);
+        return this;
+    }
+
+    @Override
+    public VerticalScrollPanelWidget setBorderColor(int borderColor) {
+        super.setBorderColor(borderColor);
         return this;
     }
 
@@ -136,7 +154,6 @@ public class VerticalScrollPanelWidget extends ResponsivePanelWidget {
         super.render(context);
     }
 
-    @Override
     protected void layoutChildren() {
         // 滚动面板的内部内容区域由 updateContentBounds() 专门负责定位与定尺寸，
         // 不能再让父类按普通响应式子项重新布局，否则会覆盖滚动偏移和真实内容高度。

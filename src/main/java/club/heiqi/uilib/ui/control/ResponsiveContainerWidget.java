@@ -11,7 +11,10 @@ import club.heiqi.uilib.ui.widget.Widget;
 
 /**
  * 无背景的响应式布局容器。
+ *
+ * @deprecated 仅保留兼容旧式锚点/offset/fill 路径，网页主线布局应优先使用 DivWidget 与简单视口容器。
  */
+@Deprecated
 public class ResponsiveContainerWidget extends RelativePanelWidget {
 
     public ResponsiveContainerWidget() {

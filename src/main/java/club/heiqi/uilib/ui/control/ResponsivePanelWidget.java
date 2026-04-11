@@ -4,7 +4,10 @@ import club.heiqi.uilib.ui.render.UiRenderContext;
 
 /**
  * 带背景和边框的响应式面板容器。
+ *
+ * @deprecated 仅保留兼容旧式面板容器路径，网页主线页面应优先使用带样式的 DivWidget。
  */
+@Deprecated
 public class ResponsivePanelWidget extends ResponsiveContainerWidget {
 
     private int fillColor = 0x88141A22;
