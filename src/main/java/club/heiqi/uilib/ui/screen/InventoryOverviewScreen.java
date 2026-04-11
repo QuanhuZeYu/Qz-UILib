@@ -1,11 +1,11 @@
 package club.heiqi.uilib.ui.screen;
 
 import club.heiqi.uilib.ui.control.ButtonWidget;
+import club.heiqi.uilib.ui.control.DocumentShellWidget;
 import club.heiqi.uilib.ui.control.DivWidget;
 import club.heiqi.uilib.ui.control.InventorySlotGridWidget;
 import club.heiqi.uilib.ui.control.LabelWidget;
-import club.heiqi.uilib.ui.control.RelativePanelWidget;
-import club.heiqi.uilib.ui.control.ResponsivePageWidget;
+import club.heiqi.uilib.ui.control.ViewportWidget;
 import club.heiqi.uilib.ui.widget.Widget;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.inventory.GuiInventory;
@@ -16,7 +16,7 @@ import net.minecraft.entity.player.InventoryPlayer;
  */
 public class InventoryOverviewScreen extends BaseScreen {
 
-    private final ResponsivePageWidget pagePanel = new ResponsivePageWidget();
+    private final DocumentShellWidget pagePanel = new DocumentShellWidget();
 
     private final DivWidget overviewCard = createCardPanel();
     private final DivWidget hotbarCard = createCardPanel();
@@ -44,7 +44,7 @@ public class InventoryOverviewScreen extends BaseScreen {
 
         int pageMargin = Math.max(24, width / 34);
         int topMargin = Math.max(28, height / 28);
-        RelativePanelWidget rootWidget = (RelativePanelWidget) getRootWidget();
+        ViewportWidget rootWidget = (ViewportWidget) getRootWidget();
         rootWidget.setPadding(pageMargin, topMargin, pageMargin, pageMargin);
 
         int pagePaddingX = clampValue(width / 48, 16, 28);
@@ -67,9 +67,9 @@ public class InventoryOverviewScreen extends BaseScreen {
         pagePanel.setPadding(24, 22, 24, 22)
                 .setFillColor(0xD0151C25)
                 .setBorderColor(0xFF86A8F0)
-                .setViewportWidthRange(720, 1040)
-                .setMinViewportHeight(620)
-                .setViewportRatio(0.94F, 0.92F);
+                .setContentWidthRange(720, 1040)
+                .setMinContentHeight(620)
+                .setViewportFillRatio(0.94F, 0.92F);
     }
 
     /**
