@@ -132,7 +132,7 @@ public class UiTestScreen extends BaseScreen {
      * 构建诊断页组件树。
      */
     private void assembleUi(Widget root) {
-        DivWidget cardsFlow = new DivWidget().setWrapRow();
+        DivWidget cardsFlow = new DivWidget().setWrapRow().setColumnGap(16).setRowGap(20);
 
         DivWidget overviewDiv = new DivWidget().setSection();
         overviewDiv.addNoGrowChild(createSectionTitle("当前状态"));

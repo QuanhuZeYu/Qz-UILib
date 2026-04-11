@@ -85,7 +85,8 @@ public class DivWidget extends Widget implements UiScrollHost {
     private int paddingTop;
     private int paddingRight;
     private int paddingBottom;
-    private int gap = 12;
+    private int rowGap = 12;
+    private int columnGap = 12;
     private int fillColor;
     private int borderColor;
     private final OverflowScrollState scrollState = new OverflowScrollState();
@@ -410,7 +411,19 @@ public class DivWidget extends Widget implements UiScrollHost {
     }
 
     public DivWidget setGap(int gap) {
-        this.gap = Math.max(0, gap);
+        int resolvedGap = Math.max(0, gap);
+        this.rowGap = resolvedGap;
+        this.columnGap = resolvedGap;
+        return this;
+    }
+
+    public DivWidget setRowGap(int rowGap) {
+        this.rowGap = Math.max(0, rowGap);
+        return this;
+    }
+
+    public DivWidget setColumnGap(int columnGap) {
+        this.columnGap = Math.max(0, columnGap);
         return this;
     }
 
@@ -559,7 +572,7 @@ public class DivWidget extends Widget implements UiScrollHost {
             for (Widget child : getChildren()) {
                 contentWidth += computeRowMainSpan(measureIntrinsic(child).getWidth(), resolveMargin(child));
             }
-            contentWidth += gap * Math.max(0, getChildren().size() - 1);
+            contentWidth += getMainAxisGap() * Math.max(0, getChildren().size() - 1);
         } else {
             for (Widget child : getChildren()) {
                 contentWidth = Math.max(contentWidth, computeColumnCrossSpan(measureIntrinsic(child).getWidth(), resolveMargin(child)));
@@ -607,7 +620,7 @@ public class DivWidget extends Widget implements UiScrollHost {
             for (Widget child : getChildren()) {
                 contentWidth += computeRowMainSpan(child.getMinContentWidth(), resolveMargin(child));
             }
-            contentWidth += gap * Math.max(0, getChildren().size() - 1);
+            contentWidth += getMainAxisGap() * Math.max(0, getChildren().size() - 1);
         } else {
             for (Widget child : getChildren()) {
                 contentWidth = Math.max(contentWidth, computeColumnCrossSpan(child.getMinContentWidth(), resolveMargin(child)));
@@ -659,7 +672,7 @@ public class DivWidget extends Widget implements UiScrollHost {
             totalWidth += computeRowMainSpan(widths[index], margins[index]);
             heights[index] = resolveRowCrossSize(child, widths[index], innerHeight, useMinHeights, false);
         }
-        totalWidth += gap * Math.max(0, childCount - 1);
+        totalWidth += getMainAxisGap() * Math.max(0, childCount - 1);
 
         if (innerWidth > 0) {
             if (totalWidth < innerWidth) {
@@ -734,7 +747,7 @@ public class DivWidget extends Widget implements UiScrollHost {
             widest = Math.max(widest, computeColumnCrossSpan(widths[index], margins[index]));
             totalHeight += computeColumnMainSpan(heights[index], margins[index]);
         }
-        totalHeight += gap * Math.max(0, childCount - 1);
+        totalHeight += getMainAxisGap() * Math.max(0, childCount - 1);
 
         if (innerHeight > 0) {
             if (totalHeight < innerHeight) {
@@ -822,7 +835,7 @@ public class DivWidget extends Widget implements UiScrollHost {
             maxLineWidth = Math.max(maxLineWidth, group.mainSize);
             totalHeight += group.crossSize;
         }
-        totalHeight += gap * Math.max(0, groups.size() - 1);
+        totalHeight += getCrossAxisGap() * Math.max(0, groups.size() - 1);
 
         int extraCrossSpace = Math.max(0, Math.max(0, containerHeight - paddingTop - paddingBottom) - totalHeight);
         if (alignContent == AlignContent.STRETCH && extraCrossSpace > 0) {
@@ -907,7 +920,7 @@ public class DivWidget extends Widget implements UiScrollHost {
             totalWidth += group.crossSize;
             tallestColumn = Math.max(tallestColumn, group.mainSize);
         }
-        totalWidth += gap * Math.max(0, groups.size() - 1);
+        totalWidth += getCrossAxisGap() * Math.max(0, groups.size() - 1);
 
         int extraCrossSpace = Math.max(0, innerWidth - totalWidth);
         if (alignContent == AlignContent.STRETCH && extraCrossSpace > 0) {
@@ -955,7 +968,7 @@ public class DivWidget extends Widget implements UiScrollHost {
         int start = 0;
         int currentSize = 0;
         for (int index = 0; index < sizes.length; index++) {
-            int candidate = currentSize == 0 ? sizes[index] : currentSize + gap + sizes[index];
+            int candidate = currentSize == 0 ? sizes[index] : currentSize + getMainAxisGap() + sizes[index];
             if (availableMainSize > 0 && index > start && candidate > availableMainSize) {
                 groups.add(new AxisGroup(start, index - 1));
                 start = index;
@@ -994,7 +1007,7 @@ public class DivWidget extends Widget implements UiScrollHost {
         for (int index = start; index <= end; index++) {
             total += computeRowMainSpan(widths[index], margins[index]);
         }
-        total += gap * Math.max(0, end - start);
+        total += getMainAxisGap() * Math.max(0, end - start);
         return total;
     }
 
@@ -1003,7 +1016,7 @@ public class DivWidget extends Widget implements UiScrollHost {
         for (int index = start; index <= end; index++) {
             total += computeColumnMainSpan(heights[index], margins[index]);
         }
-        total += gap * Math.max(0, end - start);
+        total += getMainAxisGap() * Math.max(0, end - start);
         return total;
     }
 
@@ -1215,7 +1228,7 @@ public class DivWidget extends Widget implements UiScrollHost {
         for (int index = start; index <= end; index++) {
             total += sizes[index];
         }
-        total += gap * Math.max(0, end - start);
+        total += getMainAxisGap() * Math.max(0, end - start);
         return total;
     }
 
@@ -1310,9 +1323,9 @@ public class DivWidget extends Widget implements UiScrollHost {
 
     private int resolveGap(int extraSpace, int childCount) {
         if (justifyContent != JustifyContent.SPACE_BETWEEN || childCount <= 1 || extraSpace <= 0) {
-            return gap;
+            return getMainAxisGap();
         }
-        return gap + extraSpace / (childCount - 1);
+        return getMainAxisGap() + extraSpace / (childCount - 1);
     }
 
     private int resolveContentLeadingOffset(int extraSpace, int groupCount) {
@@ -1333,9 +1346,17 @@ public class DivWidget extends Widget implements UiScrollHost {
 
     private int resolveContentGap(int extraSpace, int groupCount) {
         if (alignContent != AlignContent.SPACE_BETWEEN || groupCount <= 1 || extraSpace <= 0) {
-            return gap;
+            return getCrossAxisGap();
         }
-        return gap + extraSpace / (groupCount - 1);
+        return getCrossAxisGap() + extraSpace / (groupCount - 1);
+    }
+
+    private int getMainAxisGap() {
+        return direction == Direction.ROW ? columnGap : rowGap;
+    }
+
+    private int getCrossAxisGap() {
+        return direction == Direction.ROW ? rowGap : columnGap;
     }
 
     private AlignItems resolveChildAlignItems(Widget child) {
