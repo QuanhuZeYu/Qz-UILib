@@ -216,7 +216,7 @@ public class DivWidget extends Widget implements UiScrollHost {
      *
      * @return 当前容器
      */
-    public DivWidget setPageColumn() {
+    public DivWidget setDocumentColumn() {
         return setDirection(Direction.COLUMN)
                 .setAlignItems(AlignItems.STRETCH)
                 .setJustifyContent(JustifyContent.START)
@@ -232,7 +232,7 @@ public class DivWidget extends Widget implements UiScrollHost {
      *
      * @return 当前容器
      */
-    public DivWidget setSectionColumn() {
+    public DivWidget setSection() {
         return setDirection(Direction.COLUMN)
                 .setAlignItems(AlignItems.STRETCH)
                 .setJustifyContent(JustifyContent.START)
@@ -248,7 +248,7 @@ public class DivWidget extends Widget implements UiScrollHost {
      *
      * @return 当前容器
      */
-    public DivWidget setContentFlow() {
+    public DivWidget setWrapRow() {
         return setDirection(Direction.ROW)
                 .setAlignItems(AlignItems.STRETCH)
                 .setJustifyContent(JustifyContent.START)
@@ -264,7 +264,7 @@ public class DivWidget extends Widget implements UiScrollHost {
      *
      * @return 当前容器
      */
-    public DivWidget setInlineFlow() {
+    public DivWidget setInline() {
         return setDirection(Direction.ROW)
                 .setAlignItems(AlignItems.CENTER)
                 .setJustifyContent(JustifyContent.START)
@@ -296,7 +296,7 @@ public class DivWidget extends Widget implements UiScrollHost {
      *
      * @return 当前容器
      */
-    public DivWidget setButtonFlow() {
+    public DivWidget setToolbar() {
         return setDirection(Direction.ROW)
                 .setAlignItems(AlignItems.STRETCH)
                 .setJustifyContent(JustifyContent.START)

@@ -1,6 +1,8 @@
 package club.heiqi.uilib.ui.control;
 
 import club.heiqi.uilib.ui.event.UiMouseEvent;
+import club.heiqi.uilib.ui.layout.UiInsets;
+import club.heiqi.uilib.ui.layout.UiLayoutSpec;
 import club.heiqi.uilib.ui.widget.Widget;
 
 /**
@@ -8,8 +10,25 @@ import club.heiqi.uilib.ui.widget.Widget;
  */
 public class ScrollViewportWidget extends ViewportWidget implements UiScrollHost {
 
+    /**
+     * 父视口中的框体对齐方式。
+     */
+    public enum FrameAlign {
+        START,
+        CENTER,
+        END
+    }
+
     private final DivWidget content = new DivWidget();
     private final OverflowScrollState scrollState = new OverflowScrollState();
+    private boolean parentViewportFrameEnabled;
+    private int minFrameWidth;
+    private int minFrameHeight;
+    private int maxFrameWidth = Integer.MAX_VALUE;
+    private float maxParentFillWidth = 1.0F;
+    private float maxParentFillHeight = 1.0F;
+    private FrameAlign parentHorizontalAlign = FrameAlign.START;
+    private FrameAlign parentVerticalAlign = FrameAlign.START;
 
     public ScrollViewportWidget() {
         setClipChildren(true);
@@ -55,6 +74,60 @@ public class ScrollViewportWidget extends ViewportWidget implements UiScrollHost
 
     public ScrollViewportWidget setScrollStep(int scrollStep) {
         scrollState.setScrollStep(scrollStep);
+        return this;
+    }
+
+    /**
+     * 启用父视口约束框体，并设置宽度区间。
+     *
+     * @param minFrameWidth 最小宽度
+     * @param maxFrameWidth 最大宽度
+     * @return 当前视口
+     */
+    public ScrollViewportWidget setParentViewportWidthRange(int minFrameWidth, int maxFrameWidth) {
+        parentViewportFrameEnabled = true;
+        this.minFrameWidth = Math.max(1, minFrameWidth);
+        this.maxFrameWidth = Math.max(this.minFrameWidth, maxFrameWidth);
+        return this;
+    }
+
+    /**
+     * 设置父视口约束框体的最小高度。
+     *
+     * @param minFrameHeight 最小高度
+     * @return 当前视口
+     */
+    public ScrollViewportWidget setParentViewportMinHeight(int minFrameHeight) {
+        parentViewportFrameEnabled = true;
+        this.minFrameHeight = Math.max(1, minFrameHeight);
+        return this;
+    }
+
+    /**
+     * 设置父视口约束框体相对父可视区的最大填充比例。
+     *
+     * @param maxParentFillWidth 最大宽度占比
+     * @param maxParentFillHeight 最大高度占比
+     * @return 当前视口
+     */
+    public ScrollViewportWidget setParentViewportFillRatio(float maxParentFillWidth, float maxParentFillHeight) {
+        parentViewportFrameEnabled = true;
+        this.maxParentFillWidth = clampRatio(maxParentFillWidth);
+        this.maxParentFillHeight = clampRatio(maxParentFillHeight);
+        return this;
+    }
+
+    /**
+     * 设置父视口中的框体对齐方式。
+     *
+     * @param horizontalAlign 横向对齐
+     * @param verticalAlign 纵向对齐
+     * @return 当前视口
+     */
+    public ScrollViewportWidget setParentViewportAlignment(FrameAlign horizontalAlign, FrameAlign verticalAlign) {
+        parentViewportFrameEnabled = true;
+        parentHorizontalAlign = horizontalAlign == null ? FrameAlign.START : horizontalAlign;
+        parentVerticalAlign = verticalAlign == null ? FrameAlign.START : verticalAlign;
         return this;
     }
 
@@ -143,6 +216,7 @@ public class ScrollViewportWidget extends ViewportWidget implements UiScrollHost
 
     @Override
     public void render(club.heiqi.uilib.ui.render.UiRenderContext context) {
+        updateViewportFrameBounds();
         updateContentBounds();
         super.render(context);
     }
@@ -235,6 +309,66 @@ public class ScrollViewportWidget extends ViewportWidget implements UiScrollHost
                 true, true);
         content.setBounds(getPaddingLeft() - scrollState.getHorizontalOffset(), getPaddingTop() - scrollState.getVerticalOffset(),
                 layout.contentWidth, layout.contentHeight);
+    }
+
+    private void updateViewportFrameBounds() {
+        if (!parentViewportFrameEnabled) {
+            return;
+        }
+
+        Widget parent = getParent();
+        if (parent == null) {
+            return;
+        }
+
+        int frameLeft = 0;
+        int frameTop = 0;
+        int frameWidth = parent.getWidth();
+        int frameHeight = parent.getHeight();
+        if (parent instanceof ViewportWidget) {
+            ViewportWidget viewport = (ViewportWidget) parent;
+            frameLeft = viewport.getPaddingLeft();
+            frameTop = viewport.getPaddingTop();
+            frameWidth = Math.max(0, parent.getWidth() - viewport.getPaddingLeft() - viewport.getPaddingRight());
+            frameHeight = Math.max(0, parent.getHeight() - viewport.getPaddingTop() - viewport.getPaddingBottom());
+        }
+
+        UiLayoutSpec layoutSpec = getLayoutSpec();
+        UiInsets margin = layoutSpec == null ? UiInsets.ZERO : layoutSpec.getMargin();
+        int availableWidth = Math.max(0, frameWidth - margin.getLeft() - margin.getRight());
+        int availableHeight = Math.max(0, frameHeight - margin.getTop() - margin.getBottom());
+        if (availableWidth <= 0 || availableHeight <= 0) {
+            setBounds(frameLeft, frameTop, 0, 0);
+            return;
+        }
+
+        int ratioWidth = Math.max(1, Math.round(availableWidth * maxParentFillWidth));
+        int ratioHeight = Math.max(1, Math.round(availableHeight * maxParentFillHeight));
+        int resolvedWidth = Math.min(availableWidth, Math.min(ratioWidth, maxFrameWidth));
+        int resolvedHeight = Math.min(availableHeight, ratioHeight);
+        resolvedWidth = Math.max(resolvedWidth, Math.min(availableWidth, minFrameWidth));
+        resolvedHeight = Math.max(resolvedHeight, Math.min(availableHeight, minFrameHeight));
+
+        int resolvedX = frameLeft + margin.getLeft()
+                + resolveAlignedOffset(availableWidth, resolvedWidth, parentHorizontalAlign);
+        int resolvedY = frameTop + margin.getTop()
+                + resolveAlignedOffset(availableHeight, resolvedHeight, parentVerticalAlign);
+        setBounds(resolvedX, resolvedY, resolvedWidth, resolvedHeight);
+    }
+
+    private int resolveAlignedOffset(int availableSize, int contentSize, FrameAlign align) {
+        int remaining = Math.max(0, availableSize - contentSize);
+        if (align == FrameAlign.END) {
+            return remaining;
+        }
+        if (align == FrameAlign.CENTER) {
+            return remaining / 2;
+        }
+        return 0;
+    }
+
+    private float clampRatio(float ratio) {
+        return Math.max(0.05F, Math.min(ratio, 1.0F));
     }
 
     private OverflowScrollState.ScrollbarMetrics getVerticalScrollbarMetrics() {

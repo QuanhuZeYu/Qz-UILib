@@ -95,22 +95,22 @@ public class InventoryOverviewScreen extends BaseScreen {
      * 构建背包诊断页。
      */
     private void assembleUi(Widget root) {
-        DivWidget pageRoot = new DivWidget().setPageColumn();
-        DivWidget footer = new DivWidget().setButtonFlow();
+        DivWidget pageRoot = new DivWidget().setDocumentColumn();
+        DivWidget footer = new DivWidget().setToolbar();
 
-        DivWidget overviewDiv = new DivWidget().setSectionColumn();
+        DivWidget overviewDiv = new DivWidget().setSection();
         overviewDiv.addNoGrowChild(createSectionTitle("当前状态"));
         overviewDiv.addNoGrowChild(createBodyLabel("旧背包测试页已经完全清空。当前只保留单列背包诊断页，优先确认页面壳、格子网格和纵向滚动不会互相干扰，再重建复杂业务页。"));
         overviewDiv.addNoGrowChild(overviewMetricsLabel);
         overviewCard.addChild(overviewDiv);
 
-        DivWidget hotbarDiv = new DivWidget().setSectionColumn();
+        DivWidget hotbarDiv = new DivWidget().setSection();
         hotbarDiv.addNoGrowChild(createSectionTitle("快捷栏探针"));
         hotbarDiv.addNoGrowChild(hotbarMetricsLabel);
         hotbarDiv.addNoGrowChild(hotbarGrid);
         hotbarCard.addChild(hotbarDiv);
 
-        DivWidget backpackDiv = new DivWidget().setSectionColumn();
+        DivWidget backpackDiv = new DivWidget().setSection();
         backpackDiv.addNoGrowChild(createSectionTitle("主背包探针"));
         backpackDiv.addNoGrowChild(backpackMetricsLabel);
         backpackDiv.addNoGrowChild(backpackGrid);
@@ -181,7 +181,7 @@ public class InventoryOverviewScreen extends BaseScreen {
     }
 
     private DivWidget createCardPanel() {
-        return new DivWidget().setSectionColumn().setPadding(20).setFillColor(0xAA111721).setBorderColor(0xFF6E8FCB);
+        return new DivWidget().setSection().setPadding(20).setFillColor(0xAA111721).setBorderColor(0xFF6E8FCB);
     }
 
     private LabelWidget createTitleLabel(String text) {

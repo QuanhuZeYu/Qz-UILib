@@ -1,20 +1,13 @@
 package club.heiqi.uilib.ui.control;
 
-import club.heiqi.uilib.ui.layout.UiInsets;
-import club.heiqi.uilib.ui.layout.UiLayoutSpec;
-import club.heiqi.uilib.ui.render.UiRenderContext;
-import club.heiqi.uilib.ui.widget.Widget;
-
 /**
- * 文档内容壳，负责在视口内提供受 min/max 宽度约束的页面主内容区域。
+ * 文档内容壳，作为网页语义包装层暴露页面内容区配置。
  */
 public class DocumentShellWidget extends ScrollViewportWidget {
 
-    private int minContentWidth = 640;
-    private int minContentHeight = 420;
-    private int maxContentWidth = Integer.MAX_VALUE;
-    private float maxViewportFillWidth = 0.80F;
-    private float maxViewportFillHeight = 0.84F;
+    public DocumentShellWidget() {
+        setParentViewportAlignment(FrameAlign.CENTER, FrameAlign.START);
+    }
 
     @Override
     public DocumentShellWidget setPadding(int padding) {
@@ -48,8 +41,7 @@ public class DocumentShellWidget extends ScrollViewportWidget {
      * @return 当前页面
      */
     public DocumentShellWidget setContentWidthRange(int minContentWidth, int maxContentWidth) {
-        this.minContentWidth = Math.max(1, minContentWidth);
-        this.maxContentWidth = Math.max(this.minContentWidth, maxContentWidth);
+        super.setParentViewportWidthRange(minContentWidth, maxContentWidth);
         return this;
     }
 
@@ -60,7 +52,7 @@ public class DocumentShellWidget extends ScrollViewportWidget {
      * @return 当前页面
      */
     public DocumentShellWidget setMinContentHeight(int minContentHeight) {
-        this.minContentHeight = Math.max(1, minContentHeight);
+        super.setParentViewportMinHeight(minContentHeight);
         return this;
     }
 
@@ -72,61 +64,7 @@ public class DocumentShellWidget extends ScrollViewportWidget {
      * @return 当前页面
      */
     public DocumentShellWidget setViewportFillRatio(float maxViewportFillWidth, float maxViewportFillHeight) {
-        this.maxViewportFillWidth = clampRatio(maxViewportFillWidth);
-        this.maxViewportFillHeight = clampRatio(maxViewportFillHeight);
+        super.setParentViewportFillRatio(maxViewportFillWidth, maxViewportFillHeight);
         return this;
-    }
-
-    @Override
-    public void render(UiRenderContext context) {
-        adaptToParentViewport();
-        super.render(context);
-    }
-
-    private void adaptToParentViewport() {
-        Widget parent = getParent();
-        if (parent == null) {
-            return;
-        }
-
-        int contentLeft = 0;
-        int contentTop = 0;
-        int contentWidth = parent.getWidth();
-        int contentHeight = parent.getHeight();
-        if (parent instanceof ViewportWidget) {
-            ViewportWidget panel = (ViewportWidget) parent;
-            contentLeft = panel.getPaddingLeft();
-            contentTop = panel.getPaddingTop();
-            contentWidth = Math.max(0, parent.getWidth() - panel.getPaddingLeft() - panel.getPaddingRight());
-            contentHeight = Math.max(0, parent.getHeight() - panel.getPaddingTop() - panel.getPaddingBottom());
-        }
-
-        UiLayoutSpec layoutSpec = getLayoutSpec();
-        UiInsets margin = layoutSpec == null ? UiInsets.ZERO : layoutSpec.getMargin();
-        int availableWidth = Math.max(0, contentWidth - margin.getLeft() - margin.getRight());
-        int availableHeight = Math.max(0, contentHeight - margin.getTop() - margin.getBottom());
-        if (availableWidth <= 0 || availableHeight <= 0) {
-            setBounds(contentLeft, contentTop, 0, 0);
-            return;
-        }
-
-        int ratioWidth = Math.max(1, Math.round(availableWidth * maxViewportFillWidth));
-        int ratioHeight = Math.max(1, Math.round(availableHeight * maxViewportFillHeight));
-
-        // 内容壳宽度更接近网页里的 width:100% + max-width + min-width 组合。
-        int resolvedWidth = Math.min(availableWidth, Math.min(ratioWidth, maxContentWidth));
-        int resolvedHeight = Math.min(availableHeight, ratioHeight);
-        resolvedWidth = Math.max(resolvedWidth, Math.min(availableWidth, minContentWidth));
-        resolvedHeight = Math.max(resolvedHeight, Math.min(availableHeight, minContentHeight));
-
-        // 网页主线中的页面壳更接近块级内容容器：横向居中、纵向从顶部开始，
-        // 不再依赖 legacy anchor / offset 语义参与布局。
-        int resolvedX = contentLeft + margin.getLeft() + Math.max(0, (availableWidth - resolvedWidth) / 2);
-        int resolvedY = contentTop + margin.getTop();
-        setBounds(resolvedX, resolvedY, resolvedWidth, resolvedHeight);
-    }
-
-    private float clampRatio(float ratio) {
-        return Math.max(0.05F, Math.min(ratio, 1.0F));
     }
 }

@@ -24,7 +24,7 @@ public class UiTestScreen extends BaseScreen {
     private final DivWidget wrapCard = createCardPanel();
     private final DivWidget divScrollCard = createCardPanel();
     private final DivWidget divScrollProbe = new DivWidget()
-            .setSectionColumn()
+            .setSection()
             .setVerticalScrollOnly()
             .setPadding(14)
             .setGap(10);
@@ -132,10 +132,10 @@ public class UiTestScreen extends BaseScreen {
      * 构建诊断页组件树。
      */
     private void assembleUi(Widget root) {
-        DivWidget pageRoot = new DivWidget().setPageColumn();
-        DivWidget cardsFlow = new DivWidget().setContentFlow();
+        DivWidget pageRoot = new DivWidget().setDocumentColumn();
+        DivWidget cardsFlow = new DivWidget().setWrapRow();
 
-        DivWidget overviewDiv = new DivWidget().setSectionColumn();
+        DivWidget overviewDiv = new DivWidget().setSection();
         overviewDiv.addNoGrowChild(createSectionTitle("当前状态"));
         overviewDiv.addNoGrowChild(createBodyLabel("旧测试页已经完全清空。当前只保留这一张最小诊断页，专门验证页面壳尺寸、卡片换行、中文文本最小宽度和父容器约束是否正确。"));
         overviewDiv.addNoGrowChild(viewportMetricsLabel);
@@ -143,7 +143,7 @@ public class UiTestScreen extends BaseScreen {
         overviewDiv.addNoGrowChild(actionStateLabel);
         overviewCard.addChild(overviewDiv);
 
-        DivWidget formDiv = new DivWidget().setSectionColumn();
+        DivWidget formDiv = new DivWidget().setSection();
         formDiv.addNoGrowChild(createSectionTitle("表单约束探针"));
         formDiv.addNoGrowChild(createBodyLabel("这张卡片只验证 `setFormRow()` 在父宽度变化时能否正确重排。标签列保持固定参考宽度，字段列允许拉伸或换到下一行。"));
         formDiv.addNoGrowChild(createFormRow("主题名称", themeInput));
@@ -151,17 +151,17 @@ public class UiTestScreen extends BaseScreen {
         formDiv.addNoGrowChild(createFormRow("资源路径", pathInput));
         formDiv.addNoGrowChild(createFormRow("换行提示", wrapToggle));
         formDiv.addNoGrowChild(createFormRow("宽度档位", widthPresetSelector));
-        formDiv.addNoGrowChild(new DivWidget().setButtonFlow().addNoGrowChild(refreshButton));
+        formDiv.addNoGrowChild(new DivWidget().setToolbar().addNoGrowChild(refreshButton));
         formCard.addChild(formDiv);
 
-        DivWidget wrapDiv = new DivWidget().setSectionColumn();
+        DivWidget wrapDiv = new DivWidget().setSection();
         wrapDiv.addNoGrowChild(createSectionTitle("文本换行与最小宽度探针"));
         wrapDiv.addNoGrowChild(createBodyLabel("这里故意放一段中英混排文本，观察在不同页宽下是否优先正常换行，而不是把整段中文误判为一个不可压缩长词。"));
         wrapDiv.addNoGrowChild(wrapSampleLabel);
         wrapDiv.addNoGrowChild(wrapMetricsLabel);
         wrapCard.addChild(wrapDiv);
 
-        DivWidget divScrollCardDiv = new DivWidget().setSectionColumn();
+        DivWidget divScrollCardDiv = new DivWidget().setSection();
         divScrollCardDiv.addNoGrowChild(createSectionTitle("统一尺寸契约探针"));
         divScrollCardDiv.addNoGrowChild(createBodyLabel("这块直接验证 Div 父容器是否开始读取统一的 `UiLayoutSpec`：内部探针使用 `width=100%` 和 `height=220px`，如果仍然不产生内部滚动，就说明尺寸契约仍然割裂。"));
         for (int index = 1; index <= 10; index++) {
@@ -228,7 +228,7 @@ public class UiTestScreen extends BaseScreen {
     }
 
     private DivWidget createCardPanel() {
-        return new DivWidget().setSectionColumn().setPadding(20).setFillColor(0xAA111721).setBorderColor(0xFF6E8FCB);
+        return new DivWidget().setSection().setPadding(20).setFillColor(0xAA111721).setBorderColor(0xFF6E8FCB);
     }
 
     private LabelWidget createTitleLabel(String text) {
