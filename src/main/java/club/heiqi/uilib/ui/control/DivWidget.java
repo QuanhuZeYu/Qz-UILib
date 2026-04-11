@@ -81,10 +81,9 @@ public class DivWidget extends Widget {
             return;
         }
 
-        LayoutResult layout = measureLayout(getWidth(), getHeight(), false, false);
-        updateScrollState(layout);
+        prepareOverflowLayout(false);
         setClipHitTest(hasClippedOverflow());
-        measureLayout(getWidth(), getHeight(), true, false);
+        applyOverflowLayout(false);
 
         drawSelf(context);
         boolean clipping = hasClippedOverflow();
@@ -111,8 +110,8 @@ public class DivWidget extends Widget {
     protected int[] getChildClipRect() {
         int viewportLeft = getAbsoluteX() + paddingLeft;
         int viewportTop = getAbsoluteY() + paddingTop;
-        int viewportRight = getAbsoluteX() + getWidth() - paddingRight;
-        int viewportBottom = getAbsoluteY() + getHeight() - paddingBottom;
+        int viewportRight = viewportLeft + getVisibleContentWidth();
+        int viewportBottom = viewportTop + getVisibleContentHeight();
         return new int[] {
                 overflowX == Overflow.VISIBLE ? Integer.MIN_VALUE / 4 : viewportLeft,
                 overflowY == Overflow.VISIBLE ? Integer.MIN_VALUE / 4 : viewportTop,
@@ -124,8 +123,8 @@ public class DivWidget extends Widget {
     private int[] resolveClipRect(UiRenderContext context) {
         int viewportLeft = getAbsoluteX() + paddingLeft;
         int viewportTop = getAbsoluteY() + paddingTop;
-        int viewportRight = getAbsoluteX() + getWidth() - paddingRight;
-        int viewportBottom = getAbsoluteY() + getHeight() - paddingBottom;
+        int viewportRight = viewportLeft + getVisibleContentWidth();
+        int viewportBottom = viewportTop + getVisibleContentHeight();
         int clipLeft = overflowX == Overflow.VISIBLE ? 0 : viewportLeft;
         int clipRight = overflowX == Overflow.VISIBLE ? context.getScreenWidth() : viewportRight;
         int clipTop = overflowY == Overflow.VISIBLE ? 0 : viewportTop;
@@ -417,32 +416,44 @@ public class DivWidget extends Widget {
     }
 
     public int getVisibleContentWidth() {
+        if (scrollState.getViewportWidth() > 0 || getWidth() <= 0) {
+            return scrollState.getViewportWidth();
+        }
         return getViewportWidth();
     }
 
     public int getVisibleContentHeight() {
+        if (scrollState.getViewportHeight() > 0 || getHeight() <= 0) {
+            return scrollState.getViewportHeight();
+        }
         return getViewportHeight();
     }
 
     public int getContentWidth() {
-        return measureContentWidth();
+        if (scrollState.getContentWidth() > 0 || getChildren().isEmpty()) {
+            return scrollState.getContentWidth();
+        }
+        prepareOverflowLayout(false);
+        return scrollState.getContentWidth();
     }
 
     public int getContentHeight() {
-        return measureContentHeight();
+        if (scrollState.getContentHeight() > 0 || getChildren().isEmpty()) {
+            return scrollState.getContentHeight();
+        }
+        prepareOverflowLayout(false);
+        return scrollState.getContentHeight();
     }
 
     @Override
     public boolean onMouseScroll(UiMouseEvent event) {
-        LayoutResult layout = measureLayout(getWidth(), getHeight(), false, false);
-        updateScrollState(layout);
+        prepareOverflowLayout(false);
         return scrollState.handleWheel(event.getWheelDelta(), overflowY == Overflow.AUTO, overflowX == Overflow.AUTO);
     }
 
     @Override
     public void onMouseMove(UiMouseEvent event) {
-        LayoutResult layout = measureLayout(getWidth(), getHeight(), false, false);
-        updateScrollState(layout);
+        prepareOverflowLayout(false);
         scrollState.updatePointer(event.getMouseX(), event.getMouseY(), getAbsoluteX() + paddingLeft,
                 getAbsoluteY() + paddingTop);
     }
@@ -453,8 +464,7 @@ public class DivWidget extends Widget {
             return;
         }
 
-        LayoutResult layout = measureLayout(getWidth(), getHeight(), false, false);
-        updateScrollState(layout);
+        prepareOverflowLayout(false);
         scrollState.beginPointerDrag(event.getMouseX(), event.getMouseY(), getAbsoluteX() + paddingLeft,
                 getAbsoluteY() + paddingTop);
     }
@@ -465,8 +475,7 @@ public class DivWidget extends Widget {
             return;
         }
 
-        LayoutResult layout = measureLayout(getWidth(), getHeight(), false, false);
-        updateScrollState(layout);
+        prepareOverflowLayout(false);
         scrollState.endPointerDrag(event.getMouseX(), event.getMouseY(), getAbsoluteX() + paddingLeft,
                 getAbsoluteY() + paddingTop);
     }
@@ -486,12 +495,11 @@ public class DivWidget extends Widget {
             return;
         }
 
-        LayoutResult layout = measureLayout(getWidth(), getHeight(), false, false);
-        updateScrollState(layout);
+        prepareOverflowLayout(false);
         int viewportLeft = getAbsoluteX() + paddingLeft;
         int viewportTop = getAbsoluteY() + paddingTop;
-        int viewportRight = getAbsoluteX() + getWidth() - paddingRight;
-        int viewportBottom = getAbsoluteY() + getHeight() - paddingBottom;
+        int viewportRight = viewportLeft + getVisibleContentWidth();
+        int viewportBottom = viewportTop + getVisibleContentHeight();
         int targetLeft = target.getAbsoluteX();
         int targetTop = target.getAbsoluteY();
         int targetRight = targetLeft + target.getWidth();
@@ -1131,13 +1139,48 @@ public class DivWidget extends Widget {
         }
     }
 
-    private void updateScrollState(LayoutResult layout) {
-        int viewportWidth = getViewportWidth();
-        int viewportHeight = getViewportHeight();
-        int contentWidth = Math.max(0, layout.requiredWidth - paddingLeft - paddingRight);
-        int contentHeight = Math.max(0, layout.requiredHeight - paddingTop - paddingBottom);
-        scrollState.updateState(viewportWidth, viewportHeight, contentWidth, contentHeight, overflowX == Overflow.AUTO,
+    private LayoutResult prepareOverflowLayout(boolean useMinHeights) {
+        int baseViewportWidth = Math.max(0, getWidth() - paddingLeft - paddingRight);
+        int baseViewportHeight = Math.max(0, getHeight() - paddingTop - paddingBottom);
+        int reservedWidth = 0;
+        int reservedHeight = 0;
+        LayoutResult layout = new LayoutResult();
+
+        for (int pass = 0; pass < 4; pass++) {
+            int viewportWidth = Math.max(0, baseViewportWidth - reservedWidth);
+            int viewportHeight = Math.max(0, baseViewportHeight - reservedHeight);
+            layout = measureLayout(viewportWidth + paddingLeft + paddingRight, viewportHeight + paddingTop + paddingBottom,
+                    false, useMinHeights);
+            int contentWidth = Math.max(0, layout.requiredWidth - paddingLeft - paddingRight);
+            int contentHeight = Math.max(0, layout.requiredHeight - paddingTop - paddingBottom);
+
+            int nextReservedWidth = overflowY == Overflow.AUTO && contentHeight > viewportHeight
+                    ? OverflowScrollState.getScrollbarReserve()
+                    : 0;
+            int nextReservedHeight = overflowX == Overflow.AUTO && contentWidth > viewportWidth
+                    ? OverflowScrollState.getScrollbarReserve()
+                    : 0;
+            if (nextReservedWidth == reservedWidth && nextReservedHeight == reservedHeight) {
+                break;
+            }
+            reservedWidth = nextReservedWidth;
+            reservedHeight = nextReservedHeight;
+        }
+
+        int viewportWidth = Math.max(0, baseViewportWidth - reservedWidth);
+        int viewportHeight = Math.max(0, baseViewportHeight - reservedHeight);
+        layout = measureLayout(viewportWidth + paddingLeft + paddingRight, viewportHeight + paddingTop + paddingBottom,
+                false, useMinHeights);
+        scrollState.updateState(viewportWidth, viewportHeight,
+                Math.max(0, layout.requiredWidth - paddingLeft - paddingRight),
+                Math.max(0, layout.requiredHeight - paddingTop - paddingBottom), overflowX == Overflow.AUTO,
                 overflowY == Overflow.AUTO);
+        return layout;
+    }
+
+    private void applyOverflowLayout(boolean useMinHeights) {
+        measureLayout(getVisibleContentWidth() + paddingLeft + paddingRight, getVisibleContentHeight() + paddingTop + paddingBottom,
+                true, useMinHeights);
     }
 
     private void drawScrollbars(UiRenderContext context) {
@@ -1188,16 +1231,6 @@ public class DivWidget extends Widget {
 
     private int getViewportHeight() {
         return Math.max(0, getHeight() - paddingTop - paddingBottom);
-    }
-
-    private int measureContentWidth() {
-        LayoutResult layout = measureLayout(getWidth(), getHeight(), false, false);
-        return Math.max(0, layout.requiredWidth - paddingLeft - paddingRight);
-    }
-
-    private int measureContentHeight() {
-        LayoutResult layout = measureLayout(getWidth(), getHeight(), false, false);
-        return Math.max(0, layout.requiredHeight - paddingTop - paddingBottom);
     }
 
     private boolean isDescendant(Widget target) {
