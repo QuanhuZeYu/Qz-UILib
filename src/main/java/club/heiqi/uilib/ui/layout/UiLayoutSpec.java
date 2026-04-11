@@ -9,6 +9,7 @@ public class UiLayoutSpec {
     private UiInsets margin = UiInsets.ZERO;
     private UiLength width = UiLength.auto();
     private UiLength height = UiLength.auto();
+    private UiLength flexBasis = UiLength.auto();
     private int minWidth;
     private int minHeight;
     private int maxWidth = Integer.MAX_VALUE;
@@ -51,6 +52,26 @@ public class UiLayoutSpec {
 
     public UiLayoutSpec setHeight(UiLength height) {
         this.height = height == null ? UiLength.auto() : height;
+        return this;
+    }
+
+    /**
+     * 获取 flex 主轴初始尺寸。
+     *
+     * @return 主轴 basis
+     */
+    public UiLength getFlexBasis() {
+        return flexBasis;
+    }
+
+    /**
+     * 设置 flex 主轴初始尺寸。
+     *
+     * @param flexBasis 主轴 basis
+     * @return 当前规格
+     */
+    public UiLayoutSpec setFlexBasis(UiLength flexBasis) {
+        this.flexBasis = flexBasis == null ? UiLength.auto() : flexBasis;
         return this;
     }
 

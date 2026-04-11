@@ -8,14 +8,21 @@ import club.heiqi.uilib.ui.widget.Widget;
  */
 public class VerticalScrollPanelWidget extends ResponsivePanelWidget {
 
-    private final VerticalStackWidget content = new VerticalStackWidget();
+    private final DivWidget content = new DivWidget();
     private final OverflowScrollState scrollState = new OverflowScrollState();
 
     public VerticalScrollPanelWidget() {
         setClampChildrenInside(false);
         setClipChildren(true);
         setClipHitTest(true);
-        content.setPadding(0).setSpacing(12).setClampChildrenInside(false);
+        content.setDirection(DivWidget.Direction.COLUMN)
+                .setAlignItems(DivWidget.AlignItems.STRETCH)
+                .setJustifyContent(DivWidget.JustifyContent.START)
+                .setWrap(DivWidget.Wrap.NOWRAP)
+                .setOverflowX(DivWidget.Overflow.VISIBLE)
+                .setOverflowY(DivWidget.Overflow.VISIBLE)
+                .setGap(12)
+                .setPadding(0);
         addChild(content);
     }
 
@@ -31,7 +38,7 @@ public class VerticalScrollPanelWidget extends ResponsivePanelWidget {
         return this;
     }
 
-    public VerticalStackWidget getContent() {
+    public DivWidget getContent() {
         return content;
     }
 

@@ -100,8 +100,8 @@ public class UiTestScreen extends BaseScreen {
         wrapSampleLabel.setColor(0xFFD7E3FF).setShadow(false).setWrap(true).setMaxLines(10);
         actionStateLabel.setColor(0xFFB5D0FF).setShadow(false).setWrap(true).setMaxLines(2);
 
-        formCard.setLayoutSpec(new UiLayoutSpec().setWidth(UiLength.percent(0.55F)).setMinWidth(320).setMaxWidth(620));
-        wrapCard.setLayoutSpec(new UiLayoutSpec().setWidth(UiLength.percent(0.41F)).setMinWidth(260).setMaxWidth(480));
+        formCard.setLayoutSpec(new UiLayoutSpec().setFlexBasis(UiLength.px(460)).setMinWidth(320).setMaxWidth(620));
+        wrapCard.setLayoutSpec(new UiLayoutSpec().setFlexBasis(UiLength.px(340)).setMinWidth(260).setMaxWidth(480));
         divScrollCard.setLayoutSpec(new UiLayoutSpec().setWidth(UiLength.percent(1.0F)).setFill(true));
         divScrollProbe.setLayoutSpec(new UiLayoutSpec().setWidth(UiLength.percent(1.0F)).setHeight(UiLength.px(220)).setMinHeight(220).setMaxHeight(220).setFill(true));
 
@@ -179,7 +179,7 @@ public class UiTestScreen extends BaseScreen {
         cardsFlow.addFlexChild(wrapCard, 1.0F);
 
         pageRoot.addNoGrowChild(createTitleLabel("布局诊断页"));
-        pageRoot.addNoGrowChild(createBodyLabel("如果这一页的两张卡片仍然在不合理的宽度下并排、中文换行异常、表单行不按父宽度变化，或者卡片在宽屏下不能按增长权重自然分配空间，那么说明底层尺寸链路仍然有问题。"));
+        pageRoot.addNoGrowChild(createBodyLabel("如果这一页的两张卡片仍然在不合理的宽度下并排、中文换行异常、表单行不按父宽度变化，或者卡片不能同时按 flex-basis 和增长权重自然分配空间，那么说明底层尺寸链路仍然有问题。"));
         pageRoot.addNoGrowChild(overviewCard);
         pageRoot.addNoGrowChild(cardsFlow);
         pageRoot.addNoGrowChild(divScrollCard);

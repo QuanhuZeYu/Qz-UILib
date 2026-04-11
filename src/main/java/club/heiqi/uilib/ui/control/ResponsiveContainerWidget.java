@@ -1,9 +1,11 @@
 package club.heiqi.uilib.ui.control;
 
 import club.heiqi.uilib.ui.layout.UiAnchor;
+import club.heiqi.uilib.ui.layout.UiConstraints;
 import club.heiqi.uilib.ui.layout.UiInsets;
 import club.heiqi.uilib.ui.layout.UiLayoutSpec;
 import club.heiqi.uilib.ui.layout.UiLength;
+import club.heiqi.uilib.ui.layout.UiMeasureResult;
 import club.heiqi.uilib.ui.render.UiRenderContext;
 import club.heiqi.uilib.ui.widget.Widget;
 
@@ -74,6 +76,15 @@ public class ResponsiveContainerWidget extends RelativePanelWidget {
     }
 
     @Override
+    public UiMeasureResult measure(UiConstraints constraints) {
+        UiConstraints effectiveConstraints = constraints == null ? UiConstraints.unbounded() : constraints;
+        int preferredWidth = getPreferredWidth();
+        int measuredWidth = effectiveConstraints.constrainWidth(preferredWidth);
+        int measuredHeight = effectiveConstraints.constrainHeight(getPreferredHeightForWidth(measuredWidth));
+        return new UiMeasureResult(measuredWidth, measuredHeight);
+    }
+
+    @Override
     public int getMinContentWidth() {
         int contentWidth = 0;
         for (Widget child : getChildren()) {
@@ -119,12 +130,12 @@ public class ResponsiveContainerWidget extends RelativePanelWidget {
             int availableHeight = Math.max(0, contentHeight - margin.getTop() - margin.getBottom());
             UiLength width = layoutSpec == null ? UiLength.auto() : layoutSpec.getWidth();
             UiLength height = layoutSpec == null ? UiLength.auto() : layoutSpec.getHeight();
-            int resolvedWidth = resolveLength(width, availableWidth, child.getPreferredWidth());
+            int resolvedWidth = resolveLength(width, availableWidth, measureIntrinsic(child).getWidth());
             if (layoutSpec != null && layoutSpec.isFill() && width.getType() == UiLength.Type.AUTO) {
                 resolvedWidth = availableWidth;
             }
 
-            int preferredHeight = child.getPreferredHeightForWidth(resolvedWidth);
+            int preferredHeight = measureForWidth(child, resolvedWidth).getHeight();
             int resolvedHeight = resolveLength(height, availableHeight, preferredHeight);
             if (layoutSpec != null && layoutSpec.isFill() && height.getType() == UiLength.Type.AUTO) {
                 resolvedHeight = availableHeight;
@@ -199,12 +210,12 @@ public class ResponsiveContainerWidget extends RelativePanelWidget {
     }
 
     protected int resolvePreferredWidth(Widget child, UiLayoutSpec layoutSpec) {
-        return resolvePreferredWidth(child, layoutSpec, child.getPreferredWidth());
+        return resolvePreferredWidth(child, layoutSpec, measureIntrinsic(child).getWidth());
     }
 
     protected int resolvePreferredWidth(Widget child, UiLayoutSpec layoutSpec, int availableWidth) {
         UiLength width = layoutSpec == null ? UiLength.auto() : layoutSpec.getWidth();
-        int preferredWidth = child.getPreferredWidth();
+        int preferredWidth = measureIntrinsic(child).getWidth();
         int resolvedWidth = resolveLength(width, availableWidth, preferredWidth);
         if (layoutSpec != null && layoutSpec.isFill() && width.getType() == UiLength.Type.AUTO) {
             resolvedWidth = availableWidth;
@@ -216,7 +227,7 @@ public class ResponsiveContainerWidget extends RelativePanelWidget {
 
     protected int resolvePreferredHeight(Widget child, UiLayoutSpec layoutSpec, int resolvedWidth) {
         UiLength height = layoutSpec == null ? UiLength.auto() : layoutSpec.getHeight();
-        int preferredHeight = child.getPreferredHeightForWidth(resolvedWidth);
+        int preferredHeight = measureForWidth(child, resolvedWidth).getHeight();
         int resolvedHeight = height != null && height.getType() == UiLength.Type.PIXEL
                 ? Math.round(height.getValue())
                 : preferredHeight;
@@ -244,5 +255,13 @@ public class ResponsiveContainerWidget extends RelativePanelWidget {
             safeMax = safeMin;
         }
         return clamp(value, safeMin, safeMax);
+    }
+
+    protected UiMeasureResult measureIntrinsic(Widget child) {
+        return child.measure(UiConstraints.unbounded());
+    }
+
+    protected UiMeasureResult measureForWidth(Widget child, int width) {
+        return child.measure(UiConstraints.fixedWidth(Math.max(0, width)));
     }
 }

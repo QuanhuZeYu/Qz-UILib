@@ -8,7 +8,10 @@ import club.heiqi.uilib.ui.widget.Widget;
 
 /**
  * 横向堆叠式响应式容器。
+ *
+ * @deprecated 仅保留兼容旧布局路径，网页化主线应优先使用 {@link DivWidget}。
  */
+@Deprecated
 public class HorizontalStackWidget extends ResponsiveContainerWidget {
 
     private int spacing = 10;
@@ -37,7 +40,7 @@ public class HorizontalStackWidget extends ResponsiveContainerWidget {
         for (Widget child : getChildren()) {
             UiLayoutSpec layoutSpec = child.getLayoutSpec();
             UiInsets margin = layoutSpec == null ? UiInsets.ZERO : layoutSpec.getMargin();
-            total += child.getPreferredWidth() + margin.getLeft() + margin.getRight();
+            total += measureIntrinsic(child).getWidth() + margin.getLeft() + margin.getRight();
             count++;
         }
         if (count > 1) {
@@ -52,7 +55,7 @@ public class HorizontalStackWidget extends ResponsiveContainerWidget {
         for (Widget child : getChildren()) {
             UiLayoutSpec layoutSpec = child.getLayoutSpec();
             UiInsets margin = layoutSpec == null ? UiInsets.ZERO : layoutSpec.getMargin();
-            tallest = Math.max(tallest, child.getPreferredHeight() + margin.getTop() + margin.getBottom());
+            tallest = Math.max(tallest, measureIntrinsic(child).getHeight() + margin.getTop() + margin.getBottom());
         }
         return getPaddingTop() + tallest + getPaddingBottom();
     }
@@ -73,7 +76,7 @@ public class HorizontalStackWidget extends ResponsiveContainerWidget {
             UiInsets margin = layoutSpec == null ? UiInsets.ZERO : layoutSpec.getMargin();
             margins[index] = margin;
             UiLength childWidth = layoutSpec == null ? UiLength.auto() : layoutSpec.getWidth();
-            int resolvedWidth = resolveLength(childWidth, contentWidth, child.getPreferredWidth());
+            int resolvedWidth = resolveLength(childWidth, contentWidth, measureIntrinsic(child).getWidth());
             resolvedWidth = fitDimension(
                     resolvedWidth,
                     layoutSpec == null ? 0 : layoutSpec.getMinWidth(),
@@ -93,7 +96,7 @@ public class HorizontalStackWidget extends ResponsiveContainerWidget {
             Widget child = getChildren().get(index);
             UiInsets margin = margins[index] == null ? UiInsets.ZERO : margins[index];
             int resolvedWidth = resolvedWidths[index];
-            tallest = Math.max(tallest, child.getPreferredHeightForWidth(resolvedWidth) + margin.getTop() + margin.getBottom());
+            tallest = Math.max(tallest, measureForWidth(child, resolvedWidth).getHeight() + margin.getTop() + margin.getBottom());
         }
         return getPaddingTop() + tallest + getPaddingBottom();
     }
@@ -125,7 +128,7 @@ public class HorizontalStackWidget extends ResponsiveContainerWidget {
             UiLength height = layoutSpec == null ? UiLength.auto() : layoutSpec.getHeight();
 
             int availableHeight = Math.max(0, contentHeight - margins[index].getTop() - margins[index].getBottom());
-            int resolvedHeight = resolveLength(height, availableHeight, child.getPreferredHeight());
+            int resolvedHeight = resolveLength(height, availableHeight, measureIntrinsic(child).getHeight());
             if (layoutSpec != null && layoutSpec.isFill() && height.getType() == UiLength.Type.AUTO) {
                 resolvedHeight = availableHeight;
             }
@@ -134,7 +137,7 @@ public class HorizontalStackWidget extends ResponsiveContainerWidget {
             int maxHeight = layoutSpec == null ? Integer.MAX_VALUE : layoutSpec.getMaxHeight();
             resolvedHeight = fitDimension(resolvedHeight, minHeight, maxHeight, availableHeight);
 
-            int preferredWidth = child.getPreferredWidth();
+            int preferredWidth = measureIntrinsic(child).getWidth();
             int resolvedWidth = resolveLength(width, contentWidth, preferredWidth);
             int minWidth = layoutSpec == null ? 0 : layoutSpec.getMinWidth();
             int maxWidth = layoutSpec == null ? Integer.MAX_VALUE : layoutSpec.getMaxWidth();
@@ -286,7 +289,7 @@ public class HorizontalStackWidget extends ResponsiveContainerWidget {
             int resolvedWidth) {
         UiLength height = layoutSpec == null ? UiLength.auto() : layoutSpec.getHeight();
         int availableHeight = Math.max(0, contentHeight - margin.getTop() - margin.getBottom());
-        int preferredHeight = child.getPreferredHeightForWidth(resolvedWidth);
+        int preferredHeight = measureForWidth(child, resolvedWidth).getHeight();
         int resolvedHeight = resolveLength(height, availableHeight, preferredHeight);
         if (layoutSpec != null && layoutSpec.isFill() && height.getType() == UiLength.Type.AUTO) {
             resolvedHeight = availableHeight;
