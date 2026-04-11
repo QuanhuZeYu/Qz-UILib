@@ -14,15 +14,6 @@ public class RelativePanelWidget extends Widget {
     private int paddingTop = 8;
     private int paddingRight = 8;
     private int paddingBottom = 8;
-    private boolean clampChildrenInside = true;
-
-    @Override
-    public void render(UiRenderContext context) {
-        if (clampChildrenInside) {
-            clampChildren();
-        }
-        super.render(context);
-    }
 
     @Override
     protected void drawSelf(UiRenderContext context) {
@@ -41,11 +32,6 @@ public class RelativePanelWidget extends Widget {
         paddingTop = Math.max(0, top);
         paddingRight = Math.max(0, right);
         paddingBottom = Math.max(0, bottom);
-        return this;
-    }
-
-    public RelativePanelWidget setClampChildrenInside(boolean clampChildrenInside) {
-        this.clampChildrenInside = clampChildrenInside;
         return this;
     }
 
@@ -73,31 +59,5 @@ public class RelativePanelWidget extends Widget {
 
     protected int getPaddingBottom() {
         return paddingBottom;
-    }
-
-    private void clampChildren() {
-        int minX = paddingLeft;
-        int minY = paddingTop;
-        int maxX = Math.max(minX, getWidth() - paddingRight);
-        int maxY = Math.max(minY, getHeight() - paddingBottom);
-        int availableWidth = Math.max(0, maxX - minX);
-        int availableHeight = Math.max(0, maxY - minY);
-
-        for (Widget child : getChildren()) {
-            int childWidth = Math.max(0, Math.min(child.getWidth(), availableWidth));
-            int childHeight = Math.max(0, Math.min(child.getHeight(), availableHeight));
-            if (childWidth != child.getWidth() || childHeight != child.getHeight()) {
-                child.setSize(childWidth, childHeight);
-            }
-            int allowedX = clamp(child.getX(), minX, Math.max(minX, maxX - childWidth));
-            int allowedY = clamp(child.getY(), minY, Math.max(minY, maxY - childHeight));
-            if (allowedX != child.getX() || allowedY != child.getY()) {
-                child.setPosition(allowedX, allowedY);
-            }
-        }
-    }
-
-    private int clamp(int value, int min, int max) {
-        return Math.max(min, Math.min(max, value));
     }
 }

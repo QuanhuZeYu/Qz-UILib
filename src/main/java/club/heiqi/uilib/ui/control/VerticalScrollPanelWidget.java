@@ -12,7 +12,6 @@ public class VerticalScrollPanelWidget extends RelativePanelWidget {
     private final OverflowScrollState scrollState = new OverflowScrollState();
 
     public VerticalScrollPanelWidget() {
-        setClampChildrenInside(false);
         setClipChildren(true);
         setClipHitTest(true);
         content.setDirection(DivWidget.Direction.COLUMN)
@@ -35,12 +34,6 @@ public class VerticalScrollPanelWidget extends RelativePanelWidget {
     @Override
     public VerticalScrollPanelWidget setPadding(int left, int top, int right, int bottom) {
         super.setPadding(left, top, right, bottom);
-        return this;
-    }
-
-    @Override
-    public VerticalScrollPanelWidget setClampChildrenInside(boolean clampChildrenInside) {
-        super.setClampChildrenInside(clampChildrenInside);
         return this;
     }
 

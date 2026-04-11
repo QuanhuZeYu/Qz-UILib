@@ -17,7 +17,7 @@ import club.heiqi.uilib.ui.widget.Widget;
  */
 public abstract class BaseScreen extends GuiScreen {
 
-    private final RelativePanelWidget rootWidget = new RelativePanelWidget().setClampChildrenInside(false);
+    private final RelativePanelWidget rootWidget = new RelativePanelWidget();
     private final UiInputRouter inputRouter = new UiInputRouter();
     private final UiRenderTarget renderTarget = new UiRenderTarget();
 
