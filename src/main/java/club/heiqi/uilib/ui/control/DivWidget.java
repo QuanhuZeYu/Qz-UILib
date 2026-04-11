@@ -1142,39 +1142,22 @@ public class DivWidget extends Widget {
     private LayoutResult prepareOverflowLayout(boolean useMinHeights) {
         int baseViewportWidth = Math.max(0, getWidth() - paddingLeft - paddingRight);
         int baseViewportHeight = Math.max(0, getHeight() - paddingTop - paddingBottom);
-        int reservedWidth = 0;
-        int reservedHeight = 0;
-        LayoutResult layout = new LayoutResult();
+        OverflowViewportLayout.Result overflowLayout = OverflowViewportLayout.compute(baseViewportWidth, baseViewportHeight,
+                overflowX == Overflow.AUTO, overflowY == Overflow.AUTO, new OverflowViewportLayout.ContentMeasurer() {
+                    @Override
+                    public OverflowViewportLayout.ContentSize measure(int viewportWidth, int viewportHeight) {
+                        LayoutResult layout = measureLayout(viewportWidth + paddingLeft + paddingRight,
+                                viewportHeight + paddingTop + paddingBottom, false, useMinHeights);
+                        return new OverflowViewportLayout.ContentSize(
+                                Math.max(0, layout.requiredWidth - paddingLeft - paddingRight),
+                                Math.max(0, layout.requiredHeight - paddingTop - paddingBottom));
+                    }
+                });
 
-        for (int pass = 0; pass < 4; pass++) {
-            int viewportWidth = Math.max(0, baseViewportWidth - reservedWidth);
-            int viewportHeight = Math.max(0, baseViewportHeight - reservedHeight);
-            layout = measureLayout(viewportWidth + paddingLeft + paddingRight, viewportHeight + paddingTop + paddingBottom,
-                    false, useMinHeights);
-            int contentWidth = Math.max(0, layout.requiredWidth - paddingLeft - paddingRight);
-            int contentHeight = Math.max(0, layout.requiredHeight - paddingTop - paddingBottom);
-
-            int nextReservedWidth = overflowY == Overflow.AUTO && contentHeight > viewportHeight
-                    ? OverflowScrollState.getScrollbarReserve()
-                    : 0;
-            int nextReservedHeight = overflowX == Overflow.AUTO && contentWidth > viewportWidth
-                    ? OverflowScrollState.getScrollbarReserve()
-                    : 0;
-            if (nextReservedWidth == reservedWidth && nextReservedHeight == reservedHeight) {
-                break;
-            }
-            reservedWidth = nextReservedWidth;
-            reservedHeight = nextReservedHeight;
-        }
-
-        int viewportWidth = Math.max(0, baseViewportWidth - reservedWidth);
-        int viewportHeight = Math.max(0, baseViewportHeight - reservedHeight);
-        layout = measureLayout(viewportWidth + paddingLeft + paddingRight, viewportHeight + paddingTop + paddingBottom,
-                false, useMinHeights);
-        scrollState.updateState(viewportWidth, viewportHeight,
-                Math.max(0, layout.requiredWidth - paddingLeft - paddingRight),
-                Math.max(0, layout.requiredHeight - paddingTop - paddingBottom), overflowX == Overflow.AUTO,
-                overflowY == Overflow.AUTO);
+        LayoutResult layout = measureLayout(overflowLayout.viewportWidth + paddingLeft + paddingRight,
+                overflowLayout.viewportHeight + paddingTop + paddingBottom, false, useMinHeights);
+        scrollState.updateState(overflowLayout.viewportWidth, overflowLayout.viewportHeight, overflowLayout.contentWidth,
+                overflowLayout.contentHeight, overflowX == Overflow.AUTO, overflowY == Overflow.AUTO);
         return layout;
     }
 

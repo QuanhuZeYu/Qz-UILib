@@ -204,34 +204,20 @@ public class VerticalScrollPanelWidget extends ResponsivePanelWidget {
     private void updateContentBounds() {
         int baseVisibleWidth = Math.max(0, getWidth() - getPaddingLeft() - getPaddingRight());
         int baseVisibleHeight = Math.max(0, getHeight() - getPaddingTop() - getPaddingBottom());
-        int reservedWidth = 0;
-        int reservedHeight = 0;
-        int contentWidth = baseVisibleWidth;
-        int contentHeight = baseVisibleHeight;
+        OverflowViewportLayout.Result layout = OverflowViewportLayout.compute(baseVisibleWidth, baseVisibleHeight, true,
+                true, new OverflowViewportLayout.ContentMeasurer() {
+                    @Override
+                    public OverflowViewportLayout.ContentSize measure(int viewportWidth, int viewportHeight) {
+                        int contentWidth = Math.max(viewportWidth, content.getMinContentWidth());
+                        int contentHeight = Math.max(viewportHeight, content.getPreferredHeightForWidth(contentWidth));
+                        return new OverflowViewportLayout.ContentSize(contentWidth, contentHeight);
+                    }
+                });
 
-        for (int pass = 0; pass < 4; pass++) {
-            int currentViewportWidth = Math.max(0, baseVisibleWidth - reservedWidth);
-            int currentViewportHeight = Math.max(0, baseVisibleHeight - reservedHeight);
-            contentWidth = Math.max(currentViewportWidth, content.getMinContentWidth());
-            contentHeight = Math.max(currentViewportHeight, content.getPreferredHeightForWidth(contentWidth));
-
-            int nextReservedWidth = contentHeight > currentViewportHeight ? OverflowScrollState.getScrollbarReserve() : 0;
-            int nextReservedHeight = contentWidth > currentViewportWidth ? OverflowScrollState.getScrollbarReserve() : 0;
-            if (nextReservedWidth == reservedWidth && nextReservedHeight == reservedHeight) {
-                break;
-            }
-            reservedWidth = nextReservedWidth;
-            reservedHeight = nextReservedHeight;
-        }
-
-        int viewportWidth = Math.max(0, baseVisibleWidth - reservedWidth);
-        int viewportHeight = Math.max(0, baseVisibleHeight - reservedHeight);
-        contentWidth = Math.max(viewportWidth, content.getMinContentWidth());
-        contentHeight = Math.max(viewportHeight, content.getPreferredHeightForWidth(contentWidth));
-
-        scrollState.updateState(viewportWidth, viewportHeight, contentWidth, contentHeight, true, true);
+        scrollState.updateState(layout.viewportWidth, layout.viewportHeight, layout.contentWidth, layout.contentHeight,
+                true, true);
         content.setBounds(getPaddingLeft() - scrollState.getHorizontalOffset(), getPaddingTop() - scrollState.getVerticalOffset(),
-                contentWidth, contentHeight);
+                layout.contentWidth, layout.contentHeight);
     }
 
     private OverflowScrollState.ScrollbarMetrics getVerticalScrollbarMetrics() {
