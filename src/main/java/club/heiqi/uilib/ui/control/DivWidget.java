@@ -244,6 +244,15 @@ public class DivWidget extends Widget implements UiScrollHost {
     }
 
     /**
+     * 将当前 Div 设为常用网页卡片。
+     *
+     * @return 当前容器
+     */
+    public DivWidget setCard() {
+        return setSection().setPadding(20).setFillColor(0xAA111721).setBorderColor(0xFF6E8FCB);
+    }
+
+    /**
      * 将当前 Div 设为网页常见的卡片流，适合多个区块横向排布并在窄屏下换行。
      *
      * @return 当前容器

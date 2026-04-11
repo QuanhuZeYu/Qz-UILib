@@ -226,7 +226,7 @@ public class UiTestScreen extends BaseScreen {
     }
 
     private DivWidget createCardPanel() {
-        return new DivWidget().setSection().setPadding(20).setFillColor(0xAA111721).setBorderColor(0xFF6E8FCB);
+        return new DivWidget().setCard();
     }
 
     private LabelWidget createTitleLabel(String text) {
