@@ -89,8 +89,6 @@ public class DivWidget extends Widget {
     private int gap = 12;
     private int fillColor;
     private int borderColor;
-    private float widthPercent = -1.0F;
-    private float heightPercent = -1.0F;
     private final OverflowScrollState scrollState = new OverflowScrollState();
 
     @Override
@@ -321,7 +319,7 @@ public class DivWidget extends Widget {
      */
     public DivWidget setFillLayout() {
         ensureLayoutSpec().setWidth(UiLength.percent(1.0F)).setHeight(UiLength.auto());
-        return setWidthPercent(1.0F);
+        return this;
     }
 
     /**
@@ -423,25 +421,17 @@ public class DivWidget extends Widget {
     }
 
     public DivWidget setWidthPercent(float widthPercent) {
-        this.widthPercent = clampPercent(widthPercent);
+        float resolvedPercent = clampPercent(widthPercent);
         UiLayoutSpec layoutSpec = ensureLayoutSpec();
-        layoutSpec.setWidth(this.widthPercent >= 0.0F ? UiLength.percent(this.widthPercent) : UiLength.auto());
+        layoutSpec.setWidth(resolvedPercent >= 0.0F ? UiLength.percent(resolvedPercent) : UiLength.auto());
         return this;
     }
 
     public DivWidget setHeightPercent(float heightPercent) {
-        this.heightPercent = clampPercent(heightPercent);
+        float resolvedPercent = clampPercent(heightPercent);
         UiLayoutSpec layoutSpec = ensureLayoutSpec();
-        layoutSpec.setHeight(this.heightPercent >= 0.0F ? UiLength.percent(this.heightPercent) : UiLength.auto());
+        layoutSpec.setHeight(resolvedPercent >= 0.0F ? UiLength.percent(resolvedPercent) : UiLength.auto());
         return this;
-    }
-
-    public float getWidthPercent() {
-        return widthPercent;
-    }
-
-    public float getHeightPercent() {
-        return heightPercent;
     }
 
     public int getHorizontalScrollOffset() {
@@ -1101,41 +1091,21 @@ public class DivWidget extends Widget {
     }
 
     private UiLength resolveWidthLength(Widget child, UiLayoutSpec layoutSpec) {
-        if (layoutSpec != null && layoutSpec.getWidth().getType() != UiLength.Type.AUTO) {
-            return layoutSpec.getWidth();
-        }
-        if (child instanceof DivWidget) {
-            DivWidget divChild = (DivWidget) child;
-            if (divChild.widthPercent >= 0.0F) {
-                return UiLength.percent(divChild.widthPercent);
-            }
-        }
-        return UiLength.auto();
+        return layoutSpec != null ? layoutSpec.getWidth() : UiLength.auto();
     }
 
     private UiLength resolveHeightLength(Widget child, UiLayoutSpec layoutSpec) {
-        if (layoutSpec != null && layoutSpec.getHeight().getType() != UiLength.Type.AUTO) {
-            return layoutSpec.getHeight();
-        }
-        if (child instanceof DivWidget) {
-            DivWidget divChild = (DivWidget) child;
-            if (divChild.heightPercent >= 0.0F) {
-                return UiLength.percent(divChild.heightPercent);
-            }
-        }
-        return UiLength.auto();
+        return layoutSpec != null ? layoutSpec.getHeight() : UiLength.auto();
     }
 
     private boolean hasConfiguredWidth(Widget child) {
         UiLayoutSpec layoutSpec = child.getLayoutSpec();
-        return (layoutSpec != null && layoutSpec.getWidth().getType() != UiLength.Type.AUTO)
-                || (child instanceof DivWidget && ((DivWidget) child).widthPercent >= 0.0F);
+        return layoutSpec != null && layoutSpec.getWidth().getType() != UiLength.Type.AUTO;
     }
 
     private boolean hasConfiguredHeight(Widget child) {
         UiLayoutSpec layoutSpec = child.getLayoutSpec();
-        return (layoutSpec != null && layoutSpec.getHeight().getType() != UiLength.Type.AUTO)
-                || (child instanceof DivWidget && ((DivWidget) child).heightPercent >= 0.0F);
+        return layoutSpec != null && layoutSpec.getHeight().getType() != UiLength.Type.AUTO;
     }
 
     private int resolveLengthValue(UiLength length, int availableSpace, int fallback) {
