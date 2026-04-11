@@ -6,8 +6,10 @@ import club.heiqi.uilib.ui.widget.Widget;
 /**
  * 仅支持相对布局的容器，并在绘制前将子元素限制在容器范围内。
  */
-public class RelativePanelWidget extends PanelWidget {
+public class RelativePanelWidget extends Widget {
 
+    private int fillColor = 0x88141A22;
+    private int borderColor = 0xFF5C6B84;
     private int paddingLeft = 8;
     private int paddingTop = 8;
     private int paddingRight = 8;
@@ -20,6 +22,14 @@ public class RelativePanelWidget extends PanelWidget {
             clampChildren();
         }
         super.render(context);
+    }
+
+    @Override
+    protected void drawSelf(UiRenderContext context) {
+        int absoluteX = getAbsoluteX();
+        int absoluteY = getAbsoluteY();
+        context.fillRect(absoluteX, absoluteY, absoluteX + getWidth(), absoluteY + getHeight(), fillColor);
+        context.drawBorder(absoluteX, absoluteY, absoluteX + getWidth(), absoluteY + getHeight(), borderColor);
     }
 
     public RelativePanelWidget setPadding(int padding) {
@@ -36,6 +46,16 @@ public class RelativePanelWidget extends PanelWidget {
 
     public RelativePanelWidget setClampChildrenInside(boolean clampChildrenInside) {
         this.clampChildrenInside = clampChildrenInside;
+        return this;
+    }
+
+    public RelativePanelWidget setFillColor(int fillColor) {
+        this.fillColor = fillColor;
+        return this;
+    }
+
+    public RelativePanelWidget setBorderColor(int borderColor) {
+        this.borderColor = borderColor;
         return this;
     }
 
