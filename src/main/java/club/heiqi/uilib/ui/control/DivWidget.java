@@ -213,19 +213,42 @@ public class DivWidget extends Widget implements UiScrollHost {
     }
 
     /**
+     * 将当前 Div 设为基础纵向容器。
+     *
+     * @return 当前容器
+     */
+    public DivWidget setColumn() {
+        return setDirection(Direction.COLUMN)
+                .setAlignItems(AlignItems.STRETCH)
+                .setJustifyContent(JustifyContent.START)
+                .setWrap(Wrap.NOWRAP)
+                .setOverflowX(Overflow.VISIBLE)
+                .setOverflowY(Overflow.VISIBLE)
+                .setFillLayout();
+    }
+
+    /**
+     * 将当前 Div 设为基础横向容器。
+     *
+     * @return 当前容器
+     */
+    public DivWidget setRow() {
+        return setDirection(Direction.ROW)
+                .setAlignItems(AlignItems.STRETCH)
+                .setJustifyContent(JustifyContent.START)
+                .setWrap(Wrap.NOWRAP)
+                .setOverflowX(Overflow.VISIBLE)
+                .setOverflowY(Overflow.VISIBLE)
+                .setFillLayout();
+    }
+
+    /**
      * 将当前 Div 设为页面主内容列。
      *
      * @return 当前容器
      */
     public DivWidget setDocumentColumn() {
-        return setDirection(Direction.COLUMN)
-                .setAlignItems(AlignItems.STRETCH)
-                .setJustifyContent(JustifyContent.START)
-                .setWrap(Wrap.NOWRAP)
-                .setGap(16)
-                .setOverflowX(Overflow.VISIBLE)
-                .setOverflowY(Overflow.VISIBLE)
-                .setFillLayout();
+        return setColumn().setGap(16);
     }
 
     /**
@@ -234,14 +257,7 @@ public class DivWidget extends Widget implements UiScrollHost {
      * @return 当前容器
      */
     public DivWidget setSection() {
-        return setDirection(Direction.COLUMN)
-                .setAlignItems(AlignItems.STRETCH)
-                .setJustifyContent(JustifyContent.START)
-                .setWrap(Wrap.NOWRAP)
-                .setGap(12)
-                .setOverflowX(Overflow.VISIBLE)
-                .setOverflowY(Overflow.VISIBLE)
-                .setFillLayout();
+        return setColumn().setGap(12);
     }
 
     /**
@@ -259,13 +275,9 @@ public class DivWidget extends Widget implements UiScrollHost {
      * @return 当前容器
      */
     public DivWidget setWrapRow() {
-        return setDirection(Direction.ROW)
-                .setAlignItems(AlignItems.STRETCH)
-                .setJustifyContent(JustifyContent.START)
+        return setRow()
                 .setWrap(Wrap.WRAP)
                 .setGap(16)
-                .setOverflowX(Overflow.VISIBLE)
-                .setOverflowY(Overflow.VISIBLE)
                 .setFillLayout();
     }
 
@@ -275,13 +287,10 @@ public class DivWidget extends Widget implements UiScrollHost {
      * @return 当前容器
      */
     public DivWidget setInline() {
-        return setDirection(Direction.ROW)
+        return setRow()
                 .setAlignItems(AlignItems.CENTER)
-                .setJustifyContent(JustifyContent.START)
                 .setWrap(Wrap.WRAP)
                 .setGap(10)
-                .setOverflowX(Overflow.VISIBLE)
-                .setOverflowY(Overflow.VISIBLE)
                 .setFillLayout();
     }
 
@@ -291,13 +300,10 @@ public class DivWidget extends Widget implements UiScrollHost {
      * @return 当前容器
      */
     public DivWidget setFormRow() {
-        return setDirection(Direction.ROW)
+        return setRow()
                 .setAlignItems(AlignItems.CENTER)
-                .setJustifyContent(JustifyContent.START)
                 .setWrap(Wrap.WRAP)
                 .setGap(16)
-                .setOverflowX(Overflow.VISIBLE)
-                .setOverflowY(Overflow.VISIBLE)
                 .setFillLayout();
     }
 
@@ -307,13 +313,9 @@ public class DivWidget extends Widget implements UiScrollHost {
      * @return 当前容器
      */
     public DivWidget setToolbar() {
-        return setDirection(Direction.ROW)
-                .setAlignItems(AlignItems.STRETCH)
-                .setJustifyContent(JustifyContent.START)
+        return setRow()
                 .setWrap(Wrap.WRAP)
                 .setGap(12)
-                .setOverflowX(Overflow.VISIBLE)
-                .setOverflowY(Overflow.VISIBLE)
                 .setFillLayout();
     }
 
