@@ -16,6 +16,7 @@ import club.heiqi.uilib.font.shader.FontShaderProgram;
 import club.heiqi.uilib.font.util.FontCatalog;
 import club.heiqi.uilib.font.util.FontMatcher;
 import club.heiqi.uilib.font.util.FontRegistry;
+import club.heiqi.uilib.ui.widget.UiLayoutInvalidationRegistry;
 
 /**
  * 字体系统总入口。
@@ -37,6 +38,7 @@ public class FontService {
     private final Deque<Long> drawStageUploadTimestamps = new ArrayDeque<Long>();
 
     private long lastDrawStageUploadAt = 0L;
+    private int runtimeVersion;
 
     private FontService() {}
 
@@ -62,6 +64,7 @@ public class FontService {
         glyphPageManager.initialize();
         glyphGenerationDispatcher.initialize(fontMatcher, glyphPageManager, glyphPageManager::queueUpload);
         textLayoutService.clearCache();
+        runtimeVersion++;
 
         MyMod.LOG.info("字体系统骨架初始化完成：{}", FontConfig.buildSummary());
     }
@@ -84,8 +87,11 @@ public class FontService {
         batchRenderer.clearFrame();
         decorationRenderer.clear();
         shaderProgram.close();
+        runtimeVersion++;
+        int invalidatedRootCount = UiLayoutInvalidationRegistry.invalidateAll();
 
-        MyMod.LOG.info("字体系统重载完成，原因：{}", request.getReason());
+        MyMod.LOG.info("字体系统重载完成，原因：{}，布局树已失效：{}，运行时版本：{}", request.getReason(),
+                Integer.valueOf(invalidatedRootCount), Integer.valueOf(runtimeVersion));
     }
 
     /**
@@ -129,6 +135,15 @@ public class FontService {
      */
     public boolean isInitialized() {
         return initialized.get();
+    }
+
+    /**
+     * 获取字体运行时版本号。
+     *
+     * @return 当前字体运行时版本号
+     */
+    public int getRuntimeVersion() {
+        return runtimeVersion;
     }
 
     /**

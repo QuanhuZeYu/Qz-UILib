@@ -95,21 +95,21 @@ public class InventoryOverviewScreen extends BaseScreen {
      * 构建背包诊断页。
      */
     private void assembleUi(Widget root) {
-        DivWidget footer = new DivWidget().setToolbar();
+        DivWidget footer = createToolbarRow();
 
-        DivWidget overviewDiv = new DivWidget().setSection();
+        DivWidget overviewDiv = createSectionBlock();
         overviewDiv.addNoGrowChild(createSectionTitle("当前状态"));
         overviewDiv.addNoGrowChild(createBodyLabel("旧背包测试页已经完全清空。当前只保留单列背包诊断页，优先确认页面壳、格子网格和纵向滚动不会互相干扰，再重建复杂业务页。"));
         overviewDiv.addNoGrowChild(overviewMetricsLabel);
         overviewCard.addChild(overviewDiv);
 
-        DivWidget hotbarDiv = new DivWidget().setSection();
+        DivWidget hotbarDiv = createSectionBlock();
         hotbarDiv.addNoGrowChild(createSectionTitle("快捷栏探针"));
         hotbarDiv.addNoGrowChild(hotbarMetricsLabel);
         hotbarDiv.addNoGrowChild(hotbarGrid);
         hotbarCard.addChild(hotbarDiv);
 
-        DivWidget backpackDiv = new DivWidget().setSection();
+        DivWidget backpackDiv = createSectionBlock();
         backpackDiv.addNoGrowChild(createSectionTitle("主背包探针"));
         backpackDiv.addNoGrowChild(backpackMetricsLabel);
         backpackDiv.addNoGrowChild(backpackGrid);
@@ -179,7 +179,20 @@ public class InventoryOverviewScreen extends BaseScreen {
     }
 
     private DivWidget createCardPanel() {
-        return new DivWidget().setCard();
+        return new DivWidget()
+                .setColumn()
+                .setGap(12)
+                .setPadding(20)
+                .setFillColor(0xAA111721)
+                .setBorderColor(0xFF6E8FCB);
+    }
+
+    private DivWidget createSectionBlock() {
+        return new DivWidget().setColumn().setGap(12);
+    }
+
+    private DivWidget createToolbarRow() {
+        return new DivWidget().setRow().setWrap(DivWidget.Wrap.WRAP).setGap(12).setFillLayout();
     }
 
     private LabelWidget createTitleLabel(String text) {

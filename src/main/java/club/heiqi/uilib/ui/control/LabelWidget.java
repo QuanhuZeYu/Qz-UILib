@@ -3,6 +3,7 @@ package club.heiqi.uilib.ui.control;
 import java.util.List;
 
 import club.heiqi.uilib.font.api.DefaultFontRendererAdapter;
+import club.heiqi.uilib.font.FontService;
 import club.heiqi.uilib.font.config.FontConfig;
 import club.heiqi.uilib.ui.render.UiRenderContext;
 import club.heiqi.uilib.ui.widget.Widget;
@@ -18,6 +19,14 @@ public class LabelWidget extends Widget {
     private boolean wrap;
     private boolean ellipsis;
     private int maxLines = Integer.MAX_VALUE;
+    private int cachedPreferredWidth = -1;
+    private int cachedMinContentWidth = -1;
+    private int cachedWrapWidth = -1;
+    private String cachedWrapText;
+    private List<String> cachedWrappedLines;
+    private int cachedPreferredWidthFontRuntimeVersion = -1;
+    private int cachedMinContentWidthFontRuntimeVersion = -1;
+    private int cachedWrapFontRuntimeVersion = -1;
 
     /**
      * 使用文本创建标签。
@@ -40,7 +49,7 @@ public class LabelWidget extends Widget {
         int lineHeight = context.getTextLineHeight();
 
         if (wrap) {
-            List<String> lines = wrapToUiWidth(availableWidth);
+            List<String> lines = getWrappedLines(availableWidth);
             int lineCount = Math.min(lines.size(), maxLines);
             for (int i = 0; i < lineCount; i++) {
                 String line = lines.get(i);
@@ -58,7 +67,15 @@ public class LabelWidget extends Widget {
 
     @Override
     public int getPreferredWidth() {
-        return text == null ? 0 : DefaultFontRendererAdapter.getInstance().getStringWidth(text) * 2;
+        if (text == null || text.isEmpty()) {
+            return 0;
+        }
+        if (cachedPreferredWidth < 0
+                || cachedPreferredWidthFontRuntimeVersion != FontService.getInstance().getRuntimeVersion()) {
+            cachedPreferredWidth = DefaultFontRendererAdapter.getInstance().getStringWidth(text) * 2;
+            cachedPreferredWidthFontRuntimeVersion = FontService.getInstance().getRuntimeVersion();
+        }
+        return cachedPreferredWidth;
     }
 
     @Override
@@ -71,7 +88,7 @@ public class LabelWidget extends Widget {
         if (!wrap || text == null || text.isEmpty()) {
             return getPreferredHeight();
         }
-        int lineCount = Math.max(1, Math.min(wrapToUiWidth(Math.max(1, width)).size(), maxLines));
+        int lineCount = Math.max(1, Math.min(getWrappedLines(Math.max(1, width)).size(), maxLines));
         return lineCount * getPreferredHeight();
     }
 
@@ -86,7 +103,12 @@ public class LabelWidget extends Widget {
 
         // 当前文本布局服务按字符粒度换行，中文与大多数符号都可以在单字符处断行，
         // 因此最小内容宽度不应再按空白分词，否则中文整段会被误判为不可压缩长词。
-        return resolveWrapMinWidth();
+        if (cachedMinContentWidth < 0
+                || cachedMinContentWidthFontRuntimeVersion != FontService.getInstance().getRuntimeVersion()) {
+            cachedMinContentWidth = resolveWrapMinWidth();
+            cachedMinContentWidthFontRuntimeVersion = FontService.getInstance().getRuntimeVersion();
+        }
+        return cachedMinContentWidth;
     }
 
     public String getText() {
@@ -94,7 +116,27 @@ public class LabelWidget extends Widget {
     }
 
     public LabelWidget setText(String text) {
+        if (this.text == text || this.text != null && this.text.equals(text)) {
+            return this;
+        }
+
+        int currentWidth = getWidth();
+        int oldPreferredWidth = getPreferredWidth();
+        int oldMinContentWidth = getMinContentWidth();
+        int oldHeightAtCurrentWidth = currentWidth > 0 ? getPreferredHeightForWidth(currentWidth) : -1;
+
         this.text = text;
+        invalidateTextCache();
+
+        int newPreferredWidth = getPreferredWidth();
+        int newMinContentWidth = getMinContentWidth();
+        int newHeightAtCurrentWidth = currentWidth > 0 ? getPreferredHeightForWidth(currentWidth) : -1;
+        if (currentWidth <= 0
+                || oldPreferredWidth != newPreferredWidth
+                || oldMinContentWidth != newMinContentWidth
+                || oldHeightAtCurrentWidth != newHeightAtCurrentWidth) {
+            requestLayout();
+        }
         return this;
     }
 
@@ -110,6 +152,7 @@ public class LabelWidget extends Widget {
 
     public LabelWidget setWrap(boolean wrap) {
         this.wrap = wrap;
+        requestLayout();
         return this;
     }
 
@@ -120,12 +163,23 @@ public class LabelWidget extends Widget {
 
     public LabelWidget setMaxLines(int maxLines) {
         this.maxLines = Math.max(1, maxLines);
+        requestLayout();
         return this;
     }
 
-    private List<String> wrapToUiWidth(int uiWidth) {
+    private List<String> getWrappedLines(int uiWidth) {
+        if (cachedWrappedLines != null && cachedWrapWidth == uiWidth
+                && cachedWrapFontRuntimeVersion == FontService.getInstance().getRuntimeVersion()
+                && (cachedWrapText == text || cachedWrapText != null && cachedWrapText.equals(text))) {
+            return cachedWrappedLines;
+        }
+
         int rawWidth = toRawTextWidth(uiWidth);
-        return DefaultFontRendererAdapter.getInstance().listFormattedStringToWidth(text, rawWidth);
+        cachedWrapWidth = uiWidth;
+        cachedWrapText = text;
+        cachedWrappedLines = DefaultFontRendererAdapter.getInstance().listFormattedStringToWidth(text, rawWidth);
+        cachedWrapFontRuntimeVersion = FontService.getInstance().getRuntimeVersion();
+        return cachedWrappedLines;
     }
 
     private String trimToUiWidth(String source, int uiWidth, boolean appendEllipsis) {
@@ -164,5 +218,16 @@ public class LabelWidget extends Widget {
             index += Character.charCount(codepoint);
         }
         return Math.max(widest, adapter.getStringWidth("字") * 2);
+    }
+
+    private void invalidateTextCache() {
+        cachedPreferredWidth = -1;
+        cachedPreferredWidthFontRuntimeVersion = -1;
+        cachedMinContentWidth = -1;
+        cachedMinContentWidthFontRuntimeVersion = -1;
+        cachedWrapWidth = -1;
+        cachedWrapText = null;
+        cachedWrappedLines = null;
+        cachedWrapFontRuntimeVersion = -1;
     }
 }

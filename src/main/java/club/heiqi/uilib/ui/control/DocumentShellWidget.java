@@ -8,8 +8,8 @@ import club.heiqi.uilib.ui.widget.Widget;
 public class DocumentShellWidget extends ScrollViewportWidget {
 
     public DocumentShellWidget() {
-        setParentViewportAlignment(FrameAlign.CENTER, FrameAlign.START);
-        getContent().setDocumentColumn();
+        setViewportFrameAlignment(FrameAlign.CENTER, FrameAlign.START);
+        getContent().setColumn().setGap(16);
     }
 
     /**
@@ -64,7 +64,7 @@ public class DocumentShellWidget extends ScrollViewportWidget {
      * @return 当前页面
      */
     public DocumentShellWidget setContentWidthRange(int minContentWidth, int maxContentWidth) {
-        super.setParentViewportWidthRange(minContentWidth, maxContentWidth);
+        super.setViewportFrameWidthRange(minContentWidth, maxContentWidth);
         return this;
     }
 
@@ -75,7 +75,7 @@ public class DocumentShellWidget extends ScrollViewportWidget {
      * @return 当前页面
      */
     public DocumentShellWidget setMinContentHeight(int minContentHeight) {
-        super.setParentViewportMinHeight(minContentHeight);
+        super.setViewportFrameMinHeight(minContentHeight);
         return this;
     }
 
@@ -87,7 +87,7 @@ public class DocumentShellWidget extends ScrollViewportWidget {
      * @return 当前页面
      */
     public DocumentShellWidget setViewportFillRatio(float maxViewportFillWidth, float maxViewportFillHeight) {
-        super.setParentViewportFillRatio(maxViewportFillWidth, maxViewportFillHeight);
+        super.setViewportFrameFillRatio(maxViewportFillWidth, maxViewportFillHeight);
         return this;
     }
 }

@@ -4,23 +4,27 @@ import club.heiqi.uilib.ui.render.UiRenderContext;
 import club.heiqi.uilib.ui.widget.Widget;
 
 /**
- * 最小视口容器，负责提供 padding 与基础背景/边框绘制。
+ * 最小视口容器，负责提供 padding 与可选背景/边框绘制。
  */
 public class ViewportWidget extends Widget {
 
-    private int fillColor = 0x88141A22;
-    private int borderColor = 0xFF5C6B84;
-    private int paddingLeft = 8;
-    private int paddingTop = 8;
-    private int paddingRight = 8;
-    private int paddingBottom = 8;
+    private int fillColor;
+    private int borderColor;
+    private int paddingLeft;
+    private int paddingTop;
+    private int paddingRight;
+    private int paddingBottom;
 
     @Override
     protected void drawSelf(UiRenderContext context) {
         int absoluteX = getAbsoluteX();
         int absoluteY = getAbsoluteY();
-        context.fillRect(absoluteX, absoluteY, absoluteX + getWidth(), absoluteY + getHeight(), fillColor);
-        context.drawBorder(absoluteX, absoluteY, absoluteX + getWidth(), absoluteY + getHeight(), borderColor);
+        if (fillColor != 0) {
+            context.fillRect(absoluteX, absoluteY, absoluteX + getWidth(), absoluteY + getHeight(), fillColor);
+        }
+        if (borderColor != 0) {
+            context.drawBorder(absoluteX, absoluteY, absoluteX + getWidth(), absoluteY + getHeight(), borderColor);
+        }
     }
 
     public ViewportWidget setPadding(int padding) {
@@ -32,6 +36,7 @@ public class ViewportWidget extends Widget {
         paddingTop = Math.max(0, top);
         paddingRight = Math.max(0, right);
         paddingBottom = Math.max(0, bottom);
+        requestLayout();
         return this;
     }
 

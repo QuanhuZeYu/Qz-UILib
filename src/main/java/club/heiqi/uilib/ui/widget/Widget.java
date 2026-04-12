@@ -4,6 +4,7 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 
+import club.heiqi.uilib.ui.diagnostic.UiPerformanceMonitor;
 import club.heiqi.uilib.ui.event.UiKeyEvent;
 import club.heiqi.uilib.ui.event.UiMouseEvent;
 import club.heiqi.uilib.ui.event.UiTextInputEvent;
@@ -31,6 +32,7 @@ public class Widget {
     private boolean clipChildren;
     private boolean clipHitTest;
     private UiLayoutSpec layoutSpec;
+    private int layoutVersion;
 
     /**
      * 绘制当前组件与其子组件。
@@ -41,20 +43,26 @@ public class Widget {
         if (!visible) {
             return;
         }
-        drawSelf(context);
-        boolean clipping = clipChildren;
-        if (clipping) {
-            int[] clipRect = getChildClipRect();
-            context.pushClip(clipRect[0], clipRect[1], clipRect[2], clipRect[3]);
-        }
+        UiPerformanceMonitor performanceMonitor = UiPerformanceMonitor.getInstance();
+        performanceMonitor.enterWidget(this);
         try {
-            for (Widget child : children) {
-                child.render(context);
+            drawSelf(context);
+            boolean clipping = clipChildren;
+            if (clipping) {
+                int[] clipRect = getChildClipRect();
+                context.pushClip(clipRect[0], clipRect[1], clipRect[2], clipRect[3]);
+            }
+            try {
+                for (Widget child : children) {
+                    child.render(context);
+                }
+            } finally {
+                if (clipping) {
+                    context.popClip();
+                }
             }
         } finally {
-            if (clipping) {
-                context.popClip();
-            }
+            performanceMonitor.exitWidget(this);
         }
     }
 
@@ -81,6 +89,7 @@ public class Widget {
     }
 
     private Widget findWidgetAt(int mouseX, int mouseY, int[] inheritedHitClip) {
+        UiPerformanceMonitor.getInstance().recordHitTestVisit();
         if (inheritedHitClip != null && !containsInRect(mouseX, mouseY, inheritedHitClip)) {
             return null;
         }
@@ -114,6 +123,7 @@ public class Widget {
         }
         child.parent = this;
         children.add(child);
+        requestLayout();
         return this;
     }
 
@@ -220,6 +230,10 @@ public class Widget {
 
     public UiLayoutSpec getLayoutSpec() {
         return layoutSpec;
+    }
+
+    public int getLayoutVersion() {
+        return layoutVersion;
     }
 
     /**
@@ -347,7 +361,34 @@ public class Widget {
 
     public Widget setLayoutSpec(UiLayoutSpec layoutSpec) {
         this.layoutSpec = layoutSpec;
+        requestLayout();
         return this;
+    }
+
+    /**
+     * 标记当前节点及其全部子树的布局缓存失效。
+     *
+     * <p>该方法用于字体重载这类“运行时全局测量条件变化”的场景，
+     * 让整棵已存活 UI 树在下一帧重新测量与布局。</p>
+     */
+    public final void invalidateLayoutTree() {
+        layoutVersion++;
+        for (Widget child : children) {
+            child.invalidateLayoutTree();
+        }
+    }
+
+    /**
+     * 标记当前节点的测量与布局结果失效，并向父链传播。
+     *
+     * <p>自定义控件只要有任何内部状态会影响 `getPreferredWidth()`、`getPreferredHeight()`、
+     * `measure(...)` 或实际子节点布局结果，就必须在状态变化后调用本方法。</p>
+     */
+    protected void requestLayout() {
+        layoutVersion++;
+        if (parent != null) {
+            parent.requestLayout();
+        }
     }
 
     private boolean containsInRect(int mouseX, int mouseY, int[] rect) {

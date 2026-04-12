@@ -1,5 +1,7 @@
 package club.heiqi.uilib.ui.control;
 
+import club.heiqi.uilib.font.FontService;
+import club.heiqi.uilib.ui.diagnostic.UiPerformanceMonitor;
 import club.heiqi.uilib.ui.event.UiMouseEvent;
 import club.heiqi.uilib.ui.layout.UiInsets;
 import club.heiqi.uilib.ui.layout.UiLayoutSpec;
@@ -7,6 +9,8 @@ import club.heiqi.uilib.ui.widget.Widget;
 
 /**
  * 支持 overflow 滚动的视口容器。
+ *
+ * <p>页面壳一类的父视口框体策略属于派生层语义，基础滚动容器仅通过受保护的框体配置钩子承载。</p>
  */
 public class ScrollViewportWidget extends ViewportWidget implements UiScrollHost {
 
@@ -29,6 +33,19 @@ public class ScrollViewportWidget extends ViewportWidget implements UiScrollHost
     private float maxParentFillHeight = 1.0F;
     private FrameAlign parentHorizontalAlign = FrameAlign.START;
     private FrameAlign parentVerticalAlign = FrameAlign.START;
+    private int cachedFrameLayoutVersion = -1;
+    private int cachedParentWidth = -1;
+    private int cachedParentHeight = -1;
+    private int cachedParentPaddingLeft = -1;
+    private int cachedParentPaddingTop = -1;
+    private int cachedParentPaddingRight = -1;
+    private int cachedParentPaddingBottom = -1;
+    private int cachedContentLayoutVersion = -1;
+    private int cachedContentWidth = -1;
+    private int cachedContentHeight = -1;
+    private int cachedHorizontalScrollOffset = Integer.MIN_VALUE;
+    private int cachedVerticalScrollOffset = Integer.MIN_VALUE;
+    private int cachedContentFontRuntimeVersion = -1;
 
     public ScrollViewportWidget() {
         setClipChildren(true);
@@ -39,7 +56,6 @@ public class ScrollViewportWidget extends ViewportWidget implements UiScrollHost
                 .setWrap(DivWidget.Wrap.NOWRAP)
                 .setOverflowX(DivWidget.Overflow.VISIBLE)
                 .setOverflowY(DivWidget.Overflow.VISIBLE)
-                .setGap(12)
                 .setPadding(0);
         addChild(content);
     }
@@ -84,10 +100,11 @@ public class ScrollViewportWidget extends ViewportWidget implements UiScrollHost
      * @param maxFrameWidth 最大宽度
      * @return 当前视口
      */
-    public ScrollViewportWidget setParentViewportWidthRange(int minFrameWidth, int maxFrameWidth) {
+    protected final ScrollViewportWidget setViewportFrameWidthRange(int minFrameWidth, int maxFrameWidth) {
         parentViewportFrameEnabled = true;
         this.minFrameWidth = Math.max(1, minFrameWidth);
         this.maxFrameWidth = Math.max(this.minFrameWidth, maxFrameWidth);
+        requestLayout();
         return this;
     }
 
@@ -97,9 +114,10 @@ public class ScrollViewportWidget extends ViewportWidget implements UiScrollHost
      * @param minFrameHeight 最小高度
      * @return 当前视口
      */
-    public ScrollViewportWidget setParentViewportMinHeight(int minFrameHeight) {
+    protected final ScrollViewportWidget setViewportFrameMinHeight(int minFrameHeight) {
         parentViewportFrameEnabled = true;
         this.minFrameHeight = Math.max(1, minFrameHeight);
+        requestLayout();
         return this;
     }
 
@@ -110,10 +128,11 @@ public class ScrollViewportWidget extends ViewportWidget implements UiScrollHost
      * @param maxParentFillHeight 最大高度占比
      * @return 当前视口
      */
-    public ScrollViewportWidget setParentViewportFillRatio(float maxParentFillWidth, float maxParentFillHeight) {
+    protected final ScrollViewportWidget setViewportFrameFillRatio(float maxParentFillWidth, float maxParentFillHeight) {
         parentViewportFrameEnabled = true;
         this.maxParentFillWidth = clampRatio(maxParentFillWidth);
         this.maxParentFillHeight = clampRatio(maxParentFillHeight);
+        requestLayout();
         return this;
     }
 
@@ -124,10 +143,11 @@ public class ScrollViewportWidget extends ViewportWidget implements UiScrollHost
      * @param verticalAlign 纵向对齐
      * @return 当前视口
      */
-    public ScrollViewportWidget setParentViewportAlignment(FrameAlign horizontalAlign, FrameAlign verticalAlign) {
+    protected final ScrollViewportWidget setViewportFrameAlignment(FrameAlign horizontalAlign, FrameAlign verticalAlign) {
         parentViewportFrameEnabled = true;
         parentHorizontalAlign = horizontalAlign == null ? FrameAlign.START : horizontalAlign;
         parentVerticalAlign = verticalAlign == null ? FrameAlign.START : verticalAlign;
+        requestLayout();
         return this;
     }
 
@@ -293,6 +313,23 @@ public class ScrollViewportWidget extends ViewportWidget implements UiScrollHost
     }
 
     private void updateContentBounds() {
+        int currentLayoutVersion = getLayoutVersion();
+        int currentFontRuntimeVersion = FontService.getInstance().getRuntimeVersion();
+        int currentWidth = getWidth();
+        int currentHeight = getHeight();
+        int currentHorizontalOffset = scrollState.getHorizontalOffset();
+        int currentVerticalOffset = scrollState.getVerticalOffset();
+        if (cachedContentLayoutVersion == currentLayoutVersion
+                && cachedContentWidth == currentWidth
+                && cachedContentHeight == currentHeight
+                && cachedHorizontalScrollOffset == currentHorizontalOffset
+                && cachedVerticalScrollOffset == currentVerticalOffset
+                && cachedContentFontRuntimeVersion == currentFontRuntimeVersion) {
+            return;
+        }
+
+        long phaseStartNanos = System.nanoTime();
+
         int baseVisibleWidth = Math.max(0, getWidth() - getPaddingLeft() - getPaddingRight());
         int baseVisibleHeight = Math.max(0, getHeight() - getPaddingTop() - getPaddingBottom());
         OverflowViewportLayout.Result layout = OverflowViewportLayout.compute(baseVisibleWidth, baseVisibleHeight, true,
@@ -309,6 +346,13 @@ public class ScrollViewportWidget extends ViewportWidget implements UiScrollHost
                 true, true);
         content.setBounds(getPaddingLeft() - scrollState.getHorizontalOffset(), getPaddingTop() - scrollState.getVerticalOffset(),
                 layout.contentWidth, layout.contentHeight);
+        cachedContentLayoutVersion = currentLayoutVersion;
+        cachedContentWidth = currentWidth;
+        cachedContentHeight = currentHeight;
+        cachedHorizontalScrollOffset = scrollState.getHorizontalOffset();
+        cachedVerticalScrollOffset = scrollState.getVerticalOffset();
+        cachedContentFontRuntimeVersion = currentFontRuntimeVersion;
+        UiPerformanceMonitor.getInstance().recordPhase("viewport.contentBounds", System.nanoTime() - phaseStartNanos);
     }
 
     private void updateViewportFrameBounds() {
@@ -321,39 +365,73 @@ public class ScrollViewportWidget extends ViewportWidget implements UiScrollHost
             return;
         }
 
-        int frameLeft = 0;
-        int frameTop = 0;
-        int frameWidth = parent.getWidth();
-        int frameHeight = parent.getHeight();
+        int currentLayoutVersion = getLayoutVersion();
+        int parentPaddingLeft = 0;
+        int parentPaddingTop = 0;
+        int parentPaddingRight = 0;
+        int parentPaddingBottom = 0;
         if (parent instanceof ViewportWidget) {
             ViewportWidget viewport = (ViewportWidget) parent;
-            frameLeft = viewport.getPaddingLeft();
-            frameTop = viewport.getPaddingTop();
-            frameWidth = Math.max(0, parent.getWidth() - viewport.getPaddingLeft() - viewport.getPaddingRight());
-            frameHeight = Math.max(0, parent.getHeight() - viewport.getPaddingTop() - viewport.getPaddingBottom());
+            parentPaddingLeft = viewport.getPaddingLeft();
+            parentPaddingTop = viewport.getPaddingTop();
+            parentPaddingRight = viewport.getPaddingRight();
+            parentPaddingBottom = viewport.getPaddingBottom();
         }
-
-        UiLayoutSpec layoutSpec = getLayoutSpec();
-        UiInsets margin = layoutSpec == null ? UiInsets.ZERO : layoutSpec.getMargin();
-        int availableWidth = Math.max(0, frameWidth - margin.getLeft() - margin.getRight());
-        int availableHeight = Math.max(0, frameHeight - margin.getTop() - margin.getBottom());
-        if (availableWidth <= 0 || availableHeight <= 0) {
-            setBounds(frameLeft, frameTop, 0, 0);
+        if (cachedFrameLayoutVersion == currentLayoutVersion
+                && cachedParentWidth == parent.getWidth()
+                && cachedParentHeight == parent.getHeight()
+                && cachedParentPaddingLeft == parentPaddingLeft
+                && cachedParentPaddingTop == parentPaddingTop
+                && cachedParentPaddingRight == parentPaddingRight
+                && cachedParentPaddingBottom == parentPaddingBottom) {
             return;
         }
 
-        int ratioWidth = Math.max(1, Math.round(availableWidth * maxParentFillWidth));
-        int ratioHeight = Math.max(1, Math.round(availableHeight * maxParentFillHeight));
-        int resolvedWidth = Math.min(availableWidth, Math.min(ratioWidth, maxFrameWidth));
-        int resolvedHeight = Math.min(availableHeight, ratioHeight);
-        resolvedWidth = Math.max(resolvedWidth, Math.min(availableWidth, minFrameWidth));
-        resolvedHeight = Math.max(resolvedHeight, Math.min(availableHeight, minFrameHeight));
+        long phaseStartNanos = System.nanoTime();
+        try {
+            int frameLeft = 0;
+            int frameTop = 0;
+            int frameWidth = parent.getWidth();
+            int frameHeight = parent.getHeight();
+            if (parent instanceof ViewportWidget) {
+                ViewportWidget viewport = (ViewportWidget) parent;
+                frameLeft = parentPaddingLeft;
+                frameTop = parentPaddingTop;
+                frameWidth = Math.max(0, parent.getWidth() - parentPaddingLeft - parentPaddingRight);
+                frameHeight = Math.max(0, parent.getHeight() - parentPaddingTop - parentPaddingBottom);
+            }
 
-        int resolvedX = frameLeft + margin.getLeft()
-                + resolveAlignedOffset(availableWidth, resolvedWidth, parentHorizontalAlign);
-        int resolvedY = frameTop + margin.getTop()
-                + resolveAlignedOffset(availableHeight, resolvedHeight, parentVerticalAlign);
-        setBounds(resolvedX, resolvedY, resolvedWidth, resolvedHeight);
+            UiLayoutSpec layoutSpec = getLayoutSpec();
+            UiInsets margin = layoutSpec == null ? UiInsets.ZERO : layoutSpec.getMargin();
+            int availableWidth = Math.max(0, frameWidth - margin.getLeft() - margin.getRight());
+            int availableHeight = Math.max(0, frameHeight - margin.getTop() - margin.getBottom());
+            if (availableWidth <= 0 || availableHeight <= 0) {
+                setBounds(frameLeft, frameTop, 0, 0);
+                return;
+            }
+
+            int ratioWidth = Math.max(1, Math.round(availableWidth * maxParentFillWidth));
+            int ratioHeight = Math.max(1, Math.round(availableHeight * maxParentFillHeight));
+            int resolvedWidth = Math.min(availableWidth, Math.min(ratioWidth, maxFrameWidth));
+            int resolvedHeight = Math.min(availableHeight, ratioHeight);
+            resolvedWidth = Math.max(resolvedWidth, Math.min(availableWidth, minFrameWidth));
+            resolvedHeight = Math.max(resolvedHeight, Math.min(availableHeight, minFrameHeight));
+
+            int resolvedX = frameLeft + margin.getLeft()
+                    + resolveAlignedOffset(availableWidth, resolvedWidth, parentHorizontalAlign);
+            int resolvedY = frameTop + margin.getTop()
+                    + resolveAlignedOffset(availableHeight, resolvedHeight, parentVerticalAlign);
+            setBounds(resolvedX, resolvedY, resolvedWidth, resolvedHeight);
+            cachedFrameLayoutVersion = currentLayoutVersion;
+            cachedParentWidth = parent.getWidth();
+            cachedParentHeight = parent.getHeight();
+            cachedParentPaddingLeft = parentPaddingLeft;
+            cachedParentPaddingTop = parentPaddingTop;
+            cachedParentPaddingRight = parentPaddingRight;
+            cachedParentPaddingBottom = parentPaddingBottom;
+        } finally {
+            UiPerformanceMonitor.getInstance().recordPhase("viewport.frameBounds", System.nanoTime() - phaseStartNanos);
+        }
     }
 
     private int resolveAlignedOffset(int availableSize, int contentSize, FrameAlign align) {

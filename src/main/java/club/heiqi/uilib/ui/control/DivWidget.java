@@ -1,8 +1,12 @@
 package club.heiqi.uilib.ui.control;
 
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
+import club.heiqi.uilib.font.FontService;
+import club.heiqi.uilib.ui.diagnostic.UiPerformanceMonitor;
 import club.heiqi.uilib.ui.event.UiMouseEvent;
 import club.heiqi.uilib.ui.layout.UiAlignSelf;
 import club.heiqi.uilib.ui.layout.UiConstraints;
@@ -85,38 +89,58 @@ public class DivWidget extends Widget implements UiScrollHost {
     private int paddingTop;
     private int paddingRight;
     private int paddingBottom;
-    private int rowGap = 12;
-    private int columnGap = 12;
+    private int rowGap;
+    private int columnGap;
     private int fillColor;
     private int borderColor;
     private final OverflowScrollState scrollState = new OverflowScrollState();
+    private int cachedLayoutVersion = -1;
+    private int cachedLayoutWidth = -1;
+    private int cachedLayoutHeight = -1;
+    private int cachedHorizontalScrollOffset = Integer.MIN_VALUE;
+    private int cachedVerticalScrollOffset = Integer.MIN_VALUE;
+    private boolean cachedUseMinHeights;
+    private int cachedPureMeasureVersion = -1;
+    private int cachedPureMeasureFontRuntimeVersion = -1;
+    private int cachedPreferredWidthVersion = -1;
+    private int cachedPreferredWidth = -1;
+    private int cachedPreferredWidthFontRuntimeVersion = -1;
+    private int cachedMinContentWidthVersion = -1;
+    private int cachedMinContentWidth = -1;
+    private int cachedMinContentWidthFontRuntimeVersion = -1;
+    private int cachedLayoutFontRuntimeVersion = -1;
+    private final Map<MeasureCacheKey, LayoutResult> pureMeasureCache = new HashMap<MeasureCacheKey, LayoutResult>();
 
     @Override
     public void render(UiRenderContext context) {
         if (!isVisible()) {
             return;
         }
-
-        prepareOverflowLayout(false);
-        setClipHitTest(hasClippedOverflow());
-        applyOverflowLayout(false);
-
-        drawSelf(context);
-        boolean clipping = hasClippedOverflow();
-        if (clipping) {
-            int[] clipRect = resolveClipRect(context);
-            context.pushClip(clipRect[0], clipRect[1], clipRect[2], clipRect[3]);
-        }
+        UiPerformanceMonitor performanceMonitor = UiPerformanceMonitor.getInstance();
+        performanceMonitor.enterWidget(this);
         try {
-            for (Widget child : getChildren()) {
-                child.render(context);
-            }
-        } finally {
+            ensureLayout(false);
+            setClipHitTest(hasClippedOverflow());
+
+            drawSelf(context);
+            boolean clipping = hasClippedOverflow();
             if (clipping) {
-                context.popClip();
+                int[] clipRect = resolveClipRect(context);
+                context.pushClip(clipRect[0], clipRect[1], clipRect[2], clipRect[3]);
             }
+            try {
+                for (Widget child : getChildren()) {
+                    child.render(context);
+                }
+            } finally {
+                if (clipping) {
+                    context.popClip();
+                }
+            }
+            drawScrollbars(context);
+        } finally {
+            performanceMonitor.exitWidget(this);
         }
-        drawScrollbars(context);
     }
 
     @Override
@@ -243,89 +267,13 @@ public class DivWidget extends Widget implements UiScrollHost {
     }
 
     /**
-     * 将当前 Div 设为页面主内容列。
-     *
-     * @return 当前容器
-     */
-    public DivWidget setDocumentColumn() {
-        return setColumn().setGap(16);
-    }
-
-    /**
-     * 将当前 Div 设为卡片内部常用的纵向区块。
-     *
-     * @return 当前容器
-     */
-    public DivWidget setSection() {
-        return setColumn().setGap(12);
-    }
-
-    /**
-     * 将当前 Div 设为常用网页卡片。
-     *
-     * @return 当前容器
-     */
-    public DivWidget setCard() {
-        return setSection().setPadding(20).setFillColor(0xAA111721).setBorderColor(0xFF6E8FCB);
-    }
-
-    /**
-     * 将当前 Div 设为网页常见的卡片流，适合多个区块横向排布并在窄屏下换行。
-     *
-     * @return 当前容器
-     */
-    public DivWidget setWrapRow() {
-        return setRow()
-                .setWrap(Wrap.WRAP)
-                .setGap(16)
-                .setFillLayout();
-    }
-
-    /**
-     * 将当前 Div 设为网页常见的行内流，元素按行排列并在空间不足时自然换行。
-     *
-     * @return 当前容器
-     */
-    public DivWidget setInline() {
-        return setRow()
-                .setAlignItems(AlignItems.CENTER)
-                .setWrap(Wrap.WRAP)
-                .setGap(10)
-                .setFillLayout();
-    }
-
-    /**
-     * 将当前 Div 设为表单行，标签与控件会在窄屏下自动换行。
-     *
-     * @return 当前容器
-     */
-    public DivWidget setFormRow() {
-        return setRow()
-                .setAlignItems(AlignItems.CENTER)
-                .setWrap(Wrap.WRAP)
-                .setGap(16)
-                .setFillLayout();
-    }
-
-    /**
-     * 将当前 Div 设为按钮流，适合操作按钮组自动换行。
-     *
-     * @return 当前容器
-     */
-    public DivWidget setToolbar() {
-        return setRow()
-                .setWrap(Wrap.WRAP)
-                .setGap(12)
-                .setFillLayout();
-    }
-
-    /**
      * 在外层响应式容器中占满可用宽度，并保持高度自适应。
      *
      * @return 当前容器
      */
     public DivWidget setFillLayout() {
         ensureLayoutSpec().setWidth(UiLength.percent(1.0F)).setHeight(UiLength.auto());
+        requestLayout();
         return this;
     }
 
@@ -337,6 +285,7 @@ public class DivWidget extends Widget implements UiScrollHost {
      */
     public DivWidget setGrowLayout(float grow) {
         ensureLayoutSpec().setGrow(grow);
+        requestLayout();
         return this;
     }
 
@@ -348,6 +297,7 @@ public class DivWidget extends Widget implements UiScrollHost {
      */
     public DivWidget setMinHeightLayout(int minHeight) {
         ensureLayoutSpec().setMinHeight(minHeight);
+        requestLayout();
         return this;
     }
 
@@ -362,36 +312,43 @@ public class DivWidget extends Widget implements UiScrollHost {
 
     public DivWidget setDirection(Direction direction) {
         this.direction = direction == null ? Direction.COLUMN : direction;
+        requestLayout();
         return this;
     }
 
     public DivWidget setAlignItems(AlignItems alignItems) {
         this.alignItems = alignItems == null ? AlignItems.STRETCH : alignItems;
+        requestLayout();
         return this;
     }
 
     public DivWidget setJustifyContent(JustifyContent justifyContent) {
         this.justifyContent = justifyContent == null ? JustifyContent.START : justifyContent;
+        requestLayout();
         return this;
     }
 
     public DivWidget setAlignContent(AlignContent alignContent) {
         this.alignContent = alignContent == null ? AlignContent.START : alignContent;
+        requestLayout();
         return this;
     }
 
     public DivWidget setWrap(Wrap wrap) {
         this.wrap = wrap == null ? Wrap.NOWRAP : wrap;
+        requestLayout();
         return this;
     }
 
     public DivWidget setOverflowX(Overflow overflowX) {
         this.overflowX = overflowX == null ? Overflow.VISIBLE : overflowX;
+        requestLayout();
         return this;
     }
 
     public DivWidget setOverflowY(Overflow overflowY) {
         this.overflowY = overflowY == null ? Overflow.VISIBLE : overflowY;
+        requestLayout();
         return this;
     }
 
@@ -409,6 +366,7 @@ public class DivWidget extends Widget implements UiScrollHost {
         this.paddingTop = Math.max(0, top);
         this.paddingRight = Math.max(0, right);
         this.paddingBottom = Math.max(0, bottom);
+        requestLayout();
         return this;
     }
 
@@ -416,16 +374,19 @@ public class DivWidget extends Widget implements UiScrollHost {
         int resolvedGap = Math.max(0, gap);
         this.rowGap = resolvedGap;
         this.columnGap = resolvedGap;
+        requestLayout();
         return this;
     }
 
     public DivWidget setRowGap(int rowGap) {
         this.rowGap = Math.max(0, rowGap);
+        requestLayout();
         return this;
     }
 
     public DivWidget setColumnGap(int columnGap) {
         this.columnGap = Math.max(0, columnGap);
+        requestLayout();
         return this;
     }
 
@@ -443,6 +404,7 @@ public class DivWidget extends Widget implements UiScrollHost {
         float resolvedPercent = clampPercent(widthPercent);
         UiLayoutSpec layoutSpec = ensureLayoutSpec();
         layoutSpec.setWidth(resolvedPercent >= 0.0F ? UiLength.percent(resolvedPercent) : UiLength.auto());
+        requestLayout();
         return this;
     }
 
@@ -450,6 +412,7 @@ public class DivWidget extends Widget implements UiScrollHost {
         float resolvedPercent = clampPercent(heightPercent);
         UiLayoutSpec layoutSpec = ensureLayoutSpec();
         layoutSpec.setHeight(resolvedPercent >= 0.0F ? UiLength.percent(resolvedPercent) : UiLength.auto());
+        requestLayout();
         return this;
     }
 
@@ -487,7 +450,7 @@ public class DivWidget extends Widget implements UiScrollHost {
         if (scrollState.getContentWidth() > 0 || getChildren().isEmpty()) {
             return scrollState.getContentWidth();
         }
-        prepareOverflowLayout(false);
+        ensureLayout(false);
         return scrollState.getContentWidth();
     }
 
@@ -495,19 +458,19 @@ public class DivWidget extends Widget implements UiScrollHost {
         if (scrollState.getContentHeight() > 0 || getChildren().isEmpty()) {
             return scrollState.getContentHeight();
         }
-        prepareOverflowLayout(false);
+        ensureLayout(false);
         return scrollState.getContentHeight();
     }
 
     @Override
     public boolean onMouseScroll(UiMouseEvent event) {
-        prepareOverflowLayout(false);
+        ensureLayout(false);
         return scrollState.handleWheel(event.getWheelDelta(), overflowY == Overflow.AUTO, overflowX == Overflow.AUTO);
     }
 
     @Override
     public void onMouseMove(UiMouseEvent event) {
-        prepareOverflowLayout(false);
+        ensureLayout(false);
         scrollState.updatePointer(event.getMouseX(), event.getMouseY(), getAbsoluteX() + paddingLeft,
                 getAbsoluteY() + paddingTop);
     }
@@ -518,7 +481,7 @@ public class DivWidget extends Widget implements UiScrollHost {
             return;
         }
 
-        prepareOverflowLayout(false);
+        ensureLayout(false);
         scrollState.beginPointerDrag(event.getMouseX(), event.getMouseY(), getAbsoluteX() + paddingLeft,
                 getAbsoluteY() + paddingTop);
     }
@@ -529,7 +492,7 @@ public class DivWidget extends Widget implements UiScrollHost {
             return;
         }
 
-        prepareOverflowLayout(false);
+        ensureLayout(false);
         scrollState.endPointerDrag(event.getMouseX(), event.getMouseY(), getAbsoluteX() + paddingLeft,
                 getAbsoluteY() + paddingTop);
     }
@@ -549,7 +512,7 @@ public class DivWidget extends Widget implements UiScrollHost {
             return;
         }
 
-        prepareOverflowLayout(false);
+        ensureLayout(false);
         int viewportLeft = getAbsoluteX() + paddingLeft;
         int viewportTop = getAbsoluteY() + paddingTop;
         int viewportRight = viewportLeft + getVisibleContentWidth();
@@ -565,8 +528,18 @@ public class DivWidget extends Widget implements UiScrollHost {
 
     @Override
     public int getPreferredWidth() {
+        int currentLayoutVersion = getLayoutVersion();
+        int currentFontRuntimeVersion = FontService.getInstance().getRuntimeVersion();
+        if (cachedPreferredWidthVersion == currentLayoutVersion
+                && cachedPreferredWidthFontRuntimeVersion == currentFontRuntimeVersion
+                && cachedPreferredWidth >= 0) {
+            return cachedPreferredWidth;
+        }
         if (getChildren().isEmpty()) {
-            return paddingLeft + paddingRight;
+            cachedPreferredWidthVersion = currentLayoutVersion;
+            cachedPreferredWidthFontRuntimeVersion = currentFontRuntimeVersion;
+            cachedPreferredWidth = paddingLeft + paddingRight;
+            return cachedPreferredWidth;
         }
 
         int contentWidth = 0;
@@ -580,7 +553,10 @@ public class DivWidget extends Widget implements UiScrollHost {
                 contentWidth = Math.max(contentWidth, computeColumnCrossSpan(measureIntrinsic(child).getWidth(), resolveMargin(child)));
             }
         }
-        return paddingLeft + contentWidth + paddingRight;
+        cachedPreferredWidthVersion = currentLayoutVersion;
+        cachedPreferredWidthFontRuntimeVersion = currentFontRuntimeVersion;
+        cachedPreferredWidth = paddingLeft + contentWidth + paddingRight;
+        return cachedPreferredWidth;
     }
 
     @Override
@@ -590,7 +566,8 @@ public class DivWidget extends Widget implements UiScrollHost {
 
     @Override
     public int getPreferredHeightForWidth(int width) {
-        return measure(UiConstraints.fixedWidth(Math.max(0, width))).getHeight();
+        LayoutResult layout = measureLayoutCached(Math.max(0, width), 0, false);
+        return layout.requiredHeight;
     }
 
     @Override
@@ -598,15 +575,25 @@ public class DivWidget extends Widget implements UiScrollHost {
         UiConstraints effectiveConstraints = constraints == null ? UiConstraints.unbounded() : constraints;
         int containerWidth = effectiveConstraints.hasBoundedWidth() ? effectiveConstraints.getMaxWidth() : getPreferredWidth();
         int containerHeight = effectiveConstraints.hasBoundedHeight() ? effectiveConstraints.getMaxHeight() : 0;
-        LayoutResult layout = measureLayout(Math.max(0, containerWidth), Math.max(0, containerHeight), false, false);
+        LayoutResult layout = measureLayoutCached(Math.max(0, containerWidth), Math.max(0, containerHeight), false);
         return new UiMeasureResult(effectiveConstraints.constrainWidth(layout.requiredWidth),
                 effectiveConstraints.constrainHeight(layout.requiredHeight));
     }
 
     @Override
     public int getMinContentWidth() {
+        int currentLayoutVersion = getLayoutVersion();
+        int currentFontRuntimeVersion = FontService.getInstance().getRuntimeVersion();
+        if (cachedMinContentWidthVersion == currentLayoutVersion
+                && cachedMinContentWidthFontRuntimeVersion == currentFontRuntimeVersion
+                && cachedMinContentWidth >= 0) {
+            return cachedMinContentWidth;
+        }
         if (getChildren().isEmpty()) {
-            return paddingLeft + paddingRight;
+            cachedMinContentWidthVersion = currentLayoutVersion;
+            cachedMinContentWidthFontRuntimeVersion = currentFontRuntimeVersion;
+            cachedMinContentWidth = paddingLeft + paddingRight;
+            return cachedMinContentWidth;
         }
 
         if (wrap == Wrap.WRAP) {
@@ -614,7 +601,10 @@ public class DivWidget extends Widget implements UiScrollHost {
             for (Widget child : getChildren()) {
                 contentWidth = Math.max(contentWidth, computeColumnCrossSpan(child.getMinContentWidth(), resolveMargin(child)));
             }
-            return paddingLeft + contentWidth + paddingRight;
+            cachedMinContentWidthVersion = currentLayoutVersion;
+            cachedMinContentWidthFontRuntimeVersion = currentFontRuntimeVersion;
+            cachedMinContentWidth = paddingLeft + contentWidth + paddingRight;
+            return cachedMinContentWidth;
         }
 
         int contentWidth = 0;
@@ -628,12 +618,15 @@ public class DivWidget extends Widget implements UiScrollHost {
                 contentWidth = Math.max(contentWidth, computeColumnCrossSpan(child.getMinContentWidth(), resolveMargin(child)));
             }
         }
-        return paddingLeft + contentWidth + paddingRight;
+        cachedMinContentWidthVersion = currentLayoutVersion;
+        cachedMinContentWidthFontRuntimeVersion = currentFontRuntimeVersion;
+        cachedMinContentWidth = paddingLeft + contentWidth + paddingRight;
+        return cachedMinContentWidth;
     }
 
     @Override
     public int getMinContentHeightForWidth(int width) {
-        LayoutResult layout = measureLayout(Math.max(0, width), 0, false, true);
+        LayoutResult layout = measureLayoutCached(Math.max(0, width), 0, true);
         return layout.requiredHeight;
     }
 
@@ -650,315 +643,335 @@ public class DivWidget extends Widget implements UiScrollHost {
     }
 
     private LayoutResult measureRowLayout(int containerWidth, int containerHeight, boolean applyBounds, boolean useMinHeights) {
-        LayoutResult result = new LayoutResult();
-        int childCount = getChildren().size();
-        if (childCount == 0) {
-            result.requiredWidth = paddingLeft + paddingRight;
-            result.requiredHeight = paddingTop + paddingBottom;
-            return result;
-        }
-
-        int innerWidth = Math.max(0, containerWidth - paddingLeft - paddingRight);
-        int innerHeight = Math.max(0, containerHeight - paddingTop - paddingBottom);
-        int[] widths = new int[childCount];
-        int[] minWidths = new int[childCount];
-        int[] heights = new int[childCount];
-        UiInsets[] margins = new UiInsets[childCount];
-        int totalWidth = 0;
-
-        for (int index = 0; index < childCount; index++) {
-            Widget child = getChildren().get(index);
-            margins[index] = resolveMargin(child);
-            minWidths[index] = resolveChildMinWidth(child, innerWidth);
-            widths[index] = Math.max(minWidths[index], resolveRowBaseWidth(child, innerWidth));
-            totalWidth += computeRowMainSpan(widths[index], margins[index]);
-            heights[index] = resolveRowCrossSize(child, widths[index], innerHeight, useMinHeights, false);
-        }
-        totalWidth += getMainAxisGap() * Math.max(0, childCount - 1);
-
-        if (innerWidth > 0) {
-            if (totalWidth < innerWidth) {
-                totalWidth += distributeGrowth(widths, innerWidth - totalWidth, 0, childCount - 1);
-            } else if (totalWidth > innerWidth) {
-                totalWidth -= distributeShrink(widths, minWidths, totalWidth - innerWidth, 0, childCount - 1);
+        long phaseStartNanos = System.nanoTime();
+        try {
+            LayoutResult result = new LayoutResult();
+            int childCount = getChildren().size();
+            if (childCount == 0) {
+                result.requiredWidth = paddingLeft + paddingRight;
+                result.requiredHeight = paddingTop + paddingBottom;
+                return result;
             }
-        }
 
-        int tallest = 0;
-        for (int index = 0; index < childCount; index++) {
-            heights[index] = resolveRowCrossSize(getChildren().get(index), widths[index], innerHeight, useMinHeights, true);
-            tallest = Math.max(tallest, computeRowCrossSpan(heights[index], margins[index]));
-        }
-        if (innerHeight > 0 && hasStretchChild(0, childCount - 1)) {
-            tallest = innerHeight;
+            int innerWidth = Math.max(0, containerWidth - paddingLeft - paddingRight);
+            int innerHeight = Math.max(0, containerHeight - paddingTop - paddingBottom);
+            int[] widths = new int[childCount];
+            int[] minWidths = new int[childCount];
+            int[] heights = new int[childCount];
+            UiInsets[] margins = new UiInsets[childCount];
+            int totalWidth = 0;
+
             for (int index = 0; index < childCount; index++) {
-                if (resolveChildAlignItems(getChildren().get(index)) == AlignItems.STRETCH) {
-                    heights[index] = Math.max(0, innerHeight - margins[index].getTop() - margins[index].getBottom());
-                }
+                Widget child = getChildren().get(index);
+                margins[index] = resolveMargin(child);
+                minWidths[index] = resolveChildMinWidth(child, innerWidth);
+                widths[index] = Math.max(minWidths[index], resolveRowBaseWidth(child, innerWidth));
+                totalWidth += computeRowMainSpan(widths[index], margins[index]);
+                heights[index] = resolveRowCrossSize(child, widths[index], innerHeight, useMinHeights, false);
             }
-        }
+            totalWidth += getMainAxisGap() * Math.max(0, childCount - 1);
 
-        int extraSpace = Math.max(0, innerWidth - totalWidth);
-        int cursor = paddingLeft + resolveLeadingOffset(extraSpace, childCount);
-        int dynamicGap = resolveGap(extraSpace, childCount);
-        for (int index = 0; index < childCount; index++) {
-            Widget child = getChildren().get(index);
-            int childY = paddingTop + resolveCrossOffset(resolveChildAlignItems(child), innerHeight,
-                    computeRowCrossSpan(heights[index], margins[index]))
-                    + margins[index].getTop();
-            if (applyBounds) {
-                child.setBounds(cursor + margins[index].getLeft() - scrollState.getHorizontalOffset(),
-                        childY - scrollState.getVerticalOffset(),
-                        widths[index], heights[index]);
-            }
-            cursor += computeRowMainSpan(widths[index], margins[index]);
-            if (index < childCount - 1) {
-                cursor += dynamicGap;
-            }
-        }
-
-        result.requiredWidth = paddingLeft + totalWidth + paddingRight;
-        result.requiredHeight = paddingTop + tallest + paddingBottom;
-        return result;
-    }
-
-    private LayoutResult measureColumnLayout(int containerWidth, int containerHeight, boolean applyBounds, boolean useMinHeights) {
-        LayoutResult result = new LayoutResult();
-        int childCount = getChildren().size();
-        if (childCount == 0) {
-            result.requiredWidth = paddingLeft + paddingRight;
-            result.requiredHeight = paddingTop + paddingBottom;
-            return result;
-        }
-
-        int innerWidth = Math.max(0, containerWidth - paddingLeft - paddingRight);
-        int innerHeight = Math.max(0, containerHeight - paddingTop - paddingBottom);
-        int[] widths = new int[childCount];
-        int[] heights = new int[childCount];
-        int[] minHeights = new int[childCount];
-        UiInsets[] margins = new UiInsets[childCount];
-        int widest = 0;
-        int totalHeight = 0;
-
-        for (int index = 0; index < childCount; index++) {
-            Widget child = getChildren().get(index);
-            margins[index] = resolveMargin(child);
-            widths[index] = resolveColumnCrossSize(child, innerWidth);
-            heights[index] = resolveColumnBaseHeight(child, widths[index], innerHeight, false);
-            minHeights[index] = resolveChildMinHeight(child, widths[index], innerHeight);
-            widest = Math.max(widest, computeColumnCrossSpan(widths[index], margins[index]));
-            totalHeight += computeColumnMainSpan(heights[index], margins[index]);
-        }
-        totalHeight += getMainAxisGap() * Math.max(0, childCount - 1);
-
-        if (innerHeight > 0) {
-            if (totalHeight < innerHeight) {
-                totalHeight += distributeGrowth(heights, innerHeight - totalHeight, 0, childCount - 1);
-            } else if (totalHeight > innerHeight) {
-                totalHeight -= distributeShrink(heights, minHeights, totalHeight - innerHeight, 0, childCount - 1);
-            }
-        }
-
-        if (innerWidth > 0 && hasStretchChild(0, childCount - 1)) {
-            widest = innerWidth;
-            for (int index = 0; index < childCount; index++) {
-                if (resolveChildAlignItems(getChildren().get(index)) == AlignItems.STRETCH) {
-                    widths[index] = Math.max(0, innerWidth - margins[index].getLeft() - margins[index].getRight());
-                }
-            }
-        }
-
-        int extraSpace = Math.max(0, innerHeight - totalHeight);
-        int cursor = paddingTop + resolveLeadingOffset(extraSpace, childCount);
-        int dynamicGap = resolveGap(extraSpace, childCount);
-        for (int index = 0; index < childCount; index++) {
-            Widget child = getChildren().get(index);
-            int childX = paddingLeft + resolveCrossOffset(resolveChildAlignItems(child), innerWidth,
-                    computeColumnCrossSpan(widths[index], margins[index]))
-                    + margins[index].getLeft();
-            if (applyBounds) {
-                child.setBounds(childX - scrollState.getHorizontalOffset(), cursor - scrollState.getVerticalOffset(),
-                        widths[index], heights[index]);
-            }
-            cursor += computeColumnMainSpan(heights[index], margins[index]);
-            if (index < childCount - 1) {
-                cursor += dynamicGap;
-            }
-        }
-
-        result.requiredWidth = paddingLeft + widest + paddingRight;
-        result.requiredHeight = paddingTop + totalHeight + paddingBottom;
-        return result;
-    }
-
-    private LayoutResult measureWrappedRows(int containerWidth, int containerHeight, boolean applyBounds, boolean useMinHeights) {
-        LayoutResult result = new LayoutResult();
-        int childCount = getChildren().size();
-        if (childCount == 0) {
-            result.requiredWidth = paddingLeft + paddingRight;
-            result.requiredHeight = paddingTop + paddingBottom;
-            return result;
-        }
-
-        int innerWidth = Math.max(0, containerWidth - paddingLeft - paddingRight);
-        int[] widths = new int[childCount];
-        int[] minWidths = new int[childCount];
-        int[] heights = new int[childCount];
-        UiInsets[] margins = new UiInsets[childCount];
-        int[] itemMainSpans = new int[childCount];
-        for (int index = 0; index < childCount; index++) {
-            Widget child = getChildren().get(index);
-            margins[index] = resolveMargin(child);
-            minWidths[index] = resolveChildMinWidth(child, innerWidth);
-            widths[index] = Math.max(minWidths[index], resolveRowBaseWidth(child, innerWidth));
-            heights[index] = resolveRowCrossSize(child, widths[index], 0, useMinHeights, false);
-            itemMainSpans[index] = computeRowMainSpan(widths[index], margins[index]);
-        }
-
-        List<AxisGroup> groups = buildWrappedGroups(itemMainSpans, innerWidth);
-        int maxLineWidth = 0;
-        int totalHeight = 0;
-        for (AxisGroup group : groups) {
-            int lineWidth = computeTotal(itemMainSpans, group.start, group.end);
             if (innerWidth > 0) {
-                if (lineWidth < innerWidth) {
-                    lineWidth += distributeGrowth(widths, innerWidth - lineWidth, group.start, group.end);
-                } else if (lineWidth > innerWidth) {
-                    lineWidth -= distributeShrink(widths, minWidths, lineWidth - innerWidth, group.start, group.end);
+                if (totalWidth < innerWidth) {
+                    totalWidth += distributeGrowth(widths, innerWidth - totalWidth, 0, childCount - 1);
+                } else if (totalWidth > innerWidth) {
+                    totalWidth -= distributeShrink(widths, minWidths, totalWidth - innerWidth, 0, childCount - 1);
                 }
             }
-            group.mainSize = computeMainSpanTotalForRows(widths, margins, group.start, group.end);
-            group.crossSize = 0;
-            for (int index = group.start; index <= group.end; index++) {
-                heights[index] = resolveRowCrossSize(getChildren().get(index), widths[index], 0, useMinHeights, false);
-                group.crossSize = Math.max(group.crossSize, computeRowCrossSpan(heights[index], margins[index]));
-            }
-            stretchWrappedRowGroupIfNeeded(group, heights, margins);
-            maxLineWidth = Math.max(maxLineWidth, group.mainSize);
-            totalHeight += group.crossSize;
-        }
-        totalHeight += getCrossAxisGap() * Math.max(0, groups.size() - 1);
 
-        int extraCrossSpace = Math.max(0, Math.max(0, containerHeight - paddingTop - paddingBottom) - totalHeight);
-        if (alignContent == AlignContent.STRETCH && extraCrossSpace > 0) {
-            totalHeight += distributeGroupCrossGrowth(groups, extraCrossSpace);
-            for (AxisGroup group : groups) {
-                stretchWrappedRowGroupIfNeeded(group, heights, margins);
+            int tallest = 0;
+            for (int index = 0; index < childCount; index++) {
+                heights[index] = resolveRowCrossSize(getChildren().get(index), widths[index], innerHeight, useMinHeights, true);
+                tallest = Math.max(tallest, computeRowCrossSpan(heights[index], margins[index]));
             }
-            extraCrossSpace = 0;
-        }
-        int cursorY = paddingTop + resolveContentLeadingOffset(extraCrossSpace, groups.size());
-        int lineGap = resolveContentGap(extraCrossSpace, groups.size());
-        for (AxisGroup group : groups) {
-            int count = group.end - group.start + 1;
-            int extraSpace = Math.max(0, innerWidth - group.mainSize);
-            int cursorX = paddingLeft + resolveLeadingOffset(extraSpace, count);
-            int dynamicGap = resolveGap(extraSpace, count);
-            for (int index = group.start; index <= group.end; index++) {
-                int childY = cursorY + resolveCrossOffset(resolveChildAlignItems(getChildren().get(index)), group.crossSize,
+            if (innerHeight > 0 && hasStretchChild(0, childCount - 1)) {
+                tallest = innerHeight;
+                for (int index = 0; index < childCount; index++) {
+                    if (resolveChildAlignItems(getChildren().get(index)) == AlignItems.STRETCH) {
+                        heights[index] = Math.max(0, innerHeight - margins[index].getTop() - margins[index].getBottom());
+                    }
+                }
+            }
+
+            int extraSpace = Math.max(0, innerWidth - totalWidth);
+            int cursor = paddingLeft + resolveLeadingOffset(extraSpace, childCount);
+            int dynamicGap = resolveGap(extraSpace, childCount);
+            for (int index = 0; index < childCount; index++) {
+                Widget child = getChildren().get(index);
+                int childY = paddingTop + resolveCrossOffset(resolveChildAlignItems(child), innerHeight,
                         computeRowCrossSpan(heights[index], margins[index]))
                         + margins[index].getTop();
                 if (applyBounds) {
-                    getChildren().get(index).setBounds(cursorX + margins[index].getLeft() - scrollState.getHorizontalOffset(),
+                    child.setBounds(cursor + margins[index].getLeft() - scrollState.getHorizontalOffset(),
                             childY - scrollState.getVerticalOffset(),
                             widths[index], heights[index]);
                 }
-                cursorX += computeRowMainSpan(widths[index], margins[index]);
-                if (index < group.end) {
-                    cursorX += dynamicGap;
+                cursor += computeRowMainSpan(widths[index], margins[index]);
+                if (index < childCount - 1) {
+                    cursor += dynamicGap;
                 }
             }
-            cursorY += group.crossSize + lineGap;
-        }
 
-        result.requiredWidth = paddingLeft + maxLineWidth + paddingRight;
-        result.requiredHeight = paddingTop + totalHeight + paddingBottom;
-        return result;
+            result.requiredWidth = paddingLeft + totalWidth + paddingRight;
+            result.requiredHeight = paddingTop + tallest + paddingBottom;
+            return result;
+        } finally {
+            UiPerformanceMonitor.getInstance().recordPhase("div.measureRow", System.nanoTime() - phaseStartNanos);
+        }
     }
 
-    private LayoutResult measureWrappedColumns(int containerWidth, int containerHeight, boolean applyBounds, boolean useMinHeights) {
-        LayoutResult result = new LayoutResult();
-        int childCount = getChildren().size();
-        if (childCount == 0) {
-            result.requiredWidth = paddingLeft + paddingRight;
-            result.requiredHeight = paddingTop + paddingBottom;
-            return result;
-        }
+    private LayoutResult measureColumnLayout(int containerWidth, int containerHeight, boolean applyBounds, boolean useMinHeights) {
+        long phaseStartNanos = System.nanoTime();
+        try {
+            LayoutResult result = new LayoutResult();
+            int childCount = getChildren().size();
+            if (childCount == 0) {
+                result.requiredWidth = paddingLeft + paddingRight;
+                result.requiredHeight = paddingTop + paddingBottom;
+                return result;
+            }
 
-        int innerWidth = Math.max(0, containerWidth - paddingLeft - paddingRight);
-        int innerHeight = Math.max(0, containerHeight - paddingTop - paddingBottom);
-        int[] widths = new int[childCount];
-        int[] heights = new int[childCount];
-        int[] minHeights = new int[childCount];
-        UiInsets[] margins = new UiInsets[childCount];
-        int[] itemMainSpans = new int[childCount];
-        for (int index = 0; index < childCount; index++) {
-            Widget child = getChildren().get(index);
-            margins[index] = resolveMargin(child);
-            widths[index] = resolveColumnCrossSize(child, innerWidth);
-            heights[index] = resolveColumnBaseHeight(child, widths[index], innerHeight, false);
-            minHeights[index] = resolveChildMinHeight(child, widths[index], innerHeight);
-            itemMainSpans[index] = computeColumnMainSpan(heights[index], margins[index]);
-        }
+            int innerWidth = Math.max(0, containerWidth - paddingLeft - paddingRight);
+            int innerHeight = Math.max(0, containerHeight - paddingTop - paddingBottom);
+            int[] widths = new int[childCount];
+            int[] heights = new int[childCount];
+            int[] minHeights = new int[childCount];
+            UiInsets[] margins = new UiInsets[childCount];
+            int widest = 0;
+            int totalHeight = 0;
 
-        List<AxisGroup> groups = buildWrappedGroups(itemMainSpans, innerHeight);
-        int totalWidth = 0;
-        int tallestColumn = 0;
-        for (AxisGroup group : groups) {
-            int columnHeight = computeTotal(itemMainSpans, group.start, group.end);
+            for (int index = 0; index < childCount; index++) {
+                Widget child = getChildren().get(index);
+                margins[index] = resolveMargin(child);
+                widths[index] = resolveColumnCrossSize(child, innerWidth);
+                heights[index] = resolveColumnBaseHeight(child, widths[index], innerHeight, false);
+                minHeights[index] = resolveChildMinHeight(child, widths[index], innerHeight);
+                widest = Math.max(widest, computeColumnCrossSpan(widths[index], margins[index]));
+                totalHeight += computeColumnMainSpan(heights[index], margins[index]);
+            }
+            totalHeight += getMainAxisGap() * Math.max(0, childCount - 1);
+
             if (innerHeight > 0) {
-                if (columnHeight < innerHeight) {
-                    columnHeight += distributeGrowth(heights, innerHeight - columnHeight, group.start, group.end);
-                } else if (columnHeight > innerHeight) {
-                    columnHeight -= distributeShrink(heights, minHeights, columnHeight - innerHeight, group.start, group.end);
+                if (totalHeight < innerHeight) {
+                    totalHeight += distributeGrowth(heights, innerHeight - totalHeight, 0, childCount - 1);
+                } else if (totalHeight > innerHeight) {
+                    totalHeight -= distributeShrink(heights, minHeights, totalHeight - innerHeight, 0, childCount - 1);
                 }
             }
-            group.mainSize = computeMainSpanTotalForColumns(heights, margins, group.start, group.end);
-            group.crossSize = 0;
-            for (int index = group.start; index <= group.end; index++) {
-                group.crossSize = Math.max(group.crossSize, computeColumnCrossSpan(widths[index], margins[index]));
-            }
-            stretchWrappedColumnGroupIfNeeded(group, widths, margins);
-            totalWidth += group.crossSize;
-            tallestColumn = Math.max(tallestColumn, group.mainSize);
-        }
-        totalWidth += getCrossAxisGap() * Math.max(0, groups.size() - 1);
 
-        int extraCrossSpace = Math.max(0, innerWidth - totalWidth);
-        if (alignContent == AlignContent.STRETCH && extraCrossSpace > 0) {
-            totalWidth += distributeGroupCrossGrowth(groups, extraCrossSpace);
-            for (AxisGroup group : groups) {
-                stretchWrappedColumnGroupIfNeeded(group, widths, margins);
+            if (innerWidth > 0 && hasStretchChild(0, childCount - 1)) {
+                widest = innerWidth;
+                for (int index = 0; index < childCount; index++) {
+                    if (resolveChildAlignItems(getChildren().get(index)) == AlignItems.STRETCH) {
+                        widths[index] = Math.max(0, innerWidth - margins[index].getLeft() - margins[index].getRight());
+                    }
+                }
             }
-            extraCrossSpace = 0;
-        }
-        int cursorX = paddingLeft + resolveContentLeadingOffset(extraCrossSpace, groups.size());
-        int columnGap = resolveContentGap(extraCrossSpace, groups.size());
-        for (AxisGroup group : groups) {
-            int count = group.end - group.start + 1;
-            int extraSpace = Math.max(0, innerHeight - group.mainSize);
-            int cursorY = paddingTop + resolveLeadingOffset(extraSpace, count);
-            int dynamicGap = resolveGap(extraSpace, count);
-            for (int index = group.start; index <= group.end; index++) {
-                int childX = cursorX + resolveCrossOffset(resolveChildAlignItems(getChildren().get(index)), group.crossSize,
+
+            int extraSpace = Math.max(0, innerHeight - totalHeight);
+            int cursor = paddingTop + resolveLeadingOffset(extraSpace, childCount);
+            int dynamicGap = resolveGap(extraSpace, childCount);
+            for (int index = 0; index < childCount; index++) {
+                Widget child = getChildren().get(index);
+                int childX = paddingLeft + resolveCrossOffset(resolveChildAlignItems(child), innerWidth,
                         computeColumnCrossSpan(widths[index], margins[index]))
                         + margins[index].getLeft();
                 if (applyBounds) {
-                    getChildren().get(index).setBounds(childX - scrollState.getHorizontalOffset(),
-                            cursorY + margins[index].getTop() - scrollState.getVerticalOffset(),
+                    child.setBounds(childX - scrollState.getHorizontalOffset(), cursor - scrollState.getVerticalOffset(),
                             widths[index], heights[index]);
                 }
-                cursorY += computeColumnMainSpan(heights[index], margins[index]);
-                if (index < group.end) {
-                    cursorY += dynamicGap;
+                cursor += computeColumnMainSpan(heights[index], margins[index]);
+                if (index < childCount - 1) {
+                    cursor += dynamicGap;
                 }
             }
-            cursorX += group.crossSize + columnGap;
-        }
 
-        result.requiredWidth = paddingLeft + totalWidth + paddingRight;
-        result.requiredHeight = paddingTop + tallestColumn + paddingBottom;
-        return result;
+            result.requiredWidth = paddingLeft + widest + paddingRight;
+            result.requiredHeight = paddingTop + totalHeight + paddingBottom;
+            return result;
+        } finally {
+            UiPerformanceMonitor.getInstance().recordPhase("div.measureColumn", System.nanoTime() - phaseStartNanos);
+        }
+    }
+
+    private LayoutResult measureWrappedRows(int containerWidth, int containerHeight, boolean applyBounds, boolean useMinHeights) {
+        long phaseStartNanos = System.nanoTime();
+        try {
+            LayoutResult result = new LayoutResult();
+            int childCount = getChildren().size();
+            if (childCount == 0) {
+                result.requiredWidth = paddingLeft + paddingRight;
+                result.requiredHeight = paddingTop + paddingBottom;
+                return result;
+            }
+
+            int innerWidth = Math.max(0, containerWidth - paddingLeft - paddingRight);
+            int[] widths = new int[childCount];
+            int[] minWidths = new int[childCount];
+            int[] heights = new int[childCount];
+            UiInsets[] margins = new UiInsets[childCount];
+            int[] itemMainSpans = new int[childCount];
+            for (int index = 0; index < childCount; index++) {
+                Widget child = getChildren().get(index);
+                margins[index] = resolveMargin(child);
+                minWidths[index] = resolveChildMinWidth(child, innerWidth);
+                widths[index] = Math.max(minWidths[index], resolveRowBaseWidth(child, innerWidth));
+                heights[index] = resolveRowCrossSize(child, widths[index], 0, useMinHeights, false);
+                itemMainSpans[index] = computeRowMainSpan(widths[index], margins[index]);
+            }
+
+            List<AxisGroup> groups = buildWrappedGroups(itemMainSpans, innerWidth);
+            int maxLineWidth = 0;
+            int totalHeight = 0;
+            for (AxisGroup group : groups) {
+                int lineWidth = computeTotal(itemMainSpans, group.start, group.end);
+                if (innerWidth > 0) {
+                    if (lineWidth < innerWidth) {
+                        lineWidth += distributeGrowth(widths, innerWidth - lineWidth, group.start, group.end);
+                    } else if (lineWidth > innerWidth) {
+                        lineWidth -= distributeShrink(widths, minWidths, lineWidth - innerWidth, group.start, group.end);
+                    }
+                }
+                group.mainSize = computeMainSpanTotalForRows(widths, margins, group.start, group.end);
+                group.crossSize = 0;
+                for (int index = group.start; index <= group.end; index++) {
+                    heights[index] = resolveRowCrossSize(getChildren().get(index), widths[index], 0, useMinHeights, false);
+                    group.crossSize = Math.max(group.crossSize, computeRowCrossSpan(heights[index], margins[index]));
+                }
+                stretchWrappedRowGroupIfNeeded(group, heights, margins);
+                maxLineWidth = Math.max(maxLineWidth, group.mainSize);
+                totalHeight += group.crossSize;
+            }
+            totalHeight += getCrossAxisGap() * Math.max(0, groups.size() - 1);
+
+            int extraCrossSpace = Math.max(0, Math.max(0, containerHeight - paddingTop - paddingBottom) - totalHeight);
+            if (alignContent == AlignContent.STRETCH && extraCrossSpace > 0) {
+                totalHeight += distributeGroupCrossGrowth(groups, extraCrossSpace);
+                for (AxisGroup group : groups) {
+                    stretchWrappedRowGroupIfNeeded(group, heights, margins);
+                }
+                extraCrossSpace = 0;
+            }
+            int cursorY = paddingTop + resolveContentLeadingOffset(extraCrossSpace, groups.size());
+            int lineGap = resolveContentGap(extraCrossSpace, groups.size());
+            for (AxisGroup group : groups) {
+                int count = group.end - group.start + 1;
+                int extraSpace = Math.max(0, innerWidth - group.mainSize);
+                int cursorX = paddingLeft + resolveLeadingOffset(extraSpace, count);
+                int dynamicGap = resolveGap(extraSpace, count);
+                for (int index = group.start; index <= group.end; index++) {
+                    int childY = cursorY + resolveCrossOffset(resolveChildAlignItems(getChildren().get(index)), group.crossSize,
+                            computeRowCrossSpan(heights[index], margins[index]))
+                            + margins[index].getTop();
+                    if (applyBounds) {
+                        getChildren().get(index).setBounds(cursorX + margins[index].getLeft() - scrollState.getHorizontalOffset(),
+                                childY - scrollState.getVerticalOffset(),
+                                widths[index], heights[index]);
+                    }
+                    cursorX += computeRowMainSpan(widths[index], margins[index]);
+                    if (index < group.end) {
+                        cursorX += dynamicGap;
+                    }
+                }
+                cursorY += group.crossSize + lineGap;
+            }
+
+            result.requiredWidth = paddingLeft + maxLineWidth + paddingRight;
+            result.requiredHeight = paddingTop + totalHeight + paddingBottom;
+            return result;
+        } finally {
+            UiPerformanceMonitor.getInstance().recordPhase("div.measureWrappedRows", System.nanoTime() - phaseStartNanos);
+        }
+    }
+
+    private LayoutResult measureWrappedColumns(int containerWidth, int containerHeight, boolean applyBounds, boolean useMinHeights) {
+        long phaseStartNanos = System.nanoTime();
+        try {
+            LayoutResult result = new LayoutResult();
+            int childCount = getChildren().size();
+            if (childCount == 0) {
+                result.requiredWidth = paddingLeft + paddingRight;
+                result.requiredHeight = paddingTop + paddingBottom;
+                return result;
+            }
+
+            int innerWidth = Math.max(0, containerWidth - paddingLeft - paddingRight);
+            int innerHeight = Math.max(0, containerHeight - paddingTop - paddingBottom);
+            int[] widths = new int[childCount];
+            int[] heights = new int[childCount];
+            int[] minHeights = new int[childCount];
+            UiInsets[] margins = new UiInsets[childCount];
+            int[] itemMainSpans = new int[childCount];
+            for (int index = 0; index < childCount; index++) {
+                Widget child = getChildren().get(index);
+                margins[index] = resolveMargin(child);
+                widths[index] = resolveColumnCrossSize(child, innerWidth);
+                heights[index] = resolveColumnBaseHeight(child, widths[index], innerHeight, false);
+                minHeights[index] = resolveChildMinHeight(child, widths[index], innerHeight);
+                itemMainSpans[index] = computeColumnMainSpan(heights[index], margins[index]);
+            }
+
+            List<AxisGroup> groups = buildWrappedGroups(itemMainSpans, innerHeight);
+            int totalWidth = 0;
+            int tallestColumn = 0;
+            for (AxisGroup group : groups) {
+                int columnHeight = computeTotal(itemMainSpans, group.start, group.end);
+                if (innerHeight > 0) {
+                    if (columnHeight < innerHeight) {
+                        columnHeight += distributeGrowth(heights, innerHeight - columnHeight, group.start, group.end);
+                    } else if (columnHeight > innerHeight) {
+                        columnHeight -= distributeShrink(heights, minHeights, columnHeight - innerHeight, group.start, group.end);
+                    }
+                }
+                group.mainSize = computeMainSpanTotalForColumns(heights, margins, group.start, group.end);
+                group.crossSize = 0;
+                for (int index = group.start; index <= group.end; index++) {
+                    group.crossSize = Math.max(group.crossSize, computeColumnCrossSpan(widths[index], margins[index]));
+                }
+                stretchWrappedColumnGroupIfNeeded(group, widths, margins);
+                totalWidth += group.crossSize;
+                tallestColumn = Math.max(tallestColumn, group.mainSize);
+            }
+            totalWidth += getCrossAxisGap() * Math.max(0, groups.size() - 1);
+
+            int extraCrossSpace = Math.max(0, innerWidth - totalWidth);
+            if (alignContent == AlignContent.STRETCH && extraCrossSpace > 0) {
+                totalWidth += distributeGroupCrossGrowth(groups, extraCrossSpace);
+                for (AxisGroup group : groups) {
+                    stretchWrappedColumnGroupIfNeeded(group, widths, margins);
+                }
+                extraCrossSpace = 0;
+            }
+            int cursorX = paddingLeft + resolveContentLeadingOffset(extraCrossSpace, groups.size());
+            int columnGap = resolveContentGap(extraCrossSpace, groups.size());
+            for (AxisGroup group : groups) {
+                int count = group.end - group.start + 1;
+                int extraSpace = Math.max(0, innerHeight - group.mainSize);
+                int cursorY = paddingTop + resolveLeadingOffset(extraSpace, count);
+                int dynamicGap = resolveGap(extraSpace, count);
+                for (int index = group.start; index <= group.end; index++) {
+                    int childX = cursorX + resolveCrossOffset(resolveChildAlignItems(getChildren().get(index)), group.crossSize,
+                            computeColumnCrossSpan(widths[index], margins[index]))
+                            + margins[index].getLeft();
+                    if (applyBounds) {
+                        getChildren().get(index).setBounds(childX - scrollState.getHorizontalOffset(),
+                                cursorY + margins[index].getTop() - scrollState.getVerticalOffset(),
+                                widths[index], heights[index]);
+                    }
+                    cursorY += computeColumnMainSpan(heights[index], margins[index]);
+                    if (index < group.end) {
+                        cursorY += dynamicGap;
+                    }
+                }
+                cursorX += group.crossSize + columnGap;
+            }
+
+            result.requiredWidth = paddingLeft + totalWidth + paddingRight;
+            result.requiredHeight = paddingTop + tallestColumn + paddingBottom;
+            return result;
+        } finally {
+            UiPerformanceMonitor.getInstance().recordPhase("div.measureWrappedColumns", System.nanoTime() - phaseStartNanos);
+        }
     }
 
     private List<AxisGroup> buildWrappedGroups(int[] sizes, int availableMainSize) {
@@ -1398,31 +1411,105 @@ public class DivWidget extends Widget implements UiScrollHost {
         }
     }
 
-    private LayoutResult prepareOverflowLayout(boolean useMinHeights) {
-        int baseViewportWidth = Math.max(0, getWidth() - paddingLeft - paddingRight);
-        int baseViewportHeight = Math.max(0, getHeight() - paddingTop - paddingBottom);
-        OverflowViewportLayout.Result overflowLayout = OverflowViewportLayout.compute(baseViewportWidth, baseViewportHeight,
-                overflowX == Overflow.AUTO, overflowY == Overflow.AUTO, new OverflowViewportLayout.ContentMeasurer() {
-                    @Override
-                    public OverflowViewportLayout.ContentSize measure(int viewportWidth, int viewportHeight) {
-                        LayoutResult layout = measureLayout(viewportWidth + paddingLeft + paddingRight,
-                                viewportHeight + paddingTop + paddingBottom, false, useMinHeights);
-                        return new OverflowViewportLayout.ContentSize(
-                                Math.max(0, layout.requiredWidth - paddingLeft - paddingRight),
-                                Math.max(0, layout.requiredHeight - paddingTop - paddingBottom));
-                    }
-                });
+    private void prepareOverflowLayout(boolean useMinHeights) {
+        long phaseStartNanos = System.nanoTime();
+        try {
+            int baseViewportWidth = Math.max(0, getWidth() - paddingLeft - paddingRight);
+            int baseViewportHeight = Math.max(0, getHeight() - paddingTop - paddingBottom);
+            OverflowViewportLayout.Result overflowLayout = OverflowViewportLayout.compute(baseViewportWidth, baseViewportHeight,
+                    overflowX == Overflow.AUTO, overflowY == Overflow.AUTO, new OverflowViewportLayout.ContentMeasurer() {
+                        @Override
+                        public OverflowViewportLayout.ContentSize measure(int viewportWidth, int viewportHeight) {
+                            LayoutResult layout = measureLayoutCached(viewportWidth + paddingLeft + paddingRight,
+                                    viewportHeight + paddingTop + paddingBottom, useMinHeights);
+                            return new OverflowViewportLayout.ContentSize(
+                                    Math.max(0, layout.requiredWidth - paddingLeft - paddingRight),
+                                    Math.max(0, layout.requiredHeight - paddingTop - paddingBottom));
+                        }
+                    });
+            scrollState.updateState(overflowLayout.viewportWidth, overflowLayout.viewportHeight, overflowLayout.contentWidth,
+                    overflowLayout.contentHeight, overflowX == Overflow.AUTO, overflowY == Overflow.AUTO);
+        } finally {
+            UiPerformanceMonitor.getInstance().recordPhase("div.prepareOverflow", System.nanoTime() - phaseStartNanos);
+        }
+    }
 
-        LayoutResult layout = measureLayout(overflowLayout.viewportWidth + paddingLeft + paddingRight,
-                overflowLayout.viewportHeight + paddingTop + paddingBottom, false, useMinHeights);
-        scrollState.updateState(overflowLayout.viewportWidth, overflowLayout.viewportHeight, overflowLayout.contentWidth,
-                overflowLayout.contentHeight, overflowX == Overflow.AUTO, overflowY == Overflow.AUTO);
-        return layout;
+    private void ensureLayout(boolean useMinHeights) {
+        int currentLayoutVersion = getLayoutVersion();
+        int currentFontRuntimeVersion = FontService.getInstance().getRuntimeVersion();
+        int currentWidth = getWidth();
+        int currentHeight = getHeight();
+        int currentHorizontalOffset = scrollState.getHorizontalOffset();
+        int currentVerticalOffset = scrollState.getVerticalOffset();
+        if (cachedLayoutVersion == currentLayoutVersion
+                && cachedLayoutWidth == currentWidth
+                && cachedLayoutHeight == currentHeight
+                && cachedHorizontalScrollOffset == currentHorizontalOffset
+                && cachedVerticalScrollOffset == currentVerticalOffset
+                && cachedLayoutFontRuntimeVersion == currentFontRuntimeVersion
+                && cachedUseMinHeights == useMinHeights) {
+            return;
+        }
+
+        prepareOverflowLayout(useMinHeights);
+        applyOverflowLayout(useMinHeights);
+
+        cachedLayoutVersion = currentLayoutVersion;
+        cachedLayoutWidth = currentWidth;
+        cachedLayoutHeight = currentHeight;
+        cachedHorizontalScrollOffset = scrollState.getHorizontalOffset();
+        cachedVerticalScrollOffset = scrollState.getVerticalOffset();
+        cachedLayoutFontRuntimeVersion = currentFontRuntimeVersion;
+        cachedUseMinHeights = useMinHeights;
+    }
+
+    private LayoutResult measureLayoutCached(int containerWidth, int containerHeight, boolean useMinHeights) {
+        ensurePureMeasureCacheValid();
+        MeasureCacheKey key = new MeasureCacheKey(containerWidth, containerHeight, useMinHeights);
+        LayoutResult cached = pureMeasureCache.get(key);
+        if (cached != null) {
+            return copyLayoutResult(cached);
+        }
+
+        LayoutResult measured = measureLayout(containerWidth, containerHeight, false, useMinHeights);
+        LayoutResult snapshot = copyLayoutResult(measured);
+        pureMeasureCache.put(key, snapshot);
+        return copyLayoutResult(snapshot);
+    }
+
+    private void ensurePureMeasureCacheValid() {
+        int currentLayoutVersion = getLayoutVersion();
+        int currentFontRuntimeVersion = FontService.getInstance().getRuntimeVersion();
+        if (cachedPureMeasureVersion == currentLayoutVersion
+                && cachedPureMeasureFontRuntimeVersion == currentFontRuntimeVersion) {
+            return;
+        }
+        pureMeasureCache.clear();
+        cachedPureMeasureVersion = currentLayoutVersion;
+        cachedPureMeasureFontRuntimeVersion = currentFontRuntimeVersion;
+        cachedPreferredWidthVersion = -1;
+        cachedPreferredWidth = -1;
+        cachedPreferredWidthFontRuntimeVersion = -1;
+        cachedMinContentWidthVersion = -1;
+        cachedMinContentWidth = -1;
+        cachedMinContentWidthFontRuntimeVersion = -1;
+    }
+
+    private LayoutResult copyLayoutResult(LayoutResult source) {
+        LayoutResult copy = new LayoutResult();
+        copy.requiredWidth = source.requiredWidth;
+        copy.requiredHeight = source.requiredHeight;
+        return copy;
     }
 
     private void applyOverflowLayout(boolean useMinHeights) {
-        measureLayout(getVisibleContentWidth() + paddingLeft + paddingRight, getVisibleContentHeight() + paddingTop + paddingBottom,
-                true, useMinHeights);
+        long phaseStartNanos = System.nanoTime();
+        try {
+            measureLayout(getVisibleContentWidth() + paddingLeft + paddingRight, getVisibleContentHeight() + paddingTop + paddingBottom,
+                    true, useMinHeights);
+        } finally {
+            UiPerformanceMonitor.getInstance().recordPhase("div.applyOverflow", System.nanoTime() - phaseStartNanos);
+        }
     }
 
     private void drawScrollbars(UiRenderContext context) {
@@ -1514,5 +1601,39 @@ public class DivWidget extends Widget implements UiScrollHost {
     private static class LayoutResult {
         private int requiredWidth;
         private int requiredHeight;
+    }
+
+    private static final class MeasureCacheKey {
+        private final int containerWidth;
+        private final int containerHeight;
+        private final boolean useMinHeights;
+
+        private MeasureCacheKey(int containerWidth, int containerHeight, boolean useMinHeights) {
+            this.containerWidth = containerWidth;
+            this.containerHeight = containerHeight;
+            this.useMinHeights = useMinHeights;
+        }
+
+        @Override
+        public boolean equals(Object obj) {
+            if (this == obj) {
+                return true;
+            }
+            if (!(obj instanceof MeasureCacheKey)) {
+                return false;
+            }
+            MeasureCacheKey other = (MeasureCacheKey) obj;
+            return containerWidth == other.containerWidth
+                    && containerHeight == other.containerHeight
+                    && useMinHeights == other.useMinHeights;
+        }
+
+        @Override
+        public int hashCode() {
+            int result = containerWidth;
+            result = 31 * result + containerHeight;
+            result = 31 * result + (useMinHeights ? 1 : 0);
+            return result;
+        }
     }
 }

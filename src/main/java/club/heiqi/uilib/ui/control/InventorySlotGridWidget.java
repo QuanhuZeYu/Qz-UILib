@@ -129,6 +129,7 @@ public class InventorySlotGridWidget extends Widget {
      */
     public InventorySlotGridWidget setSlotGap(int slotGap) {
         this.slotGap = Math.max(0, slotGap);
+        requestLayout();
         return this;
     }
 
@@ -142,6 +143,7 @@ public class InventorySlotGridWidget extends Widget {
     public InventorySlotGridWidget setSlotSizeRange(int minSlotSize, int maxSlotSize) {
         this.minSlotSize = Math.max(18, minSlotSize);
         this.maxSlotSize = Math.max(this.minSlotSize, maxSlotSize);
+        requestLayout();
         return this;
     }
 
@@ -153,6 +155,7 @@ public class InventorySlotGridWidget extends Widget {
      */
     public InventorySlotGridWidget setPreferredSlotSize(int preferredSlotSize) {
         this.preferredSlotSize = Math.max(18, preferredSlotSize);
+        requestLayout();
         return this;
     }
 
