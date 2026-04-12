@@ -15,6 +15,7 @@ import club.heiqi.uilib.ui.layout.UiLayoutSpec;
 import club.heiqi.uilib.ui.layout.UiLength;
 import club.heiqi.uilib.ui.layout.UiMeasureResult;
 import club.heiqi.uilib.ui.render.UiRenderContext;
+import club.heiqi.uilib.ui.theme.UiSurfaceStyle;
 import club.heiqi.uilib.ui.widget.Widget;
 
 /**
@@ -91,8 +92,7 @@ public class DivWidget extends Widget implements UiScrollHost {
     private int paddingBottom;
     private int rowGap;
     private int columnGap;
-    private int fillColor;
-    private int borderColor;
+    private UiSurfaceStyle surfaceStyle = UiSurfaceStyle.none();
     private final OverflowScrollState scrollState = new OverflowScrollState();
     private UiControlTheme.ScrollbarStyle scrollbarStyle = UiControlTheme.defaultScrollbarStyle();
     private int cachedLayoutVersion = -1;
@@ -146,11 +146,13 @@ public class DivWidget extends Widget implements UiScrollHost {
 
     @Override
     protected void drawSelf(UiRenderContext context) {
-        if (fillColor != 0) {
-            context.fillRect(getAbsoluteX(), getAbsoluteY(), getAbsoluteX() + getWidth(), getAbsoluteY() + getHeight(), fillColor);
+        if (surfaceStyle.fillColor != 0) {
+            context.fillRect(getAbsoluteX(), getAbsoluteY(), getAbsoluteX() + getWidth(), getAbsoluteY() + getHeight(),
+                    surfaceStyle.fillColor);
         }
-        if (borderColor != 0) {
-            context.drawBorder(getAbsoluteX(), getAbsoluteY(), getAbsoluteX() + getWidth(), getAbsoluteY() + getHeight(), borderColor);
+        if (surfaceStyle.borderColor != 0) {
+            context.drawBorder(getAbsoluteX(), getAbsoluteY(), getAbsoluteX() + getWidth(), getAbsoluteY() + getHeight(),
+                    surfaceStyle.borderColor);
         }
     }
 
@@ -391,13 +393,8 @@ public class DivWidget extends Widget implements UiScrollHost {
         return this;
     }
 
-    public DivWidget setFillColor(int fillColor) {
-        this.fillColor = fillColor;
-        return this;
-    }
-
-    public DivWidget setBorderColor(int borderColor) {
-        this.borderColor = borderColor;
+    public DivWidget setSurfaceStyle(UiSurfaceStyle surfaceStyle) {
+        this.surfaceStyle = surfaceStyle == null ? UiSurfaceStyle.none() : surfaceStyle;
         return this;
     }
 

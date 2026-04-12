@@ -1,6 +1,7 @@
 package club.heiqi.uilib.ui.control;
 
 import club.heiqi.uilib.ui.render.UiRenderContext;
+import club.heiqi.uilib.ui.theme.UiSurfaceStyle;
 import club.heiqi.uilib.ui.widget.Widget;
 
 /**
@@ -8,8 +9,7 @@ import club.heiqi.uilib.ui.widget.Widget;
  */
 public class ViewportWidget extends Widget {
 
-    private int fillColor;
-    private int borderColor;
+    private UiSurfaceStyle surfaceStyle = UiSurfaceStyle.none();
     private int paddingLeft;
     private int paddingTop;
     private int paddingRight;
@@ -19,11 +19,11 @@ public class ViewportWidget extends Widget {
     protected void drawSelf(UiRenderContext context) {
         int absoluteX = getAbsoluteX();
         int absoluteY = getAbsoluteY();
-        if (fillColor != 0) {
-            context.fillRect(absoluteX, absoluteY, absoluteX + getWidth(), absoluteY + getHeight(), fillColor);
+        if (surfaceStyle.fillColor != 0) {
+            context.fillRect(absoluteX, absoluteY, absoluteX + getWidth(), absoluteY + getHeight(), surfaceStyle.fillColor);
         }
-        if (borderColor != 0) {
-            context.drawBorder(absoluteX, absoluteY, absoluteX + getWidth(), absoluteY + getHeight(), borderColor);
+        if (surfaceStyle.borderColor != 0) {
+            context.drawBorder(absoluteX, absoluteY, absoluteX + getWidth(), absoluteY + getHeight(), surfaceStyle.borderColor);
         }
     }
 
@@ -57,25 +57,14 @@ public class ViewportWidget extends Widget {
     }
 
     /**
-     * 应用视口背景色。
+     * 应用视口表面样式。
      *
      * <p>该方法属于底层视口实现入口；页面作者应优先使用屏幕或文档壳暴露的语义方法。</p>
      *
-     * @param fillColor 背景色
+     * @param surfaceStyle 表面样式；为空时恢复为空表面
      */
-    public final void applyViewportFillColor(int fillColor) {
-        this.fillColor = fillColor;
-    }
-
-    /**
-     * 应用视口边框色。
-     *
-     * <p>该方法属于底层视口实现入口；页面作者应优先使用屏幕或文档壳暴露的语义方法。</p>
-     *
-     * @param borderColor 边框色
-     */
-    public final void applyViewportBorderColor(int borderColor) {
-        this.borderColor = borderColor;
+    public final void applyViewportSurfaceStyle(UiSurfaceStyle surfaceStyle) {
+        this.surfaceStyle = surfaceStyle == null ? UiSurfaceStyle.none() : surfaceStyle;
     }
 
     protected int getPaddingLeft() {

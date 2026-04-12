@@ -1,5 +1,6 @@
 package club.heiqi.uilib.ui.control;
 
+import club.heiqi.uilib.ui.theme.UiSurfaceStyle;
 import club.heiqi.uilib.ui.widget.Widget;
 
 /**
@@ -42,13 +43,8 @@ public class DocumentShellWidget extends ScrollViewportWidget {
         return this;
     }
 
-    public DocumentShellWidget setShellFillColor(int fillColor) {
-        applyViewportFillColor(fillColor);
-        return this;
-    }
-
-    public DocumentShellWidget setShellBorderColor(int borderColor) {
-        applyViewportBorderColor(borderColor);
+    public DocumentShellWidget setShellSurfaceStyle(UiSurfaceStyle surfaceStyle) {
+        applyViewportSurfaceStyle(surfaceStyle);
         return this;
     }
 

@@ -140,11 +140,6 @@ public class LabelWidget extends Widget {
         return this;
     }
 
-    public LabelWidget setColor(int color) {
-        this.color = color;
-        return this;
-    }
-
     /**
      * 设置标签样式。
      *
@@ -155,11 +150,6 @@ public class LabelWidget extends Widget {
         UiControlTheme.LabelStyle effectiveStyle = style == null ? UiControlTheme.defaultLabelStyle() : style;
         color = effectiveStyle.textColor;
         shadow = effectiveStyle.shadow;
-        return this;
-    }
-
-    public LabelWidget setShadow(boolean shadow) {
-        this.shadow = shadow;
         return this;
     }
 
