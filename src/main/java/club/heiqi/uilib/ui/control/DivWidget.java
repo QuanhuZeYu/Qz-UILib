@@ -702,7 +702,7 @@ public class DivWidget extends Widget implements UiScrollHost {
                         computeRowCrossSpan(heights[index], margins[index]))
                         + margins[index].getTop();
                 if (applyBounds) {
-                    child.setBounds(cursor + margins[index].getLeft() - scrollState.getHorizontalOffset(),
+                    child.applyLayoutBounds(cursor + margins[index].getLeft() - scrollState.getHorizontalOffset(),
                             childY - scrollState.getVerticalOffset(),
                             widths[index], heights[index]);
                 }
@@ -777,7 +777,7 @@ public class DivWidget extends Widget implements UiScrollHost {
                         computeColumnCrossSpan(widths[index], margins[index]))
                         + margins[index].getLeft();
                 if (applyBounds) {
-                    child.setBounds(childX - scrollState.getHorizontalOffset(), cursor - scrollState.getVerticalOffset(),
+                    child.applyLayoutBounds(childX - scrollState.getHorizontalOffset(), cursor - scrollState.getVerticalOffset(),
                             widths[index], heights[index]);
                 }
                 cursor += computeColumnMainSpan(heights[index], margins[index]);
@@ -864,7 +864,7 @@ public class DivWidget extends Widget implements UiScrollHost {
                             computeRowCrossSpan(heights[index], margins[index]))
                             + margins[index].getTop();
                     if (applyBounds) {
-                        getChildren().get(index).setBounds(cursorX + margins[index].getLeft() - scrollState.getHorizontalOffset(),
+                        getChildren().get(index).applyLayoutBounds(cursorX + margins[index].getLeft() - scrollState.getHorizontalOffset(),
                                 childY - scrollState.getVerticalOffset(),
                                 widths[index], heights[index]);
                     }
@@ -954,7 +954,7 @@ public class DivWidget extends Widget implements UiScrollHost {
                             computeColumnCrossSpan(widths[index], margins[index]))
                             + margins[index].getLeft();
                     if (applyBounds) {
-                        getChildren().get(index).setBounds(childX - scrollState.getHorizontalOffset(),
+                        getChildren().get(index).applyLayoutBounds(childX - scrollState.getHorizontalOffset(),
                                 cursorY + margins[index].getTop() - scrollState.getVerticalOffset(),
                                 widths[index], heights[index]);
                     }

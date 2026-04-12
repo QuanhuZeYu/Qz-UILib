@@ -35,7 +35,7 @@ public abstract class BaseScreen extends GuiScreen {
         int nativeWidth = Math.max(1, Minecraft.getMinecraft().displayWidth);
         int nativeHeight = Math.max(1, Minecraft.getMinecraft().displayHeight);
         renderTarget.ensureSize(nativeWidth, nativeHeight);
-        rootWidget.setBounds(0, 0, nativeWidth, nativeHeight);
+        rootWidget.applyLayoutBounds(0, 0, nativeWidth, nativeHeight);
         if (!uiBuilt) {
             UiPerformanceMonitor.getInstance().resetHistory(getClass().getSimpleName());
         }
@@ -156,7 +156,7 @@ public abstract class BaseScreen extends GuiScreen {
      * @param height 界面高度
      */
     protected void onResize(int width, int height) {
-        rootWidget.setBounds(0, 0, width, height);
+        rootWidget.applyLayoutBounds(0, 0, width, height);
     }
 
     protected Widget getRootWidget() {

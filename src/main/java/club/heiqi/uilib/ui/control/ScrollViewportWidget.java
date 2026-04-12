@@ -344,7 +344,7 @@ public class ScrollViewportWidget extends ViewportWidget implements UiScrollHost
 
         scrollState.updateState(layout.viewportWidth, layout.viewportHeight, layout.contentWidth, layout.contentHeight,
                 true, true);
-        content.setBounds(getPaddingLeft() - scrollState.getHorizontalOffset(), getPaddingTop() - scrollState.getVerticalOffset(),
+        content.applyLayoutBounds(getPaddingLeft() - scrollState.getHorizontalOffset(), getPaddingTop() - scrollState.getVerticalOffset(),
                 layout.contentWidth, layout.contentHeight);
         cachedContentLayoutVersion = currentLayoutVersion;
         cachedContentWidth = currentWidth;
@@ -406,7 +406,7 @@ public class ScrollViewportWidget extends ViewportWidget implements UiScrollHost
             int availableWidth = Math.max(0, frameWidth - margin.getLeft() - margin.getRight());
             int availableHeight = Math.max(0, frameHeight - margin.getTop() - margin.getBottom());
             if (availableWidth <= 0 || availableHeight <= 0) {
-                setBounds(frameLeft, frameTop, 0, 0);
+                applyLayoutBounds(frameLeft, frameTop, 0, 0);
                 return;
             }
 
@@ -421,7 +421,7 @@ public class ScrollViewportWidget extends ViewportWidget implements UiScrollHost
                     + resolveAlignedOffset(availableWidth, resolvedWidth, parentHorizontalAlign);
             int resolvedY = frameTop + margin.getTop()
                     + resolveAlignedOffset(availableHeight, resolvedHeight, parentVerticalAlign);
-            setBounds(resolvedX, resolvedY, resolvedWidth, resolvedHeight);
+            applyLayoutBounds(resolvedX, resolvedY, resolvedWidth, resolvedHeight);
             cachedFrameLayoutVersion = currentLayoutVersion;
             cachedParentWidth = parent.getWidth();
             cachedParentHeight = parent.getHeight();

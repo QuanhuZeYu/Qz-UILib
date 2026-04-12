@@ -297,46 +297,21 @@ public class Widget {
     }
 
     /**
-     * 设置组件位置与尺寸。
+     * 应用布局引擎解析后的最终边界。
+     *
+     * <p>该方法仅供布局容器与屏幕宿主在内部写入最终布局结果，
+     * 页面作者应通过 `UiLayoutSpec`、容器流式布局和文档壳组合声明尺寸与位置。</p>
      *
      * @param x 左上角 X
      * @param y 左上角 Y
      * @param width 宽度
      * @param height 高度
-     * @return 当前组件
      */
-    public Widget setBounds(int x, int y, int width, int height) {
+    public final void applyLayoutBounds(int x, int y, int width, int height) {
         this.x = x;
         this.y = y;
         this.width = width;
         this.height = height;
-        return this;
-    }
-
-    /**
-     * 仅调整组件位置。
-     *
-     * @param x 相对父组件的 X
-     * @param y 相对父组件的 Y
-     * @return 当前组件
-     */
-    public Widget setPosition(int x, int y) {
-        this.x = x;
-        this.y = y;
-        return this;
-    }
-
-    /**
-     * 仅调整组件尺寸。
-     *
-     * @param width 宽度
-     * @param height 高度
-     * @return 当前组件
-     */
-    public Widget setSize(int width, int height) {
-        this.width = width;
-        this.height = height;
-        return this;
     }
 
     public Widget setVisible(boolean visible) {
