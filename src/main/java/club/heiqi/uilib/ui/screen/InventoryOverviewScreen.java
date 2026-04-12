@@ -1,10 +1,13 @@
 package club.heiqi.uilib.ui.screen;
 
 import club.heiqi.uilib.ui.control.ButtonWidget;
-import club.heiqi.uilib.ui.control.DocumentShellWidget;
-import club.heiqi.uilib.ui.control.DivWidget;
 import club.heiqi.uilib.ui.control.InventorySlotGridWidget;
 import club.heiqi.uilib.ui.control.LabelWidget;
+import club.heiqi.uilib.ui.document.DocumentCardWidget;
+import club.heiqi.uilib.ui.document.DocumentPageWidget;
+import club.heiqi.uilib.ui.document.DocumentSectionWidget;
+import club.heiqi.uilib.ui.document.DocumentTextWidget;
+import club.heiqi.uilib.ui.document.DocumentToolbarWidget;
 import club.heiqi.uilib.ui.theme.UiDocumentTheme;
 import club.heiqi.uilib.ui.widget.Widget;
 import net.minecraft.client.Minecraft;
@@ -16,19 +19,21 @@ import net.minecraft.entity.player.InventoryPlayer;
  */
 public class InventoryOverviewScreen extends BaseScreen {
 
-    private final DocumentShellWidget pagePanel = new DocumentShellWidget();
+    private static final UiDocumentTheme DOCUMENT_THEME = UiDocumentTheme.defaultTheme();
 
-    private final DivWidget overviewCard = createCardPanel();
-    private final DivWidget hotbarCard = createCardPanel();
-    private final DivWidget backpackCard = createCardPanel();
+    private final DocumentPageWidget pagePanel = new DocumentPageWidget(DOCUMENT_THEME);
 
-    private final LabelWidget overviewMetricsLabel = new LabelWidget("");
-    private final LabelWidget hotbarMetricsLabel = new LabelWidget("");
-    private final LabelWidget backpackMetricsLabel = new LabelWidget("");
+    private final DocumentCardWidget overviewCard = new DocumentCardWidget(DOCUMENT_THEME);
+    private final DocumentCardWidget hotbarCard = new DocumentCardWidget(DOCUMENT_THEME);
+    private final DocumentCardWidget backpackCard = new DocumentCardWidget(DOCUMENT_THEME);
 
-    private final InventorySlotGridWidget hotbarGrid = new InventorySlotGridWidget(0, 9, 9);
-    private final InventorySlotGridWidget backpackGrid = new InventorySlotGridWidget(9, 27, 9);
-    private final ButtonWidget backButton = new ButtonWidget("返回原版背包");
+    private final LabelWidget overviewMetricsLabel = new DocumentTextWidget(DOCUMENT_THEME, DocumentTextWidget.Role.EMPHASIS, "", 5);
+    private final LabelWidget hotbarMetricsLabel = new DocumentTextWidget(DOCUMENT_THEME, DocumentTextWidget.Role.BODY, "", 4);
+    private final LabelWidget backpackMetricsLabel = new DocumentTextWidget(DOCUMENT_THEME, DocumentTextWidget.Role.BODY, "", 4);
+
+    private final InventorySlotGridWidget hotbarGrid = new InventorySlotGridWidget(0, 9, 9, DOCUMENT_THEME.getInventorySlotGridStyle());
+    private final InventorySlotGridWidget backpackGrid = new InventorySlotGridWidget(9, 27, 9, DOCUMENT_THEME.getInventorySlotGridStyle());
+    private final ButtonWidget backButton = new ButtonWidget("返回原版背包", DOCUMENT_THEME.getButtonStyle());
 
     @Override
     protected void buildUi(Widget root) {
@@ -63,8 +68,7 @@ public class InventoryOverviewScreen extends BaseScreen {
      * 配置页面壳。
      */
     private void configurePage() {
-        UiDocumentTheme.applyShellSurface(pagePanel)
-                .setShellPadding(24, 22, 24, 22)
+        pagePanel.setShellPadding(24, 22, 24, 22)
                 .setContentWidthRange(720, 1040)
                 .setMinContentHeight(620)
                 .setViewportFillRatio(0.94F, 0.92F);
@@ -74,10 +78,6 @@ public class InventoryOverviewScreen extends BaseScreen {
      * 配置背包诊断控件。
      */
     private void configureControls() {
-        UiDocumentTheme.applyEmphasisText(overviewMetricsLabel).setWrap(true).setMaxLines(5);
-        UiDocumentTheme.applyBodyText(hotbarMetricsLabel).setWrap(true).setMaxLines(4);
-        UiDocumentTheme.applyBodyText(backpackMetricsLabel).setWrap(true).setMaxLines(4);
-
         hotbarGrid.setSlotGap(8).setPreferredSlotSize(34).setSlotSizeRange(18, 50);
         backpackGrid.setSlotGap(8).setPreferredSlotSize(32).setSlotSizeRange(18, 46);
 
@@ -93,34 +93,36 @@ public class InventoryOverviewScreen extends BaseScreen {
      * 构建背包诊断页。
      */
     private void assembleUi(Widget root) {
-        DivWidget footer = createToolbarRow();
+        DocumentToolbarWidget footer = new DocumentToolbarWidget(DOCUMENT_THEME);
 
-        DivWidget overviewDiv = createSectionBlock();
-        overviewDiv.addNoGrowChild(createSectionTitle("当前状态"));
-        overviewDiv.addNoGrowChild(createBodyLabel("旧背包测试页已经完全清空。当前只保留单列背包诊断页，优先确认页面壳、格子网格和纵向滚动不会互相干扰，再重建复杂业务页。"));
-        overviewDiv.addNoGrowChild(overviewMetricsLabel);
+        DocumentSectionWidget overviewDiv = new DocumentSectionWidget(DOCUMENT_THEME);
+        overviewDiv.addChild(new DocumentTextWidget(DOCUMENT_THEME, DocumentTextWidget.Role.TITLE, "当前状态", 2));
+        overviewDiv.addChild(new DocumentTextWidget(DOCUMENT_THEME, DocumentTextWidget.Role.BODY,
+                "旧背包测试页已经完全清空。当前只保留单列背包诊断页，优先确认页面壳、格子网格和纵向滚动不会互相干扰，再重建复杂业务页。", 8));
+        overviewDiv.addChild(overviewMetricsLabel);
         overviewCard.addChild(overviewDiv);
 
-        DivWidget hotbarDiv = createSectionBlock();
-        hotbarDiv.addNoGrowChild(createSectionTitle("快捷栏探针"));
-        hotbarDiv.addNoGrowChild(hotbarMetricsLabel);
-        hotbarDiv.addNoGrowChild(hotbarGrid);
+        DocumentSectionWidget hotbarDiv = new DocumentSectionWidget(DOCUMENT_THEME);
+        hotbarDiv.addChild(new DocumentTextWidget(DOCUMENT_THEME, DocumentTextWidget.Role.TITLE, "快捷栏探针", 2));
+        hotbarDiv.addChild(hotbarMetricsLabel);
+        hotbarDiv.addChild(hotbarGrid);
         hotbarCard.addChild(hotbarDiv);
 
-        DivWidget backpackDiv = createSectionBlock();
-        backpackDiv.addNoGrowChild(createSectionTitle("主背包探针"));
-        backpackDiv.addNoGrowChild(backpackMetricsLabel);
-        backpackDiv.addNoGrowChild(backpackGrid);
+        DocumentSectionWidget backpackDiv = new DocumentSectionWidget(DOCUMENT_THEME);
+        backpackDiv.addChild(new DocumentTextWidget(DOCUMENT_THEME, DocumentTextWidget.Role.TITLE, "主背包探针", 2));
+        backpackDiv.addChild(backpackMetricsLabel);
+        backpackDiv.addChild(backpackGrid);
         backpackCard.addChild(backpackDiv);
 
-        footer.addNoGrowChild(backButton);
+        footer.addChild(backButton);
 
-        pagePanel.addDocumentChild(createTitleLabel("背包诊断页"));
-        pagePanel.addDocumentChild(createBodyLabel("这里不再做左右两栏或摘要联排，只验证网格控件在可靠父宽度下是否能稳定缩放、换列和滚动。"));
-        pagePanel.addDocumentChild(overviewCard);
-        pagePanel.addDocumentChild(hotbarCard);
-        pagePanel.addDocumentChild(backpackCard);
-        pagePanel.addDocumentChild(footer);
+        pagePanel.addBlock(new DocumentTextWidget(DOCUMENT_THEME, DocumentTextWidget.Role.TITLE, "背包诊断页", 2));
+        pagePanel.addBlock(new DocumentTextWidget(DOCUMENT_THEME, DocumentTextWidget.Role.BODY,
+                "这里不再做左右两栏或摘要联排，只验证网格控件在可靠父宽度下是否能稳定缩放、换列和滚动。", 8));
+        pagePanel.addBlock(overviewCard);
+        pagePanel.addBlock(hotbarCard);
+        pagePanel.addBlock(backpackCard);
+        pagePanel.addBlock(footer);
 
         root.addChild(pagePanel);
     }
@@ -174,32 +176,6 @@ public class InventoryOverviewScreen extends BaseScreen {
             }
         }
         return occupied;
-    }
-
-    private DivWidget createCardPanel() {
-        return UiDocumentTheme.applyCardSurface(new DivWidget()
-                .setColumn()
-                .setGap(12));
-    }
-
-    private DivWidget createSectionBlock() {
-        return new DivWidget().setColumn().setGap(12);
-    }
-
-    private DivWidget createToolbarRow() {
-        return new DivWidget().setRow().setWrap(DivWidget.Wrap.WRAP).setGap(12).setFillLayout();
-    }
-
-    private LabelWidget createTitleLabel(String text) {
-        return UiDocumentTheme.applyTitleText(new LabelWidget(text)).setWrap(true).setMaxLines(2);
-    }
-
-    private LabelWidget createSectionTitle(String text) {
-        return UiDocumentTheme.applyTitleText(new LabelWidget(text)).setWrap(true).setMaxLines(2);
-    }
-
-    private LabelWidget createBodyLabel(String text) {
-        return UiDocumentTheme.applyBodyText(new LabelWidget(text)).setWrap(true).setMaxLines(8);
     }
 
     private int clampValue(int value, int min, int max) {

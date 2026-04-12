@@ -1,5 +1,7 @@
 package club.heiqi.uilib.ui.control;
 
+import java.util.Objects;
+
 import club.heiqi.uilib.ui.render.UiRenderContext;
 import club.heiqi.uilib.ui.widget.Widget;
 import net.minecraft.client.Minecraft;
@@ -25,7 +27,7 @@ public class InventorySlotGridWidget extends Widget {
     private int preferredSlotSize = 34;
     private int minSlotSize = 22;
     private int maxSlotSize = 46;
-    private UiControlTheme.InventorySlotGridStyle style = UiControlTheme.defaultInventorySlotGridStyle();
+    private UiControlTheme.InventorySlotGridStyle style;
 
     /**
      * 创建一个只读物品格子网格。
@@ -34,10 +36,11 @@ public class InventorySlotGridWidget extends Widget {
      * @param slotCount 槽位数量
      * @param preferredColumns 期望列数
      */
-    public InventorySlotGridWidget(int startSlot, int slotCount, int preferredColumns) {
+    public InventorySlotGridWidget(int startSlot, int slotCount, int preferredColumns, UiControlTheme.InventorySlotGridStyle style) {
         this.startSlot = Math.max(0, startSlot);
         this.slotCount = Math.max(0, slotCount);
         this.preferredColumns = Math.max(1, preferredColumns);
+        this.style = Objects.requireNonNull(style, "style");
     }
 
     @Override
@@ -167,7 +170,7 @@ public class InventorySlotGridWidget extends Widget {
      * @return 当前控件
      */
     public InventorySlotGridWidget setStyle(UiControlTheme.InventorySlotGridStyle style) {
-        this.style = style == null ? UiControlTheme.defaultInventorySlotGridStyle() : style;
+        this.style = Objects.requireNonNull(style, "style");
         return this;
     }
 

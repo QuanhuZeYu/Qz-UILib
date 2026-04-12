@@ -1,5 +1,7 @@
 package club.heiqi.uilib.ui.control;
 
+import java.util.Objects;
+
 import club.heiqi.uilib.ui.render.UiRenderContext;
 import club.heiqi.uilib.ui.theme.UiSurfaceStyle;
 import club.heiqi.uilib.ui.widget.Widget;
@@ -64,7 +66,7 @@ public class ViewportWidget extends Widget {
      * @param surfaceStyle 表面样式；为空时恢复为空表面
      */
     public final void applyViewportSurfaceStyle(UiSurfaceStyle surfaceStyle) {
-        this.surfaceStyle = surfaceStyle == null ? UiSurfaceStyle.none() : surfaceStyle;
+        this.surfaceStyle = Objects.requireNonNull(surfaceStyle, "surfaceStyle");
     }
 
     protected int getPaddingLeft() {

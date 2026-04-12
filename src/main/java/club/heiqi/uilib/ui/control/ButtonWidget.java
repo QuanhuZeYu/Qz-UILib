@@ -1,5 +1,7 @@
 package club.heiqi.uilib.ui.control;
 
+import java.util.Objects;
+
 import org.lwjglx.input.Keyboard;
 
 import club.heiqi.uilib.font.api.DefaultFontRendererAdapter;
@@ -18,15 +20,16 @@ public class ButtonWidget extends Widget {
     private boolean hovered;
     private boolean pressed;
     private boolean focused;
-    private UiControlTheme.ButtonStyle style = UiControlTheme.defaultButtonStyle();
+    private UiControlTheme.ButtonStyle style;
 
     /**
      * 使用文本创建按钮。
      *
      * @param text 按钮文本
      */
-    public ButtonWidget(String text) {
+    public ButtonWidget(String text, UiControlTheme.ButtonStyle style) {
         this.text = text == null ? "" : text;
+        this.style = Objects.requireNonNull(style, "style");
     }
 
     @Override
@@ -116,7 +119,7 @@ public class ButtonWidget extends Widget {
      * @return 当前按钮
      */
     public ButtonWidget setStyle(UiControlTheme.ButtonStyle style) {
-        this.style = style == null ? UiControlTheme.defaultButtonStyle() : style;
+        this.style = Objects.requireNonNull(style, "style");
         requestLayout();
         return this;
     }

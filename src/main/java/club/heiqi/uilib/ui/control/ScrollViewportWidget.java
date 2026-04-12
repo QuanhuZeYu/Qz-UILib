@@ -1,5 +1,7 @@
 package club.heiqi.uilib.ui.control;
 
+import java.util.Objects;
+
 import club.heiqi.uilib.font.FontService;
 import club.heiqi.uilib.ui.diagnostic.UiPerformanceMonitor;
 import club.heiqi.uilib.ui.event.UiMouseEvent;
@@ -46,7 +48,7 @@ public class ScrollViewportWidget extends ViewportWidget implements UiScrollHost
     private int cachedHorizontalScrollOffset = Integer.MIN_VALUE;
     private int cachedVerticalScrollOffset = Integer.MIN_VALUE;
     private int cachedContentFontRuntimeVersion = -1;
-    private UiControlTheme.ScrollbarStyle scrollbarStyle = UiControlTheme.defaultScrollbarStyle();
+    private UiControlTheme.ScrollbarStyle scrollbarStyle;
 
     public ScrollViewportWidget() {
         applyChildClipEnabled(true);
@@ -61,13 +63,12 @@ public class ScrollViewportWidget extends ViewportWidget implements UiScrollHost
         addChild(content);
     }
 
-    public DivWidget getContent() {
-        return content;
+    protected final void applyScrollbarStyle(UiControlTheme.ScrollbarStyle scrollbarStyle) {
+        this.scrollbarStyle = Objects.requireNonNull(scrollbarStyle, "scrollbarStyle");
     }
 
-    public ScrollViewportWidget setScrollStep(int scrollStep) {
-        scrollState.setScrollStep(scrollStep);
-        return this;
+    protected final DivWidget getContent() {
+        return content;
     }
 
     /**
@@ -166,14 +167,6 @@ public class ScrollViewportWidget extends ViewportWidget implements UiScrollHost
         return content.getHeight();
     }
 
-    public int getContentX() {
-        return content.getX();
-    }
-
-    public int getContentY() {
-        return content.getY();
-    }
-
     /**
      * 将目标子组件滚动到当前可视区域内。
      *
@@ -237,17 +230,6 @@ public class ScrollViewportWidget extends ViewportWidget implements UiScrollHost
             drawScrollbar(context, horizontalMetrics, scrollState.isHoveredHorizontalScrollbar(),
                     scrollState.isHoveredHorizontalThumb(), scrollState.isDraggingHorizontalThumb());
         }
-    }
-
-    /**
-     * 设置滚动条样式。
-     *
-     * @param scrollbarStyle 滚动条样式；为空时恢复默认样式
-     * @return 当前视口
-     */
-    public ScrollViewportWidget setScrollbarStyle(UiControlTheme.ScrollbarStyle scrollbarStyle) {
-        this.scrollbarStyle = scrollbarStyle == null ? UiControlTheme.defaultScrollbarStyle() : scrollbarStyle;
-        return this;
     }
 
     @Override

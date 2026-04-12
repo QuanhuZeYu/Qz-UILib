@@ -1,6 +1,7 @@
 package club.heiqi.uilib.ui.control;
 
 import java.util.List;
+import java.util.Objects;
 
 import club.heiqi.uilib.font.api.DefaultFontRendererAdapter;
 import club.heiqi.uilib.font.FontService;
@@ -14,8 +15,8 @@ import club.heiqi.uilib.ui.widget.Widget;
 public class LabelWidget extends Widget {
 
     private String text;
-    private int color = UiControlTheme.defaultLabelStyle().textColor;
-    private boolean shadow = UiControlTheme.defaultLabelStyle().shadow;
+    private int color;
+    private boolean shadow;
     private boolean wrap;
     private boolean ellipsis;
     private int maxLines = Integer.MAX_VALUE;
@@ -33,8 +34,9 @@ public class LabelWidget extends Widget {
      *
      * @param text 文本内容
      */
-    public LabelWidget(String text) {
+    public LabelWidget(String text, UiControlTheme.LabelStyle style) {
         this.text = text;
+        setStyle(style);
     }
 
     @Override
@@ -147,7 +149,7 @@ public class LabelWidget extends Widget {
      * @return 当前标签
      */
     public LabelWidget setStyle(UiControlTheme.LabelStyle style) {
-        UiControlTheme.LabelStyle effectiveStyle = style == null ? UiControlTheme.defaultLabelStyle() : style;
+        UiControlTheme.LabelStyle effectiveStyle = Objects.requireNonNull(style, "style");
         color = effectiveStyle.textColor;
         shadow = effectiveStyle.shadow;
         return this;

@@ -1,5 +1,7 @@
 package club.heiqi.uilib.ui.control;
 
+import java.util.Objects;
+
 import org.lwjglx.input.Keyboard;
 
 import club.heiqi.uilib.font.api.DefaultFontRendererAdapter;
@@ -18,10 +20,11 @@ public class ToggleSwitchWidget extends Widget {
     private Runnable toggleHandler;
     private boolean hovered;
     private boolean focused;
-    private UiControlTheme.ToggleSwitchStyle style = UiControlTheme.defaultToggleSwitchStyle();
+    private UiControlTheme.ToggleSwitchStyle style;
 
-    public ToggleSwitchWidget(String label) {
+    public ToggleSwitchWidget(String label, UiControlTheme.ToggleSwitchStyle style) {
         this.label = label == null ? "" : label;
+        this.style = Objects.requireNonNull(style, "style");
     }
 
     @Override
@@ -140,7 +143,7 @@ public class ToggleSwitchWidget extends Widget {
      * @return 当前开关
      */
     public ToggleSwitchWidget setStyle(UiControlTheme.ToggleSwitchStyle style) {
-        this.style = style == null ? UiControlTheme.defaultToggleSwitchStyle() : style;
+        this.style = Objects.requireNonNull(style, "style");
         requestLayout();
         return this;
     }

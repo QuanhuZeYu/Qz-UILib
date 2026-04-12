@@ -1,5 +1,7 @@
 package club.heiqi.uilib.ui.control;
 
+import java.util.Objects;
+
 import org.lwjglx.input.Keyboard;
 
 import club.heiqi.uilib.font.api.DefaultFontRendererAdapter;
@@ -18,10 +20,11 @@ public class SegmentedSelectorWidget extends Widget {
     private Runnable changeHandler;
     private boolean focused;
     private int hoveredIndex = -1;
-    private UiControlTheme.SegmentedSelectorStyle style = UiControlTheme.defaultSegmentedSelectorStyle();
+    private UiControlTheme.SegmentedSelectorStyle style;
 
-    public SegmentedSelectorWidget(String... options) {
+    public SegmentedSelectorWidget(UiControlTheme.SegmentedSelectorStyle style, String... options) {
         this.options = options == null ? new String[0] : options;
+        this.style = Objects.requireNonNull(style, "style");
     }
 
     @Override
@@ -156,7 +159,7 @@ public class SegmentedSelectorWidget extends Widget {
      * @return 当前选择器
      */
     public SegmentedSelectorWidget setStyle(UiControlTheme.SegmentedSelectorStyle style) {
-        this.style = style == null ? UiControlTheme.defaultSegmentedSelectorStyle() : style;
+        this.style = Objects.requireNonNull(style, "style");
         requestLayout();
         return this;
     }

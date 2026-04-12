@@ -4,6 +4,7 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 
 import club.heiqi.uilib.font.FontService;
 import club.heiqi.uilib.ui.diagnostic.UiPerformanceMonitor;
@@ -94,7 +95,7 @@ public class DivWidget extends Widget implements UiScrollHost {
     private int columnGap;
     private UiSurfaceStyle surfaceStyle = UiSurfaceStyle.none();
     private final OverflowScrollState scrollState = new OverflowScrollState();
-    private UiControlTheme.ScrollbarStyle scrollbarStyle = UiControlTheme.defaultScrollbarStyle();
+    private UiControlTheme.ScrollbarStyle scrollbarStyle;
     private int cachedLayoutVersion = -1;
     private int cachedLayoutWidth = -1;
     private int cachedLayoutHeight = -1;
@@ -194,125 +195,6 @@ public class DivWidget extends Widget implements UiScrollHost {
         return this;
     }
 
-    /**
-     * 追加固定子项，不参与主轴伸缩。
-     *
-     * @param child 子组件
-     * @return 当前容器
-     */
-    public DivWidget addFixedChild(Widget child) {
-        applyFlexItemSpec(child, 0.0F, 0.0F);
-        return addChild(child);
-    }
-
-    /**
-     * 追加不增长的子项，可按需压缩。
-     *
-     * @param child 子组件
-     * @return 当前容器
-     */
-    public DivWidget addNoGrowChild(Widget child) {
-        applyFlexItemSpec(child, 0.0F, 1.0F);
-        return addChild(child);
-    }
-
-    /**
-     * 追加柔性子项，允许按主轴空间自动伸缩。
-     *
-     * @param child 子组件
-     * @return 当前容器
-     */
-    public DivWidget addFlexChild(Widget child) {
-        applyFlexItemSpec(child, 1.0F, 1.0F);
-        return addChild(child);
-    }
-
-    /**
-     * 追加柔性子项，并指定主轴增长权重。
-     *
-     * @param child 子组件
-     * @param growFactor 增长权重
-     * @return 当前容器
-     */
-    public DivWidget addFlexChild(Widget child, float growFactor) {
-        applyFlexItemSpec(child, Math.max(0.0F, growFactor), 1.0F);
-        return addChild(child);
-    }
-
-    /**
-     * 将当前 Div 设为基础纵向容器。
-     *
-     * @return 当前容器
-     */
-    public DivWidget setColumn() {
-        return setDirection(Direction.COLUMN)
-                .setAlignItems(AlignItems.STRETCH)
-                .setJustifyContent(JustifyContent.START)
-                .setWrap(Wrap.NOWRAP)
-                .setOverflowX(Overflow.VISIBLE)
-                .setOverflowY(Overflow.VISIBLE)
-                .setFillLayout();
-    }
-
-    /**
-     * 将当前 Div 设为基础横向容器。
-     *
-     * @return 当前容器
-     */
-    public DivWidget setRow() {
-        return setDirection(Direction.ROW)
-                .setAlignItems(AlignItems.STRETCH)
-                .setJustifyContent(JustifyContent.START)
-                .setWrap(Wrap.NOWRAP)
-                .setOverflowX(Overflow.VISIBLE)
-                .setOverflowY(Overflow.VISIBLE)
-                .setFillLayout();
-    }
-
-    /**
-     * 在外层响应式容器中占满可用宽度，并保持高度自适应。
-     *
-     * @return 当前容器
-     */
-    public DivWidget setFillLayout() {
-        ensureLayoutSpec().setWidth(UiLength.percent(1.0F)).setHeight(UiLength.auto());
-        requestLayout();
-        return this;
-    }
-
-    /**
-     * 设置当前 Div 在外层响应式容器中的纵向增长系数。
-     *
-     * @param grow 增长系数
-     * @return 当前容器
-     */
-    public DivWidget setGrowLayout(float grow) {
-        ensureLayoutSpec().setGrow(grow);
-        requestLayout();
-        return this;
-    }
-
-    /**
-     * 设置当前 Div 在外层响应式容器中的最小高度约束。
-     *
-     * @param minHeight 最小高度
-     * @return 当前容器
-     */
-    public DivWidget setMinHeightLayout(int minHeight) {
-        ensureLayoutSpec().setMinHeight(minHeight);
-        requestLayout();
-        return this;
-    }
-
-    /**
-     * 将当前 Div 设为仅纵向滚动，横向溢出直接裁切。
-     *
-     * @return 当前容器
-     */
-    public DivWidget setVerticalScrollOnly() {
-        return setOverflowX(Overflow.HIDDEN).setOverflowY(Overflow.AUTO);
-    }
-
     public DivWidget setDirection(Direction direction) {
         this.direction = direction == null ? Direction.COLUMN : direction;
         requestLayout();
@@ -355,11 +237,6 @@ public class DivWidget extends Widget implements UiScrollHost {
         return this;
     }
 
-    public DivWidget setScrollStep(int scrollStep) {
-        scrollState.setScrollStep(scrollStep);
-        return this;
-    }
-
     public DivWidget setPadding(int padding) {
         return setPadding(padding, padding, padding, padding);
     }
@@ -394,35 +271,12 @@ public class DivWidget extends Widget implements UiScrollHost {
     }
 
     public DivWidget setSurfaceStyle(UiSurfaceStyle surfaceStyle) {
-        this.surfaceStyle = surfaceStyle == null ? UiSurfaceStyle.none() : surfaceStyle;
+        this.surfaceStyle = Objects.requireNonNull(surfaceStyle, "surfaceStyle");
         return this;
     }
 
-    /**
-     * 设置滚动条样式。
-     *
-     * @param scrollbarStyle 滚动条样式；为空时恢复默认样式
-     * @return 当前容器
-     */
-    public DivWidget setScrollbarStyle(UiControlTheme.ScrollbarStyle scrollbarStyle) {
-        this.scrollbarStyle = scrollbarStyle == null ? UiControlTheme.defaultScrollbarStyle() : scrollbarStyle;
-        return this;
-    }
-
-    public DivWidget setWidthPercent(float widthPercent) {
-        float resolvedPercent = clampPercent(widthPercent);
-        UiLayoutSpec layoutSpec = ensureLayoutSpec();
-        layoutSpec.setWidth(resolvedPercent >= 0.0F ? UiLength.percent(resolvedPercent) : UiLength.auto());
-        requestLayout();
-        return this;
-    }
-
-    public DivWidget setHeightPercent(float heightPercent) {
-        float resolvedPercent = clampPercent(heightPercent);
-        UiLayoutSpec layoutSpec = ensureLayoutSpec();
-        layoutSpec.setHeight(resolvedPercent >= 0.0F ? UiLength.percent(resolvedPercent) : UiLength.auto());
-        requestLayout();
-        return this;
+    protected final void applyScrollbarStyle(UiControlTheme.ScrollbarStyle scrollbarStyle) {
+        this.scrollbarStyle = Objects.requireNonNull(scrollbarStyle, "scrollbarStyle");
     }
 
     public int getHorizontalScrollOffset() {
@@ -1269,18 +1123,6 @@ public class DivWidget extends Widget implements UiScrollHost {
         UiLayoutSpec layoutSpec = child.getLayoutSpec();
         float shrinkFactor = layoutSpec == null ? 1.0F : layoutSpec.getShrink();
         return availableShrink * shrinkFactor;
-    }
-
-    private void applyFlexItemSpec(Widget child, float grow, float shrink) {
-        if (child == null) {
-            return;
-        }
-        UiLayoutSpec layoutSpec = child.getLayoutSpec();
-        if (layoutSpec == null) {
-            layoutSpec = new UiLayoutSpec();
-            child.setLayoutSpec(layoutSpec);
-        }
-        layoutSpec.setGrow(grow).setShrink(shrink);
     }
 
     private boolean hasStretchChild(int start, int end) {

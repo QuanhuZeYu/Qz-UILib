@@ -1,5 +1,7 @@
 package club.heiqi.uilib.ui.control;
 
+import java.util.Objects;
+
 import org.lwjglx.input.Keyboard;
 
 import club.heiqi.uilib.font.api.DefaultFontRendererAdapter;
@@ -20,7 +22,11 @@ public class TextInputWidget extends Widget {
     private int maxLength = 128;
     private boolean focused;
     private boolean hovered;
-    private UiControlTheme.TextInputStyle style = UiControlTheme.defaultTextInputStyle();
+    private UiControlTheme.TextInputStyle style;
+
+    public TextInputWidget(UiControlTheme.TextInputStyle style) {
+        this.style = Objects.requireNonNull(style, "style");
+    }
 
     @Override
     protected void drawSelf(UiRenderContext context) {
@@ -156,7 +162,7 @@ public class TextInputWidget extends Widget {
      * @return 当前输入框
      */
     public TextInputWidget setStyle(UiControlTheme.TextInputStyle style) {
-        this.style = style == null ? UiControlTheme.defaultTextInputStyle() : style;
+        this.style = Objects.requireNonNull(style, "style");
         requestLayout();
         return this;
     }

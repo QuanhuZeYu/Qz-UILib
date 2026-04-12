@@ -6,12 +6,18 @@ import club.heiqi.uilib.font.FontRuntimeStats;
 import club.heiqi.uilib.font.FontService;
 import club.heiqi.uilib.ui.diagnostic.UiRuntimeStats;
 import club.heiqi.uilib.ui.control.ButtonWidget;
-import club.heiqi.uilib.ui.control.DocumentShellWidget;
 import club.heiqi.uilib.ui.control.DivWidget;
 import club.heiqi.uilib.ui.control.LabelWidget;
 import club.heiqi.uilib.ui.control.SegmentedSelectorWidget;
 import club.heiqi.uilib.ui.control.TextInputWidget;
 import club.heiqi.uilib.ui.control.ToggleSwitchWidget;
+import club.heiqi.uilib.ui.document.DocumentCardWidget;
+import club.heiqi.uilib.ui.document.DocumentFlowRowWidget;
+import club.heiqi.uilib.ui.document.DocumentFormRowWidget;
+import club.heiqi.uilib.ui.document.DocumentPageWidget;
+import club.heiqi.uilib.ui.document.DocumentSectionWidget;
+import club.heiqi.uilib.ui.document.DocumentTextWidget;
+import club.heiqi.uilib.ui.document.DocumentToolbarWidget;
 import club.heiqi.uilib.ui.layout.UiLayoutSpec;
 import club.heiqi.uilib.ui.layout.UiLength;
 import club.heiqi.uilib.ui.theme.UiDocumentTheme;
@@ -22,42 +28,53 @@ import club.heiqi.uilib.ui.widget.Widget;
  */
 public class UiTestScreen extends BaseScreen {
 
-    private final DocumentShellWidget diagnosticPage = new DocumentShellWidget();
+    private static final UiDocumentTheme DOCUMENT_THEME = UiDocumentTheme.defaultTheme();
 
-    private final DivWidget overviewCard = createCardPanel();
-    private final DivWidget formCard = createCardPanel();
-    private final DivWidget wrapCard = createCardPanel();
-    private final DivWidget performanceCard = createCardPanel();
-    private final DivWidget mutationCard = createCardPanel();
-    private final DivWidget divScrollCard = createCardPanel();
-    private final DivWidget divScrollProbe = createSectionBlock()
-            .setVerticalScrollOnly()
+    private final DocumentPageWidget diagnosticPage = new DocumentPageWidget(DOCUMENT_THEME);
+
+    private final DocumentCardWidget overviewCard = new DocumentCardWidget(DOCUMENT_THEME);
+    private final DocumentCardWidget formCard = new DocumentCardWidget(DOCUMENT_THEME);
+    private final DocumentCardWidget wrapCard = new DocumentCardWidget(DOCUMENT_THEME);
+    private final DocumentCardWidget performanceCard = new DocumentCardWidget(DOCUMENT_THEME);
+    private final DocumentCardWidget mutationCard = new DocumentCardWidget(DOCUMENT_THEME);
+    private final DocumentCardWidget divScrollCard = new DocumentCardWidget(DOCUMENT_THEME);
+    private final DivWidget divScrollProbe = new DivWidget() {
+        {
+            applyScrollbarStyle(DOCUMENT_THEME.getScrollbarStyle());
+        }
+    }
+            .setDirection(DivWidget.Direction.COLUMN)
+            .setAlignItems(DivWidget.AlignItems.STRETCH)
+            .setJustifyContent(DivWidget.JustifyContent.START)
+            .setWrap(DivWidget.Wrap.NOWRAP)
+            .setOverflowX(DivWidget.Overflow.HIDDEN)
+            .setOverflowY(DivWidget.Overflow.AUTO)
             .setPadding(14)
             .setGap(10);
 
-    private final LabelWidget viewportMetricsLabel = new LabelWidget("");
-    private final LabelWidget scrollMetricsLabel = new LabelWidget("");
-    private final LabelWidget wrapMetricsLabel = new LabelWidget("");
-    private final LabelWidget performanceFrameLabel = new LabelWidget("");
-    private final LabelWidget performanceWidgetLabel = new LabelWidget("");
-    private final LabelWidget performanceHotspotLabel = new LabelWidget("");
-    private final LabelWidget performancePhaseLabel = new LabelWidget("");
-    private final LabelWidget performanceFontLabel = new LabelWidget("");
-    private final LabelWidget mutationMetricsLabel = new LabelWidget("");
-    private final LabelWidget mutationSampleLabel = new LabelWidget("");
-    private final LabelWidget divScrollMetricsLabel = new LabelWidget("");
-    private final LabelWidget wrapSampleLabel = new LabelWidget("");
-    private final LabelWidget actionStateLabel = new LabelWidget("");
+    private final LabelWidget viewportMetricsLabel = new DocumentTextWidget(DOCUMENT_THEME, DocumentTextWidget.Role.EMPHASIS, "", 4);
+    private final LabelWidget scrollMetricsLabel = new DocumentTextWidget(DOCUMENT_THEME, DocumentTextWidget.Role.SECONDARY, "", 4);
+    private final LabelWidget wrapMetricsLabel = new DocumentTextWidget(DOCUMENT_THEME, DocumentTextWidget.Role.SECONDARY, "", 6);
+    private final LabelWidget performanceFrameLabel = new DocumentTextWidget(DOCUMENT_THEME, DocumentTextWidget.Role.EMPHASIS, "", 4);
+    private final LabelWidget performanceWidgetLabel = new DocumentTextWidget(DOCUMENT_THEME, DocumentTextWidget.Role.BODY, "", 5);
+    private final LabelWidget performanceHotspotLabel = new DocumentTextWidget(DOCUMENT_THEME, DocumentTextWidget.Role.BODY, "", 5);
+    private final LabelWidget performancePhaseLabel = new DocumentTextWidget(DOCUMENT_THEME, DocumentTextWidget.Role.BODY, "", 6);
+    private final LabelWidget performanceFontLabel = new DocumentTextWidget(DOCUMENT_THEME, DocumentTextWidget.Role.SECONDARY, "", 6);
+    private final LabelWidget mutationMetricsLabel = new DocumentTextWidget(DOCUMENT_THEME, DocumentTextWidget.Role.EMPHASIS, "", 6);
+    private final LabelWidget mutationSampleLabel = new DocumentTextWidget(DOCUMENT_THEME, DocumentTextWidget.Role.BODY, "", 12);
+    private final LabelWidget divScrollMetricsLabel = new DocumentTextWidget(DOCUMENT_THEME, DocumentTextWidget.Role.SECONDARY, "", 5);
+    private final LabelWidget wrapSampleLabel = new DocumentTextWidget(DOCUMENT_THEME, DocumentTextWidget.Role.BODY, "", 10);
+    private final LabelWidget actionStateLabel = new DocumentTextWidget(DOCUMENT_THEME, DocumentTextWidget.Role.SECONDARY, "", 2);
 
-    private final TextInputWidget themeInput = new TextInputWidget();
-    private final TextInputWidget namespaceInput = new TextInputWidget();
-    private final TextInputWidget pathInput = new TextInputWidget();
-    private final ToggleSwitchWidget wrapToggle = new ToggleSwitchWidget("启用");
-    private final ToggleSwitchWidget mutationToggle = new ToggleSwitchWidget("启用高频探针");
-    private final SegmentedSelectorWidget widthPresetSelector = new SegmentedSelectorWidget("窄页", "中页", "宽页");
-    private final SegmentedSelectorWidget mutationModeSelector = new SegmentedSelectorWidget("§k渲染", "同长替换", "长文重排");
-    private final SegmentedSelectorWidget mutationRateSelector = new SegmentedSelectorWidget("每帧", "50ms", "200ms");
-    private final ButtonWidget refreshButton = new ButtonWidget("刷新诊断文本");
+    private final TextInputWidget themeInput = new TextInputWidget(DOCUMENT_THEME.getTextInputStyle());
+    private final TextInputWidget namespaceInput = new TextInputWidget(DOCUMENT_THEME.getTextInputStyle());
+    private final TextInputWidget pathInput = new TextInputWidget(DOCUMENT_THEME.getTextInputStyle());
+    private final ToggleSwitchWidget wrapToggle = new ToggleSwitchWidget("启用", DOCUMENT_THEME.getToggleSwitchStyle());
+    private final ToggleSwitchWidget mutationToggle = new ToggleSwitchWidget("启用高频探针", DOCUMENT_THEME.getToggleSwitchStyle());
+    private final SegmentedSelectorWidget widthPresetSelector = new SegmentedSelectorWidget(DOCUMENT_THEME.getSegmentedSelectorStyle(), "窄页", "中页", "宽页");
+    private final SegmentedSelectorWidget mutationModeSelector = new SegmentedSelectorWidget(DOCUMENT_THEME.getSegmentedSelectorStyle(), "§k渲染", "同长替换", "长文重排");
+    private final SegmentedSelectorWidget mutationRateSelector = new SegmentedSelectorWidget(DOCUMENT_THEME.getSegmentedSelectorStyle(), "每帧", "50ms", "200ms");
+    private final ButtonWidget refreshButton = new ButtonWidget("刷新诊断文本", DOCUMENT_THEME.getButtonStyle());
 
     private String actionStateText = "尚未操作";
     private long lastMutationUpdateNanos;
@@ -101,8 +118,7 @@ public class UiTestScreen extends BaseScreen {
      * 配置页面壳。
      */
     private void configurePage() {
-        UiDocumentTheme.applyShellSurface(diagnosticPage)
-                .setShellPadding(24, 22, 24, 22)
+        diagnosticPage.setShellPadding(24, 22, 24, 22)
                 .setContentWidthRange(680, 1080)
                 .setMinContentHeight(560)
                 .setViewportFillRatio(0.92F, 0.90F);
@@ -112,20 +128,6 @@ public class UiTestScreen extends BaseScreen {
      * 配置诊断控件。
      */
     private void configureControls() {
-        UiDocumentTheme.applyEmphasisText(viewportMetricsLabel).setWrap(true).setMaxLines(4);
-        UiDocumentTheme.applySecondaryText(scrollMetricsLabel).setWrap(true).setMaxLines(4);
-        UiDocumentTheme.applySecondaryText(wrapMetricsLabel).setWrap(true).setMaxLines(6);
-        UiDocumentTheme.applyEmphasisText(performanceFrameLabel).setWrap(true).setMaxLines(4);
-        UiDocumentTheme.applyBodyText(performanceWidgetLabel).setWrap(true).setMaxLines(5);
-        UiDocumentTheme.applyBodyText(performanceHotspotLabel).setWrap(true).setMaxLines(5);
-        UiDocumentTheme.applyBodyText(performancePhaseLabel).setWrap(true).setMaxLines(6);
-        UiDocumentTheme.applySecondaryText(performanceFontLabel).setWrap(true).setMaxLines(6);
-        UiDocumentTheme.applyEmphasisText(mutationMetricsLabel).setWrap(true).setMaxLines(6);
-        UiDocumentTheme.applyBodyText(mutationSampleLabel).setWrap(true).setMaxLines(12);
-        UiDocumentTheme.applySecondaryText(divScrollMetricsLabel).setWrap(true).setMaxLines(5);
-        UiDocumentTheme.applyBodyText(wrapSampleLabel).setWrap(true).setMaxLines(10);
-        UiDocumentTheme.applySecondaryText(actionStateLabel).setWrap(true).setMaxLines(2);
-
         formCard.setLayoutSpec(new UiLayoutSpec().setFlexBasis(UiLength.px(460)).setMinWidth(320).setMaxWidth(620));
         wrapCard.setLayoutSpec(new UiLayoutSpec().setFlexBasis(UiLength.px(340)).setMinWidth(260).setMaxWidth(480));
         performanceCard.setLayoutSpec(new UiLayoutSpec().setWidth(UiLength.percent(1.0F)));
@@ -187,92 +189,89 @@ public class UiTestScreen extends BaseScreen {
      * 构建诊断页组件树。
      */
     private void assembleUi(Widget root) {
-        DivWidget cardsFlow = createWrapRow().setColumnGap(16).setRowGap(20);
+        DocumentFlowRowWidget cardsFlow = new DocumentFlowRowWidget(DOCUMENT_THEME);
 
-        DivWidget overviewDiv = createSectionBlock();
-        overviewDiv.addNoGrowChild(createSectionTitle("当前状态"));
-        overviewDiv.addNoGrowChild(createBodyLabel("旧测试页已经完全清空。当前只保留这一张最小诊断页，专门验证页面壳尺寸、卡片换行、中文文本最小宽度和父容器约束是否正确。"));
-        overviewDiv.addNoGrowChild(viewportMetricsLabel);
-        overviewDiv.addNoGrowChild(scrollMetricsLabel);
-        overviewDiv.addNoGrowChild(actionStateLabel);
+        DocumentSectionWidget overviewDiv = new DocumentSectionWidget(DOCUMENT_THEME);
+        overviewDiv.addChild(new DocumentTextWidget(DOCUMENT_THEME, DocumentTextWidget.Role.TITLE, "当前状态", 2));
+        overviewDiv.addChild(new DocumentTextWidget(DOCUMENT_THEME, DocumentTextWidget.Role.BODY,
+                "旧测试页已经完全清空。当前只保留这一张最小诊断页，专门验证页面壳尺寸、卡片换行、中文文本最小宽度和父容器约束是否正确。", 8));
+        overviewDiv.addChild(viewportMetricsLabel);
+        overviewDiv.addChild(scrollMetricsLabel);
+        overviewDiv.addChild(actionStateLabel);
         overviewCard.addChild(overviewDiv);
 
-        DivWidget formDiv = createSectionBlock();
-        formDiv.addNoGrowChild(createSectionTitle("表单约束探针"));
-        formDiv.addNoGrowChild(createBodyLabel("这张卡片只验证标签列和字段列在父宽度变化时能否正确重排。标签列保持固定参考宽度，字段列允许拉伸或换到下一行。"));
-        formDiv.addNoGrowChild(createFormRow("主题名称", themeInput));
-        formDiv.addNoGrowChild(createFormRow("命名空间", namespaceInput));
-        formDiv.addNoGrowChild(createFormRow("资源路径", pathInput));
-        formDiv.addNoGrowChild(createFormRow("换行提示", wrapToggle));
-        formDiv.addNoGrowChild(createFormRow("宽度档位", widthPresetSelector));
-        formDiv.addNoGrowChild(createToolbarRow().addNoGrowChild(refreshButton));
+        DocumentSectionWidget formDiv = new DocumentSectionWidget(DOCUMENT_THEME);
+        formDiv.addChild(new DocumentTextWidget(DOCUMENT_THEME, DocumentTextWidget.Role.TITLE, "表单约束探针", 2));
+        formDiv.addChild(new DocumentTextWidget(DOCUMENT_THEME, DocumentTextWidget.Role.BODY,
+                "这张卡片只验证标签列和字段列在父宽度变化时能否正确重排。标签列保持固定参考宽度，字段列允许拉伸或换到下一行。", 8));
+        formDiv.addChild(new DocumentFormRowWidget(DOCUMENT_THEME, "主题名称", themeInput));
+        formDiv.addChild(new DocumentFormRowWidget(DOCUMENT_THEME, "命名空间", namespaceInput));
+        formDiv.addChild(new DocumentFormRowWidget(DOCUMENT_THEME, "资源路径", pathInput));
+        formDiv.addChild(new DocumentFormRowWidget(DOCUMENT_THEME, "换行提示", wrapToggle));
+        formDiv.addChild(new DocumentFormRowWidget(DOCUMENT_THEME, "宽度档位", widthPresetSelector));
+        DocumentToolbarWidget refreshToolbar = new DocumentToolbarWidget(DOCUMENT_THEME);
+        refreshToolbar.addChild(refreshButton);
+        formDiv.addChild(refreshToolbar);
         formCard.addChild(formDiv);
 
-        DivWidget wrapDiv = createSectionBlock();
-        wrapDiv.addNoGrowChild(createSectionTitle("文本换行与最小宽度探针"));
-        wrapDiv.addNoGrowChild(createBodyLabel("这里故意放一段中英混排文本，观察在不同页宽下是否优先正常换行，而不是把整段中文误判为一个不可压缩长词。"));
-        wrapDiv.addNoGrowChild(wrapSampleLabel);
-        wrapDiv.addNoGrowChild(wrapMetricsLabel);
+        DocumentSectionWidget wrapDiv = new DocumentSectionWidget(DOCUMENT_THEME);
+        wrapDiv.addChild(new DocumentTextWidget(DOCUMENT_THEME, DocumentTextWidget.Role.TITLE, "文本换行与最小宽度探针", 2));
+        wrapDiv.addChild(new DocumentTextWidget(DOCUMENT_THEME, DocumentTextWidget.Role.BODY,
+                "这里故意放一段中英混排文本，观察在不同页宽下是否优先正常换行，而不是把整段中文误判为一个不可压缩长词。", 8));
+        wrapDiv.addChild(wrapSampleLabel);
+        wrapDiv.addChild(wrapMetricsLabel);
         wrapCard.addChild(wrapDiv);
 
-        DivWidget divScrollCardDiv = createSectionBlock();
-        divScrollCardDiv.addNoGrowChild(createSectionTitle("统一尺寸契约探针"));
-        divScrollCardDiv.addNoGrowChild(createBodyLabel("这块直接验证 Div 父容器是否开始读取统一的 `UiLayoutSpec`：内部探针使用 `width=100%` 和 `height=220px`，如果仍然不产生内部滚动，就说明尺寸契约仍然割裂。"));
+        DocumentSectionWidget divScrollCardDiv = new DocumentSectionWidget(DOCUMENT_THEME);
+        divScrollCardDiv.addChild(new DocumentTextWidget(DOCUMENT_THEME, DocumentTextWidget.Role.TITLE, "统一尺寸契约探针", 2));
+        divScrollCardDiv.addChild(new DocumentTextWidget(DOCUMENT_THEME, DocumentTextWidget.Role.BODY,
+                "这块直接验证 Div 父容器是否开始读取统一的 `UiLayoutSpec`：内部探针使用 `width=100%` 和 `height=220px`，如果仍然不产生内部滚动，就说明尺寸契约仍然割裂。", 8));
         for (int index = 1; index <= 10; index++) {
-            divScrollProbe.addNoGrowChild(createBodyLabel("Div 自滚动条目 " + index
-                    + "：这里故意放入重复的中英混排说明，只有当 Div 真正认 `UiLayoutSpec.height=220px` 时，这块区域才会产生稳定的内部滚动，而不是继续随外层页面一起长高。"));
+            divScrollProbe.addChild(new DocumentTextWidget(DOCUMENT_THEME, DocumentTextWidget.Role.BODY,
+                    "Div 自滚动条目 " + index
+                            + "：这里故意放入重复的中英混排说明，只有当 Div 真正认 `UiLayoutSpec.height=220px` 时，这块区域才会产生稳定的内部滚动，而不是继续随外层页面一起长高。",
+                    8));
         }
-        divScrollCardDiv.addNoGrowChild(divScrollProbe);
-        divScrollCardDiv.addNoGrowChild(divScrollMetricsLabel);
+        divScrollCardDiv.addChild(divScrollProbe);
+        divScrollCardDiv.addChild(divScrollMetricsLabel);
         divScrollCard.addChild(divScrollCardDiv);
 
-        DivWidget performanceDiv = createSectionBlock();
-        performanceDiv.addNoGrowChild(createSectionTitle("UI 性能统计"));
-        performanceDiv.addNoGrowChild(createBodyLabel("这一块直接读取框架运行时采样结果，观察帧耗时、输入路由、命中测试次数和最慢组件类型。若这里的数据异常，再继续细分具体控件或布局阶段。"));
-        performanceDiv.addNoGrowChild(performanceFrameLabel);
-        performanceDiv.addNoGrowChild(performanceWidgetLabel);
-        performanceDiv.addNoGrowChild(performanceHotspotLabel);
-        performanceDiv.addNoGrowChild(performancePhaseLabel);
-        performanceDiv.addNoGrowChild(performanceFontLabel);
+        DocumentSectionWidget performanceDiv = new DocumentSectionWidget(DOCUMENT_THEME);
+        performanceDiv.addChild(new DocumentTextWidget(DOCUMENT_THEME, DocumentTextWidget.Role.TITLE, "UI 性能统计", 2));
+        performanceDiv.addChild(new DocumentTextWidget(DOCUMENT_THEME, DocumentTextWidget.Role.BODY,
+                "这一块直接读取框架运行时采样结果，观察帧耗时、输入路由、命中测试次数和最慢组件类型。若这里的数据异常，再继续细分具体控件或布局阶段。", 8));
+        performanceDiv.addChild(performanceFrameLabel);
+        performanceDiv.addChild(performanceWidgetLabel);
+        performanceDiv.addChild(performanceHotspotLabel);
+        performanceDiv.addChild(performancePhaseLabel);
+        performanceDiv.addChild(performanceFontLabel);
         performanceCard.addChild(performanceDiv);
 
-        DivWidget mutationDiv = createSectionBlock();
-        mutationDiv.addNoGrowChild(createSectionTitle("高频字符变更探针"));
-        mutationDiv.addNoGrowChild(createBodyLabel("这块专门区分三种压力：`§k` 混淆文本只在绘制阶段随机替换字符，不主动触发布局；`同长替换` 会高频调用 `setText()` 但尽量保持长度稳定；`长文重排` 会持续改变长文本内容并触发换行重算。通过它可以直接观察字体绘制和布局失效谁更伤。"));
-        mutationDiv.addNoGrowChild(createFormRow("自动运行", mutationToggle));
-        mutationDiv.addNoGrowChild(createFormRow("变更模式", mutationModeSelector));
-        mutationDiv.addNoGrowChild(createFormRow("刷新频率", mutationRateSelector));
-        mutationDiv.addNoGrowChild(mutationMetricsLabel);
-        mutationDiv.addNoGrowChild(mutationSampleLabel);
+        DocumentSectionWidget mutationDiv = new DocumentSectionWidget(DOCUMENT_THEME);
+        mutationDiv.addChild(new DocumentTextWidget(DOCUMENT_THEME, DocumentTextWidget.Role.TITLE, "高频字符变更探针", 2));
+        mutationDiv.addChild(new DocumentTextWidget(DOCUMENT_THEME, DocumentTextWidget.Role.BODY,
+                "这块专门区分三种压力：`§k` 混淆文本只在绘制阶段随机替换字符，不主动触发布局；`同长替换` 会高频调用 `setText()` 但尽量保持长度稳定；`长文重排` 会持续改变长文本内容并触发换行重算。通过它可以直接观察字体绘制和布局失效谁更伤。", 8));
+        mutationDiv.addChild(new DocumentFormRowWidget(DOCUMENT_THEME, "自动运行", mutationToggle));
+        mutationDiv.addChild(new DocumentFormRowWidget(DOCUMENT_THEME, "变更模式", mutationModeSelector));
+        mutationDiv.addChild(new DocumentFormRowWidget(DOCUMENT_THEME, "刷新频率", mutationRateSelector));
+        mutationDiv.addChild(mutationMetricsLabel);
+        mutationDiv.addChild(mutationSampleLabel);
         mutationCard.addChild(mutationDiv);
 
-        cardsFlow.addFlexChild(formCard, 1.5F);
-        cardsFlow.addFlexChild(wrapCard, 1.0F);
+        cardsFlow.addFlexibleBlock(formCard, 1.5F);
+        cardsFlow.addFlexibleBlock(wrapCard, 1.0F);
 
-        diagnosticPage.addDocumentChild(createTitleLabel("布局诊断页"));
-        diagnosticPage.addDocumentChild(createBodyLabel("如果这一页的两张卡片仍然在不合理的宽度下并排、中文换行异常、表单行不按父宽度变化，或者卡片不能同时按 flex-basis 和增长权重自然分配空间，那么说明底层尺寸链路仍然有问题。"));
-        diagnosticPage.addDocumentChild(overviewCard);
-        diagnosticPage.addDocumentChild(cardsFlow);
-        diagnosticPage.addDocumentChild(performanceCard);
-        diagnosticPage.addDocumentChild(mutationCard);
-        diagnosticPage.addDocumentChild(divScrollCard);
+        diagnosticPage.addBlock(new DocumentTextWidget(DOCUMENT_THEME, DocumentTextWidget.Role.TITLE, "布局诊断页", 2));
+        diagnosticPage.addBlock(new DocumentTextWidget(DOCUMENT_THEME, DocumentTextWidget.Role.BODY,
+                "如果这一页的两张卡片仍然在不合理的宽度下并排、中文换行异常、表单行不按父宽度变化，或者卡片不能同时按 flex-basis 和增长权重自然分配空间，那么说明底层尺寸链路仍然有问题。",
+                8));
+        diagnosticPage.addBlock(overviewCard);
+        diagnosticPage.addBlock(cardsFlow);
+        diagnosticPage.addBlock(performanceCard);
+        diagnosticPage.addBlock(mutationCard);
+        diagnosticPage.addBlock(divScrollCard);
 
         root.addChild(diagnosticPage);
-    }
-
-    /**
-     * 创建一行表单结构。
-     *
-     * @param labelText 标签文本
-     * @param field 字段控件
-     * @return 表单行
-     */
-    private DivWidget createFormRow(String labelText, Widget field) {
-        LabelWidget label = createFormLabel(labelText);
-        DivWidget row = createFormFieldRow();
-        row.addNoGrowChild(label);
-        row.addFlexChild(field);
-        return row;
     }
 
     /**
@@ -282,7 +281,7 @@ public class UiTestScreen extends BaseScreen {
         updateLabelText(viewportMetricsLabel, "窗口 " + width + "x" + height + "；页面壳 " + diagnosticPage.getWidth() + "x"
                 + diagnosticPage.getHeight() + "；总览卡片 " + overviewCard.getWidth() + "x" + overviewCard.getHeight()
                 + "；表单卡片 " + formCard.getWidth() + "x" + formCard.getHeight() + "；文本卡片 " + wrapCard.getWidth() + "x"
-                + wrapCard.getHeight() + "。\n如果页面壳仍然明显偏窄，优先检查 `DocumentShellWidget`；如果卡片宽度异常，优先检查 `DivWidget` 的盒模型计算和最小宽度传播。 ");
+                + wrapCard.getHeight() + "。\n如果页面壳仍然明显偏窄，优先检查 `DocumentPageWidget` 对 `ScrollViewportWidget` 框体约束的封装；如果卡片宽度异常，优先检查 `DivWidget` 的盒模型计算和最小宽度传播。 ");
 
         updateLabelText(scrollMetricsLabel, "滚动偏移 " + diagnosticPage.getScrollOffset() + " / " + diagnosticPage.getMaxScrollOffset()
                 + "；可视内容区 " + diagnosticPage.getVisibleContentWidth() + "x" + diagnosticPage.getVisibleContentHeight()
@@ -370,51 +369,6 @@ public class UiTestScreen extends BaseScreen {
                 Integer.valueOf(fontStats.getFrameQuadCount()),
                 Long.valueOf(fontStats.getWidthCacheHitCount()),
                 Long.valueOf(fontStats.getWidthCacheMissCount())));
-    }
-
-    private DivWidget createCardPanel() {
-        return UiDocumentTheme.applyCardSurface(new DivWidget()
-                .setColumn()
-                .setGap(12));
-    }
-
-    private DivWidget createSectionBlock() {
-        return new DivWidget().setColumn().setGap(12);
-    }
-
-    private DivWidget createWrapRow() {
-        return new DivWidget().setRow().setWrap(DivWidget.Wrap.WRAP).setGap(16).setFillLayout();
-    }
-
-    private DivWidget createToolbarRow() {
-        return new DivWidget().setRow().setWrap(DivWidget.Wrap.WRAP).setGap(12).setFillLayout();
-    }
-
-    private DivWidget createFormFieldRow() {
-        return new DivWidget()
-                .setRow()
-                .setAlignItems(DivWidget.AlignItems.CENTER)
-                .setWrap(DivWidget.Wrap.WRAP)
-                .setGap(16)
-                .setFillLayout();
-    }
-
-    private LabelWidget createTitleLabel(String text) {
-        return UiDocumentTheme.applyTitleText(new LabelWidget(text)).setWrap(true).setMaxLines(2);
-    }
-
-    private LabelWidget createSectionTitle(String text) {
-        return UiDocumentTheme.applyTitleText(new LabelWidget(text)).setWrap(true).setMaxLines(2);
-    }
-
-    private LabelWidget createBodyLabel(String text) {
-        return UiDocumentTheme.applyBodyText(new LabelWidget(text)).setWrap(true).setMaxLines(8);
-    }
-
-    private LabelWidget createFormLabel(String text) {
-        LabelWidget label = UiDocumentTheme.applyEmphasisText(new LabelWidget(text));
-        label.setLayoutSpec(new UiLayoutSpec().setWidth(UiLength.px(156)).setMinWidth(156).setMaxWidth(156));
-        return label;
     }
 
     private int clampValue(int value, int min, int max) {
