@@ -5,7 +5,7 @@ import club.heiqi.uilib.ui.control.DocumentShellWidget;
 import club.heiqi.uilib.ui.control.DivWidget;
 import club.heiqi.uilib.ui.control.InventorySlotGridWidget;
 import club.heiqi.uilib.ui.control.LabelWidget;
-import club.heiqi.uilib.ui.control.ViewportWidget;
+import club.heiqi.uilib.ui.theme.UiDocumentTheme;
 import club.heiqi.uilib.ui.widget.Widget;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.inventory.GuiInventory;
@@ -44,13 +44,12 @@ public class InventoryOverviewScreen extends BaseScreen {
 
         int pageMargin = Math.max(24, width / 34);
         int topMargin = Math.max(28, height / 28);
-        ViewportWidget rootWidget = (ViewportWidget) getRootWidget();
-        rootWidget.setPadding(pageMargin, topMargin, pageMargin, pageMargin);
+        setRootPadding(pageMargin, topMargin, pageMargin, pageMargin);
 
         int pagePaddingX = clampValue(width / 48, 16, 28);
         int pagePaddingY = clampValue(height / 36, 14, 24);
 
-        pagePanel.setPadding(pagePaddingX, pagePaddingY, pagePaddingX, pagePaddingY);
+        pagePanel.setShellPadding(pagePaddingX, pagePaddingY, pagePaddingX, pagePaddingY);
         refreshMetrics();
     }
 
@@ -64,9 +63,8 @@ public class InventoryOverviewScreen extends BaseScreen {
      * 配置页面壳。
      */
     private void configurePage() {
-        pagePanel.setPadding(24, 22, 24, 22)
-                .setFillColor(0xD0151C25)
-                .setBorderColor(0xFF86A8F0)
+        UiDocumentTheme.applyShellSurface(pagePanel)
+                .setShellPadding(24, 22, 24, 22)
                 .setContentWidthRange(720, 1040)
                 .setMinContentHeight(620)
                 .setViewportFillRatio(0.94F, 0.92F);
@@ -76,9 +74,9 @@ public class InventoryOverviewScreen extends BaseScreen {
      * 配置背包诊断控件。
      */
     private void configureControls() {
-        overviewMetricsLabel.setColor(0xFFF6D78E).setShadow(false).setWrap(true).setMaxLines(5);
-        hotbarMetricsLabel.setColor(0xFFD7E3FF).setShadow(false).setWrap(true).setMaxLines(4);
-        backpackMetricsLabel.setColor(0xFFD7E3FF).setShadow(false).setWrap(true).setMaxLines(4);
+        UiDocumentTheme.applyEmphasisText(overviewMetricsLabel).setWrap(true).setMaxLines(5);
+        UiDocumentTheme.applyBodyText(hotbarMetricsLabel).setWrap(true).setMaxLines(4);
+        UiDocumentTheme.applyBodyText(backpackMetricsLabel).setWrap(true).setMaxLines(4);
 
         hotbarGrid.setSlotGap(8).setPreferredSlotSize(34).setSlotSizeRange(18, 50);
         backpackGrid.setSlotGap(8).setPreferredSlotSize(32).setSlotSizeRange(18, 46);
@@ -179,12 +177,9 @@ public class InventoryOverviewScreen extends BaseScreen {
     }
 
     private DivWidget createCardPanel() {
-        return new DivWidget()
+        return UiDocumentTheme.applyCardSurface(new DivWidget()
                 .setColumn()
-                .setGap(12)
-                .setPadding(20)
-                .setFillColor(0xAA111721)
-                .setBorderColor(0xFF6E8FCB);
+                .setGap(12));
     }
 
     private DivWidget createSectionBlock() {
@@ -196,15 +191,15 @@ public class InventoryOverviewScreen extends BaseScreen {
     }
 
     private LabelWidget createTitleLabel(String text) {
-        return new LabelWidget(text).setColor(0xFFFFFFFF).setShadow(false).setWrap(true).setMaxLines(2);
+        return UiDocumentTheme.applyTitleText(new LabelWidget(text)).setWrap(true).setMaxLines(2);
     }
 
     private LabelWidget createSectionTitle(String text) {
-        return new LabelWidget(text).setColor(0xFFFFFFFF).setShadow(false).setWrap(true).setMaxLines(2);
+        return UiDocumentTheme.applyTitleText(new LabelWidget(text)).setWrap(true).setMaxLines(2);
     }
 
     private LabelWidget createBodyLabel(String text) {
-        return new LabelWidget(text).setColor(0xFFD7E3FF).setShadow(false).setWrap(true).setMaxLines(8);
+        return UiDocumentTheme.applyBodyText(new LabelWidget(text)).setWrap(true).setMaxLines(8);
     }
 
     private int clampValue(int value, int min, int max) {

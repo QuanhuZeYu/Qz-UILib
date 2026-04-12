@@ -94,6 +94,7 @@ public class DivWidget extends Widget implements UiScrollHost {
     private int fillColor;
     private int borderColor;
     private final OverflowScrollState scrollState = new OverflowScrollState();
+    private UiControlTheme.ScrollbarStyle scrollbarStyle = UiControlTheme.defaultScrollbarStyle();
     private int cachedLayoutVersion = -1;
     private int cachedLayoutWidth = -1;
     private int cachedLayoutHeight = -1;
@@ -120,7 +121,7 @@ public class DivWidget extends Widget implements UiScrollHost {
         performanceMonitor.enterWidget(this);
         try {
             ensureLayout(false);
-            setClipHitTest(hasClippedOverflow());
+            applyHitTestClipEnabled(hasClippedOverflow());
 
             drawSelf(context);
             boolean clipping = hasClippedOverflow();
@@ -397,6 +398,17 @@ public class DivWidget extends Widget implements UiScrollHost {
 
     public DivWidget setBorderColor(int borderColor) {
         this.borderColor = borderColor;
+        return this;
+    }
+
+    /**
+     * 设置滚动条样式。
+     *
+     * @param scrollbarStyle 滚动条样式；为空时恢复默认样式
+     * @return 当前容器
+     */
+    public DivWidget setScrollbarStyle(UiControlTheme.ScrollbarStyle scrollbarStyle) {
+        this.scrollbarStyle = scrollbarStyle == null ? UiControlTheme.defaultScrollbarStyle() : scrollbarStyle;
         return this;
     }
 
@@ -1515,25 +1527,24 @@ public class DivWidget extends Widget implements UiScrollHost {
     private void drawScrollbars(UiRenderContext context) {
         OverflowScrollState.ScrollbarMetrics verticalMetrics = getVerticalScrollbarMetrics();
         if (verticalMetrics != null) {
-            int trackColor = scrollState.isHoveredVerticalScrollbar() ? 0x66344155 : 0x552B3647;
-            int thumbColor = scrollState.isDraggingVerticalThumb() ? 0xFFD1E2FF
-                    : (scrollState.isHoveredVerticalThumb() ? 0xFFB8D0FF : 0xFF8FB3FF);
-            context.fillRect(verticalMetrics.trackLeft, verticalMetrics.trackTop, verticalMetrics.trackRight,
-                    verticalMetrics.trackBottom, trackColor);
-            context.fillRect(verticalMetrics.thumbLeft, verticalMetrics.thumbTop, verticalMetrics.thumbRight,
-                    verticalMetrics.thumbBottom, thumbColor);
+            drawScrollbar(context, verticalMetrics, scrollState.isHoveredVerticalScrollbar(),
+                    scrollState.isHoveredVerticalThumb(), scrollState.isDraggingVerticalThumb());
         }
 
         OverflowScrollState.ScrollbarMetrics horizontalMetrics = getHorizontalScrollbarMetrics();
         if (horizontalMetrics != null) {
-            int trackColor = scrollState.isHoveredHorizontalScrollbar() ? 0x66344155 : 0x552B3647;
-            int thumbColor = scrollState.isDraggingHorizontalThumb() ? 0xFFD1E2FF
-                    : (scrollState.isHoveredHorizontalThumb() ? 0xFFB8D0FF : 0xFF8FB3FF);
-            context.fillRect(horizontalMetrics.trackLeft, horizontalMetrics.trackTop, horizontalMetrics.trackRight,
-                    horizontalMetrics.trackBottom, trackColor);
-            context.fillRect(horizontalMetrics.thumbLeft, horizontalMetrics.thumbTop, horizontalMetrics.thumbRight,
-                    horizontalMetrics.thumbBottom, thumbColor);
+            drawScrollbar(context, horizontalMetrics, scrollState.isHoveredHorizontalScrollbar(),
+                    scrollState.isHoveredHorizontalThumb(), scrollState.isDraggingHorizontalThumb());
         }
+    }
+
+    private void drawScrollbar(UiRenderContext context, OverflowScrollState.ScrollbarMetrics metrics,
+            boolean hoveredTrack, boolean hoveredThumb, boolean draggingThumb) {
+        int trackColor = hoveredTrack ? scrollbarStyle.hoveredTrackColor : scrollbarStyle.trackColor;
+        int thumbColor = draggingThumb ? scrollbarStyle.draggingThumbColor
+                : (hoveredThumb ? scrollbarStyle.hoveredThumbColor : scrollbarStyle.thumbColor);
+        context.fillRect(metrics.trackLeft, metrics.trackTop, metrics.trackRight, metrics.trackBottom, trackColor);
+        context.fillRect(metrics.thumbLeft, metrics.thumbTop, metrics.thumbRight, metrics.thumbBottom, thumbColor);
     }
 
     private OverflowScrollState.ScrollbarMetrics getVerticalScrollbarMetrics() {

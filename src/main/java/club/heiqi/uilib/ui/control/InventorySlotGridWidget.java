@@ -25,6 +25,7 @@ public class InventorySlotGridWidget extends Widget {
     private int preferredSlotSize = 34;
     private int minSlotSize = 22;
     private int maxSlotSize = 46;
+    private UiControlTheme.InventorySlotGridStyle style = UiControlTheme.defaultInventorySlotGridStyle();
 
     /**
      * 创建一个只读物品格子网格。
@@ -53,8 +54,8 @@ public class InventorySlotGridWidget extends Widget {
             int left = absoluteX + column * (slotSize + slotGap);
             int top = absoluteY + row * (slotSize + slotGap);
             ItemStack stack = inventory == null ? null : getStackAt(inventory, slotIndex);
-            int fillColor = stack == null ? 0xAA171C24 : 0xCC202A38;
-            int borderColor = stack == null ? 0xFF465468 : 0xFF9AB8F2;
+            int fillColor = stack == null ? style.emptySlotFillColor : style.occupiedSlotFillColor;
+            int borderColor = stack == null ? style.emptySlotBorderColor : style.occupiedSlotBorderColor;
             context.fillRect(left, top, left + slotSize, top + slotSize, fillColor);
             context.drawBorder(left, top, left + slotSize, top + slotSize, borderColor);
         }
@@ -156,6 +157,17 @@ public class InventorySlotGridWidget extends Widget {
     public InventorySlotGridWidget setPreferredSlotSize(int preferredSlotSize) {
         this.preferredSlotSize = Math.max(18, preferredSlotSize);
         requestLayout();
+        return this;
+    }
+
+    /**
+     * 设置背包格子网格样式。
+     *
+     * @param style 网格样式；为空时恢复默认样式
+     * @return 当前控件
+     */
+    public InventorySlotGridWidget setStyle(UiControlTheme.InventorySlotGridStyle style) {
+        this.style = style == null ? UiControlTheme.defaultInventorySlotGridStyle() : style;
         return this;
     }
 

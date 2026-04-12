@@ -20,28 +20,33 @@ public class TextInputWidget extends Widget {
     private int maxLength = 128;
     private boolean focused;
     private boolean hovered;
+    private UiControlTheme.TextInputStyle style = UiControlTheme.defaultTextInputStyle();
 
     @Override
     protected void drawSelf(UiRenderContext context) {
         int absoluteX = getAbsoluteX();
         int absoluteY = getAbsoluteY();
-        int fillColor = focused ? 0xE6131A24 : 0xD910151D;
-        int borderColor = focused ? 0xFF89B4FF : (hovered ? 0xFF607697 : 0xFF35465D);
+        UiControlTheme.BoxState state = resolveVisualState();
 
-        context.fillRect(absoluteX, absoluteY, absoluteX + getWidth(), absoluteY + getHeight(), fillColor);
-        context.fillRect(absoluteX + 1, absoluteY + 1, absoluteX + getWidth() - 1, absoluteY + 3, focused ? 0x337EB1FF : 0x1A607697);
-        context.drawBorder(absoluteX, absoluteY, absoluteX + getWidth(), absoluteY + getHeight(), borderColor);
+        context.fillRect(absoluteX, absoluteY, absoluteX + getWidth(), absoluteY + getHeight(), state.fillColor);
+        if (state.accentColor != 0) {
+            context.fillRect(absoluteX + 1, absoluteY + 1, absoluteX + getWidth() - 1, absoluteY + 3, state.accentColor);
+        }
+        context.drawBorder(absoluteX, absoluteY, absoluteX + getWidth(), absoluteY + getHeight(), state.borderColor);
 
         String displayText = textBuilder.length() > 0 ? textBuilder.toString() : placeholder;
-        String visibleText = trimToVisibleText(displayText, Math.max(1, getWidth() - 24), textBuilder.length() > 0);
-        int textColor = textBuilder.length() > 0 ? 0xFFF3F7FF : 0xFF7E8A9D;
+        String visibleText = trimToVisibleText(displayText, Math.max(1, getWidth() - style.textHorizontalPadding * 2),
+                textBuilder.length() > 0);
+        int textColor = textBuilder.length() > 0 ? style.textColor : style.placeholderColor;
         int textY = absoluteY + Math.max(3, (getHeight() - context.getTextLineHeight()) / 2);
-        int textX = absoluteX + 12;
+        int textX = absoluteX + style.textHorizontalPadding;
         context.drawText(visibleText, textX, textY, textColor, false);
 
         if (focused && textBuilder.length() > 0) {
-            int caretX = Math.min(absoluteX + getWidth() - 8, textX + context.measureTextWidth(visibleText) + 1);
-            context.fillRect(caretX, absoluteY + 8, caretX + 2, absoluteY + getHeight() - 8, 0xFFD6E5FF);
+            int caretX = Math.min(absoluteX + getWidth() - style.caretRightInset,
+                    textX + context.measureTextWidth(visibleText) + 1);
+            context.fillRect(caretX, absoluteY + style.caretVerticalInset, caretX + style.caretWidth,
+                    absoluteY + getHeight() - style.caretVerticalInset, style.caretColor);
         }
     }
 
@@ -76,6 +81,7 @@ public class TextInputWidget extends Widget {
 
         if (event.getKeyCode() == Keyboard.KEY_BACK && textBuilder.length() > 0) {
             textBuilder.deleteCharAt(textBuilder.length() - 1);
+            requestLayout();
         }
     }
 
@@ -85,6 +91,7 @@ public class TextInputWidget extends Widget {
             return;
         }
 
+        boolean changed = false;
         for (int i = 0; i < event.getText().length();) {
             int codepoint = event.getText().codePointAt(i);
             if (!isAcceptedCodepoint(codepoint)) {
@@ -95,7 +102,11 @@ public class TextInputWidget extends Widget {
                 break;
             }
             textBuilder.appendCodePoint(codepoint);
+            changed = true;
             i += Character.charCount(codepoint);
+        }
+        if (changed) {
+            requestLayout();
         }
     }
 
@@ -109,20 +120,44 @@ public class TextInputWidget extends Widget {
     }
 
     public TextInputWidget setText(String text) {
-        textBuilder.setLength(0);
-        if (text != null && !text.isEmpty()) {
-            textBuilder.append(text);
+        String currentText = textBuilder.toString();
+        String normalizedText = text == null ? "" : text;
+        if (currentText.equals(normalizedText)) {
+            return this;
         }
+        textBuilder.setLength(0);
+        if (!normalizedText.isEmpty()) {
+            textBuilder.append(normalizedText);
+        }
+        requestLayout();
         return this;
     }
 
     public TextInputWidget setPlaceholder(String placeholder) {
-        this.placeholder = placeholder == null ? "" : placeholder;
+        String normalizedPlaceholder = placeholder == null ? "" : placeholder;
+        if (!normalizedPlaceholder.equals(this.placeholder)) {
+            this.placeholder = normalizedPlaceholder;
+            requestLayout();
+            return this;
+        }
+        this.placeholder = normalizedPlaceholder;
         return this;
     }
 
     public TextInputWidget setMaxLength(int maxLength) {
         this.maxLength = Math.max(1, maxLength);
+        return this;
+    }
+
+    /**
+     * 设置文本输入框样式。
+     *
+     * @param style 文本输入框样式；为空时恢复默认样式
+     * @return 当前输入框
+     */
+    public TextInputWidget setStyle(UiControlTheme.TextInputStyle style) {
+        this.style = style == null ? UiControlTheme.defaultTextInputStyle() : style;
+        requestLayout();
         return this;
     }
 
@@ -133,17 +168,18 @@ public class TextInputWidget extends Widget {
     @Override
     public int getPreferredWidth() {
         String sample = placeholder == null || placeholder.isEmpty() ? "输入文本" : placeholder;
-        return Math.max(280, DefaultFontRendererAdapter.getInstance().getStringWidth(sample) * 2 + 36);
+        return Math.max(style.preferredMinWidth,
+                DefaultFontRendererAdapter.getInstance().getStringWidth(sample) * 2 + style.preferredExtraWidth);
     }
 
     @Override
     public int getPreferredHeight() {
-        return 38;
+        return style.height;
     }
 
     @Override
     public int getMinContentWidth() {
-        return 140;
+        return style.minContentWidthFloor;
     }
 
     private String trimToVisibleText(String source, int uiWidth, boolean keepTail) {
@@ -165,5 +201,20 @@ public class TextInputWidget extends Widget {
             start += Character.charCount(source.codePointAt(start));
         }
         return "";
+    }
+
+    /**
+     * 解析当前视觉状态。
+     *
+     * @return 当前视觉状态
+     */
+    private UiControlTheme.BoxState resolveVisualState() {
+        if (focused) {
+            return style.focusedState;
+        }
+        if (hovered) {
+            return style.hoveredState;
+        }
+        return style.normalState;
     }
 }

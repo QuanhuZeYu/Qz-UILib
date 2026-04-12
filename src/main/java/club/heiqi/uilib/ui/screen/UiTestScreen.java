@@ -12,9 +12,9 @@ import club.heiqi.uilib.ui.control.LabelWidget;
 import club.heiqi.uilib.ui.control.SegmentedSelectorWidget;
 import club.heiqi.uilib.ui.control.TextInputWidget;
 import club.heiqi.uilib.ui.control.ToggleSwitchWidget;
-import club.heiqi.uilib.ui.control.ViewportWidget;
 import club.heiqi.uilib.ui.layout.UiLayoutSpec;
 import club.heiqi.uilib.ui.layout.UiLength;
+import club.heiqi.uilib.ui.theme.UiDocumentTheme;
 import club.heiqi.uilib.ui.widget.Widget;
 
 /**
@@ -81,12 +81,11 @@ public class UiTestScreen extends BaseScreen {
 
         int pageMargin = Math.max(24, width / 34);
         int topMargin = Math.max(28, height / 28);
-        ViewportWidget rootWidget = (ViewportWidget) getRootWidget();
-        rootWidget.setPadding(pageMargin, topMargin, pageMargin, pageMargin);
+        setRootPadding(pageMargin, topMargin, pageMargin, pageMargin);
 
         int pagePaddingX = clampValue(width / 48, 16, 28);
         int pagePaddingY = clampValue(height / 36, 14, 24);
-        diagnosticPage.setPadding(pagePaddingX, pagePaddingY, pagePaddingX, pagePaddingY);
+        diagnosticPage.setShellPadding(pagePaddingX, pagePaddingY, pagePaddingX, pagePaddingY);
 
         refreshDiagnostics();
     }
@@ -102,9 +101,8 @@ public class UiTestScreen extends BaseScreen {
      * 配置页面壳。
      */
     private void configurePage() {
-        diagnosticPage.setPadding(24, 22, 24, 22)
-                .setFillColor(0xD0151C25)
-                .setBorderColor(0xFF86A8F0)
+        UiDocumentTheme.applyShellSurface(diagnosticPage)
+                .setShellPadding(24, 22, 24, 22)
                 .setContentWidthRange(680, 1080)
                 .setMinContentHeight(560)
                 .setViewportFillRatio(0.92F, 0.90F);
@@ -114,19 +112,19 @@ public class UiTestScreen extends BaseScreen {
      * 配置诊断控件。
      */
     private void configureControls() {
-        viewportMetricsLabel.setColor(0xFFF6D78E).setShadow(false).setWrap(true).setMaxLines(4);
-        scrollMetricsLabel.setColor(0xFFB5D0FF).setShadow(false).setWrap(true).setMaxLines(4);
-        wrapMetricsLabel.setColor(0xFFB5D0FF).setShadow(false).setWrap(true).setMaxLines(6);
-        performanceFrameLabel.setColor(0xFFF6D78E).setShadow(false).setWrap(true).setMaxLines(4);
-        performanceWidgetLabel.setColor(0xFFD7E3FF).setShadow(false).setWrap(true).setMaxLines(5);
-        performanceHotspotLabel.setColor(0xFFD7E3FF).setShadow(false).setWrap(true).setMaxLines(5);
-        performancePhaseLabel.setColor(0xFFD7E3FF).setShadow(false).setWrap(true).setMaxLines(6);
-        performanceFontLabel.setColor(0xFFB5D0FF).setShadow(false).setWrap(true).setMaxLines(6);
-        mutationMetricsLabel.setColor(0xFFF6D78E).setShadow(false).setWrap(true).setMaxLines(6);
-        mutationSampleLabel.setColor(0xFFD7E3FF).setShadow(false).setWrap(true).setMaxLines(12);
-        divScrollMetricsLabel.setColor(0xFFB5D0FF).setShadow(false).setWrap(true).setMaxLines(5);
-        wrapSampleLabel.setColor(0xFFD7E3FF).setShadow(false).setWrap(true).setMaxLines(10);
-        actionStateLabel.setColor(0xFFB5D0FF).setShadow(false).setWrap(true).setMaxLines(2);
+        UiDocumentTheme.applyEmphasisText(viewportMetricsLabel).setWrap(true).setMaxLines(4);
+        UiDocumentTheme.applySecondaryText(scrollMetricsLabel).setWrap(true).setMaxLines(4);
+        UiDocumentTheme.applySecondaryText(wrapMetricsLabel).setWrap(true).setMaxLines(6);
+        UiDocumentTheme.applyEmphasisText(performanceFrameLabel).setWrap(true).setMaxLines(4);
+        UiDocumentTheme.applyBodyText(performanceWidgetLabel).setWrap(true).setMaxLines(5);
+        UiDocumentTheme.applyBodyText(performanceHotspotLabel).setWrap(true).setMaxLines(5);
+        UiDocumentTheme.applyBodyText(performancePhaseLabel).setWrap(true).setMaxLines(6);
+        UiDocumentTheme.applySecondaryText(performanceFontLabel).setWrap(true).setMaxLines(6);
+        UiDocumentTheme.applyEmphasisText(mutationMetricsLabel).setWrap(true).setMaxLines(6);
+        UiDocumentTheme.applyBodyText(mutationSampleLabel).setWrap(true).setMaxLines(12);
+        UiDocumentTheme.applySecondaryText(divScrollMetricsLabel).setWrap(true).setMaxLines(5);
+        UiDocumentTheme.applyBodyText(wrapSampleLabel).setWrap(true).setMaxLines(10);
+        UiDocumentTheme.applySecondaryText(actionStateLabel).setWrap(true).setMaxLines(2);
 
         formCard.setLayoutSpec(new UiLayoutSpec().setFlexBasis(UiLength.px(460)).setMinWidth(320).setMaxWidth(620));
         wrapCard.setLayoutSpec(new UiLayoutSpec().setFlexBasis(UiLength.px(340)).setMinWidth(260).setMaxWidth(480));
@@ -375,12 +373,9 @@ public class UiTestScreen extends BaseScreen {
     }
 
     private DivWidget createCardPanel() {
-        return new DivWidget()
+        return UiDocumentTheme.applyCardSurface(new DivWidget()
                 .setColumn()
-                .setGap(12)
-                .setPadding(20)
-                .setFillColor(0xAA111721)
-                .setBorderColor(0xFF6E8FCB);
+                .setGap(12));
     }
 
     private DivWidget createSectionBlock() {
@@ -405,19 +400,19 @@ public class UiTestScreen extends BaseScreen {
     }
 
     private LabelWidget createTitleLabel(String text) {
-        return new LabelWidget(text).setColor(0xFFFFFFFF).setShadow(false).setWrap(true).setMaxLines(2);
+        return UiDocumentTheme.applyTitleText(new LabelWidget(text)).setWrap(true).setMaxLines(2);
     }
 
     private LabelWidget createSectionTitle(String text) {
-        return new LabelWidget(text).setColor(0xFFFFFFFF).setShadow(false).setWrap(true).setMaxLines(2);
+        return UiDocumentTheme.applyTitleText(new LabelWidget(text)).setWrap(true).setMaxLines(2);
     }
 
     private LabelWidget createBodyLabel(String text) {
-        return new LabelWidget(text).setColor(0xFFD7E3FF).setShadow(false).setWrap(true).setMaxLines(8);
+        return UiDocumentTheme.applyBodyText(new LabelWidget(text)).setWrap(true).setMaxLines(8);
     }
 
     private LabelWidget createFormLabel(String text) {
-        LabelWidget label = new LabelWidget(text).setColor(0xFFF6D78E).setShadow(false);
+        LabelWidget label = UiDocumentTheme.applyEmphasisText(new LabelWidget(text));
         label.setLayoutSpec(new UiLayoutSpec().setWidth(UiLength.px(156)).setMinWidth(156).setMaxWidth(156));
         return label;
     }

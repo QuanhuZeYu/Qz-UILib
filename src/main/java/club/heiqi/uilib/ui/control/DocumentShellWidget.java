@@ -32,27 +32,23 @@ public class DocumentShellWidget extends ScrollViewportWidget {
         return this;
     }
 
-    @Override
-    public DocumentShellWidget setPadding(int padding) {
-        super.setPadding(padding);
+    public DocumentShellWidget setShellPadding(int padding) {
+        applyViewportPadding(padding);
         return this;
     }
 
-    @Override
-    public DocumentShellWidget setPadding(int left, int top, int right, int bottom) {
-        super.setPadding(left, top, right, bottom);
+    public DocumentShellWidget setShellPadding(int left, int top, int right, int bottom) {
+        applyViewportPadding(left, top, right, bottom);
         return this;
     }
 
-    @Override
-    public DocumentShellWidget setFillColor(int fillColor) {
-        super.setFillColor(fillColor);
+    public DocumentShellWidget setShellFillColor(int fillColor) {
+        applyViewportFillColor(fillColor);
         return this;
     }
 
-    @Override
-    public DocumentShellWidget setBorderColor(int borderColor) {
-        super.setBorderColor(borderColor);
+    public DocumentShellWidget setShellBorderColor(int borderColor) {
+        applyViewportBorderColor(borderColor);
         return this;
     }
 

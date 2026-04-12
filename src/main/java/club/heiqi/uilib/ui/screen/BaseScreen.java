@@ -143,6 +143,31 @@ public abstract class BaseScreen extends GuiScreen {
     }
 
     /**
+     * 设置根视口内边距。
+     *
+     * <p>页面作者通过该入口声明屏幕级留白，而不直接操作根视口实现类。</p>
+     *
+     * @param padding 四边统一留白
+     */
+    protected final void setRootPadding(int padding) {
+        rootWidget.applyViewportPadding(padding);
+    }
+
+    /**
+     * 设置根视口内边距。
+     *
+     * <p>页面作者通过该入口声明屏幕级留白，而不直接操作根视口实现类。</p>
+     *
+     * @param left 左侧留白
+     * @param top 上侧留白
+     * @param right 右侧留白
+     * @param bottom 下侧留白
+     */
+    protected final void setRootPadding(int left, int top, int right, int bottom) {
+        rootWidget.applyViewportPadding(left, top, right, bottom);
+    }
+
+    /**
      * 构建界面组件树。
      *
      * @param root 根组件
@@ -157,10 +182,6 @@ public abstract class BaseScreen extends GuiScreen {
      */
     protected void onResize(int width, int height) {
         rootWidget.applyLayoutBounds(0, 0, width, height);
-    }
-
-    protected Widget getRootWidget() {
-        return rootWidget;
     }
 
     /**

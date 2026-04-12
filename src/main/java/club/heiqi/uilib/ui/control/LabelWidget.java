@@ -14,8 +14,8 @@ import club.heiqi.uilib.ui.widget.Widget;
 public class LabelWidget extends Widget {
 
     private String text;
-    private int color = 0xFFFFFFFF;
-    private boolean shadow = true;
+    private int color = UiControlTheme.defaultLabelStyle().textColor;
+    private boolean shadow = UiControlTheme.defaultLabelStyle().shadow;
     private boolean wrap;
     private boolean ellipsis;
     private int maxLines = Integer.MAX_VALUE;
@@ -142,6 +142,19 @@ public class LabelWidget extends Widget {
 
     public LabelWidget setColor(int color) {
         this.color = color;
+        return this;
+    }
+
+    /**
+     * 设置标签样式。
+     *
+     * @param style 标签样式；为空时恢复默认样式
+     * @return 当前标签
+     */
+    public LabelWidget setStyle(UiControlTheme.LabelStyle style) {
+        UiControlTheme.LabelStyle effectiveStyle = style == null ? UiControlTheme.defaultLabelStyle() : style;
+        color = effectiveStyle.textColor;
+        shadow = effectiveStyle.shadow;
         return this;
     }
 

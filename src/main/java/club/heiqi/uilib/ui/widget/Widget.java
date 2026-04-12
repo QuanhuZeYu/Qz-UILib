@@ -324,14 +324,22 @@ public class Widget {
         return this;
     }
 
-    public Widget setClipChildren(boolean clipChildren) {
+    /**
+     * 应用子树裁剪开关。
+     *
+     * <p>该方法属于容器内部实现细节，页面作者应优先通过 overflow 语义表达裁剪行为。</p>
+     */
+    protected final void applyChildClipEnabled(boolean clipChildren) {
         this.clipChildren = clipChildren;
-        return this;
     }
 
-    public Widget setClipHitTest(boolean clipHitTest) {
+    /**
+     * 应用命中测试裁剪开关。
+     *
+     * <p>该方法属于容器内部实现细节，页面作者不应直接操作底层命中裁剪标志。</p>
+     */
+    protected final void applyHitTestClipEnabled(boolean clipHitTest) {
         this.clipHitTest = clipHitTest;
-        return this;
     }
 
     public Widget setLayoutSpec(UiLayoutSpec layoutSpec) {

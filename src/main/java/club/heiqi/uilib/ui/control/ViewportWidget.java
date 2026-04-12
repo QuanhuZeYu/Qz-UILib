@@ -27,27 +27,55 @@ public class ViewportWidget extends Widget {
         }
     }
 
-    public ViewportWidget setPadding(int padding) {
-        return setPadding(padding, padding, padding, padding);
+    /**
+     * 应用视口内边距。
+     *
+     * <p>该方法属于底层视口实现入口；页面作者应优先使用屏幕或文档壳暴露的语义方法。</p>
+     *
+     * @param padding 四边统一留白
+     */
+    public final void applyViewportPadding(int padding) {
+        applyViewportPadding(padding, padding, padding, padding);
     }
 
-    public ViewportWidget setPadding(int left, int top, int right, int bottom) {
+    /**
+     * 应用视口内边距。
+     *
+     * <p>该方法属于底层视口实现入口；页面作者应优先使用屏幕或文档壳暴露的语义方法。</p>
+     *
+     * @param left 左侧留白
+     * @param top 上侧留白
+     * @param right 右侧留白
+     * @param bottom 下侧留白
+     */
+    public final void applyViewportPadding(int left, int top, int right, int bottom) {
         paddingLeft = Math.max(0, left);
         paddingTop = Math.max(0, top);
         paddingRight = Math.max(0, right);
         paddingBottom = Math.max(0, bottom);
         requestLayout();
-        return this;
     }
 
-    public ViewportWidget setFillColor(int fillColor) {
+    /**
+     * 应用视口背景色。
+     *
+     * <p>该方法属于底层视口实现入口；页面作者应优先使用屏幕或文档壳暴露的语义方法。</p>
+     *
+     * @param fillColor 背景色
+     */
+    public final void applyViewportFillColor(int fillColor) {
         this.fillColor = fillColor;
-        return this;
     }
 
-    public ViewportWidget setBorderColor(int borderColor) {
+    /**
+     * 应用视口边框色。
+     *
+     * <p>该方法属于底层视口实现入口；页面作者应优先使用屏幕或文档壳暴露的语义方法。</p>
+     *
+     * @param borderColor 边框色
+     */
+    public final void applyViewportBorderColor(int borderColor) {
         this.borderColor = borderColor;
-        return this;
     }
 
     protected int getPaddingLeft() {

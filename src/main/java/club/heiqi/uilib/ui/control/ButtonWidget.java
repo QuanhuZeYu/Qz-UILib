@@ -18,6 +18,7 @@ public class ButtonWidget extends Widget {
     private boolean hovered;
     private boolean pressed;
     private boolean focused;
+    private UiControlTheme.ButtonStyle style = UiControlTheme.defaultButtonStyle();
 
     /**
      * 使用文本创建按钮。
@@ -25,35 +26,23 @@ public class ButtonWidget extends Widget {
      * @param text 按钮文本
      */
     public ButtonWidget(String text) {
-        this.text = text;
+        this.text = text == null ? "" : text;
     }
 
     @Override
     protected void drawSelf(UiRenderContext context) {
         int absoluteX = getAbsoluteX();
         int absoluteY = getAbsoluteY();
-        int fillColor = 0xDD243041;
-        int borderColor = 0xFF44556E;
-        int accentColor = 0x335D86C5;
-        if (pressed) {
-            fillColor = 0xDD1D2938;
-            borderColor = 0xFF3B4B62;
-            accentColor = 0x22486EA7;
-        } else if (focused) {
-            fillColor = 0xDD2A4161;
-            borderColor = 0xFF9CC3FF;
-            accentColor = 0x447EB1FF;
-        } else if (hovered) {
-            fillColor = 0xDD2C3B51;
-            borderColor = 0xFF5B7293;
-            accentColor = 0x336891D0;
-        }
+        UiControlTheme.BoxState state = resolveVisualState();
 
-        context.fillRect(absoluteX, absoluteY, absoluteX + getWidth(), absoluteY + getHeight(), fillColor);
-        context.fillRect(absoluteX + 1, absoluteY + 1, absoluteX + getWidth() - 1, absoluteY + 3, accentColor);
-        context.drawBorder(absoluteX, absoluteY, absoluteX + getWidth(), absoluteY + getHeight(), borderColor);
+        context.fillRect(absoluteX, absoluteY, absoluteX + getWidth(), absoluteY + getHeight(), state.fillColor);
+        if (state.accentColor != 0 && style.accentInsetHeight > 0) {
+            context.fillRect(absoluteX + 1, absoluteY + style.accentInsetTop, absoluteX + getWidth() - 1,
+                    absoluteY + style.accentInsetTop + style.accentInsetHeight, state.accentColor);
+        }
+        context.drawBorder(absoluteX, absoluteY, absoluteX + getWidth(), absoluteY + getHeight(), state.borderColor);
         int textY = absoluteY + Math.max(3, (getHeight() - context.getTextLineHeight()) / 2);
-        context.drawCenteredText(text, absoluteX + (getWidth() / 2), textY, 0xFFF7FAFF, false);
+        context.drawCenteredText(text, absoluteX + (getWidth() / 2), textY, style.textColor, false);
     }
 
     @Override
@@ -105,7 +94,13 @@ public class ButtonWidget extends Widget {
     }
 
     public ButtonWidget setText(String text) {
-        this.text = text;
+        String normalizedText = text == null ? "" : text;
+        if (!normalizedText.equals(this.text)) {
+            this.text = normalizedText;
+            requestLayout();
+            return this;
+        }
+        this.text = normalizedText;
         return this;
     }
 
@@ -114,24 +109,56 @@ public class ButtonWidget extends Widget {
         return this;
     }
 
+    /**
+     * 设置按钮样式。
+     *
+     * @param style 按钮样式；为空时恢复默认样式
+     * @return 当前按钮
+     */
+    public ButtonWidget setStyle(UiControlTheme.ButtonStyle style) {
+        this.style = style == null ? UiControlTheme.defaultButtonStyle() : style;
+        requestLayout();
+        return this;
+    }
+
     @Override
     public int getPreferredWidth() {
-        return Math.max(148, DefaultFontRendererAdapter.getInstance().getStringWidth(text) * 2 + 36);
+        return Math.max(style.preferredMinWidth,
+                DefaultFontRendererAdapter.getInstance().getStringWidth(text) * 2 + style.preferredExtraWidth);
     }
 
     @Override
     public int getPreferredHeight() {
-        return 38;
+        return style.height;
     }
 
     @Override
     public int getMinContentWidth() {
-        return Math.max(92, DefaultFontRendererAdapter.getInstance().getStringWidth(text) * 2 + 24);
+        return Math.max(style.minContentWidthFloor,
+                DefaultFontRendererAdapter.getInstance().getStringWidth(text) * 2 + style.minExtraWidth);
     }
 
     protected void triggerClick() {
         if (clickHandler != null) {
             clickHandler.run();
         }
+    }
+
+    /**
+     * 解析当前按钮状态对应的视觉样式。
+     *
+     * @return 当前视觉状态
+     */
+    protected UiControlTheme.BoxState resolveVisualState() {
+        if (pressed) {
+            return style.pressedState;
+        }
+        if (focused) {
+            return style.focusedState;
+        }
+        if (hovered) {
+            return style.hoveredState;
+        }
+        return style.normalState;
     }
 }

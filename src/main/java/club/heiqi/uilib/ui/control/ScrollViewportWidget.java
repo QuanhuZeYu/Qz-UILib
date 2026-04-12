@@ -46,10 +46,11 @@ public class ScrollViewportWidget extends ViewportWidget implements UiScrollHost
     private int cachedHorizontalScrollOffset = Integer.MIN_VALUE;
     private int cachedVerticalScrollOffset = Integer.MIN_VALUE;
     private int cachedContentFontRuntimeVersion = -1;
+    private UiControlTheme.ScrollbarStyle scrollbarStyle = UiControlTheme.defaultScrollbarStyle();
 
     public ScrollViewportWidget() {
-        setClipChildren(true);
-        setClipHitTest(true);
+        applyChildClipEnabled(true);
+        applyHitTestClipEnabled(true);
         content.setDirection(DivWidget.Direction.COLUMN)
                 .setAlignItems(DivWidget.AlignItems.STRETCH)
                 .setJustifyContent(DivWidget.JustifyContent.START)
@@ -58,30 +59,6 @@ public class ScrollViewportWidget extends ViewportWidget implements UiScrollHost
                 .setOverflowY(DivWidget.Overflow.VISIBLE)
                 .setPadding(0);
         addChild(content);
-    }
-
-    @Override
-    public ScrollViewportWidget setPadding(int padding) {
-        super.setPadding(padding);
-        return this;
-    }
-
-    @Override
-    public ScrollViewportWidget setPadding(int left, int top, int right, int bottom) {
-        super.setPadding(left, top, right, bottom);
-        return this;
-    }
-
-    @Override
-    public ScrollViewportWidget setFillColor(int fillColor) {
-        super.setFillColor(fillColor);
-        return this;
-    }
-
-    @Override
-    public ScrollViewportWidget setBorderColor(int borderColor) {
-        super.setBorderColor(borderColor);
-        return this;
     }
 
     public DivWidget getContent() {
@@ -251,25 +228,26 @@ public class ScrollViewportWidget extends ViewportWidget implements UiScrollHost
         super.drawSelf(context);
         OverflowScrollState.ScrollbarMetrics verticalMetrics = getVerticalScrollbarMetrics();
         if (verticalMetrics != null) {
-            int trackColor = scrollState.isHoveredVerticalScrollbar() ? 0x66344155 : 0x552B3647;
-            int thumbColor = scrollState.isDraggingVerticalThumb() ? 0xFFD1E2FF
-                    : (scrollState.isHoveredVerticalThumb() ? 0xFFB8D0FF : 0xFF8FB3FF);
-            context.fillRect(verticalMetrics.trackLeft, verticalMetrics.trackTop, verticalMetrics.trackRight,
-                    verticalMetrics.trackBottom, trackColor);
-            context.fillRect(verticalMetrics.thumbLeft, verticalMetrics.thumbTop, verticalMetrics.thumbRight,
-                    verticalMetrics.thumbBottom, thumbColor);
+            drawScrollbar(context, verticalMetrics, scrollState.isHoveredVerticalScrollbar(),
+                    scrollState.isHoveredVerticalThumb(), scrollState.isDraggingVerticalThumb());
         }
 
         OverflowScrollState.ScrollbarMetrics horizontalMetrics = getHorizontalScrollbarMetrics();
         if (horizontalMetrics != null) {
-            int trackColor = scrollState.isHoveredHorizontalScrollbar() ? 0x66344155 : 0x552B3647;
-            int thumbColor = scrollState.isDraggingHorizontalThumb() ? 0xFFD1E2FF
-                    : (scrollState.isHoveredHorizontalThumb() ? 0xFFB8D0FF : 0xFF8FB3FF);
-            context.fillRect(horizontalMetrics.trackLeft, horizontalMetrics.trackTop, horizontalMetrics.trackRight,
-                    horizontalMetrics.trackBottom, trackColor);
-            context.fillRect(horizontalMetrics.thumbLeft, horizontalMetrics.thumbTop, horizontalMetrics.thumbRight,
-                    horizontalMetrics.thumbBottom, thumbColor);
+            drawScrollbar(context, horizontalMetrics, scrollState.isHoveredHorizontalScrollbar(),
+                    scrollState.isHoveredHorizontalThumb(), scrollState.isDraggingHorizontalThumb());
         }
+    }
+
+    /**
+     * 设置滚动条样式。
+     *
+     * @param scrollbarStyle 滚动条样式；为空时恢复默认样式
+     * @return 当前视口
+     */
+    public ScrollViewportWidget setScrollbarStyle(UiControlTheme.ScrollbarStyle scrollbarStyle) {
+        this.scrollbarStyle = scrollbarStyle == null ? UiControlTheme.defaultScrollbarStyle() : scrollbarStyle;
+        return this;
     }
 
     @Override
@@ -466,6 +444,16 @@ public class ScrollViewportWidget extends ViewportWidget implements UiScrollHost
             current = current.getParent();
         }
         return false;
+    }
+
+    private void drawScrollbar(club.heiqi.uilib.ui.render.UiRenderContext context,
+            OverflowScrollState.ScrollbarMetrics metrics, boolean hoveredTrack, boolean hoveredThumb,
+            boolean draggingThumb) {
+        int trackColor = hoveredTrack ? scrollbarStyle.hoveredTrackColor : scrollbarStyle.trackColor;
+        int thumbColor = draggingThumb ? scrollbarStyle.draggingThumbColor
+                : (hoveredThumb ? scrollbarStyle.hoveredThumbColor : scrollbarStyle.thumbColor);
+        context.fillRect(metrics.trackLeft, metrics.trackTop, metrics.trackRight, metrics.trackBottom, trackColor);
+        context.fillRect(metrics.thumbLeft, metrics.thumbTop, metrics.thumbRight, metrics.thumbBottom, thumbColor);
     }
 
 }
