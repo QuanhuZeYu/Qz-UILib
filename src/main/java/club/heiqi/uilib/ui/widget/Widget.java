@@ -123,8 +123,51 @@ public class Widget {
         }
         child.parent = this;
         children.add(child);
+        WidgetBuildAttachmentTransaction.recordDirectAttachment(this, child);
         requestLayout();
         return this;
+    }
+
+    /**
+     * 递归清空当前节点的全部子树。
+     *
+     * <p>该方法仅用于显式销毁整棵子树，
+     * 屏幕宿主在 build attempt 失败时应使用挂接事务按直接边回滚，避免误拆复合控件骨架。</p>
+     */
+    public final void clearChildren() {
+        if (children.isEmpty()) {
+            return;
+        }
+
+        for (Widget child : children) {
+            child.clearChildren();
+            child.parent = null;
+        }
+        children.clear();
+        requestLayout();
+    }
+
+    /**
+     * 仅移除当前节点与目标子节点之间的一条直接挂接边。
+     *
+     * <p>该方法不会递归清理子树，供 build attempt 回滚按最小影响面撤销挂接关系。</p>
+     */
+    final void detachDirectChild(Widget child) {
+        if (child == null || children.isEmpty()) {
+            return;
+        }
+
+        for (int i = children.size() - 1; i >= 0; i--) {
+            if (children.get(i) != child) {
+                continue;
+            }
+            children.remove(i);
+            if (child.parent == this) {
+                child.parent = null;
+            }
+            requestLayout();
+            return;
+        }
     }
 
     /**

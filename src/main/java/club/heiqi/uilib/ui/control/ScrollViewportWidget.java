@@ -2,11 +2,12 @@ package club.heiqi.uilib.ui.control;
 
 import java.util.Objects;
 
-import club.heiqi.uilib.font.FontService;
 import club.heiqi.uilib.ui.diagnostic.UiPerformanceMonitor;
 import club.heiqi.uilib.ui.event.UiMouseEvent;
 import club.heiqi.uilib.ui.layout.UiInsets;
 import club.heiqi.uilib.ui.layout.UiLayoutSpec;
+import club.heiqi.uilib.ui.text.DefaultTextMeasureService;
+import club.heiqi.uilib.ui.text.TextMeasureService;
 import club.heiqi.uilib.ui.widget.Widget;
 
 /**
@@ -15,6 +16,8 @@ import club.heiqi.uilib.ui.widget.Widget;
  * <p>页面壳一类的父视口框体策略属于派生层语义，基础滚动容器仅通过受保护的框体配置钩子承载。</p>
  */
 public class ScrollViewportWidget extends ViewportWidget implements UiScrollHost {
+
+    private final TextMeasureService textMeasureService;
 
     /**
      * 父视口中的框体对齐方式。
@@ -25,7 +28,7 @@ public class ScrollViewportWidget extends ViewportWidget implements UiScrollHost
         END
     }
 
-    private final DivWidget content = new DivWidget();
+    private final DivWidget content;
     private final OverflowScrollState scrollState = new OverflowScrollState();
     private boolean parentViewportFrameEnabled;
     private int minFrameWidth;
@@ -47,10 +50,16 @@ public class ScrollViewportWidget extends ViewportWidget implements UiScrollHost
     private int cachedContentHeight = -1;
     private int cachedHorizontalScrollOffset = Integer.MIN_VALUE;
     private int cachedVerticalScrollOffset = Integer.MIN_VALUE;
-    private int cachedContentFontRuntimeVersion = -1;
+    private int cachedContentTextMeasureEpoch = -1;
     private UiControlTheme.ScrollbarStyle scrollbarStyle;
 
     public ScrollViewportWidget() {
+        this(DefaultTextMeasureService.getInstance());
+    }
+
+    public ScrollViewportWidget(TextMeasureService textMeasureService) {
+        this.textMeasureService = Objects.requireNonNull(textMeasureService, "textMeasureService");
+        this.content = new DivWidget(this.textMeasureService);
         applyChildClipEnabled(true);
         applyHitTestClipEnabled(true);
         content.setDirection(DivWidget.Direction.COLUMN)
@@ -274,7 +283,7 @@ public class ScrollViewportWidget extends ViewportWidget implements UiScrollHost
 
     private void updateContentBounds() {
         int currentLayoutVersion = getLayoutVersion();
-        int currentFontRuntimeVersion = FontService.getInstance().getRuntimeVersion();
+        int currentTextMeasureEpoch = textMeasureService.getEpoch();
         int currentWidth = getWidth();
         int currentHeight = getHeight();
         int currentHorizontalOffset = scrollState.getHorizontalOffset();
@@ -284,7 +293,7 @@ public class ScrollViewportWidget extends ViewportWidget implements UiScrollHost
                 && cachedContentHeight == currentHeight
                 && cachedHorizontalScrollOffset == currentHorizontalOffset
                 && cachedVerticalScrollOffset == currentVerticalOffset
-                && cachedContentFontRuntimeVersion == currentFontRuntimeVersion) {
+                && cachedContentTextMeasureEpoch == currentTextMeasureEpoch) {
             return;
         }
 
@@ -311,7 +320,7 @@ public class ScrollViewportWidget extends ViewportWidget implements UiScrollHost
         cachedContentHeight = currentHeight;
         cachedHorizontalScrollOffset = scrollState.getHorizontalOffset();
         cachedVerticalScrollOffset = scrollState.getVerticalOffset();
-        cachedContentFontRuntimeVersion = currentFontRuntimeVersion;
+        cachedContentTextMeasureEpoch = currentTextMeasureEpoch;
         UiPerformanceMonitor.getInstance().recordPhase("viewport.contentBounds", System.nanoTime() - phaseStartNanos);
     }
 

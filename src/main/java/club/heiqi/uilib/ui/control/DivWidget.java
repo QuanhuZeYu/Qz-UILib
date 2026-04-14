@@ -6,7 +6,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 
-import club.heiqi.uilib.font.FontService;
 import club.heiqi.uilib.ui.diagnostic.UiPerformanceMonitor;
 import club.heiqi.uilib.ui.event.UiMouseEvent;
 import club.heiqi.uilib.ui.layout.UiAlignSelf;
@@ -17,12 +16,16 @@ import club.heiqi.uilib.ui.layout.UiLength;
 import club.heiqi.uilib.ui.layout.UiMeasureResult;
 import club.heiqi.uilib.ui.render.UiRenderContext;
 import club.heiqi.uilib.ui.theme.UiSurfaceStyle;
+import club.heiqi.uilib.ui.text.DefaultTextMeasureService;
+import club.heiqi.uilib.ui.text.TextMeasureService;
 import club.heiqi.uilib.ui.widget.Widget;
 
 /**
  * 类似浏览器 div 的自动排布容器。
  */
 public class DivWidget extends Widget implements UiScrollHost {
+
+    private final TextMeasureService textMeasureService;
 
     /**
      * 主轴方向。
@@ -103,15 +106,23 @@ public class DivWidget extends Widget implements UiScrollHost {
     private int cachedVerticalScrollOffset = Integer.MIN_VALUE;
     private boolean cachedUseMinHeights;
     private int cachedPureMeasureVersion = -1;
-    private int cachedPureMeasureFontRuntimeVersion = -1;
+    private int cachedPureMeasureTextMeasureEpoch = -1;
     private int cachedPreferredWidthVersion = -1;
     private int cachedPreferredWidth = -1;
-    private int cachedPreferredWidthFontRuntimeVersion = -1;
+    private int cachedPreferredWidthTextMeasureEpoch = -1;
     private int cachedMinContentWidthVersion = -1;
     private int cachedMinContentWidth = -1;
-    private int cachedMinContentWidthFontRuntimeVersion = -1;
-    private int cachedLayoutFontRuntimeVersion = -1;
+    private int cachedMinContentWidthTextMeasureEpoch = -1;
+    private int cachedLayoutTextMeasureEpoch = -1;
     private final Map<MeasureCacheKey, LayoutResult> pureMeasureCache = new HashMap<MeasureCacheKey, LayoutResult>();
+
+    public DivWidget() {
+        this(DefaultTextMeasureService.getInstance());
+    }
+
+    public DivWidget(TextMeasureService textMeasureService) {
+        this.textMeasureService = Objects.requireNonNull(textMeasureService, "textMeasureService");
+    }
 
     @Override
     public void render(UiRenderContext context) {
@@ -392,15 +403,15 @@ public class DivWidget extends Widget implements UiScrollHost {
     @Override
     public int getPreferredWidth() {
         int currentLayoutVersion = getLayoutVersion();
-        int currentFontRuntimeVersion = FontService.getInstance().getRuntimeVersion();
+        int currentTextMeasureEpoch = textMeasureService.getEpoch();
         if (cachedPreferredWidthVersion == currentLayoutVersion
-                && cachedPreferredWidthFontRuntimeVersion == currentFontRuntimeVersion
+                && cachedPreferredWidthTextMeasureEpoch == currentTextMeasureEpoch
                 && cachedPreferredWidth >= 0) {
             return cachedPreferredWidth;
         }
         if (getChildren().isEmpty()) {
             cachedPreferredWidthVersion = currentLayoutVersion;
-            cachedPreferredWidthFontRuntimeVersion = currentFontRuntimeVersion;
+            cachedPreferredWidthTextMeasureEpoch = currentTextMeasureEpoch;
             cachedPreferredWidth = paddingLeft + paddingRight;
             return cachedPreferredWidth;
         }
@@ -417,7 +428,7 @@ public class DivWidget extends Widget implements UiScrollHost {
             }
         }
         cachedPreferredWidthVersion = currentLayoutVersion;
-        cachedPreferredWidthFontRuntimeVersion = currentFontRuntimeVersion;
+        cachedPreferredWidthTextMeasureEpoch = currentTextMeasureEpoch;
         cachedPreferredWidth = paddingLeft + contentWidth + paddingRight;
         return cachedPreferredWidth;
     }
@@ -446,15 +457,15 @@ public class DivWidget extends Widget implements UiScrollHost {
     @Override
     public int getMinContentWidth() {
         int currentLayoutVersion = getLayoutVersion();
-        int currentFontRuntimeVersion = FontService.getInstance().getRuntimeVersion();
+        int currentTextMeasureEpoch = textMeasureService.getEpoch();
         if (cachedMinContentWidthVersion == currentLayoutVersion
-                && cachedMinContentWidthFontRuntimeVersion == currentFontRuntimeVersion
+                && cachedMinContentWidthTextMeasureEpoch == currentTextMeasureEpoch
                 && cachedMinContentWidth >= 0) {
             return cachedMinContentWidth;
         }
         if (getChildren().isEmpty()) {
             cachedMinContentWidthVersion = currentLayoutVersion;
-            cachedMinContentWidthFontRuntimeVersion = currentFontRuntimeVersion;
+            cachedMinContentWidthTextMeasureEpoch = currentTextMeasureEpoch;
             cachedMinContentWidth = paddingLeft + paddingRight;
             return cachedMinContentWidth;
         }
@@ -465,7 +476,7 @@ public class DivWidget extends Widget implements UiScrollHost {
                 contentWidth = Math.max(contentWidth, computeColumnCrossSpan(child.getMinContentWidth(), resolveMargin(child)));
             }
             cachedMinContentWidthVersion = currentLayoutVersion;
-            cachedMinContentWidthFontRuntimeVersion = currentFontRuntimeVersion;
+            cachedMinContentWidthTextMeasureEpoch = currentTextMeasureEpoch;
             cachedMinContentWidth = paddingLeft + contentWidth + paddingRight;
             return cachedMinContentWidth;
         }
@@ -482,7 +493,7 @@ public class DivWidget extends Widget implements UiScrollHost {
             }
         }
         cachedMinContentWidthVersion = currentLayoutVersion;
-        cachedMinContentWidthFontRuntimeVersion = currentFontRuntimeVersion;
+        cachedMinContentWidthTextMeasureEpoch = currentTextMeasureEpoch;
         cachedMinContentWidth = paddingLeft + contentWidth + paddingRight;
         return cachedMinContentWidth;
     }
@@ -1287,7 +1298,7 @@ public class DivWidget extends Widget implements UiScrollHost {
 
     private void ensureLayout(boolean useMinHeights) {
         int currentLayoutVersion = getLayoutVersion();
-        int currentFontRuntimeVersion = FontService.getInstance().getRuntimeVersion();
+        int currentTextMeasureEpoch = textMeasureService.getEpoch();
         int currentWidth = getWidth();
         int currentHeight = getHeight();
         int currentHorizontalOffset = scrollState.getHorizontalOffset();
@@ -1297,7 +1308,7 @@ public class DivWidget extends Widget implements UiScrollHost {
                 && cachedLayoutHeight == currentHeight
                 && cachedHorizontalScrollOffset == currentHorizontalOffset
                 && cachedVerticalScrollOffset == currentVerticalOffset
-                && cachedLayoutFontRuntimeVersion == currentFontRuntimeVersion
+                && cachedLayoutTextMeasureEpoch == currentTextMeasureEpoch
                 && cachedUseMinHeights == useMinHeights) {
             return;
         }
@@ -1310,7 +1321,7 @@ public class DivWidget extends Widget implements UiScrollHost {
         cachedLayoutHeight = currentHeight;
         cachedHorizontalScrollOffset = scrollState.getHorizontalOffset();
         cachedVerticalScrollOffset = scrollState.getVerticalOffset();
-        cachedLayoutFontRuntimeVersion = currentFontRuntimeVersion;
+        cachedLayoutTextMeasureEpoch = currentTextMeasureEpoch;
         cachedUseMinHeights = useMinHeights;
     }
 
@@ -1330,20 +1341,20 @@ public class DivWidget extends Widget implements UiScrollHost {
 
     private void ensurePureMeasureCacheValid() {
         int currentLayoutVersion = getLayoutVersion();
-        int currentFontRuntimeVersion = FontService.getInstance().getRuntimeVersion();
+        int currentTextMeasureEpoch = textMeasureService.getEpoch();
         if (cachedPureMeasureVersion == currentLayoutVersion
-                && cachedPureMeasureFontRuntimeVersion == currentFontRuntimeVersion) {
+                && cachedPureMeasureTextMeasureEpoch == currentTextMeasureEpoch) {
             return;
         }
         pureMeasureCache.clear();
         cachedPureMeasureVersion = currentLayoutVersion;
-        cachedPureMeasureFontRuntimeVersion = currentFontRuntimeVersion;
+        cachedPureMeasureTextMeasureEpoch = currentTextMeasureEpoch;
         cachedPreferredWidthVersion = -1;
         cachedPreferredWidth = -1;
-        cachedPreferredWidthFontRuntimeVersion = -1;
+        cachedPreferredWidthTextMeasureEpoch = -1;
         cachedMinContentWidthVersion = -1;
         cachedMinContentWidth = -1;
-        cachedMinContentWidthFontRuntimeVersion = -1;
+        cachedMinContentWidthTextMeasureEpoch = -1;
     }
 
     private LayoutResult copyLayoutResult(LayoutResult source) {
