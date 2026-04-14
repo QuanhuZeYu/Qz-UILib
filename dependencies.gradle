@@ -51,4 +51,6 @@ dependencies {
     runtimeOnly(project.elytraModpackVersion.gtnhdev("NotEnoughItems"))
     runtimeOnly(project.elytraModpackVersion.gtnhdev("Applied-Energistics-2-Unofficial"))
     runtimeOnly(project.elytraModpackVersion.gtnhdev("AppleCore"))
+
+    testImplementation("junit:junit:4.13.2")
 }
