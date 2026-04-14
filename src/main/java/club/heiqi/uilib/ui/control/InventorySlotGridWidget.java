@@ -4,7 +4,6 @@ import java.util.Objects;
 
 import club.heiqi.uilib.ui.render.UiRenderContext;
 import club.heiqi.uilib.ui.widget.Widget;
-import net.minecraft.item.ItemStack;
 
 /**
  * 只读背包格子网格控件。
@@ -20,9 +19,9 @@ public class InventorySlotGridWidget extends Widget {
          * 获取指定本地索引的槽位内容。
          *
          * @param localIndex 本地索引
-         * @return 物品内容
+         * @return 槽位快照
          */
-        ItemStack getStack(int localIndex);
+        InventorySlotSnapshot getSlotSnapshot(int localIndex);
     }
 
     private final int slotCount;
@@ -71,13 +70,13 @@ public class InventorySlotGridWidget extends Widget {
         InventorySlotGridLayout layout = resolveLayout(Math.max(1, getWidth()));
         int absoluteX = getAbsoluteX() + Math.max(0, (getWidth() - layout.totalWidth) / 2);
         int absoluteY = getAbsoluteY();
-        ItemStack[] slotStacks = snapshotSlotStacks();
+        InventorySlotSnapshot[] slotSnapshots = snapshotSlotSnapshots();
         boolean hasRenderableItems = false;
 
         for (int slotIndex = 0; slotIndex < slotCount; slotIndex++) {
             InventorySlotGridLayout.SlotRect slotRect = layout.getSlotRect(slotIndex);
-            ItemStack stack = slotStacks[slotIndex];
-            boolean occupied = hasRenderableStack(stack);
+            InventorySlotSnapshot snapshot = slotSnapshots[slotIndex];
+            boolean occupied = snapshot.isOccupied();
             int fillColor = occupied ? style.occupiedSlotFillColor : style.emptySlotFillColor;
             int borderColor = occupied ? style.occupiedSlotBorderColor : style.emptySlotBorderColor;
             context.fillRect(absoluteX + slotRect.left, absoluteY + slotRect.top, absoluteX + slotRect.right,
@@ -90,7 +89,7 @@ public class InventorySlotGridWidget extends Widget {
         if (hasRenderableItems) {
             InventorySlotGridItemRenderer activeItemRenderer = resolveItemRenderer();
             if (activeItemRenderer != null) {
-                activeItemRenderer.renderItems(layout, absoluteX, absoluteY, slotStacks);
+                activeItemRenderer.renderItems(layout, absoluteX, absoluteY, slotSnapshots);
             }
         }
     }
@@ -165,16 +164,6 @@ public class InventorySlotGridWidget extends Widget {
     }
 
     /**
-     * 判断槽位内容是否可参与绘制。
-     *
-     * @param stack 槽位内容
-     * @return 是否存在可渲染物品
-     */
-    static boolean hasRenderableStack(ItemStack stack) {
-        return stack != null && stack.getItem() != null;
-    }
-
-    /**
      * 按当前宽度解析布局结果。
      *
      * @param availableWidth 可用宽度
@@ -200,12 +189,13 @@ public class InventorySlotGridWidget extends Widget {
      *
      * @return 槽位内容数组
      */
-    private ItemStack[] snapshotSlotStacks() {
-        ItemStack[] slotStacks = new ItemStack[slotCount];
+    private InventorySlotSnapshot[] snapshotSlotSnapshots() {
+        InventorySlotSnapshot[] slotSnapshots = new InventorySlotSnapshot[slotCount];
         for (int slotIndex = 0; slotIndex < slotCount; slotIndex++) {
-            slotStacks[slotIndex] = slotContentProvider.getStack(slotIndex);
+            InventorySlotSnapshot snapshot = slotContentProvider.getSlotSnapshot(slotIndex);
+            slotSnapshots[slotIndex] = snapshot == null ? InventorySlotSnapshot.empty() : snapshot;
         }
-        return slotStacks;
+        return slotSnapshots;
     }
 
     /**

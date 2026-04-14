@@ -7,6 +7,7 @@ import org.junit.Assert;
 import org.junit.Test;
 
 import club.heiqi.uilib.ui.control.ButtonWidget;
+import club.heiqi.uilib.ui.control.InventorySlotSnapshot;
 import club.heiqi.uilib.ui.control.LabelWidget;
 import club.heiqi.uilib.ui.control.NoOpInventorySlotGridItemRenderer;
 import club.heiqi.uilib.ui.control.UiControlRuntimeAdapters;
@@ -18,7 +19,6 @@ import club.heiqi.uilib.ui.event.UiMouseEvent;
 import club.heiqi.uilib.ui.theme.UiDocumentTheme;
 import club.heiqi.uilib.ui.text.TextMeasureService;
 import club.heiqi.uilib.ui.widget.Widget;
-import net.minecraft.item.ItemStack;
 
 /**
  * `InventoryOverviewDocumentPageController` 的黑盒测试。
@@ -334,8 +334,8 @@ public class InventoryOverviewDocumentPageControllerTest {
 
         private final InventoryOverviewSlotContentProvider emptySlotProvider = new InventoryOverviewSlotContentProvider() {
             @Override
-            public ItemStack getStack(int localIndex) {
-                return null;
+            public InventorySlotSnapshot getSlotSnapshot(int localIndex) {
+                return InventorySlotSnapshot.empty();
             }
         };
 

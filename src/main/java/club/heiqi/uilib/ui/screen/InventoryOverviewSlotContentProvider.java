@@ -1,6 +1,6 @@
 package club.heiqi.uilib.ui.screen;
 
-import net.minecraft.item.ItemStack;
+import club.heiqi.uilib.ui.control.InventorySlotSnapshot;
 
 /**
  * 背包诊断页使用的槽位内容提供契约。
@@ -13,7 +13,7 @@ public interface InventoryOverviewSlotContentProvider {
      * 获取指定本地索引的槽位内容。
      *
      * @param localIndex 本地索引
-     * @return 槽位物品；为空表示当前槽位无内容
+     * @return 槽位快照
      */
-    ItemStack getStack(int localIndex);
+    InventorySlotSnapshot getSlotSnapshot(int localIndex);
 }

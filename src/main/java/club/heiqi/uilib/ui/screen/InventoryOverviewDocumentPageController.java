@@ -3,13 +3,13 @@ package club.heiqi.uilib.ui.screen;
 import java.util.Objects;
 
 import club.heiqi.uilib.ui.control.ButtonWidget;
+import club.heiqi.uilib.ui.control.InventorySlotSnapshot;
 import club.heiqi.uilib.ui.control.InventorySlotGridWidget;
 import club.heiqi.uilib.ui.control.LabelWidget;
 import club.heiqi.uilib.ui.document.DocumentCardWidget;
 import club.heiqi.uilib.ui.document.DocumentSectionWidget;
 import club.heiqi.uilib.ui.document.DocumentTextWidget;
 import club.heiqi.uilib.ui.document.DocumentToolbarWidget;
-import net.minecraft.item.ItemStack;
 
 /**
  * 背包诊断页的页面控制器。
@@ -76,8 +76,8 @@ final class InventoryOverviewDocumentPageController extends DocumentPageControll
         Objects.requireNonNull(slotContentProvider, "slotContentProvider");
         return new InventorySlotGridWidget.SlotContentProvider() {
             @Override
-            public ItemStack getStack(int localIndex) {
-                return slotContentProvider.getStack(localIndex);
+            public InventorySlotSnapshot getSlotSnapshot(int localIndex) {
+                return slotContentProvider.getSlotSnapshot(localIndex);
             }
         };
     }

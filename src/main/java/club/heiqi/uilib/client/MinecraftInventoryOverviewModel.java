@@ -1,5 +1,6 @@
 package club.heiqi.uilib.client;
 
+import club.heiqi.uilib.ui.control.InventorySlotSnapshot;
 import club.heiqi.uilib.ui.screen.InventoryOverviewModel;
 import club.heiqi.uilib.ui.screen.InventoryOverviewSlotContentProvider;
 import net.minecraft.client.Minecraft;
@@ -19,15 +20,15 @@ public class MinecraftInventoryOverviewModel implements InventoryOverviewModel {
 
     private final InventoryOverviewSlotContentProvider hotbarSlotProvider = new InventoryOverviewSlotContentProvider() {
         @Override
-        public ItemStack getStack(int localIndex) {
-            return getStackAt(HOTBAR_START_SLOT, localIndex);
+        public InventorySlotSnapshot getSlotSnapshot(int localIndex) {
+            return sampleSlotSnapshot(HOTBAR_START_SLOT, localIndex);
         }
     };
 
     private final InventoryOverviewSlotContentProvider backpackSlotProvider = new InventoryOverviewSlotContentProvider() {
         @Override
-        public ItemStack getStack(int localIndex) {
-            return getStackAt(BACKPACK_START_SLOT, localIndex);
+        public InventorySlotSnapshot getSlotSnapshot(int localIndex) {
+            return sampleSlotSnapshot(BACKPACK_START_SLOT, localIndex);
         }
     };
 
@@ -86,6 +87,17 @@ public class MinecraftInventoryOverviewModel implements InventoryOverviewModel {
             return null;
         }
         return inventory.mainInventory[slotIndex];
+    }
+
+    /**
+     * 采样指定槽位的快照。
+     *
+     * @param startSlot 分区起始槽位
+     * @param localIndex 分区内本地索引
+     * @return 槽位快照
+     */
+    private InventorySlotSnapshot sampleSlotSnapshot(int startSlot, int localIndex) {
+        return InventorySlotSnapshot.fromRuntimeStack(getStackAt(startSlot, localIndex));
     }
 
     private InventoryPlayer getPlayerInventory() {

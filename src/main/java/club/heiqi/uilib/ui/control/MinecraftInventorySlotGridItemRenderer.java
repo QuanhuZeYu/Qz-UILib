@@ -15,8 +15,9 @@ final class MinecraftInventorySlotGridItemRenderer implements InventorySlotGridI
     private final RenderItem itemRenderer = new RenderItem();
 
     @Override
-    public void renderItems(InventorySlotGridLayout layout, int absoluteX, int absoluteY, ItemStack[] slotStacks) {
-        if (layout == null || slotStacks == null || slotStacks.length <= 0) {
+    public void renderItems(InventorySlotGridLayout layout, int absoluteX, int absoluteY,
+            InventorySlotSnapshot[] slotSnapshots) {
+        if (layout == null || slotSnapshots == null || slotSnapshots.length <= 0) {
             return;
         }
 
@@ -30,9 +31,14 @@ final class MinecraftInventorySlotGridItemRenderer implements InventorySlotGridI
             GL11.glColor4f(1.0F, 1.0F, 1.0F, 1.0F);
             itemRenderer.zLevel = 100.0F;
 
-            for (int slotIndex = 0; slotIndex < slotStacks.length; slotIndex++) {
-                ItemStack stack = slotStacks[slotIndex];
-                if (!InventorySlotGridWidget.hasRenderableStack(stack)) {
+            for (int slotIndex = 0; slotIndex < slotSnapshots.length; slotIndex++) {
+                InventorySlotSnapshot snapshot = slotSnapshots[slotIndex];
+                if (snapshot == null || !snapshot.isOccupied()) {
+                    continue;
+                }
+
+                ItemStack stack = snapshot.getRuntimeStack();
+                if (stack == null || stack.getItem() == null) {
                     continue;
                 }
 
