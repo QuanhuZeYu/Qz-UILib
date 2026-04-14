@@ -3,10 +3,9 @@ package club.heiqi.uilib.ui.control;
 import java.util.List;
 import java.util.Objects;
 
-import club.heiqi.uilib.font.api.DefaultFontRendererAdapter;
-import club.heiqi.uilib.font.FontService;
-import club.heiqi.uilib.font.config.FontConfig;
 import club.heiqi.uilib.ui.render.UiRenderContext;
+import club.heiqi.uilib.ui.text.DefaultTextMeasureService;
+import club.heiqi.uilib.ui.text.TextMeasureService;
 import club.heiqi.uilib.ui.widget.Widget;
 
 /**
@@ -14,6 +13,7 @@ import club.heiqi.uilib.ui.widget.Widget;
  */
 public class LabelWidget extends Widget {
 
+    private final TextMeasureService textMeasureService;
     private String text;
     private int color;
     private boolean shadow;
@@ -25,9 +25,9 @@ public class LabelWidget extends Widget {
     private int cachedWrapWidth = -1;
     private String cachedWrapText;
     private List<String> cachedWrappedLines;
-    private int cachedPreferredWidthFontRuntimeVersion = -1;
-    private int cachedMinContentWidthFontRuntimeVersion = -1;
-    private int cachedWrapFontRuntimeVersion = -1;
+    private int cachedPreferredWidthTextMeasureEpoch = -1;
+    private int cachedMinContentWidthTextMeasureEpoch = -1;
+    private int cachedWrapTextMeasureEpoch = -1;
 
     /**
      * 使用文本创建标签。
@@ -35,6 +35,18 @@ public class LabelWidget extends Widget {
      * @param text 文本内容
      */
     public LabelWidget(String text, UiControlTheme.LabelStyle style) {
+        this(text, style, DefaultTextMeasureService.getInstance());
+    }
+
+    /**
+     * 使用指定文本测量服务创建标签。
+     *
+     * @param text 文本内容
+     * @param style 标签样式
+     * @param textMeasureService 文本测量服务
+     */
+    public LabelWidget(String text, UiControlTheme.LabelStyle style, TextMeasureService textMeasureService) {
+        this.textMeasureService = Objects.requireNonNull(textMeasureService, "textMeasureService");
         this.text = text;
         setStyle(style);
     }
@@ -73,16 +85,16 @@ public class LabelWidget extends Widget {
             return 0;
         }
         if (cachedPreferredWidth < 0
-                || cachedPreferredWidthFontRuntimeVersion != FontService.getInstance().getRuntimeVersion()) {
-            cachedPreferredWidth = DefaultFontRendererAdapter.getInstance().getStringWidth(text) * 2;
-            cachedPreferredWidthFontRuntimeVersion = FontService.getInstance().getRuntimeVersion();
+                || cachedPreferredWidthTextMeasureEpoch != textMeasureService.getEpoch()) {
+            cachedPreferredWidth = textMeasureService.getStringWidth(text) * 2;
+            cachedPreferredWidthTextMeasureEpoch = textMeasureService.getEpoch();
         }
         return cachedPreferredWidth;
     }
 
     @Override
     public int getPreferredHeight() {
-        return Math.max(20, ((int) Math.ceil(FontConfig.charSize) + 2) * 2);
+        return Math.max(20, Math.round(textMeasureService.getLineHeight() * 2.0F));
     }
 
     @Override
@@ -106,9 +118,9 @@ public class LabelWidget extends Widget {
         // 当前文本布局服务按字符粒度换行，中文与大多数符号都可以在单字符处断行，
         // 因此最小内容宽度不应再按空白分词，否则中文整段会被误判为不可压缩长词。
         if (cachedMinContentWidth < 0
-                || cachedMinContentWidthFontRuntimeVersion != FontService.getInstance().getRuntimeVersion()) {
+                || cachedMinContentWidthTextMeasureEpoch != textMeasureService.getEpoch()) {
             cachedMinContentWidth = resolveWrapMinWidth();
-            cachedMinContentWidthFontRuntimeVersion = FontService.getInstance().getRuntimeVersion();
+            cachedMinContentWidthTextMeasureEpoch = textMeasureService.getEpoch();
         }
         return cachedMinContentWidth;
     }
@@ -174,7 +186,7 @@ public class LabelWidget extends Widget {
 
     private List<String> getWrappedLines(int uiWidth) {
         if (cachedWrappedLines != null && cachedWrapWidth == uiWidth
-                && cachedWrapFontRuntimeVersion == FontService.getInstance().getRuntimeVersion()
+                && cachedWrapTextMeasureEpoch == textMeasureService.getEpoch()
                 && (cachedWrapText == text || cachedWrapText != null && cachedWrapText.equals(text))) {
             return cachedWrappedLines;
         }
@@ -182,8 +194,8 @@ public class LabelWidget extends Widget {
         int rawWidth = toRawTextWidth(uiWidth);
         cachedWrapWidth = uiWidth;
         cachedWrapText = text;
-        cachedWrappedLines = DefaultFontRendererAdapter.getInstance().listFormattedStringToWidth(text, rawWidth);
-        cachedWrapFontRuntimeVersion = FontService.getInstance().getRuntimeVersion();
+        cachedWrappedLines = textMeasureService.listFormattedStringToWidth(text, rawWidth);
+        cachedWrapTextMeasureEpoch = textMeasureService.getEpoch();
         return cachedWrappedLines;
     }
 
@@ -191,16 +203,15 @@ public class LabelWidget extends Widget {
         if (source == null || source.isEmpty()) {
             return "";
         }
-        DefaultFontRendererAdapter adapter = DefaultFontRendererAdapter.getInstance();
         int rawWidth = toRawTextWidth(uiWidth);
-        if (adapter.getStringWidth(source) <= rawWidth) {
+        if (textMeasureService.getStringWidth(source) <= rawWidth) {
             return source;
         }
         if (!appendEllipsis) {
-            return adapter.trimStringToWidth(source, rawWidth);
+            return textMeasureService.trimStringToWidth(source, rawWidth);
         }
-        int ellipsisWidth = adapter.getStringWidth("...");
-        String trimmed = adapter.trimStringToWidth(source, Math.max(0, rawWidth - ellipsisWidth));
+        int ellipsisWidth = textMeasureService.getStringWidth("...");
+        String trimmed = textMeasureService.trimStringToWidth(source, Math.max(0, rawWidth - ellipsisWidth));
         return trimmed.isEmpty() ? "..." : trimmed + "...";
     }
 
@@ -209,7 +220,6 @@ public class LabelWidget extends Widget {
     }
 
     private int resolveWrapMinWidth() {
-        DefaultFontRendererAdapter adapter = DefaultFontRendererAdapter.getInstance();
         int widest = 0;
         for (int index = 0; index < text.length();) {
             int codepoint = text.codePointAt(index);
@@ -218,21 +228,21 @@ public class LabelWidget extends Widget {
                 continue;
             }
             if (!Character.isWhitespace(codepoint)) {
-                widest = Math.max(widest, adapter.getStringWidth(new String(Character.toChars(codepoint))) * 2);
+                widest = Math.max(widest, textMeasureService.getStringWidth(new String(Character.toChars(codepoint))) * 2);
             }
             index += Character.charCount(codepoint);
         }
-        return Math.max(widest, adapter.getStringWidth("字") * 2);
+        return Math.max(widest, textMeasureService.getStringWidth("字") * 2);
     }
 
     private void invalidateTextCache() {
         cachedPreferredWidth = -1;
-        cachedPreferredWidthFontRuntimeVersion = -1;
+        cachedPreferredWidthTextMeasureEpoch = -1;
         cachedMinContentWidth = -1;
-        cachedMinContentWidthFontRuntimeVersion = -1;
+        cachedMinContentWidthTextMeasureEpoch = -1;
         cachedWrapWidth = -1;
         cachedWrapText = null;
         cachedWrappedLines = null;
-        cachedWrapFontRuntimeVersion = -1;
+        cachedWrapTextMeasureEpoch = -1;
     }
 }

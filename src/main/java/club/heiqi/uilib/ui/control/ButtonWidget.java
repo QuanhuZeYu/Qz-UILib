@@ -4,10 +4,11 @@ import java.util.Objects;
 
 import org.lwjglx.input.Keyboard;
 
-import club.heiqi.uilib.font.api.DefaultFontRendererAdapter;
 import club.heiqi.uilib.ui.event.UiKeyEvent;
 import club.heiqi.uilib.ui.event.UiMouseEvent;
 import club.heiqi.uilib.ui.render.UiRenderContext;
+import club.heiqi.uilib.ui.text.DefaultTextMeasureService;
+import club.heiqi.uilib.ui.text.TextMeasureService;
 import club.heiqi.uilib.ui.widget.Widget;
 
 /**
@@ -15,6 +16,7 @@ import club.heiqi.uilib.ui.widget.Widget;
  */
 public class ButtonWidget extends Widget {
 
+    private final TextMeasureService textMeasureService;
     private String text;
     private Runnable clickHandler;
     private boolean hovered;
@@ -28,6 +30,18 @@ public class ButtonWidget extends Widget {
      * @param text 按钮文本
      */
     public ButtonWidget(String text, UiControlTheme.ButtonStyle style) {
+        this(text, style, DefaultTextMeasureService.getInstance());
+    }
+
+    /**
+     * 使用指定文本测量服务创建按钮。
+     *
+     * @param text 按钮文本
+     * @param style 按钮样式
+     * @param textMeasureService 文本测量服务
+     */
+    public ButtonWidget(String text, UiControlTheme.ButtonStyle style, TextMeasureService textMeasureService) {
+        this.textMeasureService = Objects.requireNonNull(textMeasureService, "textMeasureService");
         this.text = text == null ? "" : text;
         this.style = Objects.requireNonNull(style, "style");
     }
@@ -126,8 +140,7 @@ public class ButtonWidget extends Widget {
 
     @Override
     public int getPreferredWidth() {
-        return Math.max(style.preferredMinWidth,
-                DefaultFontRendererAdapter.getInstance().getStringWidth(text) * 2 + style.preferredExtraWidth);
+        return Math.max(style.preferredMinWidth, textMeasureService.getStringWidth(text) * 2 + style.preferredExtraWidth);
     }
 
     @Override
@@ -137,8 +150,7 @@ public class ButtonWidget extends Widget {
 
     @Override
     public int getMinContentWidth() {
-        return Math.max(style.minContentWidthFloor,
-                DefaultFontRendererAdapter.getInstance().getStringWidth(text) * 2 + style.minExtraWidth);
+        return Math.max(style.minContentWidthFloor, textMeasureService.getStringWidth(text) * 2 + style.minExtraWidth);
     }
 
     protected void triggerClick() {

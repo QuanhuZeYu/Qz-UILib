@@ -4,10 +4,11 @@ import java.util.Objects;
 
 import org.lwjglx.input.Keyboard;
 
-import club.heiqi.uilib.font.api.DefaultFontRendererAdapter;
 import club.heiqi.uilib.ui.event.UiKeyEvent;
 import club.heiqi.uilib.ui.event.UiMouseEvent;
 import club.heiqi.uilib.ui.render.UiRenderContext;
+import club.heiqi.uilib.ui.text.DefaultTextMeasureService;
+import club.heiqi.uilib.ui.text.TextMeasureService;
 import club.heiqi.uilib.ui.widget.Widget;
 
 /**
@@ -15,6 +16,7 @@ import club.heiqi.uilib.ui.widget.Widget;
  */
 public class SegmentedSelectorWidget extends Widget {
 
+    private final TextMeasureService textMeasureService;
     private final String[] options;
     private int selectedIndex;
     private Runnable changeHandler;
@@ -23,6 +25,12 @@ public class SegmentedSelectorWidget extends Widget {
     private UiControlTheme.SegmentedSelectorStyle style;
 
     public SegmentedSelectorWidget(UiControlTheme.SegmentedSelectorStyle style, String... options) {
+        this(DefaultTextMeasureService.getInstance(), style, options);
+    }
+
+    public SegmentedSelectorWidget(TextMeasureService textMeasureService,
+            UiControlTheme.SegmentedSelectorStyle style, String... options) {
+        this.textMeasureService = Objects.requireNonNull(textMeasureService, "textMeasureService");
         this.options = options == null ? new String[0] : options;
         this.style = Objects.requireNonNull(style, "style");
     }
@@ -185,9 +193,8 @@ public class SegmentedSelectorWidget extends Widget {
 
     private int getWidestOptionWidth() {
         int widest = 52;
-        DefaultFontRendererAdapter adapter = DefaultFontRendererAdapter.getInstance();
         for (String option : options) {
-            widest = Math.max(widest, adapter.getStringWidth(option == null ? "" : option) * 2);
+            widest = Math.max(widest, textMeasureService.getStringWidth(option == null ? "" : option) * 2);
         }
         return widest;
     }
@@ -196,13 +203,12 @@ public class SegmentedSelectorWidget extends Widget {
         if (source == null || source.isEmpty()) {
             return "";
         }
-        DefaultFontRendererAdapter adapter = DefaultFontRendererAdapter.getInstance();
         int rawWidth = Math.max(1, Math.round(uiWidth / 2.0F));
-        if (adapter.getStringWidth(source) <= rawWidth) {
+        if (textMeasureService.getStringWidth(source) <= rawWidth) {
             return source;
         }
-        int ellipsisWidth = adapter.getStringWidth("...");
-        String trimmed = adapter.trimStringToWidth(source, Math.max(0, rawWidth - ellipsisWidth));
+        int ellipsisWidth = textMeasureService.getStringWidth("...");
+        String trimmed = textMeasureService.trimStringToWidth(source, Math.max(0, rawWidth - ellipsisWidth));
         return trimmed.isEmpty() ? "..." : trimmed + "...";
     }
 }

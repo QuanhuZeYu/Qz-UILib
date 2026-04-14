@@ -4,10 +4,11 @@ import java.util.Objects;
 
 import org.lwjglx.input.Keyboard;
 
-import club.heiqi.uilib.font.api.DefaultFontRendererAdapter;
 import club.heiqi.uilib.ui.event.UiKeyEvent;
 import club.heiqi.uilib.ui.event.UiMouseEvent;
 import club.heiqi.uilib.ui.render.UiRenderContext;
+import club.heiqi.uilib.ui.text.DefaultTextMeasureService;
+import club.heiqi.uilib.ui.text.TextMeasureService;
 import club.heiqi.uilib.ui.widget.Widget;
 
 /**
@@ -15,6 +16,7 @@ import club.heiqi.uilib.ui.widget.Widget;
  */
 public class ToggleSwitchWidget extends Widget {
 
+    private final TextMeasureService textMeasureService;
     private String label;
     private boolean checked;
     private Runnable toggleHandler;
@@ -23,6 +25,12 @@ public class ToggleSwitchWidget extends Widget {
     private UiControlTheme.ToggleSwitchStyle style;
 
     public ToggleSwitchWidget(String label, UiControlTheme.ToggleSwitchStyle style) {
+        this(label, style, DefaultTextMeasureService.getInstance());
+    }
+
+    public ToggleSwitchWidget(String label, UiControlTheme.ToggleSwitchStyle style,
+            TextMeasureService textMeasureService) {
+        this.textMeasureService = Objects.requireNonNull(textMeasureService, "textMeasureService");
         this.label = label == null ? "" : label;
         this.style = Objects.requireNonNull(style, "style");
     }
@@ -96,8 +104,7 @@ public class ToggleSwitchWidget extends Widget {
 
     @Override
     public int getPreferredWidth() {
-        return Math.max(style.preferredMinWidth,
-                DefaultFontRendererAdapter.getInstance().getStringWidth(label) * 2 + style.preferredExtraWidth);
+        return Math.max(style.preferredMinWidth, textMeasureService.getStringWidth(label) * 2 + style.preferredExtraWidth);
     }
 
     @Override
@@ -107,8 +114,7 @@ public class ToggleSwitchWidget extends Widget {
 
     @Override
     public int getMinContentWidth() {
-        return Math.max(style.minContentWidthFloor,
-                DefaultFontRendererAdapter.getInstance().getStringWidth(label) * 2 + style.minExtraWidth);
+        return Math.max(style.minContentWidthFloor, textMeasureService.getStringWidth(label) * 2 + style.minExtraWidth);
     }
 
     public ToggleSwitchWidget setChecked(boolean checked) {
@@ -159,13 +165,12 @@ public class ToggleSwitchWidget extends Widget {
         if (source == null || source.isEmpty()) {
             return "";
         }
-        DefaultFontRendererAdapter adapter = DefaultFontRendererAdapter.getInstance();
         int rawWidth = Math.max(1, Math.round(uiWidth / 2.0F));
-        if (adapter.getStringWidth(source) <= rawWidth) {
+        if (textMeasureService.getStringWidth(source) <= rawWidth) {
             return source;
         }
-        int ellipsisWidth = adapter.getStringWidth("...");
-        String trimmed = adapter.trimStringToWidth(source, Math.max(0, rawWidth - ellipsisWidth));
+        int ellipsisWidth = textMeasureService.getStringWidth("...");
+        String trimmed = textMeasureService.trimStringToWidth(source, Math.max(0, rawWidth - ellipsisWidth));
         return trimmed.isEmpty() ? "..." : trimmed + "...";
     }
 

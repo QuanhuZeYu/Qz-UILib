@@ -4,11 +4,12 @@ import java.util.Objects;
 
 import org.lwjglx.input.Keyboard;
 
-import club.heiqi.uilib.font.api.DefaultFontRendererAdapter;
 import club.heiqi.uilib.ui.event.UiKeyEvent;
 import club.heiqi.uilib.ui.event.UiMouseEvent;
 import club.heiqi.uilib.ui.event.UiTextInputEvent;
 import club.heiqi.uilib.ui.render.UiRenderContext;
+import club.heiqi.uilib.ui.text.DefaultTextMeasureService;
+import club.heiqi.uilib.ui.text.TextMeasureService;
 import club.heiqi.uilib.ui.widget.Widget;
 
 /**
@@ -17,6 +18,7 @@ import club.heiqi.uilib.ui.widget.Widget;
 public class TextInputWidget extends Widget {
 
     private final StringBuilder textBuilder = new StringBuilder();
+    private final TextMeasureService textMeasureService;
 
     private String placeholder = "点击后输入文本";
     private int maxLength = 128;
@@ -25,6 +27,11 @@ public class TextInputWidget extends Widget {
     private UiControlTheme.TextInputStyle style;
 
     public TextInputWidget(UiControlTheme.TextInputStyle style) {
+        this(style, DefaultTextMeasureService.getInstance());
+    }
+
+    public TextInputWidget(UiControlTheme.TextInputStyle style, TextMeasureService textMeasureService) {
+        this.textMeasureService = Objects.requireNonNull(textMeasureService, "textMeasureService");
         this.style = Objects.requireNonNull(style, "style");
     }
 
@@ -174,8 +181,7 @@ public class TextInputWidget extends Widget {
     @Override
     public int getPreferredWidth() {
         String sample = placeholder == null || placeholder.isEmpty() ? "输入文本" : placeholder;
-        return Math.max(style.preferredMinWidth,
-                DefaultFontRendererAdapter.getInstance().getStringWidth(sample) * 2 + style.preferredExtraWidth);
+        return Math.max(style.preferredMinWidth, textMeasureService.getStringWidth(sample) * 2 + style.preferredExtraWidth);
     }
 
     @Override
@@ -189,19 +195,18 @@ public class TextInputWidget extends Widget {
     }
 
     private String trimToVisibleText(String source, int uiWidth, boolean keepTail) {
-        DefaultFontRendererAdapter adapter = DefaultFontRendererAdapter.getInstance();
         int rawWidth = Math.max(1, Math.round(uiWidth / 2.0F));
-        if (adapter.getStringWidth(source) <= rawWidth) {
+        if (textMeasureService.getStringWidth(source) <= rawWidth) {
             return source;
         }
         if (!keepTail) {
-            return adapter.trimStringToWidth(source, rawWidth);
+            return textMeasureService.trimStringToWidth(source, rawWidth);
         }
 
         int start = 0;
         while (start < source.length()) {
             String suffix = source.substring(start);
-            if (adapter.getStringWidth(suffix) <= rawWidth) {
+            if (textMeasureService.getStringWidth(suffix) <= rawWidth) {
                 return suffix;
             }
             start += Character.charCount(source.codePointAt(start));
