@@ -6,6 +6,8 @@ import club.heiqi.uilib.ui.control.DivWidget;
 import club.heiqi.uilib.ui.layout.UiLayoutSpec;
 import club.heiqi.uilib.ui.layout.UiLength;
 import club.heiqi.uilib.ui.theme.UiDocumentTheme;
+import club.heiqi.uilib.ui.text.DefaultTextMeasureService;
+import club.heiqi.uilib.ui.text.TextMeasureService;
 import club.heiqi.uilib.ui.widget.Widget;
 
 /**
@@ -14,6 +16,12 @@ import club.heiqi.uilib.ui.widget.Widget;
 public class DocumentFormRowWidget extends DivWidget {
 
     public DocumentFormRowWidget(UiDocumentTheme theme, String labelText, Widget field) {
+        this(theme, labelText, field, DefaultTextMeasureService.getInstance());
+    }
+
+    public DocumentFormRowWidget(UiDocumentTheme theme, String labelText, Widget field,
+            TextMeasureService textMeasureService) {
+        super(textMeasureService);
         UiDocumentTheme resolvedTheme = Objects.requireNonNull(theme, "theme");
         setDirection(Direction.ROW)
                 .setAlignItems(AlignItems.CENTER)
@@ -24,7 +32,8 @@ public class DocumentFormRowWidget extends DivWidget {
                 .setGap(resolvedTheme.getFormRowGap());
         setLayoutSpec(new UiLayoutSpec().setWidth(UiLength.percent(1.0F)).setHeight(UiLength.auto()));
 
-        DocumentTextWidget label = new DocumentTextWidget(resolvedTheme, DocumentTextWidget.Role.EMPHASIS, labelText, 2);
+        DocumentTextWidget label = new DocumentTextWidget(resolvedTheme, DocumentTextWidget.Role.EMPHASIS, labelText, 2,
+                textMeasureService);
         label.setLayoutSpec(new UiLayoutSpec()
                 .setWidth(UiLength.px(resolvedTheme.getFormLabelWidth()))
                 .setMinWidth(resolvedTheme.getFormLabelWidth())

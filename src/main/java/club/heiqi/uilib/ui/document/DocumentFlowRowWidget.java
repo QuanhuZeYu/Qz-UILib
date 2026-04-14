@@ -6,6 +6,8 @@ import club.heiqi.uilib.ui.control.DivWidget;
 import club.heiqi.uilib.ui.layout.UiLayoutSpec;
 import club.heiqi.uilib.ui.layout.UiLength;
 import club.heiqi.uilib.ui.theme.UiDocumentTheme;
+import club.heiqi.uilib.ui.text.DefaultTextMeasureService;
+import club.heiqi.uilib.ui.text.TextMeasureService;
 import club.heiqi.uilib.ui.widget.Widget;
 
 /**
@@ -14,6 +16,11 @@ import club.heiqi.uilib.ui.widget.Widget;
 public class DocumentFlowRowWidget extends DivWidget {
 
     public DocumentFlowRowWidget(UiDocumentTheme theme) {
+        this(theme, DefaultTextMeasureService.getInstance());
+    }
+
+    public DocumentFlowRowWidget(UiDocumentTheme theme, TextMeasureService textMeasureService) {
+        super(textMeasureService);
         UiDocumentTheme resolvedTheme = Objects.requireNonNull(theme, "theme");
         setDirection(Direction.ROW)
                 .setAlignItems(AlignItems.STRETCH)

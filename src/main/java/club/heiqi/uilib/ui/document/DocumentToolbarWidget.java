@@ -6,6 +6,8 @@ import club.heiqi.uilib.ui.control.DivWidget;
 import club.heiqi.uilib.ui.layout.UiLayoutSpec;
 import club.heiqi.uilib.ui.layout.UiLength;
 import club.heiqi.uilib.ui.theme.UiDocumentTheme;
+import club.heiqi.uilib.ui.text.DefaultTextMeasureService;
+import club.heiqi.uilib.ui.text.TextMeasureService;
 
 /**
  * 文档工具栏容器。
@@ -13,6 +15,11 @@ import club.heiqi.uilib.ui.theme.UiDocumentTheme;
 public class DocumentToolbarWidget extends DivWidget {
 
     public DocumentToolbarWidget(UiDocumentTheme theme) {
+        this(theme, DefaultTextMeasureService.getInstance());
+    }
+
+    public DocumentToolbarWidget(UiDocumentTheme theme, TextMeasureService textMeasureService) {
+        super(textMeasureService);
         UiDocumentTheme resolvedTheme = Objects.requireNonNull(theme, "theme");
         setDirection(Direction.ROW)
                 .setAlignItems(AlignItems.STRETCH)

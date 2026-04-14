@@ -5,6 +5,8 @@ import java.util.Objects;
 import club.heiqi.uilib.ui.control.DivWidget;
 import club.heiqi.uilib.ui.control.ScrollViewportWidget;
 import club.heiqi.uilib.ui.theme.UiDocumentTheme;
+import club.heiqi.uilib.ui.text.DefaultTextMeasureService;
+import club.heiqi.uilib.ui.text.TextMeasureService;
 import club.heiqi.uilib.ui.widget.Widget;
 
 /**
@@ -15,6 +17,11 @@ public class DocumentPageWidget extends ScrollViewportWidget {
     private final UiDocumentTheme theme;
 
     public DocumentPageWidget(UiDocumentTheme theme) {
+        this(theme, DefaultTextMeasureService.getInstance());
+    }
+
+    public DocumentPageWidget(UiDocumentTheme theme, TextMeasureService textMeasureService) {
+        super(textMeasureService);
         this.theme = Objects.requireNonNull(theme, "theme");
         setViewportFrameAlignment(FrameAlign.CENTER, FrameAlign.START);
         applyViewportSurfaceStyle(this.theme.getShellSurface());
