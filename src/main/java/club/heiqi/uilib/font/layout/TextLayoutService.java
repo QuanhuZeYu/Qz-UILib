@@ -283,7 +283,7 @@ public class TextLayoutService {
         if (lines.isEmpty()) {
             return 0;
         }
-        return (int) Math.ceil(FontConfig.charSize * lines.size());
+        return getLineHeight() * lines.size();
     }
 
     private TextStyle resolveStyleAt(String text, int endExclusive, int baseColor) {
@@ -383,7 +383,9 @@ public class TextLayoutService {
      * @return 行高
      */
     public int getLineHeight() {
-        return (int) Math.ceil(Math.max(FontConfig.charSize, 8.0D));
+        double lineSpacingRatio = Math.max(FontConfig.lineSpacing, -0.9D);
+        double rawLineHeight = Math.max(FontConfig.charSize * (1.0D + lineSpacingRatio), 1.0D);
+        return (int) Math.ceil(rawLineHeight);
     }
 
     private double measureAwtWidth(int codepoint, FontType fontType) {

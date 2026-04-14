@@ -64,6 +64,13 @@ public class DefaultFontRendererAdapter implements FontRendererAdapter {
     }
 
     @Override
+    public int getLineHeight() {
+        FontService fontService = FontService.getInstance();
+        fontService.initialize();
+        return fontService.getTextLayoutService().getLineHeight();
+    }
+
+    @Override
     public String trimStringToWidth(String text, int targetWidth) {
         FontService fontService = FontService.getInstance();
         fontService.initialize();
@@ -108,8 +115,7 @@ public class DefaultFontRendererAdapter implements FontRendererAdapter {
      */
     public void drawSplitString(String text, int x, int y, int wrapWidth, int color) {
         List<String> lines = listFormattedStringToWidth(text, wrapWidth);
-        FontService fontService = FontService.getInstance();
-        int lineHeight = fontService.getTextLayoutService().getLineHeight();
+        int lineHeight = getLineHeight();
         for (String line : lines) {
             drawString(line, x, y, color, false);
             y += lineHeight;

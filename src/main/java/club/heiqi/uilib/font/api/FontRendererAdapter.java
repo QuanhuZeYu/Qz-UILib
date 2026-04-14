@@ -28,6 +28,13 @@ public interface FontRendererAdapter {
     int getStringWidth(String text);
 
     /**
+     * 获取原始文本坐标系下的逻辑行高。
+     *
+     * @return 原始文本行高
+     */
+    int getLineHeight();
+
+    /**
      * 按宽度裁剪文本。
      *
      * @param text 文本

@@ -131,7 +131,7 @@ public class UiRenderContext {
     }
 
     public int getTextLineHeight() {
-        return Math.round(10.0F * UI_TEXT_SCALE);
+        return Math.round(fontRenderer.getLineHeight() * UI_TEXT_SCALE);
     }
 
     public void pushClip(int left, int top, int right, int bottom) {

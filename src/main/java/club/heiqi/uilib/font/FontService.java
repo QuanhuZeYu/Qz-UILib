@@ -26,6 +26,7 @@ public class FontService {
     private static final FontService INSTANCE = new FontService();
 
     private final AtomicBoolean initialized = new AtomicBoolean(false);
+    private final AtomicBoolean layoutRuntimeReady = new AtomicBoolean(false);
     private final FontCatalog fontCatalog = new FontCatalog();
     private final FontRegistry fontRegistry = new FontRegistry(fontCatalog);
     private final FontMatcher fontMatcher = new FontMatcher(fontCatalog);
@@ -39,6 +40,7 @@ public class FontService {
 
     private long lastDrawStageUploadAt = 0L;
     private int runtimeVersion;
+    private int textMeasureEpoch;
 
     private FontService() {}
 
@@ -52,19 +54,44 @@ public class FontService {
     }
 
     /**
-     * 初始化字体系统基础骨架。
+     * 确保布局期文本测量所需的轻量运行时已就绪。
+     *
+     * <p>该入口只准备字体注册、匹配缓存与布局缓存，不触碰字符页、调度器、批渲染器或着色器等重型渲染运行时。</p>
      */
-    public void initialize() {
-        if (!initialized.compareAndSet(false, true)) {
+    public void ensureLayoutRuntimeReady() {
+        if (layoutRuntimeReady.get()) {
             return;
         }
 
-        fontRegistry.reload();
-        fontMatcher.clearCache();
-        glyphPageManager.initialize();
-        glyphGenerationDispatcher.initialize(fontMatcher, glyphPageManager, glyphPageManager::queueUpload);
-        textLayoutService.clearCache();
-        runtimeVersion++;
+        synchronized (this) {
+            if (layoutRuntimeReady.get()) {
+                return;
+            }
+
+            refreshTextMeasureRuntime();
+            MyMod.LOG.info("字体布局测量运行时初始化完成：{}", FontConfig.buildSummary());
+        }
+    }
+
+    /**
+     * 初始化字体系统基础骨架。
+     */
+    public void initialize() {
+        if (initialized.get()) {
+            return;
+        }
+
+        synchronized (this) {
+            if (initialized.get()) {
+                return;
+            }
+
+            ensureLayoutRuntimeReady();
+            glyphPageManager.initialize();
+            glyphGenerationDispatcher.initialize(fontMatcher, glyphPageManager, glyphPageManager::queueUpload);
+            initialized.set(true);
+            runtimeVersion++;
+        }
 
         MyMod.LOG.info("字体系统骨架初始化完成：{}", FontConfig.buildSummary());
     }
@@ -75,19 +102,19 @@ public class FontService {
      * @param request 重载请求
      */
     public void reload(FontReloadRequest request) {
-        if (!initialized.get()) {
-            initialize();
-        }
+        synchronized (this) {
+            if (!initialized.get()) {
+                initialize();
+            }
 
-        fontRegistry.reload();
-        fontMatcher.clearCache();
-        glyphPageManager.reset();
-        glyphGenerationDispatcher.initialize(fontMatcher, glyphPageManager, glyphPageManager::queueUpload);
-        textLayoutService.clearCache();
-        batchRenderer.clearFrame();
-        decorationRenderer.clear();
-        shaderProgram.close();
-        runtimeVersion++;
+            refreshTextMeasureRuntime();
+            glyphPageManager.reset();
+            glyphGenerationDispatcher.initialize(fontMatcher, glyphPageManager, glyphPageManager::queueUpload);
+            batchRenderer.clearFrame();
+            decorationRenderer.clear();
+            shaderProgram.close();
+            runtimeVersion++;
+        }
         int invalidatedRootCount = UiLayoutInvalidationRegistry.invalidateAll();
 
         MyMod.LOG.info("字体系统重载完成，原因：{}，布局树已失效：{}，运行时版本：{}", request.getReason(),
@@ -144,6 +171,18 @@ public class FontService {
      */
     public int getRuntimeVersion() {
         return runtimeVersion;
+    }
+
+    /**
+     * 获取文本测量缓存失效纪元。
+     *
+     * <p>该纪元在布局期轻量初始化与完整运行时重载共享：只要字体注册、匹配缓存或文本布局缓存基础发生变化，就会递增。</p>
+     *
+     * @return 文本测量缓存失效纪元
+     */
+    public int getTextMeasureEpoch() {
+        ensureLayoutRuntimeReady();
+        return textMeasureEpoch;
     }
 
     /**
@@ -238,6 +277,17 @@ public class FontService {
             return false;
         }
         return drawStageUploadTimestamps.size() < FontConfig.drawStageUploadLimitPerSecond;
+    }
+
+    /**
+     * 刷新文本测量所依赖的基础状态。
+     */
+    private void refreshTextMeasureRuntime() {
+        fontRegistry.reload();
+        fontMatcher.clearCache();
+        textLayoutService.clearCache();
+        layoutRuntimeReady.set(true);
+        textMeasureEpoch++;
     }
 
     private void debugLogStats(String source) {
