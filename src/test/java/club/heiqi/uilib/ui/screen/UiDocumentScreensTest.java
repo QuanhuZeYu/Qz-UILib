@@ -1,11 +1,7 @@
 package club.heiqi.uilib.ui.screen;
 
 import org.junit.Assert;
-import org.junit.Assume;
 import org.junit.Test;
-
-import net.minecraft.client.gui.GuiScreen;
-import net.minecraft.item.ItemStack;
 
 /**
  * `UiDocumentScreens` 的页面描述契约测试。
@@ -38,64 +34,43 @@ public class UiDocumentScreensTest {
     }
 
     /**
-     * 验证非描述对象持有者不会被误判为布局诊断页。
+     * 验证 descriptor 持有者在没有 `GuiScreen` 运行时的情况下仍能暴露稳定页面标识。
      */
     @Test
-    public void shouldReturnFalseForNonDescriptorScreen() {
-        assumeGuiScreenRuntimeAvailable();
-        GuiScreen screen = new GuiScreen() {};
+    public void shouldResolvePageIdForDescriptorOwnerWithoutGuiScreen() {
+        FakeDescriptorOwner screen = new FakeDescriptorOwner(UiDocumentScreens.UI_TEST);
+
+        Assert.assertEquals(UiDocumentScreens.UI_TEST.getPageId(), UiDocumentScreens.getPageId(screen));
+        Assert.assertTrue(UiDocumentScreens.isUiTest(screen));
+        Assert.assertEquals(UiDocumentScreens.UI_TEST.getPageId(), UiDocumentScreens.runtimeScreenNameOf(screen));
+    }
+
+    /**
+     * 验证普通对象不会被误判为布局诊断页。
+     */
+    @Test
+    public void shouldReturnFalseForPlainObject() {
+        Object screen = new Object();
 
         Assert.assertEquals("", UiDocumentScreens.getPageId(screen));
         Assert.assertFalse(UiDocumentScreens.isUiTest(screen));
+        Assert.assertEquals("Object", UiDocumentScreens.runtimeScreenNameOf(screen));
     }
 
     /**
-     * 探测 `GuiScreen` 所需的最小 LWJGL 运行时是否可用。
+     * 供测试使用的最小 descriptor 持有者。
      */
-    private static void assumeGuiScreenRuntimeAvailable() {
-        try {
-            Class<?> displayModeClass = Class.forName("org.lwjgl.opengl.DisplayMode");
-            displayModeClass.getConstructor(int.class, int.class);
-        } catch (Throwable throwable) {
-            Assume.assumeTrue("当前测试 JVM 缺少兼容的 LWJGL DisplayMode 运行时，页面身份 smoke test 跳过。",
-                    false);
-        }
-    }
+    private static final class FakeDescriptorOwner implements UiDocumentScreens.DescriptorOwner {
 
-    /**
-     * 最小背包模型桩，仅用于页面描述契约测试。
-     */
-    private static final class NoopInventoryOverviewModel implements InventoryOverviewModel {
+        private final UiDocumentScreens.PageDescriptor descriptor;
 
-        private final InventoryOverviewSlotContentProvider emptySlotProvider = new InventoryOverviewSlotContentProvider() {
-            @Override
-            public ItemStack getStack(int localIndex) {
-                return null;
-            }
-        };
-
-        @Override
-        public InventoryOverviewSlotContentProvider getHotbarSlotProvider() {
-            return emptySlotProvider;
+        private FakeDescriptorOwner(UiDocumentScreens.PageDescriptor descriptor) {
+            this.descriptor = descriptor;
         }
 
         @Override
-        public InventoryOverviewSlotContentProvider getBackpackSlotProvider() {
-            return emptySlotProvider;
-        }
-
-        @Override
-        public int getHotbarOccupiedCount() {
-            return 0;
-        }
-
-        @Override
-        public int getBackpackOccupiedCount() {
-            return 0;
-        }
-
-        @Override
-        public void returnToVanillaInventory() {
+        public UiDocumentScreens.PageDescriptor getPageDescriptor() {
+            return descriptor;
         }
     }
 }

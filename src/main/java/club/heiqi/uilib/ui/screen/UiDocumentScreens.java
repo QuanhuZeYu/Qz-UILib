@@ -149,6 +149,18 @@ public final class UiDocumentScreens {
      * @return 是否为布局诊断页
      */
     public static boolean isUiTest(GuiScreen screen) {
+        return isUiTest((Object) screen);
+    }
+
+    /**
+     * 判断对象是否声明了布局诊断页标识。
+     *
+     * <p>该辅助入口仅供包内逻辑与测试使用，避免 descriptor 相关判定继续被 `GuiScreen` 运行时绑住。</p>
+     *
+     * @param screen 待判断对象
+     * @return 是否为布局诊断页
+     */
+    static boolean isUiTest(Object screen) {
         return hasPageId(screen, UI_TEST.getPageId());
     }
 
@@ -185,6 +197,19 @@ public final class UiDocumentScreens {
      * @return 是否匹配
      */
     public static boolean hasPageId(GuiScreen screen, String expectedPageId) {
+        return hasPageId((Object) screen, expectedPageId);
+    }
+
+    /**
+     * 判断对象是否声明了目标页面标识。
+     *
+     * <p>该辅助入口仅供包内逻辑与测试使用，避免 descriptor 相关判定继续依赖 `GuiScreen`。</p>
+     *
+     * @param screen 待判断对象
+     * @param expectedPageId 目标页面标识
+     * @return 是否匹配
+     */
+    static boolean hasPageId(Object screen, String expectedPageId) {
         return expectedPageId.equals(getPageId(screen));
     }
 
@@ -198,6 +223,19 @@ public final class UiDocumentScreens {
      * @return 运行时身份标识
      */
     public static String runtimeScreenNameOf(GuiScreen screen) {
+        return runtimeScreenNameOf((Object) screen);
+    }
+
+    /**
+     * 读取对象的运行时身份标识。
+     *
+     * <p>该辅助入口仅供包内逻辑与测试使用，优先返回 descriptor pageId，
+     * 否则再回退到具体类名。</p>
+     *
+     * @param screen 目标对象
+     * @return 运行时身份标识
+     */
+    static String runtimeScreenNameOf(Object screen) {
         String pageId = getPageId(screen);
         if (!pageId.isEmpty()) {
             return pageId;
@@ -212,6 +250,18 @@ public final class UiDocumentScreens {
      * @return 页面标识，不存在时返回空字符串
      */
     public static String getPageId(GuiScreen screen) {
+        return getPageId((Object) screen);
+    }
+
+    /**
+     * 读取对象的稳定页面标识。
+     *
+     * <p>该辅助入口仅供包内逻辑与测试使用，避免纯 descriptor 判定继续依赖 `GuiScreen` 运行时。</p>
+     *
+     * @param screen 目标对象
+     * @return 页面标识，不存在时返回空字符串
+     */
+    static String getPageId(Object screen) {
         if (!(screen instanceof DescriptorOwner)) {
             return "";
         }
