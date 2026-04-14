@@ -51,12 +51,12 @@ public class UiScreenManager {
                 continue;
             }
 
-            if (minecraft.currentScreen instanceof UiTestScreen) {
+            if (UiDocumentScreens.isUiTest(minecraft.currentScreen)) {
                 minecraft.displayGuiScreen(null);
                 return;
             }
             if (minecraft.currentScreen == null) {
-                minecraft.displayGuiScreen(new UiTestScreen());
+                minecraft.displayGuiScreen(UiDocumentScreens.createUiTest());
                 return;
             }
         }

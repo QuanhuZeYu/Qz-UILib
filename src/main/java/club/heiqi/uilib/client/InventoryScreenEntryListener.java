@@ -1,6 +1,6 @@
 package club.heiqi.uilib.client;
 
-import club.heiqi.uilib.ui.screen.InventoryOverviewScreen;
+import club.heiqi.uilib.ui.screen.UiDocumentScreens;
 import cpw.mods.fml.common.eventhandler.SubscribeEvent;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiButton;
@@ -53,7 +53,8 @@ public class InventoryScreenEntryListener {
                 || event.button.id != OPEN_INVENTORY_OVERVIEW_BUTTON_ID) {
             return;
         }
-        Minecraft.getMinecraft().displayGuiScreen(new InventoryOverviewScreen());
+        Minecraft.getMinecraft().displayGuiScreen(UiDocumentScreens.createInventoryOverview(
+                new MinecraftInventoryOverviewModel()));
     }
 
     private boolean containsEntryButton(GuiScreenEvent.InitGuiEvent.Post event) {
