@@ -172,10 +172,9 @@ final class InventoryOverviewDocumentPageController extends DocumentPageControll
         int hotbarUsed = model.getHotbarOccupiedCount();
         int backpackUsed = model.getBackpackOccupiedCount();
 
-        overviewMetricsLabel.setText("窗口 " + runtimeView.getHostWidth() + "x" + runtimeView.getHostHeight() + "；页面壳 "
-                + pagePanel.getWidth() + "x" + pagePanel.getHeight() + "；快捷栏卡片 " + hotbarCard.getWidth() + "x"
-                + hotbarCard.getHeight() + "；主背包卡片 " + backpackCard.getWidth() + "x" + backpackCard.getHeight()
-                + "。\n如果单列结构下背包格子仍然异常，优先检查 `InventorySlotGridWidget` 的列数和尺寸测量，而不是继续叠加页面复杂度。 ");
+        overviewMetricsLabel.setText("窗口 " + runtimeView.getHostWidth() + "x" + runtimeView.getHostHeight() + "；快捷栏卡片 "
+                + hotbarCard.getWidth() + "x" + hotbarCard.getHeight() + "；主背包卡片 " + backpackCard.getWidth() + "x"
+                + backpackCard.getHeight() + "。\n如果单列结构下背包格子仍然异常，优先检查 `InventorySlotGridWidget` 的列数和尺寸测量，而不是继续叠加页面复杂度。 ");
 
         hotbarMetricsLabel.setText("快捷栏占用 " + hotbarUsed + " / 9；网格尺寸 " + hotbarGrid.getWidth() + "x"
                 + hotbarGrid.getHeight() + "。当前结构只验证单行网格能否在父宽度变化时稳定缩放。 ");
