@@ -118,8 +118,8 @@ final class InventoryOverviewDocumentPageController extends DocumentPageControll
      * 配置背包诊断页控件。
      */
     private void configureControls() {
-        hotbarGrid.setSlotGap(8).setPreferredSlotSize(34).setSlotSizeRange(18, 50);
-        backpackGrid.setSlotGap(8).setPreferredSlotSize(32).setSlotSizeRange(18, 46);
+        hotbarGrid.setSlotGap(8).setPreferredSlotSize(44).setSlotSizeRange(24, 46);
+        backpackGrid.setSlotGap(8).setPreferredSlotSize(41).setSlotSizeRange(22, 42);
 
         backButton.setClickHandler(new Runnable() {
             @Override
