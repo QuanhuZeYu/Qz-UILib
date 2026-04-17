@@ -1,5 +1,7 @@
 package club.heiqi.uilib.ui.screen;
 
+import java.util.List;
+
 import net.minecraft.client.Minecraft;
 
 import org.lwjgl.opengl.GL11;
@@ -26,6 +28,7 @@ final class UiScreenHostSession {
     private final ViewportWidget rootWidget = new ViewportWidget();
     private final UiInputRouter inputRouter = new UiInputRouter();
     private UiRenderTarget renderTarget;
+    private UiRenderTarget inventoryItemRenderTarget;
 
     /**
      * 标记宿主会话是否已完成打开流程。
@@ -88,7 +91,9 @@ final class UiScreenHostSession {
         int nativeWidth = Math.max(1, minecraft.displayWidth);
         int nativeHeight = Math.max(1, minecraft.displayHeight);
         UiRenderTarget renderTarget = getOrCreateRenderTarget();
+        UiRenderTarget inventoryItemRenderTarget = getOrCreateInventoryItemRenderTarget();
         renderTarget.ensureSize(nativeWidth, nativeHeight);
+        inventoryItemRenderTarget.ensureSize(nativeWidth, nativeHeight);
         int previousMatrixMode = GL11.glGetInteger(GL11.GL_MATRIX_MODE);
         UiPerformanceMonitor performanceMonitor = UiPerformanceMonitor.getInstance();
         performanceMonitor.beginFrame(getRuntimeScreenName(), guiWidth, guiHeight, nativeWidth, nativeHeight);
@@ -110,6 +115,8 @@ final class UiScreenHostSession {
                             UiRenderContext context = new UiRenderContext(nativeWidth, nativeHeight, latestMouseX,
                                     latestMouseY, partialTicks);
                             rootWidget.render(context);
+                            flushDeferredInventoryItemPasses(context, inventoryItemRenderTarget, nativeWidth,
+                                    nativeHeight);
                         } finally {
                             GL11.glMatrixMode(GL11.GL_MODELVIEW);
                             GL11.glPopMatrix();
@@ -202,14 +209,105 @@ final class UiScreenHostSession {
     }
 
     /**
+     * 按需创建独立的物品离屏渲染目标。
+     *
+     * @return 物品专用离屏渲染目标
+     */
+    private UiRenderTarget getOrCreateInventoryItemRenderTarget() {
+        if (inventoryItemRenderTarget == null) {
+            inventoryItemRenderTarget = new UiRenderTarget();
+        }
+        return inventoryItemRenderTarget;
+    }
+
+    /**
      * 关闭已创建的离屏渲染目标。
      */
     private void closeRenderTarget() {
         if (renderTarget == null) {
+            if (inventoryItemRenderTarget != null) {
+                inventoryItemRenderTarget.close();
+                inventoryItemRenderTarget = null;
+            }
             return;
         }
         renderTarget.close();
         renderTarget = null;
+        if (inventoryItemRenderTarget != null) {
+            inventoryItemRenderTarget.close();
+            inventoryItemRenderTarget = null;
+        }
+    }
+
+    /**
+     * 在主 UI 层完成后回放背包物品层，再把物品层贴回主层。
+     *
+     * <p>这里故意把回放放在主 FBO 仍然绑定的阶段执行：
+     * 先保持主层 alpha 只由控件底图建立，
+     * 再把物品专用 FBO 的预合成 RGB 回贴回来，同时完全保留主层 alpha。</p>
+     */
+    private void flushDeferredInventoryItemPasses(UiRenderContext context, UiRenderTarget itemRenderTarget,
+            int nativeWidth, int nativeHeight) {
+        if (context == null || itemRenderTarget == null || !context.hasDeferredInventoryItemPasses()) {
+            return;
+        }
+
+        List<UiRenderContext.DeferredInventoryItemPass> deferredPasses = context.drainDeferredInventoryItemPasses();
+        if (deferredPasses.isEmpty()) {
+            return;
+        }
+
+        int previousMatrixMode = GL11.glGetInteger(GL11.GL_MATRIX_MODE);
+        itemRenderTarget.begin();
+        try {
+            GL11.glMatrixMode(GL11.GL_PROJECTION);
+            GL11.glPushMatrix();
+            try {
+                GL11.glLoadIdentity();
+                GL11.glOrtho(0.0D, nativeWidth, nativeHeight, 0.0D, -1000.0D, 1000.0D);
+                GL11.glMatrixMode(GL11.GL_MODELVIEW);
+                GL11.glPushMatrix();
+                try {
+                    GL11.glLoadIdentity();
+                    for (UiRenderContext.DeferredInventoryItemPass deferredPass : deferredPasses) {
+                        applyDeferredInventoryClip(deferredPass.getClipRect(), nativeHeight);
+                        deferredPass.getItemRenderer().renderItems(deferredPass.getLayout(), deferredPass.getAbsoluteX(),
+                                deferredPass.getAbsoluteY(), deferredPass.getSlotSnapshots());
+                    }
+                    GL11.glDisable(GL11.GL_SCISSOR_TEST);
+                } finally {
+                    GL11.glMatrixMode(GL11.GL_MODELVIEW);
+                    GL11.glPopMatrix();
+                }
+            } finally {
+                GL11.glMatrixMode(GL11.GL_PROJECTION);
+                GL11.glPopMatrix();
+                GL11.glMatrixMode(previousMatrixMode);
+            }
+        } finally {
+            itemRenderTarget.end();
+            GL11.glMatrixMode(previousMatrixMode);
+        }
+
+        itemRenderTarget.compositeToCurrentFramebuffer();
+    }
+
+    /**
+     * 将主 UI 渲染阶段记录的 clip/scissor 状态回放到物品层。
+     *
+     * @param clipRect 裁剪矩形；为空时表示当前批次不裁剪
+     * @param screenHeight 当前原生屏幕高度
+     */
+    private void applyDeferredInventoryClip(int[] clipRect, int screenHeight) {
+        if (clipRect == null) {
+            GL11.glDisable(GL11.GL_SCISSOR_TEST);
+            return;
+        }
+
+        int width = Math.max(0, clipRect[2] - clipRect[0]);
+        int height = Math.max(0, clipRect[3] - clipRect[1]);
+        GL11.glEnable(GL11.GL_SCISSOR_TEST);
+        GL11.glScissor(clipRect[0], screenHeight - clipRect[3], width, height);
     }
 
     /**

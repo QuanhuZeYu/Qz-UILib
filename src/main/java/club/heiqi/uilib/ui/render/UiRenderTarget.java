@@ -8,6 +8,7 @@ import net.minecraft.client.renderer.Tessellator;
 import org.lwjgl.BufferUtils;
 import org.lwjgl.opengl.GL11;
 import org.lwjgl.opengl.GL12;
+import org.lwjgl.opengl.GL14;
 import org.lwjgl.opengl.GL30;
 
 /**
@@ -85,7 +86,10 @@ public class UiRenderTarget {
         try {
             GL11.glEnable(GL11.GL_TEXTURE_2D);
             GL11.glEnable(GL11.GL_BLEND);
-            GL11.glBlendFunc(GL11.GL_SRC_ALPHA, GL11.GL_ONE_MINUS_SRC_ALPHA);
+            // 离屏纹理中的 RGB 已经是在透明背景上完成过一次合成的结果。
+            // 若这里仍按 straight alpha 做 SRC_ALPHA 混合，会让半透明像素在 present 时再次乘 alpha，
+            // 进而压暗带透明叠层的物品贴图。这里按已完成合成的 UI 层进行回贴，只使用目标端衰减。
+            GL11.glBlendFunc(GL11.GL_ONE, GL11.GL_ONE_MINUS_SRC_ALPHA);
             GL11.glDisable(GL11.GL_DEPTH_TEST);
             GL11.glColor4f(1.0F, 1.0F, 1.0F, 1.0F);
             GL11.glBindTexture(GL11.GL_TEXTURE_2D, colorTextureId);
@@ -95,6 +99,39 @@ public class UiRenderTarget {
             tessellator.addVertexWithUV(0.0D, guiHeight, 0.0D, 0.0D, 0.0D);
             tessellator.addVertexWithUV(guiWidth, guiHeight, 0.0D, 1.0D, 0.0D);
             tessellator.addVertexWithUV(guiWidth, 0.0D, 0.0D, 1.0D, 1.0D);
+            tessellator.addVertexWithUV(0.0D, 0.0D, 0.0D, 0.0D, 1.0D);
+            tessellator.draw();
+
+            GL11.glBindTexture(GL11.GL_TEXTURE_2D, 0);
+        } finally {
+            GL11.glPopAttrib();
+        }
+    }
+
+    /**
+     * 将当前离屏纹理合成到已绑定的目标 FBO，同时保留目标端既有 alpha。
+     *
+     * <p>该方法假设当前纹理内容已经在透明背景上完成过一次内部合成，
+     * 因而 RGB 需要按预乘结果直接回贴；alpha 则完全保留目标端，
+     * 避免物品层覆盖主 UI 层已经建立好的最终 coverage。</p>
+     */
+    public void compositeToCurrentFramebuffer() {
+        GL11.glPushAttrib(GL11.GL_ALL_ATTRIB_BITS);
+        try {
+            GL11.glEnable(GL11.GL_TEXTURE_2D);
+            GL11.glEnable(GL11.GL_BLEND);
+            GL11.glDisable(GL11.GL_DEPTH_TEST);
+            GL11.glDisable(GL11.GL_ALPHA_TEST);
+            GL11.glDisable(GL11.GL_SCISSOR_TEST);
+            GL11.glColor4f(1.0F, 1.0F, 1.0F, 1.0F);
+            GL14.glBlendFuncSeparate(GL11.GL_ONE, GL11.GL_ONE_MINUS_SRC_ALPHA, GL11.GL_ZERO, GL11.GL_ONE);
+            GL11.glBindTexture(GL11.GL_TEXTURE_2D, colorTextureId);
+
+            Tessellator tessellator = Tessellator.instance;
+            tessellator.startDrawingQuads();
+            tessellator.addVertexWithUV(0.0D, height, 0.0D, 0.0D, 0.0D);
+            tessellator.addVertexWithUV(width, height, 0.0D, 1.0D, 0.0D);
+            tessellator.addVertexWithUV(width, 0.0D, 0.0D, 1.0D, 1.0D);
             tessellator.addVertexWithUV(0.0D, 0.0D, 0.0D, 0.0D, 1.0D);
             tessellator.draw();
 

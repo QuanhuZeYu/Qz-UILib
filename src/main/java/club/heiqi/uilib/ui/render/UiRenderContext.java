@@ -1,13 +1,20 @@
 package club.heiqi.uilib.ui.render;
 
 import java.util.ArrayDeque;
+import java.util.ArrayList;
+import java.util.Collections;
 import java.util.Deque;
+import java.util.List;
+import java.util.Objects;
 
 import net.minecraft.client.gui.Gui;
 import org.lwjgl.opengl.GL11;
 
 import club.heiqi.uilib.font.api.DefaultFontRendererAdapter;
 import club.heiqi.uilib.font.api.FontRendererAdapter;
+import club.heiqi.uilib.ui.control.InventorySlotGridItemRenderer;
+import club.heiqi.uilib.ui.control.InventorySlotGridLayout;
+import club.heiqi.uilib.ui.control.InventorySlotSnapshot;
 
 /**
  * UI 渲染上下文。
@@ -23,6 +30,61 @@ public class UiRenderContext {
     private final float partialTicks;
     private final FontRendererAdapter fontRenderer;
     private final Deque<int[]> clipStack = new ArrayDeque<int[]>();
+    private final List<DeferredInventoryItemPass> deferredInventoryItemPasses = new ArrayList<DeferredInventoryItemPass>();
+
+    /**
+     * 延迟背包物品绘制记录。
+     *
+     * <p>主 UI 树先只建立槽位底图与最终 coverage alpha，
+     * 物品图标改为在独立 FBO 中回放，再把结果合回主 UI FBO，
+     * 避免物品半透明像素直接污染主层 alpha。</p>
+     */
+    public static final class DeferredInventoryItemPass {
+
+        private final InventorySlotGridItemRenderer itemRenderer;
+        private final InventorySlotGridLayout layout;
+        private final int absoluteX;
+        private final int absoluteY;
+        private final InventorySlotSnapshot[] slotSnapshots;
+        private final int[] clipRect;
+
+        private DeferredInventoryItemPass(InventorySlotGridItemRenderer itemRenderer, InventorySlotGridLayout layout,
+                int absoluteX, int absoluteY, InventorySlotSnapshot[] slotSnapshots, int[] clipRect) {
+            this.itemRenderer = itemRenderer;
+            this.layout = layout;
+            this.absoluteX = absoluteX;
+            this.absoluteY = absoluteY;
+            this.slotSnapshots = slotSnapshots;
+            this.clipRect = clipRect;
+        }
+
+        public InventorySlotGridItemRenderer getItemRenderer() {
+            return itemRenderer;
+        }
+
+        public InventorySlotGridLayout getLayout() {
+            return layout;
+        }
+
+        public int getAbsoluteX() {
+            return absoluteX;
+        }
+
+        public int getAbsoluteY() {
+            return absoluteY;
+        }
+
+        public InventorySlotSnapshot[] getSlotSnapshots() {
+            return slotSnapshots;
+        }
+
+        public int[] getClipRect() {
+            if (clipRect == null) {
+                return null;
+            }
+            return new int[] { clipRect[0], clipRect[1], clipRect[2], clipRect[3] };
+        }
+    }
 
     /**
      * 创建渲染上下文。
@@ -134,6 +196,46 @@ public class UiRenderContext {
         return Math.round(fontRenderer.getLineHeight() * UI_TEXT_SCALE);
     }
 
+    /**
+     * 延迟登记一批背包物品绘制，供宿主在独立物品层中回放。
+     *
+     * @param itemRenderer 物品渲染委托
+     * @param layout 网格布局结果
+     * @param absoluteX 网格绝对 X
+     * @param absoluteY 网格绝对 Y
+     * @param slotSnapshots 槽位快照
+     */
+    public void enqueueInventoryItemPass(InventorySlotGridItemRenderer itemRenderer, InventorySlotGridLayout layout,
+            int absoluteX, int absoluteY, InventorySlotSnapshot[] slotSnapshots) {
+        deferredInventoryItemPasses.add(new DeferredInventoryItemPass(Objects.requireNonNull(itemRenderer, "itemRenderer"),
+                Objects.requireNonNull(layout, "layout"), absoluteX, absoluteY,
+                Objects.requireNonNull(slotSnapshots, "slotSnapshots"), copyCurrentClipRect()));
+    }
+
+    /**
+     * 判断当前帧是否存在待回放的背包物品绘制。
+     *
+     * @return 是否存在延迟物品绘制
+     */
+    public boolean hasDeferredInventoryItemPasses() {
+        return !deferredInventoryItemPasses.isEmpty();
+    }
+
+    /**
+     * 取出并清空当前帧登记的背包物品绘制。
+     *
+     * @return 当前帧延迟物品绘制列表
+     */
+    public List<DeferredInventoryItemPass> drainDeferredInventoryItemPasses() {
+        if (deferredInventoryItemPasses.isEmpty()) {
+            return Collections.emptyList();
+        }
+        List<DeferredInventoryItemPass> drainedPasses = new ArrayList<DeferredInventoryItemPass>(
+                deferredInventoryItemPasses);
+        deferredInventoryItemPasses.clear();
+        return drainedPasses;
+    }
+
     public void pushClip(int left, int top, int right, int bottom) {
         int clipLeft = Math.max(0, Math.min(left, right));
         int clipTop = Math.max(0, Math.min(top, bottom));
@@ -164,6 +266,14 @@ public class UiRenderContext {
             clipStack.pop();
         }
         applyCurrentClip();
+    }
+
+    private int[] copyCurrentClipRect() {
+        if (clipStack.isEmpty()) {
+            return null;
+        }
+        int[] clip = clipStack.peek();
+        return new int[] { clip[0], clip[1], clip[2], clip[3] };
     }
 
     private void applyCurrentClip() {
