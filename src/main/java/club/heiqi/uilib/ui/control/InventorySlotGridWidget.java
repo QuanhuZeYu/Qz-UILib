@@ -89,7 +89,7 @@ public class InventorySlotGridWidget extends Widget {
         if (hasRenderableItems) {
             InventorySlotGridItemRenderer activeItemRenderer = resolveItemRenderer();
             if (activeItemRenderer != null) {
-                activeItemRenderer.renderItems(layout, absoluteX, absoluteY, slotSnapshots);
+                context.enqueueInventoryItemPass(activeItemRenderer, layout, absoluteX, absoluteY, slotSnapshots);
             }
         }
     }

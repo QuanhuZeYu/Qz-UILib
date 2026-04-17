@@ -3,7 +3,7 @@ package club.heiqi.uilib.ui.control;
 /**
  * 背包格子网格的纯几何布局结果。
  */
-final class InventorySlotGridLayout {
+public final class InventorySlotGridLayout {
 
     private static final int DEFAULT_ITEM_ICON_SIZE = 16;
 

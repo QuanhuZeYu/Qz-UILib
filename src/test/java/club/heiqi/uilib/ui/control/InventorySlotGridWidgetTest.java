@@ -43,11 +43,14 @@ public class InventorySlotGridWidgetTest {
         Assert.assertEquals(style.emptySlotFillColor, renderContext.fillColors.get(1).intValue());
         Assert.assertEquals(style.occupiedSlotFillColor, renderContext.fillColors.get(2).intValue());
 
-        Assert.assertNotNull(itemRenderer.lastSnapshots);
-        Assert.assertEquals(3, itemRenderer.lastSnapshots.length);
-        Assert.assertFalse(itemRenderer.lastSnapshots[0].isOccupied());
-        Assert.assertFalse(itemRenderer.lastSnapshots[1].isOccupied());
-        Assert.assertTrue(itemRenderer.lastSnapshots[2].isOccupied());
+        Assert.assertEquals(1, renderContext.deferredItemPasses.size());
+        UiRenderContext.DeferredInventoryItemPass deferredPass = renderContext.deferredItemPasses.get(0);
+        Assert.assertSame(itemRenderer, deferredPass.getItemRenderer());
+        Assert.assertNotNull(deferredPass.getSlotSnapshots());
+        Assert.assertEquals(3, deferredPass.getSlotSnapshots().length);
+        Assert.assertFalse(deferredPass.getSlotSnapshots()[0].isOccupied());
+        Assert.assertFalse(deferredPass.getSlotSnapshots()[1].isOccupied());
+        Assert.assertTrue(deferredPass.getSlotSnapshots()[2].isOccupied());
     }
 
     /**
@@ -56,6 +59,7 @@ public class InventorySlotGridWidgetTest {
     private static final class RecordingUiRenderContext extends UiRenderContext {
 
         private final List<Integer> fillColors = new ArrayList<Integer>();
+        private final List<DeferredInventoryItemPass> deferredItemPasses = new ArrayList<DeferredInventoryItemPass>();
 
         private RecordingUiRenderContext() {
             super(320, 240, 0, 0, 0.0F);
@@ -68,6 +72,14 @@ public class InventorySlotGridWidgetTest {
 
         @Override
         public void drawBorder(int left, int top, int right, int bottom, int color) {}
+
+        @Override
+        public void enqueueInventoryItemPass(InventorySlotGridItemRenderer itemRenderer, InventorySlotGridLayout layout,
+                int absoluteX, int absoluteY, InventorySlotSnapshot[] slotSnapshots) {
+            super.enqueueInventoryItemPass(itemRenderer, layout, absoluteX, absoluteY, slotSnapshots);
+            deferredItemPasses.clear();
+            deferredItemPasses.addAll(drainDeferredInventoryItemPasses());
+        }
     }
 
     /**
@@ -75,12 +87,8 @@ public class InventorySlotGridWidgetTest {
      */
     private static final class RecordingInventorySlotGridItemRenderer implements InventorySlotGridItemRenderer {
 
-        private InventorySlotSnapshot[] lastSnapshots;
-
         @Override
         public void renderItems(InventorySlotGridLayout layout, int absoluteX, int absoluteY,
-                InventorySlotSnapshot[] slotSnapshots) {
-            this.lastSnapshots = slotSnapshots;
-        }
+                InventorySlotSnapshot[] slotSnapshots) {}
     }
 }
