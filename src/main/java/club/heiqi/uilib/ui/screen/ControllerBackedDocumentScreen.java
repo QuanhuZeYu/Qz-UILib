@@ -2,12 +2,8 @@ package club.heiqi.uilib.ui.screen;
 
 import java.util.Objects;
 
-import club.heiqi.uilib.ui.control.UiControlRuntimeAdapters;
 import club.heiqi.uilib.ui.diagnostic.UiRuntimeStats;
 import club.heiqi.uilib.ui.document.DocumentPageWidget;
-import club.heiqi.uilib.ui.theme.UiDocumentTheme;
-import club.heiqi.uilib.ui.text.DefaultTextMeasureService;
-import club.heiqi.uilib.ui.text.TextMeasureService;
 
 /**
  * 控制器驱动的文档页面宿主桥接层。
@@ -38,26 +34,9 @@ abstract class ControllerBackedDocumentScreen extends BaseDocumentScreen impleme
     };
     private DocumentPageController controller;
 
-    protected ControllerBackedDocumentScreen(UiDocumentTheme documentTheme,
+    protected ControllerBackedDocumentScreen(UiDocumentScreens.DocumentScreenEnvironment environment,
             UiDocumentScreens.PageDescriptor pageDescriptor) {
-        this(documentTheme, pageDescriptor, null, UiControlRuntimeAdapters.minecraftDefaults());
-    }
-
-    protected ControllerBackedDocumentScreen(UiDocumentTheme documentTheme,
-            UiDocumentScreens.PageDescriptor pageDescriptor, TextMeasureService textMeasureService) {
-        this(documentTheme, pageDescriptor, textMeasureService, UiControlRuntimeAdapters.minecraftDefaults());
-    }
-
-    protected ControllerBackedDocumentScreen(UiDocumentTheme documentTheme,
-            UiDocumentScreens.PageDescriptor pageDescriptor, UiControlRuntimeAdapters controlRuntimeAdapters) {
-        this(documentTheme, pageDescriptor, null, controlRuntimeAdapters);
-    }
-
-    protected ControllerBackedDocumentScreen(UiDocumentTheme documentTheme,
-            UiDocumentScreens.PageDescriptor pageDescriptor, TextMeasureService textMeasureService,
-            UiControlRuntimeAdapters controlRuntimeAdapters) {
-        super(documentTheme, textMeasureService == null ? DefaultTextMeasureService.getInstance() : textMeasureService,
-                controlRuntimeAdapters == null ? UiControlRuntimeAdapters.minecraftDefaults() : controlRuntimeAdapters);
+        super(environment);
         this.pageDescriptor = Objects.requireNonNull(pageDescriptor, "pageDescriptor");
         this.documentPageAuthoringSurface = DocumentPageAuthoringSurface.adapt(getDocumentPage());
     }

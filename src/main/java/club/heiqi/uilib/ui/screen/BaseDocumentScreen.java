@@ -5,7 +5,6 @@ import java.util.Objects;
 import club.heiqi.uilib.ui.control.UiControlRuntimeAdapters;
 import club.heiqi.uilib.ui.document.DocumentPageWidget;
 import club.heiqi.uilib.ui.theme.UiDocumentTheme;
-import club.heiqi.uilib.ui.text.DefaultTextMeasureService;
 import club.heiqi.uilib.ui.text.TextMeasureService;
 import club.heiqi.uilib.ui.widget.Widget;
 
@@ -23,15 +22,12 @@ public abstract class BaseDocumentScreen extends BaseScreen {
     private final DocumentUiScope documentUiScope;
     private final DocumentPageWidget documentPage;
 
-    protected BaseDocumentScreen(UiDocumentTheme documentTheme) {
-        this(documentTheme, DefaultTextMeasureService.getInstance(), UiControlRuntimeAdapters.minecraftDefaults());
+    protected BaseDocumentScreen(UiDocumentScreens.DocumentScreenEnvironment environment) {
+        this(Objects.requireNonNull(environment, "environment").getDocumentTheme(),
+                environment.getTextMeasureService(), environment.getRuntimeAdapters());
     }
 
-    protected BaseDocumentScreen(UiDocumentTheme documentTheme, TextMeasureService textMeasureService) {
-        this(documentTheme, textMeasureService, UiControlRuntimeAdapters.minecraftDefaults());
-    }
-
-    protected BaseDocumentScreen(UiDocumentTheme documentTheme, TextMeasureService textMeasureService,
+    private BaseDocumentScreen(UiDocumentTheme documentTheme, TextMeasureService textMeasureService,
             UiControlRuntimeAdapters runtimeAdapters) {
         this.documentTheme = Objects.requireNonNull(documentTheme, "documentTheme");
         this.textMeasureService = Objects.requireNonNull(textMeasureService, "textMeasureService");

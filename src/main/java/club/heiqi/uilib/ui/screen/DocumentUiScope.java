@@ -17,7 +17,6 @@ import club.heiqi.uilib.ui.document.DocumentSectionWidget;
 import club.heiqi.uilib.ui.document.DocumentTextWidget;
 import club.heiqi.uilib.ui.document.DocumentToolbarWidget;
 import club.heiqi.uilib.ui.theme.UiDocumentTheme;
-import club.heiqi.uilib.ui.text.DefaultTextMeasureService;
 import club.heiqi.uilib.ui.text.TextMeasureService;
 import club.heiqi.uilib.ui.widget.Widget;
 
@@ -31,14 +30,6 @@ public final class DocumentUiScope {
     private final UiDocumentTheme documentTheme;
     private final TextMeasureService textMeasureService;
     private final UiControlRuntimeAdapters runtimeAdapters;
-
-    public DocumentUiScope(UiDocumentTheme documentTheme) {
-        this(documentTheme, DefaultTextMeasureService.getInstance(), UiControlRuntimeAdapters.minecraftDefaults());
-    }
-
-    public DocumentUiScope(UiDocumentTheme documentTheme, TextMeasureService textMeasureService) {
-        this(documentTheme, textMeasureService, UiControlRuntimeAdapters.minecraftDefaults());
-    }
 
     public DocumentUiScope(UiDocumentTheme documentTheme, TextMeasureService textMeasureService,
             UiControlRuntimeAdapters runtimeAdapters) {
