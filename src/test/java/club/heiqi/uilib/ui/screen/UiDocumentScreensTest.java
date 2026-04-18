@@ -1,7 +1,15 @@
 package club.heiqi.uilib.ui.screen;
 
+import java.util.Collections;
+import java.util.List;
+
 import org.junit.Assert;
 import org.junit.Test;
+
+import club.heiqi.uilib.ui.control.UiControlRuntimeAdapters;
+import club.heiqi.uilib.ui.text.TextMeasureService;
+import club.heiqi.uilib.ui.theme.UiDocumentTheme;
+import club.heiqi.uilib.ui.theme.UiDocumentThemes;
 
 /**
  * `UiDocumentScreens` 的页面描述契约测试。
@@ -58,6 +66,23 @@ public class UiDocumentScreensTest {
     }
 
     /**
+     * 验证显式文档环境会原样保留 theme / measure / runtime adapters。
+     */
+    @Test
+    public void shouldKeepExplicitDocumentScreenEnvironmentDependencies() {
+        UiDocumentTheme documentTheme = UiDocumentThemes.current();
+        NoOpTextMeasureService textMeasureService = new NoOpTextMeasureService();
+        UiControlRuntimeAdapters runtimeAdapters = UiControlRuntimeAdapters.empty();
+
+        UiDocumentScreens.DocumentScreenEnvironment environment = new UiDocumentScreens.DocumentScreenEnvironment(
+                documentTheme, textMeasureService, runtimeAdapters);
+
+        Assert.assertSame(documentTheme, environment.getDocumentTheme());
+        Assert.assertSame(textMeasureService, environment.getTextMeasureService());
+        Assert.assertSame(runtimeAdapters, environment.getRuntimeAdapters());
+    }
+
+    /**
      * 供测试使用的最小 descriptor 持有者。
      */
     private static final class FakeDescriptorOwner implements UiDocumentScreens.DescriptorOwner {
@@ -73,4 +98,36 @@ public class UiDocumentScreensTest {
             return descriptor;
         }
     }
+
+    /**
+     * 供测试使用的空文本测量桩。
+     */
+    private static final class NoOpTextMeasureService implements TextMeasureService {
+
+        @Override
+        public int getEpoch() {
+            return 1;
+        }
+
+        @Override
+        public int getStringWidth(String text) {
+            return text == null ? 0 : text.length() * 6;
+        }
+
+        @Override
+        public int getLineHeight() {
+            return 9;
+        }
+
+        @Override
+        public String trimStringToWidth(String text, int targetWidth) {
+            return text == null ? "" : text;
+        }
+
+        @Override
+        public List<String> listFormattedStringToWidth(String text, int wrapWidth) {
+            return Collections.singletonList(text == null ? "" : text);
+        }
+    }
+
 }

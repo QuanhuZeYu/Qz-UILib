@@ -2,9 +2,12 @@ package club.heiqi.uilib.ui.screen;
 
 import java.util.Objects;
 
+import club.heiqi.uilib.ui.control.UiControlRuntimeAdapters;
 import club.heiqi.uilib.ui.document.DocumentPageWidget;
 import club.heiqi.uilib.ui.theme.UiDocumentTheme;
 import club.heiqi.uilib.ui.theme.UiDocumentThemes;
+import club.heiqi.uilib.ui.text.DefaultTextMeasureService;
+import club.heiqi.uilib.ui.text.TextMeasureService;
 import net.minecraft.client.gui.GuiScreen;
 
 /**
@@ -35,6 +38,48 @@ public final class UiDocumentScreens {
             });
 
     private UiDocumentScreens() {}
+
+    /**
+     * 文档页面创建环境。
+     *
+     * <p>把主题、文本测量与运行时适配器收敛成一个显式入口，
+     * 让默认值只停留在最外层调用边界，而不是继续散落在 screen/scope 构造链路里。</p>
+     */
+    public static final class DocumentScreenEnvironment {
+
+        private final UiDocumentTheme documentTheme;
+        private final TextMeasureService textMeasureService;
+        private final UiControlRuntimeAdapters runtimeAdapters;
+
+        public DocumentScreenEnvironment(UiDocumentTheme documentTheme, TextMeasureService textMeasureService,
+                UiControlRuntimeAdapters runtimeAdapters) {
+            this.documentTheme = Objects.requireNonNull(documentTheme, "documentTheme");
+            this.textMeasureService = Objects.requireNonNull(textMeasureService, "textMeasureService");
+            this.runtimeAdapters = Objects.requireNonNull(runtimeAdapters, "runtimeAdapters");
+        }
+
+        /**
+         * 创建当前 Minecraft 宿主使用的默认文档环境。
+         *
+         * <p>默认值仍然存在，但现在被限制在最外层入口，调用方也可以显式替换。</p>
+         */
+        public static DocumentScreenEnvironment minecraftDefaults() {
+            return new DocumentScreenEnvironment(UiDocumentThemes.current(), DefaultTextMeasureService.getInstance(),
+                    UiControlRuntimeAdapters.minecraftDefaults());
+        }
+
+        public UiDocumentTheme getDocumentTheme() {
+            return documentTheme;
+        }
+
+        public TextMeasureService getTextMeasureService() {
+            return textMeasureService;
+        }
+
+        public UiControlRuntimeAdapters getRuntimeAdapters() {
+            return runtimeAdapters;
+        }
+    }
 
     /**
      * 文档型页面定义。
@@ -139,7 +184,18 @@ public final class UiDocumentScreens {
      * @return 测试页界面
      */
     public static GuiScreen createUiTest() {
-        return createDefinitionBackedScreen(UI_TEST_DEFINITION, UiDocumentThemes.current(), null);
+        return createUiTest(DocumentScreenEnvironment.minecraftDefaults());
+    }
+
+    /**
+     * 基于显式文档环境创建布局诊断页。
+     *
+     * @param environment 文档页面创建环境
+     * @return 测试页界面
+     */
+    public static GuiScreen createUiTest(DocumentScreenEnvironment environment) {
+        return createDefinitionBackedScreen(UI_TEST_DEFINITION, Objects.requireNonNull(environment, "environment"),
+                null);
     }
 
     /**
@@ -171,7 +227,18 @@ public final class UiDocumentScreens {
      * @return 背包诊断页界面
      */
     public static GuiScreen createInventoryOverview(InventoryOverviewModel model) {
-        return createDefinitionBackedScreen(INVENTORY_OVERVIEW_DEFINITION, UiDocumentThemes.current(),
+        return createInventoryOverview(DocumentScreenEnvironment.minecraftDefaults(), model);
+    }
+
+    /**
+     * 基于显式文档环境创建背包诊断页。
+     *
+     * @param environment 文档页面创建环境
+     * @param model 背包诊断模型
+     * @return 背包诊断页界面
+     */
+    public static GuiScreen createInventoryOverview(DocumentScreenEnvironment environment, InventoryOverviewModel model) {
+        return createDefinitionBackedScreen(INVENTORY_OVERVIEW_DEFINITION, Objects.requireNonNull(environment, "environment"),
                 Objects.requireNonNull(model, "model"));
     }
 
@@ -185,8 +252,8 @@ public final class UiDocumentScreens {
      * @return 文档型界面
      */
     private static <P> GuiScreen createDefinitionBackedScreen(DocumentScreenDefinition<P> definition,
-            UiDocumentTheme documentTheme, P provision) {
-        return new DefinitionBackedDocumentScreen<P>(documentTheme, definition, provision);
+            DocumentScreenEnvironment environment, P provision) {
+        return new DefinitionBackedDocumentScreen<P>(environment, definition, provision);
     }
 
     /**
@@ -276,9 +343,11 @@ public final class UiDocumentScreens {
      */
     private static final class DefinitionBackedDocumentScreen<P> extends ControllerBackedDocumentScreen {
 
-        private DefinitionBackedDocumentScreen(UiDocumentTheme documentTheme, DocumentScreenDefinition<P> definition,
+        private DefinitionBackedDocumentScreen(DocumentScreenEnvironment environment,
+                DocumentScreenDefinition<P> definition,
                 P provision) {
-            super(documentTheme, Objects.requireNonNull(definition, "definition").getPageDescriptor());
+            super(Objects.requireNonNull(environment, "environment"),
+                    Objects.requireNonNull(definition, "definition").getPageDescriptor());
             bindController(definition.createController(ui(), DocumentPageAuthoringSurface.adapt(getDocumentPage()),
                     runtimeView(), pageId(), provision));
         }

@@ -56,7 +56,8 @@ public class UiScreenManager {
                 return;
             }
             if (minecraft.currentScreen == null) {
-                minecraft.displayGuiScreen(UiDocumentScreens.createUiTest());
+                minecraft.displayGuiScreen(
+                        UiDocumentScreens.createUiTest(UiDocumentScreens.DocumentScreenEnvironment.minecraftDefaults()));
                 return;
             }
         }

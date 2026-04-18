@@ -54,7 +54,7 @@ public class InventoryScreenEntryListener {
             return;
         }
         Minecraft.getMinecraft().displayGuiScreen(UiDocumentScreens.createInventoryOverview(
-                new MinecraftInventoryOverviewModel()));
+                UiDocumentScreens.DocumentScreenEnvironment.minecraftDefaults(), new MinecraftInventoryOverviewModel()));
     }
 
     private boolean containsEntryButton(GuiScreenEvent.InitGuiEvent.Post event) {
