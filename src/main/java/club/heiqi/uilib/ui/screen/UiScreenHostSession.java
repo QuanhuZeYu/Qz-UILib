@@ -28,7 +28,7 @@ final class UiScreenHostSession {
     private final ViewportWidget rootWidget = new ViewportWidget();
     private final UiInputRouter inputRouter = new UiInputRouter();
     private UiRenderTarget renderTarget;
-    private UiRenderTarget inventoryItemRenderTarget;
+    private UiRenderTarget deferredPostMainRenderTarget;
 
     /**
      * 标记宿主会话是否已完成打开流程。
@@ -91,9 +91,9 @@ final class UiScreenHostSession {
         int nativeWidth = Math.max(1, minecraft.displayWidth);
         int nativeHeight = Math.max(1, minecraft.displayHeight);
         UiRenderTarget renderTarget = getOrCreateRenderTarget();
-        UiRenderTarget inventoryItemRenderTarget = getOrCreateInventoryItemRenderTarget();
+        UiRenderTarget deferredPostMainRenderTarget = getOrCreateDeferredPostMainRenderTarget();
         renderTarget.ensureSize(nativeWidth, nativeHeight);
-        inventoryItemRenderTarget.ensureSize(nativeWidth, nativeHeight);
+        deferredPostMainRenderTarget.ensureSize(nativeWidth, nativeHeight);
         int previousMatrixMode = GL11.glGetInteger(GL11.GL_MATRIX_MODE);
         UiPerformanceMonitor performanceMonitor = UiPerformanceMonitor.getInstance();
         performanceMonitor.beginFrame(getRuntimeScreenName(), guiWidth, guiHeight, nativeWidth, nativeHeight);
@@ -115,7 +115,7 @@ final class UiScreenHostSession {
                             UiRenderContext context = new UiRenderContext(nativeWidth, nativeHeight, latestMouseX,
                                     latestMouseY, partialTicks);
                             rootWidget.render(context);
-                            flushDeferredInventoryItemPasses(context, inventoryItemRenderTarget, nativeWidth,
+                            flushDeferredPostMainPasses(context, deferredPostMainRenderTarget, nativeWidth,
                                     nativeHeight);
                         } finally {
                             GL11.glMatrixMode(GL11.GL_MODELVIEW);
@@ -209,15 +209,15 @@ final class UiScreenHostSession {
     }
 
     /**
-     * 按需创建独立的物品离屏渲染目标。
+     * 按需创建主渲染结束后的补充离屏目标。
      *
-     * @return 物品专用离屏渲染目标
+     * @return 主后置补充离屏渲染目标
      */
-    private UiRenderTarget getOrCreateInventoryItemRenderTarget() {
-        if (inventoryItemRenderTarget == null) {
-            inventoryItemRenderTarget = new UiRenderTarget();
+    private UiRenderTarget getOrCreateDeferredPostMainRenderTarget() {
+        if (deferredPostMainRenderTarget == null) {
+            deferredPostMainRenderTarget = new UiRenderTarget();
         }
-        return inventoryItemRenderTarget;
+        return deferredPostMainRenderTarget;
     }
 
     /**
@@ -225,40 +225,40 @@ final class UiScreenHostSession {
      */
     private void closeRenderTarget() {
         if (renderTarget == null) {
-            if (inventoryItemRenderTarget != null) {
-                inventoryItemRenderTarget.close();
-                inventoryItemRenderTarget = null;
+            if (deferredPostMainRenderTarget != null) {
+                deferredPostMainRenderTarget.close();
+                deferredPostMainRenderTarget = null;
             }
             return;
         }
         renderTarget.close();
         renderTarget = null;
-        if (inventoryItemRenderTarget != null) {
-            inventoryItemRenderTarget.close();
-            inventoryItemRenderTarget = null;
+        if (deferredPostMainRenderTarget != null) {
+            deferredPostMainRenderTarget.close();
+            deferredPostMainRenderTarget = null;
         }
     }
 
     /**
-     * 在主 UI 层完成后回放背包物品层，再把物品层贴回主层。
+     * 在主 UI 层完成后回放补充绘制层，再把第二个 FBO 贴回主层。
      *
      * <p>这里故意把回放放在主 FBO 仍然绑定的阶段执行：
      * 先保持主层 alpha 只由控件底图建立，
-     * 再把物品专用 FBO 的预合成 RGB 回贴回来，同时完全保留主层 alpha。</p>
+     * 再把第二个 FBO 的预合成 RGB 回贴回来，同时完全保留主层 coverage alpha。</p>
      */
-    private void flushDeferredInventoryItemPasses(UiRenderContext context, UiRenderTarget itemRenderTarget,
+    private void flushDeferredPostMainPasses(UiRenderContext context, UiRenderTarget deferredRenderTarget,
             int nativeWidth, int nativeHeight) {
-        if (context == null || itemRenderTarget == null || !context.hasDeferredInventoryItemPasses()) {
+        if (context == null || deferredRenderTarget == null || !context.hasDeferredPostMainPasses()) {
             return;
         }
 
-        List<UiRenderContext.DeferredInventoryItemPass> deferredPasses = context.drainDeferredInventoryItemPasses();
+        List<UiRenderContext.DeferredPostMainPass> deferredPasses = context.drainDeferredPostMainPasses();
         if (deferredPasses.isEmpty()) {
             return;
         }
 
         int previousMatrixMode = GL11.glGetInteger(GL11.GL_MATRIX_MODE);
-        itemRenderTarget.begin();
+        deferredRenderTarget.begin();
         try {
             GL11.glMatrixMode(GL11.GL_PROJECTION);
             GL11.glPushMatrix();
@@ -269,10 +269,9 @@ final class UiScreenHostSession {
                 GL11.glPushMatrix();
                 try {
                     GL11.glLoadIdentity();
-                    for (UiRenderContext.DeferredInventoryItemPass deferredPass : deferredPasses) {
-                        applyDeferredInventoryClip(deferredPass.getClipRect(), nativeHeight);
-                        deferredPass.getItemRenderer().renderItems(deferredPass.getLayout(), deferredPass.getAbsoluteX(),
-                                deferredPass.getAbsoluteY(), deferredPass.getSlotSnapshots());
+                    for (UiRenderContext.DeferredPostMainPass deferredPass : deferredPasses) {
+                        applyDeferredPostMainClip(deferredPass.getClipRect(), nativeHeight);
+                        deferredPass.replay();
                     }
                     GL11.glDisable(GL11.GL_SCISSOR_TEST);
                 } finally {
@@ -285,11 +284,11 @@ final class UiScreenHostSession {
                 GL11.glMatrixMode(previousMatrixMode);
             }
         } finally {
-            itemRenderTarget.end();
+            deferredRenderTarget.end();
             GL11.glMatrixMode(previousMatrixMode);
         }
 
-        itemRenderTarget.compositeToCurrentFramebuffer();
+        deferredRenderTarget.compositeToCurrentFramebuffer();
     }
 
     /**
@@ -298,7 +297,7 @@ final class UiScreenHostSession {
      * @param clipRect 裁剪矩形；为空时表示当前批次不裁剪
      * @param screenHeight 当前原生屏幕高度
      */
-    private void applyDeferredInventoryClip(int[] clipRect, int screenHeight) {
+    private void applyDeferredPostMainClip(int[] clipRect, int screenHeight) {
         if (clipRect == null) {
             GL11.glDisable(GL11.GL_SCISSOR_TEST);
             return;

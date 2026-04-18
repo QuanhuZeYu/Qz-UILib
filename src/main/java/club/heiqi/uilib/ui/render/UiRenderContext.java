@@ -12,9 +12,6 @@ import org.lwjgl.opengl.GL11;
 
 import club.heiqi.uilib.font.api.DefaultFontRendererAdapter;
 import club.heiqi.uilib.font.api.FontRendererAdapter;
-import club.heiqi.uilib.ui.control.InventorySlotGridItemRenderer;
-import club.heiqi.uilib.ui.control.InventorySlotGridLayout;
-import club.heiqi.uilib.ui.control.InventorySlotSnapshot;
 
 /**
  * UI 渲染上下文。
@@ -30,52 +27,37 @@ public class UiRenderContext {
     private final float partialTicks;
     private final FontRendererAdapter fontRenderer;
     private final Deque<int[]> clipStack = new ArrayDeque<int[]>();
-    private final List<DeferredInventoryItemPass> deferredInventoryItemPasses = new ArrayList<DeferredInventoryItemPass>();
+    private final List<DeferredPostMainPass> deferredPostMainPasses = new ArrayList<DeferredPostMainPass>();
 
     /**
-     * 延迟背包物品绘制记录。
-     *
-     * <p>主 UI 树先只建立槽位底图与最终 coverage alpha，
-     * 物品图标改为在独立 FBO 中回放，再把结果合回主 UI FBO，
-     * 避免物品半透明像素直接污染主层 alpha。</p>
+     * 主 UI FBO 完成后的补充回放动作。
      */
-    public static final class DeferredInventoryItemPass {
+    public interface DeferredPostMainPassReplay {
 
-        private final InventorySlotGridItemRenderer itemRenderer;
-        private final InventorySlotGridLayout layout;
-        private final int absoluteX;
-        private final int absoluteY;
-        private final InventorySlotSnapshot[] slotSnapshots;
+        /**
+         * 在第二个 FBO 中回放当前动作。
+         */
+        void replay();
+    }
+
+    /**
+     * 延迟到主渲染完成后再执行的回放记录。
+     *
+     * <p>这里保留 clip/scissor 快照，让宿主能够把同一批补充绘制
+     * 回放到第二个 FBO，再按既有 alpha 合成契约贴回主 UI FBO。</p>
+     */
+    public static final class DeferredPostMainPass {
+
+        private final DeferredPostMainPassReplay replay;
         private final int[] clipRect;
 
-        private DeferredInventoryItemPass(InventorySlotGridItemRenderer itemRenderer, InventorySlotGridLayout layout,
-                int absoluteX, int absoluteY, InventorySlotSnapshot[] slotSnapshots, int[] clipRect) {
-            this.itemRenderer = itemRenderer;
-            this.layout = layout;
-            this.absoluteX = absoluteX;
-            this.absoluteY = absoluteY;
-            this.slotSnapshots = slotSnapshots;
+        private DeferredPostMainPass(DeferredPostMainPassReplay replay, int[] clipRect) {
+            this.replay = replay;
             this.clipRect = clipRect;
         }
 
-        public InventorySlotGridItemRenderer getItemRenderer() {
-            return itemRenderer;
-        }
-
-        public InventorySlotGridLayout getLayout() {
-            return layout;
-        }
-
-        public int getAbsoluteX() {
-            return absoluteX;
-        }
-
-        public int getAbsoluteY() {
-            return absoluteY;
-        }
-
-        public InventorySlotSnapshot[] getSlotSnapshots() {
-            return slotSnapshots;
+        public void replay() {
+            replay.replay();
         }
 
         public int[] getClipRect() {
@@ -197,42 +179,35 @@ public class UiRenderContext {
     }
 
     /**
-     * 延迟登记一批背包物品绘制，供宿主在独立物品层中回放。
+     * 延迟登记一批主渲染后的补充回放动作。
      *
-     * @param itemRenderer 物品渲染委托
-     * @param layout 网格布局结果
-     * @param absoluteX 网格绝对 X
-     * @param absoluteY 网格绝对 Y
-     * @param slotSnapshots 槽位快照
+     * @param replay 主渲染完成后要回放的动作
      */
-    public void enqueueInventoryItemPass(InventorySlotGridItemRenderer itemRenderer, InventorySlotGridLayout layout,
-            int absoluteX, int absoluteY, InventorySlotSnapshot[] slotSnapshots) {
-        deferredInventoryItemPasses.add(new DeferredInventoryItemPass(Objects.requireNonNull(itemRenderer, "itemRenderer"),
-                Objects.requireNonNull(layout, "layout"), absoluteX, absoluteY,
-                Objects.requireNonNull(slotSnapshots, "slotSnapshots"), copyCurrentClipRect()));
+    public void enqueueDeferredPostMainPass(DeferredPostMainPassReplay replay) {
+        deferredPostMainPasses.add(new DeferredPostMainPass(Objects.requireNonNull(replay, "replay"),
+                copyCurrentClipRect()));
     }
 
     /**
-     * 判断当前帧是否存在待回放的背包物品绘制。
+     * 判断当前帧是否存在待回放的主后置补充绘制。
      *
-     * @return 是否存在延迟物品绘制
+     * @return 是否存在延迟回放
      */
-    public boolean hasDeferredInventoryItemPasses() {
-        return !deferredInventoryItemPasses.isEmpty();
+    public boolean hasDeferredPostMainPasses() {
+        return !deferredPostMainPasses.isEmpty();
     }
 
     /**
-     * 取出并清空当前帧登记的背包物品绘制。
+     * 取出并清空当前帧登记的主后置补充绘制。
      *
-     * @return 当前帧延迟物品绘制列表
+     * @return 当前帧延迟回放列表
      */
-    public List<DeferredInventoryItemPass> drainDeferredInventoryItemPasses() {
-        if (deferredInventoryItemPasses.isEmpty()) {
+    public List<DeferredPostMainPass> drainDeferredPostMainPasses() {
+        if (deferredPostMainPasses.isEmpty()) {
             return Collections.emptyList();
         }
-        List<DeferredInventoryItemPass> drainedPasses = new ArrayList<DeferredInventoryItemPass>(
-                deferredInventoryItemPasses);
-        deferredInventoryItemPasses.clear();
+        List<DeferredPostMainPass> drainedPasses = new ArrayList<DeferredPostMainPass>(deferredPostMainPasses);
+        deferredPostMainPasses.clear();
         return drainedPasses;
     }
 

@@ -67,10 +67,10 @@ public class InventorySlotGridWidget extends Widget {
 
     @Override
     protected void drawSelf(UiRenderContext context) {
-        InventorySlotGridLayout layout = resolveLayout(Math.max(1, getWidth()));
-        int absoluteX = getAbsoluteX() + Math.max(0, (getWidth() - layout.totalWidth) / 2);
-        int absoluteY = getAbsoluteY();
-        InventorySlotSnapshot[] slotSnapshots = snapshotSlotSnapshots();
+        final InventorySlotGridLayout layout = resolveLayout(Math.max(1, getWidth()));
+        final int absoluteX = getAbsoluteX() + Math.max(0, (getWidth() - layout.totalWidth) / 2);
+        final int absoluteY = getAbsoluteY();
+        final InventorySlotSnapshot[] slotSnapshots = snapshotSlotSnapshots();
         boolean hasRenderableItems = false;
 
         for (int slotIndex = 0; slotIndex < slotCount; slotIndex++) {
@@ -87,9 +87,16 @@ public class InventorySlotGridWidget extends Widget {
         }
 
         if (hasRenderableItems) {
-            InventorySlotGridItemRenderer activeItemRenderer = resolveItemRenderer();
+            final InventorySlotGridItemRenderer activeItemRenderer = resolveItemRenderer();
             if (activeItemRenderer != null) {
-                context.enqueueInventoryItemPass(activeItemRenderer, layout, absoluteX, absoluteY, slotSnapshots);
+                final InventorySlotGridItemGeometry geometry = layout.createItemGeometry(absoluteX, absoluteY,
+                        slotSnapshots.length);
+                context.enqueueDeferredPostMainPass(new UiRenderContext.DeferredPostMainPassReplay() {
+                    @Override
+                    public void replay() {
+                        activeItemRenderer.renderItems(geometry, slotSnapshots);
+                    }
+                });
             }
         }
     }
