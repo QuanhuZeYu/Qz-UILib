@@ -20,13 +20,13 @@ final class MinecraftInventorySlotGridItemRenderer implements InventorySlotGridI
     private final RenderItem itemRenderer = new RenderItem();
 
     @Override
-    public void renderItems(InventorySlotGridLayout layout, int absoluteX, int absoluteY,
-            InventorySlotSnapshot[] slotSnapshots) {
-        if (layout == null || slotSnapshots == null || slotSnapshots.length <= 0) {
+    public void renderItems(InventorySlotGridItemGeometry geometry, InventorySlotSnapshot[] slotSnapshots) {
+        if (geometry == null || slotSnapshots == null || slotSnapshots.length <= 0) {
             return;
         }
 
         Minecraft minecraft = Minecraft.getMinecraft();
+        int itemIconSize = resolveRenderedItemIconSize(geometry.getSlotSize());
         GL11.glPushMatrix();
         try {
             GL11.glEnable(GL11.GL_DEPTH_TEST);
@@ -47,10 +47,8 @@ final class MinecraftInventorySlotGridItemRenderer implements InventorySlotGridI
                     continue;
                 }
 
-                int itemIconSize = resolveRenderedItemIconSize(layout.slotSize);
-                InventorySlotGridLayout.ItemIconOrigin iconOrigin = layout.getItemIconOrigin(slotIndex, itemIconSize);
-                int itemX = absoluteX + iconOrigin.x;
-                int itemY = absoluteY + iconOrigin.y;
+                int itemX = geometry.getSlotLeft(slotIndex) + Math.max(0, (geometry.getSlotSize() - itemIconSize) / 2);
+                int itemY = geometry.getSlotTop(slotIndex) + Math.max(0, (geometry.getSlotSize() - itemIconSize) / 2);
                 renderScaledItem(minecraft, stack, itemX, itemY, itemIconSize);
             }
         } finally {

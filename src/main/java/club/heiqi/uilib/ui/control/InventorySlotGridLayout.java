@@ -124,6 +124,26 @@ public final class InventorySlotGridLayout {
     }
 
     /**
+     * 生成物品重放阶段需要的最小槽位几何数据。
+     *
+     * @param absoluteX 网格绝对 X
+     * @param absoluteY 网格绝对 Y
+     * @param slotCount 槽位数量
+     * @return 物品重放几何数据
+     */
+    InventorySlotGridItemGeometry createItemGeometry(int absoluteX, int absoluteY, int slotCount) {
+        int normalizedSlotCount = Math.max(0, slotCount);
+        int[] slotLefts = new int[normalizedSlotCount];
+        int[] slotTops = new int[normalizedSlotCount];
+        for (int slotIndex = 0; slotIndex < normalizedSlotCount; slotIndex++) {
+            SlotRect slotRect = getSlotRect(slotIndex);
+            slotLefts[slotIndex] = absoluteX + slotRect.left;
+            slotTops[slotIndex] = absoluteY + slotRect.top;
+        }
+        return new InventorySlotGridItemGeometry(slotSize, slotLefts, slotTops);
+    }
+
+    /**
      * 计算列数。
      *
      * @param slotCount 槽位数量
