@@ -1,7 +1,6 @@
 package club.heiqi.uilib.ui.theme;
 
 import java.util.Objects;
-
 import club.heiqi.uilib.ui.control.UiControlTheme;
 
 /**
@@ -10,8 +9,6 @@ import club.heiqi.uilib.ui.control.UiControlTheme;
  * <p>结构由页面自行组合，视觉常量集中收口在主题层。</p>
  */
 public final class UiDocumentTheme {
-
-    private static final UiDocumentTheme DEFAULT_THEME = createDefaultTheme();
 
     private final UiSurfaceStyle shellSurface;
     private final UiSurfaceStyle cardSurface;
@@ -66,39 +63,13 @@ public final class UiDocumentTheme {
         this.formLabelWidth = Math.max(0, formLabelWidth);
     }
 
-    private static UiDocumentTheme createDefaultTheme() {
-        return new UiDocumentTheme(
-                new UiSurfaceStyle(0xD0151C25, 0xFF86A8F0),
-                new UiSurfaceStyle(0xAA111721, 0xFF6E8FCB),
-                new UiControlTheme.LabelStyle(0xFFFFFFFF, false),
-                new UiControlTheme.LabelStyle(0xFFD7E3FF, false),
-                new UiControlTheme.LabelStyle(0xFFF6D78E, false),
-                new UiControlTheme.LabelStyle(0xFFB5D0FF, false),
-                UiControlTheme.defaultButtonStyle(),
-                UiControlTheme.defaultToggleSwitchStyle(),
-                UiControlTheme.defaultSegmentedSelectorStyle(),
-                UiControlTheme.defaultTextInputStyle(),
-                UiControlTheme.defaultScrollbarStyle(),
-                UiControlTheme.defaultInventorySlotGridStyle(),
-                16,
-                20,
-                12,
-                12,
-                16,
-                20,
-                12,
-                16,
-                156
-        );
-    }
-
     /**
      * 获取默认文档主题。
      *
      * @return 默认文档主题
      */
     public static UiDocumentTheme defaultTheme() {
-        return DEFAULT_THEME;
+        return UiDocumentThemes.current();
     }
 
     /**

@@ -18,6 +18,7 @@ import club.heiqi.uilib.ui.document.DocumentPageWidget;
 import club.heiqi.uilib.ui.document.DocumentTextWidget;
 import club.heiqi.uilib.ui.event.UiMouseEvent;
 import club.heiqi.uilib.ui.theme.UiDocumentTheme;
+import club.heiqi.uilib.ui.theme.UiDocumentThemes;
 import club.heiqi.uilib.ui.text.TextMeasureService;
 import club.heiqi.uilib.ui.widget.Widget;
 
@@ -259,7 +260,7 @@ public class UiTestDocumentPageControllerTest {
      */
     private static final class TestFixture {
 
-        private final UiDocumentTheme documentTheme = UiDocumentTheme.defaultTheme();
+        private final UiDocumentTheme documentTheme = UiDocumentThemes.current();
         private final TextMeasureService textMeasureService = new DeterministicTextMeasureService();
         private final DocumentUiScope documentUi = new DocumentUiScope(documentTheme, textMeasureService,
                 UiControlRuntimeAdapters.empty());
