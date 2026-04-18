@@ -6,6 +6,5 @@ package club.heiqi.uilib.ui.control;
 public final class NoOpInventorySlotGridItemRenderer implements InventorySlotGridItemRenderer {
 
     @Override
-    public void renderItems(InventorySlotGridLayout layout, int absoluteX, int absoluteY,
-            InventorySlotSnapshot[] slotSnapshots) {}
+    public void renderItems(InventorySlotGridItemGeometry geometry, InventorySlotSnapshot[] slotSnapshots) {}
 }
