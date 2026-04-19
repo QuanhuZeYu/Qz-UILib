@@ -47,19 +47,13 @@ public class Widget {
         performanceMonitor.enterWidget(this);
         try {
             drawSelf(context);
-            boolean clipping = clipChildren;
-            if (clipping) {
-                int[] clipRect = getChildClipRect();
-                context.pushClip(clipRect[0], clipRect[1], clipRect[2], clipRect[3]);
-            }
+            int clipDepth = pushVisualClips(context);
             try {
                 for (Widget child : children) {
                     child.render(context);
                 }
             } finally {
-                if (clipping) {
-                    context.popClip();
-                }
+                popVisualClips(context, clipDepth);
             }
         } finally {
             performanceMonitor.exitWidget(this);
@@ -75,6 +69,27 @@ public class Widget {
 
     protected int[] getChildClipRect() {
         return new int[] { getAbsoluteX(), getAbsoluteY(), getAbsoluteX() + getWidth(), getAbsoluteY() + getHeight() };
+    }
+
+    protected final int pushChildVisualClip(UiRenderContext context) {
+        if (!clipChildren) {
+            return 0;
+        }
+
+        int[] clipRect = getChildClipRect();
+        context.pushClip(clipRect[0], clipRect[1], clipRect[2], clipRect[3]);
+        return 1;
+    }
+
+    protected final void popVisualClips(UiRenderContext context, int clipDepth) {
+        while (clipDepth > 0) {
+            context.popClip();
+            clipDepth--;
+        }
+    }
+
+    private int pushVisualClips(UiRenderContext context) {
+        return pushChildVisualClip(context);
     }
 
     /**

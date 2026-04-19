@@ -21,12 +21,7 @@ public class ViewportWidget extends Widget {
     protected void drawSelf(UiRenderContext context) {
         int absoluteX = getAbsoluteX();
         int absoluteY = getAbsoluteY();
-        if (surfaceStyle.fillColor != 0) {
-            context.fillRect(absoluteX, absoluteY, absoluteX + getWidth(), absoluteY + getHeight(), surfaceStyle.fillColor);
-        }
-        if (surfaceStyle.borderColor != 0) {
-            context.drawBorder(absoluteX, absoluteY, absoluteX + getWidth(), absoluteY + getHeight(), surfaceStyle.borderColor);
-        }
+        context.drawSurface(absoluteX, absoluteY, absoluteX + getWidth(), absoluteY + getHeight(), surfaceStyle);
     }
 
     /**

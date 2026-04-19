@@ -136,19 +136,19 @@ public class DivWidget extends Widget implements UiScrollHost {
             applyHitTestClipEnabled(hasClippedOverflow());
 
             drawSelf(context);
+            int clipDepth = 0;
             boolean clipping = hasClippedOverflow();
             if (clipping) {
                 int[] clipRect = resolveClipRect(context);
                 context.pushClip(clipRect[0], clipRect[1], clipRect[2], clipRect[3]);
+                clipDepth++;
             }
             try {
                 for (Widget child : getChildren()) {
                     child.render(context);
                 }
             } finally {
-                if (clipping) {
-                    context.popClip();
-                }
+                popVisualClips(context, clipDepth);
             }
             drawScrollbars(context);
         } finally {
@@ -158,14 +158,8 @@ public class DivWidget extends Widget implements UiScrollHost {
 
     @Override
     protected void drawSelf(UiRenderContext context) {
-        if (surfaceStyle.fillColor != 0) {
-            context.fillRect(getAbsoluteX(), getAbsoluteY(), getAbsoluteX() + getWidth(), getAbsoluteY() + getHeight(),
-                    surfaceStyle.fillColor);
-        }
-        if (surfaceStyle.borderColor != 0) {
-            context.drawBorder(getAbsoluteX(), getAbsoluteY(), getAbsoluteX() + getWidth(), getAbsoluteY() + getHeight(),
-                    surfaceStyle.borderColor);
-        }
+        context.drawSurface(getAbsoluteX(), getAbsoluteY(), getAbsoluteX() + getWidth(), getAbsoluteY() + getHeight(),
+                surfaceStyle);
     }
 
     @Override
