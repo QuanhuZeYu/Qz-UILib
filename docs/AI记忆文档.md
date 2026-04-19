@@ -18,6 +18,7 @@
 
 ### 运行与验证
 - Windows 环境下使用 PowerShell。
+- 当前协作环境下，已实际验证 `lsp_diagnostics` 可对指定 Java 文件返回结果；仓库根目录级别是否自动覆盖 Java 诊断，仍需按实际调用结果确认。
 - 当前编译门槛：`./gradlew.bat compileJava`
 - 典型定向验证命令：
   - `./gradlew.bat test --tests "club.heiqi.uilib.ui.theme.UiSurfaceStyleTest"`
