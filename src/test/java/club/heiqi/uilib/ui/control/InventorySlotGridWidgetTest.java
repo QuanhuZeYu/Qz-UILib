@@ -89,6 +89,56 @@ public class InventorySlotGridWidgetTest {
     }
 
     /**
+     * 验证 rounded structural clip 会进入延迟回放快照。
+     */
+    @Test
+    public void shouldCaptureRoundedStructuralClipForDeferredItems() {
+        InventorySlotGridWidget widget = new InventorySlotGridWidget(1, 1,
+                UiControlTheme.defaultInventorySlotGridStyle(), new InventorySlotGridWidget.SlotContentProvider() {
+                    @Override
+                    public InventorySlotSnapshot getSlotSnapshot(int localIndex) {
+                        return InventorySlotSnapshot.occupied();
+                    }
+                }, new RecordingInventorySlotGridItemRenderer());
+        widget.applyLayoutBounds(12, 16, 48, 48);
+
+        RoundedClipAwareWidget clipAwareWidget = new RoundedClipAwareWidget();
+        clipAwareWidget.applyLayoutBounds(40, 60, 180, 120);
+        clipAwareWidget.addChild(widget);
+
+        RecordingUiRenderContext renderContext = new RecordingUiRenderContext();
+        clipAwareWidget.render(renderContext);
+
+        Assert.assertEquals(1, renderContext.deferredPostMainPasses.size());
+        RecordedDeferredPostMainPass deferredPass = renderContext.deferredPostMainPasses.get(0);
+        Assert.assertNotNull(deferredPass.clipRect);
+        Assert.assertArrayEquals(new int[] { 48, 72, 204, 164 }, deferredPass.clipRect);
+        Assert.assertEquals(1, deferredPass.roundedClipRegions.size());
+        RecordedRoundedClipRegion roundedClipRegion = deferredPass.roundedClipRegions.get(0);
+        Assert.assertEquals(48, roundedClipRegion.getLeft());
+        Assert.assertEquals(72, roundedClipRegion.getTop());
+        Assert.assertEquals(204, roundedClipRegion.getRight());
+        Assert.assertEquals(164, roundedClipRegion.getBottom());
+        Assert.assertEquals(18, roundedClipRegion.getCornerRadius());
+    }
+
+    /**
+     * 验证 rounded structural clip 只裁剪子树命中，不改变容器自身命中返回规则。
+     */
+    @Test
+    public void shouldApplyRoundedStructuralClipOnlyToDescendantHitTest() {
+        RoundedClipAwareWidget clipAwareWidget = new RoundedClipAwareWidget();
+        clipAwareWidget.applyLayoutBounds(40, 60, 180, 120);
+
+        TestChildWidget childWidget = new TestChildWidget();
+        childWidget.applyLayoutBounds(8, 12, 156, 92);
+        clipAwareWidget.addChild(childWidget);
+
+        Assert.assertSame(childWidget, clipAwareWidget.findWidgetAt(120, 110));
+        Assert.assertSame(clipAwareWidget, clipAwareWidget.findWidgetAt(50, 74));
+    }
+
+    /**
      * 记录绘制调用的渲染上下文。
      */
     private static final class RecordingUiRenderContext extends UiRenderContext {
@@ -227,7 +277,7 @@ public class InventorySlotGridWidgetTest {
     /**
      * 供测试使用的最小结构裁剪容器。
      */
-    private static final class ClipAwareWidget extends Widget {
+    private static class ClipAwareWidget extends Widget {
 
         private ClipAwareWidget() {
             applyChildClipEnabled(true);
@@ -239,4 +289,24 @@ public class InventorySlotGridWidgetTest {
                     getAbsoluteY() + getHeight() - 16 };
         }
     }
+
+    /**
+     * 带圆角结构裁剪的测试容器。
+     */
+    private static final class RoundedClipAwareWidget extends ClipAwareWidget {
+
+        private RoundedClipAwareWidget() {
+            applyHitTestClipEnabled(true);
+        }
+
+        @Override
+        protected int getChildClipCornerRadius() {
+            return 18;
+        }
+    }
+
+    /**
+     * 供命中测试使用的最小子组件。
+     */
+    private static final class TestChildWidget extends Widget {}
 }

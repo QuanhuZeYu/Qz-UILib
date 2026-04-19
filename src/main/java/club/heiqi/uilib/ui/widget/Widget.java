@@ -20,6 +20,70 @@ import club.heiqi.uilib.ui.render.UiRenderContext;
  */
 public class Widget {
 
+    /**
+     * 子树命中测试继承的结构裁剪状态。
+     */
+    protected static final class StructuralHitClip {
+
+        private final int[] clipRect;
+        private final List<RoundedRectClipRegion> roundedClipRegions;
+
+        private StructuralHitClip(int[] clipRect, List<RoundedRectClipRegion> roundedClipRegions) {
+            this.clipRect = clipRect;
+            this.roundedClipRegions = roundedClipRegions;
+        }
+
+        /**
+         * 判断坐标是否仍位于当前结构裁剪内。
+         *
+         * @param mouseX 鼠标 X
+         * @param mouseY 鼠标 Y
+         * @return 是否位于裁剪区域内
+         */
+        private boolean contains(int mouseX, int mouseY) {
+            if (clipRect != null && !containsInRect(mouseX, mouseY, clipRect)) {
+                return false;
+            }
+            for (RoundedRectClipRegion roundedClipRegion : roundedClipRegions) {
+                if (!roundedClipRegion.contains(mouseX, mouseY)) {
+                    return false;
+                }
+            }
+            return true;
+        }
+    }
+
+    /**
+     * 仅用于命中测试的圆角矩形裁剪描述。
+     */
+    protected static final class RoundedRectClipRegion {
+
+        private final int left;
+        private final int top;
+        private final int right;
+        private final int bottom;
+        private final int cornerRadius;
+
+        private RoundedRectClipRegion(int left, int top, int right, int bottom, int cornerRadius) {
+            this.left = left;
+            this.top = top;
+            this.right = right;
+            this.bottom = bottom;
+            this.cornerRadius = cornerRadius;
+        }
+
+        /**
+         * 判断坐标是否落在圆角矩形内。
+         *
+         * @param mouseX 鼠标 X
+         * @param mouseY 鼠标 Y
+         * @return 是否位于圆角矩形内
+         */
+        private boolean contains(int mouseX, int mouseY) {
+            return containsInRoundedRect(mouseX, mouseY, left, top, right, bottom, cornerRadius);
+        }
+    }
+
     private final List<Widget> children = new ArrayList<Widget>();
 
     private Widget parent;
@@ -77,8 +141,33 @@ public class Widget {
         }
 
         int[] clipRect = getChildClipRect();
-        context.pushClip(clipRect[0], clipRect[1], clipRect[2], clipRect[3]);
+        context.pushClip(clipRect[0], clipRect[1], clipRect[2], clipRect[3], getChildClipCornerRadius());
         return 1;
+    }
+
+    /**
+     * 在默认子树 clip 之前，允许容器追加额外的结构性视觉裁剪。
+     *
+     * <p>该钩子用于表达“外层 rounded shell + 内层矩形 viewport”这类复合结构裁剪，
+     * 避免把多个几何层级硬挤进同一份 `rect + radius` 描述中。</p>
+     *
+     * @param context 渲染上下文
+     * @return 实际压入的裁剪层数
+     */
+    protected int pushAdditionalChildVisualClips(UiRenderContext context) {
+        return 0;
+    }
+
+    /**
+     * 返回当前容器对子树结构裁剪的圆角半径。
+     *
+     * <p>默认返回 0，表示仅使用矩形裁剪；如需显式 rounded structural clip，
+     * 应由专用结构容器子类覆盖或配置该钩子，而不是回退到 surface 外观驱动。</p>
+     *
+     * @return 子树结构裁剪圆角半径
+     */
+    protected int getChildClipCornerRadius() {
+        return 0;
     }
 
     protected final void popVisualClips(UiRenderContext context, int clipDepth) {
@@ -89,7 +178,9 @@ public class Widget {
     }
 
     private int pushVisualClips(UiRenderContext context) {
-        return pushChildVisualClip(context);
+        int clipDepth = pushAdditionalChildVisualClips(context);
+        clipDepth += pushChildVisualClip(context);
+        return clipDepth;
     }
 
     /**
@@ -103,18 +194,19 @@ public class Widget {
         return findWidgetAt(mouseX, mouseY, null);
     }
 
-    private Widget findWidgetAt(int mouseX, int mouseY, int[] inheritedHitClip) {
+    private Widget findWidgetAt(int mouseX, int mouseY, StructuralHitClip inheritedHitClip) {
         UiPerformanceMonitor.getInstance().recordHitTestVisit();
-        if (inheritedHitClip != null && !containsInRect(mouseX, mouseY, inheritedHitClip)) {
+        if (inheritedHitClip != null && !inheritedHitClip.contains(mouseX, mouseY)) {
             return null;
         }
         if (!visible || !enabled || !contains(mouseX, mouseY)) {
             return null;
         }
 
-        int[] childHitClip = inheritedHitClip;
+        StructuralHitClip childHitClip = inheritedHitClip;
         if (clipHitTest) {
-            childHitClip = intersectRect(inheritedHitClip, getChildClipRect());
+            childHitClip = appendAdditionalChildHitClips(inheritedHitClip);
+            childHitClip = appendStructuralHitClip(childHitClip, getChildClipRect(), getChildClipCornerRadius());
         }
         for (int i = children.size() - 1; i >= 0; i--) {
             Widget child = children.get(i);
@@ -124,6 +216,45 @@ public class Widget {
             }
         }
         return this;
+    }
+
+    /**
+     * 计算传递给子树的命中测试裁剪状态。
+     *
+     * <p>这里显式保留 rounded structural clip 语义，但只影响对子树的命中裁剪，
+     * 不改变当前容器自身是否返回命中的既有规则。</p>
+     *
+     * @param inheritedHitClip 继承到当前节点的裁剪状态
+     * @return 传递给子节点的裁剪状态
+     */
+    protected StructuralHitClip appendAdditionalChildHitClips(StructuralHitClip inheritedHitClip) {
+        return inheritedHitClip;
+    }
+
+    /**
+     * 在现有结构裁剪状态后追加一层新的矩形/圆角矩形裁剪。
+     *
+     * @param inheritedHitClip 继承到当前节点的裁剪状态
+     * @param childClipRect 追加的裁剪矩形
+     * @param cornerRadius 圆角半径；为 0 时表示纯矩形
+     * @return 更新后的裁剪状态
+     */
+    protected final StructuralHitClip appendStructuralHitClip(StructuralHitClip inheritedHitClip, int[] childClipRect,
+            int cornerRadius) {
+        int[] inheritedClipRect = inheritedHitClip == null ? null : inheritedHitClip.clipRect;
+        int[] resolvedClipRect = intersectRect(inheritedClipRect, childClipRect);
+
+        List<RoundedRectClipRegion> roundedClipRegions = new ArrayList<RoundedRectClipRegion>();
+        if (inheritedHitClip != null) {
+            roundedClipRegions.addAll(inheritedHitClip.roundedClipRegions);
+        }
+
+        int resolvedCornerRadius = clampCornerRadius(resolvedClipRect, cornerRadius);
+        if (resolvedCornerRadius > 0) {
+            roundedClipRegions.add(new RoundedRectClipRegion(resolvedClipRect[0], resolvedClipRect[1], resolvedClipRect[2],
+                    resolvedClipRect[3], resolvedCornerRadius));
+        }
+        return new StructuralHitClip(resolvedClipRect, roundedClipRegions);
     }
 
     /**
@@ -432,11 +563,11 @@ public class Widget {
         }
     }
 
-    private boolean containsInRect(int mouseX, int mouseY, int[] rect) {
+    private static boolean containsInRect(int mouseX, int mouseY, int[] rect) {
         return mouseX >= rect[0] && mouseX < rect[2] && mouseY >= rect[1] && mouseY < rect[3];
     }
 
-    private int[] intersectRect(int[] first, int[] second) {
+    private static int[] intersectRect(int[] first, int[] second) {
         if (second == null) {
             return first;
         }
@@ -454,5 +585,49 @@ public class Widget {
             bottom = top;
         }
         return new int[] { left, top, right, bottom };
+    }
+
+    /**
+     * 以像素中心判断命中点是否位于圆角矩形内。
+     */
+    private static boolean containsInRoundedRect(int mouseX, int mouseY, int left, int top, int right, int bottom,
+            int cornerRadius) {
+        if (!containsInRect(mouseX, mouseY, new int[] { left, top, right, bottom })) {
+            return false;
+        }
+        if (cornerRadius <= 0) {
+            return true;
+        }
+
+        int innerLeft = left + cornerRadius;
+        int innerRight = right - cornerRadius;
+        int innerTop = top + cornerRadius;
+        int innerBottom = bottom - cornerRadius;
+        if (mouseX >= innerLeft && mouseX < innerRight) {
+            return true;
+        }
+        if (mouseY >= innerTop && mouseY < innerBottom) {
+            return true;
+        }
+
+        float pointX = mouseX + 0.5F;
+        float pointY = mouseY + 0.5F;
+        float centerX = pointX < innerLeft ? innerLeft : innerRight;
+        float centerY = pointY < innerTop ? innerTop : innerBottom;
+        float deltaX = pointX - centerX;
+        float deltaY = pointY - centerY;
+        return deltaX * deltaX + deltaY * deltaY <= cornerRadius * cornerRadius;
+    }
+
+    /**
+     * 将圆角半径收敛到当前裁剪矩形可承受的范围内。
+     */
+    private static int clampCornerRadius(int[] clipRect, int cornerRadius) {
+        if (clipRect == null) {
+            return 0;
+        }
+        int width = Math.max(0, clipRect[2] - clipRect[0]);
+        int height = Math.max(0, clipRect[3] - clipRect[1]);
+        return Math.max(0, Math.min(cornerRadius, Math.min(width, height) / 2));
     }
 }
