@@ -8,6 +8,7 @@ import club.heiqi.uilib.ui.theme.UiDocumentTheme;
 import club.heiqi.uilib.ui.theme.UiDocumentThemes;
 import club.heiqi.uilib.ui.text.DefaultTextMeasureService;
 import club.heiqi.uilib.ui.text.TextMeasureService;
+import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiScreen;
 
 /**
@@ -16,15 +17,25 @@ import net.minecraft.client.gui.GuiScreen;
 public final class UiDocumentScreens {
 
     public static final PageDescriptor UI_TEST = new PageDescriptor("ui_test");
+    public static final PageDescriptor UI_TEST_LAYOUT = new PageDescriptor("ui_test_layout");
     public static final PageDescriptor INVENTORY_OVERVIEW = new PageDescriptor("inventory_overview");
-    public static final DocumentScreenDefinition<Void> UI_TEST_DEFINITION = new DocumentScreenDefinition<Void>(UI_TEST,
+    public static final DocumentScreenDefinition<UiTestMenuModel> UI_TEST_DEFINITION = new DocumentScreenDefinition<UiTestMenuModel>(UI_TEST,
             DocumentScreenChrome::resolve,
-            new DocumentPageControllerFactory<Void>() {
+            new DocumentPageControllerFactory<UiTestMenuModel>() {
+                @Override
+                public DocumentPageController create(DocumentUiScope documentUi,
+                        DocumentPageAuthoringSurface documentPage,
+                        DocumentPageRuntimeView runtimeView, String pageId, UiTestMenuModel provision) {
+                    return new UiTestDocumentPageController(documentUi, documentPage, provision);
+                }
+            });
+    public static final DocumentScreenDefinition<Void> UI_TEST_LAYOUT_DEFINITION = new DocumentScreenDefinition<Void>(
+            UI_TEST_LAYOUT, DocumentScreenChrome::resolve, new DocumentPageControllerFactory<Void>() {
                 @Override
                 public DocumentPageController create(DocumentUiScope documentUi,
                         DocumentPageAuthoringSurface documentPage,
                         DocumentPageRuntimeView runtimeView, String pageId, Void provision) {
-                    return new UiTestDocumentPageController(documentUi, documentPage, runtimeView, pageId);
+                    return new UiLayoutDiagnosticsDocumentPageController(documentUi, documentPage, runtimeView, pageId);
                 }
             });
     public static final DocumentScreenDefinition<InventoryOverviewModel> INVENTORY_OVERVIEW_DEFINITION = new DocumentScreenDefinition<InventoryOverviewModel>(
@@ -224,7 +235,28 @@ public final class UiDocumentScreens {
      * @return 测试页界面
      */
     public static GuiScreen createUiTest(DocumentScreenEnvironment environment) {
-        return createDefinitionBackedScreen(UI_TEST_DEFINITION, Objects.requireNonNull(environment, "environment"),
+        DocumentScreenEnvironment resolvedEnvironment = Objects.requireNonNull(environment, "environment");
+        return createDefinitionBackedScreen(UI_TEST_DEFINITION, resolvedEnvironment,
+                createDefaultUiTestMenuModel(resolvedEnvironment));
+    }
+
+    /**
+     * 创建布局诊断子页。
+     *
+     * @return 布局诊断子页界面
+     */
+    public static GuiScreen createUiTestLayout() {
+        return createUiTestLayout(DocumentScreenEnvironment.minecraftDefaults());
+    }
+
+    /**
+     * 基于显式文档环境创建布局诊断子页。
+     *
+     * @param environment 文档页面创建环境
+     * @return 布局诊断子页界面
+     */
+    public static GuiScreen createUiTestLayout(DocumentScreenEnvironment environment) {
+        return createDefinitionBackedScreen(UI_TEST_LAYOUT_DEFINITION, Objects.requireNonNull(environment, "environment"),
                 null);
     }
 
@@ -248,6 +280,16 @@ public final class UiDocumentScreens {
      */
     static boolean isUiTest(Object screen) {
         return hasPageId(screen, UI_TEST.getPageId());
+    }
+
+    /**
+     * 判断对象是否声明了布局诊断子页标识。
+     *
+     * @param screen 待判断对象
+     * @return 是否为布局诊断子页
+     */
+    static boolean isUiTestLayout(Object screen) {
+        return hasPageId(screen, UI_TEST_LAYOUT.getPageId());
     }
 
     /**
@@ -284,6 +326,21 @@ public final class UiDocumentScreens {
     private static <P> GuiScreen createDefinitionBackedScreen(DocumentScreenDefinition<P> definition,
             DocumentScreenEnvironment environment, P provision) {
         return new DefinitionBackedDocumentScreen<P>(environment, definition, provision);
+    }
+
+    /**
+     * 创建默认诊断菜单跳转模型。
+     *
+     * @param environment 当前文档环境
+     * @return 菜单跳转模型
+     */
+    private static UiTestMenuModel createDefaultUiTestMenuModel(final DocumentScreenEnvironment environment) {
+        return new UiTestMenuModel() {
+            @Override
+            public void openLayoutDiagnostics() {
+                Minecraft.getMinecraft().displayGuiScreen(createUiTestLayout(environment));
+            }
+        };
     }
 
     /**

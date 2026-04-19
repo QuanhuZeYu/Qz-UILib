@@ -6,7 +6,7 @@ import club.heiqi.uilib.font.FontRuntimeStats;
 import club.heiqi.uilib.ui.diagnostic.UiRuntimeStats;
 
 /**
- * `UiTestDocumentPageController` 的页面局部诊断文案 presenter。
+ * `UiLayoutDiagnosticsDocumentPageController` 的页面局部诊断文案 presenter。
  */
 final class UiTestDiagnosticsPresenter {
 

@@ -1,7 +1,7 @@
 package club.heiqi.uilib.ui.screen;
 
 /**
- * `UiTestDocumentPageController` 的页面局部高频变更探针状态。
+ * `UiLayoutDiagnosticsDocumentPageController` 的页面局部高频变更探针状态。
  */
 final class UiTestMutationProbeState {
 

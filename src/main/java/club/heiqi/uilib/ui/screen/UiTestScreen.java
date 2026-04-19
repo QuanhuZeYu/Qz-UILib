@@ -1,7 +1,9 @@
 package club.heiqi.uilib.ui.screen;
 
+import net.minecraft.client.Minecraft;
+
 /**
- * 当前阶段的最小布局诊断页。
+ * 当前阶段的诊断菜单页宿主。
  */
 public class UiTestScreen extends ControllerBackedDocumentScreen {
 
@@ -9,6 +11,12 @@ public class UiTestScreen extends ControllerBackedDocumentScreen {
 
     public UiTestScreen(UiDocumentScreens.DocumentScreenEnvironment environment) {
         super(environment, PAGE_DESCRIPTOR);
-        bindController(new UiTestDocumentPageController(ui(), documentPageAuthoringSurface(), runtimeView(), pageId()));
+        final UiDocumentScreens.DocumentScreenEnvironment resolvedEnvironment = environment;
+        bindController(new UiTestDocumentPageController(ui(), documentPageAuthoringSurface(), new UiTestMenuModel() {
+            @Override
+            public void openLayoutDiagnostics() {
+                Minecraft.getMinecraft().displayGuiScreen(UiDocumentScreens.createUiTestLayout(resolvedEnvironment));
+            }
+        }));
     }
 }

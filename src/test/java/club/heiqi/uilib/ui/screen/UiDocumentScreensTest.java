@@ -28,6 +28,18 @@ public class UiDocumentScreensTest {
     }
 
     /**
+     * 验证布局诊断子页 definition 会暴露独立稳定 descriptor 与页面标识契约。
+     */
+    @Test
+    public void shouldExposeStablePageIdForUiTestLayoutScreen() {
+        Assert.assertSame(UiDocumentScreens.UI_TEST_LAYOUT, UiDocumentScreens.UI_TEST_LAYOUT_DEFINITION.getPageDescriptor());
+        Assert.assertEquals("ui_test_layout", UiDocumentScreens.UI_TEST_LAYOUT_DEFINITION.getPageDescriptor().getPageId());
+        Assert.assertEquals(UiDocumentScreens.UI_TEST_LAYOUT.getPageId(),
+                UiDocumentScreens.UI_TEST_LAYOUT_DEFINITION.getPageDescriptor().getPageId());
+        Assert.assertEquals("ui_test_layout", UiDocumentScreens.UI_TEST_LAYOUT.getPageId());
+    }
+
+    /**
      * 验证背包页 definition 会暴露独立稳定 descriptor 与页面标识契约。
      */
     @Test
@@ -50,6 +62,7 @@ public class UiDocumentScreensTest {
 
         Assert.assertEquals(UiDocumentScreens.UI_TEST.getPageId(), UiDocumentScreens.getPageId(screen));
         Assert.assertTrue(UiDocumentScreens.isUiTest(screen));
+        Assert.assertFalse(UiDocumentScreens.isUiTestLayout(screen));
         Assert.assertEquals(UiDocumentScreens.UI_TEST.getPageId(), UiDocumentScreens.runtimeScreenNameOf(screen));
     }
 
