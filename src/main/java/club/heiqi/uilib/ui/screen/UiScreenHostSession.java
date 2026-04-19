@@ -270,10 +270,10 @@ final class UiScreenHostSession {
                 try {
                     GL11.glLoadIdentity();
                     for (UiRenderContext.DeferredPostMainPass deferredPass : deferredPasses) {
-                        applyDeferredPostMainClip(deferredPass.getClipRect(), nativeHeight);
+                        applyDeferredPostMainClip(deferredPass.getClipSnapshot(), nativeHeight);
                         deferredPass.replay();
                     }
-                    GL11.glDisable(GL11.GL_SCISSOR_TEST);
+                    UiRenderContext.clearClipState();
                 } finally {
                     GL11.glMatrixMode(GL11.GL_MODELVIEW);
                     GL11.glPopMatrix();
@@ -294,19 +294,13 @@ final class UiScreenHostSession {
     /**
      * 将主 UI 渲染阶段记录的 clip/scissor 状态回放到物品层。
      *
-     * @param clipRect 裁剪矩形；为空时表示当前批次不裁剪
+     * @param clipSnapshot 裁剪快照；为空时表示当前批次不裁剪
      * @param screenHeight 当前原生屏幕高度
      */
-    private void applyDeferredPostMainClip(int[] clipRect, int screenHeight) {
-        if (clipRect == null) {
-            GL11.glDisable(GL11.GL_SCISSOR_TEST);
-            return;
-        }
-
-        int width = Math.max(0, clipRect[2] - clipRect[0]);
-        int height = Math.max(0, clipRect[3] - clipRect[1]);
-        GL11.glEnable(GL11.GL_SCISSOR_TEST);
-        GL11.glScissor(clipRect[0], screenHeight - clipRect[3], width, height);
+    private void applyDeferredPostMainClip(UiRenderContext.ClipSnapshot clipSnapshot, int screenHeight) {
+        // 物品层重放必须复用主层已经解析好的裁剪快照，否则卡片圆角只会裁掉底图，
+        // 延迟回放的物品图标仍会从卡片拐角露出来。
+        UiRenderContext.applyClipSnapshot(clipSnapshot, screenHeight);
     }
 
     /**
