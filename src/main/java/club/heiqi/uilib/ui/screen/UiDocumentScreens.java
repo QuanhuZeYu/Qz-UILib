@@ -18,6 +18,7 @@ public final class UiDocumentScreens {
     public static final PageDescriptor UI_TEST = new PageDescriptor("ui_test");
     public static final PageDescriptor INVENTORY_OVERVIEW = new PageDescriptor("inventory_overview");
     public static final DocumentScreenDefinition<Void> UI_TEST_DEFINITION = new DocumentScreenDefinition<Void>(UI_TEST,
+            DocumentScreenChrome::resolve,
             new DocumentPageControllerFactory<Void>() {
                 @Override
                 public DocumentPageController create(DocumentUiScope documentUi,
@@ -27,7 +28,7 @@ public final class UiDocumentScreens {
                 }
             });
     public static final DocumentScreenDefinition<InventoryOverviewModel> INVENTORY_OVERVIEW_DEFINITION = new DocumentScreenDefinition<InventoryOverviewModel>(
-            INVENTORY_OVERVIEW, new DocumentPageControllerFactory<InventoryOverviewModel>() {
+            INVENTORY_OVERVIEW, DocumentScreenChrome::resolve, new DocumentPageControllerFactory<InventoryOverviewModel>() {
                 @Override
                 public DocumentPageController create(DocumentUiScope documentUi,
                         DocumentPageAuthoringSurface documentPage,
@@ -89,11 +90,14 @@ public final class UiDocumentScreens {
     public static final class DocumentScreenDefinition<P> {
 
         private final PageDescriptor pageDescriptor;
+        private final DocumentScreenChromeResolver chromeResolver;
         private final DocumentPageControllerFactory<P> controllerFactory;
 
         public DocumentScreenDefinition(PageDescriptor pageDescriptor,
+                DocumentScreenChromeResolver chromeResolver,
                 DocumentPageControllerFactory<P> controllerFactory) {
             this.pageDescriptor = Objects.requireNonNull(pageDescriptor, "pageDescriptor");
+            this.chromeResolver = Objects.requireNonNull(chromeResolver, "chromeResolver");
             this.controllerFactory = Objects.requireNonNull(controllerFactory, "controllerFactory");
         }
 
@@ -104,6 +108,17 @@ public final class UiDocumentScreens {
          */
         public PageDescriptor getPageDescriptor() {
             return pageDescriptor;
+        }
+
+        /**
+         * 基于当前宿主尺寸解析文档页面壳策略。
+         *
+         * @param width 当前宿主宽度
+         * @param height 当前宿主高度
+         * @return 页面壳策略
+         */
+        public DocumentScreenChrome resolveChrome(int width, int height) {
+            return chromeResolver.resolve(width, height);
         }
 
         /**
@@ -142,6 +157,21 @@ public final class UiDocumentScreens {
          */
         DocumentPageController create(DocumentUiScope documentUi, DocumentPageAuthoringSurface documentPage,
                 DocumentPageRuntimeView runtimeView, String pageId, P provision);
+    }
+
+    /**
+     * 文档页面壳策略解析器。
+     */
+    public interface DocumentScreenChromeResolver {
+
+        /**
+         * 基于当前宿主尺寸解析页面壳策略。
+         *
+         * @param width 当前宿主宽度
+         * @param height 当前宿主高度
+         * @return 页面壳策略
+         */
+        DocumentScreenChrome resolve(int width, int height);
     }
 
     /**
@@ -343,13 +373,21 @@ public final class UiDocumentScreens {
      */
     private static final class DefinitionBackedDocumentScreen<P> extends ControllerBackedDocumentScreen {
 
+        private final DocumentScreenDefinition<P> definition;
+
         private DefinitionBackedDocumentScreen(DocumentScreenEnvironment environment,
                 DocumentScreenDefinition<P> definition,
                 P provision) {
             super(Objects.requireNonNull(environment, "environment"),
                     Objects.requireNonNull(definition, "definition").getPageDescriptor());
+            this.definition = definition;
             bindController(definition.createController(ui(), DocumentPageAuthoringSurface.adapt(getDocumentPage()),
                     runtimeView(), pageId(), provision));
+        }
+
+        @Override
+        protected DocumentScreenChrome resolveDocumentChrome(int width, int height) {
+            return definition.resolveChrome(width, height);
         }
     }
 }

@@ -19,8 +19,14 @@ public final class UiDocumentThemes {
      */
     private static UiDocumentTheme createCurrentTheme() {
         return new UiDocumentTheme(
-                new UiSurfaceStyle(0xD0151C25, 0xFF86A8F0),
-                new UiSurfaceStyle(0xAA111721, 0xFF6E8FCB),
+                // 页面壳先只启用圆角外观，不在这一刀里接管滚动页面的内容裁剪。
+                // 否则 ScrollViewport 的内部滚动/对子内容的矩形 clip 会和圆角 mask 叠加，
+                // 让整个文档内容区在真实运行时更容易被错误裁空。
+                new UiSurfaceStyle(0xD0151C25, 0xFF86A8F0, 18),
+                // surface 只表达外观，不再承载 descendant clip。
+                // 页面滚动裁剪与 overflow 结构语义继续由 ScrollViewport/Div 自身负责，
+                // 让 shell / card 的圆角外观回到类似 Web 的 border-radius 心智模型。
+                new UiSurfaceStyle(0xAA111721, 0xFF6E8FCB, 12),
                 new UiControlTheme.LabelStyle(0xFFFFFFFF, false),
                 new UiControlTheme.LabelStyle(0xFFD7E3FF, false),
                 new UiControlTheme.LabelStyle(0xFFF6D78E, false),

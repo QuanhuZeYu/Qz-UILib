@@ -65,7 +65,7 @@ public abstract class BaseDocumentScreen extends BaseScreen {
     protected final void onResize(int width, int height) {
         super.onResize(width, height);
 
-        DocumentScreenChrome chrome = getDocumentChrome(width, height);
+        DocumentScreenChrome chrome = resolveDocumentChrome(width, height);
         DocumentScreenChrome.Insets rootPadding = chrome.getRootPadding();
         setRootPadding(rootPadding.getLeft(), rootPadding.getTop(), rootPadding.getRight(), rootPadding.getBottom());
 
@@ -120,7 +120,7 @@ public abstract class BaseDocumentScreen extends BaseScreen {
      * @param height 当前宿主高度
      * @return 文档壳策略
      */
-    protected DocumentScreenChrome getDocumentChrome(int width, int height) {
+    protected DocumentScreenChrome resolveDocumentChrome(int width, int height) {
         return DocumentScreenChrome.resolve(width, height);
     }
 }

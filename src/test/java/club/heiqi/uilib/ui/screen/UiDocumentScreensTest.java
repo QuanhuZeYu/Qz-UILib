@@ -83,6 +83,31 @@ public class UiDocumentScreensTest {
     }
 
     /**
+     * 验证页面 definition 会显式保留页面壳策略解析入口。
+     */
+    @Test
+    public void shouldResolveChromeThroughDefinition() {
+        DocumentScreenChrome chrome = UiDocumentScreens.UI_TEST_DEFINITION.resolveChrome(960, 720);
+
+        Assert.assertNotNull(chrome);
+        Assert.assertEquals(Math.max(24, 960 / 34), chrome.getRootPadding().getLeft());
+        Assert.assertEquals(Math.max(28, 720 / 28), chrome.getRootPadding().getTop());
+        Assert.assertEquals(Math.max(16, Math.min(960 / 48, 28)), chrome.getPagePadding().getLeft());
+        Assert.assertEquals(Math.max(14, Math.min(720 / 36, 24)), chrome.getPagePadding().getTop());
+    }
+
+    /**
+     * 验证默认文档主题会通过主题边界暴露圆角壳体与卡片表面。
+     */
+    @Test
+    public void shouldExposeRoundedDocumentSurfacesFromThemeBoundary() {
+        UiDocumentTheme documentTheme = UiDocumentThemes.current();
+
+        Assert.assertTrue(documentTheme.getShellSurface().cornerRadius > 0);
+        Assert.assertTrue(documentTheme.getCardSurface().cornerRadius > 0);
+    }
+
+    /**
      * 供测试使用的最小 descriptor 持有者。
      */
     private static final class FakeDescriptorOwner implements UiDocumentScreens.DescriptorOwner {
