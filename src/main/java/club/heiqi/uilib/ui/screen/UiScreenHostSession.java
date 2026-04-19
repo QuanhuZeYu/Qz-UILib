@@ -11,6 +11,7 @@ import club.heiqi.uilib.ui.diagnostic.UiPerformanceMonitor;
 import club.heiqi.uilib.ui.input.UiInputFrame;
 import club.heiqi.uilib.ui.input.UiInputRouter;
 import club.heiqi.uilib.ui.input.UiInputService;
+import club.heiqi.uilib.ui.render.UiBackdropEffectRuntime;
 import club.heiqi.uilib.ui.render.UiRenderContext;
 import club.heiqi.uilib.ui.render.UiRenderTarget;
 import club.heiqi.uilib.ui.widget.WidgetBuildAttachmentTransaction;
@@ -27,8 +28,10 @@ final class UiScreenHostSession {
     private final BaseScreen screen;
     private final ViewportWidget rootWidget = new ViewportWidget();
     private final UiInputRouter inputRouter = new UiInputRouter();
+    private final UiBackdropEffectRuntime backdropEffectRuntime = new UiBackdropEffectRuntime();
     private UiRenderTarget renderTarget;
     private UiRenderTarget deferredPostMainRenderTarget;
+    private UiRenderTarget backdropEffectRenderTarget;
 
     /**
      * 标记宿主会话是否已完成打开流程。
@@ -92,8 +95,10 @@ final class UiScreenHostSession {
         int nativeHeight = Math.max(1, minecraft.displayHeight);
         UiRenderTarget renderTarget = getOrCreateRenderTarget();
         UiRenderTarget deferredPostMainRenderTarget = getOrCreateDeferredPostMainRenderTarget();
+        UiRenderTarget backdropEffectRenderTarget = getOrCreateBackdropEffectRenderTarget();
         renderTarget.ensureSize(nativeWidth, nativeHeight);
         deferredPostMainRenderTarget.ensureSize(nativeWidth, nativeHeight);
+        backdropEffectRenderTarget.ensureSize(nativeWidth, nativeHeight);
         int previousMatrixMode = GL11.glGetInteger(GL11.GL_MATRIX_MODE);
         UiPerformanceMonitor performanceMonitor = UiPerformanceMonitor.getInstance();
         performanceMonitor.beginFrame(getRuntimeScreenName(), guiWidth, guiHeight, nativeWidth, nativeHeight);
@@ -116,6 +121,8 @@ final class UiScreenHostSession {
                                     latestMouseY, partialTicks);
                             rootWidget.render(context);
                             flushDeferredPostMainPasses(context, deferredPostMainRenderTarget, nativeWidth,
+                                    nativeHeight);
+                            flushBackdropEffects(context, renderTarget, backdropEffectRenderTarget, nativeWidth,
                                     nativeHeight);
                         } finally {
                             GL11.glMatrixMode(GL11.GL_MODELVIEW);
@@ -221,6 +228,18 @@ final class UiScreenHostSession {
     }
 
     /**
+     * 按需创建宿主 backdrop effect 离屏目标。
+     *
+     * @return backdrop effect 离屏渲染目标
+     */
+    private UiRenderTarget getOrCreateBackdropEffectRenderTarget() {
+        if (backdropEffectRenderTarget == null) {
+            backdropEffectRenderTarget = new UiRenderTarget();
+        }
+        return backdropEffectRenderTarget;
+    }
+
+    /**
      * 关闭已创建的离屏渲染目标。
      */
     private void closeRenderTarget() {
@@ -229,6 +248,10 @@ final class UiScreenHostSession {
                 deferredPostMainRenderTarget.close();
                 deferredPostMainRenderTarget = null;
             }
+            if (backdropEffectRenderTarget != null) {
+                backdropEffectRenderTarget.close();
+                backdropEffectRenderTarget = null;
+            }
             return;
         }
         renderTarget.close();
@@ -236,6 +259,10 @@ final class UiScreenHostSession {
         if (deferredPostMainRenderTarget != null) {
             deferredPostMainRenderTarget.close();
             deferredPostMainRenderTarget = null;
+        }
+        if (backdropEffectRenderTarget != null) {
+            backdropEffectRenderTarget.close();
+            backdropEffectRenderTarget = null;
         }
     }
 
@@ -289,6 +316,24 @@ final class UiScreenHostSession {
         }
 
         deferredRenderTarget.compositeToCurrentFramebuffer();
+    }
+
+    /**
+     * 在主 UI 与 deferred post-main pass 完成后回放 backdrop effect 骨架。
+     *
+     * @param context 当前帧渲染上下文
+     * @param sourceRenderTarget 主 UI 渲染目标
+     * @param effectRenderTarget effect 离屏目标
+     * @param nativeWidth 当前原生宽度
+     * @param nativeHeight 当前原生高度
+     */
+    private void flushBackdropEffects(UiRenderContext context, UiRenderTarget sourceRenderTarget,
+            UiRenderTarget effectRenderTarget, int nativeWidth, int nativeHeight) {
+        if (context == null || sourceRenderTarget == null || effectRenderTarget == null || !context.hasBackdropEffectRequests()) {
+            return;
+        }
+        backdropEffectRuntime.execute(sourceRenderTarget, effectRenderTarget, context.drainBackdropEffectRequests(),
+                nativeWidth, nativeHeight);
     }
 
     /**

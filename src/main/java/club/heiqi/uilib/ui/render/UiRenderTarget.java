@@ -169,6 +169,15 @@ public class UiRenderTarget {
         return height;
     }
 
+    /**
+     * 返回当前颜色附件纹理 id。
+     *
+     * @return 颜色纹理 id
+     */
+    public int getColorTextureId() {
+        return colorTextureId;
+    }
+
     private void initialize(int width, int height) {
         framebufferId = GL30.glGenFramebuffers();
         colorTextureId = GL11.glGenTextures();

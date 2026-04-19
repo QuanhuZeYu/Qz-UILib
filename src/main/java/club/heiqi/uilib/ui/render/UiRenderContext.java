@@ -30,6 +30,7 @@ public class UiRenderContext {
     private final FontRendererAdapter fontRenderer;
     private final Deque<ClipState> clipStack = new ArrayDeque<ClipState>();
     private final List<DeferredPostMainPass> deferredPostMainPasses = new ArrayList<DeferredPostMainPass>();
+    private final List<BackdropEffectRequest> backdropEffectRequests = new ArrayList<BackdropEffectRequest>();
 
     /**
      * 单层裁剪状态快照。
@@ -143,6 +144,57 @@ public class UiRenderContext {
 
         public ClipSnapshot getClipSnapshot() {
             return clipSnapshot;
+        }
+    }
+
+    /**
+     * 一条待由宿主执行的 backdrop effect 请求。
+     */
+    public static final class BackdropEffectRequest {
+
+        private final int left;
+        private final int top;
+        private final int right;
+        private final int bottom;
+        private final UiBackdropEffectSpec effectSpec;
+        private final ClipSnapshot clipSnapshot;
+
+        private BackdropEffectRequest(int left, int top, int right, int bottom, UiBackdropEffectSpec effectSpec,
+                ClipSnapshot clipSnapshot) {
+            this.left = left;
+            this.top = top;
+            this.right = right;
+            this.bottom = bottom;
+            this.effectSpec = effectSpec;
+            this.clipSnapshot = clipSnapshot;
+        }
+
+        public int getLeft() {
+            return left;
+        }
+
+        public int getTop() {
+            return top;
+        }
+
+        public int getRight() {
+            return right;
+        }
+
+        public int getBottom() {
+            return bottom;
+        }
+
+        public UiBackdropEffectSpec getEffectSpec() {
+            return effectSpec;
+        }
+
+        public ClipSnapshot getClipSnapshot() {
+            return clipSnapshot;
+        }
+
+        public int[] getClipRect() {
+            return clipSnapshot == null ? null : clipSnapshot.getClipRect();
         }
     }
 
@@ -318,6 +370,56 @@ public class UiRenderContext {
         List<DeferredPostMainPass> drainedPasses = new ArrayList<DeferredPostMainPass>(deferredPostMainPasses);
         deferredPostMainPasses.clear();
         return drainedPasses;
+    }
+
+    /**
+     * 登记一条待由宿主 effect runtime 执行的 backdrop effect 请求。
+     *
+     * @param left 左侧坐标
+     * @param top 顶部坐标
+     * @param right 右侧坐标
+     * @param bottom 底部坐标
+     * @param effectSpec effect 配置
+     */
+    public void enqueueBackdropEffect(int left, int top, int right, int bottom, UiBackdropEffectSpec effectSpec) {
+        UiBackdropEffectSpec resolvedSpec = effectSpec == null ? UiBackdropEffectSpec.none() : effectSpec;
+        if (!resolvedSpec.enabled) {
+            return;
+        }
+
+        int normalizedLeft = Math.max(0, Math.min(left, right));
+        int normalizedTop = Math.max(0, Math.min(top, bottom));
+        int normalizedRight = Math.min(screenWidth, Math.max(left, right));
+        int normalizedBottom = Math.min(screenHeight, Math.max(top, bottom));
+        if (normalizedRight <= normalizedLeft || normalizedBottom <= normalizedTop) {
+            return;
+        }
+
+        backdropEffectRequests.add(new BackdropEffectRequest(normalizedLeft, normalizedTop, normalizedRight,
+                normalizedBottom, resolvedSpec, copyCurrentClipSnapshot()));
+    }
+
+    /**
+     * 判断当前帧是否存在待执行的 backdrop effect 请求。
+     *
+     * @return 是否存在 effect 请求
+     */
+    public boolean hasBackdropEffectRequests() {
+        return !backdropEffectRequests.isEmpty();
+    }
+
+    /**
+     * 取出并清空当前帧登记的 backdrop effect 请求。
+     *
+     * @return 当前帧 effect 请求列表
+     */
+    public List<BackdropEffectRequest> drainBackdropEffectRequests() {
+        if (backdropEffectRequests.isEmpty()) {
+            return Collections.emptyList();
+        }
+        List<BackdropEffectRequest> drainedRequests = new ArrayList<BackdropEffectRequest>(backdropEffectRequests);
+        backdropEffectRequests.clear();
+        return drainedRequests;
     }
 
     public void pushClip(int left, int top, int right, int bottom) {

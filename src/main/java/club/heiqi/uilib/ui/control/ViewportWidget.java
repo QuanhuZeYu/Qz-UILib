@@ -2,6 +2,7 @@ package club.heiqi.uilib.ui.control;
 
 import java.util.Objects;
 
+import club.heiqi.uilib.ui.render.UiBackdropEffectSpec;
 import club.heiqi.uilib.ui.render.UiRenderContext;
 import club.heiqi.uilib.ui.theme.UiSurfaceStyle;
 import club.heiqi.uilib.ui.widget.Widget;
@@ -16,12 +17,17 @@ public class ViewportWidget extends Widget {
     private int paddingTop;
     private int paddingRight;
     private int paddingBottom;
+    private UiBackdropEffectSpec backdropEffectSpec = UiBackdropEffectSpec.none();
 
     @Override
     protected void drawSelf(UiRenderContext context) {
         int absoluteX = getAbsoluteX();
         int absoluteY = getAbsoluteY();
         context.drawSurface(absoluteX, absoluteY, absoluteX + getWidth(), absoluteY + getHeight(), surfaceStyle);
+        if (backdropEffectSpec.enabled) {
+            context.enqueueBackdropEffect(absoluteX, absoluteY, absoluteX + getWidth(), absoluteY + getHeight(),
+                    backdropEffectSpec);
+        }
     }
 
     /**
@@ -62,6 +68,17 @@ public class ViewportWidget extends Widget {
      */
     public final void applyViewportSurfaceStyle(UiSurfaceStyle surfaceStyle) {
         this.surfaceStyle = Objects.requireNonNull(surfaceStyle, "surfaceStyle");
+    }
+
+    /**
+     * 应用视口级 backdrop effect 配置。
+     *
+     * <p>该方法只负责登记宿主 effect 请求，不改变视口对子树的结构裁剪语义。</p>
+     *
+     * @param backdropEffectSpec effect 配置；为空时恢复为空 effect
+     */
+    public final void applyViewportBackdropEffect(UiBackdropEffectSpec backdropEffectSpec) {
+        this.backdropEffectSpec = backdropEffectSpec == null ? UiBackdropEffectSpec.none() : backdropEffectSpec;
     }
 
     protected int getPaddingLeft() {
