@@ -1,0 +1,80 @@
+package club.heiqi.uilib.ui.paint;
+
+import java.util.Objects;
+
+import club.heiqi.uilib.ui.dom.ElementNode;
+
+/**
+ * HTML-like 中立绘制命令。
+ *
+ * <p>该命令只描述“画什么”和“画在哪里”，不直接绑定 `UiRenderContext` 或 OpenGL。</p>
+ */
+public final class DocumentPaintCommand {
+
+    private final DocumentPaintCommandType type;
+    private final ElementNode element;
+    private final int left;
+    private final int top;
+    private final int right;
+    private final int bottom;
+    private final int color;
+    private final int borderWidth;
+    private final int borderRadius;
+
+    DocumentPaintCommand(DocumentPaintCommandType type, ElementNode element, int left, int top, int right, int bottom,
+            int color, int borderWidth, int borderRadius) {
+        this.type = Objects.requireNonNull(type, "type");
+        this.element = Objects.requireNonNull(element, "element");
+        this.left = left;
+        this.top = top;
+        this.right = Math.max(left, right);
+        this.bottom = Math.max(top, bottom);
+        this.color = color;
+        this.borderWidth = Math.max(0, borderWidth);
+        this.borderRadius = Math.max(0, borderRadius);
+    }
+
+    public DocumentPaintCommandType getType() {
+        return type;
+    }
+
+    public ElementNode getElement() {
+        return element;
+    }
+
+    public int getLeft() {
+        return left;
+    }
+
+    public int getTop() {
+        return top;
+    }
+
+    public int getRight() {
+        return right;
+    }
+
+    public int getBottom() {
+        return bottom;
+    }
+
+    public int getWidth() {
+        return right - left;
+    }
+
+    public int getHeight() {
+        return bottom - top;
+    }
+
+    public int getColor() {
+        return color;
+    }
+
+    public int getBorderWidth() {
+        return borderWidth;
+    }
+
+    public int getBorderRadius() {
+        return borderRadius;
+    }
+}
