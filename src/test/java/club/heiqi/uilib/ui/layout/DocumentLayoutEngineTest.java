@@ -5,7 +5,10 @@ import org.junit.Test;
 
 import club.heiqi.uilib.ui.dom.ElementNode;
 import club.heiqi.uilib.ui.dom.UiDocument;
+import club.heiqi.uilib.ui.style.UiAlignItems;
 import club.heiqi.uilib.ui.style.UiDisplay;
+import club.heiqi.uilib.ui.style.UiFlexDirection;
+import club.heiqi.uilib.ui.style.UiJustifyContent;
 import club.heiqi.uilib.ui.style.UiStyleInsets;
 import club.heiqi.uilib.ui.style.UiStyleLength;
 
@@ -131,5 +134,138 @@ public class DocumentLayoutEngineTest {
         Assert.assertEquals(3, childBox.getTop());
         Assert.assertEquals(184, childBox.getWidth());
         Assert.assertEquals(20, childBox.getMarginBoxBottom());
+    }
+
+    /**
+     * 验证 flex row 会分配 grow 空间并应用 column-gap。
+     */
+    @Test
+    public void shouldLayoutFlexRowWithGapAndGrow() {
+        UiDocument document = UiDocument.create();
+        ElementNode root = document.getRootElement();
+        ElementNode first = document.div();
+        ElementNode growing = document.div();
+        ElementNode last = document.div();
+
+        root.style()
+                .setDisplay(UiDisplay.FLEX)
+                .setWidth(UiStyleLength.px(300))
+                .setColumnGap(UiStyleLength.px(10));
+        first.style()
+                .setWidth(UiStyleLength.px(60))
+                .setHeight(UiStyleLength.px(20));
+        growing.style()
+                .setFlexGrow(1.0F)
+                .setHeight(UiStyleLength.px(20));
+        last.style()
+                .setWidth(UiStyleLength.px(30))
+                .setHeight(UiStyleLength.px(20));
+        root.append(first).append(growing).append(last);
+
+        DocumentLayoutBox rootBox = DocumentLayoutEngine.layout(root, 400, 0);
+        DocumentLayoutBox firstBox = rootBox.getChildren().get(0);
+        DocumentLayoutBox growingBox = rootBox.getChildren().get(1);
+        DocumentLayoutBox lastBox = rootBox.getChildren().get(2);
+
+        Assert.assertEquals(20, rootBox.getContentHeight());
+        Assert.assertEquals(0, firstBox.getLeft());
+        Assert.assertEquals(60, firstBox.getWidth());
+        Assert.assertEquals(70, growingBox.getLeft());
+        Assert.assertEquals(190, growingBox.getWidth());
+        Assert.assertEquals(270, lastBox.getLeft());
+        Assert.assertEquals(30, lastBox.getWidth());
+    }
+
+    /**
+     * 验证 flex column 会在显式高度内分配 grow 空间。
+     */
+    @Test
+    public void shouldLayoutFlexColumnWithGrowAndRowGap() {
+        UiDocument document = UiDocument.create();
+        ElementNode root = document.getRootElement();
+        ElementNode top = document.div();
+        ElementNode middle = document.div();
+        ElementNode bottom = document.div();
+
+        root.style()
+                .setDisplay(UiDisplay.FLEX)
+                .setFlexDirection(UiFlexDirection.COLUMN)
+                .setWidth(UiStyleLength.px(100))
+                .setHeight(UiStyleLength.px(200))
+                .setRowGap(UiStyleLength.px(10));
+        top.style().setHeight(UiStyleLength.px(40));
+        middle.style().setFlexGrow(1.0F);
+        bottom.style().setHeight(UiStyleLength.px(20));
+        root.append(top).append(middle).append(bottom);
+
+        DocumentLayoutBox rootBox = DocumentLayoutEngine.layout(root, 200, 0);
+        DocumentLayoutBox topBox = rootBox.getChildren().get(0);
+        DocumentLayoutBox middleBox = rootBox.getChildren().get(1);
+        DocumentLayoutBox bottomBox = rootBox.getChildren().get(2);
+
+        Assert.assertEquals(200, rootBox.getContentHeight());
+        Assert.assertEquals(0, topBox.getTop());
+        Assert.assertEquals(40, topBox.getHeight());
+        Assert.assertEquals(50, middleBox.getTop());
+        Assert.assertEquals(120, middleBox.getHeight());
+        Assert.assertEquals(180, bottomBox.getTop());
+        Assert.assertEquals(20, bottomBox.getHeight());
+        Assert.assertEquals(100, middleBox.getWidth());
+    }
+
+    /**
+     * 验证 flex row 会按 shrink 压缩超出的主轴空间。
+     */
+    @Test
+    public void shouldShrinkFlexRowItemsWhenContentOverflows() {
+        UiDocument document = UiDocument.create();
+        ElementNode root = document.getRootElement();
+        ElementNode first = document.div();
+        ElementNode second = document.div();
+
+        root.style()
+                .setDisplay(UiDisplay.FLEX)
+                .setWidth(UiStyleLength.px(100));
+        first.style()
+                .setWidth(UiStyleLength.px(80))
+                .setHeight(UiStyleLength.px(10));
+        second.style()
+                .setWidth(UiStyleLength.px(80))
+                .setHeight(UiStyleLength.px(10));
+        root.append(first).append(second);
+
+        DocumentLayoutBox rootBox = DocumentLayoutEngine.layout(root, 160, 0);
+        DocumentLayoutBox firstBox = rootBox.getChildren().get(0);
+        DocumentLayoutBox secondBox = rootBox.getChildren().get(1);
+
+        Assert.assertEquals(50, firstBox.getWidth());
+        Assert.assertEquals(50, secondBox.getWidth());
+        Assert.assertEquals(50, secondBox.getLeft());
+    }
+
+    /**
+     * 验证 flex row 的交叉轴和主轴对齐。
+     */
+    @Test
+    public void shouldAlignFlexRowItems() {
+        UiDocument document = UiDocument.create();
+        ElementNode root = document.getRootElement();
+        ElementNode child = document.div();
+
+        root.style()
+                .setDisplay(UiDisplay.FLEX)
+                .setWidth(UiStyleLength.px(120))
+                .setHeight(UiStyleLength.px(60))
+                .setAlignItems(UiAlignItems.CENTER)
+                .setJustifyContent(UiJustifyContent.END);
+        child.style()
+                .setWidth(UiStyleLength.px(40))
+                .setHeight(UiStyleLength.px(20));
+        root.append(child);
+
+        DocumentLayoutBox childBox = DocumentLayoutEngine.layout(root, 160, 0).getChildren().get(0);
+
+        Assert.assertEquals(80, childBox.getLeft());
+        Assert.assertEquals(20, childBox.getTop());
     }
 }

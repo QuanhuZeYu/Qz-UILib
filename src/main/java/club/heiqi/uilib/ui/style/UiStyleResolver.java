@@ -37,11 +37,20 @@ public final class UiStyleResolver {
         UiStyleLength borderRadius = style.getBorderRadius() == null ? UiStyleLength.px(0) : style.getBorderRadius();
         UiOverflow overflowX = style.getOverflowX() == null ? UiOverflow.VISIBLE : style.getOverflowX();
         UiOverflow overflowY = style.getOverflowY() == null ? UiOverflow.VISIBLE : style.getOverflowY();
+        UiFlexDirection flexDirection = style.getFlexDirection() == null ? UiFlexDirection.ROW : style.getFlexDirection();
+        UiAlignItems alignItems = style.getAlignItems() == null ? UiAlignItems.STRETCH : style.getAlignItems();
+        UiJustifyContent justifyContent = style.getJustifyContent() == null ? UiJustifyContent.START
+                : style.getJustifyContent();
+        UiStyleLength rowGap = style.getRowGap() == null ? UiStyleLength.px(0) : style.getRowGap();
+        UiStyleLength columnGap = style.getColumnGap() == null ? UiStyleLength.px(0) : style.getColumnGap();
+        float flexGrow = style.getFlexGrow() == null ? 0.0F : style.getFlexGrow().floatValue();
+        float flexShrink = style.getFlexShrink() == null ? 1.0F : style.getFlexShrink().floatValue();
         int backgroundColor = style.getBackgroundColor() == null ? TRANSPARENT : style.getBackgroundColor().intValue();
         int borderColor = style.getBorderColor() == null ? TRANSPARENT : style.getBorderColor().intValue();
         int textColor = style.getTextColor() == null ? inheritedTextColor(parentStyle) : style.getTextColor().intValue();
         return new ComputedStyle(display, width, height, margin, padding, borderWidth, borderRadius, overflowX,
-                overflowY, backgroundColor, borderColor, textColor);
+                overflowY, flexDirection, alignItems, justifyContent, rowGap, columnGap, flexGrow, flexShrink,
+                backgroundColor, borderColor, textColor);
     }
 
     private static ComputedStyle computeParentStyle(ElementNode element) {

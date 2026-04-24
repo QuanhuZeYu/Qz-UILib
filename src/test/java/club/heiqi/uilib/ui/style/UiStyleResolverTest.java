@@ -56,6 +56,13 @@ public class UiStyleResolverTest {
         Assert.assertEquals(UiStyleInsets.zero(), spanStyle.getMargin());
         Assert.assertEquals(UiOverflow.VISIBLE, spanStyle.getOverflowX());
         Assert.assertEquals(UiOverflow.VISIBLE, spanStyle.getOverflowY());
+        Assert.assertEquals(UiFlexDirection.ROW, spanStyle.getFlexDirection());
+        Assert.assertEquals(UiAlignItems.STRETCH, spanStyle.getAlignItems());
+        Assert.assertEquals(UiJustifyContent.START, spanStyle.getJustifyContent());
+        Assert.assertEquals(UiStyleLength.px(0), spanStyle.getRowGap());
+        Assert.assertEquals(UiStyleLength.px(0), spanStyle.getColumnGap());
+        Assert.assertEquals(0.0F, spanStyle.getFlexGrow(), 0.0F);
+        Assert.assertEquals(1.0F, spanStyle.getFlexShrink(), 0.0F);
     }
 
     /**
@@ -77,6 +84,13 @@ public class UiStyleResolverTest {
                 .setBorderRadius(UiStyleLength.px(18))
                 .setOverflowX(UiOverflow.HIDDEN)
                 .setOverflowY(UiOverflow.AUTO)
+                .setFlexDirection(UiFlexDirection.COLUMN)
+                .setAlignItems(UiAlignItems.CENTER)
+                .setJustifyContent(UiJustifyContent.SPACE_BETWEEN)
+                .setRowGap(UiStyleLength.px(6))
+                .setColumnGap(UiStyleLength.px(8))
+                .setFlexGrow(2.0F)
+                .setFlexShrink(0.5F)
                 .setBorderColor(0xFF86A8F0)
                 .setTextColor(0xFFF6D78E);
 
@@ -91,6 +105,13 @@ public class UiStyleResolverTest {
         Assert.assertEquals(UiStyleLength.px(18), computedStyle.getBorderRadius());
         Assert.assertEquals(UiOverflow.HIDDEN, computedStyle.getOverflowX());
         Assert.assertEquals(UiOverflow.AUTO, computedStyle.getOverflowY());
+        Assert.assertEquals(UiFlexDirection.COLUMN, computedStyle.getFlexDirection());
+        Assert.assertEquals(UiAlignItems.CENTER, computedStyle.getAlignItems());
+        Assert.assertEquals(UiJustifyContent.SPACE_BETWEEN, computedStyle.getJustifyContent());
+        Assert.assertEquals(UiStyleLength.px(6), computedStyle.getRowGap());
+        Assert.assertEquals(UiStyleLength.px(8), computedStyle.getColumnGap());
+        Assert.assertEquals(2.0F, computedStyle.getFlexGrow(), 0.0F);
+        Assert.assertEquals(0.5F, computedStyle.getFlexShrink(), 0.0F);
         Assert.assertEquals(0xFF86A8F0, computedStyle.getBorderColor());
         Assert.assertEquals(0xFFF6D78E, computedStyle.getTextColor());
     }

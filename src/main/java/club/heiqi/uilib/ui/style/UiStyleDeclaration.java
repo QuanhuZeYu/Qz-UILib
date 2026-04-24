@@ -24,6 +24,13 @@ public final class UiStyleDeclaration {
     private UiStyleLength borderRadius;
     private UiOverflow overflowX;
     private UiOverflow overflowY;
+    private UiFlexDirection flexDirection;
+    private UiAlignItems alignItems;
+    private UiJustifyContent justifyContent;
+    private UiStyleLength rowGap;
+    private UiStyleLength columnGap;
+    private Float flexGrow;
+    private Float flexShrink;
     private Integer backgroundColor;
     private Integer borderColor;
     private Integer textColor;
@@ -152,6 +159,103 @@ public final class UiStyleDeclaration {
         return updateOverflowY(null);
     }
 
+    public UiFlexDirection getFlexDirection() {
+        return flexDirection;
+    }
+
+    public UiStyleDeclaration setFlexDirection(UiFlexDirection flexDirection) {
+        return updateFlexDirection(Objects.requireNonNull(flexDirection, "flexDirection"));
+    }
+
+    public UiStyleDeclaration clearFlexDirection() {
+        return updateFlexDirection(null);
+    }
+
+    public UiAlignItems getAlignItems() {
+        return alignItems;
+    }
+
+    public UiStyleDeclaration setAlignItems(UiAlignItems alignItems) {
+        return updateAlignItems(Objects.requireNonNull(alignItems, "alignItems"));
+    }
+
+    public UiStyleDeclaration clearAlignItems() {
+        return updateAlignItems(null);
+    }
+
+    public UiJustifyContent getJustifyContent() {
+        return justifyContent;
+    }
+
+    public UiStyleDeclaration setJustifyContent(UiJustifyContent justifyContent) {
+        return updateJustifyContent(Objects.requireNonNull(justifyContent, "justifyContent"));
+    }
+
+    public UiStyleDeclaration clearJustifyContent() {
+        return updateJustifyContent(null);
+    }
+
+    public UiStyleLength getRowGap() {
+        return rowGap;
+    }
+
+    public UiStyleDeclaration setRowGap(UiStyleLength rowGap) {
+        return updateRowGap(Objects.requireNonNull(rowGap, "rowGap"));
+    }
+
+    public UiStyleDeclaration clearRowGap() {
+        return updateRowGap(null);
+    }
+
+    public UiStyleLength getColumnGap() {
+        return columnGap;
+    }
+
+    public UiStyleDeclaration setColumnGap(UiStyleLength columnGap) {
+        return updateColumnGap(Objects.requireNonNull(columnGap, "columnGap"));
+    }
+
+    public UiStyleDeclaration clearColumnGap() {
+        return updateColumnGap(null);
+    }
+
+    /**
+     * 同时设置 row-gap 与 column-gap。
+     *
+     * @param gap 间距
+     * @return 当前声明
+     */
+    public UiStyleDeclaration setGap(UiStyleLength gap) {
+        UiStyleLength resolvedGap = Objects.requireNonNull(gap, "gap");
+        updateRowGap(resolvedGap);
+        updateColumnGap(resolvedGap);
+        return this;
+    }
+
+    public Float getFlexGrow() {
+        return flexGrow;
+    }
+
+    public UiStyleDeclaration setFlexGrow(float flexGrow) {
+        return updateFlexGrow(Float.valueOf(Math.max(0.0F, flexGrow)));
+    }
+
+    public UiStyleDeclaration clearFlexGrow() {
+        return updateFlexGrow(null);
+    }
+
+    public Float getFlexShrink() {
+        return flexShrink;
+    }
+
+    public UiStyleDeclaration setFlexShrink(float flexShrink) {
+        return updateFlexShrink(Float.valueOf(Math.max(0.0F, flexShrink)));
+    }
+
+    public UiStyleDeclaration clearFlexShrink() {
+        return updateFlexShrink(null);
+    }
+
     public Integer getBackgroundColor() {
         return backgroundColor;
     }
@@ -255,6 +359,62 @@ public final class UiStyleDeclaration {
     private UiStyleDeclaration updateOverflowY(UiOverflow value) {
         if (overflowY != value) {
             overflowY = value;
+            recordChange();
+        }
+        return this;
+    }
+
+    private UiStyleDeclaration updateFlexDirection(UiFlexDirection value) {
+        if (flexDirection != value) {
+            flexDirection = value;
+            recordChange();
+        }
+        return this;
+    }
+
+    private UiStyleDeclaration updateAlignItems(UiAlignItems value) {
+        if (alignItems != value) {
+            alignItems = value;
+            recordChange();
+        }
+        return this;
+    }
+
+    private UiStyleDeclaration updateJustifyContent(UiJustifyContent value) {
+        if (justifyContent != value) {
+            justifyContent = value;
+            recordChange();
+        }
+        return this;
+    }
+
+    private UiStyleDeclaration updateRowGap(UiStyleLength value) {
+        if (!Objects.equals(rowGap, value)) {
+            rowGap = value;
+            recordChange();
+        }
+        return this;
+    }
+
+    private UiStyleDeclaration updateColumnGap(UiStyleLength value) {
+        if (!Objects.equals(columnGap, value)) {
+            columnGap = value;
+            recordChange();
+        }
+        return this;
+    }
+
+    private UiStyleDeclaration updateFlexGrow(Float value) {
+        if (!Objects.equals(flexGrow, value)) {
+            flexGrow = value;
+            recordChange();
+        }
+        return this;
+    }
+
+    private UiStyleDeclaration updateFlexShrink(Float value) {
+        if (!Objects.equals(flexShrink, value)) {
+            flexShrink = value;
             recordChange();
         }
         return this;
