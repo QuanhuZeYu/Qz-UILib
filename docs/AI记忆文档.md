@@ -3,60 +3,80 @@
 ## 长期稳定信息
 
 ### 项目定位
-- 本仓库是 1.7.10 Minecraft UI 框架工程，当前主线目标是让文档型 UI 与通用控件模型更接近网页式 UI 心智模型。
-- 当前文档界面的主创建边界已经收口到 `UiDocumentScreens`，并通过 `DocumentScreenEnvironment`、`DocumentScreenDefinition` 与 `DocumentScreenChromeResolver` 暴露显式入口。
+
+- 本仓库是 Minecraft 1.7.10 / GTNH / LWJGL3ify 环境下的 Java UI 框架工程。
+- 当前主线目标已经升级为实现一套完整的 HTML-like UI 渲染框架，而不是继续局部修补文档页控件。
+- “完整 HTML-like”在本项目中指具备稳定的文档树、样式计算、盒模型、布局、绘制、裁剪、滚动、命中测试与输入分发分层。
+- 本项目不直接实现完整浏览器内核，不承诺 HTML5 全量解析、CSS 全量规范、JavaScript DOM API、网络加载或浏览器安全模型。
 
 ### 当前稳定架构边界
-- `UiSurfaceStyle` 现在是**纯外观值对象**，只负责 `fillColor`、`borderColor`、`cornerRadius`。
-- UI 框架本身不再拥有 backdrop effect / 磨玻璃能力；如需背景模糊，只能由宿主在进入 UI 主渲染前统一捕获并处理背景，`Widget`、文档页与控制器保持无感知。
-- 后代内容裁剪不再由 surface 外观隐式决定，而是由显式结构容器负责：
-  - `Widget` 只保留 child clip 语义；
-  - `DivWidget` 通过 overflow/viewport 盒决定矩形内容裁剪；
-  - `ScrollViewportWidget` 继续负责滚动视口的结构性裁剪；
-  - 如需 rounded structural clip，应通过专用结构容器（当前探索版为 `RoundedScrollViewportWidget`）显式接入，而不是让 `UiSurfaceStyle` 回收 descendant clip 语义；但在当前 MC/GL 运行时中，live rounded stencil 会让文档页子树内容整体不可见，因此该能力尚未重新接入 `DocumentPageWidget` 生产链路。
-- `UiRenderContext` 继续承载主渲染与 deferred post-main 回放的 clip snapshot，但 snapshot 现在表达的是**显式结构裁剪结果**，不再继承 surface 外观带来的隐式 clip。
-- 文档主题中的 shell/card rounded style 现在只表达 border-radius 外观，不再顺带控制 descendant clip；文档页壳若需要圆角内容裁剪，只能把 theme 中的 `cornerRadius` 数值显式映射到结构容器配置。
+
+- 当前可运行链路仍以 retained `Widget` 树为渲染后端，文档页主创建边界为 `UiDocumentScreens`。
+- `UiDocumentScreens` 通过 `DocumentScreenEnvironment`、`DocumentScreenDefinition` 与 `DocumentScreenChromeResolver` 暴露显式页面创建入口。
+- 后续作者侧入口应逐步迁移到 HTML-like 文档/元素/样式 API；底层 `Widget`、`DivWidget`、`ScrollViewportWidget` 应逐步退为 backend adapter 或兼容层。
+- `UiSurfaceStyle` 是纯外观值对象，只负责 `fillColor`、`borderColor`、`cornerRadius`。
+- `border-radius` 外观不得隐式控制 descendant clip；结构裁剪必须来自 `overflow`、viewport 或显式 clip 容器。
+- `DivWidget` 当前通过 overflow/viewport 盒提供矩形内容裁剪；`ScrollViewportWidget` 负责滚动视口结构裁剪。
+- `RoundedScrollViewportWidget` 只保留为 rounded structural clip 探索容器；在真实 GL/stencil/FBO 状态链稳定前，不得接回 `DocumentPageWidget` 生产链路。
+- UI 框架本身不暴露 backdrop/effect/blur 给文档作者层；背景模糊由 `UiScreenHostSession` 在 UI 主渲染前通过宿主级 `UiHostBackgroundBlurRenderer` 统一处理。
+- `UiRenderContext` 继续承载主渲染与 deferred post-main 回放的 clip snapshot；snapshot 表达显式结构裁剪结果，不继承 surface 外观。
+
+### 清退原则
+
+- 与 HTML-like UI 主线不对应的旧规划、示例和入口可以直接重写或移除。
+- 不再把 JNI/MSDF 字体 native 方案作为当前 UI 框架主线规划；字体只作为文本渲染能力被 UI 模型消费。
+- 不再新增扩大直接 `Widget` 作者入口的 API；如必须新增，应优先放在新文档模型或兼容适配层。
+- 不再把 Minecraft GUI 生命周期、OpenGL/FBO/stencil 状态或宿主背景效果泄露给页面作者。
+- 清退旧入口时必须保留可编译、可测试的迁移路径，不能在没有替代测试时破坏当前可运行页面。
 
 ### 运行与验证
+
 - Windows 环境下使用 PowerShell。
-- 当前协作环境下，已实际验证 `lsp_diagnostics` 可对指定 Java 文件返回结果；仓库根目录级别是否自动覆盖 Java 诊断，仍需按实际调用结果确认。
-- 当前编译门槛：`./gradlew.bat compileJava`
-- 当前构建环境已验证可用的稳定命令为：`$env:GRADLE_USER_HOME="C:\temp\gradle-home"; ./gradlew.bat "-Dorg.gradle.java.installations.paths=C:\temp\zulu8\zulu8.92.0.21-ca-jdk8.0.482-win_x64,C:\Program Files\Eclipse Adoptium\jdk-21.0.9.10-hotspot,C:\Users\泉户 黑崎\.jdks\jdk-25.0.2+10" --no-configuration-cache build`
-- 原因：GTNH 构建链要求 `Azul Zulu JDK 8` 工具链；当前机器默认只有 Temurin 21，且 Gradle 通过 Foojay 自动解析/下载 Zulu 8 在本环境下不稳定，因此需要显式提供本地 `Zulu 8` 路径。
-- 本地 `Zulu 8` 已验证可执行路径：`C:\temp\zulu8\zulu8.92.0.21-ca-jdk8.0.482-win_x64\bin\java.exe`
-- 若并发启动多个 Gradle 构建，`decompileSrgJar` 可能会因共享 `build/tmp/decompileSrgJar/mc.jar` 而触发 Windows 文件锁冲突；验证构建时应串行执行单个 Gradle 命令。
-- 典型定向验证命令：
-  - `./gradlew.bat test --tests "club.heiqi.uilib.ui.theme.UiSurfaceStyleTest"`
-  - `./gradlew.bat test --tests "club.heiqi.uilib.ui.screen.UiDocumentScreensTest"`
-  - `./gradlew.bat test --tests "club.heiqi.uilib.ui.screen.UiTestDocumentPageControllerTest"`
-  - `./gradlew.bat test --tests "club.heiqi.uilib.ui.screen.InventoryOverviewDocumentPageControllerTest"`
-  - `./gradlew.bat test --tests "club.heiqi.uilib.ui.control.InventorySlotGridWidgetTest"`
+- 当前编译门槛：`./gradlew.bat compileJava`。
+- 当前构建环境已验证可用的稳定命令为：`$env:GRADLE_USER_HOME="C:\temp\gradle-home"; ./gradlew.bat "-Dorg.gradle.java.installations.paths=C:\temp\zulu8\zulu8.92.0.21-ca-jdk8.0.482-win_x64,C:\Program Files\Eclipse Adoptium\jdk-21.0.9.10-hotspot,C:\Users\泉户 黑崎\.jdks\jdk-25.0.2+10" --no-configuration-cache build`。
+- 原因：GTNH 构建链要求 Azul Zulu JDK 8 工具链；当前机器默认只有 Temurin 21，且 Gradle 通过 Foojay 自动解析/下载 Zulu 8 在本环境下不稳定，因此需要显式提供本地 Zulu 8 路径。
+- 本地 Zulu 8 已验证可执行路径：`C:\temp\zulu8\zulu8.92.0.21-ca-jdk8.0.482-win_x64\bin\java.exe`。
+- 若并发启动多个 Gradle 构建，`decompileSrgJar` 可能会因共享 `build/tmp/decompileSrgJar/mc.jar` 触发 Windows 文件锁冲突；验证构建时应串行执行单个 Gradle 命令。
+- 最近已验证通过：`compileJava`。
+- 最近已验证通过的定向测试：`UiSurfaceStyleTest`、`UiDocumentScreensTest`、`DocumentPageWidgetTest`、`InventorySlotGridWidgetTest`。
 
 ### 当前关键文件
+
+- `项目建议.md`
 - `src/main/java/club/heiqi/uilib/ui/screen/UiDocumentScreens.java`
 - `src/main/java/club/heiqi/uilib/ui/screen/BaseDocumentScreen.java`
-- `src/main/java/club/heiqi/uilib/ui/theme/UiSurfaceStyle.java`
-- `src/main/java/club/heiqi/uilib/ui/theme/UiDocumentThemes.java`
+- `src/main/java/club/heiqi/uilib/ui/screen/UiScreenHostSession.java`
+- `src/main/java/club/heiqi/uilib/ui/render/UiRenderContext.java`
 - `src/main/java/club/heiqi/uilib/ui/widget/Widget.java`
 - `src/main/java/club/heiqi/uilib/ui/control/DivWidget.java`
-- `src/main/java/club/heiqi/uilib/ui/control/ViewportWidget.java`
+- `src/main/java/club/heiqi/uilib/ui/control/ScrollViewportWidget.java`
 - `src/main/java/club/heiqi/uilib/ui/control/RoundedScrollViewportWidget.java`
-- `src/main/java/club/heiqi/uilib/ui/render/UiRenderContext.java`
-- `src/main/java/club/heiqi/uilib/ui/screen/UiScreenHostSession.java`
+- `src/main/java/club/heiqi/uilib/ui/theme/UiSurfaceStyle.java`
+- `src/main/java/club/heiqi/uilib/ui/theme/UiDocumentThemes.java`
 
 ## 阶段性进度
 
 ### 当前已完成
-- 文档型 screen 的显式 environment 主路径已经落地。
-- screen chrome 策略已下沉到 `DocumentScreenDefinition`。
-- rounded surface 能力已经接入默认文档 shell/card 外观。
-- surface 与 descendant clip 已完成解耦，符合更接近 Web 的 `border-radius` / `overflow` 分层模型。
-- 宿主渲染链现在负责在 UI 主渲染前插入统一的背景模糊步骤；该步骤只处理背景，不再由 UI 层声明或驱动任何 backdrop/effect 请求。
-- rounded border 左侧线条不完整的问题已经通过像素中心描边修复。
-- `Widget` 已具备复合结构裁剪扩展点，`RoundedScrollViewportWidget` 也保留为后续 rounded structural clip 的探索容器。
-- 但 `DocumentPageWidget` 当前已回退为稳定的矩形 viewport clip 路径；原因是只要 live child pass 启用 rounded stencil，真实运行时就会出现“壳和滚动条正常、正文子树整体不可见”的回归，而 recording test 无法发现该问题。
-- deferred post-main replay 与 rounded structural clip 的 snapshot/hit-test 逻辑目前只在测试/探索层成立，尚未重新接回文档页生产路径。
 
-### 当前待继续事项
-- rounded structural clip 当前仍处于运行时问题排查阶段；若后续继续推进，优先级应放在修复真实 GL/stencil/FBO 状态链，再考虑重新接入文档页或扩展更多 clip shape。
-- 如需继续优化磨玻璃观感，应直接调整宿主级背景模糊实现，而不是重新把 backdrop/effect 声明能力接回 UI 框架。
+- 已确认当前代码能通过 `compileJava`。
+- 已确认文档入口、surface 外观、矩形 viewport clip 与 deferred clip snapshot 相关定向测试通过。
+- 已确认 `docs/AI记忆文档.md` 原有稳定边界与当前代码大体一致，但项目长期目标需要升级到完整 HTML-like 渲染框架。
+- 已将根目录旧 `项目建议.md` 从 JNI/MSDF 字体建议重写为 HTML-like UI 实施规划。
+- 已同步清退原则：不符合当前 UI 渲染主线的旧规划和旧入口允许直接清退。
+
+### 当前阶段目标
+
+- 阶段 0：完成规划与文档清理，保留现有可运行链路。
+- 阶段 1：新增 HTML-like 文档树与作者入口最小骨架。
+- 阶段 2：新增样式系统与 computed style 初版。
+- 阶段 3：建立 box/layout tree，并逐步把现有 Div-like 布局能力迁移到新模型。
+- 阶段 4：建立 paint command、clip、scroll、deferred replay 的统一渲染模型。
+- 阶段 5：迁移事件与控件适配。
+- 阶段 6：清退旧 public screen 构造入口与直接 widget authoring 示例。
+
+### 下一步执行项
+
+- 新增 `ui.dom` 或同等命名包，定义 `DocumentNode`、`ElementNode`、`TextNode` 与基础遍历/挂接契约。
+- 新增 `ui.style` 或同等命名包，定义样式属性值对象、默认值、继承属性与 computed style 初版。
+- 为文档树、样式继承、长度解析和布局失效补最小单元测试。
+- 选择一个现有诊断页作为迁移试点，避免一次性重写全部页面。
