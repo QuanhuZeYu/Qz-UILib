@@ -1,0 +1,290 @@
+package club.heiqi.uilib.ui.style;
+
+import java.util.Objects;
+
+/**
+ * 元素作者侧样式声明。
+ *
+ * <p>该类型只保存显式声明的属性；缺省值和继承值由 computed style 阶段解析。</p>
+ */
+public final class UiStyleDeclaration {
+
+    private static final Runnable NO_OP_CHANGE_LISTENER = new Runnable() {
+        @Override
+        public void run() {}
+    };
+
+    private final Runnable changeListener;
+    private UiDisplay display;
+    private UiStyleLength width;
+    private UiStyleLength height;
+    private UiStyleInsets margin;
+    private UiStyleInsets padding;
+    private UiStyleLength borderWidth;
+    private UiStyleLength borderRadius;
+    private UiOverflow overflowX;
+    private UiOverflow overflowY;
+    private Integer backgroundColor;
+    private Integer borderColor;
+    private Integer textColor;
+
+    public UiStyleDeclaration() {
+        this(null);
+    }
+
+    public UiStyleDeclaration(Runnable changeListener) {
+        this.changeListener = changeListener == null ? NO_OP_CHANGE_LISTENER : changeListener;
+    }
+
+    public UiDisplay getDisplay() {
+        return display;
+    }
+
+    public UiStyleDeclaration setDisplay(UiDisplay display) {
+        return updateDisplay(display);
+    }
+
+    public UiStyleDeclaration clearDisplay() {
+        return updateDisplay(null);
+    }
+
+    public UiStyleLength getWidth() {
+        return width;
+    }
+
+    public UiStyleDeclaration setWidth(UiStyleLength width) {
+        return updateWidth(Objects.requireNonNull(width, "width"));
+    }
+
+    public UiStyleDeclaration clearWidth() {
+        return updateWidth(null);
+    }
+
+    public UiStyleLength getHeight() {
+        return height;
+    }
+
+    public UiStyleDeclaration setHeight(UiStyleLength height) {
+        return updateHeight(Objects.requireNonNull(height, "height"));
+    }
+
+    public UiStyleDeclaration clearHeight() {
+        return updateHeight(null);
+    }
+
+    public UiStyleInsets getMargin() {
+        return margin;
+    }
+
+    public UiStyleDeclaration setMargin(UiStyleLength margin) {
+        return setMargin(UiStyleInsets.all(margin));
+    }
+
+    public UiStyleDeclaration setMargin(UiStyleInsets margin) {
+        return updateMargin(Objects.requireNonNull(margin, "margin"));
+    }
+
+    public UiStyleDeclaration clearMargin() {
+        return updateMargin(null);
+    }
+
+    public UiStyleInsets getPadding() {
+        return padding;
+    }
+
+    public UiStyleDeclaration setPadding(UiStyleLength padding) {
+        return setPadding(UiStyleInsets.all(padding));
+    }
+
+    public UiStyleDeclaration setPadding(UiStyleInsets padding) {
+        return updatePadding(Objects.requireNonNull(padding, "padding"));
+    }
+
+    public UiStyleDeclaration clearPadding() {
+        return updatePadding(null);
+    }
+
+    public UiStyleLength getBorderWidth() {
+        return borderWidth;
+    }
+
+    public UiStyleDeclaration setBorderWidth(UiStyleLength borderWidth) {
+        return updateBorderWidth(Objects.requireNonNull(borderWidth, "borderWidth"));
+    }
+
+    public UiStyleDeclaration clearBorderWidth() {
+        return updateBorderWidth(null);
+    }
+
+    public UiStyleLength getBorderRadius() {
+        return borderRadius;
+    }
+
+    public UiStyleDeclaration setBorderRadius(UiStyleLength borderRadius) {
+        return updateBorderRadius(Objects.requireNonNull(borderRadius, "borderRadius"));
+    }
+
+    public UiStyleDeclaration clearBorderRadius() {
+        return updateBorderRadius(null);
+    }
+
+    public UiOverflow getOverflowX() {
+        return overflowX;
+    }
+
+    public UiStyleDeclaration setOverflowX(UiOverflow overflowX) {
+        return updateOverflowX(Objects.requireNonNull(overflowX, "overflowX"));
+    }
+
+    public UiStyleDeclaration clearOverflowX() {
+        return updateOverflowX(null);
+    }
+
+    public UiOverflow getOverflowY() {
+        return overflowY;
+    }
+
+    public UiStyleDeclaration setOverflowY(UiOverflow overflowY) {
+        return updateOverflowY(Objects.requireNonNull(overflowY, "overflowY"));
+    }
+
+    public UiStyleDeclaration clearOverflowY() {
+        return updateOverflowY(null);
+    }
+
+    public Integer getBackgroundColor() {
+        return backgroundColor;
+    }
+
+    public UiStyleDeclaration setBackgroundColor(int backgroundColor) {
+        return updateBackgroundColor(Integer.valueOf(backgroundColor));
+    }
+
+    public UiStyleDeclaration clearBackgroundColor() {
+        return updateBackgroundColor(null);
+    }
+
+    public Integer getBorderColor() {
+        return borderColor;
+    }
+
+    public UiStyleDeclaration setBorderColor(int borderColor) {
+        return updateBorderColor(Integer.valueOf(borderColor));
+    }
+
+    public UiStyleDeclaration clearBorderColor() {
+        return updateBorderColor(null);
+    }
+
+    public Integer getTextColor() {
+        return textColor;
+    }
+
+    public UiStyleDeclaration setTextColor(int textColor) {
+        return updateTextColor(Integer.valueOf(textColor));
+    }
+
+    public UiStyleDeclaration clearTextColor() {
+        return updateTextColor(null);
+    }
+
+    private UiStyleDeclaration updateDisplay(UiDisplay value) {
+        if (display != value) {
+            display = value;
+            recordChange();
+        }
+        return this;
+    }
+
+    private UiStyleDeclaration updateWidth(UiStyleLength value) {
+        if (!Objects.equals(width, value)) {
+            width = value;
+            recordChange();
+        }
+        return this;
+    }
+
+    private UiStyleDeclaration updateHeight(UiStyleLength value) {
+        if (!Objects.equals(height, value)) {
+            height = value;
+            recordChange();
+        }
+        return this;
+    }
+
+    private UiStyleDeclaration updateMargin(UiStyleInsets value) {
+        if (!Objects.equals(margin, value)) {
+            margin = value;
+            recordChange();
+        }
+        return this;
+    }
+
+    private UiStyleDeclaration updatePadding(UiStyleInsets value) {
+        if (!Objects.equals(padding, value)) {
+            padding = value;
+            recordChange();
+        }
+        return this;
+    }
+
+    private UiStyleDeclaration updateBorderWidth(UiStyleLength value) {
+        if (!Objects.equals(borderWidth, value)) {
+            borderWidth = value;
+            recordChange();
+        }
+        return this;
+    }
+
+    private UiStyleDeclaration updateBorderRadius(UiStyleLength value) {
+        if (!Objects.equals(borderRadius, value)) {
+            borderRadius = value;
+            recordChange();
+        }
+        return this;
+    }
+
+    private UiStyleDeclaration updateOverflowX(UiOverflow value) {
+        if (overflowX != value) {
+            overflowX = value;
+            recordChange();
+        }
+        return this;
+    }
+
+    private UiStyleDeclaration updateOverflowY(UiOverflow value) {
+        if (overflowY != value) {
+            overflowY = value;
+            recordChange();
+        }
+        return this;
+    }
+
+    private UiStyleDeclaration updateBackgroundColor(Integer value) {
+        if (!Objects.equals(backgroundColor, value)) {
+            backgroundColor = value;
+            recordChange();
+        }
+        return this;
+    }
+
+    private UiStyleDeclaration updateBorderColor(Integer value) {
+        if (!Objects.equals(borderColor, value)) {
+            borderColor = value;
+            recordChange();
+        }
+        return this;
+    }
+
+    private UiStyleDeclaration updateTextColor(Integer value) {
+        if (!Objects.equals(textColor, value)) {
+            textColor = value;
+            recordChange();
+        }
+        return this;
+    }
+
+    private void recordChange() {
+        changeListener.run();
+    }
+}

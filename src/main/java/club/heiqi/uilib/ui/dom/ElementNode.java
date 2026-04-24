@@ -6,6 +6,8 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
 
+import club.heiqi.uilib.ui.style.UiStyleDeclaration;
+
 /**
  * HTML-like 元素节点。
  */
@@ -13,6 +15,12 @@ public final class ElementNode extends DocumentNode {
 
     private final String tagName;
     private final Map<String, String> attributes = new LinkedHashMap<String, String>();
+    private final UiStyleDeclaration style = new UiStyleDeclaration(new Runnable() {
+        @Override
+        public void run() {
+            ElementNode.this.markMutated();
+        }
+    });
 
     ElementNode(UiDocument ownerDocument, String tagName) {
         super(ownerDocument);
@@ -31,6 +39,24 @@ public final class ElementNode extends DocumentNode {
      */
     public String getTagName() {
         return tagName;
+    }
+
+    /**
+     * 返回元素 inline style 声明入口。
+     *
+     * @return 样式声明
+     */
+    public UiStyleDeclaration style() {
+        return style;
+    }
+
+    /**
+     * 返回元素 inline style 声明入口。
+     *
+     * @return 样式声明
+     */
+    public UiStyleDeclaration getInlineStyle() {
+        return style;
     }
 
     /**
