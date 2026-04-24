@@ -15,6 +15,7 @@
 - `UiDocumentScreens` 通过 `DocumentScreenEnvironment`、`DocumentScreenDefinition` 与 `DocumentScreenChromeResolver` 暴露显式页面创建入口。
 - HTML-like 文档树最小骨架已在 `club.heiqi.uilib.ui.dom` 落地；`UiDocument` 是当前文档作者入口，`DocumentNode` 负责父子关系与 mutation version，`ElementNode` 与 `TextNode` 分别承载元素和文本。
 - HTML-like 样式系统初版已在 `club.heiqi.uilib.ui.style` 落地；`ElementNode.style()` 暴露 inline style 入口，`UiStyleResolver` 负责把元素样式解析为 `ComputedStyle`。
+- HTML-like 布局盒初版已在 `club.heiqi.uilib.ui.layout` 落地；`DocumentLayoutEngine` 当前支持元素级 block flow、box model、px/% 长度、auto 高度、`display: none` 过滤与子元素垂直流式排布。
 - 后续作者侧入口应逐步迁移到 HTML-like 文档/元素/样式 API；底层 `Widget`、`DivWidget`、`ScrollViewportWidget` 应逐步退为 backend adapter 或兼容层。
 - `UiSurfaceStyle` 是纯外观值对象，只负责 `fillColor`、`borderColor`、`cornerRadius`。
 - `border-radius` 外观不得隐式控制 descendant clip；结构裁剪必须来自 `overflow`、viewport 或显式 clip 容器。
@@ -40,8 +41,8 @@
 - 本地 Zulu 8 已验证可执行路径：`C:\temp\zulu8\zulu8.92.0.21-ca-jdk8.0.482-win_x64\bin\java.exe`。
 - 若并发启动多个 Gradle 构建，`decompileSrgJar` 可能会因共享 `build/tmp/decompileSrgJar/mc.jar` 触发 Windows 文件锁冲突；验证构建时应串行执行单个 Gradle 命令。
 - 最近已验证通过：`compileJava`。
-- 最近已验证通过的定向测试：`UiStyleResolverTest`、`UiDocumentTest`、`UiSurfaceStyleTest`、`UiDocumentScreensTest`、`DocumentPageWidgetTest`、`InventorySlotGridWidgetTest`。
-- 当前 `ui.dom` / `ui.style` 仍是模型层，尚未接入游戏内 screen、layout 或渲染链；现在无法做有意义的游戏内验证。
+- 最近已验证通过的定向测试：`DocumentLayoutEngineTest`、`UiStyleResolverTest`、`UiDocumentTest`、`UiSurfaceStyleTest`、`UiDocumentScreensTest`、`DocumentPageWidgetTest`、`InventorySlotGridWidgetTest`。
+- 当前 `ui.dom` / `ui.style` / `DocumentLayoutEngine` 仍是模型层，尚未接入游戏内 screen 或渲染链；现在无法做有意义的游戏内验证，游戏内 smoke screen 可等模型投影到可见 UI 后再补。
 
 ### 当前关键文件
 
@@ -53,6 +54,9 @@
 - `src/main/java/club/heiqi/uilib/ui/style/UiStyleDeclaration.java`
 - `src/main/java/club/heiqi/uilib/ui/style/UiStyleResolver.java`
 - `src/main/java/club/heiqi/uilib/ui/style/ComputedStyle.java`
+- `src/main/java/club/heiqi/uilib/ui/layout/DocumentLayoutEngine.java`
+- `src/main/java/club/heiqi/uilib/ui/layout/DocumentLayoutBox.java`
+- `src/main/java/club/heiqi/uilib/ui/layout/DocumentLayoutEdges.java`
 - `src/main/java/club/heiqi/uilib/ui/screen/UiDocumentScreens.java`
 - `src/main/java/club/heiqi/uilib/ui/screen/BaseDocumentScreen.java`
 - `src/main/java/club/heiqi/uilib/ui/screen/UiScreenHostSession.java`
@@ -75,19 +79,20 @@
 - 已同步清退原则：不符合当前 UI 渲染主线的旧规划和旧入口允许直接清退。
 - 已新增 `ui.dom` 文档树最小骨架和 `UiDocumentTest`，固定元素/文本创建、append 移动语义、跨文档拒绝、循环拒绝、根元素保护与文本叶子节点契约。
 - 已新增 `ui.style` 样式系统初版和 `UiStyleResolverTest`，固定 inline style mutation、默认 display、文本颜色继承、显式样式覆盖与长度解析契约。
+- 已新增 `DocumentLayoutEngine` 布局盒初版和 `DocumentLayoutEngineTest`，固定 block flow、box model、百分比宽度、display none 过滤与独立 margin 排布契约。
 
 ### 当前阶段目标
 
 - 阶段 0：完成规划与文档清理，保留现有可运行链路。
 - 阶段 1：新增 HTML-like 文档树与作者入口最小骨架；当前最小骨架已完成，下一步应把样式入口挂到元素层。
 - 阶段 2：新增样式系统与 computed style 初版；当前 inline style 与基础 computed style 已完成，后续需要扩展样式属性集并接入 layout invalidation。
-- 阶段 3：建立 box/layout tree，并逐步把现有 Div-like 布局能力迁移到新模型。
+- 阶段 3：建立 box/layout tree，并逐步把现有 Div-like 布局能力迁移到新模型；当前 block flow 最小闭环已完成，下一步应扩展 flex flow 或文本 inline layout。
 - 阶段 4：建立 paint command、clip、scroll、deferred replay 的统一渲染模型。
 - 阶段 5：迁移事件与控件适配。
 - 阶段 6：清退旧 public screen 构造入口与直接 widget authoring 示例。
 
 ### 下一步执行项
 
-- 下次主线推进时优先补游戏内实际验证入口：新增一个可从游戏内打开的 HTML-like smoke screen，将 `ui.dom` / `ui.style` 的结果投影为可见 UI，用于真实渲染验收。
-- 扩展 `ui.style` 属性集并补 layout invalidation 测试。
+- 继续推进 `DocumentLayoutEngine`，优先补 flex row/column、gap、align、grow/shrink 的最小实现与测试。
+- 游戏内实际验证入口暂不优先；等 layout/paint 能投影成可见 UI 后，再新增 HTML-like smoke screen 做真实渲染验收。
 - 选择一个现有诊断页作为迁移试点，避免一次性重写全部页面。
