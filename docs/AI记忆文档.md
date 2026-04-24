@@ -21,6 +21,10 @@
 - Windows 环境下使用 PowerShell。
 - 当前协作环境下，已实际验证 `lsp_diagnostics` 可对指定 Java 文件返回结果；仓库根目录级别是否自动覆盖 Java 诊断，仍需按实际调用结果确认。
 - 当前编译门槛：`./gradlew.bat compileJava`
+- 当前构建环境已验证可用的稳定命令为：`$env:GRADLE_USER_HOME="C:\temp\gradle-home"; ./gradlew.bat "-Dorg.gradle.java.installations.paths=C:\temp\zulu8\zulu8.92.0.21-ca-jdk8.0.482-win_x64,C:\Program Files\Eclipse Adoptium\jdk-21.0.9.10-hotspot,C:\Users\泉户 黑崎\.jdks\jdk-25.0.2+10" --no-configuration-cache build`
+- 原因：GTNH 构建链要求 `Azul Zulu JDK 8` 工具链；当前机器默认只有 Temurin 21，且 Gradle 通过 Foojay 自动解析/下载 Zulu 8 在本环境下不稳定，因此需要显式提供本地 `Zulu 8` 路径。
+- 本地 `Zulu 8` 已验证可执行路径：`C:\temp\zulu8\zulu8.92.0.21-ca-jdk8.0.482-win_x64\bin\java.exe`
+- 若并发启动多个 Gradle 构建，`decompileSrgJar` 可能会因共享 `build/tmp/decompileSrgJar/mc.jar` 而触发 Windows 文件锁冲突；验证构建时应串行执行单个 Gradle 命令。
 - 典型定向验证命令：
   - `./gradlew.bat test --tests "club.heiqi.uilib.ui.theme.UiSurfaceStyleTest"`
   - `./gradlew.bat test --tests "club.heiqi.uilib.ui.screen.UiDocumentScreensTest"`
