@@ -13,6 +13,7 @@
 
 - 当前可运行链路仍以 retained `Widget` 树为渲染后端，文档页主创建边界为 `UiDocumentScreens`。
 - `UiDocumentScreens` 通过 `DocumentScreenEnvironment`、`DocumentScreenDefinition` 与 `DocumentScreenChromeResolver` 暴露显式页面创建入口。
+- HTML-like 文档树最小骨架已在 `club.heiqi.uilib.ui.dom` 落地；`UiDocument` 是当前文档作者入口，`DocumentNode` 负责父子关系与 mutation version，`ElementNode` 与 `TextNode` 分别承载元素和文本。
 - 后续作者侧入口应逐步迁移到 HTML-like 文档/元素/样式 API；底层 `Widget`、`DivWidget`、`ScrollViewportWidget` 应逐步退为 backend adapter 或兼容层。
 - `UiSurfaceStyle` 是纯外观值对象，只负责 `fillColor`、`borderColor`、`cornerRadius`。
 - `border-radius` 外观不得隐式控制 descendant clip；结构裁剪必须来自 `overflow`、viewport 或显式 clip 容器。
@@ -38,11 +39,15 @@
 - 本地 Zulu 8 已验证可执行路径：`C:\temp\zulu8\zulu8.92.0.21-ca-jdk8.0.482-win_x64\bin\java.exe`。
 - 若并发启动多个 Gradle 构建，`decompileSrgJar` 可能会因共享 `build/tmp/decompileSrgJar/mc.jar` 触发 Windows 文件锁冲突；验证构建时应串行执行单个 Gradle 命令。
 - 最近已验证通过：`compileJava`。
-- 最近已验证通过的定向测试：`UiSurfaceStyleTest`、`UiDocumentScreensTest`、`DocumentPageWidgetTest`、`InventorySlotGridWidgetTest`。
+- 最近已验证通过的定向测试：`UiDocumentTest`、`UiSurfaceStyleTest`、`UiDocumentScreensTest`、`DocumentPageWidgetTest`、`InventorySlotGridWidgetTest`。
 
 ### 当前关键文件
 
 - `项目建议.md`
+- `src/main/java/club/heiqi/uilib/ui/dom/UiDocument.java`
+- `src/main/java/club/heiqi/uilib/ui/dom/DocumentNode.java`
+- `src/main/java/club/heiqi/uilib/ui/dom/ElementNode.java`
+- `src/main/java/club/heiqi/uilib/ui/dom/TextNode.java`
 - `src/main/java/club/heiqi/uilib/ui/screen/UiDocumentScreens.java`
 - `src/main/java/club/heiqi/uilib/ui/screen/BaseDocumentScreen.java`
 - `src/main/java/club/heiqi/uilib/ui/screen/UiScreenHostSession.java`
@@ -63,11 +68,12 @@
 - 已确认 `docs/AI记忆文档.md` 原有稳定边界与当前代码大体一致，但项目长期目标需要升级到完整 HTML-like 渲染框架。
 - 已将根目录旧 `项目建议.md` 从 JNI/MSDF 字体建议重写为 HTML-like UI 实施规划。
 - 已同步清退原则：不符合当前 UI 渲染主线的旧规划和旧入口允许直接清退。
+- 已新增 `ui.dom` 文档树最小骨架和 `UiDocumentTest`，固定元素/文本创建、append 移动语义、跨文档拒绝、循环拒绝、根元素保护与文本叶子节点契约。
 
 ### 当前阶段目标
 
 - 阶段 0：完成规划与文档清理，保留现有可运行链路。
-- 阶段 1：新增 HTML-like 文档树与作者入口最小骨架。
+- 阶段 1：新增 HTML-like 文档树与作者入口最小骨架；当前最小骨架已完成，下一步应把样式入口挂到元素层。
 - 阶段 2：新增样式系统与 computed style 初版。
 - 阶段 3：建立 box/layout tree，并逐步把现有 Div-like 布局能力迁移到新模型。
 - 阶段 4：建立 paint command、clip、scroll、deferred replay 的统一渲染模型。
@@ -76,7 +82,6 @@
 
 ### 下一步执行项
 
-- 新增 `ui.dom` 或同等命名包，定义 `DocumentNode`、`ElementNode`、`TextNode` 与基础遍历/挂接契约。
 - 新增 `ui.style` 或同等命名包，定义样式属性值对象、默认值、继承属性与 computed style 初版。
-- 为文档树、样式继承、长度解析和布局失效补最小单元测试。
+- 为样式继承、长度解析和布局失效补最小单元测试。
 - 选择一个现有诊断页作为迁移试点，避免一次性重写全部页面。
