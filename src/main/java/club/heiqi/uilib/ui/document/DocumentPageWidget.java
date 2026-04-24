@@ -4,7 +4,6 @@ import java.util.Objects;
 
 import club.heiqi.uilib.ui.control.DivWidget;
 import club.heiqi.uilib.ui.control.ScrollViewportWidget;
-import club.heiqi.uilib.ui.render.UiBackdropEffectSpec;
 import club.heiqi.uilib.ui.theme.UiDocumentTheme;
 import club.heiqi.uilib.ui.text.DefaultTextMeasureService;
 import club.heiqi.uilib.ui.text.TextMeasureService;
@@ -109,14 +108,4 @@ public class DocumentPageWidget extends ScrollViewportWidget {
         return this;
     }
 
-    /**
-     * 设置页面壳的 backdrop effect。
-     *
-     * @param effectSpec effect 配置
-     * @return 当前页面
-     */
-    public DocumentPageWidget applyShellBackdropEffect(UiBackdropEffectSpec effectSpec) {
-        applyViewportBackdropEffect(effectSpec);
-        return this;
-    }
 }
