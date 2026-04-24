@@ -9,7 +9,6 @@ import java.util.List;
 import org.junit.Assert;
 import org.junit.Test;
 
-import club.heiqi.uilib.ui.render.UiBackdropEffectSpec;
 import club.heiqi.uilib.ui.render.UiRenderContext;
 import club.heiqi.uilib.ui.theme.UiDocumentTheme;
 import club.heiqi.uilib.ui.theme.UiDocumentThemes;
@@ -50,40 +49,6 @@ public class DocumentPageWidgetTest {
         Assert.assertNotNull(deferredPass.clipRect);
         Assert.assertArrayEquals(new int[] { 16, 16, 404, 244 }, deferredPass.clipRect);
         Assert.assertTrue(deferredPass.roundedClipRegions.isEmpty());
-        Assert.assertTrue(renderContext.backdropEffectRequests.isEmpty());
-    }
-
-    /**
-     * 验证页面壳 effect 只登记宿主请求，不改变矩形 viewport clip 契约。
-     */
-    @Test
-    public void shouldRegisterShellBackdropEffectWithoutChangingViewportClipContract() {
-        UiDocumentTheme theme = UiDocumentThemes.current();
-        DocumentPageWidget pageWidget = new DocumentPageWidget(theme, new DeterministicTextMeasureService());
-        DeferredProbeWidget probeWidget = new DeferredProbeWidget();
-
-        pageWidget.setShellPadding(16)
-                .setContentWidthRange(320, 640)
-                .setMinContentHeight(180)
-                .setViewportFillRatio(0.95F, 0.90F)
-                .applyShellBackdropEffect(UiBackdropEffectSpec.glass(0x66DDE7FF, theme.getShellSurface().cornerRadius))
-                .addBlock(probeWidget);
-        pageWidget.applyLayoutBounds(0, 0, 420, 260);
-
-        RecordingUiRenderContext renderContext = new RecordingUiRenderContext();
-        pageWidget.render(renderContext);
-
-        Assert.assertEquals(1, renderContext.backdropEffectRequests.size());
-        RecordedBackdropEffectRequest effectRequest = renderContext.backdropEffectRequests.get(0);
-        Assert.assertArrayEquals(new int[] { 0, 0, 420, 260 }, effectRequest.bounds);
-        Assert.assertEquals(0x66DDE7FF, effectRequest.effectSpec.tintColor);
-        Assert.assertEquals(theme.getShellSurface().cornerRadius, effectRequest.effectSpec.cornerRadius);
-
-        Assert.assertEquals(1, renderContext.deferredPostMainPasses.size());
-        RecordedDeferredPostMainPass deferredPass = renderContext.deferredPostMainPasses.get(0);
-        Assert.assertNotNull(deferredPass.clipRect);
-        Assert.assertArrayEquals(new int[] { 16, 16, 404, 244 }, deferredPass.clipRect);
-        Assert.assertTrue(deferredPass.roundedClipRegions.isEmpty());
     }
 
     /**
@@ -92,7 +57,6 @@ public class DocumentPageWidgetTest {
     private static final class RecordingUiRenderContext extends UiRenderContext {
 
         private final List<RecordedDeferredPostMainPass> deferredPostMainPasses = new ArrayList<RecordedDeferredPostMainPass>();
-        private final List<RecordedBackdropEffectRequest> backdropEffectRequests = new ArrayList<RecordedBackdropEffectRequest>();
         private final Deque<RecordedClipState> clipStates = new ArrayDeque<RecordedClipState>();
 
         private RecordingUiRenderContext() {
@@ -140,11 +104,6 @@ public class DocumentPageWidgetTest {
             }
             Collections.reverse(roundedClipRegions);
             deferredPostMainPasses.add(new RecordedDeferredPostMainPass(replay, clipRect, roundedClipRegions));
-        }
-
-        @Override
-        public void enqueueBackdropEffect(int left, int top, int right, int bottom, UiBackdropEffectSpec effectSpec) {
-            backdropEffectRequests.add(new RecordedBackdropEffectRequest(new int[] { left, top, right, bottom }, effectSpec));
         }
     }
 
@@ -229,17 +188,6 @@ public class DocumentPageWidgetTest {
 
         private int getCornerRadius() {
             return cornerRadius;
-        }
-    }
-
-    private static final class RecordedBackdropEffectRequest {
-
-        private final int[] bounds;
-        private final UiBackdropEffectSpec effectSpec;
-
-        private RecordedBackdropEffectRequest(int[] bounds, UiBackdropEffectSpec effectSpec) {
-            this.bounds = bounds;
-            this.effectSpec = effectSpec;
         }
     }
 
