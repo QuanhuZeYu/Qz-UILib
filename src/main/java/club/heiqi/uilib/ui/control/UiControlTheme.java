@@ -7,10 +7,10 @@ package club.heiqi.uilib.ui.control;
  */
 public final class UiControlTheme {
 
-    private static final BoxState BUTTON_NORMAL_STATE = new BoxState(0xDD243041, 0xFF44556E, 0x335D86C5);
-    private static final BoxState BUTTON_HOVERED_STATE = new BoxState(0xDD2C3B51, 0xFF5B7293, 0x336891D0);
-    private static final BoxState BUTTON_FOCUSED_STATE = new BoxState(0xDD2A4161, 0xFF9CC3FF, 0x447EB1FF);
-    private static final BoxState BUTTON_PRESSED_STATE = new BoxState(0xDD1D2938, 0xFF3B4B62, 0x22486EA7);
+    private static final BoxState BUTTON_NORMAL_STATE = new BoxState(0xDD243041, 0xFF44556E, 0x1A5D86C5);
+    private static final BoxState BUTTON_HOVERED_STATE = new BoxState(0xDD2C3B51, 0xFF5B7293, 0x226891D0);
+    private static final BoxState BUTTON_FOCUSED_STATE = new BoxState(0xDD2A4161, 0xFF9CC3FF, 0x2A7EB1FF);
+    private static final BoxState BUTTON_PRESSED_STATE = new BoxState(0xDD1D2938, 0xFF3B4B62, 0x18486EA7);
     private static final ButtonStyle DEFAULT_BUTTON_STYLE = new ButtonStyle(
             BUTTON_NORMAL_STATE,
             BUTTON_HOVERED_STATE,
@@ -23,7 +23,7 @@ public final class UiControlTheme {
             24,
             38,
             1,
-            2
+            1
     );
 
     private static final BoxState TOGGLE_NORMAL_STATE = new BoxState(0xD910151D, 0xFF35465D, 0);
@@ -79,9 +79,9 @@ public final class UiControlTheme {
             12
     );
 
-    private static final BoxState TEXT_INPUT_NORMAL_STATE = new BoxState(0xD910151D, 0xFF35465D, 0x1A607697);
-    private static final BoxState TEXT_INPUT_HOVERED_STATE = new BoxState(0xD910151D, 0xFF607697, 0x1A607697);
-    private static final BoxState TEXT_INPUT_FOCUSED_STATE = new BoxState(0xE6131A24, 0xFF89B4FF, 0x337EB1FF);
+    private static final BoxState TEXT_INPUT_NORMAL_STATE = new BoxState(0xD910151D, 0xFF35465D, 0x12607697);
+    private static final BoxState TEXT_INPUT_HOVERED_STATE = new BoxState(0xD910151D, 0xFF607697, 0x18607697);
+    private static final BoxState TEXT_INPUT_FOCUSED_STATE = new BoxState(0xE6131A24, 0xFF89B4FF, 0x247EB1FF);
     private static final TextInputStyle DEFAULT_TEXT_INPUT_STYLE = new TextInputStyle(
             TEXT_INPUT_NORMAL_STATE,
             TEXT_INPUT_HOVERED_STATE,
@@ -94,6 +94,8 @@ public final class UiControlTheme {
             36,
             38,
             12,
+            1,
+            1,
             2,
             8,
             8
@@ -356,13 +358,16 @@ public final class UiControlTheme {
         public final int preferredExtraWidth;
         public final int height;
         public final int textHorizontalPadding;
+        public final int accentInsetTop;
+        public final int accentInsetHeight;
         public final int caretWidth;
         public final int caretRightInset;
         public final int caretVerticalInset;
 
         public TextInputStyle(BoxState normalState, BoxState hoveredState, BoxState focusedState, int textColor,
                 int placeholderColor, int caretColor, int preferredMinWidth, int minContentWidthFloor,
-                int preferredExtraWidth, int height, int textHorizontalPadding, int caretWidth,
+                int preferredExtraWidth, int height, int textHorizontalPadding, int accentInsetTop,
+                int accentInsetHeight, int caretWidth,
                 int caretRightInset, int caretVerticalInset) {
             this.normalState = normalState;
             this.hoveredState = hoveredState;
@@ -375,6 +380,8 @@ public final class UiControlTheme {
             this.preferredExtraWidth = preferredExtraWidth;
             this.height = height;
             this.textHorizontalPadding = textHorizontalPadding;
+            this.accentInsetTop = accentInsetTop;
+            this.accentInsetHeight = accentInsetHeight;
             this.caretWidth = caretWidth;
             this.caretRightInset = caretRightInset;
             this.caretVerticalInset = caretVerticalInset;

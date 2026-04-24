@@ -42,8 +42,9 @@ public class TextInputWidget extends Widget {
         UiControlTheme.BoxState state = resolveVisualState();
 
         context.fillRect(absoluteX, absoluteY, absoluteX + getWidth(), absoluteY + getHeight(), state.fillColor);
-        if (state.accentColor != 0) {
-            context.fillRect(absoluteX + 1, absoluteY + 1, absoluteX + getWidth() - 1, absoluteY + 3, state.accentColor);
+        if (state.accentColor != 0 && style.accentInsetHeight > 0) {
+            context.fillRect(absoluteX + 1, absoluteY + style.accentInsetTop, absoluteX + getWidth() - 1,
+                    absoluteY + style.accentInsetTop + style.accentInsetHeight, state.accentColor);
         }
         context.drawBorder(absoluteX, absoluteY, absoluteX + getWidth(), absoluteY + getHeight(), state.borderColor);
 
