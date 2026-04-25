@@ -17,6 +17,7 @@
 - HTML-like 样式系统初版已在 `club.heiqi.uilib.ui.style` 落地；`ElementNode.style()` 暴露 inline style 入口，`UiStyleResolver` 负责把元素样式解析为 `ComputedStyle`。
 - HTML-like 布局盒初版已在 `club.heiqi.uilib.ui.layout` 落地；`DocumentLayoutEngine` 当前支持元素级 block flow、box model、px/% 长度、auto 高度、`display: none` 过滤、子元素垂直流式排布，以及 flex row/column、gap、align、justify、grow/shrink 的最小实现。
 - HTML-like 绘制命令初版已在 `club.heiqi.uilib.ui.paint` 落地；`DocumentPaintEngine` 当前能把布局盒树转换为 background/border 中立绘制命令，并保留父元素背景、父元素边框、子树的基础 paint order。
+- `DocumentPaintRenderer` 已可把 background/border paint command 投影到现有 `UiRenderContext`，当前已经具备从 HTML-like 模型走到实际 UI 渲染上下文的最小适配链。
 - 后续作者侧入口应逐步迁移到 HTML-like 文档/元素/样式 API；底层 `Widget`、`DivWidget`、`ScrollViewportWidget` 应逐步退为 backend adapter 或兼容层。
 - `UiSurfaceStyle` 是纯外观值对象，只负责 `fillColor`、`borderColor`、`cornerRadius`。
 - `border-radius` 外观不得隐式控制 descendant clip；结构裁剪必须来自 `overflow`、viewport 或显式 clip 容器。
@@ -42,8 +43,8 @@
 - 本地 Zulu 8 已验证可执行路径：`C:\temp\zulu8\zulu8.92.0.21-ca-jdk8.0.482-win_x64\bin\java.exe`。
 - 若并发启动多个 Gradle 构建，`decompileSrgJar` 可能会因共享 `build/tmp/decompileSrgJar/mc.jar` 触发 Windows 文件锁冲突；验证构建时应串行执行单个 Gradle 命令。
 - 最近已验证通过：`compileJava`。
-- 最近已验证通过的定向测试：`DocumentPaintEngineTest`、`DocumentLayoutEngineTest`、`UiStyleResolverTest`、`UiDocumentTest`、`UiSurfaceStyleTest`、`UiDocumentScreensTest`、`DocumentPageWidgetTest`、`InventorySlotGridWidgetTest`。
-- 当前 `ui.dom` / `ui.style` / `ui.layout` / `ui.paint` 仍是模型层，尚未接入游戏内 screen 或 `UiRenderContext` 渲染链；现在无法做有意义的游戏内验证，游戏内 smoke screen 可等 paint command 投影到可见 UI 后再补。
+- 最近已验证通过的定向测试：`DocumentPaintRendererTest`、`DocumentPaintEngineTest`、`DocumentLayoutEngineTest`、`UiStyleResolverTest`、`UiDocumentTest`、`UiSurfaceStyleTest`、`UiDocumentScreensTest`、`DocumentPageWidgetTest`、`InventorySlotGridWidgetTest`。
+- 当前 `ui.dom` / `ui.style` / `ui.layout` / `ui.paint` 已经能投影到 `UiRenderContext`，但尚未接入游戏内 screen/smoke 入口；在补上最小 screen 集成前，仍不能做有意义的游戏内验证。
 
 ### 当前关键文件
 
@@ -64,6 +65,7 @@
 - `src/main/java/club/heiqi/uilib/ui/paint/DocumentPaintEngine.java`
 - `src/main/java/club/heiqi/uilib/ui/paint/DocumentPaintCommand.java`
 - `src/main/java/club/heiqi/uilib/ui/paint/DocumentPaintCommandType.java`
+- `src/main/java/club/heiqi/uilib/ui/paint/DocumentPaintRenderer.java`
 - `src/main/java/club/heiqi/uilib/ui/screen/UiDocumentScreens.java`
 - `src/main/java/club/heiqi/uilib/ui/screen/BaseDocumentScreen.java`
 - `src/main/java/club/heiqi/uilib/ui/screen/UiScreenHostSession.java`
@@ -89,6 +91,7 @@
 - 已新增 `DocumentLayoutEngine` 布局盒初版和 `DocumentLayoutEngineTest`，固定 block flow、box model、百分比宽度、display none 过滤与独立 margin 排布契约。
 - 已扩展 flex 样式与布局，固定 flex row/column、gap、主轴 grow/shrink、主轴分布与交叉轴对齐契约。
 - 已新增 `DocumentPaintEngine` 绘制命令初版和 `DocumentPaintEngineTest`，固定 background/border 命令、paint order、透明/零宽跳过与 border radius clamp 契约。
+- 已新增 `DocumentPaintRenderer` 和 `DocumentPaintRendererTest`，固定 paint command 到 `UiRenderContext` 的 background/border 投影契约。
 
 ### 当前阶段目标
 
@@ -96,12 +99,12 @@
 - 阶段 1：新增 HTML-like 文档树与作者入口最小骨架；当前最小骨架已完成，下一步应把样式入口挂到元素层。
 - 阶段 2：新增样式系统与 computed style 初版；当前 inline style 与基础 computed style 已完成，后续需要扩展样式属性集并接入 layout invalidation。
 - 阶段 3：建立 box/layout tree，并逐步把现有 Div-like 布局能力迁移到新模型；当前 block flow 与 flex flow 最小闭环已完成，下一步应推进文本 inline layout 或进入 paint command 初版。
-- 阶段 4：建立 paint command、clip、scroll、deferred replay 的统一渲染模型；当前 background/border paint command 初版已完成，下一步应补投影到 `UiRenderContext` 或文本 paint command。
+- 阶段 4：建立 paint command、clip、scroll、deferred replay 的统一渲染模型；当前 background/border paint command 与 `UiRenderContext` 投影已完成，下一步应补文本 paint command 或 screen 集成。
 - 阶段 5：迁移事件与控件适配。
 - 阶段 6：清退旧 public screen 构造入口与直接 widget authoring 示例。
 
 ### 下一步执行项
 
-- 下一步优先实现 paint command 到 `UiRenderContext` 的渲染投影，或补文本 inline/text paint command。
-- 游戏内实际验证入口暂不优先；等 paint command 能通过 adapter 画到真实 UI 后，再新增 HTML-like smoke screen 做真实渲染验收并通知用户。
+- 下一步可优先补文本 inline/text paint command，或把当前 HTML-like 渲染链接到最小 screen/smoke 入口。
+- 游戏内实际验证现在只差 screen/smoke 入口；等接好最小集成后即可进行有意义的真实渲染验收并通知用户。
 - 选择一个现有诊断页作为迁移试点，避免一次性重写全部页面。
