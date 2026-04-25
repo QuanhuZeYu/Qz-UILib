@@ -36,18 +36,21 @@ public class UiTestDocumentPageControllerTest {
         fixture.pagePanel.applyLayoutBounds(0, 0, 980, 680);
 
         List<Widget> blocks = getDocumentBlocks(fixture.pagePanel);
-        Assert.assertEquals(4, blocks.size());
+        Assert.assertEquals(5, blocks.size());
         Assert.assertTrue(blocks.get(0) instanceof DocumentTextWidget);
         Assert.assertTrue(blocks.get(1) instanceof DocumentTextWidget);
         Assert.assertTrue(blocks.get(2) instanceof DocumentCardWidget);
         Assert.assertTrue(blocks.get(3) instanceof DocumentCardWidget);
+        Assert.assertTrue(blocks.get(4) instanceof DocumentCardWidget);
         Assert.assertEquals("诊断菜单页", ((LabelWidget) blocks.get(0)).getText());
 
         List<String> labelTexts = collectLabelTexts(fixture.pagePanel);
         Assert.assertTrue(containsText(labelTexts, "诊断首页"));
         Assert.assertTrue(containsText(labelTexts, "布局诊断子页"));
+        Assert.assertTrue(containsText(labelTexts, "HTML-like Smoke 子页"));
         Assert.assertTrue(containsText(labelTexts, "继续跳到不同的 definition-backed 诊断子页"));
         Assert.assertFalse(menuModel.openLayoutDiagnosticsCalled);
+        Assert.assertFalse(menuModel.openHtmlLikeSmokeCalled);
     }
 
     /**
@@ -62,12 +65,34 @@ public class UiTestDocumentPageControllerTest {
         fixture.controller.buildDocument();
 
         List<ButtonWidget> buttons = getWidgetsByType(fixture.pagePanel, ButtonWidget.class);
-        Assert.assertEquals(1, buttons.size());
+        Assert.assertEquals(2, buttons.size());
         ButtonWidget navigateButton = buttons.get(0);
         navigateButton.applyLayoutBounds(0, 0, 220, 36);
         clickButton(navigateButton);
 
         Assert.assertTrue(menuModel.openLayoutDiagnosticsCalled);
+        Assert.assertFalse(menuModel.openHtmlLikeSmokeCalled);
+    }
+
+    /**
+     * 验证菜单按钮会触发 HTML-like smoke 跳转。
+     */
+    @Test
+    public void shouldNavigateToHtmlLikeSmokeWhenMenuButtonClicked() {
+        RecordingMenuModel menuModel = new RecordingMenuModel();
+        TestFixture fixture = new TestFixture(menuModel);
+
+        fixture.controller.configureDocumentPage();
+        fixture.controller.buildDocument();
+
+        List<ButtonWidget> buttons = getWidgetsByType(fixture.pagePanel, ButtonWidget.class);
+        Assert.assertEquals(2, buttons.size());
+        ButtonWidget navigateButton = buttons.get(1);
+        navigateButton.applyLayoutBounds(0, 0, 260, 36);
+        clickButton(navigateButton);
+
+        Assert.assertFalse(menuModel.openLayoutDiagnosticsCalled);
+        Assert.assertTrue(menuModel.openHtmlLikeSmokeCalled);
     }
 
     private static List<Widget> getDocumentBlocks(DocumentPageWidget pagePanel) {
@@ -138,10 +163,16 @@ public class UiTestDocumentPageControllerTest {
     private static final class RecordingMenuModel implements UiTestMenuModel {
 
         private boolean openLayoutDiagnosticsCalled;
+        private boolean openHtmlLikeSmokeCalled;
 
         @Override
         public void openLayoutDiagnostics() {
             openLayoutDiagnosticsCalled = true;
+        }
+
+        @Override
+        public void openHtmlLikeSmoke() {
+            openHtmlLikeSmokeCalled = true;
         }
     }
 

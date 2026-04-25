@@ -40,6 +40,20 @@ public class UiDocumentScreensTest {
     }
 
     /**
+     * 验证 HTML-like smoke 子页 definition 会暴露独立稳定 descriptor 与页面标识契约。
+     */
+    @Test
+    public void shouldExposeStablePageIdForHtmlLikeSmokeScreen() {
+        Assert.assertSame(UiDocumentScreens.HTML_LIKE_SMOKE,
+                UiDocumentScreens.HTML_LIKE_SMOKE_DEFINITION.getPageDescriptor());
+        Assert.assertEquals("html_like_smoke",
+                UiDocumentScreens.HTML_LIKE_SMOKE_DEFINITION.getPageDescriptor().getPageId());
+        Assert.assertEquals(UiDocumentScreens.HTML_LIKE_SMOKE.getPageId(),
+                UiDocumentScreens.HTML_LIKE_SMOKE_DEFINITION.getPageDescriptor().getPageId());
+        Assert.assertEquals("html_like_smoke", UiDocumentScreens.HTML_LIKE_SMOKE.getPageId());
+    }
+
+    /**
      * 验证背包页 definition 会暴露独立稳定 descriptor 与页面标识契约。
      */
     @Test
@@ -63,6 +77,7 @@ public class UiDocumentScreensTest {
         Assert.assertEquals(UiDocumentScreens.UI_TEST.getPageId(), UiDocumentScreens.getPageId(screen));
         Assert.assertTrue(UiDocumentScreens.isUiTest(screen));
         Assert.assertFalse(UiDocumentScreens.isUiTestLayout(screen));
+        Assert.assertFalse(UiDocumentScreens.isHtmlLikeSmoke(screen));
         Assert.assertEquals(UiDocumentScreens.UI_TEST.getPageId(), UiDocumentScreens.runtimeScreenNameOf(screen));
     }
 

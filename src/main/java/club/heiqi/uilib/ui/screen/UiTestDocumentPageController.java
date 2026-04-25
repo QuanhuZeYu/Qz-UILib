@@ -19,7 +19,9 @@ final class UiTestDocumentPageController extends DocumentPageController {
 
     private final DocumentCardWidget overviewCard;
     private final DocumentCardWidget layoutEntryCard;
+    private final DocumentCardWidget htmlLikeSmokeEntryCard;
     private final ButtonWidget openLayoutDiagnosticsButton;
+    private final ButtonWidget openHtmlLikeSmokeButton;
 
     /**
      * 创建诊断首页菜单控制器。
@@ -36,7 +38,9 @@ final class UiTestDocumentPageController extends DocumentPageController {
 
         this.overviewCard = this.documentUi.card();
         this.layoutEntryCard = this.documentUi.card();
+        this.htmlLikeSmokeEntryCard = this.documentUi.card();
         this.openLayoutDiagnosticsButton = this.documentUi.button("进入布局诊断页");
+        this.openHtmlLikeSmokeButton = this.documentUi.button("进入 HTML-like Smoke");
     }
 
     @Override
@@ -59,6 +63,12 @@ final class UiTestDocumentPageController extends DocumentPageController {
                 menuModel.openLayoutDiagnostics();
             }
         });
+        openHtmlLikeSmokeButton.setClickHandler(new Runnable() {
+            @Override
+            public void run() {
+                menuModel.openHtmlLikeSmoke();
+            }
+        });
     }
 
     private void assembleDocument() {
@@ -77,11 +87,21 @@ final class UiTestDocumentPageController extends DocumentPageController {
         layoutEntryDiv.addChild(entryToolbar);
         layoutEntryCard.addChild(layoutEntryDiv);
 
+        DocumentSectionWidget htmlLikeSmokeEntryDiv = documentUi.section();
+        htmlLikeSmokeEntryDiv.addChild(documentUi.text(DocumentTextWidget.Role.TITLE, "HTML-like Smoke 子页", 2));
+        htmlLikeSmokeEntryDiv.addChild(documentUi.text(DocumentTextWidget.Role.BODY,
+                "进入后验证 UiDocument、样式计算、布局盒、绘制命令和 UiRenderContext 投影是否已经能组成一条真实可见的渲染链路。", 8));
+        DocumentToolbarWidget smokeToolbar = documentUi.toolbar();
+        smokeToolbar.addChild(openHtmlLikeSmokeButton);
+        htmlLikeSmokeEntryDiv.addChild(smokeToolbar);
+        htmlLikeSmokeEntryCard.addChild(htmlLikeSmokeEntryDiv);
+
         diagnosticPage.addBlock(documentUi.text(DocumentTextWidget.Role.TITLE, "诊断菜单页", 2));
         diagnosticPage.addBlock(documentUi.text(DocumentTextWidget.Role.BODY,
                 "这一页只负责诊断导航，不再直接承担所有探针内容；这样每个子页都能拥有独立 pageId、controller 和运行时统计语义。",
                 8));
         diagnosticPage.addBlock(overviewCard);
         diagnosticPage.addBlock(layoutEntryCard);
+        diagnosticPage.addBlock(htmlLikeSmokeEntryCard);
     }
 }

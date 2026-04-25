@@ -1,0 +1,187 @@
+package club.heiqi.uilib.ui.screen;
+
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.List;
+
+import org.junit.Assert;
+import org.junit.Test;
+
+import club.heiqi.uilib.ui.control.LabelWidget;
+import club.heiqi.uilib.ui.control.UiControlRuntimeAdapters;
+import club.heiqi.uilib.ui.document.DocumentPageWidget;
+import club.heiqi.uilib.ui.document.DocumentTextWidget;
+import club.heiqi.uilib.ui.document.HtmlLikeDocumentWidget;
+import club.heiqi.uilib.ui.render.UiRenderContext;
+import club.heiqi.uilib.ui.text.TextMeasureService;
+import club.heiqi.uilib.ui.theme.UiDocumentTheme;
+import club.heiqi.uilib.ui.theme.UiDocumentThemes;
+import club.heiqi.uilib.ui.theme.UiSurfaceStyle;
+import club.heiqi.uilib.ui.widget.Widget;
+
+/**
+ * `HtmlLikeSmokeDocumentPageController` 的页面集成契约测试。
+ */
+public class HtmlLikeSmokeDocumentPageControllerTest {
+
+    /**
+     * 验证 smoke 子页会挂接 HTML-like 文档适配组件。
+     */
+    @Test
+    public void shouldBuildHtmlLikeSmokeDocumentTree() {
+        TestFixture fixture = new TestFixture();
+
+        fixture.controller.configureDocumentPage();
+        fixture.controller.buildDocument();
+
+        List<Widget> blocks = getDocumentBlocks(fixture.pagePanel);
+        Assert.assertEquals(3, blocks.size());
+        Assert.assertTrue(blocks.get(0) instanceof DocumentTextWidget);
+        Assert.assertTrue(blocks.get(1) instanceof DocumentTextWidget);
+        Assert.assertTrue(blocks.get(2) instanceof HtmlLikeDocumentWidget);
+        Assert.assertSame(blocks.get(2), fixture.controller.getHtmlLikeDocumentWidget());
+        Assert.assertEquals(3, fixture.controller.getHtmlLikeDocumentWidget().getDocument()
+                .getRootElement().getChildren().size());
+
+        List<String> labelTexts = collectLabelTexts(fixture.pagePanel);
+        Assert.assertTrue(containsText(labelTexts, "HTML-like Smoke"));
+        Assert.assertTrue(containsText(labelTexts, "UiDocument -> style -> layout -> paint command -> UiRenderContext"));
+    }
+
+    /**
+     * 验证 smoke 子页中的 HTML-like 组件能产生真实 surface 绘制调用。
+     */
+    @Test
+    public void shouldRenderSmokeDocumentToUiRenderContext() {
+        TestFixture fixture = new TestFixture();
+
+        fixture.controller.configureDocumentPage();
+        fixture.controller.buildDocument();
+        HtmlLikeDocumentWidget widget = fixture.controller.getHtmlLikeDocumentWidget();
+        widget.applyLayoutBounds(31, 47, 760, 320);
+        RecordingUiRenderContext renderContext = new RecordingUiRenderContext();
+
+        widget.render(renderContext);
+
+        Assert.assertFalse(renderContext.drawCalls.isEmpty());
+        DrawCall firstCall = renderContext.drawCalls.get(0);
+        Assert.assertEquals(31, firstCall.left);
+        Assert.assertEquals(47, firstCall.top);
+        Assert.assertEquals(791, firstCall.right);
+        Assert.assertTrue(firstCall.bottom > firstCall.top);
+        Assert.assertEquals(0xEE151A24, firstCall.surfaceStyle.fillColor);
+    }
+
+    private static List<Widget> getDocumentBlocks(DocumentPageWidget pagePanel) {
+        List<Widget> pageChildren = pagePanel.getChildren();
+        Assert.assertFalse(pageChildren.isEmpty());
+        return pageChildren.get(0).getChildren();
+    }
+
+    private static List<String> collectLabelTexts(Widget root) {
+        List<String> labelTexts = new ArrayList<String>();
+        collectLabelTexts(root, labelTexts);
+        return labelTexts;
+    }
+
+    private static void collectLabelTexts(Widget root, List<String> labelTexts) {
+        if (root instanceof LabelWidget) {
+            labelTexts.add(((LabelWidget) root).getText());
+        }
+        for (Widget child : root.getChildren()) {
+            collectLabelTexts(child, labelTexts);
+        }
+    }
+
+    private static boolean containsText(List<String> labelTexts, String expectedSnippet) {
+        for (String labelText : labelTexts) {
+            if (labelText != null && labelText.contains(expectedSnippet)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * 页面控制器测试夹具。
+     */
+    private static final class TestFixture {
+
+        private final UiDocumentTheme documentTheme = UiDocumentThemes.current();
+        private final TextMeasureService textMeasureService = new DeterministicTextMeasureService();
+        private final DocumentUiScope documentUi = new DocumentUiScope(documentTheme, textMeasureService,
+                UiControlRuntimeAdapters.empty());
+        private final DocumentPageWidget pagePanel = new DocumentPageWidget(documentTheme, textMeasureService);
+        private final DocumentPageAuthoringSurface pageSurface = DocumentPageAuthoringSurface.adapt(pagePanel);
+        private final HtmlLikeSmokeDocumentPageController controller = new HtmlLikeSmokeDocumentPageController(
+                documentUi, pageSurface);
+    }
+
+    /**
+     * 记录 surface 绘制调用的渲染上下文。
+     */
+    private static final class RecordingUiRenderContext extends UiRenderContext {
+
+        private final List<DrawCall> drawCalls = new ArrayList<DrawCall>();
+
+        private RecordingUiRenderContext() {
+            super(1024, 768, 0, 0, 0.0F);
+        }
+
+        @Override
+        public void drawSurface(int left, int top, int right, int bottom, UiSurfaceStyle surfaceStyle) {
+            drawCalls.add(new DrawCall(left, top, right, bottom, surfaceStyle));
+        }
+    }
+
+    /**
+     * 单次 surface 绘制记录。
+     */
+    private static final class DrawCall {
+
+        private final int left;
+        private final int top;
+        private final int right;
+        private final int bottom;
+        private final UiSurfaceStyle surfaceStyle;
+
+        private DrawCall(int left, int top, int right, int bottom, UiSurfaceStyle surfaceStyle) {
+            this.left = left;
+            this.top = top;
+            this.right = right;
+            this.bottom = bottom;
+            this.surfaceStyle = surfaceStyle;
+        }
+    }
+
+    /**
+     * 供测试使用的确定性文本测量服务。
+     */
+    private static final class DeterministicTextMeasureService implements TextMeasureService {
+
+        @Override
+        public int getEpoch() {
+            return 1;
+        }
+
+        @Override
+        public int getStringWidth(String text) {
+            return text == null ? 0 : text.length() * 6;
+        }
+
+        @Override
+        public int getLineHeight() {
+            return 9;
+        }
+
+        @Override
+        public String trimStringToWidth(String text, int targetWidth) {
+            return text == null ? "" : text;
+        }
+
+        @Override
+        public List<String> listFormattedStringToWidth(String text, int wrapWidth) {
+            return Collections.singletonList(text == null ? "" : text);
+        }
+    }
+}

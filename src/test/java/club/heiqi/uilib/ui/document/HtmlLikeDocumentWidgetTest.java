@@ -1,4 +1,4 @@
-package club.heiqi.uilib.ui.paint;
+package club.heiqi.uilib.ui.document;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -8,73 +8,54 @@ import org.junit.Test;
 
 import club.heiqi.uilib.ui.dom.ElementNode;
 import club.heiqi.uilib.ui.dom.UiDocument;
-import club.heiqi.uilib.ui.layout.DocumentLayoutEngine;
 import club.heiqi.uilib.ui.render.UiRenderContext;
 import club.heiqi.uilib.ui.style.UiStyleLength;
 import club.heiqi.uilib.ui.theme.UiSurfaceStyle;
 
 /**
- * `DocumentPaintRenderer` 的渲染投影契约测试。
+ * `HtmlLikeDocumentWidget` 的后端适配契约测试。
  */
-public class DocumentPaintRendererTest {
+public class HtmlLikeDocumentWidgetTest {
 
     /**
-     * 验证背景和多像素边框会按 paint command 顺序投影到 `UiRenderContext`。
+     * 验证 HTML-like 文档可以通过 widget 后端绘制到 `UiRenderContext`。
      */
     @Test
-    public void shouldRenderPaintCommandsToUiRenderContext() {
+    public void shouldRenderDocumentThroughWidgetBackend() {
         UiDocument document = UiDocument.create();
         ElementNode root = document.getRootElement();
-
         root.style()
-                .setWidth(UiStyleLength.px(40))
-                .setHeight(UiStyleLength.px(20))
-                .setBackgroundColor(0xAA101820)
-                .setBorderColor(0xFF86A8F0)
-                .setBorderWidth(UiStyleLength.px(2))
-                .setBorderRadius(UiStyleLength.px(8));
+                .setHeight(UiStyleLength.px(24))
+                .setBackgroundColor(0xFF102030)
+                .setBorderColor(0xFF80A0FF)
+                .setBorderWidth(UiStyleLength.px(1))
+                .setBorderRadius(UiStyleLength.px(6));
+        HtmlLikeDocumentWidget widget = new HtmlLikeDocumentWidget(document, 120, 48);
+        widget.applyLayoutBounds(17, 23, 120, 48);
 
         RecordingUiRenderContext renderContext = new RecordingUiRenderContext();
-        DocumentPaintRenderer.render(renderContext, DocumentPaintEngine.buildPaintCommands(
-                DocumentLayoutEngine.layout(root, 80, 0)));
+        widget.render(renderContext);
 
-        Assert.assertEquals(3, renderContext.drawCalls.size());
-        assertDrawCall(renderContext.drawCalls.get(0), 0, 0, 44, 24, 0xAA101820, 0, 8);
-        assertDrawCall(renderContext.drawCalls.get(1), 0, 0, 44, 24, 0, 0xFF86A8F0, 8);
-        assertDrawCall(renderContext.drawCalls.get(2), 1, 1, 43, 23, 0, 0xFF86A8F0, 7);
+        Assert.assertSame(document, widget.getDocument());
+        Assert.assertEquals(2, renderContext.drawCalls.size());
+        assertDrawCall(renderContext.drawCalls.get(0), 17, 23, 137, 49, 0xFF102030, 0, 6);
+        assertDrawCall(renderContext.drawCalls.get(1), 17, 23, 137, 49, 0, 0xFF80A0FF, 6);
     }
 
     /**
-     * 验证空命令列表不会触发底层绘制。
+     * 验证空尺寸组件不会触发绘制。
      */
     @Test
-    public void shouldIgnoreEmptyCommands() {
+    public void shouldIgnoreEmptyWidgetBounds() {
+        UiDocument document = UiDocument.create();
+        document.getRootElement().style().setBackgroundColor(0xFFFFFFFF);
+        HtmlLikeDocumentWidget widget = new HtmlLikeDocumentWidget(document, 120, 48);
+        widget.applyLayoutBounds(0, 0, 0, 48);
         RecordingUiRenderContext renderContext = new RecordingUiRenderContext();
 
-        DocumentPaintRenderer.render(renderContext, null);
-        DocumentPaintRenderer.render(renderContext, new ArrayList<DocumentPaintCommand>());
+        widget.render(renderContext);
 
         Assert.assertTrue(renderContext.drawCalls.isEmpty());
-    }
-
-    /**
-     * 验证绘制命令能按宿主 widget 的绝对位置整体偏移。
-     */
-    @Test
-    public void shouldApplyRenderOffset() {
-        UiDocument document = UiDocument.create();
-        ElementNode root = document.getRootElement();
-        root.style()
-                .setWidth(UiStyleLength.px(18))
-                .setHeight(UiStyleLength.px(12))
-                .setBackgroundColor(0xFF223344);
-
-        RecordingUiRenderContext renderContext = new RecordingUiRenderContext();
-        DocumentPaintRenderer.render(renderContext, DocumentPaintEngine.buildPaintCommands(
-                DocumentLayoutEngine.layout(root, 40, 0)), 7, 11);
-
-        Assert.assertEquals(1, renderContext.drawCalls.size());
-        assertDrawCall(renderContext.drawCalls.get(0), 7, 11, 25, 23, 0xFF223344, 0, 0);
     }
 
     private static void assertDrawCall(DrawCall drawCall, int left, int top, int right, int bottom, int fillColor,
@@ -89,7 +70,7 @@ public class DocumentPaintRendererTest {
     }
 
     /**
-     * 记录 drawSurface 调用的渲染上下文。
+     * 记录 surface 绘制调用的渲染上下文。
      */
     private static final class RecordingUiRenderContext extends UiRenderContext {
 
