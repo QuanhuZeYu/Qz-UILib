@@ -5,6 +5,8 @@ import java.util.Collections;
 import java.util.List;
 import java.util.Objects;
 
+import club.heiqi.uilib.ui.dom.DocumentElementActiveEvent;
+import club.heiqi.uilib.ui.dom.DocumentElementActiveHandler;
 import club.heiqi.uilib.ui.dom.DocumentElementClickEvent;
 import club.heiqi.uilib.ui.dom.DocumentElementClickHandler;
 import club.heiqi.uilib.ui.dom.DocumentElementFocusEvent;
@@ -49,6 +51,7 @@ public final class HtmlLikeDocumentWidget extends Widget {
     private DocumentLayoutBox cachedLayoutBox;
     private ElementNode pressedElement;
     private ElementNode focusedElement;
+    private boolean focusedElementFocusVisible;
     private List<DocumentPaintCommand> cachedPaintCommands = Collections.emptyList();
 
     /**
@@ -182,7 +185,8 @@ public final class HtmlLikeDocumentWidget extends Widget {
             return;
         }
         pressedElement = findElementAt(event.getMouseX(), event.getMouseY());
-        focusElement(resolveFocusableElement(pressedElement));
+        dispatchActive(pressedElement, true, event);
+        focusElement(resolveFocusableElement(pressedElement), false);
     }
 
     @Override
@@ -193,6 +197,7 @@ public final class HtmlLikeDocumentWidget extends Widget {
         }
         ElementNode releasedElement = findElementAt(event.getMouseX(), event.getMouseY());
         ElementNode target = pressedElement != null && pressedElement == releasedElement ? releasedElement : null;
+        dispatchActive(pressedElement, false, event);
         pressedElement = null;
         if (target != null) {
             dispatchClick(target, event);
@@ -218,7 +223,7 @@ public final class HtmlLikeDocumentWidget extends Widget {
     @Override
     public void onFocusChanged(boolean focused) {
         if (!focused) {
-            focusElement(null);
+            focusElement(null, false);
         }
     }
 
@@ -237,7 +242,7 @@ public final class HtmlLikeDocumentWidget extends Widget {
         ElementNode activeElement = getActiveFocusedElement();
         int currentIndex = activeElement == null ? -1 : focusableElements.indexOf(activeElement);
         if (currentIndex < 0) {
-            focusElement(reverse ? focusableElements.get(focusableElements.size() - 1) : focusableElements.get(0));
+            focusElement(reverse ? focusableElements.get(focusableElements.size() - 1) : focusableElements.get(0), true);
             return true;
         }
 
@@ -245,7 +250,7 @@ public final class HtmlLikeDocumentWidget extends Widget {
         if (nextIndex < 0 || nextIndex >= focusableElements.size()) {
             return false;
         }
-        focusElement(focusableElements.get(nextIndex));
+        focusElement(focusableElements.get(nextIndex), true);
         return true;
     }
 
@@ -334,10 +339,10 @@ public final class HtmlLikeDocumentWidget extends Widget {
     private boolean focusFirstElementInTraversalOrder(boolean reverse) {
         List<ElementNode> focusableElements = collectFocusableElements();
         if (focusableElements.isEmpty()) {
-            focusElement(null);
+            focusElement(null, false);
             return false;
         }
-        focusElement(reverse ? focusableElements.get(focusableElements.size() - 1) : focusableElements.get(0));
+        focusElement(reverse ? focusableElements.get(focusableElements.size() - 1) : focusableElements.get(0), true);
         return true;
     }
 
@@ -362,32 +367,58 @@ public final class HtmlLikeDocumentWidget extends Widget {
 
     private ElementNode getActiveFocusedElement() {
         if (focusedElement != null && (!focusedElement.isFocusable() || !isElementAttachedToDocument(focusedElement))) {
-            focusElement(null);
+            focusElement(null, false);
         }
         return focusedElement;
     }
 
-    private void focusElement(ElementNode nextFocusedElement) {
+    private void focusElement(ElementNode nextFocusedElement, boolean focusVisible) {
         ElementNode resolvedElement = nextFocusedElement != null && nextFocusedElement.isFocusable()
                 && isElementAttachedToDocument(nextFocusedElement) ? nextFocusedElement : null;
-        if (focusedElement == resolvedElement) {
+        boolean resolvedFocusVisible = resolvedElement != null && focusVisible;
+        if (focusedElement == resolvedElement && focusedElementFocusVisible == resolvedFocusVisible) {
             return;
         }
 
         ElementNode previousElement = focusedElement;
+        boolean previousFocusVisible = focusedElementFocusVisible;
         focusedElement = resolvedElement;
-        dispatchFocusChanged(previousElement, false);
-        dispatchFocusChanged(focusedElement, true);
+        focusedElementFocusVisible = resolvedFocusVisible;
+        if (previousElement != focusedElement) {
+            dispatchFocusChanged(previousElement, false, false);
+        }
+        if (focusedElement != null && (previousElement != focusedElement || previousFocusVisible != focusedElementFocusVisible)) {
+            dispatchFocusChanged(focusedElement, true, focusedElementFocusVisible);
+        }
     }
 
-    private void dispatchFocusChanged(ElementNode target, boolean focused) {
+    private void dispatchFocusChanged(ElementNode target, boolean focused, boolean focusVisible) {
         if (target == null) {
             return;
         }
         DocumentElementFocusHandler focusHandler = target.getFocusHandler();
         if (focusHandler != null) {
-            focusHandler.onFocusChanged(new DocumentElementFocusEvent(target, focused));
+            focusHandler.onFocusChanged(new DocumentElementFocusEvent(target, focused, focusVisible));
         }
+    }
+
+    private boolean dispatchActive(ElementNode target, boolean active, UiMouseEvent event) {
+        if (target == null || event == null) {
+            return false;
+        }
+        for (DocumentNode current = target; current instanceof ElementNode; current = current.getParent()) {
+            ElementNode currentElement = (ElementNode) current;
+            DocumentElementActiveHandler activeHandler = currentElement.getActiveHandler();
+            if (activeHandler == null) {
+                continue;
+            }
+            DocumentElementActiveEvent activeEvent = new DocumentElementActiveEvent(target, currentElement, active,
+                    event.getButton(), event.getTimeNanos());
+            if (activeHandler.onActiveChanged(activeEvent)) {
+                return true;
+            }
+        }
+        return false;
     }
 
     private ElementNode resolveFocusableElement(ElementNode target) {

@@ -162,7 +162,7 @@ public class HtmlLikeSmokeDocumentPageControllerTest {
         widget.render(tabFocusedRenderContext);
 
         Assert.assertTrue(containsTextCall(tabFocusedRenderContext.textCalls, "Tab target: focused"));
-        Assert.assertTrue(containsFillColor(tabFocusedRenderContext.drawCalls, 0xFF9F7AEA));
+        Assert.assertTrue(containsBorderColor(tabFocusedRenderContext.drawCalls, 0xFFD6BCFA));
 
         Assert.assertTrue(widget.onFocusTraversal(true));
         RecordingUiRenderContext reverseRenderContext = new RecordingUiRenderContext();
@@ -193,7 +193,8 @@ public class HtmlLikeSmokeDocumentPageControllerTest {
         widget.render(renderContext);
 
         Assert.assertTrue(containsTextCall(renderContext.textCalls, "Button ctrl: 1"));
-        Assert.assertTrue(containsFillColor(renderContext.drawCalls, 0xFF63B3ED));
+        Assert.assertTrue(containsFillColor(renderContext.drawCalls, 0xFF2C5282));
+        Assert.assertTrue(containsBorderColor(renderContext.drawCalls, 0xFFBEE3F8));
     }
 
     private static List<Widget> getDocumentBlocks(DocumentPageWidget pagePanel) {
@@ -238,6 +239,15 @@ public class HtmlLikeSmokeDocumentPageControllerTest {
     private static boolean containsFillColor(List<DrawCall> drawCalls, int expectedColor) {
         for (DrawCall drawCall : drawCalls) {
             if (drawCall.surfaceStyle.fillColor == expectedColor) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private static boolean containsBorderColor(List<DrawCall> drawCalls, int expectedColor) {
+        for (DrawCall drawCall : drawCalls) {
+            if (drawCall.surfaceStyle.borderColor == expectedColor) {
                 return true;
             }
         }

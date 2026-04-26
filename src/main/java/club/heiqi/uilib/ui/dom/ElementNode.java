@@ -16,6 +16,7 @@ public final class ElementNode extends DocumentNode {
     private final String tagName;
     private final Map<String, String> attributes = new LinkedHashMap<String, String>();
     private boolean focusable;
+    private DocumentElementActiveHandler activeHandler;
     private DocumentElementClickHandler clickHandler;
     private DocumentElementFocusHandler focusHandler;
     private DocumentElementKeyHandler keyHandler;
@@ -147,6 +148,28 @@ public final class ElementNode extends DocumentNode {
      */
     public boolean isFocusable() {
         return focusable;
+    }
+
+    /**
+     * 设置元素 active 状态处理器。
+     *
+     * <p>事件处理器不影响布局和绘制缓存，因此不会提升文档 mutation version。</p>
+     *
+     * @param activeHandler active 状态处理器；为 null 时清除处理器
+     * @return 当前元素
+     */
+    public ElementNode setActiveHandler(DocumentElementActiveHandler activeHandler) {
+        this.activeHandler = activeHandler;
+        return this;
+    }
+
+    /**
+     * 返回元素 active 状态处理器。
+     *
+     * @return active 状态处理器；不存在时返回 null
+     */
+    public DocumentElementActiveHandler getActiveHandler() {
+        return activeHandler;
     }
 
     /**

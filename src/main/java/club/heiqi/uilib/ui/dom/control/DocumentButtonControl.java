@@ -2,6 +2,8 @@ package club.heiqi.uilib.ui.dom.control;
 
 import org.lwjglx.input.Keyboard;
 
+import club.heiqi.uilib.ui.dom.DocumentElementActiveEvent;
+import club.heiqi.uilib.ui.dom.DocumentElementActiveHandler;
 import club.heiqi.uilib.ui.dom.DocumentElementClickEvent;
 import club.heiqi.uilib.ui.dom.DocumentElementClickHandler;
 import club.heiqi.uilib.ui.dom.DocumentElementFocusEvent;
@@ -24,10 +26,12 @@ public final class DocumentButtonControl {
     private final TextNode labelText;
     private DocumentButtonActionHandler actionHandler;
     private boolean enabled = true;
-    private boolean focused;
+    private boolean focusVisible;
+    private boolean active;
     private int normalBackgroundColor = 0xFF3182CE;
-    private int focusedBackgroundColor = 0xFF63B3ED;
+    private int activeBackgroundColor = 0xFF2B6CB0;
     private int disabledBackgroundColor = 0xFF4A5568;
+    private int focusBorderColor = 0xFFBEE3F8;
     private int textColor = 0xFFFFFFFF;
     private int disabledTextColor = 0xFFA0AEC0;
 
@@ -86,7 +90,8 @@ public final class DocumentButtonControl {
         }
         this.enabled = enabled;
         if (!enabled) {
-            focused = false;
+            focusVisible = false;
+            active = false;
             element.setAttribute("disabled", "true");
         } else {
             element.removeAttribute("disabled");
@@ -120,15 +125,27 @@ public final class DocumentButtonControl {
      * 设置按钮背景色。
      *
      * @param normalBackgroundColor 普通态背景色
-     * @param focusedBackgroundColor 聚焦态背景色
+     * @param activeBackgroundColor 按下态背景色
      * @param disabledBackgroundColor 禁用态背景色
      * @return 当前按钮控件
      */
-    public DocumentButtonControl setBackgroundColors(int normalBackgroundColor, int focusedBackgroundColor,
+    public DocumentButtonControl setBackgroundColors(int normalBackgroundColor, int activeBackgroundColor,
             int disabledBackgroundColor) {
         this.normalBackgroundColor = normalBackgroundColor;
-        this.focusedBackgroundColor = focusedBackgroundColor;
+        this.activeBackgroundColor = activeBackgroundColor;
         this.disabledBackgroundColor = disabledBackgroundColor;
+        updateVisualState();
+        return this;
+    }
+
+    /**
+     * 设置键盘焦点描边颜色。
+     *
+     * @param focusBorderColor 键盘焦点描边颜色
+     * @return 当前按钮控件
+     */
+    public DocumentButtonControl setFocusBorderColor(int focusBorderColor) {
+        this.focusBorderColor = focusBorderColor;
         updateVisualState();
         return this;
     }
@@ -152,6 +169,7 @@ public final class DocumentButtonControl {
         element.style()
                 .setPadding(UiStyleLength.px(10))
                 .setBackgroundColor(normalBackgroundColor)
+                .setBorderWidth(UiStyleLength.px(1))
                 .setBorderRadius(UiStyleLength.px(999))
                 .setTextColor(textColor)
                 .setOverflowX(UiOverflow.HIDDEN)
@@ -159,7 +177,14 @@ public final class DocumentButtonControl {
     }
 
     private void installHandlers() {
-        element.setClickHandler(new DocumentElementClickHandler() {
+        element.setActiveHandler(new DocumentElementActiveHandler() {
+            @Override
+            public boolean onActiveChanged(DocumentElementActiveEvent event) {
+                active = event.isActive() && enabled;
+                updateVisualState();
+                return true;
+            }
+        }).setClickHandler(new DocumentElementClickHandler() {
             @Override
             public boolean onClick(DocumentElementClickEvent event) {
                 activate(false, 0, event.getButton(), event.getTimeNanos());
@@ -168,17 +193,30 @@ public final class DocumentButtonControl {
         }).setFocusHandler(new DocumentElementFocusHandler() {
             @Override
             public void onFocusChanged(DocumentElementFocusEvent event) {
-                focused = event.isFocused() && enabled;
+                focusVisible = event.isFocused() && event.isFocusVisible() && enabled;
+                if (!event.isFocused()) {
+                    active = false;
+                }
                 updateVisualState();
             }
         }).setKeyHandler(new DocumentElementKeyHandler() {
             @Override
             public boolean onKey(DocumentElementKeyEvent event) {
-                if (event.getAction() == UiKeyEvent.Action.PRESSED && isActivationKey(event.getKeyCode())) {
+                if (!isActivationKey(event.getKeyCode())) {
+                    return false;
+                }
+                if (event.getAction() == UiKeyEvent.Action.PRESSED) {
+                    active = enabled;
+                    updateVisualState();
                     activate(true, event.getKeyCode(), -1, event.getTimeNanos());
                     return true;
                 }
-                return false;
+                if (event.getAction() == UiKeyEvent.Action.RELEASED) {
+                    active = false;
+                    updateVisualState();
+                    return true;
+                }
+                return true;
             }
         });
     }
@@ -197,14 +235,17 @@ public final class DocumentButtonControl {
         if (!enabled) {
             backgroundColor = disabledBackgroundColor;
             resolvedTextColor = disabledTextColor;
-        } else if (focused) {
-            backgroundColor = focusedBackgroundColor;
+        } else if (active) {
+            backgroundColor = activeBackgroundColor;
             resolvedTextColor = textColor;
         } else {
             backgroundColor = normalBackgroundColor;
             resolvedTextColor = textColor;
         }
-        element.style().setBackgroundColor(backgroundColor).setTextColor(resolvedTextColor);
+        element.style()
+                .setBackgroundColor(backgroundColor)
+                .setBorderColor(focusVisible ? focusBorderColor : 0)
+                .setTextColor(resolvedTextColor);
     }
 
     private static boolean isActivationKey(int keyCode) {

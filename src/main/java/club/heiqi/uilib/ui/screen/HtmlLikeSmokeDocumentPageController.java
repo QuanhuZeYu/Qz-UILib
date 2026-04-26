@@ -246,6 +246,7 @@ final class HtmlLikeSmokeDocumentPageController extends DocumentPageController {
                 .setFlexGrow(1.0F)
                 .setPadding(UiStyleLength.px(10))
                 .setBackgroundColor(0xFF4A5568)
+                .setBorderWidth(UiStyleLength.px(1))
                 .setBorderRadius(UiStyleLength.px(999))
                 .setTextColor(0xFFFFFFFF)
                 .setOverflowX(UiOverflow.HIDDEN)
@@ -254,15 +255,16 @@ final class HtmlLikeSmokeDocumentPageController extends DocumentPageController {
         tabPill.setFocusable(true).setFocusHandler(new DocumentElementFocusHandler() {
             @Override
             public void onFocusChanged(DocumentElementFocusEvent event) {
-                tabPill.style().setBackgroundColor(event.isFocused() ? 0xFF9F7AEA : 0xFF4A5568);
-                tabText.setText(formatTabFocusLabel(event.isFocused()));
+                tabPill.style().setBorderColor(event.isFocusVisible() ? 0xFFD6BCFA : 0);
+                tabText.setText(formatTabFocusLabel(event.isFocusVisible()));
             }
         });
         footer.append(tabPill);
 
         final DocumentButtonControl buttonControl = new DocumentButtonControl(document, "Button ctrl: 0");
         final int[] buttonCount = new int[] { 0 };
-        buttonControl.setBackgroundColors(0xFF2B6CB0, 0xFF63B3ED, 0xFF4A5568)
+        buttonControl.setBackgroundColors(0xFF2B6CB0, 0xFF2C5282, 0xFF4A5568)
+                .setFocusBorderColor(0xFFBEE3F8)
                 .setActionHandler(new DocumentButtonActionHandler() {
                     @Override
                     public void onAction(DocumentButtonActionEvent event) {

@@ -8,6 +8,8 @@ import org.junit.Assert;
 import org.junit.Test;
 import org.lwjglx.input.Keyboard;
 
+import club.heiqi.uilib.ui.dom.DocumentElementActiveEvent;
+import club.heiqi.uilib.ui.dom.DocumentElementActiveHandler;
 import club.heiqi.uilib.ui.dom.DocumentElementClickEvent;
 import club.heiqi.uilib.ui.dom.DocumentElementClickHandler;
 import club.heiqi.uilib.ui.dom.DocumentElementFocusEvent;
@@ -237,7 +239,7 @@ public class HtmlLikeDocumentWidgetTest {
         UiDocument document = UiDocument.create();
         ElementNode root = document.getRootElement();
         final ElementNode input = document.div();
-        final List<Boolean> focusEvents = new ArrayList<Boolean>();
+        final List<DocumentElementFocusEvent> focusEvents = new ArrayList<DocumentElementFocusEvent>();
         final List<DocumentElementTextInputEvent> textEvents = new ArrayList<DocumentElementTextInputEvent>();
         final List<DocumentElementKeyEvent> keyEvents = new ArrayList<DocumentElementKeyEvent>();
         root.style()
@@ -250,7 +252,7 @@ public class HtmlLikeDocumentWidgetTest {
                 .setFocusHandler(new DocumentElementFocusHandler() {
                     @Override
                     public void onFocusChanged(DocumentElementFocusEvent event) {
-                        focusEvents.add(Boolean.valueOf(event.isFocused()));
+                        focusEvents.add(event);
                     }
                 })
                 .setTextInputHandler(new DocumentElementTextInputHandler() {
@@ -279,7 +281,9 @@ public class HtmlLikeDocumentWidgetTest {
                 false, 3L));
 
         Assert.assertSame(input, widget.getFocusedElement());
-        Assert.assertEquals(Collections.singletonList(Boolean.TRUE), focusEvents);
+        Assert.assertEquals(1, focusEvents.size());
+        Assert.assertTrue(focusEvents.get(0).isFocused());
+        Assert.assertFalse(focusEvents.get(0).isFocusVisible());
         Assert.assertEquals(1, textEvents.size());
         Assert.assertSame(input, textEvents.get(0).getTarget());
         Assert.assertSame(input, textEvents.get(0).getCurrentTarget());
@@ -322,6 +326,40 @@ public class HtmlLikeDocumentWidgetTest {
         Assert.assertNull(widget.getFocusedElement());
         Assert.assertEquals(Boolean.TRUE, focusEvents.get(0));
         Assert.assertEquals(Boolean.FALSE, focusEvents.get(1));
+    }
+
+    /**
+     * 验证 HTML-like 组件会分发鼠标按下与松开的 active 状态。
+     */
+    @Test
+    public void shouldDispatchActiveStateAroundMousePress() {
+        UiDocument document = UiDocument.create();
+        ElementNode root = document.getRootElement();
+        ElementNode input = document.div();
+        final List<Boolean> activeEvents = new ArrayList<Boolean>();
+        root.style()
+                .setWidth(UiStyleLength.px(80))
+                .setHeight(UiStyleLength.px(40));
+        input.style()
+                .setWidth(UiStyleLength.px(40))
+                .setHeight(UiStyleLength.px(20));
+        input.setActiveHandler(new DocumentElementActiveHandler() {
+            @Override
+            public boolean onActiveChanged(DocumentElementActiveEvent event) {
+                activeEvents.add(Boolean.valueOf(event.isActive()));
+                return true;
+            }
+        });
+        root.append(input);
+        HtmlLikeDocumentWidget widget = new HtmlLikeDocumentWidget(document, 80, 40,
+                new DeterministicTextMeasureService());
+        widget.applyLayoutBounds(5, 7, 80, 40);
+
+        widget.onMouseDown(new UiMouseEvent(UiMouseEvent.Action.BUTTON_DOWN, 10, 12, 0, 0, 0, 0, 1L));
+        widget.onMouseUp(new UiMouseEvent(UiMouseEvent.Action.BUTTON_UP, 10, 12, 0, 0, 0, 0, 2L));
+
+        Assert.assertEquals(Boolean.TRUE, activeEvents.get(0));
+        Assert.assertEquals(Boolean.FALSE, activeEvents.get(1));
     }
 
     /**
