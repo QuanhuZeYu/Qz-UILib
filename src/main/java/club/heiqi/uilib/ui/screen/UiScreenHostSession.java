@@ -115,6 +115,7 @@ final class UiScreenHostSession {
                         try {
                             GL11.glLoadIdentity();
                             backgroundBlurRenderer.drawBlurredBackground(nativeWidth, nativeHeight);
+                            prepareMainUiRenderState();
                             UiRenderContext context = new UiRenderContext(nativeWidth, nativeHeight, latestMouseX,
                                     latestMouseY, partialTicks);
                             rootWidget.render(context);
@@ -294,6 +295,22 @@ final class UiScreenHostSession {
         }
 
         deferredRenderTarget.compositeToCurrentFramebuffer();
+    }
+
+    /**
+     * 准备主 UI 层的稳定 2D OpenGL 状态。
+     *
+     * <p>宿主世界渲染会把 depth/cull/alpha 等状态留在不可预期的组合中；主 UI 绘制必须在进入
+     * widget 树之前统一清理，否则圆角填充这类面片几何可能被背面剔除，只剩线框可见。</p>
+     */
+    private static void prepareMainUiRenderState() {
+        GL11.glDisable(GL11.GL_DEPTH_TEST);
+        GL11.glDisable(GL11.GL_CULL_FACE);
+        GL11.glDisable(GL11.GL_ALPHA_TEST);
+        GL11.glDisable(GL11.GL_LIGHTING);
+        GL11.glEnable(GL11.GL_BLEND);
+        GL11.glBlendFunc(GL11.GL_SRC_ALPHA, GL11.GL_ONE_MINUS_SRC_ALPHA);
+        GL11.glColor4f(1.0F, 1.0F, 1.0F, 1.0F);
     }
 
     /**

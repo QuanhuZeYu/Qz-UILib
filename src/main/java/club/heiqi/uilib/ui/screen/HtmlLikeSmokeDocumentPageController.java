@@ -49,7 +49,7 @@ final class HtmlLikeSmokeDocumentPageController extends DocumentPageController {
     void buildDocument() {
         documentPage.addBlock(documentUi.text(DocumentTextWidget.Role.TITLE, "HTML-like Smoke", 2));
         documentPage.addBlock(documentUi.text(DocumentTextWidget.Role.BODY,
-                "下方色块不是旧 Widget 直接排布，而是由 UiDocument -> style -> layout -> paint command -> UiRenderContext 完整链路绘制。", 8));
+                "下方色块由 UiDocument -> style -> layout -> paint command -> UiRenderContext 完整链路绘制。", 8));
         documentPage.addBlock(htmlLikeDocumentWidget);
     }
 
