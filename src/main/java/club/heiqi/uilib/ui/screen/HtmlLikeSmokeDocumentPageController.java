@@ -253,7 +253,7 @@ final class HtmlLikeSmokeDocumentPageController extends DocumentPageController {
 
         final DocumentToggleSwitchControl toggleControl = new DocumentToggleSwitchControl(document);
         toggleControl.setToggled(true)
-                .setTrackColors(0xFF4A5568, 0xFF38A169, 0xFF333344)
+                .setTrackColors(0xFF718096, 0xFF48BB78, 0xFF333344)
                 .setFocusBorderColor(0xFFBEE3F8);
         toggleControl.getElement().style().setFlexGrow(0.6F);
         footer.append(toggleControl.getElement());

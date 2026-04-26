@@ -216,13 +216,13 @@ public class HtmlLikeSmokeDocumentPageControllerTest {
         widget.onFocusTraversal(false);
         RecordingUiRenderContext onRenderContext = new RecordingUiRenderContext();
         widget.render(onRenderContext);
-        Assert.assertTrue(containsFillColor(onRenderContext.drawCalls, 0xFF38A169));
+        Assert.assertTrue(containsFillColor(onRenderContext.drawCalls, 0xFF48BB78));
 
         widget.onMouseDown(new UiMouseEvent(UiMouseEvent.Action.BUTTON_DOWN, 710, 280, 0, 0, 0, 0, 1L));
         widget.onMouseUp(new UiMouseEvent(UiMouseEvent.Action.BUTTON_UP, 710, 280, 0, 0, 0, 0, 2L));
         RecordingUiRenderContext offRenderContext = new RecordingUiRenderContext();
         widget.render(offRenderContext);
-        Assert.assertTrue(containsFillColor(offRenderContext.drawCalls, 0xFF4A5568));
+        Assert.assertTrue(containsFillColor(offRenderContext.drawCalls, 0xFF718096));
     }
 
     private static List<Widget> getDocumentBlocks(DocumentPageWidget pagePanel) {
