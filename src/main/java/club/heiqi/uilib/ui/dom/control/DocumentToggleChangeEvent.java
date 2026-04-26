@@ -3,7 +3,6 @@ package club.heiqi.uilib.ui.dom.control;
 import java.util.Objects;
 
 import club.heiqi.uilib.ui.dom.ElementNode;
-import club.heiqi.uilib.ui.dom.UiDocument;
 
 /**
  * 开关状态变更事件。

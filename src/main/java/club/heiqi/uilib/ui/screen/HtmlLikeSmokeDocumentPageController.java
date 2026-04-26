@@ -254,13 +254,14 @@ final class HtmlLikeSmokeDocumentPageController extends DocumentPageController {
         footer.append(buttonControl.getElement());
 
         final DocumentToggleSwitchControl toggleControl = new DocumentToggleSwitchControl(document);
+        final boolean[] toggleChangeFired = new boolean[] { false };
         toggleControl.setToggled(true)
                 .setTrackColors(0xFF4A5568, 0xFF38A169, 0xFF333344)
                 .setFocusBorderColor(0xFFBEE3F8)
                 .setChangeHandler(new DocumentToggleChangeHandler() {
                     @Override
                     public void onToggleChanged(DocumentToggleChangeEvent event) {
-                        // 开关控件本身已通过 updateVisualState 同步视觉状态
+                        toggleChangeFired[0] = true;
                     }
                 });
         toggleControl.getElement().style().setFlexGrow(0.6F);

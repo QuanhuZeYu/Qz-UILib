@@ -2,8 +2,6 @@ package club.heiqi.uilib.ui.dom.control;
 
 import org.lwjglx.input.Keyboard;
 
-import club.heiqi.uilib.ui.dom.DocumentElementActiveEvent;
-import club.heiqi.uilib.ui.dom.DocumentElementActiveHandler;
 import club.heiqi.uilib.ui.dom.DocumentElementClickEvent;
 import club.heiqi.uilib.ui.dom.DocumentElementClickHandler;
 import club.heiqi.uilib.ui.dom.DocumentElementFocusEvent;
@@ -31,7 +29,6 @@ public final class DocumentToggleSwitchControl {
     private boolean toggled;
     private boolean enabled = true;
     private boolean focusVisible;
-    private boolean active;
     private int trackWidth = 48;
     private int trackHeight = 24;
     private int thumbSize = 18;
@@ -87,7 +84,6 @@ public final class DocumentToggleSwitchControl {
         }
         this.toggled = toggled;
         updateVisualState();
-        fireChange();
         return this;
     }
 
@@ -104,7 +100,6 @@ public final class DocumentToggleSwitchControl {
         this.enabled = enabled;
         if (!enabled) {
             focusVisible = false;
-            active = false;
         }
         element.setFocusable(enabled);
         updateVisualState();
@@ -201,7 +196,7 @@ public final class DocumentToggleSwitchControl {
     }
 
     private void configureElement() {
-        element.setFocusable(true);
+        element.setFocusable(enabled);
         element.style()
                 .setDisplay(UiDisplay.FLEX)
                 .setFlexDirection(UiFlexDirection.ROW)
@@ -222,13 +217,7 @@ public final class DocumentToggleSwitchControl {
     }
 
     private void installHandlers() {
-        element.setActiveHandler(new DocumentElementActiveHandler() {
-            @Override
-            public boolean onActiveChanged(DocumentElementActiveEvent event) {
-                active = event.isActive() && enabled;
-                return true;
-            }
-        }).setClickHandler(new DocumentElementClickHandler() {
+        element.setClickHandler(new DocumentElementClickHandler() {
             @Override
             public boolean onClick(DocumentElementClickEvent event) {
                 toggle(false);

@@ -262,10 +262,10 @@ public class DocumentTextInputControlTest {
     }
 
     /**
-     * 验证通过 setText 外部设置文本也会触发变更处理器。
+     * 验证通过 setText 外部设置文本不触发变更处理器，只有用户交互才触发。
      */
     @Test
-    public void shouldFireChangeHandlerOnProgrammaticSetText() {
+    public void shouldNotFireChangeHandlerOnProgrammaticSetText() {
         UiDocument document = UiDocument.create();
         DocumentTextInputControl textInputControl = new DocumentTextInputControl(document);
         final List<String> changeTexts = new ArrayList<String>();
@@ -278,8 +278,7 @@ public class DocumentTextInputControlTest {
 
         textInputControl.setText("Initial");
 
-        Assert.assertEquals(1, changeTexts.size());
-        Assert.assertEquals("Initial", changeTexts.get(0));
+        Assert.assertEquals(0, changeTexts.size());
         Assert.assertEquals("Initial", textInputControl.getText());
     }
 

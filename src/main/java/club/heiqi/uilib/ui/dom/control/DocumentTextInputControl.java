@@ -80,7 +80,6 @@ public final class DocumentTextInputControl {
             appendAcceptedCodePoints(textBuilder, text, maxLength);
         }
         syncText();
-        fireChange();
         return this;
     }
 
@@ -255,7 +254,8 @@ public final class DocumentTextInputControl {
                         && (event.getAction() == UiKeyEvent.Action.PRESSED
                                 || event.getAction() == UiKeyEvent.Action.REPEATED)) {
                     if (textBuilder.length() > 0) {
-                        textBuilder.deleteCharAt(textBuilder.length() - 1);
+                        int deleteStart = textBuilder.offsetByCodePoints(textBuilder.length(), -1);
+                        textBuilder.delete(deleteStart, textBuilder.length());
                         syncText();
                         fireChange();
                     }
