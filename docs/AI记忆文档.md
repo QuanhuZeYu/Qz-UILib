@@ -14,12 +14,12 @@
 - 当前可运行链路仍以 retained `Widget` 树为渲染后端，文档页主创建边界为 `UiDocumentScreens`。
 - `UiDocumentScreens` 通过 `DocumentScreenEnvironment`、`DocumentScreenDefinition` 与 `DocumentScreenChromeResolver` 暴露显式页面创建入口。
 - HTML-like 文档树最小骨架已在 `club.heiqi.uilib.ui.dom` 落地；`UiDocument` 是当前文档作者入口，`DocumentNode` 负责父子关系与 mutation version，`ElementNode` 与 `TextNode` 分别承载元素和文本；`ElementNode` 当前支持最小 active handler、click handler、focus handler、key handler、text input handler 与 focusable 标记，active/click/key/text input 事件会从目标元素向父元素冒泡，focus 事件会带 `focusVisible` 区分键盘可见焦点与鼠标普通焦点。
-- HTML-like 基础控件适配已在 `club.heiqi.uilib.ui.dom.control` 起步；`DocumentButtonControl` 当前以 `ElementNode` 为根封装按钮行为，支持 action handler、enabled/disabled、click 激活、Enter/Space 键盘激活、focusable、active 按下态、focus-visible 描边态与基础视觉状态切换。
+- HTML-like 基础控件适配已在 `club.heiqi.uilib.ui.dom.control` 起步；`DocumentButtonControl` 当前以 `ElementNode` 为根封装按钮行为，支持 action handler、enabled/disabled、click 激活、Enter/Space 键盘激活、focusable、active 按下态、focus-visible 描边态与基础视觉状态切换；`DocumentTextInputControl` 支持 placeholder、maxLength、文本输入（过滤控制字符）、Backspace 删除、enabled/disabled、focus 边框区分、change handler；`DocumentToggleSwitchControl` 以 flex row + justifyContent 切换 thumb 位置实现开关视觉，支持 click/Enter/Space 切换、enabled/disabled、active/focus-visible 与 toggle change handler。
 - HTML-like 样式系统初版已在 `club.heiqi.uilib.ui.style` 落地；`ElementNode.style()` 暴露 inline style 入口，`UiStyleResolver` 负责把元素样式解析为 `ComputedStyle`。
 - HTML-like 布局盒初版已在 `club.heiqi.uilib.ui.layout` 落地；`DocumentLayoutEngine` 当前支持元素级 block flow、box model、px/% 长度、auto 高度、`display: none` 过滤、子元素垂直流式排布、直接文本子节点基于 `TextMeasureService` 的测量与换行布局，以及 flex row/column、gap、align、justify、grow/shrink 的最小实现；`DocumentScrollState` 当前负责根据布局盒推导 `overflow: auto` 元素的可滚范围和滚动偏移；`DocumentHitTestEngine` 当前负责在滚动与 overflow clip 语义下查找命中的最深元素。
 - HTML-like 绘制命令初版已在 `club.heiqi.uilib.ui.paint` 落地；`DocumentPaintEngine` 当前能把布局盒树转换为 background/border/text/clip 中立绘制命令，并保留父元素背景、父元素边框、结构 clip、滚动后的直接文本换行行、滚动后的子树、clip end 的基础 paint order。
 - `DocumentPaintRenderer` 已可把 background/border/text/clip paint command 投影到现有 `UiRenderContext`，当前已经具备从 HTML-like 模型走到实际 UI 渲染上下文的最小适配链。
-- `HtmlLikeDocumentWidget` 已把 `UiDocument -> style -> layout -> paint command -> UiRenderContext` 链路挂接到现有 retained `Widget` 后端；生产构造默认使用 `DefaultTextMeasureService`，测试可注入确定性 `TextMeasureService`；组件现在会消费命中的 `overflow: auto` 元素滚轮事件并让内容区随 `DocumentScrollState` 偏移，也会将鼠标 active/click 分发给命中的 HTML-like 元素，并维护命中 focusable 元素的内部焦点，接收现有 `UiInputRouter` 转发的 key/text input 后向 HTML-like 元素冒泡；鼠标聚焦元素时不设置 focus-visible，Tab/Shift+Tab 进入或移动焦点时设置 focus-visible；当前 `UiInputRouter` 的 Tab 全局遍历会先让已聚焦 `Widget` 处理内部焦点遍历，HTML-like 组件会按布局树顺序在 focusable 元素之间移动，边界处再交回全局 widget 焦点；`html_like_smoke` 子页已可通过诊断菜单进入，用于游戏内真实可见渲染验收，当前页面包含 overflow-hidden 裁剪样例、HTML-like 文本换行样例、可滚动 teal 卡片样例、可点击 `Click target` pill 样例、可输入 `Type target` pill 样例、可 Tab 聚焦 `Tab target` pill 样例与 `Button ctrl` 按钮控件样例。
+- `HtmlLikeDocumentWidget` 已把 `UiDocument -> style -> layout -> paint command -> UiRenderContext` 链路挂接到现有 retained `Widget` 后端；生产构造默认使用 `DefaultTextMeasureService`，测试可注入确定性 `TextMeasureService`；组件现在会消费命中的 `overflow: auto` 元素滚轮事件并让内容区随 `DocumentScrollState` 偏移，也会将鼠标 active/click 分发给命中的 HTML-like 元素，并维护命中 focusable 元素的内部焦点，接收现有 `UiInputRouter` 转发的 key/text input 后向 HTML-like 元素冒泡；鼠标聚焦元素时不设置 focus-visible，Tab/Shift+Tab 进入或移动焦点时设置 focus-visible；当前 `UiInputRouter` 的 Tab 全局遍历会先让已聚焦 `Widget` 处理内部焦点遍历，HTML-like 组件会按布局树顺序在 focusable 元素之间移动，边界处再交回全局 widget 焦点；`html_like_smoke` 子页已可通过诊断菜单进入，用于游戏内真实可见渲染验收，当前页面包含 overflow-hidden 裁剪样例、HTML-like 文本换行样例、可滚动 teal 卡片样例、可点击 `Click target` pill 样例、可输入 `Type target` pill 样例、可 Tab 聚焦 `Tab target` pill 样例、`Button ctrl` 按钮控件样例与 `Toggle ctrl` 开关控件样例。
 - `UiScreenHostSession` 在主 UI widget 树渲染前会统一准备稳定 2D GL 状态，避免世界渲染遗留的 depth/cull/alpha/light 状态导致 rounded fill 面片被剔除。
 - 后续作者侧入口应逐步迁移到 HTML-like 文档/元素/样式 API；底层 `Widget`、`DivWidget`、`ScrollViewportWidget` 应逐步退为 backend adapter 或兼容层。当前旧非 DOM 代码尚不能正式舍弃，至少需要完成键盘/文本输入、基础控件适配和一个真实诊断/业务页面迁移后再通知用户进入清退阶段。
 - `UiSurfaceStyle` 是纯外观值对象，只负责 `fillColor`、`borderColor`、`cornerRadius`。
@@ -53,7 +53,7 @@
 - 若并发启动多个 Gradle 构建，`decompileSrgJar` 可能会因共享 `build/tmp/decompileSrgJar/mc.jar` 触发 Windows 文件锁冲突；验证构建时应串行执行单个 Gradle 命令。
 - 最近已验证通过：`compileJava`。
 - 最近已验证通过：集中 Java 环境与 `GRADLE_USER_HOME=D:\.MyApps\.ENV\gradle-home` 下的 `javaToolchains`、`compileMcLauncherJava`、`runClient21 --dry-run`、`runClient21`、`processIdeaSettings`。
-- 最近已验证通过的定向测试：`DocumentButtonControlTest`、`HtmlLikeDocumentWidgetTest`、`HtmlLikeSmokeDocumentPageControllerTest`、`UiInputRouterTest`、`DocumentPaintRendererTest`、`UiDocumentScreensTest`、`UiTestDocumentPageControllerTest`、`DocumentPaintEngineTest`、`DocumentLayoutEngineTest`、`UiStyleResolverTest`、`UiDocumentTest`、`UiSurfaceStyleTest`、`DocumentPageWidgetTest`、`InventorySlotGridWidgetTest`。
+- 最近已验证通过的定向测试：`DocumentButtonControlTest`、`DocumentTextInputControlTest`、`DocumentToggleSwitchControlTest`、`HtmlLikeDocumentWidgetTest`、`HtmlLikeSmokeDocumentPageControllerTest`、`UiInputRouterTest`、`DocumentPaintRendererTest`、`UiDocumentScreensTest`、`UiTestDocumentPageControllerTest`、`DocumentPaintEngineTest`、`DocumentLayoutEngineTest`、`UiStyleResolverTest`、`UiDocumentTest`、`UiSurfaceStyleTest`、`DocumentPageWidgetTest`、`InventorySlotGridWidgetTest`。
 - 当前 `ui.dom` / `ui.style` / `ui.layout` / `ui.paint` 已经接入 `HtmlLikeDocumentWidget` 和 `html_like_smoke` 子页；可从游戏内诊断菜单进入 smoke 页进行真实渲染验收。
 - 纯 JVM 测试不得直接触发 `DefaultTextMeasureService`/`FontService` 默认字体运行时；涉及 HTML-like 文本测量的测试应注入确定性 `TextMeasureService`，避免加载 LWJGL 相关类。
 
@@ -71,6 +71,12 @@
 - `src/main/java/club/heiqi/uilib/ui/dom/control/DocumentButtonControl.java`
 - `src/main/java/club/heiqi/uilib/ui/dom/control/DocumentButtonActionEvent.java`
 - `src/main/java/club/heiqi/uilib/ui/dom/control/DocumentButtonActionHandler.java`
+- `src/main/java/club/heiqi/uilib/ui/dom/control/DocumentTextInputControl.java`
+- `src/main/java/club/heiqi/uilib/ui/dom/control/DocumentTextInputChangeEvent.java`
+- `src/main/java/club/heiqi/uilib/ui/dom/control/DocumentTextInputChangeHandler.java`
+- `src/main/java/club/heiqi/uilib/ui/dom/control/DocumentToggleSwitchControl.java`
+- `src/main/java/club/heiqi/uilib/ui/dom/control/DocumentToggleChangeEvent.java`
+- `src/main/java/club/heiqi/uilib/ui/dom/control/DocumentToggleChangeHandler.java`
 - `src/main/java/club/heiqi/uilib/ui/style/UiStyleDeclaration.java`
 - `src/main/java/club/heiqi/uilib/ui/style/UiStyleResolver.java`
 - `src/main/java/club/heiqi/uilib/ui/style/ComputedStyle.java`
@@ -142,12 +148,12 @@
 - 阶段 2：新增样式系统与 computed style 初版；当前 inline style 与基础 computed style 已完成，后续需要扩展样式属性集并接入 layout invalidation。
 - 阶段 3：建立 box/layout tree，并逐步把现有 Div-like 布局能力迁移到新模型；当前 block flow、flex flow 与直接文本测量/换行布局最小闭环已完成，后续应推进更完整的 inline layout。
 - 阶段 4：建立 paint command、clip、scroll、deferred replay 的统一渲染模型；当前 background/border/text/clip paint command、`UiRenderContext` 投影、`overflow: auto` 最小滚动偏移、命中测试与最小 smoke screen 集成已完成，下一步可推进滚动条可视化或更完整 inline layout。
-- 阶段 5：迁移事件与控件适配；当前已完成元素 active/click 冒泡、普通焦点/focus-visible 区分、键盘按键、文本输入、Tab/Shift+Tab 内部焦点遍历与按钮控件最小适配，后续需要输入框、开关、选择器、背包格子等更多基础控件适配与更完整的可访问性语义。
+- 阶段 5：迁移事件与控件适配；当前已完成元素 active/click 冒泡、普通焦点/focus-visible 区分、键盘按键、文本输入、Tab/Shift+Tab 内部焦点遍历、按钮/文本输入框/开关控件适配，后续需要选择器、背包格子等更多基础控件适配与更完整的可访问性语义。
 - 阶段 6：清退旧 public screen 构造入口与直接 widget authoring 示例。
 
 ### 下一步执行项
 
-- 下一步可优先推进 HTML-like 输入框/开关/选择器/背包格子等基础控件适配，或为 `overflow: auto` 增加滚动条绘制/拖拽交互。
+- 下一步可优先推进 HTML-like 选择器/背包格子等基础控件适配，或为 `overflow: auto` 增加滚动条绘制/拖拽交互。
 - 旧非 DOM 代码暂时不能舍弃；达到“可正式舍弃旧代码”的最低条件是：HTML-like 输入/控件链路可替代现有作者侧常用控件、至少一个真实诊断/业务页面迁移完成且相关测试与游戏内验收通过。达到该条件时必须明确通知用户。
-- 游戏内实际验证入口已就绪：按右 Shift 打开诊断菜单页，再进入 `HTML-like Smoke` 子页，观察 HTML-like 色块是否按实心填充、圆角边框、header 内部超宽粉色条被裁剪、卡片内 HTML-like 文本被绘制并在窄卡片中换行；teal 卡片块内文本滚动已验证通过；底部绿色 `Click target: 0` pill 可用于验证 click 分发，点击后应变为 `Click target: 1` 且背景变蓝；底部红色 `Type target: click then type` pill 可用于验证焦点与文本输入，点击后可输入但不显示键盘焦点描边，输入文本应显示到 pill 内，Backspace 按下或长按应连续删除字符；Tab 应能在 `Type target`、`Tab target` 与 `Button ctrl` 之间前进，Shift+Tab 应能反向移动，`Tab target` 聚焦时会显示浅紫描边并显示 `Tab target: focused`；`Button ctrl` 可通过鼠标点击或聚焦后按 Enter/Space 激活，文本计数应递增，鼠标点击不保留键盘焦点描边，按下时应显示 active 深色背景；若只见边框不见填充，优先检查主 UI GL 状态隔离。
+- 游戏内实际验证入口已就绪：按右 Shift 打开诊断菜单页，再进入 `HTML-like Smoke` 子页，观察 HTML-like 色块是否按实心填充、圆角边框、header 内部超宽粉色条被裁剪、卡片内 HTML-like 文本被绘制并在窄卡片中换行；teal 卡片块内文本滚动已验证通过；底部绿色 `Click target: 0` pill 可用于验证 click 分发，点击后应变为 `Click target: 1` 且背景变蓝；文本输入框（`DocumentTextInputControl`）显示 placeholder，点击聚焦后可输入文本（过滤控制字符），Backspace 删除，聚焦时显示蓝色边框；`Tab target` 聚焦时显示浅紫描边并显示 `Tab target: focused`；`Button ctrl` 可通过鼠标点击或 Enter/Space 激活，文本计数递增，按下显示 active 深色背景；开关控件（`DocumentToggleSwitchControl`）默认开启，点击或 Enter/Space 可切换，轨道颜色在线性灰/绿之间切换；Tab/Shift+Tab 可在所有 focusable 控件间遍历，`Tab target` 与开关选项卡焦点时显示浅蓝描边；若只见边框不见填充，优先检查主 UI GL 状态隔离。
 - 选择一个现有诊断页作为迁移试点，避免一次性重写全部页面。

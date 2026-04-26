@@ -2,25 +2,24 @@ package club.heiqi.uilib.ui.screen;
 
 import java.util.Objects;
 
-import org.lwjglx.input.Keyboard;
-
 import club.heiqi.uilib.ui.document.DocumentTextWidget;
 import club.heiqi.uilib.ui.document.HtmlLikeDocumentWidget;
 import club.heiqi.uilib.ui.dom.DocumentElementClickEvent;
 import club.heiqi.uilib.ui.dom.DocumentElementClickHandler;
 import club.heiqi.uilib.ui.dom.DocumentElementFocusEvent;
 import club.heiqi.uilib.ui.dom.DocumentElementFocusHandler;
-import club.heiqi.uilib.ui.dom.DocumentElementKeyEvent;
-import club.heiqi.uilib.ui.dom.DocumentElementKeyHandler;
-import club.heiqi.uilib.ui.dom.DocumentElementTextInputEvent;
-import club.heiqi.uilib.ui.dom.DocumentElementTextInputHandler;
 import club.heiqi.uilib.ui.dom.ElementNode;
 import club.heiqi.uilib.ui.dom.TextNode;
 import club.heiqi.uilib.ui.dom.UiDocument;
 import club.heiqi.uilib.ui.dom.control.DocumentButtonActionEvent;
 import club.heiqi.uilib.ui.dom.control.DocumentButtonActionHandler;
 import club.heiqi.uilib.ui.dom.control.DocumentButtonControl;
-import club.heiqi.uilib.ui.event.UiKeyEvent;
+import club.heiqi.uilib.ui.dom.control.DocumentTextInputChangeEvent;
+import club.heiqi.uilib.ui.dom.control.DocumentTextInputChangeHandler;
+import club.heiqi.uilib.ui.dom.control.DocumentTextInputControl;
+import club.heiqi.uilib.ui.dom.control.DocumentToggleChangeEvent;
+import club.heiqi.uilib.ui.dom.control.DocumentToggleChangeHandler;
+import club.heiqi.uilib.ui.dom.control.DocumentToggleSwitchControl;
 import club.heiqi.uilib.ui.layout.UiLayoutSpec;
 import club.heiqi.uilib.ui.layout.UiLength;
 import club.heiqi.uilib.ui.style.UiAlignItems;
@@ -199,47 +198,26 @@ final class HtmlLikeSmokeDocumentPageController extends DocumentPageController {
         });
         footer.append(firstPill);
 
-        final ElementNode secondPill = document.div();
-        secondPill.style()
-                .setFlexGrow(2.0F)
-                .setPadding(UiStyleLength.px(10))
-                .setBackgroundColor(0xFFE53E3E)
-                .setBorderRadius(UiStyleLength.px(999))
-                .setTextColor(0xFFFFFFFF)
-                .setOverflowX(UiOverflow.HIDDEN)
-                .setOverflowY(UiOverflow.HIDDEN);
-        final StringBuilder inputValue = new StringBuilder();
-        final TextNode inputText = secondPill.appendText(formatInputLabel(inputValue));
-        secondPill.setFocusable(true)
-                .setFocusHandler(new DocumentElementFocusHandler() {
+        final DocumentTextInputControl textInputControl = new DocumentTextInputControl(document);
+        textInputControl.setPlaceholder("Type target: click then type")
+                .setMaxLength(18)
+                .setNormalBackgroundColor(0xFFE53E3E)
+                .setNormalBorderColor(0xFFE53E3E)
+                .setFocusBorderColor(0xFFD69E2E)
+                .setTextColors(0xFFFFFFFF, 0xFFDDBBBB, 0xFF886666)
+                .setChangeHandler(new DocumentTextInputChangeHandler() {
                     @Override
-                    public void onFocusChanged(DocumentElementFocusEvent event) {
-                        secondPill.style().setBackgroundColor(event.isFocused() ? 0xFFD69E2E : 0xFFE53E3E);
-                        inputText.setText(formatInputLabel(inputValue));
-                    }
-                })
-                .setTextInputHandler(new DocumentElementTextInputHandler() {
-                    @Override
-                    public boolean onTextInput(DocumentElementTextInputEvent event) {
-                        if (appendAcceptedInputText(inputValue, event.getText())) {
-                            inputText.setText(formatInputLabel(inputValue));
-                        }
-                        return true;
-                    }
-                })
-                .setKeyHandler(new DocumentElementKeyHandler() {
-                    @Override
-                    public boolean onKey(DocumentElementKeyEvent event) {
-                        if (isBackspaceDeleteEvent(event) && inputValue.length() > 0) {
-                            int deleteStart = inputValue.offsetByCodePoints(inputValue.length(), -1);
-                            inputValue.delete(deleteStart, inputValue.length());
-                            inputText.setText(formatInputLabel(inputValue));
-                            return true;
-                        }
-                        return false;
+                    public void onTextChanged(DocumentTextInputChangeEvent event) {
+                        String text = event.getText();
+                        textInputControl.getElement().style()
+                                .setBackgroundColor(text.isEmpty() ? 0xFFE53E3E : 0xFFC53030);
                     }
                 });
-        footer.append(secondPill);
+        textInputControl.getElement().style()
+                .setFlexGrow(2.0F)
+                .setBorderRadius(UiStyleLength.px(999))
+                .setPadding(UiStyleLength.px(10));
+        footer.append(textInputControl.getElement());
 
         final ElementNode tabPill = document.div();
         tabPill.style()
@@ -274,41 +252,20 @@ final class HtmlLikeSmokeDocumentPageController extends DocumentPageController {
                 });
         buttonControl.getElement().style().setFlexGrow(1.0F);
         footer.append(buttonControl.getElement());
+
+        final DocumentToggleSwitchControl toggleControl = new DocumentToggleSwitchControl(document);
+        toggleControl.setToggled(true)
+                .setTrackColors(0xFF4A5568, 0xFF38A169, 0xFF333344)
+                .setFocusBorderColor(0xFFBEE3F8)
+                .setChangeHandler(new DocumentToggleChangeHandler() {
+                    @Override
+                    public void onToggleChanged(DocumentToggleChangeEvent event) {
+                        // 开关控件本身已通过 updateVisualState 同步视觉状态
+                    }
+                });
+        toggleControl.getElement().style().setFlexGrow(0.6F);
+        footer.append(toggleControl.getElement());
         return document;
-    }
-
-    /**
-     * 把可接受的文本输入追加到 smoke 输入样例值中。
-     *
-     * @param inputValue 输入样例当前值
-     * @param text 本次输入文本
-     * @return 是否实际追加了可见字符
-     */
-    private static boolean appendAcceptedInputText(StringBuilder inputValue, String text) {
-        if (text == null || text.isEmpty()) {
-            return false;
-        }
-
-        boolean changed = false;
-        for (int index = 0; index < text.length();) {
-            int codepoint = text.codePointAt(index);
-            if (isAcceptedInputCodepoint(codepoint) && inputValue.codePointCount(0, inputValue.length()) < 18) {
-                inputValue.appendCodePoint(codepoint);
-                changed = true;
-            }
-            index += Character.charCount(codepoint);
-        }
-        return changed;
-    }
-
-    /**
-     * 格式化 smoke 输入样例展示文本。
-     *
-     * @param inputValue 输入样例当前值
-     * @return 展示文本
-     */
-    private static String formatInputLabel(StringBuilder inputValue) {
-        return inputValue.length() == 0 ? "Type target: click then type" : "Type target: " + inputValue.toString();
     }
 
     /**
@@ -319,26 +276,5 @@ final class HtmlLikeSmokeDocumentPageController extends DocumentPageController {
      */
     private static String formatTabFocusLabel(boolean focused) {
         return focused ? "Tab target: focused" : "Tab target: idle";
-    }
-
-    /**
-     * 判断 codepoint 是否可以写入 smoke 输入样例。
-     *
-     * @param codepoint Unicode codepoint
-     * @return 是否接受该字符
-     */
-    private static boolean isAcceptedInputCodepoint(int codepoint) {
-        return !Character.isISOControl(codepoint) && codepoint != '\n' && codepoint != '\r' && codepoint != '\t';
-    }
-
-    /**
-     * 判断按键事件是否应该触发输入样例退格删除。
-     *
-     * @param event HTML-like 元素按键事件
-     * @return 是否是退格删除事件
-     */
-    private static boolean isBackspaceDeleteEvent(DocumentElementKeyEvent event) {
-        return event.getKeyCode() == Keyboard.KEY_BACK
-                && (event.getAction() == UiKeyEvent.Action.PRESSED || event.getAction() == UiKeyEvent.Action.REPEATED);
     }
 }

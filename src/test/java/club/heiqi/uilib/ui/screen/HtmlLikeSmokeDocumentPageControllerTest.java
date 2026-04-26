@@ -125,8 +125,9 @@ public class HtmlLikeSmokeDocumentPageControllerTest {
         RecordingUiRenderContext typedRenderContext = new RecordingUiRenderContext();
         widget.render(typedRenderContext);
 
-        Assert.assertTrue(containsTextCall(typedRenderContext.textCalls, "Type target: AB"));
-        Assert.assertTrue(containsFillColor(typedRenderContext.drawCalls, 0xFFD69E2E));
+        Assert.assertTrue(containsTextCall(typedRenderContext.textCalls, "AB"));
+        Assert.assertTrue(containsFillColor(typedRenderContext.drawCalls, 0xFFC53030));
+        Assert.assertTrue(containsBorderColor(typedRenderContext.drawCalls, 0xFFD69E2E));
 
         widget.onKeyEvent(new UiKeyEvent(Keyboard.KEY_BACK, 0, 0, UiKeyEvent.Action.PRESSED, false, false, false,
                 false, 3L));
