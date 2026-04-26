@@ -4,7 +4,10 @@ import java.util.Objects;
 
 import club.heiqi.uilib.ui.document.DocumentTextWidget;
 import club.heiqi.uilib.ui.document.HtmlLikeDocumentWidget;
+import club.heiqi.uilib.ui.dom.DocumentElementClickEvent;
+import club.heiqi.uilib.ui.dom.DocumentElementClickHandler;
 import club.heiqi.uilib.ui.dom.ElementNode;
+import club.heiqi.uilib.ui.dom.TextNode;
 import club.heiqi.uilib.ui.dom.UiDocument;
 import club.heiqi.uilib.ui.layout.UiLayoutSpec;
 import club.heiqi.uilib.ui.layout.UiLength;
@@ -162,11 +165,26 @@ final class HtmlLikeSmokeDocumentPageController extends DocumentPageController {
                 .setColumnGap(UiStyleLength.px(10));
         root.append(footer);
 
-        ElementNode firstPill = document.div();
+        final ElementNode firstPill = document.div();
         firstPill.style()
                 .setFlexGrow(1.0F)
+                .setPadding(UiStyleLength.px(10))
                 .setBackgroundColor(0xFF38A169)
-                .setBorderRadius(UiStyleLength.px(999));
+                .setBorderRadius(UiStyleLength.px(999))
+                .setTextColor(0xFFFFFFFF)
+                .setOverflowX(UiOverflow.HIDDEN)
+                .setOverflowY(UiOverflow.HIDDEN);
+        final TextNode clickText = firstPill.appendText("Click target: 0");
+        final int[] clickCount = new int[] { 0 };
+        firstPill.setClickHandler(new DocumentElementClickHandler() {
+            @Override
+            public boolean onClick(DocumentElementClickEvent event) {
+                clickCount[0]++;
+                clickText.setText("Click target: " + clickCount[0]);
+                firstPill.style().setBackgroundColor(clickCount[0] % 2 == 0 ? 0xFF38A169 : 0xFF3182CE);
+                return true;
+            }
+        });
         footer.append(firstPill);
 
         ElementNode secondPill = document.div();

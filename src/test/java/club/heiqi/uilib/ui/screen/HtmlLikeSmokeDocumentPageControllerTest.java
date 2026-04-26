@@ -12,6 +12,7 @@ import club.heiqi.uilib.ui.control.UiControlRuntimeAdapters;
 import club.heiqi.uilib.ui.document.DocumentPageWidget;
 import club.heiqi.uilib.ui.document.DocumentTextWidget;
 import club.heiqi.uilib.ui.document.HtmlLikeDocumentWidget;
+import club.heiqi.uilib.ui.event.UiMouseEvent;
 import club.heiqi.uilib.ui.render.UiRenderContext;
 import club.heiqi.uilib.ui.text.TextMeasureService;
 import club.heiqi.uilib.ui.theme.UiDocumentTheme;
@@ -75,6 +76,31 @@ public class HtmlLikeSmokeDocumentPageControllerTest {
         Assert.assertTrue(containsTextCall(renderContext.textCalls, "TEXT paint command"));
     }
 
+    /**
+     * 验证 smoke 子页中的 HTML-like 点击目标会产生可见反馈。
+     */
+    @Test
+    public void shouldUpdateSmokeClickTargetWhenClicked() {
+        TestFixture fixture = new TestFixture();
+
+        fixture.controller.configureDocumentPage();
+        fixture.controller.buildDocument();
+        HtmlLikeDocumentWidget widget = fixture.controller.getHtmlLikeDocumentWidget();
+        widget.applyLayoutBounds(31, 47, 760, 320);
+        RecordingUiRenderContext initialRenderContext = new RecordingUiRenderContext();
+
+        widget.render(initialRenderContext);
+        Assert.assertTrue(containsTextCall(initialRenderContext.textCalls, "Click target: 0"));
+
+        widget.onMouseDown(new UiMouseEvent(UiMouseEvent.Action.BUTTON_DOWN, 70, 280, 0, 0, 0, 0, 1L));
+        widget.onMouseUp(new UiMouseEvent(UiMouseEvent.Action.BUTTON_UP, 70, 280, 0, 0, 0, 0, 2L));
+        RecordingUiRenderContext clickedRenderContext = new RecordingUiRenderContext();
+        widget.render(clickedRenderContext);
+
+        Assert.assertTrue(containsTextCall(clickedRenderContext.textCalls, "Click target: 1"));
+        Assert.assertTrue(containsFillColor(clickedRenderContext.drawCalls, 0xFF3182CE));
+    }
+
     private static List<Widget> getDocumentBlocks(DocumentPageWidget pagePanel) {
         List<Widget> pageChildren = pagePanel.getChildren();
         Assert.assertFalse(pageChildren.isEmpty());
@@ -108,6 +134,15 @@ public class HtmlLikeSmokeDocumentPageControllerTest {
     private static boolean containsTextCall(List<TextCall> textCalls, String expectedSnippet) {
         for (TextCall textCall : textCalls) {
             if (textCall.text != null && textCall.text.contains(expectedSnippet)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private static boolean containsFillColor(List<DrawCall> drawCalls, int expectedColor) {
+        for (DrawCall drawCall : drawCalls) {
+            if (drawCall.surfaceStyle.fillColor == expectedColor) {
                 return true;
             }
         }
