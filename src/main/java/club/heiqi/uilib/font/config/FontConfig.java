@@ -16,7 +16,7 @@ public final class FontConfig {
     public static int aaMode = 2;
     public static double awtCharSize = 64.0D;
     public static double charSize = 9.0D;
-    public static double fontScale = 1.0D;
+    public static double fontScale = 0.9D;
     public static double spaceWidth = 4.0D;
     public static double characterSpacing = 0.1D;
     public static double shadowOffsetX = 0.5D;
