@@ -111,6 +111,7 @@
 - 已为 HTML-like paint command 增加 `CLIP_START` / `CLIP_END` 和 renderer 回放，`overflow: hidden/auto` 会在子树绘制前后压入/弹出结构裁剪。
 - 已为 HTML-like 直接文本子节点增加 `DocumentLayoutTextRun`、`TEXT` paint command 和 renderer 回放，当前可通过 `TextMeasureService` 把多行换行文本绘制进 HTML-like 布局盒。
 - 已为 HTML-like `overflow: auto` 增加 `DocumentScrollState`、绘制阶段内容偏移与 `HtmlLikeDocumentWidget` 滚轮消费；当前滚动会保持元素自身背景、边框和裁剪框固定，只移动该元素的文本与子树内容。
+- 已通过游戏内 `HTML-like Smoke` 页面确认 teal 卡片块内文本滚动操作符合预期：滚轮滚动时卡片背景、边框和裁剪区域保持固定，内部文本内容移动。
 - 已记录纯 JVM 测试误触默认字体服务导致 LWJGL 类加载失败的问题，错误记录见 `docs/errors/ERROR-20260426-jvm-test-default-font-service.md`。
 - 已确认 IDEA 环境下 `runClient21` 可运行，但本地 Gradle/IDEA 工具链必须显式包含 `D:\.MyApps\JetBrain\IntelliJ\jbr` 与 Zulu 8，否则会在配置阶段访问 GitHub manifest 或下载 JBR 21 时失败。
 - 已整理本机 Java 环境到 `D:\.MyApps\.ENV`，并通过用户级 Gradle 配置固定 Zulu 8、JDK 21、JDK 25 与 IntelliJ JBR 21 的工具链路径。
@@ -129,5 +130,5 @@
 ### 下一步执行项
 
 - 下一步可优先推进 HTML-like 命中测试与输入分发的最小模型，或为 `overflow: auto` 增加滚动条绘制/拖拽交互。
-- 游戏内实际验证入口已就绪：按右 Shift 打开诊断菜单页，再进入 `HTML-like Smoke` 子页，观察 HTML-like 色块是否按实心填充、圆角边框、header 内部超宽粉色条被裁剪、卡片内 HTML-like 文本被绘制并在窄卡片中换行；在 teal 卡片上滚轮滚动时，卡片背景/边框应保持固定，仅内部文本内容上下移动；若只见边框不见填充，优先检查主 UI GL 状态隔离。
+- 游戏内实际验证入口已就绪：按右 Shift 打开诊断菜单页，再进入 `HTML-like Smoke` 子页，观察 HTML-like 色块是否按实心填充、圆角边框、header 内部超宽粉色条被裁剪、卡片内 HTML-like 文本被绘制并在窄卡片中换行；teal 卡片块内文本滚动已验证通过；若只见边框不见填充，优先检查主 UI GL 状态隔离。
 - 选择一个现有诊断页作为迁移试点，避免一次性重写全部页面。
