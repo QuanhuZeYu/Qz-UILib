@@ -6,12 +6,21 @@ import java.util.List;
 
 import org.junit.Assert;
 import org.junit.Test;
+import org.lwjglx.input.Keyboard;
 
 import club.heiqi.uilib.ui.dom.DocumentElementClickEvent;
 import club.heiqi.uilib.ui.dom.DocumentElementClickHandler;
+import club.heiqi.uilib.ui.dom.DocumentElementFocusEvent;
+import club.heiqi.uilib.ui.dom.DocumentElementFocusHandler;
+import club.heiqi.uilib.ui.dom.DocumentElementKeyEvent;
+import club.heiqi.uilib.ui.dom.DocumentElementKeyHandler;
+import club.heiqi.uilib.ui.dom.DocumentElementTextInputEvent;
+import club.heiqi.uilib.ui.dom.DocumentElementTextInputHandler;
 import club.heiqi.uilib.ui.dom.ElementNode;
 import club.heiqi.uilib.ui.dom.UiDocument;
+import club.heiqi.uilib.ui.event.UiKeyEvent;
 import club.heiqi.uilib.ui.event.UiMouseEvent;
+import club.heiqi.uilib.ui.event.UiTextInputEvent;
 import club.heiqi.uilib.ui.render.UiRenderContext;
 import club.heiqi.uilib.ui.style.UiOverflow;
 import club.heiqi.uilib.ui.style.UiStyleLength;
@@ -218,6 +227,101 @@ public class HtmlLikeDocumentWidgetTest {
                 0, 1L)));
 
         Assert.assertSame(second, widget.findElementAt(10, 10));
+    }
+
+    /**
+     * 验证 HTML-like 组件会聚焦命中元素并向其分发文本与键盘事件。
+     */
+    @Test
+    public void shouldFocusHitElementAndDispatchTextAndKeyEvents() {
+        UiDocument document = UiDocument.create();
+        ElementNode root = document.getRootElement();
+        final ElementNode input = document.div();
+        final List<Boolean> focusEvents = new ArrayList<Boolean>();
+        final List<DocumentElementTextInputEvent> textEvents = new ArrayList<DocumentElementTextInputEvent>();
+        final List<DocumentElementKeyEvent> keyEvents = new ArrayList<DocumentElementKeyEvent>();
+        root.style()
+                .setWidth(UiStyleLength.px(80))
+                .setHeight(UiStyleLength.px(40));
+        input.style()
+                .setWidth(UiStyleLength.px(40))
+                .setHeight(UiStyleLength.px(20));
+        input.setFocusable(true)
+                .setFocusHandler(new DocumentElementFocusHandler() {
+                    @Override
+                    public void onFocusChanged(DocumentElementFocusEvent event) {
+                        focusEvents.add(Boolean.valueOf(event.isFocused()));
+                    }
+                })
+                .setTextInputHandler(new DocumentElementTextInputHandler() {
+                    @Override
+                    public boolean onTextInput(DocumentElementTextInputEvent event) {
+                        textEvents.add(event);
+                        return true;
+                    }
+                })
+                .setKeyHandler(new DocumentElementKeyHandler() {
+                    @Override
+                    public boolean onKey(DocumentElementKeyEvent event) {
+                        keyEvents.add(event);
+                        return true;
+                    }
+                });
+        root.append(input);
+        HtmlLikeDocumentWidget widget = new HtmlLikeDocumentWidget(document, 80, 40,
+                new DeterministicTextMeasureService());
+        widget.applyLayoutBounds(5, 7, 80, 40);
+
+        Assert.assertTrue(widget.isFocusable());
+        widget.onMouseDown(new UiMouseEvent(UiMouseEvent.Action.BUTTON_DOWN, 10, 12, 0, 0, 0, 0, 1L));
+        widget.onTextInput(new UiTextInputEvent("abc", 2L));
+        widget.onKeyEvent(new UiKeyEvent(Keyboard.KEY_BACK, 0, 0, UiKeyEvent.Action.PRESSED, false, false, false,
+                false, 3L));
+
+        Assert.assertSame(input, widget.getFocusedElement());
+        Assert.assertEquals(Collections.singletonList(Boolean.TRUE), focusEvents);
+        Assert.assertEquals(1, textEvents.size());
+        Assert.assertSame(input, textEvents.get(0).getTarget());
+        Assert.assertSame(input, textEvents.get(0).getCurrentTarget());
+        Assert.assertEquals("abc", textEvents.get(0).getText());
+        Assert.assertEquals(1, keyEvents.size());
+        Assert.assertSame(input, keyEvents.get(0).getTarget());
+        Assert.assertSame(input, keyEvents.get(0).getCurrentTarget());
+        Assert.assertEquals(Keyboard.KEY_BACK, keyEvents.get(0).getKeyCode());
+    }
+
+    /**
+     * 验证 HTML-like 组件失去 widget 焦点时会清空内部元素焦点。
+     */
+    @Test
+    public void shouldClearFocusedElementWhenWidgetLosesFocus() {
+        UiDocument document = UiDocument.create();
+        ElementNode root = document.getRootElement();
+        final ElementNode input = document.div();
+        final List<Boolean> focusEvents = new ArrayList<Boolean>();
+        root.style()
+                .setWidth(UiStyleLength.px(80))
+                .setHeight(UiStyleLength.px(40));
+        input.style()
+                .setWidth(UiStyleLength.px(40))
+                .setHeight(UiStyleLength.px(20));
+        input.setFocusable(true).setFocusHandler(new DocumentElementFocusHandler() {
+            @Override
+            public void onFocusChanged(DocumentElementFocusEvent event) {
+                focusEvents.add(Boolean.valueOf(event.isFocused()));
+            }
+        });
+        root.append(input);
+        HtmlLikeDocumentWidget widget = new HtmlLikeDocumentWidget(document, 80, 40,
+                new DeterministicTextMeasureService());
+        widget.applyLayoutBounds(5, 7, 80, 40);
+
+        widget.onMouseDown(new UiMouseEvent(UiMouseEvent.Action.BUTTON_DOWN, 10, 12, 0, 0, 0, 0, 1L));
+        widget.onFocusChanged(false);
+
+        Assert.assertNull(widget.getFocusedElement());
+        Assert.assertEquals(Boolean.TRUE, focusEvents.get(0));
+        Assert.assertEquals(Boolean.FALSE, focusEvents.get(1));
     }
 
     private static void assertDrawCall(DrawCall drawCall, int left, int top, int right, int bottom, int fillColor,

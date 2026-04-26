@@ -6,13 +6,16 @@ import java.util.List;
 
 import org.junit.Assert;
 import org.junit.Test;
+import org.lwjglx.input.Keyboard;
 
 import club.heiqi.uilib.ui.control.LabelWidget;
 import club.heiqi.uilib.ui.control.UiControlRuntimeAdapters;
 import club.heiqi.uilib.ui.document.DocumentPageWidget;
 import club.heiqi.uilib.ui.document.DocumentTextWidget;
 import club.heiqi.uilib.ui.document.HtmlLikeDocumentWidget;
+import club.heiqi.uilib.ui.event.UiKeyEvent;
 import club.heiqi.uilib.ui.event.UiMouseEvent;
+import club.heiqi.uilib.ui.event.UiTextInputEvent;
 import club.heiqi.uilib.ui.render.UiRenderContext;
 import club.heiqi.uilib.ui.text.TextMeasureService;
 import club.heiqi.uilib.ui.theme.UiDocumentTheme;
@@ -99,6 +102,38 @@ public class HtmlLikeSmokeDocumentPageControllerTest {
 
         Assert.assertTrue(containsTextCall(clickedRenderContext.textCalls, "Click target: 1"));
         Assert.assertTrue(containsFillColor(clickedRenderContext.drawCalls, 0xFF3182CE));
+    }
+
+    /**
+     * 验证 smoke 子页中的 HTML-like 输入目标会响应焦点、文本输入和退格键。
+     */
+    @Test
+    public void shouldUpdateSmokeInputTargetWhenFocusedAndTyped() {
+        TestFixture fixture = new TestFixture();
+
+        fixture.controller.configureDocumentPage();
+        fixture.controller.buildDocument();
+        HtmlLikeDocumentWidget widget = fixture.controller.getHtmlLikeDocumentWidget();
+        widget.applyLayoutBounds(31, 47, 760, 320);
+        RecordingUiRenderContext initialRenderContext = new RecordingUiRenderContext();
+
+        widget.render(initialRenderContext);
+        Assert.assertTrue(containsTextCall(initialRenderContext.textCalls, "Type target: click then type"));
+
+        widget.onMouseDown(new UiMouseEvent(UiMouseEvent.Action.BUTTON_DOWN, 350, 280, 0, 0, 0, 0, 1L));
+        widget.onTextInput(new UiTextInputEvent("A\nB", 2L));
+        RecordingUiRenderContext typedRenderContext = new RecordingUiRenderContext();
+        widget.render(typedRenderContext);
+
+        Assert.assertTrue(containsTextCall(typedRenderContext.textCalls, "Type target: AB"));
+        Assert.assertTrue(containsFillColor(typedRenderContext.drawCalls, 0xFFD69E2E));
+
+        widget.onKeyEvent(new UiKeyEvent(Keyboard.KEY_BACK, 0, 0, UiKeyEvent.Action.PRESSED, false, false, false,
+                false, 3L));
+        RecordingUiRenderContext deletedRenderContext = new RecordingUiRenderContext();
+        widget.render(deletedRenderContext);
+
+        Assert.assertTrue(containsTextCall(deletedRenderContext.textCalls, "Type target: A"));
     }
 
     private static List<Widget> getDocumentBlocks(DocumentPageWidget pagePanel) {

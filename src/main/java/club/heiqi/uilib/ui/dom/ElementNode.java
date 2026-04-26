@@ -15,7 +15,11 @@ public final class ElementNode extends DocumentNode {
 
     private final String tagName;
     private final Map<String, String> attributes = new LinkedHashMap<String, String>();
+    private boolean focusable;
     private DocumentElementClickHandler clickHandler;
+    private DocumentElementFocusHandler focusHandler;
+    private DocumentElementKeyHandler keyHandler;
+    private DocumentElementTextInputHandler textInputHandler;
     private final UiStyleDeclaration style = new UiStyleDeclaration(new Runnable() {
         @Override
         public void run() {
@@ -124,6 +128,28 @@ public final class ElementNode extends DocumentNode {
     }
 
     /**
+     * 设置元素是否允许获得 HTML-like 焦点。
+     *
+     * <p>焦点能力只影响输入分发，不影响布局和绘制缓存。</p>
+     *
+     * @param focusable 是否可聚焦
+     * @return 当前元素
+     */
+    public ElementNode setFocusable(boolean focusable) {
+        this.focusable = focusable;
+        return this;
+    }
+
+    /**
+     * 判断元素是否允许获得 HTML-like 焦点。
+     *
+     * @return 是否可聚焦
+     */
+    public boolean isFocusable() {
+        return focusable;
+    }
+
+    /**
      * 设置元素点击处理器。
      *
      * <p>事件处理器不影响布局和绘制缓存，因此不会提升文档 mutation version。</p>
@@ -143,6 +169,72 @@ public final class ElementNode extends DocumentNode {
      */
     public DocumentElementClickHandler getClickHandler() {
         return clickHandler;
+    }
+
+    /**
+     * 设置元素焦点变化处理器。
+     *
+     * <p>事件处理器不影响布局和绘制缓存，因此不会提升文档 mutation version。</p>
+     *
+     * @param focusHandler 焦点变化处理器；为 null 时清除处理器
+     * @return 当前元素
+     */
+    public ElementNode setFocusHandler(DocumentElementFocusHandler focusHandler) {
+        this.focusHandler = focusHandler;
+        return this;
+    }
+
+    /**
+     * 返回元素焦点变化处理器。
+     *
+     * @return 焦点变化处理器；不存在时返回 null
+     */
+    public DocumentElementFocusHandler getFocusHandler() {
+        return focusHandler;
+    }
+
+    /**
+     * 设置元素键盘按键处理器。
+     *
+     * <p>事件处理器不影响布局和绘制缓存，因此不会提升文档 mutation version。</p>
+     *
+     * @param keyHandler 键盘按键处理器；为 null 时清除处理器
+     * @return 当前元素
+     */
+    public ElementNode setKeyHandler(DocumentElementKeyHandler keyHandler) {
+        this.keyHandler = keyHandler;
+        return this;
+    }
+
+    /**
+     * 返回元素键盘按键处理器。
+     *
+     * @return 键盘按键处理器；不存在时返回 null
+     */
+    public DocumentElementKeyHandler getKeyHandler() {
+        return keyHandler;
+    }
+
+    /**
+     * 设置元素文本输入处理器。
+     *
+     * <p>事件处理器不影响布局和绘制缓存，因此不会提升文档 mutation version。</p>
+     *
+     * @param textInputHandler 文本输入处理器；为 null 时清除处理器
+     * @return 当前元素
+     */
+    public ElementNode setTextInputHandler(DocumentElementTextInputHandler textInputHandler) {
+        this.textInputHandler = textInputHandler;
+        return this;
+    }
+
+    /**
+     * 返回元素文本输入处理器。
+     *
+     * @return 文本输入处理器；不存在时返回 null
+     */
+    public DocumentElementTextInputHandler getTextInputHandler() {
+        return textInputHandler;
     }
 
     /**
