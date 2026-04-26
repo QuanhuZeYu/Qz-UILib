@@ -355,6 +355,23 @@ public class Widget {
 
     public void onFocusChanged(boolean focused) {}
 
+    /**
+     * 处理通过全局焦点遍历进入当前组件的时机。
+     *
+     * @param reverse 是否为反向遍历
+     */
+    public void onFocusTraversalEntered(boolean reverse) {}
+
+    /**
+     * 处理当前组件内部的焦点遍历请求。
+     *
+     * @param reverse 是否为反向遍历
+     * @return 是否已在组件内部消费该焦点遍历请求
+     */
+    public boolean onFocusTraversal(boolean reverse) {
+        return false;
+    }
+
     public boolean isFocusable() {
         return false;
     }

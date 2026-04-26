@@ -104,6 +104,10 @@ public class UiInputRouter {
 
     private void routeKeyEvent(Widget root, UiKeyEvent event) {
         if (event.getAction() == UiKeyEvent.Action.PRESSED && event.getKeyCode() == Keyboard.KEY_TAB) {
+            Widget target = getActiveFocusedWidget(root);
+            if (target != null && target.onFocusTraversal(event.isShiftPressed())) {
+                return;
+            }
             focusNextWidget(root, event.isShiftPressed());
             return;
         }
@@ -141,7 +145,18 @@ public class UiInputRouter {
     }
 
     private void setFocusedWidget(Widget widget) {
+        setFocusedWidget(widget, false, false);
+    }
+
+    private void setFocusedWidgetFromTraversal(Widget widget, boolean reverse) {
+        setFocusedWidget(widget, true, reverse);
+    }
+
+    private void setFocusedWidget(Widget widget, boolean fromTraversal, boolean reverse) {
         if (focusedWidget == widget) {
+            if (fromTraversal && focusedWidget != null) {
+                focusedWidget.onFocusTraversalEntered(reverse);
+            }
             return;
         }
         if (focusedWidget != null) {
@@ -151,6 +166,9 @@ public class UiInputRouter {
         if (focusedWidget != null) {
             ensureWidgetVisible(focusedWidget);
             focusedWidget.onFocusChanged(true);
+            if (fromTraversal) {
+                focusedWidget.onFocusTraversalEntered(reverse);
+            }
         }
     }
 
@@ -225,7 +243,7 @@ public class UiInputRouter {
         } else {
             nextIndex = currentIndex < 0 || currentIndex >= focusableWidgets.size() - 1 ? 0 : currentIndex + 1;
         }
-        setFocusedWidget(focusableWidgets.get(nextIndex));
+        setFocusedWidgetFromTraversal(focusableWidgets.get(nextIndex), reverse);
     }
 
     private void collectFocusableWidgets(Widget widget, List<Widget> focusableWidgets) {

@@ -1,5 +1,6 @@
 package club.heiqi.uilib.ui.document;
 
+import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 import java.util.Objects;
@@ -222,6 +223,33 @@ public final class HtmlLikeDocumentWidget extends Widget {
     }
 
     @Override
+    public void onFocusTraversalEntered(boolean reverse) {
+        focusFirstElementInTraversalOrder(reverse);
+    }
+
+    @Override
+    public boolean onFocusTraversal(boolean reverse) {
+        List<ElementNode> focusableElements = collectFocusableElements();
+        if (focusableElements.isEmpty()) {
+            return false;
+        }
+
+        ElementNode activeElement = getActiveFocusedElement();
+        int currentIndex = activeElement == null ? -1 : focusableElements.indexOf(activeElement);
+        if (currentIndex < 0) {
+            focusElement(reverse ? focusableElements.get(focusableElements.size() - 1) : focusableElements.get(0));
+            return true;
+        }
+
+        int nextIndex = reverse ? currentIndex - 1 : currentIndex + 1;
+        if (nextIndex < 0 || nextIndex >= focusableElements.size()) {
+            return false;
+        }
+        focusElement(focusableElements.get(nextIndex));
+        return true;
+    }
+
+    @Override
     public boolean isFocusable() {
         return hasFocusableElement(document.getRootElement());
     }
@@ -301,6 +329,35 @@ public final class HtmlLikeDocumentWidget extends Widget {
             }
         }
         return false;
+    }
+
+    private boolean focusFirstElementInTraversalOrder(boolean reverse) {
+        List<ElementNode> focusableElements = collectFocusableElements();
+        if (focusableElements.isEmpty()) {
+            focusElement(null);
+            return false;
+        }
+        focusElement(reverse ? focusableElements.get(focusableElements.size() - 1) : focusableElements.get(0));
+        return true;
+    }
+
+    private List<ElementNode> collectFocusableElements() {
+        if (getWidth() <= 0 || getHeight() <= 0) {
+            return Collections.emptyList();
+        }
+        List<ElementNode> focusableElements = new ArrayList<ElementNode>();
+        collectFocusableElements(resolveLayoutBox(), focusableElements);
+        return focusableElements;
+    }
+
+    private void collectFocusableElements(DocumentLayoutBox box, List<ElementNode> focusableElements) {
+        ElementNode element = box.getElement();
+        if (element.isFocusable() && box.getWidth() > 0 && box.getHeight() > 0) {
+            focusableElements.add(element);
+        }
+        for (DocumentLayoutBox child : box.getChildren()) {
+            collectFocusableElements(child, focusableElements);
+        }
     }
 
     private ElementNode getActiveFocusedElement() {

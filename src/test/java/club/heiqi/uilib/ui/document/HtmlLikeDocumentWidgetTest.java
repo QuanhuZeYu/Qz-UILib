@@ -324,6 +324,46 @@ public class HtmlLikeDocumentWidgetTest {
         Assert.assertEquals(Boolean.FALSE, focusEvents.get(1));
     }
 
+    /**
+     * 验证 HTML-like 组件会按布局树顺序处理内部 Tab 焦点遍历。
+     */
+    @Test
+    public void shouldTraverseFocusableElementsInLayoutOrder() {
+        UiDocument document = UiDocument.create();
+        ElementNode root = document.getRootElement();
+        ElementNode firstInput = document.div();
+        ElementNode secondInput = document.div();
+        root.style()
+                .setWidth(UiStyleLength.px(80))
+                .setHeight(UiStyleLength.px(40));
+        firstInput.style()
+                .setWidth(UiStyleLength.px(40))
+                .setHeight(UiStyleLength.px(20));
+        secondInput.style()
+                .setWidth(UiStyleLength.px(40))
+                .setHeight(UiStyleLength.px(20));
+        firstInput.setFocusable(true);
+        secondInput.setFocusable(true);
+        root.append(firstInput).append(secondInput);
+        HtmlLikeDocumentWidget widget = new HtmlLikeDocumentWidget(document, 80, 40,
+                new DeterministicTextMeasureService());
+        widget.applyLayoutBounds(5, 7, 80, 40);
+
+        widget.onFocusTraversalEntered(false);
+        Assert.assertSame(firstInput, widget.getFocusedElement());
+
+        Assert.assertTrue(widget.onFocusTraversal(false));
+        Assert.assertSame(secondInput, widget.getFocusedElement());
+        Assert.assertFalse(widget.onFocusTraversal(false));
+        Assert.assertSame(secondInput, widget.getFocusedElement());
+
+        Assert.assertTrue(widget.onFocusTraversal(true));
+        Assert.assertSame(firstInput, widget.getFocusedElement());
+        widget.onFocusChanged(false);
+        widget.onFocusTraversalEntered(true);
+        Assert.assertSame(secondInput, widget.getFocusedElement());
+    }
+
     private static void assertDrawCall(DrawCall drawCall, int left, int top, int right, int bottom, int fillColor,
             int borderColor, int cornerRadius) {
         Assert.assertEquals(left, drawCall.left);

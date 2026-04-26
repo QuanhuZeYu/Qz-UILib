@@ -138,6 +138,40 @@ public class HtmlLikeSmokeDocumentPageControllerTest {
         Assert.assertTrue(containsTextCall(deletedRenderContext.textCalls, "Type target: click then type"));
     }
 
+    /**
+     * 验证 smoke 子页中的 HTML-like Tab 目标会响应内部焦点遍历。
+     */
+    @Test
+    public void shouldUpdateSmokeTabTargetWhenTraversed() {
+        TestFixture fixture = new TestFixture();
+
+        fixture.controller.configureDocumentPage();
+        fixture.controller.buildDocument();
+        HtmlLikeDocumentWidget widget = fixture.controller.getHtmlLikeDocumentWidget();
+        widget.applyLayoutBounds(31, 47, 760, 320);
+
+        widget.onFocusTraversalEntered(false);
+        RecordingUiRenderContext inputFocusedRenderContext = new RecordingUiRenderContext();
+        widget.render(inputFocusedRenderContext);
+
+        Assert.assertTrue(containsTextCall(inputFocusedRenderContext.textCalls, "Type target: click then type"));
+        Assert.assertTrue(containsFillColor(inputFocusedRenderContext.drawCalls, 0xFFD69E2E));
+
+        Assert.assertTrue(widget.onFocusTraversal(false));
+        RecordingUiRenderContext tabFocusedRenderContext = new RecordingUiRenderContext();
+        widget.render(tabFocusedRenderContext);
+
+        Assert.assertTrue(containsTextCall(tabFocusedRenderContext.textCalls, "Tab target: focused"));
+        Assert.assertTrue(containsFillColor(tabFocusedRenderContext.drawCalls, 0xFF9F7AEA));
+
+        Assert.assertTrue(widget.onFocusTraversal(true));
+        RecordingUiRenderContext reverseRenderContext = new RecordingUiRenderContext();
+        widget.render(reverseRenderContext);
+
+        Assert.assertTrue(containsTextCall(reverseRenderContext.textCalls, "Tab target: idle"));
+        Assert.assertTrue(containsFillColor(reverseRenderContext.drawCalls, 0xFFD69E2E));
+    }
+
     private static List<Widget> getDocumentBlocks(DocumentPageWidget pagePanel) {
         List<Widget> pageChildren = pagePanel.getChildren();
         Assert.assertFalse(pageChildren.isEmpty());

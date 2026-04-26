@@ -237,6 +237,25 @@ final class HtmlLikeSmokeDocumentPageController extends DocumentPageController {
                     }
                 });
         footer.append(secondPill);
+
+        final ElementNode tabPill = document.div();
+        tabPill.style()
+                .setFlexGrow(1.0F)
+                .setPadding(UiStyleLength.px(10))
+                .setBackgroundColor(0xFF4A5568)
+                .setBorderRadius(UiStyleLength.px(999))
+                .setTextColor(0xFFFFFFFF)
+                .setOverflowX(UiOverflow.HIDDEN)
+                .setOverflowY(UiOverflow.HIDDEN);
+        final TextNode tabText = tabPill.appendText(formatTabFocusLabel(false));
+        tabPill.setFocusable(true).setFocusHandler(new DocumentElementFocusHandler() {
+            @Override
+            public void onFocusChanged(DocumentElementFocusEvent event) {
+                tabPill.style().setBackgroundColor(event.isFocused() ? 0xFF9F7AEA : 0xFF4A5568);
+                tabText.setText(formatTabFocusLabel(event.isFocused()));
+            }
+        });
+        footer.append(tabPill);
         return document;
     }
 
@@ -272,6 +291,16 @@ final class HtmlLikeSmokeDocumentPageController extends DocumentPageController {
      */
     private static String formatInputLabel(StringBuilder inputValue) {
         return inputValue.length() == 0 ? "Type target: click then type" : "Type target: " + inputValue.toString();
+    }
+
+    /**
+     * 格式化 smoke Tab 焦点样例展示文本。
+     *
+     * @param focused 当前是否聚焦
+     * @return 展示文本
+     */
+    private static String formatTabFocusLabel(boolean focused) {
+        return focused ? "Tab target: focused" : "Tab target: idle";
     }
 
     /**
