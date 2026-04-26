@@ -227,8 +227,7 @@ final class HtmlLikeSmokeDocumentPageController extends DocumentPageController {
                 .setKeyHandler(new DocumentElementKeyHandler() {
                     @Override
                     public boolean onKey(DocumentElementKeyEvent event) {
-                        if (event.getAction() == UiKeyEvent.Action.PRESSED && event.getKeyCode() == Keyboard.KEY_BACK
-                                && inputValue.length() > 0) {
+                        if (isBackspaceDeleteEvent(event) && inputValue.length() > 0) {
                             int deleteStart = inputValue.offsetByCodePoints(inputValue.length(), -1);
                             inputValue.delete(deleteStart, inputValue.length());
                             inputText.setText(formatInputLabel(inputValue));
@@ -283,5 +282,16 @@ final class HtmlLikeSmokeDocumentPageController extends DocumentPageController {
      */
     private static boolean isAcceptedInputCodepoint(int codepoint) {
         return !Character.isISOControl(codepoint) && codepoint != '\n' && codepoint != '\r' && codepoint != '\t';
+    }
+
+    /**
+     * 判断按键事件是否应该触发输入样例退格删除。
+     *
+     * @param event HTML-like 元素按键事件
+     * @return 是否是退格删除事件
+     */
+    private static boolean isBackspaceDeleteEvent(DocumentElementKeyEvent event) {
+        return event.getKeyCode() == Keyboard.KEY_BACK
+                && (event.getAction() == UiKeyEvent.Action.PRESSED || event.getAction() == UiKeyEvent.Action.REPEATED);
     }
 }

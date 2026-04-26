@@ -130,10 +130,12 @@ public class HtmlLikeSmokeDocumentPageControllerTest {
 
         widget.onKeyEvent(new UiKeyEvent(Keyboard.KEY_BACK, 0, 0, UiKeyEvent.Action.PRESSED, false, false, false,
                 false, 3L));
+        widget.onKeyEvent(new UiKeyEvent(Keyboard.KEY_BACK, 0, 0, UiKeyEvent.Action.REPEATED, false, false, false,
+                false, 4L));
         RecordingUiRenderContext deletedRenderContext = new RecordingUiRenderContext();
         widget.render(deletedRenderContext);
 
-        Assert.assertTrue(containsTextCall(deletedRenderContext.textCalls, "Type target: A"));
+        Assert.assertTrue(containsTextCall(deletedRenderContext.textCalls, "Type target: click then type"));
     }
 
     private static List<Widget> getDocumentBlocks(DocumentPageWidget pagePanel) {

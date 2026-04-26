@@ -118,7 +118,7 @@
 - 已为 HTML-like 增加 `DocumentHitTestEngine` 与元素 click handler 最小模型；当前可在滚动/overflow clip 后的视觉位置上查找最深元素，并由 `HtmlLikeDocumentWidget` 在鼠标 down/up 后把 click 事件从 target 向父元素冒泡。
 - 已为 `HTML-like Smoke` 增加可见 click 验收目标：底部绿色 `Click target: 0` pill 被点击后应显示 `Click target: 1` 并切换为蓝色，便于游戏内验证元素 click 分发。
 - 已为 HTML-like 增加最小焦点与键盘/文本输入模型：`ElementNode` 可标记 focusable 并注册 focus/key/text input handler；`HtmlLikeDocumentWidget` 点击命中元素后维护内部焦点，widget 失焦时清空内部焦点，key/text input 事件从聚焦元素向父元素冒泡。
-- 已为 `HTML-like Smoke` 增加可见文本输入验收目标：底部红色 `Type target: click then type` pill 被点击后变为橙色，输入可见字符后显示 `Type target: ...`，Backspace 会删除最后一个 codepoint。
+- 已为 `HTML-like Smoke` 增加可见文本输入验收目标：底部红色 `Type target: click then type` pill 被点击后变为橙色，输入可见字符后显示 `Type target: ...`，Backspace 按下与长按重复事件都会删除最后一个 codepoint。
 - 已记录纯 JVM 测试误触默认字体服务导致 LWJGL 类加载失败的问题，错误记录见 `docs/errors/ERROR-20260426-jvm-test-default-font-service.md`。
 - 已确认 IDEA 环境下 `runClient21` 可运行，但本地 Gradle/IDEA 工具链必须显式包含 `D:\.MyApps\JetBrain\IntelliJ\jbr` 与 Zulu 8，否则会在配置阶段访问 GitHub manifest 或下载 JBR 21 时失败。
 - 已整理本机 Java 环境到 `D:\.MyApps\.ENV`，并通过用户级 Gradle 配置固定 Zulu 8、JDK 21、JDK 25 与 IntelliJ JBR 21 的工具链路径。
@@ -138,5 +138,5 @@
 
 - 下一步可优先推进 HTML-like 基础控件适配、更完整的焦点遍历/Tab 顺序，或为 `overflow: auto` 增加滚动条绘制/拖拽交互。
 - 旧非 DOM 代码暂时不能舍弃；达到“可正式舍弃旧代码”的最低条件是：HTML-like 输入/控件链路可替代现有作者侧常用控件、至少一个真实诊断/业务页面迁移完成且相关测试与游戏内验收通过。达到该条件时必须明确通知用户。
-- 游戏内实际验证入口已就绪：按右 Shift 打开诊断菜单页，再进入 `HTML-like Smoke` 子页，观察 HTML-like 色块是否按实心填充、圆角边框、header 内部超宽粉色条被裁剪、卡片内 HTML-like 文本被绘制并在窄卡片中换行；teal 卡片块内文本滚动已验证通过；底部绿色 `Click target: 0` pill 可用于验证 click 分发，点击后应变为 `Click target: 1` 且背景变蓝；底部红色 `Type target: click then type` pill 可用于验证焦点与文本输入，点击后应变为橙色，输入文本应显示到 pill 内，Backspace 应删除最后一个字符；若只见边框不见填充，优先检查主 UI GL 状态隔离。
+- 游戏内实际验证入口已就绪：按右 Shift 打开诊断菜单页，再进入 `HTML-like Smoke` 子页，观察 HTML-like 色块是否按实心填充、圆角边框、header 内部超宽粉色条被裁剪、卡片内 HTML-like 文本被绘制并在窄卡片中换行；teal 卡片块内文本滚动已验证通过；底部绿色 `Click target: 0` pill 可用于验证 click 分发，点击后应变为 `Click target: 1` 且背景变蓝；底部红色 `Type target: click then type` pill 可用于验证焦点与文本输入，点击后应变为橙色，输入文本应显示到 pill 内，Backspace 按下或长按应连续删除字符；若只见边框不见填充，优先检查主 UI GL 状态隔离。
 - 选择一个现有诊断页作为迁移试点，避免一次性重写全部页面。
