@@ -129,6 +129,28 @@ public class DocumentPaintEngineTest {
         assertCommand(commands.get(3), DocumentPaintCommandType.CLIP_END, root, 0, 0, 60, 30, 0, 0, 0);
     }
 
+    /**
+     * 验证直接文本布局行会生成 TEXT 绘制命令并继承父元素文本颜色。
+     */
+    @Test
+    public void shouldBuildTextCommandForDirectTextRun() {
+        UiDocument document = UiDocument.create();
+        ElementNode root = document.getRootElement();
+
+        root.style()
+                .setWidth(UiStyleLength.px(120))
+                .setPadding(UiStyleLength.px(4))
+                .setTextColor(0xFFEFF6FF);
+        root.appendText("Hello");
+
+        List<DocumentPaintCommand> commands = DocumentPaintEngine.buildPaintCommands(
+                DocumentLayoutEngine.layout(root, 160, 0));
+
+        Assert.assertEquals(1, commands.size());
+        assertCommand(commands.get(0), DocumentPaintCommandType.TEXT, root, 4, 4, 44, 22, 0xFFEFF6FF, 0, 0);
+        Assert.assertEquals("Hello", commands.get(0).getText());
+    }
+
     private static void assertCommand(DocumentPaintCommand command, DocumentPaintCommandType type,
             ElementNode element, int left, int top, int right, int bottom, int color, int borderWidth,
             int borderRadius) {

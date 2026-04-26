@@ -77,6 +77,11 @@ public final class DocumentPaintRenderer {
         }
         if (command.getType() == DocumentPaintCommandType.BORDER) {
             renderBorder(context, command, offsetX, offsetY);
+            return clipDepth;
+        }
+        if (command.getType() == DocumentPaintCommandType.TEXT) {
+            context.drawText(command.getText(), command.getLeft() + offsetX, command.getTop() + offsetY,
+                    command.getColor(), false);
         }
         return clipDepth;
     }

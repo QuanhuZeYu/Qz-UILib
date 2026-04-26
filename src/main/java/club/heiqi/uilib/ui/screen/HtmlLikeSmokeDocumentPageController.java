@@ -81,6 +81,7 @@ final class HtmlLikeSmokeDocumentPageController extends DocumentPageController {
                 .setBorderColor(0xFF6B96FF)
                 .setBorderWidth(UiStyleLength.px(1))
                 .setBorderRadius(UiStyleLength.px(14))
+                .setTextColor(0xFFEFF6FF)
                 .setOverflowX(UiOverflow.HIDDEN)
                 .setOverflowY(UiOverflow.HIDDEN);
         root.append(header);
@@ -92,6 +93,7 @@ final class HtmlLikeSmokeDocumentPageController extends DocumentPageController {
                 .setBackgroundColor(0xFFED64A6)
                 .setBorderRadius(UiStyleLength.px(999));
         header.append(clippedStripe);
+        header.appendText("TextNode -> TEXT paint command");
 
         ElementNode row = document.div();
         row.style()
@@ -114,11 +116,14 @@ final class HtmlLikeSmokeDocumentPageController extends DocumentPageController {
         ElementNode fluidCard = document.div();
         fluidCard.style()
                 .setFlexGrow(1.0F)
+                .setPadding(UiStyleLength.px(10))
                 .setBackgroundColor(0xFF2C7A7B)
                 .setBorderColor(0xFF81E6D9)
                 .setBorderWidth(UiStyleLength.px(2))
-                .setBorderRadius(UiStyleLength.px(12));
+                .setBorderRadius(UiStyleLength.px(12))
+                .setTextColor(0xFFFFFFFF);
         row.append(fluidCard);
+        fluidCard.appendText("HTML-like text runs now render inside layout boxes.");
 
         ElementNode sideCard = document.div();
         sideCard.style()

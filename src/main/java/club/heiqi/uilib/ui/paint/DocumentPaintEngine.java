@@ -5,6 +5,7 @@ import java.util.List;
 import java.util.Objects;
 
 import club.heiqi.uilib.ui.layout.DocumentLayoutBox;
+import club.heiqi.uilib.ui.layout.DocumentLayoutTextRun;
 import club.heiqi.uilib.ui.style.ComputedStyle;
 import club.heiqi.uilib.ui.style.UiOverflow;
 
@@ -18,7 +19,7 @@ public final class DocumentPaintEngine {
     /**
      * 从布局盒树生成绘制命令。
      *
-     * <p>当前初版按元素背景、元素边框、子树的顺序输出命令。文本、滚动条、裁剪与 stacking context
+     * <p>当前初版按元素背景、元素边框、结构裁剪、直接文本与子树的顺序输出命令。滚动条与 stacking context
      * 会在后续阶段继续扩展。</p>
      *
      * @param rootBox 根布局盒
@@ -38,6 +39,7 @@ public final class DocumentPaintEngine {
         if (clipChildren) {
             appendClipStartCommand(box, commands);
         }
+        appendTextCommands(box, commands);
         for (DocumentLayoutBox child : box.getChildren()) {
             appendBoxCommands(child, commands);
         }
@@ -67,6 +69,21 @@ public final class DocumentPaintEngine {
                 box.getTop(), box.getRight(), box.getBottom(), color, borderWidth, resolveBorderRadius(box)));
     }
 
+    private static void appendTextCommands(DocumentLayoutBox box, List<DocumentPaintCommand> commands) {
+        int color = box.getComputedStyle().getTextColor();
+        if (color == 0) {
+            return;
+        }
+        for (DocumentLayoutTextRun textRun : box.getTextRuns()) {
+            if (textRun.getText().isEmpty() || textRun.getWidth() <= 0 || textRun.getHeight() <= 0) {
+                continue;
+            }
+            commands.add(new DocumentPaintCommand(DocumentPaintCommandType.TEXT, textRun.getOwnerElement(),
+                    textRun.getLeft(), textRun.getTop(), textRun.getRight(), textRun.getBottom(), color, 0, 0,
+                    textRun.getText()));
+        }
+    }
+
     private static void appendClipStartCommand(DocumentLayoutBox box, List<DocumentPaintCommand> commands) {
         ComputedStyle style = box.getComputedStyle();
         int left = style.getOverflowX() == UiOverflow.VISIBLE ? Integer.MIN_VALUE / 4 : getPaddingBoxLeft(box);
@@ -85,7 +102,7 @@ public final class DocumentPaintEngine {
     private static boolean shouldClipChildren(DocumentLayoutBox box) {
         ComputedStyle style = box.getComputedStyle();
         return (style.getOverflowX() != UiOverflow.VISIBLE || style.getOverflowY() != UiOverflow.VISIBLE)
-                && !box.getChildren().isEmpty();
+                && (!box.getChildren().isEmpty() || !box.getTextRuns().isEmpty());
     }
 
     private static int getPaddingBoxLeft(DocumentLayoutBox box) {

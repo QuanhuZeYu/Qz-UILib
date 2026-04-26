@@ -6,6 +6,7 @@ import java.util.Objects;
 
 import club.heiqi.uilib.ui.dom.DocumentNode;
 import club.heiqi.uilib.ui.dom.ElementNode;
+import club.heiqi.uilib.ui.dom.TextNode;
 import club.heiqi.uilib.ui.style.ComputedStyle;
 import club.heiqi.uilib.ui.style.UiAlignItems;
 import club.heiqi.uilib.ui.style.UiDisplay;
@@ -24,6 +25,8 @@ import club.heiqi.uilib.ui.style.UiStyleResolver;
 public final class DocumentLayoutEngine {
 
     private static final int AUTO_SIZE = -1;
+    private static final int TEXT_LINE_HEIGHT = 18;
+    private static final int TEXT_ADVANCE = 8;
 
     private DocumentLayoutEngine() {}
 
@@ -45,8 +48,8 @@ public final class DocumentLayoutEngine {
         ComputedStyle computedStyle = UiStyleResolver.compute(element);
         if (computedStyle.getDisplay() == UiDisplay.NONE) {
             return new DocumentLayoutBox(element, computedStyle, new ArrayList<DocumentLayoutBox>(),
-                    DocumentLayoutEdges.zero(), DocumentLayoutEdges.zero(), DocumentLayoutEdges.zero(), containingLeft,
-                    flowTop, 0, 0);
+                    new ArrayList<DocumentLayoutTextRun>(), DocumentLayoutEdges.zero(), DocumentLayoutEdges.zero(),
+                    DocumentLayoutEdges.zero(), containingLeft, flowTop, 0, 0);
         }
 
         DocumentLayoutEdges margin = resolveInsets(computedStyle.getMargin(), containingWidth, false);
@@ -74,28 +77,53 @@ public final class DocumentLayoutEngine {
         int contentHeight = forcedContentHeight >= 0 ? forcedContentHeight
                 : Math.max(0, computedStyle.getHeight().resolve(0, autoContentHeight));
         int borderBoxHeight = contentHeight + border.getVertical() + padding.getVertical();
-        return new DocumentLayoutBox(element, computedStyle, childrenResult.children, margin, border, padding,
-                borderBoxLeft, borderBoxTop, borderBoxWidth, borderBoxHeight);
+        return new DocumentLayoutBox(element, computedStyle, childrenResult.children, childrenResult.textRuns,
+                margin, border, padding, borderBoxLeft, borderBoxTop, borderBoxWidth, borderBoxHeight);
     }
 
     private static LayoutChildrenResult layoutBlockChildren(ElementNode element, int contentLeft, int contentTop,
             int contentWidth) {
         List<DocumentLayoutBox> childBoxes = new ArrayList<DocumentLayoutBox>();
+        List<DocumentLayoutTextRun> textRuns = new ArrayList<DocumentLayoutTextRun>();
         int childFlowTop = contentTop;
-        for (ElementNode childElement : getVisibleElementChildren(element)) {
+        for (DocumentNode child : element.getChildren()) {
+            if (child instanceof TextNode) {
+                childFlowTop = appendTextRun((TextNode) child, element, textRuns, contentLeft, childFlowTop,
+                        contentWidth);
+                continue;
+            }
+            if (!(child instanceof ElementNode)) {
+                continue;
+            }
+            ElementNode childElement = (ElementNode) child;
+            if (UiStyleResolver.compute(childElement).getDisplay() == UiDisplay.NONE) {
+                continue;
+            }
             DocumentLayoutBox childBox = layoutElement(childElement, contentLeft, childFlowTop, contentWidth,
                     AUTO_SIZE, AUTO_SIZE);
             childBoxes.add(childBox);
             childFlowTop = childBox.getMarginBoxBottom();
         }
-        return new LayoutChildrenResult(childBoxes, Math.max(0, childFlowTop - contentTop));
+        return new LayoutChildrenResult(childBoxes, textRuns, Math.max(0, childFlowTop - contentTop));
+    }
+
+    private static int appendTextRun(TextNode textNode, ElementNode ownerElement,
+            List<DocumentLayoutTextRun> textRuns, int left, int top, int availableWidth) {
+        String text = textNode.getText();
+        if (text == null || text.isEmpty()) {
+            return top;
+        }
+        int width = Math.max(0, Math.min(availableWidth, text.length() * TEXT_ADVANCE));
+        textRuns.add(new DocumentLayoutTextRun(textNode, ownerElement, left, top, width, TEXT_LINE_HEIGHT));
+        return top + TEXT_LINE_HEIGHT;
     }
 
     private static LayoutChildrenResult layoutFlexChildren(ElementNode element, ComputedStyle parentStyle,
             int contentLeft, int contentTop, int contentWidth, int specifiedContentHeight) {
         List<ElementNode> visibleChildren = getVisibleElementChildren(element);
         if (visibleChildren.isEmpty()) {
-            return new LayoutChildrenResult(new ArrayList<DocumentLayoutBox>(), Math.max(0, specifiedContentHeight));
+            return new LayoutChildrenResult(new ArrayList<DocumentLayoutBox>(), new ArrayList<DocumentLayoutTextRun>(),
+                    Math.max(0, specifiedContentHeight));
         }
         if (parentStyle.getFlexDirection() == UiFlexDirection.COLUMN) {
             return layoutColumnFlexChildren(visibleChildren, parentStyle, contentLeft, contentTop, contentWidth,
@@ -148,7 +176,7 @@ public final class DocumentLayoutEngine {
             childBoxes.add(childBox);
             cursor += item.margin.getLeft() + childBox.getWidth() + item.margin.getRight() + dynamicGap;
         }
-        return new LayoutChildrenResult(childBoxes, contentHeight);
+        return new LayoutChildrenResult(childBoxes, new ArrayList<DocumentLayoutTextRun>(), contentHeight);
     }
 
     private static LayoutChildrenResult layoutColumnFlexChildren(List<ElementNode> children, ComputedStyle parentStyle,
@@ -185,7 +213,7 @@ public final class DocumentLayoutEngine {
             childBoxes.add(childBox);
             cursor += item.margin.getTop() + childBox.getHeight() + item.margin.getBottom() + dynamicGap;
         }
-        return new LayoutChildrenResult(childBoxes, contentHeight);
+        return new LayoutChildrenResult(childBoxes, new ArrayList<DocumentLayoutTextRun>(), contentHeight);
     }
 
     private static void distributeMainSpace(List<FlexItem> items, int availableMainSize, int gap, boolean row) {
@@ -373,10 +401,13 @@ public final class DocumentLayoutEngine {
     private static final class LayoutChildrenResult {
 
         private final List<DocumentLayoutBox> children;
+        private final List<DocumentLayoutTextRun> textRuns;
         private final int contentHeight;
 
-        private LayoutChildrenResult(List<DocumentLayoutBox> children, int contentHeight) {
+        private LayoutChildrenResult(List<DocumentLayoutBox> children, List<DocumentLayoutTextRun> textRuns,
+                int contentHeight) {
             this.children = children;
+            this.textRuns = textRuns;
             this.contentHeight = Math.max(0, contentHeight);
         }
     }

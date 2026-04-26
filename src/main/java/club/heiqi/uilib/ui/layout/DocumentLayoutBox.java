@@ -10,13 +10,14 @@ import club.heiqi.uilib.ui.style.ComputedStyle;
 /**
  * HTML-like 元素布局盒。
  *
- * <p>当前初版只表达元素级 block layout 结果；文本 inline box 与 paint order 会在后续阶段扩展。</p>
+ * <p>当前初版表达元素级 block/flex layout 与直接文本子节点的单行布局结果；完整 inline formatting 会在后续阶段扩展。</p>
  */
 public final class DocumentLayoutBox {
 
     private final ElementNode element;
     private final ComputedStyle computedStyle;
     private final List<DocumentLayoutBox> children;
+    private final List<DocumentLayoutTextRun> textRuns;
     private final DocumentLayoutEdges margin;
     private final DocumentLayoutEdges border;
     private final DocumentLayoutEdges padding;
@@ -26,11 +27,12 @@ public final class DocumentLayoutBox {
     private final int height;
 
     DocumentLayoutBox(ElementNode element, ComputedStyle computedStyle, List<DocumentLayoutBox> children,
-            DocumentLayoutEdges margin, DocumentLayoutEdges border, DocumentLayoutEdges padding, int left, int top,
-            int width, int height) {
+            List<DocumentLayoutTextRun> textRuns, DocumentLayoutEdges margin, DocumentLayoutEdges border,
+            DocumentLayoutEdges padding, int left, int top, int width, int height) {
         this.element = Objects.requireNonNull(element, "element");
         this.computedStyle = Objects.requireNonNull(computedStyle, "computedStyle");
         this.children = Collections.unmodifiableList(Objects.requireNonNull(children, "children"));
+        this.textRuns = Collections.unmodifiableList(Objects.requireNonNull(textRuns, "textRuns"));
         this.margin = Objects.requireNonNull(margin, "margin");
         this.border = Objects.requireNonNull(border, "border");
         this.padding = Objects.requireNonNull(padding, "padding");
@@ -50,6 +52,15 @@ public final class DocumentLayoutBox {
 
     public List<DocumentLayoutBox> getChildren() {
         return children;
+    }
+
+    /**
+     * 返回当前元素直接文本子节点产生的布局文本行。
+     *
+     * @return 文本行列表
+     */
+    public List<DocumentLayoutTextRun> getTextRuns() {
+        return textRuns;
     }
 
     public DocumentLayoutEdges getMargin() {

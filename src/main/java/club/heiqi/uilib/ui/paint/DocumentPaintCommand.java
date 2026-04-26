@@ -20,9 +20,15 @@ public final class DocumentPaintCommand {
     private final int color;
     private final int borderWidth;
     private final int borderRadius;
+    private final String text;
 
     DocumentPaintCommand(DocumentPaintCommandType type, ElementNode element, int left, int top, int right, int bottom,
             int color, int borderWidth, int borderRadius) {
+        this(type, element, left, top, right, bottom, color, borderWidth, borderRadius, null);
+    }
+
+    DocumentPaintCommand(DocumentPaintCommandType type, ElementNode element, int left, int top, int right, int bottom,
+            int color, int borderWidth, int borderRadius, String text) {
         this.type = Objects.requireNonNull(type, "type");
         this.element = Objects.requireNonNull(element, "element");
         this.left = left;
@@ -32,6 +38,7 @@ public final class DocumentPaintCommand {
         this.color = color;
         this.borderWidth = Math.max(0, borderWidth);
         this.borderRadius = Math.max(0, borderRadius);
+        this.text = text == null ? "" : text;
     }
 
     public DocumentPaintCommandType getType() {
@@ -76,5 +83,9 @@ public final class DocumentPaintCommand {
 
     public int getBorderRadius() {
         return borderRadius;
+    }
+
+    public String getText() {
+        return text;
     }
 }

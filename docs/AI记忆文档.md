@@ -15,10 +15,10 @@
 - `UiDocumentScreens` 通过 `DocumentScreenEnvironment`、`DocumentScreenDefinition` 与 `DocumentScreenChromeResolver` 暴露显式页面创建入口。
 - HTML-like 文档树最小骨架已在 `club.heiqi.uilib.ui.dom` 落地；`UiDocument` 是当前文档作者入口，`DocumentNode` 负责父子关系与 mutation version，`ElementNode` 与 `TextNode` 分别承载元素和文本。
 - HTML-like 样式系统初版已在 `club.heiqi.uilib.ui.style` 落地；`ElementNode.style()` 暴露 inline style 入口，`UiStyleResolver` 负责把元素样式解析为 `ComputedStyle`。
-- HTML-like 布局盒初版已在 `club.heiqi.uilib.ui.layout` 落地；`DocumentLayoutEngine` 当前支持元素级 block flow、box model、px/% 长度、auto 高度、`display: none` 过滤、子元素垂直流式排布，以及 flex row/column、gap、align、justify、grow/shrink 的最小实现。
-- HTML-like 绘制命令初版已在 `club.heiqi.uilib.ui.paint` 落地；`DocumentPaintEngine` 当前能把布局盒树转换为 background/border/clip 中立绘制命令，并保留父元素背景、父元素边框、结构 clip、子树、clip end 的基础 paint order。
-- `DocumentPaintRenderer` 已可把 background/border paint command 投影到现有 `UiRenderContext`，当前已经具备从 HTML-like 模型走到实际 UI 渲染上下文的最小适配链。
-- `HtmlLikeDocumentWidget` 已把 `UiDocument -> style -> layout -> paint command -> UiRenderContext` 链路挂接到现有 retained `Widget` 后端；`html_like_smoke` 子页已可通过诊断菜单进入，用于游戏内真实可见渲染验收，当前页面包含 overflow-hidden 裁剪样例。
+- HTML-like 布局盒初版已在 `club.heiqi.uilib.ui.layout` 落地；`DocumentLayoutEngine` 当前支持元素级 block flow、box model、px/% 长度、auto 高度、`display: none` 过滤、子元素垂直流式排布、直接文本子节点的单行 block 文本布局，以及 flex row/column、gap、align、justify、grow/shrink 的最小实现。
+- HTML-like 绘制命令初版已在 `club.heiqi.uilib.ui.paint` 落地；`DocumentPaintEngine` 当前能把布局盒树转换为 background/border/text/clip 中立绘制命令，并保留父元素背景、父元素边框、结构 clip、直接文本、子树、clip end 的基础 paint order。
+- `DocumentPaintRenderer` 已可把 background/border/text/clip paint command 投影到现有 `UiRenderContext`，当前已经具备从 HTML-like 模型走到实际 UI 渲染上下文的最小适配链。
+- `HtmlLikeDocumentWidget` 已把 `UiDocument -> style -> layout -> paint command -> UiRenderContext` 链路挂接到现有 retained `Widget` 后端；`html_like_smoke` 子页已可通过诊断菜单进入，用于游戏内真实可见渲染验收，当前页面包含 overflow-hidden 裁剪样例与 HTML-like 文本绘制样例。
 - `UiScreenHostSession` 在主 UI widget 树渲染前会统一准备稳定 2D GL 状态，避免世界渲染遗留的 depth/cull/alpha/light 状态导致 rounded fill 面片被剔除。
 - 后续作者侧入口应逐步迁移到 HTML-like 文档/元素/样式 API；底层 `Widget`、`DivWidget`、`ScrollViewportWidget` 应逐步退为 backend adapter 或兼容层。
 - `UiSurfaceStyle` 是纯外观值对象，只负责 `fillColor`、`borderColor`、`cornerRadius`。
@@ -71,6 +71,7 @@
 - `src/main/java/club/heiqi/uilib/ui/layout/DocumentLayoutEngine.java`
 - `src/main/java/club/heiqi/uilib/ui/layout/DocumentLayoutBox.java`
 - `src/main/java/club/heiqi/uilib/ui/layout/DocumentLayoutEdges.java`
+- `src/main/java/club/heiqi/uilib/ui/layout/DocumentLayoutTextRun.java`
 - `src/main/java/club/heiqi/uilib/ui/paint/DocumentPaintEngine.java`
 - `src/main/java/club/heiqi/uilib/ui/paint/DocumentPaintCommand.java`
 - `src/main/java/club/heiqi/uilib/ui/paint/DocumentPaintCommandType.java`
@@ -106,6 +107,7 @@
 - 已新增 `HtmlLikeDocumentWidget`、`HtmlLikeSmokeDocumentPageController` 和 `html_like_smoke` 页面定义，固定 HTML-like 文档模型到游戏内诊断子页的最小可见集成契约。
 - 已根据游戏内截图修复 smoke 页 rounded fill 仅见边框的问题，错误记录见 `docs/errors/ERROR-20260426-ui-rounded-fill-cull-state.md`。
 - 已为 HTML-like paint command 增加 `CLIP_START` / `CLIP_END` 和 renderer 回放，`overflow: hidden/auto` 会在子树绘制前后压入/弹出结构裁剪。
+- 已为 HTML-like 直接文本子节点增加 `DocumentLayoutTextRun`、`TEXT` paint command 和 renderer 回放，当前可把单行文本绘制进 HTML-like 布局盒。
 - 已确认 IDEA 环境下 `runClient21` 可运行，但本地 Gradle/IDEA 工具链必须显式包含 `D:\.MyApps\JetBrain\IntelliJ\jbr` 与 Zulu 8，否则会在配置阶段访问 GitHub manifest 或下载 JBR 21 时失败。
 - 已整理本机 Java 环境到 `D:\.MyApps\.ENV`，并通过用户级 Gradle 配置固定 Zulu 8、JDK 21、JDK 25 与 IntelliJ JBR 21 的工具链路径。
 - 已确认 `compileMcLauncherJava` 在 `GRADLE_USER_HOME=D:\.MyApps\.ENV\gradle-home` 下通过，修复 Java 8 Worker 读取中文用户名路径下 Gradle worker 缓存失败的问题。
@@ -115,13 +117,13 @@
 - 阶段 0：完成规划与文档清理，保留现有可运行链路。
 - 阶段 1：新增 HTML-like 文档树与作者入口最小骨架；当前最小骨架已完成，下一步应把样式入口挂到元素层。
 - 阶段 2：新增样式系统与 computed style 初版；当前 inline style 与基础 computed style 已完成，后续需要扩展样式属性集并接入 layout invalidation。
-- 阶段 3：建立 box/layout tree，并逐步把现有 Div-like 布局能力迁移到新模型；当前 block flow 与 flex flow 最小闭环已完成，下一步应推进文本 inline layout 或进入 paint command 初版。
-- 阶段 4：建立 paint command、clip、scroll、deferred replay 的统一渲染模型；当前 background/border/clip paint command、`UiRenderContext` 投影与最小 smoke screen 集成已完成，下一步应补文本 paint command 或滚动语义。
+- 阶段 3：建立 box/layout tree，并逐步把现有 Div-like 布局能力迁移到新模型；当前 block flow、flex flow 与直接文本单行布局最小闭环已完成，后续应推进更完整的 inline layout 或文本测量服务接入。
+- 阶段 4：建立 paint command、clip、scroll、deferred replay 的统一渲染模型；当前 background/border/text/clip paint command、`UiRenderContext` 投影与最小 smoke screen 集成已完成，下一步应推进 scroll 语义或命中测试。
 - 阶段 5：迁移事件与控件适配。
 - 阶段 6：清退旧 public screen 构造入口与直接 widget authoring 示例。
 
 ### 下一步执行项
 
-- 下一步可优先补文本 inline/text paint command，或推进 scroll 语义进入 HTML-like 渲染链。
-- 游戏内实际验证入口已就绪：按右 Shift 打开诊断菜单页，再进入 `HTML-like Smoke` 子页，观察 HTML-like 色块是否按实心填充、圆角边框和 header 内部超宽粉色条被裁剪渲染；若只见边框不见填充，优先检查主 UI GL 状态隔离。
+- 下一步可优先推进 scroll 语义进入 HTML-like 渲染链，或补命中测试与输入分发的最小模型。
+- 游戏内实际验证入口已就绪：按右 Shift 打开诊断菜单页，再进入 `HTML-like Smoke` 子页，观察 HTML-like 色块是否按实心填充、圆角边框、header 内部超宽粉色条被裁剪、卡片内 HTML-like 文本被绘制；若只见边框不见填充，优先检查主 UI GL 状态隔离。
 - 选择一个现有诊断页作为迁移试点，避免一次性重写全部页面。

@@ -137,6 +137,37 @@ public class DocumentLayoutEngineTest {
     }
 
     /**
+     * 验证直接文本子节点会按单行 block 文本参与父元素 auto 高度与流式排布。
+     */
+    @Test
+    public void shouldLayoutDirectTextRunsInBlockFlow() {
+        UiDocument document = UiDocument.create();
+        ElementNode root = document.getRootElement();
+        ElementNode child = document.div();
+
+        root.style()
+                .setWidth(UiStyleLength.px(160))
+                .setPadding(UiStyleLength.px(4));
+        root.appendText("abc");
+        child.style().setHeight(UiStyleLength.px(10));
+        root.append(child);
+
+        DocumentLayoutBox rootBox = DocumentLayoutEngine.layout(root, 200, 0);
+        DocumentLayoutTextRun textRun = rootBox.getTextRuns().get(0);
+        DocumentLayoutBox childBox = rootBox.getChildren().get(0);
+
+        Assert.assertEquals(1, rootBox.getTextRuns().size());
+        Assert.assertEquals("abc", textRun.getText());
+        Assert.assertEquals(4, textRun.getLeft());
+        Assert.assertEquals(4, textRun.getTop());
+        Assert.assertEquals(24, textRun.getWidth());
+        Assert.assertEquals(18, textRun.getHeight());
+        Assert.assertEquals(36, rootBox.getHeight());
+        Assert.assertEquals(4, childBox.getLeft());
+        Assert.assertEquals(22, childBox.getTop());
+    }
+
+    /**
      * 验证 flex row 会分配 grow 空间并应用 column-gap。
      */
     @Test

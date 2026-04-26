@@ -110,6 +110,27 @@ public class DocumentPaintRendererTest {
         assertDrawCall(renderContext.drawCalls.get(0), 12, 22, 92, 30, 0xFF556677, 0, 0);
     }
 
+    /**
+     * 验证 TEXT 命令会按宿主偏移投影到 `UiRenderContext.drawText`。
+     */
+    @Test
+    public void shouldRenderTextCommandsToUiRenderContext() {
+        UiDocument document = UiDocument.create();
+        ElementNode root = document.getRootElement();
+        root.style()
+                .setWidth(UiStyleLength.px(100))
+                .setPadding(UiStyleLength.px(3))
+                .setTextColor(0xFFEFF6FF);
+        root.appendText("Text");
+
+        RecordingUiRenderContext renderContext = new RecordingUiRenderContext();
+        DocumentPaintRenderer.render(renderContext, DocumentPaintEngine.buildPaintCommands(
+                DocumentLayoutEngine.layout(root, 120, 0)), 7, 11);
+
+        Assert.assertEquals(1, renderContext.textCalls.size());
+        assertTextCall(renderContext.textCalls.get(0), "Text", 10, 14, 0xFFEFF6FF, false);
+    }
+
     private static void assertDrawCall(DrawCall drawCall, int left, int top, int right, int bottom, int fillColor,
             int borderColor, int cornerRadius) {
         Assert.assertEquals(left, drawCall.left);
@@ -129,6 +150,14 @@ public class DocumentPaintRendererTest {
         Assert.assertEquals(cornerRadius, clipCall.cornerRadius);
     }
 
+    private static void assertTextCall(TextCall textCall, String text, int x, int y, int color, boolean shadow) {
+        Assert.assertEquals(text, textCall.text);
+        Assert.assertEquals(x, textCall.x);
+        Assert.assertEquals(y, textCall.y);
+        Assert.assertEquals(color, textCall.color);
+        Assert.assertEquals(shadow, textCall.shadow);
+    }
+
     /**
      * 记录 drawSurface 调用的渲染上下文。
      */
@@ -136,6 +165,7 @@ public class DocumentPaintRendererTest {
 
         private final List<DrawCall> drawCalls = new ArrayList<DrawCall>();
         private final List<ClipCall> clipCalls = new ArrayList<ClipCall>();
+        private final List<TextCall> textCalls = new ArrayList<TextCall>();
         private int popClipCount;
 
         private RecordingUiRenderContext() {
@@ -155,6 +185,11 @@ public class DocumentPaintRendererTest {
         @Override
         public void popClip() {
             popClipCount++;
+        }
+
+        @Override
+        public void drawText(String text, int x, int y, int color, boolean shadow) {
+            textCalls.add(new TextCall(text, x, y, color, shadow));
         }
     }
 
@@ -195,6 +230,26 @@ public class DocumentPaintRendererTest {
             this.right = right;
             this.bottom = bottom;
             this.cornerRadius = cornerRadius;
+        }
+    }
+
+    /**
+     * 单次文本绘制记录。
+     */
+    private static final class TextCall {
+
+        private final String text;
+        private final int x;
+        private final int y;
+        private final int color;
+        private final boolean shadow;
+
+        private TextCall(String text, int x, int y, int color, boolean shadow) {
+            this.text = text;
+            this.x = x;
+            this.y = y;
+            this.color = color;
+            this.shadow = shadow;
         }
     }
 }

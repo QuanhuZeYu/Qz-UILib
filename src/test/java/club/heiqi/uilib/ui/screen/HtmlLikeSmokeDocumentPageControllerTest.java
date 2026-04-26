@@ -72,6 +72,7 @@ public class HtmlLikeSmokeDocumentPageControllerTest {
         Assert.assertEquals(0xEE151A24, firstCall.surfaceStyle.fillColor);
         Assert.assertFalse(renderContext.clipCalls.isEmpty());
         Assert.assertTrue(renderContext.popClipCount > 0);
+        Assert.assertTrue(containsTextCall(renderContext.textCalls, "TEXT paint command"));
     }
 
     private static List<Widget> getDocumentBlocks(DocumentPageWidget pagePanel) {
@@ -104,6 +105,15 @@ public class HtmlLikeSmokeDocumentPageControllerTest {
         return false;
     }
 
+    private static boolean containsTextCall(List<TextCall> textCalls, String expectedSnippet) {
+        for (TextCall textCall : textCalls) {
+            if (textCall.text != null && textCall.text.contains(expectedSnippet)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
     /**
      * 页面控制器测试夹具。
      */
@@ -126,6 +136,7 @@ public class HtmlLikeSmokeDocumentPageControllerTest {
 
         private final List<DrawCall> drawCalls = new ArrayList<DrawCall>();
         private final List<ClipCall> clipCalls = new ArrayList<ClipCall>();
+        private final List<TextCall> textCalls = new ArrayList<TextCall>();
         private int popClipCount;
 
         private RecordingUiRenderContext() {
@@ -145,6 +156,11 @@ public class HtmlLikeSmokeDocumentPageControllerTest {
         @Override
         public void popClip() {
             popClipCount++;
+        }
+
+        @Override
+        public void drawText(String text, int x, int y, int color, boolean shadow) {
+            textCalls.add(new TextCall(text, x, y, color, shadow));
         }
     }
 
@@ -185,6 +201,26 @@ public class HtmlLikeSmokeDocumentPageControllerTest {
             this.right = right;
             this.bottom = bottom;
             this.cornerRadius = cornerRadius;
+        }
+    }
+
+    /**
+     * 单次 HTML-like 文本绘制记录。
+     */
+    private static final class TextCall {
+
+        private final String text;
+        private final int x;
+        private final int y;
+        private final int color;
+        private final boolean shadow;
+
+        private TextCall(String text, int x, int y, int color, boolean shadow) {
+            this.text = text;
+            this.x = x;
+            this.y = y;
+            this.color = color;
+            this.shadow = shadow;
         }
     }
 
