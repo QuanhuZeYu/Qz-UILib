@@ -126,7 +126,7 @@ public class HtmlLikeSmokeDocumentPageControllerTest {
         private final DocumentPageWidget pagePanel = new DocumentPageWidget(documentTheme, textMeasureService);
         private final DocumentPageAuthoringSurface pageSurface = DocumentPageAuthoringSurface.adapt(pagePanel);
         private final HtmlLikeSmokeDocumentPageController controller = new HtmlLikeSmokeDocumentPageController(
-                documentUi, pageSurface);
+                documentUi, pageSurface, textMeasureService);
     }
 
     /**

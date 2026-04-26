@@ -1,5 +1,7 @@
 package club.heiqi.uilib.ui.paint;
 
+import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 
 import org.junit.Assert;
@@ -11,6 +13,7 @@ import club.heiqi.uilib.ui.layout.DocumentLayoutBox;
 import club.heiqi.uilib.ui.layout.DocumentLayoutEngine;
 import club.heiqi.uilib.ui.style.UiOverflow;
 import club.heiqi.uilib.ui.style.UiStyleLength;
+import club.heiqi.uilib.ui.text.TextMeasureService;
 
 /**
  * `DocumentPaintEngine` 的绘制命令生成契约测试。
@@ -151,6 +154,31 @@ public class DocumentPaintEngineTest {
         Assert.assertEquals("Hello", commands.get(0).getText());
     }
 
+    /**
+     * 验证换行后的文本布局行会各自生成 TEXT 绘制命令。
+     */
+    @Test
+    public void shouldBuildTextCommandsForWrappedTextRuns() {
+        UiDocument document = UiDocument.create();
+        ElementNode root = document.getRootElement();
+
+        root.style()
+                .setWidth(UiStyleLength.px(24))
+                .setTextColor(0xFFEFF6FF);
+        root.appendText("abcdefg");
+
+        List<DocumentPaintCommand> commands = DocumentPaintEngine.buildPaintCommands(DocumentLayoutEngine.layout(root,
+                80, 0, new DeterministicTextMeasureService()));
+
+        Assert.assertEquals(3, commands.size());
+        assertCommand(commands.get(0), DocumentPaintCommandType.TEXT, root, 0, 0, 24, 18, 0xFFEFF6FF, 0, 0);
+        Assert.assertEquals("abc", commands.get(0).getText());
+        assertCommand(commands.get(1), DocumentPaintCommandType.TEXT, root, 0, 18, 24, 36, 0xFFEFF6FF, 0, 0);
+        Assert.assertEquals("def", commands.get(1).getText());
+        assertCommand(commands.get(2), DocumentPaintCommandType.TEXT, root, 0, 36, 8, 54, 0xFFEFF6FF, 0, 0);
+        Assert.assertEquals("g", commands.get(2).getText());
+    }
+
     private static void assertCommand(DocumentPaintCommand command, DocumentPaintCommandType type,
             ElementNode element, int left, int top, int right, int bottom, int color, int borderWidth,
             int borderRadius) {
@@ -165,5 +193,48 @@ public class DocumentPaintEngineTest {
         Assert.assertEquals(color, command.getColor());
         Assert.assertEquals(borderWidth, command.getBorderWidth());
         Assert.assertEquals(borderRadius, command.getBorderRadius());
+    }
+
+    /**
+     * 供 paint 测试使用的确定性文本测量服务。
+     */
+    private static final class DeterministicTextMeasureService implements TextMeasureService {
+
+        @Override
+        public int getEpoch() {
+            return 1;
+        }
+
+        @Override
+        public int getStringWidth(String text) {
+            return text == null ? 0 : text.length() * 4;
+        }
+
+        @Override
+        public int getLineHeight() {
+            return 9;
+        }
+
+        @Override
+        public String trimStringToWidth(String text, int targetWidth) {
+            if (text == null || text.isEmpty() || targetWidth <= 0) {
+                return "";
+            }
+            int maxLength = Math.max(0, targetWidth / 4);
+            return text.substring(0, Math.min(text.length(), maxLength));
+        }
+
+        @Override
+        public List<String> listFormattedStringToWidth(String text, int wrapWidth) {
+            if (text == null || text.isEmpty() || wrapWidth <= 0) {
+                return Collections.emptyList();
+            }
+            List<String> lines = new ArrayList<String>();
+            int maxCharsPerLine = Math.max(1, wrapWidth / 4);
+            for (int index = 0; index < text.length(); index += maxCharsPerLine) {
+                lines.add(text.substring(index, Math.min(text.length(), index + maxCharsPerLine)));
+            }
+            return lines;
+        }
     }
 }

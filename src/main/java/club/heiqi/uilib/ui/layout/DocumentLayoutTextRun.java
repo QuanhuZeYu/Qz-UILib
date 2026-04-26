@@ -18,10 +18,11 @@ public final class DocumentLayoutTextRun {
     private final int width;
     private final int height;
 
-    DocumentLayoutTextRun(TextNode textNode, ElementNode ownerElement, int left, int top, int width, int height) {
+    DocumentLayoutTextRun(TextNode textNode, ElementNode ownerElement, String text, int left, int top, int width,
+            int height) {
         this.textNode = Objects.requireNonNull(textNode, "textNode");
         this.ownerElement = Objects.requireNonNull(ownerElement, "ownerElement");
-        this.text = textNode.getText();
+        this.text = text == null ? "" : text;
         this.left = left;
         this.top = top;
         this.width = Math.max(0, width);

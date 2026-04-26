@@ -14,6 +14,8 @@ import club.heiqi.uilib.ui.style.UiFlexDirection;
 import club.heiqi.uilib.ui.style.UiJustifyContent;
 import club.heiqi.uilib.ui.style.UiOverflow;
 import club.heiqi.uilib.ui.style.UiStyleLength;
+import club.heiqi.uilib.ui.text.DefaultTextMeasureService;
+import club.heiqi.uilib.ui.text.TextMeasureService;
 
 /**
  * HTML-like 渲染链路的最小可见 smoke 页面控制器。
@@ -31,9 +33,22 @@ final class HtmlLikeSmokeDocumentPageController extends DocumentPageController {
      * @param documentPage 文档页面壳
      */
     HtmlLikeSmokeDocumentPageController(DocumentUiScope documentUi, DocumentPageAuthoringSurface documentPage) {
+        this(documentUi, documentPage, DefaultTextMeasureService.getInstance());
+    }
+
+    /**
+     * 使用指定文本测量服务创建 HTML-like smoke 页面控制器。
+     *
+     * @param documentUi 文档组件作用域
+     * @param documentPage 文档页面壳
+     * @param textMeasureService HTML-like 文本测量服务
+     */
+    HtmlLikeSmokeDocumentPageController(DocumentUiScope documentUi, DocumentPageAuthoringSurface documentPage,
+            TextMeasureService textMeasureService) {
         this.documentUi = Objects.requireNonNull(documentUi, "documentUi");
         this.documentPage = Objects.requireNonNull(documentPage, "documentPage");
-        this.htmlLikeDocumentWidget = new HtmlLikeDocumentWidget(createSmokeDocument(), 760, 320);
+        this.htmlLikeDocumentWidget = new HtmlLikeDocumentWidget(createSmokeDocument(), 760, 320,
+                Objects.requireNonNull(textMeasureService, "textMeasureService"));
         this.htmlLikeDocumentWidget.setLayoutSpec(new UiLayoutSpec()
                 .setWidth(UiLength.percent(1.0F))
                 .setHeight(UiLength.px(320)));
@@ -123,7 +138,8 @@ final class HtmlLikeSmokeDocumentPageController extends DocumentPageController {
                 .setBorderRadius(UiStyleLength.px(12))
                 .setTextColor(0xFFFFFFFF);
         row.append(fluidCard);
-        fluidCard.appendText("HTML-like text runs now render inside layout boxes.");
+        fluidCard.appendText("HTML-like text now uses the shared text measurement service and wraps across multiple "
+                + "lines when the card becomes narrow.");
 
         ElementNode sideCard = document.div();
         sideCard.style()

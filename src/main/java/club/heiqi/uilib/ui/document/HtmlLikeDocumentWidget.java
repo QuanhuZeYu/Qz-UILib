@@ -11,6 +11,8 @@ import club.heiqi.uilib.ui.paint.DocumentPaintCommand;
 import club.heiqi.uilib.ui.paint.DocumentPaintEngine;
 import club.heiqi.uilib.ui.paint.DocumentPaintRenderer;
 import club.heiqi.uilib.ui.render.UiRenderContext;
+import club.heiqi.uilib.ui.text.DefaultTextMeasureService;
+import club.heiqi.uilib.ui.text.TextMeasureService;
 import club.heiqi.uilib.ui.widget.Widget;
 
 /**
@@ -19,9 +21,11 @@ import club.heiqi.uilib.ui.widget.Widget;
 public final class HtmlLikeDocumentWidget extends Widget {
 
     private final UiDocument document;
+    private final TextMeasureService textMeasureService;
     private final int preferredWidth;
     private final int preferredHeight;
     private int cachedMutationVersion = -1;
+    private int cachedTextMeasureEpoch = -1;
     private int cachedWidth = -1;
     private int cachedHeight = -1;
     private List<DocumentPaintCommand> cachedPaintCommands = Collections.emptyList();
@@ -34,7 +38,21 @@ public final class HtmlLikeDocumentWidget extends Widget {
      * @param preferredHeight 作为旧 widget 布局后端子项时的默认高度
      */
     public HtmlLikeDocumentWidget(UiDocument document, int preferredWidth, int preferredHeight) {
+        this(document, preferredWidth, preferredHeight, DefaultTextMeasureService.getInstance());
+    }
+
+    /**
+     * 使用指定文本测量服务创建 HTML-like 文档适配组件。
+     *
+     * @param document HTML-like 文档
+     * @param preferredWidth 作为旧 widget 布局后端子项时的默认宽度
+     * @param preferredHeight 作为旧 widget 布局后端子项时的默认高度
+     * @param textMeasureService 文本测量服务
+     */
+    public HtmlLikeDocumentWidget(UiDocument document, int preferredWidth, int preferredHeight,
+            TextMeasureService textMeasureService) {
         this.document = Objects.requireNonNull(document, "document");
+        this.textMeasureService = Objects.requireNonNull(textMeasureService, "textMeasureService");
         this.preferredWidth = Math.max(0, preferredWidth);
         this.preferredHeight = Math.max(0, preferredHeight);
     }
@@ -46,6 +64,15 @@ public final class HtmlLikeDocumentWidget extends Widget {
      */
     public UiDocument getDocument() {
         return document;
+    }
+
+    /**
+     * 返回当前布局使用的文本测量服务。
+     *
+     * @return 文本测量服务
+     */
+    public TextMeasureService getTextMeasureService() {
+        return textMeasureService;
     }
 
     @Override
@@ -73,13 +100,17 @@ public final class HtmlLikeDocumentWidget extends Widget {
 
     private List<DocumentPaintCommand> resolvePaintCommands() {
         int mutationVersion = document.getMutationVersion();
-        if (cachedMutationVersion == mutationVersion && cachedWidth == getWidth() && cachedHeight == getHeight()) {
+        int textMeasureEpoch = textMeasureService.getEpoch();
+        if (cachedMutationVersion == mutationVersion && cachedTextMeasureEpoch == textMeasureEpoch
+                && cachedWidth == getWidth() && cachedHeight == getHeight()) {
             return cachedPaintCommands;
         }
 
-        DocumentLayoutBox rootBox = DocumentLayoutEngine.layout(document.getRootElement(), getWidth(), getHeight());
+        DocumentLayoutBox rootBox = DocumentLayoutEngine.layout(document.getRootElement(), getWidth(), getHeight(),
+                textMeasureService);
         cachedPaintCommands = DocumentPaintEngine.buildPaintCommands(rootBox);
         cachedMutationVersion = mutationVersion;
+        cachedTextMeasureEpoch = textMeasureEpoch;
         cachedWidth = getWidth();
         cachedHeight = getHeight();
         return cachedPaintCommands;

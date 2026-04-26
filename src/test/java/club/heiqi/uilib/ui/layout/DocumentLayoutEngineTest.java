@@ -1,5 +1,9 @@
 package club.heiqi.uilib.ui.layout;
 
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.List;
+
 import org.junit.Assert;
 import org.junit.Test;
 
@@ -11,6 +15,7 @@ import club.heiqi.uilib.ui.style.UiFlexDirection;
 import club.heiqi.uilib.ui.style.UiJustifyContent;
 import club.heiqi.uilib.ui.style.UiStyleInsets;
 import club.heiqi.uilib.ui.style.UiStyleLength;
+import club.heiqi.uilib.ui.text.TextMeasureService;
 
 /**
  * `DocumentLayoutEngine` 的 HTML-like 盒模型布局契约测试。
@@ -168,6 +173,26 @@ public class DocumentLayoutEngineTest {
     }
 
     /**
+     * 验证直接文本子节点会使用注入的文本测量服务按可用宽度换行。
+     */
+    @Test
+    public void shouldWrapDirectTextRunsWithInjectedTextMeasureService() {
+        UiDocument document = UiDocument.create();
+        ElementNode root = document.getRootElement();
+
+        root.style().setWidth(UiStyleLength.px(24));
+        root.appendText("abcdefg");
+
+        DocumentLayoutBox rootBox = DocumentLayoutEngine.layout(root, 80, 0, new DeterministicTextMeasureService());
+
+        Assert.assertEquals(3, rootBox.getTextRuns().size());
+        assertTextRun(rootBox.getTextRuns().get(0), "abc", 0, 0, 24, 18);
+        assertTextRun(rootBox.getTextRuns().get(1), "def", 0, 18, 24, 18);
+        assertTextRun(rootBox.getTextRuns().get(2), "g", 0, 36, 8, 18);
+        Assert.assertEquals(54, rootBox.getHeight());
+    }
+
+    /**
      * 验证 flex row 会分配 grow 空间并应用 column-gap。
      */
     @Test
@@ -298,5 +323,57 @@ public class DocumentLayoutEngineTest {
 
         Assert.assertEquals(80, childBox.getLeft());
         Assert.assertEquals(20, childBox.getTop());
+    }
+
+    private static void assertTextRun(DocumentLayoutTextRun textRun, String text, int left, int top, int width,
+            int height) {
+        Assert.assertEquals(text, textRun.getText());
+        Assert.assertEquals(left, textRun.getLeft());
+        Assert.assertEquals(top, textRun.getTop());
+        Assert.assertEquals(width, textRun.getWidth());
+        Assert.assertEquals(height, textRun.getHeight());
+    }
+
+    /**
+     * 供布局测试使用的确定性文本测量服务。
+     */
+    private static final class DeterministicTextMeasureService implements TextMeasureService {
+
+        @Override
+        public int getEpoch() {
+            return 1;
+        }
+
+        @Override
+        public int getStringWidth(String text) {
+            return text == null ? 0 : text.length() * 4;
+        }
+
+        @Override
+        public int getLineHeight() {
+            return 9;
+        }
+
+        @Override
+        public String trimStringToWidth(String text, int targetWidth) {
+            if (text == null || text.isEmpty() || targetWidth <= 0) {
+                return "";
+            }
+            int maxLength = Math.max(0, targetWidth / 4);
+            return text.substring(0, Math.min(text.length(), maxLength));
+        }
+
+        @Override
+        public List<String> listFormattedStringToWidth(String text, int wrapWidth) {
+            if (text == null || text.isEmpty() || wrapWidth <= 0) {
+                return Collections.emptyList();
+            }
+            List<String> lines = new ArrayList<String>();
+            int maxCharsPerLine = Math.max(1, wrapWidth / 4);
+            for (int index = 0; index < text.length(); index += maxCharsPerLine) {
+                lines.add(text.substring(index, Math.min(text.length(), index + maxCharsPerLine)));
+            }
+            return lines;
+        }
     }
 }
