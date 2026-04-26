@@ -36,24 +36,49 @@ public final class DocumentPaintRenderer {
         if (commands == null || commands.isEmpty()) {
             return;
         }
-        for (DocumentPaintCommand command : commands) {
-            renderCommand(context, command, offsetX, offsetY);
+        int clipDepth = 0;
+        try {
+            for (DocumentPaintCommand command : commands) {
+                clipDepth = renderCommand(context, command, offsetX, offsetY, clipDepth);
+            }
+        } finally {
+            while (clipDepth > 0) {
+                context.popClip();
+                clipDepth--;
+            }
         }
     }
 
-    private static void renderCommand(UiRenderContext context, DocumentPaintCommand command, int offsetX, int offsetY) {
-        if (command == null || command.getWidth() <= 0 || command.getHeight() <= 0) {
-            return;
+    private static int renderCommand(UiRenderContext context, DocumentPaintCommand command, int offsetX, int offsetY,
+            int clipDepth) {
+        if (command == null) {
+            return clipDepth;
+        }
+        if (command.getType() == DocumentPaintCommandType.CLIP_END) {
+            if (clipDepth > 0) {
+                context.popClip();
+                return clipDepth - 1;
+            }
+            return 0;
+        }
+        if (command.getWidth() <= 0 || command.getHeight() <= 0) {
+            return clipDepth;
+        }
+        if (command.getType() == DocumentPaintCommandType.CLIP_START) {
+            context.pushClip(command.getLeft() + offsetX, command.getTop() + offsetY,
+                    command.getRight() + offsetX, command.getBottom() + offsetY, command.getBorderRadius());
+            return clipDepth + 1;
         }
         if (command.getType() == DocumentPaintCommandType.BACKGROUND) {
             context.drawSurface(command.getLeft() + offsetX, command.getTop() + offsetY,
                     command.getRight() + offsetX, command.getBottom() + offsetY,
                     new UiSurfaceStyle(command.getColor(), 0, command.getBorderRadius()));
-            return;
+            return clipDepth;
         }
         if (command.getType() == DocumentPaintCommandType.BORDER) {
             renderBorder(context, command, offsetX, offsetY);
         }
+        return clipDepth;
     }
 
     private static void renderBorder(UiRenderContext context, DocumentPaintCommand command, int offsetX, int offsetY) {

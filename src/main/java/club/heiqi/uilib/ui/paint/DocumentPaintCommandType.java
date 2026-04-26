@@ -5,5 +5,7 @@ package club.heiqi.uilib.ui.paint;
  */
 public enum DocumentPaintCommandType {
     BACKGROUND,
-    BORDER
+    BORDER,
+    CLIP_START,
+    CLIP_END
 }

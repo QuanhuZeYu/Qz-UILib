@@ -9,6 +9,7 @@ import club.heiqi.uilib.ui.dom.ElementNode;
 import club.heiqi.uilib.ui.dom.UiDocument;
 import club.heiqi.uilib.ui.layout.DocumentLayoutBox;
 import club.heiqi.uilib.ui.layout.DocumentLayoutEngine;
+import club.heiqi.uilib.ui.style.UiOverflow;
 import club.heiqi.uilib.ui.style.UiStyleLength;
 
 /**
@@ -90,6 +91,42 @@ public class DocumentPaintEngineTest {
 
         Assert.assertEquals(1, commands.size());
         Assert.assertEquals(5, commands.get(0).getBorderRadius());
+    }
+
+    /**
+     * 验证非 visible overflow 会在子树前后输出结构裁剪命令。
+     */
+    @Test
+    public void shouldWrapDescendantCommandsWithOverflowClip() {
+        UiDocument document = UiDocument.create();
+        ElementNode root = document.getRootElement();
+        ElementNode child = document.div();
+
+        root.style()
+                .setWidth(UiStyleLength.px(50))
+                .setHeight(UiStyleLength.px(20))
+                .setPadding(UiStyleLength.px(4))
+                .setBorderWidth(UiStyleLength.px(1))
+                .setBorderRadius(UiStyleLength.px(6))
+                .setOverflowX(UiOverflow.HIDDEN)
+                .setOverflowY(UiOverflow.HIDDEN)
+                .setBackgroundColor(0xFF101820);
+        child.style()
+                .setWidth(UiStyleLength.px(80))
+                .setHeight(UiStyleLength.px(10))
+                .setBackgroundColor(0xFFAA5500);
+        root.append(child);
+
+        List<DocumentPaintCommand> commands = DocumentPaintEngine.buildPaintCommands(
+                DocumentLayoutEngine.layout(root, 100, 0));
+
+        Assert.assertEquals(4, commands.size());
+        assertCommand(commands.get(0), DocumentPaintCommandType.BACKGROUND, root, 0, 0, 60, 30, 0xFF101820, 0,
+                6);
+        assertCommand(commands.get(1), DocumentPaintCommandType.CLIP_START, root, 1, 1, 59, 29, 0, 0, 6);
+        assertCommand(commands.get(2), DocumentPaintCommandType.BACKGROUND, child, 5, 5, 85, 15, 0xFFAA5500, 0,
+                0);
+        assertCommand(commands.get(3), DocumentPaintCommandType.CLIP_END, root, 0, 0, 60, 30, 0, 0, 0);
     }
 
     private static void assertCommand(DocumentPaintCommand command, DocumentPaintCommandType type,

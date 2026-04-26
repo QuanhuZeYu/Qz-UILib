@@ -70,6 +70,8 @@ public class HtmlLikeSmokeDocumentPageControllerTest {
         Assert.assertEquals(791, firstCall.right);
         Assert.assertTrue(firstCall.bottom > firstCall.top);
         Assert.assertEquals(0xEE151A24, firstCall.surfaceStyle.fillColor);
+        Assert.assertFalse(renderContext.clipCalls.isEmpty());
+        Assert.assertTrue(renderContext.popClipCount > 0);
     }
 
     private static List<Widget> getDocumentBlocks(DocumentPageWidget pagePanel) {
@@ -123,6 +125,8 @@ public class HtmlLikeSmokeDocumentPageControllerTest {
     private static final class RecordingUiRenderContext extends UiRenderContext {
 
         private final List<DrawCall> drawCalls = new ArrayList<DrawCall>();
+        private final List<ClipCall> clipCalls = new ArrayList<ClipCall>();
+        private int popClipCount;
 
         private RecordingUiRenderContext() {
             super(1024, 768, 0, 0, 0.0F);
@@ -131,6 +135,16 @@ public class HtmlLikeSmokeDocumentPageControllerTest {
         @Override
         public void drawSurface(int left, int top, int right, int bottom, UiSurfaceStyle surfaceStyle) {
             drawCalls.add(new DrawCall(left, top, right, bottom, surfaceStyle));
+        }
+
+        @Override
+        public void pushClip(int left, int top, int right, int bottom, int cornerRadius) {
+            clipCalls.add(new ClipCall(left, top, right, bottom, cornerRadius));
+        }
+
+        @Override
+        public void popClip() {
+            popClipCount++;
         }
     }
 
@@ -151,6 +165,26 @@ public class HtmlLikeSmokeDocumentPageControllerTest {
             this.right = right;
             this.bottom = bottom;
             this.surfaceStyle = surfaceStyle;
+        }
+    }
+
+    /**
+     * 单次 clip 投影记录。
+     */
+    private static final class ClipCall {
+
+        private final int left;
+        private final int top;
+        private final int right;
+        private final int bottom;
+        private final int cornerRadius;
+
+        private ClipCall(int left, int top, int right, int bottom, int cornerRadius) {
+            this.left = left;
+            this.top = top;
+            this.right = right;
+            this.bottom = bottom;
+            this.cornerRadius = cornerRadius;
         }
     }
 

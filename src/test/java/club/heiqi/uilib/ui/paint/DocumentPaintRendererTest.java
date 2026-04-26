@@ -10,6 +10,7 @@ import club.heiqi.uilib.ui.dom.ElementNode;
 import club.heiqi.uilib.ui.dom.UiDocument;
 import club.heiqi.uilib.ui.layout.DocumentLayoutEngine;
 import club.heiqi.uilib.ui.render.UiRenderContext;
+import club.heiqi.uilib.ui.style.UiOverflow;
 import club.heiqi.uilib.ui.style.UiStyleLength;
 import club.heiqi.uilib.ui.theme.UiSurfaceStyle;
 
@@ -77,6 +78,38 @@ public class DocumentPaintRendererTest {
         assertDrawCall(renderContext.drawCalls.get(0), 7, 11, 25, 23, 0xFF223344, 0, 0);
     }
 
+    /**
+     * 验证 overflow clip 命令会按宿主偏移投影到 `UiRenderContext` 的裁剪栈。
+     */
+    @Test
+    public void shouldReplayOverflowClipCommands() {
+        UiDocument document = UiDocument.create();
+        ElementNode root = document.getRootElement();
+        ElementNode child = document.div();
+        root.style()
+                .setWidth(UiStyleLength.px(30))
+                .setHeight(UiStyleLength.px(12))
+                .setBorderWidth(UiStyleLength.px(2))
+                .setBorderRadius(UiStyleLength.px(5))
+                .setOverflowX(UiOverflow.HIDDEN)
+                .setOverflowY(UiOverflow.HIDDEN);
+        child.style()
+                .setWidth(UiStyleLength.px(80))
+                .setHeight(UiStyleLength.px(8))
+                .setBackgroundColor(0xFF556677);
+        root.append(child);
+
+        RecordingUiRenderContext renderContext = new RecordingUiRenderContext();
+        DocumentPaintRenderer.render(renderContext, DocumentPaintEngine.buildPaintCommands(
+                DocumentLayoutEngine.layout(root, 60, 0)), 10, 20);
+
+        Assert.assertEquals(1, renderContext.clipCalls.size());
+        assertClipCall(renderContext.clipCalls.get(0), 12, 22, 42, 34, 5);
+        Assert.assertEquals(1, renderContext.popClipCount);
+        Assert.assertEquals(1, renderContext.drawCalls.size());
+        assertDrawCall(renderContext.drawCalls.get(0), 12, 22, 92, 30, 0xFF556677, 0, 0);
+    }
+
     private static void assertDrawCall(DrawCall drawCall, int left, int top, int right, int bottom, int fillColor,
             int borderColor, int cornerRadius) {
         Assert.assertEquals(left, drawCall.left);
@@ -88,12 +121,22 @@ public class DocumentPaintRendererTest {
         Assert.assertEquals(cornerRadius, drawCall.surfaceStyle.cornerRadius);
     }
 
+    private static void assertClipCall(ClipCall clipCall, int left, int top, int right, int bottom, int cornerRadius) {
+        Assert.assertEquals(left, clipCall.left);
+        Assert.assertEquals(top, clipCall.top);
+        Assert.assertEquals(right, clipCall.right);
+        Assert.assertEquals(bottom, clipCall.bottom);
+        Assert.assertEquals(cornerRadius, clipCall.cornerRadius);
+    }
+
     /**
      * 记录 drawSurface 调用的渲染上下文。
      */
     private static final class RecordingUiRenderContext extends UiRenderContext {
 
         private final List<DrawCall> drawCalls = new ArrayList<DrawCall>();
+        private final List<ClipCall> clipCalls = new ArrayList<ClipCall>();
+        private int popClipCount;
 
         private RecordingUiRenderContext() {
             super(320, 240, 0, 0, 0.0F);
@@ -102,6 +145,16 @@ public class DocumentPaintRendererTest {
         @Override
         public void drawSurface(int left, int top, int right, int bottom, UiSurfaceStyle surfaceStyle) {
             drawCalls.add(new DrawCall(left, top, right, bottom, surfaceStyle));
+        }
+
+        @Override
+        public void pushClip(int left, int top, int right, int bottom, int cornerRadius) {
+            clipCalls.add(new ClipCall(left, top, right, bottom, cornerRadius));
+        }
+
+        @Override
+        public void popClip() {
+            popClipCount++;
         }
     }
 
@@ -122,6 +175,26 @@ public class DocumentPaintRendererTest {
             this.right = right;
             this.bottom = bottom;
             this.surfaceStyle = surfaceStyle;
+        }
+    }
+
+    /**
+     * 单次 clip 绘制状态记录。
+     */
+    private static final class ClipCall {
+
+        private final int left;
+        private final int top;
+        private final int right;
+        private final int bottom;
+        private final int cornerRadius;
+
+        private ClipCall(int left, int top, int right, int bottom, int cornerRadius) {
+            this.left = left;
+            this.top = top;
+            this.right = right;
+            this.bottom = bottom;
+            this.cornerRadius = cornerRadius;
         }
     }
 }

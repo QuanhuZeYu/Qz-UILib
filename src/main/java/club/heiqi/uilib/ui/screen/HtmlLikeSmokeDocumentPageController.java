@@ -12,6 +12,7 @@ import club.heiqi.uilib.ui.style.UiAlignItems;
 import club.heiqi.uilib.ui.style.UiDisplay;
 import club.heiqi.uilib.ui.style.UiFlexDirection;
 import club.heiqi.uilib.ui.style.UiJustifyContent;
+import club.heiqi.uilib.ui.style.UiOverflow;
 import club.heiqi.uilib.ui.style.UiStyleLength;
 
 /**
@@ -79,8 +80,18 @@ final class HtmlLikeSmokeDocumentPageController extends DocumentPageController {
                 .setBackgroundColor(0xFF213556)
                 .setBorderColor(0xFF6B96FF)
                 .setBorderWidth(UiStyleLength.px(1))
-                .setBorderRadius(UiStyleLength.px(14));
+                .setBorderRadius(UiStyleLength.px(14))
+                .setOverflowX(UiOverflow.HIDDEN)
+                .setOverflowY(UiOverflow.HIDDEN);
         root.append(header);
+
+        ElementNode clippedStripe = document.div();
+        clippedStripe.style()
+                .setWidth(UiStyleLength.px(900))
+                .setHeight(UiStyleLength.px(22))
+                .setBackgroundColor(0xFFED64A6)
+                .setBorderRadius(UiStyleLength.px(999));
+        header.append(clippedStripe);
 
         ElementNode row = document.div();
         row.style()

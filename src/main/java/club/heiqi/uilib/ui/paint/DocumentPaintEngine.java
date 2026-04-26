@@ -6,6 +6,7 @@ import java.util.Objects;
 
 import club.heiqi.uilib.ui.layout.DocumentLayoutBox;
 import club.heiqi.uilib.ui.style.ComputedStyle;
+import club.heiqi.uilib.ui.style.UiOverflow;
 
 /**
  * HTML-like 绘制命令生成器。
@@ -33,8 +34,15 @@ public final class DocumentPaintEngine {
     private static void appendBoxCommands(DocumentLayoutBox box, List<DocumentPaintCommand> commands) {
         appendBackgroundCommand(box, commands);
         appendBorderCommand(box, commands);
+        boolean clipChildren = shouldClipChildren(box);
+        if (clipChildren) {
+            appendClipStartCommand(box, commands);
+        }
         for (DocumentLayoutBox child : box.getChildren()) {
             appendBoxCommands(child, commands);
+        }
+        if (clipChildren) {
+            appendClipEndCommand(box, commands);
         }
     }
 
@@ -57,6 +65,43 @@ public final class DocumentPaintEngine {
         }
         commands.add(new DocumentPaintCommand(DocumentPaintCommandType.BORDER, box.getElement(), box.getLeft(),
                 box.getTop(), box.getRight(), box.getBottom(), color, borderWidth, resolveBorderRadius(box)));
+    }
+
+    private static void appendClipStartCommand(DocumentLayoutBox box, List<DocumentPaintCommand> commands) {
+        ComputedStyle style = box.getComputedStyle();
+        int left = style.getOverflowX() == UiOverflow.VISIBLE ? Integer.MIN_VALUE / 4 : getPaddingBoxLeft(box);
+        int right = style.getOverflowX() == UiOverflow.VISIBLE ? Integer.MAX_VALUE / 4 : getPaddingBoxRight(box);
+        int top = style.getOverflowY() == UiOverflow.VISIBLE ? Integer.MIN_VALUE / 4 : getPaddingBoxTop(box);
+        int bottom = style.getOverflowY() == UiOverflow.VISIBLE ? Integer.MAX_VALUE / 4 : getPaddingBoxBottom(box);
+        commands.add(new DocumentPaintCommand(DocumentPaintCommandType.CLIP_START, box.getElement(), left, top,
+                right, bottom, 0, 0, resolveBorderRadius(box)));
+    }
+
+    private static void appendClipEndCommand(DocumentLayoutBox box, List<DocumentPaintCommand> commands) {
+        commands.add(new DocumentPaintCommand(DocumentPaintCommandType.CLIP_END, box.getElement(), box.getLeft(),
+                box.getTop(), box.getRight(), box.getBottom(), 0, 0, 0));
+    }
+
+    private static boolean shouldClipChildren(DocumentLayoutBox box) {
+        ComputedStyle style = box.getComputedStyle();
+        return (style.getOverflowX() != UiOverflow.VISIBLE || style.getOverflowY() != UiOverflow.VISIBLE)
+                && !box.getChildren().isEmpty();
+    }
+
+    private static int getPaddingBoxLeft(DocumentLayoutBox box) {
+        return box.getLeft() + box.getBorder().getLeft();
+    }
+
+    private static int getPaddingBoxTop(DocumentLayoutBox box) {
+        return box.getTop() + box.getBorder().getTop();
+    }
+
+    private static int getPaddingBoxRight(DocumentLayoutBox box) {
+        return box.getRight() - box.getBorder().getRight();
+    }
+
+    private static int getPaddingBoxBottom(DocumentLayoutBox box) {
+        return box.getBottom() - box.getBorder().getBottom();
     }
 
     private static int resolveBorderRadius(DocumentLayoutBox box) {
