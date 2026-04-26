@@ -4,9 +4,13 @@ import java.util.Collections;
 import java.util.List;
 import java.util.Objects;
 
+import club.heiqi.uilib.ui.dom.DocumentElementClickEvent;
+import club.heiqi.uilib.ui.dom.DocumentElementClickHandler;
+import club.heiqi.uilib.ui.dom.DocumentNode;
 import club.heiqi.uilib.ui.dom.ElementNode;
 import club.heiqi.uilib.ui.dom.UiDocument;
 import club.heiqi.uilib.ui.event.UiMouseEvent;
+import club.heiqi.uilib.ui.layout.DocumentHitTestEngine;
 import club.heiqi.uilib.ui.layout.DocumentLayoutBox;
 import club.heiqi.uilib.ui.layout.DocumentLayoutEngine;
 import club.heiqi.uilib.ui.layout.DocumentScrollState;
@@ -34,6 +38,7 @@ public final class HtmlLikeDocumentWidget extends Widget {
     private int cachedHeight = -1;
     private int cachedPaintScrollVersion = -1;
     private DocumentLayoutBox cachedLayoutBox;
+    private ElementNode pressedElement;
     private List<DocumentPaintCommand> cachedPaintCommands = Collections.emptyList();
 
     /**
@@ -103,6 +108,21 @@ public final class HtmlLikeDocumentWidget extends Widget {
         return scrollState.getMaxScrollTop(element);
     }
 
+    /**
+     * 返回屏幕坐标命中的 HTML-like 元素。
+     *
+     * @param screenX 屏幕 X
+     * @param screenY 屏幕 Y
+     * @return 命中的最深元素；未命中时返回 null
+     */
+    public ElementNode findElementAt(int screenX, int screenY) {
+        if (getWidth() <= 0 || getHeight() <= 0 || !contains(screenX, screenY)) {
+            return null;
+        }
+        return DocumentHitTestEngine.hitTest(resolveLayoutBox(), scrollState, screenX - getAbsoluteX(),
+                screenY - getAbsoluteY());
+    }
+
     @Override
     public int getPreferredWidth() {
         return preferredWidth;
@@ -136,6 +156,29 @@ public final class HtmlLikeDocumentWidget extends Widget {
                 event.getWheelDelta());
     }
 
+    @Override
+    public void onMouseDown(UiMouseEvent event) {
+        if (event == null || event.getButton() != 0) {
+            pressedElement = null;
+            return;
+        }
+        pressedElement = findElementAt(event.getMouseX(), event.getMouseY());
+    }
+
+    @Override
+    public void onMouseUp(UiMouseEvent event) {
+        if (event == null || event.getButton() != 0) {
+            pressedElement = null;
+            return;
+        }
+        ElementNode releasedElement = findElementAt(event.getMouseX(), event.getMouseY());
+        ElementNode target = pressedElement != null && pressedElement == releasedElement ? releasedElement : null;
+        pressedElement = null;
+        if (target != null) {
+            dispatchClick(target, event);
+        }
+    }
+
     private List<DocumentPaintCommand> resolvePaintCommands() {
         DocumentLayoutBox rootBox = resolveLayoutBox();
         int scrollVersion = scrollState.getVersion();
@@ -165,5 +208,23 @@ public final class HtmlLikeDocumentWidget extends Widget {
         cachedHeight = getHeight();
         cachedPaintScrollVersion = -1;
         return cachedLayoutBox;
+    }
+
+    private boolean dispatchClick(ElementNode target, UiMouseEvent event) {
+        int documentX = event.getMouseX() - getAbsoluteX();
+        int documentY = event.getMouseY() - getAbsoluteY();
+        for (DocumentNode current = target; current instanceof ElementNode; current = current.getParent()) {
+            ElementNode currentElement = (ElementNode) current;
+            DocumentElementClickHandler clickHandler = currentElement.getClickHandler();
+            if (clickHandler == null) {
+                continue;
+            }
+            DocumentElementClickEvent clickEvent = new DocumentElementClickEvent(target, currentElement, documentX,
+                    documentY, event.getButton(), event.getTimeNanos());
+            if (clickHandler.onClick(clickEvent)) {
+                return true;
+            }
+        }
+        return false;
     }
 }

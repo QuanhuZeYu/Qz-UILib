@@ -7,6 +7,8 @@ import java.util.List;
 import org.junit.Assert;
 import org.junit.Test;
 
+import club.heiqi.uilib.ui.dom.DocumentElementClickEvent;
+import club.heiqi.uilib.ui.dom.DocumentElementClickHandler;
 import club.heiqi.uilib.ui.dom.ElementNode;
 import club.heiqi.uilib.ui.dom.UiDocument;
 import club.heiqi.uilib.ui.event.UiMouseEvent;
@@ -122,6 +124,100 @@ public class HtmlLikeDocumentWidgetTest {
         Assert.assertEquals(36, widget.getScrollTop(root));
         Assert.assertEquals(1, scrolledRenderContext.drawCalls.size());
         assertDrawCall(scrolledRenderContext.drawCalls.get(0), 5, -29, 85, 51, 0xFFAA5500, 0, 0);
+    }
+
+    /**
+     * 验证 HTML-like 组件可以命中屏幕坐标下的最深元素。
+     */
+    @Test
+    public void shouldFindDeepestElementAtScreenPoint() {
+        UiDocument document = UiDocument.create();
+        ElementNode root = document.getRootElement();
+        ElementNode child = document.div();
+        ElementNode grandChild = document.div();
+        root.style()
+                .setWidth(UiStyleLength.px(80))
+                .setHeight(UiStyleLength.px(40));
+        child.style()
+                .setWidth(UiStyleLength.px(40))
+                .setHeight(UiStyleLength.px(20));
+        grandChild.style()
+                .setWidth(UiStyleLength.px(16))
+                .setHeight(UiStyleLength.px(10));
+        child.append(grandChild);
+        root.append(child);
+        HtmlLikeDocumentWidget widget = new HtmlLikeDocumentWidget(document, 80, 40,
+                new DeterministicTextMeasureService());
+        widget.applyLayoutBounds(5, 7, 80, 40);
+
+        Assert.assertSame(grandChild, widget.findElementAt(10, 12));
+        Assert.assertNull(widget.findElementAt(120, 12));
+    }
+
+    /**
+     * 验证 HTML-like 组件会把 click 事件分发给命中元素并向父元素冒泡。
+     */
+    @Test
+    public void shouldDispatchClickToHitElementAndBubbleToParent() {
+        UiDocument document = UiDocument.create();
+        final ElementNode root = document.getRootElement();
+        final ElementNode child = document.div();
+        final List<DocumentElementClickEvent> clickEvents = new ArrayList<DocumentElementClickEvent>();
+        root.style()
+                .setWidth(UiStyleLength.px(80))
+                .setHeight(UiStyleLength.px(40));
+        child.style()
+                .setWidth(UiStyleLength.px(40))
+                .setHeight(UiStyleLength.px(20));
+        root.setClickHandler(new DocumentElementClickHandler() {
+            @Override
+            public boolean onClick(DocumentElementClickEvent event) {
+                clickEvents.add(event);
+                return true;
+            }
+        });
+        root.append(child);
+        HtmlLikeDocumentWidget widget = new HtmlLikeDocumentWidget(document, 80, 40,
+                new DeterministicTextMeasureService());
+        widget.applyLayoutBounds(5, 7, 80, 40);
+
+        widget.onMouseDown(new UiMouseEvent(UiMouseEvent.Action.BUTTON_DOWN, 10, 12, 0, 0, 0, 0, 1L));
+        widget.onMouseUp(new UiMouseEvent(UiMouseEvent.Action.BUTTON_UP, 10, 12, 0, 0, 0, 0, 2L));
+
+        Assert.assertEquals(1, clickEvents.size());
+        Assert.assertSame(child, clickEvents.get(0).getTarget());
+        Assert.assertSame(root, clickEvents.get(0).getCurrentTarget());
+        Assert.assertEquals(5, clickEvents.get(0).getDocumentX());
+        Assert.assertEquals(5, clickEvents.get(0).getDocumentY());
+        Assert.assertEquals(0, clickEvents.get(0).getButton());
+        Assert.assertEquals(2L, clickEvents.get(0).getTimeNanos());
+    }
+
+    /**
+     * 验证滚动后的命中测试会使用内容偏移后的元素位置。
+     */
+    @Test
+    public void shouldHitTestScrolledContentAtVisualPosition() {
+        UiDocument document = UiDocument.create();
+        ElementNode root = document.getRootElement();
+        ElementNode first = document.div();
+        ElementNode second = document.div();
+        root.style()
+                .setWidth(UiStyleLength.px(80))
+                .setHeight(UiStyleLength.px(20))
+                .setOverflowY(UiOverflow.AUTO);
+        first.style().setHeight(UiStyleLength.px(40));
+        second.style().setHeight(UiStyleLength.px(40));
+        root.append(first).append(second);
+        HtmlLikeDocumentWidget widget = new HtmlLikeDocumentWidget(document, 80, 20,
+                new DeterministicTextMeasureService());
+        widget.applyLayoutBounds(0, 0, 80, 20);
+
+        Assert.assertSame(first, widget.findElementAt(10, 10));
+        Assert.assertTrue(widget.onMouseScroll(new UiMouseEvent(UiMouseEvent.Action.SCROLL, 10, 10, -1, -120, 0,
+                0, 1L)));
+
+        Assert.assertSame(second, widget.findElementAt(10, 10));
     }
 
     private static void assertDrawCall(DrawCall drawCall, int left, int top, int right, int bottom, int fillColor,

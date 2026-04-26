@@ -15,6 +15,7 @@ public final class ElementNode extends DocumentNode {
 
     private final String tagName;
     private final Map<String, String> attributes = new LinkedHashMap<String, String>();
+    private DocumentElementClickHandler clickHandler;
     private final UiStyleDeclaration style = new UiStyleDeclaration(new Runnable() {
         @Override
         public void run() {
@@ -120,6 +121,28 @@ public final class ElementNode extends DocumentNode {
      */
     public Map<String, String> getAttributes() {
         return Collections.unmodifiableMap(attributes);
+    }
+
+    /**
+     * 设置元素点击处理器。
+     *
+     * <p>事件处理器不影响布局和绘制缓存，因此不会提升文档 mutation version。</p>
+     *
+     * @param clickHandler 点击处理器；为 null 时清除处理器
+     * @return 当前元素
+     */
+    public ElementNode setClickHandler(DocumentElementClickHandler clickHandler) {
+        this.clickHandler = clickHandler;
+        return this;
+    }
+
+    /**
+     * 返回元素点击处理器。
+     *
+     * @return 点击处理器；不存在时返回 null
+     */
+    public DocumentElementClickHandler getClickHandler() {
+        return clickHandler;
     }
 
     /**
