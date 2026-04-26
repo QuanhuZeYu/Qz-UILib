@@ -17,6 +17,9 @@ import club.heiqi.uilib.ui.dom.DocumentElementTextInputHandler;
 import club.heiqi.uilib.ui.dom.ElementNode;
 import club.heiqi.uilib.ui.dom.TextNode;
 import club.heiqi.uilib.ui.dom.UiDocument;
+import club.heiqi.uilib.ui.dom.control.DocumentButtonActionEvent;
+import club.heiqi.uilib.ui.dom.control.DocumentButtonActionHandler;
+import club.heiqi.uilib.ui.dom.control.DocumentButtonControl;
 import club.heiqi.uilib.ui.event.UiKeyEvent;
 import club.heiqi.uilib.ui.layout.UiLayoutSpec;
 import club.heiqi.uilib.ui.layout.UiLength;
@@ -256,6 +259,19 @@ final class HtmlLikeSmokeDocumentPageController extends DocumentPageController {
             }
         });
         footer.append(tabPill);
+
+        final DocumentButtonControl buttonControl = new DocumentButtonControl(document, "Button ctrl: 0");
+        final int[] buttonCount = new int[] { 0 };
+        buttonControl.setBackgroundColors(0xFF2B6CB0, 0xFF63B3ED, 0xFF4A5568)
+                .setActionHandler(new DocumentButtonActionHandler() {
+                    @Override
+                    public void onAction(DocumentButtonActionEvent event) {
+                        buttonCount[0]++;
+                        event.getSource().setLabel("Button ctrl: " + buttonCount[0]);
+                    }
+                });
+        buttonControl.getElement().style().setFlexGrow(1.0F);
+        footer.append(buttonControl.getElement());
         return document;
     }
 

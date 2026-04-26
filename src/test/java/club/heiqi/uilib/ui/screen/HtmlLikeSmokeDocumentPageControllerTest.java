@@ -172,6 +172,30 @@ public class HtmlLikeSmokeDocumentPageControllerTest {
         Assert.assertTrue(containsFillColor(reverseRenderContext.drawCalls, 0xFFD69E2E));
     }
 
+    /**
+     * 验证 smoke 子页中的 HTML-like 按钮控件可通过键盘激活。
+     */
+    @Test
+    public void shouldUpdateSmokeButtonControlWhenKeyboardActivated() {
+        TestFixture fixture = new TestFixture();
+
+        fixture.controller.configureDocumentPage();
+        fixture.controller.buildDocument();
+        HtmlLikeDocumentWidget widget = fixture.controller.getHtmlLikeDocumentWidget();
+        widget.applyLayoutBounds(31, 47, 760, 320);
+
+        widget.onFocusTraversalEntered(false);
+        Assert.assertTrue(widget.onFocusTraversal(false));
+        Assert.assertTrue(widget.onFocusTraversal(false));
+        widget.onKeyEvent(new UiKeyEvent(Keyboard.KEY_RETURN, 0, 0, UiKeyEvent.Action.PRESSED, false, false, false,
+                false, 4L));
+        RecordingUiRenderContext renderContext = new RecordingUiRenderContext();
+        widget.render(renderContext);
+
+        Assert.assertTrue(containsTextCall(renderContext.textCalls, "Button ctrl: 1"));
+        Assert.assertTrue(containsFillColor(renderContext.drawCalls, 0xFF63B3ED));
+    }
+
     private static List<Widget> getDocumentBlocks(DocumentPageWidget pagePanel) {
         List<Widget> pageChildren = pagePanel.getChildren();
         Assert.assertFalse(pageChildren.isEmpty());

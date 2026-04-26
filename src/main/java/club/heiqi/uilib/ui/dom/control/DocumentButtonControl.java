@@ -1,0 +1,217 @@
+package club.heiqi.uilib.ui.dom.control;
+
+import org.lwjglx.input.Keyboard;
+
+import club.heiqi.uilib.ui.dom.DocumentElementClickEvent;
+import club.heiqi.uilib.ui.dom.DocumentElementClickHandler;
+import club.heiqi.uilib.ui.dom.DocumentElementFocusEvent;
+import club.heiqi.uilib.ui.dom.DocumentElementFocusHandler;
+import club.heiqi.uilib.ui.dom.DocumentElementKeyEvent;
+import club.heiqi.uilib.ui.dom.DocumentElementKeyHandler;
+import club.heiqi.uilib.ui.dom.ElementNode;
+import club.heiqi.uilib.ui.dom.TextNode;
+import club.heiqi.uilib.ui.dom.UiDocument;
+import club.heiqi.uilib.ui.event.UiKeyEvent;
+import club.heiqi.uilib.ui.style.UiOverflow;
+import club.heiqi.uilib.ui.style.UiStyleLength;
+
+/**
+ * 基于 HTML-like 元素实现的按钮控件适配器。
+ */
+public final class DocumentButtonControl {
+
+    private final ElementNode element;
+    private final TextNode labelText;
+    private DocumentButtonActionHandler actionHandler;
+    private boolean enabled = true;
+    private boolean focused;
+    private int normalBackgroundColor = 0xFF3182CE;
+    private int focusedBackgroundColor = 0xFF63B3ED;
+    private int disabledBackgroundColor = 0xFF4A5568;
+    private int textColor = 0xFFFFFFFF;
+    private int disabledTextColor = 0xFFA0AEC0;
+
+    /**
+     * 创建按钮控件。
+     *
+     * @param document 所属 HTML-like 文档
+     * @param label 按钮文本
+     */
+    public DocumentButtonControl(UiDocument document, String label) {
+        this.element = document.div();
+        this.labelText = element.appendText(normalizeLabel(label));
+        configureElement();
+        installHandlers();
+        updateVisualState();
+    }
+
+    /**
+     * 返回按钮根元素。
+     *
+     * @return 按钮根元素
+     */
+    public ElementNode getElement() {
+        return element;
+    }
+
+    /**
+     * 返回按钮文本。
+     *
+     * @return 按钮文本
+     */
+    public String getLabel() {
+        return labelText.getText();
+    }
+
+    /**
+     * 设置按钮文本。
+     *
+     * @param label 按钮文本
+     * @return 当前按钮控件
+     */
+    public DocumentButtonControl setLabel(String label) {
+        labelText.setText(normalizeLabel(label));
+        return this;
+    }
+
+    /**
+     * 设置按钮是否启用。
+     *
+     * @param enabled 是否启用
+     * @return 当前按钮控件
+     */
+    public DocumentButtonControl setEnabled(boolean enabled) {
+        if (this.enabled == enabled) {
+            return this;
+        }
+        this.enabled = enabled;
+        if (!enabled) {
+            focused = false;
+            element.setAttribute("disabled", "true");
+        } else {
+            element.removeAttribute("disabled");
+        }
+        element.setFocusable(enabled);
+        updateVisualState();
+        return this;
+    }
+
+    /**
+     * 判断按钮是否启用。
+     *
+     * @return 是否启用
+     */
+    public boolean isEnabled() {
+        return enabled;
+    }
+
+    /**
+     * 设置按钮动作处理器。
+     *
+     * @param actionHandler 动作处理器；为 null 时清除
+     * @return 当前按钮控件
+     */
+    public DocumentButtonControl setActionHandler(DocumentButtonActionHandler actionHandler) {
+        this.actionHandler = actionHandler;
+        return this;
+    }
+
+    /**
+     * 设置按钮背景色。
+     *
+     * @param normalBackgroundColor 普通态背景色
+     * @param focusedBackgroundColor 聚焦态背景色
+     * @param disabledBackgroundColor 禁用态背景色
+     * @return 当前按钮控件
+     */
+    public DocumentButtonControl setBackgroundColors(int normalBackgroundColor, int focusedBackgroundColor,
+            int disabledBackgroundColor) {
+        this.normalBackgroundColor = normalBackgroundColor;
+        this.focusedBackgroundColor = focusedBackgroundColor;
+        this.disabledBackgroundColor = disabledBackgroundColor;
+        updateVisualState();
+        return this;
+    }
+
+    /**
+     * 设置按钮文本颜色。
+     *
+     * @param textColor 普通文本颜色
+     * @param disabledTextColor 禁用文本颜色
+     * @return 当前按钮控件
+     */
+    public DocumentButtonControl setTextColors(int textColor, int disabledTextColor) {
+        this.textColor = textColor;
+        this.disabledTextColor = disabledTextColor;
+        updateVisualState();
+        return this;
+    }
+
+    private void configureElement() {
+        element.setFocusable(true);
+        element.style()
+                .setPadding(UiStyleLength.px(10))
+                .setBackgroundColor(normalBackgroundColor)
+                .setBorderRadius(UiStyleLength.px(999))
+                .setTextColor(textColor)
+                .setOverflowX(UiOverflow.HIDDEN)
+                .setOverflowY(UiOverflow.HIDDEN);
+    }
+
+    private void installHandlers() {
+        element.setClickHandler(new DocumentElementClickHandler() {
+            @Override
+            public boolean onClick(DocumentElementClickEvent event) {
+                activate(false, 0, event.getButton(), event.getTimeNanos());
+                return true;
+            }
+        }).setFocusHandler(new DocumentElementFocusHandler() {
+            @Override
+            public void onFocusChanged(DocumentElementFocusEvent event) {
+                focused = event.isFocused() && enabled;
+                updateVisualState();
+            }
+        }).setKeyHandler(new DocumentElementKeyHandler() {
+            @Override
+            public boolean onKey(DocumentElementKeyEvent event) {
+                if (event.getAction() == UiKeyEvent.Action.PRESSED && isActivationKey(event.getKeyCode())) {
+                    activate(true, event.getKeyCode(), -1, event.getTimeNanos());
+                    return true;
+                }
+                return false;
+            }
+        });
+    }
+
+    private void activate(boolean keyboardTriggered, int keyCode, int button, long timeNanos) {
+        if (!enabled || actionHandler == null) {
+            return;
+        }
+        actionHandler.onAction(new DocumentButtonActionEvent(this, element, keyboardTriggered, keyCode, button,
+                timeNanos));
+    }
+
+    private void updateVisualState() {
+        int backgroundColor;
+        int resolvedTextColor;
+        if (!enabled) {
+            backgroundColor = disabledBackgroundColor;
+            resolvedTextColor = disabledTextColor;
+        } else if (focused) {
+            backgroundColor = focusedBackgroundColor;
+            resolvedTextColor = textColor;
+        } else {
+            backgroundColor = normalBackgroundColor;
+            resolvedTextColor = textColor;
+        }
+        element.style().setBackgroundColor(backgroundColor).setTextColor(resolvedTextColor);
+    }
+
+    private static boolean isActivationKey(int keyCode) {
+        return keyCode == Keyboard.KEY_RETURN || keyCode == Keyboard.KEY_NUMPADENTER || keyCode == Keyboard.KEY_SPACE;
+    }
+
+    private static String normalizeLabel(String label) {
+        return label == null ? "" : label;
+    }
+}
