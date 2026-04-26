@@ -4,9 +4,12 @@ import java.util.Collections;
 import java.util.List;
 import java.util.Objects;
 
+import club.heiqi.uilib.ui.dom.ElementNode;
 import club.heiqi.uilib.ui.dom.UiDocument;
+import club.heiqi.uilib.ui.event.UiMouseEvent;
 import club.heiqi.uilib.ui.layout.DocumentLayoutBox;
 import club.heiqi.uilib.ui.layout.DocumentLayoutEngine;
+import club.heiqi.uilib.ui.layout.DocumentScrollState;
 import club.heiqi.uilib.ui.paint.DocumentPaintCommand;
 import club.heiqi.uilib.ui.paint.DocumentPaintEngine;
 import club.heiqi.uilib.ui.paint.DocumentPaintRenderer;
@@ -22,12 +25,15 @@ public final class HtmlLikeDocumentWidget extends Widget {
 
     private final UiDocument document;
     private final TextMeasureService textMeasureService;
+    private final DocumentScrollState scrollState = new DocumentScrollState();
     private final int preferredWidth;
     private final int preferredHeight;
     private int cachedMutationVersion = -1;
     private int cachedTextMeasureEpoch = -1;
     private int cachedWidth = -1;
     private int cachedHeight = -1;
+    private int cachedPaintScrollVersion = -1;
+    private DocumentLayoutBox cachedLayoutBox;
     private List<DocumentPaintCommand> cachedPaintCommands = Collections.emptyList();
 
     /**
@@ -75,6 +81,28 @@ public final class HtmlLikeDocumentWidget extends Widget {
         return textMeasureService;
     }
 
+    /**
+     * 返回指定元素当前纵向滚动偏移。
+     *
+     * @param element HTML-like 元素
+     * @return 纵向滚动偏移
+     */
+    public int getScrollTop(ElementNode element) {
+        resolveLayoutBox();
+        return scrollState.getScrollTop(element);
+    }
+
+    /**
+     * 返回指定元素最大纵向滚动偏移。
+     *
+     * @param element HTML-like 元素
+     * @return 最大纵向滚动偏移
+     */
+    public int getMaxScrollTop(ElementNode element) {
+        resolveLayoutBox();
+        return scrollState.getMaxScrollTop(element);
+    }
+
     @Override
     public int getPreferredWidth() {
         return preferredWidth;
@@ -98,21 +126,44 @@ public final class HtmlLikeDocumentWidget extends Widget {
         DocumentPaintRenderer.render(context, resolvePaintCommands(), getAbsoluteX(), getAbsoluteY());
     }
 
+    @Override
+    public boolean onMouseScroll(UiMouseEvent event) {
+        if (getWidth() <= 0 || getHeight() <= 0 || event == null) {
+            return false;
+        }
+        DocumentLayoutBox rootBox = resolveLayoutBox();
+        return scrollState.handleWheel(rootBox, event.getMouseX() - getAbsoluteX(), event.getMouseY() - getAbsoluteY(),
+                event.getWheelDelta());
+    }
+
     private List<DocumentPaintCommand> resolvePaintCommands() {
+        DocumentLayoutBox rootBox = resolveLayoutBox();
+        int scrollVersion = scrollState.getVersion();
+        if (cachedPaintScrollVersion == scrollVersion) {
+            return cachedPaintCommands;
+        }
+
+        cachedPaintCommands = DocumentPaintEngine.buildPaintCommands(rootBox, scrollState);
+        cachedPaintScrollVersion = scrollVersion;
+        return cachedPaintCommands;
+    }
+
+    private DocumentLayoutBox resolveLayoutBox() {
         int mutationVersion = document.getMutationVersion();
         int textMeasureEpoch = textMeasureService.getEpoch();
         if (cachedMutationVersion == mutationVersion && cachedTextMeasureEpoch == textMeasureEpoch
                 && cachedWidth == getWidth() && cachedHeight == getHeight()) {
-            return cachedPaintCommands;
+            return cachedLayoutBox;
         }
 
-        DocumentLayoutBox rootBox = DocumentLayoutEngine.layout(document.getRootElement(), getWidth(), getHeight(),
+        cachedLayoutBox = DocumentLayoutEngine.layout(document.getRootElement(), getWidth(), getHeight(),
                 textMeasureService);
-        cachedPaintCommands = DocumentPaintEngine.buildPaintCommands(rootBox);
+        scrollState.updateFromLayout(cachedLayoutBox);
         cachedMutationVersion = mutationVersion;
         cachedTextMeasureEpoch = textMeasureEpoch;
         cachedWidth = getWidth();
         cachedHeight = getHeight();
-        return cachedPaintCommands;
+        cachedPaintScrollVersion = -1;
+        return cachedLayoutBox;
     }
 }

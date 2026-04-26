@@ -10,7 +10,7 @@ import club.heiqi.uilib.ui.style.ComputedStyle;
 /**
  * HTML-like 元素布局盒。
  *
- * <p>当前初版表达元素级 block/flex layout 与直接文本子节点的单行布局结果；完整 inline formatting 会在后续阶段扩展。</p>
+ * <p>当前初版表达元素级 block/flex layout 与直接文本子节点的多行布局结果；完整 inline formatting 会在后续阶段扩展。</p>
  */
 public final class DocumentLayoutBox {
 

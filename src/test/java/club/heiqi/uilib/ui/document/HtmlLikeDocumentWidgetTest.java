@@ -9,7 +9,9 @@ import org.junit.Test;
 
 import club.heiqi.uilib.ui.dom.ElementNode;
 import club.heiqi.uilib.ui.dom.UiDocument;
+import club.heiqi.uilib.ui.event.UiMouseEvent;
 import club.heiqi.uilib.ui.render.UiRenderContext;
+import club.heiqi.uilib.ui.style.UiOverflow;
 import club.heiqi.uilib.ui.style.UiStyleLength;
 import club.heiqi.uilib.ui.text.TextMeasureService;
 import club.heiqi.uilib.ui.theme.UiSurfaceStyle;
@@ -86,6 +88,42 @@ public class HtmlLikeDocumentWidgetTest {
         assertTextCall(renderContext.textCalls.get(2), "g", 5, 43, 0xFFEFF6FF, false);
     }
 
+    /**
+     * 验证 HTML-like 组件能消费滚轮事件并移动 overflow auto 内容。
+     */
+    @Test
+    public void shouldScrollOverflowAutoContentWithMouseWheel() {
+        UiDocument document = UiDocument.create();
+        ElementNode root = document.getRootElement();
+        ElementNode child = document.div();
+        root.style()
+                .setWidth(UiStyleLength.px(80))
+                .setHeight(UiStyleLength.px(20))
+                .setOverflowX(UiOverflow.HIDDEN)
+                .setOverflowY(UiOverflow.AUTO);
+        child.style()
+                .setHeight(UiStyleLength.px(80))
+                .setBackgroundColor(0xFFAA5500);
+        root.append(child);
+
+        HtmlLikeDocumentWidget widget = new HtmlLikeDocumentWidget(document, 80, 20,
+                new DeterministicTextMeasureService());
+        widget.applyLayoutBounds(5, 7, 80, 20);
+        RecordingUiRenderContext renderContext = new RecordingUiRenderContext();
+        widget.render(renderContext);
+        Assert.assertEquals(60, widget.getMaxScrollTop(root));
+
+        boolean consumed = widget.onMouseScroll(new UiMouseEvent(UiMouseEvent.Action.SCROLL, 10, 10, -1, -120, 0,
+                0, 1L));
+        RecordingUiRenderContext scrolledRenderContext = new RecordingUiRenderContext();
+        widget.render(scrolledRenderContext);
+
+        Assert.assertTrue(consumed);
+        Assert.assertEquals(36, widget.getScrollTop(root));
+        Assert.assertEquals(1, scrolledRenderContext.drawCalls.size());
+        assertDrawCall(scrolledRenderContext.drawCalls.get(0), 5, -29, 85, 51, 0xFFAA5500, 0, 0);
+    }
+
     private static void assertDrawCall(DrawCall drawCall, int left, int top, int right, int bottom, int fillColor,
             int borderColor, int cornerRadius) {
         Assert.assertEquals(left, drawCall.left);
@@ -126,6 +164,12 @@ public class HtmlLikeDocumentWidgetTest {
         public void drawText(String text, int x, int y, int color, boolean shadow) {
             textCalls.add(new TextCall(text, x, y, color, shadow));
         }
+
+        @Override
+        public void pushClip(int left, int top, int right, int bottom, int cornerRadius) {}
+
+        @Override
+        public void popClip() {}
     }
 
     /**

@@ -6,6 +6,7 @@ import java.util.Objects;
 
 import club.heiqi.uilib.ui.layout.DocumentLayoutBox;
 import club.heiqi.uilib.ui.layout.DocumentLayoutTextRun;
+import club.heiqi.uilib.ui.layout.DocumentScrollState;
 import club.heiqi.uilib.ui.style.ComputedStyle;
 import club.heiqi.uilib.ui.style.UiOverflow;
 
@@ -19,57 +20,77 @@ public final class DocumentPaintEngine {
     /**
      * 从布局盒树生成绘制命令。
      *
-     * <p>当前初版按元素背景、元素边框、结构裁剪、直接文本与子树的顺序输出命令。滚动条与 stacking context
+     * <p>当前初版按元素背景、元素边框、结构裁剪、滚动内容与子树的顺序输出命令。滚动条与 stacking context
      * 会在后续阶段继续扩展。</p>
      *
      * @param rootBox 根布局盒
      * @return 绘制命令列表
      */
     public static List<DocumentPaintCommand> buildPaintCommands(DocumentLayoutBox rootBox) {
+        return buildPaintCommands(rootBox, null);
+    }
+
+    /**
+     * 从布局盒树和滚动状态生成绘制命令。
+     *
+     * @param rootBox 根布局盒
+     * @param scrollState 滚动状态；为 null 时按无滚动处理
+     * @return 绘制命令列表
+     */
+    public static List<DocumentPaintCommand> buildPaintCommands(DocumentLayoutBox rootBox,
+            DocumentScrollState scrollState) {
         Objects.requireNonNull(rootBox, "rootBox");
         List<DocumentPaintCommand> commands = new ArrayList<DocumentPaintCommand>();
-        appendBoxCommands(rootBox, commands);
+        appendBoxCommands(rootBox, commands, scrollState, 0, 0);
         return commands;
     }
 
-    private static void appendBoxCommands(DocumentLayoutBox box, List<DocumentPaintCommand> commands) {
-        appendBackgroundCommand(box, commands);
-        appendBorderCommand(box, commands);
+    private static void appendBoxCommands(DocumentLayoutBox box, List<DocumentPaintCommand> commands,
+            DocumentScrollState scrollState, int offsetX, int offsetY) {
+        appendBackgroundCommand(box, commands, offsetX, offsetY);
+        appendBorderCommand(box, commands, offsetX, offsetY);
         boolean clipChildren = shouldClipChildren(box);
         if (clipChildren) {
-            appendClipStartCommand(box, commands);
+            appendClipStartCommand(box, commands, offsetX, offsetY);
         }
-        appendTextCommands(box, commands);
+        int childOffsetX = offsetX - getScrollLeft(scrollState, box);
+        int childOffsetY = offsetY - getScrollTop(scrollState, box);
+        appendTextCommands(box, commands, childOffsetX, childOffsetY);
         for (DocumentLayoutBox child : box.getChildren()) {
-            appendBoxCommands(child, commands);
+            appendBoxCommands(child, commands, scrollState, childOffsetX, childOffsetY);
         }
         if (clipChildren) {
-            appendClipEndCommand(box, commands);
+            appendClipEndCommand(box, commands, offsetX, offsetY);
         }
     }
 
-    private static void appendBackgroundCommand(DocumentLayoutBox box, List<DocumentPaintCommand> commands) {
+    private static void appendBackgroundCommand(DocumentLayoutBox box, List<DocumentPaintCommand> commands,
+            int offsetX, int offsetY) {
         ComputedStyle style = box.getComputedStyle();
         int color = style.getBackgroundColor();
         if (color == 0 || box.getWidth() <= 0 || box.getHeight() <= 0) {
             return;
         }
-        commands.add(new DocumentPaintCommand(DocumentPaintCommandType.BACKGROUND, box.getElement(), box.getLeft(),
-                box.getTop(), box.getRight(), box.getBottom(), color, 0, resolveBorderRadius(box)));
+        commands.add(new DocumentPaintCommand(DocumentPaintCommandType.BACKGROUND, box.getElement(),
+                box.getLeft() + offsetX, box.getTop() + offsetY, box.getRight() + offsetX,
+                box.getBottom() + offsetY, color, 0, resolveBorderRadius(box)));
     }
 
-    private static void appendBorderCommand(DocumentLayoutBox box, List<DocumentPaintCommand> commands) {
+    private static void appendBorderCommand(DocumentLayoutBox box, List<DocumentPaintCommand> commands, int offsetX,
+            int offsetY) {
         ComputedStyle style = box.getComputedStyle();
         int borderWidth = box.getBorder().getTop();
         int color = style.getBorderColor();
         if (color == 0 || borderWidth <= 0 || box.getWidth() <= 0 || box.getHeight() <= 0) {
             return;
         }
-        commands.add(new DocumentPaintCommand(DocumentPaintCommandType.BORDER, box.getElement(), box.getLeft(),
-                box.getTop(), box.getRight(), box.getBottom(), color, borderWidth, resolveBorderRadius(box)));
+        commands.add(new DocumentPaintCommand(DocumentPaintCommandType.BORDER, box.getElement(),
+                box.getLeft() + offsetX, box.getTop() + offsetY, box.getRight() + offsetX,
+                box.getBottom() + offsetY, color, borderWidth, resolveBorderRadius(box)));
     }
 
-    private static void appendTextCommands(DocumentLayoutBox box, List<DocumentPaintCommand> commands) {
+    private static void appendTextCommands(DocumentLayoutBox box, List<DocumentPaintCommand> commands, int offsetX,
+            int offsetY) {
         int color = box.getComputedStyle().getTextColor();
         if (color == 0) {
             return;
@@ -79,24 +100,35 @@ public final class DocumentPaintEngine {
                 continue;
             }
             commands.add(new DocumentPaintCommand(DocumentPaintCommandType.TEXT, textRun.getOwnerElement(),
-                    textRun.getLeft(), textRun.getTop(), textRun.getRight(), textRun.getBottom(), color, 0, 0,
-                    textRun.getText()));
+                    textRun.getLeft() + offsetX, textRun.getTop() + offsetY, textRun.getRight() + offsetX,
+                    textRun.getBottom() + offsetY, color, 0, 0, textRun.getText()));
         }
     }
 
-    private static void appendClipStartCommand(DocumentLayoutBox box, List<DocumentPaintCommand> commands) {
+    private static void appendClipStartCommand(DocumentLayoutBox box, List<DocumentPaintCommand> commands, int offsetX,
+            int offsetY) {
         ComputedStyle style = box.getComputedStyle();
-        int left = style.getOverflowX() == UiOverflow.VISIBLE ? Integer.MIN_VALUE / 4 : getPaddingBoxLeft(box);
-        int right = style.getOverflowX() == UiOverflow.VISIBLE ? Integer.MAX_VALUE / 4 : getPaddingBoxRight(box);
-        int top = style.getOverflowY() == UiOverflow.VISIBLE ? Integer.MIN_VALUE / 4 : getPaddingBoxTop(box);
-        int bottom = style.getOverflowY() == UiOverflow.VISIBLE ? Integer.MAX_VALUE / 4 : getPaddingBoxBottom(box);
+        int left = style.getOverflowX() == UiOverflow.VISIBLE
+                ? Integer.MIN_VALUE / 4
+                : getPaddingBoxLeft(box) + offsetX;
+        int right = style.getOverflowX() == UiOverflow.VISIBLE
+                ? Integer.MAX_VALUE / 4
+                : getPaddingBoxRight(box) + offsetX;
+        int top = style.getOverflowY() == UiOverflow.VISIBLE
+                ? Integer.MIN_VALUE / 4
+                : getPaddingBoxTop(box) + offsetY;
+        int bottom = style.getOverflowY() == UiOverflow.VISIBLE
+                ? Integer.MAX_VALUE / 4
+                : getPaddingBoxBottom(box) + offsetY;
         commands.add(new DocumentPaintCommand(DocumentPaintCommandType.CLIP_START, box.getElement(), left, top,
                 right, bottom, 0, 0, resolveBorderRadius(box)));
     }
 
-    private static void appendClipEndCommand(DocumentLayoutBox box, List<DocumentPaintCommand> commands) {
-        commands.add(new DocumentPaintCommand(DocumentPaintCommandType.CLIP_END, box.getElement(), box.getLeft(),
-                box.getTop(), box.getRight(), box.getBottom(), 0, 0, 0));
+    private static void appendClipEndCommand(DocumentLayoutBox box, List<DocumentPaintCommand> commands, int offsetX,
+            int offsetY) {
+        commands.add(new DocumentPaintCommand(DocumentPaintCommandType.CLIP_END, box.getElement(),
+                box.getLeft() + offsetX, box.getTop() + offsetY, box.getRight() + offsetX,
+                box.getBottom() + offsetY, 0, 0, 0));
     }
 
     private static boolean shouldClipChildren(DocumentLayoutBox box) {
@@ -125,5 +157,13 @@ public final class DocumentPaintEngine {
         int limit = Math.min(box.getWidth(), box.getHeight());
         int radius = box.getComputedStyle().getBorderRadius().resolve(limit, 0);
         return Math.max(0, Math.min(radius, limit / 2));
+    }
+
+    private static int getScrollLeft(DocumentScrollState scrollState, DocumentLayoutBox box) {
+        return scrollState == null ? 0 : scrollState.getScrollLeft(box.getElement());
+    }
+
+    private static int getScrollTop(DocumentScrollState scrollState, DocumentLayoutBox box) {
+        return scrollState == null ? 0 : scrollState.getScrollTop(box.getElement());
     }
 }

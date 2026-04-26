@@ -11,6 +11,7 @@ import club.heiqi.uilib.ui.dom.ElementNode;
 import club.heiqi.uilib.ui.dom.UiDocument;
 import club.heiqi.uilib.ui.layout.DocumentLayoutBox;
 import club.heiqi.uilib.ui.layout.DocumentLayoutEngine;
+import club.heiqi.uilib.ui.layout.DocumentScrollState;
 import club.heiqi.uilib.ui.style.UiOverflow;
 import club.heiqi.uilib.ui.style.UiStyleLength;
 import club.heiqi.uilib.ui.text.TextMeasureService;
@@ -177,6 +178,42 @@ public class DocumentPaintEngineTest {
         Assert.assertEquals("def", commands.get(1).getText());
         assertCommand(commands.get(2), DocumentPaintCommandType.TEXT, root, 0, 36, 8, 54, 0xFFEFF6FF, 0, 0);
         Assert.assertEquals("g", commands.get(2).getText());
+    }
+
+    /**
+     * 验证 overflow auto 的滚动偏移只移动内容命令，不移动自身背景与裁剪框。
+     */
+    @Test
+    public void shouldOffsetScrollableContentCommands() {
+        UiDocument document = UiDocument.create();
+        ElementNode root = document.getRootElement();
+        ElementNode child = document.div();
+
+        root.style()
+                .setWidth(UiStyleLength.px(50))
+                .setHeight(UiStyleLength.px(20))
+                .setOverflowX(UiOverflow.HIDDEN)
+                .setOverflowY(UiOverflow.AUTO)
+                .setBackgroundColor(0xFF101820);
+        child.style()
+                .setHeight(UiStyleLength.px(50))
+                .setBackgroundColor(0xFFAA5500);
+        root.append(child);
+
+        DocumentLayoutBox rootBox = DocumentLayoutEngine.layout(root, 80, 0);
+        DocumentScrollState scrollState = new DocumentScrollState();
+        scrollState.updateFromLayout(rootBox);
+        Assert.assertEquals(30, scrollState.getMaxScrollTop(root));
+        Assert.assertTrue(scrollState.setScrollOffset(root, 0, 12));
+        List<DocumentPaintCommand> commands = DocumentPaintEngine.buildPaintCommands(rootBox, scrollState);
+
+        Assert.assertEquals(4, commands.size());
+        assertCommand(commands.get(0), DocumentPaintCommandType.BACKGROUND, root, 0, 0, 50, 20, 0xFF101820, 0,
+                0);
+        assertCommand(commands.get(1), DocumentPaintCommandType.CLIP_START, root, 0, 0, 50, 20, 0, 0, 0);
+        assertCommand(commands.get(2), DocumentPaintCommandType.BACKGROUND, child, 0, -12, 50, 38, 0xFFAA5500, 0,
+                0);
+        assertCommand(commands.get(3), DocumentPaintCommandType.CLIP_END, root, 0, 0, 50, 20, 0, 0, 0);
     }
 
     private static void assertCommand(DocumentPaintCommand command, DocumentPaintCommandType type,

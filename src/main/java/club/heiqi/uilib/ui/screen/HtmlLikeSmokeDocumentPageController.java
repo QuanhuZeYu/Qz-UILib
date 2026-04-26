@@ -136,10 +136,15 @@ final class HtmlLikeSmokeDocumentPageController extends DocumentPageController {
                 .setBorderColor(0xFF81E6D9)
                 .setBorderWidth(UiStyleLength.px(2))
                 .setBorderRadius(UiStyleLength.px(12))
-                .setTextColor(0xFFFFFFFF);
+                .setTextColor(0xFFFFFFFF)
+                .setOverflowX(UiOverflow.HIDDEN)
+                .setOverflowY(UiOverflow.AUTO);
         row.append(fluidCard);
         fluidCard.appendText("HTML-like text now uses the shared text measurement service and wraps across multiple "
-                + "lines when the card becomes narrow.");
+                + "lines when the card becomes narrow. This teal card also has overflow-y auto, so the text is "
+                + "clipped by the padding box and can be moved with the mouse wheel when the content exceeds the "
+                + "visible card height. Scroll here to verify that the background and border stay fixed while only "
+                + "the inner text content moves.");
 
         ElementNode sideCard = document.div();
         sideCard.style()
