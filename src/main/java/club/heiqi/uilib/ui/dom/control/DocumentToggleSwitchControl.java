@@ -150,6 +150,7 @@ public final class DocumentToggleSwitchControl {
     public DocumentToggleSwitchControl setThumbSize(int thumbSize) {
         this.thumbSize = thumbSize;
         configureElement();
+        updateVisualState();
         return this;
     }
 

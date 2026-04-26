@@ -17,8 +17,6 @@ import club.heiqi.uilib.ui.dom.control.DocumentButtonControl;
 import club.heiqi.uilib.ui.dom.control.DocumentTextInputChangeEvent;
 import club.heiqi.uilib.ui.dom.control.DocumentTextInputChangeHandler;
 import club.heiqi.uilib.ui.dom.control.DocumentTextInputControl;
-import club.heiqi.uilib.ui.dom.control.DocumentToggleChangeEvent;
-import club.heiqi.uilib.ui.dom.control.DocumentToggleChangeHandler;
 import club.heiqi.uilib.ui.dom.control.DocumentToggleSwitchControl;
 import club.heiqi.uilib.ui.layout.UiLayoutSpec;
 import club.heiqi.uilib.ui.layout.UiLength;
@@ -254,16 +252,9 @@ final class HtmlLikeSmokeDocumentPageController extends DocumentPageController {
         footer.append(buttonControl.getElement());
 
         final DocumentToggleSwitchControl toggleControl = new DocumentToggleSwitchControl(document);
-        final boolean[] toggleChangeFired = new boolean[] { false };
         toggleControl.setToggled(true)
                 .setTrackColors(0xFF4A5568, 0xFF38A169, 0xFF333344)
-                .setFocusBorderColor(0xFFBEE3F8)
-                .setChangeHandler(new DocumentToggleChangeHandler() {
-                    @Override
-                    public void onToggleChanged(DocumentToggleChangeEvent event) {
-                        toggleChangeFired[0] = true;
-                    }
-                });
+                .setFocusBorderColor(0xFFBEE3F8);
         toggleControl.getElement().style().setFlexGrow(0.6F);
         footer.append(toggleControl.getElement());
         return document;

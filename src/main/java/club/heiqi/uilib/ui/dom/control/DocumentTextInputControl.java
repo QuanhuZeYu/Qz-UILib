@@ -120,9 +120,6 @@ public final class DocumentTextInputControl {
         }
         this.enabled = enabled;
         element.setFocusable(enabled);
-        if (!enabled) {
-            focused = false;
-        }
         updateVisualState();
         return this;
     }

@@ -142,6 +142,27 @@ public class DocumentToggleSwitchControlTest {
     }
 
     /**
+     * 验证程序化 setToggled 不触发变更处理器。
+     */
+    @Test
+    public void shouldNotFireChangeHandlerOnProgrammaticSetToggled() {
+        UiDocument document = UiDocument.create();
+        DocumentToggleSwitchControl toggleControl = new DocumentToggleSwitchControl(document);
+        final List<Boolean> toggleStates = new ArrayList<Boolean>();
+        toggleControl.setChangeHandler(new DocumentToggleChangeHandler() {
+            @Override
+            public void onToggleChanged(DocumentToggleChangeEvent event) {
+                toggleStates.add(event.isToggled());
+            }
+        });
+
+        toggleControl.setToggled(true);
+        toggleControl.setToggled(false);
+
+        Assert.assertEquals(0, toggleStates.size());
+    }
+
+    /**
      * 验证开关开/关态有不同轨道颜色。
      */
     @Test

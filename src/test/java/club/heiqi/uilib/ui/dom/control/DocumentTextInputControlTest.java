@@ -107,6 +107,38 @@ public class DocumentTextInputControlTest {
     }
 
     /**
+     * 验证 Backspace 通过 offsetByCodePoints 安全删除补充平面字符。
+     */
+    @Test
+    public void shouldDeleteSurrogatePairSafely() {
+        UiDocument document = UiDocument.create();
+        ElementNode root = document.getRootElement();
+        DocumentTextInputControl textInputControl = new DocumentTextInputControl(document);
+        root.style()
+                .setWidth(UiStyleLength.px(200))
+                .setHeight(UiStyleLength.px(40));
+        textInputControl.getElement().style()
+                .setWidth(UiStyleLength.px(160))
+                .setHeight(UiStyleLength.px(24));
+        root.append(textInputControl.getElement());
+        HtmlLikeDocumentWidget widget = new HtmlLikeDocumentWidget(document, 200, 40,
+                new DeterministicTextMeasureService());
+        widget.applyLayoutBounds(0, 0, 200, 40);
+
+        widget.onFocusTraversalEntered(true);
+        widget.onTextInput(new UiTextInputEvent("A\ud83d\ude00B", 1L));
+
+        widget.onKeyEvent(new UiKeyEvent(Keyboard.KEY_BACK, 0, 0, UiKeyEvent.Action.PRESSED, false, false, false,
+                false, 2L));
+        widget.onKeyEvent(new UiKeyEvent(Keyboard.KEY_BACK, 0, 0, UiKeyEvent.Action.PRESSED, false, false, false,
+                false, 3L));
+        widget.onKeyEvent(new UiKeyEvent(Keyboard.KEY_BACK, 0, 0, UiKeyEvent.Action.PRESSED, false, false, false,
+                false, 4L));
+
+        Assert.assertEquals("", textInputControl.getText());
+    }
+
+    /**
      * 验证控制字符被过滤。
      */
     @Test
@@ -157,6 +189,39 @@ public class DocumentTextInputControlTest {
         Assert.assertEquals("", textInputControl.getText());
         Assert.assertNull(widget.getFocusedElement());
         Assert.assertFalse(textInputControl.isFocused());
+    }
+
+    /**
+     * 验证禁用后重新启用不会丢失焦点状态。
+     */
+    @Test
+    public void shouldPreserveFocusAfterDisableReenable() {
+        UiDocument document = UiDocument.create();
+        ElementNode root = document.getRootElement();
+        DocumentTextInputControl textInputControl = new DocumentTextInputControl(document);
+        root.style()
+                .setWidth(UiStyleLength.px(200))
+                .setHeight(UiStyleLength.px(40));
+        textInputControl.getElement().style()
+                .setWidth(UiStyleLength.px(160))
+                .setHeight(UiStyleLength.px(24));
+        root.append(textInputControl.getElement());
+        HtmlLikeDocumentWidget widget = new HtmlLikeDocumentWidget(document, 200, 40,
+                new DeterministicTextMeasureService());
+        widget.applyLayoutBounds(0, 0, 200, 40);
+
+        widget.onFocusTraversalEntered(true);
+        widget.onTextInput(new UiTextInputEvent("A", 1L));
+        Assert.assertEquals("A", textInputControl.getText());
+
+        textInputControl.setEnabled(false);
+        widget.onTextInput(new UiTextInputEvent("B", 2L));
+        Assert.assertEquals("A", textInputControl.getText());
+
+        textInputControl.setEnabled(true);
+        widget.onFocusTraversalEntered(true);
+        widget.onTextInput(new UiTextInputEvent("C", 3L));
+        Assert.assertEquals("AC", textInputControl.getText());
     }
 
     /**
