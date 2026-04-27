@@ -48,6 +48,15 @@ public final class DocumentUiScope {
     }
 
     /**
+     * 获取当前作用域文本测量服务。
+     *
+     * @return 文本测量服务
+     */
+    public TextMeasureService getTextMeasureService() {
+        return textMeasureService;
+    }
+
+    /**
      * 创建文档文本。
      *
      * @param role 文本角色

@@ -54,7 +54,7 @@ public final class UiDocumentScreens {
                 public DocumentPageController create(DocumentUiScope documentUi,
                         DocumentPageAuthoringSurface documentPage,
                         DocumentPageRuntimeView runtimeView, String pageId, InventoryOverviewModel provision) {
-                    return new InventoryOverviewDocumentPageController(documentUi, documentPage, runtimeView,
+                    return new HtmlLikeInventoryOverviewDocumentPageController(documentUi, documentPage, runtimeView,
                             provision);
                 }
             });

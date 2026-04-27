@@ -158,4 +158,4 @@
 - 下一步可优先推进 HTML-like 选择器/背包格子等基础控件适配，或为 `overflow: auto` 增加滚动条绘制/拖拽交互。
 - 旧非 DOM 代码暂时不能舍弃；达到“可正式舍弃旧代码”的最低条件是：HTML-like 输入/控件链路可替代现有作者侧常用控件、至少一个真实诊断/业务页面迁移完成且相关测试与游戏内验收通过。达到该条件时必须明确通知用户。
 - 游戏内实际验证入口已就绪：按右 Shift 打开诊断菜单页，再进入 `HTML-like Smoke` 子页，观察 HTML-like 色块是否按实心填充、圆角边框、header 内部超宽粉色条被裁剪、卡片内 HTML-like 文本被绘制并在窄卡片中换行；teal 卡片块内文本滚动已验证通过；底部绿色 `Click target: 0` pill 可用于验证 click 分发，点击后应变为 `Click target: 1` 且背景变蓝；文本输入框（`DocumentTextInputControl`）显示 placeholder，点击聚焦后可输入文本（过滤控制字符），Backspace 删除，聚焦时显示蓝色边框；`Tab target` 聚焦时显示浅紫描边并显示 `Tab target: focused`；`Button ctrl` 可通过鼠标点击或 Enter/Space 激活，文本计数递增，按下显示 active 深色背景；开关控件（`DocumentToggleSwitchControl`）默认开启，点击或 Enter/Space 可切换，轨道颜色在线性灰/绿之间切换；Tab/Shift+Tab 可在所有 focusable 控件间遍历，`Tab target` 与开关选项卡焦点时显示浅蓝描边；若只见边框不见填充，优先检查主 UI GL 状态隔离。
-- 选择一个现有诊断页作为迁移试点，避免一次性重写全部页面。
+- 选择一个现有诊断页作为迁移试点，避免一次性重写全部页面。当前首个迁移目标 `HtmlLikeInventoryOverviewDocumentPageController` 已完成基础结构，包含 HTML-like 卡片的 div 布局、TextNode 指标、`DocumentInventorySlotGridControl` 网格（hotbar 9 格 + backpack 27 格）、`DocumentButtonControl` 返回按钮，页面通过 `HtmlLikeDocumentWidget` 挂接到现有页面壳；后续可补充物品图标渲染链与游戏内验收。
