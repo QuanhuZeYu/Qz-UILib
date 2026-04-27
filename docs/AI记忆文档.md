@@ -6,7 +6,7 @@
 
 - 本仓库是 Minecraft 1.7.10 / GTNH / LWJGL3ify 环境下的 Java UI 框架工程。
 - 当前主线目标已经升级为实现一套完整的 HTML-like UI 渲染框架，而不是继续局部修补文档页控件。
-- “完整 HTML-like”在本项目中指具备稳定的文档树、样式计算、盒模型、布局、绘制、裁剪、滚动、命中测试与输入分发分层。
+- “完整 HTML-like”在本项目中指具备稳定的文档树、样式计算、盒模型、布局、绘制、裁剪、滚动、效果合成、命中测试与输入分发分层。
 - 本项目不直接实现完整浏览器内核，不承诺 HTML5 全量解析、CSS 全量规范、JavaScript DOM API、网络加载或浏览器安全模型。
 
 ### 当前稳定架构边界
@@ -19,6 +19,7 @@
 - HTML-like 布局盒初版已在 `club.heiqi.uilib.ui.layout` 落地；`DocumentLayoutEngine` 当前支持元素级 block flow、box model、px/% 长度、auto 高度、`display: none` 过滤、子元素垂直流式排布、直接文本子节点基于 `TextMeasureService` 的测量与换行布局，以及 flex row/column、gap、align、justify、grow/shrink 的最小实现；`DocumentScrollState` 当前负责根据布局盒推导 `overflow: auto` 元素的可滚范围、滚动偏移、滚动条几何与 track/thumb 拖拽状态；`DocumentHitTestEngine` 当前负责在滚动与 overflow clip 语义下查找命中的最深元素。
 - HTML-like 绘制命令初版已在 `club.heiqi.uilib.ui.paint` 落地；`DocumentPaintEngine` 当前能把布局盒树转换为 background/border/text/clip/scrollbar 中立绘制命令，并保留父元素背景、父元素边框、结构 clip、滚动后的直接文本换行行、滚动后的子树、clip end、滚动条 track/thumb 的基础 paint order；根元素滚动条保持可见，嵌套 `overflow:auto` 滚动条只在最近有效滚动后的短暂窗口内绘制，空闲后隐藏以避免遮挡内容。
 - `DocumentPaintRenderer` 已可把 background/border/text/clip/custom/scrollbar paint command 投影到现有 `UiRenderContext`；`DocumentCustomRenderer` 允许控件在元素背景/边框之后、clip/子树之前注入自定义绘制回调，回调坐标表达元素内容盒，并会随元素自身滚动偏移，供背包格子等复杂控件使用。
+- 新增规划需求：HTML-like 需要支持类似 CSS `backdrop-filter` 的磨玻璃效果。浏览器底层通常先绘制元素背后的内容，再抓取元素影响区域后方像素，按 blur radius 扩张采样区域，对 backdrop surface 做 blur/saturate 等滤镜，按元素 border box、border-radius、overflow clip 与 stacking context 裁剪，然后再合成元素自身 background/border/content。本项目应模仿该思路，在样式层暴露高层 `backdrop-filter`/`backdropBlur` 语义，在 paint command 中表达 backdrop filter 请求，并由宿主效果层封装 FBO/snapshot/shader/降级路径；文档作者不得接触 OpenGL/FBO 细节。
 - `HtmlLikeDocumentWidget` 已把 `UiDocument -> style -> layout -> paint command -> UiRenderContext` 链路挂接到现有 retained `Widget` 后端；生产构造默认使用 `DefaultTextMeasureService`，测试可注入确定性 `TextMeasureService`；组件现在会消费命中的 `overflow: auto` 元素滚轮事件并让内容区随 `DocumentScrollState` 偏移，同时记录最近有效滚动时间用于嵌套滚动条空闲隐藏，支持根视口或当前可见内部滚动条的 track 点击与 thumb 拖拽，也会将鼠标 active/click 分发给命中的 HTML-like 元素，并维护命中 focusable 元素的内部焦点，接收现有 `UiInputRouter` 转发的 key/text input 后向 HTML-like 元素冒泡；鼠标聚焦元素时不设置 focus-visible，Tab/Shift+Tab 进入或移动焦点时设置 focus-visible；当前 `UiInputRouter` 的 Tab 全局遍历会先让已聚焦 `Widget` 处理内部焦点遍历，HTML-like 组件会按布局树顺序在 focusable 元素之间移动，边界处再交回全局 widget 焦点；组件新增根视口滚动模式，启用后根元素 border box 固定为 widget 视口尺寸，整页滚动由根元素 `overflow:auto` 与 `DocumentScrollState` 承担，避免旧 `DocumentPageWidget` 页面壳因点击/聚焦触发 `scrollDescendantIntoView` 后随机移动；`ui_test` 诊断菜单、`ui_layout_diagnostics` 布局诊断页、`html_like_smoke` 子页与 `inventory_overview` 背包页的作者层已迁移为单个 `HtmlLikeDocumentWidget` 承载的 HTML-like 文档，并启用根视口滚动。
 - `UiScreenHostSession` 在主 UI widget 树渲染前会统一准备稳定 2D GL 状态，避免世界渲染遗留的 depth/cull/alpha/light 状态导致 rounded fill 面片被剔除。
 - 后续作者侧入口应继续迁移到 HTML-like 文档/元素/样式 API；底层 `Widget`、`DivWidget`、`ScrollViewportWidget` 应逐步退为 backend adapter 或兼容层。当前已完成键盘/文本输入、基础控件适配、诊断菜单/布局诊断页和背包业务页迁移，已具备开始清退旧 public screen 作者入口的基础；但旧非 DOM 后端和兼容 factory 仍需在替代测试覆盖完成前保留。
@@ -26,7 +27,7 @@
 - `border-radius` 外观不得隐式控制 descendant clip；结构裁剪必须来自 `overflow`、viewport 或显式 clip 容器。
 - `DivWidget` 当前通过 overflow/viewport 盒提供矩形内容裁剪；`ScrollViewportWidget` 仍保留为兼容后端与旧页面壳视觉容器，但当前 HTML-like 页面级滚动不应再依赖它，必须优先使用 `HtmlLikeDocumentWidget` 根视口滚动模式。
 - `RoundedScrollViewportWidget` 只保留为 rounded structural clip 探索容器；在真实 GL/stencil/FBO 状态链稳定前，不得接回 `DocumentPageWidget` 生产链路。
-- UI 框架本身不暴露 backdrop/effect/blur 给文档作者层；背景模糊由 `UiScreenHostSession` 在 UI 主渲染前通过宿主级 `UiHostBackgroundBlurRenderer` 统一处理。
+- UI 框架不向文档作者暴露 FBO、stencil、OpenGL 状态等宿主细节；背景模糊和磨玻璃由 `UiScreenHostSession`/宿主效果服务统一处理。后续允许在 HTML-like 样式层暴露 CSS-like `backdrop-filter` 高层语义，但实现必须继续封装在宿主效果层。
 - `UiRenderContext` 继续承载主渲染与 deferred post-main 回放的 clip snapshot；snapshot 表达显式结构裁剪结果，不继承 surface 外观。
 
 ### 清退原则
@@ -112,6 +113,13 @@
 - `src/main/java/club/heiqi/uilib/ui/theme/UiSurfaceStyle.java`
 - `src/main/java/club/heiqi/uilib/ui/theme/UiDocumentThemes.java`
 
+### 磨玻璃效果规划
+
+- 目标语义应优先模仿浏览器 `backdrop-filter`，而不是 `filter`：前者处理元素背后的已绘制内容，后者处理元素自身和子树。
+- 计划分层：style/computed style 保存 `backdrop-filter` 子集（首期建议 `blur(px)` 与 `saturate(percent)`）；layout 提供元素 border/padding/clip 几何；paint 输出 `BACKDROP_FILTER` 类命令并保持在元素 background/border/content 之前；renderer 委托宿主效果服务采样背后内容、执行 blur/saturate、按圆角与结构 clip 合成。
+- 性能策略：同帧复用背景快照；按 blur radius 扩张采样区域；优先局部 offscreen、downsample 与 separable blur/box blur 近似；限制最大 blur radius 和最大采样尺寸；FBO 或 shader 不可用时回退为半透明 tint、高光边和投影的伪玻璃视觉。
+- 验收重点：玻璃区域背后的世界/UI 内容被模糊，元素自身文字和边框保持清晰；滚动、resize、圆角裁剪、overflow clip 和多玻璃元素场景不出现错位、泄漏或明显性能抖动。
+
 ## 阶段性进度
 
 ### 当前已完成
@@ -161,12 +169,12 @@
 - 阶段 1：新增 HTML-like 文档树与作者入口最小骨架；当前最小骨架已完成，下一步应把样式入口挂到元素层。
 - 阶段 2：新增样式系统与 computed style 初版；当前 inline style 与基础 computed style 已完成，后续需要扩展样式属性集并接入 layout invalidation。
 - 阶段 3：建立 box/layout tree，并逐步把现有 Div-like 布局能力迁移到新模型；当前 block flow、flex flow 与直接文本测量/换行布局最小闭环已完成，后续应推进更完整的 inline layout。
-- 阶段 4：建立 paint command、clip、scroll、deferred replay 的统一渲染模型；当前 background/border/text/clip paint command、`UiRenderContext` 投影、`overflow: auto` 最小滚动偏移、命中测试与最小 smoke screen 集成已完成，下一步可推进滚动条可视化或更完整 inline layout。
+- 阶段 4：建立 paint command、clip、scroll、deferred replay 与效果合成的统一渲染模型；当前 background/border/text/clip paint command、`UiRenderContext` 投影、`overflow: auto` 滚动偏移、滚动条绘制/交互、命中测试与最小 smoke screen 集成已完成，下一步可推进 CSS-like `backdrop-filter` 磨玻璃效果或更完整 inline layout。
 - 阶段 5：迁移事件与控件适配；当前已完成元素 active/click 冒泡、普通焦点/focus-visible 区分、键盘按键、文本输入、Tab/Shift+Tab 内部焦点遍历、按钮/文本输入框/开关/分段选择器/背包格子控件适配，后续需要更多基础控件适配、真实页面迁移与更完整的可访问性语义。
 - 阶段 6：清退旧 public screen 构造入口与直接 widget authoring 示例；当前可访问诊断/业务页面的作者层迁移已起步完成，下一步应清点剩余直接 widget authoring 入口并按测试覆盖逐步删除或降级为兼容层。
 
 ### 下一步执行项
 
-- 下一步可优先清点剩余旧作者入口，逐步把仍由 `DocumentUiScope` factory 创建的页面改为 HTML-like，或继续补齐更完整 inline layout、列表/下拉类基础控件与可访问性语义。
+- 下一步可优先推进 CSS-like `backdrop-filter` 磨玻璃效果原型：先定义样式/computed style 与 `BACKDROP_FILTER` paint command，再在宿主效果层实现局部背景采样、圆角裁剪、blur/saturate 合成和 FBO 不可用降级；也可继续清点剩余旧作者入口、补齐更完整 inline layout、列表/下拉类基础控件与可访问性语义。
 - 旧非 DOM 后端暂时不能整体舍弃；现在已达到进入旧作者入口清退阶段的最低条件，但 `DocumentUiScope` 旧 factory、基础 retained widget、测试夹具和兼容页面仍需保留到替代覆盖完成。
 - 游戏内实际验证入口已就绪：按右 Shift 打开诊断菜单页，可直接验证 HTML-like 诊断菜单、布局诊断页、HTML-like Smoke 子页和背包概览页。Smoke 页重点观察实心填充、圆角边框、overflow-hidden 裁剪、文本换行、可滚动 teal 卡片、click/text input/Tab/button/toggle 交互；布局诊断页重点观察页面宽度、HTML-like 页面滚动偏移、HTML-like 自滚动探针、滚动条 track/thumb、性能文案和高频变更探针；背包页重点观察 hotbar/backpack 网格、自定义格子绘制和返回按钮交互。重点回归：点击任意 HTML-like 控件或卡片不应导致整个页面随机跳动，只有滚轮命中的 HTML-like `overflow:auto` 元素才应改变滚动偏移，内部滚动块的滚动条应在停止滚动后自动隐藏，可见滚动条的 track 点击与 thumb 拖拽应能改变对应元素滚动偏移且不触发底层元素 click。
