@@ -19,6 +19,7 @@ import club.heiqi.uilib.ui.style.UiOverflow;
 public final class DocumentScrollState {
 
     private static final int DEFAULT_SCROLL_STEP = 36;
+    private static final long TRANSIENT_SCROLLBAR_VISIBLE_NANOS = 900_000_000L;
 
     private final Map<ElementNode, ScrollEntry> entries = new HashMap<ElementNode, ScrollEntry>();
     private int scrollStep = DEFAULT_SCROLL_STEP;
@@ -144,6 +145,21 @@ public final class DocumentScrollState {
      * @return 是否消费滚轮事件
      */
     public boolean handleWheel(DocumentLayoutBox rootBox, int mouseX, int mouseY, int wheelDelta) {
+        return handleWheel(rootBox, mouseX, mouseY, wheelDelta, System.nanoTime());
+    }
+
+    /**
+     * 按鼠标位置和滚轮增量滚动命中的最深层可滚元素，并记录滚动发生时间。
+     *
+     * @param rootBox 根布局盒
+     * @param mouseX 文档局部鼠标 X
+     * @param mouseY 文档局部鼠标 Y
+     * @param wheelDelta 滚轮增量
+     * @param eventTimeNanos 滚轮事件时间戳
+     * @return 是否消费滚轮事件
+     */
+    public boolean handleWheel(DocumentLayoutBox rootBox, int mouseX, int mouseY, int wheelDelta,
+            long eventTimeNanos) {
         Objects.requireNonNull(rootBox, "rootBox");
         if (wheelDelta == 0) {
             return false;
@@ -167,7 +183,38 @@ public final class DocumentScrollState {
         } else if (entry.maxHorizontalOffset > 0) {
             nextHorizontalOffset += wheelDelta > 0 ? -delta : delta;
         }
-        return updateOffsets(entry, nextHorizontalOffset, nextVerticalOffset);
+        boolean changed = updateOffsets(entry, nextHorizontalOffset, nextVerticalOffset);
+        if (changed) {
+            entry.lastScrollNanos = Math.max(0L, eventTimeNanos);
+        }
+        return changed;
+    }
+
+    /**
+     * 判断指定元素的临时滚动条是否仍应显示。
+     *
+     * @param element 元素
+     * @param currentTimeNanos 当前时间戳
+     * @return 临时滚动条是否处于可见窗口内
+     */
+    public boolean shouldShowTransientScrollbar(ElementNode element, long currentTimeNanos) {
+        ScrollEntry entry = entries.get(element);
+        return entry != null && isTransientScrollbarVisible(entry, currentTimeNanos);
+    }
+
+    /**
+     * 判断当前是否存在仍处于可见窗口内的临时滚动条。
+     *
+     * @param currentTimeNanos 当前时间戳
+     * @return 是否存在可见的临时滚动条
+     */
+    public boolean hasActiveTransientScrollbars(long currentTimeNanos) {
+        for (ScrollEntry entry : entries.values()) {
+            if (isTransientScrollbarVisible(entry, currentTimeNanos)) {
+                return true;
+            }
+        }
+        return false;
     }
 
     private void collectScrollableMetrics(DocumentLayoutBox box, Set<ElementNode> activeElements) {
@@ -266,6 +313,16 @@ public final class DocumentScrollState {
         return entry != null && (entry.maxHorizontalOffset > 0 || entry.maxVerticalOffset > 0);
     }
 
+    private boolean isTransientScrollbarVisible(ScrollEntry entry, long currentTimeNanos) {
+        if (entry.lastScrollNanos <= 0L || (entry.maxHorizontalOffset <= 0 && entry.maxVerticalOffset <= 0)) {
+            return false;
+        }
+        if (currentTimeNanos < entry.lastScrollNanos) {
+            return true;
+        }
+        return currentTimeNanos - entry.lastScrollNanos <= TRANSIENT_SCROLLBAR_VISIBLE_NANOS;
+    }
+
     private boolean containsInBorderBox(DocumentLayoutBox box, int mouseX, int mouseY, int offsetX, int offsetY) {
         return containsInRect(mouseX, mouseY, box.getLeft() + offsetX, box.getTop() + offsetY,
                 box.getRight() + offsetX, box.getBottom() + offsetY);
@@ -288,6 +345,7 @@ public final class DocumentScrollState {
         private int verticalOffset;
         private int maxHorizontalOffset;
         private int maxVerticalOffset;
+        private long lastScrollNanos;
     }
 
     /**

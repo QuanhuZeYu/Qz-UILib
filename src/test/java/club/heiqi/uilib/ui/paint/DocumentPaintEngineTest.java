@@ -292,6 +292,51 @@ public class DocumentPaintEngineTest {
                 0, 3);
     }
 
+    /**
+     * 验证嵌套滚动块的滚动条只在最近滚动后短暂显示。
+     */
+    @Test
+    public void shouldHideNestedScrollbarAfterScrollBecomesIdle() {
+        UiDocument document = UiDocument.create();
+        ElementNode root = document.getRootElement();
+        ElementNode scroller = document.div();
+        ElementNode child = document.div();
+
+        root.style()
+                .setWidth(UiStyleLength.px(80))
+                .setHeight(UiStyleLength.px(40));
+        scroller.style()
+                .setWidth(UiStyleLength.px(50))
+                .setHeight(UiStyleLength.px(20))
+                .setOverflowX(UiOverflow.HIDDEN)
+                .setOverflowY(UiOverflow.AUTO);
+        child.style()
+                .setHeight(UiStyleLength.px(80))
+                .setBackgroundColor(0xFFAA5500);
+        scroller.append(child);
+        root.append(scroller);
+
+        DocumentLayoutBox rootBox = DocumentLayoutEngine.layout(root, 80, 0);
+        DocumentScrollState scrollState = new DocumentScrollState();
+        scrollState.updateFromLayout(rootBox);
+
+        List<DocumentPaintCommand> idleCommands = DocumentPaintEngine.buildPaintCommands(rootBox, scrollState,
+                1_000_000_000L);
+        Assert.assertEquals(0, countCommands(idleCommands, DocumentPaintCommandType.SCROLLBAR_TRACK));
+        Assert.assertEquals(0, countCommands(idleCommands, DocumentPaintCommandType.SCROLLBAR_THUMB));
+
+        Assert.assertTrue(scrollState.handleWheel(rootBox, 10, 10, -120, 1_000_000_000L));
+        List<DocumentPaintCommand> activeCommands = DocumentPaintEngine.buildPaintCommands(rootBox, scrollState,
+                1_500_000_000L);
+        Assert.assertEquals(1, countCommands(activeCommands, DocumentPaintCommandType.SCROLLBAR_TRACK));
+        Assert.assertEquals(1, countCommands(activeCommands, DocumentPaintCommandType.SCROLLBAR_THUMB));
+
+        List<DocumentPaintCommand> expiredCommands = DocumentPaintEngine.buildPaintCommands(rootBox, scrollState,
+                3_000_000_000L);
+        Assert.assertEquals(0, countCommands(expiredCommands, DocumentPaintCommandType.SCROLLBAR_TRACK));
+        Assert.assertEquals(0, countCommands(expiredCommands, DocumentPaintCommandType.SCROLLBAR_THUMB));
+    }
+
     private static void assertCommand(DocumentPaintCommand command, DocumentPaintCommandType type,
             ElementNode element, int left, int top, int right, int bottom, int color, int borderWidth,
             int borderRadius) {
@@ -306,6 +351,16 @@ public class DocumentPaintEngineTest {
         Assert.assertEquals(color, command.getColor());
         Assert.assertEquals(borderWidth, command.getBorderWidth());
         Assert.assertEquals(borderRadius, command.getBorderRadius());
+    }
+
+    private static int countCommands(List<DocumentPaintCommand> commands, DocumentPaintCommandType type) {
+        int count = 0;
+        for (DocumentPaintCommand command : commands) {
+            if (command.getType() == type) {
+                count++;
+            }
+        }
+        return count;
     }
 
     /**

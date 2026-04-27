@@ -48,6 +48,7 @@ public final class HtmlLikeDocumentWidget extends Widget {
     private int cachedWidth = -1;
     private int cachedHeight = -1;
     private int cachedPaintScrollVersion = -1;
+    private boolean cachedPaintTransientScrollbarActive;
     private DocumentLayoutBox cachedLayoutBox;
     private ElementNode pressedElement;
     private ElementNode focusedElement;
@@ -300,12 +301,16 @@ public final class HtmlLikeDocumentWidget extends Widget {
     private List<DocumentPaintCommand> resolvePaintCommands() {
         DocumentLayoutBox rootBox = resolveLayoutBox();
         int scrollVersion = scrollState.getVersion();
-        if (cachedPaintScrollVersion == scrollVersion) {
+        long currentTimeNanos = System.nanoTime();
+        boolean transientScrollbarActive = scrollState.hasActiveTransientScrollbars(currentTimeNanos);
+        if (cachedPaintScrollVersion == scrollVersion
+                && cachedPaintTransientScrollbarActive == transientScrollbarActive) {
             return cachedPaintCommands;
         }
 
-        cachedPaintCommands = DocumentPaintEngine.buildPaintCommands(rootBox, scrollState);
+        cachedPaintCommands = DocumentPaintEngine.buildPaintCommands(rootBox, scrollState, currentTimeNanos);
         cachedPaintScrollVersion = scrollVersion;
+        cachedPaintTransientScrollbarActive = transientScrollbarActive;
         return cachedPaintCommands;
     }
 

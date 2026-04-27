@@ -45,14 +45,30 @@ public final class DocumentPaintEngine {
      */
     public static List<DocumentPaintCommand> buildPaintCommands(DocumentLayoutBox rootBox,
             DocumentScrollState scrollState) {
+        return buildPaintCommands(rootBox, scrollState, System.nanoTime());
+    }
+
+    /**
+     * 从布局盒树和滚动状态生成绘制命令。
+     *
+     * <p>根元素滚动条保持可见；嵌套滚动条只在最近滚动后的短暂窗口内绘制，避免空闲时遮挡内容。</p>
+     *
+     * @param rootBox 根布局盒
+     * @param scrollState 滚动状态；为 null 时按无滚动处理
+     * @param currentTimeNanos 当前时间戳
+     * @return 绘制命令列表
+     */
+    public static List<DocumentPaintCommand> buildPaintCommands(DocumentLayoutBox rootBox,
+            DocumentScrollState scrollState, long currentTimeNanos) {
         Objects.requireNonNull(rootBox, "rootBox");
         List<DocumentPaintCommand> commands = new ArrayList<DocumentPaintCommand>();
-        appendBoxCommands(rootBox, commands, scrollState, 0, 0);
+        appendBoxCommands(rootBox, rootBox, commands, scrollState, 0, 0, currentTimeNanos);
         return commands;
     }
 
-    private static void appendBoxCommands(DocumentLayoutBox box, List<DocumentPaintCommand> commands,
-            DocumentScrollState scrollState, int offsetX, int offsetY) {
+    private static void appendBoxCommands(DocumentLayoutBox rootBox, DocumentLayoutBox box,
+            List<DocumentPaintCommand> commands, DocumentScrollState scrollState, int offsetX, int offsetY,
+            long currentTimeNanos) {
         appendBackgroundCommand(box, commands, offsetX, offsetY);
         appendBorderCommand(box, commands, offsetX, offsetY);
         boolean clipChildren = shouldClipChildren(box);
@@ -64,12 +80,13 @@ public final class DocumentPaintEngine {
         appendCustomCommand(box, commands, childOffsetX, childOffsetY);
         appendTextCommands(box, commands, childOffsetX, childOffsetY);
         for (DocumentLayoutBox child : box.getChildren()) {
-            appendBoxCommands(child, commands, scrollState, childOffsetX, childOffsetY);
+            appendBoxCommands(rootBox, child, commands, scrollState, childOffsetX, childOffsetY,
+                    currentTimeNanos);
         }
         if (clipChildren) {
             appendClipEndCommand(box, commands, offsetX, offsetY);
         }
-        appendScrollbarCommands(box, commands, scrollState, offsetX, offsetY);
+        appendScrollbarCommands(rootBox, box, commands, scrollState, offsetX, offsetY, currentTimeNanos);
     }
 
     private static void appendBackgroundCommand(DocumentLayoutBox box, List<DocumentPaintCommand> commands,
@@ -157,8 +174,9 @@ public final class DocumentPaintEngine {
                 box.getBottom() + offsetY, 0, 0, 0));
     }
 
-    private static void appendScrollbarCommands(DocumentLayoutBox box, List<DocumentPaintCommand> commands,
-            DocumentScrollState scrollState, int offsetX, int offsetY) {
+    private static void appendScrollbarCommands(DocumentLayoutBox rootBox, DocumentLayoutBox box,
+            List<DocumentPaintCommand> commands, DocumentScrollState scrollState, int offsetX, int offsetY,
+            long currentTimeNanos) {
         if (scrollState == null || box.getContentWidth() <= 0 || box.getContentHeight() <= 0) {
             return;
         }
@@ -167,6 +185,9 @@ public final class DocumentPaintEngine {
         boolean hasVerticalScrollbar = maxScrollTop > 0 && box.getComputedStyle().getOverflowY() == UiOverflow.AUTO;
         boolean hasHorizontalScrollbar = maxScrollLeft > 0 && box.getComputedStyle().getOverflowX() == UiOverflow.AUTO;
         if (!hasVerticalScrollbar && !hasHorizontalScrollbar) {
+            return;
+        }
+        if (box != rootBox && !scrollState.shouldShowTransientScrollbar(box.getElement(), currentTimeNanos)) {
             return;
         }
 
