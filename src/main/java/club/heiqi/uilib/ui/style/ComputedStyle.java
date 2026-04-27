@@ -26,12 +26,15 @@ public final class ComputedStyle {
     private final int backgroundColor;
     private final int borderColor;
     private final int textColor;
+    private final UiStyleLength backdropBlurRadius;
+    private final float backdropSaturation;
 
     ComputedStyle(UiDisplay display, UiStyleLength width, UiStyleLength height, UiStyleInsets margin,
             UiStyleInsets padding, UiStyleLength borderWidth, UiStyleLength borderRadius, UiOverflow overflowX,
             UiOverflow overflowY, UiFlexDirection flexDirection, UiAlignItems alignItems,
             UiJustifyContent justifyContent, UiStyleLength rowGap, UiStyleLength columnGap, float flexGrow,
-            float flexShrink, int backgroundColor, int borderColor, int textColor) {
+            float flexShrink, int backgroundColor, int borderColor, int textColor,
+            UiStyleLength backdropBlurRadius, float backdropSaturation) {
         this.display = Objects.requireNonNull(display, "display");
         this.width = Objects.requireNonNull(width, "width");
         this.height = Objects.requireNonNull(height, "height");
@@ -51,6 +54,8 @@ public final class ComputedStyle {
         this.backgroundColor = backgroundColor;
         this.borderColor = borderColor;
         this.textColor = textColor;
+        this.backdropBlurRadius = Objects.requireNonNull(backdropBlurRadius, "backdropBlurRadius");
+        this.backdropSaturation = Math.max(0.0F, backdropSaturation);
     }
 
     public UiDisplay getDisplay() {
@@ -127,5 +132,13 @@ public final class ComputedStyle {
 
     public int getTextColor() {
         return textColor;
+    }
+
+    public UiStyleLength getBackdropBlurRadius() {
+        return backdropBlurRadius;
+    }
+
+    public float getBackdropSaturation() {
+        return backdropSaturation;
     }
 }

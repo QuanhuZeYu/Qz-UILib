@@ -57,6 +57,38 @@ public class DocumentPaintEngineTest {
     }
 
     /**
+     * 验证 backdrop filter 命令会在元素自身背景与边框之前输出。
+     */
+    @Test
+    public void shouldBuildBackdropFilterBeforeOwnSurfaceCommands() {
+        UiDocument document = UiDocument.create();
+        ElementNode root = document.getRootElement();
+
+        root.style()
+                .setWidth(UiStyleLength.px(80))
+                .setHeight(UiStyleLength.px(28))
+                .setBackgroundColor(0x44FFFFFF)
+                .setBorderColor(0x99FFFFFF)
+                .setBorderWidth(UiStyleLength.px(1))
+                .setBorderRadius(UiStyleLength.px(10))
+                .setBackdropBlurRadius(UiStyleLength.px(14))
+                .setBackdropSaturation(1.4F);
+
+        List<DocumentPaintCommand> commands = DocumentPaintEngine.buildPaintCommands(
+                DocumentLayoutEngine.layout(root, 120, 0));
+
+        Assert.assertEquals(3, commands.size());
+        assertCommand(commands.get(0), DocumentPaintCommandType.BACKDROP_FILTER, root, 0, 0, 82, 30, 0, 0,
+                10);
+        Assert.assertEquals(14, commands.get(0).getBackdropBlurRadius());
+        Assert.assertEquals(1.4F, commands.get(0).getBackdropSaturation(), 0.0F);
+        assertCommand(commands.get(1), DocumentPaintCommandType.BACKGROUND, root, 0, 0, 82, 30, 0x44FFFFFF, 0,
+                10);
+        assertCommand(commands.get(2), DocumentPaintCommandType.BORDER, root, 0, 0, 82, 30, 0x99FFFFFF, 1,
+                10);
+    }
+
+    /**
      * 验证透明背景与零宽边框不会产生绘制命令。
      */
     @Test

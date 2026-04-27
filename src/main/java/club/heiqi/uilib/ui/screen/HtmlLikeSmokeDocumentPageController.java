@@ -157,6 +157,22 @@ final class HtmlLikeSmokeDocumentPageController extends DocumentPageController {
                 + "visible card height. Scroll here to verify that the background and border stay fixed while only "
                 + "the inner text content moves.");
 
+        ElementNode glassCard = document.div();
+        glassCard.style()
+                .setWidth(UiStyleLength.px(118))
+                .setPadding(UiStyleLength.px(8))
+                .setBackgroundColor(0x44FFFFFF)
+                .setBorderColor(0x99FFFFFF)
+                .setBorderWidth(UiStyleLength.px(1))
+                .setBorderRadius(UiStyleLength.px(12))
+                .setTextColor(0xFFFFFFFF)
+                .setBackdropBlurRadius(UiStyleLength.px(14))
+                .setBackdropSaturation(1.4F)
+                .setOverflowX(UiOverflow.HIDDEN)
+                .setOverflowY(UiOverflow.HIDDEN);
+        glassCard.appendText("Backdrop glass: blur 14px / saturate 140%");
+        row.append(glassCard);
+
         ElementNode sideCard = document.div();
         sideCard.style()
                 .setWidth(UiStyleLength.px(92))

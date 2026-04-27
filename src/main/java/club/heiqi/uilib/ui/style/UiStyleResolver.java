@@ -48,9 +48,13 @@ public final class UiStyleResolver {
         int backgroundColor = style.getBackgroundColor() == null ? TRANSPARENT : style.getBackgroundColor().intValue();
         int borderColor = style.getBorderColor() == null ? TRANSPARENT : style.getBorderColor().intValue();
         int textColor = style.getTextColor() == null ? inheritedTextColor(parentStyle) : style.getTextColor().intValue();
+        UiStyleLength backdropBlurRadius = style.getBackdropBlurRadius() == null ? UiStyleLength.px(0)
+                : style.getBackdropBlurRadius();
+        float backdropSaturation = style.getBackdropSaturation() == null ? 1.0F
+                : style.getBackdropSaturation().floatValue();
         return new ComputedStyle(display, width, height, margin, padding, borderWidth, borderRadius, overflowX,
                 overflowY, flexDirection, alignItems, justifyContent, rowGap, columnGap, flexGrow, flexShrink,
-                backgroundColor, borderColor, textColor);
+                backgroundColor, borderColor, textColor, backdropBlurRadius, backdropSaturation);
     }
 
     private static ComputedStyle computeParentStyle(ElementNode element) {

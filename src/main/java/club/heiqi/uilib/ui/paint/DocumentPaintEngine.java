@@ -18,13 +18,14 @@ public final class DocumentPaintEngine {
 
     private static final int SCROLLBAR_TRACK_COLOR = 0x663B4A66;
     private static final int SCROLLBAR_THUMB_COLOR = 0xDDBCD7FF;
+    private static final int MAX_BACKDROP_BLUR_RADIUS = 48;
 
     private DocumentPaintEngine() {}
 
     /**
      * 从布局盒树生成绘制命令。
      *
-     * <p>当前初版按元素背景、元素边框、结构裁剪、滚动内容、子树与滚动条的顺序输出命令。
+     * <p>当前初版按背后滤镜、元素背景、元素边框、结构裁剪、滚动内容、子树与滚动条的顺序输出命令。
      * stacking context 会在后续阶段继续扩展。</p>
      *
      * @param rootBox 根布局盒
@@ -67,6 +68,7 @@ public final class DocumentPaintEngine {
     private static void appendBoxCommands(DocumentLayoutBox rootBox, DocumentLayoutBox box,
             List<DocumentPaintCommand> commands, DocumentScrollState scrollState, int offsetX, int offsetY,
             long currentTimeNanos) {
+        appendBackdropFilterCommand(box, commands, offsetX, offsetY);
         appendBackgroundCommand(box, commands, offsetX, offsetY);
         appendBorderCommand(box, commands, offsetX, offsetY);
         boolean clipChildren = shouldClipChildren(box);
@@ -97,6 +99,20 @@ public final class DocumentPaintEngine {
         commands.add(new DocumentPaintCommand(DocumentPaintCommandType.BACKGROUND, box.getElement(),
                 box.getLeft() + offsetX, box.getTop() + offsetY, box.getRight() + offsetX,
                 box.getBottom() + offsetY, color, 0, resolveBorderRadius(box)));
+    }
+
+    private static void appendBackdropFilterCommand(DocumentLayoutBox box, List<DocumentPaintCommand> commands,
+            int offsetX, int offsetY) {
+        ComputedStyle style = box.getComputedStyle();
+        int blurRadius = resolveBackdropBlurRadius(box);
+        float saturation = style.getBackdropSaturation();
+        if ((blurRadius <= 0 && Float.compare(saturation, 1.0F) == 0) || box.getWidth() <= 0
+                || box.getHeight() <= 0) {
+            return;
+        }
+        commands.add(new DocumentPaintCommand(DocumentPaintCommandType.BACKDROP_FILTER, box.getElement(),
+                box.getLeft() + offsetX, box.getTop() + offsetY, box.getRight() + offsetX,
+                box.getBottom() + offsetY, 0, 0, resolveBorderRadius(box), null, null, blurRadius, saturation));
     }
 
     private static void appendBorderCommand(DocumentLayoutBox box, List<DocumentPaintCommand> commands, int offsetX,
@@ -248,6 +264,12 @@ public final class DocumentPaintEngine {
         int limit = Math.min(box.getWidth(), box.getHeight());
         int radius = box.getComputedStyle().getBorderRadius().resolve(limit, 0);
         return Math.max(0, Math.min(radius, limit / 2));
+    }
+
+    private static int resolveBackdropBlurRadius(DocumentLayoutBox box) {
+        int availableSpace = Math.max(box.getWidth(), box.getHeight());
+        int radius = box.getComputedStyle().getBackdropBlurRadius().resolve(availableSpace, 0);
+        return Math.max(0, Math.min(radius, MAX_BACKDROP_BLUR_RADIUS));
     }
 
     private static int getScrollLeft(DocumentScrollState scrollState, DocumentLayoutBox box) {

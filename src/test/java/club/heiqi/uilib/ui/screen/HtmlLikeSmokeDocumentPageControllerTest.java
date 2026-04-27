@@ -51,6 +51,7 @@ public class HtmlLikeSmokeDocumentPageControllerTest {
         List<String> texts = collectDocumentTexts(fixture.controller.getHtmlLikeDocumentWidget());
         Assert.assertTrue(containsText(texts, "HTML-like Smoke Lab"));
         Assert.assertTrue(containsText(texts, "UiDocument -> style -> layout -> paint command -> UiRenderContext"));
+        Assert.assertTrue(containsText(texts, "Backdrop glass: blur 14px / saturate 140%"));
     }
 
     /**
@@ -77,6 +78,7 @@ public class HtmlLikeSmokeDocumentPageControllerTest {
         Assert.assertEquals(0xF00B1020, firstCall.surfaceStyle.fillColor);
         Assert.assertFalse(renderContext.clipCalls.isEmpty());
         Assert.assertTrue(renderContext.popClipCount > 0);
+        Assert.assertFalse(renderContext.backdropCalls.isEmpty());
         Assert.assertTrue(containsTextCall(renderContext.textCalls, "TEXT paint command"));
     }
 
@@ -315,6 +317,7 @@ public class HtmlLikeSmokeDocumentPageControllerTest {
         private final List<DrawCall> drawCalls = new ArrayList<DrawCall>();
         private final List<ClipCall> clipCalls = new ArrayList<ClipCall>();
         private final List<TextCall> textCalls = new ArrayList<TextCall>();
+        private final List<BackdropCall> backdropCalls = new ArrayList<BackdropCall>();
         private int popClipCount;
 
         private RecordingUiRenderContext() {
@@ -324,6 +327,12 @@ public class HtmlLikeSmokeDocumentPageControllerTest {
         @Override
         public void drawSurface(int left, int top, int right, int bottom, UiSurfaceStyle surfaceStyle) {
             drawCalls.add(new DrawCall(left, top, right, bottom, surfaceStyle));
+        }
+
+        @Override
+        public void drawBackdropFilter(int left, int top, int right, int bottom, int blurRadius, float saturation,
+                int cornerRadius) {
+            backdropCalls.add(new BackdropCall(left, top, right, bottom, blurRadius, saturation, cornerRadius));
         }
 
         @Override
@@ -399,6 +408,31 @@ public class HtmlLikeSmokeDocumentPageControllerTest {
             this.y = y;
             this.color = color;
             this.shadow = shadow;
+        }
+    }
+
+    /**
+     * 单次 backdrop filter 投影记录。
+     */
+    private static final class BackdropCall {
+
+        private final int left;
+        private final int top;
+        private final int right;
+        private final int bottom;
+        private final int blurRadius;
+        private final float saturation;
+        private final int cornerRadius;
+
+        private BackdropCall(int left, int top, int right, int bottom, int blurRadius, float saturation,
+                int cornerRadius) {
+            this.left = left;
+            this.top = top;
+            this.right = right;
+            this.bottom = bottom;
+            this.blurRadius = blurRadius;
+            this.saturation = saturation;
+            this.cornerRadius = cornerRadius;
         }
     }
 

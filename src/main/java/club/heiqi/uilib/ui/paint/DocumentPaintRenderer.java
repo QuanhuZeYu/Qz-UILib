@@ -69,6 +69,12 @@ public final class DocumentPaintRenderer {
                     command.getRight() + offsetX, command.getBottom() + offsetY, command.getBorderRadius());
             return clipDepth + 1;
         }
+        if (command.getType() == DocumentPaintCommandType.BACKDROP_FILTER) {
+            context.drawBackdropFilter(command.getLeft() + offsetX, command.getTop() + offsetY,
+                    command.getRight() + offsetX, command.getBottom() + offsetY,
+                    command.getBackdropBlurRadius(), command.getBackdropSaturation(), command.getBorderRadius());
+            return clipDepth;
+        }
         if (command.getType() == DocumentPaintCommandType.BACKGROUND) {
             context.drawSurface(command.getLeft() + offsetX, command.getTop() + offsetY,
                     command.getRight() + offsetX, command.getBottom() + offsetY,

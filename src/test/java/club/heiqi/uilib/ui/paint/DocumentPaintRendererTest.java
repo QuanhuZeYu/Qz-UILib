@@ -81,6 +81,28 @@ public class DocumentPaintRendererTest {
     }
 
     /**
+     * 验证 BACKDROP_FILTER 命令会按宿主偏移投影到渲染上下文的效果入口。
+     */
+    @Test
+    public void shouldRenderBackdropFilterCommandsToUiRenderContext() {
+        UiDocument document = UiDocument.create();
+        ElementNode root = document.getRootElement();
+        root.style()
+                .setWidth(UiStyleLength.px(48))
+                .setHeight(UiStyleLength.px(18))
+                .setBorderRadius(UiStyleLength.px(7))
+                .setBackdropBlurRadius(UiStyleLength.px(12))
+                .setBackdropSaturation(1.25F);
+
+        RecordingUiRenderContext renderContext = new RecordingUiRenderContext();
+        DocumentPaintRenderer.render(renderContext, DocumentPaintEngine.buildPaintCommands(
+                DocumentLayoutEngine.layout(root, 80, 0)), 7, 11);
+
+        Assert.assertEquals(1, renderContext.backdropCalls.size());
+        assertBackdropCall(renderContext.backdropCalls.get(0), 7, 11, 55, 29, 12, 1.25F, 7);
+    }
+
+    /**
      * 验证 overflow clip 命令会按宿主偏移投影到 `UiRenderContext` 的裁剪栈。
      */
     @Test
@@ -224,6 +246,17 @@ public class DocumentPaintRendererTest {
         Assert.assertEquals(bottom, customCall.bottom);
     }
 
+    private static void assertBackdropCall(BackdropCall backdropCall, int left, int top, int right, int bottom,
+            int blurRadius, float saturation, int cornerRadius) {
+        Assert.assertEquals(left, backdropCall.left);
+        Assert.assertEquals(top, backdropCall.top);
+        Assert.assertEquals(right, backdropCall.right);
+        Assert.assertEquals(bottom, backdropCall.bottom);
+        Assert.assertEquals(blurRadius, backdropCall.blurRadius);
+        Assert.assertEquals(saturation, backdropCall.saturation, 0.0F);
+        Assert.assertEquals(cornerRadius, backdropCall.cornerRadius);
+    }
+
     /**
      * 记录 drawSurface 调用的渲染上下文。
      */
@@ -232,6 +265,7 @@ public class DocumentPaintRendererTest {
         private final List<DrawCall> drawCalls = new ArrayList<DrawCall>();
         private final List<ClipCall> clipCalls = new ArrayList<ClipCall>();
         private final List<TextCall> textCalls = new ArrayList<TextCall>();
+        private final List<BackdropCall> backdropCalls = new ArrayList<BackdropCall>();
         private int popClipCount;
 
         private RecordingUiRenderContext() {
@@ -241,6 +275,12 @@ public class DocumentPaintRendererTest {
         @Override
         public void drawSurface(int left, int top, int right, int bottom, UiSurfaceStyle surfaceStyle) {
             drawCalls.add(new DrawCall(left, top, right, bottom, surfaceStyle));
+        }
+
+        @Override
+        public void drawBackdropFilter(int left, int top, int right, int bottom, int blurRadius, float saturation,
+                int cornerRadius) {
+            backdropCalls.add(new BackdropCall(left, top, right, bottom, blurRadius, saturation, cornerRadius));
         }
 
         @Override
@@ -334,6 +374,31 @@ public class DocumentPaintRendererTest {
             this.top = top;
             this.right = right;
             this.bottom = bottom;
+        }
+    }
+
+    /**
+     * 单次 backdrop filter 绘制记录。
+     */
+    private static final class BackdropCall {
+
+        private final int left;
+        private final int top;
+        private final int right;
+        private final int bottom;
+        private final int blurRadius;
+        private final float saturation;
+        private final int cornerRadius;
+
+        private BackdropCall(int left, int top, int right, int bottom, int blurRadius, float saturation,
+                int cornerRadius) {
+            this.left = left;
+            this.top = top;
+            this.right = right;
+            this.bottom = bottom;
+            this.blurRadius = blurRadius;
+            this.saturation = saturation;
+            this.cornerRadius = cornerRadius;
         }
     }
 }

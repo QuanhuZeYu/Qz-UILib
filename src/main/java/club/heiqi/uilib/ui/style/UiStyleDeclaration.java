@@ -34,6 +34,8 @@ public final class UiStyleDeclaration {
     private Integer backgroundColor;
     private Integer borderColor;
     private Integer textColor;
+    private UiStyleLength backdropBlurRadius;
+    private Float backdropSaturation;
 
     public UiStyleDeclaration() {
         this(null);
@@ -292,6 +294,30 @@ public final class UiStyleDeclaration {
         return updateTextColor(null);
     }
 
+    public UiStyleLength getBackdropBlurRadius() {
+        return backdropBlurRadius;
+    }
+
+    public UiStyleDeclaration setBackdropBlurRadius(UiStyleLength backdropBlurRadius) {
+        return updateBackdropBlurRadius(Objects.requireNonNull(backdropBlurRadius, "backdropBlurRadius"));
+    }
+
+    public UiStyleDeclaration clearBackdropBlurRadius() {
+        return updateBackdropBlurRadius(null);
+    }
+
+    public Float getBackdropSaturation() {
+        return backdropSaturation;
+    }
+
+    public UiStyleDeclaration setBackdropSaturation(float backdropSaturation) {
+        return updateBackdropSaturation(Float.valueOf(Math.max(0.0F, backdropSaturation)));
+    }
+
+    public UiStyleDeclaration clearBackdropSaturation() {
+        return updateBackdropSaturation(null);
+    }
+
     private UiStyleDeclaration updateDisplay(UiDisplay value) {
         if (display != value) {
             display = value;
@@ -439,6 +465,22 @@ public final class UiStyleDeclaration {
     private UiStyleDeclaration updateTextColor(Integer value) {
         if (!Objects.equals(textColor, value)) {
             textColor = value;
+            recordChange();
+        }
+        return this;
+    }
+
+    private UiStyleDeclaration updateBackdropBlurRadius(UiStyleLength value) {
+        if (!Objects.equals(backdropBlurRadius, value)) {
+            backdropBlurRadius = value;
+            recordChange();
+        }
+        return this;
+    }
+
+    private UiStyleDeclaration updateBackdropSaturation(Float value) {
+        if (!Objects.equals(backdropSaturation, value)) {
+            backdropSaturation = value;
             recordChange();
         }
         return this;

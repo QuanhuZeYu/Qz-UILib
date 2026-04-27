@@ -249,6 +249,33 @@ public class UiRenderContext {
     }
 
     /**
+     * 绘制元素背后内容滤镜。
+     *
+     * <p>当前默认实现提供不依赖 FBO/shader 的伪玻璃降级；宿主后续可覆盖该入口，
+     * 在不改变文档作者 API 的前提下接入真实背景采样与模糊合成。</p>
+     *
+     * @param left 左侧坐标
+     * @param top 顶部坐标
+     * @param right 右侧坐标
+     * @param bottom 底部坐标
+     * @param blurRadius 模糊半径像素
+     * @param saturation 饱和度倍率，1.0 表示不改变
+     * @param cornerRadius 圆角半径
+     */
+    public void drawBackdropFilter(int left, int top, int right, int bottom, int blurRadius, float saturation,
+            int cornerRadius) {
+        if (right <= left || bottom <= top || (blurRadius <= 0 && Float.compare(saturation, 1.0F) == 0)) {
+            return;
+        }
+        int tintAlpha = clampInt(18 + Math.max(0, blurRadius) * 2 + Math.round(Math.max(0.0F,
+                saturation - 1.0F) * 16.0F), 18, 72);
+        int highlightAlpha = clampInt(tintAlpha + 22, 32, 96);
+        int tintColor = tintAlpha << 24 | 0x00FFFFFF;
+        int highlightColor = highlightAlpha << 24 | 0x00FFFFFF;
+        drawSurface(left, top, right, bottom, new UiSurfaceStyle(tintColor, highlightColor, cornerRadius));
+    }
+
+    /**
      * 绘制文本。
      *
      * @param text 文本
@@ -540,6 +567,10 @@ public class UiRenderContext {
 
     private static int clampCornerRadius(int width, int height, int radius) {
         return Math.max(0, Math.min(radius, Math.min(Math.max(0, width), Math.max(0, height)) / 2));
+    }
+
+    private static int clampInt(int value, int min, int max) {
+        return Math.max(min, Math.min(value, max));
     }
 
     private static float clampCornerRadius(float width, float height, float radius) {
