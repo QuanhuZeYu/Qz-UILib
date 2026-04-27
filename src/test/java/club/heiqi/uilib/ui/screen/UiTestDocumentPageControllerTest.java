@@ -16,6 +16,8 @@ import club.heiqi.uilib.ui.dom.DocumentNodeType;
 import club.heiqi.uilib.ui.dom.ElementNode;
 import club.heiqi.uilib.ui.dom.TextNode;
 import club.heiqi.uilib.ui.event.UiKeyEvent;
+import club.heiqi.uilib.ui.layout.DocumentLayoutBox;
+import club.heiqi.uilib.ui.layout.DocumentLayoutEngine;
 import club.heiqi.uilib.ui.theme.UiDocumentTheme;
 import club.heiqi.uilib.ui.theme.UiDocumentThemes;
 import club.heiqi.uilib.ui.text.TextMeasureService;
@@ -42,6 +44,7 @@ public class UiTestDocumentPageControllerTest {
         Assert.assertEquals(1, blocks.size());
         Assert.assertTrue(blocks.get(0) instanceof HtmlLikeDocumentWidget);
         Assert.assertSame(blocks.get(0), fixture.controller.getHtmlLikeDocumentWidget());
+        Assert.assertTrue(fixture.controller.getHtmlLikeDocumentWidget().isViewportRootScrollingEnabled());
 
         List<String> texts = collectDocumentTexts(fixture.controller.getHtmlLikeDocumentWidget());
         Assert.assertTrue(containsText(texts, "诊断指挥台"));
@@ -93,6 +96,29 @@ public class UiTestDocumentPageControllerTest {
 
         Assert.assertFalse(menuModel.openLayoutDiagnosticsCalled);
         Assert.assertTrue(menuModel.openHtmlLikeSmokeCalled);
+    }
+
+    /**
+     * 验证菜单按钮不会因 width:100% 与横向外边距组合溢出导航卡片。
+     */
+    @Test
+    public void shouldKeepNavigationButtonsInsideCards() {
+        TestFixture fixture = new TestFixture(new RecordingMenuModel());
+
+        fixture.controller.configureDocumentPage();
+        fixture.controller.buildDocument();
+        HtmlLikeDocumentWidget widget = fixture.controller.getHtmlLikeDocumentWidget();
+        DocumentLayoutBox rootBox = DocumentLayoutEngine.layoutViewportRoot(widget.getDocument().getRootElement(),
+                760, 520, fixture.textMeasureService);
+
+        DocumentLayoutBox navigationRow = rootBox.getChildren().get(2);
+        for (DocumentLayoutBox cardBox : navigationRow.getChildren()) {
+            DocumentLayoutBox buttonBox = cardBox.getChildren().get(0);
+            int cardContentLeft = cardBox.getContentLeft();
+            int cardContentRight = cardContentLeft + cardBox.getContentWidth();
+            Assert.assertTrue(buttonBox.getLeft() >= cardContentLeft);
+            Assert.assertTrue(buttonBox.getRight() <= cardContentRight);
+        }
     }
 
     private static List<Widget> getDocumentBlocks(DocumentPageWidget pagePanel) {

@@ -59,9 +59,10 @@ final class HtmlLikeSmokeDocumentPageController extends DocumentPageController {
         this.documentPage = Objects.requireNonNull(documentPage, "documentPage");
         this.htmlLikeDocumentWidget = new HtmlLikeDocumentWidget(createSmokeDocument(), 760, 320,
                 Objects.requireNonNull(textMeasureService, "textMeasureService"));
+        this.htmlLikeDocumentWidget.setViewportRootScrollingEnabled(true);
         this.htmlLikeDocumentWidget.setLayoutSpec(new UiLayoutSpec()
                 .setWidth(UiLength.percent(1.0F))
-                .setHeight(UiLength.px(320)));
+                .setHeight(UiLength.percent(1.0F)));
     }
 
     @Override
@@ -93,7 +94,9 @@ final class HtmlLikeSmokeDocumentPageController extends DocumentPageController {
                 .setBackgroundColor(0xF00B1020)
                 .setBorderColor(0xFF7C3AED)
                 .setBorderWidth(UiStyleLength.px(1))
-                .setBorderRadius(UiStyleLength.px(18));
+                .setBorderRadius(UiStyleLength.px(18))
+                .setOverflowX(UiOverflow.HIDDEN)
+                .setOverflowY(UiOverflow.AUTO);
 
         ElementNode header = document.div();
         header.style()

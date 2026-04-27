@@ -60,6 +60,37 @@ public final class DocumentLayoutEngine {
                 Objects.requireNonNull(textMeasureService, "textMeasureService"));
     }
 
+    /**
+     * 对根元素执行视口布局，让根 border box 固定为传入视口尺寸。
+     *
+     * <p>该入口用于页面级 HTML-like 滚动：根元素本身保持固定视口，超出的子内容由
+     * `DocumentScrollState` 根据 overflow 语义滚动，而不是继续扩大外层 retained widget。</p>
+     *
+     * @param rootElement 根元素
+     * @param viewportWidth 视口宽度
+     * @param viewportHeight 视口高度
+     * @param textMeasureService 文本测量服务
+     * @return 根布局盒
+     */
+    public static DocumentLayoutBox layoutViewportRoot(ElementNode rootElement, int viewportWidth, int viewportHeight,
+            TextMeasureService textMeasureService) {
+        Objects.requireNonNull(rootElement, "rootElement");
+        TextMeasureService resolvedTextMeasureService = Objects.requireNonNull(textMeasureService,
+                "textMeasureService");
+        int safeViewportWidth = Math.max(0, viewportWidth);
+        int safeViewportHeight = Math.max(0, viewportHeight);
+        ComputedStyle rootStyle = UiStyleResolver.compute(rootElement);
+        DocumentLayoutEdges margin = resolveInsets(rootStyle.getMargin(), safeViewportWidth, false);
+        DocumentLayoutEdges border = resolveUniformEdge(rootStyle.getBorderWidth(), safeViewportWidth);
+        DocumentLayoutEdges padding = resolveInsets(rootStyle.getPadding(), safeViewportWidth, true);
+        int forcedContentWidth = Math.max(0,
+                safeViewportWidth - margin.getHorizontal() - border.getHorizontal() - padding.getHorizontal());
+        int forcedContentHeight = Math.max(0,
+                safeViewportHeight - margin.getVertical() - border.getVertical() - padding.getVertical());
+        return layoutElement(rootElement, 0, 0, safeViewportWidth, forcedContentWidth, forcedContentHeight,
+                resolvedTextMeasureService);
+    }
+
     private static DocumentLayoutBox layoutElement(ElementNode element, int containingLeft, int flowTop,
             int containingWidth, int forcedContentWidth, int forcedContentHeight,
             TextMeasureService textMeasureService) {

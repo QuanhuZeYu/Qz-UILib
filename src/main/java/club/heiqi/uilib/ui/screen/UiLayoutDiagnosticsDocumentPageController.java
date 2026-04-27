@@ -98,8 +98,10 @@ final class UiLayoutDiagnosticsDocumentPageController extends DocumentPageContro
 
         this.htmlLikeDocumentWidget = new HtmlLikeDocumentWidget(document, 760, 940,
                 resolvedDocumentUi.getTextMeasureService());
+        this.htmlLikeDocumentWidget.setViewportRootScrollingEnabled(true);
         this.htmlLikeDocumentWidget.setLayoutSpec(new UiLayoutSpec()
-                .setWidth(UiLength.percent(1.0F)));
+                .setWidth(UiLength.percent(1.0F))
+                .setHeight(UiLength.percent(1.0F)));
 
         DocumentBundle bundle = createDocumentContent(document, document.getRootElement());
         this.overviewCard = bundle.overviewCard;
@@ -222,6 +224,8 @@ final class UiLayoutDiagnosticsDocumentPageController extends DocumentPageContro
                 .setBorderColor(0xFF60A5FA)
                 .setBorderWidth(UiStyleLength.px(1))
                 .setBorderRadius(UiStyleLength.px(22))
+                .setOverflowX(UiOverflow.HIDDEN)
+                .setOverflowY(UiOverflow.AUTO)
                 .setTextColor(0xFFDCE7FF);
 
         appendHero(document, root);
@@ -410,6 +414,9 @@ final class UiLayoutDiagnosticsDocumentPageController extends DocumentPageContro
     }
 
     private UiTestDiagnosticsPresenter.Snapshot collectDiagnosticsSnapshot() {
+        ElementNode pageRoot = htmlLikeDocumentWidget.getDocument().getRootElement();
+        int pageScrollTop = htmlLikeDocumentWidget.getScrollTop(pageRoot);
+        int pageMaxScrollTop = htmlLikeDocumentWidget.getMaxScrollTop(pageRoot);
         int probeScrollTop = htmlLikeDocumentWidget.getScrollTop(divScrollProbe);
         int probeMaxScrollTop = htmlLikeDocumentWidget.getMaxScrollTop(divScrollProbe);
         return new UiTestDiagnosticsPresenter.Snapshot(
@@ -423,12 +430,12 @@ final class UiLayoutDiagnosticsDocumentPageController extends DocumentPageContro
                 htmlLikeDocumentWidget.getHeight(),
                 Math.max(0, htmlLikeDocumentWidget.getWidth() / 2),
                 htmlLikeDocumentWidget.getHeight(),
-                diagnosticPage.getScrollOffset(),
-                diagnosticPage.getMaxScrollOffset(),
-                diagnosticPage.getVisibleContentWidth(),
-                diagnosticPage.getVisibleContentHeight(),
-                diagnosticPage.getContentWidth(),
-                diagnosticPage.getContentHeight(),
+                pageScrollTop,
+                pageMaxScrollTop,
+                htmlLikeDocumentWidget.getWidth(),
+                htmlLikeDocumentWidget.getHeight(),
+                htmlLikeDocumentWidget.getWidth(),
+                htmlLikeDocumentWidget.getHeight() + pageMaxScrollTop,
                 themeInput.getText(),
                 namespaceInput.getText(),
                 mutationProbeState.getActionStateText(),

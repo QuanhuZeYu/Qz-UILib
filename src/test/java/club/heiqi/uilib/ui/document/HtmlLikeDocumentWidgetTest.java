@@ -23,10 +23,15 @@ import club.heiqi.uilib.ui.dom.UiDocument;
 import club.heiqi.uilib.ui.event.UiKeyEvent;
 import club.heiqi.uilib.ui.event.UiMouseEvent;
 import club.heiqi.uilib.ui.event.UiTextInputEvent;
+import club.heiqi.uilib.ui.input.UiInputFrame;
+import club.heiqi.uilib.ui.input.UiInputRouter;
+import club.heiqi.uilib.ui.layout.UiLength;
+import club.heiqi.uilib.ui.layout.UiLayoutSpec;
 import club.heiqi.uilib.ui.render.UiRenderContext;
 import club.heiqi.uilib.ui.style.UiOverflow;
 import club.heiqi.uilib.ui.style.UiStyleLength;
 import club.heiqi.uilib.ui.text.TextMeasureService;
+import club.heiqi.uilib.ui.theme.UiDocumentThemes;
 import club.heiqi.uilib.ui.theme.UiSurfaceStyle;
 
 /**
@@ -133,8 +138,92 @@ public class HtmlLikeDocumentWidgetTest {
 
         Assert.assertTrue(consumed);
         Assert.assertEquals(36, widget.getScrollTop(root));
-        Assert.assertEquals(1, scrolledRenderContext.drawCalls.size());
+        Assert.assertEquals(3, scrolledRenderContext.drawCalls.size());
         assertDrawCall(scrolledRenderContext.drawCalls.get(0), 5, -29, 85, 51, 0xFFAA5500, 0, 0);
+        assertDrawCall(scrolledRenderContext.drawCalls.get(1), 77, 9, 83, 25, 0x663B4A66, 0, 3);
+        assertDrawCall(scrolledRenderContext.drawCalls.get(2), 77, 9, 83, 25, 0xDDBCD7FF, 0, 3);
+    }
+
+    /**
+     * 验证根视口滚动模式会让根元素承载页面级 overflow auto。
+     */
+    @Test
+    public void shouldUseRootElementAsViewportScrollHost() {
+        UiDocument document = UiDocument.create();
+        ElementNode root = document.getRootElement();
+        ElementNode child = document.div();
+        root.style()
+                .setOverflowX(UiOverflow.HIDDEN)
+                .setOverflowY(UiOverflow.AUTO);
+        child.style()
+                .setHeight(UiStyleLength.px(96))
+                .setBackgroundColor(0xFF225577);
+        root.append(child);
+
+        HtmlLikeDocumentWidget widget = new HtmlLikeDocumentWidget(document, 80, 40,
+                new DeterministicTextMeasureService());
+        widget.setViewportRootScrollingEnabled(true);
+        widget.applyLayoutBounds(0, 0, 80, 40);
+
+        Assert.assertTrue(widget.isViewportRootScrollingEnabled());
+        Assert.assertEquals(56, widget.getMaxScrollTop(root));
+        Assert.assertTrue(widget.onMouseScroll(new UiMouseEvent(UiMouseEvent.Action.SCROLL, 10, 10, -1, -120, 0,
+                0, 1L)));
+
+        RecordingUiRenderContext renderContext = new RecordingUiRenderContext();
+        widget.render(renderContext);
+
+        Assert.assertEquals(36, widget.getScrollTop(root));
+        Assert.assertEquals(3, renderContext.drawCalls.size());
+        assertDrawCall(renderContext.drawCalls.get(0), 0, -36, 80, 60, 0xFF225577, 0, 0);
+        assertDrawCall(renderContext.drawCalls.get(1), 72, 2, 78, 38, 0x663B4A66, 0, 3);
+        assertDrawCall(renderContext.drawCalls.get(2), 72, 10, 78, 34, 0xDDBCD7FF, 0, 3);
+    }
+
+    /**
+     * 验证点击 HTML-like 子元素不会再触发旧页面壳随机滚动。
+     */
+    @Test
+    public void shouldKeepOuterPageScrollStableWhenFocusableHtmlElementIsClicked() {
+        UiDocument document = UiDocument.create();
+        ElementNode root = document.getRootElement();
+        ElementNode focusableElement = document.div();
+        ElementNode filler = document.div();
+        root.style()
+                .setOverflowX(UiOverflow.HIDDEN)
+                .setOverflowY(UiOverflow.AUTO);
+        focusableElement.style().setHeight(UiStyleLength.px(24));
+        focusableElement.setFocusable(true);
+        filler.style().setHeight(UiStyleLength.px(160));
+        root.append(focusableElement).append(filler);
+
+        HtmlLikeDocumentWidget widget = new HtmlLikeDocumentWidget(document, 80, 40,
+                new DeterministicTextMeasureService());
+        widget.setViewportRootScrollingEnabled(true);
+        widget.setLayoutSpec(new UiLayoutSpec()
+                .setWidth(UiLength.percent(1.0F))
+                .setHeight(UiLength.percent(1.0F)));
+
+        DocumentPageWidget pageWidget = new DocumentPageWidget(UiDocumentThemes.current(),
+                new DeterministicTextMeasureService());
+        pageWidget.setShellPadding(0)
+                .setViewportFillRatio(1.0F, 1.0F)
+                .addBlock(widget);
+        pageWidget.applyLayoutBounds(0, 0, 100, 70);
+        pageWidget.render(new RecordingUiRenderContext());
+
+        Assert.assertEquals(0, pageWidget.getMaxScrollOffset());
+        Assert.assertTrue(widget.getMaxScrollTop(root) > 0);
+
+        UiInputRouter router = new UiInputRouter();
+        router.route(pageWidget, mouseFrame(new UiMouseEvent(UiMouseEvent.Action.BUTTON_DOWN, 10, 10, 0, 0, 0, 0,
+                1L)));
+        router.route(pageWidget, mouseFrame(new UiMouseEvent(UiMouseEvent.Action.BUTTON_UP, 10, 10, 0, 0, 0, 0,
+                2L)));
+
+        Assert.assertEquals(0, pageWidget.getScrollOffset());
+        Assert.assertEquals(0, widget.getScrollTop(root));
+        Assert.assertSame(focusableElement, widget.getFocusedElement());
     }
 
     /**
@@ -419,6 +508,11 @@ public class HtmlLikeDocumentWidgetTest {
         Assert.assertEquals(y, textCall.y);
         Assert.assertEquals(color, textCall.color);
         Assert.assertEquals(shadow, textCall.shadow);
+    }
+
+    private static UiInputFrame mouseFrame(UiMouseEvent event) {
+        return new UiInputFrame(event.getMouseX(), event.getMouseY(), Collections.singletonList(event),
+                Collections.<UiKeyEvent>emptyList(), Collections.<UiTextInputEvent>emptyList());
     }
 
     /**

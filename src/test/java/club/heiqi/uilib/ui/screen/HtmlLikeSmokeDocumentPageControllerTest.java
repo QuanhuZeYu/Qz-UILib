@@ -44,6 +44,7 @@ public class HtmlLikeSmokeDocumentPageControllerTest {
         Assert.assertEquals(1, blocks.size());
         Assert.assertTrue(blocks.get(0) instanceof HtmlLikeDocumentWidget);
         Assert.assertSame(blocks.get(0), fixture.controller.getHtmlLikeDocumentWidget());
+        Assert.assertTrue(fixture.controller.getHtmlLikeDocumentWidget().isViewportRootScrollingEnabled());
         Assert.assertEquals(3, fixture.controller.getHtmlLikeDocumentWidget().getDocument()
                 .getRootElement().getChildren().size());
 

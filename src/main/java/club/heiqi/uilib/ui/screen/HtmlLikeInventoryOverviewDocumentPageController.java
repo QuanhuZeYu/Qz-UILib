@@ -57,8 +57,10 @@ final class HtmlLikeInventoryOverviewDocumentPageController extends DocumentPage
 
         UiDocument document = UiDocument.create();
         this.htmlLikeDocumentWidget = new HtmlLikeDocumentWidget(document, 720, 600, resolvedTextMeasure);
+        this.htmlLikeDocumentWidget.setViewportRootScrollingEnabled(true);
         this.htmlLikeDocumentWidget.setLayoutSpec(new UiLayoutSpec()
-                .setWidth(UiLength.percent(1.0F)));
+                .setWidth(UiLength.percent(1.0F))
+                .setHeight(UiLength.percent(1.0F)));
 
         ContentBundle bundle = createDocumentContent(document, document.getRootElement());
         this.overviewMetricsText = bundle.overviewMetrics;
@@ -78,6 +80,8 @@ final class HtmlLikeInventoryOverviewDocumentPageController extends DocumentPage
                 .setBorderColor(0xFF38BDF8)
                 .setBorderWidth(UiStyleLength.px(1))
                 .setBorderRadius(UiStyleLength.px(22))
+                .setOverflowX(UiOverflow.HIDDEN)
+                .setOverflowY(UiOverflow.AUTO)
                 .setTextColor(BODY_COLOR);
 
         TextNode overviewMetrics = appendHero(document, root);

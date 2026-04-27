@@ -15,6 +15,7 @@ import club.heiqi.uilib.ui.style.UiDisplay;
 import club.heiqi.uilib.ui.style.UiFlexDirection;
 import club.heiqi.uilib.ui.style.UiJustifyContent;
 import club.heiqi.uilib.ui.style.UiOverflow;
+import club.heiqi.uilib.ui.style.UiStyleInsets;
 import club.heiqi.uilib.ui.style.UiStyleLength;
 
 /**
@@ -42,8 +43,10 @@ final class UiTestDocumentPageController extends DocumentPageController {
         UiDocument document = UiDocument.create();
         this.htmlLikeDocumentWidget = new HtmlLikeDocumentWidget(document, 760, 520,
                 resolvedDocumentUi.getTextMeasureService());
+        this.htmlLikeDocumentWidget.setViewportRootScrollingEnabled(true);
         this.htmlLikeDocumentWidget.setLayoutSpec(new UiLayoutSpec()
-                .setWidth(UiLength.percent(1.0F)));
+                .setWidth(UiLength.percent(1.0F))
+                .setHeight(UiLength.percent(1.0F)));
         createMenuDocument(document, document.getRootElement());
     }
 
@@ -81,6 +84,8 @@ final class UiTestDocumentPageController extends DocumentPageController {
                 .setBorderColor(0xFF5B7CFA)
                 .setBorderWidth(UiStyleLength.px(1))
                 .setBorderRadius(UiStyleLength.px(24))
+                .setOverflowX(UiOverflow.HIDDEN)
+                .setOverflowY(UiOverflow.AUTO)
                 .setTextColor(0xFFE8EEFF);
 
         appendHero(document, root);
@@ -183,8 +188,8 @@ final class UiTestDocumentPageController extends DocumentPageController {
                 .setFocusBorderColor(0xFFBFDBFE)
                 .setActionHandler(actionHandler);
         button.getElement().style()
-                .setMargin(UiStyleLength.px(10))
-                .setWidth(UiStyleLength.percent(1.0F));
+                .setMargin(UiStyleInsets.of(UiStyleLength.px(10), UiStyleLength.px(0), UiStyleLength.px(0),
+                        UiStyleLength.px(0)));
         card.append(button.getElement());
         parent.append(card);
     }

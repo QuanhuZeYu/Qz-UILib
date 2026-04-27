@@ -45,6 +45,7 @@ public class HtmlLikeInventoryOverviewDocumentPageControllerTest {
         Assert.assertEquals(1, blocks.size());
         Assert.assertTrue(blocks.get(0) instanceof HtmlLikeDocumentWidget);
         Assert.assertSame(blocks.get(0), fixture.controller.getHtmlLikeDocumentWidget());
+        Assert.assertTrue(fixture.controller.getHtmlLikeDocumentWidget().isViewportRootScrollingEnabled());
 
         List<String> blockTexts = collectDocumentTexts(fixture.controller.getHtmlLikeDocumentWidget());
         Assert.assertTrue(containsText(blockTexts, "背包诊断中枢"));

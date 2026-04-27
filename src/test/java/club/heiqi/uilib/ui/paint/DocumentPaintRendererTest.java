@@ -8,7 +8,9 @@ import org.junit.Test;
 
 import club.heiqi.uilib.ui.dom.ElementNode;
 import club.heiqi.uilib.ui.dom.UiDocument;
+import club.heiqi.uilib.ui.layout.DocumentLayoutBox;
 import club.heiqi.uilib.ui.layout.DocumentLayoutEngine;
+import club.heiqi.uilib.ui.layout.DocumentScrollState;
 import club.heiqi.uilib.ui.render.UiRenderContext;
 import club.heiqi.uilib.ui.style.UiOverflow;
 import club.heiqi.uilib.ui.style.UiStyleLength;
@@ -157,6 +159,35 @@ public class DocumentPaintRendererTest {
 
         Assert.assertEquals(1, customCalls.size());
         assertCustomCall(customCalls.get(0), 10, 14, 50, 34);
+    }
+
+    /**
+     * 验证 HTML-like 滚动条命令会投影为普通 surface 绘制。
+     */
+    @Test
+    public void shouldRenderScrollbarCommandsToUiRenderContext() {
+        UiDocument document = UiDocument.create();
+        ElementNode root = document.getRootElement();
+        ElementNode child = document.div();
+        root.style()
+                .setWidth(UiStyleLength.px(50))
+                .setHeight(UiStyleLength.px(20))
+                .setOverflowY(UiOverflow.AUTO);
+        child.style()
+                .setHeight(UiStyleLength.px(80));
+        root.append(child);
+        DocumentLayoutBox rootBox = DocumentLayoutEngine.layout(root, 80, 0);
+        DocumentScrollState scrollState = new DocumentScrollState();
+        scrollState.updateFromLayout(rootBox);
+        scrollState.setScrollOffset(root, 0, 12);
+
+        RecordingUiRenderContext renderContext = new RecordingUiRenderContext();
+        DocumentPaintRenderer.render(renderContext, DocumentPaintEngine.buildPaintCommands(rootBox, scrollState), 7,
+                11);
+
+        Assert.assertEquals(2, renderContext.drawCalls.size());
+        assertDrawCall(renderContext.drawCalls.get(0), 49, 13, 55, 29, 0x663B4A66, 0, 3);
+        assertDrawCall(renderContext.drawCalls.get(1), 49, 13, 55, 29, 0xDDBCD7FF, 0, 3);
     }
 
     private static void assertDrawCall(DrawCall drawCall, int left, int top, int right, int bottom, int fillColor,

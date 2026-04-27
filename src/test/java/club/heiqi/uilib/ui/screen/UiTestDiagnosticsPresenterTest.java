@@ -82,7 +82,7 @@ public class UiTestDiagnosticsPresenterTest {
                 mutationSampleText));
 
         Assert.assertTrue(viewState.viewportText.contains("窗口 1280x720；页面壳 960x680"));
-        Assert.assertTrue(viewState.scrollText.contains("滚动偏移 12 / 80"));
+        Assert.assertTrue(viewState.scrollText.contains("HTML-like 页面滚动偏移 12 / 80"));
         Assert.assertTrue(viewState.divScrollText.contains("HTML-like 自滚动偏移 20 / 120"));
         Assert.assertTrue(viewState.performanceFrameText.contains("当前帧 12.00 ms"));
         Assert.assertTrue(viewState.performanceWidgetText.contains("渲染 8.00 ms；贴屏 1.50 ms；输入路由 0.50 ms"));

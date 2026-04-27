@@ -9,5 +9,7 @@ public enum DocumentPaintCommandType {
     TEXT,
     CLIP_START,
     CLIP_END,
+    SCROLLBAR_TRACK,
+    SCROLLBAR_THUMB,
     CUSTOM
 }

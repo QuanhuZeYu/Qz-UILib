@@ -24,10 +24,10 @@ final class UiTestDiagnosticsPresenter {
                 + "；文本卡片 " + snapshot.wrapCardWidth + "x" + snapshot.wrapCardHeight
                 + "。\n如果页面壳仍然明显偏窄，优先检查 hosted screen 对 `HtmlLikeDocumentWidget` 的尺寸约束；如果卡片宽度异常，优先检查 HTML-like box/layout 的内容宽度传播。 ";
 
-        viewState.scrollText = "滚动偏移 " + snapshot.pageScrollOffset + " / " + snapshot.pageMaxScrollOffset
+        viewState.scrollText = "HTML-like 页面滚动偏移 " + snapshot.pageScrollOffset + " / " + snapshot.pageMaxScrollOffset
                 + "；可视内容区 " + snapshot.pageVisibleContentWidth + "x" + snapshot.pageVisibleContentHeight
                 + "；内容区 " + snapshot.pageContentWidth + "x" + snapshot.pageContentHeight
-                + "。如果内容高度已经明显超过可视区，但最大滚动仍为 0，说明页面滚动高度计算仍然有问题。 ";
+                + "。如果内容高度已经明显超过可视区，但最大滚动仍为 0，说明 HTML-like 根滚动高度计算仍然有问题。 ";
 
         viewState.wrapSampleText = "诊断文本：当前布局需要同时处理中文说明、English identifier、路径 `assets/qz_uilib/ui/diagnostic` 以及较长的字段值。只要父宽度变化，文本就应该优先自然换行，而不是继续保持单行并把右侧内容裁掉。当前主题为 “"
                 + textOrPlaceholder(snapshot.themeText) + "”，命名空间为 “" + textOrPlaceholder(snapshot.namespaceText) + "”。";

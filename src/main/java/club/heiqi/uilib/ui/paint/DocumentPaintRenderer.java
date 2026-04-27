@@ -75,6 +75,13 @@ public final class DocumentPaintRenderer {
                     new UiSurfaceStyle(command.getColor(), 0, command.getBorderRadius()));
             return clipDepth;
         }
+        if (command.getType() == DocumentPaintCommandType.SCROLLBAR_TRACK
+                || command.getType() == DocumentPaintCommandType.SCROLLBAR_THUMB) {
+            context.drawSurface(command.getLeft() + offsetX, command.getTop() + offsetY,
+                    command.getRight() + offsetX, command.getBottom() + offsetY,
+                    new UiSurfaceStyle(command.getColor(), 0, command.getBorderRadius()));
+            return clipDepth;
+        }
         if (command.getType() == DocumentPaintCommandType.BORDER) {
             renderBorder(context, command, offsetX, offsetY);
             return clipDepth;

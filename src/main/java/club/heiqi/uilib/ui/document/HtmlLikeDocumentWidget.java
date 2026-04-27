@@ -52,6 +52,7 @@ public final class HtmlLikeDocumentWidget extends Widget {
     private ElementNode pressedElement;
     private ElementNode focusedElement;
     private boolean focusedElementFocusVisible;
+    private boolean viewportRootScrollingEnabled;
     private List<DocumentPaintCommand> cachedPaintCommands = Collections.emptyList();
 
     /**
@@ -97,6 +98,35 @@ public final class HtmlLikeDocumentWidget extends Widget {
      */
     public TextMeasureService getTextMeasureService() {
         return textMeasureService;
+    }
+
+    /**
+     * 启用或关闭 HTML-like 根元素视口滚动模式。
+     *
+     * <p>启用后根元素会按当前 widget 尺寸固定为视口盒，页面级滚动交给根元素的
+     * `overflow:auto` 与 `DocumentScrollState`，避免外层 retained 页面壳因聚焦或点击而调整滚动位置。</p>
+     *
+     * @param enabled 是否启用
+     * @return 当前组件
+     */
+    public HtmlLikeDocumentWidget setViewportRootScrollingEnabled(boolean enabled) {
+        if (viewportRootScrollingEnabled == enabled) {
+            return this;
+        }
+        viewportRootScrollingEnabled = enabled;
+        cachedMutationVersion = -1;
+        cachedPaintScrollVersion = -1;
+        requestLayout();
+        return this;
+    }
+
+    /**
+     * 返回当前是否启用根元素视口滚动模式。
+     *
+     * @return 是否启用
+     */
+    public boolean isViewportRootScrollingEnabled() {
+        return viewportRootScrollingEnabled;
     }
 
     /**
@@ -157,6 +187,9 @@ public final class HtmlLikeDocumentWidget extends Widget {
 
     @Override
     public int getPreferredHeightForWidth(int width) {
+        if (viewportRootScrollingEnabled) {
+            return preferredHeight;
+        }
         if (width <= 0 || width == preferredWidth) {
             return preferredHeight;
         }
@@ -284,8 +317,10 @@ public final class HtmlLikeDocumentWidget extends Widget {
             return cachedLayoutBox;
         }
 
-        cachedLayoutBox = DocumentLayoutEngine.layout(document.getRootElement(), getWidth(), getHeight(),
-                textMeasureService);
+        cachedLayoutBox = viewportRootScrollingEnabled
+                ? DocumentLayoutEngine.layoutViewportRoot(document.getRootElement(), getWidth(), getHeight(),
+                        textMeasureService)
+                : DocumentLayoutEngine.layout(document.getRootElement(), getWidth(), getHeight(), textMeasureService);
         scrollState.updateFromLayout(cachedLayoutBox);
         cachedMutationVersion = mutationVersion;
         cachedTextMeasureEpoch = textMeasureEpoch;

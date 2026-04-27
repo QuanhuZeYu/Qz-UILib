@@ -235,13 +235,17 @@ public class DocumentPaintEngineTest {
         Assert.assertTrue(scrollState.setScrollOffset(root, 0, 12));
         List<DocumentPaintCommand> commands = DocumentPaintEngine.buildPaintCommands(rootBox, scrollState);
 
-        Assert.assertEquals(4, commands.size());
+        Assert.assertEquals(6, commands.size());
         assertCommand(commands.get(0), DocumentPaintCommandType.BACKGROUND, root, 0, 0, 50, 20, 0xFF101820, 0,
                 0);
         assertCommand(commands.get(1), DocumentPaintCommandType.CLIP_START, root, 0, 0, 50, 20, 0, 0, 0);
         assertCommand(commands.get(2), DocumentPaintCommandType.BACKGROUND, child, 0, -12, 50, 38, 0xFFAA5500, 0,
                 0);
         assertCommand(commands.get(3), DocumentPaintCommandType.CLIP_END, root, 0, 0, 50, 20, 0, 0, 0);
+        assertCommand(commands.get(4), DocumentPaintCommandType.SCROLLBAR_TRACK, root, 42, 2, 48, 18, 0x663B4A66,
+                0, 3);
+        assertCommand(commands.get(5), DocumentPaintCommandType.SCROLLBAR_THUMB, root, 42, 2, 48, 18, 0xDDBCD7FF,
+                0, 3);
     }
 
     /**
@@ -276,12 +280,16 @@ public class DocumentPaintEngineTest {
         Assert.assertTrue(scrollState.setScrollOffset(root, 0, 12));
         List<DocumentPaintCommand> commands = DocumentPaintEngine.buildPaintCommands(rootBox, scrollState);
 
-        Assert.assertEquals(4, commands.size());
+        Assert.assertEquals(6, commands.size());
         assertCommand(commands.get(0), DocumentPaintCommandType.CLIP_START, root, 1, 1, 59, 29, 0, 0, 0);
         assertCommand(commands.get(1), DocumentPaintCommandType.CUSTOM, root, 5, -7, 55, 13, 0, 0, 0);
         assertCommand(commands.get(2), DocumentPaintCommandType.BACKGROUND, child, 5, -7, 55, 43, 0xFFAA5500, 0,
                 0);
         assertCommand(commands.get(3), DocumentPaintCommandType.CLIP_END, root, 0, 0, 60, 30, 0, 0, 0);
+        assertCommand(commands.get(4), DocumentPaintCommandType.SCROLLBAR_TRACK, root, 47, 7, 53, 23, 0x663B4A66,
+                0, 3);
+        assertCommand(commands.get(5), DocumentPaintCommandType.SCROLLBAR_THUMB, root, 47, 7, 53, 23, 0xDDBCD7FF,
+                0, 3);
     }
 
     private static void assertCommand(DocumentPaintCommand command, DocumentPaintCommandType type,
