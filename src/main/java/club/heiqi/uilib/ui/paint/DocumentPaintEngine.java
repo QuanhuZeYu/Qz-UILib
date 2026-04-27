@@ -49,6 +49,7 @@ public final class DocumentPaintEngine {
             DocumentScrollState scrollState, int offsetX, int offsetY) {
         appendBackgroundCommand(box, commands, offsetX, offsetY);
         appendBorderCommand(box, commands, offsetX, offsetY);
+        appendCustomCommand(box, commands, offsetX, offsetY);
         boolean clipChildren = shouldClipChildren(box);
         if (clipChildren) {
             appendClipStartCommand(box, commands, offsetX, offsetY);
@@ -87,6 +88,17 @@ public final class DocumentPaintEngine {
         commands.add(new DocumentPaintCommand(DocumentPaintCommandType.BORDER, box.getElement(),
                 box.getLeft() + offsetX, box.getTop() + offsetY, box.getRight() + offsetX,
                 box.getBottom() + offsetY, color, borderWidth, resolveBorderRadius(box)));
+    }
+
+    private static void appendCustomCommand(DocumentLayoutBox box, List<DocumentPaintCommand> commands, int offsetX,
+            int offsetY) {
+        DocumentCustomRenderer customRenderer = box.getElement().getCustomRenderer();
+        if (customRenderer == null || box.getWidth() <= 0 || box.getHeight() <= 0) {
+            return;
+        }
+        commands.add(new DocumentPaintCommand(DocumentPaintCommandType.CUSTOM, box.getElement(),
+                box.getLeft() + offsetX, box.getTop() + offsetY, box.getRight() + offsetX,
+                box.getBottom() + offsetY, 0, 0, 0, null, customRenderer));
     }
 
     private static void appendTextCommands(DocumentLayoutBox box, List<DocumentPaintCommand> commands, int offsetX,

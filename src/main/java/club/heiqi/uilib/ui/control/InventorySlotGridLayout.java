@@ -3,15 +3,15 @@ package club.heiqi.uilib.ui.control;
 /**
  * 背包格子网格的纯几何布局结果。
  */
-final class InventorySlotGridLayout {
+public final class InventorySlotGridLayout {
 
     private static final int DEFAULT_ITEM_ICON_SIZE = 16;
 
-    final int columnCount;
-    final int rowCount;
-    final int slotSize;
-    final int totalWidth;
-    final int totalHeight;
+    public final int columnCount;
+    public final int rowCount;
+    public final int slotSize;
+    public final int totalWidth;
+    public final int totalHeight;
 
     private final int slotGap;
 
@@ -43,7 +43,7 @@ final class InventorySlotGridLayout {
      * @param availableWidth 可用宽度
      * @return 布局结果
      */
-    static InventorySlotGridLayout resolve(int slotCount, int slotGap, int preferredSlotSize, int minSlotSize,
+    public static InventorySlotGridLayout resolve(int slotCount, int slotGap, int preferredSlotSize, int minSlotSize,
             int maxSlotSize, int availableWidth) {
         int normalizedSlotCount = Math.max(0, slotCount);
         int normalizedSlotGap = Math.max(0, slotGap);
@@ -72,7 +72,7 @@ final class InventorySlotGridLayout {
      * @param maxSlotSize 最大格子尺寸
      * @return 偏好布局结果
      */
-    static InventorySlotGridLayout resolvePreferred(int slotCount, int preferredColumns, int slotGap,
+    public static InventorySlotGridLayout resolvePreferred(int slotCount, int preferredColumns, int slotGap,
             int preferredSlotSize, int minSlotSize, int maxSlotSize) {
         int normalizedSlotCount = Math.max(0, slotCount);
         int normalizedPreferredColumns = Math.max(1, preferredColumns);
@@ -89,7 +89,7 @@ final class InventorySlotGridLayout {
      * @param slotIndex 槽位索引
      * @return 相对网格原点的槽位矩形
      */
-    SlotRect getSlotRect(int slotIndex) {
+    public SlotRect getSlotRect(int slotIndex) {
         int normalizedSlotIndex = Math.max(0, slotIndex);
         int column = normalizedSlotIndex % columnCount;
         int row = normalizedSlotIndex / columnCount;
@@ -131,7 +131,7 @@ final class InventorySlotGridLayout {
      * @param slotCount 槽位数量
      * @return 物品重放几何数据
      */
-    InventorySlotGridItemGeometry createItemGeometry(int absoluteX, int absoluteY, int slotCount) {
+    public InventorySlotGridItemGeometry createItemGeometry(int absoluteX, int absoluteY, int slotCount) {
         int normalizedSlotCount = Math.max(0, slotCount);
         int[] slotLefts = new int[normalizedSlotCount];
         int[] slotTops = new int[normalizedSlotCount];
@@ -168,12 +168,12 @@ final class InventorySlotGridLayout {
     /**
      * 槽位矩形。
      */
-    static final class SlotRect {
+    public static final class SlotRect {
 
-        final int left;
-        final int top;
-        final int right;
-        final int bottom;
+        public final int left;
+        public final int top;
+        public final int right;
+        public final int bottom;
 
         /**
          * 创建槽位矩形。
@@ -183,7 +183,7 @@ final class InventorySlotGridLayout {
          * @param right 右边界
          * @param bottom 下边界
          */
-        SlotRect(int left, int top, int right, int bottom) {
+        public SlotRect(int left, int top, int right, int bottom) {
             this.left = left;
             this.top = top;
             this.right = right;

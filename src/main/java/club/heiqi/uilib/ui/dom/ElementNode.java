@@ -6,6 +6,7 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
 
+import club.heiqi.uilib.ui.paint.DocumentCustomRenderer;
 import club.heiqi.uilib.ui.style.UiStyleDeclaration;
 
 /**
@@ -21,6 +22,7 @@ public final class ElementNode extends DocumentNode {
     private DocumentElementFocusHandler focusHandler;
     private DocumentElementKeyHandler keyHandler;
     private DocumentElementTextInputHandler textInputHandler;
+    private DocumentCustomRenderer customRenderer;
     private final UiStyleDeclaration style = new UiStyleDeclaration(new Runnable() {
         @Override
         public void run() {
@@ -258,6 +260,22 @@ public final class ElementNode extends DocumentNode {
      */
     public DocumentElementTextInputHandler getTextInputHandler() {
         return textInputHandler;
+    }
+
+    /**
+     * 设置元素自定义绘制回调，供控件在背景/边框之后注入额外渲染。
+     *
+     * <p>回调会在 paint engine 的 appendBoxCommands 中被包装为 CUSTOM 命令，
+     * 在元素背景和边框绘制之后、clip/子树之前执行。</p>
+     *
+     * @param customRenderer 自定义渲染回调
+     */
+    public void setCustomRenderer(DocumentCustomRenderer customRenderer) {
+        this.customRenderer = customRenderer;
+    }
+
+    public DocumentCustomRenderer getCustomRenderer() {
+        return customRenderer;
     }
 
     /**

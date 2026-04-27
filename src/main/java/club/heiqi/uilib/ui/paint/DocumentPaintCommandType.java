@@ -8,5 +8,6 @@ public enum DocumentPaintCommandType {
     BORDER,
     TEXT,
     CLIP_START,
-    CLIP_END
+    CLIP_END,
+    CUSTOM
 }
