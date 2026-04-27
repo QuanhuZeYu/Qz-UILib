@@ -2,7 +2,6 @@ package club.heiqi.uilib.ui.screen;
 
 import java.util.Objects;
 
-import club.heiqi.uilib.ui.document.DocumentTextWidget;
 import club.heiqi.uilib.ui.document.HtmlLikeDocumentWidget;
 import club.heiqi.uilib.ui.dom.DocumentElementClickEvent;
 import club.heiqi.uilib.ui.dom.DocumentElementClickHandler;
@@ -34,7 +33,6 @@ import club.heiqi.uilib.ui.text.TextMeasureService;
  */
 final class HtmlLikeSmokeDocumentPageController extends DocumentPageController {
 
-    private final DocumentUiScope documentUi;
     private final DocumentPageAuthoringSurface documentPage;
     private final HtmlLikeDocumentWidget htmlLikeDocumentWidget;
 
@@ -57,7 +55,7 @@ final class HtmlLikeSmokeDocumentPageController extends DocumentPageController {
      */
     HtmlLikeSmokeDocumentPageController(DocumentUiScope documentUi, DocumentPageAuthoringSurface documentPage,
             TextMeasureService textMeasureService) {
-        this.documentUi = Objects.requireNonNull(documentUi, "documentUi");
+        Objects.requireNonNull(documentUi, "documentUi");
         this.documentPage = Objects.requireNonNull(documentPage, "documentPage");
         this.htmlLikeDocumentWidget = new HtmlLikeDocumentWidget(createSmokeDocument(), 760, 320,
                 Objects.requireNonNull(textMeasureService, "textMeasureService"));
@@ -75,9 +73,6 @@ final class HtmlLikeSmokeDocumentPageController extends DocumentPageController {
 
     @Override
     void buildDocument() {
-        documentPage.addBlock(documentUi.text(DocumentTextWidget.Role.TITLE, "HTML-like Smoke", 2));
-        documentPage.addBlock(documentUi.text(DocumentTextWidget.Role.BODY,
-                "下方色块由 UiDocument -> style -> layout -> paint command -> UiRenderContext 完整链路绘制。", 8));
         documentPage.addBlock(htmlLikeDocumentWidget);
     }
 
@@ -95,8 +90,8 @@ final class HtmlLikeSmokeDocumentPageController extends DocumentPageController {
         ElementNode root = document.getRootElement();
         root.style()
                 .setPadding(UiStyleLength.px(18))
-                .setBackgroundColor(0xEE151A24)
-                .setBorderColor(0xFF4A78D8)
+                .setBackgroundColor(0xF00B1020)
+                .setBorderColor(0xFF7C3AED)
                 .setBorderWidth(UiStyleLength.px(1))
                 .setBorderRadius(UiStyleLength.px(18));
 
@@ -104,8 +99,8 @@ final class HtmlLikeSmokeDocumentPageController extends DocumentPageController {
         header.style()
                 .setHeight(UiStyleLength.px(58))
                 .setMargin(UiStyleLength.px(0))
-                .setBackgroundColor(0xFF213556)
-                .setBorderColor(0xFF6B96FF)
+                .setBackgroundColor(0xFF1E1B4B)
+                .setBorderColor(0xFFA78BFA)
                 .setBorderWidth(UiStyleLength.px(1))
                 .setBorderRadius(UiStyleLength.px(14))
                 .setTextColor(0xFFEFF6FF)
@@ -120,7 +115,8 @@ final class HtmlLikeSmokeDocumentPageController extends DocumentPageController {
                 .setBackgroundColor(0xFFED64A6)
                 .setBorderRadius(UiStyleLength.px(999));
         header.append(clippedStripe);
-        header.appendText("TextNode -> TEXT paint command");
+        header.appendText("HTML-like Smoke Lab");
+        header.appendText("UiDocument -> style -> layout -> paint command -> UiRenderContext / TEXT paint command");
 
         ElementNode row = document.div();
         row.style()

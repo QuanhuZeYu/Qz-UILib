@@ -11,7 +11,7 @@ public class InventoryOverviewScreen extends ControllerBackedDocumentScreen {
 
     public InventoryOverviewScreen(UiDocumentScreens.DocumentScreenEnvironment environment, InventoryOverviewModel model) {
         super(environment, PAGE_DESCRIPTOR);
-        bindController(new InventoryOverviewDocumentPageController(ui(), documentPageAuthoringSurface(), runtimeView(),
+        bindController(new HtmlLikeInventoryOverviewDocumentPageController(ui(), documentPageAuthoringSurface(), runtimeView(),
                 Objects.requireNonNull(model, "model")));
     }
 

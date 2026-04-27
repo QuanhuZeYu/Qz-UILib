@@ -1,18 +1,21 @@
 package club.heiqi.uilib.ui.screen;
 
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 
 import org.junit.Assert;
 import org.junit.Test;
+import org.lwjglx.input.Keyboard;
 
-import club.heiqi.uilib.ui.control.ButtonWidget;
-import club.heiqi.uilib.ui.control.LabelWidget;
 import club.heiqi.uilib.ui.control.UiControlRuntimeAdapters;
-import club.heiqi.uilib.ui.document.DocumentCardWidget;
 import club.heiqi.uilib.ui.document.DocumentPageWidget;
-import club.heiqi.uilib.ui.document.DocumentTextWidget;
-import club.heiqi.uilib.ui.event.UiMouseEvent;
+import club.heiqi.uilib.ui.document.HtmlLikeDocumentWidget;
+import club.heiqi.uilib.ui.dom.DocumentNode;
+import club.heiqi.uilib.ui.dom.DocumentNodeType;
+import club.heiqi.uilib.ui.dom.ElementNode;
+import club.heiqi.uilib.ui.dom.TextNode;
+import club.heiqi.uilib.ui.event.UiKeyEvent;
 import club.heiqi.uilib.ui.theme.UiDocumentTheme;
 import club.heiqi.uilib.ui.theme.UiDocumentThemes;
 import club.heiqi.uilib.ui.text.TextMeasureService;
@@ -36,19 +39,15 @@ public class UiTestDocumentPageControllerTest {
         fixture.pagePanel.applyLayoutBounds(0, 0, 980, 680);
 
         List<Widget> blocks = getDocumentBlocks(fixture.pagePanel);
-        Assert.assertEquals(5, blocks.size());
-        Assert.assertTrue(blocks.get(0) instanceof DocumentTextWidget);
-        Assert.assertTrue(blocks.get(1) instanceof DocumentTextWidget);
-        Assert.assertTrue(blocks.get(2) instanceof DocumentCardWidget);
-        Assert.assertTrue(blocks.get(3) instanceof DocumentCardWidget);
-        Assert.assertTrue(blocks.get(4) instanceof DocumentCardWidget);
-        Assert.assertEquals("诊断菜单页", ((LabelWidget) blocks.get(0)).getText());
+        Assert.assertEquals(1, blocks.size());
+        Assert.assertTrue(blocks.get(0) instanceof HtmlLikeDocumentWidget);
+        Assert.assertSame(blocks.get(0), fixture.controller.getHtmlLikeDocumentWidget());
 
-        List<String> labelTexts = collectLabelTexts(fixture.pagePanel);
-        Assert.assertTrue(containsText(labelTexts, "诊断首页"));
-        Assert.assertTrue(containsText(labelTexts, "布局诊断子页"));
-        Assert.assertTrue(containsText(labelTexts, "HTML-like Smoke 子页"));
-        Assert.assertTrue(containsText(labelTexts, "继续跳到不同的 definition-backed 诊断子页"));
+        List<String> texts = collectDocumentTexts(fixture.controller.getHtmlLikeDocumentWidget());
+        Assert.assertTrue(containsText(texts, "诊断指挥台"));
+        Assert.assertTrue(containsText(texts, "布局诊断子页"));
+        Assert.assertTrue(containsText(texts, "HTML-like Smoke 子页"));
+        Assert.assertTrue(containsText(texts, "页面作者层不再拼装旧 Widget"));
         Assert.assertFalse(menuModel.openLayoutDiagnosticsCalled);
         Assert.assertFalse(menuModel.openHtmlLikeSmokeCalled);
     }
@@ -64,11 +63,11 @@ public class UiTestDocumentPageControllerTest {
         fixture.controller.configureDocumentPage();
         fixture.controller.buildDocument();
 
-        List<ButtonWidget> buttons = getWidgetsByType(fixture.pagePanel, ButtonWidget.class);
-        Assert.assertEquals(2, buttons.size());
-        ButtonWidget navigateButton = buttons.get(0);
-        navigateButton.applyLayoutBounds(0, 0, 220, 36);
-        clickButton(navigateButton);
+        HtmlLikeDocumentWidget widget = fixture.controller.getHtmlLikeDocumentWidget();
+        widget.applyLayoutBounds(0, 0, 760, 520);
+        widget.onFocusTraversalEntered(false);
+        widget.onKeyEvent(new UiKeyEvent(Keyboard.KEY_RETURN, 0, 0, UiKeyEvent.Action.PRESSED, false, false, false,
+                false, 1L));
 
         Assert.assertTrue(menuModel.openLayoutDiagnosticsCalled);
         Assert.assertFalse(menuModel.openHtmlLikeSmokeCalled);
@@ -85,11 +84,12 @@ public class UiTestDocumentPageControllerTest {
         fixture.controller.configureDocumentPage();
         fixture.controller.buildDocument();
 
-        List<ButtonWidget> buttons = getWidgetsByType(fixture.pagePanel, ButtonWidget.class);
-        Assert.assertEquals(2, buttons.size());
-        ButtonWidget navigateButton = buttons.get(1);
-        navigateButton.applyLayoutBounds(0, 0, 260, 36);
-        clickButton(navigateButton);
+        HtmlLikeDocumentWidget widget = fixture.controller.getHtmlLikeDocumentWidget();
+        widget.applyLayoutBounds(0, 0, 760, 520);
+        widget.onFocusTraversalEntered(false);
+        Assert.assertTrue(widget.onFocusTraversal(false));
+        widget.onKeyEvent(new UiKeyEvent(Keyboard.KEY_RETURN, 0, 0, UiKeyEvent.Action.PRESSED, false, false, false,
+                false, 1L));
 
         Assert.assertFalse(menuModel.openLayoutDiagnosticsCalled);
         Assert.assertTrue(menuModel.openHtmlLikeSmokeCalled);
@@ -101,48 +101,37 @@ public class UiTestDocumentPageControllerTest {
         return pageChildren.get(0).getChildren();
     }
 
-    private static List<String> collectLabelTexts(Widget root) {
-        List<String> labelTexts = new ArrayList<String>();
-        collectLabelTexts(root, labelTexts);
-        return labelTexts;
+    private static List<String> collectDocumentTexts(HtmlLikeDocumentWidget widget) {
+        List<String> texts = new ArrayList<String>();
+        if (widget == null || widget.getDocument() == null) {
+            return texts;
+        }
+        collectTextsFromNode(widget.getDocument().getRootElement(), texts);
+        return texts;
     }
 
-    private static boolean containsText(List<String> labelTexts, String expectedSnippet) {
-        for (String labelText : labelTexts) {
-            if (labelText != null && labelText.contains(expectedSnippet)) {
+    private static void collectTextsFromNode(DocumentNode node, List<String> texts) {
+        if (node.getNodeType() == DocumentNodeType.TEXT) {
+            String text = ((TextNode) node).getText();
+            if (text != null && !text.isEmpty()) {
+                texts.add(text);
+            }
+        }
+        if (node.getNodeType() == DocumentNodeType.ELEMENT) {
+            ElementNode element = (ElementNode) node;
+            for (DocumentNode child : element.getChildren()) {
+                collectTextsFromNode(child, texts);
+            }
+        }
+    }
+
+    private static boolean containsText(List<String> texts, String expectedSnippet) {
+        for (String text : texts) {
+            if (text != null && text.contains(expectedSnippet)) {
                 return true;
             }
         }
         return false;
-    }
-
-    private static <T extends Widget> List<T> getWidgetsByType(Widget root, Class<T> widgetClass) {
-        List<T> matchedWidgets = new ArrayList<T>();
-        collectWidgetsByType(root, widgetClass, matchedWidgets);
-        return matchedWidgets;
-    }
-
-    private static void collectLabelTexts(Widget root, List<String> labelTexts) {
-        if (root instanceof LabelWidget) {
-            labelTexts.add(((LabelWidget) root).getText());
-        }
-        for (Widget child : root.getChildren()) {
-            collectLabelTexts(child, labelTexts);
-        }
-    }
-
-    private static <T extends Widget> void collectWidgetsByType(Widget root, Class<T> widgetClass, List<T> matchedWidgets) {
-        if (widgetClass.isInstance(root)) {
-            matchedWidgets.add(widgetClass.cast(root));
-        }
-        for (Widget child : root.getChildren()) {
-            collectWidgetsByType(child, widgetClass, matchedWidgets);
-        }
-    }
-
-    private static void clickButton(ButtonWidget buttonWidget) {
-        buttonWidget.onMouseDown(new UiMouseEvent(UiMouseEvent.Action.BUTTON_DOWN, 10, 10, 0, 0, 0, 0, 1L));
-        buttonWidget.onMouseUp(new UiMouseEvent(UiMouseEvent.Action.BUTTON_UP, 10, 10, 0, 0, 0, 0, 1L));
     }
 
     private static final class TestFixture {
@@ -200,7 +189,7 @@ public class UiTestDocumentPageControllerTest {
 
         @Override
         public java.util.List<String> listFormattedStringToWidth(String text, int wrapWidth) {
-            return java.util.Collections.singletonList(text == null ? "" : text);
+            return Collections.singletonList(text == null ? "" : text);
         }
     }
 }

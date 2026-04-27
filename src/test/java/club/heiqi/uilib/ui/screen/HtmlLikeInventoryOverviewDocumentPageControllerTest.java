@@ -42,11 +42,12 @@ public class HtmlLikeInventoryOverviewDocumentPageControllerTest {
         fixture.controller.afterDocumentBuilt();
 
         List<Widget> blocks = getDocumentBlocks(fixture.pagePanel);
-        Assert.assertEquals(3, blocks.size());
-        Assert.assertTrue(blocks.get(2) instanceof HtmlLikeDocumentWidget);
+        Assert.assertEquals(1, blocks.size());
+        Assert.assertTrue(blocks.get(0) instanceof HtmlLikeDocumentWidget);
+        Assert.assertSame(blocks.get(0), fixture.controller.getHtmlLikeDocumentWidget());
 
         List<String> blockTexts = collectDocumentTexts(fixture.controller.getHtmlLikeDocumentWidget());
-        Assert.assertTrue(containsText(blockTexts, "当前状态"));
+        Assert.assertTrue(containsText(blockTexts, "背包诊断中枢"));
         Assert.assertTrue(containsText(blockTexts, "快捷栏探针"));
         Assert.assertTrue(containsText(blockTexts, "主背包探针"));
         Assert.assertTrue(containsText(blockTexts, "窗口 1280x720"));

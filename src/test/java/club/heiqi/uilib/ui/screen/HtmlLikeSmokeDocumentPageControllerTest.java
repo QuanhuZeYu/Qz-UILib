@@ -8,11 +8,13 @@ import org.junit.Assert;
 import org.junit.Test;
 import org.lwjglx.input.Keyboard;
 
-import club.heiqi.uilib.ui.control.LabelWidget;
 import club.heiqi.uilib.ui.control.UiControlRuntimeAdapters;
 import club.heiqi.uilib.ui.document.DocumentPageWidget;
-import club.heiqi.uilib.ui.document.DocumentTextWidget;
 import club.heiqi.uilib.ui.document.HtmlLikeDocumentWidget;
+import club.heiqi.uilib.ui.dom.DocumentNode;
+import club.heiqi.uilib.ui.dom.DocumentNodeType;
+import club.heiqi.uilib.ui.dom.ElementNode;
+import club.heiqi.uilib.ui.dom.TextNode;
 import club.heiqi.uilib.ui.event.UiKeyEvent;
 import club.heiqi.uilib.ui.event.UiMouseEvent;
 import club.heiqi.uilib.ui.event.UiTextInputEvent;
@@ -39,17 +41,15 @@ public class HtmlLikeSmokeDocumentPageControllerTest {
         fixture.controller.buildDocument();
 
         List<Widget> blocks = getDocumentBlocks(fixture.pagePanel);
-        Assert.assertEquals(3, blocks.size());
-        Assert.assertTrue(blocks.get(0) instanceof DocumentTextWidget);
-        Assert.assertTrue(blocks.get(1) instanceof DocumentTextWidget);
-        Assert.assertTrue(blocks.get(2) instanceof HtmlLikeDocumentWidget);
-        Assert.assertSame(blocks.get(2), fixture.controller.getHtmlLikeDocumentWidget());
+        Assert.assertEquals(1, blocks.size());
+        Assert.assertTrue(blocks.get(0) instanceof HtmlLikeDocumentWidget);
+        Assert.assertSame(blocks.get(0), fixture.controller.getHtmlLikeDocumentWidget());
         Assert.assertEquals(3, fixture.controller.getHtmlLikeDocumentWidget().getDocument()
                 .getRootElement().getChildren().size());
 
-        List<String> labelTexts = collectLabelTexts(fixture.pagePanel);
-        Assert.assertTrue(containsText(labelTexts, "HTML-like Smoke"));
-        Assert.assertTrue(containsText(labelTexts, "UiDocument -> style -> layout -> paint command -> UiRenderContext"));
+        List<String> texts = collectDocumentTexts(fixture.controller.getHtmlLikeDocumentWidget());
+        Assert.assertTrue(containsText(texts, "HTML-like Smoke Lab"));
+        Assert.assertTrue(containsText(texts, "UiDocument -> style -> layout -> paint command -> UiRenderContext"));
     }
 
     /**
@@ -73,7 +73,7 @@ public class HtmlLikeSmokeDocumentPageControllerTest {
         Assert.assertEquals(47, firstCall.top);
         Assert.assertEquals(791, firstCall.right);
         Assert.assertTrue(firstCall.bottom > firstCall.top);
-        Assert.assertEquals(0xEE151A24, firstCall.surfaceStyle.fillColor);
+        Assert.assertEquals(0xF00B1020, firstCall.surfaceStyle.fillColor);
         Assert.assertFalse(renderContext.clipCalls.isEmpty());
         Assert.assertTrue(renderContext.popClipCount > 0);
         Assert.assertTrue(containsTextCall(renderContext.textCalls, "TEXT paint command"));
@@ -231,18 +231,27 @@ public class HtmlLikeSmokeDocumentPageControllerTest {
         return pageChildren.get(0).getChildren();
     }
 
-    private static List<String> collectLabelTexts(Widget root) {
-        List<String> labelTexts = new ArrayList<String>();
-        collectLabelTexts(root, labelTexts);
-        return labelTexts;
+    private static List<String> collectDocumentTexts(HtmlLikeDocumentWidget widget) {
+        List<String> texts = new ArrayList<String>();
+        if (widget == null || widget.getDocument() == null) {
+            return texts;
+        }
+        collectTextsFromNode(widget.getDocument().getRootElement(), texts);
+        return texts;
     }
 
-    private static void collectLabelTexts(Widget root, List<String> labelTexts) {
-        if (root instanceof LabelWidget) {
-            labelTexts.add(((LabelWidget) root).getText());
+    private static void collectTextsFromNode(DocumentNode node, List<String> texts) {
+        if (node.getNodeType() == DocumentNodeType.TEXT) {
+            String text = ((TextNode) node).getText();
+            if (text != null && !text.isEmpty()) {
+                texts.add(text);
+            }
         }
-        for (Widget child : root.getChildren()) {
-            collectLabelTexts(child, labelTexts);
+        if (node.getNodeType() == DocumentNodeType.ELEMENT) {
+            ElementNode element = (ElementNode) node;
+            for (DocumentNode child : element.getChildren()) {
+                collectTextsFromNode(child, texts);
+            }
         }
     }
 

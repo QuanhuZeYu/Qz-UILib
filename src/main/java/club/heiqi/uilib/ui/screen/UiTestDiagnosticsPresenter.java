@@ -22,7 +22,7 @@ final class UiTestDiagnosticsPresenter {
                 + snapshot.pageWidth + "x" + snapshot.pageHeight + "；总览卡片 " + snapshot.overviewCardWidth + "x"
                 + snapshot.overviewCardHeight + "；表单卡片 " + snapshot.formCardWidth + "x" + snapshot.formCardHeight
                 + "；文本卡片 " + snapshot.wrapCardWidth + "x" + snapshot.wrapCardHeight
-                + "。\n如果页面壳仍然明显偏窄，优先检查 `DocumentPageWidget` 对 `ScrollViewportWidget` 框体约束的封装；如果卡片宽度异常，优先检查 `DivWidget` 的盒模型计算和最小宽度传播。 ";
+                + "。\n如果页面壳仍然明显偏窄，优先检查 hosted screen 对 `HtmlLikeDocumentWidget` 的尺寸约束；如果卡片宽度异常，优先检查 HTML-like box/layout 的内容宽度传播。 ";
 
         viewState.scrollText = "滚动偏移 " + snapshot.pageScrollOffset + " / " + snapshot.pageMaxScrollOffset
                 + "；可视内容区 " + snapshot.pageVisibleContentWidth + "x" + snapshot.pageVisibleContentHeight
@@ -33,11 +33,11 @@ final class UiTestDiagnosticsPresenter {
                 + textOrPlaceholder(snapshot.themeText) + "”，命名空间为 “" + textOrPlaceholder(snapshot.namespaceText) + "”。";
         viewState.wrapMetricsText = "文本卡片宽度 " + snapshot.wrapCardWidth + "；当前操作：" + snapshot.actionStateText
                 + "；宽度档位：" + snapshot.widthPresetOption
-                + "。如果中文说明不再把整段文本撑成一个极宽最小值，说明 `LabelWidget#getMinContentWidth()` 的修正已经生效。 ";
-        viewState.divScrollText = "Div 自滚动偏移 " + snapshot.divScrollOffset + " / " + snapshot.divMaxScrollOffset
+                + "。如果中文说明不再把整段文本撑成一个极宽最小值，说明 HTML-like 文本测量与换行链路已经生效。 ";
+        viewState.divScrollText = "HTML-like 自滚动偏移 " + snapshot.divScrollOffset + " / " + snapshot.divMaxScrollOffset
                 + "；可视内容区 " + snapshot.divVisibleContentWidth + "x" + snapshot.divVisibleContentHeight
                 + "；内容区 " + snapshot.divContentWidth + "x" + snapshot.divContentHeight
-                + "。如果这里终于出现稳定的内部滚动，说明 Div 组件开始真正读取统一的宽高契约。 ";
+                + "。如果这里终于出现稳定的内部滚动，说明 overflow:auto 元素开始真正读取统一的宽高契约。 ";
         viewState.actionText = "最近状态：" + snapshot.actionStateText;
         viewState.mutationText = "探针状态：" + (snapshot.mutationEnabled ? "运行中" : "已停止")
                 + "；模式：" + snapshot.mutationMode

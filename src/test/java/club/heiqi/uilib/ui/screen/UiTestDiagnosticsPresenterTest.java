@@ -83,11 +83,11 @@ public class UiTestDiagnosticsPresenterTest {
 
         Assert.assertTrue(viewState.viewportText.contains("窗口 1280x720；页面壳 960x680"));
         Assert.assertTrue(viewState.scrollText.contains("滚动偏移 12 / 80"));
-        Assert.assertTrue(viewState.divScrollText.contains("Div 自滚动偏移 20 / 120"));
+        Assert.assertTrue(viewState.divScrollText.contains("HTML-like 自滚动偏移 20 / 120"));
         Assert.assertTrue(viewState.performanceFrameText.contains("当前帧 12.00 ms"));
         Assert.assertTrue(viewState.performanceWidgetText.contains("渲染 8.00 ms；贴屏 1.50 ms；输入路由 0.50 ms"));
-        Assert.assertTrue(viewState.performanceHotspotText.contains("最慢自身组件：LabelWidget 3.25 ms"));
-        Assert.assertTrue(viewState.performanceHotspotText.contains("DocumentCardWidget 6.50 ms"));
+        Assert.assertTrue(viewState.performanceHotspotText.contains("最慢自身组件：HtmlLikeDocumentWidget 3.25 ms"));
+        Assert.assertTrue(viewState.performanceHotspotText.contains("DocumentPaintRenderer 6.50 ms"));
         Assert.assertTrue(viewState.performancePhaseText.contains("阶段热点：measure=4.0ms, layout=2.0ms"));
         Assert.assertTrue(viewState.performanceFontText.contains("字体统计：待上传 7；就绪字形 80；普通/粗体页 2/1"));
         Assert.assertTrue(viewState.performanceFontText.contains("字宽缓存命中/未命中 33/4"));
@@ -170,9 +170,9 @@ public class UiTestDiagnosticsPresenterTest {
                 42L,
                 77,
                 9,
-                "LabelWidget",
+                "HtmlLikeDocumentWidget",
                 3_250_000L,
-                "DocumentCardWidget",
+                "DocumentPaintRenderer",
                 6_500_000L,
                 "measure=4.0ms, layout=2.0ms",
                 2,

@@ -3,7 +3,6 @@ package club.heiqi.uilib.ui.screen;
 import java.util.Objects;
 
 import club.heiqi.uilib.ui.control.InventorySlotSnapshot;
-import club.heiqi.uilib.ui.document.DocumentTextWidget;
 import club.heiqi.uilib.ui.document.HtmlLikeDocumentWidget;
 import club.heiqi.uilib.ui.dom.ElementNode;
 import club.heiqi.uilib.ui.dom.TextNode;
@@ -14,9 +13,11 @@ import club.heiqi.uilib.ui.dom.control.DocumentButtonControl;
 import club.heiqi.uilib.ui.dom.control.DocumentInventorySlotGridControl;
 import club.heiqi.uilib.ui.layout.UiLength;
 import club.heiqi.uilib.ui.layout.UiLayoutSpec;
+import club.heiqi.uilib.ui.style.UiAlignItems;
+import club.heiqi.uilib.ui.style.UiDisplay;
 import club.heiqi.uilib.ui.style.UiFlexDirection;
 import club.heiqi.uilib.ui.style.UiJustifyContent;
-import club.heiqi.uilib.ui.style.UiDisplay;
+import club.heiqi.uilib.ui.style.UiOverflow;
 import club.heiqi.uilib.ui.style.UiStyleLength;
 import club.heiqi.uilib.ui.text.TextMeasureService;
 
@@ -72,25 +73,26 @@ final class HtmlLikeInventoryOverviewDocumentPageController extends DocumentPage
      */
     private ContentBundle createDocumentContent(UiDocument document, ElementNode root) {
         root.style()
-                .setPadding(UiStyleLength.px(18))
-                .setBackgroundColor(0xEE121726)
-                .setBorderColor(0xFF4A78D8)
+                .setPadding(UiStyleLength.px(20))
+                .setBackgroundColor(0xF0101628)
+                .setBorderColor(0xFF38BDF8)
                 .setBorderWidth(UiStyleLength.px(1))
-                .setBorderRadius(UiStyleLength.px(18))
+                .setBorderRadius(UiStyleLength.px(22))
                 .setTextColor(BODY_COLOR);
 
-        TextNode overviewMetrics = appendCardWithHeader(document, root, "当前状态",
-                "窗口信息与布局尺寸将在此刷新显示。", true);
+        TextNode overviewMetrics = appendHero(document, root);
 
-        TextNode hotbarMetrics = appendCardWithHeader(document, root, "快捷栏探针",
-                "快捷栏占用与网格尺寸将在此刷新显示。", false);
+        GridSectionBundle hotbarSection = appendGridSection(document, root, "快捷栏探针",
+                "9 格热键栏，验证 HTML-like 内容盒中的 CUSTOM paint 与物品延迟回放。", true);
+        TextNode hotbarMetrics = hotbarSection.metrics;
         DocumentInventorySlotGridControl hotbarGrid = buildGrid(document, 9, 9, 44, 24, 46, true);
-        root.append(hotbarGrid.getElement());
+        hotbarSection.card.append(hotbarGrid.getElement());
 
-        TextNode backpackMetrics = appendCardWithHeader(document, root, "主背包探针",
-                "主背包占用与网格尺寸将在此刷新显示。", false);
+        GridSectionBundle backpackSection = appendGridSection(document, root, "主背包探针",
+                "27 格主背包，验证多行槽位、占用态颜色和运行时内容刷新。", false);
+        TextNode backpackMetrics = backpackSection.metrics;
         DocumentInventorySlotGridControl backpackGrid = buildGrid(document, 27, 9, 41, 22, 42, false);
-        root.append(backpackGrid.getElement());
+        backpackSection.card.append(backpackGrid.getElement());
 
         appendFooter(document, root);
 
@@ -114,6 +116,16 @@ final class HtmlLikeInventoryOverviewDocumentPageController extends DocumentPage
         }
     }
 
+    private static final class GridSectionBundle {
+        final ElementNode card;
+        final TextNode metrics;
+
+        GridSectionBundle(ElementNode card, TextNode metrics) {
+            this.card = card;
+            this.metrics = metrics;
+        }
+    }
+
     @Override
     void configureDocumentPage() {
         documentPage.setContentWidthRange(720, 1040)
@@ -123,9 +135,6 @@ final class HtmlLikeInventoryOverviewDocumentPageController extends DocumentPage
 
     @Override
     void buildDocument() {
-        documentPage.addBlock(documentUi.text(DocumentTextWidget.Role.TITLE, "背包诊断页", 2));
-        documentPage.addBlock(documentUi.text(DocumentTextWidget.Role.BODY,
-                "HTML-like 迁移版：背包格子、卡片与按钮均由 UiDocument 驱动渲染。", 8));
         documentPage.addBlock(htmlLikeDocumentWidget);
     }
 
@@ -151,20 +160,44 @@ final class HtmlLikeInventoryOverviewDocumentPageController extends DocumentPage
         return htmlLikeDocumentWidget;
     }
 
-    private TextNode appendCardWithHeader(UiDocument document, ElementNode parent, String title, String description,
-            boolean isFirst) {
+    private TextNode appendHero(UiDocument document, ElementNode parent) {
+        ElementNode hero = document.div();
+        hero.style()
+                .setHeight(UiStyleLength.px(126))
+                .setPadding(UiStyleLength.px(18))
+                .setBackgroundColor(0xFF0F2742)
+                .setBorderColor(0xFF38BDF8)
+                .setBorderWidth(UiStyleLength.px(1))
+                .setBorderRadius(UiStyleLength.px(18))
+                .setOverflowX(UiOverflow.HIDDEN)
+                .setOverflowY(UiOverflow.HIDDEN)
+                .setTextColor(TITLE_COLOR);
+        parent.append(hero);
+
+        hero.appendText("背包诊断中枢");
+        hero.appendText("HTML-like 迁移版：卡片、指标、按钮和背包格子均由 UiDocument 驱动渲染。");
+        TextNode metrics = hero.appendText("加载中...");
+        return metrics;
+    }
+
+    private GridSectionBundle appendGridSection(UiDocument document, ElementNode parent, String title,
+            String description, boolean isFirst) {
         ElementNode card = document.div();
         card.style()
-                .setBackgroundColor(0xFF1C2333)
-                .setBorderRadius(UiStyleLength.px(12))
-                .setPadding(UiStyleLength.px(14))
-                .setMargin(UiStyleLength.px(isFirst ? 0 : 16));
+                .setBackgroundColor(isFirst ? 0xFF18243A : 0xFF1F2937)
+                .setBorderColor(isFirst ? 0xFF60A5FA : 0xFF818CF8)
+                .setBorderWidth(UiStyleLength.px(1))
+                .setBorderRadius(UiStyleLength.px(16))
+                .setPadding(UiStyleLength.px(16))
+                .setMargin(UiStyleLength.px(14))
+                .setOverflowX(UiOverflow.HIDDEN)
+                .setOverflowY(UiOverflow.HIDDEN);
         parent.append(card);
 
         card.appendText(title);
         card.appendText(description);
         TextNode metrics = card.appendText("加载中...");
-        return metrics;
+        return new GridSectionBundle(card, metrics);
     }
 
     /**
@@ -211,6 +244,7 @@ final class HtmlLikeInventoryOverviewDocumentPageController extends DocumentPage
         footer.style()
                 .setDisplay(UiDisplay.FLEX)
                 .setFlexDirection(UiFlexDirection.ROW)
+                .setAlignItems(UiAlignItems.CENTER)
                 .setJustifyContent(UiJustifyContent.END)
                 .setPadding(UiStyleLength.px(10))
                 .setMargin(UiStyleLength.px(16));
@@ -225,6 +259,7 @@ final class HtmlLikeInventoryOverviewDocumentPageController extends DocumentPage
                         model.returnToVanillaInventory();
                     }
                 });
+        backButton.getElement().style().setWidth(UiStyleLength.px(180));
         footer.append(backButton.getElement());
     }
 

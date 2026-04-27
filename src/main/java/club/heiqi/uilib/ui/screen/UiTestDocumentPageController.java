@@ -2,26 +2,29 @@ package club.heiqi.uilib.ui.screen;
 
 import java.util.Objects;
 
-import club.heiqi.uilib.ui.control.ButtonWidget;
-import club.heiqi.uilib.ui.document.DocumentCardWidget;
-import club.heiqi.uilib.ui.document.DocumentSectionWidget;
-import club.heiqi.uilib.ui.document.DocumentTextWidget;
-import club.heiqi.uilib.ui.document.DocumentToolbarWidget;
+import club.heiqi.uilib.ui.document.HtmlLikeDocumentWidget;
+import club.heiqi.uilib.ui.dom.ElementNode;
+import club.heiqi.uilib.ui.dom.UiDocument;
+import club.heiqi.uilib.ui.dom.control.DocumentButtonActionEvent;
+import club.heiqi.uilib.ui.dom.control.DocumentButtonActionHandler;
+import club.heiqi.uilib.ui.dom.control.DocumentButtonControl;
+import club.heiqi.uilib.ui.layout.UiLength;
+import club.heiqi.uilib.ui.layout.UiLayoutSpec;
+import club.heiqi.uilib.ui.style.UiAlignItems;
+import club.heiqi.uilib.ui.style.UiDisplay;
+import club.heiqi.uilib.ui.style.UiFlexDirection;
+import club.heiqi.uilib.ui.style.UiJustifyContent;
+import club.heiqi.uilib.ui.style.UiOverflow;
+import club.heiqi.uilib.ui.style.UiStyleLength;
 
 /**
  * 诊断首页菜单控制器。
  */
 final class UiTestDocumentPageController extends DocumentPageController {
 
-    private final DocumentUiScope documentUi;
     private final DocumentPageAuthoringSurface diagnosticPage;
     private final UiTestMenuModel menuModel;
-
-    private final DocumentCardWidget overviewCard;
-    private final DocumentCardWidget layoutEntryCard;
-    private final DocumentCardWidget htmlLikeSmokeEntryCard;
-    private final ButtonWidget openLayoutDiagnosticsButton;
-    private final ButtonWidget openHtmlLikeSmokeButton;
+    private final HtmlLikeDocumentWidget htmlLikeDocumentWidget;
 
     /**
      * 创建诊断首页菜单控制器。
@@ -32,76 +35,157 @@ final class UiTestDocumentPageController extends DocumentPageController {
      */
     UiTestDocumentPageController(DocumentUiScope documentUi, DocumentPageAuthoringSurface diagnosticPage,
             UiTestMenuModel menuModel) {
-        this.documentUi = Objects.requireNonNull(documentUi, "documentUi");
+        DocumentUiScope resolvedDocumentUi = Objects.requireNonNull(documentUi, "documentUi");
         this.diagnosticPage = Objects.requireNonNull(diagnosticPage, "diagnosticPage");
         this.menuModel = Objects.requireNonNull(menuModel, "menuModel");
 
-        this.overviewCard = this.documentUi.card();
-        this.layoutEntryCard = this.documentUi.card();
-        this.htmlLikeSmokeEntryCard = this.documentUi.card();
-        this.openLayoutDiagnosticsButton = this.documentUi.button("进入布局诊断页");
-        this.openHtmlLikeSmokeButton = this.documentUi.button("进入 HTML-like Smoke");
+        UiDocument document = UiDocument.create();
+        this.htmlLikeDocumentWidget = new HtmlLikeDocumentWidget(document, 760, 520,
+                resolvedDocumentUi.getTextMeasureService());
+        this.htmlLikeDocumentWidget.setLayoutSpec(new UiLayoutSpec()
+                .setWidth(UiLength.percent(1.0F)));
+        createMenuDocument(document, document.getRootElement());
     }
 
     @Override
     void configureDocumentPage() {
-        diagnosticPage.setContentWidthRange(680, 1080)
-                .setMinContentHeight(420)
-                .setViewportFillRatio(0.92F, 0.90F);
+        diagnosticPage.setContentWidthRange(700, 1080)
+                .setMinContentHeight(540)
+                .setViewportFillRatio(0.94F, 0.92F);
     }
 
     @Override
     void buildDocument() {
-        configureMenuActions();
-        assembleDocument();
+        diagnosticPage.addBlock(htmlLikeDocumentWidget);
     }
 
-    private void configureMenuActions() {
-        openLayoutDiagnosticsButton.setClickHandler(new Runnable() {
-            @Override
-            public void run() {
-                menuModel.openLayoutDiagnostics();
-            }
-        });
-        openHtmlLikeSmokeButton.setClickHandler(new Runnable() {
-            @Override
-            public void run() {
-                menuModel.openHtmlLikeSmoke();
-            }
-        });
+    /**
+     * 返回当前诊断菜单使用的 HTML-like 文档适配组件。
+     *
+     * @return HTML-like 文档适配组件
+     */
+    HtmlLikeDocumentWidget getHtmlLikeDocumentWidget() {
+        return htmlLikeDocumentWidget;
     }
 
-    private void assembleDocument() {
-        DocumentSectionWidget overviewDiv = documentUi.section();
-        overviewDiv.addChild(documentUi.text(DocumentTextWidget.Role.TITLE, "诊断首页", 2));
-        overviewDiv.addChild(documentUi.text(DocumentTextWidget.Role.BODY,
-                "这一层现在专门承担诊断目录职责：顶层 `ui_test` 不再堆放全部探针内容，而是作为稳定入口，继续跳到不同的 definition-backed 诊断子页。", 8));
-        overviewCard.addChild(overviewDiv);
+    /**
+     * 构建诊断菜单 HTML-like 文档。
+     *
+     * @param document 文档实例
+     * @param root 根元素
+     */
+    private void createMenuDocument(UiDocument document, ElementNode root) {
+        root.style()
+                .setPadding(UiStyleLength.px(22))
+                .setBackgroundColor(0xF00A1020)
+                .setBorderColor(0xFF5B7CFA)
+                .setBorderWidth(UiStyleLength.px(1))
+                .setBorderRadius(UiStyleLength.px(24))
+                .setTextColor(0xFFE8EEFF);
 
-        DocumentSectionWidget layoutEntryDiv = documentUi.section();
-        layoutEntryDiv.addChild(documentUi.text(DocumentTextWidget.Role.TITLE, "布局诊断子页", 2));
-        layoutEntryDiv.addChild(documentUi.text(DocumentTextWidget.Role.BODY,
-                "进入后继续查看页面壳尺寸、卡片换行、文本最小宽度、性能统计和高频字符变更探针。后续新的诊断主题也应继续按独立 definition-backed 子页扩展。", 8));
-        DocumentToolbarWidget entryToolbar = documentUi.toolbar();
-        entryToolbar.addChild(openLayoutDiagnosticsButton);
-        layoutEntryDiv.addChild(entryToolbar);
-        layoutEntryCard.addChild(layoutEntryDiv);
+        appendHero(document, root);
+        appendStatusStrip(document, root);
+        appendNavigationRow(document, root);
+    }
 
-        DocumentSectionWidget htmlLikeSmokeEntryDiv = documentUi.section();
-        htmlLikeSmokeEntryDiv.addChild(documentUi.text(DocumentTextWidget.Role.TITLE, "HTML-like Smoke 子页", 2));
-        htmlLikeSmokeEntryDiv.addChild(documentUi.text(DocumentTextWidget.Role.BODY,
-                "进入后验证 UiDocument、样式计算、布局盒、绘制命令和 UiRenderContext 投影是否已经能组成一条真实可见的渲染链路。", 8));
-        DocumentToolbarWidget smokeToolbar = documentUi.toolbar();
-        smokeToolbar.addChild(openHtmlLikeSmokeButton);
-        htmlLikeSmokeEntryDiv.addChild(smokeToolbar);
-        htmlLikeSmokeEntryCard.addChild(htmlLikeSmokeEntryDiv);
+    private void appendHero(UiDocument document, ElementNode root) {
+        ElementNode hero = document.div();
+        hero.style()
+                .setHeight(UiStyleLength.px(132))
+                .setPadding(UiStyleLength.px(18))
+                .setBackgroundColor(0xFF101D33)
+                .setBorderColor(0xFF6B96FF)
+                .setBorderWidth(UiStyleLength.px(1))
+                .setBorderRadius(UiStyleLength.px(18))
+                .setOverflowX(UiOverflow.HIDDEN)
+                .setOverflowY(UiOverflow.HIDDEN);
+        hero.appendText("诊断指挥台");
+        hero.appendText("所有入口已切换为 UiDocument 驱动：页面作者层不再拼装旧 Widget 卡片、按钮或工具栏。");
+        hero.appendText("目标链路：HTML-like DOM -> style -> layout -> paint command -> GL-backed UiRenderContext。");
+        root.append(hero);
+    }
 
-        diagnosticPage.addBlock(documentUi.text(DocumentTextWidget.Role.TITLE, "诊断菜单页", 2));
-        diagnosticPage.addBlock(documentUi.text(DocumentTextWidget.Role.BODY,
-                "这一页只负责诊断导航，不再直接承担所有探针内容；这样每个子页都能拥有独立 pageId、controller 和运行时统计语义。",
-                8));
-        diagnosticPage.addBlock(overviewCard);
-        diagnosticPage.addBlock(layoutEntryCard);
-        diagnosticPage.addBlock(htmlLikeSmokeEntryCard);
+    private void appendStatusStrip(UiDocument document, ElementNode root) {
+        ElementNode row = document.div();
+        row.style()
+                .setDisplay(UiDisplay.FLEX)
+                .setFlexDirection(UiFlexDirection.ROW)
+                .setAlignItems(UiAlignItems.STRETCH)
+                .setColumnGap(UiStyleLength.px(12))
+                .setHeight(UiStyleLength.px(92))
+                .setMargin(UiStyleLength.px(14));
+        root.append(row);
+
+        appendStatusCard(document, row, "核心", "DOM / Style / Layout / Paint");
+        appendStatusCard(document, row, "输入", "Click / Text / Tab / Focus-visible");
+        appendStatusCard(document, row, "清退", "旧 Widget 作者入口停止扩张");
+    }
+
+    private void appendStatusCard(UiDocument document, ElementNode parent, String title, String body) {
+        ElementNode card = document.div();
+        card.style()
+                .setFlexGrow(1.0F)
+                .setPadding(UiStyleLength.px(12))
+                .setBackgroundColor(0xFF17243A)
+                .setBorderColor(0xFF2E4C7F)
+                .setBorderWidth(UiStyleLength.px(1))
+                .setBorderRadius(UiStyleLength.px(14))
+                .setTextColor(0xFFD8E4FF);
+        card.appendText(title);
+        card.appendText(body);
+        parent.append(card);
+    }
+
+    private void appendNavigationRow(UiDocument document, ElementNode root) {
+        ElementNode row = document.div();
+        row.style()
+                .setDisplay(UiDisplay.FLEX)
+                .setFlexDirection(UiFlexDirection.ROW)
+                .setAlignItems(UiAlignItems.STRETCH)
+                .setColumnGap(UiStyleLength.px(16))
+                .setHeight(UiStyleLength.px(176));
+        root.append(row);
+
+        appendNavigationCard(document, row, "布局诊断子页",
+                "继续检查页面壳尺寸、文本测量、滚动区域和运行时统计。", "进入布局诊断页",
+                new DocumentButtonActionHandler() {
+                    @Override
+                    public void onAction(DocumentButtonActionEvent event) {
+                        menuModel.openLayoutDiagnostics();
+                    }
+                });
+        appendNavigationCard(document, row, "HTML-like Smoke 子页",
+                "验证 HTML 核心链路、控件输入、裁剪、滚动和绘制命令投影。", "进入 HTML-like Smoke",
+                new DocumentButtonActionHandler() {
+                    @Override
+                    public void onAction(DocumentButtonActionEvent event) {
+                        menuModel.openHtmlLikeSmoke();
+                    }
+                });
+    }
+
+    private void appendNavigationCard(UiDocument document, ElementNode parent, String title, String body,
+            String buttonText, DocumentButtonActionHandler actionHandler) {
+        ElementNode card = document.div();
+        card.style()
+                .setFlexGrow(1.0F)
+                .setPadding(UiStyleLength.px(16))
+                .setBackgroundColor(0xFF1D2A44)
+                .setBorderColor(0xFF405F9C)
+                .setBorderWidth(UiStyleLength.px(1))
+                .setBorderRadius(UiStyleLength.px(16))
+                .setTextColor(0xFFEAF1FF);
+        card.appendText(title);
+        card.appendText(body);
+
+        DocumentButtonControl button = new DocumentButtonControl(document, buttonText);
+        button.setBackgroundColors(0xFF3B82F6, 0xFF1D4ED8, 0xFF334155)
+                .setFocusBorderColor(0xFFBFDBFE)
+                .setActionHandler(actionHandler);
+        button.getElement().style()
+                .setMargin(UiStyleLength.px(10))
+                .setWidth(UiStyleLength.percent(1.0F));
+        card.append(button.getElement());
+        parent.append(card);
     }
 }
