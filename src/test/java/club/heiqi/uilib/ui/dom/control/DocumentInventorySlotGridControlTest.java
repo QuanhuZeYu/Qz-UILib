@@ -42,7 +42,8 @@ public class DocumentInventorySlotGridControlTest {
                     public InventorySlotSnapshot getSlotSnapshot(int localIndex) {
                         return InventorySlotSnapshot.empty();
                     }
-                });
+                })
+                .commitLayout();
         root.append(gridControl.getElement());
         HtmlLikeDocumentWidget widget = new HtmlLikeDocumentWidget(document, 400, 200,
                 new DeterministicTextMeasureService());
@@ -80,7 +81,8 @@ public class DocumentInventorySlotGridControlTest {
                         receivedGeometries.add(geometry);
                         receivedSnapshots.add(slotSnapshots);
                     }
-                });
+                })
+                .commitLayout();
         root.append(gridControl.getElement());
         HtmlLikeDocumentWidget widget = new HtmlLikeDocumentWidget(document, 400, 200,
                 new DeterministicTextMeasureService());
@@ -116,7 +118,8 @@ public class DocumentInventorySlotGridControlTest {
                     public void renderItems(InventorySlotGridItemGeometry geometry, InventorySlotSnapshot[] slotSnapshots) {
                         rendererCalled[0] = true;
                     }
-                });
+                })
+                .commitLayout();
         root.append(gridControl.getElement());
         HtmlLikeDocumentWidget widget = new HtmlLikeDocumentWidget(document, 400, 200,
                 new DeterministicTextMeasureService());
@@ -135,7 +138,8 @@ public class DocumentInventorySlotGridControlTest {
         UiDocument document = UiDocument.create();
         DocumentInventorySlotGridControl gridControl = new DocumentInventorySlotGridControl(document, 9, 9)
                 .setSlotGap(4)
-                .setPreferredSlotSize(32);
+                .setPreferredSlotSize(32)
+                .commitLayout();
 
         int expectedWidth = 9 * 32 + 8 * 4;
         int expectedHeight = 1 * 32;

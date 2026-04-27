@@ -157,7 +157,12 @@ public final class HtmlLikeDocumentWidget extends Widget {
 
     @Override
     public int getPreferredHeightForWidth(int width) {
-        return preferredHeight;
+        if (width <= 0 || width == preferredWidth) {
+            return preferredHeight;
+        }
+        DocumentLayoutBox box = DocumentLayoutEngine.layout(document.getRootElement(), width, 0,
+                textMeasureService);
+        return Math.max(preferredHeight, box.getHeight());
     }
 
     @Override

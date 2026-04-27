@@ -205,7 +205,16 @@ public class HtmlLikeInventoryOverviewDocumentPageControllerTest {
         private final InventoryOverviewSlotContentProvider emptySlotProvider = new InventoryOverviewSlotContentProvider() {
             @Override
             public InventorySlotSnapshot getSlotSnapshot(int localIndex) {
-                return InventorySlotSnapshot.empty();
+                return localIndex < hotbarOccupiedCount
+                        ? InventorySlotSnapshot.occupied() : InventorySlotSnapshot.empty();
+            }
+        };
+
+        private final InventoryOverviewSlotContentProvider backpackSlotProvider = new InventoryOverviewSlotContentProvider() {
+            @Override
+            public InventorySlotSnapshot getSlotSnapshot(int localIndex) {
+                return localIndex < backpackOccupiedCount
+                        ? InventorySlotSnapshot.occupied() : InventorySlotSnapshot.empty();
             }
         };
 

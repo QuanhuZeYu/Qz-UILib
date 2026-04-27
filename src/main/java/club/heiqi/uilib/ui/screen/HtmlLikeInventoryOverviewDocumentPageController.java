@@ -17,7 +17,6 @@ import club.heiqi.uilib.ui.layout.UiLayoutSpec;
 import club.heiqi.uilib.ui.style.UiFlexDirection;
 import club.heiqi.uilib.ui.style.UiJustifyContent;
 import club.heiqi.uilib.ui.style.UiDisplay;
-import club.heiqi.uilib.ui.style.UiOverflow;
 import club.heiqi.uilib.ui.style.UiStyleLength;
 import club.heiqi.uilib.ui.text.TextMeasureService;
 
@@ -38,6 +37,11 @@ final class HtmlLikeInventoryOverviewDocumentPageController extends DocumentPage
     private final DocumentInventorySlotGridControl hotbarGrid;
     private final DocumentInventorySlotGridControl backpackGrid;
 
+    private int lastHotbarUsed = -1;
+    private int lastBackpackUsed = -1;
+    private int lastHostWidth = -1;
+    private int lastHostHeight = -1;
+
     private static final int TITLE_COLOR = 0xFFF0F4FF;
     private static final int BODY_COLOR = 0xFFC0CAE8;
 
@@ -51,7 +55,22 @@ final class HtmlLikeInventoryOverviewDocumentPageController extends DocumentPage
         TextMeasureService resolvedTextMeasure = documentUi.getTextMeasureService();
 
         UiDocument document = UiDocument.create();
-        ElementNode root = document.getRootElement();
+        this.htmlLikeDocumentWidget = new HtmlLikeDocumentWidget(document, 720, 600, resolvedTextMeasure);
+        this.htmlLikeDocumentWidget.setLayoutSpec(new UiLayoutSpec()
+                .setWidth(UiLength.percent(1.0F)));
+
+        ContentBundle bundle = createDocumentContent(document, document.getRootElement());
+        this.overviewMetricsText = bundle.overviewMetrics;
+        this.hotbarMetricsText = bundle.hotbarMetrics;
+        this.backpackMetricsText = bundle.backpackMetrics;
+        this.hotbarGrid = bundle.hotbarGrid;
+        this.backpackGrid = bundle.backpackGrid;
+    }
+
+    /**
+     * 构建页面内容的 DOM 子树，返回各关键节点的引用集合。
+     */
+    private ContentBundle createDocumentContent(UiDocument document, ElementNode root) {
         root.style()
                 .setPadding(UiStyleLength.px(18))
                 .setBackgroundColor(0xEE121726)
@@ -60,27 +79,39 @@ final class HtmlLikeInventoryOverviewDocumentPageController extends DocumentPage
                 .setBorderRadius(UiStyleLength.px(18))
                 .setTextColor(BODY_COLOR);
 
-        this.overviewMetricsText = appendCardWithHeader(document, root, "当前状态",
+        TextNode overviewMetrics = appendCardWithHeader(document, root, "当前状态",
                 "窗口信息与布局尺寸将在此刷新显示。", true);
 
-        TextNode hotbarTitle = document.text("快捷栏探针");
-        this.hotbarMetricsText = appendCardWithHeader(document, root, "快捷栏探针",
+        TextNode hotbarMetrics = appendCardWithHeader(document, root, "快捷栏探针",
                 "快捷栏占用与网格尺寸将在此刷新显示。", false);
-        this.hotbarGrid = buildGrid(document, 9, 9, 44, 24, 46, true);
+        DocumentInventorySlotGridControl hotbarGrid = buildGrid(document, 9, 9, 44, 24, 46, true);
         root.append(hotbarGrid.getElement());
 
-        TextNode backpackTitle = document.text("主背包探针");
-        this.backpackMetricsText = appendCardWithHeader(document, root, "主背包探针",
+        TextNode backpackMetrics = appendCardWithHeader(document, root, "主背包探针",
                 "主背包占用与网格尺寸将在此刷新显示。", false);
-        this.backpackGrid = buildGrid(document, 27, 9, 41, 22, 42, false);
+        DocumentInventorySlotGridControl backpackGrid = buildGrid(document, 27, 9, 41, 22, 42, false);
         root.append(backpackGrid.getElement());
 
         appendFooter(document, root);
 
-        this.htmlLikeDocumentWidget = new HtmlLikeDocumentWidget(document, 720, 600, resolvedTextMeasure);
-        this.htmlLikeDocumentWidget.setLayoutSpec(new UiLayoutSpec()
-                .setWidth(UiLength.percent(1.0F))
-                .setHeight(UiLength.px(600)));
+        return new ContentBundle(overviewMetrics, hotbarMetrics, backpackMetrics, hotbarGrid, backpackGrid);
+    }
+
+    private static final class ContentBundle {
+        final TextNode overviewMetrics;
+        final TextNode hotbarMetrics;
+        final TextNode backpackMetrics;
+        final DocumentInventorySlotGridControl hotbarGrid;
+        final DocumentInventorySlotGridControl backpackGrid;
+
+        ContentBundle(TextNode overviewMetrics, TextNode hotbarMetrics, TextNode backpackMetrics,
+                DocumentInventorySlotGridControl hotbarGrid, DocumentInventorySlotGridControl backpackGrid) {
+            this.overviewMetrics = overviewMetrics;
+            this.hotbarMetrics = hotbarMetrics;
+            this.backpackMetrics = backpackMetrics;
+            this.hotbarGrid = hotbarGrid;
+            this.backpackGrid = backpackGrid;
+        }
     }
 
     @Override
@@ -130,12 +161,24 @@ final class HtmlLikeInventoryOverviewDocumentPageController extends DocumentPage
                 .setMargin(UiStyleLength.px(isFirst ? 0 : 16));
         parent.append(card);
 
-        card.appendText(title).getOwnerDocument();
+        card.appendText(title);
         card.appendText(description);
         TextNode metrics = card.appendText("加载中...");
         return metrics;
     }
 
+    /**
+     * 创建背包网格控件。
+     *
+     * @param document 所属文档
+     * @param slotCount 槽位数量
+     * @param columns 期望列数
+     * @param preferredSize 槽位期望尺寸
+     * @param minSize 最小槽位尺寸
+     * @param maxSize 最大槽位尺寸
+     * @param isHotbar 是否快捷栏
+     * @return 网格控件
+     */
     private DocumentInventorySlotGridControl buildGrid(UiDocument document, int slotCount, int columns,
             int preferredSize, int minSize, int maxSize, boolean isHotbar) {
         DocumentInventorySlotGridControl grid = new DocumentInventorySlotGridControl(document, slotCount, columns)
@@ -149,6 +192,10 @@ final class HtmlLikeInventoryOverviewDocumentPageController extends DocumentPage
                                 : model.getBackpackSlotProvider().getSlotSnapshot(localIndex);
                     }
                 });
+        if (documentUi.getRuntimeAdapters().getInventorySlotGridItemRenderer() != null) {
+            grid.setItemRenderer(documentUi.getRuntimeAdapters().getInventorySlotGridItemRenderer());
+        }
+        grid.commitLayout();
         grid.getElement().style()
                 .setMargin(UiStyleLength.px(8))
                 .setBackgroundColor(0xFF242D40)
@@ -184,16 +231,23 @@ final class HtmlLikeInventoryOverviewDocumentPageController extends DocumentPage
     private void refreshMetrics() {
         int hotbarUsed = model.getHotbarOccupiedCount();
         int backpackUsed = model.getBackpackOccupiedCount();
+        int hostWidth = runtimeView.getHostWidth();
+        int hostHeight = runtimeView.getHostHeight();
 
-        if (overviewMetricsText != null) {
-            overviewMetricsText.setText("窗口 " + runtimeView.getHostWidth() + "x" + runtimeView.getHostHeight()
+        if (overviewMetricsText != null
+                && (lastHostWidth != hostWidth || lastHostHeight != hostHeight)) {
+            overviewMetricsText.setText("窗口 " + hostWidth + "x" + hostHeight
                     + "。HTML-like 迁移版，格子控件通过 CUSTOM paint 命令渲染。");
+            lastHostWidth = hostWidth;
+            lastHostHeight = hostHeight;
         }
-        if (hotbarMetricsText != null) {
+        if (hotbarMetricsText != null && lastHotbarUsed != hotbarUsed) {
             hotbarMetricsText.setText("快捷栏占用 " + hotbarUsed + " / 9。");
+            lastHotbarUsed = hotbarUsed;
         }
-        if (backpackMetricsText != null) {
+        if (backpackMetricsText != null && lastBackpackUsed != backpackUsed) {
             backpackMetricsText.setText("主背包占用 " + backpackUsed + " / 27。");
+            lastBackpackUsed = backpackUsed;
         }
     }
 }

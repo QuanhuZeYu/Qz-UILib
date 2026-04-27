@@ -36,6 +36,7 @@ public final class DocumentInventorySlotGridControl {
     private int emptySlotBorderColor = 0xFF465468;
     private int occupiedSlotFillColor = 0xCC202A38;
     private int occupiedSlotBorderColor = 0xFF9AB8F2;
+    private boolean layoutDirty = true;
 
     /**
      * 创建背包格子网格控件。
@@ -48,80 +49,66 @@ public final class DocumentInventorySlotGridControl {
         this.slotCount = Math.max(0, slotCount);
         this.preferredColumns = Math.max(1, preferredColumns);
         this.element = document.div();
-        configureElement();
     }
 
-    /**
-     * 返回控件根元素。
-     *
-     * @return 控件根元素
-     */
+
     public ElementNode getElement() {
         return element;
     }
 
-    /**
-     * 设置槽位内容数据源。
-     *
-     * @param contentProvider 数据源
-     * @return 当前控件
-     */
+
     public DocumentInventorySlotGridControl setContentProvider(SlotContentProvider contentProvider) {
         this.contentProvider = contentProvider;
         return this;
     }
 
-    /**
-     * 设置物品渲染委托。
-     *
-     * @param itemRenderer 物品渲染委托
-     * @return 当前控件
-     */
+
     public DocumentInventorySlotGridControl setItemRenderer(InventorySlotGridItemRenderer itemRenderer) {
         this.itemRenderer = itemRenderer;
         return this;
     }
 
-    /**
-     * 设置格子间距。
-     *
-     * @param slotGap 格子间距
-     * @return 当前控件
-     */
+
     public DocumentInventorySlotGridControl setSlotGap(int slotGap) {
         this.slotGap = Math.max(0, slotGap);
-        configureElement();
+        layoutDirty = true;
         return this;
     }
 
+
     public DocumentInventorySlotGridControl setPreferredSlotSize(int preferredSlotSize) {
         this.preferredSlotSize = Math.max(18, preferredSlotSize);
-        configureElement();
+        layoutDirty = true;
         return this;
     }
 
     public DocumentInventorySlotGridControl setSlotSizeRange(int minSlotSize, int maxSlotSize) {
         this.minSlotSize = Math.max(18, minSlotSize);
         this.maxSlotSize = Math.max(this.minSlotSize, maxSlotSize);
-        configureElement();
+        layoutDirty = true;
         return this;
     }
 
-    /**
-     * 设置槽位颜色。
-     *
-     * @param emptySlotFillColor 空槽背景色
-     * @param emptySlotBorderColor 空槽边框色
-     * @param occupiedSlotFillColor 占用槽背景色
-     * @param occupiedSlotBorderColor 占用槽边框色
-     * @return 当前控件
-     */
+
     public DocumentInventorySlotGridControl setSlotColors(int emptySlotFillColor, int emptySlotBorderColor,
             int occupiedSlotFillColor, int occupiedSlotBorderColor) {
         this.emptySlotFillColor = emptySlotFillColor;
         this.emptySlotBorderColor = emptySlotBorderColor;
         this.occupiedSlotFillColor = occupiedSlotFillColor;
         this.occupiedSlotBorderColor = occupiedSlotBorderColor;
+        return this;
+    }
+
+    /**
+     * 提交尚未生效的布局配置，将 slot 参数映射为元素样式。
+     *
+     * @return 当前控件
+     */
+    public DocumentInventorySlotGridControl commitLayout() {
+        if (layoutDirty) {
+            configureElement();
+            layoutDirty = false;
+        }
         return this;
     }
 

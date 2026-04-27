@@ -49,11 +49,11 @@ public final class DocumentPaintEngine {
             DocumentScrollState scrollState, int offsetX, int offsetY) {
         appendBackgroundCommand(box, commands, offsetX, offsetY);
         appendBorderCommand(box, commands, offsetX, offsetY);
-        appendCustomCommand(box, commands, offsetX, offsetY);
         boolean clipChildren = shouldClipChildren(box);
         if (clipChildren) {
             appendClipStartCommand(box, commands, offsetX, offsetY);
         }
+        appendCustomCommand(box, commands, offsetX, offsetY);
         int childOffsetX = offsetX - getScrollLeft(scrollState, box);
         int childOffsetY = offsetY - getScrollTop(scrollState, box);
         appendTextCommands(box, commands, childOffsetX, childOffsetY);
@@ -96,9 +96,16 @@ public final class DocumentPaintEngine {
         if (customRenderer == null || box.getWidth() <= 0 || box.getHeight() <= 0) {
             return;
         }
+        int contentLeft = getPaddingBoxLeft(box) + offsetX;
+        int contentTop = getPaddingBoxTop(box) + offsetY;
+        int contentRight = getPaddingBoxRight(box) + offsetX;
+        int contentBottom = getPaddingBoxBottom(box) + offsetY;
+        if (contentRight <= contentLeft || contentBottom <= contentTop) {
+            return;
+        }
         commands.add(new DocumentPaintCommand(DocumentPaintCommandType.CUSTOM, box.getElement(),
-                box.getLeft() + offsetX, box.getTop() + offsetY, box.getRight() + offsetX,
-                box.getBottom() + offsetY, 0, 0, 0, null, customRenderer));
+                contentLeft, contentTop, contentRight, contentBottom,
+                0, 0, 0, null, customRenderer));
     }
 
     private static void appendTextCommands(DocumentLayoutBox box, List<DocumentPaintCommand> commands, int offsetX,
@@ -145,8 +152,15 @@ public final class DocumentPaintEngine {
 
     private static boolean shouldClipChildren(DocumentLayoutBox box) {
         ComputedStyle style = box.getComputedStyle();
-        return (style.getOverflowX() != UiOverflow.VISIBLE || style.getOverflowY() != UiOverflow.VISIBLE)
-                && (!box.getChildren().isEmpty() || !box.getTextRuns().isEmpty());
+        boolean hasOverflow = style.getOverflowX() != UiOverflow.VISIBLE
+                || style.getOverflowY() != UiOverflow.VISIBLE;
+        if (!hasOverflow) {
+            return false;
+        }
+        if (!box.getChildren().isEmpty() || !box.getTextRuns().isEmpty()) {
+            return true;
+        }
+        return box.getElement().getCustomRenderer() != null;
     }
 
     private static int getPaddingBoxLeft(DocumentLayoutBox box) {

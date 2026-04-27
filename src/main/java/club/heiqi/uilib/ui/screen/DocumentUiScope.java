@@ -57,6 +57,15 @@ public final class DocumentUiScope {
     }
 
     /**
+     * 获取当前作用域运行时适配器集合。
+     *
+     * @return 运行时适配器集合
+     */
+    public UiControlRuntimeAdapters getRuntimeAdapters() {
+        return runtimeAdapters;
+    }
+
+    /**
      * 创建文档文本。
      *
      * @param role 文本角色
