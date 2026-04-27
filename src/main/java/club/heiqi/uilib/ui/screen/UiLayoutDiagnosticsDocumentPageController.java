@@ -11,6 +11,9 @@ import club.heiqi.uilib.ui.dom.UiDocument;
 import club.heiqi.uilib.ui.dom.control.DocumentButtonActionEvent;
 import club.heiqi.uilib.ui.dom.control.DocumentButtonActionHandler;
 import club.heiqi.uilib.ui.dom.control.DocumentButtonControl;
+import club.heiqi.uilib.ui.dom.control.DocumentSegmentedSelectionEvent;
+import club.heiqi.uilib.ui.dom.control.DocumentSegmentedSelectionHandler;
+import club.heiqi.uilib.ui.dom.control.DocumentSegmentedSelectorControl;
 import club.heiqi.uilib.ui.dom.control.DocumentTextInputControl;
 import club.heiqi.uilib.ui.dom.control.DocumentToggleChangeEvent;
 import club.heiqi.uilib.ui.dom.control.DocumentToggleChangeHandler;
@@ -43,9 +46,9 @@ final class UiLayoutDiagnosticsDocumentPageController extends DocumentPageContro
     private final DocumentToggleSwitchControl wrapToggle;
     private final DocumentToggleSwitchControl mutationToggle;
     private final DocumentButtonControl refreshButton;
-    private final SegmentControl widthPresetSelector;
-    private final SegmentControl mutationModeSelector;
-    private final SegmentControl mutationRateSelector;
+    private final DocumentSegmentedSelectorControl widthPresetSelector;
+    private final DocumentSegmentedSelectorControl mutationModeSelector;
+    private final DocumentSegmentedSelectorControl mutationRateSelector;
 
     private final ElementNode overviewCard;
     private final ElementNode formCard;
@@ -91,9 +94,9 @@ final class UiLayoutDiagnosticsDocumentPageController extends DocumentPageContro
         this.wrapToggle = new DocumentToggleSwitchControl(document).setToggled(true);
         this.mutationToggle = new DocumentToggleSwitchControl(document).setToggled(false);
         this.refreshButton = new DocumentButtonControl(document, "刷新诊断文本");
-        this.widthPresetSelector = new SegmentControl(document, "窄页", "中页", "宽页");
-        this.mutationModeSelector = new SegmentControl(document, "§k渲染", "同长替换", "长文重排");
-        this.mutationRateSelector = new SegmentControl(document, "每帧", "50ms", "200ms");
+        this.widthPresetSelector = new DocumentSegmentedSelectorControl(document, "窄页", "中页", "宽页");
+        this.mutationModeSelector = new DocumentSegmentedSelectorControl(document, "§k渲染", "同长替换", "长文重排");
+        this.mutationRateSelector = new DocumentSegmentedSelectorControl(document, "每帧", "50ms", "200ms");
         configureControls();
 
         this.htmlLikeDocumentWidget = new HtmlLikeDocumentWidget(document, 760, 940,
@@ -190,28 +193,28 @@ final class UiLayoutDiagnosticsDocumentPageController extends DocumentPageContro
                         refreshDiagnostics();
                     }
                 });
-        widthPresetSelector.setSelectedIndex(1, false);
-        widthPresetSelector.setChangeHandler(new SegmentChangeHandler() {
+        widthPresetSelector.setSelectedIndex(1);
+        widthPresetSelector.setSelectionHandler(new DocumentSegmentedSelectionHandler() {
             @Override
-            public void onSelectionChanged(SegmentControl control) {
-                mutationProbeState.onWidthPresetChanged(control.getSelectedOption());
+            public void onSelectionChanged(DocumentSegmentedSelectionEvent event) {
+                mutationProbeState.onWidthPresetChanged(event.getSelectedOption());
                 refreshDiagnostics();
             }
         });
-        mutationModeSelector.setSelectedIndex(0, false);
-        mutationModeSelector.setChangeHandler(new SegmentChangeHandler() {
+        mutationModeSelector.setSelectedIndex(0);
+        mutationModeSelector.setSelectionHandler(new DocumentSegmentedSelectionHandler() {
             @Override
-            public void onSelectionChanged(SegmentControl control) {
+            public void onSelectionChanged(DocumentSegmentedSelectionEvent event) {
                 applyMutationTextUpdate(mutationProbeState.onMutationModeChanged(mutationToggle.isToggled(),
-                        control.getSelectedOption()));
+                        event.getSelectedOption()));
                 refreshDiagnostics();
             }
         });
-        mutationRateSelector.setSelectedIndex(1, false);
-        mutationRateSelector.setChangeHandler(new SegmentChangeHandler() {
+        mutationRateSelector.setSelectedIndex(1);
+        mutationRateSelector.setSelectionHandler(new DocumentSegmentedSelectionHandler() {
             @Override
-            public void onSelectionChanged(SegmentControl control) {
-                applyMutationTextUpdate(mutationProbeState.onMutationRateChanged(control.getSelectedOption()));
+            public void onSelectionChanged(DocumentSegmentedSelectionEvent event) {
+                applyMutationTextUpdate(mutationProbeState.onMutationRateChanged(event.getSelectedOption()));
                 refreshDiagnostics();
             }
         });
@@ -463,91 +466,6 @@ final class UiLayoutDiagnosticsDocumentPageController extends DocumentPageContro
             return;
         }
         textNode.setText(text == null ? "" : text);
-    }
-
-    /**
-     * HTML-like 分段按钮组。
-     */
-    private static final class SegmentControl {
-
-        private final ElementNode element;
-        private final String[] options;
-        private final DocumentButtonControl[] buttons;
-        private SegmentChangeHandler changeHandler;
-        private int selectedIndex;
-
-        SegmentControl(UiDocument document, String... options) {
-            this.options = options == null || options.length == 0 ? new String[] { "" } : options.clone();
-            this.element = document.div();
-            this.buttons = new DocumentButtonControl[this.options.length];
-            element.style()
-                    .setDisplay(UiDisplay.FLEX)
-                    .setFlexDirection(UiFlexDirection.ROW)
-                    .setAlignItems(UiAlignItems.STRETCH)
-                    .setColumnGap(UiStyleLength.px(4));
-            for (int index = 0; index < this.options.length; index++) {
-                final int optionIndex = index;
-                DocumentButtonControl button = new DocumentButtonControl(document, this.options[index]);
-                button.setFocusBorderColor(0xFFBFDBFE)
-                        .setActionHandler(new DocumentButtonActionHandler() {
-                            @Override
-                            public void onAction(DocumentButtonActionEvent event) {
-                                setSelectedIndex(optionIndex, true);
-                            }
-                        });
-                button.getElement().style()
-                        .setFlexGrow(1.0F)
-                        .setPadding(UiStyleLength.px(6));
-                buttons[index] = button;
-                element.append(button.getElement());
-            }
-            updateVisualState();
-        }
-
-        ElementNode getElement() {
-            return element;
-        }
-
-        int getSelectedIndex() {
-            return selectedIndex;
-        }
-
-        String getSelectedOption() {
-            return options[selectedIndex];
-        }
-
-        void setChangeHandler(SegmentChangeHandler changeHandler) {
-            this.changeHandler = changeHandler;
-        }
-
-        void setSelectedIndex(int selectedIndex, boolean notify) {
-            int nextIndex = Math.max(0, Math.min(selectedIndex, options.length - 1));
-            if (this.selectedIndex == nextIndex) {
-                return;
-            }
-            this.selectedIndex = nextIndex;
-            updateVisualState();
-            if (notify && changeHandler != null) {
-                changeHandler.onSelectionChanged(this);
-            }
-        }
-
-        private void updateVisualState() {
-            for (int index = 0; index < buttons.length; index++) {
-                boolean selected = index == selectedIndex;
-                buttons[index].setBackgroundColors(selected ? 0xFF2563EB : 0xFF334155,
-                        selected ? 0xFF1D4ED8 : 0xFF1E293B,
-                        0xFF1E293B);
-                buttons[index].setTextColors(selected ? 0xFFFFFFFF : 0xFFCBD5E1, 0xFF64748B);
-            }
-        }
-    }
-
-    /**
-     * 分段按钮变更处理器。
-     */
-    private interface SegmentChangeHandler {
-        void onSelectionChanged(SegmentControl control);
     }
 
     /**

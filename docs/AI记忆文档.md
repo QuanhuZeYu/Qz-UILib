@@ -14,7 +14,7 @@
 - 当前可运行链路仍以 retained `Widget` 树为渲染后端，文档页主创建边界为 `UiDocumentScreens`。
 - `UiDocumentScreens` 通过 `DocumentScreenEnvironment`、`DocumentScreenDefinition` 与 `DocumentScreenChromeResolver` 暴露显式页面创建入口。
 - HTML-like 文档树最小骨架已在 `club.heiqi.uilib.ui.dom` 落地；`UiDocument` 是当前文档作者入口，`DocumentNode` 负责父子关系与 mutation version，`ElementNode` 与 `TextNode` 分别承载元素和文本；`ElementNode` 当前支持最小 active handler、click handler、focus handler、key handler、text input handler 与 focusable 标记，active/click/key/text input 事件会从目标元素向父元素冒泡，focus 事件会带 `focusVisible` 区分键盘可见焦点与鼠标普通焦点。
-- HTML-like 基础控件适配已在 `club.heiqi.uilib.ui.dom.control` 起步；`DocumentButtonControl` 当前以 `ElementNode` 为根封装按钮行为，支持 action handler、enabled/disabled、click 激活、Enter/Space 键盘激活、focusable、active 按下态、focus-visible 描边态与基础视觉状态切换；`DocumentTextInputControl` 支持 placeholder、maxLength、文本输入（过滤控制字符）、Backspace 删除、enabled/disabled、focus 边框区分、change handler；`DocumentToggleSwitchControl` 以 flex row + justifyContent 切换 thumb 位置实现开关视觉，支持 click/Enter/Space 切换、enabled/disabled、focus-visible 与 toggle change handler；`DocumentInventorySlotGridControl` 以 `ElementNode` + 自定义渲染回调实现只读背包格子网格，复用现有 `InventorySlotGridLayout` 与 `InventorySlotGridItemRenderer`，支持 contentProvider、slotGap、preferredSlotSize 等配置。
+- HTML-like 基础控件适配已在 `club.heiqi.uilib.ui.dom.control` 起步；`DocumentButtonControl` 当前以 `ElementNode` 为根封装按钮行为，支持 action handler、enabled/disabled、click 激活、Enter/Space 键盘激活、focusable、active 按下态、focus-visible 描边态与基础视觉状态切换；`DocumentTextInputControl` 支持 placeholder、maxLength、文本输入（过滤控制字符）、Backspace 删除、enabled/disabled、focus 边框区分、change handler；`DocumentToggleSwitchControl` 以 flex row + justifyContent 切换 thumb 位置实现开关视觉，支持 click/Enter/Space 切换、enabled/disabled、focus-visible 与 toggle change handler；`DocumentSegmentedSelectorControl` 以一组 element-backed button 表达分段选择器，支持鼠标/键盘选择、enabled/disabled、选中态视觉和 selection handler；`DocumentInventorySlotGridControl` 以 `ElementNode` + 自定义渲染回调实现只读背包格子网格，复用现有 `InventorySlotGridLayout` 与 `InventorySlotGridItemRenderer`，支持 contentProvider、slotGap、preferredSlotSize 等配置。
 - HTML-like 样式系统初版已在 `club.heiqi.uilib.ui.style` 落地；`ElementNode.style()` 暴露 inline style 入口，`UiStyleResolver` 负责把元素样式解析为 `ComputedStyle`。
 - HTML-like 布局盒初版已在 `club.heiqi.uilib.ui.layout` 落地；`DocumentLayoutEngine` 当前支持元素级 block flow、box model、px/% 长度、auto 高度、`display: none` 过滤、子元素垂直流式排布、直接文本子节点基于 `TextMeasureService` 的测量与换行布局，以及 flex row/column、gap、align、justify、grow/shrink 的最小实现；`DocumentScrollState` 当前负责根据布局盒推导 `overflow: auto` 元素的可滚范围、滚动偏移、滚动条几何与 track/thumb 拖拽状态；`DocumentHitTestEngine` 当前负责在滚动与 overflow clip 语义下查找命中的最深元素。
 - HTML-like 绘制命令初版已在 `club.heiqi.uilib.ui.paint` 落地；`DocumentPaintEngine` 当前能把布局盒树转换为 background/border/text/clip/scrollbar 中立绘制命令，并保留父元素背景、父元素边框、结构 clip、滚动后的直接文本换行行、滚动后的子树、clip end、滚动条 track/thumb 的基础 paint order；根元素滚动条保持可见，嵌套 `overflow:auto` 滚动条只在最近有效滚动后的短暂窗口内绘制，空闲后隐藏以避免遮挡内容。
@@ -53,7 +53,7 @@
 - 若并发启动多个 Gradle 构建，`decompileSrgJar` 可能会因共享 `build/tmp/decompileSrgJar/mc.jar` 触发 Windows 文件锁冲突；验证构建时应串行执行单个 Gradle 命令。
 - 最近已验证通过：`compileJava`。
 - 最近已验证通过：集中 Java 环境与 `GRADLE_USER_HOME=D:\.MyApps\.ENV\gradle-home` 下的 `javaToolchains`、`compileMcLauncherJava`、`runClient21 --dry-run`、`runClient21`、`processIdeaSettings`。
-- 最近已验证通过的定向测试：`DocumentButtonControlTest`、`DocumentTextInputControlTest`、`DocumentToggleSwitchControlTest`、`DocumentInventorySlotGridControlTest`、`HtmlLikeDocumentWidgetTest`、`HtmlLikeSmokeDocumentPageControllerTest`、`UiInputRouterTest`、`DocumentPaintRendererTest`、`UiDocumentScreensTest`、`UiTestDocumentPageControllerTest`、`DocumentPaintEngineTest`、`DocumentLayoutEngineTest`、`UiStyleResolverTest`、`UiDocumentTest`、`UiSurfaceStyleTest`、`DocumentPageWidgetTest`、`InventorySlotGridWidgetTest`。
+- 最近已验证通过的定向测试：`DocumentButtonControlTest`、`DocumentTextInputControlTest`、`DocumentToggleSwitchControlTest`、`DocumentSegmentedSelectorControlTest`、`DocumentInventorySlotGridControlTest`、`HtmlLikeDocumentWidgetTest`、`HtmlLikeSmokeDocumentPageControllerTest`、`UiInputRouterTest`、`DocumentPaintRendererTest`、`UiDocumentScreensTest`、`UiTestDocumentPageControllerTest`、`DocumentPaintEngineTest`、`DocumentLayoutEngineTest`、`UiStyleResolverTest`、`UiDocumentTest`、`UiSurfaceStyleTest`、`DocumentPageWidgetTest`、`InventorySlotGridWidgetTest`。
 - 当前 `ui.dom` / `ui.style` / `ui.layout` / `ui.paint` 已经接入 `HtmlLikeDocumentWidget`、诊断菜单、布局诊断页、`html_like_smoke` 子页与背包概览页；这些页面的外层滚动已切到 HTML-like 根元素 `overflow:auto`，可从游戏内诊断菜单进入对应页面进行真实渲染验收。
 - 纯 JVM 测试不得直接触发 `DefaultTextMeasureService`/`FontService` 默认字体运行时；涉及 HTML-like 文本测量的测试应注入确定性 `TextMeasureService`，避免加载 LWJGL 相关类。
 
@@ -77,6 +77,9 @@
 - `src/main/java/club/heiqi/uilib/ui/dom/control/DocumentToggleSwitchControl.java`
 - `src/main/java/club/heiqi/uilib/ui/dom/control/DocumentToggleChangeEvent.java`
 - `src/main/java/club/heiqi/uilib/ui/dom/control/DocumentToggleChangeHandler.java`
+- `src/main/java/club/heiqi/uilib/ui/dom/control/DocumentSegmentedSelectorControl.java`
+- `src/main/java/club/heiqi/uilib/ui/dom/control/DocumentSegmentedSelectionEvent.java`
+- `src/main/java/club/heiqi/uilib/ui/dom/control/DocumentSegmentedSelectionHandler.java`
 - `src/main/java/club/heiqi/uilib/ui/dom/control/DocumentInventorySlotGridControl.java`
 - `src/main/java/club/heiqi/uilib/ui/paint/DocumentCustomRenderer.java`
 - `src/main/java/club/heiqi/uilib/ui/style/UiStyleDeclaration.java`
@@ -150,6 +153,7 @@
 - 已为 HTML-like `overflow:auto` 增加默认滚动条绘制命令与 renderer 投影，滚动条 track/thumb 由 paint command 绘制，避免根视口滚动迁移后页面能滚但没有任何可见滚动提示；错误记录见 `docs/errors/ERROR-20260427-html-scrollbar-missing.md`。
 - 已将 HTML-like 嵌套 `overflow:auto` 滚动条改为空闲自动隐藏：根元素滚动条保持可见，内部滚动块只在最近有效滚动后的短暂窗口内绘制 track/thumb，避免 Smoke 页 teal 卡片这类内部滚动条长期遮挡文本；错误记录见 `docs/errors/ERROR-20260427-html-nested-scrollbar-idle-cover.md`。
 - 已为 HTML-like 滚动条补齐 track 点击与 thumb 拖拽交互，`DocumentScrollState` 统一提供滚动条几何与拖拽状态，`DocumentPaintEngine` 复用同一份几何避免绘制/交互坐标漂移；真实输入路由测试已覆盖拖拽根滚动条和点击 track 不透传元素 click。
+- 已新增 `DocumentSegmentedSelectorControl` 分段选择器控件，并将布局诊断页原本内嵌的临时 `SegmentControl` 迁移到该 HTML-like 控件层；真实 widget 适配测试覆盖鼠标选择、键盘选择、禁用态、程序化选择不触发事件和选中态视觉。
 
 ### 当前阶段目标
 
@@ -158,11 +162,11 @@
 - 阶段 2：新增样式系统与 computed style 初版；当前 inline style 与基础 computed style 已完成，后续需要扩展样式属性集并接入 layout invalidation。
 - 阶段 3：建立 box/layout tree，并逐步把现有 Div-like 布局能力迁移到新模型；当前 block flow、flex flow 与直接文本测量/换行布局最小闭环已完成，后续应推进更完整的 inline layout。
 - 阶段 4：建立 paint command、clip、scroll、deferred replay 的统一渲染模型；当前 background/border/text/clip paint command、`UiRenderContext` 投影、`overflow: auto` 最小滚动偏移、命中测试与最小 smoke screen 集成已完成，下一步可推进滚动条可视化或更完整 inline layout。
-- 阶段 5：迁移事件与控件适配；当前已完成元素 active/click 冒泡、普通焦点/focus-visible 区分、键盘按键、文本输入、Tab/Shift+Tab 内部焦点遍历、按钮/文本输入框/开关/背包格子控件适配，后续需要选择器等更多基础控件适配、真实页面迁移与更完整的可访问性语义。
+- 阶段 5：迁移事件与控件适配；当前已完成元素 active/click 冒泡、普通焦点/focus-visible 区分、键盘按键、文本输入、Tab/Shift+Tab 内部焦点遍历、按钮/文本输入框/开关/分段选择器/背包格子控件适配，后续需要更多基础控件适配、真实页面迁移与更完整的可访问性语义。
 - 阶段 6：清退旧 public screen 构造入口与直接 widget authoring 示例；当前可访问诊断/业务页面的作者层迁移已起步完成，下一步应清点剩余直接 widget authoring 入口并按测试覆盖逐步删除或降级为兼容层。
 
 ### 下一步执行项
 
-- 下一步可优先清点剩余旧作者入口，逐步把仍由 `DocumentUiScope` factory 创建的页面改为 HTML-like，或继续补齐更完整 inline layout、选择器类基础控件与可访问性语义。
+- 下一步可优先清点剩余旧作者入口，逐步把仍由 `DocumentUiScope` factory 创建的页面改为 HTML-like，或继续补齐更完整 inline layout、列表/下拉类基础控件与可访问性语义。
 - 旧非 DOM 后端暂时不能整体舍弃；现在已达到进入旧作者入口清退阶段的最低条件，但 `DocumentUiScope` 旧 factory、基础 retained widget、测试夹具和兼容页面仍需保留到替代覆盖完成。
 - 游戏内实际验证入口已就绪：按右 Shift 打开诊断菜单页，可直接验证 HTML-like 诊断菜单、布局诊断页、HTML-like Smoke 子页和背包概览页。Smoke 页重点观察实心填充、圆角边框、overflow-hidden 裁剪、文本换行、可滚动 teal 卡片、click/text input/Tab/button/toggle 交互；布局诊断页重点观察页面宽度、HTML-like 页面滚动偏移、HTML-like 自滚动探针、滚动条 track/thumb、性能文案和高频变更探针；背包页重点观察 hotbar/backpack 网格、自定义格子绘制和返回按钮交互。重点回归：点击任意 HTML-like 控件或卡片不应导致整个页面随机跳动，只有滚轮命中的 HTML-like `overflow:auto` 元素才应改变滚动偏移，内部滚动块的滚动条应在停止滚动后自动隐藏，可见滚动条的 track 点击与 thumb 拖拽应能改变对应元素滚动偏移且不触发底层元素 click。
