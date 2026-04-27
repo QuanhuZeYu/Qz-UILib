@@ -7,6 +7,7 @@ import java.util.Objects;
 import club.heiqi.uilib.ui.layout.DocumentLayoutBox;
 import club.heiqi.uilib.ui.layout.DocumentLayoutTextRun;
 import club.heiqi.uilib.ui.layout.DocumentScrollState;
+import club.heiqi.uilib.ui.layout.DocumentScrollState.ScrollbarMetrics;
 import club.heiqi.uilib.ui.style.ComputedStyle;
 import club.heiqi.uilib.ui.style.UiOverflow;
 
@@ -15,9 +16,6 @@ import club.heiqi.uilib.ui.style.UiOverflow;
  */
 public final class DocumentPaintEngine {
 
-    private static final int SCROLLBAR_TRACK_GAP = 2;
-    private static final int SCROLLBAR_TRACK_THICKNESS = 6;
-    private static final int SCROLLBAR_MIN_THUMB_SIZE = 24;
     private static final int SCROLLBAR_TRACK_COLOR = 0x663B4A66;
     private static final int SCROLLBAR_THUMB_COLOR = 0xDDBCD7FF;
 
@@ -191,66 +189,30 @@ public final class DocumentPaintEngine {
             return;
         }
 
-        int contentLeft = box.getContentLeft() + offsetX;
-        int contentTop = box.getContentTop() + offsetY;
-        int contentRight = contentLeft + box.getContentWidth();
-        int contentBottom = contentTop + box.getContentHeight();
         if (hasVerticalScrollbar) {
-            appendVerticalScrollbarCommands(box, commands, scrollState, contentTop, contentRight,
-                    contentBottom - (hasHorizontalScrollbar ? SCROLLBAR_TRACK_THICKNESS + SCROLLBAR_TRACK_GAP : 0));
+            appendScrollbarCommands(box, commands, scrollState.getVerticalScrollbarMetrics(box, offsetX, offsetY,
+                    hasHorizontalScrollbar));
         }
         if (hasHorizontalScrollbar) {
-            appendHorizontalScrollbarCommands(box, commands, scrollState, contentLeft, contentRight
-                    - (hasVerticalScrollbar ? SCROLLBAR_TRACK_THICKNESS + SCROLLBAR_TRACK_GAP : 0), contentBottom);
+            appendScrollbarCommands(box, commands, scrollState.getHorizontalScrollbarMetrics(box, offsetX, offsetY,
+                    hasVerticalScrollbar));
         }
     }
 
-    private static void appendVerticalScrollbarCommands(DocumentLayoutBox box, List<DocumentPaintCommand> commands,
-            DocumentScrollState scrollState, int contentTop, int contentRight, int contentBottom) {
-        int trackRight = contentRight - SCROLLBAR_TRACK_GAP;
-        int trackLeft = trackRight - SCROLLBAR_TRACK_THICKNESS;
-        int trackTop = contentTop + SCROLLBAR_TRACK_GAP;
-        int trackBottom = contentBottom - SCROLLBAR_TRACK_GAP;
-        if (trackRight <= trackLeft || trackBottom <= trackTop) {
+    private static void appendScrollbarCommands(DocumentLayoutBox box, List<DocumentPaintCommand> commands,
+            ScrollbarMetrics metrics) {
+        if (metrics == null) {
             return;
         }
-
-        int trackLength = trackBottom - trackTop;
-        int viewportLength = Math.max(1, box.getContentHeight());
-        int contentLength = viewportLength + scrollState.getMaxScrollTop(box.getElement());
-        int thumbSize = Math.min(trackLength, Math.max(SCROLLBAR_MIN_THUMB_SIZE,
-                Math.round(trackLength * (viewportLength / (float) Math.max(viewportLength, contentLength)))));
-        int travel = Math.max(0, trackLength - thumbSize);
-        int thumbTop = trackTop + Math.round(travel * (scrollState.getScrollTop(box.getElement())
-                / (float) Math.max(1, scrollState.getMaxScrollTop(box.getElement()))));
-        commands.add(new DocumentPaintCommand(DocumentPaintCommandType.SCROLLBAR_TRACK, box.getElement(), trackLeft,
-                trackTop, trackRight, trackBottom, SCROLLBAR_TRACK_COLOR, 0, SCROLLBAR_TRACK_THICKNESS / 2));
-        commands.add(new DocumentPaintCommand(DocumentPaintCommandType.SCROLLBAR_THUMB, box.getElement(), trackLeft,
-                thumbTop, trackRight, thumbTop + thumbSize, SCROLLBAR_THUMB_COLOR, 0, SCROLLBAR_TRACK_THICKNESS / 2));
-    }
-
-    private static void appendHorizontalScrollbarCommands(DocumentLayoutBox box, List<DocumentPaintCommand> commands,
-            DocumentScrollState scrollState, int contentLeft, int contentRight, int contentBottom) {
-        int trackLeft = contentLeft + SCROLLBAR_TRACK_GAP;
-        int trackRight = contentRight - SCROLLBAR_TRACK_GAP;
-        int trackBottom = contentBottom - SCROLLBAR_TRACK_GAP;
-        int trackTop = trackBottom - SCROLLBAR_TRACK_THICKNESS;
-        if (trackRight <= trackLeft || trackBottom <= trackTop) {
-            return;
-        }
-
-        int trackLength = trackRight - trackLeft;
-        int viewportLength = Math.max(1, box.getContentWidth());
-        int contentLength = viewportLength + scrollState.getMaxScrollLeft(box.getElement());
-        int thumbSize = Math.min(trackLength, Math.max(SCROLLBAR_MIN_THUMB_SIZE,
-                Math.round(trackLength * (viewportLength / (float) Math.max(viewportLength, contentLength)))));
-        int travel = Math.max(0, trackLength - thumbSize);
-        int thumbLeft = trackLeft + Math.round(travel * (scrollState.getScrollLeft(box.getElement())
-                / (float) Math.max(1, scrollState.getMaxScrollLeft(box.getElement()))));
-        commands.add(new DocumentPaintCommand(DocumentPaintCommandType.SCROLLBAR_TRACK, box.getElement(), trackLeft,
-                trackTop, trackRight, trackBottom, SCROLLBAR_TRACK_COLOR, 0, SCROLLBAR_TRACK_THICKNESS / 2));
-        commands.add(new DocumentPaintCommand(DocumentPaintCommandType.SCROLLBAR_THUMB, box.getElement(), thumbLeft,
-                trackTop, thumbLeft + thumbSize, trackBottom, SCROLLBAR_THUMB_COLOR, 0, SCROLLBAR_TRACK_THICKNESS / 2));
+        int radius = Math.max(0, Math.min(metrics.getTrackRight() - metrics.getTrackLeft(),
+                metrics.getTrackBottom() - metrics.getTrackTop()) / 2);
+        commands.add(new DocumentPaintCommand(DocumentPaintCommandType.SCROLLBAR_TRACK, box.getElement(),
+                metrics.getTrackLeft(),
+                metrics.getTrackTop(), metrics.getTrackRight(), metrics.getTrackBottom(), SCROLLBAR_TRACK_COLOR, 0,
+                radius));
+        commands.add(new DocumentPaintCommand(DocumentPaintCommandType.SCROLLBAR_THUMB, box.getElement(),
+                metrics.getThumbLeft(), metrics.getThumbTop(), metrics.getThumbRight(), metrics.getThumbBottom(),
+                SCROLLBAR_THUMB_COLOR, 0, radius));
     }
 
     private static boolean shouldClipChildren(DocumentLayoutBox box) {

@@ -223,14 +223,33 @@ public final class HtmlLikeDocumentWidget extends Widget {
             pressedElement = null;
             return;
         }
+        DocumentLayoutBox rootBox = resolveLayoutBox();
+        if (scrollState.beginScrollbarDrag(rootBox, event.getMouseX() - getAbsoluteX(),
+                event.getMouseY() - getAbsoluteY())) {
+            pressedElement = null;
+            return;
+        }
         pressedElement = findElementAt(event.getMouseX(), event.getMouseY());
         dispatchActive(pressedElement, true, event);
         focusElement(resolveFocusableElement(pressedElement), false);
     }
 
     @Override
+    public void onMouseMove(UiMouseEvent event) {
+        if (event == null || !scrollState.isDraggingScrollbar()) {
+            return;
+        }
+        scrollState.updateScrollbarDrag(resolveLayoutBox(), event.getMouseX() - getAbsoluteX(),
+                event.getMouseY() - getAbsoluteY());
+    }
+
+    @Override
     public void onMouseUp(UiMouseEvent event) {
         if (event == null || event.getButton() != 0) {
+            pressedElement = null;
+            return;
+        }
+        if (scrollState.endScrollbarDrag()) {
             pressedElement = null;
             return;
         }

@@ -181,6 +181,110 @@ public class HtmlLikeDocumentWidgetTest {
     }
 
     /**
+     * 验证 HTML-like 根滚动条滑块可以通过真实输入路由拖拽滚动。
+     */
+    @Test
+    public void shouldDragRootScrollbarThumbThroughInputRouter() {
+        UiDocument document = UiDocument.create();
+        ElementNode root = document.getRootElement();
+        ElementNode child = document.div();
+        root.style()
+                .setWidth(UiStyleLength.px(80))
+                .setHeight(UiStyleLength.px(40))
+                .setOverflowY(UiOverflow.AUTO);
+        child.style().setHeight(UiStyleLength.px(120));
+        root.append(child);
+        HtmlLikeDocumentWidget widget = new HtmlLikeDocumentWidget(document, 80, 40,
+                new DeterministicTextMeasureService());
+        widget.applyLayoutBounds(0, 0, 80, 40);
+        Assert.assertEquals(80, widget.getMaxScrollTop(root));
+
+        UiInputRouter router = new UiInputRouter();
+        router.route(widget, mouseFrame(new UiMouseEvent(UiMouseEvent.Action.BUTTON_DOWN, 75, 5, 0, 0, 0, 0,
+                1L)));
+        router.route(widget, mouseFrame(new UiMouseEvent(UiMouseEvent.Action.MOVE, 75, 17, -1, 0, 0, 12,
+                2L)));
+        router.route(widget, mouseFrame(new UiMouseEvent(UiMouseEvent.Action.BUTTON_UP, 75, 17, 0, 0, 0, 0,
+                3L)));
+
+        Assert.assertEquals(80, widget.getScrollTop(root));
+    }
+
+    /**
+     * 验证点击滚动条轨道会滚动且不会透传为元素 click。
+     */
+    @Test
+    public void shouldHandleScrollbarTrackClickWithoutDispatchingElementClick() {
+        UiDocument document = UiDocument.create();
+        ElementNode root = document.getRootElement();
+        ElementNode child = document.div();
+        final List<DocumentElementClickEvent> clickEvents = new ArrayList<DocumentElementClickEvent>();
+        root.style()
+                .setWidth(UiStyleLength.px(80))
+                .setHeight(UiStyleLength.px(40))
+                .setOverflowY(UiOverflow.AUTO);
+        root.setClickHandler(new DocumentElementClickHandler() {
+            @Override
+            public boolean onClick(DocumentElementClickEvent event) {
+                clickEvents.add(event);
+                return true;
+            }
+        });
+        child.style().setHeight(UiStyleLength.px(120));
+        root.append(child);
+        HtmlLikeDocumentWidget widget = new HtmlLikeDocumentWidget(document, 80, 40,
+                new DeterministicTextMeasureService());
+        widget.applyLayoutBounds(0, 0, 80, 40);
+
+        UiInputRouter router = new UiInputRouter();
+        router.route(widget, mouseFrame(new UiMouseEvent(UiMouseEvent.Action.BUTTON_DOWN, 75, 34, 0, 0, 0, 0,
+                1L)));
+        router.route(widget, mouseFrame(new UiMouseEvent(UiMouseEvent.Action.BUTTON_UP, 75, 34, 0, 0, 0, 0,
+                2L)));
+
+        Assert.assertTrue(widget.getScrollTop(root) > 0);
+        Assert.assertTrue(clickEvents.isEmpty());
+    }
+
+    /**
+     * 验证当前可见的内部滚动块滚动条也可以拖拽。
+     */
+    @Test
+    public void shouldDragVisibleNestedScrollbarThumbThroughInputRouter() {
+        UiDocument document = UiDocument.create();
+        ElementNode root = document.getRootElement();
+        ElementNode scroller = document.div();
+        ElementNode child = document.div();
+        root.style()
+                .setWidth(UiStyleLength.px(100))
+                .setHeight(UiStyleLength.px(60));
+        scroller.style()
+                .setWidth(UiStyleLength.px(80))
+                .setHeight(UiStyleLength.px(40))
+                .setOverflowY(UiOverflow.AUTO);
+        child.style().setHeight(UiStyleLength.px(120));
+        scroller.append(child);
+        root.append(scroller);
+        HtmlLikeDocumentWidget widget = new HtmlLikeDocumentWidget(document, 100, 60,
+                new DeterministicTextMeasureService());
+        widget.applyLayoutBounds(0, 0, 100, 60);
+        Assert.assertEquals(80, widget.getMaxScrollTop(scroller));
+
+        UiInputRouter router = new UiInputRouter();
+        router.route(widget, mouseFrame(new UiMouseEvent(UiMouseEvent.Action.SCROLL, 10, 10, -1, -120, 0, 0,
+                1L)));
+        Assert.assertEquals(36, widget.getScrollTop(scroller));
+        router.route(widget, mouseFrame(new UiMouseEvent(UiMouseEvent.Action.BUTTON_DOWN, 75, 10, 0, 0, 0, 0,
+                2L)));
+        router.route(widget, mouseFrame(new UiMouseEvent(UiMouseEvent.Action.MOVE, 75, 17, -1, 0, 0, 7,
+                3L)));
+        router.route(widget, mouseFrame(new UiMouseEvent(UiMouseEvent.Action.BUTTON_UP, 75, 17, 0, 0, 0, 0,
+                4L)));
+
+        Assert.assertEquals(80, widget.getScrollTop(scroller));
+    }
+
+    /**
      * 验证点击 HTML-like 子元素不会再触发旧页面壳随机滚动。
      */
     @Test
