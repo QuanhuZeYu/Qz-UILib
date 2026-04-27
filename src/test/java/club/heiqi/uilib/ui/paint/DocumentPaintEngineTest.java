@@ -12,6 +12,7 @@ import club.heiqi.uilib.ui.dom.UiDocument;
 import club.heiqi.uilib.ui.layout.DocumentLayoutBox;
 import club.heiqi.uilib.ui.layout.DocumentLayoutEngine;
 import club.heiqi.uilib.ui.layout.DocumentScrollState;
+import club.heiqi.uilib.ui.render.UiRenderContext;
 import club.heiqi.uilib.ui.style.UiOverflow;
 import club.heiqi.uilib.ui.style.UiStyleLength;
 import club.heiqi.uilib.ui.text.TextMeasureService;
@@ -181,6 +182,33 @@ public class DocumentPaintEngineTest {
     }
 
     /**
+     * 验证 CUSTOM 绘制命令使用元素内容盒，而不是 padding 盒。
+     */
+    @Test
+    public void shouldBuildCustomCommandInContentBox() {
+        UiDocument document = UiDocument.create();
+        ElementNode root = document.getRootElement();
+
+        root.style()
+                .setWidth(UiStyleLength.px(40))
+                .setHeight(UiStyleLength.px(20))
+                .setBorderWidth(UiStyleLength.px(2))
+                .setPadding(UiStyleLength.px(3));
+        root.setCustomRenderer(new DocumentCustomRenderer() {
+            @Override
+            public void render(UiRenderContext context, int contentLeft, int contentTop, int contentRight,
+                    int contentBottom) {}
+        });
+
+        List<DocumentPaintCommand> commands = DocumentPaintEngine.buildPaintCommands(
+                DocumentLayoutEngine.layout(root, 120, 0));
+
+        Assert.assertEquals(1, commands.size());
+        assertCommand(commands.get(0), DocumentPaintCommandType.CUSTOM, root, 5, 5, 45, 25, 0, 0, 0);
+        Assert.assertNotNull(commands.get(0).getCustomRenderer());
+    }
+
+    /**
      * 验证 overflow auto 的滚动偏移只移动内容命令，不移动自身背景与裁剪框。
      */
     @Test
@@ -214,6 +242,46 @@ public class DocumentPaintEngineTest {
         assertCommand(commands.get(2), DocumentPaintCommandType.BACKGROUND, child, 0, -12, 50, 38, 0xFFAA5500, 0,
                 0);
         assertCommand(commands.get(3), DocumentPaintCommandType.CLIP_END, root, 0, 0, 50, 20, 0, 0, 0);
+    }
+
+    /**
+     * 验证 CUSTOM 绘制命令作为内容命令，会随元素自身滚动偏移。
+     */
+    @Test
+    public void shouldOffsetCustomCommandWithScrollableContent() {
+        UiDocument document = UiDocument.create();
+        ElementNode root = document.getRootElement();
+        ElementNode child = document.div();
+
+        root.style()
+                .setWidth(UiStyleLength.px(50))
+                .setHeight(UiStyleLength.px(20))
+                .setBorderWidth(UiStyleLength.px(1))
+                .setPadding(UiStyleLength.px(4))
+                .setOverflowX(UiOverflow.HIDDEN)
+                .setOverflowY(UiOverflow.AUTO);
+        root.setCustomRenderer(new DocumentCustomRenderer() {
+            @Override
+            public void render(UiRenderContext context, int contentLeft, int contentTop, int contentRight,
+                    int contentBottom) {}
+        });
+        child.style()
+                .setHeight(UiStyleLength.px(50))
+                .setBackgroundColor(0xFFAA5500);
+        root.append(child);
+
+        DocumentLayoutBox rootBox = DocumentLayoutEngine.layout(root, 80, 0);
+        DocumentScrollState scrollState = new DocumentScrollState();
+        scrollState.updateFromLayout(rootBox);
+        Assert.assertTrue(scrollState.setScrollOffset(root, 0, 12));
+        List<DocumentPaintCommand> commands = DocumentPaintEngine.buildPaintCommands(rootBox, scrollState);
+
+        Assert.assertEquals(4, commands.size());
+        assertCommand(commands.get(0), DocumentPaintCommandType.CLIP_START, root, 1, 1, 59, 29, 0, 0, 0);
+        assertCommand(commands.get(1), DocumentPaintCommandType.CUSTOM, root, 5, -7, 55, 13, 0, 0, 0);
+        assertCommand(commands.get(2), DocumentPaintCommandType.BACKGROUND, child, 5, -7, 55, 43, 0xFFAA5500, 0,
+                0);
+        assertCommand(commands.get(3), DocumentPaintCommandType.CLIP_END, root, 0, 0, 60, 30, 0, 0, 0);
     }
 
     private static void assertCommand(DocumentPaintCommand command, DocumentPaintCommandType type,

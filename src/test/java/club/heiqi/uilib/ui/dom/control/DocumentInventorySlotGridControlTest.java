@@ -148,11 +148,52 @@ public class DocumentInventorySlotGridControlTest {
     }
 
     /**
+     * 验证槽位绘制落在元素内容盒内，不侵入 padding 区域。
+     */
+    @Test
+    public void shouldRenderSlotsInsideContentBox() {
+        UiDocument document = UiDocument.create();
+        ElementNode root = document.getRootElement();
+        root.style()
+                .setWidth(UiStyleLength.px(200))
+                .setHeight(UiStyleLength.px(100));
+        RecordingUiRenderContext renderContext = new RecordingUiRenderContext();
+        DocumentInventorySlotGridControl gridControl = new DocumentInventorySlotGridControl(document, 1, 1)
+                .setPreferredSlotSize(32)
+                .setSlotColors(0xFF111111, 0, 0xFF222222, 0)
+                .commitLayout();
+        gridControl.getElement().style()
+                .setBorderWidth(UiStyleLength.px(1))
+                .setPadding(UiStyleLength.px(10));
+        root.append(gridControl.getElement());
+        HtmlLikeDocumentWidget widget = new HtmlLikeDocumentWidget(document, 200, 100,
+                new DeterministicTextMeasureService());
+        widget.applyLayoutBounds(0, 0, 200, 100);
+
+        widget.render(renderContext);
+
+        Assert.assertTrue(containsDrawCall(renderContext.drawCalls, 11, 11, 43, 43, 0xFF111111, 0));
+    }
+
+    private static boolean containsDrawCall(List<DrawCall> drawCalls, int left, int top, int right, int bottom,
+            int fillColor, int borderColor) {
+        for (DrawCall drawCall : drawCalls) {
+            if (drawCall.left == left && drawCall.top == top && drawCall.right == right
+                    && drawCall.bottom == bottom && drawCall.surfaceStyle.fillColor == fillColor
+                    && drawCall.surfaceStyle.borderColor == borderColor) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
      * 记录延迟回放与 surface 绘制调用的渲染上下文。
      */
     private static final class RecordingUiRenderContext extends UiRenderContext {
 
         private final List<DeferredPostMainPassReplay> deferredReplays = new ArrayList<DeferredPostMainPassReplay>();
+        private final List<DrawCall> drawCalls = new ArrayList<DrawCall>();
 
         private RecordingUiRenderContext() {
             super(400, 200, 0, 0, 1.0F);
@@ -160,7 +201,7 @@ public class DocumentInventorySlotGridControlTest {
 
         @Override
         public void drawSurface(int left, int top, int right, int bottom, UiSurfaceStyle surfaceStyle) {
-            // 记录但不验证具体绘制
+            drawCalls.add(new DrawCall(left, top, right, bottom, surfaceStyle));
         }
 
         @Override
@@ -185,6 +226,26 @@ public class DocumentInventorySlotGridControlTest {
         @Override
         public void enqueueDeferredPostMainPass(DeferredPostMainPassReplay replay) {
             deferredReplays.add(replay);
+        }
+    }
+
+    /**
+     * 单次 surface 绘制记录。
+     */
+    private static final class DrawCall {
+
+        private final int left;
+        private final int top;
+        private final int right;
+        private final int bottom;
+        private final UiSurfaceStyle surfaceStyle;
+
+        private DrawCall(int left, int top, int right, int bottom, UiSurfaceStyle surfaceStyle) {
+            this.left = left;
+            this.top = top;
+            this.right = right;
+            this.bottom = bottom;
+            this.surfaceStyle = surfaceStyle;
         }
     }
 

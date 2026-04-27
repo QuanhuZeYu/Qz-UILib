@@ -6,6 +6,7 @@ import java.util.List;
 
 import org.junit.Assert;
 import org.junit.Test;
+import org.lwjglx.input.Keyboard;
 
 import club.heiqi.uilib.ui.control.InventorySlotSnapshot;
 import club.heiqi.uilib.ui.control.NoOpInventorySlotGridItemRenderer;
@@ -17,6 +18,7 @@ import club.heiqi.uilib.ui.dom.DocumentNode;
 import club.heiqi.uilib.ui.dom.DocumentNodeType;
 import club.heiqi.uilib.ui.dom.ElementNode;
 import club.heiqi.uilib.ui.dom.TextNode;
+import club.heiqi.uilib.ui.event.UiKeyEvent;
 import club.heiqi.uilib.ui.theme.UiDocumentTheme;
 import club.heiqi.uilib.ui.theme.UiDocumentThemes;
 import club.heiqi.uilib.ui.text.TextMeasureService;
@@ -84,7 +86,12 @@ public class HtmlLikeInventoryOverviewDocumentPageControllerTest {
         Assert.assertTrue(containsText(labelTextsBeforeFrame, "快捷栏占用 6 / 9"));
         Assert.assertTrue(containsText(labelTextsBeforeFrame, "主背包占用 12 / 27"));
 
-        fixture.model.returnToVanillaInventory();
+        HtmlLikeDocumentWidget widget = fixture.controller.getHtmlLikeDocumentWidget();
+        widget.applyLayoutBounds(0, 0, 720, 600);
+        widget.onFocusTraversalEntered(false);
+        widget.onKeyEvent(new UiKeyEvent(Keyboard.KEY_RETURN, 0, 0, UiKeyEvent.Action.PRESSED, false, false, false,
+                false, 1L));
+
         Assert.assertEquals(1, fixture.model.returnToVanillaInventoryCalls);
     }
 
@@ -202,7 +209,7 @@ public class HtmlLikeInventoryOverviewDocumentPageControllerTest {
 
     private static final class TestInventoryOverviewModel implements InventoryOverviewModel {
 
-        private final InventoryOverviewSlotContentProvider emptySlotProvider = new InventoryOverviewSlotContentProvider() {
+        private final InventoryOverviewSlotContentProvider hotbarSlotProvider = new InventoryOverviewSlotContentProvider() {
             @Override
             public InventorySlotSnapshot getSlotSnapshot(int localIndex) {
                 return localIndex < hotbarOccupiedCount
@@ -224,12 +231,12 @@ public class HtmlLikeInventoryOverviewDocumentPageControllerTest {
 
         @Override
         public InventoryOverviewSlotContentProvider getHotbarSlotProvider() {
-            return emptySlotProvider;
+            return hotbarSlotProvider;
         }
 
         @Override
         public InventoryOverviewSlotContentProvider getBackpackSlotProvider() {
-            return emptySlotProvider;
+            return backpackSlotProvider;
         }
 
         @Override

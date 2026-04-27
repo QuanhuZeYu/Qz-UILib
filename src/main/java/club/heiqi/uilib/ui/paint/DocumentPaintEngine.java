@@ -53,9 +53,9 @@ public final class DocumentPaintEngine {
         if (clipChildren) {
             appendClipStartCommand(box, commands, offsetX, offsetY);
         }
-        appendCustomCommand(box, commands, offsetX, offsetY);
         int childOffsetX = offsetX - getScrollLeft(scrollState, box);
         int childOffsetY = offsetY - getScrollTop(scrollState, box);
+        appendCustomCommand(box, commands, childOffsetX, childOffsetY);
         appendTextCommands(box, commands, childOffsetX, childOffsetY);
         for (DocumentLayoutBox child : box.getChildren()) {
             appendBoxCommands(child, commands, scrollState, childOffsetX, childOffsetY);
@@ -96,10 +96,10 @@ public final class DocumentPaintEngine {
         if (customRenderer == null || box.getWidth() <= 0 || box.getHeight() <= 0) {
             return;
         }
-        int contentLeft = getPaddingBoxLeft(box) + offsetX;
-        int contentTop = getPaddingBoxTop(box) + offsetY;
-        int contentRight = getPaddingBoxRight(box) + offsetX;
-        int contentBottom = getPaddingBoxBottom(box) + offsetY;
+        int contentLeft = box.getContentLeft() + offsetX;
+        int contentTop = box.getContentTop() + offsetY;
+        int contentRight = contentLeft + box.getContentWidth();
+        int contentBottom = contentTop + box.getContentHeight();
         if (contentRight <= contentLeft || contentBottom <= contentTop) {
             return;
         }

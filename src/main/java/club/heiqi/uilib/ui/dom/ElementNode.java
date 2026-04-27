@@ -267,13 +267,23 @@ public final class ElementNode extends DocumentNode {
      *
      * <p>回调会在 paint engine 的 appendBoxCommands 中被包装为 CUSTOM 命令，
      * 在元素背景和边框绘制之后、clip/子树之前执行。</p>
+     * <p>回调会影响绘制命令生成，变更时会提升文档 mutation version。</p>
      *
      * @param customRenderer 自定义渲染回调
      */
     public void setCustomRenderer(DocumentCustomRenderer customRenderer) {
+        if (this.customRenderer == customRenderer) {
+            return;
+        }
         this.customRenderer = customRenderer;
+        markMutated();
     }
 
+    /**
+     * 返回元素自定义绘制回调。
+     *
+     * @return 自定义绘制回调；不存在时返回 null
+     */
     public DocumentCustomRenderer getCustomRenderer() {
         return customRenderer;
     }

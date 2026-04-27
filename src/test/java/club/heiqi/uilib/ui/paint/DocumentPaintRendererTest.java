@@ -131,6 +131,34 @@ public class DocumentPaintRendererTest {
         assertTextCall(renderContext.textCalls.get(0), "Text", 10, 14, 0xFFEFF6FF, false);
     }
 
+    /**
+     * 验证 CUSTOM 命令会按宿主偏移投影到自定义绘制回调。
+     */
+    @Test
+    public void shouldRenderCustomCommandsToUiRenderContext() {
+        UiDocument document = UiDocument.create();
+        ElementNode root = document.getRootElement();
+        final List<CustomCall> customCalls = new ArrayList<CustomCall>();
+        root.style()
+                .setWidth(UiStyleLength.px(40))
+                .setHeight(UiStyleLength.px(20))
+                .setPadding(UiStyleLength.px(3));
+        root.setCustomRenderer(new DocumentCustomRenderer() {
+            @Override
+            public void render(UiRenderContext context, int contentLeft, int contentTop, int contentRight,
+                    int contentBottom) {
+                customCalls.add(new CustomCall(contentLeft, contentTop, contentRight, contentBottom));
+            }
+        });
+
+        RecordingUiRenderContext renderContext = new RecordingUiRenderContext();
+        DocumentPaintRenderer.render(renderContext, DocumentPaintEngine.buildPaintCommands(
+                DocumentLayoutEngine.layout(root, 120, 0)), 7, 11);
+
+        Assert.assertEquals(1, customCalls.size());
+        assertCustomCall(customCalls.get(0), 10, 14, 50, 34);
+    }
+
     private static void assertDrawCall(DrawCall drawCall, int left, int top, int right, int bottom, int fillColor,
             int borderColor, int cornerRadius) {
         Assert.assertEquals(left, drawCall.left);
@@ -156,6 +184,13 @@ public class DocumentPaintRendererTest {
         Assert.assertEquals(y, textCall.y);
         Assert.assertEquals(color, textCall.color);
         Assert.assertEquals(shadow, textCall.shadow);
+    }
+
+    private static void assertCustomCall(CustomCall customCall, int left, int top, int right, int bottom) {
+        Assert.assertEquals(left, customCall.left);
+        Assert.assertEquals(top, customCall.top);
+        Assert.assertEquals(right, customCall.right);
+        Assert.assertEquals(bottom, customCall.bottom);
     }
 
     /**
@@ -250,6 +285,24 @@ public class DocumentPaintRendererTest {
             this.y = y;
             this.color = color;
             this.shadow = shadow;
+        }
+    }
+
+    /**
+     * 单次 custom 绘制记录。
+     */
+    private static final class CustomCall {
+
+        private final int left;
+        private final int top;
+        private final int right;
+        private final int bottom;
+
+        private CustomCall(int left, int top, int right, int bottom) {
+            this.left = left;
+            this.top = top;
+            this.right = right;
+            this.bottom = bottom;
         }
     }
 }
