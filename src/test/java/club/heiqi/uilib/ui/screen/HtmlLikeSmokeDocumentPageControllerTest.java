@@ -51,6 +51,9 @@ public class HtmlLikeSmokeDocumentPageControllerTest {
         Assert.assertTrue(containsText(texts, "HTML-like Smoke Lab"));
         Assert.assertTrue(containsText(texts, "UiDocument -> style -> layout -> paint command -> UiRenderContext"));
         Assert.assertTrue(containsText(texts, "Same-layer sampling grid"));
+        Assert.assertTrue(containsText(texts, "ABS containing probe"));
+        Assert.assertTrue(containsText(texts, "static wrapper is not anchor"));
+        Assert.assertTrue(containsText(texts, "ABS card anchor"));
         Assert.assertTrue(containsText(texts, "ABS badge"));
         Assert.assertTrue(containsText(texts, "pink stripe behind glass"));
         Assert.assertTrue(containsText(texts, "amber UI behind this card"));
@@ -85,6 +88,9 @@ public class HtmlLikeSmokeDocumentPageControllerTest {
         Assert.assertEquals(14, renderContext.backdropCalls.get(0).blurRadius);
         Assert.assertEquals(1.4F, renderContext.backdropCalls.get(0).saturation, 0.001F);
         Assert.assertEquals(12, renderContext.backdropCalls.get(0).cornerRadius);
+        Assert.assertTrue(containsFillColor(renderContext.drawCalls, 0xFFFFD166));
+        Assert.assertTrue(containsTextCall(renderContext.textCalls, "ABS card anchor"));
+        assertAbsoluteProbeIsAnchoredToCard(renderContext.drawCalls);
         Assert.assertTrue(containsTextCall(renderContext.textCalls, "TEXT paint command"));
     }
 
@@ -292,6 +298,24 @@ public class HtmlLikeSmokeDocumentPageControllerTest {
             }
         }
         return false;
+    }
+
+    private static void assertAbsoluteProbeIsAnchoredToCard(List<DrawCall> drawCalls) {
+        DrawCall staticWrapperCall = findFillColor(drawCalls, 0xFF111827);
+        DrawCall nestedAbsoluteCall = findFillColor(drawCalls, 0xFFFFD166);
+        Assert.assertNotNull(staticWrapperCall);
+        Assert.assertNotNull(nestedAbsoluteCall);
+        Assert.assertTrue(nestedAbsoluteCall.top < staticWrapperCall.top);
+        Assert.assertTrue(nestedAbsoluteCall.right <= staticWrapperCall.right);
+    }
+
+    private static DrawCall findFillColor(List<DrawCall> drawCalls, int expectedColor) {
+        for (DrawCall drawCall : drawCalls) {
+            if (drawCall.surfaceStyle.fillColor == expectedColor) {
+                return drawCall;
+            }
+        }
+        return null;
     }
 
     /**

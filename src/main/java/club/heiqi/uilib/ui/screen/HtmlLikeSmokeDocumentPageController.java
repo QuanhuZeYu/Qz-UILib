@@ -139,9 +139,51 @@ final class HtmlLikeSmokeDocumentPageController extends DocumentPageController {
         ElementNode fixedCard = document.div();
         fixedCard.style()
                 .setWidth(UiStyleLength.px(126))
+                .setPosition(UiPosition.RELATIVE)
+                .setPadding(UiStyleLength.px(8))
                 .setBackgroundColor(0xFF805AD5)
-                .setBorderRadius(UiStyleLength.px(12));
+                .setBorderColor(0xFFD6BCFA)
+                .setBorderWidth(UiStyleLength.px(1))
+                .setBorderRadius(UiStyleLength.px(12))
+                .setTextColor(0xFFEDE9FE)
+                .setOverflowX(UiOverflow.HIDDEN)
+                .setOverflowY(UiOverflow.HIDDEN);
         row.append(fixedCard);
+        fixedCard.appendText("ABS containing probe");
+
+        ElementNode staticWrapperProbe = document.div();
+        staticWrapperProbe.style()
+                .setHeight(UiStyleLength.px(54))
+                .setMargin(UiStyleInsets.of(UiStyleLength.px(8), UiStyleLength.px(0), UiStyleLength.px(0),
+                        UiStyleLength.px(0)))
+                .setPadding(UiStyleLength.px(6))
+                .setBackgroundColor(0xFF111827)
+                .setBorderColor(0xFF7C3AED)
+                .setBorderWidth(UiStyleLength.px(1))
+                .setBorderRadius(UiStyleLength.px(10))
+                .setTextColor(0xFFC4B5FD)
+                .setOverflowX(UiOverflow.HIDDEN)
+                .setOverflowY(UiOverflow.HIDDEN);
+        staticWrapperProbe.appendText("static wrapper is not anchor");
+        fixedCard.append(staticWrapperProbe);
+
+        ElementNode nestedAbsoluteProbe = document.div();
+        nestedAbsoluteProbe.style()
+                .setWidth(UiStyleLength.px(84))
+                .setHeight(UiStyleLength.px(18))
+                .setPosition(UiPosition.ABSOLUTE)
+                .setTop(UiStyleLength.px(8))
+                .setRight(UiStyleLength.px(8))
+                .setZIndex(2)
+                .setBackgroundColor(0xFFFFD166)
+                .setBorderColor(0xFF1A202C)
+                .setBorderWidth(UiStyleLength.px(1))
+                .setBorderRadius(UiStyleLength.px(999))
+                .setTextColor(0xFF1A202C)
+                .setOverflowX(UiOverflow.HIDDEN)
+                .setOverflowY(UiOverflow.HIDDEN);
+        nestedAbsoluteProbe.appendText("ABS card anchor");
+        staticWrapperProbe.append(nestedAbsoluteProbe);
 
         ElementNode fluidCard = document.div();
         fluidCard.style()
