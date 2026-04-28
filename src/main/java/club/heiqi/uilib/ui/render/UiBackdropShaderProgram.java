@@ -23,6 +23,7 @@ final class UiBackdropShaderProgram {
     private final Map<String, Integer> uniformLocations = new LinkedHashMap<String, Integer>();
     private final Set<String> missingUniforms = new HashSet<String>();
     private boolean unavailable;
+    private String lastFailureMessage = "";
     private int shaderProgramId;
 
     /**
@@ -45,13 +46,25 @@ final class UiBackdropShaderProgram {
             shaderProgramId = GL20.glCreateProgram();
             uniformLocations.clear();
             missingUniforms.clear();
+            lastFailureMessage = "";
             loadProgram();
             return true;
         } catch (RuntimeException exception) {
             unavailable = true;
+            lastFailureMessage = exception.getMessage() == null ? exception.getClass().getSimpleName()
+                    : exception.getMessage();
             closeProgram();
             return false;
         }
+    }
+
+    /**
+     * 返回最近一次 shader 初始化失败原因。
+     *
+     * @return 失败原因；没有失败时为空字符串
+     */
+    String getLastFailureMessage() {
+        return lastFailureMessage;
     }
 
     /**

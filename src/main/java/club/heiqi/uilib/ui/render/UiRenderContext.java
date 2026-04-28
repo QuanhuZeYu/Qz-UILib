@@ -14,6 +14,7 @@ import org.lwjgl.opengl.GL11;
 import org.lwjgl.opengl.GL12;
 import org.lwjgl.opengl.GL13;
 import org.lwjgl.opengl.GL20;
+import org.lwjgl.opengl.GL30;
 
 import club.heiqi.uilib.font.api.DefaultFontRendererAdapter;
 import club.heiqi.uilib.font.api.FontRendererAdapter;
@@ -36,6 +37,8 @@ public class UiRenderContext {
             { 1.0F, 1.0F, 0.12F }
     };
     private static final UiBackdropShaderProgram BACKDROP_SHADER_PROGRAM = new UiBackdropShaderProgram();
+    private static volatile BackdropFilterRenderPath lastBackdropFilterRenderPath = BackdropFilterRenderPath.NONE;
+    private static volatile String lastBackdropFilterDetail = "not-run";
 
     private final int screenWidth;
     private final int screenHeight;
@@ -45,6 +48,31 @@ public class UiRenderContext {
     private final FontRendererAdapter fontRenderer;
     private final Deque<ClipState> clipStack = new ArrayDeque<ClipState>();
     private final List<DeferredPostMainPass> deferredPostMainPasses = new ArrayList<DeferredPostMainPass>();
+
+    /**
+     * 最近一次 backdrop-filter 实际渲染路径。
+     */
+    public enum BackdropFilterRenderPath {
+        NONE("none"),
+        SHADER("shader"),
+        FIXED_PIPELINE("fixed-pipeline"),
+        TINT_FALLBACK("tint-fallback");
+
+        private final String label;
+
+        BackdropFilterRenderPath(String label) {
+            this.label = label;
+        }
+
+        /**
+         * 返回适合显示的路径标签。
+         *
+         * @return 路径标签
+         */
+        public String getLabel() {
+            return label;
+        }
+    }
 
     /**
      * 单层裁剪状态快照。
@@ -204,6 +232,24 @@ public class UiRenderContext {
     }
 
     /**
+     * 返回最近一次 backdrop-filter 实际渲染路径。
+     *
+     * @return 渲染路径
+     */
+    public static BackdropFilterRenderPath getLastBackdropFilterRenderPath() {
+        return lastBackdropFilterRenderPath;
+    }
+
+    /**
+     * 返回最近一次 backdrop-filter 诊断说明。
+     *
+     * @return 诊断说明
+     */
+    public static String getLastBackdropFilterDetail() {
+        return lastBackdropFilterDetail;
+    }
+
+    /**
      * 绘制矩形。
      *
      * @param left 左侧坐标
@@ -282,6 +328,7 @@ public class UiRenderContext {
     public void drawBackdropFilter(int left, int top, int right, int bottom, int blurRadius, float saturation,
             int cornerRadius) {
         if (right <= left || bottom <= top || (blurRadius <= 0 && Float.compare(saturation, 1.0F) == 0)) {
+            recordBackdropFilterPath(BackdropFilterRenderPath.NONE, "skipped");
             return;
         }
         if (drawCurrentUiBackdropFilter(left, top, right, bottom, blurRadius, saturation, cornerRadius)) {
@@ -322,6 +369,8 @@ public class UiRenderContext {
                     GL11.GL_UNSIGNED_BYTE, (java.nio.ByteBuffer) null);
             GL11.glCopyTexSubImage2D(GL11.GL_TEXTURE_2D, 0, 0, 0, sampleLeft, screenHeight - sampleBottom,
                     sampleWidth, sampleHeight);
+            GL30.glGenerateMipmap(GL11.GL_TEXTURE_2D);
+            GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_MIN_FILTER, GL11.GL_LINEAR_MIPMAP_LINEAR);
             GL11.glEnable(GL11.GL_TEXTURE_2D);
             GL11.glDisable(GL11.GL_DEPTH_TEST);
             GL11.glDisable(GL11.GL_ALPHA_TEST);
@@ -347,6 +396,7 @@ public class UiRenderContext {
                         sample[0] * sampleStep, sample[1] * sampleStep);
             }
             GL11.glColor4f(1.0F, 1.0F, 1.0F, 1.0F);
+            recordBackdropFilterPath(BackdropFilterRenderPath.FIXED_PIPELINE, "shader-unavailable");
             return true;
         } finally {
             GL20.glUseProgram(previousProgram);
@@ -361,6 +411,8 @@ public class UiRenderContext {
     private boolean drawBackdropTextureWithShader(int left, int top, int right, int bottom, int sampleLeft,
             int sampleTop, int sampleWidth, int sampleHeight, int blurRadius, float saturation) {
         if (!BACKDROP_SHADER_PROGRAM.ensureInitialized()) {
+            recordBackdropFilterPath(BackdropFilterRenderPath.FIXED_PIPELINE,
+                    "shader unavailable: " + BACKDROP_SHADER_PROGRAM.getLastFailureMessage());
             return false;
         }
         BACKDROP_SHADER_PROGRAM.bind();
@@ -368,9 +420,12 @@ public class UiRenderContext {
         BACKDROP_SHADER_PROGRAM.setUniform2f("texelSize", 1.0F / (float) sampleWidth, 1.0F / (float) sampleHeight);
         BACKDROP_SHADER_PROGRAM.setUniformF("blurRadius", resolveBackdropShaderRadius(blurRadius));
         BACKDROP_SHADER_PROGRAM.setUniformF("saturation", Math.max(0.0F, saturation));
+        BACKDROP_SHADER_PROGRAM.setUniformF("lodBias", resolveBackdropLodBias(blurRadius));
         drawBackdropTextureQuad(left, top, right, bottom, sampleLeft, sampleTop, sampleWidth, sampleHeight,
                 0.0F, 0.0F);
         BACKDROP_SHADER_PROGRAM.unbind();
+        recordBackdropFilterPath(BackdropFilterRenderPath.SHADER, "blur=" + blurRadius + ", saturation="
+                + String.format(java.util.Locale.ROOT, "%.2f", Float.valueOf(Math.max(0.0F, saturation))));
         return true;
     }
 
@@ -393,6 +448,7 @@ public class UiRenderContext {
 
     private void drawBackdropFilterFallback(int left, int top, int right, int bottom, int blurRadius, float saturation,
             int cornerRadius) {
+        recordBackdropFilterPath(BackdropFilterRenderPath.TINT_FALLBACK, "texture-copy-unavailable");
         int tintAlpha = clampInt(18 + Math.max(0, blurRadius) * 2 + Math.round(Math.max(0.0F,
                 saturation - 1.0F) * 16.0F), 18, 72);
         int highlightAlpha = clampInt(tintAlpha + 22, 32, 96);
@@ -711,7 +767,19 @@ public class UiRenderContext {
         if (blurRadius <= 0) {
             return 0.0F;
         }
-        return Math.max(1.0F, Math.min(28.0F, (float) blurRadius * 0.55F));
+        return Math.max(1.0F, Math.min(32.0F, (float) blurRadius * 0.75F));
+    }
+
+    private static float resolveBackdropLodBias(int blurRadius) {
+        if (blurRadius <= 0) {
+            return 0.0F;
+        }
+        return Math.max(0.0F, Math.min(3.2F, (float) blurRadius / 14.0F));
+    }
+
+    private static void recordBackdropFilterPath(BackdropFilterRenderPath renderPath, String detail) {
+        lastBackdropFilterRenderPath = renderPath == null ? BackdropFilterRenderPath.NONE : renderPath;
+        lastBackdropFilterDetail = detail == null ? "" : detail;
     }
 
     private static float clampCornerRadius(float width, float height, float radius) {

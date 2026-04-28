@@ -4,9 +4,11 @@ import java.util.Objects;
 
 import club.heiqi.uilib.ui.document.HtmlLikeDocumentWidget;
 import club.heiqi.uilib.ui.dom.ElementNode;
+import club.heiqi.uilib.ui.dom.TextNode;
 import club.heiqi.uilib.ui.dom.UiDocument;
 import club.heiqi.uilib.ui.layout.UiLayoutSpec;
 import club.heiqi.uilib.ui.layout.UiLength;
+import club.heiqi.uilib.ui.render.UiRenderContext;
 import club.heiqi.uilib.ui.style.UiAlignItems;
 import club.heiqi.uilib.ui.style.UiDisplay;
 import club.heiqi.uilib.ui.style.UiFlexDirection;
@@ -23,6 +25,7 @@ final class HtmlLikeGlassDocumentPageController extends DocumentPageController {
 
     private final DocumentPageAuthoringSurface documentPage;
     private final HtmlLikeDocumentWidget htmlLikeDocumentWidget;
+    private TextNode backdropPathText;
 
     /**
      * 创建大面积磨玻璃测试页控制器。
@@ -45,7 +48,8 @@ final class HtmlLikeGlassDocumentPageController extends DocumentPageController {
             TextMeasureService textMeasureService) {
         Objects.requireNonNull(documentUi, "documentUi");
         this.documentPage = Objects.requireNonNull(documentPage, "documentPage");
-        this.htmlLikeDocumentWidget = new HtmlLikeDocumentWidget(createGlassDocument(), 860, 560,
+        UiDocument document = createGlassDocument();
+        this.htmlLikeDocumentWidget = new HtmlLikeDocumentWidget(document, 860, 560,
                 Objects.requireNonNull(textMeasureService, "textMeasureService"));
         this.htmlLikeDocumentWidget.setViewportRootScrollingEnabled(true);
         this.htmlLikeDocumentWidget.setLayoutSpec(new UiLayoutSpec()
@@ -65,6 +69,13 @@ final class HtmlLikeGlassDocumentPageController extends DocumentPageController {
         documentPage.addBlock(htmlLikeDocumentWidget);
     }
 
+    @Override
+    void beforeDocumentFrame() {
+        if (backdropPathText != null) {
+            backdropPathText.setText(formatBackdropPathText());
+        }
+    }
+
     /**
      * 返回当前页面使用的 HTML-like 适配组件。
      *
@@ -74,7 +85,7 @@ final class HtmlLikeGlassDocumentPageController extends DocumentPageController {
         return htmlLikeDocumentWidget;
     }
 
-    private static UiDocument createGlassDocument() {
+    private UiDocument createGlassDocument() {
         UiDocument document = UiDocument.create();
         ElementNode root = document.getRootElement();
         root.style()
@@ -87,16 +98,16 @@ final class HtmlLikeGlassDocumentPageController extends DocumentPageController {
                 .setOverflowX(UiOverflow.HIDDEN)
                 .setOverflowY(UiOverflow.AUTO);
 
-        appendHeader(document, root);
+        backdropPathText = appendHeader(document, root);
         appendGlassStage(document, root);
         appendNotes(document, root);
         return document;
     }
 
-    private static void appendHeader(UiDocument document, ElementNode root) {
+    private static TextNode appendHeader(UiDocument document, ElementNode root) {
         ElementNode header = document.div();
         header.style()
-                .setHeight(UiStyleLength.px(74))
+                .setHeight(UiStyleLength.px(94))
                 .setPadding(UiStyleLength.px(14))
                 .setBackgroundColor(0xFF111827)
                 .setBorderColor(0xFF93C5FD)
@@ -106,7 +117,9 @@ final class HtmlLikeGlassDocumentPageController extends DocumentPageController {
                 .setOverflowY(UiOverflow.HIDDEN);
         header.appendText("HTML-like Glass Lab");
         header.appendText("Dedicated large-area backdrop-filter page for UI layer sampling tests.");
+        TextNode pathText = header.appendText("Backdrop path: pending");
         root.append(header);
+        return pathText;
     }
 
     private static void appendGlassStage(UiDocument document, ElementNode root) {
@@ -146,11 +159,11 @@ final class HtmlLikeGlassDocumentPageController extends DocumentPageController {
                 .setBorderWidth(UiStyleLength.px(1))
                 .setBorderRadius(UiStyleLength.px(20))
                 .setTextColor(0xFFFFFFFF)
-                .setBackdropBlurRadius(UiStyleLength.px(24))
-                .setBackdropSaturation(1.6F)
+                .setBackdropBlurRadius(UiStyleLength.px(36))
+                .setBackdropSaturation(1.25F)
                 .setOverflowX(UiOverflow.HIDDEN)
                 .setOverflowY(UiOverflow.HIDDEN);
-        glassSlab.appendText("Large backdrop slab: blur 24px / saturate 160%");
+        glassSlab.appendText("Large backdrop slab: blur 36px / saturate 125%");
         glassSlab.appendText("This slab intentionally covers most of the sampling field so visual regressions are easy to see.");
         glassSlab.appendText("Element text remains sharp; only previously painted UI behind this element is sampled.");
         stage.append(glassSlab);
@@ -206,5 +219,10 @@ final class HtmlLikeGlassDocumentPageController extends DocumentPageController {
                 .setOverflowY(UiOverflow.HIDDEN);
         notes.appendText("Validation notes: resize the screen, compare the large slab against the uncovered color grid, and watch for clip leaks or sampling offsets.");
         root.append(notes);
+    }
+
+    private static String formatBackdropPathText() {
+        UiRenderContext.BackdropFilterRenderPath renderPath = UiRenderContext.getLastBackdropFilterRenderPath();
+        return "Backdrop path: " + renderPath.getLabel() + " / " + UiRenderContext.getLastBackdropFilterDetail();
     }
 }

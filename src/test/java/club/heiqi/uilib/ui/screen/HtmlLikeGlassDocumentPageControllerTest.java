@@ -45,9 +45,25 @@ public class HtmlLikeGlassDocumentPageControllerTest {
 
         List<String> texts = collectDocumentTexts(fixture.controller.getHtmlLikeDocumentWidget());
         Assert.assertTrue(containsText(texts, "HTML-like Glass Lab"));
+        Assert.assertTrue(containsText(texts, "Backdrop path: pending"));
         Assert.assertTrue(containsText(texts, "UI layer sampling field"));
-        Assert.assertTrue(containsText(texts, "Large backdrop slab: blur 24px / saturate 160%"));
+        Assert.assertTrue(containsText(texts, "Large backdrop slab: blur 36px / saturate 125%"));
         Assert.assertTrue(containsText(texts, "visual regressions are easy to see"));
+    }
+
+    /**
+     * 验证页面每帧会刷新 backdrop 实际渲染路径诊断文本。
+     */
+    @Test
+    public void shouldExposeBackdropRenderPathText() {
+        TestFixture fixture = new TestFixture();
+
+        fixture.controller.configureDocumentPage();
+        fixture.controller.buildDocument();
+        fixture.controller.beforeDocumentFrame();
+
+        List<String> texts = collectDocumentTexts(fixture.controller.getHtmlLikeDocumentWidget());
+        Assert.assertTrue(containsText(texts, "Backdrop path:"));
     }
 
     /**
@@ -68,8 +84,8 @@ public class HtmlLikeGlassDocumentPageControllerTest {
         Assert.assertFalse(renderContext.drawCalls.isEmpty());
         Assert.assertEquals(1, renderContext.backdropCalls.size());
         BackdropCall backdropCall = renderContext.backdropCalls.get(0);
-        Assert.assertEquals(24, backdropCall.blurRadius);
-        Assert.assertEquals(1.6F, backdropCall.saturation, 0.001F);
+        Assert.assertEquals(36, backdropCall.blurRadius);
+        Assert.assertEquals(1.25F, backdropCall.saturation, 0.001F);
         Assert.assertEquals(20, backdropCall.cornerRadius);
         Assert.assertTrue(backdropCall.right - backdropCall.left >= 680);
         Assert.assertTrue(backdropCall.bottom - backdropCall.top >= 280);
