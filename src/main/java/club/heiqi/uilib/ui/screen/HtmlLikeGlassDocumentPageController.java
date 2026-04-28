@@ -13,6 +13,7 @@ import club.heiqi.uilib.ui.style.UiAlignItems;
 import club.heiqi.uilib.ui.style.UiDisplay;
 import club.heiqi.uilib.ui.style.UiFlexDirection;
 import club.heiqi.uilib.ui.style.UiOverflow;
+import club.heiqi.uilib.ui.style.UiPosition;
 import club.heiqi.uilib.ui.style.UiStyleInsets;
 import club.heiqi.uilib.ui.style.UiStyleLength;
 import club.heiqi.uilib.ui.text.DefaultTextMeasureService;
@@ -157,8 +158,10 @@ final class HtmlLikeGlassDocumentPageController extends DocumentPageController {
         glassSlab.style()
                 .setWidth(UiStyleLength.percent(0.86F))
                 .setHeight(UiStyleLength.px(260))
-                .setMargin(UiStyleInsets.of(UiStyleLength.px(-316), UiStyleLength.px(0), UiStyleLength.px(0),
-                        UiStyleLength.percent(0.07F)))
+                .setPosition(UiPosition.RELATIVE)
+                .setTop(UiStyleLength.px(-316))
+                .setLeft(UiStyleLength.percent(0.07F))
+                .setZIndex(1)
                 .setPadding(UiStyleLength.px(16))
                 .setBackgroundColor(0x44FFFFFF)
                 .setBorderColor(0xDDFFFFFF)

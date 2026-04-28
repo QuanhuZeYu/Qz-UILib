@@ -31,6 +31,12 @@ public final class UiStyleResolver {
         UiDisplay display = style.getDisplay() == null ? defaultDisplay(element.getTagName()) : style.getDisplay();
         UiStyleLength width = style.getWidth() == null ? UiStyleLength.auto() : style.getWidth();
         UiStyleLength height = style.getHeight() == null ? UiStyleLength.auto() : style.getHeight();
+        UiPosition position = style.getPosition() == null ? UiPosition.STATIC : style.getPosition();
+        UiStyleLength top = style.getTop() == null ? UiStyleLength.auto() : style.getTop();
+        UiStyleLength right = style.getRight() == null ? UiStyleLength.auto() : style.getRight();
+        UiStyleLength bottom = style.getBottom() == null ? UiStyleLength.auto() : style.getBottom();
+        UiStyleLength left = style.getLeft() == null ? UiStyleLength.auto() : style.getLeft();
+        Integer zIndex = style.getZIndex();
         UiStyleInsets margin = style.getMargin() == null ? UiStyleInsets.zero() : style.getMargin();
         UiStyleInsets padding = style.getPadding() == null ? UiStyleInsets.zero() : style.getPadding();
         UiStyleLength borderWidth = style.getBorderWidth() == null ? UiStyleLength.px(0) : style.getBorderWidth();
@@ -52,9 +58,10 @@ public final class UiStyleResolver {
                 : style.getBackdropBlurRadius();
         float backdropSaturation = style.getBackdropSaturation() == null ? 1.0F
                 : style.getBackdropSaturation().floatValue();
-        return new ComputedStyle(display, width, height, margin, padding, borderWidth, borderRadius, overflowX,
-                overflowY, flexDirection, alignItems, justifyContent, rowGap, columnGap, flexGrow, flexShrink,
-                backgroundColor, borderColor, textColor, backdropBlurRadius, backdropSaturation);
+        return new ComputedStyle(display, width, height, position, top, right, bottom, left, zIndex, margin,
+                padding, borderWidth, borderRadius, overflowX, overflowY, flexDirection, alignItems, justifyContent,
+                rowGap, columnGap, flexGrow, flexShrink, backgroundColor, borderColor, textColor,
+                backdropBlurRadius, backdropSaturation);
     }
 
     private static ComputedStyle computeParentStyle(ElementNode element) {

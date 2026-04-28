@@ -1,11 +1,14 @@
 package club.heiqi.uilib.ui.layout;
 
+import java.util.ArrayList;
 import java.util.Collections;
+import java.util.Comparator;
 import java.util.List;
 import java.util.Objects;
 
 import club.heiqi.uilib.ui.dom.ElementNode;
 import club.heiqi.uilib.ui.style.ComputedStyle;
+import club.heiqi.uilib.ui.style.UiPosition;
 
 /**
  * HTML-like 元素布局盒。
@@ -25,10 +28,13 @@ public final class DocumentLayoutBox {
     private final int top;
     private final int width;
     private final int height;
+    private final int positionOffsetX;
+    private final int positionOffsetY;
 
     DocumentLayoutBox(ElementNode element, ComputedStyle computedStyle, List<DocumentLayoutBox> children,
             List<DocumentLayoutTextRun> textRuns, DocumentLayoutEdges margin, DocumentLayoutEdges border,
-            DocumentLayoutEdges padding, int left, int top, int width, int height) {
+            DocumentLayoutEdges padding, int left, int top, int width, int height, int positionOffsetX,
+            int positionOffsetY) {
         this.element = Objects.requireNonNull(element, "element");
         this.computedStyle = Objects.requireNonNull(computedStyle, "computedStyle");
         this.children = Collections.unmodifiableList(Objects.requireNonNull(children, "children"));
@@ -40,6 +46,8 @@ public final class DocumentLayoutBox {
         this.top = top;
         this.width = Math.max(0, width);
         this.height = Math.max(0, height);
+        this.positionOffsetX = positionOffsetX;
+        this.positionOffsetY = positionOffsetY;
     }
 
     public ElementNode getElement() {
@@ -52,6 +60,24 @@ public final class DocumentLayoutBox {
 
     public List<DocumentLayoutBox> getChildren() {
         return children;
+    }
+
+    /**
+     * 返回按同级 stacking 顺序排序后的子盒列表。
+     *
+     * <p>当前仅实现 positioned `z-index` 的稳定排序；相同层级保留文档顺序。</p>
+     *
+     * @return 子盒 stacking 顺序列表
+     */
+    public List<DocumentLayoutBox> getChildrenInStackingOrder() {
+        List<DocumentLayoutBox> orderedChildren = new ArrayList<DocumentLayoutBox>(children);
+        Collections.sort(orderedChildren, new Comparator<DocumentLayoutBox>() {
+            @Override
+            public int compare(DocumentLayoutBox first, DocumentLayoutBox second) {
+                return Integer.compare(getStackingZIndex(first), getStackingZIndex(second));
+            }
+        });
+        return Collections.unmodifiableList(orderedChildren);
     }
 
     /**
@@ -111,6 +137,24 @@ public final class DocumentLayoutBox {
         return height;
     }
 
+    /**
+     * 返回 relative 定位产生的视觉 X 偏移，普通流几何不受该值影响。
+     *
+     * @return 视觉 X 偏移
+     */
+    public int getPositionOffsetX() {
+        return positionOffsetX;
+    }
+
+    /**
+     * 返回 relative 定位产生的视觉 Y 偏移，普通流几何不受该值影响。
+     *
+     * @return 视觉 Y 偏移
+     */
+    public int getPositionOffsetY() {
+        return positionOffsetY;
+    }
+
     public int getRight() {
         return left + width;
     }
@@ -149,5 +193,13 @@ public final class DocumentLayoutBox {
 
     public int getMarginBoxBottom() {
         return getBottom() + margin.getBottom();
+    }
+
+    private static int getStackingZIndex(DocumentLayoutBox box) {
+        ComputedStyle style = box.getComputedStyle();
+        if (style.getPosition() == UiPosition.STATIC || style.getZIndex() == null) {
+            return 0;
+        }
+        return style.getZIndex().intValue();
     }
 }

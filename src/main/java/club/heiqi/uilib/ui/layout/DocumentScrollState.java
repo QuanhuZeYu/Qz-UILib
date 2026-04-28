@@ -3,6 +3,7 @@ package club.heiqi.uilib.ui.layout;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Iterator;
+import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
@@ -460,8 +461,8 @@ public final class DocumentScrollState {
             contentBottom = Math.max(contentBottom, textRun.getBottom());
         }
         for (DocumentLayoutBox child : box.getChildren()) {
-            contentRight = Math.max(contentRight, child.getMarginBoxRight());
-            contentBottom = Math.max(contentBottom, child.getMarginBoxBottom());
+            contentRight = Math.max(contentRight, child.getMarginBoxRight() + child.getPositionOffsetX());
+            contentBottom = Math.max(contentBottom, child.getMarginBoxBottom() + child.getPositionOffsetY());
         }
 
         int contentWidth = Math.max(viewportWidth, contentRight - box.getContentLeft());
@@ -490,13 +491,15 @@ public final class DocumentScrollState {
 
     private DocumentLayoutBox findScrollableBoxAt(DocumentLayoutBox box, int mouseX, int mouseY, int offsetX,
             int offsetY) {
-        int viewportLeft = box.getContentLeft() + offsetX;
-        int viewportTop = box.getContentTop() + offsetY;
+        int boxOffsetX = offsetX + box.getPositionOffsetX();
+        int boxOffsetY = offsetY + box.getPositionOffsetY();
+        int viewportLeft = box.getContentLeft() + boxOffsetX;
+        int viewportTop = box.getContentTop() + boxOffsetY;
         int viewportRight = viewportLeft + box.getContentWidth();
         int viewportBottom = viewportTop + box.getContentHeight();
         boolean pointerInViewport = containsInRect(mouseX, mouseY, viewportLeft, viewportTop, viewportRight,
                 viewportBottom);
-        if (!containsInBorderBox(box, mouseX, mouseY, offsetX, offsetY) && !pointerInViewport) {
+        if (!containsInBorderBox(box, mouseX, mouseY, boxOffsetX, boxOffsetY) && !pointerInViewport) {
             return null;
         }
 
@@ -504,10 +507,11 @@ public final class DocumentScrollState {
         boolean clippedChildren = style.getOverflowX() != UiOverflow.VISIBLE
                 || style.getOverflowY() != UiOverflow.VISIBLE;
         if (!clippedChildren || pointerInViewport) {
-            int childOffsetX = offsetX - getScrollLeft(box.getElement());
-            int childOffsetY = offsetY - getScrollTop(box.getElement());
-            for (int index = box.getChildren().size() - 1; index >= 0; index--) {
-                DocumentLayoutBox child = box.getChildren().get(index);
+            int childOffsetX = boxOffsetX - getScrollLeft(box.getElement());
+            int childOffsetY = boxOffsetY - getScrollTop(box.getElement());
+            List<DocumentLayoutBox> children = box.getChildrenInStackingOrder();
+            for (int index = children.size() - 1; index >= 0; index--) {
+                DocumentLayoutBox child = children.get(index);
                 DocumentLayoutBox hit = findScrollableBoxAt(child, mouseX, mouseY, childOffsetX, childOffsetY);
                 if (hit != null) {
                     return hit;
@@ -528,19 +532,22 @@ public final class DocumentScrollState {
 
     private ScrollbarHit findScrollbarHit(DocumentLayoutBox rootBox, DocumentLayoutBox box, int mouseX, int mouseY,
             int offsetX, int offsetY, long currentTimeNanos) {
-        ScrollbarHit currentHit = findCurrentScrollbarHit(rootBox, box, mouseX, mouseY, offsetX, offsetY,
+        int boxOffsetX = offsetX + box.getPositionOffsetX();
+        int boxOffsetY = offsetY + box.getPositionOffsetY();
+        ScrollbarHit currentHit = findCurrentScrollbarHit(rootBox, box, mouseX, mouseY, boxOffsetX, boxOffsetY,
                 currentTimeNanos);
         if (currentHit != null) {
             return currentHit;
         }
-        if (!canReachChildren(box, mouseX, mouseY, offsetX, offsetY)) {
+        if (!canReachChildren(box, mouseX, mouseY, boxOffsetX, boxOffsetY)) {
             return null;
         }
 
-        int childOffsetX = offsetX - getScrollLeft(box.getElement());
-        int childOffsetY = offsetY - getScrollTop(box.getElement());
-        for (int index = box.getChildren().size() - 1; index >= 0; index--) {
-            DocumentLayoutBox child = box.getChildren().get(index);
+        int childOffsetX = boxOffsetX - getScrollLeft(box.getElement());
+        int childOffsetY = boxOffsetY - getScrollTop(box.getElement());
+        List<DocumentLayoutBox> children = box.getChildrenInStackingOrder();
+        for (int index = children.size() - 1; index >= 0; index--) {
+            DocumentLayoutBox child = children.get(index);
             ScrollbarHit childHit = findScrollbarHit(rootBox, child, mouseX, mouseY, childOffsetX, childOffsetY,
                     currentTimeNanos);
             if (childHit != null) {
@@ -576,20 +583,22 @@ public final class DocumentScrollState {
         if (activeScrollbarDrag == null) {
             return null;
         }
+        int boxOffsetX = offsetX + box.getPositionOffsetX();
+        int boxOffsetY = offsetY + box.getPositionOffsetY();
         if (box.getElement() == activeScrollbarDrag.element) {
             boolean hasVerticalScrollbar = getMaxScrollTop(box.getElement()) > 0
                     && box.getComputedStyle().getOverflowY() == UiOverflow.AUTO;
             boolean hasHorizontalScrollbar = getMaxScrollLeft(box.getElement()) > 0
                     && box.getComputedStyle().getOverflowX() == UiOverflow.AUTO;
             ScrollbarMetrics metrics = activeScrollbarDrag.vertical
-                    ? getVerticalScrollbarMetrics(box, offsetX, offsetY, hasHorizontalScrollbar)
-                    : getHorizontalScrollbarMetrics(box, offsetX, offsetY, hasVerticalScrollbar);
+                    ? getVerticalScrollbarMetrics(box, boxOffsetX, boxOffsetY, hasHorizontalScrollbar)
+                    : getHorizontalScrollbarMetrics(box, boxOffsetX, boxOffsetY, hasVerticalScrollbar);
             return metrics == null ? null : new ScrollbarHit(box, metrics, activeScrollbarDrag.vertical);
         }
 
-        int childOffsetX = offsetX - getScrollLeft(box.getElement());
-        int childOffsetY = offsetY - getScrollTop(box.getElement());
-        for (DocumentLayoutBox child : box.getChildren()) {
+        int childOffsetX = boxOffsetX - getScrollLeft(box.getElement());
+        int childOffsetY = boxOffsetY - getScrollTop(box.getElement());
+        for (DocumentLayoutBox child : box.getChildrenInStackingOrder()) {
             ScrollbarHit hit = findActiveScrollbar(rootBox, child, childOffsetX, childOffsetY, currentTimeNanos);
             if (hit != null) {
                 return hit;

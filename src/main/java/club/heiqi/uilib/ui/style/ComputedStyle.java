@@ -10,6 +10,12 @@ public final class ComputedStyle {
     private final UiDisplay display;
     private final UiStyleLength width;
     private final UiStyleLength height;
+    private final UiPosition position;
+    private final UiStyleLength top;
+    private final UiStyleLength right;
+    private final UiStyleLength bottom;
+    private final UiStyleLength left;
+    private final Integer zIndex;
     private final UiStyleInsets margin;
     private final UiStyleInsets padding;
     private final UiStyleLength borderWidth;
@@ -29,15 +35,22 @@ public final class ComputedStyle {
     private final UiStyleLength backdropBlurRadius;
     private final float backdropSaturation;
 
-    ComputedStyle(UiDisplay display, UiStyleLength width, UiStyleLength height, UiStyleInsets margin,
-            UiStyleInsets padding, UiStyleLength borderWidth, UiStyleLength borderRadius, UiOverflow overflowX,
-            UiOverflow overflowY, UiFlexDirection flexDirection, UiAlignItems alignItems,
+    ComputedStyle(UiDisplay display, UiStyleLength width, UiStyleLength height, UiPosition position,
+            UiStyleLength top, UiStyleLength right, UiStyleLength bottom, UiStyleLength left, Integer zIndex,
+            UiStyleInsets margin, UiStyleInsets padding, UiStyleLength borderWidth, UiStyleLength borderRadius,
+            UiOverflow overflowX, UiOverflow overflowY, UiFlexDirection flexDirection, UiAlignItems alignItems,
             UiJustifyContent justifyContent, UiStyleLength rowGap, UiStyleLength columnGap, float flexGrow,
-            float flexShrink, int backgroundColor, int borderColor, int textColor,
-            UiStyleLength backdropBlurRadius, float backdropSaturation) {
+            float flexShrink, int backgroundColor, int borderColor, int textColor, UiStyleLength backdropBlurRadius,
+            float backdropSaturation) {
         this.display = Objects.requireNonNull(display, "display");
         this.width = Objects.requireNonNull(width, "width");
         this.height = Objects.requireNonNull(height, "height");
+        this.position = Objects.requireNonNull(position, "position");
+        this.top = Objects.requireNonNull(top, "top");
+        this.right = Objects.requireNonNull(right, "right");
+        this.bottom = Objects.requireNonNull(bottom, "bottom");
+        this.left = Objects.requireNonNull(left, "left");
+        this.zIndex = zIndex;
         this.margin = Objects.requireNonNull(margin, "margin");
         this.padding = Objects.requireNonNull(padding, "padding");
         this.borderWidth = Objects.requireNonNull(borderWidth, "borderWidth");
@@ -68,6 +81,30 @@ public final class ComputedStyle {
 
     public UiStyleLength getHeight() {
         return height;
+    }
+
+    public UiPosition getPosition() {
+        return position;
+    }
+
+    public UiStyleLength getTop() {
+        return top;
+    }
+
+    public UiStyleLength getRight() {
+        return right;
+    }
+
+    public UiStyleLength getBottom() {
+        return bottom;
+    }
+
+    public UiStyleLength getLeft() {
+        return left;
+    }
+
+    public Integer getZIndex() {
+        return zIndex;
     }
 
     public UiStyleInsets getMargin() {

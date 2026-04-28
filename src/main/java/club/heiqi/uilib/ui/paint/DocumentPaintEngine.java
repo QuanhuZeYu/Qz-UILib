@@ -26,7 +26,7 @@ public final class DocumentPaintEngine {
      * 从布局盒树生成绘制命令。
      *
      * <p>当前初版按背后滤镜、元素背景、元素边框、结构裁剪、滚动内容、子树与滚动条的顺序输出命令。
-     * stacking context 会在后续阶段继续扩展。</p>
+     * 同级子元素会按 positioned z-index 做稳定排序，更完整 stacking context 会在后续阶段继续扩展。</p>
      *
      * @param rootBox 根布局盒
      * @return 绘制命令列表
@@ -68,25 +68,27 @@ public final class DocumentPaintEngine {
     private static void appendBoxCommands(DocumentLayoutBox rootBox, DocumentLayoutBox box,
             List<DocumentPaintCommand> commands, DocumentScrollState scrollState, int offsetX, int offsetY,
             long currentTimeNanos) {
-        appendBackdropFilterCommand(box, commands, offsetX, offsetY);
-        appendBackgroundCommand(box, commands, offsetX, offsetY);
-        appendBorderCommand(box, commands, offsetX, offsetY);
+        int boxOffsetX = offsetX + box.getPositionOffsetX();
+        int boxOffsetY = offsetY + box.getPositionOffsetY();
+        appendBackdropFilterCommand(box, commands, boxOffsetX, boxOffsetY);
+        appendBackgroundCommand(box, commands, boxOffsetX, boxOffsetY);
+        appendBorderCommand(box, commands, boxOffsetX, boxOffsetY);
         boolean clipChildren = shouldClipChildren(box);
         if (clipChildren) {
-            appendClipStartCommand(box, commands, offsetX, offsetY);
+            appendClipStartCommand(box, commands, boxOffsetX, boxOffsetY);
         }
-        int childOffsetX = offsetX - getScrollLeft(scrollState, box);
-        int childOffsetY = offsetY - getScrollTop(scrollState, box);
+        int childOffsetX = boxOffsetX - getScrollLeft(scrollState, box);
+        int childOffsetY = boxOffsetY - getScrollTop(scrollState, box);
         appendCustomCommand(box, commands, childOffsetX, childOffsetY);
         appendTextCommands(box, commands, childOffsetX, childOffsetY);
-        for (DocumentLayoutBox child : box.getChildren()) {
+        for (DocumentLayoutBox child : box.getChildrenInStackingOrder()) {
             appendBoxCommands(rootBox, child, commands, scrollState, childOffsetX, childOffsetY,
                     currentTimeNanos);
         }
         if (clipChildren) {
-            appendClipEndCommand(box, commands, offsetX, offsetY);
+            appendClipEndCommand(box, commands, boxOffsetX, boxOffsetY);
         }
-        appendScrollbarCommands(rootBox, box, commands, scrollState, offsetX, offsetY, currentTimeNanos);
+        appendScrollbarCommands(rootBox, box, commands, scrollState, boxOffsetX, boxOffsetY, currentTimeNanos);
     }
 
     private static void appendBackgroundCommand(DocumentLayoutBox box, List<DocumentPaintCommand> commands,

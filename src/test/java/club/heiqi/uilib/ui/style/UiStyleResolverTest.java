@@ -23,6 +23,10 @@ public class UiStyleResolverTest {
         panel.style()
                 .setDisplay(UiDisplay.FLEX)
                 .setWidth(UiStyleLength.percent(0.5F))
+                .setPosition(UiPosition.RELATIVE)
+                .setTop(UiStyleLength.px(-4))
+                .setLeft(UiStyleLength.px(8))
+                .setZIndex(3)
                 .setPadding(UiStyleLength.px(12))
                 .setBackgroundColor(0xAA101820)
                 .setBackdropBlurRadius(UiStyleLength.px(14))
@@ -32,6 +36,10 @@ public class UiStyleResolverTest {
         Assert.assertSame(panel.style(), panel.getInlineStyle());
         Assert.assertEquals(UiDisplay.FLEX, panel.style().getDisplay());
         Assert.assertEquals(UiStyleLength.percent(0.5F), panel.style().getWidth());
+        Assert.assertEquals(UiPosition.RELATIVE, panel.style().getPosition());
+        Assert.assertEquals(UiStyleLength.px(-4), panel.style().getTop());
+        Assert.assertEquals(UiStyleLength.px(8), panel.style().getLeft());
+        Assert.assertEquals(Integer.valueOf(3), panel.style().getZIndex());
         Assert.assertEquals(UiStyleInsets.all(UiStyleLength.px(12)), panel.style().getPadding());
         Assert.assertEquals(Integer.valueOf(0xAA101820), panel.style().getBackgroundColor());
         Assert.assertEquals(UiStyleLength.px(14), panel.style().getBackdropBlurRadius());
@@ -57,6 +65,12 @@ public class UiStyleResolverTest {
         Assert.assertEquals(UiDisplay.INLINE, spanStyle.getDisplay());
         Assert.assertEquals(0xFFD7E3FF, spanStyle.getTextColor());
         Assert.assertEquals(UiStyleLength.auto(), spanStyle.getWidth());
+        Assert.assertEquals(UiPosition.STATIC, spanStyle.getPosition());
+        Assert.assertEquals(UiStyleLength.auto(), spanStyle.getTop());
+        Assert.assertEquals(UiStyleLength.auto(), spanStyle.getRight());
+        Assert.assertEquals(UiStyleLength.auto(), spanStyle.getBottom());
+        Assert.assertEquals(UiStyleLength.auto(), spanStyle.getLeft());
+        Assert.assertNull(spanStyle.getZIndex());
         Assert.assertEquals(UiStyleInsets.zero(), spanStyle.getMargin());
         Assert.assertEquals(UiOverflow.VISIBLE, spanStyle.getOverflowX());
         Assert.assertEquals(UiOverflow.VISIBLE, spanStyle.getOverflowY());
@@ -83,6 +97,12 @@ public class UiStyleResolverTest {
                 .setDisplay(UiDisplay.FLEX)
                 .setWidth(UiStyleLength.percent(1.0F))
                 .setHeight(UiStyleLength.px(120))
+                .setPosition(UiPosition.RELATIVE)
+                .setTop(UiStyleLength.px(5))
+                .setRight(UiStyleLength.px(7))
+                .setBottom(UiStyleLength.px(9))
+                .setLeft(UiStyleLength.px(11))
+                .setZIndex(4)
                 .setMargin(UiStyleInsets.of(UiStyleLength.px(4), UiStyleLength.px(8), UiStyleLength.px(12),
                         UiStyleLength.px(16)))
                 .setPadding(UiStyleLength.px(10))
@@ -107,6 +127,12 @@ public class UiStyleResolverTest {
         Assert.assertEquals(UiDisplay.FLEX, computedStyle.getDisplay());
         Assert.assertEquals(UiStyleLength.percent(1.0F), computedStyle.getWidth());
         Assert.assertEquals(UiStyleLength.px(120), computedStyle.getHeight());
+        Assert.assertEquals(UiPosition.RELATIVE, computedStyle.getPosition());
+        Assert.assertEquals(UiStyleLength.px(5), computedStyle.getTop());
+        Assert.assertEquals(UiStyleLength.px(7), computedStyle.getRight());
+        Assert.assertEquals(UiStyleLength.px(9), computedStyle.getBottom());
+        Assert.assertEquals(UiStyleLength.px(11), computedStyle.getLeft());
+        Assert.assertEquals(Integer.valueOf(4), computedStyle.getZIndex());
         Assert.assertEquals(UiStyleLength.px(4), computedStyle.getMargin().getTop());
         Assert.assertEquals(UiStyleLength.px(10), computedStyle.getPadding().getLeft());
         Assert.assertEquals(UiStyleLength.px(1), computedStyle.getBorderWidth());

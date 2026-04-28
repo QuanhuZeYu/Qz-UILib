@@ -14,6 +14,7 @@ import club.heiqi.uilib.ui.layout.DocumentLayoutEngine;
 import club.heiqi.uilib.ui.layout.DocumentScrollState;
 import club.heiqi.uilib.ui.render.UiRenderContext;
 import club.heiqi.uilib.ui.style.UiOverflow;
+import club.heiqi.uilib.ui.style.UiPosition;
 import club.heiqi.uilib.ui.style.UiStyleLength;
 import club.heiqi.uilib.ui.text.TextMeasureService;
 
@@ -86,6 +87,40 @@ public class DocumentPaintEngineTest {
                 10);
         assertCommand(commands.get(2), DocumentPaintCommandType.BORDER, root, 0, 0, 82, 30, 0x99FFFFFF, 1,
                 10);
+    }
+
+    /**
+     * 验证同级 positioned 子元素按 z-index 排序，并在绘制阶段应用 relative 偏移。
+     */
+    @Test
+    public void shouldPaintPositionedChildrenByZIndex() {
+        UiDocument document = UiDocument.create();
+        ElementNode root = document.getRootElement();
+        ElementNode raised = document.div();
+        ElementNode normal = document.div();
+
+        root.style().setWidth(UiStyleLength.px(100));
+        raised.style()
+                .setWidth(UiStyleLength.px(50))
+                .setHeight(UiStyleLength.px(20))
+                .setPosition(UiPosition.RELATIVE)
+                .setTop(UiStyleLength.px(16))
+                .setZIndex(1)
+                .setBackgroundColor(0xFFFF0000);
+        normal.style()
+                .setWidth(UiStyleLength.px(50))
+                .setHeight(UiStyleLength.px(20))
+                .setBackgroundColor(0xFF0000FF);
+        root.append(raised).append(normal);
+
+        List<DocumentPaintCommand> commands = DocumentPaintEngine.buildPaintCommands(
+                DocumentLayoutEngine.layout(root, 120, 0));
+
+        Assert.assertEquals(2, commands.size());
+        assertCommand(commands.get(0), DocumentPaintCommandType.BACKGROUND, normal, 0, 20, 50, 40, 0xFF0000FF,
+                0, 0);
+        assertCommand(commands.get(1), DocumentPaintCommandType.BACKGROUND, raised, 0, 16, 50, 36, 0xFFFF0000,
+                0, 0);
     }
 
     /**

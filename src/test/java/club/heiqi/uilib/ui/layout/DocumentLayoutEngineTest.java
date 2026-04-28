@@ -13,6 +13,7 @@ import club.heiqi.uilib.ui.style.UiAlignItems;
 import club.heiqi.uilib.ui.style.UiDisplay;
 import club.heiqi.uilib.ui.style.UiFlexDirection;
 import club.heiqi.uilib.ui.style.UiJustifyContent;
+import club.heiqi.uilib.ui.style.UiPosition;
 import club.heiqi.uilib.ui.style.UiStyleInsets;
 import club.heiqi.uilib.ui.style.UiStyleLength;
 import club.heiqi.uilib.ui.text.TextMeasureService;
@@ -139,6 +140,37 @@ public class DocumentLayoutEngineTest {
         Assert.assertEquals(3, childBox.getTop());
         Assert.assertEquals(184, childBox.getWidth());
         Assert.assertEquals(20, childBox.getMarginBoxBottom());
+    }
+
+    /**
+     * 验证 relative 定位只记录视觉偏移，不改变普通流排布。
+     */
+    @Test
+    public void shouldKeepRelativePositionedElementInNormalFlow() {
+        UiDocument document = UiDocument.create();
+        ElementNode root = document.getRootElement();
+        ElementNode relative = document.div();
+        ElementNode following = document.div();
+
+        root.style().setWidth(UiStyleLength.px(120));
+        relative.style()
+                .setHeight(UiStyleLength.px(20))
+                .setPosition(UiPosition.RELATIVE)
+                .setTop(UiStyleLength.px(-6))
+                .setLeft(UiStyleLength.px(9));
+        following.style().setHeight(UiStyleLength.px(12));
+        root.append(relative).append(following);
+
+        DocumentLayoutBox rootBox = DocumentLayoutEngine.layout(root, 160, 0);
+        DocumentLayoutBox relativeBox = rootBox.getChildren().get(0);
+        DocumentLayoutBox followingBox = rootBox.getChildren().get(1);
+
+        Assert.assertEquals(0, relativeBox.getLeft());
+        Assert.assertEquals(0, relativeBox.getTop());
+        Assert.assertEquals(9, relativeBox.getPositionOffsetX());
+        Assert.assertEquals(-6, relativeBox.getPositionOffsetY());
+        Assert.assertEquals(20, followingBox.getTop());
+        Assert.assertEquals(32, rootBox.getContentHeight());
     }
 
     /**

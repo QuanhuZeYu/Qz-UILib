@@ -18,6 +18,12 @@ public final class UiStyleDeclaration {
     private UiDisplay display;
     private UiStyleLength width;
     private UiStyleLength height;
+    private UiPosition position;
+    private UiStyleLength top;
+    private UiStyleLength right;
+    private UiStyleLength bottom;
+    private UiStyleLength left;
+    private Integer zIndex;
     private UiStyleInsets margin;
     private UiStyleInsets padding;
     private UiStyleLength borderWidth;
@@ -79,6 +85,78 @@ public final class UiStyleDeclaration {
 
     public UiStyleDeclaration clearHeight() {
         return updateHeight(null);
+    }
+
+    public UiPosition getPosition() {
+        return position;
+    }
+
+    public UiStyleDeclaration setPosition(UiPosition position) {
+        return updatePosition(Objects.requireNonNull(position, "position"));
+    }
+
+    public UiStyleDeclaration clearPosition() {
+        return updatePosition(null);
+    }
+
+    public UiStyleLength getTop() {
+        return top;
+    }
+
+    public UiStyleDeclaration setTop(UiStyleLength top) {
+        return updateTop(Objects.requireNonNull(top, "top"));
+    }
+
+    public UiStyleDeclaration clearTop() {
+        return updateTop(null);
+    }
+
+    public UiStyleLength getRight() {
+        return right;
+    }
+
+    public UiStyleDeclaration setRight(UiStyleLength right) {
+        return updateRight(Objects.requireNonNull(right, "right"));
+    }
+
+    public UiStyleDeclaration clearRight() {
+        return updateRight(null);
+    }
+
+    public UiStyleLength getBottom() {
+        return bottom;
+    }
+
+    public UiStyleDeclaration setBottom(UiStyleLength bottom) {
+        return updateBottom(Objects.requireNonNull(bottom, "bottom"));
+    }
+
+    public UiStyleDeclaration clearBottom() {
+        return updateBottom(null);
+    }
+
+    public UiStyleLength getLeft() {
+        return left;
+    }
+
+    public UiStyleDeclaration setLeft(UiStyleLength left) {
+        return updateLeft(Objects.requireNonNull(left, "left"));
+    }
+
+    public UiStyleDeclaration clearLeft() {
+        return updateLeft(null);
+    }
+
+    public Integer getZIndex() {
+        return zIndex;
+    }
+
+    public UiStyleDeclaration setZIndex(int zIndex) {
+        return updateZIndex(Integer.valueOf(zIndex));
+    }
+
+    public UiStyleDeclaration clearZIndex() {
+        return updateZIndex(null);
     }
 
     public UiStyleInsets getMargin() {
@@ -337,6 +415,54 @@ public final class UiStyleDeclaration {
     private UiStyleDeclaration updateHeight(UiStyleLength value) {
         if (!Objects.equals(height, value)) {
             height = value;
+            recordChange();
+        }
+        return this;
+    }
+
+    private UiStyleDeclaration updatePosition(UiPosition value) {
+        if (position != value) {
+            position = value;
+            recordChange();
+        }
+        return this;
+    }
+
+    private UiStyleDeclaration updateTop(UiStyleLength value) {
+        if (!Objects.equals(top, value)) {
+            top = value;
+            recordChange();
+        }
+        return this;
+    }
+
+    private UiStyleDeclaration updateRight(UiStyleLength value) {
+        if (!Objects.equals(right, value)) {
+            right = value;
+            recordChange();
+        }
+        return this;
+    }
+
+    private UiStyleDeclaration updateBottom(UiStyleLength value) {
+        if (!Objects.equals(bottom, value)) {
+            bottom = value;
+            recordChange();
+        }
+        return this;
+    }
+
+    private UiStyleDeclaration updateLeft(UiStyleLength value) {
+        if (!Objects.equals(left, value)) {
+            left = value;
+            recordChange();
+        }
+        return this;
+    }
+
+    private UiStyleDeclaration updateZIndex(Integer value) {
+        if (!Objects.equals(zIndex, value)) {
+            zIndex = value;
             recordChange();
         }
         return this;

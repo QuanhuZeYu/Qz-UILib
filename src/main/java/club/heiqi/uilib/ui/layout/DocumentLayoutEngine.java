@@ -13,6 +13,7 @@ import club.heiqi.uilib.ui.style.UiAlignItems;
 import club.heiqi.uilib.ui.style.UiDisplay;
 import club.heiqi.uilib.ui.style.UiFlexDirection;
 import club.heiqi.uilib.ui.style.UiJustifyContent;
+import club.heiqi.uilib.ui.style.UiPosition;
 import club.heiqi.uilib.ui.style.UiStyleInsets;
 import club.heiqi.uilib.ui.style.UiStyleLength;
 import club.heiqi.uilib.ui.style.UiStyleResolver;
@@ -21,8 +22,8 @@ import club.heiqi.uilib.ui.text.TextMeasureService;
 /**
  * HTML-like 文档布局引擎初版。
  *
- * <p>当前实现覆盖元素盒、box model、block flow 与最小 flex flow。文本 inline formatting、
- * 多行 flex wrap、绝对定位和滚动布局会在后续阶段继续扩展。</p>
+ * <p>当前实现覆盖元素盒、box model、block flow、最小 flex flow 与 relative 定位偏移。
+ * 文本 inline formatting、多行 flex wrap、absolute/fixed 定位和滚动布局会在后续阶段继续扩展。</p>
  */
 public final class DocumentLayoutEngine {
 
@@ -98,7 +99,7 @@ public final class DocumentLayoutEngine {
         if (computedStyle.getDisplay() == UiDisplay.NONE) {
             return new DocumentLayoutBox(element, computedStyle, new ArrayList<DocumentLayoutBox>(),
                     new ArrayList<DocumentLayoutTextRun>(), DocumentLayoutEdges.zero(), DocumentLayoutEdges.zero(),
-                    DocumentLayoutEdges.zero(), containingLeft, flowTop, 0, 0);
+                    DocumentLayoutEdges.zero(), containingLeft, flowTop, 0, 0, 0, 0);
         }
 
         DocumentLayoutEdges margin = resolveInsets(computedStyle.getMargin(), containingWidth, false);
@@ -126,8 +127,11 @@ public final class DocumentLayoutEngine {
         int contentHeight = forcedContentHeight >= 0 ? forcedContentHeight
                 : Math.max(0, computedStyle.getHeight().resolve(0, autoContentHeight));
         int borderBoxHeight = contentHeight + border.getVertical() + padding.getVertical();
+        int positionOffsetX = resolveRelativeOffsetX(computedStyle, containingWidth);
+        int positionOffsetY = resolveRelativeOffsetY(computedStyle, borderBoxHeight);
         return new DocumentLayoutBox(element, computedStyle, childrenResult.children, childrenResult.textRuns,
-                margin, border, padding, borderBoxLeft, borderBoxTop, borderBoxWidth, borderBoxHeight);
+                margin, border, padding, borderBoxLeft, borderBoxTop, borderBoxWidth, borderBoxHeight,
+                positionOffsetX, positionOffsetY);
     }
 
     private static LayoutChildrenResult layoutBlockChildren(ElementNode element, int contentLeft, int contentTop,
@@ -464,6 +468,32 @@ public final class DocumentLayoutEngine {
 
     private static boolean isAuto(UiStyleLength length) {
         return length.getType() == UiStyleLength.Type.AUTO;
+    }
+
+    private static int resolveRelativeOffsetX(ComputedStyle computedStyle, int containingWidth) {
+        if (computedStyle.getPosition() != UiPosition.RELATIVE) {
+            return 0;
+        }
+        if (!isAuto(computedStyle.getLeft())) {
+            return computedStyle.getLeft().resolve(containingWidth, 0);
+        }
+        if (!isAuto(computedStyle.getRight())) {
+            return -computedStyle.getRight().resolve(containingWidth, 0);
+        }
+        return 0;
+    }
+
+    private static int resolveRelativeOffsetY(ComputedStyle computedStyle, int borderBoxHeight) {
+        if (computedStyle.getPosition() != UiPosition.RELATIVE) {
+            return 0;
+        }
+        if (!isAuto(computedStyle.getTop())) {
+            return computedStyle.getTop().resolve(borderBoxHeight, 0);
+        }
+        if (!isAuto(computedStyle.getBottom())) {
+            return -computedStyle.getBottom().resolve(borderBoxHeight, 0);
+        }
+        return 0;
     }
 
     private static int toUiTextSize(int rawSize) {

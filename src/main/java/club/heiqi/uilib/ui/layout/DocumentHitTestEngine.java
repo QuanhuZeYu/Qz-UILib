@@ -1,5 +1,6 @@
 package club.heiqi.uilib.ui.layout;
 
+import java.util.List;
 import java.util.Objects;
 
 import club.heiqi.uilib.ui.dom.ElementNode;
@@ -31,13 +32,16 @@ public final class DocumentHitTestEngine {
 
     private static DocumentLayoutBox hitTestBox(DocumentLayoutBox box, DocumentScrollState scrollState, int documentX,
             int documentY, int offsetX, int offsetY) {
-        boolean insideBorderBox = containsInRect(documentX, documentY, box.getLeft() + offsetX, box.getTop() + offsetY,
-                box.getRight() + offsetX, box.getBottom() + offsetY);
-        if (canHitTestChildren(box, documentX, documentY, offsetX, offsetY)) {
-            int childOffsetX = offsetX - getScrollLeft(scrollState, box);
-            int childOffsetY = offsetY - getScrollTop(scrollState, box);
-            for (int index = box.getChildren().size() - 1; index >= 0; index--) {
-                DocumentLayoutBox child = box.getChildren().get(index);
+        int boxOffsetX = offsetX + box.getPositionOffsetX();
+        int boxOffsetY = offsetY + box.getPositionOffsetY();
+        boolean insideBorderBox = containsInRect(documentX, documentY, box.getLeft() + boxOffsetX,
+                box.getTop() + boxOffsetY, box.getRight() + boxOffsetX, box.getBottom() + boxOffsetY);
+        if (canHitTestChildren(box, documentX, documentY, boxOffsetX, boxOffsetY)) {
+            int childOffsetX = boxOffsetX - getScrollLeft(scrollState, box);
+            int childOffsetY = boxOffsetY - getScrollTop(scrollState, box);
+            List<DocumentLayoutBox> children = box.getChildrenInStackingOrder();
+            for (int index = children.size() - 1; index >= 0; index--) {
+                DocumentLayoutBox child = children.get(index);
                 DocumentLayoutBox childHit = hitTestBox(child, scrollState, documentX, documentY, childOffsetX,
                         childOffsetY);
                 if (childHit != null) {

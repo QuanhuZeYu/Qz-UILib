@@ -24,6 +24,7 @@ import club.heiqi.uilib.ui.style.UiDisplay;
 import club.heiqi.uilib.ui.style.UiFlexDirection;
 import club.heiqi.uilib.ui.style.UiJustifyContent;
 import club.heiqi.uilib.ui.style.UiOverflow;
+import club.heiqi.uilib.ui.style.UiPosition;
 import club.heiqi.uilib.ui.style.UiStyleInsets;
 import club.heiqi.uilib.ui.style.UiStyleLength;
 import club.heiqi.uilib.ui.text.DefaultTextMeasureService;
@@ -222,8 +223,10 @@ final class HtmlLikeSmokeDocumentPageController extends DocumentPageController {
         glassCard.style()
                 .setWidth(UiStyleLength.px(158))
                 .setHeight(UiStyleLength.px(62))
-                .setMargin(UiStyleInsets.of(UiStyleLength.px(-58), UiStyleLength.px(0), UiStyleLength.px(0),
-                        UiStyleLength.px(28)))
+                .setPosition(UiPosition.RELATIVE)
+                .setTop(UiStyleLength.px(-58))
+                .setLeft(UiStyleLength.px(28))
+                .setZIndex(1)
                 .setPadding(UiStyleLength.px(8))
                 .setBackgroundColor(0x55FFFFFF)
                 .setBorderColor(0xCCFFFFFF)
