@@ -158,6 +158,71 @@ public class DocumentHitTestEngineTest {
         assertHitElement(normal, rootBox, 10, 22);
     }
 
+    /**
+     * 验证 positioned 后代可越过非 stacking context 祖先参与最近上下文命中排序。
+     */
+    @Test
+    public void shouldHitPositionedDescendantInNearestStackingContext() {
+        UiDocument document = UiDocument.create();
+        ElementNode root = document.getRootElement();
+        ElementNode parent = document.div();
+        ElementNode raisedDescendant = document.div();
+        ElementNode normalCover = document.div();
+
+        root.style().setWidth(UiStyleLength.px(120));
+        parent.style()
+                .setWidth(UiStyleLength.px(80))
+                .setHeight(UiStyleLength.px(20));
+        raisedDescendant.style()
+                .setWidth(UiStyleLength.px(70))
+                .setHeight(UiStyleLength.px(20))
+                .setPosition(UiPosition.RELATIVE)
+                .setTop(UiStyleLength.px(12))
+                .setZIndex(5);
+        normalCover.style()
+                .setWidth(UiStyleLength.px(80))
+                .setHeight(UiStyleLength.px(20));
+        parent.append(raisedDescendant);
+        root.append(parent).append(normalCover);
+
+        DocumentLayoutBox rootBox = DocumentLayoutEngine.layout(root, 140, 0);
+
+        assertHitElement(raisedDescendant, rootBox, 10, 22);
+    }
+
+    /**
+     * 验证 stacking context 祖先会阻止高 z-index 后代逃出上下文。
+     */
+    @Test
+    public void shouldHitExternalSiblingAboveIsolatedPositionedDescendant() {
+        UiDocument document = UiDocument.create();
+        ElementNode root = document.getRootElement();
+        ElementNode isolatedParent = document.div();
+        ElementNode raisedDescendant = document.div();
+        ElementNode normalCover = document.div();
+
+        root.style().setWidth(UiStyleLength.px(120));
+        isolatedParent.style()
+                .setWidth(UiStyleLength.px(80))
+                .setHeight(UiStyleLength.px(20))
+                .setOpacity(0.98F);
+        raisedDescendant.style()
+                .setWidth(UiStyleLength.px(70))
+                .setHeight(UiStyleLength.px(20))
+                .setPosition(UiPosition.RELATIVE)
+                .setTop(UiStyleLength.px(12))
+                .setZIndex(99);
+        normalCover.style()
+                .setWidth(UiStyleLength.px(80))
+                .setHeight(UiStyleLength.px(20));
+        isolatedParent.append(raisedDescendant);
+        root.append(isolatedParent).append(normalCover);
+
+        DocumentLayoutBox rootBox = DocumentLayoutEngine.layout(root, 140, 0);
+
+        assertHitElement(normalCover, rootBox, 10, 22);
+    }
+
     private static void assertHitElement(ElementNode expectedElement, DocumentLayoutBox rootBox, int x, int y) {
         ElementNode actualElement = DocumentHitTestEngine.hitTest(rootBox, null, x, y);
         Assert.assertNotNull(actualElement);

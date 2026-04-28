@@ -47,7 +47,7 @@ public class HtmlLikeSmokeDocumentPageControllerTest {
         Assert.assertTrue(blocks.get(0) instanceof HtmlLikeDocumentWidget);
         Assert.assertSame(blocks.get(0), fixture.controller.getHtmlLikeDocumentWidget());
         Assert.assertTrue(fixture.controller.getHtmlLikeDocumentWidget().isViewportRootScrollingEnabled());
-        Assert.assertEquals(4, fixture.controller.getHtmlLikeDocumentWidget().getDocument()
+        Assert.assertEquals(5, fixture.controller.getHtmlLikeDocumentWidget().getDocument()
                 .getRootElement().getChildren().size());
 
         List<String> texts = collectDocumentTexts(fixture.controller.getHtmlLikeDocumentWidget());
@@ -62,6 +62,9 @@ public class HtmlLikeSmokeDocumentPageControllerTest {
         Assert.assertTrue(containsText(texts, "amber UI behind this card"));
         Assert.assertTrue(containsText(texts, "Backdrop glass overlap: blur 14px / saturate 140%"));
         Assert.assertTrue(containsText(texts, "Group opacity probe: overlap should stay flat blue"));
+        Assert.assertTrue(containsText(texts, "Stacking context probe: blue cover must stay above red z-99 child"));
+        Assert.assertTrue(containsText(texts, "red child z=99"));
+        Assert.assertTrue(containsText(texts, "blue sibling z=1 should win"));
     }
 
     /**
@@ -96,6 +99,7 @@ public class HtmlLikeSmokeDocumentPageControllerTest {
         Assert.assertTrue(containsTextCall(renderContext.textCalls, "ABS OK"));
         assertAbsoluteProbeIsVisibleOutsideStaticWrapper(widget, fixture.textMeasureService);
         assertGroupOpacityProbeKeepsChildColorsOpaque(widget, fixture.textMeasureService);
+        assertStackingContextProbeKeepsHighZChildIsolated(widget, fixture.textMeasureService);
         Assert.assertTrue(containsTextCall(renderContext.textCalls, "TEXT paint command"));
     }
 
@@ -355,6 +359,34 @@ public class HtmlLikeSmokeDocumentPageControllerTest {
         Assert.assertEquals(0xFFFF4B4B, redBackground.getColor());
         Assert.assertEquals(0xFF3B82F6, blueBackground.getColor());
         Assert.assertTrue(redBackground.getRight() > blueBackground.getLeft());
+        Assert.assertTrue(indexOfCommand(paintCommands, redBackground) < indexOfCommand(paintCommands,
+                blueBackground));
+    }
+
+    private static void assertStackingContextProbeKeepsHighZChildIsolated(HtmlLikeDocumentWidget widget,
+            TextMeasureService textMeasureService) {
+        ElementNode isolatedShellElement = findElementContainingDirectText(widget, "isolated z=0 shell");
+        ElementNode redHighChildElement = findElementContainingDirectText(widget, "red child z=99");
+        ElementNode blueCoverElement = findElementContainingDirectText(widget, "blue sibling z=1 should win");
+        Assert.assertNotNull(isolatedShellElement);
+        Assert.assertNotNull(redHighChildElement);
+        Assert.assertNotNull(blueCoverElement);
+
+        DocumentLayoutBox rootBox = DocumentLayoutEngine.layoutViewportRoot(widget.getDocument().getRootElement(),
+                widget.getWidth(), widget.getHeight(), textMeasureService);
+        List<DocumentPaintCommand> paintCommands = DocumentPaintEngine.buildPaintCommands(rootBox);
+        DocumentPaintCommand isolatedContextStart = findPaintCommand(paintCommands,
+                DocumentPaintCommandType.PAINT_CONTEXT_START, isolatedShellElement.__getElementUid());
+        DocumentPaintCommand redBackground = findPaintCommand(paintCommands, DocumentPaintCommandType.BACKGROUND,
+                redHighChildElement.__getElementUid());
+        DocumentPaintCommand blueBackground = findPaintCommand(paintCommands, DocumentPaintCommandType.BACKGROUND,
+                blueCoverElement.__getElementUid());
+
+        Assert.assertNotNull(isolatedContextStart);
+        Assert.assertNotNull(redBackground);
+        Assert.assertNotNull(blueBackground);
+        Assert.assertTrue(redBackground.getRight() > blueBackground.getLeft());
+        Assert.assertTrue(redBackground.getBottom() > blueBackground.getTop());
         Assert.assertTrue(indexOfCommand(paintCommands, redBackground) < indexOfCommand(paintCommands,
                 blueBackground));
     }

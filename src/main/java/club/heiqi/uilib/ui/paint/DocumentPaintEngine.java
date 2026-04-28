@@ -79,18 +79,20 @@ public final class DocumentPaintEngine {
             DocumentScrollState scrollState, long currentTimeNanos, DocumentAnimationTimeline animationTimeline) {
         Objects.requireNonNull(rootBox, "rootBox");
         List<DocumentPaintCommand> commands = new ArrayList<DocumentPaintCommand>();
-        appendBoxCommands(rootBox, rootBox, commands, scrollState, animationTimeline, 0, 0, currentTimeNanos, 1.0F);
+        appendBoxCommands(rootBox, rootBox, commands, scrollState, animationTimeline, 0, 0, currentTimeNanos, 1.0F,
+                true);
         return commands;
     }
 
     private static void appendBoxCommands(DocumentLayoutBox rootBox, DocumentLayoutBox box,
             List<DocumentPaintCommand> commands, DocumentScrollState scrollState,
             DocumentAnimationTimeline animationTimeline, int offsetX, int offsetY, long currentTimeNanos,
-            float inheritedOpacity) {
+            float inheritedOpacity, boolean paintStackingContext) {
         int boxOffsetX = offsetX + box.getPositionOffsetX();
         int boxOffsetY = offsetY + box.getPositionOffsetY();
         float localOpacity = resolveAnimatedOpacity(animationTimeline, box, currentTimeNanos);
         boolean paintContext = shouldCreatePaintContext(rootBox, box, localOpacity);
+        boolean resolvedPaintStackingContext = paintStackingContext || paintContext || box == rootBox;
         float boxOpacity = paintContext ? inheritedOpacity : inheritedOpacity * localOpacity;
         if (paintContext) {
             appendPaintContextStartCommand(box, commands, localOpacity, boxOffsetX, boxOffsetY);
@@ -105,17 +107,25 @@ public final class DocumentPaintEngine {
         }
         int childOffsetX = boxOffsetX - getScrollLeft(scrollState, box);
         int childOffsetY = boxOffsetY - getScrollTop(scrollState, box);
-        appendChildrenInStackingPhase(rootBox, box, commands, scrollState, childOffsetX, childOffsetY,
-                animationTimeline, currentTimeNanos, boxOpacity, DocumentStackingPhase.NEGATIVE_POSITIONED);
-        appendCustomCommand(box, commands, childOffsetX, childOffsetY);
-        appendTextCommands(box, commands, animationTimeline, currentTimeNanos, boxOpacity, childOffsetX,
-                childOffsetY);
-        appendChildrenInStackingPhase(rootBox, box, commands, scrollState, childOffsetX, childOffsetY,
-                animationTimeline, currentTimeNanos, boxOpacity, DocumentStackingPhase.NORMAL_FLOW);
-        appendChildrenInStackingPhase(rootBox, box, commands, scrollState, childOffsetX, childOffsetY,
-                animationTimeline, currentTimeNanos, boxOpacity, DocumentStackingPhase.POSITIONED_AUTO_OR_ZERO);
-        appendChildrenInStackingPhase(rootBox, box, commands, scrollState, childOffsetX, childOffsetY,
-                animationTimeline, currentTimeNanos, boxOpacity, DocumentStackingPhase.POSITIVE_POSITIONED);
+        if (resolvedPaintStackingContext) {
+            appendStackingPhaseItems(rootBox, box, commands, scrollState, childOffsetX, childOffsetY,
+                    animationTimeline, currentTimeNanos, boxOpacity, DocumentStackingPhase.NEGATIVE_POSITIONED);
+            appendCustomCommand(box, commands, childOffsetX, childOffsetY);
+            appendTextCommands(box, commands, animationTimeline, currentTimeNanos, boxOpacity, childOffsetX,
+                    childOffsetY);
+            appendNormalFlowChildren(rootBox, box, commands, scrollState, childOffsetX, childOffsetY,
+                    animationTimeline, currentTimeNanos, boxOpacity);
+            appendStackingPhaseItems(rootBox, box, commands, scrollState, childOffsetX, childOffsetY,
+                    animationTimeline, currentTimeNanos, boxOpacity, DocumentStackingPhase.POSITIONED_AUTO_OR_ZERO);
+            appendStackingPhaseItems(rootBox, box, commands, scrollState, childOffsetX, childOffsetY,
+                    animationTimeline, currentTimeNanos, boxOpacity, DocumentStackingPhase.POSITIVE_POSITIONED);
+        } else {
+            appendCustomCommand(box, commands, childOffsetX, childOffsetY);
+            appendTextCommands(box, commands, animationTimeline, currentTimeNanos, boxOpacity, childOffsetX,
+                    childOffsetY);
+            appendNormalFlowChildren(rootBox, box, commands, scrollState, childOffsetX, childOffsetY,
+                    animationTimeline, currentTimeNanos, boxOpacity);
+        }
         if (clipChildren) {
             appendClipEndCommand(box, commands, boxOffsetX, boxOffsetY);
         }
@@ -156,13 +166,60 @@ public final class DocumentPaintEngine {
                 box.getBottom() + offsetY, 0, 0, 0));
     }
 
-    private static void appendChildrenInStackingPhase(DocumentLayoutBox rootBox, DocumentLayoutBox box,
+    private static void appendNormalFlowChildren(DocumentLayoutBox rootBox, DocumentLayoutBox box,
+            List<DocumentPaintCommand> commands, DocumentScrollState scrollState, int childOffsetX, int childOffsetY,
+            DocumentAnimationTimeline animationTimeline, long currentTimeNanos, float inheritedOpacity) {
+        for (DocumentLayoutBox child : box.getChildren()) {
+            if (child.getStackingPhase() != DocumentStackingPhase.NORMAL_FLOW) {
+                continue;
+            }
+            float localOpacity = resolveAnimatedOpacity(animationTimeline, child, currentTimeNanos);
+            boolean childPaintContext = shouldCreatePaintContext(rootBox, child, localOpacity);
+            boolean childPaintStackingContext = childPaintContext || shouldClipChildren(child);
+            appendBoxCommands(rootBox, child, commands, scrollState, animationTimeline, childOffsetX, childOffsetY,
+                    currentTimeNanos, inheritedOpacity, childPaintStackingContext);
+        }
+    }
+
+    private static void appendStackingPhaseItems(DocumentLayoutBox rootBox, DocumentLayoutBox contextRoot,
             List<DocumentPaintCommand> commands, DocumentScrollState scrollState, int childOffsetX, int childOffsetY,
             DocumentAnimationTimeline animationTimeline, long currentTimeNanos, float inheritedOpacity,
             DocumentStackingPhase phase) {
-        for (DocumentLayoutBox child : box.getChildrenInStackingPhase(phase)) {
-            appendBoxCommands(rootBox, child, commands, scrollState, animationTimeline, childOffsetX, childOffsetY,
-                    currentTimeNanos, inheritedOpacity);
+        List<StackingPaintItem> items = new ArrayList<StackingPaintItem>();
+        collectStackingPhaseItems(rootBox, contextRoot, items, scrollState, childOffsetX, childOffsetY,
+                animationTimeline, currentTimeNanos, phase);
+        if (phase == DocumentStackingPhase.NEGATIVE_POSITIONED
+                || phase == DocumentStackingPhase.POSITIVE_POSITIONED) {
+            java.util.Collections.sort(items, new java.util.Comparator<StackingPaintItem>() {
+                @Override
+                public int compare(StackingPaintItem first, StackingPaintItem second) {
+                    return Integer.compare(first.box.getStackingZIndex(), second.box.getStackingZIndex());
+                }
+            });
+        }
+        for (StackingPaintItem item : items) {
+            appendBoxCommands(rootBox, item.box, commands, scrollState, animationTimeline, item.offsetX,
+                    item.offsetY, currentTimeNanos, inheritedOpacity, item.paintStackingContext);
+        }
+    }
+
+    private static void collectStackingPhaseItems(DocumentLayoutBox rootBox, DocumentLayoutBox currentBox,
+            List<StackingPaintItem> items, DocumentScrollState scrollState, int childOffsetX, int childOffsetY,
+            DocumentAnimationTimeline animationTimeline, long currentTimeNanos, DocumentStackingPhase phase) {
+        for (DocumentLayoutBox child : currentBox.getChildren()) {
+            float localOpacity = resolveAnimatedOpacity(animationTimeline, child, currentTimeNanos);
+            boolean childPaintContext = shouldCreatePaintContext(rootBox, child, localOpacity);
+            boolean childPaintStackingContext = childPaintContext || shouldClipChildren(child);
+            if (child.getStackingPhase() == phase) {
+                items.add(new StackingPaintItem(child, childOffsetX, childOffsetY, childPaintStackingContext));
+            }
+            if (childPaintStackingContext) {
+                continue;
+            }
+            int grandChildOffsetX = childOffsetX + child.getPositionOffsetX() - getScrollLeft(scrollState, child);
+            int grandChildOffsetY = childOffsetY + child.getPositionOffsetY() - getScrollTop(scrollState, child);
+            collectStackingPhaseItems(rootBox, child, items, scrollState, grandChildOffsetX, grandChildOffsetY,
+                    animationTimeline, currentTimeNanos, phase);
         }
     }
 
@@ -411,5 +468,23 @@ public final class DocumentPaintEngine {
 
     private static int getScrollTop(DocumentScrollState scrollState, DocumentLayoutBox box) {
         return scrollState == null ? 0 : scrollState.getScrollTop(box.getElement());
+    }
+
+    /**
+     * 最近 stacking context 中可被阶段排序的绘制项。
+     */
+    private static final class StackingPaintItem {
+
+        private final DocumentLayoutBox box;
+        private final int offsetX;
+        private final int offsetY;
+        private final boolean paintStackingContext;
+
+        private StackingPaintItem(DocumentLayoutBox box, int offsetX, int offsetY, boolean paintStackingContext) {
+            this.box = box;
+            this.offsetX = offsetX;
+            this.offsetY = offsetY;
+            this.paintStackingContext = paintStackingContext;
+        }
     }
 }

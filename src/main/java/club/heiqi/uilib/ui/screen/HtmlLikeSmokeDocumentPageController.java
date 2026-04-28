@@ -400,6 +400,7 @@ final class HtmlLikeSmokeDocumentPageController extends DocumentPageController {
         toggleControl.getElement().style().setFlexGrow(0.6F);
         footer.append(toggleControl.getElement());
         appendGroupOpacityProbe(document, root);
+        appendStackingContextProbe(document, root);
         return document;
     }
 
@@ -490,6 +491,94 @@ final class HtmlLikeSmokeDocumentPageController extends DocumentPageController {
                 .setBackgroundColor(0xFF3B82F6)
                 .setBorderRadius(UiStyleLength.px(8));
         opacityGroup.append(blueLayer);
+    }
+
+    private static void appendStackingContextProbe(UiDocument document, ElementNode root) {
+        ElementNode stackingProbe = document.div();
+        stackingProbe.style()
+                .setHeight(UiStyleLength.px(128))
+                .setMargin(UiStyleLength.px(16))
+                .setPadding(UiStyleLength.px(10))
+                .setPosition(UiPosition.RELATIVE)
+                .setBackgroundColor(0xFF0B1224)
+                .setBorderColor(0xFFA78BFA)
+                .setBorderWidth(UiStyleLength.px(1))
+                .setBorderRadius(UiStyleLength.px(14))
+                .setTextColor(0xFFEDE9FE)
+                .setOverflowX(UiOverflow.HIDDEN)
+                .setOverflowY(UiOverflow.HIDDEN);
+        stackingProbe.appendText("Stacking context probe: blue cover must stay above red z-99 child");
+        root.append(stackingProbe);
+
+        ElementNode stackingStage = document.div();
+        stackingStage.style()
+                .setWidth(UiStyleLength.px(360))
+                .setHeight(UiStyleLength.px(82))
+                .setPosition(UiPosition.RELATIVE)
+                .setMargin(UiStyleInsets.of(UiStyleLength.px(8), UiStyleLength.px(0), UiStyleLength.px(0),
+                        UiStyleLength.px(0)))
+                .setBackgroundColor(0xFF111827)
+                .setBorderColor(0xFF374151)
+                .setBorderWidth(UiStyleLength.px(1))
+                .setBorderRadius(UiStyleLength.px(10))
+                .setOverflowX(UiOverflow.HIDDEN)
+                .setOverflowY(UiOverflow.HIDDEN);
+        stackingProbe.append(stackingStage);
+
+        ElementNode isolatedShell = document.div();
+        isolatedShell.style()
+                .setWidth(UiStyleLength.px(220))
+                .setHeight(UiStyleLength.px(56))
+                .setPosition(UiPosition.ABSOLUTE)
+                .setTop(UiStyleLength.px(20))
+                .setLeft(UiStyleLength.px(18))
+                .setZIndex(0)
+                .setOpacity(0.98F)
+                .setBackgroundColor(0xEE581C87)
+                .setBorderColor(0xFFC084FC)
+                .setBorderWidth(UiStyleLength.px(1))
+                .setBorderRadius(UiStyleLength.px(10))
+                .setTextColor(0xFFF5D0FE)
+                .setOverflowX(UiOverflow.VISIBLE)
+                .setOverflowY(UiOverflow.VISIBLE);
+        isolatedShell.appendText("isolated z=0 shell");
+        stackingStage.append(isolatedShell);
+
+        ElementNode redHighChild = document.div();
+        redHighChild.style()
+                .setWidth(UiStyleLength.px(150))
+                .setHeight(UiStyleLength.px(32))
+                .setPosition(UiPosition.ABSOLUTE)
+                .setTop(UiStyleLength.px(18))
+                .setLeft(UiStyleLength.px(48))
+                .setZIndex(99)
+                .setBackgroundColor(0xFFFF2D55)
+                .setBorderColor(0xFFFFC2CC)
+                .setBorderWidth(UiStyleLength.px(1))
+                .setBorderRadius(UiStyleLength.px(8))
+                .setTextColor(0xFFFFFFFF)
+                .setOverflowX(UiOverflow.HIDDEN)
+                .setOverflowY(UiOverflow.HIDDEN);
+        redHighChild.appendText("red child z=99");
+        isolatedShell.append(redHighChild);
+
+        ElementNode blueCover = document.div();
+        blueCover.style()
+                .setWidth(UiStyleLength.px(190))
+                .setHeight(UiStyleLength.px(38))
+                .setPosition(UiPosition.ABSOLUTE)
+                .setTop(UiStyleLength.px(42))
+                .setLeft(UiStyleLength.px(96))
+                .setZIndex(1)
+                .setBackgroundColor(0xFF2563EB)
+                .setBorderColor(0xFFBFDBFE)
+                .setBorderWidth(UiStyleLength.px(1))
+                .setBorderRadius(UiStyleLength.px(8))
+                .setTextColor(0xFFEFF6FF)
+                .setOverflowX(UiOverflow.HIDDEN)
+                .setOverflowY(UiOverflow.HIDDEN);
+        blueCover.appendText("blue sibling z=1 should win");
+        stackingStage.append(blueCover);
     }
 
     /**

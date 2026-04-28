@@ -108,6 +108,44 @@ public final class DocumentLayoutBox {
     }
 
     /**
+     * 返回当前布局盒在最近 stacking context 中所属的绘制阶段。
+     *
+     * @return stacking 阶段
+     */
+    public DocumentStackingPhase getStackingPhase() {
+        return getStackingPhase(this);
+    }
+
+    /**
+     * 返回当前布局盒在 stacking phase 内用于排序的 z-index 值。
+     *
+     * @return stacking z-index；auto 按 0 处理
+     */
+    public int getStackingZIndex() {
+        return getStackingZIndex(this);
+    }
+
+    /**
+     * 判断当前盒是否会建立独立 stacking context。
+     *
+     * <p>该判断只基于布局时的 computed style，动画中的临时 opacity context 由绘制阶段按当前时间另行判断。</p>
+     *
+     * @return 是否建立独立 stacking context
+     */
+    public boolean createsStackingContext() {
+        ComputedStyle style = getComputedStyle();
+        if (style.getOpacity() < 0.999F) {
+            return true;
+        }
+        if (style.getPosition() != UiPosition.STATIC && style.getZIndex() != null) {
+            return true;
+        }
+        int availableSpace = Math.max(getWidth(), getHeight());
+        return style.getBackdropBlurRadius().resolve(availableSpace, 0) > 0
+                || Float.compare(style.getBackdropSaturation(), 1.0F) != 0;
+    }
+
+    /**
      * 返回当前元素直接文本子节点产生的布局文本行。
      *
      * @return 文本行列表

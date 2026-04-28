@@ -507,6 +507,93 @@ public class DocumentPaintEngineTest {
     }
 
     /**
+     * 验证非 stacking context 祖先不会阻止 positioned 后代参与最近上下文排序。
+     */
+    @Test
+    public void shouldPaintPositionedDescendantInNearestStackingContext() {
+        UiDocument document = UiDocument.create();
+        ElementNode root = document.getRootElement();
+        ElementNode parent = document.div();
+        ElementNode raisedDescendant = document.div();
+        ElementNode normalCover = document.div();
+
+        root.style().setWidth(UiStyleLength.px(120));
+        parent.style()
+                .setWidth(UiStyleLength.px(80))
+                .setHeight(UiStyleLength.px(20))
+                .setBackgroundColor(0xFF111827);
+        raisedDescendant.style()
+                .setWidth(UiStyleLength.px(70))
+                .setHeight(UiStyleLength.px(20))
+                .setPosition(UiPosition.RELATIVE)
+                .setTop(UiStyleLength.px(12))
+                .setZIndex(5)
+                .setBackgroundColor(0xFFFF3333);
+        normalCover.style()
+                .setWidth(UiStyleLength.px(80))
+                .setHeight(UiStyleLength.px(20))
+                .setBackgroundColor(0xFF2563EB);
+        parent.append(raisedDescendant);
+        root.append(parent).append(normalCover);
+
+        List<DocumentPaintCommand> commands = DocumentPaintEngine.buildPaintCommands(
+                DocumentLayoutEngine.layout(root, 140, 0));
+        List<DocumentPaintCommand> paintCommands = withoutPaintContextCommands(commands);
+
+        Assert.assertEquals(3, paintCommands.size());
+        assertCommand(paintCommands.get(0), DocumentPaintCommandType.BACKGROUND, parent, 0, 0, 80, 20,
+                0xFF111827, 0, 0);
+        assertCommand(paintCommands.get(1), DocumentPaintCommandType.BACKGROUND, normalCover, 0, 20, 80, 40,
+                0xFF2563EB, 0, 0);
+        assertCommand(paintCommands.get(2), DocumentPaintCommandType.BACKGROUND, raisedDescendant, 0, 12, 70, 32,
+                0xFFFF3333, 0, 0);
+    }
+
+    /**
+     * 验证 stacking context 祖先会把高 z-index 后代隔离成一个整体。
+     */
+    @Test
+    public void shouldKeepPositionedDescendantInsideParentStackingContext() {
+        UiDocument document = UiDocument.create();
+        ElementNode root = document.getRootElement();
+        ElementNode isolatedParent = document.div();
+        ElementNode raisedDescendant = document.div();
+        ElementNode normalCover = document.div();
+
+        root.style().setWidth(UiStyleLength.px(120));
+        isolatedParent.style()
+                .setWidth(UiStyleLength.px(80))
+                .setHeight(UiStyleLength.px(20))
+                .setOpacity(0.98F)
+                .setBackgroundColor(0xFF111827);
+        raisedDescendant.style()
+                .setWidth(UiStyleLength.px(70))
+                .setHeight(UiStyleLength.px(20))
+                .setPosition(UiPosition.RELATIVE)
+                .setTop(UiStyleLength.px(12))
+                .setZIndex(99)
+                .setBackgroundColor(0xFFFF3333);
+        normalCover.style()
+                .setWidth(UiStyleLength.px(80))
+                .setHeight(UiStyleLength.px(20))
+                .setBackgroundColor(0xFF2563EB);
+        isolatedParent.append(raisedDescendant);
+        root.append(isolatedParent).append(normalCover);
+
+        List<DocumentPaintCommand> commands = DocumentPaintEngine.buildPaintCommands(
+                DocumentLayoutEngine.layout(root, 140, 0));
+        List<DocumentPaintCommand> paintCommands = withoutPaintContextCommands(commands);
+
+        Assert.assertEquals(3, paintCommands.size());
+        assertCommand(paintCommands.get(0), DocumentPaintCommandType.BACKGROUND, isolatedParent, 0, 0, 80, 20,
+                0xFF111827, 0, 0);
+        assertCommand(paintCommands.get(1), DocumentPaintCommandType.BACKGROUND, raisedDescendant, 0, 12, 70, 32,
+                0xFFFF3333, 0, 0);
+        assertCommand(paintCommands.get(2), DocumentPaintCommandType.BACKGROUND, normalCover, 0, 20, 80, 40,
+                0xFF2563EB, 0, 0);
+    }
+
+    /**
      * 验证透明背景与零宽边框不会产生绘制命令。
      */
     @Test
