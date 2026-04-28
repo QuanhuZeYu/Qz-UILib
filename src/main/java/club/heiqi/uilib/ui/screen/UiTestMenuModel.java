@@ -14,4 +14,9 @@ interface UiTestMenuModel {
      * 打开 HTML-like smoke 子页。
      */
     void openHtmlLikeSmoke();
+
+    /**
+     * 打开大面积磨玻璃测试子页。
+     */
+    void openHtmlLikeGlass();
 }

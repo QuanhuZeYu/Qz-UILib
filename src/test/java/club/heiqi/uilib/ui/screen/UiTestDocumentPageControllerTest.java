@@ -48,9 +48,11 @@ public class UiTestDocumentPageControllerTest {
         Assert.assertTrue(containsText(texts, "诊断指挥台"));
         Assert.assertTrue(containsText(texts, "布局诊断子页"));
         Assert.assertTrue(containsText(texts, "HTML-like Smoke 子页"));
+        Assert.assertTrue(containsText(texts, "Large Glass Lab 子页"));
         Assert.assertTrue(containsText(texts, "页面作者层不再拼装旧 Widget"));
         Assert.assertFalse(menuModel.openLayoutDiagnosticsCalled);
         Assert.assertFalse(menuModel.openHtmlLikeSmokeCalled);
+        Assert.assertFalse(menuModel.openHtmlLikeGlassCalled);
     }
 
     /**
@@ -72,6 +74,7 @@ public class UiTestDocumentPageControllerTest {
 
         Assert.assertTrue(menuModel.openLayoutDiagnosticsCalled);
         Assert.assertFalse(menuModel.openHtmlLikeSmokeCalled);
+        Assert.assertFalse(menuModel.openHtmlLikeGlassCalled);
     }
 
     /**
@@ -94,6 +97,31 @@ public class UiTestDocumentPageControllerTest {
 
         Assert.assertFalse(menuModel.openLayoutDiagnosticsCalled);
         Assert.assertTrue(menuModel.openHtmlLikeSmokeCalled);
+        Assert.assertFalse(menuModel.openHtmlLikeGlassCalled);
+    }
+
+    /**
+     * 验证菜单按钮会触发大面积磨玻璃测试页跳转。
+     */
+    @Test
+    public void shouldNavigateToHtmlLikeGlassWhenMenuButtonClicked() {
+        RecordingMenuModel menuModel = new RecordingMenuModel();
+        TestFixture fixture = new TestFixture(menuModel);
+
+        fixture.controller.configureDocumentPage();
+        fixture.controller.buildDocument();
+
+        HtmlLikeDocumentWidget widget = fixture.controller.getHtmlLikeDocumentWidget();
+        widget.applyLayoutBounds(0, 0, 760, 520);
+        widget.onFocusTraversalEntered(false);
+        Assert.assertTrue(widget.onFocusTraversal(false));
+        Assert.assertTrue(widget.onFocusTraversal(false));
+        widget.onKeyEvent(new UiKeyEvent(Keyboard.KEY_RETURN, 0, 0, UiKeyEvent.Action.PRESSED, false, false, false,
+                false, 1L));
+
+        Assert.assertFalse(menuModel.openLayoutDiagnosticsCalled);
+        Assert.assertFalse(menuModel.openHtmlLikeSmokeCalled);
+        Assert.assertTrue(menuModel.openHtmlLikeGlassCalled);
     }
 
     /**
@@ -170,6 +198,7 @@ public class UiTestDocumentPageControllerTest {
 
         private boolean openLayoutDiagnosticsCalled;
         private boolean openHtmlLikeSmokeCalled;
+        private boolean openHtmlLikeGlassCalled;
 
         @Override
         public void openLayoutDiagnostics() {
@@ -179,6 +208,11 @@ public class UiTestDocumentPageControllerTest {
         @Override
         public void openHtmlLikeSmoke() {
             openHtmlLikeSmokeCalled = true;
+        }
+
+        @Override
+        public void openHtmlLikeGlass() {
+            openHtmlLikeGlassCalled = true;
         }
     }
 

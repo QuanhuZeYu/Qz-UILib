@@ -55,6 +55,20 @@ public class UiDocumentScreensTest {
     }
 
     /**
+     * 验证大面积磨玻璃测试子页 definition 会暴露独立稳定 descriptor 与页面标识契约。
+     */
+    @Test
+    public void shouldExposeStablePageIdForHtmlLikeGlassScreen() {
+        Assert.assertSame(UiDocumentScreens.HTML_LIKE_GLASS,
+                UiDocumentScreens.HTML_LIKE_GLASS_DEFINITION.getPageDescriptor());
+        Assert.assertEquals("html_like_glass",
+                UiDocumentScreens.HTML_LIKE_GLASS_DEFINITION.getPageDescriptor().getPageId());
+        Assert.assertEquals(UiDocumentScreens.HTML_LIKE_GLASS.getPageId(),
+                UiDocumentScreens.HTML_LIKE_GLASS_DEFINITION.getPageDescriptor().getPageId());
+        Assert.assertEquals("html_like_glass", UiDocumentScreens.HTML_LIKE_GLASS.getPageId());
+    }
+
+    /**
      * 验证背包页 definition 会暴露独立稳定 descriptor 与页面标识契约。
      */
     @Test
@@ -79,6 +93,7 @@ public class UiDocumentScreensTest {
         Assert.assertTrue(UiDocumentScreens.isUiTest(screen));
         Assert.assertFalse(UiDocumentScreens.isUiTestLayout(screen));
         Assert.assertFalse(UiDocumentScreens.isHtmlLikeSmoke(screen));
+        Assert.assertFalse(UiDocumentScreens.isHtmlLikeGlass(screen));
         Assert.assertEquals(UiDocumentScreens.UI_TEST.getPageId(), UiDocumentScreens.runtimeScreenNameOf(screen));
     }
 
@@ -91,6 +106,7 @@ public class UiDocumentScreensTest {
 
         Assert.assertEquals("", UiDocumentScreens.getPageId(screen));
         Assert.assertFalse(UiDocumentScreens.isUiTest(screen));
+        Assert.assertFalse(UiDocumentScreens.isHtmlLikeGlass(screen));
         Assert.assertEquals("Object", UiDocumentScreens.runtimeScreenNameOf(screen));
     }
 

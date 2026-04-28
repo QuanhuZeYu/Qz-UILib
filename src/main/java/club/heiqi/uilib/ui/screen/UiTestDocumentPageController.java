@@ -167,6 +167,14 @@ final class UiTestDocumentPageController extends DocumentPageController {
                         menuModel.openHtmlLikeSmoke();
                     }
                 });
+        appendNavigationCard(document, row, "Large Glass Lab 子页",
+                "打开单独的大面积磨玻璃测试页，便于观察同层采样、裁剪和面积放大后的视觉稳定性。", "进入 Glass Lab",
+                new DocumentButtonActionHandler() {
+                    @Override
+                    public void onAction(DocumentButtonActionEvent event) {
+                        menuModel.openHtmlLikeGlass();
+                    }
+                });
     }
 
     private void appendNavigationCard(UiDocument document, ElementNode parent, String title, String body,

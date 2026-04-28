@@ -20,6 +20,7 @@ public final class UiDocumentScreens {
     public static final PageDescriptor UI_TEST = new PageDescriptor("ui_test");
     public static final PageDescriptor UI_TEST_LAYOUT = new PageDescriptor("ui_test_layout");
     public static final PageDescriptor HTML_LIKE_SMOKE = new PageDescriptor("html_like_smoke");
+    public static final PageDescriptor HTML_LIKE_GLASS = new PageDescriptor("html_like_glass");
     public static final PageDescriptor INVENTORY_OVERVIEW = new PageDescriptor("inventory_overview");
     public static final DocumentScreenDefinition<UiTestMenuModel> UI_TEST_DEFINITION = new DocumentScreenDefinition<UiTestMenuModel>(UI_TEST,
             DocumentScreenChrome::resolve,
@@ -47,6 +48,15 @@ public final class UiDocumentScreens {
                         DocumentPageAuthoringSurface documentPage,
                         DocumentPageRuntimeView runtimeView, String pageId, Void provision) {
                     return new HtmlLikeSmokeDocumentPageController(documentUi, documentPage);
+                }
+            });
+    public static final DocumentScreenDefinition<Void> HTML_LIKE_GLASS_DEFINITION = new DocumentScreenDefinition<Void>(
+            HTML_LIKE_GLASS, DocumentScreenChrome::resolve, new DocumentPageControllerFactory<Void>() {
+                @Override
+                public DocumentPageController create(DocumentUiScope documentUi,
+                        DocumentPageAuthoringSurface documentPage,
+                        DocumentPageRuntimeView runtimeView, String pageId, Void provision) {
+                    return new HtmlLikeGlassDocumentPageController(documentUi, documentPage);
                 }
             });
     public static final DocumentScreenDefinition<InventoryOverviewModel> INVENTORY_OVERVIEW_DEFINITION = new DocumentScreenDefinition<InventoryOverviewModel>(
@@ -292,6 +302,26 @@ public final class UiDocumentScreens {
     }
 
     /**
+     * 创建大面积磨玻璃测试子页。
+     *
+     * @return 大面积磨玻璃测试子页界面
+     */
+    public static GuiScreen createHtmlLikeGlass() {
+        return createHtmlLikeGlass(DocumentScreenEnvironment.minecraftDefaults());
+    }
+
+    /**
+     * 基于显式文档环境创建大面积磨玻璃测试子页。
+     *
+     * @param environment 文档页面创建环境
+     * @return 大面积磨玻璃测试子页界面
+     */
+    public static GuiScreen createHtmlLikeGlass(DocumentScreenEnvironment environment) {
+        return createDefinitionBackedScreen(HTML_LIKE_GLASS_DEFINITION,
+                Objects.requireNonNull(environment, "environment"), null);
+    }
+
+    /**
      * 判断界面是否为布局诊断页。
      *
      * @param screen 待判断界面
@@ -331,6 +361,16 @@ public final class UiDocumentScreens {
      */
     static boolean isHtmlLikeSmoke(Object screen) {
         return hasPageId(screen, HTML_LIKE_SMOKE.getPageId());
+    }
+
+    /**
+     * 判断对象是否声明了大面积磨玻璃测试子页标识。
+     *
+     * @param screen 待判断对象
+     * @return 是否为大面积磨玻璃测试子页
+     */
+    static boolean isHtmlLikeGlass(Object screen) {
+        return hasPageId(screen, HTML_LIKE_GLASS.getPageId());
     }
 
     /**
@@ -385,6 +425,11 @@ public final class UiDocumentScreens {
             @Override
             public void openHtmlLikeSmoke() {
                 Minecraft.getMinecraft().displayGuiScreen(createHtmlLikeSmoke(environment));
+            }
+
+            @Override
+            public void openHtmlLikeGlass() {
+                Minecraft.getMinecraft().displayGuiScreen(createHtmlLikeGlass(environment));
             }
         };
     }

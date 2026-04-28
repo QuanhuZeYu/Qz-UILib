@@ -22,6 +22,11 @@ public class UiTestScreen extends ControllerBackedDocumentScreen {
             public void openHtmlLikeSmoke() {
                 Minecraft.getMinecraft().displayGuiScreen(UiDocumentScreens.createHtmlLikeSmoke(resolvedEnvironment));
             }
+
+            @Override
+            public void openHtmlLikeGlass() {
+                Minecraft.getMinecraft().displayGuiScreen(UiDocumentScreens.createHtmlLikeGlass(resolvedEnvironment));
+            }
         }));
     }
 }
