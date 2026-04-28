@@ -26,14 +26,21 @@ public final class UiMainLayerSnapshotService {
     private static final int MAX_DOWNSAMPLE_FACTOR = 4;
     private static final int MEDIUM_BLUR_DOWNSAMPLE_THRESHOLD = 18;
     private static final int LARGE_BLUR_DOWNSAMPLE_THRESHOLD = 34;
+    private static final float[][] FILTER_BLUR_SAMPLES = new float[][] {
+            { 0.0F, 0.40F },
+            { -1.0F, 0.24F },
+            { 1.0F, 0.24F },
+            { -2.0F, 0.06F },
+            { 2.0F, 0.06F }
+    };
 
     private final List<FrameSnapshot> snapshots = new ArrayList<FrameSnapshot>();
     private int frameId;
     private boolean frameActive;
     private boolean disabledForFrame;
-    private boolean downsampleDisabledForFrame;
+    private boolean filterPassDisabledForFrame;
     private String lastFailureDetail = "not-run";
-    private String lastDownsampleFailureDetail = "";
+    private String lastFilterPassFailureDetail = "";
 
     /**
      * 开始新一帧快照复用窗口。
@@ -41,9 +48,9 @@ public final class UiMainLayerSnapshotService {
     public void beginFrame() {
         frameActive = true;
         disabledForFrame = false;
-        downsampleDisabledForFrame = false;
+        filterPassDisabledForFrame = false;
         lastFailureDetail = "not-run";
-        lastDownsampleFailureDetail = "";
+        lastFilterPassFailureDetail = "";
         if (frameId == Integer.MAX_VALUE) {
             frameId = 0;
             for (FrameSnapshot snapshot : snapshots) {
@@ -150,7 +157,7 @@ public final class UiMainLayerSnapshotService {
         int readFramebufferId = resolveReadFramebufferId(requestedReadFramebufferId);
         int downsampleFactor = resolveDownsampleFactor(blurRadius);
         FrameSnapshot capturedSnapshot = findCapturedSnapshot(readFramebufferId, sampleRegion,
-                contentRevision, downsampleFactor);
+                contentRevision, downsampleFactor, blurRadius);
         if (capturedSnapshot != null) {
             capturedSnapshot.activeUseCount++;
             return Snapshot.reused(capturedSnapshot.textureId, sampleRegion, readFramebufferId, contentRevision,
@@ -164,7 +171,7 @@ public final class UiMainLayerSnapshotService {
             snapshots.add(snapshot);
         }
         if (!captureSnapshot(snapshot, screenHeight, sampleRegion, readFramebufferId, contentRevision,
-                downsampleFactor)) {
+                downsampleFactor, blurRadius)) {
             return null;
         }
         return Snapshot.captured(snapshot.textureId, sampleRegion, readFramebufferId, contentRevision,
@@ -291,14 +298,29 @@ public final class UiMainLayerSnapshotService {
         return Math.max(1, (Math.max(1, sourceSize) + safeFactor - 1) / safeFactor);
     }
 
+    /**
+     * 计算降采样滤镜 pass 内部使用的 separable blur 半径。
+     *
+     * @param blurRadius 作者侧 blur 半径
+     * @param downsampleFactor 降采样倍率
+     * @return filter pass 半径；为 0 表示不需要独立 blur pass
+     */
+    static int resolveFilterPassRadius(int blurRadius, int downsampleFactor) {
+        if (blurRadius <= 0 || downsampleFactor <= 1) {
+            return 0;
+        }
+        return Math.max(1, Math.min(8, Math.round((float) blurRadius / (float) (downsampleFactor * 5))));
+    }
+
     private FrameSnapshot findCapturedSnapshot(int readFramebufferId, SampleRegion sampleRegion,
-            int contentRevision, int downsampleFactor) {
+            int contentRevision, int downsampleFactor, int blurRadius) {
         for (FrameSnapshot snapshot : snapshots) {
             if (snapshot.capturedFrameId == frameId && snapshot.readFramebufferId == readFramebufferId
                     && snapshot.sampleLeft == sampleRegion.getLeft() && snapshot.sampleTop == sampleRegion.getTop()
                     && snapshot.width == sampleRegion.getWidth() && snapshot.height == sampleRegion.getHeight()
                     && snapshot.contentRevision == contentRevision
-                    && snapshot.requestedDownsampleFactor == downsampleFactor && snapshot.textureId != 0) {
+                    && snapshot.requestedDownsampleFactor == downsampleFactor && snapshot.blurRadius == blurRadius
+                    && snapshot.textureId != 0) {
                 return snapshot;
             }
         }
@@ -315,7 +337,7 @@ public final class UiMainLayerSnapshotService {
     }
 
     private boolean captureSnapshot(FrameSnapshot snapshot, int screenHeight, SampleRegion sampleRegion,
-            int readFramebufferId, int contentRevision, int requestedDownsampleFactor) {
+            int readFramebufferId, int contentRevision, int requestedDownsampleFactor, int blurRadius) {
         int width = sampleRegion.getWidth();
         int height = sampleRegion.getHeight();
         int previousTexture = 0;
@@ -377,13 +399,16 @@ public final class UiMainLayerSnapshotService {
             snapshot.textureHeight = height;
             snapshot.requestedDownsampleFactor = requestedDownsampleFactor;
             snapshot.downsampleFactor = 1;
+            snapshot.blurRadius = blurRadius;
+            snapshot.filterPassRadius = 0;
             snapshot.filterDetail = "raw";
             if (downsampleFactor > 1) {
-                if (downsampleSnapshot(snapshot, downsampleFactor)) {
+                if (downsampleSnapshot(snapshot, downsampleFactor, blurRadius)) {
                     snapshot.filterDetail = "downsample" + snapshot.downsampleFactor + " "
-                            + snapshot.textureWidth + "x" + snapshot.textureHeight;
-                } else if (!lastDownsampleFailureDetail.isEmpty()) {
-                    snapshot.filterDetail = "raw, downsample-unavailable=" + lastDownsampleFailureDetail;
+                            + snapshot.textureWidth + "x" + snapshot.textureHeight
+                            + "+sepBlur" + snapshot.filterPassRadius;
+                } else if (!lastFilterPassFailureDetail.isEmpty()) {
+                    snapshot.filterDetail = "raw, filter-unavailable=" + lastFilterPassFailureDetail;
                 }
             }
 
@@ -429,8 +454,8 @@ public final class UiMainLayerSnapshotService {
         }
     }
 
-    private boolean downsampleSnapshot(FrameSnapshot snapshot, int downsampleFactor) {
-        if (downsampleDisabledForFrame) {
+    private boolean downsampleSnapshot(FrameSnapshot snapshot, int downsampleFactor, int blurRadius) {
+        if (filterPassDisabledForFrame) {
             return false;
         }
         int targetWidth = resolveDownsampledSize(snapshot.sourceWidth, downsampleFactor);
@@ -438,29 +463,19 @@ public final class UiMainLayerSnapshotService {
         if (targetWidth >= snapshot.sourceWidth && targetHeight >= snapshot.sourceHeight) {
             return false;
         }
+        int filterPassRadius = resolveFilterPassRadius(blurRadius, downsampleFactor);
 
         try {
             ensureDownsampleTarget(snapshot, targetWidth, targetHeight);
-            GL30.glBindFramebuffer(GL30.GL_DRAW_FRAMEBUFFER, snapshot.filterFramebufferId);
-            GL30.glFramebufferTexture2D(GL30.GL_DRAW_FRAMEBUFFER, GL30.GL_COLOR_ATTACHMENT0, GL11.GL_TEXTURE_2D,
-                    snapshot.filteredTextureId, 0);
-            int status = GL30.glCheckFramebufferStatus(GL30.GL_DRAW_FRAMEBUFFER);
-            if (status != GL30.GL_FRAMEBUFFER_COMPLETE) {
-                disableDownsampleForCurrentFrame("fbo-incomplete:" + status);
-                return false;
+            if (filterPassRadius <= 0) {
+                renderFilterPass(snapshot, snapshot.sourceTextureId, snapshot.filteredTextureId, snapshot.sourceWidth,
+                        snapshot.sourceHeight, targetWidth, targetHeight, 0, true);
+            } else {
+                renderFilterPass(snapshot, snapshot.sourceTextureId, snapshot.intermediateTextureId,
+                        snapshot.sourceWidth, snapshot.sourceHeight, targetWidth, targetHeight, filterPassRadius, true);
+                renderFilterPass(snapshot, snapshot.intermediateTextureId, snapshot.filteredTextureId,
+                        targetWidth, targetHeight, targetWidth, targetHeight, filterPassRadius, false);
             }
-
-            GL20.glUseProgram(0);
-            GL11.glViewport(0, 0, targetWidth, targetHeight);
-            GL11.glDisable(GL11.GL_SCISSOR_TEST);
-            GL11.glDisable(GL11.GL_STENCIL_TEST);
-            GL11.glDisable(GL11.GL_DEPTH_TEST);
-            GL11.glDisable(GL11.GL_ALPHA_TEST);
-            GL11.glDisable(GL11.GL_BLEND);
-            GL11.glEnable(GL11.GL_TEXTURE_2D);
-            GL11.glColor4f(1.0F, 1.0F, 1.0F, 1.0F);
-            GL11.glBindTexture(GL11.GL_TEXTURE_2D, snapshot.sourceTextureId);
-            drawDownsampledSourceQuad(targetWidth, targetHeight);
 
             GL11.glBindTexture(GL11.GL_TEXTURE_2D, snapshot.filteredTextureId);
             GL30.glGenerateMipmap(GL11.GL_TEXTURE_2D);
@@ -469,27 +484,75 @@ public final class UiMainLayerSnapshotService {
             snapshot.textureWidth = targetWidth;
             snapshot.textureHeight = targetHeight;
             snapshot.downsampleFactor = downsampleFactor;
+            snapshot.filterPassRadius = filterPassRadius;
             return true;
         } catch (RuntimeException exception) {
-            disableDownsampleForCurrentFrame(exception.getClass().getSimpleName());
+            disableFilterPassForCurrentFrame(exception.getClass().getSimpleName());
             return false;
         } catch (LinkageError error) {
-            disableDownsampleForCurrentFrame(error.getClass().getSimpleName());
+            disableFilterPassForCurrentFrame(error.getClass().getSimpleName());
             return false;
         }
+    }
+
+    private void renderFilterPass(FrameSnapshot snapshot, int inputTextureId, int outputTextureId, int inputWidth,
+            int inputHeight, int outputWidth, int outputHeight, int filterPassRadius, boolean horizontal) {
+        GL30.glBindFramebuffer(GL30.GL_DRAW_FRAMEBUFFER, snapshot.filterFramebufferId);
+        GL30.glFramebufferTexture2D(GL30.GL_DRAW_FRAMEBUFFER, GL30.GL_COLOR_ATTACHMENT0, GL11.GL_TEXTURE_2D,
+                outputTextureId, 0);
+        int status = GL30.glCheckFramebufferStatus(GL30.GL_DRAW_FRAMEBUFFER);
+        if (status != GL30.GL_FRAMEBUFFER_COMPLETE) {
+            disableFilterPassForCurrentFrame("fbo-incomplete:" + status);
+            throw new IllegalStateException("filter pass fbo incomplete: " + status);
+        }
+
+        GL20.glUseProgram(0);
+        GL11.glViewport(0, 0, outputWidth, outputHeight);
+        GL11.glDisable(GL11.GL_SCISSOR_TEST);
+        GL11.glDisable(GL11.GL_STENCIL_TEST);
+        GL11.glDisable(GL11.GL_DEPTH_TEST);
+        GL11.glDisable(GL11.GL_ALPHA_TEST);
+        GL11.glEnable(GL11.GL_TEXTURE_2D);
+        GL11.glBindTexture(GL11.GL_TEXTURE_2D, inputTextureId);
+        if (filterPassRadius <= 0) {
+            GL11.glDisable(GL11.GL_BLEND);
+            GL11.glColor4f(1.0F, 1.0F, 1.0F, 1.0F);
+            drawFilterTextureQuad(outputWidth, outputHeight, 0.0F, 0.0F);
+            return;
+        }
+
+        GL11.glClearColor(0.0F, 0.0F, 0.0F, 0.0F);
+        GL11.glClear(GL11.GL_COLOR_BUFFER_BIT);
+        GL11.glEnable(GL11.GL_BLEND);
+        GL11.glBlendFunc(GL11.GL_ONE, GL11.GL_ONE);
+        for (float[] sample : FILTER_BLUR_SAMPLES) {
+            float weight = sample[1];
+            float offsetPixels = sample[0] * (float) filterPassRadius;
+            float offsetU = horizontal ? offsetPixels / (float) Math.max(1, inputWidth) : 0.0F;
+            float offsetV = horizontal ? 0.0F : offsetPixels / (float) Math.max(1, inputHeight);
+            GL11.glColor4f(weight, weight, weight, weight);
+            drawFilterTextureQuad(outputWidth, outputHeight, offsetU, offsetV);
+        }
+        GL11.glColor4f(1.0F, 1.0F, 1.0F, 1.0F);
     }
 
     private void ensureDownsampleTarget(FrameSnapshot snapshot, int targetWidth, int targetHeight) {
         if (snapshot.filteredTextureId == 0) {
             snapshot.filteredTextureId = GL11.glGenTextures();
             if (snapshot.filteredTextureId == 0) {
-                throw new IllegalStateException("downsample texture allocation failed");
+                throw new IllegalStateException("filter texture allocation failed");
+            }
+        }
+        if (snapshot.intermediateTextureId == 0) {
+            snapshot.intermediateTextureId = GL11.glGenTextures();
+            if (snapshot.intermediateTextureId == 0) {
+                throw new IllegalStateException("filter intermediate texture allocation failed");
             }
         }
         if (snapshot.filterFramebufferId == 0) {
             snapshot.filterFramebufferId = GL30.glGenFramebuffers();
             if (snapshot.filterFramebufferId == 0) {
-                throw new IllegalStateException("downsample framebuffer allocation failed");
+                throw new IllegalStateException("filter framebuffer allocation failed");
             }
         }
         GL11.glBindTexture(GL11.GL_TEXTURE_2D, snapshot.filteredTextureId);
@@ -500,6 +563,14 @@ public final class UiMainLayerSnapshotService {
             snapshot.filteredWidth = targetWidth;
             snapshot.filteredHeight = targetHeight;
         }
+        GL11.glBindTexture(GL11.GL_TEXTURE_2D, snapshot.intermediateTextureId);
+        configureLinearTexture();
+        if (snapshot.intermediateWidth != targetWidth || snapshot.intermediateHeight != targetHeight) {
+            GL11.glTexImage2D(GL11.GL_TEXTURE_2D, 0, GL11.GL_RGBA, targetWidth, targetHeight, 0, GL11.GL_RGBA,
+                    GL11.GL_UNSIGNED_BYTE, (ByteBuffer) null);
+            snapshot.intermediateWidth = targetWidth;
+            snapshot.intermediateHeight = targetHeight;
+        }
     }
 
     private static void configureLinearTexture() {
@@ -509,7 +580,7 @@ public final class UiMainLayerSnapshotService {
         GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_WRAP_T, GL12.GL_CLAMP_TO_EDGE);
     }
 
-    private static void drawDownsampledSourceQuad(int targetWidth, int targetHeight) {
+    private static void drawFilterTextureQuad(int targetWidth, int targetHeight, float offsetU, float offsetV) {
         int previousMatrixMode = GL11.glGetInteger(GL11.GL_MATRIX_MODE);
         boolean projectionPushed = false;
         boolean modelViewPushed = false;
@@ -525,13 +596,13 @@ public final class UiMainLayerSnapshotService {
             GL11.glLoadIdentity();
 
             GL11.glBegin(GL11.GL_QUADS);
-            GL11.glTexCoord2f(0.0F, 0.0F);
+            GL11.glTexCoord2f(offsetU, offsetV);
             GL11.glVertex2f(0.0F, (float) targetHeight);
-            GL11.glTexCoord2f(1.0F, 0.0F);
+            GL11.glTexCoord2f(1.0F + offsetU, offsetV);
             GL11.glVertex2f((float) targetWidth, (float) targetHeight);
-            GL11.glTexCoord2f(1.0F, 1.0F);
+            GL11.glTexCoord2f(1.0F + offsetU, 1.0F + offsetV);
             GL11.glVertex2f((float) targetWidth, 0.0F);
-            GL11.glTexCoord2f(0.0F, 1.0F);
+            GL11.glTexCoord2f(offsetU, 1.0F + offsetV);
             GL11.glVertex2f(0.0F, 0.0F);
             GL11.glEnd();
         } finally {
@@ -552,9 +623,12 @@ public final class UiMainLayerSnapshotService {
         lastFailureDetail = detail;
     }
 
-    private void disableDownsampleForCurrentFrame(String detail) {
-        downsampleDisabledForFrame = true;
-        lastDownsampleFailureDetail = detail == null ? "unknown" : detail;
+    private void disableFilterPassForCurrentFrame(String detail) {
+        if (filterPassDisabledForFrame && !lastFilterPassFailureDetail.isEmpty()) {
+            return;
+        }
+        filterPassDisabledForFrame = true;
+        lastFilterPassFailureDetail = detail == null ? "unknown" : detail;
     }
 
     private void closeSnapshot(FrameSnapshot snapshot) {
@@ -565,6 +639,10 @@ public final class UiMainLayerSnapshotService {
         if (snapshot.filteredTextureId != 0) {
             GL11.glDeleteTextures(snapshot.filteredTextureId);
             snapshot.filteredTextureId = 0;
+        }
+        if (snapshot.intermediateTextureId != 0) {
+            GL11.glDeleteTextures(snapshot.intermediateTextureId);
+            snapshot.intermediateTextureId = 0;
         }
         if (snapshot.filterFramebufferId != 0) {
             GL30.glDeleteFramebuffers(snapshot.filterFramebufferId);
@@ -761,6 +839,7 @@ public final class UiMainLayerSnapshotService {
         private int textureId;
         private int sourceTextureId;
         private int filteredTextureId;
+        private int intermediateTextureId;
         private int filterFramebufferId;
         private int sampleLeft;
         private int sampleTop;
@@ -770,12 +849,16 @@ public final class UiMainLayerSnapshotService {
         private int sourceHeight;
         private int filteredWidth;
         private int filteredHeight;
+        private int intermediateWidth;
+        private int intermediateHeight;
         private int textureWidth;
         private int textureHeight;
         private int readFramebufferId = -1;
         private int contentRevision;
+        private int blurRadius;
         private int requestedDownsampleFactor = 1;
         private int downsampleFactor = 1;
+        private int filterPassRadius;
         private String filterDetail = "raw";
         private int capturedFrameId;
         private int activeUseCount;

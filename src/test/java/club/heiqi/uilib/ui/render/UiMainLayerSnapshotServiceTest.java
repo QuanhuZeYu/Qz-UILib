@@ -107,4 +107,16 @@ public class UiMainLayerSnapshotServiceTest {
         Assert.assertEquals(26, UiMainLayerSnapshotService.resolveDownsampledSize(101, 4));
         Assert.assertEquals(1, UiMainLayerSnapshotService.resolveDownsampledSize(0, 4));
     }
+
+    /**
+     * 验证降采样后的滤镜 pass 会为大半径 blur 分配独立 separable blur 半径。
+     */
+    @Test
+    public void shouldResolveFilterPassBlurRadius() {
+        Assert.assertEquals(0, UiMainLayerSnapshotService.resolveFilterPassRadius(17, 1));
+        Assert.assertEquals(2, UiMainLayerSnapshotService.resolveFilterPassRadius(18, 2));
+        Assert.assertEquals(3, UiMainLayerSnapshotService.resolveFilterPassRadius(33, 2));
+        Assert.assertEquals(2, UiMainLayerSnapshotService.resolveFilterPassRadius(36, 4));
+        Assert.assertEquals(8, UiMainLayerSnapshotService.resolveFilterPassRadius(200, 4));
+    }
 }
