@@ -13,6 +13,7 @@ import club.heiqi.uilib.ui.layout.DocumentScrollState.ScrollbarMetrics;
 import club.heiqi.uilib.ui.layout.DocumentStackingPhase;
 import club.heiqi.uilib.ui.style.ComputedStyle;
 import club.heiqi.uilib.ui.style.UiOverflow;
+import club.heiqi.uilib.ui.style.UiPosition;
 
 /**
  * HTML-like 绘制命令生成器。
@@ -88,7 +89,12 @@ public final class DocumentPaintEngine {
             float inheritedOpacity) {
         int boxOffsetX = offsetX + box.getPositionOffsetX();
         int boxOffsetY = offsetY + box.getPositionOffsetY();
-        float boxOpacity = inheritedOpacity * resolveAnimatedOpacity(animationTimeline, box, currentTimeNanos);
+        float localOpacity = resolveAnimatedOpacity(animationTimeline, box, currentTimeNanos);
+        float boxOpacity = inheritedOpacity * localOpacity;
+        boolean paintContext = shouldCreatePaintContext(rootBox, box, localOpacity);
+        if (paintContext) {
+            appendPaintContextStartCommand(box, commands, localOpacity, boxOffsetX, boxOffsetY);
+        }
         appendBackdropFilterCommand(box, commands, animationTimeline, currentTimeNanos, boxOffsetX, boxOffsetY);
         appendBackgroundCommand(box, commands, animationTimeline, currentTimeNanos, boxOpacity, boxOffsetX,
                 boxOffsetY);
@@ -115,6 +121,39 @@ public final class DocumentPaintEngine {
         }
         appendScrollbarCommands(rootBox, box, commands, scrollState, boxOffsetX, boxOffsetY, currentTimeNanos,
                 boxOpacity);
+        if (paintContext) {
+            appendPaintContextEndCommand(box, commands, boxOffsetX, boxOffsetY);
+        }
+    }
+
+    private static boolean shouldCreatePaintContext(DocumentLayoutBox rootBox, DocumentLayoutBox box,
+            float localOpacity) {
+        if (box == rootBox || box.getWidth() <= 0 || box.getHeight() <= 0) {
+            return false;
+        }
+        ComputedStyle style = box.getComputedStyle();
+        if (localOpacity < 0.999F) {
+            return true;
+        }
+        if (style.getPosition() != UiPosition.STATIC && style.getZIndex() != null) {
+            return true;
+        }
+        int blurRadius = resolveBackdropBlurRadius(box);
+        return blurRadius > 0 || Float.compare(style.getBackdropSaturation(), 1.0F) != 0;
+    }
+
+    private static void appendPaintContextStartCommand(DocumentLayoutBox box, List<DocumentPaintCommand> commands,
+            float localOpacity, int offsetX, int offsetY) {
+        commands.add(new DocumentPaintCommand(DocumentPaintCommandType.PAINT_CONTEXT_START, box.getElement(),
+                box.getLeft() + offsetX, box.getTop() + offsetY, box.getRight() + offsetX,
+                box.getBottom() + offsetY, 0, 0, 0, null, null, 0, 1.0F, localOpacity));
+    }
+
+    private static void appendPaintContextEndCommand(DocumentLayoutBox box, List<DocumentPaintCommand> commands,
+            int offsetX, int offsetY) {
+        commands.add(new DocumentPaintCommand(DocumentPaintCommandType.PAINT_CONTEXT_END, box.getElement(),
+                box.getLeft() + offsetX, box.getTop() + offsetY, box.getRight() + offsetX,
+                box.getBottom() + offsetY, 0, 0, 0));
     }
 
     private static void appendChildrenInStackingPhase(DocumentLayoutBox rootBox, DocumentLayoutBox box,

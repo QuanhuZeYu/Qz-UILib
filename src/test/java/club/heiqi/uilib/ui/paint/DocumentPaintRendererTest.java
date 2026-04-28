@@ -212,6 +212,33 @@ public class DocumentPaintRendererTest {
         assertDrawCall(renderContext.drawCalls.get(1), 49, 13, 55, 29, 0xDDBCD7FF, 0, 3);
     }
 
+    /**
+     * 验证绘制上下文边界会按宿主偏移投影到 `UiRenderContext`。
+     */
+    @Test
+    public void shouldReplayPaintContextCommands() {
+        UiDocument document = UiDocument.create();
+        ElementNode root = document.getRootElement();
+        ElementNode child = document.div();
+        root.style().setWidth(UiStyleLength.px(80));
+        child.style()
+                .setWidth(UiStyleLength.px(40))
+                .setHeight(UiStyleLength.px(20))
+                .setOpacity(0.5F)
+                .setBackgroundColor(0xFF223344);
+        root.append(child);
+
+        RecordingUiRenderContext renderContext = new RecordingUiRenderContext();
+        DocumentPaintRenderer.render(renderContext, DocumentPaintEngine.buildPaintCommands(
+                DocumentLayoutEngine.layout(root, 100, 0)), 7, 11);
+
+        Assert.assertEquals(1, renderContext.paintContextCalls.size());
+        assertPaintContextCall(renderContext.paintContextCalls.get(0), 7, 11, 47, 31, 0.5F);
+        Assert.assertEquals(1, renderContext.popPaintContextCount);
+        Assert.assertEquals(1, renderContext.drawCalls.size());
+        assertDrawCall(renderContext.drawCalls.get(0), 7, 11, 47, 31, 0x80223344, 0, 0);
+    }
+
     private static void assertDrawCall(DrawCall drawCall, int left, int top, int right, int bottom, int fillColor,
             int borderColor, int cornerRadius) {
         Assert.assertEquals(left, drawCall.left);
@@ -257,6 +284,15 @@ public class DocumentPaintRendererTest {
         Assert.assertEquals(cornerRadius, backdropCall.cornerRadius);
     }
 
+    private static void assertPaintContextCall(PaintContextCall paintContextCall, int left, int top, int right,
+            int bottom, float opacity) {
+        Assert.assertEquals(left, paintContextCall.left);
+        Assert.assertEquals(top, paintContextCall.top);
+        Assert.assertEquals(right, paintContextCall.right);
+        Assert.assertEquals(bottom, paintContextCall.bottom);
+        Assert.assertEquals(opacity, paintContextCall.opacity, 0.0F);
+    }
+
     /**
      * 记录 drawSurface 调用的渲染上下文。
      */
@@ -266,7 +302,9 @@ public class DocumentPaintRendererTest {
         private final List<ClipCall> clipCalls = new ArrayList<ClipCall>();
         private final List<TextCall> textCalls = new ArrayList<TextCall>();
         private final List<BackdropCall> backdropCalls = new ArrayList<BackdropCall>();
+        private final List<PaintContextCall> paintContextCalls = new ArrayList<PaintContextCall>();
         private int popClipCount;
+        private int popPaintContextCount;
 
         private RecordingUiRenderContext() {
             super(320, 240, 0, 0, 0.0F);
@@ -296,6 +334,16 @@ public class DocumentPaintRendererTest {
         @Override
         public void drawText(String text, int x, int y, int color, boolean shadow) {
             textCalls.add(new TextCall(text, x, y, color, shadow));
+        }
+
+        @Override
+        public void pushPaintContext(int left, int top, int right, int bottom, float opacity) {
+            paintContextCalls.add(new PaintContextCall(left, top, right, bottom, opacity));
+        }
+
+        @Override
+        public void popPaintContext() {
+            popPaintContextCount++;
         }
     }
 
@@ -399,6 +447,26 @@ public class DocumentPaintRendererTest {
             this.blurRadius = blurRadius;
             this.saturation = saturation;
             this.cornerRadius = cornerRadius;
+        }
+    }
+
+    /**
+     * 单次绘制上下文边界记录。
+     */
+    private static final class PaintContextCall {
+
+        private final int left;
+        private final int top;
+        private final int right;
+        private final int bottom;
+        private final float opacity;
+
+        private PaintContextCall(int left, int top, int right, int bottom, float opacity) {
+            this.left = left;
+            this.top = top;
+            this.right = right;
+            this.bottom = bottom;
+            this.opacity = opacity;
         }
     }
 }

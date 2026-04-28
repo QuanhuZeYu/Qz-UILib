@@ -164,13 +164,111 @@ public class DocumentPaintEngineTest {
 
         List<DocumentPaintCommand> commands = DocumentPaintEngine.buildPaintCommands(
                 DocumentLayoutEngine.layout(root, 200, 0));
+        List<DocumentPaintCommand> paintCommands = withoutPaintContextCommands(commands);
+
+        Assert.assertEquals(5, commands.size());
+        Assert.assertEquals(DocumentPaintCommandType.PAINT_CONTEXT_START, commands.get(2).getType());
+        Assert.assertEquals(0.5F, commands.get(2).getPaintContextOpacity(), 0.0F);
+        Assert.assertEquals(DocumentPaintCommandType.PAINT_CONTEXT_END, commands.get(4).getType());
+        Assert.assertEquals(3, paintCommands.size());
+        assertCommand(paintCommands.get(0), DocumentPaintCommandType.BACKGROUND, root, 0, 0, 104, 44, 0x55101820, 0,
+                12);
+        assertCommand(paintCommands.get(1), DocumentPaintCommandType.BORDER, root, 0, 0, 104, 44, 0x8086A8F0, 2,
+                12);
+        assertCommand(paintCommands.get(2), DocumentPaintCommandType.BACKGROUND, child, 2, 2, 42, 12, 0x40223344, 0,
+                0);
+    }
+
+    /**
+     * 验证非根 opacity 元素会输出显式绘制上下文边界。
+     */
+    @Test
+    public void shouldWrapOpacityDescendantWithPaintContextCommands() {
+        UiDocument document = UiDocument.create();
+        ElementNode root = document.getRootElement();
+        ElementNode child = document.div();
+
+        root.style().setWidth(UiStyleLength.px(100));
+        child.style()
+                .setWidth(UiStyleLength.px(40))
+                .setHeight(UiStyleLength.px(10))
+                .setOpacity(0.5F)
+                .setBackgroundColor(0xFF223344);
+        root.append(child);
+
+        List<DocumentPaintCommand> commands = DocumentPaintEngine.buildPaintCommands(
+                DocumentLayoutEngine.layout(root, 120, 0));
 
         Assert.assertEquals(3, commands.size());
-        assertCommand(commands.get(0), DocumentPaintCommandType.BACKGROUND, root, 0, 0, 104, 44, 0x55101820, 0,
-                12);
-        assertCommand(commands.get(1), DocumentPaintCommandType.BORDER, root, 0, 0, 104, 44, 0x8086A8F0, 2,
-                12);
-        assertCommand(commands.get(2), DocumentPaintCommandType.BACKGROUND, child, 2, 2, 42, 12, 0x40223344, 0,
+        assertCommand(commands.get(0), DocumentPaintCommandType.PAINT_CONTEXT_START, child, 0, 0, 40, 10, 0, 0,
+                0);
+        Assert.assertEquals(0.5F, commands.get(0).getPaintContextOpacity(), 0.0F);
+        assertCommand(commands.get(1), DocumentPaintCommandType.BACKGROUND, child, 0, 0, 40, 10, 0x80223344, 0,
+                0);
+        assertCommand(commands.get(2), DocumentPaintCommandType.PAINT_CONTEXT_END, child, 0, 0, 40, 10, 0, 0,
+                0);
+    }
+
+    /**
+     * 验证 positioned z-index 元素会输出显式绘制上下文边界。
+     */
+    @Test
+    public void shouldWrapPositionedZIndexDescendantWithPaintContextCommands() {
+        UiDocument document = UiDocument.create();
+        ElementNode root = document.getRootElement();
+        ElementNode child = document.div();
+
+        root.style().setWidth(UiStyleLength.px(100));
+        child.style()
+                .setWidth(UiStyleLength.px(40))
+                .setHeight(UiStyleLength.px(10))
+                .setPosition(UiPosition.RELATIVE)
+                .setZIndex(1)
+                .setBackgroundColor(0xFF223344);
+        root.append(child);
+
+        List<DocumentPaintCommand> commands = DocumentPaintEngine.buildPaintCommands(
+                DocumentLayoutEngine.layout(root, 120, 0));
+
+        Assert.assertEquals(3, commands.size());
+        assertCommand(commands.get(0), DocumentPaintCommandType.PAINT_CONTEXT_START, child, 0, 0, 40, 10, 0, 0,
+                0);
+        Assert.assertEquals(1.0F, commands.get(0).getPaintContextOpacity(), 0.0F);
+        assertCommand(commands.get(1), DocumentPaintCommandType.BACKGROUND, child, 0, 0, 40, 10, 0xFF223344, 0,
+                0);
+        assertCommand(commands.get(2), DocumentPaintCommandType.PAINT_CONTEXT_END, child, 0, 0, 40, 10, 0, 0,
+                0);
+    }
+
+    /**
+     * 验证非根 backdrop-filter 元素会输出显式绘制上下文边界。
+     */
+    @Test
+    public void shouldWrapBackdropDescendantWithPaintContextCommands() {
+        UiDocument document = UiDocument.create();
+        ElementNode root = document.getRootElement();
+        ElementNode child = document.div();
+
+        root.style().setWidth(UiStyleLength.px(100));
+        child.style()
+                .setWidth(UiStyleLength.px(40))
+                .setHeight(UiStyleLength.px(10))
+                .setBackdropBlurRadius(UiStyleLength.px(6))
+                .setBackdropSaturation(1.2F);
+        root.append(child);
+
+        List<DocumentPaintCommand> commands = DocumentPaintEngine.buildPaintCommands(
+                DocumentLayoutEngine.layout(root, 120, 0));
+
+        Assert.assertEquals(3, commands.size());
+        assertCommand(commands.get(0), DocumentPaintCommandType.PAINT_CONTEXT_START, child, 0, 0, 40, 10, 0, 0,
+                0);
+        Assert.assertEquals(1.0F, commands.get(0).getPaintContextOpacity(), 0.0F);
+        assertCommand(commands.get(1), DocumentPaintCommandType.BACKDROP_FILTER, child, 0, 0, 40, 10, 0, 0,
+                0);
+        Assert.assertEquals(6, commands.get(1).getBackdropBlurRadius());
+        Assert.assertEquals(1.2F, commands.get(1).getBackdropSaturation(), 0.0F);
+        assertCommand(commands.get(2), DocumentPaintCommandType.PAINT_CONTEXT_END, child, 0, 0, 40, 10, 0, 0,
                 0);
     }
 
@@ -390,20 +488,21 @@ public class DocumentPaintEngineTest {
 
         List<DocumentPaintCommand> commands = DocumentPaintEngine.buildPaintCommands(
                 DocumentLayoutEngine.layout(root, 120, 0));
+        List<DocumentPaintCommand> paintCommands = withoutPaintContextCommands(commands);
 
-        Assert.assertEquals(7, commands.size());
-        assertCommand(commands.get(0), DocumentPaintCommandType.BACKGROUND, negative, 0, 30, 50, 40, 0xFFFF0000,
+        Assert.assertEquals(7, paintCommands.size());
+        assertCommand(paintCommands.get(0), DocumentPaintCommandType.BACKGROUND, negative, 0, 30, 50, 40, 0xFFFF0000,
                 0, 0);
-        assertCommand(commands.get(1), DocumentPaintCommandType.CUSTOM, root, 0, 0, 100, 60, 0, 0, 0);
-        assertCommand(commands.get(2), DocumentPaintCommandType.BACKGROUND, normal, 0, 20, 50, 30, 0xFF0000FF,
+        assertCommand(paintCommands.get(1), DocumentPaintCommandType.CUSTOM, root, 0, 0, 100, 60, 0, 0, 0);
+        assertCommand(paintCommands.get(2), DocumentPaintCommandType.BACKGROUND, normal, 0, 20, 50, 30, 0xFF0000FF,
                 0, 0);
-        assertCommand(commands.get(3), DocumentPaintCommandType.BACKGROUND, autoPositioned, 0, 0, 50, 10,
+        assertCommand(paintCommands.get(3), DocumentPaintCommandType.BACKGROUND, autoPositioned, 0, 0, 50, 10,
                 0xFF00AA00, 0, 0);
-        assertCommand(commands.get(4), DocumentPaintCommandType.BACKGROUND, zero, 0, 40, 50, 50, 0xFFFFFF00,
+        assertCommand(paintCommands.get(4), DocumentPaintCommandType.BACKGROUND, zero, 0, 40, 50, 50, 0xFFFFFF00,
                 0, 0);
-        assertCommand(commands.get(5), DocumentPaintCommandType.BACKGROUND, positiveLow, 0, 50, 50, 60,
+        assertCommand(paintCommands.get(5), DocumentPaintCommandType.BACKGROUND, positiveLow, 0, 50, 50, 60,
                 0xFFAA00AA, 0, 0);
-        assertCommand(commands.get(6), DocumentPaintCommandType.BACKGROUND, positiveHigh, 0, 10, 50, 20,
+        assertCommand(paintCommands.get(6), DocumentPaintCommandType.BACKGROUND, positiveHigh, 0, 10, 50, 20,
                 0xFFFF00FF, 0, 0);
     }
 
@@ -712,6 +811,18 @@ public class DocumentPaintEngineTest {
             }
         }
         return count;
+    }
+
+    private static List<DocumentPaintCommand> withoutPaintContextCommands(List<DocumentPaintCommand> commands) {
+        List<DocumentPaintCommand> filteredCommands = new ArrayList<DocumentPaintCommand>();
+        for (DocumentPaintCommand command : commands) {
+            if (command.getType() == DocumentPaintCommandType.PAINT_CONTEXT_START
+                    || command.getType() == DocumentPaintCommandType.PAINT_CONTEXT_END) {
+                continue;
+            }
+            filteredCommands.add(command);
+        }
+        return filteredCommands;
     }
 
     /**

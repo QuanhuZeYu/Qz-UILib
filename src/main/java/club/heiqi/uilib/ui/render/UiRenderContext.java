@@ -529,6 +529,24 @@ public class UiRenderContext {
         return drainedPasses;
     }
 
+    /**
+     * 压入一个文档绘制上下文边界。
+     *
+     * <p>当前默认实现只提供可回放边界，不主动创建离屏 FBO；后续 group opacity 与元素级效果合成可在这里接入。</p>
+     *
+     * @param left 左侧坐标
+     * @param top 顶部坐标
+     * @param right 右侧坐标
+     * @param bottom 底部坐标
+     * @param opacity 当前上下文的局部 opacity
+     */
+    public void pushPaintContext(int left, int top, int right, int bottom, float opacity) {}
+
+    /**
+     * 弹出最近压入的文档绘制上下文边界。
+     */
+    public void popPaintContext() {}
+
     public void pushClip(int left, int top, int right, int bottom) {
         pushClip(left, top, right, bottom, 0);
     }

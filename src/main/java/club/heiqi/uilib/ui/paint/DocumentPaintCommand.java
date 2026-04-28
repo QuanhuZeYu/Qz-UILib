@@ -24,6 +24,7 @@ public final class DocumentPaintCommand {
     private final DocumentCustomRenderer customRenderer;
     private final int backdropBlurRadius;
     private final float backdropSaturation;
+    private final float paintContextOpacity;
 
     DocumentPaintCommand(DocumentPaintCommandType type, ElementNode element, int left, int top, int right, int bottom,
             int color, int borderWidth, int borderRadius) {
@@ -43,6 +44,13 @@ public final class DocumentPaintCommand {
     DocumentPaintCommand(DocumentPaintCommandType type, ElementNode element, int left, int top, int right, int bottom,
             int color, int borderWidth, int borderRadius, String text, DocumentCustomRenderer customRenderer,
             int backdropBlurRadius, float backdropSaturation) {
+        this(type, element, left, top, right, bottom, color, borderWidth, borderRadius, text, customRenderer,
+                backdropBlurRadius, backdropSaturation, 1.0F);
+    }
+
+    DocumentPaintCommand(DocumentPaintCommandType type, ElementNode element, int left, int top, int right, int bottom,
+            int color, int borderWidth, int borderRadius, String text, DocumentCustomRenderer customRenderer,
+            int backdropBlurRadius, float backdropSaturation, float paintContextOpacity) {
         this.type = Objects.requireNonNull(type, "type");
         this.element = Objects.requireNonNull(element, "element");
         this.left = left;
@@ -56,6 +64,7 @@ public final class DocumentPaintCommand {
         this.customRenderer = customRenderer;
         this.backdropBlurRadius = Math.max(0, backdropBlurRadius);
         this.backdropSaturation = Math.max(0.0F, backdropSaturation);
+        this.paintContextOpacity = Math.max(0.0F, Math.min(1.0F, paintContextOpacity));
     }
 
     public DocumentPaintCommandType getType() {
@@ -116,5 +125,9 @@ public final class DocumentPaintCommand {
 
     public float getBackdropSaturation() {
         return backdropSaturation;
+    }
+
+    public float getPaintContextOpacity() {
+        return paintContextOpacity;
     }
 }
