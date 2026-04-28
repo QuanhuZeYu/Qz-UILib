@@ -24,6 +24,7 @@ import club.heiqi.uilib.ui.style.UiDisplay;
 import club.heiqi.uilib.ui.style.UiFlexDirection;
 import club.heiqi.uilib.ui.style.UiJustifyContent;
 import club.heiqi.uilib.ui.style.UiOverflow;
+import club.heiqi.uilib.ui.style.UiStyleInsets;
 import club.heiqi.uilib.ui.style.UiStyleLength;
 import club.heiqi.uilib.ui.text.DefaultTextMeasureService;
 import club.heiqi.uilib.ui.text.TextMeasureService;
@@ -157,12 +158,75 @@ final class HtmlLikeSmokeDocumentPageController extends DocumentPageController {
                 + "visible card height. Scroll here to verify that the background and border stay fixed while only "
                 + "the inner text content moves.");
 
+        ElementNode backdropStage = document.div();
+        backdropStage.style()
+                .setWidth(UiStyleLength.px(218))
+                .setPadding(UiStyleLength.px(8))
+                .setBackgroundColor(0xFF1A202C)
+                .setBorderColor(0xFF4FD1C5)
+                .setBorderWidth(UiStyleLength.px(1))
+                .setBorderRadius(UiStyleLength.px(12))
+                .setTextColor(0xFFE6FFFA)
+                .setOverflowX(UiOverflow.HIDDEN)
+                .setOverflowY(UiOverflow.HIDDEN);
+        row.append(backdropStage);
+
+        ElementNode sampleTitle = document.div();
+        sampleTitle.style()
+                .setHeight(UiStyleLength.px(18))
+                .setTextColor(0xFFB2F5EA);
+        sampleTitle.appendText("Same-layer sampling grid");
+        backdropStage.append(sampleTitle);
+
+        ElementNode hotStripe = document.div();
+        hotStripe.style()
+                .setWidth(UiStyleLength.px(246))
+                .setHeight(UiStyleLength.px(18))
+                .setBackgroundColor(0xFFED64A6)
+                .setBorderRadius(UiStyleLength.px(999))
+                .setTextColor(0xFFFFFFFF)
+                .setOverflowX(UiOverflow.HIDDEN)
+                .setOverflowY(UiOverflow.HIDDEN);
+        hotStripe.appendText("pink stripe behind glass");
+        backdropStage.append(hotStripe);
+
+        ElementNode tealStripe = document.div();
+        tealStripe.style()
+                .setWidth(UiStyleLength.px(156))
+                .setHeight(UiStyleLength.px(18))
+                .setMargin(UiStyleInsets.of(UiStyleLength.px(6), UiStyleLength.px(0), UiStyleLength.px(0),
+                        UiStyleLength.px(54)))
+                .setBackgroundColor(0xFF38B2AC)
+                .setBorderRadius(UiStyleLength.px(999))
+                .setTextColor(0xFFFFFFFF)
+                .setOverflowX(UiOverflow.HIDDEN)
+                .setOverflowY(UiOverflow.HIDDEN);
+        tealStripe.appendText("teal text target");
+        backdropStage.append(tealStripe);
+
+        ElementNode amberStripe = document.div();
+        amberStripe.style()
+                .setWidth(UiStyleLength.px(206))
+                .setHeight(UiStyleLength.px(18))
+                .setMargin(UiStyleInsets.of(UiStyleLength.px(6), UiStyleLength.px(0), UiStyleLength.px(0),
+                        UiStyleLength.px(10)))
+                .setBackgroundColor(0xFFD69E2E)
+                .setBorderRadius(UiStyleLength.px(999))
+                .setTextColor(0xFF1A202C)
+                .setOverflowX(UiOverflow.HIDDEN)
+                .setOverflowY(UiOverflow.HIDDEN);
+        amberStripe.appendText("amber UI behind this card");
+        backdropStage.append(amberStripe);
+
         ElementNode glassCard = document.div();
         glassCard.style()
-                .setWidth(UiStyleLength.px(118))
+                .setWidth(UiStyleLength.px(158))
+                .setHeight(UiStyleLength.px(62))
+                .setMargin(UiStyleInsets.of(UiStyleLength.px(-58), UiStyleLength.px(0), UiStyleLength.px(0),
+                        UiStyleLength.px(28)))
                 .setPadding(UiStyleLength.px(8))
-                .setBackgroundColor(0x44FFFFFF)
-                .setBorderColor(0x99FFFFFF)
+                .setBackgroundColor(0x55FFFFFF)
+                .setBorderColor(0xCCFFFFFF)
                 .setBorderWidth(UiStyleLength.px(1))
                 .setBorderRadius(UiStyleLength.px(12))
                 .setTextColor(0xFFFFFFFF)
@@ -170,15 +234,8 @@ final class HtmlLikeSmokeDocumentPageController extends DocumentPageController {
                 .setBackdropSaturation(1.4F)
                 .setOverflowX(UiOverflow.HIDDEN)
                 .setOverflowY(UiOverflow.HIDDEN);
-        glassCard.appendText("Backdrop glass: blur 14px / saturate 140%");
-        row.append(glassCard);
-
-        ElementNode sideCard = document.div();
-        sideCard.style()
-                .setWidth(UiStyleLength.px(92))
-                .setBackgroundColor(0xFFD69E2E)
-                .setBorderRadius(UiStyleLength.px(12));
-        row.append(sideCard);
+        glassCard.appendText("Backdrop glass overlap: blur 14px / saturate 140%");
+        backdropStage.append(glassCard);
 
         ElementNode footer = document.div();
         footer.style()

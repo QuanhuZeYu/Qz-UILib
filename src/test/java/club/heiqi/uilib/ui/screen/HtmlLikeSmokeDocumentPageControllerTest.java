@@ -50,7 +50,10 @@ public class HtmlLikeSmokeDocumentPageControllerTest {
         List<String> texts = collectDocumentTexts(fixture.controller.getHtmlLikeDocumentWidget());
         Assert.assertTrue(containsText(texts, "HTML-like Smoke Lab"));
         Assert.assertTrue(containsText(texts, "UiDocument -> style -> layout -> paint command -> UiRenderContext"));
-        Assert.assertTrue(containsText(texts, "Backdrop glass: blur 14px / saturate 140%"));
+        Assert.assertTrue(containsText(texts, "Same-layer sampling grid"));
+        Assert.assertTrue(containsText(texts, "pink stripe behind glass"));
+        Assert.assertTrue(containsText(texts, "amber UI behind this card"));
+        Assert.assertTrue(containsText(texts, "Backdrop glass overlap: blur 14px / saturate 140%"));
     }
 
     /**
@@ -77,7 +80,10 @@ public class HtmlLikeSmokeDocumentPageControllerTest {
         Assert.assertEquals(0xF00B1020, firstCall.surfaceStyle.fillColor);
         Assert.assertFalse(renderContext.clipCalls.isEmpty());
         Assert.assertTrue(renderContext.popClipCount > 0);
-        Assert.assertFalse(renderContext.backdropCalls.isEmpty());
+        Assert.assertEquals(1, renderContext.backdropCalls.size());
+        Assert.assertEquals(14, renderContext.backdropCalls.get(0).blurRadius);
+        Assert.assertEquals(1.4F, renderContext.backdropCalls.get(0).saturation, 0.001F);
+        Assert.assertEquals(12, renderContext.backdropCalls.get(0).cornerRadius);
         Assert.assertTrue(containsTextCall(renderContext.textCalls, "TEXT paint command"));
     }
 
