@@ -17,6 +17,11 @@ import club.heiqi.uilib.ui.dom.TextNode;
 import club.heiqi.uilib.ui.event.UiKeyEvent;
 import club.heiqi.uilib.ui.event.UiMouseEvent;
 import club.heiqi.uilib.ui.event.UiTextInputEvent;
+import club.heiqi.uilib.ui.layout.DocumentLayoutBox;
+import club.heiqi.uilib.ui.layout.DocumentLayoutEngine;
+import club.heiqi.uilib.ui.paint.DocumentPaintCommand;
+import club.heiqi.uilib.ui.paint.DocumentPaintCommandType;
+import club.heiqi.uilib.ui.paint.DocumentPaintEngine;
 import club.heiqi.uilib.ui.render.UiRenderContext;
 import club.heiqi.uilib.ui.text.TextMeasureService;
 import club.heiqi.uilib.ui.theme.UiDocumentTheme;
@@ -90,7 +95,7 @@ public class HtmlLikeSmokeDocumentPageControllerTest {
         Assert.assertEquals(12, renderContext.backdropCalls.get(0).cornerRadius);
         Assert.assertTrue(containsFillColor(renderContext.drawCalls, 0xFFFFD166));
         Assert.assertTrue(containsTextCall(renderContext.textCalls, "ABS OK"));
-        assertAbsoluteProbeIsVisibleOutsideStaticWrapper(renderContext.drawCalls, renderContext.clipCalls);
+        assertAbsoluteProbeIsVisibleOutsideStaticWrapper(widget, fixture.textMeasureService);
         Assert.assertTrue(containsTextCall(renderContext.textCalls, "TEXT paint command"));
     }
 
@@ -300,31 +305,54 @@ public class HtmlLikeSmokeDocumentPageControllerTest {
         return false;
     }
 
-    private static void assertAbsoluteProbeIsVisibleOutsideStaticWrapper(List<DrawCall> drawCalls,
-            List<ClipCall> clipCalls) {
-        DrawCall staticWrapperCall = findFillColor(drawCalls, 0xFF111827);
-        DrawCall nestedAbsoluteCall = findFillColor(drawCalls, 0xFFFFD166);
-        Assert.assertNotNull(staticWrapperCall);
-        Assert.assertNotNull(nestedAbsoluteCall);
-        Assert.assertTrue(nestedAbsoluteCall.top < staticWrapperCall.top);
-        Assert.assertTrue(nestedAbsoluteCall.right <= staticWrapperCall.right);
-        Assert.assertFalse(hasClipForBounds(clipCalls, staticWrapperCall.left, staticWrapperCall.top,
-                staticWrapperCall.right, staticWrapperCall.bottom));
+    private static void assertAbsoluteProbeIsVisibleOutsideStaticWrapper(HtmlLikeDocumentWidget widget,
+            TextMeasureService textMeasureService) {
+        ElementNode staticWrapperElement = findElementContainingDirectText(widget, "static wrapper is not anchor");
+        ElementNode nestedAbsoluteElement = findElementContainingDirectText(widget, "ABS OK");
+        Assert.assertNotNull(staticWrapperElement);
+        Assert.assertNotNull(nestedAbsoluteElement);
+
+        DocumentLayoutBox rootBox = DocumentLayoutEngine.layoutViewportRoot(widget.getDocument().getRootElement(),
+                widget.getWidth(), widget.getHeight(), textMeasureService);
+        List<DocumentPaintCommand> paintCommands = DocumentPaintEngine.buildPaintCommands(rootBox);
+        long staticWrapperUid = staticWrapperElement.__getElementUid();
+        long nestedAbsoluteUid = nestedAbsoluteElement.__getElementUid();
+        DocumentPaintCommand staticWrapperBackground = findPaintCommand(paintCommands,
+                DocumentPaintCommandType.BACKGROUND, staticWrapperUid);
+        DocumentPaintCommand nestedAbsoluteBackground = findPaintCommand(paintCommands,
+                DocumentPaintCommandType.BACKGROUND, nestedAbsoluteUid);
+
+        Assert.assertNotNull(staticWrapperBackground);
+        Assert.assertNotNull(nestedAbsoluteBackground);
+        Assert.assertTrue(nestedAbsoluteBackground.getTop() < staticWrapperBackground.getTop());
+        Assert.assertTrue(nestedAbsoluteBackground.getRight() <= staticWrapperBackground.getRight());
+        Assert.assertNull(findPaintCommand(paintCommands, DocumentPaintCommandType.CLIP_START, staticWrapperUid));
     }
 
-    private static boolean hasClipForBounds(List<ClipCall> clipCalls, int left, int top, int right, int bottom) {
-        for (ClipCall clipCall : clipCalls) {
-            if (clipCall.left == left && clipCall.top == top && clipCall.right == right && clipCall.bottom == bottom) {
-                return true;
+    private static DocumentPaintCommand findPaintCommand(List<DocumentPaintCommand> paintCommands,
+            DocumentPaintCommandType type, long elementUid) {
+        for (DocumentPaintCommand paintCommand : paintCommands) {
+            if (paintCommand.getType() == type && paintCommand.getElement().__getElementUid() == elementUid) {
+                return paintCommand;
             }
         }
-        return false;
+        return null;
     }
 
-    private static DrawCall findFillColor(List<DrawCall> drawCalls, int expectedColor) {
-        for (DrawCall drawCall : drawCalls) {
-            if (drawCall.surfaceStyle.fillColor == expectedColor) {
-                return drawCall;
+    private static ElementNode findElementContainingDirectText(HtmlLikeDocumentWidget widget, String expectedText) {
+        return findElementContainingDirectText(widget.getDocument().getRootElement(), expectedText);
+    }
+
+    private static ElementNode findElementContainingDirectText(ElementNode element, String expectedText) {
+        for (DocumentNode child : element.getChildren()) {
+            if (child.getNodeType() == DocumentNodeType.TEXT && expectedText.equals(((TextNode) child).getText())) {
+                return element;
+            }
+            if (child.getNodeType() == DocumentNodeType.ELEMENT) {
+                ElementNode found = findElementContainingDirectText((ElementNode) child, expectedText);
+                if (found != null) {
+                    return found;
+                }
             }
         }
         return null;

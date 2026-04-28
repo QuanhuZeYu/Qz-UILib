@@ -1,9 +1,13 @@
 package club.heiqi.uilib.ui.dom;
 
+import java.util.concurrent.atomic.AtomicLong;
+
 /**
  * HTML-like 文档作者入口。
  */
 public final class UiDocument {
+
+    private static final AtomicLong NEXT_ELEMENT_UID = new AtomicLong(1L);
 
     private final ElementNode rootElement;
     private int mutationVersion;
@@ -97,5 +101,14 @@ public final class UiDocument {
 
     void recordMutation() {
         mutationVersion++;
+    }
+
+    /**
+     * 分配进程内唯一的内部元素身份。
+     *
+     * @return 内部元素身份
+     */
+    long __allocateElementUid() {
+        return NEXT_ELEMENT_UID.getAndIncrement();
     }
 }

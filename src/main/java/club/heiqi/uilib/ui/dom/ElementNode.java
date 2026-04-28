@@ -15,6 +15,7 @@ import club.heiqi.uilib.ui.style.UiStyleDeclaration;
 public final class ElementNode extends DocumentNode {
 
     private final String tagName;
+    private final long __elementUid;
     private final Map<String, String> attributes = new LinkedHashMap<String, String>();
     private boolean focusable;
     private DocumentElementActiveHandler activeHandler;
@@ -32,6 +33,7 @@ public final class ElementNode extends DocumentNode {
 
     ElementNode(UiDocument ownerDocument, String tagName) {
         super(ownerDocument);
+        this.__elementUid = ownerDocument.__allocateElementUid();
         this.tagName = normalizeName(tagName, "tagName");
     }
 
@@ -47,6 +49,17 @@ public final class ElementNode extends DocumentNode {
      */
     public String getTagName() {
         return tagName;
+    }
+
+    /**
+     * 返回框架内部元素唯一身份。
+     *
+     * <p>该值只供测试、调试、缓存和内部追踪使用，不等同于 HTML `id` 属性，也不会进入属性表或样式选择器。</p>
+     *
+     * @return 进程内唯一元素身份
+     */
+    public long __getElementUid() {
+        return __elementUid;
     }
 
     /**

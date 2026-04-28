@@ -27,6 +27,9 @@ public class UiDocumentTest {
         Assert.assertEquals("document", root.getTagName());
         Assert.assertEquals(DocumentNodeType.ELEMENT, panel.getNodeType());
         Assert.assertEquals("div", panel.getTagName());
+        Assert.assertTrue(root.__getElementUid() > 0L);
+        Assert.assertTrue(panel.__getElementUid() > 0L);
+        Assert.assertTrue(root.__getElementUid() != panel.__getElementUid());
         Assert.assertEquals("main-panel", panel.getAttribute("id"));
         Assert.assertEquals("page", panel.getAttribute("role"));
         Assert.assertSame(root, panel.getParent());
@@ -45,6 +48,7 @@ public class UiDocumentTest {
         ElementNode root = document.getRootElement();
         ElementNode first = document.div().setAttribute("id", "first");
         ElementNode second = document.div().setAttribute("id", "second");
+        long firstElementUid = first.__getElementUid();
 
         root.append(first).append(second);
         second.append(first);
@@ -54,6 +58,25 @@ public class UiDocumentTest {
         Assert.assertEquals(1, second.getChildCount());
         Assert.assertSame(first, second.getFirstChild());
         Assert.assertSame(second, first.getParent());
+        Assert.assertEquals(firstElementUid, first.__getElementUid());
+    }
+
+    /**
+     * 验证内部元素唯一身份不会复用 HTML id 属性语义。
+     */
+    @Test
+    public void shouldAssignInternalElementUidsSeparatelyFromHtmlIdAttribute() {
+        UiDocument firstDocument = UiDocument.create();
+        UiDocument secondDocument = UiDocument.create();
+        ElementNode first = firstDocument.div().setAttribute("id", "same-html-id");
+        ElementNode second = firstDocument.div().setAttribute("id", "same-html-id");
+        ElementNode otherDocumentElement = secondDocument.div().setAttribute("id", "same-html-id");
+
+        Assert.assertEquals("same-html-id", first.getAttribute("id"));
+        Assert.assertEquals("same-html-id", second.getAttribute("id"));
+        Assert.assertTrue(first.__getElementUid() != second.__getElementUid());
+        Assert.assertTrue(first.__getElementUid() != otherDocumentElement.__getElementUid());
+        Assert.assertFalse(first.hasAttribute("__elementUid"));
     }
 
     /**
