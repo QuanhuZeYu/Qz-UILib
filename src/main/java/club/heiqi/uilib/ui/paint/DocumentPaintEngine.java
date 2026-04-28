@@ -7,6 +7,7 @@ import java.util.Objects;
 import club.heiqi.uilib.ui.animation.DocumentAnimationProperty;
 import club.heiqi.uilib.ui.animation.DocumentAnimationTimeline;
 import club.heiqi.uilib.ui.layout.DocumentEffectChain;
+import club.heiqi.uilib.ui.layout.DocumentEffectType;
 import club.heiqi.uilib.ui.layout.DocumentLayoutBox;
 import club.heiqi.uilib.ui.layout.DocumentLayoutTextRun;
 import club.heiqi.uilib.ui.layout.DocumentScrollState;
@@ -142,14 +143,16 @@ public final class DocumentPaintEngine {
             float localOpacity, int offsetX, int offsetY) {
         commands.add(new DocumentPaintCommand(DocumentPaintCommandType.PAINT_CONTEXT_START, box.getElement(),
                 box.getLeft() + offsetX, box.getTop() + offsetY, box.getRight() + offsetX,
-                box.getBottom() + offsetY, 0, 0, 0, null, null, 0, 1.0F, localOpacity));
+                box.getBottom() + offsetY, 0, 0, 0, null, null, 0, 1.0F, localOpacity,
+                DocumentEffectType.PAINT_CONTEXT));
     }
 
     private static void appendPaintContextEndCommand(DocumentLayoutBox box, List<DocumentPaintCommand> commands,
             int offsetX, int offsetY) {
         commands.add(new DocumentPaintCommand(DocumentPaintCommandType.PAINT_CONTEXT_END, box.getElement(),
                 box.getLeft() + offsetX, box.getTop() + offsetY, box.getRight() + offsetX,
-                box.getBottom() + offsetY, 0, 0, 0));
+                box.getBottom() + offsetY, 0, 0, 0, null, null, 0, 1.0F, 1.0F,
+                DocumentEffectType.PAINT_CONTEXT));
     }
 
     private static void appendNormalFlowChildren(DocumentLayoutBox rootBox, DocumentLayoutBox box,
@@ -238,7 +241,7 @@ public final class DocumentPaintEngine {
         commands.add(new DocumentPaintCommand(DocumentPaintCommandType.BACKDROP_FILTER, box.getElement(),
                 box.getLeft() + offsetX, box.getTop() + offsetY, box.getRight() + offsetX,
                 box.getBottom() + offsetY, 0, 0, resolveBorderRadius(box, animationTimeline, currentTimeNanos),
-                null, null, blurRadius, saturation));
+                null, null, blurRadius, saturation, 1.0F, DocumentEffectType.BACKDROP_FILTER));
     }
 
     private static void appendBorderCommand(DocumentLayoutBox box, List<DocumentPaintCommand> commands,
@@ -332,14 +335,16 @@ public final class DocumentPaintEngine {
         DocumentEffectChain.ClipBounds clipBounds = effectChain.resolveChildClipBounds(offsetX, offsetY);
         commands.add(new DocumentPaintCommand(DocumentPaintCommandType.CLIP_START, box.getElement(),
                 clipBounds.getLeft(), clipBounds.getTop(), clipBounds.getRight(), clipBounds.getBottom(), 0, 0,
-                resolveBorderRadius(box, animationTimeline, currentTimeNanos)));
+                resolveBorderRadius(box, animationTimeline, currentTimeNanos), null, null, 0, 1.0F, 1.0F,
+                DocumentEffectType.OVERFLOW_CLIP));
     }
 
     private static void appendClipEndCommand(DocumentLayoutBox box, List<DocumentPaintCommand> commands, int offsetX,
             int offsetY) {
         commands.add(new DocumentPaintCommand(DocumentPaintCommandType.CLIP_END, box.getElement(),
                 box.getLeft() + offsetX, box.getTop() + offsetY, box.getRight() + offsetX,
-                box.getBottom() + offsetY, 0, 0, 0));
+                box.getBottom() + offsetY, 0, 0, 0, null, null, 0, 1.0F, 1.0F,
+                DocumentEffectType.OVERFLOW_CLIP));
     }
 
     private static void appendScrollbarCommands(DocumentLayoutBox rootBox, DocumentLayoutBox box,

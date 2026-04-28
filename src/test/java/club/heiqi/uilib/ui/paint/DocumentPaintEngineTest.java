@@ -11,6 +11,7 @@ import club.heiqi.uilib.ui.animation.DocumentAnimationProperty;
 import club.heiqi.uilib.ui.animation.DocumentAnimationTimeline;
 import club.heiqi.uilib.ui.dom.ElementNode;
 import club.heiqi.uilib.ui.dom.UiDocument;
+import club.heiqi.uilib.ui.layout.DocumentEffectType;
 import club.heiqi.uilib.ui.layout.DocumentLayoutBox;
 import club.heiqi.uilib.ui.layout.DocumentLayoutEngine;
 import club.heiqi.uilib.ui.layout.DocumentScrollState;
@@ -927,6 +928,7 @@ public class DocumentPaintEngineTest {
             ElementNode element, int left, int top, int right, int bottom, int color, int borderWidth,
             int borderRadius) {
         Assert.assertEquals(type, command.getType());
+        Assert.assertEquals(expectedEffectType(type), command.getEffectType());
         Assert.assertEquals(element.__getElementUid(), command.getElement().__getElementUid());
         Assert.assertEquals(left, command.getLeft());
         Assert.assertEquals(top, command.getTop());
@@ -947,6 +949,20 @@ public class DocumentPaintEngineTest {
             }
         }
         return count;
+    }
+
+    private static DocumentEffectType expectedEffectType(DocumentPaintCommandType type) {
+        if (type == DocumentPaintCommandType.PAINT_CONTEXT_START
+                || type == DocumentPaintCommandType.PAINT_CONTEXT_END) {
+            return DocumentEffectType.PAINT_CONTEXT;
+        }
+        if (type == DocumentPaintCommandType.BACKDROP_FILTER) {
+            return DocumentEffectType.BACKDROP_FILTER;
+        }
+        if (type == DocumentPaintCommandType.CLIP_START || type == DocumentPaintCommandType.CLIP_END) {
+            return DocumentEffectType.OVERFLOW_CLIP;
+        }
+        return null;
     }
 
     private static List<DocumentPaintCommand> withoutPaintContextCommands(List<DocumentPaintCommand> commands) {

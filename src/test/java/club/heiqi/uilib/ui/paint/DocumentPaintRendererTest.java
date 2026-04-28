@@ -8,6 +8,7 @@ import org.junit.Test;
 
 import club.heiqi.uilib.ui.dom.ElementNode;
 import club.heiqi.uilib.ui.dom.UiDocument;
+import club.heiqi.uilib.ui.layout.DocumentEffectType;
 import club.heiqi.uilib.ui.layout.DocumentLayoutBox;
 import club.heiqi.uilib.ui.layout.DocumentLayoutEngine;
 import club.heiqi.uilib.ui.layout.DocumentScrollState;
@@ -125,6 +126,50 @@ public class DocumentPaintRendererTest {
         Assert.assertEquals(2, renderContext.backdropCalls.size());
         Assert.assertEquals(1, renderContext.backdropCalls.get(0).contentRevision);
         Assert.assertEquals(3, renderContext.backdropCalls.get(1).contentRevision);
+    }
+
+    /**
+     * 验证 effect command 会携带可供 renderer 运行时 pass 使用的显式效果类型。
+     */
+    @Test
+    public void shouldExposeEffectTypesForRuntimePasses() {
+        UiDocument document = UiDocument.create();
+        ElementNode root = document.getRootElement();
+
+        DocumentPaintCommand paintContextStart = new DocumentPaintCommand(
+                DocumentPaintCommandType.PAINT_CONTEXT_START, root, 0, 0, 10, 10, 0, 0, 0,
+                null, null, 0, 1.0F, 0.5F);
+        DocumentPaintCommand backdrop = new DocumentPaintCommand(DocumentPaintCommandType.BACKDROP_FILTER, root,
+                0, 0, 10, 10, 0, 0, 0, "", null, 8, 1.2F);
+        DocumentPaintCommand clipStart = new DocumentPaintCommand(DocumentPaintCommandType.CLIP_START, root,
+                0, 0, 10, 10, 0, 0, 0);
+        DocumentPaintCommand clipEnd = new DocumentPaintCommand(DocumentPaintCommandType.CLIP_END, root,
+                0, 0, 10, 10, 0, 0, 0);
+
+        Assert.assertEquals(DocumentEffectType.PAINT_CONTEXT, paintContextStart.getEffectType());
+        Assert.assertEquals(DocumentEffectType.BACKDROP_FILTER, backdrop.getEffectType());
+        Assert.assertEquals(DocumentEffectType.OVERFLOW_CLIP, clipStart.getEffectType());
+        Assert.assertEquals(DocumentEffectType.OVERFLOW_CLIP, clipEnd.getEffectType());
+    }
+
+    /**
+     * 验证 renderer 会按显式 effect 类型清理未闭合的运行时 pass。
+     */
+    @Test
+    public void shouldCleanupOpenRuntimeEffectPasses() {
+        UiDocument document = UiDocument.create();
+        ElementNode root = document.getRootElement();
+        List<DocumentPaintCommand> commands = new ArrayList<DocumentPaintCommand>();
+        commands.add(new DocumentPaintCommand(DocumentPaintCommandType.PAINT_CONTEXT_START, root,
+                0, 0, 30, 20, 0, 0, 0, null, null, 0, 1.0F, 0.5F));
+        commands.add(new DocumentPaintCommand(DocumentPaintCommandType.CLIP_START, root,
+                0, 0, 30, 20, 0, 0, 0));
+
+        RecordingUiRenderContext renderContext = new RecordingUiRenderContext();
+        DocumentPaintRenderer.render(renderContext, commands);
+
+        Assert.assertEquals(1, renderContext.popClipCount);
+        Assert.assertEquals(1, renderContext.popPaintContextCount);
     }
 
     /**

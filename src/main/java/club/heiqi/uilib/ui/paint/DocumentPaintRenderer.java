@@ -5,6 +5,7 @@ import java.util.Deque;
 import java.util.List;
 import java.util.Objects;
 
+import club.heiqi.uilib.ui.layout.DocumentEffectType;
 import club.heiqi.uilib.ui.render.UiRenderContext;
 import club.heiqi.uilib.ui.theme.UiSurfaceStyle;
 
@@ -13,18 +14,13 @@ import club.heiqi.uilib.ui.theme.UiSurfaceStyle;
  */
 public final class DocumentPaintRenderer {
 
-    private enum OpenRenderStateType {
-        PAINT_CONTEXT,
-        CLIP
-    }
-
     private static final class OpenRenderState {
 
-        private final OpenRenderStateType type;
+        private final DocumentEffectType effectType;
         private final float previousFallbackOpacity;
 
-        private OpenRenderState(OpenRenderStateType type, float previousFallbackOpacity) {
-            this.type = type;
+        private OpenRenderState(DocumentEffectType effectType, float previousFallbackOpacity) {
+            this.effectType = effectType;
             this.previousFallbackOpacity = previousFallbackOpacity;
         }
     }
@@ -35,7 +31,7 @@ public final class DocumentPaintRenderer {
         private float fallbackOpacity = 1.0F;
 
         private void pushClip() {
-            openStates.push(new OpenRenderState(OpenRenderStateType.CLIP, fallbackOpacity));
+            openStates.push(new OpenRenderState(DocumentEffectType.OVERFLOW_CLIP, fallbackOpacity));
         }
 
         private void pushPaintContext(UiRenderContext context, DocumentPaintCommand command, int offsetX, int offsetY) {
@@ -45,7 +41,7 @@ public final class DocumentPaintRenderer {
             if (!context.isCurrentPaintContextLayerActive()) {
                 fallbackOpacity *= command.getPaintContextOpacity();
             }
-            openStates.push(new OpenRenderState(OpenRenderStateType.PAINT_CONTEXT, previousFallbackOpacity));
+            openStates.push(new OpenRenderState(DocumentEffectType.PAINT_CONTEXT, previousFallbackOpacity));
         }
 
         private boolean isEmpty() {
@@ -103,34 +99,21 @@ public final class DocumentPaintRenderer {
         if (command == null) {
             return;
         }
-        if (command.getType() == DocumentPaintCommandType.PAINT_CONTEXT_END) {
-            popExpectedRenderState(context, replayState, OpenRenderStateType.PAINT_CONTEXT);
+        if (isEffectEndCommand(command)) {
+            popExpectedRenderState(context, replayState, command.getEffectType());
             return;
         }
-        if (command.getType() == DocumentPaintCommandType.CLIP_END) {
-            popExpectedRenderState(context, replayState, OpenRenderStateType.CLIP);
-            return;
-        }
-        if (command.getType() == DocumentPaintCommandType.PAINT_CONTEXT_START) {
-            replayState.pushPaintContext(context, command, offsetX, offsetY);
+        if (isEffectStartCommand(command)) {
+            pushEffectState(context, command, offsetX, offsetY, replayState);
             return;
         }
         if (command.getWidth() <= 0 || command.getHeight() <= 0) {
             return;
         }
-        if (command.getType() == DocumentPaintCommandType.CLIP_START) {
-            context.pushClip(command.getLeft() + offsetX, command.getTop() + offsetY,
-                    command.getRight() + offsetX, command.getBottom() + offsetY, command.getBorderRadius());
-            replayState.pushClip();
-            return;
-        }
         if (replayState.fallbackOpacity <= 0.001F) {
             return;
         }
-        if (command.getType() == DocumentPaintCommandType.BACKDROP_FILTER) {
-            context.drawBackdropFilter(command.getLeft() + offsetX, command.getTop() + offsetY,
-                    command.getRight() + offsetX, command.getBottom() + offsetY,
-                    command.getBackdropBlurRadius(), command.getBackdropSaturation(), command.getBorderRadius());
+        if (renderStatelessEffect(context, command, offsetX, offsetY)) {
             return;
         }
         if (command.getType() == DocumentPaintCommandType.BACKGROUND) {
@@ -168,19 +151,53 @@ public final class DocumentPaintRenderer {
     }
 
     private static void popExpectedRenderState(UiRenderContext context, RenderReplayState replayState,
-            OpenRenderStateType expectedState) {
-        if (!replayState.isEmpty() && replayState.peek().type == expectedState) {
+            DocumentEffectType expectedEffectType) {
+        if (!replayState.isEmpty() && replayState.peek().effectType == expectedEffectType) {
             popOpenState(context, replayState, replayState.pop());
         }
     }
 
     private static void popOpenState(UiRenderContext context, RenderReplayState replayState, OpenRenderState state) {
-        if (state.type == OpenRenderStateType.CLIP) {
+        if (state.effectType == DocumentEffectType.OVERFLOW_CLIP) {
             context.popClip();
             return;
         }
         context.popPaintContext();
         replayState.fallbackOpacity = state.previousFallbackOpacity;
+    }
+
+    private static boolean isEffectStartCommand(DocumentPaintCommand command) {
+        return command.getType() == DocumentPaintCommandType.PAINT_CONTEXT_START
+                || command.getType() == DocumentPaintCommandType.CLIP_START;
+    }
+
+    private static boolean isEffectEndCommand(DocumentPaintCommand command) {
+        return command.getType() == DocumentPaintCommandType.PAINT_CONTEXT_END
+                || command.getType() == DocumentPaintCommandType.CLIP_END;
+    }
+
+    private static void pushEffectState(UiRenderContext context, DocumentPaintCommand command, int offsetX,
+            int offsetY, RenderReplayState replayState) {
+        if (command.getEffectType() == DocumentEffectType.PAINT_CONTEXT) {
+            replayState.pushPaintContext(context, command, offsetX, offsetY);
+            return;
+        }
+        if (command.getEffectType() == DocumentEffectType.OVERFLOW_CLIP) {
+            context.pushClip(command.getLeft() + offsetX, command.getTop() + offsetY,
+                    command.getRight() + offsetX, command.getBottom() + offsetY, command.getBorderRadius());
+            replayState.pushClip();
+        }
+    }
+
+    private static boolean renderStatelessEffect(UiRenderContext context, DocumentPaintCommand command, int offsetX,
+            int offsetY) {
+        if (command.getEffectType() != DocumentEffectType.BACKDROP_FILTER) {
+            return false;
+        }
+        context.drawBackdropFilter(command.getLeft() + offsetX, command.getTop() + offsetY,
+                command.getRight() + offsetX, command.getBottom() + offsetY,
+                command.getBackdropBlurRadius(), command.getBackdropSaturation(), command.getBorderRadius());
+        return true;
     }
 
     private static void renderBorder(UiRenderContext context, DocumentPaintCommand command, int offsetX, int offsetY,
