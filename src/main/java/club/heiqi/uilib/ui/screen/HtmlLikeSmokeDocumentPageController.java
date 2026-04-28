@@ -399,7 +399,97 @@ final class HtmlLikeSmokeDocumentPageController extends DocumentPageController {
                 .setFocusBorderColor(0xFFBEE3F8);
         toggleControl.getElement().style().setFlexGrow(0.6F);
         footer.append(toggleControl.getElement());
+        appendGroupOpacityProbe(document, root);
         return document;
+    }
+
+    private static void appendGroupOpacityProbe(UiDocument document, ElementNode root) {
+        ElementNode groupOpacityProbe = document.div();
+        groupOpacityProbe.style()
+                .setHeight(UiStyleLength.px(108))
+                .setMargin(UiStyleLength.px(16))
+                .setPadding(UiStyleLength.px(10))
+                .setPosition(UiPosition.RELATIVE)
+                .setBackgroundColor(0xFF111827)
+                .setBorderColor(0xFF60A5FA)
+                .setBorderWidth(UiStyleLength.px(1))
+                .setBorderRadius(UiStyleLength.px(14))
+                .setTextColor(0xFFEFF6FF)
+                .setOverflowX(UiOverflow.HIDDEN)
+                .setOverflowY(UiOverflow.HIDDEN);
+        groupOpacityProbe.appendText("Group opacity probe: overlap should stay flat blue, not dark purple");
+        root.append(groupOpacityProbe);
+
+        ElementNode opacitySampleStage = document.div();
+        opacitySampleStage.style()
+                .setWidth(UiStyleLength.px(300))
+                .setHeight(UiStyleLength.px(68))
+                .setPosition(UiPosition.RELATIVE)
+                .setMargin(UiStyleInsets.of(UiStyleLength.px(8), UiStyleLength.px(0), UiStyleLength.px(0),
+                        UiStyleLength.px(0)))
+                .setBackgroundColor(0xFF0F172A)
+                .setBorderColor(0xFF334155)
+                .setBorderWidth(UiStyleLength.px(1))
+                .setBorderRadius(UiStyleLength.px(10))
+                .setOverflowX(UiOverflow.HIDDEN)
+                .setOverflowY(UiOverflow.HIDDEN);
+        groupOpacityProbe.append(opacitySampleStage);
+
+        ElementNode opacityBackStripeA = document.div();
+        opacityBackStripeA.style()
+                .setWidth(UiStyleLength.px(280))
+                .setHeight(UiStyleLength.px(16))
+                .setPosition(UiPosition.ABSOLUTE)
+                .setTop(UiStyleLength.px(12))
+                .setLeft(UiStyleLength.px(10))
+                .setBackgroundColor(0xFFFFD166)
+                .setBorderRadius(UiStyleLength.px(999));
+        opacitySampleStage.append(opacityBackStripeA);
+
+        ElementNode opacityBackStripeB = document.div();
+        opacityBackStripeB.style()
+                .setWidth(UiStyleLength.px(250))
+                .setHeight(UiStyleLength.px(16))
+                .setPosition(UiPosition.ABSOLUTE)
+                .setTop(UiStyleLength.px(38))
+                .setLeft(UiStyleLength.px(28))
+                .setBackgroundColor(0xFF38BDF8)
+                .setBorderRadius(UiStyleLength.px(999));
+        opacitySampleStage.append(opacityBackStripeB);
+
+        ElementNode opacityGroup = document.div();
+        opacityGroup.style()
+                .setWidth(UiStyleLength.px(156))
+                .setHeight(UiStyleLength.px(44))
+                .setPosition(UiPosition.ABSOLUTE)
+                .setTop(UiStyleLength.px(12))
+                .setLeft(UiStyleLength.px(28))
+                .setOpacity(0.55F)
+                .setOverflowX(UiOverflow.VISIBLE)
+                .setOverflowY(UiOverflow.VISIBLE);
+        opacitySampleStage.append(opacityGroup);
+
+        ElementNode redLayer = document.div();
+        redLayer.style()
+                .setWidth(UiStyleLength.px(86))
+                .setHeight(UiStyleLength.px(34))
+                .setPosition(UiPosition.ABSOLUTE)
+                .setTop(UiStyleLength.px(5))
+                .setLeft(UiStyleLength.px(0))
+                .setBackgroundColor(0xFFFF4B4B)
+                .setBorderRadius(UiStyleLength.px(8));
+        opacityGroup.append(redLayer);
+
+        ElementNode blueLayer = document.div();
+        blueLayer.style()
+                .setWidth(UiStyleLength.px(86))
+                .setHeight(UiStyleLength.px(34))
+                .setPosition(UiPosition.ABSOLUTE)
+                .setTop(UiStyleLength.px(5))
+                .setLeft(UiStyleLength.px(48))
+                .setBackgroundColor(0xFF3B82F6)
+                .setBorderRadius(UiStyleLength.px(8));
+        opacityGroup.append(blueLayer);
     }
 
     /**

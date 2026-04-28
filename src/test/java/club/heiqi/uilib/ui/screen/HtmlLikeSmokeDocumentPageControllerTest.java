@@ -47,7 +47,7 @@ public class HtmlLikeSmokeDocumentPageControllerTest {
         Assert.assertTrue(blocks.get(0) instanceof HtmlLikeDocumentWidget);
         Assert.assertSame(blocks.get(0), fixture.controller.getHtmlLikeDocumentWidget());
         Assert.assertTrue(fixture.controller.getHtmlLikeDocumentWidget().isViewportRootScrollingEnabled());
-        Assert.assertEquals(3, fixture.controller.getHtmlLikeDocumentWidget().getDocument()
+        Assert.assertEquals(4, fixture.controller.getHtmlLikeDocumentWidget().getDocument()
                 .getRootElement().getChildren().size());
 
         List<String> texts = collectDocumentTexts(fixture.controller.getHtmlLikeDocumentWidget());
@@ -61,6 +61,7 @@ public class HtmlLikeSmokeDocumentPageControllerTest {
         Assert.assertTrue(containsText(texts, "pink stripe behind glass"));
         Assert.assertTrue(containsText(texts, "amber UI behind this card"));
         Assert.assertTrue(containsText(texts, "Backdrop glass overlap: blur 14px / saturate 140%"));
+        Assert.assertTrue(containsText(texts, "Group opacity probe: overlap should stay flat blue"));
     }
 
     /**
@@ -94,6 +95,7 @@ public class HtmlLikeSmokeDocumentPageControllerTest {
         Assert.assertTrue(containsFillColor(renderContext.drawCalls, 0xFFFFD166));
         Assert.assertTrue(containsTextCall(renderContext.textCalls, "ABS OK"));
         assertAbsoluteProbeIsVisibleOutsideStaticWrapper(widget, fixture.textMeasureService);
+        assertGroupOpacityProbeKeepsChildColorsOpaque(widget, fixture.textMeasureService);
         Assert.assertTrue(containsTextCall(renderContext.textCalls, "TEXT paint command"));
     }
 
@@ -327,6 +329,36 @@ public class HtmlLikeSmokeDocumentPageControllerTest {
         Assert.assertNull(findPaintCommand(paintCommands, DocumentPaintCommandType.CLIP_START, staticWrapperUid));
     }
 
+    private static void assertGroupOpacityProbeKeepsChildColorsOpaque(HtmlLikeDocumentWidget widget,
+            TextMeasureService textMeasureService) {
+        ElementNode opacityGroupElement = findElementWithOpacity(widget.getDocument().getRootElement(), 0.55F);
+        ElementNode redLayerElement = findElementWithBackgroundColor(widget.getDocument().getRootElement(), 0xFFFF4B4B);
+        ElementNode blueLayerElement = findElementWithBackgroundColor(widget.getDocument().getRootElement(), 0xFF3B82F6);
+        Assert.assertNotNull(opacityGroupElement);
+        Assert.assertNotNull(redLayerElement);
+        Assert.assertNotNull(blueLayerElement);
+
+        DocumentLayoutBox rootBox = DocumentLayoutEngine.layoutViewportRoot(widget.getDocument().getRootElement(),
+                widget.getWidth(), widget.getHeight(), textMeasureService);
+        List<DocumentPaintCommand> paintCommands = DocumentPaintEngine.buildPaintCommands(rootBox);
+        DocumentPaintCommand contextStart = findPaintCommand(paintCommands, DocumentPaintCommandType.PAINT_CONTEXT_START,
+                opacityGroupElement.__getElementUid());
+        DocumentPaintCommand redBackground = findPaintCommand(paintCommands, DocumentPaintCommandType.BACKGROUND,
+                redLayerElement.__getElementUid());
+        DocumentPaintCommand blueBackground = findPaintCommand(paintCommands, DocumentPaintCommandType.BACKGROUND,
+                blueLayerElement.__getElementUid());
+
+        Assert.assertNotNull(contextStart);
+        Assert.assertEquals(0.55F, contextStart.getPaintContextOpacity(), 0.0F);
+        Assert.assertNotNull(redBackground);
+        Assert.assertNotNull(blueBackground);
+        Assert.assertEquals(0xFFFF4B4B, redBackground.getColor());
+        Assert.assertEquals(0xFF3B82F6, blueBackground.getColor());
+        Assert.assertTrue(redBackground.getRight() > blueBackground.getLeft());
+        Assert.assertTrue(indexOfCommand(paintCommands, redBackground) < indexOfCommand(paintCommands,
+                blueBackground));
+    }
+
     private static DocumentPaintCommand findPaintCommand(List<DocumentPaintCommand> paintCommands,
             DocumentPaintCommandType type, long elementUid) {
         for (DocumentPaintCommand paintCommand : paintCommands) {
@@ -354,6 +386,47 @@ public class HtmlLikeSmokeDocumentPageControllerTest {
             }
         }
         return null;
+    }
+
+    private static ElementNode findElementWithOpacity(ElementNode element, float expectedOpacity) {
+        Float opacity = element.style().getOpacity();
+        if (opacity != null && Math.abs(opacity.floatValue() - expectedOpacity) < 0.001F) {
+            return element;
+        }
+        for (DocumentNode child : element.getChildren()) {
+            if (child.getNodeType() == DocumentNodeType.ELEMENT) {
+                ElementNode found = findElementWithOpacity((ElementNode) child, expectedOpacity);
+                if (found != null) {
+                    return found;
+                }
+            }
+        }
+        return null;
+    }
+
+    private static ElementNode findElementWithBackgroundColor(ElementNode element, int expectedColor) {
+        Integer backgroundColor = element.style().getBackgroundColor();
+        if (backgroundColor != null && backgroundColor.intValue() == expectedColor) {
+            return element;
+        }
+        for (DocumentNode child : element.getChildren()) {
+            if (child.getNodeType() == DocumentNodeType.ELEMENT) {
+                ElementNode found = findElementWithBackgroundColor((ElementNode) child, expectedColor);
+                if (found != null) {
+                    return found;
+                }
+            }
+        }
+        return null;
+    }
+
+    private static int indexOfCommand(List<DocumentPaintCommand> paintCommands, DocumentPaintCommand expectedCommand) {
+        for (int index = 0; index < paintCommands.size(); index++) {
+            if (paintCommands.get(index) == expectedCommand) {
+                return index;
+            }
+        }
+        return -1;
     }
 
     /**
