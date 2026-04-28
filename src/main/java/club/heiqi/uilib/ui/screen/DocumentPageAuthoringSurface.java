@@ -6,10 +6,10 @@ import club.heiqi.uilib.ui.document.DocumentPageWidget;
 import club.heiqi.uilib.ui.widget.Widget;
 
 /**
- * 页面 authoring 所需的最小页面壳契约。
+ * 页面 authoring 所需的最小挂载契约。
  *
- * <p>该接口只在 `ui.screen` 包内使用，用于收敛 controller
- * 对具体 `DocumentPageWidget` 的直接依赖，同时保留当前页面壳参数与运行时度量读取方式。</p>
+ * <p>该接口只在 `ui.screen` 包内使用，用于收敛 controller 对具体宿主实现的直接依赖。
+ * 当前 HTML-like 页面使用 direct surface；旧 `DocumentPageWidget` 适配器仅保留给兼容页面和测试。</p>
  */
 interface DocumentPageAuthoringSurface {
 

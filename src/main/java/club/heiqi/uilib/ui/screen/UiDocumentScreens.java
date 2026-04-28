@@ -3,11 +3,12 @@ package club.heiqi.uilib.ui.screen;
 import java.util.Objects;
 
 import club.heiqi.uilib.ui.control.UiControlRuntimeAdapters;
-import club.heiqi.uilib.ui.document.DocumentPageWidget;
+import club.heiqi.uilib.ui.diagnostic.UiRuntimeStats;
 import club.heiqi.uilib.ui.theme.UiDocumentTheme;
 import club.heiqi.uilib.ui.theme.UiDocumentThemes;
 import club.heiqi.uilib.ui.text.DefaultTextMeasureService;
 import club.heiqi.uilib.ui.text.TextMeasureService;
+import club.heiqi.uilib.ui.widget.Widget;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiScreen;
 
@@ -365,7 +366,7 @@ public final class UiDocumentScreens {
      */
     private static <P> GuiScreen createDefinitionBackedScreen(DocumentScreenDefinition<P> definition,
             DocumentScreenEnvironment environment, P provision) {
-        return new DefinitionBackedDocumentScreen<P>(environment, definition, provision);
+        return new DefinitionBackedHtmlLikeDocumentScreen<P>(environment, definition, provision);
     }
 
     /**
@@ -469,27 +470,74 @@ public final class UiDocumentScreens {
     }
 
     /**
-     * 由页面定义驱动的内部文档宿主界面。
+     * 由页面定义驱动的 HTML-like 直接宿主界面。
+     *
+     * <p>当前已迁移页面直接把 `HtmlLikeDocumentWidget` 挂到根视口，不再套旧 `DocumentPageWidget` 页面壳；
+     * 旧 retained 文档壳仍保留给兼容层和未迁移测试。</p>
      *
      * @param <P> 页面 provision 类型
      */
-    private static final class DefinitionBackedDocumentScreen<P> extends ControllerBackedDocumentScreen {
+    private static final class DefinitionBackedHtmlLikeDocumentScreen<P> extends BaseScreen implements DescriptorOwner {
 
         private final DocumentScreenDefinition<P> definition;
+        private final PageDescriptor pageDescriptor;
+        private final DocumentUiScope documentUiScope;
+        private final DirectDocumentPageAuthoringSurface documentPage = new DirectDocumentPageAuthoringSurface();
+        private final DocumentPageRuntimeView runtimeView = new DocumentPageRuntimeView() {
+            @Override
+            public int getHostWidth() {
+                return width;
+            }
 
-        private DefinitionBackedDocumentScreen(DocumentScreenEnvironment environment,
+            @Override
+            public int getHostHeight() {
+                return height;
+            }
+
+            @Override
+            public UiRuntimeStats getUiRuntimeStats() {
+                return DefinitionBackedHtmlLikeDocumentScreen.this.getUiRuntimeStats();
+            }
+        };
+        private final DocumentPageController controller;
+
+        private DefinitionBackedHtmlLikeDocumentScreen(DocumentScreenEnvironment environment,
                 DocumentScreenDefinition<P> definition,
                 P provision) {
-            super(Objects.requireNonNull(environment, "environment"),
-                    Objects.requireNonNull(definition, "definition").getPageDescriptor());
-            this.definition = definition;
-            bindController(definition.createController(ui(), DocumentPageAuthoringSurface.adapt(getDocumentPage()),
-                    runtimeView(), pageId(), provision));
+            DocumentScreenEnvironment resolvedEnvironment = Objects.requireNonNull(environment, "environment");
+            this.definition = Objects.requireNonNull(definition, "definition");
+            this.pageDescriptor = this.definition.getPageDescriptor();
+            this.documentUiScope = new DocumentUiScope(resolvedEnvironment.getDocumentTheme(),
+                    resolvedEnvironment.getTextMeasureService(), resolvedEnvironment.getRuntimeAdapters());
+            this.controller = this.definition.createController(documentUiScope, documentPage, runtimeView,
+                    pageDescriptor.getPageId(), provision);
         }
 
         @Override
-        protected DocumentScreenChrome resolveDocumentChrome(int width, int height) {
-            return definition.resolveChrome(width, height);
+        public PageDescriptor getPageDescriptor() {
+            return pageDescriptor;
+        }
+
+        @Override
+        protected void buildUi(Widget root) {
+            documentPage.attachRoot(root);
+            controller.configureDocumentPage();
+            controller.buildDocument();
+            controller.afterDocumentBuilt();
+        }
+
+        @Override
+        protected void onResize(int width, int height) {
+            super.onResize(width, height);
+            setRootPadding(0, 0, 0, 0);
+            documentPage.applyFrameBounds(width, height, definition.resolveChrome(width, height));
+            controller.onDocumentResized();
+        }
+
+        @Override
+        public void drawScreen(int mouseX, int mouseY, float partialTicks) {
+            controller.beforeDocumentFrame();
+            super.drawScreen(mouseX, mouseY, partialTicks);
         }
     }
 }

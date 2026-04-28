@@ -9,7 +9,6 @@ import org.junit.Test;
 import org.lwjglx.input.Keyboard;
 
 import club.heiqi.uilib.ui.control.UiControlRuntimeAdapters;
-import club.heiqi.uilib.ui.document.DocumentPageWidget;
 import club.heiqi.uilib.ui.document.HtmlLikeDocumentWidget;
 import club.heiqi.uilib.ui.dom.DocumentNode;
 import club.heiqi.uilib.ui.dom.DocumentNodeType;
@@ -40,7 +39,7 @@ public class HtmlLikeSmokeDocumentPageControllerTest {
         fixture.controller.configureDocumentPage();
         fixture.controller.buildDocument();
 
-        List<Widget> blocks = getDocumentBlocks(fixture.pagePanel);
+        List<Widget> blocks = fixture.pageSurface.getBlocks();
         Assert.assertEquals(1, blocks.size());
         Assert.assertTrue(blocks.get(0) instanceof HtmlLikeDocumentWidget);
         Assert.assertSame(blocks.get(0), fixture.controller.getHtmlLikeDocumentWidget());
@@ -228,12 +227,6 @@ public class HtmlLikeSmokeDocumentPageControllerTest {
         Assert.assertTrue(containsFillColor(offRenderContext.drawCalls, 0xFF718096));
     }
 
-    private static List<Widget> getDocumentBlocks(DocumentPageWidget pagePanel) {
-        List<Widget> pageChildren = pagePanel.getChildren();
-        Assert.assertFalse(pageChildren.isEmpty());
-        return pageChildren.get(0).getChildren();
-    }
-
     private static List<String> collectDocumentTexts(HtmlLikeDocumentWidget widget) {
         List<String> texts = new ArrayList<String>();
         if (widget == null || widget.getDocument() == null) {
@@ -303,8 +296,7 @@ public class HtmlLikeSmokeDocumentPageControllerTest {
         private final TextMeasureService textMeasureService = new DeterministicTextMeasureService();
         private final DocumentUiScope documentUi = new DocumentUiScope(documentTheme, textMeasureService,
                 UiControlRuntimeAdapters.empty());
-        private final DocumentPageWidget pagePanel = new DocumentPageWidget(documentTheme, textMeasureService);
-        private final DocumentPageAuthoringSurface pageSurface = DocumentPageAuthoringSurface.adapt(pagePanel);
+        private final DirectDocumentPageAuthoringSurface pageSurface = new DirectDocumentPageAuthoringSurface();
         private final HtmlLikeSmokeDocumentPageController controller = new HtmlLikeSmokeDocumentPageController(
                 documentUi, pageSurface, textMeasureService);
     }

@@ -10,6 +10,7 @@ import club.heiqi.uilib.ui.control.UiControlRuntimeAdapters;
 import club.heiqi.uilib.ui.text.TextMeasureService;
 import club.heiqi.uilib.ui.theme.UiDocumentTheme;
 import club.heiqi.uilib.ui.theme.UiDocumentThemes;
+import club.heiqi.uilib.ui.widget.Widget;
 
 /**
  * `UiDocumentScreens` 的页面描述契约测试。
@@ -133,6 +134,33 @@ public class UiDocumentScreensTest {
 
         Assert.assertTrue(documentTheme.getShellSurface().cornerRadius > 0);
         Assert.assertTrue(documentTheme.getCardSurface().cornerRadius > 0);
+    }
+
+    /**
+     * 验证 HTML-like 直接页面 surface 不再插入旧 DocumentPageWidget 页面壳。
+     */
+    @Test
+    public void shouldAttachDirectSurfaceBlocksWithoutLegacyPageShell() {
+        Widget root = new Widget();
+        Widget block = new Widget();
+        DirectDocumentPageAuthoringSurface surface = new DirectDocumentPageAuthoringSurface();
+
+        root.applyLayoutBounds(0, 0, 1000, 800);
+        surface.attachRoot(root);
+        surface.setContentWidthRange(700, 1080)
+                .setMinContentHeight(540)
+                .setViewportFillRatio(0.94F, 0.92F)
+                .addBlock(block);
+        surface.applyFrameBounds(1000, 800, DocumentScreenChrome.resolve(1000, 800));
+
+        Assert.assertEquals(1, root.getChildren().size());
+        Assert.assertSame(block, root.getChildren().get(0));
+        Assert.assertEquals(57, block.getX());
+        Assert.assertEquals(28, block.getY());
+        Assert.assertEquals(885, block.getWidth());
+        Assert.assertEquals(684, block.getHeight());
+        Assert.assertEquals(885, surface.getWidth());
+        Assert.assertEquals(684, surface.getHeight());
     }
 
     /**
