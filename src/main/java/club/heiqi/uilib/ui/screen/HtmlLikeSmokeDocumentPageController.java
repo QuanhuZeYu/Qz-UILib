@@ -161,16 +161,14 @@ final class HtmlLikeSmokeDocumentPageController extends DocumentPageController {
                 .setBorderColor(0xFF7C3AED)
                 .setBorderWidth(UiStyleLength.px(1))
                 .setBorderRadius(UiStyleLength.px(10))
-                .setTextColor(0xFFC4B5FD)
-                .setOverflowX(UiOverflow.HIDDEN)
-                .setOverflowY(UiOverflow.HIDDEN);
+                .setTextColor(0xFFC4B5FD);
         staticWrapperProbe.appendText("static wrapper is not anchor");
         fixedCard.append(staticWrapperProbe);
 
         ElementNode nestedAbsoluteProbe = document.div();
         nestedAbsoluteProbe.style()
-                .setWidth(UiStyleLength.px(84))
-                .setHeight(UiStyleLength.px(18))
+                .setWidth(UiStyleLength.px(62))
+                .setHeight(UiStyleLength.px(20))
                 .setPosition(UiPosition.ABSOLUTE)
                 .setTop(UiStyleLength.px(8))
                 .setRight(UiStyleLength.px(8))
@@ -182,7 +180,7 @@ final class HtmlLikeSmokeDocumentPageController extends DocumentPageController {
                 .setTextColor(0xFF1A202C)
                 .setOverflowX(UiOverflow.HIDDEN)
                 .setOverflowY(UiOverflow.HIDDEN);
-        nestedAbsoluteProbe.appendText("ABS card anchor");
+        nestedAbsoluteProbe.appendText("ABS OK");
         staticWrapperProbe.append(nestedAbsoluteProbe);
 
         ElementNode fluidCard = document.div();

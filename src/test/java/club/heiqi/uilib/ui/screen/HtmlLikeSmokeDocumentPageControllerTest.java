@@ -53,7 +53,7 @@ public class HtmlLikeSmokeDocumentPageControllerTest {
         Assert.assertTrue(containsText(texts, "Same-layer sampling grid"));
         Assert.assertTrue(containsText(texts, "ABS containing probe"));
         Assert.assertTrue(containsText(texts, "static wrapper is not anchor"));
-        Assert.assertTrue(containsText(texts, "ABS card anchor"));
+        Assert.assertTrue(containsText(texts, "ABS OK"));
         Assert.assertTrue(containsText(texts, "ABS badge"));
         Assert.assertTrue(containsText(texts, "pink stripe behind glass"));
         Assert.assertTrue(containsText(texts, "amber UI behind this card"));
@@ -89,8 +89,8 @@ public class HtmlLikeSmokeDocumentPageControllerTest {
         Assert.assertEquals(1.4F, renderContext.backdropCalls.get(0).saturation, 0.001F);
         Assert.assertEquals(12, renderContext.backdropCalls.get(0).cornerRadius);
         Assert.assertTrue(containsFillColor(renderContext.drawCalls, 0xFFFFD166));
-        Assert.assertTrue(containsTextCall(renderContext.textCalls, "ABS card anchor"));
-        assertAbsoluteProbeIsAnchoredToCard(renderContext.drawCalls);
+        Assert.assertTrue(containsTextCall(renderContext.textCalls, "ABS OK"));
+        assertAbsoluteProbeIsVisibleOutsideStaticWrapper(renderContext.drawCalls, renderContext.clipCalls);
         Assert.assertTrue(containsTextCall(renderContext.textCalls, "TEXT paint command"));
     }
 
@@ -300,13 +300,25 @@ public class HtmlLikeSmokeDocumentPageControllerTest {
         return false;
     }
 
-    private static void assertAbsoluteProbeIsAnchoredToCard(List<DrawCall> drawCalls) {
+    private static void assertAbsoluteProbeIsVisibleOutsideStaticWrapper(List<DrawCall> drawCalls,
+            List<ClipCall> clipCalls) {
         DrawCall staticWrapperCall = findFillColor(drawCalls, 0xFF111827);
         DrawCall nestedAbsoluteCall = findFillColor(drawCalls, 0xFFFFD166);
         Assert.assertNotNull(staticWrapperCall);
         Assert.assertNotNull(nestedAbsoluteCall);
         Assert.assertTrue(nestedAbsoluteCall.top < staticWrapperCall.top);
         Assert.assertTrue(nestedAbsoluteCall.right <= staticWrapperCall.right);
+        Assert.assertFalse(hasClipForBounds(clipCalls, staticWrapperCall.left, staticWrapperCall.top,
+                staticWrapperCall.right, staticWrapperCall.bottom));
+    }
+
+    private static boolean hasClipForBounds(List<ClipCall> clipCalls, int left, int top, int right, int bottom) {
+        for (ClipCall clipCall : clipCalls) {
+            if (clipCall.left == left && clipCall.top == top && clipCall.right == right && clipCall.bottom == bottom) {
+                return true;
+            }
+        }
+        return false;
     }
 
     private static DrawCall findFillColor(List<DrawCall> drawCalls, int expectedColor) {
