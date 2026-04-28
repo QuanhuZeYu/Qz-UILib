@@ -169,7 +169,7 @@
 - 已为 HTML-like 增加 `backdropBlurRadius` 与 `backdropSaturation` 样式声明、computed style 默认值、`BACKDROP_FILTER` paint command 与 `UiRenderContext.drawBackdropFilter(...)` 渲染入口；当前默认渲染复制当前 UI 主层局部区域做近似 blur，复制失败时提供伪玻璃降级，HTML-like Smoke 页新增 `Backdrop glass overlap: blur 14px / saturate 140%` 同层重叠验收卡片，定向测试已覆盖 style resolver、paint order、renderer 投影与 smoke 页面集成。
 - 已将 HTML-like backdrop 主路径升级为 shader-backed 平滑采样：当前 `UiRenderContext` 复制局部 UI 纹理后，会优先走专用 GLSL fragment shader 完成多 tap blur 与 saturation；固定管线多重偏移叠画只保留为 shader 不可用时的兼容降级。
 - 已把 `UiDocumentScreens` 当前 definition-backed 生产入口切换到 direct HTML-like screen host，`ui_test`、`ui_layout_diagnostics`、`html_like_smoke` 与 `inventory_overview` 不再套旧 `DocumentPageWidget` 页面壳；旧页面壳类与 adapter 暂保留为兼容层。
-- 已新增 `html_like_glass` 大面积磨玻璃测试页，可从诊断菜单进入；页面使用多行彩色 UI 采样场和覆盖大部分区域的 glass slab，当前固定 `blur 36px / saturate 125%` 并显示上一帧 `Backdrop path`，用于放大观察 UI 层 backdrop 采样、shader/降级路线、裁剪泄漏、采样错位和 resize 下的稳定性。
+- 已新增 `html_like_glass` 大面积磨玻璃测试页，可从诊断菜单进入；页面使用多行彩色 UI 采样场和覆盖大部分区域的 glass slab，当前固定 `blur 36px / saturate 125%` 并显示上一帧 `Backdrop path`，用于放大观察 UI 层 backdrop 采样、shader/降级路线、裁剪泄漏、采样错位和 resize 下的稳定性；原大玻璃测试下方另有 6 个新增磨玻璃块组成的层级回归区，覆盖三层嵌套 glass shell 与位于不同层级的独立 glass sibling。
 
 ### 当前阶段目标
 
@@ -185,4 +185,4 @@
 
 - 下一步可优先推进更稳定的 UI 主层 backdrop 采样模糊服务：在 `UiRenderContext`/宿主效果层接入可复用 UI 层快照、圆角裁剪、blur/saturate 合成、采样尺寸限制和 FBO 不可用降级；也可继续清点剩余旧作者入口、补齐更完整 inline layout、列表/下拉类基础控件与可访问性语义。
 - 旧非 DOM 后端暂时不能整体舍弃；现在已达到进入旧作者入口清退阶段的最低条件，但 `DocumentUiScope` 旧 factory、基础 retained widget、`DocumentPageWidget` 兼容壳、测试夹具和兼容页面仍需保留到替代覆盖完成。
-- 游戏内实际验证入口已就绪：按右 Shift 打开诊断菜单页，可直接验证 HTML-like 诊断菜单、布局诊断页、HTML-like Smoke 子页、Large Glass Lab 子页和背包概览页。Smoke 页重点观察实心填充、圆角边框、overflow-hidden 裁剪、文本换行、可滚动 teal 卡片、同层条纹/文字被 glass card 覆盖后的 backdrop blur/saturate、click/text input/Tab/button/toggle 交互；Glass Lab 页重点观察大面积 glass slab 覆盖彩色采样场后的 blur/saturate、顶部 `Backdrop path` 是否为 `shader`、边缘圆角、裁剪泄漏、采样错位和 resize 稳定性；布局诊断页重点观察页面宽度、HTML-like 页面滚动偏移、HTML-like 自滚动探针、滚动条 track/thumb、性能文案和高频变更探针；背包页重点观察 hotbar/backpack 网格、自定义格子绘制和返回按钮交互。重点回归：点击任意 HTML-like 控件或卡片不应导致整个页面随机跳动，只有滚轮命中的 HTML-like `overflow:auto` 元素才应改变滚动偏移，内部滚动块的滚动条应在停止滚动后自动隐藏，可见滚动条的 track 点击与 thumb 拖拽应能改变对应元素滚动偏移且不触发底层元素 click。
+- 游戏内实际验证入口已就绪：按右 Shift 打开诊断菜单页，可直接验证 HTML-like 诊断菜单、布局诊断页、HTML-like Smoke 子页、Large Glass Lab 子页和背包概览页。Smoke 页重点观察实心填充、圆角边框、overflow-hidden 裁剪、文本换行、可滚动 teal 卡片、同层条纹/文字被 glass card 覆盖后的 backdrop blur/saturate、click/text input/Tab/button/toggle 交互；Glass Lab 页重点观察大面积 glass slab 覆盖彩色采样场后的 blur/saturate、顶部 `Backdrop path` 是否为 `shader`、下方 6 块层级磨玻璃的三层叠套和不同层级 sibling 采样、边缘圆角、裁剪泄漏、采样错位和 resize 稳定性；布局诊断页重点观察页面宽度、HTML-like 页面滚动偏移、HTML-like 自滚动探针、滚动条 track/thumb、性能文案和高频变更探针；背包页重点观察 hotbar/backpack 网格、自定义格子绘制和返回按钮交互。重点回归：点击任意 HTML-like 控件或卡片不应导致整个页面随机跳动，只有滚轮命中的 HTML-like `overflow:auto` 元素才应改变滚动偏移，内部滚动块的滚动条应在停止滚动后自动隐藏，可见滚动条的 track 点击与 thumb 拖拽应能改变对应元素滚动偏移且不触发底层元素 click。

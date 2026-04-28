@@ -48,6 +48,11 @@ public class HtmlLikeGlassDocumentPageControllerTest {
         Assert.assertTrue(containsText(texts, "Backdrop path: pending"));
         Assert.assertTrue(containsText(texts, "UI layer sampling field"));
         Assert.assertTrue(containsText(texts, "Large backdrop slab: blur 36px / saturate 125%"));
+        Assert.assertTrue(containsText(texts, "Nested glass stack / 6 additional backdrop blocks"));
+        Assert.assertTrue(containsText(texts, "Outer glass shell"));
+        Assert.assertTrue(containsText(texts, "Middle glass shell"));
+        Assert.assertTrue(containsText(texts, "Inner glass shell"));
+        Assert.assertTrue(containsText(texts, "Scene level glass"));
         Assert.assertTrue(containsText(texts, "visual regressions are easy to see"));
     }
 
@@ -82,7 +87,7 @@ public class HtmlLikeGlassDocumentPageControllerTest {
         widget.render(renderContext);
 
         Assert.assertFalse(renderContext.drawCalls.isEmpty());
-        Assert.assertEquals(1, renderContext.backdropCalls.size());
+        Assert.assertEquals(7, renderContext.backdropCalls.size());
         BackdropCall backdropCall = renderContext.backdropCalls.get(0);
         Assert.assertEquals(36, backdropCall.blurRadius);
         Assert.assertEquals(1.25F, backdropCall.saturation, 0.001F);
@@ -90,6 +95,8 @@ public class HtmlLikeGlassDocumentPageControllerTest {
         Assert.assertTrue(backdropCall.right - backdropCall.left >= 680);
         Assert.assertTrue(backdropCall.bottom - backdropCall.top >= 280);
         Assert.assertTrue(containsTextCall(renderContext.textCalls, "Large backdrop slab"));
+        Assert.assertTrue(containsTextCall(renderContext.textCalls, "Nested level 3"));
+        Assert.assertTrue(containsTextCall(renderContext.textCalls, "Direct canvas sibling"));
     }
 
     private static List<String> collectDocumentTexts(HtmlLikeDocumentWidget widget) {
