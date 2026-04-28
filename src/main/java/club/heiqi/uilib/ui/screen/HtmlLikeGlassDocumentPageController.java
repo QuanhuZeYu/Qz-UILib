@@ -217,7 +217,7 @@ final class HtmlLikeGlassDocumentPageController extends DocumentPageController {
         appendSampleRow(document, nestedCanvas, 0xFF38BDF8, 0xFFA3E635, 0xFFF87171,
                 "Inner shell should still blur parent-painted content");
 
-        ElementNode outerGlass = createGlassBlock(document, 0x36FFFFFF, 0xCCFFFFFF, 18, 20,
+        ElementNode outerGlass = createGlassBlock(document, 0x36FFFFFF, 0xCCFFFFFF, 18, 120,
                 "Outer glass shell", "Nested level 1 / backdrop #2");
         outerGlass.style()
                 .setWidth(UiStyleLength.percent(0.78F))
@@ -226,7 +226,7 @@ final class HtmlLikeGlassDocumentPageController extends DocumentPageController {
                         UiStyleLength.px(28)));
         nestedCanvas.append(outerGlass);
 
-        ElementNode outerLevelGlass = createGlassBlock(document, 0x40D946EF, 0xCCF5D0FE, 12, 16,
+        ElementNode outerLevelGlass = createGlassBlock(document, 0x40D946EF, 0xCCF5D0FE, 12, 116,
                 "Outer level glass", "Hierarchy probe / backdrop #3");
         outerLevelGlass.style()
                 .setWidth(UiStyleLength.percent(0.44F))
@@ -235,7 +235,7 @@ final class HtmlLikeGlassDocumentPageController extends DocumentPageController {
                         UiStyleLength.percent(0.42F)));
         outerGlass.append(outerLevelGlass);
 
-        ElementNode middleGlass = createGlassBlock(document, 0x40BFDBFE, 0xCCE0F2FE, 12, 14,
+        ElementNode middleGlass = createGlassBlock(document, 0x40BFDBFE, 0xCCE0F2FE, 12, 114,
                 "Middle glass shell", "Nested level 2 / backdrop #4");
         middleGlass.style()
                 .setWidth(UiStyleLength.percent(0.76F))
@@ -244,7 +244,7 @@ final class HtmlLikeGlassDocumentPageController extends DocumentPageController {
                         UiStyleLength.px(22)));
         outerGlass.append(middleGlass);
 
-        ElementNode middleLevelGlass = createGlassBlock(document, 0x40FDE68A, 0xCCFEF3C7, 10, 12,
+        ElementNode middleLevelGlass = createGlassBlock(document, 0x40FDE68A, 0xCCFEF3C7, 10, 112,
                 "Middle level glass", "Hierarchy probe / backdrop #5");
         middleLevelGlass.style()
                 .setWidth(UiStyleLength.percent(0.42F))
@@ -253,7 +253,7 @@ final class HtmlLikeGlassDocumentPageController extends DocumentPageController {
                         UiStyleLength.percent(0.45F)));
         middleGlass.append(middleLevelGlass);
 
-        ElementNode innerGlass = createGlassBlock(document, 0x406EE7B7, 0xCCDCFCE7, 10, 12,
+        ElementNode innerGlass = createGlassBlock(document, 0x406EE7B7, 0xCCDCFCE7, 10, 112,
                 "Inner glass shell", "Nested level 3 / backdrop #6");
         innerGlass.style()
                 .setWidth(UiStyleLength.percent(0.7F))
@@ -262,7 +262,7 @@ final class HtmlLikeGlassDocumentPageController extends DocumentPageController {
                         UiStyleLength.px(16)));
         middleGlass.append(innerGlass);
 
-        ElementNode sceneLevelGlass = createGlassBlock(document, 0x40F9A8D4, 0xCCFCE7F3, 12, 14,
+        ElementNode sceneLevelGlass = createGlassBlock(document, 0x40F9A8D4, 0xCCFCE7F3, 12, 114,
                 "Scene level glass", "Direct canvas sibling / additional backdrop");
         sceneLevelGlass.style()
                 .setWidth(UiStyleLength.percent(0.34F))

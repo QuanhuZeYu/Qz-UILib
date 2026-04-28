@@ -92,6 +92,12 @@ public class HtmlLikeGlassDocumentPageControllerTest {
         Assert.assertEquals(36, backdropCall.blurRadius);
         Assert.assertEquals(1.25F, backdropCall.saturation, 0.001F);
         Assert.assertEquals(20, backdropCall.cornerRadius);
+        assertBackdropCall(renderContext.backdropCalls.get(1), 18, 1.20F);
+        assertBackdropCall(renderContext.backdropCalls.get(2), 12, 1.16F);
+        assertBackdropCall(renderContext.backdropCalls.get(3), 12, 1.14F);
+        assertBackdropCall(renderContext.backdropCalls.get(4), 10, 1.12F);
+        assertBackdropCall(renderContext.backdropCalls.get(5), 10, 1.12F);
+        assertBackdropCall(renderContext.backdropCalls.get(6), 12, 1.14F);
         Assert.assertTrue(backdropCall.right - backdropCall.left >= 680);
         Assert.assertTrue(backdropCall.bottom - backdropCall.top >= 280);
         Assert.assertTrue(containsTextCall(renderContext.textCalls, "Large backdrop slab"));
@@ -139,6 +145,11 @@ public class HtmlLikeGlassDocumentPageControllerTest {
             }
         }
         return false;
+    }
+
+    private static void assertBackdropCall(BackdropCall backdropCall, int blurRadius, float saturation) {
+        Assert.assertEquals(blurRadius, backdropCall.blurRadius);
+        Assert.assertEquals(saturation, backdropCall.saturation, 0.001F);
     }
 
     /**
