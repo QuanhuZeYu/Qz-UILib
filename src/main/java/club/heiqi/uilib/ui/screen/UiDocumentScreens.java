@@ -4,8 +4,6 @@ import java.util.Objects;
 
 import club.heiqi.uilib.ui.control.UiControlRuntimeAdapters;
 import club.heiqi.uilib.ui.diagnostic.UiRuntimeStats;
-import club.heiqi.uilib.ui.theme.UiDocumentTheme;
-import club.heiqi.uilib.ui.theme.UiDocumentThemes;
 import club.heiqi.uilib.ui.text.DefaultTextMeasureService;
 import club.heiqi.uilib.ui.text.TextMeasureService;
 import club.heiqi.uilib.ui.widget.Widget;
@@ -75,18 +73,22 @@ public final class UiDocumentScreens {
     /**
      * 文档页面创建环境。
      *
-     * <p>把主题、文本测量与运行时适配器收敛成一个显式入口，
+     * <p>把文本测量与运行时适配器收敛成一个显式入口，
      * 让默认值只停留在最外层调用边界，而不是继续散落在 screen/scope 构造链路里。</p>
      */
     public static final class DocumentScreenEnvironment {
 
-        private final UiDocumentTheme documentTheme;
         private final TextMeasureService textMeasureService;
         private final UiControlRuntimeAdapters runtimeAdapters;
 
-        public DocumentScreenEnvironment(UiDocumentTheme documentTheme, TextMeasureService textMeasureService,
+        /**
+         * 创建文档页面环境。
+         *
+         * @param textMeasureService 文本测量服务
+         * @param runtimeAdapters 运行时适配器集合
+         */
+        public DocumentScreenEnvironment(TextMeasureService textMeasureService,
                 UiControlRuntimeAdapters runtimeAdapters) {
-            this.documentTheme = Objects.requireNonNull(documentTheme, "documentTheme");
             this.textMeasureService = Objects.requireNonNull(textMeasureService, "textMeasureService");
             this.runtimeAdapters = Objects.requireNonNull(runtimeAdapters, "runtimeAdapters");
         }
@@ -97,18 +99,24 @@ public final class UiDocumentScreens {
          * <p>默认值仍然存在，但现在被限制在最外层入口，调用方也可以显式替换。</p>
          */
         public static DocumentScreenEnvironment minecraftDefaults() {
-            return new DocumentScreenEnvironment(UiDocumentThemes.current(), DefaultTextMeasureService.getInstance(),
+            return new DocumentScreenEnvironment(DefaultTextMeasureService.getInstance(),
                     UiControlRuntimeAdapters.minecraftDefaults());
         }
 
-        public UiDocumentTheme getDocumentTheme() {
-            return documentTheme;
-        }
-
+        /**
+         * 返回文本测量服务。
+         *
+         * @return 文本测量服务
+         */
         public TextMeasureService getTextMeasureService() {
             return textMeasureService;
         }
 
+        /**
+         * 返回运行时适配器集合。
+         *
+         * @return 运行时适配器集合
+         */
         public UiControlRuntimeAdapters getRuntimeAdapters() {
             return runtimeAdapters;
         }
@@ -551,8 +559,8 @@ public final class UiDocumentScreens {
             DocumentScreenEnvironment resolvedEnvironment = Objects.requireNonNull(environment, "environment");
             this.definition = Objects.requireNonNull(definition, "definition");
             this.pageDescriptor = this.definition.getPageDescriptor();
-            this.documentUiScope = new DocumentUiScope(resolvedEnvironment.getDocumentTheme(),
-                    resolvedEnvironment.getTextMeasureService(), resolvedEnvironment.getRuntimeAdapters());
+            this.documentUiScope = new DocumentUiScope(resolvedEnvironment.getTextMeasureService(),
+                    resolvedEnvironment.getRuntimeAdapters());
             this.controller = this.definition.createController(documentUiScope, documentPage, runtimeView,
                     pageDescriptor.getPageId(), provision);
         }

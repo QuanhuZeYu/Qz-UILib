@@ -8,8 +8,6 @@ import org.junit.Test;
 
 import club.heiqi.uilib.ui.control.UiControlRuntimeAdapters;
 import club.heiqi.uilib.ui.text.TextMeasureService;
-import club.heiqi.uilib.ui.theme.UiDocumentTheme;
-import club.heiqi.uilib.ui.theme.UiDocumentThemes;
 import club.heiqi.uilib.ui.widget.Widget;
 
 /**
@@ -111,18 +109,16 @@ public class UiDocumentScreensTest {
     }
 
     /**
-     * 验证显式文档环境会原样保留 theme / measure / runtime adapters。
+     * 验证显式文档环境会原样保留 measure / runtime adapters。
      */
     @Test
     public void shouldKeepExplicitDocumentScreenEnvironmentDependencies() {
-        UiDocumentTheme documentTheme = UiDocumentThemes.current();
         NoOpTextMeasureService textMeasureService = new NoOpTextMeasureService();
         UiControlRuntimeAdapters runtimeAdapters = UiControlRuntimeAdapters.empty();
 
         UiDocumentScreens.DocumentScreenEnvironment environment = new UiDocumentScreens.DocumentScreenEnvironment(
-                documentTheme, textMeasureService, runtimeAdapters);
+                textMeasureService, runtimeAdapters);
 
-        Assert.assertSame(documentTheme, environment.getDocumentTheme());
         Assert.assertSame(textMeasureService, environment.getTextMeasureService());
         Assert.assertSame(runtimeAdapters, environment.getRuntimeAdapters());
     }
@@ -139,17 +135,6 @@ public class UiDocumentScreensTest {
         Assert.assertEquals(Math.max(28, 720 / 28), chrome.getRootPadding().getTop());
         Assert.assertEquals(Math.max(16, Math.min(960 / 48, 28)), chrome.getPagePadding().getLeft());
         Assert.assertEquals(Math.max(14, Math.min(720 / 36, 24)), chrome.getPagePadding().getTop());
-    }
-
-    /**
-     * 验证默认文档主题会通过主题边界暴露圆角壳体与卡片表面。
-     */
-    @Test
-    public void shouldExposeRoundedDocumentSurfacesFromThemeBoundary() {
-        UiDocumentTheme documentTheme = UiDocumentThemes.current();
-
-        Assert.assertTrue(documentTheme.getShellSurface().cornerRadius > 0);
-        Assert.assertTrue(documentTheme.getCardSurface().cornerRadius > 0);
     }
 
     /**

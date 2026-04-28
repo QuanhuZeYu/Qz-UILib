@@ -5,8 +5,6 @@ import java.util.List;
 
 import org.lwjglx.input.Keyboard;
 
-import club.heiqi.uilib.ui.control.DivWidget;
-import club.heiqi.uilib.ui.control.UiScrollHost;
 import club.heiqi.uilib.ui.event.UiKeyEvent;
 import club.heiqi.uilib.ui.event.UiMouseEvent;
 import club.heiqi.uilib.ui.event.UiTextInputEvent;
@@ -164,7 +162,6 @@ public class UiInputRouter {
         }
         focusedWidget = widget;
         if (focusedWidget != null) {
-            ensureWidgetVisible(focusedWidget);
             focusedWidget.onFocusChanged(true);
             if (fromTraversal) {
                 focusedWidget.onFocusTraversalEntered(reverse);
@@ -211,21 +208,6 @@ public class UiInputRouter {
             current = current.getParent();
         }
         return false;
-    }
-
-    /**
-     * 当焦点进入滚动容器中的子项时，自动把它滚到可视区，避免 Tab 后焦点落在屏幕外。
-     *
-     * @param widget 新焦点组件
-     */
-    private void ensureWidgetVisible(Widget widget) {
-        Widget current = widget == null ? null : widget.getParent();
-        while (current != null) {
-            if (current instanceof UiScrollHost) {
-                ((UiScrollHost) current).scrollDescendantIntoView(widget);
-            }
-            current = current.getParent();
-        }
     }
 
     private void focusNextWidget(Widget root, boolean reverse) {

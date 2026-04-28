@@ -11,7 +11,7 @@
 
 ### 当前稳定架构边界
 
-- 当前可运行链路仍以 retained `Widget` 树为渲染后端，文档页主创建边界为 `UiDocumentScreens`。
+- 当前可运行链路仍以 retained `Widget` 树为渲染后端，screen host 根视口为 `ViewportWidget`，文档页主创建边界为 `UiDocumentScreens`。
 - `UiDocumentScreens` 通过 `DocumentScreenEnvironment`、`DocumentScreenDefinition` 与 `DocumentScreenChromeResolver` 暴露显式页面创建入口。
 - HTML-like 文档树最小骨架已在 `club.heiqi.uilib.ui.dom` 落地；`UiDocument` 是当前文档作者入口，`DocumentNode` 负责父子关系与 mutation/layout/paint 分层失效版本，tree/text/geometry 变更会提升 layout 与 paint version，paint-only style/custom renderer 变更只提升 paint version；`ElementNode` 与 `TextNode` 分别承载元素和文本；每个 `ElementNode` 创建时会分配进程内唯一的内部身份 `__getElementUid()`，该值只供测试、调试、缓存和内部追踪使用，不等同于 HTML `id` 属性，也不进入属性表或样式选择器；`ElementNode` 当前支持最小 active handler、click handler、focus handler、key handler、text input handler 与 focusable 标记，active/click/key/text input 事件会从目标元素向父元素冒泡，focus 事件会带 `focusVisible` 区分键盘可见焦点与鼠标普通焦点。
 - HTML-like 基础控件适配已在 `club.heiqi.uilib.ui.dom.control` 起步；`DocumentButtonControl` 当前以 `ElementNode` 为根封装按钮行为，支持 action handler、enabled/disabled、click 激活、Enter/Space 键盘激活、focusable、active 按下态、focus-visible 描边态与基础视觉状态切换；`DocumentTextInputControl` 支持 placeholder、maxLength、文本输入（过滤控制字符）、Backspace 删除、enabled/disabled、focus 边框区分、change handler；`DocumentToggleSwitchControl` 以 flex row + justifyContent 切换 thumb 位置实现开关视觉，支持 click/Enter/Space 切换、enabled/disabled、focus-visible 与 toggle change handler；`DocumentSegmentedSelectorControl` 以一组 element-backed button 表达分段选择器，支持鼠标/键盘选择、enabled/disabled、选中态视觉和 selection handler；`DocumentInventorySlotGridControl` 以 `ElementNode` + 自定义渲染回调实现只读背包格子网格，复用现有 `InventorySlotGridLayout` 与 `InventorySlotGridItemRenderer`，支持 contentProvider、slotGap、preferredSlotSize 等配置。
@@ -24,11 +24,10 @@
 - `HtmlLikeDocumentWidget` 已把 `UiDocument -> style -> layout -> paint command -> UiRenderContext` 链路挂接到现有 retained `Widget` 后端；生产构造默认使用 `DefaultTextMeasureService`，测试可注入确定性 `TextMeasureService` 与动画时钟；组件现在会消费命中的 `overflow: auto` 元素滚轮事件并让内容区随 `DocumentScrollState` 偏移，同时记录最近有效滚动时间用于嵌套滚动条空闲隐藏，支持根视口或当前可见内部滚动条的 track 点击与 thumb 拖拽，也会将鼠标 active/click 分发给命中的 HTML-like 元素，并维护命中 focusable 元素的内部焦点，接收现有 `UiInputRouter` 转发的 key/text input 后向 HTML-like 元素冒泡；鼠标聚焦元素时不设置 focus-visible，Tab/Shift+Tab 进入或移动焦点时设置 focus-visible；当前 `UiInputRouter` 的 Tab 全局遍历会先让已聚焦 `Widget` 处理内部焦点遍历，HTML-like 组件会按布局树顺序在 focusable 元素之间移动，边界处再交回全局 widget 焦点；组件新增根视口滚动模式，启用后根元素 border box 固定为 widget 视口尺寸，整页滚动由根元素 `overflow:auto` 与 `DocumentScrollState` 承担，避免旧页面壳因点击/聚焦触发外层滚动后随机移动；组件缓存按 layout version 与 paint version 分层失效，layout version 未变但 paint version 变化时只刷新缓存布局盒树上的 computed style，不重新执行文本测量和布局；组件会在存在 paint-only transition 时绕过静态 paint cache，每帧重建 paint commands 并在动画结束后回到缓存；`ui_test` 诊断菜单、`ui_layout_diagnostics` 布局诊断页、`html_like_smoke` 子页、`html_like_glass` 大面积磨玻璃测试页与 `inventory_overview` 背包页的作者层已迁移为单个 `HtmlLikeDocumentWidget` 承载的 HTML-like 文档，并启用根视口滚动。
 - 当前 `UiDocumentScreens` 的 definition-backed 生产入口已切换为 `DefinitionBackedHtmlLikeDocumentScreen` + `DirectDocumentPageAuthoringSurface`：已迁移 HTML-like 页面直接把 `HtmlLikeDocumentWidget` 挂到根视口并由 direct surface 计算居中 frame，不再套旧 retained 页面壳；旧 `BaseDocumentScreen`、`ControllerBackedDocumentScreen`、`DocumentPageWidget` 与 `DocumentPageAuthoringSurface.adapt(...)` 已清退。
 - `UiScreenHostSession` 在主 UI widget 树渲染前会统一准备稳定 2D GL 状态，避免世界渲染遗留的 depth/cull/alpha/light 状态导致 rounded fill 面片被剔除。
-- 后续作者侧入口应继续迁移到 HTML-like 文档/元素/样式 API；底层 `Widget`、`DivWidget`、`ScrollViewportWidget` 应逐步退为 backend adapter 或兼容层。当前已完成键盘/文本输入、基础控件适配、诊断菜单/布局诊断页和背包业务页迁移，旧 public screen 作者入口、旧页面壳适配层、`DocumentUiScope` retained widget factory 与旧 retained 文档控件已清退；仍需谨慎处理仍有测试覆盖的旧 retained control widget，不能误删 HTML-like 控件复用的底层算法与宿主适配能力。
+- 后续作者侧入口应继续迁移到 HTML-like 文档/元素/样式 API；底层 `Widget` 与 `ViewportWidget` 仍作为宿主后端保留。当前已完成键盘/文本输入、基础控件适配、诊断菜单/布局诊断页和背包业务页迁移，旧 public screen 作者入口、旧页面壳适配层、`DocumentUiScope` retained widget factory、旧 retained 文档控件、旧 retained control widget、旧 Div/ScrollViewport 兼容容器与旧 retained 主题样式对象已清退；不能误删 HTML-like 控件复用的背包格子底层算法与宿主适配能力。
 - `UiSurfaceStyle` 是纯外观值对象，只负责 `fillColor`、`borderColor`、`cornerRadius`。
 - `border-radius` 外观不得隐式控制 descendant clip；结构裁剪必须来自 `overflow`、viewport 或显式 clip 容器。
-- `DivWidget` 当前通过 overflow/viewport 盒提供矩形内容裁剪；`ScrollViewportWidget` 仍保留为兼容后端与旧页面壳视觉容器，但当前 HTML-like 页面级滚动不再依赖它，必须优先使用 `HtmlLikeDocumentWidget` 根视口滚动模式与 direct screen host。
-- `RoundedScrollViewportWidget` 只保留为 rounded structural clip 探索容器；在真实 GL/stencil/FBO 状态链稳定前，不得接回 HTML-like 生产链路。
+- 旧 `DivWidget`、`ScrollViewportWidget`、`RoundedScrollViewportWidget`、`OverflowScrollState`、`OverflowViewportLayout` 与 `UiScrollHost` 已删除；HTML-like 页面滚动必须使用 `HtmlLikeDocumentWidget` 根视口滚动模式或元素级 `overflow:auto`。
 - UI 框架不向文档作者暴露 FBO、stencil、OpenGL 状态等宿主细节；背景模糊和磨玻璃由 `UiScreenHostSession`/`UiRenderContext`/宿主效果服务统一处理。HTML-like 样式层只暴露 CSS-like `backdrop-filter` 高层语义，元素级 backdrop 默认只处理当前 UI 主层已绘制内容；游戏画面模糊只允许作为页面壳层提前准备好的背景底图进入 UI 层。
 - `UiRenderContext` 继续承载主渲染与 deferred post-main 回放的 clip snapshot；snapshot 表达显式结构裁剪结果，不继承 surface 外观。
 
@@ -56,7 +55,7 @@
 - 若并发启动多个 Gradle 构建，`decompileSrgJar` 可能会因共享 `build/tmp/decompileSrgJar/mc.jar` 触发 Windows 文件锁冲突；验证构建时应串行执行单个 Gradle 命令。
 - 最近已验证通过：`./gradlew.bat --no-configuration-cache test` 与 `./gradlew.bat --no-configuration-cache compileJava`。
 - 最近已验证通过：集中 Java 环境与 `GRADLE_USER_HOME=D:\.MyApps\.ENV\gradle-home` 下的 `javaToolchains`、`compileMcLauncherJava`、`runClient21 --dry-run`、`runClient21`、`processIdeaSettings`。
-- 最近已验证通过的定向测试：`DocumentButtonControlTest`、`DocumentTextInputControlTest`、`DocumentToggleSwitchControlTest`、`DocumentSegmentedSelectorControlTest`、`DocumentInventorySlotGridControlTest`、`HtmlLikeDocumentWidgetTest`、`HtmlLikeSmokeDocumentPageControllerTest`、`UiInputRouterTest`、`DocumentPaintRendererTest`、`UiDocumentScreensTest`、`UiTestDocumentPageControllerTest`、`DocumentPaintEngineTest`、`DocumentLayoutEngineTest`、`UiStyleResolverTest`、`UiDocumentTest`、`UiSurfaceStyleTest`、`InventorySlotGridWidgetTest`；本轮 `backdrop-filter` 定向验证覆盖 `UiStyleResolverTest`、`DocumentPaintEngineTest`、`DocumentPaintRendererTest` 与 `HtmlLikeSmokeDocumentPageControllerTest`。
+- 最近已验证通过的定向测试：`DocumentButtonControlTest`、`DocumentTextInputControlTest`、`DocumentToggleSwitchControlTest`、`DocumentSegmentedSelectorControlTest`、`DocumentInventorySlotGridControlTest`、`HtmlLikeDocumentWidgetTest`、`HtmlLikeSmokeDocumentPageControllerTest`、`UiInputRouterTest`、`DocumentPaintRendererTest`、`UiDocumentScreensTest`、`UiTestDocumentPageControllerTest`、`DocumentPaintEngineTest`、`DocumentLayoutEngineTest`、`UiStyleResolverTest`、`UiDocumentTest`、`UiSurfaceStyleTest`；本轮 `backdrop-filter` 定向验证覆盖 `UiStyleResolverTest`、`DocumentPaintEngineTest`、`DocumentPaintRendererTest` 与 `HtmlLikeSmokeDocumentPageControllerTest`。
 - 当前 `ui.dom` / `ui.style` / `ui.layout` / `ui.paint` 已经接入 `HtmlLikeDocumentWidget`、诊断菜单、布局诊断页、`html_like_smoke` 子页与背包概览页；这些页面的外层滚动已切到 HTML-like 根元素 `overflow:auto`，且生产入口不再包旧 retained 页面壳，可从游戏内诊断菜单进入对应页面进行真实渲染验收。
 - 纯 JVM 测试不得直接触发 `DefaultTextMeasureService`/`FontService` 默认字体运行时；涉及 HTML-like 文本测量的测试应注入确定性 `TextMeasureService`，避免加载 LWJGL 相关类。
 
@@ -118,11 +117,8 @@
 - `src/main/java/club/heiqi/uilib/ui/render/UiRenderContext.java`
 - `src/main/java/club/heiqi/uilib/ui/render/UiBackdropShaderProgram.java`
 - `src/main/java/club/heiqi/uilib/ui/widget/Widget.java`
-- `src/main/java/club/heiqi/uilib/ui/control/DivWidget.java`
-- `src/main/java/club/heiqi/uilib/ui/control/ScrollViewportWidget.java`
-- `src/main/java/club/heiqi/uilib/ui/control/RoundedScrollViewportWidget.java`
+- `src/main/java/club/heiqi/uilib/ui/control/ViewportWidget.java`
 - `src/main/java/club/heiqi/uilib/ui/theme/UiSurfaceStyle.java`
-- `src/main/java/club/heiqi/uilib/ui/theme/UiDocumentThemes.java`
 
 ### 磨玻璃效果规划
 
@@ -187,7 +183,8 @@
 - 已将 HTML-like 文档失效机制拆为 layout/paint 分层版本：`UiStyleDeclaration` 通过 `UiStyleChangeImpact` 区分布局级与 paint-only 样式变更，`UiDocument` 暴露 `getLayoutVersion()` 与 `getPaintVersion()`；`HtmlLikeDocumentWidget` 在 paint-only 样式变更时复用已有布局几何并通过 `DocumentLayoutBox.refreshComputedStyles()` 刷新样式快照，避免 background/text color、opacity、border-radius、backdrop 参数和 transition 声明变更触发重新文本测量与全量 layout。
 - 已为 HTML-like 绘制链路增加显式 paint context 边界：`DocumentPaintCommandType` 新增 `PAINT_CONTEXT_START` / `PAINT_CONTEXT_END`，非根 opacity、positioned z-index 与 backdrop-filter 元素会被上下文命令包裹，`DocumentPaintRenderer` 会按命令顺序回放到 `UiRenderContext.pushPaintContext(...)` / `popPaintContext()`；当前该边界默认不改变视觉输出，但为后续真正 group opacity、元素级 backdrop/effect 合成与 stacking context 隔离准备统一入口。
 - 已将根目录 `项目建议.md` 从早期 HTML-like 阶段规划替换为当前可执行建议，重点记录待添加底层基础建设与待清理旧代码清单。
-- 已按 `项目建议.md` 优先完成旧入口清理：删除 `UiTestScreen`、`InventoryOverviewScreen`、`ControllerBackedDocumentScreen`、`BaseDocumentScreen`、`DocumentPageWidget` 与 `DocumentPageWidgetTest`；移除 `DocumentPageAuthoringSurface.adapt(DocumentPageWidget)` 和 `DocumentPageWidgetAuthoringAdapter`；收缩 `DocumentUiScope`，只保留 `theme()`、`getTextMeasureService()`、`getRuntimeAdapters()`；删除 `DocumentTextWidget`、`DocumentCardWidget`、`DocumentToolbarWidget`、`DocumentFlowRowWidget`、`DocumentSectionWidget`、`DocumentFormRowWidget`。`HtmlLikeDocumentWidgetTest.shouldKeepViewportRootScrollStableWhenFocusableHtmlElementIsClicked()` 已改为直接验证 HTML-like 根视口滚动稳定性，不再依赖旧页面壳夹具。
+- 已按 `项目建议.md` 优先完成旧入口清理：删除 `UiTestScreen`、`InventoryOverviewScreen`、`ControllerBackedDocumentScreen`、`BaseDocumentScreen`、`DocumentPageWidget` 与 `DocumentPageWidgetTest`；移除 `DocumentPageAuthoringSurface.adapt(DocumentPageWidget)` 和 `DocumentPageWidgetAuthoringAdapter`；收缩 `DocumentUiScope`，移除旧 retained widget factory；删除 `DocumentTextWidget`、`DocumentCardWidget`、`DocumentToolbarWidget`、`DocumentFlowRowWidget`、`DocumentSectionWidget`、`DocumentFormRowWidget`。`HtmlLikeDocumentWidgetTest.shouldKeepViewportRootScrollStableWhenFocusableHtmlElementIsClicked()` 已改为直接验证 HTML-like 根视口滚动稳定性，不再依赖旧页面壳夹具。
+- 已继续清退旧兼容代码：删除 `ButtonWidget`、`ToggleSwitchWidget`、`SegmentedSelectorWidget`、`TextInputWidget`、`InventorySlotGridWidget`、`LabelWidget` 及旧 widget 测试；删除旧 `DivWidget`、`ScrollViewportWidget`、`RoundedScrollViewportWidget`、`OverflowScrollState`、`OverflowViewportLayout`、`UiScrollHost`；删除旧 retained 控件主题 `UiControlTheme`、`UiDocumentTheme`、`UiDocumentThemes`；`DocumentScreenEnvironment` 不再携带主题，`DocumentUiScope` 只保留 `getTextMeasureService()` 与 `getRuntimeAdapters()`。
 
 ### 当前阶段目标
 
@@ -197,11 +194,11 @@
 - 阶段 3：建立 box/layout tree，并逐步把现有 Div-like 布局能力迁移到新模型；当前 block flow、flex flow、relative 视觉偏移、absolute 脱流定位、最近 positioned ancestor containing block、最小 stacking phase 顺序与直接文本测量/换行布局最小闭环已完成，后续应推进更完整的 inline layout、fixed 定位与 left+right/stretch 约束。
 - 阶段 4：建立 paint command、clip、scroll、deferred replay 与效果合成的统一渲染模型；当前 background/border/text/clip/backdrop-filter/paint-context command、四阶段 stacking 绘制排序、paint-only transition 动画覆盖、paint-only 样式刷新不重排、opacity 标准绘制命令 alpha、border-radius 运行圆角、`UiRenderContext` 投影、`overflow: auto` 滚动偏移、滚动条绘制/交互、命中测试与最小 smoke screen 集成已完成，下一步可在 paint context 边界上推进真正 group opacity/FBO 合成、更稳定的 UI 主层 backdrop 采样模糊服务或更完整 inline layout。
 - 阶段 5：迁移事件与控件适配；当前已完成元素 active/click 冒泡、普通焦点/focus-visible 区分、键盘按键、文本输入、Tab/Shift+Tab 内部焦点遍历、按钮/文本输入框/开关/分段选择器/背包格子控件适配，后续需要更多基础控件适配、真实页面迁移与更完整的可访问性语义。
-- 阶段 6：清退旧 public screen 构造入口与直接 widget authoring 示例；当前可访问诊断/业务页面的生产宿主已改为 direct HTML-like screen host，旧 screen host、旧页面壳适配层、`DocumentUiScope` retained factory 与旧 retained 文档控件已删除，下一步应清点仍有测试覆盖的旧 retained control widget，并把仍有价值的契约迁移到 HTML-like 控件或底层算法测试。
+- 阶段 6：清退旧 public screen 构造入口与直接 widget authoring 示例；当前可访问诊断/业务页面的生产宿主已改为 direct HTML-like screen host，旧 screen host、旧页面壳适配层、`DocumentUiScope` retained factory、旧 retained 文档控件、旧 retained control widget、旧兼容容器与旧 retained 主题样式对象已删除，后续仅需持续清点是否还有无 HTML-like 复用价值的旧兼容残留。
 
 ### 下一步执行项
 
 - 下一步不应继续优先添加静态、易实现的动画属性；应优先推进更底层且会影响未来上限的基础建设，例如在已具备 paint context 边界的基础上实现真正 group opacity/FBO 合成、继续完善 CSS-like stacking context 隔离、`position: fixed`、absolute left+right/stretch 约束、更稳定的 UI 主层 backdrop 采样模糊服务、或继续把当前 layout/paint 分层失效推进为更细粒度 style/layout/paint cache。Backdrop 方向应在 `UiRenderContext`/宿主效果层接入可复用 UI 层快照、圆角裁剪、blur/saturate 合成、采样尺寸限制和 FBO 不可用降级；也可继续清点剩余旧作者入口、补齐更完整 inline layout、列表/下拉类基础控件与可访问性语义。
-- 旧非 DOM 后端暂时不能整体舍弃；`Widget`、`UiInputRouter`、`UiRenderContext`、`DivWidget`、`ScrollViewportWidget`、`RoundedScrollViewportWidget` 仍应作为 backend/internal/兼容测试工具保留，直到 HTML-like 后端完全替代对应能力。
-- 旧代码清理的下一步建议聚焦仍有测试覆盖的旧 retained control widget：`ButtonWidget`、`ToggleSwitchWidget`、`SegmentedSelectorWidget`、`TextInputWidget`、`InventorySlotGridWidget`。清理前应确认对应 HTML-like 控件测试覆盖鼠标、键盘、禁用态、视觉状态和业务回调；`InventorySlotGridLayout`、`InventorySlotGridItemRenderer`、`InventorySlotSnapshot` 等 HTML-like 背包格子控件仍复用的底层能力不得删除。
+- 旧非 DOM 后端暂时不能整体舍弃；`Widget`、`ViewportWidget`、`UiInputRouter`、`UiRenderContext` 仍应作为 backend/runtime 基础保留，直到 HTML-like 后端完全替代对应能力。
+- 旧代码清理的下一步不再聚焦已删除的 retained widget，而是持续清点旧兼容残留；`InventorySlotGridLayout`、`InventorySlotGridItemRenderer`、`InventorySlotSnapshot`、`MinecraftInventorySlotGridItemRenderer` 与 `UiControlRuntimeAdapters` 等 HTML-like 背包格子控件仍复用的底层能力不得删除。
 - 游戏内实际验证入口已就绪：按右 Shift 打开诊断菜单页，可直接验证 HTML-like 诊断菜单、布局诊断页、HTML-like Smoke 子页、Large Glass Lab 子页和背包概览页。Smoke 页重点观察实心填充、圆角边框、overflow-hidden 裁剪、文本换行、可滚动 teal 卡片、同层条纹/文字被 glass card 覆盖后的 backdrop blur/saturate、右上角 `ABS badge` absolute 浮动徽标、左侧 `ABS containing probe` 内金色 `ABS OK` 标签是否贴在紫色卡片右上角而不是深色 `static wrapper` 内、`Click target` pill 点击后的绿色/蓝色 background-color、opacity 淡入淡出与 border-radius 圆角形变平滑 transition、click/text input/Tab/button/toggle 交互；Glass Lab 页重点观察大面积 glass slab 覆盖彩色采样场后的 blur/saturate、顶部 `Backdrop path` 是否为 `shader`、下方 6 块层级磨玻璃的三层叠套和不同层级 sibling 采样、边缘圆角、裁剪泄漏、采样错位和 resize 稳定性；布局诊断页重点观察页面宽度、HTML-like 页面滚动偏移、HTML-like 自滚动探针、滚动条 track/thumb、性能文案和高频变更探针；背包页重点观察 hotbar/backpack 网格、自定义格子绘制和返回按钮交互。重点回归：点击任意 HTML-like 控件或卡片不应导致整个页面随机跳动，只有滚轮命中的 HTML-like `overflow:auto` 元素才应改变滚动偏移，内部滚动块的滚动条应在停止滚动后自动隐藏，可见滚动条的 track 点击与 thumb 拖拽应能改变对应元素滚动偏移且不触发底层元素 click。

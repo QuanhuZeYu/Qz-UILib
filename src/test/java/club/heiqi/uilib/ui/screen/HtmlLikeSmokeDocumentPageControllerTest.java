@@ -24,8 +24,6 @@ import club.heiqi.uilib.ui.paint.DocumentPaintCommandType;
 import club.heiqi.uilib.ui.paint.DocumentPaintEngine;
 import club.heiqi.uilib.ui.render.UiRenderContext;
 import club.heiqi.uilib.ui.text.TextMeasureService;
-import club.heiqi.uilib.ui.theme.UiDocumentTheme;
-import club.heiqi.uilib.ui.theme.UiDocumentThemes;
 import club.heiqi.uilib.ui.theme.UiSurfaceStyle;
 import club.heiqi.uilib.ui.widget.Widget;
 
@@ -363,10 +361,8 @@ public class HtmlLikeSmokeDocumentPageControllerTest {
      */
     private static final class TestFixture {
 
-        private final UiDocumentTheme documentTheme = UiDocumentThemes.current();
         private final TextMeasureService textMeasureService = new DeterministicTextMeasureService();
-        private final DocumentUiScope documentUi = new DocumentUiScope(documentTheme, textMeasureService,
-                UiControlRuntimeAdapters.empty());
+        private final DocumentUiScope documentUi = new DocumentUiScope(textMeasureService, UiControlRuntimeAdapters.empty());
         private final DirectDocumentPageAuthoringSurface pageSurface = new DirectDocumentPageAuthoringSurface();
         private final HtmlLikeSmokeDocumentPageController controller = new HtmlLikeSmokeDocumentPageController(
                 documentUi, pageSurface, textMeasureService);
