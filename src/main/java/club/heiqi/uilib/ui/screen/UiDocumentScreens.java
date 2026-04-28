@@ -2,8 +2,8 @@ package club.heiqi.uilib.ui.screen;
 
 import java.util.Objects;
 
-import club.heiqi.uilib.ui.control.UiControlRuntimeAdapters;
 import club.heiqi.uilib.ui.diagnostic.UiRuntimeStats;
+import club.heiqi.uilib.ui.runtime.UiRuntimeAdapters;
 import club.heiqi.uilib.ui.text.DefaultTextMeasureService;
 import club.heiqi.uilib.ui.text.TextMeasureService;
 import club.heiqi.uilib.ui.widget.Widget;
@@ -79,7 +79,7 @@ public final class UiDocumentScreens {
     public static final class DocumentScreenEnvironment {
 
         private final TextMeasureService textMeasureService;
-        private final UiControlRuntimeAdapters runtimeAdapters;
+        private final UiRuntimeAdapters runtimeAdapters;
 
         /**
          * 创建文档页面环境。
@@ -88,7 +88,7 @@ public final class UiDocumentScreens {
          * @param runtimeAdapters 运行时适配器集合
          */
         public DocumentScreenEnvironment(TextMeasureService textMeasureService,
-                UiControlRuntimeAdapters runtimeAdapters) {
+                UiRuntimeAdapters runtimeAdapters) {
             this.textMeasureService = Objects.requireNonNull(textMeasureService, "textMeasureService");
             this.runtimeAdapters = Objects.requireNonNull(runtimeAdapters, "runtimeAdapters");
         }
@@ -100,7 +100,7 @@ public final class UiDocumentScreens {
          */
         public static DocumentScreenEnvironment minecraftDefaults() {
             return new DocumentScreenEnvironment(DefaultTextMeasureService.getInstance(),
-                    UiControlRuntimeAdapters.minecraftDefaults());
+                    UiRuntimeAdapters.minecraftDefaults());
         }
 
         /**
@@ -117,7 +117,7 @@ public final class UiDocumentScreens {
          *
          * @return 运行时适配器集合
          */
-        public UiControlRuntimeAdapters getRuntimeAdapters() {
+        public UiRuntimeAdapters getRuntimeAdapters() {
             return runtimeAdapters;
         }
     }

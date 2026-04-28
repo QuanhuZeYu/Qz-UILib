@@ -8,7 +8,6 @@ import org.junit.Assert;
 import org.junit.Test;
 import org.lwjglx.input.Keyboard;
 
-import club.heiqi.uilib.ui.control.UiControlRuntimeAdapters;
 import club.heiqi.uilib.ui.document.HtmlLikeDocumentWidget;
 import club.heiqi.uilib.ui.dom.DocumentNode;
 import club.heiqi.uilib.ui.dom.DocumentNodeType;
@@ -17,6 +16,7 @@ import club.heiqi.uilib.ui.dom.TextNode;
 import club.heiqi.uilib.ui.event.UiKeyEvent;
 import club.heiqi.uilib.ui.layout.DocumentLayoutBox;
 import club.heiqi.uilib.ui.layout.DocumentLayoutEngine;
+import club.heiqi.uilib.ui.runtime.UiRuntimeAdapters;
 import club.heiqi.uilib.ui.text.TextMeasureService;
 import club.heiqi.uilib.ui.widget.Widget;
 
@@ -181,7 +181,7 @@ public class UiTestDocumentPageControllerTest {
     private static final class TestFixture {
 
         private final TextMeasureService textMeasureService = new DeterministicTextMeasureService();
-        private final DocumentUiScope documentUi = new DocumentUiScope(textMeasureService, UiControlRuntimeAdapters.empty());
+        private final DocumentUiScope documentUi = new DocumentUiScope(textMeasureService, UiRuntimeAdapters.empty());
         private final DirectDocumentPageAuthoringSurface pageSurface = new DirectDocumentPageAuthoringSurface();
         private final UiTestDocumentPageController controller;
 

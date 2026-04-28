@@ -8,9 +8,6 @@ import org.junit.Assert;
 import org.junit.Test;
 import org.lwjglx.input.Keyboard;
 
-import club.heiqi.uilib.ui.control.InventorySlotSnapshot;
-import club.heiqi.uilib.ui.control.NoOpInventorySlotGridItemRenderer;
-import club.heiqi.uilib.ui.control.UiControlRuntimeAdapters;
 import club.heiqi.uilib.ui.diagnostic.UiRuntimeStats;
 import club.heiqi.uilib.ui.document.HtmlLikeDocumentWidget;
 import club.heiqi.uilib.ui.dom.DocumentNode;
@@ -18,6 +15,9 @@ import club.heiqi.uilib.ui.dom.DocumentNodeType;
 import club.heiqi.uilib.ui.dom.ElementNode;
 import club.heiqi.uilib.ui.dom.TextNode;
 import club.heiqi.uilib.ui.event.UiKeyEvent;
+import club.heiqi.uilib.ui.inventory.InventorySlotSnapshot;
+import club.heiqi.uilib.ui.inventory.NoOpInventorySlotGridItemRenderer;
+import club.heiqi.uilib.ui.runtime.UiRuntimeAdapters;
 import club.heiqi.uilib.ui.text.TextMeasureService;
 import club.heiqi.uilib.ui.widget.Widget;
 
@@ -128,7 +128,7 @@ public class HtmlLikeInventoryOverviewDocumentPageControllerTest {
     private static final class TestFixture {
 
         private final TextMeasureService textMeasureService = new DeterministicTextMeasureService();
-        private final UiControlRuntimeAdapters runtimeAdapters = UiControlRuntimeAdapters.empty()
+        private final UiRuntimeAdapters runtimeAdapters = UiRuntimeAdapters.empty()
                 .withInventorySlotGridItemRenderer(new NoOpInventorySlotGridItemRenderer());
         private final DocumentUiScope documentUi = new DocumentUiScope(textMeasureService, runtimeAdapters);
         private final DirectDocumentPageAuthoringSurface pageSurface = new DirectDocumentPageAuthoringSurface();

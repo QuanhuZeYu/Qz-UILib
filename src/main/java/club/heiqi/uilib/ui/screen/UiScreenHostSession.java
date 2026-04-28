@@ -6,7 +6,6 @@ import net.minecraft.client.Minecraft;
 
 import org.lwjgl.opengl.GL11;
 
-import club.heiqi.uilib.ui.control.ViewportWidget;
 import club.heiqi.uilib.ui.diagnostic.UiPerformanceMonitor;
 import club.heiqi.uilib.ui.input.UiInputFrame;
 import club.heiqi.uilib.ui.input.UiInputRouter;
@@ -15,6 +14,7 @@ import club.heiqi.uilib.ui.render.UiRenderContext;
 import club.heiqi.uilib.ui.render.UiRenderTarget;
 import club.heiqi.uilib.ui.widget.WidgetBuildAttachmentTransaction;
 import club.heiqi.uilib.ui.widget.UiLayoutInvalidationRegistry;
+import club.heiqi.uilib.ui.widget.ViewportWidget;
 
 /**
  * 屏幕宿主运行时会话。

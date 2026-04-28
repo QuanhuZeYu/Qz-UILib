@@ -1,11 +1,11 @@
 package club.heiqi.uilib.ui.dom.control;
 
-import club.heiqi.uilib.ui.control.InventorySlotGridItemGeometry;
-import club.heiqi.uilib.ui.control.InventorySlotGridItemRenderer;
-import club.heiqi.uilib.ui.control.InventorySlotGridLayout;
-import club.heiqi.uilib.ui.control.InventorySlotSnapshot;
 import club.heiqi.uilib.ui.dom.ElementNode;
 import club.heiqi.uilib.ui.dom.UiDocument;
+import club.heiqi.uilib.ui.inventory.InventorySlotGridItemGeometry;
+import club.heiqi.uilib.ui.inventory.InventorySlotGridItemRenderer;
+import club.heiqi.uilib.ui.inventory.InventorySlotGridLayout;
+import club.heiqi.uilib.ui.inventory.InventorySlotSnapshot;
 import club.heiqi.uilib.ui.paint.DocumentCustomRenderer;
 import club.heiqi.uilib.ui.render.UiRenderContext;
 import club.heiqi.uilib.ui.style.UiStyleLength;

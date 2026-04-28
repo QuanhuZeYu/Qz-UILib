@@ -7,12 +7,12 @@ import java.util.List;
 import org.junit.Assert;
 import org.junit.Test;
 
-import club.heiqi.uilib.ui.control.InventorySlotGridItemGeometry;
-import club.heiqi.uilib.ui.control.InventorySlotGridItemRenderer;
-import club.heiqi.uilib.ui.control.InventorySlotSnapshot;
 import club.heiqi.uilib.ui.document.HtmlLikeDocumentWidget;
 import club.heiqi.uilib.ui.dom.ElementNode;
 import club.heiqi.uilib.ui.dom.UiDocument;
+import club.heiqi.uilib.ui.inventory.InventorySlotGridItemGeometry;
+import club.heiqi.uilib.ui.inventory.InventorySlotGridItemRenderer;
+import club.heiqi.uilib.ui.inventory.InventorySlotSnapshot;
 import club.heiqi.uilib.ui.render.UiRenderContext;
 import club.heiqi.uilib.ui.style.UiStyleLength;
 import club.heiqi.uilib.ui.text.TextMeasureService;

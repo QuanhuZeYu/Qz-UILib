@@ -1,10 +1,9 @@
-package club.heiqi.uilib.ui.control;
+package club.heiqi.uilib.ui.widget;
 
 import java.util.Objects;
 
 import club.heiqi.uilib.ui.render.UiRenderContext;
 import club.heiqi.uilib.ui.theme.UiSurfaceStyle;
-import club.heiqi.uilib.ui.widget.Widget;
 
 /**
  * 最小视口容器，负责提供 padding 与可选背景/边框绘制。

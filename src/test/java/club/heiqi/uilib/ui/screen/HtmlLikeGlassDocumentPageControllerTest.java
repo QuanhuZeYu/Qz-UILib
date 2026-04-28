@@ -7,13 +7,13 @@ import java.util.List;
 import org.junit.Assert;
 import org.junit.Test;
 
-import club.heiqi.uilib.ui.control.UiControlRuntimeAdapters;
 import club.heiqi.uilib.ui.document.HtmlLikeDocumentWidget;
 import club.heiqi.uilib.ui.dom.DocumentNode;
 import club.heiqi.uilib.ui.dom.DocumentNodeType;
 import club.heiqi.uilib.ui.dom.ElementNode;
 import club.heiqi.uilib.ui.dom.TextNode;
 import club.heiqi.uilib.ui.render.UiRenderContext;
+import club.heiqi.uilib.ui.runtime.UiRuntimeAdapters;
 import club.heiqi.uilib.ui.text.TextMeasureService;
 import club.heiqi.uilib.ui.theme.UiSurfaceStyle;
 import club.heiqi.uilib.ui.widget.Widget;
@@ -156,7 +156,7 @@ public class HtmlLikeGlassDocumentPageControllerTest {
     private static final class TestFixture {
 
         private final TextMeasureService textMeasureService = new DeterministicTextMeasureService();
-        private final DocumentUiScope documentUi = new DocumentUiScope(textMeasureService, UiControlRuntimeAdapters.empty());
+        private final DocumentUiScope documentUi = new DocumentUiScope(textMeasureService, UiRuntimeAdapters.empty());
         private final DirectDocumentPageAuthoringSurface pageSurface = new DirectDocumentPageAuthoringSurface();
         private final HtmlLikeGlassDocumentPageController controller = new HtmlLikeGlassDocumentPageController(
                 documentUi, pageSurface, textMeasureService);

@@ -1,4 +1,4 @@
-package club.heiqi.uilib.ui.control;
+package club.heiqi.uilib.ui.inventory;
 
 /**
  * 背包格子网格的纯几何布局结果。

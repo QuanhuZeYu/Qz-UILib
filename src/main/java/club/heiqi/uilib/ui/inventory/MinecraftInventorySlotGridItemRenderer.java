@@ -1,4 +1,4 @@
-package club.heiqi.uilib.ui.control;
+package club.heiqi.uilib.ui.inventory;
 
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.renderer.RenderHelper;
@@ -11,7 +11,7 @@ import org.lwjgl.opengl.GL14;
 /**
  * 基于 Minecraft 运行时的默认背包物品渲染实现。
  */
-final class MinecraftInventorySlotGridItemRenderer implements InventorySlotGridItemRenderer {
+public final class MinecraftInventorySlotGridItemRenderer implements InventorySlotGridItemRenderer {
 
     private static final int VANILLA_ITEM_ICON_SIZE = 16;
     private static final int MAX_RENDERED_ITEM_ICON_SIZE = 24;

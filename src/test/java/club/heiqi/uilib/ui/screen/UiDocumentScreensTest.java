@@ -6,7 +6,7 @@ import java.util.List;
 import org.junit.Assert;
 import org.junit.Test;
 
-import club.heiqi.uilib.ui.control.UiControlRuntimeAdapters;
+import club.heiqi.uilib.ui.runtime.UiRuntimeAdapters;
 import club.heiqi.uilib.ui.text.TextMeasureService;
 import club.heiqi.uilib.ui.widget.Widget;
 
@@ -114,7 +114,7 @@ public class UiDocumentScreensTest {
     @Test
     public void shouldKeepExplicitDocumentScreenEnvironmentDependencies() {
         NoOpTextMeasureService textMeasureService = new NoOpTextMeasureService();
-        UiControlRuntimeAdapters runtimeAdapters = UiControlRuntimeAdapters.empty();
+        UiRuntimeAdapters runtimeAdapters = UiRuntimeAdapters.empty();
 
         UiDocumentScreens.DocumentScreenEnvironment environment = new UiDocumentScreens.DocumentScreenEnvironment(
                 textMeasureService, runtimeAdapters);

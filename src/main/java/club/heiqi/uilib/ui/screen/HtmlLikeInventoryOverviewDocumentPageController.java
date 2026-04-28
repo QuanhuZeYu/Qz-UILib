@@ -2,7 +2,6 @@ package club.heiqi.uilib.ui.screen;
 
 import java.util.Objects;
 
-import club.heiqi.uilib.ui.control.InventorySlotSnapshot;
 import club.heiqi.uilib.ui.document.HtmlLikeDocumentWidget;
 import club.heiqi.uilib.ui.dom.ElementNode;
 import club.heiqi.uilib.ui.dom.TextNode;
@@ -11,6 +10,7 @@ import club.heiqi.uilib.ui.dom.control.DocumentButtonActionEvent;
 import club.heiqi.uilib.ui.dom.control.DocumentButtonActionHandler;
 import club.heiqi.uilib.ui.dom.control.DocumentButtonControl;
 import club.heiqi.uilib.ui.dom.control.DocumentInventorySlotGridControl;
+import club.heiqi.uilib.ui.inventory.InventorySlotSnapshot;
 import club.heiqi.uilib.ui.layout.UiLength;
 import club.heiqi.uilib.ui.layout.UiLayoutSpec;
 import club.heiqi.uilib.ui.style.UiAlignItems;

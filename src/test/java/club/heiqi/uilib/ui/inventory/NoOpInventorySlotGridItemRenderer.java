@@ -1,4 +1,4 @@
-package club.heiqi.uilib.ui.control;
+package club.heiqi.uilib.ui.inventory;
 
 /**
  * 测试使用的空背包网格物品渲染委托。

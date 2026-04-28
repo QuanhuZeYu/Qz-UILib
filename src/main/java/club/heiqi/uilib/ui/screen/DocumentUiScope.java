@@ -2,7 +2,7 @@ package club.heiqi.uilib.ui.screen;
 
 import java.util.Objects;
 
-import club.heiqi.uilib.ui.control.UiControlRuntimeAdapters;
+import club.heiqi.uilib.ui.runtime.UiRuntimeAdapters;
 import club.heiqi.uilib.ui.text.TextMeasureService;
 
 /**
@@ -14,7 +14,7 @@ import club.heiqi.uilib.ui.text.TextMeasureService;
 public final class DocumentUiScope {
 
     private final TextMeasureService textMeasureService;
-    private final UiControlRuntimeAdapters runtimeAdapters;
+    private final UiRuntimeAdapters runtimeAdapters;
 
     /**
      * 创建 HTML-like 页面运行时上下文。
@@ -22,7 +22,7 @@ public final class DocumentUiScope {
      * @param textMeasureService 文本测量服务
      * @param runtimeAdapters 运行时适配器集合
      */
-    public DocumentUiScope(TextMeasureService textMeasureService, UiControlRuntimeAdapters runtimeAdapters) {
+    public DocumentUiScope(TextMeasureService textMeasureService, UiRuntimeAdapters runtimeAdapters) {
         this.textMeasureService = Objects.requireNonNull(textMeasureService, "textMeasureService");
         this.runtimeAdapters = Objects.requireNonNull(runtimeAdapters, "runtimeAdapters");
     }
@@ -41,7 +41,7 @@ public final class DocumentUiScope {
      *
      * @return 运行时适配器集合
      */
-    public UiControlRuntimeAdapters getRuntimeAdapters() {
+    public UiRuntimeAdapters getRuntimeAdapters() {
         return runtimeAdapters;
     }
 }

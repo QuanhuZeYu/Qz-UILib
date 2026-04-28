@@ -1,18 +1,21 @@
-package club.heiqi.uilib.ui.control;
+package club.heiqi.uilib.ui.runtime;
 
 import java.util.Objects;
 
+import club.heiqi.uilib.ui.inventory.InventorySlotGridItemRenderer;
+import club.heiqi.uilib.ui.inventory.MinecraftInventorySlotGridItemRenderer;
+
 /**
- * 控件层运行时适配器集合。
+ * UI 运行时适配器集合。
  *
- * <p>当前仅承载背包网格物品渲染委托，用于把运行时渲染能力以窄类型形式透传到控件层，
+ * <p>当前仅承载背包网格物品渲染委托，用于把运行时渲染能力以窄类型形式透传到 HTML-like 控件层，
  * 避免引入通用注册表或 service locator。</p>
  */
-public final class UiControlRuntimeAdapters {
+public final class UiRuntimeAdapters {
 
     private final InventorySlotGridItemRenderer inventorySlotGridItemRenderer;
 
-    private UiControlRuntimeAdapters(InventorySlotGridItemRenderer inventorySlotGridItemRenderer) {
+    private UiRuntimeAdapters(InventorySlotGridItemRenderer inventorySlotGridItemRenderer) {
         this.inventorySlotGridItemRenderer = inventorySlotGridItemRenderer;
     }
 
@@ -23,8 +26,8 @@ public final class UiControlRuntimeAdapters {
      *
      * @return 空适配器集合
      */
-    public static UiControlRuntimeAdapters empty() {
-        return new UiControlRuntimeAdapters(null);
+    public static UiRuntimeAdapters empty() {
+        return new UiRuntimeAdapters(null);
     }
 
     /**
@@ -34,8 +37,8 @@ public final class UiControlRuntimeAdapters {
      *
      * @return 默认适配器集合
      */
-    public static UiControlRuntimeAdapters minecraftDefaults() {
-        return new UiControlRuntimeAdapters(new MinecraftInventorySlotGridItemRenderer());
+    public static UiRuntimeAdapters minecraftDefaults() {
+        return new UiRuntimeAdapters(new MinecraftInventorySlotGridItemRenderer());
     }
 
     /**
@@ -44,9 +47,9 @@ public final class UiControlRuntimeAdapters {
      * @param inventorySlotGridItemRenderer 背包网格物品渲染委托
      * @return 新适配器集合
      */
-    public UiControlRuntimeAdapters withInventorySlotGridItemRenderer(
+    public UiRuntimeAdapters withInventorySlotGridItemRenderer(
             InventorySlotGridItemRenderer inventorySlotGridItemRenderer) {
-        return new UiControlRuntimeAdapters(
+        return new UiRuntimeAdapters(
                 Objects.requireNonNull(inventorySlotGridItemRenderer, "inventorySlotGridItemRenderer"));
     }
 

@@ -1,4 +1,4 @@
-package club.heiqi.uilib.ui.control;
+package club.heiqi.uilib.ui.inventory;
 
 import net.minecraft.item.ItemStack;
 

@@ -1,6 +1,6 @@
 package club.heiqi.uilib.ui.screen;
 
-import club.heiqi.uilib.ui.control.InventorySlotSnapshot;
+import club.heiqi.uilib.ui.inventory.InventorySlotSnapshot;
 
 /**
  * 背包诊断页使用的槽位内容提供契约。

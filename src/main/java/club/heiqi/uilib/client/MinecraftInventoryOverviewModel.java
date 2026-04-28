@@ -1,6 +1,6 @@
 package club.heiqi.uilib.client;
 
-import club.heiqi.uilib.ui.control.InventorySlotSnapshot;
+import club.heiqi.uilib.ui.inventory.InventorySlotSnapshot;
 import club.heiqi.uilib.ui.screen.InventoryOverviewModel;
 import club.heiqi.uilib.ui.screen.InventoryOverviewSlotContentProvider;
 import net.minecraft.client.Minecraft;
