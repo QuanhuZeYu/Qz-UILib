@@ -10,6 +10,7 @@ import club.heiqi.uilib.ui.diagnostic.UiPerformanceMonitor;
 import club.heiqi.uilib.ui.input.UiInputFrame;
 import club.heiqi.uilib.ui.input.UiInputRouter;
 import club.heiqi.uilib.ui.input.UiInputService;
+import club.heiqi.uilib.ui.render.UiMainLayerSnapshotService;
 import club.heiqi.uilib.ui.render.UiRenderContext;
 import club.heiqi.uilib.ui.render.UiRenderTarget;
 import club.heiqi.uilib.ui.widget.WidgetBuildAttachmentTransaction;
@@ -29,6 +30,7 @@ final class UiScreenHostSession {
     private final UiInputRouter inputRouter = new UiInputRouter();
     private final UiHostBackgroundBlurRenderer backgroundBlurRenderer = new UiHostBackgroundBlurRenderer();
     private final UiRenderContext.PaintContextCompositor paintContextCompositor = new UiRenderContext.PaintContextCompositor();
+    private final UiMainLayerSnapshotService mainLayerSnapshotService = new UiMainLayerSnapshotService();
     private UiRenderTarget renderTarget;
     private UiRenderTarget deferredPostMainRenderTarget;
 
@@ -118,13 +120,15 @@ final class UiScreenHostSession {
                             backgroundBlurRenderer.drawBlurredBackground(nativeWidth, nativeHeight);
                             prepareMainUiRenderState();
                             paintContextCompositor.beginFrame();
+                            mainLayerSnapshotService.beginFrame();
                             UiRenderContext context = new UiRenderContext(nativeWidth, nativeHeight, latestMouseX,
-                                    latestMouseY, partialTicks, paintContextCompositor);
+                                    latestMouseY, partialTicks, paintContextCompositor, mainLayerSnapshotService);
                             try {
                                 rootWidget.render(context);
                                 flushDeferredPostMainPasses(context, deferredPostMainRenderTarget, nativeWidth,
                                         nativeHeight);
                             } finally {
+                                mainLayerSnapshotService.finishFrame();
                                 paintContextCompositor.finishFrame();
                             }
                         } finally {
@@ -240,6 +244,7 @@ final class UiScreenHostSession {
                 deferredPostMainRenderTarget = null;
             }
             paintContextCompositor.close();
+            mainLayerSnapshotService.close();
             backgroundBlurRenderer.close();
             return;
         }
@@ -250,6 +255,7 @@ final class UiScreenHostSession {
             deferredPostMainRenderTarget = null;
         }
         paintContextCompositor.close();
+        mainLayerSnapshotService.close();
         backgroundBlurRenderer.close();
     }
 

@@ -1,0 +1,357 @@
+package club.heiqi.uilib.ui.render;
+
+import java.nio.ByteBuffer;
+import java.util.ArrayList;
+import java.util.List;
+
+import org.lwjgl.opengl.GL11;
+import org.lwjgl.opengl.GL12;
+import org.lwjgl.opengl.GL30;
+
+/**
+ * 当前 UI 主层的同帧快照服务。
+ *
+ * <p>该服务只属于渲染后端，用于让多个 `backdrop-filter` 元素复用同一帧中已复制的主 UI 层纹理。
+ * 文档作者层仍只暴露 CSS-like backdrop 语义，不接触纹理、FBO 或 OpenGL 状态。</p>
+ */
+public final class UiMainLayerSnapshotService {
+
+    private static final int MAX_SNAPSHOT_EDGE = 4096;
+    private static final int MAX_SNAPSHOT_PIXELS = 4096 * 4096;
+
+    private final List<FrameSnapshot> snapshots = new ArrayList<FrameSnapshot>();
+    private int frameId;
+    private boolean frameActive;
+    private boolean disabledForFrame;
+    private String lastFailureDetail = "not-run";
+
+    /**
+     * 开始新一帧快照复用窗口。
+     */
+    public void beginFrame() {
+        frameActive = true;
+        disabledForFrame = false;
+        lastFailureDetail = "not-run";
+        if (frameId == Integer.MAX_VALUE) {
+            frameId = 0;
+            for (FrameSnapshot snapshot : snapshots) {
+                snapshot.capturedFrameId = 0;
+            }
+        }
+        frameId++;
+        for (FrameSnapshot snapshot : snapshots) {
+            snapshot.active = false;
+        }
+    }
+
+    /**
+     * 结束当前帧。
+     */
+    public void finishFrame() {
+        frameActive = false;
+        for (FrameSnapshot snapshot : snapshots) {
+            snapshot.active = false;
+        }
+    }
+
+    /**
+     * 释放服务持有的纹理资源。
+     */
+    public void close() {
+        finishFrame();
+        for (FrameSnapshot snapshot : snapshots) {
+            if (snapshot.textureId != 0) {
+                GL11.glDeleteTextures(snapshot.textureId);
+                snapshot.textureId = 0;
+            }
+        }
+        snapshots.clear();
+    }
+
+    /**
+     * 获取当前帧可复用的主 UI 层快照。
+     *
+     * @param screenWidth 屏幕宽度
+     * @param screenHeight 屏幕高度
+     * @param requestedReadFramebufferId 指定读取 FBO；小于 0 时使用当前 read framebuffer
+     * @return 快照；获取失败时返回 null
+     */
+    Snapshot acquireSnapshot(int screenWidth, int screenHeight, int requestedReadFramebufferId) {
+        if (!isSnapshotSizeAllowed(screenWidth, screenHeight)) {
+            lastFailureDetail = "snapshot-too-large: " + screenWidth + "x" + screenHeight;
+            return null;
+        }
+        if (disabledForFrame) {
+            lastFailureDetail = "disabled-for-frame";
+            return null;
+        }
+        if (!frameActive) {
+            beginFrame();
+        }
+
+        int readFramebufferId = resolveReadFramebufferId(requestedReadFramebufferId);
+        FrameSnapshot capturedSnapshot = findCapturedSnapshot(readFramebufferId, screenWidth, screenHeight);
+        if (capturedSnapshot != null) {
+            return Snapshot.reused(capturedSnapshot.textureId, screenWidth, screenHeight, readFramebufferId);
+        }
+
+        FrameSnapshot snapshot = findReusableSnapshot();
+        if (snapshot == null) {
+            snapshot = new FrameSnapshot();
+            snapshots.add(snapshot);
+        }
+        if (!captureSnapshot(snapshot, screenWidth, screenHeight, readFramebufferId)) {
+            return null;
+        }
+        return Snapshot.captured(snapshot.textureId, screenWidth, screenHeight, readFramebufferId);
+    }
+
+    /**
+     * 返回最近一次失败说明。
+     *
+     * @return 失败说明
+     */
+    String getLastFailureDetail() {
+        return lastFailureDetail;
+    }
+
+    /**
+     * 按 backdrop 半径解析扩张后的采样区域。
+     *
+     * @param screenWidth 屏幕宽度
+     * @param screenHeight 屏幕高度
+     * @param left 元素左侧
+     * @param top 元素顶部
+     * @param right 元素右侧
+     * @param bottom 元素底部
+     * @param blurRadius 模糊半径
+     * @return 采样区域；无有效采样区域时返回 null
+     */
+    static SampleRegion resolveSampleRegion(int screenWidth, int screenHeight, int left, int top, int right,
+            int bottom, int blurRadius) {
+        int sampleInset = Math.max(1, Math.min(64, blurRadius + resolveSampleStep(blurRadius)));
+        int sampleLeft = clampInt(left - sampleInset, 0, screenWidth);
+        int sampleTop = clampInt(top - sampleInset, 0, screenHeight);
+        int sampleRight = clampInt(right + sampleInset, 0, screenWidth);
+        int sampleBottom = clampInt(bottom + sampleInset, 0, screenHeight);
+        if (sampleRight <= sampleLeft || sampleBottom <= sampleTop) {
+            return null;
+        }
+        return new SampleRegion(sampleLeft, sampleTop, sampleRight, sampleBottom);
+    }
+
+    /**
+     * 判断指定快照尺寸是否在当前保护限制内。
+     *
+     * @param width 快照宽度
+     * @param height 快照高度
+     * @return 是否允许创建快照
+     */
+    static boolean isSnapshotSizeAllowed(int width, int height) {
+        if (width <= 0 || height <= 0) {
+            return false;
+        }
+        if (width > MAX_SNAPSHOT_EDGE || height > MAX_SNAPSHOT_EDGE) {
+            return false;
+        }
+        return (long) width * (long) height <= MAX_SNAPSHOT_PIXELS;
+    }
+
+    private FrameSnapshot findCapturedSnapshot(int readFramebufferId, int width, int height) {
+        for (FrameSnapshot snapshot : snapshots) {
+            if (snapshot.capturedFrameId == frameId && snapshot.readFramebufferId == readFramebufferId
+                    && snapshot.width == width && snapshot.height == height && snapshot.textureId != 0) {
+                return snapshot;
+            }
+        }
+        return null;
+    }
+
+    private FrameSnapshot findReusableSnapshot() {
+        for (FrameSnapshot snapshot : snapshots) {
+            if (!snapshot.active) {
+                return snapshot;
+            }
+        }
+        return null;
+    }
+
+    private boolean captureSnapshot(FrameSnapshot snapshot, int width, int height, int readFramebufferId) {
+        int previousTexture = 0;
+        int previousReadFramebufferId = -1;
+        boolean textureBindingCaptured = false;
+        boolean readFramebufferCaptured = false;
+        try {
+            previousTexture = GL11.glGetInteger(GL11.GL_TEXTURE_BINDING_2D);
+            textureBindingCaptured = true;
+            previousReadFramebufferId = GL11.glGetInteger(GL30.GL_READ_FRAMEBUFFER_BINDING);
+            readFramebufferCaptured = true;
+            if (snapshot.textureId == 0) {
+                snapshot.textureId = GL11.glGenTextures();
+                if (snapshot.textureId == 0) {
+                    lastFailureDetail = "texture-allocation-failed";
+                    return false;
+                }
+            }
+
+            GL11.glBindTexture(GL11.GL_TEXTURE_2D, snapshot.textureId);
+            GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_MIN_FILTER, GL11.GL_LINEAR);
+            GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_MAG_FILTER, GL11.GL_LINEAR);
+            GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_WRAP_S, GL12.GL_CLAMP_TO_EDGE);
+            GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_WRAP_T, GL12.GL_CLAMP_TO_EDGE);
+            if (snapshot.width != width || snapshot.height != height) {
+                GL11.glTexImage2D(GL11.GL_TEXTURE_2D, 0, GL11.GL_RGBA, width, height, 0, GL11.GL_RGBA,
+                        GL11.GL_UNSIGNED_BYTE, (ByteBuffer) null);
+            }
+            if (previousReadFramebufferId != readFramebufferId) {
+                GL30.glBindFramebuffer(GL30.GL_READ_FRAMEBUFFER, readFramebufferId);
+            }
+            GL11.glCopyTexSubImage2D(GL11.GL_TEXTURE_2D, 0, 0, 0, 0, 0, width, height);
+            GL30.glGenerateMipmap(GL11.GL_TEXTURE_2D);
+            GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_MIN_FILTER, GL11.GL_LINEAR_MIPMAP_LINEAR);
+
+            snapshot.width = width;
+            snapshot.height = height;
+            snapshot.readFramebufferId = readFramebufferId;
+            snapshot.capturedFrameId = frameId;
+            snapshot.active = true;
+            return true;
+        } catch (RuntimeException exception) {
+            disableForCurrentFrame("snapshot-copy-failed: " + exception.getClass().getSimpleName());
+            return false;
+        } catch (LinkageError error) {
+            disableForCurrentFrame("snapshot-copy-failed: " + error.getClass().getSimpleName());
+            return false;
+        } finally {
+            if (readFramebufferCaptured) {
+                GL30.glBindFramebuffer(GL30.GL_READ_FRAMEBUFFER, previousReadFramebufferId);
+            }
+            if (textureBindingCaptured) {
+                GL11.glBindTexture(GL11.GL_TEXTURE_2D, previousTexture);
+            }
+        }
+    }
+
+    private void disableForCurrentFrame(String detail) {
+        disabledForFrame = true;
+        lastFailureDetail = detail;
+    }
+
+    private static int resolveReadFramebufferId(int requestedReadFramebufferId) {
+        if (requestedReadFramebufferId >= 0) {
+            return requestedReadFramebufferId;
+        }
+        return GL11.glGetInteger(GL30.GL_READ_FRAMEBUFFER_BINDING);
+    }
+
+    private static int resolveSampleStep(int blurRadius) {
+        return Math.max(1, Math.min(12, Math.round(Math.max(1, blurRadius) / 2.5F)));
+    }
+
+    private static int clampInt(int value, int min, int max) {
+        return Math.max(min, Math.min(value, max));
+    }
+
+    /**
+     * 单帧主层快照。
+     */
+    static final class Snapshot {
+
+        private final int textureId;
+        private final int width;
+        private final int height;
+        private final int readFramebufferId;
+        private final boolean reused;
+
+        private Snapshot(int textureId, int width, int height, int readFramebufferId, boolean reused) {
+            this.textureId = textureId;
+            this.width = width;
+            this.height = height;
+            this.readFramebufferId = readFramebufferId;
+            this.reused = reused;
+        }
+
+        private static Snapshot captured(int textureId, int width, int height, int readFramebufferId) {
+            return new Snapshot(textureId, width, height, readFramebufferId, false);
+        }
+
+        private static Snapshot reused(int textureId, int width, int height, int readFramebufferId) {
+            return new Snapshot(textureId, width, height, readFramebufferId, true);
+        }
+
+        int getTextureId() {
+            return textureId;
+        }
+
+        int getWidth() {
+            return width;
+        }
+
+        int getHeight() {
+            return height;
+        }
+
+        int getReadFramebufferId() {
+            return readFramebufferId;
+        }
+
+        boolean isReused() {
+            return reused;
+        }
+    }
+
+    /**
+     * Backdrop 采样区域。
+     */
+    static final class SampleRegion {
+
+        private final int left;
+        private final int top;
+        private final int right;
+        private final int bottom;
+
+        private SampleRegion(int left, int top, int right, int bottom) {
+            this.left = left;
+            this.top = top;
+            this.right = right;
+            this.bottom = bottom;
+        }
+
+        int getLeft() {
+            return left;
+        }
+
+        int getTop() {
+            return top;
+        }
+
+        int getRight() {
+            return right;
+        }
+
+        int getBottom() {
+            return bottom;
+        }
+
+        int getWidth() {
+            return right - left;
+        }
+
+        int getHeight() {
+            return bottom - top;
+        }
+    }
+
+    /**
+     * 复用池中的快照槽。
+     */
+    private static final class FrameSnapshot {
+
+        private int textureId;
+        private int width;
+        private int height;
+        private int readFramebufferId = -1;
+        private int capturedFrameId;
+        private boolean active;
+    }
+}

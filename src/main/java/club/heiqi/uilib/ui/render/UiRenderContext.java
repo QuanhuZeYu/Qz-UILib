@@ -11,7 +11,6 @@ import java.util.Objects;
 import net.minecraft.client.gui.Gui;
 import net.minecraft.client.renderer.Tessellator;
 import org.lwjgl.opengl.GL11;
-import org.lwjgl.opengl.GL12;
 import org.lwjgl.opengl.GL13;
 import org.lwjgl.opengl.GL20;
 import org.lwjgl.opengl.GL30;
@@ -47,8 +46,10 @@ public class UiRenderContext {
     private final float partialTicks;
     private final FontRendererAdapter fontRenderer;
     private final PaintContextCompositor paintContextCompositor;
+    private final UiMainLayerSnapshotService mainLayerSnapshotService;
     private final Deque<ClipState> clipStack = new ArrayDeque<ClipState>();
     private final List<DeferredPostMainPass> deferredPostMainPasses = new ArrayList<DeferredPostMainPass>();
+    private String pendingBackdropFallbackDetail;
 
     /**
      * 最近一次 backdrop-filter 实际渲染路径。
@@ -360,7 +361,8 @@ public class UiRenderContext {
      * @param partialTicks 插值帧参数
      */
     public UiRenderContext(int screenWidth, int screenHeight, int mouseX, int mouseY, float partialTicks) {
-        this(screenWidth, screenHeight, mouseX, mouseY, partialTicks, new PaintContextCompositor());
+        this(screenWidth, screenHeight, mouseX, mouseY, partialTicks, new PaintContextCompositor(),
+                new UiMainLayerSnapshotService());
     }
 
     /**
@@ -375,6 +377,23 @@ public class UiRenderContext {
      */
     public UiRenderContext(int screenWidth, int screenHeight, int mouseX, int mouseY, float partialTicks,
             PaintContextCompositor paintContextCompositor) {
+        this(screenWidth, screenHeight, mouseX, mouseY, partialTicks, paintContextCompositor,
+                new UiMainLayerSnapshotService());
+    }
+
+    /**
+     * 创建渲染上下文。
+     *
+     * @param screenWidth 屏幕宽度
+     * @param screenHeight 屏幕高度
+     * @param mouseX 鼠标 X
+     * @param mouseY 鼠标 Y
+     * @param partialTicks 插值帧参数
+     * @param paintContextCompositor paint context 离屏合成器
+     * @param mainLayerSnapshotService UI 主层快照服务
+     */
+    public UiRenderContext(int screenWidth, int screenHeight, int mouseX, int mouseY, float partialTicks,
+            PaintContextCompositor paintContextCompositor, UiMainLayerSnapshotService mainLayerSnapshotService) {
         this.screenWidth = screenWidth;
         this.screenHeight = screenHeight;
         this.mouseX = mouseX;
@@ -382,6 +401,8 @@ public class UiRenderContext {
         this.partialTicks = partialTicks;
         this.fontRenderer = DefaultFontRendererAdapter.getInstance();
         this.paintContextCompositor = Objects.requireNonNull(paintContextCompositor, "paintContextCompositor");
+        this.mainLayerSnapshotService = Objects.requireNonNull(mainLayerSnapshotService,
+                "mainLayerSnapshotService");
     }
 
     public int getScreenWidth() {
@@ -491,8 +512,8 @@ public class UiRenderContext {
      *
      * <p>该入口只采样当前 UI 主层已经绘制到当前 framebuffer 的内容，不主动读取游戏世界 framebuffer。
      * 如果页面壳提前绘制了一张已模糊底图，它会作为普通 UI 背景被采样；否则只处理 UI 自身内容。
-     * 当前实现优先使用 GLSL 对当前 UI framebuffer 的局部复制纹理做平滑采样，失败时回退为固定管线近似 blur，
-     * 复制或绘制不可用时再回退为伪玻璃 tint。</p>
+     * 当前实现优先使用 GLSL 对同帧 UI 主层快照纹理做平滑采样，失败时回退为固定管线近似 blur，
+     * 快照复制或绘制不可用时再回退为伪玻璃 tint。</p>
      *
      * @param left 左侧坐标
      * @param top 顶部坐标
@@ -504,6 +525,7 @@ public class UiRenderContext {
      */
     public void drawBackdropFilter(int left, int top, int right, int bottom, int blurRadius, float saturation,
             int cornerRadius) {
+        pendingBackdropFallbackDetail = null;
         if (right <= left || bottom <= top || (blurRadius <= 0 && Float.compare(saturation, 1.0F) == 0)) {
             recordBackdropFilterPath(BackdropFilterRenderPath.NONE, "skipped");
             return;
@@ -516,90 +538,67 @@ public class UiRenderContext {
 
     private boolean drawCurrentUiBackdropFilter(int left, int top, int right, int bottom, int blurRadius,
             float saturation, int cornerRadius) {
-        int sampleInset = Math.max(1, Math.min(64, blurRadius + resolveBackdropSampleStep(blurRadius)));
-        int sampleLeft = clampInt(left - sampleInset, 0, screenWidth);
-        int sampleTop = clampInt(top - sampleInset, 0, screenHeight);
-        int sampleRight = clampInt(right + sampleInset, 0, screenWidth);
-        int sampleBottom = clampInt(bottom + sampleInset, 0, screenHeight);
-        int sampleWidth = sampleRight - sampleLeft;
-        int sampleHeight = sampleBottom - sampleTop;
-        if (sampleWidth <= 0 || sampleHeight <= 0) {
+        UiMainLayerSnapshotService.SampleRegion sampleRegion = UiMainLayerSnapshotService.resolveSampleRegion(
+                screenWidth, screenHeight, left, top, right, bottom, blurRadius);
+        if (sampleRegion == null) {
             return false;
         }
 
-        int textureId = GL11.glGenTextures();
-        if (textureId == 0) {
+        int backdropReadFramebufferId = paintContextCompositor.getCurrentBackdropReadFramebufferId();
+        UiMainLayerSnapshotService.Snapshot snapshot = mainLayerSnapshotService.acquireSnapshot(screenWidth,
+                screenHeight, backdropReadFramebufferId);
+        if (snapshot == null) {
+            pendingBackdropFallbackDetail = "snapshot-unavailable: " + mainLayerSnapshotService.getLastFailureDetail();
             return false;
         }
+
         pushClip(left, top, right, bottom, cornerRadius);
         GL11.glPushAttrib(GL11.GL_ALL_ATTRIB_BITS);
         int previousProgram = GL11.glGetInteger(GL20.GL_CURRENT_PROGRAM);
         int previousActiveTexture = GL11.glGetInteger(GL13.GL_ACTIVE_TEXTURE);
-        int previousReadFramebufferId = -1;
         try {
             GL13.glActiveTexture(GL13.GL_TEXTURE0);
-            GL11.glBindTexture(GL11.GL_TEXTURE_2D, textureId);
-            GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_MIN_FILTER, GL11.GL_LINEAR);
-            GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_MAG_FILTER, GL11.GL_LINEAR);
-            GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_WRAP_S, GL12.GL_CLAMP_TO_EDGE);
-            GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_WRAP_T, GL12.GL_CLAMP_TO_EDGE);
-            GL11.glTexImage2D(GL11.GL_TEXTURE_2D, 0, GL11.GL_RGBA, sampleWidth, sampleHeight, 0, GL11.GL_RGBA,
-                    GL11.GL_UNSIGNED_BYTE, (java.nio.ByteBuffer) null);
-            int backdropReadFramebufferId = paintContextCompositor.getCurrentBackdropReadFramebufferId();
-            if (backdropReadFramebufferId >= 0) {
-                previousReadFramebufferId = GL11.glGetInteger(GL30.GL_READ_FRAMEBUFFER_BINDING);
-                GL30.glBindFramebuffer(GL30.GL_READ_FRAMEBUFFER, backdropReadFramebufferId);
-            }
-            GL11.glCopyTexSubImage2D(GL11.GL_TEXTURE_2D, 0, 0, 0, sampleLeft, screenHeight - sampleBottom,
-                    sampleWidth, sampleHeight);
-            if (previousReadFramebufferId >= 0) {
-                GL30.glBindFramebuffer(GL30.GL_READ_FRAMEBUFFER, previousReadFramebufferId);
-                previousReadFramebufferId = -1;
-            }
-            GL30.glGenerateMipmap(GL11.GL_TEXTURE_2D);
-            GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_MIN_FILTER, GL11.GL_LINEAR_MIPMAP_LINEAR);
+            GL11.glBindTexture(GL11.GL_TEXTURE_2D, snapshot.getTextureId());
             GL11.glEnable(GL11.GL_TEXTURE_2D);
             GL11.glDisable(GL11.GL_DEPTH_TEST);
             GL11.glDisable(GL11.GL_ALPHA_TEST);
             GL11.glColor4f(1.0F, 1.0F, 1.0F, 1.0F);
             GL11.glDisable(GL11.GL_BLEND);
 
-            if (drawBackdropTextureWithShader(left, top, right, bottom, sampleLeft, sampleTop, sampleWidth,
-                    sampleHeight, blurRadius, saturation)) {
+            if (drawBackdropTextureWithShader(left, top, right, bottom, 0, 0, snapshot.getWidth(),
+                    snapshot.getHeight(), blurRadius, saturation, snapshot)) {
                 return true;
             }
             if (blurRadius <= 0) {
                 return false;
             }
 
-            drawBackdropTextureQuad(left, top, right, bottom, sampleLeft, sampleTop, sampleWidth, sampleHeight,
+            drawBackdropTextureQuad(left, top, right, bottom, 0, 0, snapshot.getWidth(), snapshot.getHeight(),
                     0.0F, 0.0F);
             GL11.glEnable(GL11.GL_BLEND);
             GL11.glBlendFunc(GL11.GL_SRC_ALPHA, GL11.GL_ONE_MINUS_SRC_ALPHA);
             float sampleStep = (float) resolveBackdropSampleStep(blurRadius);
             for (float[] sample : UI_BACKDROP_BLUR_SAMPLES) {
                 GL11.glColor4f(1.0F, 1.0F, 1.0F, sample[2]);
-                drawBackdropTextureQuad(left, top, right, bottom, sampleLeft, sampleTop, sampleWidth, sampleHeight,
+                drawBackdropTextureQuad(left, top, right, bottom, 0, 0, snapshot.getWidth(), snapshot.getHeight(),
                         sample[0] * sampleStep, sample[1] * sampleStep);
             }
             GL11.glColor4f(1.0F, 1.0F, 1.0F, 1.0F);
-            recordBackdropFilterPath(BackdropFilterRenderPath.FIXED_PIPELINE, "shader-unavailable");
+            recordBackdropFilterPath(BackdropFilterRenderPath.FIXED_PIPELINE,
+                    "shader-unavailable, snapshot=" + formatSnapshotState(snapshot));
             return true;
         } finally {
-            if (previousReadFramebufferId >= 0) {
-                GL30.glBindFramebuffer(GL30.GL_READ_FRAMEBUFFER, previousReadFramebufferId);
-            }
             GL20.glUseProgram(previousProgram);
             GL13.glActiveTexture(previousActiveTexture);
             GL11.glBindTexture(GL11.GL_TEXTURE_2D, 0);
-            GL11.glDeleteTextures(textureId);
             GL11.glPopAttrib();
             popClip();
         }
     }
 
     private boolean drawBackdropTextureWithShader(int left, int top, int right, int bottom, int sampleLeft,
-            int sampleTop, int sampleWidth, int sampleHeight, int blurRadius, float saturation) {
+            int sampleTop, int sampleWidth, int sampleHeight, int blurRadius, float saturation,
+            UiMainLayerSnapshotService.Snapshot snapshot) {
         if (!BACKDROP_SHADER_PROGRAM.ensureInitialized()) {
             recordBackdropFilterPath(BackdropFilterRenderPath.FIXED_PIPELINE,
                     "shader unavailable: " + BACKDROP_SHADER_PROGRAM.getLastFailureMessage());
@@ -615,7 +614,8 @@ public class UiRenderContext {
                 0.0F, 0.0F);
         BACKDROP_SHADER_PROGRAM.unbind();
         recordBackdropFilterPath(BackdropFilterRenderPath.SHADER, "blur=" + blurRadius + ", saturation="
-                + String.format(java.util.Locale.ROOT, "%.2f", Float.valueOf(Math.max(0.0F, saturation))));
+                + String.format(java.util.Locale.ROOT, "%.2f", Float.valueOf(Math.max(0.0F, saturation)))
+                + ", snapshot=" + formatSnapshotState(snapshot));
         return true;
     }
 
@@ -638,7 +638,8 @@ public class UiRenderContext {
 
     private void drawBackdropFilterFallback(int left, int top, int right, int bottom, int blurRadius, float saturation,
             int cornerRadius) {
-        recordBackdropFilterPath(BackdropFilterRenderPath.TINT_FALLBACK, "texture-copy-unavailable");
+        recordBackdropFilterPath(BackdropFilterRenderPath.TINT_FALLBACK,
+                pendingBackdropFallbackDetail == null ? "texture-copy-unavailable" : pendingBackdropFallbackDetail);
         int tintAlpha = clampInt(18 + Math.max(0, blurRadius) * 2 + Math.round(Math.max(0.0F,
                 saturation - 1.0F) * 16.0F), 18, 72);
         int highlightAlpha = clampInt(tintAlpha + 22, 32, 96);
@@ -985,6 +986,14 @@ public class UiRenderContext {
 
     private static int resolveBackdropSampleStep(int blurRadius) {
         return Math.max(1, Math.min(12, Math.round(Math.max(1, blurRadius) / 2.5F)));
+    }
+
+    private static String formatSnapshotState(UiMainLayerSnapshotService.Snapshot snapshot) {
+        if (snapshot == null) {
+            return "none";
+        }
+        return (snapshot.isReused() ? "reused" : "captured") + " " + snapshot.getWidth() + "x"
+                + snapshot.getHeight() + " fbo=" + snapshot.getReadFramebufferId();
     }
 
     private static float resolveBackdropShaderRadius(int blurRadius) {
