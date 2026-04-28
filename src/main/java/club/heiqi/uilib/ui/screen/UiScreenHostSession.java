@@ -309,6 +309,7 @@ final class UiScreenHostSession {
         }
 
         deferredRenderTarget.compositeToCurrentFramebuffer();
+        context.notifyMainLayerContentChanged();
     }
 
     /**

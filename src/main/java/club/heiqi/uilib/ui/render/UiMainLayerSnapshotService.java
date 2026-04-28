@@ -11,7 +11,8 @@ import org.lwjgl.opengl.GL30;
 /**
  * 当前 UI 主层的同帧快照服务。
  *
- * <p>该服务只属于渲染后端，用于让多个 `backdrop-filter` 元素复用同一帧中已复制的主 UI 层纹理。
+ * <p>该服务只属于渲染后端，用于让 `backdrop-filter` 元素在当前 UI 主层内容未变化时复用已复制纹理。
+ * 一旦两次 backdrop 之间有新的 UI 绘制写入，就必须重新捕获，避免后续元素采样到旧主层。
  * 文档作者层仍只暴露 CSS-like backdrop 语义，不接触纹理、FBO 或 OpenGL 状态。</p>
  */
 public final class UiMainLayerSnapshotService {
@@ -40,7 +41,7 @@ public final class UiMainLayerSnapshotService {
         }
         frameId++;
         for (FrameSnapshot snapshot : snapshots) {
-            snapshot.active = false;
+            snapshot.activeUseCount = 0;
         }
     }
 
@@ -50,7 +51,7 @@ public final class UiMainLayerSnapshotService {
     public void finishFrame() {
         frameActive = false;
         for (FrameSnapshot snapshot : snapshots) {
-            snapshot.active = false;
+            snapshot.activeUseCount = 0;
         }
     }
 
@@ -77,6 +78,19 @@ public final class UiMainLayerSnapshotService {
      * @return 快照；获取失败时返回 null
      */
     Snapshot acquireSnapshot(int screenWidth, int screenHeight, int requestedReadFramebufferId) {
+        return acquireSnapshot(screenWidth, screenHeight, requestedReadFramebufferId, 0);
+    }
+
+    /**
+     * 获取当前帧可复用的主 UI 层快照。
+     *
+     * @param screenWidth 屏幕宽度
+     * @param screenHeight 屏幕高度
+     * @param requestedReadFramebufferId 指定读取 FBO；小于 0 时使用当前 read framebuffer
+     * @param contentRevision 当前读取目标的内容版本
+     * @return 快照；获取失败时返回 null
+     */
+    Snapshot acquireSnapshot(int screenWidth, int screenHeight, int requestedReadFramebufferId, int contentRevision) {
         if (!isSnapshotSizeAllowed(screenWidth, screenHeight)) {
             lastFailureDetail = "snapshot-too-large: " + screenWidth + "x" + screenHeight;
             return null;
@@ -90,9 +104,12 @@ public final class UiMainLayerSnapshotService {
         }
 
         int readFramebufferId = resolveReadFramebufferId(requestedReadFramebufferId);
-        FrameSnapshot capturedSnapshot = findCapturedSnapshot(readFramebufferId, screenWidth, screenHeight);
+        FrameSnapshot capturedSnapshot = findCapturedSnapshot(readFramebufferId, screenWidth, screenHeight,
+                contentRevision);
         if (capturedSnapshot != null) {
-            return Snapshot.reused(capturedSnapshot.textureId, screenWidth, screenHeight, readFramebufferId);
+            capturedSnapshot.activeUseCount++;
+            return Snapshot.reused(capturedSnapshot.textureId, screenWidth, screenHeight, readFramebufferId,
+                    contentRevision);
         }
 
         FrameSnapshot snapshot = findReusableSnapshot();
@@ -100,10 +117,27 @@ public final class UiMainLayerSnapshotService {
             snapshot = new FrameSnapshot();
             snapshots.add(snapshot);
         }
-        if (!captureSnapshot(snapshot, screenWidth, screenHeight, readFramebufferId)) {
+        if (!captureSnapshot(snapshot, screenWidth, screenHeight, readFramebufferId, contentRevision)) {
             return null;
         }
-        return Snapshot.captured(snapshot.textureId, screenWidth, screenHeight, readFramebufferId);
+        return Snapshot.captured(snapshot.textureId, screenWidth, screenHeight, readFramebufferId, contentRevision);
+    }
+
+    /**
+     * 释放当前绘制调用持有的快照使用权。
+     *
+     * @param snapshot 快照
+     */
+    void releaseSnapshot(Snapshot snapshot) {
+        if (snapshot == null) {
+            return;
+        }
+        for (FrameSnapshot frameSnapshot : snapshots) {
+            if (frameSnapshot.textureId == snapshot.textureId && frameSnapshot.activeUseCount > 0) {
+                frameSnapshot.activeUseCount--;
+                return;
+            }
+        }
     }
 
     /**
@@ -157,10 +191,11 @@ public final class UiMainLayerSnapshotService {
         return (long) width * (long) height <= MAX_SNAPSHOT_PIXELS;
     }
 
-    private FrameSnapshot findCapturedSnapshot(int readFramebufferId, int width, int height) {
+    private FrameSnapshot findCapturedSnapshot(int readFramebufferId, int width, int height, int contentRevision) {
         for (FrameSnapshot snapshot : snapshots) {
             if (snapshot.capturedFrameId == frameId && snapshot.readFramebufferId == readFramebufferId
-                    && snapshot.width == width && snapshot.height == height && snapshot.textureId != 0) {
+                    && snapshot.width == width && snapshot.height == height
+                    && snapshot.contentRevision == contentRevision && snapshot.textureId != 0) {
                 return snapshot;
             }
         }
@@ -169,14 +204,15 @@ public final class UiMainLayerSnapshotService {
 
     private FrameSnapshot findReusableSnapshot() {
         for (FrameSnapshot snapshot : snapshots) {
-            if (!snapshot.active) {
+            if (snapshot.activeUseCount <= 0) {
                 return snapshot;
             }
         }
         return null;
     }
 
-    private boolean captureSnapshot(FrameSnapshot snapshot, int width, int height, int readFramebufferId) {
+    private boolean captureSnapshot(FrameSnapshot snapshot, int width, int height, int readFramebufferId,
+            int contentRevision) {
         int previousTexture = 0;
         int previousReadFramebufferId = -1;
         boolean textureBindingCaptured = false;
@@ -213,8 +249,9 @@ public final class UiMainLayerSnapshotService {
             snapshot.width = width;
             snapshot.height = height;
             snapshot.readFramebufferId = readFramebufferId;
+            snapshot.contentRevision = contentRevision;
             snapshot.capturedFrameId = frameId;
-            snapshot.active = true;
+            snapshot.activeUseCount = 1;
             return true;
         } catch (RuntimeException exception) {
             disableForCurrentFrame("snapshot-copy-failed: " + exception.getClass().getSimpleName());
@@ -261,22 +298,27 @@ public final class UiMainLayerSnapshotService {
         private final int width;
         private final int height;
         private final int readFramebufferId;
+        private final int contentRevision;
         private final boolean reused;
 
-        private Snapshot(int textureId, int width, int height, int readFramebufferId, boolean reused) {
+        private Snapshot(int textureId, int width, int height, int readFramebufferId, int contentRevision,
+                boolean reused) {
             this.textureId = textureId;
             this.width = width;
             this.height = height;
             this.readFramebufferId = readFramebufferId;
+            this.contentRevision = contentRevision;
             this.reused = reused;
         }
 
-        private static Snapshot captured(int textureId, int width, int height, int readFramebufferId) {
-            return new Snapshot(textureId, width, height, readFramebufferId, false);
+        private static Snapshot captured(int textureId, int width, int height, int readFramebufferId,
+                int contentRevision) {
+            return new Snapshot(textureId, width, height, readFramebufferId, contentRevision, false);
         }
 
-        private static Snapshot reused(int textureId, int width, int height, int readFramebufferId) {
-            return new Snapshot(textureId, width, height, readFramebufferId, true);
+        private static Snapshot reused(int textureId, int width, int height, int readFramebufferId,
+                int contentRevision) {
+            return new Snapshot(textureId, width, height, readFramebufferId, contentRevision, true);
         }
 
         int getTextureId() {
@@ -293,6 +335,10 @@ public final class UiMainLayerSnapshotService {
 
         int getReadFramebufferId() {
             return readFramebufferId;
+        }
+
+        int getContentRevision() {
+            return contentRevision;
         }
 
         boolean isReused() {
@@ -351,7 +397,8 @@ public final class UiMainLayerSnapshotService {
         private int width;
         private int height;
         private int readFramebufferId = -1;
+        private int contentRevision;
         private int capturedFrameId;
-        private boolean active;
+        private int activeUseCount;
     }
 }

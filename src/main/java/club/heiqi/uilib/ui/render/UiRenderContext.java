@@ -50,6 +50,7 @@ public class UiRenderContext {
     private final Deque<ClipState> clipStack = new ArrayDeque<ClipState>();
     private final List<DeferredPostMainPass> deferredPostMainPasses = new ArrayList<DeferredPostMainPass>();
     private String pendingBackdropFallbackDetail;
+    private int mainLayerContentRevision;
 
     /**
      * 最近一次 backdrop-filter 实际渲染路径。
@@ -430,6 +431,30 @@ public class UiRenderContext {
     }
 
     /**
+     * 通知当前 UI 绘制目标已经发生内容写入。
+     *
+     * <p>内置的 surface、text、backdrop 与 paint context 合成路径会自动调用该方法；
+     * 自定义渲染器如果绕过这些封装直接写入 OpenGL，也应在写入后调用，避免后续
+     * `backdrop-filter` 继续复用写入前的旧快照。</p>
+     */
+    public void notifyMainLayerContentChanged() {
+        if (mainLayerContentRevision == Integer.MAX_VALUE) {
+            mainLayerContentRevision = 1;
+            return;
+        }
+        mainLayerContentRevision++;
+    }
+
+    /**
+     * 返回当前 UI 绘制目标内容版本，供测试和诊断使用。
+     *
+     * @return 内容版本
+     */
+    public int getMainLayerContentRevisionForDiagnostics() {
+        return mainLayerContentRevision;
+    }
+
+    /**
      * 返回最近一次 backdrop-filter 实际渲染路径。
      *
      * @return 渲染路径
@@ -458,6 +483,7 @@ public class UiRenderContext {
      */
     public void fillRect(int left, int top, int right, int bottom, int color) {
         Gui.drawRect(left, top, right, bottom, color);
+        notifyMainLayerContentChanged();
     }
 
     /**
@@ -546,7 +572,7 @@ public class UiRenderContext {
 
         int backdropReadFramebufferId = paintContextCompositor.getCurrentBackdropReadFramebufferId();
         UiMainLayerSnapshotService.Snapshot snapshot = mainLayerSnapshotService.acquireSnapshot(screenWidth,
-                screenHeight, backdropReadFramebufferId);
+                screenHeight, backdropReadFramebufferId, mainLayerContentRevision);
         if (snapshot == null) {
             pendingBackdropFallbackDetail = "snapshot-unavailable: " + mainLayerSnapshotService.getLastFailureDetail();
             return false;
@@ -556,6 +582,7 @@ public class UiRenderContext {
         GL11.glPushAttrib(GL11.GL_ALL_ATTRIB_BITS);
         int previousProgram = GL11.glGetInteger(GL20.GL_CURRENT_PROGRAM);
         int previousActiveTexture = GL11.glGetInteger(GL13.GL_ACTIVE_TEXTURE);
+        boolean drewBackdrop = false;
         try {
             GL13.glActiveTexture(GL13.GL_TEXTURE0);
             GL11.glBindTexture(GL11.GL_TEXTURE_2D, snapshot.getTextureId());
@@ -567,6 +594,7 @@ public class UiRenderContext {
 
             if (drawBackdropTextureWithShader(left, top, right, bottom, 0, 0, snapshot.getWidth(),
                     snapshot.getHeight(), blurRadius, saturation, snapshot)) {
+                drewBackdrop = true;
                 return true;
             }
             if (blurRadius <= 0) {
@@ -586,6 +614,7 @@ public class UiRenderContext {
             GL11.glColor4f(1.0F, 1.0F, 1.0F, 1.0F);
             recordBackdropFilterPath(BackdropFilterRenderPath.FIXED_PIPELINE,
                     "shader-unavailable, snapshot=" + formatSnapshotState(snapshot));
+            drewBackdrop = true;
             return true;
         } finally {
             GL20.glUseProgram(previousProgram);
@@ -593,6 +622,10 @@ public class UiRenderContext {
             GL11.glBindTexture(GL11.GL_TEXTURE_2D, 0);
             GL11.glPopAttrib();
             popClip();
+            mainLayerSnapshotService.releaseSnapshot(snapshot);
+            if (drewBackdrop) {
+                notifyMainLayerContentChanged();
+            }
         }
     }
 
@@ -663,6 +696,7 @@ public class UiRenderContext {
         GL11.glScalef(UI_TEXT_SCALE, UI_TEXT_SCALE, 1.0F);
         fontRenderer.drawString(text, 0, 0, color, shadow);
         GL11.glPopMatrix();
+        notifyMainLayerContentChanged();
     }
 
     /**
@@ -751,6 +785,7 @@ public class UiRenderContext {
     public void popPaintContext() {
         if (paintContextCompositor.popPaintContext()) {
             applyCurrentClip();
+            notifyMainLayerContentChanged();
         }
     }
 
@@ -899,6 +934,7 @@ public class UiRenderContext {
         drawRoundedRectGeometry(left, top, right, bottom, radius, true);
         GL11.glEnable(GL11.GL_TEXTURE_2D);
         GL11.glColor4f(1.0F, 1.0F, 1.0F, 1.0F);
+        notifyMainLayerContentChanged();
     }
 
     private void drawRoundedBorder(int left, int top, int right, int bottom, int radius, int color) {
@@ -915,6 +951,7 @@ public class UiRenderContext {
         GL11.glEnd();
         GL11.glEnable(GL11.GL_TEXTURE_2D);
         GL11.glColor4f(1.0F, 1.0F, 1.0F, 1.0F);
+        notifyMainLayerContentChanged();
     }
 
     private static void drawRoundedRectGeometry(int left, int top, int right, int bottom, int radius, boolean filled) {
@@ -993,7 +1030,8 @@ public class UiRenderContext {
             return "none";
         }
         return (snapshot.isReused() ? "reused" : "captured") + " " + snapshot.getWidth() + "x"
-                + snapshot.getHeight() + " fbo=" + snapshot.getReadFramebufferId();
+                + snapshot.getHeight() + " fbo=" + snapshot.getReadFramebufferId() + " rev="
+                + snapshot.getContentRevision();
     }
 
     private static float resolveBackdropShaderRadius(int blurRadius) {

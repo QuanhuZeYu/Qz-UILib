@@ -157,6 +157,7 @@ public final class DocumentPaintRenderer {
             if (customRenderer != null) {
                 customRenderer.render(context, command.getLeft() + offsetX, command.getTop() + offsetY,
                         command.getRight() + offsetX, command.getBottom() + offsetY);
+                context.notifyMainLayerContentChanged();
             }
             return;
         }

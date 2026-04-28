@@ -103,6 +103,31 @@ public class DocumentPaintRendererTest {
     }
 
     /**
+     * 验证连续 backdrop 之间如果发生绘制写入，后一个 backdrop 会看到新的内容版本。
+     */
+    @Test
+    public void shouldAdvanceContentRevisionBetweenBackdropCommands() {
+        UiDocument document = UiDocument.create();
+        ElementNode root = document.getRootElement();
+        List<DocumentPaintCommand> commands = new ArrayList<DocumentPaintCommand>();
+        commands.add(new DocumentPaintCommand(DocumentPaintCommandType.BACKGROUND, root, 0, 0, 40, 20,
+                0xFF223344, 0, 0));
+        commands.add(new DocumentPaintCommand(DocumentPaintCommandType.BACKDROP_FILTER, root, 0, 0, 40, 20,
+                0, 0, 0, "", null, 12, 1.1F));
+        commands.add(new DocumentPaintCommand(DocumentPaintCommandType.BACKGROUND, root, 0, 20, 40, 40,
+                0xFF556677, 0, 0));
+        commands.add(new DocumentPaintCommand(DocumentPaintCommandType.BACKDROP_FILTER, root, 0, 20, 40, 40,
+                0, 0, 0, "", null, 12, 1.1F));
+
+        RecordingUiRenderContext renderContext = new RecordingUiRenderContext();
+        DocumentPaintRenderer.render(renderContext, commands);
+
+        Assert.assertEquals(2, renderContext.backdropCalls.size());
+        Assert.assertEquals(1, renderContext.backdropCalls.get(0).contentRevision);
+        Assert.assertEquals(3, renderContext.backdropCalls.get(1).contentRevision);
+    }
+
+    /**
      * 验证 overflow clip 命令会按宿主偏移投影到 `UiRenderContext` 的裁剪栈。
      */
     @Test
@@ -181,6 +206,7 @@ public class DocumentPaintRendererTest {
 
         Assert.assertEquals(1, customCalls.size());
         assertCustomCall(customCalls.get(0), 10, 14, 50, 34);
+        Assert.assertEquals(1, renderContext.getMainLayerContentRevisionForDiagnostics());
     }
 
     /**
@@ -342,12 +368,15 @@ public class DocumentPaintRendererTest {
         @Override
         public void drawSurface(int left, int top, int right, int bottom, UiSurfaceStyle surfaceStyle) {
             drawCalls.add(new DrawCall(left, top, right, bottom, surfaceStyle));
+            notifyMainLayerContentChanged();
         }
 
         @Override
         public void drawBackdropFilter(int left, int top, int right, int bottom, int blurRadius, float saturation,
                 int cornerRadius) {
-            backdropCalls.add(new BackdropCall(left, top, right, bottom, blurRadius, saturation, cornerRadius));
+            backdropCalls.add(new BackdropCall(left, top, right, bottom, blurRadius, saturation, cornerRadius,
+                    getMainLayerContentRevisionForDiagnostics()));
+            notifyMainLayerContentChanged();
         }
 
         @Override
@@ -363,6 +392,7 @@ public class DocumentPaintRendererTest {
         @Override
         public void drawText(String text, int x, int y, int color, boolean shadow) {
             textCalls.add(new TextCall(text, x, y, color, shadow));
+            notifyMainLayerContentChanged();
         }
 
         @Override
@@ -378,6 +408,9 @@ public class DocumentPaintRendererTest {
 
         @Override
         public void popPaintContext() {
+            if (paintContextLayerActive) {
+                notifyMainLayerContentChanged();
+            }
             paintContextLayerActive = false;
             popPaintContextCount++;
         }
@@ -473,9 +506,10 @@ public class DocumentPaintRendererTest {
         private final int blurRadius;
         private final float saturation;
         private final int cornerRadius;
+        private final int contentRevision;
 
         private BackdropCall(int left, int top, int right, int bottom, int blurRadius, float saturation,
-                int cornerRadius) {
+                int cornerRadius, int contentRevision) {
             this.left = left;
             this.top = top;
             this.right = right;
@@ -483,6 +517,7 @@ public class DocumentPaintRendererTest {
             this.blurRadius = blurRadius;
             this.saturation = saturation;
             this.cornerRadius = cornerRadius;
+            this.contentRevision = contentRevision;
         }
     }
 
