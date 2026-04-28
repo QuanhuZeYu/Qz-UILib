@@ -78,18 +78,21 @@ public final class DocumentPaintEngine {
             DocumentScrollState scrollState, long currentTimeNanos, DocumentAnimationTimeline animationTimeline) {
         Objects.requireNonNull(rootBox, "rootBox");
         List<DocumentPaintCommand> commands = new ArrayList<DocumentPaintCommand>();
-        appendBoxCommands(rootBox, rootBox, commands, scrollState, animationTimeline, 0, 0, currentTimeNanos);
+        appendBoxCommands(rootBox, rootBox, commands, scrollState, animationTimeline, 0, 0, currentTimeNanos, 1.0F);
         return commands;
     }
 
     private static void appendBoxCommands(DocumentLayoutBox rootBox, DocumentLayoutBox box,
             List<DocumentPaintCommand> commands, DocumentScrollState scrollState,
-            DocumentAnimationTimeline animationTimeline, int offsetX, int offsetY, long currentTimeNanos) {
+            DocumentAnimationTimeline animationTimeline, int offsetX, int offsetY, long currentTimeNanos,
+            float inheritedOpacity) {
         int boxOffsetX = offsetX + box.getPositionOffsetX();
         int boxOffsetY = offsetY + box.getPositionOffsetY();
+        float boxOpacity = inheritedOpacity * resolveAnimatedOpacity(animationTimeline, box, currentTimeNanos);
         appendBackdropFilterCommand(box, commands, boxOffsetX, boxOffsetY);
-        appendBackgroundCommand(box, commands, animationTimeline, currentTimeNanos, boxOffsetX, boxOffsetY);
-        appendBorderCommand(box, commands, animationTimeline, currentTimeNanos, boxOffsetX, boxOffsetY);
+        appendBackgroundCommand(box, commands, animationTimeline, currentTimeNanos, boxOpacity, boxOffsetX,
+                boxOffsetY);
+        appendBorderCommand(box, commands, animationTimeline, currentTimeNanos, boxOpacity, boxOffsetX, boxOffsetY);
         boolean clipChildren = shouldClipChildren(box);
         if (clipChildren) {
             appendClipStartCommand(box, commands, boxOffsetX, boxOffsetY);
@@ -97,36 +100,41 @@ public final class DocumentPaintEngine {
         int childOffsetX = boxOffsetX - getScrollLeft(scrollState, box);
         int childOffsetY = boxOffsetY - getScrollTop(scrollState, box);
         appendChildrenInStackingPhase(rootBox, box, commands, scrollState, childOffsetX, childOffsetY,
-                animationTimeline, currentTimeNanos, DocumentStackingPhase.NEGATIVE_POSITIONED);
+                animationTimeline, currentTimeNanos, boxOpacity, DocumentStackingPhase.NEGATIVE_POSITIONED);
         appendCustomCommand(box, commands, childOffsetX, childOffsetY);
-        appendTextCommands(box, commands, animationTimeline, currentTimeNanos, childOffsetX, childOffsetY);
+        appendTextCommands(box, commands, animationTimeline, currentTimeNanos, boxOpacity, childOffsetX,
+                childOffsetY);
         appendChildrenInStackingPhase(rootBox, box, commands, scrollState, childOffsetX, childOffsetY,
-                animationTimeline, currentTimeNanos, DocumentStackingPhase.NORMAL_FLOW);
+                animationTimeline, currentTimeNanos, boxOpacity, DocumentStackingPhase.NORMAL_FLOW);
         appendChildrenInStackingPhase(rootBox, box, commands, scrollState, childOffsetX, childOffsetY,
-                animationTimeline, currentTimeNanos, DocumentStackingPhase.POSITIONED_AUTO_OR_ZERO);
+                animationTimeline, currentTimeNanos, boxOpacity, DocumentStackingPhase.POSITIONED_AUTO_OR_ZERO);
         appendChildrenInStackingPhase(rootBox, box, commands, scrollState, childOffsetX, childOffsetY,
-                animationTimeline, currentTimeNanos, DocumentStackingPhase.POSITIVE_POSITIONED);
+                animationTimeline, currentTimeNanos, boxOpacity, DocumentStackingPhase.POSITIVE_POSITIONED);
         if (clipChildren) {
             appendClipEndCommand(box, commands, boxOffsetX, boxOffsetY);
         }
-        appendScrollbarCommands(rootBox, box, commands, scrollState, boxOffsetX, boxOffsetY, currentTimeNanos);
+        appendScrollbarCommands(rootBox, box, commands, scrollState, boxOffsetX, boxOffsetY, currentTimeNanos,
+                boxOpacity);
     }
 
     private static void appendChildrenInStackingPhase(DocumentLayoutBox rootBox, DocumentLayoutBox box,
             List<DocumentPaintCommand> commands, DocumentScrollState scrollState, int childOffsetX, int childOffsetY,
-            DocumentAnimationTimeline animationTimeline, long currentTimeNanos, DocumentStackingPhase phase) {
+            DocumentAnimationTimeline animationTimeline, long currentTimeNanos, float inheritedOpacity,
+            DocumentStackingPhase phase) {
         for (DocumentLayoutBox child : box.getChildrenInStackingPhase(phase)) {
             appendBoxCommands(rootBox, child, commands, scrollState, animationTimeline, childOffsetX, childOffsetY,
-                    currentTimeNanos);
+                    currentTimeNanos, inheritedOpacity);
         }
     }
 
     private static void appendBackgroundCommand(DocumentLayoutBox box, List<DocumentPaintCommand> commands,
-            DocumentAnimationTimeline animationTimeline, long currentTimeNanos, int offsetX, int offsetY) {
+            DocumentAnimationTimeline animationTimeline, long currentTimeNanos, float opacity, int offsetX,
+            int offsetY) {
         ComputedStyle style = box.getComputedStyle();
         int color = resolveAnimatedColor(animationTimeline, box, DocumentAnimationProperty.BACKGROUND_COLOR,
                 style.getBackgroundColor(), currentTimeNanos);
-        if (color == 0 || box.getWidth() <= 0 || box.getHeight() <= 0) {
+        color = applyOpacity(color, opacity);
+        if (isTransparent(color) || box.getWidth() <= 0 || box.getHeight() <= 0) {
             return;
         }
         commands.add(new DocumentPaintCommand(DocumentPaintCommandType.BACKGROUND, box.getElement(),
@@ -149,12 +157,14 @@ public final class DocumentPaintEngine {
     }
 
     private static void appendBorderCommand(DocumentLayoutBox box, List<DocumentPaintCommand> commands,
-            DocumentAnimationTimeline animationTimeline, long currentTimeNanos, int offsetX, int offsetY) {
+            DocumentAnimationTimeline animationTimeline, long currentTimeNanos, float opacity, int offsetX,
+            int offsetY) {
         ComputedStyle style = box.getComputedStyle();
         int borderWidth = box.getBorder().getTop();
         int color = resolveAnimatedColor(animationTimeline, box, DocumentAnimationProperty.BORDER_COLOR,
                 style.getBorderColor(), currentTimeNanos);
-        if (color == 0 || borderWidth <= 0 || box.getWidth() <= 0 || box.getHeight() <= 0) {
+        color = applyOpacity(color, opacity);
+        if (isTransparent(color) || borderWidth <= 0 || box.getWidth() <= 0 || box.getHeight() <= 0) {
             return;
         }
         commands.add(new DocumentPaintCommand(DocumentPaintCommandType.BORDER, box.getElement(),
@@ -181,10 +191,12 @@ public final class DocumentPaintEngine {
     }
 
     private static void appendTextCommands(DocumentLayoutBox box, List<DocumentPaintCommand> commands,
-            DocumentAnimationTimeline animationTimeline, long currentTimeNanos, int offsetX, int offsetY) {
+            DocumentAnimationTimeline animationTimeline, long currentTimeNanos, float opacity, int offsetX,
+            int offsetY) {
         int color = resolveAnimatedColor(animationTimeline, box, DocumentAnimationProperty.TEXT_COLOR,
                 box.getComputedStyle().getTextColor(), currentTimeNanos);
-        if (color == 0) {
+        color = applyOpacity(color, opacity);
+        if (isTransparent(color)) {
             return;
         }
         for (DocumentLayoutTextRun textRun : box.getTextRuns()) {
@@ -203,6 +215,29 @@ public final class DocumentPaintEngine {
             return baseColor;
         }
         return animationTimeline.resolveColor(box.getElement(), property, baseColor, currentTimeNanos);
+    }
+
+    private static float resolveAnimatedOpacity(DocumentAnimationTimeline animationTimeline, DocumentLayoutBox box,
+            long currentTimeNanos) {
+        float baseOpacity = box.getComputedStyle().getOpacity();
+        if (animationTimeline == null) {
+            return baseOpacity;
+        }
+        return animationTimeline.resolveFloat(box.getElement(), DocumentAnimationProperty.OPACITY, baseOpacity,
+                currentTimeNanos);
+    }
+
+    private static int applyOpacity(int color, float opacity) {
+        float clampedOpacity = Math.max(0.0F, Math.min(1.0F, opacity));
+        if (clampedOpacity >= 0.999F) {
+            return color;
+        }
+        int alpha = Math.round(((color >>> 24) & 0xFF) * clampedOpacity);
+        return (alpha << 24) | (color & 0x00FFFFFF);
+    }
+
+    private static boolean isTransparent(int color) {
+        return ((color >>> 24) & 0xFF) == 0;
     }
 
     private static void appendClipStartCommand(DocumentLayoutBox box, List<DocumentPaintCommand> commands, int offsetX,
@@ -233,7 +268,7 @@ public final class DocumentPaintEngine {
 
     private static void appendScrollbarCommands(DocumentLayoutBox rootBox, DocumentLayoutBox box,
             List<DocumentPaintCommand> commands, DocumentScrollState scrollState, int offsetX, int offsetY,
-            long currentTimeNanos) {
+            long currentTimeNanos, float opacity) {
         if (scrollState == null || box.getContentWidth() <= 0 || box.getContentHeight() <= 0) {
             return;
         }
@@ -250,28 +285,30 @@ public final class DocumentPaintEngine {
 
         if (hasVerticalScrollbar) {
             appendScrollbarCommands(box, commands, scrollState.getVerticalScrollbarMetrics(box, offsetX, offsetY,
-                    hasHorizontalScrollbar));
+                    hasHorizontalScrollbar), opacity);
         }
         if (hasHorizontalScrollbar) {
             appendScrollbarCommands(box, commands, scrollState.getHorizontalScrollbarMetrics(box, offsetX, offsetY,
-                    hasVerticalScrollbar));
+                    hasVerticalScrollbar), opacity);
         }
     }
 
     private static void appendScrollbarCommands(DocumentLayoutBox box, List<DocumentPaintCommand> commands,
-            ScrollbarMetrics metrics) {
+            ScrollbarMetrics metrics, float opacity) {
         if (metrics == null) {
             return;
         }
         int radius = Math.max(0, Math.min(metrics.getTrackRight() - metrics.getTrackLeft(),
                 metrics.getTrackBottom() - metrics.getTrackTop()) / 2);
+        int trackColor = applyOpacity(SCROLLBAR_TRACK_COLOR, opacity);
+        int thumbColor = applyOpacity(SCROLLBAR_THUMB_COLOR, opacity);
         commands.add(new DocumentPaintCommand(DocumentPaintCommandType.SCROLLBAR_TRACK, box.getElement(),
                 metrics.getTrackLeft(),
-                metrics.getTrackTop(), metrics.getTrackRight(), metrics.getTrackBottom(), SCROLLBAR_TRACK_COLOR, 0,
+                metrics.getTrackTop(), metrics.getTrackRight(), metrics.getTrackBottom(), trackColor, 0,
                 radius));
         commands.add(new DocumentPaintCommand(DocumentPaintCommandType.SCROLLBAR_THUMB, box.getElement(),
                 metrics.getThumbLeft(), metrics.getThumbTop(), metrics.getThumbRight(), metrics.getThumbBottom(),
-                SCROLLBAR_THUMB_COLOR, 0, radius));
+                thumbColor, 0, radius));
     }
 
     private static boolean shouldClipChildren(DocumentLayoutBox box) {

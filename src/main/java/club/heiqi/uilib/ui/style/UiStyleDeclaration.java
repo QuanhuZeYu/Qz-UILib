@@ -43,6 +43,7 @@ public final class UiStyleDeclaration {
     private UiStyleLength columnGap;
     private Float flexGrow;
     private Float flexShrink;
+    private Float opacity;
     private Integer backgroundColor;
     private Integer borderColor;
     private Integer textColor;
@@ -344,6 +345,18 @@ public final class UiStyleDeclaration {
 
     public UiStyleDeclaration clearFlexShrink() {
         return updateFlexShrink(null);
+    }
+
+    public Float getOpacity() {
+        return opacity;
+    }
+
+    public UiStyleDeclaration setOpacity(float opacity) {
+        return updateOpacity(Float.valueOf(Math.max(0.0F, Math.min(1.0F, opacity))));
+    }
+
+    public UiStyleDeclaration clearOpacity() {
+        return updateOpacity(null);
     }
 
     public Integer getBackgroundColor() {
@@ -656,6 +669,14 @@ public final class UiStyleDeclaration {
     private UiStyleDeclaration updateFlexShrink(Float value) {
         if (!Objects.equals(flexShrink, value)) {
             flexShrink = value;
+            recordChange();
+        }
+        return this;
+    }
+
+    private UiStyleDeclaration updateOpacity(Float value) {
+        if (!Objects.equals(opacity, value)) {
+            opacity = value;
             recordChange();
         }
         return this;

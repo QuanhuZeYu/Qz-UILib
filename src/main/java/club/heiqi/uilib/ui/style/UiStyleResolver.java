@@ -56,6 +56,7 @@ public final class UiStyleResolver {
         UiStyleLength columnGap = style.getColumnGap() == null ? UiStyleLength.px(0) : style.getColumnGap();
         float flexGrow = style.getFlexGrow() == null ? 0.0F : style.getFlexGrow().floatValue();
         float flexShrink = style.getFlexShrink() == null ? 1.0F : style.getFlexShrink().floatValue();
+        float opacity = style.getOpacity() == null ? 1.0F : style.getOpacity().floatValue();
         int backgroundColor = style.getBackgroundColor() == null ? TRANSPARENT : style.getBackgroundColor().intValue();
         int borderColor = style.getBorderColor() == null ? TRANSPARENT : style.getBorderColor().intValue();
         int textColor = style.getTextColor() == null ? inheritedTextColor(parentStyle) : style.getTextColor().intValue();
@@ -75,7 +76,7 @@ public final class UiStyleResolver {
                 : style.getBackdropSaturation().floatValue();
         return new ComputedStyle(display, width, height, position, top, right, bottom, left, zIndex, margin,
                 padding, borderWidth, borderRadius, overflowX, overflowY, flexDirection, alignItems, justifyContent,
-                rowGap, columnGap, flexGrow, flexShrink, backgroundColor, borderColor, textColor,
+                rowGap, columnGap, flexGrow, flexShrink, opacity, backgroundColor, borderColor, textColor,
                 transitionProperties, transitionDurationNanos, transitionDelayNanos, transitionTimingFunction,
                 backdropBlurRadius, backdropSaturation);
     }

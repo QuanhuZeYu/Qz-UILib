@@ -256,20 +256,23 @@ final class HtmlLikeSmokeDocumentPageController extends DocumentPageController {
                 .setFlexGrow(1.0F)
                 .setPadding(UiStyleLength.px(10))
                 .setBackgroundColor(0xFF38A169)
-                .setTransition(DocumentAnimationProperty.BACKGROUND_COLOR, 450L)
+                .setOpacity(1.0F)
+                .setTransitionProperties(DocumentAnimationProperty.BACKGROUND_COLOR, DocumentAnimationProperty.OPACITY)
+                .setTransitionDurationMillis(450L)
                 .setTransitionTimingFunction(DocumentAnimationTimingFunction.EASE_IN_OUT)
                 .setBorderRadius(UiStyleLength.px(999))
                 .setTextColor(0xFFFFFFFF)
                 .setOverflowX(UiOverflow.HIDDEN)
                 .setOverflowY(UiOverflow.HIDDEN);
-        final TextNode clickText = firstPill.appendText("Click target: 0");
+        final TextNode clickText = firstPill.appendText("Click target: 0 / fade");
         final int[] clickCount = new int[] { 0 };
         firstPill.setClickHandler(new DocumentElementClickHandler() {
             @Override
             public boolean onClick(DocumentElementClickEvent event) {
                 clickCount[0]++;
-                clickText.setText("Click target: " + clickCount[0]);
+                clickText.setText("Click target: " + clickCount[0] + " / fade");
                 firstPill.style().setBackgroundColor(clickCount[0] % 2 == 0 ? 0xFF38A169 : 0xFF3182CE);
+                firstPill.style().setOpacity(clickCount[0] % 2 == 0 ? 1.0F : 0.55F);
                 return true;
             }
         });

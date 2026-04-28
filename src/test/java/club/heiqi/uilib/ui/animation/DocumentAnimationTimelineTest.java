@@ -46,4 +46,36 @@ public class DocumentAnimationTimelineTest {
         Assert.assertTrue(timeline.pruneFinishedAnimations(1_000_000_000L));
         Assert.assertFalse(timeline.hasAnimationWork());
     }
+
+    /**
+     * 验证 opacity transition 会作为数值动画覆盖层插值。
+     */
+    @Test
+    public void shouldTransitionOpacityWithoutMutatingInlineStyle() {
+        UiDocument document = UiDocument.create();
+        ElementNode root = document.getRootElement();
+        root.style()
+                .setWidth(UiStyleLength.px(40))
+                .setHeight(UiStyleLength.px(20))
+                .setOpacity(1.0F)
+                .setTransition(DocumentAnimationProperty.OPACITY, 1000L);
+        DocumentAnimationTimeline timeline = new DocumentAnimationTimeline();
+
+        DocumentLayoutBox firstLayout = DocumentLayoutEngine.layout(root, 80, 0);
+        Assert.assertTrue(timeline.updateFromLayout(firstLayout, 0L));
+        Assert.assertEquals(1.0F, timeline.resolveFloat(root, DocumentAnimationProperty.OPACITY, 1.0F, 0L), 0.0F);
+
+        root.style().setOpacity(0.25F);
+        DocumentLayoutBox secondLayout = DocumentLayoutEngine.layout(root, 80, 0);
+        Assert.assertTrue(timeline.updateFromLayout(secondLayout, 0L));
+
+        Assert.assertEquals(1, timeline.getActiveAnimationCount(500_000_000L));
+        Assert.assertEquals(0.625F, timeline.resolveFloat(root, DocumentAnimationProperty.OPACITY, 0.25F,
+                500_000_000L), 0.0F);
+        Assert.assertEquals(Float.valueOf(0.25F), root.style().getOpacity());
+        Assert.assertEquals(0.25F, timeline.resolveFloat(root, DocumentAnimationProperty.OPACITY, 0.25F,
+                1_000_000_000L), 0.0F);
+        Assert.assertTrue(timeline.pruneFinishedAnimations(1_000_000_000L));
+        Assert.assertFalse(timeline.hasAnimationWork());
+    }
 }

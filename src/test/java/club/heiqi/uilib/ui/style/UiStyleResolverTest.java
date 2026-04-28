@@ -29,6 +29,7 @@ public class UiStyleResolverTest {
                 .setTop(UiStyleLength.px(-4))
                 .setLeft(UiStyleLength.px(8))
                 .setZIndex(3)
+                .setOpacity(0.65F)
                 .setTransition(DocumentAnimationProperty.BACKGROUND_COLOR, 250L)
                 .setTransitionTimingFunction(DocumentAnimationTimingFunction.EASE_OUT)
                 .setPadding(UiStyleLength.px(12))
@@ -44,6 +45,7 @@ public class UiStyleResolverTest {
         Assert.assertEquals(UiStyleLength.px(-4), panel.style().getTop());
         Assert.assertEquals(UiStyleLength.px(8), panel.style().getLeft());
         Assert.assertEquals(Integer.valueOf(3), panel.style().getZIndex());
+        Assert.assertEquals(Float.valueOf(0.65F), panel.style().getOpacity());
         Assert.assertEquals(DocumentAnimationProperty.BACKGROUND_COLOR,
                 panel.style().getTransitionProperties().get(0));
         Assert.assertEquals(Long.valueOf(250_000_000L), panel.style().getTransitionDurationNanos());
@@ -93,6 +95,7 @@ public class UiStyleResolverTest {
         Assert.assertEquals(UiStyleLength.px(0), spanStyle.getColumnGap());
         Assert.assertEquals(0.0F, spanStyle.getFlexGrow(), 0.0F);
         Assert.assertEquals(1.0F, spanStyle.getFlexShrink(), 0.0F);
+        Assert.assertEquals(1.0F, spanStyle.getOpacity(), 0.0F);
         Assert.assertEquals(UiStyleLength.px(0), spanStyle.getBackdropBlurRadius());
         Assert.assertEquals(1.0F, spanStyle.getBackdropSaturation(), 0.0F);
     }
@@ -116,7 +119,7 @@ public class UiStyleResolverTest {
                 .setLeft(UiStyleLength.px(11))
                 .setZIndex(4)
                 .setTransitionProperties(DocumentAnimationProperty.BACKGROUND_COLOR,
-                        DocumentAnimationProperty.BORDER_COLOR)
+                        DocumentAnimationProperty.BORDER_COLOR, DocumentAnimationProperty.OPACITY)
                 .setTransitionDurationMillis(300L)
                 .setTransitionDelayMillis(40L)
                 .setTransitionTimingFunction(DocumentAnimationTimingFunction.EASE_IN_OUT)
@@ -134,6 +137,7 @@ public class UiStyleResolverTest {
                 .setColumnGap(UiStyleLength.px(8))
                 .setFlexGrow(2.0F)
                 .setFlexShrink(0.5F)
+                .setOpacity(0.5F)
                 .setBorderColor(0xFF86A8F0)
                 .setTextColor(0xFFF6D78E)
                 .setBackdropBlurRadius(UiStyleLength.px(16))
@@ -150,10 +154,11 @@ public class UiStyleResolverTest {
         Assert.assertEquals(UiStyleLength.px(9), computedStyle.getBottom());
         Assert.assertEquals(UiStyleLength.px(11), computedStyle.getLeft());
         Assert.assertEquals(Integer.valueOf(4), computedStyle.getZIndex());
-        Assert.assertEquals(2, computedStyle.getTransitionProperties().size());
+        Assert.assertEquals(3, computedStyle.getTransitionProperties().size());
         Assert.assertEquals(DocumentAnimationProperty.BACKGROUND_COLOR,
                 computedStyle.getTransitionProperties().get(0));
         Assert.assertEquals(DocumentAnimationProperty.BORDER_COLOR, computedStyle.getTransitionProperties().get(1));
+        Assert.assertEquals(DocumentAnimationProperty.OPACITY, computedStyle.getTransitionProperties().get(2));
         Assert.assertEquals(300_000_000L, computedStyle.getTransitionDurationNanos());
         Assert.assertEquals(40_000_000L, computedStyle.getTransitionDelayNanos());
         Assert.assertEquals(DocumentAnimationTimingFunction.EASE_IN_OUT, computedStyle.getTransitionTimingFunction());
@@ -170,6 +175,7 @@ public class UiStyleResolverTest {
         Assert.assertEquals(UiStyleLength.px(8), computedStyle.getColumnGap());
         Assert.assertEquals(2.0F, computedStyle.getFlexGrow(), 0.0F);
         Assert.assertEquals(0.5F, computedStyle.getFlexShrink(), 0.0F);
+        Assert.assertEquals(0.5F, computedStyle.getOpacity(), 0.0F);
         Assert.assertEquals(0xFF86A8F0, computedStyle.getBorderColor());
         Assert.assertEquals(0xFFF6D78E, computedStyle.getTextColor());
         Assert.assertEquals(UiStyleLength.px(16), computedStyle.getBackdropBlurRadius());

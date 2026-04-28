@@ -17,5 +17,10 @@ public enum DocumentAnimationProperty {
     /**
      * 文本色，属于 paint-only 属性。
      */
-    TEXT_COLOR
+    TEXT_COLOR,
+
+    /**
+     * 元素透明度，当前作为标准 paint command 的累积透明度处理。
+     */
+    OPACITY
 }

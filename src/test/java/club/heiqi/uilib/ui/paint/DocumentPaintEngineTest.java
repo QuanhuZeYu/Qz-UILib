@@ -7,6 +7,8 @@ import java.util.List;
 import org.junit.Assert;
 import org.junit.Test;
 
+import club.heiqi.uilib.ui.animation.DocumentAnimationProperty;
+import club.heiqi.uilib.ui.animation.DocumentAnimationTimeline;
 import club.heiqi.uilib.ui.dom.ElementNode;
 import club.heiqi.uilib.ui.dom.UiDocument;
 import club.heiqi.uilib.ui.layout.DocumentLayoutBox;
@@ -55,6 +57,123 @@ public class DocumentPaintEngineTest {
                 12);
         assertCommand(commands.get(2), DocumentPaintCommandType.BACKGROUND, child, 2, 2, 42, 12, 0xFF223344, 0,
                 0);
+    }
+
+    /**
+     * 验证元素 opacity 会累积应用到自身和后代的标准绘制命令颜色。
+     */
+    @Test
+    public void shouldApplyOpacityToStandardPaintColors() {
+        UiDocument document = UiDocument.create();
+        ElementNode root = document.getRootElement();
+        ElementNode child = document.div();
+
+        root.style()
+                .setWidth(UiStyleLength.px(100))
+                .setHeight(UiStyleLength.px(40))
+                .setOpacity(0.5F)
+                .setBackgroundColor(0xAA101820)
+                .setBorderColor(0xFF86A8F0)
+                .setBorderWidth(UiStyleLength.px(2))
+                .setBorderRadius(UiStyleLength.px(12));
+        child.style()
+                .setWidth(UiStyleLength.px(40))
+                .setHeight(UiStyleLength.px(10))
+                .setOpacity(0.5F)
+                .setBackgroundColor(0xFF223344);
+        root.append(child);
+
+        List<DocumentPaintCommand> commands = DocumentPaintEngine.buildPaintCommands(
+                DocumentLayoutEngine.layout(root, 200, 0));
+
+        Assert.assertEquals(3, commands.size());
+        assertCommand(commands.get(0), DocumentPaintCommandType.BACKGROUND, root, 0, 0, 104, 44, 0x55101820, 0,
+                12);
+        assertCommand(commands.get(1), DocumentPaintCommandType.BORDER, root, 0, 0, 104, 44, 0x8086A8F0, 2,
+                12);
+        assertCommand(commands.get(2), DocumentPaintCommandType.BACKGROUND, child, 2, 2, 42, 12, 0x40223344, 0,
+                0);
+    }
+
+    /**
+     * 验证动画中的 opacity 运行值会参与绘制命令颜色计算。
+     */
+    @Test
+    public void shouldApplyAnimatedOpacityToPaintColors() {
+        UiDocument document = UiDocument.create();
+        ElementNode root = document.getRootElement();
+        root.style()
+                .setWidth(UiStyleLength.px(40))
+                .setHeight(UiStyleLength.px(20))
+                .setOpacity(1.0F)
+                .setBackgroundColor(0xFF223344)
+                .setTransition(DocumentAnimationProperty.OPACITY, 1000L);
+        DocumentAnimationTimeline timeline = new DocumentAnimationTimeline();
+        DocumentLayoutBox firstLayout = DocumentLayoutEngine.layout(root, 80, 0);
+        timeline.updateFromLayout(firstLayout, 0L);
+
+        root.style().setOpacity(0.5F);
+        DocumentLayoutBox secondLayout = DocumentLayoutEngine.layout(root, 80, 0);
+        timeline.updateFromLayout(secondLayout, 0L);
+        List<DocumentPaintCommand> commands = DocumentPaintEngine.buildPaintCommands(secondLayout, null,
+                500_000_000L, timeline);
+
+        Assert.assertEquals(1, commands.size());
+        assertCommand(commands.get(0), DocumentPaintCommandType.BACKGROUND, root, 0, 0, 40, 20, 0xBF223344, 0,
+                0);
+    }
+
+    /**
+     * 验证 opacity 会应用到文本绘制颜色。
+     */
+    @Test
+    public void shouldApplyOpacityToTextColors() {
+        UiDocument document = UiDocument.create();
+        ElementNode root = document.getRootElement();
+
+        root.style()
+                .setWidth(UiStyleLength.px(120))
+                .setPadding(UiStyleLength.px(4))
+                .setOpacity(0.5F)
+                .setTextColor(0xFFEFF6FF);
+        root.appendText("Hello");
+
+        List<DocumentPaintCommand> commands = DocumentPaintEngine.buildPaintCommands(DocumentLayoutEngine.layout(root,
+                160, 0, new DeterministicTextMeasureService()));
+
+        Assert.assertEquals(1, commands.size());
+        assertCommand(commands.get(0), DocumentPaintCommandType.TEXT, root, 4, 4, 44, 22, 0x80EFF6FF, 0, 0);
+        Assert.assertEquals("Hello", commands.get(0).getText());
+    }
+
+    /**
+     * 验证 opacity 会应用到滚动条绘制颜色。
+     */
+    @Test
+    public void shouldApplyOpacityToScrollbarColors() {
+        UiDocument document = UiDocument.create();
+        ElementNode root = document.getRootElement();
+        ElementNode child = document.div();
+
+        root.style()
+                .setWidth(UiStyleLength.px(50))
+                .setHeight(UiStyleLength.px(20))
+                .setOpacity(0.5F)
+                .setOverflowX(UiOverflow.HIDDEN)
+                .setOverflowY(UiOverflow.AUTO);
+        child.style().setHeight(UiStyleLength.px(50));
+        root.append(child);
+
+        DocumentLayoutBox rootBox = DocumentLayoutEngine.layout(root, 80, 0);
+        DocumentScrollState scrollState = new DocumentScrollState();
+        scrollState.updateFromLayout(rootBox);
+        List<DocumentPaintCommand> commands = DocumentPaintEngine.buildPaintCommands(rootBox, scrollState);
+
+        Assert.assertEquals(4, commands.size());
+        assertCommand(commands.get(2), DocumentPaintCommandType.SCROLLBAR_TRACK, root, 42, 2, 48, 18, 0x333B4A66,
+                0, 3);
+        assertCommand(commands.get(3), DocumentPaintCommandType.SCROLLBAR_THUMB, root, 42, 2, 48, 18, 0x6FBCD7FF,
+                0, 3);
     }
 
     /**

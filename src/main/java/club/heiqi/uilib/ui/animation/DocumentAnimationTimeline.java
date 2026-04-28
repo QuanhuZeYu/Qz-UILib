@@ -24,6 +24,9 @@ public final class DocumentAnimationTimeline {
             DocumentAnimationProperty.BORDER_COLOR,
             DocumentAnimationProperty.TEXT_COLOR
     };
+    private static final DocumentAnimationProperty[] PAINT_FLOAT_PROPERTIES = new DocumentAnimationProperty[] {
+            DocumentAnimationProperty.OPACITY
+    };
 
     private final Map<ElementNode, ElementAnimationState> states = new HashMap<ElementNode, ElementAnimationState>();
 
@@ -66,8 +69,27 @@ public final class DocumentAnimationTimeline {
         if (state == null) {
             return baseColor;
         }
-        ColorTransition transition = state.transitions.get(property);
+        ColorTransition transition = state.colorTransitions.get(property);
         return transition == null ? baseColor : transition.resolve(currentTimeNanos);
+    }
+
+    /**
+     * 返回指定数值属性当前动画后的表现值。
+     *
+     * @param element 元素
+     * @param property 动画属性
+     * @param baseValue 当前 computed style 基准值
+     * @param currentTimeNanos 当前动画时间
+     * @return 动画后的数值
+     */
+    public float resolveFloat(ElementNode element, DocumentAnimationProperty property, float baseValue,
+            long currentTimeNanos) {
+        ElementAnimationState state = states.get(element);
+        if (state == null) {
+            return baseValue;
+        }
+        FloatTransition transition = state.floatTransitions.get(property);
+        return transition == null ? baseValue : transition.resolve(currentTimeNanos);
     }
 
     /**
@@ -77,7 +99,7 @@ public final class DocumentAnimationTimeline {
      */
     public boolean hasAnimationWork() {
         for (ElementAnimationState state : states.values()) {
-            if (!state.transitions.isEmpty()) {
+            if (!state.colorTransitions.isEmpty() || !state.floatTransitions.isEmpty()) {
                 return true;
             }
         }
@@ -93,7 +115,12 @@ public final class DocumentAnimationTimeline {
     public int getActiveAnimationCount(long currentTimeNanos) {
         int count = 0;
         for (ElementAnimationState state : states.values()) {
-            for (ColorTransition transition : state.transitions.values()) {
+            for (ColorTransition transition : state.colorTransitions.values()) {
+                if (!transition.isFinished(currentTimeNanos)) {
+                    count++;
+                }
+            }
+            for (FloatTransition transition : state.floatTransitions.values()) {
                 if (!transition.isFinished(currentTimeNanos)) {
                     count++;
                 }
@@ -111,12 +138,21 @@ public final class DocumentAnimationTimeline {
     public boolean pruneFinishedAnimations(long currentTimeNanos) {
         boolean changed = false;
         for (ElementAnimationState state : states.values()) {
-            Iterator<Map.Entry<DocumentAnimationProperty, ColorTransition>> iterator = state.transitions.entrySet()
+            Iterator<Map.Entry<DocumentAnimationProperty, ColorTransition>> colorIterator = state.colorTransitions.entrySet()
                     .iterator();
-            while (iterator.hasNext()) {
-                Map.Entry<DocumentAnimationProperty, ColorTransition> entry = iterator.next();
+            while (colorIterator.hasNext()) {
+                Map.Entry<DocumentAnimationProperty, ColorTransition> entry = colorIterator.next();
                 if (entry.getValue().isFinished(currentTimeNanos)) {
-                    iterator.remove();
+                    colorIterator.remove();
+                    changed = true;
+                }
+            }
+            Iterator<Map.Entry<DocumentAnimationProperty, FloatTransition>> floatIterator = state.floatTransitions.entrySet()
+                    .iterator();
+            while (floatIterator.hasNext()) {
+                Map.Entry<DocumentAnimationProperty, FloatTransition> entry = floatIterator.next();
+                if (entry.getValue().isFinished(currentTimeNanos)) {
+                    floatIterator.remove();
                     changed = true;
                 }
             }
@@ -163,11 +199,33 @@ public final class DocumentAnimationTimeline {
             int fromColor = resolveColor(element, property, previousTarget.intValue(), currentTimeNanos);
             state.targetColors.put(property, Integer.valueOf(baseColor));
             if (canTransition(style, property) && fromColor != baseColor) {
-                state.transitions.put(property, new ColorTransition(fromColor, baseColor,
+                state.colorTransitions.put(property, new ColorTransition(fromColor, baseColor,
                         currentTimeNanos + style.getTransitionDelayNanos(), style.getTransitionDurationNanos(),
                         style.getTransitionTimingFunction()));
             } else {
-                state.transitions.remove(property);
+                state.colorTransitions.remove(property);
+            }
+            changed = true;
+        }
+        for (DocumentAnimationProperty property : PAINT_FLOAT_PROPERTIES) {
+            float baseValue = getBaseFloat(style, property);
+            Float previousTarget = state.targetFloats.get(property);
+            if (previousTarget == null) {
+                state.targetFloats.put(property, Float.valueOf(baseValue));
+                changed = true;
+                continue;
+            }
+            if (Float.compare(previousTarget.floatValue(), baseValue) == 0) {
+                continue;
+            }
+            float fromValue = resolveFloat(element, property, previousTarget.floatValue(), currentTimeNanos);
+            state.targetFloats.put(property, Float.valueOf(baseValue));
+            if (canTransition(style, property) && Float.compare(fromValue, baseValue) != 0) {
+                state.floatTransitions.put(property, new FloatTransition(fromValue, baseValue,
+                        currentTimeNanos + style.getTransitionDelayNanos(), style.getTransitionDurationNanos(),
+                        style.getTransitionTimingFunction()));
+            } else {
+                state.floatTransitions.remove(property);
             }
             changed = true;
         }
@@ -186,6 +244,13 @@ public final class DocumentAnimationTimeline {
             return style.getTextColor();
         }
         return style.getBackgroundColor();
+    }
+
+    private static float getBaseFloat(ComputedStyle style, DocumentAnimationProperty property) {
+        if (property == DocumentAnimationProperty.OPACITY) {
+            return style.getOpacity();
+        }
+        return 0.0F;
     }
 
     private static int interpolateColor(int fromColor, int toColor, float progress) {
@@ -215,8 +280,12 @@ public final class DocumentAnimationTimeline {
 
         private final EnumMap<DocumentAnimationProperty, Integer> targetColors =
                 new EnumMap<DocumentAnimationProperty, Integer>(DocumentAnimationProperty.class);
-        private final EnumMap<DocumentAnimationProperty, ColorTransition> transitions =
+        private final EnumMap<DocumentAnimationProperty, ColorTransition> colorTransitions =
                 new EnumMap<DocumentAnimationProperty, ColorTransition>(DocumentAnimationProperty.class);
+        private final EnumMap<DocumentAnimationProperty, Float> targetFloats =
+                new EnumMap<DocumentAnimationProperty, Float>(DocumentAnimationProperty.class);
+        private final EnumMap<DocumentAnimationProperty, FloatTransition> floatTransitions =
+                new EnumMap<DocumentAnimationProperty, FloatTransition>(DocumentAnimationProperty.class);
     }
 
     /**
@@ -249,6 +318,43 @@ public final class DocumentAnimationTimeline {
             }
             float progress = elapsedNanos / (float) durationNanos;
             return interpolateColor(fromColor, toColor, timingFunction.apply(progress));
+        }
+
+        private boolean isFinished(long currentTimeNanos) {
+            return currentTimeNanos >= startNanos + durationNanos;
+        }
+    }
+
+    /**
+     * 单个数值 transition。
+     */
+    private static final class FloatTransition {
+
+        private final float fromValue;
+        private final float toValue;
+        private final long startNanos;
+        private final long durationNanos;
+        private final DocumentAnimationTimingFunction timingFunction;
+
+        private FloatTransition(float fromValue, float toValue, long startNanos, long durationNanos,
+                DocumentAnimationTimingFunction timingFunction) {
+            this.fromValue = fromValue;
+            this.toValue = toValue;
+            this.startNanos = startNanos;
+            this.durationNanos = Math.max(1L, durationNanos);
+            this.timingFunction = timingFunction == null ? DocumentAnimationTimingFunction.LINEAR : timingFunction;
+        }
+
+        private float resolve(long currentTimeNanos) {
+            if (currentTimeNanos <= startNanos) {
+                return fromValue;
+            }
+            long elapsedNanos = currentTimeNanos - startNanos;
+            if (elapsedNanos >= durationNanos) {
+                return toValue;
+            }
+            float progress = elapsedNanos / (float) durationNanos;
+            return fromValue + (toValue - fromValue) * timingFunction.apply(progress);
         }
 
         private boolean isFinished(long currentTimeNanos) {
