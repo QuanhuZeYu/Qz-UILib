@@ -21,7 +21,7 @@ public class UiDocumentScreensTest {
      * 验证布局诊断页 definition 会暴露稳定 descriptor 与页面标识契约。
      */
     @Test
-    public void shouldExposeStablePageIdForUiTestScreen() {
+    public void shouldExposeStablePageIdForUiTestDefinition() {
         Assert.assertSame(UiDocumentScreens.UI_TEST, UiDocumentScreens.UI_TEST_DEFINITION.getPageDescriptor());
         Assert.assertEquals("ui_test", UiDocumentScreens.UI_TEST_DEFINITION.getPageDescriptor().getPageId());
         Assert.assertEquals(UiDocumentScreens.UI_TEST.getPageId(), UiDocumentScreens.UI_TEST_DEFINITION.getPageDescriptor().getPageId());
@@ -72,7 +72,7 @@ public class UiDocumentScreensTest {
      * 验证背包页 definition 会暴露独立稳定 descriptor 与页面标识契约。
      */
     @Test
-    public void shouldExposeStablePageIdForInventoryOverviewScreen() {
+    public void shouldExposeStablePageIdForInventoryOverviewDefinition() {
         Assert.assertSame(UiDocumentScreens.INVENTORY_OVERVIEW,
                 UiDocumentScreens.INVENTORY_OVERVIEW_DEFINITION.getPageDescriptor());
         Assert.assertEquals("inventory_overview",
@@ -153,7 +153,7 @@ public class UiDocumentScreensTest {
     }
 
     /**
-     * 验证 HTML-like 直接页面 surface 不再插入旧 DocumentPageWidget 页面壳。
+     * 验证 HTML-like 直接页面 surface 不再插入旧 retained 页面壳。
      */
     @Test
     public void shouldAttachDirectSurfaceBlocksWithoutLegacyPageShell() {

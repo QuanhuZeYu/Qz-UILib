@@ -517,8 +517,7 @@ public final class UiDocumentScreens {
     /**
      * 由页面定义驱动的 HTML-like 直接宿主界面。
      *
-     * <p>当前已迁移页面直接把 `HtmlLikeDocumentWidget` 挂到根视口，不再套旧 `DocumentPageWidget` 页面壳；
-     * 旧 retained 文档壳仍保留给兼容层和未迁移测试。</p>
+     * <p>当前已迁移页面直接把 `HtmlLikeDocumentWidget` 挂到根视口，不再套旧 retained 页面壳。</p>
      *
      * @param <P> 页面 provision 类型
      */

@@ -11,7 +11,7 @@ import club.heiqi.uilib.ui.widget.Widget;
  * 直接挂载到根视口的 HTML-like 页面 authoring surface。
  *
  * <p>该实现只负责把当前已迁移页面的单个 `HtmlLikeDocumentWidget` 定位到屏幕 frame，
- * 不再创建旧 `DocumentPageWidget`/`ScrollViewportWidget` 页面壳。</p>
+ * 不再创建旧 retained 页面壳。</p>
  */
 final class DirectDocumentPageAuthoringSurface implements DocumentPageAuthoringSurface {
 

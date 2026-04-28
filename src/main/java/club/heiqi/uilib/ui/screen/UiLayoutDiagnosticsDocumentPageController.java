@@ -312,7 +312,7 @@ final class UiLayoutDiagnosticsDocumentPageController extends DocumentPageContro
                 .setTextColor(0xFFF8FAFC);
         hero.appendText("布局诊断页");
         hero.appendText("HTML-like Layout Console");
-        hero.appendText("旧 DocumentCardWidget/LabelWidget 表达已从本页作者层清退。");
+        hero.appendText("旧 retained widget 作者入口已从本页清退。");
         root.append(hero);
     }
 

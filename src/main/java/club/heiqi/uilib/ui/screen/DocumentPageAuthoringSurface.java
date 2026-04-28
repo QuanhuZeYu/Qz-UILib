@@ -1,15 +1,12 @@
 package club.heiqi.uilib.ui.screen;
 
-import java.util.Objects;
-
-import club.heiqi.uilib.ui.document.DocumentPageWidget;
 import club.heiqi.uilib.ui.widget.Widget;
 
 /**
  * 页面 authoring 所需的最小挂载契约。
  *
  * <p>该接口只在 `ui.screen` 包内使用，用于收敛 controller 对具体宿主实现的直接依赖。
- * 当前 HTML-like 页面使用 direct surface；旧 `DocumentPageWidget` 适配器仅保留给兼容页面和测试。</p>
+ * 当前 HTML-like 页面使用 direct surface，不再提供旧页面壳适配入口。</p>
  */
 interface DocumentPageAuthoringSurface {
 
@@ -103,89 +100,4 @@ interface DocumentPageAuthoringSurface {
      */
     int getContentHeight();
 
-    /**
-     * 将真实页面壳包装为内部 authoring seam。
-     *
-     * @param documentPage 真实文档页面壳
-     * @return 包装后的页面壳 contract
-     */
-    static DocumentPageAuthoringSurface adapt(DocumentPageWidget documentPage) {
-        return new DocumentPageWidgetAuthoringAdapter(documentPage);
-    }
-
-    /**
-     * `DocumentPageWidget` 的内部薄适配器。
-     */
-    final class DocumentPageWidgetAuthoringAdapter implements DocumentPageAuthoringSurface {
-
-        private final DocumentPageWidget documentPage;
-
-        private DocumentPageWidgetAuthoringAdapter(DocumentPageWidget documentPage) {
-            this.documentPage = Objects.requireNonNull(documentPage, "documentPage");
-        }
-
-        @Override
-        public DocumentPageAuthoringSurface addBlock(Widget child) {
-            documentPage.addBlock(child);
-            return this;
-        }
-
-        @Override
-        public DocumentPageAuthoringSurface setContentWidthRange(int minContentWidth, int maxContentWidth) {
-            documentPage.setContentWidthRange(minContentWidth, maxContentWidth);
-            return this;
-        }
-
-        @Override
-        public DocumentPageAuthoringSurface setMinContentHeight(int minContentHeight) {
-            documentPage.setMinContentHeight(minContentHeight);
-            return this;
-        }
-
-        @Override
-        public DocumentPageAuthoringSurface setViewportFillRatio(float maxViewportFillWidth, float maxViewportFillHeight) {
-            documentPage.setViewportFillRatio(maxViewportFillWidth, maxViewportFillHeight);
-            return this;
-        }
-
-        @Override
-        public int getWidth() {
-            return documentPage.getWidth();
-        }
-
-        @Override
-        public int getHeight() {
-            return documentPage.getHeight();
-        }
-
-        @Override
-        public int getScrollOffset() {
-            return documentPage.getScrollOffset();
-        }
-
-        @Override
-        public int getMaxScrollOffset() {
-            return documentPage.getMaxScrollOffset();
-        }
-
-        @Override
-        public int getVisibleContentWidth() {
-            return documentPage.getVisibleContentWidth();
-        }
-
-        @Override
-        public int getVisibleContentHeight() {
-            return documentPage.getVisibleContentHeight();
-        }
-
-        @Override
-        public int getContentWidth() {
-            return documentPage.getContentWidth();
-        }
-
-        @Override
-        public int getContentHeight() {
-            return documentPage.getContentHeight();
-        }
-    }
 }

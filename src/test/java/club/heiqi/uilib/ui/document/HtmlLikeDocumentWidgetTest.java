@@ -27,13 +27,10 @@ import club.heiqi.uilib.ui.event.UiMouseEvent;
 import club.heiqi.uilib.ui.event.UiTextInputEvent;
 import club.heiqi.uilib.ui.input.UiInputFrame;
 import club.heiqi.uilib.ui.input.UiInputRouter;
-import club.heiqi.uilib.ui.layout.UiLength;
-import club.heiqi.uilib.ui.layout.UiLayoutSpec;
 import club.heiqi.uilib.ui.render.UiRenderContext;
 import club.heiqi.uilib.ui.style.UiOverflow;
 import club.heiqi.uilib.ui.style.UiStyleLength;
 import club.heiqi.uilib.ui.text.TextMeasureService;
-import club.heiqi.uilib.ui.theme.UiDocumentThemes;
 import club.heiqi.uilib.ui.theme.UiSurfaceStyle;
 
 /**
@@ -363,10 +360,10 @@ public class HtmlLikeDocumentWidgetTest {
     }
 
     /**
-     * 验证点击 HTML-like 子元素不会再触发旧页面壳随机滚动。
+     * 验证点击 HTML-like 子元素不会触发根视口滚动偏移。
      */
     @Test
-    public void shouldKeepOuterPageScrollStableWhenFocusableHtmlElementIsClicked() {
+    public void shouldKeepViewportRootScrollStableWhenFocusableHtmlElementIsClicked() {
         UiDocument document = UiDocument.create();
         ElementNode root = document.getRootElement();
         ElementNode focusableElement = document.div();
@@ -382,28 +379,17 @@ public class HtmlLikeDocumentWidgetTest {
         HtmlLikeDocumentWidget widget = new HtmlLikeDocumentWidget(document, 80, 40,
                 new DeterministicTextMeasureService());
         widget.setViewportRootScrollingEnabled(true);
-        widget.setLayoutSpec(new UiLayoutSpec()
-                .setWidth(UiLength.percent(1.0F))
-                .setHeight(UiLength.percent(1.0F)));
+        widget.applyLayoutBounds(0, 0, 80, 40);
+        widget.render(new RecordingUiRenderContext());
 
-        DocumentPageWidget pageWidget = new DocumentPageWidget(UiDocumentThemes.current(),
-                new DeterministicTextMeasureService());
-        pageWidget.setShellPadding(0)
-                .setViewportFillRatio(1.0F, 1.0F)
-                .addBlock(widget);
-        pageWidget.applyLayoutBounds(0, 0, 100, 70);
-        pageWidget.render(new RecordingUiRenderContext());
-
-        Assert.assertEquals(0, pageWidget.getMaxScrollOffset());
         Assert.assertTrue(widget.getMaxScrollTop(root) > 0);
 
         UiInputRouter router = new UiInputRouter();
-        router.route(pageWidget, mouseFrame(new UiMouseEvent(UiMouseEvent.Action.BUTTON_DOWN, 10, 10, 0, 0, 0, 0,
+        router.route(widget, mouseFrame(new UiMouseEvent(UiMouseEvent.Action.BUTTON_DOWN, 10, 10, 0, 0, 0, 0,
                 1L)));
-        router.route(pageWidget, mouseFrame(new UiMouseEvent(UiMouseEvent.Action.BUTTON_UP, 10, 10, 0, 0, 0, 0,
+        router.route(widget, mouseFrame(new UiMouseEvent(UiMouseEvent.Action.BUTTON_UP, 10, 10, 0, 0, 0, 0,
                 2L)));
 
-        Assert.assertEquals(0, pageWidget.getScrollOffset());
         Assert.assertEquals(0, widget.getScrollTop(root));
         assertElementUid(focusableElement, widget.getFocusedElement());
     }
