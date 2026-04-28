@@ -368,7 +368,7 @@ public class HtmlLikeDocumentWidgetTest {
 
         Assert.assertEquals(0, pageWidget.getScrollOffset());
         Assert.assertEquals(0, widget.getScrollTop(root));
-        Assert.assertSame(focusableElement, widget.getFocusedElement());
+        assertElementUid(focusableElement, widget.getFocusedElement());
     }
 
     /**
@@ -395,7 +395,7 @@ public class HtmlLikeDocumentWidgetTest {
                 new DeterministicTextMeasureService());
         widget.applyLayoutBounds(5, 7, 80, 40);
 
-        Assert.assertSame(grandChild, widget.findElementAt(10, 12));
+        assertElementUid(grandChild, widget.findElementAt(10, 12));
         Assert.assertNull(widget.findElementAt(120, 12));
     }
 
@@ -430,8 +430,8 @@ public class HtmlLikeDocumentWidgetTest {
         widget.onMouseUp(new UiMouseEvent(UiMouseEvent.Action.BUTTON_UP, 10, 12, 0, 0, 0, 0, 2L));
 
         Assert.assertEquals(1, clickEvents.size());
-        Assert.assertSame(child, clickEvents.get(0).getTarget());
-        Assert.assertSame(root, clickEvents.get(0).getCurrentTarget());
+        assertElementUid(child, clickEvents.get(0).getTarget());
+        assertElementUid(root, clickEvents.get(0).getCurrentTarget());
         Assert.assertEquals(5, clickEvents.get(0).getDocumentX());
         Assert.assertEquals(5, clickEvents.get(0).getDocumentY());
         Assert.assertEquals(0, clickEvents.get(0).getButton());
@@ -458,11 +458,11 @@ public class HtmlLikeDocumentWidgetTest {
                 new DeterministicTextMeasureService());
         widget.applyLayoutBounds(0, 0, 80, 20);
 
-        Assert.assertSame(first, widget.findElementAt(10, 10));
+        assertElementUid(first, widget.findElementAt(10, 10));
         Assert.assertTrue(widget.onMouseScroll(new UiMouseEvent(UiMouseEvent.Action.SCROLL, 10, 10, -1, -120, 0,
                 0, 1L)));
 
-        Assert.assertSame(second, widget.findElementAt(10, 10));
+        assertElementUid(second, widget.findElementAt(10, 10));
     }
 
     /**
@@ -514,17 +514,17 @@ public class HtmlLikeDocumentWidgetTest {
         widget.onKeyEvent(new UiKeyEvent(Keyboard.KEY_BACK, 0, 0, UiKeyEvent.Action.PRESSED, false, false, false,
                 false, 3L));
 
-        Assert.assertSame(input, widget.getFocusedElement());
+        assertElementUid(input, widget.getFocusedElement());
         Assert.assertEquals(1, focusEvents.size());
         Assert.assertTrue(focusEvents.get(0).isFocused());
         Assert.assertFalse(focusEvents.get(0).isFocusVisible());
         Assert.assertEquals(1, textEvents.size());
-        Assert.assertSame(input, textEvents.get(0).getTarget());
-        Assert.assertSame(input, textEvents.get(0).getCurrentTarget());
+        assertElementUid(input, textEvents.get(0).getTarget());
+        assertElementUid(input, textEvents.get(0).getCurrentTarget());
         Assert.assertEquals("abc", textEvents.get(0).getText());
         Assert.assertEquals(1, keyEvents.size());
-        Assert.assertSame(input, keyEvents.get(0).getTarget());
-        Assert.assertSame(input, keyEvents.get(0).getCurrentTarget());
+        assertElementUid(input, keyEvents.get(0).getTarget());
+        assertElementUid(input, keyEvents.get(0).getCurrentTarget());
         Assert.assertEquals(Keyboard.KEY_BACK, keyEvents.get(0).getKeyCode());
     }
 
@@ -622,18 +622,18 @@ public class HtmlLikeDocumentWidgetTest {
         widget.applyLayoutBounds(5, 7, 80, 40);
 
         widget.onFocusTraversalEntered(false);
-        Assert.assertSame(firstInput, widget.getFocusedElement());
+        assertElementUid(firstInput, widget.getFocusedElement());
 
         Assert.assertTrue(widget.onFocusTraversal(false));
-        Assert.assertSame(secondInput, widget.getFocusedElement());
+        assertElementUid(secondInput, widget.getFocusedElement());
         Assert.assertFalse(widget.onFocusTraversal(false));
-        Assert.assertSame(secondInput, widget.getFocusedElement());
+        assertElementUid(secondInput, widget.getFocusedElement());
 
         Assert.assertTrue(widget.onFocusTraversal(true));
-        Assert.assertSame(firstInput, widget.getFocusedElement());
+        assertElementUid(firstInput, widget.getFocusedElement());
         widget.onFocusChanged(false);
         widget.onFocusTraversalEntered(true);
-        Assert.assertSame(secondInput, widget.getFocusedElement());
+        assertElementUid(secondInput, widget.getFocusedElement());
     }
 
     private static void assertDrawCall(DrawCall drawCall, int left, int top, int right, int bottom, int fillColor,
@@ -653,6 +653,11 @@ public class HtmlLikeDocumentWidgetTest {
         Assert.assertEquals(y, textCall.y);
         Assert.assertEquals(color, textCall.color);
         Assert.assertEquals(shadow, textCall.shadow);
+    }
+
+    private static void assertElementUid(ElementNode expectedElement, ElementNode actualElement) {
+        Assert.assertNotNull(actualElement);
+        Assert.assertEquals(expectedElement.__getElementUid(), actualElement.__getElementUid());
     }
 
     private static UiInputFrame mouseFrame(UiMouseEvent event) {

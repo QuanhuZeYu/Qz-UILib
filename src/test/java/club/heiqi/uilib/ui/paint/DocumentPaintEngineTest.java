@@ -647,7 +647,7 @@ public class DocumentPaintEngineTest {
             ElementNode element, int left, int top, int right, int bottom, int color, int borderWidth,
             int borderRadius) {
         Assert.assertEquals(type, command.getType());
-        Assert.assertSame(element, command.getElement());
+        Assert.assertEquals(element.__getElementUid(), command.getElement().__getElementUid());
         Assert.assertEquals(left, command.getLeft());
         Assert.assertEquals(top, command.getTop());
         Assert.assertEquals(right, command.getRight());

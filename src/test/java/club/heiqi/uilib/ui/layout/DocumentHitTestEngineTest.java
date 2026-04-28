@@ -37,7 +37,7 @@ public class DocumentHitTestEngineTest {
 
         DocumentLayoutBox rootBox = DocumentLayoutEngine.layout(root, 120, 0);
 
-        Assert.assertSame(raised, DocumentHitTestEngine.hitTest(rootBox, null, 10, 22));
+        assertHitElement(raised, rootBox, 10, 22);
     }
 
     /**
@@ -63,7 +63,7 @@ public class DocumentHitTestEngineTest {
 
         DocumentLayoutBox rootBox = DocumentLayoutEngine.layout(root, 120, 0);
 
-        Assert.assertSame(positioned, DocumentHitTestEngine.hitTest(rootBox, null, 10, 22));
+        assertHitElement(positioned, rootBox, 10, 22);
     }
 
     /**
@@ -90,8 +90,8 @@ public class DocumentHitTestEngineTest {
 
         DocumentLayoutBox rootBox = DocumentLayoutEngine.layout(root, 120, 0);
 
-        Assert.assertSame(absolute, DocumentHitTestEngine.hitTest(rootBox, null, 10, 10));
-        Assert.assertSame(normal, DocumentHitTestEngine.hitTest(rootBox, null, 10, 22));
+        assertHitElement(absolute, rootBox, 10, 10);
+        assertHitElement(normal, rootBox, 10, 22);
     }
 
     /**
@@ -127,8 +127,8 @@ public class DocumentHitTestEngineTest {
 
         DocumentLayoutBox rootBox = DocumentLayoutEngine.layout(root, 220, 0);
 
-        Assert.assertSame(absolute, DocumentHitTestEngine.hitTest(rootBox, null, 21, 19));
-        Assert.assertSame(staticParent, DocumentHitTestEngine.hitTest(rootBox, null, 34, 28));
+        assertHitElement(absolute, rootBox, 21, 19);
+        assertHitElement(staticParent, rootBox, 34, 28);
     }
 
     /**
@@ -155,6 +155,12 @@ public class DocumentHitTestEngineTest {
 
         DocumentLayoutBox rootBox = DocumentLayoutEngine.layout(root, 120, 0);
 
-        Assert.assertSame(normal, DocumentHitTestEngine.hitTest(rootBox, null, 10, 22));
+        assertHitElement(normal, rootBox, 10, 22);
+    }
+
+    private static void assertHitElement(ElementNode expectedElement, DocumentLayoutBox rootBox, int x, int y) {
+        ElementNode actualElement = DocumentHitTestEngine.hitTest(rootBox, null, x, y);
+        Assert.assertNotNull(actualElement);
+        Assert.assertEquals(expectedElement.__getElementUid(), actualElement.__getElementUid());
     }
 }

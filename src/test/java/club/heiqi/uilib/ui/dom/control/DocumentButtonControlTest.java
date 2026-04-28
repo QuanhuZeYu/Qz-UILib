@@ -56,7 +56,7 @@ public class DocumentButtonControlTest {
 
         Assert.assertEquals(2, events.size());
         Assert.assertSame(buttonControl, events.get(0).getSource());
-        Assert.assertSame(buttonControl.getElement(), events.get(0).getElement());
+        assertElementUid(buttonControl.getElement(), events.get(0).getElement());
         Assert.assertFalse(events.get(0).isKeyboardTriggered());
         Assert.assertEquals(0, events.get(0).getButton());
         Assert.assertTrue(events.get(1).isKeyboardTriggered());
@@ -150,6 +150,11 @@ public class DocumentButtonControlTest {
             }
         }
         return false;
+    }
+
+    private static void assertElementUid(ElementNode expectedElement, ElementNode actualElement) {
+        Assert.assertNotNull(actualElement);
+        Assert.assertEquals(expectedElement.__getElementUid(), actualElement.__getElementUid());
     }
 
     /**

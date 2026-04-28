@@ -113,7 +113,7 @@ public class DocumentLayoutEngineTest {
         DocumentLayoutBox rootBox = DocumentLayoutEngine.layout(root, 200, 0);
 
         Assert.assertEquals(1, rootBox.getChildren().size());
-        Assert.assertSame(visible, rootBox.getChildren().get(0).getElement());
+        assertElementUid(visible, rootBox.getChildren().get(0).getElement());
         Assert.assertEquals(24, rootBox.getContentHeight());
         Assert.assertEquals(24, rootBox.getHeight());
     }
@@ -437,12 +437,12 @@ public class DocumentLayoutEngineTest {
         DocumentLayoutBox rootBox = DocumentLayoutEngine.layout(root, 160, 0);
         List<DocumentLayoutBox> orderedChildren = rootBox.getChildrenInStackingOrder();
 
-        Assert.assertSame(negative, orderedChildren.get(0).getElement());
-        Assert.assertSame(normal, orderedChildren.get(1).getElement());
-        Assert.assertSame(autoPositioned, orderedChildren.get(2).getElement());
-        Assert.assertSame(zero, orderedChildren.get(3).getElement());
-        Assert.assertSame(positive, orderedChildren.get(4).getElement());
-        Assert.assertSame(negative, rootBox.getChildrenInStackingPhase(DocumentStackingPhase.NEGATIVE_POSITIONED)
+        assertElementUid(negative, orderedChildren.get(0).getElement());
+        assertElementUid(normal, orderedChildren.get(1).getElement());
+        assertElementUid(autoPositioned, orderedChildren.get(2).getElement());
+        assertElementUid(zero, orderedChildren.get(3).getElement());
+        assertElementUid(positive, orderedChildren.get(4).getElement());
+        assertElementUid(negative, rootBox.getChildrenInStackingPhase(DocumentStackingPhase.NEGATIVE_POSITIONED)
                 .get(0).getElement());
     }
 
@@ -677,6 +677,11 @@ public class DocumentLayoutEngineTest {
         Assert.assertEquals(top, textRun.getTop());
         Assert.assertEquals(width, textRun.getWidth());
         Assert.assertEquals(height, textRun.getHeight());
+    }
+
+    private static void assertElementUid(ElementNode expectedElement, ElementNode actualElement) {
+        Assert.assertNotNull(actualElement);
+        Assert.assertEquals(expectedElement.__getElementUid(), actualElement.__getElementUid());
     }
 
     /**

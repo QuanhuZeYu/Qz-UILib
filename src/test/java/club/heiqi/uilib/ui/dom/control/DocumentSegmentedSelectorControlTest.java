@@ -56,7 +56,7 @@ public class DocumentSegmentedSelectorControlTest {
         Assert.assertEquals("B", selector.getSelectedOption());
         Assert.assertEquals(1, events.size());
         Assert.assertSame(selector, events.get(0).getSource());
-        Assert.assertSame(selector.getElement(), events.get(0).getElement());
+        assertElementUid(selector.getElement(), events.get(0).getElement());
         Assert.assertEquals(1, events.get(0).getSelectedIndex());
         Assert.assertEquals("B", events.get(0).getSelectedOption());
         Assert.assertFalse(events.get(0).isKeyboardTriggered());
@@ -193,6 +193,11 @@ public class DocumentSegmentedSelectorControlTest {
             }
         }
         return false;
+    }
+
+    private static void assertElementUid(ElementNode expectedElement, ElementNode actualElement) {
+        Assert.assertNotNull(actualElement);
+        Assert.assertEquals(expectedElement.__getElementUid(), actualElement.__getElementUid());
     }
 
     /**
