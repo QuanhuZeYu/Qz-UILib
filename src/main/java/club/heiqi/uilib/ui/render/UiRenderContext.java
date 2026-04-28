@@ -12,6 +12,8 @@ import net.minecraft.client.gui.Gui;
 import net.minecraft.client.renderer.Tessellator;
 import org.lwjgl.opengl.GL11;
 import org.lwjgl.opengl.GL12;
+import org.lwjgl.opengl.GL13;
+import org.lwjgl.opengl.GL20;
 
 import club.heiqi.uilib.font.api.DefaultFontRendererAdapter;
 import club.heiqi.uilib.font.api.FontRendererAdapter;
@@ -33,6 +35,7 @@ public class UiRenderContext {
             { -1.0F, 1.0F, 0.12F },
             { 1.0F, 1.0F, 0.12F }
     };
+    private static final UiBackdropShaderProgram BACKDROP_SHADER_PROGRAM = new UiBackdropShaderProgram();
 
     private final int screenWidth;
     private final int screenHeight;
@@ -265,7 +268,8 @@ public class UiRenderContext {
      *
      * <p>该入口只采样当前 UI 主层已经绘制到当前 framebuffer 的内容，不主动读取游戏世界 framebuffer。
      * 如果页面壳提前绘制了一张已模糊底图，它会作为普通 UI 背景被采样；否则只处理 UI 自身内容。
-     * 当前实现使用当前 UI framebuffer 的局部复制做近似 blur，复制失败时回退为伪玻璃 tint。</p>
+     * 当前实现优先使用 GLSL 对当前 UI framebuffer 的局部复制纹理做平滑采样，失败时回退为固定管线近似 blur，
+     * 复制或绘制不可用时再回退为伪玻璃 tint。</p>
      *
      * @param left 左侧坐标
      * @param top 顶部坐标
@@ -280,14 +284,14 @@ public class UiRenderContext {
         if (right <= left || bottom <= top || (blurRadius <= 0 && Float.compare(saturation, 1.0F) == 0)) {
             return;
         }
-        if (blurRadius > 0 && drawCurrentUiBackdropBlur(left, top, right, bottom, blurRadius, cornerRadius)) {
+        if (drawCurrentUiBackdropFilter(left, top, right, bottom, blurRadius, saturation, cornerRadius)) {
             return;
         }
         drawBackdropFilterFallback(left, top, right, bottom, blurRadius, saturation, cornerRadius);
     }
 
-    private boolean drawCurrentUiBackdropBlur(int left, int top, int right, int bottom, int blurRadius,
-            int cornerRadius) {
+    private boolean drawCurrentUiBackdropFilter(int left, int top, int right, int bottom, int blurRadius,
+            float saturation, int cornerRadius) {
         int sampleInset = Math.max(1, Math.min(64, blurRadius + resolveBackdropSampleStep(blurRadius)));
         int sampleLeft = clampInt(left - sampleInset, 0, screenWidth);
         int sampleTop = clampInt(top - sampleInset, 0, screenHeight);
@@ -305,7 +309,10 @@ public class UiRenderContext {
         }
         pushClip(left, top, right, bottom, cornerRadius);
         GL11.glPushAttrib(GL11.GL_ALL_ATTRIB_BITS);
+        int previousProgram = GL11.glGetInteger(GL20.GL_CURRENT_PROGRAM);
+        int previousActiveTexture = GL11.glGetInteger(GL13.GL_ACTIVE_TEXTURE);
         try {
+            GL13.glActiveTexture(GL13.GL_TEXTURE0);
             GL11.glBindTexture(GL11.GL_TEXTURE_2D, textureId);
             GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_MIN_FILTER, GL11.GL_LINEAR);
             GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_MAG_FILTER, GL11.GL_LINEAR);
@@ -315,15 +322,22 @@ public class UiRenderContext {
                     GL11.GL_UNSIGNED_BYTE, (java.nio.ByteBuffer) null);
             GL11.glCopyTexSubImage2D(GL11.GL_TEXTURE_2D, 0, 0, 0, sampleLeft, screenHeight - sampleBottom,
                     sampleWidth, sampleHeight);
-
             GL11.glEnable(GL11.GL_TEXTURE_2D);
             GL11.glDisable(GL11.GL_DEPTH_TEST);
             GL11.glDisable(GL11.GL_ALPHA_TEST);
             GL11.glColor4f(1.0F, 1.0F, 1.0F, 1.0F);
             GL11.glDisable(GL11.GL_BLEND);
+
+            if (drawBackdropTextureWithShader(left, top, right, bottom, sampleLeft, sampleTop, sampleWidth,
+                    sampleHeight, blurRadius, saturation)) {
+                return true;
+            }
+            if (blurRadius <= 0) {
+                return false;
+            }
+
             drawBackdropTextureQuad(left, top, right, bottom, sampleLeft, sampleTop, sampleWidth, sampleHeight,
                     0.0F, 0.0F);
-
             GL11.glEnable(GL11.GL_BLEND);
             GL11.glBlendFunc(GL11.GL_SRC_ALPHA, GL11.GL_ONE_MINUS_SRC_ALPHA);
             float sampleStep = (float) resolveBackdropSampleStep(blurRadius);
@@ -335,11 +349,29 @@ public class UiRenderContext {
             GL11.glColor4f(1.0F, 1.0F, 1.0F, 1.0F);
             return true;
         } finally {
+            GL20.glUseProgram(previousProgram);
+            GL13.glActiveTexture(previousActiveTexture);
             GL11.glBindTexture(GL11.GL_TEXTURE_2D, 0);
             GL11.glDeleteTextures(textureId);
             GL11.glPopAttrib();
             popClip();
         }
+    }
+
+    private boolean drawBackdropTextureWithShader(int left, int top, int right, int bottom, int sampleLeft,
+            int sampleTop, int sampleWidth, int sampleHeight, int blurRadius, float saturation) {
+        if (!BACKDROP_SHADER_PROGRAM.ensureInitialized()) {
+            return false;
+        }
+        BACKDROP_SHADER_PROGRAM.bind();
+        BACKDROP_SHADER_PROGRAM.setUniformI("mainTex", 0);
+        BACKDROP_SHADER_PROGRAM.setUniform2f("texelSize", 1.0F / (float) sampleWidth, 1.0F / (float) sampleHeight);
+        BACKDROP_SHADER_PROGRAM.setUniformF("blurRadius", resolveBackdropShaderRadius(blurRadius));
+        BACKDROP_SHADER_PROGRAM.setUniformF("saturation", Math.max(0.0F, saturation));
+        drawBackdropTextureQuad(left, top, right, bottom, sampleLeft, sampleTop, sampleWidth, sampleHeight,
+                0.0F, 0.0F);
+        BACKDROP_SHADER_PROGRAM.unbind();
+        return true;
     }
 
     private void drawBackdropTextureQuad(int left, int top, int right, int bottom, int sampleLeft, int sampleTop,
@@ -673,6 +705,13 @@ public class UiRenderContext {
 
     private static int resolveBackdropSampleStep(int blurRadius) {
         return Math.max(1, Math.min(12, Math.round(Math.max(1, blurRadius) / 2.5F)));
+    }
+
+    private static float resolveBackdropShaderRadius(int blurRadius) {
+        if (blurRadius <= 0) {
+            return 0.0F;
+        }
+        return Math.max(1.0F, Math.min(28.0F, (float) blurRadius * 0.55F));
     }
 
     private static float clampCornerRadius(float width, float height, float radius) {
