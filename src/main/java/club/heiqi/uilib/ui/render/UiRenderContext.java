@@ -9,7 +9,9 @@ import java.util.List;
 import java.util.Objects;
 
 import net.minecraft.client.gui.Gui;
+import net.minecraft.client.renderer.Tessellator;
 import org.lwjgl.opengl.GL11;
+import org.lwjgl.opengl.GL12;
 
 import club.heiqi.uilib.font.api.DefaultFontRendererAdapter;
 import club.heiqi.uilib.font.api.FontRendererAdapter;
@@ -21,6 +23,16 @@ import club.heiqi.uilib.ui.theme.UiSurfaceStyle;
 public class UiRenderContext {
 
     private static final float UI_TEXT_SCALE = 2.0F;
+    private static final float[][] UI_BACKDROP_BLUR_SAMPLES = new float[][] {
+            { -1.0F, 0.0F, 0.18F },
+            { 1.0F, 0.0F, 0.18F },
+            { 0.0F, -1.0F, 0.18F },
+            { 0.0F, 1.0F, 0.18F },
+            { -1.0F, -1.0F, 0.12F },
+            { 1.0F, -1.0F, 0.12F },
+            { -1.0F, 1.0F, 0.12F },
+            { 1.0F, 1.0F, 0.12F }
+    };
 
     private final int screenWidth;
     private final int screenHeight;
@@ -251,8 +263,9 @@ public class UiRenderContext {
     /**
      * 绘制元素背后内容滤镜。
      *
-     * <p>当前默认实现提供不依赖 FBO/shader 的伪玻璃降级；宿主后续可覆盖该入口，
-     * 在不改变文档作者 API 的前提下接入真实背景采样与模糊合成。</p>
+     * <p>该入口只采样当前 UI 主层已经绘制到当前 framebuffer 的内容，不主动读取游戏世界 framebuffer。
+     * 如果页面壳提前绘制了一张已模糊底图，它会作为普通 UI 背景被采样；否则只处理 UI 自身内容。
+     * 当前实现使用当前 UI framebuffer 的局部复制做近似 blur，复制失败时回退为伪玻璃 tint。</p>
      *
      * @param left 左侧坐标
      * @param top 顶部坐标
@@ -267,6 +280,87 @@ public class UiRenderContext {
         if (right <= left || bottom <= top || (blurRadius <= 0 && Float.compare(saturation, 1.0F) == 0)) {
             return;
         }
+        if (blurRadius > 0 && drawCurrentUiBackdropBlur(left, top, right, bottom, blurRadius, cornerRadius)) {
+            return;
+        }
+        drawBackdropFilterFallback(left, top, right, bottom, blurRadius, saturation, cornerRadius);
+    }
+
+    private boolean drawCurrentUiBackdropBlur(int left, int top, int right, int bottom, int blurRadius,
+            int cornerRadius) {
+        int sampleInset = Math.max(1, Math.min(64, blurRadius + resolveBackdropSampleStep(blurRadius)));
+        int sampleLeft = clampInt(left - sampleInset, 0, screenWidth);
+        int sampleTop = clampInt(top - sampleInset, 0, screenHeight);
+        int sampleRight = clampInt(right + sampleInset, 0, screenWidth);
+        int sampleBottom = clampInt(bottom + sampleInset, 0, screenHeight);
+        int sampleWidth = sampleRight - sampleLeft;
+        int sampleHeight = sampleBottom - sampleTop;
+        if (sampleWidth <= 0 || sampleHeight <= 0) {
+            return false;
+        }
+
+        int textureId = GL11.glGenTextures();
+        if (textureId == 0) {
+            return false;
+        }
+        pushClip(left, top, right, bottom, cornerRadius);
+        GL11.glPushAttrib(GL11.GL_ALL_ATTRIB_BITS);
+        try {
+            GL11.glBindTexture(GL11.GL_TEXTURE_2D, textureId);
+            GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_MIN_FILTER, GL11.GL_LINEAR);
+            GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_MAG_FILTER, GL11.GL_LINEAR);
+            GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_WRAP_S, GL12.GL_CLAMP_TO_EDGE);
+            GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_WRAP_T, GL12.GL_CLAMP_TO_EDGE);
+            GL11.glTexImage2D(GL11.GL_TEXTURE_2D, 0, GL11.GL_RGBA, sampleWidth, sampleHeight, 0, GL11.GL_RGBA,
+                    GL11.GL_UNSIGNED_BYTE, (java.nio.ByteBuffer) null);
+            GL11.glCopyTexSubImage2D(GL11.GL_TEXTURE_2D, 0, 0, 0, sampleLeft, screenHeight - sampleBottom,
+                    sampleWidth, sampleHeight);
+
+            GL11.glEnable(GL11.GL_TEXTURE_2D);
+            GL11.glDisable(GL11.GL_DEPTH_TEST);
+            GL11.glDisable(GL11.GL_ALPHA_TEST);
+            GL11.glColor4f(1.0F, 1.0F, 1.0F, 1.0F);
+            GL11.glDisable(GL11.GL_BLEND);
+            drawBackdropTextureQuad(left, top, right, bottom, sampleLeft, sampleTop, sampleWidth, sampleHeight,
+                    0.0F, 0.0F);
+
+            GL11.glEnable(GL11.GL_BLEND);
+            GL11.glBlendFunc(GL11.GL_SRC_ALPHA, GL11.GL_ONE_MINUS_SRC_ALPHA);
+            float sampleStep = (float) resolveBackdropSampleStep(blurRadius);
+            for (float[] sample : UI_BACKDROP_BLUR_SAMPLES) {
+                GL11.glColor4f(1.0F, 1.0F, 1.0F, sample[2]);
+                drawBackdropTextureQuad(left, top, right, bottom, sampleLeft, sampleTop, sampleWidth, sampleHeight,
+                        sample[0] * sampleStep, sample[1] * sampleStep);
+            }
+            GL11.glColor4f(1.0F, 1.0F, 1.0F, 1.0F);
+            return true;
+        } finally {
+            GL11.glBindTexture(GL11.GL_TEXTURE_2D, 0);
+            GL11.glDeleteTextures(textureId);
+            GL11.glPopAttrib();
+            popClip();
+        }
+    }
+
+    private void drawBackdropTextureQuad(int left, int top, int right, int bottom, int sampleLeft, int sampleTop,
+            int sampleWidth, int sampleHeight, float sampleOffsetX, float sampleOffsetY) {
+        float leftU = clampFloat(((float) left + sampleOffsetX - (float) sampleLeft) / (float) sampleWidth, 0.0F, 1.0F);
+        float rightU = clampFloat(((float) right + sampleOffsetX - (float) sampleLeft) / (float) sampleWidth, 0.0F, 1.0F);
+        float topV = clampFloat(1.0F - ((float) top + sampleOffsetY - (float) sampleTop) / (float) sampleHeight,
+                0.0F, 1.0F);
+        float bottomV = clampFloat(1.0F - ((float) bottom + sampleOffsetY - (float) sampleTop) / (float) sampleHeight,
+                0.0F, 1.0F);
+        Tessellator tessellator = Tessellator.instance;
+        tessellator.startDrawingQuads();
+        tessellator.addVertexWithUV(left, bottom, 0.0D, leftU, bottomV);
+        tessellator.addVertexWithUV(right, bottom, 0.0D, rightU, bottomV);
+        tessellator.addVertexWithUV(right, top, 0.0D, rightU, topV);
+        tessellator.addVertexWithUV(left, top, 0.0D, leftU, topV);
+        tessellator.draw();
+    }
+
+    private void drawBackdropFilterFallback(int left, int top, int right, int bottom, int blurRadius, float saturation,
+            int cornerRadius) {
         int tintAlpha = clampInt(18 + Math.max(0, blurRadius) * 2 + Math.round(Math.max(0.0F,
                 saturation - 1.0F) * 16.0F), 18, 72);
         int highlightAlpha = clampInt(tintAlpha + 22, 32, 96);
@@ -571,6 +665,14 @@ public class UiRenderContext {
 
     private static int clampInt(int value, int min, int max) {
         return Math.max(min, Math.min(value, max));
+    }
+
+    private static float clampFloat(float value, float min, float max) {
+        return Math.max(min, Math.min(value, max));
+    }
+
+    private static int resolveBackdropSampleStep(int blurRadius) {
+        return Math.max(1, Math.min(12, Math.round(Math.max(1, blurRadius) / 2.5F)));
     }
 
     private static float clampCornerRadius(float width, float height, float radius) {
