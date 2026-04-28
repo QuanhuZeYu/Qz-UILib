@@ -65,19 +65,29 @@ public final class DocumentLayoutBox {
     /**
      * 返回按同级 stacking 顺序排序后的子盒列表。
      *
-     * <p>当前仅实现 positioned `z-index` 的稳定排序；相同层级保留文档顺序。</p>
+     * <p>当前实现负 z-index、普通流、positioned auto/0、正 z-index 四个阶段；相同阶段与相同层级保留文档顺序。</p>
      *
      * @return 子盒 stacking 顺序列表
      */
     public List<DocumentLayoutBox> getChildrenInStackingOrder() {
-        List<DocumentLayoutBox> orderedChildren = new ArrayList<DocumentLayoutBox>(children);
-        Collections.sort(orderedChildren, new Comparator<DocumentLayoutBox>() {
-            @Override
-            public int compare(DocumentLayoutBox first, DocumentLayoutBox second) {
-                return Integer.compare(getStackingZIndex(first), getStackingZIndex(second));
-            }
-        });
+        List<DocumentLayoutBox> orderedChildren = new ArrayList<DocumentLayoutBox>();
+        appendChildrenInStackingPhase(orderedChildren, DocumentStackingPhase.NEGATIVE_POSITIONED);
+        appendChildrenInStackingPhase(orderedChildren, DocumentStackingPhase.NORMAL_FLOW);
+        appendChildrenInStackingPhase(orderedChildren, DocumentStackingPhase.POSITIONED_AUTO_OR_ZERO);
+        appendChildrenInStackingPhase(orderedChildren, DocumentStackingPhase.POSITIVE_POSITIONED);
         return Collections.unmodifiableList(orderedChildren);
+    }
+
+    /**
+     * 返回指定 stacking 阶段内的子盒列表。
+     *
+     * @param phase stacking 阶段
+     * @return 子盒列表
+     */
+    public List<DocumentLayoutBox> getChildrenInStackingPhase(DocumentStackingPhase phase) {
+        List<DocumentLayoutBox> phaseChildren = new ArrayList<DocumentLayoutBox>();
+        appendChildrenInStackingPhase(phaseChildren, Objects.requireNonNull(phase, "phase"));
+        return Collections.unmodifiableList(phaseChildren);
     }
 
     /**
@@ -195,9 +205,41 @@ public final class DocumentLayoutBox {
         return getBottom() + margin.getBottom();
     }
 
+    private void appendChildrenInStackingPhase(List<DocumentLayoutBox> target, DocumentStackingPhase phase) {
+        List<DocumentLayoutBox> phaseChildren = new ArrayList<DocumentLayoutBox>();
+        for (DocumentLayoutBox child : children) {
+            if (getStackingPhase(child) == phase) {
+                phaseChildren.add(child);
+            }
+        }
+        if (phase == DocumentStackingPhase.NEGATIVE_POSITIONED
+                || phase == DocumentStackingPhase.POSITIVE_POSITIONED) {
+            Collections.sort(phaseChildren, new Comparator<DocumentLayoutBox>() {
+                @Override
+                public int compare(DocumentLayoutBox first, DocumentLayoutBox second) {
+                    return Integer.compare(getStackingZIndex(first), getStackingZIndex(second));
+                }
+            });
+        }
+        target.addAll(phaseChildren);
+    }
+
+    private static DocumentStackingPhase getStackingPhase(DocumentLayoutBox box) {
+        ComputedStyle style = box.getComputedStyle();
+        if (style.getPosition() == UiPosition.STATIC) {
+            return DocumentStackingPhase.NORMAL_FLOW;
+        }
+        Integer zIndex = style.getZIndex();
+        if (zIndex == null || zIndex.intValue() == 0) {
+            return DocumentStackingPhase.POSITIONED_AUTO_OR_ZERO;
+        }
+        return zIndex.intValue() < 0 ? DocumentStackingPhase.NEGATIVE_POSITIONED
+                : DocumentStackingPhase.POSITIVE_POSITIONED;
+    }
+
     private static int getStackingZIndex(DocumentLayoutBox box) {
         ComputedStyle style = box.getComputedStyle();
-        if (style.getPosition() == UiPosition.STATIC || style.getZIndex() == null) {
+        if (style.getZIndex() == null) {
             return 0;
         }
         return style.getZIndex().intValue();

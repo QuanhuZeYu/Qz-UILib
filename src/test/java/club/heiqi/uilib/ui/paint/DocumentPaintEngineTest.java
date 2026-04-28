@@ -90,37 +90,78 @@ public class DocumentPaintEngineTest {
     }
 
     /**
-     * 验证同级 positioned 子元素按 z-index 排序，并在绘制阶段应用 relative 偏移。
+     * 验证子元素按 CSS-like stacking phase 绘制，负 z-index 会落在父内容命令之前。
      */
     @Test
-    public void shouldPaintPositionedChildrenByZIndex() {
+    public void shouldPaintChildrenByStackingPhases() {
         UiDocument document = UiDocument.create();
         ElementNode root = document.getRootElement();
-        ElementNode raised = document.div();
+        ElementNode autoPositioned = document.div();
+        ElementNode positiveHigh = document.div();
         ElementNode normal = document.div();
+        ElementNode negative = document.div();
+        ElementNode zero = document.div();
+        ElementNode positiveLow = document.div();
 
         root.style().setWidth(UiStyleLength.px(100));
-        raised.style()
+        root.setCustomRenderer(new DocumentCustomRenderer() {
+            @Override
+            public void render(UiRenderContext context, int contentLeft, int contentTop, int contentRight,
+                    int contentBottom) {}
+        });
+        autoPositioned.style()
                 .setWidth(UiStyleLength.px(50))
-                .setHeight(UiStyleLength.px(20))
+                .setHeight(UiStyleLength.px(10))
                 .setPosition(UiPosition.RELATIVE)
-                .setTop(UiStyleLength.px(16))
-                .setZIndex(1)
-                .setBackgroundColor(0xFFFF0000);
+                .setBackgroundColor(0xFF00AA00);
+        positiveHigh.style()
+                .setWidth(UiStyleLength.px(50))
+                .setHeight(UiStyleLength.px(10))
+                .setPosition(UiPosition.RELATIVE)
+                .setZIndex(3)
+                .setBackgroundColor(0xFFFF00FF);
         normal.style()
                 .setWidth(UiStyleLength.px(50))
-                .setHeight(UiStyleLength.px(20))
+                .setHeight(UiStyleLength.px(10))
                 .setBackgroundColor(0xFF0000FF);
-        root.append(raised).append(normal);
+        negative.style()
+                .setWidth(UiStyleLength.px(50))
+                .setHeight(UiStyleLength.px(10))
+                .setPosition(UiPosition.RELATIVE)
+                .setZIndex(-1)
+                .setBackgroundColor(0xFFFF0000);
+        zero.style()
+                .setWidth(UiStyleLength.px(50))
+                .setHeight(UiStyleLength.px(10))
+                .setPosition(UiPosition.RELATIVE)
+                .setZIndex(0)
+                .setBackgroundColor(0xFFFFFF00);
+        positiveLow.style()
+                .setWidth(UiStyleLength.px(50))
+                .setHeight(UiStyleLength.px(10))
+                .setPosition(UiPosition.RELATIVE)
+                .setZIndex(1)
+                .setBackgroundColor(0xFFAA00AA);
+        root.append(autoPositioned).append(positiveHigh).append(normal).append(negative).append(zero)
+                .append(positiveLow);
 
         List<DocumentPaintCommand> commands = DocumentPaintEngine.buildPaintCommands(
                 DocumentLayoutEngine.layout(root, 120, 0));
 
-        Assert.assertEquals(2, commands.size());
-        assertCommand(commands.get(0), DocumentPaintCommandType.BACKGROUND, normal, 0, 20, 50, 40, 0xFF0000FF,
+        Assert.assertEquals(7, commands.size());
+        assertCommand(commands.get(0), DocumentPaintCommandType.BACKGROUND, negative, 0, 30, 50, 40, 0xFFFF0000,
                 0, 0);
-        assertCommand(commands.get(1), DocumentPaintCommandType.BACKGROUND, raised, 0, 16, 50, 36, 0xFFFF0000,
+        assertCommand(commands.get(1), DocumentPaintCommandType.CUSTOM, root, 0, 0, 100, 60, 0, 0, 0);
+        assertCommand(commands.get(2), DocumentPaintCommandType.BACKGROUND, normal, 0, 20, 50, 30, 0xFF0000FF,
                 0, 0);
+        assertCommand(commands.get(3), DocumentPaintCommandType.BACKGROUND, autoPositioned, 0, 0, 50, 10,
+                0xFF00AA00, 0, 0);
+        assertCommand(commands.get(4), DocumentPaintCommandType.BACKGROUND, zero, 0, 40, 50, 50, 0xFFFFFF00,
+                0, 0);
+        assertCommand(commands.get(5), DocumentPaintCommandType.BACKGROUND, positiveLow, 0, 50, 50, 60,
+                0xFFAA00AA, 0, 0);
+        assertCommand(commands.get(6), DocumentPaintCommandType.BACKGROUND, positiveHigh, 0, 10, 50, 20,
+                0xFFFF00FF, 0, 0);
     }
 
     /**

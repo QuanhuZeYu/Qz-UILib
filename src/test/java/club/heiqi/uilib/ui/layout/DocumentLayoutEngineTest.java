@@ -174,6 +174,52 @@ public class DocumentLayoutEngineTest {
     }
 
     /**
+     * 验证布局盒能按 CSS-like stacking phase 提供稳定子盒顺序。
+     */
+    @Test
+    public void shouldExposeChildrenInStackingPhaseOrder() {
+        UiDocument document = UiDocument.create();
+        ElementNode root = document.getRootElement();
+        ElementNode autoPositioned = document.div();
+        ElementNode positive = document.div();
+        ElementNode normal = document.div();
+        ElementNode negative = document.div();
+        ElementNode zero = document.div();
+
+        root.style().setWidth(UiStyleLength.px(120));
+        autoPositioned.style()
+                .setHeight(UiStyleLength.px(8))
+                .setPosition(UiPosition.RELATIVE);
+        positive.style()
+                .setHeight(UiStyleLength.px(8))
+                .setPosition(UiPosition.RELATIVE)
+                .setZIndex(2);
+        normal.style()
+                .setHeight(UiStyleLength.px(8))
+                .setZIndex(9);
+        negative.style()
+                .setHeight(UiStyleLength.px(8))
+                .setPosition(UiPosition.RELATIVE)
+                .setZIndex(-1);
+        zero.style()
+                .setHeight(UiStyleLength.px(8))
+                .setPosition(UiPosition.RELATIVE)
+                .setZIndex(0);
+        root.append(autoPositioned).append(positive).append(normal).append(negative).append(zero);
+
+        DocumentLayoutBox rootBox = DocumentLayoutEngine.layout(root, 160, 0);
+        List<DocumentLayoutBox> orderedChildren = rootBox.getChildrenInStackingOrder();
+
+        Assert.assertSame(negative, orderedChildren.get(0).getElement());
+        Assert.assertSame(normal, orderedChildren.get(1).getElement());
+        Assert.assertSame(autoPositioned, orderedChildren.get(2).getElement());
+        Assert.assertSame(zero, orderedChildren.get(3).getElement());
+        Assert.assertSame(positive, orderedChildren.get(4).getElement());
+        Assert.assertSame(negative, rootBox.getChildrenInStackingPhase(DocumentStackingPhase.NEGATIVE_POSITIONED)
+                .get(0).getElement());
+    }
+
+    /**
      * 验证直接文本子节点会按单行 block 文本参与父元素 auto 高度与流式排布。
      */
     @Test

@@ -39,4 +39,57 @@ public class DocumentHitTestEngineTest {
 
         Assert.assertSame(raised, DocumentHitTestEngine.hitTest(rootBox, null, 10, 22));
     }
+
+    /**
+     * 验证 positioned auto 元素在普通流元素上方命中。
+     */
+    @Test
+    public void shouldHitPositionedAutoAboveNormalFlow() {
+        UiDocument document = UiDocument.create();
+        ElementNode root = document.getRootElement();
+        ElementNode positioned = document.div();
+        ElementNode normal = document.div();
+
+        root.style().setWidth(UiStyleLength.px(100));
+        positioned.style()
+                .setWidth(UiStyleLength.px(50))
+                .setHeight(UiStyleLength.px(20))
+                .setPosition(UiPosition.RELATIVE)
+                .setTop(UiStyleLength.px(20));
+        normal.style()
+                .setWidth(UiStyleLength.px(50))
+                .setHeight(UiStyleLength.px(20));
+        root.append(positioned).append(normal);
+
+        DocumentLayoutBox rootBox = DocumentLayoutEngine.layout(root, 120, 0);
+
+        Assert.assertSame(positioned, DocumentHitTestEngine.hitTest(rootBox, null, 10, 22));
+    }
+
+    /**
+     * 验证负 z-index 元素在普通流元素下方命中。
+     */
+    @Test
+    public void shouldHitNormalFlowAboveNegativeZIndex() {
+        UiDocument document = UiDocument.create();
+        ElementNode root = document.getRootElement();
+        ElementNode negative = document.div();
+        ElementNode normal = document.div();
+
+        root.style().setWidth(UiStyleLength.px(100));
+        negative.style()
+                .setWidth(UiStyleLength.px(50))
+                .setHeight(UiStyleLength.px(20))
+                .setPosition(UiPosition.RELATIVE)
+                .setTop(UiStyleLength.px(20))
+                .setZIndex(-1);
+        normal.style()
+                .setWidth(UiStyleLength.px(50))
+                .setHeight(UiStyleLength.px(20));
+        root.append(negative).append(normal);
+
+        DocumentLayoutBox rootBox = DocumentLayoutEngine.layout(root, 120, 0);
+
+        Assert.assertSame(normal, DocumentHitTestEngine.hitTest(rootBox, null, 10, 22));
+    }
 }
