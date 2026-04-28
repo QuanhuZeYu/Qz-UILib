@@ -148,6 +148,43 @@ public class HtmlLikeDocumentWidgetTest {
     }
 
     /**
+     * 验证 paint-only 样式变更只刷新绘制样式，不重新执行文本测量布局。
+     */
+    @Test
+    public void shouldRefreshPaintOnlyStyleWithoutRecomputingLayout() {
+        UiDocument document = UiDocument.create();
+        ElementNode root = document.getRootElement();
+        root.style()
+                .setWidth(UiStyleLength.px(24))
+                .setBackgroundColor(0xFF000000)
+                .setTextColor(0xFFFFFFFF);
+        root.appendText("abcdefg");
+        CountingTextMeasureService textMeasureService = new CountingTextMeasureService();
+        HtmlLikeDocumentWidget widget = new HtmlLikeDocumentWidget(document, 80, 80, textMeasureService);
+        widget.applyLayoutBounds(0, 0, 80, 80);
+
+        RecordingUiRenderContext initialContext = new RecordingUiRenderContext();
+        widget.render(initialContext);
+        int measureCountAfterInitialRender = textMeasureService.getMeasureCount();
+        Assert.assertTrue(measureCountAfterInitialRender > 0);
+
+        root.style()
+                .setBackgroundColor(0xFFFFFFFF)
+                .setTextColor(0xFF112233);
+        RecordingUiRenderContext paintOnlyContext = new RecordingUiRenderContext();
+        widget.render(paintOnlyContext);
+
+        Assert.assertEquals(measureCountAfterInitialRender, textMeasureService.getMeasureCount());
+        assertDrawCall(paintOnlyContext.drawCalls.get(0), 0, 0, 24, 54, 0xFFFFFFFF, 0, 0);
+        Assert.assertEquals(0xFF112233, paintOnlyContext.textCalls.get(0).color);
+
+        root.style().setWidth(UiStyleLength.px(32));
+        widget.render(new RecordingUiRenderContext());
+
+        Assert.assertTrue(textMeasureService.getMeasureCount() > measureCountAfterInitialRender);
+    }
+
+    /**
      * 验证 HTML-like 组件能消费滚轮事件并移动 overflow auto 内容。
      */
     @Test
@@ -748,6 +785,58 @@ public class HtmlLikeDocumentWidgetTest {
         @Override
         public long getCurrentTimeNanos() {
             return currentTimeNanos;
+        }
+    }
+
+    /**
+     * 记录测量次数的确定性文本测量服务。
+     */
+    private static final class CountingTextMeasureService implements TextMeasureService {
+
+        private int measureCount;
+
+        private int getMeasureCount() {
+            return measureCount;
+        }
+
+        @Override
+        public int getEpoch() {
+            return 1;
+        }
+
+        @Override
+        public int getStringWidth(String text) {
+            measureCount++;
+            return text == null ? 0 : text.length() * 4;
+        }
+
+        @Override
+        public int getLineHeight() {
+            return 9;
+        }
+
+        @Override
+        public String trimStringToWidth(String text, int targetWidth) {
+            measureCount++;
+            if (text == null || text.isEmpty() || targetWidth <= 0) {
+                return "";
+            }
+            int maxLength = Math.max(0, targetWidth / 4);
+            return text.substring(0, Math.min(text.length(), maxLength));
+        }
+
+        @Override
+        public List<String> listFormattedStringToWidth(String text, int wrapWidth) {
+            measureCount++;
+            if (text == null || text.isEmpty() || wrapWidth <= 0) {
+                return Collections.emptyList();
+            }
+            List<String> lines = new ArrayList<String>();
+            int maxCharsPerLine = Math.max(1, wrapWidth / 4);
+            for (int index = 0; index < text.length(); index += maxCharsPerLine) {
+                lines.add(text.substring(index, Math.min(text.length(), index + maxCharsPerLine)));
+            }
+            return lines;
         }
     }
 

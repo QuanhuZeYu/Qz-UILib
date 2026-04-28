@@ -3,6 +3,8 @@ package club.heiqi.uilib.ui.dom;
 import org.junit.Assert;
 import org.junit.Test;
 
+import club.heiqi.uilib.ui.style.UiStyleLength;
+
 /**
  * `UiDocument` 文档树基础契约测试。
  */
@@ -77,6 +79,31 @@ public class UiDocumentTest {
         Assert.assertTrue(first.__getElementUid() != second.__getElementUid());
         Assert.assertTrue(first.__getElementUid() != otherDocumentElement.__getElementUid());
         Assert.assertFalse(first.hasAttribute("__elementUid"));
+    }
+
+    /**
+     * 验证文档会区分 layout 失效与 paint-only 失效版本。
+     */
+    @Test
+    public void shouldTrackLayoutAndPaintMutationVersionsSeparately() {
+        UiDocument document = UiDocument.create();
+        ElementNode root = document.getRootElement();
+        int initialMutationVersion = document.getMutationVersion();
+        int initialLayoutVersion = document.getLayoutVersion();
+        int initialPaintVersion = document.getPaintVersion();
+
+        root.style().setBackgroundColor(0xFF223344);
+
+        Assert.assertTrue(document.getMutationVersion() > initialMutationVersion);
+        Assert.assertEquals(initialLayoutVersion, document.getLayoutVersion());
+        Assert.assertTrue(document.getPaintVersion() > initialPaintVersion);
+
+        int paintOnlyLayoutVersion = document.getLayoutVersion();
+        int paintOnlyPaintVersion = document.getPaintVersion();
+        root.style().setWidth(UiStyleLength.px(40));
+
+        Assert.assertTrue(document.getLayoutVersion() > paintOnlyLayoutVersion);
+        Assert.assertTrue(document.getPaintVersion() > paintOnlyPaintVersion);
     }
 
     /**

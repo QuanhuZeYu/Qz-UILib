@@ -15,12 +15,12 @@ import club.heiqi.uilib.ui.animation.DocumentAnimationTimingFunction;
  */
 public final class UiStyleDeclaration {
 
-    private static final Runnable NO_OP_CHANGE_LISTENER = new Runnable() {
+    private static final UiStyleChangeListener NO_OP_CHANGE_LISTENER = new UiStyleChangeListener() {
         @Override
-        public void run() {}
+        public void onStyleChanged(UiStyleChangeImpact impact) {}
     };
 
-    private final Runnable changeListener;
+    private final UiStyleChangeListener changeListener;
     private UiDisplay display;
     private UiStyleLength width;
     private UiStyleLength height;
@@ -55,10 +55,14 @@ public final class UiStyleDeclaration {
     private Float backdropSaturation;
 
     public UiStyleDeclaration() {
-        this(null);
+        this((UiStyleChangeListener) null);
     }
 
     public UiStyleDeclaration(Runnable changeListener) {
+        this(changeListener == null ? null : new RunnableStyleChangeListener(changeListener));
+    }
+
+    public UiStyleDeclaration(UiStyleChangeListener changeListener) {
         this.changeListener = changeListener == null ? NO_OP_CHANGE_LISTENER : changeListener;
     }
 
@@ -501,7 +505,7 @@ public final class UiStyleDeclaration {
     private UiStyleDeclaration updateDisplay(UiDisplay value) {
         if (display != value) {
             display = value;
-            recordChange();
+            recordLayoutChange();
         }
         return this;
     }
@@ -509,7 +513,7 @@ public final class UiStyleDeclaration {
     private UiStyleDeclaration updateWidth(UiStyleLength value) {
         if (!Objects.equals(width, value)) {
             width = value;
-            recordChange();
+            recordLayoutChange();
         }
         return this;
     }
@@ -517,7 +521,7 @@ public final class UiStyleDeclaration {
     private UiStyleDeclaration updateHeight(UiStyleLength value) {
         if (!Objects.equals(height, value)) {
             height = value;
-            recordChange();
+            recordLayoutChange();
         }
         return this;
     }
@@ -525,7 +529,7 @@ public final class UiStyleDeclaration {
     private UiStyleDeclaration updatePosition(UiPosition value) {
         if (position != value) {
             position = value;
-            recordChange();
+            recordLayoutChange();
         }
         return this;
     }
@@ -533,7 +537,7 @@ public final class UiStyleDeclaration {
     private UiStyleDeclaration updateTop(UiStyleLength value) {
         if (!Objects.equals(top, value)) {
             top = value;
-            recordChange();
+            recordLayoutChange();
         }
         return this;
     }
@@ -541,7 +545,7 @@ public final class UiStyleDeclaration {
     private UiStyleDeclaration updateRight(UiStyleLength value) {
         if (!Objects.equals(right, value)) {
             right = value;
-            recordChange();
+            recordLayoutChange();
         }
         return this;
     }
@@ -549,7 +553,7 @@ public final class UiStyleDeclaration {
     private UiStyleDeclaration updateBottom(UiStyleLength value) {
         if (!Objects.equals(bottom, value)) {
             bottom = value;
-            recordChange();
+            recordLayoutChange();
         }
         return this;
     }
@@ -557,7 +561,7 @@ public final class UiStyleDeclaration {
     private UiStyleDeclaration updateLeft(UiStyleLength value) {
         if (!Objects.equals(left, value)) {
             left = value;
-            recordChange();
+            recordLayoutChange();
         }
         return this;
     }
@@ -565,7 +569,7 @@ public final class UiStyleDeclaration {
     private UiStyleDeclaration updateZIndex(Integer value) {
         if (!Objects.equals(zIndex, value)) {
             zIndex = value;
-            recordChange();
+            recordLayoutChange();
         }
         return this;
     }
@@ -573,7 +577,7 @@ public final class UiStyleDeclaration {
     private UiStyleDeclaration updateMargin(UiStyleInsets value) {
         if (!Objects.equals(margin, value)) {
             margin = value;
-            recordChange();
+            recordLayoutChange();
         }
         return this;
     }
@@ -581,7 +585,7 @@ public final class UiStyleDeclaration {
     private UiStyleDeclaration updatePadding(UiStyleInsets value) {
         if (!Objects.equals(padding, value)) {
             padding = value;
-            recordChange();
+            recordLayoutChange();
         }
         return this;
     }
@@ -589,7 +593,7 @@ public final class UiStyleDeclaration {
     private UiStyleDeclaration updateBorderWidth(UiStyleLength value) {
         if (!Objects.equals(borderWidth, value)) {
             borderWidth = value;
-            recordChange();
+            recordLayoutChange();
         }
         return this;
     }
@@ -597,7 +601,7 @@ public final class UiStyleDeclaration {
     private UiStyleDeclaration updateBorderRadius(UiStyleLength value) {
         if (!Objects.equals(borderRadius, value)) {
             borderRadius = value;
-            recordChange();
+            recordPaintChange();
         }
         return this;
     }
@@ -605,7 +609,7 @@ public final class UiStyleDeclaration {
     private UiStyleDeclaration updateOverflowX(UiOverflow value) {
         if (overflowX != value) {
             overflowX = value;
-            recordChange();
+            recordLayoutChange();
         }
         return this;
     }
@@ -613,7 +617,7 @@ public final class UiStyleDeclaration {
     private UiStyleDeclaration updateOverflowY(UiOverflow value) {
         if (overflowY != value) {
             overflowY = value;
-            recordChange();
+            recordLayoutChange();
         }
         return this;
     }
@@ -621,7 +625,7 @@ public final class UiStyleDeclaration {
     private UiStyleDeclaration updateFlexDirection(UiFlexDirection value) {
         if (flexDirection != value) {
             flexDirection = value;
-            recordChange();
+            recordLayoutChange();
         }
         return this;
     }
@@ -629,7 +633,7 @@ public final class UiStyleDeclaration {
     private UiStyleDeclaration updateAlignItems(UiAlignItems value) {
         if (alignItems != value) {
             alignItems = value;
-            recordChange();
+            recordLayoutChange();
         }
         return this;
     }
@@ -637,7 +641,7 @@ public final class UiStyleDeclaration {
     private UiStyleDeclaration updateJustifyContent(UiJustifyContent value) {
         if (justifyContent != value) {
             justifyContent = value;
-            recordChange();
+            recordLayoutChange();
         }
         return this;
     }
@@ -645,7 +649,7 @@ public final class UiStyleDeclaration {
     private UiStyleDeclaration updateRowGap(UiStyleLength value) {
         if (!Objects.equals(rowGap, value)) {
             rowGap = value;
-            recordChange();
+            recordLayoutChange();
         }
         return this;
     }
@@ -653,7 +657,7 @@ public final class UiStyleDeclaration {
     private UiStyleDeclaration updateColumnGap(UiStyleLength value) {
         if (!Objects.equals(columnGap, value)) {
             columnGap = value;
-            recordChange();
+            recordLayoutChange();
         }
         return this;
     }
@@ -661,7 +665,7 @@ public final class UiStyleDeclaration {
     private UiStyleDeclaration updateFlexGrow(Float value) {
         if (!Objects.equals(flexGrow, value)) {
             flexGrow = value;
-            recordChange();
+            recordLayoutChange();
         }
         return this;
     }
@@ -669,7 +673,7 @@ public final class UiStyleDeclaration {
     private UiStyleDeclaration updateFlexShrink(Float value) {
         if (!Objects.equals(flexShrink, value)) {
             flexShrink = value;
-            recordChange();
+            recordLayoutChange();
         }
         return this;
     }
@@ -677,7 +681,7 @@ public final class UiStyleDeclaration {
     private UiStyleDeclaration updateOpacity(Float value) {
         if (!Objects.equals(opacity, value)) {
             opacity = value;
-            recordChange();
+            recordPaintChange();
         }
         return this;
     }
@@ -685,7 +689,7 @@ public final class UiStyleDeclaration {
     private UiStyleDeclaration updateBackgroundColor(Integer value) {
         if (!Objects.equals(backgroundColor, value)) {
             backgroundColor = value;
-            recordChange();
+            recordPaintChange();
         }
         return this;
     }
@@ -693,7 +697,7 @@ public final class UiStyleDeclaration {
     private UiStyleDeclaration updateBorderColor(Integer value) {
         if (!Objects.equals(borderColor, value)) {
             borderColor = value;
-            recordChange();
+            recordPaintChange();
         }
         return this;
     }
@@ -701,7 +705,7 @@ public final class UiStyleDeclaration {
     private UiStyleDeclaration updateTextColor(Integer value) {
         if (!Objects.equals(textColor, value)) {
             textColor = value;
-            recordChange();
+            recordPaintChange();
         }
         return this;
     }
@@ -711,7 +715,7 @@ public final class UiStyleDeclaration {
                 : Collections.unmodifiableList(new ArrayList<DocumentAnimationProperty>(value));
         if (!Objects.equals(transitionProperties, nextValue)) {
             transitionProperties = nextValue;
-            recordChange();
+            recordPaintChange();
         }
         return this;
     }
@@ -719,7 +723,7 @@ public final class UiStyleDeclaration {
     private UiStyleDeclaration updateTransitionDurationNanos(Long value) {
         if (!Objects.equals(transitionDurationNanos, value)) {
             transitionDurationNanos = value;
-            recordChange();
+            recordPaintChange();
         }
         return this;
     }
@@ -727,7 +731,7 @@ public final class UiStyleDeclaration {
     private UiStyleDeclaration updateTransitionDelayNanos(Long value) {
         if (!Objects.equals(transitionDelayNanos, value)) {
             transitionDelayNanos = value;
-            recordChange();
+            recordPaintChange();
         }
         return this;
     }
@@ -735,7 +739,7 @@ public final class UiStyleDeclaration {
     private UiStyleDeclaration updateTransitionTimingFunction(DocumentAnimationTimingFunction value) {
         if (transitionTimingFunction != value) {
             transitionTimingFunction = value;
-            recordChange();
+            recordPaintChange();
         }
         return this;
     }
@@ -743,7 +747,7 @@ public final class UiStyleDeclaration {
     private UiStyleDeclaration updateBackdropBlurRadius(UiStyleLength value) {
         if (!Objects.equals(backdropBlurRadius, value)) {
             backdropBlurRadius = value;
-            recordChange();
+            recordPaintChange();
         }
         return this;
     }
@@ -751,12 +755,37 @@ public final class UiStyleDeclaration {
     private UiStyleDeclaration updateBackdropSaturation(Float value) {
         if (!Objects.equals(backdropSaturation, value)) {
             backdropSaturation = value;
-            recordChange();
+            recordPaintChange();
         }
         return this;
     }
 
-    private void recordChange() {
-        changeListener.run();
+    private void recordLayoutChange() {
+        recordChange(UiStyleChangeImpact.LAYOUT);
+    }
+
+    private void recordPaintChange() {
+        recordChange(UiStyleChangeImpact.PAINT);
+    }
+
+    private void recordChange(UiStyleChangeImpact impact) {
+        changeListener.onStyleChanged(impact);
+    }
+
+    /**
+     * 兼容旧 Runnable 监听器的适配器。
+     */
+    private static final class RunnableStyleChangeListener implements UiStyleChangeListener {
+
+        private final Runnable runnable;
+
+        private RunnableStyleChangeListener(Runnable runnable) {
+            this.runnable = Objects.requireNonNull(runnable, "runnable");
+        }
+
+        @Override
+        public void onStyleChanged(UiStyleChangeImpact impact) {
+            runnable.run();
+        }
     }
 }

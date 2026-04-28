@@ -11,6 +11,8 @@ public final class UiDocument {
 
     private final ElementNode rootElement;
     private int mutationVersion;
+    private int layoutVersion;
+    private int paintVersion;
 
     private UiDocument() {
         rootElement = new ElementNode(this, "document");
@@ -99,8 +101,37 @@ public final class UiDocument {
         return mutationVersion;
     }
 
+    /**
+     * 返回布局失效版本。
+     *
+     * @return 布局失效版本
+     */
+    public int getLayoutVersion() {
+        return layoutVersion;
+    }
+
+    /**
+     * 返回绘制失效版本。
+     *
+     * @return 绘制失效版本
+     */
+    public int getPaintVersion() {
+        return paintVersion;
+    }
+
     void recordMutation() {
+        recordLayoutMutation();
+    }
+
+    void recordLayoutMutation() {
         mutationVersion++;
+        layoutVersion++;
+        paintVersion++;
+    }
+
+    void recordPaintMutation() {
+        mutationVersion++;
+        paintVersion++;
     }
 
     /**

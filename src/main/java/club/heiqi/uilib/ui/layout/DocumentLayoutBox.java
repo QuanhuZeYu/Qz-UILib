@@ -9,6 +9,7 @@ import java.util.Objects;
 import club.heiqi.uilib.ui.dom.ElementNode;
 import club.heiqi.uilib.ui.style.ComputedStyle;
 import club.heiqi.uilib.ui.style.UiPosition;
+import club.heiqi.uilib.ui.style.UiStyleResolver;
 
 /**
  * HTML-like 元素布局盒。
@@ -56,6 +57,22 @@ public final class DocumentLayoutBox {
 
     public ComputedStyle getComputedStyle() {
         return computedStyle;
+    }
+
+    /**
+     * 复用当前布局几何，仅刷新盒树上的 computed style。
+     *
+     * <p>该方法只用于 paint-only style 变更后的绘制刷新，不会重新测量文本或重新计算盒几何。</p>
+     *
+     * @return 刷新样式后的布局盒树
+     */
+    public DocumentLayoutBox refreshComputedStyles() {
+        List<DocumentLayoutBox> refreshedChildren = new ArrayList<DocumentLayoutBox>();
+        for (DocumentLayoutBox child : children) {
+            refreshedChildren.add(child.refreshComputedStyles());
+        }
+        return new DocumentLayoutBox(element, UiStyleResolver.compute(element), refreshedChildren, textRuns, margin,
+                border, padding, left, top, width, height, positionOffsetX, positionOffsetY);
     }
 
     public List<DocumentLayoutBox> getChildren() {

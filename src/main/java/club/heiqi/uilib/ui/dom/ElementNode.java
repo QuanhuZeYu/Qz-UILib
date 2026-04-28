@@ -7,6 +7,8 @@ import java.util.Map;
 import java.util.Objects;
 
 import club.heiqi.uilib.ui.paint.DocumentCustomRenderer;
+import club.heiqi.uilib.ui.style.UiStyleChangeImpact;
+import club.heiqi.uilib.ui.style.UiStyleChangeListener;
 import club.heiqi.uilib.ui.style.UiStyleDeclaration;
 
 /**
@@ -24,9 +26,13 @@ public final class ElementNode extends DocumentNode {
     private DocumentElementKeyHandler keyHandler;
     private DocumentElementTextInputHandler textInputHandler;
     private DocumentCustomRenderer customRenderer;
-    private final UiStyleDeclaration style = new UiStyleDeclaration(new Runnable() {
+    private final UiStyleDeclaration style = new UiStyleDeclaration(new UiStyleChangeListener() {
         @Override
-        public void run() {
+        public void onStyleChanged(UiStyleChangeImpact impact) {
+            if (impact == UiStyleChangeImpact.PAINT) {
+                ElementNode.this.markPaintMutated();
+                return;
+            }
             ElementNode.this.markMutated();
         }
     });
@@ -280,7 +286,7 @@ public final class ElementNode extends DocumentNode {
      *
      * <p>回调会在 paint engine 的 appendBoxCommands 中被包装为 CUSTOM 命令，
      * 在元素背景和边框绘制之后、clip/子树之前执行。</p>
-     * <p>回调会影响绘制命令生成，变更时会提升文档 mutation version。</p>
+     * <p>回调会影响绘制命令生成，变更时只提升文档 paint version。</p>
      *
      * @param customRenderer 自定义渲染回调
      */
@@ -289,7 +295,7 @@ public final class ElementNode extends DocumentNode {
             return;
         }
         this.customRenderer = customRenderer;
-        markMutated();
+        markPaintMutated();
     }
 
     /**

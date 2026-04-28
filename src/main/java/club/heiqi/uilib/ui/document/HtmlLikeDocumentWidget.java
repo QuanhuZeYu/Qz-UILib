@@ -48,7 +48,8 @@ public final class HtmlLikeDocumentWidget extends Widget {
     private final int preferredWidth;
     private final int preferredHeight;
     private DocumentAnimationClock animationClock = SystemDocumentAnimationClock.getInstance();
-    private int cachedMutationVersion = -1;
+    private int cachedLayoutVersion = -1;
+    private int cachedPaintVersion = -1;
     private int cachedTextMeasureEpoch = -1;
     private int cachedWidth = -1;
     private int cachedHeight = -1;
@@ -120,7 +121,7 @@ public final class HtmlLikeDocumentWidget extends Widget {
             return this;
         }
         viewportRootScrollingEnabled = enabled;
-        cachedMutationVersion = -1;
+        cachedLayoutVersion = -1;
         cachedPaintScrollVersion = -1;
         requestLayout();
         return this;
@@ -344,7 +345,7 @@ public final class HtmlLikeDocumentWidget extends Widget {
     }
 
     private List<DocumentPaintCommand> resolvePaintCommands() {
-        DocumentLayoutBox rootBox = resolveLayoutBox();
+        DocumentLayoutBox rootBox = resolvePaintLayoutBox();
         int scrollVersion = scrollState.getVersion();
         long currentTimeNanos = animationClock.getCurrentTimeNanos();
         boolean animationStateChanged = animationTimeline.updateFromLayout(rootBox, currentTimeNanos);
@@ -363,10 +364,23 @@ public final class HtmlLikeDocumentWidget extends Widget {
         return cachedPaintCommands;
     }
 
+    private DocumentLayoutBox resolvePaintLayoutBox() {
+        DocumentLayoutBox rootBox = resolveLayoutBox();
+        int paintVersion = document.getPaintVersion();
+        if (cachedPaintVersion == paintVersion) {
+            return rootBox;
+        }
+
+        cachedLayoutBox = rootBox.refreshComputedStyles();
+        cachedPaintVersion = paintVersion;
+        cachedPaintScrollVersion = -1;
+        return cachedLayoutBox;
+    }
+
     private DocumentLayoutBox resolveLayoutBox() {
-        int mutationVersion = document.getMutationVersion();
+        int layoutVersion = document.getLayoutVersion();
         int textMeasureEpoch = textMeasureService.getEpoch();
-        if (cachedMutationVersion == mutationVersion && cachedTextMeasureEpoch == textMeasureEpoch
+        if (cachedLayoutVersion == layoutVersion && cachedTextMeasureEpoch == textMeasureEpoch
                 && cachedWidth == getWidth() && cachedHeight == getHeight()) {
             return cachedLayoutBox;
         }
@@ -376,7 +390,8 @@ public final class HtmlLikeDocumentWidget extends Widget {
                         textMeasureService)
                 : DocumentLayoutEngine.layout(document.getRootElement(), getWidth(), getHeight(), textMeasureService);
         scrollState.updateFromLayout(cachedLayoutBox);
-        cachedMutationVersion = mutationVersion;
+        cachedLayoutVersion = layoutVersion;
+        cachedPaintVersion = document.getPaintVersion();
         cachedTextMeasureEpoch = textMeasureEpoch;
         cachedWidth = getWidth();
         cachedHeight = getHeight();

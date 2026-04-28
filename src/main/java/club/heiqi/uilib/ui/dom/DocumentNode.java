@@ -153,7 +153,14 @@ public abstract class DocumentNode {
      * 通知所属文档当前节点自身状态已变化。
      */
     protected final void markMutated() {
-        ownerDocument.recordMutation();
+        ownerDocument.recordLayoutMutation();
+    }
+
+    /**
+     * 通知所属文档当前节点绘制状态已变化。
+     */
+    protected final void markPaintMutated() {
+        ownerDocument.recordPaintMutation();
     }
 
     private void validateAppendChild(DocumentNode child) {
