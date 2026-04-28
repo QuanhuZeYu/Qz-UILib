@@ -5,6 +5,7 @@ import org.junit.Test;
 
 import club.heiqi.uilib.ui.dom.ElementNode;
 import club.heiqi.uilib.ui.dom.UiDocument;
+import club.heiqi.uilib.ui.style.UiOverflow;
 import club.heiqi.uilib.ui.style.UiPosition;
 import club.heiqi.uilib.ui.style.UiStyleLength;
 
@@ -217,6 +218,40 @@ public class DocumentHitTestEngineTest {
                 .setHeight(UiStyleLength.px(20));
         isolatedParent.append(raisedDescendant);
         root.append(isolatedParent).append(normalCover);
+
+        DocumentLayoutBox rootBox = DocumentLayoutEngine.layout(root, 140, 0);
+
+        assertHitElement(normalCover, rootBox, 10, 22);
+    }
+
+    /**
+     * 验证 overflow clip effect boundary 会阻止高 z-index 后代越界命中。
+     */
+    @Test
+    public void shouldHitExternalSiblingAboveClippedPositionedDescendant() {
+        UiDocument document = UiDocument.create();
+        ElementNode root = document.getRootElement();
+        ElementNode clippedParent = document.div();
+        ElementNode raisedDescendant = document.div();
+        ElementNode normalCover = document.div();
+
+        root.style().setWidth(UiStyleLength.px(120));
+        clippedParent.style()
+                .setWidth(UiStyleLength.px(80))
+                .setHeight(UiStyleLength.px(20))
+                .setOverflowX(UiOverflow.HIDDEN)
+                .setOverflowY(UiOverflow.HIDDEN);
+        raisedDescendant.style()
+                .setWidth(UiStyleLength.px(70))
+                .setHeight(UiStyleLength.px(20))
+                .setPosition(UiPosition.RELATIVE)
+                .setTop(UiStyleLength.px(12))
+                .setZIndex(99);
+        normalCover.style()
+                .setWidth(UiStyleLength.px(80))
+                .setHeight(UiStyleLength.px(20));
+        clippedParent.append(raisedDescendant);
+        root.append(clippedParent).append(normalCover);
 
         DocumentLayoutBox rootBox = DocumentLayoutEngine.layout(root, 140, 0);
 

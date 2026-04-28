@@ -6,6 +6,7 @@ import java.util.Objects;
 
 import club.heiqi.uilib.ui.animation.DocumentAnimationProperty;
 import club.heiqi.uilib.ui.animation.DocumentAnimationTimeline;
+import club.heiqi.uilib.ui.layout.DocumentEffectChain;
 import club.heiqi.uilib.ui.layout.DocumentLayoutBox;
 import club.heiqi.uilib.ui.layout.DocumentLayoutTextRun;
 import club.heiqi.uilib.ui.layout.DocumentScrollState;
@@ -13,7 +14,6 @@ import club.heiqi.uilib.ui.layout.DocumentScrollState.ScrollbarMetrics;
 import club.heiqi.uilib.ui.layout.DocumentStackingPhase;
 import club.heiqi.uilib.ui.style.ComputedStyle;
 import club.heiqi.uilib.ui.style.UiOverflow;
-import club.heiqi.uilib.ui.style.UiPosition;
 
 /**
  * HTML-like 绘制命令生成器。
@@ -22,7 +22,6 @@ public final class DocumentPaintEngine {
 
     private static final int SCROLLBAR_TRACK_COLOR = 0x663B4A66;
     private static final int SCROLLBAR_THUMB_COLOR = 0xDDBCD7FF;
-    private static final int MAX_BACKDROP_BLUR_RADIUS = 48;
 
     private DocumentPaintEngine() {}
 
@@ -91,19 +90,22 @@ public final class DocumentPaintEngine {
         int boxOffsetX = offsetX + box.getPositionOffsetX();
         int boxOffsetY = offsetY + box.getPositionOffsetY();
         float localOpacity = resolveAnimatedOpacity(animationTimeline, box, currentTimeNanos);
-        boolean paintContext = shouldCreatePaintContext(rootBox, box, localOpacity);
+        DocumentEffectChain effectChain = DocumentEffectChain.resolve(box);
+        boolean paintContext = effectChain.createsPaintContext(box == rootBox, localOpacity);
         boolean resolvedPaintStackingContext = paintStackingContext || paintContext || box == rootBox;
         float boxOpacity = paintContext ? inheritedOpacity : inheritedOpacity * localOpacity;
         if (paintContext) {
             appendPaintContextStartCommand(box, commands, localOpacity, boxOffsetX, boxOffsetY);
         }
-        appendBackdropFilterCommand(box, commands, animationTimeline, currentTimeNanos, boxOffsetX, boxOffsetY);
+        appendBackdropFilterCommand(box, commands, animationTimeline, currentTimeNanos, effectChain, boxOffsetX,
+                boxOffsetY);
         appendBackgroundCommand(box, commands, animationTimeline, currentTimeNanos, boxOpacity, boxOffsetX,
                 boxOffsetY);
         appendBorderCommand(box, commands, animationTimeline, currentTimeNanos, boxOpacity, boxOffsetX, boxOffsetY);
-        boolean clipChildren = shouldClipChildren(box);
+        boolean clipChildren = effectChain.clipsChildren();
         if (clipChildren) {
-            appendClipStartCommand(box, commands, animationTimeline, currentTimeNanos, boxOffsetX, boxOffsetY);
+            appendClipStartCommand(box, commands, animationTimeline, currentTimeNanos, effectChain, boxOffsetX,
+                    boxOffsetY);
         }
         int childOffsetX = boxOffsetX - getScrollLeft(scrollState, box);
         int childOffsetY = boxOffsetY - getScrollTop(scrollState, box);
@@ -136,22 +138,6 @@ public final class DocumentPaintEngine {
         }
     }
 
-    private static boolean shouldCreatePaintContext(DocumentLayoutBox rootBox, DocumentLayoutBox box,
-            float localOpacity) {
-        if (box == rootBox || box.getWidth() <= 0 || box.getHeight() <= 0) {
-            return false;
-        }
-        ComputedStyle style = box.getComputedStyle();
-        if (localOpacity < 0.999F) {
-            return true;
-        }
-        if (style.getPosition() != UiPosition.STATIC && style.getZIndex() != null) {
-            return true;
-        }
-        int blurRadius = resolveBackdropBlurRadius(box);
-        return blurRadius > 0 || Float.compare(style.getBackdropSaturation(), 1.0F) != 0;
-    }
-
     private static void appendPaintContextStartCommand(DocumentLayoutBox box, List<DocumentPaintCommand> commands,
             float localOpacity, int offsetX, int offsetY) {
         commands.add(new DocumentPaintCommand(DocumentPaintCommandType.PAINT_CONTEXT_START, box.getElement(),
@@ -174,8 +160,9 @@ public final class DocumentPaintEngine {
                 continue;
             }
             float localOpacity = resolveAnimatedOpacity(animationTimeline, child, currentTimeNanos);
-            boolean childPaintContext = shouldCreatePaintContext(rootBox, child, localOpacity);
-            boolean childPaintStackingContext = childPaintContext || shouldClipChildren(child);
+            DocumentEffectChain childEffectChain = DocumentEffectChain.resolve(child);
+            boolean childPaintContext = childEffectChain.createsPaintContext(child == rootBox, localOpacity);
+            boolean childPaintStackingContext = childPaintContext || childEffectChain.clipsChildren();
             appendBoxCommands(rootBox, child, commands, scrollState, animationTimeline, childOffsetX, childOffsetY,
                     currentTimeNanos, inheritedOpacity, childPaintStackingContext);
         }
@@ -208,8 +195,9 @@ public final class DocumentPaintEngine {
             DocumentAnimationTimeline animationTimeline, long currentTimeNanos, DocumentStackingPhase phase) {
         for (DocumentLayoutBox child : currentBox.getChildren()) {
             float localOpacity = resolveAnimatedOpacity(animationTimeline, child, currentTimeNanos);
-            boolean childPaintContext = shouldCreatePaintContext(rootBox, child, localOpacity);
-            boolean childPaintStackingContext = childPaintContext || shouldClipChildren(child);
+            DocumentEffectChain childEffectChain = DocumentEffectChain.resolve(child);
+            boolean childPaintContext = childEffectChain.createsPaintContext(child == rootBox, localOpacity);
+            boolean childPaintStackingContext = childPaintContext || childEffectChain.clipsChildren();
             if (child.getStackingPhase() == phase) {
                 items.add(new StackingPaintItem(child, childOffsetX, childOffsetY, childPaintStackingContext));
             }
@@ -240,12 +228,11 @@ public final class DocumentPaintEngine {
     }
 
     private static void appendBackdropFilterCommand(DocumentLayoutBox box, List<DocumentPaintCommand> commands,
-            DocumentAnimationTimeline animationTimeline, long currentTimeNanos, int offsetX, int offsetY) {
-        ComputedStyle style = box.getComputedStyle();
-        int blurRadius = resolveBackdropBlurRadius(box);
-        float saturation = style.getBackdropSaturation();
-        if ((blurRadius <= 0 && Float.compare(saturation, 1.0F) == 0) || box.getWidth() <= 0
-                || box.getHeight() <= 0) {
+            DocumentAnimationTimeline animationTimeline, long currentTimeNanos, DocumentEffectChain effectChain,
+            int offsetX, int offsetY) {
+        int blurRadius = effectChain.getBackdropBlurRadius();
+        float saturation = effectChain.getBackdropSaturation();
+        if (!effectChain.hasBackdropFilter() || box.getWidth() <= 0 || box.getHeight() <= 0) {
             return;
         }
         commands.add(new DocumentPaintCommand(DocumentPaintCommandType.BACKDROP_FILTER, box.getElement(),
@@ -340,22 +327,12 @@ public final class DocumentPaintEngine {
     }
 
     private static void appendClipStartCommand(DocumentLayoutBox box, List<DocumentPaintCommand> commands,
-            DocumentAnimationTimeline animationTimeline, long currentTimeNanos, int offsetX, int offsetY) {
-        ComputedStyle style = box.getComputedStyle();
-        int left = style.getOverflowX() == UiOverflow.VISIBLE
-                ? Integer.MIN_VALUE / 4
-                : getPaddingBoxLeft(box) + offsetX;
-        int right = style.getOverflowX() == UiOverflow.VISIBLE
-                ? Integer.MAX_VALUE / 4
-                : getPaddingBoxRight(box) + offsetX;
-        int top = style.getOverflowY() == UiOverflow.VISIBLE
-                ? Integer.MIN_VALUE / 4
-                : getPaddingBoxTop(box) + offsetY;
-        int bottom = style.getOverflowY() == UiOverflow.VISIBLE
-                ? Integer.MAX_VALUE / 4
-                : getPaddingBoxBottom(box) + offsetY;
-        commands.add(new DocumentPaintCommand(DocumentPaintCommandType.CLIP_START, box.getElement(), left, top,
-                right, bottom, 0, 0, resolveBorderRadius(box, animationTimeline, currentTimeNanos)));
+            DocumentAnimationTimeline animationTimeline, long currentTimeNanos, DocumentEffectChain effectChain,
+            int offsetX, int offsetY) {
+        DocumentEffectChain.ClipBounds clipBounds = effectChain.resolveChildClipBounds(offsetX, offsetY);
+        commands.add(new DocumentPaintCommand(DocumentPaintCommandType.CLIP_START, box.getElement(),
+                clipBounds.getLeft(), clipBounds.getTop(), clipBounds.getRight(), clipBounds.getBottom(), 0, 0,
+                resolveBorderRadius(box, animationTimeline, currentTimeNanos)));
     }
 
     private static void appendClipEndCommand(DocumentLayoutBox box, List<DocumentPaintCommand> commands, int offsetX,
@@ -410,35 +387,6 @@ public final class DocumentPaintEngine {
                 thumbColor, 0, radius));
     }
 
-    private static boolean shouldClipChildren(DocumentLayoutBox box) {
-        ComputedStyle style = box.getComputedStyle();
-        boolean hasOverflow = style.getOverflowX() != UiOverflow.VISIBLE
-                || style.getOverflowY() != UiOverflow.VISIBLE;
-        if (!hasOverflow) {
-            return false;
-        }
-        if (!box.getChildren().isEmpty() || !box.getTextRuns().isEmpty()) {
-            return true;
-        }
-        return box.getElement().getCustomRenderer() != null;
-    }
-
-    private static int getPaddingBoxLeft(DocumentLayoutBox box) {
-        return box.getLeft() + box.getBorder().getLeft();
-    }
-
-    private static int getPaddingBoxTop(DocumentLayoutBox box) {
-        return box.getTop() + box.getBorder().getTop();
-    }
-
-    private static int getPaddingBoxRight(DocumentLayoutBox box) {
-        return box.getRight() - box.getBorder().getRight();
-    }
-
-    private static int getPaddingBoxBottom(DocumentLayoutBox box) {
-        return box.getBottom() - box.getBorder().getBottom();
-    }
-
     private static int resolveBorderRadius(DocumentLayoutBox box, DocumentAnimationTimeline animationTimeline,
             long currentTimeNanos) {
         int radius = resolveStaticBorderRadius(box);
@@ -454,12 +402,6 @@ public final class DocumentPaintEngine {
         int limit = Math.min(box.getWidth(), box.getHeight());
         int radius = box.getComputedStyle().getBorderRadius().resolve(limit, 0);
         return Math.max(0, Math.min(radius, limit / 2));
-    }
-
-    private static int resolveBackdropBlurRadius(DocumentLayoutBox box) {
-        int availableSpace = Math.max(box.getWidth(), box.getHeight());
-        int radius = box.getComputedStyle().getBackdropBlurRadius().resolve(availableSpace, 0);
-        return Math.max(0, Math.min(radius, MAX_BACKDROP_BLUR_RADIUS));
     }
 
     private static int getScrollLeft(DocumentScrollState scrollState, DocumentLayoutBox box) {

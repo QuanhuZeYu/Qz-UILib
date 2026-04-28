@@ -7,8 +7,6 @@ import java.util.List;
 import java.util.Objects;
 
 import club.heiqi.uilib.ui.dom.ElementNode;
-import club.heiqi.uilib.ui.style.ComputedStyle;
-import club.heiqi.uilib.ui.style.UiOverflow;
 
 /**
  * HTML-like 布局盒命中测试引擎。
@@ -133,24 +131,7 @@ public final class DocumentHitTestEngine {
 
     private static boolean canHitTestChildren(DocumentLayoutBox box, int documentX, int documentY, int offsetX,
             int offsetY) {
-        ComputedStyle style = box.getComputedStyle();
-        if (style.getOverflowX() == UiOverflow.VISIBLE && style.getOverflowY() == UiOverflow.VISIBLE) {
-            return true;
-        }
-
-        int left = style.getOverflowX() == UiOverflow.VISIBLE
-                ? Integer.MIN_VALUE / 4
-                : box.getLeft() + box.getBorder().getLeft() + offsetX;
-        int right = style.getOverflowX() == UiOverflow.VISIBLE
-                ? Integer.MAX_VALUE / 4
-                : box.getRight() - box.getBorder().getRight() + offsetX;
-        int top = style.getOverflowY() == UiOverflow.VISIBLE
-                ? Integer.MIN_VALUE / 4
-                : box.getTop() + box.getBorder().getTop() + offsetY;
-        int bottom = style.getOverflowY() == UiOverflow.VISIBLE
-                ? Integer.MAX_VALUE / 4
-                : box.getBottom() - box.getBorder().getBottom() + offsetY;
-        return containsInRect(documentX, documentY, left, top, right, bottom);
+        return DocumentEffectChain.resolve(box).canReachChildrenAt(documentX, documentY, offsetX, offsetY);
     }
 
     private static int getScrollLeft(DocumentScrollState scrollState, DocumentLayoutBox box) {
@@ -162,16 +143,7 @@ public final class DocumentHitTestEngine {
     }
 
     private static boolean shouldSearchAsStackingContext(DocumentLayoutBox box) {
-        return box.createsStackingContext() || clipsChildren(box);
-    }
-
-    private static boolean clipsChildren(DocumentLayoutBox box) {
-        ComputedStyle style = box.getComputedStyle();
-        if (style.getOverflowX() == UiOverflow.VISIBLE && style.getOverflowY() == UiOverflow.VISIBLE) {
-            return false;
-        }
-        return !box.getChildren().isEmpty() || !box.getTextRuns().isEmpty()
-                || box.getElement().getCustomRenderer() != null;
+        return DocumentEffectChain.resolve(box).isStackingBoundary();
     }
 
     private static boolean containsInRect(int x, int y, int left, int top, int right, int bottom) {

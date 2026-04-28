@@ -594,6 +594,55 @@ public class DocumentPaintEngineTest {
     }
 
     /**
+     * 验证 overflow clip 作为 effect boundary 会隔离高 z-index 后代。
+     */
+    @Test
+    public void shouldKeepPositionedDescendantInsideOverflowClipBoundary() {
+        UiDocument document = UiDocument.create();
+        ElementNode root = document.getRootElement();
+        ElementNode clippedParent = document.div();
+        ElementNode raisedDescendant = document.div();
+        ElementNode normalCover = document.div();
+
+        root.style().setWidth(UiStyleLength.px(120));
+        clippedParent.style()
+                .setWidth(UiStyleLength.px(80))
+                .setHeight(UiStyleLength.px(20))
+                .setOverflowX(UiOverflow.HIDDEN)
+                .setOverflowY(UiOverflow.HIDDEN)
+                .setBackgroundColor(0xFF111827);
+        raisedDescendant.style()
+                .setWidth(UiStyleLength.px(70))
+                .setHeight(UiStyleLength.px(20))
+                .setPosition(UiPosition.RELATIVE)
+                .setTop(UiStyleLength.px(12))
+                .setZIndex(99)
+                .setBackgroundColor(0xFFFF3333);
+        normalCover.style()
+                .setWidth(UiStyleLength.px(80))
+                .setHeight(UiStyleLength.px(20))
+                .setBackgroundColor(0xFF2563EB);
+        clippedParent.append(raisedDescendant);
+        root.append(clippedParent).append(normalCover);
+
+        List<DocumentPaintCommand> commands = DocumentPaintEngine.buildPaintCommands(
+                DocumentLayoutEngine.layout(root, 140, 0));
+        List<DocumentPaintCommand> paintCommands = withoutPaintContextCommands(commands);
+
+        Assert.assertEquals(5, paintCommands.size());
+        assertCommand(paintCommands.get(0), DocumentPaintCommandType.BACKGROUND, clippedParent, 0, 0, 80, 20,
+                0xFF111827, 0, 0);
+        assertCommand(paintCommands.get(1), DocumentPaintCommandType.CLIP_START, clippedParent, 0, 0, 80, 20,
+                0, 0, 0);
+        assertCommand(paintCommands.get(2), DocumentPaintCommandType.BACKGROUND, raisedDescendant, 0, 12, 70, 32,
+                0xFFFF3333, 0, 0);
+        assertCommand(paintCommands.get(3), DocumentPaintCommandType.CLIP_END, clippedParent, 0, 0, 80, 20,
+                0, 0, 0);
+        assertCommand(paintCommands.get(4), DocumentPaintCommandType.BACKGROUND, normalCover, 0, 20, 80, 40,
+                0xFF2563EB, 0, 0);
+    }
+
+    /**
      * 验证透明背景与零宽边框不会产生绘制命令。
      */
     @Test

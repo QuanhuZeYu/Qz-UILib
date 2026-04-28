@@ -506,9 +506,7 @@ public final class DocumentScrollState {
             return null;
         }
 
-        ComputedStyle style = box.getComputedStyle();
-        boolean clippedChildren = style.getOverflowX() != UiOverflow.VISIBLE
-                || style.getOverflowY() != UiOverflow.VISIBLE;
+        boolean clippedChildren = DocumentEffectChain.resolve(box).hasOverflowClip();
         if (!clippedChildren || pointerInViewport) {
             int childOffsetX = boxOffsetX - getScrollLeft(box.getElement());
             int childOffsetY = boxOffsetY - getScrollTop(box.getElement());
@@ -741,37 +739,11 @@ public final class DocumentScrollState {
     }
 
     private boolean shouldSearchAsStackingContext(DocumentLayoutBox box) {
-        return box.createsStackingContext() || clipsChildren(box);
-    }
-
-    private boolean clipsChildren(DocumentLayoutBox box) {
-        ComputedStyle style = box.getComputedStyle();
-        if (style.getOverflowX() == UiOverflow.VISIBLE && style.getOverflowY() == UiOverflow.VISIBLE) {
-            return false;
-        }
-        return !box.getChildren().isEmpty() || !box.getTextRuns().isEmpty()
-                || box.getElement().getCustomRenderer() != null;
+        return DocumentEffectChain.resolve(box).isStackingBoundary();
     }
 
     private boolean canReachChildren(DocumentLayoutBox box, int mouseX, int mouseY, int offsetX, int offsetY) {
-        ComputedStyle style = box.getComputedStyle();
-        if (style.getOverflowX() == UiOverflow.VISIBLE && style.getOverflowY() == UiOverflow.VISIBLE) {
-            return true;
-        }
-
-        int left = style.getOverflowX() == UiOverflow.VISIBLE
-                ? Integer.MIN_VALUE / 4
-                : box.getLeft() + box.getBorder().getLeft() + offsetX;
-        int right = style.getOverflowX() == UiOverflow.VISIBLE
-                ? Integer.MAX_VALUE / 4
-                : box.getRight() - box.getBorder().getRight() + offsetX;
-        int top = style.getOverflowY() == UiOverflow.VISIBLE
-                ? Integer.MIN_VALUE / 4
-                : box.getTop() + box.getBorder().getTop() + offsetY;
-        int bottom = style.getOverflowY() == UiOverflow.VISIBLE
-                ? Integer.MAX_VALUE / 4
-                : box.getBottom() - box.getBorder().getBottom() + offsetY;
-        return containsInRect(mouseX, mouseY, left, top, right, bottom);
+        return DocumentEffectChain.resolve(box).canReachChildrenAt(mouseX, mouseY, offsetX, offsetY);
     }
 
     private boolean updateOffsetFromScrollbarPointer(ScrollEntry entry, ScrollbarMetrics metrics, int pointerPosition,

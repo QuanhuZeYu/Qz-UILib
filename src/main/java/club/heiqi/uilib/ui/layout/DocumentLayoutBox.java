@@ -133,16 +133,7 @@ public final class DocumentLayoutBox {
      * @return 是否建立独立 stacking context
      */
     public boolean createsStackingContext() {
-        ComputedStyle style = getComputedStyle();
-        if (style.getOpacity() < 0.999F) {
-            return true;
-        }
-        if (style.getPosition() != UiPosition.STATIC && style.getZIndex() != null) {
-            return true;
-        }
-        int availableSpace = Math.max(getWidth(), getHeight());
-        return style.getBackdropBlurRadius().resolve(availableSpace, 0) > 0
-                || Float.compare(style.getBackdropSaturation(), 1.0F) != 0;
+        return DocumentEffectChain.resolve(this).createsStackingContext();
     }
 
     /**

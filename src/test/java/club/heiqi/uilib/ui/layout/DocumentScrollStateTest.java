@@ -91,6 +91,46 @@ public class DocumentScrollStateTest {
         Assert.assertTrue(scrollState.getScrollTop(normalCover) > 0);
     }
 
+    /**
+     * 验证 overflow clip effect boundary 会阻止越界高 z-index scroller 抢占滚轮。
+     */
+    @Test
+    public void shouldScrollExternalSiblingAboveClippedPositionedDescendant() {
+        UiDocument document = UiDocument.create();
+        ElementNode root = document.getRootElement();
+        ElementNode clippedParent = document.div();
+        ElementNode raisedScroller = document.div();
+        ElementNode raisedContent = document.div();
+        ElementNode normalCover = document.div();
+        ElementNode coverContent = document.div();
+
+        root.style().setWidth(UiStyleLength.px(120));
+        clippedParent.style()
+                .setWidth(UiStyleLength.px(80))
+                .setHeight(UiStyleLength.px(20))
+                .setOverflowX(UiOverflow.HIDDEN)
+                .setOverflowY(UiOverflow.HIDDEN);
+        configureScroller(raisedScroller);
+        raisedScroller.style()
+                .setPosition(UiPosition.RELATIVE)
+                .setTop(UiStyleLength.px(12))
+                .setZIndex(99);
+        raisedContent.style().setHeight(UiStyleLength.px(80));
+        configureScroller(normalCover);
+        coverContent.style().setHeight(UiStyleLength.px(80));
+        raisedScroller.append(raisedContent);
+        normalCover.append(coverContent);
+        clippedParent.append(raisedScroller);
+        root.append(clippedParent).append(normalCover);
+
+        DocumentLayoutBox rootBox = DocumentLayoutEngine.layout(root, 140, 0);
+        DocumentScrollState scrollState = new DocumentScrollState();
+
+        Assert.assertTrue(scrollState.handleWheel(rootBox, 10, 22, -120, 1L));
+        Assert.assertEquals(0, scrollState.getScrollTop(raisedScroller));
+        Assert.assertTrue(scrollState.getScrollTop(normalCover) > 0);
+    }
+
     private static void configureScroller(ElementNode scroller) {
         scroller.style()
                 .setWidth(UiStyleLength.px(70))
