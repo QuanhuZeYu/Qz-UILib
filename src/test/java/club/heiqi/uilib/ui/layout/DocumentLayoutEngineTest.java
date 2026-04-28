@@ -174,7 +174,7 @@ public class DocumentLayoutEngineTest {
     }
 
     /**
-     * 验证 absolute 定位元素相对父 content box 定位，并脱离普通流。
+     * 验证 absolute 定位元素相对根 content box 定位，并脱离普通流。
      */
     @Test
     public void shouldLayoutAbsolutePositionedElementOutOfNormalFlow() {
@@ -210,7 +210,7 @@ public class DocumentLayoutEngineTest {
     }
 
     /**
-     * 验证 absolute 定位元素可通过 right/bottom 从父 content box 反向定位。
+     * 验证 absolute 定位元素可通过 right/bottom 从根 content box 反向定位。
      */
     @Test
     public void shouldLayoutAbsolutePositionedElementFromRightAndBottomInsets() {
@@ -236,6 +236,168 @@ public class DocumentLayoutEngineTest {
 
         Assert.assertEquals(66, absoluteBox.getLeft());
         Assert.assertEquals(48, absoluteBox.getTop());
+    }
+
+    /**
+     * 验证 absolute 定位元素会相对最近的 positioned ancestor，而不是直接静态父元素。
+     */
+    @Test
+    public void shouldLayoutAbsolutePositionedElementAgainstNearestPositionedAncestor() {
+        UiDocument document = UiDocument.create();
+        ElementNode root = document.getRootElement();
+        ElementNode positioned = document.div();
+        ElementNode staticParent = document.div();
+        ElementNode absolute = document.div();
+
+        root.style().setWidth(UiStyleLength.px(180));
+        positioned.style()
+                .setWidth(UiStyleLength.px(100))
+                .setHeight(UiStyleLength.px(60))
+                .setPosition(UiPosition.RELATIVE)
+                .setBorderWidth(UiStyleLength.px(2))
+                .setPadding(UiStyleLength.px(10));
+        staticParent.style()
+                .setHeight(UiStyleLength.px(20))
+                .setPadding(UiStyleLength.px(3));
+        absolute.style()
+                .setWidth(UiStyleLength.px(12))
+                .setHeight(UiStyleLength.px(8))
+                .setPosition(UiPosition.ABSOLUTE)
+                .setTop(UiStyleLength.px(6))
+                .setLeft(UiStyleLength.px(8));
+        staticParent.append(absolute);
+        positioned.append(staticParent);
+        root.append(positioned);
+
+        DocumentLayoutBox absoluteBox = DocumentLayoutEngine.layout(root, 220, 0)
+                .getChildren().get(0)
+                .getChildren().get(0)
+                .getChildren().get(0);
+
+        Assert.assertEquals(20, absoluteBox.getLeft());
+        Assert.assertEquals(18, absoluteBox.getTop());
+    }
+
+    /**
+     * 验证嵌套 positioned ancestor 会覆盖更外层的 containing block。
+     */
+    @Test
+    public void shouldLayoutAbsolutePositionedElementAgainstNestedPositionedAncestor() {
+        UiDocument document = UiDocument.create();
+        ElementNode root = document.getRootElement();
+        ElementNode outer = document.div();
+        ElementNode inner = document.div();
+        ElementNode staticParent = document.div();
+        ElementNode absolute = document.div();
+
+        root.style().setWidth(UiStyleLength.px(200));
+        outer.style()
+                .setWidth(UiStyleLength.px(160))
+                .setHeight(UiStyleLength.px(100))
+                .setPosition(UiPosition.RELATIVE)
+                .setBorderWidth(UiStyleLength.px(1))
+                .setPadding(UiStyleLength.px(10));
+        inner.style()
+                .setWidth(UiStyleLength.px(70))
+                .setHeight(UiStyleLength.px(40))
+                .setPosition(UiPosition.RELATIVE)
+                .setBorderWidth(UiStyleLength.px(2))
+                .setPadding(UiStyleLength.px(5));
+        staticParent.style()
+                .setHeight(UiStyleLength.px(10))
+                .setPadding(UiStyleLength.px(1));
+        absolute.style()
+                .setWidth(UiStyleLength.px(8))
+                .setHeight(UiStyleLength.px(6))
+                .setPosition(UiPosition.ABSOLUTE)
+                .setTop(UiStyleLength.px(4))
+                .setLeft(UiStyleLength.px(6));
+        staticParent.append(absolute);
+        inner.append(staticParent);
+        outer.append(inner);
+        root.append(outer);
+
+        DocumentLayoutBox absoluteBox = DocumentLayoutEngine.layout(root, 240, 0)
+                .getChildren().get(0)
+                .getChildren().get(0)
+                .getChildren().get(0)
+                .getChildren().get(0);
+
+        Assert.assertEquals(24, absoluteBox.getLeft());
+        Assert.assertEquals(22, absoluteBox.getTop());
+    }
+
+    /**
+     * 验证 right/bottom 会按最近 positioned ancestor 的 content box 反向定位。
+     */
+    @Test
+    public void shouldLayoutAbsolutePositionedElementFromNearestPositionedAncestorRightAndBottomInsets() {
+        UiDocument document = UiDocument.create();
+        ElementNode root = document.getRootElement();
+        ElementNode positioned = document.div();
+        ElementNode staticParent = document.div();
+        ElementNode absolute = document.div();
+
+        root.style().setWidth(UiStyleLength.px(180));
+        positioned.style()
+                .setWidth(UiStyleLength.px(100))
+                .setHeight(UiStyleLength.px(60))
+                .setPosition(UiPosition.RELATIVE)
+                .setBorderWidth(UiStyleLength.px(2))
+                .setPadding(UiStyleLength.px(10));
+        staticParent.style()
+                .setHeight(UiStyleLength.px(20))
+                .setPadding(UiStyleLength.px(3));
+        absolute.style()
+                .setWidth(UiStyleLength.px(12))
+                .setHeight(UiStyleLength.px(8))
+                .setPosition(UiPosition.ABSOLUTE)
+                .setRight(UiStyleLength.px(7))
+                .setBottom(UiStyleLength.px(5));
+        staticParent.append(absolute);
+        positioned.append(staticParent);
+        root.append(positioned);
+
+        DocumentLayoutBox absoluteBox = DocumentLayoutEngine.layout(root, 220, 0)
+                .getChildren().get(0)
+                .getChildren().get(0)
+                .getChildren().get(0);
+
+        Assert.assertEquals(93, absoluteBox.getLeft());
+        Assert.assertEquals(59, absoluteBox.getTop());
+    }
+
+    /**
+     * 验证没有 positioned ancestor 时 absolute 定位回退到根 content box。
+     */
+    @Test
+    public void shouldLayoutAbsolutePositionedElementAgainstRootWhenNoPositionedAncestorExists() {
+        UiDocument document = UiDocument.create();
+        ElementNode root = document.getRootElement();
+        ElementNode staticParent = document.div();
+        ElementNode absolute = document.div();
+
+        root.style()
+                .setWidth(UiStyleLength.px(120))
+                .setPadding(UiStyleLength.px(5));
+        staticParent.style()
+                .setHeight(UiStyleLength.px(20))
+                .setPadding(UiStyleLength.px(30));
+        absolute.style()
+                .setWidth(UiStyleLength.px(10))
+                .setHeight(UiStyleLength.px(8))
+                .setPosition(UiPosition.ABSOLUTE)
+                .setTop(UiStyleLength.px(7))
+                .setLeft(UiStyleLength.px(9));
+        staticParent.append(absolute);
+        root.append(staticParent);
+
+        DocumentLayoutBox absoluteBox = DocumentLayoutEngine.layout(root, 160, 0)
+                .getChildren().get(0)
+                .getChildren().get(0);
+
+        Assert.assertEquals(14, absoluteBox.getLeft());
+        Assert.assertEquals(12, absoluteBox.getTop());
     }
 
     /**

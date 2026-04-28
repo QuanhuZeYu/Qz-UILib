@@ -99,6 +99,46 @@ public class DocumentPaintEngineTest {
     }
 
     /**
+     * 验证 absolute 子元素按最近 positioned ancestor 的 containing block 绘制。
+     */
+    @Test
+    public void shouldPaintAbsolutePositionedChildAgainstNearestPositionedAncestor() {
+        UiDocument document = UiDocument.create();
+        ElementNode root = document.getRootElement();
+        ElementNode positioned = document.div();
+        ElementNode staticParent = document.div();
+        ElementNode absolute = document.div();
+
+        root.style().setWidth(UiStyleLength.px(180));
+        positioned.style()
+                .setWidth(UiStyleLength.px(100))
+                .setHeight(UiStyleLength.px(60))
+                .setPosition(UiPosition.RELATIVE)
+                .setBorderWidth(UiStyleLength.px(2))
+                .setPadding(UiStyleLength.px(10));
+        staticParent.style()
+                .setHeight(UiStyleLength.px(20))
+                .setPadding(UiStyleLength.px(3));
+        absolute.style()
+                .setWidth(UiStyleLength.px(12))
+                .setHeight(UiStyleLength.px(8))
+                .setPosition(UiPosition.ABSOLUTE)
+                .setTop(UiStyleLength.px(6))
+                .setLeft(UiStyleLength.px(8))
+                .setBackgroundColor(0xFFFF0000);
+        staticParent.append(absolute);
+        positioned.append(staticParent);
+        root.append(positioned);
+
+        List<DocumentPaintCommand> commands = DocumentPaintEngine.buildPaintCommands(
+                DocumentLayoutEngine.layout(root, 220, 0));
+
+        Assert.assertEquals(1, commands.size());
+        assertCommand(commands.get(0), DocumentPaintCommandType.BACKGROUND, absolute, 20, 18, 32, 26, 0xFFFF0000,
+                0, 0);
+    }
+
+    /**
      * 验证元素 opacity 会累积应用到自身和后代的标准绘制命令颜色。
      */
     @Test

@@ -95,6 +95,43 @@ public class DocumentHitTestEngineTest {
     }
 
     /**
+     * 验证 absolute 子元素相对最近 positioned ancestor 的位置参与命中。
+     */
+    @Test
+    public void shouldHitAbsolutePositionedChildAgainstNearestPositionedAncestor() {
+        UiDocument document = UiDocument.create();
+        ElementNode root = document.getRootElement();
+        ElementNode positioned = document.div();
+        ElementNode staticParent = document.div();
+        ElementNode absolute = document.div();
+
+        root.style().setWidth(UiStyleLength.px(180));
+        positioned.style()
+                .setWidth(UiStyleLength.px(100))
+                .setHeight(UiStyleLength.px(60))
+                .setPosition(UiPosition.RELATIVE)
+                .setBorderWidth(UiStyleLength.px(2))
+                .setPadding(UiStyleLength.px(10));
+        staticParent.style()
+                .setHeight(UiStyleLength.px(20))
+                .setPadding(UiStyleLength.px(3));
+        absolute.style()
+                .setWidth(UiStyleLength.px(12))
+                .setHeight(UiStyleLength.px(8))
+                .setPosition(UiPosition.ABSOLUTE)
+                .setTop(UiStyleLength.px(6))
+                .setLeft(UiStyleLength.px(8));
+        staticParent.append(absolute);
+        positioned.append(staticParent);
+        root.append(positioned);
+
+        DocumentLayoutBox rootBox = DocumentLayoutEngine.layout(root, 220, 0);
+
+        Assert.assertSame(absolute, DocumentHitTestEngine.hitTest(rootBox, null, 21, 19));
+        Assert.assertSame(staticParent, DocumentHitTestEngine.hitTest(rootBox, null, 34, 28));
+    }
+
+    /**
      * 验证负 z-index 元素在普通流元素下方命中。
      */
     @Test

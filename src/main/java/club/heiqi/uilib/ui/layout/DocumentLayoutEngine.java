@@ -24,6 +24,7 @@ import club.heiqi.uilib.ui.text.TextMeasureService;
  * HTML-like 文档布局引擎初版。
  *
  * <p>当前实现覆盖元素盒、box model、block flow、最小 flex flow、relative 定位偏移与 absolute 脱流定位。
+ * absolute 元素会相对最近 positioned ancestor 的 content box 定位，没有 positioned ancestor 时回退根 content box。
  * 文本 inline formatting、多行 flex wrap、fixed 定位和滚动布局会在后续阶段继续扩展。</p>
  */
 public final class DocumentLayoutEngine {
@@ -59,7 +60,7 @@ public final class DocumentLayoutEngine {
             TextMeasureService textMeasureService) {
         Objects.requireNonNull(rootElement, "rootElement");
         return layoutElement(rootElement, 0, 0, Math.max(0, viewportWidth), AUTO_SIZE, AUTO_SIZE,
-                Objects.requireNonNull(textMeasureService, "textMeasureService"));
+                null, Objects.requireNonNull(textMeasureService, "textMeasureService"));
     }
 
     /**
@@ -90,12 +91,12 @@ public final class DocumentLayoutEngine {
         int forcedContentHeight = Math.max(0,
                 safeViewportHeight - margin.getVertical() - border.getVertical() - padding.getVertical());
         return layoutElement(rootElement, 0, 0, safeViewportWidth, forcedContentWidth, forcedContentHeight,
-                resolvedTextMeasureService);
+                null, resolvedTextMeasureService);
     }
 
     private static DocumentLayoutBox layoutElement(ElementNode element, int containingLeft, int flowTop,
             int containingWidth, int forcedContentWidth, int forcedContentHeight,
-            TextMeasureService textMeasureService) {
+            AbsoluteContainingBlock absoluteContainingBlock, TextMeasureService textMeasureService) {
         ComputedStyle computedStyle = UiStyleResolver.compute(element);
         if (computedStyle.getDisplay() == UiDisplay.NONE) {
             return new DocumentLayoutBox(element, computedStyle, new ArrayList<DocumentLayoutBox>(),
@@ -119,11 +120,17 @@ public final class DocumentLayoutEngine {
         int contentTop = borderBoxTop + border.getTop() + padding.getTop();
 
         int specifiedContentHeight = resolveSpecifiedHeight(computedStyle, forcedContentHeight);
+        boolean createsAbsoluteContainingBlock = absoluteContainingBlock == null || isPositioned(computedStyle);
+        AbsoluteContainingBlock childrenAbsoluteContainingBlock = createsAbsoluteContainingBlock
+                ? new AbsoluteContainingBlock(contentLeft, contentTop, contentWidth,
+                        resolveInitialAbsoluteContainingBlockHeight(specifiedContentHeight))
+                : absoluteContainingBlock;
         LayoutChildrenResult childrenResult = computedStyle.getDisplay() == UiDisplay.FLEX
                 ? layoutFlexChildren(element, computedStyle, contentLeft, contentTop, contentWidth,
-                        specifiedContentHeight, textMeasureService)
+                        specifiedContentHeight, childrenAbsoluteContainingBlock, createsAbsoluteContainingBlock,
+                        textMeasureService)
                 : layoutBlockChildren(element, contentLeft, contentTop, contentWidth, specifiedContentHeight,
-                        textMeasureService);
+                        childrenAbsoluteContainingBlock, createsAbsoluteContainingBlock, textMeasureService);
 
         int autoContentHeight = childrenResult.contentHeight;
         int contentHeight = forcedContentHeight >= 0 ? forcedContentHeight
@@ -137,7 +144,8 @@ public final class DocumentLayoutEngine {
     }
 
     private static LayoutChildrenResult layoutBlockChildren(ElementNode element, int contentLeft, int contentTop,
-            int contentWidth, int specifiedContentHeight, TextMeasureService textMeasureService) {
+            int contentWidth, int specifiedContentHeight, AbsoluteContainingBlock absoluteContainingBlock,
+            boolean createsAbsoluteContainingBlock, TextMeasureService textMeasureService) {
         List<DocumentLayoutBox> childBoxes = new ArrayList<DocumentLayoutBox>();
         List<DocumentLayoutTextRun> textRuns = new ArrayList<DocumentLayoutTextRun>();
         List<ElementNode> absoluteChildren = new ArrayList<ElementNode>();
@@ -161,13 +169,14 @@ public final class DocumentLayoutEngine {
                 continue;
             }
             DocumentLayoutBox childBox = layoutElement(childElement, contentLeft, childFlowTop, contentWidth,
-                    AUTO_SIZE, AUTO_SIZE, textMeasureService);
+                    AUTO_SIZE, AUTO_SIZE, absoluteContainingBlock, textMeasureService);
             childBoxes.add(childBox);
             childFlowTop = childBox.getMarginBoxBottom();
         }
         int contentHeight = Math.max(0, childFlowTop - contentTop);
-        appendAbsoluteChildren(childBoxes, absoluteChildren, contentLeft, contentTop, contentWidth,
-                specifiedContentHeight >= 0 ? specifiedContentHeight : contentHeight, textMeasureService);
+        appendAbsoluteChildren(childBoxes, absoluteChildren, resolveDirectAbsoluteContainingBlock(
+                absoluteContainingBlock, createsAbsoluteContainingBlock, specifiedContentHeight, contentHeight),
+                textMeasureService);
         return new LayoutChildrenResult(sortByDocumentChildOrder(element, childBoxes), textRuns, contentHeight);
     }
 
@@ -196,6 +205,7 @@ public final class DocumentLayoutEngine {
 
     private static LayoutChildrenResult layoutFlexChildren(ElementNode element, ComputedStyle parentStyle,
             int contentLeft, int contentTop, int contentWidth, int specifiedContentHeight,
+            AbsoluteContainingBlock absoluteContainingBlock, boolean createsAbsoluteContainingBlock,
             TextMeasureService textMeasureService) {
         List<ElementNode> absoluteChildren = getVisibleAbsoluteElementChildren(element);
         List<ElementNode> visibleChildren = getVisibleInFlowElementChildren(element);
@@ -205,21 +215,22 @@ public final class DocumentLayoutEngine {
                     new ArrayList<DocumentLayoutTextRun>(), Math.max(0, specifiedContentHeight));
         } else if (parentStyle.getFlexDirection() == UiFlexDirection.COLUMN) {
             flowResult = layoutColumnFlexChildren(visibleChildren, parentStyle, contentLeft, contentTop, contentWidth,
-                    specifiedContentHeight, textMeasureService);
+                    specifiedContentHeight, absoluteContainingBlock, textMeasureService);
         } else {
             flowResult = layoutRowFlexChildren(visibleChildren, parentStyle, contentLeft, contentTop, contentWidth,
-                    specifiedContentHeight, textMeasureService);
+                    specifiedContentHeight, absoluteContainingBlock, textMeasureService);
         }
         List<DocumentLayoutBox> childBoxes = new ArrayList<DocumentLayoutBox>(flowResult.children);
-        appendAbsoluteChildren(childBoxes, absoluteChildren, contentLeft, contentTop, contentWidth,
-                flowResult.contentHeight, textMeasureService);
+        appendAbsoluteChildren(childBoxes, absoluteChildren, resolveDirectAbsoluteContainingBlock(
+                absoluteContainingBlock, createsAbsoluteContainingBlock, specifiedContentHeight,
+                flowResult.contentHeight), textMeasureService);
         return new LayoutChildrenResult(sortByDocumentChildOrder(element, childBoxes), flowResult.textRuns,
                 flowResult.contentHeight);
     }
 
     private static LayoutChildrenResult layoutRowFlexChildren(List<ElementNode> children, ComputedStyle parentStyle,
             int contentLeft, int contentTop, int contentWidth, int specifiedContentHeight,
-            TextMeasureService textMeasureService) {
+            AbsoluteContainingBlock absoluteContainingBlock, TextMeasureService textMeasureService) {
         List<FlexItem> items = new ArrayList<FlexItem>();
         for (ElementNode child : children) {
             FlexItem item = createFlexItem(child, contentWidth);
@@ -233,7 +244,7 @@ public final class DocumentLayoutEngine {
         int lineCrossSize = 0;
         for (FlexItem item : items) {
             item.box = layoutElement(item.element, 0, 0, contentWidth, item.contentMainSize, AUTO_SIZE,
-                    textMeasureService);
+                    absoluteContainingBlock, textMeasureService);
             lineCrossSize = Math.max(lineCrossSize, item.getOuterCrossSize(true));
         }
 
@@ -243,7 +254,7 @@ public final class DocumentLayoutEngine {
                 item.forcedCrossSize = Math.max(0,
                         contentHeight - item.margin.getVertical() - item.border.getVertical() - item.padding.getVertical());
                 item.box = layoutElement(item.element, 0, 0, contentWidth, item.contentMainSize,
-                        item.forcedCrossSize, textMeasureService);
+                        item.forcedCrossSize, absoluteContainingBlock, textMeasureService);
             }
         }
 
@@ -259,7 +270,7 @@ public final class DocumentLayoutEngine {
             int borderTop = contentTop + crossOffset + item.margin.getTop();
             DocumentLayoutBox childBox = layoutElement(item.element, borderLeft - item.margin.getLeft(),
                     borderTop - item.margin.getTop(), contentWidth, item.contentMainSize, item.forcedCrossSize,
-                    textMeasureService);
+                    absoluteContainingBlock, textMeasureService);
             childBoxes.add(childBox);
             cursor += item.margin.getLeft() + childBox.getWidth() + item.margin.getRight() + dynamicGap;
         }
@@ -268,13 +279,13 @@ public final class DocumentLayoutEngine {
 
     private static LayoutChildrenResult layoutColumnFlexChildren(List<ElementNode> children, ComputedStyle parentStyle,
             int contentLeft, int contentTop, int contentWidth, int specifiedContentHeight,
-            TextMeasureService textMeasureService) {
+            AbsoluteContainingBlock absoluteContainingBlock, TextMeasureService textMeasureService) {
         List<FlexItem> items = new ArrayList<FlexItem>();
         for (ElementNode child : children) {
             FlexItem item = createFlexItem(child, contentWidth);
             item.forcedCrossSize = resolveColumnCrossContentWidth(item, parentStyle.getAlignItems(), contentWidth);
             item.box = layoutElement(item.element, 0, 0, contentWidth, item.forcedCrossSize, AUTO_SIZE,
-                    textMeasureService);
+                    absoluteContainingBlock, textMeasureService);
             item.contentMainSize = resolveContentMainSize(item, contentWidth, false);
             if (isAuto(item.style.getHeight())) {
                 item.contentMainSize = item.box.getContentHeight();
@@ -299,7 +310,7 @@ public final class DocumentLayoutEngine {
             int borderTop = contentTop + cursor + item.margin.getTop();
             DocumentLayoutBox childBox = layoutElement(item.element, borderLeft - item.margin.getLeft(),
                     borderTop - item.margin.getTop(), contentWidth, item.forcedCrossSize, item.contentMainSize,
-                    textMeasureService);
+                    absoluteContainingBlock, textMeasureService);
             childBoxes.add(childBox);
             cursor += item.margin.getTop() + childBox.getHeight() + item.margin.getBottom() + dynamicGap;
         }
@@ -477,49 +488,57 @@ public final class DocumentLayoutEngine {
     }
 
     private static void appendAbsoluteChildren(List<DocumentLayoutBox> childBoxes, List<ElementNode> absoluteChildren,
-            int contentLeft, int contentTop, int contentWidth, int contentHeight,
-            TextMeasureService textMeasureService) {
+            AbsoluteContainingBlock absoluteContainingBlock, TextMeasureService textMeasureService) {
         for (ElementNode child : absoluteChildren) {
-            childBoxes.add(layoutAbsoluteElement(child, contentLeft, contentTop, contentWidth, contentHeight,
-                    textMeasureService));
+            childBoxes.add(layoutAbsoluteElement(child, absoluteContainingBlock, textMeasureService));
         }
     }
 
-    private static DocumentLayoutBox layoutAbsoluteElement(ElementNode element, int containingLeft, int containingTop,
-            int containingWidth, int containingHeight, TextMeasureService textMeasureService) {
+    private static DocumentLayoutBox layoutAbsoluteElement(ElementNode element,
+            AbsoluteContainingBlock absoluteContainingBlock, TextMeasureService textMeasureService) {
         ComputedStyle style = UiStyleResolver.compute(element);
-        DocumentLayoutBox measuredBox = layoutElement(element, 0, 0, containingWidth, AUTO_SIZE, AUTO_SIZE,
-                textMeasureService);
+        DocumentLayoutBox measuredBox = layoutElement(element, 0, 0, absoluteContainingBlock.width, AUTO_SIZE,
+                AUTO_SIZE, absoluteContainingBlock, textMeasureService);
         int marginBoxWidth = measuredBox.getWidth() + measuredBox.getMargin().getHorizontal();
         int marginBoxHeight = measuredBox.getHeight() + measuredBox.getMargin().getVertical();
-        int marginBoxLeft = resolveAbsoluteMarginBoxLeft(style, containingLeft, containingWidth, marginBoxWidth);
-        int marginBoxTop = resolveAbsoluteMarginBoxTop(style, containingTop, containingHeight, marginBoxHeight);
-        return layoutElement(element, marginBoxLeft, marginBoxTop, containingWidth, AUTO_SIZE, AUTO_SIZE,
-                textMeasureService);
+        int marginBoxLeft = resolveAbsoluteMarginBoxLeft(style, absoluteContainingBlock, marginBoxWidth);
+        int marginBoxTop = resolveAbsoluteMarginBoxTop(style, absoluteContainingBlock, marginBoxHeight);
+        return layoutElement(element, marginBoxLeft, marginBoxTop, absoluteContainingBlock.width, AUTO_SIZE,
+                AUTO_SIZE, absoluteContainingBlock, textMeasureService);
     }
 
-    private static int resolveAbsoluteMarginBoxLeft(ComputedStyle style, int containingLeft, int containingWidth,
-            int marginBoxWidth) {
+    private static int resolveAbsoluteMarginBoxLeft(ComputedStyle style,
+            AbsoluteContainingBlock absoluteContainingBlock, int marginBoxWidth) {
         if (!isAuto(style.getLeft())) {
-            return containingLeft + style.getLeft().resolve(containingWidth, 0);
+            return absoluteContainingBlock.left + style.getLeft().resolve(absoluteContainingBlock.width, 0);
         }
         if (!isAuto(style.getRight())) {
-            return containingLeft + containingWidth - style.getRight().resolve(containingWidth, 0) - marginBoxWidth;
+            return absoluteContainingBlock.left + absoluteContainingBlock.width
+                    - style.getRight().resolve(absoluteContainingBlock.width, 0) - marginBoxWidth;
         }
-        return containingLeft;
+        return absoluteContainingBlock.left;
     }
 
-    private static int resolveAbsoluteMarginBoxTop(ComputedStyle style, int containingTop, int containingHeight,
-            int marginBoxHeight) {
-        int safeContainingHeight = Math.max(0, containingHeight);
+    private static int resolveAbsoluteMarginBoxTop(ComputedStyle style,
+            AbsoluteContainingBlock absoluteContainingBlock, int marginBoxHeight) {
+        int safeContainingHeight = Math.max(0, absoluteContainingBlock.height);
         if (!isAuto(style.getTop())) {
-            return containingTop + style.getTop().resolve(safeContainingHeight, 0);
+            return absoluteContainingBlock.top + style.getTop().resolve(safeContainingHeight, 0);
         }
         if (!isAuto(style.getBottom())) {
-            return containingTop + safeContainingHeight - style.getBottom().resolve(safeContainingHeight, 0)
-                    - marginBoxHeight;
+            return absoluteContainingBlock.top + safeContainingHeight
+                    - style.getBottom().resolve(safeContainingHeight, 0) - marginBoxHeight;
         }
-        return containingTop;
+        return absoluteContainingBlock.top;
+    }
+
+    private static AbsoluteContainingBlock resolveDirectAbsoluteContainingBlock(
+            AbsoluteContainingBlock absoluteContainingBlock, boolean createsAbsoluteContainingBlock,
+            int specifiedContentHeight, int contentHeight) {
+        if (!createsAbsoluteContainingBlock) {
+            return absoluteContainingBlock;
+        }
+        return absoluteContainingBlock.withHeight(specifiedContentHeight >= 0 ? specifiedContentHeight : contentHeight);
     }
 
     private static List<DocumentLayoutBox> sortByDocumentChildOrder(final ElementNode parentElement,
@@ -547,6 +566,14 @@ public final class DocumentLayoutEngine {
 
     private static boolean isAbsolutePositioned(ComputedStyle style) {
         return style.getPosition() == UiPosition.ABSOLUTE;
+    }
+
+    private static boolean isPositioned(ComputedStyle style) {
+        return style.getPosition() != UiPosition.STATIC;
+    }
+
+    private static int resolveInitialAbsoluteContainingBlockHeight(int specifiedContentHeight) {
+        return specifiedContentHeight >= 0 ? specifiedContentHeight : 0;
     }
 
     private static FlexItem createFlexItem(ElementNode element, int containingWidth) {
@@ -623,6 +650,28 @@ public final class DocumentLayoutEngine {
             this.children = children;
             this.textRuns = textRuns;
             this.contentHeight = Math.max(0, contentHeight);
+        }
+    }
+
+    /**
+     * absolute 定位使用的包含块。
+     */
+    private static final class AbsoluteContainingBlock {
+
+        private final int left;
+        private final int top;
+        private final int width;
+        private final int height;
+
+        private AbsoluteContainingBlock(int left, int top, int width, int height) {
+            this.left = left;
+            this.top = top;
+            this.width = Math.max(0, width);
+            this.height = Math.max(0, height);
+        }
+
+        private AbsoluteContainingBlock withHeight(int height) {
+            return new AbsoluteContainingBlock(left, top, width, height);
         }
     }
 
