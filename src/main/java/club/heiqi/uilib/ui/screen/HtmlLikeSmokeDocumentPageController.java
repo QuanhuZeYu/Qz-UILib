@@ -2,6 +2,8 @@ package club.heiqi.uilib.ui.screen;
 
 import java.util.Objects;
 
+import club.heiqi.uilib.ui.animation.DocumentAnimationProperty;
+import club.heiqi.uilib.ui.animation.DocumentAnimationTimingFunction;
 import club.heiqi.uilib.ui.document.HtmlLikeDocumentWidget;
 import club.heiqi.uilib.ui.dom.DocumentElementClickEvent;
 import club.heiqi.uilib.ui.dom.DocumentElementClickHandler;
@@ -254,6 +256,8 @@ final class HtmlLikeSmokeDocumentPageController extends DocumentPageController {
                 .setFlexGrow(1.0F)
                 .setPadding(UiStyleLength.px(10))
                 .setBackgroundColor(0xFF38A169)
+                .setTransition(DocumentAnimationProperty.BACKGROUND_COLOR, 450L)
+                .setTransitionTimingFunction(DocumentAnimationTimingFunction.EASE_IN_OUT)
                 .setBorderRadius(UiStyleLength.px(999))
                 .setTextColor(0xFFFFFFFF)
                 .setOverflowX(UiOverflow.HIDDEN)

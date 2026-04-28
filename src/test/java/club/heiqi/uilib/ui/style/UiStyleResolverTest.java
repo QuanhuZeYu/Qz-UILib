@@ -3,6 +3,8 @@ package club.heiqi.uilib.ui.style;
 import org.junit.Assert;
 import org.junit.Test;
 
+import club.heiqi.uilib.ui.animation.DocumentAnimationProperty;
+import club.heiqi.uilib.ui.animation.DocumentAnimationTimingFunction;
 import club.heiqi.uilib.ui.dom.ElementNode;
 import club.heiqi.uilib.ui.dom.UiDocument;
 
@@ -27,6 +29,8 @@ public class UiStyleResolverTest {
                 .setTop(UiStyleLength.px(-4))
                 .setLeft(UiStyleLength.px(8))
                 .setZIndex(3)
+                .setTransition(DocumentAnimationProperty.BACKGROUND_COLOR, 250L)
+                .setTransitionTimingFunction(DocumentAnimationTimingFunction.EASE_OUT)
                 .setPadding(UiStyleLength.px(12))
                 .setBackgroundColor(0xAA101820)
                 .setBackdropBlurRadius(UiStyleLength.px(14))
@@ -40,6 +44,10 @@ public class UiStyleResolverTest {
         Assert.assertEquals(UiStyleLength.px(-4), panel.style().getTop());
         Assert.assertEquals(UiStyleLength.px(8), panel.style().getLeft());
         Assert.assertEquals(Integer.valueOf(3), panel.style().getZIndex());
+        Assert.assertEquals(DocumentAnimationProperty.BACKGROUND_COLOR,
+                panel.style().getTransitionProperties().get(0));
+        Assert.assertEquals(Long.valueOf(250_000_000L), panel.style().getTransitionDurationNanos());
+        Assert.assertEquals(DocumentAnimationTimingFunction.EASE_OUT, panel.style().getTransitionTimingFunction());
         Assert.assertEquals(UiStyleInsets.all(UiStyleLength.px(12)), panel.style().getPadding());
         Assert.assertEquals(Integer.valueOf(0xAA101820), panel.style().getBackgroundColor());
         Assert.assertEquals(UiStyleLength.px(14), panel.style().getBackdropBlurRadius());
@@ -71,6 +79,10 @@ public class UiStyleResolverTest {
         Assert.assertEquals(UiStyleLength.auto(), spanStyle.getBottom());
         Assert.assertEquals(UiStyleLength.auto(), spanStyle.getLeft());
         Assert.assertNull(spanStyle.getZIndex());
+        Assert.assertTrue(spanStyle.getTransitionProperties().isEmpty());
+        Assert.assertEquals(0L, spanStyle.getTransitionDurationNanos());
+        Assert.assertEquals(0L, spanStyle.getTransitionDelayNanos());
+        Assert.assertEquals(DocumentAnimationTimingFunction.LINEAR, spanStyle.getTransitionTimingFunction());
         Assert.assertEquals(UiStyleInsets.zero(), spanStyle.getMargin());
         Assert.assertEquals(UiOverflow.VISIBLE, spanStyle.getOverflowX());
         Assert.assertEquals(UiOverflow.VISIBLE, spanStyle.getOverflowY());
@@ -103,6 +115,11 @@ public class UiStyleResolverTest {
                 .setBottom(UiStyleLength.px(9))
                 .setLeft(UiStyleLength.px(11))
                 .setZIndex(4)
+                .setTransitionProperties(DocumentAnimationProperty.BACKGROUND_COLOR,
+                        DocumentAnimationProperty.BORDER_COLOR)
+                .setTransitionDurationMillis(300L)
+                .setTransitionDelayMillis(40L)
+                .setTransitionTimingFunction(DocumentAnimationTimingFunction.EASE_IN_OUT)
                 .setMargin(UiStyleInsets.of(UiStyleLength.px(4), UiStyleLength.px(8), UiStyleLength.px(12),
                         UiStyleLength.px(16)))
                 .setPadding(UiStyleLength.px(10))
@@ -133,6 +150,13 @@ public class UiStyleResolverTest {
         Assert.assertEquals(UiStyleLength.px(9), computedStyle.getBottom());
         Assert.assertEquals(UiStyleLength.px(11), computedStyle.getLeft());
         Assert.assertEquals(Integer.valueOf(4), computedStyle.getZIndex());
+        Assert.assertEquals(2, computedStyle.getTransitionProperties().size());
+        Assert.assertEquals(DocumentAnimationProperty.BACKGROUND_COLOR,
+                computedStyle.getTransitionProperties().get(0));
+        Assert.assertEquals(DocumentAnimationProperty.BORDER_COLOR, computedStyle.getTransitionProperties().get(1));
+        Assert.assertEquals(300_000_000L, computedStyle.getTransitionDurationNanos());
+        Assert.assertEquals(40_000_000L, computedStyle.getTransitionDelayNanos());
+        Assert.assertEquals(DocumentAnimationTimingFunction.EASE_IN_OUT, computedStyle.getTransitionTimingFunction());
         Assert.assertEquals(UiStyleLength.px(4), computedStyle.getMargin().getTop());
         Assert.assertEquals(UiStyleLength.px(10), computedStyle.getPadding().getLeft());
         Assert.assertEquals(UiStyleLength.px(1), computedStyle.getBorderWidth());

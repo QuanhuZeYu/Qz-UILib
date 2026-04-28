@@ -1,5 +1,10 @@
 package club.heiqi.uilib.ui.style;
 
+import java.util.Collections;
+import java.util.List;
+
+import club.heiqi.uilib.ui.animation.DocumentAnimationProperty;
+import club.heiqi.uilib.ui.animation.DocumentAnimationTimingFunction;
 import club.heiqi.uilib.ui.dom.DocumentNode;
 import club.heiqi.uilib.ui.dom.ElementNode;
 
@@ -54,6 +59,16 @@ public final class UiStyleResolver {
         int backgroundColor = style.getBackgroundColor() == null ? TRANSPARENT : style.getBackgroundColor().intValue();
         int borderColor = style.getBorderColor() == null ? TRANSPARENT : style.getBorderColor().intValue();
         int textColor = style.getTextColor() == null ? inheritedTextColor(parentStyle) : style.getTextColor().intValue();
+        List<DocumentAnimationProperty> transitionProperties = style.getTransitionProperties() == null
+                ? Collections.<DocumentAnimationProperty>emptyList()
+                : style.getTransitionProperties();
+        long transitionDurationNanos = style.getTransitionDurationNanos() == null ? 0L
+                : style.getTransitionDurationNanos().longValue();
+        long transitionDelayNanos = style.getTransitionDelayNanos() == null ? 0L
+                : style.getTransitionDelayNanos().longValue();
+        DocumentAnimationTimingFunction transitionTimingFunction = style.getTransitionTimingFunction() == null
+                ? DocumentAnimationTimingFunction.LINEAR
+                : style.getTransitionTimingFunction();
         UiStyleLength backdropBlurRadius = style.getBackdropBlurRadius() == null ? UiStyleLength.px(0)
                 : style.getBackdropBlurRadius();
         float backdropSaturation = style.getBackdropSaturation() == null ? 1.0F
@@ -61,6 +76,7 @@ public final class UiStyleResolver {
         return new ComputedStyle(display, width, height, position, top, right, bottom, left, zIndex, margin,
                 padding, borderWidth, borderRadius, overflowX, overflowY, flexDirection, alignItems, justifyContent,
                 rowGap, columnGap, flexGrow, flexShrink, backgroundColor, borderColor, textColor,
+                transitionProperties, transitionDurationNanos, transitionDelayNanos, transitionTimingFunction,
                 backdropBlurRadius, backdropSaturation);
     }
 

@@ -4,6 +4,8 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
 
+import club.heiqi.uilib.ui.animation.DocumentAnimationProperty;
+import club.heiqi.uilib.ui.animation.DocumentAnimationTimeline;
 import club.heiqi.uilib.ui.layout.DocumentLayoutBox;
 import club.heiqi.uilib.ui.layout.DocumentLayoutTextRun;
 import club.heiqi.uilib.ui.layout.DocumentScrollState;
@@ -60,20 +62,34 @@ public final class DocumentPaintEngine {
      */
     public static List<DocumentPaintCommand> buildPaintCommands(DocumentLayoutBox rootBox,
             DocumentScrollState scrollState, long currentTimeNanos) {
+        return buildPaintCommands(rootBox, scrollState, currentTimeNanos, null);
+    }
+
+    /**
+     * 从布局盒树、滚动状态和动画时间线生成绘制命令。
+     *
+     * @param rootBox 根布局盒
+     * @param scrollState 滚动状态；为 null 时按无滚动处理
+     * @param currentTimeNanos 当前时间戳
+     * @param animationTimeline 动画时间线；为 null 时不应用动画覆盖
+     * @return 绘制命令列表
+     */
+    public static List<DocumentPaintCommand> buildPaintCommands(DocumentLayoutBox rootBox,
+            DocumentScrollState scrollState, long currentTimeNanos, DocumentAnimationTimeline animationTimeline) {
         Objects.requireNonNull(rootBox, "rootBox");
         List<DocumentPaintCommand> commands = new ArrayList<DocumentPaintCommand>();
-        appendBoxCommands(rootBox, rootBox, commands, scrollState, 0, 0, currentTimeNanos);
+        appendBoxCommands(rootBox, rootBox, commands, scrollState, animationTimeline, 0, 0, currentTimeNanos);
         return commands;
     }
 
     private static void appendBoxCommands(DocumentLayoutBox rootBox, DocumentLayoutBox box,
-            List<DocumentPaintCommand> commands, DocumentScrollState scrollState, int offsetX, int offsetY,
-            long currentTimeNanos) {
+            List<DocumentPaintCommand> commands, DocumentScrollState scrollState,
+            DocumentAnimationTimeline animationTimeline, int offsetX, int offsetY, long currentTimeNanos) {
         int boxOffsetX = offsetX + box.getPositionOffsetX();
         int boxOffsetY = offsetY + box.getPositionOffsetY();
         appendBackdropFilterCommand(box, commands, boxOffsetX, boxOffsetY);
-        appendBackgroundCommand(box, commands, boxOffsetX, boxOffsetY);
-        appendBorderCommand(box, commands, boxOffsetX, boxOffsetY);
+        appendBackgroundCommand(box, commands, animationTimeline, currentTimeNanos, boxOffsetX, boxOffsetY);
+        appendBorderCommand(box, commands, animationTimeline, currentTimeNanos, boxOffsetX, boxOffsetY);
         boolean clipChildren = shouldClipChildren(box);
         if (clipChildren) {
             appendClipStartCommand(box, commands, boxOffsetX, boxOffsetY);
@@ -81,15 +97,15 @@ public final class DocumentPaintEngine {
         int childOffsetX = boxOffsetX - getScrollLeft(scrollState, box);
         int childOffsetY = boxOffsetY - getScrollTop(scrollState, box);
         appendChildrenInStackingPhase(rootBox, box, commands, scrollState, childOffsetX, childOffsetY,
-                currentTimeNanos, DocumentStackingPhase.NEGATIVE_POSITIONED);
+                animationTimeline, currentTimeNanos, DocumentStackingPhase.NEGATIVE_POSITIONED);
         appendCustomCommand(box, commands, childOffsetX, childOffsetY);
-        appendTextCommands(box, commands, childOffsetX, childOffsetY);
+        appendTextCommands(box, commands, animationTimeline, currentTimeNanos, childOffsetX, childOffsetY);
         appendChildrenInStackingPhase(rootBox, box, commands, scrollState, childOffsetX, childOffsetY,
-                currentTimeNanos, DocumentStackingPhase.NORMAL_FLOW);
+                animationTimeline, currentTimeNanos, DocumentStackingPhase.NORMAL_FLOW);
         appendChildrenInStackingPhase(rootBox, box, commands, scrollState, childOffsetX, childOffsetY,
-                currentTimeNanos, DocumentStackingPhase.POSITIONED_AUTO_OR_ZERO);
+                animationTimeline, currentTimeNanos, DocumentStackingPhase.POSITIONED_AUTO_OR_ZERO);
         appendChildrenInStackingPhase(rootBox, box, commands, scrollState, childOffsetX, childOffsetY,
-                currentTimeNanos, DocumentStackingPhase.POSITIVE_POSITIONED);
+                animationTimeline, currentTimeNanos, DocumentStackingPhase.POSITIVE_POSITIONED);
         if (clipChildren) {
             appendClipEndCommand(box, commands, boxOffsetX, boxOffsetY);
         }
@@ -98,17 +114,18 @@ public final class DocumentPaintEngine {
 
     private static void appendChildrenInStackingPhase(DocumentLayoutBox rootBox, DocumentLayoutBox box,
             List<DocumentPaintCommand> commands, DocumentScrollState scrollState, int childOffsetX, int childOffsetY,
-            long currentTimeNanos, DocumentStackingPhase phase) {
+            DocumentAnimationTimeline animationTimeline, long currentTimeNanos, DocumentStackingPhase phase) {
         for (DocumentLayoutBox child : box.getChildrenInStackingPhase(phase)) {
-            appendBoxCommands(rootBox, child, commands, scrollState, childOffsetX, childOffsetY,
+            appendBoxCommands(rootBox, child, commands, scrollState, animationTimeline, childOffsetX, childOffsetY,
                     currentTimeNanos);
         }
     }
 
     private static void appendBackgroundCommand(DocumentLayoutBox box, List<DocumentPaintCommand> commands,
-            int offsetX, int offsetY) {
+            DocumentAnimationTimeline animationTimeline, long currentTimeNanos, int offsetX, int offsetY) {
         ComputedStyle style = box.getComputedStyle();
-        int color = style.getBackgroundColor();
+        int color = resolveAnimatedColor(animationTimeline, box, DocumentAnimationProperty.BACKGROUND_COLOR,
+                style.getBackgroundColor(), currentTimeNanos);
         if (color == 0 || box.getWidth() <= 0 || box.getHeight() <= 0) {
             return;
         }
@@ -131,11 +148,12 @@ public final class DocumentPaintEngine {
                 box.getBottom() + offsetY, 0, 0, resolveBorderRadius(box), null, null, blurRadius, saturation));
     }
 
-    private static void appendBorderCommand(DocumentLayoutBox box, List<DocumentPaintCommand> commands, int offsetX,
-            int offsetY) {
+    private static void appendBorderCommand(DocumentLayoutBox box, List<DocumentPaintCommand> commands,
+            DocumentAnimationTimeline animationTimeline, long currentTimeNanos, int offsetX, int offsetY) {
         ComputedStyle style = box.getComputedStyle();
         int borderWidth = box.getBorder().getTop();
-        int color = style.getBorderColor();
+        int color = resolveAnimatedColor(animationTimeline, box, DocumentAnimationProperty.BORDER_COLOR,
+                style.getBorderColor(), currentTimeNanos);
         if (color == 0 || borderWidth <= 0 || box.getWidth() <= 0 || box.getHeight() <= 0) {
             return;
         }
@@ -162,9 +180,10 @@ public final class DocumentPaintEngine {
                 0, 0, 0, null, customRenderer));
     }
 
-    private static void appendTextCommands(DocumentLayoutBox box, List<DocumentPaintCommand> commands, int offsetX,
-            int offsetY) {
-        int color = box.getComputedStyle().getTextColor();
+    private static void appendTextCommands(DocumentLayoutBox box, List<DocumentPaintCommand> commands,
+            DocumentAnimationTimeline animationTimeline, long currentTimeNanos, int offsetX, int offsetY) {
+        int color = resolveAnimatedColor(animationTimeline, box, DocumentAnimationProperty.TEXT_COLOR,
+                box.getComputedStyle().getTextColor(), currentTimeNanos);
         if (color == 0) {
             return;
         }
@@ -176,6 +195,14 @@ public final class DocumentPaintEngine {
                     textRun.getLeft() + offsetX, textRun.getTop() + offsetY, textRun.getRight() + offsetX,
                     textRun.getBottom() + offsetY, color, 0, 0, textRun.getText()));
         }
+    }
+
+    private static int resolveAnimatedColor(DocumentAnimationTimeline animationTimeline, DocumentLayoutBox box,
+            DocumentAnimationProperty property, int baseColor, long currentTimeNanos) {
+        if (animationTimeline == null) {
+            return baseColor;
+        }
+        return animationTimeline.resolveColor(box.getElement(), property, baseColor, currentTimeNanos);
     }
 
     private static void appendClipStartCommand(DocumentLayoutBox box, List<DocumentPaintCommand> commands, int offsetX,

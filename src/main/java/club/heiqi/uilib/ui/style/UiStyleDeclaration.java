@@ -1,6 +1,12 @@
 package club.heiqi.uilib.ui.style;
 
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.List;
 import java.util.Objects;
+
+import club.heiqi.uilib.ui.animation.DocumentAnimationProperty;
+import club.heiqi.uilib.ui.animation.DocumentAnimationTimingFunction;
 
 /**
  * 元素作者侧样式声明。
@@ -40,6 +46,10 @@ public final class UiStyleDeclaration {
     private Integer backgroundColor;
     private Integer borderColor;
     private Integer textColor;
+    private List<DocumentAnimationProperty> transitionProperties;
+    private Long transitionDurationNanos;
+    private Long transitionDelayNanos;
+    private DocumentAnimationTimingFunction transitionTimingFunction;
     private UiStyleLength backdropBlurRadius;
     private Float backdropSaturation;
 
@@ -372,6 +382,85 @@ public final class UiStyleDeclaration {
         return updateTextColor(null);
     }
 
+    public List<DocumentAnimationProperty> getTransitionProperties() {
+        return transitionProperties;
+    }
+
+    public UiStyleDeclaration setTransitionProperties(DocumentAnimationProperty... transitionProperties) {
+        if (transitionProperties == null || transitionProperties.length == 0) {
+            return updateTransitionProperties(Collections.<DocumentAnimationProperty>emptyList());
+        }
+        List<DocumentAnimationProperty> properties = new ArrayList<DocumentAnimationProperty>();
+        for (DocumentAnimationProperty property : transitionProperties) {
+            if (property != null && !properties.contains(property)) {
+                properties.add(property);
+            }
+        }
+        return updateTransitionProperties(properties);
+    }
+
+    public UiStyleDeclaration clearTransitionProperties() {
+        return updateTransitionProperties(null);
+    }
+
+    public Long getTransitionDurationNanos() {
+        return transitionDurationNanos;
+    }
+
+    public UiStyleDeclaration setTransitionDurationMillis(long transitionDurationMillis) {
+        return setTransitionDurationNanos(transitionDurationMillis * 1_000_000L);
+    }
+
+    public UiStyleDeclaration setTransitionDurationNanos(long transitionDurationNanos) {
+        return updateTransitionDurationNanos(Long.valueOf(Math.max(0L, transitionDurationNanos)));
+    }
+
+    public UiStyleDeclaration clearTransitionDuration() {
+        return updateTransitionDurationNanos(null);
+    }
+
+    public Long getTransitionDelayNanos() {
+        return transitionDelayNanos;
+    }
+
+    public UiStyleDeclaration setTransitionDelayMillis(long transitionDelayMillis) {
+        return setTransitionDelayNanos(transitionDelayMillis * 1_000_000L);
+    }
+
+    public UiStyleDeclaration setTransitionDelayNanos(long transitionDelayNanos) {
+        return updateTransitionDelayNanos(Long.valueOf(Math.max(0L, transitionDelayNanos)));
+    }
+
+    public UiStyleDeclaration clearTransitionDelay() {
+        return updateTransitionDelayNanos(null);
+    }
+
+    public DocumentAnimationTimingFunction getTransitionTimingFunction() {
+        return transitionTimingFunction;
+    }
+
+    public UiStyleDeclaration setTransitionTimingFunction(DocumentAnimationTimingFunction transitionTimingFunction) {
+        return updateTransitionTimingFunction(Objects.requireNonNull(transitionTimingFunction,
+                "transitionTimingFunction"));
+    }
+
+    public UiStyleDeclaration clearTransitionTimingFunction() {
+        return updateTransitionTimingFunction(null);
+    }
+
+    /**
+     * 设置单属性 transition 便捷声明。
+     *
+     * @param property transition 属性
+     * @param durationMillis 持续时间，单位毫秒
+     * @return 当前声明
+     */
+    public UiStyleDeclaration setTransition(DocumentAnimationProperty property, long durationMillis) {
+        setTransitionProperties(Objects.requireNonNull(property, "property"));
+        setTransitionDurationMillis(durationMillis);
+        return this;
+    }
+
     public UiStyleLength getBackdropBlurRadius() {
         return backdropBlurRadius;
     }
@@ -591,6 +680,40 @@ public final class UiStyleDeclaration {
     private UiStyleDeclaration updateTextColor(Integer value) {
         if (!Objects.equals(textColor, value)) {
             textColor = value;
+            recordChange();
+        }
+        return this;
+    }
+
+    private UiStyleDeclaration updateTransitionProperties(List<DocumentAnimationProperty> value) {
+        List<DocumentAnimationProperty> nextValue = value == null ? null
+                : Collections.unmodifiableList(new ArrayList<DocumentAnimationProperty>(value));
+        if (!Objects.equals(transitionProperties, nextValue)) {
+            transitionProperties = nextValue;
+            recordChange();
+        }
+        return this;
+    }
+
+    private UiStyleDeclaration updateTransitionDurationNanos(Long value) {
+        if (!Objects.equals(transitionDurationNanos, value)) {
+            transitionDurationNanos = value;
+            recordChange();
+        }
+        return this;
+    }
+
+    private UiStyleDeclaration updateTransitionDelayNanos(Long value) {
+        if (!Objects.equals(transitionDelayNanos, value)) {
+            transitionDelayNanos = value;
+            recordChange();
+        }
+        return this;
+    }
+
+    private UiStyleDeclaration updateTransitionTimingFunction(DocumentAnimationTimingFunction value) {
+        if (transitionTimingFunction != value) {
+            transitionTimingFunction = value;
             recordChange();
         }
         return this;

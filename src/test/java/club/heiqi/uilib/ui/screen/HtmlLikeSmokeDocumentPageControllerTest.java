@@ -109,7 +109,7 @@ public class HtmlLikeSmokeDocumentPageControllerTest {
         widget.render(clickedRenderContext);
 
         Assert.assertTrue(containsTextCall(clickedRenderContext.textCalls, "Click target: 1"));
-        Assert.assertTrue(containsFillColor(clickedRenderContext.drawCalls, 0xFF3182CE));
+        Assert.assertTrue(widget.getActiveAnimationCount() > 0);
     }
 
     /**

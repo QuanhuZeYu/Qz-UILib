@@ -1,6 +1,12 @@
 package club.heiqi.uilib.ui.style;
 
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.List;
 import java.util.Objects;
+
+import club.heiqi.uilib.ui.animation.DocumentAnimationProperty;
+import club.heiqi.uilib.ui.animation.DocumentAnimationTimingFunction;
 
 /**
  * 元素最终计算样式。
@@ -32,6 +38,10 @@ public final class ComputedStyle {
     private final int backgroundColor;
     private final int borderColor;
     private final int textColor;
+    private final List<DocumentAnimationProperty> transitionProperties;
+    private final long transitionDurationNanos;
+    private final long transitionDelayNanos;
+    private final DocumentAnimationTimingFunction transitionTimingFunction;
     private final UiStyleLength backdropBlurRadius;
     private final float backdropSaturation;
 
@@ -40,8 +50,10 @@ public final class ComputedStyle {
             UiStyleInsets margin, UiStyleInsets padding, UiStyleLength borderWidth, UiStyleLength borderRadius,
             UiOverflow overflowX, UiOverflow overflowY, UiFlexDirection flexDirection, UiAlignItems alignItems,
             UiJustifyContent justifyContent, UiStyleLength rowGap, UiStyleLength columnGap, float flexGrow,
-            float flexShrink, int backgroundColor, int borderColor, int textColor, UiStyleLength backdropBlurRadius,
-            float backdropSaturation) {
+            float flexShrink, int backgroundColor, int borderColor, int textColor,
+            List<DocumentAnimationProperty> transitionProperties, long transitionDurationNanos,
+            long transitionDelayNanos, DocumentAnimationTimingFunction transitionTimingFunction,
+            UiStyleLength backdropBlurRadius, float backdropSaturation) {
         this.display = Objects.requireNonNull(display, "display");
         this.width = Objects.requireNonNull(width, "width");
         this.height = Objects.requireNonNull(height, "height");
@@ -67,6 +79,11 @@ public final class ComputedStyle {
         this.backgroundColor = backgroundColor;
         this.borderColor = borderColor;
         this.textColor = textColor;
+        this.transitionProperties = Collections.unmodifiableList(new ArrayList<DocumentAnimationProperty>(
+                Objects.requireNonNull(transitionProperties, "transitionProperties")));
+        this.transitionDurationNanos = Math.max(0L, transitionDurationNanos);
+        this.transitionDelayNanos = Math.max(0L, transitionDelayNanos);
+        this.transitionTimingFunction = Objects.requireNonNull(transitionTimingFunction, "transitionTimingFunction");
         this.backdropBlurRadius = Objects.requireNonNull(backdropBlurRadius, "backdropBlurRadius");
         this.backdropSaturation = Math.max(0.0F, backdropSaturation);
     }
@@ -169,6 +186,22 @@ public final class ComputedStyle {
 
     public int getTextColor() {
         return textColor;
+    }
+
+    public List<DocumentAnimationProperty> getTransitionProperties() {
+        return transitionProperties;
+    }
+
+    public long getTransitionDurationNanos() {
+        return transitionDurationNanos;
+    }
+
+    public long getTransitionDelayNanos() {
+        return transitionDelayNanos;
+    }
+
+    public DocumentAnimationTimingFunction getTransitionTimingFunction() {
+        return transitionTimingFunction;
     }
 
     public UiStyleLength getBackdropBlurRadius() {

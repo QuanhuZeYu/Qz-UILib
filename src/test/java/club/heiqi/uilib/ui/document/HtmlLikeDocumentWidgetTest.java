@@ -8,6 +8,8 @@ import org.junit.Assert;
 import org.junit.Test;
 import org.lwjglx.input.Keyboard;
 
+import club.heiqi.uilib.ui.animation.DocumentAnimationClock;
+import club.heiqi.uilib.ui.animation.DocumentAnimationProperty;
 import club.heiqi.uilib.ui.dom.DocumentElementActiveEvent;
 import club.heiqi.uilib.ui.dom.DocumentElementActiveHandler;
 import club.heiqi.uilib.ui.dom.DocumentElementClickEvent;
@@ -104,6 +106,45 @@ public class HtmlLikeDocumentWidgetTest {
         assertTextCall(renderContext.textCalls.get(0), "abc", 5, 7, 0xFFEFF6FF, false);
         assertTextCall(renderContext.textCalls.get(1), "def", 5, 25, 0xFFEFF6FF, false);
         assertTextCall(renderContext.textCalls.get(2), "g", 5, 43, 0xFFEFF6FF, false);
+    }
+
+    /**
+     * 验证 HTML-like 组件会在没有 DOM 变更时继续重绘 paint-only transition。
+     */
+    @Test
+    public void shouldRenderPaintOnlyTransitionAcrossFrames() {
+        UiDocument document = UiDocument.create();
+        ElementNode root = document.getRootElement();
+        root.style()
+                .setHeight(UiStyleLength.px(24))
+                .setBackgroundColor(0xFF000000)
+                .setTransition(DocumentAnimationProperty.BACKGROUND_COLOR, 1000L);
+        ManualAnimationClock animationClock = new ManualAnimationClock();
+        HtmlLikeDocumentWidget widget = new HtmlLikeDocumentWidget(document, 120, 48,
+                new DeterministicTextMeasureService());
+        widget.setAnimationClock(animationClock);
+        widget.applyLayoutBounds(0, 0, 120, 48);
+
+        RecordingUiRenderContext initialContext = new RecordingUiRenderContext();
+        widget.render(initialContext);
+        Assert.assertEquals(0xFF000000, initialContext.drawCalls.get(0).surfaceStyle.fillColor);
+
+        root.style().setBackgroundColor(0xFFFFFFFF);
+        RecordingUiRenderContext startContext = new RecordingUiRenderContext();
+        widget.render(startContext);
+        Assert.assertEquals(0xFF000000, startContext.drawCalls.get(0).surfaceStyle.fillColor);
+        Assert.assertEquals(1, widget.getActiveAnimationCount());
+
+        animationClock.setCurrentTimeNanos(500_000_000L);
+        RecordingUiRenderContext halfContext = new RecordingUiRenderContext();
+        widget.render(halfContext);
+        Assert.assertEquals(0xFF808080, halfContext.drawCalls.get(0).surfaceStyle.fillColor);
+
+        animationClock.setCurrentTimeNanos(1_000_000_000L);
+        RecordingUiRenderContext finishedContext = new RecordingUiRenderContext();
+        widget.render(finishedContext);
+        Assert.assertEquals(0xFFFFFFFF, finishedContext.drawCalls.get(0).surfaceStyle.fillColor);
+        Assert.assertEquals(0, widget.getActiveAnimationCount());
     }
 
     /**
@@ -685,6 +726,23 @@ public class HtmlLikeDocumentWidgetTest {
             this.y = y;
             this.color = color;
             this.shadow = shadow;
+        }
+    }
+
+    /**
+     * 供动画测试使用的手动时间源。
+     */
+    private static final class ManualAnimationClock implements DocumentAnimationClock {
+
+        private long currentTimeNanos;
+
+        private void setCurrentTimeNanos(long currentTimeNanos) {
+            this.currentTimeNanos = currentTimeNanos;
+        }
+
+        @Override
+        public long getCurrentTimeNanos() {
+            return currentTimeNanos;
         }
     }
 

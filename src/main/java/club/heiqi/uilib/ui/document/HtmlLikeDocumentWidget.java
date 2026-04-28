@@ -5,6 +5,9 @@ import java.util.Collections;
 import java.util.List;
 import java.util.Objects;
 
+import club.heiqi.uilib.ui.animation.DocumentAnimationClock;
+import club.heiqi.uilib.ui.animation.DocumentAnimationTimeline;
+import club.heiqi.uilib.ui.animation.SystemDocumentAnimationClock;
 import club.heiqi.uilib.ui.dom.DocumentElementActiveEvent;
 import club.heiqi.uilib.ui.dom.DocumentElementActiveHandler;
 import club.heiqi.uilib.ui.dom.DocumentElementClickEvent;
@@ -41,8 +44,10 @@ public final class HtmlLikeDocumentWidget extends Widget {
     private final UiDocument document;
     private final TextMeasureService textMeasureService;
     private final DocumentScrollState scrollState = new DocumentScrollState();
+    private final DocumentAnimationTimeline animationTimeline = new DocumentAnimationTimeline();
     private final int preferredWidth;
     private final int preferredHeight;
+    private DocumentAnimationClock animationClock = SystemDocumentAnimationClock.getInstance();
     private int cachedMutationVersion = -1;
     private int cachedTextMeasureEpoch = -1;
     private int cachedWidth = -1;
@@ -128,6 +133,27 @@ public final class HtmlLikeDocumentWidget extends Widget {
      */
     public boolean isViewportRootScrollingEnabled() {
         return viewportRootScrollingEnabled;
+    }
+
+    /**
+     * 设置 HTML-like 动画时间源。
+     *
+     * @param animationClock 动画时间源
+     * @return 当前组件
+     */
+    public HtmlLikeDocumentWidget setAnimationClock(DocumentAnimationClock animationClock) {
+        this.animationClock = Objects.requireNonNull(animationClock, "animationClock");
+        cachedPaintScrollVersion = -1;
+        return this;
+    }
+
+    /**
+     * 返回当前未完成的动画数量。
+     *
+     * @return 未完成动画数量
+     */
+    public int getActiveAnimationCount() {
+        return animationTimeline.getActiveAnimationCount(animationClock.getCurrentTimeNanos());
     }
 
     /**
@@ -320,14 +346,18 @@ public final class HtmlLikeDocumentWidget extends Widget {
     private List<DocumentPaintCommand> resolvePaintCommands() {
         DocumentLayoutBox rootBox = resolveLayoutBox();
         int scrollVersion = scrollState.getVersion();
-        long currentTimeNanos = System.nanoTime();
+        long currentTimeNanos = animationClock.getCurrentTimeNanos();
+        boolean animationStateChanged = animationTimeline.updateFromLayout(rootBox, currentTimeNanos);
+        boolean animationWork = animationTimeline.hasAnimationWork();
         boolean transientScrollbarActive = scrollState.hasActiveTransientScrollbars(currentTimeNanos);
-        if (cachedPaintScrollVersion == scrollVersion
+        if (!animationStateChanged && !animationWork && cachedPaintScrollVersion == scrollVersion
                 && cachedPaintTransientScrollbarActive == transientScrollbarActive) {
             return cachedPaintCommands;
         }
 
-        cachedPaintCommands = DocumentPaintEngine.buildPaintCommands(rootBox, scrollState, currentTimeNanos);
+        cachedPaintCommands = DocumentPaintEngine.buildPaintCommands(rootBox, scrollState, currentTimeNanos,
+                animationTimeline);
+        animationTimeline.pruneFinishedAnimations(currentTimeNanos);
         cachedPaintScrollVersion = scrollVersion;
         cachedPaintTransientScrollbarActive = transientScrollbarActive;
         return cachedPaintCommands;
