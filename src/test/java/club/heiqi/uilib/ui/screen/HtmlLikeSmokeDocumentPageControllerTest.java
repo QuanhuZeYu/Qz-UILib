@@ -51,6 +51,7 @@ public class HtmlLikeSmokeDocumentPageControllerTest {
         Assert.assertTrue(containsText(texts, "HTML-like Smoke Lab"));
         Assert.assertTrue(containsText(texts, "UiDocument -> style -> layout -> paint command -> UiRenderContext"));
         Assert.assertTrue(containsText(texts, "Same-layer sampling grid"));
+        Assert.assertTrue(containsText(texts, "ABS badge"));
         Assert.assertTrue(containsText(texts, "pink stripe behind glass"));
         Assert.assertTrue(containsText(texts, "amber UI behind this card"));
         Assert.assertTrue(containsText(texts, "Backdrop glass overlap: blur 14px / saturate 140%"));

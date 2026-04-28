@@ -112,7 +112,7 @@ public class UiStyleResolverTest {
                 .setDisplay(UiDisplay.FLEX)
                 .setWidth(UiStyleLength.percent(1.0F))
                 .setHeight(UiStyleLength.px(120))
-                .setPosition(UiPosition.RELATIVE)
+                .setPosition(UiPosition.ABSOLUTE)
                 .setTop(UiStyleLength.px(5))
                 .setRight(UiStyleLength.px(7))
                 .setBottom(UiStyleLength.px(9))
@@ -148,7 +148,7 @@ public class UiStyleResolverTest {
         Assert.assertEquals(UiDisplay.FLEX, computedStyle.getDisplay());
         Assert.assertEquals(UiStyleLength.percent(1.0F), computedStyle.getWidth());
         Assert.assertEquals(UiStyleLength.px(120), computedStyle.getHeight());
-        Assert.assertEquals(UiPosition.RELATIVE, computedStyle.getPosition());
+        Assert.assertEquals(UiPosition.ABSOLUTE, computedStyle.getPosition());
         Assert.assertEquals(UiStyleLength.px(5), computedStyle.getTop());
         Assert.assertEquals(UiStyleLength.px(7), computedStyle.getRight());
         Assert.assertEquals(UiStyleLength.px(9), computedStyle.getBottom());

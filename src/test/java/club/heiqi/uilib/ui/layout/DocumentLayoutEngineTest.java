@@ -174,6 +174,71 @@ public class DocumentLayoutEngineTest {
     }
 
     /**
+     * 验证 absolute 定位元素相对父 content box 定位，并脱离普通流。
+     */
+    @Test
+    public void shouldLayoutAbsolutePositionedElementOutOfNormalFlow() {
+        UiDocument document = UiDocument.create();
+        ElementNode root = document.getRootElement();
+        ElementNode absolute = document.div();
+        ElementNode following = document.div();
+
+        root.style()
+                .setWidth(UiStyleLength.px(120))
+                .setPadding(UiStyleLength.px(10))
+                .setBorderWidth(UiStyleLength.px(2));
+        absolute.style()
+                .setWidth(UiStyleLength.px(30))
+                .setHeight(UiStyleLength.px(12))
+                .setPosition(UiPosition.ABSOLUTE)
+                .setTop(UiStyleLength.px(7))
+                .setLeft(UiStyleLength.px(9));
+        following.style().setHeight(UiStyleLength.px(16));
+        root.append(absolute).append(following);
+
+        DocumentLayoutBox rootBox = DocumentLayoutEngine.layout(root, 180, 0);
+        DocumentLayoutBox absoluteBox = rootBox.getChildren().get(0);
+        DocumentLayoutBox followingBox = rootBox.getChildren().get(1);
+
+        Assert.assertEquals(21, absoluteBox.getLeft());
+        Assert.assertEquals(19, absoluteBox.getTop());
+        Assert.assertEquals(30, absoluteBox.getWidth());
+        Assert.assertEquals(12, absoluteBox.getHeight());
+        Assert.assertEquals(12, followingBox.getLeft());
+        Assert.assertEquals(12, followingBox.getTop());
+        Assert.assertEquals(40, rootBox.getHeight());
+    }
+
+    /**
+     * 验证 absolute 定位元素可通过 right/bottom 从父 content box 反向定位。
+     */
+    @Test
+    public void shouldLayoutAbsolutePositionedElementFromRightAndBottomInsets() {
+        UiDocument document = UiDocument.create();
+        ElementNode root = document.getRootElement();
+        ElementNode spacer = document.div();
+        ElementNode absolute = document.div();
+
+        root.style()
+                .setWidth(UiStyleLength.px(100))
+                .setHeight(UiStyleLength.px(60))
+                .setPadding(UiStyleLength.px(4));
+        spacer.style().setHeight(UiStyleLength.px(20));
+        absolute.style()
+                .setWidth(UiStyleLength.px(30))
+                .setHeight(UiStyleLength.px(10))
+                .setPosition(UiPosition.ABSOLUTE)
+                .setRight(UiStyleLength.px(8))
+                .setBottom(UiStyleLength.px(6));
+        root.append(spacer).append(absolute);
+
+        DocumentLayoutBox absoluteBox = DocumentLayoutEngine.layout(root, 140, 0).getChildren().get(1);
+
+        Assert.assertEquals(66, absoluteBox.getLeft());
+        Assert.assertEquals(48, absoluteBox.getTop());
+    }
+
+    /**
      * 验证布局盒能按 CSS-like stacking phase 提供稳定子盒顺序。
      */
     @Test
@@ -308,6 +373,46 @@ public class DocumentLayoutEngineTest {
         Assert.assertEquals(190, growingBox.getWidth());
         Assert.assertEquals(270, lastBox.getLeft());
         Assert.assertEquals(30, lastBox.getWidth());
+    }
+
+    /**
+     * 验证 absolute 子元素不参与 flex item 空间分配。
+     */
+    @Test
+    public void shouldExcludeAbsolutePositionedElementFromFlexLayout() {
+        UiDocument document = UiDocument.create();
+        ElementNode root = document.getRootElement();
+        ElementNode absolute = document.div();
+        ElementNode fixed = document.div();
+        ElementNode growing = document.div();
+
+        root.style()
+                .setDisplay(UiDisplay.FLEX)
+                .setWidth(UiStyleLength.px(100));
+        absolute.style()
+                .setWidth(UiStyleLength.px(30))
+                .setHeight(UiStyleLength.px(8))
+                .setPosition(UiPosition.ABSOLUTE)
+                .setLeft(UiStyleLength.px(5));
+        fixed.style()
+                .setWidth(UiStyleLength.px(40))
+                .setHeight(UiStyleLength.px(10));
+        growing.style()
+                .setFlexGrow(1.0F)
+                .setHeight(UiStyleLength.px(10));
+        root.append(absolute).append(fixed).append(growing);
+
+        DocumentLayoutBox rootBox = DocumentLayoutEngine.layout(root, 140, 0);
+        DocumentLayoutBox absoluteBox = rootBox.getChildren().get(0);
+        DocumentLayoutBox fixedBox = rootBox.getChildren().get(1);
+        DocumentLayoutBox growingBox = rootBox.getChildren().get(2);
+
+        Assert.assertEquals(5, absoluteBox.getLeft());
+        Assert.assertEquals(0, fixedBox.getLeft());
+        Assert.assertEquals(40, fixedBox.getWidth());
+        Assert.assertEquals(40, growingBox.getLeft());
+        Assert.assertEquals(60, growingBox.getWidth());
+        Assert.assertEquals(10, rootBox.getContentHeight());
     }
 
     /**

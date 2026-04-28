@@ -181,6 +181,24 @@ final class HtmlLikeSmokeDocumentPageController extends DocumentPageController {
         sampleTitle.appendText("Same-layer sampling grid");
         backdropStage.append(sampleTitle);
 
+        ElementNode absoluteBadge = document.div();
+        absoluteBadge.style()
+                .setWidth(UiStyleLength.px(54))
+                .setHeight(UiStyleLength.px(18))
+                .setPosition(UiPosition.ABSOLUTE)
+                .setTop(UiStyleLength.px(8))
+                .setRight(UiStyleLength.px(8))
+                .setZIndex(2)
+                .setBackgroundColor(0xEE2D3748)
+                .setBorderColor(0xFFBEE3F8)
+                .setBorderWidth(UiStyleLength.px(1))
+                .setBorderRadius(UiStyleLength.px(999))
+                .setTextColor(0xFFE6FFFA)
+                .setOverflowX(UiOverflow.HIDDEN)
+                .setOverflowY(UiOverflow.HIDDEN);
+        absoluteBadge.appendText("ABS badge");
+        backdropStage.append(absoluteBadge);
+
         ElementNode hotStripe = document.div();
         hotStripe.style()
                 .setWidth(UiStyleLength.px(246))

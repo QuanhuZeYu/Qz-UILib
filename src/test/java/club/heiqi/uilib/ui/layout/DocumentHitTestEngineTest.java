@@ -67,6 +67,34 @@ public class DocumentHitTestEngineTest {
     }
 
     /**
+     * 验证 absolute 子元素按脱流后的视觉位置参与命中。
+     */
+    @Test
+    public void shouldHitAbsolutePositionedChildAtInsetPosition() {
+        UiDocument document = UiDocument.create();
+        ElementNode root = document.getRootElement();
+        ElementNode absolute = document.div();
+        ElementNode normal = document.div();
+
+        root.style().setWidth(UiStyleLength.px(100));
+        absolute.style()
+                .setWidth(UiStyleLength.px(40))
+                .setHeight(UiStyleLength.px(12))
+                .setPosition(UiPosition.ABSOLUTE)
+                .setTop(UiStyleLength.px(8))
+                .setLeft(UiStyleLength.px(6));
+        normal.style()
+                .setWidth(UiStyleLength.px(60))
+                .setHeight(UiStyleLength.px(24));
+        root.append(absolute).append(normal);
+
+        DocumentLayoutBox rootBox = DocumentLayoutEngine.layout(root, 120, 0);
+
+        Assert.assertSame(absolute, DocumentHitTestEngine.hitTest(rootBox, null, 10, 10));
+        Assert.assertSame(normal, DocumentHitTestEngine.hitTest(rootBox, null, 10, 22));
+    }
+
+    /**
      * 验证负 z-index 元素在普通流元素下方命中。
      */
     @Test

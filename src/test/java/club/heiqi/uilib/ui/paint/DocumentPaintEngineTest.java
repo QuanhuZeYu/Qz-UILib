@@ -60,6 +60,45 @@ public class DocumentPaintEngineTest {
     }
 
     /**
+     * 验证 absolute 子元素按 inset 坐标绘制，并位于普通流内容之上。
+     */
+    @Test
+    public void shouldPaintAbsolutePositionedChildAboveNormalFlow() {
+        UiDocument document = UiDocument.create();
+        ElementNode root = document.getRootElement();
+        ElementNode absolute = document.div();
+        ElementNode normal = document.div();
+
+        root.style()
+                .setWidth(UiStyleLength.px(100))
+                .setHeight(UiStyleLength.px(30))
+                .setBackgroundColor(0xFF101820);
+        absolute.style()
+                .setWidth(UiStyleLength.px(20))
+                .setHeight(UiStyleLength.px(8))
+                .setPosition(UiPosition.ABSOLUTE)
+                .setTop(UiStyleLength.px(6))
+                .setLeft(UiStyleLength.px(10))
+                .setBackgroundColor(0xFFFF0000);
+        normal.style()
+                .setWidth(UiStyleLength.px(40))
+                .setHeight(UiStyleLength.px(10))
+                .setBackgroundColor(0xFF0000FF);
+        root.append(absolute).append(normal);
+
+        List<DocumentPaintCommand> commands = DocumentPaintEngine.buildPaintCommands(
+                DocumentLayoutEngine.layout(root, 120, 0));
+
+        Assert.assertEquals(3, commands.size());
+        assertCommand(commands.get(0), DocumentPaintCommandType.BACKGROUND, root, 0, 0, 100, 30, 0xFF101820,
+                0, 0);
+        assertCommand(commands.get(1), DocumentPaintCommandType.BACKGROUND, normal, 0, 0, 40, 10, 0xFF0000FF,
+                0, 0);
+        assertCommand(commands.get(2), DocumentPaintCommandType.BACKGROUND, absolute, 10, 6, 30, 14, 0xFFFF0000,
+                0, 0);
+    }
+
+    /**
      * 验证元素 opacity 会累积应用到自身和后代的标准绘制命令颜色。
      */
     @Test
