@@ -1,11 +1,15 @@
 package club.heiqi.uilib.ui.render;
 
 import java.nio.ByteBuffer;
+import java.nio.IntBuffer;
 import java.util.ArrayList;
 import java.util.List;
 
+import org.lwjgl.BufferUtils;
 import org.lwjgl.opengl.GL11;
 import org.lwjgl.opengl.GL12;
+import org.lwjgl.opengl.GL13;
+import org.lwjgl.opengl.GL20;
 import org.lwjgl.opengl.GL30;
 
 /**
@@ -19,12 +23,17 @@ public final class UiMainLayerSnapshotService {
 
     private static final int MAX_SNAPSHOT_EDGE = 4096;
     private static final int MAX_SNAPSHOT_PIXELS = 4096 * 4096;
+    private static final int MAX_DOWNSAMPLE_FACTOR = 4;
+    private static final int MEDIUM_BLUR_DOWNSAMPLE_THRESHOLD = 18;
+    private static final int LARGE_BLUR_DOWNSAMPLE_THRESHOLD = 34;
 
     private final List<FrameSnapshot> snapshots = new ArrayList<FrameSnapshot>();
     private int frameId;
     private boolean frameActive;
     private boolean disabledForFrame;
+    private boolean downsampleDisabledForFrame;
     private String lastFailureDetail = "not-run";
+    private String lastDownsampleFailureDetail = "";
 
     /**
      * 开始新一帧快照复用窗口。
@@ -32,7 +41,9 @@ public final class UiMainLayerSnapshotService {
     public void beginFrame() {
         frameActive = true;
         disabledForFrame = false;
+        downsampleDisabledForFrame = false;
         lastFailureDetail = "not-run";
+        lastDownsampleFailureDetail = "";
         if (frameId == Integer.MAX_VALUE) {
             frameId = 0;
             for (FrameSnapshot snapshot : snapshots) {
@@ -61,10 +72,7 @@ public final class UiMainLayerSnapshotService {
     public void close() {
         finishFrame();
         for (FrameSnapshot snapshot : snapshots) {
-            if (snapshot.textureId != 0) {
-                GL11.glDeleteTextures(snapshot.textureId);
-                snapshot.textureId = 0;
-            }
+            closeSnapshot(snapshot);
         }
         snapshots.clear();
     }
@@ -107,6 +115,22 @@ public final class UiMainLayerSnapshotService {
      */
     Snapshot acquireSnapshot(int screenWidth, int screenHeight, int requestedReadFramebufferId, int contentRevision,
             SampleRegion sampleRegion) {
+        return acquireSnapshot(screenWidth, screenHeight, requestedReadFramebufferId, contentRevision, sampleRegion, 0);
+    }
+
+    /**
+     * 获取当前帧可复用的局部主 UI 层滤镜快照。
+     *
+     * @param screenWidth 屏幕宽度
+     * @param screenHeight 屏幕高度
+     * @param requestedReadFramebufferId 指定读取 FBO；小于 0 时使用当前 read framebuffer
+     * @param contentRevision 当前读取目标的内容版本
+     * @param sampleRegion 需要复制的 UI 采样区域
+     * @param blurRadius 当前 backdrop 模糊半径，用于决定是否降采样
+     * @return 快照；获取失败时返回 null
+     */
+    Snapshot acquireSnapshot(int screenWidth, int screenHeight, int requestedReadFramebufferId, int contentRevision,
+            SampleRegion sampleRegion, int blurRadius) {
         if (sampleRegion == null || !isSnapshotRegionWithinScreen(screenWidth, screenHeight, sampleRegion)) {
             lastFailureDetail = "snapshot-region-invalid";
             return null;
@@ -124,11 +148,14 @@ public final class UiMainLayerSnapshotService {
         }
 
         int readFramebufferId = resolveReadFramebufferId(requestedReadFramebufferId);
+        int downsampleFactor = resolveDownsampleFactor(blurRadius);
         FrameSnapshot capturedSnapshot = findCapturedSnapshot(readFramebufferId, sampleRegion,
-                contentRevision);
+                contentRevision, downsampleFactor);
         if (capturedSnapshot != null) {
             capturedSnapshot.activeUseCount++;
-            return Snapshot.reused(capturedSnapshot.textureId, sampleRegion, readFramebufferId, contentRevision);
+            return Snapshot.reused(capturedSnapshot.textureId, sampleRegion, readFramebufferId, contentRevision,
+                    capturedSnapshot.textureWidth, capturedSnapshot.textureHeight, capturedSnapshot.downsampleFactor,
+                    capturedSnapshot.filterDetail);
         }
 
         FrameSnapshot snapshot = findReusableSnapshot();
@@ -136,10 +163,12 @@ public final class UiMainLayerSnapshotService {
             snapshot = new FrameSnapshot();
             snapshots.add(snapshot);
         }
-        if (!captureSnapshot(snapshot, screenHeight, sampleRegion, readFramebufferId, contentRevision)) {
+        if (!captureSnapshot(snapshot, screenHeight, sampleRegion, readFramebufferId, contentRevision,
+                downsampleFactor)) {
             return null;
         }
-        return Snapshot.captured(snapshot.textureId, sampleRegion, readFramebufferId, contentRevision);
+        return Snapshot.captured(snapshot.textureId, sampleRegion, readFramebufferId, contentRevision,
+                snapshot.textureWidth, snapshot.textureHeight, snapshot.downsampleFactor, snapshot.filterDetail);
     }
 
     /**
@@ -234,13 +263,42 @@ public final class UiMainLayerSnapshotService {
         return screenHeight - sampleRegion.getBottom();
     }
 
+    /**
+     * 按模糊半径决定滤镜快照降采样倍率。
+     *
+     * @param blurRadius 模糊半径
+     * @return 降采样倍率
+     */
+    static int resolveDownsampleFactor(int blurRadius) {
+        if (blurRadius < MEDIUM_BLUR_DOWNSAMPLE_THRESHOLD) {
+            return 1;
+        }
+        if (blurRadius < LARGE_BLUR_DOWNSAMPLE_THRESHOLD) {
+            return 2;
+        }
+        return MAX_DOWNSAMPLE_FACTOR;
+    }
+
+    /**
+     * 计算降采样后的纹理边长。
+     *
+     * @param sourceSize 原始边长
+     * @param downsampleFactor 降采样倍率
+     * @return 降采样后边长
+     */
+    static int resolveDownsampledSize(int sourceSize, int downsampleFactor) {
+        int safeFactor = Math.max(1, Math.min(MAX_DOWNSAMPLE_FACTOR, downsampleFactor));
+        return Math.max(1, (Math.max(1, sourceSize) + safeFactor - 1) / safeFactor);
+    }
+
     private FrameSnapshot findCapturedSnapshot(int readFramebufferId, SampleRegion sampleRegion,
-            int contentRevision) {
+            int contentRevision, int downsampleFactor) {
         for (FrameSnapshot snapshot : snapshots) {
             if (snapshot.capturedFrameId == frameId && snapshot.readFramebufferId == readFramebufferId
                     && snapshot.sampleLeft == sampleRegion.getLeft() && snapshot.sampleTop == sampleRegion.getTop()
                     && snapshot.width == sampleRegion.getWidth() && snapshot.height == sampleRegion.getHeight()
-                    && snapshot.contentRevision == contentRevision && snapshot.textureId != 0) {
+                    && snapshot.contentRevision == contentRevision
+                    && snapshot.requestedDownsampleFactor == downsampleFactor && snapshot.textureId != 0) {
                 return snapshot;
             }
         }
@@ -257,35 +315,53 @@ public final class UiMainLayerSnapshotService {
     }
 
     private boolean captureSnapshot(FrameSnapshot snapshot, int screenHeight, SampleRegion sampleRegion,
-            int readFramebufferId,
-            int contentRevision) {
+            int readFramebufferId, int contentRevision, int requestedDownsampleFactor) {
         int width = sampleRegion.getWidth();
         int height = sampleRegion.getHeight();
         int previousTexture = 0;
         int previousReadFramebufferId = -1;
+        int previousDrawFramebufferId = -1;
+        int previousActiveTexture = GL13.GL_TEXTURE0;
+        int previousProgram = 0;
+        IntBuffer previousViewport = BufferUtils.createIntBuffer(16);
         boolean textureBindingCaptured = false;
         boolean readFramebufferCaptured = false;
+        boolean drawFramebufferCaptured = false;
+        boolean activeTextureCaptured = false;
+        boolean programCaptured = false;
+        boolean viewportCaptured = false;
+        boolean attribCaptured = false;
         try {
+            previousActiveTexture = GL11.glGetInteger(GL13.GL_ACTIVE_TEXTURE);
+            activeTextureCaptured = true;
+            GL13.glActiveTexture(GL13.GL_TEXTURE0);
             previousTexture = GL11.glGetInteger(GL11.GL_TEXTURE_BINDING_2D);
             textureBindingCaptured = true;
             previousReadFramebufferId = GL11.glGetInteger(GL30.GL_READ_FRAMEBUFFER_BINDING);
             readFramebufferCaptured = true;
-            if (snapshot.textureId == 0) {
-                snapshot.textureId = GL11.glGenTextures();
-                if (snapshot.textureId == 0) {
+            previousDrawFramebufferId = GL11.glGetInteger(GL30.GL_DRAW_FRAMEBUFFER_BINDING);
+            drawFramebufferCaptured = true;
+            previousProgram = GL11.glGetInteger(GL20.GL_CURRENT_PROGRAM);
+            programCaptured = true;
+            GL11.glGetInteger(GL11.GL_VIEWPORT, previousViewport);
+            viewportCaptured = true;
+            GL11.glPushAttrib(GL11.GL_ALL_ATTRIB_BITS);
+            attribCaptured = true;
+            if (snapshot.sourceTextureId == 0) {
+                snapshot.sourceTextureId = GL11.glGenTextures();
+                if (snapshot.sourceTextureId == 0) {
                     lastFailureDetail = "texture-allocation-failed";
                     return false;
                 }
             }
 
-            GL11.glBindTexture(GL11.GL_TEXTURE_2D, snapshot.textureId);
-            GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_MIN_FILTER, GL11.GL_LINEAR);
-            GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_MAG_FILTER, GL11.GL_LINEAR);
-            GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_WRAP_S, GL12.GL_CLAMP_TO_EDGE);
-            GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_WRAP_T, GL12.GL_CLAMP_TO_EDGE);
-            if (snapshot.width != width || snapshot.height != height) {
+            GL11.glBindTexture(GL11.GL_TEXTURE_2D, snapshot.sourceTextureId);
+            configureLinearTexture();
+            if (snapshot.sourceWidth != width || snapshot.sourceHeight != height) {
                 GL11.glTexImage2D(GL11.GL_TEXTURE_2D, 0, GL11.GL_RGBA, width, height, 0, GL11.GL_RGBA,
                         GL11.GL_UNSIGNED_BYTE, (ByteBuffer) null);
+                snapshot.sourceWidth = width;
+                snapshot.sourceHeight = height;
             }
             if (previousReadFramebufferId != readFramebufferId) {
                 GL30.glBindFramebuffer(GL30.GL_READ_FRAMEBUFFER, readFramebufferId);
@@ -294,6 +370,22 @@ public final class UiMainLayerSnapshotService {
                     resolveCopySourceY(screenHeight, sampleRegion), width, height);
             GL30.glGenerateMipmap(GL11.GL_TEXTURE_2D);
             GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_MIN_FILTER, GL11.GL_LINEAR_MIPMAP_LINEAR);
+
+            int downsampleFactor = resolveEffectiveDownsampleFactor(width, height, requestedDownsampleFactor);
+            snapshot.textureId = snapshot.sourceTextureId;
+            snapshot.textureWidth = width;
+            snapshot.textureHeight = height;
+            snapshot.requestedDownsampleFactor = requestedDownsampleFactor;
+            snapshot.downsampleFactor = 1;
+            snapshot.filterDetail = "raw";
+            if (downsampleFactor > 1) {
+                if (downsampleSnapshot(snapshot, downsampleFactor)) {
+                    snapshot.filterDetail = "downsample" + snapshot.downsampleFactor + " "
+                            + snapshot.textureWidth + "x" + snapshot.textureHeight;
+                } else if (!lastDownsampleFailureDetail.isEmpty()) {
+                    snapshot.filterDetail = "raw, downsample-unavailable=" + lastDownsampleFailureDetail;
+                }
+            }
 
             snapshot.sampleLeft = sampleRegion.getLeft();
             snapshot.sampleTop = sampleRegion.getTop();
@@ -311,12 +403,147 @@ public final class UiMainLayerSnapshotService {
             disableForCurrentFrame("snapshot-copy-failed: " + error.getClass().getSimpleName());
             return false;
         } finally {
+            if (attribCaptured) {
+                GL11.glPopAttrib();
+            }
+            if (programCaptured) {
+                GL20.glUseProgram(previousProgram);
+            }
+            if (viewportCaptured) {
+                GL11.glViewport(previousViewport.get(0), previousViewport.get(1), previousViewport.get(2),
+                        previousViewport.get(3));
+            }
+            if (drawFramebufferCaptured) {
+                GL30.glBindFramebuffer(GL30.GL_DRAW_FRAMEBUFFER, previousDrawFramebufferId);
+            }
             if (readFramebufferCaptured) {
                 GL30.glBindFramebuffer(GL30.GL_READ_FRAMEBUFFER, previousReadFramebufferId);
             }
             if (textureBindingCaptured) {
+                GL13.glActiveTexture(GL13.GL_TEXTURE0);
                 GL11.glBindTexture(GL11.GL_TEXTURE_2D, previousTexture);
             }
+            if (activeTextureCaptured) {
+                GL13.glActiveTexture(previousActiveTexture);
+            }
+        }
+    }
+
+    private boolean downsampleSnapshot(FrameSnapshot snapshot, int downsampleFactor) {
+        if (downsampleDisabledForFrame) {
+            return false;
+        }
+        int targetWidth = resolveDownsampledSize(snapshot.sourceWidth, downsampleFactor);
+        int targetHeight = resolveDownsampledSize(snapshot.sourceHeight, downsampleFactor);
+        if (targetWidth >= snapshot.sourceWidth && targetHeight >= snapshot.sourceHeight) {
+            return false;
+        }
+
+        try {
+            ensureDownsampleTarget(snapshot, targetWidth, targetHeight);
+            GL30.glBindFramebuffer(GL30.GL_DRAW_FRAMEBUFFER, snapshot.filterFramebufferId);
+            GL30.glFramebufferTexture2D(GL30.GL_DRAW_FRAMEBUFFER, GL30.GL_COLOR_ATTACHMENT0, GL11.GL_TEXTURE_2D,
+                    snapshot.filteredTextureId, 0);
+            int status = GL30.glCheckFramebufferStatus(GL30.GL_DRAW_FRAMEBUFFER);
+            if (status != GL30.GL_FRAMEBUFFER_COMPLETE) {
+                disableDownsampleForCurrentFrame("fbo-incomplete:" + status);
+                return false;
+            }
+
+            GL20.glUseProgram(0);
+            GL11.glViewport(0, 0, targetWidth, targetHeight);
+            GL11.glDisable(GL11.GL_SCISSOR_TEST);
+            GL11.glDisable(GL11.GL_STENCIL_TEST);
+            GL11.glDisable(GL11.GL_DEPTH_TEST);
+            GL11.glDisable(GL11.GL_ALPHA_TEST);
+            GL11.glDisable(GL11.GL_BLEND);
+            GL11.glEnable(GL11.GL_TEXTURE_2D);
+            GL11.glColor4f(1.0F, 1.0F, 1.0F, 1.0F);
+            GL11.glBindTexture(GL11.GL_TEXTURE_2D, snapshot.sourceTextureId);
+            drawDownsampledSourceQuad(targetWidth, targetHeight);
+
+            GL11.glBindTexture(GL11.GL_TEXTURE_2D, snapshot.filteredTextureId);
+            GL30.glGenerateMipmap(GL11.GL_TEXTURE_2D);
+            GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_MIN_FILTER, GL11.GL_LINEAR_MIPMAP_LINEAR);
+            snapshot.textureId = snapshot.filteredTextureId;
+            snapshot.textureWidth = targetWidth;
+            snapshot.textureHeight = targetHeight;
+            snapshot.downsampleFactor = downsampleFactor;
+            return true;
+        } catch (RuntimeException exception) {
+            disableDownsampleForCurrentFrame(exception.getClass().getSimpleName());
+            return false;
+        } catch (LinkageError error) {
+            disableDownsampleForCurrentFrame(error.getClass().getSimpleName());
+            return false;
+        }
+    }
+
+    private void ensureDownsampleTarget(FrameSnapshot snapshot, int targetWidth, int targetHeight) {
+        if (snapshot.filteredTextureId == 0) {
+            snapshot.filteredTextureId = GL11.glGenTextures();
+            if (snapshot.filteredTextureId == 0) {
+                throw new IllegalStateException("downsample texture allocation failed");
+            }
+        }
+        if (snapshot.filterFramebufferId == 0) {
+            snapshot.filterFramebufferId = GL30.glGenFramebuffers();
+            if (snapshot.filterFramebufferId == 0) {
+                throw new IllegalStateException("downsample framebuffer allocation failed");
+            }
+        }
+        GL11.glBindTexture(GL11.GL_TEXTURE_2D, snapshot.filteredTextureId);
+        configureLinearTexture();
+        if (snapshot.filteredWidth != targetWidth || snapshot.filteredHeight != targetHeight) {
+            GL11.glTexImage2D(GL11.GL_TEXTURE_2D, 0, GL11.GL_RGBA, targetWidth, targetHeight, 0, GL11.GL_RGBA,
+                    GL11.GL_UNSIGNED_BYTE, (ByteBuffer) null);
+            snapshot.filteredWidth = targetWidth;
+            snapshot.filteredHeight = targetHeight;
+        }
+    }
+
+    private static void configureLinearTexture() {
+        GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_MIN_FILTER, GL11.GL_LINEAR);
+        GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_MAG_FILTER, GL11.GL_LINEAR);
+        GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_WRAP_S, GL12.GL_CLAMP_TO_EDGE);
+        GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_WRAP_T, GL12.GL_CLAMP_TO_EDGE);
+    }
+
+    private static void drawDownsampledSourceQuad(int targetWidth, int targetHeight) {
+        int previousMatrixMode = GL11.glGetInteger(GL11.GL_MATRIX_MODE);
+        boolean projectionPushed = false;
+        boolean modelViewPushed = false;
+        try {
+            GL11.glMatrixMode(GL11.GL_PROJECTION);
+            GL11.glPushMatrix();
+            projectionPushed = true;
+            GL11.glLoadIdentity();
+            GL11.glOrtho(0.0D, (double) targetWidth, (double) targetHeight, 0.0D, -1.0D, 1.0D);
+            GL11.glMatrixMode(GL11.GL_MODELVIEW);
+            GL11.glPushMatrix();
+            modelViewPushed = true;
+            GL11.glLoadIdentity();
+
+            GL11.glBegin(GL11.GL_QUADS);
+            GL11.glTexCoord2f(0.0F, 0.0F);
+            GL11.glVertex2f(0.0F, (float) targetHeight);
+            GL11.glTexCoord2f(1.0F, 0.0F);
+            GL11.glVertex2f((float) targetWidth, (float) targetHeight);
+            GL11.glTexCoord2f(1.0F, 1.0F);
+            GL11.glVertex2f((float) targetWidth, 0.0F);
+            GL11.glTexCoord2f(0.0F, 1.0F);
+            GL11.glVertex2f(0.0F, 0.0F);
+            GL11.glEnd();
+        } finally {
+            if (modelViewPushed) {
+                GL11.glMatrixMode(GL11.GL_MODELVIEW);
+                GL11.glPopMatrix();
+            }
+            if (projectionPushed) {
+                GL11.glMatrixMode(GL11.GL_PROJECTION);
+                GL11.glPopMatrix();
+            }
+            GL11.glMatrixMode(previousMatrixMode);
         }
     }
 
@@ -325,11 +552,42 @@ public final class UiMainLayerSnapshotService {
         lastFailureDetail = detail;
     }
 
+    private void disableDownsampleForCurrentFrame(String detail) {
+        downsampleDisabledForFrame = true;
+        lastDownsampleFailureDetail = detail == null ? "unknown" : detail;
+    }
+
+    private void closeSnapshot(FrameSnapshot snapshot) {
+        if (snapshot.sourceTextureId != 0) {
+            GL11.glDeleteTextures(snapshot.sourceTextureId);
+            snapshot.sourceTextureId = 0;
+        }
+        if (snapshot.filteredTextureId != 0) {
+            GL11.glDeleteTextures(snapshot.filteredTextureId);
+            snapshot.filteredTextureId = 0;
+        }
+        if (snapshot.filterFramebufferId != 0) {
+            GL30.glDeleteFramebuffers(snapshot.filterFramebufferId);
+            snapshot.filterFramebufferId = 0;
+        }
+        snapshot.textureId = 0;
+    }
+
     private static int resolveReadFramebufferId(int requestedReadFramebufferId) {
         if (requestedReadFramebufferId >= 0) {
             return requestedReadFramebufferId;
         }
         return GL11.glGetInteger(GL30.GL_READ_FRAMEBUFFER_BINDING);
+    }
+
+    private static int resolveEffectiveDownsampleFactor(int width, int height, int requestedDownsampleFactor) {
+        int safeFactor = Math.max(1, Math.min(MAX_DOWNSAMPLE_FACTOR, requestedDownsampleFactor));
+        int targetWidth = resolveDownsampledSize(width, safeFactor);
+        int targetHeight = resolveDownsampledSize(height, safeFactor);
+        if (targetWidth >= width && targetHeight >= height) {
+            return 1;
+        }
+        return safeFactor;
     }
 
     private static int resolveSampleStep(int blurRadius) {
@@ -365,32 +623,43 @@ public final class UiMainLayerSnapshotService {
         private final int sampleTop;
         private final int width;
         private final int height;
+        private final int textureWidth;
+        private final int textureHeight;
         private final int readFramebufferId;
         private final int contentRevision;
+        private final int downsampleFactor;
+        private final String filterDetail;
         private final boolean reused;
 
         private Snapshot(int textureId, int sampleLeft, int sampleTop, int width, int height,
-                int readFramebufferId, int contentRevision, boolean reused) {
+                int readFramebufferId, int contentRevision, int textureWidth, int textureHeight,
+                int downsampleFactor, String filterDetail, boolean reused) {
             this.textureId = textureId;
             this.sampleLeft = sampleLeft;
             this.sampleTop = sampleTop;
             this.width = width;
             this.height = height;
+            this.textureWidth = textureWidth;
+            this.textureHeight = textureHeight;
             this.readFramebufferId = readFramebufferId;
             this.contentRevision = contentRevision;
+            this.downsampleFactor = downsampleFactor;
+            this.filterDetail = filterDetail == null ? "raw" : filterDetail;
             this.reused = reused;
         }
 
         private static Snapshot captured(int textureId, SampleRegion sampleRegion, int readFramebufferId,
-                int contentRevision) {
+                int contentRevision, int textureWidth, int textureHeight, int downsampleFactor, String filterDetail) {
             return new Snapshot(textureId, sampleRegion.getLeft(), sampleRegion.getTop(), sampleRegion.getWidth(),
-                    sampleRegion.getHeight(), readFramebufferId, contentRevision, false);
+                    sampleRegion.getHeight(), readFramebufferId, contentRevision, textureWidth, textureHeight,
+                    downsampleFactor, filterDetail, false);
         }
 
         private static Snapshot reused(int textureId, SampleRegion sampleRegion, int readFramebufferId,
-                int contentRevision) {
+                int contentRevision, int textureWidth, int textureHeight, int downsampleFactor, String filterDetail) {
             return new Snapshot(textureId, sampleRegion.getLeft(), sampleRegion.getTop(), sampleRegion.getWidth(),
-                    sampleRegion.getHeight(), readFramebufferId, contentRevision, true);
+                    sampleRegion.getHeight(), readFramebufferId, contentRevision, textureWidth, textureHeight,
+                    downsampleFactor, filterDetail, true);
         }
 
         int getTextureId() {
@@ -413,12 +682,28 @@ public final class UiMainLayerSnapshotService {
             return height;
         }
 
+        int getTextureWidth() {
+            return textureWidth;
+        }
+
+        int getTextureHeight() {
+            return textureHeight;
+        }
+
         int getReadFramebufferId() {
             return readFramebufferId;
         }
 
         int getContentRevision() {
             return contentRevision;
+        }
+
+        int getDownsampleFactor() {
+            return downsampleFactor;
+        }
+
+        String getFilterDetail() {
+            return filterDetail;
         }
 
         boolean isReused() {
@@ -474,12 +759,24 @@ public final class UiMainLayerSnapshotService {
     private static final class FrameSnapshot {
 
         private int textureId;
+        private int sourceTextureId;
+        private int filteredTextureId;
+        private int filterFramebufferId;
         private int sampleLeft;
         private int sampleTop;
         private int width;
         private int height;
+        private int sourceWidth;
+        private int sourceHeight;
+        private int filteredWidth;
+        private int filteredHeight;
+        private int textureWidth;
+        private int textureHeight;
         private int readFramebufferId = -1;
         private int contentRevision;
+        private int requestedDownsampleFactor = 1;
+        private int downsampleFactor = 1;
+        private String filterDetail = "raw";
         private int capturedFrameId;
         private int activeUseCount;
     }

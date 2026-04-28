@@ -84,4 +84,27 @@ public class UiMainLayerSnapshotServiceTest {
 
         Assert.assertEquals(100, UiMainLayerSnapshotService.resolveCopySourceY(240, sampleRegion));
     }
+
+    /**
+     * 验证大半径 blur 会进入降采样滤镜路径。
+     */
+    @Test
+    public void shouldResolveDownsampleFactorFromBlurRadius() {
+        Assert.assertEquals(1, UiMainLayerSnapshotService.resolveDownsampleFactor(0));
+        Assert.assertEquals(1, UiMainLayerSnapshotService.resolveDownsampleFactor(17));
+        Assert.assertEquals(2, UiMainLayerSnapshotService.resolveDownsampleFactor(18));
+        Assert.assertEquals(2, UiMainLayerSnapshotService.resolveDownsampleFactor(33));
+        Assert.assertEquals(4, UiMainLayerSnapshotService.resolveDownsampleFactor(34));
+    }
+
+    /**
+     * 验证降采样尺寸使用向上取整，避免奇数尺寸丢失边缘像素。
+     */
+    @Test
+    public void shouldResolveDownsampledTextureSize() {
+        Assert.assertEquals(50, UiMainLayerSnapshotService.resolveDownsampledSize(100, 2));
+        Assert.assertEquals(51, UiMainLayerSnapshotService.resolveDownsampledSize(101, 2));
+        Assert.assertEquals(26, UiMainLayerSnapshotService.resolveDownsampledSize(101, 4));
+        Assert.assertEquals(1, UiMainLayerSnapshotService.resolveDownsampledSize(0, 4));
+    }
 }

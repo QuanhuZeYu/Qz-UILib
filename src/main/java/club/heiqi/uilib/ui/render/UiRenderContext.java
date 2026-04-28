@@ -572,7 +572,7 @@ public class UiRenderContext {
 
         int backdropReadFramebufferId = paintContextCompositor.getCurrentBackdropReadFramebufferId();
         UiMainLayerSnapshotService.Snapshot snapshot = mainLayerSnapshotService.acquireSnapshot(screenWidth,
-                screenHeight, backdropReadFramebufferId, mainLayerContentRevision, sampleRegion);
+                screenHeight, backdropReadFramebufferId, mainLayerContentRevision, sampleRegion, blurRadius);
         if (snapshot == null) {
             pendingBackdropFallbackDetail = "snapshot-unavailable: " + mainLayerSnapshotService.getLastFailureDetail();
             return false;
@@ -593,8 +593,8 @@ public class UiRenderContext {
             GL11.glDisable(GL11.GL_BLEND);
 
             if (drawBackdropTextureWithShader(left, top, right, bottom, snapshot.getSampleLeft(),
-                    snapshot.getSampleTop(), snapshot.getWidth(), snapshot.getHeight(), blurRadius, saturation,
-                    snapshot)) {
+                    snapshot.getSampleTop(), snapshot.getWidth(), snapshot.getHeight(), snapshot.getTextureWidth(),
+                    snapshot.getTextureHeight(), snapshot.getDownsampleFactor(), blurRadius, saturation, snapshot)) {
                 drewBackdrop = true;
                 return true;
             }
@@ -631,8 +631,8 @@ public class UiRenderContext {
     }
 
     private boolean drawBackdropTextureWithShader(int left, int top, int right, int bottom, int sampleLeft,
-            int sampleTop, int sampleWidth, int sampleHeight, int blurRadius, float saturation,
-            UiMainLayerSnapshotService.Snapshot snapshot) {
+            int sampleTop, int sampleWidth, int sampleHeight, int textureWidth, int textureHeight,
+            int downsampleFactor, int blurRadius, float saturation, UiMainLayerSnapshotService.Snapshot snapshot) {
         if (!BACKDROP_SHADER_PROGRAM.ensureInitialized()) {
             recordBackdropFilterPath(BackdropFilterRenderPath.FIXED_PIPELINE,
                     "shader unavailable: " + BACKDROP_SHADER_PROGRAM.getLastFailureMessage());
@@ -640,10 +640,11 @@ public class UiRenderContext {
         }
         BACKDROP_SHADER_PROGRAM.bind();
         BACKDROP_SHADER_PROGRAM.setUniformI("mainTex", 0);
-        BACKDROP_SHADER_PROGRAM.setUniform2f("texelSize", 1.0F / (float) sampleWidth, 1.0F / (float) sampleHeight);
-        BACKDROP_SHADER_PROGRAM.setUniformF("blurRadius", resolveBackdropShaderRadius(blurRadius));
+        BACKDROP_SHADER_PROGRAM.setUniform2f("texelSize", 1.0F / (float) textureWidth, 1.0F / (float) textureHeight);
+        BACKDROP_SHADER_PROGRAM.setUniformF("blurRadius", resolveBackdropShaderRadius(blurRadius,
+                downsampleFactor));
         BACKDROP_SHADER_PROGRAM.setUniformF("saturation", Math.max(0.0F, saturation));
-        BACKDROP_SHADER_PROGRAM.setUniformF("lodBias", resolveBackdropLodBias(blurRadius));
+        BACKDROP_SHADER_PROGRAM.setUniformF("lodBias", resolveBackdropLodBias(blurRadius, downsampleFactor));
         drawBackdropTextureQuad(left, top, right, bottom, sampleLeft, sampleTop, sampleWidth, sampleHeight,
                 0.0F, 0.0F);
         BACKDROP_SHADER_PROGRAM.unbind();
@@ -1032,21 +1033,24 @@ public class UiRenderContext {
         }
         return (snapshot.isReused() ? "reused" : "captured") + " " + snapshot.getWidth() + "x"
                 + snapshot.getHeight() + " @" + snapshot.getSampleLeft() + "," + snapshot.getSampleTop()
-                + " fbo=" + snapshot.getReadFramebufferId() + " rev=" + snapshot.getContentRevision();
+                + " fbo=" + snapshot.getReadFramebufferId() + " rev=" + snapshot.getContentRevision()
+                + " filter=" + snapshot.getFilterDetail();
     }
 
-    private static float resolveBackdropShaderRadius(int blurRadius) {
+    private static float resolveBackdropShaderRadius(int blurRadius, int downsampleFactor) {
         if (blurRadius <= 0) {
             return 0.0F;
         }
-        return Math.max(1.0F, Math.min(32.0F, (float) blurRadius * 0.75F));
+        return Math.max(1.0F, Math.min(32.0F, (float) blurRadius * 0.75F
+                / (float) Math.max(1, downsampleFactor)));
     }
 
-    private static float resolveBackdropLodBias(int blurRadius) {
+    private static float resolveBackdropLodBias(int blurRadius, int downsampleFactor) {
         if (blurRadius <= 0) {
             return 0.0F;
         }
-        return Math.max(0.0F, Math.min(3.2F, (float) blurRadius / 14.0F));
+        return Math.max(0.0F, Math.min(3.2F, (float) blurRadius
+                / (14.0F * (float) Math.max(1, downsampleFactor))));
     }
 
     private static void recordBackdropFilterPath(BackdropFilterRenderPath renderPath, String detail) {
