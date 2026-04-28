@@ -25,7 +25,8 @@ public final class DocumentAnimationTimeline {
             DocumentAnimationProperty.TEXT_COLOR
     };
     private static final DocumentAnimationProperty[] PAINT_FLOAT_PROPERTIES = new DocumentAnimationProperty[] {
-            DocumentAnimationProperty.OPACITY
+            DocumentAnimationProperty.OPACITY,
+            DocumentAnimationProperty.BORDER_RADIUS
     };
 
     private final Map<ElementNode, ElementAnimationState> states = new HashMap<ElementNode, ElementAnimationState>();
@@ -170,14 +171,16 @@ public final class DocumentAnimationTimeline {
     private boolean updateFromBox(DocumentLayoutBox box, long currentTimeNanos, Set<ElementNode> activeElements) {
         ElementNode element = box.getElement();
         activeElements.add(element);
-        boolean changed = updateElementState(element, box.getComputedStyle(), currentTimeNanos);
+        boolean changed = updateElementState(box, currentTimeNanos);
         for (DocumentLayoutBox child : box.getChildren()) {
             changed |= updateFromBox(child, currentTimeNanos, activeElements);
         }
         return changed;
     }
 
-    private boolean updateElementState(ElementNode element, ComputedStyle style, long currentTimeNanos) {
+    private boolean updateElementState(DocumentLayoutBox box, long currentTimeNanos) {
+        ElementNode element = box.getElement();
+        ComputedStyle style = box.getComputedStyle();
         ElementAnimationState state = states.get(element);
         boolean changed = false;
         if (state == null) {
@@ -208,7 +211,7 @@ public final class DocumentAnimationTimeline {
             changed = true;
         }
         for (DocumentAnimationProperty property : PAINT_FLOAT_PROPERTIES) {
-            float baseValue = getBaseFloat(style, property);
+            float baseValue = getBaseFloat(box, property);
             Float previousTarget = state.targetFloats.get(property);
             if (previousTarget == null) {
                 state.targetFloats.put(property, Float.valueOf(baseValue));
@@ -246,11 +249,20 @@ public final class DocumentAnimationTimeline {
         return style.getBackgroundColor();
     }
 
-    private static float getBaseFloat(ComputedStyle style, DocumentAnimationProperty property) {
+    private static float getBaseFloat(DocumentLayoutBox box, DocumentAnimationProperty property) {
         if (property == DocumentAnimationProperty.OPACITY) {
-            return style.getOpacity();
+            return box.getComputedStyle().getOpacity();
+        }
+        if (property == DocumentAnimationProperty.BORDER_RADIUS) {
+            return resolveBorderRadius(box);
         }
         return 0.0F;
+    }
+
+    private static int resolveBorderRadius(DocumentLayoutBox box) {
+        int limit = Math.min(box.getWidth(), box.getHeight());
+        int radius = box.getComputedStyle().getBorderRadius().resolve(limit, 0);
+        return Math.max(0, Math.min(radius, limit / 2));
     }
 
     private static int interpolateColor(int fromColor, int toColor, float progress) {

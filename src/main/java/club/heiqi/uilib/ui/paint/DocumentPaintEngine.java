@@ -89,13 +89,13 @@ public final class DocumentPaintEngine {
         int boxOffsetX = offsetX + box.getPositionOffsetX();
         int boxOffsetY = offsetY + box.getPositionOffsetY();
         float boxOpacity = inheritedOpacity * resolveAnimatedOpacity(animationTimeline, box, currentTimeNanos);
-        appendBackdropFilterCommand(box, commands, boxOffsetX, boxOffsetY);
+        appendBackdropFilterCommand(box, commands, animationTimeline, currentTimeNanos, boxOffsetX, boxOffsetY);
         appendBackgroundCommand(box, commands, animationTimeline, currentTimeNanos, boxOpacity, boxOffsetX,
                 boxOffsetY);
         appendBorderCommand(box, commands, animationTimeline, currentTimeNanos, boxOpacity, boxOffsetX, boxOffsetY);
         boolean clipChildren = shouldClipChildren(box);
         if (clipChildren) {
-            appendClipStartCommand(box, commands, boxOffsetX, boxOffsetY);
+            appendClipStartCommand(box, commands, animationTimeline, currentTimeNanos, boxOffsetX, boxOffsetY);
         }
         int childOffsetX = boxOffsetX - getScrollLeft(scrollState, box);
         int childOffsetY = boxOffsetY - getScrollTop(scrollState, box);
@@ -139,11 +139,12 @@ public final class DocumentPaintEngine {
         }
         commands.add(new DocumentPaintCommand(DocumentPaintCommandType.BACKGROUND, box.getElement(),
                 box.getLeft() + offsetX, box.getTop() + offsetY, box.getRight() + offsetX,
-                box.getBottom() + offsetY, color, 0, resolveBorderRadius(box)));
+                box.getBottom() + offsetY, color, 0, resolveBorderRadius(box, animationTimeline,
+                        currentTimeNanos)));
     }
 
     private static void appendBackdropFilterCommand(DocumentLayoutBox box, List<DocumentPaintCommand> commands,
-            int offsetX, int offsetY) {
+            DocumentAnimationTimeline animationTimeline, long currentTimeNanos, int offsetX, int offsetY) {
         ComputedStyle style = box.getComputedStyle();
         int blurRadius = resolveBackdropBlurRadius(box);
         float saturation = style.getBackdropSaturation();
@@ -153,7 +154,8 @@ public final class DocumentPaintEngine {
         }
         commands.add(new DocumentPaintCommand(DocumentPaintCommandType.BACKDROP_FILTER, box.getElement(),
                 box.getLeft() + offsetX, box.getTop() + offsetY, box.getRight() + offsetX,
-                box.getBottom() + offsetY, 0, 0, resolveBorderRadius(box), null, null, blurRadius, saturation));
+                box.getBottom() + offsetY, 0, 0, resolveBorderRadius(box, animationTimeline, currentTimeNanos),
+                null, null, blurRadius, saturation));
     }
 
     private static void appendBorderCommand(DocumentLayoutBox box, List<DocumentPaintCommand> commands,
@@ -169,7 +171,8 @@ public final class DocumentPaintEngine {
         }
         commands.add(new DocumentPaintCommand(DocumentPaintCommandType.BORDER, box.getElement(),
                 box.getLeft() + offsetX, box.getTop() + offsetY, box.getRight() + offsetX,
-                box.getBottom() + offsetY, color, borderWidth, resolveBorderRadius(box)));
+                box.getBottom() + offsetY, color, borderWidth, resolveBorderRadius(box, animationTimeline,
+                        currentTimeNanos)));
     }
 
     private static void appendCustomCommand(DocumentLayoutBox box, List<DocumentPaintCommand> commands, int offsetX,
@@ -240,8 +243,8 @@ public final class DocumentPaintEngine {
         return ((color >>> 24) & 0xFF) == 0;
     }
 
-    private static void appendClipStartCommand(DocumentLayoutBox box, List<DocumentPaintCommand> commands, int offsetX,
-            int offsetY) {
+    private static void appendClipStartCommand(DocumentLayoutBox box, List<DocumentPaintCommand> commands,
+            DocumentAnimationTimeline animationTimeline, long currentTimeNanos, int offsetX, int offsetY) {
         ComputedStyle style = box.getComputedStyle();
         int left = style.getOverflowX() == UiOverflow.VISIBLE
                 ? Integer.MIN_VALUE / 4
@@ -256,7 +259,7 @@ public final class DocumentPaintEngine {
                 ? Integer.MAX_VALUE / 4
                 : getPaddingBoxBottom(box) + offsetY;
         commands.add(new DocumentPaintCommand(DocumentPaintCommandType.CLIP_START, box.getElement(), left, top,
-                right, bottom, 0, 0, resolveBorderRadius(box)));
+                right, bottom, 0, 0, resolveBorderRadius(box, animationTimeline, currentTimeNanos)));
     }
 
     private static void appendClipEndCommand(DocumentLayoutBox box, List<DocumentPaintCommand> commands, int offsetX,
@@ -340,7 +343,18 @@ public final class DocumentPaintEngine {
         return box.getBottom() - box.getBorder().getBottom();
     }
 
-    private static int resolveBorderRadius(DocumentLayoutBox box) {
+    private static int resolveBorderRadius(DocumentLayoutBox box, DocumentAnimationTimeline animationTimeline,
+            long currentTimeNanos) {
+        int radius = resolveStaticBorderRadius(box);
+        if (animationTimeline != null) {
+            radius = Math.round(animationTimeline.resolveFloat(box.getElement(), DocumentAnimationProperty.BORDER_RADIUS,
+                    radius, currentTimeNanos));
+        }
+        int limit = Math.min(box.getWidth(), box.getHeight());
+        return Math.max(0, Math.min(radius, limit / 2));
+    }
+
+    private static int resolveStaticBorderRadius(DocumentLayoutBox box) {
         int limit = Math.min(box.getWidth(), box.getHeight());
         int radius = box.getComputedStyle().getBorderRadius().resolve(limit, 0);
         return Math.max(0, Math.min(radius, limit / 2));

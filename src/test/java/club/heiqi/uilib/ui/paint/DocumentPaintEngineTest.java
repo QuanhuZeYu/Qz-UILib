@@ -203,6 +203,51 @@ public class DocumentPaintEngineTest {
     }
 
     /**
+     * 验证动画中的 border-radius 运行值会参与表面、边框和裁剪命令。
+     */
+    @Test
+    public void shouldApplyAnimatedBorderRadiusToPaintCommands() {
+        UiDocument document = UiDocument.create();
+        ElementNode root = document.getRootElement();
+        ElementNode child = document.div();
+
+        root.style()
+                .setWidth(UiStyleLength.px(80))
+                .setHeight(UiStyleLength.px(40))
+                .setBackgroundColor(0xFF223344)
+                .setBorderColor(0xFF88AADD)
+                .setBorderWidth(UiStyleLength.px(1))
+                .setBorderRadius(UiStyleLength.px(0))
+                .setOverflowX(UiOverflow.HIDDEN)
+                .setOverflowY(UiOverflow.HIDDEN)
+                .setTransition(DocumentAnimationProperty.BORDER_RADIUS, 1000L);
+        child.style()
+                .setWidth(UiStyleLength.px(10))
+                .setHeight(UiStyleLength.px(10))
+                .setBackgroundColor(0xFF0000FF);
+        root.append(child);
+
+        DocumentAnimationTimeline timeline = new DocumentAnimationTimeline();
+        DocumentLayoutBox firstLayout = DocumentLayoutEngine.layout(root, 120, 0);
+        timeline.updateFromLayout(firstLayout, 0L);
+        root.style().setBorderRadius(UiStyleLength.px(12));
+        DocumentLayoutBox secondLayout = DocumentLayoutEngine.layout(root, 120, 0);
+        timeline.updateFromLayout(secondLayout, 0L);
+
+        List<DocumentPaintCommand> commands = DocumentPaintEngine.buildPaintCommands(secondLayout, null,
+                500_000_000L, timeline);
+
+        Assert.assertEquals(5, commands.size());
+        assertCommand(commands.get(0), DocumentPaintCommandType.BACKGROUND, root, 0, 0, 82, 42, 0xFF223344, 0,
+                6);
+        assertCommand(commands.get(1), DocumentPaintCommandType.BORDER, root, 0, 0, 82, 42, 0xFF88AADD, 1, 6);
+        assertCommand(commands.get(2), DocumentPaintCommandType.CLIP_START, root, 1, 1, 81, 41, 0, 0, 6);
+        assertCommand(commands.get(3), DocumentPaintCommandType.BACKGROUND, child, 1, 1, 11, 11, 0xFF0000FF, 0,
+                0);
+        assertCommand(commands.get(4), DocumentPaintCommandType.CLIP_END, root, 0, 0, 82, 42, 0, 0, 0);
+    }
+
+    /**
      * 验证 opacity 会应用到文本绘制颜色。
      */
     @Test

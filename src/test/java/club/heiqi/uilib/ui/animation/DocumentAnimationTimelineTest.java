@@ -78,4 +78,37 @@ public class DocumentAnimationTimelineTest {
         Assert.assertTrue(timeline.pruneFinishedAnimations(1_000_000_000L));
         Assert.assertFalse(timeline.hasAnimationWork());
     }
+
+    /**
+     * 验证 border-radius transition 会作为 paint-only 数值覆盖层插值。
+     */
+    @Test
+    public void shouldTransitionBorderRadiusWithoutMutatingInlineStyle() {
+        UiDocument document = UiDocument.create();
+        ElementNode root = document.getRootElement();
+        root.style()
+                .setWidth(UiStyleLength.px(80))
+                .setHeight(UiStyleLength.px(40))
+                .setBorderRadius(UiStyleLength.px(0))
+                .setTransition(DocumentAnimationProperty.BORDER_RADIUS, 1000L);
+        DocumentAnimationTimeline timeline = new DocumentAnimationTimeline();
+
+        DocumentLayoutBox firstLayout = DocumentLayoutEngine.layout(root, 120, 0);
+        Assert.assertTrue(timeline.updateFromLayout(firstLayout, 0L));
+        Assert.assertEquals(0.0F, timeline.resolveFloat(root, DocumentAnimationProperty.BORDER_RADIUS, 0.0F, 0L),
+                0.0F);
+
+        root.style().setBorderRadius(UiStyleLength.px(20));
+        DocumentLayoutBox secondLayout = DocumentLayoutEngine.layout(root, 120, 0);
+        Assert.assertTrue(timeline.updateFromLayout(secondLayout, 0L));
+
+        Assert.assertEquals(1, timeline.getActiveAnimationCount(500_000_000L));
+        Assert.assertEquals(10.0F, timeline.resolveFloat(root, DocumentAnimationProperty.BORDER_RADIUS, 20.0F,
+                500_000_000L), 0.0F);
+        Assert.assertEquals(UiStyleLength.px(20), root.style().getBorderRadius());
+        Assert.assertEquals(20.0F, timeline.resolveFloat(root, DocumentAnimationProperty.BORDER_RADIUS, 20.0F,
+                1_000_000_000L), 0.0F);
+        Assert.assertTrue(timeline.pruneFinishedAnimations(1_000_000_000L));
+        Assert.assertFalse(timeline.hasAnimationWork());
+    }
 }

@@ -15,6 +15,11 @@ public enum DocumentAnimationProperty {
     BORDER_COLOR,
 
     /**
+     * 边框圆角，属于 paint-only 属性。
+     */
+    BORDER_RADIUS,
+
+    /**
      * 文本色，属于 paint-only 属性。
      */
     TEXT_COLOR,
