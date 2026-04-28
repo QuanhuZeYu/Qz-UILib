@@ -91,8 +91,28 @@ public final class UiMainLayerSnapshotService {
      * @return 快照；获取失败时返回 null
      */
     Snapshot acquireSnapshot(int screenWidth, int screenHeight, int requestedReadFramebufferId, int contentRevision) {
-        if (!isSnapshotSizeAllowed(screenWidth, screenHeight)) {
-            lastFailureDetail = "snapshot-too-large: " + screenWidth + "x" + screenHeight;
+        return acquireSnapshot(screenWidth, screenHeight, requestedReadFramebufferId, contentRevision,
+                resolveFullScreenSampleRegion(screenWidth, screenHeight));
+    }
+
+    /**
+     * 获取当前帧可复用的局部主 UI 层快照。
+     *
+     * @param screenWidth 屏幕宽度
+     * @param screenHeight 屏幕高度
+     * @param requestedReadFramebufferId 指定读取 FBO；小于 0 时使用当前 read framebuffer
+     * @param contentRevision 当前读取目标的内容版本
+     * @param sampleRegion 需要复制的 UI 采样区域
+     * @return 快照；获取失败时返回 null
+     */
+    Snapshot acquireSnapshot(int screenWidth, int screenHeight, int requestedReadFramebufferId, int contentRevision,
+            SampleRegion sampleRegion) {
+        if (sampleRegion == null || !isSnapshotRegionWithinScreen(screenWidth, screenHeight, sampleRegion)) {
+            lastFailureDetail = "snapshot-region-invalid";
+            return null;
+        }
+        if (!isSnapshotSizeAllowed(sampleRegion)) {
+            lastFailureDetail = "snapshot-too-large: " + sampleRegion.getWidth() + "x" + sampleRegion.getHeight();
             return null;
         }
         if (disabledForFrame) {
@@ -104,12 +124,11 @@ public final class UiMainLayerSnapshotService {
         }
 
         int readFramebufferId = resolveReadFramebufferId(requestedReadFramebufferId);
-        FrameSnapshot capturedSnapshot = findCapturedSnapshot(readFramebufferId, screenWidth, screenHeight,
+        FrameSnapshot capturedSnapshot = findCapturedSnapshot(readFramebufferId, sampleRegion,
                 contentRevision);
         if (capturedSnapshot != null) {
             capturedSnapshot.activeUseCount++;
-            return Snapshot.reused(capturedSnapshot.textureId, screenWidth, screenHeight, readFramebufferId,
-                    contentRevision);
+            return Snapshot.reused(capturedSnapshot.textureId, sampleRegion, readFramebufferId, contentRevision);
         }
 
         FrameSnapshot snapshot = findReusableSnapshot();
@@ -117,10 +136,10 @@ public final class UiMainLayerSnapshotService {
             snapshot = new FrameSnapshot();
             snapshots.add(snapshot);
         }
-        if (!captureSnapshot(snapshot, screenWidth, screenHeight, readFramebufferId, contentRevision)) {
+        if (!captureSnapshot(snapshot, screenHeight, sampleRegion, readFramebufferId, contentRevision)) {
             return null;
         }
-        return Snapshot.captured(snapshot.textureId, screenWidth, screenHeight, readFramebufferId, contentRevision);
+        return Snapshot.captured(snapshot.textureId, sampleRegion, readFramebufferId, contentRevision);
     }
 
     /**
@@ -191,10 +210,36 @@ public final class UiMainLayerSnapshotService {
         return (long) width * (long) height <= MAX_SNAPSHOT_PIXELS;
     }
 
-    private FrameSnapshot findCapturedSnapshot(int readFramebufferId, int width, int height, int contentRevision) {
+    /**
+     * 判断局部采样区域尺寸是否在当前保护限制内。
+     *
+     * @param sampleRegion 采样区域
+     * @return 是否允许创建快照
+     */
+    static boolean isSnapshotSizeAllowed(SampleRegion sampleRegion) {
+        return sampleRegion != null && isSnapshotSizeAllowed(sampleRegion.getWidth(), sampleRegion.getHeight());
+    }
+
+    /**
+     * 将 top-left UI 坐标系中的采样区域转换为 OpenGL copy 的源 Y 坐标。
+     *
+     * @param screenHeight 屏幕高度
+     * @param sampleRegion 采样区域
+     * @return OpenGL 底部原点坐标系中的源 Y
+     */
+    static int resolveCopySourceY(int screenHeight, SampleRegion sampleRegion) {
+        if (sampleRegion == null) {
+            return 0;
+        }
+        return screenHeight - sampleRegion.getBottom();
+    }
+
+    private FrameSnapshot findCapturedSnapshot(int readFramebufferId, SampleRegion sampleRegion,
+            int contentRevision) {
         for (FrameSnapshot snapshot : snapshots) {
             if (snapshot.capturedFrameId == frameId && snapshot.readFramebufferId == readFramebufferId
-                    && snapshot.width == width && snapshot.height == height
+                    && snapshot.sampleLeft == sampleRegion.getLeft() && snapshot.sampleTop == sampleRegion.getTop()
+                    && snapshot.width == sampleRegion.getWidth() && snapshot.height == sampleRegion.getHeight()
                     && snapshot.contentRevision == contentRevision && snapshot.textureId != 0) {
                 return snapshot;
             }
@@ -211,8 +256,11 @@ public final class UiMainLayerSnapshotService {
         return null;
     }
 
-    private boolean captureSnapshot(FrameSnapshot snapshot, int width, int height, int readFramebufferId,
+    private boolean captureSnapshot(FrameSnapshot snapshot, int screenHeight, SampleRegion sampleRegion,
+            int readFramebufferId,
             int contentRevision) {
+        int width = sampleRegion.getWidth();
+        int height = sampleRegion.getHeight();
         int previousTexture = 0;
         int previousReadFramebufferId = -1;
         boolean textureBindingCaptured = false;
@@ -242,10 +290,13 @@ public final class UiMainLayerSnapshotService {
             if (previousReadFramebufferId != readFramebufferId) {
                 GL30.glBindFramebuffer(GL30.GL_READ_FRAMEBUFFER, readFramebufferId);
             }
-            GL11.glCopyTexSubImage2D(GL11.GL_TEXTURE_2D, 0, 0, 0, 0, 0, width, height);
+            GL11.glCopyTexSubImage2D(GL11.GL_TEXTURE_2D, 0, 0, 0, sampleRegion.getLeft(),
+                    resolveCopySourceY(screenHeight, sampleRegion), width, height);
             GL30.glGenerateMipmap(GL11.GL_TEXTURE_2D);
             GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_MIN_FILTER, GL11.GL_LINEAR_MIPMAP_LINEAR);
 
+            snapshot.sampleLeft = sampleRegion.getLeft();
+            snapshot.sampleTop = sampleRegion.getTop();
             snapshot.width = width;
             snapshot.height = height;
             snapshot.readFramebufferId = readFramebufferId;
@@ -285,6 +336,21 @@ public final class UiMainLayerSnapshotService {
         return Math.max(1, Math.min(12, Math.round(Math.max(1, blurRadius) / 2.5F)));
     }
 
+    private static SampleRegion resolveFullScreenSampleRegion(int screenWidth, int screenHeight) {
+        if (screenWidth <= 0 || screenHeight <= 0) {
+            return null;
+        }
+        return new SampleRegion(0, 0, screenWidth, screenHeight);
+    }
+
+    private static boolean isSnapshotRegionWithinScreen(int screenWidth, int screenHeight, SampleRegion sampleRegion) {
+        return screenWidth > 0 && screenHeight > 0
+                && sampleRegion.getLeft() >= 0 && sampleRegion.getTop() >= 0
+                && sampleRegion.getRight() <= screenWidth && sampleRegion.getBottom() <= screenHeight
+                && sampleRegion.getRight() > sampleRegion.getLeft()
+                && sampleRegion.getBottom() > sampleRegion.getTop();
+    }
+
     private static int clampInt(int value, int min, int max) {
         return Math.max(min, Math.min(value, max));
     }
@@ -295,15 +361,19 @@ public final class UiMainLayerSnapshotService {
     static final class Snapshot {
 
         private final int textureId;
+        private final int sampleLeft;
+        private final int sampleTop;
         private final int width;
         private final int height;
         private final int readFramebufferId;
         private final int contentRevision;
         private final boolean reused;
 
-        private Snapshot(int textureId, int width, int height, int readFramebufferId, int contentRevision,
-                boolean reused) {
+        private Snapshot(int textureId, int sampleLeft, int sampleTop, int width, int height,
+                int readFramebufferId, int contentRevision, boolean reused) {
             this.textureId = textureId;
+            this.sampleLeft = sampleLeft;
+            this.sampleTop = sampleTop;
             this.width = width;
             this.height = height;
             this.readFramebufferId = readFramebufferId;
@@ -311,18 +381,28 @@ public final class UiMainLayerSnapshotService {
             this.reused = reused;
         }
 
-        private static Snapshot captured(int textureId, int width, int height, int readFramebufferId,
+        private static Snapshot captured(int textureId, SampleRegion sampleRegion, int readFramebufferId,
                 int contentRevision) {
-            return new Snapshot(textureId, width, height, readFramebufferId, contentRevision, false);
+            return new Snapshot(textureId, sampleRegion.getLeft(), sampleRegion.getTop(), sampleRegion.getWidth(),
+                    sampleRegion.getHeight(), readFramebufferId, contentRevision, false);
         }
 
-        private static Snapshot reused(int textureId, int width, int height, int readFramebufferId,
+        private static Snapshot reused(int textureId, SampleRegion sampleRegion, int readFramebufferId,
                 int contentRevision) {
-            return new Snapshot(textureId, width, height, readFramebufferId, contentRevision, true);
+            return new Snapshot(textureId, sampleRegion.getLeft(), sampleRegion.getTop(), sampleRegion.getWidth(),
+                    sampleRegion.getHeight(), readFramebufferId, contentRevision, true);
         }
 
         int getTextureId() {
             return textureId;
+        }
+
+        int getSampleLeft() {
+            return sampleLeft;
+        }
+
+        int getSampleTop() {
+            return sampleTop;
         }
 
         int getWidth() {
@@ -394,6 +474,8 @@ public final class UiMainLayerSnapshotService {
     private static final class FrameSnapshot {
 
         private int textureId;
+        private int sampleLeft;
+        private int sampleTop;
         private int width;
         private int height;
         private int readFramebufferId = -1;

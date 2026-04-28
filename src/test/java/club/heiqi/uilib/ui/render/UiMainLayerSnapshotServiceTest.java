@@ -59,4 +59,29 @@ public class UiMainLayerSnapshotServiceTest {
         Assert.assertFalse(UiMainLayerSnapshotService.isSnapshotSizeAllowed(320, 4097));
         Assert.assertFalse(UiMainLayerSnapshotService.isSnapshotSizeAllowed(0, 240));
     }
+
+    /**
+     * 验证局部采样区域使用自身尺寸参与快照保护，而不是整屏尺寸。
+     */
+    @Test
+    public void shouldLimitLocalSnapshotBySampleRegionSize() {
+        UiMainLayerSnapshotService.SampleRegion smallRegion = UiMainLayerSnapshotService.resolveSampleRegion(8000,
+                8000, 100, 120, 220, 260, 14);
+        UiMainLayerSnapshotService.SampleRegion oversizedRegion = UiMainLayerSnapshotService.resolveSampleRegion(5000,
+                5000, 0, 0, 5000, 5000, 0);
+
+        Assert.assertTrue(UiMainLayerSnapshotService.isSnapshotSizeAllowed(smallRegion));
+        Assert.assertFalse(UiMainLayerSnapshotService.isSnapshotSizeAllowed(oversizedRegion));
+    }
+
+    /**
+     * 验证 top-left UI 采样区域会转换为 OpenGL copy 所需的 bottom-left 源坐标。
+     */
+    @Test
+    public void shouldResolveOpenGlCopySourceYFromSampleRegion() {
+        UiMainLayerSnapshotService.SampleRegion sampleRegion = UiMainLayerSnapshotService.resolveSampleRegion(320,
+                240, 40, 50, 100, 120, 14);
+
+        Assert.assertEquals(100, UiMainLayerSnapshotService.resolveCopySourceY(240, sampleRegion));
+    }
 }

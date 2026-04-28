@@ -572,7 +572,7 @@ public class UiRenderContext {
 
         int backdropReadFramebufferId = paintContextCompositor.getCurrentBackdropReadFramebufferId();
         UiMainLayerSnapshotService.Snapshot snapshot = mainLayerSnapshotService.acquireSnapshot(screenWidth,
-                screenHeight, backdropReadFramebufferId, mainLayerContentRevision);
+                screenHeight, backdropReadFramebufferId, mainLayerContentRevision, sampleRegion);
         if (snapshot == null) {
             pendingBackdropFallbackDetail = "snapshot-unavailable: " + mainLayerSnapshotService.getLastFailureDetail();
             return false;
@@ -592,8 +592,9 @@ public class UiRenderContext {
             GL11.glColor4f(1.0F, 1.0F, 1.0F, 1.0F);
             GL11.glDisable(GL11.GL_BLEND);
 
-            if (drawBackdropTextureWithShader(left, top, right, bottom, 0, 0, snapshot.getWidth(),
-                    snapshot.getHeight(), blurRadius, saturation, snapshot)) {
+            if (drawBackdropTextureWithShader(left, top, right, bottom, snapshot.getSampleLeft(),
+                    snapshot.getSampleTop(), snapshot.getWidth(), snapshot.getHeight(), blurRadius, saturation,
+                    snapshot)) {
                 drewBackdrop = true;
                 return true;
             }
@@ -601,15 +602,15 @@ public class UiRenderContext {
                 return false;
             }
 
-            drawBackdropTextureQuad(left, top, right, bottom, 0, 0, snapshot.getWidth(), snapshot.getHeight(),
-                    0.0F, 0.0F);
+            drawBackdropTextureQuad(left, top, right, bottom, snapshot.getSampleLeft(), snapshot.getSampleTop(),
+                    snapshot.getWidth(), snapshot.getHeight(), 0.0F, 0.0F);
             GL11.glEnable(GL11.GL_BLEND);
             GL11.glBlendFunc(GL11.GL_SRC_ALPHA, GL11.GL_ONE_MINUS_SRC_ALPHA);
             float sampleStep = (float) resolveBackdropSampleStep(blurRadius);
             for (float[] sample : UI_BACKDROP_BLUR_SAMPLES) {
                 GL11.glColor4f(1.0F, 1.0F, 1.0F, sample[2]);
-                drawBackdropTextureQuad(left, top, right, bottom, 0, 0, snapshot.getWidth(), snapshot.getHeight(),
-                        sample[0] * sampleStep, sample[1] * sampleStep);
+                drawBackdropTextureQuad(left, top, right, bottom, snapshot.getSampleLeft(), snapshot.getSampleTop(),
+                        snapshot.getWidth(), snapshot.getHeight(), sample[0] * sampleStep, sample[1] * sampleStep);
             }
             GL11.glColor4f(1.0F, 1.0F, 1.0F, 1.0F);
             recordBackdropFilterPath(BackdropFilterRenderPath.FIXED_PIPELINE,
@@ -1030,8 +1031,8 @@ public class UiRenderContext {
             return "none";
         }
         return (snapshot.isReused() ? "reused" : "captured") + " " + snapshot.getWidth() + "x"
-                + snapshot.getHeight() + " fbo=" + snapshot.getReadFramebufferId() + " rev="
-                + snapshot.getContentRevision();
+                + snapshot.getHeight() + " @" + snapshot.getSampleLeft() + "," + snapshot.getSampleTop()
+                + " fbo=" + snapshot.getReadFramebufferId() + " rev=" + snapshot.getContentRevision();
     }
 
     private static float resolveBackdropShaderRadius(int blurRadius) {
