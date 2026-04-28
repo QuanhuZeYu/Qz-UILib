@@ -46,6 +46,7 @@ public class UiRenderContext {
     private final int mouseY;
     private final float partialTicks;
     private final FontRendererAdapter fontRenderer;
+    private final PaintContextCompositor paintContextCompositor;
     private final Deque<ClipState> clipStack = new ArrayDeque<ClipState>();
     private final List<DeferredPostMainPass> deferredPostMainPasses = new ArrayList<DeferredPostMainPass>();
 
@@ -85,6 +86,166 @@ public class UiRenderContext {
         private ClipState(int[] clipRect, int cornerRadius) {
             this.clipRect = clipRect;
             this.cornerRadius = cornerRadius;
+        }
+    }
+
+    /**
+     * HTML-like paint context 离屏合成器。
+     *
+     * <p>该对象由宿主会话跨帧复用，按需借出同尺寸 `UiRenderTarget`。文档作者只接触 CSS-like opacity，
+     * 不直接感知 FBO、framebuffer 或 OpenGL 状态。</p>
+     */
+    public static final class PaintContextCompositor {
+
+        private final Deque<PaintContextFrame> frameStack = new ArrayDeque<PaintContextFrame>();
+        private final List<UiRenderTarget> layerPool = new ArrayList<UiRenderTarget>();
+        private int borrowedLayerCount;
+        private boolean disabledForFrame;
+
+        /**
+         * 开始新一帧 paint context 回放。
+         */
+        public void beginFrame() {
+            finishFrame();
+            borrowedLayerCount = 0;
+            disabledForFrame = false;
+        }
+
+        /**
+         * 结束当前帧，防御性清理仍未弹出的 paint context。
+         */
+        public void finishFrame() {
+            while (!frameStack.isEmpty()) {
+                popPaintContext();
+            }
+            borrowedLayerCount = 0;
+        }
+
+        /**
+         * 释放已缓存的离屏层资源。
+         */
+        public void close() {
+            finishFrame();
+            for (UiRenderTarget renderTarget : layerPool) {
+                renderTarget.close();
+            }
+            layerPool.clear();
+        }
+
+        private void pushPaintContext(int screenWidth, int screenHeight, int left, int top, int right, int bottom,
+                float opacity, ClipSnapshot clipSnapshot) {
+            int clampedLeft = clampInt(Math.min(left, right), 0, screenWidth);
+            int clampedTop = clampInt(Math.min(top, bottom), 0, screenHeight);
+            int clampedRight = clampInt(Math.max(left, right), 0, screenWidth);
+            int clampedBottom = clampInt(Math.max(top, bottom), 0, screenHeight);
+            float clampedOpacity = Math.max(0.0F, Math.min(1.0F, opacity));
+            if (disabledForFrame || clampedOpacity <= 0.0F || clampedOpacity >= 0.999F
+                    || clampedRight <= clampedLeft || clampedBottom <= clampedTop) {
+                frameStack.push(PaintContextFrame.inactive());
+                return;
+            }
+
+            int layerIndex = borrowedLayerCount;
+            UiRenderTarget layer = null;
+            boolean layerBegun = false;
+            try {
+                layer = borrowLayer(screenWidth, screenHeight);
+                int parentFramebufferId = GL11.glGetInteger(GL30.GL_FRAMEBUFFER_BINDING);
+                layer.begin();
+                layerBegun = true;
+                applyClipSnapshot(clipSnapshot, screenHeight);
+                frameStack.push(PaintContextFrame.active(layerIndex, layer, clampedLeft, clampedTop, clampedRight,
+                        clampedBottom, clampedOpacity, parentFramebufferId));
+            } catch (RuntimeException exception) {
+                if (layerBegun && layer != null) {
+                    layer.end();
+                }
+                disabledForFrame = true;
+                borrowedLayerCount = layerIndex;
+                frameStack.push(PaintContextFrame.inactive());
+            } catch (LinkageError error) {
+                if (layerBegun && layer != null) {
+                    layer.end();
+                }
+                disabledForFrame = true;
+                borrowedLayerCount = layerIndex;
+                frameStack.push(PaintContextFrame.inactive());
+            }
+        }
+
+        private boolean popPaintContext() {
+            if (frameStack.isEmpty()) {
+                return false;
+            }
+            PaintContextFrame frame = frameStack.pop();
+            if (!frame.active) {
+                return false;
+            }
+            frame.layer.end();
+            frame.layer.compositeToCurrentFramebuffer(frame.left, frame.top, frame.right, frame.bottom,
+                    frame.opacity);
+            borrowedLayerCount = Math.min(borrowedLayerCount, frame.layerIndex);
+            return true;
+        }
+
+        private boolean isCurrentLayerActive() {
+            return !frameStack.isEmpty() && frameStack.peek().active;
+        }
+
+        private int getCurrentBackdropReadFramebufferId() {
+            if (!isCurrentLayerActive()) {
+                return -1;
+            }
+            return frameStack.peek().parentFramebufferId;
+        }
+
+        private UiRenderTarget borrowLayer(int screenWidth, int screenHeight) {
+            UiRenderTarget layer;
+            if (borrowedLayerCount < layerPool.size()) {
+                layer = layerPool.get(borrowedLayerCount);
+            } else {
+                layer = new UiRenderTarget();
+                layerPool.add(layer);
+            }
+            borrowedLayerCount++;
+            layer.ensureSize(screenWidth, screenHeight);
+            return layer;
+        }
+    }
+
+    private static final class PaintContextFrame {
+
+        private final int layerIndex;
+        private final UiRenderTarget layer;
+        private final int left;
+        private final int top;
+        private final int right;
+        private final int bottom;
+        private final float opacity;
+        private final int parentFramebufferId;
+        private final boolean active;
+
+        private PaintContextFrame(int layerIndex, UiRenderTarget layer, int left, int top, int right, int bottom,
+                float opacity, int parentFramebufferId, boolean active) {
+            this.layerIndex = layerIndex;
+            this.layer = layer;
+            this.left = left;
+            this.top = top;
+            this.right = right;
+            this.bottom = bottom;
+            this.opacity = opacity;
+            this.parentFramebufferId = parentFramebufferId;
+            this.active = active;
+        }
+
+        private static PaintContextFrame inactive() {
+            return new PaintContextFrame(-1, null, 0, 0, 0, 0, 1.0F, 0, false);
+        }
+
+        private static PaintContextFrame active(int layerIndex, UiRenderTarget layer, int left, int top, int right,
+                int bottom, float opacity, int parentFramebufferId) {
+            return new PaintContextFrame(layerIndex, layer, left, top, right, bottom, opacity, parentFramebufferId,
+                    true);
         }
     }
 
@@ -199,12 +360,28 @@ public class UiRenderContext {
      * @param partialTicks 插值帧参数
      */
     public UiRenderContext(int screenWidth, int screenHeight, int mouseX, int mouseY, float partialTicks) {
+        this(screenWidth, screenHeight, mouseX, mouseY, partialTicks, new PaintContextCompositor());
+    }
+
+    /**
+     * 创建渲染上下文。
+     *
+     * @param screenWidth 屏幕宽度
+     * @param screenHeight 屏幕高度
+     * @param mouseX 鼠标 X
+     * @param mouseY 鼠标 Y
+     * @param partialTicks 插值帧参数
+     * @param paintContextCompositor paint context 离屏合成器
+     */
+    public UiRenderContext(int screenWidth, int screenHeight, int mouseX, int mouseY, float partialTicks,
+            PaintContextCompositor paintContextCompositor) {
         this.screenWidth = screenWidth;
         this.screenHeight = screenHeight;
         this.mouseX = mouseX;
         this.mouseY = mouseY;
         this.partialTicks = partialTicks;
         this.fontRenderer = DefaultFontRendererAdapter.getInstance();
+        this.paintContextCompositor = Objects.requireNonNull(paintContextCompositor, "paintContextCompositor");
     }
 
     public int getScreenWidth() {
@@ -358,6 +535,7 @@ public class UiRenderContext {
         GL11.glPushAttrib(GL11.GL_ALL_ATTRIB_BITS);
         int previousProgram = GL11.glGetInteger(GL20.GL_CURRENT_PROGRAM);
         int previousActiveTexture = GL11.glGetInteger(GL13.GL_ACTIVE_TEXTURE);
+        int previousReadFramebufferId = -1;
         try {
             GL13.glActiveTexture(GL13.GL_TEXTURE0);
             GL11.glBindTexture(GL11.GL_TEXTURE_2D, textureId);
@@ -367,8 +545,17 @@ public class UiRenderContext {
             GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_WRAP_T, GL12.GL_CLAMP_TO_EDGE);
             GL11.glTexImage2D(GL11.GL_TEXTURE_2D, 0, GL11.GL_RGBA, sampleWidth, sampleHeight, 0, GL11.GL_RGBA,
                     GL11.GL_UNSIGNED_BYTE, (java.nio.ByteBuffer) null);
+            int backdropReadFramebufferId = paintContextCompositor.getCurrentBackdropReadFramebufferId();
+            if (backdropReadFramebufferId >= 0) {
+                previousReadFramebufferId = GL11.glGetInteger(GL30.GL_READ_FRAMEBUFFER_BINDING);
+                GL30.glBindFramebuffer(GL30.GL_READ_FRAMEBUFFER, backdropReadFramebufferId);
+            }
             GL11.glCopyTexSubImage2D(GL11.GL_TEXTURE_2D, 0, 0, 0, sampleLeft, screenHeight - sampleBottom,
                     sampleWidth, sampleHeight);
+            if (previousReadFramebufferId >= 0) {
+                GL30.glBindFramebuffer(GL30.GL_READ_FRAMEBUFFER, previousReadFramebufferId);
+                previousReadFramebufferId = -1;
+            }
             GL30.glGenerateMipmap(GL11.GL_TEXTURE_2D);
             GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_MIN_FILTER, GL11.GL_LINEAR_MIPMAP_LINEAR);
             GL11.glEnable(GL11.GL_TEXTURE_2D);
@@ -399,6 +586,9 @@ public class UiRenderContext {
             recordBackdropFilterPath(BackdropFilterRenderPath.FIXED_PIPELINE, "shader-unavailable");
             return true;
         } finally {
+            if (previousReadFramebufferId >= 0) {
+                GL30.glBindFramebuffer(GL30.GL_READ_FRAMEBUFFER, previousReadFramebufferId);
+            }
             GL20.glUseProgram(previousProgram);
             GL13.glActiveTexture(previousActiveTexture);
             GL11.glBindTexture(GL11.GL_TEXTURE_2D, 0);
@@ -532,7 +722,7 @@ public class UiRenderContext {
     /**
      * 压入一个文档绘制上下文边界。
      *
-     * <p>当前默认实现只提供可回放边界，不主动创建离屏 FBO；后续 group opacity 与元素级效果合成可在这里接入。</p>
+     * <p>当前 opacity context 会通过离屏层做 group opacity 合成；FBO 不可用时调用方会降级为命令级 alpha。</p>
      *
      * @param left 左侧坐标
      * @param top 顶部坐标
@@ -540,12 +730,28 @@ public class UiRenderContext {
      * @param bottom 底部坐标
      * @param opacity 当前上下文的局部 opacity
      */
-    public void pushPaintContext(int left, int top, int right, int bottom, float opacity) {}
+    public void pushPaintContext(int left, int top, int right, int bottom, float opacity) {
+        paintContextCompositor.pushPaintContext(screenWidth, screenHeight, left, top, right, bottom, opacity,
+                copyCurrentClipSnapshot());
+    }
+
+    /**
+     * 判断当前最近的 paint context 是否正在使用离屏层。
+     *
+     * @return 是否使用离屏层
+     */
+    public boolean isCurrentPaintContextLayerActive() {
+        return paintContextCompositor.isCurrentLayerActive();
+    }
 
     /**
      * 弹出最近压入的文档绘制上下文边界。
      */
-    public void popPaintContext() {}
+    public void popPaintContext() {
+        if (paintContextCompositor.popPaintContext()) {
+            applyCurrentClip();
+        }
+    }
 
     public void pushClip(int left, int top, int right, int bottom) {
         pushClip(left, top, right, bottom, 0);

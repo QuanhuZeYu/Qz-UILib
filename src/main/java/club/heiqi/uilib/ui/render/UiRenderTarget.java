@@ -58,6 +58,11 @@ public class UiRenderTarget {
         attribStatePushed = true;
         GL30.glBindFramebuffer(GL30.GL_FRAMEBUFFER, framebufferId);
         GL11.glViewport(0, 0, width, height);
+        GL11.glDisable(GL11.GL_SCISSOR_TEST);
+        GL11.glDisable(GL11.GL_STENCIL_TEST);
+        GL11.glStencilMask(0xFF);
+        GL11.glColorMask(true, true, true, true);
+        GL11.glDepthMask(true);
         GL11.glClearColor(0.0F, 0.0F, 0.0F, 0.0F);
         GL11.glClear(GL11.GL_COLOR_BUFFER_BIT | GL11.GL_DEPTH_BUFFER_BIT | GL11.GL_STENCIL_BUFFER_BIT);
     }
@@ -142,6 +147,59 @@ public class UiRenderTarget {
     }
 
     /**
+     * 将当前离屏纹理按指定 group opacity 合成回已绑定的目标 FBO。
+     *
+     * <p>该路径保留当前 scissor/stencil 裁剪状态，让 paint context 可以继承外层 overflow clip。
+     * 纹理内容按预乘 alpha 处理，回贴时同时更新目标 alpha。</p>
+     *
+     * @param left 回贴左边界
+     * @param top 回贴上边界
+     * @param right 回贴右边界
+     * @param bottom 回贴下边界
+     * @param opacity group opacity
+     */
+    public void compositeToCurrentFramebuffer(int left, int top, int right, int bottom, float opacity) {
+        int clippedLeft = clampInt(Math.min(left, right), 0, width);
+        int clippedTop = clampInt(Math.min(top, bottom), 0, height);
+        int clippedRight = clampInt(Math.max(left, right), 0, width);
+        int clippedBottom = clampInt(Math.max(top, bottom), 0, height);
+        float clampedOpacity = Math.max(0.0F, Math.min(1.0F, opacity));
+        if (clippedRight <= clippedLeft || clippedBottom <= clippedTop || clampedOpacity <= 0.0F) {
+            return;
+        }
+
+        GL11.glPushAttrib(GL11.GL_ALL_ATTRIB_BITS);
+        try {
+            GL11.glEnable(GL11.GL_TEXTURE_2D);
+            GL11.glEnable(GL11.GL_BLEND);
+            GL11.glDisable(GL11.GL_DEPTH_TEST);
+            GL11.glDisable(GL11.GL_ALPHA_TEST);
+            GL11.glColor4f(clampedOpacity, clampedOpacity, clampedOpacity, clampedOpacity);
+            GL14.glBlendFuncSeparate(GL11.GL_ONE, GL11.GL_ONE_MINUS_SRC_ALPHA,
+                    GL11.GL_ONE, GL11.GL_ONE_MINUS_SRC_ALPHA);
+            GL11.glBindTexture(GL11.GL_TEXTURE_2D, colorTextureId);
+
+            float leftU = (float) clippedLeft / (float) width;
+            float rightU = (float) clippedRight / (float) width;
+            float topV = 1.0F - (float) clippedTop / (float) height;
+            float bottomV = 1.0F - (float) clippedBottom / (float) height;
+
+            Tessellator tessellator = Tessellator.instance;
+            tessellator.startDrawingQuads();
+            tessellator.addVertexWithUV(clippedLeft, clippedBottom, 0.0D, leftU, bottomV);
+            tessellator.addVertexWithUV(clippedRight, clippedBottom, 0.0D, rightU, bottomV);
+            tessellator.addVertexWithUV(clippedRight, clippedTop, 0.0D, rightU, topV);
+            tessellator.addVertexWithUV(clippedLeft, clippedTop, 0.0D, leftU, topV);
+            tessellator.draw();
+
+            GL11.glBindTexture(GL11.GL_TEXTURE_2D, 0);
+            GL11.glColor4f(1.0F, 1.0F, 1.0F, 1.0F);
+        } finally {
+            GL11.glPopAttrib();
+        }
+    }
+
+    /**
      * 释放离屏目标资源。
      */
     public void close() {
@@ -176,6 +234,10 @@ public class UiRenderTarget {
      */
     public int getColorTextureId() {
         return colorTextureId;
+    }
+
+    private static int clampInt(int value, int min, int max) {
+        return Math.max(min, Math.min(value, max));
     }
 
     private void initialize(int width, int height) {

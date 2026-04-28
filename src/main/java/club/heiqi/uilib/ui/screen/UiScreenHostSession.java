@@ -28,6 +28,7 @@ final class UiScreenHostSession {
     private final ViewportWidget rootWidget = new ViewportWidget();
     private final UiInputRouter inputRouter = new UiInputRouter();
     private final UiHostBackgroundBlurRenderer backgroundBlurRenderer = new UiHostBackgroundBlurRenderer();
+    private final UiRenderContext.PaintContextCompositor paintContextCompositor = new UiRenderContext.PaintContextCompositor();
     private UiRenderTarget renderTarget;
     private UiRenderTarget deferredPostMainRenderTarget;
 
@@ -116,11 +117,16 @@ final class UiScreenHostSession {
                             GL11.glLoadIdentity();
                             backgroundBlurRenderer.drawBlurredBackground(nativeWidth, nativeHeight);
                             prepareMainUiRenderState();
+                            paintContextCompositor.beginFrame();
                             UiRenderContext context = new UiRenderContext(nativeWidth, nativeHeight, latestMouseX,
-                                    latestMouseY, partialTicks);
-                            rootWidget.render(context);
-                            flushDeferredPostMainPasses(context, deferredPostMainRenderTarget, nativeWidth,
-                                    nativeHeight);
+                                    latestMouseY, partialTicks, paintContextCompositor);
+                            try {
+                                rootWidget.render(context);
+                                flushDeferredPostMainPasses(context, deferredPostMainRenderTarget, nativeWidth,
+                                        nativeHeight);
+                            } finally {
+                                paintContextCompositor.finishFrame();
+                            }
                         } finally {
                             GL11.glMatrixMode(GL11.GL_MODELVIEW);
                             GL11.glPopMatrix();
@@ -233,6 +239,7 @@ final class UiScreenHostSession {
                 deferredPostMainRenderTarget.close();
                 deferredPostMainRenderTarget = null;
             }
+            paintContextCompositor.close();
             backgroundBlurRenderer.close();
             return;
         }
@@ -242,6 +249,7 @@ final class UiScreenHostSession {
             deferredPostMainRenderTarget.close();
             deferredPostMainRenderTarget = null;
         }
+        paintContextCompositor.close();
         backgroundBlurRenderer.close();
     }
 

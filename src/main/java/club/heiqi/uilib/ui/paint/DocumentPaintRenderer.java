@@ -13,9 +13,52 @@ import club.heiqi.uilib.ui.theme.UiSurfaceStyle;
  */
 public final class DocumentPaintRenderer {
 
-    private enum OpenRenderState {
+    private enum OpenRenderStateType {
         PAINT_CONTEXT,
         CLIP
+    }
+
+    private static final class OpenRenderState {
+
+        private final OpenRenderStateType type;
+        private final float previousFallbackOpacity;
+
+        private OpenRenderState(OpenRenderStateType type, float previousFallbackOpacity) {
+            this.type = type;
+            this.previousFallbackOpacity = previousFallbackOpacity;
+        }
+    }
+
+    private static final class RenderReplayState {
+
+        private final Deque<OpenRenderState> openStates = new ArrayDeque<OpenRenderState>();
+        private float fallbackOpacity = 1.0F;
+
+        private void pushClip() {
+            openStates.push(new OpenRenderState(OpenRenderStateType.CLIP, fallbackOpacity));
+        }
+
+        private void pushPaintContext(UiRenderContext context, DocumentPaintCommand command, int offsetX, int offsetY) {
+            float previousFallbackOpacity = fallbackOpacity;
+            context.pushPaintContext(command.getLeft() + offsetX, command.getTop() + offsetY,
+                    command.getRight() + offsetX, command.getBottom() + offsetY, command.getPaintContextOpacity());
+            if (!context.isCurrentPaintContextLayerActive()) {
+                fallbackOpacity *= command.getPaintContextOpacity();
+            }
+            openStates.push(new OpenRenderState(OpenRenderStateType.PAINT_CONTEXT, previousFallbackOpacity));
+        }
+
+        private boolean isEmpty() {
+            return openStates.isEmpty();
+        }
+
+        private OpenRenderState peek() {
+            return openStates.peek();
+        }
+
+        private OpenRenderState pop() {
+            return openStates.pop();
+        }
     }
 
     private DocumentPaintRenderer() {}
@@ -43,35 +86,33 @@ public final class DocumentPaintRenderer {
         if (commands == null || commands.isEmpty()) {
             return;
         }
-        Deque<OpenRenderState> openStates = new ArrayDeque<OpenRenderState>();
+        RenderReplayState replayState = new RenderReplayState();
         try {
             for (DocumentPaintCommand command : commands) {
-                renderCommand(context, command, offsetX, offsetY, openStates);
+                renderCommand(context, command, offsetX, offsetY, replayState);
             }
         } finally {
-            while (!openStates.isEmpty()) {
-                popOpenState(context, openStates.pop());
+            while (!replayState.isEmpty()) {
+                popOpenState(context, replayState, replayState.pop());
             }
         }
     }
 
     private static void renderCommand(UiRenderContext context, DocumentPaintCommand command, int offsetX, int offsetY,
-            Deque<OpenRenderState> openStates) {
+            RenderReplayState replayState) {
         if (command == null) {
             return;
         }
         if (command.getType() == DocumentPaintCommandType.PAINT_CONTEXT_END) {
-            popExpectedRenderState(context, openStates, OpenRenderState.PAINT_CONTEXT);
+            popExpectedRenderState(context, replayState, OpenRenderStateType.PAINT_CONTEXT);
             return;
         }
         if (command.getType() == DocumentPaintCommandType.CLIP_END) {
-            popExpectedRenderState(context, openStates, OpenRenderState.CLIP);
+            popExpectedRenderState(context, replayState, OpenRenderStateType.CLIP);
             return;
         }
         if (command.getType() == DocumentPaintCommandType.PAINT_CONTEXT_START) {
-            context.pushPaintContext(command.getLeft() + offsetX, command.getTop() + offsetY,
-                    command.getRight() + offsetX, command.getBottom() + offsetY, command.getPaintContextOpacity());
-            openStates.push(OpenRenderState.PAINT_CONTEXT);
+            replayState.pushPaintContext(context, command, offsetX, offsetY);
             return;
         }
         if (command.getWidth() <= 0 || command.getHeight() <= 0) {
@@ -80,7 +121,10 @@ public final class DocumentPaintRenderer {
         if (command.getType() == DocumentPaintCommandType.CLIP_START) {
             context.pushClip(command.getLeft() + offsetX, command.getTop() + offsetY,
                     command.getRight() + offsetX, command.getBottom() + offsetY, command.getBorderRadius());
-            openStates.push(OpenRenderState.CLIP);
+            replayState.pushClip();
+            return;
+        }
+        if (replayState.fallbackOpacity <= 0.001F) {
             return;
         }
         if (command.getType() == DocumentPaintCommandType.BACKDROP_FILTER) {
@@ -92,18 +136,20 @@ public final class DocumentPaintRenderer {
         if (command.getType() == DocumentPaintCommandType.BACKGROUND) {
             context.drawSurface(command.getLeft() + offsetX, command.getTop() + offsetY,
                     command.getRight() + offsetX, command.getBottom() + offsetY,
-                    new UiSurfaceStyle(command.getColor(), 0, command.getBorderRadius()));
+                    new UiSurfaceStyle(applyOpacity(command.getColor(), replayState.fallbackOpacity), 0,
+                            command.getBorderRadius()));
             return;
         }
         if (command.getType() == DocumentPaintCommandType.SCROLLBAR_TRACK
                 || command.getType() == DocumentPaintCommandType.SCROLLBAR_THUMB) {
             context.drawSurface(command.getLeft() + offsetX, command.getTop() + offsetY,
                     command.getRight() + offsetX, command.getBottom() + offsetY,
-                    new UiSurfaceStyle(command.getColor(), 0, command.getBorderRadius()));
+                    new UiSurfaceStyle(applyOpacity(command.getColor(), replayState.fallbackOpacity), 0,
+                            command.getBorderRadius()));
             return;
         }
         if (command.getType() == DocumentPaintCommandType.BORDER) {
-            renderBorder(context, command, offsetX, offsetY);
+            renderBorder(context, command, offsetX, offsetY, replayState.fallbackOpacity);
             return;
         }
         if (command.getType() == DocumentPaintCommandType.CUSTOM) {
@@ -116,34 +162,44 @@ public final class DocumentPaintRenderer {
         }
         if (command.getType() == DocumentPaintCommandType.TEXT) {
             context.drawText(command.getText(), command.getLeft() + offsetX, command.getTop() + offsetY,
-                    command.getColor(), false);
+                    applyOpacity(command.getColor(), replayState.fallbackOpacity), false);
         }
     }
 
-    private static void popExpectedRenderState(UiRenderContext context, Deque<OpenRenderState> openStates,
-            OpenRenderState expectedState) {
-        if (!openStates.isEmpty() && openStates.peek() == expectedState) {
-            popOpenState(context, openStates.pop());
+    private static void popExpectedRenderState(UiRenderContext context, RenderReplayState replayState,
+            OpenRenderStateType expectedState) {
+        if (!replayState.isEmpty() && replayState.peek().type == expectedState) {
+            popOpenState(context, replayState, replayState.pop());
         }
     }
 
-    private static void popOpenState(UiRenderContext context, OpenRenderState state) {
-        if (state == OpenRenderState.CLIP) {
+    private static void popOpenState(UiRenderContext context, RenderReplayState replayState, OpenRenderState state) {
+        if (state.type == OpenRenderStateType.CLIP) {
             context.popClip();
             return;
         }
         context.popPaintContext();
+        replayState.fallbackOpacity = state.previousFallbackOpacity;
     }
 
-    private static void renderBorder(UiRenderContext context, DocumentPaintCommand command, int offsetX, int offsetY) {
+    private static void renderBorder(UiRenderContext context, DocumentPaintCommand command, int offsetX, int offsetY,
+            float fallbackOpacity) {
         int maxBorderWidth = Math.min(command.getBorderWidth(), Math.min(command.getWidth(), command.getHeight()) / 2);
+        int borderColor = applyOpacity(command.getColor(), fallbackOpacity);
         for (int offset = 0; offset < maxBorderWidth; offset++) {
             int left = command.getLeft() + offset + offsetX;
             int top = command.getTop() + offset + offsetY;
             int right = command.getRight() - offset + offsetX;
             int bottom = command.getBottom() - offset + offsetY;
             int radius = Math.max(0, command.getBorderRadius() - offset);
-            context.drawSurface(left, top, right, bottom, new UiSurfaceStyle(0, command.getColor(), radius));
+            context.drawSurface(left, top, right, bottom, new UiSurfaceStyle(0, borderColor, radius));
         }
+    }
+
+    private static int applyOpacity(int color, float opacity) {
+        float clampedOpacity = Math.max(0.0F, Math.min(1.0F, opacity));
+        int alpha = color >> 24 & 255;
+        int resolvedAlpha = Math.max(0, Math.min(255, Math.round((float) alpha * clampedOpacity)));
+        return color & 0x00FFFFFF | resolvedAlpha << 24;
     }
 }

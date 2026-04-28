@@ -139,7 +139,7 @@ public class DocumentPaintEngineTest {
     }
 
     /**
-     * 验证元素 opacity 会累积应用到自身和后代的标准绘制命令颜色。
+     * 验证非 context 祖先 opacity 会应用到标准绘制命令颜色，当前 context 的 opacity 由离屏合成处理。
      */
     @Test
     public void shouldApplyOpacityToStandardPaintColors() {
@@ -175,7 +175,7 @@ public class DocumentPaintEngineTest {
                 12);
         assertCommand(paintCommands.get(1), DocumentPaintCommandType.BORDER, root, 0, 0, 104, 44, 0x8086A8F0, 2,
                 12);
-        assertCommand(paintCommands.get(2), DocumentPaintCommandType.BACKGROUND, child, 2, 2, 42, 12, 0x40223344, 0,
+        assertCommand(paintCommands.get(2), DocumentPaintCommandType.BACKGROUND, child, 2, 2, 42, 12, 0x80223344, 0,
                 0);
     }
 
@@ -203,7 +203,7 @@ public class DocumentPaintEngineTest {
         assertCommand(commands.get(0), DocumentPaintCommandType.PAINT_CONTEXT_START, child, 0, 0, 40, 10, 0, 0,
                 0);
         Assert.assertEquals(0.5F, commands.get(0).getPaintContextOpacity(), 0.0F);
-        assertCommand(commands.get(1), DocumentPaintCommandType.BACKGROUND, child, 0, 0, 40, 10, 0x80223344, 0,
+        assertCommand(commands.get(1), DocumentPaintCommandType.BACKGROUND, child, 0, 0, 40, 10, 0xFF223344, 0,
                 0);
         assertCommand(commands.get(2), DocumentPaintCommandType.PAINT_CONTEXT_END, child, 0, 0, 40, 10, 0, 0,
                 0);

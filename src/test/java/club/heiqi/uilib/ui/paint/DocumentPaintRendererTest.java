@@ -239,6 +239,33 @@ public class DocumentPaintRendererTest {
         assertDrawCall(renderContext.drawCalls.get(0), 7, 11, 47, 31, 0x80223344, 0, 0);
     }
 
+    /**
+     * 验证真实离屏 paint context 激活时，标准颜色命令不再被 renderer 额外乘以 context opacity。
+     */
+    @Test
+    public void shouldKeepPaintColorsUnchangedWhenPaintContextLayerIsActive() {
+        UiDocument document = UiDocument.create();
+        ElementNode root = document.getRootElement();
+        ElementNode child = document.div();
+        root.style().setWidth(UiStyleLength.px(80));
+        child.style()
+                .setWidth(UiStyleLength.px(40))
+                .setHeight(UiStyleLength.px(20))
+                .setOpacity(0.5F)
+                .setBackgroundColor(0xFF223344);
+        root.append(child);
+
+        RecordingUiRenderContext renderContext = new RecordingUiRenderContext();
+        renderContext.simulatePaintContextLayer = true;
+        DocumentPaintRenderer.render(renderContext, DocumentPaintEngine.buildPaintCommands(
+                DocumentLayoutEngine.layout(root, 100, 0)), 7, 11);
+
+        Assert.assertEquals(1, renderContext.paintContextCalls.size());
+        Assert.assertEquals(1, renderContext.popPaintContextCount);
+        Assert.assertEquals(1, renderContext.drawCalls.size());
+        assertDrawCall(renderContext.drawCalls.get(0), 7, 11, 47, 31, 0xFF223344, 0, 0);
+    }
+
     private static void assertDrawCall(DrawCall drawCall, int left, int top, int right, int bottom, int fillColor,
             int borderColor, int cornerRadius) {
         Assert.assertEquals(left, drawCall.left);
@@ -303,6 +330,8 @@ public class DocumentPaintRendererTest {
         private final List<TextCall> textCalls = new ArrayList<TextCall>();
         private final List<BackdropCall> backdropCalls = new ArrayList<BackdropCall>();
         private final List<PaintContextCall> paintContextCalls = new ArrayList<PaintContextCall>();
+        private boolean simulatePaintContextLayer;
+        private boolean paintContextLayerActive;
         private int popClipCount;
         private int popPaintContextCount;
 
@@ -339,10 +368,17 @@ public class DocumentPaintRendererTest {
         @Override
         public void pushPaintContext(int left, int top, int right, int bottom, float opacity) {
             paintContextCalls.add(new PaintContextCall(left, top, right, bottom, opacity));
+            paintContextLayerActive = simulatePaintContextLayer;
+        }
+
+        @Override
+        public boolean isCurrentPaintContextLayerActive() {
+            return paintContextLayerActive;
         }
 
         @Override
         public void popPaintContext() {
+            paintContextLayerActive = false;
             popPaintContextCount++;
         }
     }

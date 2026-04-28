@@ -90,8 +90,8 @@ public final class DocumentPaintEngine {
         int boxOffsetX = offsetX + box.getPositionOffsetX();
         int boxOffsetY = offsetY + box.getPositionOffsetY();
         float localOpacity = resolveAnimatedOpacity(animationTimeline, box, currentTimeNanos);
-        float boxOpacity = inheritedOpacity * localOpacity;
         boolean paintContext = shouldCreatePaintContext(rootBox, box, localOpacity);
+        float boxOpacity = paintContext ? inheritedOpacity : inheritedOpacity * localOpacity;
         if (paintContext) {
             appendPaintContextStartCommand(box, commands, localOpacity, boxOffsetX, boxOffsetY);
         }
