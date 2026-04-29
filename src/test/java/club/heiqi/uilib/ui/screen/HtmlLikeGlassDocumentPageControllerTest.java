@@ -55,7 +55,6 @@ public class HtmlLikeGlassDocumentPageControllerTest {
         Assert.assertTrue(containsText(texts, "Atlas target inside source"));
         Assert.assertTrue(containsText(texts, "Tile count target"));
         Assert.assertTrue(containsText(texts, "Tile probe Backdrop path: pending"));
-        Assert.assertTrue(containsText(texts, "Tile atlas snapshot probe: pending"));
         Assert.assertTrue(containsText(texts, "visual regressions are easy to see"));
     }
 
@@ -73,7 +72,6 @@ public class HtmlLikeGlassDocumentPageControllerTest {
         List<String> texts = collectDocumentTexts(fixture.controller.getHtmlLikeDocumentWidget());
         Assert.assertTrue(containsText(texts, "Backdrop path:"));
         Assert.assertTrue(containsText(texts, "Tile probe Backdrop path:"));
-        Assert.assertTrue(containsText(texts, "Tile atlas snapshot probe:"));
     }
 
     /**
@@ -114,12 +112,7 @@ public class HtmlLikeGlassDocumentPageControllerTest {
         Assert.assertTrue(containsTextCall(renderContext.textCalls, "Tile atlas probe"));
         Assert.assertTrue(containsTextCall(renderContext.textCalls, "tiles=N covered=M missing=K reused=R copied=C"));
         Assert.assertTrue(containsTextCall(renderContext.textCalls, "Tile probe Backdrop path"));
-        Assert.assertTrue(containsTextCall(renderContext.textCalls, "Tile atlas snapshot probe"));
         Assert.assertTrue(containsTextCall(renderContext.textCalls, "Local path line updates with tiles="));
-        Assert.assertEquals(2, renderContext.snapshotProbeCalls.size());
-        Assert.assertEquals(36, renderContext.snapshotProbeCalls.get(0).blurRadius);
-        Assert.assertEquals(36, renderContext.snapshotProbeCalls.get(1).blurRadius);
-        Assert.assertTrue(renderContext.snapshotProbeCalls.get(1).right > renderContext.snapshotProbeCalls.get(0).right);
     }
 
     private static List<String> collectDocumentTexts(HtmlLikeDocumentWidget widget) {
@@ -189,7 +182,6 @@ public class HtmlLikeGlassDocumentPageControllerTest {
         private final List<DrawCall> drawCalls = new ArrayList<DrawCall>();
         private final List<TextCall> textCalls = new ArrayList<TextCall>();
         private final List<BackdropCall> backdropCalls = new ArrayList<BackdropCall>();
-        private final List<SnapshotProbeCall> snapshotProbeCalls = new ArrayList<SnapshotProbeCall>();
 
         private RecordingUiRenderContext() {
             super(1280, 720, 0, 0, 0.0F);
@@ -204,11 +196,6 @@ public class HtmlLikeGlassDocumentPageControllerTest {
         public void drawBackdropFilter(int left, int top, int right, int bottom, int blurRadius, float saturation,
                 int cornerRadius) {
             backdropCalls.add(new BackdropCall(left, top, right, bottom, blurRadius, saturation, cornerRadius));
-        }
-
-        @Override
-        public void probeBackdropSnapshot(int left, int top, int right, int bottom, int blurRadius, float saturation) {
-            snapshotProbeCalls.add(new SnapshotProbeCall(left, top, right, bottom, blurRadius, saturation));
         }
 
         @Override
@@ -260,28 +247,6 @@ public class HtmlLikeGlassDocumentPageControllerTest {
             this.y = y;
             this.color = color;
             this.shadow = shadow;
-        }
-    }
-
-    /**
-     * 单次 snapshot 诊断探针记录。
-     */
-    private static final class SnapshotProbeCall {
-
-        private final int left;
-        private final int top;
-        private final int right;
-        private final int bottom;
-        private final int blurRadius;
-        private final float saturation;
-
-        private SnapshotProbeCall(int left, int top, int right, int bottom, int blurRadius, float saturation) {
-            this.left = left;
-            this.top = top;
-            this.right = right;
-            this.bottom = bottom;
-            this.blurRadius = blurRadius;
-            this.saturation = saturation;
         }
     }
 

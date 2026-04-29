@@ -38,7 +38,6 @@ public class UiRenderContext {
     private static final UiBackdropShaderProgram BACKDROP_SHADER_PROGRAM = new UiBackdropShaderProgram();
     private static volatile BackdropFilterRenderPath lastBackdropFilterRenderPath = BackdropFilterRenderPath.NONE;
     private static volatile String lastBackdropFilterDetail = "not-run";
-    private static volatile String lastBackdropSnapshotProbeDetail = "not-run";
 
     private final int screenWidth;
     private final int screenHeight;
@@ -474,15 +473,6 @@ public class UiRenderContext {
     }
 
     /**
-     * 返回最近一次 backdrop snapshot 诊断探针说明。
-     *
-     * @return snapshot 探针说明
-     */
-    public static String getLastBackdropSnapshotProbeDetail() {
-        return lastBackdropSnapshotProbeDetail;
-    }
-
-    /**
      * 绘制矩形。
      *
      * @param left 左侧坐标
@@ -572,45 +562,6 @@ public class UiRenderContext {
             return;
         }
         drawBackdropFilterFallback(left, top, right, bottom, blurRadius, saturation, cornerRadius);
-    }
-
-    /**
-     * 执行一次只读 backdrop snapshot 诊断采样。
-     *
-     * <p>该方法供内部诊断页验证 snapshot atlas 规划，不绘制任何可见内容，也不会推进 UI 主层内容版本。</p>
-     *
-     * @param left 左侧坐标
-     * @param top 顶部坐标
-     * @param right 右侧坐标
-     * @param bottom 底部坐标
-     * @param blurRadius 模糊半径像素
-     * @param saturation 饱和度倍率，1.0 表示不改变
-     */
-    public void probeBackdropSnapshot(int left, int top, int right, int bottom, int blurRadius, float saturation) {
-        if (right <= left || bottom <= top) {
-            recordBackdropSnapshotProbe("skipped");
-            return;
-        }
-        UiMainLayerSnapshotService.SampleRegion sampleRegion = UiMainLayerSnapshotService.resolveSampleRegion(
-                screenWidth, screenHeight, left, top, right, bottom, blurRadius);
-        if (sampleRegion == null) {
-            recordBackdropSnapshotProbe("sample-region-invalid");
-            return;
-        }
-        int backdropReadFramebufferId = paintContextCompositor.getCurrentBackdropReadFramebufferId();
-        UiMainLayerSnapshotService.Snapshot snapshot = mainLayerSnapshotService.acquireSnapshot(screenWidth,
-                screenHeight, backdropReadFramebufferId, mainLayerContentRevision, sampleRegion, blurRadius);
-        if (snapshot == null) {
-            recordBackdropSnapshotProbe("snapshot-unavailable: " + mainLayerSnapshotService.getLastFailureDetail());
-            return;
-        }
-        try {
-            recordBackdropSnapshotProbe("blur=" + blurRadius + ", saturation="
-                    + String.format(java.util.Locale.ROOT, "%.2f", Float.valueOf(Math.max(0.0F, saturation)))
-                    + ", snapshot=" + formatSnapshotState(snapshot));
-        } finally {
-            mainLayerSnapshotService.releaseSnapshot(snapshot);
-        }
     }
 
     private boolean drawCurrentUiBackdropFilter(int left, int top, int right, int bottom, int blurRadius,
@@ -1108,10 +1059,6 @@ public class UiRenderContext {
     private static void recordBackdropFilterPath(BackdropFilterRenderPath renderPath, String detail) {
         lastBackdropFilterRenderPath = renderPath == null ? BackdropFilterRenderPath.NONE : renderPath;
         lastBackdropFilterDetail = detail == null ? "" : detail;
-    }
-
-    private static void recordBackdropSnapshotProbe(String detail) {
-        lastBackdropSnapshotProbeDetail = detail == null ? "" : detail;
     }
 
     private static float clampCornerRadius(float width, float height, float radius) {
