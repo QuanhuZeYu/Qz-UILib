@@ -129,7 +129,7 @@ final class HtmlLikeSmokeDocumentPageController extends DocumentPageController {
         ElementNode fixedViewportProbe = document.div();
         fixedViewportProbe.style()
                 .setWidth(UiStyleLength.px(178))
-                .setHeight(UiStyleLength.px(26))
+                .setHeight(UiStyleLength.px(40))
                 .setPosition(UiPosition.FIXED)
                 .setBottom(UiStyleLength.px(12))
                 .setRight(UiStyleLength.px(14))
