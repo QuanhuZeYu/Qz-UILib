@@ -54,6 +54,7 @@ public class HtmlLikeGlassDocumentPageControllerTest {
         Assert.assertTrue(containsText(texts, "Tile atlas probe / block128 tile diagnostics"));
         Assert.assertTrue(containsText(texts, "Atlas target inside source"));
         Assert.assertTrue(containsText(texts, "Tile count target"));
+        Assert.assertTrue(containsText(texts, "Tile probe Backdrop path: pending"));
         Assert.assertTrue(containsText(texts, "visual regressions are easy to see"));
     }
 
@@ -70,6 +71,7 @@ public class HtmlLikeGlassDocumentPageControllerTest {
 
         List<String> texts = collectDocumentTexts(fixture.controller.getHtmlLikeDocumentWidget());
         Assert.assertTrue(containsText(texts, "Backdrop path:"));
+        Assert.assertTrue(containsText(texts, "Tile probe Backdrop path:"));
     }
 
     /**
@@ -108,8 +110,9 @@ public class HtmlLikeGlassDocumentPageControllerTest {
         Assert.assertTrue(containsTextCall(renderContext.textCalls, "Nested level 3"));
         Assert.assertTrue(containsTextCall(renderContext.textCalls, "Direct canvas sibling"));
         Assert.assertTrue(containsTextCall(renderContext.textCalls, "Tile atlas probe"));
-        Assert.assertTrue(containsTextCall(renderContext.textCalls, "tiles=N reused=M captured=K"));
-        Assert.assertTrue(containsTextCall(renderContext.textCalls, "Last probe updates header with tiles="));
+        Assert.assertTrue(containsTextCall(renderContext.textCalls, "tiles=N covered=M missing=K reused=R copied=C"));
+        Assert.assertTrue(containsTextCall(renderContext.textCalls, "Tile probe Backdrop path"));
+        Assert.assertTrue(containsTextCall(renderContext.textCalls, "Local path line updates with tiles="));
     }
 
     private static List<String> collectDocumentTexts(HtmlLikeDocumentWidget widget) {

@@ -1,5 +1,7 @@
 package club.heiqi.uilib.ui.render;
 
+import java.util.Arrays;
+
 import org.junit.Assert;
 import org.junit.Test;
 
@@ -154,6 +156,30 @@ public class UiMainLayerSnapshotServiceTest {
 
         Assert.assertEquals(4, UiMainLayerSnapshotService.resolveTileCount(blockRegion));
         Assert.assertEquals(4, UiMainLayerSnapshotService.resolveTileCount(unevenRegion));
+    }
+
+    /**
+     * 验证 tile 覆盖计划会统计已覆盖和缺失的 tile，且重复覆盖不会重复计数。
+     */
+    @Test
+    public void shouldResolveTileCoveragePlanFromCapturedTileRegions() {
+        UiMainLayerSnapshotService.TileRegion requestedRegion = UiMainLayerSnapshotService.resolveTileRegion(
+                UiMainLayerSnapshotService.resolveBlockAlignedSampleRegion(512, 512,
+                        UiMainLayerSnapshotService.resolveSampleRegion(512, 512, 1, 1, 383, 255, 0)));
+        UiMainLayerSnapshotService.TileRegion leftCoveredRegion = UiMainLayerSnapshotService.resolveTileRegion(
+                UiMainLayerSnapshotService.resolveBlockAlignedSampleRegion(512, 512,
+                        UiMainLayerSnapshotService.resolveSampleRegion(512, 512, 1, 1, 127, 255, 0)));
+        UiMainLayerSnapshotService.TileRegion bottomRightCoveredRegion = UiMainLayerSnapshotService.resolveTileRegion(
+                UiMainLayerSnapshotService.resolveBlockAlignedSampleRegion(512, 512,
+                        UiMainLayerSnapshotService.resolveSampleRegion(512, 512, 257, 129, 383, 255, 0)));
+
+        UiMainLayerSnapshotService.TileCoveragePlan coveragePlan = UiMainLayerSnapshotService.resolveTileCoverage(
+                requestedRegion, Arrays.asList(leftCoveredRegion, bottomRightCoveredRegion, leftCoveredRegion));
+
+        Assert.assertSame(requestedRegion, coveragePlan.getRequestedTileRegion());
+        Assert.assertEquals(6, coveragePlan.getTileCount());
+        Assert.assertEquals(3, coveragePlan.getCoveredTileCount());
+        Assert.assertEquals(3, coveragePlan.getMissingTileCount());
     }
 
     /**

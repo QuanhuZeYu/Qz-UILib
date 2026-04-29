@@ -27,6 +27,7 @@ final class HtmlLikeGlassDocumentPageController extends DocumentPageController {
     private final DocumentPageAuthoringSurface documentPage;
     private final HtmlLikeDocumentWidget htmlLikeDocumentWidget;
     private TextNode backdropPathText;
+    private TextNode tileProbeBackdropPathText;
 
     /**
      * 创建大面积磨玻璃测试页控制器。
@@ -72,8 +73,12 @@ final class HtmlLikeGlassDocumentPageController extends DocumentPageController {
 
     @Override
     void beforeDocumentFrame() {
+        String pathText = formatBackdropPathText();
         if (backdropPathText != null) {
-            backdropPathText.setText(formatBackdropPathText());
+            backdropPathText.setText(pathText);
+        }
+        if (tileProbeBackdropPathText != null) {
+            tileProbeBackdropPathText.setText("Tile probe " + pathText);
         }
     }
 
@@ -123,7 +128,7 @@ final class HtmlLikeGlassDocumentPageController extends DocumentPageController {
         return pathText;
     }
 
-    private static void appendGlassStage(UiDocument document, ElementNode root) {
+    private void appendGlassStage(UiDocument document, ElementNode root) {
         ElementNode stage = document.div();
         stage.style()
                 .setMargin(UiStyleInsets.of(UiStyleLength.px(16), UiStyleLength.px(0), UiStyleLength.px(0),
@@ -282,7 +287,7 @@ final class HtmlLikeGlassDocumentPageController extends DocumentPageController {
      * @param document 文档实例
      * @param stage 父级测试容器
      */
-    private static void appendTileAtlasProbeScene(UiDocument document, ElementNode stage) {
+    private void appendTileAtlasProbeScene(UiDocument document, ElementNode stage) {
         ElementNode probeScene = document.div();
         probeScene.style()
                 .setHeight(UiStyleLength.px(334))
@@ -297,7 +302,8 @@ final class HtmlLikeGlassDocumentPageController extends DocumentPageController {
                 .setOverflowX(UiOverflow.HIDDEN)
                 .setOverflowY(UiOverflow.HIDDEN);
         probeScene.appendText("Tile atlas probe / block128 tile diagnostics");
-        probeScene.appendText("Header Backdrop path should include region=..., tiles=N reused=M captured=K, and filter=...");
+        probeScene.appendText("Header Backdrop path should include region=..., tiles=N covered=M missing=K reused=R copied=C, and filter=...");
+        tileProbeBackdropPathText = probeScene.appendText("Tile probe Backdrop path: pending");
         stage.append(probeScene);
 
         ElementNode probeCanvas = document.div();
@@ -333,7 +339,7 @@ final class HtmlLikeGlassDocumentPageController extends DocumentPageController {
         probeCanvas.append(coveredTargetGlass);
 
         ElementNode tileCountTargetGlass = createGlassBlock(document, 0x40BAE6FD, 0xCCE0F2FE, 36, 125,
-                "Tile count target", "Last probe updates header with tiles=... and downsample filter");
+                "Tile count target", "Local path line updates with tiles=... and downsample filter");
         tileCountTargetGlass.style()
                 .setWidth(UiStyleLength.percent(0.38F))
                 .setHeight(UiStyleLength.px(64))
