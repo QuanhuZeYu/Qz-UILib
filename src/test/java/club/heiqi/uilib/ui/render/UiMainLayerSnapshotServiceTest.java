@@ -122,6 +122,30 @@ public class UiMainLayerSnapshotServiceTest {
     }
 
     /**
+     * 验证较大的 block 区域可作为同帧临时 atlas 覆盖后续较小采样区域。
+     */
+    @Test
+    public void shouldReuseLargerBlockRegionAsSnapshotAtlas() {
+        UiMainLayerSnapshotService.SampleRegion largerRegion = UiMainLayerSnapshotService.resolveSampleRegion(768,
+                512, 90, 90, 330, 230, 18);
+        UiMainLayerSnapshotService.SampleRegion smallerRegion = UiMainLayerSnapshotService.resolveSampleRegion(768,
+                512, 140, 120, 190, 160, 18);
+        UiMainLayerSnapshotService.SampleRegion unrelatedRegion = UiMainLayerSnapshotService.resolveSampleRegion(768,
+                512, 430, 120, 480, 160, 18);
+
+        UiMainLayerSnapshotService.SampleRegion largerBlock = UiMainLayerSnapshotService.resolveBlockAlignedSampleRegion(
+                768, 512, largerRegion);
+        UiMainLayerSnapshotService.SampleRegion smallerBlock = UiMainLayerSnapshotService.resolveBlockAlignedSampleRegion(
+                768, 512, smallerRegion);
+        UiMainLayerSnapshotService.SampleRegion unrelatedBlock = UiMainLayerSnapshotService.resolveBlockAlignedSampleRegion(
+                768, 512, unrelatedRegion);
+
+        Assert.assertTrue(UiMainLayerSnapshotService.containsSampleRegion(largerBlock, smallerBlock));
+        Assert.assertFalse(UiMainLayerSnapshotService.containsSampleRegion(smallerBlock, largerBlock));
+        Assert.assertFalse(UiMainLayerSnapshotService.containsSampleRegion(largerBlock, unrelatedBlock));
+    }
+
+    /**
      * 验证大半径 blur 会进入降采样滤镜路径。
      */
     @Test

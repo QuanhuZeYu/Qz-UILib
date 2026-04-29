@@ -16,6 +16,7 @@ import org.lwjgl.opengl.GL30;
  * 当前 UI 主层的同帧快照服务。
  *
  * <p>该服务只属于渲染后端，用于让 `backdrop-filter` 元素在当前 UI 主层内容未变化时复用已复制纹理。
+ * 同帧已捕获的较大 block 区域也可作为临时 atlas，供后续被其覆盖的较小区域继续采样。
  * 一旦两次 backdrop 之间有新的 UI 绘制写入，就必须重新捕获，避免后续元素采样到旧主层。
  * 文档作者层仍只暴露 CSS-like backdrop 语义，不接触纹理、FBO 或 OpenGL 状态。</p>
  */
@@ -159,13 +160,17 @@ public final class UiMainLayerSnapshotService {
         String regionDetail = formatRegionDetail(sampleRegion, reusableRegion);
         int readFramebufferId = resolveReadFramebufferId(requestedReadFramebufferId);
         int downsampleFactor = resolveDownsampleFactor(blurRadius);
-        FrameSnapshot capturedSnapshot = findCapturedSnapshot(readFramebufferId, reusableRegion,
+        FrameSnapshotMatch capturedSnapshotMatch = findCapturedSnapshot(readFramebufferId, reusableRegion,
                 contentRevision, downsampleFactor, blurRadius);
-        if (capturedSnapshot != null) {
+        if (capturedSnapshotMatch != null) {
+            FrameSnapshot capturedSnapshot = capturedSnapshotMatch.snapshot;
             capturedSnapshot.activeUseCount++;
-            return Snapshot.reused(capturedSnapshot.textureId, reusableRegion, readFramebufferId, contentRevision,
+            SampleRegion capturedRegion = toSampleRegion(capturedSnapshot);
+            String matchedRegionDetail = capturedSnapshotMatch.exactMatch ? capturedSnapshot.regionDetail
+                    : formatAtlasRegionDetail(capturedSnapshot.regionDetail);
+            return Snapshot.reused(capturedSnapshot.textureId, capturedRegion, readFramebufferId, contentRevision,
                     capturedSnapshot.textureWidth, capturedSnapshot.textureHeight, capturedSnapshot.downsampleFactor,
-                    capturedSnapshot.filterDetail, capturedSnapshot.regionDetail);
+                    capturedSnapshot.filterDetail, matchedRegionDetail);
         }
 
         FrameSnapshot snapshot = findReusableSnapshot();
@@ -342,24 +347,33 @@ public final class UiMainLayerSnapshotService {
         return Math.max(1, Math.min(8, Math.round((float) blurRadius / (float) (downsampleFactor * 5))));
     }
 
-    private FrameSnapshot findCapturedSnapshot(int readFramebufferId, SampleRegion sampleRegion,
+    private FrameSnapshotMatch findCapturedSnapshot(int readFramebufferId, SampleRegion sampleRegion,
             int contentRevision, int downsampleFactor, int blurRadius) {
+        FrameSnapshot containingSnapshot = null;
         for (FrameSnapshot snapshot : snapshots) {
             if (snapshot.capturedFrameId == frameId && snapshot.readFramebufferId == readFramebufferId
-                    && snapshot.sampleLeft == sampleRegion.getLeft() && snapshot.sampleTop == sampleRegion.getTop()
-                    && snapshot.width == sampleRegion.getWidth() && snapshot.height == sampleRegion.getHeight()
                     && snapshot.contentRevision == contentRevision
                     && snapshot.requestedDownsampleFactor == downsampleFactor && snapshot.blurRadius == blurRadius
                     && snapshot.textureId != 0) {
-                return snapshot;
+                SampleRegion capturedRegion = toSampleRegion(snapshot);
+                if (isSameSampleRegion(capturedRegion, sampleRegion)) {
+                    return new FrameSnapshotMatch(snapshot, true);
+                }
+                if (containsSampleRegion(capturedRegion, sampleRegion)
+                        && isBetterContainingSnapshot(containingSnapshot, snapshot)) {
+                    containingSnapshot = snapshot;
+                }
             }
         }
-        return null;
+        if (containingSnapshot == null) {
+            return null;
+        }
+        return new FrameSnapshotMatch(containingSnapshot, false);
     }
 
     private FrameSnapshot findReusableSnapshot() {
         for (FrameSnapshot snapshot : snapshots) {
-            if (snapshot.activeUseCount <= 0) {
+            if (snapshot.activeUseCount <= 0 && snapshot.capturedFrameId != frameId) {
                 return snapshot;
             }
         }
@@ -721,6 +735,53 @@ public final class UiMainLayerSnapshotService {
         return "block" + SNAPSHOT_BLOCK_SIZE;
     }
 
+    private static String formatAtlasRegionDetail(String regionDetail) {
+        if (regionDetail == null || regionDetail.isEmpty()) {
+            return "atlas";
+        }
+        if (regionDetail.startsWith("atlas-")) {
+            return regionDetail;
+        }
+        return "atlas-" + regionDetail;
+    }
+
+    /**
+     * 判断外层采样区域是否完整覆盖内层采样区域。
+     *
+     * @param outerRegion 外层区域
+     * @param innerRegion 内层区域
+     * @return 是否可由外层区域作为临时 atlas 承载内层区域采样
+     */
+    static boolean containsSampleRegion(SampleRegion outerRegion, SampleRegion innerRegion) {
+        return outerRegion != null && innerRegion != null
+                && outerRegion.getLeft() <= innerRegion.getLeft()
+                && outerRegion.getTop() <= innerRegion.getTop()
+                && outerRegion.getRight() >= innerRegion.getRight()
+                && outerRegion.getBottom() >= innerRegion.getBottom();
+    }
+
+    private static boolean isSameSampleRegion(SampleRegion firstRegion, SampleRegion secondRegion) {
+        return firstRegion != null && secondRegion != null
+                && firstRegion.getLeft() == secondRegion.getLeft()
+                && firstRegion.getTop() == secondRegion.getTop()
+                && firstRegion.getRight() == secondRegion.getRight()
+                && firstRegion.getBottom() == secondRegion.getBottom();
+    }
+
+    private static boolean isBetterContainingSnapshot(FrameSnapshot currentSnapshot, FrameSnapshot candidateSnapshot) {
+        if (currentSnapshot == null) {
+            return true;
+        }
+        long currentArea = (long) currentSnapshot.width * (long) currentSnapshot.height;
+        long candidateArea = (long) candidateSnapshot.width * (long) candidateSnapshot.height;
+        return candidateArea < currentArea;
+    }
+
+    private static SampleRegion toSampleRegion(FrameSnapshot snapshot) {
+        return new SampleRegion(snapshot.sampleLeft, snapshot.sampleTop, snapshot.sampleLeft + snapshot.width,
+                snapshot.sampleTop + snapshot.height);
+    }
+
     private static int resolveSampleStep(int blurRadius) {
         return Math.max(1, Math.min(12, Math.round(Math.max(1, blurRadius) / 2.5F)));
     }
@@ -938,5 +999,19 @@ public final class UiMainLayerSnapshotService {
         private String regionDetail = "exact";
         private int capturedFrameId;
         private int activeUseCount;
+    }
+
+    /**
+     * 当前帧已捕获快照的匹配结果。
+     */
+    private static final class FrameSnapshotMatch {
+
+        private final FrameSnapshot snapshot;
+        private final boolean exactMatch;
+
+        private FrameSnapshotMatch(FrameSnapshot snapshot, boolean exactMatch) {
+            this.snapshot = snapshot;
+            this.exactMatch = exactMatch;
+        }
     }
 }
