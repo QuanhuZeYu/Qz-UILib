@@ -1034,7 +1034,7 @@ public class UiRenderContext {
         return (snapshot.isReused() ? "reused" : "captured") + " " + snapshot.getWidth() + "x"
                 + snapshot.getHeight() + " @" + snapshot.getSampleLeft() + "," + snapshot.getSampleTop()
                 + " fbo=" + snapshot.getReadFramebufferId() + " rev=" + snapshot.getContentRevision()
-                + " filter=" + snapshot.getFilterDetail();
+                + " region=" + snapshot.getRegionDetail() + " filter=" + snapshot.getFilterDetail();
     }
 
     private static float resolveBackdropShaderRadius(int blurRadius, int downsampleFactor) {

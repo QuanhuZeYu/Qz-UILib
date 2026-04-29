@@ -23,6 +23,7 @@ public final class UiMainLayerSnapshotService {
 
     private static final int MAX_SNAPSHOT_EDGE = 4096;
     private static final int MAX_SNAPSHOT_PIXELS = 4096 * 4096;
+    private static final int SNAPSHOT_BLOCK_SIZE = 128;
     private static final int MAX_DOWNSAMPLE_FACTOR = 4;
     private static final int MEDIUM_BLUR_DOWNSAMPLE_THRESHOLD = 18;
     private static final int LARGE_BLUR_DOWNSAMPLE_THRESHOLD = 34;
@@ -154,15 +155,17 @@ public final class UiMainLayerSnapshotService {
             beginFrame();
         }
 
+        SampleRegion reusableRegion = resolveReusableSampleRegion(screenWidth, screenHeight, sampleRegion);
+        String regionDetail = formatRegionDetail(sampleRegion, reusableRegion);
         int readFramebufferId = resolveReadFramebufferId(requestedReadFramebufferId);
         int downsampleFactor = resolveDownsampleFactor(blurRadius);
-        FrameSnapshot capturedSnapshot = findCapturedSnapshot(readFramebufferId, sampleRegion,
+        FrameSnapshot capturedSnapshot = findCapturedSnapshot(readFramebufferId, reusableRegion,
                 contentRevision, downsampleFactor, blurRadius);
         if (capturedSnapshot != null) {
             capturedSnapshot.activeUseCount++;
-            return Snapshot.reused(capturedSnapshot.textureId, sampleRegion, readFramebufferId, contentRevision,
+            return Snapshot.reused(capturedSnapshot.textureId, reusableRegion, readFramebufferId, contentRevision,
                     capturedSnapshot.textureWidth, capturedSnapshot.textureHeight, capturedSnapshot.downsampleFactor,
-                    capturedSnapshot.filterDetail);
+                    capturedSnapshot.filterDetail, capturedSnapshot.regionDetail);
         }
 
         FrameSnapshot snapshot = findReusableSnapshot();
@@ -170,12 +173,13 @@ public final class UiMainLayerSnapshotService {
             snapshot = new FrameSnapshot();
             snapshots.add(snapshot);
         }
-        if (!captureSnapshot(snapshot, screenHeight, sampleRegion, readFramebufferId, contentRevision,
-                downsampleFactor, blurRadius)) {
+        if (!captureSnapshot(snapshot, screenHeight, reusableRegion, readFramebufferId, contentRevision,
+                downsampleFactor, blurRadius, regionDetail)) {
             return null;
         }
-        return Snapshot.captured(snapshot.textureId, sampleRegion, readFramebufferId, contentRevision,
-                snapshot.textureWidth, snapshot.textureHeight, snapshot.downsampleFactor, snapshot.filterDetail);
+        return Snapshot.captured(snapshot.textureId, reusableRegion, readFramebufferId, contentRevision,
+                snapshot.textureWidth, snapshot.textureHeight, snapshot.downsampleFactor, snapshot.filterDetail,
+                snapshot.regionDetail);
     }
 
     /**
@@ -227,6 +231,32 @@ public final class UiMainLayerSnapshotService {
             return null;
         }
         return new SampleRegion(sampleLeft, sampleTop, sampleRight, sampleBottom);
+    }
+
+    /**
+     * 将局部采样区域扩展到固定 block 边界，提升相近 glass 元素的快照复用率。
+     *
+     * @param screenWidth 屏幕宽度
+     * @param screenHeight 屏幕高度
+     * @param sampleRegion 原始采样区域
+     * @return block 对齐后的采样区域；无法对齐时返回原始区域
+     */
+    static SampleRegion resolveBlockAlignedSampleRegion(int screenWidth, int screenHeight, SampleRegion sampleRegion) {
+        if (sampleRegion == null) {
+            return null;
+        }
+        int sampleLeft = alignDown(sampleRegion.getLeft(), SNAPSHOT_BLOCK_SIZE);
+        int sampleTop = alignDown(sampleRegion.getTop(), SNAPSHOT_BLOCK_SIZE);
+        int sampleRight = alignUp(sampleRegion.getRight(), SNAPSHOT_BLOCK_SIZE);
+        int sampleBottom = alignUp(sampleRegion.getBottom(), SNAPSHOT_BLOCK_SIZE);
+        int alignedLeft = clampInt(sampleLeft, 0, screenWidth);
+        int alignedTop = clampInt(sampleTop, 0, screenHeight);
+        int alignedRight = clampInt(sampleRight, 0, screenWidth);
+        int alignedBottom = clampInt(sampleBottom, 0, screenHeight);
+        if (alignedRight <= alignedLeft || alignedBottom <= alignedTop) {
+            return sampleRegion;
+        }
+        return new SampleRegion(alignedLeft, alignedTop, alignedRight, alignedBottom);
     }
 
     /**
@@ -337,7 +367,8 @@ public final class UiMainLayerSnapshotService {
     }
 
     private boolean captureSnapshot(FrameSnapshot snapshot, int screenHeight, SampleRegion sampleRegion,
-            int readFramebufferId, int contentRevision, int requestedDownsampleFactor, int blurRadius) {
+            int readFramebufferId, int contentRevision, int requestedDownsampleFactor, int blurRadius,
+            String regionDetail) {
         int width = sampleRegion.getWidth();
         int height = sampleRegion.getHeight();
         int previousTexture = 0;
@@ -402,6 +433,7 @@ public final class UiMainLayerSnapshotService {
             snapshot.blurRadius = blurRadius;
             snapshot.filterPassRadius = 0;
             snapshot.filterDetail = "raw";
+            snapshot.regionDetail = regionDetail;
             if (downsampleFactor > 1) {
                 if (downsampleSnapshot(snapshot, downsampleFactor, blurRadius)) {
                     snapshot.filterDetail = "downsample" + snapshot.downsampleFactor + " "
@@ -668,6 +700,27 @@ public final class UiMainLayerSnapshotService {
         return safeFactor;
     }
 
+    private static SampleRegion resolveReusableSampleRegion(int screenWidth, int screenHeight,
+            SampleRegion sampleRegion) {
+        SampleRegion blockRegion = resolveBlockAlignedSampleRegion(screenWidth, screenHeight, sampleRegion);
+        if (isSnapshotSizeAllowed(blockRegion)) {
+            return blockRegion;
+        }
+        return sampleRegion;
+    }
+
+    private static String formatRegionDetail(SampleRegion requestedRegion, SampleRegion reusableRegion) {
+        if (requestedRegion == null || reusableRegion == null) {
+            return "exact";
+        }
+        if (requestedRegion.getLeft() == reusableRegion.getLeft() && requestedRegion.getTop() == reusableRegion.getTop()
+                && requestedRegion.getRight() == reusableRegion.getRight()
+                && requestedRegion.getBottom() == reusableRegion.getBottom()) {
+            return "exact";
+        }
+        return "block" + SNAPSHOT_BLOCK_SIZE;
+    }
+
     private static int resolveSampleStep(int blurRadius) {
         return Math.max(1, Math.min(12, Math.round(Math.max(1, blurRadius) / 2.5F)));
     }
@@ -691,6 +744,20 @@ public final class UiMainLayerSnapshotService {
         return Math.max(min, Math.min(value, max));
     }
 
+    private static int alignDown(int value, int blockSize) {
+        if (blockSize <= 0) {
+            return value;
+        }
+        return value / blockSize * blockSize;
+    }
+
+    private static int alignUp(int value, int blockSize) {
+        if (blockSize <= 0) {
+            return value;
+        }
+        return (value + blockSize - 1) / blockSize * blockSize;
+    }
+
     /**
      * 单帧主层快照。
      */
@@ -707,11 +774,12 @@ public final class UiMainLayerSnapshotService {
         private final int contentRevision;
         private final int downsampleFactor;
         private final String filterDetail;
+        private final String regionDetail;
         private final boolean reused;
 
         private Snapshot(int textureId, int sampleLeft, int sampleTop, int width, int height,
                 int readFramebufferId, int contentRevision, int textureWidth, int textureHeight,
-                int downsampleFactor, String filterDetail, boolean reused) {
+                int downsampleFactor, String filterDetail, String regionDetail, boolean reused) {
             this.textureId = textureId;
             this.sampleLeft = sampleLeft;
             this.sampleTop = sampleTop;
@@ -723,21 +791,24 @@ public final class UiMainLayerSnapshotService {
             this.contentRevision = contentRevision;
             this.downsampleFactor = downsampleFactor;
             this.filterDetail = filterDetail == null ? "raw" : filterDetail;
+            this.regionDetail = regionDetail == null ? "exact" : regionDetail;
             this.reused = reused;
         }
 
         private static Snapshot captured(int textureId, SampleRegion sampleRegion, int readFramebufferId,
-                int contentRevision, int textureWidth, int textureHeight, int downsampleFactor, String filterDetail) {
+                int contentRevision, int textureWidth, int textureHeight, int downsampleFactor, String filterDetail,
+                String regionDetail) {
             return new Snapshot(textureId, sampleRegion.getLeft(), sampleRegion.getTop(), sampleRegion.getWidth(),
                     sampleRegion.getHeight(), readFramebufferId, contentRevision, textureWidth, textureHeight,
-                    downsampleFactor, filterDetail, false);
+                    downsampleFactor, filterDetail, regionDetail, false);
         }
 
         private static Snapshot reused(int textureId, SampleRegion sampleRegion, int readFramebufferId,
-                int contentRevision, int textureWidth, int textureHeight, int downsampleFactor, String filterDetail) {
+                int contentRevision, int textureWidth, int textureHeight, int downsampleFactor, String filterDetail,
+                String regionDetail) {
             return new Snapshot(textureId, sampleRegion.getLeft(), sampleRegion.getTop(), sampleRegion.getWidth(),
                     sampleRegion.getHeight(), readFramebufferId, contentRevision, textureWidth, textureHeight,
-                    downsampleFactor, filterDetail, true);
+                    downsampleFactor, filterDetail, regionDetail, true);
         }
 
         int getTextureId() {
@@ -782,6 +853,10 @@ public final class UiMainLayerSnapshotService {
 
         String getFilterDetail() {
             return filterDetail;
+        }
+
+        String getRegionDetail() {
+            return regionDetail;
         }
 
         boolean isReused() {
@@ -860,6 +935,7 @@ public final class UiMainLayerSnapshotService {
         private int downsampleFactor = 1;
         private int filterPassRadius;
         private String filterDetail = "raw";
+        private String regionDetail = "exact";
         private int capturedFrameId;
         private int activeUseCount;
     }

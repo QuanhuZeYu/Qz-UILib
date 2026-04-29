@@ -86,6 +86,42 @@ public class UiMainLayerSnapshotServiceTest {
     }
 
     /**
+     * 验证采样区域会扩展到固定 block 边界，便于相近 glass 元素复用同一 snapshot。
+     */
+    @Test
+    public void shouldAlignSampleRegionToSnapshotBlocks() {
+        UiMainLayerSnapshotService.SampleRegion sampleRegion = UiMainLayerSnapshotService.resolveSampleRegion(512,
+                360, 100, 100, 140, 140, 18);
+        UiMainLayerSnapshotService.SampleRegion blockRegion = UiMainLayerSnapshotService.resolveBlockAlignedSampleRegion(
+                512, 360, sampleRegion);
+
+        Assert.assertEquals(0, blockRegion.getLeft());
+        Assert.assertEquals(0, blockRegion.getTop());
+        Assert.assertEquals(256, blockRegion.getRight());
+        Assert.assertEquals(256, blockRegion.getBottom());
+    }
+
+    /**
+     * 验证相近但不完全相同的采样区域可归并到同一个 block snapshot 区域。
+     */
+    @Test
+    public void shouldBucketNearbySampleRegionsIntoSameSnapshotBlock() {
+        UiMainLayerSnapshotService.SampleRegion firstRegion = UiMainLayerSnapshotService.resolveSampleRegion(512,
+                360, 100, 100, 140, 140, 18);
+        UiMainLayerSnapshotService.SampleRegion secondRegion = UiMainLayerSnapshotService.resolveSampleRegion(512,
+                360, 110, 108, 150, 148, 18);
+        UiMainLayerSnapshotService.SampleRegion firstBlock = UiMainLayerSnapshotService.resolveBlockAlignedSampleRegion(
+                512, 360, firstRegion);
+        UiMainLayerSnapshotService.SampleRegion secondBlock = UiMainLayerSnapshotService.resolveBlockAlignedSampleRegion(
+                512, 360, secondRegion);
+
+        Assert.assertEquals(firstBlock.getLeft(), secondBlock.getLeft());
+        Assert.assertEquals(firstBlock.getTop(), secondBlock.getTop());
+        Assert.assertEquals(firstBlock.getRight(), secondBlock.getRight());
+        Assert.assertEquals(firstBlock.getBottom(), secondBlock.getBottom());
+    }
+
+    /**
      * 验证大半径 blur 会进入降采样滤镜路径。
      */
     @Test
