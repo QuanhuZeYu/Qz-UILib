@@ -418,9 +418,72 @@ final class HtmlLikeSmokeDocumentPageController extends DocumentPageController {
                 .setFocusBorderColor(0xFFBEE3F8);
         toggleControl.getElement().style().setFlexGrow(0.6F);
         footer.append(toggleControl.getElement());
+        appendAbsoluteStretchAndInlineProbe(document, root);
         appendGroupOpacityProbe(document, root);
         appendStackingContextProbe(document, root);
         return document;
+    }
+
+    private static void appendAbsoluteStretchAndInlineProbe(UiDocument document, ElementNode root) {
+        ElementNode probe = document.div();
+        probe.style()
+                .setHeight(UiStyleLength.px(116))
+                .setMargin(UiStyleLength.px(16))
+                .setPadding(UiStyleLength.px(10))
+                .setBackgroundColor(0xFF102A43)
+                .setBorderColor(0xFF38BDF8)
+                .setBorderWidth(UiStyleLength.px(1))
+                .setBorderRadius(UiStyleLength.px(14))
+                .setTextColor(0xFFE0F2FE)
+                .setOverflowX(UiOverflow.HIDDEN)
+                .setOverflowY(UiOverflow.HIDDEN);
+        probe.appendText("Absolute stretch + inline span probe");
+        root.append(probe);
+
+        ElementNode stretchStage = document.div();
+        stretchStage.style()
+                .setHeight(UiStyleLength.px(42))
+                .setPosition(UiPosition.RELATIVE)
+                .setMargin(UiStyleInsets.of(UiStyleLength.px(8), UiStyleLength.px(0), UiStyleLength.px(0),
+                        UiStyleLength.px(0)))
+                .setBackgroundColor(0xFF0F172A)
+                .setBorderColor(0xFF334155)
+                .setBorderWidth(UiStyleLength.px(1))
+                .setBorderRadius(UiStyleLength.px(10))
+                .setOverflowX(UiOverflow.HIDDEN)
+                .setOverflowY(UiOverflow.HIDDEN);
+        probe.append(stretchStage);
+
+        ElementNode stretchedFill = document.div();
+        stretchedFill.style()
+                .setPosition(UiPosition.ABSOLUTE)
+                .setLeft(UiStyleLength.px(14))
+                .setRight(UiStyleLength.px(22))
+                .setTop(UiStyleLength.px(8))
+                .setBottom(UiStyleLength.px(8))
+                .setPadding(UiStyleLength.px(5))
+                .setBackgroundColor(0xFF0EA5E9)
+                .setBorderColor(0xFFBAE6FD)
+                .setBorderWidth(UiStyleLength.px(1))
+                .setBorderRadius(UiStyleLength.px(999))
+                .setTextColor(0xFFFFFFFF)
+                .setOverflowX(UiOverflow.HIDDEN)
+                .setOverflowY(UiOverflow.HIDDEN);
+        stretchedFill.appendText("ABS stretch fill: left+right / top+bottom");
+        stretchStage.append(stretchedFill);
+
+        ElementNode inlineLine = document.div();
+        inlineLine.style()
+                .setMargin(UiStyleInsets.of(UiStyleLength.px(8), UiStyleLength.px(0), UiStyleLength.px(0),
+                        UiStyleLength.px(0)))
+                .setTextColor(0xFFE0F2FE);
+        inlineLine.appendText("Inline mix: text ");
+        ElementNode amberSpan = document.span();
+        amberSpan.style().setTextColor(0xFFFFD166);
+        amberSpan.appendText("amber span");
+        inlineLine.append(amberSpan);
+        inlineLine.appendText(" continues on the same line and wraps as one flow.");
+        probe.append(inlineLine);
     }
 
     private static void appendGroupOpacityProbe(UiDocument document, ElementNode root) {

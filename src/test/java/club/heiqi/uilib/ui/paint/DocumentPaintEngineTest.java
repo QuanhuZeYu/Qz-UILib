@@ -815,6 +815,36 @@ public class DocumentPaintEngineTest {
     }
 
     /**
+     * 验证 inline span 文本片段使用自身继承链解析出的文本颜色。
+     */
+    @Test
+    public void shouldPaintInlineSpanTextWithOwnTextColor() {
+        UiDocument document = UiDocument.create();
+        ElementNode root = document.getRootElement();
+        ElementNode span = document.span();
+
+        root.style()
+                .setWidth(UiStyleLength.px(48))
+                .setTextColor(0xFFEFF6FF);
+        span.style().setTextColor(0xFFFFD166);
+        root.appendText("AA");
+        span.appendText("BBBB");
+        root.append(span);
+        root.appendText("CC");
+
+        List<DocumentPaintCommand> commands = DocumentPaintEngine.buildPaintCommands(DocumentLayoutEngine.layout(root,
+                80, 0, new DeterministicTextMeasureService()));
+
+        Assert.assertEquals(3, commands.size());
+        assertCommand(commands.get(0), DocumentPaintCommandType.TEXT, root, 0, 0, 16, 18, 0xFFEFF6FF, 0, 0);
+        Assert.assertEquals("AA", commands.get(0).getText());
+        assertCommand(commands.get(1), DocumentPaintCommandType.TEXT, span, 16, 0, 48, 18, 0xFFFFD166, 0, 0);
+        Assert.assertEquals("BBBB", commands.get(1).getText());
+        assertCommand(commands.get(2), DocumentPaintCommandType.TEXT, root, 0, 18, 16, 36, 0xFFEFF6FF, 0, 0);
+        Assert.assertEquals("CC", commands.get(2).getText());
+    }
+
+    /**
      * 验证 CUSTOM 绘制命令使用元素内容盒，而不是 padding 盒。
      */
     @Test

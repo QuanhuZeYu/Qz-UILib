@@ -47,7 +47,7 @@ public class HtmlLikeSmokeDocumentPageControllerTest {
         Assert.assertTrue(blocks.get(0) instanceof HtmlLikeDocumentWidget);
         Assert.assertSame(blocks.get(0), fixture.controller.getHtmlLikeDocumentWidget());
         Assert.assertTrue(fixture.controller.getHtmlLikeDocumentWidget().isViewportRootScrollingEnabled());
-        Assert.assertEquals(6, fixture.controller.getHtmlLikeDocumentWidget().getDocument()
+        Assert.assertEquals(7, fixture.controller.getHtmlLikeDocumentWidget().getDocument()
                 .getRootElement().getChildren().size());
 
         List<String> texts = collectDocumentTexts(fixture.controller.getHtmlLikeDocumentWidget());
@@ -62,6 +62,9 @@ public class HtmlLikeSmokeDocumentPageControllerTest {
         Assert.assertTrue(containsText(texts, "pink stripe behind glass"));
         Assert.assertTrue(containsText(texts, "amber UI behind this card"));
         Assert.assertTrue(containsText(texts, "Backdrop glass overlap: blur 14px / saturate 140%"));
+        Assert.assertTrue(containsText(texts, "Absolute stretch + inline span probe"));
+        Assert.assertTrue(containsText(texts, "ABS stretch fill: left+right / top+bottom"));
+        Assert.assertTrue(containsText(texts, "amber span"));
         Assert.assertTrue(containsText(texts, "Group opacity probe: overlap should stay flat blue"));
         Assert.assertTrue(containsText(texts, "Stacking context probe: blue cover must stay above red z-99 child"));
         Assert.assertTrue(containsText(texts, "red child z=99"));
@@ -97,11 +100,14 @@ public class HtmlLikeSmokeDocumentPageControllerTest {
         Assert.assertEquals(1.4F, renderContext.backdropCalls.get(0).saturation, 0.001F);
         Assert.assertEquals(12, renderContext.backdropCalls.get(0).cornerRadius);
         Assert.assertTrue(containsFillColor(renderContext.drawCalls, 0xFFFFD166));
+        Assert.assertTrue(containsFillColor(renderContext.drawCalls, 0xFF0EA5E9));
         Assert.assertTrue(containsTextCall(renderContext.textCalls, "ABS OK"));
         assertAbsoluteProbeIsVisibleOutsideStaticWrapper(widget, fixture.textMeasureService);
         assertGroupOpacityProbeKeepsChildColorsOpaque(widget, fixture.textMeasureService);
         assertStackingContextProbeKeepsHighZChildIsolated(widget, fixture.textMeasureService);
         Assert.assertTrue(containsTextCall(renderContext.textCalls, "FIXED viewport probe"));
+        Assert.assertTrue(containsTextCall(renderContext.textCalls, "ABS stretch fill"));
+        Assert.assertTrue(containsTextCall(renderContext.textCalls, "amber span"));
         Assert.assertTrue(containsTextCall(renderContext.textCalls, "TEXT paint command"));
     }
 

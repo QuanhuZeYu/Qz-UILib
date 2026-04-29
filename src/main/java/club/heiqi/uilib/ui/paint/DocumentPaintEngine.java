@@ -6,6 +6,7 @@ import java.util.Objects;
 
 import club.heiqi.uilib.ui.animation.DocumentAnimationProperty;
 import club.heiqi.uilib.ui.animation.DocumentAnimationTimeline;
+import club.heiqi.uilib.ui.dom.ElementNode;
 import club.heiqi.uilib.ui.layout.DocumentEffectChain;
 import club.heiqi.uilib.ui.layout.DocumentEffectType;
 import club.heiqi.uilib.ui.layout.DocumentLayoutBox;
@@ -15,6 +16,7 @@ import club.heiqi.uilib.ui.layout.DocumentScrollState.ScrollbarMetrics;
 import club.heiqi.uilib.ui.layout.DocumentStackingPhase;
 import club.heiqi.uilib.ui.style.ComputedStyle;
 import club.heiqi.uilib.ui.style.UiOverflow;
+import club.heiqi.uilib.ui.style.UiStyleResolver;
 
 /**
  * HTML-like 绘制命令生成器。
@@ -284,14 +286,12 @@ public final class DocumentPaintEngine {
     private static void appendTextCommands(DocumentLayoutBox box, List<DocumentPaintCommand> commands,
             DocumentAnimationTimeline animationTimeline, long currentTimeNanos, float opacity, int offsetX,
             int offsetY) {
-        int color = resolveAnimatedColor(animationTimeline, box, DocumentAnimationProperty.TEXT_COLOR,
-                box.getComputedStyle().getTextColor(), currentTimeNanos);
-        color = applyOpacity(color, opacity);
-        if (isTransparent(color)) {
-            return;
-        }
         for (DocumentLayoutTextRun textRun : box.getTextRuns()) {
             if (textRun.getText().isEmpty() || textRun.getWidth() <= 0 || textRun.getHeight() <= 0) {
+                continue;
+            }
+            int color = resolveTextRunColor(textRun, animationTimeline, currentTimeNanos, opacity);
+            if (isTransparent(color)) {
                 continue;
             }
             commands.add(new DocumentPaintCommand(DocumentPaintCommandType.TEXT, textRun.getOwnerElement(),
@@ -300,12 +300,26 @@ public final class DocumentPaintEngine {
         }
     }
 
+    private static int resolveTextRunColor(DocumentLayoutTextRun textRun, DocumentAnimationTimeline animationTimeline,
+            long currentTimeNanos, float opacity) {
+        ElementNode ownerElement = textRun.getOwnerElement();
+        int baseColor = UiStyleResolver.compute(ownerElement).getTextColor();
+        int color = resolveAnimatedColor(animationTimeline, ownerElement, DocumentAnimationProperty.TEXT_COLOR,
+                baseColor, currentTimeNanos);
+        return applyOpacity(color, opacity);
+    }
+
     private static int resolveAnimatedColor(DocumentAnimationTimeline animationTimeline, DocumentLayoutBox box,
+            DocumentAnimationProperty property, int baseColor, long currentTimeNanos) {
+        return resolveAnimatedColor(animationTimeline, box.getElement(), property, baseColor, currentTimeNanos);
+    }
+
+    private static int resolveAnimatedColor(DocumentAnimationTimeline animationTimeline, ElementNode element,
             DocumentAnimationProperty property, int baseColor, long currentTimeNanos) {
         if (animationTimeline == null) {
             return baseColor;
         }
-        return animationTimeline.resolveColor(box.getElement(), property, baseColor, currentTimeNanos);
+        return animationTimeline.resolveColor(element, property, baseColor, currentTimeNanos);
     }
 
     private static float resolveAnimatedOpacity(DocumentAnimationTimeline animationTimeline, DocumentLayoutBox box,

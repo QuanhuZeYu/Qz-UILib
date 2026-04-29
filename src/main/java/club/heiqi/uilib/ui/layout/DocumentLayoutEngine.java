@@ -25,8 +25,9 @@ import club.heiqi.uilib.ui.text.TextMeasureService;
  *
  * <p>当前实现覆盖元素盒、box model、block flow、最小 flex flow、relative 定位偏移、absolute 脱流定位
  * 与 fixed 视口定位。absolute 元素会相对最近 positioned ancestor 的 content box 定位，没有 positioned
- * ancestor 时回退根 content box；fixed 元素相对当前 HTML-like 视口定位。文本 inline formatting、
- * 多行 flex wrap 和滚动布局会在后续阶段继续扩展。</p>
+ * ancestor 时回退根 content box；fixed 元素相对当前 HTML-like 视口定位。当前已支持 positioned 元素
+ * 在横向或纵向两侧 inset 同时存在且尺寸为 auto 时进行 stretch 求解，并支持包含 inline 元素的
+ * text/span 初版混排；更完整 inline box、多行 flex wrap 和滚动布局会在后续阶段继续扩展。</p>
  */
 public final class DocumentLayoutEngine {
 
@@ -160,11 +161,20 @@ public final class DocumentLayoutEngine {
         List<DocumentLayoutTextRun> textRuns = new ArrayList<DocumentLayoutTextRun>();
         List<ElementNode> absoluteChildren = new ArrayList<ElementNode>();
         List<ElementNode> fixedChildren = new ArrayList<ElementNode>();
+        boolean usesInlineFormatting = hasVisibleInlineElementChild(element);
+        InlineLayoutContext inlineLayoutContext = usesInlineFormatting
+                ? new InlineLayoutContext(contentLeft, contentTop, contentWidth, resolveTextLineHeight(textMeasureService))
+                : null;
         int childFlowTop = contentTop;
         for (DocumentNode child : element.getChildren()) {
             if (child instanceof TextNode) {
-                childFlowTop = appendTextRun((TextNode) child, element, textRuns, contentLeft, childFlowTop,
-                        contentWidth, textMeasureService);
+                if (usesInlineFormatting) {
+                    appendInlineTextRun((TextNode) child, element, textRuns, inlineLayoutContext, textMeasureService);
+                    childFlowTop = inlineLayoutContext.getFlowBottom();
+                } else {
+                    childFlowTop = appendTextRun((TextNode) child, element, textRuns, contentLeft, childFlowTop,
+                            contentWidth, textMeasureService);
+                }
                 continue;
             }
             if (!(child instanceof ElementNode)) {
@@ -183,10 +193,25 @@ public final class DocumentLayoutEngine {
                 absoluteChildren.add(childElement);
                 continue;
             }
+            if (usesInlineFormatting && childStyle.getDisplay() == UiDisplay.INLINE) {
+                appendInlineElementTextRuns(childElement, textRuns, inlineLayoutContext, textMeasureService);
+                childFlowTop = inlineLayoutContext.getFlowBottom();
+                continue;
+            }
+            if (usesInlineFormatting) {
+                childFlowTop = inlineLayoutContext.finishLineAndGetBottom();
+                inlineLayoutContext.reset(childFlowTop);
+            }
             DocumentLayoutBox childBox = layoutElement(childElement, contentLeft, childFlowTop, contentWidth,
                     AUTO_SIZE, AUTO_SIZE, absoluteContainingBlock, fixedContainingBlock, textMeasureService);
             childBoxes.add(childBox);
             childFlowTop = childBox.getMarginBoxBottom();
+            if (usesInlineFormatting) {
+                inlineLayoutContext.reset(childFlowTop);
+            }
+        }
+        if (usesInlineFormatting) {
+            childFlowTop = Math.max(childFlowTop, inlineLayoutContext.finishLineAndGetBottom());
         }
         int contentHeight = Math.max(0, childFlowTop - contentTop);
         appendAbsoluteChildren(childBoxes, absoluteChildren, resolveDirectAbsoluteContainingBlock(
@@ -203,7 +228,7 @@ public final class DocumentLayoutEngine {
         if (text == null || text.isEmpty()) {
             return top;
         }
-        int lineHeight = Math.max(1, toUiTextSize(textMeasureService.getLineHeight()));
+        int lineHeight = resolveTextLineHeight(textMeasureService);
         List<String> lines = textMeasureService.listFormattedStringToWidth(text, toRawTextSize(availableWidth));
         if (lines == null || lines.isEmpty()) {
             return top;
@@ -217,6 +242,69 @@ public final class DocumentLayoutEngine {
             lineTop += lineHeight;
         }
         return lineTop;
+    }
+
+    private static void appendInlineElementTextRuns(ElementNode inlineElement,
+            List<DocumentLayoutTextRun> textRuns, InlineLayoutContext inlineLayoutContext,
+            TextMeasureService textMeasureService) {
+        for (DocumentNode child : inlineElement.getChildren()) {
+            if (child instanceof TextNode) {
+                appendInlineTextRun((TextNode) child, inlineElement, textRuns, inlineLayoutContext, textMeasureService);
+                continue;
+            }
+            if (!(child instanceof ElementNode)) {
+                continue;
+            }
+            ElementNode childElement = (ElementNode) child;
+            ComputedStyle childStyle = UiStyleResolver.compute(childElement);
+            if (childStyle.getDisplay() == UiDisplay.NONE || isOutOfFlowPositioned(childStyle)) {
+                continue;
+            }
+            appendInlineElementTextRuns(childElement, textRuns, inlineLayoutContext, textMeasureService);
+        }
+    }
+
+    private static void appendInlineTextRun(TextNode textNode, ElementNode ownerElement,
+            List<DocumentLayoutTextRun> textRuns, InlineLayoutContext inlineLayoutContext,
+            TextMeasureService textMeasureService) {
+        String remainingText = textNode.getText();
+        if (remainingText == null || remainingText.isEmpty() || inlineLayoutContext.getLineWidth() <= 0) {
+            return;
+        }
+        while (!remainingText.isEmpty()) {
+            if (inlineLayoutContext.getRemainingWidth() <= 0 && inlineLayoutContext.hasLineContent()) {
+                inlineLayoutContext.nextLine();
+            }
+            int remainingWidth = inlineLayoutContext.getRemainingWidth();
+            if (remainingWidth <= 0) {
+                return;
+            }
+            String segment = textMeasureService.trimStringToWidth(remainingText, toRawTextSize(remainingWidth));
+            if (segment == null) {
+                segment = "";
+            }
+            if (segment.isEmpty()) {
+                segment = firstCodePoint(remainingText);
+            }
+            int width = Math.max(0, toUiTextSize(textMeasureService.getStringWidth(segment)));
+            if (width > remainingWidth && inlineLayoutContext.hasLineContent()) {
+                inlineLayoutContext.nextLine();
+                continue;
+            }
+            width = Math.min(width, inlineLayoutContext.getRemainingWidth());
+            textRuns.add(new DocumentLayoutTextRun(textNode, ownerElement, segment, inlineLayoutContext.getCursorLeft(),
+                    inlineLayoutContext.getLineTop(), width, inlineLayoutContext.getLineHeight()));
+            inlineLayoutContext.advance(width);
+            remainingText = remainingText.substring(segment.length());
+            if (!remainingText.isEmpty() && inlineLayoutContext.getRemainingWidth() <= 0) {
+                inlineLayoutContext.nextLine();
+            }
+        }
+    }
+
+    private static String firstCodePoint(String text) {
+        int endIndex = Math.min(text.length(), Character.charCount(text.codePointAt(0)));
+        return text.substring(0, endIndex);
     }
 
     private static LayoutChildrenResult layoutFlexChildren(ElementNode element, ComputedStyle parentStyle,
@@ -491,6 +579,20 @@ public final class DocumentLayoutEngine {
         return children;
     }
 
+    private static boolean hasVisibleInlineElementChild(ElementNode element) {
+        for (DocumentNode child : element.getChildren()) {
+            if (!(child instanceof ElementNode)) {
+                continue;
+            }
+            ElementNode childElement = (ElementNode) child;
+            ComputedStyle childStyle = UiStyleResolver.compute(childElement);
+            if (childStyle.getDisplay() == UiDisplay.INLINE && !isOutOfFlowPositioned(childStyle)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
     private static List<ElementNode> getVisibleAbsoluteElementChildren(ElementNode element) {
         List<ElementNode> children = new ArrayList<ElementNode>();
         for (DocumentNode child : element.getChildren()) {
@@ -544,14 +646,43 @@ public final class DocumentLayoutEngine {
             AbsoluteContainingBlock containingBlock, AbsoluteContainingBlock fixedContainingBlock,
             TextMeasureService textMeasureService) {
         ComputedStyle style = UiStyleResolver.compute(element);
-        DocumentLayoutBox measuredBox = layoutElement(element, 0, 0, containingBlock.width, AUTO_SIZE,
-                AUTO_SIZE, containingBlock, fixedContainingBlock, textMeasureService);
+        int forcedContentWidth = resolveStretchContentWidth(style, containingBlock);
+        int forcedContentHeight = resolveStretchContentHeight(style, containingBlock);
+        DocumentLayoutBox measuredBox = layoutElement(element, 0, 0, containingBlock.width, forcedContentWidth,
+                forcedContentHeight, containingBlock, fixedContainingBlock, textMeasureService);
         int marginBoxWidth = measuredBox.getWidth() + measuredBox.getMargin().getHorizontal();
         int marginBoxHeight = measuredBox.getHeight() + measuredBox.getMargin().getVertical();
         int marginBoxLeft = resolveAbsoluteMarginBoxLeft(style, containingBlock, marginBoxWidth);
         int marginBoxTop = resolveAbsoluteMarginBoxTop(style, containingBlock, marginBoxHeight);
-        return layoutElement(element, marginBoxLeft, marginBoxTop, containingBlock.width, AUTO_SIZE,
-                AUTO_SIZE, containingBlock, fixedContainingBlock, textMeasureService);
+        return layoutElement(element, marginBoxLeft, marginBoxTop, containingBlock.width, forcedContentWidth,
+                forcedContentHeight, containingBlock, fixedContainingBlock, textMeasureService);
+    }
+
+    private static int resolveStretchContentWidth(ComputedStyle style, AbsoluteContainingBlock containingBlock) {
+        if (!isAuto(style.getWidth()) || isAuto(style.getLeft()) || isAuto(style.getRight())) {
+            return AUTO_SIZE;
+        }
+        DocumentLayoutEdges margin = resolveInsets(style.getMargin(), containingBlock.width, false);
+        DocumentLayoutEdges border = resolveUniformEdge(style.getBorderWidth(), containingBlock.width);
+        DocumentLayoutEdges padding = resolveInsets(style.getPadding(), containingBlock.width, true);
+        int leftInset = style.getLeft().resolve(containingBlock.width, 0);
+        int rightInset = style.getRight().resolve(containingBlock.width, 0);
+        return Math.max(0, containingBlock.width - leftInset - rightInset - margin.getHorizontal()
+                - border.getHorizontal() - padding.getHorizontal());
+    }
+
+    private static int resolveStretchContentHeight(ComputedStyle style, AbsoluteContainingBlock containingBlock) {
+        if (!isAuto(style.getHeight()) || isAuto(style.getTop()) || isAuto(style.getBottom())) {
+            return AUTO_SIZE;
+        }
+        int containingHeight = Math.max(0, containingBlock.height);
+        DocumentLayoutEdges margin = resolveInsets(style.getMargin(), containingBlock.width, false);
+        DocumentLayoutEdges border = resolveUniformEdge(style.getBorderWidth(), containingBlock.width);
+        DocumentLayoutEdges padding = resolveInsets(style.getPadding(), containingBlock.width, true);
+        int topInset = style.getTop().resolve(containingHeight, 0);
+        int bottomInset = style.getBottom().resolve(containingHeight, 0);
+        return Math.max(0, containingHeight - topInset - bottomInset - margin.getVertical()
+                - border.getVertical() - padding.getVertical());
     }
 
     private static int resolveAbsoluteMarginBoxLeft(ComputedStyle style,
@@ -692,6 +823,84 @@ public final class DocumentLayoutEngine {
 
     private static int toRawTextSize(int uiSize) {
         return Math.max(1, Math.round(Math.max(1, uiSize) / UI_TEXT_SCALE));
+    }
+
+    private static int resolveTextLineHeight(TextMeasureService textMeasureService) {
+        return Math.max(1, toUiTextSize(textMeasureService.getLineHeight()));
+    }
+
+    /**
+     * block 容器内的首期 inline 文本排版游标。
+     */
+    private static final class InlineLayoutContext {
+
+        private final int lineLeft;
+        private final int lineWidth;
+        private final int lineHeight;
+        private int lineTop;
+        private int cursorLeft;
+        private boolean lineContentPresent;
+
+        private InlineLayoutContext(int lineLeft, int lineTop, int lineWidth, int lineHeight) {
+            this.lineLeft = lineLeft;
+            this.lineTop = lineTop;
+            this.lineWidth = Math.max(0, lineWidth);
+            this.lineHeight = Math.max(1, lineHeight);
+            this.cursorLeft = lineLeft;
+        }
+
+        private int getLineWidth() {
+            return lineWidth;
+        }
+
+        private int getLineHeight() {
+            return lineHeight;
+        }
+
+        private int getLineTop() {
+            return lineTop;
+        }
+
+        private int getCursorLeft() {
+            return cursorLeft;
+        }
+
+        private int getRemainingWidth() {
+            return Math.max(0, lineLeft + lineWidth - cursorLeft);
+        }
+
+        private boolean hasLineContent() {
+            return lineContentPresent;
+        }
+
+        private void advance(int width) {
+            cursorLeft += Math.max(0, width);
+            lineContentPresent = true;
+        }
+
+        private void nextLine() {
+            lineTop += lineHeight;
+            cursorLeft = lineLeft;
+            lineContentPresent = false;
+        }
+
+        private int getFlowBottom() {
+            return lineContentPresent ? lineTop + lineHeight : lineTop;
+        }
+
+        private int finishLineAndGetBottom() {
+            int bottom = getFlowBottom();
+            lineTop = bottom;
+            cursorLeft = lineLeft;
+            lineContentPresent = false;
+            return bottom;
+        }
+
+        private void reset(int nextLineTop) {
+            lineTop = nextLineTop;
+            cursorLeft = lineLeft;
+            lineContentPresent = false;
+        }
     }
 
     private static final class LayoutChildrenResult {

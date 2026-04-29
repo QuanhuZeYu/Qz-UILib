@@ -239,6 +239,42 @@ public class DocumentLayoutEngineTest {
     }
 
     /**
+     * 验证 absolute 定位元素在两侧 inset 同时存在且尺寸为 auto 时会 stretch 到 containing block。
+     */
+    @Test
+    public void shouldStretchAbsolutePositionedElementBetweenInsets() {
+        UiDocument document = UiDocument.create();
+        ElementNode root = document.getRootElement();
+        ElementNode absolute = document.div();
+
+        root.style()
+                .setWidth(UiStyleLength.px(200))
+                .setHeight(UiStyleLength.px(100))
+                .setPadding(UiStyleLength.px(10))
+                .setBorderWidth(UiStyleLength.px(2));
+        absolute.style()
+                .setPosition(UiPosition.ABSOLUTE)
+                .setLeft(UiStyleLength.px(15))
+                .setRight(UiStyleLength.px(25))
+                .setTop(UiStyleLength.px(7))
+                .setBottom(UiStyleLength.px(13))
+                .setMargin(UiStyleInsets.of(UiStyleLength.px(2), UiStyleLength.px(5), UiStyleLength.px(6),
+                        UiStyleLength.px(3)))
+                .setPadding(UiStyleLength.px(4))
+                .setBorderWidth(UiStyleLength.px(1));
+        root.append(absolute);
+
+        DocumentLayoutBox absoluteBox = DocumentLayoutEngine.layout(root, 260, 0).getChildren().get(0);
+
+        Assert.assertEquals(30, absoluteBox.getLeft());
+        Assert.assertEquals(21, absoluteBox.getTop());
+        Assert.assertEquals(152, absoluteBox.getWidth());
+        Assert.assertEquals(72, absoluteBox.getHeight());
+        Assert.assertEquals(142, absoluteBox.getContentWidth());
+        Assert.assertEquals(62, absoluteBox.getContentHeight());
+    }
+
+    /**
      * 验证 fixed 定位元素相对 HTML-like 视口定位，并脱离普通流。
      */
     @Test
@@ -531,6 +567,34 @@ public class DocumentLayoutEngineTest {
         assertTextRun(rootBox.getTextRuns().get(1), "def", 0, 18, 24, 18);
         assertTextRun(rootBox.getTextRuns().get(2), "g", 0, 36, 8, 18);
         Assert.assertEquals(54, rootBox.getHeight());
+    }
+
+    /**
+     * 验证包含 span 的文本会按 inline flow 混排，并保留各文本片段所属元素。
+     */
+    @Test
+    public void shouldLayoutTextAndSpanInInlineFlow() {
+        UiDocument document = UiDocument.create();
+        ElementNode root = document.getRootElement();
+        ElementNode span = document.span();
+
+        root.style().setWidth(UiStyleLength.px(48));
+        root.appendText("AA");
+        span.appendText("BBBB");
+        root.append(span);
+        root.appendText("CC");
+
+        DocumentLayoutBox rootBox = DocumentLayoutEngine.layout(root, 80, 0,
+                new DeterministicTextMeasureService());
+
+        Assert.assertEquals(3, rootBox.getTextRuns().size());
+        assertTextRun(rootBox.getTextRuns().get(0), "AA", 0, 0, 16, 18);
+        assertTextRun(rootBox.getTextRuns().get(1), "BBBB", 16, 0, 32, 18);
+        assertTextRun(rootBox.getTextRuns().get(2), "CC", 0, 18, 16, 18);
+        assertElementUid(root, rootBox.getTextRuns().get(0).getOwnerElement());
+        assertElementUid(span, rootBox.getTextRuns().get(1).getOwnerElement());
+        assertElementUid(root, rootBox.getTextRuns().get(2).getOwnerElement());
+        Assert.assertEquals(36, rootBox.getHeight());
     }
 
     /**
