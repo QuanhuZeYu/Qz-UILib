@@ -122,6 +122,41 @@ public class UiMainLayerSnapshotServiceTest {
     }
 
     /**
+     * 验证采样区域会映射到稳定的 128px tile 网格范围。
+     */
+    @Test
+    public void shouldResolveSnapshotTileRegion() {
+        UiMainLayerSnapshotService.SampleRegion sampleRegion = UiMainLayerSnapshotService.resolveSampleRegion(768,
+                512, 180, 130, 250, 260, 18);
+        UiMainLayerSnapshotService.SampleRegion blockRegion = UiMainLayerSnapshotService.resolveBlockAlignedSampleRegion(
+                768, 512, sampleRegion);
+
+        UiMainLayerSnapshotService.TileRegion tileRegion = UiMainLayerSnapshotService.resolveTileRegion(blockRegion);
+
+        Assert.assertEquals(1, tileRegion.getTileLeft());
+        Assert.assertEquals(0, tileRegion.getTileTop());
+        Assert.assertEquals(3, tileRegion.getTileRight());
+        Assert.assertEquals(3, tileRegion.getTileBottom());
+        Assert.assertEquals(2, tileRegion.getTileWidth());
+        Assert.assertEquals(3, tileRegion.getTileHeight());
+        Assert.assertEquals(6, tileRegion.getTileCount());
+    }
+
+    /**
+     * 验证 tile 数量使用向上取整，覆盖非对齐采样区域的边缘 tile。
+     */
+    @Test
+    public void shouldCountTilesCoveredBySampleRegion() {
+        UiMainLayerSnapshotService.SampleRegion blockRegion = UiMainLayerSnapshotService.resolveBlockAlignedSampleRegion(
+                512, 512, UiMainLayerSnapshotService.resolveSampleRegion(512, 512, 100, 100, 140, 140, 18));
+        UiMainLayerSnapshotService.SampleRegion unevenRegion = UiMainLayerSnapshotService.resolveSampleRegion(512,
+                512, 128, 128, 129, 129, 0);
+
+        Assert.assertEquals(4, UiMainLayerSnapshotService.resolveTileCount(blockRegion));
+        Assert.assertEquals(4, UiMainLayerSnapshotService.resolveTileCount(unevenRegion));
+    }
+
+    /**
      * 验证较大的 block 区域可作为同帧临时 atlas 覆盖后续较小采样区域。
      */
     @Test

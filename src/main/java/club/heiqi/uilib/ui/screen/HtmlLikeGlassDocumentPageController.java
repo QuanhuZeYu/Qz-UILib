@@ -178,6 +178,7 @@ final class HtmlLikeGlassDocumentPageController extends DocumentPageController {
         samplingField.append(glassSlab);
 
         appendNestedGlassRegressionScene(document, stage);
+        appendTileAtlasProbeScene(document, stage);
     }
 
     /**
@@ -275,6 +276,72 @@ final class HtmlLikeGlassDocumentPageController extends DocumentPageController {
         nestedCanvas.append(sceneLevelGlass);
     }
 
+    /**
+     * 追加 tile atlas 诊断区，用于在游戏内观察 block 分桶、tile 计数和 atlas 覆盖诊断。
+     *
+     * @param document 文档实例
+     * @param stage 父级测试容器
+     */
+    private static void appendTileAtlasProbeScene(UiDocument document, ElementNode stage) {
+        ElementNode probeScene = document.div();
+        probeScene.style()
+                .setHeight(UiStyleLength.px(334))
+                .setMargin(UiStyleInsets.of(UiStyleLength.px(18), UiStyleLength.px(0), UiStyleLength.px(0),
+                        UiStyleLength.px(0)))
+                .setPadding(UiStyleLength.px(14))
+                .setBackgroundColor(0xFF132033)
+                .setBorderColor(0xFF0EA5E9)
+                .setBorderWidth(UiStyleLength.px(1))
+                .setBorderRadius(UiStyleLength.px(18))
+                .setTextColor(0xFFE0F2FE)
+                .setOverflowX(UiOverflow.HIDDEN)
+                .setOverflowY(UiOverflow.HIDDEN);
+        probeScene.appendText("Tile atlas probe / block128 tile diagnostics");
+        probeScene.appendText("Header Backdrop path should include region=..., tiles=N reused=M captured=K, and filter=...");
+        stage.append(probeScene);
+
+        ElementNode probeCanvas = document.div();
+        probeCanvas.style()
+                .setHeight(UiStyleLength.px(238))
+                .setMargin(UiStyleInsets.of(UiStyleLength.px(10), UiStyleLength.px(0), UiStyleLength.px(0),
+                        UiStyleLength.px(0)))
+                .setOverflowX(UiOverflow.HIDDEN)
+                .setOverflowY(UiOverflow.HIDDEN);
+        probeScene.append(probeCanvas);
+
+        appendSampleRow(document, probeCanvas, 0xFF0284C7, 0xFF65A30D, 0xFFCA8A04,
+                "Tile grid row A / watch copied tile count");
+        appendSampleRow(document, probeCanvas, 0xFFBE185D, 0xFF7C3AED, 0xFF0F766E,
+                "Tile grid row B / atlas coverage target");
+
+        ElementNode sourceGlass = createGlassBlock(document, 0x34FFFFFF, 0xCCBAE6FD, 18, 120,
+                "Atlas source slab", "Large source block for tile coverage");
+        sourceGlass.style()
+                .setWidth(UiStyleLength.percent(0.62F))
+                .setHeight(UiStyleLength.px(116))
+                .setMargin(UiStyleInsets.of(UiStyleLength.px(-154), UiStyleLength.px(0), UiStyleLength.px(0),
+                        UiStyleLength.px(24)));
+        probeCanvas.append(sourceGlass);
+
+        ElementNode coveredTargetGlass = createGlassBlock(document, 0x40C4B5FD, 0xCCEDE9FE, 18, 120,
+                "Atlas target inside source", "If read revision is stable, expect atlas-block128");
+        coveredTargetGlass.style()
+                .setWidth(UiStyleLength.percent(0.32F))
+                .setHeight(UiStyleLength.px(58))
+                .setMargin(UiStyleInsets.of(UiStyleLength.px(-96), UiStyleLength.px(0), UiStyleLength.px(0),
+                        UiStyleLength.percent(0.22F)));
+        probeCanvas.append(coveredTargetGlass);
+
+        ElementNode tileCountTargetGlass = createGlassBlock(document, 0x40BAE6FD, 0xCCE0F2FE, 36, 125,
+                "Tile count target", "Last probe updates header with tiles=... and downsample filter");
+        tileCountTargetGlass.style()
+                .setWidth(UiStyleLength.percent(0.38F))
+                .setHeight(UiStyleLength.px(64))
+                .setMargin(UiStyleInsets.of(UiStyleLength.px(-64), UiStyleLength.px(0), UiStyleLength.px(0),
+                        UiStyleLength.percent(0.56F)));
+        probeCanvas.append(tileCountTargetGlass);
+    }
+
     private static void appendSampleRow(UiDocument document, ElementNode parent, int firstColor, int secondColor,
             int thirdColor, String label) {
         ElementNode row = document.div();
@@ -354,7 +421,7 @@ final class HtmlLikeGlassDocumentPageController extends DocumentPageController {
                 .setTextColor(0xFFCBD5E1)
                 .setOverflowX(UiOverflow.HIDDEN)
                 .setOverflowY(UiOverflow.HIDDEN);
-        notes.appendText("Validation notes: resize the screen, compare the large slab against the uncovered color grid, and watch for clip leaks or sampling offsets.");
+        notes.appendText("Validation notes: resize the screen, compare the large slab against the uncovered color grid, and watch Backdrop path for region=..., tiles=..., filter=..., clip leaks or sampling offsets.");
         root.append(notes);
     }
 

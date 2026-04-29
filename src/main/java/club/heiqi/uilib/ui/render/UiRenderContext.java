@@ -540,7 +540,7 @@ public class UiRenderContext {
      * 如果页面壳提前绘制了一张已模糊底图，它会作为普通 UI 背景被采样；否则只处理 UI 自身内容。
      * 当前实现优先使用 GLSL 对同帧 UI 主层快照纹理做平滑采样，失败时回退为固定管线近似 blur，
      * 快照复制或绘制不可用时再回退为伪玻璃 tint。诊断中的 `region=atlas-*` 表示当前采样复用了同帧
-     * 已捕获且完整覆盖当前区域的较大 block 快照。</p>
+     * 已捕获且完整覆盖当前区域的较大 block 快照，`tiles=...` 用于观察 tile 分桶命中情况。</p>
      *
      * @param left 左侧坐标
      * @param top 顶部坐标
@@ -1035,7 +1035,8 @@ public class UiRenderContext {
         return (snapshot.isReused() ? "reused" : "captured") + " " + snapshot.getWidth() + "x"
                 + snapshot.getHeight() + " @" + snapshot.getSampleLeft() + "," + snapshot.getSampleTop()
                 + " fbo=" + snapshot.getReadFramebufferId() + " rev=" + snapshot.getContentRevision()
-                + " region=" + snapshot.getRegionDetail() + " filter=" + snapshot.getFilterDetail();
+                + " region=" + snapshot.getRegionDetail() + " " + snapshot.getTileDetail()
+                + " filter=" + snapshot.getFilterDetail();
     }
 
     private static float resolveBackdropShaderRadius(int blurRadius, int downsampleFactor) {

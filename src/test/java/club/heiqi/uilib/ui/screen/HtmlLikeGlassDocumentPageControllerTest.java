@@ -51,6 +51,9 @@ public class HtmlLikeGlassDocumentPageControllerTest {
         Assert.assertTrue(containsText(texts, "Middle glass shell"));
         Assert.assertTrue(containsText(texts, "Inner glass shell"));
         Assert.assertTrue(containsText(texts, "Scene level glass"));
+        Assert.assertTrue(containsText(texts, "Tile atlas probe / block128 tile diagnostics"));
+        Assert.assertTrue(containsText(texts, "Atlas target inside source"));
+        Assert.assertTrue(containsText(texts, "Tile count target"));
         Assert.assertTrue(containsText(texts, "visual regressions are easy to see"));
     }
 
@@ -85,7 +88,7 @@ public class HtmlLikeGlassDocumentPageControllerTest {
         widget.render(renderContext);
 
         Assert.assertFalse(renderContext.drawCalls.isEmpty());
-        Assert.assertEquals(7, renderContext.backdropCalls.size());
+        Assert.assertEquals(10, renderContext.backdropCalls.size());
         BackdropCall backdropCall = renderContext.backdropCalls.get(0);
         Assert.assertEquals(36, backdropCall.blurRadius);
         Assert.assertEquals(1.25F, backdropCall.saturation, 0.001F);
@@ -96,11 +99,17 @@ public class HtmlLikeGlassDocumentPageControllerTest {
         assertBackdropCall(renderContext.backdropCalls.get(4), 10, 1.12F);
         assertBackdropCall(renderContext.backdropCalls.get(5), 10, 1.12F);
         assertBackdropCall(renderContext.backdropCalls.get(6), 12, 1.14F);
+        assertBackdropCall(renderContext.backdropCalls.get(7), 18, 1.20F);
+        assertBackdropCall(renderContext.backdropCalls.get(8), 18, 1.20F);
+        assertBackdropCall(renderContext.backdropCalls.get(9), 36, 1.25F);
         Assert.assertTrue(backdropCall.right - backdropCall.left >= 680);
         Assert.assertTrue(backdropCall.bottom - backdropCall.top >= 280);
         Assert.assertTrue(containsTextCall(renderContext.textCalls, "Large backdrop slab"));
         Assert.assertTrue(containsTextCall(renderContext.textCalls, "Nested level 3"));
         Assert.assertTrue(containsTextCall(renderContext.textCalls, "Direct canvas sibling"));
+        Assert.assertTrue(containsTextCall(renderContext.textCalls, "Tile atlas probe"));
+        Assert.assertTrue(containsTextCall(renderContext.textCalls, "tiles=N reused=M captured=K"));
+        Assert.assertTrue(containsTextCall(renderContext.textCalls, "Last probe updates header with tiles="));
     }
 
     private static List<String> collectDocumentTexts(HtmlLikeDocumentWidget widget) {

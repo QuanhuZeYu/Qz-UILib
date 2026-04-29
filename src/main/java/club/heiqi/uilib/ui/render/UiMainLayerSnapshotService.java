@@ -168,9 +168,10 @@ public final class UiMainLayerSnapshotService {
             SampleRegion capturedRegion = toSampleRegion(capturedSnapshot);
             String matchedRegionDetail = capturedSnapshotMatch.exactMatch ? capturedSnapshot.regionDetail
                     : formatAtlasRegionDetail(capturedSnapshot.regionDetail);
+            String tileDetail = formatTileDetail(reusableRegion, true);
             return Snapshot.reused(capturedSnapshot.textureId, capturedRegion, readFramebufferId, contentRevision,
                     capturedSnapshot.textureWidth, capturedSnapshot.textureHeight, capturedSnapshot.downsampleFactor,
-                    capturedSnapshot.filterDetail, matchedRegionDetail);
+                    capturedSnapshot.filterDetail, matchedRegionDetail, tileDetail);
         }
 
         FrameSnapshot snapshot = findReusableSnapshot();
@@ -178,13 +179,14 @@ public final class UiMainLayerSnapshotService {
             snapshot = new FrameSnapshot();
             snapshots.add(snapshot);
         }
+        String tileDetail = formatTileDetail(reusableRegion, false);
         if (!captureSnapshot(snapshot, screenHeight, reusableRegion, readFramebufferId, contentRevision,
-                downsampleFactor, blurRadius, regionDetail)) {
+                downsampleFactor, blurRadius, regionDetail, tileDetail)) {
             return null;
         }
         return Snapshot.captured(snapshot.textureId, reusableRegion, readFramebufferId, contentRevision,
                 snapshot.textureWidth, snapshot.textureHeight, snapshot.downsampleFactor, snapshot.filterDetail,
-                snapshot.regionDetail);
+                snapshot.regionDetail, snapshot.tileDetail);
     }
 
     /**
@@ -347,6 +349,33 @@ public final class UiMainLayerSnapshotService {
         return Math.max(1, Math.min(8, Math.round((float) blurRadius / (float) (downsampleFactor * 5))));
     }
 
+    /**
+     * 将采样区域映射到 128px tile 网格。
+     *
+     * @param sampleRegion 采样区域
+     * @return tile 区域；无效区域返回空 tile 区域
+     */
+    static TileRegion resolveTileRegion(SampleRegion sampleRegion) {
+        if (sampleRegion == null || sampleRegion.getRight() <= sampleRegion.getLeft()
+                || sampleRegion.getBottom() <= sampleRegion.getTop()) {
+            return new TileRegion(0, 0, 0, 0);
+        }
+        return new TileRegion(sampleRegion.getLeft() / SNAPSHOT_BLOCK_SIZE,
+                sampleRegion.getTop() / SNAPSHOT_BLOCK_SIZE,
+                alignUp(sampleRegion.getRight(), SNAPSHOT_BLOCK_SIZE) / SNAPSHOT_BLOCK_SIZE,
+                alignUp(sampleRegion.getBottom(), SNAPSHOT_BLOCK_SIZE) / SNAPSHOT_BLOCK_SIZE);
+    }
+
+    /**
+     * 计算采样区域覆盖的 tile 数量。
+     *
+     * @param sampleRegion 采样区域
+     * @return tile 数量
+     */
+    static int resolveTileCount(SampleRegion sampleRegion) {
+        return resolveTileRegion(sampleRegion).getTileCount();
+    }
+
     private FrameSnapshotMatch findCapturedSnapshot(int readFramebufferId, SampleRegion sampleRegion,
             int contentRevision, int downsampleFactor, int blurRadius) {
         FrameSnapshot containingSnapshot = null;
@@ -382,7 +411,7 @@ public final class UiMainLayerSnapshotService {
 
     private boolean captureSnapshot(FrameSnapshot snapshot, int screenHeight, SampleRegion sampleRegion,
             int readFramebufferId, int contentRevision, int requestedDownsampleFactor, int blurRadius,
-            String regionDetail) {
+            String regionDetail, String tileDetail) {
         int width = sampleRegion.getWidth();
         int height = sampleRegion.getHeight();
         int previousTexture = 0;
@@ -448,6 +477,7 @@ public final class UiMainLayerSnapshotService {
             snapshot.filterPassRadius = 0;
             snapshot.filterDetail = "raw";
             snapshot.regionDetail = regionDetail;
+            snapshot.tileDetail = tileDetail;
             if (downsampleFactor > 1) {
                 if (downsampleSnapshot(snapshot, downsampleFactor, blurRadius)) {
                     snapshot.filterDetail = "downsample" + snapshot.downsampleFactor + " "
@@ -745,6 +775,13 @@ public final class UiMainLayerSnapshotService {
         return "atlas-" + regionDetail;
     }
 
+    private static String formatTileDetail(SampleRegion sampleRegion, boolean reused) {
+        int tileCount = resolveTileCount(sampleRegion);
+        int reusedTileCount = reused ? tileCount : 0;
+        int capturedTileCount = reused ? 0 : tileCount;
+        return "tiles=" + tileCount + " reused=" + reusedTileCount + " captured=" + capturedTileCount;
+    }
+
     /**
      * 判断外层采样区域是否完整覆盖内层采样区域。
      *
@@ -836,11 +873,12 @@ public final class UiMainLayerSnapshotService {
         private final int downsampleFactor;
         private final String filterDetail;
         private final String regionDetail;
+        private final String tileDetail;
         private final boolean reused;
 
         private Snapshot(int textureId, int sampleLeft, int sampleTop, int width, int height,
                 int readFramebufferId, int contentRevision, int textureWidth, int textureHeight,
-                int downsampleFactor, String filterDetail, String regionDetail, boolean reused) {
+                int downsampleFactor, String filterDetail, String regionDetail, String tileDetail, boolean reused) {
             this.textureId = textureId;
             this.sampleLeft = sampleLeft;
             this.sampleTop = sampleTop;
@@ -853,23 +891,24 @@ public final class UiMainLayerSnapshotService {
             this.downsampleFactor = downsampleFactor;
             this.filterDetail = filterDetail == null ? "raw" : filterDetail;
             this.regionDetail = regionDetail == null ? "exact" : regionDetail;
+            this.tileDetail = tileDetail == null ? "tiles=0 reused=0 captured=0" : tileDetail;
             this.reused = reused;
         }
 
         private static Snapshot captured(int textureId, SampleRegion sampleRegion, int readFramebufferId,
                 int contentRevision, int textureWidth, int textureHeight, int downsampleFactor, String filterDetail,
-                String regionDetail) {
+                String regionDetail, String tileDetail) {
             return new Snapshot(textureId, sampleRegion.getLeft(), sampleRegion.getTop(), sampleRegion.getWidth(),
                     sampleRegion.getHeight(), readFramebufferId, contentRevision, textureWidth, textureHeight,
-                    downsampleFactor, filterDetail, regionDetail, false);
+                    downsampleFactor, filterDetail, regionDetail, tileDetail, false);
         }
 
         private static Snapshot reused(int textureId, SampleRegion sampleRegion, int readFramebufferId,
                 int contentRevision, int textureWidth, int textureHeight, int downsampleFactor, String filterDetail,
-                String regionDetail) {
+                String regionDetail, String tileDetail) {
             return new Snapshot(textureId, sampleRegion.getLeft(), sampleRegion.getTop(), sampleRegion.getWidth(),
                     sampleRegion.getHeight(), readFramebufferId, contentRevision, textureWidth, textureHeight,
-                    downsampleFactor, filterDetail, regionDetail, true);
+                    downsampleFactor, filterDetail, regionDetail, tileDetail, true);
         }
 
         int getTextureId() {
@@ -920,8 +959,58 @@ public final class UiMainLayerSnapshotService {
             return regionDetail;
         }
 
+        String getTileDetail() {
+            return tileDetail;
+        }
+
         boolean isReused() {
             return reused;
+        }
+    }
+
+    /**
+     * Backdrop 采样区域对应的 tile 网格范围。
+     */
+    static final class TileRegion {
+
+        private final int tileLeft;
+        private final int tileTop;
+        private final int tileRight;
+        private final int tileBottom;
+
+        private TileRegion(int tileLeft, int tileTop, int tileRight, int tileBottom) {
+            this.tileLeft = tileLeft;
+            this.tileTop = tileTop;
+            this.tileRight = tileRight;
+            this.tileBottom = tileBottom;
+        }
+
+        int getTileLeft() {
+            return tileLeft;
+        }
+
+        int getTileTop() {
+            return tileTop;
+        }
+
+        int getTileRight() {
+            return tileRight;
+        }
+
+        int getTileBottom() {
+            return tileBottom;
+        }
+
+        int getTileWidth() {
+            return Math.max(0, tileRight - tileLeft);
+        }
+
+        int getTileHeight() {
+            return Math.max(0, tileBottom - tileTop);
+        }
+
+        int getTileCount() {
+            return getTileWidth() * getTileHeight();
         }
     }
 
@@ -997,6 +1086,7 @@ public final class UiMainLayerSnapshotService {
         private int filterPassRadius;
         private String filterDetail = "raw";
         private String regionDetail = "exact";
+        private String tileDetail = "tiles=0 reused=0 captured=0";
         private int capturedFrameId;
         private int activeUseCount;
     }
