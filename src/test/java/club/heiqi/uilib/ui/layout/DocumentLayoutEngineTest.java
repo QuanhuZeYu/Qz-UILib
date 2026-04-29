@@ -239,6 +239,42 @@ public class DocumentLayoutEngineTest {
     }
 
     /**
+     * 验证 fixed 定位元素相对 HTML-like 视口定位，并脱离普通流。
+     */
+    @Test
+    public void shouldLayoutFixedPositionedElementAgainstViewport() {
+        UiDocument document = UiDocument.create();
+        ElementNode root = document.getRootElement();
+        ElementNode fixed = document.div();
+        ElementNode following = document.div();
+
+        root.style()
+                .setWidth(UiStyleLength.px(120))
+                .setPadding(UiStyleLength.px(10))
+                .setBorderWidth(UiStyleLength.px(2));
+        fixed.style()
+                .setWidth(UiStyleLength.px(30))
+                .setHeight(UiStyleLength.px(12))
+                .setPosition(UiPosition.FIXED)
+                .setTop(UiStyleLength.px(7))
+                .setRight(UiStyleLength.px(9));
+        following.style().setHeight(UiStyleLength.px(16));
+        root.append(fixed).append(following);
+
+        DocumentLayoutBox rootBox = DocumentLayoutEngine.layout(root, 200, 100);
+        DocumentLayoutBox fixedBox = rootBox.getChildren().get(0);
+        DocumentLayoutBox followingBox = rootBox.getChildren().get(1);
+
+        Assert.assertEquals(161, fixedBox.getLeft());
+        Assert.assertEquals(7, fixedBox.getTop());
+        Assert.assertEquals(30, fixedBox.getWidth());
+        Assert.assertEquals(12, fixedBox.getHeight());
+        Assert.assertEquals(12, followingBox.getLeft());
+        Assert.assertEquals(12, followingBox.getTop());
+        Assert.assertEquals(40, rootBox.getHeight());
+    }
+
+    /**
      * 验证 absolute 定位元素会相对最近的 positioned ancestor，而不是直接静态父元素。
      */
     @Test

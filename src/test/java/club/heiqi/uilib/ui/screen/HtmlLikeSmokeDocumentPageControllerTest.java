@@ -47,12 +47,13 @@ public class HtmlLikeSmokeDocumentPageControllerTest {
         Assert.assertTrue(blocks.get(0) instanceof HtmlLikeDocumentWidget);
         Assert.assertSame(blocks.get(0), fixture.controller.getHtmlLikeDocumentWidget());
         Assert.assertTrue(fixture.controller.getHtmlLikeDocumentWidget().isViewportRootScrollingEnabled());
-        Assert.assertEquals(5, fixture.controller.getHtmlLikeDocumentWidget().getDocument()
+        Assert.assertEquals(6, fixture.controller.getHtmlLikeDocumentWidget().getDocument()
                 .getRootElement().getChildren().size());
 
         List<String> texts = collectDocumentTexts(fixture.controller.getHtmlLikeDocumentWidget());
         Assert.assertTrue(containsText(texts, "HTML-like Smoke Lab"));
         Assert.assertTrue(containsText(texts, "UiDocument -> style -> layout -> paint command -> UiRenderContext"));
+        Assert.assertTrue(containsText(texts, "FIXED viewport probe"));
         Assert.assertTrue(containsText(texts, "Same-layer sampling grid"));
         Assert.assertTrue(containsText(texts, "ABS containing probe"));
         Assert.assertTrue(containsText(texts, "static wrapper is not anchor"));
@@ -100,6 +101,7 @@ public class HtmlLikeSmokeDocumentPageControllerTest {
         assertAbsoluteProbeIsVisibleOutsideStaticWrapper(widget, fixture.textMeasureService);
         assertGroupOpacityProbeKeepsChildColorsOpaque(widget, fixture.textMeasureService);
         assertStackingContextProbeKeepsHighZChildIsolated(widget, fixture.textMeasureService);
+        Assert.assertTrue(containsTextCall(renderContext.textCalls, "FIXED viewport probe"));
         Assert.assertTrue(containsTextCall(renderContext.textCalls, "TEXT paint command"));
     }
 

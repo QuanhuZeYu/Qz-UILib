@@ -133,6 +133,38 @@ public class DocumentHitTestEngineTest {
     }
 
     /**
+     * 验证 fixed 元素在根滚动后仍按视口固定位置参与命中。
+     */
+    @Test
+    public void shouldHitFixedPositionedChildAfterRootScroll() {
+        UiDocument document = UiDocument.create();
+        ElementNode root = document.getRootElement();
+        ElementNode spacer = document.div();
+        ElementNode fixed = document.div();
+
+        root.style()
+                .setWidth(UiStyleLength.px(100))
+                .setHeight(UiStyleLength.px(50))
+                .setOverflowY(UiOverflow.AUTO);
+        spacer.style().setHeight(UiStyleLength.px(140));
+        fixed.style()
+                .setWidth(UiStyleLength.px(30))
+                .setHeight(UiStyleLength.px(12))
+                .setPosition(UiPosition.FIXED)
+                .setTop(UiStyleLength.px(6))
+                .setLeft(UiStyleLength.px(10));
+        root.append(spacer).append(fixed);
+
+        DocumentLayoutBox rootBox = DocumentLayoutEngine.layout(root, 100, 50);
+        DocumentScrollState scrollState = new DocumentScrollState();
+        scrollState.updateFromLayout(rootBox);
+        Assert.assertTrue(scrollState.setScrollOffset(root, 0, 36));
+
+        assertHitElement(fixed, rootBox, scrollState, 12, 8);
+        assertHitElement(spacer, rootBox, scrollState, 12, 24);
+    }
+
+    /**
      * 验证负 z-index 元素在普通流元素下方命中。
      */
     @Test
@@ -260,6 +292,13 @@ public class DocumentHitTestEngineTest {
 
     private static void assertHitElement(ElementNode expectedElement, DocumentLayoutBox rootBox, int x, int y) {
         ElementNode actualElement = DocumentHitTestEngine.hitTest(rootBox, null, x, y);
+        Assert.assertNotNull(actualElement);
+        Assert.assertEquals(expectedElement.__getElementUid(), actualElement.__getElementUid());
+    }
+
+    private static void assertHitElement(ElementNode expectedElement, DocumentLayoutBox rootBox,
+            DocumentScrollState scrollState, int x, int y) {
+        ElementNode actualElement = DocumentHitTestEngine.hitTest(rootBox, scrollState, x, y);
         Assert.assertNotNull(actualElement);
         Assert.assertEquals(expectedElement.__getElementUid(), actualElement.__getElementUid());
     }

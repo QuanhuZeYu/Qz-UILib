@@ -140,6 +140,52 @@ public class DocumentPaintEngineTest {
     }
 
     /**
+     * 验证 fixed 子元素在根滚动后仍按视口固定位置绘制。
+     */
+    @Test
+    public void shouldPaintFixedPositionedChildAtViewportPositionAfterRootScroll() {
+        UiDocument document = UiDocument.create();
+        ElementNode root = document.getRootElement();
+        ElementNode spacer = document.div();
+        ElementNode fixed = document.div();
+
+        root.style()
+                .setWidth(UiStyleLength.px(100))
+                .setHeight(UiStyleLength.px(50))
+                .setOverflowX(UiOverflow.HIDDEN)
+                .setOverflowY(UiOverflow.AUTO)
+                .setBackgroundColor(0xFF101820);
+        spacer.style()
+                .setHeight(UiStyleLength.px(140))
+                .setBackgroundColor(0xFF0000FF);
+        fixed.style()
+                .setWidth(UiStyleLength.px(30))
+                .setHeight(UiStyleLength.px(12))
+                .setPosition(UiPosition.FIXED)
+                .setTop(UiStyleLength.px(6))
+                .setLeft(UiStyleLength.px(10))
+                .setBackgroundColor(0xFFFF0000);
+        root.append(spacer).append(fixed);
+
+        DocumentLayoutBox rootBox = DocumentLayoutEngine.layout(root, 100, 50);
+        DocumentScrollState scrollState = new DocumentScrollState();
+        scrollState.updateFromLayout(rootBox);
+        Assert.assertTrue(scrollState.setScrollOffset(root, 0, 36));
+        List<DocumentPaintCommand> commands = withoutScrollbarCommands(DocumentPaintEngine.buildPaintCommands(rootBox,
+                scrollState, 1L));
+
+        Assert.assertEquals(5, commands.size());
+        assertCommand(commands.get(0), DocumentPaintCommandType.BACKGROUND, root, 0, 0, 100, 50, 0xFF101820,
+                0, 0);
+        assertCommand(commands.get(1), DocumentPaintCommandType.CLIP_START, root, 0, 0, 100, 50, 0, 0, 0);
+        assertCommand(commands.get(2), DocumentPaintCommandType.BACKGROUND, spacer, 0, -36, 100, 104, 0xFF0000FF,
+                0, 0);
+        assertCommand(commands.get(3), DocumentPaintCommandType.BACKGROUND, fixed, 10, 6, 40, 18, 0xFFFF0000,
+                0, 0);
+        assertCommand(commands.get(4), DocumentPaintCommandType.CLIP_END, root, 0, 0, 100, 50, 0, 0, 0);
+    }
+
+    /**
      * 验证非 context 祖先 opacity 会应用到标准绘制命令颜色，当前 context 的 opacity 由离屏合成处理。
      */
     @Test
@@ -970,6 +1016,18 @@ public class DocumentPaintEngineTest {
         for (DocumentPaintCommand command : commands) {
             if (command.getType() == DocumentPaintCommandType.PAINT_CONTEXT_START
                     || command.getType() == DocumentPaintCommandType.PAINT_CONTEXT_END) {
+                continue;
+            }
+            filteredCommands.add(command);
+        }
+        return filteredCommands;
+    }
+
+    private static List<DocumentPaintCommand> withoutScrollbarCommands(List<DocumentPaintCommand> commands) {
+        List<DocumentPaintCommand> filteredCommands = new ArrayList<DocumentPaintCommand>();
+        for (DocumentPaintCommand command : commands) {
+            if (command.getType() == DocumentPaintCommandType.SCROLLBAR_TRACK
+                    || command.getType() == DocumentPaintCommandType.SCROLLBAR_THUMB) {
                 continue;
             }
             filteredCommands.add(command);

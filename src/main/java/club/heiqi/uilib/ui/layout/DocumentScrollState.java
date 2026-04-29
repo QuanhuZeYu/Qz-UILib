@@ -464,6 +464,9 @@ public final class DocumentScrollState {
             contentBottom = Math.max(contentBottom, textRun.getBottom());
         }
         for (DocumentLayoutBox child : box.getChildren()) {
+            if (child.isFixedPositioned()) {
+                continue;
+            }
             contentRight = Math.max(contentRight, child.getMarginBoxRight() + child.getPositionOffsetX());
             contentBottom = Math.max(contentBottom, child.getMarginBoxBottom() + child.getPositionOffsetY());
         }
@@ -494,8 +497,10 @@ public final class DocumentScrollState {
 
     private DocumentLayoutBox findScrollableBoxAt(DocumentLayoutBox box, int mouseX, int mouseY, int offsetX,
             int offsetY, boolean searchStackingContext) {
-        int boxOffsetX = offsetX + box.getPositionOffsetX();
-        int boxOffsetY = offsetY + box.getPositionOffsetY();
+        int baseOffsetX = box.isFixedPositioned() ? 0 : offsetX;
+        int baseOffsetY = box.isFixedPositioned() ? 0 : offsetY;
+        int boxOffsetX = baseOffsetX + box.getPositionOffsetX();
+        int boxOffsetY = baseOffsetY + box.getPositionOffsetY();
         int viewportLeft = box.getContentLeft() + boxOffsetX;
         int viewportTop = box.getContentTop() + boxOffsetY;
         int viewportRight = viewportLeft + box.getContentWidth();
@@ -584,8 +589,10 @@ public final class DocumentScrollState {
 
     private ScrollbarHit findScrollbarHit(DocumentLayoutBox rootBox, DocumentLayoutBox box, int mouseX, int mouseY,
             int offsetX, int offsetY, long currentTimeNanos, boolean searchStackingContext) {
-        int boxOffsetX = offsetX + box.getPositionOffsetX();
-        int boxOffsetY = offsetY + box.getPositionOffsetY();
+        int baseOffsetX = box.isFixedPositioned() ? 0 : offsetX;
+        int baseOffsetY = box.isFixedPositioned() ? 0 : offsetY;
+        int boxOffsetX = baseOffsetX + box.getPositionOffsetX();
+        int boxOffsetY = baseOffsetY + box.getPositionOffsetY();
         ScrollbarHit currentHit = findCurrentScrollbarHit(rootBox, box, mouseX, mouseY, boxOffsetX, boxOffsetY,
                 currentTimeNanos);
         if (currentHit != null) {
@@ -685,8 +692,10 @@ public final class DocumentScrollState {
         if (activeScrollbarDrag == null) {
             return null;
         }
-        int boxOffsetX = offsetX + box.getPositionOffsetX();
-        int boxOffsetY = offsetY + box.getPositionOffsetY();
+        int baseOffsetX = box.isFixedPositioned() ? 0 : offsetX;
+        int baseOffsetY = box.isFixedPositioned() ? 0 : offsetY;
+        int boxOffsetX = baseOffsetX + box.getPositionOffsetX();
+        int boxOffsetY = baseOffsetY + box.getPositionOffsetY();
         if (box.getElement() == activeScrollbarDrag.element) {
             boolean hasVerticalScrollbar = getMaxScrollTop(box.getElement()) > 0
                     && box.getComputedStyle().getOverflowY() == UiOverflow.AUTO;
@@ -701,7 +710,8 @@ public final class DocumentScrollState {
         int childOffsetX = boxOffsetX - getScrollLeft(box.getElement());
         int childOffsetY = boxOffsetY - getScrollTop(box.getElement());
         for (DocumentLayoutBox child : box.getChildrenInStackingOrder()) {
-            ScrollbarHit hit = findActiveScrollbar(rootBox, child, childOffsetX, childOffsetY, currentTimeNanos);
+            ScrollbarHit hit = findActiveScrollbar(rootBox, child, resolveDescendantBaseOffsetX(childOffsetX, child),
+                    resolveDescendantBaseOffsetY(childOffsetY, child), currentTimeNanos);
             if (hit != null) {
                 return hit;
             }
@@ -719,10 +729,28 @@ public final class DocumentScrollState {
             if (childStackingContext) {
                 continue;
             }
-            int grandChildOffsetX = childOffsetX + child.getPositionOffsetX() - getScrollLeft(child.getElement());
-            int grandChildOffsetY = childOffsetY + child.getPositionOffsetY() - getScrollTop(child.getElement());
+            int grandChildOffsetX = resolveChildOffsetX(childOffsetX, child);
+            int grandChildOffsetY = resolveChildOffsetY(childOffsetY, child);
             collectStackingPhaseItems(child, items, grandChildOffsetX, grandChildOffsetY, phase);
         }
+    }
+
+    private int resolveDescendantBaseOffsetX(int offsetX, DocumentLayoutBox child) {
+        return child.isFixedPositioned() ? 0 : offsetX;
+    }
+
+    private int resolveDescendantBaseOffsetY(int offsetY, DocumentLayoutBox child) {
+        return child.isFixedPositioned() ? 0 : offsetY;
+    }
+
+    private int resolveChildOffsetX(int childOffsetX, DocumentLayoutBox child) {
+        int baseOffsetX = child.isFixedPositioned() ? 0 : childOffsetX;
+        return baseOffsetX + child.getPositionOffsetX() - getScrollLeft(child.getElement());
+    }
+
+    private int resolveChildOffsetY(int childOffsetY, DocumentLayoutBox child) {
+        int baseOffsetY = child.isFixedPositioned() ? 0 : childOffsetY;
+        return baseOffsetY + child.getPositionOffsetY() - getScrollTop(child.getElement());
     }
 
     private void sortStackingItemsIfNeeded(List<StackingScrollItem> items, DocumentStackingPhase phase) {

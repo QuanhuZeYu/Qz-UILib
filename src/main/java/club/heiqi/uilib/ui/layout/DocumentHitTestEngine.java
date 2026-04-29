@@ -33,8 +33,10 @@ public final class DocumentHitTestEngine {
 
     private static DocumentLayoutBox hitTestBox(DocumentLayoutBox box, DocumentScrollState scrollState, int documentX,
             int documentY, int offsetX, int offsetY, boolean searchStackingContext) {
-        int boxOffsetX = offsetX + box.getPositionOffsetX();
-        int boxOffsetY = offsetY + box.getPositionOffsetY();
+        int baseOffsetX = box.isFixedPositioned() ? 0 : offsetX;
+        int baseOffsetY = box.isFixedPositioned() ? 0 : offsetY;
+        int boxOffsetX = baseOffsetX + box.getPositionOffsetX();
+        int boxOffsetY = baseOffsetY + box.getPositionOffsetY();
         boolean insideBorderBox = containsInRect(documentX, documentY, box.getLeft() + boxOffsetX,
                 box.getTop() + boxOffsetY, box.getRight() + boxOffsetX, box.getBottom() + boxOffsetY);
         if (canHitTestChildren(box, documentX, documentY, boxOffsetX, boxOffsetY)) {
@@ -123,8 +125,8 @@ public final class DocumentHitTestEngine {
             if (childStackingContext) {
                 continue;
             }
-            int grandChildOffsetX = childOffsetX + child.getPositionOffsetX() - getScrollLeft(scrollState, child);
-            int grandChildOffsetY = childOffsetY + child.getPositionOffsetY() - getScrollTop(scrollState, child);
+            int grandChildOffsetX = resolveChildOffsetX(childOffsetX, scrollState, child);
+            int grandChildOffsetY = resolveChildOffsetY(childOffsetY, scrollState, child);
             collectStackingPhaseItems(child, items, scrollState, grandChildOffsetX, grandChildOffsetY, phase);
         }
     }
@@ -140,6 +142,16 @@ public final class DocumentHitTestEngine {
 
     private static int getScrollTop(DocumentScrollState scrollState, DocumentLayoutBox box) {
         return scrollState == null ? 0 : scrollState.getScrollTop(box.getElement());
+    }
+
+    private static int resolveChildOffsetX(int childOffsetX, DocumentScrollState scrollState, DocumentLayoutBox child) {
+        int baseOffsetX = child.isFixedPositioned() ? 0 : childOffsetX;
+        return baseOffsetX + child.getPositionOffsetX() - getScrollLeft(scrollState, child);
+    }
+
+    private static int resolveChildOffsetY(int childOffsetY, DocumentScrollState scrollState, DocumentLayoutBox child) {
+        int baseOffsetY = child.isFixedPositioned() ? 0 : childOffsetY;
+        return baseOffsetY + child.getPositionOffsetY() - getScrollTop(scrollState, child);
     }
 
     private static boolean shouldSearchAsStackingContext(DocumentLayoutBox box) {

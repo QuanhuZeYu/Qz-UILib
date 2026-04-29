@@ -125,6 +125,25 @@ final class HtmlLikeSmokeDocumentPageController extends DocumentPageController {
         header.appendText("HTML-like Smoke Lab");
         header.appendText("UiDocument -> style -> layout -> paint command -> UiRenderContext / TEXT paint command");
 
+        ElementNode fixedViewportProbe = document.div();
+        fixedViewportProbe.style()
+                .setWidth(UiStyleLength.px(138))
+                .setHeight(UiStyleLength.px(28))
+                .setPosition(UiPosition.FIXED)
+                .setTop(UiStyleLength.px(12))
+                .setRight(UiStyleLength.px(14))
+                .setZIndex(20)
+                .setPadding(UiStyleLength.px(6))
+                .setBackgroundColor(0xEE0F766E)
+                .setBorderColor(0xFF99F6E4)
+                .setBorderWidth(UiStyleLength.px(1))
+                .setBorderRadius(UiStyleLength.px(999))
+                .setTextColor(0xFFE6FFFA)
+                .setOverflowX(UiOverflow.HIDDEN)
+                .setOverflowY(UiOverflow.HIDDEN);
+        fixedViewportProbe.appendText("FIXED viewport probe");
+        root.append(fixedViewportProbe);
+
         ElementNode row = document.div();
         row.style()
                 .setDisplay(UiDisplay.FLEX)

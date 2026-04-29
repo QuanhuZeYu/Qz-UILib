@@ -211,6 +211,15 @@ public final class DocumentLayoutBox {
         return positionOffsetY;
     }
 
+    /**
+     * 判断当前布局盒是否是相对 HTML-like 视口固定定位的元素。
+     *
+     * @return 是否为 fixed 定位盒
+     */
+    public boolean isFixedPositioned() {
+        return computedStyle.getPosition() == UiPosition.FIXED;
+    }
+
     public int getRight() {
         return left + width;
     }

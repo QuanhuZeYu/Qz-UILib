@@ -17,5 +17,10 @@ public enum UiPosition {
     /**
      * 脱离普通流，并相对当前父元素 content box 按 inset 定位。
      */
-    ABSOLUTE
+    ABSOLUTE,
+
+    /**
+     * 脱离普通流，并相对当前 HTML-like 视口按 inset 固定定位。
+     */
+    FIXED
 }

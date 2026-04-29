@@ -88,8 +88,10 @@ public final class DocumentPaintEngine {
             List<DocumentPaintCommand> commands, DocumentScrollState scrollState,
             DocumentAnimationTimeline animationTimeline, int offsetX, int offsetY, long currentTimeNanos,
             float inheritedOpacity, boolean paintStackingContext) {
-        int boxOffsetX = offsetX + box.getPositionOffsetX();
-        int boxOffsetY = offsetY + box.getPositionOffsetY();
+        int baseOffsetX = box.isFixedPositioned() ? 0 : offsetX;
+        int baseOffsetY = box.isFixedPositioned() ? 0 : offsetY;
+        int boxOffsetX = baseOffsetX + box.getPositionOffsetX();
+        int boxOffsetY = baseOffsetY + box.getPositionOffsetY();
         float localOpacity = resolveAnimatedOpacity(animationTimeline, box, currentTimeNanos);
         DocumentEffectChain effectChain = DocumentEffectChain.resolve(box);
         boolean paintContext = effectChain.createsPaintContext(box == rootBox, localOpacity);
@@ -207,8 +209,8 @@ public final class DocumentPaintEngine {
             if (childPaintStackingContext) {
                 continue;
             }
-            int grandChildOffsetX = childOffsetX + child.getPositionOffsetX() - getScrollLeft(scrollState, child);
-            int grandChildOffsetY = childOffsetY + child.getPositionOffsetY() - getScrollTop(scrollState, child);
+            int grandChildOffsetX = resolveChildOffsetX(childOffsetX, scrollState, child);
+            int grandChildOffsetY = resolveChildOffsetY(childOffsetY, scrollState, child);
             collectStackingPhaseItems(rootBox, child, items, scrollState, grandChildOffsetX, grandChildOffsetY,
                     animationTimeline, currentTimeNanos, phase);
         }
@@ -415,6 +417,16 @@ public final class DocumentPaintEngine {
 
     private static int getScrollTop(DocumentScrollState scrollState, DocumentLayoutBox box) {
         return scrollState == null ? 0 : scrollState.getScrollTop(box.getElement());
+    }
+
+    private static int resolveChildOffsetX(int childOffsetX, DocumentScrollState scrollState, DocumentLayoutBox child) {
+        int baseOffsetX = child.isFixedPositioned() ? 0 : childOffsetX;
+        return baseOffsetX + child.getPositionOffsetX() - getScrollLeft(scrollState, child);
+    }
+
+    private static int resolveChildOffsetY(int childOffsetY, DocumentScrollState scrollState, DocumentLayoutBox child) {
+        int baseOffsetY = child.isFixedPositioned() ? 0 : childOffsetY;
+        return baseOffsetY + child.getPositionOffsetY() - getScrollTop(scrollState, child);
     }
 
     /**

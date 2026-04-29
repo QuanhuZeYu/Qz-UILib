@@ -131,6 +131,41 @@ public class DocumentScrollStateTest {
         Assert.assertTrue(scrollState.getScrollTop(normalCover) > 0);
     }
 
+    /**
+     * 验证 fixed 滚动容器在根滚动后仍按视口固定位置接收滚轮。
+     */
+    @Test
+    public void shouldScrollFixedDescendantAtViewportPositionAfterRootScroll() {
+        UiDocument document = UiDocument.create();
+        ElementNode root = document.getRootElement();
+        ElementNode spacer = document.div();
+        ElementNode fixedScroller = document.div();
+        ElementNode fixedContent = document.div();
+
+        root.style()
+                .setWidth(UiStyleLength.px(100))
+                .setHeight(UiStyleLength.px(50))
+                .setOverflowY(UiOverflow.AUTO);
+        spacer.style().setHeight(UiStyleLength.px(140));
+        configureScroller(fixedScroller);
+        fixedScroller.style()
+                .setPosition(UiPosition.FIXED)
+                .setTop(UiStyleLength.px(5))
+                .setLeft(UiStyleLength.px(5));
+        fixedContent.style().setHeight(UiStyleLength.px(80));
+        fixedScroller.append(fixedContent);
+        root.append(spacer).append(fixedScroller);
+
+        DocumentLayoutBox rootBox = DocumentLayoutEngine.layout(root, 100, 50);
+        DocumentScrollState scrollState = new DocumentScrollState();
+        scrollState.updateFromLayout(rootBox);
+        Assert.assertTrue(scrollState.setScrollOffset(root, 0, 36));
+
+        Assert.assertTrue(scrollState.handleWheel(rootBox, 10, 10, -120, 1L));
+        Assert.assertEquals(36, scrollState.getScrollTop(root));
+        Assert.assertTrue(scrollState.getScrollTop(fixedScroller) > 0);
+    }
+
     private static void configureScroller(ElementNode scroller) {
         scroller.style()
                 .setWidth(UiStyleLength.px(70))
