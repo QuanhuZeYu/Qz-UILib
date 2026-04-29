@@ -27,7 +27,7 @@ import club.heiqi.uilib.ui.text.TextMeasureService;
  * 与 fixed 视口定位。absolute 元素会相对最近 positioned ancestor 的 content box 定位，没有 positioned
  * ancestor 时回退根 content box；fixed 元素相对当前 HTML-like 视口定位。当前已支持 positioned 元素
  * 在横向或纵向两侧 inset 同时存在且尺寸为 auto 时进行 stretch 求解，并支持包含 inline 元素的
- * text/span 初版混排；更完整 inline box、多行 flex wrap 和滚动布局会在后续阶段继续扩展。</p>
+ * text/span 初版混排和 inline fragment 盒边；更完整 inline box、多行 flex wrap 和滚动布局会在后续阶段继续扩展。</p>
  */
 public final class DocumentLayoutEngine {
 
@@ -165,14 +165,15 @@ public final class DocumentLayoutEngine {
         List<ElementNode> fixedChildren = new ArrayList<ElementNode>();
         boolean usesInlineFormatting = hasVisibleInlineElementChild(element);
         InlineLayoutContext inlineLayoutContext = usesInlineFormatting
-                ? new InlineLayoutContext(contentLeft, contentTop, contentWidth, resolveTextLineHeight(textMeasureService))
+                ? new InlineLayoutContext(contentLeft, contentTop, contentWidth,
+                        resolveTextLineHeight(textMeasureService), textRuns, inlineFragments)
                 : null;
         int childFlowTop = contentTop;
         for (DocumentNode child : element.getChildren()) {
             if (child instanceof TextNode) {
                 if (usesInlineFormatting) {
-                    appendInlineTextRun((TextNode) child, element, textRuns, inlineFragments,
-                            new ArrayList<ElementNode>(), inlineLayoutContext, textMeasureService);
+                    appendInlineTextRun((TextNode) child, element, new ArrayList<InlineFragmentOwner>(),
+                            inlineLayoutContext, textMeasureService);
                     childFlowTop = inlineLayoutContext.getFlowBottom();
                 } else {
                     childFlowTop = appendTextRun((TextNode) child, element, textRuns, contentLeft, childFlowTop,
@@ -197,8 +198,7 @@ public final class DocumentLayoutEngine {
                 continue;
             }
             if (usesInlineFormatting && childStyle.getDisplay() == UiDisplay.INLINE) {
-                appendInlineElementTextRuns(childElement, textRuns, inlineFragments, inlineLayoutContext,
-                        textMeasureService);
+                appendInlineElementTextRuns(childElement, inlineLayoutContext, textMeasureService);
                 childFlowTop = inlineLayoutContext.getFlowBottom();
                 continue;
             }
@@ -249,28 +249,25 @@ public final class DocumentLayoutEngine {
         return lineTop;
     }
 
-    private static void appendInlineElementTextRuns(ElementNode inlineElement,
-            List<DocumentLayoutTextRun> textRuns, List<DocumentLayoutInlineFragment> inlineFragments,
-            InlineLayoutContext inlineLayoutContext,
+    private static void appendInlineElementTextRuns(ElementNode inlineElement, InlineLayoutContext inlineLayoutContext,
             TextMeasureService textMeasureService) {
-        appendInlineElementTextRuns(inlineElement, textRuns, inlineFragments, inlineLayoutContext, textMeasureService,
-                new ArrayList<ElementNode>());
+        appendInlineElementTextRuns(inlineElement, inlineLayoutContext, textMeasureService,
+                new ArrayList<InlineFragmentOwner>());
     }
 
-    private static void appendInlineElementTextRuns(ElementNode inlineElement,
-            List<DocumentLayoutTextRun> textRuns, List<DocumentLayoutInlineFragment> inlineFragments,
-            InlineLayoutContext inlineLayoutContext, TextMeasureService textMeasureService,
-            List<ElementNode> ancestorInlineElements) {
+    private static void appendInlineElementTextRuns(ElementNode inlineElement, InlineLayoutContext inlineLayoutContext,
+            TextMeasureService textMeasureService, List<InlineFragmentOwner> ancestorInlineElements) {
         InlineElementEdges edges = resolveInlineElementEdges(inlineElement, inlineLayoutContext.getLineWidth());
-        List<ElementNode> fragmentOwners = new ArrayList<ElementNode>(ancestorInlineElements);
-        fragmentOwners.add(inlineElement);
-        appendInlineSpacing(inlineFragments, ancestorInlineElements, inlineLayoutContext, edges.margin.getLeft());
-        appendInlineSpacing(inlineFragments, fragmentOwners, inlineLayoutContext,
+        List<InlineFragmentOwner> fragmentOwners = new ArrayList<InlineFragmentOwner>(ancestorInlineElements);
+        fragmentOwners.add(new InlineFragmentOwner(inlineElement, edges.getVerticalTop(),
+                edges.getVerticalBottom()));
+        appendInlineSpacing(ancestorInlineElements, inlineLayoutContext, edges.margin.getLeft());
+        appendInlineSpacing(fragmentOwners, inlineLayoutContext,
                 edges.border.getLeft() + edges.padding.getLeft());
         for (DocumentNode child : inlineElement.getChildren()) {
             if (child instanceof TextNode) {
-                appendInlineTextRun((TextNode) child, inlineElement, textRuns, inlineFragments, fragmentOwners,
-                        inlineLayoutContext, textMeasureService);
+                appendInlineTextRun((TextNode) child, inlineElement, fragmentOwners, inlineLayoutContext,
+                        textMeasureService);
                 continue;
             }
             if (!(child instanceof ElementNode)) {
@@ -281,17 +278,15 @@ public final class DocumentLayoutEngine {
             if (childStyle.getDisplay() == UiDisplay.NONE || isOutOfFlowPositioned(childStyle)) {
                 continue;
             }
-            appendInlineElementTextRuns(childElement, textRuns, inlineFragments, inlineLayoutContext,
-                    textMeasureService, fragmentOwners);
+            appendInlineElementTextRuns(childElement, inlineLayoutContext, textMeasureService, fragmentOwners);
         }
-        appendInlineSpacing(inlineFragments, fragmentOwners, inlineLayoutContext,
+        appendInlineSpacing(fragmentOwners, inlineLayoutContext,
                 edges.padding.getRight() + edges.border.getRight());
-        appendInlineSpacing(inlineFragments, ancestorInlineElements, inlineLayoutContext, edges.margin.getRight());
+        appendInlineSpacing(ancestorInlineElements, inlineLayoutContext, edges.margin.getRight());
     }
 
     private static void appendInlineTextRun(TextNode textNode, ElementNode ownerElement,
-            List<DocumentLayoutTextRun> textRuns, List<DocumentLayoutInlineFragment> inlineFragments,
-            List<ElementNode> fragmentOwners, InlineLayoutContext inlineLayoutContext,
+            List<InlineFragmentOwner> fragmentOwners, InlineLayoutContext inlineLayoutContext,
             TextMeasureService textMeasureService) {
         String remainingText = textNode.getText();
         if (remainingText == null || remainingText.isEmpty() || inlineLayoutContext.getLineWidth() <= 0) {
@@ -318,10 +313,9 @@ public final class DocumentLayoutEngine {
                 continue;
             }
             width = Math.min(width, inlineLayoutContext.getRemainingWidth());
-            textRuns.add(new DocumentLayoutTextRun(textNode, ownerElement, segment, inlineLayoutContext.getCursorLeft(),
-                    inlineLayoutContext.getLineTop(), width, inlineLayoutContext.getLineHeight()));
-            appendInlineFragments(inlineFragments, fragmentOwners, inlineLayoutContext.getCursorLeft(),
-                    inlineLayoutContext.getLineTop(), width, inlineLayoutContext.getLineHeight());
+            inlineLayoutContext.appendTextRun(textNode, ownerElement, segment, inlineLayoutContext.getCursorLeft(),
+                    width);
+            appendInlineFragments(fragmentOwners, inlineLayoutContext.getCursorLeft(), width, inlineLayoutContext);
             inlineLayoutContext.advance(width);
             remainingText = remainingText.substring(segment.length());
             if (!remainingText.isEmpty() && inlineLayoutContext.getRemainingWidth() <= 0) {
@@ -330,8 +324,8 @@ public final class DocumentLayoutEngine {
         }
     }
 
-    private static void appendInlineSpacing(List<DocumentLayoutInlineFragment> inlineFragments,
-            List<ElementNode> fragmentOwners, InlineLayoutContext inlineLayoutContext, int width) {
+    private static void appendInlineSpacing(List<InlineFragmentOwner> fragmentOwners,
+            InlineLayoutContext inlineLayoutContext, int width) {
         int remainingSpacing = Math.max(0, width);
         while (remainingSpacing > 0 && inlineLayoutContext.getLineWidth() > 0) {
             if (inlineLayoutContext.getRemainingWidth() <= 0 && inlineLayoutContext.hasLineContent()) {
@@ -342,20 +336,19 @@ public final class DocumentLayoutEngine {
                 return;
             }
             int chunkWidth = Math.min(remainingSpacing, remainingWidth);
-            appendInlineFragments(inlineFragments, fragmentOwners, inlineLayoutContext.getCursorLeft(),
-                    inlineLayoutContext.getLineTop(), chunkWidth, inlineLayoutContext.getLineHeight());
+            appendInlineFragments(fragmentOwners, inlineLayoutContext.getCursorLeft(), chunkWidth, inlineLayoutContext);
             inlineLayoutContext.advance(chunkWidth);
             remainingSpacing -= chunkWidth;
         }
     }
 
-    private static void appendInlineFragments(List<DocumentLayoutInlineFragment> inlineFragments,
-            List<ElementNode> fragmentOwners, int left, int top, int width, int height) {
-        if (width <= 0 || height <= 0) {
+    private static void appendInlineFragments(List<InlineFragmentOwner> fragmentOwners, int left, int width,
+            InlineLayoutContext inlineLayoutContext) {
+        if (width <= 0) {
             return;
         }
-        for (ElementNode fragmentOwner : fragmentOwners) {
-            inlineFragments.add(new DocumentLayoutInlineFragment(fragmentOwner, left, top, width, height));
+        for (InlineFragmentOwner fragmentOwner : fragmentOwners) {
+            inlineLayoutContext.appendInlineFragment(fragmentOwner, left, width);
         }
     }
 
@@ -940,29 +933,30 @@ public final class DocumentLayoutEngine {
 
         private final int lineLeft;
         private final int lineWidth;
-        private final int lineHeight;
+        private final int baseLineHeight;
+        private final List<DocumentLayoutTextRun> textRuns;
+        private final List<DocumentLayoutInlineFragment> inlineFragments;
+        private final List<PendingInlineTextRun> pendingTextRuns = new ArrayList<PendingInlineTextRun>();
+        private final List<PendingInlineFragment> pendingInlineFragments = new ArrayList<PendingInlineFragment>();
         private int lineTop;
         private int cursorLeft;
+        private int lineTopInset;
+        private int lineBottomInset;
         private boolean lineContentPresent;
 
-        private InlineLayoutContext(int lineLeft, int lineTop, int lineWidth, int lineHeight) {
+        private InlineLayoutContext(int lineLeft, int lineTop, int lineWidth, int lineHeight,
+                List<DocumentLayoutTextRun> textRuns, List<DocumentLayoutInlineFragment> inlineFragments) {
             this.lineLeft = lineLeft;
             this.lineTop = lineTop;
             this.lineWidth = Math.max(0, lineWidth);
-            this.lineHeight = Math.max(1, lineHeight);
+            this.baseLineHeight = Math.max(1, lineHeight);
+            this.textRuns = textRuns;
+            this.inlineFragments = inlineFragments;
             this.cursorLeft = lineLeft;
         }
 
         private int getLineWidth() {
             return lineWidth;
-        }
-
-        private int getLineHeight() {
-            return lineHeight;
-        }
-
-        private int getLineTop() {
-            return lineTop;
         }
 
         private int getCursorLeft() {
@@ -977,33 +971,133 @@ public final class DocumentLayoutEngine {
             return lineContentPresent;
         }
 
+        private void appendTextRun(TextNode textNode, ElementNode ownerElement, String text, int left, int width) {
+            if (width <= 0) {
+                return;
+            }
+            pendingTextRuns.add(new PendingInlineTextRun(textNode, ownerElement, text, left, width));
+        }
+
+        private void appendInlineFragment(InlineFragmentOwner owner, int left, int width) {
+            if (width <= 0) {
+                return;
+            }
+            pendingInlineFragments.add(new PendingInlineFragment(owner, left, width));
+            lineTopInset = Math.max(lineTopInset, owner.topEdge);
+            lineBottomInset = Math.max(lineBottomInset, owner.bottomEdge);
+        }
+
         private void advance(int width) {
             cursorLeft += Math.max(0, width);
             lineContentPresent = true;
         }
 
         private void nextLine() {
-            lineTop += lineHeight;
-            cursorLeft = lineLeft;
-            lineContentPresent = false;
+            int nextLineTop = getFlowBottom();
+            flushCurrentLine();
+            lineTop = nextLineTop;
+            resetCurrentLineState();
         }
 
         private int getFlowBottom() {
-            return lineContentPresent ? lineTop + lineHeight : lineTop;
+            return lineContentPresent ? lineTop + getCurrentLineHeight() : lineTop;
         }
 
         private int finishLineAndGetBottom() {
             int bottom = getFlowBottom();
+            flushCurrentLine();
             lineTop = bottom;
-            cursorLeft = lineLeft;
-            lineContentPresent = false;
+            resetCurrentLineState();
             return bottom;
         }
 
         private void reset(int nextLineTop) {
+            flushCurrentLine();
             lineTop = nextLineTop;
+            resetCurrentLineState();
+        }
+
+        private int getCurrentLineHeight() {
+            return lineTopInset + baseLineHeight + lineBottomInset;
+        }
+
+        private void flushCurrentLine() {
+            if (!lineContentPresent) {
+                return;
+            }
+            int textTop = lineTop + lineTopInset;
+            for (PendingInlineFragment pendingInlineFragment : pendingInlineFragments) {
+                int fragmentTop = textTop - pendingInlineFragment.owner.topEdge;
+                int fragmentHeight = pendingInlineFragment.owner.topEdge + baseLineHeight
+                        + pendingInlineFragment.owner.bottomEdge;
+                inlineFragments.add(new DocumentLayoutInlineFragment(pendingInlineFragment.owner.element,
+                        pendingInlineFragment.left, fragmentTop, pendingInlineFragment.width, fragmentHeight));
+            }
+            for (PendingInlineTextRun pendingTextRun : pendingTextRuns) {
+                textRuns.add(new DocumentLayoutTextRun(pendingTextRun.textNode, pendingTextRun.ownerElement,
+                        pendingTextRun.text, pendingTextRun.left, textTop, pendingTextRun.width, baseLineHeight));
+            }
+        }
+
+        private void resetCurrentLineState() {
             cursorLeft = lineLeft;
+            lineTopInset = 0;
+            lineBottomInset = 0;
             lineContentPresent = false;
+            pendingTextRuns.clear();
+            pendingInlineFragments.clear();
+        }
+    }
+
+    /**
+     * inline fragment 所属元素及其垂直表面边距。
+     */
+    private static final class InlineFragmentOwner {
+
+        private final ElementNode element;
+        private final int topEdge;
+        private final int bottomEdge;
+
+        private InlineFragmentOwner(ElementNode element, int topEdge, int bottomEdge) {
+            this.element = element;
+            this.topEdge = Math.max(0, topEdge);
+            this.bottomEdge = Math.max(0, bottomEdge);
+        }
+    }
+
+    /**
+     * 延迟到行高确定后生成的 inline 文本片段。
+     */
+    private static final class PendingInlineTextRun {
+
+        private final TextNode textNode;
+        private final ElementNode ownerElement;
+        private final String text;
+        private final int left;
+        private final int width;
+
+        private PendingInlineTextRun(TextNode textNode, ElementNode ownerElement, String text, int left, int width) {
+            this.textNode = textNode;
+            this.ownerElement = ownerElement;
+            this.text = text;
+            this.left = left;
+            this.width = width;
+        }
+    }
+
+    /**
+     * 延迟到行高确定后生成的 inline 元素表面片段。
+     */
+    private static final class PendingInlineFragment {
+
+        private final InlineFragmentOwner owner;
+        private final int left;
+        private final int width;
+
+        private PendingInlineFragment(InlineFragmentOwner owner, int left, int width) {
+            this.owner = owner;
+            this.left = left;
+            this.width = width;
         }
     }
 
@@ -1024,7 +1118,7 @@ public final class DocumentLayoutEngine {
     }
 
     /**
-     * inline 元素在行内流中参与占位的横向盒边。
+     * inline 元素在行内流中参与占位和表面扩展的盒边。
      */
     private static final class InlineElementEdges {
 
@@ -1037,6 +1131,14 @@ public final class DocumentLayoutEngine {
             this.margin = margin;
             this.border = border;
             this.padding = padding;
+        }
+
+        private int getVerticalTop() {
+            return border.getTop() + padding.getTop();
+        }
+
+        private int getVerticalBottom() {
+            return padding.getBottom() + border.getBottom();
         }
     }
 

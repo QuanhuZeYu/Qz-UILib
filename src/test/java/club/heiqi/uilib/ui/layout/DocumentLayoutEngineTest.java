@@ -647,10 +647,10 @@ public class DocumentLayoutEngineTest {
     }
 
     /**
-     * 验证 inline 元素的水平 margin、border 与 padding 会参与行内流和 fragment 几何。
+     * 验证 inline 元素的 margin、border 与 padding 会参与行内流和 fragment 几何。
      */
     @Test
-    public void shouldLayoutInlineFragmentWithHorizontalBoxEdges() {
+    public void shouldLayoutInlineFragmentWithBoxEdges() {
         UiDocument document = UiDocument.create();
         ElementNode root = document.getRootElement();
         ElementNode span = document.span();
@@ -659,7 +659,7 @@ public class DocumentLayoutEngineTest {
         span.style()
                 .setMargin(UiStyleInsets.of(UiStyleLength.px(0), UiStyleLength.px(6), UiStyleLength.px(0),
                         UiStyleLength.px(4)))
-                .setPadding(UiStyleInsets.of(UiStyleLength.px(0), UiStyleLength.px(5), UiStyleLength.px(0),
+                .setPadding(UiStyleInsets.of(UiStyleLength.px(2), UiStyleLength.px(5), UiStyleLength.px(4),
                         UiStyleLength.px(3)))
                 .setBorderWidth(UiStyleLength.px(1));
         root.appendText("AA");
@@ -671,11 +671,12 @@ public class DocumentLayoutEngineTest {
                 new DeterministicTextMeasureService());
 
         Assert.assertEquals(3, rootBox.getTextRuns().size());
-        assertTextRun(rootBox.getTextRuns().get(0), "AA", 0, 0, 16, 18);
-        assertTextRun(rootBox.getTextRuns().get(1), "BB", 24, 0, 16, 18);
-        assertTextRun(rootBox.getTextRuns().get(2), "CC", 52, 0, 16, 18);
+        assertTextRun(rootBox.getTextRuns().get(0), "AA", 0, 3, 16, 18);
+        assertTextRun(rootBox.getTextRuns().get(1), "BB", 24, 3, 16, 18);
+        assertTextRun(rootBox.getTextRuns().get(2), "CC", 52, 3, 16, 18);
         Assert.assertEquals(1, rootBox.getInlineFragments().size());
-        assertInlineFragment(rootBox.getInlineFragments().get(0), span, 20, 0, 26, 18);
+        assertInlineFragment(rootBox.getInlineFragments().get(0), span, 20, 0, 26, 26);
+        Assert.assertEquals(26, rootBox.getContentHeight());
     }
 
     /**

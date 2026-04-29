@@ -871,12 +871,12 @@ public class DocumentPaintEngineTest {
                 80, 0, new DeterministicTextMeasureService()));
 
         Assert.assertEquals(4, commands.size());
-        assertCommand(commands.get(0), DocumentPaintCommandType.BACKGROUND, span, 16, 0, 50, 18, 0x334F46E5, 0,
+        assertCommand(commands.get(0), DocumentPaintCommandType.BACKGROUND, span, 16, 0, 50, 20, 0x334F46E5, 0,
                 5);
-        assertCommand(commands.get(1), DocumentPaintCommandType.BORDER, span, 16, 0, 50, 18, 0xFFFFD166, 1,
+        assertCommand(commands.get(1), DocumentPaintCommandType.BORDER, span, 16, 0, 50, 20, 0xFFFFD166, 1,
                 5);
-        assertCommand(commands.get(2), DocumentPaintCommandType.TEXT, root, 0, 0, 16, 18, 0xFFEFF6FF, 0, 0);
-        assertCommand(commands.get(3), DocumentPaintCommandType.TEXT, span, 17, 0, 49, 18, 0xFFFFD166, 0, 0);
+        assertCommand(commands.get(2), DocumentPaintCommandType.TEXT, root, 0, 1, 16, 19, 0xFFEFF6FF, 0, 0);
+        assertCommand(commands.get(3), DocumentPaintCommandType.TEXT, span, 17, 1, 49, 19, 0xFFFFD166, 0, 0);
     }
 
     /**
@@ -902,14 +902,14 @@ public class DocumentPaintEngineTest {
                 80, 0, new DeterministicTextMeasureService()));
 
         Assert.assertEquals(6, commands.size());
-        assertCommand(commands.get(0), DocumentPaintCommandType.BACKGROUND, span, 0, 0, 33, 18, 0x334F46E5, 0, 5);
-        assertCommand(commands.get(1), DocumentPaintCommandType.BORDER, span, 0, 0, 33, 18, 0xFFFFD166, 1, 5);
-        assertCommand(commands.get(2), DocumentPaintCommandType.BACKGROUND, span, 0, 18, 17, 36, 0x334F46E5, 0,
+        assertCommand(commands.get(0), DocumentPaintCommandType.BACKGROUND, span, 0, 0, 33, 20, 0x334F46E5, 0, 5);
+        assertCommand(commands.get(1), DocumentPaintCommandType.BORDER, span, 0, 0, 33, 20, 0xFFFFD166, 1, 5);
+        assertCommand(commands.get(2), DocumentPaintCommandType.BACKGROUND, span, 0, 20, 17, 40, 0x334F46E5, 0,
                 5);
-        assertCommand(commands.get(3), DocumentPaintCommandType.BORDER, span, 0, 18, 17, 36, 0xFFFFD166, 1, 5);
-        assertCommand(commands.get(4), DocumentPaintCommandType.TEXT, span, 1, 0, 33, 18, 0xFFFFD166, 0, 0);
+        assertCommand(commands.get(3), DocumentPaintCommandType.BORDER, span, 0, 20, 17, 40, 0xFFFFD166, 1, 5);
+        assertCommand(commands.get(4), DocumentPaintCommandType.TEXT, span, 1, 1, 33, 19, 0xFFFFD166, 0, 0);
         Assert.assertEquals("AABB", commands.get(4).getText());
-        assertCommand(commands.get(5), DocumentPaintCommandType.TEXT, span, 0, 18, 16, 36, 0xFFFFD166, 0, 0);
+        assertCommand(commands.get(5), DocumentPaintCommandType.TEXT, span, 0, 21, 16, 39, 0xFFFFD166, 0, 0);
         Assert.assertEquals("CC", commands.get(5).getText());
     }
 
@@ -943,10 +943,10 @@ public class DocumentPaintEngineTest {
     }
 
     /**
-     * 验证 inline span 的水平 padding/border 会扩大 fragment 表面但不会把 margin 绘入背景。
+     * 验证 inline span 的 padding/border 会扩大 fragment 表面但不会把 margin 绘入背景。
      */
     @Test
-    public void shouldPaintInlineFragmentWithHorizontalBoxEdges() {
+    public void shouldPaintInlineFragmentWithBoxEdges() {
         UiDocument document = UiDocument.create();
         ElementNode root = document.getRootElement();
         ElementNode span = document.span();
@@ -957,7 +957,7 @@ public class DocumentPaintEngineTest {
         span.style()
                 .setMargin(UiStyleInsets.of(UiStyleLength.px(0), UiStyleLength.px(6), UiStyleLength.px(0),
                         UiStyleLength.px(4)))
-                .setPadding(UiStyleInsets.of(UiStyleLength.px(0), UiStyleLength.px(5), UiStyleLength.px(0),
+                .setPadding(UiStyleInsets.of(UiStyleLength.px(2), UiStyleLength.px(5), UiStyleLength.px(4),
                         UiStyleLength.px(3)))
                 .setBorderWidth(UiStyleLength.px(1))
                 .setBackgroundColor(0x334F46E5)
@@ -972,12 +972,12 @@ public class DocumentPaintEngineTest {
                 100, 0, new DeterministicTextMeasureService()));
 
         Assert.assertEquals(5, commands.size());
-        assertCommand(commands.get(0), DocumentPaintCommandType.BACKGROUND, span, 20, 0, 46, 18, 0x334F46E5, 0,
+        assertCommand(commands.get(0), DocumentPaintCommandType.BACKGROUND, span, 20, 0, 46, 26, 0x334F46E5, 0,
                 0);
-        assertCommand(commands.get(1), DocumentPaintCommandType.BORDER, span, 20, 0, 46, 18, 0xFFFFD166, 1, 0);
-        assertCommand(commands.get(2), DocumentPaintCommandType.TEXT, root, 0, 0, 16, 18, 0xFFEFF6FF, 0, 0);
-        assertCommand(commands.get(3), DocumentPaintCommandType.TEXT, span, 24, 0, 40, 18, 0xFFFFD166, 0, 0);
-        assertCommand(commands.get(4), DocumentPaintCommandType.TEXT, root, 52, 0, 68, 18, 0xFFEFF6FF, 0, 0);
+        assertCommand(commands.get(1), DocumentPaintCommandType.BORDER, span, 20, 0, 46, 26, 0xFFFFD166, 1, 0);
+        assertCommand(commands.get(2), DocumentPaintCommandType.TEXT, root, 0, 3, 16, 21, 0xFFEFF6FF, 0, 0);
+        assertCommand(commands.get(3), DocumentPaintCommandType.TEXT, span, 24, 3, 40, 21, 0xFFFFD166, 0, 0);
+        assertCommand(commands.get(4), DocumentPaintCommandType.TEXT, root, 52, 3, 68, 21, 0xFFEFF6FF, 0, 0);
     }
 
     /**

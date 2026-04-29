@@ -200,7 +200,7 @@ public class DocumentHitTestEngineTest {
         span.style()
                 .setMargin(UiStyleInsets.of(UiStyleLength.px(0), UiStyleLength.px(6), UiStyleLength.px(0),
                         UiStyleLength.px(4)))
-                .setPadding(UiStyleInsets.of(UiStyleLength.px(0), UiStyleLength.px(5), UiStyleLength.px(0),
+                .setPadding(UiStyleInsets.of(UiStyleLength.px(2), UiStyleLength.px(5), UiStyleLength.px(4),
                         UiStyleLength.px(3)))
                 .setBorderWidth(UiStyleLength.px(1));
         root.appendText("AA");
@@ -210,8 +210,9 @@ public class DocumentHitTestEngineTest {
         DocumentLayoutBox rootBox = DocumentLayoutEngine.layout(root, 100, 0);
 
         assertHitElement(root, rootBox, 18, 5);
-        assertHitElement(span, rootBox, 22, 5);
-        assertHitElement(span, rootBox, 42, 5);
+        assertHitElement(span, rootBox, 22, 1);
+        assertHitElement(span, rootBox, 42, 24);
+        assertHitElement(root, rootBox, 48, 5);
     }
 
     /**
