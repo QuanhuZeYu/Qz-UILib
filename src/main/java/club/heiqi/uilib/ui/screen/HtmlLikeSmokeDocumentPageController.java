@@ -510,6 +510,10 @@ final class HtmlLikeSmokeDocumentPageController extends DocumentPageController {
         inlineLine.appendText("Inline mix: text ");
         final ElementNode amberSpan = document.span();
         amberSpan.style()
+                .setMargin(UiStyleInsets.of(UiStyleLength.px(0), UiStyleLength.px(2), UiStyleLength.px(0),
+                        UiStyleLength.px(2)))
+                .setPadding(UiStyleInsets.of(UiStyleLength.px(0), UiStyleLength.px(4), UiStyleLength.px(0),
+                        UiStyleLength.px(4)))
                 .setBackgroundColor(0x334F46E5)
                 .setBorderColor(0xFFFFD166)
                 .setBorderWidth(UiStyleLength.px(1))

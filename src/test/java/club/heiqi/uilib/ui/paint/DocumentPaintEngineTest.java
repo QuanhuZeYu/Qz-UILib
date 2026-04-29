@@ -18,6 +18,7 @@ import club.heiqi.uilib.ui.layout.DocumentScrollState;
 import club.heiqi.uilib.ui.render.UiRenderContext;
 import club.heiqi.uilib.ui.style.UiOverflow;
 import club.heiqi.uilib.ui.style.UiPosition;
+import club.heiqi.uilib.ui.style.UiStyleInsets;
 import club.heiqi.uilib.ui.style.UiStyleLength;
 import club.heiqi.uilib.ui.text.TextMeasureService;
 
@@ -824,7 +825,7 @@ public class DocumentPaintEngineTest {
         ElementNode span = document.span();
 
         root.style()
-                .setWidth(UiStyleLength.px(48))
+                .setWidth(UiStyleLength.px(52))
                 .setTextColor(0xFFEFF6FF);
         span.style().setTextColor(0xFFFFD166);
         root.appendText("AA");
@@ -854,7 +855,7 @@ public class DocumentPaintEngineTest {
         ElementNode span = document.span();
 
         root.style()
-                .setWidth(UiStyleLength.px(48))
+                .setWidth(UiStyleLength.px(52))
                 .setTextColor(0xFFEFF6FF);
         span.style()
                 .setBackgroundColor(0x334F46E5)
@@ -870,12 +871,12 @@ public class DocumentPaintEngineTest {
                 80, 0, new DeterministicTextMeasureService()));
 
         Assert.assertEquals(4, commands.size());
-        assertCommand(commands.get(0), DocumentPaintCommandType.BACKGROUND, span, 16, 0, 48, 18, 0x334F46E5, 0,
+        assertCommand(commands.get(0), DocumentPaintCommandType.BACKGROUND, span, 16, 0, 50, 18, 0x334F46E5, 0,
                 5);
-        assertCommand(commands.get(1), DocumentPaintCommandType.BORDER, span, 16, 0, 48, 18, 0xFFFFD166, 1,
+        assertCommand(commands.get(1), DocumentPaintCommandType.BORDER, span, 16, 0, 50, 18, 0xFFFFD166, 1,
                 5);
         assertCommand(commands.get(2), DocumentPaintCommandType.TEXT, root, 0, 0, 16, 18, 0xFFEFF6FF, 0, 0);
-        assertCommand(commands.get(3), DocumentPaintCommandType.TEXT, span, 16, 0, 48, 18, 0xFFFFD166, 0, 0);
+        assertCommand(commands.get(3), DocumentPaintCommandType.TEXT, span, 17, 0, 49, 18, 0xFFFFD166, 0, 0);
     }
 
     /**
@@ -887,7 +888,7 @@ public class DocumentPaintEngineTest {
         ElementNode root = document.getRootElement();
         ElementNode span = document.span();
 
-        root.style().setWidth(UiStyleLength.px(32));
+        root.style().setWidth(UiStyleLength.px(34));
         span.style()
                 .setBackgroundColor(0x334F46E5)
                 .setBorderColor(0xFFFFD166)
@@ -901,12 +902,12 @@ public class DocumentPaintEngineTest {
                 80, 0, new DeterministicTextMeasureService()));
 
         Assert.assertEquals(6, commands.size());
-        assertCommand(commands.get(0), DocumentPaintCommandType.BACKGROUND, span, 0, 0, 32, 18, 0x334F46E5, 0, 5);
-        assertCommand(commands.get(1), DocumentPaintCommandType.BORDER, span, 0, 0, 32, 18, 0xFFFFD166, 1, 5);
-        assertCommand(commands.get(2), DocumentPaintCommandType.BACKGROUND, span, 0, 18, 16, 36, 0x334F46E5, 0,
+        assertCommand(commands.get(0), DocumentPaintCommandType.BACKGROUND, span, 0, 0, 33, 18, 0x334F46E5, 0, 5);
+        assertCommand(commands.get(1), DocumentPaintCommandType.BORDER, span, 0, 0, 33, 18, 0xFFFFD166, 1, 5);
+        assertCommand(commands.get(2), DocumentPaintCommandType.BACKGROUND, span, 0, 18, 17, 36, 0x334F46E5, 0,
                 5);
-        assertCommand(commands.get(3), DocumentPaintCommandType.BORDER, span, 0, 18, 16, 36, 0xFFFFD166, 1, 5);
-        assertCommand(commands.get(4), DocumentPaintCommandType.TEXT, span, 0, 0, 32, 18, 0xFFFFD166, 0, 0);
+        assertCommand(commands.get(3), DocumentPaintCommandType.BORDER, span, 0, 18, 17, 36, 0xFFFFD166, 1, 5);
+        assertCommand(commands.get(4), DocumentPaintCommandType.TEXT, span, 1, 0, 33, 18, 0xFFFFD166, 0, 0);
         Assert.assertEquals("AABB", commands.get(4).getText());
         assertCommand(commands.get(5), DocumentPaintCommandType.TEXT, span, 0, 18, 16, 36, 0xFFFFD166, 0, 0);
         Assert.assertEquals("CC", commands.get(5).getText());
@@ -939,6 +940,44 @@ public class DocumentPaintEngineTest {
                 0, 0);
         assertCommand(commands.get(1), DocumentPaintCommandType.BACKGROUND, innerSpan, 16, 0, 32, 18, 0xAA0EA5E9,
                 0, 0);
+    }
+
+    /**
+     * 验证 inline span 的水平 padding/border 会扩大 fragment 表面但不会把 margin 绘入背景。
+     */
+    @Test
+    public void shouldPaintInlineFragmentWithHorizontalBoxEdges() {
+        UiDocument document = UiDocument.create();
+        ElementNode root = document.getRootElement();
+        ElementNode span = document.span();
+
+        root.style()
+                .setWidth(UiStyleLength.px(80))
+                .setTextColor(0xFFEFF6FF);
+        span.style()
+                .setMargin(UiStyleInsets.of(UiStyleLength.px(0), UiStyleLength.px(6), UiStyleLength.px(0),
+                        UiStyleLength.px(4)))
+                .setPadding(UiStyleInsets.of(UiStyleLength.px(0), UiStyleLength.px(5), UiStyleLength.px(0),
+                        UiStyleLength.px(3)))
+                .setBorderWidth(UiStyleLength.px(1))
+                .setBackgroundColor(0x334F46E5)
+                .setBorderColor(0xFFFFD166)
+                .setTextColor(0xFFFFD166);
+        root.appendText("AA");
+        span.appendText("BB");
+        root.append(span);
+        root.appendText("CC");
+
+        List<DocumentPaintCommand> commands = DocumentPaintEngine.buildPaintCommands(DocumentLayoutEngine.layout(root,
+                100, 0, new DeterministicTextMeasureService()));
+
+        Assert.assertEquals(5, commands.size());
+        assertCommand(commands.get(0), DocumentPaintCommandType.BACKGROUND, span, 20, 0, 46, 18, 0x334F46E5, 0,
+                0);
+        assertCommand(commands.get(1), DocumentPaintCommandType.BORDER, span, 20, 0, 46, 18, 0xFFFFD166, 1, 0);
+        assertCommand(commands.get(2), DocumentPaintCommandType.TEXT, root, 0, 0, 16, 18, 0xFFEFF6FF, 0, 0);
+        assertCommand(commands.get(3), DocumentPaintCommandType.TEXT, span, 24, 0, 40, 18, 0xFFFFD166, 0, 0);
+        assertCommand(commands.get(4), DocumentPaintCommandType.TEXT, root, 52, 0, 68, 18, 0xFFEFF6FF, 0, 0);
     }
 
     /**

@@ -51,6 +51,10 @@ public final class DocumentHitTestEngine {
             if (inlineTextHit != null) {
                 return inlineTextHit;
             }
+            ElementNode inlineFragmentHit = hitInlineFragments(box, documentX, documentY, childOffsetX, childOffsetY);
+            if (inlineFragmentHit != null) {
+                return inlineFragmentHit;
+            }
         }
         return insideBorderBox ? box.getElement() : null;
     }
@@ -147,6 +151,20 @@ public final class DocumentHitTestEngine {
             if (containsInRect(documentX, documentY, textRun.getLeft() + offsetX, textRun.getTop() + offsetY,
                     textRun.getRight() + offsetX, textRun.getBottom() + offsetY)) {
                 return textRun.getOwnerElement();
+            }
+        }
+        return null;
+    }
+
+    private static ElementNode hitInlineFragments(DocumentLayoutBox box, int documentX, int documentY, int offsetX,
+            int offsetY) {
+        List<DocumentLayoutInlineFragment> inlineFragments = box.getInlineFragments();
+        for (int index = inlineFragments.size() - 1; index >= 0; index--) {
+            DocumentLayoutInlineFragment inlineFragment = inlineFragments.get(index);
+            if (containsInRect(documentX, documentY, inlineFragment.getLeft() + offsetX,
+                    inlineFragment.getTop() + offsetY, inlineFragment.getRight() + offsetX,
+                    inlineFragment.getBottom() + offsetY)) {
+                return inlineFragment.getOwnerElement();
             }
         }
         return null;

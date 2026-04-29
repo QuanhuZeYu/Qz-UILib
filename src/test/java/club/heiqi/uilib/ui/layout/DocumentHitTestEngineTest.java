@@ -7,6 +7,7 @@ import club.heiqi.uilib.ui.dom.ElementNode;
 import club.heiqi.uilib.ui.dom.UiDocument;
 import club.heiqi.uilib.ui.style.UiOverflow;
 import club.heiqi.uilib.ui.style.UiPosition;
+import club.heiqi.uilib.ui.style.UiStyleInsets;
 import club.heiqi.uilib.ui.style.UiStyleLength;
 
 /**
@@ -184,6 +185,33 @@ public class DocumentHitTestEngineTest {
         assertHitElement(root, rootBox, 4, 5);
         assertHitElement(span, rootBox, 20, 5);
         assertHitElement(root, rootBox, 4, 23);
+    }
+
+    /**
+     * 验证 inline span 的 padding/border fragment 空白区域也会命中 span 本身。
+     */
+    @Test
+    public void shouldHitInlineSpanFragmentSurfaceOutsideText() {
+        UiDocument document = UiDocument.create();
+        ElementNode root = document.getRootElement();
+        ElementNode span = document.span();
+
+        root.style().setWidth(UiStyleLength.px(80));
+        span.style()
+                .setMargin(UiStyleInsets.of(UiStyleLength.px(0), UiStyleLength.px(6), UiStyleLength.px(0),
+                        UiStyleLength.px(4)))
+                .setPadding(UiStyleInsets.of(UiStyleLength.px(0), UiStyleLength.px(5), UiStyleLength.px(0),
+                        UiStyleLength.px(3)))
+                .setBorderWidth(UiStyleLength.px(1));
+        root.appendText("AA");
+        span.appendText("BB");
+        root.append(span);
+
+        DocumentLayoutBox rootBox = DocumentLayoutEngine.layout(root, 100, 0);
+
+        assertHitElement(root, rootBox, 18, 5);
+        assertHitElement(span, rootBox, 22, 5);
+        assertHitElement(span, rootBox, 42, 5);
     }
 
     /**

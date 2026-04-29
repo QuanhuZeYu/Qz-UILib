@@ -261,8 +261,12 @@ public final class DocumentLayoutEngine {
             List<DocumentLayoutTextRun> textRuns, List<DocumentLayoutInlineFragment> inlineFragments,
             InlineLayoutContext inlineLayoutContext, TextMeasureService textMeasureService,
             List<ElementNode> ancestorInlineElements) {
+        InlineElementEdges edges = resolveInlineElementEdges(inlineElement, inlineLayoutContext.getLineWidth());
         List<ElementNode> fragmentOwners = new ArrayList<ElementNode>(ancestorInlineElements);
         fragmentOwners.add(inlineElement);
+        appendInlineSpacing(inlineFragments, ancestorInlineElements, inlineLayoutContext, edges.margin.getLeft());
+        appendInlineSpacing(inlineFragments, fragmentOwners, inlineLayoutContext,
+                edges.border.getLeft() + edges.padding.getLeft());
         for (DocumentNode child : inlineElement.getChildren()) {
             if (child instanceof TextNode) {
                 appendInlineTextRun((TextNode) child, inlineElement, textRuns, inlineFragments, fragmentOwners,
@@ -280,6 +284,9 @@ public final class DocumentLayoutEngine {
             appendInlineElementTextRuns(childElement, textRuns, inlineFragments, inlineLayoutContext,
                     textMeasureService, fragmentOwners);
         }
+        appendInlineSpacing(inlineFragments, fragmentOwners, inlineLayoutContext,
+                edges.padding.getRight() + edges.border.getRight());
+        appendInlineSpacing(inlineFragments, ancestorInlineElements, inlineLayoutContext, edges.margin.getRight());
     }
 
     private static void appendInlineTextRun(TextNode textNode, ElementNode ownerElement,
@@ -320,6 +327,25 @@ public final class DocumentLayoutEngine {
             if (!remainingText.isEmpty() && inlineLayoutContext.getRemainingWidth() <= 0) {
                 inlineLayoutContext.nextLine();
             }
+        }
+    }
+
+    private static void appendInlineSpacing(List<DocumentLayoutInlineFragment> inlineFragments,
+            List<ElementNode> fragmentOwners, InlineLayoutContext inlineLayoutContext, int width) {
+        int remainingSpacing = Math.max(0, width);
+        while (remainingSpacing > 0 && inlineLayoutContext.getLineWidth() > 0) {
+            if (inlineLayoutContext.getRemainingWidth() <= 0 && inlineLayoutContext.hasLineContent()) {
+                inlineLayoutContext.nextLine();
+            }
+            int remainingWidth = inlineLayoutContext.getRemainingWidth();
+            if (remainingWidth <= 0) {
+                return;
+            }
+            int chunkWidth = Math.min(remainingSpacing, remainingWidth);
+            appendInlineFragments(inlineFragments, fragmentOwners, inlineLayoutContext.getCursorLeft(),
+                    inlineLayoutContext.getLineTop(), chunkWidth, inlineLayoutContext.getLineHeight());
+            inlineLayoutContext.advance(chunkWidth);
+            remainingSpacing -= chunkWidth;
         }
     }
 
@@ -373,6 +399,13 @@ public final class DocumentLayoutEngine {
     private static String firstCodePoint(String text) {
         int endIndex = Math.min(text.length(), Character.charCount(text.codePointAt(0)));
         return text.substring(0, endIndex);
+    }
+
+    private static InlineElementEdges resolveInlineElementEdges(ElementNode inlineElement, int lineWidth) {
+        ComputedStyle style = UiStyleResolver.compute(inlineElement);
+        return new InlineElementEdges(resolveInsets(style.getMargin(), lineWidth, false),
+                resolveUniformEdge(style.getBorderWidth(), lineWidth), resolveInsets(style.getPadding(), lineWidth,
+                        true));
     }
 
     private static LayoutChildrenResult layoutFlexChildren(ElementNode element, ComputedStyle parentStyle,
@@ -987,6 +1020,23 @@ public final class DocumentLayoutEngine {
             this.textRuns = textRuns;
             this.inlineFragments = inlineFragments;
             this.contentHeight = Math.max(0, contentHeight);
+        }
+    }
+
+    /**
+     * inline 元素在行内流中参与占位的横向盒边。
+     */
+    private static final class InlineElementEdges {
+
+        private final DocumentLayoutEdges margin;
+        private final DocumentLayoutEdges border;
+        private final DocumentLayoutEdges padding;
+
+        private InlineElementEdges(DocumentLayoutEdges margin, DocumentLayoutEdges border,
+                DocumentLayoutEdges padding) {
+            this.margin = margin;
+            this.border = border;
+            this.padding = padding;
         }
     }
 
