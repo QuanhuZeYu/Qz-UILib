@@ -8,6 +8,7 @@ import club.heiqi.uilib.ui.dom.TextNode;
 import club.heiqi.uilib.ui.dom.UiDocument;
 import club.heiqi.uilib.ui.layout.UiLayoutSpec;
 import club.heiqi.uilib.ui.layout.UiLength;
+import club.heiqi.uilib.ui.paint.DocumentCustomRenderer;
 import club.heiqi.uilib.ui.render.UiRenderContext;
 import club.heiqi.uilib.ui.style.UiAlignItems;
 import club.heiqi.uilib.ui.style.UiDisplay;
@@ -28,6 +29,7 @@ final class HtmlLikeGlassDocumentPageController extends DocumentPageController {
     private final HtmlLikeDocumentWidget htmlLikeDocumentWidget;
     private TextNode backdropPathText;
     private TextNode tileProbeBackdropPathText;
+    private TextNode tileAtlasSnapshotProbeText;
 
     /**
      * 创建大面积磨玻璃测试页控制器。
@@ -79,6 +81,9 @@ final class HtmlLikeGlassDocumentPageController extends DocumentPageController {
         }
         if (tileProbeBackdropPathText != null) {
             tileProbeBackdropPathText.setText("Tile probe " + pathText);
+        }
+        if (tileAtlasSnapshotProbeText != null) {
+            tileAtlasSnapshotProbeText.setText(formatBackdropSnapshotProbeText());
         }
     }
 
@@ -304,6 +309,7 @@ final class HtmlLikeGlassDocumentPageController extends DocumentPageController {
         probeScene.appendText("Tile atlas probe / block128 tile diagnostics");
         probeScene.appendText("Header Backdrop path should include region=..., tiles=N covered=M missing=K reused=R copied=C, and filter=...");
         tileProbeBackdropPathText = probeScene.appendText("Tile probe Backdrop path: pending");
+        tileAtlasSnapshotProbeText = probeScene.appendText("Tile atlas snapshot probe: pending");
         stage.append(probeScene);
 
         ElementNode probeCanvas = document.div();
@@ -313,6 +319,13 @@ final class HtmlLikeGlassDocumentPageController extends DocumentPageController {
                         UiStyleLength.px(0)))
                 .setOverflowX(UiOverflow.HIDDEN)
                 .setOverflowY(UiOverflow.HIDDEN);
+        probeCanvas.setCustomRenderer(new DocumentCustomRenderer() {
+            @Override
+            public void render(UiRenderContext context, int contentLeft, int contentTop, int contentRight,
+                    int contentBottom) {
+                probeTileAtlasSnapshots(context, contentLeft, contentTop, contentRight, contentBottom);
+            }
+        });
         probeScene.append(probeCanvas);
 
         appendSampleRow(document, probeCanvas, 0xFF0284C7, 0xFF65A30D, 0xFFCA8A04,
@@ -346,6 +359,26 @@ final class HtmlLikeGlassDocumentPageController extends DocumentPageController {
                 .setMargin(UiStyleInsets.of(UiStyleLength.px(-64), UiStyleLength.px(0), UiStyleLength.px(0),
                         UiStyleLength.percent(0.56F)));
         probeCanvas.append(tileCountTargetGlass);
+    }
+
+    private static void probeTileAtlasSnapshots(UiRenderContext context, int contentLeft, int contentTop,
+            int contentRight, int contentBottom) {
+        int availableWidth = contentRight - contentLeft;
+        int availableHeight = contentBottom - contentTop;
+        if (context == null || availableWidth < 360 || availableHeight < 120) {
+            return;
+        }
+        int probeLeft = contentLeft + 24;
+        int probeTop = contentTop + 20;
+        int probeBottom = Math.min(contentBottom - 18, probeTop + 72);
+        int sourceRight = Math.min(contentRight - 24, probeLeft + 136);
+        int targetRight = Math.min(contentRight - 8, probeLeft + 432);
+        if (sourceRight <= probeLeft || targetRight <= sourceRight + 128 || probeBottom <= probeTop) {
+            return;
+        }
+
+        context.probeBackdropSnapshot(probeLeft, probeTop, sourceRight, probeBottom, 36, 1.25F);
+        context.probeBackdropSnapshot(probeLeft, probeTop, targetRight, probeBottom, 36, 1.25F);
     }
 
     private static void appendSampleRow(UiDocument document, ElementNode parent, int firstColor, int secondColor,
@@ -434,5 +467,9 @@ final class HtmlLikeGlassDocumentPageController extends DocumentPageController {
     private static String formatBackdropPathText() {
         UiRenderContext.BackdropFilterRenderPath renderPath = UiRenderContext.getLastBackdropFilterRenderPath();
         return "Backdrop path: " + renderPath.getLabel() + " / " + UiRenderContext.getLastBackdropFilterDetail();
+    }
+
+    private static String formatBackdropSnapshotProbeText() {
+        return "Tile atlas snapshot probe: " + UiRenderContext.getLastBackdropSnapshotProbeDetail();
     }
 }
