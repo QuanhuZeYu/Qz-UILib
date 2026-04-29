@@ -94,7 +94,7 @@ final class HtmlLikeSmokeDocumentPageController extends DocumentPageController {
         UiDocument document = UiDocument.create();
         ElementNode root = document.getRootElement();
         root.style()
-                .setPadding(UiStyleLength.px(18))
+                .setPadding(UiStyleLength.px(14))
                 .setBackgroundColor(0xF00B1020)
                 .setBorderColor(0xFF7C3AED)
                 .setBorderWidth(UiStyleLength.px(1))
@@ -104,8 +104,9 @@ final class HtmlLikeSmokeDocumentPageController extends DocumentPageController {
 
         ElementNode header = document.div();
         header.style()
-                .setHeight(UiStyleLength.px(58))
+                .setHeight(UiStyleLength.px(74))
                 .setMargin(UiStyleLength.px(0))
+                .setPadding(UiStyleLength.px(8))
                 .setBackgroundColor(0xFF1E1B4B)
                 .setBorderColor(0xFFA78BFA)
                 .setBorderWidth(UiStyleLength.px(1))
@@ -118,7 +119,7 @@ final class HtmlLikeSmokeDocumentPageController extends DocumentPageController {
         ElementNode clippedStripe = document.div();
         clippedStripe.style()
                 .setWidth(UiStyleLength.px(900))
-                .setHeight(UiStyleLength.px(22))
+                .setHeight(UiStyleLength.px(14))
                 .setBackgroundColor(0xFFED64A6)
                 .setBorderRadius(UiStyleLength.px(999));
         header.append(clippedStripe);
@@ -127,10 +128,10 @@ final class HtmlLikeSmokeDocumentPageController extends DocumentPageController {
 
         ElementNode fixedViewportProbe = document.div();
         fixedViewportProbe.style()
-                .setWidth(UiStyleLength.px(138))
-                .setHeight(UiStyleLength.px(28))
+                .setWidth(UiStyleLength.px(178))
+                .setHeight(UiStyleLength.px(26))
                 .setPosition(UiPosition.FIXED)
-                .setTop(UiStyleLength.px(12))
+                .setBottom(UiStyleLength.px(12))
                 .setRight(UiStyleLength.px(14))
                 .setZIndex(20)
                 .setPadding(UiStyleLength.px(6))
@@ -141,8 +142,10 @@ final class HtmlLikeSmokeDocumentPageController extends DocumentPageController {
                 .setTextColor(0xFFE6FFFA)
                 .setOverflowX(UiOverflow.HIDDEN)
                 .setOverflowY(UiOverflow.HIDDEN);
-        fixedViewportProbe.appendText("FIXED viewport probe");
+        fixedViewportProbe.appendText("FIXED viewport stays here");
         root.append(fixedViewportProbe);
+
+        appendControlsSection(document, root);
 
         ElementNode row = document.div();
         row.style()
@@ -151,13 +154,14 @@ final class HtmlLikeSmokeDocumentPageController extends DocumentPageController {
                 .setAlignItems(UiAlignItems.STRETCH)
                 .setJustifyContent(UiJustifyContent.START)
                 .setColumnGap(UiStyleLength.px(14))
-                .setHeight(UiStyleLength.px(112))
-                .setMargin(UiStyleLength.px(16));
+                .setHeight(UiStyleLength.px(158))
+                .setMargin(UiStyleInsets.of(UiStyleLength.px(16), UiStyleLength.px(0), UiStyleLength.px(0),
+                        UiStyleLength.px(0)));
         root.append(row);
 
         ElementNode fixedCard = document.div();
         fixedCard.style()
-                .setWidth(UiStyleLength.px(126))
+                .setWidth(UiStyleLength.px(188))
                 .setPosition(UiPosition.RELATIVE)
                 .setPadding(UiStyleLength.px(8))
                 .setBackgroundColor(0xFF805AD5)
@@ -172,7 +176,7 @@ final class HtmlLikeSmokeDocumentPageController extends DocumentPageController {
 
         ElementNode staticWrapperProbe = document.div();
         staticWrapperProbe.style()
-                .setHeight(UiStyleLength.px(54))
+                .setHeight(UiStyleLength.px(78))
                 .setMargin(UiStyleInsets.of(UiStyleLength.px(8), UiStyleLength.px(0), UiStyleLength.px(0),
                         UiStyleLength.px(0)))
                 .setPadding(UiStyleLength.px(6))
@@ -222,7 +226,7 @@ final class HtmlLikeSmokeDocumentPageController extends DocumentPageController {
 
         ElementNode backdropStage = document.div();
         backdropStage.style()
-                .setWidth(UiStyleLength.px(218))
+                .setWidth(UiStyleLength.px(282))
                 .setPadding(UiStyleLength.px(8))
                 .setBackgroundColor(0xFF1A202C)
                 .setBorderColor(0xFF4FD1C5)
@@ -242,7 +246,7 @@ final class HtmlLikeSmokeDocumentPageController extends DocumentPageController {
 
         ElementNode absoluteBadge = document.div();
         absoluteBadge.style()
-                .setWidth(UiStyleLength.px(54))
+                .setWidth(UiStyleLength.px(72))
                 .setHeight(UiStyleLength.px(18))
                 .setPosition(UiPosition.ABSOLUTE)
                 .setTop(UiStyleLength.px(8))
@@ -300,8 +304,8 @@ final class HtmlLikeSmokeDocumentPageController extends DocumentPageController {
 
         ElementNode glassCard = document.div();
         glassCard.style()
-                .setWidth(UiStyleLength.px(158))
-                .setHeight(UiStyleLength.px(62))
+                .setWidth(UiStyleLength.px(188))
+                .setHeight(UiStyleLength.px(66))
                 .setPosition(UiPosition.RELATIVE)
                 .setTop(UiStyleLength.px(-58))
                 .setLeft(UiStyleLength.px(28))
@@ -318,15 +322,45 @@ final class HtmlLikeSmokeDocumentPageController extends DocumentPageController {
                 .setOverflowY(UiOverflow.HIDDEN);
         glassCard.appendText("Backdrop glass overlap: blur 14px / saturate 140%");
         backdropStage.append(glassCard);
+        appendAbsoluteStretchAndInlineProbe(document, root);
+        appendGroupOpacityProbe(document, root);
+        appendStackingContextProbe(document, root);
+        return document;
+    }
 
-        ElementNode footer = document.div();
-        footer.style()
+    /**
+     * 追加独立交互控件测试区，避免控件被定位、backdrop 与布局探针挤在同一行中。
+     *
+     * @param document HTML-like 文档
+     * @param root 文档根元素
+     */
+    private static void appendControlsSection(UiDocument document, ElementNode root) {
+        ElementNode controlsSection = document.div();
+        controlsSection.style()
+                .setHeight(UiStyleLength.px(92))
+                .setMargin(UiStyleInsets.of(UiStyleLength.px(14), UiStyleLength.px(0), UiStyleLength.px(0),
+                        UiStyleLength.px(0)))
+                .setPadding(UiStyleLength.px(10))
+                .setBackgroundColor(0xFF101827)
+                .setBorderColor(0xFF22D3EE)
+                .setBorderWidth(UiStyleLength.px(1))
+                .setBorderRadius(UiStyleLength.px(14))
+                .setTextColor(0xFFE0F2FE)
+                .setOverflowX(UiOverflow.HIDDEN)
+                .setOverflowY(UiOverflow.HIDDEN);
+        controlsSection.appendText("Controls probe: click, input, Tab, button, toggle");
+        root.append(controlsSection);
+
+        ElementNode controlsRow = document.div();
+        controlsRow.style()
                 .setHeight(UiStyleLength.px(46))
                 .setDisplay(UiDisplay.FLEX)
                 .setFlexDirection(UiFlexDirection.ROW)
                 .setAlignItems(UiAlignItems.STRETCH)
-                .setColumnGap(UiStyleLength.px(10));
-        root.append(footer);
+                .setColumnGap(UiStyleLength.px(10))
+                .setMargin(UiStyleInsets.of(UiStyleLength.px(8), UiStyleLength.px(0), UiStyleLength.px(0),
+                        UiStyleLength.px(0)));
+        controlsSection.append(controlsRow);
 
         final ElementNode firstPill = document.div();
         firstPill.style()
@@ -355,7 +389,7 @@ final class HtmlLikeSmokeDocumentPageController extends DocumentPageController {
                 return true;
             }
         });
-        footer.append(firstPill);
+        controlsRow.append(firstPill);
 
         final DocumentTextInputControl textInputControl = new DocumentTextInputControl(document);
         textInputControl.setPlaceholder("Type target: click then type")
@@ -376,7 +410,7 @@ final class HtmlLikeSmokeDocumentPageController extends DocumentPageController {
                 .setFlexGrow(2.0F)
                 .setBorderRadius(UiStyleLength.px(999))
                 .setPadding(UiStyleLength.px(10));
-        footer.append(textInputControl.getElement());
+        controlsRow.append(textInputControl.getElement());
 
         final ElementNode tabPill = document.div();
         tabPill.style()
@@ -396,7 +430,7 @@ final class HtmlLikeSmokeDocumentPageController extends DocumentPageController {
                 tabText.setText(formatTabFocusLabel(event.isFocusVisible()));
             }
         });
-        footer.append(tabPill);
+        controlsRow.append(tabPill);
 
         final DocumentButtonControl buttonControl = new DocumentButtonControl(document, "Button ctrl: 0");
         final int[] buttonCount = new int[] { 0 };
@@ -410,18 +444,14 @@ final class HtmlLikeSmokeDocumentPageController extends DocumentPageController {
                     }
                 });
         buttonControl.getElement().style().setFlexGrow(1.0F);
-        footer.append(buttonControl.getElement());
+        controlsRow.append(buttonControl.getElement());
 
         final DocumentToggleSwitchControl toggleControl = new DocumentToggleSwitchControl(document);
         toggleControl.setToggled(true)
                 .setTrackColors(0xFF718096, 0xFF48BB78, 0xFF333344)
                 .setFocusBorderColor(0xFFBEE3F8);
         toggleControl.getElement().style().setFlexGrow(0.6F);
-        footer.append(toggleControl.getElement());
-        appendAbsoluteStretchAndInlineProbe(document, root);
-        appendGroupOpacityProbe(document, root);
-        appendStackingContextProbe(document, root);
-        return document;
+        controlsRow.append(toggleControl.getElement());
     }
 
     private static void appendAbsoluteStretchAndInlineProbe(UiDocument document, ElementNode root) {
@@ -478,9 +508,24 @@ final class HtmlLikeSmokeDocumentPageController extends DocumentPageController {
                         UiStyleLength.px(0)))
                 .setTextColor(0xFFE0F2FE);
         inlineLine.appendText("Inline mix: text ");
-        ElementNode amberSpan = document.span();
-        amberSpan.style().setTextColor(0xFFFFD166);
-        amberSpan.appendText("amber span");
+        final ElementNode amberSpan = document.span();
+        amberSpan.style()
+                .setBackgroundColor(0x334F46E5)
+                .setBorderColor(0xFFFFD166)
+                .setBorderWidth(UiStyleLength.px(1))
+                .setBorderRadius(UiStyleLength.px(5))
+                .setTextColor(0xFFFFD166);
+        final TextNode amberSpanText = amberSpan.appendText("amber span hit: 0");
+        final int[] amberSpanClickCount = new int[] { 0 };
+        amberSpan.setClickHandler(new DocumentElementClickHandler() {
+            @Override
+            public boolean onClick(DocumentElementClickEvent event) {
+                amberSpanClickCount[0]++;
+                amberSpanText.setText("amber span hit: " + amberSpanClickCount[0]);
+                amberSpan.style().setBackgroundColor(amberSpanClickCount[0] % 2 == 0 ? 0x334F46E5 : 0x5538BDF8);
+                return true;
+            }
+        });
         inlineLine.append(amberSpan);
         inlineLine.appendText(" continues on the same line and wraps as one flow.");
         probe.append(inlineLine);

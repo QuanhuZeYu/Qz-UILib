@@ -53,7 +53,8 @@ public class HtmlLikeSmokeDocumentPageControllerTest {
         List<String> texts = collectDocumentTexts(fixture.controller.getHtmlLikeDocumentWidget());
         Assert.assertTrue(containsText(texts, "HTML-like Smoke Lab"));
         Assert.assertTrue(containsText(texts, "UiDocument -> style -> layout -> paint command -> UiRenderContext"));
-        Assert.assertTrue(containsText(texts, "FIXED viewport probe"));
+        Assert.assertTrue(containsText(texts, "FIXED viewport stays here"));
+        Assert.assertTrue(containsText(texts, "Controls probe: click, input, Tab, button, toggle"));
         Assert.assertTrue(containsText(texts, "Same-layer sampling grid"));
         Assert.assertTrue(containsText(texts, "ABS containing probe"));
         Assert.assertTrue(containsText(texts, "static wrapper is not anchor"));
@@ -64,7 +65,7 @@ public class HtmlLikeSmokeDocumentPageControllerTest {
         Assert.assertTrue(containsText(texts, "Backdrop glass overlap: blur 14px / saturate 140%"));
         Assert.assertTrue(containsText(texts, "Absolute stretch + inline span probe"));
         Assert.assertTrue(containsText(texts, "ABS stretch fill: left+right / top+bottom"));
-        Assert.assertTrue(containsText(texts, "amber span"));
+        Assert.assertTrue(containsText(texts, "amber span hit: 0"));
         Assert.assertTrue(containsText(texts, "Group opacity probe: overlap should stay flat blue"));
         Assert.assertTrue(containsText(texts, "Stacking context probe: blue cover must stay above red z-99 child"));
         Assert.assertTrue(containsText(texts, "red child z=99"));
@@ -101,13 +102,14 @@ public class HtmlLikeSmokeDocumentPageControllerTest {
         Assert.assertEquals(12, renderContext.backdropCalls.get(0).cornerRadius);
         Assert.assertTrue(containsFillColor(renderContext.drawCalls, 0xFFFFD166));
         Assert.assertTrue(containsFillColor(renderContext.drawCalls, 0xFF0EA5E9));
+        Assert.assertTrue(containsFillColor(renderContext.drawCalls, 0x334F46E5));
         Assert.assertTrue(containsTextCall(renderContext.textCalls, "ABS OK"));
         assertAbsoluteProbeIsVisibleOutsideStaticWrapper(widget, fixture.textMeasureService);
         assertGroupOpacityProbeKeepsChildColorsOpaque(widget, fixture.textMeasureService);
         assertStackingContextProbeKeepsHighZChildIsolated(widget, fixture.textMeasureService);
-        Assert.assertTrue(containsTextCall(renderContext.textCalls, "FIXED viewport probe"));
+        Assert.assertTrue(containsTextCall(renderContext.textCalls, "FIXED viewport stays here"));
         Assert.assertTrue(containsTextCall(renderContext.textCalls, "ABS stretch fill"));
-        Assert.assertTrue(containsTextCall(renderContext.textCalls, "amber span"));
+        Assert.assertTrue(containsTextCall(renderContext.textCalls, "amber span hit: 0"));
         Assert.assertTrue(containsTextCall(renderContext.textCalls, "TEXT paint command"));
     }
 
@@ -127,8 +129,8 @@ public class HtmlLikeSmokeDocumentPageControllerTest {
         widget.render(initialRenderContext);
         Assert.assertTrue(containsTextCall(initialRenderContext.textCalls, "Click target: 0"));
 
-        widget.onMouseDown(new UiMouseEvent(UiMouseEvent.Action.BUTTON_DOWN, 70, 280, 0, 0, 0, 0, 1L));
-        widget.onMouseUp(new UiMouseEvent(UiMouseEvent.Action.BUTTON_UP, 70, 280, 0, 0, 0, 0, 2L));
+        ElementNode clickTarget = findElementContainingDirectText(widget, "Click target: 0 / fade+morph");
+        clickElementCenter(widget, fixture.textMeasureService, clickTarget, 1L, 2L);
         RecordingUiRenderContext clickedRenderContext = new RecordingUiRenderContext();
         widget.render(clickedRenderContext);
 
@@ -152,7 +154,8 @@ public class HtmlLikeSmokeDocumentPageControllerTest {
         widget.render(initialRenderContext);
         Assert.assertTrue(containsTextCall(initialRenderContext.textCalls, "Type target: click then type"));
 
-        widget.onMouseDown(new UiMouseEvent(UiMouseEvent.Action.BUTTON_DOWN, 350, 280, 0, 0, 0, 0, 1L));
+        ElementNode inputTarget = findElementContainingDirectText(widget, "Type target: click then type");
+        clickElementCenter(widget, fixture.textMeasureService, inputTarget, 1L, 2L);
         widget.onTextInput(new UiTextInputEvent("A\nB", 2L));
         RecordingUiRenderContext typedRenderContext = new RecordingUiRenderContext();
         widget.render(typedRenderContext);
@@ -250,11 +253,36 @@ public class HtmlLikeSmokeDocumentPageControllerTest {
         widget.render(onRenderContext);
         Assert.assertTrue(containsFillColor(onRenderContext.drawCalls, 0xFF48BB78));
 
-        widget.onMouseDown(new UiMouseEvent(UiMouseEvent.Action.BUTTON_DOWN, 710, 280, 0, 0, 0, 0, 1L));
-        widget.onMouseUp(new UiMouseEvent(UiMouseEvent.Action.BUTTON_UP, 710, 280, 0, 0, 0, 0, 2L));
+        ElementNode toggleTarget = findElementWithBackgroundColor(widget.getDocument().getRootElement(), 0xFF48BB78);
+        clickElementCenter(widget, fixture.textMeasureService, toggleTarget, 1L, 2L);
         RecordingUiRenderContext offRenderContext = new RecordingUiRenderContext();
         widget.render(offRenderContext);
         Assert.assertTrue(containsFillColor(offRenderContext.drawCalls, 0xFF718096));
+    }
+
+    /**
+     * 验证 Smoke 页内 inline span 可以通过文本 fragment 命中并触发 click handler。
+     */
+    @Test
+    public void shouldUpdateSmokeInlineSpanWhenClicked() {
+        TestFixture fixture = new TestFixture();
+
+        fixture.controller.configureDocumentPage();
+        fixture.controller.buildDocument();
+        HtmlLikeDocumentWidget widget = fixture.controller.getHtmlLikeDocumentWidget();
+        widget.applyLayoutBounds(31, 47, 760, 900);
+        RecordingUiRenderContext initialRenderContext = new RecordingUiRenderContext();
+
+        widget.render(initialRenderContext);
+        Assert.assertTrue(containsTextCall(initialRenderContext.textCalls, "amber span hit: 0"));
+
+        ElementNode inlineTarget = findElementContainingDirectText(widget, "amber span hit: 0");
+        clickElementCenter(widget, fixture.textMeasureService, inlineTarget, 1L, 2L);
+        RecordingUiRenderContext clickedRenderContext = new RecordingUiRenderContext();
+        widget.render(clickedRenderContext);
+
+        Assert.assertTrue(containsTextCall(clickedRenderContext.textCalls, "amber span hit: 1"));
+        Assert.assertTrue(containsFillColor(clickedRenderContext.drawCalls, 0x5538BDF8));
     }
 
     private static List<String> collectDocumentTexts(HtmlLikeDocumentWidget widget) {
@@ -407,6 +435,26 @@ public class HtmlLikeSmokeDocumentPageControllerTest {
             }
         }
         return null;
+    }
+
+    private static void clickElementCenter(HtmlLikeDocumentWidget widget, TextMeasureService textMeasureService,
+            ElementNode element, long downTimeNanos, long upTimeNanos) {
+        Assert.assertNotNull(element);
+        DocumentLayoutBox rootBox = DocumentLayoutEngine.layoutViewportRoot(widget.getDocument().getRootElement(),
+                widget.getWidth(), widget.getHeight(), textMeasureService);
+        List<DocumentPaintCommand> paintCommands = DocumentPaintEngine.buildPaintCommands(rootBox);
+        DocumentPaintCommand command = findPaintCommand(paintCommands, DocumentPaintCommandType.BACKGROUND,
+                element.__getElementUid());
+        if (command == null) {
+            command = findPaintCommand(paintCommands, DocumentPaintCommandType.BORDER, element.__getElementUid());
+        }
+        Assert.assertNotNull(command);
+        int screenX = widget.getAbsoluteX() + command.getLeft() + Math.max(1, command.getWidth()) / 2;
+        int screenY = widget.getAbsoluteY() + command.getTop() + Math.max(1, command.getHeight()) / 2;
+        widget.onMouseDown(new UiMouseEvent(UiMouseEvent.Action.BUTTON_DOWN, screenX, screenY, 0, 0, 0, 0,
+                downTimeNanos));
+        widget.onMouseUp(new UiMouseEvent(UiMouseEvent.Action.BUTTON_UP, screenX, screenY, 0, 0, 0, 0,
+                upTimeNanos));
     }
 
     private static ElementNode findElementContainingDirectText(HtmlLikeDocumentWidget widget, String expectedText) {

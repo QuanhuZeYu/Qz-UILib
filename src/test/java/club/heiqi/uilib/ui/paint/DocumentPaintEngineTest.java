@@ -845,6 +845,40 @@ public class DocumentPaintEngineTest {
     }
 
     /**
+     * 验证 inline span 文本片段会生成自身背景与边框 fragment 命令。
+     */
+    @Test
+    public void shouldPaintInlineSpanFragmentSurfaceBeforeText() {
+        UiDocument document = UiDocument.create();
+        ElementNode root = document.getRootElement();
+        ElementNode span = document.span();
+
+        root.style()
+                .setWidth(UiStyleLength.px(48))
+                .setTextColor(0xFFEFF6FF);
+        span.style()
+                .setBackgroundColor(0x334F46E5)
+                .setBorderColor(0xFFFFD166)
+                .setBorderWidth(UiStyleLength.px(1))
+                .setBorderRadius(UiStyleLength.px(5))
+                .setTextColor(0xFFFFD166);
+        root.appendText("AA");
+        span.appendText("BBBB");
+        root.append(span);
+
+        List<DocumentPaintCommand> commands = DocumentPaintEngine.buildPaintCommands(DocumentLayoutEngine.layout(root,
+                80, 0, new DeterministicTextMeasureService()));
+
+        Assert.assertEquals(4, commands.size());
+        assertCommand(commands.get(0), DocumentPaintCommandType.BACKGROUND, span, 16, 0, 48, 18, 0x334F46E5, 0,
+                5);
+        assertCommand(commands.get(1), DocumentPaintCommandType.BORDER, span, 16, 0, 48, 18, 0xFFFFD166, 1,
+                5);
+        assertCommand(commands.get(2), DocumentPaintCommandType.TEXT, root, 0, 0, 16, 18, 0xFFEFF6FF, 0, 0);
+        assertCommand(commands.get(3), DocumentPaintCommandType.TEXT, span, 16, 0, 48, 18, 0xFFFFD166, 0, 0);
+    }
+
+    /**
      * 验证 CUSTOM 绘制命令使用元素内容盒，而不是 padding 盒。
      */
     @Test

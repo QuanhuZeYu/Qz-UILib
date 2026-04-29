@@ -27,11 +27,10 @@ public final class DocumentHitTestEngine {
     public static ElementNode hitTest(DocumentLayoutBox rootBox, DocumentScrollState scrollState, int documentX,
             int documentY) {
         Objects.requireNonNull(rootBox, "rootBox");
-        DocumentLayoutBox hitBox = hitTestBox(rootBox, scrollState, documentX, documentY, 0, 0, true);
-        return hitBox == null ? null : hitBox.getElement();
+        return hitTestBox(rootBox, scrollState, documentX, documentY, 0, 0, true);
     }
 
-    private static DocumentLayoutBox hitTestBox(DocumentLayoutBox box, DocumentScrollState scrollState, int documentX,
+    private static ElementNode hitTestBox(DocumentLayoutBox box, DocumentScrollState scrollState, int documentX,
             int documentY, int offsetX, int offsetY, boolean searchStackingContext) {
         int baseOffsetX = box.isFixedPositioned() ? 0 : offsetX;
         int baseOffsetY = box.isFixedPositioned() ? 0 : offsetY;
@@ -42,19 +41,23 @@ public final class DocumentHitTestEngine {
         if (canHitTestChildren(box, documentX, documentY, boxOffsetX, boxOffsetY)) {
             int childOffsetX = boxOffsetX - getScrollLeft(scrollState, box);
             int childOffsetY = boxOffsetY - getScrollTop(scrollState, box);
-            DocumentLayoutBox childHit = searchStackingContext
+            ElementNode childHit = searchStackingContext
                     ? hitStackingContextChildren(box, scrollState, documentX, documentY, childOffsetX, childOffsetY)
                     : hitNormalFlowChildren(box, scrollState, documentX, documentY, childOffsetX, childOffsetY);
             if (childHit != null) {
                 return childHit;
             }
+            ElementNode inlineTextHit = hitTextRuns(box, documentX, documentY, childOffsetX, childOffsetY);
+            if (inlineTextHit != null) {
+                return inlineTextHit;
+            }
         }
-        return insideBorderBox ? box : null;
+        return insideBorderBox ? box.getElement() : null;
     }
 
-    private static DocumentLayoutBox hitStackingContextChildren(DocumentLayoutBox contextRoot,
+    private static ElementNode hitStackingContextChildren(DocumentLayoutBox contextRoot,
             DocumentScrollState scrollState, int documentX, int documentY, int childOffsetX, int childOffsetY) {
-        DocumentLayoutBox hit = hitStackingPhaseItems(contextRoot, scrollState, documentX, documentY, childOffsetX,
+        ElementNode hit = hitStackingPhaseItems(contextRoot, scrollState, documentX, documentY, childOffsetX,
                 childOffsetY, DocumentStackingPhase.POSITIVE_POSITIONED);
         if (hit != null) {
             return hit;
@@ -72,7 +75,7 @@ public final class DocumentHitTestEngine {
                 DocumentStackingPhase.NEGATIVE_POSITIONED);
     }
 
-    private static DocumentLayoutBox hitNormalFlowChildren(DocumentLayoutBox box, DocumentScrollState scrollState,
+    private static ElementNode hitNormalFlowChildren(DocumentLayoutBox box, DocumentScrollState scrollState,
             int documentX, int documentY, int childOffsetX, int childOffsetY) {
         List<DocumentLayoutBox> children = box.getChildren();
         for (int index = children.size() - 1; index >= 0; index--) {
@@ -81,7 +84,7 @@ public final class DocumentHitTestEngine {
                 continue;
             }
             boolean childStackingContext = shouldSearchAsStackingContext(child);
-            DocumentLayoutBox hit = hitTestBox(child, scrollState, documentX, documentY, childOffsetX, childOffsetY,
+            ElementNode hit = hitTestBox(child, scrollState, documentX, documentY, childOffsetX, childOffsetY,
                     childStackingContext);
             if (hit != null) {
                 return hit;
@@ -90,7 +93,7 @@ public final class DocumentHitTestEngine {
         return null;
     }
 
-    private static DocumentLayoutBox hitStackingPhaseItems(DocumentLayoutBox contextRoot,
+    private static ElementNode hitStackingPhaseItems(DocumentLayoutBox contextRoot,
             DocumentScrollState scrollState, int documentX, int documentY, int childOffsetX, int childOffsetY,
             DocumentStackingPhase phase) {
         List<StackingHitItem> items = new ArrayList<StackingHitItem>();
@@ -106,7 +109,7 @@ public final class DocumentHitTestEngine {
         }
         for (int index = items.size() - 1; index >= 0; index--) {
             StackingHitItem item = items.get(index);
-            DocumentLayoutBox hit = hitTestBox(item.box, scrollState, documentX, documentY, item.offsetX,
+            ElementNode hit = hitTestBox(item.box, scrollState, documentX, documentY, item.offsetX,
                     item.offsetY, item.searchStackingContext);
             if (hit != null) {
                 return hit;
@@ -134,6 +137,19 @@ public final class DocumentHitTestEngine {
     private static boolean canHitTestChildren(DocumentLayoutBox box, int documentX, int documentY, int offsetX,
             int offsetY) {
         return DocumentEffectChain.resolve(box).canReachChildrenAt(documentX, documentY, offsetX, offsetY);
+    }
+
+    private static ElementNode hitTextRuns(DocumentLayoutBox box, int documentX, int documentY, int offsetX,
+            int offsetY) {
+        List<DocumentLayoutTextRun> textRuns = box.getTextRuns();
+        for (int index = textRuns.size() - 1; index >= 0; index--) {
+            DocumentLayoutTextRun textRun = textRuns.get(index);
+            if (containsInRect(documentX, documentY, textRun.getLeft() + offsetX, textRun.getTop() + offsetY,
+                    textRun.getRight() + offsetX, textRun.getBottom() + offsetY)) {
+                return textRun.getOwnerElement();
+            }
+        }
+        return null;
     }
 
     private static int getScrollLeft(DocumentScrollState scrollState, DocumentLayoutBox box) {

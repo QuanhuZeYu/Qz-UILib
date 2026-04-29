@@ -165,6 +165,28 @@ public class DocumentHitTestEngineTest {
     }
 
     /**
+     * 验证 inline span 文本片段可以作为最深元素被命中。
+     */
+    @Test
+    public void shouldHitInlineSpanTextRun() {
+        UiDocument document = UiDocument.create();
+        ElementNode root = document.getRootElement();
+        ElementNode span = document.span();
+
+        root.style().setWidth(UiStyleLength.px(48));
+        root.appendText("AA");
+        span.appendText("BBBB");
+        root.append(span);
+        root.appendText("CC");
+
+        DocumentLayoutBox rootBox = DocumentLayoutEngine.layout(root, 80, 0);
+
+        assertHitElement(root, rootBox, 4, 5);
+        assertHitElement(span, rootBox, 20, 5);
+        assertHitElement(root, rootBox, 4, 23);
+    }
+
+    /**
      * 验证负 z-index 元素在普通流元素下方命中。
      */
     @Test
