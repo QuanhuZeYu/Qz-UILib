@@ -330,7 +330,7 @@ final class HtmlLikeGlassDocumentPageController extends DocumentPageController {
         probeCanvas.append(sourceGlass);
 
         ElementNode coveredTargetGlass = createGlassBlock(document, 0x40C4B5FD, 0xCCEDE9FE, 18, 120,
-                "Atlas target inside source", "If read revision is stable, expect atlas-block128");
+                "Atlas target inside source", "Stable rev may show atlas-block128 or tile-atlas-block128");
         coveredTargetGlass.style()
                 .setWidth(UiStyleLength.percent(0.32F))
                 .setHeight(UiStyleLength.px(58))

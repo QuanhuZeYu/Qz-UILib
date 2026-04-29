@@ -180,6 +180,57 @@ public class UiMainLayerSnapshotServiceTest {
         Assert.assertEquals(6, coveragePlan.getTileCount());
         Assert.assertEquals(3, coveragePlan.getCoveredTileCount());
         Assert.assertEquals(3, coveragePlan.getMissingTileCount());
+        Assert.assertTrue(coveragePlan.isTileCovered(0, 0));
+        Assert.assertTrue(coveragePlan.isTileCovered(0, 1));
+        Assert.assertTrue(coveragePlan.isTileCovered(2, 1));
+        Assert.assertFalse(coveragePlan.isTileCovered(1, 0));
+        Assert.assertFalse(coveragePlan.isTileCovered(1, 1));
+        Assert.assertFalse(coveragePlan.isTileCovered(2, 0));
+    }
+
+    /**
+     * 验证 tile 采样像素区域会被请求区域裁剪，用于后续 atlas 子区域复制。
+     */
+    @Test
+    public void shouldResolveTileSampleRegionInsideRequestedRegion() {
+        UiMainLayerSnapshotService.SampleRegion requestedRegion = UiMainLayerSnapshotService.resolveSampleRegion(512,
+                512, 10, 20, 260, 260, 0);
+
+        UiMainLayerSnapshotService.SampleRegion topLeftTile = UiMainLayerSnapshotService.resolveTileSampleRegion(
+                requestedRegion, 0, 0, 1, 1);
+        UiMainLayerSnapshotService.SampleRegion centerTile = UiMainLayerSnapshotService.resolveTileSampleRegion(
+                requestedRegion, 1, 1, 2, 2);
+        UiMainLayerSnapshotService.SampleRegion bottomRightTile = UiMainLayerSnapshotService.resolveTileSampleRegion(
+                requestedRegion, 2, 2, 3, 3);
+
+        Assert.assertEquals(9, topLeftTile.getLeft());
+        Assert.assertEquals(19, topLeftTile.getTop());
+        Assert.assertEquals(128, topLeftTile.getRight());
+        Assert.assertEquals(128, topLeftTile.getBottom());
+        Assert.assertEquals(128, centerTile.getLeft());
+        Assert.assertEquals(128, centerTile.getTop());
+        Assert.assertEquals(256, centerTile.getRight());
+        Assert.assertEquals(256, centerTile.getBottom());
+        Assert.assertEquals(256, bottomRightTile.getLeft());
+        Assert.assertEquals(256, bottomRightTile.getTop());
+        Assert.assertEquals(261, bottomRightTile.getRight());
+        Assert.assertEquals(261, bottomRightTile.getBottom());
+    }
+
+    /**
+     * 验证 top-left 子区域能转换为 OpenGL atlas 纹理底部原点 Y 偏移。
+     */
+    @Test
+    public void shouldResolveTextureCopyTargetYForAtlasSubRegion() {
+        UiMainLayerSnapshotService.SampleRegion atlasRegion = UiMainLayerSnapshotService.resolveSampleRegion(1024,
+                768, 128, 128, 512, 384, 0);
+        UiMainLayerSnapshotService.SampleRegion topTile = UiMainLayerSnapshotService.resolveTileSampleRegion(
+                atlasRegion, 1, 1, 2, 2);
+        UiMainLayerSnapshotService.SampleRegion bottomTile = UiMainLayerSnapshotService.resolveTileSampleRegion(
+                atlasRegion, 3, 3, 4, 4);
+
+        Assert.assertEquals(129, UiMainLayerSnapshotService.resolveTextureCopyTargetY(atlasRegion, topTile));
+        Assert.assertEquals(0, UiMainLayerSnapshotService.resolveTextureCopyTargetY(atlasRegion, bottomTile));
     }
 
     /**

@@ -16,7 +16,8 @@ import org.lwjgl.opengl.GL30;
  * 当前 UI 主层的同帧快照服务。
  *
  * <p>该服务只属于渲染后端，用于让 `backdrop-filter` 元素在当前 UI 主层内容未变化时复用已复制纹理。
- * 同帧已捕获的较大 block 区域也可作为临时 atlas，供后续被其覆盖的较小区域继续采样。
+ * 同帧已捕获的较大 block 区域也可作为临时 atlas，供后续被其覆盖的较小区域继续采样；
+ * 多个已捕获 tile 能覆盖同一次请求时，也会组装成新的局部 atlas，缺失 tile 才从当前 read framebuffer 复制。
  * 一旦两次 backdrop 之间有新的 UI 绘制写入，就必须重新捕获，避免后续元素采样到旧主层。
  * 文档作者层仍只暴露 CSS-like backdrop 语义，不接触纹理、FBO 或 OpenGL 状态。</p>
  */
@@ -183,7 +184,7 @@ public final class UiMainLayerSnapshotService {
         }
         String tileDetail = formatTileDetail(tileCoveragePlan, 0, tileCoveragePlan.getTileCount());
         if (!captureSnapshot(snapshot, screenHeight, reusableRegion, readFramebufferId, contentRevision,
-                downsampleFactor, blurRadius, regionDetail, tileDetail)) {
+                downsampleFactor, blurRadius, regionDetail, tileCoveragePlan)) {
             return null;
         }
         return Snapshot.captured(snapshot.textureId, reusableRegion, readFramebufferId, contentRevision,
@@ -379,6 +380,45 @@ public final class UiMainLayerSnapshotService {
     }
 
     /**
+     * 将 tile 网格范围裁剪到具体采样区域内的像素范围。
+     *
+     * @param sampleRegion 采样区域
+     * @param tileLeft 左侧 tile 坐标
+     * @param tileTop 顶部 tile 坐标
+     * @param tileRight 右侧 tile 坐标
+     * @param tileBottom 底部 tile 坐标
+     * @return 裁剪后的像素区域；无交集时返回 null
+     */
+    static SampleRegion resolveTileSampleRegion(SampleRegion sampleRegion, int tileLeft, int tileTop,
+            int tileRight, int tileBottom) {
+        if (sampleRegion == null || tileRight <= tileLeft || tileBottom <= tileTop) {
+            return null;
+        }
+        int left = Math.max(sampleRegion.getLeft(), tileLeft * SNAPSHOT_BLOCK_SIZE);
+        int top = Math.max(sampleRegion.getTop(), tileTop * SNAPSHOT_BLOCK_SIZE);
+        int right = Math.min(sampleRegion.getRight(), tileRight * SNAPSHOT_BLOCK_SIZE);
+        int bottom = Math.min(sampleRegion.getBottom(), tileBottom * SNAPSHOT_BLOCK_SIZE);
+        if (right <= left || bottom <= top) {
+            return null;
+        }
+        return new SampleRegion(left, top, right, bottom);
+    }
+
+    /**
+     * 将 top-left UI 子区域映射到 atlas 纹理的 bottom-left Y 偏移。
+     *
+     * @param atlasRegion atlas 采样区域
+     * @param copiedRegion 要写入的子区域
+     * @return OpenGL 纹理底部原点坐标系中的目标 Y 偏移
+     */
+    static int resolveTextureCopyTargetY(SampleRegion atlasRegion, SampleRegion copiedRegion) {
+        if (atlasRegion == null || copiedRegion == null) {
+            return 0;
+        }
+        return Math.max(0, atlasRegion.getBottom() - copiedRegion.getBottom());
+    }
+
+    /**
      * 计算请求 tile 区域已经被哪些既有 tile 区域覆盖。
      *
      * @param requestedTileRegion 请求 tile 区域
@@ -417,7 +457,7 @@ public final class UiMainLayerSnapshotService {
                 }
             }
         }
-        return new TileCoveragePlan(requestedTileRegion, coveredTileCount);
+        return new TileCoveragePlan(requestedTileRegion, coveredTileCount, coveredTiles);
     }
 
     private FrameSnapshotMatch findCapturedSnapshot(int readFramebufferId, SampleRegion sampleRegion,
@@ -469,9 +509,15 @@ public final class UiMainLayerSnapshotService {
 
     private boolean captureSnapshot(FrameSnapshot snapshot, int screenHeight, SampleRegion sampleRegion,
             int readFramebufferId, int contentRevision, int requestedDownsampleFactor, int blurRadius,
-            String regionDetail, String tileDetail) {
+            String regionDetail, TileCoveragePlan tileCoveragePlan) {
         int width = sampleRegion.getWidth();
         int height = sampleRegion.getHeight();
+        List<TileAssemblyEntry> tileAssemblyEntries = resolveTileAssemblyEntries(readFramebufferId, sampleRegion,
+                contentRevision, requestedDownsampleFactor, blurRadius);
+        int reusableTileCount = countReusableTileEntries(tileAssemblyEntries);
+        boolean assembleTileAtlas = reusableTileCount > 0;
+        String resolvedRegionDetail = assembleTileAtlas ? formatTileAtlasRegionDetail(regionDetail) : regionDetail;
+        String resolvedTileDetail = formatTileDetail(tileCoveragePlan, 0, resolveTileCount(sampleRegion));
         int previousTexture = 0;
         int previousReadFramebufferId = -1;
         int previousDrawFramebufferId = -1;
@@ -517,11 +563,19 @@ public final class UiMainLayerSnapshotService {
                 snapshot.sourceWidth = width;
                 snapshot.sourceHeight = height;
             }
-            if (previousReadFramebufferId != readFramebufferId) {
-                GL30.glBindFramebuffer(GL30.GL_READ_FRAMEBUFFER, readFramebufferId);
+            if (assembleTileAtlas) {
+                int copiedTileCount = copyMissingTileEntriesFromFramebuffer(snapshot, screenHeight, readFramebufferId,
+                        previousReadFramebufferId, sampleRegion, tileAssemblyEntries);
+                reusableTileCount = renderCoveredTileEntriesToAtlas(snapshot, sampleRegion, tileAssemblyEntries);
+                resolvedTileDetail = formatTileDetail(tileCoveragePlan, reusableTileCount, copiedTileCount);
+                GL11.glBindTexture(GL11.GL_TEXTURE_2D, snapshot.sourceTextureId);
+            } else {
+                if (previousReadFramebufferId != readFramebufferId) {
+                    GL30.glBindFramebuffer(GL30.GL_READ_FRAMEBUFFER, readFramebufferId);
+                }
+                GL11.glCopyTexSubImage2D(GL11.GL_TEXTURE_2D, 0, 0, 0, sampleRegion.getLeft(),
+                        resolveCopySourceY(screenHeight, sampleRegion), width, height);
             }
-            GL11.glCopyTexSubImage2D(GL11.GL_TEXTURE_2D, 0, 0, 0, sampleRegion.getLeft(),
-                    resolveCopySourceY(screenHeight, sampleRegion), width, height);
             GL30.glGenerateMipmap(GL11.GL_TEXTURE_2D);
             GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_MIN_FILTER, GL11.GL_LINEAR_MIPMAP_LINEAR);
 
@@ -534,8 +588,8 @@ public final class UiMainLayerSnapshotService {
             snapshot.blurRadius = blurRadius;
             snapshot.filterPassRadius = 0;
             snapshot.filterDetail = "raw";
-            snapshot.regionDetail = regionDetail;
-            snapshot.tileDetail = tileDetail;
+            snapshot.regionDetail = resolvedRegionDetail;
+            snapshot.tileDetail = resolvedTileDetail;
             if (downsampleFactor > 1) {
                 if (downsampleSnapshot(snapshot, downsampleFactor, blurRadius)) {
                     snapshot.filterDetail = "downsample" + snapshot.downsampleFactor + " "
@@ -585,6 +639,252 @@ public final class UiMainLayerSnapshotService {
             if (activeTextureCaptured) {
                 GL13.glActiveTexture(previousActiveTexture);
             }
+        }
+    }
+
+    /**
+     * 为当前请求生成每个 tile 的 atlas 组装来源。
+     *
+     * @param readFramebufferId read framebuffer
+     * @param sampleRegion 请求采样区域
+     * @param contentRevision 当前内容版本
+     * @param downsampleFactor 请求降采样倍率
+     * @param blurRadius 请求模糊半径
+     * @return tile 组装条目列表
+     */
+    private List<TileAssemblyEntry> resolveTileAssemblyEntries(int readFramebufferId, SampleRegion sampleRegion,
+            int contentRevision, int downsampleFactor, int blurRadius) {
+        List<TileAssemblyEntry> entries = new ArrayList<TileAssemblyEntry>();
+        TileRegion requestedTileRegion = resolveTileRegion(sampleRegion);
+        for (int tileY = requestedTileRegion.getTileTop(); tileY < requestedTileRegion.getTileBottom(); tileY++) {
+            for (int tileX = requestedTileRegion.getTileLeft(); tileX < requestedTileRegion.getTileRight(); tileX++) {
+                SampleRegion tileSampleRegion = resolveTileSampleRegion(sampleRegion, tileX, tileY, tileX + 1,
+                        tileY + 1);
+                if (tileSampleRegion == null) {
+                    continue;
+                }
+                FrameSnapshot sourceSnapshot = findTileSourceSnapshot(readFramebufferId, tileSampleRegion,
+                        contentRevision, downsampleFactor, blurRadius);
+                entries.add(new TileAssemblyEntry(tileSampleRegion, sourceSnapshot));
+            }
+        }
+        return entries;
+    }
+
+    /**
+     * 统计可以从既有 snapshot 复用的 tile 数。
+     *
+     * @param entries tile 组装条目
+     * @return 可复用 tile 数
+     */
+    private static int countReusableTileEntries(List<TileAssemblyEntry> entries) {
+        int reusableTileCount = 0;
+        if (entries == null) {
+            return 0;
+        }
+        for (TileAssemblyEntry entry : entries) {
+            if (entry != null && entry.sourceSnapshot != null) {
+                reusableTileCount++;
+            }
+        }
+        return reusableTileCount;
+    }
+
+    /**
+     * 查找能完整覆盖指定 tile 像素区域的既有 snapshot。
+     *
+     * @param readFramebufferId read framebuffer
+     * @param tileSampleRegion tile 像素区域
+     * @param contentRevision 当前内容版本
+     * @param downsampleFactor 请求降采样倍率
+     * @param blurRadius 请求模糊半径
+     * @return 最小覆盖 snapshot；没有时返回 null
+     */
+    private FrameSnapshot findTileSourceSnapshot(int readFramebufferId, SampleRegion tileSampleRegion,
+            int contentRevision, int downsampleFactor, int blurRadius) {
+        FrameSnapshot sourceSnapshot = null;
+        for (FrameSnapshot snapshot : snapshots) {
+            if (snapshot.capturedFrameId == frameId && snapshot.readFramebufferId == readFramebufferId
+                    && snapshot.contentRevision == contentRevision
+                    && snapshot.requestedDownsampleFactor == downsampleFactor && snapshot.blurRadius == blurRadius
+                    && snapshot.sourceTextureId != 0 && containsSampleRegion(toSampleRegion(snapshot),
+                            tileSampleRegion) && isBetterContainingSnapshot(sourceSnapshot, snapshot)) {
+                sourceSnapshot = snapshot;
+            }
+        }
+        return sourceSnapshot;
+    }
+
+    /**
+     * 把缺失 tile 从当前 read framebuffer 写入 atlas 原始纹理。
+     *
+     * @param screenHeight 屏幕高度
+     * @param readFramebufferId read framebuffer
+     * @param previousReadFramebufferId 原 read framebuffer
+     * @param atlasRegion atlas 采样区域
+     * @param entries tile 组装条目
+     * @return 从 framebuffer 复制的 tile 数
+     */
+    private int copyMissingTileEntriesFromFramebuffer(FrameSnapshot snapshot, int screenHeight, int readFramebufferId,
+            int previousReadFramebufferId, SampleRegion atlasRegion, List<TileAssemblyEntry> entries) {
+        int copiedTileCount = 0;
+        if (entries == null || entries.isEmpty()) {
+            return 0;
+        }
+        GL11.glBindTexture(GL11.GL_TEXTURE_2D, snapshot.sourceTextureId);
+        if (previousReadFramebufferId != readFramebufferId) {
+            GL30.glBindFramebuffer(GL30.GL_READ_FRAMEBUFFER, readFramebufferId);
+        }
+        for (TileAssemblyEntry entry : entries) {
+            if (entry == null || entry.sourceSnapshot != null) {
+                continue;
+            }
+            SampleRegion copiedRegion = entry.sampleRegion;
+            GL11.glCopyTexSubImage2D(GL11.GL_TEXTURE_2D, 0,
+                    copiedRegion.getLeft() - atlasRegion.getLeft(), resolveTextureCopyTargetY(atlasRegion,
+                            copiedRegion), copiedRegion.getLeft(), resolveCopySourceY(screenHeight, copiedRegion),
+                    copiedRegion.getWidth(), copiedRegion.getHeight());
+            copiedTileCount++;
+        }
+        return copiedTileCount;
+    }
+
+    /**
+     * 把可复用 tile 从既有 snapshot 源纹理绘制到新的 atlas 原始纹理。
+     *
+     * @param snapshot 目标 snapshot
+     * @param atlasRegion atlas 采样区域
+     * @param entries tile 组装条目
+     * @return 从既有 snapshot 复用的 tile 数
+     */
+    private int renderCoveredTileEntriesToAtlas(FrameSnapshot snapshot, SampleRegion atlasRegion,
+            List<TileAssemblyEntry> entries) {
+        int reusableTileCount = 0;
+        if (entries == null || entries.isEmpty()) {
+            return 0;
+        }
+        ensureTextureAssemblyFramebuffer(snapshot);
+        GL30.glBindFramebuffer(GL30.GL_DRAW_FRAMEBUFFER, snapshot.filterFramebufferId);
+        GL30.glFramebufferTexture2D(GL30.GL_DRAW_FRAMEBUFFER, GL30.GL_COLOR_ATTACHMENT0, GL11.GL_TEXTURE_2D,
+                snapshot.sourceTextureId, 0);
+        int status = GL30.glCheckFramebufferStatus(GL30.GL_DRAW_FRAMEBUFFER);
+        if (status != GL30.GL_FRAMEBUFFER_COMPLETE) {
+            disableFilterPassForCurrentFrame("tile-atlas-fbo-incomplete:" + status);
+            throw new IllegalStateException("tile atlas fbo incomplete: " + status);
+        }
+
+        GL20.glUseProgram(0);
+        GL11.glViewport(0, 0, atlasRegion.getWidth(), atlasRegion.getHeight());
+        GL11.glDisable(GL11.GL_SCISSOR_TEST);
+        GL11.glDisable(GL11.GL_STENCIL_TEST);
+        GL11.glDisable(GL11.GL_DEPTH_TEST);
+        GL11.glDisable(GL11.GL_ALPHA_TEST);
+        GL11.glDisable(GL11.GL_BLEND);
+        GL11.glEnable(GL11.GL_TEXTURE_2D);
+        GL11.glColor4f(1.0F, 1.0F, 1.0F, 1.0F);
+
+        for (TileAssemblyEntry entry : entries) {
+            if (entry == null || entry.sourceSnapshot == null) {
+                continue;
+            }
+            renderSnapshotTileToAtlas(atlasRegion, entry.sampleRegion, entry.sourceSnapshot);
+            reusableTileCount++;
+        }
+        return reusableTileCount;
+    }
+
+    /**
+     * 确保 snapshot 有可用于 tile atlas 组装的 FBO。
+     *
+     * @param snapshot 目标 snapshot
+     */
+    private void ensureTextureAssemblyFramebuffer(FrameSnapshot snapshot) {
+        if (snapshot.filterFramebufferId == 0) {
+            snapshot.filterFramebufferId = GL30.glGenFramebuffers();
+            if (snapshot.filterFramebufferId == 0) {
+                throw new IllegalStateException("tile atlas framebuffer allocation failed");
+            }
+        }
+    }
+
+    /**
+     * 从既有 snapshot 源纹理中绘制一个 tile 子区域到目标 atlas。
+     *
+     * @param atlasRegion atlas 采样区域
+     * @param tileSampleRegion tile 像素区域
+     * @param sourceSnapshot 来源 snapshot
+     */
+    private static void renderSnapshotTileToAtlas(SampleRegion atlasRegion, SampleRegion tileSampleRegion,
+            FrameSnapshot sourceSnapshot) {
+        SampleRegion sourceRegion = toSampleRegion(sourceSnapshot);
+        float leftU = clampFloat(((float) tileSampleRegion.getLeft() - (float) sourceRegion.getLeft())
+                / (float) Math.max(1, sourceRegion.getWidth()), 0.0F, 1.0F);
+        float rightU = clampFloat(((float) tileSampleRegion.getRight() - (float) sourceRegion.getLeft())
+                / (float) Math.max(1, sourceRegion.getWidth()), 0.0F, 1.0F);
+        float topV = clampFloat(1.0F - ((float) tileSampleRegion.getTop() - (float) sourceRegion.getTop())
+                / (float) Math.max(1, sourceRegion.getHeight()), 0.0F, 1.0F);
+        float bottomV = clampFloat(1.0F - ((float) tileSampleRegion.getBottom() - (float) sourceRegion.getTop())
+                / (float) Math.max(1, sourceRegion.getHeight()), 0.0F, 1.0F);
+        int targetLeft = tileSampleRegion.getLeft() - atlasRegion.getLeft();
+        int targetTop = tileSampleRegion.getTop() - atlasRegion.getTop();
+        int targetRight = tileSampleRegion.getRight() - atlasRegion.getLeft();
+        int targetBottom = tileSampleRegion.getBottom() - atlasRegion.getTop();
+
+        GL11.glBindTexture(GL11.GL_TEXTURE_2D, sourceSnapshot.sourceTextureId);
+        drawAtlasTextureQuad(atlasRegion.getWidth(), atlasRegion.getHeight(), targetLeft, targetTop, targetRight,
+                targetBottom, leftU, rightU, topV, bottomV);
+    }
+
+    /**
+     * 在当前 draw framebuffer 上按 top-left 坐标绘制纹理子矩形。
+     *
+     * @param targetWidth 目标宽度
+     * @param targetHeight 目标高度
+     * @param left 目标左侧
+     * @param top 目标顶部
+     * @param right 目标右侧
+     * @param bottom 目标底部
+     * @param leftU 源纹理左侧 U
+     * @param rightU 源纹理右侧 U
+     * @param topV 源纹理顶部 V
+     * @param bottomV 源纹理底部 V
+     */
+    private static void drawAtlasTextureQuad(int targetWidth, int targetHeight, int left, int top, int right,
+            int bottom, float leftU, float rightU, float topV, float bottomV) {
+        int previousMatrixMode = GL11.glGetInteger(GL11.GL_MATRIX_MODE);
+        boolean projectionPushed = false;
+        boolean modelViewPushed = false;
+        try {
+            GL11.glMatrixMode(GL11.GL_PROJECTION);
+            GL11.glPushMatrix();
+            projectionPushed = true;
+            GL11.glLoadIdentity();
+            GL11.glOrtho(0.0D, (double) targetWidth, (double) targetHeight, 0.0D, -1.0D, 1.0D);
+            GL11.glMatrixMode(GL11.GL_MODELVIEW);
+            GL11.glPushMatrix();
+            modelViewPushed = true;
+            GL11.glLoadIdentity();
+
+            GL11.glBegin(GL11.GL_QUADS);
+            GL11.glTexCoord2f(leftU, bottomV);
+            GL11.glVertex2f((float) left, (float) bottom);
+            GL11.glTexCoord2f(rightU, bottomV);
+            GL11.glVertex2f((float) right, (float) bottom);
+            GL11.glTexCoord2f(rightU, topV);
+            GL11.glVertex2f((float) right, (float) top);
+            GL11.glTexCoord2f(leftU, topV);
+            GL11.glVertex2f((float) left, (float) top);
+            GL11.glEnd();
+        } finally {
+            if (modelViewPushed) {
+                GL11.glMatrixMode(GL11.GL_MODELVIEW);
+                GL11.glPopMatrix();
+            }
+            if (projectionPushed) {
+                GL11.glMatrixMode(GL11.GL_PROJECTION);
+                GL11.glPopMatrix();
+            }
+            GL11.glMatrixMode(previousMatrixMode);
         }
     }
 
@@ -833,6 +1133,14 @@ public final class UiMainLayerSnapshotService {
         return "atlas-" + regionDetail;
     }
 
+    private static String formatTileAtlasRegionDetail(String regionDetail) {
+        String atlasRegionDetail = formatAtlasRegionDetail(regionDetail);
+        if (atlasRegionDetail.startsWith("tile-")) {
+            return atlasRegionDetail;
+        }
+        return "tile-" + atlasRegionDetail;
+    }
+
     private static String formatTileDetail(TileCoveragePlan tileCoveragePlan, int reusedTileCount,
             int copiedTileCount) {
         TileCoveragePlan safePlan = tileCoveragePlan == null ? new TileCoveragePlan(new TileRegion(0, 0, 0, 0), 0)
@@ -899,6 +1207,10 @@ public final class UiMainLayerSnapshotService {
     }
 
     private static int clampInt(int value, int min, int max) {
+        return Math.max(min, Math.min(value, max));
+    }
+
+    private static float clampFloat(float value, float min, float max) {
         return Math.max(min, Math.min(value, max));
     }
 
@@ -1081,10 +1393,28 @@ public final class UiMainLayerSnapshotService {
 
         private final TileRegion requestedTileRegion;
         private final int coveredTileCount;
+        private final boolean[] coveredTiles;
 
         private TileCoveragePlan(TileRegion requestedTileRegion, int coveredTileCount) {
+            this(requestedTileRegion, coveredTileCount, null);
+        }
+
+        private TileCoveragePlan(TileRegion requestedTileRegion, int coveredTileCount, boolean[] coveredTiles) {
             this.requestedTileRegion = requestedTileRegion == null ? new TileRegion(0, 0, 0, 0) : requestedTileRegion;
-            this.coveredTileCount = clampInt(coveredTileCount, 0, this.requestedTileRegion.getTileCount());
+            this.coveredTiles = new boolean[this.requestedTileRegion.getTileCount()];
+            int actualCoveredTileCount = 0;
+            if (coveredTiles != null) {
+                int copyLength = Math.min(coveredTiles.length, this.coveredTiles.length);
+                for (int index = 0; index < copyLength; index++) {
+                    this.coveredTiles[index] = coveredTiles[index];
+                    if (this.coveredTiles[index]) {
+                        actualCoveredTileCount++;
+                    }
+                }
+            } else {
+                actualCoveredTileCount = coveredTileCount;
+            }
+            this.coveredTileCount = clampInt(actualCoveredTileCount, 0, this.requestedTileRegion.getTileCount());
         }
 
         TileRegion getRequestedTileRegion() {
@@ -1101,6 +1431,31 @@ public final class UiMainLayerSnapshotService {
 
         int getMissingTileCount() {
             return getTileCount() - coveredTileCount;
+        }
+
+        boolean isTileCovered(int tileX, int tileY) {
+            int localX = tileX - requestedTileRegion.getTileLeft();
+            int localY = tileY - requestedTileRegion.getTileTop();
+            if (localX < 0 || localY < 0 || localX >= requestedTileRegion.getTileWidth()
+                    || localY >= requestedTileRegion.getTileHeight()) {
+                return false;
+            }
+            int tileIndex = localY * requestedTileRegion.getTileWidth() + localX;
+            return tileIndex >= 0 && tileIndex < coveredTiles.length && coveredTiles[tileIndex];
+        }
+    }
+
+    /**
+     * 单个 atlas tile 的数据来源。
+     */
+    private static final class TileAssemblyEntry {
+
+        private final SampleRegion sampleRegion;
+        private final FrameSnapshot sourceSnapshot;
+
+        private TileAssemblyEntry(SampleRegion sampleRegion, FrameSnapshot sourceSnapshot) {
+            this.sampleRegion = sampleRegion;
+            this.sourceSnapshot = sourceSnapshot;
         }
     }
 
