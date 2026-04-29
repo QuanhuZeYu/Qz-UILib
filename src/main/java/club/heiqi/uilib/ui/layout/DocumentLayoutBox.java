@@ -14,7 +14,8 @@ import club.heiqi.uilib.ui.style.UiStyleResolver;
 /**
  * HTML-like 元素布局盒。
  *
- * <p>当前初版表达元素级 block/flex layout 与直接文本子节点的多行布局结果；完整 inline formatting 会在后续阶段扩展。</p>
+ * <p>当前初版表达元素级 block/flex layout、直接文本子节点的多行布局结果与 inline fragment 几何；
+ * 完整 inline formatting 会在后续阶段扩展。</p>
  */
 public final class DocumentLayoutBox {
 
@@ -22,6 +23,7 @@ public final class DocumentLayoutBox {
     private final ComputedStyle computedStyle;
     private final List<DocumentLayoutBox> children;
     private final List<DocumentLayoutTextRun> textRuns;
+    private final List<DocumentLayoutInlineFragment> inlineFragments;
     private final DocumentLayoutEdges margin;
     private final DocumentLayoutEdges border;
     private final DocumentLayoutEdges padding;
@@ -33,13 +35,15 @@ public final class DocumentLayoutBox {
     private final int positionOffsetY;
 
     DocumentLayoutBox(ElementNode element, ComputedStyle computedStyle, List<DocumentLayoutBox> children,
-            List<DocumentLayoutTextRun> textRuns, DocumentLayoutEdges margin, DocumentLayoutEdges border,
-            DocumentLayoutEdges padding, int left, int top, int width, int height, int positionOffsetX,
-            int positionOffsetY) {
+            List<DocumentLayoutTextRun> textRuns, List<DocumentLayoutInlineFragment> inlineFragments,
+            DocumentLayoutEdges margin, DocumentLayoutEdges border, DocumentLayoutEdges padding, int left, int top,
+            int width, int height, int positionOffsetX, int positionOffsetY) {
         this.element = Objects.requireNonNull(element, "element");
         this.computedStyle = Objects.requireNonNull(computedStyle, "computedStyle");
         this.children = Collections.unmodifiableList(Objects.requireNonNull(children, "children"));
         this.textRuns = Collections.unmodifiableList(Objects.requireNonNull(textRuns, "textRuns"));
+        this.inlineFragments = Collections.unmodifiableList(Objects.requireNonNull(inlineFragments,
+                "inlineFragments"));
         this.margin = Objects.requireNonNull(margin, "margin");
         this.border = Objects.requireNonNull(border, "border");
         this.padding = Objects.requireNonNull(padding, "padding");
@@ -71,8 +75,8 @@ public final class DocumentLayoutBox {
         for (DocumentLayoutBox child : children) {
             refreshedChildren.add(child.refreshComputedStyles());
         }
-        return new DocumentLayoutBox(element, UiStyleResolver.compute(element), refreshedChildren, textRuns, margin,
-                border, padding, left, top, width, height, positionOffsetX, positionOffsetY);
+        return new DocumentLayoutBox(element, UiStyleResolver.compute(element), refreshedChildren, textRuns,
+                inlineFragments, margin, border, padding, left, top, width, height, positionOffsetX, positionOffsetY);
     }
 
     public List<DocumentLayoutBox> getChildren() {
@@ -143,6 +147,15 @@ public final class DocumentLayoutBox {
      */
     public List<DocumentLayoutTextRun> getTextRuns() {
         return textRuns;
+    }
+
+    /**
+     * 返回 inline 元素按行形成的 fragment 几何。
+     *
+     * @return inline fragment 列表
+     */
+    public List<DocumentLayoutInlineFragment> getInlineFragments() {
+        return inlineFragments;
     }
 
     public DocumentLayoutEdges getMargin() {

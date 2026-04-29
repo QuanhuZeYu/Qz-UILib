@@ -109,8 +109,9 @@ public final class DocumentLayoutEngine {
         ComputedStyle computedStyle = UiStyleResolver.compute(element);
         if (computedStyle.getDisplay() == UiDisplay.NONE) {
             return new DocumentLayoutBox(element, computedStyle, new ArrayList<DocumentLayoutBox>(),
-                    new ArrayList<DocumentLayoutTextRun>(), DocumentLayoutEdges.zero(), DocumentLayoutEdges.zero(),
-                    DocumentLayoutEdges.zero(), containingLeft, flowTop, 0, 0, 0, 0);
+                    new ArrayList<DocumentLayoutTextRun>(), new ArrayList<DocumentLayoutInlineFragment>(),
+                    DocumentLayoutEdges.zero(), DocumentLayoutEdges.zero(), DocumentLayoutEdges.zero(), containingLeft,
+                    flowTop, 0, 0, 0, 0);
         }
 
         DocumentLayoutEdges margin = resolveInsets(computedStyle.getMargin(), containingWidth, false);
@@ -149,8 +150,8 @@ public final class DocumentLayoutEngine {
         int positionOffsetX = resolveRelativeOffsetX(computedStyle, containingWidth);
         int positionOffsetY = resolveRelativeOffsetY(computedStyle, borderBoxHeight);
         return new DocumentLayoutBox(element, computedStyle, childrenResult.children, childrenResult.textRuns,
-                margin, border, padding, borderBoxLeft, borderBoxTop, borderBoxWidth, borderBoxHeight,
-                positionOffsetX, positionOffsetY);
+                childrenResult.inlineFragments, margin, border, padding, borderBoxLeft, borderBoxTop, borderBoxWidth,
+                borderBoxHeight, positionOffsetX, positionOffsetY);
     }
 
     private static LayoutChildrenResult layoutBlockChildren(ElementNode element, int contentLeft, int contentTop,
@@ -159,6 +160,7 @@ public final class DocumentLayoutEngine {
             TextMeasureService textMeasureService) {
         List<DocumentLayoutBox> childBoxes = new ArrayList<DocumentLayoutBox>();
         List<DocumentLayoutTextRun> textRuns = new ArrayList<DocumentLayoutTextRun>();
+        List<DocumentLayoutInlineFragment> inlineFragments = new ArrayList<DocumentLayoutInlineFragment>();
         List<ElementNode> absoluteChildren = new ArrayList<ElementNode>();
         List<ElementNode> fixedChildren = new ArrayList<ElementNode>();
         boolean usesInlineFormatting = hasVisibleInlineElementChild(element);
@@ -169,7 +171,8 @@ public final class DocumentLayoutEngine {
         for (DocumentNode child : element.getChildren()) {
             if (child instanceof TextNode) {
                 if (usesInlineFormatting) {
-                    appendInlineTextRun((TextNode) child, element, textRuns, inlineLayoutContext, textMeasureService);
+                    appendInlineTextRun((TextNode) child, element, textRuns, inlineFragments,
+                            new ArrayList<ElementNode>(), inlineLayoutContext, textMeasureService);
                     childFlowTop = inlineLayoutContext.getFlowBottom();
                 } else {
                     childFlowTop = appendTextRun((TextNode) child, element, textRuns, contentLeft, childFlowTop,
@@ -194,7 +197,8 @@ public final class DocumentLayoutEngine {
                 continue;
             }
             if (usesInlineFormatting && childStyle.getDisplay() == UiDisplay.INLINE) {
-                appendInlineElementTextRuns(childElement, textRuns, inlineLayoutContext, textMeasureService);
+                appendInlineElementTextRuns(childElement, textRuns, inlineFragments, inlineLayoutContext,
+                        textMeasureService);
                 childFlowTop = inlineLayoutContext.getFlowBottom();
                 continue;
             }
@@ -218,7 +222,8 @@ public final class DocumentLayoutEngine {
                 absoluteContainingBlock, createsAbsoluteContainingBlock, specifiedContentHeight, contentHeight),
                 fixedContainingBlock, textMeasureService);
         appendFixedChildren(childBoxes, fixedChildren, fixedContainingBlock, textMeasureService);
-        return new LayoutChildrenResult(sortByDocumentChildOrder(element, childBoxes), textRuns, contentHeight);
+        return new LayoutChildrenResult(sortByDocumentChildOrder(element, childBoxes), textRuns,
+                mergeInlineFragments(inlineFragments), contentHeight);
     }
 
     private static int appendTextRun(TextNode textNode, ElementNode ownerElement,
@@ -245,11 +250,23 @@ public final class DocumentLayoutEngine {
     }
 
     private static void appendInlineElementTextRuns(ElementNode inlineElement,
-            List<DocumentLayoutTextRun> textRuns, InlineLayoutContext inlineLayoutContext,
+            List<DocumentLayoutTextRun> textRuns, List<DocumentLayoutInlineFragment> inlineFragments,
+            InlineLayoutContext inlineLayoutContext,
             TextMeasureService textMeasureService) {
+        appendInlineElementTextRuns(inlineElement, textRuns, inlineFragments, inlineLayoutContext, textMeasureService,
+                new ArrayList<ElementNode>());
+    }
+
+    private static void appendInlineElementTextRuns(ElementNode inlineElement,
+            List<DocumentLayoutTextRun> textRuns, List<DocumentLayoutInlineFragment> inlineFragments,
+            InlineLayoutContext inlineLayoutContext, TextMeasureService textMeasureService,
+            List<ElementNode> ancestorInlineElements) {
+        List<ElementNode> fragmentOwners = new ArrayList<ElementNode>(ancestorInlineElements);
+        fragmentOwners.add(inlineElement);
         for (DocumentNode child : inlineElement.getChildren()) {
             if (child instanceof TextNode) {
-                appendInlineTextRun((TextNode) child, inlineElement, textRuns, inlineLayoutContext, textMeasureService);
+                appendInlineTextRun((TextNode) child, inlineElement, textRuns, inlineFragments, fragmentOwners,
+                        inlineLayoutContext, textMeasureService);
                 continue;
             }
             if (!(child instanceof ElementNode)) {
@@ -260,12 +277,14 @@ public final class DocumentLayoutEngine {
             if (childStyle.getDisplay() == UiDisplay.NONE || isOutOfFlowPositioned(childStyle)) {
                 continue;
             }
-            appendInlineElementTextRuns(childElement, textRuns, inlineLayoutContext, textMeasureService);
+            appendInlineElementTextRuns(childElement, textRuns, inlineFragments, inlineLayoutContext,
+                    textMeasureService, fragmentOwners);
         }
     }
 
     private static void appendInlineTextRun(TextNode textNode, ElementNode ownerElement,
-            List<DocumentLayoutTextRun> textRuns, InlineLayoutContext inlineLayoutContext,
+            List<DocumentLayoutTextRun> textRuns, List<DocumentLayoutInlineFragment> inlineFragments,
+            List<ElementNode> fragmentOwners, InlineLayoutContext inlineLayoutContext,
             TextMeasureService textMeasureService) {
         String remainingText = textNode.getText();
         if (remainingText == null || remainingText.isEmpty() || inlineLayoutContext.getLineWidth() <= 0) {
@@ -294,12 +313,61 @@ public final class DocumentLayoutEngine {
             width = Math.min(width, inlineLayoutContext.getRemainingWidth());
             textRuns.add(new DocumentLayoutTextRun(textNode, ownerElement, segment, inlineLayoutContext.getCursorLeft(),
                     inlineLayoutContext.getLineTop(), width, inlineLayoutContext.getLineHeight()));
+            appendInlineFragments(inlineFragments, fragmentOwners, inlineLayoutContext.getCursorLeft(),
+                    inlineLayoutContext.getLineTop(), width, inlineLayoutContext.getLineHeight());
             inlineLayoutContext.advance(width);
             remainingText = remainingText.substring(segment.length());
             if (!remainingText.isEmpty() && inlineLayoutContext.getRemainingWidth() <= 0) {
                 inlineLayoutContext.nextLine();
             }
         }
+    }
+
+    private static void appendInlineFragments(List<DocumentLayoutInlineFragment> inlineFragments,
+            List<ElementNode> fragmentOwners, int left, int top, int width, int height) {
+        if (width <= 0 || height <= 0) {
+            return;
+        }
+        for (ElementNode fragmentOwner : fragmentOwners) {
+            inlineFragments.add(new DocumentLayoutInlineFragment(fragmentOwner, left, top, width, height));
+        }
+    }
+
+    private static List<DocumentLayoutInlineFragment> mergeInlineFragments(
+            List<DocumentLayoutInlineFragment> inlineFragments) {
+        List<DocumentLayoutInlineFragment> mergedFragments = new ArrayList<DocumentLayoutInlineFragment>();
+        for (DocumentLayoutInlineFragment inlineFragment : inlineFragments) {
+            int mergeIndex = findMergeableInlineFragment(mergedFragments, inlineFragment);
+            if (mergeIndex < 0) {
+                mergedFragments.add(inlineFragment);
+                continue;
+            }
+            DocumentLayoutInlineFragment existingFragment = mergedFragments.get(mergeIndex);
+            int left = Math.min(existingFragment.getLeft(), inlineFragment.getLeft());
+            int top = Math.min(existingFragment.getTop(), inlineFragment.getTop());
+            int right = Math.max(existingFragment.getRight(), inlineFragment.getRight());
+            int bottom = Math.max(existingFragment.getBottom(), inlineFragment.getBottom());
+            mergedFragments.set(mergeIndex, new DocumentLayoutInlineFragment(existingFragment.getOwnerElement(), left,
+                    top, right - left, bottom - top));
+        }
+        return mergedFragments;
+    }
+
+    private static int findMergeableInlineFragment(List<DocumentLayoutInlineFragment> mergedFragments,
+            DocumentLayoutInlineFragment inlineFragment) {
+        for (int index = mergedFragments.size() - 1; index >= 0; index--) {
+            DocumentLayoutInlineFragment existingFragment = mergedFragments.get(index);
+            if (existingFragment.getOwnerElement() != inlineFragment.getOwnerElement()
+                    || existingFragment.getTop() != inlineFragment.getTop()
+                    || existingFragment.getBottom() != inlineFragment.getBottom()) {
+                continue;
+            }
+            if (inlineFragment.getLeft() <= existingFragment.getRight()
+                    && inlineFragment.getRight() >= existingFragment.getLeft()) {
+                return index;
+            }
+        }
+        return -1;
     }
 
     private static String firstCodePoint(String text) {
@@ -317,7 +385,8 @@ public final class DocumentLayoutEngine {
         LayoutChildrenResult flowResult;
         if (visibleChildren.isEmpty()) {
             flowResult = new LayoutChildrenResult(new ArrayList<DocumentLayoutBox>(),
-                    new ArrayList<DocumentLayoutTextRun>(), Math.max(0, specifiedContentHeight));
+                    new ArrayList<DocumentLayoutTextRun>(), new ArrayList<DocumentLayoutInlineFragment>(),
+                    Math.max(0, specifiedContentHeight));
         } else if (parentStyle.getFlexDirection() == UiFlexDirection.COLUMN) {
             flowResult = layoutColumnFlexChildren(visibleChildren, parentStyle, contentLeft, contentTop, contentWidth,
                     specifiedContentHeight, absoluteContainingBlock, fixedContainingBlock, textMeasureService);
@@ -331,7 +400,7 @@ public final class DocumentLayoutEngine {
                 flowResult.contentHeight), fixedContainingBlock, textMeasureService);
         appendFixedChildren(childBoxes, fixedChildren, fixedContainingBlock, textMeasureService);
         return new LayoutChildrenResult(sortByDocumentChildOrder(element, childBoxes), flowResult.textRuns,
-                flowResult.contentHeight);
+                flowResult.inlineFragments, flowResult.contentHeight);
     }
 
     private static LayoutChildrenResult layoutRowFlexChildren(List<ElementNode> children, ComputedStyle parentStyle,
@@ -381,7 +450,8 @@ public final class DocumentLayoutEngine {
             childBoxes.add(childBox);
             cursor += item.margin.getLeft() + childBox.getWidth() + item.margin.getRight() + dynamicGap;
         }
-        return new LayoutChildrenResult(childBoxes, new ArrayList<DocumentLayoutTextRun>(), contentHeight);
+        return new LayoutChildrenResult(childBoxes, new ArrayList<DocumentLayoutTextRun>(),
+                new ArrayList<DocumentLayoutInlineFragment>(), contentHeight);
     }
 
     private static LayoutChildrenResult layoutColumnFlexChildren(List<ElementNode> children, ComputedStyle parentStyle,
@@ -422,7 +492,8 @@ public final class DocumentLayoutEngine {
             childBoxes.add(childBox);
             cursor += item.margin.getTop() + childBox.getHeight() + item.margin.getBottom() + dynamicGap;
         }
-        return new LayoutChildrenResult(childBoxes, new ArrayList<DocumentLayoutTextRun>(), contentHeight);
+        return new LayoutChildrenResult(childBoxes, new ArrayList<DocumentLayoutTextRun>(),
+                new ArrayList<DocumentLayoutInlineFragment>(), contentHeight);
     }
 
     private static void distributeMainSpace(List<FlexItem> items, int availableMainSize, int gap, boolean row) {
@@ -907,12 +978,14 @@ public final class DocumentLayoutEngine {
 
         private final List<DocumentLayoutBox> children;
         private final List<DocumentLayoutTextRun> textRuns;
+        private final List<DocumentLayoutInlineFragment> inlineFragments;
         private final int contentHeight;
 
         private LayoutChildrenResult(List<DocumentLayoutBox> children, List<DocumentLayoutTextRun> textRuns,
-                int contentHeight) {
+                List<DocumentLayoutInlineFragment> inlineFragments, int contentHeight) {
             this.children = children;
             this.textRuns = textRuns;
+            this.inlineFragments = inlineFragments;
             this.contentHeight = Math.max(0, contentHeight);
         }
     }

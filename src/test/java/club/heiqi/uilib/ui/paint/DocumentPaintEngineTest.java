@@ -879,6 +879,69 @@ public class DocumentPaintEngineTest {
     }
 
     /**
+     * 验证跨行 inline span 会按行绘制独立 fragment 表面。
+     */
+    @Test
+    public void shouldPaintSplitInlineSpanFragmentsAcrossLines() {
+        UiDocument document = UiDocument.create();
+        ElementNode root = document.getRootElement();
+        ElementNode span = document.span();
+
+        root.style().setWidth(UiStyleLength.px(32));
+        span.style()
+                .setBackgroundColor(0x334F46E5)
+                .setBorderColor(0xFFFFD166)
+                .setBorderWidth(UiStyleLength.px(1))
+                .setBorderRadius(UiStyleLength.px(5))
+                .setTextColor(0xFFFFD166);
+        span.appendText("AABBCC");
+        root.append(span);
+
+        List<DocumentPaintCommand> commands = DocumentPaintEngine.buildPaintCommands(DocumentLayoutEngine.layout(root,
+                80, 0, new DeterministicTextMeasureService()));
+
+        Assert.assertEquals(6, commands.size());
+        assertCommand(commands.get(0), DocumentPaintCommandType.BACKGROUND, span, 0, 0, 32, 18, 0x334F46E5, 0, 5);
+        assertCommand(commands.get(1), DocumentPaintCommandType.BORDER, span, 0, 0, 32, 18, 0xFFFFD166, 1, 5);
+        assertCommand(commands.get(2), DocumentPaintCommandType.BACKGROUND, span, 0, 18, 16, 36, 0x334F46E5, 0,
+                5);
+        assertCommand(commands.get(3), DocumentPaintCommandType.BORDER, span, 0, 18, 16, 36, 0xFFFFD166, 1, 5);
+        assertCommand(commands.get(4), DocumentPaintCommandType.TEXT, span, 0, 0, 32, 18, 0xFFFFD166, 0, 0);
+        Assert.assertEquals("AABB", commands.get(4).getText());
+        assertCommand(commands.get(5), DocumentPaintCommandType.TEXT, span, 0, 18, 16, 36, 0xFFFFD166, 0, 0);
+        Assert.assertEquals("CC", commands.get(5).getText());
+    }
+
+    /**
+     * 验证父 inline 背景 fragment 会覆盖嵌套 inline 子内容的整体范围。
+     */
+    @Test
+    public void shouldPaintParentInlineFragmentAcrossNestedInlineDescendant() {
+        UiDocument document = UiDocument.create();
+        ElementNode root = document.getRootElement();
+        ElementNode outerSpan = document.span();
+        ElementNode innerSpan = document.span();
+
+        root.style().setWidth(UiStyleLength.px(80));
+        outerSpan.style().setBackgroundColor(0x5538BDF8).setTextColor(0xFFE0F2FE);
+        innerSpan.style().setBackgroundColor(0xAA0EA5E9).setTextColor(0xFFFFFFFF);
+        outerSpan.appendText("AA");
+        innerSpan.appendText("BB");
+        outerSpan.append(innerSpan);
+        outerSpan.appendText("CC");
+        root.append(outerSpan);
+
+        List<DocumentPaintCommand> commands = DocumentPaintEngine.buildPaintCommands(DocumentLayoutEngine.layout(root,
+                100, 0, new DeterministicTextMeasureService()));
+
+        Assert.assertEquals(5, commands.size());
+        assertCommand(commands.get(0), DocumentPaintCommandType.BACKGROUND, outerSpan, 0, 0, 48, 18, 0x5538BDF8,
+                0, 0);
+        assertCommand(commands.get(1), DocumentPaintCommandType.BACKGROUND, innerSpan, 16, 0, 32, 18, 0xAA0EA5E9,
+                0, 0);
+    }
+
+    /**
      * 验证 CUSTOM 绘制命令使用元素内容盒，而不是 padding 盒。
      */
     @Test

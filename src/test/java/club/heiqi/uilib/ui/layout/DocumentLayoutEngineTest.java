@@ -598,6 +598,55 @@ public class DocumentLayoutEngineTest {
     }
 
     /**
+     * 验证 inline fragment 会按行分片，保留跨行 span 的逐行背景几何。
+     */
+    @Test
+    public void shouldSplitInlineFragmentsAcrossLines() {
+        UiDocument document = UiDocument.create();
+        ElementNode root = document.getRootElement();
+        ElementNode span = document.span();
+
+        root.style().setWidth(UiStyleLength.px(32));
+        span.appendText("AABBCC");
+        root.append(span);
+
+        DocumentLayoutBox rootBox = DocumentLayoutEngine.layout(root, 80, 0,
+                new DeterministicTextMeasureService());
+
+        Assert.assertEquals(2, rootBox.getInlineFragments().size());
+        assertInlineFragment(rootBox.getInlineFragments().get(0), span, 0, 0, 32, 18);
+        assertInlineFragment(rootBox.getInlineFragments().get(1), span, 0, 18, 16, 18);
+    }
+
+    /**
+     * 验证父 inline fragment 会合并覆盖嵌套 inline 子内容。
+     */
+    @Test
+    public void shouldMergeInlineFragmentsAcrossNestedInlineDescendants() {
+        UiDocument document = UiDocument.create();
+        ElementNode root = document.getRootElement();
+        ElementNode outerSpan = document.span();
+        ElementNode innerSpan = document.span();
+
+        root.style().setWidth(UiStyleLength.px(80));
+        outerSpan.appendText("AA");
+        innerSpan.appendText("BB");
+        outerSpan.append(innerSpan);
+        outerSpan.appendText("CC");
+        root.append(outerSpan);
+
+        DocumentLayoutBox rootBox = DocumentLayoutEngine.layout(root, 100, 0,
+                new DeterministicTextMeasureService());
+
+        Assert.assertEquals(2, rootBox.getInlineFragments().size());
+        assertInlineFragment(rootBox.getInlineFragments().get(0), outerSpan, 0, 0, 48, 18);
+        assertInlineFragment(rootBox.getInlineFragments().get(1), innerSpan, 16, 0, 16, 18);
+        assertElementUid(outerSpan, rootBox.getTextRuns().get(0).getOwnerElement());
+        assertElementUid(innerSpan, rootBox.getTextRuns().get(1).getOwnerElement());
+        assertElementUid(outerSpan, rootBox.getTextRuns().get(2).getOwnerElement());
+    }
+
+    /**
      * 验证 flex row 会分配 grow 空间并应用 column-gap。
      */
     @Test
@@ -777,6 +826,15 @@ public class DocumentLayoutEngineTest {
         Assert.assertEquals(top, textRun.getTop());
         Assert.assertEquals(width, textRun.getWidth());
         Assert.assertEquals(height, textRun.getHeight());
+    }
+
+    private static void assertInlineFragment(DocumentLayoutInlineFragment inlineFragment, ElementNode expectedElement,
+            int left, int top, int width, int height) {
+        assertElementUid(expectedElement, inlineFragment.getOwnerElement());
+        Assert.assertEquals(left, inlineFragment.getLeft());
+        Assert.assertEquals(top, inlineFragment.getTop());
+        Assert.assertEquals(width, inlineFragment.getWidth());
+        Assert.assertEquals(height, inlineFragment.getHeight());
     }
 
     private static void assertElementUid(ElementNode expectedElement, ElementNode actualElement) {

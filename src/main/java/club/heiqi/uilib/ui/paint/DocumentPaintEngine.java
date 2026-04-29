@@ -10,6 +10,7 @@ import club.heiqi.uilib.ui.dom.ElementNode;
 import club.heiqi.uilib.ui.layout.DocumentEffectChain;
 import club.heiqi.uilib.ui.layout.DocumentEffectType;
 import club.heiqi.uilib.ui.layout.DocumentLayoutBox;
+import club.heiqi.uilib.ui.layout.DocumentLayoutInlineFragment;
 import club.heiqi.uilib.ui.layout.DocumentLayoutTextRun;
 import club.heiqi.uilib.ui.layout.DocumentScrollState;
 import club.heiqi.uilib.ui.layout.DocumentScrollState.ScrollbarMetrics;
@@ -118,7 +119,7 @@ public final class DocumentPaintEngine {
             appendStackingPhaseItems(rootBox, box, commands, scrollState, childOffsetX, childOffsetY,
                     animationTimeline, currentTimeNanos, boxOpacity, DocumentStackingPhase.NEGATIVE_POSITIONED);
             appendCustomCommand(box, commands, childOffsetX, childOffsetY);
-            appendInlineTextRunSurfaceCommands(box, commands, animationTimeline, currentTimeNanos, boxOpacity,
+            appendInlineFragmentSurfaceCommands(box, commands, animationTimeline, currentTimeNanos, boxOpacity,
                     childOffsetX, childOffsetY);
             appendTextCommands(box, commands, animationTimeline, currentTimeNanos, boxOpacity, childOffsetX,
                     childOffsetY);
@@ -130,7 +131,7 @@ public final class DocumentPaintEngine {
                     animationTimeline, currentTimeNanos, boxOpacity, DocumentStackingPhase.POSITIVE_POSITIONED);
         } else {
             appendCustomCommand(box, commands, childOffsetX, childOffsetY);
-            appendInlineTextRunSurfaceCommands(box, commands, animationTimeline, currentTimeNanos, boxOpacity,
+            appendInlineFragmentSurfaceCommands(box, commands, animationTimeline, currentTimeNanos, boxOpacity,
                     childOffsetX, childOffsetY);
             appendTextCommands(box, commands, animationTimeline, currentTimeNanos, boxOpacity, childOffsetX,
                     childOffsetY);
@@ -304,32 +305,35 @@ public final class DocumentPaintEngine {
         }
     }
 
-    private static void appendInlineTextRunSurfaceCommands(DocumentLayoutBox box, List<DocumentPaintCommand> commands,
+    private static void appendInlineFragmentSurfaceCommands(DocumentLayoutBox box, List<DocumentPaintCommand> commands,
             DocumentAnimationTimeline animationTimeline, long currentTimeNanos, float opacity, int offsetX,
             int offsetY) {
-        for (DocumentLayoutTextRun textRun : box.getTextRuns()) {
-            ElementNode ownerElement = textRun.getOwnerElement();
-            if (ownerElement == box.getElement() || textRun.getWidth() <= 0 || textRun.getHeight() <= 0) {
+        for (DocumentLayoutInlineFragment inlineFragment : box.getInlineFragments()) {
+            ElementNode ownerElement = inlineFragment.getOwnerElement();
+            if (inlineFragment.getWidth() <= 0 || inlineFragment.getHeight() <= 0) {
                 continue;
             }
             ComputedStyle ownerStyle = UiStyleResolver.compute(ownerElement);
-            int radius = resolveInlineFragmentBorderRadius(ownerStyle, textRun.getWidth(), textRun.getHeight());
+            int radius = resolveInlineFragmentBorderRadius(ownerStyle, inlineFragment.getWidth(),
+                    inlineFragment.getHeight());
             int backgroundColor = resolveAnimatedColor(animationTimeline, ownerElement,
                     DocumentAnimationProperty.BACKGROUND_COLOR, ownerStyle.getBackgroundColor(), currentTimeNanos);
             backgroundColor = applyOpacity(backgroundColor, opacity);
             if (!isTransparent(backgroundColor)) {
                 commands.add(new DocumentPaintCommand(DocumentPaintCommandType.BACKGROUND, ownerElement,
-                        textRun.getLeft() + offsetX, textRun.getTop() + offsetY, textRun.getRight() + offsetX,
-                        textRun.getBottom() + offsetY, backgroundColor, 0, radius));
+                        inlineFragment.getLeft() + offsetX, inlineFragment.getTop() + offsetY,
+                        inlineFragment.getRight() + offsetX, inlineFragment.getBottom() + offsetY, backgroundColor, 0,
+                        radius));
             }
-            int borderWidth = Math.max(0, ownerStyle.getBorderWidth().resolve(textRun.getWidth(), 0));
+            int borderWidth = Math.max(0, ownerStyle.getBorderWidth().resolve(inlineFragment.getWidth(), 0));
             int borderColor = resolveAnimatedColor(animationTimeline, ownerElement, DocumentAnimationProperty.BORDER_COLOR,
                     ownerStyle.getBorderColor(), currentTimeNanos);
             borderColor = applyOpacity(borderColor, opacity);
             if (!isTransparent(borderColor) && borderWidth > 0) {
                 commands.add(new DocumentPaintCommand(DocumentPaintCommandType.BORDER, ownerElement,
-                        textRun.getLeft() + offsetX, textRun.getTop() + offsetY, textRun.getRight() + offsetX,
-                        textRun.getBottom() + offsetY, borderColor, borderWidth, radius));
+                        inlineFragment.getLeft() + offsetX, inlineFragment.getTop() + offsetY,
+                        inlineFragment.getRight() + offsetX, inlineFragment.getBottom() + offsetY, borderColor,
+                        borderWidth, radius));
             }
         }
     }
