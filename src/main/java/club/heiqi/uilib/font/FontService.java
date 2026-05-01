@@ -110,6 +110,7 @@ public class FontService {
             refreshTextMeasureRuntime();
             glyphPageManager.reset();
             glyphGenerationDispatcher.initialize(fontMatcher, glyphPageManager, glyphPageManager::queueUpload);
+            batchRenderer.dispose();
             batchRenderer.clearFrame();
             decorationRenderer.clear();
             shaderProgram.close();

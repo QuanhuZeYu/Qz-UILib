@@ -1,11 +1,6 @@
 package club.heiqi.uilib.font.shader;
 
-import java.io.BufferedReader;
-import java.io.IOException;
-import java.io.InputStream;
-import java.io.InputStreamReader;
 import java.nio.FloatBuffer;
-import java.nio.charset.StandardCharsets;
 import java.util.Collections;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
@@ -13,6 +8,7 @@ import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicBoolean;
 
+import club.heiqi.uilib.gl.shader.ShaderProgramSupport;
 import org.joml.Matrix4f;
 import org.joml.Vector2f;
 import org.lwjgl.BufferUtils;
@@ -193,8 +189,14 @@ public class FontShaderProgram {
     }
 
     private void loadProgram() {
-        int vertexShaderId = compileShader(readText(vertexShaderPath), GL20.GL_VERTEX_SHADER);
-        int fragmentShaderId = compileShader(readText(fragmentShaderPath), GL20.GL_FRAGMENT_SHADER);
+        int vertexShaderId = ShaderProgramSupport.compileShader(
+                ShaderProgramSupport.readText(getClass(), vertexShaderPath, "读取字体着色器失败: "),
+                GL20.GL_VERTEX_SHADER,
+                "字体着色器编译失败: ");
+        int fragmentShaderId = ShaderProgramSupport.compileShader(
+                ShaderProgramSupport.readText(getClass(), fragmentShaderPath, "读取字体着色器失败: "),
+                GL20.GL_FRAGMENT_SHADER,
+                "字体着色器编译失败: ");
 
         GL20.glAttachShader(shaderProgramId, vertexShaderId);
         GL20.glAttachShader(shaderProgramId, fragmentShaderId);
@@ -203,29 +205,10 @@ public class FontShaderProgram {
         GL20.glBindAttribLocation(shaderProgramId, 2, "color");
         GL20.glBindAttribLocation(shaderProgramId, 3, "v_uvBounds");
         GL20.glBindAttribLocation(shaderProgramId, 4, "v_glyphFlags");
-        GL20.glLinkProgram(shaderProgramId);
-
-        if (GL20.glGetProgrami(shaderProgramId, GL20.GL_LINK_STATUS) == GL11.GL_FALSE) {
-            throw new IllegalStateException("字体着色器链接失败: " + GL20.glGetProgramInfoLog(shaderProgramId, 4096));
-        }
-
-        GL20.glValidateProgram(shaderProgramId);
-        if (GL20.glGetProgrami(shaderProgramId, GL20.GL_VALIDATE_STATUS) == GL11.GL_FALSE) {
-            throw new IllegalStateException("字体着色器验证失败: " + GL20.glGetProgramInfoLog(shaderProgramId, 4096));
-        }
+        ShaderProgramSupport.linkAndValidateProgram(shaderProgramId, "字体着色器链接失败: ", "字体着色器验证失败: ");
 
         GL20.glDeleteShader(vertexShaderId);
         GL20.glDeleteShader(fragmentShaderId);
-    }
-
-    private int compileShader(String source, int shaderType) {
-        int shaderId = GL20.glCreateShader(shaderType);
-        GL20.glShaderSource(shaderId, source);
-        GL20.glCompileShader(shaderId);
-        if (GL20.glGetShaderi(shaderId, GL20.GL_COMPILE_STATUS) == GL11.GL_FALSE) {
-            throw new IllegalStateException("字体着色器编译失败: " + GL20.glGetShaderInfoLog(shaderId, 4096));
-        }
-        return shaderId;
     }
 
     private int getUniformLocation(String name) {
@@ -245,21 +228,4 @@ public class FontShaderProgram {
         return location;
     }
 
-    private String readText(String resourcePath) {
-        if (!resourcePath.startsWith("/")) {
-            resourcePath = "/" + resourcePath;
-        }
-
-        StringBuilder builder = new StringBuilder();
-        try (InputStream inputStream = getClass().getResourceAsStream(resourcePath);
-             BufferedReader reader = new BufferedReader(new InputStreamReader(inputStream, StandardCharsets.UTF_8))) {
-            String line;
-            while ((line = reader.readLine()) != null) {
-                builder.append(line).append(System.lineSeparator());
-            }
-        } catch (IOException | NullPointerException e) {
-            throw new IllegalStateException("读取字体着色器失败: " + resourcePath, e);
-        }
-        return builder.toString();
-    }
 }

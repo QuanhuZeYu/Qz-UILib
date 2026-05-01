@@ -112,4 +112,27 @@ public class FontRenderTool {
         GL15.glBindBuffer(GL15.GL_ARRAY_BUFFER, 0);
         GL15.glBindBuffer(GL15.GL_ELEMENT_ARRAY_BUFFER, 0);
     }
+
+    /**
+     * 释放底层 GL 资源。
+     */
+    public void dispose() {
+        if (vao != 0) {
+            GL30.glDeleteVertexArrays(vao);
+            vao = 0;
+        }
+        positionBuffer = deleteBuffer(positionBuffer);
+        uvBuffer = deleteBuffer(uvBuffer);
+        colorBuffer = deleteBuffer(colorBuffer);
+        uvBoundsBuffer = deleteBuffer(uvBoundsBuffer);
+        glyphFlagsBuffer = deleteBuffer(glyphFlagsBuffer);
+        indexBuffer = deleteBuffer(indexBuffer);
+    }
+
+    private int deleteBuffer(int bufferId) {
+        if (bufferId != 0) {
+            GL15.glDeleteBuffers(bufferId);
+        }
+        return 0;
+    }
 }

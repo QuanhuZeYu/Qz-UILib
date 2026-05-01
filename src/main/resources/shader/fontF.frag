@@ -6,10 +6,10 @@ varying vec4 uvBounds;
 varying float glyphFlags;
 
 uniform sampler2D mainTex;
-uniform vec2 smoothRange = vec2(0.0, 0.9);
-uniform float brightnessGain = 1.0;
-uniform int aaMode = 2;
-uniform float aaStrength = 12.0 / 120.0;
+uniform vec2 smoothRange;
+uniform float brightnessGain;
+uniform int aaMode;
+uniform float aaStrength;
 
 float calculateWeight(float du, float dv) {
     float distSquared = sqrt(du * du + dv * dv);

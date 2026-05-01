@@ -1,16 +1,12 @@
 package club.heiqi.uilib.ui.render;
 
-import java.io.BufferedReader;
-import java.io.IOException;
-import java.io.InputStream;
-import java.io.InputStreamReader;
-import java.nio.charset.StandardCharsets;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicBoolean;
 
+import club.heiqi.uilib.gl.shader.ShaderProgramSupport;
 import org.lwjgl.opengl.GL11;
 import org.lwjgl.opengl.GL20;
 
@@ -132,35 +128,22 @@ final class UiBackdropShaderProgram {
     }
 
     private void loadProgram() {
-        int vertexShaderId = compileShader(readText("shader/uiBackdropV.vert"), GL20.GL_VERTEX_SHADER);
-        int fragmentShaderId = compileShader(readText("shader/uiBackdropF.frag"), GL20.GL_FRAGMENT_SHADER);
+        int vertexShaderId = ShaderProgramSupport.compileShader(
+                ShaderProgramSupport.readText(getClass(), "shader/uiBackdropV.vert", "读取 UI backdrop 着色器失败: "),
+                GL20.GL_VERTEX_SHADER,
+                "UI backdrop 着色器编译失败: ");
+        int fragmentShaderId = ShaderProgramSupport.compileShader(
+                ShaderProgramSupport.readText(getClass(), "shader/uiBackdropF.frag", "读取 UI backdrop 着色器失败: "),
+                GL20.GL_FRAGMENT_SHADER,
+                "UI backdrop 着色器编译失败: ");
 
         GL20.glAttachShader(shaderProgramId, vertexShaderId);
         GL20.glAttachShader(shaderProgramId, fragmentShaderId);
-        GL20.glLinkProgram(shaderProgramId);
-        if (GL20.glGetProgrami(shaderProgramId, GL20.GL_LINK_STATUS) == GL11.GL_FALSE) {
-            throw new IllegalStateException("UI backdrop 着色器链接失败: "
-                    + GL20.glGetProgramInfoLog(shaderProgramId, 4096));
-        }
-
-        GL20.glValidateProgram(shaderProgramId);
-        if (GL20.glGetProgrami(shaderProgramId, GL20.GL_VALIDATE_STATUS) == GL11.GL_FALSE) {
-            throw new IllegalStateException("UI backdrop 着色器验证失败: "
-                    + GL20.glGetProgramInfoLog(shaderProgramId, 4096));
-        }
+        ShaderProgramSupport.linkAndValidateProgram(shaderProgramId, "UI backdrop 着色器链接失败: ",
+                "UI backdrop 着色器验证失败: ");
 
         GL20.glDeleteShader(vertexShaderId);
         GL20.glDeleteShader(fragmentShaderId);
-    }
-
-    private int compileShader(String source, int shaderType) {
-        int shaderId = GL20.glCreateShader(shaderType);
-        GL20.glShaderSource(shaderId, source);
-        GL20.glCompileShader(shaderId);
-        if (GL20.glGetShaderi(shaderId, GL20.GL_COMPILE_STATUS) == GL11.GL_FALSE) {
-            throw new IllegalStateException("UI backdrop 着色器编译失败: " + GL20.glGetShaderInfoLog(shaderId, 4096));
-        }
-        return shaderId;
     }
 
     private int getUniformLocation(String name) {
@@ -180,18 +163,4 @@ final class UiBackdropShaderProgram {
         return location;
     }
 
-    private String readText(String resourcePath) {
-        String resolvedPath = resourcePath.startsWith("/") ? resourcePath : "/" + resourcePath;
-        StringBuilder builder = new StringBuilder();
-        try (InputStream inputStream = getClass().getResourceAsStream(resolvedPath);
-             BufferedReader reader = new BufferedReader(new InputStreamReader(inputStream, StandardCharsets.UTF_8))) {
-            String line;
-            while ((line = reader.readLine()) != null) {
-                builder.append(line).append(System.lineSeparator());
-            }
-        } catch (IOException | NullPointerException exception) {
-            throw new IllegalStateException("读取 UI backdrop 着色器失败: " + resolvedPath, exception);
-        }
-        return builder.toString();
-    }
 }

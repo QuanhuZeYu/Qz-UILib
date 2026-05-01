@@ -61,6 +61,15 @@ public class FontBatchRenderer {
     }
 
     /**
+     * 释放批渲染器持有的底层 GL 资源。
+     */
+    public void dispose() {
+        clearFrame();
+        renderTool.dispose();
+        initialized.set(false);
+    }
+
+    /**
      * 收集一个字符四边形到当前帧。
      *
      * @param glyphPage 字符页

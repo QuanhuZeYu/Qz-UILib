@@ -647,7 +647,6 @@ public class UiRenderContext {
         BACKDROP_SHADER_PROGRAM.setUniformF("blurRadius", resolveBackdropShaderRadius(blurRadius,
                 downsampleFactor));
         BACKDROP_SHADER_PROGRAM.setUniformF("saturation", Math.max(0.0F, saturation));
-        BACKDROP_SHADER_PROGRAM.setUniformF("lodBias", resolveBackdropLodBias(blurRadius, downsampleFactor));
         drawBackdropTextureQuad(left, top, right, bottom, sampleLeft, sampleTop, sampleWidth, sampleHeight,
                 0.0F, 0.0F);
         BACKDROP_SHADER_PROGRAM.unbind();
@@ -1077,14 +1076,6 @@ public class UiRenderContext {
         }
         return Math.max(1.0F, Math.min(32.0F, (float) blurRadius * 0.75F
                 / (float) Math.max(1, downsampleFactor)));
-    }
-
-    private static float resolveBackdropLodBias(int blurRadius, int downsampleFactor) {
-        if (blurRadius <= 0) {
-            return 0.0F;
-        }
-        return Math.max(0.0F, Math.min(3.2F, (float) blurRadius
-                / (14.0F * (float) Math.max(1, downsampleFactor))));
     }
 
     private static void recordBackdropFilterPath(BackdropFilterRenderPath renderPath, String detail) {
