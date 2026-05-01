@@ -5,6 +5,9 @@
 - 当前项目尚未发布，不存在需要维护的外部兼容承诺；除非用户明确要求，否则无需为旧式 API、旧式行为或旧式内部结构添加兼容层。
 - 框架可围绕整体最优进行大幅重构、删除或替换，优先追求长期架构正确性、模型一致性和未来上限，而不是为了局部最小改动保留不合适的旧代码。
 - 当前下一阶段主目标是 CSS transition / animation 语义 MVP。后续长期会话即使反复压缩上下文，也不应默认回到“继续补完整 inline formatting”作为第一任务；inline 只处理阻塞动画探针、真实页面迁移或控件展示的最小收口项。
+- 清退决策必须服从 HTML-like 主线：旧 retained 作者入口、旧页面壳、旧兼容主题与旧规划若没有 HTML-like 后端复用价值，应优先删除或重写，而不是继续兼容、internal 化或围绕旧结构扩展。
+- 清退时必须保留 HTML-like 仍复用的 backend/runtime 能力：`Widget`、`ViewportWidget`、`UiInputRouter`、`UiRenderContext`、`UiRuntimeAdapters`、背包格子底层布局/渲染适配与 Minecraft 宿主会话能力；不得因“清退旧入口”误删当前生产链路。
+- 作者层边界优先级高于实现便利性：不得向文档作者暴露 Minecraft GUI 生命周期、OpenGL/FBO/shader/stencil、snapshot-only 诊断或宿主背景效果细节；这些只能留在 screen host、render context 或内部效果服务中。
 
 ## 长期稳定信息
 
@@ -42,11 +45,13 @@
 
 ### 清退原则
 
-- 与 HTML-like UI 主线不对应的旧规划、示例和入口可以直接重写或移除。
+- 清退规则与“最高优先级信息”保持一致：项目未发布，不为旧式 API、旧式行为、旧页面壳或旧 retained 作者模式新增兼容层。
+- 与 HTML-like UI 主线不对应的旧规划、示例和入口可以直接重写或移除；发现无 HTML-like 后端复用价值的 public 类、测试夹具或主题值对象，应优先删除，而不是继续 internal 化或围绕旧结构扩展。
 - 不再把 JNI/MSDF 字体 native 方案作为当前 UI 框架主线规划；字体只作为文本渲染能力被 UI 模型消费。
-- 不再新增扩大直接 `Widget` 作者入口的 API；如必须新增，应优先放在新文档模型或兼容适配层。
-- 不再把 Minecraft GUI 生命周期、OpenGL/FBO/stencil 状态或宿主背景效果泄露给页面作者。
+- 不再新增扩大直接 `Widget` 作者入口的 API；如必须新增，应优先放在 `UiDocument`、`ElementNode`、样式系统、控件适配或 HTML-like 后端能力中。
+- 不再把 Minecraft GUI 生命周期、OpenGL/FBO/shader/stencil 状态、snapshot-only 诊断或宿主背景效果泄露给页面作者；作者层只暴露 HTML-like/CSS-like 语义。
 - 清退旧入口时必须保留可编译、可测试的迁移路径，不能在没有替代测试时破坏当前可运行页面。
+- 清退旧 retained 作者入口时不得误删当前 HTML-like 仍依赖的 backend/runtime 能力：`Widget`、`ViewportWidget`、`UiInputRouter`、`UiRenderContext`、`UiRuntimeAdapters`、背包格子底层布局/渲染适配与 Minecraft 宿主会话能力。
 
 ### 运行与验证
 
