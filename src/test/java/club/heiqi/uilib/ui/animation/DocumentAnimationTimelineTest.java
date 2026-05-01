@@ -210,4 +210,38 @@ public class DocumentAnimationTimelineTest {
         Assert.assertEquals(0.0F, timeline.resolveFloat(root, DocumentAnimationProperty.OPACITY, 0.0F,
                 500_000_000L), 0.0F);
     }
+
+    /**
+     * 验证 keyframe animation 运行值位于 computed style 之上，transition 运行值位于 keyframe 之上。
+     */
+    @Test
+    public void shouldResolveTransitionAboveKeyframeAnimationAndComputedStyle() {
+        UiDocument document = UiDocument.create();
+        ElementNode root = document.getRootElement();
+        root.style()
+                .setWidth(UiStyleLength.px(40))
+                .setHeight(UiStyleLength.px(20))
+                .setOpacity(1.0F)
+                .setTransition(DocumentAnimationProperty.OPACITY, 1000L);
+        DocumentAnimationTimeline timeline = new DocumentAnimationTimeline();
+
+        timeline.updateFromLayout(DocumentLayoutEngine.layout(root, 80, 0), 0L);
+        timeline.setFloatKeyframeAnimation(root, DocumentAnimationProperty.OPACITY, 1.0F, 0.0F, 0L,
+                1_000_000_000L);
+
+        Assert.assertTrue(timeline.hasAnimationWork(DocumentAnimationImpact.EFFECT));
+        Assert.assertFalse(timeline.hasRunningTransition(root, DocumentAnimationProperty.OPACITY));
+        Assert.assertEquals(0.5F, timeline.resolveFloat(root, DocumentAnimationProperty.OPACITY, 1.0F,
+                500_000_000L), 0.0F);
+
+        root.style().setOpacity(0.25F);
+        timeline.updateFromLayout(DocumentLayoutEngine.layout(root, 80, 0), 500_000_000L);
+
+        Assert.assertTrue(timeline.hasRunningTransition(root, DocumentAnimationProperty.OPACITY));
+        Assert.assertEquals(0.4375F, timeline.resolveFloat(root, DocumentAnimationProperty.OPACITY, 0.25F,
+                750_000_000L), 0.0F);
+        Assert.assertEquals(Float.valueOf(0.25F), root.style().getOpacity());
+        Assert.assertTrue(timeline.pruneFinishedAnimations(1_500_000_000L));
+        Assert.assertFalse(timeline.hasAnimationWork());
+    }
 }
