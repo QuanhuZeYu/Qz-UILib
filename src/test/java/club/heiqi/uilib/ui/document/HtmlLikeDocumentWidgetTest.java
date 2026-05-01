@@ -145,6 +145,37 @@ public class HtmlLikeDocumentWidgetTest {
     }
 
     /**
+     * 验证 effect-affecting 动画运行期间不会触发重新文本测量布局。
+     */
+    @Test
+    public void shouldRenderEffectTransitionWithoutRecomputingLayout() {
+        UiDocument document = UiDocument.create();
+        ElementNode root = document.getRootElement();
+        root.style()
+                .setWidth(UiStyleLength.px(64))
+                .setHeight(UiStyleLength.px(28))
+                .setBackdropBlurRadius(UiStyleLength.px(4))
+                .setTransition(DocumentAnimationProperty.BACKDROP_BLUR_RADIUS, 1000L);
+        root.appendText("glass");
+        ManualAnimationClock animationClock = new ManualAnimationClock();
+        CountingTextMeasureService textMeasureService = new CountingTextMeasureService();
+        HtmlLikeDocumentWidget widget = new HtmlLikeDocumentWidget(document, 120, 48, textMeasureService);
+        widget.setAnimationClock(animationClock);
+        widget.applyLayoutBounds(0, 0, 120, 48);
+
+        widget.render(new RecordingUiRenderContext());
+        int measureCountAfterInitialRender = textMeasureService.getMeasureCount();
+        root.style().setBackdropBlurRadius(UiStyleLength.px(20));
+        widget.render(new RecordingUiRenderContext());
+
+        animationClock.setCurrentTimeNanos(500_000_000L);
+        widget.render(new RecordingUiRenderContext());
+
+        Assert.assertEquals(measureCountAfterInitialRender, textMeasureService.getMeasureCount());
+        Assert.assertEquals(1, widget.getActiveAnimationCount());
+    }
+
+    /**
      * 验证 paint-only 样式变更只刷新绘制样式，不重新执行文本测量布局。
      */
     @Test
@@ -709,6 +740,10 @@ public class HtmlLikeDocumentWidgetTest {
         public void drawText(String text, int x, int y, int color, boolean shadow) {
             textCalls.add(new TextCall(text, x, y, color, shadow));
         }
+
+        @Override
+        public void drawBackdropFilter(int left, int top, int right, int bottom, int blurRadius, float saturation,
+                int cornerRadius) {}
 
         @Override
         public void pushClip(int left, int top, int right, int bottom, int cornerRadius) {}

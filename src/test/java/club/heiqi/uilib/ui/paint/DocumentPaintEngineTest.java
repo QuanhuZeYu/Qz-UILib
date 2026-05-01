@@ -395,6 +395,34 @@ public class DocumentPaintEngineTest {
     }
 
     /**
+     * 验证 backdrop blur 即使目标值变为 0，也会在 transition 期间继续输出效果命令。
+     */
+    @Test
+    public void shouldKeepBackdropFilterCommandDuringAnimatedBlurExit() {
+        UiDocument document = UiDocument.create();
+        ElementNode root = document.getRootElement();
+        root.style()
+                .setWidth(UiStyleLength.px(80))
+                .setHeight(UiStyleLength.px(40))
+                .setBackdropBlurRadius(UiStyleLength.px(12))
+                .setTransition(DocumentAnimationProperty.BACKDROP_BLUR_RADIUS, 1000L);
+        DocumentAnimationTimeline timeline = new DocumentAnimationTimeline();
+        DocumentLayoutBox firstLayout = DocumentLayoutEngine.layout(root, 120, 0);
+        timeline.updateFromLayout(firstLayout, 0L);
+
+        root.style().setBackdropBlurRadius(UiStyleLength.px(0));
+        DocumentLayoutBox secondLayout = DocumentLayoutEngine.layout(root, 120, 0);
+        timeline.updateFromLayout(secondLayout, 0L);
+        List<DocumentPaintCommand> commands = DocumentPaintEngine.buildPaintCommands(secondLayout, null,
+                500_000_000L, timeline);
+
+        Assert.assertEquals(1, commands.size());
+        assertCommand(commands.get(0), DocumentPaintCommandType.BACKDROP_FILTER, root, 0, 0, 80, 40, 0, 0, 0);
+        Assert.assertEquals(6, commands.get(0).getBackdropBlurRadius());
+        Assert.assertEquals(1.0F, commands.get(0).getBackdropSaturation(), 0.0F);
+    }
+
+    /**
      * 验证 opacity 会应用到文本绘制颜色。
      */
     @Test

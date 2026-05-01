@@ -243,9 +243,10 @@ public final class DocumentPaintEngine {
     private static void appendBackdropFilterCommand(DocumentLayoutBox box, List<DocumentPaintCommand> commands,
             DocumentAnimationTimeline animationTimeline, long currentTimeNanos, DocumentEffectChain effectChain,
             int offsetX, int offsetY) {
-        int blurRadius = effectChain.getBackdropBlurRadius();
+        int blurRadius = resolveAnimatedBackdropBlurRadius(animationTimeline, box, effectChain.getBackdropBlurRadius(),
+                currentTimeNanos);
         float saturation = effectChain.getBackdropSaturation();
-        if (!effectChain.hasBackdropFilter() || box.getWidth() <= 0 || box.getHeight() <= 0) {
+        if (!hasBackdropFilter(blurRadius, saturation) || box.getWidth() <= 0 || box.getHeight() <= 0) {
             return;
         }
         commands.add(new DocumentPaintCommand(DocumentPaintCommandType.BACKDROP_FILTER, box.getElement(),
@@ -392,6 +393,20 @@ public final class DocumentPaintEngine {
         }
         return animationTimeline.resolveFloat(box.getElement(), DocumentAnimationProperty.OPACITY, baseOpacity,
                 currentTimeNanos);
+    }
+
+    private static int resolveAnimatedBackdropBlurRadius(DocumentAnimationTimeline animationTimeline,
+            DocumentLayoutBox box, int baseRadius, long currentTimeNanos) {
+        if (animationTimeline == null) {
+            return baseRadius;
+        }
+        float animatedRadius = animationTimeline.resolveFloat(box.getElement(),
+                DocumentAnimationProperty.BACKDROP_BLUR_RADIUS, baseRadius, currentTimeNanos);
+        return Math.max(0, Math.min(Math.round(animatedRadius), DocumentEffectChain.MAX_BACKDROP_BLUR_RADIUS));
+    }
+
+    private static boolean hasBackdropFilter(int blurRadius, float saturation) {
+        return blurRadius > 0 || Float.compare(saturation, 1.0F) != 0;
     }
 
     private static int applyOpacity(int color, float opacity) {

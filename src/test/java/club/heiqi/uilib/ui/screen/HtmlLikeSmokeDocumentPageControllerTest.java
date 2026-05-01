@@ -9,6 +9,7 @@ import org.junit.Test;
 import org.lwjglx.input.Keyboard;
 
 import club.heiqi.uilib.ui.document.HtmlLikeDocumentWidget;
+import club.heiqi.uilib.ui.dom.DocumentElementClickEvent;
 import club.heiqi.uilib.ui.dom.DocumentNode;
 import club.heiqi.uilib.ui.dom.DocumentNodeType;
 import club.heiqi.uilib.ui.dom.ElementNode;
@@ -23,6 +24,7 @@ import club.heiqi.uilib.ui.paint.DocumentPaintCommandType;
 import club.heiqi.uilib.ui.paint.DocumentPaintEngine;
 import club.heiqi.uilib.ui.render.UiRenderContext;
 import club.heiqi.uilib.ui.runtime.UiRuntimeAdapters;
+import club.heiqi.uilib.ui.style.UiStyleLength;
 import club.heiqi.uilib.ui.text.TextMeasureService;
 import club.heiqi.uilib.ui.theme.UiSurfaceStyle;
 import club.heiqi.uilib.ui.widget.Widget;
@@ -62,7 +64,7 @@ public class HtmlLikeSmokeDocumentPageControllerTest {
         Assert.assertTrue(containsText(texts, "ABS badge"));
         Assert.assertTrue(containsText(texts, "pink stripe behind glass"));
         Assert.assertTrue(containsText(texts, "amber UI behind this card"));
-        Assert.assertTrue(containsText(texts, "Backdrop glass overlap: blur 14px / saturate 140%"));
+        Assert.assertTrue(containsText(texts, "Backdrop glass transition: click blur 4/22px"));
         Assert.assertTrue(containsText(texts, "Absolute stretch + inline span probe"));
         Assert.assertTrue(containsText(texts, "ABS stretch fill: left+right / top+bottom"));
         Assert.assertTrue(containsText(texts, "amber span hit: 0"));
@@ -141,6 +143,30 @@ public class HtmlLikeSmokeDocumentPageControllerTest {
 
         Assert.assertTrue(containsTextCall(clickedRenderContext.textCalls, "Click target: 1"));
         Assert.assertTrue(widget.getActiveAnimationCount() >= 2);
+    }
+
+    /**
+     * 验证 smoke 页玻璃卡片会触发 backdrop blur 长度类 transition。
+     */
+    @Test
+    public void shouldAnimateSmokeBackdropBlurWhenGlassCardClicked() {
+        TestFixture fixture = new TestFixture();
+
+        fixture.controller.configureDocumentPage();
+        fixture.controller.buildDocument();
+        HtmlLikeDocumentWidget widget = fixture.controller.getHtmlLikeDocumentWidget();
+        widget.applyLayoutBounds(31, 47, 760, 320);
+        widget.render(new RecordingUiRenderContext());
+
+        ElementNode glassCard = findElementContainingDirectText(widget, "Backdrop glass transition: click blur 4/22px");
+        Assert.assertNotNull(glassCard);
+        Assert.assertTrue(glassCard.getClickHandler().onClick(new DocumentElementClickEvent(glassCard, glassCard,
+                0, 0, 0, 2L)));
+        RecordingUiRenderContext clickedRenderContext = new RecordingUiRenderContext();
+        widget.render(clickedRenderContext);
+
+        Assert.assertFalse(clickedRenderContext.backdropCalls.isEmpty());
+        Assert.assertEquals(UiStyleLength.px(22), glassCard.style().getBackdropBlurRadius());
     }
 
     /**

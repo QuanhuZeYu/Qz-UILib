@@ -15,6 +15,17 @@ import club.heiqi.uilib.ui.style.UiStyleLength;
 public class DocumentAnimationTimelineTest {
 
     /**
+     * 验证动画属性会暴露 paint/effect/layout 分层分类。
+     */
+    @Test
+    public void shouldExposeAnimationPropertyImpactClassification() {
+        Assert.assertSame(DocumentAnimationImpact.PAINT, DocumentAnimationProperty.BACKGROUND_COLOR.getImpact());
+        Assert.assertTrue(DocumentAnimationProperty.BORDER_RADIUS.isPaintOnly());
+        Assert.assertSame(DocumentAnimationImpact.EFFECT, DocumentAnimationProperty.OPACITY.getImpact());
+        Assert.assertTrue(DocumentAnimationProperty.BACKDROP_BLUR_RADIUS.isEffectAffecting());
+    }
+
+    /**
      * 验证颜色 transition 会基于 computed style 变化创建动画覆盖，不污染 inline style。
      */
     @Test
@@ -110,5 +121,63 @@ public class DocumentAnimationTimelineTest {
                 1_000_000_000L), 0.0F);
         Assert.assertTrue(timeline.pruneFinishedAnimations(1_000_000_000L));
         Assert.assertFalse(timeline.hasAnimationWork());
+    }
+
+    /**
+     * 验证 effect-affecting 长度类 backdrop blur transition 会按运行值插值。
+     */
+    @Test
+    public void shouldTransitionBackdropBlurRadiusWithoutMutatingInlineStyle() {
+        UiDocument document = UiDocument.create();
+        ElementNode root = document.getRootElement();
+        root.style()
+                .setWidth(UiStyleLength.px(80))
+                .setHeight(UiStyleLength.px(40))
+                .setBackdropBlurRadius(UiStyleLength.px(4))
+                .setTransition(DocumentAnimationProperty.BACKDROP_BLUR_RADIUS, 1000L);
+        DocumentAnimationTimeline timeline = new DocumentAnimationTimeline();
+
+        DocumentLayoutBox firstLayout = DocumentLayoutEngine.layout(root, 120, 0);
+        Assert.assertTrue(timeline.updateFromLayout(firstLayout, 0L));
+        Assert.assertEquals(4.0F, timeline.resolveFloat(root, DocumentAnimationProperty.BACKDROP_BLUR_RADIUS, 4.0F,
+                0L), 0.0F);
+
+        root.style().setBackdropBlurRadius(UiStyleLength.px(20));
+        DocumentLayoutBox secondLayout = DocumentLayoutEngine.layout(root, 120, 0);
+        Assert.assertTrue(timeline.updateFromLayout(secondLayout, 0L));
+
+        Assert.assertTrue(timeline.hasAnimationWork(DocumentAnimationImpact.EFFECT));
+        Assert.assertEquals(1, timeline.getActiveAnimationCount(500_000_000L));
+        Assert.assertEquals(12.0F, timeline.resolveFloat(root, DocumentAnimationProperty.BACKDROP_BLUR_RADIUS, 20.0F,
+                500_000_000L), 0.0F);
+        Assert.assertEquals(UiStyleLength.px(20), root.style().getBackdropBlurRadius());
+        Assert.assertEquals(20.0F, timeline.resolveFloat(root, DocumentAnimationProperty.BACKDROP_BLUR_RADIUS, 20.0F,
+                1_000_000_000L), 0.0F);
+    }
+
+    /**
+     * 验证 transition delay 与 timing function 会影响运行值进度。
+     */
+    @Test
+    public void shouldHonorDelayAndTimingFunction() {
+        UiDocument document = UiDocument.create();
+        ElementNode root = document.getRootElement();
+        root.style()
+                .setWidth(UiStyleLength.px(40))
+                .setHeight(UiStyleLength.px(20))
+                .setOpacity(1.0F)
+                .setTransition(DocumentAnimationProperty.OPACITY, 1000L)
+                .setTransitionDelayMillis(250L)
+                .setTransitionTimingFunction(DocumentAnimationTimingFunction.EASE_IN);
+        DocumentAnimationTimeline timeline = new DocumentAnimationTimeline();
+
+        timeline.updateFromLayout(DocumentLayoutEngine.layout(root, 80, 0), 0L);
+        root.style().setOpacity(0.0F);
+        timeline.updateFromLayout(DocumentLayoutEngine.layout(root, 80, 0), 0L);
+
+        Assert.assertEquals(1.0F, timeline.resolveFloat(root, DocumentAnimationProperty.OPACITY, 0.0F,
+                200_000_000L), 0.0F);
+        Assert.assertEquals(0.75F, timeline.resolveFloat(root, DocumentAnimationProperty.OPACITY, 0.0F,
+                750_000_000L), 0.0F);
     }
 }

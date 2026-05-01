@@ -319,9 +319,24 @@ final class HtmlLikeSmokeDocumentPageController extends DocumentPageController {
                 .setTextColor(0xFFFFFFFF)
                 .setBackdropBlurRadius(UiStyleLength.px(14))
                 .setBackdropSaturation(1.4F)
+                .setTransitionProperties(DocumentAnimationProperty.BACKDROP_BLUR_RADIUS,
+                        DocumentAnimationProperty.BORDER_RADIUS)
+                .setTransitionDurationMillis(700L)
+                .setTransitionTimingFunction(DocumentAnimationTimingFunction.EASE_IN_OUT)
                 .setOverflowX(UiOverflow.HIDDEN)
                 .setOverflowY(UiOverflow.HIDDEN);
-        glassCard.appendText("Backdrop glass overlap: blur 14px / saturate 140%");
+        glassCard.appendText("Backdrop glass transition: click blur 4/22px");
+        final int[] glassClickCount = new int[] { 0 };
+        glassCard.setClickHandler(new DocumentElementClickHandler() {
+            @Override
+            public boolean onClick(DocumentElementClickEvent event) {
+                glassClickCount[0]++;
+                boolean expanded = glassClickCount[0] % 2 == 1;
+                glassCard.style().setBackdropBlurRadius(UiStyleLength.px(expanded ? 22 : 4));
+                glassCard.style().setBorderRadius(UiStyleLength.px(expanded ? 22 : 8));
+                return true;
+            }
+        });
         backdropStage.append(glassCard);
         appendAbsoluteStretchAndInlineProbe(document, root);
         appendGroupOpacityProbe(document, root);

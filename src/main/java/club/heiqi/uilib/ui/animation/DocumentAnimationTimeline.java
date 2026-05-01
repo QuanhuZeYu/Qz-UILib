@@ -9,6 +9,7 @@ import java.util.Objects;
 import java.util.Set;
 
 import club.heiqi.uilib.ui.dom.ElementNode;
+import club.heiqi.uilib.ui.layout.DocumentEffectChain;
 import club.heiqi.uilib.ui.layout.DocumentLayoutBox;
 import club.heiqi.uilib.ui.style.ComputedStyle;
 
@@ -26,7 +27,8 @@ public final class DocumentAnimationTimeline {
     };
     private static final DocumentAnimationProperty[] PAINT_FLOAT_PROPERTIES = new DocumentAnimationProperty[] {
             DocumentAnimationProperty.OPACITY,
-            DocumentAnimationProperty.BORDER_RADIUS
+            DocumentAnimationProperty.BORDER_RADIUS,
+            DocumentAnimationProperty.BACKDROP_BLUR_RADIUS
     };
 
     private final Map<ElementNode, ElementAnimationState> states = new HashMap<ElementNode, ElementAnimationState>();
@@ -102,6 +104,29 @@ public final class DocumentAnimationTimeline {
         for (ElementAnimationState state : states.values()) {
             if (!state.colorTransitions.isEmpty() || !state.floatTransitions.isEmpty()) {
                 return true;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * 返回当前是否有指定影响范围的动画工作。
+     *
+     * @param impact 动画影响范围
+     * @return 是否存在对应动画
+     */
+    public boolean hasAnimationWork(DocumentAnimationImpact impact) {
+        Objects.requireNonNull(impact, "impact");
+        for (ElementAnimationState state : states.values()) {
+            for (DocumentAnimationProperty property : state.colorTransitions.keySet()) {
+                if (property.getImpact() == impact) {
+                    return true;
+                }
+            }
+            for (DocumentAnimationProperty property : state.floatTransitions.keySet()) {
+                if (property.getImpact() == impact) {
+                    return true;
+                }
             }
         }
         return false;
@@ -256,6 +281,9 @@ public final class DocumentAnimationTimeline {
         if (property == DocumentAnimationProperty.BORDER_RADIUS) {
             return resolveBorderRadius(box);
         }
+        if (property == DocumentAnimationProperty.BACKDROP_BLUR_RADIUS) {
+            return resolveBackdropBlurRadius(box);
+        }
         return 0.0F;
     }
 
@@ -263,6 +291,12 @@ public final class DocumentAnimationTimeline {
         int limit = Math.min(box.getWidth(), box.getHeight());
         int radius = box.getComputedStyle().getBorderRadius().resolve(limit, 0);
         return Math.max(0, Math.min(radius, limit / 2));
+    }
+
+    private static int resolveBackdropBlurRadius(DocumentLayoutBox box) {
+        int availableSpace = Math.max(box.getWidth(), box.getHeight());
+        int radius = box.getComputedStyle().getBackdropBlurRadius().resolve(availableSpace, 0);
+        return Math.max(0, Math.min(radius, DocumentEffectChain.MAX_BACKDROP_BLUR_RADIUS));
     }
 
     private static int interpolateColor(int fromColor, int toColor, float progress) {
