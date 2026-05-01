@@ -96,9 +96,15 @@ final class HtmlLikeSmokeDocumentPageController extends DocumentPageController {
     private static UiDocument createSmokeDocument() {
         UiDocument document = UiDocument.create();
         document.registerKeyframes(DocumentKeyframes.named("smokePulse")
-                .setFloat(DocumentAnimationProperty.OPACITY, 1.0F, 0.45F)
-                .setFloat(DocumentAnimationProperty.BORDER_RADIUS, 999.0F, 12.0F)
-                .setColor(DocumentAnimationProperty.BACKGROUND_COLOR, 0xFF38A169, 0xFF805AD5)
+                .setFloatStop(DocumentAnimationProperty.OPACITY, 0.0F, 1.0F)
+                .setFloatStop(DocumentAnimationProperty.OPACITY, 0.5F, 1.0F)
+                .setFloatStop(DocumentAnimationProperty.OPACITY, 1.0F, 0.45F)
+                .setFloatStop(DocumentAnimationProperty.BORDER_RADIUS, 0.0F, 999.0F)
+                .setFloatStop(DocumentAnimationProperty.BORDER_RADIUS, 0.5F, 999.0F)
+                .setFloatStop(DocumentAnimationProperty.BORDER_RADIUS, 1.0F, 12.0F)
+                .setColorStop(DocumentAnimationProperty.BACKGROUND_COLOR, 0.0F, 0xFF38A169)
+                .setColorStop(DocumentAnimationProperty.BACKGROUND_COLOR, 0.5F, 0xFF68D391)
+                .setColorStop(DocumentAnimationProperty.BACKGROUND_COLOR, 1.0F, 0xFF805AD5)
                 .build());
         ElementNode root = document.getRootElement();
         root.style()
@@ -393,7 +399,7 @@ final class HtmlLikeSmokeDocumentPageController extends DocumentPageController {
                 .setTextColor(0xFFC4B5FD)
                 .setOverflowX(UiOverflow.HIDDEN)
                 .setOverflowY(UiOverflow.HIDDEN);
-        keyframeDiagnostic.appendText("Keyframe diagnostics: first pill runs animation-name=smokePulse once; fill-mode=both.");
+        keyframeDiagnostic.appendText("Keyframe diagnostics: first pill runs smokePulse 0/50/100 stops once; fill-mode=both.");
         controlsSection.append(keyframeDiagnostic);
 
         ElementNode controlsRow = document.div();

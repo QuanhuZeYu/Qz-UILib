@@ -8,6 +8,7 @@ import org.junit.Assert;
 import org.junit.Test;
 import org.lwjglx.input.Keyboard;
 
+import club.heiqi.uilib.ui.animation.DocumentAnimationProperty;
 import club.heiqi.uilib.ui.document.HtmlLikeDocumentWidget;
 import club.heiqi.uilib.ui.dom.DocumentElementClickEvent;
 import club.heiqi.uilib.ui.dom.DocumentNode;
@@ -59,7 +60,7 @@ public class HtmlLikeSmokeDocumentPageControllerTest {
         Assert.assertTrue(containsText(texts, "Controls probe: click, input, Tab, button, toggle"));
         Assert.assertTrue(containsText(texts, "Animation diagnostics: pill=paint/effect"));
         Assert.assertTrue(containsText(texts, "static cache resumes after finish"));
-        Assert.assertTrue(containsText(texts, "Keyframe diagnostics: first pill runs animation-name=smokePulse"));
+        Assert.assertTrue(containsText(texts, "Keyframe diagnostics: first pill runs smokePulse 0/50/100 stops"));
         Assert.assertTrue(containsText(texts, "Same-layer sampling grid"));
         Assert.assertTrue(containsText(texts, "ABS containing probe"));
         Assert.assertTrue(containsText(texts, "static wrapper is not anchor"));
@@ -168,6 +169,10 @@ public class HtmlLikeSmokeDocumentPageControllerTest {
         ElementNode clickTarget = findElementContainingDirectText(widget, "Click target: 0");
         Assert.assertEquals("smokePulse", clickTarget.style().getAnimationName());
         Assert.assertTrue(widget.getDocument().getKeyframesRegistry().containsKey("smokePulse"));
+        Assert.assertEquals(3, widget.getDocument().getKeyframes("smokePulse")
+                .getColorTracks().get(DocumentAnimationProperty.BACKGROUND_COLOR).getStops().size());
+        Assert.assertEquals(3, widget.getDocument().getKeyframes("smokePulse")
+                .getFloatTracks().get(DocumentAnimationProperty.BORDER_RADIUS).getStops().size());
         Assert.assertTrue(widget.getActiveAnimationCount() >= 3);
     }
 

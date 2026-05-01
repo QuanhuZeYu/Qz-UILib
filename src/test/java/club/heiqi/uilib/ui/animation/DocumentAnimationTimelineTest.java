@@ -324,6 +324,41 @@ public class DocumentAnimationTimelineTest {
     }
 
     /**
+     * 验证声明式 keyframes 可按 0%/50%/100% 这类多段 stop 列表插值。
+     */
+    @Test
+    public void shouldInterpolateDeclaredKeyframeStopList() {
+        UiDocument document = UiDocument.create();
+        document.registerKeyframes(DocumentKeyframes.named("pulse")
+                .setColorStop(DocumentAnimationProperty.BACKGROUND_COLOR, 0.0F, 0xFF000000)
+                .setColorStop(DocumentAnimationProperty.BACKGROUND_COLOR, 0.5F, 0xFFFFFFFF)
+                .setColorStop(DocumentAnimationProperty.BACKGROUND_COLOR, 1.0F, 0xFFFF0000)
+                .setFloatStop(DocumentAnimationProperty.BORDER_RADIUS, 0.0F, 999.0F)
+                .setFloatStop(DocumentAnimationProperty.BORDER_RADIUS, 0.5F, 20.0F)
+                .setFloatStop(DocumentAnimationProperty.BORDER_RADIUS, 1.0F, 10.0F)
+                .build());
+        ElementNode root = document.getRootElement();
+        root.style()
+                .setWidth(UiStyleLength.px(80))
+                .setHeight(UiStyleLength.px(40))
+                .setBackgroundColor(0xFF112233)
+                .setAnimation("pulse", 1000L)
+                .setAnimationFillMode(DocumentAnimationFillMode.BOTH);
+        DocumentAnimationTimeline timeline = new DocumentAnimationTimeline();
+
+        timeline.updateFromLayout(DocumentLayoutEngine.layout(root, 120, 0), 0L);
+
+        Assert.assertEquals(0xFF808080, timeline.resolveColor(root, DocumentAnimationProperty.BACKGROUND_COLOR,
+                0xFF112233, 250_000_000L));
+        Assert.assertEquals(0xFFFF8080, timeline.resolveColor(root, DocumentAnimationProperty.BACKGROUND_COLOR,
+                0xFF112233, 750_000_000L));
+        Assert.assertEquals(20.0F, timeline.resolveFloat(root, DocumentAnimationProperty.BORDER_RADIUS, 0.0F,
+                250_000_000L), 0.0F);
+        Assert.assertEquals(15.0F, timeline.resolveFloat(root, DocumentAnimationProperty.BORDER_RADIUS, 0.0F,
+                750_000_000L), 0.0F);
+    }
+
+    /**
      * 验证 animation delay、iteration、fill-mode 与 timing function 会影响 keyframes 生命周期。
      */
     @Test

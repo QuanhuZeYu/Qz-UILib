@@ -4,6 +4,7 @@ import java.util.EnumMap;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Iterator;
+import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
@@ -128,7 +129,12 @@ public final class DocumentAnimationTimeline {
         ElementAnimationState state = getOrCreateState(element);
         state.declaredColorKeyframeProperties.remove(property);
         state.filledColors.remove(property);
-        state.colorKeyframeAnimations.put(property, new ColorKeyframeAnimation(fromColor, toColor, startNanos,
+        state.colorKeyframeAnimations.put(property, new ColorKeyframeAnimation(
+                DocumentKeyframes.named("manual-color")
+                        .setColor(property, fromColor, toColor)
+                        .build()
+                        .getColorTracks()
+                        .get(property), startNanos,
                 durationNanos, 1, DocumentAnimationFillMode.NONE, DocumentAnimationTimingFunction.LINEAR));
     }
 
@@ -149,7 +155,12 @@ public final class DocumentAnimationTimeline {
         ElementAnimationState state = getOrCreateState(element);
         state.declaredFloatKeyframeProperties.remove(property);
         state.filledFloats.remove(property);
-        state.floatKeyframeAnimations.put(property, new FloatKeyframeAnimation(fromValue, toValue, startNanos,
+        state.floatKeyframeAnimations.put(property, new FloatKeyframeAnimation(
+                DocumentKeyframes.named("manual-float")
+                        .setFloat(property, fromValue, toValue)
+                        .build()
+                        .getFloatTracks()
+                        .get(property), startNanos,
                 durationNanos, 1, DocumentAnimationFillMode.NONE, DocumentAnimationTimingFunction.LINEAR));
     }
 
@@ -465,24 +476,23 @@ public final class DocumentAnimationTimeline {
         state.declaredBoxWidth = box.getWidth();
         state.declaredBoxHeight = box.getHeight();
         long startNanos = currentTimeNanos + style.getAnimationDelayNanos();
-        for (Map.Entry<DocumentAnimationProperty, DocumentKeyframes.ColorRange> entry : keyframes.getColorRanges()
+        for (Map.Entry<DocumentAnimationProperty, DocumentKeyframes.ColorTrack> entry : keyframes.getColorTracks()
                 .entrySet()) {
             DocumentAnimationProperty property = entry.getKey();
-            DocumentKeyframes.ColorRange range = entry.getValue();
-            state.colorKeyframeAnimations.put(property, new ColorKeyframeAnimation(range.getFromColor(),
-                    range.getToColor(), startNanos, style.getAnimationDurationNanos(),
+            DocumentKeyframes.ColorTrack track = entry.getValue();
+            state.colorKeyframeAnimations.put(property, new ColorKeyframeAnimation(track, startNanos,
+                    style.getAnimationDurationNanos(),
                     style.getAnimationIterationCount(), style.getAnimationFillMode(),
                     style.getAnimationTimingFunction()));
             state.declaredColorKeyframeProperties.add(property);
             state.filledColors.remove(property);
         }
-        for (Map.Entry<DocumentAnimationProperty, DocumentKeyframes.FloatRange> entry : keyframes.getFloatRanges()
+        for (Map.Entry<DocumentAnimationProperty, DocumentKeyframes.FloatTrack> entry : keyframes.getFloatTracks()
                 .entrySet()) {
             DocumentAnimationProperty property = entry.getKey();
-            DocumentKeyframes.FloatRange range = entry.getValue();
-            state.floatKeyframeAnimations.put(property, new FloatKeyframeAnimation(normalizeDeclaredKeyframeFloat(box,
-                    property, range.getFromValue()), normalizeDeclaredKeyframeFloat(box, property, range.getToValue()),
-                    startNanos, style.getAnimationDurationNanos(),
+            DocumentKeyframes.FloatTrack track = entry.getValue();
+            state.floatKeyframeAnimations.put(property, new FloatKeyframeAnimation(normalizeDeclaredKeyframeFloatTrack(box,
+                    property, track), startNanos, style.getAnimationDurationNanos(),
                     style.getAnimationIterationCount(), style.getAnimationFillMode(),
                     style.getAnimationTimingFunction()));
             state.declaredFloatKeyframeProperties.add(property);
@@ -521,6 +531,16 @@ public final class DocumentAnimationTimeline {
             return Math.max(0.0F, Math.min(value, DocumentEffectChain.MAX_BACKDROP_BLUR_RADIUS));
         }
         return value;
+    }
+
+    private static DocumentKeyframes.FloatTrack normalizeDeclaredKeyframeFloatTrack(DocumentLayoutBox box,
+            DocumentAnimationProperty property, DocumentKeyframes.FloatTrack track) {
+        DocumentKeyframes.Builder builder = DocumentKeyframes.named("normalized-float-track");
+        for (DocumentKeyframes.FloatStop stop : track.getStops()) {
+            builder.setFloatStop(property, stop.getOffset(), normalizeDeclaredKeyframeFloat(box, property,
+                    stop.getValue()));
+        }
+        return builder.build().getFloatTracks().get(property);
     }
 
     private static int getBaseColor(ComputedStyle style, DocumentAnimationProperty property) {
@@ -576,6 +596,62 @@ public final class DocumentAnimationTimeline {
 
     private static int interpolateChannel(int from, int to, float progress) {
         return Math.max(0, Math.min(255, Math.round(from + (to - from) * progress)));
+    }
+
+    private static int resolveColorTrack(DocumentKeyframes.ColorTrack track, float progress,
+            DocumentAnimationTimingFunction timingFunction) {
+        List<DocumentKeyframes.ColorStop> stops = track.getStops();
+        if (progress <= stops.get(0).getOffset()) {
+            return stops.get(0).getColor();
+        }
+        int lastIndex = stops.size() - 1;
+        if (progress >= stops.get(lastIndex).getOffset()) {
+            return stops.get(lastIndex).getColor();
+        }
+        for (int index = 0; index < lastIndex; index++) {
+            DocumentKeyframes.ColorStop fromStop = stops.get(index);
+            DocumentKeyframes.ColorStop toStop = stops.get(index + 1);
+            if (progress > toStop.getOffset()) {
+                continue;
+            }
+            float localProgress = resolveLocalProgress(fromStop.getOffset(), toStop.getOffset(), progress,
+                    timingFunction);
+            return interpolateColor(fromStop.getColor(), toStop.getColor(), localProgress);
+        }
+        return stops.get(lastIndex).getColor();
+    }
+
+    private static float resolveFloatTrack(DocumentKeyframes.FloatTrack track, float progress,
+            DocumentAnimationTimingFunction timingFunction) {
+        List<DocumentKeyframes.FloatStop> stops = track.getStops();
+        if (progress <= stops.get(0).getOffset()) {
+            return stops.get(0).getValue();
+        }
+        int lastIndex = stops.size() - 1;
+        if (progress >= stops.get(lastIndex).getOffset()) {
+            return stops.get(lastIndex).getValue();
+        }
+        for (int index = 0; index < lastIndex; index++) {
+            DocumentKeyframes.FloatStop fromStop = stops.get(index);
+            DocumentKeyframes.FloatStop toStop = stops.get(index + 1);
+            if (progress > toStop.getOffset()) {
+                continue;
+            }
+            float localProgress = resolveLocalProgress(fromStop.getOffset(), toStop.getOffset(), progress,
+                    timingFunction);
+            return fromStop.getValue() + (toStop.getValue() - fromStop.getValue()) * localProgress;
+        }
+        return stops.get(lastIndex).getValue();
+    }
+
+    private static float resolveLocalProgress(float fromOffset, float toOffset, float progress,
+            DocumentAnimationTimingFunction timingFunction) {
+        float span = toOffset - fromOffset;
+        if (span <= 0.0F) {
+            return 1.0F;
+        }
+        float localProgress = (progress - fromOffset) / span;
+        return timingFunction.apply(Math.max(0.0F, Math.min(1.0F, localProgress)));
     }
 
     /**
@@ -719,18 +795,16 @@ public final class DocumentAnimationTimeline {
      */
     private static final class ColorKeyframeAnimation {
 
-        private final int fromColor;
-        private final int toColor;
+        private final DocumentKeyframes.ColorTrack track;
         private final long startNanos;
         private final long durationNanos;
         private final int iterationCount;
         private final DocumentAnimationFillMode fillMode;
         private final DocumentAnimationTimingFunction timingFunction;
 
-        private ColorKeyframeAnimation(int fromColor, int toColor, long startNanos, long durationNanos,
+        private ColorKeyframeAnimation(DocumentKeyframes.ColorTrack track, long startNanos, long durationNanos,
                 int iterationCount, DocumentAnimationFillMode fillMode, DocumentAnimationTimingFunction timingFunction) {
-            this.fromColor = fromColor;
-            this.toColor = toColor;
+            this.track = Objects.requireNonNull(track, "track");
             this.startNanos = startNanos;
             this.durationNanos = Math.max(1L, durationNanos);
             this.iterationCount = Math.max(1, iterationCount);
@@ -740,15 +814,15 @@ public final class DocumentAnimationTimeline {
 
         private int resolve(int baseColor, long currentTimeNanos) {
             if (currentTimeNanos <= startNanos) {
-                return fillsBackwards() ? fromColor : baseColor;
+                return fillsBackwards() ? track.getFirstColor() : baseColor;
             }
             long activeDurationNanos = getActiveDurationNanos();
             long elapsedNanos = currentTimeNanos - startNanos;
             if (elapsedNanos >= activeDurationNanos) {
-                return fillsForwards() ? toColor : baseColor;
+                return fillsForwards() ? track.getLastColor() : baseColor;
             }
             long iterationElapsedNanos = elapsedNanos % durationNanos;
-            return interpolateColor(fromColor, toColor, timingFunction.apply(iterationElapsedNanos / (float) durationNanos));
+            return resolveColorTrack(track, iterationElapsedNanos / (float) durationNanos, timingFunction);
         }
 
         private boolean isFinished(long currentTimeNanos) {
@@ -764,7 +838,7 @@ public final class DocumentAnimationTimeline {
         }
 
         private int getFilledColor() {
-            return toColor;
+            return track.getLastColor();
         }
 
         private long getActiveDurationNanos() {
@@ -777,18 +851,16 @@ public final class DocumentAnimationTimeline {
      */
     private static final class FloatKeyframeAnimation {
 
-        private final float fromValue;
-        private final float toValue;
+        private final DocumentKeyframes.FloatTrack track;
         private final long startNanos;
         private final long durationNanos;
         private final int iterationCount;
         private final DocumentAnimationFillMode fillMode;
         private final DocumentAnimationTimingFunction timingFunction;
 
-        private FloatKeyframeAnimation(float fromValue, float toValue, long startNanos, long durationNanos,
+        private FloatKeyframeAnimation(DocumentKeyframes.FloatTrack track, long startNanos, long durationNanos,
                 int iterationCount, DocumentAnimationFillMode fillMode, DocumentAnimationTimingFunction timingFunction) {
-            this.fromValue = fromValue;
-            this.toValue = toValue;
+            this.track = Objects.requireNonNull(track, "track");
             this.startNanos = startNanos;
             this.durationNanos = Math.max(1L, durationNanos);
             this.iterationCount = Math.max(1, iterationCount);
@@ -798,15 +870,15 @@ public final class DocumentAnimationTimeline {
 
         private float resolve(float baseValue, long currentTimeNanos) {
             if (currentTimeNanos <= startNanos) {
-                return fillsBackwards() ? fromValue : baseValue;
+                return fillsBackwards() ? track.getFirstValue() : baseValue;
             }
             long activeDurationNanos = getActiveDurationNanos();
             long elapsedNanos = currentTimeNanos - startNanos;
             if (elapsedNanos >= activeDurationNanos) {
-                return fillsForwards() ? toValue : baseValue;
+                return fillsForwards() ? track.getLastValue() : baseValue;
             }
             long iterationElapsedNanos = elapsedNanos % durationNanos;
-            return fromValue + (toValue - fromValue) * timingFunction.apply(iterationElapsedNanos / (float) durationNanos);
+            return resolveFloatTrack(track, iterationElapsedNanos / (float) durationNanos, timingFunction);
         }
 
         private boolean isFinished(long currentTimeNanos) {
@@ -822,7 +894,7 @@ public final class DocumentAnimationTimeline {
         }
 
         private float getFilledValue() {
-            return toValue;
+            return track.getLastValue();
         }
 
         private long getActiveDurationNanos() {
