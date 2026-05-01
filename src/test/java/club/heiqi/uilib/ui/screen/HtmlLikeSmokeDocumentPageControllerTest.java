@@ -61,8 +61,9 @@ public class HtmlLikeSmokeDocumentPageControllerTest {
         Assert.assertTrue(containsText(texts, "Animation diagnostics: pill=paint bg+radius"));
         Assert.assertTrue(containsText(texts, "opacity uses separate group probe"));
         Assert.assertTrue(containsText(texts, "Keyframe diagnostics: first pill runs smokePulse bg+radius 0/50/100 stops"));
-        Assert.assertTrue(containsText(texts, "Opacity FBO probe: click the purple card"));
+        Assert.assertTrue(containsText(texts, "Opacity FBO probe: click card fades"));
         Assert.assertTrue(containsText(texts, "Opacity FBO card: click fade"));
+        Assert.assertTrue(containsText(texts, "Opacity FBO auto: initial fade"));
         Assert.assertTrue(containsText(texts, "Same-layer sampling grid"));
         Assert.assertTrue(containsText(texts, "ABS containing probe"));
         Assert.assertTrue(containsText(texts, "static wrapper is not anchor"));
@@ -196,7 +197,16 @@ public class HtmlLikeSmokeDocumentPageControllerTest {
         widget.render(new RecordingUiRenderContext());
 
         ElementNode opacityCard = findElementContainingDirectText(widget, "Opacity FBO card: click fade");
+        ElementNode autoOpacityCard = findElementContainingDirectText(widget, "Opacity FBO auto: initial fade");
         Assert.assertNotNull(opacityCard);
+        Assert.assertNotNull(autoOpacityCard);
+        Assert.assertTrue(widget.getDocument().getKeyframesRegistry().containsKey("opacityFboAuto"));
+        Assert.assertTrue(widget.getDocument().getKeyframes("opacityFboAuto").getFloatTracks()
+                .containsKey(DocumentAnimationProperty.OPACITY));
+        Assert.assertEquals(3, widget.getDocument().getKeyframes("opacityFboAuto").getFloatTracks()
+                .get(DocumentAnimationProperty.OPACITY).getStops().size());
+        Assert.assertEquals("opacityFboAuto", autoOpacityCard.style().getAnimationName());
+        Assert.assertNull(autoOpacityCard.style().getTransitionProperties());
         Assert.assertTrue(opacityCard.style().getTransitionProperties().contains(DocumentAnimationProperty.OPACITY));
         Assert.assertEquals(Float.valueOf(1.0F), opacityCard.style().getOpacity());
 

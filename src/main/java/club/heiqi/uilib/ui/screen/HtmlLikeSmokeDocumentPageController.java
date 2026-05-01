@@ -103,6 +103,11 @@ final class HtmlLikeSmokeDocumentPageController extends DocumentPageController {
                 .setColorStop(DocumentAnimationProperty.BACKGROUND_COLOR, 0.5F, 0xFF68D391)
                 .setColorStop(DocumentAnimationProperty.BACKGROUND_COLOR, 1.0F, 0xFF805AD5)
                 .build());
+        document.registerKeyframes(DocumentKeyframes.named("opacityFboAuto")
+                .setFloatStop(DocumentAnimationProperty.OPACITY, 0.0F, 1.0F)
+                .setFloatStop(DocumentAnimationProperty.OPACITY, 0.5F, 0.45F)
+                .setFloatStop(DocumentAnimationProperty.OPACITY, 1.0F, 1.0F)
+                .build());
         ElementNode root = document.getRootElement();
         root.style()
                 .setPadding(UiStyleLength.px(14))
@@ -514,7 +519,7 @@ final class HtmlLikeSmokeDocumentPageController extends DocumentPageController {
     private static void appendOpacityFboProbe(UiDocument document, ElementNode root) {
         ElementNode probe = document.div();
         probe.style()
-                .setHeight(UiStyleLength.px(92))
+                .setHeight(UiStyleLength.px(142))
                 .setMargin(UiStyleInsets.of(UiStyleLength.px(12), UiStyleLength.px(0), UiStyleLength.px(0),
                         UiStyleLength.px(0)))
                 .setPadding(UiStyleLength.px(10))
@@ -526,7 +531,7 @@ final class HtmlLikeSmokeDocumentPageController extends DocumentPageController {
                 .setTextColor(0xFFFFF7ED)
                 .setOverflowX(UiOverflow.HIDDEN)
                 .setOverflowY(UiOverflow.HIDDEN);
-        probe.appendText("Opacity FBO probe: click the purple card; it fades 100/45 without full-screen flash.");
+        probe.appendText("Opacity FBO probe: click card fades; auto card runs initial opacity keyframe.");
         root.append(probe);
 
         ElementNode amberStripe = document.div();
@@ -550,6 +555,28 @@ final class HtmlLikeSmokeDocumentPageController extends DocumentPageController {
                 .setBackgroundColor(0xFF22D3EE)
                 .setBorderRadius(UiStyleLength.px(999));
         probe.append(cyanStripe);
+
+        ElementNode roseStripe = document.div();
+        roseStripe.style()
+                .setWidth(UiStyleLength.px(330))
+                .setHeight(UiStyleLength.px(16))
+                .setPosition(UiPosition.ABSOLUTE)
+                .setLeft(UiStyleLength.px(28))
+                .setTop(UiStyleLength.px(102))
+                .setBackgroundColor(0xFFFB7185)
+                .setBorderRadius(UiStyleLength.px(999));
+        probe.append(roseStripe);
+
+        ElementNode greenStripe = document.div();
+        greenStripe.style()
+                .setWidth(UiStyleLength.px(280))
+                .setHeight(UiStyleLength.px(16))
+                .setPosition(UiPosition.ABSOLUTE)
+                .setLeft(UiStyleLength.px(76))
+                .setTop(UiStyleLength.px(122))
+                .setBackgroundColor(0xFF34D399)
+                .setBorderRadius(UiStyleLength.px(999));
+        probe.append(greenStripe);
 
         final ElementNode opacityCard = document.div();
         opacityCard.style()
@@ -581,6 +608,29 @@ final class HtmlLikeSmokeDocumentPageController extends DocumentPageController {
             }
         });
         probe.append(opacityCard);
+
+        ElementNode autoOpacityCard = document.div();
+        autoOpacityCard.style()
+                .setWidth(UiStyleLength.px(238))
+                .setHeight(UiStyleLength.px(42))
+                .setPosition(UiPosition.ABSOLUTE)
+                .setLeft(UiStyleLength.px(88))
+                .setTop(UiStyleLength.px(92))
+                .setZIndex(1)
+                .setPadding(UiStyleLength.px(8))
+                .setBackgroundColor(0xFF2563EB)
+                .setBorderColor(0xFFBFDBFE)
+                .setBorderWidth(UiStyleLength.px(1))
+                .setBorderRadius(UiStyleLength.px(12))
+                .setTextColor(0xFFFFFFFF)
+                .setOpacity(1.0F)
+                .setAnimation("opacityFboAuto", 900L)
+                .setAnimationFillMode(DocumentAnimationFillMode.NONE)
+                .setAnimationTimingFunction(DocumentAnimationTimingFunction.EASE_IN_OUT)
+                .setOverflowX(UiOverflow.HIDDEN)
+                .setOverflowY(UiOverflow.HIDDEN);
+        autoOpacityCard.appendText("Opacity FBO auto: initial fade");
+        probe.append(autoOpacityCard);
     }
 
     private static void appendAbsoluteStretchAndInlineProbe(UiDocument document, ElementNode root) {
