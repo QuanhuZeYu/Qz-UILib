@@ -13,6 +13,7 @@ import club.heiqi.uilib.ui.dom.ElementNode;
 import club.heiqi.uilib.ui.layout.DocumentEffectChain;
 import club.heiqi.uilib.ui.layout.DocumentLayoutBox;
 import club.heiqi.uilib.ui.style.ComputedStyle;
+import club.heiqi.uilib.ui.style.UiStyleLength;
 
 /**
  * HTML-like 文档级动画时间线。
@@ -26,10 +27,12 @@ public final class DocumentAnimationTimeline {
             DocumentAnimationProperty.BORDER_COLOR,
             DocumentAnimationProperty.TEXT_COLOR
     };
-    private static final DocumentAnimationProperty[] PAINT_FLOAT_PROPERTIES = new DocumentAnimationProperty[] {
+    private static final DocumentAnimationProperty[] FLOAT_PROPERTIES = new DocumentAnimationProperty[] {
             DocumentAnimationProperty.OPACITY,
             DocumentAnimationProperty.BORDER_RADIUS,
-            DocumentAnimationProperty.BACKDROP_BLUR_RADIUS
+            DocumentAnimationProperty.BACKDROP_BLUR_RADIUS,
+            DocumentAnimationProperty.WIDTH,
+            DocumentAnimationProperty.HEIGHT
     };
 
     private final Map<ElementNode, ElementAnimationState> states = new HashMap<ElementNode, ElementAnimationState>();
@@ -391,23 +394,32 @@ public final class DocumentAnimationTimeline {
             }
             changed = true;
         }
-        for (DocumentAnimationProperty property : PAINT_FLOAT_PROPERTIES) {
+        for (DocumentAnimationProperty property : FLOAT_PROPERTIES) {
             float baseValue = getBaseFloat(box, property);
             Float previousTarget = state.targetFloats.get(property);
-            boolean transitionAllowed = canTransition(style, property);
+            boolean targetTransitionable = isFloatTransitionTargetAnimatable(box, property);
+            Boolean previousTargetTransitionable = state.targetFloatTransitionable.get(property);
+            boolean transitionAllowed = canTransition(style, property) && targetTransitionable
+                    && Boolean.TRUE.equals(previousTargetTransitionable);
             if (!transitionAllowed && state.floatTransitions.remove(property) != null) {
                 changed = true;
             }
             if (previousTarget == null) {
                 state.targetFloats.put(property, Float.valueOf(baseValue));
+                state.targetFloatTransitionable.put(property, Boolean.valueOf(targetTransitionable));
                 changed = true;
                 continue;
             }
             if (Float.compare(previousTarget.floatValue(), baseValue) == 0) {
+                if (!Objects.equals(previousTargetTransitionable, Boolean.valueOf(targetTransitionable))) {
+                    state.targetFloatTransitionable.put(property, Boolean.valueOf(targetTransitionable));
+                    changed = true;
+                }
                 continue;
             }
             float fromValue = resolveFloat(element, property, previousTarget.floatValue(), currentTimeNanos);
             state.targetFloats.put(property, Float.valueOf(baseValue));
+            state.targetFloatTransitionable.put(property, Boolean.valueOf(targetTransitionable));
             suppressDeclaredFloatKeyframeProperty(state, property);
             if (transitionAllowed && Float.compare(fromValue, baseValue) != 0) {
                 state.floatTransitions.put(property, new FloatTransition(fromValue, baseValue,
@@ -591,7 +603,23 @@ public final class DocumentAnimationTimeline {
         if (property == DocumentAnimationProperty.BACKDROP_BLUR_RADIUS) {
             return resolveBackdropBlurRadius(box);
         }
+        if (property == DocumentAnimationProperty.WIDTH) {
+            return box.getContentWidth();
+        }
+        if (property == DocumentAnimationProperty.HEIGHT) {
+            return box.getContentHeight();
+        }
         return 0.0F;
+    }
+
+    private static boolean isFloatTransitionTargetAnimatable(DocumentLayoutBox box, DocumentAnimationProperty property) {
+        if (property == DocumentAnimationProperty.WIDTH) {
+            return box.getComputedStyle().getWidth().getType() == UiStyleLength.Type.PIXEL;
+        }
+        if (property == DocumentAnimationProperty.HEIGHT) {
+            return box.getComputedStyle().getHeight().getType() == UiStyleLength.Type.PIXEL;
+        }
+        return true;
     }
 
     private static int resolveBorderRadius(DocumentLayoutBox box) {
@@ -693,6 +721,8 @@ public final class DocumentAnimationTimeline {
                 new EnumMap<DocumentAnimationProperty, ColorTransition>(DocumentAnimationProperty.class);
         private final EnumMap<DocumentAnimationProperty, Float> targetFloats =
                 new EnumMap<DocumentAnimationProperty, Float>(DocumentAnimationProperty.class);
+        private final EnumMap<DocumentAnimationProperty, Boolean> targetFloatTransitionable =
+                new EnumMap<DocumentAnimationProperty, Boolean>(DocumentAnimationProperty.class);
         private final EnumMap<DocumentAnimationProperty, FloatTransition> floatTransitions =
                 new EnumMap<DocumentAnimationProperty, FloatTransition>(DocumentAnimationProperty.class);
         private final EnumMap<DocumentAnimationProperty, ColorKeyframeAnimation> colorKeyframeAnimations =

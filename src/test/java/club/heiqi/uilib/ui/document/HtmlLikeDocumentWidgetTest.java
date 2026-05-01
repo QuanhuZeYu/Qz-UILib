@@ -30,6 +30,7 @@ import club.heiqi.uilib.ui.event.UiTextInputEvent;
 import club.heiqi.uilib.ui.input.UiInputFrame;
 import club.heiqi.uilib.ui.input.UiInputRouter;
 import club.heiqi.uilib.ui.render.UiRenderContext;
+import club.heiqi.uilib.ui.style.UiDisplay;
 import club.heiqi.uilib.ui.style.UiOverflow;
 import club.heiqi.uilib.ui.style.UiStyleLength;
 import club.heiqi.uilib.ui.text.TextMeasureService;
@@ -219,6 +220,92 @@ public class HtmlLikeDocumentWidgetTest {
 
         Assert.assertEquals(measureCountAfterInitialRender, textMeasureService.getMeasureCount());
         Assert.assertEquals(1, widget.getActiveAnimationCount());
+    }
+
+    /**
+     * 验证 layout-affecting width transition 会驱动同帧重排并影响后续兄弟元素位置。
+     */
+    @Test
+    public void shouldRelayoutSiblingsDuringWidthTransition() {
+        UiDocument document = UiDocument.create();
+        ElementNode root = document.getRootElement();
+        ElementNode row = document.div();
+        ElementNode animated = document.div();
+        ElementNode sibling = document.div();
+        root.style().setWidth(UiStyleLength.px(160));
+        row.style().setDisplay(UiDisplay.FLEX);
+        animated.style()
+                .setWidth(UiStyleLength.px(40))
+                .setHeight(UiStyleLength.px(20))
+                .setBackgroundColor(0xFF112233)
+                .setTransition(DocumentAnimationProperty.WIDTH, 1000L);
+        sibling.style()
+                .setWidth(UiStyleLength.px(20))
+                .setHeight(UiStyleLength.px(20))
+                .setBackgroundColor(0xFF445566);
+        row.append(animated).append(sibling);
+        root.append(row);
+        ManualAnimationClock animationClock = new ManualAnimationClock();
+        HtmlLikeDocumentWidget widget = new HtmlLikeDocumentWidget(document, 160, 40,
+                new DeterministicTextMeasureService());
+        widget.setAnimationClock(animationClock);
+        widget.applyLayoutBounds(0, 0, 160, 40);
+
+        widget.render(new RecordingUiRenderContext());
+        animated.style().setWidth(UiStyleLength.px(80));
+        widget.render(new RecordingUiRenderContext());
+
+        animationClock.setCurrentTimeNanos(500_000_000L);
+        RecordingUiRenderContext halfContext = new RecordingUiRenderContext();
+        widget.render(halfContext);
+
+        assertDrawCall(halfContext.drawCalls.get(0), 0, 0, 60, 20, 0xFF112233, 0, 0);
+        assertDrawCall(halfContext.drawCalls.get(1), 60, 0, 80, 20, 0xFF445566, 0, 0);
+        Assert.assertEquals(1, widget.getActiveAnimationCount());
+    }
+
+    /**
+     * 验证 layout transition 结束后组件会恢复静态 paint cache。
+     */
+    @Test
+    public void shouldReturnToStaticPaintCacheAfterLayoutTransitionFinishes() {
+        UiDocument document = UiDocument.create();
+        ElementNode root = document.getRootElement();
+        ElementNode child = document.div();
+        root.style().setWidth(UiStyleLength.px(120));
+        child.style()
+                .setWidth(UiStyleLength.px(40))
+                .setHeight(UiStyleLength.px(20))
+                .setBackgroundColor(0xFF000000)
+                .setTransition(DocumentAnimationProperty.WIDTH, 1000L);
+        child.appendText("layout");
+        root.append(child);
+        ManualAnimationClock animationClock = new ManualAnimationClock();
+        CountingTextMeasureService textMeasureService = new CountingTextMeasureService();
+        HtmlLikeDocumentWidget widget = new HtmlLikeDocumentWidget(document, 120, 40, textMeasureService);
+        widget.setAnimationClock(animationClock);
+        widget.applyLayoutBounds(0, 0, 120, 40);
+
+        widget.render(new RecordingUiRenderContext());
+        int initialMeasureCount = textMeasureService.getMeasureCount();
+        child.style().setWidth(UiStyleLength.px(80));
+        widget.render(new RecordingUiRenderContext());
+        int transitionStartGeneration = widget.getPaintCacheGenerationForDiagnostics();
+
+        animationClock.setCurrentTimeNanos(500_000_000L);
+        widget.render(new RecordingUiRenderContext());
+        Assert.assertTrue(widget.getPaintCacheGenerationForDiagnostics() > transitionStartGeneration);
+        Assert.assertTrue(textMeasureService.getMeasureCount() > initialMeasureCount);
+
+        animationClock.setCurrentTimeNanos(1_000_000_000L);
+        widget.render(new RecordingUiRenderContext());
+        int finishedGeneration = widget.getPaintCacheGenerationForDiagnostics();
+        int finishedMeasureCount = textMeasureService.getMeasureCount();
+        Assert.assertEquals(0, widget.getActiveAnimationCount());
+
+        widget.render(new RecordingUiRenderContext());
+        Assert.assertEquals(finishedGeneration, widget.getPaintCacheGenerationForDiagnostics());
+        Assert.assertEquals(finishedMeasureCount, textMeasureService.getMeasureCount());
     }
 
     /**

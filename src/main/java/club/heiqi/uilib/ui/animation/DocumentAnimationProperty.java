@@ -32,7 +32,17 @@ public enum DocumentAnimationProperty {
     /**
      * 背景滤镜 blur 半径，属于 effect-affecting 长度类属性。
      */
-    BACKDROP_BLUR_RADIUS(DocumentAnimationImpact.EFFECT);
+    BACKDROP_BLUR_RADIUS(DocumentAnimationImpact.EFFECT),
+
+    /**
+     * 元素 content box 宽度，属于 layout-affecting 属性。
+     */
+    WIDTH(DocumentAnimationImpact.LAYOUT),
+
+    /**
+     * 元素 content box 高度，属于 layout-affecting 属性。
+     */
+    HEIGHT(DocumentAnimationImpact.LAYOUT);
 
     private final DocumentAnimationImpact impact;
 
@@ -65,5 +75,14 @@ public enum DocumentAnimationProperty {
      */
     public boolean isEffectAffecting() {
         return impact == DocumentAnimationImpact.EFFECT;
+    }
+
+    /**
+     * 返回该属性是否会影响布局。
+     *
+     * @return 是否为 layout-affecting 属性
+     */
+    public boolean isLayoutAffecting() {
+        return impact == DocumentAnimationImpact.LAYOUT;
     }
 }

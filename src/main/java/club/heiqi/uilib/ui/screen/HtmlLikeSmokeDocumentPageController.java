@@ -163,6 +163,7 @@ final class HtmlLikeSmokeDocumentPageController extends DocumentPageController {
 
         appendControlsSection(document, root);
         appendOpacityFboProbe(document, root);
+        appendLayoutAnimationProbe(document, root);
 
         ElementNode row = document.div();
         row.style()
@@ -687,6 +688,89 @@ final class HtmlLikeSmokeDocumentPageController extends DocumentPageController {
             }
         });
         probe.append(comboOpacityCard);
+    }
+
+    /**
+     * 追加 layout-affecting 动画测试区，用于游戏内观察 width/height 运行值触发布局重排。
+     *
+     * @param document HTML-like 文档
+     * @param root 文档根元素
+     */
+    private static void appendLayoutAnimationProbe(UiDocument document, ElementNode root) {
+        ElementNode probe = document.div();
+        probe.style()
+                .setHeight(UiStyleLength.px(132))
+                .setMargin(UiStyleInsets.of(UiStyleLength.px(12), UiStyleLength.px(0), UiStyleLength.px(0),
+                        UiStyleLength.px(0)))
+                .setPadding(UiStyleLength.px(10))
+                .setBackgroundColor(0xFF0F172A)
+                .setBorderColor(0xFF60A5FA)
+                .setBorderWidth(UiStyleLength.px(1))
+                .setBorderRadius(UiStyleLength.px(14))
+                .setTextColor(0xFFDBEAFE)
+                .setOverflowX(UiOverflow.HIDDEN)
+                .setOverflowY(UiOverflow.HIDDEN);
+        probe.appendText("Layout animation probe: click blue card; width/height push sibling.");
+        root.append(probe);
+
+        ElementNode row = document.div();
+        row.style()
+                .setHeight(UiStyleLength.px(78))
+                .setDisplay(UiDisplay.FLEX)
+                .setFlexDirection(UiFlexDirection.ROW)
+                .setAlignItems(UiAlignItems.CENTER)
+                .setColumnGap(UiStyleLength.px(10))
+                .setMargin(UiStyleInsets.of(UiStyleLength.px(8), UiStyleLength.px(0), UiStyleLength.px(0),
+                        UiStyleLength.px(0)))
+                .setOverflowX(UiOverflow.HIDDEN)
+                .setOverflowY(UiOverflow.HIDDEN);
+        probe.append(row);
+
+        final ElementNode layoutCard = document.div();
+        layoutCard.style()
+                .setWidth(UiStyleLength.px(92))
+                .setHeight(UiStyleLength.px(34))
+                .setFlexShrink(0.0F)
+                .setPadding(UiStyleLength.px(8))
+                .setBackgroundColor(0xFF2563EB)
+                .setBorderColor(0xFFBFDBFE)
+                .setBorderWidth(UiStyleLength.px(1))
+                .setBorderRadius(UiStyleLength.px(12))
+                .setTextColor(0xFFEFF6FF)
+                .setTransitionProperties(DocumentAnimationProperty.WIDTH, DocumentAnimationProperty.HEIGHT)
+                .setTransitionDurationMillis(800L)
+                .setTransitionTimingFunction(DocumentAnimationTimingFunction.EASE_IN_OUT)
+                .setOverflowX(UiOverflow.HIDDEN)
+                .setOverflowY(UiOverflow.HIDDEN);
+        final TextNode layoutLabel = layoutCard.appendText("Layout card: small");
+        final boolean[] expanded = new boolean[] { false };
+        layoutCard.setClickHandler(new DocumentElementClickHandler() {
+            @Override
+            public boolean onClick(DocumentElementClickEvent event) {
+                expanded[0] = !expanded[0];
+                layoutCard.style()
+                        .setWidth(UiStyleLength.px(expanded[0] ? 190 : 92))
+                        .setHeight(UiStyleLength.px(expanded[0] ? 58 : 34));
+                layoutLabel.setText(expanded[0] ? "Layout card: large" : "Layout card: small");
+                return true;
+            }
+        });
+        row.append(layoutCard);
+
+        ElementNode sibling = document.div();
+        sibling.style()
+                .setFlexGrow(1.0F)
+                .setHeight(UiStyleLength.px(34))
+                .setPadding(UiStyleLength.px(8))
+                .setBackgroundColor(0xFF064E3B)
+                .setBorderColor(0xFF6EE7B7)
+                .setBorderWidth(UiStyleLength.px(1))
+                .setBorderRadius(UiStyleLength.px(12))
+                .setTextColor(0xFFD1FAE5)
+                .setOverflowX(UiOverflow.HIDDEN)
+                .setOverflowY(UiOverflow.HIDDEN);
+        sibling.appendText("Sibling shifts while layout transition runs");
+        row.append(sibling);
     }
 
     private static void appendAbsoluteStretchAndInlineProbe(UiDocument document, ElementNode root) {

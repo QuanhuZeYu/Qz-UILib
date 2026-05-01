@@ -6,6 +6,8 @@ import java.util.List;
 import java.util.Objects;
 
 import club.heiqi.uilib.ui.animation.DocumentAnimationClock;
+import club.heiqi.uilib.ui.animation.DocumentAnimationImpact;
+import club.heiqi.uilib.ui.animation.DocumentAnimationProperty;
 import club.heiqi.uilib.ui.animation.DocumentAnimationTimeline;
 import club.heiqi.uilib.ui.animation.SystemDocumentAnimationClock;
 import club.heiqi.uilib.ui.dom.DocumentElementActiveEvent;
@@ -356,12 +358,16 @@ public final class HtmlLikeDocumentWidget extends Widget {
 
     private List<DocumentPaintCommand> resolvePaintCommands() {
         DocumentLayoutBox rootBox = resolvePaintLayoutBox();
-        int scrollVersion = scrollState.getVersion();
         long currentTimeNanos = animationClock.getCurrentTimeNanos();
         boolean animationStateChanged = animationTimeline.updateFromLayout(rootBox, currentTimeNanos);
+        boolean layoutAnimationWork = animationTimeline.hasAnimationWork(DocumentAnimationImpact.LAYOUT);
+        if (layoutAnimationWork) {
+            rootBox = resolveRuntimeLayoutBox(currentTimeNanos);
+        }
+        int scrollVersion = scrollState.getVersion();
         boolean animationWork = animationTimeline.hasAnimationWork();
         boolean transientScrollbarActive = scrollState.hasActiveTransientScrollbars(currentTimeNanos);
-        if (!animationStateChanged && !animationWork && cachedPaintScrollVersion == scrollVersion
+        if (!animationStateChanged && !animationWork && !layoutAnimationWork && cachedPaintScrollVersion == scrollVersion
                 && cachedPaintTransientScrollbarActive == transientScrollbarActive) {
             return cachedPaintCommands;
         }
@@ -373,6 +379,20 @@ public final class HtmlLikeDocumentWidget extends Widget {
         cachedPaintScrollVersion = scrollVersion;
         cachedPaintTransientScrollbarActive = transientScrollbarActive;
         return cachedPaintCommands;
+    }
+
+    private DocumentLayoutBox resolveRuntimeLayoutBox(final long currentTimeNanos) {
+        DocumentLayoutEngine.LayoutRuntimeValueResolver layoutValueResolver =
+                new DocumentLayoutEngine.LayoutRuntimeValueResolver() {
+                    @Override
+                    public int resolve(ElementNode element, DocumentAnimationProperty property, int baseValue) {
+                        return Math.max(0, Math.round(animationTimeline.resolveFloat(element, property, baseValue,
+                                currentTimeNanos)));
+                    }
+                };
+        DocumentLayoutBox rootBox = layoutDocument(layoutValueResolver);
+        scrollState.updateFromLayout(rootBox);
+        return rootBox;
     }
 
     private DocumentLayoutBox resolvePaintLayoutBox() {
@@ -396,10 +416,7 @@ public final class HtmlLikeDocumentWidget extends Widget {
             return cachedLayoutBox;
         }
 
-        cachedLayoutBox = viewportRootScrollingEnabled
-                ? DocumentLayoutEngine.layoutViewportRoot(document.getRootElement(), getWidth(), getHeight(),
-                        textMeasureService)
-                : DocumentLayoutEngine.layout(document.getRootElement(), getWidth(), getHeight(), textMeasureService);
+        cachedLayoutBox = layoutDocument(null);
         scrollState.updateFromLayout(cachedLayoutBox);
         cachedLayoutVersion = layoutVersion;
         cachedPaintVersion = document.getPaintVersion();
@@ -408,6 +425,14 @@ public final class HtmlLikeDocumentWidget extends Widget {
         cachedHeight = getHeight();
         cachedPaintScrollVersion = -1;
         return cachedLayoutBox;
+    }
+
+    private DocumentLayoutBox layoutDocument(DocumentLayoutEngine.LayoutRuntimeValueResolver layoutValueResolver) {
+        return viewportRootScrollingEnabled
+                ? DocumentLayoutEngine.layoutViewportRoot(document.getRootElement(), getWidth(), getHeight(),
+                        textMeasureService, layoutValueResolver)
+                : DocumentLayoutEngine.layout(document.getRootElement(), getWidth(), getHeight(), textMeasureService,
+                        layoutValueResolver);
     }
 
     private boolean dispatchClick(ElementNode target, UiMouseEvent event) {

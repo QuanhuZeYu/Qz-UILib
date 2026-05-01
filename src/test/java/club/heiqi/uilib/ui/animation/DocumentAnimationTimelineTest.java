@@ -24,6 +24,8 @@ public class DocumentAnimationTimelineTest {
         Assert.assertTrue(DocumentAnimationProperty.BORDER_RADIUS.isPaintOnly());
         Assert.assertSame(DocumentAnimationImpact.EFFECT, DocumentAnimationProperty.OPACITY.getImpact());
         Assert.assertTrue(DocumentAnimationProperty.BACKDROP_BLUR_RADIUS.isEffectAffecting());
+        Assert.assertSame(DocumentAnimationImpact.LAYOUT, DocumentAnimationProperty.WIDTH.getImpact());
+        Assert.assertTrue(DocumentAnimationProperty.HEIGHT.isLayoutAffecting());
     }
 
     /**
@@ -154,6 +156,63 @@ public class DocumentAnimationTimelineTest {
         Assert.assertEquals(UiStyleLength.px(20), root.style().getBackdropBlurRadius());
         Assert.assertEquals(20.0F, timeline.resolveFloat(root, DocumentAnimationProperty.BACKDROP_BLUR_RADIUS, 20.0F,
                 1_000_000_000L), 0.0F);
+    }
+
+    /**
+     * 验证 layout-affecting 的 width/height transition 会作为数值覆盖层插值。
+     */
+    @Test
+    public void shouldTransitionWidthAndHeightWithoutMutatingInlineStyle() {
+        UiDocument document = UiDocument.create();
+        ElementNode root = document.getRootElement();
+        root.style()
+                .setWidth(UiStyleLength.px(40))
+                .setHeight(UiStyleLength.px(20))
+                .setTransitionProperties(DocumentAnimationProperty.WIDTH, DocumentAnimationProperty.HEIGHT)
+                .setTransitionDurationMillis(1000L);
+        DocumentAnimationTimeline timeline = new DocumentAnimationTimeline();
+
+        DocumentLayoutBox firstLayout = DocumentLayoutEngine.layout(root, 120, 0);
+        Assert.assertTrue(timeline.updateFromLayout(firstLayout, 0L));
+        Assert.assertEquals(40.0F, timeline.resolveFloat(root, DocumentAnimationProperty.WIDTH, 40.0F, 0L), 0.0F);
+        Assert.assertEquals(20.0F, timeline.resolveFloat(root, DocumentAnimationProperty.HEIGHT, 20.0F, 0L), 0.0F);
+
+        root.style()
+                .setWidth(UiStyleLength.px(80))
+                .setHeight(UiStyleLength.px(40));
+        DocumentLayoutBox secondLayout = DocumentLayoutEngine.layout(root, 120, 0);
+        Assert.assertTrue(timeline.updateFromLayout(secondLayout, 0L));
+
+        Assert.assertTrue(timeline.hasAnimationWork(DocumentAnimationImpact.LAYOUT));
+        Assert.assertEquals(2, timeline.getActiveAnimationCount(500_000_000L));
+        Assert.assertEquals(60.0F, timeline.resolveFloat(root, DocumentAnimationProperty.WIDTH, 80.0F,
+                500_000_000L), 0.0F);
+        Assert.assertEquals(30.0F, timeline.resolveFloat(root, DocumentAnimationProperty.HEIGHT, 40.0F,
+                500_000_000L), 0.0F);
+        Assert.assertEquals(UiStyleLength.px(80), root.style().getWidth());
+        Assert.assertEquals(UiStyleLength.px(40), root.style().getHeight());
+    }
+
+    /**
+     * 验证 width 从 auto 进入像素值时不会创建首期 px-to-px transition。
+     */
+    @Test
+    public void shouldNotTransitionWidthFromAutoTarget() {
+        UiDocument document = UiDocument.create();
+        ElementNode root = document.getRootElement();
+        root.style()
+                .setHeight(UiStyleLength.px(20))
+                .setTransition(DocumentAnimationProperty.WIDTH, 1000L);
+        DocumentAnimationTimeline timeline = new DocumentAnimationTimeline();
+
+        timeline.updateFromLayout(DocumentLayoutEngine.layout(root, 120, 0), 0L);
+        root.style().setWidth(UiStyleLength.px(80));
+        Assert.assertTrue(timeline.updateFromLayout(DocumentLayoutEngine.layout(root, 120, 0), 0L));
+
+        Assert.assertFalse(timeline.hasAnimationWork(DocumentAnimationImpact.LAYOUT));
+        Assert.assertFalse(timeline.hasRunningTransition(root, DocumentAnimationProperty.WIDTH));
+        Assert.assertEquals(80.0F, timeline.resolveFloat(root, DocumentAnimationProperty.WIDTH, 80.0F,
+                500_000_000L), 0.0F);
     }
 
     /**

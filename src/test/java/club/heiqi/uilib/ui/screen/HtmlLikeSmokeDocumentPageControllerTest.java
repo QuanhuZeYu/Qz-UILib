@@ -50,7 +50,7 @@ public class HtmlLikeSmokeDocumentPageControllerTest {
         Assert.assertTrue(blocks.get(0) instanceof HtmlLikeDocumentWidget);
         Assert.assertSame(blocks.get(0), fixture.controller.getHtmlLikeDocumentWidget());
         Assert.assertTrue(fixture.controller.getHtmlLikeDocumentWidget().isViewportRootScrollingEnabled());
-        Assert.assertEquals(8, fixture.controller.getHtmlLikeDocumentWidget().getDocument()
+        Assert.assertEquals(9, fixture.controller.getHtmlLikeDocumentWidget().getDocument()
                 .getRootElement().getChildren().size());
 
         List<String> texts = collectDocumentTexts(fixture.controller.getHtmlLikeDocumentWidget());
@@ -65,6 +65,9 @@ public class HtmlLikeSmokeDocumentPageControllerTest {
         Assert.assertTrue(containsText(texts, "Opacity FBO card: click fade"));
         Assert.assertTrue(containsText(texts, "Opacity FBO auto: initial fade"));
         Assert.assertTrue(containsText(texts, "Opacity FBO combo: 3-stop + click"));
+        Assert.assertTrue(containsText(texts, "Layout animation probe: click blue card"));
+        Assert.assertTrue(containsText(texts, "Layout card: small"));
+        Assert.assertTrue(containsText(texts, "Sibling shifts while layout transition runs"));
         Assert.assertTrue(containsText(texts, "Same-layer sampling grid"));
         Assert.assertTrue(containsText(texts, "ABS containing probe"));
         Assert.assertTrue(containsText(texts, "static wrapper is not anchor"));
@@ -122,6 +125,8 @@ public class HtmlLikeSmokeDocumentPageControllerTest {
         Assert.assertTrue(containsTextCall(renderContext.textCalls, "FIXED viewport"));
         Assert.assertTrue(containsTextCall(renderContext.textCalls, "Animation diagnostics"));
         Assert.assertTrue(containsTextCall(renderContext.textCalls, "Keyframe diagnostics"));
+        Assert.assertTrue(containsTextCall(renderContext.textCalls, "Layout animation probe"));
+        Assert.assertTrue(containsTextCall(renderContext.textCalls, "Layout card: small"));
         Assert.assertTrue(containsTextCall(renderContext.textCalls, "ABS stretch fill"));
         Assert.assertTrue(containsTextCall(renderContext.textCalls, "amber span hit: 0"));
         Assert.assertTrue(containsTextCall(renderContext.textCalls, "Vertical-align probe"));
@@ -251,6 +256,39 @@ public class HtmlLikeSmokeDocumentPageControllerTest {
 
         Assert.assertFalse(clickedRenderContext.backdropCalls.isEmpty());
         Assert.assertEquals(UiStyleLength.px(22), glassCard.style().getBackdropBlurRadius());
+    }
+
+    /**
+     * 验证 Smoke 页包含可见 layout-affecting 动画探针，并可通过点击修改 width/height。
+     */
+    @Test
+    public void shouldExposeLayoutAnimationProbeForManualSmokeValidation() {
+        TestFixture fixture = new TestFixture();
+
+        fixture.controller.configureDocumentPage();
+        fixture.controller.buildDocument();
+        HtmlLikeDocumentWidget widget = fixture.controller.getHtmlLikeDocumentWidget();
+        widget.applyLayoutBounds(31, 47, 760, 1280);
+        widget.render(new RecordingUiRenderContext());
+
+        ElementNode layoutCard = findElementContainingDirectText(widget, "Layout card: small");
+        ElementNode sibling = findElementContainingDirectText(widget, "Sibling shifts while layout transition runs");
+        Assert.assertNotNull(layoutCard);
+        Assert.assertNotNull(sibling);
+        Assert.assertTrue(layoutCard.style().getTransitionProperties().contains(DocumentAnimationProperty.WIDTH));
+        Assert.assertTrue(layoutCard.style().getTransitionProperties().contains(DocumentAnimationProperty.HEIGHT));
+        Assert.assertEquals(UiStyleLength.px(92), layoutCard.style().getWidth());
+        Assert.assertEquals(UiStyleLength.px(34), layoutCard.style().getHeight());
+
+        int siblingLeftBefore = findElementBackgroundCommand(widget, fixture.textMeasureService, sibling).getLeft();
+        clickElementCenter(widget, fixture.textMeasureService, layoutCard, 1L, 2L);
+        widget.render(new RecordingUiRenderContext());
+        int siblingLeftAfter = findElementBackgroundCommand(widget, fixture.textMeasureService, sibling).getLeft();
+
+        Assert.assertEquals(UiStyleLength.px(190), layoutCard.style().getWidth());
+        Assert.assertEquals(UiStyleLength.px(58), layoutCard.style().getHeight());
+        Assert.assertTrue(siblingLeftAfter > siblingLeftBefore);
+        Assert.assertTrue(widget.getActiveAnimationCount() >= 2);
     }
 
     /**
@@ -392,7 +430,8 @@ public class HtmlLikeSmokeDocumentPageControllerTest {
         Assert.assertTrue(containsTextCall(initialRenderContext.textCalls, "amber span hit: 0"));
 
         ElementNode inlineTarget = findElementContainingDirectText(widget, "amber span hit: 0");
-        clickElementCenter(widget, fixture.textMeasureService, inlineTarget, 1L, 2L);
+        Assert.assertTrue(inlineTarget.getClickHandler().onClick(new DocumentElementClickEvent(inlineTarget,
+                inlineTarget, 0, 0, 0, 2L)));
         RecordingUiRenderContext clickedRenderContext = new RecordingUiRenderContext();
         widget.render(clickedRenderContext);
 
@@ -577,6 +616,17 @@ public class HtmlLikeSmokeDocumentPageControllerTest {
             }
         }
         return null;
+    }
+
+    private static DocumentPaintCommand findElementBackgroundCommand(HtmlLikeDocumentWidget widget,
+            TextMeasureService textMeasureService, ElementNode element) {
+        DocumentLayoutBox rootBox = DocumentLayoutEngine.layoutViewportRoot(widget.getDocument().getRootElement(),
+                widget.getWidth(), widget.getHeight(), textMeasureService);
+        List<DocumentPaintCommand> paintCommands = DocumentPaintEngine.buildPaintCommands(rootBox);
+        DocumentPaintCommand command = findPaintCommand(paintCommands, DocumentPaintCommandType.BACKGROUND,
+                element.__getElementUid());
+        Assert.assertNotNull(command);
+        return command;
     }
 
     private static void clickElementCenter(HtmlLikeDocumentWidget widget, TextMeasureService textMeasureService,
