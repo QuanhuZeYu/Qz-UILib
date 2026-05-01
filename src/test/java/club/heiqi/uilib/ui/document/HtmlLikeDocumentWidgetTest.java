@@ -363,6 +363,51 @@ public class HtmlLikeDocumentWidgetTest {
     }
 
     /**
+     * 验证清除 layout keyframe 声明后会恢复静态布局缓存路径。
+     */
+    @Test
+    public void shouldReturnToStaticPaintCacheAfterLayoutKeyframeIsCleared() {
+        UiDocument document = UiDocument.create();
+        document.registerKeyframes(DocumentKeyframes.named("layoutGrow")
+                .setFloat(DocumentAnimationProperty.WIDTH, 40.0F, 80.0F)
+                .build());
+        ElementNode root = document.getRootElement();
+        ElementNode child = document.div();
+        root.style().setWidth(UiStyleLength.px(120));
+        child.style()
+                .setWidth(UiStyleLength.px(40))
+                .setHeight(UiStyleLength.px(20))
+                .setBackgroundColor(0xFF000000)
+                .setAnimation("layoutGrow", 1000L)
+                .setAnimationFillMode(DocumentAnimationFillMode.FORWARDS);
+        child.appendText("layout");
+        root.append(child);
+        ManualAnimationClock animationClock = new ManualAnimationClock();
+        CountingTextMeasureService textMeasureService = new CountingTextMeasureService();
+        HtmlLikeDocumentWidget widget = new HtmlLikeDocumentWidget(document, 120, 40, textMeasureService);
+        widget.setAnimationClock(animationClock);
+        widget.applyLayoutBounds(0, 0, 120, 40);
+
+        widget.render(new RecordingUiRenderContext());
+        animationClock.setCurrentTimeNanos(1_000_000_000L);
+        RecordingUiRenderContext filledContext = new RecordingUiRenderContext();
+        widget.render(filledContext);
+        assertDrawCall(filledContext.drawCalls.get(0), 0, 0, 80, 20, 0xFF000000, 0, 0);
+
+        child.style().clearAnimationName();
+        RecordingUiRenderContext clearedContext = new RecordingUiRenderContext();
+        widget.render(clearedContext);
+        assertDrawCall(clearedContext.drawCalls.get(0), 0, 0, 40, 20, 0xFF000000, 0, 0);
+        int clearedGeneration = widget.getPaintCacheGenerationForDiagnostics();
+        int clearedMeasureCount = textMeasureService.getMeasureCount();
+        Assert.assertEquals(0, widget.getActiveAnimationCount());
+
+        widget.render(new RecordingUiRenderContext());
+        Assert.assertEquals(clearedGeneration, widget.getPaintCacheGenerationForDiagnostics());
+        Assert.assertEquals(clearedMeasureCount, textMeasureService.getMeasureCount());
+    }
+
+    /**
      * 验证作者侧 keyframe animation 运行期间不会触发重新文本测量布局。
      */
     @Test

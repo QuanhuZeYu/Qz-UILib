@@ -82,7 +82,7 @@
 - keyframe 声明重启条件：`animation-name`、keyframes 对象、duration、delay、iteration count、fill-mode、timing function 变化。
 - 布局盒尺寸变化只刷新数值轨道 used value 归一化边界，不重启 keyframe 进度。
 - 同名 keyframes 定义对象替换会让引用元素重启动画；定义移除会取消引用元素动画并清理对应 fill。
-- forwards fill 后作者侧修改同属性 computed target 时，该属性 fill 让位给作者值；多属性 fill 只清理被作者改动的属性。
+- forwards fill 后作者侧修改同属性 computed target 时，该属性 fill 让位给作者值；多属性 fill 只清理被作者改动的属性；layout keyframe 声明清除或 keyframes 定义移除会清理对应 layout 运行值。
 - 数值 keyframe used value 归一化范围：opacity clamp 到 0..1，border-radius clamp 到当前布局盒半径上限，backdrop blur clamp 到 48。
 - `BACKDROP_BLUR_RADIUS` 是 effect-affecting 长度 transition；退场期间即使目标 blur 为 0，只要 transition 仍运行，paint 仍保留 backdrop command。
 - `WIDTH/HEIGHT` 是首批 layout-affecting transition/keyframe 属性；当前 transition 稳定承诺仅为 px-to-px，auto/% 不创建 width/height transition。

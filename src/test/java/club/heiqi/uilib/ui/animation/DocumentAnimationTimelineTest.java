@@ -577,6 +577,38 @@ public class DocumentAnimationTimelineTest {
     }
 
     /**
+     * 验证清除 animation 声明会取消 layout keyframe 和对应 forwards fill。
+     */
+    @Test
+    public void shouldCancelLayoutKeyframeAndFillWhenDeclarationChanges() {
+        UiDocument document = UiDocument.create();
+        document.registerKeyframes(DocumentKeyframes.named("layoutGrow")
+                .setFloat(DocumentAnimationProperty.WIDTH, 40.0F, 80.0F)
+                .build());
+        ElementNode root = document.getRootElement();
+        root.style()
+                .setWidth(UiStyleLength.px(40))
+                .setHeight(UiStyleLength.px(20))
+                .setAnimation("layoutGrow", 1000L)
+                .setAnimationFillMode(DocumentAnimationFillMode.FORWARDS);
+        DocumentAnimationTimeline timeline = new DocumentAnimationTimeline();
+
+        timeline.updateFromLayout(DocumentLayoutEngine.layout(root, 120, 0), 0L);
+        timeline.pruneFinishedAnimations(1_000_000_000L);
+        Assert.assertTrue(timeline.hasRuntimeValue(DocumentAnimationImpact.LAYOUT));
+        Assert.assertEquals(80.0F, timeline.resolveFloat(root, DocumentAnimationProperty.WIDTH, 40.0F,
+                1_000_000_000L), 0.0F);
+
+        root.style().clearAnimationName();
+        Assert.assertTrue(timeline.updateFromLayout(DocumentLayoutEngine.layout(root, 120, 0), 1_000_000_000L));
+
+        Assert.assertFalse(timeline.hasAnimationWork(DocumentAnimationImpact.LAYOUT));
+        Assert.assertFalse(timeline.hasRuntimeValue(DocumentAnimationImpact.LAYOUT));
+        Assert.assertEquals(40.0F, timeline.resolveFloat(root, DocumentAnimationProperty.WIDTH, 40.0F,
+                1_000_000_000L), 0.0F);
+    }
+
+    /**
      * 验证同名 keyframes 定义替换会重启引用它的声明式动画并使用新轨道。
      */
     @Test
@@ -638,6 +670,38 @@ public class DocumentAnimationTimelineTest {
         Assert.assertFalse(timeline.hasAnimationWork());
         Assert.assertEquals(0xFF112233, timeline.resolveColor(root, DocumentAnimationProperty.BACKGROUND_COLOR,
                 0xFF112233, 1_000_000_000L));
+    }
+
+    /**
+     * 验证移除 layout keyframes 定义会取消布局运行值和旧 forwards fill。
+     */
+    @Test
+    public void shouldCancelLayoutKeyframeAndFillWhenRegisteredKeyframesDefinitionIsRemoved() {
+        UiDocument document = UiDocument.create();
+        document.registerKeyframes(DocumentKeyframes.named("layoutGrow")
+                .setFloat(DocumentAnimationProperty.WIDTH, 40.0F, 80.0F)
+                .build());
+        ElementNode root = document.getRootElement();
+        root.style()
+                .setWidth(UiStyleLength.px(40))
+                .setHeight(UiStyleLength.px(20))
+                .setAnimation("layoutGrow", 1000L)
+                .setAnimationFillMode(DocumentAnimationFillMode.FORWARDS);
+        DocumentAnimationTimeline timeline = new DocumentAnimationTimeline();
+
+        timeline.updateFromLayout(DocumentLayoutEngine.layout(root, 120, 0), 0L);
+        timeline.pruneFinishedAnimations(1_000_000_000L);
+        Assert.assertTrue(timeline.hasRuntimeValue(DocumentAnimationImpact.LAYOUT));
+        Assert.assertEquals(80.0F, timeline.resolveFloat(root, DocumentAnimationProperty.WIDTH, 40.0F,
+                1_000_000_000L), 0.0F);
+
+        document.unregisterKeyframes("layoutGrow");
+        Assert.assertTrue(timeline.updateFromLayout(DocumentLayoutEngine.layout(root, 120, 0), 1_000_000_000L));
+
+        Assert.assertFalse(timeline.hasAnimationWork(DocumentAnimationImpact.LAYOUT));
+        Assert.assertFalse(timeline.hasRuntimeValue(DocumentAnimationImpact.LAYOUT));
+        Assert.assertEquals(40.0F, timeline.resolveFloat(root, DocumentAnimationProperty.WIDTH, 40.0F,
+                1_000_000_000L), 0.0F);
     }
 
     /**
@@ -725,6 +789,41 @@ public class DocumentAnimationTimelineTest {
         Assert.assertFalse(timeline.hasAnimationWork());
         Assert.assertEquals(0xFF123456, timeline.resolveColor(root, DocumentAnimationProperty.BACKGROUND_COLOR,
                 0xFF123456, 1_000_000_000L));
+    }
+
+    /**
+     * 验证作者侧 layout 目标值变化会清理同属性 layout keyframe forwards fill。
+     */
+    @Test
+    public void shouldSuppressLayoutKeyframeFillWhenAuthorTargetChanges() {
+        UiDocument document = UiDocument.create();
+        document.registerKeyframes(DocumentKeyframes.named("layoutGrow")
+                .setFloat(DocumentAnimationProperty.WIDTH, 40.0F, 80.0F)
+                .setFloat(DocumentAnimationProperty.HEIGHT, 20.0F, 40.0F)
+                .build());
+        ElementNode root = document.getRootElement();
+        root.style()
+                .setWidth(UiStyleLength.px(40))
+                .setHeight(UiStyleLength.px(20))
+                .setAnimation("layoutGrow", 1000L)
+                .setAnimationFillMode(DocumentAnimationFillMode.FORWARDS);
+        DocumentAnimationTimeline timeline = new DocumentAnimationTimeline();
+
+        timeline.updateFromLayout(DocumentLayoutEngine.layout(root, 120, 0), 0L);
+        timeline.pruneFinishedAnimations(1_000_000_000L);
+        Assert.assertEquals(80.0F, timeline.resolveFloat(root, DocumentAnimationProperty.WIDTH, 40.0F,
+                1_000_000_000L), 0.0F);
+        Assert.assertEquals(40.0F, timeline.resolveFloat(root, DocumentAnimationProperty.HEIGHT, 20.0F,
+                1_000_000_000L), 0.0F);
+
+        root.style().setWidth(UiStyleLength.px(50));
+        Assert.assertTrue(timeline.updateFromLayout(DocumentLayoutEngine.layout(root, 120, 0), 1_000_000_000L));
+
+        Assert.assertTrue(timeline.hasRuntimeValue(DocumentAnimationImpact.LAYOUT));
+        Assert.assertEquals(50.0F, timeline.resolveFloat(root, DocumentAnimationProperty.WIDTH, 50.0F,
+                1_000_000_000L), 0.0F);
+        Assert.assertEquals(40.0F, timeline.resolveFloat(root, DocumentAnimationProperty.HEIGHT, 20.0F,
+                1_000_000_000L), 0.0F);
     }
 
     /**
