@@ -157,6 +157,7 @@ final class HtmlLikeSmokeDocumentPageController extends DocumentPageController {
         root.append(fixedViewportProbe);
 
         appendControlsSection(document, root);
+        appendOpacityFboProbe(document, root);
 
         ElementNode row = document.div();
         row.style()
@@ -502,6 +503,84 @@ final class HtmlLikeSmokeDocumentPageController extends DocumentPageController {
                 .setFocusBorderColor(0xFFBEE3F8);
         toggleControl.getElement().style().setFlexGrow(0.6F);
         controlsRow.append(toggleControl.getElement());
+    }
+
+    /**
+     * 追加 opacity FBO 独立测试区，用于验证首次进入 opacity paint context 不会整屏闪烁。
+     *
+     * @param document HTML-like 文档
+     * @param root 文档根元素
+     */
+    private static void appendOpacityFboProbe(UiDocument document, ElementNode root) {
+        ElementNode probe = document.div();
+        probe.style()
+                .setHeight(UiStyleLength.px(92))
+                .setMargin(UiStyleInsets.of(UiStyleLength.px(12), UiStyleLength.px(0), UiStyleLength.px(0),
+                        UiStyleLength.px(0)))
+                .setPadding(UiStyleLength.px(10))
+                .setPosition(UiPosition.RELATIVE)
+                .setBackgroundColor(0xFF111827)
+                .setBorderColor(0xFFFBBF24)
+                .setBorderWidth(UiStyleLength.px(1))
+                .setBorderRadius(UiStyleLength.px(14))
+                .setTextColor(0xFFFFF7ED)
+                .setOverflowX(UiOverflow.HIDDEN)
+                .setOverflowY(UiOverflow.HIDDEN);
+        probe.appendText("Opacity FBO probe: click the purple card; it fades 100/45 without full-screen flash.");
+        root.append(probe);
+
+        ElementNode amberStripe = document.div();
+        amberStripe.style()
+                .setWidth(UiStyleLength.px(360))
+                .setHeight(UiStyleLength.px(16))
+                .setPosition(UiPosition.ABSOLUTE)
+                .setLeft(UiStyleLength.px(18))
+                .setTop(UiStyleLength.px(44))
+                .setBackgroundColor(0xFFF59E0B)
+                .setBorderRadius(UiStyleLength.px(999));
+        probe.append(amberStripe);
+
+        ElementNode cyanStripe = document.div();
+        cyanStripe.style()
+                .setWidth(UiStyleLength.px(310))
+                .setHeight(UiStyleLength.px(16))
+                .setPosition(UiPosition.ABSOLUTE)
+                .setLeft(UiStyleLength.px(56))
+                .setTop(UiStyleLength.px(64))
+                .setBackgroundColor(0xFF22D3EE)
+                .setBorderRadius(UiStyleLength.px(999));
+        probe.append(cyanStripe);
+
+        final ElementNode opacityCard = document.div();
+        opacityCard.style()
+                .setWidth(UiStyleLength.px(238))
+                .setHeight(UiStyleLength.px(42))
+                .setPosition(UiPosition.ABSOLUTE)
+                .setLeft(UiStyleLength.px(88))
+                .setTop(UiStyleLength.px(34))
+                .setZIndex(1)
+                .setPadding(UiStyleLength.px(8))
+                .setBackgroundColor(0xFF7C3AED)
+                .setBorderColor(0xFFE9D5FF)
+                .setBorderWidth(UiStyleLength.px(1))
+                .setBorderRadius(UiStyleLength.px(12))
+                .setTextColor(0xFFFFFFFF)
+                .setOpacity(1.0F)
+                .setTransition(DocumentAnimationProperty.OPACITY, 700L)
+                .setTransitionTimingFunction(DocumentAnimationTimingFunction.EASE_IN_OUT)
+                .setOverflowX(UiOverflow.HIDDEN)
+                .setOverflowY(UiOverflow.HIDDEN);
+        opacityCard.appendText("Opacity FBO card: click fade");
+        final boolean[] faded = new boolean[] { false };
+        opacityCard.setClickHandler(new DocumentElementClickHandler() {
+            @Override
+            public boolean onClick(DocumentElementClickEvent event) {
+                faded[0] = !faded[0];
+                opacityCard.style().setOpacity(faded[0] ? 0.45F : 1.0F);
+                return true;
+            }
+        });
+        probe.append(opacityCard);
     }
 
     private static void appendAbsoluteStretchAndInlineProbe(UiDocument document, ElementNode root) {

@@ -50,7 +50,7 @@ public class HtmlLikeSmokeDocumentPageControllerTest {
         Assert.assertTrue(blocks.get(0) instanceof HtmlLikeDocumentWidget);
         Assert.assertSame(blocks.get(0), fixture.controller.getHtmlLikeDocumentWidget());
         Assert.assertTrue(fixture.controller.getHtmlLikeDocumentWidget().isViewportRootScrollingEnabled());
-        Assert.assertEquals(7, fixture.controller.getHtmlLikeDocumentWidget().getDocument()
+        Assert.assertEquals(8, fixture.controller.getHtmlLikeDocumentWidget().getDocument()
                 .getRootElement().getChildren().size());
 
         List<String> texts = collectDocumentTexts(fixture.controller.getHtmlLikeDocumentWidget());
@@ -61,6 +61,8 @@ public class HtmlLikeSmokeDocumentPageControllerTest {
         Assert.assertTrue(containsText(texts, "Animation diagnostics: pill=paint bg+radius"));
         Assert.assertTrue(containsText(texts, "opacity uses separate group probe"));
         Assert.assertTrue(containsText(texts, "Keyframe diagnostics: first pill runs smokePulse bg+radius 0/50/100 stops"));
+        Assert.assertTrue(containsText(texts, "Opacity FBO probe: click the purple card"));
+        Assert.assertTrue(containsText(texts, "Opacity FBO card: click fade"));
         Assert.assertTrue(containsText(texts, "Same-layer sampling grid"));
         Assert.assertTrue(containsText(texts, "ABS containing probe"));
         Assert.assertTrue(containsText(texts, "static wrapper is not anchor"));
@@ -178,6 +180,32 @@ public class HtmlLikeSmokeDocumentPageControllerTest {
         Assert.assertFalse(widget.getDocument().getKeyframes("smokePulse").getFloatTracks()
                 .containsKey(DocumentAnimationProperty.OPACITY));
         Assert.assertTrue(widget.getActiveAnimationCount() >= 2);
+    }
+
+    /**
+     * 验证 Smoke 页包含独立 opacity FBO 探针，并可通过点击进入 opacity transition。
+     */
+    @Test
+    public void shouldExposeOpacityFboProbeForManualSmokeValidation() {
+        TestFixture fixture = new TestFixture();
+
+        fixture.controller.configureDocumentPage();
+        fixture.controller.buildDocument();
+        HtmlLikeDocumentWidget widget = fixture.controller.getHtmlLikeDocumentWidget();
+        widget.applyLayoutBounds(31, 47, 760, 320);
+        widget.render(new RecordingUiRenderContext());
+
+        ElementNode opacityCard = findElementContainingDirectText(widget, "Opacity FBO card: click fade");
+        Assert.assertNotNull(opacityCard);
+        Assert.assertTrue(opacityCard.style().getTransitionProperties().contains(DocumentAnimationProperty.OPACITY));
+        Assert.assertEquals(Float.valueOf(1.0F), opacityCard.style().getOpacity());
+
+        Assert.assertTrue(opacityCard.getClickHandler().onClick(new DocumentElementClickEvent(opacityCard,
+                opacityCard, 0, 0, 0, 2L)));
+        widget.render(new RecordingUiRenderContext());
+
+        Assert.assertEquals(Float.valueOf(0.45F), opacityCard.style().getOpacity());
+        Assert.assertTrue(widget.getActiveAnimationCount() >= 1);
     }
 
     /**
