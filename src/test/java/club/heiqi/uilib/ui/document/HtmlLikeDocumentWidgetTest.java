@@ -413,6 +413,45 @@ public class HtmlLikeDocumentWidgetTest {
     }
 
     /**
+     * 验证 forwards fill 后作者修改同属性目标值会回到作者值且不重新文本测量布局。
+     */
+    @Test
+    public void shouldRenderAuthorTargetAfterForwardsFillChangesWithoutRecomputingLayout() {
+        UiDocument document = UiDocument.create();
+        document.registerKeyframes(DocumentKeyframes.named("pulse")
+                .setColor(DocumentAnimationProperty.BACKGROUND_COLOR, 0xFF000000, 0xFFFFFFFF)
+                .build());
+        ElementNode root = document.getRootElement();
+        root.style()
+                .setWidth(UiStyleLength.px(32))
+                .setHeight(UiStyleLength.px(20))
+                .setBackgroundColor(0xFF000000)
+                .setAnimation("pulse", 1000L)
+                .setAnimationFillMode(DocumentAnimationFillMode.FORWARDS);
+        root.appendText("pulse");
+        ManualAnimationClock animationClock = new ManualAnimationClock();
+        CountingTextMeasureService textMeasureService = new CountingTextMeasureService();
+        HtmlLikeDocumentWidget widget = new HtmlLikeDocumentWidget(document, 80, 40, textMeasureService);
+        widget.setAnimationClock(animationClock);
+        widget.applyLayoutBounds(0, 0, 80, 40);
+
+        widget.render(new RecordingUiRenderContext());
+        int measureCountAfterInitialRender = textMeasureService.getMeasureCount();
+        animationClock.setCurrentTimeNanos(1_000_000_000L);
+        RecordingUiRenderContext filledContext = new RecordingUiRenderContext();
+        widget.render(filledContext);
+        Assert.assertEquals(0xFFFFFFFF, filledContext.drawCalls.get(0).surfaceStyle.fillColor);
+
+        root.style().setBackgroundColor(0xFF123456);
+        RecordingUiRenderContext authorContext = new RecordingUiRenderContext();
+        widget.render(authorContext);
+
+        Assert.assertEquals(measureCountAfterInitialRender, textMeasureService.getMeasureCount());
+        Assert.assertEquals(0xFF123456, authorContext.drawCalls.get(0).surfaceStyle.fillColor);
+        Assert.assertEquals(0, widget.getActiveAnimationCount());
+    }
+
+    /**
      * 验证 paint-only 样式变更只刷新绘制样式，不重新执行文本测量布局。
      */
     @Test
