@@ -519,7 +519,7 @@ final class HtmlLikeSmokeDocumentPageController extends DocumentPageController {
     private static void appendOpacityFboProbe(UiDocument document, ElementNode root) {
         ElementNode probe = document.div();
         probe.style()
-                .setHeight(UiStyleLength.px(142))
+                .setHeight(UiStyleLength.px(200))
                 .setMargin(UiStyleInsets.of(UiStyleLength.px(12), UiStyleLength.px(0), UiStyleLength.px(0),
                         UiStyleLength.px(0)))
                 .setPadding(UiStyleLength.px(10))
@@ -531,7 +531,7 @@ final class HtmlLikeSmokeDocumentPageController extends DocumentPageController {
                 .setTextColor(0xFFFFF7ED)
                 .setOverflowX(UiOverflow.HIDDEN)
                 .setOverflowY(UiOverflow.HIDDEN);
-        probe.appendText("Opacity FBO probe: click card fades; auto card runs initial opacity keyframe.");
+        probe.appendText("Opacity FBO probe: click card, auto card, and combo card cover opacity FBO paths.");
         root.append(probe);
 
         ElementNode amberStripe = document.div();
@@ -577,6 +577,28 @@ final class HtmlLikeSmokeDocumentPageController extends DocumentPageController {
                 .setBackgroundColor(0xFF34D399)
                 .setBorderRadius(UiStyleLength.px(999));
         probe.append(greenStripe);
+
+        ElementNode violetStripe = document.div();
+        violetStripe.style()
+                .setWidth(UiStyleLength.px(350))
+                .setHeight(UiStyleLength.px(16))
+                .setPosition(UiPosition.ABSOLUTE)
+                .setLeft(UiStyleLength.px(22))
+                .setTop(UiStyleLength.px(160))
+                .setBackgroundColor(0xFFA78BFA)
+                .setBorderRadius(UiStyleLength.px(999));
+        probe.append(violetStripe);
+
+        ElementNode limeStripe = document.div();
+        limeStripe.style()
+                .setWidth(UiStyleLength.px(300))
+                .setHeight(UiStyleLength.px(16))
+                .setPosition(UiPosition.ABSOLUTE)
+                .setLeft(UiStyleLength.px(70))
+                .setTop(UiStyleLength.px(180))
+                .setBackgroundColor(0xFFA3E635)
+                .setBorderRadius(UiStyleLength.px(999));
+        probe.append(limeStripe);
 
         final ElementNode opacityCard = document.div();
         opacityCard.style()
@@ -631,6 +653,40 @@ final class HtmlLikeSmokeDocumentPageController extends DocumentPageController {
                 .setOverflowY(UiOverflow.HIDDEN);
         autoOpacityCard.appendText("Opacity FBO auto: initial fade");
         probe.append(autoOpacityCard);
+
+        final ElementNode comboOpacityCard = document.div();
+        comboOpacityCard.style()
+                .setWidth(UiStyleLength.px(238))
+                .setHeight(UiStyleLength.px(42))
+                .setPosition(UiPosition.ABSOLUTE)
+                .setLeft(UiStyleLength.px(88))
+                .setTop(UiStyleLength.px(150))
+                .setZIndex(1)
+                .setPadding(UiStyleLength.px(8))
+                .setBackgroundColor(0xFF0F766E)
+                .setBorderColor(0xFF99F6E4)
+                .setBorderWidth(UiStyleLength.px(1))
+                .setBorderRadius(UiStyleLength.px(12))
+                .setTextColor(0xFFFFFFFF)
+                .setOpacity(1.0F)
+                .setTransition(DocumentAnimationProperty.OPACITY, 700L)
+                .setTransitionTimingFunction(DocumentAnimationTimingFunction.EASE_IN_OUT)
+                .setAnimation("opacityFboAuto", 900L)
+                .setAnimationFillMode(DocumentAnimationFillMode.NONE)
+                .setAnimationTimingFunction(DocumentAnimationTimingFunction.EASE_IN_OUT)
+                .setOverflowX(UiOverflow.HIDDEN)
+                .setOverflowY(UiOverflow.HIDDEN);
+        comboOpacityCard.appendText("Opacity FBO combo: 3-stop + click");
+        final boolean[] comboFaded = new boolean[] { false };
+        comboOpacityCard.setClickHandler(new DocumentElementClickHandler() {
+            @Override
+            public boolean onClick(DocumentElementClickEvent event) {
+                comboFaded[0] = !comboFaded[0];
+                comboOpacityCard.style().setOpacity(comboFaded[0] ? 0.45F : 1.0F);
+                return true;
+            }
+        });
+        probe.append(comboOpacityCard);
     }
 
     private static void appendAbsoluteStretchAndInlineProbe(UiDocument document, ElementNode root) {

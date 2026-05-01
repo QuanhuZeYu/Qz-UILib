@@ -61,9 +61,10 @@ public class HtmlLikeSmokeDocumentPageControllerTest {
         Assert.assertTrue(containsText(texts, "Animation diagnostics: pill=paint bg+radius"));
         Assert.assertTrue(containsText(texts, "opacity uses separate group probe"));
         Assert.assertTrue(containsText(texts, "Keyframe diagnostics: first pill runs smokePulse bg+radius 0/50/100 stops"));
-        Assert.assertTrue(containsText(texts, "Opacity FBO probe: click card fades"));
+        Assert.assertTrue(containsText(texts, "Opacity FBO probe: click card, auto card"));
         Assert.assertTrue(containsText(texts, "Opacity FBO card: click fade"));
         Assert.assertTrue(containsText(texts, "Opacity FBO auto: initial fade"));
+        Assert.assertTrue(containsText(texts, "Opacity FBO combo: 3-stop + click"));
         Assert.assertTrue(containsText(texts, "Same-layer sampling grid"));
         Assert.assertTrue(containsText(texts, "ABS containing probe"));
         Assert.assertTrue(containsText(texts, "static wrapper is not anchor"));
@@ -198,8 +199,10 @@ public class HtmlLikeSmokeDocumentPageControllerTest {
 
         ElementNode opacityCard = findElementContainingDirectText(widget, "Opacity FBO card: click fade");
         ElementNode autoOpacityCard = findElementContainingDirectText(widget, "Opacity FBO auto: initial fade");
+        ElementNode comboOpacityCard = findElementContainingDirectText(widget, "Opacity FBO combo: 3-stop + click");
         Assert.assertNotNull(opacityCard);
         Assert.assertNotNull(autoOpacityCard);
+        Assert.assertNotNull(comboOpacityCard);
         Assert.assertTrue(widget.getDocument().getKeyframesRegistry().containsKey("opacityFboAuto"));
         Assert.assertTrue(widget.getDocument().getKeyframes("opacityFboAuto").getFloatTracks()
                 .containsKey(DocumentAnimationProperty.OPACITY));
@@ -207,14 +210,22 @@ public class HtmlLikeSmokeDocumentPageControllerTest {
                 .get(DocumentAnimationProperty.OPACITY).getStops().size());
         Assert.assertEquals("opacityFboAuto", autoOpacityCard.style().getAnimationName());
         Assert.assertNull(autoOpacityCard.style().getTransitionProperties());
+        Assert.assertEquals("opacityFboAuto", comboOpacityCard.style().getAnimationName());
+        Assert.assertTrue(comboOpacityCard.style().getTransitionProperties().contains(DocumentAnimationProperty.OPACITY));
         Assert.assertTrue(opacityCard.style().getTransitionProperties().contains(DocumentAnimationProperty.OPACITY));
         Assert.assertEquals(Float.valueOf(1.0F), opacityCard.style().getOpacity());
+        Assert.assertEquals(Float.valueOf(1.0F), comboOpacityCard.style().getOpacity());
 
         Assert.assertTrue(opacityCard.getClickHandler().onClick(new DocumentElementClickEvent(opacityCard,
                 opacityCard, 0, 0, 0, 2L)));
         widget.render(new RecordingUiRenderContext());
 
         Assert.assertEquals(Float.valueOf(0.45F), opacityCard.style().getOpacity());
+        Assert.assertTrue(comboOpacityCard.getClickHandler().onClick(new DocumentElementClickEvent(comboOpacityCard,
+                comboOpacityCard, 0, 0, 0, 3L)));
+        widget.render(new RecordingUiRenderContext());
+
+        Assert.assertEquals(Float.valueOf(0.45F), comboOpacityCard.style().getOpacity());
         Assert.assertTrue(widget.getActiveAnimationCount() >= 1);
     }
 
