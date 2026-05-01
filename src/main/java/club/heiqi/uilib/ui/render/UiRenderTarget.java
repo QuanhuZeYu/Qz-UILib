@@ -256,31 +256,35 @@ public class UiRenderTarget {
     }
 
     private void allocateAttachments() {
+        int previousFramebufferId = GL11.glGetInteger(GL30.GL_FRAMEBUFFER_BINDING);
+        int previousTextureId = GL11.glGetInteger(GL11.GL_TEXTURE_BINDING_2D);
+        int previousRenderbufferId = GL11.glGetInteger(GL30.GL_RENDERBUFFER_BINDING);
         GL30.glBindFramebuffer(GL30.GL_FRAMEBUFFER, framebufferId);
 
-        GL11.glBindTexture(GL11.GL_TEXTURE_2D, colorTextureId);
-        GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_MIN_FILTER, GL11.GL_LINEAR);
-        GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_MAG_FILTER, GL11.GL_LINEAR);
-        GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_WRAP_S, GL12.GL_CLAMP_TO_EDGE);
-        GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_WRAP_T, GL12.GL_CLAMP_TO_EDGE);
-        GL11.glTexImage2D(GL11.GL_TEXTURE_2D, 0, GL11.GL_RGBA, width, height, 0, GL11.GL_RGBA,
-                GL11.GL_UNSIGNED_BYTE, (ByteBuffer) null);
-        GL30.glFramebufferTexture2D(GL30.GL_FRAMEBUFFER, GL30.GL_COLOR_ATTACHMENT0, GL11.GL_TEXTURE_2D,
-                colorTextureId, 0);
-        GL11.glBindTexture(GL11.GL_TEXTURE_2D, 0);
+        try {
+            GL11.glBindTexture(GL11.GL_TEXTURE_2D, colorTextureId);
+            GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_MIN_FILTER, GL11.GL_LINEAR);
+            GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_MAG_FILTER, GL11.GL_LINEAR);
+            GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_WRAP_S, GL12.GL_CLAMP_TO_EDGE);
+            GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_WRAP_T, GL12.GL_CLAMP_TO_EDGE);
+            GL11.glTexImage2D(GL11.GL_TEXTURE_2D, 0, GL11.GL_RGBA, width, height, 0, GL11.GL_RGBA,
+                    GL11.GL_UNSIGNED_BYTE, (ByteBuffer) null);
+            GL30.glFramebufferTexture2D(GL30.GL_FRAMEBUFFER, GL30.GL_COLOR_ATTACHMENT0, GL11.GL_TEXTURE_2D,
+                    colorTextureId, 0);
 
-        GL30.glBindRenderbuffer(GL30.GL_RENDERBUFFER, depthStencilRenderbufferId);
-        GL30.glRenderbufferStorage(GL30.GL_RENDERBUFFER, GL30.GL_DEPTH24_STENCIL8, width, height);
-        GL30.glFramebufferRenderbuffer(GL30.GL_FRAMEBUFFER, GL30.GL_DEPTH_STENCIL_ATTACHMENT,
-                GL30.GL_RENDERBUFFER, depthStencilRenderbufferId);
-        GL30.glBindRenderbuffer(GL30.GL_RENDERBUFFER, 0);
+            GL30.glBindRenderbuffer(GL30.GL_RENDERBUFFER, depthStencilRenderbufferId);
+            GL30.glRenderbufferStorage(GL30.GL_RENDERBUFFER, GL30.GL_DEPTH24_STENCIL8, width, height);
+            GL30.glFramebufferRenderbuffer(GL30.GL_FRAMEBUFFER, GL30.GL_DEPTH_STENCIL_ATTACHMENT,
+                    GL30.GL_RENDERBUFFER, depthStencilRenderbufferId);
 
-        int status = GL30.glCheckFramebufferStatus(GL30.GL_FRAMEBUFFER);
-        if (status != GL30.GL_FRAMEBUFFER_COMPLETE) {
-            GL30.glBindFramebuffer(GL30.GL_FRAMEBUFFER, 0);
-            throw new IllegalStateException("UI 离屏渲染目标创建失败，状态码=" + status);
+            int status = GL30.glCheckFramebufferStatus(GL30.GL_FRAMEBUFFER);
+            if (status != GL30.GL_FRAMEBUFFER_COMPLETE) {
+                throw new IllegalStateException("UI 离屏渲染目标创建失败，状态码=" + status);
+            }
+        } finally {
+            GL30.glBindRenderbuffer(GL30.GL_RENDERBUFFER, previousRenderbufferId);
+            GL11.glBindTexture(GL11.GL_TEXTURE_2D, previousTextureId);
+            GL30.glBindFramebuffer(GL30.GL_FRAMEBUFFER, previousFramebufferId);
         }
-
-        GL30.glBindFramebuffer(GL30.GL_FRAMEBUFFER, 0);
     }
 }
