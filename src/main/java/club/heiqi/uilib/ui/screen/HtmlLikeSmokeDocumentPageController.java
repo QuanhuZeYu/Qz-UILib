@@ -508,11 +508,11 @@ final class HtmlLikeSmokeDocumentPageController extends DocumentPageController {
                         UiStyleLength.px(0)))
                 .setWidth(UiStyleLength.px(240))
                 .setTextColor(0xFFE0F2FE);
-        inlineLine.appendText("Inline split: text ");
+        inlineLine.appendText("Inline split probe:");
         final ElementNode amberSpan = document.span();
         amberSpan.style()
-                .setMargin(UiStyleInsets.of(UiStyleLength.px(0), UiStyleLength.px(2), UiStyleLength.px(0),
-                        UiStyleLength.px(2)))
+                .setMargin(UiStyleInsets.of(UiStyleLength.px(2), UiStyleLength.px(2), UiStyleLength.px(0),
+                        UiStyleLength.px(0)))
                 .setPadding(UiStyleInsets.of(UiStyleLength.px(2), UiStyleLength.px(4), UiStyleLength.px(2),
                         UiStyleLength.px(4)))
                 .setBackgroundColor(0x334F46E5)
@@ -532,7 +532,7 @@ final class HtmlLikeSmokeDocumentPageController extends DocumentPageController {
             }
         });
         inlineLine.append(amberSpan);
-        inlineLine.appendText(" span should split; only outer split corners stay rounded.");
+        inlineLine.appendText(" split corners stay rounded only at the outside edges.");
         probe.append(inlineLine);
     }
 
