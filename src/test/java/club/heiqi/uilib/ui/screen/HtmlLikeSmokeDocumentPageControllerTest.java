@@ -58,8 +58,8 @@ public class HtmlLikeSmokeDocumentPageControllerTest {
         Assert.assertTrue(containsText(texts, "UiDocument -> style -> layout -> paint command -> UiRenderContext"));
         Assert.assertTrue(containsText(texts, "FIXED viewport"));
         Assert.assertTrue(containsText(texts, "Controls probe: click, input, Tab, button, toggle"));
-        Assert.assertTrue(containsText(texts, "Animation diagnostics: pill=paint/effect"));
-        Assert.assertTrue(containsText(texts, "static cache resumes after finish"));
+        Assert.assertTrue(containsText(texts, "Animation diagnostics: pill=paint bg+radius"));
+        Assert.assertTrue(containsText(texts, "opacity uses separate group probe"));
         Assert.assertTrue(containsText(texts, "Keyframe diagnostics: first pill runs smokePulse bg+radius 0/50/100 stops"));
         Assert.assertTrue(containsText(texts, "Same-layer sampling grid"));
         Assert.assertTrue(containsText(texts, "ABS containing probe"));
@@ -148,6 +148,8 @@ public class HtmlLikeSmokeDocumentPageControllerTest {
         widget.render(clickedRenderContext);
 
         Assert.assertTrue(containsTextCall(clickedRenderContext.textCalls, "Click target: 1"));
+        Assert.assertFalse(clickTarget.style().getTransitionProperties().contains(DocumentAnimationProperty.OPACITY));
+        Assert.assertEquals(Float.valueOf(1.0F), clickTarget.style().getOpacity());
         Assert.assertTrue(widget.getActiveAnimationCount() >= 2);
     }
 

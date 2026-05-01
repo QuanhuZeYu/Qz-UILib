@@ -385,7 +385,7 @@ final class HtmlLikeSmokeDocumentPageController extends DocumentPageController {
                 .setTextColor(0xFFBAE6FD)
                 .setOverflowX(UiOverflow.HIDDEN)
                 .setOverflowY(UiOverflow.HIDDEN);
-        animationDiagnostic.appendText("Animation diagnostics: pill=paint/effect bg+opacity+radius 450ms; glass=blur+radius 700ms; static cache resumes after finish.");
+        animationDiagnostic.appendText("Animation diagnostics: pill=paint bg+radius 450ms; glass=blur+radius 700ms; opacity uses separate group probe.");
         controlsSection.append(animationDiagnostic);
 
         ElementNode keyframeDiagnostic = document.div();
@@ -416,7 +416,7 @@ final class HtmlLikeSmokeDocumentPageController extends DocumentPageController {
                 .setPadding(UiStyleLength.px(10))
                 .setBackgroundColor(0xFF38A169)
                 .setOpacity(1.0F)
-                .setTransitionProperties(DocumentAnimationProperty.BACKGROUND_COLOR, DocumentAnimationProperty.OPACITY,
+                .setTransitionProperties(DocumentAnimationProperty.BACKGROUND_COLOR,
                         DocumentAnimationProperty.BORDER_RADIUS)
                 .setTransitionDurationMillis(450L)
                 .setTransitionTimingFunction(DocumentAnimationTimingFunction.EASE_IN_OUT)
@@ -435,7 +435,6 @@ final class HtmlLikeSmokeDocumentPageController extends DocumentPageController {
                 clickCount[0]++;
                 clickText.setText("Click target: " + clickCount[0]);
                 firstPill.style().setBackgroundColor(clickCount[0] % 2 == 0 ? 0xFF38A169 : 0xFF3182CE);
-                firstPill.style().setOpacity(clickCount[0] % 2 == 0 ? 1.0F : 0.55F);
                 firstPill.style().setBorderRadius(UiStyleLength.px(clickCount[0] % 2 == 0 ? 999 : 10));
                 return true;
             }
