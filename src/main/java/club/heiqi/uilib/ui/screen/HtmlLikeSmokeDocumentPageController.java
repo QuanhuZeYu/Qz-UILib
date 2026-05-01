@@ -129,8 +129,8 @@ final class HtmlLikeSmokeDocumentPageController extends DocumentPageController {
 
         ElementNode fixedViewportProbe = document.div();
         fixedViewportProbe.style()
-                .setWidth(UiStyleLength.px(178))
-                .setHeight(UiStyleLength.px(40))
+                .setWidth(UiStyleLength.px(150))
+                .setHeight(UiStyleLength.px(30))
                 .setPosition(UiPosition.FIXED)
                 .setBottom(UiStyleLength.px(12))
                 .setRight(UiStyleLength.px(14))
@@ -143,7 +143,7 @@ final class HtmlLikeSmokeDocumentPageController extends DocumentPageController {
                 .setTextColor(0xFFE6FFFA)
                 .setOverflowX(UiOverflow.HIDDEN)
                 .setOverflowY(UiOverflow.HIDDEN);
-        fixedViewportProbe.appendText("FIXED viewport stays here");
+        fixedViewportProbe.appendText("FIXED viewport");
         root.append(fixedViewportProbe);
 
         appendControlsSection(document, root);
@@ -377,13 +377,13 @@ final class HtmlLikeSmokeDocumentPageController extends DocumentPageController {
                 .setTextColor(0xFFFFFFFF)
                 .setOverflowX(UiOverflow.HIDDEN)
                 .setOverflowY(UiOverflow.HIDDEN);
-        final TextNode clickText = firstPill.appendText("Click target: 0 / fade+morph");
+        final TextNode clickText = firstPill.appendText("Click target: 0");
         final int[] clickCount = new int[] { 0 };
         firstPill.setClickHandler(new DocumentElementClickHandler() {
             @Override
             public boolean onClick(DocumentElementClickEvent event) {
                 clickCount[0]++;
-                clickText.setText("Click target: " + clickCount[0] + " / fade+morph");
+                clickText.setText("Click target: " + clickCount[0]);
                 firstPill.style().setBackgroundColor(clickCount[0] % 2 == 0 ? 0xFF38A169 : 0xFF3182CE);
                 firstPill.style().setOpacity(clickCount[0] % 2 == 0 ? 1.0F : 0.55F);
                 firstPill.style().setBorderRadius(UiStyleLength.px(clickCount[0] % 2 == 0 ? 999 : 10));
@@ -533,7 +533,7 @@ final class HtmlLikeSmokeDocumentPageController extends DocumentPageController {
             }
         });
         inlineLine.append(amberSpan);
-        inlineLine.appendText(" split corners stay rounded only at the outside edges.");
+        inlineLine.appendText(" split corners only outside.");
         probe.append(inlineLine);
 
         ElementNode verticalAlignLine = document.div();
@@ -541,7 +541,7 @@ final class HtmlLikeSmokeDocumentPageController extends DocumentPageController {
                 .setMargin(UiStyleInsets.of(UiStyleLength.px(10), UiStyleLength.px(0), UiStyleLength.px(0),
                         UiStyleLength.px(0)))
                 .setTextColor(0xFFE0F2FE);
-        verticalAlignLine.appendText("Vertical-align probe:");
+        verticalAlignLine.appendText("Vertical-align probe: rail sets row height; top/mid/bot shift inside it.");
 
         ElementNode verticalAlignPills = document.div();
         verticalAlignPills.style()
@@ -549,7 +549,7 @@ final class HtmlLikeSmokeDocumentPageController extends DocumentPageController {
                         UiStyleLength.px(0)))
                 .setWidth(UiStyleLength.px(360))
                 .setTextColor(0xFFE0F2FE);
-        verticalAlignPills.appendText("ruler:");
+        verticalAlignPills.appendText("align:");
         appendVerticalAlignPill(document, verticalAlignPills, "rail", UiVerticalAlign.BASELINE,
                 0x334F46E5, 0xFF38BDF8, UiStyleInsets.of(UiStyleLength.px(7), UiStyleLength.px(5),
                         UiStyleLength.px(7), UiStyleLength.px(5)));

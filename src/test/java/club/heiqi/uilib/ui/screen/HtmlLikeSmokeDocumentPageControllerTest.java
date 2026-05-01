@@ -53,7 +53,7 @@ public class HtmlLikeSmokeDocumentPageControllerTest {
         List<String> texts = collectDocumentTexts(fixture.controller.getHtmlLikeDocumentWidget());
         Assert.assertTrue(containsText(texts, "HTML-like Smoke Lab"));
         Assert.assertTrue(containsText(texts, "UiDocument -> style -> layout -> paint command -> UiRenderContext"));
-        Assert.assertTrue(containsText(texts, "FIXED viewport stays here"));
+        Assert.assertTrue(containsText(texts, "FIXED viewport"));
         Assert.assertTrue(containsText(texts, "Controls probe: click, input, Tab, button, toggle"));
         Assert.assertTrue(containsText(texts, "Same-layer sampling grid"));
         Assert.assertTrue(containsText(texts, "ABS containing probe"));
@@ -67,7 +67,7 @@ public class HtmlLikeSmokeDocumentPageControllerTest {
         Assert.assertTrue(containsText(texts, "ABS stretch fill: left+right / top+bottom"));
         Assert.assertTrue(containsText(texts, "amber span hit: 0"));
         Assert.assertTrue(containsText(texts, "Vertical-align probe:"));
-        Assert.assertTrue(containsText(texts, "ruler:"));
+        Assert.assertTrue(containsText(texts, "align:"));
         Assert.assertTrue(containsText(texts, "Group opacity probe: overlap should stay flat blue"));
         Assert.assertTrue(containsText(texts, "Stacking context probe: blue cover must stay above red z-99 child"));
         Assert.assertTrue(containsText(texts, "red child z=99"));
@@ -109,7 +109,7 @@ public class HtmlLikeSmokeDocumentPageControllerTest {
         assertAbsoluteProbeIsVisibleOutsideStaticWrapper(widget, fixture.textMeasureService);
         assertGroupOpacityProbeKeepsChildColorsOpaque(widget, fixture.textMeasureService);
         assertStackingContextProbeKeepsHighZChildIsolated(widget, fixture.textMeasureService);
-        Assert.assertTrue(containsTextCall(renderContext.textCalls, "FIXED viewport stays here"));
+        Assert.assertTrue(containsTextCall(renderContext.textCalls, "FIXED viewport"));
         Assert.assertTrue(containsTextCall(renderContext.textCalls, "ABS stretch fill"));
         Assert.assertTrue(containsTextCall(renderContext.textCalls, "amber span hit: 0"));
         Assert.assertTrue(containsTextCall(renderContext.textCalls, "Vertical-align probe"));
@@ -134,7 +134,7 @@ public class HtmlLikeSmokeDocumentPageControllerTest {
         widget.render(initialRenderContext);
         Assert.assertTrue(containsTextCall(initialRenderContext.textCalls, "Click target: 0"));
 
-        ElementNode clickTarget = findElementContainingDirectText(widget, "Click target: 0 / fade+morph");
+        ElementNode clickTarget = findElementContainingDirectText(widget, "Click target: 0");
         clickElementCenter(widget, fixture.textMeasureService, clickTarget, 1L, 2L);
         RecordingUiRenderContext clickedRenderContext = new RecordingUiRenderContext();
         widget.render(clickedRenderContext);
