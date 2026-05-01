@@ -384,4 +384,60 @@ public class DocumentAnimationTimelineTest {
         Assert.assertEquals(0.5F, timeline.resolveFloat(root, DocumentAnimationProperty.OPACITY, 0.5F,
                 500_000_000L), 0.0F);
     }
+
+    /**
+     * 验证作者侧目标值变化后，同属性 keyframe fill 不会在后续重绘时重新覆盖 transition 结果。
+     */
+    @Test
+    public void shouldSuppressKeyframeFillWhenAuthorTargetChangesSameProperty() {
+        UiDocument document = UiDocument.create();
+        document.registerKeyframes(DocumentKeyframes.named("pulse")
+                .setFloat(DocumentAnimationProperty.BORDER_RADIUS, 999.0F, 12.0F)
+                .setColor(DocumentAnimationProperty.BACKGROUND_COLOR, 0xFF38A169, 0xFF805AD5)
+                .build());
+        ElementNode root = document.getRootElement();
+        ElementNode pill = document.div();
+        ElementNode sibling = document.div();
+        pill.style()
+                .setWidth(UiStyleLength.px(80))
+                .setHeight(UiStyleLength.px(40))
+                .setBackgroundColor(0xFF38A169)
+                .setBorderRadius(UiStyleLength.px(999))
+                .setTransitionProperties(DocumentAnimationProperty.BACKGROUND_COLOR,
+                        DocumentAnimationProperty.BORDER_RADIUS)
+                .setTransitionDurationMillis(450L)
+                .setAnimation("pulse", 1000L)
+                .setAnimationFillMode(DocumentAnimationFillMode.BOTH);
+        sibling.style()
+                .setWidth(UiStyleLength.px(20))
+                .setHeight(UiStyleLength.px(20));
+        root.append(pill).append(sibling);
+        DocumentAnimationTimeline timeline = new DocumentAnimationTimeline();
+
+        timeline.updateFromLayout(DocumentLayoutEngine.layout(root, 120, 0), 0L);
+        timeline.pruneFinishedAnimations(1_000_000_000L);
+        Assert.assertEquals(0xFF805AD5, timeline.resolveColor(pill, DocumentAnimationProperty.BACKGROUND_COLOR,
+                0xFF38A169, 1_000_000_000L));
+        Assert.assertEquals(12.0F, timeline.resolveFloat(pill, DocumentAnimationProperty.BORDER_RADIUS, 20.0F,
+                1_000_000_000L), 0.0F);
+
+        pill.style()
+                .setBackgroundColor(0xFF3182CE)
+                .setBorderRadius(UiStyleLength.px(10));
+        timeline.updateFromLayout(DocumentLayoutEngine.layout(root, 120, 0), 1_000_000_000L);
+        timeline.pruneFinishedAnimations(1_450_000_000L);
+
+        Assert.assertEquals(0xFF3182CE, timeline.resolveColor(pill, DocumentAnimationProperty.BACKGROUND_COLOR,
+                0xFF3182CE, 1_450_000_000L));
+        Assert.assertEquals(10.0F, timeline.resolveFloat(pill, DocumentAnimationProperty.BORDER_RADIUS, 10.0F,
+                1_450_000_000L), 0.0F);
+
+        sibling.style().setBackgroundColor(0xFFFFFFFF);
+        timeline.updateFromLayout(DocumentLayoutEngine.layout(root, 120, 0), 1_500_000_000L);
+
+        Assert.assertEquals(0xFF3182CE, timeline.resolveColor(pill, DocumentAnimationProperty.BACKGROUND_COLOR,
+                0xFF3182CE, 1_500_000_000L));
+        Assert.assertEquals(10.0F, timeline.resolveFloat(pill, DocumentAnimationProperty.BORDER_RADIUS, 10.0F,
+                1_500_000_000L), 0.0F);
+    }
 }

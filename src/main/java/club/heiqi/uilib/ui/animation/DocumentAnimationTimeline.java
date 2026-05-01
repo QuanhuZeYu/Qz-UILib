@@ -370,6 +370,7 @@ public final class DocumentAnimationTimeline {
             }
             int fromColor = resolveColor(element, property, previousTarget.intValue(), currentTimeNanos);
             state.targetColors.put(property, Integer.valueOf(baseColor));
+            suppressDeclaredColorKeyframeProperty(state, property);
             if (transitionAllowed && fromColor != baseColor) {
                 state.colorTransitions.put(property, new ColorTransition(fromColor, baseColor,
                         currentTimeNanos + style.getTransitionDelayNanos(), style.getTransitionDurationNanos(),
@@ -396,6 +397,7 @@ public final class DocumentAnimationTimeline {
             }
             float fromValue = resolveFloat(element, property, previousTarget.floatValue(), currentTimeNanos);
             state.targetFloats.put(property, Float.valueOf(baseValue));
+            suppressDeclaredFloatKeyframeProperty(state, property);
             if (transitionAllowed && Float.compare(fromValue, baseValue) != 0) {
                 state.floatTransitions.put(property, new FloatTransition(fromValue, baseValue,
                         currentTimeNanos + style.getTransitionDelayNanos(), style.getTransitionDurationNanos(),
@@ -406,6 +408,24 @@ public final class DocumentAnimationTimeline {
             changed = true;
         }
         return changed;
+    }
+
+    private static void suppressDeclaredColorKeyframeProperty(ElementAnimationState state,
+            DocumentAnimationProperty property) {
+        if (!state.declaredColorKeyframeProperties.contains(property)) {
+            return;
+        }
+        state.colorKeyframeAnimations.remove(property);
+        state.filledColors.remove(property);
+    }
+
+    private static void suppressDeclaredFloatKeyframeProperty(ElementAnimationState state,
+            DocumentAnimationProperty property) {
+        if (!state.declaredFloatKeyframeProperties.contains(property)) {
+            return;
+        }
+        state.floatKeyframeAnimations.remove(property);
+        state.filledFloats.remove(property);
     }
 
     private ElementAnimationState getOrCreateState(ElementNode element) {
