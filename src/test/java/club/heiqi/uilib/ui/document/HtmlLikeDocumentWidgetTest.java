@@ -363,6 +363,50 @@ public class HtmlLikeDocumentWidgetTest {
     }
 
     /**
+     * 验证 height keyframe 会驱动后续 block sibling 的纵向重排。
+     */
+    @Test
+    public void shouldRelayoutSiblingsDuringHeightKeyframe() {
+        UiDocument document = UiDocument.create();
+        document.registerKeyframes(DocumentKeyframes.named("heightGrow")
+                .setFloat(DocumentAnimationProperty.HEIGHT, 20.0F, 60.0F)
+                .build());
+        ElementNode root = document.getRootElement();
+        ElementNode animated = document.div();
+        ElementNode sibling = document.div();
+        root.style().setWidth(UiStyleLength.px(120));
+        animated.style()
+                .setWidth(UiStyleLength.px(40))
+                .setHeight(UiStyleLength.px(20))
+                .setBackgroundColor(0xFF112233)
+                .setAnimation("heightGrow", 1000L)
+                .setAnimationFillMode(DocumentAnimationFillMode.FORWARDS);
+        sibling.style()
+                .setWidth(UiStyleLength.px(40))
+                .setHeight(UiStyleLength.px(20))
+                .setBackgroundColor(0xFF445566);
+        root.append(animated).append(sibling);
+        ManualAnimationClock animationClock = new ManualAnimationClock();
+        HtmlLikeDocumentWidget widget = new HtmlLikeDocumentWidget(document, 120, 100,
+                new DeterministicTextMeasureService());
+        widget.setAnimationClock(animationClock);
+        widget.applyLayoutBounds(0, 0, 120, 100);
+
+        widget.render(new RecordingUiRenderContext());
+        animationClock.setCurrentTimeNanos(500_000_000L);
+        RecordingUiRenderContext halfContext = new RecordingUiRenderContext();
+        widget.render(halfContext);
+        assertDrawCall(halfContext.drawCalls.get(0), 0, 0, 40, 40, 0xFF112233, 0, 0);
+        assertDrawCall(halfContext.drawCalls.get(1), 0, 40, 40, 60, 0xFF445566, 0, 0);
+
+        animationClock.setCurrentTimeNanos(1_000_000_000L);
+        RecordingUiRenderContext filledContext = new RecordingUiRenderContext();
+        widget.render(filledContext);
+        assertDrawCall(filledContext.drawCalls.get(0), 0, 0, 40, 60, 0xFF112233, 0, 0);
+        assertDrawCall(filledContext.drawCalls.get(1), 0, 60, 40, 80, 0xFF445566, 0, 0);
+    }
+
+    /**
      * 验证清除 layout keyframe 声明后会恢复静态布局缓存路径。
      */
     @Test
@@ -444,6 +488,51 @@ public class HtmlLikeDocumentWidgetTest {
         animationClock.setCurrentTimeNanos(1_000_000_000L);
         widget.render(new RecordingUiRenderContext());
         Assert.assertEquals(50, widget.getMaxScrollTop(root));
+    }
+
+    /**
+     * 验证 layout 动画让内容收缩时会夹取已有滚动偏移。
+     */
+    @Test
+    public void shouldClampScrollOffsetWhenHeightTransitionShrinksContent() {
+        UiDocument document = UiDocument.create();
+        ElementNode root = document.getRootElement();
+        ElementNode child = document.div();
+        root.style()
+                .setWidth(UiStyleLength.px(80))
+                .setHeight(UiStyleLength.px(50))
+                .setOverflowY(UiOverflow.AUTO);
+        child.style()
+                .setHeight(UiStyleLength.px(100))
+                .setBackgroundColor(0xFFAA5500)
+                .setTransition(DocumentAnimationProperty.HEIGHT, 1000L);
+        root.append(child);
+        ManualAnimationClock animationClock = new ManualAnimationClock();
+        HtmlLikeDocumentWidget widget = new HtmlLikeDocumentWidget(document, 80, 50,
+                new DeterministicTextMeasureService());
+        widget.setAnimationClock(animationClock);
+        widget.applyLayoutBounds(0, 0, 80, 50);
+
+        widget.render(new RecordingUiRenderContext());
+        Assert.assertEquals(50, widget.getMaxScrollTop(root));
+        Assert.assertTrue(widget.onMouseScroll(new UiMouseEvent(UiMouseEvent.Action.SCROLL, 10, 10, -1, -240, 0,
+                0, 1L)));
+        Assert.assertEquals(50, widget.getScrollTop(root));
+
+        child.style().setHeight(UiStyleLength.px(40));
+        widget.render(new RecordingUiRenderContext());
+        Assert.assertEquals(50, widget.getMaxScrollTop(root));
+        Assert.assertEquals(50, widget.getScrollTop(root));
+
+        animationClock.setCurrentTimeNanos(500_000_000L);
+        widget.render(new RecordingUiRenderContext());
+        Assert.assertEquals(20, widget.getMaxScrollTop(root));
+        Assert.assertEquals(20, widget.getScrollTop(root));
+
+        animationClock.setCurrentTimeNanos(1_000_000_000L);
+        widget.render(new RecordingUiRenderContext());
+        Assert.assertEquals(0, widget.getMaxScrollTop(root));
+        Assert.assertEquals(0, widget.getScrollTop(root));
     }
 
     /**

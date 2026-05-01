@@ -230,6 +230,40 @@ public class DocumentAnimationTimelineTest {
     }
 
     /**
+     * 验证 layout keyframe 会复用通用 delay、timing 与 fill-mode 生命周期语义。
+     */
+    @Test
+    public void shouldHonorLayoutKeyframeDelayTimingAndFillMode() {
+        UiDocument document = UiDocument.create();
+        document.registerKeyframes(DocumentKeyframes.named("layoutPulse")
+                .setFloat(DocumentAnimationProperty.WIDTH, 40.0F, 80.0F)
+                .build());
+        ElementNode root = document.getRootElement();
+        root.style()
+                .setWidth(UiStyleLength.px(50))
+                .setHeight(UiStyleLength.px(20))
+                .setAnimation("layoutPulse", 1000L)
+                .setAnimationDelayMillis(250L)
+                .setAnimationTimingFunction(DocumentAnimationTimingFunction.EASE_IN)
+                .setAnimationFillMode(DocumentAnimationFillMode.BOTH);
+        DocumentAnimationTimeline timeline = new DocumentAnimationTimeline();
+
+        timeline.updateFromLayout(DocumentLayoutEngine.layout(root, 120, 0), 0L);
+
+        Assert.assertEquals(40.0F, timeline.resolveFloat(root, DocumentAnimationProperty.WIDTH, 50.0F,
+                200_000_000L), 0.0F);
+        Assert.assertEquals(50.0F, timeline.resolveFloat(root, DocumentAnimationProperty.WIDTH, 50.0F,
+                750_000_000L), 0.0F);
+        Assert.assertEquals(80.0F, timeline.resolveFloat(root, DocumentAnimationProperty.WIDTH, 50.0F,
+                1_250_000_000L), 0.0F);
+
+        Assert.assertTrue(timeline.pruneFinishedAnimations(1_250_000_000L));
+        Assert.assertTrue(timeline.hasRuntimeValue(DocumentAnimationImpact.LAYOUT));
+        Assert.assertEquals(80.0F, timeline.resolveFloat(root, DocumentAnimationProperty.WIDTH, 50.0F,
+                1_250_000_000L), 0.0F);
+    }
+
+    /**
      * 验证 width 从 auto 进入像素值时不会创建首期 px-to-px transition。
      */
     @Test
