@@ -1202,6 +1202,112 @@ public class HtmlLikeDocumentWidgetTest {
     }
 
     /**
+     * 验证 layout 动画期间端到端 click 使用运行态命中目标。
+     */
+    @Test
+    public void shouldDispatchClickToRuntimeGeometryDuringWidthTransition() {
+        UiDocument document = UiDocument.create();
+        ElementNode root = document.getRootElement();
+        ElementNode row = document.div();
+        ElementNode animated = document.div();
+        final ElementNode sibling = document.div();
+        final List<DocumentElementClickEvent> clickEvents = new ArrayList<DocumentElementClickEvent>();
+        root.style().setWidth(UiStyleLength.px(160));
+        row.style().setDisplay(UiDisplay.FLEX);
+        animated.style()
+                .setWidth(UiStyleLength.px(40))
+                .setHeight(UiStyleLength.px(20))
+                .setBackgroundColor(0xFF112233)
+                .setTransition(DocumentAnimationProperty.WIDTH, 1000L);
+        sibling.style()
+                .setWidth(UiStyleLength.px(20))
+                .setHeight(UiStyleLength.px(20))
+                .setBackgroundColor(0xFF445566);
+        sibling.setClickHandler(new DocumentElementClickHandler() {
+            @Override
+            public boolean onClick(DocumentElementClickEvent event) {
+                clickEvents.add(event);
+                return true;
+            }
+        });
+        row.append(animated).append(sibling);
+        root.append(row);
+        ManualAnimationClock animationClock = new ManualAnimationClock();
+        HtmlLikeDocumentWidget widget = new HtmlLikeDocumentWidget(document, 160, 40,
+                new DeterministicTextMeasureService());
+        widget.setAnimationClock(animationClock);
+        widget.applyLayoutBounds(0, 0, 160, 40);
+
+        widget.render(new RecordingUiRenderContext());
+        animated.style().setWidth(UiStyleLength.px(80));
+        widget.render(new RecordingUiRenderContext());
+        animationClock.setCurrentTimeNanos(500_000_000L);
+        widget.render(new RecordingUiRenderContext());
+        widget.onMouseDown(new UiMouseEvent(UiMouseEvent.Action.BUTTON_DOWN, 70, 10, 0, 0, 0, 0, 1L));
+        widget.onMouseUp(new UiMouseEvent(UiMouseEvent.Action.BUTTON_UP, 70, 10, 0, 0, 0, 0, 2L));
+
+        Assert.assertEquals(1, clickEvents.size());
+        assertElementUid(sibling, clickEvents.get(0).getTarget());
+        Assert.assertEquals(70, clickEvents.get(0).getDocumentX());
+        Assert.assertEquals(10, clickEvents.get(0).getDocumentY());
+    }
+
+    /**
+     * 验证 layout 动画期间 down/up 都命中同一运行态目标时才触发 click。
+     */
+    @Test
+    public void shouldRequireSameRuntimeTargetForClickDuringWidthTransition() {
+        UiDocument document = UiDocument.create();
+        ElementNode root = document.getRootElement();
+        ElementNode row = document.div();
+        final ElementNode animated = document.div();
+        final ElementNode sibling = document.div();
+        final List<DocumentElementClickEvent> clickEvents = new ArrayList<DocumentElementClickEvent>();
+        root.style().setWidth(UiStyleLength.px(160));
+        row.style().setDisplay(UiDisplay.FLEX);
+        animated.style()
+                .setWidth(UiStyleLength.px(40))
+                .setHeight(UiStyleLength.px(20))
+                .setBackgroundColor(0xFF112233)
+                .setTransition(DocumentAnimationProperty.WIDTH, 1000L);
+        sibling.style()
+                .setWidth(UiStyleLength.px(20))
+                .setHeight(UiStyleLength.px(20))
+                .setBackgroundColor(0xFF445566);
+        animated.setClickHandler(new DocumentElementClickHandler() {
+            @Override
+            public boolean onClick(DocumentElementClickEvent event) {
+                clickEvents.add(event);
+                return true;
+            }
+        });
+        sibling.setClickHandler(new DocumentElementClickHandler() {
+            @Override
+            public boolean onClick(DocumentElementClickEvent event) {
+                clickEvents.add(event);
+                return true;
+            }
+        });
+        row.append(animated).append(sibling);
+        root.append(row);
+        ManualAnimationClock animationClock = new ManualAnimationClock();
+        HtmlLikeDocumentWidget widget = new HtmlLikeDocumentWidget(document, 160, 40,
+                new DeterministicTextMeasureService());
+        widget.setAnimationClock(animationClock);
+        widget.applyLayoutBounds(0, 0, 160, 40);
+
+        widget.render(new RecordingUiRenderContext());
+        animated.style().setWidth(UiStyleLength.px(80));
+        widget.render(new RecordingUiRenderContext());
+        animationClock.setCurrentTimeNanos(500_000_000L);
+        widget.render(new RecordingUiRenderContext());
+        widget.onMouseDown(new UiMouseEvent(UiMouseEvent.Action.BUTTON_DOWN, 55, 10, 0, 0, 0, 0, 1L));
+        widget.onMouseUp(new UiMouseEvent(UiMouseEvent.Action.BUTTON_UP, 70, 10, 0, 0, 0, 0, 2L));
+
+        Assert.assertTrue(clickEvents.isEmpty());
+    }
+
+    /**
      * 验证滚动后的命中测试会使用内容偏移后的元素位置。
      */
     @Test
