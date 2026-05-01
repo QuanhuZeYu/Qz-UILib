@@ -73,20 +73,20 @@
 - `DocumentAnimationClock` 是可注入时间源；`DocumentAnimationTimeline` 维护 computed style 之上的运行时覆盖层。
 - 运行值不写回作者侧 inline style。
 - 运行值优先级固定为：`transition > keyframe animation > computed style`。
-- 当前可动画属性：`BACKGROUND_COLOR`、`BORDER_COLOR`、`TEXT_COLOR`、`OPACITY`、`BORDER_RADIUS`、`BACKDROP_BLUR_RADIUS`、`WIDTH`、`HEIGHT`。
+- 当前可动画属性：`BACKGROUND_COLOR`、`BORDER_COLOR`、`TEXT_COLOR`、`OPACITY`、`BORDER_RADIUS`、`BACKDROP_BLUR_RADIUS`、`WIDTH`、`HEIGHT`、`MARGIN_LEFT`、`MARGIN_RIGHT`。
 - 动画属性按影响范围分类：paint、effect、layout。
 - transition 基于 computed style 基准值变化创建；清除 `transition-property` 或 duration 变为 0 时，运行中 transition 在下一次 timeline 刷新回到 computed style 基准值。
 - `DocumentAnimationTimeline.hasRunningTransition(element, property)` 可按元素/属性查询 transition 运行状态。
 - keyframe animation 通过 `UiDocument.registerKeyframes(...)` 注册命名 `DocumentKeyframes`，由元素的 `animation-name` 引用。
-- keyframes 支持 color/float 轨道、多段 stop、delay、有限 iteration、fill-mode none/backwards/forwards/both 与 timing function；float 轨道可覆盖受控 layout 属性 `WIDTH/HEIGHT`。
+- keyframes 支持 color/float 轨道、多段 stop、delay、有限 iteration、fill-mode none/backwards/forwards/both 与 timing function；float 轨道可覆盖受控 layout 属性 `WIDTH/HEIGHT/MARGIN_LEFT/MARGIN_RIGHT`。
 - keyframe 声明重启条件：`animation-name`、keyframes 对象、duration、delay、iteration count、fill-mode、timing function 变化。
 - 布局盒尺寸变化只刷新数值轨道 used value 归一化边界，不重启 keyframe 进度。
 - 同名 keyframes 定义对象替换会让引用元素重启动画；定义移除会取消引用元素动画并清理对应 fill。
 - forwards fill 后作者侧修改同属性 computed target 或同属性 transition 接管时，该属性 fill 让位给作者/transition 值；多属性 fill 只清理被作者改动的属性；layout keyframe 声明清除或 keyframes 定义移除会清理对应 layout 运行值。
 - 数值 keyframe used value 归一化范围：opacity clamp 到 0..1，border-radius clamp 到当前布局盒半径上限，backdrop blur clamp 到 48。
 - `BACKDROP_BLUR_RADIUS` 是 effect-affecting 长度 transition；退场期间即使目标 blur 为 0，只要 transition 仍运行，paint 仍保留 backdrop command。
-- `WIDTH/HEIGHT` 是首批 layout-affecting transition/keyframe 属性；当前 transition 稳定承诺仅为 px-to-px，auto/% 不创建 width/height transition。
-- `HtmlLikeDocumentWidget` 在 layout 动画活跃或存在 layout forwards fill 运行值时，先用静态 computed style 布局刷新 timeline，再用 `DocumentLayoutEngine.LayoutRuntimeValueResolver` 按运行态 `WIDTH/HEIGHT` 同帧重建布局并刷新滚动范围；绘制、hit-test、滚动交互、焦点遍历和端到端点击分发使用同一份运行态布局几何；收缩动画期间滚动偏移按运行态最大滚动范围夹取，不提前使用目标静态布局夹取；作者修改同属性目标后恢复作者布局值。
+- `WIDTH/HEIGHT/MARGIN_LEFT/MARGIN_RIGHT` 是当前受控 layout-affecting transition/keyframe 属性；当前 transition 稳定承诺仅为 px-to-px，auto/% 不创建 width/height/margin transition。
+- `HtmlLikeDocumentWidget` 在 layout 动画活跃或存在 layout forwards fill 运行值时，先用静态 computed style 布局刷新 timeline，再用 `DocumentLayoutEngine.LayoutRuntimeValueResolver` 按运行态 `WIDTH/HEIGHT/MARGIN_LEFT/MARGIN_RIGHT` 同帧重建布局并刷新滚动范围；绘制、hit-test、滚动交互、焦点遍历和端到端点击分发使用同一份运行态布局几何；收缩动画期间滚动偏移按运行态最大滚动范围夹取，不提前使用目标静态布局夹取；作者修改同属性目标后恢复作者布局值。
 - timing function 当前支持 linear、ease、ease-in、ease-out、ease-in-out 的简化插值。
 
 ## Widget 适配与页面入口
@@ -102,8 +102,8 @@
 ## 游戏内验收边界
 
 - 入口：右 Shift 打开诊断菜单，可进入布局诊断页、HTML-like Smoke 页、Large Glass Lab 页和背包页。
-- Smoke 页覆盖：控件交互、文本输入、Tab 焦点、按钮、开关、overflow auto 滚动、absolute/fixed 定位、absolute stretch、inline fragment/vertical-align、group opacity、stacking context、backdrop-filter、opacity FBO、`WIDTH/HEIGHT` layout transition。
-- Smoke 页 `Layout animation probe`：点击蓝色 `Layout card`，宽高在 92x34 与 190x58 间过渡，右侧绿色 sibling 应随动画被推开或回收。
+- Smoke 页覆盖：控件交互、文本输入、Tab 焦点、按钮、开关、overflow auto 滚动、absolute/fixed 定位、absolute stretch、inline fragment/vertical-align、group opacity、stacking context、backdrop-filter、opacity FBO、`WIDTH/HEIGHT/MARGIN_LEFT/MARGIN_RIGHT` layout transition。
+- Smoke 页 `Layout animation probe`：点击蓝色 `Layout card`，宽高在 92x34 与 190x58 间过渡，右侧绿色 sibling 应随动画被推开或回收；点击琥珀色 `Margin card`，左右 margin 在 tight/wide 间过渡，右侧棕色 sibling 应随 margin 动画位移。
 - Glass Lab 覆盖：大面积 backdrop、shader/fallback 路径、snapshot captured/reused、block/atlas/tile 诊断、downsample/separable blur filter 诊断、嵌套/同级多 glass 采样稳定性。
 - 背包页覆盖：hotbar/backpack 网格、自定义格子绘制与返回按钮交互。
 
@@ -143,7 +143,7 @@
 
 ## 下一步边界
 
-- CSS transition / animation MVP 继续优先；`WIDTH/HEIGHT` layout 动画已完成首轮收口，后续 layout-affecting 属性扩展必须限制在少量可控属性与明确 fallback。
+- CSS transition / animation MVP 继续优先；`WIDTH/HEIGHT/MARGIN_LEFT/MARGIN_RIGHT` layout 动画已完成首轮收口，后续 layout-affecting 属性扩展必须限制在少量可控属性与明确 fallback。
 - 不一次性开放全量布局动画。
 - paint/effect 动画不能触发布局；layout 动画可以重布局，但结束后必须恢复静态缓存。
 - inline formatting、effect chain、snapshot atlas 和 blur/filter 优化只在阻塞动画探针、真实页面迁移或控件展示时优先处理。

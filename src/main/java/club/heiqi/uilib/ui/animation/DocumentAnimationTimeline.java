@@ -32,7 +32,9 @@ public final class DocumentAnimationTimeline {
             DocumentAnimationProperty.BORDER_RADIUS,
             DocumentAnimationProperty.BACKDROP_BLUR_RADIUS,
             DocumentAnimationProperty.WIDTH,
-            DocumentAnimationProperty.HEIGHT
+            DocumentAnimationProperty.HEIGHT,
+            DocumentAnimationProperty.MARGIN_LEFT,
+            DocumentAnimationProperty.MARGIN_RIGHT
     };
 
     private final Map<ElementNode, ElementAnimationState> states = new HashMap<ElementNode, ElementAnimationState>();
@@ -657,6 +659,12 @@ public final class DocumentAnimationTimeline {
         if (property == DocumentAnimationProperty.HEIGHT) {
             return box.getContentHeight();
         }
+        if (property == DocumentAnimationProperty.MARGIN_LEFT) {
+            return box.getMargin().getLeft();
+        }
+        if (property == DocumentAnimationProperty.MARGIN_RIGHT) {
+            return box.getMargin().getRight();
+        }
         return 0.0F;
     }
 
@@ -667,7 +675,18 @@ public final class DocumentAnimationTimeline {
         if (property == DocumentAnimationProperty.HEIGHT) {
             return box.getComputedStyle().getHeight().getType() == UiStyleLength.Type.PIXEL;
         }
+        if (property == DocumentAnimationProperty.MARGIN_LEFT
+                || property == DocumentAnimationProperty.MARGIN_RIGHT) {
+            return getMarginLength(box.getComputedStyle(), property).getType() == UiStyleLength.Type.PIXEL;
+        }
         return true;
+    }
+
+    private static UiStyleLength getMarginLength(ComputedStyle style, DocumentAnimationProperty property) {
+        if (property == DocumentAnimationProperty.MARGIN_LEFT) {
+            return style.getMargin().getLeft();
+        }
+        return style.getMargin().getRight();
     }
 
     private static int resolveBorderRadius(DocumentLayoutBox box) {

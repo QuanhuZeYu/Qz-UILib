@@ -699,7 +699,7 @@ final class HtmlLikeSmokeDocumentPageController extends DocumentPageController {
     private static void appendLayoutAnimationProbe(UiDocument document, ElementNode root) {
         ElementNode probe = document.div();
         probe.style()
-                .setHeight(UiStyleLength.px(132))
+                .setHeight(UiStyleLength.px(206))
                 .setMargin(UiStyleInsets.of(UiStyleLength.px(12), UiStyleLength.px(0), UiStyleLength.px(0),
                         UiStyleLength.px(0)))
                 .setPadding(UiStyleLength.px(10))
@@ -710,7 +710,7 @@ final class HtmlLikeSmokeDocumentPageController extends DocumentPageController {
                 .setTextColor(0xFFDBEAFE)
                 .setOverflowX(UiOverflow.HIDDEN)
                 .setOverflowY(UiOverflow.HIDDEN);
-        probe.appendText("Layout animation probe: click blue card; width/height push sibling.");
+        probe.appendText("Layout animation probe: click cards; width/height and margin push siblings.");
         root.append(probe);
 
         ElementNode row = document.div();
@@ -771,6 +771,68 @@ final class HtmlLikeSmokeDocumentPageController extends DocumentPageController {
                 .setOverflowY(UiOverflow.HIDDEN);
         sibling.appendText("Sibling shifts while layout transition runs");
         row.append(sibling);
+
+        ElementNode marginRow = document.div();
+        marginRow.style()
+                .setHeight(UiStyleLength.px(56))
+                .setDisplay(UiDisplay.FLEX)
+                .setFlexDirection(UiFlexDirection.ROW)
+                .setAlignItems(UiAlignItems.CENTER)
+                .setColumnGap(UiStyleLength.px(10))
+                .setMargin(UiStyleInsets.of(UiStyleLength.px(8), UiStyleLength.px(0), UiStyleLength.px(0),
+                        UiStyleLength.px(0)))
+                .setOverflowX(UiOverflow.HIDDEN)
+                .setOverflowY(UiOverflow.HIDDEN);
+        probe.append(marginRow);
+
+        final ElementNode marginCard = document.div();
+        marginCard.style()
+                .setWidth(UiStyleLength.px(92))
+                .setHeight(UiStyleLength.px(30))
+                .setFlexShrink(0.0F)
+                .setMargin(UiStyleInsets.of(UiStyleLength.px(0), UiStyleLength.px(4), UiStyleLength.px(0),
+                        UiStyleLength.px(4)))
+                .setPadding(UiStyleLength.px(7))
+                .setBackgroundColor(0xFFD97706)
+                .setBorderColor(0xFFFDE68A)
+                .setBorderWidth(UiStyleLength.px(1))
+                .setBorderRadius(UiStyleLength.px(12))
+                .setTextColor(0xFFFFF7ED)
+                .setTransitionProperties(DocumentAnimationProperty.MARGIN_LEFT,
+                        DocumentAnimationProperty.MARGIN_RIGHT)
+                .setTransitionDurationMillis(800L)
+                .setTransitionTimingFunction(DocumentAnimationTimingFunction.EASE_IN_OUT)
+                .setOverflowX(UiOverflow.HIDDEN)
+                .setOverflowY(UiOverflow.HIDDEN);
+        final TextNode marginLabel = marginCard.appendText("Margin card: tight");
+        final boolean[] marginExpanded = new boolean[] { false };
+        marginCard.setClickHandler(new DocumentElementClickHandler() {
+            @Override
+            public boolean onClick(DocumentElementClickEvent event) {
+                marginExpanded[0] = !marginExpanded[0];
+                marginCard.style().setMargin(UiStyleInsets.of(UiStyleLength.px(0),
+                        UiStyleLength.px(marginExpanded[0] ? 18 : 4), UiStyleLength.px(0),
+                        UiStyleLength.px(marginExpanded[0] ? 34 : 4)));
+                marginLabel.setText(marginExpanded[0] ? "Margin card: wide" : "Margin card: tight");
+                return true;
+            }
+        });
+        marginRow.append(marginCard);
+
+        ElementNode marginSibling = document.div();
+        marginSibling.style()
+                .setFlexGrow(1.0F)
+                .setHeight(UiStyleLength.px(30))
+                .setPadding(UiStyleLength.px(7))
+                .setBackgroundColor(0xFF7C2D12)
+                .setBorderColor(0xFFFED7AA)
+                .setBorderWidth(UiStyleLength.px(1))
+                .setBorderRadius(UiStyleLength.px(12))
+                .setTextColor(0xFFFFEDD5)
+                .setOverflowX(UiOverflow.HIDDEN)
+                .setOverflowY(UiOverflow.HIDDEN);
+        marginSibling.appendText("Margin sibling shifts from margin");
+        marginRow.append(marginSibling);
     }
 
     private static void appendAbsoluteStretchAndInlineProbe(UiDocument document, ElementNode root) {

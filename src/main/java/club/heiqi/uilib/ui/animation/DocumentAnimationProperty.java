@@ -42,7 +42,17 @@ public enum DocumentAnimationProperty {
     /**
      * 元素 content box 高度，属于 layout-affecting 属性。
      */
-    HEIGHT(DocumentAnimationImpact.LAYOUT);
+    HEIGHT(DocumentAnimationImpact.LAYOUT),
+
+    /**
+     * 元素左外边距，属于 layout-affecting 属性。
+     */
+    MARGIN_LEFT(DocumentAnimationImpact.LAYOUT),
+
+    /**
+     * 元素右外边距，属于 layout-affecting 属性。
+     */
+    MARGIN_RIGHT(DocumentAnimationImpact.LAYOUT);
 
     private final DocumentAnimationImpact impact;
 

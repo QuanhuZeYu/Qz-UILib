@@ -65,9 +65,11 @@ public class HtmlLikeSmokeDocumentPageControllerTest {
         Assert.assertTrue(containsText(texts, "Opacity FBO card: click fade"));
         Assert.assertTrue(containsText(texts, "Opacity FBO auto: initial fade"));
         Assert.assertTrue(containsText(texts, "Opacity FBO combo: 3-stop + click"));
-        Assert.assertTrue(containsText(texts, "Layout animation probe: click blue card"));
+        Assert.assertTrue(containsText(texts, "Layout animation probe: click cards"));
         Assert.assertTrue(containsText(texts, "Layout card: small"));
         Assert.assertTrue(containsText(texts, "Sibling shifts while layout transition runs"));
+        Assert.assertTrue(containsText(texts, "Margin card: tight"));
+        Assert.assertTrue(containsText(texts, "Margin sibling shifts from margin"));
         Assert.assertTrue(containsText(texts, "Same-layer sampling grid"));
         Assert.assertTrue(containsText(texts, "ABS containing probe"));
         Assert.assertTrue(containsText(texts, "static wrapper is not anchor"));
@@ -127,6 +129,7 @@ public class HtmlLikeSmokeDocumentPageControllerTest {
         Assert.assertTrue(containsTextCall(renderContext.textCalls, "Keyframe diagnostics"));
         Assert.assertTrue(containsTextCall(renderContext.textCalls, "Layout animation probe"));
         Assert.assertTrue(containsTextCall(renderContext.textCalls, "Layout card: small"));
+        Assert.assertTrue(containsTextCall(renderContext.textCalls, "Margin card: tight"));
         Assert.assertTrue(containsTextCall(renderContext.textCalls, "ABS stretch fill"));
         Assert.assertTrue(containsTextCall(renderContext.textCalls, "amber span hit: 0"));
         Assert.assertTrue(containsTextCall(renderContext.textCalls, "Vertical-align probe"));
@@ -259,7 +262,7 @@ public class HtmlLikeSmokeDocumentPageControllerTest {
     }
 
     /**
-     * 验证 Smoke 页包含可见 layout-affecting 动画探针，并可通过点击修改 width/height。
+     * 验证 Smoke 页包含可见 layout-affecting 动画探针，并可通过点击修改 width/height 与 margin。
      */
     @Test
     public void shouldExposeLayoutAnimationProbeForManualSmokeValidation() {
@@ -273,22 +276,39 @@ public class HtmlLikeSmokeDocumentPageControllerTest {
 
         ElementNode layoutCard = findElementContainingDirectText(widget, "Layout card: small");
         ElementNode sibling = findElementContainingDirectText(widget, "Sibling shifts while layout transition runs");
+        ElementNode marginCard = findElementContainingDirectText(widget, "Margin card: tight");
+        ElementNode marginSibling = findElementContainingDirectText(widget, "Margin sibling shifts from margin");
         Assert.assertNotNull(layoutCard);
         Assert.assertNotNull(sibling);
+        Assert.assertNotNull(marginCard);
+        Assert.assertNotNull(marginSibling);
         Assert.assertTrue(layoutCard.style().getTransitionProperties().contains(DocumentAnimationProperty.WIDTH));
         Assert.assertTrue(layoutCard.style().getTransitionProperties().contains(DocumentAnimationProperty.HEIGHT));
+        Assert.assertTrue(marginCard.style().getTransitionProperties().contains(DocumentAnimationProperty.MARGIN_LEFT));
+        Assert.assertTrue(marginCard.style().getTransitionProperties().contains(DocumentAnimationProperty.MARGIN_RIGHT));
         Assert.assertEquals(UiStyleLength.px(92), layoutCard.style().getWidth());
         Assert.assertEquals(UiStyleLength.px(34), layoutCard.style().getHeight());
+        Assert.assertEquals(UiStyleLength.px(4), marginCard.style().getMargin().getLeft());
+        Assert.assertEquals(UiStyleLength.px(4), marginCard.style().getMargin().getRight());
 
         int siblingLeftBefore = findElementBackgroundCommand(widget, fixture.textMeasureService, sibling).getLeft();
         clickElementCenter(widget, fixture.textMeasureService, layoutCard, 1L, 2L);
         widget.render(new RecordingUiRenderContext());
         int siblingLeftAfter = findElementBackgroundCommand(widget, fixture.textMeasureService, sibling).getLeft();
+        int marginSiblingLeftBefore = findElementBackgroundCommand(widget, fixture.textMeasureService,
+                marginSibling).getLeft();
+        clickElementCenter(widget, fixture.textMeasureService, marginCard, 3L, 4L);
+        widget.render(new RecordingUiRenderContext());
+        int marginSiblingLeftAfter = findElementBackgroundCommand(widget, fixture.textMeasureService,
+                marginSibling).getLeft();
 
         Assert.assertEquals(UiStyleLength.px(190), layoutCard.style().getWidth());
         Assert.assertEquals(UiStyleLength.px(58), layoutCard.style().getHeight());
+        Assert.assertEquals(UiStyleLength.px(34), marginCard.style().getMargin().getLeft());
+        Assert.assertEquals(UiStyleLength.px(18), marginCard.style().getMargin().getRight());
         Assert.assertTrue(siblingLeftAfter > siblingLeftBefore);
-        Assert.assertTrue(widget.getActiveAnimationCount() >= 2);
+        Assert.assertTrue(marginSiblingLeftAfter > marginSiblingLeftBefore);
+        Assert.assertTrue(widget.getActiveAnimationCount() >= 4);
     }
 
     /**

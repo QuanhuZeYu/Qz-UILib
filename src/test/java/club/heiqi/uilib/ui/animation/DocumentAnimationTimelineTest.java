@@ -8,6 +8,7 @@ import club.heiqi.uilib.ui.dom.UiDocument;
 import club.heiqi.uilib.ui.layout.DocumentLayoutBox;
 import club.heiqi.uilib.ui.layout.DocumentLayoutEngine;
 import club.heiqi.uilib.ui.style.UiStyleDeclaration;
+import club.heiqi.uilib.ui.style.UiStyleInsets;
 import club.heiqi.uilib.ui.style.UiStyleLength;
 
 /**
@@ -26,6 +27,8 @@ public class DocumentAnimationTimelineTest {
         Assert.assertTrue(DocumentAnimationProperty.BACKDROP_BLUR_RADIUS.isEffectAffecting());
         Assert.assertSame(DocumentAnimationImpact.LAYOUT, DocumentAnimationProperty.WIDTH.getImpact());
         Assert.assertTrue(DocumentAnimationProperty.HEIGHT.isLayoutAffecting());
+        Assert.assertTrue(DocumentAnimationProperty.MARGIN_LEFT.isLayoutAffecting());
+        Assert.assertSame(DocumentAnimationImpact.LAYOUT, DocumentAnimationProperty.MARGIN_RIGHT.getImpact());
     }
 
     /**
@@ -194,6 +197,76 @@ public class DocumentAnimationTimelineTest {
     }
 
     /**
+     * 验证 margin-left/right transition 会作为 layout-affecting 数值覆盖层插值。
+     */
+    @Test
+    public void shouldTransitionMarginLeftAndRightWithoutMutatingInlineStyle() {
+        UiDocument document = UiDocument.create();
+        ElementNode root = document.getRootElement();
+        root.style()
+                .setWidth(UiStyleLength.px(40))
+                .setHeight(UiStyleLength.px(20))
+                .setMargin(UiStyleInsets.of(UiStyleLength.px(0), UiStyleLength.px(4), UiStyleLength.px(0),
+                        UiStyleLength.px(2)))
+                .setTransitionProperties(DocumentAnimationProperty.MARGIN_LEFT,
+                        DocumentAnimationProperty.MARGIN_RIGHT)
+                .setTransitionDurationMillis(1000L);
+        DocumentAnimationTimeline timeline = new DocumentAnimationTimeline();
+
+        DocumentLayoutBox firstLayout = DocumentLayoutEngine.layout(root, 120, 0);
+        Assert.assertTrue(timeline.updateFromLayout(firstLayout, 0L));
+        Assert.assertEquals(2.0F, timeline.resolveFloat(root, DocumentAnimationProperty.MARGIN_LEFT, 2.0F, 0L),
+                0.0F);
+        Assert.assertEquals(4.0F, timeline.resolveFloat(root, DocumentAnimationProperty.MARGIN_RIGHT, 4.0F, 0L),
+                0.0F);
+
+        root.style().setMargin(UiStyleInsets.of(UiStyleLength.px(0), UiStyleLength.px(24), UiStyleLength.px(0),
+                UiStyleLength.px(12)));
+        DocumentLayoutBox secondLayout = DocumentLayoutEngine.layout(root, 120, 0);
+        Assert.assertTrue(timeline.updateFromLayout(secondLayout, 0L));
+
+        Assert.assertTrue(timeline.hasAnimationWork(DocumentAnimationImpact.LAYOUT));
+        Assert.assertEquals(2, timeline.getActiveAnimationCount(500_000_000L));
+        Assert.assertEquals(7.0F, timeline.resolveFloat(root, DocumentAnimationProperty.MARGIN_LEFT, 12.0F,
+                500_000_000L), 0.0F);
+        Assert.assertEquals(14.0F, timeline.resolveFloat(root, DocumentAnimationProperty.MARGIN_RIGHT, 24.0F,
+                500_000_000L), 0.0F);
+        Assert.assertEquals(UiStyleInsets.of(UiStyleLength.px(0), UiStyleLength.px(24), UiStyleLength.px(0),
+                UiStyleLength.px(12)), root.style().getMargin());
+    }
+
+    /**
+     * 验证 margin-left/right 从百分比或 auto 进入像素值时不会创建首期 px-to-px transition。
+     */
+    @Test
+    public void shouldNotTransitionMarginFromPercentOrAutoTarget() {
+        UiDocument document = UiDocument.create();
+        ElementNode root = document.getRootElement();
+        root.style()
+                .setWidth(UiStyleLength.px(40))
+                .setHeight(UiStyleLength.px(20))
+                .setMargin(UiStyleInsets.of(UiStyleLength.px(0), UiStyleLength.auto(), UiStyleLength.px(0),
+                        UiStyleLength.percent(0.10F)))
+                .setTransitionProperties(DocumentAnimationProperty.MARGIN_LEFT,
+                        DocumentAnimationProperty.MARGIN_RIGHT)
+                .setTransitionDurationMillis(1000L);
+        DocumentAnimationTimeline timeline = new DocumentAnimationTimeline();
+
+        timeline.updateFromLayout(DocumentLayoutEngine.layout(root, 100, 0), 0L);
+        root.style().setMargin(UiStyleInsets.of(UiStyleLength.px(0), UiStyleLength.px(10), UiStyleLength.px(0),
+                UiStyleLength.px(20)));
+        Assert.assertTrue(timeline.updateFromLayout(DocumentLayoutEngine.layout(root, 100, 0), 0L));
+
+        Assert.assertFalse(timeline.hasAnimationWork(DocumentAnimationImpact.LAYOUT));
+        Assert.assertFalse(timeline.hasRunningTransition(root, DocumentAnimationProperty.MARGIN_LEFT));
+        Assert.assertFalse(timeline.hasRunningTransition(root, DocumentAnimationProperty.MARGIN_RIGHT));
+        Assert.assertEquals(20.0F, timeline.resolveFloat(root, DocumentAnimationProperty.MARGIN_LEFT, 20.0F,
+                500_000_000L), 0.0F);
+        Assert.assertEquals(10.0F, timeline.resolveFloat(root, DocumentAnimationProperty.MARGIN_RIGHT, 10.0F,
+                500_000_000L), 0.0F);
+    }
+
+    /**
      * 验证 width/height keyframe 会作为 layout-affecting 数值覆盖层插值。
      */
     @Test
@@ -226,6 +299,52 @@ public class DocumentAnimationTimelineTest {
         Assert.assertEquals(80.0F, timeline.resolveFloat(root, DocumentAnimationProperty.WIDTH, 40.0F,
                 1_000_000_000L), 0.0F);
         Assert.assertEquals(40.0F, timeline.resolveFloat(root, DocumentAnimationProperty.HEIGHT, 20.0F,
+                1_000_000_000L), 0.0F);
+    }
+
+    /**
+     * 验证 margin keyframe 会进入 layout 运行值，并在清除声明后移除 forwards fill。
+     */
+    @Test
+    public void shouldRunMarginKeyframeAndClearFillAsLayoutRuntimeValues() {
+        UiDocument document = UiDocument.create();
+        document.registerKeyframes(DocumentKeyframes.named("marginPush")
+                .setFloat(DocumentAnimationProperty.MARGIN_LEFT, 2.0F, 12.0F)
+                .setFloat(DocumentAnimationProperty.MARGIN_RIGHT, 4.0F, 24.0F)
+                .build());
+        ElementNode root = document.getRootElement();
+        root.style()
+                .setWidth(UiStyleLength.px(40))
+                .setHeight(UiStyleLength.px(20))
+                .setMargin(UiStyleInsets.of(UiStyleLength.px(0), UiStyleLength.px(4), UiStyleLength.px(0),
+                        UiStyleLength.px(2)))
+                .setAnimation("marginPush", 1000L)
+                .setAnimationFillMode(DocumentAnimationFillMode.FORWARDS);
+        DocumentAnimationTimeline timeline = new DocumentAnimationTimeline();
+
+        Assert.assertTrue(timeline.updateFromLayout(DocumentLayoutEngine.layout(root, 120, 0), 0L));
+
+        Assert.assertTrue(timeline.hasRuntimeValue(DocumentAnimationImpact.LAYOUT));
+        Assert.assertEquals(7.0F, timeline.resolveFloat(root, DocumentAnimationProperty.MARGIN_LEFT, 2.0F,
+                500_000_000L), 0.0F);
+        Assert.assertEquals(14.0F, timeline.resolveFloat(root, DocumentAnimationProperty.MARGIN_RIGHT, 4.0F,
+                500_000_000L), 0.0F);
+
+        Assert.assertTrue(timeline.pruneFinishedAnimations(1_000_000_000L));
+        Assert.assertFalse(timeline.hasAnimationWork(DocumentAnimationImpact.LAYOUT));
+        Assert.assertTrue(timeline.hasRuntimeValue(DocumentAnimationImpact.LAYOUT));
+        Assert.assertEquals(12.0F, timeline.resolveFloat(root, DocumentAnimationProperty.MARGIN_LEFT, 2.0F,
+                1_000_000_000L), 0.0F);
+        Assert.assertEquals(24.0F, timeline.resolveFloat(root, DocumentAnimationProperty.MARGIN_RIGHT, 4.0F,
+                1_000_000_000L), 0.0F);
+
+        root.style().clearAnimationName();
+        Assert.assertTrue(timeline.updateFromLayout(DocumentLayoutEngine.layout(root, 120, 0), 1_000_000_000L));
+
+        Assert.assertFalse(timeline.hasRuntimeValue(DocumentAnimationImpact.LAYOUT));
+        Assert.assertEquals(2.0F, timeline.resolveFloat(root, DocumentAnimationProperty.MARGIN_LEFT, 2.0F,
+                1_000_000_000L), 0.0F);
+        Assert.assertEquals(4.0F, timeline.resolveFloat(root, DocumentAnimationProperty.MARGIN_RIGHT, 4.0F,
                 1_000_000_000L), 0.0F);
     }
 

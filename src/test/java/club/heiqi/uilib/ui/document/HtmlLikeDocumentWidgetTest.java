@@ -33,6 +33,7 @@ import club.heiqi.uilib.ui.render.UiRenderContext;
 import club.heiqi.uilib.ui.style.UiDisplay;
 import club.heiqi.uilib.ui.style.UiOverflow;
 import club.heiqi.uilib.ui.style.UiPosition;
+import club.heiqi.uilib.ui.style.UiStyleInsets;
 import club.heiqi.uilib.ui.style.UiStyleLength;
 import club.heiqi.uilib.ui.text.TextMeasureService;
 import club.heiqi.uilib.ui.theme.UiSurfaceStyle;
@@ -266,6 +267,53 @@ public class HtmlLikeDocumentWidgetTest {
     }
 
     /**
+     * 验证 layout-affecting margin transition 会驱动同帧重排并影响兄弟元素位置。
+     */
+    @Test
+    public void shouldRelayoutSiblingsDuringMarginTransition() {
+        UiDocument document = UiDocument.create();
+        ElementNode root = document.getRootElement();
+        ElementNode row = document.div();
+        ElementNode animated = document.div();
+        ElementNode sibling = document.div();
+        root.style().setWidth(UiStyleLength.px(160));
+        row.style().setDisplay(UiDisplay.FLEX);
+        animated.style()
+                .setWidth(UiStyleLength.px(40))
+                .setHeight(UiStyleLength.px(20))
+                .setMargin(UiStyleInsets.of(UiStyleLength.px(0), UiStyleLength.px(6), UiStyleLength.px(0),
+                        UiStyleLength.px(4)))
+                .setBackgroundColor(0xFF112233)
+                .setTransitionProperties(DocumentAnimationProperty.MARGIN_LEFT,
+                        DocumentAnimationProperty.MARGIN_RIGHT)
+                .setTransitionDurationMillis(1000L);
+        sibling.style()
+                .setWidth(UiStyleLength.px(20))
+                .setHeight(UiStyleLength.px(20))
+                .setBackgroundColor(0xFF445566);
+        row.append(animated).append(sibling);
+        root.append(row);
+        ManualAnimationClock animationClock = new ManualAnimationClock();
+        HtmlLikeDocumentWidget widget = new HtmlLikeDocumentWidget(document, 160, 40,
+                new DeterministicTextMeasureService());
+        widget.setAnimationClock(animationClock);
+        widget.applyLayoutBounds(0, 0, 160, 40);
+
+        widget.render(new RecordingUiRenderContext());
+        animated.style().setMargin(UiStyleInsets.of(UiStyleLength.px(0), UiStyleLength.px(16),
+                UiStyleLength.px(0), UiStyleLength.px(24)));
+        widget.render(new RecordingUiRenderContext());
+
+        animationClock.setCurrentTimeNanos(500_000_000L);
+        RecordingUiRenderContext halfContext = new RecordingUiRenderContext();
+        widget.render(halfContext);
+
+        assertDrawCall(halfContext.drawCalls.get(0), 14, 0, 54, 20, 0xFF112233, 0, 0);
+        assertDrawCall(halfContext.drawCalls.get(1), 65, 0, 85, 20, 0xFF445566, 0, 0);
+        Assert.assertEquals(2, widget.getActiveAnimationCount());
+    }
+
+    /**
      * 验证 layout transition 期间 hit-test 使用运行态几何而不是目标静态几何。
      */
     @Test
@@ -479,6 +527,61 @@ public class HtmlLikeDocumentWidgetTest {
         widget.render(authorContext);
         assertDrawCall(authorContext.drawCalls.get(0), 0, 0, 50, 20, 0xFF112233, 0, 0);
         assertDrawCall(authorContext.drawCalls.get(1), 50, 0, 70, 20, 0xFF445566, 0, 0);
+    }
+
+    /**
+     * 验证 margin keyframe 运行期间和 forwards fill 后都会驱动运行态布局值。
+     */
+    @Test
+    public void shouldRelayoutSiblingsDuringMarginKeyframeAndForwardsFill() {
+        UiDocument document = UiDocument.create();
+        document.registerKeyframes(DocumentKeyframes.named("marginPush")
+                .setFloat(DocumentAnimationProperty.MARGIN_LEFT, 0.0F, 20.0F)
+                .build());
+        ElementNode root = document.getRootElement();
+        ElementNode row = document.div();
+        ElementNode animated = document.div();
+        ElementNode sibling = document.div();
+        root.style().setWidth(UiStyleLength.px(160));
+        row.style().setDisplay(UiDisplay.FLEX);
+        animated.style()
+                .setWidth(UiStyleLength.px(40))
+                .setHeight(UiStyleLength.px(20))
+                .setBackgroundColor(0xFF112233)
+                .setAnimation("marginPush", 1000L)
+                .setAnimationFillMode(DocumentAnimationFillMode.FORWARDS);
+        sibling.style()
+                .setWidth(UiStyleLength.px(20))
+                .setHeight(UiStyleLength.px(20))
+                .setBackgroundColor(0xFF445566);
+        row.append(animated).append(sibling);
+        root.append(row);
+        ManualAnimationClock animationClock = new ManualAnimationClock();
+        HtmlLikeDocumentWidget widget = new HtmlLikeDocumentWidget(document, 160, 40,
+                new DeterministicTextMeasureService());
+        widget.setAnimationClock(animationClock);
+        widget.applyLayoutBounds(0, 0, 160, 40);
+
+        widget.render(new RecordingUiRenderContext());
+        animationClock.setCurrentTimeNanos(500_000_000L);
+        RecordingUiRenderContext halfContext = new RecordingUiRenderContext();
+        widget.render(halfContext);
+        assertDrawCall(halfContext.drawCalls.get(0), 10, 0, 50, 20, 0xFF112233, 0, 0);
+        assertDrawCall(halfContext.drawCalls.get(1), 50, 0, 70, 20, 0xFF445566, 0, 0);
+
+        animationClock.setCurrentTimeNanos(1_000_000_000L);
+        RecordingUiRenderContext filledContext = new RecordingUiRenderContext();
+        widget.render(filledContext);
+        assertDrawCall(filledContext.drawCalls.get(0), 20, 0, 60, 20, 0xFF112233, 0, 0);
+        assertDrawCall(filledContext.drawCalls.get(1), 60, 0, 80, 20, 0xFF445566, 0, 0);
+
+        animated.style().setMargin(UiStyleInsets.of(UiStyleLength.px(0), UiStyleLength.px(0),
+                UiStyleLength.px(0), UiStyleLength.px(4)));
+        RecordingUiRenderContext authorContext = new RecordingUiRenderContext();
+        widget.render(authorContext);
+        assertDrawCall(authorContext.drawCalls.get(0), 4, 0, 44, 20, 0xFF112233, 0, 0);
+        assertDrawCall(authorContext.drawCalls.get(1), 44, 0, 64, 20, 0xFF445566, 0, 0);
+        Assert.assertEquals(0, widget.getActiveAnimationCount());
     }
 
     /**

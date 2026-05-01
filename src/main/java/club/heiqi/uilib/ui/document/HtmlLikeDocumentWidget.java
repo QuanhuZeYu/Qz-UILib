@@ -390,8 +390,8 @@ public final class HtmlLikeDocumentWidget extends Widget {
                 new DocumentLayoutEngine.LayoutRuntimeValueResolver() {
                     @Override
                     public int resolve(ElementNode element, DocumentAnimationProperty property, int baseValue) {
-                        return Math.max(0, Math.round(animationTimeline.resolveFloat(element, property, baseValue,
-                                currentTimeNanos)));
+                        return Math.round(animationTimeline.resolveFloat(element, property, baseValue,
+                                currentTimeNanos));
                     }
                 };
         DocumentLayoutBox rootBox = layoutDocument(layoutValueResolver);

@@ -146,7 +146,8 @@ public final class DocumentLayoutEngine {
         int safeViewportWidth = Math.max(0, viewportWidth);
         int safeViewportHeight = Math.max(0, viewportHeight);
         ComputedStyle rootStyle = UiStyleResolver.compute(rootElement);
-        DocumentLayoutEdges margin = resolveInsets(rootStyle.getMargin(), safeViewportWidth, false);
+        DocumentLayoutEdges margin = resolveMarginInsets(rootElement, rootStyle, safeViewportWidth,
+                resolvedLayoutValueResolver);
         DocumentLayoutEdges border = resolveUniformEdge(rootStyle.getBorderWidth(), safeViewportWidth);
         DocumentLayoutEdges padding = resolveInsets(rootStyle.getPadding(), safeViewportWidth, true);
         int forcedContentWidth = Math.max(0,
@@ -171,7 +172,8 @@ public final class DocumentLayoutEngine {
                     flowTop, 0, 0, 0, 0);
         }
 
-        DocumentLayoutEdges margin = resolveInsets(computedStyle.getMargin(), containingWidth, false);
+        DocumentLayoutEdges margin = resolveMarginInsets(element, computedStyle, containingWidth,
+                layoutValueResolver);
         DocumentLayoutEdges border = resolveUniformEdge(computedStyle.getBorderWidth(), containingWidth);
         DocumentLayoutEdges padding = resolveInsets(computedStyle.getPadding(), containingWidth, true);
 
@@ -256,7 +258,8 @@ public final class DocumentLayoutEngine {
                 continue;
             }
             if (usesInlineFormatting && childStyle.getDisplay() == UiDisplay.INLINE) {
-                appendInlineElementTextRuns(childElement, inlineLayoutContext, textMeasureService);
+                appendInlineElementTextRuns(childElement, inlineLayoutContext, textMeasureService,
+                        layoutValueResolver);
                 childFlowTop = inlineLayoutContext.getFlowBottom();
                 continue;
             }
@@ -310,14 +313,16 @@ public final class DocumentLayoutEngine {
     }
 
     private static void appendInlineElementTextRuns(ElementNode inlineElement, InlineLayoutContext inlineLayoutContext,
-            TextMeasureService textMeasureService) {
-        appendInlineElementTextRuns(inlineElement, inlineLayoutContext, textMeasureService,
+            TextMeasureService textMeasureService, LayoutRuntimeValueResolver layoutValueResolver) {
+        appendInlineElementTextRuns(inlineElement, inlineLayoutContext, textMeasureService, layoutValueResolver,
                 new ArrayList<InlineFragmentOwner>());
     }
 
     private static void appendInlineElementTextRuns(ElementNode inlineElement, InlineLayoutContext inlineLayoutContext,
-            TextMeasureService textMeasureService, List<InlineFragmentOwner> ancestorInlineElements) {
-        InlineElementEdges edges = resolveInlineElementEdges(inlineElement, inlineLayoutContext.getLineWidth());
+            TextMeasureService textMeasureService, LayoutRuntimeValueResolver layoutValueResolver,
+            List<InlineFragmentOwner> ancestorInlineElements) {
+        InlineElementEdges edges = resolveInlineElementEdges(inlineElement, inlineLayoutContext.getLineWidth(),
+                layoutValueResolver);
         List<InlineFragmentOwner> fragmentOwners = new ArrayList<InlineFragmentOwner>(ancestorInlineElements);
         fragmentOwners.add(new InlineFragmentOwner(inlineElement, edges.getVerticalTop(),
                 edges.getVerticalBottom(), UiStyleResolver.compute(inlineElement).getVerticalAlign()));
@@ -338,7 +343,8 @@ public final class DocumentLayoutEngine {
             if (childStyle.getDisplay() == UiDisplay.NONE || isOutOfFlowPositioned(childStyle)) {
                 continue;
             }
-            appendInlineElementTextRuns(childElement, inlineLayoutContext, textMeasureService, fragmentOwners);
+            appendInlineElementTextRuns(childElement, inlineLayoutContext, textMeasureService, layoutValueResolver,
+                    fragmentOwners);
         }
         appendInlineSpacing(fragmentOwners, inlineLayoutContext,
                 edges.padding.getRight() + edges.border.getRight());
@@ -486,9 +492,10 @@ public final class DocumentLayoutEngine {
         return text.substring(0, endIndex);
     }
 
-    private static InlineElementEdges resolveInlineElementEdges(ElementNode inlineElement, int lineWidth) {
+    private static InlineElementEdges resolveInlineElementEdges(ElementNode inlineElement, int lineWidth,
+            LayoutRuntimeValueResolver layoutValueResolver) {
         ComputedStyle style = UiStyleResolver.compute(inlineElement);
-        return new InlineElementEdges(resolveInsets(style.getMargin(), lineWidth, false),
+        return new InlineElementEdges(resolveMarginInsets(inlineElement, style, lineWidth, layoutValueResolver),
                 resolveUniformEdge(style.getBorderWidth(), lineWidth), resolveInsets(style.getPadding(), lineWidth,
                         true));
     }
@@ -531,7 +538,7 @@ public final class DocumentLayoutEngine {
             TextMeasureService textMeasureService, LayoutRuntimeValueResolver layoutValueResolver) {
         List<FlexItem> items = new ArrayList<FlexItem>();
         for (ElementNode child : children) {
-            FlexItem item = createFlexItem(child, contentWidth);
+            FlexItem item = createFlexItem(child, contentWidth, layoutValueResolver);
             item.contentMainSize = resolveContentMainSize(item, contentWidth, true, layoutValueResolver);
             items.add(item);
         }
@@ -583,7 +590,7 @@ public final class DocumentLayoutEngine {
             TextMeasureService textMeasureService, LayoutRuntimeValueResolver layoutValueResolver) {
         List<FlexItem> items = new ArrayList<FlexItem>();
         for (ElementNode child : children) {
-            FlexItem item = createFlexItem(child, contentWidth);
+            FlexItem item = createFlexItem(child, contentWidth, layoutValueResolver);
             item.forcedCrossSize = resolveColumnCrossContentWidth(item, parentStyle.getAlignItems(), contentWidth,
                     layoutValueResolver);
             item.box = layoutElement(item.element, 0, 0, contentWidth, item.forcedCrossSize, AUTO_SIZE,
@@ -868,8 +875,8 @@ public final class DocumentLayoutEngine {
             AbsoluteContainingBlock containingBlock, AbsoluteContainingBlock fixedContainingBlock,
             TextMeasureService textMeasureService, LayoutRuntimeValueResolver layoutValueResolver) {
         ComputedStyle style = UiStyleResolver.compute(element);
-        int forcedContentWidth = resolveStretchContentWidth(style, containingBlock);
-        int forcedContentHeight = resolveStretchContentHeight(style, containingBlock);
+        int forcedContentWidth = resolveStretchContentWidth(element, style, containingBlock, layoutValueResolver);
+        int forcedContentHeight = resolveStretchContentHeight(element, style, containingBlock, layoutValueResolver);
         DocumentLayoutBox measuredBox = layoutElement(element, 0, 0, containingBlock.width, forcedContentWidth,
                 forcedContentHeight, containingBlock, fixedContainingBlock, textMeasureService, layoutValueResolver);
         int marginBoxWidth = measuredBox.getWidth() + measuredBox.getMargin().getHorizontal();
@@ -881,11 +888,12 @@ public final class DocumentLayoutEngine {
                 layoutValueResolver);
     }
 
-    private static int resolveStretchContentWidth(ComputedStyle style, AbsoluteContainingBlock containingBlock) {
+    private static int resolveStretchContentWidth(ElementNode element, ComputedStyle style,
+            AbsoluteContainingBlock containingBlock, LayoutRuntimeValueResolver layoutValueResolver) {
         if (!isAuto(style.getWidth()) || isAuto(style.getLeft()) || isAuto(style.getRight())) {
             return AUTO_SIZE;
         }
-        DocumentLayoutEdges margin = resolveInsets(style.getMargin(), containingBlock.width, false);
+        DocumentLayoutEdges margin = resolveMarginInsets(element, style, containingBlock.width, layoutValueResolver);
         DocumentLayoutEdges border = resolveUniformEdge(style.getBorderWidth(), containingBlock.width);
         DocumentLayoutEdges padding = resolveInsets(style.getPadding(), containingBlock.width, true);
         int leftInset = style.getLeft().resolve(containingBlock.width, 0);
@@ -894,12 +902,13 @@ public final class DocumentLayoutEngine {
                 - border.getHorizontal() - padding.getHorizontal());
     }
 
-    private static int resolveStretchContentHeight(ComputedStyle style, AbsoluteContainingBlock containingBlock) {
+    private static int resolveStretchContentHeight(ElementNode element, ComputedStyle style,
+            AbsoluteContainingBlock containingBlock, LayoutRuntimeValueResolver layoutValueResolver) {
         if (!isAuto(style.getHeight()) || isAuto(style.getTop()) || isAuto(style.getBottom())) {
             return AUTO_SIZE;
         }
         int containingHeight = Math.max(0, containingBlock.height);
-        DocumentLayoutEdges margin = resolveInsets(style.getMargin(), containingBlock.width, false);
+        DocumentLayoutEdges margin = resolveMarginInsets(element, style, containingBlock.width, layoutValueResolver);
         DocumentLayoutEdges border = resolveUniformEdge(style.getBorderWidth(), containingBlock.width);
         DocumentLayoutEdges padding = resolveInsets(style.getPadding(), containingBlock.width, true);
         int topInset = style.getTop().resolve(containingHeight, 0);
@@ -985,11 +994,20 @@ public final class DocumentLayoutEngine {
         return specifiedContentHeight >= 0 ? specifiedContentHeight : 0;
     }
 
-    private static FlexItem createFlexItem(ElementNode element, int containingWidth) {
+    private static FlexItem createFlexItem(ElementNode element, int containingWidth,
+            LayoutRuntimeValueResolver layoutValueResolver) {
         ComputedStyle style = UiStyleResolver.compute(element);
-        return new FlexItem(element, style, resolveInsets(style.getMargin(), containingWidth, false),
+        return new FlexItem(element, style, resolveMarginInsets(element, style, containingWidth, layoutValueResolver),
                 resolveUniformEdge(style.getBorderWidth(), containingWidth),
                 resolveInsets(style.getPadding(), containingWidth, true));
+    }
+
+    private static DocumentLayoutEdges resolveMarginInsets(ElementNode element, ComputedStyle style,
+            int containingWidth, LayoutRuntimeValueResolver layoutValueResolver) {
+        DocumentLayoutEdges margin = resolveInsets(style.getMargin(), containingWidth, false);
+        int left = layoutValueResolver.resolve(element, DocumentAnimationProperty.MARGIN_LEFT, margin.getLeft());
+        int right = layoutValueResolver.resolve(element, DocumentAnimationProperty.MARGIN_RIGHT, margin.getRight());
+        return DocumentLayoutEdges.of(margin.getTop(), right, margin.getBottom(), left);
     }
 
     private static DocumentLayoutEdges resolveInsets(UiStyleInsets insets, int containingWidth, boolean clampNonNegative) {
