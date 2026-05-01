@@ -60,7 +60,7 @@ public class HtmlLikeSmokeDocumentPageControllerTest {
         Assert.assertTrue(containsText(texts, "Controls probe: click, input, Tab, button, toggle"));
         Assert.assertTrue(containsText(texts, "Animation diagnostics: pill=paint/effect"));
         Assert.assertTrue(containsText(texts, "static cache resumes after finish"));
-        Assert.assertTrue(containsText(texts, "Keyframe diagnostics: first pill runs smokePulse 0/50/100 stops"));
+        Assert.assertTrue(containsText(texts, "Keyframe diagnostics: first pill runs smokePulse bg+radius 0/50/100 stops"));
         Assert.assertTrue(containsText(texts, "Same-layer sampling grid"));
         Assert.assertTrue(containsText(texts, "ABS containing probe"));
         Assert.assertTrue(containsText(texts, "static wrapper is not anchor"));
@@ -173,7 +173,9 @@ public class HtmlLikeSmokeDocumentPageControllerTest {
                 .getColorTracks().get(DocumentAnimationProperty.BACKGROUND_COLOR).getStops().size());
         Assert.assertEquals(3, widget.getDocument().getKeyframes("smokePulse")
                 .getFloatTracks().get(DocumentAnimationProperty.BORDER_RADIUS).getStops().size());
-        Assert.assertTrue(widget.getActiveAnimationCount() >= 3);
+        Assert.assertFalse(widget.getDocument().getKeyframes("smokePulse").getFloatTracks()
+                .containsKey(DocumentAnimationProperty.OPACITY));
+        Assert.assertTrue(widget.getActiveAnimationCount() >= 2);
     }
 
     /**

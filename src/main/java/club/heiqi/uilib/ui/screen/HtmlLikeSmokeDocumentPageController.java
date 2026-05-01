@@ -96,9 +96,6 @@ final class HtmlLikeSmokeDocumentPageController extends DocumentPageController {
     private static UiDocument createSmokeDocument() {
         UiDocument document = UiDocument.create();
         document.registerKeyframes(DocumentKeyframes.named("smokePulse")
-                .setFloatStop(DocumentAnimationProperty.OPACITY, 0.0F, 1.0F)
-                .setFloatStop(DocumentAnimationProperty.OPACITY, 0.5F, 1.0F)
-                .setFloatStop(DocumentAnimationProperty.OPACITY, 1.0F, 0.45F)
                 .setFloatStop(DocumentAnimationProperty.BORDER_RADIUS, 0.0F, 999.0F)
                 .setFloatStop(DocumentAnimationProperty.BORDER_RADIUS, 0.5F, 999.0F)
                 .setFloatStop(DocumentAnimationProperty.BORDER_RADIUS, 1.0F, 12.0F)
@@ -399,7 +396,7 @@ final class HtmlLikeSmokeDocumentPageController extends DocumentPageController {
                 .setTextColor(0xFFC4B5FD)
                 .setOverflowX(UiOverflow.HIDDEN)
                 .setOverflowY(UiOverflow.HIDDEN);
-        keyframeDiagnostic.appendText("Keyframe diagnostics: first pill runs smokePulse 0/50/100 stops once; fill-mode=both.");
+        keyframeDiagnostic.appendText("Keyframe diagnostics: first pill runs smokePulse bg+radius 0/50/100 stops once; fill-mode=both.");
         controlsSection.append(keyframeDiagnostic);
 
         ElementNode controlsRow = document.div();
