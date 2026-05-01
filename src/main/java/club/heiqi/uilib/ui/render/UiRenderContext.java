@@ -517,18 +517,19 @@ public class UiRenderContext {
         }
 
         int radius = clampCornerRadius(right - left, bottom - top, surfaceStyle.cornerRadius);
+        int cornerMask = surfaceStyle.cornerMask;
         if (surfaceStyle.fillColor != 0) {
-            if (radius <= 0) {
+            if (radius <= 0 || cornerMask == 0) {
                 fillRect(left, top, right, bottom, surfaceStyle.fillColor);
             } else {
-                fillRoundedRect(left, top, right, bottom, radius, surfaceStyle.fillColor);
+                fillRoundedRect(left, top, right, bottom, radius, cornerMask, surfaceStyle.fillColor);
             }
         }
         if (surfaceStyle.borderColor != 0) {
-            if (radius <= 0) {
+            if (radius <= 0 || cornerMask == 0) {
                 drawBorder(left, top, right, bottom, surfaceStyle.borderColor);
             } else {
-                drawRoundedBorder(left, top, right, bottom, radius, surfaceStyle.borderColor);
+                drawRoundedBorder(left, top, right, bottom, radius, cornerMask, surfaceStyle.borderColor);
             }
         }
     }
@@ -930,18 +931,18 @@ public class UiRenderContext {
         GL11.glStencilOp(GL11.GL_KEEP, GL11.GL_KEEP, GL11.GL_KEEP);
     }
 
-    private void fillRoundedRect(int left, int top, int right, int bottom, int radius, int color) {
+    private void fillRoundedRect(int left, int top, int right, int bottom, int radius, int cornerMask, int color) {
         applyColor(color);
         GL11.glEnable(GL11.GL_BLEND);
         GL11.glBlendFunc(GL11.GL_SRC_ALPHA, GL11.GL_ONE_MINUS_SRC_ALPHA);
         GL11.glDisable(GL11.GL_TEXTURE_2D);
-        drawRoundedRectGeometry(left, top, right, bottom, radius, true);
+        drawRoundedRectGeometry(left, top, right, bottom, radius, true, cornerMask);
         GL11.glEnable(GL11.GL_TEXTURE_2D);
         GL11.glColor4f(1.0F, 1.0F, 1.0F, 1.0F);
         notifyMainLayerContentChanged();
     }
 
-    private void drawRoundedBorder(int left, int top, int right, int bottom, int radius, int color) {
+    private void drawRoundedBorder(int left, int top, int right, int bottom, int radius, int cornerMask, int color) {
         applyColor(color);
         GL11.glEnable(GL11.GL_BLEND);
         GL11.glBlendFunc(GL11.GL_SRC_ALPHA, GL11.GL_ONE_MINUS_SRC_ALPHA);
@@ -951,7 +952,8 @@ public class UiRenderContext {
         // 线框边界若直接落在整数像素边缘，会让左/上侧描边有一半落在 clip 外，
         // 在真实运行时看起来像左侧边线被吞掉。这里统一把描边中心内缩到像素中心，
         // 让四条边都以同样的方式落在边框盒内部。
-        drawRoundedRectGeometry(left + 0.5F, top + 0.5F, right - 0.5F, bottom - 0.5F, radius, false);
+        drawRoundedRectGeometry(left + 0.5F, top + 0.5F, right - 0.5F, bottom - 0.5F, radius, false,
+                cornerMask);
         GL11.glEnd();
         GL11.glEnable(GL11.GL_TEXTURE_2D);
         GL11.glColor4f(1.0F, 1.0F, 1.0F, 1.0F);
@@ -959,13 +961,20 @@ public class UiRenderContext {
     }
 
     private static void drawRoundedRectGeometry(int left, int top, int right, int bottom, int radius, boolean filled) {
-        drawRoundedRectGeometry((float) left, (float) top, (float) right, (float) bottom, (float) radius, filled);
+        drawRoundedRectGeometry(left, top, right, bottom, radius, filled, UiSurfaceStyle.CORNER_ALL);
+    }
+
+    private static void drawRoundedRectGeometry(int left, int top, int right, int bottom, int radius, boolean filled,
+            int cornerMask) {
+        drawRoundedRectGeometry((float) left, (float) top, (float) right, (float) bottom, (float) radius, filled,
+                cornerMask);
     }
 
     private static void drawRoundedRectGeometry(float left, float top, float right, float bottom, float radius,
-            boolean filled) {
+            boolean filled, int cornerMask) {
         float resolvedRadius = clampCornerRadius(right - left, bottom - top, radius);
-        if (resolvedRadius <= 0.0F) {
+        int resolvedCornerMask = cornerMask & UiSurfaceStyle.CORNER_ALL;
+        if (resolvedRadius <= 0.0F || resolvedCornerMask == 0) {
             if (filled) {
                 GL11.glBegin(GL11.GL_QUADS);
                 GL11.glVertex2f(right, bottom);
@@ -986,18 +995,40 @@ public class UiRenderContext {
             GL11.glBegin(GL11.GL_TRIANGLE_FAN);
             GL11.glVertex2f((left + right) / 2.0F, (top + bottom) / 2.0F);
         }
-        emitRoundedRectVertices(left, top, right, bottom, resolvedRadius);
+        emitRoundedRectVertices(left, top, right, bottom, resolvedRadius, resolvedCornerMask);
         if (filled) {
-            GL11.glVertex2f(left, top + resolvedRadius);
+            emitFirstRoundedRectVertex(left, top, resolvedRadius, resolvedCornerMask);
             GL11.glEnd();
         }
     }
 
-    private static void emitRoundedRectVertices(float left, float top, float right, float bottom, float radius) {
-        emitArcVertices(left + radius, top + radius, radius, 180.0D, 270.0D, false);
-        emitArcVertices(right - radius, top + radius, radius, 270.0D, 360.0D, true);
-        emitArcVertices(right - radius, bottom - radius, radius, 0.0D, 90.0D, true);
-        emitArcVertices(left + radius, bottom - radius, radius, 90.0D, 180.0D, true);
+    private static void emitRoundedRectVertices(float left, float top, float right, float bottom, float radius,
+            int cornerMask) {
+        emitCornerVertices(left, top, radius, cornerMask, UiSurfaceStyle.CORNER_TOP_LEFT,
+                left + radius, top + radius, 180.0D, 270.0D);
+        emitCornerVertices(right, top, radius, cornerMask, UiSurfaceStyle.CORNER_TOP_RIGHT,
+                right - radius, top + radius, 270.0D, 360.0D);
+        emitCornerVertices(right, bottom, radius, cornerMask, UiSurfaceStyle.CORNER_BOTTOM_RIGHT,
+                right - radius, bottom - radius, 0.0D, 90.0D);
+        emitCornerVertices(left, bottom, radius, cornerMask, UiSurfaceStyle.CORNER_BOTTOM_LEFT,
+                left + radius, bottom - radius, 90.0D, 180.0D);
+    }
+
+    private static void emitCornerVertices(float sharpX, float sharpY, float radius, int cornerMask, int cornerBit,
+            float centerX, float centerY, double startAngle, double endAngle) {
+        if ((cornerMask & cornerBit) == 0) {
+            GL11.glVertex2f(sharpX, sharpY);
+            return;
+        }
+        emitArcVertices(centerX, centerY, radius, startAngle, endAngle, false);
+    }
+
+    private static void emitFirstRoundedRectVertex(float left, float top, float radius, int cornerMask) {
+        if ((cornerMask & UiSurfaceStyle.CORNER_TOP_LEFT) == 0) {
+            GL11.glVertex2f(left, top);
+            return;
+        }
+        GL11.glVertex2f(left, top + radius);
     }
 
     private static void emitArcVertices(float centerX, float centerY, float radius, double startAngle, double endAngle,

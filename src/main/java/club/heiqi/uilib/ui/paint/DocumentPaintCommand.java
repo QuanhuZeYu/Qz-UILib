@@ -4,6 +4,7 @@ import java.util.Objects;
 
 import club.heiqi.uilib.ui.dom.ElementNode;
 import club.heiqi.uilib.ui.layout.DocumentEffectType;
+import club.heiqi.uilib.ui.theme.UiSurfaceStyle;
 
 /**
  * HTML-like 中立绘制命令。
@@ -22,6 +23,7 @@ public final class DocumentPaintCommand {
     private final int color;
     private final int borderWidth;
     private final int borderRadius;
+    private final int cornerMask;
     private final String text;
     private final DocumentCustomRenderer customRenderer;
     private final int backdropBlurRadius;
@@ -61,6 +63,14 @@ public final class DocumentPaintCommand {
             int color, int borderWidth, int borderRadius, String text, DocumentCustomRenderer customRenderer,
             int backdropBlurRadius, float backdropSaturation, float paintContextOpacity,
             DocumentEffectType effectType) {
+        this(type, element, left, top, right, bottom, color, borderWidth, borderRadius, UiSurfaceStyle.CORNER_ALL,
+                text, customRenderer, backdropBlurRadius, backdropSaturation, paintContextOpacity, effectType);
+    }
+
+    DocumentPaintCommand(DocumentPaintCommandType type, ElementNode element, int left, int top, int right, int bottom,
+            int color, int borderWidth, int borderRadius, int cornerMask, String text,
+            DocumentCustomRenderer customRenderer, int backdropBlurRadius, float backdropSaturation,
+            float paintContextOpacity, DocumentEffectType effectType) {
         this.type = Objects.requireNonNull(type, "type");
         this.effectType = resolveEffectType(this.type, effectType);
         this.element = Objects.requireNonNull(element, "element");
@@ -71,6 +81,7 @@ public final class DocumentPaintCommand {
         this.color = color;
         this.borderWidth = Math.max(0, borderWidth);
         this.borderRadius = Math.max(0, borderRadius);
+        this.cornerMask = cornerMask & UiSurfaceStyle.CORNER_ALL;
         this.text = text == null ? "" : text;
         this.customRenderer = customRenderer;
         this.backdropBlurRadius = Math.max(0, backdropBlurRadius);
@@ -129,6 +140,15 @@ public final class DocumentPaintCommand {
 
     public int getBorderRadius() {
         return borderRadius;
+    }
+
+    /**
+     * 返回参与圆角绘制的角位掩码。
+     *
+     * @return 圆角位掩码
+     */
+    public int getCornerMask() {
+        return cornerMask;
     }
 
     public String getText() {

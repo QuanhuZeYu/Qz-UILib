@@ -120,7 +120,7 @@ public final class DocumentPaintRenderer {
             context.drawSurface(command.getLeft() + offsetX, command.getTop() + offsetY,
                     command.getRight() + offsetX, command.getBottom() + offsetY,
                     new UiSurfaceStyle(applyOpacity(command.getColor(), replayState.fallbackOpacity), 0,
-                            command.getBorderRadius()));
+                            command.getBorderRadius(), command.getCornerMask()));
             return;
         }
         if (command.getType() == DocumentPaintCommandType.SCROLLBAR_TRACK
@@ -128,7 +128,7 @@ public final class DocumentPaintRenderer {
             context.drawSurface(command.getLeft() + offsetX, command.getTop() + offsetY,
                     command.getRight() + offsetX, command.getBottom() + offsetY,
                     new UiSurfaceStyle(applyOpacity(command.getColor(), replayState.fallbackOpacity), 0,
-                            command.getBorderRadius()));
+                            command.getBorderRadius(), command.getCornerMask()));
             return;
         }
         if (command.getType() == DocumentPaintCommandType.BORDER) {
@@ -210,7 +210,8 @@ public final class DocumentPaintRenderer {
             int right = command.getRight() - offset + offsetX;
             int bottom = command.getBottom() - offset + offsetY;
             int radius = Math.max(0, command.getBorderRadius() - offset);
-            context.drawSurface(left, top, right, bottom, new UiSurfaceStyle(0, borderColor, radius));
+            context.drawSurface(left, top, right, bottom, new UiSurfaceStyle(0, borderColor, radius,
+                    command.getCornerMask()));
         }
     }
 

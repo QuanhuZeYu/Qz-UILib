@@ -616,6 +616,10 @@ public class DocumentLayoutEngineTest {
         Assert.assertEquals(2, rootBox.getInlineFragments().size());
         assertInlineFragment(rootBox.getInlineFragments().get(0), span, 0, 0, 32, 18);
         assertInlineFragment(rootBox.getInlineFragments().get(1), span, 0, 18, 16, 18);
+        Assert.assertTrue(rootBox.getInlineFragments().get(0).isFirstForElement());
+        Assert.assertFalse(rootBox.getInlineFragments().get(0).isLastForElement());
+        Assert.assertFalse(rootBox.getInlineFragments().get(1).isFirstForElement());
+        Assert.assertTrue(rootBox.getInlineFragments().get(1).isLastForElement());
     }
 
     /**

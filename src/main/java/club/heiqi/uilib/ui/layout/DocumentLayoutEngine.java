@@ -223,7 +223,7 @@ public final class DocumentLayoutEngine {
                 fixedContainingBlock, textMeasureService);
         appendFixedChildren(childBoxes, fixedChildren, fixedContainingBlock, textMeasureService);
         return new LayoutChildrenResult(sortByDocumentChildOrder(element, childBoxes), textRuns,
-                mergeInlineFragments(inlineFragments), contentHeight);
+                markInlineFragmentSequence(mergeInlineFragments(inlineFragments)), contentHeight);
     }
 
     private static int appendTextRun(TextNode textNode, ElementNode ownerElement,
@@ -367,9 +367,41 @@ public final class DocumentLayoutEngine {
             int right = Math.max(existingFragment.getRight(), inlineFragment.getRight());
             int bottom = Math.max(existingFragment.getBottom(), inlineFragment.getBottom());
             mergedFragments.set(mergeIndex, new DocumentLayoutInlineFragment(existingFragment.getOwnerElement(), left,
-                    top, right - left, bottom - top));
+                    top, right - left, bottom - top, existingFragment.isFirstForElement(),
+                    existingFragment.isLastForElement()));
         }
         return mergedFragments;
+    }
+
+    private static List<DocumentLayoutInlineFragment> markInlineFragmentSequence(
+            List<DocumentLayoutInlineFragment> inlineFragments) {
+        List<DocumentLayoutInlineFragment> markedFragments = new ArrayList<DocumentLayoutInlineFragment>();
+        for (DocumentLayoutInlineFragment inlineFragment : inlineFragments) {
+            boolean first = true;
+            boolean last = true;
+            for (DocumentLayoutInlineFragment otherFragment : inlineFragments) {
+                if (otherFragment == inlineFragment || otherFragment.getOwnerElement() != inlineFragment.getOwnerElement()) {
+                    continue;
+                }
+                if (isInlineFragmentBefore(otherFragment, inlineFragment)) {
+                    first = false;
+                }
+                if (isInlineFragmentBefore(inlineFragment, otherFragment)) {
+                    last = false;
+                }
+            }
+            markedFragments.add(new DocumentLayoutInlineFragment(inlineFragment.getOwnerElement(), inlineFragment.getLeft(),
+                    inlineFragment.getTop(), inlineFragment.getWidth(), inlineFragment.getHeight(), first, last));
+        }
+        return markedFragments;
+    }
+
+    private static boolean isInlineFragmentBefore(DocumentLayoutInlineFragment first,
+            DocumentLayoutInlineFragment second) {
+        if (first.getTop() != second.getTop()) {
+            return first.getTop() < second.getTop();
+        }
+        return first.getLeft() < second.getLeft();
     }
 
     private static int findMergeableInlineFragment(List<DocumentLayoutInlineFragment> mergedFragments,

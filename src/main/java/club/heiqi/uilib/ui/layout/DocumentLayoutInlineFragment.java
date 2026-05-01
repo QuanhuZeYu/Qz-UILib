@@ -14,13 +14,22 @@ public final class DocumentLayoutInlineFragment {
     private final int top;
     private final int width;
     private final int height;
+    private final boolean firstForElement;
+    private final boolean lastForElement;
 
     DocumentLayoutInlineFragment(ElementNode ownerElement, int left, int top, int width, int height) {
+        this(ownerElement, left, top, width, height, true, true);
+    }
+
+    DocumentLayoutInlineFragment(ElementNode ownerElement, int left, int top, int width, int height,
+            boolean firstForElement, boolean lastForElement) {
         this.ownerElement = Objects.requireNonNull(ownerElement, "ownerElement");
         this.left = left;
         this.top = top;
         this.width = Math.max(0, width);
         this.height = Math.max(0, height);
+        this.firstForElement = firstForElement;
+        this.lastForElement = lastForElement;
     }
 
     /**
@@ -54,5 +63,23 @@ public final class DocumentLayoutInlineFragment {
 
     public int getBottom() {
         return top + height;
+    }
+
+    /**
+     * 判断该 fragment 是否是所属 inline 元素的首个分片。
+     *
+     * @return 是否为首片
+     */
+    public boolean isFirstForElement() {
+        return firstForElement;
+    }
+
+    /**
+     * 判断该 fragment 是否是所属 inline 元素的末个分片。
+     *
+     * @return 是否为末片
+     */
+    public boolean isLastForElement() {
+        return lastForElement;
     }
 }

@@ -21,6 +21,7 @@ import club.heiqi.uilib.ui.style.UiPosition;
 import club.heiqi.uilib.ui.style.UiStyleInsets;
 import club.heiqi.uilib.ui.style.UiStyleLength;
 import club.heiqi.uilib.ui.text.TextMeasureService;
+import club.heiqi.uilib.ui.theme.UiSurfaceStyle;
 
 /**
  * `DocumentPaintEngine` 的绘制命令生成契约测试。
@@ -902,11 +903,14 @@ public class DocumentPaintEngineTest {
                 80, 0, new DeterministicTextMeasureService()));
 
         Assert.assertEquals(6, commands.size());
-        assertCommand(commands.get(0), DocumentPaintCommandType.BACKGROUND, span, 0, 0, 33, 20, 0x334F46E5, 0, 5);
-        assertCommand(commands.get(1), DocumentPaintCommandType.BORDER, span, 0, 0, 33, 20, 0xFFFFD166, 1, 5);
+        assertCommand(commands.get(0), DocumentPaintCommandType.BACKGROUND, span, 0, 0, 33, 20, 0x334F46E5, 0, 5,
+                UiSurfaceStyle.CORNER_TOP_LEFT | UiSurfaceStyle.CORNER_BOTTOM_LEFT);
+        assertCommand(commands.get(1), DocumentPaintCommandType.BORDER, span, 0, 0, 33, 20, 0xFFFFD166, 1, 5,
+                UiSurfaceStyle.CORNER_TOP_LEFT | UiSurfaceStyle.CORNER_BOTTOM_LEFT);
         assertCommand(commands.get(2), DocumentPaintCommandType.BACKGROUND, span, 0, 20, 17, 40, 0x334F46E5, 0,
-                5);
-        assertCommand(commands.get(3), DocumentPaintCommandType.BORDER, span, 0, 20, 17, 40, 0xFFFFD166, 1, 5);
+                5, UiSurfaceStyle.CORNER_TOP_RIGHT | UiSurfaceStyle.CORNER_BOTTOM_RIGHT);
+        assertCommand(commands.get(3), DocumentPaintCommandType.BORDER, span, 0, 20, 17, 40, 0xFFFFD166, 1, 5,
+                UiSurfaceStyle.CORNER_TOP_RIGHT | UiSurfaceStyle.CORNER_BOTTOM_RIGHT);
         assertCommand(commands.get(4), DocumentPaintCommandType.TEXT, span, 1, 1, 33, 19, 0xFFFFD166, 0, 0);
         Assert.assertEquals("AABB", commands.get(4).getText());
         assertCommand(commands.get(5), DocumentPaintCommandType.TEXT, span, 0, 21, 16, 39, 0xFFFFD166, 0, 0);
@@ -1139,6 +1143,13 @@ public class DocumentPaintEngineTest {
     private static void assertCommand(DocumentPaintCommand command, DocumentPaintCommandType type,
             ElementNode element, int left, int top, int right, int bottom, int color, int borderWidth,
             int borderRadius) {
+        assertCommand(command, type, element, left, top, right, bottom, color, borderWidth, borderRadius,
+                UiSurfaceStyle.CORNER_ALL);
+    }
+
+    private static void assertCommand(DocumentPaintCommand command, DocumentPaintCommandType type,
+            ElementNode element, int left, int top, int right, int bottom, int color, int borderWidth,
+            int borderRadius, int cornerMask) {
         Assert.assertEquals(type, command.getType());
         Assert.assertEquals(expectedEffectType(type), command.getEffectType());
         Assert.assertEquals(element.__getElementUid(), command.getElement().__getElementUid());
@@ -1151,6 +1162,7 @@ public class DocumentPaintEngineTest {
         Assert.assertEquals(color, command.getColor());
         Assert.assertEquals(borderWidth, command.getBorderWidth());
         Assert.assertEquals(borderRadius, command.getBorderRadius());
+        Assert.assertEquals(cornerMask, command.getCornerMask());
     }
 
     private static int countCommands(List<DocumentPaintCommand> commands, DocumentPaintCommandType type) {

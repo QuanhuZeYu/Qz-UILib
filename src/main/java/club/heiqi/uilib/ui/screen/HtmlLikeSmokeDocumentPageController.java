@@ -457,7 +457,7 @@ final class HtmlLikeSmokeDocumentPageController extends DocumentPageController {
     private static void appendAbsoluteStretchAndInlineProbe(UiDocument document, ElementNode root) {
         ElementNode probe = document.div();
         probe.style()
-                .setHeight(UiStyleLength.px(116))
+                .setHeight(UiStyleLength.px(172))
                 .setMargin(UiStyleLength.px(16))
                 .setPadding(UiStyleLength.px(10))
                 .setBackgroundColor(0xFF102A43)
@@ -506,8 +506,9 @@ final class HtmlLikeSmokeDocumentPageController extends DocumentPageController {
         inlineLine.style()
                 .setMargin(UiStyleInsets.of(UiStyleLength.px(8), UiStyleLength.px(0), UiStyleLength.px(0),
                         UiStyleLength.px(0)))
+                .setWidth(UiStyleLength.px(240))
                 .setTextColor(0xFFE0F2FE);
-        inlineLine.appendText("Inline mix: text ");
+        inlineLine.appendText("Inline split: text ");
         final ElementNode amberSpan = document.span();
         amberSpan.style()
                 .setMargin(UiStyleInsets.of(UiStyleLength.px(0), UiStyleLength.px(2), UiStyleLength.px(0),
@@ -531,7 +532,7 @@ final class HtmlLikeSmokeDocumentPageController extends DocumentPageController {
             }
         });
         inlineLine.append(amberSpan);
-        inlineLine.appendText(" continues on the same line and wraps as one flow.");
+        inlineLine.appendText(" span should split; only outer split corners stay rounded.");
         probe.append(inlineLine);
     }
 

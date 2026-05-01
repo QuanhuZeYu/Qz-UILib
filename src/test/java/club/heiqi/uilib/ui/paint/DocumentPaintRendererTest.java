@@ -82,6 +82,26 @@ public class DocumentPaintRendererTest {
     }
 
     /**
+     * 验证 surface 命令会把局部圆角掩码投影到底层表面样式。
+     */
+    @Test
+    public void shouldRenderSurfaceCornerMaskToUiRenderContext() {
+        UiDocument document = UiDocument.create();
+        ElementNode root = document.getRootElement();
+        List<DocumentPaintCommand> commands = new ArrayList<DocumentPaintCommand>();
+        commands.add(new DocumentPaintCommand(DocumentPaintCommandType.BACKGROUND, root, 0, 0, 30, 14,
+                0xFF223344, 0, 6, UiSurfaceStyle.CORNER_TOP_LEFT | UiSurfaceStyle.CORNER_BOTTOM_LEFT,
+                null, null, 0, 1.0F, 1.0F, null));
+
+        RecordingUiRenderContext renderContext = new RecordingUiRenderContext();
+        DocumentPaintRenderer.render(renderContext, commands, 7, 11);
+
+        Assert.assertEquals(1, renderContext.drawCalls.size());
+        assertDrawCall(renderContext.drawCalls.get(0), 7, 11, 37, 25, 0xFF223344, 0, 6,
+                UiSurfaceStyle.CORNER_TOP_LEFT | UiSurfaceStyle.CORNER_BOTTOM_LEFT);
+    }
+
+    /**
      * 验证 BACKDROP_FILTER 命令会按宿主偏移投影到渲染上下文的效果入口。
      */
     @Test
@@ -339,6 +359,12 @@ public class DocumentPaintRendererTest {
 
     private static void assertDrawCall(DrawCall drawCall, int left, int top, int right, int bottom, int fillColor,
             int borderColor, int cornerRadius) {
+        assertDrawCall(drawCall, left, top, right, bottom, fillColor, borderColor, cornerRadius,
+                UiSurfaceStyle.CORNER_ALL);
+    }
+
+    private static void assertDrawCall(DrawCall drawCall, int left, int top, int right, int bottom, int fillColor,
+            int borderColor, int cornerRadius, int cornerMask) {
         Assert.assertEquals(left, drawCall.left);
         Assert.assertEquals(top, drawCall.top);
         Assert.assertEquals(right, drawCall.right);
@@ -346,6 +372,7 @@ public class DocumentPaintRendererTest {
         Assert.assertEquals(fillColor, drawCall.surfaceStyle.fillColor);
         Assert.assertEquals(borderColor, drawCall.surfaceStyle.borderColor);
         Assert.assertEquals(cornerRadius, drawCall.surfaceStyle.cornerRadius);
+        Assert.assertEquals(cornerMask, drawCall.surfaceStyle.cornerMask);
     }
 
     private static void assertClipCall(ClipCall clipCall, int left, int top, int right, int bottom, int cornerRadius) {

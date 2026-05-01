@@ -110,6 +110,7 @@ public class HtmlLikeSmokeDocumentPageControllerTest {
         Assert.assertTrue(containsTextCall(renderContext.textCalls, "FIXED viewport stays here"));
         Assert.assertTrue(containsTextCall(renderContext.textCalls, "ABS stretch fill"));
         Assert.assertTrue(containsTextCall(renderContext.textCalls, "amber span hit: 0"));
+        assertSmokeInlineProbeSplitsAmberSpan(widget, fixture.textMeasureService);
         Assert.assertTrue(containsTextCall(renderContext.textCalls, "TEXT paint command"));
     }
 
@@ -343,6 +344,33 @@ public class HtmlLikeSmokeDocumentPageControllerTest {
             }
         }
         return false;
+    }
+
+    private static void assertSmokeInlineProbeSplitsAmberSpan(HtmlLikeDocumentWidget widget,
+            TextMeasureService textMeasureService) {
+        ElementNode amberSpan = findElementContainingDirectText(widget, "amber span hit: 0");
+        DocumentLayoutBox rootBox = DocumentLayoutEngine.layoutViewportRoot(widget.getDocument().getRootElement(),
+                widget.getWidth(), widget.getHeight(), textMeasureService);
+        List<DocumentPaintCommand> commands = DocumentPaintEngine.buildPaintCommands(rootBox);
+        int amberSurfaceCount = 0;
+        boolean sawLeftCornerSlice = false;
+        boolean sawRightCornerSlice = false;
+        for (DocumentPaintCommand command : commands) {
+            if (command.getType() != DocumentPaintCommandType.BACKGROUND
+                    || command.getElement().__getElementUid() != amberSpan.__getElementUid()
+                    || command.getColor() != 0x334F46E5) {
+                continue;
+            }
+            amberSurfaceCount++;
+            int cornerMask = command.getCornerMask();
+            sawLeftCornerSlice = sawLeftCornerSlice || cornerMask == (UiSurfaceStyle.CORNER_TOP_LEFT
+                    | UiSurfaceStyle.CORNER_BOTTOM_LEFT);
+            sawRightCornerSlice = sawRightCornerSlice || cornerMask == (UiSurfaceStyle.CORNER_TOP_RIGHT
+                    | UiSurfaceStyle.CORNER_BOTTOM_RIGHT);
+        }
+        Assert.assertTrue(amberSurfaceCount >= 2);
+        Assert.assertTrue(sawLeftCornerSlice);
+        Assert.assertTrue(sawRightCornerSlice);
     }
 
     private static void assertAbsoluteProbeIsVisibleOutsideStaticWrapper(HtmlLikeDocumentWidget widget,

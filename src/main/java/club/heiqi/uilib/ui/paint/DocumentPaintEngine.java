@@ -18,6 +18,7 @@ import club.heiqi.uilib.ui.layout.DocumentStackingPhase;
 import club.heiqi.uilib.ui.style.ComputedStyle;
 import club.heiqi.uilib.ui.style.UiOverflow;
 import club.heiqi.uilib.ui.style.UiStyleResolver;
+import club.heiqi.uilib.ui.theme.UiSurfaceStyle;
 
 /**
  * HTML-like 绘制命令生成器。
@@ -316,6 +317,7 @@ public final class DocumentPaintEngine {
             ComputedStyle ownerStyle = UiStyleResolver.compute(ownerElement);
             int radius = resolveInlineFragmentBorderRadius(ownerStyle, inlineFragment.getWidth(),
                     inlineFragment.getHeight());
+            int cornerMask = resolveInlineFragmentCornerMask(inlineFragment);
             int backgroundColor = resolveAnimatedColor(animationTimeline, ownerElement,
                     DocumentAnimationProperty.BACKGROUND_COLOR, ownerStyle.getBackgroundColor(), currentTimeNanos);
             backgroundColor = applyOpacity(backgroundColor, opacity);
@@ -323,7 +325,7 @@ public final class DocumentPaintEngine {
                 commands.add(new DocumentPaintCommand(DocumentPaintCommandType.BACKGROUND, ownerElement,
                         inlineFragment.getLeft() + offsetX, inlineFragment.getTop() + offsetY,
                         inlineFragment.getRight() + offsetX, inlineFragment.getBottom() + offsetY, backgroundColor, 0,
-                        radius));
+                        radius, cornerMask, null, null, 0, 1.0F, 1.0F, null));
             }
             int borderWidth = Math.max(0, ownerStyle.getBorderWidth().resolve(inlineFragment.getWidth(), 0));
             int borderColor = resolveAnimatedColor(animationTimeline, ownerElement, DocumentAnimationProperty.BORDER_COLOR,
@@ -333,9 +335,25 @@ public final class DocumentPaintEngine {
                 commands.add(new DocumentPaintCommand(DocumentPaintCommandType.BORDER, ownerElement,
                         inlineFragment.getLeft() + offsetX, inlineFragment.getTop() + offsetY,
                         inlineFragment.getRight() + offsetX, inlineFragment.getBottom() + offsetY, borderColor,
-                        borderWidth, radius));
+                        borderWidth, radius, cornerMask, null, null, 0, 1.0F, 1.0F, null));
             }
         }
+    }
+
+    private static int resolveInlineFragmentCornerMask(DocumentLayoutInlineFragment inlineFragment) {
+        boolean first = inlineFragment.isFirstForElement();
+        boolean last = inlineFragment.isLastForElement();
+        if (first && last) {
+            return UiSurfaceStyle.CORNER_ALL;
+        }
+        int cornerMask = 0;
+        if (first) {
+            cornerMask |= UiSurfaceStyle.CORNER_TOP_LEFT | UiSurfaceStyle.CORNER_BOTTOM_LEFT;
+        }
+        if (last) {
+            cornerMask |= UiSurfaceStyle.CORNER_TOP_RIGHT | UiSurfaceStyle.CORNER_BOTTOM_RIGHT;
+        }
+        return cornerMask;
     }
 
     private static int resolveInlineFragmentBorderRadius(ComputedStyle style, int width, int height) {
