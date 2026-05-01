@@ -57,6 +57,8 @@ public class HtmlLikeSmokeDocumentPageControllerTest {
         Assert.assertTrue(containsText(texts, "UiDocument -> style -> layout -> paint command -> UiRenderContext"));
         Assert.assertTrue(containsText(texts, "FIXED viewport"));
         Assert.assertTrue(containsText(texts, "Controls probe: click, input, Tab, button, toggle"));
+        Assert.assertTrue(containsText(texts, "Animation diagnostics: pill=paint/effect"));
+        Assert.assertTrue(containsText(texts, "static cache resumes after finish"));
         Assert.assertTrue(containsText(texts, "Same-layer sampling grid"));
         Assert.assertTrue(containsText(texts, "ABS containing probe"));
         Assert.assertTrue(containsText(texts, "static wrapper is not anchor"));
@@ -112,6 +114,7 @@ public class HtmlLikeSmokeDocumentPageControllerTest {
         assertGroupOpacityProbeKeepsChildColorsOpaque(widget, fixture.textMeasureService);
         assertStackingContextProbeKeepsHighZChildIsolated(widget, fixture.textMeasureService);
         Assert.assertTrue(containsTextCall(renderContext.textCalls, "FIXED viewport"));
+        Assert.assertTrue(containsTextCall(renderContext.textCalls, "Animation diagnostics"));
         Assert.assertTrue(containsTextCall(renderContext.textCalls, "ABS stretch fill"));
         Assert.assertTrue(containsTextCall(renderContext.textCalls, "amber span hit: 0"));
         Assert.assertTrue(containsTextCall(renderContext.textCalls, "Vertical-align probe"));

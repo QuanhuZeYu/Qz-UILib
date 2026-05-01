@@ -353,7 +353,7 @@ final class HtmlLikeSmokeDocumentPageController extends DocumentPageController {
     private static void appendControlsSection(UiDocument document, ElementNode root) {
         ElementNode controlsSection = document.div();
         controlsSection.style()
-                .setHeight(UiStyleLength.px(92))
+                .setHeight(UiStyleLength.px(112))
                 .setMargin(UiStyleInsets.of(UiStyleLength.px(14), UiStyleLength.px(0), UiStyleLength.px(0),
                         UiStyleLength.px(0)))
                 .setPadding(UiStyleLength.px(10))
@@ -367,6 +367,17 @@ final class HtmlLikeSmokeDocumentPageController extends DocumentPageController {
         controlsSection.appendText("Controls probe: click, input, Tab, button, toggle");
         root.append(controlsSection);
 
+        ElementNode animationDiagnostic = document.div();
+        animationDiagnostic.style()
+                .setHeight(UiStyleLength.px(14))
+                .setMargin(UiStyleInsets.of(UiStyleLength.px(4), UiStyleLength.px(0), UiStyleLength.px(0),
+                        UiStyleLength.px(0)))
+                .setTextColor(0xFFBAE6FD)
+                .setOverflowX(UiOverflow.HIDDEN)
+                .setOverflowY(UiOverflow.HIDDEN);
+        animationDiagnostic.appendText("Animation diagnostics: pill=paint/effect bg+opacity+radius 450ms; glass=blur+radius 700ms; static cache resumes after finish.");
+        controlsSection.append(animationDiagnostic);
+
         ElementNode controlsRow = document.div();
         controlsRow.style()
                 .setHeight(UiStyleLength.px(46))
@@ -374,7 +385,7 @@ final class HtmlLikeSmokeDocumentPageController extends DocumentPageController {
                 .setFlexDirection(UiFlexDirection.ROW)
                 .setAlignItems(UiAlignItems.STRETCH)
                 .setColumnGap(UiStyleLength.px(10))
-                .setMargin(UiStyleInsets.of(UiStyleLength.px(8), UiStyleLength.px(0), UiStyleLength.px(0),
+                .setMargin(UiStyleInsets.of(UiStyleLength.px(6), UiStyleLength.px(0), UiStyleLength.px(0),
                         UiStyleLength.px(0)));
         controlsSection.append(controlsRow);
 
