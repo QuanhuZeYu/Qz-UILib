@@ -287,6 +287,43 @@ public class DocumentAnimationTimelineTest {
     }
 
     /**
+     * 验证声明式 keyframe 圆角会先归一化到布局约束，避免 999px 胶囊值在末尾跳变。
+     */
+    @Test
+    public void shouldNormalizeDeclaredBorderRadiusKeyframeToLayoutBounds() {
+        UiDocument document = UiDocument.create();
+        document.registerKeyframes(DocumentKeyframes.named("pillMorph")
+                .setFloat(DocumentAnimationProperty.BORDER_RADIUS, 999.0F, 10.0F)
+                .build());
+        ElementNode root = document.getRootElement();
+        ElementNode pill = document.div();
+        ElementNode sibling = document.div();
+        pill.style()
+                .setWidth(UiStyleLength.px(80))
+                .setHeight(UiStyleLength.px(40))
+                .setAnimation("pillMorph", 1000L)
+                .setAnimationFillMode(DocumentAnimationFillMode.BOTH);
+        sibling.style()
+                .setWidth(UiStyleLength.px(20))
+                .setHeight(UiStyleLength.px(20));
+        root.append(pill).append(sibling);
+        DocumentAnimationTimeline timeline = new DocumentAnimationTimeline();
+
+        timeline.updateFromLayout(DocumentLayoutEngine.layout(root, 120, 0), 0L);
+
+        Assert.assertEquals(20.0F, timeline.resolveFloat(pill, DocumentAnimationProperty.BORDER_RADIUS, 0.0F,
+                0L), 0.0F);
+        Assert.assertEquals(15.0F, timeline.resolveFloat(pill, DocumentAnimationProperty.BORDER_RADIUS, 0.0F,
+                500_000_000L), 0.0F);
+
+        sibling.style().setBackgroundColor(0xFFFFFFFF);
+        timeline.updateFromLayout(DocumentLayoutEngine.layout(root, 120, 0), 500_000_000L);
+
+        Assert.assertEquals(15.0F, timeline.resolveFloat(pill, DocumentAnimationProperty.BORDER_RADIUS, 0.0F,
+                500_000_000L), 0.0F);
+    }
+
+    /**
      * 验证 animation delay、iteration、fill-mode 与 timing function 会影响 keyframes 生命周期。
      */
     @Test

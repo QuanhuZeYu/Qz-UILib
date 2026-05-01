@@ -352,7 +352,7 @@ public final class DocumentAnimationTimeline {
             state = getOrCreateState(element);
             changed = true;
         }
-        changed |= updateDeclaredKeyframeAnimations(element, style, currentTimeNanos, state);
+        changed |= updateDeclaredKeyframeAnimations(box, style, currentTimeNanos, state);
         for (DocumentAnimationProperty property : PAINT_COLOR_PROPERTIES) {
             int baseColor = getBaseColor(style, property);
             Integer previousTarget = state.targetColors.get(property);
@@ -421,14 +421,16 @@ public final class DocumentAnimationTimeline {
         return style.getTransitionDurationNanos() > 0L && style.getTransitionProperties().contains(property);
     }
 
-    private static boolean updateDeclaredKeyframeAnimations(ElementNode element, ComputedStyle style,
+    private static boolean updateDeclaredKeyframeAnimations(DocumentLayoutBox box, ComputedStyle style,
             long currentTimeNanos, ElementAnimationState state) {
         String animationName = style.getAnimationName();
-        DocumentKeyframes keyframes = animationName == null ? null : element.getOwnerDocument().getKeyframes(animationName);
-        if (animationName == null || style.getAnimationDurationNanos() <= 0L || keyframes == null || keyframes.isEmpty()) {
+        DocumentKeyframes keyframes = animationName == null ? null
+                : box.getElement().getOwnerDocument().getKeyframes(animationName);
+        if (animationName == null || style.getAnimationDurationNanos() <= 0L || keyframes == null
+                || keyframes.isEmpty()) {
             return clearDeclaredKeyframeAnimations(state);
         }
-        if (state.matchesDeclaredKeyframeSignature(animationName, keyframes, style)) {
+        if (state.matchesDeclaredKeyframeSignature(animationName, keyframes, box, style)) {
             return false;
         }
 
@@ -440,6 +442,8 @@ public final class DocumentAnimationTimeline {
         state.declaredIterationCount = style.getAnimationIterationCount();
         state.declaredFillMode = style.getAnimationFillMode();
         state.declaredTimingFunction = style.getAnimationTimingFunction();
+        state.declaredBoxWidth = box.getWidth();
+        state.declaredBoxHeight = box.getHeight();
         long startNanos = currentTimeNanos + style.getAnimationDelayNanos();
         for (Map.Entry<DocumentAnimationProperty, DocumentKeyframes.ColorRange> entry : keyframes.getColorRanges()
                 .entrySet()) {
@@ -447,7 +451,8 @@ public final class DocumentAnimationTimeline {
             DocumentKeyframes.ColorRange range = entry.getValue();
             state.colorKeyframeAnimations.put(property, new ColorKeyframeAnimation(range.getFromColor(),
                     range.getToColor(), startNanos, style.getAnimationDurationNanos(),
-                    style.getAnimationIterationCount(), style.getAnimationFillMode(), style.getAnimationTimingFunction()));
+                    style.getAnimationIterationCount(), style.getAnimationFillMode(),
+                    style.getAnimationTimingFunction()));
             state.declaredColorKeyframeProperties.add(property);
             state.filledColors.remove(property);
         }
@@ -455,9 +460,11 @@ public final class DocumentAnimationTimeline {
                 .entrySet()) {
             DocumentAnimationProperty property = entry.getKey();
             DocumentKeyframes.FloatRange range = entry.getValue();
-            state.floatKeyframeAnimations.put(property, new FloatKeyframeAnimation(range.getFromValue(),
-                    range.getToValue(), startNanos, style.getAnimationDurationNanos(),
-                    style.getAnimationIterationCount(), style.getAnimationFillMode(), style.getAnimationTimingFunction()));
+            state.floatKeyframeAnimations.put(property, new FloatKeyframeAnimation(normalizeDeclaredKeyframeFloat(box,
+                    property, range.getFromValue()), normalizeDeclaredKeyframeFloat(box, property, range.getToValue()),
+                    startNanos, style.getAnimationDurationNanos(),
+                    style.getAnimationIterationCount(), style.getAnimationFillMode(),
+                    style.getAnimationTimingFunction()));
             state.declaredFloatKeyframeProperties.add(property);
             state.filledFloats.remove(property);
         }
@@ -479,6 +486,21 @@ public final class DocumentAnimationTimeline {
         }
         state.clearDeclaredKeyframeSignature();
         return changed;
+    }
+
+    private static float normalizeDeclaredKeyframeFloat(DocumentLayoutBox box, DocumentAnimationProperty property,
+            float value) {
+        if (property == DocumentAnimationProperty.OPACITY) {
+            return Math.max(0.0F, Math.min(1.0F, value));
+        }
+        if (property == DocumentAnimationProperty.BORDER_RADIUS) {
+            int limit = Math.min(box.getWidth(), box.getHeight());
+            return Math.max(0.0F, Math.min(value, limit / 2.0F));
+        }
+        if (property == DocumentAnimationProperty.BACKDROP_BLUR_RADIUS) {
+            return Math.max(0.0F, Math.min(value, DocumentEffectChain.MAX_BACKDROP_BLUR_RADIUS));
+        }
+        return value;
     }
 
     private static int getBaseColor(ComputedStyle style, DocumentAnimationProperty property) {
@@ -568,15 +590,19 @@ public final class DocumentAnimationTimeline {
         private int declaredIterationCount;
         private DocumentAnimationFillMode declaredFillMode;
         private DocumentAnimationTimingFunction declaredTimingFunction;
+        private int declaredBoxWidth;
+        private int declaredBoxHeight;
 
         private boolean matchesDeclaredKeyframeSignature(String animationName, DocumentKeyframes keyframes,
-                ComputedStyle style) {
+                DocumentLayoutBox box, ComputedStyle style) {
             return Objects.equals(declaredAnimationName, animationName) && declaredKeyframes == keyframes
                     && declaredDurationNanos == style.getAnimationDurationNanos()
                     && declaredDelayNanos == style.getAnimationDelayNanos()
                     && declaredIterationCount == style.getAnimationIterationCount()
                     && declaredFillMode == style.getAnimationFillMode()
-                    && declaredTimingFunction == style.getAnimationTimingFunction();
+                    && declaredTimingFunction == style.getAnimationTimingFunction()
+                    && declaredBoxWidth == box.getWidth()
+                    && declaredBoxHeight == box.getHeight();
         }
 
         private void clearDeclaredKeyframeSignature() {
@@ -589,6 +615,8 @@ public final class DocumentAnimationTimeline {
             declaredIterationCount = 0;
             declaredFillMode = null;
             declaredTimingFunction = null;
+            declaredBoxWidth = 0;
+            declaredBoxHeight = 0;
         }
     }
 
