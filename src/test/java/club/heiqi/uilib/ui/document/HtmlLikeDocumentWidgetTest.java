@@ -32,6 +32,7 @@ import club.heiqi.uilib.ui.input.UiInputRouter;
 import club.heiqi.uilib.ui.render.UiRenderContext;
 import club.heiqi.uilib.ui.style.UiDisplay;
 import club.heiqi.uilib.ui.style.UiOverflow;
+import club.heiqi.uilib.ui.style.UiPosition;
 import club.heiqi.uilib.ui.style.UiStyleLength;
 import club.heiqi.uilib.ui.text.TextMeasureService;
 import club.heiqi.uilib.ui.theme.UiSurfaceStyle;
@@ -262,6 +263,124 @@ public class HtmlLikeDocumentWidgetTest {
         assertDrawCall(halfContext.drawCalls.get(0), 0, 0, 60, 20, 0xFF112233, 0, 0);
         assertDrawCall(halfContext.drawCalls.get(1), 60, 0, 80, 20, 0xFF445566, 0, 0);
         Assert.assertEquals(1, widget.getActiveAnimationCount());
+    }
+
+    /**
+     * 验证 layout transition 期间 hit-test 使用运行态几何而不是目标静态几何。
+     */
+    @Test
+    public void shouldHitTestRuntimeGeometryDuringWidthTransition() {
+        UiDocument document = UiDocument.create();
+        ElementNode root = document.getRootElement();
+        ElementNode row = document.div();
+        ElementNode animated = document.div();
+        ElementNode sibling = document.div();
+        root.style().setWidth(UiStyleLength.px(160));
+        row.style().setDisplay(UiDisplay.FLEX);
+        animated.style()
+                .setWidth(UiStyleLength.px(40))
+                .setHeight(UiStyleLength.px(20))
+                .setBackgroundColor(0xFF112233)
+                .setTransition(DocumentAnimationProperty.WIDTH, 1000L);
+        sibling.style()
+                .setWidth(UiStyleLength.px(20))
+                .setHeight(UiStyleLength.px(20))
+                .setBackgroundColor(0xFF445566);
+        row.append(animated).append(sibling);
+        root.append(row);
+        ManualAnimationClock animationClock = new ManualAnimationClock();
+        HtmlLikeDocumentWidget widget = new HtmlLikeDocumentWidget(document, 160, 40,
+                new DeterministicTextMeasureService());
+        widget.setAnimationClock(animationClock);
+        widget.applyLayoutBounds(0, 0, 160, 40);
+
+        widget.render(new RecordingUiRenderContext());
+        animated.style().setWidth(UiStyleLength.px(80));
+        widget.render(new RecordingUiRenderContext());
+        animationClock.setCurrentTimeNanos(500_000_000L);
+        widget.render(new RecordingUiRenderContext());
+
+        assertElementUid(sibling, widget.findElementAt(70, 10));
+    }
+
+    /**
+     * 验证 layout transition 会让 absolute 子树按运行态 containing block 命中。
+     */
+    @Test
+    public void shouldHitAbsoluteChildAgainstRuntimeContainingBlockDuringWidthTransition() {
+        UiDocument document = UiDocument.create();
+        ElementNode root = document.getRootElement();
+        ElementNode animated = document.div();
+        ElementNode absolute = document.div();
+        root.style().setWidth(UiStyleLength.px(160));
+        animated.style()
+                .setWidth(UiStyleLength.px(40))
+                .setHeight(UiStyleLength.px(20))
+                .setPosition(UiPosition.RELATIVE)
+                .setBackgroundColor(0xFF112233)
+                .setTransition(DocumentAnimationProperty.WIDTH, 1000L);
+        absolute.style()
+                .setWidth(UiStyleLength.px(10))
+                .setHeight(UiStyleLength.px(10))
+                .setPosition(UiPosition.ABSOLUTE)
+                .setTop(UiStyleLength.px(0))
+                .setRight(UiStyleLength.px(0))
+                .setBackgroundColor(0xFF445566);
+        animated.append(absolute);
+        root.append(animated);
+        ManualAnimationClock animationClock = new ManualAnimationClock();
+        HtmlLikeDocumentWidget widget = new HtmlLikeDocumentWidget(document, 160, 40,
+                new DeterministicTextMeasureService());
+        widget.setAnimationClock(animationClock);
+        widget.applyLayoutBounds(0, 0, 160, 40);
+
+        widget.render(new RecordingUiRenderContext());
+        animated.style().setWidth(UiStyleLength.px(80));
+        widget.render(new RecordingUiRenderContext());
+        animationClock.setCurrentTimeNanos(500_000_000L);
+        widget.render(new RecordingUiRenderContext());
+
+        assertElementUid(absolute, widget.findElementAt(55, 5));
+        assertElementUid(root, widget.findElementAt(75, 5));
+    }
+
+    /**
+     * 验证 fixed layout transition 期间 hit-test 使用视口内运行态 fixed 几何。
+     */
+    @Test
+    public void shouldHitFixedRuntimeGeometryDuringWidthTransition() {
+        UiDocument document = UiDocument.create();
+        ElementNode root = document.getRootElement();
+        ElementNode spacer = document.div();
+        ElementNode fixed = document.div();
+        root.style().setWidth(UiStyleLength.px(160));
+        spacer.style()
+                .setWidth(UiStyleLength.px(120))
+                .setHeight(UiStyleLength.px(20))
+                .setBackgroundColor(0xFF112233);
+        fixed.style()
+                .setWidth(UiStyleLength.px(40))
+                .setHeight(UiStyleLength.px(12))
+                .setPosition(UiPosition.FIXED)
+                .setTop(UiStyleLength.px(4))
+                .setLeft(UiStyleLength.px(10))
+                .setBackgroundColor(0xFF445566)
+                .setTransition(DocumentAnimationProperty.WIDTH, 1000L);
+        root.append(spacer).append(fixed);
+        ManualAnimationClock animationClock = new ManualAnimationClock();
+        HtmlLikeDocumentWidget widget = new HtmlLikeDocumentWidget(document, 160, 40,
+                new DeterministicTextMeasureService());
+        widget.setAnimationClock(animationClock);
+        widget.applyLayoutBounds(0, 0, 160, 40);
+
+        widget.render(new RecordingUiRenderContext());
+        fixed.style().setWidth(UiStyleLength.px(80));
+        widget.render(new RecordingUiRenderContext());
+        animationClock.setCurrentTimeNanos(500_000_000L);
+        widget.render(new RecordingUiRenderContext());
+
+        assertElementUid(fixed, widget.findElementAt(65, 8));
+        assertElementUid(spacer, widget.findElementAt(85, 8));
     }
 
     /**

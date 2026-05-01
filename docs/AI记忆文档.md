@@ -86,7 +86,7 @@
 - 数值 keyframe used value 归一化范围：opacity clamp 到 0..1，border-radius clamp 到当前布局盒半径上限，backdrop blur clamp 到 48。
 - `BACKDROP_BLUR_RADIUS` 是 effect-affecting 长度 transition；退场期间即使目标 blur 为 0，只要 transition 仍运行，paint 仍保留 backdrop command。
 - `WIDTH/HEIGHT` 是首批 layout-affecting transition/keyframe 属性；当前 transition 稳定承诺仅为 px-to-px，auto/% 不创建 width/height transition。
-- `HtmlLikeDocumentWidget` 在 layout 动画活跃或存在 layout forwards fill 运行值时，先用静态 computed style 布局刷新 timeline，再用 `DocumentLayoutEngine.LayoutRuntimeValueResolver` 按运行态 `WIDTH/HEIGHT` 同帧重建布局并刷新滚动范围；收缩动画期间滚动偏移按运行态最大滚动范围夹取，不提前使用目标静态布局夹取；作者修改同属性目标后恢复作者布局值。
+- `HtmlLikeDocumentWidget` 在 layout 动画活跃或存在 layout forwards fill 运行值时，先用静态 computed style 布局刷新 timeline，再用 `DocumentLayoutEngine.LayoutRuntimeValueResolver` 按运行态 `WIDTH/HEIGHT` 同帧重建布局并刷新滚动范围；绘制、hit-test、滚动交互与焦点遍历使用同一份运行态布局几何；收缩动画期间滚动偏移按运行态最大滚动范围夹取，不提前使用目标静态布局夹取；作者修改同属性目标后恢复作者布局值。
 - timing function 当前支持 linear、ease、ease-in、ease-out、ease-in-out 的简化插值。
 
 ## Widget 适配与页面入口

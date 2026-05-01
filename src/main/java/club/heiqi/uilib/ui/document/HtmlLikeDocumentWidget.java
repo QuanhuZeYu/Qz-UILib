@@ -178,7 +178,7 @@ public final class HtmlLikeDocumentWidget extends Widget {
      * @return 纵向滚动偏移
      */
     public int getScrollTop(ElementNode element) {
-        resolveLayoutBox();
+        resolveInteractiveLayoutBox();
         return scrollState.getScrollTop(element);
     }
 
@@ -189,7 +189,7 @@ public final class HtmlLikeDocumentWidget extends Widget {
      * @return 最大纵向滚动偏移
      */
     public int getMaxScrollTop(ElementNode element) {
-        resolveLayoutBox();
+        resolveInteractiveLayoutBox();
         return scrollState.getMaxScrollTop(element);
     }
 
@@ -204,7 +204,7 @@ public final class HtmlLikeDocumentWidget extends Widget {
         if (getWidth() <= 0 || getHeight() <= 0 || !contains(screenX, screenY)) {
             return null;
         }
-        return DocumentHitTestEngine.hitTest(resolveLayoutBox(), scrollState, screenX - getAbsoluteX(),
+        return DocumentHitTestEngine.hitTest(resolveInteractiveLayoutBox(), scrollState, screenX - getAbsoluteX(),
                 screenY - getAbsoluteY());
     }
 
@@ -253,7 +253,7 @@ public final class HtmlLikeDocumentWidget extends Widget {
         if (getWidth() <= 0 || getHeight() <= 0 || event == null) {
             return false;
         }
-        DocumentLayoutBox rootBox = resolveLayoutBox();
+        DocumentLayoutBox rootBox = resolveInteractiveLayoutBox();
         return scrollState.handleWheel(rootBox, event.getMouseX() - getAbsoluteX(), event.getMouseY() - getAbsoluteY(),
                 event.getWheelDelta());
     }
@@ -264,7 +264,7 @@ public final class HtmlLikeDocumentWidget extends Widget {
             pressedElement = null;
             return;
         }
-        DocumentLayoutBox rootBox = resolveLayoutBox();
+        DocumentLayoutBox rootBox = resolveInteractiveLayoutBox();
         if (scrollState.beginScrollbarDrag(rootBox, event.getMouseX() - getAbsoluteX(),
                 event.getMouseY() - getAbsoluteY())) {
             pressedElement = null;
@@ -280,7 +280,7 @@ public final class HtmlLikeDocumentWidget extends Widget {
         if (event == null || !scrollState.isDraggingScrollbar()) {
             return;
         }
-        scrollState.updateScrollbarDrag(resolveLayoutBox(), event.getMouseX() - getAbsoluteX(),
+        scrollState.updateScrollbarDrag(resolveInteractiveLayoutBox(), event.getMouseX() - getAbsoluteX(),
                 event.getMouseY() - getAbsoluteY());
     }
 
@@ -519,8 +519,19 @@ public final class HtmlLikeDocumentWidget extends Widget {
             return Collections.emptyList();
         }
         List<ElementNode> focusableElements = new ArrayList<ElementNode>();
-        collectFocusableElements(resolveLayoutBox(), focusableElements);
+        collectFocusableElements(resolveInteractiveLayoutBox(), focusableElements);
         return focusableElements;
+    }
+
+    private DocumentLayoutBox resolveInteractiveLayoutBox() {
+        DocumentLayoutBox rootBox = resolvePaintLayoutBox(false);
+        long currentTimeNanos = animationClock.getCurrentTimeNanos();
+        animationTimeline.updateFromLayout(rootBox, currentTimeNanos);
+        if (animationTimeline.hasRuntimeValue(DocumentAnimationImpact.LAYOUT)) {
+            return resolveRuntimeLayoutBox(currentTimeNanos);
+        }
+        updateScrollStateFromCachedLayoutIfNeeded();
+        return rootBox;
     }
 
     private void collectFocusableElements(DocumentLayoutBox box, List<ElementNode> focusableElements) {
