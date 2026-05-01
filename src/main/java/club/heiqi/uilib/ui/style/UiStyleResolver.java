@@ -3,6 +3,7 @@ package club.heiqi.uilib.ui.style;
 import java.util.Collections;
 import java.util.List;
 
+import club.heiqi.uilib.ui.animation.DocumentAnimationFillMode;
 import club.heiqi.uilib.ui.animation.DocumentAnimationProperty;
 import club.heiqi.uilib.ui.animation.DocumentAnimationTimingFunction;
 import club.heiqi.uilib.ui.dom.DocumentNode;
@@ -72,6 +73,19 @@ public final class UiStyleResolver {
         DocumentAnimationTimingFunction transitionTimingFunction = style.getTransitionTimingFunction() == null
                 ? DocumentAnimationTimingFunction.LINEAR
                 : style.getTransitionTimingFunction();
+        String animationName = style.getAnimationName();
+        long animationDurationNanos = style.getAnimationDurationNanos() == null ? 0L
+                : style.getAnimationDurationNanos().longValue();
+        long animationDelayNanos = style.getAnimationDelayNanos() == null ? 0L
+                : style.getAnimationDelayNanos().longValue();
+        int animationIterationCount = style.getAnimationIterationCount() == null ? 1
+                : style.getAnimationIterationCount().intValue();
+        DocumentAnimationFillMode animationFillMode = style.getAnimationFillMode() == null
+                ? DocumentAnimationFillMode.NONE
+                : style.getAnimationFillMode();
+        DocumentAnimationTimingFunction animationTimingFunction = style.getAnimationTimingFunction() == null
+                ? DocumentAnimationTimingFunction.LINEAR
+                : style.getAnimationTimingFunction();
         UiStyleLength backdropBlurRadius = style.getBackdropBlurRadius() == null ? UiStyleLength.px(0)
                 : style.getBackdropBlurRadius();
         float backdropSaturation = style.getBackdropSaturation() == null ? 1.0F
@@ -80,6 +94,8 @@ public final class UiStyleResolver {
                 padding, borderWidth, borderRadius, overflowX, overflowY, flexDirection, alignItems, justifyContent,
                 verticalAlign, rowGap, columnGap, flexGrow, flexShrink, opacity, backgroundColor, borderColor, textColor,
                 transitionProperties, transitionDurationNanos, transitionDelayNanos, transitionTimingFunction,
+                animationName, animationDurationNanos, animationDelayNanos, animationIterationCount, animationFillMode,
+                animationTimingFunction,
                 backdropBlurRadius, backdropSaturation);
     }
 

@@ -2,8 +2,10 @@ package club.heiqi.uilib.ui.screen;
 
 import java.util.Objects;
 
+import club.heiqi.uilib.ui.animation.DocumentAnimationFillMode;
 import club.heiqi.uilib.ui.animation.DocumentAnimationProperty;
 import club.heiqi.uilib.ui.animation.DocumentAnimationTimingFunction;
+import club.heiqi.uilib.ui.animation.DocumentKeyframes;
 import club.heiqi.uilib.ui.document.HtmlLikeDocumentWidget;
 import club.heiqi.uilib.ui.dom.DocumentElementClickEvent;
 import club.heiqi.uilib.ui.dom.DocumentElementClickHandler;
@@ -93,6 +95,11 @@ final class HtmlLikeSmokeDocumentPageController extends DocumentPageController {
 
     private static UiDocument createSmokeDocument() {
         UiDocument document = UiDocument.create();
+        document.registerKeyframes(DocumentKeyframes.named("smokePulse")
+                .setFloat(DocumentAnimationProperty.OPACITY, 1.0F, 0.45F)
+                .setFloat(DocumentAnimationProperty.BORDER_RADIUS, 999.0F, 12.0F)
+                .setColor(DocumentAnimationProperty.BACKGROUND_COLOR, 0xFF38A169, 0xFF805AD5)
+                .build());
         ElementNode root = document.getRootElement();
         root.style()
                 .setPadding(UiStyleLength.px(14))
@@ -378,6 +385,17 @@ final class HtmlLikeSmokeDocumentPageController extends DocumentPageController {
         animationDiagnostic.appendText("Animation diagnostics: pill=paint/effect bg+opacity+radius 450ms; glass=blur+radius 700ms; static cache resumes after finish.");
         controlsSection.append(animationDiagnostic);
 
+        ElementNode keyframeDiagnostic = document.div();
+        keyframeDiagnostic.style()
+                .setHeight(UiStyleLength.px(14))
+                .setMargin(UiStyleInsets.of(UiStyleLength.px(2), UiStyleLength.px(0), UiStyleLength.px(0),
+                        UiStyleLength.px(0)))
+                .setTextColor(0xFFC4B5FD)
+                .setOverflowX(UiOverflow.HIDDEN)
+                .setOverflowY(UiOverflow.HIDDEN);
+        keyframeDiagnostic.appendText("Keyframe diagnostics: first pill runs animation-name=smokePulse once; fill-mode=both.");
+        controlsSection.append(keyframeDiagnostic);
+
         ElementNode controlsRow = document.div();
         controlsRow.style()
                 .setHeight(UiStyleLength.px(46))
@@ -399,6 +417,9 @@ final class HtmlLikeSmokeDocumentPageController extends DocumentPageController {
                         DocumentAnimationProperty.BORDER_RADIUS)
                 .setTransitionDurationMillis(450L)
                 .setTransitionTimingFunction(DocumentAnimationTimingFunction.EASE_IN_OUT)
+                .setAnimation("smokePulse", 1200L)
+                .setAnimationFillMode(DocumentAnimationFillMode.BOTH)
+                .setAnimationTimingFunction(DocumentAnimationTimingFunction.EASE_IN_OUT)
                 .setBorderRadius(UiStyleLength.px(999))
                 .setTextColor(0xFFFFFFFF)
                 .setOverflowX(UiOverflow.HIDDEN)

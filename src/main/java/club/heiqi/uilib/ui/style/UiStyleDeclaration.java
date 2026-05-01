@@ -6,6 +6,7 @@ import java.util.List;
 import java.util.Objects;
 
 import club.heiqi.uilib.ui.animation.DocumentAnimationProperty;
+import club.heiqi.uilib.ui.animation.DocumentAnimationFillMode;
 import club.heiqi.uilib.ui.animation.DocumentAnimationTimingFunction;
 
 /**
@@ -52,6 +53,12 @@ public final class UiStyleDeclaration {
     private Long transitionDurationNanos;
     private Long transitionDelayNanos;
     private DocumentAnimationTimingFunction transitionTimingFunction;
+    private String animationName;
+    private Long animationDurationNanos;
+    private Long animationDelayNanos;
+    private Integer animationIterationCount;
+    private DocumentAnimationFillMode animationFillMode;
+    private DocumentAnimationTimingFunction animationTimingFunction;
     private UiStyleLength backdropBlurRadius;
     private Float backdropSaturation;
 
@@ -491,6 +498,103 @@ public final class UiStyleDeclaration {
         return this;
     }
 
+    public String getAnimationName() {
+        return animationName;
+    }
+
+    public UiStyleDeclaration setAnimationName(String animationName) {
+        String resolvedName = Objects.requireNonNull(animationName, "animationName").trim();
+        if (resolvedName.isEmpty()) {
+            throw new IllegalArgumentException("animationName cannot be empty");
+        }
+        return updateAnimationName(resolvedName);
+    }
+
+    public UiStyleDeclaration clearAnimationName() {
+        return updateAnimationName(null);
+    }
+
+    public Long getAnimationDurationNanos() {
+        return animationDurationNanos;
+    }
+
+    public UiStyleDeclaration setAnimationDurationMillis(long animationDurationMillis) {
+        return setAnimationDurationNanos(animationDurationMillis * 1_000_000L);
+    }
+
+    public UiStyleDeclaration setAnimationDurationNanos(long animationDurationNanos) {
+        return updateAnimationDurationNanos(Long.valueOf(Math.max(0L, animationDurationNanos)));
+    }
+
+    public UiStyleDeclaration clearAnimationDuration() {
+        return updateAnimationDurationNanos(null);
+    }
+
+    public Long getAnimationDelayNanos() {
+        return animationDelayNanos;
+    }
+
+    public UiStyleDeclaration setAnimationDelayMillis(long animationDelayMillis) {
+        return setAnimationDelayNanos(animationDelayMillis * 1_000_000L);
+    }
+
+    public UiStyleDeclaration setAnimationDelayNanos(long animationDelayNanos) {
+        return updateAnimationDelayNanos(Long.valueOf(Math.max(0L, animationDelayNanos)));
+    }
+
+    public UiStyleDeclaration clearAnimationDelay() {
+        return updateAnimationDelayNanos(null);
+    }
+
+    public Integer getAnimationIterationCount() {
+        return animationIterationCount;
+    }
+
+    public UiStyleDeclaration setAnimationIterationCount(int animationIterationCount) {
+        return updateAnimationIterationCount(Integer.valueOf(Math.max(1, animationIterationCount)));
+    }
+
+    public UiStyleDeclaration clearAnimationIterationCount() {
+        return updateAnimationIterationCount(null);
+    }
+
+    public DocumentAnimationFillMode getAnimationFillMode() {
+        return animationFillMode;
+    }
+
+    public UiStyleDeclaration setAnimationFillMode(DocumentAnimationFillMode animationFillMode) {
+        return updateAnimationFillMode(Objects.requireNonNull(animationFillMode, "animationFillMode"));
+    }
+
+    public UiStyleDeclaration clearAnimationFillMode() {
+        return updateAnimationFillMode(null);
+    }
+
+    public DocumentAnimationTimingFunction getAnimationTimingFunction() {
+        return animationTimingFunction;
+    }
+
+    public UiStyleDeclaration setAnimationTimingFunction(DocumentAnimationTimingFunction animationTimingFunction) {
+        return updateAnimationTimingFunction(Objects.requireNonNull(animationTimingFunction, "animationTimingFunction"));
+    }
+
+    public UiStyleDeclaration clearAnimationTimingFunction() {
+        return updateAnimationTimingFunction(null);
+    }
+
+    /**
+     * 设置单个 keyframe animation 便捷声明。
+     *
+     * @param animationName keyframes 名称
+     * @param durationMillis 持续时间，单位毫秒
+     * @return 当前声明
+     */
+    public UiStyleDeclaration setAnimation(String animationName, long durationMillis) {
+        setAnimationName(animationName);
+        setAnimationDurationMillis(durationMillis);
+        return this;
+    }
+
     public UiStyleLength getBackdropBlurRadius() {
         return backdropBlurRadius;
     }
@@ -760,6 +864,54 @@ public final class UiStyleDeclaration {
     private UiStyleDeclaration updateTransitionTimingFunction(DocumentAnimationTimingFunction value) {
         if (transitionTimingFunction != value) {
             transitionTimingFunction = value;
+            recordPaintChange();
+        }
+        return this;
+    }
+
+    private UiStyleDeclaration updateAnimationName(String value) {
+        if (!Objects.equals(animationName, value)) {
+            animationName = value;
+            recordPaintChange();
+        }
+        return this;
+    }
+
+    private UiStyleDeclaration updateAnimationDurationNanos(Long value) {
+        if (!Objects.equals(animationDurationNanos, value)) {
+            animationDurationNanos = value;
+            recordPaintChange();
+        }
+        return this;
+    }
+
+    private UiStyleDeclaration updateAnimationDelayNanos(Long value) {
+        if (!Objects.equals(animationDelayNanos, value)) {
+            animationDelayNanos = value;
+            recordPaintChange();
+        }
+        return this;
+    }
+
+    private UiStyleDeclaration updateAnimationIterationCount(Integer value) {
+        if (!Objects.equals(animationIterationCount, value)) {
+            animationIterationCount = value;
+            recordPaintChange();
+        }
+        return this;
+    }
+
+    private UiStyleDeclaration updateAnimationFillMode(DocumentAnimationFillMode value) {
+        if (animationFillMode != value) {
+            animationFillMode = value;
+            recordPaintChange();
+        }
+        return this;
+    }
+
+    private UiStyleDeclaration updateAnimationTimingFunction(DocumentAnimationTimingFunction value) {
+        if (animationTimingFunction != value) {
+            animationTimingFunction = value;
             recordPaintChange();
         }
         return this;

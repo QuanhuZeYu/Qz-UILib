@@ -6,6 +6,7 @@ import java.util.List;
 import java.util.Objects;
 
 import club.heiqi.uilib.ui.animation.DocumentAnimationProperty;
+import club.heiqi.uilib.ui.animation.DocumentAnimationFillMode;
 import club.heiqi.uilib.ui.animation.DocumentAnimationTimingFunction;
 
 /**
@@ -44,6 +45,12 @@ public final class ComputedStyle {
     private final long transitionDurationNanos;
     private final long transitionDelayNanos;
     private final DocumentAnimationTimingFunction transitionTimingFunction;
+    private final String animationName;
+    private final long animationDurationNanos;
+    private final long animationDelayNanos;
+    private final int animationIterationCount;
+    private final DocumentAnimationFillMode animationFillMode;
+    private final DocumentAnimationTimingFunction animationTimingFunction;
     private final UiStyleLength backdropBlurRadius;
     private final float backdropSaturation;
 
@@ -56,6 +63,8 @@ public final class ComputedStyle {
             int textColor,
             List<DocumentAnimationProperty> transitionProperties, long transitionDurationNanos,
             long transitionDelayNanos, DocumentAnimationTimingFunction transitionTimingFunction,
+            String animationName, long animationDurationNanos, long animationDelayNanos, int animationIterationCount,
+            DocumentAnimationFillMode animationFillMode, DocumentAnimationTimingFunction animationTimingFunction,
             UiStyleLength backdropBlurRadius, float backdropSaturation) {
         this.display = Objects.requireNonNull(display, "display");
         this.width = Objects.requireNonNull(width, "width");
@@ -89,6 +98,12 @@ public final class ComputedStyle {
         this.transitionDurationNanos = Math.max(0L, transitionDurationNanos);
         this.transitionDelayNanos = Math.max(0L, transitionDelayNanos);
         this.transitionTimingFunction = Objects.requireNonNull(transitionTimingFunction, "transitionTimingFunction");
+        this.animationName = animationName;
+        this.animationDurationNanos = Math.max(0L, animationDurationNanos);
+        this.animationDelayNanos = Math.max(0L, animationDelayNanos);
+        this.animationIterationCount = Math.max(1, animationIterationCount);
+        this.animationFillMode = Objects.requireNonNull(animationFillMode, "animationFillMode");
+        this.animationTimingFunction = Objects.requireNonNull(animationTimingFunction, "animationTimingFunction");
         this.backdropBlurRadius = Objects.requireNonNull(backdropBlurRadius, "backdropBlurRadius");
         this.backdropSaturation = Math.max(0.0F, backdropSaturation);
     }
@@ -215,6 +230,30 @@ public final class ComputedStyle {
 
     public DocumentAnimationTimingFunction getTransitionTimingFunction() {
         return transitionTimingFunction;
+    }
+
+    public String getAnimationName() {
+        return animationName;
+    }
+
+    public long getAnimationDurationNanos() {
+        return animationDurationNanos;
+    }
+
+    public long getAnimationDelayNanos() {
+        return animationDelayNanos;
+    }
+
+    public int getAnimationIterationCount() {
+        return animationIterationCount;
+    }
+
+    public DocumentAnimationFillMode getAnimationFillMode() {
+        return animationFillMode;
+    }
+
+    public DocumentAnimationTimingFunction getAnimationTimingFunction() {
+        return animationTimingFunction;
     }
 
     public UiStyleLength getBackdropBlurRadius() {

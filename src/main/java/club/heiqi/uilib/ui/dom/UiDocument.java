@@ -1,6 +1,12 @@
 package club.heiqi.uilib.ui.dom;
 
+import java.util.Collections;
+import java.util.LinkedHashMap;
+import java.util.Map;
+import java.util.Objects;
 import java.util.concurrent.atomic.AtomicLong;
+
+import club.heiqi.uilib.ui.animation.DocumentKeyframes;
 
 /**
  * HTML-like 文档作者入口。
@@ -10,6 +16,7 @@ public final class UiDocument {
     private static final AtomicLong NEXT_ELEMENT_UID = new AtomicLong(1L);
 
     private final ElementNode rootElement;
+    private final Map<String, DocumentKeyframes> keyframes = new LinkedHashMap<String, DocumentKeyframes>();
     private int mutationVersion;
     private int layoutVersion;
     private int paintVersion;
@@ -90,6 +97,56 @@ public final class UiDocument {
      */
     public TextNode text(String text) {
         return new TextNode(this, text);
+    }
+
+    /**
+     * 注册命名 keyframes 定义。
+     *
+     * @param keyframes keyframes 定义
+     * @return 当前文档
+     */
+    public UiDocument registerKeyframes(DocumentKeyframes keyframes) {
+        DocumentKeyframes resolvedKeyframes = Objects.requireNonNull(keyframes, "keyframes");
+        DocumentKeyframes previousKeyframes = this.keyframes.put(resolvedKeyframes.getName(), resolvedKeyframes);
+        if (previousKeyframes != resolvedKeyframes) {
+            recordPaintMutation();
+        }
+        return this;
+    }
+
+    /**
+     * 移除命名 keyframes 定义。
+     *
+     * @param name keyframes 名称
+     * @return 当前文档
+     */
+    public UiDocument unregisterKeyframes(String name) {
+        if (keyframes.remove(Objects.requireNonNull(name, "name")) != null) {
+            recordPaintMutation();
+        }
+        return this;
+    }
+
+    /**
+     * 查找命名 keyframes 定义。
+     *
+     * @param name keyframes 名称
+     * @return keyframes 定义；不存在时返回 null
+     */
+    public DocumentKeyframes getKeyframes(String name) {
+        if (name == null) {
+            return null;
+        }
+        return keyframes.get(name);
+    }
+
+    /**
+     * 返回只读 keyframes 注册表。
+     *
+     * @return keyframes 注册表
+     */
+    public Map<String, DocumentKeyframes> getKeyframesRegistry() {
+        return Collections.unmodifiableMap(keyframes);
     }
 
     /**

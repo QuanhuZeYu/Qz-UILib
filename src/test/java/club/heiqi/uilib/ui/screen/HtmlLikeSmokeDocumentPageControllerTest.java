@@ -59,6 +59,7 @@ public class HtmlLikeSmokeDocumentPageControllerTest {
         Assert.assertTrue(containsText(texts, "Controls probe: click, input, Tab, button, toggle"));
         Assert.assertTrue(containsText(texts, "Animation diagnostics: pill=paint/effect"));
         Assert.assertTrue(containsText(texts, "static cache resumes after finish"));
+        Assert.assertTrue(containsText(texts, "Keyframe diagnostics: first pill runs animation-name=smokePulse"));
         Assert.assertTrue(containsText(texts, "Same-layer sampling grid"));
         Assert.assertTrue(containsText(texts, "ABS containing probe"));
         Assert.assertTrue(containsText(texts, "static wrapper is not anchor"));
@@ -115,6 +116,7 @@ public class HtmlLikeSmokeDocumentPageControllerTest {
         assertStackingContextProbeKeepsHighZChildIsolated(widget, fixture.textMeasureService);
         Assert.assertTrue(containsTextCall(renderContext.textCalls, "FIXED viewport"));
         Assert.assertTrue(containsTextCall(renderContext.textCalls, "Animation diagnostics"));
+        Assert.assertTrue(containsTextCall(renderContext.textCalls, "Keyframe diagnostics"));
         Assert.assertTrue(containsTextCall(renderContext.textCalls, "ABS stretch fill"));
         Assert.assertTrue(containsTextCall(renderContext.textCalls, "amber span hit: 0"));
         Assert.assertTrue(containsTextCall(renderContext.textCalls, "Vertical-align probe"));
@@ -146,6 +148,27 @@ public class HtmlLikeSmokeDocumentPageControllerTest {
 
         Assert.assertTrue(containsTextCall(clickedRenderContext.textCalls, "Click target: 1"));
         Assert.assertTrue(widget.getActiveAnimationCount() >= 2);
+    }
+
+    /**
+     * 验证 Smoke 页首个交互 pill 会通过作者侧 animation-name 运行 keyframes。
+     */
+    @Test
+    public void shouldRunSmokeKeyframeAnimationOnFirstPill() {
+        TestFixture fixture = new TestFixture();
+
+        fixture.controller.configureDocumentPage();
+        fixture.controller.buildDocument();
+        HtmlLikeDocumentWidget widget = fixture.controller.getHtmlLikeDocumentWidget();
+        widget.applyLayoutBounds(31, 47, 760, 320);
+        RecordingUiRenderContext renderContext = new RecordingUiRenderContext();
+
+        widget.render(renderContext);
+
+        ElementNode clickTarget = findElementContainingDirectText(widget, "Click target: 0");
+        Assert.assertEquals("smokePulse", clickTarget.style().getAnimationName());
+        Assert.assertTrue(widget.getDocument().getKeyframesRegistry().containsKey("smokePulse"));
+        Assert.assertTrue(widget.getActiveAnimationCount() >= 3);
     }
 
     /**

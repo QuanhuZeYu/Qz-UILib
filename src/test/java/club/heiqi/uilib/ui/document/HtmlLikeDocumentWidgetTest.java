@@ -9,7 +9,9 @@ import org.junit.Test;
 import org.lwjglx.input.Keyboard;
 
 import club.heiqi.uilib.ui.animation.DocumentAnimationClock;
+import club.heiqi.uilib.ui.animation.DocumentAnimationFillMode;
 import club.heiqi.uilib.ui.animation.DocumentAnimationProperty;
+import club.heiqi.uilib.ui.animation.DocumentKeyframes;
 import club.heiqi.uilib.ui.dom.DocumentElementActiveEvent;
 import club.heiqi.uilib.ui.dom.DocumentElementActiveHandler;
 import club.heiqi.uilib.ui.dom.DocumentElementClickEvent;
@@ -135,7 +137,7 @@ public class HtmlLikeDocumentWidgetTest {
         animationClock.setCurrentTimeNanos(500_000_000L);
         RecordingUiRenderContext halfContext = new RecordingUiRenderContext();
         widget.render(halfContext);
-        Assert.assertEquals(0xFF808080, halfContext.drawCalls.get(0).surfaceStyle.fillColor);
+        Assert.assertEquals(0x00808080, halfContext.drawCalls.get(0).surfaceStyle.fillColor & 0x00FFFFFF);
 
         animationClock.setCurrentTimeNanos(1_000_000_000L);
         RecordingUiRenderContext finishedContext = new RecordingUiRenderContext();
@@ -217,6 +219,48 @@ public class HtmlLikeDocumentWidgetTest {
 
         Assert.assertEquals(measureCountAfterInitialRender, textMeasureService.getMeasureCount());
         Assert.assertEquals(1, widget.getActiveAnimationCount());
+    }
+
+    /**
+     * 验证作者侧 keyframe animation 运行期间不会触发重新文本测量布局。
+     */
+    @Test
+    public void shouldRenderDeclaredKeyframeAnimationWithoutRecomputingLayout() {
+        UiDocument document = UiDocument.create();
+        document.registerKeyframes(DocumentKeyframes.named("pulse")
+                .setFloat(DocumentAnimationProperty.OPACITY, 1.0F, 0.4F)
+                .setColor(DocumentAnimationProperty.BACKGROUND_COLOR, 0xFF000000, 0xFFFFFFFF)
+                .build());
+        ElementNode root = document.getRootElement();
+        root.style()
+                .setWidth(UiStyleLength.px(32))
+                .setHeight(UiStyleLength.px(20))
+                .setBackgroundColor(0xFF000000)
+                .setOpacity(1.0F)
+                .setAnimation("pulse", 1000L)
+                .setAnimationFillMode(DocumentAnimationFillMode.FORWARDS);
+        root.appendText("pulse");
+        ManualAnimationClock animationClock = new ManualAnimationClock();
+        CountingTextMeasureService textMeasureService = new CountingTextMeasureService();
+        HtmlLikeDocumentWidget widget = new HtmlLikeDocumentWidget(document, 80, 40, textMeasureService);
+        widget.setAnimationClock(animationClock);
+        widget.applyLayoutBounds(0, 0, 80, 40);
+
+        widget.render(new RecordingUiRenderContext());
+        int measureCountAfterInitialRender = textMeasureService.getMeasureCount();
+        Assert.assertEquals(2, widget.getActiveAnimationCount());
+
+        animationClock.setCurrentTimeNanos(500_000_000L);
+        RecordingUiRenderContext halfContext = new RecordingUiRenderContext();
+        widget.render(halfContext);
+
+        Assert.assertEquals(measureCountAfterInitialRender, textMeasureService.getMeasureCount());
+        Assert.assertEquals(0x00808080, halfContext.drawCalls.get(0).surfaceStyle.fillColor & 0x00FFFFFF);
+        Assert.assertTrue(widget.getActiveAnimationCount() > 0);
+
+        animationClock.setCurrentTimeNanos(1_000_000_000L);
+        widget.render(new RecordingUiRenderContext());
+        Assert.assertEquals(0, widget.getActiveAnimationCount());
     }
 
     /**
