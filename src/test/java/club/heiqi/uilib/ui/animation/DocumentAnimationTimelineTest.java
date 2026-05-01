@@ -482,6 +482,70 @@ public class DocumentAnimationTimelineTest {
     }
 
     /**
+     * 验证同名 keyframes 定义替换会重启引用它的声明式动画并使用新轨道。
+     */
+    @Test
+    public void shouldRestartDeclaredKeyframeAnimationWhenRegisteredKeyframesDefinitionChanges() {
+        UiDocument document = UiDocument.create();
+        document.registerKeyframes(DocumentKeyframes.named("pulse")
+                .setFloat(DocumentAnimationProperty.OPACITY, 1.0F, 0.0F)
+                .build());
+        ElementNode root = document.getRootElement();
+        root.style()
+                .setWidth(UiStyleLength.px(40))
+                .setHeight(UiStyleLength.px(20))
+                .setOpacity(0.5F)
+                .setAnimation("pulse", 1000L)
+                .setAnimationFillMode(DocumentAnimationFillMode.BOTH);
+        DocumentAnimationTimeline timeline = new DocumentAnimationTimeline();
+
+        timeline.updateFromLayout(DocumentLayoutEngine.layout(root, 80, 0), 0L);
+        Assert.assertEquals(0.5F, timeline.resolveFloat(root, DocumentAnimationProperty.OPACITY, 0.5F,
+                500_000_000L), 0.0F);
+
+        document.registerKeyframes(DocumentKeyframes.named("pulse")
+                .setFloat(DocumentAnimationProperty.OPACITY, 0.25F, 0.75F)
+                .build());
+        Assert.assertTrue(timeline.updateFromLayout(DocumentLayoutEngine.layout(root, 80, 0), 500_000_000L));
+
+        Assert.assertEquals(0.25F, timeline.resolveFloat(root, DocumentAnimationProperty.OPACITY, 0.5F,
+                500_000_000L), 0.0F);
+        Assert.assertEquals(0.5F, timeline.resolveFloat(root, DocumentAnimationProperty.OPACITY, 0.5F,
+                1_000_000_000L), 0.0F);
+    }
+
+    /**
+     * 验证移除 keyframes 定义会取消引用它的动画并清理旧 forwards fill。
+     */
+    @Test
+    public void shouldCancelDeclaredKeyframeAnimationAndFillWhenRegisteredKeyframesDefinitionIsRemoved() {
+        UiDocument document = UiDocument.create();
+        document.registerKeyframes(DocumentKeyframes.named("pulse")
+                .setColor(DocumentAnimationProperty.BACKGROUND_COLOR, 0xFF000000, 0xFFFFFFFF)
+                .build());
+        ElementNode root = document.getRootElement();
+        root.style()
+                .setWidth(UiStyleLength.px(40))
+                .setHeight(UiStyleLength.px(20))
+                .setBackgroundColor(0xFF112233)
+                .setAnimation("pulse", 1000L)
+                .setAnimationFillMode(DocumentAnimationFillMode.FORWARDS);
+        DocumentAnimationTimeline timeline = new DocumentAnimationTimeline();
+
+        timeline.updateFromLayout(DocumentLayoutEngine.layout(root, 80, 0), 0L);
+        timeline.pruneFinishedAnimations(1_000_000_000L);
+        Assert.assertEquals(0xFFFFFFFF, timeline.resolveColor(root, DocumentAnimationProperty.BACKGROUND_COLOR,
+                0xFF112233, 1_000_000_000L));
+
+        document.unregisterKeyframes("pulse");
+        Assert.assertTrue(timeline.updateFromLayout(DocumentLayoutEngine.layout(root, 80, 0), 1_000_000_000L));
+
+        Assert.assertFalse(timeline.hasAnimationWork());
+        Assert.assertEquals(0xFF112233, timeline.resolveColor(root, DocumentAnimationProperty.BACKGROUND_COLOR,
+                0xFF112233, 1_000_000_000L));
+    }
+
+    /**
      * 验证作者侧目标值变化后，同属性 keyframe fill 不会在后续重绘时重新覆盖 transition 结果。
      */
     @Test

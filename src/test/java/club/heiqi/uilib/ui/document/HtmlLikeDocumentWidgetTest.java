@@ -340,6 +340,79 @@ public class HtmlLikeDocumentWidgetTest {
     }
 
     /**
+     * 验证同名 keyframes 定义替换会重启动画但不重新文本测量布局。
+     */
+    @Test
+    public void shouldRestartDeclaredKeyframeWhenRegisteredKeyframesChangeWithoutRecomputingLayout() {
+        UiDocument document = UiDocument.create();
+        document.registerKeyframes(DocumentKeyframes.named("pulse")
+                .setColor(DocumentAnimationProperty.BACKGROUND_COLOR, 0xFF000000, 0xFFFFFFFF)
+                .build());
+        ElementNode root = document.getRootElement();
+        root.style()
+                .setWidth(UiStyleLength.px(32))
+                .setHeight(UiStyleLength.px(20))
+                .setBackgroundColor(0xFF000000)
+                .setAnimation("pulse", 1000L)
+                .setAnimationFillMode(DocumentAnimationFillMode.BOTH);
+        root.appendText("pulse");
+        ManualAnimationClock animationClock = new ManualAnimationClock();
+        CountingTextMeasureService textMeasureService = new CountingTextMeasureService();
+        HtmlLikeDocumentWidget widget = new HtmlLikeDocumentWidget(document, 80, 40, textMeasureService);
+        widget.setAnimationClock(animationClock);
+        widget.applyLayoutBounds(0, 0, 80, 40);
+
+        widget.render(new RecordingUiRenderContext());
+        int measureCountAfterInitialRender = textMeasureService.getMeasureCount();
+        animationClock.setCurrentTimeNanos(500_000_000L);
+        widget.render(new RecordingUiRenderContext());
+
+        document.registerKeyframes(DocumentKeyframes.named("pulse")
+                .setColor(DocumentAnimationProperty.BACKGROUND_COLOR, 0xFF101010, 0xFF202020)
+                .build());
+        RecordingUiRenderContext replacedContext = new RecordingUiRenderContext();
+        widget.render(replacedContext);
+
+        Assert.assertEquals(measureCountAfterInitialRender, textMeasureService.getMeasureCount());
+        Assert.assertEquals(0xFF101010, replacedContext.drawCalls.get(0).surfaceStyle.fillColor);
+    }
+
+    /**
+     * 验证移除 keyframes 定义会取消动画并回到静态 paint command 缓存路径。
+     */
+    @Test
+    public void shouldReturnToStaticPaintCacheAfterRegisteredKeyframesAreRemoved() {
+        UiDocument document = UiDocument.create();
+        document.registerKeyframes(DocumentKeyframes.named("pulse")
+                .setColor(DocumentAnimationProperty.BACKGROUND_COLOR, 0xFF000000, 0xFFFFFFFF)
+                .build());
+        ElementNode root = document.getRootElement();
+        root.style()
+                .setWidth(UiStyleLength.px(32))
+                .setHeight(UiStyleLength.px(20))
+                .setBackgroundColor(0xFF000000)
+                .setAnimation("pulse", 1000L);
+        ManualAnimationClock animationClock = new ManualAnimationClock();
+        HtmlLikeDocumentWidget widget = new HtmlLikeDocumentWidget(document, 80, 40,
+                new DeterministicTextMeasureService());
+        widget.setAnimationClock(animationClock);
+        widget.applyLayoutBounds(0, 0, 80, 40);
+
+        widget.render(new RecordingUiRenderContext());
+        animationClock.setCurrentTimeNanos(500_000_000L);
+        widget.render(new RecordingUiRenderContext());
+        Assert.assertTrue(widget.getActiveAnimationCount() > 0);
+
+        document.unregisterKeyframes("pulse");
+        widget.render(new RecordingUiRenderContext());
+        int removedGeneration = widget.getPaintCacheGenerationForDiagnostics();
+        Assert.assertEquals(0, widget.getActiveAnimationCount());
+
+        widget.render(new RecordingUiRenderContext());
+        Assert.assertEquals(removedGeneration, widget.getPaintCacheGenerationForDiagnostics());
+    }
+
+    /**
      * 验证 paint-only 样式变更只刷新绘制样式，不重新执行文本测量布局。
      */
     @Test
