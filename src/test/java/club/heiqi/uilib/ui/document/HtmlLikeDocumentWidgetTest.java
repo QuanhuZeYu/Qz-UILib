@@ -264,6 +264,82 @@ public class HtmlLikeDocumentWidgetTest {
     }
 
     /**
+     * 验证 keyframe animation 结束后组件会回到静态 paint command 缓存路径。
+     */
+    @Test
+    public void shouldReturnToStaticPaintCacheAfterDeclaredKeyframeAnimationFinishes() {
+        UiDocument document = UiDocument.create();
+        document.registerKeyframes(DocumentKeyframes.named("pulse")
+                .setColor(DocumentAnimationProperty.BACKGROUND_COLOR, 0xFF000000, 0xFFFFFFFF)
+                .build());
+        ElementNode root = document.getRootElement();
+        root.style()
+                .setWidth(UiStyleLength.px(32))
+                .setHeight(UiStyleLength.px(20))
+                .setBackgroundColor(0xFF000000)
+                .setAnimation("pulse", 1000L);
+        root.appendText("pulse");
+        ManualAnimationClock animationClock = new ManualAnimationClock();
+        CountingTextMeasureService textMeasureService = new CountingTextMeasureService();
+        HtmlLikeDocumentWidget widget = new HtmlLikeDocumentWidget(document, 80, 40, textMeasureService);
+        widget.setAnimationClock(animationClock);
+        widget.applyLayoutBounds(0, 0, 80, 40);
+
+        widget.render(new RecordingUiRenderContext());
+        int initialMeasureCount = textMeasureService.getMeasureCount();
+        int startGeneration = widget.getPaintCacheGenerationForDiagnostics();
+
+        animationClock.setCurrentTimeNanos(500_000_000L);
+        widget.render(new RecordingUiRenderContext());
+        Assert.assertTrue(widget.getPaintCacheGenerationForDiagnostics() > startGeneration);
+        Assert.assertEquals(initialMeasureCount, textMeasureService.getMeasureCount());
+
+        animationClock.setCurrentTimeNanos(1_000_000_000L);
+        widget.render(new RecordingUiRenderContext());
+        int finishedGeneration = widget.getPaintCacheGenerationForDiagnostics();
+        Assert.assertEquals(0, widget.getActiveAnimationCount());
+
+        widget.render(new RecordingUiRenderContext());
+        Assert.assertEquals(finishedGeneration, widget.getPaintCacheGenerationForDiagnostics());
+        Assert.assertEquals(initialMeasureCount, textMeasureService.getMeasureCount());
+    }
+
+    /**
+     * 验证 keyframe animation 声明被清除后组件会回到静态 paint command 缓存路径。
+     */
+    @Test
+    public void shouldReturnToStaticPaintCacheAfterDeclaredKeyframeAnimationIsCleared() {
+        UiDocument document = UiDocument.create();
+        document.registerKeyframes(DocumentKeyframes.named("pulse")
+                .setColor(DocumentAnimationProperty.BACKGROUND_COLOR, 0xFF000000, 0xFFFFFFFF)
+                .build());
+        ElementNode root = document.getRootElement();
+        root.style()
+                .setWidth(UiStyleLength.px(32))
+                .setHeight(UiStyleLength.px(20))
+                .setBackgroundColor(0xFF000000)
+                .setAnimation("pulse", 1000L);
+        ManualAnimationClock animationClock = new ManualAnimationClock();
+        HtmlLikeDocumentWidget widget = new HtmlLikeDocumentWidget(document, 80, 40,
+                new DeterministicTextMeasureService());
+        widget.setAnimationClock(animationClock);
+        widget.applyLayoutBounds(0, 0, 80, 40);
+
+        widget.render(new RecordingUiRenderContext());
+        animationClock.setCurrentTimeNanos(500_000_000L);
+        widget.render(new RecordingUiRenderContext());
+        Assert.assertTrue(widget.getActiveAnimationCount() > 0);
+
+        root.style().clearAnimationName();
+        widget.render(new RecordingUiRenderContext());
+        int clearedGeneration = widget.getPaintCacheGenerationForDiagnostics();
+        Assert.assertEquals(0, widget.getActiveAnimationCount());
+
+        widget.render(new RecordingUiRenderContext());
+        Assert.assertEquals(clearedGeneration, widget.getPaintCacheGenerationForDiagnostics());
+    }
+
+    /**
      * 验证 paint-only 样式变更只刷新绘制样式，不重新执行文本测量布局。
      */
     @Test

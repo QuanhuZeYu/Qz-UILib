@@ -461,8 +461,8 @@ public final class DocumentAnimationTimeline {
                 || keyframes.isEmpty()) {
             return clearDeclaredKeyframeAnimations(state);
         }
-        if (state.matchesDeclaredKeyframeSignature(animationName, keyframes, box, style)) {
-            return false;
+        if (state.matchesDeclaredKeyframeSignature(animationName, keyframes, style)) {
+            return refreshDeclaredKeyframeGeometry(box, state);
         }
 
         clearDeclaredKeyframeAnimations(state);
@@ -476,6 +476,7 @@ public final class DocumentAnimationTimeline {
         state.declaredBoxWidth = box.getWidth();
         state.declaredBoxHeight = box.getHeight();
         long startNanos = currentTimeNanos + style.getAnimationDelayNanos();
+        state.declaredStartNanos = startNanos;
         for (Map.Entry<DocumentAnimationProperty, DocumentKeyframes.ColorTrack> entry : keyframes.getColorTracks()
                 .entrySet()) {
             DocumentAnimationProperty property = entry.getKey();
@@ -499,6 +500,33 @@ public final class DocumentAnimationTimeline {
             state.filledFloats.remove(property);
         }
         return true;
+    }
+
+    private static boolean refreshDeclaredKeyframeGeometry(DocumentLayoutBox box, ElementAnimationState state) {
+        if (state.declaredBoxWidth == box.getWidth() && state.declaredBoxHeight == box.getHeight()) {
+            return false;
+        }
+        state.declaredBoxWidth = box.getWidth();
+        state.declaredBoxHeight = box.getHeight();
+        boolean changed = false;
+        for (DocumentAnimationProperty property : state.declaredFloatKeyframeProperties) {
+            DocumentKeyframes.FloatTrack track = state.declaredKeyframes.getFloatTracks().get(property);
+            if (track == null) {
+                continue;
+            }
+            DocumentKeyframes.FloatTrack normalizedTrack = normalizeDeclaredKeyframeFloatTrack(box, property, track);
+            if (state.floatKeyframeAnimations.containsKey(property)) {
+                state.floatKeyframeAnimations.put(property, new FloatKeyframeAnimation(normalizedTrack,
+                        state.declaredStartNanos, state.declaredDurationNanos, state.declaredIterationCount,
+                        state.declaredFillMode, state.declaredTimingFunction));
+                changed = true;
+            }
+            if (state.filledFloats.containsKey(property)) {
+                state.filledFloats.put(property, Float.valueOf(normalizedTrack.getLastValue()));
+                changed = true;
+            }
+        }
+        return changed;
     }
 
     private static boolean clearDeclaredKeyframeAnimations(ElementAnimationState state) {
@@ -686,19 +714,18 @@ public final class DocumentAnimationTimeline {
         private int declaredIterationCount;
         private DocumentAnimationFillMode declaredFillMode;
         private DocumentAnimationTimingFunction declaredTimingFunction;
+        private long declaredStartNanos;
         private int declaredBoxWidth;
         private int declaredBoxHeight;
 
         private boolean matchesDeclaredKeyframeSignature(String animationName, DocumentKeyframes keyframes,
-                DocumentLayoutBox box, ComputedStyle style) {
+                ComputedStyle style) {
             return Objects.equals(declaredAnimationName, animationName) && declaredKeyframes == keyframes
                     && declaredDurationNanos == style.getAnimationDurationNanos()
                     && declaredDelayNanos == style.getAnimationDelayNanos()
                     && declaredIterationCount == style.getAnimationIterationCount()
                     && declaredFillMode == style.getAnimationFillMode()
-                    && declaredTimingFunction == style.getAnimationTimingFunction()
-                    && declaredBoxWidth == box.getWidth()
-                    && declaredBoxHeight == box.getHeight();
+                    && declaredTimingFunction == style.getAnimationTimingFunction();
         }
 
         private void clearDeclaredKeyframeSignature() {
@@ -711,6 +738,7 @@ public final class DocumentAnimationTimeline {
             declaredIterationCount = 0;
             declaredFillMode = null;
             declaredTimingFunction = null;
+            declaredStartNanos = 0L;
             declaredBoxWidth = 0;
             declaredBoxHeight = 0;
         }

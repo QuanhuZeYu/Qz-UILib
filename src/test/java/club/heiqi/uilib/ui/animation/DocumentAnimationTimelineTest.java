@@ -392,6 +392,67 @@ public class DocumentAnimationTimelineTest {
     }
 
     /**
+     * 验证 animation duration 等声明变化会重启声明式 keyframe，而非沿用旧进度。
+     */
+    @Test
+    public void shouldRestartDeclaredKeyframeAnimationWhenTimingDeclarationChanges() {
+        UiDocument document = UiDocument.create();
+        document.registerKeyframes(DocumentKeyframes.named("pulse")
+                .setFloat(DocumentAnimationProperty.OPACITY, 1.0F, 0.0F)
+                .build());
+        ElementNode root = document.getRootElement();
+        root.style()
+                .setWidth(UiStyleLength.px(40))
+                .setHeight(UiStyleLength.px(20))
+                .setOpacity(0.5F)
+                .setAnimation("pulse", 1000L)
+                .setAnimationFillMode(DocumentAnimationFillMode.BOTH);
+        DocumentAnimationTimeline timeline = new DocumentAnimationTimeline();
+
+        timeline.updateFromLayout(DocumentLayoutEngine.layout(root, 80, 0), 0L);
+        Assert.assertEquals(0.5F, timeline.resolveFloat(root, DocumentAnimationProperty.OPACITY, 0.5F,
+                500_000_000L), 0.0F);
+
+        root.style().setAnimationDurationMillis(2000L);
+        Assert.assertTrue(timeline.updateFromLayout(DocumentLayoutEngine.layout(root, 80, 0), 500_000_000L));
+
+        Assert.assertEquals(1.0F, timeline.resolveFloat(root, DocumentAnimationProperty.OPACITY, 0.5F,
+                500_000_000L), 0.0F);
+        Assert.assertEquals(0.5F, timeline.resolveFloat(root, DocumentAnimationProperty.OPACITY, 0.5F,
+                1_500_000_000L), 0.0F);
+    }
+
+    /**
+     * 验证布局尺寸变化不会把声明式 keyframe 从头重启，只会刷新 used value 归一化边界。
+     */
+    @Test
+    public void shouldPreserveDeclaredKeyframeProgressWhenLayoutSizeChanges() {
+        UiDocument document = UiDocument.create();
+        document.registerKeyframes(DocumentKeyframes.named("pillMorph")
+                .setFloat(DocumentAnimationProperty.BORDER_RADIUS, 0.0F, 999.0F)
+                .build());
+        ElementNode root = document.getRootElement();
+        root.style()
+                .setWidth(UiStyleLength.px(80))
+                .setHeight(UiStyleLength.px(40))
+                .setAnimation("pillMorph", 1000L)
+                .setAnimationFillMode(DocumentAnimationFillMode.BOTH);
+        DocumentAnimationTimeline timeline = new DocumentAnimationTimeline();
+
+        timeline.updateFromLayout(DocumentLayoutEngine.layout(root, 120, 0), 0L);
+        Assert.assertEquals(10.0F, timeline.resolveFloat(root, DocumentAnimationProperty.BORDER_RADIUS, 0.0F,
+                500_000_000L), 0.0F);
+
+        root.style().setHeight(UiStyleLength.px(80));
+        Assert.assertTrue(timeline.updateFromLayout(DocumentLayoutEngine.layout(root, 120, 0), 500_000_000L));
+
+        Assert.assertEquals(20.0F, timeline.resolveFloat(root, DocumentAnimationProperty.BORDER_RADIUS, 0.0F,
+                500_000_000L), 0.0F);
+        Assert.assertEquals(40.0F, timeline.resolveFloat(root, DocumentAnimationProperty.BORDER_RADIUS, 0.0F,
+                1_000_000_000L), 0.0F);
+    }
+
+    /**
      * 验证清除或失效 animation 声明会取消作者侧 keyframes 覆盖。
      */
     @Test
