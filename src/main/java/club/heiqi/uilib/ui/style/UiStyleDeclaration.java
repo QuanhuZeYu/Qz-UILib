@@ -39,6 +39,7 @@ public final class UiStyleDeclaration {
     private UiFlexDirection flexDirection;
     private UiAlignItems alignItems;
     private UiJustifyContent justifyContent;
+    private UiVerticalAlign verticalAlign;
     private UiStyleLength rowGap;
     private UiStyleLength columnGap;
     private Float flexGrow;
@@ -288,6 +289,18 @@ public final class UiStyleDeclaration {
 
     public UiStyleDeclaration clearJustifyContent() {
         return updateJustifyContent(null);
+    }
+
+    public UiVerticalAlign getVerticalAlign() {
+        return verticalAlign;
+    }
+
+    public UiStyleDeclaration setVerticalAlign(UiVerticalAlign verticalAlign) {
+        return updateVerticalAlign(Objects.requireNonNull(verticalAlign, "verticalAlign"));
+    }
+
+    public UiStyleDeclaration clearVerticalAlign() {
+        return updateVerticalAlign(null);
     }
 
     public UiStyleLength getRowGap() {
@@ -641,6 +654,14 @@ public final class UiStyleDeclaration {
     private UiStyleDeclaration updateJustifyContent(UiJustifyContent value) {
         if (justifyContent != value) {
             justifyContent = value;
+            recordLayoutChange();
+        }
+        return this;
+    }
+
+    private UiStyleDeclaration updateVerticalAlign(UiVerticalAlign value) {
+        if (verticalAlign != value) {
+            verticalAlign = value;
             recordLayoutChange();
         }
         return this;

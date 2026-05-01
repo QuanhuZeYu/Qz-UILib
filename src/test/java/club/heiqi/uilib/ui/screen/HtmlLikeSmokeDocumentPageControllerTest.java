@@ -66,6 +66,8 @@ public class HtmlLikeSmokeDocumentPageControllerTest {
         Assert.assertTrue(containsText(texts, "Absolute stretch + inline span probe"));
         Assert.assertTrue(containsText(texts, "ABS stretch fill: left+right / top+bottom"));
         Assert.assertTrue(containsText(texts, "amber span hit: 0"));
+        Assert.assertTrue(containsText(texts, "Vertical-align probe:"));
+        Assert.assertTrue(containsText(texts, "ruler:"));
         Assert.assertTrue(containsText(texts, "Group opacity probe: overlap should stay flat blue"));
         Assert.assertTrue(containsText(texts, "Stacking context probe: blue cover must stay above red z-99 child"));
         Assert.assertTrue(containsText(texts, "red child z=99"));
@@ -110,6 +112,8 @@ public class HtmlLikeSmokeDocumentPageControllerTest {
         Assert.assertTrue(containsTextCall(renderContext.textCalls, "FIXED viewport stays here"));
         Assert.assertTrue(containsTextCall(renderContext.textCalls, "ABS stretch fill"));
         Assert.assertTrue(containsTextCall(renderContext.textCalls, "amber span hit: 0"));
+        Assert.assertTrue(containsTextCall(renderContext.textCalls, "Vertical-align probe"));
+        Assert.assertTrue(containsTextCall(renderContext.textCalls, "bot"));
         assertSmokeInlineProbeSplitsAmberSpan(widget, fixture.textMeasureService);
         Assert.assertTrue(containsTextCall(renderContext.textCalls, "TEXT paint command"));
     }

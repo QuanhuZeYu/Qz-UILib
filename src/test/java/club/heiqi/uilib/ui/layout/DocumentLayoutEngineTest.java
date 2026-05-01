@@ -16,6 +16,7 @@ import club.heiqi.uilib.ui.style.UiJustifyContent;
 import club.heiqi.uilib.ui.style.UiPosition;
 import club.heiqi.uilib.ui.style.UiStyleInsets;
 import club.heiqi.uilib.ui.style.UiStyleLength;
+import club.heiqi.uilib.ui.style.UiVerticalAlign;
 import club.heiqi.uilib.ui.text.TextMeasureService;
 
 /**
@@ -681,6 +682,46 @@ public class DocumentLayoutEngineTest {
         Assert.assertEquals(1, rootBox.getInlineFragments().size());
         assertInlineFragment(rootBox.getInlineFragments().get(0), span, 20, 0, 26, 26);
         Assert.assertEquals(26, rootBox.getContentHeight());
+    }
+
+    /**
+     * 验证 inline 元素可按行盒 top/middle/bottom 做垂直对齐。
+     */
+    @Test
+    public void shouldApplyInlineVerticalAlignToTextAndFragments() {
+        UiDocument document = UiDocument.create();
+        ElementNode root = document.getRootElement();
+        ElementNode baselineSpan = document.span();
+        ElementNode topSpan = document.span();
+        ElementNode middleSpan = document.span();
+        ElementNode bottomSpan = document.span();
+
+        root.style().setWidth(UiStyleLength.px(160));
+        baselineSpan.style().setPadding(UiStyleInsets.of(UiStyleLength.px(6), UiStyleLength.px(0),
+                UiStyleLength.px(6), UiStyleLength.px(0)));
+        topSpan.style().setVerticalAlign(UiVerticalAlign.TOP);
+        middleSpan.style().setVerticalAlign(UiVerticalAlign.MIDDLE);
+        bottomSpan.style().setVerticalAlign(UiVerticalAlign.BOTTOM);
+        root.appendText("A");
+        baselineSpan.appendText("B");
+        topSpan.appendText("T");
+        middleSpan.appendText("M");
+        bottomSpan.appendText("Z");
+        root.append(baselineSpan).append(topSpan).append(middleSpan).append(bottomSpan);
+
+        DocumentLayoutBox rootBox = DocumentLayoutEngine.layout(root, 200, 0,
+                new DeterministicTextMeasureService());
+
+        Assert.assertEquals(30, rootBox.getContentHeight());
+        assertTextRun(rootBox.getTextRuns().get(0), "A", 0, 6, 8, 18);
+        assertTextRun(rootBox.getTextRuns().get(1), "B", 8, 6, 8, 18);
+        assertTextRun(rootBox.getTextRuns().get(2), "T", 16, 0, 8, 18);
+        assertTextRun(rootBox.getTextRuns().get(3), "M", 24, 6, 8, 18);
+        assertTextRun(rootBox.getTextRuns().get(4), "Z", 32, 12, 8, 18);
+        assertInlineFragment(rootBox.getInlineFragments().get(0), baselineSpan, 8, 0, 8, 30);
+        assertInlineFragment(rootBox.getInlineFragments().get(1), topSpan, 16, 0, 8, 18);
+        assertInlineFragment(rootBox.getInlineFragments().get(2), middleSpan, 24, 6, 8, 18);
+        assertInlineFragment(rootBox.getInlineFragments().get(3), bottomSpan, 32, 12, 8, 18);
     }
 
     /**

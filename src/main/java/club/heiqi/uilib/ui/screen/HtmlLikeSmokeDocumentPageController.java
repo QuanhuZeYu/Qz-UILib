@@ -29,6 +29,7 @@ import club.heiqi.uilib.ui.style.UiOverflow;
 import club.heiqi.uilib.ui.style.UiPosition;
 import club.heiqi.uilib.ui.style.UiStyleInsets;
 import club.heiqi.uilib.ui.style.UiStyleLength;
+import club.heiqi.uilib.ui.style.UiVerticalAlign;
 import club.heiqi.uilib.ui.text.DefaultTextMeasureService;
 import club.heiqi.uilib.ui.text.TextMeasureService;
 
@@ -457,7 +458,7 @@ final class HtmlLikeSmokeDocumentPageController extends DocumentPageController {
     private static void appendAbsoluteStretchAndInlineProbe(UiDocument document, ElementNode root) {
         ElementNode probe = document.div();
         probe.style()
-                .setHeight(UiStyleLength.px(172))
+                .setHeight(UiStyleLength.px(226))
                 .setMargin(UiStyleLength.px(16))
                 .setPadding(UiStyleLength.px(10))
                 .setBackgroundColor(0xFF102A43)
@@ -534,6 +535,52 @@ final class HtmlLikeSmokeDocumentPageController extends DocumentPageController {
         inlineLine.append(amberSpan);
         inlineLine.appendText(" split corners stay rounded only at the outside edges.");
         probe.append(inlineLine);
+
+        ElementNode verticalAlignLine = document.div();
+        verticalAlignLine.style()
+                .setMargin(UiStyleInsets.of(UiStyleLength.px(10), UiStyleLength.px(0), UiStyleLength.px(0),
+                        UiStyleLength.px(0)))
+                .setTextColor(0xFFE0F2FE);
+        verticalAlignLine.appendText("Vertical-align probe:");
+
+        ElementNode verticalAlignPills = document.div();
+        verticalAlignPills.style()
+                .setMargin(UiStyleInsets.of(UiStyleLength.px(4), UiStyleLength.px(0), UiStyleLength.px(0),
+                        UiStyleLength.px(0)))
+                .setWidth(UiStyleLength.px(360))
+                .setTextColor(0xFFE0F2FE);
+        verticalAlignPills.appendText("ruler:");
+        appendVerticalAlignPill(document, verticalAlignPills, "rail", UiVerticalAlign.BASELINE,
+                0x334F46E5, 0xFF38BDF8, UiStyleInsets.of(UiStyleLength.px(7), UiStyleLength.px(5),
+                        UiStyleLength.px(7), UiStyleLength.px(5)));
+        appendVerticalAlignPill(document, verticalAlignPills, "top", UiVerticalAlign.TOP, 0x5538BDF8, 0xFF93C5FD,
+                UiStyleInsets.of(UiStyleLength.px(1), UiStyleLength.px(5), UiStyleLength.px(1),
+                        UiStyleLength.px(5)));
+        appendVerticalAlignPill(document, verticalAlignPills, "mid", UiVerticalAlign.MIDDLE, 0x55F59E0B,
+                0xFFFDE68A, UiStyleInsets.of(UiStyleLength.px(1), UiStyleLength.px(5), UiStyleLength.px(1),
+                        UiStyleLength.px(5)));
+        appendVerticalAlignPill(document, verticalAlignPills, "bot", UiVerticalAlign.BOTTOM, 0x5522C55E,
+                0xFF86EFAC, UiStyleInsets.of(UiStyleLength.px(1), UiStyleLength.px(5), UiStyleLength.px(1),
+                        UiStyleLength.px(5)));
+        verticalAlignLine.append(verticalAlignPills);
+        probe.append(verticalAlignLine);
+    }
+
+    private static void appendVerticalAlignPill(UiDocument document, ElementNode line, String label,
+            UiVerticalAlign verticalAlign, int backgroundColor, int borderColor, UiStyleInsets padding) {
+        ElementNode pill = document.span();
+        pill.style()
+                .setVerticalAlign(verticalAlign)
+                .setMargin(UiStyleInsets.of(UiStyleLength.px(0), UiStyleLength.px(3), UiStyleLength.px(0),
+                        UiStyleLength.px(3)))
+                .setPadding(padding)
+                .setBackgroundColor(backgroundColor)
+                .setBorderColor(borderColor)
+                .setBorderWidth(UiStyleLength.px(1))
+                .setBorderRadius(UiStyleLength.px(5))
+                .setTextColor(0xFFFFFFFF);
+        pill.appendText(label);
+        line.append(pill);
     }
 
     private static void appendGroupOpacityProbe(UiDocument document, ElementNode root) {

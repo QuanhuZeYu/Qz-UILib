@@ -31,6 +31,7 @@ public final class ComputedStyle {
     private final UiFlexDirection flexDirection;
     private final UiAlignItems alignItems;
     private final UiJustifyContent justifyContent;
+    private final UiVerticalAlign verticalAlign;
     private final UiStyleLength rowGap;
     private final UiStyleLength columnGap;
     private final float flexGrow;
@@ -50,8 +51,9 @@ public final class ComputedStyle {
             UiStyleLength top, UiStyleLength right, UiStyleLength bottom, UiStyleLength left, Integer zIndex,
             UiStyleInsets margin, UiStyleInsets padding, UiStyleLength borderWidth, UiStyleLength borderRadius,
             UiOverflow overflowX, UiOverflow overflowY, UiFlexDirection flexDirection, UiAlignItems alignItems,
-            UiJustifyContent justifyContent, UiStyleLength rowGap, UiStyleLength columnGap, float flexGrow,
-            float flexShrink, float opacity, int backgroundColor, int borderColor, int textColor,
+            UiJustifyContent justifyContent, UiVerticalAlign verticalAlign, UiStyleLength rowGap,
+            UiStyleLength columnGap, float flexGrow, float flexShrink, float opacity, int backgroundColor, int borderColor,
+            int textColor,
             List<DocumentAnimationProperty> transitionProperties, long transitionDurationNanos,
             long transitionDelayNanos, DocumentAnimationTimingFunction transitionTimingFunction,
             UiStyleLength backdropBlurRadius, float backdropSaturation) {
@@ -73,6 +75,7 @@ public final class ComputedStyle {
         this.flexDirection = Objects.requireNonNull(flexDirection, "flexDirection");
         this.alignItems = Objects.requireNonNull(alignItems, "alignItems");
         this.justifyContent = Objects.requireNonNull(justifyContent, "justifyContent");
+        this.verticalAlign = Objects.requireNonNull(verticalAlign, "verticalAlign");
         this.rowGap = Objects.requireNonNull(rowGap, "rowGap");
         this.columnGap = Objects.requireNonNull(columnGap, "columnGap");
         this.flexGrow = Math.max(0.0F, flexGrow);
@@ -160,6 +163,10 @@ public final class ComputedStyle {
 
     public UiJustifyContent getJustifyContent() {
         return justifyContent;
+    }
+
+    public UiVerticalAlign getVerticalAlign() {
+        return verticalAlign;
     }
 
     public UiStyleLength getRowGap() {

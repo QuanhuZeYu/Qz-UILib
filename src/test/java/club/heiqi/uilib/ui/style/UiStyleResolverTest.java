@@ -35,7 +35,8 @@ public class UiStyleResolverTest {
                 .setPadding(UiStyleLength.px(12))
                 .setBackgroundColor(0xAA101820)
                 .setBackdropBlurRadius(UiStyleLength.px(14))
-                .setBackdropSaturation(1.35F);
+                .setBackdropSaturation(1.35F)
+                .setVerticalAlign(UiVerticalAlign.MIDDLE);
 
         Assert.assertTrue(document.getMutationVersion() > initialVersion);
         Assert.assertSame(panel.style(), panel.getInlineStyle());
@@ -54,6 +55,7 @@ public class UiStyleResolverTest {
         Assert.assertEquals(Integer.valueOf(0xAA101820), panel.style().getBackgroundColor());
         Assert.assertEquals(UiStyleLength.px(14), panel.style().getBackdropBlurRadius());
         Assert.assertEquals(Float.valueOf(1.35F), panel.style().getBackdropSaturation());
+        Assert.assertEquals(UiVerticalAlign.MIDDLE, panel.style().getVerticalAlign());
     }
 
     /**
@@ -91,6 +93,7 @@ public class UiStyleResolverTest {
         Assert.assertEquals(UiFlexDirection.ROW, spanStyle.getFlexDirection());
         Assert.assertEquals(UiAlignItems.STRETCH, spanStyle.getAlignItems());
         Assert.assertEquals(UiJustifyContent.START, spanStyle.getJustifyContent());
+        Assert.assertEquals(UiVerticalAlign.BASELINE, spanStyle.getVerticalAlign());
         Assert.assertEquals(UiStyleLength.px(0), spanStyle.getRowGap());
         Assert.assertEquals(UiStyleLength.px(0), spanStyle.getColumnGap());
         Assert.assertEquals(0.0F, spanStyle.getFlexGrow(), 0.0F);
@@ -141,7 +144,8 @@ public class UiStyleResolverTest {
                 .setBorderColor(0xFF86A8F0)
                 .setTextColor(0xFFF6D78E)
                 .setBackdropBlurRadius(UiStyleLength.px(16))
-                .setBackdropSaturation(1.4F);
+                .setBackdropSaturation(1.4F)
+                .setVerticalAlign(UiVerticalAlign.BOTTOM);
 
         ComputedStyle computedStyle = UiStyleResolver.compute(panel);
 
@@ -180,6 +184,7 @@ public class UiStyleResolverTest {
         Assert.assertEquals(0xFFF6D78E, computedStyle.getTextColor());
         Assert.assertEquals(UiStyleLength.px(16), computedStyle.getBackdropBlurRadius());
         Assert.assertEquals(1.4F, computedStyle.getBackdropSaturation(), 0.0F);
+        Assert.assertEquals(UiVerticalAlign.BOTTOM, computedStyle.getVerticalAlign());
     }
 
     /**

@@ -52,6 +52,8 @@ public final class UiStyleResolver {
         UiAlignItems alignItems = style.getAlignItems() == null ? UiAlignItems.STRETCH : style.getAlignItems();
         UiJustifyContent justifyContent = style.getJustifyContent() == null ? UiJustifyContent.START
                 : style.getJustifyContent();
+        UiVerticalAlign verticalAlign = style.getVerticalAlign() == null ? UiVerticalAlign.BASELINE
+                : style.getVerticalAlign();
         UiStyleLength rowGap = style.getRowGap() == null ? UiStyleLength.px(0) : style.getRowGap();
         UiStyleLength columnGap = style.getColumnGap() == null ? UiStyleLength.px(0) : style.getColumnGap();
         float flexGrow = style.getFlexGrow() == null ? 0.0F : style.getFlexGrow().floatValue();
@@ -76,7 +78,7 @@ public final class UiStyleResolver {
                 : style.getBackdropSaturation().floatValue();
         return new ComputedStyle(display, width, height, position, top, right, bottom, left, zIndex, margin,
                 padding, borderWidth, borderRadius, overflowX, overflowY, flexDirection, alignItems, justifyContent,
-                rowGap, columnGap, flexGrow, flexShrink, opacity, backgroundColor, borderColor, textColor,
+                verticalAlign, rowGap, columnGap, flexGrow, flexShrink, opacity, backgroundColor, borderColor, textColor,
                 transitionProperties, transitionDurationNanos, transitionDelayNanos, transitionTimingFunction,
                 backdropBlurRadius, backdropSaturation);
     }

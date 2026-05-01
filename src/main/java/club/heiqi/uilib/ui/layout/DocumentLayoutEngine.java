@@ -18,6 +18,7 @@ import club.heiqi.uilib.ui.style.UiPosition;
 import club.heiqi.uilib.ui.style.UiStyleInsets;
 import club.heiqi.uilib.ui.style.UiStyleLength;
 import club.heiqi.uilib.ui.style.UiStyleResolver;
+import club.heiqi.uilib.ui.style.UiVerticalAlign;
 import club.heiqi.uilib.ui.text.TextMeasureService;
 
 /**
@@ -260,7 +261,7 @@ public final class DocumentLayoutEngine {
         InlineElementEdges edges = resolveInlineElementEdges(inlineElement, inlineLayoutContext.getLineWidth());
         List<InlineFragmentOwner> fragmentOwners = new ArrayList<InlineFragmentOwner>(ancestorInlineElements);
         fragmentOwners.add(new InlineFragmentOwner(inlineElement, edges.getVerticalTop(),
-                edges.getVerticalBottom()));
+                edges.getVerticalBottom(), UiStyleResolver.compute(inlineElement).getVerticalAlign()));
         appendInlineSpacing(ancestorInlineElements, inlineLayoutContext, edges.margin.getLeft());
         appendInlineSpacing(fragmentOwners, inlineLayoutContext,
                 edges.border.getLeft() + edges.padding.getLeft());
@@ -314,7 +315,7 @@ public final class DocumentLayoutEngine {
             }
             width = Math.min(width, inlineLayoutContext.getRemainingWidth());
             inlineLayoutContext.appendTextRun(textNode, ownerElement, segment, inlineLayoutContext.getCursorLeft(),
-                    width);
+                    width, fragmentOwners);
             appendInlineFragments(fragmentOwners, inlineLayoutContext.getCursorLeft(), width, inlineLayoutContext);
             inlineLayoutContext.advance(width);
             remainingText = remainingText.substring(segment.length());
@@ -972,8 +973,9 @@ public final class DocumentLayoutEngine {
         private final List<PendingInlineFragment> pendingInlineFragments = new ArrayList<PendingInlineFragment>();
         private int lineTop;
         private int cursorLeft;
-        private int lineTopInset;
-        private int lineBottomInset;
+        private int maxBaselineTopEdge;
+        private int maxBaselineBottomEdge;
+        private int maxAlignedItemHeight;
         private boolean lineContentPresent;
 
         private InlineLayoutContext(int lineLeft, int lineTop, int lineWidth, int lineHeight,
@@ -1003,11 +1005,15 @@ public final class DocumentLayoutEngine {
             return lineContentPresent;
         }
 
-        private void appendTextRun(TextNode textNode, ElementNode ownerElement, String text, int left, int width) {
+        private void appendTextRun(TextNode textNode, ElementNode ownerElement, String text, int left, int width,
+                List<InlineFragmentOwner> fragmentOwners) {
             if (width <= 0) {
                 return;
             }
-            pendingTextRuns.add(new PendingInlineTextRun(textNode, ownerElement, text, left, width));
+            InlineFragmentOwner innermostOwner = fragmentOwners.isEmpty() ? null
+                    : fragmentOwners.get(fragmentOwners.size() - 1);
+            pendingTextRuns.add(new PendingInlineTextRun(textNode, ownerElement, text, left, width,
+                    innermostOwner));
         }
 
         private void appendInlineFragment(InlineFragmentOwner owner, int left, int width) {
@@ -1015,8 +1021,12 @@ public final class DocumentLayoutEngine {
                 return;
             }
             pendingInlineFragments.add(new PendingInlineFragment(owner, left, width));
-            lineTopInset = Math.max(lineTopInset, owner.topEdge);
-            lineBottomInset = Math.max(lineBottomInset, owner.bottomEdge);
+            if (owner.verticalAlign == UiVerticalAlign.BASELINE) {
+                maxBaselineTopEdge = Math.max(maxBaselineTopEdge, owner.topEdge);
+                maxBaselineBottomEdge = Math.max(maxBaselineBottomEdge, owner.bottomEdge);
+                return;
+            }
+            maxAlignedItemHeight = Math.max(maxAlignedItemHeight, owner.getHeight(baseLineHeight));
         }
 
         private void advance(int width) {
@@ -1050,31 +1060,64 @@ public final class DocumentLayoutEngine {
         }
 
         private int getCurrentLineHeight() {
-            return lineTopInset + baseLineHeight + lineBottomInset;
+            int baselineHeight = maxBaselineTopEdge + baseLineHeight + maxBaselineBottomEdge;
+            return Math.max(Math.max(baseLineHeight, baselineHeight), maxAlignedItemHeight);
         }
 
         private void flushCurrentLine() {
             if (!lineContentPresent) {
                 return;
             }
-            int textTop = lineTop + lineTopInset;
+            int lineHeight = getCurrentLineHeight();
             for (PendingInlineFragment pendingInlineFragment : pendingInlineFragments) {
-                int fragmentTop = textTop - pendingInlineFragment.owner.topEdge;
+                InlineFragmentOwner owner = pendingInlineFragment.owner;
+                int itemHeight = owner.getHeight(baseLineHeight);
+                int fragmentOffset = owner.verticalAlign == UiVerticalAlign.BASELINE
+                        ? maxBaselineTopEdge - owner.topEdge
+                        : resolveInlineVerticalOffset(owner.verticalAlign, lineHeight, itemHeight);
+                int fragmentTop = lineTop + fragmentOffset;
                 int fragmentHeight = pendingInlineFragment.owner.topEdge + baseLineHeight
                         + pendingInlineFragment.owner.bottomEdge;
                 inlineFragments.add(new DocumentLayoutInlineFragment(pendingInlineFragment.owner.element,
                         pendingInlineFragment.left, fragmentTop, pendingInlineFragment.width, fragmentHeight));
             }
             for (PendingInlineTextRun pendingTextRun : pendingTextRuns) {
+                int textTop = resolveInlineTextTop(lineHeight, pendingTextRun);
                 textRuns.add(new DocumentLayoutTextRun(pendingTextRun.textNode, pendingTextRun.ownerElement,
                         pendingTextRun.text, pendingTextRun.left, textTop, pendingTextRun.width, baseLineHeight));
             }
         }
 
+        private int resolveInlineTextTop(int lineHeight, PendingInlineTextRun pendingTextRun) {
+            if (pendingTextRun.verticalAlign == UiVerticalAlign.BASELINE) {
+                return lineTop + maxBaselineTopEdge;
+            }
+            int itemHeight = pendingTextRun.topEdge + baseLineHeight + pendingTextRun.bottomEdge;
+            return lineTop + resolveInlineVerticalOffset(pendingTextRun.verticalAlign, lineHeight, itemHeight)
+                    + pendingTextRun.topEdge;
+        }
+
+        private static int resolveInlineVerticalOffset(UiVerticalAlign verticalAlign, int lineHeight, int itemHeight) {
+            int safeLineHeight = Math.max(1, lineHeight);
+            int safeItemHeight = Math.max(1, itemHeight);
+            int remaining = Math.max(0, safeLineHeight - safeItemHeight);
+            if (verticalAlign == UiVerticalAlign.TOP) {
+                return 0;
+            }
+            if (verticalAlign == UiVerticalAlign.MIDDLE) {
+                return remaining / 2;
+            }
+            if (verticalAlign == UiVerticalAlign.BOTTOM) {
+                return remaining;
+            }
+            return 0;
+        }
+
         private void resetCurrentLineState() {
             cursorLeft = lineLeft;
-            lineTopInset = 0;
-            lineBottomInset = 0;
+            maxBaselineTopEdge = 0;
+            maxBaselineBottomEdge = 0;
+            maxAlignedItemHeight = 0;
             lineContentPresent = false;
             pendingTextRuns.clear();
             pendingInlineFragments.clear();
@@ -1089,11 +1132,17 @@ public final class DocumentLayoutEngine {
         private final ElementNode element;
         private final int topEdge;
         private final int bottomEdge;
+        private final UiVerticalAlign verticalAlign;
 
-        private InlineFragmentOwner(ElementNode element, int topEdge, int bottomEdge) {
+        private InlineFragmentOwner(ElementNode element, int topEdge, int bottomEdge, UiVerticalAlign verticalAlign) {
             this.element = element;
             this.topEdge = Math.max(0, topEdge);
             this.bottomEdge = Math.max(0, bottomEdge);
+            this.verticalAlign = verticalAlign == null ? UiVerticalAlign.BASELINE : verticalAlign;
+        }
+
+        private int getHeight(int baseLineHeight) {
+            return topEdge + Math.max(1, baseLineHeight) + bottomEdge;
         }
     }
 
@@ -1107,13 +1156,20 @@ public final class DocumentLayoutEngine {
         private final String text;
         private final int left;
         private final int width;
+        private final int topEdge;
+        private final int bottomEdge;
+        private final UiVerticalAlign verticalAlign;
 
-        private PendingInlineTextRun(TextNode textNode, ElementNode ownerElement, String text, int left, int width) {
+        private PendingInlineTextRun(TextNode textNode, ElementNode ownerElement, String text, int left, int width,
+                InlineFragmentOwner innermostOwner) {
             this.textNode = textNode;
             this.ownerElement = ownerElement;
             this.text = text;
             this.left = left;
             this.width = width;
+            this.topEdge = innermostOwner == null ? 0 : innermostOwner.topEdge;
+            this.bottomEdge = innermostOwner == null ? 0 : innermostOwner.bottomEdge;
+            this.verticalAlign = innermostOwner == null ? UiVerticalAlign.BASELINE : innermostOwner.verticalAlign;
         }
     }
 
