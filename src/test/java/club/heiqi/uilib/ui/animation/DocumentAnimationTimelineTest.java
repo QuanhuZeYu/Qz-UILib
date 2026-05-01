@@ -10,7 +10,7 @@ import club.heiqi.uilib.ui.layout.DocumentLayoutEngine;
 import club.heiqi.uilib.ui.style.UiStyleLength;
 
 /**
- * `DocumentAnimationTimeline` 的 paint-only transition 契约测试。
+ * `DocumentAnimationTimeline` 的 paint/effect transition 契约测试。
  */
 public class DocumentAnimationTimelineTest {
 
@@ -179,5 +179,33 @@ public class DocumentAnimationTimelineTest {
                 200_000_000L), 0.0F);
         Assert.assertEquals(0.75F, timeline.resolveFloat(root, DocumentAnimationProperty.OPACITY, 0.0F,
                 750_000_000L), 0.0F);
+    }
+
+    /**
+     * 验证作者侧关闭 transition 后，运行中的动画会立即取消并回到 computed style 值。
+     */
+    @Test
+    public void shouldCancelRunningTransitionWhenDeclarationNoLongerAllowsIt() {
+        UiDocument document = UiDocument.create();
+        ElementNode root = document.getRootElement();
+        root.style()
+                .setWidth(UiStyleLength.px(40))
+                .setHeight(UiStyleLength.px(20))
+                .setOpacity(1.0F)
+                .setTransition(DocumentAnimationProperty.OPACITY, 1000L);
+        DocumentAnimationTimeline timeline = new DocumentAnimationTimeline();
+
+        timeline.updateFromLayout(DocumentLayoutEngine.layout(root, 80, 0), 0L);
+        root.style().setOpacity(0.0F);
+        timeline.updateFromLayout(DocumentLayoutEngine.layout(root, 80, 0), 0L);
+        Assert.assertEquals(0.5F, timeline.resolveFloat(root, DocumentAnimationProperty.OPACITY, 0.0F,
+                500_000_000L), 0.0F);
+
+        root.style().setTransitionDurationMillis(0L);
+        Assert.assertTrue(timeline.updateFromLayout(DocumentLayoutEngine.layout(root, 80, 0), 500_000_000L));
+
+        Assert.assertFalse(timeline.hasAnimationWork());
+        Assert.assertEquals(0.0F, timeline.resolveFloat(root, DocumentAnimationProperty.OPACITY, 0.0F,
+                500_000_000L), 0.0F);
     }
 }

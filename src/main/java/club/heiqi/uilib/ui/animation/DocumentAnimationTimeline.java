@@ -16,7 +16,7 @@ import club.heiqi.uilib.ui.style.ComputedStyle;
 /**
  * HTML-like 文档级动画时间线。
  *
- * <p>当前只负责 paint-only transition，不直接修改作者侧 inline style。</p>
+ * <p>当前负责 paint/effect transition，不直接修改作者侧 inline style。</p>
  */
 public final class DocumentAnimationTimeline {
 
@@ -216,6 +216,10 @@ public final class DocumentAnimationTimeline {
         for (DocumentAnimationProperty property : PAINT_COLOR_PROPERTIES) {
             int baseColor = getBaseColor(style, property);
             Integer previousTarget = state.targetColors.get(property);
+            boolean transitionAllowed = canTransition(style, property);
+            if (!transitionAllowed && state.colorTransitions.remove(property) != null) {
+                changed = true;
+            }
             if (previousTarget == null) {
                 state.targetColors.put(property, Integer.valueOf(baseColor));
                 changed = true;
@@ -226,7 +230,7 @@ public final class DocumentAnimationTimeline {
             }
             int fromColor = resolveColor(element, property, previousTarget.intValue(), currentTimeNanos);
             state.targetColors.put(property, Integer.valueOf(baseColor));
-            if (canTransition(style, property) && fromColor != baseColor) {
+            if (transitionAllowed && fromColor != baseColor) {
                 state.colorTransitions.put(property, new ColorTransition(fromColor, baseColor,
                         currentTimeNanos + style.getTransitionDelayNanos(), style.getTransitionDurationNanos(),
                         style.getTransitionTimingFunction()));
@@ -238,6 +242,10 @@ public final class DocumentAnimationTimeline {
         for (DocumentAnimationProperty property : PAINT_FLOAT_PROPERTIES) {
             float baseValue = getBaseFloat(box, property);
             Float previousTarget = state.targetFloats.get(property);
+            boolean transitionAllowed = canTransition(style, property);
+            if (!transitionAllowed && state.floatTransitions.remove(property) != null) {
+                changed = true;
+            }
             if (previousTarget == null) {
                 state.targetFloats.put(property, Float.valueOf(baseValue));
                 changed = true;
@@ -248,7 +256,7 @@ public final class DocumentAnimationTimeline {
             }
             float fromValue = resolveFloat(element, property, previousTarget.floatValue(), currentTimeNanos);
             state.targetFloats.put(property, Float.valueOf(baseValue));
-            if (canTransition(style, property) && Float.compare(fromValue, baseValue) != 0) {
+            if (transitionAllowed && Float.compare(fromValue, baseValue) != 0) {
                 state.floatTransitions.put(property, new FloatTransition(fromValue, baseValue,
                         currentTimeNanos + style.getTransitionDelayNanos(), style.getTransitionDurationNanos(),
                         style.getTransitionTimingFunction()));
