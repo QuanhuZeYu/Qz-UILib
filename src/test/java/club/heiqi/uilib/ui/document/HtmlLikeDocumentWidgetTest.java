@@ -408,6 +408,45 @@ public class HtmlLikeDocumentWidgetTest {
     }
 
     /**
+     * 验证 layout 动画期间会按运行态高度刷新 overflow auto 的滚动范围。
+     */
+    @Test
+    public void shouldUpdateScrollRangeDuringHeightTransition() {
+        UiDocument document = UiDocument.create();
+        ElementNode root = document.getRootElement();
+        ElementNode child = document.div();
+        root.style()
+                .setWidth(UiStyleLength.px(80))
+                .setHeight(UiStyleLength.px(50))
+                .setOverflowY(UiOverflow.AUTO);
+        child.style()
+                .setHeight(UiStyleLength.px(40))
+                .setBackgroundColor(0xFFAA5500)
+                .setTransition(DocumentAnimationProperty.HEIGHT, 1000L);
+        root.append(child);
+        ManualAnimationClock animationClock = new ManualAnimationClock();
+        HtmlLikeDocumentWidget widget = new HtmlLikeDocumentWidget(document, 80, 50,
+                new DeterministicTextMeasureService());
+        widget.setAnimationClock(animationClock);
+        widget.applyLayoutBounds(0, 0, 80, 50);
+
+        widget.render(new RecordingUiRenderContext());
+        Assert.assertEquals(0, widget.getMaxScrollTop(root));
+
+        child.style().setHeight(UiStyleLength.px(100));
+        widget.render(new RecordingUiRenderContext());
+        Assert.assertEquals(0, widget.getMaxScrollTop(root));
+
+        animationClock.setCurrentTimeNanos(500_000_000L);
+        widget.render(new RecordingUiRenderContext());
+        Assert.assertEquals(20, widget.getMaxScrollTop(root));
+
+        animationClock.setCurrentTimeNanos(1_000_000_000L);
+        widget.render(new RecordingUiRenderContext());
+        Assert.assertEquals(50, widget.getMaxScrollTop(root));
+    }
+
+    /**
      * 验证作者侧 keyframe animation 运行期间不会触发重新文本测量布局。
      */
     @Test
