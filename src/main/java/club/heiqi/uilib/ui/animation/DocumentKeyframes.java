@@ -12,7 +12,7 @@ import java.util.TreeMap;
 /**
  * 命名 keyframes 定义。
  *
- * <p>当前 MVP 支持 paint/effect 属性的多段 stop 列表，供作者侧 `animation-name` 复用。</p>
+ * <p>当前 MVP 支持 paint/effect 属性，以及受控 layout 数值属性的多段 stop 列表，供作者侧 `animation-name` 复用。</p>
  */
 public final class DocumentKeyframes {
 
@@ -124,7 +124,7 @@ public final class DocumentKeyframes {
          * @return 当前 builder
          */
         public Builder setColor(DocumentAnimationProperty property, int fromColor, int toColor) {
-            DocumentAnimationProperty resolvedProperty = requirePaintOrEffectProperty(property);
+            DocumentAnimationProperty resolvedProperty = requireColorProperty(property);
             NavigableMap<Float, Integer> track = new TreeMap<Float, Integer>();
             track.put(Float.valueOf(0.0F), Integer.valueOf(fromColor));
             track.put(Float.valueOf(1.0F), Integer.valueOf(toColor));
@@ -142,7 +142,7 @@ public final class DocumentKeyframes {
          * @return 当前 builder
          */
         public Builder setColorStop(DocumentAnimationProperty property, float offset, int color) {
-            DocumentAnimationProperty resolvedProperty = requirePaintOrEffectProperty(property);
+            DocumentAnimationProperty resolvedProperty = requireColorProperty(property);
             NavigableMap<Float, Integer> track = getOrCreateColorTrack(resolvedProperty);
             track.put(Float.valueOf(normalizeOffset(offset)), Integer.valueOf(color));
             floatTracks.remove(resolvedProperty);
@@ -158,7 +158,7 @@ public final class DocumentKeyframes {
          * @return 当前 builder
          */
         public Builder setFloat(DocumentAnimationProperty property, float fromValue, float toValue) {
-            DocumentAnimationProperty resolvedProperty = requirePaintOrEffectProperty(property);
+            DocumentAnimationProperty resolvedProperty = requireFloatProperty(property);
             NavigableMap<Float, Float> track = new TreeMap<Float, Float>();
             track.put(Float.valueOf(0.0F), Float.valueOf(fromValue));
             track.put(Float.valueOf(1.0F), Float.valueOf(toValue));
@@ -176,7 +176,7 @@ public final class DocumentKeyframes {
          * @return 当前 builder
          */
         public Builder setFloatStop(DocumentAnimationProperty property, float offset, float value) {
-            DocumentAnimationProperty resolvedProperty = requirePaintOrEffectProperty(property);
+            DocumentAnimationProperty resolvedProperty = requireFloatProperty(property);
             NavigableMap<Float, Float> track = getOrCreateFloatTrack(resolvedProperty);
             track.put(Float.valueOf(normalizeOffset(offset)), Float.valueOf(value));
             colorTracks.remove(resolvedProperty);
@@ -246,10 +246,22 @@ public final class DocumentKeyframes {
             return stops;
         }
 
-        private static DocumentAnimationProperty requirePaintOrEffectProperty(DocumentAnimationProperty property) {
+        private static DocumentAnimationProperty requireColorProperty(DocumentAnimationProperty property) {
             DocumentAnimationProperty resolvedProperty = Objects.requireNonNull(property, "property");
-            if (resolvedProperty.getImpact() == DocumentAnimationImpact.LAYOUT) {
-                throw new IllegalArgumentException("layout keyframes are not supported yet: " + resolvedProperty);
+            if (resolvedProperty != DocumentAnimationProperty.BACKGROUND_COLOR
+                    && resolvedProperty != DocumentAnimationProperty.BORDER_COLOR
+                    && resolvedProperty != DocumentAnimationProperty.TEXT_COLOR) {
+                throw new IllegalArgumentException("color keyframes are not supported for: " + resolvedProperty);
+            }
+            return resolvedProperty;
+        }
+
+        private static DocumentAnimationProperty requireFloatProperty(DocumentAnimationProperty property) {
+            DocumentAnimationProperty resolvedProperty = Objects.requireNonNull(property, "property");
+            if (resolvedProperty == DocumentAnimationProperty.BACKGROUND_COLOR
+                    || resolvedProperty == DocumentAnimationProperty.BORDER_COLOR
+                    || resolvedProperty == DocumentAnimationProperty.TEXT_COLOR) {
+                throw new IllegalArgumentException("float keyframes are not supported for: " + resolvedProperty);
             }
             return resolvedProperty;
         }

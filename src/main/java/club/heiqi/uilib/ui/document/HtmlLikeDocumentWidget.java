@@ -360,14 +360,14 @@ public final class HtmlLikeDocumentWidget extends Widget {
         DocumentLayoutBox rootBox = resolvePaintLayoutBox();
         long currentTimeNanos = animationClock.getCurrentTimeNanos();
         boolean animationStateChanged = animationTimeline.updateFromLayout(rootBox, currentTimeNanos);
-        boolean layoutAnimationWork = animationTimeline.hasAnimationWork(DocumentAnimationImpact.LAYOUT);
-        if (layoutAnimationWork) {
+        boolean layoutRuntimeValueActive = animationTimeline.hasRuntimeValue(DocumentAnimationImpact.LAYOUT);
+        if (layoutRuntimeValueActive) {
             rootBox = resolveRuntimeLayoutBox(currentTimeNanos);
         }
         int scrollVersion = scrollState.getVersion();
         boolean animationWork = animationTimeline.hasAnimationWork();
         boolean transientScrollbarActive = scrollState.hasActiveTransientScrollbars(currentTimeNanos);
-        if (!animationStateChanged && !animationWork && !layoutAnimationWork && cachedPaintScrollVersion == scrollVersion
+        if (!animationStateChanged && !animationWork && cachedPaintScrollVersion == scrollVersion
                 && cachedPaintTransientScrollbarActive == transientScrollbarActive) {
             return cachedPaintCommands;
         }

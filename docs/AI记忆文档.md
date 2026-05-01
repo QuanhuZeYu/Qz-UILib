@@ -78,15 +78,15 @@
 - transition 基于 computed style 基准值变化创建；清除 `transition-property` 或 duration 变为 0 时，运行中 transition 在下一次 timeline 刷新回到 computed style 基准值。
 - `DocumentAnimationTimeline.hasRunningTransition(element, property)` 可按元素/属性查询 transition 运行状态。
 - keyframe animation 通过 `UiDocument.registerKeyframes(...)` 注册命名 `DocumentKeyframes`，由元素的 `animation-name` 引用。
-- keyframes 支持 color/float 轨道、多段 stop、delay、有限 iteration、fill-mode none/backwards/forwards/both 与 timing function。
+- keyframes 支持 color/float 轨道、多段 stop、delay、有限 iteration、fill-mode none/backwards/forwards/both 与 timing function；float 轨道可覆盖受控 layout 属性 `WIDTH/HEIGHT`。
 - keyframe 声明重启条件：`animation-name`、keyframes 对象、duration、delay、iteration count、fill-mode、timing function 变化。
 - 布局盒尺寸变化只刷新数值轨道 used value 归一化边界，不重启 keyframe 进度。
 - 同名 keyframes 定义对象替换会让引用元素重启动画；定义移除会取消引用元素动画并清理对应 fill。
 - forwards fill 后作者侧修改同属性 computed target 时，该属性 fill 让位给作者值；多属性 fill 只清理被作者改动的属性。
 - 数值 keyframe used value 归一化范围：opacity clamp 到 0..1，border-radius clamp 到当前布局盒半径上限，backdrop blur clamp 到 48。
 - `BACKDROP_BLUR_RADIUS` 是 effect-affecting 长度 transition；退场期间即使目标 blur 为 0，只要 transition 仍运行，paint 仍保留 backdrop command。
-- `WIDTH/HEIGHT` 是首批 layout-affecting transition；当前稳定承诺仅为 px-to-px transition，auto/% 不创建 width/height transition。
-- `HtmlLikeDocumentWidget` 在 layout 动画活跃时先用静态 computed style 布局刷新 timeline，再用 `DocumentLayoutEngine.LayoutRuntimeValueResolver` 按运行态 `WIDTH/HEIGHT` 同帧重建布局，结束后回到静态 layout/paint cache。
+- `WIDTH/HEIGHT` 是首批 layout-affecting transition/keyframe 属性；当前 transition 稳定承诺仅为 px-to-px，auto/% 不创建 width/height transition。
+- `HtmlLikeDocumentWidget` 在 layout 动画活跃或存在 layout forwards fill 运行值时，先用静态 computed style 布局刷新 timeline，再用 `DocumentLayoutEngine.LayoutRuntimeValueResolver` 按运行态 `WIDTH/HEIGHT` 同帧重建布局；作者修改同属性目标后恢复作者布局值。
 - timing function 当前支持 linear、ease、ease-in、ease-out、ease-in-out 的简化插值。
 
 ## Widget 适配与页面入口
@@ -143,7 +143,7 @@
 
 ## 下一步边界
 
-- CSS transition / animation MVP 继续优先；后续 layout-affecting 属性或 keyframe layout 属性必须限制在少量可控属性与明确 fallback。
+- CSS transition / animation MVP 继续优先；后续 layout-affecting 属性扩展必须限制在少量可控属性与明确 fallback。
 - 不一次性开放全量布局动画。
 - paint/effect 动画不能触发布局；layout 动画可以重布局，但结束后必须恢复静态缓存。
 - inline formatting、effect chain、snapshot atlas 和 blur/filter 优化只在阻塞动画探针、真实页面迁移或控件展示时优先处理。

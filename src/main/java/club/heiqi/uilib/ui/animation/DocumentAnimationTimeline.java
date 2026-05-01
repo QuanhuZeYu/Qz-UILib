@@ -234,6 +234,51 @@ public final class DocumentAnimationTimeline {
     }
 
     /**
+     * 返回当前是否有指定影响范围的运行态覆盖值。
+     *
+     * <p>与 `hasAnimationWork(...)` 不同，forwards fill 这类已完成但仍覆盖 computed style 的运行值也会返回 true。</p>
+     *
+     * @param impact 动画影响范围
+     * @return 是否存在对应运行态覆盖值
+     */
+    public boolean hasRuntimeValue(DocumentAnimationImpact impact) {
+        Objects.requireNonNull(impact, "impact");
+        for (ElementAnimationState state : states.values()) {
+            for (DocumentAnimationProperty property : state.colorTransitions.keySet()) {
+                if (property.getImpact() == impact) {
+                    return true;
+                }
+            }
+            for (DocumentAnimationProperty property : state.floatTransitions.keySet()) {
+                if (property.getImpact() == impact) {
+                    return true;
+                }
+            }
+            for (DocumentAnimationProperty property : state.colorKeyframeAnimations.keySet()) {
+                if (property.getImpact() == impact) {
+                    return true;
+                }
+            }
+            for (DocumentAnimationProperty property : state.floatKeyframeAnimations.keySet()) {
+                if (property.getImpact() == impact) {
+                    return true;
+                }
+            }
+            for (DocumentAnimationProperty property : state.filledColors.keySet()) {
+                if (property.getImpact() == impact) {
+                    return true;
+                }
+            }
+            for (DocumentAnimationProperty property : state.filledFloats.keySet()) {
+                if (property.getImpact() == impact) {
+                    return true;
+                }
+            }
+        }
+        return false;
+    }
+
+    /**
      * 返回指定元素属性当前是否仍存在运行态 transition 覆盖。
      *
      * @param element 元素
@@ -534,8 +579,11 @@ public final class DocumentAnimationTimeline {
                 changed = true;
             }
             if (state.filledFloats.containsKey(property)) {
-                state.filledFloats.put(property, Float.valueOf(normalizedTrack.getLastValue()));
-                changed = true;
+                float nextFilledValue = normalizedTrack.getLastValue();
+                if (Float.compare(state.filledFloats.get(property).floatValue(), nextFilledValue) != 0) {
+                    state.filledFloats.put(property, Float.valueOf(nextFilledValue));
+                    changed = true;
+                }
             }
         }
         return changed;

@@ -194,6 +194,42 @@ public class DocumentAnimationTimelineTest {
     }
 
     /**
+     * 验证 width/height keyframe 会作为 layout-affecting 数值覆盖层插值。
+     */
+    @Test
+    public void shouldRunWidthAndHeightKeyframeAsLayoutRuntimeValues() {
+        UiDocument document = UiDocument.create();
+        document.registerKeyframes(DocumentKeyframes.named("grow")
+                .setFloat(DocumentAnimationProperty.WIDTH, 40.0F, 80.0F)
+                .setFloat(DocumentAnimationProperty.HEIGHT, 20.0F, 40.0F)
+                .build());
+        ElementNode root = document.getRootElement();
+        root.style()
+                .setWidth(UiStyleLength.px(40))
+                .setHeight(UiStyleLength.px(20))
+                .setAnimation("grow", 1000L)
+                .setAnimationFillMode(DocumentAnimationFillMode.FORWARDS);
+        DocumentAnimationTimeline timeline = new DocumentAnimationTimeline();
+
+        Assert.assertTrue(timeline.updateFromLayout(DocumentLayoutEngine.layout(root, 120, 0), 0L));
+
+        Assert.assertTrue(timeline.hasAnimationWork(DocumentAnimationImpact.LAYOUT));
+        Assert.assertTrue(timeline.hasRuntimeValue(DocumentAnimationImpact.LAYOUT));
+        Assert.assertEquals(60.0F, timeline.resolveFloat(root, DocumentAnimationProperty.WIDTH, 40.0F,
+                500_000_000L), 0.0F);
+        Assert.assertEquals(30.0F, timeline.resolveFloat(root, DocumentAnimationProperty.HEIGHT, 20.0F,
+                500_000_000L), 0.0F);
+
+        Assert.assertTrue(timeline.pruneFinishedAnimations(1_000_000_000L));
+        Assert.assertFalse(timeline.hasAnimationWork(DocumentAnimationImpact.LAYOUT));
+        Assert.assertTrue(timeline.hasRuntimeValue(DocumentAnimationImpact.LAYOUT));
+        Assert.assertEquals(80.0F, timeline.resolveFloat(root, DocumentAnimationProperty.WIDTH, 40.0F,
+                1_000_000_000L), 0.0F);
+        Assert.assertEquals(40.0F, timeline.resolveFloat(root, DocumentAnimationProperty.HEIGHT, 20.0F,
+                1_000_000_000L), 0.0F);
+    }
+
+    /**
      * 验证 width 从 auto 进入像素值时不会创建首期 px-to-px transition。
      */
     @Test

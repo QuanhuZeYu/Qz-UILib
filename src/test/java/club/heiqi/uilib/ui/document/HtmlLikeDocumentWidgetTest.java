@@ -309,6 +309,60 @@ public class HtmlLikeDocumentWidgetTest {
     }
 
     /**
+     * 验证 layout keyframe 运行期间和 forwards fill 后都会驱动运行态布局值。
+     */
+    @Test
+    public void shouldRelayoutSiblingsDuringWidthKeyframeAndForwardsFill() {
+        UiDocument document = UiDocument.create();
+        document.registerKeyframes(DocumentKeyframes.named("layoutGrow")
+                .setFloat(DocumentAnimationProperty.WIDTH, 40.0F, 80.0F)
+                .build());
+        ElementNode root = document.getRootElement();
+        ElementNode row = document.div();
+        ElementNode animated = document.div();
+        ElementNode sibling = document.div();
+        root.style().setWidth(UiStyleLength.px(160));
+        row.style().setDisplay(UiDisplay.FLEX);
+        animated.style()
+                .setWidth(UiStyleLength.px(40))
+                .setHeight(UiStyleLength.px(20))
+                .setBackgroundColor(0xFF112233)
+                .setAnimation("layoutGrow", 1000L)
+                .setAnimationFillMode(DocumentAnimationFillMode.FORWARDS);
+        sibling.style()
+                .setWidth(UiStyleLength.px(20))
+                .setHeight(UiStyleLength.px(20))
+                .setBackgroundColor(0xFF445566);
+        row.append(animated).append(sibling);
+        root.append(row);
+        ManualAnimationClock animationClock = new ManualAnimationClock();
+        HtmlLikeDocumentWidget widget = new HtmlLikeDocumentWidget(document, 160, 40,
+                new DeterministicTextMeasureService());
+        widget.setAnimationClock(animationClock);
+        widget.applyLayoutBounds(0, 0, 160, 40);
+
+        widget.render(new RecordingUiRenderContext());
+        animationClock.setCurrentTimeNanos(500_000_000L);
+        RecordingUiRenderContext halfContext = new RecordingUiRenderContext();
+        widget.render(halfContext);
+        assertDrawCall(halfContext.drawCalls.get(0), 0, 0, 60, 20, 0xFF112233, 0, 0);
+        assertDrawCall(halfContext.drawCalls.get(1), 60, 0, 80, 20, 0xFF445566, 0, 0);
+
+        animationClock.setCurrentTimeNanos(1_000_000_000L);
+        RecordingUiRenderContext filledContext = new RecordingUiRenderContext();
+        widget.render(filledContext);
+        assertDrawCall(filledContext.drawCalls.get(0), 0, 0, 80, 20, 0xFF112233, 0, 0);
+        assertDrawCall(filledContext.drawCalls.get(1), 80, 0, 100, 20, 0xFF445566, 0, 0);
+        Assert.assertEquals(0, widget.getActiveAnimationCount());
+
+        animated.style().setWidth(UiStyleLength.px(50));
+        RecordingUiRenderContext authorContext = new RecordingUiRenderContext();
+        widget.render(authorContext);
+        assertDrawCall(authorContext.drawCalls.get(0), 0, 0, 50, 20, 0xFF112233, 0, 0);
+        assertDrawCall(authorContext.drawCalls.get(1), 50, 0, 70, 20, 0xFF445566, 0, 0);
+    }
+
+    /**
      * 验证作者侧 keyframe animation 运行期间不会触发重新文本测量布局。
      */
     @Test
