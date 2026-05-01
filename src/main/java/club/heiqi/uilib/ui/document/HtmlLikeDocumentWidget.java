@@ -54,6 +54,7 @@ public final class HtmlLikeDocumentWidget extends Widget {
     private int cachedWidth = -1;
     private int cachedHeight = -1;
     private int cachedPaintScrollVersion = -1;
+    private int paintCacheGeneration;
     private boolean cachedPaintTransientScrollbarActive;
     private DocumentLayoutBox cachedLayoutBox;
     private ElementNode pressedElement;
@@ -155,6 +156,15 @@ public final class HtmlLikeDocumentWidget extends Widget {
      */
     public int getActiveAnimationCount() {
         return animationTimeline.getActiveAnimationCount(animationClock.getCurrentTimeNanos());
+    }
+
+    /**
+     * 返回 paint command 缓存重建代数，供诊断和测试确认动画缓存边界。
+     *
+     * @return paint command 缓存重建代数
+     */
+    public int getPaintCacheGenerationForDiagnostics() {
+        return paintCacheGeneration;
     }
 
     /**
@@ -358,6 +368,7 @@ public final class HtmlLikeDocumentWidget extends Widget {
 
         cachedPaintCommands = DocumentPaintEngine.buildPaintCommands(rootBox, scrollState, currentTimeNanos,
                 animationTimeline);
+        paintCacheGeneration++;
         animationTimeline.pruneFinishedAnimations(currentTimeNanos);
         cachedPaintScrollVersion = scrollVersion;
         cachedPaintTransientScrollbarActive = transientScrollbarActive;

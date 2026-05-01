@@ -145,6 +145,50 @@ public class HtmlLikeDocumentWidgetTest {
     }
 
     /**
+     * 验证 transition 结束后组件会回到静态 paint command 缓存路径。
+     */
+    @Test
+    public void shouldReturnToStaticPaintCacheAfterTransitionFinishes() {
+        UiDocument document = UiDocument.create();
+        ElementNode root = document.getRootElement();
+        root.style()
+                .setWidth(UiStyleLength.px(32))
+                .setHeight(UiStyleLength.px(20))
+                .setBackgroundColor(0xFF000000)
+                .setTransition(DocumentAnimationProperty.BACKGROUND_COLOR, 1000L);
+        root.appendText("cache");
+        ManualAnimationClock animationClock = new ManualAnimationClock();
+        CountingTextMeasureService textMeasureService = new CountingTextMeasureService();
+        HtmlLikeDocumentWidget widget = new HtmlLikeDocumentWidget(document, 80, 40, textMeasureService);
+        widget.setAnimationClock(animationClock);
+        widget.applyLayoutBounds(0, 0, 80, 40);
+
+        widget.render(new RecordingUiRenderContext());
+        int initialGeneration = widget.getPaintCacheGenerationForDiagnostics();
+        int initialMeasureCount = textMeasureService.getMeasureCount();
+        widget.render(new RecordingUiRenderContext());
+        Assert.assertEquals(initialGeneration, widget.getPaintCacheGenerationForDiagnostics());
+
+        root.style().setBackgroundColor(0xFFFFFFFF);
+        widget.render(new RecordingUiRenderContext());
+        int transitionStartGeneration = widget.getPaintCacheGenerationForDiagnostics();
+
+        animationClock.setCurrentTimeNanos(500_000_000L);
+        widget.render(new RecordingUiRenderContext());
+        Assert.assertTrue(widget.getPaintCacheGenerationForDiagnostics() > transitionStartGeneration);
+        Assert.assertEquals(initialMeasureCount, textMeasureService.getMeasureCount());
+
+        animationClock.setCurrentTimeNanos(1_000_000_000L);
+        widget.render(new RecordingUiRenderContext());
+        int finishedGeneration = widget.getPaintCacheGenerationForDiagnostics();
+        Assert.assertEquals(0, widget.getActiveAnimationCount());
+
+        widget.render(new RecordingUiRenderContext());
+        Assert.assertEquals(finishedGeneration, widget.getPaintCacheGenerationForDiagnostics());
+        Assert.assertEquals(initialMeasureCount, textMeasureService.getMeasureCount());
+    }
+
+    /**
      * 验证 effect-affecting 动画运行期间不会触发重新文本测量布局。
      */
     @Test
