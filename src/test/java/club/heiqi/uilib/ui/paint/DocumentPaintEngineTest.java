@@ -423,6 +423,36 @@ public class DocumentPaintEngineTest {
     }
 
     /**
+     * 验证 backdrop blur 退场接近完成时，即使四舍五入为 0 也保留效果命令到动画清理阶段。
+     */
+    @Test
+    public void shouldKeepBackdropFilterCommandUntilBlurExitTransitionIsPruned() {
+        UiDocument document = UiDocument.create();
+        ElementNode root = document.getRootElement();
+        root.style()
+                .setWidth(UiStyleLength.px(80))
+                .setHeight(UiStyleLength.px(40))
+                .setBackdropBlurRadius(UiStyleLength.px(1))
+                .setTransition(DocumentAnimationProperty.BACKDROP_BLUR_RADIUS, 1000L);
+        DocumentAnimationTimeline timeline = new DocumentAnimationTimeline();
+        timeline.updateFromLayout(DocumentLayoutEngine.layout(root, 120, 0), 0L);
+
+        root.style().setBackdropBlurRadius(UiStyleLength.px(0));
+        DocumentLayoutBox exitLayout = DocumentLayoutEngine.layout(root, 120, 0);
+        timeline.updateFromLayout(exitLayout, 0L);
+        List<DocumentPaintCommand> commands = DocumentPaintEngine.buildPaintCommands(exitLayout, null,
+                900_000_000L, timeline);
+
+        Assert.assertTrue(timeline.hasRunningTransition(root, DocumentAnimationProperty.BACKDROP_BLUR_RADIUS));
+        Assert.assertEquals(1, commands.size());
+        assertCommand(commands.get(0), DocumentPaintCommandType.BACKDROP_FILTER, root, 0, 0, 80, 40, 0, 0, 0);
+        Assert.assertEquals(0, commands.get(0).getBackdropBlurRadius());
+
+        Assert.assertTrue(timeline.pruneFinishedAnimations(1_000_000_000L));
+        Assert.assertTrue(DocumentPaintEngine.buildPaintCommands(exitLayout, null, 1_000_000_000L, timeline).isEmpty());
+    }
+
+    /**
      * 验证 opacity 会应用到文本绘制颜色。
      */
     @Test

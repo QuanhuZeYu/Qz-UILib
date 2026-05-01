@@ -198,6 +198,7 @@ public class DocumentAnimationTimelineTest {
         timeline.updateFromLayout(DocumentLayoutEngine.layout(root, 80, 0), 0L);
         root.style().setOpacity(0.0F);
         timeline.updateFromLayout(DocumentLayoutEngine.layout(root, 80, 0), 0L);
+        Assert.assertTrue(timeline.hasRunningTransition(root, DocumentAnimationProperty.OPACITY));
         Assert.assertEquals(0.5F, timeline.resolveFloat(root, DocumentAnimationProperty.OPACITY, 0.0F,
                 500_000_000L), 0.0F);
 
@@ -205,6 +206,7 @@ public class DocumentAnimationTimelineTest {
         Assert.assertTrue(timeline.updateFromLayout(DocumentLayoutEngine.layout(root, 80, 0), 500_000_000L));
 
         Assert.assertFalse(timeline.hasAnimationWork());
+        Assert.assertFalse(timeline.hasRunningTransition(root, DocumentAnimationProperty.OPACITY));
         Assert.assertEquals(0.0F, timeline.resolveFloat(root, DocumentAnimationProperty.OPACITY, 0.0F,
                 500_000_000L), 0.0F);
     }

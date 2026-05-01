@@ -133,6 +133,23 @@ public final class DocumentAnimationTimeline {
     }
 
     /**
+     * 返回指定元素属性当前是否仍存在运行态 transition 覆盖。
+     *
+     * @param element 元素
+     * @param property 动画属性
+     * @return 是否存在运行态 transition
+     */
+    public boolean hasRunningTransition(ElementNode element, DocumentAnimationProperty property) {
+        Objects.requireNonNull(element, "element");
+        Objects.requireNonNull(property, "property");
+        ElementAnimationState state = states.get(element);
+        if (state == null) {
+            return false;
+        }
+        return state.colorTransitions.containsKey(property) || state.floatTransitions.containsKey(property);
+    }
+
+    /**
      * 返回当前仍未完成的动画数量。
      *
      * @param currentTimeNanos 当前动画时间
