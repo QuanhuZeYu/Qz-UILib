@@ -388,9 +388,14 @@ public class HtmlLikeSmokeDocumentPageControllerTest {
         RecordingUiRenderContext keyframeFilledRenderContext = new RecordingUiRenderContext();
         widget.render(keyframeFilledRenderContext);
         DocumentAnimationTimeline.DiagnosticsSnapshot keyframeFilledSnapshot = widget.getAnimationDiagnosticsSnapshot();
+        int filledRuntimeLayoutGeneration = widget.getPerformanceDiagnosticsSnapshot().getRuntimeLayoutGeneration();
         Assert.assertEquals(0, keyframeFilledSnapshot.getKeyframeCount(DocumentAnimationImpact.LAYOUT));
         Assert.assertTrue(keyframeFilledSnapshot.getForwardsFillCount(DocumentAnimationImpact.LAYOUT) >= 1);
         Assert.assertTrue(containsTextCall(keyframeFilledRenderContext.textCalls, "f="));
+
+        widget.render(new RecordingUiRenderContext());
+        Assert.assertEquals(filledRuntimeLayoutGeneration,
+                widget.getPerformanceDiagnosticsSnapshot().getRuntimeLayoutGeneration());
 
         ElementNode clearKeyframeCard = findElementContainingDirectText(widget, "Keyframe card: clear fill");
         Assert.assertNotNull(clearKeyframeCard);

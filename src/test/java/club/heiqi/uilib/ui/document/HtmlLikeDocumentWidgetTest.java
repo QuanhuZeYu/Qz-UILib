@@ -662,15 +662,24 @@ public class HtmlLikeDocumentWidgetTest {
         animationClock.setCurrentTimeNanos(500_000_000L);
         RecordingUiRenderContext halfContext = new RecordingUiRenderContext();
         widget.render(halfContext);
+        int runningRuntimeLayoutGeneration = widget.getPerformanceDiagnosticsSnapshot()
+                .getRuntimeLayoutGeneration();
         assertDrawCall(halfContext.drawCalls.get(0), 0, 0, 60, 20, 0xFF112233, 0, 0);
         assertDrawCall(halfContext.drawCalls.get(1), 60, 0, 80, 20, 0xFF445566, 0, 0);
 
         animationClock.setCurrentTimeNanos(1_000_000_000L);
         RecordingUiRenderContext filledContext = new RecordingUiRenderContext();
         widget.render(filledContext);
+        int filledRuntimeLayoutGeneration = widget.getPerformanceDiagnosticsSnapshot()
+                .getRuntimeLayoutGeneration();
         assertDrawCall(filledContext.drawCalls.get(0), 0, 0, 80, 20, 0xFF112233, 0, 0);
         assertDrawCall(filledContext.drawCalls.get(1), 80, 0, 100, 20, 0xFF445566, 0, 0);
         Assert.assertEquals(0, widget.getActiveAnimationCount());
+        Assert.assertTrue(filledRuntimeLayoutGeneration > runningRuntimeLayoutGeneration);
+
+        widget.render(new RecordingUiRenderContext());
+        Assert.assertEquals(filledRuntimeLayoutGeneration, widget.getPerformanceDiagnosticsSnapshot()
+                .getRuntimeLayoutGeneration());
 
         animated.style().setWidth(UiStyleLength.px(50));
         RecordingUiRenderContext authorContext = new RecordingUiRenderContext();

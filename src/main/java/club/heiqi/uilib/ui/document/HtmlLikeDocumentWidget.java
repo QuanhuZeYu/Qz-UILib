@@ -61,6 +61,13 @@ public final class HtmlLikeDocumentWidget extends Widget {
     private int runtimeLayoutGeneration;
     private boolean cachedPaintTransientScrollbarActive;
     private DocumentLayoutBox cachedLayoutBox;
+    private DocumentLayoutBox cachedRuntimeLayoutBox;
+    private int cachedRuntimeLayoutVersion = -1;
+    private int cachedRuntimePaintVersion = -1;
+    private int cachedRuntimeTextMeasureEpoch = -1;
+    private int cachedRuntimeWidth = -1;
+    private int cachedRuntimeHeight = -1;
+    private boolean cachedRuntimeViewportRootScrollingEnabled;
     private ElementNode pressedElement;
     private ElementNode focusedElement;
     private boolean focusedElementFocusVisible;
@@ -130,6 +137,7 @@ public final class HtmlLikeDocumentWidget extends Widget {
         cachedLayoutVersion = -1;
         cachedPaintScrollVersion = -1;
         cachedLayoutScrollStateUpdated = false;
+        invalidateRuntimeLayoutCache();
         requestLayout();
         return this;
     }
@@ -152,6 +160,7 @@ public final class HtmlLikeDocumentWidget extends Widget {
     public HtmlLikeDocumentWidget setAnimationClock(DocumentAnimationClock animationClock) {
         this.animationClock = Objects.requireNonNull(animationClock, "animationClock");
         cachedPaintScrollVersion = -1;
+        invalidateRuntimeLayoutCache();
         return this;
     }
 
@@ -399,10 +408,13 @@ public final class HtmlLikeDocumentWidget extends Widget {
         DocumentLayoutBox rootBox = resolvePaintLayoutBox(false);
         long currentTimeNanos = animationClock.getCurrentTimeNanos();
         boolean animationStateChanged = animationTimeline.updateFromLayout(rootBox, currentTimeNanos);
+        animationStateChanged |= animationTimeline.pruneFinishedAnimations(currentTimeNanos);
         boolean layoutRuntimeValueActive = animationTimeline.hasRuntimeValue(DocumentAnimationImpact.LAYOUT);
         if (layoutRuntimeValueActive) {
-            rootBox = resolveRuntimeLayoutBox(currentTimeNanos);
+            rootBox = resolveRuntimeLayoutBox(currentTimeNanos,
+                    animationTimeline.hasAnimationWork(DocumentAnimationImpact.LAYOUT));
         } else {
+            invalidateRuntimeLayoutCache();
             updateScrollStateFromCachedLayoutIfNeeded();
         }
         int scrollVersion = scrollState.getVersion();
@@ -416,13 +428,17 @@ public final class HtmlLikeDocumentWidget extends Widget {
         cachedPaintCommands = DocumentPaintEngine.buildPaintCommands(rootBox, scrollState, currentTimeNanos,
                 animationTimeline);
         paintCacheGeneration++;
-        animationTimeline.pruneFinishedAnimations(currentTimeNanos);
         cachedPaintScrollVersion = scrollVersion;
         cachedPaintTransientScrollbarActive = transientScrollbarActive;
         return cachedPaintCommands;
     }
 
-    private DocumentLayoutBox resolveRuntimeLayoutBox(final long currentTimeNanos) {
+    private DocumentLayoutBox resolveRuntimeLayoutBox(final long currentTimeNanos, boolean layoutAnimationWork) {
+        if (!layoutAnimationWork && isRuntimeLayoutCacheReusable()) {
+            scrollState.updateFromLayout(cachedRuntimeLayoutBox);
+            return cachedRuntimeLayoutBox;
+        }
+
         DocumentLayoutEngine.LayoutRuntimeValueResolver layoutValueResolver =
                 new DocumentLayoutEngine.LayoutRuntimeValueResolver() {
                     @Override
@@ -433,6 +449,11 @@ public final class HtmlLikeDocumentWidget extends Widget {
         };
         DocumentLayoutBox rootBox = layoutDocument(layoutValueResolver);
         runtimeLayoutGeneration++;
+        if (layoutAnimationWork) {
+            invalidateRuntimeLayoutCache();
+        } else {
+            cacheRuntimeLayoutBox(rootBox);
+        }
         scrollState.updateFromLayout(rootBox);
         return rootBox;
     }
@@ -447,6 +468,7 @@ public final class HtmlLikeDocumentWidget extends Widget {
         cachedLayoutBox = rootBox.refreshComputedStyles();
         cachedPaintVersion = paintVersion;
         cachedPaintScrollVersion = -1;
+        invalidateRuntimeLayoutCache();
         return cachedLayoutBox;
     }
 
@@ -474,6 +496,7 @@ public final class HtmlLikeDocumentWidget extends Widget {
         cachedWidth = getWidth();
         cachedHeight = getHeight();
         cachedPaintScrollVersion = -1;
+        invalidateRuntimeLayoutCache();
         if (updateScrollState) {
             updateScrollStateFromCachedLayoutIfNeeded();
         }
@@ -566,11 +589,44 @@ public final class HtmlLikeDocumentWidget extends Widget {
         DocumentLayoutBox rootBox = resolvePaintLayoutBox(false);
         long currentTimeNanos = animationClock.getCurrentTimeNanos();
         animationTimeline.updateFromLayout(rootBox, currentTimeNanos);
+        animationTimeline.pruneFinishedAnimations(currentTimeNanos);
         if (animationTimeline.hasRuntimeValue(DocumentAnimationImpact.LAYOUT)) {
-            return resolveRuntimeLayoutBox(currentTimeNanos);
+            return resolveRuntimeLayoutBox(currentTimeNanos,
+                    animationTimeline.hasAnimationWork(DocumentAnimationImpact.LAYOUT));
         }
+        invalidateRuntimeLayoutCache();
         updateScrollStateFromCachedLayoutIfNeeded();
         return rootBox;
+    }
+
+    private boolean isRuntimeLayoutCacheReusable() {
+        return cachedRuntimeLayoutBox != null
+                && cachedRuntimeLayoutVersion == cachedLayoutVersion
+                && cachedRuntimePaintVersion == cachedPaintVersion
+                && cachedRuntimeTextMeasureEpoch == cachedTextMeasureEpoch
+                && cachedRuntimeWidth == getWidth()
+                && cachedRuntimeHeight == getHeight()
+                && cachedRuntimeViewportRootScrollingEnabled == viewportRootScrollingEnabled;
+    }
+
+    private void cacheRuntimeLayoutBox(DocumentLayoutBox rootBox) {
+        cachedRuntimeLayoutBox = rootBox;
+        cachedRuntimeLayoutVersion = cachedLayoutVersion;
+        cachedRuntimePaintVersion = cachedPaintVersion;
+        cachedRuntimeTextMeasureEpoch = cachedTextMeasureEpoch;
+        cachedRuntimeWidth = getWidth();
+        cachedRuntimeHeight = getHeight();
+        cachedRuntimeViewportRootScrollingEnabled = viewportRootScrollingEnabled;
+    }
+
+    private void invalidateRuntimeLayoutCache() {
+        cachedRuntimeLayoutBox = null;
+        cachedRuntimeLayoutVersion = -1;
+        cachedRuntimePaintVersion = -1;
+        cachedRuntimeTextMeasureEpoch = -1;
+        cachedRuntimeWidth = -1;
+        cachedRuntimeHeight = -1;
+        cachedRuntimeViewportRootScrollingEnabled = viewportRootScrollingEnabled;
     }
 
     private void collectFocusableElements(DocumentLayoutBox box, List<ElementNode> focusableElements) {
