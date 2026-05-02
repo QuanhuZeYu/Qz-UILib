@@ -105,8 +105,8 @@
 ## 游戏内验收边界
 
 - 入口：右 Shift 打开诊断菜单，可进入布局诊断页、HTML-like Smoke 页、Large Glass Lab 页和背包页。
-- Smoke 页覆盖：控件交互、文本输入、Tab 焦点、按钮、开关、overflow auto 滚动、absolute/fixed 定位、absolute stretch、inline fragment/vertical-align、group opacity、stacking context、backdrop-filter、opacity FBO、`WIDTH/HEIGHT/MARGIN_LEFT/MARGIN_RIGHT/PADDING_LEFT/PADDING_RIGHT` layout transition 和 layout keyframe/forwards fill；`PADDING_LEFT/PADDING_RIGHT` 游戏内 Smoke 已验收正确；layout 动画区会显示覆盖属性清单、active 总数、transition/keyframe/fill 来源计数，以及 paint/effect/layout 分 impact 运行态状态。
-- Smoke 页 `Layout animation probe`：点击蓝色 `Layout card`，宽高在 92x34 与 190x58 间过渡，右侧绿色 sibling 应随动画被推开或回收；点击琥珀色 `Margin card`，左右 margin 在 tight/wide 间过渡，右侧棕色 sibling 应随 margin 动画位移；点击紫色 `Padding card`，左右 padding 在 tight/wide 间过渡，卡片内容和右侧紫色 sibling 应随 padding 动画位移；点击青色 `Keyframe card` 启动 `layoutFillProbe` width keyframe，运行时 layout `k` 应增加，结束后 layout `f` 应保留，再次点击清除 animation 后 `f` 应归零并恢复作者宽度。当前游戏内已确认 padding 动画平滑、内容和 sibling 同步位移、视觉效果正确。
+- Smoke 页覆盖：控件交互、文本输入、Tab 焦点、按钮、开关、overflow auto 滚动、absolute/fixed 定位、absolute stretch、inline fragment/vertical-align、group opacity、stacking context、backdrop-filter、opacity FBO、`WIDTH/HEIGHT/MARGIN_LEFT/MARGIN_RIGHT/PADDING_LEFT/PADDING_RIGHT` layout transition 和 layout keyframe/forwards fill；`PADDING_LEFT/PADDING_RIGHT` 游戏内 Smoke 已验收正确；layout 动画区会显示覆盖属性清单、active 总数、transition/keyframe/fill 来源计数，以及 paint/effect/layout 分 impact 运行态状态；当前 layout `t/k/f` 游戏内诊断已验收正确。
+- Smoke 页 `Layout animation probe`：点击蓝色 `Layout card`，宽高在 92x34 与 190x58 间过渡，右侧绿色 sibling 应随动画被推开或回收；点击琥珀色 `Margin card`，左右 margin 在 tight/wide 间过渡，右侧棕色 sibling 应随 margin 动画位移；点击紫色 `Padding card`，左右 padding 在 tight/wide 间过渡，卡片内容和右侧紫色 sibling 应随 padding 动画位移；点击青色 `Keyframe card` 启动 `layoutFillProbe` width keyframe，运行时 layout `k` 应增加，结束后 layout `f` 应保留，再次点击清除 animation 后 `f` 应归零并恢复作者宽度。当前游戏内已确认 transition、keyframe、forwards fill 均有可见诊断路径，padding 动画平滑、内容和 sibling 同步位移、`t/k/f` 计数进入与退出符合预期。
 - Glass Lab 覆盖：大面积 backdrop、shader/fallback 路径、snapshot captured/reused、block/atlas/tile 诊断、downsample/separable blur filter 诊断、嵌套/同级多 glass 采样稳定性。
 - 背包页覆盖：hotbar/backpack 网格、自定义格子绘制与返回按钮交互。
 
@@ -146,8 +146,9 @@
 
 ## 下一步边界
 
-- CSS transition / animation MVP 继续优先；`WIDTH/HEIGHT/MARGIN_LEFT/MARGIN_RIGHT/PADDING_LEFT/PADDING_RIGHT` layout 动画已完成纯 JVM、Smoke 探针与游戏内视觉验收，后续 layout-affecting 属性扩展必须限制在少量可控属性与明确 fallback。
-- 先暂停继续扩展 layout 属性；Smoke 页动画诊断可见性已接入覆盖属性清单、active 总数、transition/keyframe/fill 来源计数与 paint/effect/layout 分 impact 状态，后续应优先用这些诊断验证 transition/keyframe/fill 是否正确进入或退出运行态，再决定是否扩展更多 layout 属性。
+- CSS transition / animation MVP 已完成首轮收口：transition、keyframe、forwards fill 均具备 Smoke 可见诊断路径，`WIDTH/HEIGHT/MARGIN_LEFT/MARGIN_RIGHT/PADDING_LEFT/PADDING_RIGHT` layout 动画已完成纯 JVM、Smoke 探针与游戏内视觉/诊断验收。
+- 下一阶段暂停继续扩展 layout-affecting 属性；若后续确需新增属性，必须重新证明必要性，并继续限制在少量可控属性与明确 fallback。
+- 下一批优先转向缓存与性能诊断可见性：Smoke 页应展示 paint cache generation，区分 layout 动画重排帧与 paint/effect 动画非重排帧，并提供 text measure count 或 layout rebuild count 的测试/诊断入口。
 - 不一次性开放全量布局动画。
 - paint/effect 动画不能触发布局；layout 动画可以重布局，但结束后必须恢复静态缓存。
 - inline formatting、effect chain、snapshot atlas 和 blur/filter 优化只在阻塞动画探针、真实页面迁移或控件展示时优先处理。
