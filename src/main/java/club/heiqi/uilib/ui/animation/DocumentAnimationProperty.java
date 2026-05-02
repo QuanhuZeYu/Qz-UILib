@@ -7,57 +7,59 @@ public enum DocumentAnimationProperty {
     /**
      * 背景色，属于 paint-only 属性。
      */
-    BACKGROUND_COLOR(DocumentAnimationImpact.PAINT),
+    BACKGROUND_COLOR(DocumentAnimationImpact.PAINT, ValueType.COLOR),
 
     /**
      * 边框色，属于 paint-only 属性。
      */
-    BORDER_COLOR(DocumentAnimationImpact.PAINT),
+    BORDER_COLOR(DocumentAnimationImpact.PAINT, ValueType.COLOR),
 
     /**
      * 边框圆角，属于 paint-only 属性。
      */
-    BORDER_RADIUS(DocumentAnimationImpact.PAINT),
+    BORDER_RADIUS(DocumentAnimationImpact.PAINT, ValueType.FLOAT),
 
     /**
      * 文本色，属于 paint-only 属性。
      */
-    TEXT_COLOR(DocumentAnimationImpact.PAINT),
+    TEXT_COLOR(DocumentAnimationImpact.PAINT, ValueType.COLOR),
 
     /**
      * 元素透明度，会影响 paint context 与最终绘制透明度。
      */
-    OPACITY(DocumentAnimationImpact.EFFECT),
+    OPACITY(DocumentAnimationImpact.EFFECT, ValueType.FLOAT),
 
     /**
      * 背景滤镜 blur 半径，属于 effect-affecting 长度类属性。
      */
-    BACKDROP_BLUR_RADIUS(DocumentAnimationImpact.EFFECT),
+    BACKDROP_BLUR_RADIUS(DocumentAnimationImpact.EFFECT, ValueType.FLOAT),
 
     /**
      * 元素 content box 宽度，属于 layout-affecting 属性。
      */
-    WIDTH(DocumentAnimationImpact.LAYOUT),
+    WIDTH(DocumentAnimationImpact.LAYOUT, ValueType.FLOAT),
 
     /**
      * 元素 content box 高度，属于 layout-affecting 属性。
      */
-    HEIGHT(DocumentAnimationImpact.LAYOUT),
+    HEIGHT(DocumentAnimationImpact.LAYOUT, ValueType.FLOAT),
 
     /**
      * 元素左外边距，属于 layout-affecting 属性。
      */
-    MARGIN_LEFT(DocumentAnimationImpact.LAYOUT),
+    MARGIN_LEFT(DocumentAnimationImpact.LAYOUT, ValueType.FLOAT),
 
     /**
      * 元素右外边距，属于 layout-affecting 属性。
      */
-    MARGIN_RIGHT(DocumentAnimationImpact.LAYOUT);
+    MARGIN_RIGHT(DocumentAnimationImpact.LAYOUT, ValueType.FLOAT);
 
     private final DocumentAnimationImpact impact;
+    private final ValueType valueType;
 
-    private DocumentAnimationProperty(DocumentAnimationImpact impact) {
+    private DocumentAnimationProperty(DocumentAnimationImpact impact, ValueType valueType) {
         this.impact = impact;
+        this.valueType = valueType;
     }
 
     /**
@@ -67,6 +69,15 @@ public enum DocumentAnimationProperty {
      */
     public DocumentAnimationImpact getImpact() {
         return impact;
+    }
+
+    /**
+     * 返回该动画属性的插值值类型。
+     *
+     * @return 插值值类型
+     */
+    public ValueType getValueType() {
+        return valueType;
     }
 
     /**
@@ -94,5 +105,38 @@ public enum DocumentAnimationProperty {
      */
     public boolean isLayoutAffecting() {
         return impact == DocumentAnimationImpact.LAYOUT;
+    }
+
+    /**
+     * 返回该属性是否使用颜色插值轨道。
+     *
+     * @return 是否为颜色值属性
+     */
+    public boolean isColorValue() {
+        return valueType == ValueType.COLOR;
+    }
+
+    /**
+     * 返回该属性是否使用数值插值轨道。
+     *
+     * @return 是否为数值属性
+     */
+    public boolean isFloatValue() {
+        return valueType == ValueType.FLOAT;
+    }
+
+    /**
+     * 动画属性的插值值类型。
+     */
+    public enum ValueType {
+        /**
+         * ARGB 颜色值。
+         */
+        COLOR,
+
+        /**
+         * 单精度数值。
+         */
+        FLOAT
     }
 }

@@ -248,9 +248,7 @@ public final class DocumentKeyframes {
 
         private static DocumentAnimationProperty requireColorProperty(DocumentAnimationProperty property) {
             DocumentAnimationProperty resolvedProperty = Objects.requireNonNull(property, "property");
-            if (resolvedProperty != DocumentAnimationProperty.BACKGROUND_COLOR
-                    && resolvedProperty != DocumentAnimationProperty.BORDER_COLOR
-                    && resolvedProperty != DocumentAnimationProperty.TEXT_COLOR) {
+            if (!resolvedProperty.isColorValue()) {
                 throw new IllegalArgumentException("color keyframes are not supported for: " + resolvedProperty);
             }
             return resolvedProperty;
@@ -258,9 +256,7 @@ public final class DocumentKeyframes {
 
         private static DocumentAnimationProperty requireFloatProperty(DocumentAnimationProperty property) {
             DocumentAnimationProperty resolvedProperty = Objects.requireNonNull(property, "property");
-            if (resolvedProperty == DocumentAnimationProperty.BACKGROUND_COLOR
-                    || resolvedProperty == DocumentAnimationProperty.BORDER_COLOR
-                    || resolvedProperty == DocumentAnimationProperty.TEXT_COLOR) {
+            if (!resolvedProperty.isFloatValue()) {
                 throw new IllegalArgumentException("float keyframes are not supported for: " + resolvedProperty);
             }
             return resolvedProperty;

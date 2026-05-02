@@ -1,5 +1,6 @@
 package club.heiqi.uilib.ui.animation;
 
+import java.util.ArrayList;
 import java.util.EnumMap;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -22,20 +23,10 @@ import club.heiqi.uilib.ui.style.UiStyleLength;
  */
 public final class DocumentAnimationTimeline {
 
-    private static final DocumentAnimationProperty[] PAINT_COLOR_PROPERTIES = new DocumentAnimationProperty[] {
-            DocumentAnimationProperty.BACKGROUND_COLOR,
-            DocumentAnimationProperty.BORDER_COLOR,
-            DocumentAnimationProperty.TEXT_COLOR
-    };
-    private static final DocumentAnimationProperty[] FLOAT_PROPERTIES = new DocumentAnimationProperty[] {
-            DocumentAnimationProperty.OPACITY,
-            DocumentAnimationProperty.BORDER_RADIUS,
-            DocumentAnimationProperty.BACKDROP_BLUR_RADIUS,
-            DocumentAnimationProperty.WIDTH,
-            DocumentAnimationProperty.HEIGHT,
-            DocumentAnimationProperty.MARGIN_LEFT,
-            DocumentAnimationProperty.MARGIN_RIGHT
-    };
+    private static final DocumentAnimationProperty[] COLOR_PROPERTIES = filterPropertiesByValueType(
+            DocumentAnimationProperty.ValueType.COLOR);
+    private static final DocumentAnimationProperty[] FLOAT_PROPERTIES = filterPropertiesByValueType(
+            DocumentAnimationProperty.ValueType.FLOAT);
 
     private final Map<ElementNode, ElementAnimationState> states = new HashMap<ElementNode, ElementAnimationState>();
 
@@ -414,7 +405,7 @@ public final class DocumentAnimationTimeline {
             changed = true;
         }
         changed |= updateDeclaredKeyframeAnimations(box, style, currentTimeNanos, state);
-        for (DocumentAnimationProperty property : PAINT_COLOR_PROPERTIES) {
+        for (DocumentAnimationProperty property : COLOR_PROPERTIES) {
             int baseColor = getBaseColor(style, property);
             Integer previousTarget = state.targetColors.get(property);
             boolean transitionAllowed = canTransition(style, property);
@@ -610,17 +601,7 @@ public final class DocumentAnimationTimeline {
 
     private static float normalizeDeclaredKeyframeFloat(DocumentLayoutBox box, DocumentAnimationProperty property,
             float value) {
-        if (property == DocumentAnimationProperty.OPACITY) {
-            return Math.max(0.0F, Math.min(1.0F, value));
-        }
-        if (property == DocumentAnimationProperty.BORDER_RADIUS) {
-            int limit = Math.min(box.getWidth(), box.getHeight());
-            return Math.max(0.0F, Math.min(value, limit / 2.0F));
-        }
-        if (property == DocumentAnimationProperty.BACKDROP_BLUR_RADIUS) {
-            return Math.max(0.0F, Math.min(value, DocumentEffectChain.MAX_BACKDROP_BLUR_RADIUS));
-        }
-        return value;
+        return PropertyRuntimeSemantics.forProperty(property).normalizeDeclaredKeyframeFloat(box, value);
     }
 
     private static DocumentKeyframes.FloatTrack normalizeDeclaredKeyframeFloatTrack(DocumentLayoutBox box,
@@ -634,59 +615,15 @@ public final class DocumentAnimationTimeline {
     }
 
     private static int getBaseColor(ComputedStyle style, DocumentAnimationProperty property) {
-        if (property == DocumentAnimationProperty.BORDER_COLOR) {
-            return style.getBorderColor();
-        }
-        if (property == DocumentAnimationProperty.TEXT_COLOR) {
-            return style.getTextColor();
-        }
-        return style.getBackgroundColor();
+        return PropertyRuntimeSemantics.forProperty(property).resolveBaseColor(style);
     }
 
     private static float getBaseFloat(DocumentLayoutBox box, DocumentAnimationProperty property) {
-        if (property == DocumentAnimationProperty.OPACITY) {
-            return box.getComputedStyle().getOpacity();
-        }
-        if (property == DocumentAnimationProperty.BORDER_RADIUS) {
-            return resolveBorderRadius(box);
-        }
-        if (property == DocumentAnimationProperty.BACKDROP_BLUR_RADIUS) {
-            return resolveBackdropBlurRadius(box);
-        }
-        if (property == DocumentAnimationProperty.WIDTH) {
-            return box.getContentWidth();
-        }
-        if (property == DocumentAnimationProperty.HEIGHT) {
-            return box.getContentHeight();
-        }
-        if (property == DocumentAnimationProperty.MARGIN_LEFT) {
-            return box.getMargin().getLeft();
-        }
-        if (property == DocumentAnimationProperty.MARGIN_RIGHT) {
-            return box.getMargin().getRight();
-        }
-        return 0.0F;
+        return PropertyRuntimeSemantics.forProperty(property).resolveBaseFloat(box);
     }
 
     private static boolean isFloatTransitionTargetAnimatable(DocumentLayoutBox box, DocumentAnimationProperty property) {
-        if (property == DocumentAnimationProperty.WIDTH) {
-            return box.getComputedStyle().getWidth().getType() == UiStyleLength.Type.PIXEL;
-        }
-        if (property == DocumentAnimationProperty.HEIGHT) {
-            return box.getComputedStyle().getHeight().getType() == UiStyleLength.Type.PIXEL;
-        }
-        if (property == DocumentAnimationProperty.MARGIN_LEFT
-                || property == DocumentAnimationProperty.MARGIN_RIGHT) {
-            return getMarginLength(box.getComputedStyle(), property).getType() == UiStyleLength.Type.PIXEL;
-        }
-        return true;
-    }
-
-    private static UiStyleLength getMarginLength(ComputedStyle style, DocumentAnimationProperty property) {
-        if (property == DocumentAnimationProperty.MARGIN_LEFT) {
-            return style.getMargin().getLeft();
-        }
-        return style.getMargin().getRight();
+        return PropertyRuntimeSemantics.forProperty(property).isFloatTransitionTargetAnimatable(box);
     }
 
     private static int resolveBorderRadius(DocumentLayoutBox box) {
@@ -699,6 +636,17 @@ public final class DocumentAnimationTimeline {
         int availableSpace = Math.max(box.getWidth(), box.getHeight());
         int radius = box.getComputedStyle().getBackdropBlurRadius().resolve(availableSpace, 0);
         return Math.max(0, Math.min(radius, DocumentEffectChain.MAX_BACKDROP_BLUR_RADIUS));
+    }
+
+    private static DocumentAnimationProperty[] filterPropertiesByValueType(
+            DocumentAnimationProperty.ValueType valueType) {
+        List<DocumentAnimationProperty> properties = new ArrayList<DocumentAnimationProperty>();
+        for (DocumentAnimationProperty property : DocumentAnimationProperty.values()) {
+            if (property.getValueType() == valueType) {
+                properties.add(property);
+            }
+        }
+        return properties.toArray(new DocumentAnimationProperty[properties.size()]);
     }
 
     private static int interpolateColor(int fromColor, int toColor, float progress) {
@@ -838,6 +786,154 @@ public final class DocumentAnimationTimeline {
             declaredStartNanos = 0L;
             declaredBoxWidth = 0;
             declaredBoxHeight = 0;
+        }
+    }
+
+    /**
+     * 单个动画属性的运行时取值与 transition 限制规则。
+     */
+    private enum PropertyRuntimeSemantics {
+        BACKGROUND_COLOR(DocumentAnimationProperty.BACKGROUND_COLOR) {
+            @Override
+            int resolveBaseColor(ComputedStyle style) {
+                return style.getBackgroundColor();
+            }
+        },
+        BORDER_COLOR(DocumentAnimationProperty.BORDER_COLOR) {
+            @Override
+            int resolveBaseColor(ComputedStyle style) {
+                return style.getBorderColor();
+            }
+        },
+        TEXT_COLOR(DocumentAnimationProperty.TEXT_COLOR) {
+            @Override
+            int resolveBaseColor(ComputedStyle style) {
+                return style.getTextColor();
+            }
+        },
+        OPACITY(DocumentAnimationProperty.OPACITY) {
+            @Override
+            float resolveBaseFloat(DocumentLayoutBox box) {
+                return box.getComputedStyle().getOpacity();
+            }
+
+            @Override
+            float normalizeDeclaredKeyframeFloat(DocumentLayoutBox box, float value) {
+                return Math.max(0.0F, Math.min(1.0F, value));
+            }
+        },
+        BORDER_RADIUS(DocumentAnimationProperty.BORDER_RADIUS) {
+            @Override
+            float resolveBaseFloat(DocumentLayoutBox box) {
+                return resolveBorderRadius(box);
+            }
+
+            @Override
+            float normalizeDeclaredKeyframeFloat(DocumentLayoutBox box, float value) {
+                int limit = Math.min(box.getWidth(), box.getHeight());
+                return Math.max(0.0F, Math.min(value, limit / 2.0F));
+            }
+        },
+        BACKDROP_BLUR_RADIUS(DocumentAnimationProperty.BACKDROP_BLUR_RADIUS) {
+            @Override
+            float resolveBaseFloat(DocumentLayoutBox box) {
+                return resolveBackdropBlurRadius(box);
+            }
+
+            @Override
+            float normalizeDeclaredKeyframeFloat(DocumentLayoutBox box, float value) {
+                return Math.max(0.0F, Math.min(value, DocumentEffectChain.MAX_BACKDROP_BLUR_RADIUS));
+            }
+        },
+        WIDTH(DocumentAnimationProperty.WIDTH) {
+            @Override
+            float resolveBaseFloat(DocumentLayoutBox box) {
+                return box.getContentWidth();
+            }
+
+            @Override
+            boolean isFloatTransitionTargetAnimatable(DocumentLayoutBox box) {
+                return isPixelLength(box.getComputedStyle().getWidth());
+            }
+        },
+        HEIGHT(DocumentAnimationProperty.HEIGHT) {
+            @Override
+            float resolveBaseFloat(DocumentLayoutBox box) {
+                return box.getContentHeight();
+            }
+
+            @Override
+            boolean isFloatTransitionTargetAnimatable(DocumentLayoutBox box) {
+                return isPixelLength(box.getComputedStyle().getHeight());
+            }
+        },
+        MARGIN_LEFT(DocumentAnimationProperty.MARGIN_LEFT) {
+            @Override
+            float resolveBaseFloat(DocumentLayoutBox box) {
+                return box.getMargin().getLeft();
+            }
+
+            @Override
+            boolean isFloatTransitionTargetAnimatable(DocumentLayoutBox box) {
+                return isPixelLength(box.getComputedStyle().getMargin().getLeft());
+            }
+        },
+        MARGIN_RIGHT(DocumentAnimationProperty.MARGIN_RIGHT) {
+            @Override
+            float resolveBaseFloat(DocumentLayoutBox box) {
+                return box.getMargin().getRight();
+            }
+
+            @Override
+            boolean isFloatTransitionTargetAnimatable(DocumentLayoutBox box) {
+                return isPixelLength(box.getComputedStyle().getMargin().getRight());
+            }
+        };
+
+        private static final EnumMap<DocumentAnimationProperty, PropertyRuntimeSemantics> BY_PROPERTY =
+                createLookup();
+
+        private final DocumentAnimationProperty property;
+
+        private PropertyRuntimeSemantics(DocumentAnimationProperty property) {
+            this.property = property;
+        }
+
+        private static PropertyRuntimeSemantics forProperty(DocumentAnimationProperty property) {
+            PropertyRuntimeSemantics semantics = BY_PROPERTY.get(Objects.requireNonNull(property, "property"));
+            if (semantics == null) {
+                throw new IllegalArgumentException("unsupported animation property: " + property);
+            }
+            return semantics;
+        }
+
+        private static EnumMap<DocumentAnimationProperty, PropertyRuntimeSemantics> createLookup() {
+            EnumMap<DocumentAnimationProperty, PropertyRuntimeSemantics> lookup =
+                    new EnumMap<DocumentAnimationProperty, PropertyRuntimeSemantics>(DocumentAnimationProperty.class);
+            for (PropertyRuntimeSemantics semantics : values()) {
+                lookup.put(semantics.property, semantics);
+            }
+            return lookup;
+        }
+
+        private static boolean isPixelLength(UiStyleLength length) {
+            return length.getType() == UiStyleLength.Type.PIXEL;
+        }
+
+        int resolveBaseColor(ComputedStyle style) {
+            throw new IllegalArgumentException("color value is not supported for: " + property);
+        }
+
+        float resolveBaseFloat(DocumentLayoutBox box) {
+            throw new IllegalArgumentException("float value is not supported for: " + property);
+        }
+
+        boolean isFloatTransitionTargetAnimatable(DocumentLayoutBox box) {
+            return true;
+        }
+
+        float normalizeDeclaredKeyframeFloat(DocumentLayoutBox box, float value) {
+            return value;
         }
     }
 

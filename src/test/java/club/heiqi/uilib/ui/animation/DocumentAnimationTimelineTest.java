@@ -22,7 +22,11 @@ public class DocumentAnimationTimelineTest {
     @Test
     public void shouldExposeAnimationPropertyImpactClassification() {
         Assert.assertSame(DocumentAnimationImpact.PAINT, DocumentAnimationProperty.BACKGROUND_COLOR.getImpact());
+        Assert.assertSame(DocumentAnimationProperty.ValueType.COLOR,
+                DocumentAnimationProperty.BACKGROUND_COLOR.getValueType());
+        Assert.assertTrue(DocumentAnimationProperty.BACKGROUND_COLOR.isColorValue());
         Assert.assertTrue(DocumentAnimationProperty.BORDER_RADIUS.isPaintOnly());
+        Assert.assertTrue(DocumentAnimationProperty.BORDER_RADIUS.isFloatValue());
         Assert.assertSame(DocumentAnimationImpact.EFFECT, DocumentAnimationProperty.OPACITY.getImpact());
         Assert.assertTrue(DocumentAnimationProperty.BACKDROP_BLUR_RADIUS.isEffectAffecting());
         Assert.assertSame(DocumentAnimationImpact.LAYOUT, DocumentAnimationProperty.WIDTH.getImpact());

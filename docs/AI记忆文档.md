@@ -74,7 +74,8 @@
 - 运行值不写回作者侧 inline style。
 - 运行值优先级固定为：`transition > keyframe animation > computed style`。
 - 当前可动画属性：`BACKGROUND_COLOR`、`BORDER_COLOR`、`TEXT_COLOR`、`OPACITY`、`BORDER_RADIUS`、`BACKDROP_BLUR_RADIUS`、`WIDTH`、`HEIGHT`、`MARGIN_LEFT`、`MARGIN_RIGHT`。
-- 动画属性按影响范围分类：paint、effect、layout。
+- 动画属性按影响范围分类：paint、effect、layout；按插值值类型分类：color、float。
+- `DocumentAnimationProperty` 是属性枚举与值类型元数据来源；`DocumentAnimationTimeline` 内部通过属性运行语义表集中处理颜色/数值 base value、px-only transition 判定和 keyframe used value 归一化，避免新增属性时散落维护多套 if/else 白名单。
 - transition 基于 computed style 基准值变化创建；清除 `transition-property` 或 duration 变为 0 时，运行中 transition 在下一次 timeline 刷新回到 computed style 基准值。
 - `DocumentAnimationTimeline.hasRunningTransition(element, property)` 可按元素/属性查询 transition 运行状态。
 - keyframe animation 通过 `UiDocument.registerKeyframes(...)` 注册命名 `DocumentKeyframes`，由元素的 `animation-name` 引用。
