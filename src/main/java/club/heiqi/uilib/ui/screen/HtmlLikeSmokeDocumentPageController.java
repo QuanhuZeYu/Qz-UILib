@@ -699,7 +699,7 @@ final class HtmlLikeSmokeDocumentPageController extends DocumentPageController {
     private static void appendLayoutAnimationProbe(UiDocument document, ElementNode root) {
         ElementNode probe = document.div();
         probe.style()
-                .setHeight(UiStyleLength.px(206))
+                .setHeight(UiStyleLength.px(264))
                 .setMargin(UiStyleInsets.of(UiStyleLength.px(12), UiStyleLength.px(0), UiStyleLength.px(0),
                         UiStyleLength.px(0)))
                 .setPadding(UiStyleLength.px(10))
@@ -710,7 +710,7 @@ final class HtmlLikeSmokeDocumentPageController extends DocumentPageController {
                 .setTextColor(0xFFDBEAFE)
                 .setOverflowX(UiOverflow.HIDDEN)
                 .setOverflowY(UiOverflow.HIDDEN);
-        probe.appendText("Layout animation probe: click cards; width/height and margin push siblings.");
+        probe.appendText("Layout animation probe: click cards; width/height, margin and padding push siblings.");
         root.append(probe);
 
         ElementNode row = document.div();
@@ -833,6 +833,67 @@ final class HtmlLikeSmokeDocumentPageController extends DocumentPageController {
                 .setOverflowY(UiOverflow.HIDDEN);
         marginSibling.appendText("Margin sibling shifts from margin");
         marginRow.append(marginSibling);
+
+        ElementNode paddingRow = document.div();
+        paddingRow.style()
+                .setHeight(UiStyleLength.px(56))
+                .setDisplay(UiDisplay.FLEX)
+                .setFlexDirection(UiFlexDirection.ROW)
+                .setAlignItems(UiAlignItems.CENTER)
+                .setColumnGap(UiStyleLength.px(10))
+                .setMargin(UiStyleInsets.of(UiStyleLength.px(8), UiStyleLength.px(0), UiStyleLength.px(0),
+                        UiStyleLength.px(0)))
+                .setOverflowX(UiOverflow.HIDDEN)
+                .setOverflowY(UiOverflow.HIDDEN);
+        probe.append(paddingRow);
+
+        final ElementNode paddingCard = document.div();
+        paddingCard.style()
+                .setWidth(UiStyleLength.px(92))
+                .setHeight(UiStyleLength.px(30))
+                .setFlexShrink(0.0F)
+                .setPadding(UiStyleInsets.of(UiStyleLength.px(7), UiStyleLength.px(4), UiStyleLength.px(7),
+                        UiStyleLength.px(4)))
+                .setBackgroundColor(0xFF7C3AED)
+                .setBorderColor(0xFFD8B4FE)
+                .setBorderWidth(UiStyleLength.px(1))
+                .setBorderRadius(UiStyleLength.px(12))
+                .setTextColor(0xFFF5F3FF)
+                .setTransitionProperties(DocumentAnimationProperty.PADDING_LEFT,
+                        DocumentAnimationProperty.PADDING_RIGHT)
+                .setTransitionDurationMillis(800L)
+                .setTransitionTimingFunction(DocumentAnimationTimingFunction.EASE_IN_OUT)
+                .setOverflowX(UiOverflow.HIDDEN)
+                .setOverflowY(UiOverflow.HIDDEN);
+        final TextNode paddingLabel = paddingCard.appendText("Padding card: tight");
+        final boolean[] paddingExpanded = new boolean[] { false };
+        paddingCard.setClickHandler(new DocumentElementClickHandler() {
+            @Override
+            public boolean onClick(DocumentElementClickEvent event) {
+                paddingExpanded[0] = !paddingExpanded[0];
+                paddingCard.style().setPadding(UiStyleInsets.of(UiStyleLength.px(7),
+                        UiStyleLength.px(paddingExpanded[0] ? 24 : 4), UiStyleLength.px(7),
+                        UiStyleLength.px(paddingExpanded[0] ? 28 : 4)));
+                paddingLabel.setText(paddingExpanded[0] ? "Padding card: wide" : "Padding card: tight");
+                return true;
+            }
+        });
+        paddingRow.append(paddingCard);
+
+        ElementNode paddingSibling = document.div();
+        paddingSibling.style()
+                .setFlexGrow(1.0F)
+                .setHeight(UiStyleLength.px(30))
+                .setPadding(UiStyleLength.px(7))
+                .setBackgroundColor(0xFF4C1D95)
+                .setBorderColor(0xFFE9D5FF)
+                .setBorderWidth(UiStyleLength.px(1))
+                .setBorderRadius(UiStyleLength.px(12))
+                .setTextColor(0xFFF3E8FF)
+                .setOverflowX(UiOverflow.HIDDEN)
+                .setOverflowY(UiOverflow.HIDDEN);
+        paddingSibling.appendText("Padding sibling shifts from padding");
+        paddingRow.append(paddingSibling);
     }
 
     private static void appendAbsoluteStretchAndInlineProbe(UiDocument document, ElementNode root) {

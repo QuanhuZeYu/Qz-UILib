@@ -33,6 +33,8 @@ public class DocumentAnimationTimelineTest {
         Assert.assertTrue(DocumentAnimationProperty.HEIGHT.isLayoutAffecting());
         Assert.assertTrue(DocumentAnimationProperty.MARGIN_LEFT.isLayoutAffecting());
         Assert.assertSame(DocumentAnimationImpact.LAYOUT, DocumentAnimationProperty.MARGIN_RIGHT.getImpact());
+        Assert.assertTrue(DocumentAnimationProperty.PADDING_LEFT.isLayoutAffecting());
+        Assert.assertSame(DocumentAnimationImpact.LAYOUT, DocumentAnimationProperty.PADDING_RIGHT.getImpact());
     }
 
     /**
@@ -271,6 +273,76 @@ public class DocumentAnimationTimelineTest {
     }
 
     /**
+     * 验证 padding-left/right transition 会作为 layout-affecting 数值覆盖层插值。
+     */
+    @Test
+    public void shouldTransitionPaddingLeftAndRightWithoutMutatingInlineStyle() {
+        UiDocument document = UiDocument.create();
+        ElementNode root = document.getRootElement();
+        root.style()
+                .setWidth(UiStyleLength.px(40))
+                .setHeight(UiStyleLength.px(20))
+                .setPadding(UiStyleInsets.of(UiStyleLength.px(0), UiStyleLength.px(4), UiStyleLength.px(0),
+                        UiStyleLength.px(2)))
+                .setTransitionProperties(DocumentAnimationProperty.PADDING_LEFT,
+                        DocumentAnimationProperty.PADDING_RIGHT)
+                .setTransitionDurationMillis(1000L);
+        DocumentAnimationTimeline timeline = new DocumentAnimationTimeline();
+
+        DocumentLayoutBox firstLayout = DocumentLayoutEngine.layout(root, 120, 0);
+        Assert.assertTrue(timeline.updateFromLayout(firstLayout, 0L));
+        Assert.assertEquals(2.0F, timeline.resolveFloat(root, DocumentAnimationProperty.PADDING_LEFT, 2.0F, 0L),
+                0.0F);
+        Assert.assertEquals(4.0F, timeline.resolveFloat(root, DocumentAnimationProperty.PADDING_RIGHT, 4.0F, 0L),
+                0.0F);
+
+        root.style().setPadding(UiStyleInsets.of(UiStyleLength.px(0), UiStyleLength.px(24), UiStyleLength.px(0),
+                UiStyleLength.px(12)));
+        DocumentLayoutBox secondLayout = DocumentLayoutEngine.layout(root, 120, 0);
+        Assert.assertTrue(timeline.updateFromLayout(secondLayout, 0L));
+
+        Assert.assertTrue(timeline.hasAnimationWork(DocumentAnimationImpact.LAYOUT));
+        Assert.assertEquals(2, timeline.getActiveAnimationCount(500_000_000L));
+        Assert.assertEquals(7.0F, timeline.resolveFloat(root, DocumentAnimationProperty.PADDING_LEFT, 12.0F,
+                500_000_000L), 0.0F);
+        Assert.assertEquals(14.0F, timeline.resolveFloat(root, DocumentAnimationProperty.PADDING_RIGHT, 24.0F,
+                500_000_000L), 0.0F);
+        Assert.assertEquals(UiStyleInsets.of(UiStyleLength.px(0), UiStyleLength.px(24), UiStyleLength.px(0),
+                UiStyleLength.px(12)), root.style().getPadding());
+    }
+
+    /**
+     * 验证 padding-left/right 从百分比进入像素值时不会创建首期 px-to-px transition。
+     */
+    @Test
+    public void shouldNotTransitionPaddingFromPercentTarget() {
+        UiDocument document = UiDocument.create();
+        ElementNode root = document.getRootElement();
+        root.style()
+                .setWidth(UiStyleLength.px(40))
+                .setHeight(UiStyleLength.px(20))
+                .setPadding(UiStyleInsets.of(UiStyleLength.px(0), UiStyleLength.percent(0.10F), UiStyleLength.px(0),
+                        UiStyleLength.percent(0.20F)))
+                .setTransitionProperties(DocumentAnimationProperty.PADDING_LEFT,
+                        DocumentAnimationProperty.PADDING_RIGHT)
+                .setTransitionDurationMillis(1000L);
+        DocumentAnimationTimeline timeline = new DocumentAnimationTimeline();
+
+        timeline.updateFromLayout(DocumentLayoutEngine.layout(root, 100, 0), 0L);
+        root.style().setPadding(UiStyleInsets.of(UiStyleLength.px(0), UiStyleLength.px(10), UiStyleLength.px(0),
+                UiStyleLength.px(20)));
+        Assert.assertTrue(timeline.updateFromLayout(DocumentLayoutEngine.layout(root, 100, 0), 0L));
+
+        Assert.assertFalse(timeline.hasAnimationWork(DocumentAnimationImpact.LAYOUT));
+        Assert.assertFalse(timeline.hasRunningTransition(root, DocumentAnimationProperty.PADDING_LEFT));
+        Assert.assertFalse(timeline.hasRunningTransition(root, DocumentAnimationProperty.PADDING_RIGHT));
+        Assert.assertEquals(20.0F, timeline.resolveFloat(root, DocumentAnimationProperty.PADDING_LEFT, 20.0F,
+                500_000_000L), 0.0F);
+        Assert.assertEquals(10.0F, timeline.resolveFloat(root, DocumentAnimationProperty.PADDING_RIGHT, 10.0F,
+                500_000_000L), 0.0F);
+    }
+
+    /**
      * 验证 width/height keyframe 会作为 layout-affecting 数值覆盖层插值。
      */
     @Test
@@ -349,6 +421,52 @@ public class DocumentAnimationTimelineTest {
         Assert.assertEquals(2.0F, timeline.resolveFloat(root, DocumentAnimationProperty.MARGIN_LEFT, 2.0F,
                 1_000_000_000L), 0.0F);
         Assert.assertEquals(4.0F, timeline.resolveFloat(root, DocumentAnimationProperty.MARGIN_RIGHT, 4.0F,
+                1_000_000_000L), 0.0F);
+    }
+
+    /**
+     * 验证 padding keyframe 会进入 layout 运行值，并在清除声明后移除 forwards fill。
+     */
+    @Test
+    public void shouldRunPaddingKeyframeAndClearFillAsLayoutRuntimeValues() {
+        UiDocument document = UiDocument.create();
+        document.registerKeyframes(DocumentKeyframes.named("paddingPush")
+                .setFloat(DocumentAnimationProperty.PADDING_LEFT, 2.0F, 12.0F)
+                .setFloat(DocumentAnimationProperty.PADDING_RIGHT, 4.0F, 24.0F)
+                .build());
+        ElementNode root = document.getRootElement();
+        root.style()
+                .setWidth(UiStyleLength.px(40))
+                .setHeight(UiStyleLength.px(20))
+                .setPadding(UiStyleInsets.of(UiStyleLength.px(0), UiStyleLength.px(4), UiStyleLength.px(0),
+                        UiStyleLength.px(2)))
+                .setAnimation("paddingPush", 1000L)
+                .setAnimationFillMode(DocumentAnimationFillMode.FORWARDS);
+        DocumentAnimationTimeline timeline = new DocumentAnimationTimeline();
+
+        Assert.assertTrue(timeline.updateFromLayout(DocumentLayoutEngine.layout(root, 120, 0), 0L));
+
+        Assert.assertTrue(timeline.hasRuntimeValue(DocumentAnimationImpact.LAYOUT));
+        Assert.assertEquals(7.0F, timeline.resolveFloat(root, DocumentAnimationProperty.PADDING_LEFT, 2.0F,
+                500_000_000L), 0.0F);
+        Assert.assertEquals(14.0F, timeline.resolveFloat(root, DocumentAnimationProperty.PADDING_RIGHT, 4.0F,
+                500_000_000L), 0.0F);
+
+        Assert.assertTrue(timeline.pruneFinishedAnimations(1_000_000_000L));
+        Assert.assertFalse(timeline.hasAnimationWork(DocumentAnimationImpact.LAYOUT));
+        Assert.assertTrue(timeline.hasRuntimeValue(DocumentAnimationImpact.LAYOUT));
+        Assert.assertEquals(12.0F, timeline.resolveFloat(root, DocumentAnimationProperty.PADDING_LEFT, 2.0F,
+                1_000_000_000L), 0.0F);
+        Assert.assertEquals(24.0F, timeline.resolveFloat(root, DocumentAnimationProperty.PADDING_RIGHT, 4.0F,
+                1_000_000_000L), 0.0F);
+
+        root.style().clearAnimationName();
+        Assert.assertTrue(timeline.updateFromLayout(DocumentLayoutEngine.layout(root, 120, 0), 1_000_000_000L));
+
+        Assert.assertFalse(timeline.hasRuntimeValue(DocumentAnimationImpact.LAYOUT));
+        Assert.assertEquals(2.0F, timeline.resolveFloat(root, DocumentAnimationProperty.PADDING_LEFT, 2.0F,
+                1_000_000_000L), 0.0F);
+        Assert.assertEquals(4.0F, timeline.resolveFloat(root, DocumentAnimationProperty.PADDING_RIGHT, 4.0F,
                 1_000_000_000L), 0.0F);
     }
 

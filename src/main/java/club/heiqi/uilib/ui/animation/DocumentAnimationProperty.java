@@ -52,7 +52,17 @@ public enum DocumentAnimationProperty {
     /**
      * 元素右外边距，属于 layout-affecting 属性。
      */
-    MARGIN_RIGHT(DocumentAnimationImpact.LAYOUT, ValueType.FLOAT);
+    MARGIN_RIGHT(DocumentAnimationImpact.LAYOUT, ValueType.FLOAT),
+
+    /**
+     * 元素左内边距，属于 layout-affecting 属性。
+     */
+    PADDING_LEFT(DocumentAnimationImpact.LAYOUT, ValueType.FLOAT),
+
+    /**
+     * 元素右内边距，属于 layout-affecting 属性。
+     */
+    PADDING_RIGHT(DocumentAnimationImpact.LAYOUT, ValueType.FLOAT);
 
     private final DocumentAnimationImpact impact;
     private final ValueType valueType;

@@ -975,6 +975,38 @@ public final class DocumentAnimationTimeline {
             boolean isFloatTransitionTargetAnimatable(DocumentLayoutBox box) {
                 return isPixelLength(box.getComputedStyle().getMargin().getRight());
             }
+        },
+        PADDING_LEFT(DocumentAnimationProperty.PADDING_LEFT) {
+            @Override
+            float resolveBaseFloat(DocumentLayoutBox box) {
+                return box.getPadding().getLeft();
+            }
+
+            @Override
+            boolean isFloatTransitionTargetAnimatable(DocumentLayoutBox box) {
+                return isPixelLength(box.getComputedStyle().getPadding().getLeft());
+            }
+
+            @Override
+            float normalizeDeclaredKeyframeFloat(DocumentLayoutBox box, float value) {
+                return Math.max(0.0F, value);
+            }
+        },
+        PADDING_RIGHT(DocumentAnimationProperty.PADDING_RIGHT) {
+            @Override
+            float resolveBaseFloat(DocumentLayoutBox box) {
+                return box.getPadding().getRight();
+            }
+
+            @Override
+            boolean isFloatTransitionTargetAnimatable(DocumentLayoutBox box) {
+                return isPixelLength(box.getComputedStyle().getPadding().getRight());
+            }
+
+            @Override
+            float normalizeDeclaredKeyframeFloat(DocumentLayoutBox box, float value) {
+                return Math.max(0.0F, value);
+            }
         };
 
         private static final EnumMap<DocumentAnimationProperty, PropertyRuntimeSemantics> BY_PROPERTY =

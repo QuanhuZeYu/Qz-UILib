@@ -25,6 +25,7 @@ import club.heiqi.uilib.ui.paint.DocumentPaintCommandType;
 import club.heiqi.uilib.ui.paint.DocumentPaintEngine;
 import club.heiqi.uilib.ui.render.UiRenderContext;
 import club.heiqi.uilib.ui.runtime.UiRuntimeAdapters;
+import club.heiqi.uilib.ui.style.UiStyleInsets;
 import club.heiqi.uilib.ui.style.UiStyleLength;
 import club.heiqi.uilib.ui.text.TextMeasureService;
 import club.heiqi.uilib.ui.theme.UiSurfaceStyle;
@@ -70,6 +71,8 @@ public class HtmlLikeSmokeDocumentPageControllerTest {
         Assert.assertTrue(containsText(texts, "Sibling shifts while layout transition runs"));
         Assert.assertTrue(containsText(texts, "Margin card: tight"));
         Assert.assertTrue(containsText(texts, "Margin sibling shifts from margin"));
+        Assert.assertTrue(containsText(texts, "Padding card: tight"));
+        Assert.assertTrue(containsText(texts, "Padding sibling shifts from padding"));
         Assert.assertTrue(containsText(texts, "Same-layer sampling grid"));
         Assert.assertTrue(containsText(texts, "ABS containing probe"));
         Assert.assertTrue(containsText(texts, "static wrapper is not anchor"));
@@ -130,6 +133,7 @@ public class HtmlLikeSmokeDocumentPageControllerTest {
         Assert.assertTrue(containsTextCall(renderContext.textCalls, "Layout animation probe"));
         Assert.assertTrue(containsTextCall(renderContext.textCalls, "Layout card: small"));
         Assert.assertTrue(containsTextCall(renderContext.textCalls, "Margin card: tight"));
+        Assert.assertTrue(containsTextCall(renderContext.textCalls, "Padding card: tight"));
         Assert.assertTrue(containsTextCall(renderContext.textCalls, "ABS stretch fill"));
         Assert.assertTrue(containsTextCall(renderContext.textCalls, "amber span hit: 0"));
         Assert.assertTrue(containsTextCall(renderContext.textCalls, "Vertical-align probe"));
@@ -278,18 +282,26 @@ public class HtmlLikeSmokeDocumentPageControllerTest {
         ElementNode sibling = findElementContainingDirectText(widget, "Sibling shifts while layout transition runs");
         ElementNode marginCard = findElementContainingDirectText(widget, "Margin card: tight");
         ElementNode marginSibling = findElementContainingDirectText(widget, "Margin sibling shifts from margin");
+        ElementNode paddingCard = findElementContainingDirectText(widget, "Padding card: tight");
+        ElementNode paddingSibling = findElementContainingDirectText(widget, "Padding sibling shifts from padding");
         Assert.assertNotNull(layoutCard);
         Assert.assertNotNull(sibling);
         Assert.assertNotNull(marginCard);
         Assert.assertNotNull(marginSibling);
+        Assert.assertNotNull(paddingCard);
+        Assert.assertNotNull(paddingSibling);
         Assert.assertTrue(layoutCard.style().getTransitionProperties().contains(DocumentAnimationProperty.WIDTH));
         Assert.assertTrue(layoutCard.style().getTransitionProperties().contains(DocumentAnimationProperty.HEIGHT));
         Assert.assertTrue(marginCard.style().getTransitionProperties().contains(DocumentAnimationProperty.MARGIN_LEFT));
         Assert.assertTrue(marginCard.style().getTransitionProperties().contains(DocumentAnimationProperty.MARGIN_RIGHT));
+        Assert.assertTrue(paddingCard.style().getTransitionProperties().contains(DocumentAnimationProperty.PADDING_LEFT));
+        Assert.assertTrue(paddingCard.style().getTransitionProperties().contains(DocumentAnimationProperty.PADDING_RIGHT));
         Assert.assertEquals(UiStyleLength.px(92), layoutCard.style().getWidth());
         Assert.assertEquals(UiStyleLength.px(34), layoutCard.style().getHeight());
         Assert.assertEquals(UiStyleLength.px(4), marginCard.style().getMargin().getLeft());
         Assert.assertEquals(UiStyleLength.px(4), marginCard.style().getMargin().getRight());
+        Assert.assertEquals(UiStyleLength.px(4), paddingCard.style().getPadding().getLeft());
+        Assert.assertEquals(UiStyleLength.px(4), paddingCard.style().getPadding().getRight());
 
         int siblingLeftBefore = findElementBackgroundCommand(widget, fixture.textMeasureService, sibling).getLeft();
         clickElementCenter(widget, fixture.textMeasureService, layoutCard, 1L, 2L);
@@ -301,14 +313,23 @@ public class HtmlLikeSmokeDocumentPageControllerTest {
         widget.render(new RecordingUiRenderContext());
         int marginSiblingLeftAfter = findElementBackgroundCommand(widget, fixture.textMeasureService,
                 marginSibling).getLeft();
+        int paddingSiblingLeftBefore = findElementBackgroundCommand(widget, fixture.textMeasureService,
+                paddingSibling).getLeft();
+        clickElementCenter(widget, fixture.textMeasureService, paddingCard, 5L, 6L);
+        widget.render(new RecordingUiRenderContext());
+        int paddingSiblingLeftAfter = findElementBackgroundCommand(widget, fixture.textMeasureService,
+                paddingSibling).getLeft();
 
         Assert.assertEquals(UiStyleLength.px(190), layoutCard.style().getWidth());
         Assert.assertEquals(UiStyleLength.px(58), layoutCard.style().getHeight());
         Assert.assertEquals(UiStyleLength.px(34), marginCard.style().getMargin().getLeft());
         Assert.assertEquals(UiStyleLength.px(18), marginCard.style().getMargin().getRight());
+        Assert.assertEquals(UiStyleInsets.of(UiStyleLength.px(7), UiStyleLength.px(24), UiStyleLength.px(7),
+                UiStyleLength.px(28)), paddingCard.style().getPadding());
         Assert.assertTrue(siblingLeftAfter > siblingLeftBefore);
         Assert.assertTrue(marginSiblingLeftAfter > marginSiblingLeftBefore);
-        Assert.assertTrue(widget.getActiveAnimationCount() >= 4);
+        Assert.assertTrue(paddingSiblingLeftAfter > paddingSiblingLeftBefore);
+        Assert.assertTrue(widget.getActiveAnimationCount() >= 6);
     }
 
     /**

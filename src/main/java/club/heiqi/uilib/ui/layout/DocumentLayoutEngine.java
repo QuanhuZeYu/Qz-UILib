@@ -149,7 +149,8 @@ public final class DocumentLayoutEngine {
         DocumentLayoutEdges margin = resolveMarginInsets(rootElement, rootStyle, safeViewportWidth,
                 resolvedLayoutValueResolver);
         DocumentLayoutEdges border = resolveUniformEdge(rootStyle.getBorderWidth(), safeViewportWidth);
-        DocumentLayoutEdges padding = resolveInsets(rootStyle.getPadding(), safeViewportWidth, true);
+        DocumentLayoutEdges padding = resolvePaddingInsets(rootElement, rootStyle, safeViewportWidth,
+                resolvedLayoutValueResolver);
         int forcedContentWidth = Math.max(0,
                 safeViewportWidth - margin.getHorizontal() - border.getHorizontal() - padding.getHorizontal());
         int forcedContentHeight = Math.max(0,
@@ -175,7 +176,8 @@ public final class DocumentLayoutEngine {
         DocumentLayoutEdges margin = resolveMarginInsets(element, computedStyle, containingWidth,
                 layoutValueResolver);
         DocumentLayoutEdges border = resolveUniformEdge(computedStyle.getBorderWidth(), containingWidth);
-        DocumentLayoutEdges padding = resolveInsets(computedStyle.getPadding(), containingWidth, true);
+        DocumentLayoutEdges padding = resolvePaddingInsets(element, computedStyle, containingWidth,
+                layoutValueResolver);
 
         int availableBorderBoxWidth = Math.max(0, containingWidth - margin.getHorizontal());
         int autoContentWidth = Math.max(0, availableBorderBoxWidth - border.getHorizontal() - padding.getHorizontal());
@@ -496,8 +498,8 @@ public final class DocumentLayoutEngine {
             LayoutRuntimeValueResolver layoutValueResolver) {
         ComputedStyle style = UiStyleResolver.compute(inlineElement);
         return new InlineElementEdges(resolveMarginInsets(inlineElement, style, lineWidth, layoutValueResolver),
-                resolveUniformEdge(style.getBorderWidth(), lineWidth), resolveInsets(style.getPadding(), lineWidth,
-                        true));
+                resolveUniformEdge(style.getBorderWidth(), lineWidth), resolvePaddingInsets(inlineElement, style,
+                        lineWidth, layoutValueResolver));
     }
 
     private static LayoutChildrenResult layoutFlexChildren(ElementNode element, ComputedStyle parentStyle,
@@ -895,7 +897,8 @@ public final class DocumentLayoutEngine {
         }
         DocumentLayoutEdges margin = resolveMarginInsets(element, style, containingBlock.width, layoutValueResolver);
         DocumentLayoutEdges border = resolveUniformEdge(style.getBorderWidth(), containingBlock.width);
-        DocumentLayoutEdges padding = resolveInsets(style.getPadding(), containingBlock.width, true);
+        DocumentLayoutEdges padding = resolvePaddingInsets(element, style, containingBlock.width,
+                layoutValueResolver);
         int leftInset = style.getLeft().resolve(containingBlock.width, 0);
         int rightInset = style.getRight().resolve(containingBlock.width, 0);
         return Math.max(0, containingBlock.width - leftInset - rightInset - margin.getHorizontal()
@@ -910,7 +913,8 @@ public final class DocumentLayoutEngine {
         int containingHeight = Math.max(0, containingBlock.height);
         DocumentLayoutEdges margin = resolveMarginInsets(element, style, containingBlock.width, layoutValueResolver);
         DocumentLayoutEdges border = resolveUniformEdge(style.getBorderWidth(), containingBlock.width);
-        DocumentLayoutEdges padding = resolveInsets(style.getPadding(), containingBlock.width, true);
+        DocumentLayoutEdges padding = resolvePaddingInsets(element, style, containingBlock.width,
+                layoutValueResolver);
         int topInset = style.getTop().resolve(containingHeight, 0);
         int bottomInset = style.getBottom().resolve(containingHeight, 0);
         return Math.max(0, containingHeight - topInset - bottomInset - margin.getVertical()
@@ -999,7 +1003,7 @@ public final class DocumentLayoutEngine {
         ComputedStyle style = UiStyleResolver.compute(element);
         return new FlexItem(element, style, resolveMarginInsets(element, style, containingWidth, layoutValueResolver),
                 resolveUniformEdge(style.getBorderWidth(), containingWidth),
-                resolveInsets(style.getPadding(), containingWidth, true));
+                resolvePaddingInsets(element, style, containingWidth, layoutValueResolver));
     }
 
     private static DocumentLayoutEdges resolveMarginInsets(ElementNode element, ComputedStyle style,
@@ -1008,6 +1012,14 @@ public final class DocumentLayoutEngine {
         int left = layoutValueResolver.resolve(element, DocumentAnimationProperty.MARGIN_LEFT, margin.getLeft());
         int right = layoutValueResolver.resolve(element, DocumentAnimationProperty.MARGIN_RIGHT, margin.getRight());
         return DocumentLayoutEdges.of(margin.getTop(), right, margin.getBottom(), left);
+    }
+
+    private static DocumentLayoutEdges resolvePaddingInsets(ElementNode element, ComputedStyle style,
+            int containingWidth, LayoutRuntimeValueResolver layoutValueResolver) {
+        DocumentLayoutEdges padding = resolveInsets(style.getPadding(), containingWidth, true);
+        int left = layoutValueResolver.resolve(element, DocumentAnimationProperty.PADDING_LEFT, padding.getLeft());
+        int right = layoutValueResolver.resolve(element, DocumentAnimationProperty.PADDING_RIGHT, padding.getRight());
+        return DocumentLayoutEdges.of(padding.getTop(), Math.max(0, right), padding.getBottom(), Math.max(0, left));
     }
 
     private static DocumentLayoutEdges resolveInsets(UiStyleInsets insets, int containingWidth, boolean clampNonNegative) {

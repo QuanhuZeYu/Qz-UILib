@@ -23,6 +23,7 @@ import club.heiqi.uilib.ui.dom.DocumentElementKeyHandler;
 import club.heiqi.uilib.ui.dom.DocumentElementTextInputEvent;
 import club.heiqi.uilib.ui.dom.DocumentElementTextInputHandler;
 import club.heiqi.uilib.ui.dom.ElementNode;
+import club.heiqi.uilib.ui.dom.TextNode;
 import club.heiqi.uilib.ui.dom.UiDocument;
 import club.heiqi.uilib.ui.event.UiKeyEvent;
 import club.heiqi.uilib.ui.event.UiMouseEvent;
@@ -314,6 +315,55 @@ public class HtmlLikeDocumentWidgetTest {
     }
 
     /**
+     * 验证 layout-affecting padding transition 会驱动内容位置与兄弟元素同帧重排。
+     */
+    @Test
+    public void shouldRelayoutContentAndSiblingsDuringPaddingTransition() {
+        UiDocument document = UiDocument.create();
+        ElementNode root = document.getRootElement();
+        ElementNode row = document.div();
+        ElementNode animated = document.div();
+        TextNode label = animated.appendText("pad");
+        ElementNode sibling = document.div();
+        root.style().setWidth(UiStyleLength.px(160));
+        row.style().setDisplay(UiDisplay.FLEX);
+        animated.style()
+                .setWidth(UiStyleLength.px(40))
+                .setHeight(UiStyleLength.px(20))
+                .setPadding(UiStyleInsets.of(UiStyleLength.px(0), UiStyleLength.px(6), UiStyleLength.px(0),
+                        UiStyleLength.px(4)))
+                .setBackgroundColor(0xFF112233)
+                .setTransitionProperties(DocumentAnimationProperty.PADDING_LEFT,
+                        DocumentAnimationProperty.PADDING_RIGHT)
+                .setTransitionDurationMillis(1000L);
+        sibling.style()
+                .setWidth(UiStyleLength.px(20))
+                .setHeight(UiStyleLength.px(20))
+                .setBackgroundColor(0xFF445566);
+        row.append(animated).append(sibling);
+        root.append(row);
+        ManualAnimationClock animationClock = new ManualAnimationClock();
+        HtmlLikeDocumentWidget widget = new HtmlLikeDocumentWidget(document, 160, 40,
+                new DeterministicTextMeasureService());
+        widget.setAnimationClock(animationClock);
+        widget.applyLayoutBounds(0, 0, 160, 40);
+
+        widget.render(new RecordingUiRenderContext());
+        animated.style().setPadding(UiStyleInsets.of(UiStyleLength.px(0), UiStyleLength.px(16), UiStyleLength.px(0),
+                UiStyleLength.px(20)));
+        widget.render(new RecordingUiRenderContext());
+
+        animationClock.setCurrentTimeNanos(500_000_000L);
+        RecordingUiRenderContext halfContext = new RecordingUiRenderContext();
+        widget.render(halfContext);
+
+        assertDrawCall(halfContext.drawCalls.get(0), 0, 0, 63, 20, 0xFF112233, 0, 0);
+        assertDrawCall(halfContext.drawCalls.get(1), 63, 0, 83, 20, 0xFF445566, 0, 0);
+        assertTextCall(halfContext.textCalls.get(0), label.getText(), 12, 0, 0xFFFFFFFF, false);
+        Assert.assertEquals(2, widget.getActiveAnimationCount());
+    }
+
+    /**
      * 验证 layout transition 期间 hit-test 使用运行态几何而不是目标静态几何。
      */
     @Test
@@ -581,6 +631,68 @@ public class HtmlLikeDocumentWidgetTest {
         widget.render(authorContext);
         assertDrawCall(authorContext.drawCalls.get(0), 4, 0, 44, 20, 0xFF112233, 0, 0);
         assertDrawCall(authorContext.drawCalls.get(1), 44, 0, 64, 20, 0xFF445566, 0, 0);
+        Assert.assertEquals(0, widget.getActiveAnimationCount());
+    }
+
+    /**
+     * 验证 padding keyframe 运行期间和 forwards fill 后都会驱动运行态布局值。
+     */
+    @Test
+    public void shouldRelayoutContentAndSiblingsDuringPaddingKeyframeAndForwardsFill() {
+        UiDocument document = UiDocument.create();
+        document.registerKeyframes(DocumentKeyframes.named("paddingPush")
+                .setFloat(DocumentAnimationProperty.PADDING_LEFT, 4.0F, 20.0F)
+                .setFloat(DocumentAnimationProperty.PADDING_RIGHT, 6.0F, 18.0F)
+                .build());
+        ElementNode root = document.getRootElement();
+        ElementNode row = document.div();
+        ElementNode animated = document.div();
+        TextNode label = animated.appendText("pad");
+        ElementNode sibling = document.div();
+        root.style().setWidth(UiStyleLength.px(160));
+        row.style().setDisplay(UiDisplay.FLEX);
+        animated.style()
+                .setWidth(UiStyleLength.px(40))
+                .setHeight(UiStyleLength.px(20))
+                .setPadding(UiStyleInsets.of(UiStyleLength.px(0), UiStyleLength.px(6), UiStyleLength.px(0),
+                        UiStyleLength.px(4)))
+                .setBackgroundColor(0xFF112233)
+                .setAnimation("paddingPush", 1000L)
+                .setAnimationFillMode(DocumentAnimationFillMode.FORWARDS);
+        sibling.style()
+                .setWidth(UiStyleLength.px(20))
+                .setHeight(UiStyleLength.px(20))
+                .setBackgroundColor(0xFF445566);
+        row.append(animated).append(sibling);
+        root.append(row);
+        ManualAnimationClock animationClock = new ManualAnimationClock();
+        HtmlLikeDocumentWidget widget = new HtmlLikeDocumentWidget(document, 160, 40,
+                new DeterministicTextMeasureService());
+        widget.setAnimationClock(animationClock);
+        widget.applyLayoutBounds(0, 0, 160, 40);
+
+        widget.render(new RecordingUiRenderContext());
+        animationClock.setCurrentTimeNanos(500_000_000L);
+        RecordingUiRenderContext halfContext = new RecordingUiRenderContext();
+        widget.render(halfContext);
+        assertDrawCall(halfContext.drawCalls.get(0), 0, 0, 64, 20, 0xFF112233, 0, 0);
+        assertDrawCall(halfContext.drawCalls.get(1), 64, 0, 84, 20, 0xFF445566, 0, 0);
+        assertTextCall(halfContext.textCalls.get(0), label.getText(), 12, 0, 0xFFFFFFFF, false);
+
+        animationClock.setCurrentTimeNanos(1_000_000_000L);
+        RecordingUiRenderContext filledContext = new RecordingUiRenderContext();
+        widget.render(filledContext);
+        assertDrawCall(filledContext.drawCalls.get(0), 0, 0, 78, 20, 0xFF112233, 0, 0);
+        assertDrawCall(filledContext.drawCalls.get(1), 78, 0, 98, 20, 0xFF445566, 0, 0);
+        assertTextCall(filledContext.textCalls.get(0), label.getText(), 20, 0, 0xFFFFFFFF, false);
+
+        animated.style().setPadding(UiStyleInsets.of(UiStyleLength.px(0), UiStyleLength.px(6), UiStyleLength.px(0),
+                UiStyleLength.px(8)));
+        RecordingUiRenderContext authorContext = new RecordingUiRenderContext();
+        widget.render(authorContext);
+        assertDrawCall(authorContext.drawCalls.get(0), 0, 0, 66, 20, 0xFF112233, 0, 0);
+        assertDrawCall(authorContext.drawCalls.get(1), 66, 0, 86, 20, 0xFF445566, 0, 0);
+        assertTextCall(authorContext.textCalls.get(0), label.getText(), 8, 0, 0xFFFFFFFF, false);
         Assert.assertEquals(0, widget.getActiveAnimationCount());
     }
 
