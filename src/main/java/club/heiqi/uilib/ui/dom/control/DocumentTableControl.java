@@ -215,6 +215,30 @@ public final class DocumentTableControl {
     }
 
     /**
+     * 追加一个无文本内容的表体行，并返回该行单元格元素。
+     *
+     * <p>该入口用于图标格、状态格等仍需真实 table 结构但单元格内容由调用方继续装配的场景。</p>
+     *
+     * @param cellCount 单元格数量
+     * @return 新行中的单元格元素快照
+     */
+    public List<ElementNode> addEmptyRow(int cellCount) {
+        ElementNode row = document.tr();
+        bodySection.append(row);
+        List<ElementNode> cells = new ArrayList<ElementNode>();
+        int resolvedCellCount = Math.max(0, cellCount);
+        for (int columnIndex = 0; columnIndex < resolvedCellCount; columnIndex++) {
+            ElementNode cell = document.td();
+            configureCell(cell, false);
+            applyColumnWidth(cell, cells.size());
+            cells.add(cell);
+            row.append(cell);
+        }
+        bodyRows.add(cells);
+        return new ArrayList<ElementNode>(cells);
+    }
+
+    /**
      * 清空表体行。
      *
      * @return 当前表格控件

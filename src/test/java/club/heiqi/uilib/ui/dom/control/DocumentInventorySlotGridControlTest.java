@@ -20,7 +20,9 @@ import club.heiqi.uilib.ui.paint.DocumentPaintCommand;
 import club.heiqi.uilib.ui.paint.DocumentPaintCommandType;
 import club.heiqi.uilib.ui.paint.DocumentPaintEngine;
 import club.heiqi.uilib.ui.render.UiRenderContext;
+import club.heiqi.uilib.ui.style.UiDisplay;
 import club.heiqi.uilib.ui.style.UiStyleLength;
+import club.heiqi.uilib.ui.style.UiStyleResolver;
 import club.heiqi.uilib.ui.text.TextMeasureService;
 import club.heiqi.uilib.ui.theme.UiSurfaceStyle;
 
@@ -211,10 +213,10 @@ public class DocumentInventorySlotGridControlTest {
     }
 
     /**
-     * 验证槽位表面由普通文档流子元素组成，而不是自定义绘制器直接画格子。
+     * 验证槽位表面由真实 table/tr/td 文档流子元素组成，而不是自定义绘制器直接画格子。
      */
     @Test
-    public void shouldBuildSlotCellsAsFlowDomElements() {
+    public void shouldBuildSlotCellsAsTableDomElements() {
         UiDocument document = UiDocument.create();
         DocumentInventorySlotGridControl gridControl = new DocumentInventorySlotGridControl(document, 10, 9)
                 .setSlotGap(4)
@@ -227,11 +229,21 @@ public class DocumentInventorySlotGridControlTest {
                 })
                 .commitLayout();
 
-        Assert.assertEquals(2, gridControl.getElement().getChildCount());
-        ElementNode firstRow = (ElementNode) gridControl.getElement().getChildren().get(0);
+        ElementNode table = gridControl.getElement();
+        ElementNode body = (ElementNode) table.getChildren().get(1);
+        ElementNode firstRow = (ElementNode) body.getChildren().get(0);
         ElementNode firstSlot = (ElementNode) firstRow.getChildren().get(0);
         ElementNode secondSlot = (ElementNode) firstRow.getChildren().get(1);
 
+        Assert.assertEquals("table", table.getTagName());
+        Assert.assertEquals("tbody", body.getTagName());
+        Assert.assertEquals("tr", firstRow.getTagName());
+        Assert.assertEquals("td", firstSlot.getTagName());
+        Assert.assertEquals(UiDisplay.TABLE, UiStyleResolver.compute(table).getDisplay());
+        Assert.assertEquals(UiDisplay.TABLE_ROW_GROUP, UiStyleResolver.compute(body).getDisplay());
+        Assert.assertEquals(UiDisplay.TABLE_ROW, UiStyleResolver.compute(firstRow).getDisplay());
+        Assert.assertEquals(UiDisplay.TABLE_CELL, UiStyleResolver.compute(firstSlot).getDisplay());
+        Assert.assertEquals(2, body.getChildCount());
         Assert.assertEquals(9, firstRow.getChildCount());
         Assert.assertEquals(Integer.valueOf(0xCC202A38), firstSlot.style().getBackgroundColor());
         Assert.assertEquals(Integer.valueOf(0xFF9AB8F2), firstSlot.style().getBorderColor());
@@ -239,9 +251,44 @@ public class DocumentInventorySlotGridControlTest {
         Assert.assertEquals(Integer.valueOf(0xFF465468), secondSlot.style().getBorderColor());
         Assert.assertEquals(UiStyleLength.px(30), firstSlot.style().getWidth());
         Assert.assertEquals(UiStyleLength.px(30), firstSlot.style().getHeight());
-        for (DocumentNode rowNode : gridControl.getElement().getChildren()) {
+        for (DocumentNode rowNode : body.getChildren()) {
             Assert.assertTrue(rowNode instanceof ElementNode);
         }
+    }
+
+    /**
+     * 验证背包槽位 table 布局仍与底层物品几何保持一致。
+     */
+    @Test
+    public void shouldLayoutTableSlotsAtInventoryGeometryPositions() {
+        UiDocument document = UiDocument.create();
+        ElementNode root = document.getRootElement();
+        root.style()
+                .setWidth(UiStyleLength.px(240))
+                .setHeight(UiStyleLength.px(140));
+        DocumentInventorySlotGridControl gridControl = new DocumentInventorySlotGridControl(document, 10, 9)
+                .setSlotGap(4)
+                .setPreferredSlotSize(32)
+                .commitLayout();
+        root.append(gridControl.getElement());
+
+        DocumentLayoutBox tableBox = DocumentLayoutEngine.layout(root, 240, 140,
+                new DeterministicTextMeasureService()).getChildren().get(0);
+        DocumentLayoutBox bodyBox = tableBox.getChildren().get(0);
+        DocumentLayoutBox firstRowBox = bodyBox.getChildren().get(0);
+        DocumentLayoutBox secondRowBox = bodyBox.getChildren().get(1);
+        DocumentLayoutBox firstSlotBox = firstRowBox.getChildren().get(0);
+        DocumentLayoutBox secondSlotBox = firstRowBox.getChildren().get(1);
+        DocumentLayoutBox tenthSlotBox = secondRowBox.getChildren().get(0);
+
+        Assert.assertEquals(320, tableBox.getWidth());
+        Assert.assertEquals(68, tableBox.getHeight());
+        Assert.assertEquals(32, firstSlotBox.getWidth());
+        Assert.assertEquals(32, firstSlotBox.getHeight());
+        Assert.assertEquals(36, secondSlotBox.getLeft());
+        Assert.assertEquals(36, secondRowBox.getTop());
+        Assert.assertEquals(0, tenthSlotBox.getLeft());
+        Assert.assertEquals(36, tenthSlotBox.getTop());
     }
 
     private static List<DocumentPaintCommand> buildPaintCommands(ElementNode root, int width, int height) {

@@ -30,7 +30,7 @@
 - `DocumentTextInputControl` 支持 placeholder、maxLength、控制字符过滤、Backspace 删除、enabled/disabled、focus 边框和 change handler。
 - `DocumentToggleSwitchControl` 以 flex row + justifyContent 表达开关，支持 click/Enter/Space 切换、enabled/disabled、focus-visible 与 toggle change handler。
 - `DocumentSegmentedSelectorControl` 以 element-backed button 组表达分段选择器，支持鼠标/键盘选择、enabled/disabled、选中态视觉和 selection handler。
-- `DocumentInventorySlotGridControl` 使用普通 HTML-like `ElementNode` 行列和 slot `div` 表达只读背包格子底板，slot 背景/边框走标准 `BACKGROUND`/`BORDER` 绘制命令；自定义渲染回调仅用于登记 Minecraft 物品图标延迟回放，复用 `ui.inventory` 下的 `InventorySlotGridLayout` 与 `InventorySlotGridItemRenderer`。
+- `DocumentInventorySlotGridControl` 使用真实 HTML-like `table/tbody/tr/td` 表达只读背包格子底板，slot 背景/边框走标准 `BACKGROUND`/`BORDER` 绘制命令；自定义渲染回调仅用于登记 Minecraft 物品图标延迟回放，复用 `ui.inventory` 下的 `InventorySlotGridLayout` 与 `InventorySlotGridItemRenderer`。
 - `DocumentTableControl` 使用真实 `table/thead/tbody/tr/th/td` 元素表达表格，支持表头、表体行、列宽、行列 gap、单元格 padding/border/background/text 样式；绘制走标准 background/border/text 命令，不使用 `CUSTOM`。
 
 ### 样式
@@ -110,7 +110,7 @@
 - Smoke 页覆盖：控件交互、文本输入、Tab 焦点、按钮、开关、overflow auto 滚动、absolute/fixed 定位、absolute stretch、inline fragment/vertical-align、group opacity、stacking context、backdrop-filter、opacity FBO、`WIDTH/HEIGHT/MARGIN_LEFT/MARGIN_RIGHT/PADDING_LEFT/PADDING_RIGHT` layout transition 和 layout keyframe/forwards fill；`PADDING_LEFT/PADDING_RIGHT` 游戏内 Smoke 已验收正确；layout 动画区会显示覆盖属性清单、active 总数、transition/keyframe/fill 来源计数、paint/effect/layout 分 impact 运行态状态，以及 `Cache runtime: paintGen/staticLayout/runtimeLayout/textEpoch` 缓存诊断；点击当帧因文本或 layout 目标变化导致 `staticLayout +1` 允许，运行期 paint/effect 动画不得增长 `runtimeLayout`；当前 layout `t/k/f`、缓存诊断和 layout forwards fill 稳态缓存均已完成游戏内验收。
 - Smoke 页 `Layout animation probe`：点击蓝色 `Layout card`，宽高在 92x34 与 190x58 间过渡，右侧绿色 sibling 应随动画被推开或回收；点击琥珀色 `Margin card`，左右 margin 在 tight/wide 间过渡，右侧棕色 sibling 应随 margin 动画位移；点击紫色 `Padding card`，左右 padding 在 tight/wide 间过渡，卡片内容和右侧紫色 sibling 应随 padding 动画位移；点击青色 `Keyframe card` 启动 `layoutFillProbe` width keyframe，运行时 layout `k` 应增加且 `runtimeLayout` 增长，结束后 layout `f` 应保留但 `runtimeLayout` 应进入稳态不再持续增长，再次点击清除 animation 后 `f` 应归零并恢复作者宽度。当前游戏内已确认 transition、keyframe、forwards fill 均有可见诊断路径，padding 动画平滑、内容和 sibling 同步位移、`t/k/f` 计数进入与退出、paint/effect 不增长 `runtimeLayout`、layout 动画增长 `runtimeLayout`、forwards fill 稳态缓存均符合预期。
 - Glass Lab 覆盖：大面积 backdrop、shader/fallback 路径、snapshot captured/reused、block/atlas/tile 诊断、downsample/separable blur filter 诊断、嵌套/同级多 glass 采样稳定性。
-- 背包页覆盖：hotbar/backpack 网格、slot DOM 底板、Minecraft 物品图标延迟回放、当前背包占用指标与返回原版背包按钮交互；该页按生产级前测试准备收口，不再承载临时迁移验证卡或动画/定位/inline 探针。slot 默认底板允许半透明，视觉应叠在背包卡片/UI 底图上，不得通过改成不透明来规避穿透问题。
+- 背包页覆盖：hotbar/backpack table 网格、slot DOM 底板、Minecraft 物品图标延迟回放、当前背包占用指标与返回原版背包按钮交互；该页按生产级前测试准备收口，不再承载临时迁移验证卡或动画/定位/inline 探针。slot 默认底板允许半透明，视觉应叠在背包卡片/UI 底图上，不得通过改成不透明来规避穿透问题。
 
 ## 清退边界
 
@@ -150,8 +150,8 @@
 
 - CSS transition / animation MVP 已完成游戏内收口验收：transition、keyframe、forwards fill 均具备 Smoke 可见诊断路径，`WIDTH/HEIGHT/MARGIN_LEFT/MARGIN_RIGHT/PADDING_LEFT/PADDING_RIGHT` layout 动画已完成纯 JVM、Smoke 探针、游戏内视觉、诊断与缓存边界验收。
 - 下一阶段暂停继续扩展动画属性和动画诊断显示；若后续确需新增 layout-affecting 属性，必须重新证明必要性，并继续限制在少量可控属性与明确 fallback。
-- HTML-like table 首期能力已接入：可先在普通数据表场景使用 `DocumentTableControl` 验证真实 DOM 表格结构、标准 paint 命令和行列布局；后续若要迁移背包槽位，应评估是否需要 colspan/rowspan、border-collapse 或更细 table 算法，而不是把 slot 特例写进 table 布局。
-- `inventory_overview` 背包页已转为生产级前测试准备：保留快捷栏、主背包、占用指标、slot DOM 底板、物品图标延迟回放和返回按钮，移除临时迁移验证卡；后续优先在真实背包 UI 中收口槽位视觉、焦点、滚动、命中与真实数据渲染问题，其次再评估 dirty subtree / 细粒度缓存或 effect chain 后续优化。
+- HTML-like table 首期能力已接入：可在普通数据表场景使用 `DocumentTableControl` 验证真实 DOM 表格结构、标准 paint 命令和行列布局；背包槽位也已迁移到 table 结构，但 table 布局层不得加入 slot 专用分支。
+- `inventory_overview` 背包页已转为生产级前测试准备：保留快捷栏、主背包、占用指标、table slot DOM 底板、物品图标延迟回放和返回按钮，移除临时迁移验证卡；后续优先在真实背包 UI 中收口槽位视觉、焦点、滚动、命中与真实数据渲染问题，其次再评估 dirty subtree / 细粒度缓存或 effect chain 后续优化。
 - 不一次性开放全量布局动画。
 - paint/effect 动画不能触发布局；layout 动画可以重布局，但结束后必须恢复静态缓存。
 - inline formatting、effect chain、snapshot atlas 和 blur/filter 优化只在阻塞动画探针、真实页面迁移或控件展示时优先处理。

@@ -11,8 +11,6 @@ import club.heiqi.uilib.ui.inventory.InventorySlotGridLayout;
 import club.heiqi.uilib.ui.inventory.InventorySlotSnapshot;
 import club.heiqi.uilib.ui.paint.DocumentCustomRenderer;
 import club.heiqi.uilib.ui.render.UiRenderContext;
-import club.heiqi.uilib.ui.style.UiDisplay;
-import club.heiqi.uilib.ui.style.UiFlexDirection;
 import club.heiqi.uilib.ui.style.UiOverflow;
 import club.heiqi.uilib.ui.style.UiStyleLength;
 
@@ -30,8 +28,8 @@ public final class DocumentInventorySlotGridControl {
         InventorySlotSnapshot getSlotSnapshot(int localIndex);
     }
 
-    private final UiDocument document;
     private final ElementNode element;
+    private final DocumentTableControl tableControl;
     private final List<ElementNode> slotElements = new ArrayList<ElementNode>();
     private final int slotCount;
     private final int preferredColumns;
@@ -56,10 +54,12 @@ public final class DocumentInventorySlotGridControl {
      * @param preferredColumns 期望列数
      */
     public DocumentInventorySlotGridControl(UiDocument document, int slotCount, int preferredColumns) {
-        this.document = document;
         this.slotCount = Math.max(0, slotCount);
         this.preferredColumns = Math.max(1, preferredColumns);
-        this.element = document.div();
+        this.tableControl = new DocumentTableControl(document)
+                .setCellPadding(0)
+                .setBorderWidth(SLOT_BORDER_WIDTH);
+        this.element = tableControl.getElement();
     }
 
 
@@ -147,10 +147,8 @@ public final class DocumentInventorySlotGridControl {
     private void configureElement() {
         currentLayout = InventorySlotGridLayout.resolvePreferred(slotCount, preferredColumns,
                 slotGap, preferredSlotSize, minSlotSize, maxSlotSize);
+        tableControl.setCellGap(slotGap, slotGap);
         element.style()
-                .setDisplay(UiDisplay.FLEX)
-                .setFlexDirection(UiFlexDirection.COLUMN)
-                .setRowGap(UiStyleLength.px(slotGap))
                 .setWidth(UiStyleLength.px(currentLayout.totalWidth))
                 .setHeight(UiStyleLength.px(currentLayout.totalHeight));
         rebuildSlotElements();
@@ -165,35 +163,25 @@ public final class DocumentInventorySlotGridControl {
 
     private void rebuildSlotElements() {
         slotElements.clear();
-        element.clearChildren();
+        tableControl.clearRows();
         if (slotCount <= 0 || currentLayout == null) {
             return;
         }
 
         int slotIndex = 0;
         for (int rowIndex = 0; rowIndex < currentLayout.rowCount && slotIndex < slotCount; rowIndex++) {
-            ElementNode rowElement = document.div();
-            rowElement.style()
-                    .setDisplay(UiDisplay.FLEX)
-                    .setFlexDirection(UiFlexDirection.ROW)
-                    .setColumnGap(UiStyleLength.px(slotGap))
-                    .setOverflowX(UiOverflow.HIDDEN)
-                    .setOverflowY(UiOverflow.HIDDEN);
-            element.appendChild(rowElement);
-
             int rowSlotCount = Math.min(currentLayout.columnCount, slotCount - slotIndex);
-            for (int columnIndex = 0; columnIndex < rowSlotCount; columnIndex++) {
-                ElementNode slotElement = document.div();
+            List<ElementNode> rowCells = tableControl.addEmptyRow(rowSlotCount);
+            for (int columnIndex = 0; columnIndex < rowCells.size(); columnIndex++) {
+                ElementNode slotElement = rowCells.get(columnIndex);
                 int slotContentSize = resolveSlotContentSize();
                 slotElement.style()
                         .setWidth(UiStyleLength.px(slotContentSize))
                         .setHeight(UiStyleLength.px(slotContentSize))
-                        .setFlexShrink(0.0F)
                         .setBorderWidth(UiStyleLength.px(SLOT_BORDER_WIDTH))
                         .setOverflowX(UiOverflow.HIDDEN)
                         .setOverflowY(UiOverflow.HIDDEN);
                 slotElements.add(slotElement);
-                rowElement.appendChild(slotElement);
                 slotIndex++;
             }
         }
