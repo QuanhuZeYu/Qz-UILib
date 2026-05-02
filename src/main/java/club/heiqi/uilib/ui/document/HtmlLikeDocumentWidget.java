@@ -163,6 +163,17 @@ public final class HtmlLikeDocumentWidget extends Widget {
     }
 
     /**
+     * 返回当前动画时间线中是否存在 layout 运行态覆盖值。
+     *
+     * <p>该方法仅供 Smoke 页和测试诊断使用，状态来自最近一次布局或绘制刷新后的时间线快照。</p>
+     *
+     * @return 是否存在 layout 运行态覆盖值
+     */
+    public boolean hasLayoutRuntimeValueForDiagnostics() {
+        return animationTimeline.hasRuntimeValue(DocumentAnimationImpact.LAYOUT);
+    }
+
+    /**
      * 返回 paint command 缓存重建代数，供诊断和测试确认动画缓存边界。
      *
      * @return paint command 缓存重建代数

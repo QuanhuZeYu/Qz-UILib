@@ -73,6 +73,8 @@ public class HtmlLikeSmokeDocumentPageControllerTest {
         Assert.assertTrue(containsText(texts, "Margin sibling shifts from margin"));
         Assert.assertTrue(containsText(texts, "Padding card: tight"));
         Assert.assertTrue(containsText(texts, "Padding sibling shifts from padding"));
+        Assert.assertTrue(containsText(texts, "Layout animation coverage: WIDTH/HEIGHT/MARGIN_LEFT/MARGIN_RIGHT/PADDING_LEFT/PADDING_RIGHT"));
+        Assert.assertTrue(containsText(texts, "Animation runtime: active animation count="));
         Assert.assertTrue(containsText(texts, "Same-layer sampling grid"));
         Assert.assertTrue(containsText(texts, "ABS containing probe"));
         Assert.assertTrue(containsText(texts, "static wrapper is not anchor"));
@@ -134,6 +136,9 @@ public class HtmlLikeSmokeDocumentPageControllerTest {
         Assert.assertTrue(containsTextCall(renderContext.textCalls, "Layout card: small"));
         Assert.assertTrue(containsTextCall(renderContext.textCalls, "Margin card: tight"));
         Assert.assertTrue(containsTextCall(renderContext.textCalls, "Padding card: tight"));
+        Assert.assertTrue(containsTextCall(renderContext.textCalls, "Layout animation coverage: WIDTH/HEIGHT/MARGIN_LEFT/MARGIN_RIGHT/PADDING_LEFT/PADDING_RIGHT"));
+        Assert.assertTrue(containsTextCall(renderContext.textCalls, "Animation runtime: active animation count="));
+        Assert.assertTrue(containsTextCall(renderContext.textCalls, "layout runtime active=false"));
         Assert.assertTrue(containsTextCall(renderContext.textCalls, "ABS stretch fill"));
         Assert.assertTrue(containsTextCall(renderContext.textCalls, "amber span hit: 0"));
         Assert.assertTrue(containsTextCall(renderContext.textCalls, "Vertical-align probe"));
@@ -276,7 +281,8 @@ public class HtmlLikeSmokeDocumentPageControllerTest {
         fixture.controller.buildDocument();
         HtmlLikeDocumentWidget widget = fixture.controller.getHtmlLikeDocumentWidget();
         widget.applyLayoutBounds(31, 47, 760, 1280);
-        widget.render(new RecordingUiRenderContext());
+        RecordingUiRenderContext initialRenderContext = new RecordingUiRenderContext();
+        widget.render(initialRenderContext);
 
         ElementNode layoutCard = findElementContainingDirectText(widget, "Layout card: small");
         ElementNode sibling = findElementContainingDirectText(widget, "Sibling shifts while layout transition runs");
@@ -302,10 +308,15 @@ public class HtmlLikeSmokeDocumentPageControllerTest {
         Assert.assertEquals(UiStyleLength.px(4), marginCard.style().getMargin().getRight());
         Assert.assertEquals(UiStyleLength.px(4), paddingCard.style().getPadding().getLeft());
         Assert.assertEquals(UiStyleLength.px(4), paddingCard.style().getPadding().getRight());
+        Assert.assertFalse(widget.hasLayoutRuntimeValueForDiagnostics());
+        Assert.assertTrue(containsTextCall(initialRenderContext.textCalls,
+                "Layout animation coverage: WIDTH/HEIGHT/MARGIN_LEFT/MARGIN_RIGHT/PADDING_LEFT/PADDING_RIGHT"));
+        Assert.assertTrue(containsTextCall(initialRenderContext.textCalls, "layout runtime active=false"));
 
         int siblingLeftBefore = findElementBackgroundCommand(widget, fixture.textMeasureService, sibling).getLeft();
         clickElementCenter(widget, fixture.textMeasureService, layoutCard, 1L, 2L);
-        widget.render(new RecordingUiRenderContext());
+        RecordingUiRenderContext layoutClickedRenderContext = new RecordingUiRenderContext();
+        widget.render(layoutClickedRenderContext);
         int siblingLeftAfter = findElementBackgroundCommand(widget, fixture.textMeasureService, sibling).getLeft();
         int marginSiblingLeftBefore = findElementBackgroundCommand(widget, fixture.textMeasureService,
                 marginSibling).getLeft();
@@ -330,6 +341,8 @@ public class HtmlLikeSmokeDocumentPageControllerTest {
         Assert.assertTrue(marginSiblingLeftAfter > marginSiblingLeftBefore);
         Assert.assertTrue(paddingSiblingLeftAfter > paddingSiblingLeftBefore);
         Assert.assertTrue(widget.getActiveAnimationCount() >= 6);
+        Assert.assertTrue(widget.hasLayoutRuntimeValueForDiagnostics());
+        Assert.assertTrue(containsTextCall(layoutClickedRenderContext.textCalls, "layout runtime active=true"));
     }
 
     /**

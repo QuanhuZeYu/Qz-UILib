@@ -265,6 +265,41 @@ public class HtmlLikeDocumentWidgetTest {
         assertDrawCall(halfContext.drawCalls.get(0), 0, 0, 60, 20, 0xFF112233, 0, 0);
         assertDrawCall(halfContext.drawCalls.get(1), 60, 0, 80, 20, 0xFF445566, 0, 0);
         Assert.assertEquals(1, widget.getActiveAnimationCount());
+        Assert.assertTrue(widget.hasLayoutRuntimeValueForDiagnostics());
+    }
+
+    /**
+     * 验证 layout runtime 诊断状态会随 layout transition 清理恢复为空。
+     */
+    @Test
+    public void shouldExposeLayoutRuntimeDiagnosticState() {
+        UiDocument document = UiDocument.create();
+        ElementNode root = document.getRootElement();
+        root.style()
+                .setWidth(UiStyleLength.px(40))
+                .setHeight(UiStyleLength.px(20))
+                .setBackgroundColor(0xFF112233)
+                .setTransition(DocumentAnimationProperty.WIDTH, 1000L);
+        ManualAnimationClock animationClock = new ManualAnimationClock();
+        HtmlLikeDocumentWidget widget = new HtmlLikeDocumentWidget(document, 120, 40,
+                new DeterministicTextMeasureService());
+        widget.setAnimationClock(animationClock);
+        widget.applyLayoutBounds(0, 0, 120, 40);
+
+        widget.render(new RecordingUiRenderContext());
+        Assert.assertFalse(widget.hasLayoutRuntimeValueForDiagnostics());
+
+        root.style().setWidth(UiStyleLength.px(80));
+        widget.render(new RecordingUiRenderContext());
+
+        Assert.assertEquals(1, widget.getActiveAnimationCount());
+        Assert.assertTrue(widget.hasLayoutRuntimeValueForDiagnostics());
+
+        animationClock.setCurrentTimeNanos(1_000_000_000L);
+        widget.render(new RecordingUiRenderContext());
+
+        Assert.assertEquals(0, widget.getActiveAnimationCount());
+        Assert.assertFalse(widget.hasLayoutRuntimeValueForDiagnostics());
     }
 
     /**

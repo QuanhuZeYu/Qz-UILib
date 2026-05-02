@@ -97,13 +97,14 @@
 - `HtmlLikeDocumentWidget` 缓存按 layout version、paint version、text measure epoch、widget 尺寸、scroll version 与动画状态分层失效。
 - paint-only 样式变更复用已有布局几何，通过 `DocumentLayoutBox.refreshComputedStyles()` 刷新 computed style 快照，不重新文本测量。
 - paint/effect 动画期间每帧重建 paint commands，但不重建 layout；layout 动画期间允许重建 layout；动画结束后回到静态缓存。
+- `HtmlLikeDocumentWidget.getActiveAnimationCount()` 与 `hasLayoutRuntimeValueForDiagnostics()` 是当前只读诊断入口，用于 Smoke 页和测试展示未完成动画数量与 layout 运行态覆盖是否存在，不作为作者层业务 API。
 - 当前可访问页面：`ui_test` 诊断菜单、`ui_test_layout` 布局诊断页、`html_like_smoke` Smoke 页、`html_like_glass` 大面积磨玻璃页、`inventory_overview` 背包页。
 - 当前 definition-backed 生产入口使用 `DefinitionBackedHtmlLikeDocumentScreen` + `DirectDocumentPageAuthoringSurface`；HTML-like 页面直接挂载 `HtmlLikeDocumentWidget`，不套旧 retained 页面壳。
 
 ## 游戏内验收边界
 
 - 入口：右 Shift 打开诊断菜单，可进入布局诊断页、HTML-like Smoke 页、Large Glass Lab 页和背包页。
-- Smoke 页覆盖：控件交互、文本输入、Tab 焦点、按钮、开关、overflow auto 滚动、absolute/fixed 定位、absolute stretch、inline fragment/vertical-align、group opacity、stacking context、backdrop-filter、opacity FBO、`WIDTH/HEIGHT/MARGIN_LEFT/MARGIN_RIGHT/PADDING_LEFT/PADDING_RIGHT` layout transition；`PADDING_LEFT/PADDING_RIGHT` 游戏内 Smoke 已验收正确。
+- Smoke 页覆盖：控件交互、文本输入、Tab 焦点、按钮、开关、overflow auto 滚动、absolute/fixed 定位、absolute stretch、inline fragment/vertical-align、group opacity、stacking context、backdrop-filter、opacity FBO、`WIDTH/HEIGHT/MARGIN_LEFT/MARGIN_RIGHT/PADDING_LEFT/PADDING_RIGHT` layout transition；`PADDING_LEFT/PADDING_RIGHT` 游戏内 Smoke 已验收正确；layout 动画区会显示覆盖属性清单、active animation count 与 layout runtime active 状态。
 - Smoke 页 `Layout animation probe`：点击蓝色 `Layout card`，宽高在 92x34 与 190x58 间过渡，右侧绿色 sibling 应随动画被推开或回收；点击琥珀色 `Margin card`，左右 margin 在 tight/wide 间过渡，右侧棕色 sibling 应随 margin 动画位移；点击紫色 `Padding card`，左右 padding 在 tight/wide 间过渡，卡片内容和右侧紫色 sibling 应随 padding 动画位移。当前游戏内已确认 padding 动画平滑、内容和 sibling 同步位移、视觉效果正确。
 - Glass Lab 覆盖：大面积 backdrop、shader/fallback 路径、snapshot captured/reused、block/atlas/tile 诊断、downsample/separable blur filter 诊断、嵌套/同级多 glass 采样稳定性。
 - 背包页覆盖：hotbar/backpack 网格、自定义格子绘制与返回按钮交互。
@@ -145,7 +146,7 @@
 ## 下一步边界
 
 - CSS transition / animation MVP 继续优先；`WIDTH/HEIGHT/MARGIN_LEFT/MARGIN_RIGHT/PADDING_LEFT/PADDING_RIGHT` layout 动画已完成纯 JVM、Smoke 探针与游戏内视觉验收，后续 layout-affecting 属性扩展必须限制在少量可控属性与明确 fallback。
-- 下一步先暂停继续扩展 layout 属性，优先增强 Smoke 页动画诊断可见性：显示当前 layout 动画覆盖属性清单、active animation count 与 layout runtime active 状态，帮助后续验证 transition/keyframe/fill 是否正确进入或退出运行态。
+- 先暂停继续扩展 layout 属性；Smoke 页动画诊断可见性已接入覆盖属性清单、active animation count 与 layout runtime active 状态，后续应优先用这些诊断验证 transition/keyframe/fill 是否正确进入或退出运行态，再决定是否扩展更多 layout 属性。
 - 不一次性开放全量布局动画。
 - paint/effect 动画不能触发布局；layout 动画可以重布局，但结束后必须恢复静态缓存。
 - inline formatting、effect chain、snapshot atlas 和 blur/filter 优化只在阻塞动画探针、真实页面迁移或控件展示时优先处理。

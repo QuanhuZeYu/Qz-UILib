@@ -23,6 +23,8 @@ import club.heiqi.uilib.ui.dom.control.DocumentTextInputControl;
 import club.heiqi.uilib.ui.dom.control.DocumentToggleSwitchControl;
 import club.heiqi.uilib.ui.layout.UiLayoutSpec;
 import club.heiqi.uilib.ui.layout.UiLength;
+import club.heiqi.uilib.ui.paint.DocumentCustomRenderer;
+import club.heiqi.uilib.ui.render.UiRenderContext;
 import club.heiqi.uilib.ui.style.UiAlignItems;
 import club.heiqi.uilib.ui.style.UiDisplay;
 import club.heiqi.uilib.ui.style.UiFlexDirection;
@@ -64,8 +66,21 @@ final class HtmlLikeSmokeDocumentPageController extends DocumentPageController {
             TextMeasureService textMeasureService) {
         Objects.requireNonNull(documentUi, "documentUi");
         this.documentPage = Objects.requireNonNull(documentPage, "documentPage");
-        this.htmlLikeDocumentWidget = new HtmlLikeDocumentWidget(createSmokeDocument(), 760, 320,
+        final HtmlLikeDocumentWidget[] widgetReference = new HtmlLikeDocumentWidget[1];
+        UiDocument smokeDocument = createSmokeDocument(new AnimationRuntimeDiagnostics() {
+            @Override
+            public int getActiveAnimationCount() {
+                return widgetReference[0] == null ? 0 : widgetReference[0].getActiveAnimationCount();
+            }
+
+            @Override
+            public boolean hasLayoutRuntimeValue() {
+                return widgetReference[0] != null && widgetReference[0].hasLayoutRuntimeValueForDiagnostics();
+            }
+        });
+        this.htmlLikeDocumentWidget = new HtmlLikeDocumentWidget(smokeDocument, 760, 320,
                 Objects.requireNonNull(textMeasureService, "textMeasureService"));
+        widgetReference[0] = this.htmlLikeDocumentWidget;
         this.htmlLikeDocumentWidget.setViewportRootScrollingEnabled(true);
         this.htmlLikeDocumentWidget.setLayoutSpec(new UiLayoutSpec()
                 .setWidth(UiLength.percent(1.0F))
@@ -93,7 +108,7 @@ final class HtmlLikeSmokeDocumentPageController extends DocumentPageController {
         return htmlLikeDocumentWidget;
     }
 
-    private static UiDocument createSmokeDocument() {
+    private static UiDocument createSmokeDocument(AnimationRuntimeDiagnostics animationRuntimeDiagnostics) {
         UiDocument document = UiDocument.create();
         document.registerKeyframes(DocumentKeyframes.named("smokePulse")
                 .setFloatStop(DocumentAnimationProperty.BORDER_RADIUS, 0.0F, 999.0F)
@@ -163,7 +178,7 @@ final class HtmlLikeSmokeDocumentPageController extends DocumentPageController {
 
         appendControlsSection(document, root);
         appendOpacityFboProbe(document, root);
-        appendLayoutAnimationProbe(document, root);
+        appendLayoutAnimationProbe(document, root, animationRuntimeDiagnostics);
 
         ElementNode row = document.div();
         row.style()
@@ -696,7 +711,8 @@ final class HtmlLikeSmokeDocumentPageController extends DocumentPageController {
      * @param document HTML-like 文档
      * @param root 文档根元素
      */
-    private static void appendLayoutAnimationProbe(UiDocument document, ElementNode root) {
+    private static void appendLayoutAnimationProbe(UiDocument document, ElementNode root,
+            AnimationRuntimeDiagnostics animationRuntimeDiagnostics) {
         ElementNode probe = document.div();
         probe.style()
                 .setHeight(UiStyleLength.px(264))
@@ -713,6 +729,36 @@ final class HtmlLikeSmokeDocumentPageController extends DocumentPageController {
         probe.appendText("Layout animation probe: click cards; width/height, margin and padding push siblings.");
         root.append(probe);
 
+        ElementNode coveredProperties = document.div();
+        coveredProperties.style()
+                .setHeight(UiStyleLength.px(14))
+                .setMargin(UiStyleInsets.of(UiStyleLength.px(4), UiStyleLength.px(0), UiStyleLength.px(0),
+                        UiStyleLength.px(0)))
+                .setTextColor(0xFF93C5FD)
+                .setOverflowX(UiOverflow.HIDDEN)
+                .setOverflowY(UiOverflow.HIDDEN);
+        coveredProperties.appendText("Layout animation coverage: " + formatLayoutAnimationProperties());
+        probe.append(coveredProperties);
+
+        ElementNode runtimeDiagnostic = document.div();
+        runtimeDiagnostic.style()
+                .setHeight(UiStyleLength.px(14))
+                .setMargin(UiStyleInsets.of(UiStyleLength.px(2), UiStyleLength.px(0), UiStyleLength.px(0),
+                        UiStyleLength.px(0)))
+                .setTextColor(0x00000000)
+                .setOverflowX(UiOverflow.HIDDEN)
+                .setOverflowY(UiOverflow.HIDDEN);
+        runtimeDiagnostic.appendText(formatRuntimeDiagnosticText(animationRuntimeDiagnostics));
+        runtimeDiagnostic.setCustomRenderer(new DocumentCustomRenderer() {
+            @Override
+            public void render(UiRenderContext context, int contentLeft, int contentTop, int contentRight,
+                    int contentBottom) {
+                context.drawText(formatRuntimeDiagnosticText(animationRuntimeDiagnostics), contentLeft, contentTop,
+                        0xFFDDD6FE, false);
+            }
+        });
+        probe.append(runtimeDiagnostic);
+
         ElementNode row = document.div();
         row.style()
                 .setHeight(UiStyleLength.px(78))
@@ -720,7 +766,7 @@ final class HtmlLikeSmokeDocumentPageController extends DocumentPageController {
                 .setFlexDirection(UiFlexDirection.ROW)
                 .setAlignItems(UiAlignItems.CENTER)
                 .setColumnGap(UiStyleLength.px(10))
-                .setMargin(UiStyleInsets.of(UiStyleLength.px(8), UiStyleLength.px(0), UiStyleLength.px(0),
+                .setMargin(UiStyleInsets.of(UiStyleLength.px(6), UiStyleLength.px(0), UiStyleLength.px(0),
                         UiStyleLength.px(0)))
                 .setOverflowX(UiOverflow.HIDDEN)
                 .setOverflowY(UiOverflow.HIDDEN);
@@ -1202,6 +1248,40 @@ final class HtmlLikeSmokeDocumentPageController extends DocumentPageController {
     }
 
     /**
+     * 格式化当前 layout 动画覆盖属性清单。
+     *
+     * @return layout 动画覆盖属性清单
+     */
+    private static String formatLayoutAnimationProperties() {
+        StringBuilder builder = new StringBuilder();
+        for (DocumentAnimationProperty property : DocumentAnimationProperty.values()) {
+            if (!property.isLayoutAffecting()) {
+                continue;
+            }
+            if (builder.length() > 0) {
+                builder.append('/');
+            }
+            builder.append(property.name());
+        }
+        return builder.toString();
+    }
+
+    /**
+     * 格式化实时动画运行状态诊断文本。
+     *
+     * @param animationRuntimeDiagnostics 动画运行诊断源
+     * @return 展示文本
+     */
+    private static String formatRuntimeDiagnosticText(AnimationRuntimeDiagnostics animationRuntimeDiagnostics) {
+        int activeAnimationCount = animationRuntimeDiagnostics == null ? 0
+                : animationRuntimeDiagnostics.getActiveAnimationCount();
+        boolean layoutRuntimeActive = animationRuntimeDiagnostics != null
+                && animationRuntimeDiagnostics.hasLayoutRuntimeValue();
+        return "Animation runtime: active animation count=" + activeAnimationCount
+                + "; layout runtime active=" + layoutRuntimeActive;
+    }
+
+    /**
      * 格式化 smoke Tab 焦点样例展示文本。
      *
      * @param focused 当前是否聚焦
@@ -1209,5 +1289,25 @@ final class HtmlLikeSmokeDocumentPageController extends DocumentPageController {
      */
     private static String formatTabFocusLabel(boolean focused) {
         return focused ? "Tab target: focused" : "Tab target: idle";
+    }
+
+    /**
+     * Smoke 页面动画运行态诊断源。
+     */
+    private interface AnimationRuntimeDiagnostics {
+
+        /**
+         * 返回当前未完成动画数量。
+         *
+         * @return 未完成动画数量
+         */
+        int getActiveAnimationCount();
+
+        /**
+         * 返回当前是否存在 layout 运行态覆盖值。
+         *
+         * @return 是否存在 layout 运行态覆盖值
+         */
+        boolean hasLayoutRuntimeValue();
     }
 }
