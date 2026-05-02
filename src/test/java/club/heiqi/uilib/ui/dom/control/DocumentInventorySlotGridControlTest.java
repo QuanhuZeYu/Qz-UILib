@@ -423,6 +423,53 @@ public class DocumentInventorySlotGridControlTest {
         Assert.assertEquals(Collections.singletonList("88:66:true"), cursorCalls);
     }
 
+    /**
+     * 验证同一页面内多个占用网格会分别登记并回放物品批次。
+     */
+    @Test
+    public void shouldReplayOccupiedItemPassesForMultipleSlotGrids() {
+        UiDocument document = UiDocument.create();
+        ElementNode root = document.getRootElement();
+        root.style()
+                .setWidth(UiStyleLength.px(480))
+                .setHeight(UiStyleLength.px(260));
+        RecordingUiRenderContext renderContext = new RecordingUiRenderContext(480, 260, 0, 0);
+        final List<Integer> renderedSlotCounts = new ArrayList<Integer>();
+        InventorySlotGridItemRenderer itemRenderer = new InventorySlotGridItemRenderer() {
+            @Override
+            public void renderItems(InventorySlotGridItemGeometry geometry, InventorySlotSnapshot[] slotSnapshots) {
+                renderedSlotCounts.add(Integer.valueOf(geometry.getSlotCount()));
+            }
+        };
+        DocumentInventorySlotGridControl firstGrid = new DocumentInventorySlotGridControl(document, 9, 9)
+                .setSlotGap(4)
+                .setPreferredSlotSize(32)
+                .setContentProvider(new SingleOccupiedSlotContentProvider(0))
+                .setItemRenderer(itemRenderer)
+                .commitLayout();
+        DocumentInventorySlotGridControl secondGrid = new DocumentInventorySlotGridControl(document, 27, 9)
+                .setSlotGap(4)
+                .setPreferredSlotSize(32)
+                .setContentProvider(new SingleOccupiedSlotContentProvider(10))
+                .setItemRenderer(itemRenderer)
+                .commitLayout();
+        root.append(firstGrid.getElement());
+        root.append(secondGrid.getElement());
+        HtmlLikeDocumentWidget widget = new HtmlLikeDocumentWidget(document, 480, 260,
+                new DeterministicTextMeasureService());
+        widget.applyLayoutBounds(0, 0, 480, 260);
+
+        widget.render(renderContext);
+        for (UiRenderContext.DeferredPostMainPassReplay replay : renderContext.deferredReplays) {
+            replay.replay();
+        }
+
+        Assert.assertEquals(2, renderContext.deferredReplays.size());
+        Assert.assertEquals(2, renderedSlotCounts.size());
+        Assert.assertEquals(Integer.valueOf(9), renderedSlotCounts.get(0));
+        Assert.assertEquals(Integer.valueOf(27), renderedSlotCounts.get(1));
+    }
+
     private static List<DocumentPaintCommand> buildPaintCommands(ElementNode root, int width, int height) {
         DocumentLayoutBox rootBox = DocumentLayoutEngine.layout(root, width, height,
                 new DeterministicTextMeasureService());
@@ -472,6 +519,24 @@ public class DocumentInventorySlotGridControlTest {
         ElementNode body = (ElementNode) table.getChildren().get(1);
         ElementNode row = (ElementNode) body.getChildren().get(0);
         return (ElementNode) row.getChildren().get(1);
+    }
+
+    /**
+     * 单个占用槽位的数据源。
+     */
+    private static final class SingleOccupiedSlotContentProvider
+            implements DocumentInventorySlotGridControl.SlotContentProvider {
+
+        private final int occupiedSlotIndex;
+
+        private SingleOccupiedSlotContentProvider(int occupiedSlotIndex) {
+            this.occupiedSlotIndex = occupiedSlotIndex;
+        }
+
+        @Override
+        public InventorySlotSnapshot getSlotSnapshot(int localIndex) {
+            return localIndex == occupiedSlotIndex ? InventorySlotSnapshot.occupied() : InventorySlotSnapshot.empty();
+        }
     }
 
     /**

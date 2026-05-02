@@ -28,13 +28,11 @@ public final class MinecraftInventorySlotGridItemRenderer implements InventorySl
 
         Minecraft minecraft = Minecraft.getMinecraft();
         int itemIconSize = resolveRenderedItemIconSize(geometry.getSlotSize());
+        GL11.glPushAttrib(GL11.GL_ALL_ATTRIB_BITS);
         GL11.glPushMatrix();
         try {
-            GL11.glEnable(GL11.GL_DEPTH_TEST);
-            GL11.glEnable(GL12.GL_RESCALE_NORMAL);
-            GL11.glEnable(GL11.GL_LIGHTING);
+            prepareItemBatchState();
             RenderHelper.enableGUIStandardItemLighting();
-            GL11.glColor4f(1.0F, 1.0F, 1.0F, 1.0F);
             itemRenderer.zLevel = 100.0F;
 
             for (int slotIndex = 0; slotIndex < slotSnapshots.length; slotIndex++) {
@@ -55,10 +53,9 @@ public final class MinecraftInventorySlotGridItemRenderer implements InventorySl
         } finally {
             itemRenderer.zLevel = 0.0F;
             RenderHelper.disableStandardItemLighting();
-            GL11.glDisable(GL11.GL_LIGHTING);
-            GL11.glDisable(GL12.GL_RESCALE_NORMAL);
-            GL11.glDisable(GL11.GL_DEPTH_TEST);
+            GL11.glMatrixMode(GL11.GL_MODELVIEW);
             GL11.glPopMatrix();
+            GL11.glPopAttrib();
         }
     }
 
@@ -74,23 +71,20 @@ public final class MinecraftInventorySlotGridItemRenderer implements InventorySl
         }
 
         Minecraft minecraft = Minecraft.getMinecraft();
+        GL11.glPushAttrib(GL11.GL_ALL_ATTRIB_BITS);
         GL11.glPushMatrix();
         try {
-            GL11.glEnable(GL11.GL_DEPTH_TEST);
-            GL11.glEnable(GL12.GL_RESCALE_NORMAL);
-            GL11.glEnable(GL11.GL_LIGHTING);
+            prepareItemBatchState();
             RenderHelper.enableGUIStandardItemLighting();
-            GL11.glColor4f(1.0F, 1.0F, 1.0F, 1.0F);
             itemRenderer.zLevel = 220.0F;
             renderScaledItem(minecraft, stack, mouseX - CURSOR_ITEM_ICON_SIZE / 2, mouseY - CURSOR_ITEM_ICON_SIZE / 2,
                     CURSOR_ITEM_ICON_SIZE);
         } finally {
             itemRenderer.zLevel = 0.0F;
             RenderHelper.disableStandardItemLighting();
-            GL11.glDisable(GL11.GL_LIGHTING);
-            GL11.glDisable(GL12.GL_RESCALE_NORMAL);
-            GL11.glDisable(GL11.GL_DEPTH_TEST);
+            GL11.glMatrixMode(GL11.GL_MODELVIEW);
             GL11.glPopMatrix();
+            GL11.glPopAttrib();
         }
     }
 
@@ -116,8 +110,9 @@ public final class MinecraftInventorySlotGridItemRenderer implements InventorySl
      * @param itemIconSize 目标绘制尺寸
      */
     private void renderScaledItem(Minecraft minecraft, ItemStack stack, int itemX, int itemY, int itemIconSize) {
-        GL11.glPushAttrib(GL11.GL_COLOR_BUFFER_BIT);
+        GL11.glPushAttrib(GL11.GL_ALL_ATTRIB_BITS);
         try {
+            prepareItemBatchState();
             applyItemLayerBlendState();
             float scale = (float) itemIconSize / (float) VANILLA_ITEM_ICON_SIZE;
             if (Math.abs(scale - 1.0F) < 0.001F) {
@@ -141,8 +136,25 @@ public final class MinecraftInventorySlotGridItemRenderer implements InventorySl
                 GL11.glPopMatrix();
             }
         } finally {
+            GL11.glMatrixMode(GL11.GL_MODELVIEW);
             GL11.glPopAttrib();
         }
+    }
+
+    /**
+     * 为原版物品 GUI 绘制准备稳定状态。
+     */
+    private static void prepareItemBatchState() {
+        GL11.glMatrixMode(GL11.GL_MODELVIEW);
+        GL11.glEnable(GL11.GL_TEXTURE_2D);
+        GL11.glEnable(GL11.GL_DEPTH_TEST);
+        GL11.glDepthFunc(GL11.GL_LEQUAL);
+        GL11.glDepthMask(true);
+        GL11.glDisable(GL11.GL_CULL_FACE);
+        GL11.glEnable(GL12.GL_RESCALE_NORMAL);
+        GL11.glEnable(GL11.GL_LIGHTING);
+        GL11.glColorMask(true, true, true, true);
+        GL11.glColor4f(1.0F, 1.0F, 1.0F, 1.0F);
     }
 
     /**

@@ -98,7 +98,7 @@
 - `HtmlLikeDocumentWidget` 承载 `UiDocument -> style -> layout -> paint command -> UiRenderContext` 链路；生产默认使用 `DefaultTextMeasureService`，测试可注入确定性 `TextMeasureService` 和动画时钟。
 - `HtmlLikeDocumentWidget` 支持根视口滚动模式：根元素 border box 固定为 widget 视口尺寸，页面级滚动由根元素 `overflow:auto` 和 `DocumentScrollState` 承担。
 - `HtmlLikeDocumentWidget` 缓存按 layout version、paint version、text measure epoch、widget 尺寸、scroll version 与动画状态分层失效。
-- `HtmlLikeDocumentWidget` 支持元素 hover 事件分发；`UiRenderContext.enqueueDeferredPostMainOverlayPass(...)` 用于 tooltip、鼠标携带物品这类顶层后置 overlay，不继承槽位局部 clip。
+- `HtmlLikeDocumentWidget` 支持元素 hover 事件分发；`UiRenderContext.enqueueDeferredPostMainOverlayPass(...)` 用于 tooltip、鼠标携带物品这类顶层后置 overlay，不继承槽位局部 clip；主后置 deferred 批次由 `UiScreenHostSession` 在每个 replay 前重置 2D 状态并清空 depth，避免多个背包网格连续物品回放互相污染。
 - paint-only 样式变更复用已有布局几何，通过 `DocumentLayoutBox.refreshComputedStyles()` 刷新 computed style 快照，不重新文本测量。
 - paint/effect 动画期间每帧重建 paint commands，但不重建 layout；layout 动画运行期允许重建 runtime layout，只剩 forwards fill 稳态后应复用 runtime layout 缓存；动画结束后回到静态缓存。
 - `HtmlLikeDocumentWidget.getActiveAnimationCount()`、`getAnimationDiagnosticsSnapshot()`、`getPerformanceDiagnosticsSnapshot()` 与 `hasLayoutRuntimeValueForDiagnostics()` 是当前只读诊断入口，用于 Smoke 页和测试展示未完成动画数量、transition/keyframe/fill 来源计数、paint/effect/layout 影响范围计数、layout 运行态覆盖是否存在，以及 `paintGen/staticLayout/runtimeLayout/textEpoch` 缓存边界状态，不作为作者层业务 API。

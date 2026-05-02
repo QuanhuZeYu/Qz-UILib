@@ -290,6 +290,7 @@ final class UiScreenHostSession {
                 try {
                     GL11.glLoadIdentity();
                     for (UiRenderContext.DeferredPostMainPass deferredPass : deferredPasses) {
+                        prepareDeferredPostMainReplayState(nativeWidth, nativeHeight);
                         applyDeferredPostMainClip(deferredPass.getClipSnapshot(), nativeHeight);
                         deferredPass.replay();
                     }
@@ -323,6 +324,34 @@ final class UiScreenHostSession {
         GL11.glDisable(GL11.GL_CULL_FACE);
         GL11.glDisable(GL11.GL_ALPHA_TEST);
         GL11.glDisable(GL11.GL_LIGHTING);
+        GL11.glEnable(GL11.GL_BLEND);
+        GL11.glBlendFunc(GL11.GL_SRC_ALPHA, GL11.GL_ONE_MINUS_SRC_ALPHA);
+        GL11.glColor4f(1.0F, 1.0F, 1.0F, 1.0F);
+    }
+
+    /**
+     * 准备单个主后置回放批次的稳定 2D 初始状态。
+     *
+     * <p>物品图标这类宿主绘制会临时开启 depth、lighting、alpha test 等状态，并可能写入深度缓存。
+     * 每个批次开始前重置矩阵与深度，避免前一个网格的宿主渲染状态或深度内容影响后一个网格。</p>
+     */
+    private static void prepareDeferredPostMainReplayState(int nativeWidth, int nativeHeight) {
+        UiRenderContext.clearClipState();
+        GL11.glMatrixMode(GL11.GL_PROJECTION);
+        GL11.glLoadIdentity();
+        GL11.glOrtho(0.0D, nativeWidth, nativeHeight, 0.0D, -1000.0D, 1000.0D);
+        GL11.glMatrixMode(GL11.GL_MODELVIEW);
+        GL11.glLoadIdentity();
+        GL11.glColorMask(true, true, true, true);
+        GL11.glDepthMask(true);
+        GL11.glClearDepth(1.0D);
+        GL11.glClear(GL11.GL_DEPTH_BUFFER_BIT);
+        GL11.glDisable(GL11.GL_DEPTH_TEST);
+        GL11.glDepthFunc(GL11.GL_LEQUAL);
+        GL11.glDisable(GL11.GL_CULL_FACE);
+        GL11.glDisable(GL11.GL_ALPHA_TEST);
+        GL11.glDisable(GL11.GL_LIGHTING);
+        GL11.glEnable(GL11.GL_TEXTURE_2D);
         GL11.glEnable(GL11.GL_BLEND);
         GL11.glBlendFunc(GL11.GL_SRC_ALPHA, GL11.GL_ONE_MINUS_SRC_ALPHA);
         GL11.glColor4f(1.0F, 1.0F, 1.0F, 1.0F);
