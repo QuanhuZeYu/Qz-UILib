@@ -175,6 +175,38 @@ public class DocumentInventorySlotGridControlTest {
         Assert.assertTrue(containsDrawCall(renderContext.drawCalls, 11, 11, 43, 43, 0xFF111111, 0));
     }
 
+    /**
+     * 验证默认槽位底色是不透明颜色，避免背后游戏画面直接穿透。
+     */
+    @Test
+    public void shouldRenderDefaultSlotsWithOpaqueFillColors() {
+        UiDocument document = UiDocument.create();
+        ElementNode root = document.getRootElement();
+        root.style()
+                .setWidth(UiStyleLength.px(200))
+                .setHeight(UiStyleLength.px(100));
+        RecordingUiRenderContext renderContext = new RecordingUiRenderContext();
+        DocumentInventorySlotGridControl gridControl = new DocumentInventorySlotGridControl(document, 2, 2)
+                .setSlotGap(4)
+                .setPreferredSlotSize(32)
+                .setContentProvider(new DocumentInventorySlotGridControl.SlotContentProvider() {
+                    @Override
+                    public InventorySlotSnapshot getSlotSnapshot(int localIndex) {
+                        return localIndex == 0 ? InventorySlotSnapshot.empty() : InventorySlotSnapshot.occupied();
+                    }
+                })
+                .commitLayout();
+        root.append(gridControl.getElement());
+        HtmlLikeDocumentWidget widget = new HtmlLikeDocumentWidget(document, 200, 100,
+                new DeterministicTextMeasureService());
+        widget.applyLayoutBounds(0, 0, 200, 100);
+
+        widget.render(renderContext);
+
+        Assert.assertTrue(containsDrawCall(renderContext.drawCalls, 0, 0, 32, 32, 0xFF171C24, 0));
+        Assert.assertTrue(containsDrawCall(renderContext.drawCalls, 36, 0, 68, 32, 0xFF202A38, 0));
+    }
+
     private static boolean containsDrawCall(List<DrawCall> drawCalls, int left, int top, int right, int bottom,
             int fillColor, int borderColor) {
         for (DrawCall drawCall : drawCalls) {

@@ -32,9 +32,9 @@ public final class DocumentInventorySlotGridControl {
     private int preferredSlotSize = 34;
     private int minSlotSize = 22;
     private int maxSlotSize = 46;
-    private int emptySlotFillColor = 0xAA171C24;
+    private int emptySlotFillColor = 0xFF171C24;
     private int emptySlotBorderColor = 0xFF465468;
-    private int occupiedSlotFillColor = 0xCC202A38;
+    private int occupiedSlotFillColor = 0xFF202A38;
     private int occupiedSlotBorderColor = 0xFF9AB8F2;
     private boolean layoutDirty = true;
 
