@@ -163,6 +163,17 @@ public final class HtmlLikeDocumentWidget extends Widget {
     }
 
     /**
+     * 返回当前动画时间线的只读诊断快照。
+     *
+     * <p>该方法仅供 Smoke 页和测试诊断使用，状态来自最近一次布局或绘制刷新后的时间线快照。</p>
+     *
+     * @return 动画运行态诊断快照
+     */
+    public DocumentAnimationTimeline.DiagnosticsSnapshot getAnimationDiagnosticsSnapshot() {
+        return animationTimeline.getDiagnosticsSnapshot(animationClock.getCurrentTimeNanos());
+    }
+
+    /**
      * 返回当前动画时间线中是否存在 layout 运行态覆盖值。
      *
      * <p>该方法仅供 Smoke 页和测试诊断使用，状态来自最近一次布局或绘制刷新后的时间线快照。</p>

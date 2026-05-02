@@ -690,6 +690,54 @@ public class DocumentAnimationTimelineTest {
     }
 
     /**
+     * 验证动画诊断快照会按来源和影响范围统计 transition、keyframe 与 forwards fill。
+     */
+    @Test
+    public void shouldExposeDiagnosticsSnapshotBySourceAndImpact() {
+        UiDocument document = UiDocument.create();
+        document.registerKeyframes(DocumentKeyframes.named("layoutFill")
+                .setFloat(DocumentAnimationProperty.WIDTH, 40.0F, 80.0F)
+                .build());
+        ElementNode root = document.getRootElement();
+        ElementNode fillElement = document.div();
+        ElementNode transitionElement = document.div();
+        fillElement.style()
+                .setWidth(UiStyleLength.px(40))
+                .setHeight(UiStyleLength.px(20))
+                .setAnimation("layoutFill", 1000L)
+                .setAnimationFillMode(DocumentAnimationFillMode.FORWARDS);
+        transitionElement.style()
+                .setWidth(UiStyleLength.px(40))
+                .setHeight(UiStyleLength.px(20))
+                .setBackgroundColor(0xFF000000)
+                .setTransitionProperties(DocumentAnimationProperty.BACKGROUND_COLOR,
+                        DocumentAnimationProperty.HEIGHT)
+                .setTransitionDurationMillis(1000L);
+        root.append(fillElement).append(transitionElement);
+        DocumentAnimationTimeline timeline = new DocumentAnimationTimeline();
+
+        timeline.updateFromLayout(DocumentLayoutEngine.layout(root, 160, 0), 0L);
+        Assert.assertTrue(timeline.pruneFinishedAnimations(1_000_000_000L));
+        transitionElement.style()
+                .setBackgroundColor(0xFFFFFFFF)
+                .setHeight(UiStyleLength.px(40));
+        Assert.assertTrue(timeline.updateFromLayout(DocumentLayoutEngine.layout(root, 160, 0), 1_000_000_000L));
+
+        DocumentAnimationTimeline.DiagnosticsSnapshot snapshot = timeline.getDiagnosticsSnapshot(1_500_000_000L);
+
+        Assert.assertEquals(2, snapshot.getActiveAnimationCount());
+        Assert.assertEquals(2, snapshot.getTotalTransitionCount());
+        Assert.assertEquals(0, snapshot.getTotalKeyframeCount());
+        Assert.assertEquals(1, snapshot.getTotalForwardsFillCount());
+        Assert.assertEquals(1, snapshot.getTransitionCount(DocumentAnimationImpact.PAINT));
+        Assert.assertEquals(1, snapshot.getTransitionCount(DocumentAnimationImpact.LAYOUT));
+        Assert.assertEquals(1, snapshot.getForwardsFillCount(DocumentAnimationImpact.LAYOUT));
+        Assert.assertFalse(snapshot.hasRuntimeValue(DocumentAnimationImpact.EFFECT));
+        Assert.assertTrue(snapshot.hasRuntimeValue(DocumentAnimationImpact.PAINT));
+        Assert.assertTrue(snapshot.hasRuntimeValue(DocumentAnimationImpact.LAYOUT));
+    }
+
+    /**
      * 验证声明式 keyframe 圆角会先归一化到布局约束，避免 999px 胶囊值在末尾跳变。
      */
     @Test

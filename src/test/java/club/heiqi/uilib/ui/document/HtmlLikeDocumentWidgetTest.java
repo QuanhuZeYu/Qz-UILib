@@ -10,7 +10,9 @@ import org.lwjglx.input.Keyboard;
 
 import club.heiqi.uilib.ui.animation.DocumentAnimationClock;
 import club.heiqi.uilib.ui.animation.DocumentAnimationFillMode;
+import club.heiqi.uilib.ui.animation.DocumentAnimationImpact;
 import club.heiqi.uilib.ui.animation.DocumentAnimationProperty;
+import club.heiqi.uilib.ui.animation.DocumentAnimationTimeline;
 import club.heiqi.uilib.ui.animation.DocumentKeyframes;
 import club.heiqi.uilib.ui.dom.DocumentElementActiveEvent;
 import club.heiqi.uilib.ui.dom.DocumentElementActiveHandler;
@@ -288,18 +290,31 @@ public class HtmlLikeDocumentWidgetTest {
 
         widget.render(new RecordingUiRenderContext());
         Assert.assertFalse(widget.hasLayoutRuntimeValueForDiagnostics());
+        DocumentAnimationTimeline.DiagnosticsSnapshot initialSnapshot = widget.getAnimationDiagnosticsSnapshot();
+        Assert.assertEquals(0, initialSnapshot.getActiveAnimationCount());
+        Assert.assertFalse(initialSnapshot.hasRuntimeValue(DocumentAnimationImpact.LAYOUT));
 
         root.style().setWidth(UiStyleLength.px(80));
         widget.render(new RecordingUiRenderContext());
 
         Assert.assertEquals(1, widget.getActiveAnimationCount());
         Assert.assertTrue(widget.hasLayoutRuntimeValueForDiagnostics());
+        DocumentAnimationTimeline.DiagnosticsSnapshot runningSnapshot = widget.getAnimationDiagnosticsSnapshot();
+        Assert.assertEquals(1, runningSnapshot.getActiveAnimationCount());
+        Assert.assertEquals(1, runningSnapshot.getTotalTransitionCount());
+        Assert.assertEquals(0, runningSnapshot.getTotalKeyframeCount());
+        Assert.assertEquals(0, runningSnapshot.getTotalForwardsFillCount());
+        Assert.assertEquals(1, runningSnapshot.getTransitionCount(DocumentAnimationImpact.LAYOUT));
+        Assert.assertTrue(runningSnapshot.hasRuntimeValue(DocumentAnimationImpact.LAYOUT));
 
         animationClock.setCurrentTimeNanos(1_000_000_000L);
         widget.render(new RecordingUiRenderContext());
 
         Assert.assertEquals(0, widget.getActiveAnimationCount());
         Assert.assertFalse(widget.hasLayoutRuntimeValueForDiagnostics());
+        DocumentAnimationTimeline.DiagnosticsSnapshot finishedSnapshot = widget.getAnimationDiagnosticsSnapshot();
+        Assert.assertEquals(0, finishedSnapshot.getActiveAnimationCount());
+        Assert.assertFalse(finishedSnapshot.hasRuntimeValue(DocumentAnimationImpact.LAYOUT));
     }
 
     /**

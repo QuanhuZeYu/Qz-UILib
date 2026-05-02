@@ -220,6 +220,22 @@ public final class DocumentAnimationTimeline {
     }
 
     /**
+     * 返回当前动画运行态诊断快照。
+     *
+     * <p>诊断只读取当前时间线状态，不推进动画，也不清理已完成动画。</p>
+     *
+     * @param currentTimeNanos 当前动画时间
+     * @return 运行态诊断快照
+     */
+    public DiagnosticsSnapshot getDiagnosticsSnapshot(long currentTimeNanos) {
+        DiagnosticsSnapshot snapshot = new DiagnosticsSnapshot();
+        for (ElementAnimationState state : states.values()) {
+            state.collectDiagnostics(snapshot, currentTimeNanos);
+        }
+        return snapshot;
+    }
+
+    /**
      * 清理已完成动画。
      *
      * @param currentTimeNanos 当前动画时间
@@ -238,6 +254,133 @@ public final class DocumentAnimationTimeline {
      */
     public void clear() {
         states.clear();
+    }
+
+    /**
+     * 动画运行态诊断快照。
+     */
+    public static final class DiagnosticsSnapshot {
+
+        private final EnumMap<DocumentAnimationImpact, int[]> countsByImpact =
+                new EnumMap<DocumentAnimationImpact, int[]>(DocumentAnimationImpact.class);
+        private int totalTransitionCount;
+        private int totalKeyframeCount;
+        private int totalForwardsFillCount;
+
+        private DiagnosticsSnapshot() {
+            for (DocumentAnimationImpact impact : DocumentAnimationImpact.values()) {
+                countsByImpact.put(impact, new int[3]);
+            }
+        }
+
+        /**
+         * 返回空诊断快照。
+         *
+         * @return 空诊断快照
+         */
+        public static DiagnosticsSnapshot empty() {
+            return new DiagnosticsSnapshot();
+        }
+
+        /**
+         * 返回指定影响范围内未完成 transition 数量。
+         *
+         * @param impact 动画影响范围
+         * @return transition 数量
+         */
+        public int getTransitionCount(DocumentAnimationImpact impact) {
+            return getCounts(impact)[0];
+        }
+
+        /**
+         * 返回指定影响范围内未完成 keyframe animation 数量。
+         *
+         * @param impact 动画影响范围
+         * @return keyframe animation 数量
+         */
+        public int getKeyframeCount(DocumentAnimationImpact impact) {
+            return getCounts(impact)[1];
+        }
+
+        /**
+         * 返回指定影响范围内 forwards fill 运行值数量。
+         *
+         * @param impact 动画影响范围
+         * @return forwards fill 运行值数量
+         */
+        public int getForwardsFillCount(DocumentAnimationImpact impact) {
+            return getCounts(impact)[2];
+        }
+
+        /**
+         * 返回所有影响范围内未完成 transition 总数。
+         *
+         * @return transition 总数
+         */
+        public int getTotalTransitionCount() {
+            return totalTransitionCount;
+        }
+
+        /**
+         * 返回所有影响范围内未完成 keyframe animation 总数。
+         *
+         * @return keyframe animation 总数
+         */
+        public int getTotalKeyframeCount() {
+            return totalKeyframeCount;
+        }
+
+        /**
+         * 返回所有影响范围内 forwards fill 运行值总数。
+         *
+         * @return forwards fill 总数
+         */
+        public int getTotalForwardsFillCount() {
+            return totalForwardsFillCount;
+        }
+
+        /**
+         * 返回当前未完成动画总数。
+         *
+         * @return transition 与 keyframe animation 的总数
+         */
+        public int getActiveAnimationCount() {
+            return totalTransitionCount + totalKeyframeCount;
+        }
+
+        /**
+         * 返回指定影响范围内是否存在运行态覆盖值。
+         *
+         * @param impact 动画影响范围
+         * @return 是否存在运行态覆盖值
+         */
+        public boolean hasRuntimeValue(DocumentAnimationImpact impact) {
+            int[] counts = getCounts(impact);
+            return counts[0] > 0 || counts[1] > 0 || counts[2] > 0;
+        }
+
+        private int[] getCounts(DocumentAnimationImpact impact) {
+            int[] counts = countsByImpact.get(Objects.requireNonNull(impact, "impact"));
+            if (counts == null) {
+                throw new IllegalArgumentException("unsupported animation impact: " + impact);
+            }
+            return counts;
+        }
+
+        private void incrementTransition(DocumentAnimationImpact impact) {
+            getCounts(impact)[0]++;
+            totalTransitionCount++;
+        }
+
+        private void incrementKeyframe(DocumentAnimationImpact impact) {
+            getCounts(impact)[1]++;
+            totalKeyframeCount++;
+        }
+
+        private void incrementForwardsFill(DocumentAnimationImpact impact) {
+            getCounts(impact)[2]++;
+            totalForwardsFillCount++;
+        }
     }
 
     private boolean updateFromBox(DocumentLayoutBox box, long currentTimeNanos, Set<ElementNode> activeElements) {
@@ -701,6 +844,15 @@ public final class DocumentAnimationTimeline {
             return count;
         }
 
+        private void collectDiagnostics(DiagnosticsSnapshot snapshot, long currentTimeNanos) {
+            collectTransitionDiagnostics(snapshot, colorTransitions, currentTimeNanos);
+            collectTransitionDiagnostics(snapshot, floatTransitions, currentTimeNanos);
+            collectKeyframeDiagnostics(snapshot, colorKeyframeAnimations, currentTimeNanos);
+            collectKeyframeDiagnostics(snapshot, floatKeyframeAnimations, currentTimeNanos);
+            collectFillDiagnostics(snapshot, filledColors);
+            collectFillDiagnostics(snapshot, filledFloats);
+        }
+
         private boolean pruneFinishedAnimations(long currentTimeNanos) {
             boolean changed = false;
             changed |= pruneFinishedTransitions(colorTransitions, currentTimeNanos);
@@ -765,6 +917,31 @@ public final class DocumentAnimationTimeline {
                 }
             }
             return count;
+        }
+
+        private static <T extends TransitionState> void collectTransitionDiagnostics(DiagnosticsSnapshot snapshot,
+                Map<DocumentAnimationProperty, T> values, long currentTimeNanos) {
+            for (Map.Entry<DocumentAnimationProperty, T> entry : values.entrySet()) {
+                if (!entry.getValue().isFinished(currentTimeNanos)) {
+                    snapshot.incrementTransition(entry.getKey().getImpact());
+                }
+            }
+        }
+
+        private static <T extends KeyframeAnimationState> void collectKeyframeDiagnostics(DiagnosticsSnapshot snapshot,
+                Map<DocumentAnimationProperty, T> values, long currentTimeNanos) {
+            for (Map.Entry<DocumentAnimationProperty, T> entry : values.entrySet()) {
+                if (!entry.getValue().isFinished(currentTimeNanos)) {
+                    snapshot.incrementKeyframe(entry.getKey().getImpact());
+                }
+            }
+        }
+
+        private static void collectFillDiagnostics(DiagnosticsSnapshot snapshot,
+                Map<DocumentAnimationProperty, ?> values) {
+            for (DocumentAnimationProperty property : values.keySet()) {
+                snapshot.incrementForwardsFill(property.getImpact());
+            }
         }
 
         private static <T extends TransitionState> boolean pruneFinishedTransitions(

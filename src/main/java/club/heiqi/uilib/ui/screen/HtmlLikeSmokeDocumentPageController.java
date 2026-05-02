@@ -2,9 +2,11 @@ package club.heiqi.uilib.ui.screen;
 
 import java.util.Objects;
 
+import club.heiqi.uilib.ui.animation.DocumentAnimationImpact;
 import club.heiqi.uilib.ui.animation.DocumentAnimationFillMode;
 import club.heiqi.uilib.ui.animation.DocumentAnimationProperty;
 import club.heiqi.uilib.ui.animation.DocumentAnimationTimingFunction;
+import club.heiqi.uilib.ui.animation.DocumentAnimationTimeline;
 import club.heiqi.uilib.ui.animation.DocumentKeyframes;
 import club.heiqi.uilib.ui.document.HtmlLikeDocumentWidget;
 import club.heiqi.uilib.ui.dom.DocumentElementClickEvent;
@@ -69,13 +71,9 @@ final class HtmlLikeSmokeDocumentPageController extends DocumentPageController {
         final HtmlLikeDocumentWidget[] widgetReference = new HtmlLikeDocumentWidget[1];
         UiDocument smokeDocument = createSmokeDocument(new AnimationRuntimeDiagnostics() {
             @Override
-            public int getActiveAnimationCount() {
-                return widgetReference[0] == null ? 0 : widgetReference[0].getActiveAnimationCount();
-            }
-
-            @Override
-            public boolean hasLayoutRuntimeValue() {
-                return widgetReference[0] != null && widgetReference[0].hasLayoutRuntimeValueForDiagnostics();
+            public DocumentAnimationTimeline.DiagnosticsSnapshot getSnapshot() {
+                return widgetReference[0] == null ? DocumentAnimationTimeline.DiagnosticsSnapshot.empty()
+                        : widgetReference[0].getAnimationDiagnosticsSnapshot();
             }
         });
         this.htmlLikeDocumentWidget = new HtmlLikeDocumentWidget(smokeDocument, 760, 320,
@@ -740,24 +738,43 @@ final class HtmlLikeSmokeDocumentPageController extends DocumentPageController {
         coveredProperties.appendText("Layout animation coverage: " + formatLayoutAnimationProperties());
         probe.append(coveredProperties);
 
-        ElementNode runtimeDiagnostic = document.div();
-        runtimeDiagnostic.style()
+        ElementNode runtimeSummaryDiagnostic = document.div();
+        runtimeSummaryDiagnostic.style()
                 .setHeight(UiStyleLength.px(14))
                 .setMargin(UiStyleInsets.of(UiStyleLength.px(2), UiStyleLength.px(0), UiStyleLength.px(0),
                         UiStyleLength.px(0)))
                 .setTextColor(0x00000000)
                 .setOverflowX(UiOverflow.HIDDEN)
                 .setOverflowY(UiOverflow.HIDDEN);
-        runtimeDiagnostic.appendText(formatRuntimeDiagnosticText(animationRuntimeDiagnostics));
-        runtimeDiagnostic.setCustomRenderer(new DocumentCustomRenderer() {
+        runtimeSummaryDiagnostic.appendText(formatRuntimeSummaryDiagnosticText(animationRuntimeDiagnostics));
+        runtimeSummaryDiagnostic.setCustomRenderer(new DocumentCustomRenderer() {
             @Override
             public void render(UiRenderContext context, int contentLeft, int contentTop, int contentRight,
                     int contentBottom) {
-                context.drawText(formatRuntimeDiagnosticText(animationRuntimeDiagnostics), contentLeft, contentTop,
-                        0xFFDDD6FE, false);
+                context.drawText(formatRuntimeSummaryDiagnosticText(animationRuntimeDiagnostics), contentLeft,
+                        contentTop, 0xFFDDD6FE, false);
             }
         });
-        probe.append(runtimeDiagnostic);
+        probe.append(runtimeSummaryDiagnostic);
+
+        ElementNode runtimeImpactDiagnostic = document.div();
+        runtimeImpactDiagnostic.style()
+                .setHeight(UiStyleLength.px(14))
+                .setMargin(UiStyleInsets.of(UiStyleLength.px(2), UiStyleLength.px(0), UiStyleLength.px(0),
+                        UiStyleLength.px(0)))
+                .setTextColor(0x00000000)
+                .setOverflowX(UiOverflow.HIDDEN)
+                .setOverflowY(UiOverflow.HIDDEN);
+        runtimeImpactDiagnostic.appendText(formatRuntimeImpactDiagnosticText(animationRuntimeDiagnostics));
+        runtimeImpactDiagnostic.setCustomRenderer(new DocumentCustomRenderer() {
+            @Override
+            public void render(UiRenderContext context, int contentLeft, int contentTop, int contentRight,
+                    int contentBottom) {
+                context.drawText(formatRuntimeImpactDiagnosticText(animationRuntimeDiagnostics), contentLeft,
+                        contentTop, 0xFFC4B5FD, false);
+            }
+        });
+        probe.append(runtimeImpactDiagnostic);
 
         ElementNode row = document.div();
         row.style()
@@ -766,7 +783,7 @@ final class HtmlLikeSmokeDocumentPageController extends DocumentPageController {
                 .setFlexDirection(UiFlexDirection.ROW)
                 .setAlignItems(UiAlignItems.CENTER)
                 .setColumnGap(UiStyleLength.px(10))
-                .setMargin(UiStyleInsets.of(UiStyleLength.px(6), UiStyleLength.px(0), UiStyleLength.px(0),
+                .setMargin(UiStyleInsets.of(UiStyleLength.px(4), UiStyleLength.px(0), UiStyleLength.px(0),
                         UiStyleLength.px(0)))
                 .setOverflowX(UiOverflow.HIDDEN)
                 .setOverflowY(UiOverflow.HIDDEN);
@@ -1267,18 +1284,46 @@ final class HtmlLikeSmokeDocumentPageController extends DocumentPageController {
     }
 
     /**
-     * 格式化实时动画运行状态诊断文本。
+     * 格式化实时动画来源汇总诊断文本。
      *
      * @param animationRuntimeDiagnostics 动画运行诊断源
      * @return 展示文本
      */
-    private static String formatRuntimeDiagnosticText(AnimationRuntimeDiagnostics animationRuntimeDiagnostics) {
-        int activeAnimationCount = animationRuntimeDiagnostics == null ? 0
-                : animationRuntimeDiagnostics.getActiveAnimationCount();
-        boolean layoutRuntimeActive = animationRuntimeDiagnostics != null
-                && animationRuntimeDiagnostics.hasLayoutRuntimeValue();
-        return "Animation runtime: active animation count=" + activeAnimationCount
-                + "; layout runtime active=" + layoutRuntimeActive;
+    private static String formatRuntimeSummaryDiagnosticText(AnimationRuntimeDiagnostics animationRuntimeDiagnostics) {
+        DocumentAnimationTimeline.DiagnosticsSnapshot snapshot = getRuntimeDiagnosticsSnapshot(
+                animationRuntimeDiagnostics);
+        return "Animation runtime: active=" + snapshot.getActiveAnimationCount()
+                + " transition=" + snapshot.getTotalTransitionCount()
+                + " keyframe=" + snapshot.getTotalKeyframeCount()
+                + " fill=" + snapshot.getTotalForwardsFillCount();
+    }
+
+    /**
+     * 格式化实时动画影响范围诊断文本。
+     *
+     * @param animationRuntimeDiagnostics 动画运行诊断源
+     * @return 展示文本
+     */
+    private static String formatRuntimeImpactDiagnosticText(AnimationRuntimeDiagnostics animationRuntimeDiagnostics) {
+        DocumentAnimationTimeline.DiagnosticsSnapshot snapshot = getRuntimeDiagnosticsSnapshot(
+                animationRuntimeDiagnostics);
+        return "Runtime by impact: paint " + formatImpactDiagnostics(snapshot, DocumentAnimationImpact.PAINT)
+                + " | effect " + formatImpactDiagnostics(snapshot, DocumentAnimationImpact.EFFECT)
+                + " | layout " + formatImpactDiagnostics(snapshot, DocumentAnimationImpact.LAYOUT)
+                + " active=" + snapshot.hasRuntimeValue(DocumentAnimationImpact.LAYOUT);
+    }
+
+    private static String formatImpactDiagnostics(DocumentAnimationTimeline.DiagnosticsSnapshot snapshot,
+            DocumentAnimationImpact impact) {
+        return "t=" + snapshot.getTransitionCount(impact)
+                + " k=" + snapshot.getKeyframeCount(impact)
+                + " f=" + snapshot.getForwardsFillCount(impact);
+    }
+
+    private static DocumentAnimationTimeline.DiagnosticsSnapshot getRuntimeDiagnosticsSnapshot(
+            AnimationRuntimeDiagnostics animationRuntimeDiagnostics) {
+        return animationRuntimeDiagnostics == null ? DocumentAnimationTimeline.DiagnosticsSnapshot.empty()
+                : animationRuntimeDiagnostics.getSnapshot();
     }
 
     /**
@@ -1297,17 +1342,10 @@ final class HtmlLikeSmokeDocumentPageController extends DocumentPageController {
     private interface AnimationRuntimeDiagnostics {
 
         /**
-         * 返回当前未完成动画数量。
+         * 返回当前动画运行态诊断快照。
          *
-         * @return 未完成动画数量
+         * @return 动画运行态诊断快照
          */
-        int getActiveAnimationCount();
-
-        /**
-         * 返回当前是否存在 layout 运行态覆盖值。
-         *
-         * @return 是否存在 layout 运行态覆盖值
-         */
-        boolean hasLayoutRuntimeValue();
+        DocumentAnimationTimeline.DiagnosticsSnapshot getSnapshot();
     }
 }

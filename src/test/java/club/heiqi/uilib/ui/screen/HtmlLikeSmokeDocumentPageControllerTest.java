@@ -74,7 +74,8 @@ public class HtmlLikeSmokeDocumentPageControllerTest {
         Assert.assertTrue(containsText(texts, "Padding card: tight"));
         Assert.assertTrue(containsText(texts, "Padding sibling shifts from padding"));
         Assert.assertTrue(containsText(texts, "Layout animation coverage: WIDTH/HEIGHT/MARGIN_LEFT/MARGIN_RIGHT/PADDING_LEFT/PADDING_RIGHT"));
-        Assert.assertTrue(containsText(texts, "Animation runtime: active animation count="));
+        Assert.assertTrue(containsText(texts, "Animation runtime: active="));
+        Assert.assertTrue(containsText(texts, "Runtime by impact: paint t="));
         Assert.assertTrue(containsText(texts, "Same-layer sampling grid"));
         Assert.assertTrue(containsText(texts, "ABS containing probe"));
         Assert.assertTrue(containsText(texts, "static wrapper is not anchor"));
@@ -137,8 +138,12 @@ public class HtmlLikeSmokeDocumentPageControllerTest {
         Assert.assertTrue(containsTextCall(renderContext.textCalls, "Margin card: tight"));
         Assert.assertTrue(containsTextCall(renderContext.textCalls, "Padding card: tight"));
         Assert.assertTrue(containsTextCall(renderContext.textCalls, "Layout animation coverage: WIDTH/HEIGHT/MARGIN_LEFT/MARGIN_RIGHT/PADDING_LEFT/PADDING_RIGHT"));
-        Assert.assertTrue(containsTextCall(renderContext.textCalls, "Animation runtime: active animation count="));
-        Assert.assertTrue(containsTextCall(renderContext.textCalls, "layout runtime active=false"));
+        Assert.assertTrue(containsTextCall(renderContext.textCalls, "Animation runtime: active="));
+        Assert.assertTrue(containsTextCall(renderContext.textCalls, "transition="));
+        Assert.assertTrue(containsTextCall(renderContext.textCalls, "keyframe="));
+        Assert.assertTrue(containsTextCall(renderContext.textCalls, "fill="));
+        Assert.assertTrue(containsTextCall(renderContext.textCalls, "Runtime by impact: paint t="));
+        Assert.assertTrue(containsTextCall(renderContext.textCalls, "layout t=0 k=0 f=0 active=false"));
         Assert.assertTrue(containsTextCall(renderContext.textCalls, "ABS stretch fill"));
         Assert.assertTrue(containsTextCall(renderContext.textCalls, "amber span hit: 0"));
         Assert.assertTrue(containsTextCall(renderContext.textCalls, "Vertical-align probe"));
@@ -311,7 +316,7 @@ public class HtmlLikeSmokeDocumentPageControllerTest {
         Assert.assertFalse(widget.hasLayoutRuntimeValueForDiagnostics());
         Assert.assertTrue(containsTextCall(initialRenderContext.textCalls,
                 "Layout animation coverage: WIDTH/HEIGHT/MARGIN_LEFT/MARGIN_RIGHT/PADDING_LEFT/PADDING_RIGHT"));
-        Assert.assertTrue(containsTextCall(initialRenderContext.textCalls, "layout runtime active=false"));
+        Assert.assertTrue(containsTextCall(initialRenderContext.textCalls, "layout t=0 k=0 f=0 active=false"));
 
         int siblingLeftBefore = findElementBackgroundCommand(widget, fixture.textMeasureService, sibling).getLeft();
         clickElementCenter(widget, fixture.textMeasureService, layoutCard, 1L, 2L);
@@ -342,7 +347,8 @@ public class HtmlLikeSmokeDocumentPageControllerTest {
         Assert.assertTrue(paddingSiblingLeftAfter > paddingSiblingLeftBefore);
         Assert.assertTrue(widget.getActiveAnimationCount() >= 6);
         Assert.assertTrue(widget.hasLayoutRuntimeValueForDiagnostics());
-        Assert.assertTrue(containsTextCall(layoutClickedRenderContext.textCalls, "layout runtime active=true"));
+        Assert.assertTrue(containsTextCall(layoutClickedRenderContext.textCalls, "layout t="));
+        Assert.assertTrue(containsTextCall(layoutClickedRenderContext.textCalls, "active=true"));
     }
 
     /**
