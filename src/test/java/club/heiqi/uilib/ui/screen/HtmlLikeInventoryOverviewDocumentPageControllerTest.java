@@ -8,8 +8,10 @@ import org.junit.Assert;
 import org.junit.Test;
 import org.lwjglx.input.Keyboard;
 
+import club.heiqi.uilib.ui.animation.DocumentAnimationProperty;
 import club.heiqi.uilib.ui.diagnostic.UiRuntimeStats;
 import club.heiqi.uilib.ui.document.HtmlLikeDocumentWidget;
+import club.heiqi.uilib.ui.dom.DocumentElementClickEvent;
 import club.heiqi.uilib.ui.dom.DocumentNode;
 import club.heiqi.uilib.ui.dom.DocumentNodeType;
 import club.heiqi.uilib.ui.dom.ElementNode;
@@ -18,6 +20,7 @@ import club.heiqi.uilib.ui.event.UiKeyEvent;
 import club.heiqi.uilib.ui.inventory.InventorySlotSnapshot;
 import club.heiqi.uilib.ui.inventory.NoOpInventorySlotGridItemRenderer;
 import club.heiqi.uilib.ui.runtime.UiRuntimeAdapters;
+import club.heiqi.uilib.ui.style.UiStyleLength;
 import club.heiqi.uilib.ui.text.TextMeasureService;
 import club.heiqi.uilib.ui.widget.Widget;
 
@@ -47,6 +50,9 @@ public class HtmlLikeInventoryOverviewDocumentPageControllerTest {
         Assert.assertTrue(containsText(blockTexts, "背包诊断中枢"));
         Assert.assertTrue(containsText(blockTexts, "快捷栏探针"));
         Assert.assertTrue(containsText(blockTexts, "主背包探针"));
+        Assert.assertTrue(containsText(blockTexts, "真实迁移验证卡"));
+        Assert.assertTrue(containsText(blockTexts, "inline pill"));
+        Assert.assertTrue(containsText(blockTexts, "Inventory fixed hint"));
         Assert.assertTrue(containsText(blockTexts, "窗口 1280x720"));
         Assert.assertTrue(containsText(blockTexts, "快捷栏占用 3 / 9"));
         Assert.assertTrue(containsText(blockTexts, "主背包占用 7 / 27"));
@@ -86,10 +92,43 @@ public class HtmlLikeInventoryOverviewDocumentPageControllerTest {
         HtmlLikeDocumentWidget widget = fixture.controller.getHtmlLikeDocumentWidget();
         widget.applyLayoutBounds(0, 0, 720, 600);
         widget.onFocusTraversalEntered(false);
+        Assert.assertTrue(widget.onFocusTraversal(false));
         widget.onKeyEvent(new UiKeyEvent(Keyboard.KEY_RETURN, 0, 0, UiKeyEvent.Action.PRESSED, false, false, false,
                 false, 1L));
 
         Assert.assertEquals(1, fixture.model.returnToVanillaInventoryCalls);
+    }
+
+    /**
+     * 验证真实迁移卡组合了动画、toggle、inline、fixed 与 overflow 文本路径。
+     */
+    @Test
+    public void shouldExposeInteractiveMigrationValidationCard() {
+        TestFixture fixture = new TestFixture();
+
+        fixture.controller.configureDocumentPage();
+        fixture.controller.buildDocument();
+        fixture.controller.afterDocumentBuilt();
+
+        HtmlLikeDocumentWidget widget = fixture.controller.getHtmlLikeDocumentWidget();
+        ElementNode migrationCard = findElementContainingText(widget, "迁移卡片：紧凑");
+        Assert.assertNotNull(migrationCard);
+        Assert.assertTrue(migrationCard.style().getTransitionProperties().contains(DocumentAnimationProperty.WIDTH));
+        Assert.assertTrue(migrationCard.style().getTransitionProperties()
+                .contains(DocumentAnimationProperty.BACKGROUND_COLOR));
+        Assert.assertTrue(migrationCard.style().getTransitionProperties()
+                .contains(DocumentAnimationProperty.BORDER_RADIUS));
+        Assert.assertEquals(UiStyleLength.px(150), migrationCard.style().getWidth());
+        Assert.assertNotNull(findElementContainingText(widget, "inline pill"));
+        Assert.assertNotNull(findElementContainingText(widget, "Inventory fixed hint"));
+
+        migrationCard.getClickHandler().onClick(new DocumentElementClickEvent(migrationCard, migrationCard, 0, 0, 0,
+                1L));
+
+        List<String> expandedTexts = collectDocumentTexts(widget);
+        Assert.assertEquals(UiStyleLength.px(220), migrationCard.style().getWidth());
+        Assert.assertTrue(containsText(expandedTexts, "迁移卡片：展开"));
+        Assert.assertTrue(containsText(expandedTexts, "状态：展开模式"));
     }
 
     private static List<String> collectDocumentTexts(HtmlLikeDocumentWidget widget) {
@@ -123,6 +162,26 @@ public class HtmlLikeInventoryOverviewDocumentPageControllerTest {
             }
         }
         return false;
+    }
+
+    private static ElementNode findElementContainingText(HtmlLikeDocumentWidget widget, String expectedSnippet) {
+        return findElementContainingText(widget.getDocument().getRootElement(), expectedSnippet);
+    }
+
+    private static ElementNode findElementContainingText(ElementNode element, String expectedSnippet) {
+        for (DocumentNode child : element.getChildren()) {
+            if (child.getNodeType() == DocumentNodeType.TEXT
+                    && ((TextNode) child).getText().contains(expectedSnippet)) {
+                return element;
+            }
+            if (child.getNodeType() == DocumentNodeType.ELEMENT) {
+                ElementNode matched = findElementContainingText((ElementNode) child, expectedSnippet);
+                if (matched != null) {
+                    return matched;
+                }
+            }
+        }
+        return null;
     }
 
     private static final class TestFixture {

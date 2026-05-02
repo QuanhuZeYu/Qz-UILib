@@ -108,7 +108,7 @@
 - Smoke 页覆盖：控件交互、文本输入、Tab 焦点、按钮、开关、overflow auto 滚动、absolute/fixed 定位、absolute stretch、inline fragment/vertical-align、group opacity、stacking context、backdrop-filter、opacity FBO、`WIDTH/HEIGHT/MARGIN_LEFT/MARGIN_RIGHT/PADDING_LEFT/PADDING_RIGHT` layout transition 和 layout keyframe/forwards fill；`PADDING_LEFT/PADDING_RIGHT` 游戏内 Smoke 已验收正确；layout 动画区会显示覆盖属性清单、active 总数、transition/keyframe/fill 来源计数、paint/effect/layout 分 impact 运行态状态，以及 `Cache runtime: paintGen/staticLayout/runtimeLayout/textEpoch` 缓存诊断；点击当帧因文本或 layout 目标变化导致 `staticLayout +1` 允许，运行期 paint/effect 动画不得增长 `runtimeLayout`；当前 layout `t/k/f`、缓存诊断和 layout forwards fill 稳态缓存均已完成游戏内验收。
 - Smoke 页 `Layout animation probe`：点击蓝色 `Layout card`，宽高在 92x34 与 190x58 间过渡，右侧绿色 sibling 应随动画被推开或回收；点击琥珀色 `Margin card`，左右 margin 在 tight/wide 间过渡，右侧棕色 sibling 应随 margin 动画位移；点击紫色 `Padding card`，左右 padding 在 tight/wide 间过渡，卡片内容和右侧紫色 sibling 应随 padding 动画位移；点击青色 `Keyframe card` 启动 `layoutFillProbe` width keyframe，运行时 layout `k` 应增加且 `runtimeLayout` 增长，结束后 layout `f` 应保留但 `runtimeLayout` 应进入稳态不再持续增长，再次点击清除 animation 后 `f` 应归零并恢复作者宽度。当前游戏内已确认 transition、keyframe、forwards fill 均有可见诊断路径，padding 动画平滑、内容和 sibling 同步位移、`t/k/f` 计数进入与退出、paint/effect 不增长 `runtimeLayout`、layout 动画增长 `runtimeLayout`、forwards fill 稳态缓存均符合预期。
 - Glass Lab 覆盖：大面积 backdrop、shader/fallback 路径、snapshot captured/reused、block/atlas/tile 诊断、downsample/separable blur filter 诊断、嵌套/同级多 glass 采样稳定性。
-- 背包页覆盖：hotbar/backpack 网格、自定义格子绘制与返回按钮交互。
+- 背包页覆盖：hotbar/backpack 网格、自定义格子绘制、返回按钮交互，以及真实迁移验证卡；迁移验证卡组合可点击 transition 卡片、toggle 控件、overflow auto 文本、absolute 角标、fixed 提示和 inline pill，用于在非 Smoke 页面验证动画、控件、定位、滚动、inline 与缓存路径组合。
 
 ## 清退边界
 
@@ -148,7 +148,7 @@
 
 - CSS transition / animation MVP 已完成游戏内收口验收：transition、keyframe、forwards fill 均具备 Smoke 可见诊断路径，`WIDTH/HEIGHT/MARGIN_LEFT/MARGIN_RIGHT/PADDING_LEFT/PADDING_RIGHT` layout 动画已完成纯 JVM、Smoke 探针、游戏内视觉、诊断与缓存边界验收。
 - 下一阶段暂停继续扩展动画属性和动画诊断显示；若后续确需新增 layout-affecting 属性，必须重新证明必要性，并继续限制在少量可控属性与明确 fallback。
-- 短期优先转向真实页面/控件迁移验证：选择一个非 Smoke 小页面使用当前 HTML-like 动画、控件、滚动、fixed/absolute、inline 与缓存能力，暴露真实组合问题；其次再评估 dirty subtree / 细粒度缓存或 effect chain 后续优化。
+- 真实页面/控件迁移验证已从 `inventory_overview` 背包页起步：该页新增真实迁移验证卡，覆盖 HTML-like 动画、控件、滚动、fixed/absolute、inline 与缓存路径组合；后续优先在该页或其他非 Smoke 小页面继续暴露真实组合问题，其次再评估 dirty subtree / 细粒度缓存或 effect chain 后续优化。
 - 不一次性开放全量布局动画。
 - paint/effect 动画不能触发布局；layout 动画可以重布局，但结束后必须恢复静态缓存。
 - inline formatting、effect chain、snapshot atlas 和 blur/filter 优化只在阻塞动画探针、真实页面迁移或控件展示时优先处理。
