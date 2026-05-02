@@ -1,5 +1,9 @@
 package club.heiqi.uilib.client;
 
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.List;
+
 import club.heiqi.uilib.ui.inventory.InventorySlotSnapshot;
 import club.heiqi.uilib.ui.screen.InventoryOverviewModel;
 import club.heiqi.uilib.ui.screen.InventoryOverviewSlotContentProvider;
@@ -7,6 +11,7 @@ import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.inventory.GuiInventory;
 import net.minecraft.entity.player.InventoryPlayer;
 import net.minecraft.item.ItemStack;
+import net.minecraft.util.EnumChatFormatting;
 
 /**
  * 基于 Minecraft 客户端状态的背包诊断页模型。
@@ -53,6 +58,62 @@ public class MinecraftInventoryOverviewModel implements InventoryOverviewModel {
     }
 
     @Override
+    public int getSelectedHotbarSlotIndex() {
+        InventoryPlayer inventory = getPlayerInventory();
+        if (inventory == null || inventory.currentItem < 0 || inventory.currentItem >= HOTBAR_SLOT_COUNT) {
+            return -1;
+        }
+        return inventory.currentItem;
+    }
+
+    @Override
+    public InventorySlotSnapshot getCarriedSlotSnapshot() {
+        InventoryPlayer inventory = getPlayerInventory();
+        return inventory == null ? InventorySlotSnapshot.empty()
+                : InventorySlotSnapshot.fromRuntimeStack(inventory.getItemStack());
+    }
+
+    @Override
+    public List<String> getSlotTooltip(boolean hotbar, int localIndex) {
+        ItemStack stack = getStackAt(hotbar ? HOTBAR_START_SLOT : BACKPACK_START_SLOT, localIndex);
+        Minecraft minecraft = Minecraft.getMinecraft();
+        if (stack == null || stack.getItem() == null || minecraft == null || minecraft.thePlayer == null) {
+            return Collections.emptyList();
+        }
+        List<String> tooltipLines = new ArrayList<String>();
+        List rawLines = stack.getTooltip(minecraft.thePlayer, minecraft.gameSettings.advancedItemTooltips);
+        for (int lineIndex = 0; lineIndex < rawLines.size(); lineIndex++) {
+            Object rawLine = rawLines.get(lineIndex);
+            String line = rawLine == null ? "" : String.valueOf(rawLine);
+            tooltipLines.add(lineIndex == 0 ? stack.getRarity().rarityColor + line
+                    : EnumChatFormatting.GRAY + line);
+        }
+        return tooltipLines;
+    }
+
+    @Override
+    public boolean handleSlotClick(boolean hotbar, int localIndex, int button) {
+        Minecraft minecraft = Minecraft.getMinecraft();
+        if (minecraft == null || minecraft.thePlayer == null || minecraft.playerController == null) {
+            return false;
+        }
+        if (minecraft.thePlayer.inventoryContainer == null) {
+            return false;
+        }
+        if (button != 0 && button != 1) {
+            return false;
+        }
+
+        int containerSlotId = resolveContainerSlotId(hotbar, localIndex);
+        if (containerSlotId < 0 && localIndex >= 0) {
+            return false;
+        }
+        minecraft.playerController.windowClick(minecraft.thePlayer.inventoryContainer.windowId, containerSlotId,
+                button, 0, minecraft.thePlayer);
+        return true;
+    }
+
+    @Override
     public void returnToVanillaInventory() {
         Minecraft minecraft = Minecraft.getMinecraft();
         if (minecraft == null) {
@@ -87,6 +148,16 @@ public class MinecraftInventoryOverviewModel implements InventoryOverviewModel {
             return null;
         }
         return inventory.mainInventory[slotIndex];
+    }
+
+    private int resolveContainerSlotId(boolean hotbar, int localIndex) {
+        if (localIndex < 0) {
+            return -999;
+        }
+        if (hotbar) {
+            return localIndex >= 0 && localIndex < HOTBAR_SLOT_COUNT ? 36 + localIndex : -1;
+        }
+        return localIndex >= 0 && localIndex < BACKPACK_SLOT_COUNT ? 9 + localIndex : -1;
     }
 
     /**

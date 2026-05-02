@@ -180,6 +180,9 @@ public final class DocumentButtonControl {
         element.setActiveHandler(new DocumentElementActiveHandler() {
             @Override
             public boolean onActiveChanged(DocumentElementActiveEvent event) {
+                if (event.getButton() != 0) {
+                    return false;
+                }
                 active = event.isActive() && enabled;
                 updateVisualState();
                 return true;
@@ -187,6 +190,9 @@ public final class DocumentButtonControl {
         }).setClickHandler(new DocumentElementClickHandler() {
             @Override
             public boolean onClick(DocumentElementClickEvent event) {
+                if (event.getButton() != 0) {
+                    return false;
+                }
                 activate(false, 0, event.getButton(), event.getTimeNanos());
                 return true;
             }

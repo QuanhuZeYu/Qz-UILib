@@ -10,6 +10,8 @@ import org.lwjglx.input.Keyboard;
 
 import club.heiqi.uilib.ui.diagnostic.UiRuntimeStats;
 import club.heiqi.uilib.ui.document.HtmlLikeDocumentWidget;
+import club.heiqi.uilib.ui.dom.DocumentElementClickEvent;
+import club.heiqi.uilib.ui.dom.DocumentElementHoverEvent;
 import club.heiqi.uilib.ui.dom.DocumentNode;
 import club.heiqi.uilib.ui.dom.DocumentNodeType;
 import club.heiqi.uilib.ui.dom.ElementNode;
@@ -51,8 +53,8 @@ public class HtmlLikeInventoryOverviewDocumentPageControllerTest {
         Assert.assertFalse(containsText(blockTexts, "inline pill"));
         Assert.assertFalse(containsText(blockTexts, "Inventory fixed hint"));
         Assert.assertTrue(containsText(blockTexts, "窗口 1280x720"));
-        Assert.assertTrue(containsText(blockTexts, "快捷栏占用 3 / 9"));
-        Assert.assertTrue(containsText(blockTexts, "主背包占用 7 / 27"));
+        Assert.assertTrue(containsText(blockTexts, "快捷栏占用 3 / 9。当前持有槽 1"));
+        Assert.assertTrue(containsText(blockTexts, "主背包占用 7 / 27。鼠标携带 空"));
     }
 
     /**
@@ -73,8 +75,8 @@ public class HtmlLikeInventoryOverviewDocumentPageControllerTest {
 
         List<String> labelTextsAfterResize = collectDocumentTexts(fixture.controller.getHtmlLikeDocumentWidget());
         Assert.assertTrue(containsText(labelTextsAfterResize, "窗口 1440x900"));
-        Assert.assertTrue(containsText(labelTextsAfterResize, "快捷栏占用 5 / 9"));
-        Assert.assertTrue(containsText(labelTextsAfterResize, "主背包占用 11 / 27"));
+        Assert.assertTrue(containsText(labelTextsAfterResize, "快捷栏占用 5 / 9。当前持有槽 1"));
+        Assert.assertTrue(containsText(labelTextsAfterResize, "主背包占用 11 / 27。鼠标携带 空"));
 
         fixture.model.hotbarOccupiedCount = 6;
         fixture.model.backpackOccupiedCount = 12;
@@ -83,8 +85,8 @@ public class HtmlLikeInventoryOverviewDocumentPageControllerTest {
 
         List<String> labelTextsBeforeFrame = collectDocumentTexts(fixture.controller.getHtmlLikeDocumentWidget());
         Assert.assertTrue(containsText(labelTextsBeforeFrame, "窗口 1600x960"));
-        Assert.assertTrue(containsText(labelTextsBeforeFrame, "快捷栏占用 6 / 9"));
-        Assert.assertTrue(containsText(labelTextsBeforeFrame, "主背包占用 12 / 27"));
+        Assert.assertTrue(containsText(labelTextsBeforeFrame, "快捷栏占用 6 / 9。当前持有槽 1"));
+        Assert.assertTrue(containsText(labelTextsBeforeFrame, "主背包占用 12 / 27。鼠标携带 空"));
 
         HtmlLikeDocumentWidget widget = fixture.controller.getHtmlLikeDocumentWidget();
         widget.applyLayoutBounds(0, 0, 720, 600);
@@ -94,6 +96,56 @@ public class HtmlLikeInventoryOverviewDocumentPageControllerTest {
                 false, 1L));
 
         Assert.assertEquals(1, fixture.model.returnToVanillaInventoryCalls);
+    }
+
+    /**
+     * 验证背包页会把 slot hover/click 代理到模型，并刷新当前持有槽高亮。
+     */
+    @Test
+    public void shouldProxySlotHoverClickAndSelectedHotbarStateToModel() {
+        TestFixture fixture = new TestFixture();
+
+        fixture.controller.configureDocumentPage();
+        fixture.controller.buildDocument();
+        fixture.controller.afterDocumentBuilt();
+
+        ElementNode hotbarSlot = findFirstSlotInGrid(fixture.controller.getHtmlLikeDocumentWidget(), 0);
+        ElementNode backpackSlot = findFirstSlotInGrid(fixture.controller.getHtmlLikeDocumentWidget(), 1);
+
+        hotbarSlot.getHoverHandler().onHoverChanged(new DocumentElementHoverEvent(hotbarSlot, hotbarSlot, true,
+                0, 0, 1L));
+        Assert.assertEquals(Integer.valueOf(0xDD263349), hotbarSlot.style().getBackgroundColor());
+        hotbarSlot.getClickHandler().onClick(new DocumentElementClickEvent(hotbarSlot, hotbarSlot, 0, 0, 1, 2L));
+        backpackSlot.getClickHandler().onClick(new DocumentElementClickEvent(backpackSlot, backpackSlot, 0, 0, 0,
+                3L));
+
+        Assert.assertEquals("hotbar:0:1", fixture.model.slotClickCalls.get(0));
+        Assert.assertEquals("backpack:0:0", fixture.model.slotClickCalls.get(1));
+        Assert.assertEquals("hotbar:0", fixture.model.tooltipCalls.get(0));
+
+        fixture.model.selectedHotbarSlotIndex = 4;
+        fixture.controller.beforeDocumentFrame();
+        ElementNode selectedHotbarSlot = findSlotInGrid(fixture.controller.getHtmlLikeDocumentWidget(), 0, 4);
+        Assert.assertEquals(Integer.valueOf(0xDD273B20), selectedHotbarSlot.style().getBackgroundColor());
+        Assert.assertTrue(containsText(collectDocumentTexts(fixture.controller.getHtmlLikeDocumentWidget()),
+                "当前持有槽 5"));
+    }
+
+    /**
+     * 验证页面根点击空白区域会代理为丢弃鼠标携带物品的模型操作。
+     */
+    @Test
+    public void shouldProxyRootClickAsOutsideInventoryClick() {
+        TestFixture fixture = new TestFixture();
+
+        fixture.controller.configureDocumentPage();
+        fixture.controller.buildDocument();
+        fixture.controller.afterDocumentBuilt();
+
+        ElementNode root = fixture.controller.getHtmlLikeDocumentWidget().getDocument().getRootElement();
+        root.getClickHandler().onClick(new DocumentElementClickEvent(root, root, 4, 4, 0, 1L));
+
+        Assert.assertEquals(Collections.singletonList("backpack:-1:0"), fixture.model.slotClickCalls);
     }
 
     private static List<String> collectDocumentTexts(HtmlLikeDocumentWidget widget) {
@@ -127,6 +179,31 @@ public class HtmlLikeInventoryOverviewDocumentPageControllerTest {
             }
         }
         return false;
+    }
+
+    private static ElementNode findFirstSlotInGrid(HtmlLikeDocumentWidget widget, int gridIndex) {
+        return findSlotInGrid(widget, gridIndex, 0);
+    }
+
+    private static ElementNode findSlotInGrid(HtmlLikeDocumentWidget widget, int gridIndex, int slotIndex) {
+        List<ElementNode> tables = new ArrayList<ElementNode>();
+        collectElementsByTag(widget.getDocument().getRootElement(), "table", tables);
+        ElementNode table = tables.get(gridIndex);
+        ElementNode body = (ElementNode) table.getChildren().get(1);
+        ElementNode row = (ElementNode) body.getChildren().get(slotIndex / 9);
+        return (ElementNode) row.getChildren().get(slotIndex % 9);
+    }
+
+    private static void collectElementsByTag(DocumentNode node, String tagName, List<ElementNode> elements) {
+        if (node.getNodeType() == DocumentNodeType.ELEMENT) {
+            ElementNode element = (ElementNode) node;
+            if (tagName.equals(element.getTagName())) {
+                elements.add(element);
+            }
+            for (DocumentNode child : element.getChildren()) {
+                collectElementsByTag(child, tagName, elements);
+            }
+        }
     }
 
     private static final class TestFixture {
@@ -219,7 +296,10 @@ public class HtmlLikeInventoryOverviewDocumentPageControllerTest {
 
         private int hotbarOccupiedCount = 3;
         private int backpackOccupiedCount = 7;
+        private int selectedHotbarSlotIndex;
         private int returnToVanillaInventoryCalls;
+        private final List<String> slotClickCalls = new ArrayList<String>();
+        private final List<String> tooltipCalls = new ArrayList<String>();
 
         @Override
         public InventoryOverviewSlotContentProvider getHotbarSlotProvider() {
@@ -239,6 +319,23 @@ public class HtmlLikeInventoryOverviewDocumentPageControllerTest {
         @Override
         public int getBackpackOccupiedCount() {
             return backpackOccupiedCount;
+        }
+
+        @Override
+        public int getSelectedHotbarSlotIndex() {
+            return selectedHotbarSlotIndex;
+        }
+
+        @Override
+        public List<String> getSlotTooltip(boolean hotbar, int localIndex) {
+            tooltipCalls.add((hotbar ? "hotbar" : "backpack") + ":" + localIndex);
+            return Collections.singletonList("Tooltip " + localIndex);
+        }
+
+        @Override
+        public boolean handleSlotClick(boolean hotbar, int localIndex, int button) {
+            slotClickCalls.add((hotbar ? "hotbar" : "backpack") + ":" + localIndex + ":" + button);
+            return true;
         }
 
         @Override

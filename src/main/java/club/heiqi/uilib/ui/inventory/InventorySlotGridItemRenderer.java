@@ -12,4 +12,13 @@ public interface InventorySlotGridItemRenderer {
      * @param slotSnapshots 槽位内容快照
      */
     void renderItems(InventorySlotGridItemGeometry geometry, InventorySlotSnapshot[] slotSnapshots);
+
+    /**
+     * 在鼠标位置绘制当前携带的物品。
+     *
+     * @param carriedSnapshot 当前鼠标携带物品快照
+     * @param mouseX 鼠标 X
+     * @param mouseY 鼠标 Y
+     */
+    default void renderCursorItem(InventorySlotSnapshot carriedSnapshot, int mouseX, int mouseY) {}
 }

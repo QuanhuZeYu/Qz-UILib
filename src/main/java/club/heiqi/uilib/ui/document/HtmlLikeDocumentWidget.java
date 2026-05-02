@@ -16,6 +16,8 @@ import club.heiqi.uilib.ui.dom.DocumentElementClickEvent;
 import club.heiqi.uilib.ui.dom.DocumentElementClickHandler;
 import club.heiqi.uilib.ui.dom.DocumentElementFocusEvent;
 import club.heiqi.uilib.ui.dom.DocumentElementFocusHandler;
+import club.heiqi.uilib.ui.dom.DocumentElementHoverEvent;
+import club.heiqi.uilib.ui.dom.DocumentElementHoverHandler;
 import club.heiqi.uilib.ui.dom.DocumentElementKeyEvent;
 import club.heiqi.uilib.ui.dom.DocumentElementKeyHandler;
 import club.heiqi.uilib.ui.dom.DocumentElementTextInputEvent;
@@ -70,6 +72,7 @@ public final class HtmlLikeDocumentWidget extends Widget {
     private boolean cachedRuntimeViewportRootScrollingEnabled;
     private ElementNode pressedElement;
     private ElementNode focusedElement;
+    private ElementNode hoveredElement;
     private boolean focusedElementFocusVisible;
     private boolean viewportRootScrollingEnabled;
     private boolean cachedLayoutScrollStateUpdated;
@@ -306,12 +309,12 @@ public final class HtmlLikeDocumentWidget extends Widget {
 
     @Override
     public void onMouseDown(UiMouseEvent event) {
-        if (event == null || event.getButton() != 0) {
+        if (event == null) {
             pressedElement = null;
             return;
         }
         DocumentLayoutBox rootBox = resolveInteractiveLayoutBox();
-        if (scrollState.beginScrollbarDrag(rootBox, event.getMouseX() - getAbsoluteX(),
+        if (event.getButton() == 0 && scrollState.beginScrollbarDrag(rootBox, event.getMouseX() - getAbsoluteX(),
                 event.getMouseY() - getAbsoluteY())) {
             pressedElement = null;
             return;
@@ -323,20 +326,23 @@ public final class HtmlLikeDocumentWidget extends Widget {
 
     @Override
     public void onMouseMove(UiMouseEvent event) {
-        if (event == null || !scrollState.isDraggingScrollbar()) {
+        if (event == null) {
             return;
         }
-        scrollState.updateScrollbarDrag(resolveInteractiveLayoutBox(), event.getMouseX() - getAbsoluteX(),
-                event.getMouseY() - getAbsoluteY());
+        updateHoveredElement(findElementAt(event.getMouseX(), event.getMouseY()), event);
+        if (scrollState.isDraggingScrollbar()) {
+            scrollState.updateScrollbarDrag(resolveInteractiveLayoutBox(), event.getMouseX() - getAbsoluteX(),
+                    event.getMouseY() - getAbsoluteY());
+        }
     }
 
     @Override
     public void onMouseUp(UiMouseEvent event) {
-        if (event == null || event.getButton() != 0) {
+        if (event == null) {
             pressedElement = null;
             return;
         }
-        if (scrollState.endScrollbarDrag()) {
+        if (event.getButton() == 0 && scrollState.endScrollbarDrag()) {
             pressedElement = null;
             return;
         }
@@ -366,8 +372,14 @@ public final class HtmlLikeDocumentWidget extends Widget {
     }
 
     @Override
+    public void onMouseLeave() {
+        updateHoveredElement(null, null);
+    }
+
+    @Override
     public void onFocusChanged(boolean focused) {
         if (!focused) {
+            updateHoveredElement(null, null);
             focusElement(null, false);
         }
     }
@@ -689,6 +701,40 @@ public final class HtmlLikeDocumentWidget extends Widget {
             DocumentElementActiveEvent activeEvent = new DocumentElementActiveEvent(target, currentElement, active,
                     event.getButton(), event.getTimeNanos());
             if (activeHandler.onActiveChanged(activeEvent)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private void updateHoveredElement(ElementNode nextHoveredElement, UiMouseEvent event) {
+        ElementNode resolvedElement = nextHoveredElement != null && isElementAttachedToDocument(nextHoveredElement)
+                ? nextHoveredElement : null;
+        if (hoveredElement == resolvedElement) {
+            return;
+        }
+        ElementNode previousElement = hoveredElement;
+        hoveredElement = resolvedElement;
+        dispatchHoverChanged(previousElement, false, event);
+        dispatchHoverChanged(hoveredElement, true, event);
+    }
+
+    private boolean dispatchHoverChanged(ElementNode target, boolean hovered, UiMouseEvent event) {
+        if (target == null) {
+            return false;
+        }
+        int documentX = event == null ? -1 : event.getMouseX() - getAbsoluteX();
+        int documentY = event == null ? -1 : event.getMouseY() - getAbsoluteY();
+        long timeNanos = event == null ? 0L : event.getTimeNanos();
+        for (DocumentNode current = target; current instanceof ElementNode; current = current.getParent()) {
+            ElementNode currentElement = (ElementNode) current;
+            DocumentElementHoverHandler hoverHandler = currentElement.getHoverHandler();
+            if (hoverHandler == null) {
+                continue;
+            }
+            DocumentElementHoverEvent hoverEvent = new DocumentElementHoverEvent(target, currentElement, hovered,
+                    documentX, documentY, timeNanos);
+            if (hoverHandler.onHoverChanged(hoverEvent)) {
                 return true;
             }
         }

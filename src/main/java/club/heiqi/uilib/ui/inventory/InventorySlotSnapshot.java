@@ -14,10 +14,14 @@ public final class InventorySlotSnapshot {
 
     private final boolean occupied;
     private final ItemStack runtimeStack;
+    private final String displayName;
+    private final int stackSize;
 
     private InventorySlotSnapshot(boolean occupied, ItemStack runtimeStack) {
         this.occupied = occupied;
         this.runtimeStack = runtimeStack;
+        this.displayName = runtimeStack == null ? "" : runtimeStack.getDisplayName();
+        this.stackSize = runtimeStack == null ? 0 : Math.max(0, runtimeStack.stackSize);
     }
 
     /**
@@ -61,6 +65,24 @@ public final class InventorySlotSnapshot {
      */
     public boolean isOccupied() {
         return occupied;
+    }
+
+    /**
+     * 获取槽位物品显示名。
+     *
+     * @return 物品显示名；空槽或无运行时物品时为空字符串
+     */
+    public String getDisplayName() {
+        return displayName;
+    }
+
+    /**
+     * 获取槽位物品堆叠数量。
+     *
+     * @return 堆叠数量；空槽或无运行时物品时为 0
+     */
+    public int getStackSize() {
+        return stackSize;
     }
 
     /**

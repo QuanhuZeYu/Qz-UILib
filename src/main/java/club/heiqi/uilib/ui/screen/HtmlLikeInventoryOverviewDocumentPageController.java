@@ -1,7 +1,10 @@
 package club.heiqi.uilib.ui.screen;
 
+import java.util.List;
 import java.util.Objects;
 
+import club.heiqi.uilib.ui.dom.DocumentElementClickEvent;
+import club.heiqi.uilib.ui.dom.DocumentElementClickHandler;
 import club.heiqi.uilib.ui.document.HtmlLikeDocumentWidget;
 import club.heiqi.uilib.ui.dom.ElementNode;
 import club.heiqi.uilib.ui.dom.TextNode;
@@ -40,6 +43,8 @@ final class HtmlLikeInventoryOverviewDocumentPageController extends DocumentPage
 
     private int lastHotbarUsed = -1;
     private int lastBackpackUsed = -1;
+    private int lastSelectedHotbarSlot = -2;
+    private boolean lastCarriedSlotOccupied = true;
     private int lastHostWidth = -1;
     private int lastHostHeight = -1;
 
@@ -83,6 +88,15 @@ final class HtmlLikeInventoryOverviewDocumentPageController extends DocumentPage
                 .setOverflowX(UiOverflow.HIDDEN)
                 .setOverflowY(UiOverflow.AUTO)
                 .setTextColor(BODY_COLOR);
+        root.setClickHandler(new DocumentElementClickHandler() {
+            @Override
+            public boolean onClick(DocumentElementClickEvent event) {
+                if (event.getButton() != 0 && event.getButton() != 1) {
+                    return false;
+                }
+                return model.handleSlotClick(false, -1, event.getButton());
+            }
+        });
 
         TextNode overviewMetrics = appendHero(document, root);
 
@@ -228,6 +242,18 @@ final class HtmlLikeInventoryOverviewDocumentPageController extends DocumentPage
                         return isHotbar ? model.getHotbarSlotProvider().getSlotSnapshot(localIndex)
                                 : model.getBackpackSlotProvider().getSlotSnapshot(localIndex);
                     }
+                })
+                .setSlotClickHandler(new DocumentInventorySlotGridControl.SlotClickHandler() {
+                    @Override
+                    public boolean onSlotClick(int localIndex, int button, long timeNanos) {
+                        return model.handleSlotClick(isHotbar, localIndex, button);
+                    }
+                })
+                .setSlotTooltipProvider(new DocumentInventorySlotGridControl.SlotTooltipProvider() {
+                    @Override
+                    public List<String> getSlotTooltip(int localIndex) {
+                        return model.getSlotTooltip(isHotbar, localIndex);
+                    }
                 });
         if (documentUi.getRuntimeAdapters().getInventorySlotGridItemRenderer() != null) {
             grid.setItemRenderer(documentUi.getRuntimeAdapters().getInventorySlotGridItemRenderer());
@@ -270,9 +296,20 @@ final class HtmlLikeInventoryOverviewDocumentPageController extends DocumentPage
     private void refreshMetrics() {
         int hotbarUsed = model.getHotbarOccupiedCount();
         int backpackUsed = model.getBackpackOccupiedCount();
+        int selectedHotbarSlot = model.getSelectedHotbarSlotIndex();
+        InventorySlotSnapshot carriedSlotSnapshot = model.getCarriedSlotSnapshot();
+        boolean carriedSlotOccupied = carriedSlotSnapshot != null && carriedSlotSnapshot.isOccupied();
         int hostWidth = runtimeView.getHostWidth();
         int hostHeight = runtimeView.getHostHeight();
+        int previousHotbarUsed = lastHotbarUsed;
+        int previousBackpackUsed = lastBackpackUsed;
+        int previousSelectedHotbarSlot = lastSelectedHotbarSlot;
+        boolean previousCarriedSlotOccupied = lastCarriedSlotOccupied;
 
+        hotbarGrid.setSelectedSlotIndex(selectedHotbarSlot)
+                .setCarriedSnapshot(carriedSlotSnapshot);
+        backpackGrid.setSelectedSlotIndex(-1)
+                .setCarriedSnapshot(carriedSlotSnapshot);
         hotbarGrid.refreshSlotStates();
         backpackGrid.refreshSlotStates();
 
@@ -283,13 +320,27 @@ final class HtmlLikeInventoryOverviewDocumentPageController extends DocumentPage
             lastHostWidth = hostWidth;
             lastHostHeight = hostHeight;
         }
-        if (hotbarMetricsText != null && lastHotbarUsed != hotbarUsed) {
-            hotbarMetricsText.setText("快捷栏占用 " + hotbarUsed + " / 9。");
+        if (hotbarMetricsText != null
+                && (previousHotbarUsed != hotbarUsed || previousSelectedHotbarSlot != selectedHotbarSlot)) {
+            hotbarMetricsText.setText("快捷栏占用 " + hotbarUsed + " / 9。当前持有槽 "
+                    + formatSelectedHotbarSlot(selectedHotbarSlot) + "。");
             lastHotbarUsed = hotbarUsed;
+            lastSelectedHotbarSlot = selectedHotbarSlot;
         }
-        if (backpackMetricsText != null && lastBackpackUsed != backpackUsed) {
-            backpackMetricsText.setText("主背包占用 " + backpackUsed + " / 27。");
+        if (backpackMetricsText != null
+                && (previousBackpackUsed != backpackUsed || previousCarriedSlotOccupied != carriedSlotOccupied)) {
+            backpackMetricsText.setText("主背包占用 " + backpackUsed + " / 27。鼠标携带 "
+                    + formatCarriedSlotState(carriedSlotOccupied) + "。");
             lastBackpackUsed = backpackUsed;
+            lastCarriedSlotOccupied = carriedSlotOccupied;
         }
+    }
+
+    private static String formatSelectedHotbarSlot(int selectedHotbarSlot) {
+        return selectedHotbarSlot >= 0 ? String.valueOf(selectedHotbarSlot + 1) : "无";
+    }
+
+    private static String formatCarriedSlotState(boolean carriedSlotOccupied) {
+        return carriedSlotOccupied ? "物品" : "空";
     }
 }

@@ -16,6 +16,7 @@ public final class MinecraftInventorySlotGridItemRenderer implements InventorySl
     private static final int VANILLA_ITEM_ICON_SIZE = 16;
     private static final int MAX_RENDERED_ITEM_ICON_SIZE = 24;
     private static final int ITEM_ICON_PADDING = 12;
+    private static final int CURSOR_ITEM_ICON_SIZE = 24;
 
     private final RenderItem itemRenderer = new RenderItem();
 
@@ -51,6 +52,38 @@ public final class MinecraftInventorySlotGridItemRenderer implements InventorySl
                 int itemY = geometry.getSlotTop(slotIndex) + Math.max(0, (geometry.getSlotSize() - itemIconSize) / 2);
                 renderScaledItem(minecraft, stack, itemX, itemY, itemIconSize);
             }
+        } finally {
+            itemRenderer.zLevel = 0.0F;
+            RenderHelper.disableStandardItemLighting();
+            GL11.glDisable(GL11.GL_LIGHTING);
+            GL11.glDisable(GL12.GL_RESCALE_NORMAL);
+            GL11.glDisable(GL11.GL_DEPTH_TEST);
+            GL11.glPopMatrix();
+        }
+    }
+
+    @Override
+    public void renderCursorItem(InventorySlotSnapshot carriedSnapshot, int mouseX, int mouseY) {
+        if (carriedSnapshot == null || !carriedSnapshot.isOccupied()) {
+            return;
+        }
+
+        ItemStack stack = carriedSnapshot.getRuntimeStack();
+        if (stack == null || stack.getItem() == null) {
+            return;
+        }
+
+        Minecraft minecraft = Minecraft.getMinecraft();
+        GL11.glPushMatrix();
+        try {
+            GL11.glEnable(GL11.GL_DEPTH_TEST);
+            GL11.glEnable(GL12.GL_RESCALE_NORMAL);
+            GL11.glEnable(GL11.GL_LIGHTING);
+            RenderHelper.enableGUIStandardItemLighting();
+            GL11.glColor4f(1.0F, 1.0F, 1.0F, 1.0F);
+            itemRenderer.zLevel = 220.0F;
+            renderScaledItem(minecraft, stack, mouseX - CURSOR_ITEM_ICON_SIZE / 2, mouseY - CURSOR_ITEM_ICON_SIZE / 2,
+                    CURSOR_ITEM_ICON_SIZE);
         } finally {
             itemRenderer.zLevel = 0.0F;
             RenderHelper.disableStandardItemLighting();

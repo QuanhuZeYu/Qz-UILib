@@ -23,6 +23,7 @@ public final class ElementNode extends DocumentNode {
     private DocumentElementActiveHandler activeHandler;
     private DocumentElementClickHandler clickHandler;
     private DocumentElementFocusHandler focusHandler;
+    private DocumentElementHoverHandler hoverHandler;
     private DocumentElementKeyHandler keyHandler;
     private DocumentElementTextInputHandler textInputHandler;
     private DocumentCustomRenderer customRenderer;
@@ -235,6 +236,28 @@ public final class ElementNode extends DocumentNode {
      */
     public DocumentElementFocusHandler getFocusHandler() {
         return focusHandler;
+    }
+
+    /**
+     * 设置元素悬停状态处理器。
+     *
+     * <p>事件处理器不影响布局和绘制缓存，因此不会提升文档 mutation version。</p>
+     *
+     * @param hoverHandler 悬停状态处理器；为 null 时清除处理器
+     * @return 当前元素
+     */
+    public ElementNode setHoverHandler(DocumentElementHoverHandler hoverHandler) {
+        this.hoverHandler = hoverHandler;
+        return this;
+    }
+
+    /**
+     * 返回元素悬停状态处理器。
+     *
+     * @return 悬停状态处理器；不存在时返回 null
+     */
+    public DocumentElementHoverHandler getHoverHandler() {
+        return hoverHandler;
     }
 
     /**

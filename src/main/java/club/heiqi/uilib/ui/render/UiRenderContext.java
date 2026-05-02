@@ -49,6 +49,7 @@ public class UiRenderContext {
     private final UiMainLayerSnapshotService mainLayerSnapshotService;
     private final Deque<ClipState> clipStack = new ArrayDeque<ClipState>();
     private final List<DeferredPostMainPass> deferredPostMainPasses = new ArrayList<DeferredPostMainPass>();
+    private final List<DeferredPostMainPass> deferredPostMainOverlayPasses = new ArrayList<DeferredPostMainPass>();
     private String pendingBackdropFallbackDetail;
     private int mainLayerContentRevision;
 
@@ -749,12 +750,23 @@ public class UiRenderContext {
     }
 
     /**
+     * 延迟登记一批主渲染后的顶层 overlay 回放动作。
+     *
+     * <p>该路径用于 tooltip、鼠标携带物品这类应覆盖在页面内容之上、且不应被槽位卡片局部裁剪的运行时叠层。</p>
+     *
+     * @param replay 主渲染完成后要回放的顶层动作
+     */
+    public void enqueueDeferredPostMainOverlayPass(DeferredPostMainPassReplay replay) {
+        deferredPostMainOverlayPasses.add(new DeferredPostMainPass(Objects.requireNonNull(replay, "replay"), null));
+    }
+
+    /**
      * 判断当前帧是否存在待回放的主后置补充绘制。
      *
      * @return 是否存在延迟回放
      */
     public boolean hasDeferredPostMainPasses() {
-        return !deferredPostMainPasses.isEmpty();
+        return !deferredPostMainPasses.isEmpty() || !deferredPostMainOverlayPasses.isEmpty();
     }
 
     /**
@@ -763,11 +775,13 @@ public class UiRenderContext {
      * @return 当前帧延迟回放列表
      */
     public List<DeferredPostMainPass> drainDeferredPostMainPasses() {
-        if (deferredPostMainPasses.isEmpty()) {
+        if (deferredPostMainPasses.isEmpty() && deferredPostMainOverlayPasses.isEmpty()) {
             return Collections.emptyList();
         }
         List<DeferredPostMainPass> drainedPasses = new ArrayList<DeferredPostMainPass>(deferredPostMainPasses);
+        drainedPasses.addAll(deferredPostMainOverlayPasses);
         deferredPostMainPasses.clear();
+        deferredPostMainOverlayPasses.clear();
         return drainedPasses;
     }
 

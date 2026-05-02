@@ -221,6 +221,9 @@ public final class DocumentToggleSwitchControl {
         element.setClickHandler(new DocumentElementClickHandler() {
             @Override
             public boolean onClick(DocumentElementClickEvent event) {
+                if (event.getButton() != 0) {
+                    return false;
+                }
                 toggle(false);
                 return true;
             }

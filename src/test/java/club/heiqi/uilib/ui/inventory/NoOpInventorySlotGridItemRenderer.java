@@ -7,4 +7,7 @@ public final class NoOpInventorySlotGridItemRenderer implements InventorySlotGri
 
     @Override
     public void renderItems(InventorySlotGridItemGeometry geometry, InventorySlotSnapshot[] slotSnapshots) {}
+
+    @Override
+    public void renderCursorItem(InventorySlotSnapshot carriedSnapshot, int mouseX, int mouseY) {}
 }
