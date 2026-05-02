@@ -8,10 +8,10 @@ import java.util.Iterator;
 import java.util.List;
 import java.util.Objects;
 
-import net.minecraft.client.gui.Gui;
 import net.minecraft.client.renderer.Tessellator;
 import org.lwjgl.opengl.GL11;
 import org.lwjgl.opengl.GL13;
+import org.lwjgl.opengl.GL14;
 import org.lwjgl.opengl.GL20;
 import org.lwjgl.opengl.GL30;
 
@@ -482,7 +482,20 @@ public class UiRenderContext {
      * @param color ARGB 颜色
      */
     public void fillRect(int left, int top, int right, int bottom, int color) {
-        Gui.drawRect(left, top, right, bottom, color);
+        applyColor(color);
+        GL11.glEnable(GL11.GL_BLEND);
+        GL14.glBlendFuncSeparate(GL11.GL_SRC_ALPHA, GL11.GL_ONE_MINUS_SRC_ALPHA,
+                GL11.GL_ONE, GL11.GL_ONE_MINUS_SRC_ALPHA);
+        GL11.glDisable(GL11.GL_TEXTURE_2D);
+        Tessellator tessellator = Tessellator.instance;
+        tessellator.startDrawingQuads();
+        tessellator.addVertex(right, bottom, 0.0D);
+        tessellator.addVertex(right, top, 0.0D);
+        tessellator.addVertex(left, top, 0.0D);
+        tessellator.addVertex(left, bottom, 0.0D);
+        tessellator.draw();
+        GL11.glEnable(GL11.GL_TEXTURE_2D);
+        GL11.glColor4f(1.0F, 1.0F, 1.0F, 1.0F);
         notifyMainLayerContentChanged();
     }
 
@@ -933,7 +946,8 @@ public class UiRenderContext {
     private void fillRoundedRect(int left, int top, int right, int bottom, int radius, int cornerMask, int color) {
         applyColor(color);
         GL11.glEnable(GL11.GL_BLEND);
-        GL11.glBlendFunc(GL11.GL_SRC_ALPHA, GL11.GL_ONE_MINUS_SRC_ALPHA);
+        GL14.glBlendFuncSeparate(GL11.GL_SRC_ALPHA, GL11.GL_ONE_MINUS_SRC_ALPHA,
+                GL11.GL_ONE, GL11.GL_ONE_MINUS_SRC_ALPHA);
         GL11.glDisable(GL11.GL_TEXTURE_2D);
         drawRoundedRectGeometry(left, top, right, bottom, radius, true, cornerMask);
         GL11.glEnable(GL11.GL_TEXTURE_2D);
@@ -944,7 +958,8 @@ public class UiRenderContext {
     private void drawRoundedBorder(int left, int top, int right, int bottom, int radius, int cornerMask, int color) {
         applyColor(color);
         GL11.glEnable(GL11.GL_BLEND);
-        GL11.glBlendFunc(GL11.GL_SRC_ALPHA, GL11.GL_ONE_MINUS_SRC_ALPHA);
+        GL14.glBlendFuncSeparate(GL11.GL_SRC_ALPHA, GL11.GL_ONE_MINUS_SRC_ALPHA,
+                GL11.GL_ONE, GL11.GL_ONE_MINUS_SRC_ALPHA);
         GL11.glDisable(GL11.GL_TEXTURE_2D);
         GL11.glLineWidth(1.0F);
         GL11.glBegin(GL11.GL_LINE_LOOP);

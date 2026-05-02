@@ -1,5 +1,8 @@
 package club.heiqi.uilib.ui.dom.control;
 
+import java.util.ArrayList;
+import java.util.List;
+
 import club.heiqi.uilib.ui.dom.ElementNode;
 import club.heiqi.uilib.ui.dom.UiDocument;
 import club.heiqi.uilib.ui.inventory.InventorySlotGridItemGeometry;
@@ -8,13 +11,17 @@ import club.heiqi.uilib.ui.inventory.InventorySlotGridLayout;
 import club.heiqi.uilib.ui.inventory.InventorySlotSnapshot;
 import club.heiqi.uilib.ui.paint.DocumentCustomRenderer;
 import club.heiqi.uilib.ui.render.UiRenderContext;
+import club.heiqi.uilib.ui.style.UiDisplay;
+import club.heiqi.uilib.ui.style.UiFlexDirection;
+import club.heiqi.uilib.ui.style.UiOverflow;
 import club.heiqi.uilib.ui.style.UiStyleLength;
-import club.heiqi.uilib.ui.theme.UiSurfaceStyle;
 
 /**
  * 基于 HTML-like 元素实现的只读背包格子网格控件适配器。
  */
 public final class DocumentInventorySlotGridControl {
+
+    private static final int SLOT_BORDER_WIDTH = 1;
 
     /**
      * 槽位内容数据源合约。
@@ -23,7 +30,9 @@ public final class DocumentInventorySlotGridControl {
         InventorySlotSnapshot getSlotSnapshot(int localIndex);
     }
 
+    private final UiDocument document;
     private final ElementNode element;
+    private final List<ElementNode> slotElements = new ArrayList<ElementNode>();
     private final int slotCount;
     private final int preferredColumns;
     private SlotContentProvider contentProvider;
@@ -32,10 +41,11 @@ public final class DocumentInventorySlotGridControl {
     private int preferredSlotSize = 34;
     private int minSlotSize = 22;
     private int maxSlotSize = 46;
-    private int emptySlotFillColor = 0xFF171C24;
+    private int emptySlotFillColor = 0xAA171C24;
     private int emptySlotBorderColor = 0xFF465468;
-    private int occupiedSlotFillColor = 0xFF202A38;
+    private int occupiedSlotFillColor = 0xCC202A38;
     private int occupiedSlotBorderColor = 0xFF9AB8F2;
+    private InventorySlotGridLayout currentLayout;
     private boolean layoutDirty = true;
 
     /**
@@ -46,6 +56,7 @@ public final class DocumentInventorySlotGridControl {
      * @param preferredColumns 期望列数
      */
     public DocumentInventorySlotGridControl(UiDocument document, int slotCount, int preferredColumns) {
+        this.document = document;
         this.slotCount = Math.max(0, slotCount);
         this.preferredColumns = Math.max(1, preferredColumns);
         this.element = document.div();
@@ -59,6 +70,7 @@ public final class DocumentInventorySlotGridControl {
 
     public DocumentInventorySlotGridControl setContentProvider(SlotContentProvider contentProvider) {
         this.contentProvider = contentProvider;
+        refreshSlotStates();
         return this;
     }
 
@@ -96,6 +108,7 @@ public final class DocumentInventorySlotGridControl {
         this.emptySlotBorderColor = emptySlotBorderColor;
         this.occupiedSlotFillColor = occupiedSlotFillColor;
         this.occupiedSlotBorderColor = occupiedSlotBorderColor;
+        refreshSlotStates();
         return this;
     }
 
@@ -109,50 +122,102 @@ public final class DocumentInventorySlotGridControl {
             configureElement();
             layoutDirty = false;
         }
+        refreshSlotStates();
+        return this;
+    }
+
+    /**
+     * 刷新槽位 DOM 表面的占用状态样式。
+     *
+     * @return 当前控件
+     */
+    public DocumentInventorySlotGridControl refreshSlotStates() {
+        if (slotElements.isEmpty()) {
+            return this;
+        }
+        InventorySlotSnapshot[] snapshots = sampleSlotSnapshots();
+        for (int slotIndex = 0; slotIndex < slotElements.size(); slotIndex++) {
+            InventorySlotSnapshot snapshot = slotIndex < snapshots.length
+                    ? snapshots[slotIndex] : InventorySlotSnapshot.empty();
+            applySlotStyle(slotElements.get(slotIndex), snapshot.isOccupied());
+        }
         return this;
     }
 
     private void configureElement() {
-        InventorySlotGridLayout preferredLayout = InventorySlotGridLayout.resolvePreferred(slotCount, preferredColumns,
+        currentLayout = InventorySlotGridLayout.resolvePreferred(slotCount, preferredColumns,
                 slotGap, preferredSlotSize, minSlotSize, maxSlotSize);
         element.style()
-                .setWidth(UiStyleLength.px(preferredLayout.totalWidth))
-                .setHeight(UiStyleLength.px(preferredLayout.totalHeight));
+                .setDisplay(UiDisplay.FLEX)
+                .setFlexDirection(UiFlexDirection.COLUMN)
+                .setRowGap(UiStyleLength.px(slotGap))
+                .setWidth(UiStyleLength.px(currentLayout.totalWidth))
+                .setHeight(UiStyleLength.px(currentLayout.totalHeight));
+        rebuildSlotElements();
         element.setCustomRenderer(new DocumentCustomRenderer() {
             @Override
             public void render(UiRenderContext context, int contentLeft, int contentTop, int contentRight,
                     int contentBottom) {
-                renderSlots(context, contentLeft, contentTop, contentRight - contentLeft);
+                renderItems(context, contentLeft, contentTop);
             }
         });
     }
 
-    private void renderSlots(UiRenderContext context, int absX, int absY, int availableWidth) {
-        if (slotCount <= 0 || availableWidth <= 0) {
+    private void rebuildSlotElements() {
+        slotElements.clear();
+        element.clearChildren();
+        if (slotCount <= 0 || currentLayout == null) {
+            return;
+        }
+
+        int slotIndex = 0;
+        for (int rowIndex = 0; rowIndex < currentLayout.rowCount && slotIndex < slotCount; rowIndex++) {
+            ElementNode rowElement = document.div();
+            rowElement.style()
+                    .setDisplay(UiDisplay.FLEX)
+                    .setFlexDirection(UiFlexDirection.ROW)
+                    .setColumnGap(UiStyleLength.px(slotGap))
+                    .setOverflowX(UiOverflow.HIDDEN)
+                    .setOverflowY(UiOverflow.HIDDEN);
+            element.appendChild(rowElement);
+
+            int rowSlotCount = Math.min(currentLayout.columnCount, slotCount - slotIndex);
+            for (int columnIndex = 0; columnIndex < rowSlotCount; columnIndex++) {
+                ElementNode slotElement = document.div();
+                int slotContentSize = resolveSlotContentSize();
+                slotElement.style()
+                        .setWidth(UiStyleLength.px(slotContentSize))
+                        .setHeight(UiStyleLength.px(slotContentSize))
+                        .setFlexShrink(0.0F)
+                        .setBorderWidth(UiStyleLength.px(SLOT_BORDER_WIDTH))
+                        .setOverflowX(UiOverflow.HIDDEN)
+                        .setOverflowY(UiOverflow.HIDDEN);
+                slotElements.add(slotElement);
+                rowElement.appendChild(slotElement);
+                slotIndex++;
+            }
+        }
+    }
+
+    private int resolveSlotContentSize() {
+        int slotSize = currentLayout == null ? preferredSlotSize : currentLayout.slotSize;
+        return Math.max(0, slotSize - SLOT_BORDER_WIDTH * 2);
+    }
+
+    private void applySlotStyle(ElementNode slotElement, boolean occupied) {
+        slotElement.style()
+                .setBackgroundColor(occupied ? occupiedSlotFillColor : emptySlotFillColor)
+                .setBorderColor(occupied ? occupiedSlotBorderColor : emptySlotBorderColor);
+    }
+
+    private void renderItems(UiRenderContext context, int absX, int absY) {
+        if (slotCount <= 0 || currentLayout == null) {
             return;
         }
         InventorySlotSnapshot[] snapshots = sampleSlotSnapshots();
 
-        InventorySlotGridLayout layout = InventorySlotGridLayout.resolve(slotCount, slotGap, preferredSlotSize,
-                minSlotSize, maxSlotSize, availableWidth);
-        for (int slotIndex = 0; slotIndex < slotCount; slotIndex++) {
-            InventorySlotGridLayout.SlotRect slotRect = layout.getSlotRect(slotIndex);
-            InventorySlotSnapshot snapshot = snapshots[slotIndex];
-            int fillColor = snapshot.isOccupied() ? occupiedSlotFillColor : emptySlotFillColor;
-            int borderColor = snapshot.isOccupied() ? occupiedSlotBorderColor : emptySlotBorderColor;
-            if (fillColor != 0) {
-                context.drawSurface(absX + slotRect.left, absY + slotRect.top,
-                        absX + slotRect.right, absY + slotRect.bottom,
-                        new UiSurfaceStyle(fillColor, 0, 0));
-            }
-            if (borderColor != 0) {
-                renderSlotBorder(context, absX + slotRect.left, absY + slotRect.top,
-                        absX + slotRect.right, absY + slotRect.bottom, borderColor);
-            }
-        }
-
         if (itemRenderer != null && hasOccupiedSlot(snapshots)) {
-            final InventorySlotGridItemGeometry geometry = layout.createItemGeometry(absX, absY, slotCount);
+            final InventorySlotGridItemGeometry geometry = currentLayout.createItemGeometry(absX, absY, slotCount);
             final InventorySlotSnapshot[] capturedSnapshots = snapshots;
             final InventorySlotGridItemRenderer capturedRenderer = itemRenderer;
             context.enqueueDeferredPostMainPass(new UiRenderContext.DeferredPostMainPassReplay() {
@@ -186,18 +251,5 @@ public final class DocumentInventorySlotGridControl {
             }
         }
         return false;
-    }
-
-    private static void renderSlotBorder(UiRenderContext context, int left, int top, int right, int bottom,
-            int borderColor) {
-        int width = right - left;
-        int height = bottom - top;
-        if (width <= 0 || height <= 0) {
-            return;
-        }
-        context.drawSurface(left, top, right, top + 1, new UiSurfaceStyle(0, borderColor, 0));
-        context.drawSurface(left, bottom - 1, right, bottom, new UiSurfaceStyle(0, borderColor, 0));
-        context.drawSurface(left, top, left + 1, bottom, new UiSurfaceStyle(0, borderColor, 0));
-        context.drawSurface(right - 1, top, right, bottom, new UiSurfaceStyle(0, borderColor, 0));
     }
 }

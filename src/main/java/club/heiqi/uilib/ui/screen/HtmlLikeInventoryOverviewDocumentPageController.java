@@ -273,6 +273,9 @@ final class HtmlLikeInventoryOverviewDocumentPageController extends DocumentPage
         int hostWidth = runtimeView.getHostWidth();
         int hostHeight = runtimeView.getHostHeight();
 
+        hotbarGrid.refreshSlotStates();
+        backpackGrid.refreshSlotStates();
+
         if (overviewMetricsText != null
                 && (lastHostWidth != hostWidth || lastHostHeight != hostHeight)) {
             overviewMetricsText.setText("窗口 " + hostWidth + "x" + hostHeight

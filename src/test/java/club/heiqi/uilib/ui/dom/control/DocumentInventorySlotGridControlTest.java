@@ -8,11 +8,17 @@ import org.junit.Assert;
 import org.junit.Test;
 
 import club.heiqi.uilib.ui.document.HtmlLikeDocumentWidget;
+import club.heiqi.uilib.ui.dom.DocumentNode;
 import club.heiqi.uilib.ui.dom.ElementNode;
 import club.heiqi.uilib.ui.dom.UiDocument;
 import club.heiqi.uilib.ui.inventory.InventorySlotGridItemGeometry;
 import club.heiqi.uilib.ui.inventory.InventorySlotGridItemRenderer;
 import club.heiqi.uilib.ui.inventory.InventorySlotSnapshot;
+import club.heiqi.uilib.ui.layout.DocumentLayoutBox;
+import club.heiqi.uilib.ui.layout.DocumentLayoutEngine;
+import club.heiqi.uilib.ui.paint.DocumentPaintCommand;
+import club.heiqi.uilib.ui.paint.DocumentPaintCommandType;
+import club.heiqi.uilib.ui.paint.DocumentPaintEngine;
 import club.heiqi.uilib.ui.render.UiRenderContext;
 import club.heiqi.uilib.ui.style.UiStyleLength;
 import club.heiqi.uilib.ui.text.TextMeasureService;
@@ -51,6 +57,9 @@ public class DocumentInventorySlotGridControlTest {
         widget.render(renderContext);
 
         Assert.assertTrue(renderContext.deferredReplays.isEmpty());
+        List<DocumentPaintCommand> commands = buildPaintCommands(root, 400, 200);
+        Assert.assertEquals(1, countCommands(commands, DocumentPaintCommandType.CUSTOM));
+        Assert.assertTrue(containsCommand(commands, DocumentPaintCommandType.BACKGROUND, 0xAA171C24));
     }
 
     /**
@@ -96,6 +105,7 @@ public class DocumentInventorySlotGridControlTest {
         Assert.assertTrue(receivedSnapshots.get(0)[0].isOccupied());
         Assert.assertFalse(receivedSnapshots.get(0)[1].isOccupied());
         Assert.assertEquals(9, receivedGeometries.get(0).getSlotCount());
+        Assert.assertEquals(1, countCommands(buildPaintCommands(root, 400, 200), DocumentPaintCommandType.CUSTOM));
     }
 
     /**
@@ -148,7 +158,7 @@ public class DocumentInventorySlotGridControlTest {
     }
 
     /**
-     * 验证槽位绘制落在元素内容盒内，不侵入 padding 区域。
+     * 验证槽位 DOM 表面落在元素内容盒内，不侵入 padding 区域。
      */
     @Test
     public void shouldRenderSlotsInsideContentBox() {
@@ -157,7 +167,6 @@ public class DocumentInventorySlotGridControlTest {
         root.style()
                 .setWidth(UiStyleLength.px(200))
                 .setHeight(UiStyleLength.px(100));
-        RecordingUiRenderContext renderContext = new RecordingUiRenderContext();
         DocumentInventorySlotGridControl gridControl = new DocumentInventorySlotGridControl(document, 1, 1)
                 .setPreferredSlotSize(32)
                 .setSlotColors(0xFF111111, 0, 0xFF222222, 0)
@@ -166,26 +175,20 @@ public class DocumentInventorySlotGridControlTest {
                 .setBorderWidth(UiStyleLength.px(1))
                 .setPadding(UiStyleLength.px(10));
         root.append(gridControl.getElement());
-        HtmlLikeDocumentWidget widget = new HtmlLikeDocumentWidget(document, 200, 100,
-                new DeterministicTextMeasureService());
-        widget.applyLayoutBounds(0, 0, 200, 100);
-
-        widget.render(renderContext);
-
-        Assert.assertTrue(containsDrawCall(renderContext.drawCalls, 11, 11, 43, 43, 0xFF111111, 0));
+        Assert.assertTrue(containsCommand(buildPaintCommands(root, 200, 100), DocumentPaintCommandType.BACKGROUND,
+                0xFF111111, 11, 11, 43, 43));
     }
 
     /**
-     * 验证默认槽位底色是不透明颜色，避免背后游戏画面直接穿透。
+     * 验证默认槽位底色仍可保持半透明，并通过标准 DOM 背景命令绘制。
      */
     @Test
-    public void shouldRenderDefaultSlotsWithOpaqueFillColors() {
+    public void shouldRenderDefaultSlotsWithSemiTransparentDomSurfaces() {
         UiDocument document = UiDocument.create();
         ElementNode root = document.getRootElement();
         root.style()
                 .setWidth(UiStyleLength.px(200))
                 .setHeight(UiStyleLength.px(100));
-        RecordingUiRenderContext renderContext = new RecordingUiRenderContext();
         DocumentInventorySlotGridControl gridControl = new DocumentInventorySlotGridControl(document, 2, 2)
                 .setSlotGap(4)
                 .setPreferredSlotSize(32)
@@ -197,26 +200,85 @@ public class DocumentInventorySlotGridControlTest {
                 })
                 .commitLayout();
         root.append(gridControl.getElement());
-        HtmlLikeDocumentWidget widget = new HtmlLikeDocumentWidget(document, 200, 100,
-                new DeterministicTextMeasureService());
-        widget.applyLayoutBounds(0, 0, 200, 100);
 
-        widget.render(renderContext);
+        List<DocumentPaintCommand> commands = buildPaintCommands(root, 200, 100);
 
-        Assert.assertTrue(containsDrawCall(renderContext.drawCalls, 0, 0, 32, 32, 0xFF171C24, 0));
-        Assert.assertTrue(containsDrawCall(renderContext.drawCalls, 36, 0, 68, 32, 0xFF202A38, 0));
+        Assert.assertTrue(containsCommand(commands, DocumentPaintCommandType.BACKGROUND, 0xAA171C24));
+        Assert.assertTrue(containsCommand(commands, DocumentPaintCommandType.BACKGROUND, 0xCC202A38));
+        Assert.assertTrue(containsCommand(commands, DocumentPaintCommandType.BORDER, 0xFF465468));
+        Assert.assertTrue(containsCommand(commands, DocumentPaintCommandType.BORDER, 0xFF9AB8F2));
+        Assert.assertEquals(1, countCommands(commands, DocumentPaintCommandType.CUSTOM));
     }
 
-    private static boolean containsDrawCall(List<DrawCall> drawCalls, int left, int top, int right, int bottom,
-            int fillColor, int borderColor) {
-        for (DrawCall drawCall : drawCalls) {
-            if (drawCall.left == left && drawCall.top == top && drawCall.right == right
-                    && drawCall.bottom == bottom && drawCall.surfaceStyle.fillColor == fillColor
-                    && drawCall.surfaceStyle.borderColor == borderColor) {
+    /**
+     * 验证槽位表面由普通文档流子元素组成，而不是自定义绘制器直接画格子。
+     */
+    @Test
+    public void shouldBuildSlotCellsAsFlowDomElements() {
+        UiDocument document = UiDocument.create();
+        DocumentInventorySlotGridControl gridControl = new DocumentInventorySlotGridControl(document, 10, 9)
+                .setSlotGap(4)
+                .setPreferredSlotSize(32)
+                .setContentProvider(new DocumentInventorySlotGridControl.SlotContentProvider() {
+                    @Override
+                    public InventorySlotSnapshot getSlotSnapshot(int localIndex) {
+                        return localIndex == 0 ? InventorySlotSnapshot.occupied() : InventorySlotSnapshot.empty();
+                    }
+                })
+                .commitLayout();
+
+        Assert.assertEquals(2, gridControl.getElement().getChildCount());
+        ElementNode firstRow = (ElementNode) gridControl.getElement().getChildren().get(0);
+        ElementNode firstSlot = (ElementNode) firstRow.getChildren().get(0);
+        ElementNode secondSlot = (ElementNode) firstRow.getChildren().get(1);
+
+        Assert.assertEquals(9, firstRow.getChildCount());
+        Assert.assertEquals(Integer.valueOf(0xCC202A38), firstSlot.style().getBackgroundColor());
+        Assert.assertEquals(Integer.valueOf(0xFF9AB8F2), firstSlot.style().getBorderColor());
+        Assert.assertEquals(Integer.valueOf(0xAA171C24), secondSlot.style().getBackgroundColor());
+        Assert.assertEquals(Integer.valueOf(0xFF465468), secondSlot.style().getBorderColor());
+        Assert.assertEquals(UiStyleLength.px(30), firstSlot.style().getWidth());
+        Assert.assertEquals(UiStyleLength.px(30), firstSlot.style().getHeight());
+        for (DocumentNode rowNode : gridControl.getElement().getChildren()) {
+            Assert.assertTrue(rowNode instanceof ElementNode);
+        }
+    }
+
+    private static List<DocumentPaintCommand> buildPaintCommands(ElementNode root, int width, int height) {
+        DocumentLayoutBox rootBox = DocumentLayoutEngine.layout(root, width, height,
+                new DeterministicTextMeasureService());
+        return DocumentPaintEngine.buildPaintCommands(rootBox);
+    }
+
+    private static boolean containsCommand(List<DocumentPaintCommand> commands, DocumentPaintCommandType type,
+            int color) {
+        for (DocumentPaintCommand command : commands) {
+            if (command.getType() == type && command.getColor() == color) {
                 return true;
             }
         }
         return false;
+    }
+
+    private static boolean containsCommand(List<DocumentPaintCommand> commands, DocumentPaintCommandType type,
+            int color, int left, int top, int right, int bottom) {
+        for (DocumentPaintCommand command : commands) {
+            if (command.getType() == type && command.getColor() == color && command.getLeft() == left
+                    && command.getTop() == top && command.getRight() == right && command.getBottom() == bottom) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private static int countCommands(List<DocumentPaintCommand> commands, DocumentPaintCommandType type) {
+        int count = 0;
+        for (DocumentPaintCommand command : commands) {
+            if (command.getType() == type) {
+                count++;
+            }
+        }
+        return count;
     }
 
     /**
