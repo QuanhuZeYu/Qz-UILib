@@ -121,6 +121,11 @@ final class HtmlLikeSmokeDocumentPageController extends DocumentPageController {
                 .setFloatStop(DocumentAnimationProperty.OPACITY, 0.5F, 0.45F)
                 .setFloatStop(DocumentAnimationProperty.OPACITY, 1.0F, 1.0F)
                 .build());
+        document.registerKeyframes(DocumentKeyframes.named("layoutFillProbe")
+                .setFloatStop(DocumentAnimationProperty.WIDTH, 0.0F, 92.0F)
+                .setFloatStop(DocumentAnimationProperty.WIDTH, 0.5F, 174.0F)
+                .setFloatStop(DocumentAnimationProperty.WIDTH, 1.0F, 144.0F)
+                .build());
         ElementNode root = document.getRootElement();
         root.style()
                 .setPadding(UiStyleLength.px(14))
@@ -713,7 +718,7 @@ final class HtmlLikeSmokeDocumentPageController extends DocumentPageController {
             AnimationRuntimeDiagnostics animationRuntimeDiagnostics) {
         ElementNode probe = document.div();
         probe.style()
-                .setHeight(UiStyleLength.px(264))
+                .setHeight(UiStyleLength.px(328))
                 .setMargin(UiStyleInsets.of(UiStyleLength.px(12), UiStyleLength.px(0), UiStyleLength.px(0),
                         UiStyleLength.px(0)))
                 .setPadding(UiStyleLength.px(10))
@@ -724,7 +729,7 @@ final class HtmlLikeSmokeDocumentPageController extends DocumentPageController {
                 .setTextColor(0xFFDBEAFE)
                 .setOverflowX(UiOverflow.HIDDEN)
                 .setOverflowY(UiOverflow.HIDDEN);
-        probe.appendText("Layout animation probe: click cards; width/height, margin and padding push siblings.");
+        probe.appendText("Layout animation probe: click cards; transition/keyframe/fill push siblings.");
         root.append(probe);
 
         ElementNode coveredProperties = document.div();
@@ -957,6 +962,68 @@ final class HtmlLikeSmokeDocumentPageController extends DocumentPageController {
                 .setOverflowY(UiOverflow.HIDDEN);
         paddingSibling.appendText("Padding sibling shifts from padding");
         paddingRow.append(paddingSibling);
+
+        ElementNode keyframeRow = document.div();
+        keyframeRow.style()
+                .setHeight(UiStyleLength.px(56))
+                .setDisplay(UiDisplay.FLEX)
+                .setFlexDirection(UiFlexDirection.ROW)
+                .setAlignItems(UiAlignItems.CENTER)
+                .setColumnGap(UiStyleLength.px(10))
+                .setMargin(UiStyleInsets.of(UiStyleLength.px(8), UiStyleLength.px(0), UiStyleLength.px(0),
+                        UiStyleLength.px(0)))
+                .setOverflowX(UiOverflow.HIDDEN)
+                .setOverflowY(UiOverflow.HIDDEN);
+        probe.append(keyframeRow);
+
+        final ElementNode keyframeCard = document.div();
+        keyframeCard.style()
+                .setWidth(UiStyleLength.px(92))
+                .setHeight(UiStyleLength.px(30))
+                .setFlexShrink(0.0F)
+                .setPadding(UiStyleLength.px(7))
+                .setBackgroundColor(0xFF0F766E)
+                .setBorderColor(0xFF99F6E4)
+                .setBorderWidth(UiStyleLength.px(1))
+                .setBorderRadius(UiStyleLength.px(12))
+                .setTextColor(0xFFE6FFFA)
+                .setOverflowX(UiOverflow.HIDDEN)
+                .setOverflowY(UiOverflow.HIDDEN);
+        final TextNode keyframeLabel = keyframeCard.appendText("Keyframe card: idle");
+        final boolean[] keyframeStarted = new boolean[] { false };
+        keyframeCard.setClickHandler(new DocumentElementClickHandler() {
+            @Override
+            public boolean onClick(DocumentElementClickEvent event) {
+                keyframeStarted[0] = !keyframeStarted[0];
+                if (keyframeStarted[0]) {
+                    keyframeCard.style()
+                            .setAnimation("layoutFillProbe", 1000L)
+                            .setAnimationFillMode(DocumentAnimationFillMode.FORWARDS)
+                            .setAnimationTimingFunction(DocumentAnimationTimingFunction.EASE_IN_OUT);
+                    keyframeLabel.setText("Keyframe card: clear fill");
+                } else {
+                    keyframeCard.style().clearAnimationName();
+                    keyframeLabel.setText("Keyframe card: idle");
+                }
+                return true;
+            }
+        });
+        keyframeRow.append(keyframeCard);
+
+        ElementNode keyframeSibling = document.div();
+        keyframeSibling.style()
+                .setFlexGrow(1.0F)
+                .setHeight(UiStyleLength.px(30))
+                .setPadding(UiStyleLength.px(7))
+                .setBackgroundColor(0xFF134E4A)
+                .setBorderColor(0xFF5EEAD4)
+                .setBorderWidth(UiStyleLength.px(1))
+                .setBorderRadius(UiStyleLength.px(12))
+                .setTextColor(0xFFCCFBF1)
+                .setOverflowX(UiOverflow.HIDDEN)
+                .setOverflowY(UiOverflow.HIDDEN);
+        keyframeSibling.appendText("Keyframe sibling holds forwards fill");
+        keyframeRow.append(keyframeSibling);
     }
 
     private static void appendAbsoluteStretchAndInlineProbe(UiDocument document, ElementNode root) {

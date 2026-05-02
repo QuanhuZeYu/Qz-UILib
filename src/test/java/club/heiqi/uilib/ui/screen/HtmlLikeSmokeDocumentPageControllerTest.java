@@ -8,7 +8,10 @@ import org.junit.Assert;
 import org.junit.Test;
 import org.lwjglx.input.Keyboard;
 
+import club.heiqi.uilib.ui.animation.DocumentAnimationClock;
+import club.heiqi.uilib.ui.animation.DocumentAnimationImpact;
 import club.heiqi.uilib.ui.animation.DocumentAnimationProperty;
+import club.heiqi.uilib.ui.animation.DocumentAnimationTimeline;
 import club.heiqi.uilib.ui.document.HtmlLikeDocumentWidget;
 import club.heiqi.uilib.ui.dom.DocumentElementClickEvent;
 import club.heiqi.uilib.ui.dom.DocumentNode;
@@ -73,6 +76,8 @@ public class HtmlLikeSmokeDocumentPageControllerTest {
         Assert.assertTrue(containsText(texts, "Margin sibling shifts from margin"));
         Assert.assertTrue(containsText(texts, "Padding card: tight"));
         Assert.assertTrue(containsText(texts, "Padding sibling shifts from padding"));
+        Assert.assertTrue(containsText(texts, "Keyframe card: idle"));
+        Assert.assertTrue(containsText(texts, "Keyframe sibling holds forwards fill"));
         Assert.assertTrue(containsText(texts, "Layout animation coverage: WIDTH/HEIGHT/MARGIN_LEFT/MARGIN_RIGHT/PADDING_LEFT/PADDING_RIGHT"));
         Assert.assertTrue(containsText(texts, "Animation runtime: active="));
         Assert.assertTrue(containsText(texts, "Runtime by impact: paint t="));
@@ -137,6 +142,8 @@ public class HtmlLikeSmokeDocumentPageControllerTest {
         Assert.assertTrue(containsTextCall(renderContext.textCalls, "Layout card: small"));
         Assert.assertTrue(containsTextCall(renderContext.textCalls, "Margin card: tight"));
         Assert.assertTrue(containsTextCall(renderContext.textCalls, "Padding card: tight"));
+        Assert.assertTrue(containsTextCall(renderContext.textCalls, "Keyframe card: idle"));
+        Assert.assertTrue(containsTextCall(renderContext.textCalls, "Keyframe sibling holds forwards fill"));
         Assert.assertTrue(containsTextCall(renderContext.textCalls, "Layout animation coverage: WIDTH/HEIGHT/MARGIN_LEFT/MARGIN_RIGHT/PADDING_LEFT/PADDING_RIGHT"));
         Assert.assertTrue(containsTextCall(renderContext.textCalls, "Animation runtime: active="));
         Assert.assertTrue(containsTextCall(renderContext.textCalls, "transition="));
@@ -281,10 +288,12 @@ public class HtmlLikeSmokeDocumentPageControllerTest {
     @Test
     public void shouldExposeLayoutAnimationProbeForManualSmokeValidation() {
         TestFixture fixture = new TestFixture();
+        ManualAnimationClock animationClock = new ManualAnimationClock();
 
         fixture.controller.configureDocumentPage();
         fixture.controller.buildDocument();
         HtmlLikeDocumentWidget widget = fixture.controller.getHtmlLikeDocumentWidget();
+        widget.setAnimationClock(animationClock);
         widget.applyLayoutBounds(31, 47, 760, 1280);
         RecordingUiRenderContext initialRenderContext = new RecordingUiRenderContext();
         widget.render(initialRenderContext);
@@ -295,12 +304,17 @@ public class HtmlLikeSmokeDocumentPageControllerTest {
         ElementNode marginSibling = findElementContainingDirectText(widget, "Margin sibling shifts from margin");
         ElementNode paddingCard = findElementContainingDirectText(widget, "Padding card: tight");
         ElementNode paddingSibling = findElementContainingDirectText(widget, "Padding sibling shifts from padding");
+        ElementNode keyframeCard = findElementContainingDirectText(widget, "Keyframe card: idle");
+        ElementNode keyframeSibling = findElementContainingDirectText(widget,
+                "Keyframe sibling holds forwards fill");
         Assert.assertNotNull(layoutCard);
         Assert.assertNotNull(sibling);
         Assert.assertNotNull(marginCard);
         Assert.assertNotNull(marginSibling);
         Assert.assertNotNull(paddingCard);
         Assert.assertNotNull(paddingSibling);
+        Assert.assertNotNull(keyframeCard);
+        Assert.assertNotNull(keyframeSibling);
         Assert.assertTrue(layoutCard.style().getTransitionProperties().contains(DocumentAnimationProperty.WIDTH));
         Assert.assertTrue(layoutCard.style().getTransitionProperties().contains(DocumentAnimationProperty.HEIGHT));
         Assert.assertTrue(marginCard.style().getTransitionProperties().contains(DocumentAnimationProperty.MARGIN_LEFT));
@@ -313,6 +327,10 @@ public class HtmlLikeSmokeDocumentPageControllerTest {
         Assert.assertEquals(UiStyleLength.px(4), marginCard.style().getMargin().getRight());
         Assert.assertEquals(UiStyleLength.px(4), paddingCard.style().getPadding().getLeft());
         Assert.assertEquals(UiStyleLength.px(4), paddingCard.style().getPadding().getRight());
+        Assert.assertTrue(widget.getDocument().getKeyframesRegistry().containsKey("layoutFillProbe"));
+        Assert.assertTrue(widget.getDocument().getKeyframes("layoutFillProbe").getFloatTracks()
+                .containsKey(DocumentAnimationProperty.WIDTH));
+        Assert.assertNull(keyframeCard.style().getAnimationName());
         Assert.assertFalse(widget.hasLayoutRuntimeValueForDiagnostics());
         Assert.assertTrue(containsTextCall(initialRenderContext.textCalls,
                 "Layout animation coverage: WIDTH/HEIGHT/MARGIN_LEFT/MARGIN_RIGHT/PADDING_LEFT/PADDING_RIGHT"));
@@ -349,6 +367,35 @@ public class HtmlLikeSmokeDocumentPageControllerTest {
         Assert.assertTrue(widget.hasLayoutRuntimeValueForDiagnostics());
         Assert.assertTrue(containsTextCall(layoutClickedRenderContext.textCalls, "layout t="));
         Assert.assertTrue(containsTextCall(layoutClickedRenderContext.textCalls, "active=true"));
+
+        ElementNode activeKeyframeCard = findElementContainingDirectText(widget, "Keyframe card: idle");
+        clickElementCenter(widget, fixture.textMeasureService, activeKeyframeCard, 7L, 8L);
+        RecordingUiRenderContext keyframeRunningRenderContext = new RecordingUiRenderContext();
+        widget.render(keyframeRunningRenderContext);
+        DocumentAnimationTimeline.DiagnosticsSnapshot keyframeRunningSnapshot = widget.getAnimationDiagnosticsSnapshot();
+        Assert.assertEquals("layoutFillProbe", activeKeyframeCard.style().getAnimationName());
+        Assert.assertTrue(keyframeRunningSnapshot.getKeyframeCount(DocumentAnimationImpact.LAYOUT) >= 1);
+        Assert.assertTrue(containsTextCall(keyframeRunningRenderContext.textCalls, "layout t="));
+        Assert.assertTrue(containsTextCall(keyframeRunningRenderContext.textCalls, "k="));
+
+        animationClock.setCurrentTimeNanos(1_000_000_000L);
+        RecordingUiRenderContext keyframeFilledRenderContext = new RecordingUiRenderContext();
+        widget.render(keyframeFilledRenderContext);
+        DocumentAnimationTimeline.DiagnosticsSnapshot keyframeFilledSnapshot = widget.getAnimationDiagnosticsSnapshot();
+        Assert.assertEquals(0, keyframeFilledSnapshot.getKeyframeCount(DocumentAnimationImpact.LAYOUT));
+        Assert.assertTrue(keyframeFilledSnapshot.getForwardsFillCount(DocumentAnimationImpact.LAYOUT) >= 1);
+        Assert.assertTrue(containsTextCall(keyframeFilledRenderContext.textCalls, "f="));
+
+        ElementNode clearKeyframeCard = findElementContainingDirectText(widget, "Keyframe card: clear fill");
+        Assert.assertNotNull(clearKeyframeCard);
+        clickElementCenter(widget, fixture.textMeasureService, clearKeyframeCard, 9L, 10L);
+        RecordingUiRenderContext keyframeClearedRenderContext = new RecordingUiRenderContext();
+        widget.render(keyframeClearedRenderContext);
+        DocumentAnimationTimeline.DiagnosticsSnapshot keyframeClearedSnapshot = widget.getAnimationDiagnosticsSnapshot();
+        Assert.assertNull(clearKeyframeCard.style().getAnimationName());
+        Assert.assertEquals(0, keyframeClearedSnapshot.getKeyframeCount(DocumentAnimationImpact.LAYOUT));
+        Assert.assertEquals(0, keyframeClearedSnapshot.getForwardsFillCount(DocumentAnimationImpact.LAYOUT));
+        Assert.assertTrue(containsTextCall(keyframeClearedRenderContext.textCalls, "Keyframe card: idle"));
     }
 
     /**
@@ -905,6 +952,23 @@ public class HtmlLikeSmokeDocumentPageControllerTest {
             this.blurRadius = blurRadius;
             this.saturation = saturation;
             this.cornerRadius = cornerRadius;
+        }
+    }
+
+    /**
+     * 供测试推进动画时间的手动时钟。
+     */
+    private static final class ManualAnimationClock implements DocumentAnimationClock {
+
+        private long currentTimeNanos;
+
+        private void setCurrentTimeNanos(long currentTimeNanos) {
+            this.currentTimeNanos = currentTimeNanos;
+        }
+
+        @Override
+        public long getCurrentTimeNanos() {
+            return currentTimeNanos;
         }
     }
 
