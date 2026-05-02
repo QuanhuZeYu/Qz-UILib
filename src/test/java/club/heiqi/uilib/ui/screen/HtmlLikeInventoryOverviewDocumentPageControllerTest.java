@@ -189,9 +189,18 @@ public class HtmlLikeInventoryOverviewDocumentPageControllerTest {
         List<ElementNode> tables = new ArrayList<ElementNode>();
         collectElementsByTag(widget.getDocument().getRootElement(), "table", tables);
         ElementNode table = tables.get(gridIndex);
-        ElementNode body = (ElementNode) table.getChildren().get(1);
+        ElementNode body = tableBodyElement(table);
         ElementNode row = (ElementNode) body.getChildren().get(slotIndex / 9);
         return (ElementNode) row.getChildren().get(slotIndex % 9);
+    }
+
+    private static ElementNode tableBodyElement(ElementNode table) {
+        for (DocumentNode child : table.getChildren()) {
+            if (child instanceof ElementNode && "tbody".equals(((ElementNode) child).getTagName())) {
+                return (ElementNode) child;
+            }
+        }
+        throw new AssertionError("table body not found");
     }
 
     private static void collectElementsByTag(DocumentNode node, String tagName, List<ElementNode> elements) {

@@ -50,7 +50,7 @@ public final class DocumentTableControl {
         this.headerSection = document.thead();
         this.bodySection = document.tbody();
         configureTableElement();
-        element.append(headerSection).append(bodySection);
+        element.append(bodySection);
     }
 
     /**
@@ -175,17 +175,20 @@ public final class DocumentTableControl {
     public DocumentTableControl setHeader(String... labels) {
         headerCells.clear();
         headerSection.clearChildren();
+        if (labels == null || labels.length <= 0) {
+            detachHeaderSection();
+            return this;
+        }
+        ensureHeaderSectionAttached();
         ElementNode row = document.tr();
         headerSection.append(row);
-        if (labels != null) {
-            for (String label : labels) {
-                ElementNode cell = document.th();
-                cell.appendText(normalizeText(label));
-                configureCell(cell, true);
-                applyColumnWidth(cell, headerCells.size());
-                headerCells.add(cell);
-                row.append(cell);
-            }
+        for (String label : labels) {
+            ElementNode cell = document.th();
+            cell.appendText(normalizeText(label));
+            configureCell(cell, true);
+            applyColumnWidth(cell, headerCells.size());
+            headerCells.add(cell);
+            row.append(cell);
         }
         return this;
     }
@@ -253,6 +256,20 @@ public final class DocumentTableControl {
         element.style()
                 .setRowGap(UiStyleLength.px(rowGap))
                 .setColumnGap(UiStyleLength.px(columnGap));
+    }
+
+    private void ensureHeaderSectionAttached() {
+        if (headerSection.getParent() == element) {
+            return;
+        }
+        element.clearChildren();
+        element.append(headerSection).append(bodySection);
+    }
+
+    private void detachHeaderSection() {
+        if (headerSection.getParent() == element) {
+            element.removeChild(headerSection);
+        }
     }
 
     private void configureCell(ElementNode cell, boolean header) {

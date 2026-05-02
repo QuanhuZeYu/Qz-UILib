@@ -236,6 +236,7 @@ final class HtmlLikeInventoryOverviewDocumentPageController extends DocumentPage
                 .setSlotGap(8)
                 .setPreferredSlotSize(preferredSize)
                 .setSlotSizeRange(minSize, maxSize)
+                .setCarriedItemOverlayEnabled(isHotbar)
                 .setContentProvider(new DocumentInventorySlotGridControl.SlotContentProvider() {
                     @Override
                     public InventorySlotSnapshot getSlotSnapshot(int localIndex) {
@@ -307,9 +308,11 @@ final class HtmlLikeInventoryOverviewDocumentPageController extends DocumentPage
         boolean previousCarriedSlotOccupied = lastCarriedSlotOccupied;
 
         hotbarGrid.setSelectedSlotIndex(selectedHotbarSlot)
-                .setCarriedSnapshot(carriedSlotSnapshot);
+                .setCarriedSnapshot(carriedSlotSnapshot)
+                .setCarriedItemOverlayEnabled(true);
         backpackGrid.setSelectedSlotIndex(-1)
-                .setCarriedSnapshot(carriedSlotSnapshot);
+                .setCarriedSnapshot(carriedSlotSnapshot)
+                .setCarriedItemOverlayEnabled(false);
         hotbarGrid.refreshSlotStates();
         backpackGrid.refreshSlotStates();
 

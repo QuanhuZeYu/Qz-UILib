@@ -81,6 +81,30 @@ public class DocumentTableControlTest {
     }
 
     /**
+     * 验证无表头表格不会保留空 thead 节点。
+     */
+    @Test
+    public void shouldOmitHeaderSectionWhenNoHeaderIsSet() {
+        UiDocument document = UiDocument.create();
+        DocumentTableControl tableControl = new DocumentTableControl(document)
+                .addRow("铁锭", "64");
+        ElementNode table = tableControl.getElement();
+
+        Assert.assertEquals(1, table.getChildCount());
+        Assert.assertEquals("tbody", ((ElementNode) table.getChildren().get(0)).getTagName());
+        Assert.assertSame(tableControl.getBodySectionElement(), table.getChildren().get(0));
+
+        tableControl.setHeader("名称", "数量");
+        Assert.assertEquals(2, table.getChildCount());
+        Assert.assertSame(tableControl.getHeaderSectionElement(), table.getChildren().get(0));
+        Assert.assertSame(tableControl.getBodySectionElement(), table.getChildren().get(1));
+
+        tableControl.setHeader();
+        Assert.assertEquals(1, table.getChildCount());
+        Assert.assertSame(tableControl.getBodySectionElement(), table.getChildren().get(0));
+    }
+
+    /**
      * 验证控件列宽设置会参与 table 布局，并保留自动列分配。
      */
     @Test

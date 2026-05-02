@@ -78,6 +78,7 @@ public final class DocumentInventorySlotGridControl {
     private int selectedSlotIndex = -1;
     private int hoveredSlotIndex = -1;
     private int activeSlotIndex = -1;
+    private boolean carriedItemOverlayEnabled = true;
     private boolean layoutDirty = true;
 
     /**
@@ -136,6 +137,12 @@ public final class DocumentInventorySlotGridControl {
 
     public DocumentInventorySlotGridControl setCarriedSnapshot(InventorySlotSnapshot carriedSnapshot) {
         this.carriedSnapshot = carriedSnapshot != null ? carriedSnapshot : InventorySlotSnapshot.empty();
+        return this;
+    }
+
+
+    public DocumentInventorySlotGridControl setCarriedItemOverlayEnabled(boolean carriedItemOverlayEnabled) {
+        this.carriedItemOverlayEnabled = carriedItemOverlayEnabled;
         return this;
     }
 
@@ -219,6 +226,7 @@ public final class DocumentInventorySlotGridControl {
                     ? snapshots[slotIndex] : InventorySlotSnapshot.empty();
             applySlotStyle(slotElements.get(slotIndex), slotIndex, snapshot.isOccupied());
         }
+        refreshVisibleTooltipLines();
         return this;
     }
 
@@ -348,8 +356,13 @@ public final class DocumentInventorySlotGridControl {
 
     private void handleSlotHover(int localIndex, boolean hovered) {
         hoveredSlotIndex = hovered ? localIndex : -1;
-        visibleTooltipLines = hovered ? resolveTooltipLines(localIndex) : Collections.<String>emptyList();
+        refreshVisibleTooltipLines();
         refreshSlotStates();
+    }
+
+    private void refreshVisibleTooltipLines() {
+        visibleTooltipLines = hoveredSlotIndex >= 0 && hoveredSlotIndex < slotCount
+                ? resolveTooltipLines(hoveredSlotIndex) : Collections.<String>emptyList();
     }
 
     private List<String> resolveTooltipLines(int localIndex) {
@@ -419,7 +432,8 @@ public final class DocumentInventorySlotGridControl {
     }
 
     private void enqueueCarriedItemOverlay(final UiRenderContext context) {
-        if (itemRenderer == null || carriedSnapshot == null || !carriedSnapshot.isOccupied()) {
+        if (!carriedItemOverlayEnabled || itemRenderer == null || carriedSnapshot == null
+                || !carriedSnapshot.isOccupied()) {
             return;
         }
         final InventorySlotGridItemRenderer capturedRenderer = itemRenderer;

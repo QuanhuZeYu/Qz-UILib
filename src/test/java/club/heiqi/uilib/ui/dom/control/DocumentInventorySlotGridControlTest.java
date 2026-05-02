@@ -233,12 +233,13 @@ public class DocumentInventorySlotGridControlTest {
                 .commitLayout();
 
         ElementNode table = gridControl.getElement();
-        ElementNode body = (ElementNode) table.getChildren().get(1);
+        ElementNode body = tableBodyElement(table);
         ElementNode firstRow = (ElementNode) body.getChildren().get(0);
         ElementNode firstSlot = (ElementNode) firstRow.getChildren().get(0);
         ElementNode secondSlot = (ElementNode) firstRow.getChildren().get(1);
 
         Assert.assertEquals("table", table.getTagName());
+        Assert.assertEquals(1, table.getChildCount());
         Assert.assertEquals("tbody", body.getTagName());
         Assert.assertEquals("tr", firstRow.getTagName());
         Assert.assertEquals("td", firstSlot.getTagName());
@@ -338,6 +339,43 @@ public class DocumentInventorySlotGridControlTest {
     }
 
     /**
+     * 验证 hover 中刷新槽位状态会同步更新 tooltip 文本。
+     */
+    @Test
+    public void shouldRefreshVisibleTooltipWhenSlotStateRefreshes() {
+        UiDocument document = UiDocument.create();
+        ElementNode root = document.getRootElement();
+        root.style()
+                .setWidth(UiStyleLength.px(240))
+                .setHeight(UiStyleLength.px(140));
+        final int[] tooltipVersion = new int[] { 1 };
+        DocumentInventorySlotGridControl gridControl = new DocumentInventorySlotGridControl(document, 2, 2)
+                .setSlotTooltipProvider(new DocumentInventorySlotGridControl.SlotTooltipProvider() {
+                    @Override
+                    public List<String> getSlotTooltip(int localIndex) {
+                        return Collections.singletonList("Tooltip " + tooltipVersion[0]);
+                    }
+                })
+                .commitLayout();
+        root.append(gridControl.getElement());
+        ElementNode firstSlot = firstSlotElement(gridControl);
+        firstSlot.getHoverHandler().onHoverChanged(new DocumentElementHoverEvent(firstSlot, firstSlot, true, 6, 6,
+                1L));
+        tooltipVersion[0] = 2;
+
+        gridControl.refreshSlotStates();
+        RecordingUiRenderContext renderContext = new RecordingUiRenderContext(240, 140, 20, 20);
+        HtmlLikeDocumentWidget widget = new HtmlLikeDocumentWidget(document, 240, 140,
+                new DeterministicTextMeasureService());
+        widget.applyLayoutBounds(0, 0, 240, 140);
+        widget.render(renderContext);
+        renderContext.deferredReplays.get(renderContext.deferredReplays.size() - 1).replay();
+
+        Assert.assertTrue(renderContext.textCalls.contains("Tooltip 2"));
+        Assert.assertFalse(renderContext.textCalls.contains("Tooltip 1"));
+    }
+
+    /**
      * 验证槽位点击 handler 会接收按钮和本地索引。
      */
     @Test
@@ -419,6 +457,52 @@ public class DocumentInventorySlotGridControlTest {
         widget.render(renderContext);
         Assert.assertEquals(1, renderContext.deferredReplays.size());
         renderContext.deferredReplays.get(0).replay();
+
+        Assert.assertEquals(Collections.singletonList("88:66:true"), cursorCalls);
+    }
+
+    /**
+     * 验证鼠标携带物品 overlay 可以按网格关闭，避免页面内多个网格重复绘制。
+     */
+    @Test
+    public void shouldAllowDisablingCarriedSnapshotOverlay() {
+        UiDocument document = UiDocument.create();
+        ElementNode root = document.getRootElement();
+        root.style()
+                .setWidth(UiStyleLength.px(240))
+                .setHeight(UiStyleLength.px(140));
+        final List<String> cursorCalls = new ArrayList<String>();
+        InventorySlotGridItemRenderer itemRenderer = new InventorySlotGridItemRenderer() {
+            @Override
+            public void renderItems(InventorySlotGridItemGeometry geometry,
+                    InventorySlotSnapshot[] slotSnapshots) {}
+
+            @Override
+            public void renderCursorItem(InventorySlotSnapshot carriedSnapshot, int mouseX, int mouseY) {
+                cursorCalls.add(mouseX + ":" + mouseY + ":" + carriedSnapshot.isOccupied());
+            }
+        };
+        DocumentInventorySlotGridControl firstGrid = new DocumentInventorySlotGridControl(document, 1, 1)
+                .setCarriedSnapshot(InventorySlotSnapshot.occupied())
+                .setCarriedItemOverlayEnabled(true)
+                .setItemRenderer(itemRenderer)
+                .commitLayout();
+        DocumentInventorySlotGridControl secondGrid = new DocumentInventorySlotGridControl(document, 1, 1)
+                .setCarriedSnapshot(InventorySlotSnapshot.occupied())
+                .setCarriedItemOverlayEnabled(false)
+                .setItemRenderer(itemRenderer)
+                .commitLayout();
+        root.append(firstGrid.getElement());
+        root.append(secondGrid.getElement());
+        RecordingUiRenderContext renderContext = new RecordingUiRenderContext(240, 140, 88, 66);
+        HtmlLikeDocumentWidget widget = new HtmlLikeDocumentWidget(document, 240, 140,
+                new DeterministicTextMeasureService());
+        widget.applyLayoutBounds(0, 0, 240, 140);
+
+        widget.render(renderContext);
+        for (UiRenderContext.DeferredPostMainPassReplay replay : renderContext.deferredReplays) {
+            replay.replay();
+        }
 
         Assert.assertEquals(Collections.singletonList("88:66:true"), cursorCalls);
     }
@@ -509,16 +593,25 @@ public class DocumentInventorySlotGridControlTest {
 
     private static ElementNode firstSlotElement(DocumentInventorySlotGridControl gridControl) {
         ElementNode table = gridControl.getElement();
-        ElementNode body = (ElementNode) table.getChildren().get(1);
+        ElementNode body = tableBodyElement(table);
         ElementNode row = (ElementNode) body.getChildren().get(0);
         return (ElementNode) row.getChildren().get(0);
     }
 
     private static ElementNode secondSlotElement(DocumentInventorySlotGridControl gridControl) {
         ElementNode table = gridControl.getElement();
-        ElementNode body = (ElementNode) table.getChildren().get(1);
+        ElementNode body = tableBodyElement(table);
         ElementNode row = (ElementNode) body.getChildren().get(0);
         return (ElementNode) row.getChildren().get(1);
+    }
+
+    private static ElementNode tableBodyElement(ElementNode table) {
+        for (DocumentNode child : table.getChildren()) {
+            if (child instanceof ElementNode && "tbody".equals(((ElementNode) child).getTagName())) {
+                return (ElementNode) child;
+            }
+        }
+        throw new AssertionError("table body not found");
     }
 
     /**
