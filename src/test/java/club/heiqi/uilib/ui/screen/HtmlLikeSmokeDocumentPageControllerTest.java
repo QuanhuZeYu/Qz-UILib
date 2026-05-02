@@ -339,6 +339,8 @@ public class HtmlLikeSmokeDocumentPageControllerTest {
         Assert.assertTrue(containsTextCall(initialRenderContext.textCalls, "staticLayout="));
         Assert.assertTrue(containsTextCall(initialRenderContext.textCalls, "runtimeLayout="));
         Assert.assertTrue(containsTextCall(initialRenderContext.textCalls, "textEpoch="));
+        Assert.assertTrue(containsTextCall(initialRenderContext.textCalls,
+                "Cache note: click-frame static +1 is OK; running paint/effect must not grow runtimeLayout."));
 
         int siblingLeftBefore = findElementBackgroundCommand(widget, fixture.textMeasureService, sibling).getLeft();
         clickElementCenter(widget, fixture.textMeasureService, layoutCard, 1L, 2L);

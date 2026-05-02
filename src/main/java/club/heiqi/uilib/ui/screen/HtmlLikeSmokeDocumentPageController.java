@@ -724,7 +724,7 @@ final class HtmlLikeSmokeDocumentPageController extends DocumentPageController {
             AnimationRuntimeDiagnostics animationRuntimeDiagnostics) {
         ElementNode probe = document.div();
         probe.style()
-                .setHeight(UiStyleLength.px(346))
+                .setHeight(UiStyleLength.px(364))
                 .setMargin(UiStyleInsets.of(UiStyleLength.px(12), UiStyleLength.px(0), UiStyleLength.px(0),
                         UiStyleLength.px(0)))
                 .setPadding(UiStyleLength.px(10))
@@ -805,6 +805,17 @@ final class HtmlLikeSmokeDocumentPageController extends DocumentPageController {
             }
         });
         probe.append(cacheDiagnostic);
+
+        ElementNode cacheHint = document.div();
+        cacheHint.style()
+                .setHeight(UiStyleLength.px(14))
+                .setMargin(UiStyleInsets.of(UiStyleLength.px(2), UiStyleLength.px(0), UiStyleLength.px(0),
+                        UiStyleLength.px(0)))
+                .setTextColor(0xFF7DD3FC)
+                .setOverflowX(UiOverflow.HIDDEN)
+                .setOverflowY(UiOverflow.HIDDEN);
+        cacheHint.appendText("Cache note: click-frame static +1 is OK; running paint/effect must not grow runtimeLayout.");
+        probe.append(cacheHint);
 
         ElementNode row = document.div();
         row.style()
