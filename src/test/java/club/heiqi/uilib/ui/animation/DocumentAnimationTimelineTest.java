@@ -539,6 +539,39 @@ public class DocumentAnimationTimelineTest {
     }
 
     /**
+     * 验证 forwards fill 会按影响范围继续暴露运行态覆盖值，但不再计入下一帧动画工作。
+     */
+    @Test
+    public void shouldReportForwardsFillRuntimeValueByImpact() {
+        UiDocument document = UiDocument.create();
+        document.registerKeyframes(DocumentKeyframes.named("pulse")
+                .setColor(DocumentAnimationProperty.BACKGROUND_COLOR, 0xFF000000, 0xFFFFFFFF)
+                .setFloat(DocumentAnimationProperty.OPACITY, 1.0F, 0.25F)
+                .build());
+        ElementNode root = document.getRootElement();
+        root.style()
+                .setWidth(UiStyleLength.px(40))
+                .setHeight(UiStyleLength.px(20))
+                .setBackgroundColor(0xFF000000)
+                .setOpacity(1.0F)
+                .setAnimation("pulse", 1000L)
+                .setAnimationFillMode(DocumentAnimationFillMode.FORWARDS);
+        DocumentAnimationTimeline timeline = new DocumentAnimationTimeline();
+
+        timeline.updateFromLayout(DocumentLayoutEngine.layout(root, 80, 0), 0L);
+        Assert.assertTrue(timeline.pruneFinishedAnimations(1_000_000_000L));
+
+        Assert.assertFalse(timeline.hasAnimationWork());
+        Assert.assertTrue(timeline.hasRuntimeValue(DocumentAnimationImpact.PAINT));
+        Assert.assertTrue(timeline.hasRuntimeValue(DocumentAnimationImpact.EFFECT));
+        Assert.assertFalse(timeline.hasRuntimeValue(DocumentAnimationImpact.LAYOUT));
+        Assert.assertEquals(0xFFFFFFFF, timeline.resolveColor(root, DocumentAnimationProperty.BACKGROUND_COLOR,
+                0xFF000000, 1_000_000_000L));
+        Assert.assertEquals(0.25F, timeline.resolveFloat(root, DocumentAnimationProperty.OPACITY, 1.0F,
+                1_000_000_000L), 0.0F);
+    }
+
+    /**
      * 验证声明式 keyframe 圆角会先归一化到布局约束，避免 999px 胶囊值在末尾跳变。
      */
     @Test

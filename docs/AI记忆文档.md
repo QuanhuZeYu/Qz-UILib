@@ -75,7 +75,7 @@
 - 运行值优先级固定为：`transition > keyframe animation > computed style`。
 - 当前可动画属性：`BACKGROUND_COLOR`、`BORDER_COLOR`、`TEXT_COLOR`、`OPACITY`、`BORDER_RADIUS`、`BACKDROP_BLUR_RADIUS`、`WIDTH`、`HEIGHT`、`MARGIN_LEFT`、`MARGIN_RIGHT`。
 - 动画属性按影响范围分类：paint、effect、layout；按插值值类型分类：color、float。
-- `DocumentAnimationProperty` 是属性枚举与值类型元数据来源；`DocumentAnimationTimeline` 内部通过属性运行语义表集中处理颜色/数值 base value、px-only transition 判定和 keyframe used value 归一化，避免新增属性时散落维护多套 if/else 白名单。
+- `DocumentAnimationProperty` 是属性枚举与值类型元数据来源；`DocumentAnimationTimeline` 内部通过属性运行语义表集中处理颜色/数值 base value、px-only transition 判定和 keyframe used value 归一化，并把 transition/keyframe/fill 的存在性判断、完成计数和完成清理集中到单元素状态 helper，避免新增属性时散落维护多套 if/else 白名单。
 - transition 基于 computed style 基准值变化创建；清除 `transition-property` 或 duration 变为 0 时，运行中 transition 在下一次 timeline 刷新回到 computed style 基准值。
 - `DocumentAnimationTimeline.hasRunningTransition(element, property)` 可按元素/属性查询 transition 运行状态。
 - keyframe animation 通过 `UiDocument.registerKeyframes(...)` 注册命名 `DocumentKeyframes`，由元素的 `animation-name` 引用。
@@ -144,7 +144,7 @@
 
 ## 下一步边界
 
-- CSS transition / animation MVP 继续优先；`WIDTH/HEIGHT/MARGIN_LEFT/MARGIN_RIGHT` layout 动画已完成首轮收口，后续 layout-affecting 属性扩展必须限制在少量可控属性与明确 fallback。
+- CSS transition / animation MVP 继续优先；`WIDTH/HEIGHT/MARGIN_LEFT/MARGIN_RIGHT` layout 动画已完成游戏内 Smoke 验收，后续 layout-affecting 属性扩展必须限制在少量可控属性与明确 fallback。
 - 不一次性开放全量布局动画。
 - paint/effect 动画不能触发布局；layout 动画可以重布局，但结束后必须恢复静态缓存。
 - inline formatting、effect chain、snapshot atlas 和 blur/filter 优化只在阻塞动画探针、真实页面迁移或控件展示时优先处理。
