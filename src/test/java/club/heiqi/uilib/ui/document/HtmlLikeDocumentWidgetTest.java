@@ -174,16 +174,28 @@ public class HtmlLikeDocumentWidgetTest {
         widget.render(new RecordingUiRenderContext());
         int initialGeneration = widget.getPaintCacheGenerationForDiagnostics();
         int initialMeasureCount = textMeasureService.getMeasureCount();
+        HtmlLikeDocumentWidget.PerformanceDiagnosticsSnapshot initialSnapshot =
+                widget.getPerformanceDiagnosticsSnapshot();
         widget.render(new RecordingUiRenderContext());
         Assert.assertEquals(initialGeneration, widget.getPaintCacheGenerationForDiagnostics());
+        Assert.assertEquals(initialSnapshot.getStaticLayoutGeneration(),
+                widget.getPerformanceDiagnosticsSnapshot().getStaticLayoutGeneration());
+        Assert.assertEquals(initialSnapshot.getRuntimeLayoutGeneration(),
+                widget.getPerformanceDiagnosticsSnapshot().getRuntimeLayoutGeneration());
 
         root.style().setBackgroundColor(0xFFFFFFFF);
         widget.render(new RecordingUiRenderContext());
         int transitionStartGeneration = widget.getPaintCacheGenerationForDiagnostics();
+        HtmlLikeDocumentWidget.PerformanceDiagnosticsSnapshot transitionStartSnapshot =
+                widget.getPerformanceDiagnosticsSnapshot();
 
         animationClock.setCurrentTimeNanos(500_000_000L);
         widget.render(new RecordingUiRenderContext());
         Assert.assertTrue(widget.getPaintCacheGenerationForDiagnostics() > transitionStartGeneration);
+        Assert.assertEquals(transitionStartSnapshot.getStaticLayoutGeneration(),
+                widget.getPerformanceDiagnosticsSnapshot().getStaticLayoutGeneration());
+        Assert.assertEquals(transitionStartSnapshot.getRuntimeLayoutGeneration(),
+                widget.getPerformanceDiagnosticsSnapshot().getRuntimeLayoutGeneration());
         Assert.assertEquals(initialMeasureCount, textMeasureService.getMeasureCount());
 
         animationClock.setCurrentTimeNanos(1_000_000_000L);
@@ -217,13 +229,25 @@ public class HtmlLikeDocumentWidgetTest {
 
         widget.render(new RecordingUiRenderContext());
         int measureCountAfterInitialRender = textMeasureService.getMeasureCount();
+        HtmlLikeDocumentWidget.PerformanceDiagnosticsSnapshot initialSnapshot =
+                widget.getPerformanceDiagnosticsSnapshot();
         root.style().setBackdropBlurRadius(UiStyleLength.px(20));
         widget.render(new RecordingUiRenderContext());
+        HtmlLikeDocumentWidget.PerformanceDiagnosticsSnapshot transitionStartSnapshot =
+                widget.getPerformanceDiagnosticsSnapshot();
 
         animationClock.setCurrentTimeNanos(500_000_000L);
         widget.render(new RecordingUiRenderContext());
+        HtmlLikeDocumentWidget.PerformanceDiagnosticsSnapshot runningSnapshot =
+                widget.getPerformanceDiagnosticsSnapshot();
 
         Assert.assertEquals(measureCountAfterInitialRender, textMeasureService.getMeasureCount());
+        Assert.assertEquals(initialSnapshot.getStaticLayoutGeneration(),
+                transitionStartSnapshot.getStaticLayoutGeneration());
+        Assert.assertEquals(transitionStartSnapshot.getStaticLayoutGeneration(),
+                runningSnapshot.getStaticLayoutGeneration());
+        Assert.assertEquals(transitionStartSnapshot.getRuntimeLayoutGeneration(),
+                runningSnapshot.getRuntimeLayoutGeneration());
         Assert.assertEquals(1, widget.getActiveAnimationCount());
     }
 
@@ -257,17 +281,27 @@ public class HtmlLikeDocumentWidgetTest {
         widget.applyLayoutBounds(0, 0, 160, 40);
 
         widget.render(new RecordingUiRenderContext());
+        HtmlLikeDocumentWidget.PerformanceDiagnosticsSnapshot initialSnapshot =
+                widget.getPerformanceDiagnosticsSnapshot();
         animated.style().setWidth(UiStyleLength.px(80));
         widget.render(new RecordingUiRenderContext());
+        HtmlLikeDocumentWidget.PerformanceDiagnosticsSnapshot transitionStartSnapshot =
+                widget.getPerformanceDiagnosticsSnapshot();
 
         animationClock.setCurrentTimeNanos(500_000_000L);
         RecordingUiRenderContext halfContext = new RecordingUiRenderContext();
         widget.render(halfContext);
+        HtmlLikeDocumentWidget.PerformanceDiagnosticsSnapshot runningSnapshot =
+                widget.getPerformanceDiagnosticsSnapshot();
 
         assertDrawCall(halfContext.drawCalls.get(0), 0, 0, 60, 20, 0xFF112233, 0, 0);
         assertDrawCall(halfContext.drawCalls.get(1), 60, 0, 80, 20, 0xFF445566, 0, 0);
         Assert.assertEquals(1, widget.getActiveAnimationCount());
         Assert.assertTrue(widget.hasLayoutRuntimeValueForDiagnostics());
+        Assert.assertTrue(transitionStartSnapshot.getStaticLayoutGeneration()
+                >= initialSnapshot.getStaticLayoutGeneration());
+        Assert.assertTrue(runningSnapshot.getRuntimeLayoutGeneration()
+                > transitionStartSnapshot.getRuntimeLayoutGeneration());
     }
 
     /**
@@ -555,24 +589,40 @@ public class HtmlLikeDocumentWidgetTest {
 
         widget.render(new RecordingUiRenderContext());
         int initialMeasureCount = textMeasureService.getMeasureCount();
+        HtmlLikeDocumentWidget.PerformanceDiagnosticsSnapshot initialSnapshot =
+                widget.getPerformanceDiagnosticsSnapshot();
         child.style().setWidth(UiStyleLength.px(80));
         widget.render(new RecordingUiRenderContext());
         int transitionStartGeneration = widget.getPaintCacheGenerationForDiagnostics();
+        HtmlLikeDocumentWidget.PerformanceDiagnosticsSnapshot transitionStartSnapshot =
+                widget.getPerformanceDiagnosticsSnapshot();
 
         animationClock.setCurrentTimeNanos(500_000_000L);
         widget.render(new RecordingUiRenderContext());
+        HtmlLikeDocumentWidget.PerformanceDiagnosticsSnapshot runningSnapshot =
+                widget.getPerformanceDiagnosticsSnapshot();
         Assert.assertTrue(widget.getPaintCacheGenerationForDiagnostics() > transitionStartGeneration);
         Assert.assertTrue(textMeasureService.getMeasureCount() > initialMeasureCount);
+        Assert.assertTrue(transitionStartSnapshot.getStaticLayoutGeneration()
+                >= initialSnapshot.getStaticLayoutGeneration());
+        Assert.assertTrue(runningSnapshot.getRuntimeLayoutGeneration()
+                > transitionStartSnapshot.getRuntimeLayoutGeneration());
 
         animationClock.setCurrentTimeNanos(1_000_000_000L);
         widget.render(new RecordingUiRenderContext());
         int finishedGeneration = widget.getPaintCacheGenerationForDiagnostics();
         int finishedMeasureCount = textMeasureService.getMeasureCount();
+        HtmlLikeDocumentWidget.PerformanceDiagnosticsSnapshot finishedSnapshot =
+                widget.getPerformanceDiagnosticsSnapshot();
         Assert.assertEquals(0, widget.getActiveAnimationCount());
 
         widget.render(new RecordingUiRenderContext());
         Assert.assertEquals(finishedGeneration, widget.getPaintCacheGenerationForDiagnostics());
         Assert.assertEquals(finishedMeasureCount, textMeasureService.getMeasureCount());
+        Assert.assertEquals(finishedSnapshot.getStaticLayoutGeneration(),
+                widget.getPerformanceDiagnosticsSnapshot().getStaticLayoutGeneration());
+        Assert.assertEquals(finishedSnapshot.getRuntimeLayoutGeneration(),
+                widget.getPerformanceDiagnosticsSnapshot().getRuntimeLayoutGeneration());
     }
 
     /**

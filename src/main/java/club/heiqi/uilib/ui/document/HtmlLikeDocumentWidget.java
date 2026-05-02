@@ -57,6 +57,8 @@ public final class HtmlLikeDocumentWidget extends Widget {
     private int cachedHeight = -1;
     private int cachedPaintScrollVersion = -1;
     private int paintCacheGeneration;
+    private int staticLayoutGeneration;
+    private int runtimeLayoutGeneration;
     private boolean cachedPaintTransientScrollbarActive;
     private DocumentLayoutBox cachedLayoutBox;
     private ElementNode pressedElement;
@@ -194,6 +196,18 @@ public final class HtmlLikeDocumentWidget extends Widget {
     }
 
     /**
+     * 返回当前 HTML-like 文档组件缓存与布局重建的只读诊断快照。
+     *
+     * <p>该方法仅供 Smoke 页和测试验证缓存边界使用，不作为页面作者业务 API。</p>
+     *
+     * @return 缓存与布局重建诊断快照
+     */
+    public PerformanceDiagnosticsSnapshot getPerformanceDiagnosticsSnapshot() {
+        return new PerformanceDiagnosticsSnapshot(paintCacheGeneration, staticLayoutGeneration,
+                runtimeLayoutGeneration, textMeasureService.getEpoch());
+    }
+
+    /**
      * 返回指定元素当前纵向滚动偏移。
      *
      * @param element HTML-like 元素
@@ -257,6 +271,7 @@ public final class HtmlLikeDocumentWidget extends Widget {
         if (width <= 0 || width == preferredWidth) {
             return preferredHeight;
         }
+        staticLayoutGeneration++;
         DocumentLayoutBox box = DocumentLayoutEngine.layout(document.getRootElement(), width, 0,
                 textMeasureService);
         return Math.max(preferredHeight, box.getHeight());
@@ -415,8 +430,9 @@ public final class HtmlLikeDocumentWidget extends Widget {
                         return Math.round(animationTimeline.resolveFloat(element, property, baseValue,
                                 currentTimeNanos));
                     }
-                };
+        };
         DocumentLayoutBox rootBox = layoutDocument(layoutValueResolver);
+        runtimeLayoutGeneration++;
         scrollState.updateFromLayout(rootBox);
         return rootBox;
     }
@@ -450,6 +466,7 @@ public final class HtmlLikeDocumentWidget extends Widget {
         }
 
         cachedLayoutBox = layoutDocument(null);
+        staticLayoutGeneration++;
         cachedLayoutScrollStateUpdated = false;
         cachedLayoutVersion = layoutVersion;
         cachedPaintVersion = document.getPaintVersion();
@@ -654,5 +671,71 @@ public final class HtmlLikeDocumentWidget extends Widget {
             }
         }
         return false;
+    }
+
+    /**
+     * HTML-like 文档组件缓存与布局重建的只读诊断快照。
+     */
+    public static final class PerformanceDiagnosticsSnapshot {
+
+        private static final PerformanceDiagnosticsSnapshot EMPTY = new PerformanceDiagnosticsSnapshot(0, 0, 0, 0);
+
+        private final int paintCacheGeneration;
+        private final int staticLayoutGeneration;
+        private final int runtimeLayoutGeneration;
+        private final int textMeasureEpoch;
+
+        private PerformanceDiagnosticsSnapshot(int paintCacheGeneration, int staticLayoutGeneration,
+                int runtimeLayoutGeneration, int textMeasureEpoch) {
+            this.paintCacheGeneration = paintCacheGeneration;
+            this.staticLayoutGeneration = staticLayoutGeneration;
+            this.runtimeLayoutGeneration = runtimeLayoutGeneration;
+            this.textMeasureEpoch = textMeasureEpoch;
+        }
+
+        /**
+         * 返回空诊断快照。
+         *
+         * @return 空诊断快照
+         */
+        public static PerformanceDiagnosticsSnapshot empty() {
+            return EMPTY;
+        }
+
+        /**
+         * 返回 paint command 缓存重建代数。
+         *
+         * @return paint command 缓存重建代数
+         */
+        public int getPaintCacheGeneration() {
+            return paintCacheGeneration;
+        }
+
+        /**
+         * 返回静态布局重建代数。
+         *
+         * @return 静态布局重建代数
+         */
+        public int getStaticLayoutGeneration() {
+            return staticLayoutGeneration;
+        }
+
+        /**
+         * 返回 layout 动画运行态布局重建代数。
+         *
+         * @return layout 动画运行态布局重建代数
+         */
+        public int getRuntimeLayoutGeneration() {
+            return runtimeLayoutGeneration;
+        }
+
+        /**
+         * 返回当前文本测量服务 epoch。
+         *
+         * @return 文本测量服务 epoch
+         */
+        public int getTextMeasureEpoch() {
+            return textMeasureEpoch;
+        }
     }
 }

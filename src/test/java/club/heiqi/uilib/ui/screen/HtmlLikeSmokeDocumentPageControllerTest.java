@@ -335,6 +335,10 @@ public class HtmlLikeSmokeDocumentPageControllerTest {
         Assert.assertTrue(containsTextCall(initialRenderContext.textCalls,
                 "Layout animation coverage: WIDTH/HEIGHT/MARGIN_LEFT/MARGIN_RIGHT/PADDING_LEFT/PADDING_RIGHT"));
         Assert.assertTrue(containsTextCall(initialRenderContext.textCalls, "layout t=0 k=0 f=0 active=false"));
+        Assert.assertTrue(containsTextCall(initialRenderContext.textCalls, "Cache runtime: paintGen="));
+        Assert.assertTrue(containsTextCall(initialRenderContext.textCalls, "staticLayout="));
+        Assert.assertTrue(containsTextCall(initialRenderContext.textCalls, "runtimeLayout="));
+        Assert.assertTrue(containsTextCall(initialRenderContext.textCalls, "textEpoch="));
 
         int siblingLeftBefore = findElementBackgroundCommand(widget, fixture.textMeasureService, sibling).getLeft();
         clickElementCenter(widget, fixture.textMeasureService, layoutCard, 1L, 2L);

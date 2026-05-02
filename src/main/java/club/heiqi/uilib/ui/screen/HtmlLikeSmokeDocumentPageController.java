@@ -75,6 +75,12 @@ final class HtmlLikeSmokeDocumentPageController extends DocumentPageController {
                 return widgetReference[0] == null ? DocumentAnimationTimeline.DiagnosticsSnapshot.empty()
                         : widgetReference[0].getAnimationDiagnosticsSnapshot();
             }
+
+            @Override
+            public HtmlLikeDocumentWidget.PerformanceDiagnosticsSnapshot getPerformanceSnapshot() {
+                return widgetReference[0] == null ? HtmlLikeDocumentWidget.PerformanceDiagnosticsSnapshot.empty()
+                        : widgetReference[0].getPerformanceDiagnosticsSnapshot();
+            }
         });
         this.htmlLikeDocumentWidget = new HtmlLikeDocumentWidget(smokeDocument, 760, 320,
                 Objects.requireNonNull(textMeasureService, "textMeasureService"));
@@ -718,7 +724,7 @@ final class HtmlLikeSmokeDocumentPageController extends DocumentPageController {
             AnimationRuntimeDiagnostics animationRuntimeDiagnostics) {
         ElementNode probe = document.div();
         probe.style()
-                .setHeight(UiStyleLength.px(328))
+                .setHeight(UiStyleLength.px(346))
                 .setMargin(UiStyleInsets.of(UiStyleLength.px(12), UiStyleLength.px(0), UiStyleLength.px(0),
                         UiStyleLength.px(0)))
                 .setPadding(UiStyleLength.px(10))
@@ -780,6 +786,25 @@ final class HtmlLikeSmokeDocumentPageController extends DocumentPageController {
             }
         });
         probe.append(runtimeImpactDiagnostic);
+
+        ElementNode cacheDiagnostic = document.div();
+        cacheDiagnostic.style()
+                .setHeight(UiStyleLength.px(14))
+                .setMargin(UiStyleInsets.of(UiStyleLength.px(2), UiStyleLength.px(0), UiStyleLength.px(0),
+                        UiStyleLength.px(0)))
+                .setTextColor(0x00000000)
+                .setOverflowX(UiOverflow.HIDDEN)
+                .setOverflowY(UiOverflow.HIDDEN);
+        cacheDiagnostic.appendText(formatPerformanceDiagnosticText(animationRuntimeDiagnostics));
+        cacheDiagnostic.setCustomRenderer(new DocumentCustomRenderer() {
+            @Override
+            public void render(UiRenderContext context, int contentLeft, int contentTop, int contentRight,
+                    int contentBottom) {
+                context.drawText(formatPerformanceDiagnosticText(animationRuntimeDiagnostics), contentLeft,
+                        contentTop, 0xFFBAE6FD, false);
+            }
+        });
+        probe.append(cacheDiagnostic);
 
         ElementNode row = document.div();
         row.style()
@@ -1394,6 +1419,27 @@ final class HtmlLikeSmokeDocumentPageController extends DocumentPageController {
     }
 
     /**
+     * 格式化缓存与布局重建诊断文本。
+     *
+     * @param animationRuntimeDiagnostics 动画运行诊断源
+     * @return 展示文本
+     */
+    private static String formatPerformanceDiagnosticText(AnimationRuntimeDiagnostics animationRuntimeDiagnostics) {
+        HtmlLikeDocumentWidget.PerformanceDiagnosticsSnapshot snapshot = getPerformanceDiagnosticsSnapshot(
+                animationRuntimeDiagnostics);
+        return "Cache runtime: paintGen=" + snapshot.getPaintCacheGeneration()
+                + " staticLayout=" + snapshot.getStaticLayoutGeneration()
+                + " runtimeLayout=" + snapshot.getRuntimeLayoutGeneration()
+                + " textEpoch=" + snapshot.getTextMeasureEpoch();
+    }
+
+    private static HtmlLikeDocumentWidget.PerformanceDiagnosticsSnapshot getPerformanceDiagnosticsSnapshot(
+            AnimationRuntimeDiagnostics animationRuntimeDiagnostics) {
+        return animationRuntimeDiagnostics == null ? HtmlLikeDocumentWidget.PerformanceDiagnosticsSnapshot.empty()
+                : animationRuntimeDiagnostics.getPerformanceSnapshot();
+    }
+
+    /**
      * 格式化 smoke Tab 焦点样例展示文本。
      *
      * @param focused 当前是否聚焦
@@ -1414,5 +1460,12 @@ final class HtmlLikeSmokeDocumentPageController extends DocumentPageController {
          * @return 动画运行态诊断快照
          */
         DocumentAnimationTimeline.DiagnosticsSnapshot getSnapshot();
+
+        /**
+         * 返回当前缓存与布局重建诊断快照。
+         *
+         * @return 缓存与布局重建诊断快照
+         */
+        HtmlLikeDocumentWidget.PerformanceDiagnosticsSnapshot getPerformanceSnapshot();
     }
 }
