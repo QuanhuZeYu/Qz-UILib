@@ -115,6 +115,24 @@ public final class UiStyleResolver {
         if ("span".equals(tagName)) {
             return UiDisplay.INLINE;
         }
+        if ("table".equals(tagName)) {
+            return UiDisplay.TABLE;
+        }
+        if ("thead".equals(tagName)) {
+            return UiDisplay.TABLE_HEADER_GROUP;
+        }
+        if ("tbody".equals(tagName)) {
+            return UiDisplay.TABLE_ROW_GROUP;
+        }
+        if ("tfoot".equals(tagName)) {
+            return UiDisplay.TABLE_FOOTER_GROUP;
+        }
+        if ("tr".equals(tagName)) {
+            return UiDisplay.TABLE_ROW;
+        }
+        if ("td".equals(tagName) || "th".equals(tagName)) {
+            return UiDisplay.TABLE_CELL;
+        }
         return UiDisplay.BLOCK;
     }
 }

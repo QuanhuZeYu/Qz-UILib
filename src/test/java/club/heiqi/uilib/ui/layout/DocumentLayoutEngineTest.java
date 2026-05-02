@@ -120,6 +120,108 @@ public class DocumentLayoutEngineTest {
     }
 
     /**
+     * 验证 table 布局按列宽、行高和行列间距生成 table row/cell 盒。
+     */
+    @Test
+    public void shouldLayoutTableRowsAndCells() {
+        UiDocument document = UiDocument.create();
+        ElementNode root = document.getRootElement();
+        ElementNode table = document.table();
+        ElementNode body = document.tbody();
+        ElementNode firstRow = document.tr();
+        ElementNode secondRow = document.tr();
+        ElementNode firstName = document.td();
+        ElementNode firstValue = document.td();
+        ElementNode secondName = document.td();
+        ElementNode secondValue = document.td();
+
+        root.style().setWidth(UiStyleLength.px(260));
+        table.style()
+                .setWidth(UiStyleLength.px(200))
+                .setRowGap(UiStyleLength.px(4))
+                .setColumnGap(UiStyleLength.px(6));
+        firstName.style()
+                .setWidth(UiStyleLength.px(70))
+                .setPadding(UiStyleLength.px(3))
+                .setBorderWidth(UiStyleLength.px(1));
+        firstValue.style()
+                .setPadding(UiStyleLength.px(3))
+                .setBorderWidth(UiStyleLength.px(1));
+        secondName.style()
+                .setPadding(UiStyleLength.px(3))
+                .setBorderWidth(UiStyleLength.px(1));
+        secondValue.style()
+                .setPadding(UiStyleLength.px(3))
+                .setBorderWidth(UiStyleLength.px(1));
+        firstName.appendText("A");
+        firstValue.appendText("B");
+        secondName.appendText("C");
+        secondValue.appendText("D");
+        firstRow.append(firstName).append(firstValue);
+        secondRow.append(secondName).append(secondValue);
+        body.append(firstRow).append(secondRow);
+        table.append(body);
+        root.append(table);
+
+        DocumentLayoutBox tableBox = DocumentLayoutEngine.layout(root, 260, 0,
+                new DeterministicTextMeasureService()).getChildren().get(0);
+        DocumentLayoutBox bodyBox = tableBox.getChildren().get(0);
+        DocumentLayoutBox firstRowBox = bodyBox.getChildren().get(0);
+        DocumentLayoutBox secondRowBox = bodyBox.getChildren().get(1);
+        DocumentLayoutBox firstNameBox = firstRowBox.getChildren().get(0);
+        DocumentLayoutBox firstValueBox = firstRowBox.getChildren().get(1);
+
+        Assert.assertEquals(200, tableBox.getContentWidth());
+        Assert.assertEquals(200, bodyBox.getWidth());
+        Assert.assertEquals(200, firstRowBox.getWidth());
+        Assert.assertEquals(78, firstNameBox.getWidth());
+        Assert.assertEquals(116, firstValueBox.getWidth());
+        Assert.assertEquals(84, firstValueBox.getLeft());
+        Assert.assertEquals(firstNameBox.getHeight(), firstRowBox.getHeight());
+        Assert.assertEquals(firstRowBox.getBottom() + 4, secondRowBox.getTop());
+        Assert.assertEquals(secondRowBox.getBottom(), tableBox.getContentHeight());
+    }
+
+    /**
+     * 验证 table 布局会让同一行的单元格拉伸到统一行高。
+     */
+    @Test
+    public void shouldStretchTableCellsToResolvedRowHeight() {
+        UiDocument document = UiDocument.create();
+        ElementNode root = document.getRootElement();
+        ElementNode table = document.table();
+        ElementNode row = document.tr();
+        ElementNode shortCell = document.td();
+        ElementNode tallCell = document.td();
+
+        root.style().setWidth(UiStyleLength.px(220));
+        table.style().setWidth(UiStyleLength.px(160));
+        row.style().setHeight(UiStyleLength.px(40));
+        shortCell.style()
+                .setWidth(UiStyleLength.px(60))
+                .setPadding(UiStyleLength.px(2))
+                .setBorderWidth(UiStyleLength.px(1));
+        tallCell.style()
+                .setPadding(UiStyleLength.px(2))
+                .setBorderWidth(UiStyleLength.px(1));
+        shortCell.appendText("A");
+        tallCell.appendText("B");
+        row.append(shortCell).append(tallCell);
+        table.append(row);
+        root.append(table);
+
+        DocumentLayoutBox rowBox = DocumentLayoutEngine.layout(root, 220, 0,
+                new DeterministicTextMeasureService()).getChildren().get(0).getChildren().get(0);
+        DocumentLayoutBox shortCellBox = rowBox.getChildren().get(0);
+        DocumentLayoutBox tallCellBox = rowBox.getChildren().get(1);
+
+        Assert.assertEquals(40, rowBox.getHeight());
+        Assert.assertEquals(40, shortCellBox.getHeight());
+        Assert.assertEquals(40, tallCellBox.getHeight());
+        Assert.assertEquals(34, shortCellBox.getContentHeight());
+    }
+
+    /**
      * 验证四边 margin 会影响子盒在父 content box 内的流式位置。
      */
     @Test

@@ -90,6 +90,69 @@ public final class UiDocument {
     }
 
     /**
+     * 创建 table 元素。
+     *
+     * @return table 元素
+     */
+    public ElementNode table() {
+        return element("table");
+    }
+
+    /**
+     * 创建 thead 元素。
+     *
+     * @return thead 元素
+     */
+    public ElementNode thead() {
+        return element("thead");
+    }
+
+    /**
+     * 创建 tbody 元素。
+     *
+     * @return tbody 元素
+     */
+    public ElementNode tbody() {
+        return element("tbody");
+    }
+
+    /**
+     * 创建 tfoot 元素。
+     *
+     * @return tfoot 元素
+     */
+    public ElementNode tfoot() {
+        return element("tfoot");
+    }
+
+    /**
+     * 创建 tr 元素。
+     *
+     * @return tr 元素
+     */
+    public ElementNode tr() {
+        return element("tr");
+    }
+
+    /**
+     * 创建 th 元素。
+     *
+     * @return th 元素
+     */
+    public ElementNode th() {
+        return element("th");
+    }
+
+    /**
+     * 创建 td 元素。
+     *
+     * @return td 元素
+     */
+    public ElementNode td() {
+        return element("td");
+    }
+
+    /**
      * 创建文本节点。
      *
      * @param text 文本内容

@@ -25,7 +25,7 @@ import club.heiqi.uilib.ui.text.TextMeasureService;
 /**
  * HTML-like 文档布局引擎初版。
  *
- * <p>当前实现覆盖元素盒、box model、block flow、最小 flex flow、relative 定位偏移、absolute 脱流定位
+ * <p>当前实现覆盖元素盒、box model、block flow、最小 flex flow、table flow、relative 定位偏移、absolute 脱流定位
  * 与 fixed 视口定位。absolute 元素会相对最近 positioned ancestor 的 content box 定位，没有 positioned
  * ancestor 时回退根 content box；fixed 元素相对当前 HTML-like 视口定位。当前已支持 positioned 元素
  * 在横向或纵向两侧 inset 同时存在且尺寸为 auto 时进行 stretch 求解，并支持包含 inline 元素的
@@ -197,13 +197,20 @@ public final class DocumentLayoutEngine {
                 ? new AbsoluteContainingBlock(contentLeft, contentTop, contentWidth,
                         resolveInitialAbsoluteContainingBlockHeight(specifiedContentHeight))
                 : absoluteContainingBlock;
-        LayoutChildrenResult childrenResult = computedStyle.getDisplay() == UiDisplay.FLEX
-                ? layoutFlexChildren(element, computedStyle, contentLeft, contentTop, contentWidth,
-                        specifiedContentHeight, childrenAbsoluteContainingBlock, createsAbsoluteContainingBlock,
-                        fixedContainingBlock, textMeasureService, layoutValueResolver)
-                : layoutBlockChildren(element, contentLeft, contentTop, contentWidth, specifiedContentHeight,
-                        childrenAbsoluteContainingBlock, createsAbsoluteContainingBlock, fixedContainingBlock,
-                        textMeasureService, layoutValueResolver);
+        LayoutChildrenResult childrenResult;
+        if (computedStyle.getDisplay() == UiDisplay.FLEX) {
+            childrenResult = layoutFlexChildren(element, computedStyle, contentLeft, contentTop, contentWidth,
+                    specifiedContentHeight, childrenAbsoluteContainingBlock, createsAbsoluteContainingBlock,
+                    fixedContainingBlock, textMeasureService, layoutValueResolver);
+        } else if (computedStyle.getDisplay() == UiDisplay.TABLE) {
+            childrenResult = layoutTableChildren(element, computedStyle, contentLeft, contentTop, contentWidth,
+                    specifiedContentHeight, childrenAbsoluteContainingBlock, createsAbsoluteContainingBlock,
+                    fixedContainingBlock, textMeasureService, layoutValueResolver);
+        } else {
+            childrenResult = layoutBlockChildren(element, contentLeft, contentTop, contentWidth, specifiedContentHeight,
+                    childrenAbsoluteContainingBlock, createsAbsoluteContainingBlock, fixedContainingBlock,
+                    textMeasureService, layoutValueResolver);
+        }
 
         int autoContentHeight = childrenResult.contentHeight;
         int contentHeight = resolveContentHeight(element, computedStyle, forcedContentHeight, autoContentHeight,
@@ -289,6 +296,342 @@ public final class DocumentLayoutEngine {
                 layoutValueResolver);
         return new LayoutChildrenResult(sortByDocumentChildOrder(element, childBoxes), textRuns,
                 markInlineFragmentSequence(mergeInlineFragments(inlineFragments)), contentHeight);
+    }
+
+    private static LayoutChildrenResult layoutTableChildren(ElementNode element, ComputedStyle tableStyle,
+            int contentLeft, int contentTop, int contentWidth, int specifiedContentHeight,
+            AbsoluteContainingBlock absoluteContainingBlock, boolean createsAbsoluteContainingBlock,
+            AbsoluteContainingBlock fixedContainingBlock, TextMeasureService textMeasureService,
+            LayoutRuntimeValueResolver layoutValueResolver) {
+        List<ElementNode> absoluteChildren = getVisibleAbsoluteElementChildren(element);
+        List<ElementNode> fixedChildren = getVisibleFixedElementChildren(element);
+        List<TableRowPlan> rowPlans = collectTableRows(element);
+        List<DocumentLayoutBox> childBoxes = new ArrayList<DocumentLayoutBox>();
+        int columnCount = resolveTableColumnCount(rowPlans);
+        int rowGap = Math.max(0, tableStyle.getRowGap().resolve(contentWidth, 0));
+        int columnGap = Math.max(0, tableStyle.getColumnGap().resolve(contentWidth, 0));
+        int childFlowTop = contentTop;
+        if (columnCount > 0) {
+            int[] columnWidths = resolveTableColumnWidths(rowPlans, columnCount, contentWidth, columnGap,
+                    layoutValueResolver);
+            boolean hasPreviousTableChild = false;
+            for (DocumentNode child : element.getChildren()) {
+                if (!(child instanceof ElementNode)) {
+                    continue;
+                }
+                ElementNode childElement = (ElementNode) child;
+                ComputedStyle childStyle = UiStyleResolver.compute(childElement);
+                if (childStyle.getDisplay() == UiDisplay.NONE || isOutOfFlowPositioned(childStyle)) {
+                    continue;
+                }
+                DocumentLayoutBox childBox = null;
+                if (isTableRowGroupDisplay(childStyle.getDisplay())) {
+                    childBox = layoutTableSection(childElement, contentLeft, childFlowTop, contentWidth, columnWidths,
+                            rowGap, columnGap, absoluteContainingBlock, fixedContainingBlock, textMeasureService,
+                            layoutValueResolver);
+                } else if (childStyle.getDisplay() == UiDisplay.TABLE_ROW) {
+                    childBox = layoutTableRow(new TableRowPlan(childElement, collectTableRowCells(childElement)),
+                            contentLeft, childFlowTop, contentWidth, columnWidths, columnGap, absoluteContainingBlock,
+                            fixedContainingBlock, textMeasureService, layoutValueResolver);
+                }
+                if (childBox == null) {
+                    continue;
+                }
+                if (hasPreviousTableChild) {
+                    int shiftedTop = childFlowTop + rowGap;
+                    childBox = relayoutTableDirectChild(childBox, shiftedTop, contentLeft, contentWidth, columnWidths,
+                            rowGap, columnGap, absoluteContainingBlock, fixedContainingBlock, textMeasureService,
+                            layoutValueResolver);
+                }
+                childBoxes.add(childBox);
+                childFlowTop = childBox.getBottom();
+                hasPreviousTableChild = true;
+            }
+        }
+        int contentHeight = Math.max(0, childFlowTop - contentTop);
+        appendAbsoluteChildren(childBoxes, absoluteChildren, resolveDirectAbsoluteContainingBlock(
+                absoluteContainingBlock, createsAbsoluteContainingBlock, specifiedContentHeight, contentHeight),
+                fixedContainingBlock, textMeasureService, layoutValueResolver);
+        appendFixedChildren(childBoxes, fixedChildren, fixedContainingBlock, textMeasureService,
+                layoutValueResolver);
+        return new LayoutChildrenResult(sortByDocumentChildOrder(element, childBoxes),
+                new ArrayList<DocumentLayoutTextRun>(), new ArrayList<DocumentLayoutInlineFragment>(), contentHeight);
+    }
+
+    private static DocumentLayoutBox relayoutTableDirectChild(DocumentLayoutBox previousBox, int top,
+            int contentLeft, int contentWidth, int[] columnWidths, int rowGap, int columnGap,
+            AbsoluteContainingBlock absoluteContainingBlock, AbsoluteContainingBlock fixedContainingBlock,
+            TextMeasureService textMeasureService, LayoutRuntimeValueResolver layoutValueResolver) {
+        ElementNode element = previousBox.getElement();
+        ComputedStyle style = UiStyleResolver.compute(element);
+        if (isTableRowGroupDisplay(style.getDisplay())) {
+            return layoutTableSection(element, contentLeft, top, contentWidth, columnWidths, rowGap, columnGap,
+                    absoluteContainingBlock, fixedContainingBlock, textMeasureService, layoutValueResolver);
+        }
+        return layoutTableRow(new TableRowPlan(element, collectTableRowCells(element)), contentLeft, top, contentWidth,
+                columnWidths, columnGap, absoluteContainingBlock, fixedContainingBlock, textMeasureService,
+                layoutValueResolver);
+    }
+
+    private static DocumentLayoutBox layoutTableSection(ElementNode sectionElement, int contentLeft, int sectionTop,
+            int contentWidth, int[] columnWidths, int rowGap, int columnGap,
+            AbsoluteContainingBlock absoluteContainingBlock, AbsoluteContainingBlock fixedContainingBlock,
+            TextMeasureService textMeasureService, LayoutRuntimeValueResolver layoutValueResolver) {
+        List<DocumentLayoutBox> rowBoxes = new ArrayList<DocumentLayoutBox>();
+        int rowTop = sectionTop;
+        boolean hasPreviousRow = false;
+        for (DocumentNode child : sectionElement.getChildren()) {
+            if (!(child instanceof ElementNode)) {
+                continue;
+            }
+            ElementNode rowElement = (ElementNode) child;
+            ComputedStyle rowStyle = UiStyleResolver.compute(rowElement);
+            if (rowStyle.getDisplay() == UiDisplay.NONE || rowStyle.getDisplay() != UiDisplay.TABLE_ROW
+                    || isOutOfFlowPositioned(rowStyle)) {
+                continue;
+            }
+            if (hasPreviousRow) {
+                rowTop += rowGap;
+            }
+            DocumentLayoutBox rowBox = layoutTableRow(new TableRowPlan(rowElement, collectTableRowCells(rowElement)),
+                    contentLeft, rowTop, contentWidth, columnWidths, columnGap, absoluteContainingBlock,
+                    fixedContainingBlock, textMeasureService, layoutValueResolver);
+            rowBoxes.add(rowBox);
+            rowTop = rowBox.getBottom();
+            hasPreviousRow = true;
+        }
+        if (rowBoxes.isEmpty()) {
+            return null;
+        }
+        return new DocumentLayoutBox(sectionElement, UiStyleResolver.compute(sectionElement), rowBoxes,
+                new ArrayList<DocumentLayoutTextRun>(), new ArrayList<DocumentLayoutInlineFragment>(),
+                DocumentLayoutEdges.zero(), DocumentLayoutEdges.zero(), DocumentLayoutEdges.zero(), contentLeft,
+                sectionTop, contentWidth, Math.max(0, rowTop - sectionTop), 0, 0);
+    }
+
+    private static DocumentLayoutBox layoutTableRow(TableRowPlan rowPlan, int contentLeft, int rowTop,
+            int contentWidth, int[] columnWidths, int columnGap, AbsoluteContainingBlock absoluteContainingBlock,
+            AbsoluteContainingBlock fixedContainingBlock, TextMeasureService textMeasureService,
+            LayoutRuntimeValueResolver layoutValueResolver) {
+        int rowHeight = resolveTableRowSpecifiedHeight(rowPlan.element, layoutValueResolver);
+        for (int columnIndex = 0; columnIndex < columnWidths.length; columnIndex++) {
+            ElementNode cellElement = rowPlan.getCell(columnIndex);
+            if (cellElement == null) {
+                continue;
+            }
+            int columnWidth = columnWidths[columnIndex];
+            int forcedContentWidth = resolveTableCellForcedContentWidth(cellElement, columnWidth,
+                    layoutValueResolver);
+            DocumentLayoutBox measuredBox = layoutElement(cellElement, 0, 0, columnWidth, forcedContentWidth,
+                    AUTO_SIZE, absoluteContainingBlock, fixedContainingBlock, textMeasureService, layoutValueResolver);
+            rowHeight = Math.max(rowHeight, getOuterBlockHeight(measuredBox));
+        }
+
+        List<DocumentLayoutBox> cellBoxes = new ArrayList<DocumentLayoutBox>();
+        int cellLeft = contentLeft;
+        for (int columnIndex = 0; columnIndex < columnWidths.length; columnIndex++) {
+            ElementNode cellElement = rowPlan.getCell(columnIndex);
+            int columnWidth = columnWidths[columnIndex];
+            if (cellElement != null) {
+                int forcedContentWidth = resolveTableCellForcedContentWidth(cellElement, columnWidth,
+                        layoutValueResolver);
+                int forcedContentHeight = resolveTableCellForcedContentHeight(cellElement, rowHeight, columnWidth,
+                        layoutValueResolver);
+                cellBoxes.add(layoutElement(cellElement, cellLeft, rowTop, columnWidth, forcedContentWidth,
+                        forcedContentHeight, absoluteContainingBlock, fixedContainingBlock, textMeasureService,
+                        layoutValueResolver));
+            }
+            cellLeft += columnWidth + columnGap;
+        }
+        return new DocumentLayoutBox(rowPlan.element, UiStyleResolver.compute(rowPlan.element), cellBoxes,
+                new ArrayList<DocumentLayoutTextRun>(), new ArrayList<DocumentLayoutInlineFragment>(),
+                DocumentLayoutEdges.zero(), DocumentLayoutEdges.zero(), DocumentLayoutEdges.zero(), contentLeft,
+                rowTop, contentWidth, rowHeight, 0, 0);
+    }
+
+    private static List<TableRowPlan> collectTableRows(ElementNode tableElement) {
+        List<TableRowPlan> rows = new ArrayList<TableRowPlan>();
+        for (DocumentNode child : tableElement.getChildren()) {
+            if (!(child instanceof ElementNode)) {
+                continue;
+            }
+            ElementNode childElement = (ElementNode) child;
+            ComputedStyle childStyle = UiStyleResolver.compute(childElement);
+            if (childStyle.getDisplay() == UiDisplay.NONE || isOutOfFlowPositioned(childStyle)) {
+                continue;
+            }
+            if (isTableRowGroupDisplay(childStyle.getDisplay())) {
+                collectTableSectionRows(childElement, rows);
+            } else if (childStyle.getDisplay() == UiDisplay.TABLE_ROW) {
+                rows.add(new TableRowPlan(childElement, collectTableRowCells(childElement)));
+            }
+        }
+        return rows;
+    }
+
+    private static void collectTableSectionRows(ElementNode sectionElement, List<TableRowPlan> rows) {
+        for (DocumentNode child : sectionElement.getChildren()) {
+            if (!(child instanceof ElementNode)) {
+                continue;
+            }
+            ElementNode rowElement = (ElementNode) child;
+            ComputedStyle rowStyle = UiStyleResolver.compute(rowElement);
+            if (rowStyle.getDisplay() == UiDisplay.TABLE_ROW && !isOutOfFlowPositioned(rowStyle)) {
+                rows.add(new TableRowPlan(rowElement, collectTableRowCells(rowElement)));
+            }
+        }
+    }
+
+    private static List<ElementNode> collectTableRowCells(ElementNode rowElement) {
+        List<ElementNode> cells = new ArrayList<ElementNode>();
+        for (DocumentNode child : rowElement.getChildren()) {
+            if (!(child instanceof ElementNode)) {
+                continue;
+            }
+            ElementNode cellElement = (ElementNode) child;
+            ComputedStyle cellStyle = UiStyleResolver.compute(cellElement);
+            if (cellStyle.getDisplay() == UiDisplay.TABLE_CELL && !isOutOfFlowPositioned(cellStyle)) {
+                cells.add(cellElement);
+            }
+        }
+        return cells;
+    }
+
+    private static int resolveTableColumnCount(List<TableRowPlan> rows) {
+        int columnCount = 0;
+        for (TableRowPlan row : rows) {
+            columnCount = Math.max(columnCount, row.cells.size());
+        }
+        return columnCount;
+    }
+
+    private static int[] resolveTableColumnWidths(List<TableRowPlan> rows, int columnCount, int contentWidth,
+            int columnGap, LayoutRuntimeValueResolver layoutValueResolver) {
+        int[] widths = new int[columnCount];
+        boolean[] explicitColumns = new boolean[columnCount];
+        int availableWidth = Math.max(0, contentWidth - Math.max(0, columnCount - 1) * columnGap);
+        for (TableRowPlan row : rows) {
+            for (int columnIndex = 0; columnIndex < row.cells.size() && columnIndex < columnCount; columnIndex++) {
+                int preferredWidth = resolveSpecifiedTableCellOuterWidth(row.cells.get(columnIndex), availableWidth,
+                        layoutValueResolver);
+                if (preferredWidth < 0) {
+                    continue;
+                }
+                widths[columnIndex] = Math.max(widths[columnIndex], preferredWidth);
+                explicitColumns[columnIndex] = true;
+            }
+        }
+        fitTableColumnWidths(widths, explicitColumns, availableWidth);
+        return widths;
+    }
+
+    private static int resolveSpecifiedTableCellOuterWidth(ElementNode cellElement, int availableWidth,
+            LayoutRuntimeValueResolver layoutValueResolver) {
+        ComputedStyle style = UiStyleResolver.compute(cellElement);
+        if (isAuto(style.getWidth())) {
+            return -1;
+        }
+        DocumentLayoutEdges margin = resolveMarginInsets(cellElement, style, availableWidth, layoutValueResolver);
+        DocumentLayoutEdges border = resolveUniformEdge(style.getBorderWidth(), availableWidth);
+        DocumentLayoutEdges padding = resolvePaddingInsets(cellElement, style, availableWidth, layoutValueResolver);
+        int baseWidth = Math.max(0, style.getWidth().resolve(availableWidth, 0));
+        int contentWidth = Math.max(0, layoutValueResolver.resolve(cellElement, DocumentAnimationProperty.WIDTH,
+                baseWidth));
+        return contentWidth + margin.getHorizontal() + border.getHorizontal() + padding.getHorizontal();
+    }
+
+    private static void fitTableColumnWidths(int[] widths, boolean[] explicitColumns, int availableWidth) {
+        int usedWidth = sum(widths);
+        if (usedWidth < availableWidth) {
+            distributeTableWidth(widths, explicitColumns, availableWidth - usedWidth);
+            return;
+        }
+        if (usedWidth > availableWidth) {
+            shrinkTableWidths(widths, usedWidth - availableWidth);
+        }
+    }
+
+    private static void distributeTableWidth(int[] widths, boolean[] explicitColumns, int extraWidth) {
+        int targetCount = 0;
+        for (boolean explicitColumn : explicitColumns) {
+            if (!explicitColumn) {
+                targetCount++;
+            }
+        }
+        boolean useAutoColumns = targetCount > 0;
+        if (!useAutoColumns) {
+            targetCount = widths.length;
+        }
+        if (targetCount <= 0 || extraWidth <= 0) {
+            return;
+        }
+        int distributed = 0;
+        int targetIndex = 0;
+        for (int columnIndex = 0; columnIndex < widths.length; columnIndex++) {
+            if (useAutoColumns && explicitColumns[columnIndex]) {
+                continue;
+            }
+            targetIndex++;
+            int addition = targetIndex == targetCount ? extraWidth - distributed
+                    : extraWidth / targetCount;
+            widths[columnIndex] += Math.max(0, addition);
+            distributed += Math.max(0, addition);
+        }
+    }
+
+    private static void shrinkTableWidths(int[] widths, int overflow) {
+        int usedWidth = sum(widths);
+        if (usedWidth <= 0 || overflow <= 0) {
+            return;
+        }
+        int removed = 0;
+        for (int columnIndex = 0; columnIndex < widths.length; columnIndex++) {
+            int cut = columnIndex == widths.length - 1 ? overflow - removed
+                    : Math.round(overflow * widths[columnIndex] / (float) usedWidth);
+            cut = Math.max(0, Math.min(cut, widths[columnIndex]));
+            widths[columnIndex] -= cut;
+            removed += cut;
+        }
+    }
+
+    private static int resolveTableCellForcedContentWidth(ElementNode cellElement, int columnWidth,
+            LayoutRuntimeValueResolver layoutValueResolver) {
+        ComputedStyle style = UiStyleResolver.compute(cellElement);
+        DocumentLayoutEdges margin = resolveMarginInsets(cellElement, style, columnWidth, layoutValueResolver);
+        DocumentLayoutEdges border = resolveUniformEdge(style.getBorderWidth(), columnWidth);
+        DocumentLayoutEdges padding = resolvePaddingInsets(cellElement, style, columnWidth, layoutValueResolver);
+        return Math.max(0, columnWidth - margin.getHorizontal() - border.getHorizontal() - padding.getHorizontal());
+    }
+
+    private static int resolveTableCellForcedContentHeight(ElementNode cellElement, int rowHeight, int columnWidth,
+            LayoutRuntimeValueResolver layoutValueResolver) {
+        ComputedStyle style = UiStyleResolver.compute(cellElement);
+        DocumentLayoutEdges margin = resolveMarginInsets(cellElement, style, columnWidth, layoutValueResolver);
+        DocumentLayoutEdges border = resolveUniformEdge(style.getBorderWidth(), columnWidth);
+        DocumentLayoutEdges padding = resolvePaddingInsets(cellElement, style, columnWidth, layoutValueResolver);
+        return Math.max(0, rowHeight - margin.getVertical() - border.getVertical() - padding.getVertical());
+    }
+
+    private static int resolveTableRowSpecifiedHeight(ElementNode rowElement,
+            LayoutRuntimeValueResolver layoutValueResolver) {
+        ComputedStyle rowStyle = UiStyleResolver.compute(rowElement);
+        if (isAuto(rowStyle.getHeight())) {
+            return 0;
+        }
+        int baseHeight = Math.max(0, rowStyle.getHeight().resolve(0, 0));
+        return Math.max(0, layoutValueResolver.resolve(rowElement, DocumentAnimationProperty.HEIGHT, baseHeight));
+    }
+
+    private static int getOuterBlockHeight(DocumentLayoutBox box) {
+        return Math.max(0, box.getMarginBoxBottom() - box.getMarginBoxTop());
+    }
+
+    private static int sum(int[] values) {
+        int result = 0;
+        for (int value : values) {
+            result += Math.max(0, value);
+        }
+        return result;
     }
 
     private static int appendTextRun(TextNode textNode, ElementNode ownerElement,
@@ -990,6 +1333,11 @@ public final class DocumentLayoutEngine {
         return isAbsolutePositioned(style) || isFixedPositioned(style);
     }
 
+    private static boolean isTableRowGroupDisplay(UiDisplay display) {
+        return display == UiDisplay.TABLE_HEADER_GROUP || display == UiDisplay.TABLE_ROW_GROUP
+                || display == UiDisplay.TABLE_FOOTER_GROUP;
+    }
+
     private static boolean isPositioned(ComputedStyle style) {
         return style.getPosition() != UiPosition.STATIC;
     }
@@ -1329,6 +1677,27 @@ public final class DocumentLayoutEngine {
             this.textRuns = textRuns;
             this.inlineFragments = inlineFragments;
             this.contentHeight = Math.max(0, contentHeight);
+        }
+    }
+
+    /**
+     * table 布局阶段使用的行与单元格计划。
+     */
+    private static final class TableRowPlan {
+
+        private final ElementNode element;
+        private final List<ElementNode> cells;
+
+        private TableRowPlan(ElementNode element, List<ElementNode> cells) {
+            this.element = element;
+            this.cells = cells;
+        }
+
+        private ElementNode getCell(int columnIndex) {
+            if (columnIndex < 0 || columnIndex >= cells.size()) {
+                return null;
+            }
+            return cells.get(columnIndex);
         }
     }
 

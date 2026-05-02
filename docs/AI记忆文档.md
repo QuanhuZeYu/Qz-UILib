@@ -31,18 +31,20 @@
 - `DocumentToggleSwitchControl` 以 flex row + justifyContent 表达开关，支持 click/Enter/Space 切换、enabled/disabled、focus-visible 与 toggle change handler。
 - `DocumentSegmentedSelectorControl` 以 element-backed button 组表达分段选择器，支持鼠标/键盘选择、enabled/disabled、选中态视觉和 selection handler。
 - `DocumentInventorySlotGridControl` 使用普通 HTML-like `ElementNode` 行列和 slot `div` 表达只读背包格子底板，slot 背景/边框走标准 `BACKGROUND`/`BORDER` 绘制命令；自定义渲染回调仅用于登记 Minecraft 物品图标延迟回放，复用 `ui.inventory` 下的 `InventorySlotGridLayout` 与 `InventorySlotGridItemRenderer`。
+- `DocumentTableControl` 使用真实 `table/thead/tbody/tr/th/td` 元素表达表格，支持表头、表体行、列宽、行列 gap、单元格 padding/border/background/text 样式；绘制走标准 background/border/text 命令，不使用 `CUSTOM`。
 
 ### 样式
 
 - 样式入口是 `ElementNode.style()` 的 Java inline style API；`UiStyleResolver` 输出 `ComputedStyle`。
-- 当前样式支持 `display`、px/%/auto 长度、margin/padding/border、颜色、文本色、`opacity`、`overflow`、`position: static/relative/absolute/fixed`、`top/right/bottom/left`、`zIndex`、flex row/column、gap、align、justify、grow/shrink、`vertical-align: baseline/top/middle/bottom`、`backdropBlurRadius`、`backdropSaturation`。
+- 当前样式支持 `display`、px/%/auto 长度、margin/padding/border、颜色、文本色、`opacity`、`overflow`、`position: static/relative/absolute/fixed`、`top/right/bottom/left`、`zIndex`、flex row/column、table/table row group/table row/table cell、gap、align、justify、grow/shrink、`vertical-align: baseline/top/middle/bottom`、`backdropBlurRadius`、`backdropSaturation`。
 - transition 声明支持 `transition-property`、duration、delay 与 timing function。
 - keyframe animation 声明支持 `animation-name`、duration、delay、iteration count、fill mode 与 timing function。
 - 样式系统当前不提供 CSS parser、样式表层叠、选择器匹配或媒体查询语义；作者侧使用 Java API 直接声明样式。
 
 ## 布局能力
 
-- `DocumentLayoutEngine` 支持 block flow、box model、px/% 长度、auto 高度、`display:none` 过滤、直接文本子节点测量/换行、text/span 首期 inline flow、flex row/column、gap、align、justify、grow/shrink。
+- `DocumentLayoutEngine` 支持 block flow、box model、px/% 长度、auto 高度、`display:none` 过滤、直接文本子节点测量/换行、text/span 首期 inline flow、flex row/column、gap、align、justify、grow/shrink、table 行列布局。
+- table 布局首期支持 `table/thead/tbody/tfoot/tr/th/td` 默认 display、行组/行/单元格盒、列宽汇总、自动列宽分配、row-gap/column-gap 和单元格行高拉伸；暂不覆盖 colspan/rowspan、border-collapse、caption 或完整 CSS table 算法。
 - inline flow 通过 `DocumentLayoutInlineFragment` 输出 fragment 几何；支持同一 inline 元素同一行相邻片段合并、跨行分片、首片/末片标记、父 inline fragment 覆盖嵌套 inline 子内容。
 - inline 元素左右 margin 参与行内流但不绘制；左右 border/padding 参与行内流；上下 border/padding 扩展行高与 fragment 表面；跨行 inline fragment 支持局部圆角切片。
 - `position: relative` 保留普通流位置，仅记录视觉偏移；绘制、命中与滚动几何阶段应用该偏移。
@@ -148,6 +150,7 @@
 
 - CSS transition / animation MVP 已完成游戏内收口验收：transition、keyframe、forwards fill 均具备 Smoke 可见诊断路径，`WIDTH/HEIGHT/MARGIN_LEFT/MARGIN_RIGHT/PADDING_LEFT/PADDING_RIGHT` layout 动画已完成纯 JVM、Smoke 探针、游戏内视觉、诊断与缓存边界验收。
 - 下一阶段暂停继续扩展动画属性和动画诊断显示；若后续确需新增 layout-affecting 属性，必须重新证明必要性，并继续限制在少量可控属性与明确 fallback。
+- HTML-like table 首期能力已接入：可先在普通数据表场景使用 `DocumentTableControl` 验证真实 DOM 表格结构、标准 paint 命令和行列布局；后续若要迁移背包槽位，应评估是否需要 colspan/rowspan、border-collapse 或更细 table 算法，而不是把 slot 特例写进 table 布局。
 - `inventory_overview` 背包页已转为生产级前测试准备：保留快捷栏、主背包、占用指标、slot DOM 底板、物品图标延迟回放和返回按钮，移除临时迁移验证卡；后续优先在真实背包 UI 中收口槽位视觉、焦点、滚动、命中与真实数据渲染问题，其次再评估 dirty subtree / 细粒度缓存或 effect chain 后续优化。
 - 不一次性开放全量布局动画。
 - paint/effect 动画不能触发布局；layout 动画可以重布局，但结束后必须恢复静态缓存。

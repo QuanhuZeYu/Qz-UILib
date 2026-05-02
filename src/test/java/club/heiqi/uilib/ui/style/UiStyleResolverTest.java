@@ -122,6 +122,22 @@ public class UiStyleResolverTest {
     }
 
     /**
+     * 验证 table 系列标签拥有 HTML-like 默认 display。
+     */
+    @Test
+    public void shouldResolveDefaultTableDisplays() {
+        UiDocument document = UiDocument.create();
+
+        Assert.assertEquals(UiDisplay.TABLE, UiStyleResolver.compute(document.table()).getDisplay());
+        Assert.assertEquals(UiDisplay.TABLE_HEADER_GROUP, UiStyleResolver.compute(document.thead()).getDisplay());
+        Assert.assertEquals(UiDisplay.TABLE_ROW_GROUP, UiStyleResolver.compute(document.tbody()).getDisplay());
+        Assert.assertEquals(UiDisplay.TABLE_FOOTER_GROUP, UiStyleResolver.compute(document.tfoot()).getDisplay());
+        Assert.assertEquals(UiDisplay.TABLE_ROW, UiStyleResolver.compute(document.tr()).getDisplay());
+        Assert.assertEquals(UiDisplay.TABLE_CELL, UiStyleResolver.compute(document.th()).getDisplay());
+        Assert.assertEquals(UiDisplay.TABLE_CELL, UiStyleResolver.compute(document.td()).getDisplay());
+    }
+
+    /**
      * 验证 inline style 会覆盖初始值与继承值。
      */
     @Test
