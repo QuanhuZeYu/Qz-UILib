@@ -42,7 +42,8 @@ public final class DocumentButtonControl {
      * @param label 按钮文本
      */
     public DocumentButtonControl(UiDocument document, String label) {
-        this.element = document.div();
+        this.element = document.button();
+        this.element.setAttribute("type", "button");
         this.labelText = element.appendText(normalizeLabel(label));
         configureElement();
         installHandlers();

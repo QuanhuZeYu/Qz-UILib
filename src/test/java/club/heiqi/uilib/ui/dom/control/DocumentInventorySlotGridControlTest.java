@@ -6,14 +6,17 @@ import java.util.List;
 
 import org.junit.Assert;
 import org.junit.Test;
+import org.lwjglx.input.Keyboard;
 
 import club.heiqi.uilib.ui.document.HtmlLikeDocumentWidget;
 import club.heiqi.uilib.ui.dom.DocumentElementActiveEvent;
 import club.heiqi.uilib.ui.dom.DocumentElementClickEvent;
 import club.heiqi.uilib.ui.dom.DocumentElementHoverEvent;
+import club.heiqi.uilib.ui.dom.DocumentElementKeyEvent;
 import club.heiqi.uilib.ui.dom.DocumentNode;
 import club.heiqi.uilib.ui.dom.ElementNode;
 import club.heiqi.uilib.ui.dom.UiDocument;
+import club.heiqi.uilib.ui.event.UiKeyEvent;
 import club.heiqi.uilib.ui.inventory.InventorySlotGridItemGeometry;
 import club.heiqi.uilib.ui.inventory.InventorySlotGridItemRenderer;
 import club.heiqi.uilib.ui.inventory.InventorySlotSnapshot;
@@ -251,8 +254,15 @@ public class DocumentInventorySlotGridControlTest {
         Assert.assertEquals(9, firstRow.getChildCount());
         Assert.assertEquals(Integer.valueOf(0xCC202A38), firstSlot.style().getBackgroundColor());
         Assert.assertEquals(Integer.valueOf(0xFF9AB8F2), firstSlot.style().getBorderColor());
+        Assert.assertEquals("button", firstSlot.getAttribute("role"));
+        Assert.assertEquals("0", firstSlot.getAttribute("tabindex"));
+        Assert.assertEquals("0", firstSlot.getAttribute("data-slot-index"));
+        Assert.assertEquals("true", firstSlot.getAttribute("data-slot-occupied"));
+        Assert.assertEquals("槽位 1，已占用", firstSlot.getAttribute("aria-label"));
         Assert.assertEquals(Integer.valueOf(0xAA171C24), secondSlot.style().getBackgroundColor());
         Assert.assertEquals(Integer.valueOf(0xFF465468), secondSlot.style().getBorderColor());
+        Assert.assertEquals("false", secondSlot.getAttribute("data-slot-occupied"));
+        Assert.assertEquals("槽位 2，空", secondSlot.getAttribute("aria-label"));
         Assert.assertEquals(UiStyleLength.px(30), firstSlot.style().getWidth());
         Assert.assertEquals(UiStyleLength.px(30), firstSlot.style().getHeight());
         for (DocumentNode rowNode : body.getChildren()) {
@@ -299,12 +309,13 @@ public class DocumentInventorySlotGridControlTest {
      * 验证槽位 hover 会更新高亮、tooltip，并在鼠标离开时恢复。
      */
     @Test
-    public void shouldHighlightHoveredSlotAndRenderTooltipOverlay() {
+    public void shouldHighlightHoveredSlotAndNotifyTooltipHover() {
         UiDocument document = UiDocument.create();
         ElementNode root = document.getRootElement();
         root.style()
                 .setWidth(UiStyleLength.px(240))
                 .setHeight(UiStyleLength.px(140));
+        final List<String> tooltipEvents = new ArrayList<String>();
         DocumentInventorySlotGridControl gridControl = new DocumentInventorySlotGridControl(document, 2, 2)
                 .setSlotGap(4)
                 .setPreferredSlotSize(32)
@@ -314,28 +325,31 @@ public class DocumentInventorySlotGridControlTest {
                         return Collections.singletonList("Tooltip " + localIndex);
                     }
                 })
+                .setSlotHoverHandler(new DocumentInventorySlotGridControl.SlotHoverHandler() {
+                    @Override
+                    public void onSlotHoverChanged(int localIndex, boolean hovered, List<String> tooltipLines,
+                            int documentX, int documentY, long timeNanos) {
+                        tooltipEvents.add(localIndex + ":" + hovered + ":"
+                                + (tooltipLines.isEmpty() ? "empty" : tooltipLines.get(0)));
+                    }
+                })
                 .commitLayout();
         root.append(gridControl.getElement());
         ElementNode firstSlot = firstSlotElement(gridControl);
 
         firstSlot.getHoverHandler().onHoverChanged(new DocumentElementHoverEvent(firstSlot, firstSlot, true, 6, 6,
                 1L));
-        RecordingUiRenderContext renderContext = new RecordingUiRenderContext(240, 140, 20, 20);
-        HtmlLikeDocumentWidget widget = new HtmlLikeDocumentWidget(document, 240, 140,
-                new DeterministicTextMeasureService());
-        widget.applyLayoutBounds(0, 0, 240, 140);
-        widget.render(renderContext);
 
         Assert.assertEquals(0, gridControl.getHoveredSlotIndex());
         Assert.assertEquals(Integer.valueOf(0xDD263349), firstSlot.style().getBackgroundColor());
-        Assert.assertFalse(renderContext.deferredReplays.isEmpty());
-        renderContext.deferredReplays.get(renderContext.deferredReplays.size() - 1).replay();
-        Assert.assertTrue(renderContext.textCalls.contains("Tooltip 0"));
+        Assert.assertEquals("true", firstSlot.getAttribute("data-slot-hovered"));
+        Assert.assertEquals(Collections.singletonList("0:true:Tooltip 0"), tooltipEvents);
 
         firstSlot.getHoverHandler().onHoverChanged(new DocumentElementHoverEvent(firstSlot, firstSlot, false, -1, -1,
                 2L));
         Assert.assertEquals(-1, gridControl.getHoveredSlotIndex());
         Assert.assertEquals(Integer.valueOf(0xAA171C24), firstSlot.style().getBackgroundColor());
+        Assert.assertEquals("false", firstSlot.getAttribute("data-slot-hovered"));
     }
 
     /**
@@ -349,11 +363,19 @@ public class DocumentInventorySlotGridControlTest {
                 .setWidth(UiStyleLength.px(240))
                 .setHeight(UiStyleLength.px(140));
         final int[] tooltipVersion = new int[] { 1 };
+        final List<String> tooltipEvents = new ArrayList<String>();
         DocumentInventorySlotGridControl gridControl = new DocumentInventorySlotGridControl(document, 2, 2)
                 .setSlotTooltipProvider(new DocumentInventorySlotGridControl.SlotTooltipProvider() {
                     @Override
                     public List<String> getSlotTooltip(int localIndex) {
                         return Collections.singletonList("Tooltip " + tooltipVersion[0]);
+                    }
+                })
+                .setSlotHoverHandler(new DocumentInventorySlotGridControl.SlotHoverHandler() {
+                    @Override
+                    public void onSlotHoverChanged(int localIndex, boolean hovered, List<String> tooltipLines,
+                            int documentX, int documentY, long timeNanos) {
+                        tooltipEvents.add(tooltipLines.isEmpty() ? "empty" : tooltipLines.get(0));
                     }
                 })
                 .commitLayout();
@@ -364,15 +386,9 @@ public class DocumentInventorySlotGridControlTest {
         tooltipVersion[0] = 2;
 
         gridControl.refreshSlotStates();
-        RecordingUiRenderContext renderContext = new RecordingUiRenderContext(240, 140, 20, 20);
-        HtmlLikeDocumentWidget widget = new HtmlLikeDocumentWidget(document, 240, 140,
-                new DeterministicTextMeasureService());
-        widget.applyLayoutBounds(0, 0, 240, 140);
-        widget.render(renderContext);
-        renderContext.deferredReplays.get(renderContext.deferredReplays.size() - 1).replay();
 
-        Assert.assertTrue(renderContext.textCalls.contains("Tooltip 2"));
-        Assert.assertFalse(renderContext.textCalls.contains("Tooltip 1"));
+        Assert.assertTrue(tooltipEvents.contains("Tooltip 1"));
+        Assert.assertEquals("Tooltip 2", tooltipEvents.get(tooltipEvents.size() - 1));
     }
 
     /**
@@ -403,6 +419,36 @@ public class DocumentInventorySlotGridControlTest {
     }
 
     /**
+     * 验证槽位可通过 Enter/Space 键盘激活为左键点击。
+     */
+    @Test
+    public void shouldActivateSlotWithKeyboardAsLeftClick() {
+        UiDocument document = UiDocument.create();
+        final List<Integer> clickedSlots = new ArrayList<Integer>();
+        final List<Integer> clickedButtons = new ArrayList<Integer>();
+        DocumentInventorySlotGridControl gridControl = new DocumentInventorySlotGridControl(document, 2, 2)
+                .setSlotClickHandler(new DocumentInventorySlotGridControl.SlotClickHandler() {
+                    @Override
+                    public boolean onSlotClick(int localIndex, int button, long timeNanos) {
+                        clickedSlots.add(Integer.valueOf(localIndex));
+                        clickedButtons.add(Integer.valueOf(button));
+                        return true;
+                    }
+                })
+                .commitLayout();
+        ElementNode firstSlot = firstSlotElement(gridControl);
+
+        Assert.assertTrue(firstSlot.isFocusable());
+        Assert.assertTrue(firstSlot.getKeyHandler().onKey(new DocumentElementKeyEvent(firstSlot, firstSlot,
+                new UiKeyEvent(Keyboard.KEY_SPACE, 0, 0, UiKeyEvent.Action.PRESSED, false, false, false,
+                        false, 4L))));
+
+        Assert.assertEquals(Collections.singletonList(Integer.valueOf(0)), clickedSlots);
+        Assert.assertEquals(Collections.singletonList(Integer.valueOf(0)), clickedButtons);
+        Assert.assertEquals(Integer.valueOf(0xEE334155), firstSlot.style().getBackgroundColor());
+    }
+
+    /**
      * 验证当前选中槽位和按下态拥有独立高亮样式。
      */
     @Test
@@ -425,44 +471,7 @@ public class DocumentInventorySlotGridControlTest {
     }
 
     /**
-     * 验证鼠标携带物品使用顶层延迟回放，不依赖 slot 物品批次。
-     */
-    @Test
-    public void shouldRenderCarriedSnapshotThroughOverlayRenderer() {
-        UiDocument document = UiDocument.create();
-        ElementNode root = document.getRootElement();
-        root.style()
-                .setWidth(UiStyleLength.px(240))
-                .setHeight(UiStyleLength.px(140));
-        final List<String> cursorCalls = new ArrayList<String>();
-        DocumentInventorySlotGridControl gridControl = new DocumentInventorySlotGridControl(document, 1, 1)
-                .setCarriedSnapshot(InventorySlotSnapshot.occupied())
-                .setItemRenderer(new InventorySlotGridItemRenderer() {
-                    @Override
-                    public void renderItems(InventorySlotGridItemGeometry geometry,
-                            InventorySlotSnapshot[] slotSnapshots) {}
-
-                    @Override
-                    public void renderCursorItem(InventorySlotSnapshot carriedSnapshot, int mouseX, int mouseY) {
-                        cursorCalls.add(mouseX + ":" + mouseY + ":" + carriedSnapshot.isOccupied());
-                    }
-                })
-                .commitLayout();
-        root.append(gridControl.getElement());
-        RecordingUiRenderContext renderContext = new RecordingUiRenderContext(240, 140, 88, 66);
-        HtmlLikeDocumentWidget widget = new HtmlLikeDocumentWidget(document, 240, 140,
-                new DeterministicTextMeasureService());
-        widget.applyLayoutBounds(0, 0, 240, 140);
-
-        widget.render(renderContext);
-        Assert.assertEquals(1, renderContext.deferredReplays.size());
-        renderContext.deferredReplays.get(0).replay();
-
-        Assert.assertEquals(Collections.singletonList("88:66:true"), cursorCalls);
-    }
-
-    /**
-     * 验证鼠标携带物品 overlay 可以按网格关闭，避免页面内多个网格重复绘制。
+     * 验证鼠标携带物品 overlay 默认保留可关闭能力，供页面级语义层接管绘制。
      */
     @Test
     public void shouldAllowDisablingCarriedSnapshotOverlay() {
@@ -505,6 +514,16 @@ public class DocumentInventorySlotGridControlTest {
         }
 
         Assert.assertEquals(Collections.singletonList("88:66:true"), cursorCalls);
+
+        cursorCalls.clear();
+        firstGrid.setCarriedItemOverlayEnabled(false);
+        RecordingUiRenderContext disabledContext = new RecordingUiRenderContext(240, 140, 88, 66);
+        widget.render(disabledContext);
+        for (UiRenderContext.DeferredPostMainPassReplay replay : disabledContext.deferredReplays) {
+            replay.replay();
+        }
+
+        Assert.assertTrue(cursorCalls.isEmpty());
     }
 
     /**
@@ -639,7 +658,6 @@ public class DocumentInventorySlotGridControlTest {
 
         private final List<DeferredPostMainPassReplay> deferredReplays = new ArrayList<DeferredPostMainPassReplay>();
         private final List<DrawCall> drawCalls = new ArrayList<DrawCall>();
-        private final List<String> textCalls = new ArrayList<String>();
 
         private RecordingUiRenderContext() {
             super(400, 200, 0, 0, 1.0F);
@@ -656,23 +674,7 @@ public class DocumentInventorySlotGridControlTest {
 
         @Override
         public void drawText(String text, int x, int y, int color, boolean shadow) {
-            textCalls.add(text);
-        }
-
-        @Override
-        public void fillRect(int left, int top, int right, int bottom, int color) {}
-
-        @Override
-        public void drawBorder(int left, int top, int right, int bottom, int color) {}
-
-        @Override
-        public int measureTextWidth(String text) {
-            return text == null ? 0 : text.length() * 12;
-        }
-
-        @Override
-        public int getTextLineHeight() {
-            return 18;
+            // 测试只关心是否输出文本命令，不需要记录具体文字。
         }
 
         @Override

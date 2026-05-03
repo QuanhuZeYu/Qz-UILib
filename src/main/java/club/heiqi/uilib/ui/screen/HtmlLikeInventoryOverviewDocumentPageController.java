@@ -1,5 +1,7 @@
 package club.heiqi.uilib.ui.screen;
 
+import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 import java.util.Objects;
 
@@ -13,14 +15,19 @@ import club.heiqi.uilib.ui.dom.control.DocumentButtonActionEvent;
 import club.heiqi.uilib.ui.dom.control.DocumentButtonActionHandler;
 import club.heiqi.uilib.ui.dom.control.DocumentButtonControl;
 import club.heiqi.uilib.ui.dom.control.DocumentInventorySlotGridControl;
+import club.heiqi.uilib.ui.inventory.InventorySlotGridItemRenderer;
 import club.heiqi.uilib.ui.inventory.InventorySlotSnapshot;
 import club.heiqi.uilib.ui.layout.UiLength;
 import club.heiqi.uilib.ui.layout.UiLayoutSpec;
+import club.heiqi.uilib.ui.paint.DocumentCustomRenderer;
+import club.heiqi.uilib.ui.render.UiRenderContext;
 import club.heiqi.uilib.ui.style.UiAlignItems;
 import club.heiqi.uilib.ui.style.UiDisplay;
 import club.heiqi.uilib.ui.style.UiFlexDirection;
 import club.heiqi.uilib.ui.style.UiJustifyContent;
 import club.heiqi.uilib.ui.style.UiOverflow;
+import club.heiqi.uilib.ui.style.UiPosition;
+import club.heiqi.uilib.ui.style.UiStyleInsets;
 import club.heiqi.uilib.ui.style.UiStyleLength;
 import club.heiqi.uilib.ui.text.TextMeasureService;
 
@@ -40,6 +47,8 @@ final class HtmlLikeInventoryOverviewDocumentPageController extends DocumentPage
     private final TextNode backpackMetricsText;
     private final DocumentInventorySlotGridControl hotbarGrid;
     private final DocumentInventorySlotGridControl backpackGrid;
+    private final ElementNode tooltipLayer;
+    private final InventorySlotGridItemRenderer inventoryItemRenderer;
 
     private int lastHotbarUsed = -1;
     private int lastBackpackUsed = -1;
@@ -47,9 +56,18 @@ final class HtmlLikeInventoryOverviewDocumentPageController extends DocumentPage
     private boolean lastCarriedSlotOccupied = true;
     private int lastHostWidth = -1;
     private int lastHostHeight = -1;
+    private InventorySlotSnapshot currentCarriedSlotSnapshot = InventorySlotSnapshot.empty();
+    private boolean tooltipHovered;
+    private List<String> tooltipLines = Collections.emptyList();
+    private int tooltipDocumentX = -1;
+    private int tooltipDocumentY = -1;
 
     private static final int TITLE_COLOR = 0xFFF0F4FF;
     private static final int BODY_COLOR = 0xFFC0CAE8;
+    private static final int TOOLTIP_MAX_WIDTH = 260;
+    private static final int TOOLTIP_OFFSET_X = 14;
+    private static final int TOOLTIP_OFFSET_Y = 22;
+    private static final int TOOLTIP_FALLBACK_HEIGHT = 56;
 
     HtmlLikeInventoryOverviewDocumentPageController(DocumentUiScope documentUi,
             DocumentPageAuthoringSurface documentPage, DocumentPageRuntimeView runtimeView,
@@ -58,6 +76,7 @@ final class HtmlLikeInventoryOverviewDocumentPageController extends DocumentPage
         this.documentPage = Objects.requireNonNull(documentPage, "documentPage");
         this.runtimeView = Objects.requireNonNull(runtimeView, "runtimeView");
         this.model = Objects.requireNonNull(model, "model");
+        this.inventoryItemRenderer = documentUi.getRuntimeAdapters().getInventorySlotGridItemRenderer();
         TextMeasureService resolvedTextMeasure = documentUi.getTextMeasureService();
 
         UiDocument document = UiDocument.create();
@@ -73,6 +92,7 @@ final class HtmlLikeInventoryOverviewDocumentPageController extends DocumentPage
         this.backpackMetricsText = bundle.backpackMetrics;
         this.hotbarGrid = bundle.hotbarGrid;
         this.backpackGrid = bundle.backpackGrid;
+        this.tooltipLayer = bundle.tooltipLayer;
     }
 
     /**
@@ -88,7 +108,12 @@ final class HtmlLikeInventoryOverviewDocumentPageController extends DocumentPage
                 .setOverflowX(UiOverflow.HIDDEN)
                 .setOverflowY(UiOverflow.AUTO)
                 .setTextColor(BODY_COLOR);
-        root.setClickHandler(new DocumentElementClickHandler() {
+        ElementNode main = document.element("main");
+        main.setAttribute("role", "main")
+                .setAttribute("data-inventory-drop-zone", "true");
+        main.style()
+                .setWidth(UiStyleLength.auto());
+        main.setClickHandler(new DocumentElementClickHandler() {
             @Override
             public boolean onClick(DocumentElementClickEvent event) {
                 if (event.getButton() != 0 && event.getButton() != 1) {
@@ -97,24 +122,28 @@ final class HtmlLikeInventoryOverviewDocumentPageController extends DocumentPage
                 return model.handleSlotClick(false, -1, event.getButton());
             }
         });
+        root.append(main);
 
-        TextNode overviewMetrics = appendHero(document, root);
+        TextNode overviewMetrics = appendHero(document, main);
 
-        GridSectionBundle hotbarSection = appendGridSection(document, root, "快捷栏",
+        GridSectionBundle hotbarSection = appendGridSection(document, main, "快捷栏",
                 "9 格热键栏，展示当前可快速使用的物品栏内容。", true);
         TextNode hotbarMetrics = hotbarSection.metrics;
         DocumentInventorySlotGridControl hotbarGrid = buildGrid(document, 9, 9, 44, 24, 46, true);
         hotbarSection.card.append(hotbarGrid.getElement());
 
-        GridSectionBundle backpackSection = appendGridSection(document, root, "主背包",
+        GridSectionBundle backpackSection = appendGridSection(document, main, "主背包",
                 "27 格主背包，展示当前背包内容与占用状态。", false);
         TextNode backpackMetrics = backpackSection.metrics;
         DocumentInventorySlotGridControl backpackGrid = buildGrid(document, 27, 9, 41, 22, 42, false);
         backpackSection.card.append(backpackGrid.getElement());
 
-        appendFooter(document, root);
+        appendFooter(document, main);
+        ElementNode tooltipLayer = appendTooltipLayer(document, root);
+        ElementNode cursorItemLayer = appendCursorItemLayer(document, root);
 
-        return new ContentBundle(overviewMetrics, hotbarMetrics, backpackMetrics, hotbarGrid, backpackGrid);
+        return new ContentBundle(overviewMetrics, hotbarMetrics, backpackMetrics, hotbarGrid, backpackGrid,
+                tooltipLayer, cursorItemLayer);
     }
 
     private static final class ContentBundle {
@@ -123,14 +152,19 @@ final class HtmlLikeInventoryOverviewDocumentPageController extends DocumentPage
         final TextNode backpackMetrics;
         final DocumentInventorySlotGridControl hotbarGrid;
         final DocumentInventorySlotGridControl backpackGrid;
+        final ElementNode tooltipLayer;
+        final ElementNode cursorItemLayer;
 
         ContentBundle(TextNode overviewMetrics, TextNode hotbarMetrics, TextNode backpackMetrics,
-                DocumentInventorySlotGridControl hotbarGrid, DocumentInventorySlotGridControl backpackGrid) {
+                DocumentInventorySlotGridControl hotbarGrid, DocumentInventorySlotGridControl backpackGrid,
+                ElementNode tooltipLayer, ElementNode cursorItemLayer) {
             this.overviewMetrics = overviewMetrics;
             this.hotbarMetrics = hotbarMetrics;
             this.backpackMetrics = backpackMetrics;
             this.hotbarGrid = hotbarGrid;
             this.backpackGrid = backpackGrid;
+            this.tooltipLayer = tooltipLayer;
+            this.cursorItemLayer = cursorItemLayer;
         }
     }
 
@@ -179,7 +213,8 @@ final class HtmlLikeInventoryOverviewDocumentPageController extends DocumentPage
     }
 
     private TextNode appendHero(UiDocument document, ElementNode parent) {
-        ElementNode hero = document.div();
+        ElementNode hero = document.element("header");
+        hero.setAttribute("role", "banner");
         hero.style()
                 .setHeight(UiStyleLength.px(126))
                 .setPadding(UiStyleLength.px(18))
@@ -192,15 +227,23 @@ final class HtmlLikeInventoryOverviewDocumentPageController extends DocumentPage
                 .setTextColor(TITLE_COLOR);
         parent.append(hero);
 
-        hero.appendText("背包概览");
-        hero.appendText("查看快捷栏与主背包占用情况，并保持与原版背包数据同步。");
-        TextNode metrics = hero.appendText("加载中...");
+        ElementNode title = document.element("h1");
+        title.appendText("背包概览");
+        hero.append(title);
+        ElementNode description = document.element("p");
+        description.appendText("查看快捷栏与主背包占用情况，并保持与原版背包数据同步。");
+        hero.append(description);
+        ElementNode metricsParagraph = document.element("p");
+        metricsParagraph.setAttribute("role", "status");
+        TextNode metrics = metricsParagraph.appendText("加载中...");
+        hero.append(metricsParagraph);
         return metrics;
     }
 
     private GridSectionBundle appendGridSection(UiDocument document, ElementNode parent, String title,
             String description, boolean isFirst) {
-        ElementNode card = document.div();
+        ElementNode card = document.element("section");
+        card.setAttribute("aria-label", title);
         card.style()
                 .setBackgroundColor(isFirst ? 0xFF18243A : 0xFF1F2937)
                 .setBorderColor(isFirst ? 0xFF60A5FA : 0xFF818CF8)
@@ -212,9 +255,16 @@ final class HtmlLikeInventoryOverviewDocumentPageController extends DocumentPage
                 .setOverflowY(UiOverflow.HIDDEN);
         parent.append(card);
 
-        card.appendText(title);
-        card.appendText(description);
-        TextNode metrics = card.appendText("加载中...");
+        ElementNode heading = document.element("h2");
+        heading.appendText(title);
+        card.append(heading);
+        ElementNode descriptionParagraph = document.element("p");
+        descriptionParagraph.appendText(description);
+        card.append(descriptionParagraph);
+        ElementNode metricsParagraph = document.element("p");
+        metricsParagraph.setAttribute("role", "status");
+        TextNode metrics = metricsParagraph.appendText("加载中...");
+        card.append(metricsParagraph);
         return new GridSectionBundle(card, metrics);
     }
 
@@ -236,7 +286,7 @@ final class HtmlLikeInventoryOverviewDocumentPageController extends DocumentPage
                 .setSlotGap(8)
                 .setPreferredSlotSize(preferredSize)
                 .setSlotSizeRange(minSize, maxSize)
-                .setCarriedItemOverlayEnabled(isHotbar)
+                .setCarriedItemOverlayEnabled(false)
                 .setContentProvider(new DocumentInventorySlotGridControl.SlotContentProvider() {
                     @Override
                     public InventorySlotSnapshot getSlotSnapshot(int localIndex) {
@@ -255,9 +305,16 @@ final class HtmlLikeInventoryOverviewDocumentPageController extends DocumentPage
                     public List<String> getSlotTooltip(int localIndex) {
                         return model.getSlotTooltip(isHotbar, localIndex);
                     }
+                })
+                .setSlotHoverHandler(new DocumentInventorySlotGridControl.SlotHoverHandler() {
+                    @Override
+                    public void onSlotHoverChanged(int localIndex, boolean hovered, List<String> tooltipLines,
+                            int documentX, int documentY, long timeNanos) {
+                        updateTooltipLayer(hovered, tooltipLines, documentX, documentY);
+                    }
                 });
-        if (documentUi.getRuntimeAdapters().getInventorySlotGridItemRenderer() != null) {
-            grid.setItemRenderer(documentUi.getRuntimeAdapters().getInventorySlotGridItemRenderer());
+        if (inventoryItemRenderer != null) {
+            grid.setItemRenderer(inventoryItemRenderer);
         }
         grid.commitLayout();
         grid.getElement().style()
@@ -271,7 +328,8 @@ final class HtmlLikeInventoryOverviewDocumentPageController extends DocumentPage
     }
 
     private void appendFooter(UiDocument document, ElementNode parent) {
-        ElementNode footer = document.div();
+        ElementNode footer = document.element("footer");
+        footer.setAttribute("role", "contentinfo");
         footer.style()
                 .setDisplay(UiDisplay.FLEX)
                 .setFlexDirection(UiFlexDirection.ROW)
@@ -294,12 +352,152 @@ final class HtmlLikeInventoryOverviewDocumentPageController extends DocumentPage
         footer.append(backButton.getElement());
     }
 
+    private ElementNode appendTooltipLayer(UiDocument document, ElementNode parent) {
+        ElementNode tooltip = document.element("aside");
+        tooltip.setAttribute("role", "tooltip")
+                .setAttribute("aria-hidden", "true")
+                .setAttribute("data-inventory-tooltip", "true")
+                .setAttribute("data-hit-test-hidden", "true");
+        tooltip.style()
+                .setPosition(UiPosition.FIXED)
+                .setZIndex(1000)
+                .setWidth(UiStyleLength.px(TOOLTIP_MAX_WIDTH))
+                .setPadding(UiStyleInsets.of(UiStyleLength.px(6), UiStyleLength.px(7), UiStyleLength.px(6),
+                        UiStyleLength.px(7)))
+                .setBackgroundColor(0xF0181024)
+                .setBorderColor(0xFF8B5CF6)
+                .setBorderWidth(UiStyleLength.px(1))
+                .setBorderRadius(UiStyleLength.px(4))
+                .setTextColor(0xFFD1D5DB)
+                .setOverflowX(UiOverflow.HIDDEN)
+                .setOverflowY(UiOverflow.HIDDEN);
+        hideTooltipElement(tooltip);
+        parent.append(tooltip);
+        return tooltip;
+    }
+
+    private ElementNode appendCursorItemLayer(UiDocument document, ElementNode parent) {
+        ElementNode layer = document.element("aside");
+        layer.setAttribute("aria-hidden", "true")
+                .setAttribute("data-cursor-item-layer", "true")
+                .setAttribute("data-hit-test-hidden", "true");
+        layer.style()
+                .setPosition(UiPosition.FIXED)
+                .setLeft(UiStyleLength.px(0))
+                .setTop(UiStyleLength.px(0))
+                .setWidth(UiStyleLength.px(1))
+                .setHeight(UiStyleLength.px(1))
+                .setZIndex(1001)
+                .setOverflowX(UiOverflow.VISIBLE)
+                .setOverflowY(UiOverflow.VISIBLE);
+        if (inventoryItemRenderer == null) {
+            parent.append(layer);
+            return layer;
+        }
+        layer.setCustomRenderer(new DocumentCustomRenderer() {
+            @Override
+            public void render(final UiRenderContext context, int contentLeft, int contentTop, int contentRight,
+                    int contentBottom) {
+                enqueueCursorItemOverlay(context);
+            }
+        });
+        parent.append(layer);
+        return layer;
+    }
+
+    private void updateTooltipLayer(boolean hovered, List<String> lines, int documentX, int documentY) {
+        if (tooltipLayer == null) {
+            return;
+        }
+        tooltipHovered = hovered;
+        tooltipLines = lines == null ? Collections.<String>emptyList() : new ArrayList<String>(lines);
+        tooltipDocumentX = documentX;
+        tooltipDocumentY = documentY;
+        tooltipLayer.clearChildren();
+        if (!hovered || lines == null || lines.isEmpty() || currentCarriedSlotSnapshot.isOccupied()) {
+            tooltipLayer.setAttribute("aria-hidden", "true");
+            hideTooltipElement(tooltipLayer);
+            return;
+        }
+        tooltipLayer.setAttribute("aria-hidden", "false");
+        for (int lineIndex = 0; lineIndex < tooltipLines.size(); lineIndex++) {
+            ElementNode line = tooltipLayer.getOwnerDocument().element("p");
+            line.appendText(tooltipLines.get(lineIndex));
+            line.style()
+                    .setTextColor(lineIndex == 0 ? 0xFFFFFFFF : 0xFFD1D5DB)
+                    .setMargin(UiStyleLength.px(0));
+            tooltipLayer.append(line);
+        }
+        tooltipLayer.style()
+                .setWidth(UiStyleLength.px(TOOLTIP_MAX_WIDTH))
+                .setHeight(UiStyleLength.auto())
+                .setLeft(UiStyleLength.px(resolveTooltipLeft(documentX)))
+                .setTop(UiStyleLength.px(resolveTooltipTop(documentY)));
+    }
+
+    private static void hideTooltipElement(ElementNode tooltip) {
+        tooltip.style()
+                .setWidth(UiStyleLength.px(0))
+                .setHeight(UiStyleLength.px(0))
+                .setLeft(UiStyleLength.px(-10000))
+                .setTop(UiStyleLength.px(-10000));
+    }
+
+    private int resolveTooltipLeft(int documentX) {
+        int preferredLeft = documentX + TOOLTIP_OFFSET_X;
+        int maxLeft = Math.max(4, lastHostWidth - TOOLTIP_MAX_WIDTH - 4);
+        if (preferredLeft > maxLeft) {
+            return Math.max(4, documentX - TOOLTIP_MAX_WIDTH - 16);
+        }
+        return Math.max(4, preferredLeft);
+    }
+
+    private int resolveTooltipTop(int documentY) {
+        int preferredTop = documentY + TOOLTIP_OFFSET_Y;
+        int tooltipHeight = estimateTooltipHeight();
+        int maxTop = Math.max(4, lastHostHeight - tooltipHeight - 4);
+        if (preferredTop > maxTop) {
+            return Math.max(4, documentY - tooltipHeight - 18);
+        }
+        return Math.max(4, preferredTop);
+    }
+
+    private int estimateTooltipHeight() {
+        if (tooltipLines == null || tooltipLines.isEmpty()) {
+            return TOOLTIP_FALLBACK_HEIGHT;
+        }
+        int lineHeight = 18;
+        int verticalPadding = 14;
+        return verticalPadding + tooltipLines.size() * lineHeight;
+    }
+
+    private void refreshVisibleTooltipLayer() {
+        updateTooltipLayer(tooltipHovered, tooltipLines, tooltipDocumentX, tooltipDocumentY);
+    }
+
+    private void enqueueCursorItemOverlay(final UiRenderContext context) {
+        if (context == null || inventoryItemRenderer == null || currentCarriedSlotSnapshot == null
+                || !currentCarriedSlotSnapshot.isOccupied()) {
+            return;
+        }
+        final InventorySlotSnapshot capturedSnapshot = currentCarriedSlotSnapshot;
+        final int mouseX = context.getMouseX();
+        final int mouseY = context.getMouseY();
+        context.enqueueDeferredPostMainOverlayPass(new UiRenderContext.DeferredPostMainPassReplay() {
+            @Override
+            public void replay() {
+                inventoryItemRenderer.renderCursorItem(capturedSnapshot, mouseX, mouseY);
+            }
+        });
+    }
+
     private void refreshMetrics() {
         int hotbarUsed = model.getHotbarOccupiedCount();
         int backpackUsed = model.getBackpackOccupiedCount();
         int selectedHotbarSlot = model.getSelectedHotbarSlotIndex();
         InventorySlotSnapshot carriedSlotSnapshot = model.getCarriedSlotSnapshot();
         boolean carriedSlotOccupied = carriedSlotSnapshot != null && carriedSlotSnapshot.isOccupied();
+        currentCarriedSlotSnapshot = carriedSlotSnapshot != null ? carriedSlotSnapshot : InventorySlotSnapshot.empty();
         int hostWidth = runtimeView.getHostWidth();
         int hostHeight = runtimeView.getHostHeight();
         int previousHotbarUsed = lastHotbarUsed;
@@ -309,12 +507,13 @@ final class HtmlLikeInventoryOverviewDocumentPageController extends DocumentPage
 
         hotbarGrid.setSelectedSlotIndex(selectedHotbarSlot)
                 .setCarriedSnapshot(carriedSlotSnapshot)
-                .setCarriedItemOverlayEnabled(true);
+                .setCarriedItemOverlayEnabled(false);
         backpackGrid.setSelectedSlotIndex(-1)
                 .setCarriedSnapshot(carriedSlotSnapshot)
                 .setCarriedItemOverlayEnabled(false);
         hotbarGrid.refreshSlotStates();
         backpackGrid.refreshSlotStates();
+        refreshVisibleTooltipLayer();
 
         if (overviewMetricsText != null
                 && (lastHostWidth != hostWidth || lastHostHeight != hostHeight)) {

@@ -55,6 +55,8 @@ public class DocumentButtonControlTest {
                 false, 3L));
 
         Assert.assertEquals(2, events.size());
+        Assert.assertEquals("button", buttonControl.getElement().getTagName());
+        Assert.assertEquals("button", buttonControl.getElement().getAttribute("type"));
         Assert.assertSame(buttonControl, events.get(0).getSource());
         assertElementUid(buttonControl.getElement(), events.get(0).getElement());
         Assert.assertFalse(events.get(0).isKeyboardTriggered());

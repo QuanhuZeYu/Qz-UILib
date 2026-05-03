@@ -341,6 +341,35 @@ public class DocumentHitTestEngineTest {
         assertHitElement(normalCover, rootBox, 10, 22);
     }
 
+    /**
+     * 验证声明为命中隐藏的 fixed overlay 不会截获下层元素命中。
+     */
+    @Test
+    public void shouldSkipHitTestHiddenFixedOverlay() {
+        UiDocument document = UiDocument.create();
+        ElementNode root = document.getRootElement();
+        ElementNode target = document.div();
+        ElementNode overlay = document.div();
+
+        root.style().setWidth(UiStyleLength.px(120));
+        target.style()
+                .setWidth(UiStyleLength.px(80))
+                .setHeight(UiStyleLength.px(40));
+        overlay.setAttribute("data-hit-test-hidden", "true");
+        overlay.style()
+                .setWidth(UiStyleLength.px(120))
+                .setHeight(UiStyleLength.px(80))
+                .setPosition(UiPosition.FIXED)
+                .setTop(UiStyleLength.px(0))
+                .setLeft(UiStyleLength.px(0))
+                .setZIndex(1000);
+        root.append(target).append(overlay);
+
+        DocumentLayoutBox rootBox = DocumentLayoutEngine.layout(root, 120, 80);
+
+        assertHitElement(target, rootBox, 10, 10);
+    }
+
     private static void assertHitElement(ElementNode expectedElement, DocumentLayoutBox rootBox, int x, int y) {
         ElementNode actualElement = DocumentHitTestEngine.hitTest(rootBox, null, x, y);
         Assert.assertNotNull(actualElement);

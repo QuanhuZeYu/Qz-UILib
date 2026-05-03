@@ -32,6 +32,9 @@ public final class DocumentHitTestEngine {
 
     private static ElementNode hitTestBox(DocumentLayoutBox box, DocumentScrollState scrollState, int documentX,
             int documentY, int offsetX, int offsetY, boolean searchStackingContext) {
+        if (isHitTestHidden(box.getElement())) {
+            return null;
+        }
         int baseOffsetX = box.isFixedPositioned() ? 0 : offsetX;
         int baseOffsetY = box.isFixedPositioned() ? 0 : offsetY;
         int boxOffsetX = baseOffsetX + box.getPositionOffsetX();
@@ -145,6 +148,9 @@ public final class DocumentHitTestEngine {
 
     private static ElementNode hitTextRuns(DocumentLayoutBox box, int documentX, int documentY, int offsetX,
             int offsetY) {
+        if (isHitTestHidden(box.getElement())) {
+            return null;
+        }
         List<DocumentLayoutTextRun> textRuns = box.getTextRuns();
         for (int index = textRuns.size() - 1; index >= 0; index--) {
             DocumentLayoutTextRun textRun = textRuns.get(index);
@@ -158,6 +164,9 @@ public final class DocumentHitTestEngine {
 
     private static ElementNode hitInlineFragments(DocumentLayoutBox box, int documentX, int documentY, int offsetX,
             int offsetY) {
+        if (isHitTestHidden(box.getElement())) {
+            return null;
+        }
         List<DocumentLayoutInlineFragment> inlineFragments = box.getInlineFragments();
         for (int index = inlineFragments.size() - 1; index >= 0; index--) {
             DocumentLayoutInlineFragment inlineFragment = inlineFragments.get(index);
@@ -190,6 +199,10 @@ public final class DocumentHitTestEngine {
 
     private static boolean shouldSearchAsStackingContext(DocumentLayoutBox box) {
         return DocumentEffectChain.resolve(box).isStackingBoundary();
+    }
+
+    private static boolean isHitTestHidden(ElementNode element) {
+        return element != null && "true".equals(element.getAttribute("data-hit-test-hidden"));
     }
 
     private static boolean containsInRect(int x, int y, int left, int top, int right, int bottom) {

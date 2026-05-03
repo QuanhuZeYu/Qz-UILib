@@ -4,14 +4,19 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 
+import org.lwjglx.input.Keyboard;
+
 import club.heiqi.uilib.ui.dom.DocumentElementActiveEvent;
 import club.heiqi.uilib.ui.dom.DocumentElementActiveHandler;
 import club.heiqi.uilib.ui.dom.DocumentElementClickEvent;
 import club.heiqi.uilib.ui.dom.DocumentElementClickHandler;
 import club.heiqi.uilib.ui.dom.DocumentElementHoverEvent;
 import club.heiqi.uilib.ui.dom.DocumentElementHoverHandler;
+import club.heiqi.uilib.ui.dom.DocumentElementKeyEvent;
+import club.heiqi.uilib.ui.dom.DocumentElementKeyHandler;
 import club.heiqi.uilib.ui.dom.ElementNode;
 import club.heiqi.uilib.ui.dom.UiDocument;
+import club.heiqi.uilib.ui.event.UiKeyEvent;
 import club.heiqi.uilib.ui.inventory.InventorySlotGridItemGeometry;
 import club.heiqi.uilib.ui.inventory.InventorySlotGridItemRenderer;
 import club.heiqi.uilib.ui.inventory.InventorySlotGridLayout;
@@ -49,6 +54,14 @@ public final class DocumentInventorySlotGridControl {
         List<String> getSlotTooltip(int localIndex);
     }
 
+    /**
+     * 槽位 hover 提示展示状态处理器。
+     */
+    public interface SlotHoverHandler {
+        void onSlotHoverChanged(int localIndex, boolean hovered, List<String> tooltipLines, int documentX,
+                int documentY, long timeNanos);
+    }
+
     private final ElementNode element;
     private final DocumentTableControl tableControl;
     private final List<ElementNode> slotElements = new ArrayList<ElementNode>();
@@ -57,6 +70,7 @@ public final class DocumentInventorySlotGridControl {
     private SlotContentProvider contentProvider;
     private SlotClickHandler slotClickHandler;
     private SlotTooltipProvider slotTooltipProvider;
+    private SlotHoverHandler slotHoverHandler;
     private InventorySlotGridItemRenderer itemRenderer;
     private int slotGap = 8;
     private int preferredSlotSize = 34;
@@ -78,6 +92,12 @@ public final class DocumentInventorySlotGridControl {
     private int selectedSlotIndex = -1;
     private int hoveredSlotIndex = -1;
     private int activeSlotIndex = -1;
+    private int lastHoverDocumentX = -1;
+    private int lastHoverDocumentY = -1;
+    private long lastHoverTimeNanos;
+    private int lastNotifiedTooltipSlotIndex = -1;
+    private boolean lastNotifiedTooltipHovered;
+    private List<String> lastNotifiedTooltipLines = Collections.emptyList();
     private boolean carriedItemOverlayEnabled = true;
     private boolean layoutDirty = true;
 
@@ -128,6 +148,12 @@ public final class DocumentInventorySlotGridControl {
     }
 
 
+    public DocumentInventorySlotGridControl setSlotHoverHandler(SlotHoverHandler slotHoverHandler) {
+        this.slotHoverHandler = slotHoverHandler;
+        return this;
+    }
+
+
     public DocumentInventorySlotGridControl setSelectedSlotIndex(int selectedSlotIndex) {
         this.selectedSlotIndex = selectedSlotIndex >= 0 && selectedSlotIndex < slotCount ? selectedSlotIndex : -1;
         refreshSlotStates();
@@ -137,6 +163,7 @@ public final class DocumentInventorySlotGridControl {
 
     public DocumentInventorySlotGridControl setCarriedSnapshot(InventorySlotSnapshot carriedSnapshot) {
         this.carriedSnapshot = carriedSnapshot != null ? carriedSnapshot : InventorySlotSnapshot.empty();
+        refreshVisibleTooltipLines();
         return this;
     }
 
@@ -224,7 +251,7 @@ public final class DocumentInventorySlotGridControl {
         for (int slotIndex = 0; slotIndex < slotElements.size(); slotIndex++) {
             InventorySlotSnapshot snapshot = slotIndex < snapshots.length
                     ? snapshots[slotIndex] : InventorySlotSnapshot.empty();
-            applySlotStyle(slotElements.get(slotIndex), slotIndex, snapshot.isOccupied());
+            applySlotStyle(slotElements.get(slotIndex), slotIndex, snapshot);
         }
         refreshVisibleTooltipLines();
         return this;
@@ -268,6 +295,10 @@ public final class DocumentInventorySlotGridControl {
                         .setBorderWidth(UiStyleLength.px(SLOT_BORDER_WIDTH))
                         .setOverflowX(UiOverflow.HIDDEN)
                         .setOverflowY(UiOverflow.HIDDEN);
+                slotElement.setAttribute("role", "button")
+                        .setAttribute("tabindex", "0")
+                        .setAttribute("data-slot-index", String.valueOf(currentSlotIndex))
+                        .setFocusable(true);
                 slotElement.setActiveHandler(new DocumentElementActiveHandler() {
                     @Override
                     public boolean onActiveChanged(DocumentElementActiveEvent event) {
@@ -286,8 +317,14 @@ public final class DocumentInventorySlotGridControl {
                 }).setHoverHandler(new DocumentElementHoverHandler() {
                     @Override
                     public boolean onHoverChanged(DocumentElementHoverEvent event) {
-                        handleSlotHover(currentSlotIndex, event.isHovered());
+                        handleSlotHover(currentSlotIndex, event.isHovered(), event.getDocumentX(),
+                                event.getDocumentY(), event.getTimeNanos());
                         return true;
+                    }
+                }).setKeyHandler(new DocumentElementKeyHandler() {
+                    @Override
+                    public boolean onKey(DocumentElementKeyEvent event) {
+                        return handleSlotKey(currentSlotIndex, event);
                     }
                 });
                 slotElements.add(slotElement);
@@ -301,7 +338,32 @@ public final class DocumentInventorySlotGridControl {
         return Math.max(0, slotSize - SLOT_BORDER_WIDTH * 2);
     }
 
-    private void applySlotStyle(ElementNode slotElement, int slotIndex, boolean occupied) {
+    private boolean handleSlotKey(int localIndex, DocumentElementKeyEvent event) {
+        if (event == null || !isActivationKey(event.getKeyCode())) {
+            return false;
+        }
+        if (event.getAction() == UiKeyEvent.Action.PRESSED) {
+            activeSlotIndex = localIndex;
+            boolean consumed = handleSlotClick(localIndex, 0, event.getTimeNanos());
+            refreshSlotStates();
+            return consumed;
+        }
+        if (event.getAction() == UiKeyEvent.Action.RELEASED) {
+            if (activeSlotIndex == localIndex) {
+                activeSlotIndex = -1;
+                refreshSlotStates();
+            }
+            return true;
+        }
+        return true;
+    }
+
+    private static boolean isActivationKey(int keyCode) {
+        return keyCode == Keyboard.KEY_RETURN || keyCode == Keyboard.KEY_NUMPADENTER || keyCode == Keyboard.KEY_SPACE;
+    }
+
+    private void applySlotStyle(ElementNode slotElement, int slotIndex, InventorySlotSnapshot snapshot) {
+        boolean occupied = snapshot != null && snapshot.isOccupied();
         int fillColor;
         int borderColor;
         if (slotIndex == activeSlotIndex) {
@@ -320,6 +382,25 @@ public final class DocumentInventorySlotGridControl {
         slotElement.style()
                 .setBackgroundColor(fillColor)
                 .setBorderColor(borderColor);
+        slotElement.setAttribute("data-slot-occupied", String.valueOf(occupied))
+                .setAttribute("data-slot-selected", String.valueOf(slotIndex == selectedSlotIndex))
+                .setAttribute("data-slot-hovered", String.valueOf(slotIndex == hoveredSlotIndex))
+                .setAttribute("aria-label", formatSlotAriaLabel(slotIndex, snapshot));
+    }
+
+    private static String formatSlotAriaLabel(int slotIndex, InventorySlotSnapshot snapshot) {
+        int slotNumber = slotIndex + 1;
+        if (snapshot == null || !snapshot.isOccupied()) {
+            return "槽位 " + slotNumber + "，空";
+        }
+        String displayName = snapshot.getDisplayName();
+        if (displayName == null || displayName.isEmpty()) {
+            return "槽位 " + slotNumber + "，已占用";
+        }
+        if (snapshot.getStackSize() > 1) {
+            return "槽位 " + slotNumber + "，" + displayName + "，数量 " + snapshot.getStackSize();
+        }
+        return "槽位 " + slotNumber + "，" + displayName;
     }
 
     private void renderItems(UiRenderContext context, int absX, int absY) {
@@ -339,7 +420,6 @@ public final class DocumentInventorySlotGridControl {
                 }
             });
         }
-        enqueueTooltipOverlay(context);
         enqueueCarriedItemOverlay(context);
     }
 
@@ -354,15 +434,32 @@ public final class DocumentInventorySlotGridControl {
         return consumed;
     }
 
-    private void handleSlotHover(int localIndex, boolean hovered) {
+    private void handleSlotHover(int localIndex, boolean hovered, int documentX, int documentY, long timeNanos) {
         hoveredSlotIndex = hovered ? localIndex : -1;
-        refreshVisibleTooltipLines();
+        lastHoverDocumentX = documentX;
+        lastHoverDocumentY = documentY;
+        lastHoverTimeNanos = timeNanos;
         refreshSlotStates();
     }
 
     private void refreshVisibleTooltipLines() {
-        visibleTooltipLines = hoveredSlotIndex >= 0 && hoveredSlotIndex < slotCount
+        visibleTooltipLines = hoveredSlotIndex >= 0 && hoveredSlotIndex < slotCount && !carriedSnapshot.isOccupied()
                 ? resolveTooltipLines(hoveredSlotIndex) : Collections.<String>emptyList();
+        boolean tooltipHovered = hoveredSlotIndex >= 0;
+        if (slotHoverHandler != null && shouldNotifyTooltipHover(tooltipHovered)) {
+            slotHoverHandler.onSlotHoverChanged(hoveredSlotIndex, hoveredSlotIndex >= 0,
+                    new ArrayList<String>(visibleTooltipLines), lastHoverDocumentX, lastHoverDocumentY,
+                    lastHoverTimeNanos);
+            lastNotifiedTooltipSlotIndex = hoveredSlotIndex;
+            lastNotifiedTooltipHovered = tooltipHovered;
+            lastNotifiedTooltipLines = new ArrayList<String>(visibleTooltipLines);
+        }
+    }
+
+    private boolean shouldNotifyTooltipHover(boolean tooltipHovered) {
+        return tooltipHovered != lastNotifiedTooltipHovered
+                || hoveredSlotIndex != lastNotifiedTooltipSlotIndex
+                || !visibleTooltipLines.equals(lastNotifiedTooltipLines);
     }
 
     private List<String> resolveTooltipLines(int localIndex) {
@@ -383,52 +480,6 @@ public final class DocumentInventorySlotGridControl {
             lines.add("数量 " + snapshot.getStackSize());
         }
         return lines;
-    }
-
-    private void enqueueTooltipOverlay(final UiRenderContext context) {
-        if (visibleTooltipLines.isEmpty() || context == null || carriedSnapshot.isOccupied()) {
-            return;
-        }
-        final List<String> capturedLines = new ArrayList<String>(visibleTooltipLines);
-        enqueueOverlayPass(context, new UiRenderContext.DeferredPostMainPassReplay() {
-            @Override
-            public void replay() {
-                renderTooltip(context, capturedLines);
-            }
-        });
-    }
-
-    private void renderTooltip(UiRenderContext context, List<String> lines) {
-        if (lines == null || lines.isEmpty()) {
-            return;
-        }
-        int maxLineWidth = 0;
-        for (String line : lines) {
-            maxLineWidth = Math.max(maxLineWidth, context.measureTextWidth(line));
-        }
-        int lineHeight = Math.max(1, context.getTextLineHeight());
-        int contentHeight = lines.size() * lineHeight + Math.max(0, lines.size() - 1) * 2;
-        int left = context.getMouseX() + 14;
-        int top = context.getMouseY() - 12;
-        int width = maxLineWidth + 14;
-        int height = contentHeight + 12;
-        if (left + width > context.getScreenWidth()) {
-            left = context.getMouseX() - width - 16;
-        }
-        if (top + height > context.getScreenHeight()) {
-            top = context.getScreenHeight() - height - 4;
-        }
-        left = Math.max(4, left);
-        top = Math.max(4, top);
-
-        context.fillRect(left, top, left + width, top + height, 0xF0181024);
-        context.drawBorder(left, top, left + width, top + height, 0xFF8B5CF6);
-        int textY = top + 6;
-        for (int lineIndex = 0; lineIndex < lines.size(); lineIndex++) {
-            context.drawText(lines.get(lineIndex), left + 7, textY, lineIndex == 0 ? 0xFFFFFFFF : 0xFFD1D5DB,
-                    true);
-            textY += lineHeight + 2;
-        }
     }
 
     private void enqueueCarriedItemOverlay(final UiRenderContext context) {
