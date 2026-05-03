@@ -2,7 +2,7 @@
 
 ## 最高优先级信息
 
-- 当前项目尚未发布，不存在外部兼容承诺；除非用户明确要求，否则不为旧 API、旧行为或旧内部结构增加兼容层。
+- 当前项目正准备固化第一版面向其他开发者的开放入口；旧 API、旧行为或旧内部结构仍无外部兼容承诺，但新增开放文档与后续 API 门面需要按首版开发者体验审视。
 - 当前主线是 HTML-like UI 渲染框架与 CSS transition / animation 语义 MVP；inline formatting 只处理阻塞动画探针、真实页面迁移或控件展示的最小必要项。
 - 清退 retained 作者入口、旧页面壳与兼容主题时，以 HTML-like 主线价值为准；没有复用价值的结构优先删除或重写。
 - 清退不能误删当前 HTML-like 仍复用的后端/运行时能力：`Widget`、`ViewportWidget`、`UiInputRouter`、`UiRenderContext`、`UiRuntimeAdapters`、背包格子底层布局/渲染适配与 Minecraft 宿主会话能力。
@@ -13,7 +13,7 @@
 - 本仓库是 Minecraft 1.7.10 / GTNH / LWJGL3ify 环境下的 Java UI 框架工程。
 - 当前目标是一套 HTML-like UI 渲染框架，覆盖文档树、样式计算、盒模型、布局、绘制、裁剪、滚动、效果合成、命中测试与输入分发。
 - 本项目不是完整浏览器内核，不承诺 HTML5 全量解析、CSS 全量规范、JavaScript DOM API、网络加载或浏览器安全模型。
-- 当前可运行后端仍是 retained `Widget` 树；screen host 根视口是 `ViewportWidget`；文档页创建入口是 `UiDocumentScreens`。
+- 当前可运行后端仍是 retained `Widget` 树；screen host 根视口是 `ViewportWidget`；文档页创建入口是 `UiDocumentScreens`；开放化调整文档入口是 `docs/开放化调整.md`，具体开发者使用文档按分级目录存放在 `docs/开放化调整/使用文档/`。
 
 ## 作者层能力
 
@@ -103,12 +103,12 @@
 - paint-only 样式变更复用已有布局几何，通过 `DocumentLayoutBox.refreshComputedStyles()` 刷新 computed style 快照，不重新文本测量。
 - paint/effect 动画期间每帧重建 paint commands，但不重建 layout；layout 动画运行期允许重建 runtime layout，只剩 forwards fill 稳态后应复用 runtime layout 缓存；动画结束后回到静态缓存。
 - `HtmlLikeDocumentWidget.getActiveAnimationCount()`、`getAnimationDiagnosticsSnapshot()`、`getPerformanceDiagnosticsSnapshot()` 与 `hasLayoutRuntimeValueForDiagnostics()` 是当前只读诊断入口，用于 Smoke 页和测试展示未完成动画数量、transition/keyframe/fill 来源计数、paint/effect/layout 影响范围计数、layout 运行态覆盖是否存在，以及 `paintGen/staticLayout/runtimeLayout/textEpoch` 缓存边界状态，不作为作者层业务 API。
-- 当前可访问页面：`ui_test` 诊断菜单、`ui_test_layout` 布局诊断页、`html_like_smoke` Smoke 页、`html_like_glass` 大面积磨玻璃页、`inventory_overview` 背包页。
+- 当前可访问页面：`ui_test` 诊断菜单、`ui_test_layout` 布局诊断页、`html_like_smoke` Smoke 页、`html_like_glass` 大面积磨玻璃页、`inventory_overview` 背包页；首版开放化目标是把测试期右 Shift 入口和原版背包注入按钮迁移为显式客户端指令触发。
 - 当前 definition-backed 生产入口使用 `DefinitionBackedHtmlLikeDocumentScreen` + `DirectDocumentPageAuthoringSurface`；HTML-like 页面直接挂载 `HtmlLikeDocumentWidget`，不套旧 retained 页面壳。
 
 ## 游戏内验收边界
 
-- 入口：右 Shift 打开诊断菜单，可进入布局诊断页、HTML-like Smoke 页、Large Glass Lab 页和背包页。
+- 当前测试入口仍是右 Shift 打开诊断菜单，原版背包页仍注入 `背包UI` 按钮；开放化调整已确定后续要改为客户端指令触发，建议命令组为 `/qzuilib ui|smoke|layout|glass|inventory|help`。
 - Smoke 页覆盖：控件交互、文本输入、Tab 焦点、按钮、开关、overflow auto 滚动、absolute/fixed 定位、absolute stretch、inline fragment/vertical-align、group opacity、stacking context、backdrop-filter、opacity FBO、`WIDTH/HEIGHT/MARGIN_LEFT/MARGIN_RIGHT/PADDING_LEFT/PADDING_RIGHT` layout transition 和 layout keyframe/forwards fill；`PADDING_LEFT/PADDING_RIGHT` 游戏内 Smoke 已验收正确；layout 动画区会显示覆盖属性清单、active 总数、transition/keyframe/fill 来源计数、paint/effect/layout 分 impact 运行态状态，以及 `Cache runtime: paintGen/staticLayout/runtimeLayout/textEpoch` 缓存诊断；点击当帧因文本或 layout 目标变化导致 `staticLayout +1` 允许，运行期 paint/effect 动画不得增长 `runtimeLayout`；当前 layout `t/k/f`、缓存诊断和 layout forwards fill 稳态缓存均已完成游戏内验收。
 - Smoke 页 `Layout animation probe`：点击蓝色 `Layout card`，宽高在 92x34 与 190x58 间过渡，右侧绿色 sibling 应随动画被推开或回收；点击琥珀色 `Margin card`，左右 margin 在 tight/wide 间过渡，右侧棕色 sibling 应随 margin 动画位移；点击紫色 `Padding card`，左右 padding 在 tight/wide 间过渡，卡片内容和右侧紫色 sibling 应随 padding 动画位移；点击青色 `Keyframe card` 启动 `layoutFillProbe` width keyframe，运行时 layout `k` 应增加且 `runtimeLayout` 增长，结束后 layout `f` 应保留但 `runtimeLayout` 应进入稳态不再持续增长，再次点击清除 animation 后 `f` 应归零并恢复作者宽度。当前游戏内已确认 transition、keyframe、forwards fill 均有可见诊断路径，padding 动画平滑、内容和 sibling 同步位移、`t/k/f` 计数进入与退出、paint/effect 不增长 `runtimeLayout`、layout 动画增长 `runtimeLayout`、forwards fill 稳态缓存均符合预期。
 - Glass Lab 覆盖：大面积 backdrop、shader/fallback 路径、snapshot captured/reused、block/atlas/tile 诊断、downsample/separable blur filter 诊断、嵌套/同级多 glass 采样稳定性。
@@ -136,6 +136,8 @@
 ## 关键文件
 
 - 规划：`项目建议.md`。
+- 开放化调整：`docs/开放化调整.md`。
+- 开放化使用文档：`docs/开放化调整/使用文档/README.md`。
 - DOM：`src/main/java/club/heiqi/uilib/ui/dom/UiDocument.java`、`DocumentNode.java`、`ElementNode.java`、`TextNode.java`。
 - 控件：`src/main/java/club/heiqi/uilib/ui/dom/control/`。
 - 样式：`src/main/java/club/heiqi/uilib/ui/style/UiStyleDeclaration.java`、`UiStyleResolver.java`、`ComputedStyle.java`、`UiStyleLength.java`、`UiStyleInsets.java`。
@@ -154,6 +156,7 @@
 - 下一阶段暂停继续扩展动画属性和动画诊断显示；若后续确需新增 layout-affecting 属性，必须重新证明必要性，并继续限制在少量可控属性与明确 fallback。
 - HTML-like table 首期能力已接入：可在普通数据表场景使用 `DocumentTableControl` 验证真实 DOM 表格结构、标准 paint 命令和行列布局；背包槽位也已迁移到 table 结构，但 table 布局层不得加入 slot 专用分支。
 - `inventory_overview` 背包页已转为生产级前测试准备：页面外围使用 `main/header/section/footer/h1/h2/p/button` 等语义元素，保留快捷栏、主背包、占用指标、table slot DOM 底板、物品图标延迟回放、DOM tooltip、真实物品移动、页面级单次鼠标携带物品 overlay、当前热键栏选中槽位高亮和返回按钮，移除临时迁移验证卡；后续优先在真实背包 UI 中收口槽位视觉、焦点、滚动、命中与真实数据渲染问题，其次再评估 dirty subtree / 细粒度缓存或 effect chain 后续优化。
+- 开放化文档已开始固化：根索引为 `docs/开放化调整.md`，分级使用文档覆盖项目定位、最小文档页面、基础控件、表格与背包槽位、Minecraft 界面入口和指令触发方案；下一步优先实现客户端指令入口，并停止默认背包按钮注入与右 Shift 诊断热键。
 - 不一次性开放全量布局动画。
 - paint/effect 动画不能触发布局；layout 动画可以重布局，但结束后必须恢复静态缓存。
 - inline formatting、effect chain、snapshot atlas 和 blur/filter 优化只在阻塞动画探针、真实页面迁移或控件展示时优先处理。
