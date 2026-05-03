@@ -3,6 +3,10 @@ package club.heiqi.uilib.ui.screen;
 import java.util.Objects;
 
 import club.heiqi.uilib.ui.diagnostic.UiRuntimeStats;
+import club.heiqi.uilib.ui.document.HtmlLikeDocumentWidget;
+import club.heiqi.uilib.ui.dom.UiDocument;
+import club.heiqi.uilib.ui.layout.UiLayoutSpec;
+import club.heiqi.uilib.ui.layout.UiLength;
 import club.heiqi.uilib.ui.runtime.UiRuntimeAdapters;
 import club.heiqi.uilib.ui.text.DefaultTextMeasureService;
 import club.heiqi.uilib.ui.text.TextMeasureService;
@@ -20,6 +24,7 @@ public final class UiDocumentScreens {
     public static final PageDescriptor HTML_LIKE_SMOKE = new PageDescriptor("html_like_smoke");
     public static final PageDescriptor HTML_LIKE_GLASS = new PageDescriptor("html_like_glass");
     public static final PageDescriptor INVENTORY_OVERVIEW = new PageDescriptor("inventory_overview");
+    public static final PageDescriptor DOCUMENT_SCREEN = new PageDescriptor("document_screen");
     public static final DocumentScreenDefinition<UiTestMenuModel> UI_TEST_DEFINITION = new DocumentScreenDefinition<UiTestMenuModel>(UI_TEST,
             DocumentScreenChrome::resolve,
             new DocumentPageControllerFactory<UiTestMenuModel>() {
@@ -65,6 +70,16 @@ public final class UiDocumentScreens {
                         DocumentPageRuntimeView runtimeView, String pageId, InventoryOverviewModel provision) {
                     return new HtmlLikeInventoryOverviewDocumentPageController(documentUi, documentPage, runtimeView,
                             provision);
+                }
+            });
+    public static final DocumentScreenDefinition<DocumentScreenContentBuilder> DOCUMENT_SCREEN_DEFINITION = new DocumentScreenDefinition<DocumentScreenContentBuilder>(
+            DOCUMENT_SCREEN, DocumentScreenChrome::fillViewport,
+            new DocumentPageControllerFactory<DocumentScreenContentBuilder>() {
+                @Override
+                public DocumentPageController create(DocumentUiScope documentUi,
+                        DocumentPageAuthoringSurface documentPage,
+                        DocumentPageRuntimeView runtimeView, String pageId, DocumentScreenContentBuilder provision) {
+                    return new InlineDocumentPageController(documentUi, documentPage, provision);
                 }
             });
 
@@ -171,7 +186,7 @@ public final class UiDocumentScreens {
          * @param provision 页面专属 provision
          * @return 页面控制器
          */
-        private DocumentPageController createController(DocumentUiScope documentUi,
+        DocumentPageController createController(DocumentUiScope documentUi,
                 DocumentPageAuthoringSurface documentPage,
                 DocumentPageRuntimeView runtimeView, String pageId, P provision) {
             return controllerFactory.create(documentUi, documentPage, runtimeView, pageId, provision);
@@ -212,6 +227,22 @@ public final class UiDocumentScreens {
          * @return 页面壳策略
          */
         DocumentScreenChrome resolve(int width, int height);
+    }
+
+    /**
+     * HTML-like 文档内容构建器。
+     *
+     * <p>宿主层负责创建 `UiDocument`、`HtmlLikeDocumentWidget` 和 Minecraft `GuiScreen`，
+     * 使用者只需要在回调中组装文档树、样式和事件。</p>
+     */
+    public interface DocumentScreenContentBuilder {
+
+        /**
+         * 构建 HTML-like 文档内容。
+         *
+         * @param document 待填充的文档
+         */
+        void build(UiDocument document);
     }
 
     /**
@@ -404,10 +435,36 @@ public final class UiDocumentScreens {
     }
 
     /**
+     * 创建由调用方填充 `UiDocument` 的业务文档界面。
+     *
+     * <p>该入口用于 Minecraft 宿主层快速打开 HTML-like UI，调用方无需接触内部页面控制器、
+     * 页面 definition 或 `HtmlLikeDocumentWidget` 挂载细节。</p>
+     *
+     * @param contentBuilder 文档内容构建器
+     * @return 文档型界面
+     */
+    public static GuiScreen createDocumentScreen(DocumentScreenContentBuilder contentBuilder) {
+        return createDocumentScreen(DocumentScreenEnvironment.minecraftDefaults(), contentBuilder);
+    }
+
+    /**
+     * 基于显式文档环境创建由调用方填充 `UiDocument` 的业务文档界面。
+     *
+     * @param environment 文档页面创建环境
+     * @param contentBuilder 文档内容构建器
+     * @return 文档型界面
+     */
+    public static GuiScreen createDocumentScreen(DocumentScreenEnvironment environment,
+            DocumentScreenContentBuilder contentBuilder) {
+        return createDefinitionBackedScreen(DOCUMENT_SCREEN_DEFINITION,
+                Objects.requireNonNull(environment, "environment"), Objects.requireNonNull(contentBuilder, "contentBuilder"));
+    }
+
+    /**
      * 基于页面定义创建内部 hosted screen。
      *
      * @param definition 页面定义
-     * @param documentTheme 当前主题
+     * @param environment 文档页面创建环境
      * @param provision 页面专属 provision
      * @param <P> 页面 provision 类型
      * @return 文档型界面
@@ -520,6 +577,48 @@ public final class UiDocumentScreens {
         }
         PageDescriptor descriptor = ((DescriptorOwner) screen).getPageDescriptor();
         return descriptor == null ? "" : descriptor.getPageId();
+    }
+
+    /**
+     * 调用方内容驱动的 HTML-like 文档页面控制器。
+     */
+    private static final class InlineDocumentPageController extends DocumentPageController {
+
+        private final DocumentPageAuthoringSurface documentPage;
+        private final HtmlLikeDocumentWidget htmlLikeDocumentWidget;
+
+        /**
+         * 创建调用方内容驱动的文档页面控制器。
+         *
+         * @param documentUi 文档组件作用域
+         * @param documentPage 文档页面挂载面
+         * @param contentBuilder 文档内容构建器
+         */
+        private InlineDocumentPageController(DocumentUiScope documentUi, DocumentPageAuthoringSurface documentPage,
+                DocumentScreenContentBuilder contentBuilder) {
+            DocumentUiScope resolvedDocumentUi = Objects.requireNonNull(documentUi, "documentUi");
+            this.documentPage = Objects.requireNonNull(documentPage, "documentPage");
+            UiDocument document = UiDocument.create();
+            Objects.requireNonNull(contentBuilder, "contentBuilder").build(document);
+            this.htmlLikeDocumentWidget = new HtmlLikeDocumentWidget(document, 320, 180,
+                    resolvedDocumentUi.getTextMeasureService());
+            this.htmlLikeDocumentWidget.setViewportRootScrollingEnabled(true);
+            this.htmlLikeDocumentWidget.setLayoutSpec(new UiLayoutSpec()
+                    .setWidth(UiLength.percent(1.0F))
+                    .setHeight(UiLength.percent(1.0F)));
+        }
+
+        @Override
+        void configureDocumentPage() {
+            documentPage.setContentWidthRange(1, Integer.MAX_VALUE)
+                    .setMinContentHeight(1)
+                    .setViewportFillRatio(1.0F, 1.0F);
+        }
+
+        @Override
+        void buildDocument() {
+            documentPage.addBlock(htmlLikeDocumentWidget);
+        }
     }
 
     /**

@@ -13,7 +13,7 @@
 - 本仓库是 Minecraft 1.7.10 / GTNH / LWJGL3ify 环境下的 Java UI 框架工程。
 - 当前目标是一套 HTML-like UI 渲染框架，覆盖文档树、样式计算、盒模型、布局、绘制、裁剪、滚动、效果合成、命中测试与输入分发。
 - 本项目不是完整浏览器内核，不承诺 HTML5 全量解析、CSS 全量规范、JavaScript DOM API、网络加载或浏览器安全模型。
-- 当前可运行后端仍是 retained `Widget` 树；screen host 根视口是 `ViewportWidget`；文档页创建入口是 `UiDocumentScreens`；开放化调整文档入口是 `docs/开放化调整.md`，具体开发者使用文档按分级目录存放在 `docs/使用文档/`。
+- 当前可运行后端仍是 retained `Widget` 树；screen host 根视口是 `ViewportWidget`；宿主业务文档入口是 `UiDocumentScreens.createDocumentScreen(...)`；开放化调整文档入口是 `docs/开放化调整.md`，具体开发者使用文档按分级目录存放在 `docs/使用文档/`。
 
 ## 作者层能力
 
@@ -40,6 +40,7 @@
 ## Widget 适配与页面入口
 
 - 具体 Widget 适配和 Minecraft 宿主接入说明不再在 AI 记忆中重复维护；以 `docs/使用文档/01-入门/最小文档页面.md` 和 `docs/使用文档/03-宿主集成/Minecraft界面入口.md` 为准。
+- 宿主层已新增业务文档 screen 创建入口 `UiDocumentScreens.createDocumentScreen(...)`，用于从 Minecraft 入口直接传入 `UiDocument` 构建回调并打开 UI。
 - 当前可访问页面仍包括 `ui_test`、`ui_test_layout`、`html_like_smoke`、`html_like_glass`、`inventory_overview`；首版开放化目标是把测试期右 Shift 入口和原版背包注入按钮迁移为显式客户端指令触发。
 
 ## 游戏内验收边界
@@ -89,7 +90,7 @@
 - CSS transition / animation MVP 已完成游戏内收口验收：transition、keyframe、forwards fill 均具备 Smoke 可见诊断路径，`WIDTH/HEIGHT/MARGIN_LEFT/MARGIN_RIGHT/PADDING_LEFT/PADDING_RIGHT` layout 动画已完成纯 JVM、Smoke 探针、游戏内视觉、诊断与缓存边界验收。
 - 下一阶段暂停继续扩展动画属性和动画诊断显示；若后续确需新增 layout-affecting 属性，必须重新证明必要性，并继续限制在少量可控属性与明确 fallback。
 - HTML-like table 与 `inventory_overview` 背包页能力详情以 `docs/使用文档/02-控件/表格与背包槽位.md` 为准；后续优先在真实背包 UI 中收口槽位视觉、焦点、滚动、命中与真实数据渲染问题，其次再评估 dirty subtree / 细粒度缓存或 effect chain 后续优化。
-- 开放化文档已开始固化：根索引为 `docs/开放化调整.md`，分级使用文档位于 `docs/使用文档/`，覆盖项目定位、最小文档页面、基础控件、表格与背包槽位、Minecraft 界面入口和指令触发方案；下一步优先实现客户端指令入口，并停止默认背包按钮注入与右 Shift 诊断热键。
+- 开放化文档已开始固化：根索引为 `docs/开放化调整.md`，分级使用文档位于 `docs/使用文档/`，覆盖项目定位、最小文档页面、基础控件、表格与背包槽位、Minecraft 界面入口和指令触发方案；宿主业务文档 screen 创建入口已开始代码收口；下一步优先实现客户端指令入口，并停止默认背包按钮注入与右 Shift 诊断热键。
 - 不一次性开放全量布局动画。
 - paint/effect 动画不能触发布局；layout 动画可以重布局，但结束后必须恢复静态缓存。
 - inline formatting、effect chain、snapshot atlas 和 blur/filter 优化只在阻塞动画探针、真实页面迁移或控件展示时优先处理。

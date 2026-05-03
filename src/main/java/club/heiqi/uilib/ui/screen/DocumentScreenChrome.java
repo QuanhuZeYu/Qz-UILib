@@ -34,6 +34,19 @@ public final class DocumentScreenChrome {
     }
 
     /**
+     * 创建填满宿主视口的无留白文档壳。
+     *
+     * <p>业务文档 screen 默认不套诊断页外边距，页面自己的留白应通过根元素样式声明。</p>
+     *
+     * @param width 屏幕宽度
+     * @param height 屏幕高度
+     * @return 无留白文档壳
+     */
+    public static DocumentScreenChrome fillViewport(int width, int height) {
+        return new DocumentScreenChrome(Insets.of(0, 0, 0, 0), Insets.of(0, 0, 0, 0));
+    }
+
+    /**
      * 获取根视口留白。
      *
      * @return 根留白

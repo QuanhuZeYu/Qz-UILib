@@ -6,7 +6,11 @@ import java.util.List;
 import org.junit.Assert;
 import org.junit.Test;
 
+import club.heiqi.uilib.ui.document.HtmlLikeDocumentWidget;
+import club.heiqi.uilib.ui.dom.ElementNode;
+import club.heiqi.uilib.ui.dom.UiDocument;
 import club.heiqi.uilib.ui.runtime.UiRuntimeAdapters;
+import club.heiqi.uilib.ui.style.UiStyleLength;
 import club.heiqi.uilib.ui.text.TextMeasureService;
 import club.heiqi.uilib.ui.widget.Widget;
 
@@ -81,6 +85,24 @@ public class UiDocumentScreensTest {
     }
 
     /**
+     * 验证通用业务文档 screen definition 会暴露稳定 descriptor 与全视口 chrome。
+     */
+    @Test
+    public void shouldExposeStablePageIdAndChromeForDocumentScreenDefinition() {
+        Assert.assertSame(UiDocumentScreens.DOCUMENT_SCREEN,
+                UiDocumentScreens.DOCUMENT_SCREEN_DEFINITION.getPageDescriptor());
+        Assert.assertEquals("document_screen",
+                UiDocumentScreens.DOCUMENT_SCREEN_DEFINITION.getPageDescriptor().getPageId());
+
+        DocumentScreenChrome chrome = UiDocumentScreens.DOCUMENT_SCREEN_DEFINITION.resolveChrome(960, 720);
+
+        Assert.assertEquals(0, chrome.getRootPadding().getLeft());
+        Assert.assertEquals(0, chrome.getRootPadding().getTop());
+        Assert.assertEquals(0, chrome.getRootPadding().getRight());
+        Assert.assertEquals(0, chrome.getRootPadding().getBottom());
+    }
+
+    /**
      * 验证 descriptor 持有者在没有 `GuiScreen` 运行时的情况下仍能暴露稳定页面标识。
      */
     @Test
@@ -121,6 +143,42 @@ public class UiDocumentScreensTest {
 
         Assert.assertSame(textMeasureService, environment.getTextMeasureService());
         Assert.assertSame(runtimeAdapters, environment.getRuntimeAdapters());
+    }
+
+    /**
+     * 验证通用文档 definition 会执行调用方文档构建回调。
+     */
+    @Test
+    public void shouldCreateDocumentControllerFromContentBuilder() {
+        NoOpTextMeasureService textMeasureService = new NoOpTextMeasureService();
+        UiRuntimeAdapters runtimeAdapters = UiRuntimeAdapters.empty();
+        DocumentUiScope documentUiScope = new DocumentUiScope(textMeasureService, runtimeAdapters);
+        DirectDocumentPageAuthoringSurface surface = new DirectDocumentPageAuthoringSurface();
+        final boolean[] called = new boolean[] { false };
+
+        DocumentPageController controller = UiDocumentScreens.DOCUMENT_SCREEN_DEFINITION.createController(
+                documentUiScope, surface, EmptyRuntimeView.INSTANCE, UiDocumentScreens.DOCUMENT_SCREEN.getPageId(),
+                new UiDocumentScreens.DocumentScreenContentBuilder() {
+            @Override
+            public void build(UiDocument document) {
+                called[0] = true;
+                ElementNode root = document.getRootElement();
+                root.style()
+                        .setWidth(UiStyleLength.percent(1.0F))
+                        .setHeight(UiStyleLength.percent(1.0F));
+                ElementNode title = document.element("h1");
+                title.appendText("业务页面");
+                root.append(title);
+            }
+        });
+
+        controller.configureDocumentPage();
+        controller.buildDocument();
+
+        Assert.assertTrue(called[0]);
+        Assert.assertEquals(1, surface.getBlocks().size());
+        Assert.assertTrue(surface.getBlocks().get(0) instanceof HtmlLikeDocumentWidget);
+        Assert.assertTrue(((HtmlLikeDocumentWidget) surface.getBlocks().get(0)).isViewportRootScrollingEnabled());
     }
 
     /**
@@ -178,6 +236,28 @@ public class UiDocumentScreensTest {
         @Override
         public UiDocumentScreens.PageDescriptor getPageDescriptor() {
             return descriptor;
+        }
+    }
+
+    /**
+     * 供测试使用的空运行时视图。
+     */
+    private enum EmptyRuntimeView implements DocumentPageRuntimeView {
+        INSTANCE;
+
+        @Override
+        public int getHostWidth() {
+            return 0;
+        }
+
+        @Override
+        public int getHostHeight() {
+            return 0;
+        }
+
+        @Override
+        public club.heiqi.uilib.ui.diagnostic.UiRuntimeStats getUiRuntimeStats() {
+            return club.heiqi.uilib.ui.diagnostic.UiRuntimeStats.empty();
         }
     }
 

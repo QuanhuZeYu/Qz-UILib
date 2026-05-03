@@ -2,6 +2,26 @@
 
 本文说明在 Minecraft 1.7.10 宿主中打开 Qz UILib 文档页面的建议方式。
 
+## 业务文档入口
+
+业务 UI 优先通过 `UiDocumentScreens.createDocumentScreen(...)` 创建：
+
+```java
+Minecraft.getMinecraft().displayGuiScreen(UiDocumentScreens.createDocumentScreen(document -> {
+    ElementNode root = document.getRootElement();
+    root.style()
+            .setWidth(UiStyleLength.percent(1.0F))
+            .setHeight(UiStyleLength.percent(1.0F))
+            .setPadding(UiStyleLength.px(16));
+
+    ElementNode title = document.element("h1");
+    title.appendText("我的 UI");
+    root.append(title);
+}));
+```
+
+该入口会创建 `UiDocument`、`HtmlLikeDocumentWidget` 和宿主 `GuiScreen`，调用方只负责组装文档树、样式和事件。
+
 ## 当前内部入口
 
 当前内部页面通过 `UiDocumentScreens` 创建 `GuiScreen`：
@@ -17,10 +37,11 @@ Minecraft.getMinecraft().displayGuiScreen(UiDocumentScreens.createHtmlLikeSmoke(
 - `createHtmlLikeSmoke()`：HTML-like Smoke 页。
 - `createHtmlLikeGlass()`：Glass Lab 页。
 - `createInventoryOverview(...)`：背包概览示例页。
+- `createDocumentScreen(...)`：业务文档 screen。
 
 ## 首版建议
 
-- 外部开发者应通过明确的 screen 工厂或后续 API 门面打开业务 UI。
+- 外部开发者应优先通过 `createDocumentScreen(...)` 打开业务 UI。
 - 诊断页只作为开发期工具使用，不应作为玩家默认入口。
 - 默认不向原版背包注入按钮。
 - 默认不注册全局右 Shift 打开诊断菜单。

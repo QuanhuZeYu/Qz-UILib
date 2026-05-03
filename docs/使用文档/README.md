@@ -20,6 +20,7 @@
 ## 首版重点
 
 - 使用 Java API 构建 UI，而不是编写 HTML/CSS 文件。
-- 优先通过 `UiDocument` 和 `HtmlLikeDocumentWidget` 组织界面。
+- 优先通过 `UiDocumentScreens.createDocumentScreen(...)` 在宿主入口创建业务界面。
+- 页面内容仍通过 `UiDocument`、`ElementNode`、样式和控件组织。
 - 诊断页和示例页只作为开发期工具，不作为玩家默认入口。
 - 所有测试入口应改为显式指令触发，不再默认注入原版界面或占用全局热键。
