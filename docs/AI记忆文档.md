@@ -13,106 +13,40 @@
 - 本仓库是 Minecraft 1.7.10 / GTNH / LWJGL3ify 环境下的 Java UI 框架工程。
 - 当前目标是一套 HTML-like UI 渲染框架，覆盖文档树、样式计算、盒模型、布局、绘制、裁剪、滚动、效果合成、命中测试与输入分发。
 - 本项目不是完整浏览器内核，不承诺 HTML5 全量解析、CSS 全量规范、JavaScript DOM API、网络加载或浏览器安全模型。
-- 当前可运行后端仍是 retained `Widget` 树；screen host 根视口是 `ViewportWidget`；文档页创建入口是 `UiDocumentScreens`；开放化调整文档入口是 `docs/开放化调整.md`，具体开发者使用文档按分级目录存放在 `docs/开放化调整/使用文档/`。
+- 当前可运行后端仍是 retained `Widget` 树；screen host 根视口是 `ViewportWidget`；文档页创建入口是 `UiDocumentScreens`；开放化调整文档入口是 `docs/开放化调整.md`，具体开发者使用文档按分级目录存放在 `docs/使用文档/`。
 
 ## 作者层能力
 
-### DOM 与事件
-
-- `UiDocument` 是 HTML-like 文档作者入口；`ElementNode` 与 `TextNode` 分别承载元素和文本。
-- `DocumentNode` 维护父子关系与 layout/paint 分层失效版本；tree/text/geometry 变更提升 layout 与 paint version，paint-only style/custom renderer/keyframes 注册变更只提升 paint version。
-- `ElementNode.__getElementUid()` 是进程内唯一内部身份，只用于测试、调试、缓存和内部追踪；不等同于 HTML `id`，不进入属性表或选择器语义。
-- 元素事件支持 active、click、focus、key、text input 与 focusable 标记；active/click/key/text input 从目标向父元素冒泡；focus 事件带 `focusVisible` 区分键盘可见焦点与鼠标普通焦点。
-- `data-hit-test-hidden="true"` 是当前内部约定，用于 tooltip、鼠标携带物品层这类视觉 overlay 整棵子树不截获 HTML-like 命中测试；不要把它当成公开 CSS `pointer-events` 能力。
-
-### 控件
-
-- `DocumentButtonControl` 使用真实 `button type="button"` 元素表达按钮，支持 action、enabled/disabled、鼠标 click、Enter/Space 激活、active、focus-visible 与基础视觉状态。
-- `DocumentTextInputControl` 支持 placeholder、maxLength、控制字符过滤、Backspace 删除、enabled/disabled、focus 边框和 change handler。
-- `DocumentToggleSwitchControl` 以 flex row + justifyContent 表达开关，支持 click/Enter/Space 切换、enabled/disabled、focus-visible 与 toggle change handler。
-- `DocumentSegmentedSelectorControl` 以 element-backed button 组表达分段选择器，支持鼠标/键盘选择、enabled/disabled、选中态视觉和 selection handler。
-- `DocumentInventorySlotGridControl` 使用真实 HTML-like `table/tbody/tr/td` 表达背包格子底板，slot 背景/边框走标准 `BACKGROUND`/`BORDER` 绘制命令；slot `td` 保持表格单元格语义，同时带 `role="button"`、`tabindex="0"`、`data-slot-*` 与 `aria-label`，支持鼠标 click、Enter/Space 左键激活、slot hover/active/selected 高亮和 tooltip hover 状态通知；hover 中刷新槽位状态会同步刷新 tooltip 文本；自定义渲染回调仅用于登记 Minecraft 物品图标延迟回放，复用 `ui.inventory` 下的 `InventorySlotGridLayout` 与 `InventorySlotGridItemRenderer`。
-- `DocumentTableControl` 使用真实 `table/tbody/tr/td` 与按需 `thead/tr/th` 元素表达表格，支持表头、表体行、列宽、行列 gap、单元格 padding/border/background/text 样式；无表头表格不保留空 `thead`；绘制走标准 background/border/text 命令，不使用 `CUSTOM`。
-
-### 样式
-
-- 样式入口是 `ElementNode.style()` 的 Java inline style API；`UiStyleResolver` 输出 `ComputedStyle`。
-- 当前样式支持 `display`、px/%/auto 长度、margin/padding/border、颜色、文本色、`opacity`、`overflow`、`position: static/relative/absolute/fixed`、`top/right/bottom/left`、`zIndex`、flex row/column、table/table row group/table row/table cell、gap、align、justify、grow/shrink、`vertical-align: baseline/top/middle/bottom`、`backdropBlurRadius`、`backdropSaturation`。
-- transition 声明支持 `transition-property`、duration、delay 与 timing function。
-- keyframe animation 声明支持 `animation-name`、duration、delay、iteration count、fill mode 与 timing function。
-- 样式系统当前不提供 CSS parser、样式表层叠、选择器匹配或媒体查询语义；作者侧使用 Java API 直接声明样式。
+- 具体 DOM、事件、控件、样式、表格与背包槽位能力不再在 AI 记忆中重复维护；以 `docs/使用文档/README.md` 及其分级文档为准。
+- 关键入口说明见 `docs/使用文档/01-入门/最小文档页面.md`。
+- 基础控件说明见 `docs/使用文档/02-控件/基础控件.md`。
+- 表格与背包槽位边界见 `docs/使用文档/02-控件/表格与背包槽位.md`。
 
 ## 布局能力
 
-- `DocumentLayoutEngine` 支持 block flow、box model、px/% 长度、auto 高度、`display:none` 过滤、直接文本子节点测量/换行、text/span 首期 inline flow、flex row/column、gap、align、justify、grow/shrink、table 行列布局。
-- table 布局首期支持 `table/thead/tbody/tfoot/tr/th/td` 默认 display、行组/行/单元格盒、列宽汇总、自动列宽分配、row-gap/column-gap 和单元格行高拉伸；暂不覆盖 colspan/rowspan、border-collapse、caption 或完整 CSS table 算法。
-- inline flow 通过 `DocumentLayoutInlineFragment` 输出 fragment 几何；支持同一 inline 元素同一行相邻片段合并、跨行分片、首片/末片标记、父 inline fragment 覆盖嵌套 inline 子内容。
-- inline 元素左右 margin 参与行内流但不绘制；左右 border/padding 参与行内流；上下 border/padding 扩展行高与 fragment 表面；跨行 inline fragment 支持局部圆角切片。
-- `position: relative` 保留普通流位置，仅记录视觉偏移；绘制、命中与滚动几何阶段应用该偏移。
-- `position: absolute` 脱离普通流，不撑开父 auto 高度，不参与 flex item 分配；定位基准是最近 non-static ancestor 的 content box，没有 positioned ancestor 时回退根 content box。
-- `position: fixed` 脱离普通流，相对 `HtmlLikeDocumentWidget` viewport containing block 定位，不随根滚动内容移动。
-- absolute/fixed 在 `width:auto` 且 left+right 同时存在时横向 stretch，在 `height:auto` 且 top+bottom 同时存在时纵向 stretch，并扣除 inset、margin、border 与 padding 求解 content size。
-- `DocumentLayoutBox` 提供 CSS-like stacking phase：负 `z-index` positioned、普通流、positioned auto/0、正 `z-index` positioned。
-- `DocumentEffectChain` 是 paint context、backdrop-filter、overflow clip、stacking context 与局部排序边界的统一判定点。
-- `DocumentScrollState` 根据布局盒推导 `overflow:auto` 的可滚范围、滚动偏移、滚动条几何和 track/thumb 拖拽状态。
-- `DocumentHitTestEngine` 在滚动、relative/absolute/fixed、inline fragment、四阶段 stacking 与 overflow/effect boundary 语义下返回命中的最深元素。
+- 具体布局能力、非目标与普通表格边界不再在 AI 记忆中重复维护；以 `docs/使用文档/01-入门/项目定位与能力边界.md` 和 `docs/使用文档/02-控件/表格与背包槽位.md` 为准。
+- 若后续新增 layout-affecting 能力，必须同步更新使用文档并保留最小必要验证。
 
 ## 绘制与效果能力
 
-- `DocumentPaintEngine` 把布局盒树转换为中立 paint command：paint-context、backdrop-filter、background、border、text、clip、custom、scrollbar。
-- 绘制顺序复用 `DocumentEffectChain` 与 stacking phase；stacking context 或 overflow clip effect boundary 会把子树作为整体隔离。
-- 非根 `opacity < 1`、positioned + 显式 `z-index`、或 `backdrop-filter` 元素会输出 `PAINT_CONTEXT_START` / `PAINT_CONTEXT_END`。
-- `DocumentPaintRenderer` 将 paint command 投影到 `UiRenderContext`；`PAINT_CONTEXT` 与 `OVERFLOW_CLIP` 是栈式 pass，`BACKDROP_FILTER` 是 stateless pass。
-- group opacity 使用 `UiRenderContext.pushPaintContext(...)` / `popPaintContext()` 与 `PaintContextCompositor`；FBO 不可用时回退到命令级 alpha。
-- `CUSTOM` 内容在元素背景/边框之后、clip/子树之前绘制，可参与 group opacity；普通 UI 表面不应为了方便直接落到 CUSTOM 中手绘，应优先用 DOM 元素和标准背景/边框命令表达。
-- `backdrop-filter` 语义只采样当前 UI 主层中元素背后的已绘制 UI 内容；不直接模糊游戏世界画面。若页面壳提供已模糊背景图，它只作为普通 UI 背景参与采样。
-- `UiMainLayerSnapshotService` 按 read framebuffer、UI 主层内容版本、采样区域、blur 级别复用同帧局部快照；支持 128px block 对齐、较大 block atlas 覆盖、multi tile atlas 组装、downsample + separable blur filter pass。
-- backdrop shader 路径优先使用 GLSL 平滑采样与 saturation；shader 或 FBO 不可用时回退固定管线近似或 tint fallback。
-- 元素级 backdrop blur 半径由 `DocumentEffectChain.MAX_BACKDROP_BLUR_RADIUS` 限制为 48。
-- 根滚动条保持可见；嵌套 `overflow:auto` 滚动条只在最近有效滚动后的短暂窗口内绘制，空闲后隐藏。
+- 具体绘制、效果、custom renderer 与宿主边界不再在 AI 记忆中重复维护；以 `docs/使用文档/01-入门/项目定位与能力边界.md`、`docs/使用文档/02-控件/表格与背包槽位.md` 和 `docs/使用文档/03-宿主集成/Minecraft界面入口.md` 为准。
+- 普通 UI 表面仍应优先用 DOM 元素和标准样式表达，不应为了方便落到 `CUSTOM` 手绘。
 
 ## 动画能力
 
-- `DocumentAnimationClock` 是可注入时间源；`DocumentAnimationTimeline` 维护 computed style 之上的运行时覆盖层。
-- 运行值不写回作者侧 inline style。
-- 运行值优先级固定为：`transition > keyframe animation > computed style`。
-- 当前可动画属性：`BACKGROUND_COLOR`、`BORDER_COLOR`、`TEXT_COLOR`、`OPACITY`、`BORDER_RADIUS`、`BACKDROP_BLUR_RADIUS`、`WIDTH`、`HEIGHT`、`MARGIN_LEFT`、`MARGIN_RIGHT`、`PADDING_LEFT`、`PADDING_RIGHT`。
-- 动画属性按影响范围分类：paint、effect、layout；按插值值类型分类：color、float。
-- `DocumentAnimationProperty` 是属性枚举与值类型元数据来源；`DocumentAnimationTimeline` 内部通过属性运行语义表集中处理颜色/数值 base value、px-only transition 判定和 keyframe used value 归一化，并把 transition/keyframe/fill 的存在性判断、完成计数和完成清理集中到单元素状态 helper，避免新增属性时散落维护多套 if/else 白名单。
-- `DocumentAnimationTimeline.DiagnosticsSnapshot` 是当前只读动画诊断快照，可按来源统计 transition、keyframe、forwards fill，并按 impact 区分 paint/effect/layout；诊断快照不推进或清理动画状态。
-- transition 基于 computed style 基准值变化创建；清除 `transition-property` 或 duration 变为 0 时，运行中 transition 在下一次 timeline 刷新回到 computed style 基准值。
-- `DocumentAnimationTimeline.hasRunningTransition(element, property)` 可按元素/属性查询 transition 运行状态。
-- keyframe animation 通过 `UiDocument.registerKeyframes(...)` 注册命名 `DocumentKeyframes`，由元素的 `animation-name` 引用。
-- keyframes 支持 color/float 轨道、多段 stop、delay、有限 iteration、fill-mode none/backwards/forwards/both 与 timing function；float 轨道可覆盖受控 layout 属性 `WIDTH/HEIGHT/MARGIN_LEFT/MARGIN_RIGHT/PADDING_LEFT/PADDING_RIGHT`。
-- keyframe 声明重启条件：`animation-name`、keyframes 对象、duration、delay、iteration count、fill-mode、timing function 变化。
-- 布局盒尺寸变化只刷新数值轨道 used value 归一化边界，不重启 keyframe 进度。
-- 同名 keyframes 定义对象替换会让引用元素重启动画；定义移除会取消引用元素动画并清理对应 fill。
-- forwards fill 后作者侧修改同属性 computed target 或同属性 transition 接管时，该属性 fill 让位给作者/transition 值；多属性 fill 只清理被作者改动的属性；layout keyframe 声明清除或 keyframes 定义移除会清理对应 layout 运行值。
-- 数值 keyframe used value 归一化范围：opacity clamp 到 0..1，border-radius clamp 到当前布局盒半径上限，backdrop blur clamp 到 48。
-- `BACKDROP_BLUR_RADIUS` 是 effect-affecting 长度 transition；退场期间即使目标 blur 为 0，只要 transition 仍运行，paint 仍保留 backdrop command。
-- `WIDTH/HEIGHT/MARGIN_LEFT/MARGIN_RIGHT/PADDING_LEFT/PADDING_RIGHT` 是当前受控 layout-affecting transition/keyframe 属性；当前 transition 稳定承诺仅为 px-to-px，auto/% 不创建 width/height/margin/padding transition。
-- `HtmlLikeDocumentWidget` 在 layout 动画活跃或存在 layout forwards fill 运行值时，先用静态 computed style 布局刷新 timeline，再用 `DocumentLayoutEngine.LayoutRuntimeValueResolver` 按运行态 `WIDTH/HEIGHT/MARGIN_LEFT/MARGIN_RIGHT/PADDING_LEFT/PADDING_RIGHT` 同帧重建布局并刷新滚动范围；绘制、hit-test、滚动交互、焦点遍历和端到端点击分发使用同一份运行态布局几何；运行中的 layout transition/keyframe 仍逐帧重建 runtime layout，只剩 layout forwards fill 的稳态会复用 runtime layout 缓存；收缩动画期间滚动偏移按运行态最大滚动范围夹取，不提前使用目标静态布局夹取；作者修改同属性目标后恢复作者布局值。
-- timing function 当前支持 linear、ease、ease-in、ease-out、ease-in-out 的简化插值。
+- 具体动画属性、运行边界和诊断能力不再在 AI 记忆中重复维护；对外能力以 `docs/使用文档/01-入门/项目定位与能力边界.md` 为准，阶段性验收结论继续保留在本文件“下一步边界”。
+- 不一次性开放全量 layout 动画；新增动画能力前必须先证明必要性，并同步补使用文档与验证。
 
 ## Widget 适配与页面入口
 
-- `HtmlLikeDocumentWidget` 承载 `UiDocument -> style -> layout -> paint command -> UiRenderContext` 链路；生产默认使用 `DefaultTextMeasureService`，测试可注入确定性 `TextMeasureService` 和动画时钟。
-- `HtmlLikeDocumentWidget` 支持根视口滚动模式：根元素 border box 固定为 widget 视口尺寸，页面级滚动由根元素 `overflow:auto` 和 `DocumentScrollState` 承担。
-- `HtmlLikeDocumentWidget` 缓存按 layout version、paint version、text measure epoch、widget 尺寸、scroll version 与动画状态分层失效。
-- `HtmlLikeDocumentWidget` 支持元素 hover 事件分发；`UiRenderContext.enqueueDeferredPostMainOverlayPass(...)` 用于鼠标携带物品这类顶层后置 overlay，不继承槽位局部 clip；主后置 deferred 批次由 `UiScreenHostSession` 在每个 replay 前重置 2D 状态并清空 depth，避免多个背包网格连续物品回放互相污染。
-- paint-only 样式变更复用已有布局几何，通过 `DocumentLayoutBox.refreshComputedStyles()` 刷新 computed style 快照，不重新文本测量。
-- paint/effect 动画期间每帧重建 paint commands，但不重建 layout；layout 动画运行期允许重建 runtime layout，只剩 forwards fill 稳态后应复用 runtime layout 缓存；动画结束后回到静态缓存。
-- `HtmlLikeDocumentWidget.getActiveAnimationCount()`、`getAnimationDiagnosticsSnapshot()`、`getPerformanceDiagnosticsSnapshot()` 与 `hasLayoutRuntimeValueForDiagnostics()` 是当前只读诊断入口，用于 Smoke 页和测试展示未完成动画数量、transition/keyframe/fill 来源计数、paint/effect/layout 影响范围计数、layout 运行态覆盖是否存在，以及 `paintGen/staticLayout/runtimeLayout/textEpoch` 缓存边界状态，不作为作者层业务 API。
-- 当前可访问页面：`ui_test` 诊断菜单、`ui_test_layout` 布局诊断页、`html_like_smoke` Smoke 页、`html_like_glass` 大面积磨玻璃页、`inventory_overview` 背包页；首版开放化目标是把测试期右 Shift 入口和原版背包注入按钮迁移为显式客户端指令触发。
-- 当前 definition-backed 生产入口使用 `DefinitionBackedHtmlLikeDocumentScreen` + `DirectDocumentPageAuthoringSurface`；HTML-like 页面直接挂载 `HtmlLikeDocumentWidget`，不套旧 retained 页面壳。
+- 具体 Widget 适配和 Minecraft 宿主接入说明不再在 AI 记忆中重复维护；以 `docs/使用文档/01-入门/最小文档页面.md` 和 `docs/使用文档/03-宿主集成/Minecraft界面入口.md` 为准。
+- 当前可访问页面仍包括 `ui_test`、`ui_test_layout`、`html_like_smoke`、`html_like_glass`、`inventory_overview`；首版开放化目标是把测试期右 Shift 入口和原版背包注入按钮迁移为显式客户端指令触发。
 
 ## 游戏内验收边界
 
 - 当前测试入口仍是右 Shift 打开诊断菜单，原版背包页仍注入 `背包UI` 按钮；开放化调整已确定后续要改为客户端指令触发，建议命令组为 `/qzuilib ui|smoke|layout|glass|inventory|help`。
-- Smoke 页覆盖：控件交互、文本输入、Tab 焦点、按钮、开关、overflow auto 滚动、absolute/fixed 定位、absolute stretch、inline fragment/vertical-align、group opacity、stacking context、backdrop-filter、opacity FBO、`WIDTH/HEIGHT/MARGIN_LEFT/MARGIN_RIGHT/PADDING_LEFT/PADDING_RIGHT` layout transition 和 layout keyframe/forwards fill；`PADDING_LEFT/PADDING_RIGHT` 游戏内 Smoke 已验收正确；layout 动画区会显示覆盖属性清单、active 总数、transition/keyframe/fill 来源计数、paint/effect/layout 分 impact 运行态状态，以及 `Cache runtime: paintGen/staticLayout/runtimeLayout/textEpoch` 缓存诊断；点击当帧因文本或 layout 目标变化导致 `staticLayout +1` 允许，运行期 paint/effect 动画不得增长 `runtimeLayout`；当前 layout `t/k/f`、缓存诊断和 layout forwards fill 稳态缓存均已完成游戏内验收。
-- Smoke 页 `Layout animation probe`：点击蓝色 `Layout card`，宽高在 92x34 与 190x58 间过渡，右侧绿色 sibling 应随动画被推开或回收；点击琥珀色 `Margin card`，左右 margin 在 tight/wide 间过渡，右侧棕色 sibling 应随 margin 动画位移；点击紫色 `Padding card`，左右 padding 在 tight/wide 间过渡，卡片内容和右侧紫色 sibling 应随 padding 动画位移；点击青色 `Keyframe card` 启动 `layoutFillProbe` width keyframe，运行时 layout `k` 应增加且 `runtimeLayout` 增长，结束后 layout `f` 应保留但 `runtimeLayout` 应进入稳态不再持续增长，再次点击清除 animation 后 `f` 应归零并恢复作者宽度。当前游戏内已确认 transition、keyframe、forwards fill 均有可见诊断路径，padding 动画平滑、内容和 sibling 同步位移、`t/k/f` 计数进入与退出、paint/effect 不增长 `runtimeLayout`、layout 动画增长 `runtimeLayout`、forwards fill 稳态缓存均符合预期。
-- Glass Lab 覆盖：大面积 backdrop、shader/fallback 路径、snapshot captured/reused、block/atlas/tile 诊断、downsample/separable blur filter 诊断、嵌套/同级多 glass 采样稳定性。
-- 背包页覆盖：hotbar/backpack table 网格、slot DOM 底板、Minecraft 物品图标延迟回放、DOM fixed tooltip surface、真实左/右键物品移动、显式 `main[data-inventory-drop-zone]` 空白投放区域、页面级单次鼠标携带物品 layer、当前热键栏选中槽位高亮、当前背包占用指标与返回原版背包按钮交互；tooltip 默认放在指针下方以避开当前 slot 物品图标，空间不足时再翻转；该页按生产级前测试准备收口，不再承载临时迁移验证卡或动画/定位/inline 探针。slot 默认底板允许半透明，视觉应叠在背包卡片/UI 底图上，不得通过改成不透明来规避穿透问题。
+- 诊断页、Smoke 页、Glass Lab 和背包示例页的具体覆盖能力不再在 AI 记忆中重复维护；开放入口与使用边界以 `docs/使用文档/` 为准。
+- 当前已完成的阶段性验收结论：动画 MVP、layout 动画缓存边界、Smoke 诊断路径、Glass Lab 采样诊断路径和背包页生产级前收口均已过一轮游戏内确认；后续若变更相关能力，应同步更新使用文档和对应测试。
 
 ## 清退边界
 
@@ -137,7 +71,7 @@
 
 - 规划：`项目建议.md`。
 - 开放化调整：`docs/开放化调整.md`。
-- 开放化使用文档：`docs/开放化调整/使用文档/README.md`。
+- 开放化使用文档：`docs/使用文档/README.md`。
 - DOM：`src/main/java/club/heiqi/uilib/ui/dom/UiDocument.java`、`DocumentNode.java`、`ElementNode.java`、`TextNode.java`。
 - 控件：`src/main/java/club/heiqi/uilib/ui/dom/control/`。
 - 样式：`src/main/java/club/heiqi/uilib/ui/style/UiStyleDeclaration.java`、`UiStyleResolver.java`、`ComputedStyle.java`、`UiStyleLength.java`、`UiStyleInsets.java`。
@@ -154,9 +88,8 @@
 
 - CSS transition / animation MVP 已完成游戏内收口验收：transition、keyframe、forwards fill 均具备 Smoke 可见诊断路径，`WIDTH/HEIGHT/MARGIN_LEFT/MARGIN_RIGHT/PADDING_LEFT/PADDING_RIGHT` layout 动画已完成纯 JVM、Smoke 探针、游戏内视觉、诊断与缓存边界验收。
 - 下一阶段暂停继续扩展动画属性和动画诊断显示；若后续确需新增 layout-affecting 属性，必须重新证明必要性，并继续限制在少量可控属性与明确 fallback。
-- HTML-like table 首期能力已接入：可在普通数据表场景使用 `DocumentTableControl` 验证真实 DOM 表格结构、标准 paint 命令和行列布局；背包槽位也已迁移到 table 结构，但 table 布局层不得加入 slot 专用分支。
-- `inventory_overview` 背包页已转为生产级前测试准备：页面外围使用 `main/header/section/footer/h1/h2/p/button` 等语义元素，保留快捷栏、主背包、占用指标、table slot DOM 底板、物品图标延迟回放、DOM tooltip、真实物品移动、页面级单次鼠标携带物品 overlay、当前热键栏选中槽位高亮和返回按钮，移除临时迁移验证卡；后续优先在真实背包 UI 中收口槽位视觉、焦点、滚动、命中与真实数据渲染问题，其次再评估 dirty subtree / 细粒度缓存或 effect chain 后续优化。
-- 开放化文档已开始固化：根索引为 `docs/开放化调整.md`，分级使用文档覆盖项目定位、最小文档页面、基础控件、表格与背包槽位、Minecraft 界面入口和指令触发方案；下一步优先实现客户端指令入口，并停止默认背包按钮注入与右 Shift 诊断热键。
+- HTML-like table 与 `inventory_overview` 背包页能力详情以 `docs/使用文档/02-控件/表格与背包槽位.md` 为准；后续优先在真实背包 UI 中收口槽位视觉、焦点、滚动、命中与真实数据渲染问题，其次再评估 dirty subtree / 细粒度缓存或 effect chain 后续优化。
+- 开放化文档已开始固化：根索引为 `docs/开放化调整.md`，分级使用文档位于 `docs/使用文档/`，覆盖项目定位、最小文档页面、基础控件、表格与背包槽位、Minecraft 界面入口和指令触发方案；下一步优先实现客户端指令入口，并停止默认背包按钮注入与右 Shift 诊断热键。
 - 不一次性开放全量布局动画。
 - paint/effect 动画不能触发布局；layout 动画可以重布局，但结束后必须恢复静态缓存。
 - inline formatting、effect chain、snapshot atlas 和 blur/filter 优化只在阻塞动画探针、真实页面迁移或控件展示时优先处理。
