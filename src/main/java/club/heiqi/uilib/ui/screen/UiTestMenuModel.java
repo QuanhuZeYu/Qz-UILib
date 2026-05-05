@@ -19,4 +19,9 @@ interface UiTestMenuModel {
      * 打开大面积磨玻璃测试子页。
      */
     void openHtmlLikeGlass();
+
+    /**
+     * 打开背包概览示例页。
+     */
+    void openInventoryOverview();
 }

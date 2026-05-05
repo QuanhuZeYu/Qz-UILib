@@ -3,9 +3,6 @@ package club.heiqi.uilib.ui.screen;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiScreen;
 
-import org.lwjglx.input.Keyboard;
-
-import club.heiqi.uilib.ui.event.UiKeyEvent;
 import club.heiqi.uilib.ui.input.UiInputFrame;
 import club.heiqi.uilib.ui.input.UiInputService;
 
@@ -37,29 +34,10 @@ public class UiScreenManager {
         }
 
         UiInputFrame frame = UiInputService.getInstance().collectFrame();
-        handleGlobalHotkey(minecraft, frame);
 
         GuiScreen currentScreen = minecraft.currentScreen;
         if (currentScreen instanceof BaseScreen) {
             ((BaseScreen) currentScreen).handleInputFrame(frame);
-        }
-    }
-
-    private void handleGlobalHotkey(Minecraft minecraft, UiInputFrame frame) {
-        for (UiKeyEvent keyEvent : frame.getKeyEvents()) {
-            if (keyEvent.getKeyCode() != Keyboard.KEY_RSHIFT || keyEvent.getAction() != UiKeyEvent.Action.PRESSED) {
-                continue;
-            }
-
-            if (UiDocumentScreens.isUiTest(minecraft.currentScreen)) {
-                minecraft.displayGuiScreen(null);
-                return;
-            }
-            if (minecraft.currentScreen == null) {
-                minecraft.displayGuiScreen(
-                        UiDocumentScreens.createUiTest(UiDocumentScreens.DocumentScreenEnvironment.minecraftDefaults()));
-                return;
-            }
         }
     }
 }

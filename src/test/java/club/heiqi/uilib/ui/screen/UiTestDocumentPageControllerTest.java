@@ -47,10 +47,12 @@ public class UiTestDocumentPageControllerTest {
         Assert.assertTrue(containsText(texts, "布局诊断子页"));
         Assert.assertTrue(containsText(texts, "HTML-like Smoke 子页"));
         Assert.assertTrue(containsText(texts, "Large Glass Lab 子页"));
+        Assert.assertTrue(containsText(texts, "背包概览示例页"));
         Assert.assertTrue(containsText(texts, "页面作者层不再拼装旧 Widget"));
         Assert.assertFalse(menuModel.openLayoutDiagnosticsCalled);
         Assert.assertFalse(menuModel.openHtmlLikeSmokeCalled);
         Assert.assertFalse(menuModel.openHtmlLikeGlassCalled);
+        Assert.assertFalse(menuModel.openInventoryOverviewCalled);
     }
 
     /**
@@ -73,6 +75,7 @@ public class UiTestDocumentPageControllerTest {
         Assert.assertTrue(menuModel.openLayoutDiagnosticsCalled);
         Assert.assertFalse(menuModel.openHtmlLikeSmokeCalled);
         Assert.assertFalse(menuModel.openHtmlLikeGlassCalled);
+        Assert.assertFalse(menuModel.openInventoryOverviewCalled);
     }
 
     /**
@@ -96,6 +99,7 @@ public class UiTestDocumentPageControllerTest {
         Assert.assertFalse(menuModel.openLayoutDiagnosticsCalled);
         Assert.assertTrue(menuModel.openHtmlLikeSmokeCalled);
         Assert.assertFalse(menuModel.openHtmlLikeGlassCalled);
+        Assert.assertFalse(menuModel.openInventoryOverviewCalled);
     }
 
     /**
@@ -120,6 +124,33 @@ public class UiTestDocumentPageControllerTest {
         Assert.assertFalse(menuModel.openLayoutDiagnosticsCalled);
         Assert.assertFalse(menuModel.openHtmlLikeSmokeCalled);
         Assert.assertTrue(menuModel.openHtmlLikeGlassCalled);
+        Assert.assertFalse(menuModel.openInventoryOverviewCalled);
+    }
+
+    /**
+     * 验证菜单按钮会触发背包概览示例页跳转。
+     */
+    @Test
+    public void shouldNavigateToInventoryOverviewWhenMenuButtonClicked() {
+        RecordingMenuModel menuModel = new RecordingMenuModel();
+        TestFixture fixture = new TestFixture(menuModel);
+
+        fixture.controller.configureDocumentPage();
+        fixture.controller.buildDocument();
+
+        HtmlLikeDocumentWidget widget = fixture.controller.getHtmlLikeDocumentWidget();
+        widget.applyLayoutBounds(0, 0, 760, 520);
+        widget.onFocusTraversalEntered(false);
+        Assert.assertTrue(widget.onFocusTraversal(false));
+        Assert.assertTrue(widget.onFocusTraversal(false));
+        Assert.assertTrue(widget.onFocusTraversal(false));
+        widget.onKeyEvent(new UiKeyEvent(Keyboard.KEY_RETURN, 0, 0, UiKeyEvent.Action.PRESSED, false, false, false,
+                false, 1L));
+
+        Assert.assertFalse(menuModel.openLayoutDiagnosticsCalled);
+        Assert.assertFalse(menuModel.openHtmlLikeSmokeCalled);
+        Assert.assertFalse(menuModel.openHtmlLikeGlassCalled);
+        Assert.assertTrue(menuModel.openInventoryOverviewCalled);
     }
 
     /**
@@ -135,13 +166,15 @@ public class UiTestDocumentPageControllerTest {
         DocumentLayoutBox rootBox = DocumentLayoutEngine.layoutViewportRoot(widget.getDocument().getRootElement(),
                 760, 520, fixture.textMeasureService);
 
-        DocumentLayoutBox navigationRow = rootBox.getChildren().get(2);
-        for (DocumentLayoutBox cardBox : navigationRow.getChildren()) {
-            DocumentLayoutBox buttonBox = cardBox.getChildren().get(0);
-            int cardContentLeft = cardBox.getContentLeft();
-            int cardContentRight = cardContentLeft + cardBox.getContentWidth();
-            Assert.assertTrue(buttonBox.getLeft() >= cardContentLeft);
-            Assert.assertTrue(buttonBox.getRight() <= cardContentRight);
+        DocumentLayoutBox navigationGrid = rootBox.getChildren().get(2);
+        for (DocumentLayoutBox navigationRow : navigationGrid.getChildren()) {
+            for (DocumentLayoutBox cardBox : navigationRow.getChildren()) {
+                DocumentLayoutBox buttonBox = cardBox.getChildren().get(0);
+                int cardContentLeft = cardBox.getContentLeft();
+                int cardContentRight = cardContentLeft + cardBox.getContentWidth();
+                Assert.assertTrue(buttonBox.getLeft() >= cardContentLeft);
+                Assert.assertTrue(buttonBox.getRight() <= cardContentRight);
+            }
         }
     }
 
@@ -195,6 +228,7 @@ public class UiTestDocumentPageControllerTest {
         private boolean openLayoutDiagnosticsCalled;
         private boolean openHtmlLikeSmokeCalled;
         private boolean openHtmlLikeGlassCalled;
+        private boolean openInventoryOverviewCalled;
 
         @Override
         public void openLayoutDiagnostics() {
@@ -209,6 +243,11 @@ public class UiTestDocumentPageControllerTest {
         @Override
         public void openHtmlLikeGlass() {
             openHtmlLikeGlassCalled = true;
+        }
+
+        @Override
+        public void openInventoryOverview() {
+            openInventoryOverviewCalled = true;
         }
     }
 

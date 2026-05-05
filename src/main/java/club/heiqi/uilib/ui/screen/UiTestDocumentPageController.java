@@ -90,7 +90,7 @@ final class UiTestDocumentPageController extends DocumentPageController {
 
         appendHero(document, root);
         appendStatusStrip(document, root);
-        appendNavigationRow(document, root);
+        appendNavigationGrid(document, root);
     }
 
     private void appendHero(UiDocument document, ElementNode root) {
@@ -141,17 +141,18 @@ final class UiTestDocumentPageController extends DocumentPageController {
         parent.append(card);
     }
 
-    private void appendNavigationRow(UiDocument document, ElementNode root) {
-        ElementNode row = document.div();
-        row.style()
+    private void appendNavigationGrid(UiDocument document, ElementNode root) {
+        ElementNode outer = document.div();
+        outer.style()
                 .setDisplay(UiDisplay.FLEX)
-                .setFlexDirection(UiFlexDirection.ROW)
-                .setAlignItems(UiAlignItems.STRETCH)
-                .setColumnGap(UiStyleLength.px(16))
-                .setHeight(UiStyleLength.px(176));
-        root.append(row);
+                .setFlexDirection(UiFlexDirection.COLUMN)
+                .setRowGap(UiStyleLength.px(16));
+        root.append(outer);
 
-        appendNavigationCard(document, row, "布局诊断子页",
+        ElementNode firstRow = appendNavigationRow(document, outer);
+        ElementNode secondRow = appendNavigationRow(document, outer);
+
+        appendNavigationCard(document, firstRow, "布局诊断子页",
                 "继续检查页面壳尺寸、文本测量、滚动区域和运行时统计。", "进入布局诊断页",
                 new DocumentButtonActionHandler() {
                     @Override
@@ -159,7 +160,7 @@ final class UiTestDocumentPageController extends DocumentPageController {
                         menuModel.openLayoutDiagnostics();
                     }
                 });
-        appendNavigationCard(document, row, "HTML-like Smoke 子页",
+        appendNavigationCard(document, firstRow, "HTML-like Smoke 子页",
                 "验证 HTML 核心链路、控件输入、裁剪、滚动和绘制命令投影。", "进入 HTML-like Smoke",
                 new DocumentButtonActionHandler() {
                     @Override
@@ -167,7 +168,7 @@ final class UiTestDocumentPageController extends DocumentPageController {
                         menuModel.openHtmlLikeSmoke();
                     }
                 });
-        appendNavigationCard(document, row, "Large Glass Lab 子页",
+        appendNavigationCard(document, secondRow, "Large Glass Lab 子页",
                 "打开单独的大面积磨玻璃测试页，便于观察同层采样、裁剪和面积放大后的视觉稳定性。", "进入 Glass Lab",
                 new DocumentButtonActionHandler() {
                     @Override
@@ -175,6 +176,26 @@ final class UiTestDocumentPageController extends DocumentPageController {
                         menuModel.openHtmlLikeGlass();
                     }
                 });
+        appendNavigationCard(document, secondRow, "背包概览示例页",
+                "打开真实 Minecraft 背包数据驱动的 HTML-like 示例页，检查槽位、tooltip 和交互边界。", "进入背包概览",
+                new DocumentButtonActionHandler() {
+                    @Override
+                    public void onAction(DocumentButtonActionEvent event) {
+                        menuModel.openInventoryOverview();
+                    }
+                });
+    }
+
+    private ElementNode appendNavigationRow(UiDocument document, ElementNode parent) {
+        ElementNode row = document.div();
+        row.style()
+                .setDisplay(UiDisplay.FLEX)
+                .setFlexDirection(UiFlexDirection.ROW)
+                .setAlignItems(UiAlignItems.STRETCH)
+                .setColumnGap(UiStyleLength.px(16))
+                .setHeight(UiStyleLength.px(176));
+        parent.append(row);
+        return row;
     }
 
     private void appendNavigationCard(UiDocument document, ElementNode parent, String title, String body,

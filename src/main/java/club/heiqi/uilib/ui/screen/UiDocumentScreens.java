@@ -2,6 +2,7 @@ package club.heiqi.uilib.ui.screen;
 
 import java.util.Objects;
 
+import club.heiqi.uilib.client.MinecraftInventoryOverviewModel;
 import club.heiqi.uilib.ui.diagnostic.UiRuntimeStats;
 import club.heiqi.uilib.ui.document.HtmlLikeDocumentWidget;
 import club.heiqi.uilib.ui.dom.UiDocument;
@@ -495,6 +496,12 @@ public final class UiDocumentScreens {
             @Override
             public void openHtmlLikeGlass() {
                 Minecraft.getMinecraft().displayGuiScreen(createHtmlLikeGlass(environment));
+            }
+
+            @Override
+            public void openInventoryOverview() {
+                Minecraft.getMinecraft().displayGuiScreen(createInventoryOverview(environment,
+                        new MinecraftInventoryOverviewModel()));
             }
         };
     }
