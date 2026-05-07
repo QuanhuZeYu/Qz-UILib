@@ -102,4 +102,40 @@ public abstract class BaseScreen extends GuiScreen {
     protected UiRuntimeStats getUiRuntimeStats() {
         return UiPerformanceMonitor.getInstance().getRuntimeStats();
     }
+
+    /**
+     * 返回最近一次输入路由记录的鼠标 X。
+     *
+     * @return 鼠标 X
+     */
+    protected int getLatestMouseX() {
+        return hostSession.getLatestMouseX();
+    }
+
+    /**
+     * 返回最近一次输入路由记录的鼠标 Y。
+     *
+     * @return 鼠标 Y
+     */
+    protected int getLatestMouseY() {
+        return hostSession.getLatestMouseY();
+    }
+
+    /**
+     * 返回最近一次同步的宿主原生宽度。
+     *
+     * @return 宿主原生宽度
+     */
+    protected int getLatestHostWidth() {
+        return hostSession.getLatestHostWidth();
+    }
+
+    /**
+     * 返回最近一次同步的宿主原生高度。
+     *
+     * @return 宿主原生高度
+     */
+    protected int getLatestHostHeight() {
+        return hostSession.getLatestHostHeight();
+    }
 }

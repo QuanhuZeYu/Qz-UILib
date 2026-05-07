@@ -644,12 +644,22 @@ public final class UiDocumentScreens {
         private final DocumentPageRuntimeView runtimeView = new DocumentPageRuntimeView() {
             @Override
             public int getHostWidth() {
-                return width;
+                return DefinitionBackedHtmlLikeDocumentScreen.this.getLatestHostWidth();
             }
 
             @Override
             public int getHostHeight() {
-                return height;
+                return DefinitionBackedHtmlLikeDocumentScreen.this.getLatestHostHeight();
+            }
+
+            @Override
+            public int getMouseX() {
+                return DefinitionBackedHtmlLikeDocumentScreen.this.getLatestMouseX();
+            }
+
+            @Override
+            public int getMouseY() {
+                return DefinitionBackedHtmlLikeDocumentScreen.this.getLatestMouseY();
             }
 
             @Override

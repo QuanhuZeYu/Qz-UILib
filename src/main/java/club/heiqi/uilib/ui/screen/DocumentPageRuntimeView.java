@@ -25,6 +25,20 @@ interface DocumentPageRuntimeView {
     int getHostHeight();
 
     /**
+     * 获取最近一次输入路由记录的鼠标 X。
+     *
+     * @return 鼠标 X
+     */
+    int getMouseX();
+
+    /**
+     * 获取最近一次输入路由记录的鼠标 Y。
+     *
+     * @return 鼠标 Y
+     */
+    int getMouseY();
+
+    /**
      * 获取最近一次完成帧的 UI 运行时统计。
      *
      * @return 运行时统计快照

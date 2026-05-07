@@ -256,6 +256,16 @@ public class UiDocumentScreensTest {
         }
 
         @Override
+        public int getMouseX() {
+            return 0;
+        }
+
+        @Override
+        public int getMouseY() {
+            return 0;
+        }
+
+        @Override
         public club.heiqi.uilib.ui.diagnostic.UiRuntimeStats getUiRuntimeStats() {
             return club.heiqi.uilib.ui.diagnostic.UiRuntimeStats.empty();
         }

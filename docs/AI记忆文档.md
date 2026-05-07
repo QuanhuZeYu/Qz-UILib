@@ -21,6 +21,7 @@
 - 关键入口说明见 `docs/使用文档/01-入门/最小文档页面.md`。
 - 基础控件说明见 `docs/使用文档/02-控件/基础控件.md`。
 - 表格与背包槽位边界见 `docs/使用文档/02-控件/表格与背包槽位.md`。
+- 背包页 tooltip 重设计需求见 `docs/使用文档/02-控件/背包Tooltip设计需求.md`。
 
 ## 布局能力
 
@@ -46,6 +47,7 @@
 ## 游戏内验收边界
 
 - 测试入口迁移为 `/qzuilib test` 打开诊断跳转菜单；右 Shift 诊断热键与原版背包页 `背包UI` 按钮不再作为默认入口。
+- 客户端聊天命令内不要直接 `displayGuiScreen(...)`；需要延后到当前帧聊天界面关闭之后再切换，否则新界面会被聊天关闭流程覆盖。
 - 诊断页、Smoke 页、Glass Lab 和背包示例页的具体覆盖能力不再在 AI 记忆中重复维护；开放入口与使用边界以 `docs/使用文档/` 为准。
 - 当前已完成的阶段性验收结论：动画 MVP、layout 动画缓存边界、Smoke 诊断路径、Glass Lab 采样诊断路径和背包页生产级前收口均已过一轮游戏内确认；后续若变更相关能力，应同步更新使用文档和对应测试。
 
@@ -90,6 +92,8 @@
 - CSS transition / animation MVP 已完成游戏内收口验收：transition、keyframe、forwards fill 均具备 Smoke 可见诊断路径，`WIDTH/HEIGHT/MARGIN_LEFT/MARGIN_RIGHT/PADDING_LEFT/PADDING_RIGHT` layout 动画已完成纯 JVM、Smoke 探针、游戏内视觉、诊断与缓存边界验收。
 - 下一阶段暂停继续扩展动画属性和动画诊断显示；若后续确需新增 layout-affecting 属性，必须重新证明必要性，并继续限制在少量可控属性与明确 fallback。
 - HTML-like table 与 `inventory_overview` 背包页能力详情以 `docs/使用文档/02-控件/表格与背包槽位.md` 为准；后续优先在真实背包 UI 中收口槽位视觉、焦点、滚动、命中与真实数据渲染问题，其次再评估 dirty subtree / 细粒度缓存或 effect chain 后续优化。
+- 背包页 tooltip 已单独固化为设计需求文档；后续实现应按 Apple 风格鼠标跟随浮层、原版 tooltip 内容优先、拖拽时完全隐藏的口径执行。
+- 背包页 tooltip 第一阶段代码已开始落地：当前已接入页面级跟随鼠标定位、方向回退、宽度压缩与拖拽隐藏；定位计算收敛在 `InventoryTooltipLayoutResolver`，宿主鼠标坐标通过 `DocumentPageRuntimeView` 暴露给页面层。
 - 开放化文档已开始固化：根索引为 `docs/开放化调整.md`，分级使用文档位于 `docs/使用文档/`，覆盖项目定位、最小文档页面、基础控件、表格与背包槽位、Minecraft 界面入口和指令触发方案；宿主业务文档 screen 创建入口已完成首轮代码收口；测试入口已迁移为 `/qzuilib test` 诊断跳转菜单，后续优先游戏内验证该命令与菜单跳转。
 - 不一次性开放全量布局动画。
 - paint/effect 动画不能触发布局；layout 动画可以重布局，但结束后必须恢复静态缓存。

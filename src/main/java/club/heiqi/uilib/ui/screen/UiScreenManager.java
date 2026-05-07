@@ -1,5 +1,8 @@
 package club.heiqi.uilib.ui.screen;
 
+import java.util.Queue;
+import java.util.concurrent.ConcurrentLinkedQueue;
+
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiScreen;
 
@@ -13,6 +16,8 @@ public class UiScreenManager {
 
     private static final UiScreenManager INSTANCE = new UiScreenManager();
 
+    private final Queue<Runnable> pendingTasks = new ConcurrentLinkedQueue<Runnable>();
+
     private UiScreenManager() {}
 
     /**
@@ -22,6 +27,18 @@ public class UiScreenManager {
      */
     public static UiScreenManager getInstance() {
         return INSTANCE;
+    }
+
+    /**
+     * 把需要切换界面的操作延后到当前帧输入分发完成后执行。
+     *
+     * @param task 待执行任务
+     */
+    public void enqueue(Runnable task) {
+        if (task == null) {
+            return;
+        }
+        pendingTasks.add(task);
     }
 
     /**
@@ -38,6 +55,24 @@ public class UiScreenManager {
         GuiScreen currentScreen = minecraft.currentScreen;
         if (currentScreen instanceof BaseScreen) {
             ((BaseScreen) currentScreen).handleInputFrame(frame);
+        }
+
+        runPendingTasks();
+    }
+
+    /**
+     * 仅供测试或无 Minecraft 上下文时主动冲刷延后任务。
+     */
+    void flushPendingTasks() {
+        runPendingTasks();
+    }
+
+    private void runPendingTasks() {
+        while (!pendingTasks.isEmpty()) {
+            Runnable task = pendingTasks.poll();
+            if (task != null) {
+                task.run();
+            }
         }
     }
 }

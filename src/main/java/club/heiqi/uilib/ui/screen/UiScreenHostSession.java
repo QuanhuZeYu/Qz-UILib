@@ -42,6 +42,8 @@ final class UiScreenHostSession {
     private WidgetBuildAttachmentTransaction buildAttachmentTransaction;
     private int latestMouseX;
     private int latestMouseY;
+    private int latestHostWidth;
+    private int latestHostHeight;
 
     UiScreenHostSession(BaseScreen screen) {
         this.screen = screen;
@@ -190,6 +192,8 @@ final class UiScreenHostSession {
     private int[] syncHostSize() {
         int nativeWidth = Math.max(1, Minecraft.getMinecraft().displayWidth);
         int nativeHeight = Math.max(1, Minecraft.getMinecraft().displayHeight);
+        latestHostWidth = nativeWidth;
+        latestHostHeight = nativeHeight;
         rootWidget.applyLayoutBounds(0, 0, nativeWidth, nativeHeight);
         return new int[] { nativeWidth, nativeHeight };
     }
@@ -434,5 +438,41 @@ final class UiScreenHostSession {
      */
     void applyRootBounds(int width, int height) {
         rootWidget.applyLayoutBounds(0, 0, width, height);
+    }
+
+    /**
+     * 返回最近一次输入路由记录的鼠标 X。
+     *
+     * @return 鼠标 X
+     */
+    int getLatestMouseX() {
+        return latestMouseX;
+    }
+
+    /**
+     * 返回最近一次输入路由记录的鼠标 Y。
+     *
+     * @return 鼠标 Y
+     */
+    int getLatestMouseY() {
+        return latestMouseY;
+    }
+
+    /**
+     * 返回最近一次同步的宿主原生宽度。
+     *
+     * @return 宿主原生宽度
+     */
+    int getLatestHostWidth() {
+        return latestHostWidth;
+    }
+
+    /**
+     * 返回最近一次同步的宿主原生高度。
+     *
+     * @return 宿主原生高度
+     */
+    int getLatestHostHeight() {
+        return latestHostHeight;
     }
 }

@@ -11,7 +11,6 @@ import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.inventory.GuiInventory;
 import net.minecraft.entity.player.InventoryPlayer;
 import net.minecraft.item.ItemStack;
-import net.minecraft.util.EnumChatFormatting;
 
 /**
  * 基于 Minecraft 客户端状态的背包诊断页模型。
@@ -85,8 +84,7 @@ public class MinecraftInventoryOverviewModel implements InventoryOverviewModel {
         for (int lineIndex = 0; lineIndex < rawLines.size(); lineIndex++) {
             Object rawLine = rawLines.get(lineIndex);
             String line = rawLine == null ? "" : String.valueOf(rawLine);
-            tooltipLines.add(lineIndex == 0 ? stack.getRarity().rarityColor + line
-                    : EnumChatFormatting.GRAY + line);
+            tooltipLines.add(line);
         }
         return tooltipLines;
     }

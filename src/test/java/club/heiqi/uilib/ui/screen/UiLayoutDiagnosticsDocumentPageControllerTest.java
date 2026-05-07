@@ -186,6 +186,8 @@ public class UiLayoutDiagnosticsDocumentPageControllerTest {
 
         private int hostWidth = 1280;
         private int hostHeight = 720;
+        private int mouseX = 0;
+        private int mouseY = 0;
         private UiRuntimeStats runtimeStats = createRuntimeStats("");
 
         @Override
@@ -199,6 +201,16 @@ public class UiLayoutDiagnosticsDocumentPageControllerTest {
         }
 
         @Override
+        public int getMouseX() {
+            return mouseX;
+        }
+
+        @Override
+        public int getMouseY() {
+            return mouseY;
+        }
+
+        @Override
         public UiRuntimeStats getUiRuntimeStats() {
             return runtimeStats;
         }
@@ -206,6 +218,11 @@ public class UiLayoutDiagnosticsDocumentPageControllerTest {
         private void setHostSize(int hostWidth, int hostHeight) {
             this.hostWidth = hostWidth;
             this.hostHeight = hostHeight;
+        }
+
+        private void setMousePosition(int mouseX, int mouseY) {
+            this.mouseX = mouseX;
+            this.mouseY = mouseY;
         }
 
         private void setRuntimeStats(UiRuntimeStats runtimeStats) {

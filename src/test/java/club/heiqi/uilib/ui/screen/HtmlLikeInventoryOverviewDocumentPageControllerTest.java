@@ -174,6 +174,7 @@ public class HtmlLikeInventoryOverviewDocumentPageControllerTest {
     @Test
     public void shouldRenderSlotTooltipAsDomSurface() {
         TestFixture fixture = new TestFixture();
+        fixture.runtimeView.setMousePosition(32, 44);
 
         fixture.controller.configureDocumentPage();
         fixture.controller.buildDocument();
@@ -189,9 +190,10 @@ public class HtmlLikeInventoryOverviewDocumentPageControllerTest {
         Assert.assertEquals("aside", tooltip.getTagName());
         Assert.assertEquals("tooltip", tooltip.getAttribute("role"));
         Assert.assertEquals("false", tooltip.getAttribute("aria-hidden"));
-        Assert.assertEquals(UiDisplay.BLOCK, UiStyleResolver.compute(tooltip).getDisplay());
+        Assert.assertEquals(UiDisplay.FLEX, UiStyleResolver.compute(tooltip).getDisplay());
         Assert.assertTrue(tooltip.style().getWidth().getValue() > 0.0F);
-        Assert.assertEquals(66.0F, tooltip.style().getTop().getValue(), 0.001F);
+        Assert.assertEquals(64.0F, tooltip.style().getLeft().getValue(), 0.001F);
+        Assert.assertEquals(76.0F, tooltip.style().getTop().getValue(), 0.001F);
         Assert.assertTrue(containsText(collectDocumentTexts(fixture.controller.getHtmlLikeDocumentWidget()),
                 "Tooltip 0"));
         fixture.controller.getHtmlLikeDocumentWidget().applyLayoutBounds(0, 0, 720, 600);
@@ -204,6 +206,57 @@ public class HtmlLikeInventoryOverviewDocumentPageControllerTest {
                 -1, -1, 2L));
         Assert.assertEquals("true", tooltip.getAttribute("aria-hidden"));
         Assert.assertEquals(0.0F, tooltip.style().getWidth().getValue(), 0.001F);
+    }
+
+    /**
+     * 验证 tooltip 在同一槽位悬停期间会持续跟随鼠标位置。
+     */
+    @Test
+    public void shouldRepositionVisibleTooltipWithLatestMouseCoordinates() {
+        TestFixture fixture = new TestFixture();
+        fixture.runtimeView.setMousePosition(80, 96);
+
+        fixture.controller.configureDocumentPage();
+        fixture.controller.buildDocument();
+        fixture.controller.afterDocumentBuilt();
+
+        ElementNode hotbarSlot = findFirstSlotInGrid(fixture.controller.getHtmlLikeDocumentWidget(), 0);
+        hotbarSlot.getHoverHandler().onHoverChanged(new DocumentElementHoverEvent(hotbarSlot, hotbarSlot, true,
+                80, 96, 1L));
+
+        ElementNode tooltip = collectElementsByAttribute(fixture.controller.getHtmlLikeDocumentWidget()
+                .getDocument().getRootElement(), "data-inventory-tooltip", "true").get(0);
+        Assert.assertEquals(112.0F, tooltip.style().getLeft().getValue(), 0.001F);
+        Assert.assertEquals(128.0F, tooltip.style().getTop().getValue(), 0.001F);
+
+        fixture.runtimeView.setMousePosition(140, 152);
+        fixture.controller.beforeDocumentFrame();
+
+        Assert.assertEquals(172.0F, tooltip.style().getLeft().getValue(), 0.001F);
+        Assert.assertEquals(184.0F, tooltip.style().getTop().getValue(), 0.001F);
+    }
+
+    /**
+     * 验证靠近屏幕边缘时 tooltip 宽度会被压缩到可用空间。
+     */
+    @Test
+    public void shouldShrinkTooltipWidthNearScreenEdge() {
+        TestFixture fixture = new TestFixture();
+        fixture.runtimeView.setHostSize(320, 240);
+        fixture.runtimeView.setMousePosition(250, 100);
+        fixture.model.tooltipLine = "Tooltip line that should wrap near the edge";
+
+        fixture.controller.configureDocumentPage();
+        fixture.controller.buildDocument();
+        fixture.controller.afterDocumentBuilt();
+
+        ElementNode hotbarSlot = findFirstSlotInGrid(fixture.controller.getHtmlLikeDocumentWidget(), 0);
+        hotbarSlot.getHoverHandler().onHoverChanged(new DocumentElementHoverEvent(hotbarSlot, hotbarSlot, true,
+                250, 100, 1L));
+
+        ElementNode tooltip = collectElementsByAttribute(fixture.controller.getHtmlLikeDocumentWidget()
+                .getDocument().getRootElement(), "data-inventory-tooltip", "true").get(0);
+        Assert.assertTrue(tooltip.style().getWidth().getValue() <= 236.0F);
     }
 
     /**
@@ -393,6 +446,8 @@ public class HtmlLikeInventoryOverviewDocumentPageControllerTest {
 
         private int hostWidth = 720;
         private int hostHeight = 600;
+        private int mouseX = 0;
+        private int mouseY = 0;
 
         @Override
         public int getHostWidth() {
@@ -405,6 +460,16 @@ public class HtmlLikeInventoryOverviewDocumentPageControllerTest {
         }
 
         @Override
+        public int getMouseX() {
+            return mouseX;
+        }
+
+        @Override
+        public int getMouseY() {
+            return mouseY;
+        }
+
+        @Override
         public UiRuntimeStats getUiRuntimeStats() {
             return UiRuntimeStats.empty();
         }
@@ -412,6 +477,11 @@ public class HtmlLikeInventoryOverviewDocumentPageControllerTest {
         private void setHostSize(int hostWidth, int hostHeight) {
             this.hostWidth = hostWidth;
             this.hostHeight = hostHeight;
+        }
+
+        private void setMousePosition(int mouseX, int mouseY) {
+            this.mouseX = mouseX;
+            this.mouseY = mouseY;
         }
     }
 
@@ -484,6 +554,7 @@ public class HtmlLikeInventoryOverviewDocumentPageControllerTest {
         private int returnToVanillaInventoryCalls;
         private final List<String> slotClickCalls = new ArrayList<String>();
         private final List<String> tooltipCalls = new ArrayList<String>();
+        private String tooltipLine = "Tooltip 0";
 
         @Override
         public InventoryOverviewSlotContentProvider getHotbarSlotProvider() {
@@ -518,7 +589,7 @@ public class HtmlLikeInventoryOverviewDocumentPageControllerTest {
         @Override
         public List<String> getSlotTooltip(boolean hotbar, int localIndex) {
             tooltipCalls.add((hotbar ? "hotbar" : "backpack") + ":" + localIndex);
-            return Collections.singletonList("Tooltip " + localIndex);
+            return Collections.singletonList(tooltipLine.replace("{index}", String.valueOf(localIndex)));
         }
 
         @Override

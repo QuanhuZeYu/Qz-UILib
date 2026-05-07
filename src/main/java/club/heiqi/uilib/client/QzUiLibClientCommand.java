@@ -4,6 +4,7 @@ import java.util.Collections;
 import java.util.List;
 
 import club.heiqi.uilib.ui.screen.UiDocumentScreens;
+import club.heiqi.uilib.ui.screen.UiScreenManager;
 import net.minecraft.client.Minecraft;
 import net.minecraft.command.CommandBase;
 import net.minecraft.command.ICommandSender;
@@ -49,8 +50,13 @@ public class QzUiLibClientCommand extends CommandBase {
             sender.addChatMessage(new ChatComponentText("Qz UILib: 当前客户端不可用。"));
             return;
         }
-        minecraft.displayGuiScreen(UiDocumentScreens.createUiTest(
-                UiDocumentScreens.DocumentScreenEnvironment.minecraftDefaults()));
+        UiScreenManager.getInstance().enqueue(new Runnable() {
+            @Override
+            public void run() {
+                minecraft.displayGuiScreen(UiDocumentScreens.createUiTest(
+                        UiDocumentScreens.DocumentScreenEnvironment.minecraftDefaults()));
+            }
+        });
     }
 
     @Override

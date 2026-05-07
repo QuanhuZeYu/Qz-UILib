@@ -29,6 +29,7 @@ import club.heiqi.uilib.ui.style.UiOverflow;
 import club.heiqi.uilib.ui.style.UiPosition;
 import club.heiqi.uilib.ui.style.UiStyleInsets;
 import club.heiqi.uilib.ui.style.UiStyleLength;
+import club.heiqi.uilib.ui.style.UiVerticalAlign;
 import club.heiqi.uilib.ui.text.TextMeasureService;
 
 /**
@@ -57,17 +58,22 @@ final class HtmlLikeInventoryOverviewDocumentPageController extends DocumentPage
     private int lastHostWidth = -1;
     private int lastHostHeight = -1;
     private InventorySlotSnapshot currentCarriedSlotSnapshot = InventorySlotSnapshot.empty();
-    private boolean tooltipHovered;
-    private List<String> tooltipLines = Collections.emptyList();
-    private int tooltipDocumentX = -1;
-    private int tooltipDocumentY = -1;
 
     private static final int TITLE_COLOR = 0xFFF0F4FF;
     private static final int BODY_COLOR = 0xFFC0CAE8;
-    private static final int TOOLTIP_MAX_WIDTH = 260;
-    private static final int TOOLTIP_OFFSET_X = 14;
-    private static final int TOOLTIP_OFFSET_Y = 22;
-    private static final int TOOLTIP_FALLBACK_HEIGHT = 56;
+    private static final int TOOLTIP_MAX_WIDTH = 360;
+    private static final float TOOLTIP_MAX_WIDTH_RATIO = 0.4F;
+    private static final int TOOLTIP_MIN_WIDTH = 120;
+    private static final int TOOLTIP_TITLE_COLOR = 0xFFFDFEFF;
+    private static final int TOOLTIP_BODY_COLOR = 0xFFD8E4FF;
+    private static final int TOOLTIP_BACKGROUND_COLOR = 0xB8182033;
+    private static final int TOOLTIP_BORDER_COLOR = 0xCC8B5CF6;
+    private static final int TOOLTIP_CORNER_RADIUS = 16;
+    private static final int TOOLTIP_LINE_SPACING = 4;
+    private static final int TOOLTIP_VERTICAL_PADDING = 12;
+    private static final int TOOLTIP_HORIZONTAL_PADDING = 14;
+
+    private final TooltipState tooltipState = new TooltipState();
 
     HtmlLikeInventoryOverviewDocumentPageController(DocumentUiScope documentUi,
             DocumentPageAuthoringSurface documentPage, DocumentPageRuntimeView runtimeView,
@@ -361,14 +367,21 @@ final class HtmlLikeInventoryOverviewDocumentPageController extends DocumentPage
         tooltip.style()
                 .setPosition(UiPosition.FIXED)
                 .setZIndex(1000)
-                .setWidth(UiStyleLength.px(TOOLTIP_MAX_WIDTH))
-                .setPadding(UiStyleInsets.of(UiStyleLength.px(6), UiStyleLength.px(7), UiStyleLength.px(6),
-                        UiStyleLength.px(7)))
-                .setBackgroundColor(0xF0181024)
-                .setBorderColor(0xFF8B5CF6)
+                .setDisplay(UiDisplay.FLEX)
+                .setFlexDirection(UiFlexDirection.COLUMN)
+                .setAlignItems(UiAlignItems.STRETCH)
+                .setJustifyContent(UiJustifyContent.START)
+                .setWidth(UiStyleLength.px(TOOLTIP_MIN_WIDTH))
+                .setPadding(UiStyleInsets.of(UiStyleLength.px(TOOLTIP_VERTICAL_PADDING),
+                        UiStyleLength.px(TOOLTIP_HORIZONTAL_PADDING), UiStyleLength.px(TOOLTIP_VERTICAL_PADDING),
+                        UiStyleLength.px(TOOLTIP_HORIZONTAL_PADDING)))
+                .setBackgroundColor(TOOLTIP_BACKGROUND_COLOR)
+                .setBorderColor(TOOLTIP_BORDER_COLOR)
                 .setBorderWidth(UiStyleLength.px(1))
-                .setBorderRadius(UiStyleLength.px(4))
-                .setTextColor(0xFFD1D5DB)
+                .setBorderRadius(UiStyleLength.px(TOOLTIP_CORNER_RADIUS))
+                .setTextColor(TOOLTIP_BODY_COLOR)
+                .setBackdropBlurRadius(UiStyleLength.px(12))
+                .setBackdropSaturation(1.2F)
                 .setOverflowX(UiOverflow.HIDDEN)
                 .setOverflowY(UiOverflow.HIDDEN);
         hideTooltipElement(tooltip);
@@ -409,10 +422,10 @@ final class HtmlLikeInventoryOverviewDocumentPageController extends DocumentPage
         if (tooltipLayer == null) {
             return;
         }
-        tooltipHovered = hovered;
-        tooltipLines = lines == null ? Collections.<String>emptyList() : new ArrayList<String>(lines);
-        tooltipDocumentX = documentX;
-        tooltipDocumentY = documentY;
+        tooltipState.hovered = hovered;
+        tooltipState.lines = lines == null ? Collections.<String>emptyList() : new ArrayList<String>(lines);
+        tooltipState.documentX = documentX;
+        tooltipState.documentY = documentY;
         tooltipLayer.clearChildren();
         if (!hovered || lines == null || lines.isEmpty() || currentCarriedSlotSnapshot.isOccupied()) {
             tooltipLayer.setAttribute("aria-hidden", "true");
@@ -420,19 +433,31 @@ final class HtmlLikeInventoryOverviewDocumentPageController extends DocumentPage
             return;
         }
         tooltipLayer.setAttribute("aria-hidden", "false");
-        for (int lineIndex = 0; lineIndex < tooltipLines.size(); lineIndex++) {
+        for (int lineIndex = 0; lineIndex < tooltipState.lines.size(); lineIndex++) {
             ElementNode line = tooltipLayer.getOwnerDocument().element("p");
-            line.appendText(tooltipLines.get(lineIndex));
+            line.appendText(tooltipState.lines.get(lineIndex));
             line.style()
-                    .setTextColor(lineIndex == 0 ? 0xFFFFFFFF : 0xFFD1D5DB)
-                    .setMargin(UiStyleLength.px(0));
+                    .setDisplay(UiDisplay.BLOCK)
+                    .setWidth(UiStyleLength.auto())
+                    .setTextColor(lineIndex == 0 ? TOOLTIP_TITLE_COLOR : TOOLTIP_BODY_COLOR)
+                    .setMargin(UiStyleInsets.of(UiStyleLength.px(0), UiStyleLength.px(0),
+                            UiStyleLength.px(lineIndex == tooltipState.lines.size() - 1 ? 0 : TOOLTIP_LINE_SPACING),
+                            UiStyleLength.px(0)));
             tooltipLayer.append(line);
         }
+        InventoryTooltipLayoutResolver.TooltipPlacement placement = InventoryTooltipLayoutResolver.resolve(
+                runtimeView.getHostWidth(), runtimeView.getHostHeight(), runtimeView.getMouseX(), runtimeView.getMouseY(),
+                resolvePreferredTooltipWidth(), TOOLTIP_MIN_WIDTH, new InventoryTooltipLayoutResolver.TooltipHeightEstimator() {
+                    @Override
+                    public int estimate(int tooltipWidth) {
+                        return estimateTooltipHeight(tooltipWidth);
+                    }
+                });
         tooltipLayer.style()
-                .setWidth(UiStyleLength.px(TOOLTIP_MAX_WIDTH))
+                .setWidth(UiStyleLength.px(placement.getWidth()))
                 .setHeight(UiStyleLength.auto())
-                .setLeft(UiStyleLength.px(resolveTooltipLeft(documentX)))
-                .setTop(UiStyleLength.px(resolveTooltipTop(documentY)));
+                .setLeft(UiStyleLength.px(placement.getLeft()))
+                .setTop(UiStyleLength.px(placement.getTop()));
     }
 
     private static void hideTooltipElement(ElementNode tooltip) {
@@ -443,36 +468,36 @@ final class HtmlLikeInventoryOverviewDocumentPageController extends DocumentPage
                 .setTop(UiStyleLength.px(-10000));
     }
 
-    private int resolveTooltipLeft(int documentX) {
-        int preferredLeft = documentX + TOOLTIP_OFFSET_X;
-        int maxLeft = Math.max(4, lastHostWidth - TOOLTIP_MAX_WIDTH - 4);
-        if (preferredLeft > maxLeft) {
-            return Math.max(4, documentX - TOOLTIP_MAX_WIDTH - 16);
+    private int resolvePreferredTooltipWidth() {
+        int maxWidth = Math.max(TOOLTIP_MIN_WIDTH,
+                Math.min(TOOLTIP_MAX_WIDTH, Math.round(runtimeView.getHostWidth() * TOOLTIP_MAX_WIDTH_RATIO)));
+        int maxLineWidth = 0;
+        TextMeasureService measureService = documentUi.getTextMeasureService();
+        for (String line : tooltipState.lines) {
+            maxLineWidth = Math.max(maxLineWidth, measureService.getStringWidth(line));
         }
-        return Math.max(4, preferredLeft);
+        int paddedWidth = maxLineWidth + TOOLTIP_HORIZONTAL_PADDING * 2;
+        return Math.max(TOOLTIP_MIN_WIDTH, Math.min(maxWidth, paddedWidth));
     }
 
-    private int resolveTooltipTop(int documentY) {
-        int preferredTop = documentY + TOOLTIP_OFFSET_Y;
-        int tooltipHeight = estimateTooltipHeight();
-        int maxTop = Math.max(4, lastHostHeight - tooltipHeight - 4);
-        if (preferredTop > maxTop) {
-            return Math.max(4, documentY - tooltipHeight - 18);
+    private int estimateTooltipHeight(int tooltipWidth) {
+        if (tooltipState.lines == null || tooltipState.lines.isEmpty()) {
+            return TOOLTIP_VERTICAL_PADDING * 2;
         }
-        return Math.max(4, preferredTop);
-    }
-
-    private int estimateTooltipHeight() {
-        if (tooltipLines == null || tooltipLines.isEmpty()) {
-            return TOOLTIP_FALLBACK_HEIGHT;
+        TextMeasureService measureService = documentUi.getTextMeasureService();
+        int wrapWidth = Math.max(1, tooltipWidth - TOOLTIP_HORIZONTAL_PADDING * 2);
+        int lineHeight = measureService.getLineHeight();
+        int totalTextLines = 0;
+        for (String line : tooltipState.lines) {
+            List<String> wrappedLines = measureService.listFormattedStringToWidth(line, wrapWidth);
+            totalTextLines += Math.max(1, wrappedLines == null ? 0 : wrappedLines.size());
         }
-        int lineHeight = 18;
-        int verticalPadding = 14;
-        return verticalPadding + tooltipLines.size() * lineHeight;
+        int gapCount = Math.max(0, tooltipState.lines.size() - 1);
+        return TOOLTIP_VERTICAL_PADDING * 2 + totalTextLines * lineHeight + gapCount * TOOLTIP_LINE_SPACING;
     }
 
     private void refreshVisibleTooltipLayer() {
-        updateTooltipLayer(tooltipHovered, tooltipLines, tooltipDocumentX, tooltipDocumentY);
+        updateTooltipLayer(tooltipState.hovered, tooltipState.lines, tooltipState.documentX, tooltipState.documentY);
     }
 
     private void enqueueCursorItemOverlay(final UiRenderContext context) {
@@ -544,5 +569,16 @@ final class HtmlLikeInventoryOverviewDocumentPageController extends DocumentPage
 
     private static String formatCarriedSlotState(boolean carriedSlotOccupied) {
         return carriedSlotOccupied ? "物品" : "空";
+    }
+
+    /**
+     * 页面级 tooltip 可见状态。
+     */
+    private static final class TooltipState {
+
+        private boolean hovered;
+        private List<String> lines = Collections.emptyList();
+        private int documentX = -1;
+        private int documentY = -1;
     }
 }
