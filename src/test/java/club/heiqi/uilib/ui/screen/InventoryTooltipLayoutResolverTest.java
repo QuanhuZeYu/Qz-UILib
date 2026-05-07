@@ -21,8 +21,8 @@ public class InventoryTooltipLayoutResolverTest {
                     }
                 });
 
-        Assert.assertEquals(232, placement.getLeft());
-        Assert.assertEquals(212, placement.getTop());
+        Assert.assertEquals(223, placement.getLeft());
+        Assert.assertEquals(203, placement.getTop());
         Assert.assertEquals(240, placement.getWidth());
     }
 

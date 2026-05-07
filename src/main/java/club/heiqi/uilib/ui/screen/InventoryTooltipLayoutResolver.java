@@ -7,6 +7,7 @@ final class InventoryTooltipLayoutResolver {
 
     private static final int SCREEN_MARGIN = 4;
     private static final int POINTER_RADIUS = 32;
+    private static final int POINTER_DIAGONAL_COMPONENT = Math.round((float) (POINTER_RADIUS / Math.sqrt(2.0D)));
 
     private InventoryTooltipLayoutResolver() {}
 
@@ -65,9 +66,9 @@ final class InventoryTooltipLayoutResolver {
         int tooltipWidth = resolveTooltipWidth(preferredWidth, minWidth, availableWidth);
         int tooltipHeight = Math.max(1, heightEstimator == null ? 1 : heightEstimator.estimate(tooltipWidth));
         int preferredLeft = horizontalSide == HorizontalSide.RIGHT
-                ? mouseX + POINTER_RADIUS : mouseX - POINTER_RADIUS - tooltipWidth;
+                ? mouseX + POINTER_DIAGONAL_COMPONENT : mouseX - POINTER_DIAGONAL_COMPONENT - tooltipWidth;
         int preferredTop = verticalSide == VerticalSide.BOTTOM
-                ? mouseY + POINTER_RADIUS : mouseY - POINTER_RADIUS - tooltipHeight;
+                ? mouseY + POINTER_DIAGONAL_COMPONENT : mouseY - POINTER_DIAGONAL_COMPONENT - tooltipHeight;
 
         int left = clamp(preferredLeft, SCREEN_MARGIN, Math.max(SCREEN_MARGIN, hostWidth - tooltipWidth - SCREEN_MARGIN));
         int top = clamp(preferredTop, SCREEN_MARGIN, Math.max(SCREEN_MARGIN, hostHeight - tooltipHeight - SCREEN_MARGIN));
@@ -84,14 +85,14 @@ final class InventoryTooltipLayoutResolver {
 
     private static int resolveAvailableWidth(int hostWidth, int mouseX, HorizontalSide horizontalSide) {
         return horizontalSide == HorizontalSide.RIGHT
-                ? Math.max(0, hostWidth - mouseX - POINTER_RADIUS - SCREEN_MARGIN)
-                : Math.max(0, mouseX - POINTER_RADIUS - SCREEN_MARGIN);
+                ? Math.max(0, hostWidth - mouseX - POINTER_DIAGONAL_COMPONENT - SCREEN_MARGIN)
+                : Math.max(0, mouseX - POINTER_DIAGONAL_COMPONENT - SCREEN_MARGIN);
     }
 
     private static int resolveAvailableHeight(int hostHeight, int mouseY, VerticalSide verticalSide) {
         return verticalSide == VerticalSide.BOTTOM
-                ? Math.max(0, hostHeight - mouseY - POINTER_RADIUS - SCREEN_MARGIN)
-                : Math.max(0, mouseY - POINTER_RADIUS - SCREEN_MARGIN);
+                ? Math.max(0, hostHeight - mouseY - POINTER_DIAGONAL_COMPONENT - SCREEN_MARGIN)
+                : Math.max(0, mouseY - POINTER_DIAGONAL_COMPONENT - SCREEN_MARGIN);
     }
 
     private static int resolveTooltipWidth(int preferredWidth, int minWidth, int availableWidth) {

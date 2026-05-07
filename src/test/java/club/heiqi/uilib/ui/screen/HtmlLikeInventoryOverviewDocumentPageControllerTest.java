@@ -192,8 +192,8 @@ public class HtmlLikeInventoryOverviewDocumentPageControllerTest {
         Assert.assertEquals("false", tooltip.getAttribute("aria-hidden"));
         Assert.assertEquals(UiDisplay.FLEX, UiStyleResolver.compute(tooltip).getDisplay());
         Assert.assertTrue(tooltip.style().getWidth().getValue() > 0.0F);
-        Assert.assertEquals(64.0F, tooltip.style().getLeft().getValue(), 0.001F);
-        Assert.assertEquals(76.0F, tooltip.style().getTop().getValue(), 0.001F);
+        Assert.assertEquals(55.0F, tooltip.style().getLeft().getValue(), 0.001F);
+        Assert.assertEquals(67.0F, tooltip.style().getTop().getValue(), 0.001F);
         Assert.assertTrue(containsText(collectDocumentTexts(fixture.controller.getHtmlLikeDocumentWidget()),
                 "Tooltip 0"));
         fixture.controller.getHtmlLikeDocumentWidget().applyLayoutBounds(0, 0, 720, 600);
@@ -226,14 +226,14 @@ public class HtmlLikeInventoryOverviewDocumentPageControllerTest {
 
         ElementNode tooltip = collectElementsByAttribute(fixture.controller.getHtmlLikeDocumentWidget()
                 .getDocument().getRootElement(), "data-inventory-tooltip", "true").get(0);
-        Assert.assertEquals(112.0F, tooltip.style().getLeft().getValue(), 0.001F);
-        Assert.assertEquals(128.0F, tooltip.style().getTop().getValue(), 0.001F);
+        Assert.assertEquals(103.0F, tooltip.style().getLeft().getValue(), 0.001F);
+        Assert.assertEquals(119.0F, tooltip.style().getTop().getValue(), 0.001F);
 
         fixture.runtimeView.setMousePosition(140, 152);
         fixture.controller.beforeDocumentFrame();
 
-        Assert.assertEquals(172.0F, tooltip.style().getLeft().getValue(), 0.001F);
-        Assert.assertEquals(184.0F, tooltip.style().getTop().getValue(), 0.001F);
+        Assert.assertEquals(163.0F, tooltip.style().getLeft().getValue(), 0.001F);
+        Assert.assertEquals(175.0F, tooltip.style().getTop().getValue(), 0.001F);
     }
 
     /**
