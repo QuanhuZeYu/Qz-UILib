@@ -445,8 +445,10 @@ final class HtmlLikeInventoryOverviewDocumentPageController extends DocumentPage
                             UiStyleLength.px(0)));
             tooltipLayer.append(line);
         }
+        int viewportMouseX = runtimeView.getMouseX() - htmlLikeDocumentWidget.getAbsoluteX();
+        int viewportMouseY = runtimeView.getMouseY() - htmlLikeDocumentWidget.getAbsoluteY();
         InventoryTooltipLayoutResolver.TooltipPlacement placement = InventoryTooltipLayoutResolver.resolve(
-                runtimeView.getHostWidth(), runtimeView.getHostHeight(), runtimeView.getMouseX(), runtimeView.getMouseY(),
+                resolveTooltipViewportWidth(), resolveTooltipViewportHeight(), viewportMouseX, viewportMouseY,
                 resolvePreferredTooltipWidth(), TOOLTIP_MIN_WIDTH, new InventoryTooltipLayoutResolver.TooltipHeightEstimator() {
                     @Override
                     public int estimate(int tooltipWidth) {
@@ -470,7 +472,7 @@ final class HtmlLikeInventoryOverviewDocumentPageController extends DocumentPage
 
     private int resolvePreferredTooltipWidth() {
         int maxWidth = Math.max(TOOLTIP_MIN_WIDTH,
-                Math.min(TOOLTIP_MAX_WIDTH, Math.round(runtimeView.getHostWidth() * TOOLTIP_MAX_WIDTH_RATIO)));
+                Math.min(TOOLTIP_MAX_WIDTH, Math.round(resolveTooltipViewportWidth() * TOOLTIP_MAX_WIDTH_RATIO)));
         int maxLineWidth = 0;
         TextMeasureService measureService = documentUi.getTextMeasureService();
         for (String line : tooltipState.lines) {
@@ -478,6 +480,14 @@ final class HtmlLikeInventoryOverviewDocumentPageController extends DocumentPage
         }
         int paddedWidth = maxLineWidth + TOOLTIP_HORIZONTAL_PADDING * 2;
         return Math.max(TOOLTIP_MIN_WIDTH, Math.min(maxWidth, paddedWidth));
+    }
+
+    private int resolveTooltipViewportWidth() {
+        return htmlLikeDocumentWidget.getWidth() > 0 ? htmlLikeDocumentWidget.getWidth() : runtimeView.getHostWidth();
+    }
+
+    private int resolveTooltipViewportHeight() {
+        return htmlLikeDocumentWidget.getHeight() > 0 ? htmlLikeDocumentWidget.getHeight() : runtimeView.getHostHeight();
     }
 
     private int estimateTooltipHeight(int tooltipWidth) {
