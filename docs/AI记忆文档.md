@@ -93,7 +93,7 @@
 - 下一阶段暂停继续扩展动画属性和动画诊断显示；若后续确需新增 layout-affecting 属性，必须重新证明必要性，并继续限制在少量可控属性与明确 fallback。
 - HTML-like table 与 `inventory_overview` 背包页能力详情以 `docs/使用文档/02-控件/表格与背包槽位.md` 为准；后续优先在真实背包 UI 中收口槽位视觉、焦点、滚动、命中与真实数据渲染问题，其次再评估 dirty subtree / 细粒度缓存或 effect chain 后续优化。
 - 背包页 tooltip 已单独固化为设计需求文档；后续实现应按 Apple 风格鼠标跟随浮层、原版 tooltip 内容优先、拖拽时完全隐藏的口径执行。
-- 背包页 tooltip 第一阶段代码已开始落地：当前已接入页面级跟随鼠标定位、方向回退、宽度压缩与拖拽隐藏；定位计算收敛在 `InventoryTooltipLayoutResolver`，宿主鼠标坐标通过 `DocumentPageRuntimeView` 暴露给页面层。
+- 背包页 tooltip 第一阶段代码已开始落地：当前已接入页面级跟随鼠标定位、方向回退、宽度压缩与拖拽隐藏；定位计算收敛在 `InventoryTooltipLayoutResolver`，宿主鼠标坐标通过 `DocumentPageRuntimeView` 暴露给页面层。已确认可用空间预留应按 32px 鼠标清空带处理，而不是继续沿用对角分量近似。
 - 开放化文档已开始固化：根索引为 `docs/开放化调整.md`，分级使用文档位于 `docs/使用文档/`，覆盖项目定位、最小文档页面、基础控件、表格与背包槽位、Minecraft 界面入口和指令触发方案；宿主业务文档 screen 创建入口已完成首轮代码收口；测试入口已迁移为 `/qzuilib test` 诊断跳转菜单，后续优先游戏内验证该命令与菜单跳转。
 - 不一次性开放全量布局动画。
 - paint/effect 动画不能触发布局；layout 动画可以重布局，但结束后必须恢复静态缓存。

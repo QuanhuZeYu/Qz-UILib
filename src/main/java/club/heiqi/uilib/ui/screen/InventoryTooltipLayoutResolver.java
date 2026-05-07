@@ -83,16 +83,18 @@ final class InventoryTooltipLayoutResolver {
                 coversPointer, freeSpace, horizontalSide, verticalSide);
     }
 
+    // 这里按 32px 鼠标清空带预留宽高，锚点仍使用对角分量保持右下默认落点。
     private static int resolveAvailableWidth(int hostWidth, int mouseX, HorizontalSide horizontalSide) {
         return horizontalSide == HorizontalSide.RIGHT
-                ? Math.max(0, hostWidth - mouseX - POINTER_DIAGONAL_COMPONENT - SCREEN_MARGIN)
-                : Math.max(0, mouseX - POINTER_DIAGONAL_COMPONENT - SCREEN_MARGIN);
+                ? Math.max(0, hostWidth - mouseX - POINTER_RADIUS - SCREEN_MARGIN)
+                : Math.max(0, mouseX - POINTER_RADIUS - SCREEN_MARGIN);
     }
 
+    // 这里按 32px 鼠标清空带预留宽高，避免 tooltip 贴住指针热区。
     private static int resolveAvailableHeight(int hostHeight, int mouseY, VerticalSide verticalSide) {
         return verticalSide == VerticalSide.BOTTOM
-                ? Math.max(0, hostHeight - mouseY - POINTER_DIAGONAL_COMPONENT - SCREEN_MARGIN)
-                : Math.max(0, mouseY - POINTER_DIAGONAL_COMPONENT - SCREEN_MARGIN);
+                ? Math.max(0, hostHeight - mouseY - POINTER_RADIUS - SCREEN_MARGIN)
+                : Math.max(0, mouseY - POINTER_RADIUS - SCREEN_MARGIN);
     }
 
     private static int resolveTooltipWidth(int preferredWidth, int minWidth, int availableWidth) {
