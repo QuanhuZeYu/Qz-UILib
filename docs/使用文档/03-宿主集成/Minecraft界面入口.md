@@ -2,6 +2,8 @@
 
 本文说明在 Minecraft 1.7.10 宿主中打开 Qz UILib 文档页面的建议方式。
 
+本文是宿主集成说明；内置诊断页和示例页仅作为开发调试入口，不构成对外稳定业务 API。
+
 ## 业务文档入口
 
 业务 UI 优先通过 `UiDocumentScreens.createDocumentScreen(...)` 创建：
@@ -21,6 +23,24 @@ Minecraft.getMinecraft().displayGuiScreen(UiDocumentScreens.createDocumentScreen
 ```
 
 该入口会创建 `UiDocument`、`HtmlLikeDocumentWidget` 和宿主 `GuiScreen`，调用方只负责组装文档树、样式和事件。
+
+## 开屏时序约束
+
+- 普通宿主事件或按钮回调里，可以直接调用 `Minecraft.displayGuiScreen(...)`。
+- 如果当前上下文会在本次回调结束后关闭现有 `GuiScreen`，则不要直接开屏。
+- 典型场景包括客户端聊天命令、聊天按钮或其他会立即结束当前界面的入口。
+- 这类场景应通过 `UiScreenManager.getInstance().enqueue(...)` 延后到当前帧输入分发结束后再执行开屏。
+
+```java
+UiScreenManager.getInstance().enqueue(new Runnable() {
+    @Override
+    public void run() {
+        Minecraft.getMinecraft().displayGuiScreen(UiDocumentScreens.createDocumentScreen(document -> {
+            // 组装文档树。
+        }));
+    }
+});
+```
 
 ## 当前内部入口
 
@@ -45,7 +65,7 @@ Minecraft.getMinecraft().displayGuiScreen(UiDocumentScreens.createHtmlLikeSmoke(
 - 诊断页只作为开发期工具使用，不应作为玩家默认入口。
 - 默认不向原版背包注入按钮。
 - 默认不注册全局右 Shift 打开诊断菜单。
-- 当前测试入口统一为 `/qzuilib test`，由菜单继续跳转到各内置页面。
+- 当前测试入口统一为 `/qzuilib test`，并通过 `UiScreenManager` 延后开屏后再由菜单跳转到各内置页面。
 
 ## 环境对象
 
@@ -70,4 +90,5 @@ UiDocumentScreens.DocumentScreenEnvironment environment =
 
 - 保留 `UiInputService.getInstance().initialize()`。
 - 保留 `UiInputTickListener` 注册。
+- 保留 `UiScreenManager.getInstance().tick()` 这条延后任务冲刷路径。
 - 只移除全局诊断热键，不移除正常输入分发。
