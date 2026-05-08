@@ -2,6 +2,8 @@ package club.heiqi.uilib.ui.inventory;
 
 import net.minecraft.item.ItemStack;
 
+import club.heiqi.uilib.ui.image.HostImageSource;
+
 /**
  * 背包网格专用的槽位快照。
  *
@@ -94,5 +96,17 @@ public final class InventorySlotSnapshot {
      */
     ItemStack getRuntimeStack() {
         return runtimeStack;
+    }
+
+    /**
+     * 将当前槽位快照转换为宿主图片源。
+     *
+     * <p>只有携带真实运行时 `ItemStack` 的快照才能转换成功；纯占位测试快照会返回 null，
+     * 交由调用方决定是否走旧回退路径。</p>
+     *
+     * @return 对应的宿主图片源；不可转换时返回 null
+     */
+    public HostImageSource toHostImageSource() {
+        return runtimeStack == null || runtimeStack.getItem() == null ? null : HostImageSource.itemStack(runtimeStack);
     }
 }

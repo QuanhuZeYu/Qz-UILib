@@ -17,6 +17,7 @@ import club.heiqi.uilib.ui.dom.DocumentNode;
 import club.heiqi.uilib.ui.dom.ElementNode;
 import club.heiqi.uilib.ui.dom.UiDocument;
 import club.heiqi.uilib.ui.event.UiKeyEvent;
+import club.heiqi.uilib.ui.image.HostImageSource;
 import club.heiqi.uilib.ui.inventory.InventorySlotGridItemGeometry;
 import club.heiqi.uilib.ui.inventory.InventorySlotGridItemRenderer;
 import club.heiqi.uilib.ui.inventory.InventorySlotSnapshot;
@@ -658,6 +659,7 @@ public class DocumentInventorySlotGridControlTest {
 
         private final List<DeferredPostMainPassReplay> deferredReplays = new ArrayList<DeferredPostMainPassReplay>();
         private final List<DrawCall> drawCalls = new ArrayList<DrawCall>();
+        private final List<String> hostImageCalls = new ArrayList<String>();
 
         private RecordingUiRenderContext() {
             super(400, 200, 0, 0, 1.0F);
@@ -691,6 +693,12 @@ public class DocumentInventorySlotGridControlTest {
         @Override
         public void enqueueDeferredPostMainOverlayPass(DeferredPostMainPassReplay replay) {
             deferredReplays.add(replay);
+        }
+
+        @Override
+        public void drawHostImage(HostImageSource source, int left, int top, int right, int bottom) {
+            hostImageCalls.add((source == null ? "null" : source.getKind().name()) + "@" + left + "," + top + ","
+                    + right + "," + bottom);
         }
     }
 

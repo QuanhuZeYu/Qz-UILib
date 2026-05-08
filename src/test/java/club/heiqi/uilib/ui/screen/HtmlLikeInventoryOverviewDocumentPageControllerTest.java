@@ -4,6 +4,9 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 
+import net.minecraft.init.Items;
+import net.minecraft.item.ItemStack;
+
 import org.junit.Assert;
 import org.junit.Test;
 import org.lwjglx.input.Keyboard;
@@ -17,6 +20,7 @@ import club.heiqi.uilib.ui.dom.DocumentNodeType;
 import club.heiqi.uilib.ui.dom.ElementNode;
 import club.heiqi.uilib.ui.dom.TextNode;
 import club.heiqi.uilib.ui.event.UiKeyEvent;
+import club.heiqi.uilib.ui.image.HostImageSource;
 import club.heiqi.uilib.ui.inventory.InventorySlotSnapshot;
 import club.heiqi.uilib.ui.inventory.NoOpInventorySlotGridItemRenderer;
 import club.heiqi.uilib.ui.inventory.InventorySlotGridItemGeometry;
@@ -260,14 +264,14 @@ public class HtmlLikeInventoryOverviewDocumentPageControllerTest {
     }
 
     /**
-     * 验证鼠标携带物品由页面级语义 layer 单次登记 overlay。
+     * 验证鼠标携带物品会优先走页面级通用宿主图片 overlay。
      */
     @Test
-    public void shouldRegisterCursorItemOverlayFromPageLayer() {
+    public void shouldPreferHostImageCursorOverlayFromPageLayer() {
         TestFixture fixture = new TestFixture();
         RecordingInventorySlotGridItemRenderer itemRenderer = new RecordingInventorySlotGridItemRenderer();
         fixture.runtimeAdapters = UiRuntimeAdapters.empty().withInventorySlotGridItemRenderer(itemRenderer);
-        fixture.model.carriedSlotSnapshot = InventorySlotSnapshot.occupied();
+        fixture.model.carriedSlotSnapshot = InventorySlotSnapshot.fromRuntimeStack(new ItemStack(Items.apple));
         fixture.recreateController();
 
         fixture.controller.configureDocumentPage();
@@ -279,24 +283,24 @@ public class HtmlLikeInventoryOverviewDocumentPageControllerTest {
                 20, 20, 1L));
         ElementNode tooltip = collectElementsByAttribute(fixture.controller.getHtmlLikeDocumentWidget()
                 .getDocument().getRootElement(), "data-inventory-tooltip", "true").get(0);
-        Assert.assertEquals("true", tooltip.getAttribute("aria-hidden"));
+        Assert.assertEquals("false", tooltip.getAttribute("aria-hidden"));
 
         HtmlLikeDocumentWidget widget = fixture.controller.getHtmlLikeDocumentWidget();
         widget.applyLayoutBounds(0, 0, 720, 600);
         RecordingUiRenderContext renderContext = new RecordingUiRenderContext(720, 600, 90, 72);
-        widget.render(renderContext);
+
+        ElementNode cursorLayer = collectElementsByAttribute(widget.getDocument().getRootElement(),
+                "data-cursor-item-layer", "true").get(0);
+        cursorLayer.getCustomRenderer().render(renderContext, 0, 0, 1, 1);
         for (club.heiqi.uilib.ui.render.UiRenderContext.DeferredPostMainPassReplay replay
                 : renderContext.deferredReplays) {
             replay.replay();
         }
 
-        ElementNode cursorLayer = collectElementsByAttribute(widget.getDocument().getRootElement(),
-                "data-cursor-item-layer", "true").get(0);
-
         Assert.assertEquals("aside", cursorLayer.getTagName());
         Assert.assertEquals("true", cursorLayer.getAttribute("aria-hidden"));
         Assert.assertNotNull(cursorLayer.getCustomRenderer());
-        Assert.assertEquals(Collections.singletonList("90:72:true"), itemRenderer.cursorCalls);
+        Assert.assertTrue(itemRenderer.cursorCalls.isEmpty());
     }
 
     private static List<String> collectDocumentTexts(HtmlLikeDocumentWidget widget) {
@@ -501,6 +505,7 @@ public class HtmlLikeInventoryOverviewDocumentPageControllerTest {
     private static final class RecordingUiRenderContext extends UiRenderContext {
 
         private final List<DeferredPostMainPassReplay> deferredReplays = new ArrayList<DeferredPostMainPassReplay>();
+        private final List<String> hostImageCalls = new ArrayList<String>();
 
         private RecordingUiRenderContext(int width, int height, int mouseX, int mouseY) {
             super(width, height, mouseX, mouseY, 1.0F);
@@ -526,6 +531,12 @@ public class HtmlLikeInventoryOverviewDocumentPageControllerTest {
         @Override
         public void enqueueDeferredPostMainOverlayPass(DeferredPostMainPassReplay replay) {
             deferredReplays.add(replay);
+        }
+
+        @Override
+        public void drawHostImage(HostImageSource source, int left, int top, int right, int bottom) {
+            hostImageCalls.add((source == null ? "null" : source.getKind().name()) + "@" + left + "," + top + ","
+                    + right + "," + bottom);
         }
     }
 

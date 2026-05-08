@@ -14,6 +14,7 @@ import club.heiqi.uilib.ui.dom.UiDocument;
 import club.heiqi.uilib.ui.dom.control.DocumentButtonActionEvent;
 import club.heiqi.uilib.ui.dom.control.DocumentButtonActionHandler;
 import club.heiqi.uilib.ui.dom.control.DocumentButtonControl;
+import club.heiqi.uilib.ui.image.HostImageSource;
 import club.heiqi.uilib.ui.dom.control.DocumentInventorySlotGridControl;
 import club.heiqi.uilib.ui.inventory.InventorySlotGridItemRenderer;
 import club.heiqi.uilib.ui.inventory.InventorySlotSnapshot;
@@ -403,10 +404,6 @@ final class HtmlLikeInventoryOverviewDocumentPageController extends DocumentPage
                 .setZIndex(1001)
                 .setOverflowX(UiOverflow.VISIBLE)
                 .setOverflowY(UiOverflow.VISIBLE);
-        if (inventoryItemRenderer == null) {
-            parent.append(layer);
-            return layer;
-        }
         layer.setCustomRenderer(new DocumentCustomRenderer() {
             @Override
             public void render(final UiRenderContext context, int contentLeft, int contentTop, int contentRight,
@@ -511,8 +508,23 @@ final class HtmlLikeInventoryOverviewDocumentPageController extends DocumentPage
     }
 
     private void enqueueCursorItemOverlay(final UiRenderContext context) {
-        if (context == null || inventoryItemRenderer == null || currentCarriedSlotSnapshot == null
-                || !currentCarriedSlotSnapshot.isOccupied()) {
+        if (context == null || currentCarriedSlotSnapshot == null || !currentCarriedSlotSnapshot.isOccupied()) {
+            return;
+        }
+        HostImageSource hostImageSource = currentCarriedSlotSnapshot.toHostImageSource();
+        if (hostImageSource != null) {
+            final HostImageSource capturedSource = hostImageSource;
+            final int mouseX = context.getMouseX();
+            final int mouseY = context.getMouseY();
+            context.enqueueDeferredPostMainOverlayPass(new UiRenderContext.DeferredPostMainPassReplay() {
+                @Override
+                public void replay() {
+                    context.drawHostImage(capturedSource, mouseX - 12, mouseY - 12, mouseX + 12, mouseY + 12);
+                }
+            });
+            return;
+        }
+        if (inventoryItemRenderer == null) {
             return;
         }
         final InventorySlotSnapshot capturedSnapshot = currentCarriedSlotSnapshot;

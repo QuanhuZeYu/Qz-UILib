@@ -17,6 +17,7 @@ import club.heiqi.uilib.ui.dom.DocumentElementKeyHandler;
 import club.heiqi.uilib.ui.dom.ElementNode;
 import club.heiqi.uilib.ui.dom.UiDocument;
 import club.heiqi.uilib.ui.event.UiKeyEvent;
+import club.heiqi.uilib.ui.image.HostImageSource;
 import club.heiqi.uilib.ui.inventory.InventorySlotGridItemGeometry;
 import club.heiqi.uilib.ui.inventory.InventorySlotGridItemRenderer;
 import club.heiqi.uilib.ui.inventory.InventorySlotGridLayout;
@@ -409,6 +410,11 @@ public final class DocumentInventorySlotGridControl {
         }
         InventorySlotSnapshot[] snapshots = sampleSlotSnapshots();
 
+        if (renderItemsThroughHostImages(context, absX, absY, snapshots)) {
+            enqueueCarriedItemOverlay(context);
+            return;
+        }
+
         if (itemRenderer != null && hasOccupiedSlot(snapshots)) {
             final InventorySlotGridItemGeometry geometry = currentLayout.createItemGeometry(absX, absY, slotCount);
             final InventorySlotSnapshot[] capturedSnapshots = snapshots;
@@ -421,6 +427,26 @@ public final class DocumentInventorySlotGridControl {
             });
         }
         enqueueCarriedItemOverlay(context);
+    }
+
+    private boolean renderItemsThroughHostImages(UiRenderContext context, int absX, int absY,
+            InventorySlotSnapshot[] snapshots) {
+        if (context == null || currentLayout == null || snapshots == null || snapshots.length <= 0) {
+            return false;
+        }
+        boolean renderedAny = false;
+        for (int slotIndex = 0; slotIndex < snapshots.length; slotIndex++) {
+            InventorySlotSnapshot snapshot = snapshots[slotIndex];
+            HostImageSource hostImageSource = snapshot == null ? null : snapshot.toHostImageSource();
+            if (hostImageSource == null) {
+                continue;
+            }
+            InventorySlotGridLayout.SlotRect slotRect = currentLayout.getSlotRect(slotIndex);
+            context.drawHostImage(hostImageSource, absX + slotRect.left, absY + slotRect.top,
+                    absX + slotRect.right, absY + slotRect.bottom);
+            renderedAny = true;
+        }
+        return renderedAny;
     }
 
     private boolean handleSlotClick(int localIndex, int button, long timeNanos) {
@@ -485,6 +511,24 @@ public final class DocumentInventorySlotGridControl {
     private void enqueueCarriedItemOverlay(final UiRenderContext context) {
         if (!carriedItemOverlayEnabled || itemRenderer == null || carriedSnapshot == null
                 || !carriedSnapshot.isOccupied()) {
+            if (!carriedItemOverlayEnabled || carriedSnapshot == null || !carriedSnapshot.isOccupied()) {
+                return;
+            }
+        }
+        HostImageSource hostImageSource = carriedSnapshot == null ? null : carriedSnapshot.toHostImageSource();
+        if (hostImageSource != null) {
+            final HostImageSource capturedSource = hostImageSource;
+            final int mouseX = context.getMouseX();
+            final int mouseY = context.getMouseY();
+            enqueueOverlayPass(context, new UiRenderContext.DeferredPostMainPassReplay() {
+                @Override
+                public void replay() {
+                    context.drawHostImage(capturedSource, mouseX - 12, mouseY - 12, mouseX + 12, mouseY + 12);
+                }
+            });
+            return;
+        }
+        if (itemRenderer == null) {
             return;
         }
         final InventorySlotGridItemRenderer capturedRenderer = itemRenderer;
