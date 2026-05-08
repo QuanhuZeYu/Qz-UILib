@@ -34,6 +34,7 @@
 - 不新增扩大直接 `Widget` 作者入口的 API；新增作者能力优先放在 `UiDocument`、DOM、样式系统、控件适配或 HTML-like 后端能力中。
 - `createDocumentScreen(...)` 已默认补齐根元素 `width:100%`、`height:100%` 和 `overflow-y:auto`；文档与示例不应再把这组样板当作手动必填前置知识。
 - 结构节点优先直接写 `UiDocument` DOM-like 元素；标准交互节点优先使用 `Document*Control`，其中 `DocumentTextInputControl` 现已使用真实 `input type="text"` 语义。
+- 面向作者的宿主贴图能力以 `DocumentHostImageControl` / `DocumentHostImageDecorations` 为主，不鼓励业务代码直接写底层 `custom renderer` 处理 Minecraft 物品或纹理贴图。
 - `Widget`、`ViewportWidget`、`UiInputRouter`、`UiRenderContext`、`UiRuntimeAdapters` 与背包格子底层宿主适配仍可能是当前后端基础；动这些能力前必须先查源码引用。
 - 新增 layout-affecting、宿主集成或对外能力时，要同步更新 `docs/使用文档/` 并保留最小必要验证。
 - `club.heiqi.uilib.config.ForgeConfigTemplateScreen` 已作为对外可复用模板，用于替换 Forge 默认 `GuiConfig` 并直接消费 `Configuration` / `ConfigCategory` / `Property`。
@@ -53,6 +54,7 @@
 - 继续固化第一版开放文档与业务入口，优先保证真实页面、控件迁移和开发者接入体验。
 - 2026-05-08 HTML-like 开发者易用性审查提出的首轮入口收敛、控件心智和接入示例问题已完成整改；相关审查明细保留原始结论，并在文末追加后续修复状态，不直接改写原审查结论。
 - 入门文档已新增 `01-入门/完整业务页面示例.md`，用于串联业务页面正常拼装路径；后续新增接入能力时优先接到这条连续体验链上。
+- 2026-05-09 已新增宿主图片作者入口：业务页面可像 `img` / 背景图一样挂载 Minecraft 物品与纹理图片源；交互默认仍由外层 HTML-like 元素承担，拖拽类组件若要扩展应建立在这条贴图能力之上而不是回退到底层 GL 回调。
 - Forge 配置页已切换到 HTML-like 模板化实现，后续若继续扩展配置类页面，应优先复用模板而不是回退到 `GuiConfig`。
 - 配置模板页若不走 `DocumentPageAuthoringSurface`，需要在 `BaseScreen.onResize(...)` 中显式给 `HtmlLikeDocumentWidget` 下发布局边界；仅设置 `UiLayoutSpec` 可能导致页面可开屏但内容区域为 `0x0`。
 - 2026-05-09 已确认 `runClient21` 会由 `gtnhgradle` 的 Modern Java 模块强制约束 `GTNHLib` 到 `0.9.20`；若只为在该运行链路下测试 Angelica，不应再尝试把 `GTNHLib` 锁回 `0.7.10`，而应改测兼容新版 `GTNHLib` 的 Angelica 版本。

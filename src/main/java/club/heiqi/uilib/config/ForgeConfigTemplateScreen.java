@@ -39,6 +39,7 @@ import club.heiqi.uilib.ui.style.UiDisplay;
 import club.heiqi.uilib.ui.style.UiFlexDirection;
 import club.heiqi.uilib.ui.style.UiOverflow;
 import club.heiqi.uilib.ui.style.UiStyleLength;
+import club.heiqi.uilib.ui.runtime.UiRuntimeAdapters;
 import club.heiqi.uilib.ui.text.DefaultTextMeasureService;
 import club.heiqi.uilib.ui.text.TextMeasureService;
 import club.heiqi.uilib.ui.widget.Widget;
@@ -59,6 +60,7 @@ public class ForgeConfigTemplateScreen extends BaseScreen {
     private final GuiScreen parentScreen;
     private final Spec spec;
     private final HtmlLikeDocumentWidget documentWidget;
+    private final UiRuntimeAdapters runtimeAdapters;
     private final List<PropertyBinding> bindings = new ArrayList<PropertyBinding>();
     private final Map<String, PropertyBinding> bindingsByKey = new LinkedHashMap<String, PropertyBinding>();
     private final DocumentButtonControl saveButton;
@@ -80,8 +82,14 @@ public class ForgeConfigTemplateScreen extends BaseScreen {
     }
 
     ForgeConfigTemplateScreen(GuiScreen parentScreen, Spec spec, TextMeasureService textMeasureService) {
+        this(parentScreen, spec, textMeasureService, UiRuntimeAdapters.minecraftDefaults());
+    }
+
+    ForgeConfigTemplateScreen(GuiScreen parentScreen, Spec spec, TextMeasureService textMeasureService,
+            UiRuntimeAdapters runtimeAdapters) {
         this.parentScreen = parentScreen;
         this.spec = Objects.requireNonNull(spec, "spec");
+        this.runtimeAdapters = Objects.requireNonNull(runtimeAdapters, "runtimeAdapters");
 
         UiDocument document = UiDocument.create();
         this.saveButton = createActionButton(document, spec.getTextSet().saveButtonLabel,
@@ -106,6 +114,11 @@ public class ForgeConfigTemplateScreen extends BaseScreen {
                 .setWidth(UiLength.percent(1.0F))
                 .setHeight(UiLength.percent(1.0F)));
         refreshStatusText(null);
+    }
+
+    @Override
+    protected UiRuntimeAdapters getRuntimeAdapters() {
+        return runtimeAdapters;
     }
 
     @Override

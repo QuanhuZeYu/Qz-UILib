@@ -5,12 +5,15 @@ import net.minecraft.client.gui.GuiScreen;
 import club.heiqi.uilib.ui.diagnostic.UiRuntimeStats;
 import club.heiqi.uilib.ui.input.UiInputFrame;
 import club.heiqi.uilib.ui.diagnostic.UiPerformanceMonitor;
+import club.heiqi.uilib.ui.runtime.UiRuntimeAdapters;
 import club.heiqi.uilib.ui.widget.Widget;
 
 /**
  * 新 UI 系统的界面基类。
  */
 public abstract class BaseScreen extends GuiScreen {
+
+    private static final UiRuntimeAdapters DEFAULT_RUNTIME_ADAPTERS = UiRuntimeAdapters.minecraftDefaults();
 
     private final UiScreenHostSession hostSession = new UiScreenHostSession(this);
 
@@ -101,6 +104,17 @@ public abstract class BaseScreen extends GuiScreen {
      */
     protected UiRuntimeStats getUiRuntimeStats() {
         return UiPerformanceMonitor.getInstance().getRuntimeStats();
+    }
+
+    /**
+     * 返回当前界面注入给 HTML-like 渲染链路的运行时适配器集合。
+     *
+     * <p>默认使用 Minecraft 宿主能力；需要测试替身或裁剪能力集的界面可覆写该方法。</p>
+     *
+     * @return 运行时适配器集合
+     */
+    protected UiRuntimeAdapters getRuntimeAdapters() {
+        return DEFAULT_RUNTIME_ADAPTERS;
     }
 
     /**

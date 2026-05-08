@@ -2,6 +2,8 @@ package club.heiqi.uilib.ui.runtime;
 
 import java.util.Objects;
 
+import club.heiqi.uilib.ui.image.HostImageRenderer;
+import club.heiqi.uilib.ui.image.MinecraftHostImageRenderer;
 import club.heiqi.uilib.ui.inventory.InventorySlotGridItemRenderer;
 import club.heiqi.uilib.ui.inventory.MinecraftInventorySlotGridItemRenderer;
 
@@ -14,9 +16,12 @@ import club.heiqi.uilib.ui.inventory.MinecraftInventorySlotGridItemRenderer;
 public final class UiRuntimeAdapters {
 
     private final InventorySlotGridItemRenderer inventorySlotGridItemRenderer;
+    private final HostImageRenderer hostImageRenderer;
 
-    private UiRuntimeAdapters(InventorySlotGridItemRenderer inventorySlotGridItemRenderer) {
+    private UiRuntimeAdapters(InventorySlotGridItemRenderer inventorySlotGridItemRenderer,
+            HostImageRenderer hostImageRenderer) {
         this.inventorySlotGridItemRenderer = inventorySlotGridItemRenderer;
+        this.hostImageRenderer = hostImageRenderer;
     }
 
     /**
@@ -27,7 +32,7 @@ public final class UiRuntimeAdapters {
      * @return 空适配器集合
      */
     public static UiRuntimeAdapters empty() {
-        return new UiRuntimeAdapters(null);
+        return new UiRuntimeAdapters(null, null);
     }
 
     /**
@@ -38,7 +43,7 @@ public final class UiRuntimeAdapters {
      * @return 默认适配器集合
      */
     public static UiRuntimeAdapters minecraftDefaults() {
-        return new UiRuntimeAdapters(new MinecraftInventorySlotGridItemRenderer());
+        return new UiRuntimeAdapters(new MinecraftInventorySlotGridItemRenderer(), new MinecraftHostImageRenderer());
     }
 
     /**
@@ -50,7 +55,19 @@ public final class UiRuntimeAdapters {
     public UiRuntimeAdapters withInventorySlotGridItemRenderer(
             InventorySlotGridItemRenderer inventorySlotGridItemRenderer) {
         return new UiRuntimeAdapters(
-                Objects.requireNonNull(inventorySlotGridItemRenderer, "inventorySlotGridItemRenderer"));
+                Objects.requireNonNull(inventorySlotGridItemRenderer, "inventorySlotGridItemRenderer"),
+                hostImageRenderer);
+    }
+
+    /**
+     * 返回注入指定宿主图片渲染委托后的新适配器集合。
+     *
+     * @param hostImageRenderer 宿主图片渲染委托
+     * @return 新适配器集合
+     */
+    public UiRuntimeAdapters withHostImageRenderer(HostImageRenderer hostImageRenderer) {
+        return new UiRuntimeAdapters(inventorySlotGridItemRenderer,
+                Objects.requireNonNull(hostImageRenderer, "hostImageRenderer"));
     }
 
     /**
@@ -60,5 +77,14 @@ public final class UiRuntimeAdapters {
      */
     public InventorySlotGridItemRenderer getInventorySlotGridItemRenderer() {
         return inventorySlotGridItemRenderer;
+    }
+
+    /**
+     * 获取宿主图片渲染委托。
+     *
+     * @return 宿主图片渲染委托；为空时无法使用 `img`/背景贴图这类宿主图片能力
+     */
+    public HostImageRenderer getHostImageRenderer() {
+        return hostImageRenderer;
     }
 }

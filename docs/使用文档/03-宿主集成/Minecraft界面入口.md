@@ -103,7 +103,19 @@ UiDocumentScreens.DocumentScreenEnvironment environment =
 
 - 正常游戏内使用 `minecraftDefaults()`。
 - 测试中注入确定性 `TextMeasureService`。
-- Minecraft 物品、鼠标携带物品等能力通过 `UiRuntimeAdapters` 注入。
+- Minecraft 物品、宿主图片、鼠标携带物品等能力通过 `UiRuntimeAdapters` 注入。
+
+例如，业务页如果想把 Minecraft 物品当作 `img` 一样挂到文档里，通常不需要自己碰运行时适配器细节；只要页面通过 `createDocumentScreen(...)` 使用默认环境，即可直接使用：
+
+```java
+Minecraft.getMinecraft().displayGuiScreen(UiDocumentScreens.createDocumentScreen(document -> {
+    ElementNode root = document.getRootElement();
+    DocumentHostImageControl icon = new DocumentHostImageControl(document,
+            HostImageSource.itemStack(new ItemStack(Items.apple)));
+    icon.setSize(20);
+    root.append(icon.getElement());
+}));
+```
 
 ## 输入路由
 

@@ -470,6 +470,11 @@ public final class UiDocumentScreens {
         }
 
         @Override
+        protected club.heiqi.uilib.ui.runtime.UiRuntimeAdapters getRuntimeAdapters() {
+            return documentUiScope.getRuntimeAdapters();
+        }
+
+        @Override
         protected void buildUi(Widget root) {
             documentPage.attachRoot(root);
             controller.configureDocumentPage();

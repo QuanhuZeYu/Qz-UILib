@@ -17,6 +17,9 @@ import org.lwjgl.opengl.GL30;
 
 import club.heiqi.uilib.font.api.DefaultFontRendererAdapter;
 import club.heiqi.uilib.font.api.FontRendererAdapter;
+import club.heiqi.uilib.ui.image.HostImageRenderer;
+import club.heiqi.uilib.ui.image.HostImageSource;
+import club.heiqi.uilib.ui.runtime.UiRuntimeAdapters;
 import club.heiqi.uilib.ui.theme.UiSurfaceStyle;
 
 /**
@@ -47,6 +50,7 @@ public class UiRenderContext {
     private final FontRendererAdapter fontRenderer;
     private final PaintContextCompositor paintContextCompositor;
     private final UiMainLayerSnapshotService mainLayerSnapshotService;
+    private final UiRuntimeAdapters runtimeAdapters;
     private final Deque<ClipState> clipStack = new ArrayDeque<ClipState>();
     private final List<DeferredPostMainPass> deferredPostMainPasses = new ArrayList<DeferredPostMainPass>();
     private final List<DeferredPostMainPass> deferredPostMainOverlayPasses = new ArrayList<DeferredPostMainPass>();
@@ -214,6 +218,17 @@ public class UiRenderContext {
             layer.ensureSize(screenWidth, screenHeight);
             return layer;
         }
+
+        private UiRenderTarget borrowIsolatedLayer(int screenWidth, int screenHeight) {
+            return borrowLayer(screenWidth, screenHeight);
+        }
+
+        private void releaseIsolatedLayer(UiRenderTarget layer) {
+            if (layer == null || borrowedLayerCount <= 0) {
+                return;
+            }
+            borrowedLayerCount--;
+        }
     }
 
     private static final class PaintContextFrame {
@@ -364,7 +379,7 @@ public class UiRenderContext {
      */
     public UiRenderContext(int screenWidth, int screenHeight, int mouseX, int mouseY, float partialTicks) {
         this(screenWidth, screenHeight, mouseX, mouseY, partialTicks, new PaintContextCompositor(),
-                new UiMainLayerSnapshotService());
+                new UiMainLayerSnapshotService(), UiRuntimeAdapters.empty());
     }
 
     /**
@@ -380,7 +395,7 @@ public class UiRenderContext {
     public UiRenderContext(int screenWidth, int screenHeight, int mouseX, int mouseY, float partialTicks,
             PaintContextCompositor paintContextCompositor) {
         this(screenWidth, screenHeight, mouseX, mouseY, partialTicks, paintContextCompositor,
-                new UiMainLayerSnapshotService());
+                new UiMainLayerSnapshotService(), UiRuntimeAdapters.empty());
     }
 
     /**
@@ -396,6 +411,25 @@ public class UiRenderContext {
      */
     public UiRenderContext(int screenWidth, int screenHeight, int mouseX, int mouseY, float partialTicks,
             PaintContextCompositor paintContextCompositor, UiMainLayerSnapshotService mainLayerSnapshotService) {
+        this(screenWidth, screenHeight, mouseX, mouseY, partialTicks, paintContextCompositor,
+                mainLayerSnapshotService, UiRuntimeAdapters.empty());
+    }
+
+    /**
+     * 创建渲染上下文。
+     *
+     * @param screenWidth 屏幕宽度
+     * @param screenHeight 屏幕高度
+     * @param mouseX 鼠标 X
+     * @param mouseY 鼠标 Y
+     * @param partialTicks 插值帧参数
+     * @param paintContextCompositor paint context 离屏合成器
+     * @param mainLayerSnapshotService UI 主层快照服务
+     * @param runtimeAdapters 运行时适配器集合
+     */
+    public UiRenderContext(int screenWidth, int screenHeight, int mouseX, int mouseY, float partialTicks,
+            PaintContextCompositor paintContextCompositor, UiMainLayerSnapshotService mainLayerSnapshotService,
+            UiRuntimeAdapters runtimeAdapters) {
         this.screenWidth = screenWidth;
         this.screenHeight = screenHeight;
         this.mouseX = mouseX;
@@ -405,6 +439,7 @@ public class UiRenderContext {
         this.paintContextCompositor = Objects.requireNonNull(paintContextCompositor, "paintContextCompositor");
         this.mainLayerSnapshotService = Objects.requireNonNull(mainLayerSnapshotService,
                 "mainLayerSnapshotService");
+        this.runtimeAdapters = Objects.requireNonNull(runtimeAdapters, "runtimeAdapters");
     }
 
     public int getScreenWidth() {
@@ -429,6 +464,15 @@ public class UiRenderContext {
 
     public FontRendererAdapter getFontRenderer() {
         return fontRenderer;
+    }
+
+    /**
+     * 返回当前运行时适配器集合。
+     *
+     * @return 运行时适配器集合
+     */
+    public UiRuntimeAdapters getRuntimeAdapters() {
+        return runtimeAdapters;
     }
 
     /**
@@ -715,6 +759,64 @@ public class UiRenderContext {
         fontRenderer.drawString(text, 0, 0, color, shadow);
         GL11.glPopMatrix();
         notifyMainLayerContentChanged();
+    }
+
+    /**
+     * 使用宿主图片渲染能力在指定区域绘制一张隔离贴图。
+     *
+     * <p>该入口会把宿主绘制放进独立 FBO，再立即按预乘 alpha 回贴到当前主层，避免宿主错误状态、
+     * depth 写入或半透明叠层污染当前文档内容。</p>
+     *
+     * @param source 图片源
+     * @param left 左边界
+     * @param top 上边界
+     * @param right 右边界
+     * @param bottom 下边界
+     */
+    public void drawHostImage(HostImageSource source, int left, int top, int right, int bottom) {
+        if (source == null || right <= left || bottom <= top) {
+            return;
+        }
+        HostImageRenderer hostImageRenderer = runtimeAdapters.getHostImageRenderer();
+        if (hostImageRenderer == null) {
+            return;
+        }
+
+        UiRenderTarget layer = paintContextCompositor.borrowIsolatedLayer(screenWidth, screenHeight);
+        ClipSnapshot clipSnapshot = copyCurrentClipSnapshot();
+        int previousMatrixMode = GL11.glGetInteger(GL11.GL_MATRIX_MODE);
+        layer.begin();
+        try {
+            GL11.glMatrixMode(GL11.GL_PROJECTION);
+            GL11.glPushMatrix();
+            try {
+                GL11.glLoadIdentity();
+                GL11.glOrtho(0.0D, screenWidth, screenHeight, 0.0D, -1000.0D, 1000.0D);
+                GL11.glMatrixMode(GL11.GL_MODELVIEW);
+                GL11.glPushMatrix();
+                try {
+                    GL11.glLoadIdentity();
+                    clearClipState();
+                    applyClipSnapshot(clipSnapshot, screenHeight);
+                    hostImageRenderer.render(source, left, top, right, bottom);
+                    clearClipState();
+                } finally {
+                    GL11.glMatrixMode(GL11.GL_MODELVIEW);
+                    GL11.glPopMatrix();
+                }
+            } finally {
+                GL11.glMatrixMode(GL11.GL_PROJECTION);
+                GL11.glPopMatrix();
+                GL11.glMatrixMode(previousMatrixMode);
+            }
+        } finally {
+            layer.end();
+        }
+
+        applyClipSnapshot(clipSnapshot, screenHeight);
+        layer.compositeToCurrentFramebuffer(left, top, right, bottom, 1.0F);
+        notifyMainLayerContentChanged();
+        paintContextCompositor.releaseIsolatedLayer(layer);
     }
 
     /**
