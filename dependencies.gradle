@@ -51,6 +51,7 @@ dependencies {
     runtimeOnly(project.elytraModpackVersion.gtnhdev("NotEnoughItems"))
     runtimeOnly(project.elytraModpackVersion.gtnhdev("Applied-Energistics-2-Unofficial"))
     runtimeOnly(project.elytraModpackVersion.gtnhdev("AppleCore"))
+    runtimeOnly("com.github.GTNewHorizons:Angelica:2.1.15:dev")
 
     testImplementation("junit:junit:4.13.2")
 }

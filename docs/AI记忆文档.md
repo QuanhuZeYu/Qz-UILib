@@ -45,6 +45,7 @@
 - Windows 环境使用 PowerShell。
 - `GRADLE_USER_HOME` 需显式设置为 `D:\.MyApps\.ENV\gradle-home`；验证命令按串行执行。
 - 常用命令：`git diff --check`、`$env:GRADLE_USER_HOME="D:\.MyApps\.ENV\gradle-home"; ./gradlew.bat --no-configuration-cache test`、`$env:GRADLE_USER_HOME="D:\.MyApps\.ENV\gradle-home"; ./gradlew.bat --no-configuration-cache compileJava`、`$env:GRADLE_USER_HOME="D:\.MyApps\.ENV\gradle-home"; ./gradlew.bat --no-configuration-cache runClient21`。
+- 若需在当前 `runClient21`/现代 Java 开发环境中验证 Angelica 兼容性，应优先选用与运行时强制解析的 `GTNHLib 0.9.20` 同代的 Angelica；当前已验证 `com.github.GTNewHorizons:Angelica:2.1.15:dev` 可正常启动，`1.0.0-beta66b` 会因缺失 `com.gtnewhorizon.gtnhlib.client.renderer.quad.QuadProvider` 在启动早期崩溃。
 - 纯 JVM 文本测量相关测试要注入确定性 `TextMeasureService`，不要依赖默认字体运行时。
 
 ## 当前阶段
@@ -54,5 +55,6 @@
 - 入门文档已新增 `01-入门/完整业务页面示例.md`，用于串联业务页面正常拼装路径；后续新增接入能力时优先接到这条连续体验链上。
 - Forge 配置页已切换到 HTML-like 模板化实现，后续若继续扩展配置类页面，应优先复用模板而不是回退到 `GuiConfig`。
 - 配置模板页若不走 `DocumentPageAuthoringSurface`，需要在 `BaseScreen.onResize(...)` 中显式给 `HtmlLikeDocumentWidget` 下发布局边界；仅设置 `UiLayoutSpec` 可能导致页面可开屏但内容区域为 `0x0`。
+- 2026-05-09 已确认 `runClient21` 会由 `gtnhgradle` 的 Modern Java 模块强制约束 `GTNHLib` 到 `0.9.20`；若只为在该运行链路下测试 Angelica，不应再尝试把 `GTNHLib` 锁回 `0.7.10`，而应改测兼容新版 `GTNHLib` 的 Angelica 版本。
 - 是否继续扩展动画、布局或渲染能力，要以真实需求和验证结果决定，不默认扩面。
 - 非阻塞的底层细节优化后置，阶段目标变化时只在本文件保留高层边界，不回填大段实现细节。
