@@ -59,6 +59,29 @@ Minecraft.getMinecraft().displayGuiScreen(UiDocumentScreens.createHtmlLikeSmoke(
 - `createInventoryOverview(...)`：背包概览示例页。
 - `createDocumentScreen(...)`：业务文档 screen。
 
+## 替换 Forge 配置页
+
+如果宿主模组仍在使用 `IModGuiFactory -> GuiConfig` 这条旧配置入口，可以改为继承
+`ForgeConfigTemplateScreen`：
+
+```java
+public class ExampleConfigGui extends ForgeConfigTemplateScreen {
+
+    public ExampleConfigGui(GuiScreen parentScreen) {
+        super(parentScreen, createSpec());
+    }
+}
+```
+
+接入特点：
+
+- 继续保留 Forge `IModGuiFactory` 注册方式。
+- 页面内容改为 HTML-like 文档承载，不再依赖默认 `GuiConfig` 列表页。
+- 模板会自动读取 `Configuration` 中的分类与属性。
+- 保存动作可通过 `Spec.setSaveHandler(...)` 挂接到宿主自己的 `saveAndReload()` 逻辑。
+
+完整模板说明见 `docs/使用文档/02-控件/Forge配置模板.md`。
+
 ## 首版建议
 
 - 外部开发者应优先通过 `createDocumentScreen(...)` 打开业务 UI。

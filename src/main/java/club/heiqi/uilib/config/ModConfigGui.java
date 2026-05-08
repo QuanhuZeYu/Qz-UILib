@@ -1,23 +1,14 @@
 package club.heiqi.uilib.config;
 
-import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.List;
-import java.util.Locale;
-
 import club.heiqi.uilib.Config;
 import club.heiqi.uilib.MyMod;
 import club.heiqi.uilib.font.config.FontConfig;
-import cpw.mods.fml.client.config.GuiConfig;
-import cpw.mods.fml.client.config.IConfigElement;
 import net.minecraft.client.gui.GuiScreen;
-import net.minecraftforge.common.config.ConfigCategory;
-import net.minecraftforge.common.config.ConfigElement;
 
 /**
- * Forge 可视化配置主界面。
+ * Qz UILib 的 HTML-like 游戏内配置页。
  */
-public class ModConfigGui extends GuiConfig {
+public class ModConfigGui extends ForgeConfigTemplateScreen {
 
     /**
      * 创建配置界面。
@@ -25,33 +16,28 @@ public class ModConfigGui extends GuiConfig {
      * @param parentScreen 父界面
      */
     public ModConfigGui(GuiScreen parentScreen) {
-        super(
-                parentScreen,
-                getConfigElements(),
-                MyMod.MODID,
-                false,
-                false,
-                MyMod.MOD_NAME,
-                GuiConfig.getAbridgedConfigPath(Config.getConfigPath()));
+        super(parentScreen, createSpec());
     }
 
-    private static List<IConfigElement> getConfigElements() {
-        List<IConfigElement> elements = new ArrayList<IConfigElement>();
-        List<String> categories = Arrays.asList(
-                Config.GENERAL,
-                FontConfig.CATEGORY,
-                FontConfig.FONT_SIZE_CATEGORY);
-
-        for (String categoryName : categories) {
-            ConfigCategory category = Config.configuration.getCategory(categoryName.toLowerCase(Locale.ROOT));
-            elements.add(new ConfigElement(category));
-        }
-        return elements;
-    }
-
-    @Override
-    public void onGuiClosed() {
-        super.onGuiClosed();
-        Config.saveAndReload();
+    private static Spec createSpec() {
+        return new Spec(MyMod.MODID, MyMod.MOD_NAME + " 配置", Config.configuration)
+                .setSubtitle("Forge In-Game Config Replacement")
+                .setDescription("使用 Qz UILib 的 HTML-like 文档页面替代默认 Forge 配置页，并作为可复用模板开放给其他开发者。")
+                .setConfigPath(Config.getConfigPath())
+                .setSaveHandler(new SaveHandler() {
+                    @Override
+                    public void onSave(net.minecraftforge.common.config.Configuration configuration) {
+                        Config.saveAndReload();
+                    }
+                })
+                .addCategory(new CategorySpec(Config.GENERAL)
+                        .setTitle("General")
+                        .setDescription("基础运行开关与通用行为配置。"))
+                .addCategory(new CategorySpec(FontConfig.CATEGORY)
+                        .setTitle("Font System")
+                        .setDescription("字体渲染运行时、排序和 drawString 上传节流相关配置。"))
+                .addCategory(new CategorySpec(FontConfig.FONT_SIZE_CATEGORY)
+                        .setTitle("Font Size")
+                        .setDescription("默认字号、生成分辨率与缩放系数配置。"));
     }
 }
