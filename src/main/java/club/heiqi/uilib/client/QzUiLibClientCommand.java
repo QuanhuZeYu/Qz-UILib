@@ -3,6 +3,7 @@ package club.heiqi.uilib.client;
 import java.util.Collections;
 import java.util.List;
 
+import club.heiqi.uilib.ui.screen.UiDiagnosticsScreens;
 import club.heiqi.uilib.ui.screen.UiDocumentScreens;
 import club.heiqi.uilib.ui.screen.UiScreenManager;
 import net.minecraft.client.Minecraft;
@@ -53,7 +54,7 @@ public class QzUiLibClientCommand extends CommandBase {
         UiScreenManager.getInstance().enqueue(new Runnable() {
             @Override
             public void run() {
-                minecraft.displayGuiScreen(UiDocumentScreens.createUiTest(
+                minecraft.displayGuiScreen(UiDiagnosticsScreens.createUiTest(
                         UiDocumentScreens.DocumentScreenEnvironment.minecraftDefaults()));
             }
         });

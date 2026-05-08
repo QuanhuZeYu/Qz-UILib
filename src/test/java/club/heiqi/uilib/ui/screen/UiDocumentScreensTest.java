@@ -10,6 +10,7 @@ import club.heiqi.uilib.ui.document.HtmlLikeDocumentWidget;
 import club.heiqi.uilib.ui.dom.ElementNode;
 import club.heiqi.uilib.ui.dom.UiDocument;
 import club.heiqi.uilib.ui.runtime.UiRuntimeAdapters;
+import club.heiqi.uilib.ui.style.UiOverflow;
 import club.heiqi.uilib.ui.style.UiStyleLength;
 import club.heiqi.uilib.ui.text.TextMeasureService;
 import club.heiqi.uilib.ui.widget.Widget;
@@ -20,68 +21,16 @@ import club.heiqi.uilib.ui.widget.Widget;
 public class UiDocumentScreensTest {
 
     /**
-     * 验证布局诊断页 definition 会暴露稳定 descriptor 与页面标识契约。
+     * 验证诊断入口 definition 会暴露稳定页面标识契约。
      */
     @Test
-    public void shouldExposeStablePageIdForUiTestDefinition() {
-        Assert.assertSame(UiDocumentScreens.UI_TEST, UiDocumentScreens.UI_TEST_DEFINITION.getPageDescriptor());
-        Assert.assertEquals("ui_test", UiDocumentScreens.UI_TEST_DEFINITION.getPageDescriptor().getPageId());
-        Assert.assertEquals(UiDocumentScreens.UI_TEST.getPageId(), UiDocumentScreens.UI_TEST_DEFINITION.getPageDescriptor().getPageId());
-        Assert.assertEquals("ui_test", UiDocumentScreens.UI_TEST.getPageId());
-    }
-
-    /**
-     * 验证布局诊断子页 definition 会暴露独立稳定 descriptor 与页面标识契约。
-     */
-    @Test
-    public void shouldExposeStablePageIdForUiTestLayoutScreen() {
-        Assert.assertSame(UiDocumentScreens.UI_TEST_LAYOUT, UiDocumentScreens.UI_TEST_LAYOUT_DEFINITION.getPageDescriptor());
-        Assert.assertEquals("ui_test_layout", UiDocumentScreens.UI_TEST_LAYOUT_DEFINITION.getPageDescriptor().getPageId());
-        Assert.assertEquals(UiDocumentScreens.UI_TEST_LAYOUT.getPageId(),
-                UiDocumentScreens.UI_TEST_LAYOUT_DEFINITION.getPageDescriptor().getPageId());
-        Assert.assertEquals("ui_test_layout", UiDocumentScreens.UI_TEST_LAYOUT.getPageId());
-    }
-
-    /**
-     * 验证 HTML-like smoke 子页 definition 会暴露独立稳定 descriptor 与页面标识契约。
-     */
-    @Test
-    public void shouldExposeStablePageIdForHtmlLikeSmokeScreen() {
-        Assert.assertSame(UiDocumentScreens.HTML_LIKE_SMOKE,
-                UiDocumentScreens.HTML_LIKE_SMOKE_DEFINITION.getPageDescriptor());
-        Assert.assertEquals("html_like_smoke",
-                UiDocumentScreens.HTML_LIKE_SMOKE_DEFINITION.getPageDescriptor().getPageId());
-        Assert.assertEquals(UiDocumentScreens.HTML_LIKE_SMOKE.getPageId(),
-                UiDocumentScreens.HTML_LIKE_SMOKE_DEFINITION.getPageDescriptor().getPageId());
-        Assert.assertEquals("html_like_smoke", UiDocumentScreens.HTML_LIKE_SMOKE.getPageId());
-    }
-
-    /**
-     * 验证大面积磨玻璃测试子页 definition 会暴露独立稳定 descriptor 与页面标识契约。
-     */
-    @Test
-    public void shouldExposeStablePageIdForHtmlLikeGlassScreen() {
-        Assert.assertSame(UiDocumentScreens.HTML_LIKE_GLASS,
-                UiDocumentScreens.HTML_LIKE_GLASS_DEFINITION.getPageDescriptor());
-        Assert.assertEquals("html_like_glass",
-                UiDocumentScreens.HTML_LIKE_GLASS_DEFINITION.getPageDescriptor().getPageId());
-        Assert.assertEquals(UiDocumentScreens.HTML_LIKE_GLASS.getPageId(),
-                UiDocumentScreens.HTML_LIKE_GLASS_DEFINITION.getPageDescriptor().getPageId());
-        Assert.assertEquals("html_like_glass", UiDocumentScreens.HTML_LIKE_GLASS.getPageId());
-    }
-
-    /**
-     * 验证背包页 definition 会暴露独立稳定 descriptor 与页面标识契约。
-     */
-    @Test
-    public void shouldExposeStablePageIdForInventoryOverviewDefinition() {
-        Assert.assertSame(UiDocumentScreens.INVENTORY_OVERVIEW,
-                UiDocumentScreens.INVENTORY_OVERVIEW_DEFINITION.getPageDescriptor());
-        Assert.assertEquals("inventory_overview",
-                UiDocumentScreens.INVENTORY_OVERVIEW_DEFINITION.getPageDescriptor().getPageId());
-        Assert.assertEquals(UiDocumentScreens.INVENTORY_OVERVIEW.getPageId(),
-                UiDocumentScreens.INVENTORY_OVERVIEW_DEFINITION.getPageDescriptor().getPageId());
-        Assert.assertEquals("inventory_overview", UiDocumentScreens.INVENTORY_OVERVIEW.getPageId());
+    public void shouldExposeStablePageIdsForDiagnosticsDefinitions() {
+        Assert.assertSame(UiDiagnosticsScreens.UI_TEST, UiDiagnosticsScreens.UI_TEST_DEFINITION.getPageDescriptor());
+        Assert.assertEquals("ui_test", UiDiagnosticsScreens.UI_TEST.getPageId());
+        Assert.assertEquals("ui_test_layout", UiDiagnosticsScreens.UI_TEST_LAYOUT.getPageId());
+        Assert.assertEquals("html_like_smoke", UiDiagnosticsScreens.HTML_LIKE_SMOKE.getPageId());
+        Assert.assertEquals("html_like_glass", UiDiagnosticsScreens.HTML_LIKE_GLASS.getPageId());
+        Assert.assertEquals("inventory_overview", UiDiagnosticsScreens.INVENTORY_OVERVIEW.getPageId());
     }
 
     /**
@@ -107,14 +56,14 @@ public class UiDocumentScreensTest {
      */
     @Test
     public void shouldResolvePageIdForDescriptorOwnerWithoutGuiScreen() {
-        FakeDescriptorOwner screen = new FakeDescriptorOwner(UiDocumentScreens.UI_TEST);
+        FakeDescriptorOwner screen = new FakeDescriptorOwner(UiDiagnosticsScreens.UI_TEST);
 
-        Assert.assertEquals(UiDocumentScreens.UI_TEST.getPageId(), UiDocumentScreens.getPageId(screen));
-        Assert.assertTrue(UiDocumentScreens.isUiTest(screen));
-        Assert.assertFalse(UiDocumentScreens.isUiTestLayout(screen));
-        Assert.assertFalse(UiDocumentScreens.isHtmlLikeSmoke(screen));
-        Assert.assertFalse(UiDocumentScreens.isHtmlLikeGlass(screen));
-        Assert.assertEquals(UiDocumentScreens.UI_TEST.getPageId(), UiDocumentScreens.runtimeScreenNameOf(screen));
+        Assert.assertEquals(UiDiagnosticsScreens.UI_TEST.getPageId(), UiDocumentScreens.getPageId(screen));
+        Assert.assertTrue(UiDiagnosticsScreens.isUiTest(screen));
+        Assert.assertFalse(UiDiagnosticsScreens.isUiTestLayout(screen));
+        Assert.assertFalse(UiDiagnosticsScreens.isHtmlLikeSmoke(screen));
+        Assert.assertFalse(UiDiagnosticsScreens.isHtmlLikeGlass(screen));
+        Assert.assertEquals(UiDiagnosticsScreens.UI_TEST.getPageId(), UiDocumentScreens.runtimeScreenNameOf(screen));
     }
 
     /**
@@ -125,8 +74,8 @@ public class UiDocumentScreensTest {
         Object screen = new Object();
 
         Assert.assertEquals("", UiDocumentScreens.getPageId(screen));
-        Assert.assertFalse(UiDocumentScreens.isUiTest(screen));
-        Assert.assertFalse(UiDocumentScreens.isHtmlLikeGlass(screen));
+        Assert.assertFalse(UiDiagnosticsScreens.isUiTest(screen));
+        Assert.assertFalse(UiDiagnosticsScreens.isHtmlLikeGlass(screen));
         Assert.assertEquals("Object", UiDocumentScreens.runtimeScreenNameOf(screen));
     }
 
@@ -182,11 +131,73 @@ public class UiDocumentScreensTest {
     }
 
     /**
+     * 验证业务入口会为未声明的根节点补齐全视口与根滚动契约。
+     */
+    @Test
+    public void shouldApplyDefaultRootContractForDocumentScreen() {
+        NoOpTextMeasureService textMeasureService = new NoOpTextMeasureService();
+        DocumentUiScope documentUiScope = new DocumentUiScope(textMeasureService, UiRuntimeAdapters.empty());
+        DirectDocumentPageAuthoringSurface surface = new DirectDocumentPageAuthoringSurface();
+        final UiDocument[] builtDocument = new UiDocument[1];
+
+        DocumentPageController controller = UiDocumentScreens.DOCUMENT_SCREEN_DEFINITION.createController(
+                documentUiScope, surface, EmptyRuntimeView.INSTANCE, UiDocumentScreens.DOCUMENT_SCREEN.getPageId(),
+                new UiDocumentScreens.DocumentScreenContentBuilder() {
+                    @Override
+                    public void build(UiDocument document) {
+                        builtDocument[0] = document;
+                        ElementNode title = document.element("h1");
+                        title.appendText("业务页面");
+                        document.getRootElement().append(title);
+                    }
+                });
+
+        controller.buildDocument();
+
+        ElementNode root = builtDocument[0].getRootElement();
+        Assert.assertEquals(UiStyleLength.percent(1.0F), root.style().getWidth());
+        Assert.assertEquals(UiStyleLength.percent(1.0F), root.style().getHeight());
+        Assert.assertEquals(UiOverflow.AUTO, root.style().getOverflowY());
+    }
+
+    /**
+     * 验证业务入口不会覆盖调用方已经声明的根节点样式。
+     */
+    @Test
+    public void shouldPreserveExplicitRootContractForDocumentScreen() {
+        NoOpTextMeasureService textMeasureService = new NoOpTextMeasureService();
+        DocumentUiScope documentUiScope = new DocumentUiScope(textMeasureService, UiRuntimeAdapters.empty());
+        DirectDocumentPageAuthoringSurface surface = new DirectDocumentPageAuthoringSurface();
+        final UiDocument[] builtDocument = new UiDocument[1];
+
+        DocumentPageController controller = UiDocumentScreens.DOCUMENT_SCREEN_DEFINITION.createController(
+                documentUiScope, surface, EmptyRuntimeView.INSTANCE, UiDocumentScreens.DOCUMENT_SCREEN.getPageId(),
+                new UiDocumentScreens.DocumentScreenContentBuilder() {
+                    @Override
+                    public void build(UiDocument document) {
+                        builtDocument[0] = document;
+                        ElementNode root = document.getRootElement();
+                        root.style()
+                                .setWidth(UiStyleLength.px(640))
+                                .setHeight(UiStyleLength.px(360))
+                                .setOverflowY(UiOverflow.HIDDEN);
+                    }
+                });
+
+        controller.buildDocument();
+
+        ElementNode root = builtDocument[0].getRootElement();
+        Assert.assertEquals(UiStyleLength.px(640), root.style().getWidth());
+        Assert.assertEquals(UiStyleLength.px(360), root.style().getHeight());
+        Assert.assertEquals(UiOverflow.HIDDEN, root.style().getOverflowY());
+    }
+
+    /**
      * 验证页面 definition 会显式保留页面壳策略解析入口。
      */
     @Test
     public void shouldResolveChromeThroughDefinition() {
-        DocumentScreenChrome chrome = UiDocumentScreens.UI_TEST_DEFINITION.resolveChrome(960, 720);
+        DocumentScreenChrome chrome = UiDiagnosticsScreens.UI_TEST_DEFINITION.resolveChrome(960, 720);
 
         Assert.assertNotNull(chrome);
         Assert.assertEquals(Math.max(24, 960 / 34), chrome.getRootPadding().getLeft());

@@ -12,8 +12,6 @@
 Minecraft.getMinecraft().displayGuiScreen(UiDocumentScreens.createDocumentScreen(document -> {
     ElementNode root = document.getRootElement();
     root.style()
-            .setWidth(UiStyleLength.percent(1.0F))
-            .setHeight(UiStyleLength.percent(1.0F))
             .setPadding(UiStyleLength.px(16));
 
     ElementNode title = document.element("h1");
@@ -23,6 +21,8 @@ Minecraft.getMinecraft().displayGuiScreen(UiDocumentScreens.createDocumentScreen
 ```
 
 该入口会创建 `UiDocument`、`HtmlLikeDocumentWidget` 和宿主 `GuiScreen`，调用方只负责组装文档树、样式和事件。
+
+默认还会给根元素补齐 `width:100%`、`height:100%` 和 `overflow-y:auto`；只有需要覆盖默认全视口根滚动时，才显式改这些样式。
 
 ## 开屏时序约束
 
@@ -44,19 +44,19 @@ UiScreenManager.getInstance().enqueue(new Runnable() {
 
 ## 当前内部入口
 
-当前内部页面通过 `UiDocumentScreens` 创建 `GuiScreen`：
+当前内部诊断页和示例页通过 `UiDiagnosticsScreens` 创建 `GuiScreen`：
 
 ```java
-Minecraft.getMinecraft().displayGuiScreen(UiDocumentScreens.createHtmlLikeSmoke());
+Minecraft.getMinecraft().displayGuiScreen(UiDiagnosticsScreens.createHtmlLikeSmoke());
 ```
 
 已有页面包括：
 
-- `createUiTest()`：诊断菜单。
-- `createUiTestLayout()`：布局诊断页。
-- `createHtmlLikeSmoke()`：HTML-like Smoke 页。
-- `createHtmlLikeGlass()`：Glass Lab 页。
-- `createInventoryOverview(...)`：背包概览示例页。
+- `UiDiagnosticsScreens.createUiTest()`：诊断菜单。
+- `UiDiagnosticsScreens.createUiTestLayout()`：布局诊断页。
+- `UiDiagnosticsScreens.createHtmlLikeSmoke()`：HTML-like Smoke 页。
+- `UiDiagnosticsScreens.createHtmlLikeGlass()`：Glass Lab 页。
+- `UiDiagnosticsScreens.createInventoryOverview(...)`：背包概览示例页。
 - `createDocumentScreen(...)`：业务文档 screen。
 
 ## 替换 Forge 配置页

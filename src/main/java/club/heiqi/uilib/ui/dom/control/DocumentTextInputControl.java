@@ -43,7 +43,8 @@ public final class DocumentTextInputControl {
      * @param document 所属 HTML-like 文档
      */
     public DocumentTextInputControl(UiDocument document) {
-        this.element = document.div();
+        this.element = document.input();
+        this.element.setAttribute("type", "text");
         this.textNode = element.appendText("");
         configureElement();
         installHandlers();
@@ -286,10 +287,20 @@ public final class DocumentTextInputControl {
         boolean showingPlaceholder = textBuilder.length() == 0 && placeholder != null && !placeholder.isEmpty();
         if (showingPlaceholder) {
             textNode.setText(placeholder);
+            element.setAttribute("placeholder", placeholder);
             element.style().setTextColor(enabled ? placeholderColor : disabledTextColor);
         } else {
             textNode.setText(textBuilder.toString());
+            element.setAttribute("value", textBuilder.toString());
+            if (placeholder == null || placeholder.isEmpty()) {
+                element.removeAttribute("placeholder");
+            } else {
+                element.setAttribute("placeholder", placeholder);
+            }
             element.style().setTextColor(enabled ? textColor : disabledTextColor);
+        }
+        if (showingPlaceholder) {
+            element.setAttribute("value", "");
         }
     }
 

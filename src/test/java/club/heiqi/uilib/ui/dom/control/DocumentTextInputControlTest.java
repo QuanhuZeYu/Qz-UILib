@@ -24,6 +24,19 @@ import club.heiqi.uilib.ui.theme.UiSurfaceStyle;
 public class DocumentTextInputControlTest {
 
     /**
+     * 验证文本输入控件使用真实 input 语义。
+     */
+    @Test
+    public void shouldUseInputElementSemantics() {
+        UiDocument document = UiDocument.create();
+        DocumentTextInputControl textInputControl = new DocumentTextInputControl(document);
+
+        Assert.assertEquals("input", textInputControl.getElement().getTagName());
+        Assert.assertEquals("text", textInputControl.getElement().getAttribute("type"));
+        Assert.assertEquals("", textInputControl.getElement().getAttribute("value"));
+    }
+
+    /**
      * 验证文本输入控件接受输入并返回对应文本。
      */
     @Test
@@ -271,6 +284,8 @@ public class DocumentTextInputControlTest {
         widget.applyLayoutBounds(0, 0, 200, 40);
 
         Assert.assertEquals("", textInputControl.getText());
+        Assert.assertEquals("", textInputControl.getElement().getAttribute("value"));
+        Assert.assertEquals("Enter text here...", textInputControl.getElement().getAttribute("placeholder"));
 
         RecordingUiRenderContext renderContext = new RecordingUiRenderContext();
         widget.render(renderContext);
@@ -278,6 +293,8 @@ public class DocumentTextInputControlTest {
 
         widget.onFocusTraversalEntered(true);
         widget.onTextInput(new UiTextInputEvent("Hi", 1L));
+        Assert.assertEquals("Hi", textInputControl.getElement().getAttribute("value"));
+        Assert.assertEquals("Enter text here...", textInputControl.getElement().getAttribute("placeholder"));
         RecordingUiRenderContext filledRenderContext = new RecordingUiRenderContext();
         widget.render(filledRenderContext);
         Assert.assertTrue(containsTextCall(filledRenderContext.textCalls, "Hi"));

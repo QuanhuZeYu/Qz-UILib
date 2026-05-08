@@ -4,7 +4,7 @@
 
 ## 适用范围
 
-- 当前适用于 `UiDocumentScreens.createInventoryOverview(...)` 打开的背包概览示例页。
+- 当前适用于 `UiDiagnosticsScreens.createInventoryOverview(...)` 打开的背包概览示例页。
 - 当前聚焦背包槽位 hover tooltip，不扩展到普通按钮、表格或其他通用浮层。
 
 ## 设计目标

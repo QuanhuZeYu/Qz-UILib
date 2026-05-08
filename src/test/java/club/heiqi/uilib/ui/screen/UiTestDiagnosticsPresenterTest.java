@@ -19,7 +19,7 @@ public class UiTestDiagnosticsPresenterTest {
         UiTestDiagnosticsPresenter presenter = new UiTestDiagnosticsPresenter();
 
         UiTestDiagnosticsPresenter.ViewState viewState = presenter.present(createSnapshot(
-                UiDocumentScreens.UI_TEST.getPageId(),
+                UiDiagnosticsScreens.UI_TEST.getPageId(),
                 UiRuntimeStats.empty(),
                 new FontRuntimeStats(1, 2, 3, 4, 5, 6, 7L, 8L, 9L, 10L),
                 "已开启自动换行提示",
@@ -48,7 +48,7 @@ public class UiTestDiagnosticsPresenterTest {
         UiRuntimeStats mismatchedStats = createRuntimeStats("OtherScreen");
 
         UiTestDiagnosticsPresenter.ViewState viewState = presenter.present(createSnapshot(
-                UiDocumentScreens.UI_TEST.getPageId(),
+                UiDiagnosticsScreens.UI_TEST.getPageId(),
                 mismatchedStats,
                 new FontRuntimeStats(3, 5, 1, 1, 2, 40, 0L, 0L, 12L, 1L),
                 "已切换宽度档位到 中页",
@@ -72,8 +72,8 @@ public class UiTestDiagnosticsPresenterTest {
         String mutationSampleText = "长文重排样本 000001：当前路径片段为 assets/qz_uilib/ui/diagnostic/ABCDEF";
 
         UiTestDiagnosticsPresenter.ViewState viewState = presenter.present(createSnapshot(
-                UiDocumentScreens.UI_TEST.getPageId(),
-                createRuntimeStats(UiDocumentScreens.UI_TEST.getPageId()),
+                UiDiagnosticsScreens.UI_TEST.getPageId(),
+                createRuntimeStats(UiDiagnosticsScreens.UI_TEST.getPageId()),
                 new FontRuntimeStats(7, 80, 2, 1, 6, 128, 0L, 0L, 33L, 4L),
                 "已切换变更模式到 长文重排",
                 true,

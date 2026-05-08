@@ -2,78 +2,27 @@ package club.heiqi.uilib.ui.screen;
 
 import java.util.Objects;
 
-import club.heiqi.uilib.client.MinecraftInventoryOverviewModel;
 import club.heiqi.uilib.ui.diagnostic.UiRuntimeStats;
 import club.heiqi.uilib.ui.document.HtmlLikeDocumentWidget;
+import club.heiqi.uilib.ui.dom.ElementNode;
 import club.heiqi.uilib.ui.dom.UiDocument;
 import club.heiqi.uilib.ui.layout.UiLayoutSpec;
 import club.heiqi.uilib.ui.layout.UiLength;
 import club.heiqi.uilib.ui.runtime.UiRuntimeAdapters;
+import club.heiqi.uilib.ui.style.UiOverflow;
+import club.heiqi.uilib.ui.style.UiStyleLength;
 import club.heiqi.uilib.ui.text.DefaultTextMeasureService;
 import club.heiqi.uilib.ui.text.TextMeasureService;
 import club.heiqi.uilib.ui.widget.Widget;
-import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiScreen;
 
 /**
- * 文档型界面创建边界。
+ * 业务文档界面创建边界。
  */
 public final class UiDocumentScreens {
 
-    public static final PageDescriptor UI_TEST = new PageDescriptor("ui_test");
-    public static final PageDescriptor UI_TEST_LAYOUT = new PageDescriptor("ui_test_layout");
-    public static final PageDescriptor HTML_LIKE_SMOKE = new PageDescriptor("html_like_smoke");
-    public static final PageDescriptor HTML_LIKE_GLASS = new PageDescriptor("html_like_glass");
-    public static final PageDescriptor INVENTORY_OVERVIEW = new PageDescriptor("inventory_overview");
-    public static final PageDescriptor DOCUMENT_SCREEN = new PageDescriptor("document_screen");
-    public static final DocumentScreenDefinition<UiTestMenuModel> UI_TEST_DEFINITION = new DocumentScreenDefinition<UiTestMenuModel>(UI_TEST,
-            DocumentScreenChrome::resolve,
-            new DocumentPageControllerFactory<UiTestMenuModel>() {
-                @Override
-                public DocumentPageController create(DocumentUiScope documentUi,
-                        DocumentPageAuthoringSurface documentPage,
-                        DocumentPageRuntimeView runtimeView, String pageId, UiTestMenuModel provision) {
-                    return new UiTestDocumentPageController(documentUi, documentPage, provision);
-                }
-            });
-    public static final DocumentScreenDefinition<Void> UI_TEST_LAYOUT_DEFINITION = new DocumentScreenDefinition<Void>(
-            UI_TEST_LAYOUT, DocumentScreenChrome::resolve, new DocumentPageControllerFactory<Void>() {
-                @Override
-                public DocumentPageController create(DocumentUiScope documentUi,
-                        DocumentPageAuthoringSurface documentPage,
-                        DocumentPageRuntimeView runtimeView, String pageId, Void provision) {
-                    return new UiLayoutDiagnosticsDocumentPageController(documentUi, documentPage, runtimeView, pageId);
-                }
-            });
-    public static final DocumentScreenDefinition<Void> HTML_LIKE_SMOKE_DEFINITION = new DocumentScreenDefinition<Void>(
-            HTML_LIKE_SMOKE, DocumentScreenChrome::resolve, new DocumentPageControllerFactory<Void>() {
-                @Override
-                public DocumentPageController create(DocumentUiScope documentUi,
-                        DocumentPageAuthoringSurface documentPage,
-                        DocumentPageRuntimeView runtimeView, String pageId, Void provision) {
-                    return new HtmlLikeSmokeDocumentPageController(documentUi, documentPage);
-                }
-            });
-    public static final DocumentScreenDefinition<Void> HTML_LIKE_GLASS_DEFINITION = new DocumentScreenDefinition<Void>(
-            HTML_LIKE_GLASS, DocumentScreenChrome::resolve, new DocumentPageControllerFactory<Void>() {
-                @Override
-                public DocumentPageController create(DocumentUiScope documentUi,
-                        DocumentPageAuthoringSurface documentPage,
-                        DocumentPageRuntimeView runtimeView, String pageId, Void provision) {
-                    return new HtmlLikeGlassDocumentPageController(documentUi, documentPage);
-                }
-            });
-    public static final DocumentScreenDefinition<InventoryOverviewModel> INVENTORY_OVERVIEW_DEFINITION = new DocumentScreenDefinition<InventoryOverviewModel>(
-            INVENTORY_OVERVIEW, DocumentScreenChrome::resolve, new DocumentPageControllerFactory<InventoryOverviewModel>() {
-                @Override
-                public DocumentPageController create(DocumentUiScope documentUi,
-                        DocumentPageAuthoringSurface documentPage,
-                        DocumentPageRuntimeView runtimeView, String pageId, InventoryOverviewModel provision) {
-                    return new HtmlLikeInventoryOverviewDocumentPageController(documentUi, documentPage, runtimeView,
-                            provision);
-                }
-            });
-    public static final DocumentScreenDefinition<DocumentScreenContentBuilder> DOCUMENT_SCREEN_DEFINITION = new DocumentScreenDefinition<DocumentScreenContentBuilder>(
+    static final PageDescriptor DOCUMENT_SCREEN = new PageDescriptor("document_screen");
+    static final DocumentScreenDefinition<DocumentScreenContentBuilder> DOCUMENT_SCREEN_DEFINITION = new DocumentScreenDefinition<DocumentScreenContentBuilder>(
             DOCUMENT_SCREEN, DocumentScreenChrome::fillViewport,
             new DocumentPageControllerFactory<DocumentScreenContentBuilder>() {
                 @Override
@@ -143,7 +92,7 @@ public final class UiDocumentScreens {
      *
      * @param <P> 页面控制器所需的专属 provision 类型
      */
-    public static final class DocumentScreenDefinition<P> {
+    static final class DocumentScreenDefinition<P> {
 
         private final PageDescriptor pageDescriptor;
         private final DocumentScreenChromeResolver chromeResolver;
@@ -199,7 +148,7 @@ public final class UiDocumentScreens {
      *
      * @param <P> 页面控制器所需的专属 provision 类型
      */
-    private interface DocumentPageControllerFactory<P> {
+    interface DocumentPageControllerFactory<P> {
 
         /**
          * 创建页面控制器。
@@ -218,7 +167,7 @@ public final class UiDocumentScreens {
     /**
      * 文档页面壳策略解析器。
      */
-    public interface DocumentScreenChromeResolver {
+    interface DocumentScreenChromeResolver {
 
         /**
          * 基于当前宿主尺寸解析页面壳策略。
@@ -249,7 +198,7 @@ public final class UiDocumentScreens {
     /**
      * 页面描述对象，仅承载稳定页面标识。
      */
-    public static final class PageDescriptor {
+    static final class PageDescriptor {
 
         private final String pageId;
 
@@ -270,7 +219,7 @@ public final class UiDocumentScreens {
     /**
      * 描述对象持有者。
      */
-    public interface DescriptorOwner {
+    interface DescriptorOwner {
 
         /**
          * 返回当前页面的稳定描述对象。
@@ -281,165 +230,11 @@ public final class UiDocumentScreens {
     }
 
     /**
-     * 创建布局诊断页。
-     *
-     * @return 测试页界面
-     */
-    public static GuiScreen createUiTest() {
-        return createUiTest(DocumentScreenEnvironment.minecraftDefaults());
-    }
-
-    /**
-     * 基于显式文档环境创建布局诊断页。
-     *
-     * @param environment 文档页面创建环境
-     * @return 测试页界面
-     */
-    public static GuiScreen createUiTest(DocumentScreenEnvironment environment) {
-        DocumentScreenEnvironment resolvedEnvironment = Objects.requireNonNull(environment, "environment");
-        return createDefinitionBackedScreen(UI_TEST_DEFINITION, resolvedEnvironment,
-                createDefaultUiTestMenuModel(resolvedEnvironment));
-    }
-
-    /**
-     * 创建布局诊断子页。
-     *
-     * @return 布局诊断子页界面
-     */
-    public static GuiScreen createUiTestLayout() {
-        return createUiTestLayout(DocumentScreenEnvironment.minecraftDefaults());
-    }
-
-    /**
-     * 基于显式文档环境创建布局诊断子页。
-     *
-     * @param environment 文档页面创建环境
-     * @return 布局诊断子页界面
-     */
-    public static GuiScreen createUiTestLayout(DocumentScreenEnvironment environment) {
-        return createDefinitionBackedScreen(UI_TEST_LAYOUT_DEFINITION, Objects.requireNonNull(environment, "environment"),
-                null);
-    }
-
-    /**
-     * 创建 HTML-like smoke 子页。
-     *
-     * @return HTML-like smoke 子页界面
-     */
-    public static GuiScreen createHtmlLikeSmoke() {
-        return createHtmlLikeSmoke(DocumentScreenEnvironment.minecraftDefaults());
-    }
-
-    /**
-     * 基于显式文档环境创建 HTML-like smoke 子页。
-     *
-     * @param environment 文档页面创建环境
-     * @return HTML-like smoke 子页界面
-     */
-    public static GuiScreen createHtmlLikeSmoke(DocumentScreenEnvironment environment) {
-        return createDefinitionBackedScreen(HTML_LIKE_SMOKE_DEFINITION,
-                Objects.requireNonNull(environment, "environment"), null);
-    }
-
-    /**
-     * 创建大面积磨玻璃测试子页。
-     *
-     * @return 大面积磨玻璃测试子页界面
-     */
-    public static GuiScreen createHtmlLikeGlass() {
-        return createHtmlLikeGlass(DocumentScreenEnvironment.minecraftDefaults());
-    }
-
-    /**
-     * 基于显式文档环境创建大面积磨玻璃测试子页。
-     *
-     * @param environment 文档页面创建环境
-     * @return 大面积磨玻璃测试子页界面
-     */
-    public static GuiScreen createHtmlLikeGlass(DocumentScreenEnvironment environment) {
-        return createDefinitionBackedScreen(HTML_LIKE_GLASS_DEFINITION,
-                Objects.requireNonNull(environment, "environment"), null);
-    }
-
-    /**
-     * 判断界面是否为布局诊断页。
-     *
-     * @param screen 待判断界面
-     * @return 是否为布局诊断页
-     */
-    public static boolean isUiTest(GuiScreen screen) {
-        return isUiTest((Object) screen);
-    }
-
-    /**
-     * 判断对象是否声明了布局诊断页标识。
-     *
-     * <p>该辅助入口仅供包内逻辑与测试使用，避免 descriptor 相关判定继续被 `GuiScreen` 运行时绑住。</p>
-     *
-     * @param screen 待判断对象
-     * @return 是否为布局诊断页
-     */
-    static boolean isUiTest(Object screen) {
-        return hasPageId(screen, UI_TEST.getPageId());
-    }
-
-    /**
-     * 判断对象是否声明了布局诊断子页标识。
-     *
-     * @param screen 待判断对象
-     * @return 是否为布局诊断子页
-     */
-    static boolean isUiTestLayout(Object screen) {
-        return hasPageId(screen, UI_TEST_LAYOUT.getPageId());
-    }
-
-    /**
-     * 判断对象是否声明了 HTML-like smoke 子页标识。
-     *
-     * @param screen 待判断对象
-     * @return 是否为 HTML-like smoke 子页
-     */
-    static boolean isHtmlLikeSmoke(Object screen) {
-        return hasPageId(screen, HTML_LIKE_SMOKE.getPageId());
-    }
-
-    /**
-     * 判断对象是否声明了大面积磨玻璃测试子页标识。
-     *
-     * @param screen 待判断对象
-     * @return 是否为大面积磨玻璃测试子页
-     */
-    static boolean isHtmlLikeGlass(Object screen) {
-        return hasPageId(screen, HTML_LIKE_GLASS.getPageId());
-    }
-
-    /**
-     * 创建背包诊断页。
-     *
-     * @param model 背包诊断模型
-     * @return 背包诊断页界面
-     */
-    public static GuiScreen createInventoryOverview(InventoryOverviewModel model) {
-        return createInventoryOverview(DocumentScreenEnvironment.minecraftDefaults(), model);
-    }
-
-    /**
-     * 基于显式文档环境创建背包诊断页。
-     *
-     * @param environment 文档页面创建环境
-     * @param model 背包诊断模型
-     * @return 背包诊断页界面
-     */
-    public static GuiScreen createInventoryOverview(DocumentScreenEnvironment environment, InventoryOverviewModel model) {
-        return createDefinitionBackedScreen(INVENTORY_OVERVIEW_DEFINITION, Objects.requireNonNull(environment, "environment"),
-                Objects.requireNonNull(model, "model"));
-    }
-
-    /**
      * 创建由调用方填充 `UiDocument` 的业务文档界面。
      *
      * <p>该入口用于 Minecraft 宿主层快速打开 HTML-like UI，调用方无需接触内部页面控制器、
-     * 页面 definition 或 `HtmlLikeDocumentWidget` 挂载细节。</p>
+     * 页面 definition 或 `HtmlLikeDocumentWidget` 挂载细节。根元素若未显式声明
+     * `width`、`height` 或 `overflow-y`，框架会分别兜底为 `100%`、`100%` 与 `auto`。</p>
      *
      * @param contentBuilder 文档内容构建器
      * @return 文档型界面
@@ -470,40 +265,9 @@ public final class UiDocumentScreens {
      * @param <P> 页面 provision 类型
      * @return 文档型界面
      */
-    private static <P> GuiScreen createDefinitionBackedScreen(DocumentScreenDefinition<P> definition,
+    static <P> GuiScreen createDefinitionBackedScreen(DocumentScreenDefinition<P> definition,
             DocumentScreenEnvironment environment, P provision) {
         return new DefinitionBackedHtmlLikeDocumentScreen<P>(environment, definition, provision);
-    }
-
-    /**
-     * 创建默认诊断菜单跳转模型。
-     *
-     * @param environment 当前文档环境
-     * @return 菜单跳转模型
-     */
-    private static UiTestMenuModel createDefaultUiTestMenuModel(final DocumentScreenEnvironment environment) {
-        return new UiTestMenuModel() {
-            @Override
-            public void openLayoutDiagnostics() {
-                Minecraft.getMinecraft().displayGuiScreen(createUiTestLayout(environment));
-            }
-
-            @Override
-            public void openHtmlLikeSmoke() {
-                Minecraft.getMinecraft().displayGuiScreen(createHtmlLikeSmoke(environment));
-            }
-
-            @Override
-            public void openHtmlLikeGlass() {
-                Minecraft.getMinecraft().displayGuiScreen(createHtmlLikeGlass(environment));
-            }
-
-            @Override
-            public void openInventoryOverview() {
-                Minecraft.getMinecraft().displayGuiScreen(createInventoryOverview(environment,
-                        new MinecraftInventoryOverviewModel()));
-            }
-        };
     }
 
     /**
@@ -607,6 +371,7 @@ public final class UiDocumentScreens {
             this.documentPage = Objects.requireNonNull(documentPage, "documentPage");
             UiDocument document = UiDocument.create();
             Objects.requireNonNull(contentBuilder, "contentBuilder").build(document);
+            applyDefaultRootContract(document.getRootElement());
             this.htmlLikeDocumentWidget = new HtmlLikeDocumentWidget(document, 320, 180,
                     resolvedDocumentUi.getTextMeasureService());
             this.htmlLikeDocumentWidget.setViewportRootScrollingEnabled(true);
@@ -625,6 +390,24 @@ public final class UiDocumentScreens {
         @Override
         void buildDocument() {
             documentPage.addBlock(htmlLikeDocumentWidget);
+        }
+
+        /**
+         * 为业务入口默认补齐根节点契约，减少首次接入需要记忆的样板。
+         */
+        private static void applyDefaultRootContract(ElementNode rootElement) {
+            if (rootElement == null) {
+                return;
+            }
+            if (rootElement.style().getWidth() == null) {
+                rootElement.style().setWidth(UiStyleLength.percent(1.0F));
+            }
+            if (rootElement.style().getHeight() == null) {
+                rootElement.style().setHeight(UiStyleLength.percent(1.0F));
+            }
+            if (rootElement.style().getOverflowY() == null) {
+                rootElement.style().setOverflowY(UiOverflow.AUTO);
+            }
         }
     }
 
