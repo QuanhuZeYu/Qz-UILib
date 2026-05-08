@@ -1829,6 +1829,44 @@ public class HtmlLikeDocumentWidgetTest {
         assertElementUid(secondInput, widget.getFocusedElement());
     }
 
+    /**
+     * 验证 Tab 切换到滚动区外的焦点元素时会自动滚动到可视区域。
+     */
+    @Test
+    public void shouldScrollFocusedElementIntoViewDuringTabTraversal() {
+        UiDocument document = UiDocument.create();
+        ElementNode root = document.getRootElement();
+        ElementNode firstInput = document.div();
+        ElementNode spacer = document.div();
+        ElementNode secondInput = document.div();
+        root.style()
+                .setWidth(UiStyleLength.px(80))
+                .setHeight(UiStyleLength.px(40))
+                .setOverflowX(UiOverflow.HIDDEN)
+                .setOverflowY(UiOverflow.AUTO);
+        firstInput.style()
+                .setWidth(UiStyleLength.px(40))
+                .setHeight(UiStyleLength.px(20));
+        spacer.style().setHeight(UiStyleLength.px(48));
+        secondInput.style()
+                .setWidth(UiStyleLength.px(40))
+                .setHeight(UiStyleLength.px(20));
+        firstInput.setFocusable(true);
+        secondInput.setFocusable(true);
+        root.append(firstInput).append(spacer).append(secondInput);
+        HtmlLikeDocumentWidget widget = new HtmlLikeDocumentWidget(document, 80, 40,
+                new DeterministicTextMeasureService());
+        widget.applyLayoutBounds(0, 0, 80, 40);
+
+        widget.onFocusTraversalEntered(false);
+        Assert.assertEquals(0, widget.getScrollTop(root));
+
+        Assert.assertTrue(widget.onFocusTraversal(false));
+
+        assertElementUid(secondInput, widget.getFocusedElement());
+        Assert.assertEquals(48, widget.getScrollTop(root));
+    }
+
     private static void assertDrawCall(DrawCall drawCall, int left, int top, int right, int bottom, int fillColor,
             int borderColor, int cornerRadius) {
         Assert.assertEquals(left, drawCall.left);

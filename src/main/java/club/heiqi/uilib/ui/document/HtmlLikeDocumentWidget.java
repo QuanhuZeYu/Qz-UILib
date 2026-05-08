@@ -676,6 +676,113 @@ public final class HtmlLikeDocumentWidget extends Widget {
         if (focusedElement != null && (previousElement != focusedElement || previousFocusVisible != focusedElementFocusVisible)) {
             dispatchFocusChanged(focusedElement, true, focusedElementFocusVisible);
         }
+        if (focusedElement != null && focusedElementFocusVisible && focusedElement.isFocusable()
+                && isElementAttachedToDocument(focusedElement)) {
+            ensureFocusedElementVisible();
+        }
+    }
+
+    private void ensureFocusedElementVisible() {
+        if (focusedElement == null || !focusedElementFocusVisible || getWidth() <= 0 || getHeight() <= 0) {
+            return;
+        }
+        for (int remainingPasses = 16; remainingPasses > 0; remainingPasses--) {
+            List<LayoutPathEntry> path = resolveFocusedElementLayoutPath();
+            if (path.isEmpty()) {
+                return;
+            }
+            int firstFixedIndex = findFirstFixedIndex(path);
+            boolean changed = false;
+            for (int index = path.size() - 2; index >= 0; index--) {
+                if (firstFixedIndex >= 0 && index < firstFixedIndex) {
+                    break;
+                }
+                if (scrollAncestorToRevealTarget(path.get(index), path.get(path.size() - 1))) {
+                    changed = true;
+                    break;
+                }
+            }
+            if (!changed) {
+                return;
+            }
+        }
+    }
+
+    private List<LayoutPathEntry> resolveFocusedElementLayoutPath() {
+        if (focusedElement == null) {
+            return Collections.emptyList();
+        }
+        List<LayoutPathEntry> path = new ArrayList<LayoutPathEntry>();
+        if (!collectLayoutPath(resolveInteractiveLayoutBox(), focusedElement, 0, 0, path)) {
+            return Collections.emptyList();
+        }
+        return path;
+    }
+
+    private boolean collectLayoutPath(DocumentLayoutBox box, ElementNode target, int offsetX, int offsetY,
+            List<LayoutPathEntry> path) {
+        int baseOffsetX = box.isFixedPositioned() ? 0 : offsetX;
+        int baseOffsetY = box.isFixedPositioned() ? 0 : offsetY;
+        int boxOffsetX = baseOffsetX + box.getPositionOffsetX();
+        int boxOffsetY = baseOffsetY + box.getPositionOffsetY();
+        path.add(new LayoutPathEntry(box, boxOffsetX, boxOffsetY));
+        if (box.getElement() == target) {
+            return true;
+        }
+        int childOffsetX = boxOffsetX - scrollState.getScrollLeft(box.getElement());
+        int childOffsetY = boxOffsetY - scrollState.getScrollTop(box.getElement());
+        for (DocumentLayoutBox child : box.getChildren()) {
+            if (collectLayoutPath(child, target, childOffsetX, childOffsetY, path)) {
+                return true;
+            }
+        }
+        path.remove(path.size() - 1);
+        return false;
+    }
+
+    private int findFirstFixedIndex(List<LayoutPathEntry> path) {
+        for (int index = 1; index < path.size(); index++) {
+            if (path.get(index).box.isFixedPositioned()) {
+                return index;
+            }
+        }
+        return -1;
+    }
+
+    private boolean scrollAncestorToRevealTarget(LayoutPathEntry ancestorEntry, LayoutPathEntry targetEntry) {
+        ElementNode ancestorElement = ancestorEntry.box.getElement();
+        int currentScrollLeft = scrollState.getScrollLeft(ancestorElement);
+        int currentScrollTop = scrollState.getScrollTop(ancestorElement);
+        int nextScrollLeft = resolveScrollOffsetForTarget(currentScrollLeft,
+                ancestorEntry.box.getContentLeft() + ancestorEntry.boxOffsetX,
+                ancestorEntry.box.getContentLeft() + ancestorEntry.boxOffsetX + ancestorEntry.box.getContentWidth(),
+                targetEntry.box.getLeft() + targetEntry.boxOffsetX,
+                targetEntry.box.getRight() + targetEntry.boxOffsetX,
+                scrollState.getMaxScrollLeft(ancestorElement));
+        int nextScrollTop = resolveScrollOffsetForTarget(currentScrollTop,
+                ancestorEntry.box.getContentTop() + ancestorEntry.boxOffsetY,
+                ancestorEntry.box.getContentTop() + ancestorEntry.boxOffsetY + ancestorEntry.box.getContentHeight(),
+                targetEntry.box.getTop() + targetEntry.boxOffsetY,
+                targetEntry.box.getBottom() + targetEntry.boxOffsetY,
+                scrollState.getMaxScrollTop(ancestorElement));
+        if (currentScrollLeft == nextScrollLeft && currentScrollTop == nextScrollTop) {
+            return false;
+        }
+        return scrollState.setScrollOffset(ancestorElement, nextScrollLeft, nextScrollTop);
+    }
+
+    private int resolveScrollOffsetForTarget(int currentOffset, int viewportStart, int viewportEnd, int targetStart,
+            int targetEnd, int maxOffset) {
+        if (maxOffset <= 0 || (targetStart >= viewportStart && targetEnd <= viewportEnd)) {
+            return currentOffset;
+        }
+        int nextOffset = currentOffset;
+        if (targetStart < viewportStart) {
+            nextOffset -= viewportStart - targetStart;
+        } else if (targetEnd > viewportEnd) {
+            nextOffset += targetEnd - viewportEnd;
+        }
+        return Math.max(0, Math.min(nextOffset, maxOffset));
     }
 
     private void dispatchFocusChanged(ElementNode target, boolean focused, boolean focusVisible) {
@@ -773,6 +880,19 @@ public final class HtmlLikeDocumentWidget extends Widget {
             }
         }
         return false;
+    }
+
+    private static final class LayoutPathEntry {
+
+        private final DocumentLayoutBox box;
+        private final int boxOffsetX;
+        private final int boxOffsetY;
+
+        private LayoutPathEntry(DocumentLayoutBox box, int boxOffsetX, int boxOffsetY) {
+            this.box = box;
+            this.boxOffsetX = boxOffsetX;
+            this.boxOffsetY = boxOffsetY;
+        }
     }
 
     /**
