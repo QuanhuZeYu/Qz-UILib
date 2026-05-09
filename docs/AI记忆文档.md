@@ -36,6 +36,7 @@
 - 结构节点优先直接写 `UiDocument` DOM-like 元素；标准交互节点优先使用 `Document*Control`，其中 `DocumentTextInputControl` 现已使用真实 `input type="text"` 语义。
 - 面向作者的宿主贴图能力以 `DocumentHostImageControl` / `DocumentHostImageDecorations` 为主，不鼓励业务代码直接写底层 `custom renderer` 处理 Minecraft 物品或纹理贴图。
 - `DocumentInventorySlotGridControl` 与背包概览页现已改为通过真实 DOM 图片子元素承载槽位物品和 cursor layer；后续若继续扩展背包 UI，不应再回退到网格根元素或页面空层上的批量 `custom renderer` 回放。
+- 通用槽位能力已沉淀为 `SlotContentSnapshot`、`DocumentSlotControl`、`DocumentSlotGridControl` 三层；背包专用 `DocumentInventorySlotGridControl` 仅作为 `InventorySlotSnapshot` 适配层保留，后续新增槽位类能力优先扩展通用三层而不是继续堆在背包适配层。
 - `Widget`、`ViewportWidget`、`UiInputRouter`、`UiRenderContext`、`UiRuntimeAdapters` 与背包格子底层宿主适配仍可能是当前后端基础；动这些能力前必须先查源码引用。
 - 新增 layout-affecting、宿主集成或对外能力时，要同步更新 `docs/使用文档/` 并保留最小必要验证。
 - `club.heiqi.uilib.config.ForgeConfigTemplateScreen` 已作为对外可复用模板，用于替换 Forge 默认 `GuiConfig` 并直接消费 `Configuration` / `ConfigCategory` / `Property`。
@@ -57,6 +58,7 @@
 - 入门文档已新增 `01-入门/完整业务页面示例.md`，用于串联业务页面正常拼装路径；后续新增接入能力时优先接到这条连续体验链上。
 - 2026-05-09 已新增宿主图片作者入口：业务页面可像 `img` / 背景图一样挂载 Minecraft 物品与纹理图片源；交互默认仍由外层 HTML-like 元素承担，拖拽类组件若要扩展应建立在这条贴图能力之上而不是回退到底层 GL 回调。
 - 2026-05-09 背包概览页已进一步完成 HTML-like 化：槽位物品改为 `td` 内部图片子元素，鼠标携带物品改为固定定位 DOM 图片层；相关测试也已改成面向 DOM 结构与样式断言，而不是旧 deferred/custom renderer 断言。
+- 2026-05-09 已完成槽位能力前三层抽象：新增 `SlotContentSnapshot`、`DocumentSlotControl`、`DocumentSlotGridControl`，并让 `DocumentInventorySlotGridControl` 退为背包语义适配层；后续若要扩展流体、源质、幽灵槽等内容，应优先建立在这三层之上。
 - Forge 配置页已切换到 HTML-like 模板化实现，后续若继续扩展配置类页面，应优先复用模板而不是回退到 `GuiConfig`。
 - 配置模板页若不走 `DocumentPageAuthoringSurface`，需要在 `BaseScreen.onResize(...)` 中显式给 `HtmlLikeDocumentWidget` 下发布局边界；仅设置 `UiLayoutSpec` 可能导致页面可开屏但内容区域为 `0x0`。
 - 2026-05-09 已确认 `runClient21` 会由 `gtnhgradle` 的 Modern Java 模块强制约束 `GTNHLib` 到 `0.9.20`；若只为在该运行链路下测试 Angelica，不应再尝试把 `GTNHLib` 锁回 `0.7.10`，而应改测兼容新版 `GTNHLib` 的 Angelica 版本。

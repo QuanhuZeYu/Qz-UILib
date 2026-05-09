@@ -1,5 +1,7 @@
 package club.heiqi.uilib.ui.inventory;
 
+import club.heiqi.uilib.ui.slot.SlotGridLayout;
+
 /**
  * 背包格子网格的纯几何布局结果。
  */
@@ -45,20 +47,9 @@ public final class InventorySlotGridLayout {
      */
     public static InventorySlotGridLayout resolve(int slotCount, int slotGap, int preferredSlotSize, int minSlotSize,
             int maxSlotSize, int availableWidth) {
-        int normalizedSlotCount = Math.max(0, slotCount);
-        int normalizedSlotGap = Math.max(0, slotGap);
-        int normalizedPreferredSlotSize = Math.max(18, preferredSlotSize);
-        int normalizedMinSlotSize = Math.max(18, minSlotSize);
-        int normalizedMaxSlotSize = Math.max(normalizedMinSlotSize, maxSlotSize);
-        int normalizedAvailableWidth = Math.max(1, availableWidth);
-
-        int columnCount = resolveColumnCount(normalizedSlotCount, normalizedSlotGap, normalizedPreferredSlotSize,
-                normalizedMinSlotSize, normalizedAvailableWidth);
-        int rowCount = Math.max(1, (normalizedSlotCount + columnCount - 1) / columnCount);
-        int totalGap = Math.max(0, columnCount - 1) * normalizedSlotGap;
-        int rawSlotSize = Math.max(18, (normalizedAvailableWidth - totalGap) / columnCount);
-        int slotSize = Math.max(normalizedMinSlotSize, Math.min(normalizedMaxSlotSize, rawSlotSize));
-        return new InventorySlotGridLayout(columnCount, rowCount, slotSize, normalizedSlotGap);
+        SlotGridLayout layout = SlotGridLayout.resolve(slotCount, slotGap, preferredSlotSize, minSlotSize,
+                maxSlotSize, availableWidth);
+        return new InventorySlotGridLayout(layout.columnCount, layout.rowCount, layout.slotSize, slotGap);
     }
 
     /**
@@ -74,13 +65,9 @@ public final class InventorySlotGridLayout {
      */
     public static InventorySlotGridLayout resolvePreferred(int slotCount, int preferredColumns, int slotGap,
             int preferredSlotSize, int minSlotSize, int maxSlotSize) {
-        int normalizedSlotCount = Math.max(0, slotCount);
-        int normalizedPreferredColumns = Math.max(1, preferredColumns);
-        int normalizedPreferredSlotSize = Math.max(18, preferredSlotSize);
-        int preferredColumnCount = Math.max(1, Math.min(normalizedSlotCount, normalizedPreferredColumns));
-        int preferredWidth = preferredColumnCount * normalizedPreferredSlotSize
-                + Math.max(0, preferredColumnCount - 1) * Math.max(0, slotGap);
-        return resolve(slotCount, slotGap, preferredSlotSize, minSlotSize, maxSlotSize, preferredWidth);
+        SlotGridLayout layout = SlotGridLayout.resolvePreferred(slotCount, preferredColumns, slotGap,
+                preferredSlotSize, minSlotSize, maxSlotSize);
+        return new InventorySlotGridLayout(layout.columnCount, layout.rowCount, layout.slotSize, slotGap);
     }
 
     /**
@@ -141,28 +128,6 @@ public final class InventorySlotGridLayout {
             slotTops[slotIndex] = absoluteY + slotRect.top;
         }
         return new InventorySlotGridItemGeometry(slotSize, slotLefts, slotTops);
-    }
-
-    /**
-     * 计算列数。
-     *
-     * @param slotCount 槽位数量
-     * @param slotGap 格子间距
-     * @param preferredSlotSize 期望格子尺寸
-     * @param minSlotSize 最小格子尺寸
-     * @param availableWidth 可用宽度
-     * @return 列数
-     */
-    private static int resolveColumnCount(int slotCount, int slotGap, int preferredSlotSize, int minSlotSize,
-            int availableWidth) {
-        if (slotCount <= 0) {
-            return 1;
-        }
-
-        int fitByPreferredSize = Math.max(1, (availableWidth + slotGap) / Math.max(1, preferredSlotSize + slotGap));
-        int fitByMinimumSize = Math.max(1, (availableWidth + slotGap) / Math.max(1, minSlotSize + slotGap));
-        int columnCount = Math.max(1, Math.min(slotCount, fitByPreferredSize));
-        return Math.min(columnCount, Math.max(1, Math.min(slotCount, fitByMinimumSize)));
     }
 
     /**

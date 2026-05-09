@@ -1,40 +1,21 @@
 package club.heiqi.uilib.ui.dom.control;
 
 import java.util.ArrayList;
-import java.util.Collections;
 import java.util.List;
 
-import org.lwjglx.input.Keyboard;
-
-import club.heiqi.uilib.ui.dom.DocumentElementActiveEvent;
-import club.heiqi.uilib.ui.dom.DocumentElementActiveHandler;
-import club.heiqi.uilib.ui.dom.DocumentElementClickEvent;
-import club.heiqi.uilib.ui.dom.DocumentElementClickHandler;
-import club.heiqi.uilib.ui.dom.DocumentElementHoverEvent;
-import club.heiqi.uilib.ui.dom.DocumentElementHoverHandler;
-import club.heiqi.uilib.ui.dom.DocumentElementKeyEvent;
-import club.heiqi.uilib.ui.dom.DocumentElementKeyHandler;
 import club.heiqi.uilib.ui.dom.ElementNode;
 import club.heiqi.uilib.ui.dom.UiDocument;
-import club.heiqi.uilib.ui.event.UiKeyEvent;
-import club.heiqi.uilib.ui.image.HostImageSource;
 import club.heiqi.uilib.ui.inventory.InventorySlotGridItemRenderer;
-import club.heiqi.uilib.ui.inventory.InventorySlotGridLayout;
 import club.heiqi.uilib.ui.inventory.InventorySlotSnapshot;
-import club.heiqi.uilib.ui.style.UiDisplay;
-import club.heiqi.uilib.ui.style.UiOverflow;
-import club.heiqi.uilib.ui.style.UiPosition;
-import club.heiqi.uilib.ui.style.UiStyleLength;
+import club.heiqi.uilib.ui.slot.SlotContentSnapshot;
 
 /**
- * 基于 HTML-like 元素实现的只读背包格子网格控件适配器。
+ * 背包槽位网格的 HTML-like 适配层。
+ *
+ * <p>该类型保留背包语义接口，对外继续使用 `InventorySlotSnapshot`，
+ * 内部委托给通用 `DocumentSlotGridControl`。</p>
  */
 public final class DocumentInventorySlotGridControl {
-
-    private static final int SLOT_BORDER_WIDTH = 1;
-    private static final HostImageSource PLACEHOLDER_IMAGE_SOURCE = HostImageSource.textureRegion(
-            new net.minecraft.util.ResourceLocation("minecraft", "textures/gui/widgets.png"), 256, 256, 0, 0, 1,
-            1);
 
     /**
      * 槽位内容数据源合约。
@@ -65,43 +46,8 @@ public final class DocumentInventorySlotGridControl {
                 int documentY, long timeNanos);
     }
 
-    private final ElementNode element;
-    private final DocumentTableControl tableControl;
-    private final List<ElementNode> slotElements = new ArrayList<ElementNode>();
-    private final List<DocumentHostImageControl> slotImageControls = new ArrayList<DocumentHostImageControl>();
-    private final int slotCount;
-    private final int preferredColumns;
+    private final DocumentSlotGridControl slotGridControl;
     private SlotContentProvider contentProvider;
-    private SlotClickHandler slotClickHandler;
-    private SlotTooltipProvider slotTooltipProvider;
-    private SlotHoverHandler slotHoverHandler;
-    private int slotGap = 8;
-    private int preferredSlotSize = 34;
-    private int minSlotSize = 22;
-    private int maxSlotSize = 46;
-    private int emptySlotFillColor = 0xAA171C24;
-    private int emptySlotBorderColor = 0xFF465468;
-    private int occupiedSlotFillColor = 0xCC202A38;
-    private int occupiedSlotBorderColor = 0xFF9AB8F2;
-    private int hoveredSlotFillColor = 0xDD263349;
-    private int hoveredSlotBorderColor = 0xFFE6F0FF;
-    private int selectedSlotFillColor = 0xDD273B20;
-    private int selectedSlotBorderColor = 0xFFFFD166;
-    private int activeSlotFillColor = 0xEE334155;
-    private int activeSlotBorderColor = 0xFFFFFFFF;
-    private InventorySlotGridLayout currentLayout;
-    private InventorySlotSnapshot carriedSnapshot = InventorySlotSnapshot.empty();
-    private List<String> visibleTooltipLines = Collections.emptyList();
-    private int selectedSlotIndex = -1;
-    private int hoveredSlotIndex = -1;
-    private int activeSlotIndex = -1;
-    private int lastHoverDocumentX = -1;
-    private int lastHoverDocumentY = -1;
-    private long lastHoverTimeNanos;
-    private int lastNotifiedTooltipSlotIndex = -1;
-    private boolean lastNotifiedTooltipHovered;
-    private List<String> lastNotifiedTooltipLines = Collections.emptyList();
-    private boolean layoutDirty = true;
 
     /**
      * 创建背包格子网格控件。
@@ -111,21 +57,22 @@ public final class DocumentInventorySlotGridControl {
      * @param preferredColumns 期望列数
      */
     public DocumentInventorySlotGridControl(UiDocument document, int slotCount, int preferredColumns) {
-        this.slotCount = Math.max(0, slotCount);
-        this.preferredColumns = Math.max(1, preferredColumns);
-        this.tableControl = new DocumentTableControl(document)
-                .setCellPadding(0)
-                .setBorderWidth(SLOT_BORDER_WIDTH);
-        this.element = tableControl.getElement();
+        this.slotGridControl = new DocumentSlotGridControl(document, slotCount, preferredColumns)
+                .setContentProvider(new DocumentSlotGridControl.SlotContentProvider() {
+                    @Override
+                    public SlotContentSnapshot getSlotContent(int localIndex) {
+                        return convertSnapshot(resolveSnapshot(localIndex));
+                    }
+                });
     }
 
     public ElementNode getElement() {
-        return element;
+        return slotGridControl.getElement();
     }
 
     public DocumentInventorySlotGridControl setContentProvider(SlotContentProvider contentProvider) {
         this.contentProvider = contentProvider;
-        refreshSlotStates();
+        slotGridControl.refreshSlotStates();
         return this;
     }
 
@@ -136,30 +83,48 @@ public final class DocumentInventorySlotGridControl {
         return this;
     }
 
-    public DocumentInventorySlotGridControl setSlotClickHandler(SlotClickHandler slotClickHandler) {
-        this.slotClickHandler = slotClickHandler;
+    public DocumentInventorySlotGridControl setSlotClickHandler(final SlotClickHandler slotClickHandler) {
+        slotGridControl.setSlotClickHandler(slotClickHandler == null ? null
+                : new DocumentSlotGridControl.SlotClickHandler() {
+                    @Override
+                    public boolean onSlotClick(int localIndex, int button, long timeNanos) {
+                        return slotClickHandler.onSlotClick(localIndex, button, timeNanos);
+                    }
+                });
         return this;
     }
 
-    public DocumentInventorySlotGridControl setSlotTooltipProvider(SlotTooltipProvider slotTooltipProvider) {
-        this.slotTooltipProvider = slotTooltipProvider;
+    public DocumentInventorySlotGridControl setSlotTooltipProvider(final SlotTooltipProvider slotTooltipProvider) {
+        slotGridControl.setSlotTooltipProvider(slotTooltipProvider == null ? null
+                : new DocumentSlotGridControl.SlotTooltipProvider() {
+                    @Override
+                    public List<String> getSlotTooltip(int localIndex) {
+                        return slotTooltipProvider.getSlotTooltip(localIndex);
+                    }
+                });
         return this;
     }
 
-    public DocumentInventorySlotGridControl setSlotHoverHandler(SlotHoverHandler slotHoverHandler) {
-        this.slotHoverHandler = slotHoverHandler;
+    public DocumentInventorySlotGridControl setSlotHoverHandler(final SlotHoverHandler slotHoverHandler) {
+        slotGridControl.setSlotHoverHandler(slotHoverHandler == null ? null
+                : new DocumentSlotGridControl.SlotHoverHandler() {
+                    @Override
+                    public void onSlotHoverChanged(int localIndex, boolean hovered, List<String> tooltipLines,
+                            int documentX, int documentY, long timeNanos) {
+                        slotHoverHandler.onSlotHoverChanged(localIndex, hovered, tooltipLines,
+                                documentX, documentY, timeNanos);
+                    }
+                });
         return this;
     }
 
     public DocumentInventorySlotGridControl setSelectedSlotIndex(int selectedSlotIndex) {
-        this.selectedSlotIndex = selectedSlotIndex >= 0 && selectedSlotIndex < slotCount ? selectedSlotIndex : -1;
-        refreshSlotStates();
+        slotGridControl.setSelectedSlotIndex(selectedSlotIndex);
         return this;
     }
 
     public DocumentInventorySlotGridControl setCarriedSnapshot(InventorySlotSnapshot carriedSnapshot) {
-        this.carriedSnapshot = carriedSnapshot != null ? carriedSnapshot : InventorySlotSnapshot.empty();
-        refreshVisibleTooltipLines();
+        slotGridControl.setCarriedContent(convertSnapshot(carriedSnapshot));
         return this;
     }
 
@@ -168,334 +133,73 @@ public final class DocumentInventorySlotGridControl {
     }
 
     public int getHoveredSlotIndex() {
-        return hoveredSlotIndex;
+        return slotGridControl.getHoveredSlotIndex();
     }
 
     public DocumentInventorySlotGridControl setSlotGap(int slotGap) {
-        this.slotGap = Math.max(0, slotGap);
-        layoutDirty = true;
+        slotGridControl.setSlotGap(slotGap);
         return this;
     }
 
     public DocumentInventorySlotGridControl setPreferredSlotSize(int preferredSlotSize) {
-        this.preferredSlotSize = Math.max(18, preferredSlotSize);
-        layoutDirty = true;
+        slotGridControl.setPreferredSlotSize(preferredSlotSize);
         return this;
     }
 
     public DocumentInventorySlotGridControl setSlotSizeRange(int minSlotSize, int maxSlotSize) {
-        this.minSlotSize = Math.max(18, minSlotSize);
-        this.maxSlotSize = Math.max(this.minSlotSize, maxSlotSize);
-        layoutDirty = true;
+        slotGridControl.setSlotSizeRange(minSlotSize, maxSlotSize);
         return this;
     }
 
     public DocumentInventorySlotGridControl setSlotColors(int emptySlotFillColor, int emptySlotBorderColor,
             int occupiedSlotFillColor, int occupiedSlotBorderColor) {
-        this.emptySlotFillColor = emptySlotFillColor;
-        this.emptySlotBorderColor = emptySlotBorderColor;
-        this.occupiedSlotFillColor = occupiedSlotFillColor;
-        this.occupiedSlotBorderColor = occupiedSlotBorderColor;
-        refreshSlotStates();
+        slotGridControl.setSlotColors(emptySlotFillColor, emptySlotBorderColor,
+                occupiedSlotFillColor, occupiedSlotBorderColor);
         return this;
     }
 
     public DocumentInventorySlotGridControl setInteractionSlotColors(int hoveredSlotFillColor,
             int hoveredSlotBorderColor, int selectedSlotFillColor, int selectedSlotBorderColor,
             int activeSlotFillColor, int activeSlotBorderColor) {
-        this.hoveredSlotFillColor = hoveredSlotFillColor;
-        this.hoveredSlotBorderColor = hoveredSlotBorderColor;
-        this.selectedSlotFillColor = selectedSlotFillColor;
-        this.selectedSlotBorderColor = selectedSlotBorderColor;
-        this.activeSlotFillColor = activeSlotFillColor;
-        this.activeSlotBorderColor = activeSlotBorderColor;
-        refreshSlotStates();
+        slotGridControl.setInteractionSlotColors(hoveredSlotFillColor, hoveredSlotBorderColor,
+                selectedSlotFillColor, selectedSlotBorderColor, activeSlotFillColor, activeSlotBorderColor);
         return this;
     }
 
-    /**
-     * 提交尚未生效的布局配置，将 slot 参数映射为元素样式。
-     *
-     * @return 当前控件
-     */
     public DocumentInventorySlotGridControl commitLayout() {
-        if (layoutDirty) {
-            configureElement();
-            layoutDirty = false;
-        }
-        refreshSlotStates();
+        slotGridControl.commitLayout();
         return this;
     }
 
-    /**
-     * 刷新槽位 DOM 表面的占用状态样式与图片子树。
-     *
-     * @return 当前控件
-     */
     public DocumentInventorySlotGridControl refreshSlotStates() {
-        if (slotElements.isEmpty()) {
-            return this;
-        }
-        InventorySlotSnapshot[] snapshots = sampleSlotSnapshots();
-        for (int slotIndex = 0; slotIndex < slotElements.size(); slotIndex++) {
-            InventorySlotSnapshot snapshot = slotIndex < snapshots.length
-                    ? snapshots[slotIndex] : InventorySlotSnapshot.empty();
-            applySlotStyle(slotElements.get(slotIndex), slotIndex, snapshot);
-            syncSlotImage(slotIndex, snapshot);
-        }
-        refreshVisibleTooltipLines();
+        slotGridControl.refreshSlotStates();
         return this;
     }
 
-    private void configureElement() {
-        currentLayout = InventorySlotGridLayout.resolvePreferred(slotCount, preferredColumns,
-                slotGap, preferredSlotSize, minSlotSize, maxSlotSize);
-        tableControl.setCellGap(slotGap, slotGap);
-        element.style()
-                .setWidth(UiStyleLength.px(currentLayout.totalWidth))
-                .setHeight(UiStyleLength.px(currentLayout.totalHeight));
-        rebuildSlotElements();
-    }
-
-    private void rebuildSlotElements() {
-        slotElements.clear();
-        slotImageControls.clear();
-        tableControl.clearRows();
-        if (slotCount <= 0 || currentLayout == null) {
-            return;
-        }
-
-        int slotIndex = 0;
-        for (int rowIndex = 0; rowIndex < currentLayout.rowCount && slotIndex < slotCount; rowIndex++) {
-            int rowSlotCount = Math.min(currentLayout.columnCount, slotCount - slotIndex);
-            List<ElementNode> rowCells = tableControl.addEmptyRow(rowSlotCount);
-            for (int columnIndex = 0; columnIndex < rowCells.size(); columnIndex++) {
-                final int currentSlotIndex = slotIndex;
-                ElementNode slotElement = rowCells.get(columnIndex);
-                int slotContentSize = resolveSlotContentSize();
-                slotElement.style()
-                        .setWidth(UiStyleLength.px(slotContentSize))
-                        .setHeight(UiStyleLength.px(slotContentSize))
-                        .setBorderWidth(UiStyleLength.px(SLOT_BORDER_WIDTH))
-                        .setOverflowX(UiOverflow.HIDDEN)
-                        .setOverflowY(UiOverflow.HIDDEN);
-                slotElement.setAttribute("role", "button")
-                        .setAttribute("tabindex", "0")
-                        .setAttribute("data-slot-index", String.valueOf(currentSlotIndex))
-                        .setFocusable(true);
-
-                DocumentHostImageControl slotImageControl = new DocumentHostImageControl(slotElement.getOwnerDocument(),
-                        PLACEHOLDER_IMAGE_SOURCE)
-                                .setSize(slotContentSize);
-                ElementNode slotImageElement = slotImageControl.getElement();
-                slotImageElement.setAttribute("data-slot-image", "true");
-                slotImageElement.style()
-                        .setPosition(UiPosition.RELATIVE)
-                        .setWidth(UiStyleLength.px(slotContentSize))
-                        .setHeight(UiStyleLength.px(slotContentSize))
-                        .setDisplay(UiDisplay.NONE);
-                slotElement.append(slotImageElement);
-
-                slotElement.setActiveHandler(new DocumentElementActiveHandler() {
-                    @Override
-                    public boolean onActiveChanged(DocumentElementActiveEvent event) {
-                        if (event.getButton() != 0 && event.getButton() != 1) {
-                            return false;
-                        }
-                        activeSlotIndex = event.isActive() ? currentSlotIndex : -1;
-                        refreshSlotStates();
-                        return true;
-                    }
-                }).setClickHandler(new DocumentElementClickHandler() {
-                    @Override
-                    public boolean onClick(DocumentElementClickEvent event) {
-                        return handleSlotClick(currentSlotIndex, event.getButton(), event.getTimeNanos());
-                    }
-                }).setHoverHandler(new DocumentElementHoverHandler() {
-                    @Override
-                    public boolean onHoverChanged(DocumentElementHoverEvent event) {
-                        handleSlotHover(currentSlotIndex, event.isHovered(), event.getDocumentX(),
-                                event.getDocumentY(), event.getTimeNanos());
-                        return true;
-                    }
-                }).setKeyHandler(new DocumentElementKeyHandler() {
-                    @Override
-                    public boolean onKey(DocumentElementKeyEvent event) {
-                        return handleSlotKey(currentSlotIndex, event);
-                    }
-                });
-                slotElements.add(slotElement);
-                slotImageControls.add(slotImageControl);
-                slotIndex++;
-            }
-        }
-    }
-
-    private int resolveSlotContentSize() {
-        int slotSize = currentLayout == null ? preferredSlotSize : currentLayout.slotSize;
-        return Math.max(0, slotSize - SLOT_BORDER_WIDTH * 2);
-    }
-
-    private boolean handleSlotKey(int localIndex, DocumentElementKeyEvent event) {
-        if (event == null || !isActivationKey(event.getKeyCode())) {
-            return false;
-        }
-        if (event.getAction() == UiKeyEvent.Action.PRESSED) {
-            activeSlotIndex = localIndex;
-            boolean consumed = handleSlotClick(localIndex, 0, event.getTimeNanos());
-            refreshSlotStates();
-            return consumed;
-        }
-        if (event.getAction() == UiKeyEvent.Action.RELEASED) {
-            if (activeSlotIndex == localIndex) {
-                activeSlotIndex = -1;
-                refreshSlotStates();
-            }
-            return true;
-        }
-        return true;
-    }
-
-    private static boolean isActivationKey(int keyCode) {
-        return keyCode == Keyboard.KEY_RETURN || keyCode == Keyboard.KEY_NUMPADENTER || keyCode == Keyboard.KEY_SPACE;
-    }
-
-    private void applySlotStyle(ElementNode slotElement, int slotIndex, InventorySlotSnapshot snapshot) {
-        boolean occupied = snapshot != null && snapshot.isOccupied();
-        int fillColor;
-        int borderColor;
-        if (slotIndex == activeSlotIndex) {
-            fillColor = activeSlotFillColor;
-            borderColor = activeSlotBorderColor;
-        } else if (slotIndex == hoveredSlotIndex) {
-            fillColor = hoveredSlotFillColor;
-            borderColor = hoveredSlotBorderColor;
-        } else if (slotIndex == selectedSlotIndex) {
-            fillColor = selectedSlotFillColor;
-            borderColor = selectedSlotBorderColor;
-        } else {
-            fillColor = occupied ? occupiedSlotFillColor : emptySlotFillColor;
-            borderColor = occupied ? occupiedSlotBorderColor : emptySlotBorderColor;
-        }
-        slotElement.style()
-                .setBackgroundColor(fillColor)
-                .setBorderColor(borderColor);
-        slotElement.setAttribute("data-slot-occupied", String.valueOf(occupied))
-                .setAttribute("data-slot-selected", String.valueOf(slotIndex == selectedSlotIndex))
-                .setAttribute("data-slot-hovered", String.valueOf(slotIndex == hoveredSlotIndex))
-                .setAttribute("aria-label", formatSlotAriaLabel(slotIndex, snapshot));
-    }
-
-    private void syncSlotImage(int slotIndex, InventorySlotSnapshot snapshot) {
-        if (slotIndex < 0 || slotIndex >= slotImageControls.size()) {
-            return;
-        }
-        DocumentHostImageControl imageControl = slotImageControls.get(slotIndex);
-        ElementNode imageElement = imageControl.getElement();
-        HostImageSource hostImageSource = snapshot == null ? null : snapshot.toHostImageSource();
-        if (hostImageSource == null) {
-            imageElement.style().setDisplay(UiDisplay.NONE);
-            return;
-        }
-        imageControl.setSource(hostImageSource);
-        imageElement.style().setDisplay(UiDisplay.BLOCK);
-    }
-
-    private static String formatSlotAriaLabel(int slotIndex, InventorySlotSnapshot snapshot) {
-        int slotNumber = slotIndex + 1;
-        if (snapshot == null || !snapshot.isOccupied()) {
-            return "槽位 " + slotNumber + "，空";
-        }
-        String displayName = snapshot.getDisplayName();
-        if (displayName == null || displayName.isEmpty()) {
-            return "槽位 " + slotNumber + "，已占用";
-        }
-        if (snapshot.getStackSize() > 1) {
-            return "槽位 " + slotNumber + "，" + displayName + "，数量 " + snapshot.getStackSize();
-        }
-        return "槽位 " + slotNumber + "，" + displayName;
-    }
-
-    private boolean handleSlotClick(int localIndex, int button, long timeNanos) {
-        if (localIndex < 0 || localIndex >= slotCount || slotClickHandler == null) {
-            return false;
-        }
-        boolean consumed = slotClickHandler.onSlotClick(localIndex, button, timeNanos);
-        if (consumed) {
-            refreshSlotStates();
-        }
-        return consumed;
-    }
-
-    private void handleSlotHover(int localIndex, boolean hovered, int documentX, int documentY, long timeNanos) {
-        hoveredSlotIndex = hovered ? localIndex : -1;
-        lastHoverDocumentX = documentX;
-        lastHoverDocumentY = documentY;
-        lastHoverTimeNanos = timeNanos;
-        refreshSlotStates();
-    }
-
-    private void refreshVisibleTooltipLines() {
-        visibleTooltipLines = hoveredSlotIndex >= 0 && hoveredSlotIndex < slotCount && !carriedSnapshot.isOccupied()
-                ? resolveTooltipLines(hoveredSlotIndex) : Collections.<String>emptyList();
-        boolean tooltipHovered = hoveredSlotIndex >= 0;
-        if (slotHoverHandler != null && shouldNotifyTooltipHover(tooltipHovered)) {
-            slotHoverHandler.onSlotHoverChanged(hoveredSlotIndex, hoveredSlotIndex >= 0,
-                    new ArrayList<String>(visibleTooltipLines), lastHoverDocumentX, lastHoverDocumentY,
-                    lastHoverTimeNanos);
-            lastNotifiedTooltipSlotIndex = hoveredSlotIndex;
-            lastNotifiedTooltipHovered = tooltipHovered;
-            lastNotifiedTooltipLines = new ArrayList<String>(visibleTooltipLines);
-        }
-    }
-
-    private boolean shouldNotifyTooltipHover(boolean tooltipHovered) {
-        return tooltipHovered != lastNotifiedTooltipHovered
-                || hoveredSlotIndex != lastNotifiedTooltipSlotIndex
-                || !visibleTooltipLines.equals(lastNotifiedTooltipLines);
-    }
-
-    private List<String> resolveTooltipLines(int localIndex) {
-        if (slotTooltipProvider != null) {
-            List<String> lines = slotTooltipProvider.getSlotTooltip(localIndex);
-            if (lines != null) {
-                return new ArrayList<String>(lines);
-            }
-        }
+    private InventorySlotSnapshot resolveSnapshot(int localIndex) {
         InventorySlotSnapshot snapshot = contentProvider == null ? InventorySlotSnapshot.empty()
                 : contentProvider.getSlotSnapshot(localIndex);
-        if (snapshot == null || !snapshot.isOccupied() || snapshot.getDisplayName().isEmpty()) {
-            return Collections.emptyList();
+        return snapshot != null ? snapshot : InventorySlotSnapshot.empty();
+    }
+
+    private static SlotContentSnapshot convertSnapshot(InventorySlotSnapshot snapshot) {
+        if (snapshot == null || !snapshot.isOccupied()) {
+            return SlotContentSnapshot.empty();
         }
-        List<String> lines = new ArrayList<String>();
-        lines.add(snapshot.getDisplayName());
+        List<String> tooltipLines = new ArrayList<String>();
+        if (snapshot.getDisplayName() != null && !snapshot.getDisplayName().isEmpty()) {
+            tooltipLines.add(snapshot.getDisplayName());
+        }
         if (snapshot.getStackSize() > 1) {
-            lines.add("数量 " + snapshot.getStackSize());
+            tooltipLines.add("数量 " + snapshot.getStackSize());
         }
-        return lines;
-    }
-
-    private InventorySlotSnapshot[] sampleSlotSnapshots() {
-        InventorySlotSnapshot[] snapshots = new InventorySlotSnapshot[slotCount];
-        if (contentProvider != null) {
-            for (int slotIndex = 0; slotIndex < slotCount; slotIndex++) {
-                InventorySlotSnapshot snapshot = contentProvider.getSlotSnapshot(slotIndex);
-                snapshots[slotIndex] = snapshot != null ? snapshot : InventorySlotSnapshot.empty();
-            }
-        } else {
-            for (int slotIndex = 0; slotIndex < slotCount; slotIndex++) {
-                snapshots[slotIndex] = InventorySlotSnapshot.empty();
-            }
-        }
-        return snapshots;
-    }
-
-    private static boolean hasOccupiedSlot(InventorySlotSnapshot[] snapshots) {
-        for (InventorySlotSnapshot snapshot : snapshots) {
-            if (snapshot.isOccupied()) {
-                return true;
-            }
-        }
-        return false;
+        return SlotContentSnapshot.builder()
+                .setOccupied(true)
+                .setContentKind("item")
+                .setVisualSource(snapshot.toHostImageSource())
+                .setDisplayName(snapshot.getDisplayName())
+                .setPrimaryCount(snapshot.getStackSize())
+                .setTooltipLines(tooltipLines)
+                .build();
     }
 }
