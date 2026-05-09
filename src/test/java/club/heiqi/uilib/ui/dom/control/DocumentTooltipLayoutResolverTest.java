@@ -1,20 +1,20 @@
-package club.heiqi.uilib.ui.screen;
+package club.heiqi.uilib.ui.dom.control;
 
 import org.junit.Assert;
 import org.junit.Test;
 
 /**
- * `InventoryTooltipLayoutResolver` 的定位测试。
+ * `DocumentTooltipLayoutResolver` 的定位测试。
  */
-public class InventoryTooltipLayoutResolverTest {
+public class DocumentTooltipLayoutResolverTest {
 
     /**
      * 验证空间足够时优先放在鼠标右下。
      */
     @Test
     public void shouldPreferBottomRightWhenSpaceIsEnough() {
-        InventoryTooltipLayoutResolver.TooltipPlacement placement = InventoryTooltipLayoutResolver.resolve(
-                1280, 720, 200, 180, 240, 120, new InventoryTooltipLayoutResolver.TooltipHeightEstimator() {
+        DocumentTooltipLayoutResolver.TooltipPlacement placement = DocumentTooltipLayoutResolver.resolve(
+                1280, 720, 200, 180, 240, 120, new DocumentTooltipLayoutResolver.TooltipHeightEstimator() {
                     @Override
                     public int estimate(int tooltipWidth) {
                         return 120;
@@ -31,8 +31,8 @@ public class InventoryTooltipLayoutResolverTest {
      */
     @Test
     public void shouldFallbackWhenBottomRightWouldOverflow() {
-        InventoryTooltipLayoutResolver.TooltipPlacement placement = InventoryTooltipLayoutResolver.resolve(
-                400, 300, 360, 260, 180, 120, new InventoryTooltipLayoutResolver.TooltipHeightEstimator() {
+        DocumentTooltipLayoutResolver.TooltipPlacement placement = DocumentTooltipLayoutResolver.resolve(
+                400, 300, 360, 260, 180, 120, new DocumentTooltipLayoutResolver.TooltipHeightEstimator() {
                     @Override
                     public int estimate(int tooltipWidth) {
                         return 100;
@@ -48,8 +48,8 @@ public class InventoryTooltipLayoutResolverTest {
      */
     @Test
     public void shouldShrinkWidthToFitAvailableSpace() {
-        InventoryTooltipLayoutResolver.TooltipPlacement placement = InventoryTooltipLayoutResolver.resolve(
-                140, 240, 70, 100, 220, 120, new InventoryTooltipLayoutResolver.TooltipHeightEstimator() {
+        DocumentTooltipLayoutResolver.TooltipPlacement placement = DocumentTooltipLayoutResolver.resolve(
+                140, 240, 70, 100, 220, 120, new DocumentTooltipLayoutResolver.TooltipHeightEstimator() {
                     @Override
                     public int estimate(int tooltipWidth) {
                         return tooltipWidth > 100 ? 80 : 140;

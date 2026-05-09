@@ -1,15 +1,15 @@
-package club.heiqi.uilib.ui.screen;
+package club.heiqi.uilib.ui.dom.control;
 
 /**
- * 背包页 tooltip 的页面级定位计算器。
+ * 页面级 tooltip 的指针避让定位计算器。
  */
-final class InventoryTooltipLayoutResolver {
+final class DocumentTooltipLayoutResolver {
 
     private static final int SCREEN_MARGIN = 4;
     private static final int POINTER_RADIUS = 32;
     private static final int POINTER_DIAGONAL_COMPONENT = Math.round((float) (POINTER_RADIUS / Math.sqrt(2.0D)));
 
-    private InventoryTooltipLayoutResolver() {}
+    private DocumentTooltipLayoutResolver() {}
 
     /**
      * tooltip 高度估算器。
@@ -30,10 +30,11 @@ final class InventoryTooltipLayoutResolver {
      *
      * @param hostWidth 宿主宽度
      * @param hostHeight 宿主高度
-     * @param mouseX 鼠标 X
-     * @param mouseY 鼠标 Y
-     * @param tooltipWidth tooltip 宽度
-     * @param tooltipHeight tooltip 高度
+     * @param mouseX 指针 X
+     * @param mouseY 指针 Y
+     * @param preferredWidth 偏好宽度
+     * @param minWidth 最小宽度
+     * @param heightEstimator 高度估算器
      * @return 定位结果
      */
     static TooltipPlacement resolve(int hostWidth, int hostHeight, int mouseX, int mouseY,
@@ -70,8 +71,10 @@ final class InventoryTooltipLayoutResolver {
         int preferredTop = verticalSide == VerticalSide.BOTTOM
                 ? mouseY + POINTER_DIAGONAL_COMPONENT : mouseY - POINTER_DIAGONAL_COMPONENT - tooltipHeight;
 
-        int left = clamp(preferredLeft, SCREEN_MARGIN, Math.max(SCREEN_MARGIN, hostWidth - tooltipWidth - SCREEN_MARGIN));
-        int top = clamp(preferredTop, SCREEN_MARGIN, Math.max(SCREEN_MARGIN, hostHeight - tooltipHeight - SCREEN_MARGIN));
+        int left = clamp(preferredLeft, SCREEN_MARGIN,
+                Math.max(SCREEN_MARGIN, hostWidth - tooltipWidth - SCREEN_MARGIN));
+        int top = clamp(preferredTop, SCREEN_MARGIN,
+                Math.max(SCREEN_MARGIN, hostHeight - tooltipHeight - SCREEN_MARGIN));
 
         int hiddenWidth = overflow(preferredLeft, tooltipWidth, hostWidth);
         int hiddenHeight = overflow(preferredTop, tooltipHeight, hostHeight);
@@ -144,8 +147,8 @@ final class InventoryTooltipLayoutResolver {
         private final HorizontalSide horizontalSide;
         private final VerticalSide verticalSide;
 
-        TooltipPlacement(int left, int top, int width, int height, int overflow, boolean coversPointer, int freeSpace,
-                HorizontalSide horizontalSide, VerticalSide verticalSide) {
+        TooltipPlacement(int left, int top, int width, int height, int overflow, boolean coversPointer,
+                int freeSpace, HorizontalSide horizontalSide, VerticalSide verticalSide) {
             this.left = left;
             this.top = top;
             this.width = width;

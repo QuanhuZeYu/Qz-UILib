@@ -15,6 +15,7 @@ import club.heiqi.uilib.ui.dom.control.DocumentButtonActionEvent;
 import club.heiqi.uilib.ui.dom.control.DocumentButtonActionHandler;
 import club.heiqi.uilib.ui.dom.control.DocumentButtonControl;
 import club.heiqi.uilib.ui.dom.control.DocumentHostImageControl;
+import club.heiqi.uilib.ui.dom.control.DocumentTooltipOverlayControl;
 import club.heiqi.uilib.ui.image.HostImageSource;
 import club.heiqi.uilib.ui.dom.control.DocumentInventorySlotGridControl;
 import club.heiqi.uilib.ui.inventory.InventorySlotGridItemRenderer;
@@ -29,9 +30,7 @@ import club.heiqi.uilib.ui.style.UiFlexDirection;
 import club.heiqi.uilib.ui.style.UiJustifyContent;
 import club.heiqi.uilib.ui.style.UiOverflow;
 import club.heiqi.uilib.ui.style.UiPosition;
-import club.heiqi.uilib.ui.style.UiStyleInsets;
 import club.heiqi.uilib.ui.style.UiStyleLength;
-import club.heiqi.uilib.ui.style.UiVerticalAlign;
 import club.heiqi.uilib.ui.text.TextMeasureService;
 
 /**
@@ -50,7 +49,7 @@ final class HtmlLikeInventoryOverviewDocumentPageController extends DocumentPage
     private final TextNode backpackMetricsText;
     private final DocumentInventorySlotGridControl hotbarGrid;
     private final DocumentInventorySlotGridControl backpackGrid;
-    private final ElementNode tooltipLayer;
+    private final DocumentTooltipOverlayControl tooltipOverlayControl;
     private final DocumentHostImageControl cursorItemControl;
     private final InventorySlotGridItemRenderer inventoryItemRenderer;
 
@@ -76,8 +75,6 @@ final class HtmlLikeInventoryOverviewDocumentPageController extends DocumentPage
     private static final int TOOLTIP_VERTICAL_PADDING = 12;
     private static final int TOOLTIP_HORIZONTAL_PADDING = 14;
 
-    private final TooltipState tooltipState = new TooltipState();
-
     HtmlLikeInventoryOverviewDocumentPageController(DocumentUiScope documentUi,
             DocumentPageAuthoringSurface documentPage, DocumentPageRuntimeView runtimeView,
             InventoryOverviewModel model) {
@@ -101,7 +98,7 @@ final class HtmlLikeInventoryOverviewDocumentPageController extends DocumentPage
         this.backpackMetricsText = bundle.backpackMetrics;
         this.hotbarGrid = bundle.hotbarGrid;
         this.backpackGrid = bundle.backpackGrid;
-        this.tooltipLayer = bundle.tooltipLayer;
+        this.tooltipOverlayControl = bundle.tooltipOverlayControl;
         this.cursorItemControl = bundle.cursorItemControl;
     }
 
@@ -149,11 +146,11 @@ final class HtmlLikeInventoryOverviewDocumentPageController extends DocumentPage
         backpackSection.card.append(backpackGrid.getElement());
 
         appendFooter(document, main);
-        ElementNode tooltipLayer = appendTooltipLayer(document, root);
+        DocumentTooltipOverlayControl tooltipOverlayControl = appendTooltipLayer(document, root);
         DocumentHostImageControl cursorItemControl = appendCursorItemLayer(document, root);
 
         return new ContentBundle(overviewMetrics, hotbarMetrics, backpackMetrics, hotbarGrid, backpackGrid,
-                tooltipLayer, cursorItemControl);
+                tooltipOverlayControl, cursorItemControl);
     }
 
     private static final class ContentBundle {
@@ -162,18 +159,18 @@ final class HtmlLikeInventoryOverviewDocumentPageController extends DocumentPage
         final TextNode backpackMetrics;
         final DocumentInventorySlotGridControl hotbarGrid;
         final DocumentInventorySlotGridControl backpackGrid;
-        final ElementNode tooltipLayer;
+        final DocumentTooltipOverlayControl tooltipOverlayControl;
         final DocumentHostImageControl cursorItemControl;
 
         ContentBundle(TextNode overviewMetrics, TextNode hotbarMetrics, TextNode backpackMetrics,
                 DocumentInventorySlotGridControl hotbarGrid, DocumentInventorySlotGridControl backpackGrid,
-                ElementNode tooltipLayer, DocumentHostImageControl cursorItemControl) {
+                DocumentTooltipOverlayControl tooltipOverlayControl, DocumentHostImageControl cursorItemControl) {
             this.overviewMetrics = overviewMetrics;
             this.hotbarMetrics = hotbarMetrics;
             this.backpackMetrics = backpackMetrics;
             this.hotbarGrid = hotbarGrid;
             this.backpackGrid = backpackGrid;
-            this.tooltipLayer = tooltipLayer;
+            this.tooltipOverlayControl = tooltipOverlayControl;
             this.cursorItemControl = cursorItemControl;
         }
     }
@@ -362,35 +359,40 @@ final class HtmlLikeInventoryOverviewDocumentPageController extends DocumentPage
         footer.append(backButton.getElement());
     }
 
-    private ElementNode appendTooltipLayer(UiDocument document, ElementNode parent) {
-        ElementNode tooltip = document.element("aside");
-        tooltip.setAttribute("role", "tooltip")
-                .setAttribute("aria-hidden", "true")
-                .setAttribute("data-inventory-tooltip", "true")
-                .setAttribute("data-hit-test-hidden", "true");
-        tooltip.style()
-                .setPosition(UiPosition.FIXED)
-                .setZIndex(1000)
-                .setDisplay(UiDisplay.FLEX)
-                .setFlexDirection(UiFlexDirection.COLUMN)
-                .setAlignItems(UiAlignItems.STRETCH)
-                .setJustifyContent(UiJustifyContent.START)
-                .setWidth(UiStyleLength.px(TOOLTIP_MIN_WIDTH))
-                .setPadding(UiStyleInsets.of(UiStyleLength.px(TOOLTIP_VERTICAL_PADDING),
-                        UiStyleLength.px(TOOLTIP_HORIZONTAL_PADDING), UiStyleLength.px(TOOLTIP_VERTICAL_PADDING),
-                        UiStyleLength.px(TOOLTIP_HORIZONTAL_PADDING)))
-                .setBackgroundColor(TOOLTIP_BACKGROUND_COLOR)
-                .setBorderColor(TOOLTIP_BORDER_COLOR)
-                .setBorderWidth(UiStyleLength.px(1))
-                .setBorderRadius(UiStyleLength.px(TOOLTIP_CORNER_RADIUS))
-                .setTextColor(TOOLTIP_BODY_COLOR)
-                .setBackdropBlurRadius(UiStyleLength.px(12))
-                .setBackdropSaturation(1.2F)
-                .setOverflowX(UiOverflow.HIDDEN)
-                .setOverflowY(UiOverflow.HIDDEN);
-        hideTooltipElement(tooltip);
-        parent.append(tooltip);
-        return tooltip;
+    private DocumentTooltipOverlayControl appendTooltipLayer(UiDocument document, ElementNode parent) {
+        DocumentTooltipOverlayControl tooltipOverlay = new DocumentTooltipOverlayControl(document,
+                documentUi.getTextMeasureService(), new DocumentTooltipOverlayControl.ViewportPointerProvider() {
+                    @Override
+                    public int getViewportWidth() {
+                        return htmlLikeDocumentWidget.getWidth() > 0 ? htmlLikeDocumentWidget.getWidth()
+                                : runtimeView.getHostWidth();
+                    }
+
+                    @Override
+                    public int getViewportHeight() {
+                        return htmlLikeDocumentWidget.getHeight() > 0 ? htmlLikeDocumentWidget.getHeight()
+                                : runtimeView.getHostHeight();
+                    }
+
+                    @Override
+                    public int getPointerX() {
+                        return runtimeView.getMouseX() - htmlLikeDocumentWidget.getAbsoluteX();
+                    }
+
+                    @Override
+                    public int getPointerY() {
+                        return runtimeView.getMouseY() - htmlLikeDocumentWidget.getAbsoluteY();
+                    }
+                })
+                .setWidthPolicy(TOOLTIP_MIN_WIDTH, TOOLTIP_MAX_WIDTH, TOOLTIP_MAX_WIDTH_RATIO)
+                .setTextColors(TOOLTIP_TITLE_COLOR, TOOLTIP_BODY_COLOR)
+                .setSurfaceStyle(TOOLTIP_BACKGROUND_COLOR, TOOLTIP_BORDER_COLOR, TOOLTIP_CORNER_RADIUS,
+                        TOOLTIP_LINE_SPACING, TOOLTIP_VERTICAL_PADDING, TOOLTIP_HORIZONTAL_PADDING)
+                .setBackdropStyle(12, 1.2F);
+        ElementNode tooltipElement = tooltipOverlay.getElement();
+        tooltipElement.setAttribute("data-inventory-tooltip", "true");
+        parent.append(tooltipElement);
+        return tooltipOverlay;
     }
 
     private DocumentHostImageControl appendCursorItemLayer(UiDocument document, ElementNode parent) {
@@ -413,95 +415,19 @@ final class HtmlLikeInventoryOverviewDocumentPageController extends DocumentPage
     }
 
     private void updateTooltipLayer(boolean hovered, List<String> lines, int documentX, int documentY) {
-        if (tooltipLayer == null) {
+        if (tooltipOverlayControl == null) {
             return;
         }
-        tooltipState.hovered = hovered;
-        tooltipState.lines = lines == null ? Collections.<String>emptyList() : new ArrayList<String>(lines);
-        tooltipState.documentX = documentX;
-        tooltipState.documentY = documentY;
-        tooltipLayer.clearChildren();
-        if (!hovered || lines == null || lines.isEmpty() || currentCarriedSlotSnapshot.isOccupied()) {
-            tooltipLayer.setAttribute("aria-hidden", "true");
-            hideTooltipElement(tooltipLayer);
-            return;
-        }
-        tooltipLayer.setAttribute("aria-hidden", "false");
-        for (int lineIndex = 0; lineIndex < tooltipState.lines.size(); lineIndex++) {
-            ElementNode line = tooltipLayer.getOwnerDocument().element("p");
-            line.appendText(tooltipState.lines.get(lineIndex));
-            line.style()
-                    .setDisplay(UiDisplay.BLOCK)
-                    .setWidth(UiStyleLength.auto())
-                    .setTextColor(lineIndex == 0 ? TOOLTIP_TITLE_COLOR : TOOLTIP_BODY_COLOR)
-                    .setMargin(UiStyleInsets.of(UiStyleLength.px(0), UiStyleLength.px(0),
-                            UiStyleLength.px(lineIndex == tooltipState.lines.size() - 1 ? 0 : TOOLTIP_LINE_SPACING),
-                            UiStyleLength.px(0)));
-            tooltipLayer.append(line);
-        }
-        int viewportMouseX = runtimeView.getMouseX() - htmlLikeDocumentWidget.getAbsoluteX();
-        int viewportMouseY = runtimeView.getMouseY() - htmlLikeDocumentWidget.getAbsoluteY();
-        InventoryTooltipLayoutResolver.TooltipPlacement placement = InventoryTooltipLayoutResolver.resolve(
-                resolveTooltipViewportWidth(), resolveTooltipViewportHeight(), viewportMouseX, viewportMouseY,
-                resolvePreferredTooltipWidth(), TOOLTIP_MIN_WIDTH, new InventoryTooltipLayoutResolver.TooltipHeightEstimator() {
-                    @Override
-                    public int estimate(int tooltipWidth) {
-                        return estimateTooltipHeight(tooltipWidth);
-                    }
-                });
-        tooltipLayer.style()
-                .setWidth(UiStyleLength.px(placement.getWidth()))
-                .setHeight(UiStyleLength.auto())
-                .setLeft(UiStyleLength.px(placement.getLeft()))
-                .setTop(UiStyleLength.px(placement.getTop()));
-    }
-
-    private static void hideTooltipElement(ElementNode tooltip) {
-        tooltip.style()
-                .setWidth(UiStyleLength.px(0))
-                .setHeight(UiStyleLength.px(0))
-                .setLeft(UiStyleLength.px(-10000))
-                .setTop(UiStyleLength.px(-10000));
-    }
-
-    private int resolvePreferredTooltipWidth() {
-        int maxWidth = Math.max(TOOLTIP_MIN_WIDTH,
-                Math.min(TOOLTIP_MAX_WIDTH, Math.round(resolveTooltipViewportWidth() * TOOLTIP_MAX_WIDTH_RATIO)));
-        int maxLineWidth = 0;
-        TextMeasureService measureService = documentUi.getTextMeasureService();
-        for (String line : tooltipState.lines) {
-            maxLineWidth = Math.max(maxLineWidth, measureService.getStringWidth(line));
-        }
-        int paddedWidth = maxLineWidth + TOOLTIP_HORIZONTAL_PADDING * 2;
-        return Math.max(TOOLTIP_MIN_WIDTH, Math.min(maxWidth, paddedWidth));
-    }
-
-    private int resolveTooltipViewportWidth() {
-        return htmlLikeDocumentWidget.getWidth() > 0 ? htmlLikeDocumentWidget.getWidth() : runtimeView.getHostWidth();
-    }
-
-    private int resolveTooltipViewportHeight() {
-        return htmlLikeDocumentWidget.getHeight() > 0 ? htmlLikeDocumentWidget.getHeight() : runtimeView.getHostHeight();
-    }
-
-    private int estimateTooltipHeight(int tooltipWidth) {
-        if (tooltipState.lines == null || tooltipState.lines.isEmpty()) {
-            return TOOLTIP_VERTICAL_PADDING * 2;
-        }
-        TextMeasureService measureService = documentUi.getTextMeasureService();
-        int wrapWidth = Math.max(1, tooltipWidth - TOOLTIP_HORIZONTAL_PADDING * 2);
-        int lineHeight = measureService.getLineHeight();
-        int totalTextLines = 0;
-        for (String line : tooltipState.lines) {
-            List<String> wrappedLines = measureService.listFormattedStringToWidth(line, wrapWidth);
-            totalTextLines += Math.max(1, wrappedLines == null ? 0 : wrappedLines.size());
-        }
-        int gapCount = Math.max(0, tooltipState.lines.size() - 1);
-        return TOOLTIP_VERTICAL_PADDING * 2 + totalTextLines * lineHeight + gapCount * TOOLTIP_LINE_SPACING;
+        tooltipOverlayControl.setRequestedTooltip(hovered, lines)
+                .setSuppressed(currentCarriedSlotSnapshot.isOccupied())
+                .refresh();
     }
 
     private void refreshVisibleTooltipLayer() {
-        updateTooltipLayer(tooltipState.hovered, tooltipState.lines, tooltipState.documentX, tooltipState.documentY);
+        if (tooltipOverlayControl != null) {
+            tooltipOverlayControl.setSuppressed(currentCarriedSlotSnapshot.isOccupied())
+                    .refresh();
+        }
     }
 
     private void refreshMetrics() {
@@ -589,15 +515,4 @@ final class HtmlLikeInventoryOverviewDocumentPageController extends DocumentPage
     private static final HostImageSource CURSOR_PLACEHOLDER_IMAGE_SOURCE = HostImageSource.textureRegion(
             new net.minecraft.util.ResourceLocation("minecraft", "textures/gui/widgets.png"), 256, 256, 0, 0, 1,
             1);
-
-    /**
-     * 页面级 tooltip 可见状态。
-     */
-    private static final class TooltipState {
-
-        private boolean hovered;
-        private List<String> lines = Collections.emptyList();
-        private int documentX = -1;
-        private int documentY = -1;
-    }
 }
