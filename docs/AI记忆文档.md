@@ -1,74 +1,54 @@
 # AI记忆文档
 
-本文件只保留对长期协作仍有持续价值的高层信息，不重复维护具体能力清单、属性细节、示例页行为和长文件索引。遇到具体任务时，Agent 必须主动读取对应文档、源码和错误记录确认现状。
+本文件只保留对后续协作长期稳定、跨任务高频复用的高层信息，作为“导航 + 边界”文档使用，不承担阶段流水账、类清单、修复日志、版本兼容试验记录等职责。遇到具体任务时，Agent 必须主动读取对应文档、源码和错误记录确认现状。
 
-## 最高优先级信息
+## 使用定位
 
-- 项目处于第一版开发者入口固化阶段；新增对外能力、文档或 API 门面要按首版开发者体验审视。
+- 只记录长期稳定边界、主线方向、文档分工和验证前提。
+- 不记录具体类清单、示例页细节、已完成修复列表、按日期追加的阶段流水账。
+- 有明确归属的信息优先写回原文档：接入说明写 `docs/使用文档/`，审查结论写 `docs/审查报告.md` / `docs/reviews/`，错误教训写 `docs/错误记录.md` / `docs/errors/`。
+
+## 当前主线
+
+- 项目处于第一版开发者入口固化阶段；新增对外能力、文档或 API 门面要优先审视开发者接入体验。
 - 当前主线仍是 HTML-like UI 渲染框架；功能取舍以这条主线为准，不为补“完整浏览器语义”偏离主线。
-- 清退旧 retained 作者入口时，不要误删仍被 HTML-like 后端复用的 backend、runtime、inventory 宿主能力。
-- 作者层只暴露 HTML-like/CSS-like 语义，不向页面作者暴露 Minecraft GUI 生命周期或底层渲染实现细节。
+- 作者层只暴露 HTML-like / CSS-like 语义，不向页面作者暴露 Minecraft GUI 生命周期或底层渲染实现细节。
 
 ## 文档分工
 
-- `docs/使用文档/`：对外开发使用文档。接入方式、能力边界、宿主集成、诊断入口都以这里为准。
+- `docs/使用文档/`：对外开发使用文档，接入方式、能力边界、宿主集成、诊断入口以这里为准。
 - `docs/开放化调整.md`：开放化方案、调整范围、执行顺序与阶段状态。
-- `docs/审查报告.md` 与 `docs/reviews/`：审查报告索引与详细归档，记录易用性、开放化、代码评审等需要长期留档的结论。
-- `项目建议.md`：协作开发阶段的技术方向与阶段建议，不是正式使用文档。
-- `docs/错误记录.md` 与 `docs/errors/`：历史错误索引与问题分析。
-- `docs/使用文档/02-控件/背包Tooltip设计需求.md`：示例页专题需求，不属于通用接入必读项。
+- `docs/审查报告.md` 与 `docs/reviews/`：长期留档的审查结论。
+- `docs/错误记录.md` 与 `docs/errors/`：历史错误索引与详细问题分析。
+- `项目建议.md`：协作阶段的方向性建议，不是正式使用文档。
 
 ## 主动读取原则
 
 - 涉及对外接入、作者能力、宿主入口时，先读 `docs/使用文档/README.md` 和对应分级文档。
-- 涉及历史审查结论、开放化体验问题、长期评审结论时，先读 `docs/审查报告.md` 和对应 `docs/reviews/` 明细。
-- 涉及命令入口、界面切换、输入路由、示例页或诊断入口时，先读 `docs/使用文档/03-宿主集成/Minecraft界面入口.md`、`docs/使用文档/04-诊断入口/指令触发方案.md`，再查相关源码与错误记录。
-- 涉及动画、布局、绘制、背包槽位、tooltip、渲染运行时等具体能力时，不依赖本文件记忆，先读当前使用文档、相关源码和 `docs/错误记录.md`。
-- 涉及旧 retained 结构清理、重命名或删除时，先搜索当前引用，再决定是否删除，不依赖历史印象。
-- 需要知道具体类、入口、目录位置时，优先通过 `Glob`、`Grep`、`Read` 现查，不在本文件维护长文件清单。
+- 涉及命令入口、界面切换、输入路由、示例页或诊断入口时，先读 `docs/使用文档/03-宿主集成/Minecraft界面入口.md` 与 `docs/使用文档/04-诊断入口/指令触发方案.md`，再查源码与错误记录。
+- 涉及历史审查结论、开放化体验问题或长期评审结论时，先读 `docs/审查报告.md` 与对应 `docs/reviews/` 明细。
+- 涉及错误复现、回归风险或过往踩坑时，先读 `docs/错误记录.md` 与对应 `docs/errors/`。
+- 需要知道具体类、入口、目录位置时，优先通过 `Glob`、`Grep`、`Read` 现查，不在本文件维护长文件索引。
 
 ## 长期稳定边界
 
-- 业务文档入口以 `UiDocumentScreens.createDocumentScreen(...)` 为主；诊断入口不应回退成默认 UI 注入或全局热键。
-- `UiDocumentScreens` 仅保留业务文档开屏门面；内建诊断页与示例页统一从 `UiDiagnosticsScreens` 进入。
+- 业务文档入口以 `UiDocumentScreens.createDocumentScreen(...)` 为主；诊断页与示例页统一从 `UiDiagnosticsScreens` 进入。
 - 不新增扩大直接 `Widget` 作者入口的 API；新增作者能力优先放在 `UiDocument`、DOM、样式系统、控件适配或 HTML-like 后端能力中。
 - `createDocumentScreen(...)` 已默认补齐根元素 `width:100%`、`height:100%` 和 `overflow-y:auto`；文档与示例不应再把这组样板当作手动必填前置知识。
-- 结构节点优先直接写 `UiDocument` DOM-like 元素；标准交互节点优先使用 `Document*Control`，其中 `DocumentTextInputControl` 现已使用真实 `input type="text"` 语义。
-- 面向作者的宿主贴图能力以 `DocumentHostImageControl` / `DocumentHostImageDecorations` 为主，不鼓励业务代码直接写底层 `custom renderer` 处理 Minecraft 物品或纹理贴图。
-- `DocumentInventorySlotGridControl` 与背包概览页现已改为通过真实 DOM 图片子元素承载槽位物品和 cursor layer；后续若继续扩展背包 UI，不应再回退到网格根元素或页面空层上的批量 `custom renderer` 回放。
-- 通用槽位能力已沉淀为 `SlotContentSnapshot`、`DocumentSlotControl`、`DocumentSlotGridControl` 三层；背包专用 `DocumentInventorySlotGridControl` 仅作为 `InventorySlotSnapshot` 适配层保留，后续新增槽位类能力优先扩展通用三层而不是继续堆在背包适配层。
-- 页面级 tooltip 已沉淀为 `DocumentTooltipOverlayControl` + `DocumentTooltipLayoutResolver`；后续 tooltip 能力优先遵循“控件声明 tooltip，页面级 overlay 统一承载”的分层，不把浮层 DOM 回塞到单个控件内部。
-- 页面级 fixed 浮层基础设施已沉淀为 `DocumentOverlayHostControl` + `DocumentOverlayLayerControl`；后续 cursor item、tooltip、popover、context menu 等页面级浮层优先挂到 overlay host 子树里，不直接在页面控制器里手写散落的 fixed 节点。
-- 鼠标跟随宿主图片浮层已沉淀为 `DocumentCursorOverlayControl`；后续若继续扩展拖拽预览、鼠标携带物品、光标提示图层，优先复用该控件而不是重复拼 `DocumentHostImageControl + overlay layer + 指针偏移`。
-- `Widget`、`ViewportWidget`、`UiInputRouter`、`UiRenderContext`、`UiRuntimeAdapters` 与背包格子底层宿主适配仍可能是当前后端基础；动这些能力前必须先查源码引用。
+- 结构节点优先直接写 `UiDocument` DOM-like 元素；标准交互节点优先使用 `Document*Control`。
+- 面向作者的宿主贴图能力以 `DocumentHostImageControl` / `DocumentHostImageDecorations` 为主，不鼓励业务代码直接写底层 `custom renderer` 处理 Minecraft 物品或纹理。
 - 新增 layout-affecting、宿主集成或对外能力时，要同步更新 `docs/使用文档/` 并保留最小必要验证。
-- `club.heiqi.uilib.config.ForgeConfigTemplateScreen` 已作为对外可复用模板，用于替换 Forge 默认 `GuiConfig` 并直接消费 `Configuration` / `ConfigCategory` / `Property`。
-- `ForgeConfigTemplateScreen.Spec` 已支持 `PropertyEditorFactory`、`Theme`、`TextSet` 三类扩展点；非列表字符串属性若声明 `validValues` 且当前值仍在候选集中，默认走分段选择控件；遗留值要回退到文本输入，避免保存时静默覆盖成首项。
-- 继承 `GuiScreen` / `BaseScreen` 的页面类不应在纯 JVM 单测中直接实例化；相关教训记录在 `docs/errors/ERROR-20260508-jvm-test-guiscreen-static-init.md`。
+- `ForgeConfigTemplateScreen` 已作为对外可复用模板；非列表字符串属性若声明 `validValues` 且当前值仍在候选集中，可走分段选择控件，遗留值应回退到文本输入，避免静默覆盖。
 
 ## 运行与验证
 
 - Windows 环境使用 PowerShell。
-- `GRADLE_USER_HOME` 需显式设置为 `D:\.MyApps\.ENV\gradle-home`；验证命令按串行执行。
-- 常用命令：`git diff --check`、`$env:GRADLE_USER_HOME="D:\.MyApps\.ENV\gradle-home"; ./gradlew.bat --no-configuration-cache test`、`$env:GRADLE_USER_HOME="D:\.MyApps\.ENV\gradle-home"; ./gradlew.bat --no-configuration-cache compileJava`、`$env:GRADLE_USER_HOME="D:\.MyApps\.ENV\gradle-home"; ./gradlew.bat --no-configuration-cache runClient21`。
-- 若需在当前 `runClient21`/现代 Java 开发环境中验证 Angelica 兼容性，应优先选用与运行时强制解析的 `GTNHLib 0.9.20` 同代的 Angelica；当前已验证 `com.github.GTNewHorizons:Angelica:2.1.15:dev` 可正常启动，`1.0.0-beta66b` 会因缺失 `com.gtnewhorizon.gtnhlib.client.renderer.quad.QuadProvider` 在启动早期崩溃。
-- 纯 JVM 文本测量相关测试要注入确定性 `TextMeasureService`，不要依赖默认字体运行时。
+- `GRADLE_USER_HOME` 需显式设置为 `D:\.MyApps\.ENV\gradle-home`。
+- 常用验证命令：`git diff --check`、`$env:GRADLE_USER_HOME="D:\.MyApps\.ENV\gradle-home"; ./gradlew.bat --no-configuration-cache test`、`$env:GRADLE_USER_HOME="D:\.MyApps\.ENV\gradle-home"; ./gradlew.bat --no-configuration-cache compileJava`、`$env:GRADLE_USER_HOME="D:\.MyApps\.ENV\gradle-home"; ./gradlew.bat --no-configuration-cache runClient21`。
+- 纯 JVM 测试不要直接实例化继承 `GuiScreen` / `BaseScreen` 的页面类；文本测量相关测试要注入确定性 `TextMeasureService`。
 
 ## 当前阶段
 
 - 继续固化第一版开放文档与业务入口，优先保证真实页面、控件迁移和开发者接入体验。
-- 2026-05-08 HTML-like 开发者易用性审查提出的首轮入口收敛、控件心智和接入示例问题已完成整改；相关审查明细保留原始结论，并在文末追加后续修复状态，不直接改写原审查结论。
-- 入门文档已新增 `01-入门/完整业务页面示例.md`，用于串联业务页面正常拼装路径；后续新增接入能力时优先接到这条连续体验链上。
-- 2026-05-09 已新增宿主图片作者入口：业务页面可像 `img` / 背景图一样挂载 Minecraft 物品与纹理图片源；交互默认仍由外层 HTML-like 元素承担，拖拽类组件若要扩展应建立在这条贴图能力之上而不是回退到底层 GL 回调。
-- 2026-05-09 背包概览页已进一步完成 HTML-like 化：槽位物品改为 `td` 内部图片子元素，鼠标携带物品改为固定定位 DOM 图片层；相关测试也已改成面向 DOM 结构与样式断言，而不是旧 deferred/custom renderer 断言。
-- 2026-05-09 已完成槽位能力前三层抽象：新增 `SlotContentSnapshot`、`DocumentSlotControl`、`DocumentSlotGridControl`，并让 `DocumentInventorySlotGridControl` 退为背包语义适配层；后续若要扩展流体、源质、幽灵槽等内容，应优先建立在这三层之上。
-- 2026-05-09 已把背包页手写 tooltip 层抽为通用页面级 tooltip overlay；后续若新增需要鼠标跟随的 tooltip，不应重复在页面控制器里手写 `aside + 定位器 + 文本装配`，而应复用 `DocumentTooltipOverlayControl`。
-- 2026-05-09 已把背包页 tooltip 与 cursor item 层进一步接到通用 overlay 基础设施；后续若继续扩展页面级浮层，优先复用 `DocumentOverlayHostControl` / `DocumentOverlayLayerControl`，而不是继续在页面控制器中直接操作 fixed 层样式细节。
-- 2026-05-09 已把背包页 cursor item 层抽成 `DocumentCursorOverlayControl`；后续若业务页需要鼠标跟随的宿主图片浮层，应优先直接接该控件。
-- 2026-05-09 已修复 HTML-like 文档在滚轮滚动或滚动条拖拽后 hover 不同步的问题；今后凡是会改变内容相对鼠标位置的输入分支，都要在位移生效后重新做 hover 命中。
-- Forge 配置页已切换到 HTML-like 模板化实现，后续若继续扩展配置类页面，应优先复用模板而不是回退到 `GuiConfig`。
-- 配置模板页若不走 `DocumentPageAuthoringSurface`，需要在 `BaseScreen.onResize(...)` 中显式给 `HtmlLikeDocumentWidget` 下发布局边界；仅设置 `UiLayoutSpec` 可能导致页面可开屏但内容区域为 `0x0`。
-- 2026-05-09 已修复配置模板页保存失败后的属性状态污染；后续若保存流程包含“先写内存属性、再执行保存/重载副作用”，必须提供回滚，不能只提示“保存失败”。
-- 2026-05-09 已确认 `runClient21` 会由 `gtnhgradle` 的 Modern Java 模块强制约束 `GTNHLib` 到 `0.9.20`；若只为在该运行链路下测试 Angelica，不应再尝试把 `GTNHLib` 锁回 `0.7.10`，而应改测兼容新版 `GTNHLib` 的 Angelica 版本。
+- 诊断页与示例页只作为开发期工具，不回退到默认 UI 注入或全局热键入口。
 - 是否继续扩展动画、布局或渲染能力，要以真实需求和验证结果决定，不默认扩面。
-- 非阻塞的底层细节优化后置，阶段目标变化时只在本文件保留高层边界，不回填大段实现细节。
