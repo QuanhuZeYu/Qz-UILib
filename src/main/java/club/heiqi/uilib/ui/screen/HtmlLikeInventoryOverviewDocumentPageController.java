@@ -560,6 +560,10 @@ final class HtmlLikeInventoryOverviewDocumentPageController extends DocumentPage
         return carriedSlotOccupied ? "物品" : "空";
     }
 
+    static int resolveCursorItemLayerOffset(int mouseCoordinate, int widgetAbsoluteCoordinate) {
+        return mouseCoordinate - widgetAbsoluteCoordinate - 12;
+    }
+
     private void refreshCursorItemLayer(InventorySlotSnapshot carriedSlotSnapshot) {
         if (cursorItemControl == null) {
             return;
@@ -573,13 +577,13 @@ final class HtmlLikeInventoryOverviewDocumentPageController extends DocumentPage
                     .setTop(UiStyleLength.px(-10000));
             return;
         }
-        int mouseX = runtimeView.getMouseX();
-        int mouseY = runtimeView.getMouseY();
+        int mouseX = resolveCursorItemLayerOffset(runtimeView.getMouseX(), htmlLikeDocumentWidget.getAbsoluteX());
+        int mouseY = resolveCursorItemLayerOffset(runtimeView.getMouseY(), htmlLikeDocumentWidget.getAbsoluteY());
         cursorItemControl.setSource(hostImageSource);
         cursorLayer.style()
                 .setDisplay(UiDisplay.BLOCK)
-                .setLeft(UiStyleLength.px(mouseX - 12))
-                .setTop(UiStyleLength.px(mouseY - 12));
+                .setLeft(UiStyleLength.px(mouseX))
+                .setTop(UiStyleLength.px(mouseY));
     }
 
     private static final HostImageSource CURSOR_PLACEHOLDER_IMAGE_SOURCE = HostImageSource.textureRegion(

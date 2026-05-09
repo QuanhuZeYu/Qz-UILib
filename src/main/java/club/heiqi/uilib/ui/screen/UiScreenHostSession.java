@@ -13,6 +13,7 @@ import club.heiqi.uilib.ui.input.UiInputService;
 import club.heiqi.uilib.ui.render.UiMainLayerSnapshotService;
 import club.heiqi.uilib.ui.render.UiRenderContext;
 import club.heiqi.uilib.ui.render.UiRenderTarget;
+import club.heiqi.uilib.ui.runtime.UiRuntimeAdapters;
 import club.heiqi.uilib.ui.widget.WidgetBuildAttachmentTransaction;
 import club.heiqi.uilib.ui.widget.UiLayoutInvalidationRegistry;
 import club.heiqi.uilib.ui.widget.ViewportWidget;
@@ -123,8 +124,9 @@ final class UiScreenHostSession {
                             prepareMainUiRenderState();
                             paintContextCompositor.beginFrame();
                             mainLayerSnapshotService.beginFrame();
-                            UiRenderContext context = new UiRenderContext(nativeWidth, nativeHeight, latestMouseX,
-                                    latestMouseY, partialTicks, paintContextCompositor, mainLayerSnapshotService);
+                            UiRenderContext context = createRenderContext(nativeWidth, nativeHeight, latestMouseX,
+                                    latestMouseY, partialTicks, paintContextCompositor, mainLayerSnapshotService,
+                                    screen.getRuntimeAdapters());
                             try {
                                 rootWidget.render(context);
                                 flushDeferredPostMainPasses(context, deferredPostMainRenderTarget, nativeWidth,
@@ -159,6 +161,13 @@ final class UiScreenHostSession {
         } finally {
             performanceMonitor.finishFrame();
         }
+    }
+
+    static UiRenderContext createRenderContext(int screenWidth, int screenHeight, int mouseX, int mouseY,
+            float partialTicks, UiRenderContext.PaintContextCompositor paintContextCompositor,
+            UiMainLayerSnapshotService mainLayerSnapshotService, UiRuntimeAdapters runtimeAdapters) {
+        return new UiRenderContext(screenWidth, screenHeight, mouseX, mouseY, partialTicks,
+                paintContextCompositor, mainLayerSnapshotService, runtimeAdapters);
     }
 
     /**
