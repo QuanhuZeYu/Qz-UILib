@@ -20,6 +20,8 @@ import club.heiqi.uilib.ui.dom.DocumentElementClickEvent;
 import club.heiqi.uilib.ui.dom.DocumentElementClickHandler;
 import club.heiqi.uilib.ui.dom.DocumentElementFocusEvent;
 import club.heiqi.uilib.ui.dom.DocumentElementFocusHandler;
+import club.heiqi.uilib.ui.dom.DocumentElementHoverEvent;
+import club.heiqi.uilib.ui.dom.DocumentElementHoverHandler;
 import club.heiqi.uilib.ui.dom.DocumentElementKeyEvent;
 import club.heiqi.uilib.ui.dom.DocumentElementKeyHandler;
 import club.heiqi.uilib.ui.dom.DocumentElementTextInputEvent;
@@ -1656,6 +1658,58 @@ public class HtmlLikeDocumentWidgetTest {
                 0, 1L)));
 
         assertElementUid(second, widget.findElementAt(10, 10));
+    }
+
+    /**
+     * 验证滚轮滚动后 hover 会按当前鼠标位置重新切换。
+     */
+    @Test
+    public void shouldRefreshHoverAfterMouseWheelScrollMovesContent() {
+        UiDocument document = UiDocument.create();
+        ElementNode root = document.getRootElement();
+        ElementNode first = document.div();
+        ElementNode second = document.div();
+        final List<String> hoverEvents = new ArrayList<String>();
+        root.style()
+                .setWidth(UiStyleLength.px(80))
+                .setHeight(UiStyleLength.px(20))
+                .setOverflowY(UiOverflow.AUTO);
+        first.style()
+                .setWidth(UiStyleLength.px(80))
+                .setHeight(UiStyleLength.px(40));
+        second.style()
+                .setWidth(UiStyleLength.px(80))
+                .setHeight(UiStyleLength.px(40));
+        first.setHoverHandler(new DocumentElementHoverHandler() {
+            @Override
+            public boolean onHoverChanged(DocumentElementHoverEvent event) {
+                hoverEvents.add("first:" + event.isHovered() + ":" + event.getDocumentX() + ":"
+                        + event.getDocumentY());
+                return true;
+            }
+        });
+        second.setHoverHandler(new DocumentElementHoverHandler() {
+            @Override
+            public boolean onHoverChanged(DocumentElementHoverEvent event) {
+                hoverEvents.add("second:" + event.isHovered() + ":" + event.getDocumentX() + ":"
+                        + event.getDocumentY());
+                return true;
+            }
+        });
+        root.append(first).append(second);
+        HtmlLikeDocumentWidget widget = new HtmlLikeDocumentWidget(document, 80, 20,
+                new DeterministicTextMeasureService());
+        widget.applyLayoutBounds(0, 0, 80, 20);
+
+        widget.onMouseMove(new UiMouseEvent(UiMouseEvent.Action.MOVE, 10, 10, -1, 0, 0, 0, 1L));
+        Assert.assertEquals(1, hoverEvents.size());
+        Assert.assertEquals("first:true:10:10", hoverEvents.get(0));
+
+        Assert.assertTrue(widget.onMouseScroll(new UiMouseEvent(UiMouseEvent.Action.SCROLL, 10, 10, -1, -120, 0,
+                0, 2L)));
+        Assert.assertEquals(3, hoverEvents.size());
+        Assert.assertEquals("first:false:10:10", hoverEvents.get(1));
+        Assert.assertEquals("second:true:10:10", hoverEvents.get(2));
     }
 
     /**

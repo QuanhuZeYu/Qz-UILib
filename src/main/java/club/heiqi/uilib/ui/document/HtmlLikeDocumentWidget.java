@@ -303,8 +303,12 @@ public final class HtmlLikeDocumentWidget extends Widget {
             return false;
         }
         DocumentLayoutBox rootBox = resolveInteractiveLayoutBox();
-        return scrollState.handleWheel(rootBox, event.getMouseX() - getAbsoluteX(), event.getMouseY() - getAbsoluteY(),
-                event.getWheelDelta());
+        boolean consumed = scrollState.handleWheel(rootBox, event.getMouseX() - getAbsoluteX(),
+                event.getMouseY() - getAbsoluteY(), event.getWheelDelta());
+        if (consumed) {
+            updateHoveredElement(findElementAt(event.getMouseX(), event.getMouseY()), event);
+        }
+        return consumed;
     }
 
     @Override
@@ -329,11 +333,11 @@ public final class HtmlLikeDocumentWidget extends Widget {
         if (event == null) {
             return;
         }
-        updateHoveredElement(findElementAt(event.getMouseX(), event.getMouseY()), event);
         if (scrollState.isDraggingScrollbar()) {
             scrollState.updateScrollbarDrag(resolveInteractiveLayoutBox(), event.getMouseX() - getAbsoluteX(),
                     event.getMouseY() - getAbsoluteY());
         }
+        updateHoveredElement(findElementAt(event.getMouseX(), event.getMouseY()), event);
     }
 
     @Override

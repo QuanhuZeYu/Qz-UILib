@@ -65,6 +65,7 @@
 - 2026-05-09 已把背包页手写 tooltip 层抽为通用页面级 tooltip overlay；后续若新增需要鼠标跟随的 tooltip，不应重复在页面控制器里手写 `aside + 定位器 + 文本装配`，而应复用 `DocumentTooltipOverlayControl`。
 - 2026-05-09 已把背包页 tooltip 与 cursor item 层进一步接到通用 overlay 基础设施；后续若继续扩展页面级浮层，优先复用 `DocumentOverlayHostControl` / `DocumentOverlayLayerControl`，而不是继续在页面控制器中直接操作 fixed 层样式细节。
 - 2026-05-09 已把背包页 cursor item 层抽成 `DocumentCursorOverlayControl`；后续若业务页需要鼠标跟随的宿主图片浮层，应优先直接接该控件。
+- 2026-05-09 已修复 HTML-like 文档在滚轮滚动或滚动条拖拽后 hover 不同步的问题；今后凡是会改变内容相对鼠标位置的输入分支，都要在位移生效后重新做 hover 命中。
 - Forge 配置页已切换到 HTML-like 模板化实现，后续若继续扩展配置类页面，应优先复用模板而不是回退到 `GuiConfig`。
 - 配置模板页若不走 `DocumentPageAuthoringSurface`，需要在 `BaseScreen.onResize(...)` 中显式给 `HtmlLikeDocumentWidget` 下发布局边界；仅设置 `UiLayoutSpec` 可能导致页面可开屏但内容区域为 `0x0`。
 - 2026-05-09 已确认 `runClient21` 会由 `gtnhgradle` 的 Modern Java 模块强制约束 `GTNHLib` 到 `0.9.20`；若只为在该运行链路下测试 Angelica，不应再尝试把 `GTNHLib` 锁回 `0.7.10`，而应改测兼容新版 `GTNHLib` 的 Angelica 版本。
