@@ -15,6 +15,8 @@ import club.heiqi.uilib.ui.dom.control.DocumentButtonActionEvent;
 import club.heiqi.uilib.ui.dom.control.DocumentButtonActionHandler;
 import club.heiqi.uilib.ui.dom.control.DocumentButtonControl;
 import club.heiqi.uilib.ui.dom.control.DocumentHostImageControl;
+import club.heiqi.uilib.ui.dom.control.DocumentOverlayHostControl;
+import club.heiqi.uilib.ui.dom.control.DocumentOverlayLayerControl;
 import club.heiqi.uilib.ui.dom.control.DocumentTooltipOverlayControl;
 import club.heiqi.uilib.ui.image.HostImageSource;
 import club.heiqi.uilib.ui.dom.control.DocumentInventorySlotGridControl;
@@ -49,7 +51,9 @@ final class HtmlLikeInventoryOverviewDocumentPageController extends DocumentPage
     private final TextNode backpackMetricsText;
     private final DocumentInventorySlotGridControl hotbarGrid;
     private final DocumentInventorySlotGridControl backpackGrid;
+    private final DocumentOverlayHostControl overlayHostControl;
     private final DocumentTooltipOverlayControl tooltipOverlayControl;
+    private final DocumentOverlayLayerControl cursorItemLayer;
     private final DocumentHostImageControl cursorItemControl;
     private final InventorySlotGridItemRenderer inventoryItemRenderer;
 
@@ -98,7 +102,9 @@ final class HtmlLikeInventoryOverviewDocumentPageController extends DocumentPage
         this.backpackMetricsText = bundle.backpackMetrics;
         this.hotbarGrid = bundle.hotbarGrid;
         this.backpackGrid = bundle.backpackGrid;
+        this.overlayHostControl = bundle.overlayHostControl;
         this.tooltipOverlayControl = bundle.tooltipOverlayControl;
+        this.cursorItemLayer = bundle.cursorItemLayer;
         this.cursorItemControl = bundle.cursorItemControl;
     }
 
@@ -146,11 +152,11 @@ final class HtmlLikeInventoryOverviewDocumentPageController extends DocumentPage
         backpackSection.card.append(backpackGrid.getElement());
 
         appendFooter(document, main);
-        DocumentTooltipOverlayControl tooltipOverlayControl = appendTooltipLayer(document, root);
-        DocumentHostImageControl cursorItemControl = appendCursorItemLayer(document, root);
+        DocumentOverlayBundle overlayBundle = appendOverlayLayers(document, root);
 
         return new ContentBundle(overviewMetrics, hotbarMetrics, backpackMetrics, hotbarGrid, backpackGrid,
-                tooltipOverlayControl, cursorItemControl);
+                overlayBundle.overlayHostControl, overlayBundle.tooltipOverlayControl,
+                overlayBundle.cursorItemLayer, overlayBundle.cursorItemControl);
     }
 
     private static final class ContentBundle {
@@ -159,18 +165,39 @@ final class HtmlLikeInventoryOverviewDocumentPageController extends DocumentPage
         final TextNode backpackMetrics;
         final DocumentInventorySlotGridControl hotbarGrid;
         final DocumentInventorySlotGridControl backpackGrid;
+        final DocumentOverlayHostControl overlayHostControl;
         final DocumentTooltipOverlayControl tooltipOverlayControl;
+        final DocumentOverlayLayerControl cursorItemLayer;
         final DocumentHostImageControl cursorItemControl;
 
         ContentBundle(TextNode overviewMetrics, TextNode hotbarMetrics, TextNode backpackMetrics,
                 DocumentInventorySlotGridControl hotbarGrid, DocumentInventorySlotGridControl backpackGrid,
-                DocumentTooltipOverlayControl tooltipOverlayControl, DocumentHostImageControl cursorItemControl) {
+                DocumentOverlayHostControl overlayHostControl, DocumentTooltipOverlayControl tooltipOverlayControl,
+                DocumentOverlayLayerControl cursorItemLayer, DocumentHostImageControl cursorItemControl) {
             this.overviewMetrics = overviewMetrics;
             this.hotbarMetrics = hotbarMetrics;
             this.backpackMetrics = backpackMetrics;
             this.hotbarGrid = hotbarGrid;
             this.backpackGrid = backpackGrid;
+            this.overlayHostControl = overlayHostControl;
             this.tooltipOverlayControl = tooltipOverlayControl;
+            this.cursorItemLayer = cursorItemLayer;
+            this.cursorItemControl = cursorItemControl;
+        }
+    }
+
+    private static final class DocumentOverlayBundle {
+        final DocumentOverlayHostControl overlayHostControl;
+        final DocumentTooltipOverlayControl tooltipOverlayControl;
+        final DocumentOverlayLayerControl cursorItemLayer;
+        final DocumentHostImageControl cursorItemControl;
+
+        DocumentOverlayBundle(DocumentOverlayHostControl overlayHostControl,
+                DocumentTooltipOverlayControl tooltipOverlayControl, DocumentOverlayLayerControl cursorItemLayer,
+                DocumentHostImageControl cursorItemControl) {
+            this.overlayHostControl = overlayHostControl;
+            this.tooltipOverlayControl = tooltipOverlayControl;
+            this.cursorItemLayer = cursorItemLayer;
             this.cursorItemControl = cursorItemControl;
         }
     }
@@ -359,7 +386,10 @@ final class HtmlLikeInventoryOverviewDocumentPageController extends DocumentPage
         footer.append(backButton.getElement());
     }
 
-    private DocumentTooltipOverlayControl appendTooltipLayer(UiDocument document, ElementNode parent) {
+    private DocumentOverlayBundle appendOverlayLayers(UiDocument document, ElementNode parent) {
+        DocumentOverlayHostControl overlayHostControl = new DocumentOverlayHostControl(document);
+        parent.append(overlayHostControl.getElement());
+
         DocumentTooltipOverlayControl tooltipOverlay = new DocumentTooltipOverlayControl(document,
                 documentUi.getTextMeasureService(), new DocumentTooltipOverlayControl.ViewportPointerProvider() {
                     @Override
@@ -391,27 +421,24 @@ final class HtmlLikeInventoryOverviewDocumentPageController extends DocumentPage
                 .setBackdropStyle(12, 1.2F);
         ElementNode tooltipElement = tooltipOverlay.getElement();
         tooltipElement.setAttribute("data-inventory-tooltip", "true");
-        parent.append(tooltipElement);
-        return tooltipOverlay;
-    }
+        overlayHostControl.appendOverlay(tooltipElement);
 
-    private DocumentHostImageControl appendCursorItemLayer(UiDocument document, ElementNode parent) {
         DocumentHostImageControl control = new DocumentHostImageControl(document, CURSOR_PLACEHOLDER_IMAGE_SOURCE)
                 .setSize(24);
         ElementNode layer = control.getElement();
+        DocumentOverlayLayerControl cursorItemLayer = new DocumentOverlayLayerControl(layer)
+                .setHitTestHidden(true)
+                .setZIndex(1001)
+                .hideOffscreen();
         layer.setAttribute("data-cursor-item-layer", "true");
         layer.style()
-                .setPosition(UiPosition.FIXED)
-                .setLeft(UiStyleLength.px(-10000))
-                .setTop(UiStyleLength.px(-10000))
                 .setWidth(UiStyleLength.px(24))
                 .setHeight(UiStyleLength.px(24))
-                .setZIndex(1001)
                 .setOverflowX(UiOverflow.VISIBLE)
                 .setOverflowY(UiOverflow.VISIBLE)
                 .setDisplay(UiDisplay.NONE);
-        parent.append(layer);
-        return control;
+        overlayHostControl.appendOverlay(layer);
+        return new DocumentOverlayBundle(overlayHostControl, tooltipOverlay, cursorItemLayer, control);
     }
 
     private void updateTooltipLayer(boolean hovered, List<String> lines, int documentX, int documentY) {
@@ -498,18 +525,16 @@ final class HtmlLikeInventoryOverviewDocumentPageController extends DocumentPage
         HostImageSource hostImageSource = carriedSlotSnapshot == null ? null : carriedSlotSnapshot.toHostImageSource();
         if (hostImageSource == null) {
             cursorLayer.style()
-                    .setDisplay(UiDisplay.NONE)
-                    .setLeft(UiStyleLength.px(-10000))
-                    .setTop(UiStyleLength.px(-10000));
+                    .setDisplay(UiDisplay.NONE);
+            cursorItemLayer.hideOffscreen();
             return;
         }
         int mouseX = resolveCursorItemLayerOffset(runtimeView.getMouseX(), htmlLikeDocumentWidget.getAbsoluteX());
         int mouseY = resolveCursorItemLayerOffset(runtimeView.getMouseY(), htmlLikeDocumentWidget.getAbsoluteY());
         cursorItemControl.setSource(hostImageSource);
         cursorLayer.style()
-                .setDisplay(UiDisplay.BLOCK)
-                .setLeft(UiStyleLength.px(mouseX))
-                .setTop(UiStyleLength.px(mouseY));
+                .setDisplay(UiDisplay.BLOCK);
+        cursorItemLayer.setOverlayPosition(mouseX, mouseY);
     }
 
     private static final HostImageSource CURSOR_PLACEHOLDER_IMAGE_SOURCE = HostImageSource.textureRegion(

@@ -12,7 +12,6 @@ import club.heiqi.uilib.ui.style.UiDisplay;
 import club.heiqi.uilib.ui.style.UiFlexDirection;
 import club.heiqi.uilib.ui.style.UiJustifyContent;
 import club.heiqi.uilib.ui.style.UiOverflow;
-import club.heiqi.uilib.ui.style.UiPosition;
 import club.heiqi.uilib.ui.style.UiStyleInsets;
 import club.heiqi.uilib.ui.style.UiStyleLength;
 import club.heiqi.uilib.ui.text.TextMeasureService;
@@ -56,6 +55,7 @@ public final class DocumentTooltipOverlayControl {
         int getPointerY();
     }
 
+    private final DocumentOverlayLayerControl overlayLayer;
     private final ElementNode element;
     private final TextMeasureService textMeasureService;
     private final ViewportPointerProvider viewportPointerProvider;
@@ -86,7 +86,10 @@ public final class DocumentTooltipOverlayControl {
      */
     public DocumentTooltipOverlayControl(UiDocument document, TextMeasureService textMeasureService,
             ViewportPointerProvider viewportPointerProvider) {
-        this.element = Objects.requireNonNull(document, "document").element("aside");
+        this.overlayLayer = new DocumentOverlayLayerControl(Objects.requireNonNull(document, "document"), "aside")
+                .setHitTestHidden(true)
+                .setZIndex(zIndex);
+        this.element = overlayLayer.getElement();
         this.textMeasureService = Objects.requireNonNull(textMeasureService, "textMeasureService");
         this.viewportPointerProvider = Objects.requireNonNull(viewportPointerProvider, "viewportPointerProvider");
         configureElement();
@@ -179,6 +182,7 @@ public final class DocumentTooltipOverlayControl {
      */
     public DocumentTooltipOverlayControl setZIndex(int zIndex) {
         this.zIndex = zIndex;
+        overlayLayer.setZIndex(zIndex);
         applySurfaceStyle();
         refresh();
         return this;
@@ -232,18 +236,15 @@ public final class DocumentTooltipOverlayControl {
                 });
         element.style()
                 .setWidth(UiStyleLength.px(placement.getWidth()))
-                .setHeight(UiStyleLength.auto())
-                .setLeft(UiStyleLength.px(placement.getLeft()))
-                .setTop(UiStyleLength.px(placement.getTop()));
+                .setHeight(UiStyleLength.auto());
+        overlayLayer.setOverlayPosition(placement.getLeft(), placement.getTop());
         return this;
     }
 
     private void configureElement() {
         element.setAttribute("role", "tooltip")
-                .setAttribute("aria-hidden", "true")
-                .setAttribute("data-hit-test-hidden", "true");
+                .setAttribute("aria-hidden", "true");
         element.style()
-                .setPosition(UiPosition.FIXED)
                 .setDisplay(UiDisplay.FLEX)
                 .setFlexDirection(UiFlexDirection.COLUMN)
                 .setAlignItems(UiAlignItems.STRETCH)
@@ -254,7 +255,6 @@ public final class DocumentTooltipOverlayControl {
 
     private void applySurfaceStyle() {
         element.style()
-                .setZIndex(zIndex)
                 .setWidth(UiStyleLength.px(minWidth))
                 .setPadding(UiStyleInsets.of(UiStyleLength.px(verticalPadding), UiStyleLength.px(horizontalPadding),
                         UiStyleLength.px(verticalPadding), UiStyleLength.px(horizontalPadding)))
@@ -287,11 +287,7 @@ public final class DocumentTooltipOverlayControl {
     }
 
     private void hideTooltipElement() {
-        element.style()
-                .setWidth(UiStyleLength.px(0))
-                .setHeight(UiStyleLength.px(0))
-                .setLeft(UiStyleLength.px(-10000))
-                .setTop(UiStyleLength.px(-10000));
+        overlayLayer.collapseOffscreen();
     }
 
     private int resolvePreferredTooltipWidth() {
