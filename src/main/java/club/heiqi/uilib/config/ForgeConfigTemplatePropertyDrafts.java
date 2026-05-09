@@ -16,6 +16,22 @@ final class ForgeConfigTemplatePropertyDrafts {
     private ForgeConfigTemplatePropertyDrafts() {}
 
     /**
+     * 已应用属性值的回滚快照。
+     */
+    private static final class PropertyValueSnapshot {
+
+        private final boolean list;
+        private final String stringValue;
+        private final String[] listValue;
+
+        private PropertyValueSnapshot(boolean list, String stringValue, String[] listValue) {
+            this.list = list;
+            this.stringValue = stringValue;
+            this.listValue = listValue;
+        }
+    }
+
+    /**
      * 读取当前属性值对应的展示文本。
      *
      * @param property Forge 属性
@@ -67,6 +83,19 @@ final class ForgeConfigTemplatePropertyDrafts {
     }
 
     /**
+     * 判断当前值是否适合继续使用分段选择控件承载。
+     *
+     * <p>当当前值已经不在 validValues 中时，回退到文本输入框，
+     * 避免页面静默把遗留值覆盖成第一个选项。</p>
+     *
+     * @param property Forge 属性
+     * @return 是否应使用分段选择控件
+     */
+    static boolean shouldUseDiscreteValidValuesEditor(Property property) {
+        return hasDiscreteValidValues(property) && resolveSelectedValidValueIndex(property) >= 0;
+    }
+
+    /**
      * 返回属性的有效值列表快照。
      *
      * @param property Forge 属性
@@ -84,12 +113,12 @@ final class ForgeConfigTemplatePropertyDrafts {
      * 返回当前值在有效值列表中的索引。
      *
      * @param property Forge 属性
-     * @return 有效索引；找不到时返回 0
+     * @return 有效索引；找不到时返回 -1
      */
     static int resolveSelectedValidValueIndex(Property property) {
         String[] validValues = getValidValuesSnapshot(property);
         if (validValues.length == 0) {
-            return 0;
+            return -1;
         }
         String currentValue = property == null ? "" : property.getString();
         for (int index = 0; index < validValues.length; index++) {
@@ -97,7 +126,7 @@ final class ForgeConfigTemplatePropertyDrafts {
                 return index;
             }
         }
-        return 0;
+        return -1;
     }
 
     /**
@@ -110,10 +139,44 @@ final class ForgeConfigTemplatePropertyDrafts {
         if (property == null) {
             return 128;
         }
-        if (property.isList()) {
-            return Math.max(64, property.getMaxListLength() > 0 ? property.getMaxListLength() * 16 : 256);
+        int maxObservedLength = Math.max(readCurrentDisplayValue(property).length(),
+                readDefaultDisplayValue(property).length());
+        String[] validValues = getValidValuesSnapshot(property);
+        for (String validValue : validValues) {
+            if (validValue != null) {
+                maxObservedLength = Math.max(maxObservedLength, validValue.length());
+            }
         }
-        return 160;
+        if (property.isList()) {
+            int estimated = Math.max(256, maxObservedLength + 64);
+            if (property.getMaxListLength() > 0 && maxObservedLength > 0) {
+                estimated = Math.max(estimated, property.getMaxListLength() * (maxObservedLength + 2));
+            }
+            return Math.min(4096, estimated);
+        }
+        return Math.min(1024, Math.max(160, maxObservedLength + 32));
+    }
+
+    /**
+     * 在执行保存事务时提供属性值回滚。
+     *
+     * @param properties 可能被改写的属性集合
+     * @param applyDrafts 草稿写回动作
+     * @param saveAction 保存动作
+     */
+    static void runWithRollback(List<Property> properties, Runnable applyDrafts, Runnable saveAction) {
+        List<PropertyValueSnapshot> snapshots = snapshotProperties(properties);
+        try {
+            if (applyDrafts != null) {
+                applyDrafts.run();
+            }
+            if (saveAction != null) {
+                saveAction.run();
+            }
+        } catch (RuntimeException exception) {
+            restoreProperties(properties, snapshots);
+            throw exception;
+        }
     }
 
     /**
@@ -348,6 +411,52 @@ final class ForgeConfigTemplatePropertyDrafts {
             builder.append(value.trim());
         }
         return builder.toString();
+    }
+
+    private static List<PropertyValueSnapshot> snapshotProperties(List<Property> properties) {
+        List<PropertyValueSnapshot> snapshots = new ArrayList<PropertyValueSnapshot>();
+        if (properties == null) {
+            return snapshots;
+        }
+        for (Property property : properties) {
+            snapshots.add(snapshotProperty(property));
+        }
+        return snapshots;
+    }
+
+    private static PropertyValueSnapshot snapshotProperty(Property property) {
+        if (property == null) {
+            return new PropertyValueSnapshot(false, "", null);
+        }
+        if (property.isList()) {
+            String[] stringList = property.getStringList();
+            return new PropertyValueSnapshot(true, null,
+                    stringList == null ? new String[0] : Arrays.copyOf(stringList, stringList.length));
+        }
+        return new PropertyValueSnapshot(false, property.getString(), null);
+    }
+
+    private static void restoreProperties(List<Property> properties, List<PropertyValueSnapshot> snapshots) {
+        if (properties == null || snapshots == null) {
+            return;
+        }
+        int count = Math.min(properties.size(), snapshots.size());
+        for (int index = 0; index < count; index++) {
+            restoreProperty(properties.get(index), snapshots.get(index));
+        }
+    }
+
+    private static void restoreProperty(Property property, PropertyValueSnapshot snapshot) {
+        if (property == null || snapshot == null) {
+            return;
+        }
+        if (snapshot.list) {
+            String[] listValue = snapshot.listValue == null ? new String[0] : Arrays.copyOf(snapshot.listValue,
+                    snapshot.listValue.length);
+            property.set(listValue);
+            return;
+        }
+        property.set(snapshot.stringValue == null ? "" : snapshot.stringValue);
     }
 
     private static boolean contains(String[] values, String target) {

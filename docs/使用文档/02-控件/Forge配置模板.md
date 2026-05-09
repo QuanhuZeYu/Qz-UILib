@@ -13,11 +13,12 @@
 - 模板会直接读取 `Configuration` 中已存在的 `ConfigCategory` 与 `Property`。
 - 当前模板支持布尔、整数、小数、字符串与列表属性。
 - 布尔属性默认渲染为开关。
-- 非列表字符串属性如果声明了 `validValues`，默认渲染为分段选择控件。
+- 非列表字符串属性如果声明了 `validValues`，且当前值仍在候选集中，默认渲染为分段选择控件；遗留值会自动回退为文本输入，避免静默改写。
 - 其他属性默认渲染为文本输入框。
 - 列表输入使用英文逗号分隔；保存时会写回到对应 Forge `Property`。
 - 页面内置 `Ctrl+S` 保存、`ESC` 返回、恢复当前值、恢复默认值四个基础动作。
-- 页面在找不到显式声明的分类时，会在状态区和空状态区明确给出缺失分类名。
+- 保存动作若在写盘或宿主 `saveAndReload()` 阶段失败，页面会回滚本次已写回的属性值，并保留失败提示。
+- 页面在找不到显式声明的分类时，会在状态区提示缺失分类名；空状态区也会优先显示缺失分类信息。
 
 ## 最小接入
 
@@ -104,7 +105,7 @@ spec.addPropertyEditorFactory(new ForgeConfigTemplateScreen.PropertyEditorFactor
 - `club.heiqi.uilib.config.ModGuiFactory` 继续作为 Forge `guiFactory` 入口。
 - `club.heiqi.uilib.config.ModConfigGui` 已切换为 `ForgeConfigTemplateScreen` 的具体实现，不再继承默认 `GuiConfig`。
 - 当前模板实例覆盖三个分类：`general`、`fontSystem`、`fontSizeSetting`。
-- 当前模板已经把 `validValues` 视为一等语义，不再一律退化成文本输入。
+- 当前模板已经把 `validValues` 视为一等语义；但当当前值已不在候选集时，会自动回退为文本输入保留遗留值。
 
 ## 验证建议
 

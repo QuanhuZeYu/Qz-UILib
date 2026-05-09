@@ -43,7 +43,7 @@
 - `Widget`、`ViewportWidget`、`UiInputRouter`、`UiRenderContext`、`UiRuntimeAdapters` 与背包格子底层宿主适配仍可能是当前后端基础；动这些能力前必须先查源码引用。
 - 新增 layout-affecting、宿主集成或对外能力时，要同步更新 `docs/使用文档/` 并保留最小必要验证。
 - `club.heiqi.uilib.config.ForgeConfigTemplateScreen` 已作为对外可复用模板，用于替换 Forge 默认 `GuiConfig` 并直接消费 `Configuration` / `ConfigCategory` / `Property`。
-- `ForgeConfigTemplateScreen.Spec` 已支持 `PropertyEditorFactory`、`Theme`、`TextSet` 三类扩展点；非列表字符串属性如果声明 `validValues`，默认走分段选择控件而不是文本输入。
+- `ForgeConfigTemplateScreen.Spec` 已支持 `PropertyEditorFactory`、`Theme`、`TextSet` 三类扩展点；非列表字符串属性若声明 `validValues` 且当前值仍在候选集中，默认走分段选择控件；遗留值要回退到文本输入，避免保存时静默覆盖成首项。
 - 继承 `GuiScreen` / `BaseScreen` 的页面类不应在纯 JVM 单测中直接实例化；相关教训记录在 `docs/errors/ERROR-20260508-jvm-test-guiscreen-static-init.md`。
 
 ## 运行与验证
@@ -68,6 +68,7 @@
 - 2026-05-09 已修复 HTML-like 文档在滚轮滚动或滚动条拖拽后 hover 不同步的问题；今后凡是会改变内容相对鼠标位置的输入分支，都要在位移生效后重新做 hover 命中。
 - Forge 配置页已切换到 HTML-like 模板化实现，后续若继续扩展配置类页面，应优先复用模板而不是回退到 `GuiConfig`。
 - 配置模板页若不走 `DocumentPageAuthoringSurface`，需要在 `BaseScreen.onResize(...)` 中显式给 `HtmlLikeDocumentWidget` 下发布局边界；仅设置 `UiLayoutSpec` 可能导致页面可开屏但内容区域为 `0x0`。
+- 2026-05-09 已修复配置模板页保存失败后的属性状态污染；后续若保存流程包含“先写内存属性、再执行保存/重载副作用”，必须提供回滚，不能只提示“保存失败”。
 - 2026-05-09 已确认 `runClient21` 会由 `gtnhgradle` 的 Modern Java 模块强制约束 `GTNHLib` 到 `0.9.20`；若只为在该运行链路下测试 Angelica，不应再尝试把 `GTNHLib` 锁回 `0.7.10`，而应改测兼容新版 `GTNHLib` 的 Angelica 版本。
 - 是否继续扩展动画、布局或渲染能力，要以真实需求和验证结果决定，不默认扩面。
 - 非阻塞的底层细节优化后置，阶段目标变化时只在本文件保留高层边界，不回填大段实现细节。

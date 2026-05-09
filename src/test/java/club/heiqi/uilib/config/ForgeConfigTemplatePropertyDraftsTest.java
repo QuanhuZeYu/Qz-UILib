@@ -1,5 +1,7 @@
 package club.heiqi.uilib.config;
 
+import java.util.Arrays;
+
 import org.junit.Assert;
 import org.junit.Test;
 
@@ -89,5 +91,84 @@ public class ForgeConfigTemplatePropertyDraftsTest {
 
         modeProperty.set("debug");
         Assert.assertEquals(2, ForgeConfigTemplatePropertyDrafts.resolveSelectedValidValueIndex(modeProperty));
+    }
+
+    /**
+     * 验证遗留值不会再被静默回退成第一个 validValues 选项。
+     */
+    @Test
+    public void shouldFallbackFromChoiceEditorWhenCurrentValueIsLegacyValue() {
+        Configuration configuration = new Configuration();
+        Property modeProperty = configuration.get("general", "mode", "legacy", "运行模式");
+        modeProperty.setValidValues(new String[] { "normal", "safe", "debug" });
+
+        Assert.assertTrue(ForgeConfigTemplatePropertyDrafts.hasDiscreteValidValues(modeProperty));
+        Assert.assertEquals(-1, ForgeConfigTemplatePropertyDrafts.resolveSelectedValidValueIndex(modeProperty));
+        Assert.assertFalse(ForgeConfigTemplatePropertyDrafts.shouldUseDiscreteValidValuesEditor(modeProperty));
+    }
+
+    /**
+     * 验证列表输入最大长度至少覆盖当前与默认展示文本。
+     */
+    @Test
+    public void shouldResolveListMaxLengthFromObservedContent() {
+        Configuration configuration = new Configuration();
+        String[] defaults = new String[] { "default_resource_pack_identifier_with_long_name" };
+        Property listProperty = configuration.get("general", "resourcePacks", defaults, "资源包列表");
+        listProperty.setMaxListLength(2);
+        listProperty.set(new String[] {
+                "runtime_resource_pack_identifier_with_even_longer_name",
+                "emoji_fallback_resource_pack_identifier"
+        });
+
+        int maxLength = ForgeConfigTemplatePropertyDrafts.resolveMaxLength(listProperty);
+
+        Assert.assertTrue(maxLength >= ForgeConfigTemplatePropertyDrafts.readCurrentDisplayValue(listProperty).length());
+        Assert.assertTrue(maxLength >= ForgeConfigTemplatePropertyDrafts.readDefaultDisplayValue(listProperty).length());
+    }
+
+    /**
+     * 验证保存动作失败时会回滚已写回的属性值。
+     */
+    @Test
+    public void shouldRollbackAppliedDraftsWhenSaveActionFails() {
+        Configuration configuration = new Configuration();
+        Property modeProperty = configuration.get("general", "mode", "normal", "运行模式");
+        Property listProperty = configuration.get("general", "resourcePacks", new String[] { "base" }, "资源包列表");
+
+        try {
+            ForgeConfigTemplatePropertyDrafts.runWithRollback(Arrays.asList(modeProperty, listProperty), new Runnable() {
+                @Override
+                public void run() {
+                    modeProperty.set("debug");
+                    listProperty.set(new String[] { "runtime", "emoji" });
+                }
+            }, new Runnable() {
+                @Override
+                public void run() {
+                    throw new IllegalStateException("save failed");
+                }
+            });
+            Assert.fail("expected save failure");
+        } catch (IllegalStateException exception) {
+            Assert.assertEquals("save failed", exception.getMessage());
+        }
+
+        Assert.assertEquals("normal", modeProperty.getString());
+        Assert.assertArrayEquals(new String[] { "base" }, listProperty.getStringList());
+    }
+
+    /**
+     * 验证空状态文案会优先暴露缺失分类。
+     */
+    @Test
+    public void shouldPreferMissingCategoriesInEmptyStateMessage() {
+        Assert.assertEquals("当前模板没有找到可展示的 Forge 配置项。请检查分类名是否与 Configuration 中注册的一致。",
+                ForgeConfigTemplateMessages.resolveEmptyStateMessage(
+                        "当前模板没有找到可展示的 Forge 配置项。请检查分类名是否与 Configuration 中注册的一致。", ""));
+        Assert.assertEquals("以下分类未在 Configuration 中找到：[general, render]。",
+                ForgeConfigTemplateMessages.resolveEmptyStateMessage(
+                        "当前模板没有找到可展示的 Forge 配置项。请检查分类名是否与 Configuration 中注册的一致。",
+                        "以下分类未在 Configuration 中找到：[general, render]。"));
     }
 }

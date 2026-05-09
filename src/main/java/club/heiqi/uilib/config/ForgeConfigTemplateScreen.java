@@ -179,14 +179,26 @@ public class ForgeConfigTemplateScreen extends BaseScreen {
             }
         }
 
-        for (PropertyBinding binding : bindings) {
-            binding.applyDraft();
-        }
         try {
-            runSaveHandler();
+            ForgeConfigTemplatePropertyDrafts.runWithRollback(collectBoundProperties(), new Runnable() {
+                @Override
+                public void run() {
+                    for (PropertyBinding binding : bindings) {
+                        binding.applyDraft();
+                    }
+                }
+            }, new Runnable() {
+                @Override
+                public void run() {
+                    runSaveHandler();
+                }
+            });
         } catch (RuntimeException exception) {
             refreshStatusText(spec.getTextSet().formatSaveFailed(exception));
-            throw exception;
+            for (PropertyBinding binding : bindings) {
+                binding.restoreCurrentValue();
+            }
+            return;
         }
         for (PropertyBinding binding : bindings) {
             binding.restoreCurrentValue();
@@ -258,7 +270,7 @@ public class ForgeConfigTemplateScreen extends BaseScreen {
         TextNode status = appendStatusCard(document, main);
         appendToolbar(document, main);
         appendCategoryCards(document, main);
-        if (bindings.isEmpty()) {
+        if (shouldRenderEmptyState()) {
             appendEmptyState(document, main);
         }
         return status;
@@ -419,11 +431,10 @@ public class ForgeConfigTemplateScreen extends BaseScreen {
                 .setBorderWidth(UiStyleLength.px(1))
                 .setBorderRadius(UiStyleLength.px(16))
                 .setTextColor(spec.getTheme().emptyStateTextColor);
-        if (!missingCategories.isEmpty()) {
-            empty.appendText(spec.getTextSet().formatMissingCategories(missingCategories));
-        } else {
-            empty.appendText(spec.getTextSet().emptyTemplateText);
-        }
+        String missingCategoriesMessage = missingCategories.isEmpty() ? ""
+                : spec.getTextSet().formatMissingCategories(missingCategories);
+        empty.appendText(ForgeConfigTemplateMessages.resolveEmptyStateMessage(spec.getTextSet().emptyTemplateText,
+                missingCategoriesMessage));
         parent.append(empty);
     }
 
@@ -435,7 +446,7 @@ public class ForgeConfigTemplateScreen extends BaseScreen {
         if (property.getType() == Property.Type.BOOLEAN && !property.isList()) {
             return new TogglePropertyBinding(document, categorySpec, property);
         }
-        if (ForgeConfigTemplatePropertyDrafts.hasDiscreteValidValues(property)) {
+        if (ForgeConfigTemplatePropertyDrafts.shouldUseDiscreteValidValuesEditor(property)) {
             return new ChoicePropertyBinding(document, categorySpec, property);
         }
         return new TextPropertyBinding(document, categorySpec, property);
@@ -510,6 +521,18 @@ public class ForgeConfigTemplateScreen extends BaseScreen {
             }
         }
         return dirtyCount;
+    }
+
+    private List<Property> collectBoundProperties() {
+        List<Property> properties = new ArrayList<Property>(bindings.size());
+        for (PropertyBinding binding : bindings) {
+            properties.add(binding.getProperty());
+        }
+        return properties;
+    }
+
+    private boolean shouldRenderEmptyState() {
+        return bindings.isEmpty() || !missingCategories.isEmpty();
     }
 
     private void refreshStatusText(String overrideMessage) {
