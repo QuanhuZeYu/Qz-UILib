@@ -17,21 +17,16 @@ import club.heiqi.uilib.ui.dom.DocumentNode;
 import club.heiqi.uilib.ui.dom.ElementNode;
 import club.heiqi.uilib.ui.dom.UiDocument;
 import club.heiqi.uilib.ui.event.UiKeyEvent;
-import club.heiqi.uilib.ui.image.HostImageSource;
-import club.heiqi.uilib.ui.inventory.InventorySlotGridItemGeometry;
-import club.heiqi.uilib.ui.inventory.InventorySlotGridItemRenderer;
 import club.heiqi.uilib.ui.inventory.InventorySlotSnapshot;
 import club.heiqi.uilib.ui.layout.DocumentLayoutBox;
 import club.heiqi.uilib.ui.layout.DocumentLayoutEngine;
 import club.heiqi.uilib.ui.paint.DocumentPaintCommand;
 import club.heiqi.uilib.ui.paint.DocumentPaintCommandType;
 import club.heiqi.uilib.ui.paint.DocumentPaintEngine;
-import club.heiqi.uilib.ui.render.UiRenderContext;
 import club.heiqi.uilib.ui.style.UiDisplay;
 import club.heiqi.uilib.ui.style.UiStyleLength;
 import club.heiqi.uilib.ui.style.UiStyleResolver;
 import club.heiqi.uilib.ui.text.TextMeasureService;
-import club.heiqi.uilib.ui.theme.UiSurfaceStyle;
 
 /**
  * `DocumentInventorySlotGridControl` 的基础行为契约测试。
@@ -39,16 +34,15 @@ import club.heiqi.uilib.ui.theme.UiSurfaceStyle;
 public class DocumentInventorySlotGridControlTest {
 
     /**
-     * 验证空槽网格渲染时不触发物品渲染器。
+     * 验证空槽网格不会生成可见物品图片子元素。
      */
     @Test
-    public void shouldRenderEmptySlotGridWithoutCallingItemRenderer() {
+    public void shouldKeepSlotImageHiddenWhenSlotsAreEmpty() {
         UiDocument document = UiDocument.create();
         ElementNode root = document.getRootElement();
         root.style()
                 .setWidth(UiStyleLength.px(400))
                 .setHeight(UiStyleLength.px(200));
-        RecordingUiRenderContext renderContext = new RecordingUiRenderContext();
         DocumentInventorySlotGridControl gridControl = new DocumentInventorySlotGridControl(document, 9, 9)
                 .setSlotGap(4)
                 .setPreferredSlotSize(32)
@@ -60,30 +54,21 @@ public class DocumentInventorySlotGridControlTest {
                 })
                 .commitLayout();
         root.append(gridControl.getElement());
-        HtmlLikeDocumentWidget widget = new HtmlLikeDocumentWidget(document, 400, 200,
-                new DeterministicTextMeasureService());
-        widget.applyLayoutBounds(0, 0, 400, 200);
-        widget.render(renderContext);
-
-        Assert.assertTrue(renderContext.deferredReplays.isEmpty());
         List<DocumentPaintCommand> commands = buildPaintCommands(root, 400, 200);
-        Assert.assertEquals(1, countCommands(commands, DocumentPaintCommandType.CUSTOM));
         Assert.assertTrue(containsCommand(commands, DocumentPaintCommandType.BACKGROUND, 0xAA171C24));
+        Assert.assertEquals(UiDisplay.NONE, UiStyleResolver.compute(slotImageElement(firstSlotElement(gridControl))).getDisplay());
     }
 
     /**
-     * 验证占用槽触发物品渲染器。
+     * 验证占用槽会挂载宿主图片子元素占位。
      */
     @Test
-    public void shouldCallItemRendererWhenSlotsAreOccupied() {
+    public void shouldAttachHostImageElementWhenSlotsAreOccupied() {
         UiDocument document = UiDocument.create();
         ElementNode root = document.getRootElement();
         root.style()
                 .setWidth(UiStyleLength.px(400))
                 .setHeight(UiStyleLength.px(200));
-        RecordingUiRenderContext renderContext = new RecordingUiRenderContext();
-        final List<InventorySlotSnapshot[]> receivedSnapshots = new ArrayList<InventorySlotSnapshot[]>();
-        final List<InventorySlotGridItemGeometry> receivedGeometries = new ArrayList<InventorySlotGridItemGeometry>();
         DocumentInventorySlotGridControl gridControl = new DocumentInventorySlotGridControl(document, 9, 9)
                 .setSlotGap(4)
                 .setPreferredSlotSize(32)
@@ -93,28 +78,16 @@ public class DocumentInventorySlotGridControlTest {
                         return localIndex == 0 ? InventorySlotSnapshot.occupied() : InventorySlotSnapshot.empty();
                     }
                 })
-                .setItemRenderer(new InventorySlotGridItemRenderer() {
-                    @Override
-                    public void renderItems(InventorySlotGridItemGeometry geometry, InventorySlotSnapshot[] slotSnapshots) {
-                        receivedGeometries.add(geometry);
-                        receivedSnapshots.add(slotSnapshots);
-                    }
-                })
                 .commitLayout();
         root.append(gridControl.getElement());
-        HtmlLikeDocumentWidget widget = new HtmlLikeDocumentWidget(document, 400, 200,
-                new DeterministicTextMeasureService());
-        widget.applyLayoutBounds(0, 0, 400, 200);
-        widget.render(renderContext);
 
-        Assert.assertEquals(1, renderContext.deferredReplays.size());
-        renderContext.deferredReplays.get(0).replay();
-        Assert.assertEquals(1, receivedSnapshots.size());
-        Assert.assertEquals(9, receivedSnapshots.get(0).length);
-        Assert.assertTrue(receivedSnapshots.get(0)[0].isOccupied());
-        Assert.assertFalse(receivedSnapshots.get(0)[1].isOccupied());
-        Assert.assertEquals(9, receivedGeometries.get(0).getSlotCount());
-        Assert.assertEquals(1, countCommands(buildPaintCommands(root, 400, 200), DocumentPaintCommandType.CUSTOM));
+        ElementNode firstImage = slotImageElement(firstSlotElement(gridControl));
+        ElementNode secondImage = slotImageElement(secondSlotElement(gridControl));
+
+        Assert.assertEquals(UiDisplay.NONE, UiStyleResolver.compute(firstImage).getDisplay());
+        Assert.assertEquals(UiDisplay.NONE, UiStyleResolver.compute(secondImage).getDisplay());
+        Assert.assertEquals("img", firstImage.getTagName());
+        Assert.assertEquals("true", firstImage.getAttribute("aria-hidden"));
     }
 
     /**
@@ -127,26 +100,12 @@ public class DocumentInventorySlotGridControlTest {
         root.style()
                 .setWidth(UiStyleLength.px(400))
                 .setHeight(UiStyleLength.px(200));
-        RecordingUiRenderContext renderContext = new RecordingUiRenderContext();
-        final boolean[] rendererCalled = new boolean[] { false };
         DocumentInventorySlotGridControl gridControl = new DocumentInventorySlotGridControl(document, 9, 9)
                 .setSlotGap(4)
                 .setPreferredSlotSize(32)
-                .setItemRenderer(new InventorySlotGridItemRenderer() {
-                    @Override
-                    public void renderItems(InventorySlotGridItemGeometry geometry, InventorySlotSnapshot[] slotSnapshots) {
-                        rendererCalled[0] = true;
-                    }
-                })
                 .commitLayout();
         root.append(gridControl.getElement());
-        HtmlLikeDocumentWidget widget = new HtmlLikeDocumentWidget(document, 400, 200,
-                new DeterministicTextMeasureService());
-        widget.applyLayoutBounds(0, 0, 400, 200);
-        widget.render(renderContext);
-
-        Assert.assertTrue(renderContext.deferredReplays.isEmpty());
-        Assert.assertFalse(rendererCalled[0]);
+        Assert.assertEquals(UiDisplay.NONE, UiStyleResolver.compute(slotImageElement(firstSlotElement(gridControl))).getDisplay());
     }
 
     /**
@@ -185,7 +144,7 @@ public class DocumentInventorySlotGridControlTest {
                 .setPadding(UiStyleLength.px(10));
         root.append(gridControl.getElement());
         Assert.assertTrue(containsCommand(buildPaintCommands(root, 200, 100), DocumentPaintCommandType.BACKGROUND,
-                0xFF111111, 11, 11, 43, 43));
+                0xFF111111));
     }
 
     /**
@@ -216,7 +175,6 @@ public class DocumentInventorySlotGridControlTest {
         Assert.assertTrue(containsCommand(commands, DocumentPaintCommandType.BACKGROUND, 0xCC202A38));
         Assert.assertTrue(containsCommand(commands, DocumentPaintCommandType.BORDER, 0xFF465468));
         Assert.assertTrue(containsCommand(commands, DocumentPaintCommandType.BORDER, 0xFF9AB8F2));
-        Assert.assertEquals(1, countCommands(commands, DocumentPaintCommandType.CUSTOM));
     }
 
     /**
@@ -260,6 +218,7 @@ public class DocumentInventorySlotGridControlTest {
         Assert.assertEquals("0", firstSlot.getAttribute("data-slot-index"));
         Assert.assertEquals("true", firstSlot.getAttribute("data-slot-occupied"));
         Assert.assertEquals("槽位 1，已占用", firstSlot.getAttribute("aria-label"));
+        Assert.assertEquals("img", slotImageElement(firstSlot).getTagName());
         Assert.assertEquals(Integer.valueOf(0xAA171C24), secondSlot.style().getBackgroundColor());
         Assert.assertEquals(Integer.valueOf(0xFF465468), secondSlot.style().getBorderColor());
         Assert.assertEquals("false", secondSlot.getAttribute("data-slot-occupied"));
@@ -287,8 +246,9 @@ public class DocumentInventorySlotGridControlTest {
                 .commitLayout();
         root.append(gridControl.getElement());
 
-        DocumentLayoutBox tableBox = DocumentLayoutEngine.layout(root, 240, 140,
-                new DeterministicTextMeasureService()).getChildren().get(0);
+        DocumentLayoutBox rootBox = DocumentLayoutEngine.layout(root, 240, 140,
+                new DeterministicTextMeasureService());
+        DocumentLayoutBox tableBox = rootBox.getChildren().get(0);
         DocumentLayoutBox bodyBox = tableBox.getChildren().get(0);
         DocumentLayoutBox firstRowBox = bodyBox.getChildren().get(0);
         DocumentLayoutBox secondRowBox = bodyBox.getChildren().get(1);
@@ -471,109 +431,6 @@ public class DocumentInventorySlotGridControlTest {
         Assert.assertEquals(Integer.valueOf(0xFFFFFFFF), firstSlot.style().getBorderColor());
     }
 
-    /**
-     * 验证鼠标携带物品 overlay 默认保留可关闭能力，供页面级语义层接管绘制。
-     */
-    @Test
-    public void shouldAllowDisablingCarriedSnapshotOverlay() {
-        UiDocument document = UiDocument.create();
-        ElementNode root = document.getRootElement();
-        root.style()
-                .setWidth(UiStyleLength.px(240))
-                .setHeight(UiStyleLength.px(140));
-        final List<String> cursorCalls = new ArrayList<String>();
-        InventorySlotGridItemRenderer itemRenderer = new InventorySlotGridItemRenderer() {
-            @Override
-            public void renderItems(InventorySlotGridItemGeometry geometry,
-                    InventorySlotSnapshot[] slotSnapshots) {}
-
-            @Override
-            public void renderCursorItem(InventorySlotSnapshot carriedSnapshot, int mouseX, int mouseY) {
-                cursorCalls.add(mouseX + ":" + mouseY + ":" + carriedSnapshot.isOccupied());
-            }
-        };
-        DocumentInventorySlotGridControl firstGrid = new DocumentInventorySlotGridControl(document, 1, 1)
-                .setCarriedSnapshot(InventorySlotSnapshot.occupied())
-                .setCarriedItemOverlayEnabled(true)
-                .setItemRenderer(itemRenderer)
-                .commitLayout();
-        DocumentInventorySlotGridControl secondGrid = new DocumentInventorySlotGridControl(document, 1, 1)
-                .setCarriedSnapshot(InventorySlotSnapshot.occupied())
-                .setCarriedItemOverlayEnabled(false)
-                .setItemRenderer(itemRenderer)
-                .commitLayout();
-        root.append(firstGrid.getElement());
-        root.append(secondGrid.getElement());
-        RecordingUiRenderContext renderContext = new RecordingUiRenderContext(240, 140, 88, 66);
-        HtmlLikeDocumentWidget widget = new HtmlLikeDocumentWidget(document, 240, 140,
-                new DeterministicTextMeasureService());
-        widget.applyLayoutBounds(0, 0, 240, 140);
-
-        widget.render(renderContext);
-        for (UiRenderContext.DeferredPostMainPassReplay replay : renderContext.deferredReplays) {
-            replay.replay();
-        }
-
-        Assert.assertEquals(Collections.singletonList("88:66:true"), cursorCalls);
-
-        cursorCalls.clear();
-        firstGrid.setCarriedItemOverlayEnabled(false);
-        RecordingUiRenderContext disabledContext = new RecordingUiRenderContext(240, 140, 88, 66);
-        widget.render(disabledContext);
-        for (UiRenderContext.DeferredPostMainPassReplay replay : disabledContext.deferredReplays) {
-            replay.replay();
-        }
-
-        Assert.assertTrue(cursorCalls.isEmpty());
-    }
-
-    /**
-     * 验证同一页面内多个占用网格会分别登记并回放物品批次。
-     */
-    @Test
-    public void shouldReplayOccupiedItemPassesForMultipleSlotGrids() {
-        UiDocument document = UiDocument.create();
-        ElementNode root = document.getRootElement();
-        root.style()
-                .setWidth(UiStyleLength.px(480))
-                .setHeight(UiStyleLength.px(260));
-        RecordingUiRenderContext renderContext = new RecordingUiRenderContext(480, 260, 0, 0);
-        final List<Integer> renderedSlotCounts = new ArrayList<Integer>();
-        InventorySlotGridItemRenderer itemRenderer = new InventorySlotGridItemRenderer() {
-            @Override
-            public void renderItems(InventorySlotGridItemGeometry geometry, InventorySlotSnapshot[] slotSnapshots) {
-                renderedSlotCounts.add(Integer.valueOf(geometry.getSlotCount()));
-            }
-        };
-        DocumentInventorySlotGridControl firstGrid = new DocumentInventorySlotGridControl(document, 9, 9)
-                .setSlotGap(4)
-                .setPreferredSlotSize(32)
-                .setContentProvider(new SingleOccupiedSlotContentProvider(0))
-                .setItemRenderer(itemRenderer)
-                .commitLayout();
-        DocumentInventorySlotGridControl secondGrid = new DocumentInventorySlotGridControl(document, 27, 9)
-                .setSlotGap(4)
-                .setPreferredSlotSize(32)
-                .setContentProvider(new SingleOccupiedSlotContentProvider(10))
-                .setItemRenderer(itemRenderer)
-                .commitLayout();
-        root.append(firstGrid.getElement());
-        root.append(secondGrid.getElement());
-        HtmlLikeDocumentWidget widget = new HtmlLikeDocumentWidget(document, 480, 260,
-                new DeterministicTextMeasureService());
-        widget.applyLayoutBounds(0, 0, 480, 260);
-
-        widget.render(renderContext);
-        for (UiRenderContext.DeferredPostMainPassReplay replay : renderContext.deferredReplays) {
-            replay.replay();
-        }
-
-        Assert.assertEquals(2, renderContext.deferredReplays.size());
-        Assert.assertEquals(2, renderedSlotCounts.size());
-        Assert.assertEquals(Integer.valueOf(9), renderedSlotCounts.get(0));
-        Assert.assertEquals(Integer.valueOf(27), renderedSlotCounts.get(1));
-    }
-
     private static List<DocumentPaintCommand> buildPaintCommands(ElementNode root, int width, int height) {
         DocumentLayoutBox rootBox = DocumentLayoutEngine.layout(root, width, height,
                 new DeterministicTextMeasureService());
@@ -625,6 +482,15 @@ public class DocumentInventorySlotGridControlTest {
         return (ElementNode) row.getChildren().get(1);
     }
 
+    private static ElementNode slotImageElement(ElementNode slotElement) {
+        for (DocumentNode child : slotElement.getChildren()) {
+            if (child instanceof ElementNode && "true".equals(((ElementNode) child).getAttribute("data-slot-image"))) {
+                return (ElementNode) child;
+            }
+        }
+        throw new AssertionError("slot image element not found");
+    }
+
     private static ElementNode tableBodyElement(ElementNode table) {
         for (DocumentNode child : table.getChildren()) {
             if (child instanceof ElementNode && "tbody".equals(((ElementNode) child).getTagName())) {
@@ -632,94 +498,6 @@ public class DocumentInventorySlotGridControlTest {
             }
         }
         throw new AssertionError("table body not found");
-    }
-
-    /**
-     * 单个占用槽位的数据源。
-     */
-    private static final class SingleOccupiedSlotContentProvider
-            implements DocumentInventorySlotGridControl.SlotContentProvider {
-
-        private final int occupiedSlotIndex;
-
-        private SingleOccupiedSlotContentProvider(int occupiedSlotIndex) {
-            this.occupiedSlotIndex = occupiedSlotIndex;
-        }
-
-        @Override
-        public InventorySlotSnapshot getSlotSnapshot(int localIndex) {
-            return localIndex == occupiedSlotIndex ? InventorySlotSnapshot.occupied() : InventorySlotSnapshot.empty();
-        }
-    }
-
-    /**
-     * 记录延迟回放与 surface 绘制调用的渲染上下文。
-     */
-    private static final class RecordingUiRenderContext extends UiRenderContext {
-
-        private final List<DeferredPostMainPassReplay> deferredReplays = new ArrayList<DeferredPostMainPassReplay>();
-        private final List<DrawCall> drawCalls = new ArrayList<DrawCall>();
-        private final List<String> hostImageCalls = new ArrayList<String>();
-
-        private RecordingUiRenderContext() {
-            super(400, 200, 0, 0, 1.0F);
-        }
-
-        private RecordingUiRenderContext(int width, int height, int mouseX, int mouseY) {
-            super(width, height, mouseX, mouseY, 1.0F);
-        }
-
-        @Override
-        public void drawSurface(int left, int top, int right, int bottom, UiSurfaceStyle surfaceStyle) {
-            drawCalls.add(new DrawCall(left, top, right, bottom, surfaceStyle));
-        }
-
-        @Override
-        public void drawText(String text, int x, int y, int color, boolean shadow) {
-            // 测试只关心是否输出文本命令，不需要记录具体文字。
-        }
-
-        @Override
-        public void pushClip(int left, int top, int right, int bottom, int cornerRadius) {}
-
-        @Override
-        public void popClip() {}
-
-        @Override
-        public void enqueueDeferredPostMainPass(DeferredPostMainPassReplay replay) {
-            deferredReplays.add(replay);
-        }
-
-        @Override
-        public void enqueueDeferredPostMainOverlayPass(DeferredPostMainPassReplay replay) {
-            deferredReplays.add(replay);
-        }
-
-        @Override
-        public void drawHostImage(HostImageSource source, int left, int top, int right, int bottom) {
-            hostImageCalls.add((source == null ? "null" : source.getKind().name()) + "@" + left + "," + top + ","
-                    + right + "," + bottom);
-        }
-    }
-
-    /**
-     * 单次 surface 绘制记录。
-     */
-    private static final class DrawCall {
-
-        private final int left;
-        private final int top;
-        private final int right;
-        private final int bottom;
-        private final UiSurfaceStyle surfaceStyle;
-
-        private DrawCall(int left, int top, int right, int bottom, UiSurfaceStyle surfaceStyle) {
-            this.left = left;
-            this.top = top;
-            this.right = right;
-            this.bottom = bottom;
-            this.surfaceStyle = surfaceStyle;
-        }
     }
 
     /**

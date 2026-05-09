@@ -18,13 +18,12 @@ import club.heiqi.uilib.ui.dom.ElementNode;
 import club.heiqi.uilib.ui.dom.UiDocument;
 import club.heiqi.uilib.ui.event.UiKeyEvent;
 import club.heiqi.uilib.ui.image.HostImageSource;
-import club.heiqi.uilib.ui.inventory.InventorySlotGridItemGeometry;
 import club.heiqi.uilib.ui.inventory.InventorySlotGridItemRenderer;
 import club.heiqi.uilib.ui.inventory.InventorySlotGridLayout;
 import club.heiqi.uilib.ui.inventory.InventorySlotSnapshot;
-import club.heiqi.uilib.ui.paint.DocumentCustomRenderer;
-import club.heiqi.uilib.ui.render.UiRenderContext;
+import club.heiqi.uilib.ui.style.UiDisplay;
 import club.heiqi.uilib.ui.style.UiOverflow;
+import club.heiqi.uilib.ui.style.UiPosition;
 import club.heiqi.uilib.ui.style.UiStyleLength;
 
 /**
@@ -33,6 +32,9 @@ import club.heiqi.uilib.ui.style.UiStyleLength;
 public final class DocumentInventorySlotGridControl {
 
     private static final int SLOT_BORDER_WIDTH = 1;
+    private static final HostImageSource PLACEHOLDER_IMAGE_SOURCE = HostImageSource.textureRegion(
+            new net.minecraft.util.ResourceLocation("minecraft", "textures/gui/widgets.png"), 256, 256, 0, 0, 1,
+            1);
 
     /**
      * 槽位内容数据源合约。
@@ -66,13 +68,13 @@ public final class DocumentInventorySlotGridControl {
     private final ElementNode element;
     private final DocumentTableControl tableControl;
     private final List<ElementNode> slotElements = new ArrayList<ElementNode>();
+    private final List<DocumentHostImageControl> slotImageControls = new ArrayList<DocumentHostImageControl>();
     private final int slotCount;
     private final int preferredColumns;
     private SlotContentProvider contentProvider;
     private SlotClickHandler slotClickHandler;
     private SlotTooltipProvider slotTooltipProvider;
     private SlotHoverHandler slotHoverHandler;
-    private InventorySlotGridItemRenderer itemRenderer;
     private int slotGap = 8;
     private int preferredSlotSize = 34;
     private int minSlotSize = 22;
@@ -99,7 +101,6 @@ public final class DocumentInventorySlotGridControl {
     private int lastNotifiedTooltipSlotIndex = -1;
     private boolean lastNotifiedTooltipHovered;
     private List<String> lastNotifiedTooltipLines = Collections.emptyList();
-    private boolean carriedItemOverlayEnabled = true;
     private boolean layoutDirty = true;
 
     /**
@@ -118,11 +119,9 @@ public final class DocumentInventorySlotGridControl {
         this.element = tableControl.getElement();
     }
 
-
     public ElementNode getElement() {
         return element;
     }
-
 
     public DocumentInventorySlotGridControl setContentProvider(SlotContentProvider contentProvider) {
         this.contentProvider = contentProvider;
@@ -130,30 +129,27 @@ public final class DocumentInventorySlotGridControl {
         return this;
     }
 
-
+    /**
+     * 旧物品 renderer 仅保留兼容入口；纯 HTML-like 路径不再主动使用该能力。
+     */
     public DocumentInventorySlotGridControl setItemRenderer(InventorySlotGridItemRenderer itemRenderer) {
-        this.itemRenderer = itemRenderer;
         return this;
     }
-
 
     public DocumentInventorySlotGridControl setSlotClickHandler(SlotClickHandler slotClickHandler) {
         this.slotClickHandler = slotClickHandler;
         return this;
     }
 
-
     public DocumentInventorySlotGridControl setSlotTooltipProvider(SlotTooltipProvider slotTooltipProvider) {
         this.slotTooltipProvider = slotTooltipProvider;
         return this;
     }
 
-
     public DocumentInventorySlotGridControl setSlotHoverHandler(SlotHoverHandler slotHoverHandler) {
         this.slotHoverHandler = slotHoverHandler;
         return this;
     }
-
 
     public DocumentInventorySlotGridControl setSelectedSlotIndex(int selectedSlotIndex) {
         this.selectedSlotIndex = selectedSlotIndex >= 0 && selectedSlotIndex < slotCount ? selectedSlotIndex : -1;
@@ -161,31 +157,25 @@ public final class DocumentInventorySlotGridControl {
         return this;
     }
 
-
     public DocumentInventorySlotGridControl setCarriedSnapshot(InventorySlotSnapshot carriedSnapshot) {
         this.carriedSnapshot = carriedSnapshot != null ? carriedSnapshot : InventorySlotSnapshot.empty();
         refreshVisibleTooltipLines();
         return this;
     }
 
-
     public DocumentInventorySlotGridControl setCarriedItemOverlayEnabled(boolean carriedItemOverlayEnabled) {
-        this.carriedItemOverlayEnabled = carriedItemOverlayEnabled;
         return this;
     }
-
 
     public int getHoveredSlotIndex() {
         return hoveredSlotIndex;
     }
-
 
     public DocumentInventorySlotGridControl setSlotGap(int slotGap) {
         this.slotGap = Math.max(0, slotGap);
         layoutDirty = true;
         return this;
     }
-
 
     public DocumentInventorySlotGridControl setPreferredSlotSize(int preferredSlotSize) {
         this.preferredSlotSize = Math.max(18, preferredSlotSize);
@@ -200,7 +190,6 @@ public final class DocumentInventorySlotGridControl {
         return this;
     }
 
-
     public DocumentInventorySlotGridControl setSlotColors(int emptySlotFillColor, int emptySlotBorderColor,
             int occupiedSlotFillColor, int occupiedSlotBorderColor) {
         this.emptySlotFillColor = emptySlotFillColor;
@@ -210,7 +199,6 @@ public final class DocumentInventorySlotGridControl {
         refreshSlotStates();
         return this;
     }
-
 
     public DocumentInventorySlotGridControl setInteractionSlotColors(int hoveredSlotFillColor,
             int hoveredSlotBorderColor, int selectedSlotFillColor, int selectedSlotBorderColor,
@@ -240,7 +228,7 @@ public final class DocumentInventorySlotGridControl {
     }
 
     /**
-     * 刷新槽位 DOM 表面的占用状态样式。
+     * 刷新槽位 DOM 表面的占用状态样式与图片子树。
      *
      * @return 当前控件
      */
@@ -253,6 +241,7 @@ public final class DocumentInventorySlotGridControl {
             InventorySlotSnapshot snapshot = slotIndex < snapshots.length
                     ? snapshots[slotIndex] : InventorySlotSnapshot.empty();
             applySlotStyle(slotElements.get(slotIndex), slotIndex, snapshot);
+            syncSlotImage(slotIndex, snapshot);
         }
         refreshVisibleTooltipLines();
         return this;
@@ -266,17 +255,11 @@ public final class DocumentInventorySlotGridControl {
                 .setWidth(UiStyleLength.px(currentLayout.totalWidth))
                 .setHeight(UiStyleLength.px(currentLayout.totalHeight));
         rebuildSlotElements();
-        element.setCustomRenderer(new DocumentCustomRenderer() {
-            @Override
-            public void render(UiRenderContext context, int contentLeft, int contentTop, int contentRight,
-                    int contentBottom) {
-                renderItems(context, contentLeft, contentTop);
-            }
-        });
     }
 
     private void rebuildSlotElements() {
         slotElements.clear();
+        slotImageControls.clear();
         tableControl.clearRows();
         if (slotCount <= 0 || currentLayout == null) {
             return;
@@ -300,6 +283,19 @@ public final class DocumentInventorySlotGridControl {
                         .setAttribute("tabindex", "0")
                         .setAttribute("data-slot-index", String.valueOf(currentSlotIndex))
                         .setFocusable(true);
+
+                DocumentHostImageControl slotImageControl = new DocumentHostImageControl(slotElement.getOwnerDocument(),
+                        PLACEHOLDER_IMAGE_SOURCE)
+                                .setSize(slotContentSize);
+                ElementNode slotImageElement = slotImageControl.getElement();
+                slotImageElement.setAttribute("data-slot-image", "true");
+                slotImageElement.style()
+                        .setPosition(UiPosition.RELATIVE)
+                        .setWidth(UiStyleLength.px(slotContentSize))
+                        .setHeight(UiStyleLength.px(slotContentSize))
+                        .setDisplay(UiDisplay.NONE);
+                slotElement.append(slotImageElement);
+
                 slotElement.setActiveHandler(new DocumentElementActiveHandler() {
                     @Override
                     public boolean onActiveChanged(DocumentElementActiveEvent event) {
@@ -329,6 +325,7 @@ public final class DocumentInventorySlotGridControl {
                     }
                 });
                 slotElements.add(slotElement);
+                slotImageControls.add(slotImageControl);
                 slotIndex++;
             }
         }
@@ -389,6 +386,21 @@ public final class DocumentInventorySlotGridControl {
                 .setAttribute("aria-label", formatSlotAriaLabel(slotIndex, snapshot));
     }
 
+    private void syncSlotImage(int slotIndex, InventorySlotSnapshot snapshot) {
+        if (slotIndex < 0 || slotIndex >= slotImageControls.size()) {
+            return;
+        }
+        DocumentHostImageControl imageControl = slotImageControls.get(slotIndex);
+        ElementNode imageElement = imageControl.getElement();
+        HostImageSource hostImageSource = snapshot == null ? null : snapshot.toHostImageSource();
+        if (hostImageSource == null) {
+            imageElement.style().setDisplay(UiDisplay.NONE);
+            return;
+        }
+        imageControl.setSource(hostImageSource);
+        imageElement.style().setDisplay(UiDisplay.BLOCK);
+    }
+
     private static String formatSlotAriaLabel(int slotIndex, InventorySlotSnapshot snapshot) {
         int slotNumber = slotIndex + 1;
         if (snapshot == null || !snapshot.isOccupied()) {
@@ -402,51 +414,6 @@ public final class DocumentInventorySlotGridControl {
             return "槽位 " + slotNumber + "，" + displayName + "，数量 " + snapshot.getStackSize();
         }
         return "槽位 " + slotNumber + "，" + displayName;
-    }
-
-    private void renderItems(UiRenderContext context, int absX, int absY) {
-        if (slotCount <= 0 || currentLayout == null) {
-            return;
-        }
-        InventorySlotSnapshot[] snapshots = sampleSlotSnapshots();
-
-        if (renderItemsThroughHostImages(context, absX, absY, snapshots)) {
-            enqueueCarriedItemOverlay(context);
-            return;
-        }
-
-        if (itemRenderer != null && hasOccupiedSlot(snapshots)) {
-            final InventorySlotGridItemGeometry geometry = currentLayout.createItemGeometry(absX, absY, slotCount);
-            final InventorySlotSnapshot[] capturedSnapshots = snapshots;
-            final InventorySlotGridItemRenderer capturedRenderer = itemRenderer;
-            context.enqueueDeferredPostMainPass(new UiRenderContext.DeferredPostMainPassReplay() {
-                @Override
-                public void replay() {
-                    capturedRenderer.renderItems(geometry, capturedSnapshots);
-                }
-            });
-        }
-        enqueueCarriedItemOverlay(context);
-    }
-
-    private boolean renderItemsThroughHostImages(UiRenderContext context, int absX, int absY,
-            InventorySlotSnapshot[] snapshots) {
-        if (context == null || currentLayout == null || snapshots == null || snapshots.length <= 0) {
-            return false;
-        }
-        boolean renderedAny = false;
-        for (int slotIndex = 0; slotIndex < snapshots.length; slotIndex++) {
-            InventorySlotSnapshot snapshot = snapshots[slotIndex];
-            HostImageSource hostImageSource = snapshot == null ? null : snapshot.toHostImageSource();
-            if (hostImageSource == null) {
-                continue;
-            }
-            InventorySlotGridLayout.SlotRect slotRect = currentLayout.getSlotRect(slotIndex);
-            context.drawHostImage(hostImageSource, absX + slotRect.left, absY + slotRect.top,
-                    absX + slotRect.right, absY + slotRect.bottom);
-            renderedAny = true;
-        }
-        return renderedAny;
     }
 
     private boolean handleSlotClick(int localIndex, int button, long timeNanos) {
@@ -506,45 +473,6 @@ public final class DocumentInventorySlotGridControl {
             lines.add("数量 " + snapshot.getStackSize());
         }
         return lines;
-    }
-
-    private void enqueueCarriedItemOverlay(final UiRenderContext context) {
-        if (!carriedItemOverlayEnabled || itemRenderer == null || carriedSnapshot == null
-                || !carriedSnapshot.isOccupied()) {
-            if (!carriedItemOverlayEnabled || carriedSnapshot == null || !carriedSnapshot.isOccupied()) {
-                return;
-            }
-        }
-        HostImageSource hostImageSource = carriedSnapshot == null ? null : carriedSnapshot.toHostImageSource();
-        if (hostImageSource != null) {
-            final HostImageSource capturedSource = hostImageSource;
-            final int mouseX = context.getMouseX();
-            final int mouseY = context.getMouseY();
-            enqueueOverlayPass(context, new UiRenderContext.DeferredPostMainPassReplay() {
-                @Override
-                public void replay() {
-                    context.drawHostImage(capturedSource, mouseX - 12, mouseY - 12, mouseX + 12, mouseY + 12);
-                }
-            });
-            return;
-        }
-        if (itemRenderer == null) {
-            return;
-        }
-        final InventorySlotGridItemRenderer capturedRenderer = itemRenderer;
-        final InventorySlotSnapshot capturedSnapshot = carriedSnapshot;
-        final int mouseX = context.getMouseX();
-        final int mouseY = context.getMouseY();
-        enqueueOverlayPass(context, new UiRenderContext.DeferredPostMainPassReplay() {
-            @Override
-            public void replay() {
-                capturedRenderer.renderCursorItem(capturedSnapshot, mouseX, mouseY);
-            }
-        });
-    }
-
-    private static void enqueueOverlayPass(UiRenderContext context, UiRenderContext.DeferredPostMainPassReplay replay) {
-        context.enqueueDeferredPostMainOverlayPass(replay);
     }
 
     private InventorySlotSnapshot[] sampleSlotSnapshots() {

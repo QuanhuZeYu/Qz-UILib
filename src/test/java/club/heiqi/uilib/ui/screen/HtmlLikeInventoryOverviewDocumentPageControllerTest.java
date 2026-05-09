@@ -4,9 +4,6 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 
-import net.minecraft.init.Items;
-import net.minecraft.item.ItemStack;
-
 import org.junit.Assert;
 import org.junit.Test;
 import org.lwjglx.input.Keyboard;
@@ -20,17 +17,11 @@ import club.heiqi.uilib.ui.dom.DocumentNodeType;
 import club.heiqi.uilib.ui.dom.ElementNode;
 import club.heiqi.uilib.ui.dom.TextNode;
 import club.heiqi.uilib.ui.event.UiKeyEvent;
-import club.heiqi.uilib.ui.image.HostImageSource;
 import club.heiqi.uilib.ui.inventory.InventorySlotSnapshot;
-import club.heiqi.uilib.ui.inventory.NoOpInventorySlotGridItemRenderer;
-import club.heiqi.uilib.ui.inventory.InventorySlotGridItemGeometry;
-import club.heiqi.uilib.ui.inventory.InventorySlotGridItemRenderer;
 import club.heiqi.uilib.ui.runtime.UiRuntimeAdapters;
-import club.heiqi.uilib.ui.render.UiRenderContext;
 import club.heiqi.uilib.ui.text.TextMeasureService;
 import club.heiqi.uilib.ui.style.UiDisplay;
 import club.heiqi.uilib.ui.style.UiStyleResolver;
-import club.heiqi.uilib.ui.theme.UiSurfaceStyle;
 import club.heiqi.uilib.ui.widget.Widget;
 
 /**
@@ -75,8 +66,9 @@ public class HtmlLikeInventoryOverviewDocumentPageControllerTest {
         Assert.assertEquals(2, collectElementsByTag(root, "h2").size());
         Assert.assertFalse(collectElementsByTag(root, "p").isEmpty());
         Assert.assertEquals("button", collectElementsByTag(root, "button").get(0).getTagName());
-        Assert.assertEquals("true", collectElementsByAttribute(root, "data-cursor-item-layer", "true").get(0)
-                .getAttribute("data-hit-test-hidden"));
+        ElementNode cursorLayer = collectElementsByAttribute(root, "data-cursor-item-layer", "true").get(0);
+        Assert.assertEquals("true", cursorLayer.getAttribute("data-hit-test-hidden"));
+        Assert.assertEquals(UiDisplay.NONE, UiStyleResolver.compute(cursorLayer).getDisplay());
     }
 
     /**
@@ -264,15 +256,12 @@ public class HtmlLikeInventoryOverviewDocumentPageControllerTest {
     }
 
     /**
-     * 验证鼠标携带物品会优先走页面级通用宿主图片 overlay。
+     * 验证鼠标携带物品层现在是固定定位 DOM 图片元素，而不是 custom renderer 空层。
      */
     @Test
-    public void shouldPreferHostImageCursorOverlayFromPageLayer() {
+    public void shouldRenderCursorItemAsDomHostImageLayer() {
         TestFixture fixture = new TestFixture();
-        RecordingInventorySlotGridItemRenderer itemRenderer = new RecordingInventorySlotGridItemRenderer();
-        fixture.runtimeAdapters = UiRuntimeAdapters.empty().withInventorySlotGridItemRenderer(itemRenderer);
-        fixture.model.carriedSlotSnapshot = InventorySlotSnapshot.fromRuntimeStack(new ItemStack(Items.apple));
-        fixture.recreateController();
+        fixture.model.carriedSlotSnapshot = InventorySlotSnapshot.occupied();
 
         fixture.controller.configureDocumentPage();
         fixture.controller.buildDocument();
@@ -283,24 +272,14 @@ public class HtmlLikeInventoryOverviewDocumentPageControllerTest {
                 20, 20, 1L));
         ElementNode tooltip = collectElementsByAttribute(fixture.controller.getHtmlLikeDocumentWidget()
                 .getDocument().getRootElement(), "data-inventory-tooltip", "true").get(0);
-        Assert.assertEquals("false", tooltip.getAttribute("aria-hidden"));
+        Assert.assertEquals("true", tooltip.getAttribute("aria-hidden"));
 
-        HtmlLikeDocumentWidget widget = fixture.controller.getHtmlLikeDocumentWidget();
-        widget.applyLayoutBounds(0, 0, 720, 600);
-        RecordingUiRenderContext renderContext = new RecordingUiRenderContext(720, 600, 90, 72);
-
-        ElementNode cursorLayer = collectElementsByAttribute(widget.getDocument().getRootElement(),
+        ElementNode cursorLayer = collectElementsByAttribute(fixture.controller.getHtmlLikeDocumentWidget()
+                .getDocument().getRootElement(),
                 "data-cursor-item-layer", "true").get(0);
-        cursorLayer.getCustomRenderer().render(renderContext, 0, 0, 1, 1);
-        for (club.heiqi.uilib.ui.render.UiRenderContext.DeferredPostMainPassReplay replay
-                : renderContext.deferredReplays) {
-            replay.replay();
-        }
-
-        Assert.assertEquals("aside", cursorLayer.getTagName());
+        Assert.assertEquals("img", cursorLayer.getTagName());
         Assert.assertEquals("true", cursorLayer.getAttribute("aria-hidden"));
-        Assert.assertNotNull(cursorLayer.getCustomRenderer());
-        Assert.assertTrue(itemRenderer.cursorCalls.isEmpty());
+        Assert.assertEquals(UiDisplay.NONE, UiStyleResolver.compute(cursorLayer).getDisplay());
     }
 
     private static List<String> collectDocumentTexts(HtmlLikeDocumentWidget widget) {
@@ -399,8 +378,7 @@ public class HtmlLikeInventoryOverviewDocumentPageControllerTest {
     private static final class TestFixture {
 
         private final TextMeasureService textMeasureService = new DeterministicTextMeasureService();
-        private UiRuntimeAdapters runtimeAdapters = UiRuntimeAdapters.empty()
-                .withInventorySlotGridItemRenderer(new NoOpInventorySlotGridItemRenderer());
+        private UiRuntimeAdapters runtimeAdapters = UiRuntimeAdapters.empty();
         private DocumentUiScope documentUi = new DocumentUiScope(textMeasureService, runtimeAdapters);
         private final DirectDocumentPageAuthoringSurface pageSurface = new DirectDocumentPageAuthoringSurface();
         private final TestRuntimeView runtimeView = new TestRuntimeView();
@@ -486,57 +464,6 @@ public class HtmlLikeInventoryOverviewDocumentPageControllerTest {
         private void setMousePosition(int mouseX, int mouseY) {
             this.mouseX = mouseX;
             this.mouseY = mouseY;
-        }
-    }
-
-    private static final class RecordingInventorySlotGridItemRenderer implements InventorySlotGridItemRenderer {
-
-        private final List<String> cursorCalls = new ArrayList<String>();
-
-        @Override
-        public void renderItems(InventorySlotGridItemGeometry geometry, InventorySlotSnapshot[] slotSnapshots) {}
-
-        @Override
-        public void renderCursorItem(InventorySlotSnapshot carriedSnapshot, int mouseX, int mouseY) {
-            cursorCalls.add(mouseX + ":" + mouseY + ":" + carriedSnapshot.isOccupied());
-        }
-    }
-
-    private static final class RecordingUiRenderContext extends UiRenderContext {
-
-        private final List<DeferredPostMainPassReplay> deferredReplays = new ArrayList<DeferredPostMainPassReplay>();
-        private final List<String> hostImageCalls = new ArrayList<String>();
-
-        private RecordingUiRenderContext(int width, int height, int mouseX, int mouseY) {
-            super(width, height, mouseX, mouseY, 1.0F);
-        }
-
-        @Override
-        public void drawSurface(int left, int top, int right, int bottom, UiSurfaceStyle surfaceStyle) {}
-
-        @Override
-        public void drawText(String text, int x, int y, int color, boolean shadow) {}
-
-        @Override
-        public void pushClip(int left, int top, int right, int bottom, int cornerRadius) {}
-
-        @Override
-        public void popClip() {}
-
-        @Override
-        public void enqueueDeferredPostMainPass(DeferredPostMainPassReplay replay) {
-            deferredReplays.add(replay);
-        }
-
-        @Override
-        public void enqueueDeferredPostMainOverlayPass(DeferredPostMainPassReplay replay) {
-            deferredReplays.add(replay);
-        }
-
-        @Override
-        public void drawHostImage(HostImageSource source, int left, int top, int right, int bottom) {
-            hostImageCalls.add((source == null ? "null" : source.getKind().name()) + "@" + left + "," + top + ","
-                    + right + "," + bottom);
         }
     }
 
