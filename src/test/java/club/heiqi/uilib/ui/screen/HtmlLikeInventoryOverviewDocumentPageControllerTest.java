@@ -282,17 +282,6 @@ public class HtmlLikeInventoryOverviewDocumentPageControllerTest {
         Assert.assertEquals(UiDisplay.NONE, UiStyleResolver.compute(cursorLayer).getDisplay());
     }
 
-    /**
-     * 验证鼠标携带物品层会按文档组件绝对偏移换算到页面局部坐标，避免在居中页面中偏离鼠标。
-     */
-    @Test
-    public void shouldResolveCursorItemLayerOffsetInDocumentLocalCoordinates() {
-        Assert.assertEquals(297,
-                HtmlLikeInventoryOverviewDocumentPageController.resolveCursorItemLayerOffset(340, 31));
-        Assert.assertEquals(221,
-                HtmlLikeInventoryOverviewDocumentPageController.resolveCursorItemLayerOffset(280, 47));
-    }
-
     private static List<String> collectDocumentTexts(HtmlLikeDocumentWidget widget) {
         List<String> texts = new ArrayList<String>();
         if (widget == null || widget.getDocument() == null) {

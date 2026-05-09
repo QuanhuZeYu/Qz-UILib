@@ -39,6 +39,7 @@
 - 通用槽位能力已沉淀为 `SlotContentSnapshot`、`DocumentSlotControl`、`DocumentSlotGridControl` 三层；背包专用 `DocumentInventorySlotGridControl` 仅作为 `InventorySlotSnapshot` 适配层保留，后续新增槽位类能力优先扩展通用三层而不是继续堆在背包适配层。
 - 页面级 tooltip 已沉淀为 `DocumentTooltipOverlayControl` + `DocumentTooltipLayoutResolver`；后续 tooltip 能力优先遵循“控件声明 tooltip，页面级 overlay 统一承载”的分层，不把浮层 DOM 回塞到单个控件内部。
 - 页面级 fixed 浮层基础设施已沉淀为 `DocumentOverlayHostControl` + `DocumentOverlayLayerControl`；后续 cursor item、tooltip、popover、context menu 等页面级浮层优先挂到 overlay host 子树里，不直接在页面控制器里手写散落的 fixed 节点。
+- 鼠标跟随宿主图片浮层已沉淀为 `DocumentCursorOverlayControl`；后续若继续扩展拖拽预览、鼠标携带物品、光标提示图层，优先复用该控件而不是重复拼 `DocumentHostImageControl + overlay layer + 指针偏移`。
 - `Widget`、`ViewportWidget`、`UiInputRouter`、`UiRenderContext`、`UiRuntimeAdapters` 与背包格子底层宿主适配仍可能是当前后端基础；动这些能力前必须先查源码引用。
 - 新增 layout-affecting、宿主集成或对外能力时，要同步更新 `docs/使用文档/` 并保留最小必要验证。
 - `club.heiqi.uilib.config.ForgeConfigTemplateScreen` 已作为对外可复用模板，用于替换 Forge 默认 `GuiConfig` 并直接消费 `Configuration` / `ConfigCategory` / `Property`。
@@ -63,6 +64,7 @@
 - 2026-05-09 已完成槽位能力前三层抽象：新增 `SlotContentSnapshot`、`DocumentSlotControl`、`DocumentSlotGridControl`，并让 `DocumentInventorySlotGridControl` 退为背包语义适配层；后续若要扩展流体、源质、幽灵槽等内容，应优先建立在这三层之上。
 - 2026-05-09 已把背包页手写 tooltip 层抽为通用页面级 tooltip overlay；后续若新增需要鼠标跟随的 tooltip，不应重复在页面控制器里手写 `aside + 定位器 + 文本装配`，而应复用 `DocumentTooltipOverlayControl`。
 - 2026-05-09 已把背包页 tooltip 与 cursor item 层进一步接到通用 overlay 基础设施；后续若继续扩展页面级浮层，优先复用 `DocumentOverlayHostControl` / `DocumentOverlayLayerControl`，而不是继续在页面控制器中直接操作 fixed 层样式细节。
+- 2026-05-09 已把背包页 cursor item 层抽成 `DocumentCursorOverlayControl`；后续若业务页需要鼠标跟随的宿主图片浮层，应优先直接接该控件。
 - Forge 配置页已切换到 HTML-like 模板化实现，后续若继续扩展配置类页面，应优先复用模板而不是回退到 `GuiConfig`。
 - 配置模板页若不走 `DocumentPageAuthoringSurface`，需要在 `BaseScreen.onResize(...)` 中显式给 `HtmlLikeDocumentWidget` 下发布局边界；仅设置 `UiLayoutSpec` 可能导致页面可开屏但内容区域为 `0x0`。
 - 2026-05-09 已确认 `runClient21` 会由 `gtnhgradle` 的 Modern Java 模块强制约束 `GTNHLib` 到 `0.9.20`；若只为在该运行链路下测试 Angelica，不应再尝试把 `GTNHLib` 锁回 `0.7.10`，而应改测兼容新版 `GTNHLib` 的 Angelica 版本。
