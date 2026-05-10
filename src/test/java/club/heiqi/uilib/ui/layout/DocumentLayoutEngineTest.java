@@ -1125,6 +1125,39 @@ public class DocumentLayoutEngineTest {
         Assert.assertEquals(29, childBox.getLeft());
     }
 
+    /**
+     * 验证 flex row 固有宽度测量会合并文本子项、非文本子项与 column-gap。
+     */
+    @Test
+    public void shouldMeasureMixedTextAndNonTextIntrinsicFlexRowContent() {
+        UiDocument document = UiDocument.create();
+        ElementNode root = document.getRootElement();
+        ElementNode child = document.div();
+        ElementNode label = document.div();
+        ElementNode icon = document.div();
+
+        root.style()
+                .setDisplay(UiDisplay.FLEX)
+                .setWidth(UiStyleLength.px(100))
+                .setJustifyContent(UiJustifyContent.CENTER);
+        child.style()
+                .setDisplay(UiDisplay.FLEX)
+                .setColumnGap(UiStyleLength.px(4));
+        label.appendText("TXT");
+        icon.style()
+                .setWidth(UiStyleLength.px(18))
+                .setHeight(UiStyleLength.px(18));
+        child.append(label).append(icon);
+        root.append(child);
+
+        DocumentLayoutBox childBox = DocumentLayoutEngine.layout(root, 120, 0,
+                new DeterministicTextMeasureService()).getChildren().get(0);
+
+        Assert.assertEquals(46, childBox.getContentWidth());
+        Assert.assertEquals(46, childBox.getWidth());
+        Assert.assertEquals(27, childBox.getLeft());
+    }
+
     private static void assertTextRun(DocumentLayoutTextRun textRun, String text, int left, int top, int width,
             int height) {
         Assert.assertEquals(text, textRun.getText());
