@@ -1134,6 +1134,7 @@ public final class DocumentLayoutEngine {
                 ? style.getRowGap()
                 : style.getColumnGap()).resolve(containingWidth, 0));
         int measuredWidth = 0;
+        int itemIndex = 0;
         for (ElementNode child : children) {
             ComputedStyle childStyle = UiStyleResolver.compute(child);
             int childWidth = measureIntrinsicOuterWidth(child, childStyle, textMeasureService, containingWidth,
@@ -1141,11 +1142,12 @@ public final class DocumentLayoutEngine {
             if (style.getFlexDirection() == UiFlexDirection.COLUMN) {
                 measuredWidth = Math.max(measuredWidth, childWidth);
             } else {
-                if (measuredWidth > 0) {
+                if (itemIndex > 0) {
                     measuredWidth += gap;
                 }
                 measuredWidth += childWidth;
             }
+            itemIndex++;
         }
         return measuredWidth;
     }

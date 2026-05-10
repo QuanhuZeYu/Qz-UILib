@@ -1093,6 +1093,38 @@ public class DocumentLayoutEngineTest {
         Assert.assertEquals(28, childBox.getLeft());
     }
 
+    /**
+     * 验证 flex row 固有宽度测量会保留 0 宽子项后的 column-gap。
+     */
+    @Test
+    public void shouldKeepColumnGapAfterZeroWidthIntrinsicFlexItem() {
+        UiDocument document = UiDocument.create();
+        ElementNode root = document.getRootElement();
+        ElementNode child = document.div();
+        ElementNode zeroWidth = document.div();
+        ElementNode icon = document.div();
+
+        root.style()
+                .setDisplay(UiDisplay.FLEX)
+                .setWidth(UiStyleLength.px(80))
+                .setJustifyContent(UiJustifyContent.CENTER);
+        child.style()
+                .setDisplay(UiDisplay.FLEX)
+                .setColumnGap(UiStyleLength.px(4));
+        icon.style()
+                .setWidth(UiStyleLength.px(18))
+                .setHeight(UiStyleLength.px(18));
+        child.append(zeroWidth).append(icon);
+        root.append(child);
+
+        DocumentLayoutBox childBox = DocumentLayoutEngine.layout(root, 100, 0,
+                new DeterministicTextMeasureService()).getChildren().get(0);
+
+        Assert.assertEquals(22, childBox.getContentWidth());
+        Assert.assertEquals(22, childBox.getWidth());
+        Assert.assertEquals(29, childBox.getLeft());
+    }
+
     private static void assertTextRun(DocumentLayoutTextRun textRun, String text, int left, int top, int width,
             int height) {
         Assert.assertEquals(text, textRun.getText());
