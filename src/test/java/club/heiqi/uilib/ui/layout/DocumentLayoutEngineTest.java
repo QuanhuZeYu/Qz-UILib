@@ -1030,13 +1030,14 @@ public class DocumentLayoutEngineTest {
     }
 
     /**
-     * 验证 flex row 中 auto 宽度文本子项不会被压缩成 0 宽。
+     * 验证 flex row 中 auto 宽度文本子项会按同一行内容总宽测量。
      */
     @Test
-    public void shouldMeasureAutoWidthTextItemInFlexRow() {
+    public void shouldMeasureAutoWidthInlineContentItemInFlexRow() {
         UiDocument document = UiDocument.create();
         ElementNode root = document.getRootElement();
         ElementNode child = document.div();
+        ElementNode span = document.span();
 
         root.style()
                 .setDisplay(UiDisplay.FLEX)
@@ -1046,13 +1047,50 @@ public class DocumentLayoutEngineTest {
                 .setPadding(UiStyleLength.px(3))
                 .setBorderWidth(UiStyleLength.px(1));
         child.appendText("HUD");
+        span.style()
+                .setPadding(UiStyleLength.px(2))
+                .setBorderWidth(UiStyleLength.px(1));
+        span.appendText("UI");
+        child.append(span);
         root.append(child);
 
-        DocumentLayoutBox childBox = DocumentLayoutEngine.layout(root, 140, 0).getChildren().get(0);
+        DocumentLayoutBox childBox = DocumentLayoutEngine.layout(root, 140, 0,
+                new DeterministicTextMeasureService()).getChildren().get(0);
 
-        Assert.assertEquals(24, childBox.getContentWidth());
-        Assert.assertEquals(32, childBox.getWidth());
-        Assert.assertEquals(34, childBox.getLeft());
+        Assert.assertEquals(46, childBox.getContentWidth());
+        Assert.assertEquals(54, childBox.getWidth());
+        Assert.assertEquals(23, childBox.getLeft());
+    }
+
+    /**
+     * 验证 flex row 中 auto 宽度非文本子项会按显式子元素尺寸测量。
+     */
+    @Test
+    public void shouldMeasureAutoWidthNonTextItemInFlexRow() {
+        UiDocument document = UiDocument.create();
+        ElementNode root = document.getRootElement();
+        ElementNode child = document.div();
+        ElementNode icon = document.div();
+
+        root.style()
+                .setDisplay(UiDisplay.FLEX)
+                .setWidth(UiStyleLength.px(80))
+                .setJustifyContent(UiJustifyContent.CENTER);
+        child.style()
+                .setPadding(UiStyleLength.px(2))
+                .setBorderWidth(UiStyleLength.px(1));
+        icon.style()
+                .setWidth(UiStyleLength.px(18))
+                .setHeight(UiStyleLength.px(18));
+        child.append(icon);
+        root.append(child);
+
+        DocumentLayoutBox childBox = DocumentLayoutEngine.layout(root, 100, 0,
+                new DeterministicTextMeasureService()).getChildren().get(0);
+
+        Assert.assertEquals(18, childBox.getContentWidth());
+        Assert.assertEquals(24, childBox.getWidth());
+        Assert.assertEquals(28, childBox.getLeft());
     }
 
     private static void assertTextRun(DocumentLayoutTextRun textRun, String text, int left, int top, int width,

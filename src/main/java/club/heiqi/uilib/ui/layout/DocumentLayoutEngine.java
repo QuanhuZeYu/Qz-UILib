@@ -1068,11 +1068,12 @@ public final class DocumentLayoutEngine {
     }
 
     /**
-     * 测量横向 flex 子项 auto 主轴尺寸，避免纯文本子项被主轴基准尺寸压缩成 0。
+     * 测量横向 flex 子项 auto 主轴尺寸，避免内容被主轴基准尺寸压缩成 0。
      */
     private static int measureAutoFlexRowMainSize(ElementNode element, ComputedStyle style, int containingWidth,
             TextMeasureService textMeasureService, LayoutRuntimeValueResolver layoutValueResolver) {
-        int measuredWidth = measureIntrinsicTextWidth(element, textMeasureService);
+        int measuredWidth = measureIntrinsicContentWidth(element, textMeasureService, containingWidth,
+                layoutValueResolver);
         if (measuredWidth <= 0) {
             return 0;
         }
@@ -1084,14 +1085,21 @@ public final class DocumentLayoutEngine {
     }
 
     /**
-     * 递归测量元素内文本内容的最大固有宽度。
+     * 递归测量元素内容的固有宽度。
      */
-    private static int measureIntrinsicTextWidth(ElementNode element, TextMeasureService textMeasureService) {
+    private static int measureIntrinsicContentWidth(ElementNode element, TextMeasureService textMeasureService,
+            int containingWidth, LayoutRuntimeValueResolver layoutValueResolver) {
+        ComputedStyle style = UiStyleResolver.compute(element);
+        if (style.getDisplay() == UiDisplay.FLEX) {
+            return measureIntrinsicFlexContentWidth(element, style, textMeasureService, containingWidth,
+                    layoutValueResolver);
+        }
+
         int maxWidth = 0;
+        int inlineWidth = 0;
         for (DocumentNode child : element.getChildren()) {
             if (child instanceof TextNode) {
-                maxWidth = Math.max(maxWidth, toUiTextSize(textMeasureService.getStringWidth(
-                        ((TextNode) child).getText())));
+                inlineWidth += toUiTextSize(textMeasureService.getStringWidth(((TextNode) child).getText()));
                 continue;
             }
             if (!(child instanceof ElementNode)) {
@@ -1102,9 +1110,62 @@ public final class DocumentLayoutEngine {
             if (childStyle.getDisplay() == UiDisplay.NONE || isOutOfFlowPositioned(childStyle)) {
                 continue;
             }
-            maxWidth = Math.max(maxWidth, measureIntrinsicTextWidth(childElement, textMeasureService));
+            if (childStyle.getDisplay() == UiDisplay.INLINE) {
+                inlineWidth += measureIntrinsicOuterWidth(childElement, childStyle, textMeasureService,
+                        containingWidth, layoutValueResolver);
+                continue;
+            }
+            maxWidth = Math.max(maxWidth, inlineWidth);
+            inlineWidth = 0;
+            maxWidth = Math.max(maxWidth, measureIntrinsicOuterWidth(childElement, childStyle, textMeasureService,
+                    containingWidth, layoutValueResolver));
         }
-        return maxWidth;
+        return Math.max(maxWidth, inlineWidth);
+    }
+
+    private static int measureIntrinsicFlexContentWidth(ElementNode element, ComputedStyle style,
+            TextMeasureService textMeasureService, int containingWidth,
+            LayoutRuntimeValueResolver layoutValueResolver) {
+        List<ElementNode> children = getVisibleInFlowElementChildren(element);
+        if (children.isEmpty()) {
+            return 0;
+        }
+        int gap = Math.max(0, (style.getFlexDirection() == UiFlexDirection.COLUMN
+                ? style.getRowGap()
+                : style.getColumnGap()).resolve(containingWidth, 0));
+        int measuredWidth = 0;
+        for (ElementNode child : children) {
+            ComputedStyle childStyle = UiStyleResolver.compute(child);
+            int childWidth = measureIntrinsicOuterWidth(child, childStyle, textMeasureService, containingWidth,
+                    layoutValueResolver);
+            if (style.getFlexDirection() == UiFlexDirection.COLUMN) {
+                measuredWidth = Math.max(measuredWidth, childWidth);
+            } else {
+                if (measuredWidth > 0) {
+                    measuredWidth += gap;
+                }
+                measuredWidth += childWidth;
+            }
+        }
+        return measuredWidth;
+    }
+
+    private static int measureIntrinsicOuterWidth(ElementNode element, ComputedStyle style,
+            TextMeasureService textMeasureService, int containingWidth,
+            LayoutRuntimeValueResolver layoutValueResolver) {
+        DocumentLayoutEdges margin = resolveMarginInsets(element, style, containingWidth, layoutValueResolver);
+        DocumentLayoutEdges border = resolveUniformEdge(style.getBorderWidth(), containingWidth);
+        DocumentLayoutEdges padding = resolvePaddingInsets(element, style, containingWidth, layoutValueResolver);
+        int contentWidth;
+        if (isAuto(style.getWidth())) {
+            contentWidth = measureIntrinsicContentWidth(element, textMeasureService, containingWidth,
+                    layoutValueResolver);
+        } else {
+            int baseWidth = Math.max(0, style.getWidth().resolve(containingWidth, 0));
+            contentWidth = Math.max(0, layoutValueResolver.resolve(element, DocumentAnimationProperty.WIDTH,
+                    baseWidth));
+        }
+        return margin.getHorizontal() + border.getHorizontal() + padding.getHorizontal() + contentWidth;
     }
 
     private static int resolveContentWidth(ElementNode element, ComputedStyle computedStyle, int containingWidth,
