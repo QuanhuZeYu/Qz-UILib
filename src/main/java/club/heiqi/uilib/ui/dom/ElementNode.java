@@ -24,6 +24,7 @@ public final class ElementNode extends DocumentNode {
     private DocumentElementClickHandler clickHandler;
     private DocumentElementFocusHandler focusHandler;
     private DocumentElementHoverHandler hoverHandler;
+    private DocumentElementDragHandler dragHandler;
     private DocumentElementKeyHandler keyHandler;
     private DocumentElementTextInputHandler textInputHandler;
     private DocumentCustomRenderer customRenderer;
@@ -258,6 +259,28 @@ public final class ElementNode extends DocumentNode {
      */
     public DocumentElementHoverHandler getHoverHandler() {
         return hoverHandler;
+    }
+
+    /**
+     * 设置元素拖拽处理器。
+     *
+     * <p>事件处理器不影响布局和绘制缓存，因此不会提升文档 mutation version。</p>
+     *
+     * @param dragHandler 拖拽处理器；为 null 时清除处理器
+     * @return 当前元素
+     */
+    public ElementNode setDragHandler(DocumentElementDragHandler dragHandler) {
+        this.dragHandler = dragHandler;
+        return this;
+    }
+
+    /**
+     * 返回元素拖拽处理器。
+     *
+     * @return 拖拽处理器；不存在时返回 null
+     */
+    public DocumentElementDragHandler getDragHandler() {
+        return dragHandler;
     }
 
     /**

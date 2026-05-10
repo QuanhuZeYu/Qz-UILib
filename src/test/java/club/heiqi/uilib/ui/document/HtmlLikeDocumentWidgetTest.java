@@ -18,6 +18,7 @@ import club.heiqi.uilib.ui.dom.DocumentElementActiveEvent;
 import club.heiqi.uilib.ui.dom.DocumentElementActiveHandler;
 import club.heiqi.uilib.ui.dom.DocumentElementClickEvent;
 import club.heiqi.uilib.ui.dom.DocumentElementClickHandler;
+import club.heiqi.uilib.ui.dom.DocumentElementDragEvent;
 import club.heiqi.uilib.ui.dom.DocumentElementFocusEvent;
 import club.heiqi.uilib.ui.dom.DocumentElementFocusHandler;
 import club.heiqi.uilib.ui.dom.DocumentElementHoverEvent;
@@ -29,6 +30,7 @@ import club.heiqi.uilib.ui.dom.DocumentElementTextInputHandler;
 import club.heiqi.uilib.ui.dom.ElementNode;
 import club.heiqi.uilib.ui.dom.TextNode;
 import club.heiqi.uilib.ui.dom.UiDocument;
+import club.heiqi.uilib.ui.dom.control.DocumentDraggableSupport;
 import club.heiqi.uilib.ui.event.UiKeyEvent;
 import club.heiqi.uilib.ui.event.UiMouseEvent;
 import club.heiqi.uilib.ui.event.UiTextInputEvent;
@@ -743,6 +745,52 @@ public class HtmlLikeDocumentWidgetTest {
         assertDrawCall(authorContext.drawCalls.get(0), 4, 0, 44, 20, 0xFF112233, 0, 0);
         assertDrawCall(authorContext.drawCalls.get(1), 44, 0, 64, 20, 0xFF445566, 0, 0);
         Assert.assertEquals(0, widget.getActiveAnimationCount());
+    }
+
+    /**
+     * 验证 HTML 级拖拽辅助器可以更新 fixed 元素位置。
+     */
+    @Test
+    public void shouldDragFixedElementThroughDocumentDragSupport() {
+        UiDocument document = UiDocument.create();
+        ElementNode root = document.getRootElement();
+        ElementNode panel = document.div();
+        ElementNode handle = document.div();
+
+        root.style()
+                .setWidth(UiStyleLength.px(240))
+                .setHeight(UiStyleLength.px(120));
+        panel.style()
+                .setPosition(UiPosition.FIXED)
+                .setLeft(UiStyleLength.px(20))
+                .setTop(UiStyleLength.px(10))
+                .setWidth(UiStyleLength.px(80))
+                .setHeight(UiStyleLength.px(30))
+                .setBackgroundColor(0xFF223344);
+        handle.style()
+                .setWidth(UiStyleLength.px(80))
+                .setHeight(UiStyleLength.px(10))
+                .setBackgroundColor(0xFF446688);
+        panel.append(handle);
+        root.append(panel);
+        DocumentDraggableSupport.attach(panel, handle, DocumentDraggableSupport.DragAxis.BOTH);
+
+        HtmlLikeDocumentWidget widget = new HtmlLikeDocumentWidget(document, 240, 120,
+                new DeterministicTextMeasureService());
+        widget.applyLayoutBounds(0, 0, 240, 120);
+
+        widget.onMouseDown(new UiMouseEvent(UiMouseEvent.Action.BUTTON_DOWN, 25, 15, 0, 0, 0, 0, 1L));
+        widget.onMouseMove(new UiMouseEvent(UiMouseEvent.Action.MOVE, 45, 35, -1, 0, 20, 20, 2L));
+        widget.onMouseUp(new UiMouseEvent(UiMouseEvent.Action.BUTTON_UP, 45, 35, 0, 0, 0, 0, 3L));
+
+        Assert.assertNotNull(panel.style().getLeft());
+        Assert.assertNotNull(panel.style().getTop());
+        Assert.assertEquals(UiStyleLength.Type.PIXEL, panel.style().getLeft().getType());
+        Assert.assertEquals(UiStyleLength.Type.PIXEL, panel.style().getTop().getType());
+        Assert.assertTrue(panel.style().getLeft().getValue() >= 40.0F);
+        Assert.assertTrue(panel.style().getTop().getValue() >= 30.0F);
+        Assert.assertNull(panel.style().getRight());
+        Assert.assertNull(panel.style().getBottom());
     }
 
     /**

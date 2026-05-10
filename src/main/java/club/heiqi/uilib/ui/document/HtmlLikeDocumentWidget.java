@@ -14,6 +14,8 @@ import club.heiqi.uilib.ui.dom.DocumentElementActiveEvent;
 import club.heiqi.uilib.ui.dom.DocumentElementActiveHandler;
 import club.heiqi.uilib.ui.dom.DocumentElementClickEvent;
 import club.heiqi.uilib.ui.dom.DocumentElementClickHandler;
+import club.heiqi.uilib.ui.dom.DocumentElementDragEvent;
+import club.heiqi.uilib.ui.dom.DocumentElementDragHandler;
 import club.heiqi.uilib.ui.dom.DocumentElementFocusEvent;
 import club.heiqi.uilib.ui.dom.DocumentElementFocusHandler;
 import club.heiqi.uilib.ui.dom.DocumentElementHoverEvent;
@@ -73,10 +75,15 @@ public final class HtmlLikeDocumentWidget extends Widget {
     private ElementNode pressedElement;
     private ElementNode focusedElement;
     private ElementNode hoveredElement;
+    private ElementNode draggingElement;
     private boolean focusedElementFocusVisible;
     private boolean viewportRootScrollingEnabled;
     private boolean cachedLayoutScrollStateUpdated;
     private List<DocumentPaintCommand> cachedPaintCommands = Collections.emptyList();
+    private int dragStartDocumentX;
+    private int dragStartDocumentY;
+    private int lastDragDocumentX;
+    private int lastDragDocumentY;
 
     /**
      * 创建 HTML-like 文档适配组件。
@@ -315,6 +322,7 @@ public final class HtmlLikeDocumentWidget extends Widget {
     public void onMouseDown(UiMouseEvent event) {
         if (event == null) {
             pressedElement = null;
+            draggingElement = null;
             return;
         }
         DocumentLayoutBox rootBox = resolveInteractiveLayoutBox();
@@ -324,6 +332,7 @@ public final class HtmlLikeDocumentWidget extends Widget {
             return;
         }
         pressedElement = findElementAt(event.getMouseX(), event.getMouseY());
+        beginDragIfNeeded(pressedElement, event);
         dispatchActive(pressedElement, true, event);
         focusElement(resolveFocusableElement(pressedElement), false);
     }
@@ -337,6 +346,7 @@ public final class HtmlLikeDocumentWidget extends Widget {
             scrollState.updateScrollbarDrag(resolveInteractiveLayoutBox(), event.getMouseX() - getAbsoluteX(),
                     event.getMouseY() - getAbsoluteY());
         }
+        dispatchDragMove(event);
         updateHoveredElement(findElementAt(event.getMouseX(), event.getMouseY()), event);
     }
 
@@ -352,9 +362,10 @@ public final class HtmlLikeDocumentWidget extends Widget {
         }
         ElementNode releasedElement = findElementAt(event.getMouseX(), event.getMouseY());
         ElementNode target = pressedElement != null && pressedElement == releasedElement ? releasedElement : null;
+        boolean dragHandled = dispatchDragEnd(event);
         dispatchActive(pressedElement, false, event);
         pressedElement = null;
-        if (target != null) {
+        if (!dragHandled && target != null) {
             dispatchClick(target, event);
         }
     }
@@ -580,6 +591,79 @@ public final class HtmlLikeDocumentWidget extends Widget {
             }
         }
         return false;
+    }
+
+    private void beginDragIfNeeded(ElementNode target, UiMouseEvent event) {
+        draggingElement = null;
+        if (target == null || event == null || event.getButton() != 0) {
+            return;
+        }
+        int documentX = event.getMouseX() - getAbsoluteX();
+        int documentY = event.getMouseY() - getAbsoluteY();
+        for (DocumentNode current = target; current instanceof ElementNode; current = current.getParent()) {
+            ElementNode currentElement = (ElementNode) current;
+            DocumentElementDragHandler dragHandler = currentElement.getDragHandler();
+            if (dragHandler == null) {
+                continue;
+            }
+            dragStartDocumentX = documentX;
+            dragStartDocumentY = documentY;
+            lastDragDocumentX = documentX;
+            lastDragDocumentY = documentY;
+            DocumentElementDragEvent dragEvent = new DocumentElementDragEvent(target, currentElement, documentX,
+                    documentY, documentX, documentY, 0, 0, event.getButton(), event.getTimeNanos(),
+                    DocumentElementDragEvent.DragPhase.START);
+            if (dragHandler.onDrag(dragEvent)) {
+                draggingElement = currentElement;
+                return;
+            }
+        }
+    }
+
+    private boolean dispatchDragMove(UiMouseEvent event) {
+        if (draggingElement == null || event == null) {
+            return false;
+        }
+        int documentX = event.getMouseX() - getAbsoluteX();
+        int documentY = event.getMouseY() - getAbsoluteY();
+        int deltaDocumentX = documentX - lastDragDocumentX;
+        int deltaDocumentY = documentY - lastDragDocumentY;
+        lastDragDocumentX = documentX;
+        lastDragDocumentY = documentY;
+        return dispatchDragEvent(draggingElement, pressedElement, event, documentX, documentY, deltaDocumentX,
+                deltaDocumentY, DocumentElementDragEvent.DragPhase.DRAG);
+    }
+
+    private boolean dispatchDragEnd(UiMouseEvent event) {
+        if (draggingElement == null || event == null) {
+            draggingElement = null;
+            return false;
+        }
+        int documentX = event.getMouseX() - getAbsoluteX();
+        int documentY = event.getMouseY() - getAbsoluteY();
+        int deltaDocumentX = documentX - lastDragDocumentX;
+        int deltaDocumentY = documentY - lastDragDocumentY;
+        ElementNode dragTarget = pressedElement;
+        ElementNode dragHandlerTarget = draggingElement;
+        draggingElement = null;
+        return dispatchDragEvent(dragHandlerTarget, dragTarget, event, documentX, documentY, deltaDocumentX,
+                deltaDocumentY, DocumentElementDragEvent.DragPhase.END);
+    }
+
+    private boolean dispatchDragEvent(ElementNode dragHandlerTarget, ElementNode dragTarget, UiMouseEvent event,
+            int documentX, int documentY, int deltaDocumentX, int deltaDocumentY,
+            DocumentElementDragEvent.DragPhase phase) {
+        if (dragHandlerTarget == null || event == null) {
+            return false;
+        }
+        DocumentElementDragHandler dragHandler = dragHandlerTarget.getDragHandler();
+        if (dragHandler == null) {
+            return false;
+        }
+        ElementNode resolvedTarget = dragTarget != null ? dragTarget : dragHandlerTarget;
+        return dragHandler.onDrag(new DocumentElementDragEvent(resolvedTarget, dragHandlerTarget,
+                dragStartDocumentX, dragStartDocumentY, documentX, documentY, deltaDocumentX, deltaDocumentY,
+                event.getButton(), event.getTimeNanos(), phase));
     }
 
     private boolean focusFirstElementInTraversalOrder(boolean reverse) {

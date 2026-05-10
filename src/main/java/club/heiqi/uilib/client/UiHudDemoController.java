@@ -10,6 +10,7 @@ import club.heiqi.uilib.ui.dom.UiDocument;
 import club.heiqi.uilib.ui.dom.control.DocumentButtonActionEvent;
 import club.heiqi.uilib.ui.dom.control.DocumentButtonActionHandler;
 import club.heiqi.uilib.ui.dom.control.DocumentButtonControl;
+import club.heiqi.uilib.ui.dom.control.DocumentDraggableSupport;
 import club.heiqi.uilib.ui.dom.control.DocumentTextInputChangeEvent;
 import club.heiqi.uilib.ui.dom.control.DocumentTextInputChangeHandler;
 import club.heiqi.uilib.ui.dom.control.DocumentTextInputControl;
@@ -171,7 +172,7 @@ public final class UiHudDemoController {
         ElementNode panel = document.div();
         panel.style()
                 .setPosition(UiPosition.FIXED)
-                .setRight(UiStyleLength.px(14))
+                .setLeft(UiStyleLength.px(1760))
                 .setTop(UiStyleLength.px(14))
                 .setWidth(UiStyleLength.px(248))
                 .setPadding(UiStyleLength.px(12))
@@ -181,6 +182,17 @@ public final class UiHudDemoController {
                 .setBorderRadius(UiStyleLength.px(14))
                 .setTextColor(0xFFF3F1FF);
         root.append(panel);
+
+        ElementNode dragBar = document.div();
+        dragBar.style()
+                .setMargin(UiStyleLength.px(0))
+                .setPadding(UiStyleLength.px(3))
+                .setBackgroundColor(0x335A3FB8)
+                .setBorderRadius(UiStyleLength.px(999))
+                .setTextColor(0xFFDED7FF);
+        dragBar.appendText("拖住这里移动浮窗");
+        panel.append(dragBar);
+        DocumentDraggableSupport.attach(panel, dragBar, DocumentDraggableSupport.DragAxis.BOTH);
 
         ElementNode title = document.div();
         title.style().setTextColor(0xFFC9B6FF);
@@ -201,7 +213,7 @@ public final class UiHudDemoController {
                     }
                 });
         noteInput.getElement().style()
-                .setWidth(UiStyleLength.percent(1.0F))
+                .setDisplay(UiDisplay.BLOCK)
                 .setMargin(UiStyleLength.px(0));
         panel.append(noteInput.getElement());
 
@@ -237,7 +249,7 @@ public final class UiHudDemoController {
                     }
                 });
         button.getElement().style()
-                .setWidth(UiStyleLength.percent(1.0F))
+                .setDisplay(UiDisplay.BLOCK)
                 .setMargin(UiStyleLength.px(0));
         panel.append(button.getElement());
     }

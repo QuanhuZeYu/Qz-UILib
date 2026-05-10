@@ -884,7 +884,8 @@ public final class DocumentLayoutEngine {
         List<FlexItem> items = new ArrayList<FlexItem>();
         for (ElementNode child : children) {
             FlexItem item = createFlexItem(child, contentWidth, layoutValueResolver);
-            item.contentMainSize = resolveContentMainSize(item, contentWidth, true, layoutValueResolver);
+            item.contentMainSize = resolveContentMainSize(item, contentWidth, true, textMeasureService,
+                    layoutValueResolver);
             items.add(item);
         }
 
@@ -940,7 +941,8 @@ public final class DocumentLayoutEngine {
                     layoutValueResolver);
             item.box = layoutElement(item.element, 0, 0, contentWidth, item.forcedCrossSize, AUTO_SIZE,
                     absoluteContainingBlock, fixedContainingBlock, textMeasureService, layoutValueResolver);
-            item.contentMainSize = resolveContentMainSize(item, contentWidth, false, layoutValueResolver);
+            item.contentMainSize = resolveContentMainSize(item, contentWidth, false, textMeasureService,
+                    layoutValueResolver);
             if (isAuto(item.style.getHeight())) {
                 item.contentMainSize = item.box.getContentHeight();
             }
@@ -1051,14 +1053,58 @@ public final class DocumentLayoutEngine {
     }
 
     private static int resolveContentMainSize(FlexItem item, int containingWidth, boolean row,
-            LayoutRuntimeValueResolver layoutValueResolver) {
+            TextMeasureService textMeasureService, LayoutRuntimeValueResolver layoutValueResolver) {
         UiStyleLength length = row ? item.style.getWidth() : item.style.getHeight();
         if (isAuto(length)) {
+            if (row) {
+                return measureAutoFlexRowMainSize(item.element, item.style, containingWidth, textMeasureService,
+                        layoutValueResolver);
+            }
             return 0;
         }
         int baseSize = Math.max(0, length.resolve(containingWidth, 0));
         DocumentAnimationProperty property = row ? DocumentAnimationProperty.WIDTH : DocumentAnimationProperty.HEIGHT;
         return Math.max(0, layoutValueResolver.resolve(item.element, property, baseSize));
+    }
+
+    /**
+     * 测量横向 flex 子项 auto 主轴尺寸，避免纯文本子项被主轴基准尺寸压缩成 0。
+     */
+    private static int measureAutoFlexRowMainSize(ElementNode element, ComputedStyle style, int containingWidth,
+            TextMeasureService textMeasureService, LayoutRuntimeValueResolver layoutValueResolver) {
+        int measuredWidth = measureIntrinsicTextWidth(element, textMeasureService);
+        if (measuredWidth <= 0) {
+            return 0;
+        }
+        int availableContentWidth = Math.max(0, containingWidth
+                - resolveMarginInsets(element, style, containingWidth, layoutValueResolver).getHorizontal()
+                - resolveUniformEdge(style.getBorderWidth(), containingWidth).getHorizontal()
+                - resolvePaddingInsets(element, style, containingWidth, layoutValueResolver).getHorizontal());
+        return Math.min(measuredWidth, availableContentWidth);
+    }
+
+    /**
+     * 递归测量元素内文本内容的最大固有宽度。
+     */
+    private static int measureIntrinsicTextWidth(ElementNode element, TextMeasureService textMeasureService) {
+        int maxWidth = 0;
+        for (DocumentNode child : element.getChildren()) {
+            if (child instanceof TextNode) {
+                maxWidth = Math.max(maxWidth, toUiTextSize(textMeasureService.getStringWidth(
+                        ((TextNode) child).getText())));
+                continue;
+            }
+            if (!(child instanceof ElementNode)) {
+                continue;
+            }
+            ElementNode childElement = (ElementNode) child;
+            ComputedStyle childStyle = UiStyleResolver.compute(childElement);
+            if (childStyle.getDisplay() == UiDisplay.NONE || isOutOfFlowPositioned(childStyle)) {
+                continue;
+            }
+            maxWidth = Math.max(maxWidth, measureIntrinsicTextWidth(childElement, textMeasureService));
+        }
+        return maxWidth;
     }
 
     private static int resolveContentWidth(ElementNode element, ComputedStyle computedStyle, int containingWidth,

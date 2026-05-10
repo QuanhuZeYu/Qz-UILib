@@ -95,6 +95,36 @@ public class DocumentLayoutEngineTest {
     }
 
     /**
+     * 验证固定宽父容器中的 block 子项在 auto 宽下不会因自身 padding/border 撑出父内容盒。
+     */
+    @Test
+    public void shouldKeepAutoWidthBlockChildInsideParentContentBox() {
+        UiDocument document = UiDocument.create();
+        ElementNode root = document.getRootElement();
+        ElementNode panel = document.div();
+        ElementNode child = document.div();
+
+        root.style().setWidth(UiStyleLength.px(320));
+        panel.style()
+                .setWidth(UiStyleLength.px(248))
+                .setPadding(UiStyleLength.px(12))
+                .setBorderWidth(UiStyleLength.px(1));
+        child.style()
+                .setDisplay(UiDisplay.BLOCK)
+                .setPadding(UiStyleLength.px(8))
+                .setBorderWidth(UiStyleLength.px(1));
+        panel.append(child);
+        root.append(panel);
+
+        DocumentLayoutBox panelBox = DocumentLayoutEngine.layout(root, 320, 0).getChildren().get(0);
+        DocumentLayoutBox childBox = panelBox.getChildren().get(0);
+
+        Assert.assertEquals(248, panelBox.getContentWidth());
+        Assert.assertEquals(248, childBox.getWidth());
+        Assert.assertTrue(childBox.getRight() <= panelBox.getContentLeft() + panelBox.getContentWidth());
+    }
+
+    /**
      * 验证 display none 元素不会进入 layout box tree。
      */
     @Test
@@ -997,6 +1027,32 @@ public class DocumentLayoutEngineTest {
 
         Assert.assertEquals(80, childBox.getLeft());
         Assert.assertEquals(20, childBox.getTop());
+    }
+
+    /**
+     * 验证 flex row 中 auto 宽度文本子项不会被压缩成 0 宽。
+     */
+    @Test
+    public void shouldMeasureAutoWidthTextItemInFlexRow() {
+        UiDocument document = UiDocument.create();
+        ElementNode root = document.getRootElement();
+        ElementNode child = document.div();
+
+        root.style()
+                .setDisplay(UiDisplay.FLEX)
+                .setWidth(UiStyleLength.px(100))
+                .setJustifyContent(UiJustifyContent.CENTER);
+        child.style()
+                .setPadding(UiStyleLength.px(3))
+                .setBorderWidth(UiStyleLength.px(1));
+        child.appendText("HUD");
+        root.append(child);
+
+        DocumentLayoutBox childBox = DocumentLayoutEngine.layout(root, 140, 0).getChildren().get(0);
+
+        Assert.assertEquals(24, childBox.getContentWidth());
+        Assert.assertEquals(32, childBox.getWidth());
+        Assert.assertEquals(34, childBox.getLeft());
     }
 
     private static void assertTextRun(DocumentLayoutTextRun textRun, String text, int left, int top, int width,
