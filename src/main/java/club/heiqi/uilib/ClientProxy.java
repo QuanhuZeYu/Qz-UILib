@@ -2,6 +2,7 @@ package club.heiqi.uilib;
 
 import club.heiqi.uilib.client.FontRenderTickListener;
 import club.heiqi.uilib.client.QzUiLibClientCommand;
+import club.heiqi.uilib.client.UiHudRenderListener;
 import club.heiqi.uilib.client.UiInputTickListener;
 import club.heiqi.uilib.ui.input.UiInputService;
 import cpw.mods.fml.common.FMLCommonHandler;
@@ -16,6 +17,7 @@ public class ClientProxy extends CommonProxy {
 
     private final FontRenderTickListener fontRenderTickListener = new FontRenderTickListener();
     private final QzUiLibClientCommand qzUiLibClientCommand = new QzUiLibClientCommand();
+    private final UiHudRenderListener uiHudRenderListener = new UiHudRenderListener();
     private final UiInputTickListener uiInputTickListener = new UiInputTickListener();
 
     /**
@@ -29,6 +31,7 @@ public class ClientProxy extends CommonProxy {
         UiInputService.getInstance().initialize();
         ClientCommandHandler.instance.registerCommand(qzUiLibClientCommand);
         MinecraftForge.EVENT_BUS.register(fontRenderTickListener);
+        MinecraftForge.EVENT_BUS.register(uiHudRenderListener);
         FMLCommonHandler.instance().bus().register(fontRenderTickListener);
         FMLCommonHandler.instance().bus().register(uiInputTickListener);
     }

@@ -49,11 +49,22 @@ public class UiScreenManager {
         if (minecraft == null) {
             return;
         }
+        tick(UiInputService.getInstance().collectFrame());
+    }
 
-        UiInputFrame frame = UiInputService.getInstance().collectFrame();
+    /**
+     * 使用外部已收集好的输入快照刷新一帧 UI 输入与界面路由。
+     *
+     * @param frame 输入快照
+     */
+    public void tick(UiInputFrame frame) {
+        Minecraft minecraft = Minecraft.getMinecraft();
+        if (minecraft == null) {
+            return;
+        }
 
         GuiScreen currentScreen = minecraft.currentScreen;
-        if (currentScreen instanceof BaseScreen) {
+        if (frame != null && currentScreen instanceof BaseScreen) {
             ((BaseScreen) currentScreen).handleInputFrame(frame);
         }
 

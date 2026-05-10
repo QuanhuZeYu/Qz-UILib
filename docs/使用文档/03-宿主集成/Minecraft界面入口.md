@@ -127,3 +127,34 @@ Minecraft.getMinecraft().displayGuiScreen(UiDocumentScreens.createDocumentScreen
 - 保留 `UiInputTickListener` 注册。
 - 保留 `UiScreenManager.getInstance().tick()` 这条延后任务冲刷路径。
 - 只移除全局诊断热键，不移除正常输入分发。
+
+## HUD 文档层
+
+如果宿主想在游戏内 HUD 区域承载 HTML-like 内容，可以使用 `UiHudDocumentHost` 注册 HUD 文档层。
+
+当前内置两类层：
+
+- `UiHudLayerType.PASSIVE`：不可交互，只在纯游戏内 HUD 可见；打开背包、箱子、菜单后会隐藏。
+- `UiHudLayerType.INTERACTIVE`：游戏内与容器界面可见；菜单页隐藏。当前只在鼠标已自由的容器界面里接通命中和焦点输入。
+
+```java
+UiHudDocumentRegistration registration = UiHudDocumentHost.getInstance().register(
+        UiHudLayerType.PASSIVE,
+        document -> {
+            ElementNode root = document.getRootElement();
+            ElementNode badge = document.div();
+            badge.style()
+                    .setPosition(UiPosition.FIXED)
+                    .setRight(UiStyleLength.px(12))
+                    .setTop(UiStyleLength.px(12));
+            badge.appendText("战斗中");
+            root.append(badge);
+        });
+```
+
+当前稳定边界：
+
+- HUD 文档仍复用 `UiDocument` 与 `HtmlLikeDocumentWidget`，不是单独的一套渲染语法。
+- HUD 根元素默认补齐 `width:100%`、`height:100%` 与 `overflow:visible`。
+- 被动层会默认标记为整棵子树不可命中。
+- 交互层首版优先服务“容器界面上方的小面板/浮层”场景，暂不主动接管原版游戏内锁定鼠标状态。
