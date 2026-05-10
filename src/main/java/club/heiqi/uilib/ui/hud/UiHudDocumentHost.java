@@ -361,8 +361,12 @@ public final class UiHudDocumentHost {
     }
 
     private static boolean isInteractiveInputEnabled(GuiScreen currentScreen) {
-        return currentScreen != null && classifyScreen(currentScreen) == UiHudScreenCategory.CONTAINER
-                && !Mouse.isGrabbed();
+        return isInteractiveInputEnabled(currentScreen, currentScreen == null ? null : currentScreen.getClass().getName(),
+                Mouse.isGrabbed());
+    }
+
+    static boolean isInteractiveInputEnabled(Object screen, String screenClassName, boolean mouseGrabbed) {
+        return (screen != null || screenClassName != null) && !mouseGrabbed;
     }
 
     private UiRenderTarget getOrCreateDeferredPostMainRenderTarget() {

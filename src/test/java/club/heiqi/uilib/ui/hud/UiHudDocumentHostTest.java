@@ -62,6 +62,21 @@ public class UiHudDocumentHostTest {
         Assert.assertNull(root.getAttribute("data-hit-test-hidden"));
     }
 
+    /**
+     * 验证交互 HUD 在非菜单且鼠标已释放时都允许接通输入。
+     */
+    @Test
+    public void shouldEnableInteractiveHudInputOnAnyOpenedScreenWhenMouseIsFree() {
+        Assert.assertFalse(UiHudDocumentHost.isInteractiveInputEnabled(null, null, false));
+        Assert.assertTrue(UiHudDocumentHost.isInteractiveInputEnabled(new Object(),
+                "net.minecraft.client.gui.inventory.GuiChest", false));
+        Assert.assertTrue(UiHudDocumentHost.isInteractiveInputEnabled(new Object(),
+                "example.custom.Screen", false));
+        Assert.assertTrue(UiHudDocumentHost.isInteractiveInputEnabled(new Object(),
+                "net.minecraft.client.gui.GuiIngameMenu", false));
+        Assert.assertFalse(UiHudDocumentHost.isInteractiveInputEnabled(null, null, true));
+    }
+
     private static UiDocument captureRegisteredDocument(UiHudLayerType layerType) {
         final UiDocument[] holder = new UiDocument[1];
         UiHudDocumentRegistration registration = UiHudDocumentHost.getInstance().register(layerType,

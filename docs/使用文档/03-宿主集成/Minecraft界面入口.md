@@ -135,7 +135,7 @@ Minecraft.getMinecraft().displayGuiScreen(UiDocumentScreens.createDocumentScreen
 当前内置两类层：
 
 - `UiHudLayerType.PASSIVE`：不可交互，只在纯游戏内 HUD 可见；打开背包、箱子、菜单后会隐藏。
-- `UiHudLayerType.INTERACTIVE`：游戏内与容器界面可见；菜单页隐藏。当前只在鼠标已自由的容器界面里接通命中和焦点输入。
+- `UiHudLayerType.INTERACTIVE`：游戏内与容器界面可见；菜单页隐藏。当前会在任意已打开且鼠标已自由的界面里接通命中和焦点输入。
 
 ```java
 UiHudDocumentRegistration registration = UiHudDocumentHost.getInstance().register(
@@ -157,4 +157,4 @@ UiHudDocumentRegistration registration = UiHudDocumentHost.getInstance().registe
 - HUD 文档仍复用 `UiDocument` 与 `HtmlLikeDocumentWidget`，不是单独的一套渲染语法。
 - HUD 根元素默认补齐 `width:100%`、`height:100%` 与 `overflow:visible`。
 - 被动层会默认标记为整棵子树不可命中。
-- 交互层首版优先服务“容器界面上方的小面板/浮层”场景，暂不主动接管原版游戏内锁定鼠标状态。
+- 交互层当前不再限定必须是容器界面；只要当前已有打开界面且鼠标未锁定，就会接通输入，纯游戏内锁定鼠标状态仍不主动接管。
