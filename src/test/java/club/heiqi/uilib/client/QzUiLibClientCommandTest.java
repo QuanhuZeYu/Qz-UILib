@@ -27,9 +27,10 @@ public class QzUiLibClientCommandTest {
         RecordingSender sender = new RecordingSender();
 
         Assert.assertEquals("qzuilib", command.getCommandName());
-        Assert.assertEquals("/qzuilib test", command.getCommandUsage(sender));
+        Assert.assertEquals("/qzuilib <test|hud_demo>", command.getCommandUsage(sender));
         Assert.assertEquals(0, command.getRequiredPermissionLevel());
         Assert.assertTrue(command.addTabCompletionOptions(sender, new String[] { "t" }).contains("test"));
+        Assert.assertTrue(command.addTabCompletionOptions(sender, new String[] { "hud" }).contains("hud_demo"));
         Assert.assertTrue(command.addTabCompletionOptions(sender, new String[] { "test", "extra" }).isEmpty());
     }
 
@@ -45,14 +46,14 @@ public class QzUiLibClientCommandTest {
             command.processCommand(sender, new String[0]);
             Assert.fail("Expected WrongUsageException");
         } catch (WrongUsageException expected) {
-            Assert.assertEquals("/qzuilib test", expected.getMessage());
+            Assert.assertEquals("/qzuilib <test|hud_demo>", expected.getMessage());
         }
 
         try {
             command.processCommand(sender, new String[] { "inventory" });
             Assert.fail("Expected WrongUsageException");
         } catch (WrongUsageException expected) {
-            Assert.assertEquals("/qzuilib test", expected.getMessage());
+            Assert.assertEquals("/qzuilib <test|hud_demo>", expected.getMessage());
         }
 
         Assert.assertTrue(sender.messages.isEmpty());

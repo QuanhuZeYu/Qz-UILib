@@ -19,6 +19,7 @@ public class QzUiLibClientCommand extends CommandBase {
 
     private static final String COMMAND_NAME = "qzuilib";
     private static final String SUBCOMMAND_TEST = "test";
+    private static final String SUBCOMMAND_HUD_DEMO = "hud_demo";
 
     @Override
     public String getCommandName() {
@@ -27,7 +28,7 @@ public class QzUiLibClientCommand extends CommandBase {
 
     @Override
     public String getCommandUsage(ICommandSender sender) {
-        return "/qzuilib test";
+        return "/qzuilib <test|hud_demo>";
     }
 
     @Override
@@ -42,15 +43,28 @@ public class QzUiLibClientCommand extends CommandBase {
 
     @Override
     public void processCommand(ICommandSender sender, String[] args) {
-        if (args.length != 1 || !SUBCOMMAND_TEST.equalsIgnoreCase(args[0])) {
+        if (args.length != 1) {
             throw new WrongUsageException(getCommandUsage(sender));
         }
 
+        if (SUBCOMMAND_TEST.equalsIgnoreCase(args[0])) {
+            openDiagnosticsMenu(sender);
+            return;
+        }
+        if (SUBCOMMAND_HUD_DEMO.equalsIgnoreCase(args[0])) {
+            toggleHudDemo(sender);
+            return;
+        }
+        throw new WrongUsageException(getCommandUsage(sender));
+    }
+
+    private void openDiagnosticsMenu(ICommandSender sender) {
         Minecraft minecraft = Minecraft.getMinecraft();
         if (minecraft == null) {
             sender.addChatMessage(new ChatComponentText("Qz UILib: 当前客户端不可用。"));
             return;
         }
+
         UiScreenManager.getInstance().enqueue(new Runnable() {
             @Override
             public void run() {
@@ -60,10 +74,23 @@ public class QzUiLibClientCommand extends CommandBase {
         });
     }
 
+    private void toggleHudDemo(ICommandSender sender) {
+        Minecraft minecraft = Minecraft.getMinecraft();
+        if (minecraft == null) {
+            sender.addChatMessage(new ChatComponentText("Qz UILib: 当前客户端不可用。"));
+            return;
+        }
+
+        boolean enabled = UiHudDemoController.getInstance().toggle();
+        sender.addChatMessage(new ChatComponentText(enabled
+                ? "Qz UILib: HUD 双层示例已启用。纯 HUD 层会在背包/菜单中隐藏；交互层可在容器界面上方继续显示。"
+                : "Qz UILib: HUD 双层示例已关闭。"));
+    }
+
     @Override
     public List<String> addTabCompletionOptions(ICommandSender sender, String[] args) {
         if (args.length == 1) {
-            return getListOfStringsMatchingLastWord(args, SUBCOMMAND_TEST);
+            return getListOfStringsMatchingLastWord(args, SUBCOMMAND_TEST, SUBCOMMAND_HUD_DEMO);
         }
         return Collections.emptyList();
     }
