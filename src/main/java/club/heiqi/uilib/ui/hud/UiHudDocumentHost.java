@@ -109,10 +109,7 @@ public final class UiHudDocumentHost {
         if (frame == null || entries.isEmpty()) {
             return;
         }
-        for (HudEntry entry : entries) {
-            entry.latestMouseX = frame.getMouseX();
-            entry.latestMouseY = frame.getMouseY();
-        }
+        updateLatestPointer(frame);
         Minecraft minecraft = Minecraft.getMinecraft();
         if (minecraft == null) {
             return;
@@ -124,7 +121,34 @@ public final class UiHudDocumentHost {
             clearInteractiveStates();
             return;
         }
+        routeInteractiveEntries(frame, screenCategory, new ArrayList<HudEntry>(entries));
+    }
+
+    synchronized void handleInputFrameForTest(UiInputFrame frame, UiHudScreenCategory screenCategory, int width,
+            int height) {
+        if (frame == null || entries.isEmpty()) {
+            return;
+        }
+        updateLatestPointer(frame);
         for (HudEntry entry : entries) {
+            entry.widget.applyLayoutBounds(0, 0, Math.max(0, width), Math.max(0, height));
+        }
+        routeInteractiveEntries(frame, screenCategory, new ArrayList<HudEntry>(entries));
+    }
+
+    private void updateLatestPointer(UiInputFrame frame) {
+        for (HudEntry entry : entries) {
+            entry.latestMouseX = frame.getMouseX();
+            entry.latestMouseY = frame.getMouseY();
+        }
+    }
+
+    private void routeInteractiveEntries(UiInputFrame frame, UiHudScreenCategory screenCategory,
+            List<HudEntry> entrySnapshot) {
+        for (HudEntry entry : entrySnapshot) {
+            if (!entries.contains(entry)) {
+                continue;
+            }
             if (entry.layerType != UiHudLayerType.INTERACTIVE || !entry.isVisibleIn(screenCategory)) {
                 continue;
             }
