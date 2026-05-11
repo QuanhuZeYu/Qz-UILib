@@ -69,8 +69,12 @@ public final class DocumentDraggableSupport {
                 return false;
             }
             ensureInitialized();
-            dragging = true;
             return true;
+        }
+        if (!dragging) {
+            if (event.getPhase() == DocumentElementDragEvent.DragPhase.DRAG) {
+                dragging = true;
+            }
         }
         if (!dragging) {
             return false;

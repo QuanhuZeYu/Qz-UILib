@@ -794,6 +794,115 @@ public class HtmlLikeDocumentWidgetTest {
     }
 
     /**
+     * 验证可拖拽把手在短点击时仍会保留 click 语义。
+     */
+    @Test
+    public void shouldPreserveClickForDraggableHandleWithoutCrossingThreshold() {
+        UiDocument document = UiDocument.create();
+        ElementNode root = document.getRootElement();
+        final ElementNode panel = document.div();
+        final ElementNode handle = document.div();
+        final List<DocumentElementClickEvent> clickEvents = new ArrayList<DocumentElementClickEvent>();
+
+        root.style()
+                .setWidth(UiStyleLength.px(240))
+                .setHeight(UiStyleLength.px(120));
+        panel.style()
+                .setPosition(UiPosition.FIXED)
+                .setLeft(UiStyleLength.px(20))
+                .setTop(UiStyleLength.px(10))
+                .setWidth(UiStyleLength.px(80))
+                .setHeight(UiStyleLength.px(30));
+        handle.style()
+                .setWidth(UiStyleLength.px(80))
+                .setHeight(UiStyleLength.px(10));
+        handle.setClickHandler(new DocumentElementClickHandler() {
+            @Override
+            public boolean onClick(DocumentElementClickEvent event) {
+                clickEvents.add(event);
+                return true;
+            }
+        });
+        panel.append(handle);
+        root.append(panel);
+        DocumentDraggableSupport.attach(panel, handle, DocumentDraggableSupport.DragAxis.BOTH);
+
+        HtmlLikeDocumentWidget widget = new HtmlLikeDocumentWidget(document, 240, 120,
+                new DeterministicTextMeasureService());
+        widget.applyLayoutBounds(0, 0, 240, 120);
+
+        widget.onMouseDown(new UiMouseEvent(UiMouseEvent.Action.BUTTON_DOWN, 25, 15, 0, 0, 0, 0, 1L));
+        widget.onMouseMove(new UiMouseEvent(UiMouseEvent.Action.MOVE, 27, 16, -1, 0, 2, 1, 2L));
+        widget.onMouseUp(new UiMouseEvent(UiMouseEvent.Action.BUTTON_UP, 27, 16, 0, 0, 0, 0, 3L));
+
+        Assert.assertEquals(1, clickEvents.size());
+        assertElementUid(handle, clickEvents.get(0).getTarget());
+        Assert.assertEquals(20.0F, panel.style().getLeft().getValue(), 0.001F);
+        Assert.assertEquals(10.0F, panel.style().getTop().getValue(), 0.001F);
+    }
+
+    /**
+     * 验证 drag handler 只有超过阈值后才进入真正拖拽并阻断 click。
+     */
+    @Test
+    public void shouldActivateDragOnlyAfterCrossingThreshold() {
+        UiDocument document = UiDocument.create();
+        ElementNode root = document.getRootElement();
+        final ElementNode panel = document.div();
+        final List<DocumentElementDragEvent.DragPhase> dragPhases =
+                new ArrayList<DocumentElementDragEvent.DragPhase>();
+        final List<DocumentElementClickEvent> clickEvents = new ArrayList<DocumentElementClickEvent>();
+
+        root.style()
+                .setWidth(UiStyleLength.px(120))
+                .setHeight(UiStyleLength.px(60));
+        panel.style()
+                .setWidth(UiStyleLength.px(60))
+                .setHeight(UiStyleLength.px(20));
+        panel.setDragHandler(new club.heiqi.uilib.ui.dom.DocumentElementDragHandler() {
+            @Override
+            public boolean onDrag(DocumentElementDragEvent event) {
+                dragPhases.add(event.getPhase());
+                return true;
+            }
+        });
+        panel.setClickHandler(new DocumentElementClickHandler() {
+            @Override
+            public boolean onClick(DocumentElementClickEvent event) {
+                clickEvents.add(event);
+                return true;
+            }
+        });
+        root.append(panel);
+
+        HtmlLikeDocumentWidget widget = new HtmlLikeDocumentWidget(document, 120, 60,
+                new DeterministicTextMeasureService());
+        widget.applyLayoutBounds(0, 0, 120, 60);
+
+        widget.onMouseDown(new UiMouseEvent(UiMouseEvent.Action.BUTTON_DOWN, 10, 10, 0, 0, 0, 0, 1L));
+        widget.onMouseMove(new UiMouseEvent(UiMouseEvent.Action.MOVE, 12, 11, -1, 0, 2, 1, 2L));
+        widget.onMouseUp(new UiMouseEvent(UiMouseEvent.Action.BUTTON_UP, 12, 11, 0, 0, 0, 0, 3L));
+
+        Assert.assertEquals(2, dragPhases.size());
+        Assert.assertEquals(DocumentElementDragEvent.DragPhase.START, dragPhases.get(0));
+        Assert.assertEquals(DocumentElementDragEvent.DragPhase.END, dragPhases.get(1));
+        Assert.assertEquals(1, clickEvents.size());
+
+        dragPhases.clear();
+        clickEvents.clear();
+
+        widget.onMouseDown(new UiMouseEvent(UiMouseEvent.Action.BUTTON_DOWN, 10, 10, 0, 0, 0, 0, 4L));
+        widget.onMouseMove(new UiMouseEvent(UiMouseEvent.Action.MOVE, 16, 10, -1, 0, 6, 0, 5L));
+        widget.onMouseUp(new UiMouseEvent(UiMouseEvent.Action.BUTTON_UP, 16, 10, 0, 0, 0, 0, 6L));
+
+        Assert.assertEquals(3, dragPhases.size());
+        Assert.assertEquals(DocumentElementDragEvent.DragPhase.START, dragPhases.get(0));
+        Assert.assertEquals(DocumentElementDragEvent.DragPhase.DRAG, dragPhases.get(1));
+        Assert.assertEquals(DocumentElementDragEvent.DragPhase.END, dragPhases.get(2));
+        Assert.assertTrue(clickEvents.isEmpty());
+    }
+
+    /**
      * 验证 padding keyframe 运行期间和 forwards fill 后都会驱动运行态布局值。
      */
     @Test

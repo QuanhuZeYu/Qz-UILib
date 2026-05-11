@@ -47,6 +47,10 @@ import club.heiqi.uilib.ui.widget.Widget;
  */
 public final class HtmlLikeDocumentWidget extends Widget {
 
+    private static final int DRAG_ACTIVATION_THRESHOLD_PX = 4;
+    private static final int DRAG_ACTIVATION_THRESHOLD_SQUARED =
+            DRAG_ACTIVATION_THRESHOLD_PX * DRAG_ACTIVATION_THRESHOLD_PX;
+
     private final UiDocument document;
     private final TextMeasureService textMeasureService;
     private final DocumentScrollState scrollState = new DocumentScrollState();
@@ -84,6 +88,7 @@ public final class HtmlLikeDocumentWidget extends Widget {
     private int dragStartDocumentY;
     private int lastDragDocumentX;
     private int lastDragDocumentY;
+    private boolean dragActivated;
 
     /**
      * 创建 HTML-like 文档适配组件。
@@ -322,13 +327,14 @@ public final class HtmlLikeDocumentWidget extends Widget {
     public void onMouseDown(UiMouseEvent event) {
         if (event == null) {
             pressedElement = null;
-            draggingElement = null;
+            clearDragState();
             return;
         }
         DocumentLayoutBox rootBox = resolveInteractiveLayoutBox();
         if (event.getButton() == 0 && scrollState.beginScrollbarDrag(rootBox, event.getMouseX() - getAbsoluteX(),
                 event.getMouseY() - getAbsoluteY())) {
             pressedElement = null;
+            clearDragState();
             return;
         }
         pressedElement = findElementAt(event.getMouseX(), event.getMouseY());
@@ -354,10 +360,12 @@ public final class HtmlLikeDocumentWidget extends Widget {
     public void onMouseUp(UiMouseEvent event) {
         if (event == null) {
             pressedElement = null;
+            clearDragState();
             return;
         }
         if (event.getButton() == 0 && scrollState.endScrollbarDrag()) {
             pressedElement = null;
+            clearDragState();
             return;
         }
         ElementNode releasedElement = findElementAt(event.getMouseX(), event.getMouseY());
@@ -594,7 +602,7 @@ public final class HtmlLikeDocumentWidget extends Widget {
     }
 
     private void beginDragIfNeeded(ElementNode target, UiMouseEvent event) {
-        draggingElement = null;
+        clearDragState();
         if (target == null || event == null || event.getButton() != 0) {
             return;
         }
@@ -615,6 +623,7 @@ public final class HtmlLikeDocumentWidget extends Widget {
                     DocumentElementDragEvent.DragPhase.START);
             if (dragHandler.onDrag(dragEvent)) {
                 draggingElement = currentElement;
+                dragActivated = false;
                 return;
             }
         }
@@ -626,6 +635,14 @@ public final class HtmlLikeDocumentWidget extends Widget {
         }
         int documentX = event.getMouseX() - getAbsoluteX();
         int documentY = event.getMouseY() - getAbsoluteY();
+        if (!dragActivated) {
+            int distanceX = documentX - dragStartDocumentX;
+            int distanceY = documentY - dragStartDocumentY;
+            if (distanceX * distanceX + distanceY * distanceY < DRAG_ACTIVATION_THRESHOLD_SQUARED) {
+                return false;
+            }
+            dragActivated = true;
+        }
         int deltaDocumentX = documentX - lastDragDocumentX;
         int deltaDocumentY = documentY - lastDragDocumentY;
         lastDragDocumentX = documentX;
@@ -636,7 +653,7 @@ public final class HtmlLikeDocumentWidget extends Widget {
 
     private boolean dispatchDragEnd(UiMouseEvent event) {
         if (draggingElement == null || event == null) {
-            draggingElement = null;
+            clearDragState();
             return false;
         }
         int documentX = event.getMouseX() - getAbsoluteX();
@@ -645,9 +662,16 @@ public final class HtmlLikeDocumentWidget extends Widget {
         int deltaDocumentY = documentY - lastDragDocumentY;
         ElementNode dragTarget = pressedElement;
         ElementNode dragHandlerTarget = draggingElement;
+        boolean activated = dragActivated;
+        clearDragState();
+        boolean handled = dispatchDragEvent(dragHandlerTarget, dragTarget, event, documentX, documentY,
+                deltaDocumentX, deltaDocumentY, DocumentElementDragEvent.DragPhase.END);
+        return activated && handled;
+    }
+
+    private void clearDragState() {
         draggingElement = null;
-        return dispatchDragEvent(dragHandlerTarget, dragTarget, event, documentX, documentY, deltaDocumentX,
-                deltaDocumentY, DocumentElementDragEvent.DragPhase.END);
+        dragActivated = false;
     }
 
     private boolean dispatchDragEvent(ElementNode dragHandlerTarget, ElementNode dragTarget, UiMouseEvent event,
