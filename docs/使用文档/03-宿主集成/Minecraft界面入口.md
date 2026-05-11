@@ -159,3 +159,4 @@ UiHudDocumentRegistration registration = UiHudDocumentHost.getInstance().registe
 - 被动层会默认标记为整棵子树不可命中。
 - 交互层当前不再限定必须是容器界面；只要当前已有打开界面且鼠标未锁定，就会接通输入，纯游戏内锁定鼠标状态仍不主动接管。
 - 当当前原生界面已有聚焦的 Minecraft 文本输入框时，交互层不会继续接管键盘；一旦 UILib 获得焦点，会阻断宿主原生键盘链路，避免双方同时响应同一输入。
+- 交互层的键盘抢占发生在原生 `handleKeyboardInput()` 之前，避免背包、容器或其他页面先消费 Tab / 文本输入。

@@ -132,6 +132,45 @@ public final class UiHudDocumentHost {
         updateHudKeyboardCaptureState();
     }
 
+    /**
+     * 在宿主原生 `handleKeyboardInput()` 调用栈内即时路由当前键盘事件。
+     *
+     * @param currentScreen 当前宿主界面
+     * @param frame 当前键盘事件对应的即时输入快照
+     * @return 是否应阻断宿主继续处理该键盘事件
+     */
+    public synchronized boolean handleImmediateKeyboardInput(GuiScreen currentScreen, UiInputFrame frame) {
+        if (frame == null || entries.isEmpty()) {
+            return false;
+        }
+        updateLatestPointer(frame);
+        UiHudScreenCategory screenCategory = classifyScreen(currentScreen);
+        if (!isInteractiveInputEnabled(currentScreen)) {
+            clearInteractiveStates();
+            return false;
+        }
+        boolean keyboardCapturedBeforeRouting = UiKeyboardCaptureState.getInstance().isUiLibKeyboardCaptured();
+        UiInputFrame routedFrame = filterKeyboardInput(frame,
+                UiNativeTextInputInspector.hasFocusedTextInput(currentScreen),
+                keyboardCapturedBeforeRouting);
+        if (routedFrame.getKeyEvents().isEmpty() && routedFrame.getTextEvents().isEmpty()) {
+            return false;
+        }
+        routeInteractiveEntries(routedFrame, screenCategory, new ArrayList<HudEntry>(entries));
+        updateHudKeyboardCaptureState();
+        return UiKeyboardCaptureState.getInstance().isUiLibKeyboardCaptured();
+    }
+
+    synchronized boolean handleImmediateKeyboardInputForTest(UiInputFrame frame, UiHudScreenCategory screenCategory) {
+        if (frame == null || entries.isEmpty()) {
+            return false;
+        }
+        updateLatestPointer(frame);
+        routeInteractiveEntries(frame, screenCategory, new ArrayList<HudEntry>(entries));
+        updateHudKeyboardCaptureState();
+        return UiKeyboardCaptureState.getInstance().isUiLibKeyboardCaptured();
+    }
+
     synchronized void handleInputFrameForTest(UiInputFrame frame, UiHudScreenCategory screenCategory, int width,
             int height) {
         if (frame == null || entries.isEmpty()) {

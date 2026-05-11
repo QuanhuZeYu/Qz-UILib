@@ -11,6 +11,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import net.minecraft.client.Minecraft;
 
 import org.lwjglx.Sys;
+import org.lwjglx.input.Keyboard;
 import org.lwjglx.input.Mouse;
 
 import club.heiqi.uilib.ui.event.UiKeyEvent;
@@ -42,6 +43,10 @@ public class UiInputService implements InputEvents.KeyboardListener {
     private final Queue<UiKeyEvent> keyEvents = new ConcurrentLinkedQueue<UiKeyEvent>();
     private final Queue<UiTextInputEvent> textEvents = new ConcurrentLinkedQueue<UiTextInputEvent>();
     private final boolean[] previousMouseButtonStates = new boolean[8];
+    private volatile boolean suppressNextCollectedKeyEvent;
+    private volatile int suppressNextCollectedKeyCode;
+    private volatile UiKeyEvent.Action suppressNextCollectedKeyAction;
+    private volatile String suppressNextCollectedText;
 
     private volatile int mouseX;
     private volatile int mouseY;
@@ -98,6 +103,10 @@ public class UiInputService implements InputEvents.KeyboardListener {
         mouseEvents.clear();
         keyEvents.clear();
         textEvents.clear();
+        suppressNextCollectedKeyEvent = false;
+        suppressNextCollectedKeyCode = 0;
+        suppressNextCollectedKeyAction = null;
+        suppressNextCollectedText = null;
     }
 
     /**
@@ -122,9 +131,57 @@ public class UiInputService implements InputEvents.KeyboardListener {
         return mouseY;
     }
 
+    /**
+     * 基于当前原生键盘事件构造一份即时输入快照，供宿主在 `GuiScreen.handleKeyboardInput()` 内抢先分发。
+     *
+     * @return 即时输入快照；当前事件无效时返回 null
+     */
+    public UiInputFrame createImmediateKeyboardFrame() {
+        if (!Keyboard.getEventKeyState()) {
+            return null;
+        }
+        UiKeyEvent keyEvent = createCurrentKeyboardEvent();
+        if (keyEvent == null) {
+            return null;
+        }
+        List<UiKeyEvent> keyEventList = new ArrayList<UiKeyEvent>(1);
+        keyEventList.add(keyEvent);
+        List<UiTextInputEvent> textEventList = new ArrayList<UiTextInputEvent>(1);
+        String eventText = resolveImmediateKeyboardText();
+        if (eventText != null) {
+            textEventList.add(new UiTextInputEvent(eventText, keyEvent.getTimeNanos()));
+        }
+        return new UiInputFrame(mouseX, mouseY, java.util.Collections.<UiMouseEvent>emptyList(), keyEventList,
+                textEventList);
+    }
+
+    /**
+     * 标记下一次从全局输入监听收集到的键盘事件已由宿主即时分发，避免 HUD 同帧收到重复键盘输入。
+     *
+     * @param text 当前原生事件对应的文本；无文本时传 null
+     */
+    public void suppressNextCollectedKeyboardEvent(int keyCode, UiKeyEvent.Action action, String text) {
+        suppressNextCollectedKeyEvent = true;
+        suppressNextCollectedKeyCode = keyCode;
+        suppressNextCollectedKeyAction = action;
+        suppressNextCollectedText = text;
+        removeQueuedKeyEvent(keyCode, action);
+        if (text != null) {
+            removeQueuedTextEvent(text);
+        }
+    }
+
     @Override
     public void onKeyEvent(InputEvents.KeyEvent event) {
         int keyCode = readIntField(event, "lwjgl2KeyCode", 0);
+        UiKeyEvent.Action action = mapAction(event.action);
+        if (suppressNextCollectedKeyEvent && suppressNextCollectedKeyCode == keyCode
+                && suppressNextCollectedKeyAction == action) {
+            suppressNextCollectedKeyEvent = false;
+            suppressNextCollectedKeyCode = 0;
+            suppressNextCollectedKeyAction = null;
+            return;
+        }
         int glfwKeyCode = readIntField(event, "glfwKeyCode", readIntField(event, "sdlKeyCode", 0));
         int glfwScanCode = readIntField(event, "glfwScanCode", readIntField(event, "sdlScanCode", 0));
         short modifierMask = readShortField(event, "sdlKeyModifiers", (short) 0);
@@ -146,7 +203,36 @@ public class UiInputService implements InputEvents.KeyboardListener {
         if (event.text == null || event.text.isEmpty()) {
             return;
         }
+        if (suppressNextCollectedText != null && suppressNextCollectedText.equals(event.text)) {
+            suppressNextCollectedText = null;
+            return;
+        }
         textEvents.add(new UiTextInputEvent(event.text, Sys.getNanoTime()));
+    }
+
+    private UiKeyEvent createCurrentKeyboardEvent() {
+        if (!Keyboard.isCreated()) {
+            return null;
+        }
+        long now = Sys.getNanoTime();
+        return new UiKeyEvent(
+                Keyboard.getEventKey(),
+                0,
+                0,
+                Keyboard.isRepeatEvent() ? UiKeyEvent.Action.REPEATED : UiKeyEvent.Action.PRESSED,
+                Keyboard.isKeyDown(Keyboard.KEY_LCONTROL) || Keyboard.isKeyDown(Keyboard.KEY_RCONTROL),
+                Keyboard.isKeyDown(Keyboard.KEY_LSHIFT) || Keyboard.isKeyDown(Keyboard.KEY_RSHIFT),
+                Keyboard.isKeyDown(Keyboard.KEY_LMENU) || Keyboard.isKeyDown(Keyboard.KEY_RMENU),
+                false,
+                now);
+    }
+
+    private String resolveImmediateKeyboardText() {
+        char eventCharacter = Keyboard.getEventCharacter();
+        if (eventCharacter == Keyboard.CHAR_NONE || Character.isISOControl(eventCharacter)) {
+            return null;
+        }
+        return String.valueOf(eventCharacter);
     }
 
     private UiKeyEvent.Action mapAction(InputEvents.KeyAction action) {
@@ -168,6 +254,46 @@ public class UiInputService implements InputEvents.KeyboardListener {
             }
         }
         return result;
+    }
+
+    private void removeQueuedKeyEvent(int keyCode, UiKeyEvent.Action action) {
+        if (action == null || keyEvents.isEmpty()) {
+            return;
+        }
+        List<UiKeyEvent> retainedEvents = new ArrayList<UiKeyEvent>();
+        boolean removed = false;
+        while (!keyEvents.isEmpty()) {
+            UiKeyEvent event = keyEvents.poll();
+            if (event == null) {
+                continue;
+            }
+            if (!removed && event.getKeyCode() == keyCode && event.getAction() == action) {
+                removed = true;
+                continue;
+            }
+            retainedEvents.add(event);
+        }
+        keyEvents.addAll(retainedEvents);
+    }
+
+    private void removeQueuedTextEvent(String text) {
+        if (text == null || text.isEmpty() || textEvents.isEmpty()) {
+            return;
+        }
+        List<UiTextInputEvent> retainedEvents = new ArrayList<UiTextInputEvent>();
+        boolean removed = false;
+        while (!textEvents.isEmpty()) {
+            UiTextInputEvent event = textEvents.poll();
+            if (event == null) {
+                continue;
+            }
+            if (!removed && text.equals(event.getText())) {
+                removed = true;
+                continue;
+            }
+            retainedEvents.add(event);
+        }
+        textEvents.addAll(retainedEvents);
     }
 
     private int readIntField(Object instance, String fieldName, int fallback) {

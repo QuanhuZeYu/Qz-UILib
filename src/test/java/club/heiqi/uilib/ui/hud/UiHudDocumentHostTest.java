@@ -12,9 +12,11 @@ import club.heiqi.uilib.ui.dom.UiDocument;
 import club.heiqi.uilib.ui.dom.control.DocumentButtonActionEvent;
 import club.heiqi.uilib.ui.dom.control.DocumentButtonActionHandler;
 import club.heiqi.uilib.ui.dom.control.DocumentButtonControl;
+import club.heiqi.uilib.ui.dom.control.DocumentTextInputControl;
 import club.heiqi.uilib.ui.event.UiKeyEvent;
 import club.heiqi.uilib.ui.event.UiMouseEvent;
 import club.heiqi.uilib.ui.event.UiTextInputEvent;
+import club.heiqi.uilib.ui.input.UiKeyboardCaptureState;
 import club.heiqi.uilib.ui.input.UiInputFrame;
 import club.heiqi.uilib.ui.runtime.UiRuntimeAdapters;
 import club.heiqi.uilib.ui.style.UiOverflow;
@@ -166,6 +168,47 @@ public class UiHudDocumentHostTest {
 
         Assert.assertEquals(1, filtered.getKeyEvents().size());
         Assert.assertEquals(1, filtered.getTextEvents().size());
+    }
+
+    /**
+     * 验证当 HUD 输入框已获得焦点时，会在宿主原生键盘处理前抢先接管键盘。
+     */
+    @Test
+    public void shouldCaptureImmediateKeyboardInputBeforeNativeScreenConsumesIt() {
+        UiHudDocumentHost host = UiHudDocumentHost.getInstance();
+        UiKeyboardCaptureState.getInstance().clear();
+        UiHudDocumentRegistration registration = host.register(UiHudLayerType.INTERACTIVE,
+                new UiHudDocumentHost.UiHudDocumentContentBuilder() {
+                    @Override
+                    public void build(UiDocument document) {
+                        ElementNode root = document.getRootElement();
+                        root.style()
+                                .setWidth(UiStyleLength.px(160))
+                                .setHeight(UiStyleLength.px(80));
+                        DocumentTextInputControl inputControl = new DocumentTextInputControl(document);
+                        inputControl.getElement().style()
+                                .setWidth(UiStyleLength.px(120))
+                                .setHeight(UiStyleLength.px(24));
+                        root.append(inputControl.getElement());
+                    }
+                }, new DeterministicTextMeasureService(), UiRuntimeAdapters.empty());
+        try {
+            host.handleInputFrameForTest(mouseFrame(UiMouseEvent.Action.BUTTON_DOWN, 8, 8, 1L),
+                    UiHudScreenCategory.CONTAINER, 160, 80);
+
+            boolean captured = host.handleImmediateKeyboardInputForTest(
+                    new UiInputFrame(8, 8, Collections.<UiMouseEvent>emptyList(),
+                            Collections.singletonList(new UiKeyEvent(Keyboard.KEY_TAB, 0, 0,
+                                    UiKeyEvent.Action.PRESSED, false, false, false, false, 2L)),
+                            Collections.<UiTextInputEvent>emptyList()),
+                    UiHudScreenCategory.CONTAINER);
+
+            Assert.assertTrue(captured);
+            Assert.assertTrue(UiKeyboardCaptureState.getInstance().isUiLibKeyboardCaptured());
+        } finally {
+            registration.unregister();
+            UiKeyboardCaptureState.getInstance().clear();
+        }
     }
 
     private static UiDocument captureRegisteredDocument(UiHudLayerType layerType) {

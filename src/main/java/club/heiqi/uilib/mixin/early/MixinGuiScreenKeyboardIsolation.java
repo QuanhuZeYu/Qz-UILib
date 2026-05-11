@@ -5,7 +5,10 @@ import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 
+import club.heiqi.uilib.ui.hud.UiHudDocumentHost;
 import club.heiqi.uilib.ui.input.UiKeyboardCaptureState;
+import club.heiqi.uilib.ui.input.UiInputFrame;
+import club.heiqi.uilib.ui.input.UiInputService;
 import club.heiqi.uilib.ui.screen.BaseScreen;
 import net.minecraft.client.gui.GuiScreen;
 
@@ -22,7 +25,23 @@ public abstract class MixinGuiScreenKeyboardIsolation {
      */
     @Inject(method = "handleKeyboardInput", at = @At("HEAD"), cancellable = true)
     private void qzuilib$cancelNativeKeyboardWhenUiLibCaptures(CallbackInfo ci) {
-        if (!(((Object) this) instanceof BaseScreen) && UiKeyboardCaptureState.getInstance().shouldCancelNativeKeyboardInput()) {
+        if (((Object) this) instanceof BaseScreen) {
+            return;
+        }
+        UiInputFrame immediateFrame = UiInputService.getInstance().createImmediateKeyboardFrame();
+        if (UiHudDocumentHost.getInstance().handleImmediateKeyboardInput((GuiScreen) (Object) this, immediateFrame)) {
+            int keyCode = immediateFrame == null || immediateFrame.getKeyEvents().isEmpty() ? 0
+                    : immediateFrame.getKeyEvents().get(0).getKeyCode();
+            club.heiqi.uilib.ui.event.UiKeyEvent.Action action = immediateFrame == null || immediateFrame.getKeyEvents().isEmpty()
+                    ? null
+                    : immediateFrame.getKeyEvents().get(0).getAction();
+            String collectedText = immediateFrame == null || immediateFrame.getTextEvents().isEmpty() ? null
+                    : immediateFrame.getTextEvents().get(0).getText();
+            UiInputService.getInstance().suppressNextCollectedKeyboardEvent(keyCode, action, collectedText);
+            ci.cancel();
+            return;
+        }
+        if (UiKeyboardCaptureState.getInstance().shouldCancelNativeKeyboardInput()) {
             ci.cancel();
         }
     }
