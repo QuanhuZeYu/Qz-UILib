@@ -8,6 +8,7 @@ import org.lwjgl.opengl.GL11;
 
 import club.heiqi.uilib.ui.diagnostic.UiPerformanceMonitor;
 import club.heiqi.uilib.ui.input.UiInputFrame;
+import club.heiqi.uilib.ui.input.UiKeyboardCaptureState;
 import club.heiqi.uilib.ui.input.UiInputRouter;
 import club.heiqi.uilib.ui.input.UiInputService;
 import club.heiqi.uilib.ui.render.UiMainLayerSnapshotService;
@@ -181,6 +182,7 @@ final class UiScreenHostSession {
         sessionOpened = false;
         UiInputService.getInstance().endTextInput();
         inputRouter.reset();
+        UiKeyboardCaptureState.getInstance().setScreenKeyboardCaptured(false);
         closeRenderTarget();
         UiLayoutInvalidationRegistry.unregisterRoot(rootWidget);
     }
@@ -215,6 +217,7 @@ final class UiScreenHostSession {
         uiBuilt = false;
         UiInputService.getInstance().endTextInput();
         inputRouter.reset();
+        UiKeyboardCaptureState.getInstance().setScreenKeyboardCaptured(false);
         closeRenderTarget();
         if (buildAttachmentTransaction != null) {
             buildAttachmentTransaction.rollback();
@@ -397,6 +400,7 @@ final class UiScreenHostSession {
         performanceMonitor.beginInputRouting(getRuntimeScreenName(), frame);
         try {
             inputRouter.route(rootWidget, frame);
+            UiKeyboardCaptureState.getInstance().setScreenKeyboardCaptured(inputRouter.hasFocusedWidget());
         } finally {
             performanceMonitor.finishInputRouting();
         }

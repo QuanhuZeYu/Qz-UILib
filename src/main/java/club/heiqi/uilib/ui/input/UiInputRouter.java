@@ -63,6 +63,15 @@ public class UiInputRouter {
         reset();
     }
 
+    /**
+     * 判断当前是否仍有有效焦点组件。
+     *
+     * @return 是否存在焦点组件
+     */
+    public boolean hasFocusedWidget() {
+        return focusedWidget != null;
+    }
+
     private void routeMouseEvent(Widget root, UiMouseEvent event) {
         Widget target = root.findWidgetAt(event.getMouseX(), event.getMouseY());
         updateHoveredWidget(target);

@@ -1,6 +1,7 @@
 package club.heiqi.uilib.ui.hud;
 
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 import java.util.Objects;
 
@@ -22,6 +23,8 @@ import club.heiqi.uilib.ui.dom.UiDocument;
 import club.heiqi.uilib.ui.input.UiInputFrame;
 import club.heiqi.uilib.ui.input.UiInputRouter;
 import club.heiqi.uilib.ui.input.UiInputService;
+import club.heiqi.uilib.ui.input.UiKeyboardCaptureState;
+import club.heiqi.uilib.ui.input.UiNativeTextInputInspector;
 import club.heiqi.uilib.ui.layout.UiLength;
 import club.heiqi.uilib.ui.layout.UiLayoutSpec;
 import club.heiqi.uilib.ui.render.UiMainLayerSnapshotService;
@@ -107,6 +110,7 @@ public final class UiHudDocumentHost {
      */
     public synchronized void handleInputFrame(UiInputFrame frame) {
         if (frame == null || entries.isEmpty()) {
+            UiKeyboardCaptureState.getInstance().setHudKeyboardCaptured(false);
             return;
         }
         updateLatestPointer(frame);
@@ -121,7 +125,11 @@ public final class UiHudDocumentHost {
             clearInteractiveStates();
             return;
         }
-        routeInteractiveEntries(frame, screenCategory, new ArrayList<HudEntry>(entries));
+        UiInputFrame routedFrame = filterKeyboardInput(frame,
+                UiNativeTextInputInspector.hasFocusedTextInput(currentScreen),
+                UiKeyboardCaptureState.getInstance().isUiLibKeyboardCaptured());
+        routeInteractiveEntries(routedFrame, screenCategory, new ArrayList<HudEntry>(entries));
+        updateHudKeyboardCaptureState();
     }
 
     synchronized void handleInputFrameForTest(UiInputFrame frame, UiHudScreenCategory screenCategory, int width,
@@ -134,6 +142,20 @@ public final class UiHudDocumentHost {
             entry.widget.applyLayoutBounds(0, 0, Math.max(0, width), Math.max(0, height));
         }
         routeInteractiveEntries(frame, screenCategory, new ArrayList<HudEntry>(entries));
+        updateHudKeyboardCaptureState();
+    }
+
+    static UiInputFrame filterKeyboardInput(UiInputFrame frame, boolean nativeTextInputFocused,
+            boolean uiLibKeyboardCaptured) {
+        if (frame == null || !nativeTextInputFocused || uiLibKeyboardCaptured) {
+            return frame;
+        }
+        if (frame.getKeyEvents().isEmpty() && frame.getTextEvents().isEmpty()) {
+            return frame;
+        }
+        return new UiInputFrame(frame.getMouseX(), frame.getMouseY(), frame.getMouseEvents(),
+                Collections.<club.heiqi.uilib.ui.event.UiKeyEvent>emptyList(),
+                Collections.<club.heiqi.uilib.ui.event.UiTextInputEvent>emptyList());
     }
 
     private void updateLatestPointer(UiInputFrame frame) {
@@ -360,6 +382,7 @@ public final class UiHudDocumentHost {
         if (entries.remove(entry)) {
             entry.inputRouter.clearInteractionState();
             UiLayoutInvalidationRegistry.unregisterRoot(entry.widget);
+            updateHudKeyboardCaptureState();
         }
     }
 
@@ -369,6 +392,18 @@ public final class UiHudDocumentHost {
                 entry.inputRouter.clearInteractionState();
             }
         }
+        UiKeyboardCaptureState.getInstance().setHudKeyboardCaptured(false);
+    }
+
+    private synchronized void updateHudKeyboardCaptureState() {
+        boolean captured = false;
+        for (HudEntry entry : entries) {
+            if (entry.layerType == UiHudLayerType.INTERACTIVE && entry.inputRouter.hasFocusedWidget()) {
+                captured = true;
+                break;
+            }
+        }
+        UiKeyboardCaptureState.getInstance().setHudKeyboardCaptured(captured);
     }
 
     private static void applyDefaultRootContract(UiDocument document, UiHudLayerType layerType) {

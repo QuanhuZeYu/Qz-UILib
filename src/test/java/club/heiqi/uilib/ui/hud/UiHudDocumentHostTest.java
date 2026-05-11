@@ -5,13 +5,16 @@ import java.util.List;
 
 import org.junit.Assert;
 import org.junit.Test;
+import org.lwjglx.input.Keyboard;
 
 import club.heiqi.uilib.ui.dom.ElementNode;
 import club.heiqi.uilib.ui.dom.UiDocument;
 import club.heiqi.uilib.ui.dom.control.DocumentButtonActionEvent;
 import club.heiqi.uilib.ui.dom.control.DocumentButtonActionHandler;
 import club.heiqi.uilib.ui.dom.control.DocumentButtonControl;
+import club.heiqi.uilib.ui.event.UiKeyEvent;
 import club.heiqi.uilib.ui.event.UiMouseEvent;
+import club.heiqi.uilib.ui.event.UiTextInputEvent;
 import club.heiqi.uilib.ui.input.UiInputFrame;
 import club.heiqi.uilib.ui.runtime.UiRuntimeAdapters;
 import club.heiqi.uilib.ui.style.UiOverflow;
@@ -129,6 +132,40 @@ public class UiHudDocumentHostTest {
         } finally {
             registrationHolder[0].unregister();
         }
+    }
+
+    /**
+     * 验证原生文本输入框持有键盘时，HUD 仍可收鼠标但不会继续收到键盘与文本事件。
+     */
+    @Test
+    public void shouldStripKeyboardEventsWhenNativeTextInputOwnsKeyboard() {
+        UiInputFrame frame = new UiInputFrame(12, 18,
+                Collections.singletonList(new UiMouseEvent(UiMouseEvent.Action.MOVE, 12, 18, -1, 0, 0, 0, 1L)),
+                Collections.singletonList(new UiKeyEvent(Keyboard.KEY_TAB, 0, 0, UiKeyEvent.Action.PRESSED, false,
+                        false, false, false, 2L)),
+                Collections.singletonList(new UiTextInputEvent("a", 3L)));
+
+        UiInputFrame filtered = UiHudDocumentHost.filterKeyboardInput(frame, true, false);
+
+        Assert.assertEquals(1, filtered.getMouseEvents().size());
+        Assert.assertTrue(filtered.getKeyEvents().isEmpty());
+        Assert.assertTrue(filtered.getTextEvents().isEmpty());
+    }
+
+    /**
+     * 验证 UILib 已接管键盘后，不会再因为原生文本框聚焦而剥离自身键盘事件。
+     */
+    @Test
+    public void shouldKeepKeyboardEventsWhenUiLibAlreadyCapturedKeyboard() {
+        UiInputFrame frame = new UiInputFrame(12, 18, Collections.<UiMouseEvent>emptyList(),
+                Collections.singletonList(new UiKeyEvent(Keyboard.KEY_TAB, 0, 0, UiKeyEvent.Action.PRESSED, false,
+                        false, false, false, 2L)),
+                Collections.singletonList(new UiTextInputEvent("a", 3L)));
+
+        UiInputFrame filtered = UiHudDocumentHost.filterKeyboardInput(frame, true, true);
+
+        Assert.assertEquals(1, filtered.getKeyEvents().size());
+        Assert.assertEquals(1, filtered.getTextEvents().size());
     }
 
     private static UiDocument captureRegisteredDocument(UiHudLayerType layerType) {
