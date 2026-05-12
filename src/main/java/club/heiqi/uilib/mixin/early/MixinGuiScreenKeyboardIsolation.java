@@ -41,18 +41,18 @@ public abstract class MixinGuiScreenKeyboardIsolation {
         }
     }
 
-    @Redirect(method = "handleInput", at = @At(value = "INVOKE", target = "Lorg/lwjglx/input/Keyboard;next()Z"))
+    @Redirect(method = "handleInput", at = @At(value = "INVOKE", target = "Lorg/lwjgl/input/Keyboard;next()Z", remap = false))
     private boolean qzuilib$redirectKeyboardNextForHudPriority() {
         if (((Object) this) instanceof BaseScreen) {
-            return org.lwjglx.input.Keyboard.next();
+            return org.lwjgl.input.Keyboard.next();
         }
         return UiHostInputCoordinator.getInstance().advanceKeyboardEventForHudPriority((GuiScreen) (Object) this);
     }
 
-    @Redirect(method = "handleInput", at = @At(value = "INVOKE", target = "Lorg/lwjglx/input/Mouse;next()Z"))
+    @Redirect(method = "handleInput", at = @At(value = "INVOKE", target = "Lorg/lwjgl/input/Mouse;next()Z", remap = false))
     private boolean qzuilib$redirectMouseNextForHudPriority() {
         if (((Object) this) instanceof BaseScreen) {
-            return org.lwjglx.input.Mouse.next();
+            return org.lwjgl.input.Mouse.next();
         }
         return UiHostInputCoordinator.getInstance().advanceMouseEventForHudPriority((GuiScreen) (Object) this);
     }
