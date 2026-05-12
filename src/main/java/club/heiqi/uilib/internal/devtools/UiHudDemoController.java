@@ -24,6 +24,7 @@ import club.heiqi.uilib.ui.style.UiAlignItems;
 import club.heiqi.uilib.ui.style.UiDisplay;
 import club.heiqi.uilib.ui.style.UiFlexDirection;
 import club.heiqi.uilib.ui.style.UiJustifyContent;
+import club.heiqi.uilib.ui.style.UiOverflow;
 import club.heiqi.uilib.ui.style.UiPosition;
 import club.heiqi.uilib.ui.style.UiStyleLength;
 
@@ -174,7 +175,10 @@ final class UiHudDemoController {
                 .setPosition(UiPosition.FIXED)
                 .setLeft(UiStyleLength.px(1760))
                 .setTop(UiStyleLength.px(14))
+                .setDisplay(UiDisplay.FLEX)
+                .setFlexDirection(UiFlexDirection.COLUMN)
                 .setWidth(UiStyleLength.px(248))
+                .setHeight(UiStyleLength.px(232))
                 .setPadding(UiStyleLength.px(12))
                 .setBackgroundColor(0xE61A2233)
                 .setBorderColor(0xFF8A6CFF)
@@ -199,8 +203,16 @@ final class UiHudDemoController {
         title.appendText("INTERACTIVE HUD");
         panel.append(title);
 
-        interactiveSummaryText = panel.appendText("");
-        interactiveSwitchText = panel.appendText("");
+        ElementNode scrollContent = document.div();
+        scrollContent.style()
+                .setDisplay(UiDisplay.FLEX)
+                .setFlexDirection(UiFlexDirection.COLUMN)
+                .setFlexGrow(1.0F)
+                .setOverflowY(UiOverflow.AUTO);
+        panel.append(scrollContent);
+
+        interactiveSummaryText = scrollContent.appendText("");
+        interactiveSwitchText = scrollContent.appendText("");
 
         DocumentTextInputControl noteInput = new DocumentTextInputControl(document)
                 .setPlaceholder("在容器界面中输入备注")
@@ -215,7 +227,7 @@ final class UiHudDemoController {
         noteInput.getElement().style()
                 .setDisplay(UiDisplay.BLOCK)
                 .setMargin(UiStyleLength.px(0));
-        panel.append(noteInput.getElement());
+        scrollContent.append(noteInput.getElement());
 
         ElementNode toggleRow = document.div();
         toggleRow.style()
@@ -224,7 +236,7 @@ final class UiHudDemoController {
                 .setAlignItems(UiAlignItems.CENTER)
                 .setJustifyContent(UiJustifyContent.SPACE_BETWEEN)
                 .setMargin(UiStyleLength.px(8));
-        panel.append(toggleRow);
+        scrollContent.append(toggleRow);
         toggleRow.appendText("保留底部提示标记");
 
         DocumentToggleSwitchControl toggle = new DocumentToggleSwitchControl(document)
@@ -251,7 +263,11 @@ final class UiHudDemoController {
         button.getElement().style()
                 .setDisplay(UiDisplay.BLOCK)
                 .setMargin(UiStyleLength.px(0));
-        panel.append(button.getElement());
+        scrollContent.append(button.getElement());
+
+        for (int index = 1; index <= 8; index++) {
+            scrollContent.appendText("滚轮停在这里可查看内部内容，第 " + index + " 条示例说明。");
+        }
     }
 
     private synchronized void refreshTexts() {
