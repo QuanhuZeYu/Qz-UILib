@@ -213,6 +213,8 @@ public class UiHudDocumentHostTest {
 
     /**
      * 验证 HUD 未通过鼠标先获得焦点时，单独按 Tab 不会把键盘焦点直接激活到 HUD。
+     *
+     * <p>这是当前产品约束：交互 HUD 必须先鼠标聚焦，才允许继续接管后续键盘输入。</p>
      */
     @Test
     public void shouldNotCaptureImmediateKeyboardInputWithoutPriorHudFocus() {

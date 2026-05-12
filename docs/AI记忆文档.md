@@ -36,6 +36,7 @@
 - 不新增扩大直接 `Widget` 作者入口的 API；新增作者能力优先放在 `UiDocument`、DOM、样式系统、控件适配或 HTML-like 后端能力中。
 - `createDocumentScreen(...)` 已默认补齐根元素 `width:100%`、`height:100%` 和 `overflow-y:auto`；文档与示例不应再把这组样板当作手动必填前置知识。
 - HUD 文档层统一经 `UiHudDocumentHost` 承载，继续复用 `UiDocument` / `HtmlLikeDocumentWidget`；当前稳定分为 `PASSIVE` 与 `INTERACTIVE` 两层，而不是再开放独立 Widget 作者入口。
+- 交互 HUD 的键盘接管契约是“先鼠标聚焦、后键盘接管”：必须先通过鼠标命中建立 HUD 焦点，不支持纯键盘首次进入 HUD。
 - `UiHudDocumentHost` 的输入分发需容忍回调内即时 `unregister()`；HUD 注册表遍历应基于快照或等效防御，不能在公开回调链中直接依赖可变列表的 fail-fast 迭代。
 - 键盘输入需在宿主原生文本框与 UILib 焦点之间做隔离：原生文本框聚焦时 HUD/叠层不接管键盘；UILib 获得焦点后需阻断宿主原生键盘继续响应。
 - HUD 键盘隔离的优先级高于原生页面处理链路：当前在 `handleKeyboardInput()` 阶段就会先让 UILib 尝试接管，再决定是否阻断宿主继续分发。

@@ -141,6 +141,9 @@ public final class UiHudDocumentHost {
     /**
      * 在宿主原生 `handleKeyboardInput()` 调用栈内即时路由当前键盘事件。
      *
+     * <p>当前交互 HUD 的稳定产品约束是“必须先通过鼠标命中建立 HUD 焦点，之后才会继续接管键盘”。
+     * 因此这里不会支持纯键盘首次进入 HUD，也不会在 HUD 尚未聚焦时直接抢占宿主首个键盘事件。</p>
+     *
      * @param currentScreen 当前宿主界面
      * @param frame 当前键盘事件对应的即时输入快照
      * @return 是否应阻断宿主继续处理该键盘事件
