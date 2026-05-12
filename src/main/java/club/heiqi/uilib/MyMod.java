@@ -20,7 +20,7 @@ public class MyMod {
 
     public static final String MODID = "qz_uilib";
     public static final String MOD_NAME = "Qz UILib";
-    public static final String CLIENT_PROXY = "club.heiqi.uilib.internal.devtools.ClientProxy";
+    public static final String CLIENT_PROXY = "club.heiqi.uilib.ClientProxy";
     public static final String COMMON_PROXY = "club.heiqi.uilib.CommonProxy";
     public static final String GUI_FACTORY = "club.heiqi.uilib.config.ModGuiFactory";
     public static final Logger LOG = LogManager.getLogger(MODID);

@@ -1,13 +1,12 @@
-package club.heiqi.uilib.internal.devtools;
+package club.heiqi.uilib;
 
-import club.heiqi.uilib.CommonProxy;
 import club.heiqi.uilib.client.FontRenderTickListener;
 import club.heiqi.uilib.client.UiHudRenderListener;
 import club.heiqi.uilib.client.UiInputTickListener;
+import club.heiqi.uilib.internal.devtools.DevToolsClientBootstrap;
 import club.heiqi.uilib.ui.input.UiInputService;
 import cpw.mods.fml.common.FMLCommonHandler;
 import cpw.mods.fml.common.event.FMLPreInitializationEvent;
-import net.minecraftforge.client.ClientCommandHandler;
 import net.minecraftforge.common.MinecraftForge;
 
 /**
@@ -16,7 +15,6 @@ import net.minecraftforge.common.MinecraftForge;
 public class ClientProxy extends CommonProxy {
 
     private final FontRenderTickListener fontRenderTickListener = new FontRenderTickListener();
-    private final QzUiLibClientCommand qzUiLibClientCommand = new QzUiLibClientCommand();
     private final UiHudRenderListener uiHudRenderListener = new UiHudRenderListener();
     private final UiInputTickListener uiInputTickListener = new UiInputTickListener();
 
@@ -29,7 +27,7 @@ public class ClientProxy extends CommonProxy {
     public void preInit(FMLPreInitializationEvent event) {
         super.preInit(event);
         UiInputService.getInstance().initialize();
-        ClientCommandHandler.instance.registerCommand(qzUiLibClientCommand);
+        DevToolsClientBootstrap.registerClientDevTools();
         MinecraftForge.EVENT_BUS.register(fontRenderTickListener);
         MinecraftForge.EVENT_BUS.register(uiHudRenderListener);
         FMLCommonHandler.instance().bus().register(fontRenderTickListener);
