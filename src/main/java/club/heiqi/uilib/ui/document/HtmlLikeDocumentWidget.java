@@ -50,6 +50,7 @@ public final class HtmlLikeDocumentWidget extends Widget {
     private static final int DRAG_ACTIVATION_THRESHOLD_PX = 4;
     private static final int DRAG_ACTIVATION_THRESHOLD_SQUARED =
             DRAG_ACTIVATION_THRESHOLD_PX * DRAG_ACTIVATION_THRESHOLD_PX;
+    private static final String HIT_TEST_BLOCKING_ATTRIBUTE = "data-hit-test-blocking";
 
     private final UiDocument document;
     private final TextMeasureService textMeasureService;
@@ -294,6 +295,25 @@ public final class HtmlLikeDocumentWidget extends Widget {
                     || currentElement.getDragHandler() != null
                     || currentElement.getKeyHandler() != null
                     || currentElement.getTextInputHandler() != null) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * 判断指定元素是否命中了显式声明的阻断命中区域。
+     *
+     * @param target 待判断元素
+     * @return 是否属于显式阻断命中目标
+     */
+    public boolean isBlockingHit(ElementNode target) {
+        if (target == null || !isElementAttachedToDocument(target)) {
+            return false;
+        }
+        for (DocumentNode current = target; current instanceof ElementNode; current = current.getParent()) {
+            ElementNode currentElement = (ElementNode) current;
+            if ("true".equals(currentElement.getAttribute(HIT_TEST_BLOCKING_ATTRIBUTE))) {
                 return true;
             }
         }

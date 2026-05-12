@@ -339,8 +339,7 @@ public final class UiHudDocumentHost {
         if (entry.widget.isInteractiveHit(hitElement)) {
             return true;
         }
-        ElementNode rootElement = entry.widget.getDocument().getRootElement();
-        return hitElement != rootElement;
+        return entry.widget.isBlockingHit(hitElement);
     }
 
     /**

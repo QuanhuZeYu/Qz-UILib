@@ -6,6 +6,7 @@ import java.lang.reflect.Modifier;
 import java.util.IdentityHashMap;
 import java.util.Map;
 
+import net.minecraft.client.gui.GuiChat;
 import net.minecraft.client.gui.GuiScreen;
 import net.minecraft.client.gui.GuiTextField;
 
@@ -17,6 +18,8 @@ import club.heiqi.uilib.ui.screen.BaseScreen;
 public final class UiNativeTextInputInspector {
 
     private static final int MAX_SCAN_DEPTH = 2;
+    private static final NativeTextInputAdapter[] ADAPTERS = new NativeTextInputAdapter[] {
+            new GuiChatTextInputAdapter() };
 
     private UiNativeTextInputInspector() {}
 
@@ -30,7 +33,11 @@ public final class UiNativeTextInputInspector {
         if (screen == null || screen instanceof BaseScreen) {
             return false;
         }
-        return hasFocusedTextInput((Object) screen, 0, new IdentityHashMap<Object, Boolean>());
+        NativeTextInputAdapter adapter = findAdapter(screen);
+        if (adapter != null) {
+            return adapter.hasFocusedTextInput(screen);
+        }
+        return hasFocusedTextInputReflectively(screen, 0, new IdentityHashMap<Object, Boolean>());
     }
 
     /**
@@ -43,10 +50,27 @@ public final class UiNativeTextInputInspector {
         if (screen == null || screen instanceof BaseScreen) {
             return false;
         }
-        return blurFocusedTextInputs((Object) screen, 0, new IdentityHashMap<Object, Boolean>());
+        NativeTextInputAdapter adapter = findAdapter(screen);
+        if (adapter != null) {
+            return adapter.blurFocusedTextInputs(screen);
+        }
+        return blurFocusedTextInputsReflectively(screen, 0, new IdentityHashMap<Object, Boolean>());
     }
 
-    private static boolean hasFocusedTextInput(Object value, int depth, IdentityHashMap<Object, Boolean> visited) {
+    private static NativeTextInputAdapter findAdapter(GuiScreen screen) {
+        if (screen == null) {
+            return null;
+        }
+        for (NativeTextInputAdapter adapter : ADAPTERS) {
+            if (adapter != null && adapter.supports(screen)) {
+                return adapter;
+            }
+        }
+        return null;
+    }
+
+    private static boolean hasFocusedTextInputReflectively(Object value, int depth,
+            IdentityHashMap<Object, Boolean> visited) {
         if (value == null || depth > MAX_SCAN_DEPTH || visited.containsKey(value)) {
             return false;
         }
@@ -56,7 +80,7 @@ public final class UiNativeTextInputInspector {
         }
         if (value instanceof Iterable<?>) {
             for (Object entry : (Iterable<?>) value) {
-                if (hasFocusedTextInput(entry, depth + 1, visited)) {
+                if (hasFocusedTextInputReflectively(entry, depth + 1, visited)) {
                     return true;
                 }
             }
@@ -64,7 +88,7 @@ public final class UiNativeTextInputInspector {
         }
         if (value instanceof Map<?, ?>) {
             for (Object entry : ((Map<?, ?>) value).values()) {
-                if (hasFocusedTextInput(entry, depth + 1, visited)) {
+                if (hasFocusedTextInputReflectively(entry, depth + 1, visited)) {
                     return true;
                 }
             }
@@ -74,7 +98,7 @@ public final class UiNativeTextInputInspector {
         if (valueClass.isArray()) {
             int length = Array.getLength(value);
             for (int index = 0; index < length; index++) {
-                if (hasFocusedTextInput(Array.get(value, index), depth + 1, visited)) {
+                if (hasFocusedTextInputReflectively(Array.get(value, index), depth + 1, visited)) {
                     return true;
                 }
             }
@@ -93,7 +117,7 @@ public final class UiNativeTextInputInspector {
                 }
                 try {
                     field.setAccessible(true);
-                    if (hasFocusedTextInput(field.get(value), depth + 1, visited)) {
+                    if (hasFocusedTextInputReflectively(field.get(value), depth + 1, visited)) {
                         return true;
                     }
                 } catch (ReflectiveOperationException ignored) {
@@ -104,7 +128,8 @@ public final class UiNativeTextInputInspector {
         return false;
     }
 
-    private static boolean blurFocusedTextInputs(Object value, int depth, IdentityHashMap<Object, Boolean> visited) {
+    private static boolean blurFocusedTextInputsReflectively(Object value, int depth,
+            IdentityHashMap<Object, Boolean> visited) {
         if (value == null || depth > MAX_SCAN_DEPTH || visited.containsKey(value)) {
             return false;
         }
@@ -120,13 +145,13 @@ public final class UiNativeTextInputInspector {
         boolean changed = false;
         if (value instanceof Iterable<?>) {
             for (Object entry : (Iterable<?>) value) {
-                changed |= blurFocusedTextInputs(entry, depth + 1, visited);
+                changed |= blurFocusedTextInputsReflectively(entry, depth + 1, visited);
             }
             return changed;
         }
         if (value instanceof Map<?, ?>) {
             for (Object entry : ((Map<?, ?>) value).values()) {
-                changed |= blurFocusedTextInputs(entry, depth + 1, visited);
+                changed |= blurFocusedTextInputsReflectively(entry, depth + 1, visited);
             }
             return changed;
         }
@@ -134,7 +159,7 @@ public final class UiNativeTextInputInspector {
         if (valueClass.isArray()) {
             int length = Array.getLength(value);
             for (int index = 0; index < length; index++) {
-                changed |= blurFocusedTextInputs(Array.get(value, index), depth + 1, visited);
+                changed |= blurFocusedTextInputsReflectively(Array.get(value, index), depth + 1, visited);
             }
             return changed;
         }
@@ -151,7 +176,7 @@ public final class UiNativeTextInputInspector {
                 }
                 try {
                     field.setAccessible(true);
-                    changed |= blurFocusedTextInputs(field.get(value), depth + 1, visited);
+                    changed |= blurFocusedTextInputsReflectively(field.get(value), depth + 1, visited);
                 } catch (ReflectiveOperationException ignored) {
                     // 反射失败时忽略该字段，继续清理其他候选输入框。
                 }
@@ -170,5 +195,81 @@ public final class UiNativeTextInputInspector {
         }
         String packageName = valuePackage.getName();
         return packageName.startsWith("java.") || packageName.startsWith("javax.");
+    }
+
+    private interface NativeTextInputAdapter {
+
+        boolean supports(GuiScreen screen);
+
+        boolean hasFocusedTextInput(GuiScreen screen);
+
+        boolean blurFocusedTextInputs(GuiScreen screen);
+    }
+
+    private static final class GuiChatTextInputAdapter implements NativeTextInputAdapter {
+
+        private final Field inputField = findGuiTextFieldField(GuiChat.class, "inputField");
+
+        @Override
+        public boolean supports(GuiScreen screen) {
+            return screen instanceof GuiChat;
+        }
+
+        @Override
+        public boolean hasFocusedTextInput(GuiScreen screen) {
+            GuiTextField textField = resolveTextField(screen);
+            return textField != null && textField.isFocused();
+        }
+
+        @Override
+        public boolean blurFocusedTextInputs(GuiScreen screen) {
+            GuiTextField textField = resolveTextField(screen);
+            if (textField == null || !textField.isFocused()) {
+                return false;
+            }
+            textField.setFocused(false);
+            return true;
+        }
+
+        private GuiTextField resolveTextField(GuiScreen screen) {
+            if (inputField == null || screen == null) {
+                return null;
+            }
+            try {
+                Object value = inputField.get(screen);
+                return value instanceof GuiTextField ? (GuiTextField) value : null;
+            } catch (ReflectiveOperationException ignored) {
+                return null;
+            }
+        }
+    }
+
+    private static Field findGuiTextFieldField(Class<?> ownerClass, String preferredName) {
+        for (Class<?> currentClass = ownerClass;
+                currentClass != null && currentClass != Object.class;
+                currentClass = currentClass.getSuperclass()) {
+            Field namedField = tryFindDeclaredField(currentClass, preferredName);
+            if (namedField != null && GuiTextField.class.isAssignableFrom(namedField.getType())) {
+                namedField.setAccessible(true);
+                return namedField;
+            }
+            Field[] declaredFields = currentClass.getDeclaredFields();
+            for (Field field : declaredFields) {
+                if (!GuiTextField.class.isAssignableFrom(field.getType())) {
+                    continue;
+                }
+                field.setAccessible(true);
+                return field;
+            }
+        }
+        return null;
+    }
+
+    private static Field tryFindDeclaredField(Class<?> ownerClass, String fieldName) {
+        try {
+            return ownerClass.getDeclaredField(fieldName);
+        } catch (NoSuchFieldException ignored) {
+            return null;
+        }
     }
 }

@@ -322,10 +322,47 @@ public class UiHudDocumentHostTest {
     }
 
     /**
-     * 验证点到浮窗面板内部空白区域时，也会阻止点击穿透到底层原生页面。
+     * 验证点到显式声明为 blocking 的浮窗面板空白区域时，也会阻止点击穿透到底层原生页面。
      */
     @Test
     public void shouldCaptureImmediateMouseInputOnPanelWhitespace() {
+        UiHudDocumentHost host = UiHudDocumentHost.getInstance();
+        UiHudDocumentRegistration registration = host.register(UiHudLayerType.INTERACTIVE,
+                new UiHudDocumentHost.UiHudDocumentContentBuilder() {
+                    @Override
+                    public void build(UiDocument document) {
+                        ElementNode root = document.getRootElement();
+                        root.style()
+                                .setWidth(UiStyleLength.px(320))
+                                .setHeight(UiStyleLength.px(180));
+                        ElementNode panel = document.div();
+                        panel.style()
+                                .setWidth(UiStyleLength.px(140))
+                                .setHeight(UiStyleLength.px(80))
+                                .setBackgroundColor(0xFF222233);
+                        panel.setAttribute("data-hit-test-blocking", "true");
+                        root.append(panel);
+                    }
+                }, new DeterministicTextMeasureService(), UiRuntimeAdapters.empty());
+        try {
+            host.handleInputFrameForTest(mouseFrame(UiMouseEvent.Action.MOVE, 12, 12, 1L), UiHudScreenCategory.CONTAINER,
+                    320, 180);
+
+            boolean captured = host.handleImmediateMouseInputForTest(
+                    mouseFrame(UiMouseEvent.Action.BUTTON_DOWN, 12, 12, 2L),
+                    UiHudScreenCategory.CONTAINER);
+
+            Assert.assertTrue(captured);
+        } finally {
+            registration.unregister();
+        }
+    }
+
+    /**
+     * 验证普通非交互面板若未显式声明 blocking，空白区域不会再默认拦截原生鼠标输入。
+     */
+    @Test
+    public void shouldNotCaptureImmediateMouseInputOnNonBlockingPanelWhitespace() {
         UiHudDocumentHost host = UiHudDocumentHost.getInstance();
         UiHudDocumentRegistration registration = host.register(UiHudLayerType.INTERACTIVE,
                 new UiHudDocumentHost.UiHudDocumentContentBuilder() {
@@ -351,7 +388,7 @@ public class UiHudDocumentHostTest {
                     mouseFrame(UiMouseEvent.Action.BUTTON_DOWN, 12, 12, 2L),
                     UiHudScreenCategory.CONTAINER);
 
-            Assert.assertTrue(captured);
+            Assert.assertFalse(captured);
         } finally {
             registration.unregister();
         }
