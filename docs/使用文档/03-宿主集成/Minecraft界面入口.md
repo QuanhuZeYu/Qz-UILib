@@ -26,6 +26,8 @@ Minecraft.getMinecraft().displayGuiScreen(UiDocumentScreens.createDocumentScreen
 
 默认还会给根元素补齐 `width:100%`、`height:100%` 和 `overflow-y:auto`；只有需要覆盖默认全视口根滚动时，才显式改这些样式。
 
+从第一版开放边界开始，`UiDocumentScreens` 只承担这条业务开屏门面职责；诊断页托管机制、页面标识与内部 definition 不再属于对外可感知 API。
+
 ## 开屏时序约束
 
 - 普通宿主事件或按钮回调里，可以直接调用 `Minecraft.displayGuiScreen(...)`。
@@ -46,7 +48,7 @@ UiScreenManager.getInstance().enqueue(new Runnable() {
 
 ## 诊断与示例入口
 
-内置诊断页和示例页仍通过 `UiDiagnosticsScreens` 创建，但它们属于开发调试入口，不在本文件展开维护具体页面清单。
+内置诊断页和示例页仍通过 `UiDiagnosticsScreens` 创建，但它们属于开发调试入口，不在本文件展开维护具体页面清单；其底层托管页面定义和页面标识属于库内实现细节，不建议外部代码依赖。
 
 当前命令入口、跳转菜单、保留页面范围和触发时序统一见 `docs/使用文档/04-诊断入口/指令触发方案.md`。
 

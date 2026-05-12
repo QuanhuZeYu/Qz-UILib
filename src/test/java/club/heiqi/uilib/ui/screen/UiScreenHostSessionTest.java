@@ -31,4 +31,32 @@ public class UiScreenHostSessionTest {
         Assert.assertSame(runtimeAdapters, context.getRuntimeAdapters());
         Assert.assertSame(hostImageRenderer, context.getRuntimeAdapters().getHostImageRenderer());
     }
+
+    /**
+     * 验证内部屏幕身份识别优先返回稳定 pageId。
+     */
+    @Test
+    public void shouldResolveRuntimeScreenNameFromInternalDescriptorOwner() {
+        Object screen = new FakeDescriptorOwner(InternalDiagnosticScreenRegistry.UI_TEST);
+
+        Assert.assertEquals(InternalDiagnosticScreenRegistry.uiTestPageId(),
+                InternalScreenIdentity.runtimeScreenNameOf(screen));
+    }
+
+    /**
+     * 供测试使用的最小 descriptor screen。
+     */
+    private static final class FakeDescriptorOwner implements InternalScreenIdentity.DescriptorOwner {
+
+        private final InternalScreenIdentity.PageDescriptor pageDescriptor;
+
+        private FakeDescriptorOwner(InternalScreenIdentity.PageDescriptor pageDescriptor) {
+            this.pageDescriptor = pageDescriptor;
+        }
+
+        @Override
+        public InternalScreenIdentity.PageDescriptor getPageDescriptor() {
+            return pageDescriptor;
+        }
+    }
 }

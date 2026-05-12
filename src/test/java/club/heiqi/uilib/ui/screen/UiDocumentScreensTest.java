@@ -1,5 +1,8 @@
 package club.heiqi.uilib.ui.screen;
 
+import java.lang.reflect.Method;
+import java.lang.reflect.Modifier;
+import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
 
@@ -16,34 +19,57 @@ import club.heiqi.uilib.ui.text.TextMeasureService;
 import club.heiqi.uilib.ui.widget.Widget;
 
 /**
- * `UiDocumentScreens` 的页面描述契约测试。
+ * `UiDocumentScreens` 的公开边界与内部托管页面契约测试。
  */
 public class UiDocumentScreensTest {
 
     /**
-     * 验证诊断入口 definition 会暴露稳定页面标识契约。
+     * 验证业务入口类不再暴露内部 definition / descriptor 结构。
      */
     @Test
-    public void shouldExposeStablePageIdsForDiagnosticsDefinitions() {
-        Assert.assertSame(UiDiagnosticsScreens.UI_TEST, UiDiagnosticsScreens.UI_TEST_DEFINITION.getPageDescriptor());
-        Assert.assertEquals("ui_test", UiDiagnosticsScreens.UI_TEST.getPageId());
-        Assert.assertEquals("ui_test_layout", UiDiagnosticsScreens.UI_TEST_LAYOUT.getPageId());
-        Assert.assertEquals("html_like_smoke", UiDiagnosticsScreens.HTML_LIKE_SMOKE.getPageId());
-        Assert.assertEquals("html_like_glass", UiDiagnosticsScreens.HTML_LIKE_GLASS.getPageId());
-        Assert.assertEquals("inventory_overview", UiDiagnosticsScreens.INVENTORY_OVERVIEW.getPageId());
+    public void shouldKeepUiDocumentScreensAsBusinessFacadeOnly() {
+        List<Class<?>> publicMemberClasses = Arrays.asList(UiDocumentScreens.class.getClasses());
+
+        Assert.assertEquals(2, publicMemberClasses.size());
+        Assert.assertTrue(publicMemberClasses.contains(UiDocumentScreens.DocumentScreenEnvironment.class));
+        Assert.assertTrue(publicMemberClasses.contains(UiDocumentScreens.DocumentScreenContentBuilder.class));
+
+        int publicStaticMethodCount = 0;
+        for (Method method : UiDocumentScreens.class.getDeclaredMethods()) {
+            if (!Modifier.isPublic(method.getModifiers()) || !Modifier.isStatic(method.getModifiers())) {
+                continue;
+            }
+            publicStaticMethodCount++;
+            Assert.assertTrue("createDocumentScreen".equals(method.getName()));
+        }
+        Assert.assertEquals(2, publicStaticMethodCount);
     }
 
     /**
-     * 验证通用业务文档 screen definition 会暴露稳定 descriptor 与全视口 chrome。
+     * 验证内部诊断注册表仍保留稳定页面标识契约。
+     */
+    @Test
+    public void shouldExposeStablePageIdsForInternalDiagnosticDefinitions() {
+        Assert.assertSame(InternalDiagnosticScreenRegistry.UI_TEST,
+                InternalDiagnosticScreenRegistry.UI_TEST_DEFINITION.getPageDescriptor());
+        Assert.assertEquals("ui_test", InternalDiagnosticScreenRegistry.uiTestPageId());
+        Assert.assertEquals("ui_test_layout", InternalDiagnosticScreenRegistry.uiTestLayoutPageId());
+        Assert.assertEquals("html_like_smoke", InternalDiagnosticScreenRegistry.htmlLikeSmokePageId());
+        Assert.assertEquals("html_like_glass", InternalDiagnosticScreenRegistry.htmlLikeGlassPageId());
+        Assert.assertEquals("inventory_overview", InternalDiagnosticScreenRegistry.inventoryOverviewPageId());
+    }
+
+    /**
+     * 验证通用业务文档内部 definition 仍保留稳定 descriptor 与全视口 chrome。
      */
     @Test
     public void shouldExposeStablePageIdAndChromeForDocumentScreenDefinition() {
-        Assert.assertSame(UiDocumentScreens.DOCUMENT_SCREEN,
-                UiDocumentScreens.DOCUMENT_SCREEN_DEFINITION.getPageDescriptor());
+        Assert.assertSame(InternalHostedScreenFactory.DOCUMENT_SCREEN,
+                InternalHostedScreenFactory.DOCUMENT_SCREEN_DEFINITION.getPageDescriptor());
         Assert.assertEquals("document_screen",
-                UiDocumentScreens.DOCUMENT_SCREEN_DEFINITION.getPageDescriptor().getPageId());
+                InternalHostedScreenFactory.DOCUMENT_SCREEN_DEFINITION.getPageDescriptor().getPageId());
 
-        DocumentScreenChrome chrome = UiDocumentScreens.DOCUMENT_SCREEN_DEFINITION.resolveChrome(960, 720);
+        DocumentScreenChrome chrome = InternalHostedScreenFactory.DOCUMENT_SCREEN_DEFINITION.resolveChrome(960, 720);
 
         Assert.assertEquals(0, chrome.getRootPadding().getLeft());
         Assert.assertEquals(0, chrome.getRootPadding().getTop());
@@ -52,31 +78,31 @@ public class UiDocumentScreensTest {
     }
 
     /**
-     * 验证 descriptor 持有者在没有 `GuiScreen` 运行时的情况下仍能暴露稳定页面标识。
+     * 验证内部 descriptor 持有者在没有 `GuiScreen` 运行时的情况下仍能暴露稳定页面标识。
      */
     @Test
     public void shouldResolvePageIdForDescriptorOwnerWithoutGuiScreen() {
-        FakeDescriptorOwner screen = new FakeDescriptorOwner(UiDiagnosticsScreens.UI_TEST);
+        FakeDescriptorOwner screen = new FakeDescriptorOwner(InternalDiagnosticScreenRegistry.UI_TEST);
 
-        Assert.assertEquals(UiDiagnosticsScreens.UI_TEST.getPageId(), UiDocumentScreens.getPageId(screen));
+        Assert.assertEquals(InternalDiagnosticScreenRegistry.uiTestPageId(), InternalScreenIdentity.getPageId(screen));
         Assert.assertTrue(UiDiagnosticsScreens.isUiTest(screen));
         Assert.assertFalse(UiDiagnosticsScreens.isUiTestLayout(screen));
         Assert.assertFalse(UiDiagnosticsScreens.isHtmlLikeSmoke(screen));
         Assert.assertFalse(UiDiagnosticsScreens.isHtmlLikeGlass(screen));
-        Assert.assertEquals(UiDiagnosticsScreens.UI_TEST.getPageId(), UiDocumentScreens.runtimeScreenNameOf(screen));
+        Assert.assertEquals(InternalDiagnosticScreenRegistry.uiTestPageId(), InternalScreenIdentity.runtimeScreenNameOf(screen));
     }
 
     /**
-     * 验证普通对象不会被误判为布局诊断页。
+     * 验证普通对象不会被误判为内部页面。
      */
     @Test
     public void shouldReturnFalseForPlainObject() {
         Object screen = new Object();
 
-        Assert.assertEquals("", UiDocumentScreens.getPageId(screen));
+        Assert.assertEquals("", InternalScreenIdentity.getPageId(screen));
         Assert.assertFalse(UiDiagnosticsScreens.isUiTest(screen));
         Assert.assertFalse(UiDiagnosticsScreens.isHtmlLikeGlass(screen));
-        Assert.assertEquals("Object", UiDocumentScreens.runtimeScreenNameOf(screen));
+        Assert.assertEquals("Object", InternalScreenIdentity.runtimeScreenNameOf(screen));
     }
 
     /**
@@ -95,7 +121,7 @@ public class UiDocumentScreensTest {
     }
 
     /**
-     * 验证通用文档 definition 会执行调用方文档构建回调。
+     * 验证通用文档内部 definition 会执行调用方文档构建回调。
      */
     @Test
     public void shouldCreateDocumentControllerFromContentBuilder() {
@@ -105,8 +131,9 @@ public class UiDocumentScreensTest {
         DirectDocumentPageAuthoringSurface surface = new DirectDocumentPageAuthoringSurface();
         final boolean[] called = new boolean[] { false };
 
-        DocumentPageController controller = UiDocumentScreens.DOCUMENT_SCREEN_DEFINITION.createController(
-                documentUiScope, surface, EmptyRuntimeView.INSTANCE, UiDocumentScreens.DOCUMENT_SCREEN.getPageId(),
+        DocumentPageController controller = InternalHostedScreenFactory.DOCUMENT_SCREEN_DEFINITION.createController(
+                documentUiScope, surface, EmptyRuntimeView.INSTANCE,
+                InternalHostedScreenFactory.DOCUMENT_SCREEN.getPageId(),
                 new UiDocumentScreens.DocumentScreenContentBuilder() {
             @Override
             public void build(UiDocument document) {
@@ -140,8 +167,9 @@ public class UiDocumentScreensTest {
         DirectDocumentPageAuthoringSurface surface = new DirectDocumentPageAuthoringSurface();
         final UiDocument[] builtDocument = new UiDocument[1];
 
-        DocumentPageController controller = UiDocumentScreens.DOCUMENT_SCREEN_DEFINITION.createController(
-                documentUiScope, surface, EmptyRuntimeView.INSTANCE, UiDocumentScreens.DOCUMENT_SCREEN.getPageId(),
+        DocumentPageController controller = InternalHostedScreenFactory.DOCUMENT_SCREEN_DEFINITION.createController(
+                documentUiScope, surface, EmptyRuntimeView.INSTANCE,
+                InternalHostedScreenFactory.DOCUMENT_SCREEN.getPageId(),
                 new UiDocumentScreens.DocumentScreenContentBuilder() {
                     @Override
                     public void build(UiDocument document) {
@@ -170,8 +198,9 @@ public class UiDocumentScreensTest {
         DirectDocumentPageAuthoringSurface surface = new DirectDocumentPageAuthoringSurface();
         final UiDocument[] builtDocument = new UiDocument[1];
 
-        DocumentPageController controller = UiDocumentScreens.DOCUMENT_SCREEN_DEFINITION.createController(
-                documentUiScope, surface, EmptyRuntimeView.INSTANCE, UiDocumentScreens.DOCUMENT_SCREEN.getPageId(),
+        DocumentPageController controller = InternalHostedScreenFactory.DOCUMENT_SCREEN_DEFINITION.createController(
+                documentUiScope, surface, EmptyRuntimeView.INSTANCE,
+                InternalHostedScreenFactory.DOCUMENT_SCREEN.getPageId(),
                 new UiDocumentScreens.DocumentScreenContentBuilder() {
                     @Override
                     public void build(UiDocument document) {
@@ -193,11 +222,11 @@ public class UiDocumentScreensTest {
     }
 
     /**
-     * 验证页面 definition 会显式保留页面壳策略解析入口。
+     * 验证内部诊断 definition 会显式保留页面壳策略解析入口。
      */
     @Test
     public void shouldResolveChromeThroughDefinition() {
-        DocumentScreenChrome chrome = UiDiagnosticsScreens.UI_TEST_DEFINITION.resolveChrome(960, 720);
+        DocumentScreenChrome chrome = InternalDiagnosticScreenRegistry.UI_TEST_DEFINITION.resolveChrome(960, 720);
 
         Assert.assertNotNull(chrome);
         Assert.assertEquals(Math.max(24, 960 / 34), chrome.getRootPadding().getLeft());
@@ -236,16 +265,16 @@ public class UiDocumentScreensTest {
     /**
      * 供测试使用的最小 descriptor 持有者。
      */
-    private static final class FakeDescriptorOwner implements UiDocumentScreens.DescriptorOwner {
+    private static final class FakeDescriptorOwner implements InternalScreenIdentity.DescriptorOwner {
 
-        private final UiDocumentScreens.PageDescriptor descriptor;
+        private final InternalScreenIdentity.PageDescriptor descriptor;
 
-        private FakeDescriptorOwner(UiDocumentScreens.PageDescriptor descriptor) {
+        private FakeDescriptorOwner(InternalScreenIdentity.PageDescriptor descriptor) {
             this.descriptor = descriptor;
         }
 
         @Override
-        public UiDocumentScreens.PageDescriptor getPageDescriptor() {
+        public InternalScreenIdentity.PageDescriptor getPageDescriptor() {
             return descriptor;
         }
     }

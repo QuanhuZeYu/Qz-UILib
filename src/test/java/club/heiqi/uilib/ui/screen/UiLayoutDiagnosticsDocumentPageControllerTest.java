@@ -112,7 +112,7 @@ public class UiLayoutDiagnosticsDocumentPageControllerTest {
         Assert.assertFalse(containsText(textsAfterMismatch, "当前帧 12.00 ms"));
 
         fixture.runtimeView.setHostSize(1600, 960);
-        fixture.runtimeView.setRuntimeStats(createRuntimeStats(UiDiagnosticsScreens.UI_TEST_LAYOUT.getPageId()));
+        fixture.runtimeView.setRuntimeStats(createRuntimeStats(InternalDiagnosticScreenRegistry.uiTestLayoutPageId()));
         fixture.controller.beforeDocumentFrame();
 
         List<String> textsAfterMatch = collectDocumentTexts(fixture.controller.getHtmlLikeDocumentWidget());
@@ -179,7 +179,8 @@ public class UiLayoutDiagnosticsDocumentPageControllerTest {
             }
         };
         private final UiLayoutDiagnosticsDocumentPageController controller = new UiLayoutDiagnosticsDocumentPageController(
-                documentUi, pageSurface, runtimeView, UiDiagnosticsScreens.UI_TEST_LAYOUT.getPageId(), fontRuntimeStatsSource);
+                documentUi, pageSurface, runtimeView, InternalDiagnosticScreenRegistry.uiTestLayoutPageId(),
+                fontRuntimeStatsSource);
     }
 
     private static final class TestRuntimeView implements DocumentPageRuntimeView {

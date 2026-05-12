@@ -419,7 +419,7 @@ final class UiScreenHostSession {
      * @return 运行时页面标识
      */
     private String getRuntimeScreenName() {
-        return UiDocumentScreens.runtimeScreenNameOf(screen);
+        return InternalScreenIdentity.runtimeScreenNameOf(screen);
     }
 
     /**

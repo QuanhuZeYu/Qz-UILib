@@ -11,64 +11,6 @@ import net.minecraft.client.gui.GuiScreen;
  */
 public final class UiDiagnosticsScreens {
 
-    public static final UiDocumentScreens.PageDescriptor UI_TEST = new UiDocumentScreens.PageDescriptor("ui_test");
-    public static final UiDocumentScreens.PageDescriptor UI_TEST_LAYOUT = new UiDocumentScreens.PageDescriptor(
-            "ui_test_layout");
-    public static final UiDocumentScreens.PageDescriptor HTML_LIKE_SMOKE = new UiDocumentScreens.PageDescriptor(
-            "html_like_smoke");
-    public static final UiDocumentScreens.PageDescriptor HTML_LIKE_GLASS = new UiDocumentScreens.PageDescriptor(
-            "html_like_glass");
-    public static final UiDocumentScreens.PageDescriptor INVENTORY_OVERVIEW = new UiDocumentScreens.PageDescriptor(
-            "inventory_overview");
-
-    static final UiDocumentScreens.DocumentScreenDefinition<UiTestMenuModel> UI_TEST_DEFINITION = new UiDocumentScreens.DocumentScreenDefinition<UiTestMenuModel>(
-            UI_TEST, DocumentScreenChrome::resolve, new UiDocumentScreens.DocumentPageControllerFactory<UiTestMenuModel>() {
-                @Override
-                public DocumentPageController create(DocumentUiScope documentUi,
-                        DocumentPageAuthoringSurface documentPage,
-                        DocumentPageRuntimeView runtimeView, String pageId, UiTestMenuModel provision) {
-                    return new UiTestDocumentPageController(documentUi, documentPage, provision);
-                }
-            });
-    static final UiDocumentScreens.DocumentScreenDefinition<Void> UI_TEST_LAYOUT_DEFINITION = new UiDocumentScreens.DocumentScreenDefinition<Void>(
-            UI_TEST_LAYOUT, DocumentScreenChrome::resolve, new UiDocumentScreens.DocumentPageControllerFactory<Void>() {
-                @Override
-                public DocumentPageController create(DocumentUiScope documentUi,
-                        DocumentPageAuthoringSurface documentPage,
-                        DocumentPageRuntimeView runtimeView, String pageId, Void provision) {
-                    return new UiLayoutDiagnosticsDocumentPageController(documentUi, documentPage, runtimeView, pageId);
-                }
-            });
-    static final UiDocumentScreens.DocumentScreenDefinition<Void> HTML_LIKE_SMOKE_DEFINITION = new UiDocumentScreens.DocumentScreenDefinition<Void>(
-            HTML_LIKE_SMOKE, DocumentScreenChrome::resolve, new UiDocumentScreens.DocumentPageControllerFactory<Void>() {
-                @Override
-                public DocumentPageController create(DocumentUiScope documentUi,
-                        DocumentPageAuthoringSurface documentPage,
-                        DocumentPageRuntimeView runtimeView, String pageId, Void provision) {
-                    return new HtmlLikeSmokeDocumentPageController(documentUi, documentPage);
-                }
-            });
-    static final UiDocumentScreens.DocumentScreenDefinition<Void> HTML_LIKE_GLASS_DEFINITION = new UiDocumentScreens.DocumentScreenDefinition<Void>(
-            HTML_LIKE_GLASS, DocumentScreenChrome::resolve, new UiDocumentScreens.DocumentPageControllerFactory<Void>() {
-                @Override
-                public DocumentPageController create(DocumentUiScope documentUi,
-                        DocumentPageAuthoringSurface documentPage,
-                        DocumentPageRuntimeView runtimeView, String pageId, Void provision) {
-                    return new HtmlLikeGlassDocumentPageController(documentUi, documentPage);
-                }
-            });
-    static final UiDocumentScreens.DocumentScreenDefinition<InventoryOverviewModel> INVENTORY_OVERVIEW_DEFINITION = new UiDocumentScreens.DocumentScreenDefinition<InventoryOverviewModel>(
-            INVENTORY_OVERVIEW, DocumentScreenChrome::resolve,
-            new UiDocumentScreens.DocumentPageControllerFactory<InventoryOverviewModel>() {
-                @Override
-                public DocumentPageController create(DocumentUiScope documentUi,
-                        DocumentPageAuthoringSurface documentPage,
-                        DocumentPageRuntimeView runtimeView, String pageId, InventoryOverviewModel provision) {
-                    return new HtmlLikeInventoryOverviewDocumentPageController(documentUi, documentPage, runtimeView,
-                            provision);
-                }
-            });
-
     private UiDiagnosticsScreens() {}
 
     /**
@@ -84,7 +26,8 @@ public final class UiDiagnosticsScreens {
     public static GuiScreen createUiTest(UiDocumentScreens.DocumentScreenEnvironment environment) {
         UiDocumentScreens.DocumentScreenEnvironment resolvedEnvironment = Objects.requireNonNull(environment,
                 "environment");
-        return UiDocumentScreens.createDefinitionBackedScreen(UI_TEST_DEFINITION, resolvedEnvironment,
+        return InternalHostedScreenFactory.createScreen(InternalDiagnosticScreenRegistry.UI_TEST_DEFINITION,
+                resolvedEnvironment,
                 createDefaultUiTestMenuModel(resolvedEnvironment));
     }
 
@@ -99,7 +42,7 @@ public final class UiDiagnosticsScreens {
      * 基于显式环境创建布局诊断页。
      */
     public static GuiScreen createUiTestLayout(UiDocumentScreens.DocumentScreenEnvironment environment) {
-        return UiDocumentScreens.createDefinitionBackedScreen(UI_TEST_LAYOUT_DEFINITION,
+        return InternalHostedScreenFactory.createScreen(InternalDiagnosticScreenRegistry.UI_TEST_LAYOUT_DEFINITION,
                 Objects.requireNonNull(environment, "environment"), null);
     }
 
@@ -114,7 +57,7 @@ public final class UiDiagnosticsScreens {
      * 基于显式环境创建 HTML-like smoke 页。
      */
     public static GuiScreen createHtmlLikeSmoke(UiDocumentScreens.DocumentScreenEnvironment environment) {
-        return UiDocumentScreens.createDefinitionBackedScreen(HTML_LIKE_SMOKE_DEFINITION,
+        return InternalHostedScreenFactory.createScreen(InternalDiagnosticScreenRegistry.HTML_LIKE_SMOKE_DEFINITION,
                 Objects.requireNonNull(environment, "environment"), null);
     }
 
@@ -129,7 +72,7 @@ public final class UiDiagnosticsScreens {
      * 基于显式环境创建 Glass Lab 页。
      */
     public static GuiScreen createHtmlLikeGlass(UiDocumentScreens.DocumentScreenEnvironment environment) {
-        return UiDocumentScreens.createDefinitionBackedScreen(HTML_LIKE_GLASS_DEFINITION,
+        return InternalHostedScreenFactory.createScreen(InternalDiagnosticScreenRegistry.HTML_LIKE_GLASS_DEFINITION,
                 Objects.requireNonNull(environment, "environment"), null);
     }
 
@@ -145,7 +88,7 @@ public final class UiDiagnosticsScreens {
      */
     public static GuiScreen createInventoryOverview(UiDocumentScreens.DocumentScreenEnvironment environment,
             InventoryOverviewModel model) {
-        return UiDocumentScreens.createDefinitionBackedScreen(INVENTORY_OVERVIEW_DEFINITION,
+        return InternalHostedScreenFactory.createScreen(InternalDiagnosticScreenRegistry.INVENTORY_OVERVIEW_DEFINITION,
                 Objects.requireNonNull(environment, "environment"), Objects.requireNonNull(model, "model"));
     }
 
@@ -157,19 +100,19 @@ public final class UiDiagnosticsScreens {
     }
 
     static boolean isUiTest(Object screen) {
-        return UiDocumentScreens.hasPageId(screen, UI_TEST.getPageId());
+        return InternalScreenIdentity.hasPageId(screen, InternalDiagnosticScreenRegistry.uiTestPageId());
     }
 
     static boolean isUiTestLayout(Object screen) {
-        return UiDocumentScreens.hasPageId(screen, UI_TEST_LAYOUT.getPageId());
+        return InternalScreenIdentity.hasPageId(screen, InternalDiagnosticScreenRegistry.uiTestLayoutPageId());
     }
 
     static boolean isHtmlLikeSmoke(Object screen) {
-        return UiDocumentScreens.hasPageId(screen, HTML_LIKE_SMOKE.getPageId());
+        return InternalScreenIdentity.hasPageId(screen, InternalDiagnosticScreenRegistry.htmlLikeSmokePageId());
     }
 
     static boolean isHtmlLikeGlass(Object screen) {
-        return UiDocumentScreens.hasPageId(screen, HTML_LIKE_GLASS.getPageId());
+        return InternalScreenIdentity.hasPageId(screen, InternalDiagnosticScreenRegistry.htmlLikeGlassPageId());
     }
 
     /**
