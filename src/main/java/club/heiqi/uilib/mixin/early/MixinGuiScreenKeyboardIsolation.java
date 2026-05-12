@@ -6,10 +6,7 @@ import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.Redirect;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 
-import club.heiqi.uilib.ui.hud.UiHudDocumentHost;
-import club.heiqi.uilib.ui.input.UiKeyboardCaptureState;
-import club.heiqi.uilib.ui.input.UiInputFrame;
-import club.heiqi.uilib.ui.input.UiInputService;
+import club.heiqi.uilib.ui.input.UiHostInputCoordinator;
 import club.heiqi.uilib.ui.screen.BaseScreen;
 import net.minecraft.client.gui.GuiScreen;
 
@@ -29,20 +26,7 @@ public abstract class MixinGuiScreenKeyboardIsolation {
         if (((Object) this) instanceof BaseScreen) {
             return;
         }
-        UiInputFrame immediateFrame = UiInputService.getInstance().createImmediateKeyboardFrame();
-        if (UiHudDocumentHost.getInstance().handleImmediateKeyboardInput((GuiScreen) (Object) this, immediateFrame)) {
-            int keyCode = immediateFrame == null || immediateFrame.getKeyEvents().isEmpty() ? 0
-                    : immediateFrame.getKeyEvents().get(0).getKeyCode();
-            club.heiqi.uilib.ui.event.UiKeyEvent.Action action = immediateFrame == null || immediateFrame.getKeyEvents().isEmpty()
-                    ? null
-                    : immediateFrame.getKeyEvents().get(0).getAction();
-            String collectedText = immediateFrame == null || immediateFrame.getTextEvents().isEmpty() ? null
-                    : immediateFrame.getTextEvents().get(0).getText();
-            UiInputService.getInstance().suppressNextCollectedKeyboardEvent(keyCode, action, collectedText);
-            ci.cancel();
-            return;
-        }
-        if (UiKeyboardCaptureState.getInstance().shouldCancelNativeKeyboardInput()) {
+        if (UiHostInputCoordinator.getInstance().shouldCancelNativeKeyboardInput((GuiScreen) (Object) this)) {
             ci.cancel();
         }
     }
@@ -52,45 +36,24 @@ public abstract class MixinGuiScreenKeyboardIsolation {
         if (((Object) this) instanceof BaseScreen) {
             return;
         }
-        UiInputFrame immediateFrame = UiInputService.getInstance().createImmediateMouseFrame();
-        if (UiHudDocumentHost.getInstance().handleImmediateMouseInput((GuiScreen) (Object) this, immediateFrame)) {
+        if (UiHostInputCoordinator.getInstance().shouldCancelNativeMouseInput((GuiScreen) (Object) this)) {
             ci.cancel();
         }
     }
 
     @Redirect(method = "handleInput", at = @At(value = "INVOKE", target = "Lorg/lwjglx/input/Keyboard;next()Z"))
     private boolean qzuilib$redirectKeyboardNextForHudPriority() {
-        while (org.lwjglx.input.Keyboard.next()) {
-            if (((Object) this) instanceof BaseScreen) {
-                return true;
-            }
-            UiInputFrame immediateFrame = UiInputService.getInstance().createImmediateKeyboardFrame();
-            if (!UiHudDocumentHost.getInstance().handleImmediateKeyboardInput((GuiScreen) (Object) this, immediateFrame)) {
-                return true;
-            }
-            int keyCode = immediateFrame == null || immediateFrame.getKeyEvents().isEmpty() ? 0
-                    : immediateFrame.getKeyEvents().get(0).getKeyCode();
-            club.heiqi.uilib.ui.event.UiKeyEvent.Action action = immediateFrame == null || immediateFrame.getKeyEvents().isEmpty()
-                    ? null
-                    : immediateFrame.getKeyEvents().get(0).getAction();
-            String collectedText = immediateFrame == null || immediateFrame.getTextEvents().isEmpty() ? null
-                    : immediateFrame.getTextEvents().get(0).getText();
-            UiInputService.getInstance().suppressNextCollectedKeyboardEvent(keyCode, action, collectedText);
+        if (((Object) this) instanceof BaseScreen) {
+            return org.lwjglx.input.Keyboard.next();
         }
-        return false;
+        return UiHostInputCoordinator.getInstance().advanceKeyboardEventForHudPriority((GuiScreen) (Object) this);
     }
 
     @Redirect(method = "handleInput", at = @At(value = "INVOKE", target = "Lorg/lwjglx/input/Mouse;next()Z"))
     private boolean qzuilib$redirectMouseNextForHudPriority() {
-        while (org.lwjglx.input.Mouse.next()) {
-            if (((Object) this) instanceof BaseScreen) {
-                return true;
-            }
-            UiInputFrame immediateFrame = UiInputService.getInstance().createImmediateMouseFrame();
-            if (!UiHudDocumentHost.getInstance().handleImmediateMouseInput((GuiScreen) (Object) this, immediateFrame)) {
-                return true;
-            }
+        if (((Object) this) instanceof BaseScreen) {
+            return org.lwjglx.input.Mouse.next();
         }
-        return false;
+        return UiHostInputCoordinator.getInstance().advanceMouseEventForHudPriority((GuiScreen) (Object) this);
     }
 }
