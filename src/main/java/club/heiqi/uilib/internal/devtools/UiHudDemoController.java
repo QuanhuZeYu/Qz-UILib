@@ -7,6 +7,7 @@ import java.util.Locale;
 import club.heiqi.uilib.ui.dom.ElementNode;
 import club.heiqi.uilib.ui.dom.TextNode;
 import club.heiqi.uilib.ui.dom.UiDocument;
+import club.heiqi.uilib.ui.document.HtmlLikeDocumentWidget;
 import club.heiqi.uilib.ui.dom.control.DocumentButtonActionEvent;
 import club.heiqi.uilib.ui.dom.control.DocumentButtonActionHandler;
 import club.heiqi.uilib.ui.dom.control.DocumentButtonControl;
@@ -31,7 +32,7 @@ import club.heiqi.uilib.ui.style.UiStyleLength;
 /**
  * 内部开发工具使用的 HUD 双层示例控制器。
  */
-final class UiHudDemoController {
+public final class UiHudDemoController {
 
     private static final UiHudDemoController INSTANCE = new UiHudDemoController();
     private static final SimpleDateFormat TIME_FORMAT = new SimpleDateFormat("HH:mm:ss", Locale.ROOT);
@@ -40,11 +41,13 @@ final class UiHudDemoController {
     private UiHudDocumentRegistration interactiveRegistration;
     private TextNode passiveStatusText;
     private TextNode passiveClockText;
+    private TextNode interactiveScrollProbeText;
     private TextNode interactiveSummaryText;
     private TextNode interactiveSwitchText;
     private int interactiveClickCount;
     private boolean markersEnabled = true;
     private String noteText = "把鼠标移到背包界面后尝试编辑我";
+    private ElementNode interactiveScrollContent;
 
     private UiHudDemoController() {}
 
@@ -113,8 +116,10 @@ final class UiHudDemoController {
         }
         passiveStatusText = null;
         passiveClockText = null;
+        interactiveScrollProbeText = null;
         interactiveSummaryText = null;
         interactiveSwitchText = null;
+        interactiveScrollContent = null;
     }
 
     private void buildPassiveDocument(UiDocument document) {
@@ -203,13 +208,26 @@ final class UiHudDemoController {
         title.appendText("INTERACTIVE HUD");
         panel.append(title);
 
+        ElementNode scrollProbe = document.div();
+        scrollProbe.style()
+                .setMargin(UiStyleLength.px(0))
+                .setPadding(UiStyleLength.px(4))
+                .setBackgroundColor(0x223B82F6)
+                .setBorderColor(0x664C7ED8)
+                .setBorderWidth(UiStyleLength.px(1))
+                .setBorderRadius(UiStyleLength.px(8))
+                .setTextColor(0xFFDBEAFE);
+        interactiveScrollProbeText = scrollProbe.appendText("");
+        panel.append(scrollProbe);
+
         ElementNode scrollContent = document.div();
         scrollContent.style()
                 .setDisplay(UiDisplay.FLEX)
                 .setFlexDirection(UiFlexDirection.COLUMN)
-                .setFlexGrow(1.0F)
+                .setHeight(UiStyleLength.px(118))
                 .setOverflowY(UiOverflow.AUTO);
         panel.append(scrollContent);
+        interactiveScrollContent = scrollContent;
 
         interactiveSummaryText = scrollContent.appendText("");
         interactiveSwitchText = scrollContent.appendText("");
@@ -277,6 +295,9 @@ final class UiHudDemoController {
         if (passiveClockText != null) {
             passiveClockText.setText("最近刷新：" + TIME_FORMAT.format(new Date()));
         }
+        if (interactiveScrollProbeText != null) {
+            interactiveScrollProbeText.setText(buildScrollProbeText());
+        }
         if (interactiveSummaryText != null) {
             interactiveSummaryText.setText("容器界面上方可见。点击次数 " + interactiveClickCount + "，备注：" + noteText + "。");
         }
@@ -285,5 +306,30 @@ final class UiHudDemoController {
                     ? "底部提示标记：保留"
                     : "底部提示标记：已关闭，仅右上角交互面板保留");
         }
+    }
+
+    /**
+     * 在 HUD 渲染前刷新调试文本，便于观察滚轮输入与内部滚动状态。
+     */
+    public synchronized void refreshDiagnosticsBeforeRender() {
+        if (!isEnabled()) {
+            return;
+        }
+        refreshTexts();
+    }
+
+    private String buildScrollProbeText() {
+        HtmlLikeDocumentWidget widget = UiHudDocumentHost.getInstance().getFirstInteractiveWidgetForDiagnostics();
+        if (widget == null || interactiveScrollContent == null) {
+            return "滚轮监控：交互 HUD 组件未就绪";
+        }
+        HtmlLikeDocumentWidget.ScrollInputDiagnosticsSnapshot inputSnapshot =
+                widget.getScrollInputDiagnosticsSnapshot();
+        int scrollTop = widget.getScrollTop(interactiveScrollContent);
+        int maxScrollTop = widget.getMaxScrollTop(interactiveScrollContent);
+        return "滚轮监控：事件 " + inputSnapshot.getEventCount()
+                + " 次，最近 delta=" + inputSnapshot.getLastWheelDelta()
+                + "，最近消费=" + (inputSnapshot.isLastConsumed() ? "是" : "否")
+                + "，偏移 " + scrollTop + " / " + maxScrollTop;
     }
 }

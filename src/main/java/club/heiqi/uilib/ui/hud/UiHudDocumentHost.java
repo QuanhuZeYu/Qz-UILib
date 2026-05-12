@@ -256,6 +256,20 @@ public final class UiHudDocumentHost {
         updateHudKeyboardCaptureState();
     }
 
+    /**
+     * 返回首个交互 HUD 对应的 HTML-like 组件，供诊断读取滚动与输入状态。
+     *
+     * @return 首个交互 HUD 组件；不存在时返回 null
+     */
+    public synchronized HtmlLikeDocumentWidget getFirstInteractiveWidgetForDiagnostics() {
+        for (HudEntry entry : entries) {
+            if (entry.layerType == UiHudLayerType.INTERACTIVE) {
+                return entry.widget;
+            }
+        }
+        return null;
+    }
+
     static UiInputFrame filterKeyboardInput(UiInputFrame frame, boolean nativeTextInputFocused,
             boolean uiLibKeyboardCaptured) {
         if (frame == null || !nativeTextInputFocused || uiLibKeyboardCaptured) {

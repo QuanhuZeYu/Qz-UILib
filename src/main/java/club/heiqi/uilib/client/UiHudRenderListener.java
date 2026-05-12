@@ -4,6 +4,7 @@ import net.minecraft.client.Minecraft;
 import net.minecraftforge.client.event.GuiScreenEvent;
 import net.minecraftforge.client.event.RenderGameOverlayEvent;
 
+import club.heiqi.uilib.internal.devtools.UiHudDemoController;
 import club.heiqi.uilib.ui.hud.UiHudDocumentHost;
 import cpw.mods.fml.common.eventhandler.SubscribeEvent;
 
@@ -25,6 +26,7 @@ public class UiHudRenderListener {
         if (Minecraft.getMinecraft() == null || Minecraft.getMinecraft().currentScreen != null) {
             return;
         }
+        UiHudDemoController.getInstance().refreshDiagnosticsBeforeRender();
         UiHudDocumentHost.getInstance().renderHud(event.partialTicks);
     }
 
@@ -41,6 +43,7 @@ public class UiHudRenderListener {
         if (!UiHudDocumentHost.getInstance().hasVisibleLayer(event.gui)) {
             return;
         }
+        UiHudDemoController.getInstance().refreshDiagnosticsBeforeRender();
         UiHudDocumentHost.getInstance().renderOnScreen(event.renderPartialTicks);
     }
 }

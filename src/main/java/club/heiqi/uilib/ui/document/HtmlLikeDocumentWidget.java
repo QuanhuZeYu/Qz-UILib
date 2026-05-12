@@ -81,6 +81,10 @@ public final class HtmlLikeDocumentWidget extends Widget {
     private ElementNode focusedElement;
     private ElementNode hoveredElement;
     private ElementNode draggingElement;
+    private int scrollEventCount;
+    private int lastScrollWheelDelta;
+    private boolean lastScrollConsumed;
+    private long lastScrollEventTimeNanos;
     private boolean focusedElementFocusVisible;
     private boolean viewportRootScrollingEnabled;
     private boolean cachedLayoutScrollStateUpdated;
@@ -255,6 +259,18 @@ public final class HtmlLikeDocumentWidget extends Widget {
     }
 
     /**
+     * 返回最近一次滚轮输入的诊断快照。
+     *
+     * <p>仅供 HUD / 诊断页排查输入链路使用，不作为业务作者 API。</p>
+     *
+     * @return 滚轮输入诊断快照
+     */
+    public ScrollInputDiagnosticsSnapshot getScrollInputDiagnosticsSnapshot() {
+        return new ScrollInputDiagnosticsSnapshot(scrollEventCount, lastScrollWheelDelta, lastScrollConsumed,
+                lastScrollEventTimeNanos);
+    }
+
+    /**
      * 返回屏幕坐标命中的 HTML-like 元素。
      *
      * @param screenX 屏幕 X
@@ -357,9 +373,13 @@ public final class HtmlLikeDocumentWidget extends Widget {
         if (getWidth() <= 0 || getHeight() <= 0 || event == null) {
             return false;
         }
+        scrollEventCount++;
+        lastScrollWheelDelta = event.getWheelDelta();
+        lastScrollEventTimeNanos = event.getTimeNanos();
         DocumentLayoutBox rootBox = resolveInteractiveLayoutBox();
         boolean consumed = scrollState.handleWheel(rootBox, event.getMouseX() - getAbsoluteX(),
                 event.getMouseY() - getAbsoluteY(), event.getWheelDelta());
+        lastScrollConsumed = consumed;
         if (consumed) {
             updateHoveredElement(findElementAt(event.getMouseX(), event.getMouseY()), event);
         }
@@ -480,6 +500,41 @@ public final class HtmlLikeDocumentWidget extends Widget {
     @Override
     public boolean isFocusable() {
         return hasFocusableElement(document.getRootElement());
+    }
+
+    /**
+     * 滚轮输入诊断快照。
+     */
+    public static final class ScrollInputDiagnosticsSnapshot {
+
+        private final int eventCount;
+        private final int lastWheelDelta;
+        private final boolean lastConsumed;
+        private final long lastEventTimeNanos;
+
+        private ScrollInputDiagnosticsSnapshot(int eventCount, int lastWheelDelta, boolean lastConsumed,
+                long lastEventTimeNanos) {
+            this.eventCount = eventCount;
+            this.lastWheelDelta = lastWheelDelta;
+            this.lastConsumed = lastConsumed;
+            this.lastEventTimeNanos = lastEventTimeNanos;
+        }
+
+        public int getEventCount() {
+            return eventCount;
+        }
+
+        public int getLastWheelDelta() {
+            return lastWheelDelta;
+        }
+
+        public boolean isLastConsumed() {
+            return lastConsumed;
+        }
+
+        public long getLastEventTimeNanos() {
+            return lastEventTimeNanos;
+        }
     }
 
     private List<DocumentPaintCommand> resolvePaintCommands() {
