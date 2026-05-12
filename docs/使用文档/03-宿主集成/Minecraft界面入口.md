@@ -44,22 +44,11 @@ UiScreenManager.getInstance().enqueue(new Runnable() {
 });
 ```
 
-## 当前内部入口
+## 诊断与示例入口
 
-当前内部诊断页和示例页通过 `UiDiagnosticsScreens` 创建 `GuiScreen`：
+内置诊断页和示例页仍通过 `UiDiagnosticsScreens` 创建，但它们属于开发调试入口，不在本文件展开维护具体页面清单。
 
-```java
-Minecraft.getMinecraft().displayGuiScreen(UiDiagnosticsScreens.createHtmlLikeSmoke());
-```
-
-已有页面包括：
-
-- `UiDiagnosticsScreens.createUiTest()`：诊断菜单。
-- `UiDiagnosticsScreens.createUiTestLayout()`：布局诊断页。
-- `UiDiagnosticsScreens.createHtmlLikeSmoke()`：HTML-like Smoke 页。
-- `UiDiagnosticsScreens.createHtmlLikeGlass()`：Glass Lab 页。
-- `UiDiagnosticsScreens.createInventoryOverview(...)`：背包概览示例页。
-- `createDocumentScreen(...)`：业务文档 screen。
+当前命令入口、跳转菜单、保留页面范围和触发时序统一见 `docs/使用文档/04-诊断入口/指令触发方案.md`。
 
 ## 替换 Forge 配置页
 

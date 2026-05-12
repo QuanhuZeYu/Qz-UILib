@@ -1,4 +1,4 @@
-# 背包 Tooltip 设计需求
+# 背包概览 Tooltip 规格
 
 本文固化 `inventory_overview` 背包页 tooltip 的视觉与交互需求，后续实现与验收以本文件为准。
 
