@@ -322,7 +322,7 @@ public class UiHudDocumentHostTest {
     }
 
     /**
-     * 验证点到显式声明为 blocking 的浮窗面板空白区域时，也会阻止点击穿透到底层原生页面。
+     * 验证普通浮窗面板空白区域默认会阻止点击穿透到底层原生页面。
      */
     @Test
     public void shouldCaptureImmediateMouseInputOnPanelWhitespace() {
@@ -340,7 +340,6 @@ public class UiHudDocumentHostTest {
                                 .setWidth(UiStyleLength.px(140))
                                 .setHeight(UiStyleLength.px(80))
                                 .setBackgroundColor(0xFF222233);
-                        panel.setAttribute("data-hit-test-blocking", "true");
                         root.append(panel);
                     }
                 }, new DeterministicTextMeasureService(), UiRuntimeAdapters.empty());
@@ -359,10 +358,10 @@ public class UiHudDocumentHostTest {
     }
 
     /**
-     * 验证普通非交互面板若未显式声明 blocking，空白区域不会再默认拦截原生鼠标输入。
+     * 验证显式声明为可穿透的非交互面板空白区域，会放行到底层原生鼠标输入。
      */
     @Test
-    public void shouldNotCaptureImmediateMouseInputOnNonBlockingPanelWhitespace() {
+    public void shouldNotCaptureImmediateMouseInputOnPassthroughPanelWhitespace() {
         UiHudDocumentHost host = UiHudDocumentHost.getInstance();
         UiHudDocumentRegistration registration = host.register(UiHudLayerType.INTERACTIVE,
                 new UiHudDocumentHost.UiHudDocumentContentBuilder() {
@@ -377,6 +376,7 @@ public class UiHudDocumentHostTest {
                                 .setWidth(UiStyleLength.px(140))
                                 .setHeight(UiStyleLength.px(80))
                                 .setBackgroundColor(0xFF222233);
+                        panel.setAttribute("data-hit-test-passthrough", "true");
                         root.append(panel);
                     }
                 }, new DeterministicTextMeasureService(), UiRuntimeAdapters.empty());
@@ -395,10 +395,10 @@ public class UiHudDocumentHostTest {
     }
 
     /**
-     * 验证只命中 HUD 根空白区域时，不会错误拦截原生鼠标输入。
+     * 验证只命中 HUD 根空白区域时，也会按默认阻断契约拦截原生鼠标输入。
      */
     @Test
-    public void shouldNotCaptureImmediateMouseInputOnNonInteractiveHudWhitespace() {
+    public void shouldCaptureImmediateMouseInputOnHudRootWhitespaceByDefault() {
         UiHudDocumentHost host = UiHudDocumentHost.getInstance();
         UiHudDocumentRegistration registration = host.register(UiHudLayerType.INTERACTIVE,
                 new UiHudDocumentHost.UiHudDocumentContentBuilder() {
@@ -418,7 +418,7 @@ public class UiHudDocumentHostTest {
                     mouseFrame(UiMouseEvent.Action.BUTTON_DOWN, 8, 8, 2L),
                     UiHudScreenCategory.CONTAINER);
 
-            Assert.assertFalse(captured);
+            Assert.assertTrue(captured);
         } finally {
             registration.unregister();
         }

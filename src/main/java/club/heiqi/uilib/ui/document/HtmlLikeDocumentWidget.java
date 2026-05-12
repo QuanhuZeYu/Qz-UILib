@@ -50,7 +50,7 @@ public final class HtmlLikeDocumentWidget extends Widget {
     private static final int DRAG_ACTIVATION_THRESHOLD_PX = 4;
     private static final int DRAG_ACTIVATION_THRESHOLD_SQUARED =
             DRAG_ACTIVATION_THRESHOLD_PX * DRAG_ACTIVATION_THRESHOLD_PX;
-    private static final String HIT_TEST_BLOCKING_ATTRIBUTE = "data-hit-test-blocking";
+    private static final String HIT_TEST_PASSTHROUGH_ATTRIBUTE = "data-hit-test-passthrough";
 
     private final UiDocument document;
     private final TextMeasureService textMeasureService;
@@ -302,18 +302,18 @@ public final class HtmlLikeDocumentWidget extends Widget {
     }
 
     /**
-     * 判断指定元素是否命中了显式声明的阻断命中区域。
+     * 判断指定元素是否命中了显式声明的可穿透区域。
      *
      * @param target 待判断元素
-     * @return 是否属于显式阻断命中目标
+     * @return 是否属于显式可穿透命中目标
      */
-    public boolean isBlockingHit(ElementNode target) {
+    public boolean isPassthroughHit(ElementNode target) {
         if (target == null || !isElementAttachedToDocument(target)) {
             return false;
         }
         for (DocumentNode current = target; current instanceof ElementNode; current = current.getParent()) {
             ElementNode currentElement = (ElementNode) current;
-            if ("true".equals(currentElement.getAttribute(HIT_TEST_BLOCKING_ATTRIBUTE))) {
+            if ("true".equals(currentElement.getAttribute(HIT_TEST_PASSTHROUGH_ATTRIBUTE))) {
                 return true;
             }
         }

@@ -336,10 +336,13 @@ public final class UiHudDocumentHost {
         if (hitElement == null) {
             return false;
         }
+        if (entry.widget.isPassthroughHit(hitElement)) {
+            return false;
+        }
         if (entry.widget.isInteractiveHit(hitElement)) {
             return true;
         }
-        return entry.widget.isBlockingHit(hitElement);
+        return true;
     }
 
     /**
