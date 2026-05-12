@@ -974,6 +974,132 @@ public class DocumentLayoutEngineTest {
     }
 
     /**
+     * 验证 flex column 在非 stretch 下会按固有内容宽度测量 auto 宽子项，而不是压成 0 宽。
+     */
+    @Test
+    public void shouldMeasureAutoWidthItemsInFlexColumnWhenAlignItemsStart() {
+        UiDocument document = UiDocument.create();
+        ElementNode root = document.getRootElement();
+        ElementNode child = document.div();
+        ElementNode icon = document.div();
+
+        root.style()
+                .setDisplay(UiDisplay.FLEX)
+                .setFlexDirection(UiFlexDirection.COLUMN)
+                .setAlignItems(UiAlignItems.START)
+                .setWidth(UiStyleLength.px(120));
+        child.style()
+                .setPadding(UiStyleLength.px(2))
+                .setBorderWidth(UiStyleLength.px(1));
+        icon.style()
+                .setWidth(UiStyleLength.px(18))
+                .setHeight(UiStyleLength.px(18));
+        child.append(icon);
+        root.append(child);
+
+        DocumentLayoutBox childBox = DocumentLayoutEngine.layout(root, 160, 0,
+                new DeterministicTextMeasureService()).getChildren().get(0);
+
+        Assert.assertEquals(18, childBox.getContentWidth());
+        Assert.assertEquals(24, childBox.getWidth());
+        Assert.assertEquals(0, childBox.getLeft());
+    }
+
+    /**
+     * 验证 flex column 中嵌套的 auto 宽 flex row 会保留自身内容宽度。
+     */
+    @Test
+    public void shouldMeasureNestedFlexRowAutoWidthInFlexColumn() {
+        UiDocument document = UiDocument.create();
+        ElementNode root = document.getRootElement();
+        ElementNode row = document.div();
+        ElementNode first = document.div();
+        ElementNode second = document.div();
+
+        root.style()
+                .setDisplay(UiDisplay.FLEX)
+                .setFlexDirection(UiFlexDirection.COLUMN)
+                .setAlignItems(UiAlignItems.START)
+                .setWidth(UiStyleLength.px(120));
+        row.style()
+                .setDisplay(UiDisplay.FLEX)
+                .setColumnGap(UiStyleLength.px(8))
+                .setPadding(UiStyleLength.px(2))
+                .setBorderWidth(UiStyleLength.px(1));
+        first.style()
+                .setWidth(UiStyleLength.px(20))
+                .setHeight(UiStyleLength.px(12));
+        second.style()
+                .setWidth(UiStyleLength.px(30))
+                .setHeight(UiStyleLength.px(12));
+        row.append(first).append(second);
+        root.append(row);
+
+        DocumentLayoutBox rowBox = DocumentLayoutEngine.layout(root, 160, 0,
+                new DeterministicTextMeasureService()).getChildren().get(0);
+
+        Assert.assertEquals(58, rowBox.getContentWidth());
+        Assert.assertEquals(64, rowBox.getWidth());
+        Assert.assertEquals(0, rowBox.getLeft());
+    }
+
+    /**
+     * 验证 flex column 的交叉轴对齐会基于测得宽度做 center 偏移。
+     */
+    @Test
+    public void shouldCenterAutoWidthItemInFlexColumn() {
+        UiDocument document = UiDocument.create();
+        ElementNode root = document.getRootElement();
+        ElementNode child = document.div();
+
+        root.style()
+                .setDisplay(UiDisplay.FLEX)
+                .setFlexDirection(UiFlexDirection.COLUMN)
+                .setAlignItems(UiAlignItems.CENTER)
+                .setWidth(UiStyleLength.px(120));
+        child.style()
+                .setPadding(UiStyleLength.px(3))
+                .setBorderWidth(UiStyleLength.px(1));
+        child.appendText("HUD");
+        root.append(child);
+
+        DocumentLayoutBox childBox = DocumentLayoutEngine.layout(root, 160, 0,
+                new DeterministicTextMeasureService()).getChildren().get(0);
+
+        Assert.assertEquals(24, childBox.getContentWidth());
+        Assert.assertEquals(32, childBox.getWidth());
+        Assert.assertEquals(44, childBox.getLeft());
+    }
+
+    /**
+     * 验证 flex column 的交叉轴对齐会基于测得宽度做 end 偏移。
+     */
+    @Test
+    public void shouldEndAlignAutoWidthItemInFlexColumn() {
+        UiDocument document = UiDocument.create();
+        ElementNode root = document.getRootElement();
+        ElementNode child = document.div();
+
+        root.style()
+                .setDisplay(UiDisplay.FLEX)
+                .setFlexDirection(UiFlexDirection.COLUMN)
+                .setAlignItems(UiAlignItems.END)
+                .setWidth(UiStyleLength.px(120));
+        child.style()
+                .setPadding(UiStyleLength.px(2))
+                .setBorderWidth(UiStyleLength.px(1));
+        child.appendText("UI");
+        root.append(child);
+
+        DocumentLayoutBox childBox = DocumentLayoutEngine.layout(root, 160, 0,
+                new DeterministicTextMeasureService()).getChildren().get(0);
+
+        Assert.assertEquals(16, childBox.getContentWidth());
+        Assert.assertEquals(22, childBox.getWidth());
+        Assert.assertEquals(98, childBox.getLeft());
+    }
+
+    /**
      * 验证 flex row 会按 shrink 压缩超出的主轴空间。
      */
     @Test

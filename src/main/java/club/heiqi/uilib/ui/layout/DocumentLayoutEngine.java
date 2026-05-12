@@ -938,7 +938,7 @@ public final class DocumentLayoutEngine {
         for (ElementNode child : children) {
             FlexItem item = createFlexItem(child, contentWidth, layoutValueResolver);
             item.forcedCrossSize = resolveColumnCrossContentWidth(item, parentStyle.getAlignItems(), contentWidth,
-                    layoutValueResolver);
+                    textMeasureService, layoutValueResolver);
             item.box = layoutElement(item.element, 0, 0, contentWidth, item.forcedCrossSize, AUTO_SIZE,
                     absoluteContainingBlock, fixedContainingBlock, textMeasureService, layoutValueResolver);
             item.contentMainSize = resolveContentMainSize(item, contentWidth, false, textMeasureService,
@@ -1057,7 +1057,7 @@ public final class DocumentLayoutEngine {
         UiStyleLength length = row ? item.style.getWidth() : item.style.getHeight();
         if (isAuto(length)) {
             if (row) {
-                return measureAutoFlexRowMainSize(item.element, item.style, containingWidth, textMeasureService,
+                return measureAutoFlexAutoWidth(item.element, item.style, containingWidth, textMeasureService,
                         layoutValueResolver);
             }
             return 0;
@@ -1068,9 +1068,9 @@ public final class DocumentLayoutEngine {
     }
 
     /**
-     * 测量横向 flex 子项 auto 主轴尺寸，避免内容被主轴基准尺寸压缩成 0。
+     * 测量 auto 宽度元素的内容宽，统一用于 flex row 主轴与 flex column 交叉轴。
      */
-    private static int measureAutoFlexRowMainSize(ElementNode element, ComputedStyle style, int containingWidth,
+    private static int measureAutoFlexAutoWidth(ElementNode element, ComputedStyle style, int containingWidth,
             TextMeasureService textMeasureService, LayoutRuntimeValueResolver layoutValueResolver) {
         int measuredWidth = measureIntrinsicContentWidth(element, textMeasureService, containingWidth,
                 layoutValueResolver);
@@ -1189,7 +1189,7 @@ public final class DocumentLayoutEngine {
     }
 
     private static int resolveColumnCrossContentWidth(FlexItem item, UiAlignItems alignItems, int contentWidth,
-            LayoutRuntimeValueResolver layoutValueResolver) {
+            TextMeasureService textMeasureService, LayoutRuntimeValueResolver layoutValueResolver) {
         if (!isAuto(item.style.getWidth())) {
             int baseWidth = Math.max(0, item.style.getWidth().resolve(contentWidth, 0));
             return Math.max(0, layoutValueResolver.resolve(item.element, DocumentAnimationProperty.WIDTH,
@@ -1199,7 +1199,8 @@ public final class DocumentLayoutEngine {
             return Math.max(0, contentWidth - item.margin.getHorizontal() - item.border.getHorizontal()
                     - item.padding.getHorizontal());
         }
-        return 0;
+        return measureAutoFlexAutoWidth(item.element, item.style, contentWidth, textMeasureService,
+                layoutValueResolver);
     }
 
     private static int resolveSpecifiedHeight(ElementNode element, ComputedStyle computedStyle, int forcedContentHeight,
