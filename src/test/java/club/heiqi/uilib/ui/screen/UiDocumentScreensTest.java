@@ -43,6 +43,7 @@ public class UiDocumentScreensTest {
             Assert.assertTrue("createDocumentScreen".equals(method.getName()));
         }
         Assert.assertEquals(2, publicStaticMethodCount);
+        Assert.assertFalse(Modifier.isPublic(UiDiagnosticsScreens.class.getModifiers()));
     }
 
     /**
