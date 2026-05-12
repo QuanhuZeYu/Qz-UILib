@@ -18,15 +18,20 @@ public class UiKeyboardCaptureStateTest {
         try {
             Assert.assertFalse(state.isUiLibKeyboardCaptured());
             Assert.assertFalse(state.shouldCancelNativeKeyboardInput());
+            Assert.assertEquals(UiKeyboardCaptureState.Owner.NONE, state.getKeyboardCaptureOwner());
 
             state.setScreenKeyboardCaptured(true);
             Assert.assertTrue(state.isUiLibKeyboardCaptured());
             Assert.assertTrue(state.shouldCancelNativeKeyboardInput());
+            Assert.assertEquals(UiKeyboardCaptureState.Owner.SCREEN, state.getKeyboardCaptureOwner());
 
-            state.setScreenKeyboardCaptured(false);
             state.setHudKeyboardCaptured(true);
             Assert.assertTrue(state.isUiLibKeyboardCaptured());
             Assert.assertTrue(state.shouldCancelNativeKeyboardInput());
+            Assert.assertEquals(UiKeyboardCaptureState.Owner.BOTH, state.getKeyboardCaptureOwner());
+
+            state.setScreenKeyboardCaptured(false);
+            Assert.assertEquals(UiKeyboardCaptureState.Owner.HUD, state.getKeyboardCaptureOwner());
         } finally {
             state.clear();
         }

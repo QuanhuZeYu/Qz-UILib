@@ -5,6 +5,16 @@ package club.heiqi.uilib.ui.input;
  */
 public final class UiKeyboardCaptureState {
 
+    /**
+     * 当前键盘接管归属方。
+     */
+    public enum Owner {
+        NONE,
+        SCREEN,
+        HUD,
+        BOTH
+    }
+
     private static final UiKeyboardCaptureState INSTANCE = new UiKeyboardCaptureState();
 
     private boolean screenKeyboardCaptured;
@@ -66,6 +76,24 @@ public final class UiKeyboardCaptureState {
      */
     public synchronized boolean shouldCancelNativeKeyboardInput() {
         return isUiLibKeyboardCaptured();
+    }
+
+    /**
+     * 返回当前键盘接管归属方。
+     *
+     * @return 接管归属方
+     */
+    public synchronized Owner getKeyboardCaptureOwner() {
+        if (screenKeyboardCaptured && hudKeyboardCaptured) {
+            return Owner.BOTH;
+        }
+        if (screenKeyboardCaptured) {
+            return Owner.SCREEN;
+        }
+        if (hudKeyboardCaptured) {
+            return Owner.HUD;
+        }
+        return Owner.NONE;
     }
 
     /**
