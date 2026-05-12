@@ -1,7 +1,6 @@
 package club.heiqi.uilib.mixin.early;
 
 import org.spongepowered.asm.mixin.Mixin;
-import org.spongepowered.asm.mixin.Shadow;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.Redirect;
@@ -19,12 +18,6 @@ import net.minecraft.client.gui.GuiScreen;
  */
 @Mixin(GuiScreen.class)
 public abstract class MixinGuiScreenKeyboardIsolation {
-
-    @Shadow
-    public int width;
-
-    @Shadow
-    public int height;
 
     /**
      * 在原生键盘处理开始前做一次统一拦截，避免同一按键同时命中 UILib 与宿主输入框。
@@ -59,7 +52,7 @@ public abstract class MixinGuiScreenKeyboardIsolation {
         if (((Object) this) instanceof BaseScreen) {
             return;
         }
-        UiInputFrame immediateFrame = UiInputService.getInstance().createImmediateMouseFrame(width, height);
+        UiInputFrame immediateFrame = UiInputService.getInstance().createImmediateMouseFrame();
         if (UiHudDocumentHost.getInstance().handleImmediateMouseInput((GuiScreen) (Object) this, immediateFrame)) {
             ci.cancel();
         }
@@ -93,7 +86,7 @@ public abstract class MixinGuiScreenKeyboardIsolation {
             if (((Object) this) instanceof BaseScreen) {
                 return true;
             }
-            UiInputFrame immediateFrame = UiInputService.getInstance().createImmediateMouseFrame(width, height);
+            UiInputFrame immediateFrame = UiInputService.getInstance().createImmediateMouseFrame();
             if (!UiHudDocumentHost.getInstance().handleImmediateMouseInput((GuiScreen) (Object) this, immediateFrame)) {
                 return true;
             }

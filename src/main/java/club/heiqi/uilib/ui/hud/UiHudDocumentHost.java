@@ -126,10 +126,15 @@ public final class UiHudDocumentHost {
             clearInteractiveStates();
             return;
         }
-        UiInputFrame routedFrame = filterKeyboardInput(frame,
-                UiNativeTextInputInspector.hasFocusedTextInput(currentScreen),
-                UiKeyboardCaptureState.getInstance().isUiLibKeyboardCaptured());
-        routeInteractiveEntries(routedFrame, screenCategory, new ArrayList<HudEntry>(entries));
+        boolean keyboardCapturedBeforeRouting = UiKeyboardCaptureState.getInstance().isHudKeyboardCaptured();
+        routeMouseFrame(frame, screenCategory, new ArrayList<HudEntry>(entries));
+        if (UiKeyboardCaptureState.getInstance().isHudKeyboardCaptured()) {
+            UiInputFrame keyboardFrame = filterKeyboardInput(extractKeyboardFrame(frame),
+                    UiNativeTextInputInspector.hasFocusedTextInput(currentScreen), keyboardCapturedBeforeRouting);
+            routeInteractiveEntries(keyboardFrame, screenCategory, new ArrayList<HudEntry>(entries));
+            updateHudKeyboardCaptureState();
+            return;
+        }
         updateHudKeyboardCaptureState();
     }
 
@@ -142,6 +147,9 @@ public final class UiHudDocumentHost {
      */
     public synchronized boolean handleImmediateKeyboardInput(GuiScreen currentScreen, UiInputFrame frame) {
         if (frame == null || entries.isEmpty()) {
+            return false;
+        }
+        if (!UiKeyboardCaptureState.getInstance().isHudKeyboardCaptured()) {
             return false;
         }
         updateLatestPointer(frame);
@@ -223,6 +231,9 @@ public final class UiHudDocumentHost {
         if (frame == null || entries.isEmpty()) {
             return false;
         }
+        if (!UiKeyboardCaptureState.getInstance().isHudKeyboardCaptured()) {
+            return false;
+        }
         updateLatestPointer(frame);
         routeInteractiveEntries(frame, screenCategory, new ArrayList<HudEntry>(entries));
         updateHudKeyboardCaptureState();
@@ -264,6 +275,9 @@ public final class UiHudDocumentHost {
 
     private void routeInteractiveEntries(UiInputFrame frame, UiHudScreenCategory screenCategory,
             List<HudEntry> entrySnapshot) {
+        if (frame == null) {
+            return;
+        }
         for (HudEntry entry : entrySnapshot) {
             if (!entries.contains(entry)) {
                 continue;
@@ -281,17 +295,49 @@ public final class UiHudDocumentHost {
         }
     }
 
+    private void routeMouseFrame(UiInputFrame frame, UiHudScreenCategory screenCategory, List<HudEntry> entrySnapshot) {
+        if (frame == null || frame.getMouseEvents().isEmpty()) {
+            return;
+        }
+        routeInteractiveEntries(new UiInputFrame(frame.getMouseX(), frame.getMouseY(), frame.getMouseEvents(),
+                Collections.<club.heiqi.uilib.ui.event.UiKeyEvent>emptyList(),
+                Collections.<club.heiqi.uilib.ui.event.UiTextInputEvent>emptyList()), screenCategory, entrySnapshot);
+        updateHudKeyboardCaptureState();
+    }
+
+    private UiInputFrame extractKeyboardFrame(UiInputFrame frame) {
+        if (frame == null) {
+            return null;
+        }
+        if (frame.getKeyEvents().isEmpty() && frame.getTextEvents().isEmpty()) {
+            return null;
+        }
+        return new UiInputFrame(frame.getMouseX(), frame.getMouseY(), Collections.<club.heiqi.uilib.ui.event.UiMouseEvent>emptyList(),
+                frame.getKeyEvents(), frame.getTextEvents());
+    }
+
     private boolean shouldCaptureImmediateMouseInput(UiHudScreenCategory screenCategory, int mouseX, int mouseY) {
         for (HudEntry entry : entries) {
             if (entry.layerType != UiHudLayerType.INTERACTIVE || !entry.isVisibleIn(screenCategory)) {
                 continue;
             }
             ElementNode hitElement = entry.widget.findElementAt(mouseX, mouseY);
-            if (entry.widget.isInteractiveHit(hitElement)) {
+            if (shouldCaptureHit(entry, hitElement)) {
                 return true;
             }
         }
         return false;
+    }
+
+    private boolean shouldCaptureHit(HudEntry entry, ElementNode hitElement) {
+        if (hitElement == null) {
+            return false;
+        }
+        if (entry.widget.isInteractiveHit(hitElement)) {
+            return true;
+        }
+        ElementNode rootElement = entry.widget.getDocument().getRootElement();
+        return hitElement != rootElement;
     }
 
     /**

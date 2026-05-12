@@ -158,20 +158,20 @@ public class UiInputService implements InputEvents.KeyboardListener {
     /**
      * 基于当前原生鼠标事件构造一份即时输入快照，供宿主在 `GuiScreen.handleMouseInput()` 内抢先分发。
      *
-     * @param guiWidth 当前 GUI 宽度
-     * @param guiHeight 当前 GUI 高度
      * @return 即时输入快照；当前事件无效时返回 null
      */
-    public UiInputFrame createImmediateMouseFrame(int guiWidth, int guiHeight) {
-        if (!Mouse.isCreated() || guiWidth <= 0 || guiHeight <= 0) {
+    public UiInputFrame createImmediateMouseFrame() {
+        if (!Mouse.isCreated()) {
             return null;
         }
         Minecraft minecraft = Minecraft.getMinecraft();
         if (minecraft == null || minecraft.displayWidth <= 0 || minecraft.displayHeight <= 0) {
             return null;
         }
-        int mouseX = Mouse.getEventX() * guiWidth / minecraft.displayWidth;
-        int mouseY = guiHeight - Mouse.getEventY() * guiHeight / minecraft.displayHeight - 1;
+        int mouseX = Mouse.getEventX();
+        int mouseY = minecraft.displayHeight - Mouse.getEventY() - 1;
+        mouseY = Math.max(0, Math.min(minecraft.displayHeight, mouseY));
+        mouseX = Math.max(0, Math.min(minecraft.displayWidth, mouseX));
         int button = Mouse.getEventButton();
         long now = Sys.getNanoTime();
         java.util.List<UiMouseEvent> mouseEventList = new java.util.ArrayList<UiMouseEvent>(1);

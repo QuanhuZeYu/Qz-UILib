@@ -212,6 +212,44 @@ public class UiHudDocumentHostTest {
     }
 
     /**
+     * 验证 HUD 未通过鼠标先获得焦点时，单独按 Tab 不会把键盘焦点直接激活到 HUD。
+     */
+    @Test
+    public void shouldNotCaptureImmediateKeyboardInputWithoutPriorHudFocus() {
+        UiHudDocumentHost host = UiHudDocumentHost.getInstance();
+        UiKeyboardCaptureState.getInstance().clear();
+        UiHudDocumentRegistration registration = host.register(UiHudLayerType.INTERACTIVE,
+                new UiHudDocumentHost.UiHudDocumentContentBuilder() {
+                    @Override
+                    public void build(UiDocument document) {
+                        ElementNode root = document.getRootElement();
+                        root.style()
+                                .setWidth(UiStyleLength.px(160))
+                                .setHeight(UiStyleLength.px(80));
+                        DocumentTextInputControl inputControl = new DocumentTextInputControl(document);
+                        inputControl.getElement().style()
+                                .setWidth(UiStyleLength.px(120))
+                                .setHeight(UiStyleLength.px(24));
+                        root.append(inputControl.getElement());
+                    }
+                }, new DeterministicTextMeasureService(), UiRuntimeAdapters.empty());
+        try {
+            boolean captured = host.handleImmediateKeyboardInputForTest(
+                    new UiInputFrame(8, 8, Collections.<UiMouseEvent>emptyList(),
+                            Collections.singletonList(new UiKeyEvent(Keyboard.KEY_TAB, 0, 0,
+                                    UiKeyEvent.Action.PRESSED, false, false, false, false, 2L)),
+                            Collections.<UiTextInputEvent>emptyList()),
+                    UiHudScreenCategory.CONTAINER);
+
+            Assert.assertFalse(captured);
+            Assert.assertFalse(UiKeyboardCaptureState.getInstance().isHudKeyboardCaptured());
+        } finally {
+            registration.unregister();
+            UiKeyboardCaptureState.getInstance().clear();
+        }
+    }
+
+    /**
      * 验证命中交互元素时，HUD 会在原生页面之前拦截鼠标按下。
      */
     @Test
@@ -238,6 +276,77 @@ public class UiHudDocumentHostTest {
 
             boolean captured = host.handleImmediateMouseInputForTest(
                     mouseFrame(UiMouseEvent.Action.BUTTON_DOWN, 8, 8, 2L),
+                    UiHudScreenCategory.CONTAINER);
+
+            Assert.assertTrue(captured);
+        } finally {
+            registration.unregister();
+        }
+    }
+
+    /**
+     * 验证即时鼠标拦截与常规 HUD 输入路由使用同一套原生像素坐标，不会因缩放坐标不一致导致点击穿透。
+     */
+    @Test
+    public void shouldCaptureImmediateMouseInputUsingSameNativeCoordinatesAsHudRouting() {
+        UiHudDocumentHost host = UiHudDocumentHost.getInstance();
+        UiHudDocumentRegistration registration = host.register(UiHudLayerType.INTERACTIVE,
+                new UiHudDocumentHost.UiHudDocumentContentBuilder() {
+                    @Override
+                    public void build(UiDocument document) {
+                        ElementNode root = document.getRootElement();
+                        root.style()
+                                .setWidth(UiStyleLength.px(320))
+                                .setHeight(UiStyleLength.px(180));
+                        DocumentButtonControl buttonControl = new DocumentButtonControl(document, "Hit");
+                        buttonControl.getElement().style()
+                                .setWidth(UiStyleLength.px(120))
+                                .setHeight(UiStyleLength.px(24));
+                        root.append(buttonControl.getElement());
+                    }
+                }, new DeterministicTextMeasureService(), UiRuntimeAdapters.empty());
+        try {
+            host.handleInputFrameForTest(mouseFrame(UiMouseEvent.Action.MOVE, 12, 12, 1L), UiHudScreenCategory.CONTAINER,
+                    320, 180);
+
+            boolean captured = host.handleImmediateMouseInputForTest(
+                    mouseFrame(UiMouseEvent.Action.BUTTON_DOWN, 12, 12, 2L),
+                    UiHudScreenCategory.CONTAINER);
+
+            Assert.assertTrue(captured);
+        } finally {
+            registration.unregister();
+        }
+    }
+
+    /**
+     * 验证点到浮窗面板内部空白区域时，也会阻止点击穿透到底层原生页面。
+     */
+    @Test
+    public void shouldCaptureImmediateMouseInputOnPanelWhitespace() {
+        UiHudDocumentHost host = UiHudDocumentHost.getInstance();
+        UiHudDocumentRegistration registration = host.register(UiHudLayerType.INTERACTIVE,
+                new UiHudDocumentHost.UiHudDocumentContentBuilder() {
+                    @Override
+                    public void build(UiDocument document) {
+                        ElementNode root = document.getRootElement();
+                        root.style()
+                                .setWidth(UiStyleLength.px(320))
+                                .setHeight(UiStyleLength.px(180));
+                        ElementNode panel = document.div();
+                        panel.style()
+                                .setWidth(UiStyleLength.px(140))
+                                .setHeight(UiStyleLength.px(80))
+                                .setBackgroundColor(0xFF222233);
+                        root.append(panel);
+                    }
+                }, new DeterministicTextMeasureService(), UiRuntimeAdapters.empty());
+        try {
+            host.handleInputFrameForTest(mouseFrame(UiMouseEvent.Action.MOVE, 12, 12, 1L), UiHudScreenCategory.CONTAINER,
+                    320, 180);
+
+            boolean captured = host.handleImmediateMouseInputForTest(
+                    mouseFrame(UiMouseEvent.Action.BUTTON_DOWN, 12, 12, 2L),
                     UiHudScreenCategory.CONTAINER);
 
             Assert.assertTrue(captured);
