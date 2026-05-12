@@ -126,7 +126,7 @@ Minecraft.getMinecraft().displayGuiScreen(UiDocumentScreens.createDocumentScreen
 当前内置两类层：
 
 - `UiHudLayerType.PASSIVE`：不可交互，只在纯游戏内 HUD 可见；打开背包、箱子、菜单后会隐藏。
-- `UiHudLayerType.INTERACTIVE`：游戏内与容器界面可见；菜单页隐藏。当前会在任意已打开且鼠标已自由的界面里接通命中和焦点输入。
+- `UiHudLayerType.INTERACTIVE`：游戏内与容器界面可见；菜单页隐藏。只有当前存在已打开的非菜单界面且鼠标已自由时，才会接通命中和焦点输入；纯游戏内锁鼠状态下仅可见，不可交互。
 
 ```java
 UiHudDocumentRegistration registration = UiHudDocumentHost.getInstance().register(
@@ -148,7 +148,7 @@ UiHudDocumentRegistration registration = UiHudDocumentHost.getInstance().registe
 - HUD 文档仍复用 `UiDocument` 与 `HtmlLikeDocumentWidget`，不是单独的一套渲染语法。
 - HUD 根元素默认补齐 `width:100%`、`height:100%` 与 `overflow:visible`。
 - 被动层会默认标记为整棵子树不可命中。
-- 交互层当前不再限定必须是容器界面；只要当前已有打开界面且鼠标未锁定，就会接通输入，纯游戏内锁定鼠标状态仍不主动接管。
+- 交互层当前不再限定必须是容器界面；但只有当前存在已打开的非菜单界面且鼠标未锁定时，才会接通输入。纯游戏内锁定鼠标状态下，交互 HUD 仍只会显示，不会主动接管命中或键盘输入；当前主要适用容器类与部分自定义屏幕。
 - 交互 HUD 当前采用“先鼠标、后键盘”的接管契约：必须先通过鼠标命中建立 HUD 焦点，之后才会继续接管键盘；不支持纯键盘首次进入 HUD。
 - 交互 HUD 默认会阻断命中区域继续落到底层原生界面；若某个面板或其祖先希望显式放行空白区域，需要声明 `data-hit-test-passthrough="true"`。
 - 当当前原生界面已有聚焦的 Minecraft 文本输入框时，交互层不会继续接管键盘；一旦 UILib 获得焦点，会阻断宿主原生键盘链路，避免双方同时响应同一输入。
