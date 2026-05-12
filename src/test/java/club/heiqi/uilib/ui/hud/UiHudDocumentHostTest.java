@@ -212,6 +212,55 @@ public class UiHudDocumentHostTest {
     }
 
     /**
+     * 验证 HUD 即时键盘抢占只处理按键语义，不会把同一字符作为即时文本再次注入。
+     */
+    @Test
+    public void shouldNotInjectImmediateTextDuringHudKeyboardCapture() {
+        UiHudDocumentHost host = UiHudDocumentHost.getInstance();
+        UiKeyboardCaptureState.getInstance().clear();
+        final String[] textHolder = new String[1];
+        UiHudDocumentRegistration registration = host.register(UiHudLayerType.INTERACTIVE,
+                new UiHudDocumentHost.UiHudDocumentContentBuilder() {
+                    @Override
+                    public void build(UiDocument document) {
+                        ElementNode root = document.getRootElement();
+                        root.style()
+                                .setWidth(UiStyleLength.px(160))
+                                .setHeight(UiStyleLength.px(80));
+                        DocumentTextInputControl inputControl = new DocumentTextInputControl(document);
+                        inputControl.getElement().style()
+                                .setWidth(UiStyleLength.px(120))
+                                .setHeight(UiStyleLength.px(24));
+                        inputControl.setChangeHandler(event -> textHolder[0] = event.getText());
+                        root.append(inputControl.getElement());
+                    }
+                }, new DeterministicTextMeasureService(), UiRuntimeAdapters.empty());
+        try {
+            host.handleInputFrameForTest(mouseFrame(UiMouseEvent.Action.BUTTON_DOWN, 8, 8, 1L),
+                    UiHudScreenCategory.CONTAINER, 160, 80);
+
+            boolean captured = host.handleImmediateKeyboardInputForTest(
+                    new UiInputFrame(8, 8, Collections.<UiMouseEvent>emptyList(),
+                            Collections.singletonList(new UiKeyEvent(Keyboard.KEY_1, 0, 0,
+                                    UiKeyEvent.Action.PRESSED, false, false, false, false, 2L)),
+                            Collections.<UiTextInputEvent>emptyList()),
+                    UiHudScreenCategory.CONTAINER);
+
+            Assert.assertTrue(captured);
+            Assert.assertNull(textHolder[0]);
+
+            host.handleInputFrameForTest(new UiInputFrame(8, 8, Collections.<UiMouseEvent>emptyList(),
+                    Collections.<UiKeyEvent>emptyList(),
+                    Collections.singletonList(new UiTextInputEvent("1", 3L))), UiHudScreenCategory.CONTAINER, 160, 80);
+
+            Assert.assertEquals("1", textHolder[0]);
+        } finally {
+            registration.unregister();
+            UiKeyboardCaptureState.getInstance().clear();
+        }
+    }
+
+    /**
      * 验证 HUD 未通过鼠标先获得焦点时，单独按 Tab 不会把键盘焦点直接激活到 HUD。
      *
      * <p>这是当前产品约束：交互 HUD 必须先鼠标聚焦，才允许继续接管后续键盘输入。</p>

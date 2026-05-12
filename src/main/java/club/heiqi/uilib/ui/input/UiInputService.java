@@ -134,6 +134,8 @@ public class UiInputService implements InputEvents.KeyboardListener {
     /**
      * 基于当前原生键盘事件构造一份即时输入快照，供宿主在 `GuiScreen.handleKeyboardInput()` 内抢先分发。
      *
+     * <p>即时快照只携带按键语义，不提前附带文本输入，避免 HUD 的即时路由与常规收集链重复写入同一字符。</p>
+     *
      * @return 即时输入快照；当前事件无效时返回 null
      */
     public UiInputFrame createImmediateKeyboardFrame() {
@@ -146,13 +148,8 @@ public class UiInputService implements InputEvents.KeyboardListener {
         }
         List<UiKeyEvent> keyEventList = new ArrayList<UiKeyEvent>(1);
         keyEventList.add(keyEvent);
-        List<UiTextInputEvent> textEventList = new ArrayList<UiTextInputEvent>(1);
-        String eventText = resolveImmediateKeyboardText();
-        if (eventText != null) {
-            textEventList.add(new UiTextInputEvent(eventText, keyEvent.getTimeNanos()));
-        }
         return new UiInputFrame(mouseX, mouseY, java.util.Collections.<UiMouseEvent>emptyList(), keyEventList,
-                textEventList);
+                java.util.Collections.<UiTextInputEvent>emptyList());
     }
 
     /**
@@ -262,14 +259,6 @@ public class UiInputService implements InputEvents.KeyboardListener {
                 Keyboard.isKeyDown(Keyboard.KEY_LMENU) || Keyboard.isKeyDown(Keyboard.KEY_RMENU),
                 false,
                 now);
-    }
-
-    private String resolveImmediateKeyboardText() {
-        char eventCharacter = Keyboard.getEventCharacter();
-        if (eventCharacter == Keyboard.CHAR_NONE || Character.isISOControl(eventCharacter)) {
-            return null;
-        }
-        return String.valueOf(eventCharacter);
     }
 
     private UiKeyEvent.Action mapAction(InputEvents.KeyAction action) {

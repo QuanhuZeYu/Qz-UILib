@@ -41,6 +41,7 @@
 - `UiHudDocumentHost` 的输入分发需容忍回调内即时 `unregister()`；HUD 注册表遍历应基于快照或等效防御，不能在公开回调链中直接依赖可变列表的 fail-fast 迭代。
 - 键盘输入需在宿主原生文本框与 UILib 焦点之间做隔离：原生文本框聚焦时 HUD/叠层不接管键盘；UILib 获得焦点后需阻断宿主原生键盘继续响应。
 - HUD 键盘隔离的优先级高于原生页面处理链路：当前在 `handleKeyboardInput()` 阶段就会先让 UILib 尝试接管，再决定是否阻断宿主继续分发。
+- HUD 的即时键盘抢占只处理按键语义，不提前注入可打印文本；可打印字符统一回落到常规收集链路，避免同一按键在 HUD 中重复落字。
 - 浮窗/面板拖拽优先走 HTML-like 元素级能力（`setDragHandler(...)` / `DocumentDraggableSupport`），HUD 只复用该能力，不再单独扩一套 HUD 专属拖动 API。
 - HTML-like 元素拖拽采用位移阈值激活：短点击保留 `click`，只有超过阈值后才进入真实拖拽并消费抬起事件。
 - 结构节点优先直接写 `UiDocument` DOM-like 元素；标准交互节点优先使用 `Document*Control`。
