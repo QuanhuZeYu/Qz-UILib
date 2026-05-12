@@ -13,11 +13,13 @@
 5. `02-控件/表格与背包槽位.md`
 6. `02-控件/Forge配置模板.md`
 7. `03-宿主集成/Minecraft界面入口.md`
-8. `04-诊断入口/指令触发方案.md`
+8. `03-宿主集成/Minecraft原版输入链路.md`
+9. `04-诊断入口/指令触发方案.md`
 
 ## 专题文档
 
 - `02-控件/背包Tooltip设计需求.md`：仅适用于 `inventory_overview` 背包概览示例页的 tooltip 专题需求，不属于通用 UI 接入必读项。
+- `03-宿主集成/Minecraft原版输入链路.md`：整理原版 `Minecraft` / `GuiScreen` / `GuiContainer` 输入分发主链，适合排查宿主输入抢占、HUD 键鼠隔离和特殊界面串扰问题。
 
 ## 面向对象
 

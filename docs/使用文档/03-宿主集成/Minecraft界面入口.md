@@ -4,6 +4,8 @@
 
 本文是宿主集成说明；内置诊断页和示例页仅作为开发调试入口，不构成对外稳定业务 API。
 
+如果需要排查原版 `GuiScreen` / `GuiContainer` 的键鼠分发细节、HUD 抢占时序或注入层级，请同时参考 `Minecraft原版输入链路.md`。
+
 ## 业务文档入口
 
 业务 UI 优先通过 `UiDocumentScreens.createDocumentScreen(...)` 创建：
