@@ -21,7 +21,8 @@ public class EarlyMixins implements IEarlyMixinLoader, IFMLLoadingPlugin {
 
     @Override
     public List<String> getMixins(Set<String> loadedCoreMods) {
-        return Arrays.asList("MixinFontRenderer", "MixinGuiScreenKeyboardIsolation");
+        return Arrays.asList("MixinFontRenderer", "MixinGuiScreenKeyboardIsolation",
+                "MixinGuiContainerKeyTypedIsolation");
     }
 
     @Override

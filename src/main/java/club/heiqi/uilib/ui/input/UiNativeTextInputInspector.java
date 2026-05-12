@@ -33,6 +33,19 @@ public final class UiNativeTextInputInspector {
         return hasFocusedTextInput((Object) screen, 0, new IdentityHashMap<Object, Boolean>());
     }
 
+    /**
+     * 清除当前屏幕内所有原生文本输入框的焦点。
+     *
+     * @param screen 当前屏幕
+     * @return 是否实际清除了至少一个文本输入框焦点
+     */
+    public static boolean blurFocusedTextInputs(GuiScreen screen) {
+        if (screen == null || screen instanceof BaseScreen) {
+            return false;
+        }
+        return blurFocusedTextInputs((Object) screen, 0, new IdentityHashMap<Object, Boolean>());
+    }
+
     private static boolean hasFocusedTextInput(Object value, int depth, IdentityHashMap<Object, Boolean> visited) {
         if (value == null || depth > MAX_SCAN_DEPTH || visited.containsKey(value)) {
             return false;
@@ -89,6 +102,62 @@ public final class UiNativeTextInputInspector {
             }
         }
         return false;
+    }
+
+    private static boolean blurFocusedTextInputs(Object value, int depth, IdentityHashMap<Object, Boolean> visited) {
+        if (value == null || depth > MAX_SCAN_DEPTH || visited.containsKey(value)) {
+            return false;
+        }
+        visited.put(value, Boolean.TRUE);
+        if (value instanceof GuiTextField) {
+            GuiTextField textField = (GuiTextField) value;
+            boolean focused = textField.isFocused();
+            if (focused) {
+                textField.setFocused(false);
+            }
+            return focused;
+        }
+        boolean changed = false;
+        if (value instanceof Iterable<?>) {
+            for (Object entry : (Iterable<?>) value) {
+                changed |= blurFocusedTextInputs(entry, depth + 1, visited);
+            }
+            return changed;
+        }
+        if (value instanceof Map<?, ?>) {
+            for (Object entry : ((Map<?, ?>) value).values()) {
+                changed |= blurFocusedTextInputs(entry, depth + 1, visited);
+            }
+            return changed;
+        }
+        Class<?> valueClass = value.getClass();
+        if (valueClass.isArray()) {
+            int length = Array.getLength(value);
+            for (int index = 0; index < length; index++) {
+                changed |= blurFocusedTextInputs(Array.get(value, index), depth + 1, visited);
+            }
+            return changed;
+        }
+        if (isJdkValueObject(valueClass)) {
+            return false;
+        }
+        for (Class<?> currentClass = valueClass;
+                currentClass != null && currentClass != Object.class;
+                currentClass = currentClass.getSuperclass()) {
+            Field[] fields = currentClass.getDeclaredFields();
+            for (Field field : fields) {
+                if (Modifier.isStatic(field.getModifiers()) || field.getType().isPrimitive()) {
+                    continue;
+                }
+                try {
+                    field.setAccessible(true);
+                    changed |= blurFocusedTextInputs(field.get(value), depth + 1, visited);
+                } catch (ReflectiveOperationException ignored) {
+                    // 反射失败时忽略该字段，继续清理其他候选输入框。
+                }
+            }
+        }
+        return changed;
     }
 
     private static boolean isJdkValueObject(Class<?> valueClass) {

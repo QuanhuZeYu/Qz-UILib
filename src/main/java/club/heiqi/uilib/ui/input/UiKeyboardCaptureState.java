@@ -51,6 +51,15 @@ public final class UiKeyboardCaptureState {
     }
 
     /**
+     * 判断当前是否由 HUD 宿主接管键盘。
+     *
+     * @return HUD 是否已接管键盘
+     */
+    public synchronized boolean isHudKeyboardCaptured() {
+        return hudKeyboardCaptured;
+    }
+
+    /**
      * 判断当前是否需要阻断宿主原生键盘分发。
      *
      * @return 是否阻断原生键盘

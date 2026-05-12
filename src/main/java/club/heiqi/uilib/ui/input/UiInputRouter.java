@@ -5,6 +5,7 @@ import java.util.List;
 
 import org.lwjglx.input.Keyboard;
 
+import club.heiqi.uilib.ui.document.HtmlLikeDocumentWidget;
 import club.heiqi.uilib.ui.event.UiKeyEvent;
 import club.heiqi.uilib.ui.event.UiMouseEvent;
 import club.heiqi.uilib.ui.event.UiTextInputEvent;
@@ -69,7 +70,7 @@ public class UiInputRouter {
      * @return 是否存在焦点组件
      */
     public boolean hasFocusedWidget() {
-        return focusedWidget != null;
+        return isFocusedWidgetInputActive(focusedWidget);
     }
 
     private void routeMouseEvent(Widget root, UiMouseEvent event) {
@@ -195,10 +196,20 @@ public class UiInputRouter {
      * @return 有效焦点组件；失效时返回 null
      */
     private Widget getActiveFocusedWidget(Widget root) {
-        if (!isWidgetActiveInTree(root, focusedWidget)) {
+        if (!isWidgetActiveInTree(root, focusedWidget) || !isFocusedWidgetInputActive(focusedWidget)) {
             setFocusedWidget(null);
         }
         return focusedWidget;
+    }
+
+    private boolean isFocusedWidgetInputActive(Widget widget) {
+        if (widget == null) {
+            return false;
+        }
+        if (widget instanceof HtmlLikeDocumentWidget) {
+            return ((HtmlLikeDocumentWidget) widget).getFocusedElement() != null;
+        }
+        return true;
     }
 
     private boolean isWidgetActiveInTree(Widget root, Widget widget) {

@@ -179,10 +179,14 @@ public final class UiHudDocumentHost {
             clearInteractiveStates();
             return false;
         }
+        if (isPrimaryMouseButtonDown(frame)) {
+            clearInteractiveStates();
+        }
         boolean shouldCapture = shouldCaptureImmediateMouseInput(screenCategory, frame.getMouseX(), frame.getMouseY());
         if (!shouldCapture) {
             return false;
         }
+        UiNativeTextInputInspector.blurFocusedTextInputs(currentScreen);
         routeInteractiveEntries(frame, screenCategory, new ArrayList<HudEntry>(entries));
         updateHudKeyboardCaptureState();
         return true;
@@ -199,6 +203,20 @@ public final class UiHudDocumentHost {
         routeInteractiveEntries(frame, screenCategory, new ArrayList<HudEntry>(entries));
         updateHudKeyboardCaptureState();
         return true;
+    }
+
+    private boolean isPrimaryMouseButtonDown(UiInputFrame frame) {
+        if (frame == null) {
+            return false;
+        }
+        for (club.heiqi.uilib.ui.event.UiMouseEvent mouseEvent : frame.getMouseEvents()) {
+            if (mouseEvent != null
+                    && mouseEvent.getAction() == club.heiqi.uilib.ui.event.UiMouseEvent.Action.BUTTON_DOWN
+                    && mouseEvent.getButton() == 0) {
+                return true;
+            }
+        }
+        return false;
     }
 
     synchronized boolean handleImmediateKeyboardInputForTest(UiInputFrame frame, UiHudScreenCategory screenCategory) {
