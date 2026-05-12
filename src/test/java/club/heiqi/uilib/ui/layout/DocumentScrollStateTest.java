@@ -166,6 +166,100 @@ public class DocumentScrollStateTest {
         Assert.assertTrue(scrollState.getScrollTop(fixedScroller) > 0);
     }
 
+    /**
+     * 验证 HUD 风格固定内容区能计算出正向滚动范围并消费滚轮。
+     */
+    @Test
+    public void shouldComputePositiveScrollRangeForHudLikeScrollHost() {
+        UiDocument document = UiDocument.create();
+        ElementNode root = document.getRootElement();
+        ElementNode contentRoot = document.div();
+
+        root.style()
+                .setWidth(UiStyleLength.px(320))
+                .setHeight(UiStyleLength.px(540));
+        contentRoot.style()
+                .setWidth(UiStyleLength.px(248))
+                .setHeight(UiStyleLength.px(360))
+                .setOverflowX(UiOverflow.HIDDEN)
+                .setOverflowY(UiOverflow.AUTO);
+        for (int index = 1; index <= 6; index++) {
+            contentRoot.append(createCard(document, index));
+        }
+        root.append(contentRoot);
+
+        DocumentLayoutBox rootBox = DocumentLayoutEngine.layout(root, 320, 540,
+                new DeterministicTextMeasureService());
+        DocumentScrollState scrollState = new DocumentScrollState();
+        scrollState.updateFromLayout(rootBox);
+
+        Assert.assertTrue(scrollState.getMaxScrollTop(contentRoot) > 0);
+        Assert.assertTrue(scrollState.handleWheel(rootBox, 24, 40, -120, 1L));
+        Assert.assertTrue(scrollState.getScrollTop(contentRoot) > 0);
+    }
+
+    private static ElementNode createCard(UiDocument document, int index) {
+        ElementNode card = document.div();
+        card.style()
+                .setWidth(UiStyleLength.percent(1.0F))
+                .setPadding(UiStyleLength.px(8))
+                .setMargin(UiStyleLength.px(6))
+                .setBorderWidth(UiStyleLength.px(1));
+        card.append(createTextBlock(document, "卡片 " + index + " 标题"));
+        card.append(createTextBlock(document, "卡片 " + index + " 描述：验证 HUD 固定正文区滚动范围计算。"));
+        card.append(createTextBlock(document,
+                "卡片 " + index + " 正文：这是一段较长的中文说明，用于制造稳定换行与显著高度，"
+                        + "确保总高度明显超过 360 像素视口。继续补充第二句说明，避免测试只依赖空白 margin 通过。"));
+        return card;
+    }
+
+    private static ElementNode createTextBlock(UiDocument document, String text) {
+        ElementNode block = document.div();
+        block.style().setWidth(UiStyleLength.percent(1.0F));
+        block.appendText(text);
+        return block;
+    }
+
+    private static final class DeterministicTextMeasureService implements club.heiqi.uilib.ui.text.TextMeasureService {
+
+        @Override
+        public int getEpoch() {
+            return 1;
+        }
+
+        @Override
+        public int getStringWidth(String text) {
+            return text == null ? 0 : text.length() * 4;
+        }
+
+        @Override
+        public int getLineHeight() {
+            return 9;
+        }
+
+        @Override
+        public String trimStringToWidth(String text, int targetWidth) {
+            if (text == null || text.isEmpty() || targetWidth <= 0) {
+                return "";
+            }
+            int maxLength = Math.max(0, targetWidth / 4);
+            return text.substring(0, Math.min(text.length(), maxLength));
+        }
+
+        @Override
+        public java.util.List<String> listFormattedStringToWidth(String text, int wrapWidth) {
+            if (text == null || text.isEmpty() || wrapWidth <= 0) {
+                return java.util.Collections.emptyList();
+            }
+            java.util.List<String> lines = new java.util.ArrayList<String>();
+            int maxCharsPerLine = Math.max(1, wrapWidth / 4);
+            for (int index = 0; index < text.length(); index += maxCharsPerLine) {
+                lines.add(text.substring(index, Math.min(text.length(), index + maxCharsPerLine)));
+            }
+            return lines;
+        }
+    }
+
     private static void configureScroller(ElementNode scroller) {
         scroller.style()
                 .setWidth(UiStyleLength.px(70))

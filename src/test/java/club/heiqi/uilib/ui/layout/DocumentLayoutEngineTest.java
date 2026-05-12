@@ -1220,6 +1220,60 @@ public class DocumentLayoutEngineTest {
     }
 
     /**
+     * 验证 display 从 none 切换到 block 后仍保持正常 block flow，不会挤成一排。
+     */
+    @Test
+    public void shouldPreserveBlockFlowAfterDisplayToggleFromNone() {
+        UiDocument document = UiDocument.create();
+        ElementNode root = document.getRootElement();
+        ElementNode pageRoot = document.div();
+
+        root.style().setWidth(UiStyleLength.px(258));
+        pageRoot.style().setDisplay(UiDisplay.NONE);
+        for (int index = 1; index <= 4; index++) {
+            pageRoot.append(createWrappedHudCard(document, index));
+        }
+        root.append(pageRoot);
+
+        DocumentLayoutBox hiddenRootBox = DocumentLayoutEngine.layout(root, 258, 0,
+                new DeterministicTextMeasureService());
+        Assert.assertTrue(hiddenRootBox.getChildren().isEmpty());
+
+        pageRoot.style().setDisplay(UiDisplay.BLOCK);
+        DocumentLayoutBox rootBox = DocumentLayoutEngine.layout(root, 258, 0,
+                new DeterministicTextMeasureService());
+        DocumentLayoutBox pageBox = rootBox.getChildren().get(0);
+        DocumentLayoutBox firstCard = pageBox.getChildren().get(0);
+        DocumentLayoutBox secondCard = pageBox.getChildren().get(1);
+
+        Assert.assertTrue(secondCard.getTop() >= firstCard.getBottom());
+        Assert.assertTrue(pageBox.getContentHeight() > firstCard.getHeight());
+    }
+
+    /**
+     * 验证 HUD 风格卡片在中文长文本换行后会正确扩展高度，且各文本块不重叠。
+     */
+    @Test
+    public void shouldExpandBlockCardHeightWithWrappedHudText() {
+        UiDocument document = UiDocument.create();
+        ElementNode root = document.getRootElement();
+        ElementNode card = createWrappedHudCard(document, 1);
+
+        root.style().setWidth(UiStyleLength.px(258));
+        root.append(card);
+
+        DocumentLayoutBox cardBox = DocumentLayoutEngine.layout(root, 258, 0,
+                new DeterministicTextMeasureService()).getChildren().get(0);
+        DocumentLayoutBox titleBox = cardBox.getChildren().get(0);
+        DocumentLayoutBox descriptionBox = cardBox.getChildren().get(1);
+        DocumentLayoutBox bodyBox = cardBox.getChildren().get(2);
+
+        Assert.assertTrue(titleBox.getBottom() <= descriptionBox.getTop());
+        Assert.assertTrue(descriptionBox.getBottom() <= bodyBox.getTop());
+        Assert.assertTrue(cardBox.getContentHeight() > bodyBox.getHeight());
+    }
+
+    /**
      * 验证 flex row 固有宽度测量会保留 0 宽子项后的 column-gap。
      */
     @Test
@@ -1348,5 +1402,32 @@ public class DocumentLayoutEngineTest {
             }
             return lines;
         }
+    }
+
+    private static ElementNode createWrappedHudCard(UiDocument document, int index) {
+        ElementNode card = document.div();
+        card.style()
+                .setDisplay(UiDisplay.BLOCK)
+                .setWidth(UiStyleLength.percent(1.0F))
+                .setPadding(UiStyleLength.px(8))
+                .setMargin(UiStyleLength.px(6))
+                .setBorderWidth(UiStyleLength.px(1));
+        card.append(createWrappedHudTextBlock(document, "卡片 " + index + " 标题"));
+        card.append(createWrappedHudTextBlock(document,
+                "卡片 " + index + " 描述：用于验证 HUD 中文说明在较窄宽度下的正常换行与块级布局。"));
+        card.append(createWrappedHudTextBlock(document,
+                "卡片 " + index + " 正文：这是一段较长的中文说明文字，需要在接近 HUD 浮窗宽度的环境下发生二到四行换行。"
+                        + "继续补充第二句说明，确保 card 高度会随着文本换行自然增长，而不是把文本块互相压叠。"
+                        + "继续补充第三句说明，避免英文短词测试掩盖中文换行高度问题。"));
+        return card;
+    }
+
+    private static ElementNode createWrappedHudTextBlock(UiDocument document, String text) {
+        ElementNode block = document.div();
+        block.style()
+                .setDisplay(UiDisplay.BLOCK)
+                .setWidth(UiStyleLength.percent(1.0F));
+        block.appendText(text);
+        return block;
     }
 }

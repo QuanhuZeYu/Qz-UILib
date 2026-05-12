@@ -30,7 +30,10 @@ import club.heiqi.uilib.ui.dom.DocumentElementTextInputHandler;
 import club.heiqi.uilib.ui.dom.ElementNode;
 import club.heiqi.uilib.ui.dom.TextNode;
 import club.heiqi.uilib.ui.dom.UiDocument;
+import club.heiqi.uilib.ui.dom.control.DocumentButtonControl;
 import club.heiqi.uilib.ui.dom.control.DocumentDraggableSupport;
+import club.heiqi.uilib.ui.dom.control.DocumentTextInputControl;
+import club.heiqi.uilib.ui.dom.control.DocumentToggleSwitchControl;
 import club.heiqi.uilib.ui.event.UiKeyEvent;
 import club.heiqi.uilib.ui.event.UiMouseEvent;
 import club.heiqi.uilib.ui.event.UiTextInputEvent;
@@ -1443,6 +1446,254 @@ public class HtmlLikeDocumentWidgetTest {
     }
 
     /**
+     * 验证 HUD 风格固定面板在鼠标命中后代内容区时，仍会滚动祖先 scroll host。
+     */
+    @Test
+    public void shouldScrollHudLikePanelContentWhenWheelOnDescendant() {
+        UiDocument document = UiDocument.create();
+        ElementNode root = document.getRootElement();
+        ElementNode panel = document.div();
+        ElementNode header = document.div();
+        ElementNode contentRoot = document.div();
+        ElementNode card = null;
+
+        root.style()
+                .setWidth(UiStyleLength.px(320))
+                .setHeight(UiStyleLength.px(540));
+        panel.style()
+                .setWidth(UiStyleLength.px(248))
+                .setHeight(UiStyleLength.px(420))
+                .setPadding(UiStyleLength.px(12));
+        header.style()
+                .setHeight(UiStyleLength.px(40));
+        header.appendText("HUD Header");
+        contentRoot.style()
+                .setHeight(UiStyleLength.px(360))
+                .setOverflowX(UiOverflow.HIDDEN)
+                .setOverflowY(UiOverflow.AUTO);
+        contentRoot.append(createTextBlock(document, "页面概览：用于复现 HUD 浮窗正文区内部滚动。"));
+        contentRoot.append(createTextBlock(document, "摘要：滚轮命中后代卡片正文时，祖先 scroll host 仍应滚动。"));
+        for (int index = 1; index <= 6; index++) {
+            card = createHudLikeCard(document, index);
+            contentRoot.append(card);
+        }
+        panel.append(header).append(contentRoot);
+        root.append(panel);
+
+        HtmlLikeDocumentWidget widget = new HtmlLikeDocumentWidget(document, 320, 540,
+                new DeterministicTextMeasureService());
+        widget.applyLayoutBounds(0, 0, 320, 540);
+        widget.render(new RecordingUiRenderContext());
+
+        Assert.assertTrue(widget.getMaxScrollTop(contentRoot) > 0);
+        Assert.assertNotNull(card);
+        int scrollX = 40;
+        int scrollY = 220;
+        Assert.assertTrue(widget.findElementAt(scrollX, scrollY) != null);
+
+        boolean consumed = widget.onMouseScroll(new UiMouseEvent(UiMouseEvent.Action.SCROLL, scrollX, scrollY, -1,
+                -120, 0, 0, 1L));
+
+        Assert.assertTrue(consumed);
+        Assert.assertTrue(widget.getScrollTop(contentRoot) > 0);
+    }
+
+    /**
+     * 验证当鼠标直接命中文本行时，祖先 scroll host 仍会消费滚轮并滚动。
+     */
+    @Test
+    public void shouldScrollAncestorHostWhenPointerHitsNestedTextRun() {
+        UiDocument document = UiDocument.create();
+        ElementNode root = document.getRootElement();
+        ElementNode scrollHost = document.div();
+        ElementNode card = document.div();
+        ElementNode body = document.div();
+
+        root.style()
+                .setWidth(UiStyleLength.px(280))
+                .setHeight(UiStyleLength.px(220));
+        scrollHost.style()
+                .setWidth(UiStyleLength.px(240))
+                .setHeight(UiStyleLength.px(140))
+                .setOverflowX(UiOverflow.HIDDEN)
+                .setOverflowY(UiOverflow.AUTO);
+        card.style()
+                .setPadding(UiStyleLength.px(8))
+                .setMargin(UiStyleLength.px(6))
+                .setBorderWidth(UiStyleLength.px(1));
+        body.style()
+                .setDisplay(UiDisplay.BLOCK)
+                .setWidth(UiStyleLength.percent(1.0F));
+        body.appendText("这是用于验证祖先滚动宿主命中文本行时仍可滚动的长文本内容，必须在较窄宽度下发生多行换行，"
+                + "这样测试才能命中真实 text run，而不是只命中空白区域。"
+                + "继续补充第二段中文说明，确保滚动区域高度显著超过视口高度。"
+                + "继续补充第三段中文说明，模拟 HUD 说明文案与正文卡片。"
+                + "继续补充第四段中文说明，确保内部区域形成真实滚动。"
+                + "继续补充第五段中文说明，避免只靠边框高度通过测试。");
+        card.append(createTextBlock(document, "卡片标题：滚动祖先宿主命中测试"));
+        card.append(body);
+        scrollHost.append(card);
+        root.append(scrollHost);
+
+        HtmlLikeDocumentWidget widget = new HtmlLikeDocumentWidget(document, 280, 220,
+                new DeterministicTextMeasureService());
+        widget.applyLayoutBounds(0, 0, 280, 220);
+        widget.render(new RecordingUiRenderContext());
+
+        Assert.assertTrue(widget.getMaxScrollTop(scrollHost) > 0);
+        Assert.assertNotNull(widget.findElementAt(24, 52));
+
+        boolean consumed = widget.onMouseScroll(new UiMouseEvent(UiMouseEvent.Action.SCROLL, 24, 52, -1, -120, 0,
+                0, 1L));
+
+        Assert.assertTrue(consumed);
+        Assert.assertTrue(widget.getScrollTop(scrollHost) > 0);
+    }
+
+    /**
+     * 验证 fixed HUD 面板中的内部 scroll host 在命中后代正文时仍可滚动。
+     */
+    @Test
+    public void shouldScrollFixedHudLikePanelContentWhenWheelOnDescendant() {
+        UiDocument document = UiDocument.create();
+        ElementNode root = document.getRootElement();
+        ElementNode panel = document.div();
+        ElementNode title = document.div();
+        ElementNode diagnostics = document.div();
+        ElementNode contentRoot = document.div();
+
+        root.style()
+                .setWidth(UiStyleLength.px(320))
+                .setHeight(UiStyleLength.px(240));
+        panel.style()
+                .setPosition(UiPosition.FIXED)
+                .setLeft(UiStyleLength.px(0))
+                .setTop(UiStyleLength.px(0))
+                .setDisplay(UiDisplay.FLEX)
+                .setFlexDirection(club.heiqi.uilib.ui.style.UiFlexDirection.COLUMN)
+                .setWidth(UiStyleLength.px(248))
+                .setHeight(UiStyleLength.px(232))
+                .setPadding(UiStyleLength.px(12));
+        title.appendText("INTERACTIVE HUD");
+        diagnostics.appendText("阶段: 有范围但未命中宿主");
+        contentRoot.style()
+                .setHeight(UiStyleLength.px(118))
+                .setOverflowX(UiOverflow.HIDDEN)
+                .setOverflowY(UiOverflow.AUTO);
+        contentRoot.append(createTextBlock(document, "容器界面上方可见。点击次数 0，备注：把鼠标移到背包界面后尝试编辑我。"));
+        contentRoot.append(createTextBlock(document, "底部提示标记：保留"));
+        contentRoot.append(createTextBlock(document, "把鼠标移到背包界面后尝试编辑我 123"));
+        for (int index = 1; index <= 8; index++) {
+            contentRoot.append(createTextBlock(document,
+                    "滚轮停在这里可查看内部内容，第 " + index + " 条示例说明。继续补充中文描述，确保形成明显纵向溢出。"));
+        }
+        panel.append(title).append(diagnostics).append(contentRoot);
+        root.append(panel);
+
+        HtmlLikeDocumentWidget widget = new HtmlLikeDocumentWidget(document, 320, 240,
+                new DeterministicTextMeasureService());
+        widget.applyLayoutBounds(0, 0, 320, 240);
+        widget.render(new RecordingUiRenderContext());
+
+        Assert.assertTrue(widget.getMaxScrollTop(contentRoot) > 0);
+        Assert.assertNotNull(widget.findElementAt(20, 140));
+
+        boolean consumed = widget.onMouseScroll(new UiMouseEvent(UiMouseEvent.Action.SCROLL, 20, 140, -1, -120, 0,
+                0, 1L));
+
+        Assert.assertTrue(consumed);
+        Assert.assertTrue(widget.getScrollTop(contentRoot) > 0);
+    }
+
+    /**
+     * 验证当前 HUD demo 等价控件树在正文文本区与输入框区域都能滚动内部 scroll host。
+     */
+    @Test
+    public void shouldScrollCurrentHudDemoLikeTreeOnTextAndInputAreas() {
+        UiDocument document = UiDocument.create();
+        ElementNode root = document.getRootElement();
+        ElementNode panel = document.div();
+        ElementNode dragBar = document.div();
+        ElementNode title = document.div();
+        ElementNode diagnostics = document.div();
+        ElementNode scrollContent = document.div();
+
+        root.style()
+                .setWidth(UiStyleLength.px(2048))
+                .setHeight(UiStyleLength.px(1152));
+        panel.style()
+                .setPosition(UiPosition.FIXED)
+                .setLeft(UiStyleLength.px(1760))
+                .setTop(UiStyleLength.px(14))
+                .setDisplay(UiDisplay.FLEX)
+                .setFlexDirection(club.heiqi.uilib.ui.style.UiFlexDirection.COLUMN)
+                .setWidth(UiStyleLength.px(248))
+                .setHeight(UiStyleLength.px(232))
+                .setPadding(UiStyleLength.px(12));
+        dragBar.appendText("拖住这里移动浮窗");
+        title.appendText("INTERACTIVE HUD");
+        diagnostics.appendText("阶段: 有范围但未命中宿主\n事件: 270  delta: 2  消费: 否\n偏移: 0 / 439");
+        scrollContent.style()
+                .setHeight(UiStyleLength.px(118))
+                .setOverflowX(UiOverflow.HIDDEN)
+                .setOverflowY(UiOverflow.AUTO);
+        scrollContent.append(createTextBlock(document, "容器界面上方可见。点击次数 0，备注：把鼠标移到背包界面后尝试编辑我 123。"));
+        scrollContent.append(createTextBlock(document, "底部提示标记：保留"));
+
+        DocumentTextInputControl input = new DocumentTextInputControl(document)
+                .setPlaceholder("在容器界面中输入备注")
+                .setText("把鼠标移到背包界面后尝试编辑我");
+        input.getElement().style()
+                .setDisplay(UiDisplay.BLOCK)
+                .setMargin(UiStyleLength.px(0));
+        scrollContent.append(input.getElement());
+
+        ElementNode toggleRow = document.div();
+        toggleRow.style()
+                .setDisplay(UiDisplay.FLEX)
+                .setFlexDirection(club.heiqi.uilib.ui.style.UiFlexDirection.ROW)
+                .setAlignItems(club.heiqi.uilib.ui.style.UiAlignItems.CENTER)
+                .setJustifyContent(club.heiqi.uilib.ui.style.UiJustifyContent.SPACE_BETWEEN)
+                .setMargin(UiStyleLength.px(8));
+        toggleRow.append(createTextBlock(document, "保留底部提示标记"));
+        toggleRow.append(new DocumentToggleSwitchControl(document).setToggled(true).getElement());
+        scrollContent.append(toggleRow);
+
+        DocumentButtonControl button = new DocumentButtonControl(document, "记录一次点击");
+        button.getElement().style()
+                .setDisplay(UiDisplay.BLOCK)
+                .setMargin(UiStyleLength.px(0));
+        scrollContent.append(button.getElement());
+
+        for (int index = 1; index <= 8; index++) {
+            scrollContent.append(createTextBlock(document,
+                    "滚轮停在这里可查看内部内容，第 " + index + " 条示例说明。继续补充中文描述，确保形成明显纵向溢出。"));
+        }
+
+        panel.append(dragBar).append(title).append(diagnostics).append(scrollContent);
+        root.append(panel);
+
+        HtmlLikeDocumentWidget widget = new HtmlLikeDocumentWidget(document, 2048, 1152,
+                new DeterministicTextMeasureService());
+        widget.applyLayoutBounds(0, 0, 2048, 1152);
+        widget.render(new RecordingUiRenderContext());
+
+        Assert.assertTrue(widget.getMaxScrollTop(scrollContent) > 0);
+        Assert.assertNotNull(widget.findElementAt(1784, 172));
+        Assert.assertNotNull(widget.findElementAt(1784, 206));
+
+        boolean consumedOnText = widget.onMouseScroll(new UiMouseEvent(UiMouseEvent.Action.SCROLL, 1784, 172, -1,
+                -120, 0, 0, 1L));
+        Assert.assertTrue(consumedOnText);
+        Assert.assertTrue(widget.getScrollTop(scrollContent) > 0);
+
+        boolean consumedOnInput = widget.onMouseScroll(new UiMouseEvent(UiMouseEvent.Action.SCROLL, 1784, 206, -1,
+                -120, 0, 0, 2L));
+        Assert.assertTrue(consumedOnInput);
+        Assert.assertTrue(widget.getScrollTop(scrollContent) > 0);
+    }
+
+    /**
      * 验证根视口滚动模式会让根元素承载页面级 overflow auto。
      */
     @Test
@@ -2105,6 +2356,31 @@ public class HtmlLikeDocumentWidgetTest {
     private static UiInputFrame mouseFrame(UiMouseEvent event) {
         return new UiInputFrame(event.getMouseX(), event.getMouseY(), Collections.singletonList(event),
                 Collections.<UiKeyEvent>emptyList(), Collections.<UiTextInputEvent>emptyList());
+    }
+
+    private static ElementNode createHudLikeCard(UiDocument document, int index) {
+        ElementNode card = document.div();
+        card.style()
+                .setDisplay(UiDisplay.BLOCK)
+                .setWidth(UiStyleLength.percent(1.0F))
+                .setPadding(UiStyleLength.px(8))
+                .setMargin(UiStyleLength.px(6))
+                .setBorderWidth(UiStyleLength.px(1));
+        card.append(createTextBlock(document, "卡片 " + index + " 标题"));
+        card.append(createTextBlock(document, "卡片 " + index + " 描述：用于构造 HUD 面板内部固定高度滚动区域。"));
+        card.append(createTextBlock(document,
+                "卡片 " + index + " 正文：这是一段较长的中文说明，用于确保在较窄 HUD 面板宽度下发生多行换行，"
+                        + "并且总高度明显超过固定内容区视口。继续补充第二句说明，验证滚轮命中后代卡片正文时，祖先滚动宿主仍会移动。"));
+        return card;
+    }
+
+    private static ElementNode createTextBlock(UiDocument document, String text) {
+        ElementNode block = document.div();
+        block.style()
+                .setDisplay(UiDisplay.BLOCK)
+                .setWidth(UiStyleLength.percent(1.0F));
+        block.appendText(text);
+        return block;
     }
 
     /**

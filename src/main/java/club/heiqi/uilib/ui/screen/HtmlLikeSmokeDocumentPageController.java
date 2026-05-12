@@ -19,6 +19,7 @@ import club.heiqi.uilib.ui.dom.UiDocument;
 import club.heiqi.uilib.ui.dom.control.DocumentButtonActionEvent;
 import club.heiqi.uilib.ui.dom.control.DocumentButtonActionHandler;
 import club.heiqi.uilib.ui.dom.control.DocumentButtonControl;
+import club.heiqi.uilib.ui.dom.control.DocumentDraggableSupport;
 import club.heiqi.uilib.ui.dom.control.DocumentTextInputChangeEvent;
 import club.heiqi.uilib.ui.dom.control.DocumentTextInputChangeHandler;
 import club.heiqi.uilib.ui.dom.control.DocumentTextInputControl;
@@ -188,6 +189,7 @@ final class HtmlLikeSmokeDocumentPageController extends DocumentPageController {
         appendControlsSection(document, root);
         appendOpacityFboProbe(document, root);
         appendLayoutAnimationProbe(document, root, animationRuntimeDiagnostics);
+        appendFloatingScrollProbe(document, root);
 
         ElementNode row = document.div();
         row.style()
@@ -383,6 +385,103 @@ final class HtmlLikeSmokeDocumentPageController extends DocumentPageController {
         appendGroupOpacityProbe(document, root);
         appendStackingContextProbe(document, root);
         return document;
+    }
+
+    /**
+     * 追加固定浮窗滚动探针，用于对照 HUD 浮窗与普通 HTML-like fixed 浮窗的滚动语义。
+     */
+    private static void appendFloatingScrollProbe(UiDocument document, ElementNode root) {
+        ElementNode floatingPanel = document.div();
+        floatingPanel.style()
+                .setWidth(UiStyleLength.px(268))
+                .setPosition(UiPosition.FIXED)
+                .setTop(UiStyleLength.px(92))
+                .setRight(UiStyleLength.px(18))
+                .setZIndex(40)
+                .setDisplay(UiDisplay.FLEX)
+                .setFlexDirection(UiFlexDirection.COLUMN)
+                .setPadding(UiStyleLength.px(10))
+                .setBackgroundColor(0xEE111827)
+                .setBorderColor(0xFF67E8F9)
+                .setBorderWidth(UiStyleLength.px(1))
+                .setBorderRadius(UiStyleLength.px(14))
+                .setTextColor(0xFFE0F2FE)
+                .setOverflowX(UiOverflow.HIDDEN)
+                .setOverflowY(UiOverflow.HIDDEN);
+        root.append(floatingPanel);
+
+        ElementNode dragBar = document.div();
+        dragBar.style()
+                .setMargin(UiStyleLength.px(0))
+                .setPadding(UiStyleLength.px(4))
+                .setBackgroundColor(0x2238BDF8)
+                .setBorderRadius(UiStyleLength.px(999))
+                .setTextColor(0xFFE0F2FE);
+        dragBar.appendText("Smoke 浮窗：拖住这里移动");
+        floatingPanel.append(dragBar);
+        DocumentDraggableSupport.attach(floatingPanel, dragBar, DocumentDraggableSupport.DragAxis.BOTH);
+
+        ElementNode title = document.div();
+        title.style().setTextColor(0xFFBAE6FD);
+        title.appendText("Floating scroll probe");
+        floatingPanel.append(title);
+
+        ElementNode summary = document.div();
+        summary.style()
+                .setWidth(UiStyleLength.percent(1.0F))
+                .setMargin(UiStyleInsets.of(UiStyleLength.px(6), UiStyleLength.px(0), UiStyleLength.px(6),
+                        UiStyleLength.px(0)))
+                .setTextColor(0xFFBFDBFE);
+        summary.appendText("目标：验证同一套 HTML-like fixed 浮窗在普通 document screen 中是否能稳定形成内部滚动。");
+        floatingPanel.append(summary);
+
+        ElementNode scrollHost = document.div();
+        scrollHost.style()
+                .setHeight(UiStyleLength.px(154))
+                .setPadding(UiStyleLength.px(8))
+                .setBackgroundColor(0xAA0F172A)
+                .setBorderColor(0xFF38BDF8)
+                .setBorderWidth(UiStyleLength.px(1))
+                .setBorderRadius(UiStyleLength.px(10))
+                .setOverflowX(UiOverflow.HIDDEN)
+                .setOverflowY(UiOverflow.AUTO);
+        floatingPanel.append(scrollHost);
+
+        ElementNode heading = document.div();
+        heading.style()
+                .setWidth(UiStyleLength.percent(1.0F))
+                .setTextColor(0xFFE0F2FE);
+        heading.appendText("正文滚动区");
+        scrollHost.append(heading);
+
+        DocumentTextInputControl textInput = new DocumentTextInputControl(document)
+                .setPlaceholder("点击后输入，观察滚轮是否仍能滚动祖先")
+                .setText("把鼠标放在这里或下方卡片正文上滚动");
+        textInput.getElement().style()
+                .setDisplay(UiDisplay.BLOCK)
+                .setMargin(UiStyleInsets.of(UiStyleLength.px(6), UiStyleLength.px(0), UiStyleLength.px(6),
+                        UiStyleLength.px(0)));
+        scrollHost.append(textInput.getElement());
+
+        for (int index = 1; index <= 6; index++) {
+            ElementNode card = document.div();
+            card.style()
+                    .setWidth(UiStyleLength.percent(1.0F))
+                    .setPadding(UiStyleLength.px(8))
+                    .setMargin(UiStyleInsets.of(UiStyleLength.px(0), UiStyleLength.px(0), UiStyleLength.px(8),
+                            UiStyleLength.px(0)))
+                    .setBackgroundColor(0xCC1E293B)
+                    .setBorderColor(0xFF7DD3FC)
+                    .setBorderWidth(UiStyleLength.px(1))
+                    .setBorderRadius(UiStyleLength.px(10))
+                    .setTextColor(0xFFE2E8F0);
+            card.appendText("Card " + index + " 标题");
+            card.appendText("Card " + index + " 描述：用于复现固定浮窗中的内部 scroll host 与后代正文命中。"
+                    + " 继续补充中文说明，确保文本会换行并形成明显纵向溢出。"
+                    + " 再补充一段内容，验证滚轮命中输入框、卡片正文、卡片边框时，祖先滚动宿主都应滚动。"
+                    + " 最后继续拉长文案，避免仅靠 margin 高度形成假性滚动范围。");
+            scrollHost.append(card);
+        }
     }
 
     /**

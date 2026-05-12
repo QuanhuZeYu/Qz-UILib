@@ -21,6 +21,7 @@ import club.heiqi.uilib.ui.dom.control.DocumentToggleSwitchControl;
 import club.heiqi.uilib.ui.hud.UiHudDocumentHost;
 import club.heiqi.uilib.ui.hud.UiHudDocumentRegistration;
 import club.heiqi.uilib.ui.hud.UiHudLayerType;
+import club.heiqi.uilib.ui.input.UiInputService;
 import club.heiqi.uilib.ui.style.UiAlignItems;
 import club.heiqi.uilib.ui.style.UiDisplay;
 import club.heiqi.uilib.ui.style.UiFlexDirection;
@@ -208,29 +209,48 @@ public final class UiHudDemoController {
         title.appendText("INTERACTIVE HUD");
         panel.append(title);
 
-        ElementNode scrollProbe = document.div();
-        scrollProbe.style()
-                .setMargin(UiStyleLength.px(0))
-                .setPadding(UiStyleLength.px(4))
-                .setBackgroundColor(0x223B82F6)
-                .setBorderColor(0x664C7ED8)
+        ElementNode debugPanel = document.div();
+        debugPanel.style()
+                .setPosition(UiPosition.FIXED)
+                .setLeft(UiStyleLength.px(1460))
+                .setTop(UiStyleLength.px(14))
+                .setWidth(UiStyleLength.px(280))
+                .setPadding(UiStyleLength.px(8))
+                .setBackgroundColor(0xE6121A28)
+                .setBorderColor(0xFF4C7ED8)
                 .setBorderWidth(UiStyleLength.px(1))
-                .setBorderRadius(UiStyleLength.px(8))
+                .setBorderRadius(UiStyleLength.px(12))
                 .setTextColor(0xFFDBEAFE);
-        interactiveScrollProbeText = scrollProbe.appendText("");
-        panel.append(scrollProbe);
+        root.append(debugPanel);
+
+        ElementNode debugTitle = document.div();
+        debugTitle.style().setTextColor(0xFF9FD0FF);
+        debugTitle.appendText("HUD DEBUG");
+        debugPanel.append(debugTitle);
+
+        interactiveScrollProbeText = debugPanel.appendText("");
 
         ElementNode scrollContent = document.div();
         scrollContent.style()
-                .setDisplay(UiDisplay.FLEX)
-                .setFlexDirection(UiFlexDirection.COLUMN)
                 .setHeight(UiStyleLength.px(118))
+                .setPadding(UiStyleLength.px(8))
+                .setBackgroundColor(0xAA0F172A)
+                .setBorderColor(0xFF38BDF8)
+                .setBorderWidth(UiStyleLength.px(1))
+                .setBorderRadius(UiStyleLength.px(10))
+                .setOverflowX(UiOverflow.HIDDEN)
                 .setOverflowY(UiOverflow.AUTO);
         panel.append(scrollContent);
         interactiveScrollContent = scrollContent;
 
-        interactiveSummaryText = scrollContent.appendText("");
-        interactiveSwitchText = scrollContent.appendText("");
+        ElementNode contentBody = document.div();
+        contentBody.style()
+                .setDisplay(UiDisplay.BLOCK)
+                .setWidth(UiStyleLength.percent(1.0F));
+        scrollContent.append(contentBody);
+
+        interactiveSummaryText = appendScrollTextLine(document, contentBody, "");
+        interactiveSwitchText = appendScrollTextLine(document, contentBody, "");
 
         DocumentTextInputControl noteInput = new DocumentTextInputControl(document)
                 .setPlaceholder("在容器界面中输入备注")
@@ -245,7 +265,7 @@ public final class UiHudDemoController {
         noteInput.getElement().style()
                 .setDisplay(UiDisplay.BLOCK)
                 .setMargin(UiStyleLength.px(0));
-        scrollContent.append(noteInput.getElement());
+        contentBody.append(noteInput.getElement());
 
         ElementNode toggleRow = document.div();
         toggleRow.style()
@@ -254,8 +274,8 @@ public final class UiHudDemoController {
                 .setAlignItems(UiAlignItems.CENTER)
                 .setJustifyContent(UiJustifyContent.SPACE_BETWEEN)
                 .setMargin(UiStyleLength.px(8));
-        scrollContent.append(toggleRow);
-        toggleRow.appendText("保留底部提示标记");
+        contentBody.append(toggleRow);
+        appendTextLine(document, toggleRow, "保留底部提示标记");
 
         DocumentToggleSwitchControl toggle = new DocumentToggleSwitchControl(document)
                 .setToggled(markersEnabled)
@@ -281,10 +301,10 @@ public final class UiHudDemoController {
         button.getElement().style()
                 .setDisplay(UiDisplay.BLOCK)
                 .setMargin(UiStyleLength.px(0));
-        scrollContent.append(button.getElement());
+        contentBody.append(button.getElement());
 
         for (int index = 1; index <= 8; index++) {
-            scrollContent.appendText("滚轮停在这里可查看内部内容，第 " + index + " 条示例说明。");
+            appendTextLine(document, contentBody, "滚轮停在这里可查看内部内容，第 " + index + " 条示例说明。");
         }
     }
 
@@ -318,18 +338,74 @@ public final class UiHudDemoController {
         refreshTexts();
     }
 
+    private TextNode appendScrollTextLine(UiDocument document, ElementNode parent, String text) {
+        return appendTextLine(document, parent, text);
+    }
+
+    private TextNode appendTextLine(UiDocument document, ElementNode parent, String text) {
+        ElementNode line = document.div();
+        line.style()
+                .setDisplay(UiDisplay.BLOCK)
+                .setWidth(UiStyleLength.percent(1.0F))
+                .setMargin(UiStyleLength.px(0));
+        TextNode textNode = line.appendText(text);
+        parent.append(line);
+        return textNode;
+    }
+
     private String buildScrollProbeText() {
         HtmlLikeDocumentWidget widget = UiHudDocumentHost.getInstance().getFirstInteractiveWidgetForDiagnostics();
         if (widget == null || interactiveScrollContent == null) {
-            return "滚轮监控：交互 HUD 组件未就绪";
+            return "滚轮监控\n阶段: 组件未就绪";
         }
         HtmlLikeDocumentWidget.ScrollInputDiagnosticsSnapshot inputSnapshot =
                 widget.getScrollInputDiagnosticsSnapshot();
+        int mouseX = UiInputService.getInstance().getMouseX();
+        int mouseY = UiInputService.getInstance().getMouseY();
+        ElementNode hitElement = widget.findElementAt(mouseX, mouseY);
+        boolean hitInsideScrollContent = isSameOrDescendantOf(hitElement, interactiveScrollContent);
         int scrollTop = widget.getScrollTop(interactiveScrollContent);
         int maxScrollTop = widget.getMaxScrollTop(interactiveScrollContent);
-        return "滚轮监控：事件 " + inputSnapshot.getEventCount()
-                + " 次，最近 delta=" + inputSnapshot.getLastWheelDelta()
-                + "，最近消费=" + (inputSnapshot.isLastConsumed() ? "是" : "否")
-                + "，偏移 " + scrollTop + " / " + maxScrollTop;
+        String phase;
+        if (inputSnapshot.getEventCount() <= 0) {
+            phase = "未收到滚轮";
+        } else if (maxScrollTop <= 0) {
+            phase = "无滚动范围";
+        } else if (!inputSnapshot.isLastConsumed()) {
+            phase = "有范围但未命中宿主";
+        } else if (scrollTop <= 0) {
+            phase = "已消费但偏移未变化";
+        } else {
+            phase = "滚动生效";
+        }
+        return "滚轮监控\n阶段: " + phase
+                + "\n鼠标: " + mouseX + ", " + mouseY
+                + "  命中: " + describeElement(hitElement)
+                + "  滚动区: " + (hitInsideScrollContent ? "是" : "否")
+                + "\n事件: " + inputSnapshot.getEventCount()
+                + "  delta: " + inputSnapshot.getLastWheelDelta()
+                + "  消费: " + (inputSnapshot.isLastConsumed() ? "是" : "否")
+                + "\n偏移: " + scrollTop + " / " + maxScrollTop;
+    }
+
+    private boolean isSameOrDescendantOf(ElementNode element, ElementNode ancestor) {
+        if (element == null || ancestor == null) {
+            return false;
+        }
+        for (ElementNode current = element; current != null; current = current.getParent() instanceof ElementNode
+                ? (ElementNode) current.getParent()
+                : null) {
+            if (current == ancestor) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private String describeElement(ElementNode element) {
+        if (element == null) {
+            return "无";
+        }
+        return element.getTagName();
     }
 }
