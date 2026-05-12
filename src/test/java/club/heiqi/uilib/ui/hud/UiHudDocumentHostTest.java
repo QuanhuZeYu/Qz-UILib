@@ -211,6 +211,71 @@ public class UiHudDocumentHostTest {
         }
     }
 
+    /**
+     * 验证命中交互元素时，HUD 会在原生页面之前拦截鼠标按下。
+     */
+    @Test
+    public void shouldCaptureImmediateMouseInputWhenInteractiveHudElementIsHit() {
+        UiHudDocumentHost host = UiHudDocumentHost.getInstance();
+        UiHudDocumentRegistration registration = host.register(UiHudLayerType.INTERACTIVE,
+                new UiHudDocumentHost.UiHudDocumentContentBuilder() {
+                    @Override
+                    public void build(UiDocument document) {
+                        ElementNode root = document.getRootElement();
+                        root.style()
+                                .setWidth(UiStyleLength.px(160))
+                                .setHeight(UiStyleLength.px(80));
+                        DocumentButtonControl buttonControl = new DocumentButtonControl(document, "Hit");
+                        buttonControl.getElement().style()
+                                .setWidth(UiStyleLength.px(120))
+                                .setHeight(UiStyleLength.px(24));
+                        root.append(buttonControl.getElement());
+                    }
+                }, new DeterministicTextMeasureService(), UiRuntimeAdapters.empty());
+        try {
+            host.handleInputFrameForTest(mouseFrame(UiMouseEvent.Action.MOVE, 8, 8, 1L), UiHudScreenCategory.CONTAINER,
+                    160, 80);
+
+            boolean captured = host.handleImmediateMouseInputForTest(
+                    mouseFrame(UiMouseEvent.Action.BUTTON_DOWN, 8, 8, 2L),
+                    UiHudScreenCategory.CONTAINER);
+
+            Assert.assertTrue(captured);
+        } finally {
+            registration.unregister();
+        }
+    }
+
+    /**
+     * 验证只命中 HUD 根空白区域时，不会错误拦截原生鼠标输入。
+     */
+    @Test
+    public void shouldNotCaptureImmediateMouseInputOnNonInteractiveHudWhitespace() {
+        UiHudDocumentHost host = UiHudDocumentHost.getInstance();
+        UiHudDocumentRegistration registration = host.register(UiHudLayerType.INTERACTIVE,
+                new UiHudDocumentHost.UiHudDocumentContentBuilder() {
+                    @Override
+                    public void build(UiDocument document) {
+                        ElementNode root = document.getRootElement();
+                        root.style()
+                                .setWidth(UiStyleLength.px(160))
+                                .setHeight(UiStyleLength.px(80));
+                    }
+                }, new DeterministicTextMeasureService(), UiRuntimeAdapters.empty());
+        try {
+            host.handleInputFrameForTest(mouseFrame(UiMouseEvent.Action.MOVE, 8, 8, 1L), UiHudScreenCategory.CONTAINER,
+                    160, 80);
+
+            boolean captured = host.handleImmediateMouseInputForTest(
+                    mouseFrame(UiMouseEvent.Action.BUTTON_DOWN, 8, 8, 2L),
+                    UiHudScreenCategory.CONTAINER);
+
+            Assert.assertFalse(captured);
+        } finally {
+            registration.unregister();
+        }
+    }
+
     private static UiDocument captureRegisteredDocument(UiHudLayerType layerType) {
         final UiDocument[] holder = new UiDocument[1];
         UiHudDocumentRegistration registration = UiHudDocumentHost.getInstance().register(layerType,

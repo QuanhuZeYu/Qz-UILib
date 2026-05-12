@@ -156,6 +156,43 @@ public class UiInputService implements InputEvents.KeyboardListener {
     }
 
     /**
+     * 基于当前原生鼠标事件构造一份即时输入快照，供宿主在 `GuiScreen.handleMouseInput()` 内抢先分发。
+     *
+     * @param guiWidth 当前 GUI 宽度
+     * @param guiHeight 当前 GUI 高度
+     * @return 即时输入快照；当前事件无效时返回 null
+     */
+    public UiInputFrame createImmediateMouseFrame(int guiWidth, int guiHeight) {
+        if (!Mouse.isCreated() || guiWidth <= 0 || guiHeight <= 0) {
+            return null;
+        }
+        Minecraft minecraft = Minecraft.getMinecraft();
+        if (minecraft == null || minecraft.displayWidth <= 0 || minecraft.displayHeight <= 0) {
+            return null;
+        }
+        int mouseX = Mouse.getEventX() * guiWidth / minecraft.displayWidth;
+        int mouseY = guiHeight - Mouse.getEventY() * guiHeight / minecraft.displayHeight - 1;
+        int button = Mouse.getEventButton();
+        long now = Sys.getNanoTime();
+        java.util.List<UiMouseEvent> mouseEventList = new java.util.ArrayList<UiMouseEvent>(1);
+        if (Mouse.getEventButtonState()) {
+            mouseEventList.add(new UiMouseEvent(UiMouseEvent.Action.BUTTON_DOWN, mouseX, mouseY, button, 0, 0, 0, now));
+        } else if (button != -1) {
+            mouseEventList.add(new UiMouseEvent(UiMouseEvent.Action.BUTTON_UP, mouseX, mouseY, button, 0, 0, 0, now));
+        } else {
+            int wheelDelta = Mouse.getEventDWheel();
+            if (wheelDelta != 0) {
+                mouseEventList.add(new UiMouseEvent(UiMouseEvent.Action.SCROLL, mouseX, mouseY, -1, wheelDelta, 0, 0, now));
+            } else {
+                mouseEventList.add(new UiMouseEvent(UiMouseEvent.Action.MOVE, mouseX, mouseY, -1, 0,
+                        mouseX - this.mouseX, mouseY - this.mouseY, now));
+            }
+        }
+        return new UiInputFrame(mouseX, mouseY, mouseEventList, java.util.Collections.<UiKeyEvent>emptyList(),
+                java.util.Collections.<UiTextInputEvent>emptyList());
+    }
+
+    /**
      * 标记下一次从全局输入监听收集到的键盘事件已由宿主即时分发，避免 HUD 同帧收到重复键盘输入。
      *
      * @param text 当前原生事件对应的文本；无文本时传 null

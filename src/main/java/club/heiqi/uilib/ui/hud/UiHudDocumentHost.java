@@ -48,6 +48,7 @@ public final class UiHudDocumentHost {
     private final UiRenderContext.PaintContextCompositor paintContextCompositor = new UiRenderContext.PaintContextCompositor();
     private final UiMainLayerSnapshotService mainLayerSnapshotService = new UiMainLayerSnapshotService();
     private UiRenderTarget deferredPostMainRenderTarget;
+    private boolean hudTextInputRequested;
 
     private UiHudDocumentHost() {}
 
@@ -161,6 +162,45 @@ public final class UiHudDocumentHost {
         return UiKeyboardCaptureState.getInstance().isUiLibKeyboardCaptured();
     }
 
+    /**
+     * 在宿主原生 `handleMouseInput()` 调用栈内即时路由当前鼠标事件。
+     *
+     * @param currentScreen 当前宿主界面
+     * @param frame 当前鼠标事件对应的即时输入快照
+     * @return 是否应阻断宿主继续处理该鼠标事件
+     */
+    public synchronized boolean handleImmediateMouseInput(GuiScreen currentScreen, UiInputFrame frame) {
+        if (frame == null || frame.getMouseEvents().isEmpty() || entries.isEmpty()) {
+            return false;
+        }
+        updateLatestPointer(frame);
+        UiHudScreenCategory screenCategory = classifyScreen(currentScreen);
+        if (!isInteractiveInputEnabled(currentScreen)) {
+            clearInteractiveStates();
+            return false;
+        }
+        boolean shouldCapture = shouldCaptureImmediateMouseInput(screenCategory, frame.getMouseX(), frame.getMouseY());
+        if (!shouldCapture) {
+            return false;
+        }
+        routeInteractiveEntries(frame, screenCategory, new ArrayList<HudEntry>(entries));
+        updateHudKeyboardCaptureState();
+        return true;
+    }
+
+    synchronized boolean handleImmediateMouseInputForTest(UiInputFrame frame, UiHudScreenCategory screenCategory) {
+        if (frame == null || frame.getMouseEvents().isEmpty() || entries.isEmpty()) {
+            return false;
+        }
+        updateLatestPointer(frame);
+        if (!shouldCaptureImmediateMouseInput(screenCategory, frame.getMouseX(), frame.getMouseY())) {
+            return false;
+        }
+        routeInteractiveEntries(frame, screenCategory, new ArrayList<HudEntry>(entries));
+        updateHudKeyboardCaptureState();
+        return true;
+    }
+
     synchronized boolean handleImmediateKeyboardInputForTest(UiInputFrame frame, UiHudScreenCategory screenCategory) {
         if (frame == null || entries.isEmpty()) {
             return false;
@@ -221,6 +261,19 @@ public final class UiHudDocumentHost {
                 performanceMonitor.finishInputRouting();
             }
         }
+    }
+
+    private boolean shouldCaptureImmediateMouseInput(UiHudScreenCategory screenCategory, int mouseX, int mouseY) {
+        for (HudEntry entry : entries) {
+            if (entry.layerType != UiHudLayerType.INTERACTIVE || !entry.isVisibleIn(screenCategory)) {
+                continue;
+            }
+            ElementNode hitElement = entry.widget.findElementAt(mouseX, mouseY);
+            if (entry.widget.isInteractiveHit(hitElement)) {
+                return true;
+            }
+        }
+        return false;
     }
 
     /**
@@ -432,6 +485,7 @@ public final class UiHudDocumentHost {
             }
         }
         UiKeyboardCaptureState.getInstance().setHudKeyboardCaptured(false);
+        syncHudTextInputRequest(false);
     }
 
     private synchronized void updateHudKeyboardCaptureState() {
@@ -443,6 +497,22 @@ public final class UiHudDocumentHost {
             }
         }
         UiKeyboardCaptureState.getInstance().setHudKeyboardCaptured(captured);
+        syncHudTextInputRequest(captured);
+    }
+
+    private void syncHudTextInputRequest(boolean shouldRequest) {
+        if (hudTextInputRequested == shouldRequest) {
+            return;
+        }
+        hudTextInputRequested = shouldRequest;
+        UiKeyboardCaptureState.getInstance().setHudTextInputRequested(shouldRequest);
+        if (shouldRequest) {
+            UiInputService.getInstance().beginTextInput();
+            return;
+        }
+        if (!UiKeyboardCaptureState.getInstance().shouldKeepTextInputActive()) {
+            UiInputService.getInstance().endTextInput();
+        }
     }
 
     private static void applyDefaultRootContract(UiDocument document, UiHudLayerType layerType) {

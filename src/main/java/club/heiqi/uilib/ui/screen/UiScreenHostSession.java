@@ -180,7 +180,10 @@ final class UiScreenHostSession {
         }
 
         sessionOpened = false;
-        UiInputService.getInstance().endTextInput();
+        UiKeyboardCaptureState.getInstance().setScreenTextInputRequested(false);
+        if (!UiKeyboardCaptureState.getInstance().shouldKeepTextInputActive()) {
+            UiInputService.getInstance().endTextInput();
+        }
         inputRouter.reset();
         UiKeyboardCaptureState.getInstance().setScreenKeyboardCaptured(false);
         closeRenderTarget();
@@ -191,6 +194,7 @@ final class UiScreenHostSession {
      * 执行首次打开所需的一次性副作用。
      */
     private void beginSessionOpen() {
+        UiKeyboardCaptureState.getInstance().setScreenTextInputRequested(true);
         UiInputService.getInstance().beginTextInput();
         UiLayoutInvalidationRegistry.registerRoot(rootWidget);
     }
@@ -215,7 +219,10 @@ final class UiScreenHostSession {
     private void rollbackOpenFailure() {
         sessionOpened = false;
         uiBuilt = false;
-        UiInputService.getInstance().endTextInput();
+        UiKeyboardCaptureState.getInstance().setScreenTextInputRequested(false);
+        if (!UiKeyboardCaptureState.getInstance().shouldKeepTextInputActive()) {
+            UiInputService.getInstance().endTextInput();
+        }
         inputRouter.reset();
         UiKeyboardCaptureState.getInstance().setScreenKeyboardCaptured(false);
         closeRenderTarget();

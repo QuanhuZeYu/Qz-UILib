@@ -277,6 +277,29 @@ public final class HtmlLikeDocumentWidget extends Widget {
         return getActiveFocusedElement();
     }
 
+    /**
+     * 判断指定元素是否会在当前文档内形成实际交互命中。
+     *
+     * @param target 待判断元素
+     * @return 是否属于可交互命中目标
+     */
+    public boolean isInteractiveHit(ElementNode target) {
+        if (target == null || !isElementAttachedToDocument(target)) {
+            return false;
+        }
+        for (DocumentNode current = target; current instanceof ElementNode; current = current.getParent()) {
+            ElementNode currentElement = (ElementNode) current;
+            if (currentElement.isFocusable()
+                    || currentElement.getClickHandler() != null
+                    || currentElement.getDragHandler() != null
+                    || currentElement.getKeyHandler() != null
+                    || currentElement.getTextInputHandler() != null) {
+                return true;
+            }
+        }
+        return false;
+    }
+
     @Override
     public int getPreferredWidth() {
         return preferredWidth;
