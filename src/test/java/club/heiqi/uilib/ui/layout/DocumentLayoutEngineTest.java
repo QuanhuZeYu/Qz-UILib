@@ -9,6 +9,8 @@ import org.junit.Test;
 
 import club.heiqi.uilib.ui.dom.ElementNode;
 import club.heiqi.uilib.ui.dom.UiDocument;
+import club.heiqi.uilib.ui.dom.control.DocumentButtonControl;
+import club.heiqi.uilib.ui.dom.control.DocumentTextInputControl;
 import club.heiqi.uilib.ui.style.UiAlignItems;
 import club.heiqi.uilib.ui.style.UiDisplay;
 import club.heiqi.uilib.ui.style.UiFlexDirection;
@@ -122,6 +124,32 @@ public class DocumentLayoutEngineTest {
         Assert.assertEquals(248, panelBox.getContentWidth());
         Assert.assertEquals(248, childBox.getWidth());
         Assert.assertTrue(childBox.getRight() <= panelBox.getContentLeft() + panelBox.getContentWidth());
+    }
+
+    /**
+     * 验证固定宽父容器中的 100% 宽 block 子项会把自身 padding/border 收进父内容盒。
+     */
+    @Test
+    public void shouldKeepPercentWidthBlockChildInsideParentContentBox() {
+        UiDocument document = UiDocument.create();
+        ElementNode root = document.getRootElement();
+        ElementNode child = document.div();
+
+        root.style().setWidth(UiStyleLength.px(200));
+        child.style()
+                .setDisplay(UiDisplay.BLOCK)
+                .setWidth(UiStyleLength.percent(1.0F))
+                .setPadding(UiStyleLength.px(8))
+                .setBorderWidth(UiStyleLength.px(1));
+        root.append(child);
+
+        DocumentLayoutBox rootBox = DocumentLayoutEngine.layout(root, 240, 0);
+        DocumentLayoutBox childBox = rootBox.getChildren().get(0);
+
+        Assert.assertEquals(200, rootBox.getContentWidth());
+        Assert.assertEquals(182, childBox.getContentWidth());
+        Assert.assertEquals(200, childBox.getWidth());
+        Assert.assertTrue(childBox.getRight() <= rootBox.getContentLeft() + rootBox.getContentWidth());
     }
 
     /**
@@ -1100,6 +1128,200 @@ public class DocumentLayoutEngineTest {
     }
 
     /**
+     * 验证 flex column 中文本块在换行后会保留真实高度，不会把后续兄弟项压叠到前一项文本上。
+     */
+    @Test
+    public void shouldKeepWrappedTextBlocksSeparatedInFlexColumn() {
+        UiDocument document = UiDocument.create();
+        ElementNode root = document.getRootElement();
+        ElementNode card = document.div();
+
+        root.style().setWidth(UiStyleLength.px(258));
+        card.style()
+                .setDisplay(UiDisplay.FLEX)
+                .setFlexDirection(UiFlexDirection.COLUMN)
+                .setAlignItems(UiAlignItems.START)
+                .setWidth(UiStyleLength.percent(1.0F))
+                .setPadding(UiStyleLength.px(8))
+                .setBorderWidth(UiStyleLength.px(1))
+                .setRowGap(UiStyleLength.px(3));
+        card.append(createAutoWidthWrappedTextBlock(document, "会话概览"));
+        card.append(createAutoWidthWrappedTextBlock(document,
+                "容器界面上方可见。点击次数 0，备注：把鼠标移到背包界面后尝试编辑我。"));
+        card.append(createAutoWidthWrappedTextBlock(document,
+                "滚轮停在这里可查看内部内容，继续补充中文描述，确保在接近 HUD 浮窗宽度的环境下发生明显换行。"));
+        root.append(card);
+
+        DocumentLayoutBox cardBox = DocumentLayoutEngine.layout(root, 258, 0,
+                new DeterministicTextMeasureService()).getChildren().get(0);
+        DocumentLayoutBox titleBox = cardBox.getChildren().get(0);
+        DocumentLayoutBox summaryBox = cardBox.getChildren().get(1);
+        DocumentLayoutBox bodyBox = cardBox.getChildren().get(2);
+
+        Assert.assertTrue(summaryBox.getTop() >= titleBox.getBottom());
+        Assert.assertTrue(bodyBox.getTop() >= summaryBox.getBottom());
+        Assert.assertTrue(summaryBox.getContentHeight() > 18);
+        Assert.assertTrue(bodyBox.getContentHeight() > 18);
+    }
+
+    /**
+     * 验证生产 HUD 浮窗等价结构不会横向撑出面板，且主要文本卡片按行序稳定排布。
+     */
+    @Test
+    public void shouldLayoutProductionHudLikePanelWithoutOverflowOrOverlap() {
+        UiDocument document = UiDocument.create();
+        ElementNode root = document.getRootElement();
+        ElementNode panel = document.div();
+        ElementNode dragBar = document.div();
+        ElementNode heroCard = document.div();
+        ElementNode controlCard = document.div();
+        ElementNode debugToggleCard = document.div();
+        ElementNode scrollContent = document.div();
+        ElementNode contentBody = document.div();
+        ElementNode overviewCard = document.div();
+        ElementNode noteCard = document.div();
+        ElementNode tipsCard = document.div();
+
+        root.style().setWidth(UiStyleLength.px(2048));
+        panel.style()
+                .setDisplay(UiDisplay.FLEX)
+                .setFlexDirection(UiFlexDirection.COLUMN)
+                .setAlignItems(UiAlignItems.START)
+                .setWidth(UiStyleLength.px(360))
+                .setHeight(UiStyleLength.px(368))
+                .setPadding(UiStyleLength.px(12))
+                .setBorderWidth(UiStyleLength.px(1))
+                .setRowGap(UiStyleLength.px(8));
+        dragBar.style().setWidth(UiStyleLength.auto()).setPadding(UiStyleLength.px(4));
+        dragBar.appendText("HUD 工具浮窗 · 拖住这里移动");
+
+        heroCard.style()
+                .setDisplay(UiDisplay.FLEX)
+                .setFlexDirection(UiFlexDirection.COLUMN)
+                .setAlignItems(UiAlignItems.START)
+                .setWidth(UiStyleLength.percent(1.0F))
+                .setPadding(UiStyleLength.px(8))
+                .setBorderWidth(UiStyleLength.px(1))
+                .setRowGap(UiStyleLength.px(4));
+        heroCard.append(createAutoWidthWrappedTextBlock(document, "INTERACTIVE HUD"));
+        heroCard.append(createAutoWidthWrappedTextBlock(document, "容器界面可交互"));
+        heroCard.append(createAutoWidthWrappedTextBlock(document, "主浮窗调试台"));
+        heroCard.append(createAutoWidthWrappedTextBlock(document,
+                "把工具浮窗停在背包右上区域，用于核对 HUD 层可见性、输入接管与滚轮状态。"));
+
+        controlCard.style()
+                .setDisplay(UiDisplay.FLEX)
+                .setFlexDirection(UiFlexDirection.COLUMN)
+                .setAlignItems(UiAlignItems.START)
+                .setWidth(UiStyleLength.percent(1.0F))
+                .setPadding(UiStyleLength.px(8))
+                .setBorderWidth(UiStyleLength.px(1))
+                .setRowGap(UiStyleLength.px(6));
+        controlCard.append(createAutoWidthWrappedTextBlock(document, "调试开关"));
+        debugToggleCard.style()
+                .setDisplay(UiDisplay.FLEX)
+                .setFlexDirection(UiFlexDirection.COLUMN)
+                .setAlignItems(UiAlignItems.START)
+                .setWidth(UiStyleLength.percent(1.0F))
+                .setPadding(UiStyleLength.px(8))
+                .setBorderWidth(UiStyleLength.px(1))
+                .setRowGap(UiStyleLength.px(6));
+        debugToggleCard.append(createAutoWidthWrappedTextBlock(document, "显示 HUD 调试信息"));
+        ElementNode toggleHost = document.div();
+        toggleHost.style().setDisplay(UiDisplay.BLOCK).setWidth(UiStyleLength.auto());
+        toggleHost.append(new club.heiqi.uilib.ui.dom.control.DocumentToggleSwitchControl(document)
+                .setToggled(true)
+                .getElement());
+        debugToggleCard.append(toggleHost);
+        controlCard.append(debugToggleCard);
+        controlCard.append(createAutoWidthWrappedTextBlock(document, "底部提示标记：保留"));
+
+        scrollContent.style()
+                .setFlexGrow(1.0F)
+                .setWidth(UiStyleLength.percent(1.0F))
+                .setPadding(UiStyleLength.px(6))
+                .setBorderWidth(UiStyleLength.px(1));
+        contentBody.style()
+                .setDisplay(UiDisplay.FLEX)
+                .setFlexDirection(UiFlexDirection.COLUMN)
+                .setAlignItems(UiAlignItems.STRETCH)
+                .setWidth(UiStyleLength.percent(1.0F))
+                .setRowGap(UiStyleLength.px(6));
+        scrollContent.append(contentBody);
+
+        overviewCard.style()
+                .setDisplay(UiDisplay.FLEX)
+                .setFlexDirection(UiFlexDirection.COLUMN)
+                .setAlignItems(UiAlignItems.START)
+                .setWidth(UiStyleLength.percent(1.0F))
+                .setPadding(UiStyleLength.px(6))
+                .setBorderWidth(UiStyleLength.px(1))
+                .setRowGap(UiStyleLength.px(3));
+        overviewCard.append(createAutoWidthWrappedTextBlock(document, "会话概览"));
+        overviewCard.append(createAutoWidthWrappedTextBlock(document,
+                "容器界面上方可见。点击次数 0，备注：把鼠标移到背包界面后尝试编辑我。"));
+        contentBody.append(overviewCard);
+
+        noteCard.style()
+                .setDisplay(UiDisplay.FLEX)
+                .setFlexDirection(UiFlexDirection.COLUMN)
+                .setAlignItems(UiAlignItems.STRETCH)
+                .setWidth(UiStyleLength.percent(1.0F))
+                .setPadding(UiStyleLength.px(6))
+                .setBorderWidth(UiStyleLength.px(1))
+                .setRowGap(UiStyleLength.px(4));
+        noteCard.append(createAutoWidthWrappedTextBlock(document, "容器备注"));
+        DocumentTextInputControl input = new DocumentTextInputControl(document)
+                .setPlaceholder("在容器界面中输入备注")
+                .setText("把鼠标移到背包界面后尝试编辑我");
+        input.getElement().style().setDisplay(UiDisplay.BLOCK).setWidth(UiStyleLength.percent(1.0F));
+        noteCard.append(input.getElement());
+        DocumentButtonControl button = new DocumentButtonControl(document, "记录一次点击");
+        button.getElement().style().setDisplay(UiDisplay.BLOCK).setWidth(UiStyleLength.percent(1.0F));
+        noteCard.append(button.getElement());
+        contentBody.append(noteCard);
+
+        tipsCard.style()
+                .setDisplay(UiDisplay.FLEX)
+                .setFlexDirection(UiFlexDirection.COLUMN)
+                .setAlignItems(UiAlignItems.START)
+                .setWidth(UiStyleLength.percent(1.0F))
+                .setPadding(UiStyleLength.px(6))
+                .setBorderWidth(UiStyleLength.px(1))
+                .setRowGap(UiStyleLength.px(3));
+        tipsCard.append(createAutoWidthWrappedTextBlock(document, "HUD DEBUG"));
+        tipsCard.append(createAutoWidthWrappedTextBlock(document, "滚轮监控：有范围但未命中宿主。偏移 0 / 439。"));
+        contentBody.append(tipsCard);
+
+        panel.append(dragBar).append(heroCard).append(controlCard).append(scrollContent);
+        root.append(panel);
+
+        DocumentLayoutBox panelBox = DocumentLayoutEngine.layout(root, 2048, 1152,
+                new DeterministicTextMeasureService()).getChildren().get(0);
+        DocumentLayoutBox heroCardBox = panelBox.getChildren().get(1);
+        DocumentLayoutBox controlCardBox = panelBox.getChildren().get(2);
+        DocumentLayoutBox scrollContentBox = panelBox.getChildren().get(3);
+        DocumentLayoutBox overviewCardBox = scrollContentBox.getChildren().get(0).getChildren().get(0);
+        DocumentLayoutBox noteCardBox = scrollContentBox.getChildren().get(0).getChildren().get(1);
+        DocumentLayoutBox noteInputBox = noteCardBox.getChildren().get(1);
+        DocumentLayoutBox noteButtonBox = noteCardBox.getChildren().get(2);
+
+        int panelContentRight = panelBox.getContentLeft() + panelBox.getContentWidth();
+        Assert.assertTrue(heroCardBox.getRight() <= panelContentRight);
+        Assert.assertTrue(controlCardBox.getRight() <= panelContentRight);
+        Assert.assertTrue(scrollContentBox.getRight() <= panelContentRight);
+        Assert.assertTrue(heroCardBox.getChildren().get(1).getTop() >= heroCardBox.getChildren().get(0).getBottom());
+        Assert.assertTrue(heroCardBox.getChildren().get(2).getTop() >= heroCardBox.getChildren().get(1).getBottom());
+        Assert.assertTrue(heroCardBox.getChildren().get(3).getTop() >= heroCardBox.getChildren().get(2).getBottom());
+        Assert.assertTrue(controlCardBox.getChildren().get(1).getTop() >= controlCardBox.getChildren().get(0).getBottom());
+        Assert.assertTrue(noteCardBox.getChildren().get(1).getTop() >= noteCardBox.getChildren().get(0).getBottom());
+        Assert.assertTrue(noteCardBox.getChildren().get(2).getTop() >= noteCardBox.getChildren().get(1).getBottom());
+        Assert.assertTrue(overviewCardBox.getRight() <= scrollContentBox.getContentLeft() + scrollContentBox.getContentWidth());
+        Assert.assertTrue(noteInputBox.getRight() <= noteCardBox.getContentLeft() + noteCardBox.getContentWidth());
+        Assert.assertTrue(noteButtonBox.getRight() <= noteCardBox.getContentLeft() + noteCardBox.getContentWidth());
+    }
+
+    /**
      * 验证 flex row 会按 shrink 压缩超出的主轴空间。
      */
     @Test
@@ -1427,6 +1649,15 @@ public class DocumentLayoutEngineTest {
         block.style()
                 .setDisplay(UiDisplay.BLOCK)
                 .setWidth(UiStyleLength.percent(1.0F));
+        block.appendText(text);
+        return block;
+    }
+
+    private static ElementNode createAutoWidthWrappedTextBlock(UiDocument document, String text) {
+        ElementNode block = document.div();
+        block.style()
+                .setDisplay(UiDisplay.BLOCK)
+                .setWidth(UiStyleLength.auto());
         block.appendText(text);
         return block;
     }

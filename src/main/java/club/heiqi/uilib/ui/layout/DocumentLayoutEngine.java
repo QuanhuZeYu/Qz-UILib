@@ -944,7 +944,10 @@ public final class DocumentLayoutEngine {
             item.contentMainSize = resolveContentMainSize(item, contentWidth, false, textMeasureService,
                     layoutValueResolver);
             if (isAuto(item.style.getHeight())) {
-                item.contentMainSize = item.box.getContentHeight();
+                item.naturalContentMainSize = item.box.getContentHeight();
+                item.contentMainSize = item.naturalContentMainSize;
+            } else {
+                item.naturalContentMainSize = item.contentMainSize;
             }
             items.add(item);
         }
@@ -960,18 +963,35 @@ public final class DocumentLayoutEngine {
         int dynamicGap = resolveDynamicGap(parentStyle.getJustifyContent(), gap, remaining, items.size());
         int cursor = resolveLeadingOffset(parentStyle.getJustifyContent(), remaining);
         List<DocumentLayoutBox> childBoxes = new ArrayList<DocumentLayoutBox>();
+        int measuredContentBottom = contentTop;
         for (FlexItem item : items) {
             int crossOffset = resolveCrossOffset(parentStyle.getAlignItems(), contentWidth, item.getOuterCrossSize(false));
             int borderLeft = contentLeft + crossOffset + item.margin.getLeft();
             int borderTop = contentTop + cursor + item.margin.getTop();
+            int forcedMainSize = shouldKeepAutoHeightInFinalColumnLayout(item, specifiedContentHeight)
+                    ? AUTO_SIZE
+                    : item.contentMainSize;
             DocumentLayoutBox childBox = layoutElement(item.element, borderLeft - item.margin.getLeft(),
-                    borderTop - item.margin.getTop(), contentWidth, item.forcedCrossSize, item.contentMainSize,
+                    borderTop - item.margin.getTop(), contentWidth, item.forcedCrossSize, forcedMainSize,
                     absoluteContainingBlock, fixedContainingBlock, textMeasureService, layoutValueResolver);
             childBoxes.add(childBox);
+            measuredContentBottom = Math.max(measuredContentBottom, childBox.getBottom() + item.margin.getBottom());
             cursor += item.margin.getTop() + childBox.getHeight() + item.margin.getBottom() + dynamicGap;
         }
         return new LayoutChildrenResult(childBoxes, new ArrayList<DocumentLayoutTextRun>(),
-                new ArrayList<DocumentLayoutInlineFragment>(), contentHeight);
+                new ArrayList<DocumentLayoutInlineFragment>(), specifiedContentHeight >= 0
+                        ? contentHeight
+                        : Math.max(0, measuredContentBottom - contentTop));
+    }
+
+    private static boolean shouldKeepAutoHeightInFinalColumnLayout(FlexItem item, int specifiedContentHeight) {
+        if (!isAuto(item.style.getHeight())) {
+            return false;
+        }
+        if (specifiedContentHeight < 0) {
+            return true;
+        }
+        return item.contentMainSize == item.naturalContentMainSize;
     }
 
     private static void distributeMainSpace(List<FlexItem> items, int availableMainSize, int gap, boolean row) {
@@ -1064,7 +1084,12 @@ public final class DocumentLayoutEngine {
         }
         int baseSize = Math.max(0, length.resolve(containingWidth, 0));
         DocumentAnimationProperty property = row ? DocumentAnimationProperty.WIDTH : DocumentAnimationProperty.HEIGHT;
-        return Math.max(0, layoutValueResolver.resolve(item.element, property, baseSize));
+        int resolvedSize = Math.max(0, layoutValueResolver.resolve(item.element, property, baseSize));
+        if (row && length.getType() == UiStyleLength.Type.PERCENT) {
+            return Math.min(resolvedSize, resolveAvailableContentWidth(item.element, item.style, containingWidth,
+                    layoutValueResolver));
+        }
+        return resolvedSize;
     }
 
     /**
@@ -1166,6 +1191,10 @@ public final class DocumentLayoutEngine {
             int baseWidth = Math.max(0, style.getWidth().resolve(containingWidth, 0));
             contentWidth = Math.max(0, layoutValueResolver.resolve(element, DocumentAnimationProperty.WIDTH,
                     baseWidth));
+            if (style.getWidth().getType() == UiStyleLength.Type.PERCENT) {
+                contentWidth = Math.min(contentWidth, resolveAvailableContentWidth(element, style, containingWidth,
+                        layoutValueResolver));
+            }
         }
         return margin.getHorizontal() + border.getHorizontal() + padding.getHorizontal() + contentWidth;
     }
@@ -1175,8 +1204,14 @@ public final class DocumentLayoutEngine {
         if (forcedContentWidth >= 0) {
             return forcedContentWidth;
         }
-        int baseWidth = Math.max(0, computedStyle.getWidth().resolve(containingWidth, autoContentWidth));
-        return Math.max(0, layoutValueResolver.resolve(element, DocumentAnimationProperty.WIDTH, baseWidth));
+        UiStyleLength width = computedStyle.getWidth();
+        int baseWidth = Math.max(0, width.resolve(containingWidth, autoContentWidth));
+        int resolvedWidth = Math.max(0, layoutValueResolver.resolve(element, DocumentAnimationProperty.WIDTH,
+                baseWidth));
+        if (width.getType() == UiStyleLength.Type.PERCENT) {
+            return Math.min(resolvedWidth, autoContentWidth);
+        }
+        return resolvedWidth;
     }
 
     private static int resolveContentHeight(ElementNode element, ComputedStyle computedStyle, int forcedContentHeight,
@@ -1192,8 +1227,13 @@ public final class DocumentLayoutEngine {
             TextMeasureService textMeasureService, LayoutRuntimeValueResolver layoutValueResolver) {
         if (!isAuto(item.style.getWidth())) {
             int baseWidth = Math.max(0, item.style.getWidth().resolve(contentWidth, 0));
-            return Math.max(0, layoutValueResolver.resolve(item.element, DocumentAnimationProperty.WIDTH,
-                    baseWidth));
+            int resolvedWidth = Math.max(0, layoutValueResolver.resolve(item.element,
+                    DocumentAnimationProperty.WIDTH, baseWidth));
+            if (item.style.getWidth().getType() == UiStyleLength.Type.PERCENT) {
+                return Math.min(resolvedWidth, resolveAvailableContentWidth(item.element, item.style, contentWidth,
+                        layoutValueResolver));
+            }
+            return resolvedWidth;
         }
         if (alignItems == UiAlignItems.STRETCH) {
             return Math.max(0, contentWidth - item.margin.getHorizontal() - item.border.getHorizontal()
@@ -1201,6 +1241,14 @@ public final class DocumentLayoutEngine {
         }
         return measureAutoFlexAutoWidth(item.element, item.style, contentWidth, textMeasureService,
                 layoutValueResolver);
+    }
+
+    private static int resolveAvailableContentWidth(ElementNode element, ComputedStyle style, int containingWidth,
+            LayoutRuntimeValueResolver layoutValueResolver) {
+        return Math.max(0, containingWidth
+                - resolveMarginInsets(element, style, containingWidth, layoutValueResolver).getHorizontal()
+                - resolveUniformEdge(style.getBorderWidth(), containingWidth).getHorizontal()
+                - resolvePaddingInsets(element, style, containingWidth, layoutValueResolver).getHorizontal());
     }
 
     private static int resolveSpecifiedHeight(ElementNode element, ComputedStyle computedStyle, int forcedContentHeight,
@@ -1866,6 +1914,7 @@ public final class DocumentLayoutEngine {
         private final DocumentLayoutEdges border;
         private final DocumentLayoutEdges padding;
         private int contentMainSize;
+        private int naturalContentMainSize = AUTO_SIZE;
         private int forcedCrossSize = AUTO_SIZE;
         private DocumentLayoutBox box;
 

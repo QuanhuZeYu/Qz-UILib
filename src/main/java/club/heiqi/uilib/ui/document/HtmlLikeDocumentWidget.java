@@ -216,6 +216,15 @@ public final class HtmlLikeDocumentWidget extends Widget {
     }
 
     /**
+     * 返回当前交互布局盒，仅供测试与诊断读取。
+     *
+     * @return 当前布局盒
+     */
+    public DocumentLayoutBox resolveLayoutBoxForTest() {
+        return resolveInteractiveLayoutBox();
+    }
+
+    /**
      * 返回 paint command 缓存重建代数，供诊断和测试确认动画缓存边界。
      *
      * @return paint command 缓存重建代数

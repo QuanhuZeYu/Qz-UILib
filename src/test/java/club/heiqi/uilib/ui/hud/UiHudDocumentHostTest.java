@@ -14,6 +14,7 @@ import club.heiqi.uilib.ui.dom.control.DocumentButtonActionEvent;
 import club.heiqi.uilib.ui.dom.control.DocumentButtonActionHandler;
 import club.heiqi.uilib.ui.dom.control.DocumentButtonControl;
 import club.heiqi.uilib.ui.dom.control.DocumentTextInputControl;
+import club.heiqi.uilib.ui.layout.DocumentLayoutBox;
 import club.heiqi.uilib.ui.host.DocumentHostRenderSupport;
 import club.heiqi.uilib.ui.event.UiKeyEvent;
 import club.heiqi.uilib.ui.event.UiMouseEvent;
@@ -427,6 +428,154 @@ public class UiHudDocumentHostTest {
     }
 
     /**
+     * 验证真实 HUD demo 控制器构建出的 interactive 浮窗在宿主 widget 中不会横向溢出，且主要卡片纵向不重叠。
+     */
+    @Test
+    public void shouldLayoutHudDemoLikeWidgetWithoutOverflowOrOverlap() {
+        UiDocument document = UiDocument.create();
+        ElementNode root = document.getRootElement();
+        ElementNode panel = document.div();
+        ElementNode dragBar = document.div();
+        ElementNode controlCard = document.div();
+        ElementNode debugToggleCard = document.div();
+        ElementNode scrollContent = document.div();
+        ElementNode contentBody = document.div();
+        ElementNode overviewCard = document.div();
+        ElementNode noteCard = document.div();
+        ElementNode debugCard = document.div();
+
+        root.style()
+                .setWidth(UiStyleLength.percent(1.0F))
+                .setHeight(UiStyleLength.percent(1.0F));
+        panel.style()
+                .setPosition(club.heiqi.uilib.ui.style.UiPosition.FIXED)
+                .setLeft(UiStyleLength.px(1648))
+                .setTop(UiStyleLength.px(18))
+                .setDisplay(club.heiqi.uilib.ui.style.UiDisplay.FLEX)
+                .setFlexDirection(club.heiqi.uilib.ui.style.UiFlexDirection.COLUMN)
+                .setAlignItems(club.heiqi.uilib.ui.style.UiAlignItems.START)
+                .setWidth(UiStyleLength.px(360))
+                .setHeight(UiStyleLength.px(368))
+                .setPadding(UiStyleLength.px(12))
+                .setBorderWidth(UiStyleLength.px(1))
+                .setRowGap(UiStyleLength.px(8));
+        root.append(panel);
+
+        dragBar.style().setWidth(UiStyleLength.auto()).setPadding(UiStyleLength.px(4));
+        dragBar.appendText("HUD 工具浮窗 · 拖住这里移动");
+        panel.append(dragBar);
+
+        controlCard.style()
+                .setDisplay(club.heiqi.uilib.ui.style.UiDisplay.FLEX)
+                .setFlexDirection(club.heiqi.uilib.ui.style.UiFlexDirection.COLUMN)
+                .setAlignItems(club.heiqi.uilib.ui.style.UiAlignItems.START)
+                .setWidth(UiStyleLength.percent(1.0F))
+                .setPadding(UiStyleLength.px(8))
+                .setBorderWidth(UiStyleLength.px(1))
+                .setRowGap(UiStyleLength.px(6));
+        controlCard.append(line(document, "调试开关"));
+        debugToggleCard.style()
+                .setDisplay(club.heiqi.uilib.ui.style.UiDisplay.FLEX)
+                .setFlexDirection(club.heiqi.uilib.ui.style.UiFlexDirection.COLUMN)
+                .setAlignItems(club.heiqi.uilib.ui.style.UiAlignItems.START)
+                .setWidth(UiStyleLength.percent(1.0F))
+                .setPadding(UiStyleLength.px(8))
+                .setBorderWidth(UiStyleLength.px(1))
+                .setRowGap(UiStyleLength.px(6));
+        debugToggleCard.append(line(document, "显示 HUD 调试信息"));
+        ElementNode debugToggleHost = document.div();
+        debugToggleHost.style().setDisplay(club.heiqi.uilib.ui.style.UiDisplay.BLOCK).setWidth(UiStyleLength.auto());
+        debugToggleHost.append(new club.heiqi.uilib.ui.dom.control.DocumentToggleSwitchControl(document).setToggled(true).getElement());
+        debugToggleCard.append(debugToggleHost);
+        controlCard.append(debugToggleCard);
+        controlCard.append(line(document, "底部提示标记：保留"));
+        panel.append(controlCard);
+
+        scrollContent.style()
+                .setFlexGrow(1.0F)
+                .setWidth(UiStyleLength.percent(1.0F))
+                .setPadding(UiStyleLength.px(6))
+                .setBorderWidth(UiStyleLength.px(1))
+                .setOverflowX(UiOverflow.HIDDEN)
+                .setOverflowY(UiOverflow.AUTO);
+        panel.append(scrollContent);
+
+        contentBody.style()
+                .setDisplay(club.heiqi.uilib.ui.style.UiDisplay.FLEX)
+                .setFlexDirection(club.heiqi.uilib.ui.style.UiFlexDirection.COLUMN)
+                .setAlignItems(club.heiqi.uilib.ui.style.UiAlignItems.STRETCH)
+                .setWidth(UiStyleLength.percent(1.0F))
+                .setRowGap(UiStyleLength.px(6));
+        scrollContent.append(contentBody);
+
+        overviewCard.style()
+                .setDisplay(club.heiqi.uilib.ui.style.UiDisplay.FLEX)
+                .setFlexDirection(club.heiqi.uilib.ui.style.UiFlexDirection.COLUMN)
+                .setAlignItems(club.heiqi.uilib.ui.style.UiAlignItems.START)
+                .setWidth(UiStyleLength.percent(1.0F))
+                .setPadding(UiStyleLength.px(6))
+                .setBorderWidth(UiStyleLength.px(1))
+                .setRowGap(UiStyleLength.px(3));
+        overviewCard.append(line(document, "会话概览"));
+        overviewCard.append(line(document, "容器界面上方可见。点击次数 0，备注：把鼠标移到背包界面后尝试编辑我。"));
+        contentBody.append(overviewCard);
+
+        noteCard.style()
+                .setDisplay(club.heiqi.uilib.ui.style.UiDisplay.FLEX)
+                .setFlexDirection(club.heiqi.uilib.ui.style.UiFlexDirection.COLUMN)
+                .setAlignItems(club.heiqi.uilib.ui.style.UiAlignItems.STRETCH)
+                .setWidth(UiStyleLength.percent(1.0F))
+                .setPadding(UiStyleLength.px(6))
+                .setBorderWidth(UiStyleLength.px(1))
+                .setRowGap(UiStyleLength.px(4));
+        noteCard.append(line(document, "容器备注"));
+        DocumentTextInputControl input = new DocumentTextInputControl(document)
+                .setPlaceholder("在容器界面中输入备注")
+                .setText("把鼠标移到背包界面后尝试编辑我");
+        input.getElement().style().setDisplay(club.heiqi.uilib.ui.style.UiDisplay.BLOCK)
+                .setWidth(UiStyleLength.percent(1.0F));
+        noteCard.append(input.getElement());
+        DocumentButtonControl button = new DocumentButtonControl(document, "记录一次点击");
+        button.getElement().style().setDisplay(club.heiqi.uilib.ui.style.UiDisplay.BLOCK)
+                .setWidth(UiStyleLength.percent(1.0F));
+        noteCard.append(button.getElement());
+        contentBody.append(noteCard);
+
+        debugCard.style()
+                .setDisplay(club.heiqi.uilib.ui.style.UiDisplay.FLEX)
+                .setFlexDirection(club.heiqi.uilib.ui.style.UiFlexDirection.COLUMN)
+                .setAlignItems(club.heiqi.uilib.ui.style.UiAlignItems.START)
+                .setWidth(UiStyleLength.percent(1.0F))
+                .setPadding(UiStyleLength.px(6))
+                .setBorderWidth(UiStyleLength.px(1))
+                .setRowGap(UiStyleLength.px(3));
+        debugCard.append(line(document, "HUD DEBUG"));
+        debugCard.append(line(document, "滚轮监控\n阶段: 有范围但未命中宿主\n鼠标: 1778, 216  命中: div  滚动区: 是\n事件: 1  delta: -120  消费: 否\n偏移: 0 / 439"));
+        contentBody.append(debugCard);
+
+        HtmlLikeDocumentWidget widget = new HtmlLikeDocumentWidget(document, 2048, 1152,
+                DefaultTextMeasureService.getInstance());
+        widget.applyLayoutBounds(0, 0, 2048, 1152);
+
+        DocumentLayoutBox panelBox = widget.resolveLayoutBoxForTest().getChildren().get(0);
+        DocumentLayoutBox controlCardBox = panelBox.getChildren().get(1);
+        DocumentLayoutBox scrollContentBox = panelBox.getChildren().get(2);
+        DocumentLayoutBox contentBodyBox = scrollContentBox.getChildren().get(0);
+        DocumentLayoutBox overviewCardBox = contentBodyBox.getChildren().get(0);
+        DocumentLayoutBox noteCardBox = contentBodyBox.getChildren().get(1);
+        DocumentLayoutBox debugCardBox = contentBodyBox.getChildren().get(2);
+
+        int panelContentRight = panelBox.getContentLeft() + panelBox.getContentWidth();
+        Assert.assertTrue(controlCardBox.getRight() <= panelContentRight);
+        Assert.assertTrue(scrollContentBox.getRight() <= panelContentRight);
+        Assert.assertTrue(scrollContentBox.getTop() >= controlCardBox.getBottom());
+        Assert.assertTrue(noteCardBox.getTop() >= overviewCardBox.getBottom());
+        Assert.assertTrue(debugCardBox.getTop() >= noteCardBox.getBottom());
+        Assert.assertTrue(noteCardBox.getChildren().get(1).getTop() >= noteCardBox.getChildren().get(0).getBottom());
+        Assert.assertTrue(noteCardBox.getChildren().get(2).getTop() >= noteCardBox.getChildren().get(1).getBottom());
+    }
+
+    /**
      * 验证普通浮窗面板空白区域默认会阻止点击穿透到底层原生页面。
      */
     @Test
@@ -549,6 +698,15 @@ public class UiHudDocumentHostTest {
         return new UiInputFrame(mouseX, mouseY,
                 Collections.singletonList(new UiMouseEvent(action, mouseX, mouseY, 0, 0, 0, 0, timeNanos)),
                 Collections.emptyList(), Collections.emptyList());
+    }
+
+    private static ElementNode line(UiDocument document, String text) {
+        ElementNode line = document.div();
+        line.style()
+                .setDisplay(club.heiqi.uilib.ui.style.UiDisplay.BLOCK)
+                .setWidth(UiStyleLength.auto());
+        line.appendText(text);
+        return line;
     }
 
     private static final class DeterministicTextMeasureService implements TextMeasureService {

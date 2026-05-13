@@ -33,9 +33,9 @@ public class FontService {
     private final GlyphPageManager glyphPageManager = new GlyphPageManager();
     private final GlyphGenerationDispatcher glyphGenerationDispatcher = new GlyphGenerationDispatcher();
     private final TextLayoutService textLayoutService = new TextLayoutService(fontMatcher, glyphPageManager);
-    private final FontBatchRenderer batchRenderer = new FontBatchRenderer();
-    private final TextDecorationRenderer decorationRenderer = new TextDecorationRenderer();
-    private final FontShaderProgram shaderProgram = new FontShaderProgram();
+    private FontBatchRenderer batchRenderer;
+    private TextDecorationRenderer decorationRenderer;
+    private FontShaderProgram shaderProgram;
     private final Deque<Long> drawStageUploadTimestamps = new ArrayDeque<Long>();
 
     private long lastDrawStageUploadAt = 0L;
@@ -110,10 +110,16 @@ public class FontService {
             refreshTextMeasureRuntime();
             glyphPageManager.reset();
             glyphGenerationDispatcher.initialize(fontMatcher, glyphPageManager, glyphPageManager::queueUpload);
-            batchRenderer.dispose();
-            batchRenderer.clearFrame();
-            decorationRenderer.clear();
-            shaderProgram.close();
+            if (batchRenderer != null) {
+                batchRenderer.dispose();
+                batchRenderer.clearFrame();
+            }
+            if (decorationRenderer != null) {
+                decorationRenderer.clear();
+            }
+            if (shaderProgram != null) {
+                shaderProgram.close();
+            }
             runtimeVersion++;
         }
         int invalidatedRootCount = UiLayoutInvalidationRegistry.invalidateAll();
@@ -228,6 +234,9 @@ public class FontService {
      * @return 批渲染器
      */
     public FontBatchRenderer getBatchRenderer() {
+        if (batchRenderer == null) {
+            batchRenderer = new FontBatchRenderer();
+        }
         return batchRenderer;
     }
 
@@ -237,6 +246,9 @@ public class FontService {
      * @return 着色器程序
      */
     public FontShaderProgram getShaderProgram() {
+        if (shaderProgram == null) {
+            shaderProgram = new FontShaderProgram();
+        }
         return shaderProgram;
     }
 
@@ -246,6 +258,9 @@ public class FontService {
      * @return 装饰线渲染器
      */
     public TextDecorationRenderer getDecorationRenderer() {
+        if (decorationRenderer == null) {
+            decorationRenderer = new TextDecorationRenderer();
+        }
         return decorationRenderer;
     }
 
@@ -255,13 +270,14 @@ public class FontService {
      * @return 运行时统计快照
      */
     public FontRuntimeStats getRuntimeStats() {
+        int quadCount = batchRenderer == null ? 0 : batchRenderer.getQuadCount();
         return new FontRuntimeStats(
                 glyphPageManager.getPendingUploadCount(),
                 glyphPageManager.getReadyGlyphCount(),
                 glyphPageManager.getNormalPageCount(),
                 glyphPageManager.getBoldPageCount(),
                 drawStageUploadTimestamps.size(),
-                batchRenderer.getQuadCount(),
+                quadCount,
                 fontMatcher.getCacheHitCount(),
                 fontMatcher.getCacheMissCount(),
                 textLayoutService.getWidthCacheHitCount(),

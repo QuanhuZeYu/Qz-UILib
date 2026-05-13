@@ -456,20 +456,9 @@ public final class DocumentScrollState {
         ComputedStyle style = box.getComputedStyle();
         int viewportWidth = box.getContentWidth();
         int viewportHeight = box.getContentHeight();
-        int contentRight = box.getContentLeft() + viewportWidth;
-        int contentBottom = box.getContentTop() + viewportHeight;
-
-        for (DocumentLayoutTextRun textRun : box.getTextRuns()) {
-            contentRight = Math.max(contentRight, textRun.getRight());
-            contentBottom = Math.max(contentBottom, textRun.getBottom());
-        }
-        for (DocumentLayoutBox child : box.getChildren()) {
-            if (child.isFixedPositioned()) {
-                continue;
-            }
-            contentRight = Math.max(contentRight, child.getMarginBoxRight() + child.getPositionOffsetX());
-            contentBottom = Math.max(contentBottom, child.getMarginBoxBottom() + child.getPositionOffsetY());
-        }
+        ContentBounds contentBounds = measureContentBounds(box, 0, 0);
+        int contentRight = Math.max(box.getContentLeft() + viewportWidth, contentBounds.right);
+        int contentBottom = Math.max(box.getContentTop() + viewportHeight, contentBounds.bottom);
 
         int contentWidth = Math.max(viewportWidth, contentRight - box.getContentLeft());
         int contentHeight = Math.max(viewportHeight, contentBottom - box.getContentTop());
@@ -481,6 +470,34 @@ public final class DocumentScrollState {
                 : 0;
         return new ScrollMetrics(viewportWidth, viewportHeight, contentWidth, contentHeight, maxHorizontalOffset,
                 maxVerticalOffset);
+    }
+
+    private ContentBounds measureContentBounds(DocumentLayoutBox box, int offsetX, int offsetY) {
+        int baseOffsetX = box.isFixedPositioned() ? 0 : offsetX;
+        int baseOffsetY = box.isFixedPositioned() ? 0 : offsetY;
+        int boxOffsetX = baseOffsetX + box.getPositionOffsetX();
+        int boxOffsetY = baseOffsetY + box.getPositionOffsetY();
+        int right = box.getContentLeft() + boxOffsetX + box.getContentWidth();
+        int bottom = box.getContentTop() + boxOffsetY + box.getContentHeight();
+
+        for (DocumentLayoutTextRun textRun : box.getTextRuns()) {
+            right = Math.max(right, textRun.getRight() + boxOffsetX);
+            bottom = Math.max(bottom, textRun.getBottom() + boxOffsetY);
+        }
+
+        int childOffsetX = boxOffsetX;
+        int childOffsetY = boxOffsetY;
+        for (DocumentLayoutBox child : box.getChildren()) {
+            if (child.isFixedPositioned()) {
+                continue;
+            }
+            right = Math.max(right, child.getMarginBoxRight() + childOffsetX);
+            bottom = Math.max(bottom, child.getMarginBoxBottom() + childOffsetY);
+            ContentBounds childBounds = measureContentBounds(child, childOffsetX, childOffsetY);
+            right = Math.max(right, childBounds.right);
+            bottom = Math.max(bottom, childBounds.bottom);
+        }
+        return new ContentBounds(right, bottom);
     }
 
     private boolean updateOffsets(ScrollEntry entry, int horizontalOffset, int verticalOffset) {
@@ -859,6 +876,17 @@ public final class DocumentScrollState {
         private int maxHorizontalOffset;
         private int maxVerticalOffset;
         private long lastScrollNanos;
+    }
+
+    private static final class ContentBounds {
+
+        private final int right;
+        private final int bottom;
+
+        private ContentBounds(int right, int bottom) {
+            this.right = right;
+            this.bottom = bottom;
+        }
     }
 
     /**
