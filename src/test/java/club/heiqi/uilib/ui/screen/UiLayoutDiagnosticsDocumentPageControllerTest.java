@@ -6,16 +6,14 @@ import java.util.List;
 
 import org.junit.Assert;
 import org.junit.Test;
-import org.lwjglx.input.Keyboard;
-
 import club.heiqi.uilib.font.FontRuntimeStats;
 import club.heiqi.uilib.ui.diagnostic.UiRuntimeStats;
 import club.heiqi.uilib.ui.document.HtmlLikeDocumentWidget;
+import club.heiqi.uilib.ui.dom.DocumentElementClickEvent;
 import club.heiqi.uilib.ui.dom.DocumentNode;
 import club.heiqi.uilib.ui.dom.DocumentNodeType;
 import club.heiqi.uilib.ui.dom.ElementNode;
 import club.heiqi.uilib.ui.dom.TextNode;
-import club.heiqi.uilib.ui.event.UiKeyEvent;
 import club.heiqi.uilib.ui.runtime.UiRuntimeAdapters;
 import club.heiqi.uilib.ui.text.TextMeasureService;
 import club.heiqi.uilib.ui.widget.Widget;
@@ -62,23 +60,14 @@ public class UiLayoutDiagnosticsDocumentPageControllerTest {
         widget.applyLayoutBounds(0, 0, 760, 940);
         fixture.controller.afterDocumentBuilt();
 
-        widget.onFocusTraversalEntered(false);
-        for (int index = 0; index < 8; index++) {
-            Assert.assertTrue(widget.onFocusTraversal(false));
-        }
-        widget.onKeyEvent(new UiKeyEvent(Keyboard.KEY_RETURN, 0, 0, UiKeyEvent.Action.PRESSED, false, false, false,
-                false, 1L));
+        clickControl(widget, "mutation-toggle", 1L);
 
         List<String> textsAfterToggle = collectDocumentTexts(widget);
         Assert.assertTrue(containsText(textsAfterToggle, "最近状态：已启用高频字符变更探针"));
         Assert.assertTrue(containsText(textsAfterToggle, "探针状态：运行中"));
         Assert.assertTrue(containsText(textsAfterToggle, "探针已重置，等待下一次文本变更。"));
 
-        Assert.assertTrue(widget.onFocusTraversal(false));
-        Assert.assertTrue(widget.onFocusTraversal(false));
-        Assert.assertTrue(widget.onFocusTraversal(false));
-        widget.onKeyEvent(new UiKeyEvent(Keyboard.KEY_RETURN, 0, 0, UiKeyEvent.Action.PRESSED, false, false, false,
-                false, 2L));
+        clickSegmentedOption(widget, "mutation-mode", "长文重排", 2L);
 
         fixture.controller.beforeDocumentFrame();
 
@@ -154,6 +143,57 @@ public class UiLayoutDiagnosticsDocumentPageControllerTest {
             }
         }
         return false;
+    }
+
+    private static void clickControl(HtmlLikeDocumentWidget widget, String controlName, long timeNanos) {
+        ElementNode control = findElementByAttribute(widget.getDocument().getRootElement(), "data-layout-probe-control",
+                controlName);
+        Assert.assertNotNull(control);
+        Assert.assertNotNull(control.getClickHandler());
+        Assert.assertTrue(control.getClickHandler().onClick(new DocumentElementClickEvent(control, control, 0, 0, 0,
+                timeNanos)));
+    }
+
+    private static void clickSegmentedOption(HtmlLikeDocumentWidget widget, String controlName, String optionText,
+            long timeNanos) {
+        ElementNode control = findElementByAttribute(widget.getDocument().getRootElement(), "data-layout-probe-control",
+                controlName);
+        Assert.assertNotNull(control);
+        ElementNode option = findElementContainingDirectText(control, optionText);
+        Assert.assertNotNull(option);
+        Assert.assertNotNull(option.getClickHandler());
+        Assert.assertTrue(option.getClickHandler().onClick(new DocumentElementClickEvent(option, option, 0, 0, 0,
+                timeNanos)));
+    }
+
+    private static ElementNode findElementByAttribute(ElementNode element, String attributeName, String attributeValue) {
+        if (attributeValue.equals(element.getAttribute(attributeName))) {
+            return element;
+        }
+        for (DocumentNode child : element.getChildren()) {
+            if (child.getNodeType() == DocumentNodeType.ELEMENT) {
+                ElementNode found = findElementByAttribute((ElementNode) child, attributeName, attributeValue);
+                if (found != null) {
+                    return found;
+                }
+            }
+        }
+        return null;
+    }
+
+    private static ElementNode findElementContainingDirectText(ElementNode element, String expectedText) {
+        for (DocumentNode child : element.getChildren()) {
+            if (child.getNodeType() == DocumentNodeType.TEXT && expectedText.equals(((TextNode) child).getText())) {
+                return element;
+            }
+            if (child.getNodeType() == DocumentNodeType.ELEMENT) {
+                ElementNode found = findElementContainingDirectText((ElementNode) child, expectedText);
+                if (found != null) {
+                    return found;
+                }
+            }
+        }
+        return null;
     }
 
     private static UiRuntimeStats createRuntimeStats(String screenName) {

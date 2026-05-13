@@ -374,6 +374,7 @@ final class HtmlLikeInventoryOverviewDocumentPageController extends DocumentPage
                         model.returnToVanillaInventory();
                     }
                 });
+        backButton.getElement().setAttribute("data-inventory-action", "back");
         backButton.getElement().style().setWidth(UiStyleLength.px(180));
         footer.append(backButton.getElement());
     }

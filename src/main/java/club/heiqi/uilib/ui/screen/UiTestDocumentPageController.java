@@ -216,6 +216,7 @@ final class UiTestDocumentPageController extends DocumentPageController {
         button.setBackgroundColors(0xFF3B82F6, 0xFF1D4ED8, 0xFF334155)
                 .setFocusBorderColor(0xFFBFDBFE)
                 .setActionHandler(actionHandler);
+        button.getElement().setAttribute("data-diagnostic-nav", buttonText);
         button.getElement().style()
                 .setMargin(UiStyleInsets.of(UiStyleLength.px(10), UiStyleLength.px(0), UiStyleLength.px(0),
                         UiStyleLength.px(0)));

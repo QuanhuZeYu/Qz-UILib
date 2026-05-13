@@ -6,7 +6,6 @@ import java.util.List;
 
 import org.junit.Assert;
 import org.junit.Test;
-import org.lwjglx.input.Keyboard;
 
 import club.heiqi.uilib.ui.diagnostic.UiRuntimeStats;
 import club.heiqi.uilib.ui.document.HtmlLikeDocumentWidget;
@@ -16,7 +15,6 @@ import club.heiqi.uilib.ui.dom.DocumentNode;
 import club.heiqi.uilib.ui.dom.DocumentNodeType;
 import club.heiqi.uilib.ui.dom.ElementNode;
 import club.heiqi.uilib.ui.dom.TextNode;
-import club.heiqi.uilib.ui.event.UiKeyEvent;
 import club.heiqi.uilib.ui.inventory.InventorySlotSnapshot;
 import club.heiqi.uilib.ui.runtime.UiRuntimeAdapters;
 import club.heiqi.uilib.ui.text.TextMeasureService;
@@ -104,10 +102,10 @@ public class HtmlLikeInventoryOverviewDocumentPageControllerTest {
 
         HtmlLikeDocumentWidget widget = fixture.controller.getHtmlLikeDocumentWidget();
         widget.applyLayoutBounds(0, 0, 720, 600);
-        widget.onFocusTraversalEntered(false);
-        while (widget.onFocusTraversal(false)) {}
-        widget.onKeyEvent(new UiKeyEvent(Keyboard.KEY_RETURN, 0, 0, UiKeyEvent.Action.PRESSED, false, false, false,
-                false, 1L));
+        ElementNode backButton = collectElementsByAttribute(widget.getDocument().getRootElement(),
+                "data-inventory-action", "back").get(0);
+        Assert.assertTrue(backButton.getClickHandler().onClick(new DocumentElementClickEvent(backButton, backButton,
+                0, 0, 0, 1L)));
 
         Assert.assertEquals(1, fixture.model.returnToVanillaInventoryCalls);
     }

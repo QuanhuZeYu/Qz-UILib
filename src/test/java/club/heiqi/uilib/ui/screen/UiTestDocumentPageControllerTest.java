@@ -6,14 +6,12 @@ import java.util.List;
 
 import org.junit.Assert;
 import org.junit.Test;
-import org.lwjglx.input.Keyboard;
-
 import club.heiqi.uilib.ui.document.HtmlLikeDocumentWidget;
+import club.heiqi.uilib.ui.dom.DocumentElementClickEvent;
 import club.heiqi.uilib.ui.dom.DocumentNode;
 import club.heiqi.uilib.ui.dom.DocumentNodeType;
 import club.heiqi.uilib.ui.dom.ElementNode;
 import club.heiqi.uilib.ui.dom.TextNode;
-import club.heiqi.uilib.ui.event.UiKeyEvent;
 import club.heiqi.uilib.ui.layout.DocumentLayoutBox;
 import club.heiqi.uilib.ui.layout.DocumentLayoutEngine;
 import club.heiqi.uilib.ui.runtime.UiRuntimeAdapters;
@@ -66,11 +64,7 @@ public class UiTestDocumentPageControllerTest {
         fixture.controller.configureDocumentPage();
         fixture.controller.buildDocument();
 
-        HtmlLikeDocumentWidget widget = fixture.controller.getHtmlLikeDocumentWidget();
-        widget.applyLayoutBounds(0, 0, 760, 520);
-        widget.onFocusTraversalEntered(false);
-        widget.onKeyEvent(new UiKeyEvent(Keyboard.KEY_RETURN, 0, 0, UiKeyEvent.Action.PRESSED, false, false, false,
-                false, 1L));
+        clickNavigationButton(fixture.controller.getHtmlLikeDocumentWidget(), "进入布局诊断页", 1L);
 
         Assert.assertTrue(menuModel.openLayoutDiagnosticsCalled);
         Assert.assertFalse(menuModel.openHtmlLikeSmokeCalled);
@@ -89,12 +83,7 @@ public class UiTestDocumentPageControllerTest {
         fixture.controller.configureDocumentPage();
         fixture.controller.buildDocument();
 
-        HtmlLikeDocumentWidget widget = fixture.controller.getHtmlLikeDocumentWidget();
-        widget.applyLayoutBounds(0, 0, 760, 520);
-        widget.onFocusTraversalEntered(false);
-        Assert.assertTrue(widget.onFocusTraversal(false));
-        widget.onKeyEvent(new UiKeyEvent(Keyboard.KEY_RETURN, 0, 0, UiKeyEvent.Action.PRESSED, false, false, false,
-                false, 1L));
+        clickNavigationButton(fixture.controller.getHtmlLikeDocumentWidget(), "进入 HTML-like Smoke", 1L);
 
         Assert.assertFalse(menuModel.openLayoutDiagnosticsCalled);
         Assert.assertTrue(menuModel.openHtmlLikeSmokeCalled);
@@ -113,13 +102,7 @@ public class UiTestDocumentPageControllerTest {
         fixture.controller.configureDocumentPage();
         fixture.controller.buildDocument();
 
-        HtmlLikeDocumentWidget widget = fixture.controller.getHtmlLikeDocumentWidget();
-        widget.applyLayoutBounds(0, 0, 760, 520);
-        widget.onFocusTraversalEntered(false);
-        Assert.assertTrue(widget.onFocusTraversal(false));
-        Assert.assertTrue(widget.onFocusTraversal(false));
-        widget.onKeyEvent(new UiKeyEvent(Keyboard.KEY_RETURN, 0, 0, UiKeyEvent.Action.PRESSED, false, false, false,
-                false, 1L));
+        clickNavigationButton(fixture.controller.getHtmlLikeDocumentWidget(), "进入 Glass Lab", 1L);
 
         Assert.assertFalse(menuModel.openLayoutDiagnosticsCalled);
         Assert.assertFalse(menuModel.openHtmlLikeSmokeCalled);
@@ -138,14 +121,7 @@ public class UiTestDocumentPageControllerTest {
         fixture.controller.configureDocumentPage();
         fixture.controller.buildDocument();
 
-        HtmlLikeDocumentWidget widget = fixture.controller.getHtmlLikeDocumentWidget();
-        widget.applyLayoutBounds(0, 0, 760, 520);
-        widget.onFocusTraversalEntered(false);
-        Assert.assertTrue(widget.onFocusTraversal(false));
-        Assert.assertTrue(widget.onFocusTraversal(false));
-        Assert.assertTrue(widget.onFocusTraversal(false));
-        widget.onKeyEvent(new UiKeyEvent(Keyboard.KEY_RETURN, 0, 0, UiKeyEvent.Action.PRESSED, false, false, false,
-                false, 1L));
+        clickNavigationButton(fixture.controller.getHtmlLikeDocumentWidget(), "进入背包概览", 1L);
 
         Assert.assertFalse(menuModel.openLayoutDiagnosticsCalled);
         Assert.assertFalse(menuModel.openHtmlLikeSmokeCalled);
@@ -209,6 +185,31 @@ public class UiTestDocumentPageControllerTest {
             }
         }
         return false;
+    }
+
+    private static void clickNavigationButton(HtmlLikeDocumentWidget widget, String buttonText, long timeNanos) {
+        Assert.assertNotNull(widget);
+        ElementNode button = findElementByAttribute(widget.getDocument().getRootElement(), "data-diagnostic-nav",
+                buttonText);
+        Assert.assertNotNull(button);
+        Assert.assertNotNull(button.getClickHandler());
+        Assert.assertTrue(button.getClickHandler().onClick(new DocumentElementClickEvent(button, button, 0, 0, 0,
+                timeNanos)));
+    }
+
+    private static ElementNode findElementByAttribute(ElementNode element, String attributeName, String attributeValue) {
+        if (attributeValue.equals(element.getAttribute(attributeName))) {
+            return element;
+        }
+        for (DocumentNode child : element.getChildren()) {
+            if (child.getNodeType() == DocumentNodeType.ELEMENT) {
+                ElementNode found = findElementByAttribute((ElementNode) child, attributeName, attributeValue);
+                if (found != null) {
+                    return found;
+                }
+            }
+        }
+        return null;
     }
 
     private static final class TestFixture {

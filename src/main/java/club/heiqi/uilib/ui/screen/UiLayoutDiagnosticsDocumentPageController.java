@@ -174,6 +174,7 @@ final class UiLayoutDiagnosticsDocumentPageController extends DocumentPageContro
                         refreshDiagnostics();
                     }
                 });
+        wrapToggle.getElement().setAttribute("data-layout-probe-control", "wrap-toggle");
         mutationToggle.setTrackColors(0xFF475569, 0xFFF97316, 0xFF334155)
                 .setFocusBorderColor(0xFFFED7AA)
                 .setChangeHandler(new DocumentToggleChangeHandler() {
@@ -184,6 +185,7 @@ final class UiLayoutDiagnosticsDocumentPageController extends DocumentPageContro
                         refreshDiagnostics();
                     }
                 });
+        mutationToggle.getElement().setAttribute("data-layout-probe-control", "mutation-toggle");
         refreshButton.setBackgroundColors(0xFF2563EB, 0xFF1D4ED8, 0xFF334155)
                 .setFocusBorderColor(0xFFBFDBFE)
                 .setActionHandler(new DocumentButtonActionHandler() {
@@ -193,6 +195,7 @@ final class UiLayoutDiagnosticsDocumentPageController extends DocumentPageContro
                         refreshDiagnostics();
                     }
                 });
+        refreshButton.getElement().setAttribute("data-layout-probe-control", "refresh-button");
         widthPresetSelector.setSelectedIndex(1);
         widthPresetSelector.setSelectionHandler(new DocumentSegmentedSelectionHandler() {
             @Override
@@ -201,6 +204,7 @@ final class UiLayoutDiagnosticsDocumentPageController extends DocumentPageContro
                 refreshDiagnostics();
             }
         });
+        widthPresetSelector.getElement().setAttribute("data-layout-probe-control", "width-preset");
         mutationModeSelector.setSelectedIndex(0);
         mutationModeSelector.setSelectionHandler(new DocumentSegmentedSelectionHandler() {
             @Override
@@ -210,6 +214,7 @@ final class UiLayoutDiagnosticsDocumentPageController extends DocumentPageContro
                 refreshDiagnostics();
             }
         });
+        mutationModeSelector.getElement().setAttribute("data-layout-probe-control", "mutation-mode");
         mutationRateSelector.setSelectedIndex(1);
         mutationRateSelector.setSelectionHandler(new DocumentSegmentedSelectionHandler() {
             @Override
@@ -218,6 +223,7 @@ final class UiLayoutDiagnosticsDocumentPageController extends DocumentPageContro
                 refreshDiagnostics();
             }
         });
+        mutationRateSelector.getElement().setAttribute("data-layout-probe-control", "mutation-rate");
     }
 
     private DocumentBundle createDocumentContent(UiDocument document, ElementNode root) {
