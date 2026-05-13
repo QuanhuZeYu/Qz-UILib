@@ -7,6 +7,7 @@ import org.junit.Assert;
 import org.junit.Test;
 import org.lwjglx.input.Keyboard;
 
+import club.heiqi.uilib.ui.document.HtmlLikeDocumentWidget;
 import club.heiqi.uilib.ui.dom.ElementNode;
 import club.heiqi.uilib.ui.dom.UiDocument;
 import club.heiqi.uilib.ui.dom.control.DocumentButtonActionEvent;
@@ -365,6 +366,33 @@ public class UiHudDocumentHostTest {
                     UiHudScreenCategory.CONTAINER);
 
             Assert.assertTrue(captured);
+        } finally {
+            registration.unregister();
+        }
+    }
+
+    /**
+     * 验证常规 HUD 输入路由会更新交互会话记录的最近鼠标位置，供后续渲染复用。
+     */
+    @Test
+    public void shouldReuseLatestPointerRecordedByHudInteractionSession() {
+        UiHudDocumentHost host = UiHudDocumentHost.getInstance();
+        UiHudDocumentRegistration registration = host.register(UiHudLayerType.INTERACTIVE,
+                new UiHudDocumentHost.UiHudDocumentContentBuilder() {
+                    @Override
+                    public void build(UiDocument document) {
+                        document.getRootElement().style()
+                                .setWidth(UiStyleLength.px(160))
+                                .setHeight(UiStyleLength.px(80));
+                    }
+                }, new DeterministicTextMeasureService(), UiRuntimeAdapters.empty());
+        try {
+            host.handleInputFrameForTest(mouseFrame(UiMouseEvent.Action.MOVE, 18, 26, 1L),
+                    UiHudScreenCategory.CONTAINER, 160, 80);
+
+            HtmlLikeDocumentWidget widget = host.getFirstInteractiveWidgetForDiagnostics();
+            Assert.assertNotNull(widget);
+            Assert.assertNotNull(widget.findElementAt(18, 26));
         } finally {
             registration.unregister();
         }

@@ -20,10 +20,10 @@ import club.heiqi.uilib.ui.diagnostic.UiPerformanceMonitor;
 import club.heiqi.uilib.ui.document.HtmlLikeDocumentWidget;
 import club.heiqi.uilib.ui.dom.ElementNode;
 import club.heiqi.uilib.ui.dom.UiDocument;
+import club.heiqi.uilib.ui.host.DocumentHostInteractionSession;
 import club.heiqi.uilib.ui.host.DocumentHostRenderSupport;
 import club.heiqi.uilib.ui.host.DocumentHostWidgetFactory;
 import club.heiqi.uilib.ui.input.UiInputFrame;
-import club.heiqi.uilib.ui.input.UiInputRouter;
 import club.heiqi.uilib.ui.input.UiInputService;
 import club.heiqi.uilib.ui.input.UiKeyboardCaptureState;
 import club.heiqi.uilib.ui.input.UiNativeTextInputInspector;
@@ -281,8 +281,7 @@ public final class UiHudDocumentHost {
 
     private void updateLatestPointer(UiInputFrame frame) {
         for (HudEntry entry : entries) {
-            entry.latestMouseX = frame.getMouseX();
-            entry.latestMouseY = frame.getMouseY();
+            entry.interactionSession.recordPointer(frame);
         }
     }
 
@@ -298,13 +297,7 @@ public final class UiHudDocumentHost {
             if (entry.layerType != UiHudLayerType.INTERACTIVE || !entry.isVisibleIn(screenCategory)) {
                 continue;
             }
-            UiPerformanceMonitor performanceMonitor = UiPerformanceMonitor.getInstance();
-            performanceMonitor.beginInputRouting(entry.getRuntimeName(), frame);
-            try {
-                entry.inputRouter.route(entry.widget, frame);
-            } finally {
-                performanceMonitor.finishInputRouting();
-            }
+            entry.interactionSession.route(entry.getRuntimeName(), entry.widget, frame);
         }
     }
 
@@ -524,7 +517,7 @@ public final class UiHudDocumentHost {
             return;
         }
         if (entries.remove(entry)) {
-            entry.inputRouter.clearInteractionState();
+            entry.interactionSession.clearInteractionState();
             UiLayoutInvalidationRegistry.unregisterRoot(entry.widget);
             updateHudKeyboardCaptureState();
         }
@@ -533,7 +526,7 @@ public final class UiHudDocumentHost {
     private synchronized void clearInteractiveStates() {
         for (HudEntry entry : entries) {
             if (entry.layerType == UiHudLayerType.INTERACTIVE) {
-                entry.inputRouter.clearInteractionState();
+                entry.interactionSession.clearInteractionState();
             }
         }
         UiKeyboardCaptureState.getInstance().setHudKeyboardCaptured(false);
@@ -543,7 +536,7 @@ public final class UiHudDocumentHost {
     private synchronized void updateHudKeyboardCaptureState() {
         boolean captured = false;
         for (HudEntry entry : entries) {
-            if (entry.layerType == UiHudLayerType.INTERACTIVE && entry.inputRouter.hasFocusedWidget()) {
+            if (entry.layerType == UiHudLayerType.INTERACTIVE && entry.interactionSession.hasFocusedWidget()) {
                 captured = true;
                 break;
             }
@@ -601,8 +594,8 @@ public final class UiHudDocumentHost {
             return Math.min(mouseX, nativeWidth);
         }
         for (HudEntry entry : entries) {
-            if (entry.latestMouseX > 0) {
-                return Math.min(entry.latestMouseX, nativeWidth);
+            if (entry.interactionSession.getLatestMouseX() > 0) {
+                return Math.min(entry.interactionSession.getLatestMouseX(), nativeWidth);
             }
         }
         return 0;
@@ -613,23 +606,23 @@ public final class UiHudDocumentHost {
             return Math.min(mouseY, nativeHeight);
         }
         for (HudEntry entry : entries) {
-            if (entry.latestMouseY > 0) {
-                return Math.min(entry.latestMouseY, nativeHeight);
+            if (entry.interactionSession.getLatestMouseY() > 0) {
+                return Math.min(entry.interactionSession.getLatestMouseY(), nativeHeight);
             }
         }
         return 0;
     }
 
     private static int resolveEntryMouseX(HudEntry entry, int fallbackMouseX, int nativeWidth) {
-        if (entry != null && entry.latestMouseX > 0) {
-            return Math.min(entry.latestMouseX, nativeWidth);
+        if (entry != null && entry.interactionSession.getLatestMouseX() > 0) {
+            return Math.min(entry.interactionSession.getLatestMouseX(), nativeWidth);
         }
         return fallbackMouseX;
     }
 
     private static int resolveEntryMouseY(HudEntry entry, int fallbackMouseY, int nativeHeight) {
-        if (entry != null && entry.latestMouseY > 0) {
-            return Math.min(entry.latestMouseY, nativeHeight);
+        if (entry != null && entry.interactionSession.getLatestMouseY() > 0) {
+            return Math.min(entry.interactionSession.getLatestMouseY(), nativeHeight);
         }
         return fallbackMouseY;
     }
@@ -651,10 +644,8 @@ public final class UiHudDocumentHost {
 
         private final UiHudLayerType layerType;
         private final HtmlLikeDocumentWidget widget;
-        private final UiInputRouter inputRouter = new UiInputRouter();
+        private final DocumentHostInteractionSession interactionSession = new DocumentHostInteractionSession();
         private final UiRuntimeAdapters runtimeAdapters;
-        private int latestMouseX;
-        private int latestMouseY;
 
         private HudEntry(UiHudLayerType layerType, HtmlLikeDocumentWidget widget, UiRuntimeAdapters runtimeAdapters) {
             this.layerType = layerType;
