@@ -11,6 +11,7 @@ import org.lwjgl.opengl.GL11;
 public class TextDecorationRenderer {
 
     private final List<TextLineQuad> lineQuads = new ArrayList<TextLineQuad>();
+    private final FontRenderStateGuard stateGuard = new FontRenderStateGuard();
 
     /**
      * 收集一个装饰线四边形。
@@ -50,20 +51,25 @@ public class TextDecorationRenderer {
             return;
         }
 
-        GL11.glDisable(GL11.GL_TEXTURE_2D);
-        GL11.glBegin(GL11.GL_QUADS);
-        for (TextLineQuad quad : lineQuads) {
-            float[] color = quad.getColor();
-            float[] vertex = quad.getVertex();
-            for (int i = 0; i < 4; i++) {
-                int colorOffset = i * 4;
-                int vertexOffset = i * 3;
-                GL11.glColor4f(color[colorOffset], color[colorOffset + 1], color[colorOffset + 2], color[colorOffset + 3]);
-                GL11.glVertex3f(vertex[vertexOffset], vertex[vertexOffset + 1], vertex[vertexOffset + 2]);
+        stateGuard.run(new Runnable() {
+            @Override
+            public void run() {
+                FontRenderStateSupport.prepareTextRenderState();
+                GL11.glDisable(GL11.GL_TEXTURE_2D);
+                GL11.glBegin(GL11.GL_QUADS);
+                for (TextLineQuad quad : lineQuads) {
+                    float[] color = quad.getColor();
+                    float[] vertex = quad.getVertex();
+                    for (int i = 0; i < 4; i++) {
+                        int colorOffset = i * 4;
+                        int vertexOffset = i * 3;
+                        GL11.glColor4f(color[colorOffset], color[colorOffset + 1], color[colorOffset + 2], color[colorOffset + 3]);
+                        GL11.glVertex3f(vertex[vertexOffset], vertex[vertexOffset + 1], vertex[vertexOffset + 2]);
+                    }
+                }
+                GL11.glEnd();
             }
-        }
-        GL11.glEnd();
-        GL11.glEnable(GL11.GL_TEXTURE_2D);
+        });
         lineQuads.clear();
     }
 

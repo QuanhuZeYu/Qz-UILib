@@ -15,6 +15,8 @@ import club.heiqi.uilib.font.layout.TextStyle;
 import club.heiqi.uilib.font.page.GlyphPage;
 import club.heiqi.uilib.font.page.GlyphPageManager;
 import club.heiqi.uilib.font.page.GlyphPageSlot;
+import club.heiqi.uilib.font.render.FontRenderFlushCoordinator;
+import club.heiqi.uilib.font.render.FontRenderStateGuard;
 
 /**
  * 默认字体适配器。
@@ -26,6 +28,8 @@ public class DefaultFontRendererAdapter implements FontRendererAdapter {
             + "@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`abcdefghijklmnopqrstuvwxyz{|}~"
             + "ÇüéâäàåçêëèïîìÄÅÉæÆôöòûùÿÖÜø£Ø×ƒáíóúñÑªº¿®¬½¼¡«»░▒▓│┤╡╢╖╕╣║╗╝╜╛┐└┴┬├─┼╞╟╚╔╩╦╠═╬╧╨╤╥╙╘╒╓╫╪┘┌█▄▌▐▀"
             + "αβΓπΣσμτΦΘΩδ∞∅∈∩≡±≥≤⌠⌡÷≈°∙·√ⁿ²■";
+    private final FontRenderStateGuard renderStateGuard = new FontRenderStateGuard();
+    private final FontRenderFlushCoordinator flushCoordinator = new FontRenderFlushCoordinator();
 
     private DefaultFontRendererAdapter() {}
 
@@ -163,8 +167,17 @@ public class DefaultFontRendererAdapter implements FontRendererAdapter {
                 i += Character.charCount(codepoint);
             }
         }
-        fontService.getBatchRenderer().flush(fontService.getShaderProgram());
-        fontService.getDecorationRenderer().flush();
+        flushCoordinator.flush(renderStateGuard, new Runnable() {
+            @Override
+            public void run() {
+                fontService.getBatchRenderer().flush(fontService.getShaderProgram());
+            }
+        }, new Runnable() {
+            @Override
+            public void run() {
+                fontService.getDecorationRenderer().flush();
+            }
+        });
         return (int) Math.ceil(currentX);
     }
 
