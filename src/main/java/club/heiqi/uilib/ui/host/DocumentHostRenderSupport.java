@@ -1,5 +1,6 @@
 package club.heiqi.uilib.ui.host;
 
+import java.util.Collections;
 import java.util.List;
 
 import org.lwjgl.opengl.GL11;
@@ -13,6 +14,48 @@ import club.heiqi.uilib.ui.runtime.UiRuntimeAdapters;
  * 文档宿主共享的渲染运行时支持。
  */
 public final class DocumentHostRenderSupport {
+
+    /**
+     * 一次性主后置回放批次。
+     */
+    public static final class DeferredPostMainReplayBatch {
+
+        private static final DeferredPostMainReplayBatch EMPTY = new DeferredPostMainReplayBatch(null,
+                Collections.<UiRenderContext.DeferredPostMainPass>emptyList());
+
+        private final UiRenderContext context;
+        private final List<UiRenderContext.DeferredPostMainPass> deferredPasses;
+        private boolean replayClaimed;
+
+        private DeferredPostMainReplayBatch(UiRenderContext context,
+                List<UiRenderContext.DeferredPostMainPass> deferredPasses) {
+            this.context = context;
+            this.deferredPasses = deferredPasses;
+        }
+
+        /**
+         * 当前批次是否为空。
+         *
+         * @return 是否无待回放内容
+         */
+        public boolean isEmpty() {
+            return deferredPasses.isEmpty() || replayClaimed;
+        }
+
+        private List<UiRenderContext.DeferredPostMainPass> claimPasses() {
+            if (deferredPasses.isEmpty() || replayClaimed) {
+                return Collections.emptyList();
+            }
+            replayClaimed = true;
+            return deferredPasses;
+        }
+
+        private void notifyReplayCompleted() {
+            if (context != null) {
+                context.notifyMainLayerContentChanged();
+            }
+        }
+    }
 
     private DocumentHostRenderSupport() {}
 
@@ -50,6 +93,43 @@ public final class DocumentHostRenderSupport {
     }
 
     /**
+     * 从当前渲染上下文中提取一次性主后置回放批次。
+     *
+     * @param context 当前渲染上下文
+     * @return 回放批次；无内容时返回空批次
+     */
+    public static DeferredPostMainReplayBatch drainDeferredPostMainReplayBatch(UiRenderContext context) {
+        if (context == null) {
+            return DeferredPostMainReplayBatch.EMPTY;
+        }
+
+        List<UiRenderContext.DeferredPostMainPass> deferredPasses = context.drainDeferredPostMainPasses();
+        if (deferredPasses.isEmpty()) {
+            return DeferredPostMainReplayBatch.EMPTY;
+        }
+        return new DeferredPostMainReplayBatch(context, deferredPasses);
+    }
+
+    /**
+     * 在不依赖宿主 OpenGL 离屏目标的情况下回放主后置批次。
+     *
+     * <p>该入口主要用于共享消费语义测试：验证 deferred pass 会被真实执行，
+     * 且回放完成后会推动主层内容版本递增。</p>
+     *
+     * @param replayBatch 已提取的回放批次
+     */
+    public static void replayDeferredPostMainPasses(DeferredPostMainReplayBatch replayBatch) {
+        List<UiRenderContext.DeferredPostMainPass> deferredPasses = claimDeferredPostMainPasses(replayBatch);
+        if (deferredPasses.isEmpty()) {
+            return;
+        }
+        for (UiRenderContext.DeferredPostMainPass deferredPass : deferredPasses) {
+            deferredPass.replay();
+        }
+        replayBatch.notifyReplayCompleted();
+    }
+
+    /**
      * 在主 UI 层完成后回放补充绘制层。
      *
      * @param context 当前渲染上下文
@@ -59,11 +139,25 @@ public final class DocumentHostRenderSupport {
      */
     public static void flushDeferredPostMainPasses(UiRenderContext context, UiRenderTarget deferredRenderTarget,
             int nativeWidth, int nativeHeight) {
-        if (context == null || deferredRenderTarget == null || !context.hasDeferredPostMainPasses()) {
+        flushDeferredPostMainPasses(drainDeferredPostMainReplayBatch(context), deferredRenderTarget, nativeWidth,
+                nativeHeight);
+    }
+
+    /**
+     * 在主 UI 层完成后回放已提取的补充绘制批次。
+     *
+     * @param replayBatch 已提取的回放批次
+     * @param deferredRenderTarget 主后置离屏目标
+     * @param nativeWidth 原生宽度
+     * @param nativeHeight 原生高度
+     */
+    public static void flushDeferredPostMainPasses(DeferredPostMainReplayBatch replayBatch,
+            UiRenderTarget deferredRenderTarget, int nativeWidth, int nativeHeight) {
+        if (deferredRenderTarget == null) {
             return;
         }
 
-        List<UiRenderContext.DeferredPostMainPass> deferredPasses = context.drainDeferredPostMainPasses();
+        List<UiRenderContext.DeferredPostMainPass> deferredPasses = claimDeferredPostMainPasses(replayBatch);
         if (deferredPasses.isEmpty()) {
             return;
         }
@@ -101,7 +195,7 @@ public final class DocumentHostRenderSupport {
         }
 
         deferredRenderTarget.compositeToCurrentFramebuffer();
-        context.notifyMainLayerContentChanged();
+        replayBatch.notifyReplayCompleted();
     }
 
     /**
@@ -147,5 +241,13 @@ public final class DocumentHostRenderSupport {
         GL11.glEnable(GL11.GL_BLEND);
         GL11.glBlendFunc(GL11.GL_SRC_ALPHA, GL11.GL_ONE_MINUS_SRC_ALPHA);
         GL11.glColor4f(1.0F, 1.0F, 1.0F, 1.0F);
+    }
+
+    private static List<UiRenderContext.DeferredPostMainPass> claimDeferredPostMainPasses(
+            DeferredPostMainReplayBatch replayBatch) {
+        if (replayBatch == null) {
+            return Collections.emptyList();
+        }
+        return replayBatch.claimPasses();
     }
 }

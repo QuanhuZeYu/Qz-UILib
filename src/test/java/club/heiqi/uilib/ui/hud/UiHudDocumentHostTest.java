@@ -14,11 +14,14 @@ import club.heiqi.uilib.ui.dom.control.DocumentButtonActionEvent;
 import club.heiqi.uilib.ui.dom.control.DocumentButtonActionHandler;
 import club.heiqi.uilib.ui.dom.control.DocumentButtonControl;
 import club.heiqi.uilib.ui.dom.control.DocumentTextInputControl;
+import club.heiqi.uilib.ui.host.DocumentHostRenderSupport;
 import club.heiqi.uilib.ui.event.UiKeyEvent;
 import club.heiqi.uilib.ui.event.UiMouseEvent;
 import club.heiqi.uilib.ui.event.UiTextInputEvent;
 import club.heiqi.uilib.ui.input.UiKeyboardCaptureState;
 import club.heiqi.uilib.ui.input.UiInputFrame;
+import club.heiqi.uilib.ui.render.UiMainLayerSnapshotService;
+import club.heiqi.uilib.ui.render.UiRenderContext;
 import club.heiqi.uilib.ui.runtime.UiRuntimeAdapters;
 import club.heiqi.uilib.ui.style.UiOverflow;
 import club.heiqi.uilib.ui.style.UiStyleLength;
@@ -76,6 +79,31 @@ public class UiHudDocumentHostTest {
         Assert.assertEquals(UiOverflow.VISIBLE, root.style().getOverflowY());
         Assert.assertEquals("interactive", root.getAttribute("data-hud-layer"));
         Assert.assertNull(root.getAttribute("data-hit-test-hidden"));
+    }
+
+    /**
+     * 验证 HUD 侧准备流程只消费一次 deferred 批次，不会提前清空后续回放内容。
+     */
+    @Test
+    public void shouldPrepareHudDeferredPostMainBatchWithoutDoubleDrain() {
+        UiHudDocumentHost host = UiHudDocumentHost.getInstance();
+        UiRenderContext context = new UiRenderContext(320, 240, 12, 34, 0.5F,
+                new UiRenderContext.PaintContextCompositor(), new UiMainLayerSnapshotService(),
+                UiRuntimeAdapters.empty());
+        context.enqueueDeferredPostMainPass(() -> {});
+
+        CountingRenderTarget renderTarget = new CountingRenderTarget();
+        DocumentHostRenderSupport.DeferredPostMainReplayBatch replayBatch = host.prepareDeferredPostMainPasses(context,
+                renderTarget, 320, 240);
+
+        Assert.assertFalse(replayBatch.isEmpty());
+        Assert.assertEquals(1, renderTarget.ensureSizeCount);
+        Assert.assertFalse(context.hasDeferredPostMainPasses());
+        Assert.assertEquals(0, context.getMainLayerContentRevisionForDiagnostics());
+
+        DocumentHostRenderSupport.replayDeferredPostMainPasses(replayBatch);
+
+        Assert.assertEquals(1, context.getMainLayerContentRevisionForDiagnostics());
     }
 
     /**
@@ -552,6 +580,19 @@ public class UiHudDocumentHostTest {
         @Override
         public List<String> listFormattedStringToWidth(String text, int wrapWidth) {
             return Collections.singletonList(text == null ? "" : trimStringToWidth(text, wrapWidth));
+        }
+    }
+
+    /**
+     * 仅用于验证尺寸准备是否发生的离屏目标替身。
+     */
+    private static final class CountingRenderTarget implements UiHudDocumentHost.DeferredPostMainRenderTarget {
+
+        private int ensureSizeCount;
+
+        @Override
+        public void ensureSize(int width, int height) {
+            ensureSizeCount++;
         }
     }
 }

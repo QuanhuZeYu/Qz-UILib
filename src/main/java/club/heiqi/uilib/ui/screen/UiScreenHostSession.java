@@ -130,9 +130,13 @@ final class UiScreenHostSession {
                                     paintContextCompositor, mainLayerSnapshotService, screen.getRuntimeAdapters());
                             try {
                                 rootWidget.render(context);
-                                DocumentHostRenderSupport.flushDeferredPostMainPasses(context,
-                                        deferredPostMainRenderTarget, nativeWidth,
-                                        nativeHeight);
+                                DocumentHostRenderSupport.DeferredPostMainReplayBatch replayBatch = DocumentHostRenderSupport
+                                        .drainDeferredPostMainReplayBatch(context);
+                                if (!replayBatch.isEmpty()) {
+                                    deferredPostMainRenderTarget.ensureSize(nativeWidth, nativeHeight);
+                                    DocumentHostRenderSupport.flushDeferredPostMainPasses(replayBatch,
+                                            deferredPostMainRenderTarget, nativeWidth, nativeHeight);
+                                }
                             } finally {
                                 mainLayerSnapshotService.finishFrame();
                                 paintContextCompositor.finishFrame();

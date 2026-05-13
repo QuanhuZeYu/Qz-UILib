@@ -503,13 +503,31 @@ public final class UiHudDocumentHost {
             return;
         }
         UiRenderTarget renderTarget = getOrCreateDeferredPostMainRenderTarget();
-        renderTarget.ensureSize(nativeWidth, nativeHeight);
-        List<UiRenderContext.DeferredPostMainPass> deferredPasses = context.drainDeferredPostMainPasses();
-        if (deferredPasses.isEmpty()) {
+        DocumentHostRenderSupport.DeferredPostMainReplayBatch replayBatch = prepareDeferredPostMainPasses(context,
+                renderTarget::ensureSize, nativeWidth, nativeHeight);
+        if (replayBatch.isEmpty()) {
             return;
         }
+        DocumentHostRenderSupport.flushDeferredPostMainPasses(replayBatch, renderTarget, nativeWidth, nativeHeight);
+    }
 
-        DocumentHostRenderSupport.flushDeferredPostMainPasses(context, renderTarget, nativeWidth, nativeHeight);
+    /**
+     * 准备 HUD 主后置回放批次并同步目标尺寸。
+     *
+     * @param context 当前渲染上下文
+     * @param renderTargetSizer HUD 后置离屏目标尺寸同步器
+     * @param nativeWidth 原生宽度
+     * @param nativeHeight 原生高度
+     * @return 已提取的回放批次
+     */
+    DocumentHostRenderSupport.DeferredPostMainReplayBatch prepareDeferredPostMainPasses(UiRenderContext context,
+            DeferredPostMainRenderTarget renderTargetSizer, int nativeWidth, int nativeHeight) {
+        DocumentHostRenderSupport.DeferredPostMainReplayBatch replayBatch = DocumentHostRenderSupport
+                .drainDeferredPostMainReplayBatch(context);
+        if (!replayBatch.isEmpty()) {
+            renderTargetSizer.ensureSize(nativeWidth, nativeHeight);
+        }
+        return replayBatch;
     }
 
     private synchronized void unregister(HudEntry entry) {
@@ -638,6 +656,20 @@ public final class UiHudDocumentHost {
          * @param document HUD 文档
          */
         void build(UiDocument document);
+    }
+
+    /**
+     * HUD 后置离屏目标的尺寸同步契约。
+     */
+    interface DeferredPostMainRenderTarget {
+
+        /**
+         * 同步离屏目标尺寸。
+         *
+         * @param width 原生宽度
+         * @param height 原生高度
+         */
+        void ensureSize(int width, int height);
     }
 
     private static final class HudEntry {

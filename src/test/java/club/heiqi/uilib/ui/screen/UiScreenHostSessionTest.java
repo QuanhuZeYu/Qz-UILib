@@ -1,5 +1,7 @@
 package club.heiqi.uilib.ui.screen;
 
+import java.util.ArrayList;
+import java.util.Arrays;
 import org.junit.Assert;
 import org.junit.Test;
 
@@ -31,6 +33,35 @@ public class UiScreenHostSessionTest {
 
         Assert.assertSame(runtimeAdapters, context.getRuntimeAdapters());
         Assert.assertSame(hostImageRenderer, context.getRuntimeAdapters().getHostImageRenderer());
+    }
+
+    /**
+     * 验证共享 deferred 批次只会消费一次，并且回放完成后会推动主层内容版本更新。
+     */
+    @Test
+    public void shouldReplayDeferredPostMainBatchOnceAndNotifyContext() {
+        UiRenderContext context = new UiRenderContext(320, 240, 12, 34, 0.5F,
+                new UiRenderContext.PaintContextCompositor(), new UiMainLayerSnapshotService(),
+                UiRuntimeAdapters.empty());
+        ArrayList<String> replayLog = new ArrayList<String>();
+        context.enqueueDeferredPostMainPass(() -> replayLog.add("main"));
+        context.enqueueDeferredPostMainOverlayPass(() -> replayLog.add("overlay"));
+
+        DocumentHostRenderSupport.DeferredPostMainReplayBatch replayBatch = DocumentHostRenderSupport
+                .drainDeferredPostMainReplayBatch(context);
+
+        Assert.assertFalse(context.hasDeferredPostMainPasses());
+        Assert.assertEquals(0, context.getMainLayerContentRevisionForDiagnostics());
+
+        DocumentHostRenderSupport.replayDeferredPostMainPasses(replayBatch);
+
+        Assert.assertEquals(Arrays.asList("main", "overlay"), replayLog);
+        Assert.assertEquals(1, context.getMainLayerContentRevisionForDiagnostics());
+
+        DocumentHostRenderSupport.replayDeferredPostMainPasses(replayBatch);
+
+        Assert.assertEquals(Arrays.asList("main", "overlay"), replayLog);
+        Assert.assertEquals(1, context.getMainLayerContentRevisionForDiagnostics());
     }
 
     /**
