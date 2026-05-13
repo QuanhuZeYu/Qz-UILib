@@ -230,7 +230,7 @@ public class DocumentScrollStateTest {
         heroCard.style()
                 .setDisplay(club.heiqi.uilib.ui.style.UiDisplay.FLEX)
                 .setFlexDirection(club.heiqi.uilib.ui.style.UiFlexDirection.COLUMN)
-                .setRowGap(UiStyleLength.px(4));
+                .setRowGap(UiStyleLength.px(6));
         heroCard.append(createTextBlock(document, "INTERACTIVE HUD"));
         heroCard.append(createTextBlock(document, "容器界面可交互"));
         heroCard.append(createTextBlock(document, "主浮窗调试台"));
@@ -242,24 +242,24 @@ public class DocumentScrollStateTest {
                 .setFlexDirection(club.heiqi.uilib.ui.style.UiFlexDirection.COLUMN)
                 .setRowGap(UiStyleLength.px(8));
         controlCard.append(createTextBlock(document, "调试开关"));
-        ElementNode debugToggleRow = document.div();
-        debugToggleRow.style()
+        ElementNode debugToggleCard = document.div();
+        debugToggleCard.style()
                 .setDisplay(club.heiqi.uilib.ui.style.UiDisplay.FLEX)
-                .setFlexDirection(club.heiqi.uilib.ui.style.UiFlexDirection.ROW)
-                .setJustifyContent(club.heiqi.uilib.ui.style.UiJustifyContent.SPACE_BETWEEN);
-        debugToggleRow.append(createTextBlock(document, "显示 HUD 调试信息"));
-        debugToggleRow.append(new club.heiqi.uilib.ui.dom.control.DocumentToggleSwitchControl(document)
+                .setFlexDirection(club.heiqi.uilib.ui.style.UiFlexDirection.COLUMN)
+                .setRowGap(UiStyleLength.px(6));
+        debugToggleCard.append(createTextBlock(document, "显示 HUD 调试信息"));
+        debugToggleCard.append(new club.heiqi.uilib.ui.dom.control.DocumentToggleSwitchControl(document)
                 .setToggled(true).getElement());
-        controlCard.append(debugToggleRow);
-        ElementNode markerToggleRow = document.div();
-        markerToggleRow.style()
+        controlCard.append(debugToggleCard);
+        ElementNode markerToggleCard = document.div();
+        markerToggleCard.style()
                 .setDisplay(club.heiqi.uilib.ui.style.UiDisplay.FLEX)
-                .setFlexDirection(club.heiqi.uilib.ui.style.UiFlexDirection.ROW)
-                .setJustifyContent(club.heiqi.uilib.ui.style.UiJustifyContent.SPACE_BETWEEN);
-        markerToggleRow.append(createTextBlock(document, "保留底部提示标记"));
-        markerToggleRow.append(new club.heiqi.uilib.ui.dom.control.DocumentToggleSwitchControl(document)
+                .setFlexDirection(club.heiqi.uilib.ui.style.UiFlexDirection.COLUMN)
+                .setRowGap(UiStyleLength.px(6));
+        markerToggleCard.append(createTextBlock(document, "保留底部提示标记"));
+        markerToggleCard.append(new club.heiqi.uilib.ui.dom.control.DocumentToggleSwitchControl(document)
                 .setToggled(true).getElement());
-        controlCard.append(markerToggleRow);
+        controlCard.append(markerToggleCard);
 
         scrollHost.style()
                 .setFlexGrow(1.0F)

@@ -1615,7 +1615,6 @@ public class HtmlLikeDocumentWidgetTest {
         ElementNode panel = document.div();
         ElementNode dragBar = document.div();
         ElementNode heroCard = document.div();
-        ElementNode badgeRow = document.div();
         ElementNode controlCard = document.div();
         ElementNode scrollContent = document.div();
         ElementNode contentBody = document.div();
@@ -1638,14 +1637,9 @@ public class HtmlLikeDocumentWidgetTest {
         heroCard.style()
                 .setDisplay(UiDisplay.FLEX)
                 .setFlexDirection(club.heiqi.uilib.ui.style.UiFlexDirection.COLUMN)
-                .setRowGap(UiStyleLength.px(4));
-        badgeRow.style()
-                .setDisplay(UiDisplay.FLEX)
-                .setFlexDirection(club.heiqi.uilib.ui.style.UiFlexDirection.ROW)
-                .setJustifyContent(club.heiqi.uilib.ui.style.UiJustifyContent.SPACE_BETWEEN);
-        badgeRow.append(createTextBlock(document, "INTERACTIVE HUD"));
-        badgeRow.append(createTextBlock(document, "容器界面可交互"));
-        heroCard.append(badgeRow);
+                .setRowGap(UiStyleLength.px(6));
+        heroCard.append(createTextBlock(document, "INTERACTIVE HUD"));
+        heroCard.append(createTextBlock(document, "容器界面可交互"));
         heroCard.append(createTextBlock(document, "主浮窗调试台"));
         heroCard.append(createTextBlock(document,
                 "把工具浮窗停在背包右上区域，用于核对 HUD 层可见性、输入接管与滚轮状态。"));
@@ -1656,25 +1650,23 @@ public class HtmlLikeDocumentWidgetTest {
                 .setRowGap(UiStyleLength.px(8));
         controlCard.append(createTextBlock(document, "调试开关"));
 
-        ElementNode debugToggleRow = document.div();
-        debugToggleRow.style()
+        ElementNode debugToggleCard = document.div();
+        debugToggleCard.style()
                 .setDisplay(UiDisplay.FLEX)
-                .setFlexDirection(club.heiqi.uilib.ui.style.UiFlexDirection.ROW)
-                .setAlignItems(club.heiqi.uilib.ui.style.UiAlignItems.CENTER)
-                .setJustifyContent(club.heiqi.uilib.ui.style.UiJustifyContent.SPACE_BETWEEN);
-        debugToggleRow.append(createTextBlock(document, "显示 HUD 调试信息"));
-        debugToggleRow.append(new DocumentToggleSwitchControl(document).setToggled(true).getElement());
-        controlCard.append(debugToggleRow);
+                .setFlexDirection(club.heiqi.uilib.ui.style.UiFlexDirection.COLUMN)
+                .setRowGap(UiStyleLength.px(6));
+        debugToggleCard.append(createTextBlock(document, "显示 HUD 调试信息"));
+        debugToggleCard.append(new DocumentToggleSwitchControl(document).setToggled(true).getElement());
+        controlCard.append(debugToggleCard);
 
-        ElementNode markerToggleRow = document.div();
-        markerToggleRow.style()
+        ElementNode markerToggleCard = document.div();
+        markerToggleCard.style()
                 .setDisplay(UiDisplay.FLEX)
-                .setFlexDirection(club.heiqi.uilib.ui.style.UiFlexDirection.ROW)
-                .setAlignItems(club.heiqi.uilib.ui.style.UiAlignItems.CENTER)
-                .setJustifyContent(club.heiqi.uilib.ui.style.UiJustifyContent.SPACE_BETWEEN);
-        markerToggleRow.append(createTextBlock(document, "保留底部提示标记"));
-        markerToggleRow.append(new DocumentToggleSwitchControl(document).setToggled(true).getElement());
-        controlCard.append(markerToggleRow);
+                .setFlexDirection(club.heiqi.uilib.ui.style.UiFlexDirection.COLUMN)
+                .setRowGap(UiStyleLength.px(6));
+        markerToggleCard.append(createTextBlock(document, "保留底部提示标记"));
+        markerToggleCard.append(new DocumentToggleSwitchControl(document).setToggled(true).getElement());
+        controlCard.append(markerToggleCard);
 
         scrollContent.style()
                 .setFlexGrow(1.0F)

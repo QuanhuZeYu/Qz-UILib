@@ -22,7 +22,6 @@ import club.heiqi.uilib.ui.hud.UiHudDocumentHost;
 import club.heiqi.uilib.ui.hud.UiHudDocumentRegistration;
 import club.heiqi.uilib.ui.hud.UiHudLayerType;
 import club.heiqi.uilib.ui.input.UiInputService;
-import club.heiqi.uilib.ui.style.UiAlignItems;
 import club.heiqi.uilib.ui.style.UiDisplay;
 import club.heiqi.uilib.ui.style.UiFlexDirection;
 import club.heiqi.uilib.ui.style.UiJustifyContent;
@@ -220,34 +219,28 @@ public final class UiHudDemoController {
                 .setBorderColor(0xFF6D5CE8)
                 .setBorderWidth(UiStyleLength.px(1))
                 .setBorderRadius(UiStyleLength.px(12))
-                .setRowGap(UiStyleLength.px(4));
+                .setRowGap(UiStyleLength.px(6));
         panel.append(heroCard);
-
-        ElementNode badgeRow = document.div();
-        badgeRow.style()
-                .setDisplay(UiDisplay.FLEX)
-                .setFlexDirection(UiFlexDirection.ROW)
-                .setAlignItems(UiAlignItems.CENTER)
-                .setJustifyContent(UiJustifyContent.SPACE_BETWEEN);
-        heroCard.append(badgeRow);
 
         ElementNode heroTag = document.div();
         heroTag.style()
                 .setPadding(UiStyleLength.px(4))
                 .setBackgroundColor(0x444C1D95)
                 .setBorderRadius(UiStyleLength.px(999))
-                .setTextColor(0xFFD8C7FF);
+                .setTextColor(0xFFD8C7FF)
+                .setDisplay(UiDisplay.BLOCK);
         heroTag.appendText("INTERACTIVE HUD");
-        badgeRow.append(heroTag);
+        heroCard.append(heroTag);
 
         ElementNode statusTag = document.div();
         statusTag.style()
                 .setPadding(UiStyleLength.px(4))
                 .setBackgroundColor(0x3322C55E)
                 .setBorderRadius(UiStyleLength.px(999))
-                .setTextColor(0xFFA7F3D0);
+                .setTextColor(0xFFA7F3D0)
+                .setDisplay(UiDisplay.BLOCK);
         statusTag.appendText("容器界面可交互");
-        badgeRow.append(statusTag);
+        heroCard.append(statusTag);
 
         ElementNode title = document.div();
         title.style().setTextColor(0xFFF1E8FF);
@@ -273,15 +266,19 @@ public final class UiHudDemoController {
         controlTitle.appendText("调试开关");
         controlCard.append(controlTitle);
 
-        ElementNode debugToggleRow = document.div();
-        debugToggleRow.style()
+        ElementNode debugToggleCard = document.div();
+        debugToggleCard.style()
                 .setDisplay(UiDisplay.FLEX)
-                .setFlexDirection(UiFlexDirection.ROW)
-                .setAlignItems(UiAlignItems.CENTER)
-                .setJustifyContent(UiJustifyContent.SPACE_BETWEEN)
-                .setColumnGap(UiStyleLength.px(10));
-        controlCard.append(debugToggleRow);
-        appendTextLine(document, debugToggleRow, "显示 HUD 调试信息");
+                .setFlexDirection(UiFlexDirection.COLUMN)
+                .setRowGap(UiStyleLength.px(6))
+                .setPadding(UiStyleLength.px(8))
+                .setBackgroundColor(0x88121D33)
+                .setBorderColor(0xFF334155)
+                .setBorderWidth(UiStyleLength.px(1))
+                .setBorderRadius(UiStyleLength.px(10));
+        controlCard.append(debugToggleCard);
+
+        appendInlineTextLine(document, debugToggleCard, "显示 HUD 调试信息");
 
         DocumentToggleSwitchControl debugToggle = new DocumentToggleSwitchControl(document)
                 .setToggled(debugInfoVisible)
@@ -294,17 +291,21 @@ public final class UiHudDemoController {
                         refreshTexts();
                     }
                 });
-        debugToggleRow.append(debugToggle.getElement());
+        debugToggleCard.append(debugToggle.getElement());
 
-        ElementNode markerToggleRow = document.div();
-        markerToggleRow.style()
+        ElementNode markerToggleCard = document.div();
+        markerToggleCard.style()
                 .setDisplay(UiDisplay.FLEX)
-                .setFlexDirection(UiFlexDirection.ROW)
-                .setAlignItems(UiAlignItems.CENTER)
-                .setJustifyContent(UiJustifyContent.SPACE_BETWEEN)
-                .setColumnGap(UiStyleLength.px(10));
-        controlCard.append(markerToggleRow);
-        appendTextLine(document, markerToggleRow, "保留底部提示标记");
+                .setFlexDirection(UiFlexDirection.COLUMN)
+                .setRowGap(UiStyleLength.px(6))
+                .setPadding(UiStyleLength.px(8))
+                .setBackgroundColor(0x88121D33)
+                .setBorderColor(0xFF334155)
+                .setBorderWidth(UiStyleLength.px(1))
+                .setBorderRadius(UiStyleLength.px(10));
+        controlCard.append(markerToggleCard);
+
+        appendInlineTextLine(document, markerToggleCard, "保留底部提示标记");
 
         DocumentToggleSwitchControl markerToggle = new DocumentToggleSwitchControl(document)
                 .setToggled(markersEnabled)
@@ -317,7 +318,7 @@ public final class UiHudDemoController {
                         refreshTexts();
                     }
                 });
-        markerToggleRow.append(markerToggle.getElement());
+        markerToggleCard.append(markerToggle.getElement());
 
         ElementNode scrollContent = document.div();
         scrollContent.style()
@@ -485,6 +486,16 @@ public final class UiHudDemoController {
 
     private TextNode appendScrollTextLine(UiDocument document, ElementNode parent, String text) {
         return appendTextLine(document, parent, text);
+    }
+
+    private TextNode appendInlineTextLine(UiDocument document, ElementNode parent, String text) {
+        ElementNode line = document.div();
+        line.style()
+                .setDisplay(UiDisplay.BLOCK)
+                .setMargin(UiStyleLength.px(0));
+        TextNode textNode = line.appendText(text);
+        parent.append(line);
+        return textNode;
     }
 
     private TextNode appendTextLine(UiDocument document, ElementNode parent, String text) {
