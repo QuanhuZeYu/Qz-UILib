@@ -1614,31 +1614,94 @@ public class HtmlLikeDocumentWidgetTest {
         ElementNode root = document.getRootElement();
         ElementNode panel = document.div();
         ElementNode dragBar = document.div();
-        ElementNode title = document.div();
-        ElementNode diagnostics = document.div();
+        ElementNode heroCard = document.div();
+        ElementNode badgeRow = document.div();
+        ElementNode controlCard = document.div();
         ElementNode scrollContent = document.div();
+        ElementNode contentBody = document.div();
 
         root.style()
                 .setWidth(UiStyleLength.px(2048))
                 .setHeight(UiStyleLength.px(1152));
         panel.style()
                 .setPosition(UiPosition.FIXED)
-                .setLeft(UiStyleLength.px(1760))
-                .setTop(UiStyleLength.px(14))
+                .setLeft(UiStyleLength.px(1648))
+                .setTop(UiStyleLength.px(18))
                 .setDisplay(UiDisplay.FLEX)
                 .setFlexDirection(club.heiqi.uilib.ui.style.UiFlexDirection.COLUMN)
-                .setWidth(UiStyleLength.px(248))
-                .setHeight(UiStyleLength.px(232))
-                .setPadding(UiStyleLength.px(12));
-        dragBar.appendText("拖住这里移动浮窗");
-        title.appendText("INTERACTIVE HUD");
-        diagnostics.appendText("阶段: 有范围但未命中宿主\n事件: 270  delta: 2  消费: 否\n偏移: 0 / 439");
+                .setWidth(UiStyleLength.px(360))
+                .setHeight(UiStyleLength.px(368))
+                .setPadding(UiStyleLength.px(12))
+                .setRowGap(UiStyleLength.px(8));
+        dragBar.appendText("HUD 工具浮窗 · 拖住这里移动");
+
+        heroCard.style()
+                .setDisplay(UiDisplay.FLEX)
+                .setFlexDirection(club.heiqi.uilib.ui.style.UiFlexDirection.COLUMN)
+                .setRowGap(UiStyleLength.px(4));
+        badgeRow.style()
+                .setDisplay(UiDisplay.FLEX)
+                .setFlexDirection(club.heiqi.uilib.ui.style.UiFlexDirection.ROW)
+                .setJustifyContent(club.heiqi.uilib.ui.style.UiJustifyContent.SPACE_BETWEEN);
+        badgeRow.append(createTextBlock(document, "INTERACTIVE HUD"));
+        badgeRow.append(createTextBlock(document, "容器界面可交互"));
+        heroCard.append(badgeRow);
+        heroCard.append(createTextBlock(document, "主浮窗调试台"));
+        heroCard.append(createTextBlock(document,
+                "把工具浮窗停在背包右上区域，用于核对 HUD 层可见性、输入接管与滚轮状态。"));
+
+        controlCard.style()
+                .setDisplay(UiDisplay.FLEX)
+                .setFlexDirection(club.heiqi.uilib.ui.style.UiFlexDirection.COLUMN)
+                .setRowGap(UiStyleLength.px(8));
+        controlCard.append(createTextBlock(document, "调试开关"));
+
+        ElementNode debugToggleRow = document.div();
+        debugToggleRow.style()
+                .setDisplay(UiDisplay.FLEX)
+                .setFlexDirection(club.heiqi.uilib.ui.style.UiFlexDirection.ROW)
+                .setAlignItems(club.heiqi.uilib.ui.style.UiAlignItems.CENTER)
+                .setJustifyContent(club.heiqi.uilib.ui.style.UiJustifyContent.SPACE_BETWEEN);
+        debugToggleRow.append(createTextBlock(document, "显示 HUD 调试信息"));
+        debugToggleRow.append(new DocumentToggleSwitchControl(document).setToggled(true).getElement());
+        controlCard.append(debugToggleRow);
+
+        ElementNode markerToggleRow = document.div();
+        markerToggleRow.style()
+                .setDisplay(UiDisplay.FLEX)
+                .setFlexDirection(club.heiqi.uilib.ui.style.UiFlexDirection.ROW)
+                .setAlignItems(club.heiqi.uilib.ui.style.UiAlignItems.CENTER)
+                .setJustifyContent(club.heiqi.uilib.ui.style.UiJustifyContent.SPACE_BETWEEN);
+        markerToggleRow.append(createTextBlock(document, "保留底部提示标记"));
+        markerToggleRow.append(new DocumentToggleSwitchControl(document).setToggled(true).getElement());
+        controlCard.append(markerToggleRow);
+
         scrollContent.style()
-                .setHeight(UiStyleLength.px(118))
+                .setFlexGrow(1.0F)
                 .setOverflowX(UiOverflow.HIDDEN)
                 .setOverflowY(UiOverflow.AUTO);
-        scrollContent.append(createTextBlock(document, "容器界面上方可见。点击次数 0，备注：把鼠标移到背包界面后尝试编辑我 123。"));
-        scrollContent.append(createTextBlock(document, "底部提示标记：保留"));
+        contentBody.style()
+                .setDisplay(UiDisplay.FLEX)
+                .setFlexDirection(club.heiqi.uilib.ui.style.UiFlexDirection.COLUMN)
+                .setRowGap(UiStyleLength.px(8));
+        scrollContent.append(contentBody);
+
+        ElementNode overviewCard = document.div();
+        overviewCard.style()
+                .setDisplay(UiDisplay.FLEX)
+                .setFlexDirection(club.heiqi.uilib.ui.style.UiFlexDirection.COLUMN)
+                .setRowGap(UiStyleLength.px(4));
+        overviewCard.append(createTextBlock(document, "会话概览"));
+        overviewCard.append(createTextBlock(document, "容器界面上方可见。点击次数 0，备注：把鼠标移到背包界面后尝试编辑我。"));
+        overviewCard.append(createTextBlock(document, "底部提示标记：保留，用于对照 HUD 提示层位置。"));
+        contentBody.append(overviewCard);
+
+        ElementNode noteCard = document.div();
+        noteCard.style()
+                .setDisplay(UiDisplay.FLEX)
+                .setFlexDirection(club.heiqi.uilib.ui.style.UiFlexDirection.COLUMN)
+                .setRowGap(UiStyleLength.px(6));
+        noteCard.append(createTextBlock(document, "容器备注"));
 
         DocumentTextInputControl input = new DocumentTextInputControl(document)
                 .setPlaceholder("在容器界面中输入备注")
@@ -1646,31 +1709,39 @@ public class HtmlLikeDocumentWidgetTest {
         input.getElement().style()
                 .setDisplay(UiDisplay.BLOCK)
                 .setMargin(UiStyleLength.px(0));
-        scrollContent.append(input.getElement());
-
-        ElementNode toggleRow = document.div();
-        toggleRow.style()
-                .setDisplay(UiDisplay.FLEX)
-                .setFlexDirection(club.heiqi.uilib.ui.style.UiFlexDirection.ROW)
-                .setAlignItems(club.heiqi.uilib.ui.style.UiAlignItems.CENTER)
-                .setJustifyContent(club.heiqi.uilib.ui.style.UiJustifyContent.SPACE_BETWEEN)
-                .setMargin(UiStyleLength.px(8));
-        toggleRow.append(createTextBlock(document, "保留底部提示标记"));
-        toggleRow.append(new DocumentToggleSwitchControl(document).setToggled(true).getElement());
-        scrollContent.append(toggleRow);
+        noteCard.append(input.getElement());
 
         DocumentButtonControl button = new DocumentButtonControl(document, "记录一次点击");
         button.getElement().style()
                 .setDisplay(UiDisplay.BLOCK)
                 .setMargin(UiStyleLength.px(0));
-        scrollContent.append(button.getElement());
+        noteCard.append(button.getElement());
+        contentBody.append(noteCard);
+
+        ElementNode debugCard = document.div();
+        debugCard.style()
+                .setDisplay(UiDisplay.FLEX)
+                .setFlexDirection(club.heiqi.uilib.ui.style.UiFlexDirection.COLUMN)
+                .setRowGap(UiStyleLength.px(4));
+        debugCard.append(createTextBlock(document, "HUD DEBUG"));
+        debugCard.append(createTextBlock(document,
+                "滚轮监控\n阶段: 有范围但未命中宿主\n鼠标: 1784, 172  命中: div  滚动区: 是\n事件: 270  delta: 2  消费: 否\n偏移: 0 / 439"));
+        contentBody.append(debugCard);
+
+        ElementNode tipsCard = document.div();
+        tipsCard.style()
+                .setDisplay(UiDisplay.FLEX)
+                .setFlexDirection(club.heiqi.uilib.ui.style.UiFlexDirection.COLUMN)
+                .setRowGap(UiStyleLength.px(4));
+        tipsCard.append(createTextBlock(document, "操作建议"));
 
         for (int index = 1; index <= 8; index++) {
-            scrollContent.append(createTextBlock(document,
+            tipsCard.append(createTextBlock(document,
                     "滚轮停在这里可查看内部内容，第 " + index + " 条示例说明。继续补充中文描述，确保形成明显纵向溢出。"));
         }
+        contentBody.append(tipsCard);
 
-        panel.append(dragBar).append(title).append(diagnostics).append(scrollContent);
+        panel.append(dragBar).append(heroCard).append(controlCard).append(scrollContent);
         root.append(panel);
 
         HtmlLikeDocumentWidget widget = new HtmlLikeDocumentWidget(document, 2048, 1152,
@@ -1679,15 +1750,15 @@ public class HtmlLikeDocumentWidgetTest {
         widget.render(new RecordingUiRenderContext());
 
         Assert.assertTrue(widget.getMaxScrollTop(scrollContent) > 0);
-        Assert.assertNotNull(widget.findElementAt(1784, 172));
-        Assert.assertNotNull(widget.findElementAt(1784, 206));
+        Assert.assertNotNull(widget.findElementAt(1778, 216));
+        Assert.assertNotNull(widget.findElementAt(1778, 260));
 
-        boolean consumedOnText = widget.onMouseScroll(new UiMouseEvent(UiMouseEvent.Action.SCROLL, 1784, 172, -1,
+        boolean consumedOnText = widget.onMouseScroll(new UiMouseEvent(UiMouseEvent.Action.SCROLL, 1778, 216, -1,
                 -120, 0, 0, 1L));
         Assert.assertTrue(consumedOnText);
         Assert.assertTrue(widget.getScrollTop(scrollContent) > 0);
 
-        boolean consumedOnInput = widget.onMouseScroll(new UiMouseEvent(UiMouseEvent.Action.SCROLL, 1784, 206, -1,
+        boolean consumedOnInput = widget.onMouseScroll(new UiMouseEvent(UiMouseEvent.Action.SCROLL, 1778, 260, -1,
                 -120, 0, 0, 2L));
         Assert.assertTrue(consumedOnInput);
         Assert.assertTrue(widget.getScrollTop(scrollContent) > 0);

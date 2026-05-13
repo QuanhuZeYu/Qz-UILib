@@ -206,42 +206,125 @@ public class DocumentScrollStateTest {
         UiDocument document = UiDocument.create();
         ElementNode root = document.getRootElement();
         ElementNode panel = document.div();
-        ElementNode title = document.div();
-        ElementNode diagnostics = document.div();
+        ElementNode dragBar = document.div();
+        ElementNode heroCard = document.div();
+        ElementNode controlCard = document.div();
         ElementNode scrollHost = document.div();
+        ElementNode contentBody = document.div();
 
         root.style()
                 .setWidth(UiStyleLength.px(2048))
                 .setHeight(UiStyleLength.px(1152));
         panel.style()
                 .setPosition(UiPosition.FIXED)
-                .setLeft(UiStyleLength.px(1760))
-                .setTop(UiStyleLength.px(14))
-                .setWidth(UiStyleLength.px(248))
-                .setHeight(UiStyleLength.px(232))
-                .setPadding(UiStyleLength.px(12));
-        title.appendText("INTERACTIVE HUD");
-        diagnostics.appendText("阶段: 有范围但未命中宿主");
+                .setLeft(UiStyleLength.px(1648))
+                .setTop(UiStyleLength.px(18))
+                .setDisplay(club.heiqi.uilib.ui.style.UiDisplay.FLEX)
+                .setFlexDirection(club.heiqi.uilib.ui.style.UiFlexDirection.COLUMN)
+                .setWidth(UiStyleLength.px(360))
+                .setHeight(UiStyleLength.px(368))
+                .setPadding(UiStyleLength.px(12))
+                .setRowGap(UiStyleLength.px(8));
+        dragBar.appendText("HUD 工具浮窗 · 拖住这里移动");
+
+        heroCard.style()
+                .setDisplay(club.heiqi.uilib.ui.style.UiDisplay.FLEX)
+                .setFlexDirection(club.heiqi.uilib.ui.style.UiFlexDirection.COLUMN)
+                .setRowGap(UiStyleLength.px(4));
+        heroCard.append(createTextBlock(document, "INTERACTIVE HUD"));
+        heroCard.append(createTextBlock(document, "容器界面可交互"));
+        heroCard.append(createTextBlock(document, "主浮窗调试台"));
+        heroCard.append(createTextBlock(document,
+                "把工具浮窗停在背包右上区域，用于核对 HUD 层可见性、输入接管与滚轮状态。"));
+
+        controlCard.style()
+                .setDisplay(club.heiqi.uilib.ui.style.UiDisplay.FLEX)
+                .setFlexDirection(club.heiqi.uilib.ui.style.UiFlexDirection.COLUMN)
+                .setRowGap(UiStyleLength.px(8));
+        controlCard.append(createTextBlock(document, "调试开关"));
+        ElementNode debugToggleRow = document.div();
+        debugToggleRow.style()
+                .setDisplay(club.heiqi.uilib.ui.style.UiDisplay.FLEX)
+                .setFlexDirection(club.heiqi.uilib.ui.style.UiFlexDirection.ROW)
+                .setJustifyContent(club.heiqi.uilib.ui.style.UiJustifyContent.SPACE_BETWEEN);
+        debugToggleRow.append(createTextBlock(document, "显示 HUD 调试信息"));
+        debugToggleRow.append(new club.heiqi.uilib.ui.dom.control.DocumentToggleSwitchControl(document)
+                .setToggled(true).getElement());
+        controlCard.append(debugToggleRow);
+        ElementNode markerToggleRow = document.div();
+        markerToggleRow.style()
+                .setDisplay(club.heiqi.uilib.ui.style.UiDisplay.FLEX)
+                .setFlexDirection(club.heiqi.uilib.ui.style.UiFlexDirection.ROW)
+                .setJustifyContent(club.heiqi.uilib.ui.style.UiJustifyContent.SPACE_BETWEEN);
+        markerToggleRow.append(createTextBlock(document, "保留底部提示标记"));
+        markerToggleRow.append(new club.heiqi.uilib.ui.dom.control.DocumentToggleSwitchControl(document)
+                .setToggled(true).getElement());
+        controlCard.append(markerToggleRow);
+
         scrollHost.style()
-                .setHeight(UiStyleLength.px(118))
+                .setFlexGrow(1.0F)
                 .setOverflowX(UiOverflow.HIDDEN)
                 .setOverflowY(UiOverflow.AUTO);
-        scrollHost.append(createTextBlock(document, "容器界面上方可见。点击次数 0，备注：把鼠标移到背包界面后尝试编辑我 123。"));
-        scrollHost.append(createTextBlock(document, "底部提示标记：保留"));
+        contentBody.style()
+                .setDisplay(club.heiqi.uilib.ui.style.UiDisplay.FLEX)
+                .setFlexDirection(club.heiqi.uilib.ui.style.UiFlexDirection.COLUMN)
+                .setRowGap(UiStyleLength.px(8));
+        scrollHost.append(contentBody);
+
+        ElementNode overviewCard = document.div();
+        overviewCard.style()
+                .setDisplay(club.heiqi.uilib.ui.style.UiDisplay.FLEX)
+                .setFlexDirection(club.heiqi.uilib.ui.style.UiFlexDirection.COLUMN)
+                .setRowGap(UiStyleLength.px(4));
+        overviewCard.append(createTextBlock(document, "会话概览"));
+        overviewCard.append(createTextBlock(document, "容器界面上方可见。点击次数 0，备注：把鼠标移到背包界面后尝试编辑我。"));
+        overviewCard.append(createTextBlock(document, "底部提示标记：保留，用于对照 HUD 提示层位置。"));
+        contentBody.append(overviewCard);
+
+        ElementNode noteCard = document.div();
+        noteCard.style()
+                .setDisplay(club.heiqi.uilib.ui.style.UiDisplay.FLEX)
+                .setFlexDirection(club.heiqi.uilib.ui.style.UiFlexDirection.COLUMN)
+                .setRowGap(UiStyleLength.px(6));
+        noteCard.append(createTextBlock(document, "容器备注"));
+        noteCard.append(new club.heiqi.uilib.ui.dom.control.DocumentTextInputControl(document)
+                .setPlaceholder("在容器界面中输入备注")
+                .setText("把鼠标移到背包界面后尝试编辑我")
+                .getElement());
+        noteCard.append(new club.heiqi.uilib.ui.dom.control.DocumentButtonControl(document, "记录一次点击").getElement());
+        contentBody.append(noteCard);
+
+        ElementNode debugCard = document.div();
+        debugCard.style()
+                .setDisplay(club.heiqi.uilib.ui.style.UiDisplay.FLEX)
+                .setFlexDirection(club.heiqi.uilib.ui.style.UiFlexDirection.COLUMN)
+                .setRowGap(UiStyleLength.px(4));
+        debugCard.append(createTextBlock(document, "HUD DEBUG"));
+        debugCard.append(createTextBlock(document,
+                "滚轮监控\n阶段: 有范围但未命中宿主\n鼠标: 1784, 172  命中: div  滚动区: 是\n事件: 270  delta: 2  消费: 否\n偏移: 0 / 439"));
+        contentBody.append(debugCard);
+
+        ElementNode tipsCard = document.div();
+        tipsCard.style()
+                .setDisplay(club.heiqi.uilib.ui.style.UiDisplay.FLEX)
+                .setFlexDirection(club.heiqi.uilib.ui.style.UiFlexDirection.COLUMN)
+                .setRowGap(UiStyleLength.px(4));
+        tipsCard.append(createTextBlock(document, "操作建议"));
         for (int index = 1; index <= 8; index++) {
-            scrollHost.append(createTextBlock(document,
+            tipsCard.append(createTextBlock(document,
                     "滚轮停在这里可查看内部内容，第 " + index + " 条示例说明。继续补充中文描述，确保形成明显纵向溢出。"));
         }
-        panel.append(title).append(diagnostics).append(scrollHost);
+        contentBody.append(tipsCard);
+        panel.append(dragBar).append(heroCard).append(controlCard).append(scrollHost);
         root.append(panel);
 
         DocumentLayoutBox rootBox = DocumentLayoutEngine.layout(root, 2048, 1152,
                 new DeterministicTextMeasureService());
         DocumentScrollState scrollState = new DocumentScrollState();
 
-        Assert.assertEquals(title, DocumentHitTestEngine.hitTest(rootBox, scrollState, 1784, 30));
-        Assert.assertNotNull(DocumentHitTestEngine.hitTest(rootBox, scrollState, 1784, 172));
-        Assert.assertTrue(scrollState.handleWheel(rootBox, 1784, 172, -120, 1L));
+        Assert.assertNotNull(DocumentHitTestEngine.hitTest(rootBox, scrollState, 1784, 54));
+        Assert.assertNotNull(DocumentHitTestEngine.hitTest(rootBox, scrollState, 1784, 204));
+        Assert.assertTrue(scrollState.handleWheel(rootBox, 1784, 204, -120, 1L));
         Assert.assertTrue(scrollState.getScrollTop(scrollHost) > 0);
     }
 

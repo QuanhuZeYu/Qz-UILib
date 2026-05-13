@@ -43,12 +43,15 @@ public final class UiHudDemoController {
     private TextNode passiveStatusText;
     private TextNode passiveClockText;
     private TextNode interactiveScrollProbeText;
-    private TextNode interactiveSummaryText;
-    private TextNode interactiveSwitchText;
+    private TextNode interactiveHeaderSummaryText;
+    private TextNode interactiveBodySummaryText;
+    private TextNode interactiveMarkerSummaryText;
     private int interactiveClickCount;
     private boolean markersEnabled = true;
+    private boolean debugInfoVisible = true;
     private String noteText = "把鼠标移到背包界面后尝试编辑我";
     private ElementNode interactiveScrollContent;
+    private ElementNode interactiveDebugSection;
 
     private UiHudDemoController() {}
 
@@ -88,6 +91,7 @@ public final class UiHudDemoController {
         disable();
         interactiveClickCount = 0;
         markersEnabled = true;
+        debugInfoVisible = true;
         noteText = "把鼠标移到背包界面后尝试编辑我";
         passiveRegistration = UiHudDocumentHost.getInstance().register(UiHudLayerType.PASSIVE,
                 new UiHudDocumentHost.UiHudDocumentContentBuilder() {
@@ -118,9 +122,11 @@ public final class UiHudDemoController {
         passiveStatusText = null;
         passiveClockText = null;
         interactiveScrollProbeText = null;
-        interactiveSummaryText = null;
-        interactiveSwitchText = null;
+        interactiveHeaderSummaryText = null;
+        interactiveBodySummaryText = null;
+        interactiveMarkerSummaryText = null;
         interactiveScrollContent = null;
+        interactiveDebugSection = null;
     }
 
     private void buildPassiveDocument(UiDocument document) {
@@ -179,63 +185,146 @@ public final class UiHudDemoController {
         ElementNode panel = document.div();
         panel.style()
                 .setPosition(UiPosition.FIXED)
-                .setLeft(UiStyleLength.px(1760))
-                .setTop(UiStyleLength.px(14))
+                .setLeft(UiStyleLength.px(1648))
+                .setTop(UiStyleLength.px(18))
                 .setDisplay(UiDisplay.FLEX)
                 .setFlexDirection(UiFlexDirection.COLUMN)
-                .setWidth(UiStyleLength.px(248))
-                .setHeight(UiStyleLength.px(232))
+                .setWidth(UiStyleLength.px(360))
+                .setHeight(UiStyleLength.px(368))
                 .setPadding(UiStyleLength.px(12))
-                .setBackgroundColor(0xE61A2233)
-                .setBorderColor(0xFF8A6CFF)
+                .setBackgroundColor(0xEE12192A)
+                .setBorderColor(0xFF7C3AED)
                 .setBorderWidth(UiStyleLength.px(1))
-                .setBorderRadius(UiStyleLength.px(14))
+                .setBorderRadius(UiStyleLength.px(16))
+                .setRowGap(UiStyleLength.px(8))
                 .setTextColor(0xFFF3F1FF);
         root.append(panel);
 
         ElementNode dragBar = document.div();
         dragBar.style()
                 .setMargin(UiStyleLength.px(0))
-                .setPadding(UiStyleLength.px(3))
-                .setBackgroundColor(0x335A3FB8)
+                .setPadding(UiStyleLength.px(4))
+                .setBackgroundColor(0x334C1D95)
                 .setBorderRadius(UiStyleLength.px(999))
                 .setTextColor(0xFFDED7FF);
-        dragBar.appendText("拖住这里移动浮窗");
+        dragBar.appendText("HUD 工具浮窗 · 拖住这里移动");
         panel.append(dragBar);
         DocumentDraggableSupport.attach(panel, dragBar, DocumentDraggableSupport.DragAxis.BOTH);
 
-        ElementNode title = document.div();
-        title.style().setTextColor(0xFFC9B6FF);
-        title.appendText("INTERACTIVE HUD");
-        panel.append(title);
-
-        ElementNode debugPanel = document.div();
-        debugPanel.style()
-                .setPosition(UiPosition.FIXED)
-                .setLeft(UiStyleLength.px(1460))
-                .setTop(UiStyleLength.px(14))
-                .setWidth(UiStyleLength.px(280))
-                .setPadding(UiStyleLength.px(8))
-                .setBackgroundColor(0xE6121A28)
-                .setBorderColor(0xFF4C7ED8)
+        ElementNode heroCard = document.div();
+        heroCard.style()
+                .setDisplay(UiDisplay.FLEX)
+                .setFlexDirection(UiFlexDirection.COLUMN)
+                .setPadding(UiStyleLength.px(10))
+                .setBackgroundColor(0xAA1A2238)
+                .setBorderColor(0xFF6D5CE8)
                 .setBorderWidth(UiStyleLength.px(1))
                 .setBorderRadius(UiStyleLength.px(12))
-                .setTextColor(0xFFDBEAFE);
-        root.append(debugPanel);
+                .setRowGap(UiStyleLength.px(4));
+        panel.append(heroCard);
 
-        ElementNode debugTitle = document.div();
-        debugTitle.style().setTextColor(0xFF9FD0FF);
-        debugTitle.appendText("HUD DEBUG");
-        debugPanel.append(debugTitle);
+        ElementNode badgeRow = document.div();
+        badgeRow.style()
+                .setDisplay(UiDisplay.FLEX)
+                .setFlexDirection(UiFlexDirection.ROW)
+                .setAlignItems(UiAlignItems.CENTER)
+                .setJustifyContent(UiJustifyContent.SPACE_BETWEEN);
+        heroCard.append(badgeRow);
 
-        interactiveScrollProbeText = debugPanel.appendText("");
+        ElementNode heroTag = document.div();
+        heroTag.style()
+                .setPadding(UiStyleLength.px(4))
+                .setBackgroundColor(0x444C1D95)
+                .setBorderRadius(UiStyleLength.px(999))
+                .setTextColor(0xFFD8C7FF);
+        heroTag.appendText("INTERACTIVE HUD");
+        badgeRow.append(heroTag);
+
+        ElementNode statusTag = document.div();
+        statusTag.style()
+                .setPadding(UiStyleLength.px(4))
+                .setBackgroundColor(0x3322C55E)
+                .setBorderRadius(UiStyleLength.px(999))
+                .setTextColor(0xFFA7F3D0);
+        statusTag.appendText("容器界面可交互");
+        badgeRow.append(statusTag);
+
+        ElementNode title = document.div();
+        title.style().setTextColor(0xFFF1E8FF);
+        title.appendText("主浮窗调试台");
+        heroCard.append(title);
+
+        interactiveHeaderSummaryText = appendTextLine(document, heroCard, "");
+
+        ElementNode controlCard = document.div();
+        controlCard.style()
+                .setDisplay(UiDisplay.FLEX)
+                .setFlexDirection(UiFlexDirection.COLUMN)
+                .setPadding(UiStyleLength.px(10))
+                .setBackgroundColor(0xAA0F172A)
+                .setBorderColor(0xFF38BDF8)
+                .setBorderWidth(UiStyleLength.px(1))
+                .setBorderRadius(UiStyleLength.px(12))
+                .setRowGap(UiStyleLength.px(8));
+        panel.append(controlCard);
+
+        ElementNode controlTitle = document.div();
+        controlTitle.style().setTextColor(0xFF93C5FD);
+        controlTitle.appendText("调试开关");
+        controlCard.append(controlTitle);
+
+        ElementNode debugToggleRow = document.div();
+        debugToggleRow.style()
+                .setDisplay(UiDisplay.FLEX)
+                .setFlexDirection(UiFlexDirection.ROW)
+                .setAlignItems(UiAlignItems.CENTER)
+                .setJustifyContent(UiJustifyContent.SPACE_BETWEEN)
+                .setColumnGap(UiStyleLength.px(10));
+        controlCard.append(debugToggleRow);
+        appendTextLine(document, debugToggleRow, "显示 HUD 调试信息");
+
+        DocumentToggleSwitchControl debugToggle = new DocumentToggleSwitchControl(document)
+                .setToggled(debugInfoVisible)
+                .setTrackColors(0xFF475569, 0xFF2563EB, 0xFF334155)
+                .setFocusBorderColor(0xFFBFDBFE)
+                .setChangeHandler(new DocumentToggleChangeHandler() {
+                    @Override
+                    public void onToggleChanged(DocumentToggleChangeEvent event) {
+                        debugInfoVisible = event.isToggled();
+                        refreshTexts();
+                    }
+                });
+        debugToggleRow.append(debugToggle.getElement());
+
+        ElementNode markerToggleRow = document.div();
+        markerToggleRow.style()
+                .setDisplay(UiDisplay.FLEX)
+                .setFlexDirection(UiFlexDirection.ROW)
+                .setAlignItems(UiAlignItems.CENTER)
+                .setJustifyContent(UiJustifyContent.SPACE_BETWEEN)
+                .setColumnGap(UiStyleLength.px(10));
+        controlCard.append(markerToggleRow);
+        appendTextLine(document, markerToggleRow, "保留底部提示标记");
+
+        DocumentToggleSwitchControl markerToggle = new DocumentToggleSwitchControl(document)
+                .setToggled(markersEnabled)
+                .setTrackColors(0xFF475569, 0xFF7C3AED, 0xFF334155)
+                .setFocusBorderColor(0xFFD8B4FE)
+                .setChangeHandler(new DocumentToggleChangeHandler() {
+                    @Override
+                    public void onToggleChanged(DocumentToggleChangeEvent event) {
+                        markersEnabled = event.isToggled();
+                        refreshTexts();
+                    }
+                });
+        markerToggleRow.append(markerToggle.getElement());
 
         ElementNode scrollContent = document.div();
         scrollContent.style()
-                .setHeight(UiStyleLength.px(118))
+                .setFlexGrow(1.0F)
                 .setPadding(UiStyleLength.px(8))
-                .setBackgroundColor(0xAA0F172A)
-                .setBorderColor(0xFF38BDF8)
+                .setBackgroundColor(0xCC0B1220)
+                .setBorderColor(0xFF334155)
                 .setBorderWidth(UiStyleLength.px(1))
                 .setBorderRadius(UiStyleLength.px(10))
                 .setOverflowX(UiOverflow.HIDDEN)
@@ -245,12 +334,30 @@ public final class UiHudDemoController {
 
         ElementNode contentBody = document.div();
         contentBody.style()
-                .setDisplay(UiDisplay.BLOCK)
+                .setDisplay(UiDisplay.FLEX)
+                .setFlexDirection(UiFlexDirection.COLUMN)
+                .setRowGap(UiStyleLength.px(8))
                 .setWidth(UiStyleLength.percent(1.0F));
         scrollContent.append(contentBody);
 
-        interactiveSummaryText = appendScrollTextLine(document, contentBody, "");
-        interactiveSwitchText = appendScrollTextLine(document, contentBody, "");
+        ElementNode overviewCard = document.div();
+        overviewCard.style()
+                .setDisplay(UiDisplay.FLEX)
+                .setFlexDirection(UiFlexDirection.COLUMN)
+                .setPadding(UiStyleLength.px(8))
+                .setBackgroundColor(0xAA182131)
+                .setBorderColor(0xFF4C1D95)
+                .setBorderWidth(UiStyleLength.px(1))
+                .setBorderRadius(UiStyleLength.px(10))
+                .setRowGap(UiStyleLength.px(4));
+        contentBody.append(overviewCard);
+
+        ElementNode overviewTitle = document.div();
+        overviewTitle.style().setTextColor(0xFFC4B5FD);
+        overviewTitle.appendText("会话概览");
+        overviewCard.append(overviewTitle);
+        interactiveBodySummaryText = appendScrollTextLine(document, overviewCard, "");
+        interactiveMarkerSummaryText = appendScrollTextLine(document, overviewCard, "");
 
         DocumentTextInputControl noteInput = new DocumentTextInputControl(document)
                 .setPlaceholder("在容器界面中输入备注")
@@ -265,28 +372,23 @@ public final class UiHudDemoController {
         noteInput.getElement().style()
                 .setDisplay(UiDisplay.BLOCK)
                 .setMargin(UiStyleLength.px(0));
-        contentBody.append(noteInput.getElement());
-
-        ElementNode toggleRow = document.div();
-        toggleRow.style()
+        ElementNode noteCard = document.div();
+        noteCard.style()
                 .setDisplay(UiDisplay.FLEX)
-                .setFlexDirection(UiFlexDirection.ROW)
-                .setAlignItems(UiAlignItems.CENTER)
-                .setJustifyContent(UiJustifyContent.SPACE_BETWEEN)
-                .setMargin(UiStyleLength.px(8));
-        contentBody.append(toggleRow);
-        appendTextLine(document, toggleRow, "保留底部提示标记");
+                .setFlexDirection(UiFlexDirection.COLUMN)
+                .setPadding(UiStyleLength.px(8))
+                .setBackgroundColor(0xAA14213A)
+                .setBorderColor(0xFF2563EB)
+                .setBorderWidth(UiStyleLength.px(1))
+                .setBorderRadius(UiStyleLength.px(10))
+                .setRowGap(UiStyleLength.px(6));
+        contentBody.append(noteCard);
 
-        DocumentToggleSwitchControl toggle = new DocumentToggleSwitchControl(document)
-                .setToggled(markersEnabled)
-                .setChangeHandler(new DocumentToggleChangeHandler() {
-                    @Override
-                    public void onToggleChanged(DocumentToggleChangeEvent event) {
-                        markersEnabled = event.isToggled();
-                        refreshTexts();
-                    }
-                });
-        toggleRow.append(toggle.getElement());
+        ElementNode noteTitle = document.div();
+        noteTitle.style().setTextColor(0xFF93C5FD);
+        noteTitle.appendText("容器备注");
+        noteCard.append(noteTitle);
+        noteCard.append(noteInput.getElement());
 
         DocumentButtonControl button = new DocumentButtonControl(document, "记录一次点击")
                 .setBackgroundColors(0xFF7C3AED, 0xFF5B21B6, 0xFF334155)
@@ -301,10 +403,47 @@ public final class UiHudDemoController {
         button.getElement().style()
                 .setDisplay(UiDisplay.BLOCK)
                 .setMargin(UiStyleLength.px(0));
-        contentBody.append(button.getElement());
+        noteCard.append(button.getElement());
+
+        interactiveDebugSection = document.div();
+        interactiveDebugSection.style()
+                .setDisplay(debugInfoVisible ? UiDisplay.FLEX : UiDisplay.NONE)
+                .setFlexDirection(UiFlexDirection.COLUMN)
+                .setPadding(UiStyleLength.px(8))
+                .setBackgroundColor(0xAA101826)
+                .setBorderColor(0xFF0EA5E9)
+                .setBorderWidth(UiStyleLength.px(1))
+                .setBorderRadius(UiStyleLength.px(10))
+                .setRowGap(UiStyleLength.px(4))
+                .setTextColor(0xFFDBEAFE);
+        contentBody.append(interactiveDebugSection);
+
+        ElementNode debugTitle = document.div();
+        debugTitle.style().setTextColor(0xFF7DD3FC);
+        debugTitle.appendText("HUD DEBUG");
+        interactiveDebugSection.append(debugTitle);
+
+        interactiveScrollProbeText = appendScrollTextLine(document, interactiveDebugSection, "");
+
+        ElementNode tipsCard = document.div();
+        tipsCard.style()
+                .setDisplay(UiDisplay.FLEX)
+                .setFlexDirection(UiFlexDirection.COLUMN)
+                .setPadding(UiStyleLength.px(8))
+                .setBackgroundColor(0xAA1F2937)
+                .setBorderColor(0xFF475569)
+                .setBorderWidth(UiStyleLength.px(1))
+                .setBorderRadius(UiStyleLength.px(10))
+                .setRowGap(UiStyleLength.px(4));
+        contentBody.append(tipsCard);
+
+        ElementNode tipsTitle = document.div();
+        tipsTitle.style().setTextColor(0xFFE5E7EB);
+        tipsTitle.appendText("操作建议");
+        tipsCard.append(tipsTitle);
 
         for (int index = 1; index <= 8; index++) {
-            appendTextLine(document, contentBody, "滚轮停在这里可查看内部内容，第 " + index + " 条示例说明。");
+            appendTextLine(document, tipsCard, "滚轮停在这里可查看内部内容，第 " + index + " 条示例说明。");
         }
     }
 
@@ -318,13 +457,19 @@ public final class UiHudDemoController {
         if (interactiveScrollProbeText != null) {
             interactiveScrollProbeText.setText(buildScrollProbeText());
         }
-        if (interactiveSummaryText != null) {
-            interactiveSummaryText.setText("容器界面上方可见。点击次数 " + interactiveClickCount + "，备注：" + noteText + "。");
+        if (interactiveHeaderSummaryText != null) {
+            interactiveHeaderSummaryText.setText("把工具浮窗停在背包右上区域，用于核对 HUD 层可见性、输入接管与滚轮状态。");
         }
-        if (interactiveSwitchText != null) {
-            interactiveSwitchText.setText(markersEnabled
-                    ? "底部提示标记：保留"
-                    : "底部提示标记：已关闭，仅右上角交互面板保留");
+        if (interactiveBodySummaryText != null) {
+            interactiveBodySummaryText.setText("容器界面上方可见。点击次数 " + interactiveClickCount + "，备注：" + noteText + "。");
+        }
+        if (interactiveMarkerSummaryText != null) {
+            interactiveMarkerSummaryText.setText(markersEnabled
+                    ? "底部提示标记：保留，用于对照 HUD 提示层位置。"
+                    : "底部提示标记：已关闭，仅保留浮窗主体用于观察交互。 ");
+        }
+        if (interactiveDebugSection != null) {
+            interactiveDebugSection.style().setDisplay(debugInfoVisible ? UiDisplay.FLEX : UiDisplay.NONE);
         }
     }
 
