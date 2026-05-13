@@ -24,4 +24,9 @@ interface UiTestMenuModel {
      * 打开背包概览示例页。
      */
     void openInventoryOverview();
+
+    /**
+     * 打开列表元素组件拖拽测试子页。
+     */
+    void openListElementDrag();
 }

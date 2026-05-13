@@ -151,6 +151,7 @@ final class UiTestDocumentPageController extends DocumentPageController {
 
         ElementNode firstRow = appendNavigationRow(document, outer);
         ElementNode secondRow = appendNavigationRow(document, outer);
+        ElementNode thirdRow = appendNavigationRow(document, outer);
 
         appendNavigationCard(document, firstRow, "布局诊断子页",
                 "继续检查页面壳尺寸、文本测量、滚动区域和运行时统计。", "进入布局诊断页",
@@ -182,6 +183,14 @@ final class UiTestDocumentPageController extends DocumentPageController {
                     @Override
                     public void onAction(DocumentButtonActionEvent event) {
                         menuModel.openInventoryOverview();
+                    }
+                });
+        appendNavigationCard(document, thirdRow, "列表元素组件拖拽",
+                "用普通 HTML-like 元素组合可排序列表，验证列表项把手拖拽和 DOM 状态同步。", "进入拖拽列表",
+                new DocumentButtonActionHandler() {
+                    @Override
+                    public void onAction(DocumentButtonActionEvent event) {
+                        menuModel.openListElementDrag();
                     }
                 });
     }

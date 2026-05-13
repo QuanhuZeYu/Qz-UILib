@@ -104,35 +104,14 @@ public class FontBatchRenderer {
         float blue = (float) (color & 255) / 255.0F;
         float z = (float) FontConfig.renderOffset;
 
-        float[] vertex = new float[] {
-                italic ? x + 2.0F : x, y, z,
-                x, y + charSize, z,
-                x + charSize, y + charSize, z,
-                italic ? x + charSize + 2.0F : x + charSize, y, z
-        };
-        float[] uv = new float[] { u0, v0, u0, v1, u1, v1, u1, v0 };
-        float[] vertexColor = new float[] {
-                red, green, blue, alpha,
-                red, green, blue, alpha,
-                red, green, blue, alpha,
-                red, green, blue, alpha
-        };
-        float[] uvBounds = new float[] {
-                u0, v0, u1, v1,
-                u0, v0, u1, v1,
-                u0, v0, u1, v1,
-                u0, v0, u1, v1
-        };
         float coloredGlyphFlag = glyphInfo != null && glyphInfo.isColoredGlyph() ? 1.0F : 0.0F;
-        float[] glyphFlags = new float[] { coloredGlyphFlag, coloredGlyphFlag, coloredGlyphFlag, coloredGlyphFlag };
-        int[] index = new int[] { 0, 1, 2, 2, 3, 0 };
 
         GlyphRenderBatch batch = currentBatches.get(glyphPage);
         if (batch == null) {
             batch = new GlyphRenderBatch(glyphPage);
             currentBatches.put(glyphPage, batch);
         }
-        batch.addQuad(new GlyphQuad(glyphPage, vertex, uv, vertexColor, uvBounds, glyphFlags, index));
+        batch.addQuad(x, y, z, charSize, italic, u0, u1, v0, v1, red, green, blue, alpha, coloredGlyphFlag);
         quadCount++;
     }
 
@@ -241,19 +220,7 @@ public class FontBatchRenderer {
         uvBoundsBuffer.clear();
         glyphFlagsBuffer.clear();
         indexBuffer.clear();
-
-        int vertexOffset = 0;
-        for (GlyphQuad quad : batch.getGlyphQuads()) {
-            vertexBuffer.put(quad.getVertex());
-            uvBuffer.put(quad.getUv());
-            colorBuffer.put(quad.getColor());
-            uvBoundsBuffer.put(quad.getUvBounds());
-            glyphFlagsBuffer.put(quad.getGlyphFlags());
-            for (int index : quad.getIndex()) {
-                indexBuffer.put(index + vertexOffset);
-            }
-            vertexOffset += 4;
-        }
+        batch.writeToBuffers(vertexBuffer, uvBuffer, colorBuffer, uvBoundsBuffer, glyphFlagsBuffer, indexBuffer);
 
         vertexBuffer.flip();
         uvBuffer.flip();

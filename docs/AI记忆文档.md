@@ -57,7 +57,7 @@
 - 新增 layout-affecting、宿主集成或对外能力时，要同步更新 `docs/使用文档/` 并保留最小必要验证。
 - `ForgeConfigTemplateScreen` 已作为对外可复用模板；非列表字符串属性若声明 `validValues` 且当前值仍在候选集中，可走分段选择控件，遗留值应回退到文本输入，避免静默覆盖。
 - 字体系统启动时会把本次已发现字体整理进 `FontConfig.fontSort`：先按配置提示顺序吸收存在项，再把未配置字体按自然顺序追加；配置中缺失的字体只保留在内存缺失态，不参与当前回退链。
-- `ForgeConfigTemplateScreen` 的列表能力允许通过 `PropertyEditorFactory` 派生专用列表控件；当前字体排序页使用“有序字符串列表基类 -> 字体排序派生控件”承载拖拽排序和序号提交，未把该行为塞进通用文本列表输入。
+- `ForgeConfigTemplateScreen` 的列表能力允许通过 `PropertyEditorFactory` 派生专用列表控件；当前字体排序不再使用专用二级拖拽页，恢复为默认模板列表文本编辑，避免为单个长列表维护页面级特判。
 
 ## 运行与验证
 

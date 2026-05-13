@@ -95,6 +95,21 @@ final class UiDiagnosticsScreens {
     }
 
     /**
+     * 创建列表元素组件拖拽测试页。
+     */
+    static GuiScreen createListElementDrag() {
+        return createListElementDrag(UiDocumentScreens.DocumentScreenEnvironment.minecraftDefaults());
+    }
+
+    /**
+     * 基于显式环境创建列表元素组件拖拽测试页。
+     */
+    static GuiScreen createListElementDrag(UiDocumentScreens.DocumentScreenEnvironment environment) {
+        return InternalHostedScreenFactory.createScreen(InternalDiagnosticScreenRegistry.LIST_ELEMENT_DRAG_DEFINITION,
+                Objects.requireNonNull(environment, "environment"), null);
+    }
+
+    /**
      * 判断界面是否为诊断菜单。
      */
     static boolean isUiTest(GuiScreen screen) {
@@ -115,6 +130,10 @@ final class UiDiagnosticsScreens {
 
     static boolean isHtmlLikeGlass(Object screen) {
         return InternalScreenIdentity.hasPageId(screen, InternalDiagnosticScreenRegistry.htmlLikeGlassPageId());
+    }
+
+    static boolean isListElementDrag(Object screen) {
+        return InternalScreenIdentity.hasPageId(screen, InternalDiagnosticScreenRegistry.listElementDragPageId());
     }
 
     /**
@@ -142,6 +161,11 @@ final class UiDiagnosticsScreens {
             public void openInventoryOverview() {
                 Minecraft.getMinecraft().displayGuiScreen(createInventoryOverview(environment,
                         new MinecraftInventoryOverviewModel()));
+            }
+
+            @Override
+            public void openListElementDrag() {
+                Minecraft.getMinecraft().displayGuiScreen(createListElementDrag(environment));
             }
         };
     }

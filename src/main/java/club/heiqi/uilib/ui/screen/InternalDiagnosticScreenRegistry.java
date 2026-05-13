@@ -14,6 +14,8 @@ final class InternalDiagnosticScreenRegistry {
             "html_like_glass");
     static final InternalScreenIdentity.PageDescriptor INVENTORY_OVERVIEW = new InternalScreenIdentity.PageDescriptor(
             "inventory_overview");
+    static final InternalScreenIdentity.PageDescriptor LIST_ELEMENT_DRAG = new InternalScreenIdentity.PageDescriptor(
+            "list_element_drag");
 
     static final InternalHostedScreenFactory.InternalHostedScreenDefinition<UiTestMenuModel> UI_TEST_DEFINITION = new InternalHostedScreenFactory.InternalHostedScreenDefinition<UiTestMenuModel>(
             UI_TEST,
@@ -81,6 +83,19 @@ final class InternalDiagnosticScreenRegistry {
                             provision);
                 }
             });
+    static final InternalHostedScreenFactory.InternalHostedScreenDefinition<Void> LIST_ELEMENT_DRAG_DEFINITION = new InternalHostedScreenFactory.InternalHostedScreenDefinition<Void>(
+            LIST_ELEMENT_DRAG,
+            DocumentScreenChrome::resolve,
+            new InternalHostedScreenFactory.InternalDocumentPageControllerFactory<Void>() {
+                @Override
+                public DocumentPageController create(DocumentUiScope documentUi,
+                        DocumentPageAuthoringSurface documentPage,
+                        DocumentPageRuntimeView runtimeView,
+                        String pageId,
+                        Void provision) {
+                    return new HtmlLikeListDragDocumentPageController(documentUi, documentPage);
+                }
+            });
 
     private InternalDiagnosticScreenRegistry() {}
 
@@ -102,5 +117,9 @@ final class InternalDiagnosticScreenRegistry {
 
     static String inventoryOverviewPageId() {
         return INVENTORY_OVERVIEW.getPageId();
+    }
+
+    static String listElementDragPageId() {
+        return LIST_ELEMENT_DRAG.getPageId();
     }
 }

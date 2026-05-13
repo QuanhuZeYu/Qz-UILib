@@ -46,11 +46,13 @@ public class UiTestDocumentPageControllerTest {
         Assert.assertTrue(containsText(texts, "HTML-like Smoke 子页"));
         Assert.assertTrue(containsText(texts, "Large Glass Lab 子页"));
         Assert.assertTrue(containsText(texts, "背包概览示例页"));
+        Assert.assertTrue(containsText(texts, "列表元素组件拖拽"));
         Assert.assertTrue(containsText(texts, "页面作者层不再拼装旧 Widget"));
         Assert.assertFalse(menuModel.openLayoutDiagnosticsCalled);
         Assert.assertFalse(menuModel.openHtmlLikeSmokeCalled);
         Assert.assertFalse(menuModel.openHtmlLikeGlassCalled);
         Assert.assertFalse(menuModel.openInventoryOverviewCalled);
+        Assert.assertFalse(menuModel.openListElementDragCalled);
     }
 
     /**
@@ -127,6 +129,27 @@ public class UiTestDocumentPageControllerTest {
         Assert.assertFalse(menuModel.openHtmlLikeSmokeCalled);
         Assert.assertFalse(menuModel.openHtmlLikeGlassCalled);
         Assert.assertTrue(menuModel.openInventoryOverviewCalled);
+        Assert.assertFalse(menuModel.openListElementDragCalled);
+    }
+
+    /**
+     * 验证菜单按钮会触发列表元素拖拽测试页跳转。
+     */
+    @Test
+    public void shouldNavigateToListElementDragWhenMenuButtonClicked() {
+        RecordingMenuModel menuModel = new RecordingMenuModel();
+        TestFixture fixture = new TestFixture(menuModel);
+
+        fixture.controller.configureDocumentPage();
+        fixture.controller.buildDocument();
+
+        clickNavigationButton(fixture.controller.getHtmlLikeDocumentWidget(), "进入拖拽列表", 1L);
+
+        Assert.assertFalse(menuModel.openLayoutDiagnosticsCalled);
+        Assert.assertFalse(menuModel.openHtmlLikeSmokeCalled);
+        Assert.assertFalse(menuModel.openHtmlLikeGlassCalled);
+        Assert.assertFalse(menuModel.openInventoryOverviewCalled);
+        Assert.assertTrue(menuModel.openListElementDragCalled);
     }
 
     /**
@@ -145,7 +168,7 @@ public class UiTestDocumentPageControllerTest {
         DocumentLayoutBox navigationGrid = rootBox.getChildren().get(2);
         for (DocumentLayoutBox navigationRow : navigationGrid.getChildren()) {
             for (DocumentLayoutBox cardBox : navigationRow.getChildren()) {
-                DocumentLayoutBox buttonBox = cardBox.getChildren().get(0);
+                DocumentLayoutBox buttonBox = cardBox.getChildren().get(cardBox.getChildren().size() - 1);
                 int cardContentLeft = cardBox.getContentLeft();
                 int cardContentRight = cardContentLeft + cardBox.getContentWidth();
                 Assert.assertTrue(buttonBox.getLeft() >= cardContentLeft);
@@ -230,6 +253,7 @@ public class UiTestDocumentPageControllerTest {
         private boolean openHtmlLikeSmokeCalled;
         private boolean openHtmlLikeGlassCalled;
         private boolean openInventoryOverviewCalled;
+        private boolean openListElementDragCalled;
 
         @Override
         public void openLayoutDiagnostics() {
@@ -249,6 +273,11 @@ public class UiTestDocumentPageControllerTest {
         @Override
         public void openInventoryOverview() {
             openInventoryOverviewCalled = true;
+        }
+
+        @Override
+        public void openListElementDrag() {
+            openListElementDragCalled = true;
         }
     }
 
