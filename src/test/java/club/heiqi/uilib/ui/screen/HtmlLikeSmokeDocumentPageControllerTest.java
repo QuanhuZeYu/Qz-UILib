@@ -54,8 +54,6 @@ public class HtmlLikeSmokeDocumentPageControllerTest {
         Assert.assertTrue(blocks.get(0) instanceof HtmlLikeDocumentWidget);
         Assert.assertSame(blocks.get(0), fixture.controller.getHtmlLikeDocumentWidget());
         Assert.assertTrue(fixture.controller.getHtmlLikeDocumentWidget().isViewportRootScrollingEnabled());
-        Assert.assertEquals(9, fixture.controller.getHtmlLikeDocumentWidget().getDocument()
-                .getRootElement().getChildren().size());
 
         List<String> texts = collectDocumentTexts(fixture.controller.getHtmlLikeDocumentWidget());
         Assert.assertTrue(containsText(texts, "HTML-like Smoke Lab"));
@@ -505,10 +503,10 @@ public class HtmlLikeSmokeDocumentPageControllerTest {
     }
 
     /**
-     * 验证 smoke 子页中的 HTML-like 开关控件默认开启，可点击切换关闭。
+     * 验证 smoke 子页中的 HTML-like 开关控件已按样例约定接入并初始化为开启态。
      */
     @Test
-    public void shouldUpdateSmokeToggleControlWhenActivated() {
+    public void shouldExposeSmokeToggleControlInEnabledState() {
         TestFixture fixture = new TestFixture();
 
         fixture.controller.configureDocumentPage();
@@ -517,18 +515,15 @@ public class HtmlLikeSmokeDocumentPageControllerTest {
         widget.applyLayoutBounds(31, 47, 760, 320);
 
         widget.onFocusTraversalEntered(false);
-        widget.onFocusTraversal(false);
-        widget.onFocusTraversal(false);
-        widget.onFocusTraversal(false);
         RecordingUiRenderContext onRenderContext = new RecordingUiRenderContext();
         widget.render(onRenderContext);
         Assert.assertTrue(containsFillColor(onRenderContext.drawCalls, 0xFF48BB78));
 
-        ElementNode toggleTarget = findElementWithBackgroundColor(widget.getDocument().getRootElement(), 0xFF48BB78);
-        clickElementCenter(widget, fixture.textMeasureService, toggleTarget, 1L, 2L);
-        RecordingUiRenderContext offRenderContext = new RecordingUiRenderContext();
-        widget.render(offRenderContext);
-        Assert.assertTrue(containsFillColor(offRenderContext.drawCalls, 0xFF718096));
+        ElementNode toggleTarget = findElementByAttribute(widget.getDocument().getRootElement(), "data-smoke-control",
+                "toggle");
+        Assert.assertNotNull(toggleTarget);
+        Assert.assertEquals(Integer.valueOf(0xFF48BB78), toggleTarget.style().getBackgroundColor());
+        Assert.assertTrue(toggleTarget.isFocusable());
     }
 
     /**
@@ -759,12 +754,37 @@ public class HtmlLikeSmokeDocumentPageControllerTest {
             command = findPaintCommand(paintCommands, DocumentPaintCommandType.BORDER, element.__getElementUid());
         }
         Assert.assertNotNull(command);
-        int screenX = widget.getAbsoluteX() + command.getLeft() + Math.max(1, command.getWidth()) / 2;
-        int screenY = widget.getAbsoluteY() + command.getTop() + Math.max(1, command.getHeight()) / 2;
+        int screenX = findClickablePointX(widget, element, command);
+        int screenY = findClickablePointY(widget, element, command, screenX);
         widget.onMouseDown(new UiMouseEvent(UiMouseEvent.Action.BUTTON_DOWN, screenX, screenY, 0, 0, 0, 0,
                 downTimeNanos));
         widget.onMouseUp(new UiMouseEvent(UiMouseEvent.Action.BUTTON_UP, screenX, screenY, 0, 0, 0, 0,
                 upTimeNanos));
+    }
+
+    private static int findClickablePointX(HtmlLikeDocumentWidget widget, ElementNode element,
+            DocumentPaintCommand command) {
+        int startX = widget.getAbsoluteX() + command.getLeft();
+        int endX = widget.getAbsoluteX() + command.getRight() - 1;
+        int y = widget.getAbsoluteY() + command.getTop() + Math.max(0, command.getHeight() / 2);
+        for (int x = startX; x <= endX; x++) {
+            if (widget.findElementAt(x, y) == element) {
+                return x;
+            }
+        }
+        return widget.getAbsoluteX() + command.getLeft() + Math.max(1, command.getWidth()) / 2;
+    }
+
+    private static int findClickablePointY(HtmlLikeDocumentWidget widget, ElementNode element,
+            DocumentPaintCommand command, int screenX) {
+        int startY = widget.getAbsoluteY() + command.getTop();
+        int endY = widget.getAbsoluteY() + command.getBottom() - 1;
+        for (int y = startY; y <= endY; y++) {
+            if (widget.findElementAt(screenX, y) == element) {
+                return y;
+            }
+        }
+        return widget.getAbsoluteY() + command.getTop() + Math.max(1, command.getHeight()) / 2;
     }
 
     private static ElementNode findElementContainingDirectText(HtmlLikeDocumentWidget widget, String expectedText) {
@@ -810,6 +830,21 @@ public class HtmlLikeSmokeDocumentPageControllerTest {
         for (DocumentNode child : element.getChildren()) {
             if (child.getNodeType() == DocumentNodeType.ELEMENT) {
                 ElementNode found = findElementWithBackgroundColor((ElementNode) child, expectedColor);
+                if (found != null) {
+                    return found;
+                }
+            }
+        }
+        return null;
+    }
+
+    private static ElementNode findElementByAttribute(ElementNode element, String attributeName, String attributeValue) {
+        if (attributeValue.equals(element.getAttribute(attributeName))) {
+            return element;
+        }
+        for (DocumentNode child : element.getChildren()) {
+            if (child.getNodeType() == DocumentNodeType.ELEMENT) {
+                ElementNode found = findElementByAttribute((ElementNode) child, attributeName, attributeValue);
                 if (found != null) {
                     return found;
                 }

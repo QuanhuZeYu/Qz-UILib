@@ -6,6 +6,7 @@ import java.util.concurrent.ConcurrentLinkedQueue;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiScreen;
 
+import club.heiqi.uilib.ui.input.UiKeyboardCaptureState;
 import club.heiqi.uilib.ui.input.UiInputFrame;
 import club.heiqi.uilib.ui.input.UiInputService;
 
@@ -65,7 +66,12 @@ public class UiScreenManager {
 
         GuiScreen currentScreen = minecraft.currentScreen;
         if (frame != null && currentScreen instanceof BaseScreen) {
-            ((BaseScreen) currentScreen).handleInputFrame(frame);
+            if (!UiKeyboardCaptureState.getInstance().isHudKeyboardCaptured()) {
+                ((BaseScreen) currentScreen).handleInputFrame(frame);
+            } else {
+                ((BaseScreen) currentScreen).clearInteractionState();
+                UiKeyboardCaptureState.getInstance().setScreenKeyboardCaptured(false);
+            }
         }
 
         runPendingTasks();

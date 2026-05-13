@@ -46,8 +46,10 @@ public class UiHudDocumentHostTest {
                 UiHudDocumentHost.classifyScreen(new Object(), "net.minecraft.client.gui.GuiChat"));
         Assert.assertEquals(UiHudScreenCategory.MENU,
                 UiHudDocumentHost.classifyScreen(new Object(), "net.minecraft.client.gui.GuiIngameMenu"));
-        Assert.assertEquals(UiHudScreenCategory.MENU,
+        Assert.assertEquals(UiHudScreenCategory.CONTAINER,
                 UiHudDocumentHost.classifyScreen(new Object(), "example.custom.Screen"));
+        Assert.assertEquals(UiHudScreenCategory.MENU,
+                UiHudDocumentHost.classifyScreen(new Object(), "club.heiqi.uilib.config.ForgeConfigTemplateScreen"));
     }
 
     /**
@@ -111,15 +113,25 @@ public class UiHudDocumentHostTest {
      * 验证交互 HUD 在非菜单且鼠标已释放时都允许接通输入。
      */
     @Test
-    public void shouldEnableInteractiveHudInputOnAnyOpenedScreenWhenMouseIsFree() {
+    public void shouldEnableInteractiveHudInputOnlyInContainerLikeScreensWhenMouseIsFree() {
         Assert.assertFalse(UiHudDocumentHost.isInteractiveInputEnabled(null, null, false));
         Assert.assertTrue(UiHudDocumentHost.isInteractiveInputEnabled(new Object(),
                 "net.minecraft.client.gui.inventory.GuiChest", false));
         Assert.assertTrue(UiHudDocumentHost.isInteractiveInputEnabled(new Object(),
                 "example.custom.Screen", false));
-        Assert.assertTrue(UiHudDocumentHost.isInteractiveInputEnabled(new Object(),
+        Assert.assertFalse(UiHudDocumentHost.isInteractiveInputEnabled(new Object(),
                 "net.minecraft.client.gui.GuiIngameMenu", false));
         Assert.assertFalse(UiHudDocumentHost.isInteractiveInputEnabled(null, null, true));
+    }
+
+    /**
+     * 验证交互 HUD 在纯游戏内只可见不可交互，不会继续接管输入。
+     */
+    @Test
+    public void shouldDisableInteractiveHudInputInMenuLikeState() {
+        Assert.assertFalse(UiHudDocumentHost.isInteractiveInputEnabled(null, null, false));
+        Assert.assertFalse(UiHudDocumentHost.isInteractiveInputEnabled(new Object(),
+                "net.minecraft.client.gui.GuiIngameMenu", false));
     }
 
     /**
@@ -675,6 +687,101 @@ public class UiHudDocumentHostTest {
             Assert.assertTrue(captured);
         } finally {
             registration.unregister();
+        }
+    }
+
+    /**
+     * 验证 HUD 在不可交互场景下会主动清掉已建立的焦点与键盘接管。
+     */
+    @Test
+    public void shouldClearHudFocusWhenScreenCategoryBecomesNonInteractive() {
+        UiHudDocumentHost host = UiHudDocumentHost.getInstance();
+        UiKeyboardCaptureState.getInstance().clear();
+        UiHudDocumentRegistration registration = host.register(UiHudLayerType.INTERACTIVE,
+                new UiHudDocumentHost.UiHudDocumentContentBuilder() {
+                    @Override
+                    public void build(UiDocument document) {
+                        ElementNode root = document.getRootElement();
+                        root.style()
+                                .setWidth(UiStyleLength.px(160))
+                                .setHeight(UiStyleLength.px(80));
+                        DocumentTextInputControl inputControl = new DocumentTextInputControl(document);
+                        inputControl.getElement().style()
+                                .setWidth(UiStyleLength.px(120))
+                                .setHeight(UiStyleLength.px(24));
+                        root.append(inputControl.getElement());
+                    }
+                }, new DeterministicTextMeasureService(), UiRuntimeAdapters.empty());
+        try {
+            host.handleInputFrameForTest(mouseFrame(UiMouseEvent.Action.BUTTON_DOWN, 8, 8, 1L),
+                    UiHudScreenCategory.CONTAINER, 160, 80);
+            Assert.assertTrue(UiKeyboardCaptureState.getInstance().isHudKeyboardCaptured());
+
+            host.handleInputFrameForTest(mouseFrame(UiMouseEvent.Action.MOVE, 8, 8, 2L), UiHudScreenCategory.MENU,
+                    160, 80);
+
+            Assert.assertFalse(UiKeyboardCaptureState.getInstance().isHudKeyboardCaptured());
+            Assert.assertFalse(host.handleImmediateKeyboardInputForTest(new UiInputFrame(8, 8,
+                    Collections.<UiMouseEvent>emptyList(), Collections.singletonList(new UiKeyEvent(Keyboard.KEY_TAB,
+                            0, 0, UiKeyEvent.Action.PRESSED, false, false, false, false, 3L)),
+                    Collections.<UiTextInputEvent>emptyList()), UiHudScreenCategory.MENU));
+        } finally {
+            registration.unregister();
+            UiKeyboardCaptureState.getInstance().clear();
+        }
+    }
+
+    /**
+     * 验证重叠交互 HUD 只会由顶层面板收到鼠标按下，不会多层同时响应。
+     */
+    @Test
+    public void shouldRoutePointerToTopmostInteractiveHudOnly() {
+        UiHudDocumentHost host = UiHudDocumentHost.getInstance();
+        final int[] bottomClicks = new int[1];
+        final int[] topClicks = new int[1];
+        UiHudDocumentRegistration bottomRegistration = host.register(UiHudLayerType.INTERACTIVE,
+                new UiHudDocumentHost.UiHudDocumentContentBuilder() {
+                    @Override
+                    public void build(UiDocument document) {
+                        ElementNode root = document.getRootElement();
+                        root.style()
+                                .setWidth(UiStyleLength.px(160))
+                                .setHeight(UiStyleLength.px(80));
+                        DocumentButtonControl buttonControl = new DocumentButtonControl(document, "Bottom");
+                        buttonControl.getElement().style()
+                                .setWidth(UiStyleLength.px(120))
+                                .setHeight(UiStyleLength.px(24));
+                        buttonControl.setActionHandler(event -> bottomClicks[0]++);
+                        root.append(buttonControl.getElement());
+                    }
+                }, new DeterministicTextMeasureService(), UiRuntimeAdapters.empty());
+        UiHudDocumentRegistration topRegistration = host.register(UiHudLayerType.INTERACTIVE,
+                new UiHudDocumentHost.UiHudDocumentContentBuilder() {
+                    @Override
+                    public void build(UiDocument document) {
+                        ElementNode root = document.getRootElement();
+                        root.style()
+                                .setWidth(UiStyleLength.px(160))
+                                .setHeight(UiStyleLength.px(80));
+                        DocumentButtonControl buttonControl = new DocumentButtonControl(document, "Top");
+                        buttonControl.getElement().style()
+                                .setWidth(UiStyleLength.px(120))
+                                .setHeight(UiStyleLength.px(24));
+                        buttonControl.setActionHandler(event -> topClicks[0]++);
+                        root.append(buttonControl.getElement());
+                    }
+                }, new DeterministicTextMeasureService(), UiRuntimeAdapters.empty());
+        try {
+            host.handleInputFrameForTest(mouseFrame(UiMouseEvent.Action.BUTTON_DOWN, 8, 8, 1L),
+                    UiHudScreenCategory.CONTAINER, 160, 80);
+            host.handleInputFrameForTest(mouseFrame(UiMouseEvent.Action.BUTTON_UP, 8, 8, 2L),
+                    UiHudScreenCategory.CONTAINER, 160, 80);
+
+            Assert.assertEquals(0, bottomClicks[0]);
+            Assert.assertEquals(1, topClicks[0]);
+        } finally {
+            topRegistration.unregister();
+            bottomRegistration.unregister();
         }
     }
 

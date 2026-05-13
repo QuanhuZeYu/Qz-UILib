@@ -42,9 +42,10 @@
 - 固定宽度父容器中的 `width:100%` block/flex 子项，会把自身 padding/border 收进父内容盒，不再因子项自身盒模型把 border box 撑出父内容盒；若额外声明横向 margin，外侧空间仍需业务自行预留。
 - HUD 文档层统一经 `UiHudDocumentHost` 承载，继续复用 `UiDocument` / `HtmlLikeDocumentWidget`；当前稳定分为 `PASSIVE` 与 `INTERACTIVE` 两层，而不是再开放独立 Widget 作者入口。
 - HUD 浮窗若需要固定外框并承载长内容，优先在面板内部声明固定高度或剩余空间容器，并对子容器使用 `overflow-y:auto`；不要依赖外层 HUD 根节点滚动去撑大浮窗。
-- `INTERACTIVE` HUD 在纯游戏内锁鼠状态下只可见不可交互；只有当前存在已打开的非菜单界面且鼠标已释放时，才会接通命中与焦点输入。暂停菜单、主菜单以及大多数原版 `Gui*` 页面会归为 `MENU` 并隐藏该层，当前主要适用容器类与部分自定义屏幕。
+- `INTERACTIVE` HUD 仍可在纯游戏阶段渲染，但只在容器态接通命中与焦点输入；原版菜单页和 UILib 自身 `BaseScreen` 链路归为 `MENU` 并隐藏/清空该层，第三方非菜单自定义屏幕默认按容器态处理。
 - 交互 HUD 的键盘接管契约是“先鼠标聚焦、后键盘接管”：必须先通过鼠标命中建立 HUD 焦点，不支持纯键盘首次进入 HUD。
 - 交互 HUD 默认阻断命中区域继续落到底层宿主；若某个元素或其祖先需要显式放行空白区域，使用 `data-hit-test-passthrough="true"`。
+- 多个交互 HUD 重叠时，输入只路由给最上层命中的那一层；按下后到抬起前的鼠标链路保持在同一层内，避免多层同时响应。
 - `UiHudDocumentHost` 的输入分发需容忍回调内即时 `unregister()`；HUD 注册表遍历应基于快照或等效防御，不能在公开回调链中直接依赖可变列表的 fail-fast 迭代。
 - 键盘输入需在宿主原生文本框与 UILib 焦点之间做隔离：原生文本框聚焦时 HUD/叠层不接管键盘；UILib 获得焦点后需阻断宿主原生键盘继续响应。
 - HUD 键盘隔离的优先级高于原生页面处理链路：当前在 `handleKeyboardInput()` 阶段就会先让 UILib 尝试接管，再决定是否阻断宿主继续分发。

@@ -630,6 +630,7 @@ final class HtmlLikeSmokeDocumentPageController extends DocumentPageController {
         toggleControl.setToggled(true)
                 .setTrackColors(0xFF718096, 0xFF48BB78, 0xFF333344)
                 .setFocusBorderColor(0xFFBEE3F8);
+        toggleControl.getElement().setAttribute("data-smoke-control", "toggle");
         toggleControl.getElement().style().setFlexGrow(0.6F);
         controlsRow.append(toggleControl.getElement());
     }

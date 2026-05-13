@@ -35,6 +35,7 @@ import club.heiqi.uilib.ui.style.UiOverflow;
 import club.heiqi.uilib.ui.style.UiStyleLength;
 import club.heiqi.uilib.ui.text.DefaultTextMeasureService;
 import club.heiqi.uilib.ui.text.TextMeasureService;
+import club.heiqi.uilib.ui.screen.BaseScreen;
 import club.heiqi.uilib.ui.widget.UiLayoutInvalidationRegistry;
 
 /**
@@ -49,6 +50,8 @@ public final class UiHudDocumentHost {
     private final UiMainLayerSnapshotService mainLayerSnapshotService = new UiMainLayerSnapshotService();
     private UiRenderTarget deferredPostMainRenderTarget;
     private boolean hudTextInputRequested;
+    private HudEntry activeMouseEntry;
+    private HudEntry activeKeyboardEntry;
 
     private UiHudDocumentHost() {}
 
@@ -107,7 +110,7 @@ public final class UiHudDocumentHost {
      */
     public synchronized void handleInputFrame(UiInputFrame frame) {
         if (frame == null || entries.isEmpty()) {
-            UiKeyboardCaptureState.getInstance().setHudKeyboardCaptured(false);
+            clearInteractiveStates();
             return;
         }
         updateLatestPointer(frame);
@@ -127,7 +130,7 @@ public final class UiHudDocumentHost {
         if (UiKeyboardCaptureState.getInstance().isHudKeyboardCaptured()) {
             UiInputFrame keyboardFrame = filterKeyboardInput(extractKeyboardFrame(frame),
                     UiNativeTextInputInspector.hasFocusedTextInput(currentScreen), keyboardCapturedBeforeRouting);
-            routeInteractiveEntries(keyboardFrame, screenCategory, new ArrayList<HudEntry>(entries));
+            routeKeyboardFrame(keyboardFrame, screenCategory, new ArrayList<HudEntry>(entries));
             updateHudKeyboardCaptureState();
             return;
         }
@@ -148,15 +151,15 @@ public final class UiHudDocumentHost {
         if (frame == null || entries.isEmpty()) {
             return false;
         }
+        if (!isInteractiveInputEnabled(currentScreen)) {
+            clearInteractiveStates();
+            return false;
+        }
         if (!UiKeyboardCaptureState.getInstance().isHudKeyboardCaptured()) {
             return false;
         }
         updateLatestPointer(frame);
         UiHudScreenCategory screenCategory = classifyScreen(currentScreen);
-        if (!isInteractiveInputEnabled(currentScreen)) {
-            clearInteractiveStates();
-            return false;
-        }
         boolean keyboardCapturedBeforeRouting = UiKeyboardCaptureState.getInstance().isUiLibKeyboardCaptured();
         UiInputFrame routedFrame = filterKeyboardInput(frame,
                 UiNativeTextInputInspector.hasFocusedTextInput(currentScreen),
@@ -164,7 +167,7 @@ public final class UiHudDocumentHost {
         if (routedFrame.getKeyEvents().isEmpty() && routedFrame.getTextEvents().isEmpty()) {
             return false;
         }
-        routeInteractiveEntries(routedFrame, screenCategory, new ArrayList<HudEntry>(entries));
+        routeKeyboardFrame(routedFrame, screenCategory, new ArrayList<HudEntry>(entries));
         updateHudKeyboardCaptureState();
         return UiKeyboardCaptureState.getInstance().isUiLibKeyboardCaptured();
     }
@@ -186,15 +189,15 @@ public final class UiHudDocumentHost {
             clearInteractiveStates();
             return false;
         }
-        if (isPrimaryMouseButtonDown(frame)) {
-            clearInteractiveStates();
-        }
-        boolean shouldCapture = shouldCaptureImmediateMouseInput(screenCategory, frame.getMouseX(), frame.getMouseY());
+        boolean shouldCapture = shouldCaptureImmediateMouseInput(screenCategory, frame);
         if (!shouldCapture) {
+            if (isPrimaryMouseButtonDown(frame)) {
+                clearInteractiveStates();
+            }
             return false;
         }
         UiNativeTextInputInspector.blurFocusedTextInputs(currentScreen);
-        routeInteractiveEntries(frame, screenCategory, new ArrayList<HudEntry>(entries));
+        routeMouseFrame(frame, screenCategory, new ArrayList<HudEntry>(entries));
         updateHudKeyboardCaptureState();
         return true;
     }
@@ -204,10 +207,14 @@ public final class UiHudDocumentHost {
             return false;
         }
         updateLatestPointer(frame);
-        if (!shouldCaptureImmediateMouseInput(screenCategory, frame.getMouseX(), frame.getMouseY())) {
+        if (screenCategory != UiHudScreenCategory.CONTAINER) {
+            clearInteractiveStates();
             return false;
         }
-        routeInteractiveEntries(frame, screenCategory, new ArrayList<HudEntry>(entries));
+        if (!shouldCaptureImmediateMouseInput(screenCategory, frame)) {
+            return false;
+        }
+        routeMouseFrame(frame, screenCategory, new ArrayList<HudEntry>(entries));
         updateHudKeyboardCaptureState();
         return true;
     }
@@ -226,15 +233,33 @@ public final class UiHudDocumentHost {
         return false;
     }
 
+    private boolean isPrimaryMouseButtonUp(UiInputFrame frame) {
+        if (frame == null) {
+            return false;
+        }
+        for (club.heiqi.uilib.ui.event.UiMouseEvent mouseEvent : frame.getMouseEvents()) {
+            if (mouseEvent != null
+                    && mouseEvent.getAction() == club.heiqi.uilib.ui.event.UiMouseEvent.Action.BUTTON_UP
+                    && mouseEvent.getButton() == 0) {
+                return true;
+            }
+        }
+        return false;
+    }
+
     synchronized boolean handleImmediateKeyboardInputForTest(UiInputFrame frame, UiHudScreenCategory screenCategory) {
         if (frame == null || entries.isEmpty()) {
+            return false;
+        }
+        if (screenCategory != UiHudScreenCategory.CONTAINER) {
+            clearInteractiveStates();
             return false;
         }
         if (!UiKeyboardCaptureState.getInstance().isHudKeyboardCaptured()) {
             return false;
         }
         updateLatestPointer(frame);
-        routeInteractiveEntries(frame, screenCategory, new ArrayList<HudEntry>(entries));
+        routeKeyboardFrame(frame, screenCategory, new ArrayList<HudEntry>(entries));
         updateHudKeyboardCaptureState();
         return UiKeyboardCaptureState.getInstance().isUiLibKeyboardCaptured();
     }
@@ -245,10 +270,18 @@ public final class UiHudDocumentHost {
             return;
         }
         updateLatestPointer(frame);
+        if (screenCategory != UiHudScreenCategory.CONTAINER) {
+            clearInteractiveStates();
+            return;
+        }
         for (HudEntry entry : entries) {
             entry.widget.applyLayoutBounds(0, 0, Math.max(0, width), Math.max(0, height));
         }
-        routeInteractiveEntries(frame, screenCategory, new ArrayList<HudEntry>(entries));
+        routeMouseFrame(frame, screenCategory, new ArrayList<HudEntry>(entries));
+        UiInputFrame keyboardFrame = extractKeyboardFrame(frame);
+        if (keyboardFrame != null) {
+            routeKeyboardFrame(keyboardFrame, screenCategory, new ArrayList<HudEntry>(entries));
+        }
         updateHudKeyboardCaptureState();
     }
 
@@ -285,30 +318,63 @@ public final class UiHudDocumentHost {
         }
     }
 
-    private void routeInteractiveEntries(UiInputFrame frame, UiHudScreenCategory screenCategory,
-            List<HudEntry> entrySnapshot) {
-        if (frame == null) {
-            return;
-        }
-        for (HudEntry entry : entrySnapshot) {
-            if (!entries.contains(entry)) {
-                continue;
-            }
-            if (entry.layerType != UiHudLayerType.INTERACTIVE || !entry.isVisibleIn(screenCategory)) {
-                continue;
-            }
-            entry.interactionSession.route(entry.getRuntimeName(), entry.widget, frame);
-        }
-    }
-
     private void routeMouseFrame(UiInputFrame frame, UiHudScreenCategory screenCategory, List<HudEntry> entrySnapshot) {
         if (frame == null || frame.getMouseEvents().isEmpty()) {
             return;
         }
-        routeInteractiveEntries(new UiInputFrame(frame.getMouseX(), frame.getMouseY(), frame.getMouseEvents(),
+        boolean primaryDown = isPrimaryMouseButtonDown(frame);
+        boolean primaryUp = isPrimaryMouseButtonUp(frame);
+        if (primaryDown) {
+            HudEntry targetEntry = resolveMouseTargetEntry(screenCategory, frame.getMouseX(), frame.getMouseY(),
+                    entrySnapshot);
+            clearInteractiveStates();
+            if (targetEntry == null) {
+                return;
+            }
+            activeMouseEntry = targetEntry;
+            UiInputFrame mouseFrame = new UiInputFrame(frame.getMouseX(), frame.getMouseY(), frame.getMouseEvents(),
+                    Collections.<club.heiqi.uilib.ui.event.UiKeyEvent>emptyList(),
+                    Collections.<club.heiqi.uilib.ui.event.UiTextInputEvent>emptyList());
+            targetEntry.interactionSession.route(targetEntry.getRuntimeName(), targetEntry.widget, mouseFrame);
+            if (targetEntry.interactionSession.hasFocusedWidget()) {
+                activeKeyboardEntry = targetEntry;
+            }
+            updateHudKeyboardCaptureState();
+            return;
+        }
+        HudEntry targetEntry = resolveMouseFrameTargetEntry(screenCategory, frame.getMouseX(), frame.getMouseY(),
+                entrySnapshot);
+        if (targetEntry == null) {
+            return;
+        }
+        UiInputFrame mouseFrame = new UiInputFrame(frame.getMouseX(), frame.getMouseY(), frame.getMouseEvents(),
                 Collections.<club.heiqi.uilib.ui.event.UiKeyEvent>emptyList(),
-                Collections.<club.heiqi.uilib.ui.event.UiTextInputEvent>emptyList()), screenCategory, entrySnapshot);
+                Collections.<club.heiqi.uilib.ui.event.UiTextInputEvent>emptyList());
+        targetEntry.interactionSession.route(targetEntry.getRuntimeName(), targetEntry.widget, mouseFrame);
+        if (targetEntry.interactionSession.hasFocusedWidget()) {
+            activeKeyboardEntry = targetEntry;
+        }
+        if (primaryUp) {
+            activeMouseEntry = null;
+        }
         updateHudKeyboardCaptureState();
+    }
+
+    private void routeKeyboardFrame(UiInputFrame frame, UiHudScreenCategory screenCategory, List<HudEntry> entrySnapshot) {
+        if (frame == null || (frame.getKeyEvents().isEmpty() && frame.getTextEvents().isEmpty())) {
+            return;
+        }
+        HudEntry targetEntry = resolveKeyboardTargetEntry(screenCategory, entrySnapshot);
+        if (targetEntry == null) {
+            return;
+        }
+        targetEntry.interactionSession.route(targetEntry.getRuntimeName(), targetEntry.widget, frame);
+        if (targetEntry.interactionSession.hasFocusedWidget()) {
+            activeKeyboardEntry = targetEntry;
+            activeMouseEntry = targetEntry;
+        } else if (activeKeyboardEntry == targetEntry) {
+            activeKeyboardEntry = null;
+        }
     }
 
     private UiInputFrame extractKeyboardFrame(UiInputFrame frame) {
@@ -322,17 +388,75 @@ public final class UiHudDocumentHost {
                 frame.getKeyEvents(), frame.getTextEvents());
     }
 
-    private boolean shouldCaptureImmediateMouseInput(UiHudScreenCategory screenCategory, int mouseX, int mouseY) {
-        for (HudEntry entry : entries) {
-            if (entry.layerType != UiHudLayerType.INTERACTIVE || !entry.isVisibleIn(screenCategory)) {
+    private boolean shouldCaptureImmediateMouseInput(UiHudScreenCategory screenCategory, UiInputFrame frame) {
+        if (screenCategory != UiHudScreenCategory.CONTAINER) {
+            return false;
+        }
+        if (frame != null && isPrimaryMouseButtonDown(frame)) {
+            return resolveMouseTargetEntry(screenCategory, frame.getMouseX(), frame.getMouseY(),
+                    new ArrayList<HudEntry>(entries)) != null;
+        }
+        if (frame != null && isPrimaryMouseButtonUp(frame)) {
+            return activeMouseEntry != null && isInteractiveEntryAvailable(activeMouseEntry, screenCategory);
+        }
+        if (activeMouseEntry != null && isInteractiveEntryAvailable(activeMouseEntry, screenCategory)) {
+            return true;
+        }
+        return resolveMouseTargetEntry(screenCategory, frame == null ? 0 : frame.getMouseX(),
+                frame == null ? 0 : frame.getMouseY(), new ArrayList<HudEntry>(entries)) != null;
+    }
+
+    private HudEntry resolveMouseFrameTargetEntry(UiHudScreenCategory screenCategory, int mouseX, int mouseY,
+            List<HudEntry> entrySnapshot) {
+        if (activeMouseEntry != null && isInteractiveEntryAvailable(activeMouseEntry, screenCategory)) {
+            return activeMouseEntry;
+        }
+        return resolveMouseTargetEntry(screenCategory, mouseX, mouseY, entrySnapshot);
+    }
+
+    private HudEntry resolveMouseTargetEntry(UiHudScreenCategory screenCategory, int mouseX, int mouseY,
+            List<HudEntry> entrySnapshot) {
+        if (screenCategory != UiHudScreenCategory.CONTAINER) {
+            return null;
+        }
+        for (int index = entrySnapshot.size() - 1; index >= 0; index--) {
+            HudEntry entry = entrySnapshot.get(index);
+            if (!isInteractiveEntryAvailable(entry, screenCategory)) {
                 continue;
             }
             ElementNode hitElement = entry.widget.findElementAt(mouseX, mouseY);
             if (shouldCaptureHit(entry, hitElement)) {
-                return true;
+                return entry;
             }
         }
-        return false;
+        return null;
+    }
+
+    private HudEntry resolveKeyboardTargetEntry(UiHudScreenCategory screenCategory, List<HudEntry> entrySnapshot) {
+        if (screenCategory != UiHudScreenCategory.CONTAINER) {
+            return null;
+        }
+        if (isInteractiveEntryAvailable(activeKeyboardEntry, screenCategory)
+                && activeKeyboardEntry.interactionSession.hasFocusedWidget()) {
+            return activeKeyboardEntry;
+        }
+        activeKeyboardEntry = null;
+        for (int index = entrySnapshot.size() - 1; index >= 0; index--) {
+            HudEntry entry = entrySnapshot.get(index);
+            if (!isInteractiveEntryAvailable(entry, screenCategory)) {
+                continue;
+            }
+            if (entry.interactionSession.hasFocusedWidget()) {
+                activeKeyboardEntry = entry;
+                return entry;
+            }
+        }
+        return null;
+    }
+
+    private boolean isInteractiveEntryAvailable(HudEntry entry, UiHudScreenCategory screenCategory) {
+        return entry != null && entries.contains(entry) && entry.layerType == UiHudLayerType.INTERACTIVE
+                && entry.isVisibleIn(screenCategory);
     }
 
     private boolean shouldCaptureHit(HudEntry entry, ElementNode hitElement) {
@@ -409,6 +533,9 @@ public final class UiHudDocumentHost {
         if (screen == null && (screenClassName == null || screenClassName.isEmpty())) {
             return UiHudScreenCategory.INGAME;
         }
+        if (screen instanceof BaseScreen) {
+            return UiHudScreenCategory.MENU;
+        }
         if (screen instanceof GuiContainer || screen instanceof GuiChat) {
             return UiHudScreenCategory.CONTAINER;
         }
@@ -420,6 +547,9 @@ public final class UiHudDocumentHost {
                 || (screenClassName != null && screenClassName.startsWith("net.minecraft.client.gui.inventory."))) {
             return UiHudScreenCategory.CONTAINER;
         }
+        if (screenClassName != null && screenClassName.startsWith("club.heiqi.uilib.")) {
+            return UiHudScreenCategory.MENU;
+        }
         if ("net.minecraft.client.gui.GuiIngameMenu".equals(screenClassName)
                 || "net.minecraft.client.gui.GuiMainMenu".equals(screenClassName)
                 || (screenClassName != null && screenClassName.startsWith("net.minecraft.client.gui.Gui"))) {
@@ -428,7 +558,7 @@ public final class UiHudDocumentHost {
         if (screen == null) {
             return UiHudScreenCategory.INGAME;
         }
-        return UiHudScreenCategory.MENU;
+        return UiHudScreenCategory.CONTAINER;
     }
 
     private synchronized void renderVisibleLayers(UiHudScreenCategory screenCategory, float partialTicks) {
@@ -535,6 +665,12 @@ public final class UiHudDocumentHost {
             return;
         }
         if (entries.remove(entry)) {
+            if (activeMouseEntry == entry) {
+                activeMouseEntry = null;
+            }
+            if (activeKeyboardEntry == entry) {
+                activeKeyboardEntry = null;
+            }
             entry.interactionSession.clearInteractionState();
             UiLayoutInvalidationRegistry.unregisterRoot(entry.widget);
             updateHudKeyboardCaptureState();
@@ -542,6 +678,7 @@ public final class UiHudDocumentHost {
     }
 
     private synchronized void clearInteractiveStates() {
+        clearActiveInteractionEntries();
         for (HudEntry entry : entries) {
             if (entry.layerType == UiHudLayerType.INTERACTIVE) {
                 entry.interactionSession.clearInteractionState();
@@ -553,14 +690,28 @@ public final class UiHudDocumentHost {
 
     private synchronized void updateHudKeyboardCaptureState() {
         boolean captured = false;
-        for (HudEntry entry : entries) {
-            if (entry.layerType == UiHudLayerType.INTERACTIVE && entry.interactionSession.hasFocusedWidget()) {
-                captured = true;
-                break;
+        if (activeKeyboardEntry != null && entries.contains(activeKeyboardEntry)
+                && activeKeyboardEntry.layerType == UiHudLayerType.INTERACTIVE
+                && activeKeyboardEntry.interactionSession.hasFocusedWidget()) {
+            captured = true;
+        } else {
+            activeKeyboardEntry = null;
+            for (int index = entries.size() - 1; index >= 0; index--) {
+                HudEntry entry = entries.get(index);
+                if (entry.layerType == UiHudLayerType.INTERACTIVE && entry.interactionSession.hasFocusedWidget()) {
+                    activeKeyboardEntry = entry;
+                    captured = true;
+                    break;
+                }
             }
         }
         UiKeyboardCaptureState.getInstance().setHudKeyboardCaptured(captured);
         syncHudTextInputRequest(captured);
+    }
+
+    private void clearActiveInteractionEntries() {
+        activeMouseEntry = null;
+        activeKeyboardEntry = null;
     }
 
     private void syncHudTextInputRequest(boolean shouldRequest) {
@@ -596,8 +747,8 @@ public final class UiHudDocumentHost {
                 Mouse.isGrabbed());
     }
 
-    static boolean isInteractiveInputEnabled(Object screen, String screenClassName, boolean mouseGrabbed) {
-        return (screen != null || screenClassName != null) && !mouseGrabbed;
+    public static boolean isInteractiveInputEnabled(Object screen, String screenClassName, boolean mouseGrabbed) {
+        return classifyScreen(screen, screenClassName) == UiHudScreenCategory.CONTAINER && !mouseGrabbed;
     }
 
     private UiRenderTarget getOrCreateDeferredPostMainRenderTarget() {

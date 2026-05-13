@@ -34,6 +34,10 @@ public final class UiHostInputCoordinator {
      */
     public boolean shouldCancelNativeKeyboardInput(GuiScreen currentScreen) {
         UiInputFrame immediateFrame = UiInputService.getInstance().createImmediateKeyboardFrame();
+        if (!UiHudDocumentHost.isInteractiveInputEnabled(currentScreen,
+                currentScreen == null ? null : currentScreen.getClass().getName(), Mouse.isGrabbed())) {
+            return false;
+        }
         if (handleImmediateKeyboardFrame(currentScreen, immediateFrame)) {
             return true;
         }
@@ -47,6 +51,10 @@ public final class UiHostInputCoordinator {
      * @return 是否应阻断宿主继续处理当前鼠标事件
      */
     public boolean shouldCancelNativeMouseInput(GuiScreen currentScreen) {
+        if (!UiHudDocumentHost.isInteractiveInputEnabled(currentScreen,
+                currentScreen == null ? null : currentScreen.getClass().getName(), Mouse.isGrabbed())) {
+            return false;
+        }
         return handleImmediateMouseFrame(currentScreen, UiInputService.getInstance().createImmediateMouseFrame());
     }
 
@@ -57,6 +65,10 @@ public final class UiHostInputCoordinator {
      * @return 是否保留一个应继续交给宿主处理的原生键盘事件
      */
     public boolean advanceKeyboardEventForHudPriority(GuiScreen currentScreen) {
+        if (!UiHudDocumentHost.isInteractiveInputEnabled(currentScreen,
+                currentScreen == null ? null : currentScreen.getClass().getName(), Mouse.isGrabbed())) {
+            return Keyboard.next();
+        }
         while (Keyboard.next()) {
             UiInputFrame immediateFrame = UiInputService.getInstance().createImmediateKeyboardFrame();
             if (!handleImmediateKeyboardFrame(currentScreen, immediateFrame)) {
@@ -73,6 +85,10 @@ public final class UiHostInputCoordinator {
      * @return 是否保留一个应继续交给宿主处理的原生鼠标事件
      */
     public boolean advanceMouseEventForHudPriority(GuiScreen currentScreen) {
+        if (!UiHudDocumentHost.isInteractiveInputEnabled(currentScreen,
+                currentScreen == null ? null : currentScreen.getClass().getName(), Mouse.isGrabbed())) {
+            return Mouse.next();
+        }
         while (Mouse.next()) {
             UiInputFrame immediateFrame = UiInputService.getInstance().createImmediateMouseFrame();
             if (!handleImmediateMouseFrame(currentScreen, immediateFrame)) {
