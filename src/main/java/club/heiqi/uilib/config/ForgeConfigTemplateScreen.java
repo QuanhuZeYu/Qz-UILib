@@ -555,6 +555,13 @@ public class ForgeConfigTemplateScreen extends BaseScreen {
         statusText.setText(spec.getTextSet().formatReadyState(visibleCategoryCount, bindings.size()));
     }
 
+    /**
+     * 请求按当前绑定状态刷新状态区文案。
+     */
+    protected final void requestStatusRefresh() {
+        refreshStatusText(null);
+    }
+
     private DocumentButtonControl createActionButton(UiDocument document, String label, int normalColor, int activeColor,
             int disabledColor) {
         return new DocumentButtonControl(document, label)
@@ -1251,7 +1258,7 @@ public class ForgeConfigTemplateScreen extends BaseScreen {
             return cardElement;
         }
 
-        private String buildMetadataText() {
+        protected String buildMetadataText() {
             StringBuilder builder = new StringBuilder();
             builder.append("键：").append(property.getName());
             builder.append(" | 类型：").append(resolveTypeLabel(property));
@@ -1274,7 +1281,7 @@ public class ForgeConfigTemplateScreen extends BaseScreen {
             return builder.toString();
         }
 
-        private String buildHelperText() {
+        protected String buildHelperText() {
             List<String> fragments = new ArrayList<String>();
             String comment = normalizeInlineText(property.comment);
             if (!comment.isEmpty()) {

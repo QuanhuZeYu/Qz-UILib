@@ -1,9 +1,10 @@
 package club.heiqi.uilib.font.render;
 
+import java.nio.ByteBuffer;
+import java.nio.ByteOrder;
 import java.nio.IntBuffer;
 import java.util.Objects;
 
-import org.lwjgl.BufferUtils;
 import org.lwjgl.opengl.GL11;
 import org.lwjgl.opengl.GL13;
 import org.lwjgl.opengl.GL15;
@@ -15,7 +16,9 @@ import org.lwjgl.opengl.GL30;
  */
 public class FontRenderStateGuard implements FontRenderStateExecutor {
 
-    private final IntBuffer viewportBuffer = BufferUtils.createIntBuffer(16);
+    private final IntBuffer viewportBuffer = ByteBuffer.allocateDirect(16 * Integer.BYTES)
+            .order(ByteOrder.nativeOrder())
+            .asIntBuffer();
 
     private int activeTexture;
     private int currentProgram;

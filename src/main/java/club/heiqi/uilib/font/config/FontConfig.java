@@ -1,7 +1,9 @@
 package club.heiqi.uilib.font.config;
 
+import java.util.ArrayList;
 import java.util.Arrays;
 
+import club.heiqi.uilib.font.util.FontOrderSnapshot;
 import net.minecraftforge.common.config.Configuration;
 
 /**
@@ -33,6 +35,7 @@ public final class FontConfig {
     public static boolean replaceOrigin = false;
     public static boolean customInvCountFont = false;
     public static String[] fontSort = new String[0];
+    public static String[] missingFontSort = new String[0];
 
     private static double lastAwtCharSize = awtCharSize;
     private static double lastCharSize = charSize;
@@ -40,6 +43,7 @@ public final class FontConfig {
     private static boolean lastReplaceOrigin = replaceOrigin;
     private static boolean lastCustomInvCountFont = customInvCountFont;
     private static String[] lastFontSort = fontSort;
+    private static Configuration activeConfiguration;
 
     private FontConfig() {}
 
@@ -49,6 +53,7 @@ public final class FontConfig {
      * @param configuration Forge 配置对象
      */
     public static void load(Configuration configuration) {
+        activeConfiguration = configuration;
         lerpMode = configuration.get(CATEGORY, "lerpMode", lerpMode, "插值模式", 0, 3).getInt();
         aaMode = configuration.get(CATEGORY, "aaMode", aaMode, "AA 模式", 1, 2).getInt();
         brightnessGain = configuration.get(CATEGORY, "brightnessGain", readLegacyBrightnessGain(configuration), "HSV 亮度增强，仅增强亮度并保持原有颜色倾向", -Double.MAX_VALUE, Double.MAX_VALUE).getDouble();
@@ -67,6 +72,9 @@ public final class FontConfig {
         replaceOrigin = configuration.get(CATEGORY, "replaceOrigin", replaceOrigin, "是否替换原版字体渲染").getBoolean();
         customInvCountFont = configuration.get(CATEGORY, "customInvCountFont", customInvCountFont, "是否接管物品数量字体").getBoolean();
         fontSort = configuration.get(CATEGORY, "fontSort", fontSort, "字体排序").getStringList();
+        if (fontSort == null) {
+            fontSort = new String[0];
+        }
 
         awtCharSize = configuration.get(FONT_SIZE_CATEGORY, "awtCharSize", awtCharSize, "字符生成分辨率", 8.0D, Double.MAX_VALUE).getDouble();
         charSize = configuration.get(FONT_SIZE_CATEGORY, "charSize", charSize, "默认显示字号", 1.0D, Double.MAX_VALUE).getDouble();
@@ -100,6 +108,58 @@ public final class FontConfig {
     }
 
     /**
+     * 应用字体排序规划结果。
+     *
+     * @param snapshot 字体排序快照
+     */
+    public static void applyFontOrderSnapshot(FontOrderSnapshot snapshot) {
+        if (snapshot == null) {
+            return;
+        }
+        fontSort = snapshot.getResolvedFontNames();
+        missingFontSort = snapshot.getMissingConfiguredFontNames();
+        persistFontSortToConfiguration();
+    }
+
+    /**
+     * 判断当前字体名是否已经存在于有效顺序中。
+     *
+     * @param fontName 字体名
+     * @return 是否存在
+     */
+    public static boolean isFontPresent(String fontName) {
+        return containsIgnoreCase(fontSort, fontName);
+    }
+
+    /**
+     * 判断当前字体名是否处于缺失状态。
+     *
+     * @param fontName 字体名
+     * @return 是否缺失
+     */
+    public static boolean isFontMissing(String fontName) {
+        return containsIgnoreCase(missingFontSort, fontName);
+    }
+
+    /**
+     * 获取当前有效字体顺序快照。
+     *
+     * @return 字体顺序快照
+     */
+    public static String[] getFontSortSnapshot() {
+        return fontSort == null ? new String[0] : Arrays.copyOf(fontSort, fontSort.length);
+    }
+
+    /**
+     * 获取当前缺失字体名称快照。
+     *
+     * @return 缺失字体名称快照
+     */
+    public static String[] getMissingFontSnapshot() {
+        return missingFontSort == null ? new String[0] : Arrays.copyOf(missingFontSort, missingFontSort.length);
+    }
+
+    /**
      * 生成用于日志输出的简短摘要。
      *
      * @return 摘要文本
@@ -109,7 +169,30 @@ public final class FontConfig {
                 + ", awtCharSize=" + awtCharSize
                 + ", replaceOrigin=" + replaceOrigin
                 + ", customInvCountFont=" + customInvCountFont
-                + ", fontSort=" + Arrays.toString(fontSort);
+                + ", fontSort=" + Arrays.toString(fontSort)
+                + ", missingFontSort=" + Arrays.toString(missingFontSort);
+    }
+
+    private static void persistFontSortToConfiguration() {
+        if (activeConfiguration == null) {
+            return;
+        }
+        activeConfiguration.get(CATEGORY, "fontSort", fontSort, "字体排序").set(fontSort);
+        if (activeConfiguration.hasChanged()) {
+            activeConfiguration.save();
+        }
+    }
+
+    private static boolean containsIgnoreCase(String[] values, String target) {
+        if (values == null || target == null) {
+            return false;
+        }
+        for (String value : values) {
+            if (value != null && value.equalsIgnoreCase(target.trim())) {
+                return true;
+            }
+        }
+        return false;
     }
 
     private static double readLegacyBrightnessGain(Configuration configuration) {

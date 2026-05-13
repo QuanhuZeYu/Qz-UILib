@@ -9,6 +9,8 @@ import org.junit.Test;
 import org.lwjglx.input.Keyboard;
 
 import club.heiqi.uilib.ui.document.HtmlLikeDocumentWidget;
+import club.heiqi.uilib.ui.dom.DocumentElementKeyEvent;
+import club.heiqi.uilib.ui.dom.DocumentElementKeyHandler;
 import club.heiqi.uilib.ui.dom.ElementNode;
 import club.heiqi.uilib.ui.dom.UiDocument;
 import club.heiqi.uilib.ui.event.UiKeyEvent;
@@ -338,6 +340,51 @@ public class DocumentTextInputControlTest {
         Assert.assertEquals("AB", changeTexts.get(1));
         Assert.assertEquals("ABC", changeTexts.get(2));
         Assert.assertEquals("AB", changeTexts.get(3));
+    }
+
+    /**
+     * 验证扩展键盘处理器可接收回车，同时不影响输入框原有退格行为。
+     */
+    @Test
+    public void shouldSupportAdditionalKeyHandlerWithoutBreakingBackspace() {
+        UiDocument document = UiDocument.create();
+        ElementNode root = document.getRootElement();
+        DocumentTextInputControl textInputControl = new DocumentTextInputControl(document);
+        final List<Integer> enterKeys = new ArrayList<Integer>();
+        textInputControl.setKeyHandler(new DocumentElementKeyHandler() {
+            @Override
+            public boolean onKey(DocumentElementKeyEvent event) {
+                if (event.getAction() != UiKeyEvent.Action.PRESSED) {
+                    return false;
+                }
+                if (event.getKeyCode() != Keyboard.KEY_RETURN) {
+                    return false;
+                }
+                enterKeys.add(Integer.valueOf(event.getKeyCode()));
+                return true;
+            }
+        });
+        root.style()
+                .setWidth(UiStyleLength.px(200))
+                .setHeight(UiStyleLength.px(40));
+        textInputControl.getElement().style()
+                .setWidth(UiStyleLength.px(160))
+                .setHeight(UiStyleLength.px(24));
+        root.append(textInputControl.getElement());
+        HtmlLikeDocumentWidget widget = new HtmlLikeDocumentWidget(document, 200, 40,
+                new DeterministicTextMeasureService());
+        widget.applyLayoutBounds(0, 0, 200, 40);
+
+        widget.onFocusTraversalEntered(true);
+        widget.onTextInput(new UiTextInputEvent("AB", 1L));
+        widget.onKeyEvent(new UiKeyEvent(Keyboard.KEY_BACK, 0, 0, UiKeyEvent.Action.PRESSED, false, false, false,
+                false, 2L));
+        widget.onKeyEvent(new UiKeyEvent(Keyboard.KEY_RETURN, 0, 0, UiKeyEvent.Action.PRESSED, false, false, false,
+                false, 3L));
+
+        Assert.assertEquals("A", textInputControl.getText());
+        Assert.assertEquals(1, enterKeys.size());
+        Assert.assertEquals(Integer.valueOf(Keyboard.KEY_RETURN), enterKeys.get(0));
     }
 
     /**

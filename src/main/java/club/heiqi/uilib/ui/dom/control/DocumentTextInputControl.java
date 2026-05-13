@@ -24,6 +24,7 @@ public final class DocumentTextInputControl {
     private final TextNode textNode;
     private final StringBuilder textBuilder = new StringBuilder();
     private DocumentTextInputChangeHandler changeHandler;
+    private DocumentElementKeyHandler keyHandler;
     private String placeholder = "";
     private int maxLength = 128;
     private boolean enabled = true;
@@ -155,6 +156,20 @@ public final class DocumentTextInputControl {
     }
 
     /**
+     * 设置扩展键盘处理器。
+     *
+     * <p>该处理器会在文本输入框自身处理完退格后继续参与处理，
+     * 可用于回车提交等输入框扩展语义。</p>
+     *
+     * @param keyHandler 键盘处理器；为 null 时清除
+     * @return 当前文本输入控件
+     */
+    public DocumentTextInputControl setKeyHandler(DocumentElementKeyHandler keyHandler) {
+        this.keyHandler = keyHandler;
+        return this;
+    }
+
+    /**
      * 设置正常态背景色。
      *
      * @param normalBackgroundColor 正常态背景色
@@ -258,6 +273,9 @@ public final class DocumentTextInputControl {
                         fireChange();
                     }
                     return true;
+                }
+                if (keyHandler != null) {
+                    return keyHandler.onKey(event);
                 }
                 return false;
             }

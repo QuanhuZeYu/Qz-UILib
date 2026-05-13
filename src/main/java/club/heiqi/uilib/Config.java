@@ -58,11 +58,12 @@ public class Config {
             configuration.save();
         }
         load();
-        FontConfig.onConfigReload();
-        if (FontConfig.affectsFontRuntime()) {
+        boolean fontRuntimeChanged = FontConfig.affectsFontRuntime();
+        if (fontRuntimeChanged) {
             MyMod.LOG.info("检测到字体配置更新，准备重载字体系统");
             club.heiqi.uilib.font.FontService.getInstance().reload(new FontReloadRequest("config_changed"));
         }
+        FontConfig.onConfigReload();
     }
 
     /**

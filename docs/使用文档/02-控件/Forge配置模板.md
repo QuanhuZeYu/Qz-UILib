@@ -16,6 +16,7 @@
 - 非列表字符串属性如果声明了 `validValues`，且当前值仍在候选集中，默认渲染为分段选择控件；遗留值会自动回退为文本输入，避免静默改写。
 - 其他属性默认渲染为文本输入框。
 - 列表输入使用英文逗号分隔；保存时会写回到对应 Forge `Property`。
+- 列表属性也可以通过自定义 `PropertyEditorFactory` 派生为专用列表控件，而不是局限于文本输入。
 - 页面内置 `Ctrl+S` 保存、`ESC` 返回、恢复当前值、恢复默认值四个基础动作。
 - 保存动作若在写盘或宿主 `saveAndReload()` 阶段失败，页面会回滚本次已写回的属性值，并保留失败提示。
 - 页面在找不到显式声明的分类时，会在状态区提示缺失分类名；空状态区也会优先显示缺失分类信息。
@@ -93,6 +94,7 @@ spec.addPropertyEditorFactory(new ForgeConfigTemplateScreen.PropertyEditorFactor
 
 - 返回 `null` 表示当前工厂不处理该属性，模板会继续尝试后续工厂和默认编辑器。
 - `PropertyBinding` 已开放给外部继承，可自定义 `isDirty()`、`restoreCurrentValue()`、`validateDraft()`、`applyDraft()`。
+- 如果某类列表属性需要可视化重排、拖拽或其他专属交互，建议派生一个专用列表控件，再通过 `PropertyBinding` 接入，不要直接修改通用文本列表编辑语义。
 
 ### 主题与文案
 
@@ -106,6 +108,7 @@ spec.addPropertyEditorFactory(new ForgeConfigTemplateScreen.PropertyEditorFactor
 - `club.heiqi.uilib.config.ModConfigGui` 已切换为 `ForgeConfigTemplateScreen` 的具体实现，不再继承默认 `GuiConfig`。
 - 当前模板实例覆盖三个分类：`general`、`fontSystem`、`fontSizeSetting`。
 - 当前模板已经把 `validValues` 视为一等语义；但当当前值已不在候选集时，会自动回退为文本输入保留遗留值。
+- 当前 `fontSystem.fontSort` 已切换为专用字体排序控件：支持拖拽排序和序号提交两种模式，并会在每次启动后根据已发现字体自动补全有效顺序，同时在界面中提示未发现的历史配置字体。
 
 ## 验证建议
 
