@@ -507,12 +507,8 @@ public final class DocumentScrollState {
         int viewportBottom = viewportTop + box.getContentHeight();
         boolean pointerInViewport = containsInRect(mouseX, mouseY, viewportLeft, viewportTop, viewportRight,
                 viewportBottom);
-        if (!containsInBorderBox(box, mouseX, mouseY, boxOffsetX, boxOffsetY) && !pointerInViewport) {
-            return null;
-        }
-
-        boolean clippedChildren = DocumentEffectChain.resolve(box).hasOverflowClip();
-        if (!clippedChildren || pointerInViewport) {
+        boolean childrenReachable = canReachChildren(box, mouseX, mouseY, boxOffsetX, boxOffsetY);
+        if (childrenReachable) {
             int childOffsetX = boxOffsetX - getScrollLeft(box.getElement());
             int childOffsetY = boxOffsetY - getScrollTop(box.getElement());
             DocumentLayoutBox hit = searchStackingContext
@@ -843,11 +839,6 @@ public final class DocumentScrollState {
             return true;
         }
         return currentTimeNanos - entry.lastScrollNanos <= TRANSIENT_SCROLLBAR_VISIBLE_NANOS;
-    }
-
-    private boolean containsInBorderBox(DocumentLayoutBox box, int mouseX, int mouseY, int offsetX, int offsetY) {
-        return containsInRect(mouseX, mouseY, box.getLeft() + offsetX, box.getTop() + offsetY,
-                box.getRight() + offsetX, box.getBottom() + offsetY);
     }
 
     private static boolean containsInRect(int mouseX, int mouseY, int left, int top, int right, int bottom) {

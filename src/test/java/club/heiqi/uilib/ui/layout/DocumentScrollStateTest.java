@@ -198,6 +198,53 @@ public class DocumentScrollStateTest {
         Assert.assertTrue(scrollState.getScrollTop(contentRoot) > 0);
     }
 
+    /**
+     * 验证 fixed HUD 面板中命中后代文本时，滚轮命中链路会回退到祖先 scroll host。
+     */
+    @Test
+    public void shouldScrollFixedHudAncestorHostWhenPointerHitsDescendantText() {
+        UiDocument document = UiDocument.create();
+        ElementNode root = document.getRootElement();
+        ElementNode panel = document.div();
+        ElementNode title = document.div();
+        ElementNode diagnostics = document.div();
+        ElementNode scrollHost = document.div();
+
+        root.style()
+                .setWidth(UiStyleLength.px(2048))
+                .setHeight(UiStyleLength.px(1152));
+        panel.style()
+                .setPosition(UiPosition.FIXED)
+                .setLeft(UiStyleLength.px(1760))
+                .setTop(UiStyleLength.px(14))
+                .setWidth(UiStyleLength.px(248))
+                .setHeight(UiStyleLength.px(232))
+                .setPadding(UiStyleLength.px(12));
+        title.appendText("INTERACTIVE HUD");
+        diagnostics.appendText("阶段: 有范围但未命中宿主");
+        scrollHost.style()
+                .setHeight(UiStyleLength.px(118))
+                .setOverflowX(UiOverflow.HIDDEN)
+                .setOverflowY(UiOverflow.AUTO);
+        scrollHost.append(createTextBlock(document, "容器界面上方可见。点击次数 0，备注：把鼠标移到背包界面后尝试编辑我 123。"));
+        scrollHost.append(createTextBlock(document, "底部提示标记：保留"));
+        for (int index = 1; index <= 8; index++) {
+            scrollHost.append(createTextBlock(document,
+                    "滚轮停在这里可查看内部内容，第 " + index + " 条示例说明。继续补充中文描述，确保形成明显纵向溢出。"));
+        }
+        panel.append(title).append(diagnostics).append(scrollHost);
+        root.append(panel);
+
+        DocumentLayoutBox rootBox = DocumentLayoutEngine.layout(root, 2048, 1152,
+                new DeterministicTextMeasureService());
+        DocumentScrollState scrollState = new DocumentScrollState();
+
+        Assert.assertEquals(title, DocumentHitTestEngine.hitTest(rootBox, scrollState, 1784, 30));
+        Assert.assertNotNull(DocumentHitTestEngine.hitTest(rootBox, scrollState, 1784, 172));
+        Assert.assertTrue(scrollState.handleWheel(rootBox, 1784, 172, -120, 1L));
+        Assert.assertTrue(scrollState.getScrollTop(scrollHost) > 0);
+    }
+
     private static ElementNode createCard(UiDocument document, int index) {
         ElementNode card = document.div();
         card.style()
