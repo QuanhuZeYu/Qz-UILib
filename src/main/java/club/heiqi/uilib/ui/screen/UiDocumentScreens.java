@@ -2,11 +2,10 @@ package club.heiqi.uilib.ui.screen;
 
 import java.util.Objects;
 
+import club.heiqi.uilib.ui.host.DocumentHostWidgetFactory;
 import club.heiqi.uilib.ui.document.HtmlLikeDocumentWidget;
 import club.heiqi.uilib.ui.dom.ElementNode;
 import club.heiqi.uilib.ui.dom.UiDocument;
-import club.heiqi.uilib.ui.layout.UiLayoutSpec;
-import club.heiqi.uilib.ui.layout.UiLength;
 import club.heiqi.uilib.ui.runtime.UiRuntimeAdapters;
 import club.heiqi.uilib.ui.style.UiOverflow;
 import club.heiqi.uilib.ui.style.UiStyleLength;
@@ -151,12 +150,8 @@ public final class UiDocumentScreens {
             UiDocument document = UiDocument.create();
             Objects.requireNonNull(contentBuilder, "contentBuilder").build(document);
             applyDefaultRootContract(document.getRootElement());
-            this.htmlLikeDocumentWidget = new HtmlLikeDocumentWidget(document, 320, 180,
-                    resolvedDocumentUi.getTextMeasureService());
-            this.htmlLikeDocumentWidget.setViewportRootScrollingEnabled(true);
-            this.htmlLikeDocumentWidget.setLayoutSpec(new UiLayoutSpec()
-                    .setWidth(UiLength.percent(1.0F))
-                    .setHeight(UiLength.percent(1.0F)));
+            this.htmlLikeDocumentWidget = DocumentHostWidgetFactory.createViewportDocumentWidget(document, 320, 180,
+                    resolvedDocumentUi.getTextMeasureService(), true);
         }
 
         @Override

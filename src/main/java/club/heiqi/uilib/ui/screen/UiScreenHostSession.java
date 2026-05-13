@@ -7,6 +7,7 @@ import net.minecraft.client.Minecraft;
 import org.lwjgl.opengl.GL11;
 
 import club.heiqi.uilib.ui.diagnostic.UiPerformanceMonitor;
+import club.heiqi.uilib.ui.host.DocumentHostRenderSupport;
 import club.heiqi.uilib.ui.input.UiInputFrame;
 import club.heiqi.uilib.ui.input.UiKeyboardCaptureState;
 import club.heiqi.uilib.ui.input.UiInputRouter;
@@ -122,15 +123,16 @@ final class UiScreenHostSession {
                         try {
                             GL11.glLoadIdentity();
                             backgroundBlurRenderer.drawBlurredBackground(nativeWidth, nativeHeight);
-                            prepareMainUiRenderState();
+                            DocumentHostRenderSupport.prepareMainUiRenderState();
                             paintContextCompositor.beginFrame();
                             mainLayerSnapshotService.beginFrame();
-                            UiRenderContext context = createRenderContext(nativeWidth, nativeHeight, latestMouseX,
-                                    latestMouseY, partialTicks, paintContextCompositor, mainLayerSnapshotService,
-                                    screen.getRuntimeAdapters());
+                            UiRenderContext context = DocumentHostRenderSupport.createRenderContext(nativeWidth,
+                                    nativeHeight, latestMouseX, latestMouseY, partialTicks,
+                                    paintContextCompositor, mainLayerSnapshotService, screen.getRuntimeAdapters());
                             try {
                                 rootWidget.render(context);
-                                flushDeferredPostMainPasses(context, deferredPostMainRenderTarget, nativeWidth,
+                                DocumentHostRenderSupport.flushDeferredPostMainPasses(context,
+                                        deferredPostMainRenderTarget, nativeWidth,
                                         nativeHeight);
                             } finally {
                                 mainLayerSnapshotService.finishFrame();
@@ -162,13 +164,6 @@ final class UiScreenHostSession {
         } finally {
             performanceMonitor.finishFrame();
         }
-    }
-
-    static UiRenderContext createRenderContext(int screenWidth, int screenHeight, int mouseX, int mouseY,
-            float partialTicks, UiRenderContext.PaintContextCompositor paintContextCompositor,
-            UiMainLayerSnapshotService mainLayerSnapshotService, UiRuntimeAdapters runtimeAdapters) {
-        return new UiRenderContext(screenWidth, screenHeight, mouseX, mouseY, partialTicks,
-                paintContextCompositor, mainLayerSnapshotService, runtimeAdapters);
     }
 
     /**
@@ -262,134 +257,18 @@ final class UiScreenHostSession {
      */
     private void closeRenderTarget() {
         if (renderTarget == null) {
-            if (deferredPostMainRenderTarget != null) {
-                deferredPostMainRenderTarget.close();
-                deferredPostMainRenderTarget = null;
-            }
-            paintContextCompositor.close();
-            mainLayerSnapshotService.close();
+            DocumentHostRenderSupport.closeSharedRenderResources(paintContextCompositor, mainLayerSnapshotService,
+                    deferredPostMainRenderTarget);
+            deferredPostMainRenderTarget = null;
             backgroundBlurRenderer.close();
             return;
         }
         renderTarget.close();
         renderTarget = null;
-        if (deferredPostMainRenderTarget != null) {
-            deferredPostMainRenderTarget.close();
-            deferredPostMainRenderTarget = null;
-        }
-        paintContextCompositor.close();
-        mainLayerSnapshotService.close();
+        DocumentHostRenderSupport.closeSharedRenderResources(paintContextCompositor, mainLayerSnapshotService,
+                deferredPostMainRenderTarget);
+        deferredPostMainRenderTarget = null;
         backgroundBlurRenderer.close();
-    }
-
-    /**
-     * 在主 UI 层完成后回放补充绘制层，再把第二个 FBO 贴回主层。
-     *
-     * <p>这里故意把回放放在主 FBO 仍然绑定的阶段执行：
-     * 先保持主层 alpha 只由控件底图建立，
-     * 再把第二个 FBO 的预合成 RGB 回贴回来，同时完全保留主层 coverage alpha。</p>
-     */
-    private void flushDeferredPostMainPasses(UiRenderContext context, UiRenderTarget deferredRenderTarget,
-            int nativeWidth, int nativeHeight) {
-        if (context == null || deferredRenderTarget == null || !context.hasDeferredPostMainPasses()) {
-            return;
-        }
-
-        List<UiRenderContext.DeferredPostMainPass> deferredPasses = context.drainDeferredPostMainPasses();
-        if (deferredPasses.isEmpty()) {
-            return;
-        }
-
-        int previousMatrixMode = GL11.glGetInteger(GL11.GL_MATRIX_MODE);
-        deferredRenderTarget.begin();
-        try {
-            GL11.glMatrixMode(GL11.GL_PROJECTION);
-            GL11.glPushMatrix();
-            try {
-                GL11.glLoadIdentity();
-                GL11.glOrtho(0.0D, nativeWidth, nativeHeight, 0.0D, -1000.0D, 1000.0D);
-                GL11.glMatrixMode(GL11.GL_MODELVIEW);
-                GL11.glPushMatrix();
-                try {
-                    GL11.glLoadIdentity();
-                    for (UiRenderContext.DeferredPostMainPass deferredPass : deferredPasses) {
-                        prepareDeferredPostMainReplayState(nativeWidth, nativeHeight);
-                        applyDeferredPostMainClip(deferredPass.getClipSnapshot(), nativeHeight);
-                        deferredPass.replay();
-                    }
-                    UiRenderContext.clearClipState();
-                } finally {
-                    GL11.glMatrixMode(GL11.GL_MODELVIEW);
-                    GL11.glPopMatrix();
-                }
-            } finally {
-                GL11.glMatrixMode(GL11.GL_PROJECTION);
-                GL11.glPopMatrix();
-                GL11.glMatrixMode(previousMatrixMode);
-            }
-        } finally {
-            deferredRenderTarget.end();
-            GL11.glMatrixMode(previousMatrixMode);
-        }
-
-        deferredRenderTarget.compositeToCurrentFramebuffer();
-        context.notifyMainLayerContentChanged();
-    }
-
-    /**
-     * 准备主 UI 层的稳定 2D OpenGL 状态。
-     *
-     * <p>宿主世界渲染会把 depth/cull/alpha 等状态留在不可预期的组合中；主 UI 绘制必须在进入
-     * widget 树之前统一清理，否则圆角填充这类面片几何可能被背面剔除，只剩线框可见。</p>
-     */
-    private static void prepareMainUiRenderState() {
-        GL11.glDisable(GL11.GL_DEPTH_TEST);
-        GL11.glDisable(GL11.GL_CULL_FACE);
-        GL11.glDisable(GL11.GL_ALPHA_TEST);
-        GL11.glDisable(GL11.GL_LIGHTING);
-        GL11.glEnable(GL11.GL_BLEND);
-        GL11.glBlendFunc(GL11.GL_SRC_ALPHA, GL11.GL_ONE_MINUS_SRC_ALPHA);
-        GL11.glColor4f(1.0F, 1.0F, 1.0F, 1.0F);
-    }
-
-    /**
-     * 准备单个主后置回放批次的稳定 2D 初始状态。
-     *
-     * <p>物品图标这类宿主绘制会临时开启 depth、lighting、alpha test 等状态，并可能写入深度缓存。
-     * 每个批次开始前重置矩阵与深度，避免前一个网格的宿主渲染状态或深度内容影响后一个网格。</p>
-     */
-    private static void prepareDeferredPostMainReplayState(int nativeWidth, int nativeHeight) {
-        UiRenderContext.clearClipState();
-        GL11.glMatrixMode(GL11.GL_PROJECTION);
-        GL11.glLoadIdentity();
-        GL11.glOrtho(0.0D, nativeWidth, nativeHeight, 0.0D, -1000.0D, 1000.0D);
-        GL11.glMatrixMode(GL11.GL_MODELVIEW);
-        GL11.glLoadIdentity();
-        GL11.glColorMask(true, true, true, true);
-        GL11.glDepthMask(true);
-        GL11.glClearDepth(1.0D);
-        GL11.glClear(GL11.GL_DEPTH_BUFFER_BIT);
-        GL11.glDisable(GL11.GL_DEPTH_TEST);
-        GL11.glDepthFunc(GL11.GL_LEQUAL);
-        GL11.glDisable(GL11.GL_CULL_FACE);
-        GL11.glDisable(GL11.GL_ALPHA_TEST);
-        GL11.glDisable(GL11.GL_LIGHTING);
-        GL11.glEnable(GL11.GL_TEXTURE_2D);
-        GL11.glEnable(GL11.GL_BLEND);
-        GL11.glBlendFunc(GL11.GL_SRC_ALPHA, GL11.GL_ONE_MINUS_SRC_ALPHA);
-        GL11.glColor4f(1.0F, 1.0F, 1.0F, 1.0F);
-    }
-
-    /**
-     * 将主 UI 渲染阶段记录的 clip/scissor 状态回放到物品层。
-     *
-     * @param clipSnapshot 裁剪快照；为空时表示当前批次不裁剪
-     * @param screenHeight 当前原生屏幕高度
-     */
-    private void applyDeferredPostMainClip(UiRenderContext.ClipSnapshot clipSnapshot, int screenHeight) {
-        // 物品层重放必须复用主层已经解析好的裁剪快照，否则卡片圆角只会裁掉底图，
-        // 延迟回放的物品图标仍会从卡片拐角露出来。
-        UiRenderContext.applyClipSnapshot(clipSnapshot, screenHeight);
     }
 
     /**

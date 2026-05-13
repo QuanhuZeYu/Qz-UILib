@@ -20,13 +20,13 @@ import club.heiqi.uilib.ui.diagnostic.UiPerformanceMonitor;
 import club.heiqi.uilib.ui.document.HtmlLikeDocumentWidget;
 import club.heiqi.uilib.ui.dom.ElementNode;
 import club.heiqi.uilib.ui.dom.UiDocument;
+import club.heiqi.uilib.ui.host.DocumentHostRenderSupport;
+import club.heiqi.uilib.ui.host.DocumentHostWidgetFactory;
 import club.heiqi.uilib.ui.input.UiInputFrame;
 import club.heiqi.uilib.ui.input.UiInputRouter;
 import club.heiqi.uilib.ui.input.UiInputService;
 import club.heiqi.uilib.ui.input.UiKeyboardCaptureState;
 import club.heiqi.uilib.ui.input.UiNativeTextInputInspector;
-import club.heiqi.uilib.ui.layout.UiLength;
-import club.heiqi.uilib.ui.layout.UiLayoutSpec;
 import club.heiqi.uilib.ui.render.UiMainLayerSnapshotService;
 import club.heiqi.uilib.ui.render.UiRenderContext;
 import club.heiqi.uilib.ui.render.UiRenderTarget;
@@ -90,12 +90,8 @@ public final class UiHudDocumentHost {
         applyDefaultRootContract(document, resolvedLayerType);
         Objects.requireNonNull(contentBuilder, "contentBuilder").build(document);
 
-        HtmlLikeDocumentWidget widget = new HtmlLikeDocumentWidget(document, 320, 180,
-                Objects.requireNonNull(textMeasureService, "textMeasureService"));
-        widget.setViewportRootScrollingEnabled(false);
-        widget.setLayoutSpec(new UiLayoutSpec()
-                .setWidth(UiLength.percent(1.0F))
-                .setHeight(UiLength.percent(1.0F)));
+        HtmlLikeDocumentWidget widget = DocumentHostWidgetFactory.createViewportDocumentWidget(document, 320, 180,
+                Objects.requireNonNull(textMeasureService, "textMeasureService"), false);
 
         HudEntry entry = new HudEntry(resolvedLayerType, widget, Objects.requireNonNull(runtimeAdapters,
                 "runtimeAdapters"));
@@ -474,7 +470,7 @@ public final class UiHudDocumentHost {
             GL11.glMatrixMode(GL11.GL_MODELVIEW);
             GL11.glPushMatrix();
             GL11.glLoadIdentity();
-            prepareMainUiRenderState();
+            DocumentHostRenderSupport.prepareMainUiRenderState();
             paintContextCompositor.beginFrame();
             mainLayerSnapshotService.beginFrame();
             try {
@@ -485,7 +481,8 @@ public final class UiHudDocumentHost {
                     entry.widget.applyLayoutBounds(0, 0, nativeWidth, nativeHeight);
                     performanceMonitor.beginFrame(entry.getRuntimeName(), guiWidth, guiHeight, nativeWidth, nativeHeight);
                     try {
-                        UiRenderContext context = new UiRenderContext(nativeWidth, nativeHeight,
+                        UiRenderContext context = DocumentHostRenderSupport.createRenderContext(nativeWidth,
+                                nativeHeight,
                                 resolveEntryMouseX(entry, fallbackMouseX, nativeWidth),
                                 resolveEntryMouseY(entry, fallbackMouseY, nativeHeight),
                                 partialTicks, paintContextCompositor, mainLayerSnapshotService, entry.runtimeAdapters);
@@ -519,35 +516,7 @@ public final class UiHudDocumentHost {
             return;
         }
 
-        int previousMatrixMode = GL11.glGetInteger(GL11.GL_MATRIX_MODE);
-        renderTarget.begin();
-        try {
-            GL11.glMatrixMode(GL11.GL_PROJECTION);
-            GL11.glPushMatrix();
-            GL11.glLoadIdentity();
-            GL11.glOrtho(0.0D, nativeWidth, nativeHeight, 0.0D, -1000.0D, 1000.0D);
-            GL11.glMatrixMode(GL11.GL_MODELVIEW);
-            GL11.glPushMatrix();
-            GL11.glLoadIdentity();
-            try {
-                for (UiRenderContext.DeferredPostMainPass deferredPass : deferredPasses) {
-                    prepareDeferredPostMainReplayState(nativeWidth, nativeHeight);
-                    UiRenderContext.applyClipSnapshot(deferredPass.getClipSnapshot(), nativeHeight);
-                    deferredPass.replay();
-                }
-                UiRenderContext.clearClipState();
-            } finally {
-                GL11.glMatrixMode(GL11.GL_MODELVIEW);
-                GL11.glPopMatrix();
-            }
-        } finally {
-            GL11.glMatrixMode(GL11.GL_PROJECTION);
-            GL11.glPopMatrix();
-            renderTarget.end();
-            GL11.glMatrixMode(previousMatrixMode);
-        }
-        renderTarget.compositeToCurrentFramebuffer();
-        context.notifyMainLayerContentChanged();
+        DocumentHostRenderSupport.flushDeferredPostMainPasses(context, renderTarget, nativeWidth, nativeHeight);
     }
 
     private synchronized void unregister(HudEntry entry) {
@@ -663,38 +632,6 @@ public final class UiHudDocumentHost {
             return Math.min(entry.latestMouseY, nativeHeight);
         }
         return fallbackMouseY;
-    }
-
-    private static void prepareMainUiRenderState() {
-        GL11.glDisable(GL11.GL_DEPTH_TEST);
-        GL11.glDisable(GL11.GL_CULL_FACE);
-        GL11.glDisable(GL11.GL_ALPHA_TEST);
-        GL11.glDisable(GL11.GL_LIGHTING);
-        GL11.glEnable(GL11.GL_BLEND);
-        GL11.glBlendFunc(GL11.GL_SRC_ALPHA, GL11.GL_ONE_MINUS_SRC_ALPHA);
-        GL11.glColor4f(1.0F, 1.0F, 1.0F, 1.0F);
-    }
-
-    private static void prepareDeferredPostMainReplayState(int nativeWidth, int nativeHeight) {
-        UiRenderContext.clearClipState();
-        GL11.glMatrixMode(GL11.GL_PROJECTION);
-        GL11.glLoadIdentity();
-        GL11.glOrtho(0.0D, nativeWidth, nativeHeight, 0.0D, -1000.0D, 1000.0D);
-        GL11.glMatrixMode(GL11.GL_MODELVIEW);
-        GL11.glLoadIdentity();
-        GL11.glColorMask(true, true, true, true);
-        GL11.glDepthMask(true);
-        GL11.glClearDepth(1.0D);
-        GL11.glClear(GL11.GL_DEPTH_BUFFER_BIT);
-        GL11.glDisable(GL11.GL_DEPTH_TEST);
-        GL11.glDepthFunc(GL11.GL_LEQUAL);
-        GL11.glDisable(GL11.GL_CULL_FACE);
-        GL11.glDisable(GL11.GL_ALPHA_TEST);
-        GL11.glDisable(GL11.GL_LIGHTING);
-        GL11.glEnable(GL11.GL_TEXTURE_2D);
-        GL11.glEnable(GL11.GL_BLEND);
-        GL11.glBlendFunc(GL11.GL_SRC_ALPHA, GL11.GL_ONE_MINUS_SRC_ALPHA);
-        GL11.glColor4f(1.0F, 1.0F, 1.0F, 1.0F);
     }
 
     /**

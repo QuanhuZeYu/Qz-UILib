@@ -3,6 +3,7 @@ package club.heiqi.uilib.ui.screen;
 import org.junit.Assert;
 import org.junit.Test;
 
+import club.heiqi.uilib.ui.host.DocumentHostRenderSupport;
 import club.heiqi.uilib.ui.image.HostImageRenderer;
 import club.heiqi.uilib.ui.image.HostImageSource;
 import club.heiqi.uilib.ui.render.UiMainLayerSnapshotService;
@@ -25,7 +26,7 @@ public class UiScreenHostSessionTest {
         };
         UiRuntimeAdapters runtimeAdapters = UiRuntimeAdapters.empty().withHostImageRenderer(hostImageRenderer);
 
-        UiRenderContext context = UiScreenHostSession.createRenderContext(320, 240, 12, 34, 0.5F,
+        UiRenderContext context = DocumentHostRenderSupport.createRenderContext(320, 240, 12, 34, 0.5F,
                 new UiRenderContext.PaintContextCompositor(), new UiMainLayerSnapshotService(), runtimeAdapters);
 
         Assert.assertSame(runtimeAdapters, context.getRuntimeAdapters());
