@@ -32,6 +32,7 @@ import club.heiqi.uilib.ui.text.TextMeasureService;
 final class HtmlLikeListDragDocumentPageController extends DocumentPageController {
 
     private static final int ROW_HEIGHT = 48;
+    private static final String DRAG_HANDLE_ICON_SRC = "https://img.icons8.com/ios-filled/50/93c5fd/drag-reorder.png";
     private static final List<String> DEFAULT_ITEMS = Arrays.asList("产品设计", "用户调研", "技术选型", "前端开发", "测试上线");
 
     private final DocumentPageAuthoringSurface documentPage;
@@ -201,11 +202,10 @@ final class HtmlLikeListDragDocumentPageController extends DocumentPageControlle
             ElementNode handle = document.div();
             handle.style()
                     .setDisplay(UiDisplay.FLEX)
-                    .setFlexDirection(UiFlexDirection.COLUMN)
+                    .setFlexDirection(UiFlexDirection.ROW)
                     .setAlignItems(UiAlignItems.CENTER)
                     .setJustifyContent(UiJustifyContent.CENTER)
-                    .setRowGap(UiStyleLength.px(3))
-                    .setWidth(UiStyleLength.px(26))
+                    .setWidth(UiStyleLength.px(28))
                     .setHeight(UiStyleLength.px(24))
                     .setMargin(UiStyleInsets.of(UiStyleLength.px(0), UiStyleLength.px(12), UiStyleLength.px(0),
                             UiStyleLength.px(0)))
@@ -216,15 +216,15 @@ final class HtmlLikeListDragDocumentPageController extends DocumentPageControlle
                     .setTextColor(0xFF93C5FD)
                     .setOverflowX(UiOverflow.HIDDEN)
                     .setOverflowY(UiOverflow.HIDDEN);
-            for (int gripIndex = 0; gripIndex < 3; gripIndex++) {
-                ElementNode gripBar = document.div();
-                gripBar.style()
-                        .setWidth(UiStyleLength.px(12))
-                        .setHeight(UiStyleLength.px(2))
-                        .setBackgroundColor(item.equals(draggingItem) ? 0xFFBFDBFE : 0xFF64748B)
-                        .setBorderRadius(UiStyleLength.px(999));
-                handle.append(gripBar);
-            }
+            ElementNode handleIcon = document.img();
+            handleIcon.setAttribute("src", DRAG_HANDLE_ICON_SRC)
+                    .setAttribute("alt", "拖拽把手")
+                    .setAttribute("data-drag-handle-icon", item);
+            handleIcon.style()
+                    .setWidth(UiStyleLength.px(14))
+                    .setHeight(UiStyleLength.px(14))
+                    .setOpacity(item.equals(draggingItem) ? 0.92F : 0.62F);
+            handle.append(handleIcon);
             row.append(handle);
 
             ElementNode label = document.div();
