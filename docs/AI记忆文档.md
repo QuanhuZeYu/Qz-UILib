@@ -59,6 +59,7 @@
 - 普通位图优先走浏览器式 `document.img()` / `img[src]`，支持本地 `ResourceLocation` 与远程 HTTP/HTTPS 位图；Minecraft 物品栈、纹理区域和背景装饰继续使用 `DocumentHostImageControl` / `DocumentHostImageDecorations`，不鼓励业务代码直接写底层 `custom renderer`。
 - 新增 layout-affecting、宿主集成或对外能力时，要同步更新 `docs/使用文档/` 并保留最小必要验证。
 - `ForgeConfigTemplateScreen` 已作为对外可复用模板；非列表字符串属性若声明 `validValues` 且当前值仍在候选集中，可走分段选择控件，遗留值应回退到文本输入，避免静默覆盖。
+- `ForgeConfigTemplateScreen` 的列表属性在摘要、默认值和占位展示中默认取“前 5 项摘要”和“200 字符截断”中更长的一种，避免长列表直接撑爆配置页；实际文本编辑、保存和恢复默认仍使用完整列表值。
 - 字体系统启动时会把本次已发现字体整理进 `FontConfig.fontSort`：先按配置提示顺序吸收存在项，再把未配置字体按自然顺序追加；配置中缺失的字体只保留在内存缺失态，不参与当前回退链。
 - `ForgeConfigTemplateScreen` 的列表能力允许通过 `PropertyEditorFactory` 派生专用列表控件；当前 `fontSystem.fontSort` 使用专用二级字体排序页，页面内部用 HTML-like 拖拽列表调整顺序，并支持在每行序号输入框中直接输入目标位置后回写草稿。
 

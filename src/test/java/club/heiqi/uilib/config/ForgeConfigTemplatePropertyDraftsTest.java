@@ -76,6 +76,24 @@ public class ForgeConfigTemplatePropertyDraftsTest {
     }
 
     /**
+     * 验证长列表展示会取前五项摘要与 200 字符截断中信息量更长的一种。
+     */
+    @Test
+    public void shouldSummarizeLongListDisplayValues() {
+        Configuration configuration = new Configuration();
+        Property listProperty = configuration.get("fontsystem", "fontSort",
+                new String[] { "Default", "Fallback", "Emoji", "Cjk", "Symbols", "Legacy" }, "字体排序");
+        listProperty.set(new String[] { "Runtime", "Emoji", "Cjk", "Symbols", "Legacy", "Serif", "Sans" });
+
+        Assert.assertEquals("Runtime, Emoji, Cjk, Symbols, Legacy, Serif, Sans",
+                ForgeConfigTemplatePropertyDrafts.readCurrentDisplayValue(listProperty));
+        Assert.assertEquals("Default, Fallback, Emoji, Cjk, Symbols, Legacy",
+                ForgeConfigTemplatePropertyDrafts.readDefaultDisplayValue(listProperty));
+        Assert.assertEquals("Runtime, Emoji, Cjk, Symbols, Legacy, Serif, Sans",
+                ForgeConfigTemplatePropertyDrafts.readFullListDisplayValue(listProperty));
+    }
+
+    /**
      * 验证离散有效值属性会暴露分段选择所需状态。
      */
     @Test

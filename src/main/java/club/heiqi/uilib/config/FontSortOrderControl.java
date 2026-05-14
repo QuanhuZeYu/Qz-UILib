@@ -2,7 +2,9 @@ package club.heiqi.uilib.config;
 
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 
 import org.lwjglx.input.Keyboard;
@@ -37,15 +39,15 @@ import club.heiqi.uilib.ui.style.UiStyleLength;
 final class FontSortOrderControl {
 
     private static final int ROW_HEIGHT = 48;
-    private static final String DRAG_HANDLE_ICON_SRC = "https://img.icons8.com/ios-filled/50/93c5fd/drag-reorder.png";
-
     private final UiDocument document;
     private final HtmlLikeDocumentWidget documentWidget;
     private final FontSortOrderChangeListener changeListener;
     private final List<String> items = new ArrayList<String>();
+    private final Map<String, FontSortRow> rowsByItem = new LinkedHashMap<String, FontSortRow>();
     private final ElementNode rootElement;
     private final ElementNode listElement;
     private final TextNode stateText;
+    private final List<Integer> cachedRowMiddleYs = new ArrayList<Integer>();
     private String draggingItem;
 
     /**
@@ -75,6 +77,7 @@ final class FontSortOrderControl {
         this.stateText = state.appendText("");
         rootElement.append(state);
 
+        createRows();
         rebuildList();
         updateStateText();
     }
@@ -104,8 +107,9 @@ final class FontSortOrderControl {
      */
     void setItems(List<String> updatedItems) {
         replaceItems(updatedItems);
+        createRows();
         draggingItem = null;
-        rebuildList();
+        syncListOrder();
         updateStateText();
         fireChange();
     }
@@ -144,6 +148,15 @@ final class FontSortOrderControl {
             if (!normalized.isEmpty() && !items.contains(normalized)) {
                 items.add(normalized);
             }
+        }
+    }
+
+    private void createRows() {
+        rowsByItem.clear();
+        listElement.clearChildren();
+        for (int index = 0; index < items.size(); index++) {
+            String item = items.get(index);
+            rowsByItem.put(item, createRow(item, index));
         }
     }
 
@@ -193,13 +206,11 @@ final class FontSortOrderControl {
     }
 
     private void rebuildList() {
-        listElement.clearChildren();
-        for (int index = 0; index < items.size(); index++) {
-            listElement.append(createRow(items.get(index), index));
-        }
+        syncRowVisuals();
+        syncListOrder();
     }
 
-    private ElementNode createRow(final String item, int index) {
+    private FontSortRow createRow(final String item, int index) {
         ElementNode row = document.element("li");
         row.setAttribute("data-font-sort-item", item);
         row.setAttribute("draggable", "true");
@@ -221,11 +232,12 @@ final class FontSortOrderControl {
                 .setTextColor(0xFFEAF1FF);
 
         row.append(createHandle(item));
-        row.append(createOrderInput(item, index));
+        DocumentTextInputControl orderInput = createOrderInput(item, index);
+        row.append(orderInput.getElement());
         row.append(createLabel(item));
         row.setDragStartHandler(createItemDragStartHandler(item));
         row.setDragEndHandler(createItemDragEndHandler(item));
-        return row;
+        return new FontSortRow(row, orderInput);
     }
 
     private ElementNode createHandle(String item) {
@@ -241,22 +253,15 @@ final class FontSortOrderControl {
                 .setBorderColor(item.equals(draggingItem) ? 0xFF93C5FD : 0xFF334155)
                 .setBorderWidth(UiStyleLength.px(1))
                 .setBorderRadius(UiStyleLength.px(999))
+                .setTextColor(0xFF93C5FD)
                 .setOverflowX(UiOverflow.HIDDEN)
                 .setOverflowY(UiOverflow.HIDDEN);
-
-        ElementNode handleIcon = document.img();
-        handleIcon.setAttribute("src", DRAG_HANDLE_ICON_SRC)
-                .setAttribute("alt", "拖拽把手")
-                .setAttribute("data-font-sort-handle", item);
-        handleIcon.style()
-                .setWidth(UiStyleLength.px(14))
-                .setHeight(UiStyleLength.px(14))
-                .setOpacity(item.equals(draggingItem) ? 0.92F : 0.62F);
-        handle.append(handleIcon);
+        handle.setAttribute("data-font-sort-handle", item);
+        handle.appendText("|||");
         return handle;
     }
 
-    private ElementNode createOrderInput(final String item, int index) {
+    private DocumentTextInputControl createOrderInput(final String item, int index) {
         DocumentTextInputControl input = new DocumentTextInputControl(document)
                 .setPlaceholder(String.valueOf(index + 1))
                 .setMaxLength(4)
@@ -286,7 +291,7 @@ final class FontSortOrderControl {
                 .setHeight(UiStyleLength.px(28))
                 .setPadding(UiStyleInsets.of(UiStyleLength.px(6), UiStyleLength.px(8), UiStyleLength.px(6),
                         UiStyleLength.px(8)));
-        return input.getElement();
+        return input;
     }
 
     private ElementNode createLabel(String item) {
@@ -324,6 +329,7 @@ final class FontSortOrderControl {
             @Override
             public boolean onDragStart(DocumentElementDragEvent event) {
                 draggingItem = item;
+                refreshDragLayoutCache();
                 rebuildList();
                 return true;
             }
@@ -338,6 +344,7 @@ final class FontSortOrderControl {
                     return false;
                 }
                 draggingItem = null;
+                cachedRowMiddleYs.clear();
                 rebuildList();
                 updateStateText();
                 fireChange();
@@ -359,6 +366,15 @@ final class FontSortOrderControl {
     private int resolveTargetIndex(DocumentElementDragEvent event) {
         if (event == null) {
             return 0;
+        }
+        if (!cachedRowMiddleYs.isEmpty()) {
+            int documentY = event.getDocumentY();
+            for (int index = 0; index < cachedRowMiddleYs.size(); index++) {
+                if (documentY < cachedRowMiddleYs.get(index).intValue()) {
+                    return index;
+                }
+            }
+            return cachedRowMiddleYs.size();
         }
         DocumentLayoutBox listBox = findLayoutBox(DocumentLayoutEngine.layoutViewportRoot(document.getRootElement(),
                 documentWidget.getWidth(), documentWidget.getHeight(), documentWidget.getTextMeasureService()),
@@ -423,6 +439,47 @@ final class FontSortOrderControl {
         }
     }
 
+    private void syncRowVisuals() {
+        for (int index = 0; index < items.size(); index++) {
+            String item = items.get(index);
+            FontSortRow row = rowsByItem.get(item);
+            if (row == null) {
+                continue;
+            }
+            boolean dragging = item.equals(draggingItem);
+            row.element.style()
+                    .setBackgroundColor(dragging ? 0xFF1D4ED8 : 0xFF1E293B)
+                    .setBorderColor(dragging ? 0xFFBFDBFE : 0xFF475569)
+                    .setOpacity(dragging ? 0.62F : 1.0F);
+            row.orderInput.setPlaceholder(String.valueOf(index + 1));
+            row.orderInput.setText("");
+        }
+    }
+
+    private void syncListOrder() {
+        for (String item : items) {
+            FontSortRow row = rowsByItem.get(item);
+            if (row != null) {
+                listElement.append(row.element);
+            }
+        }
+    }
+
+    private void refreshDragLayoutCache() {
+        cachedRowMiddleYs.clear();
+        DocumentLayoutBox listBox = findLayoutBox(DocumentLayoutEngine.layoutViewportRoot(document.getRootElement(),
+                documentWidget.getWidth(), documentWidget.getHeight(), documentWidget.getTextMeasureService()),
+                listElement);
+        if (listBox == null || listBox.getChildren().isEmpty()) {
+            return;
+        }
+        for (DocumentLayoutBox itemBox : listBox.getChildren()) {
+            if (itemBox.getElement().getAttribute("data-font-sort-item") != null) {
+                cachedRowMiddleYs.add(Integer.valueOf((itemBox.getTop() + itemBox.getBottom()) / 2));
+            }
+        }
+    }
+
     private static DocumentLayoutBox findLayoutBox(DocumentLayoutBox currentBox, ElementNode element) {
         if (currentBox == null || element == null) {
             return null;
@@ -480,5 +537,19 @@ final class FontSortOrderControl {
          * @param orderedItems 最新字体顺序
          */
         void onOrderChanged(List<String> orderedItems);
+    }
+
+    /**
+     * 可复用的字体排序行节点。
+     */
+    private static final class FontSortRow {
+
+        private final ElementNode element;
+        private final DocumentTextInputControl orderInput;
+
+        private FontSortRow(ElementNode element, DocumentTextInputControl orderInput) {
+            this.element = element;
+            this.orderInput = orderInput;
+        }
     }
 }

@@ -13,6 +13,9 @@ import net.minecraftforge.common.config.Property;
  */
 final class ForgeConfigTemplatePropertyDrafts {
 
+    private static final int LIST_DISPLAY_MAX_ITEMS = 5;
+    private static final int LIST_DISPLAY_MAX_CHARS = 200;
+
     private ForgeConfigTemplatePropertyDrafts() {}
 
     /**
@@ -41,7 +44,7 @@ final class ForgeConfigTemplatePropertyDrafts {
         if (property == null) {
             return "";
         }
-        return property.isList() ? joinList(property.getStringList()) : property.getString();
+        return property.isList() ? summarizeList(property.getStringList()) : property.getString();
     }
 
     /**
@@ -54,7 +57,33 @@ final class ForgeConfigTemplatePropertyDrafts {
         if (property == null) {
             return "";
         }
-        return property.isList() ? joinList(property.getDefaults()) : property.getDefault();
+        return property.isList() ? summarizeList(property.getDefaults()) : property.getDefault();
+    }
+
+    /**
+     * 读取列表属性完整展示文本。
+     *
+     * @param property Forge 属性
+     * @return 完整列表文本
+     */
+    static String readFullListDisplayValue(Property property) {
+        if (property == null || !property.isList()) {
+            return readCurrentDisplayValue(property);
+        }
+        return joinList(property.getStringList());
+    }
+
+    /**
+     * 读取列表属性完整默认文本。
+     *
+     * @param property Forge 属性
+     * @return 完整默认列表文本
+     */
+    static String readFullDefaultListDisplayValue(Property property) {
+        if (property == null || !property.isList()) {
+            return readDefaultDisplayValue(property);
+        }
+        return joinList(property.getDefaults());
     }
 
     /**
@@ -139,8 +168,8 @@ final class ForgeConfigTemplatePropertyDrafts {
         if (property == null) {
             return 128;
         }
-        int maxObservedLength = Math.max(readCurrentDisplayValue(property).length(),
-                readDefaultDisplayValue(property).length());
+        int maxObservedLength = Math.max(readMaxLengthDisplayValue(property, false).length(),
+                readMaxLengthDisplayValue(property, true).length());
         String[] validValues = getValidValuesSnapshot(property);
         for (String validValue : validValues) {
             if (validValue != null) {
@@ -411,6 +440,36 @@ final class ForgeConfigTemplatePropertyDrafts {
             builder.append(value.trim());
         }
         return builder.toString();
+    }
+
+    private static String summarizeList(String[] values) {
+        if (values == null || values.length == 0) {
+            return "";
+        }
+        String itemLimited = joinList(Arrays.copyOf(values, Math.min(values.length, LIST_DISPLAY_MAX_ITEMS)));
+        if (values.length > LIST_DISPLAY_MAX_ITEMS) {
+            itemLimited = itemLimited + " 等 " + values.length + " 项";
+        }
+        String charLimited = truncateText(joinList(values), LIST_DISPLAY_MAX_CHARS);
+        return itemLimited.length() >= charLimited.length() ? itemLimited : charLimited;
+    }
+
+    private static String truncateText(String text, int maxChars) {
+        String resolved = text == null ? "" : text;
+        if (resolved.length() <= maxChars) {
+            return resolved;
+        }
+        return resolved.substring(0, Math.max(0, maxChars - 1)) + "…";
+    }
+
+    private static String readMaxLengthDisplayValue(Property property, boolean defaultValue) {
+        if (property == null) {
+            return "";
+        }
+        if (property.isList()) {
+            return defaultValue ? joinList(property.getDefaults()) : joinList(property.getStringList());
+        }
+        return defaultValue ? property.getDefault() : property.getString();
     }
 
     private static List<PropertyValueSnapshot> snapshotProperties(List<Property> properties) {

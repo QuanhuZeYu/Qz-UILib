@@ -1421,10 +1421,16 @@ public class ForgeConfigTemplateScreen extends BaseScreen {
         }
 
         private String readCurrentDisplayValue() {
+            if (getProperty().isList()) {
+                return ForgeConfigTemplatePropertyDrafts.readFullListDisplayValue(getProperty());
+            }
             return ForgeConfigTemplatePropertyDrafts.readCurrentDisplayValue(getProperty());
         }
 
         private String readDefaultDisplayValue() {
+            if (getProperty().isList()) {
+                return ForgeConfigTemplatePropertyDrafts.readFullDefaultListDisplayValue(getProperty());
+            }
             return ForgeConfigTemplatePropertyDrafts.readDefaultDisplayValue(getProperty());
         }
     }

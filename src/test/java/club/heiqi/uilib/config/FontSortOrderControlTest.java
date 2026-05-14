@@ -65,6 +65,7 @@ public class FontSortOrderControlTest {
         ElementNode root = fixture.document.getRootElement();
         ElementNode firstItem = findElementByAttribute(root, "data-font-sort-item", "Alpha");
         ElementNode list = findElementByAttribute(root, "data-font-sort-list", "fonts");
+        int initialNodeCount = countElementNodes(root);
         int startY = resolveItemMiddleY(fixture.widget, firstItem);
         int dragY = resolveItemBottomY(fixture.widget, findElementByAttribute(root, "data-font-sort-item", "Charlie")) + 1;
 
@@ -77,6 +78,8 @@ public class FontSortOrderControlTest {
 
         Assert.assertEquals(Arrays.asList("Bravo", "Charlie", "Alpha", "Delta"), fixture.control.getItemsSnapshot());
         Assert.assertEquals(Arrays.asList("Bravo", "Charlie", "Alpha", "Delta"), fixture.lastChangedOrder);
+        Assert.assertSame(firstItem, findElementByAttribute(root, "data-font-sort-item", "Alpha"));
+        Assert.assertEquals(initialNodeCount, countElementNodes(root));
     }
 
     private static List<String> collectDocumentTexts(ElementNode root) {
@@ -122,6 +125,16 @@ public class FontSortOrderControlTest {
             }
         }
         return null;
+    }
+
+    private static int countElementNodes(DocumentNode node) {
+        int count = node.getNodeType() == DocumentNodeType.ELEMENT ? 1 : 0;
+        if (node.getNodeType() == DocumentNodeType.ELEMENT) {
+            for (DocumentNode child : ((ElementNode) node).getChildren()) {
+                count += countElementNodes(child);
+            }
+        }
+        return count;
     }
 
     private static int resolveItemMiddleY(HtmlLikeDocumentWidget widget, ElementNode item) {
