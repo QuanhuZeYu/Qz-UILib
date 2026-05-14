@@ -200,18 +200,31 @@ final class HtmlLikeListDragDocumentPageController extends DocumentPageControlle
 
             ElementNode handle = document.div();
             handle.style()
-                    .setWidth(UiStyleLength.px(54))
+                    .setDisplay(UiDisplay.FLEX)
+                    .setFlexDirection(UiFlexDirection.COLUMN)
+                    .setAlignItems(UiAlignItems.CENTER)
+                    .setJustifyContent(UiJustifyContent.CENTER)
+                    .setRowGap(UiStyleLength.px(3))
+                    .setWidth(UiStyleLength.px(26))
                     .setHeight(UiStyleLength.px(24))
                     .setMargin(UiStyleInsets.of(UiStyleLength.px(0), UiStyleLength.px(12), UiStyleLength.px(0),
                             UiStyleLength.px(0)))
-                    .setBackgroundColor(0xFF0F172A)
-                    .setBorderColor(0xFF334155)
+                    .setBackgroundColor(item.equals(draggingItem) ? 0xFF172554 : 0xFF0F172A)
+                    .setBorderColor(item.equals(draggingItem) ? 0xFF93C5FD : 0xFF334155)
                     .setBorderWidth(UiStyleLength.px(1))
                     .setBorderRadius(UiStyleLength.px(999))
                     .setTextColor(0xFF93C5FD)
                     .setOverflowX(UiOverflow.HIDDEN)
                     .setOverflowY(UiOverflow.HIDDEN);
-            handle.appendText("拖拽");
+            for (int gripIndex = 0; gripIndex < 3; gripIndex++) {
+                ElementNode gripBar = document.div();
+                gripBar.style()
+                        .setWidth(UiStyleLength.px(12))
+                        .setHeight(UiStyleLength.px(2))
+                        .setBackgroundColor(item.equals(draggingItem) ? 0xFFBFDBFE : 0xFF64748B)
+                        .setBorderRadius(UiStyleLength.px(999));
+                handle.append(gripBar);
+            }
             row.append(handle);
 
             ElementNode label = document.div();
