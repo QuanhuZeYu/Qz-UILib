@@ -52,6 +52,8 @@
 - HUD 的即时键盘抢占只处理按键语义，不提前注入可打印文本；可打印字符统一回落到常规收集链路，避免同一按键在 HUD 中重复落字。
 - 浮窗/面板拖拽优先走 HTML-like 元素级能力（`setDragHandler(...)` / `DocumentDraggableSupport`），HUD 只复用该能力，不再单独扩一套 HUD 专属拖动 API。
 - HTML-like 元素拖拽采用位移阈值激活：短点击保留 `click`，只有超过阈值后才进入真实拖拽并消费抬起事件。
+- HTML-like 拖拽事件沿用 UILib 原生像素坐标体系，事件内 document 坐标只做 widget/document 局部化，不转换为 Minecraft GUI 缩放坐标。
+- 浏览器式拖拽首版支持 `draggable="true"`、`dragstart`、`dragover`、`dragend`；`drop`、`dragenter`、`dragleave`、`DataTransfer` 与 `preventDefault()` 尚未补齐。
 - 结构节点优先直接写 `UiDocument` DOM-like 元素；标准交互节点优先使用 `Document*Control`。
 - 面向作者的宿主贴图能力以 `DocumentHostImageControl` / `DocumentHostImageDecorations` 为主，不鼓励业务代码直接写底层 `custom renderer` 处理 Minecraft 物品或纹理。
 - 新增 layout-affecting、宿主集成或对外能力时，要同步更新 `docs/使用文档/` 并保留最小必要验证。

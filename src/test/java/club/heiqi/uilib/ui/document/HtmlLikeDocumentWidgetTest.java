@@ -908,6 +908,109 @@ public class HtmlLikeDocumentWidgetTest {
     }
 
     /**
+     * 验证 draggable="true" 会走浏览器式 dragstart / dragover / dragend 事件链。
+     */
+    @Test
+    public void shouldDispatchHtmlLikeDragEventsForDraggableElement() {
+        UiDocument document = UiDocument.create();
+        ElementNode root = document.getRootElement();
+        ElementNode list = document.div();
+        ElementNode item = document.div();
+        final List<String> events = new ArrayList<String>();
+
+        root.style()
+                .setWidth(UiStyleLength.px(180))
+                .setHeight(UiStyleLength.px(120));
+        list.style()
+                .setWidth(UiStyleLength.px(160))
+                .setHeight(UiStyleLength.px(100));
+        item.setAttribute("draggable", "true");
+        item.style()
+                .setWidth(UiStyleLength.px(120))
+                .setHeight(UiStyleLength.px(30));
+        item.setDragStartHandler(new club.heiqi.uilib.ui.dom.DocumentElementDragStartHandler() {
+            @Override
+            public boolean onDragStart(DocumentElementDragEvent event) {
+                events.add("start:" + event.getTarget().getAttribute("draggable"));
+                return true;
+            }
+        });
+        item.setDragEndHandler(new club.heiqi.uilib.ui.dom.DocumentElementDragEndHandler() {
+            @Override
+            public boolean onDragEnd(DocumentElementDragEvent event) {
+                events.add("end:" + event.getTarget().getAttribute("draggable"));
+                return true;
+            }
+        });
+        list.setDragOverHandler(new club.heiqi.uilib.ui.dom.DocumentElementDragOverHandler() {
+            @Override
+            public boolean onDragOver(DocumentElementDragEvent event) {
+                events.add("over:" + event.getTarget().getAttribute("draggable"));
+                return true;
+            }
+        });
+        list.append(item);
+        root.append(list);
+
+        HtmlLikeDocumentWidget widget = new HtmlLikeDocumentWidget(document, 180, 120,
+                new DeterministicTextMeasureService());
+        widget.applyLayoutBounds(0, 0, 180, 120);
+
+        widget.onMouseDown(new UiMouseEvent(UiMouseEvent.Action.BUTTON_DOWN, 10, 10, 0, 0, 0, 0, 1L));
+        widget.onMouseMove(new UiMouseEvent(UiMouseEvent.Action.MOVE, 18, 10, -1, 0, 8, 0, 2L));
+        widget.onMouseMove(new UiMouseEvent(UiMouseEvent.Action.MOVE, 26, 10, -1, 0, 8, 0, 3L));
+        widget.onMouseUp(new UiMouseEvent(UiMouseEvent.Action.BUTTON_UP, 26, 10, 0, 0, 0, 0, 4L));
+
+        Assert.assertEquals("start:true", events.get(0));
+        Assert.assertEquals("over:true", events.get(1));
+        Assert.assertEquals("over:true", events.get(2));
+        Assert.assertEquals("end:true", events.get(3));
+        Assert.assertEquals(4, events.size());
+    }
+
+    /**
+     * 验证浏览器式拖拽事件继续沿用 UILib 原生像素坐标，不回退到 MC GUI 缩放坐标。
+     */
+    @Test
+    public void shouldExposeNativeDocumentCoordinatesForHtmlLikeDragEvents() {
+        UiDocument document = UiDocument.create();
+        ElementNode root = document.getRootElement();
+        ElementNode item = document.div();
+        final List<Integer> coordinates = new ArrayList<Integer>();
+
+        root.style()
+                .setWidth(UiStyleLength.px(180))
+                .setHeight(UiStyleLength.px(120));
+        item.setAttribute("draggable", "true");
+        item.style()
+                .setWidth(UiStyleLength.px(120))
+                .setHeight(UiStyleLength.px(30));
+        item.setDragStartHandler(new club.heiqi.uilib.ui.dom.DocumentElementDragStartHandler() {
+            @Override
+            public boolean onDragStart(DocumentElementDragEvent event) {
+                coordinates.add(Integer.valueOf(event.getStartDocumentX()));
+                coordinates.add(Integer.valueOf(event.getStartDocumentY()));
+                coordinates.add(Integer.valueOf(event.getDocumentX()));
+                coordinates.add(Integer.valueOf(event.getDocumentY()));
+                return true;
+            }
+        });
+        root.append(item);
+
+        HtmlLikeDocumentWidget widget = new HtmlLikeDocumentWidget(document, 180, 120,
+                new DeterministicTextMeasureService());
+        widget.applyLayoutBounds(100, 200, 180, 120);
+
+        widget.onMouseDown(new UiMouseEvent(UiMouseEvent.Action.BUTTON_DOWN, 112, 218, 0, 0, 0, 0, 1L));
+        widget.onMouseMove(new UiMouseEvent(UiMouseEvent.Action.MOVE, 130, 250, -1, 0, 18, 32, 2L));
+
+        Assert.assertEquals(Integer.valueOf(12), coordinates.get(0));
+        Assert.assertEquals(Integer.valueOf(18), coordinates.get(1));
+        Assert.assertEquals(Integer.valueOf(30), coordinates.get(2));
+        Assert.assertEquals(Integer.valueOf(50), coordinates.get(3));
+    }
+
+    /**
      * 验证 padding keyframe 运行期间和 forwards fill 后都会驱动运行态布局值。
      */
     @Test

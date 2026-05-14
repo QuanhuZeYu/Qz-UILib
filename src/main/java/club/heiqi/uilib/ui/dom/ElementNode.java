@@ -25,6 +25,9 @@ public final class ElementNode extends DocumentNode {
     private DocumentElementFocusHandler focusHandler;
     private DocumentElementHoverHandler hoverHandler;
     private DocumentElementDragHandler dragHandler;
+    private DocumentElementDragStartHandler dragStartHandler;
+    private DocumentElementDragOverHandler dragOverHandler;
+    private DocumentElementDragEndHandler dragEndHandler;
     private DocumentElementKeyHandler keyHandler;
     private DocumentElementTextInputHandler textInputHandler;
     private DocumentCustomRenderer customRenderer;
@@ -281,6 +284,66 @@ public final class ElementNode extends DocumentNode {
      */
     public DocumentElementDragHandler getDragHandler() {
         return dragHandler;
+    }
+
+    /**
+     * 设置元素 dragstart 处理器。
+     *
+     * @param dragStartHandler dragstart 处理器；为 null 时清除处理器
+     * @return 当前元素
+     */
+    public ElementNode setDragStartHandler(DocumentElementDragStartHandler dragStartHandler) {
+        this.dragStartHandler = dragStartHandler;
+        return this;
+    }
+
+    /**
+     * 返回元素 dragstart 处理器。
+     *
+     * @return dragstart 处理器；不存在时返回 null
+     */
+    public DocumentElementDragStartHandler getDragStartHandler() {
+        return dragStartHandler;
+    }
+
+    /**
+     * 设置元素 dragover 处理器。
+     *
+     * @param dragOverHandler dragover 处理器；为 null 时清除处理器
+     * @return 当前元素
+     */
+    public ElementNode setDragOverHandler(DocumentElementDragOverHandler dragOverHandler) {
+        this.dragOverHandler = dragOverHandler;
+        return this;
+    }
+
+    /**
+     * 返回元素 dragover 处理器。
+     *
+     * @return dragover 处理器；不存在时返回 null
+     */
+    public DocumentElementDragOverHandler getDragOverHandler() {
+        return dragOverHandler;
+    }
+
+    /**
+     * 设置元素 dragend 处理器。
+     *
+     * @param dragEndHandler dragend 处理器；为 null 时清除处理器
+     * @return 当前元素
+     */
+    public ElementNode setDragEndHandler(DocumentElementDragEndHandler dragEndHandler) {
+        this.dragEndHandler = dragEndHandler;
+        return this;
+    }
+
+    /**
+     * 返回元素 dragend 处理器。
+     *
+     * @return dragend 处理器；不存在时返回 null
+     */
+    public DocumentElementDragEndHandler getDragEndHandler() {
+        return dragEndHandler;
     }
 
     /**

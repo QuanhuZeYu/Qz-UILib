@@ -15,7 +15,10 @@ import club.heiqi.uilib.ui.dom.DocumentElementActiveHandler;
 import club.heiqi.uilib.ui.dom.DocumentElementClickEvent;
 import club.heiqi.uilib.ui.dom.DocumentElementClickHandler;
 import club.heiqi.uilib.ui.dom.DocumentElementDragEvent;
+import club.heiqi.uilib.ui.dom.DocumentElementDragEndHandler;
 import club.heiqi.uilib.ui.dom.DocumentElementDragHandler;
+import club.heiqi.uilib.ui.dom.DocumentElementDragOverHandler;
+import club.heiqi.uilib.ui.dom.DocumentElementDragStartHandler;
 import club.heiqi.uilib.ui.dom.DocumentElementFocusEvent;
 import club.heiqi.uilib.ui.dom.DocumentElementFocusHandler;
 import club.heiqi.uilib.ui.dom.DocumentElementHoverEvent;
@@ -81,6 +84,7 @@ public final class HtmlLikeDocumentWidget extends Widget {
     private ElementNode focusedElement;
     private ElementNode hoveredElement;
     private ElementNode draggingElement;
+    private ElementNode htmlDragSourceElement;
     private int scrollEventCount;
     private int lastScrollWheelDelta;
     private boolean lastScrollConsumed;
@@ -94,6 +98,7 @@ public final class HtmlLikeDocumentWidget extends Widget {
     private int lastDragDocumentX;
     private int lastDragDocumentY;
     private boolean dragActivated;
+    private boolean htmlDragStarted;
 
     /**
      * 创建 HTML-like 文档适配组件。
@@ -318,6 +323,10 @@ public final class HtmlLikeDocumentWidget extends Widget {
             if (currentElement.isFocusable()
                     || currentElement.getClickHandler() != null
                     || currentElement.getDragHandler() != null
+                    || currentElement.getDragStartHandler() != null
+                    || currentElement.getDragOverHandler() != null
+                    || currentElement.getDragEndHandler() != null
+                    || "true".equals(currentElement.getAttribute("draggable"))
                     || currentElement.getKeyHandler() != null
                     || currentElement.getTextInputHandler() != null) {
                 return true;
@@ -734,6 +743,21 @@ public final class HtmlLikeDocumentWidget extends Widget {
                 return;
             }
         }
+        for (DocumentNode current = target; current instanceof ElementNode; current = current.getParent()) {
+            ElementNode currentElement = (ElementNode) current;
+            if (!"true".equals(currentElement.getAttribute("draggable"))) {
+                continue;
+            }
+            dragStartDocumentX = documentX;
+            dragStartDocumentY = documentY;
+            lastDragDocumentX = documentX;
+            lastDragDocumentY = documentY;
+            draggingElement = currentElement;
+            htmlDragSourceElement = currentElement;
+            dragActivated = false;
+            htmlDragStarted = false;
+            return;
+        }
     }
 
     private boolean dispatchDragMove(UiMouseEvent event) {
@@ -754,6 +778,15 @@ public final class HtmlLikeDocumentWidget extends Widget {
         int deltaDocumentY = documentY - lastDragDocumentY;
         lastDragDocumentX = documentX;
         lastDragDocumentY = documentY;
+        if (htmlDragSourceElement != null) {
+            if (deltaDocumentX == 0 && deltaDocumentY == 0) {
+                deltaDocumentX = documentX - dragStartDocumentX;
+                deltaDocumentY = documentY - dragStartDocumentY;
+            }
+            dispatchHtmlDragStartIfNeeded(event, documentX, documentY, deltaDocumentX, deltaDocumentY);
+            dispatchHtmlDragOver(event, documentX, documentY, deltaDocumentX, deltaDocumentY);
+            return true;
+        }
         return dispatchDragEvent(draggingElement, pressedElement, event, documentX, documentY, deltaDocumentX,
                 deltaDocumentY, DocumentElementDragEvent.DragPhase.DRAG);
     }
@@ -770,7 +803,12 @@ public final class HtmlLikeDocumentWidget extends Widget {
         ElementNode dragTarget = pressedElement;
         ElementNode dragHandlerTarget = draggingElement;
         boolean activated = dragActivated;
+        ElementNode htmlDragSource = htmlDragSourceElement;
         clearDragState();
+        if (htmlDragSource != null) {
+            dispatchHtmlDragEnd(htmlDragSource, event, documentX, documentY, deltaDocumentX, deltaDocumentY);
+            return activated;
+        }
         boolean handled = dispatchDragEvent(dragHandlerTarget, dragTarget, event, documentX, documentY,
                 deltaDocumentX, deltaDocumentY, DocumentElementDragEvent.DragPhase.END);
         return activated && handled;
@@ -778,7 +816,53 @@ public final class HtmlLikeDocumentWidget extends Widget {
 
     private void clearDragState() {
         draggingElement = null;
+        htmlDragSourceElement = null;
         dragActivated = false;
+        htmlDragStarted = false;
+    }
+
+    private void dispatchHtmlDragStartIfNeeded(UiMouseEvent event, int documentX, int documentY, int deltaDocumentX,
+            int deltaDocumentY) {
+        if (htmlDragStarted) {
+            return;
+        }
+        htmlDragStarted = true;
+        DocumentElementDragStartHandler dragStartHandler = htmlDragSourceElement.getDragStartHandler();
+        if (dragStartHandler == null) {
+            return;
+        }
+        dragStartHandler.onDragStart(new DocumentElementDragEvent(htmlDragSourceElement, htmlDragSourceElement,
+                dragStartDocumentX, dragStartDocumentY, documentX, documentY, deltaDocumentX, deltaDocumentY,
+                event.getButton(), event.getTimeNanos(), DocumentElementDragEvent.DragPhase.START));
+    }
+
+    private boolean dispatchHtmlDragOver(UiMouseEvent event, int documentX, int documentY, int deltaDocumentX,
+            int deltaDocumentY) {
+        ElementNode target = findElementAt(event.getMouseX(), event.getMouseY());
+        for (DocumentNode current = target; current instanceof ElementNode; current = current.getParent()) {
+            ElementNode currentElement = (ElementNode) current;
+            DocumentElementDragOverHandler dragOverHandler = currentElement.getDragOverHandler();
+            if (dragOverHandler == null) {
+                continue;
+            }
+            if (dragOverHandler.onDragOver(new DocumentElementDragEvent(htmlDragSourceElement, currentElement,
+                    dragStartDocumentX, dragStartDocumentY, documentX, documentY, deltaDocumentX, deltaDocumentY,
+                    event.getButton(), event.getTimeNanos(), DocumentElementDragEvent.DragPhase.DRAG))) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private void dispatchHtmlDragEnd(ElementNode htmlDragSource, UiMouseEvent event, int documentX, int documentY,
+            int deltaDocumentX, int deltaDocumentY) {
+        DocumentElementDragEndHandler dragEndHandler = htmlDragSource.getDragEndHandler();
+        if (dragEndHandler == null) {
+            return;
+        }
+        dragEndHandler.onDragEnd(new DocumentElementDragEvent(htmlDragSource, htmlDragSource, dragStartDocumentX,
+                dragStartDocumentY, documentX, documentY, deltaDocumentX, deltaDocumentY, event.getButton(),
+                event.getTimeNanos(), DocumentElementDragEvent.DragPhase.END));
     }
 
     private boolean dispatchDragEvent(ElementNode dragHandlerTarget, ElementNode dragTarget, UiMouseEvent event,
