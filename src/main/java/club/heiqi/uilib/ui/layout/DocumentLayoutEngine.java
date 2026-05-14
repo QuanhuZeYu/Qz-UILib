@@ -191,7 +191,7 @@ public final class DocumentLayoutEngine {
         int contentLeft = borderBoxLeft + border.getLeft() + padding.getLeft();
         int contentTop = borderBoxTop + border.getTop() + padding.getTop();
 
-        int specifiedContentHeight = resolveSpecifiedHeight(element, computedStyle, forcedContentHeight,
+        int specifiedContentHeight = resolveSpecifiedHeight(element, computedStyle, forcedContentHeight, contentWidth,
                 layoutValueResolver);
         boolean createsAbsoluteContainingBlock = absoluteContainingBlock == null || isPositioned(computedStyle);
         AbsoluteContainingBlock childrenAbsoluteContainingBlock = createsAbsoluteContainingBlock
@@ -215,6 +215,7 @@ public final class DocumentLayoutEngine {
 
         int autoContentHeight = childrenResult.contentHeight;
         int contentHeight = resolveContentHeight(element, computedStyle, forcedContentHeight, autoContentHeight,
+                contentWidth,
                 layoutValueResolver);
         int borderBoxHeight = contentHeight + border.getVertical() + padding.getVertical();
         int positionOffsetX = resolveRelativeOffsetX(computedStyle, containingWidth);
@@ -1210,7 +1211,8 @@ public final class DocumentLayoutEngine {
         }
         UiStyleLength width = computedStyle.getWidth();
         if (isAuto(width) && DocumentImageElementSupport.isImageTag(element.getTagName())) {
-            return Math.min(DocumentImageElementSupport.resolveIntrinsicWidth(element), autoContentWidth);
+            return DocumentImageElementSupport.resolveContentWidth(element, computedStyle, containingWidth,
+                    autoContentWidth);
         }
         int baseWidth = Math.max(0, width.resolve(containingWidth, autoContentWidth));
         int resolvedWidth = Math.max(0, layoutValueResolver.resolve(element, DocumentAnimationProperty.WIDTH,
@@ -1222,12 +1224,12 @@ public final class DocumentLayoutEngine {
     }
 
     private static int resolveContentHeight(ElementNode element, ComputedStyle computedStyle, int forcedContentHeight,
-            int autoContentHeight, LayoutRuntimeValueResolver layoutValueResolver) {
+            int autoContentHeight, int contentWidth, LayoutRuntimeValueResolver layoutValueResolver) {
         if (forcedContentHeight >= 0) {
             return forcedContentHeight;
         }
         if (isAuto(computedStyle.getHeight()) && DocumentImageElementSupport.isImageTag(element.getTagName())) {
-            return DocumentImageElementSupport.resolveIntrinsicHeight(element);
+            return DocumentImageElementSupport.resolveContentHeight(element, computedStyle, contentWidth);
         }
         int baseHeight = Math.max(0, computedStyle.getHeight().resolve(0, autoContentHeight));
         return Math.max(0, layoutValueResolver.resolve(element, DocumentAnimationProperty.HEIGHT, baseHeight));
@@ -1262,13 +1264,13 @@ public final class DocumentLayoutEngine {
     }
 
     private static int resolveSpecifiedHeight(ElementNode element, ComputedStyle computedStyle, int forcedContentHeight,
-            LayoutRuntimeValueResolver layoutValueResolver) {
+            int contentWidth, LayoutRuntimeValueResolver layoutValueResolver) {
         if (forcedContentHeight >= 0) {
             return forcedContentHeight;
         }
         if (isAuto(computedStyle.getHeight())) {
             if (DocumentImageElementSupport.isImageTag(element.getTagName())) {
-                return DocumentImageElementSupport.resolveIntrinsicHeight(element);
+                return DocumentImageElementSupport.resolveContentHeight(element, computedStyle, contentWidth);
             }
             return AUTO_SIZE;
         }

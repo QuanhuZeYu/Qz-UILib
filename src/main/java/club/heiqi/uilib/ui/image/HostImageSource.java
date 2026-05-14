@@ -1,5 +1,6 @@
 package club.heiqi.uilib.ui.image;
 
+import java.awt.image.BufferedImage;
 import java.util.Objects;
 
 import net.minecraft.item.ItemStack;
@@ -9,7 +10,7 @@ import net.minecraft.util.ResourceLocation;
  * 宿主图片源描述。
  *
  * <p>该类型只描述“画什么”，不暴露任何 OpenGL、FBO 或宿主绘制细节。
- * 文档作者可以把它当成 `img src` 的宿主版本：当前支持 Minecraft 物品与整张纹理。</p>
+ * 文档作者可以把它当成 `img src` 的宿主版本：当前支持 Minecraft 物品、纹理与运行时位图。</p>
  */
 public final class HostImageSource {
 
@@ -18,12 +19,15 @@ public final class HostImageSource {
      */
     public enum Kind {
         ITEM_STACK,
-        TEXTURE
+        TEXTURE,
+        BUFFERED_IMAGE
     }
 
     private final Kind kind;
     private final ItemStack itemStack;
     private final ResourceLocation texture;
+    private final BufferedImage bufferedImage;
+    private final String imageKey;
     private final int textureWidth;
     private final int textureHeight;
     private final int regionU;
@@ -31,11 +35,14 @@ public final class HostImageSource {
     private final int regionWidth;
     private final int regionHeight;
 
-    private HostImageSource(Kind kind, ItemStack itemStack, ResourceLocation texture, int textureWidth,
-            int textureHeight, int regionU, int regionV, int regionWidth, int regionHeight) {
+    private HostImageSource(Kind kind, ItemStack itemStack, ResourceLocation texture, BufferedImage bufferedImage,
+            String imageKey, int textureWidth, int textureHeight, int regionU, int regionV, int regionWidth,
+            int regionHeight) {
         this.kind = Objects.requireNonNull(kind, "kind");
         this.itemStack = itemStack;
         this.texture = texture;
+        this.bufferedImage = bufferedImage;
+        this.imageKey = imageKey;
         this.textureWidth = Math.max(1, textureWidth);
         this.textureHeight = Math.max(1, textureHeight);
         this.regionU = Math.max(0, regionU);
@@ -54,7 +61,7 @@ public final class HostImageSource {
         if (itemStack == null || itemStack.getItem() == null) {
             throw new IllegalArgumentException("itemStack must contain an item");
         }
-        return new HostImageSource(Kind.ITEM_STACK, itemStack.copy(), null, 16, 16, 0, 0, 16, 16);
+        return new HostImageSource(Kind.ITEM_STACK, itemStack.copy(), null, null, null, 16, 16, 0, 0, 16, 16);
     }
 
     /**
@@ -90,8 +97,28 @@ public final class HostImageSource {
         if (regionWidth <= 0 || regionHeight <= 0) {
             throw new IllegalArgumentException("texture region size must be positive");
         }
-        return new HostImageSource(Kind.TEXTURE, null, resolvedTexture, textureWidth, textureHeight,
+        return new HostImageSource(Kind.TEXTURE, null, resolvedTexture, null, null, textureWidth, textureHeight,
                 regionU, regionV, regionWidth, regionHeight);
+    }
+
+    /**
+     * 创建运行时位图图片源。
+     *
+     * @param image 位图
+     * @param imageKey 稳定缓存键
+     * @return 位图图片源
+     */
+    public static HostImageSource bufferedImage(BufferedImage image, String imageKey) {
+        BufferedImage resolvedImage = Objects.requireNonNull(image, "image");
+        if (resolvedImage.getWidth() <= 0 || resolvedImage.getHeight() <= 0) {
+            throw new IllegalArgumentException("image size must be positive");
+        }
+        String resolvedImageKey = imageKey == null || imageKey.trim().isEmpty()
+                ? "image-" + System.identityHashCode(resolvedImage)
+                : imageKey.trim();
+        return new HostImageSource(Kind.BUFFERED_IMAGE, null, null, resolvedImage, resolvedImageKey,
+                resolvedImage.getWidth(), resolvedImage.getHeight(), 0, 0, resolvedImage.getWidth(),
+                resolvedImage.getHeight());
     }
 
     public Kind getKind() {
@@ -104,6 +131,14 @@ public final class HostImageSource {
 
     public ResourceLocation getTexture() {
         return texture;
+    }
+
+    public BufferedImage getBufferedImage() {
+        return bufferedImage;
+    }
+
+    public String getImageKey() {
+        return imageKey;
     }
 
     public int getTextureWidth() {

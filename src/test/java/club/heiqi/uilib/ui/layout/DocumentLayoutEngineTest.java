@@ -1,5 +1,6 @@
 package club.heiqi.uilib.ui.layout;
 
+import java.awt.image.BufferedImage;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
@@ -11,6 +12,7 @@ import club.heiqi.uilib.ui.dom.ElementNode;
 import club.heiqi.uilib.ui.dom.UiDocument;
 import club.heiqi.uilib.ui.dom.control.DocumentButtonControl;
 import club.heiqi.uilib.ui.dom.control.DocumentTextInputControl;
+import club.heiqi.uilib.ui.image.DocumentRemoteImageCache;
 import club.heiqi.uilib.ui.style.UiAlignItems;
 import club.heiqi.uilib.ui.style.UiDisplay;
 import club.heiqi.uilib.ui.style.UiFlexDirection;
@@ -132,6 +134,49 @@ public class DocumentLayoutEngineTest {
 
         Assert.assertEquals(28, imageBox.getContentWidth());
         Assert.assertEquals(18, imageBox.getContentHeight());
+    }
+
+    /**
+     * 验证远程图片缓存命中后使用真实位图尺寸参与 auto 布局。
+     */
+    @Test
+    public void shouldUseRemoteImageSizeAsIntrinsicSizeWhenLoaded() {
+        DocumentRemoteImageCache.getInstance().clearForTesting();
+        DocumentRemoteImageCache.getInstance().putForTesting("https://example.test/banner.jpg",
+                new BufferedImage(48, 18, BufferedImage.TYPE_INT_ARGB));
+        UiDocument document = UiDocument.create();
+        ElementNode root = document.getRootElement();
+        ElementNode image = document.img();
+        image.setAttribute("src", "https://example.test/banner.jpg");
+        root.style().setWidth(UiStyleLength.px(120));
+        root.append(image);
+
+        DocumentLayoutBox imageBox = DocumentLayoutEngine.layout(root, 160, 0).getChildren().get(0);
+
+        Assert.assertEquals(48, imageBox.getContentWidth());
+        Assert.assertEquals(18, imageBox.getContentHeight());
+    }
+
+    /**
+     * 验证 img 单边 CSS 尺寸会按固有比例推导另一边。
+     */
+    @Test
+    public void shouldPreserveImageRatioWhenOnlyCssWidthIsSpecified() {
+        DocumentRemoteImageCache.getInstance().clearForTesting();
+        DocumentRemoteImageCache.getInstance().putForTesting("https://example.test/ratio.png",
+                new BufferedImage(40, 20, BufferedImage.TYPE_INT_ARGB));
+        UiDocument document = UiDocument.create();
+        ElementNode root = document.getRootElement();
+        ElementNode image = document.img();
+        image.setAttribute("src", "https://example.test/ratio.png");
+        image.style().setWidth(UiStyleLength.px(80));
+        root.style().setWidth(UiStyleLength.px(120));
+        root.append(image);
+
+        DocumentLayoutBox imageBox = DocumentLayoutEngine.layout(root, 160, 0).getChildren().get(0);
+
+        Assert.assertEquals(80, imageBox.getContentWidth());
+        Assert.assertEquals(40, imageBox.getContentHeight());
     }
 
     /**

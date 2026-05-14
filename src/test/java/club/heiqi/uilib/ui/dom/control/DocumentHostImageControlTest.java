@@ -1,5 +1,6 @@
 package club.heiqi.uilib.ui.dom.control;
 
+import java.awt.image.BufferedImage;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
@@ -13,6 +14,7 @@ import club.heiqi.uilib.ui.document.HtmlLikeDocumentWidget;
 import club.heiqi.uilib.ui.dom.DocumentNode;
 import club.heiqi.uilib.ui.dom.ElementNode;
 import club.heiqi.uilib.ui.dom.UiDocument;
+import club.heiqi.uilib.ui.image.DocumentRemoteImageCache;
 import club.heiqi.uilib.ui.image.HostImageRenderer;
 import club.heiqi.uilib.ui.image.HostImageSource;
 import club.heiqi.uilib.ui.layout.DocumentHitTestEngine;
@@ -137,6 +139,37 @@ public class DocumentHostImageControlTest {
         Assert.assertEquals("img", image.getTagName());
         Assert.assertEquals(1, hostImageRenderer.calls.size());
         Assert.assertTrue(hostImageRenderer.calls.get(0).contains("0,0,32,24"));
+    }
+
+    /**
+     * 验证远程 URL 图片在缓存命中后可作为 img 源绘制。
+     */
+    @Test
+    public void shouldRenderRemoteImageElementWhenLoaded() {
+        DocumentRemoteImageCache.getInstance().clearForTesting();
+        DocumentRemoteImageCache.getInstance().putForTesting("https://example.test/icon.png",
+                new BufferedImage(40, 20, BufferedImage.TYPE_INT_ARGB));
+        UiDocument document = UiDocument.create();
+        ElementNode root = document.getRootElement();
+        root.style()
+                .setWidth(UiStyleLength.px(160))
+                .setHeight(UiStyleLength.px(120));
+        ElementNode image = document.img();
+        image.setAttribute("src", "https://example.test/icon.png");
+        root.append(image);
+
+        RecordingHostImageRenderer hostImageRenderer = new RecordingHostImageRenderer();
+        RecordingUiRenderContext renderContext = new RecordingUiRenderContext(160, 120,
+                UiRuntimeAdapters.empty().withHostImageRenderer(hostImageRenderer));
+        HtmlLikeDocumentWidget widget = new HtmlLikeDocumentWidget(document, 160, 120,
+                new DeterministicTextMeasureService());
+        widget.applyLayoutBounds(0, 0, 160, 120);
+
+        widget.render(renderContext);
+
+        Assert.assertEquals(1, hostImageRenderer.calls.size());
+        Assert.assertTrue(hostImageRenderer.calls.get(0).startsWith("BUFFERED_IMAGE@"));
+        Assert.assertTrue(hostImageRenderer.calls.get(0).contains("0,0,40,20"));
     }
 
     private static int countCommands(List<DocumentPaintCommand> commands, DocumentPaintCommandType type) {

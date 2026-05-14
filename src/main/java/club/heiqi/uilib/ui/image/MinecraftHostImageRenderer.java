@@ -1,7 +1,11 @@
 package club.heiqi.uilib.ui.image;
 
+import java.awt.image.BufferedImage;
+import java.util.HashMap;
+import java.util.Map;
+
 import net.minecraft.client.Minecraft;
-import net.minecraft.client.gui.Gui;
+import net.minecraft.client.renderer.texture.DynamicTexture;
 import net.minecraft.client.renderer.RenderHelper;
 import net.minecraft.client.renderer.Tessellator;
 import net.minecraft.client.renderer.entity.RenderItem;
@@ -20,6 +24,7 @@ public final class MinecraftHostImageRenderer implements HostImageRenderer {
     private static final int VANILLA_ITEM_ICON_SIZE = 16;
 
     private final RenderItem itemRenderer = new RenderItem();
+    private final Map<String, ResourceLocation> dynamicImageTextures = new HashMap<String, ResourceLocation>();
 
     @Override
     public void render(HostImageSource source, int left, int top, int right, int bottom) {
@@ -28,6 +33,10 @@ public final class MinecraftHostImageRenderer implements HostImageRenderer {
         }
         if (source.getKind() == HostImageSource.Kind.ITEM_STACK) {
             renderItemStack(source, left, top, right, bottom);
+            return;
+        }
+        if (source.getKind() == HostImageSource.Kind.BUFFERED_IMAGE) {
+            renderBufferedImage(source, left, top, right, bottom);
             return;
         }
         renderTexture(source, left, top, right, bottom);
@@ -72,12 +81,47 @@ public final class MinecraftHostImageRenderer implements HostImageRenderer {
         if (texture == null) {
             return;
         }
+        renderTextureRegion(texture, source.getRegionU(), source.getRegionV(), source.getRegionWidth(),
+                source.getRegionHeight(), source.getTextureWidth(), source.getTextureHeight(), left, top, right,
+                bottom);
+    }
 
+    private void renderBufferedImage(HostImageSource source, int left, int top, int right, int bottom) {
+        BufferedImage image = source.getBufferedImage();
+        if (image == null || image.getWidth() <= 0 || image.getHeight() <= 0) {
+            return;
+        }
+        ResourceLocation texture = resolveDynamicImageTexture(source);
+        if (texture == null) {
+            return;
+        }
+        renderTextureRegion(texture, 0, 0, image.getWidth(), image.getHeight(), image.getWidth(), image.getHeight(),
+                left, top, right, bottom);
+    }
+
+    private ResourceLocation resolveDynamicImageTexture(HostImageSource source) {
+        String imageKey = source.getImageKey();
+        ResourceLocation cachedTexture = dynamicImageTextures.get(imageKey);
+        if (cachedTexture != null) {
+            return cachedTexture;
+        }
+        BufferedImage image = source.getBufferedImage();
+        if (image == null) {
+            return null;
+        }
+        ResourceLocation texture = Minecraft.getMinecraft().getTextureManager()
+                .getDynamicTextureLocation("qz_img", new DynamicTexture(image));
+        dynamicImageTextures.put(imageKey, texture);
+        return texture;
+    }
+
+    private void renderTextureRegion(ResourceLocation texture, int regionU, int regionV, int regionWidth,
+            int regionHeight, int textureWidth, int textureHeight, int left, int top, int right, int bottom) {
         Minecraft minecraft = Minecraft.getMinecraft();
-        float u0 = (float) source.getRegionU() / (float) source.getTextureWidth();
-        float v0 = (float) source.getRegionV() / (float) source.getTextureHeight();
-        float u1 = (float) (source.getRegionU() + source.getRegionWidth()) / (float) source.getTextureWidth();
-        float v1 = (float) (source.getRegionV() + source.getRegionHeight()) / (float) source.getTextureHeight();
+        float u0 = (float) regionU / (float) textureWidth;
+        float v0 = (float) regionV / (float) textureHeight;
+        float u1 = (float) (regionU + regionWidth) / (float) textureWidth;
+        float v1 = (float) (regionV + regionHeight) / (float) textureHeight;
 
         GL11.glPushAttrib(GL11.GL_ALL_ATTRIB_BITS);
         try {
