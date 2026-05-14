@@ -8,6 +8,7 @@ import java.util.Objects;
 
 import club.heiqi.uilib.ui.animation.DocumentAnimationProperty;
 import club.heiqi.uilib.ui.dom.DocumentNode;
+import club.heiqi.uilib.ui.dom.DocumentImageElementSupport;
 import club.heiqi.uilib.ui.dom.ElementNode;
 import club.heiqi.uilib.ui.dom.TextNode;
 import club.heiqi.uilib.ui.style.ComputedStyle;
@@ -1115,6 +1116,9 @@ public final class DocumentLayoutEngine {
     private static int measureIntrinsicContentWidth(ElementNode element, TextMeasureService textMeasureService,
             int containingWidth, LayoutRuntimeValueResolver layoutValueResolver) {
         ComputedStyle style = UiStyleResolver.compute(element);
+        if (DocumentImageElementSupport.isImageTag(element.getTagName())) {
+            return DocumentImageElementSupport.resolveIntrinsicWidth(element);
+        }
         if (style.getDisplay() == UiDisplay.FLEX) {
             return measureIntrinsicFlexContentWidth(element, style, textMeasureService, containingWidth,
                     layoutValueResolver);
@@ -1205,6 +1209,9 @@ public final class DocumentLayoutEngine {
             return forcedContentWidth;
         }
         UiStyleLength width = computedStyle.getWidth();
+        if (isAuto(width) && DocumentImageElementSupport.isImageTag(element.getTagName())) {
+            return Math.min(DocumentImageElementSupport.resolveIntrinsicWidth(element), autoContentWidth);
+        }
         int baseWidth = Math.max(0, width.resolve(containingWidth, autoContentWidth));
         int resolvedWidth = Math.max(0, layoutValueResolver.resolve(element, DocumentAnimationProperty.WIDTH,
                 baseWidth));
@@ -1218,6 +1225,9 @@ public final class DocumentLayoutEngine {
             int autoContentHeight, LayoutRuntimeValueResolver layoutValueResolver) {
         if (forcedContentHeight >= 0) {
             return forcedContentHeight;
+        }
+        if (isAuto(computedStyle.getHeight()) && DocumentImageElementSupport.isImageTag(element.getTagName())) {
+            return DocumentImageElementSupport.resolveIntrinsicHeight(element);
         }
         int baseHeight = Math.max(0, computedStyle.getHeight().resolve(0, autoContentHeight));
         return Math.max(0, layoutValueResolver.resolve(element, DocumentAnimationProperty.HEIGHT, baseHeight));
@@ -1257,6 +1267,9 @@ public final class DocumentLayoutEngine {
             return forcedContentHeight;
         }
         if (isAuto(computedStyle.getHeight())) {
+            if (DocumentImageElementSupport.isImageTag(element.getTagName())) {
+                return DocumentImageElementSupport.resolveIntrinsicHeight(element);
+            }
             return AUTO_SIZE;
         }
         int baseHeight = Math.max(0, computedStyle.getHeight().resolve(0, 0));

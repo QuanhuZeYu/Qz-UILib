@@ -97,6 +97,44 @@ public class DocumentLayoutEngineTest {
     }
 
     /**
+     * 验证 img 元素在未声明 CSS 尺寸时使用稳定的替换元素默认尺寸。
+     */
+    @Test
+    public void shouldUseImageIntrinsicFallbackSizeForAutoDimensions() {
+        UiDocument document = UiDocument.create();
+        ElementNode root = document.getRootElement();
+        ElementNode image = document.img();
+        image.setAttribute("src", "qz_uilib:textures/test/icon.png");
+        root.style().setWidth(UiStyleLength.px(120));
+        root.append(image);
+
+        DocumentLayoutBox imageBox = DocumentLayoutEngine.layout(root, 160, 0).getChildren().get(0);
+
+        Assert.assertEquals(16, imageBox.getContentWidth());
+        Assert.assertEquals(16, imageBox.getContentHeight());
+    }
+
+    /**
+     * 验证 img 元素的 HTML width / height 属性可作为首版固有尺寸来源。
+     */
+    @Test
+    public void shouldUseImageWidthAndHeightAttributesAsIntrinsicSize() {
+        UiDocument document = UiDocument.create();
+        ElementNode root = document.getRootElement();
+        ElementNode image = document.img();
+        image.setAttribute("src", "qz_uilib:textures/test/icon.png");
+        image.setAttribute("width", "28");
+        image.setAttribute("height", "18");
+        root.style().setWidth(UiStyleLength.px(120));
+        root.append(image);
+
+        DocumentLayoutBox imageBox = DocumentLayoutEngine.layout(root, 160, 0).getChildren().get(0);
+
+        Assert.assertEquals(28, imageBox.getContentWidth());
+        Assert.assertEquals(18, imageBox.getContentHeight());
+    }
+
+    /**
      * 验证固定宽父容器中的 block 子项在 auto 宽下不会因自身 padding/border 撑出父内容盒。
      */
     @Test

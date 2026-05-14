@@ -46,6 +46,9 @@ public final class ElementNode extends DocumentNode {
         super(ownerDocument);
         this.__elementUid = ownerDocument.__allocateElementUid();
         this.tagName = normalizeName(tagName, "tagName");
+        if (DocumentImageElementSupport.isImageTag(this.tagName)) {
+            DocumentImageElementSupport.attach(this);
+        }
     }
 
     @Override

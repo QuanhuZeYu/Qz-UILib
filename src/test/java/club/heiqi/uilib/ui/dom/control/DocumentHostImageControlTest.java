@@ -108,6 +108,37 @@ public class DocumentHostImageControlTest {
         Assert.assertEquals("true", element.getAttribute("data-hit-test-hidden"));
     }
 
+    /**
+     * 验证普通 img 元素可以通过 src 属性触发宿主位图绘制。
+     */
+    @Test
+    public void shouldRenderImageElementFromSrcAttribute() {
+        UiDocument document = UiDocument.create();
+        ElementNode root = document.getRootElement();
+        root.style()
+                .setWidth(UiStyleLength.px(160))
+                .setHeight(UiStyleLength.px(120));
+        ElementNode image = document.img();
+        image.setAttribute("src", "qz_uilib:textures/test/icon.png");
+        image.style()
+                .setWidth(UiStyleLength.px(32))
+                .setHeight(UiStyleLength.px(24));
+        root.append(image);
+
+        RecordingHostImageRenderer hostImageRenderer = new RecordingHostImageRenderer();
+        RecordingUiRenderContext renderContext = new RecordingUiRenderContext(160, 120,
+                UiRuntimeAdapters.empty().withHostImageRenderer(hostImageRenderer));
+        HtmlLikeDocumentWidget widget = new HtmlLikeDocumentWidget(document, 160, 120,
+                new DeterministicTextMeasureService());
+        widget.applyLayoutBounds(0, 0, 160, 120);
+
+        widget.render(renderContext);
+
+        Assert.assertEquals("img", image.getTagName());
+        Assert.assertEquals(1, hostImageRenderer.calls.size());
+        Assert.assertTrue(hostImageRenderer.calls.get(0).contains("0,0,32,24"));
+    }
+
     private static int countCommands(List<DocumentPaintCommand> commands, DocumentPaintCommandType type) {
         int count = 0;
         for (DocumentPaintCommand command : commands) {

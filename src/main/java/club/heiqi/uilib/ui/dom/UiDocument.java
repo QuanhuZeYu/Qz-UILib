@@ -90,6 +90,15 @@ public final class UiDocument {
     }
 
     /**
+     * 创建 img 元素。
+     *
+     * @return img 元素
+     */
+    public ElementNode img() {
+        return element("img");
+    }
+
+    /**
      * 创建 table 元素。
      *
      * @return table 元素
