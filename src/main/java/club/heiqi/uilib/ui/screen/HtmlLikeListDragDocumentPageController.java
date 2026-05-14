@@ -99,18 +99,24 @@ final class HtmlLikeListDragDocumentPageController extends DocumentPageControlle
         root.style()
                 .setDisplay(UiDisplay.FLEX)
                 .setFlexDirection(UiFlexDirection.COLUMN)
-                .setAlignItems(UiAlignItems.CENTER)
-                .setPadding(UiStyleLength.px(40))
-                .setBackgroundColor(0xFFF5F5F5)
-                .setTextColor(0xFF0F172A)
+                .setAlignItems(UiAlignItems.STRETCH)
+                .setPadding(UiStyleLength.px(20))
+                .setBackgroundColor(0xF00A1020)
+                .setBorderColor(0xFF60A5FA)
+                .setBorderWidth(UiStyleLength.px(1))
+                .setBorderRadius(UiStyleLength.px(22))
+                .setTextColor(0xFFE8EEFF)
                 .setOverflowX(UiOverflow.HIDDEN)
                 .setOverflowY(UiOverflow.AUTO);
 
         ElementNode section = document.div();
         section.style()
-                .setWidth(UiStyleLength.px(600))
-                .setBackgroundColor(0xFFFFFFFF)
-                .setBorderRadius(UiStyleLength.px(12))
+                .setWidth(UiStyleLength.percent(1.0F))
+                .setPadding(UiStyleLength.px(16))
+                .setBackgroundColor(0xFF101827)
+                .setBorderColor(0xFF405F9C)
+                .setBorderWidth(UiStyleLength.px(1))
+                .setBorderRadius(UiStyleLength.px(18))
                 .setOverflowX(UiOverflow.HIDDEN)
                 .setOverflowY(UiOverflow.HIDDEN);
         root.append(section);
@@ -119,33 +125,51 @@ final class HtmlLikeListDragDocumentPageController extends DocumentPageControlle
         header.style()
                 .setDisplay(UiDisplay.FLEX)
                 .setFlexDirection(UiFlexDirection.COLUMN)
-                .setAlignItems(UiAlignItems.CENTER)
+                .setAlignItems(UiAlignItems.STRETCH)
                 .setJustifyContent(UiJustifyContent.CENTER)
-                .setHeight(UiStyleLength.px(76))
-                .setPadding(UiStyleLength.px(20))
-                .setBackgroundColor(0xFF2563EB)
-                .setTextColor(0xFFFFFFFF)
+                .setHeight(UiStyleLength.px(118))
+                .setPadding(UiStyleLength.px(18))
+                .setBackgroundColor(0xFF0F172A)
+                .setBorderColor(0xFF93C5FD)
+                .setBorderWidth(UiStyleLength.px(1))
+                .setBorderRadius(UiStyleLength.px(16))
+                .setTextColor(0xFFF8FAFC)
                 .setOverflowX(UiOverflow.HIDDEN)
                 .setOverflowY(UiOverflow.HIDDEN);
         header.appendText("列表元素组件拖拽");
+        header.appendText("HTML-like sortable list / dragstart -> dragover -> dragend");
+        header.appendText("拖住任意列表项上下移动，验证 DOM 顺序与状态文本同步。 ");
         section.append(header);
 
         listElement = document.div();
         listElement.setAttribute("data-drag-list", "draggable-list");
         listElement.style()
-                .setPadding(UiStyleLength.px(10));
+                .setMargin(UiStyleInsets.of(UiStyleLength.px(14), UiStyleLength.px(0), UiStyleLength.px(0),
+                        UiStyleLength.px(0)))
+                .setPadding(UiStyleLength.px(10))
+                .setBackgroundColor(0xFF17233B)
+                .setBorderColor(0xFF2563EB)
+                .setBorderWidth(UiStyleLength.px(1))
+                .setBorderRadius(UiStyleLength.px(16))
+                .setOverflowX(UiOverflow.HIDDEN)
+                .setOverflowY(UiOverflow.HIDDEN);
         section.append(listElement);
 
         stateElement = document.div();
         stateElement.setAttribute("data-drag-state", "order");
         stateElement.style()
                 .setHeight(UiStyleLength.px(70))
+                .setMargin(UiStyleInsets.of(UiStyleLength.px(14), UiStyleLength.px(0), UiStyleLength.px(0),
+                        UiStyleLength.px(0)))
                 .setPadding(UiStyleInsets.of(UiStyleLength.px(18), UiStyleLength.px(20), UiStyleLength.px(18),
                         UiStyleLength.px(20)))
-                .setBackgroundColor(0xFFF8FAFC)
-                .setBorderColor(0xFFE2E8F0)
+                .setBackgroundColor(0xFF111827)
+                .setBorderColor(0xFF38BDF8)
                 .setBorderWidth(UiStyleLength.px(1))
-                .setTextColor(0xFF64748B);
+                .setBorderRadius(UiStyleLength.px(14))
+                .setTextColor(0xFFBAE6FD)
+                .setOverflowX(UiOverflow.HIDDEN)
+                .setOverflowY(UiOverflow.HIDDEN);
         section.append(stateElement);
 
         rebuildList();
@@ -163,21 +187,37 @@ final class HtmlLikeListDragDocumentPageController extends DocumentPageControlle
                     .setFlexDirection(UiFlexDirection.ROW)
                     .setAlignItems(UiAlignItems.CENTER)
                     .setHeight(UiStyleLength.px(ROW_HEIGHT))
-                    .setMargin(UiStyleInsets.of(UiStyleLength.px(8), UiStyleLength.px(10), UiStyleLength.px(8),
-                            UiStyleLength.px(10)))
-                    .setPadding(UiStyleInsets.of(UiStyleLength.px(14), UiStyleLength.px(20), UiStyleLength.px(14),
-                            UiStyleLength.px(20)))
-                    .setBackgroundColor(item.equals(draggingItem) ? 0xFFD3E5FF : 0xFFF8FAFC)
-                    .setBorderColor(0xFFE2E8F0)
-                    .setBorderWidth(UiStyleLength.px(2))
-                    .setBorderRadius(UiStyleLength.px(8))
-                    .setOpacity(item.equals(draggingItem) ? 0.42F : 1.0F)
-                    .setTextColor(0xFF0F172A);
+                    .setMargin(UiStyleInsets.of(UiStyleLength.px(8), UiStyleLength.px(0), UiStyleLength.px(8),
+                            UiStyleLength.px(0)))
+                    .setPadding(UiStyleInsets.of(UiStyleLength.px(12), UiStyleLength.px(16), UiStyleLength.px(12),
+                            UiStyleLength.px(14)))
+                    .setBackgroundColor(item.equals(draggingItem) ? 0xFF1D4ED8 : 0xFF1E293B)
+                    .setBorderColor(item.equals(draggingItem) ? 0xFFBFDBFE : 0xFF475569)
+                    .setBorderWidth(UiStyleLength.px(1))
+                    .setBorderRadius(UiStyleLength.px(12))
+                    .setOpacity(item.equals(draggingItem) ? 0.62F : 1.0F)
+                    .setTextColor(0xFFEAF1FF);
+
+            ElementNode handle = document.div();
+            handle.style()
+                    .setWidth(UiStyleLength.px(54))
+                    .setHeight(UiStyleLength.px(24))
+                    .setMargin(UiStyleInsets.of(UiStyleLength.px(0), UiStyleLength.px(12), UiStyleLength.px(0),
+                            UiStyleLength.px(0)))
+                    .setBackgroundColor(0xFF0F172A)
+                    .setBorderColor(0xFF334155)
+                    .setBorderWidth(UiStyleLength.px(1))
+                    .setBorderRadius(UiStyleLength.px(999))
+                    .setTextColor(0xFF93C5FD)
+                    .setOverflowX(UiOverflow.HIDDEN)
+                    .setOverflowY(UiOverflow.HIDDEN);
+            handle.appendText("拖拽");
+            row.append(handle);
 
             ElementNode label = document.div();
             label.style()
                     .setFlexGrow(1.0F)
-                    .setTextColor(0xFF0F172A);
+                    .setTextColor(0xFFEAF1FF);
             label.appendText(item);
             row.append(label);
             row.setDragStartHandler(createItemDragStartHandler(item));
