@@ -24,6 +24,7 @@ public class ModConfigGui extends ForgeConfigTemplateScreen {
                 .setSubtitle("Forge In-Game Config Replacement")
                 .setDescription("使用 Qz UILib 的 HTML-like 文档页面替代默认 Forge 配置页，并作为可复用模板开放给其他开发者。")
                 .setConfigPath(Config.getConfigPath())
+                .addPropertyEditorFactory(new FontSortPropertyEditorFactory())
                 .setSaveHandler(new SaveHandler() {
                     @Override
                     public void onSave(net.minecraftforge.common.config.Configuration configuration) {
