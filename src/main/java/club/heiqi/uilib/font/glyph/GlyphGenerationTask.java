@@ -7,6 +7,7 @@ import club.heiqi.uilib.font.FontType;
  */
 public class GlyphGenerationTask {
 
+    private final int runtimeVersion;
     private final int codepoint;
     private final FontType fontType;
     private final int glyphSize;
@@ -15,16 +16,23 @@ public class GlyphGenerationTask {
     /**
      * 创建字符生成任务。
      *
+     * @param runtimeVersion 运行时版本
      * @param codepoint 字符码点
      * @param fontType 字重类型
      * @param glyphSize 字符格大小
      * @param priority 生成优先级
      */
-    public GlyphGenerationTask(int codepoint, FontType fontType, int glyphSize, GlyphGenerationPriority priority) {
+    public GlyphGenerationTask(int runtimeVersion, int codepoint, FontType fontType, int glyphSize,
+            GlyphGenerationPriority priority) {
+        this.runtimeVersion = runtimeVersion;
         this.codepoint = codepoint;
         this.fontType = fontType;
         this.glyphSize = glyphSize;
         this.priority = priority;
+    }
+
+    public int getRuntimeVersion() {
+        return runtimeVersion;
     }
 
     public int getCodepoint() {

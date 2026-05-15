@@ -30,6 +30,7 @@ public class GlyphPageManager {
     private int textureSize;
     private int glyphSize;
     private int maintainPageCount = 3;
+    private volatile int runtimeVersion;
 
     /**
      * 初始化字符页管理器。
@@ -41,6 +42,15 @@ public class GlyphPageManager {
             ensureCapacity(FontType.NORMAL);
             ensureCapacity(FontType.BOLD);
         }
+    }
+
+    /**
+     * 设置当前运行时版本。
+     *
+     * @param runtimeVersion 运行时版本
+     */
+    public void setRuntimeVersion(int runtimeVersion) {
+        this.runtimeVersion = runtimeVersion;
     }
 
     /**
@@ -73,7 +83,22 @@ public class GlyphPageManager {
      * @return 是否允许开始生成
      */
     public boolean tryMarkGenerating(int codepoint, FontType fontType) {
-        GlyphCacheKey key = new GlyphCacheKey(codepoint, fontType);
+        return tryMarkGenerating(runtimeVersion, codepoint, fontType);
+    }
+
+    /**
+     * 尝试将指定运行时版本内的字符切换到生成中状态。
+     *
+     * @param runtimeVersion 运行时版本
+     * @param codepoint 字符码点
+     * @param fontType 字重类型
+     * @return 是否允许开始生成
+     */
+    public boolean tryMarkGenerating(int runtimeVersion, int codepoint, FontType fontType) {
+        if (runtimeVersion != this.runtimeVersion) {
+            return false;
+        }
+        GlyphCacheKey key = createKey(runtimeVersion, codepoint, fontType);
         GlyphState currentState = glyphStates.get(key);
         if (currentState == GlyphState.GENERATING
                 || currentState == GlyphState.UPLOAD_PENDING
@@ -92,7 +117,21 @@ public class GlyphPageManager {
      * @param fontType 字重类型
      */
     public void markFailed(int codepoint, FontType fontType) {
-        glyphStates.put(new GlyphCacheKey(codepoint, fontType), GlyphState.FAILED);
+        markFailed(runtimeVersion, codepoint, fontType);
+    }
+
+    /**
+     * 标记指定运行时版本内的字符生成失败。
+     *
+     * @param runtimeVersion 运行时版本
+     * @param codepoint 字符码点
+     * @param fontType 字重类型
+     */
+    public void markFailed(int runtimeVersion, int codepoint, FontType fontType) {
+        if (runtimeVersion != this.runtimeVersion) {
+            return;
+        }
+        glyphStates.put(createKey(runtimeVersion, codepoint, fontType), GlyphState.FAILED);
     }
 
     /**
@@ -101,8 +140,11 @@ public class GlyphPageManager {
      * @param result 字符生成结果
      */
     public void queueUpload(GlyphGenerationResult result) {
-        GlyphCacheKey key = new GlyphCacheKey(result.getCodepoint(), result.getFontType());
-        pendingUploads.add(new PendingGlyphUpload(key, result));
+        if (result.getRuntimeVersion() != runtimeVersion) {
+            return;
+        }
+        GlyphCacheKey key = createKey(result.getRuntimeVersion(), result.getCodepoint(), result.getFontType());
+        pendingUploads.add(new PendingGlyphUpload(result.getRuntimeVersion(), key, result));
         glyphStates.put(key, GlyphState.UPLOAD_PENDING);
     }
 
@@ -121,6 +163,9 @@ public class GlyphPageManager {
 
             GlyphCacheKey key = upload.getKey();
             GlyphGenerationResult result = upload.getGenerationResult();
+            if (upload.getRuntimeVersion() != runtimeVersion || result.getRuntimeVersion() != runtimeVersion) {
+                continue;
+            }
             GlyphPage glyphPage = allocatePage(result.getFontType(), key);
             glyphPage.allocate(key);
             glyphPage.upload(key, result.getImage());
@@ -139,7 +184,7 @@ public class GlyphPageManager {
      * @return 是否可用
      */
     public boolean isReady(int codepoint, FontType fontType) {
-        return glyphStates.get(new GlyphCacheKey(codepoint, fontType)) == GlyphState.READY;
+        return glyphStates.get(createKey(codepoint, fontType)) == GlyphState.READY;
     }
 
     /**
@@ -150,7 +195,7 @@ public class GlyphPageManager {
      * @return 字符状态
      */
     public GlyphState getState(int codepoint, FontType fontType) {
-        GlyphCacheKey key = new GlyphCacheKey(codepoint, fontType);
+        GlyphCacheKey key = createKey(codepoint, fontType);
         GlyphState state = glyphStates.get(key);
         return state == null ? GlyphState.NEW : state;
     }
@@ -163,7 +208,7 @@ public class GlyphPageManager {
      * @return 字符页，未准备好时返回 null
      */
     public GlyphPage getReadyPage(int codepoint, FontType fontType) {
-        return readyPages.get(new GlyphCacheKey(codepoint, fontType));
+        return readyPages.get(createKey(codepoint, fontType));
     }
 
     /**
@@ -174,7 +219,18 @@ public class GlyphPageManager {
      * @return 字符度量信息，未准备好时返回 null
      */
     public GlyphInfo getGlyphInfo(int codepoint, FontType fontType) {
-        return glyphInfos.get(new GlyphCacheKey(codepoint, fontType));
+        return glyphInfos.get(createKey(codepoint, fontType));
+    }
+
+    /**
+     * 获取当前运行时的字符缓存键。
+     *
+     * @param codepoint 字符码点
+     * @param fontType 字重类型
+     * @return 字符缓存键
+     */
+    public GlyphCacheKey createKey(int codepoint, FontType fontType) {
+        return createKey(runtimeVersion, codepoint, fontType);
     }
 
     /**
@@ -254,6 +310,10 @@ public class GlyphPageManager {
         MyMod.LOG.debug("字符页容量扩展，type={} pageIndex={}", fontType, Integer.valueOf(page.getPageIndex()));
         ensureCapacity(fontType);
         return page;
+    }
+
+    private GlyphCacheKey createKey(int runtimeVersion, int codepoint, FontType fontType) {
+        return new GlyphCacheKey(runtimeVersion, codepoint, fontType);
     }
 
     private List<GlyphPage> getPages(FontType fontType) {

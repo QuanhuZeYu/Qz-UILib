@@ -24,6 +24,7 @@ public class GlyphGenerationDispatcher {
     private final AtomicBoolean acceptingTasks = new AtomicBoolean(true);
     private final AtomicInteger generationEpoch = new AtomicInteger(0);
     private ExecutorService executorService;
+    private volatile int runtimeVersion;
 
     private FontMatcher fontMatcher;
     private GlyphPageManager glyphPageManager;
@@ -60,6 +61,15 @@ public class GlyphGenerationDispatcher {
     }
 
     /**
+     * 设置当前运行时版本。
+     *
+     * @param runtimeVersion 运行时版本
+     */
+    public void setRuntimeVersion(int runtimeVersion) {
+        this.runtimeVersion = runtimeVersion;
+    }
+
+    /**
      * 提交字符生成任务。
      *
      * @param task 生成任务
@@ -68,32 +78,37 @@ public class GlyphGenerationDispatcher {
         if (!initialized.get() || !acceptingTasks.get()) {
             return;
         }
-        if (glyphPageManager == null || !glyphPageManager.tryMarkGenerating(task.getCodepoint(), task.getFontType())) {
+        if (task.getRuntimeVersion() != runtimeVersion) {
+            return;
+        }
+        if (glyphPageManager == null || !glyphPageManager.tryMarkGenerating(
+                task.getRuntimeVersion(), task.getCodepoint(), task.getFontType())) {
             return;
         }
 
         final int taskGenerationEpoch = generationEpoch.get();
+        final int taskRuntimeVersion = task.getRuntimeVersion();
         executorService.submit(() -> {
-            if (!isTaskCurrent(taskGenerationEpoch) || fontMatcher == null) {
+            if (!isTaskCurrent(taskGenerationEpoch) || fontMatcher == null || taskRuntimeVersion != runtimeVersion) {
                 return;
             }
 
             FontType fontType = task.getFontType();
-            if (fontMatcher.match(task.getCodepoint(), fontType) == null) {
-                if (!isTaskCurrent(taskGenerationEpoch)) {
+            if (fontMatcher.match(taskRuntimeVersion, task.getCodepoint(), fontType) == null) {
+                if (!isTaskCurrent(taskGenerationEpoch) || taskRuntimeVersion != runtimeVersion) {
                     return;
                 }
-                glyphPageManager.markFailed(task.getCodepoint(), fontType);
+                glyphPageManager.markFailed(taskRuntimeVersion, task.getCodepoint(), fontType);
                 MyMod.LOG.warn("未找到可显示字符的字体，codepoint={} type={}", task.getCodepoint(), fontType);
                 return;
             }
 
             GlyphGenerationResult result = glyphGenerator.generate(task);
-            if (!isTaskCurrent(taskGenerationEpoch)) {
+            if (!isTaskCurrent(taskGenerationEpoch) || taskRuntimeVersion != runtimeVersion) {
                 return;
             }
             if (result == null) {
-                glyphPageManager.markFailed(task.getCodepoint(), fontType);
+                glyphPageManager.markFailed(taskRuntimeVersion, task.getCodepoint(), fontType);
                 return;
             }
             if (resultHandler != null) {

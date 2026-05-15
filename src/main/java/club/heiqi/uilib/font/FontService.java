@@ -39,8 +39,8 @@ public class FontService {
     private final Deque<Long> drawStageUploadTimestamps = new ArrayDeque<Long>();
 
     private long lastDrawStageUploadAt = 0L;
-    private int runtimeVersion;
-    private int textMeasureEpoch;
+    private volatile int runtimeVersion;
+    private volatile int textMeasureEpoch;
 
     private FontService() {}
 
@@ -86,11 +86,14 @@ public class FontService {
                 return;
             }
 
+            runtimeVersion++;
             ensureLayoutRuntimeReady();
+            glyphPageManager.setRuntimeVersion(runtimeVersion);
+            glyphGenerationDispatcher.setRuntimeVersion(runtimeVersion);
+            textLayoutService.setRuntimeVersion(runtimeVersion);
             glyphPageManager.initialize();
             glyphGenerationDispatcher.initialize(fontMatcher, glyphPageManager, glyphPageManager::queueUpload);
             initialized.set(true);
-            runtimeVersion++;
         }
 
         MyMod.LOG.info("字体系统骨架初始化完成：{}", FontConfig.buildSummary());
@@ -107,7 +110,11 @@ public class FontService {
                 initialize();
             }
 
+            int nextRuntimeVersion = runtimeVersion + 1;
             glyphGenerationDispatcher.reset();
+            glyphGenerationDispatcher.setRuntimeVersion(nextRuntimeVersion);
+            glyphPageManager.setRuntimeVersion(nextRuntimeVersion);
+            textLayoutService.setRuntimeVersion(nextRuntimeVersion);
             refreshTextMeasureRuntime();
             glyphPageManager.reset();
             if (batchRenderer != null) {
@@ -125,7 +132,7 @@ public class FontService {
             drawStageUploadTimestamps.clear();
             lastDrawStageUploadAt = 0L;
             glyphGenerationDispatcher.initialize(fontMatcher, glyphPageManager, glyphPageManager::queueUpload);
-            runtimeVersion++;
+            runtimeVersion = nextRuntimeVersion;
         }
         int invalidatedRootCount = UiLayoutInvalidationRegistry.invalidateAll();
 
@@ -139,12 +146,14 @@ public class FontService {
      * @param maxUploadCount 本次最多处理的待上传数量
      */
     public void tickMainThread(int maxUploadCount) {
-        if (!initialized.get()) {
-            return;
-        }
+        synchronized (this) {
+            if (!initialized.get()) {
+                return;
+            }
 
-        glyphPageManager.flushPendingUploads(maxUploadCount);
-        debugLogStats("render_tick");
+            glyphPageManager.flushPendingUploads(maxUploadCount);
+            debugLogStats("render_tick");
+        }
     }
 
     /**
@@ -153,18 +162,20 @@ public class FontService {
      * @param maxUploadCount 本次最多处理的待上传数量
      */
     public void tickDrawStage(int maxUploadCount) {
-        if (!initialized.get() || maxUploadCount <= 0) {
-            return;
-        }
-        if (!canRunDrawStageUpload()) {
-            return;
-        }
+        synchronized (this) {
+            if (!initialized.get() || maxUploadCount <= 0) {
+                return;
+            }
+            if (!canRunDrawStageUpload()) {
+                return;
+            }
 
-        glyphPageManager.flushPendingUploads(maxUploadCount);
-        long now = System.currentTimeMillis();
-        lastDrawStageUploadAt = now;
-        drawStageUploadTimestamps.addLast(Long.valueOf(now));
-        debugLogStats("draw_stage");
+            glyphPageManager.flushPendingUploads(maxUploadCount);
+            long now = System.currentTimeMillis();
+            lastDrawStageUploadAt = now;
+            drawStageUploadTimestamps.addLast(Long.valueOf(now));
+            debugLogStats("draw_stage");
+        }
     }
 
     /**

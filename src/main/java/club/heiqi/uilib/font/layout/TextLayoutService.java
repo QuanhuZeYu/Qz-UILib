@@ -35,6 +35,7 @@ public class TextLayoutService {
     private final Map<String, Double> widthCache = new ConcurrentHashMap<String, Double>();
     private final AtomicLong widthCacheHitCount = new AtomicLong(0L);
     private final AtomicLong widthCacheMissCount = new AtomicLong(0L);
+    private volatile int runtimeVersion;
 
     /**
      * 创建文本布局服务。
@@ -45,6 +46,15 @@ public class TextLayoutService {
     public TextLayoutService(FontMatcher fontMatcher, GlyphPageManager glyphPageManager) {
         this.fontMatcher = fontMatcher;
         this.glyphPageManager = glyphPageManager;
+    }
+
+    /**
+     * 设置当前运行时版本。
+     *
+     * @param runtimeVersion 运行时版本
+     */
+    public void setRuntimeVersion(int runtimeVersion) {
+        this.runtimeVersion = runtimeVersion;
     }
 
     /**
@@ -389,7 +399,7 @@ public class TextLayoutService {
     }
 
     private double measureAwtWidth(int codepoint, FontType fontType) {
-        Font font = fontMatcher.match(codepoint, fontType);
+        Font font = fontMatcher.match(runtimeVersion, codepoint, fontType);
         if (font == null) {
             return FontConfig.spaceWidth;
         }
@@ -467,6 +477,7 @@ public class TextLayoutService {
     }
 
     private String buildWidthCacheKey(int codepoint, FontType fontType) {
-        return codepoint + ":" + fontType.name() + ":" + FontConfig.charSize + ":" + FontConfig.characterSpacing;
+        return runtimeVersion + ":" + codepoint + ":" + fontType.name() + ":" + FontConfig.charSize + ":"
+                + FontConfig.characterSpacing;
     }
 }

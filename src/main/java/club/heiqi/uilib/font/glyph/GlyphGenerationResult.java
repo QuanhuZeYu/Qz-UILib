@@ -9,6 +9,7 @@ import club.heiqi.uilib.font.FontType;
  */
 public class GlyphGenerationResult {
 
+    private final int runtimeVersion;
     private final int codepoint;
     private final FontType fontType;
     private final BufferedImage image;
@@ -17,16 +18,23 @@ public class GlyphGenerationResult {
     /**
      * 创建字符生成结果。
      *
+     * @param runtimeVersion 运行时版本
      * @param codepoint 字符码点
      * @param fontType 字重类型
      * @param image 字符图像
      * @param glyphInfo 字符度量信息
      */
-    public GlyphGenerationResult(int codepoint, FontType fontType, BufferedImage image, GlyphInfo glyphInfo) {
+    public GlyphGenerationResult(int runtimeVersion, int codepoint, FontType fontType, BufferedImage image,
+            GlyphInfo glyphInfo) {
+        this.runtimeVersion = runtimeVersion;
         this.codepoint = codepoint;
         this.fontType = fontType;
         this.image = image;
         this.glyphInfo = glyphInfo;
+    }
+
+    public int getRuntimeVersion() {
+        return runtimeVersion;
     }
 
     public int getCodepoint() {

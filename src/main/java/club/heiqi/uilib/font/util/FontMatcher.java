@@ -38,8 +38,8 @@ public class FontMatcher {
      * @param fontType 字重类型
      * @return 匹配到的字体，未匹配到则返回 null
      */
-    public Font match(int codepoint, FontType fontType) {
-        String cacheKey = buildCacheKey(codepoint, fontType);
+    public Font match(int runtimeVersion, int codepoint, FontType fontType) {
+        String cacheKey = buildCacheKey(runtimeVersion, codepoint, fontType);
         Font cachedFont = matchCache.get(cacheKey);
         if (cachedFont != null) {
             cacheHitCount.incrementAndGet();
@@ -109,7 +109,7 @@ public class FontMatcher {
         return glyphVector.getGlyphOutline(0) != null;
     }
 
-    private String buildCacheKey(int codepoint, FontType fontType) {
-        return codepoint + ":" + fontType.name();
+    private String buildCacheKey(int runtimeVersion, int codepoint, FontType fontType) {
+        return runtimeVersion + ":" + codepoint + ":" + fontType.name();
     }
 }

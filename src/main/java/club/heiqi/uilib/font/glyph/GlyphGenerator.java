@@ -38,7 +38,7 @@ public class GlyphGenerator {
      * @return 生成结果，失败时返回 null
      */
     public GlyphGenerationResult generate(GlyphGenerationTask task) {
-        Font baseFont = fontMatcher.match(task.getCodepoint(), task.getFontType());
+        Font baseFont = fontMatcher.match(task.getRuntimeVersion(), task.getCodepoint(), task.getFontType());
         if (baseFont == null) {
             return null;
         }
@@ -111,7 +111,7 @@ public class GlyphGenerator {
                 (float) visualBounds.getWidth(),
                 (float) visualBounds.getHeight(),
                 coloredGlyph);
-        return new GlyphGenerationResult(task.getCodepoint(), task.getFontType(), image, glyphInfo);
+        return new GlyphGenerationResult(task.getRuntimeVersion(), task.getCodepoint(), task.getFontType(), image, glyphInfo);
     }
 
     private Font deriveFont(Font baseFont, FontType fontType, int glyphSize) {

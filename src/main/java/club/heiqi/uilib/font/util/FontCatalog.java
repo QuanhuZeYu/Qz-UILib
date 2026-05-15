@@ -10,7 +10,7 @@ import java.util.List;
  */
 public class FontCatalog {
 
-    private final List<Font> fonts = new ArrayList<Font>();
+    private volatile List<Font> fonts = Collections.emptyList();
 
     /**
      * 使用新字体列表替换当前目录。
@@ -18,8 +18,11 @@ public class FontCatalog {
      * @param updatedFonts 新字体列表
      */
     public void replaceAll(List<Font> updatedFonts) {
-        fonts.clear();
-        fonts.addAll(updatedFonts);
+        if (updatedFonts == null || updatedFonts.isEmpty()) {
+            fonts = Collections.emptyList();
+            return;
+        }
+        fonts = Collections.unmodifiableList(new ArrayList<Font>(updatedFonts));
     }
 
     /**
@@ -28,7 +31,7 @@ public class FontCatalog {
      * @return 字体列表
      */
     public List<Font> getFonts() {
-        return Collections.unmodifiableList(fonts);
+        return fonts;
     }
 
     /**

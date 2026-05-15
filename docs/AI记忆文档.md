@@ -64,6 +64,7 @@
 - 原版资源包重载会通过 `FontRenderer.onResourceManagerReload` 的 Mixin 触发字体系统重载；字体 GL 资源、字符页、后台字形任务和布局缓存必须整体重建，避免继续使用资源包重载前的 GL 状态。
 - `FontConfig.replaceOrigin=true` 会让原版 `FontRenderer` 在 SplashProgress 加载线程和客户端主线程都可能进入 UILib 字体管线；字体资源重载、shader/批渲染器重建与 `drawString` 必须在字体运行时锁下串行化，不能用“只允许主线程接管”规避 Splash 字体渲染。
 - 字体页纹理创建时必须先显式清为透明，再上传单字形并生成 mipmap；不要依赖驱动对未初始化纹理内容的默认值，否则资源重载后的 Splash 文本可能出现整格纯色块。
+- 字体异步字形生成链路必须以运行时版本隔离：任务、结果、待上传队列、字符缓存键、字体匹配缓存和宽度缓存都要区分 runtimeVersion；资源重载或字体排序变化后，旧 worker 的迟到结果不能写入新页，同码点也不能复用旧排序下的字形或宽度语义。
 - `ForgeConfigTemplateScreen` 的列表能力允许通过 `PropertyEditorFactory` 派生专用列表控件；当前 `fontSystem.fontSort` 使用专用二级字体排序页，页面内部用 HTML-like 拖拽列表调整顺序，并支持在每行序号输入框中直接输入目标位置后回写草稿。
 
 ## 运行与验证

@@ -160,11 +160,14 @@ public class DefaultFontRendererAdapter implements FontRendererAdapter {
                 int renderCodepoint = style.isRandomStyle() ? resolveRandomStyleCodepoint(codepoint, style, textLayoutService) : codepoint;
                 FontType fontType = style.getFontType();
                 GlyphPage glyphPage = glyphPageManager.getReadyPage(renderCodepoint, fontType);
-                GlyphPageSlot slot = glyphPage == null ? null : glyphPage.getSlotMap().get(new club.heiqi.uilib.font.page.GlyphCacheKey(renderCodepoint, fontType));
+                GlyphPageSlot slot = glyphPage == null
+                        ? null
+                        : glyphPage.getSlotMap().get(glyphPageManager.createKey(renderCodepoint, fontType));
                 float measuredWidth = (float) textLayoutService.getCodepointWidth(codepoint, style);
 
                 if (glyphPage == null || slot == null) {
                     fontService.getGlyphGenerationDispatcher().submit(new GlyphGenerationTask(
+                            fontService.getRuntimeVersion(),
                             renderCodepoint,
                             fontType,
                             Math.max(8, (int) Math.ceil(FontConfig.awtCharSize)),
