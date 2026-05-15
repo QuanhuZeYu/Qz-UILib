@@ -16,7 +16,6 @@ import club.heiqi.uilib.ui.style.UiOverflow;
 import club.heiqi.uilib.ui.style.UiPosition;
 import club.heiqi.uilib.ui.style.UiStyleInsets;
 import club.heiqi.uilib.ui.style.UiStyleLength;
-import club.heiqi.uilib.ui.text.DefaultTextMeasureService;
 import club.heiqi.uilib.ui.text.TextMeasureService;
 
 /**
@@ -36,7 +35,7 @@ final class HtmlLikeGlassDocumentPageController extends DocumentPageController {
      * @param documentPage 文档页面壳
      */
     HtmlLikeGlassDocumentPageController(DocumentUiScope documentUi, DocumentPageAuthoringSurface documentPage) {
-        this(documentUi, documentPage, DefaultTextMeasureService.getInstance());
+        this(Objects.requireNonNull(documentUi, "documentUi"), documentPage, documentUi.getTextMeasureService());
     }
 
     /**
@@ -51,6 +50,7 @@ final class HtmlLikeGlassDocumentPageController extends DocumentPageController {
         Objects.requireNonNull(documentUi, "documentUi");
         this.documentPage = Objects.requireNonNull(documentPage, "documentPage");
         UiDocument document = createGlassDocument();
+        document.setDefaultTextContentMode(documentUi.getDefaultTextContentMode());
         this.htmlLikeDocumentWidget = new HtmlLikeDocumentWidget(document, 860, 560,
                 Objects.requireNonNull(textMeasureService, "textMeasureService"));
         this.htmlLikeDocumentWidget.setViewportRootScrollingEnabled(true);

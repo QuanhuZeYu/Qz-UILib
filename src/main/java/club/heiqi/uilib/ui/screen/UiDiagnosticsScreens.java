@@ -19,7 +19,7 @@ final class UiDiagnosticsScreens {
      * 创建诊断菜单。
      */
     static GuiScreen createUiTest() {
-        return createUiTest(UiDocumentScreens.DocumentScreenEnvironment.minecraftDefaults());
+        return createUiTest(UiDocumentScreens.DocumentScreenEnvironment.minecraftFormattedDefaults());
     }
 
     /**
@@ -37,7 +37,7 @@ final class UiDiagnosticsScreens {
      * 创建布局诊断页。
      */
     static GuiScreen createUiTestLayout() {
-        return createUiTestLayout(UiDocumentScreens.DocumentScreenEnvironment.minecraftDefaults());
+        return createUiTestLayout(UiDocumentScreens.DocumentScreenEnvironment.minecraftFormattedDefaults());
     }
 
     /**
@@ -52,7 +52,7 @@ final class UiDiagnosticsScreens {
      * 创建 HTML-like smoke 页。
      */
     static GuiScreen createHtmlLikeSmoke() {
-        return createHtmlLikeSmoke(UiDocumentScreens.DocumentScreenEnvironment.minecraftDefaults());
+        return createHtmlLikeSmoke(UiDocumentScreens.DocumentScreenEnvironment.minecraftFormattedDefaults());
     }
 
     /**
@@ -67,7 +67,7 @@ final class UiDiagnosticsScreens {
      * 创建 Glass Lab 页。
      */
     static GuiScreen createHtmlLikeGlass() {
-        return createHtmlLikeGlass(UiDocumentScreens.DocumentScreenEnvironment.minecraftDefaults());
+        return createHtmlLikeGlass(UiDocumentScreens.DocumentScreenEnvironment.minecraftFormattedDefaults());
     }
 
     /**
@@ -82,7 +82,7 @@ final class UiDiagnosticsScreens {
      * 创建背包概览示例页。
      */
     static GuiScreen createInventoryOverview(InventoryOverviewModel model) {
-        return createInventoryOverview(UiDocumentScreens.DocumentScreenEnvironment.minecraftDefaults(), model);
+        return createInventoryOverview(UiDocumentScreens.DocumentScreenEnvironment.minecraftFormattedDefaults(), model);
     }
 
     /**
@@ -98,7 +98,7 @@ final class UiDiagnosticsScreens {
      * 创建列表元素组件拖拽测试页。
      */
     static GuiScreen createListElementDrag() {
-        return createListElementDrag(UiDocumentScreens.DocumentScreenEnvironment.minecraftDefaults());
+        return createListElementDrag(UiDocumentScreens.DocumentScreenEnvironment.minecraftFormattedDefaults());
     }
 
     /**

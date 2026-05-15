@@ -16,6 +16,7 @@ import club.heiqi.uilib.ui.render.UiRenderContext;
 import club.heiqi.uilib.ui.style.UiOverflow;
 import club.heiqi.uilib.ui.style.UiStyleLength;
 import club.heiqi.uilib.ui.theme.UiSurfaceStyle;
+import club.heiqi.uilib.ui.text.TextContentMode;
 
 /**
  * `DocumentPaintRenderer` 的渲染投影契约测试。
@@ -79,6 +80,24 @@ public class DocumentPaintRendererTest {
 
         Assert.assertEquals(1, renderContext.drawCalls.size());
         assertDrawCall(renderContext.drawCalls.get(0), 7, 11, 25, 23, 0xFF223344, 0, 0);
+    }
+
+    /**
+     * 验证文本命令会把文本解析模式传给渲染上下文。
+     */
+    @Test
+    public void shouldReplayTextContentModeToRenderContext() {
+        UiDocument document = UiDocument.create();
+        ElementNode root = document.getRootElement();
+        List<DocumentPaintCommand> commands = new ArrayList<DocumentPaintCommand>();
+        commands.add(new DocumentPaintCommand(DocumentPaintCommandType.TEXT, root, 0, 0, 24, 12,
+                0xFFE2E8F0, 0, 0, "§aRaw?", TextContentMode.MINECRAFT_FORMATTED, null, 0, 1.0F, 1.0F));
+
+        RecordingUiRenderContext renderContext = new RecordingUiRenderContext();
+        DocumentPaintRenderer.render(renderContext, commands, 7, 11);
+
+        Assert.assertEquals(1, renderContext.textCalls.size());
+        Assert.assertEquals(TextContentMode.MINECRAFT_FORMATTED, renderContext.textCalls.get(0).textContentMode);
     }
 
     /**
@@ -158,7 +177,7 @@ public class DocumentPaintRendererTest {
 
         DocumentPaintCommand paintContextStart = new DocumentPaintCommand(
                 DocumentPaintCommandType.PAINT_CONTEXT_START, root, 0, 0, 10, 10, 0, 0, 0,
-                null, null, 0, 1.0F, 0.5F);
+                null, null, 0, 1.0F, 0.5F, DocumentEffectType.PAINT_CONTEXT);
         DocumentPaintCommand backdrop = new DocumentPaintCommand(DocumentPaintCommandType.BACKDROP_FILTER, root,
                 0, 0, 10, 10, 0, 0, 0, "", null, 8, 1.2F);
         DocumentPaintCommand clipStart = new DocumentPaintCommand(DocumentPaintCommandType.CLIP_START, root,
@@ -181,7 +200,7 @@ public class DocumentPaintRendererTest {
         ElementNode root = document.getRootElement();
         List<DocumentPaintCommand> commands = new ArrayList<DocumentPaintCommand>();
         commands.add(new DocumentPaintCommand(DocumentPaintCommandType.PAINT_CONTEXT_START, root,
-                0, 0, 30, 20, 0, 0, 0, null, null, 0, 1.0F, 0.5F));
+                0, 0, 30, 20, 0, 0, 0, null, null, 0, 1.0F, 0.5F, DocumentEffectType.PAINT_CONTEXT));
         commands.add(new DocumentPaintCommand(DocumentPaintCommandType.CLIP_START, root,
                 0, 0, 30, 20, 0, 0, 0));
 
@@ -463,7 +482,12 @@ public class DocumentPaintRendererTest {
 
         @Override
         public void drawText(String text, int x, int y, int color, boolean shadow) {
-            textCalls.add(new TextCall(text, x, y, color, shadow));
+            drawText(text, x, y, color, shadow, TextContentMode.UILIB_RAW);
+        }
+
+        @Override
+        public void drawText(String text, int x, int y, int color, boolean shadow, TextContentMode textContentMode) {
+            textCalls.add(new TextCall(text, x, y, color, shadow, textContentMode));
             notifyMainLayerContentChanged();
         }
 
@@ -538,13 +562,15 @@ public class DocumentPaintRendererTest {
         private final int y;
         private final int color;
         private final boolean shadow;
+        private final TextContentMode textContentMode;
 
-        private TextCall(String text, int x, int y, int color, boolean shadow) {
+        private TextCall(String text, int x, int y, int color, boolean shadow, TextContentMode textContentMode) {
             this.text = text;
             this.x = x;
             this.y = y;
             this.color = color;
             this.shadow = shadow;
+            this.textContentMode = textContentMode;
         }
     }
 

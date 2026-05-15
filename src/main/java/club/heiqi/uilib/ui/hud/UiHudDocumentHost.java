@@ -34,6 +34,7 @@ import club.heiqi.uilib.ui.runtime.UiRuntimeAdapters;
 import club.heiqi.uilib.ui.style.UiOverflow;
 import club.heiqi.uilib.ui.style.UiStyleLength;
 import club.heiqi.uilib.ui.text.DefaultTextMeasureService;
+import club.heiqi.uilib.ui.text.TextContentMode;
 import club.heiqi.uilib.ui.text.TextMeasureService;
 import club.heiqi.uilib.ui.screen.BaseScreen;
 import club.heiqi.uilib.ui.widget.UiLayoutInvalidationRegistry;
@@ -90,6 +91,7 @@ public final class UiHudDocumentHost {
             UiRuntimeAdapters runtimeAdapters) {
         UiHudLayerType resolvedLayerType = Objects.requireNonNull(layerType, "layerType");
         UiDocument document = UiDocument.create();
+        document.setDefaultTextContentMode(TextContentMode.UILIB_RAW);
         applyDefaultRootContract(document, resolvedLayerType);
         Objects.requireNonNull(contentBuilder, "contentBuilder").build(document);
 

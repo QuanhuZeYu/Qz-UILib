@@ -1,15 +1,19 @@
 package club.heiqi.uilib.ui.dom;
 
+import club.heiqi.uilib.ui.text.TextContentMode;
+
 /**
  * HTML-like 文本节点。
  */
 public final class TextNode extends DocumentNode {
 
     private String text;
+    private TextContentMode textContentMode = TextContentMode.UILIB_RAW;
 
     TextNode(UiDocument ownerDocument, String text) {
         super(ownerDocument);
         this.text = normalizeText(text);
+        this.textContentMode = ownerDocument.getDefaultTextContentMode();
     }
 
     @Override
@@ -36,6 +40,30 @@ public final class TextNode extends DocumentNode {
         String resolvedText = normalizeText(text);
         if (!this.text.equals(resolvedText)) {
             this.text = resolvedText;
+            markMutated();
+        }
+        return this;
+    }
+
+    /**
+     * 返回当前文本节点的内容解析模式。
+     *
+     * @return 文本内容解析模式
+     */
+    public TextContentMode getTextContentMode() {
+        return textContentMode;
+    }
+
+    /**
+     * 设置当前文本节点的内容解析模式。
+     *
+     * @param textContentMode 文本内容解析模式
+     * @return 当前文本节点
+     */
+    public TextNode setTextContentMode(TextContentMode textContentMode) {
+        TextContentMode resolvedMode = textContentMode == null ? TextContentMode.UILIB_RAW : textContentMode;
+        if (this.textContentMode != resolvedMode) {
+            this.textContentMode = resolvedMode;
             markMutated();
         }
         return this;

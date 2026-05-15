@@ -4,6 +4,7 @@ import java.util.Objects;
 
 import club.heiqi.uilib.ui.dom.ElementNode;
 import club.heiqi.uilib.ui.dom.TextNode;
+import club.heiqi.uilib.ui.text.TextContentMode;
 
 /**
  * HTML-like 直接文本子节点的布局结果。
@@ -13,6 +14,7 @@ public final class DocumentLayoutTextRun {
     private final TextNode textNode;
     private final ElementNode ownerElement;
     private final String text;
+    private final TextContentMode textContentMode;
     private final int left;
     private final int top;
     private final int width;
@@ -20,9 +22,15 @@ public final class DocumentLayoutTextRun {
 
     DocumentLayoutTextRun(TextNode textNode, ElementNode ownerElement, String text, int left, int top, int width,
             int height) {
+        this(textNode, ownerElement, text, textNode.getTextContentMode(), left, top, width, height);
+    }
+
+    DocumentLayoutTextRun(TextNode textNode, ElementNode ownerElement, String text, TextContentMode textContentMode,
+            int left, int top, int width, int height) {
         this.textNode = Objects.requireNonNull(textNode, "textNode");
         this.ownerElement = Objects.requireNonNull(ownerElement, "ownerElement");
         this.text = text == null ? "" : text;
+        this.textContentMode = textContentMode == null ? TextContentMode.UILIB_RAW : textContentMode;
         this.left = left;
         this.top = top;
         this.width = Math.max(0, width);
@@ -54,6 +62,15 @@ public final class DocumentLayoutTextRun {
      */
     public String getText() {
         return text;
+    }
+
+    /**
+     * 返回当前文本 run 的解析模式。
+     *
+     * @return 文本内容解析模式
+     */
+    public TextContentMode getTextContentMode() {
+        return textContentMode;
     }
 
     public int getLeft() {

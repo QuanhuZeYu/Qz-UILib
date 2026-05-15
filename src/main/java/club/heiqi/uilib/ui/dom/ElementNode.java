@@ -10,6 +10,7 @@ import club.heiqi.uilib.ui.paint.DocumentCustomRenderer;
 import club.heiqi.uilib.ui.style.UiStyleChangeImpact;
 import club.heiqi.uilib.ui.style.UiStyleChangeListener;
 import club.heiqi.uilib.ui.style.UiStyleDeclaration;
+import club.heiqi.uilib.ui.text.TextContentMode;
 
 /**
  * HTML-like 元素节点。
@@ -438,6 +439,19 @@ public final class ElementNode extends DocumentNode {
      */
     public TextNode appendText(String text) {
         TextNode textNode = getOwnerDocument().text(text);
+        appendChild(textNode);
+        return textNode;
+    }
+
+    /**
+     * 追加指定文本模式的文本子节点。
+     *
+     * @param text 文本内容
+     * @param textContentMode 文本内容解析模式
+     * @return 新建文本节点
+     */
+    public TextNode appendText(String text, TextContentMode textContentMode) {
+        TextNode textNode = getOwnerDocument().text(text, textContentMode);
         appendChild(textNode);
         return textNode;
     }

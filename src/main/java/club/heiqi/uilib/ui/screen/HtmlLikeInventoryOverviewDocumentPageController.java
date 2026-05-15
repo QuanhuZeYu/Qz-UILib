@@ -88,6 +88,7 @@ final class HtmlLikeInventoryOverviewDocumentPageController extends DocumentPage
         TextMeasureService resolvedTextMeasure = documentUi.getTextMeasureService();
 
         UiDocument document = UiDocument.create();
+        document.setDefaultTextContentMode(documentUi.getDefaultTextContentMode());
         this.htmlLikeDocumentWidget = new HtmlLikeDocumentWidget(document, 720, 600, resolvedTextMeasure);
         this.htmlLikeDocumentWidget.setViewportRootScrollingEnabled(true);
         this.htmlLikeDocumentWidget.setLayoutSpec(new UiLayoutSpec()

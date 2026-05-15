@@ -47,6 +47,7 @@ import club.heiqi.uilib.ui.style.UiPosition;
 import club.heiqi.uilib.ui.style.UiStyleInsets;
 import club.heiqi.uilib.ui.style.UiStyleLength;
 import club.heiqi.uilib.ui.text.DefaultTextMeasureService;
+import club.heiqi.uilib.ui.text.TextContentMode;
 import club.heiqi.uilib.ui.text.TextMeasureService;
 import club.heiqi.uilib.ui.theme.UiSurfaceStyle;
 
@@ -120,6 +121,48 @@ public class HtmlLikeDocumentWidgetTest {
         assertTextCall(renderContext.textCalls.get(0), "abc", 5, 7, 0xFFEFF6FF, false);
         assertTextCall(renderContext.textCalls.get(1), "def", 5, 25, 0xFFEFF6FF, false);
         assertTextCall(renderContext.textCalls.get(2), "g", 5, 43, 0xFFEFF6FF, false);
+    }
+
+    /**
+     * 验证 HTML-like 文本节点默认按 UILib 原始文本模式绘制。
+     */
+    @Test
+    public void shouldRenderTextNodesInUiLibRawModeByDefault() {
+        UiDocument document = UiDocument.create();
+        ElementNode root = document.getRootElement();
+        root.style().setWidth(UiStyleLength.px(80));
+        root.appendText("价格：§a100金币");
+        HtmlLikeDocumentWidget widget = new HtmlLikeDocumentWidget(document, 120, 48,
+                new DeterministicTextMeasureService());
+        widget.applyLayoutBounds(0, 0, 120, 48);
+
+        RecordingUiRenderContext renderContext = new RecordingUiRenderContext();
+        widget.render(renderContext);
+
+        Assert.assertEquals(1, renderContext.textCalls.size());
+        Assert.assertEquals("价格：§a100金币", renderContext.textCalls.get(0).text);
+        Assert.assertEquals(TextContentMode.UILIB_RAW, renderContext.textCalls.get(0).textContentMode);
+    }
+
+    /**
+     * 验证文本节点可显式切回 Minecraft 文本模式。
+     */
+    @Test
+    public void shouldAllowExplicitMinecraftFormattedTextNodes() {
+        UiDocument document = UiDocument.create();
+        document.setDefaultTextContentMode(TextContentMode.MINECRAFT_FORMATTED);
+        ElementNode root = document.getRootElement();
+        root.style().setWidth(UiStyleLength.px(80));
+        root.appendText("价格：§a100金币");
+        HtmlLikeDocumentWidget widget = new HtmlLikeDocumentWidget(document, 120, 48,
+                new DeterministicTextMeasureService());
+        widget.applyLayoutBounds(0, 0, 120, 48);
+
+        RecordingUiRenderContext renderContext = new RecordingUiRenderContext();
+        widget.render(renderContext);
+
+        Assert.assertFalse(renderContext.textCalls.isEmpty());
+        Assert.assertEquals(TextContentMode.MINECRAFT_FORMATTED, renderContext.textCalls.get(0).textContentMode);
     }
 
     /**
@@ -2855,7 +2898,12 @@ public class HtmlLikeDocumentWidgetTest {
 
         @Override
         public void drawText(String text, int x, int y, int color, boolean shadow) {
-            textCalls.add(new TextCall(text, x, y, color, shadow));
+            drawText(text, x, y, color, shadow, TextContentMode.UILIB_RAW);
+        }
+
+        @Override
+        public void drawText(String text, int x, int y, int color, boolean shadow, TextContentMode textContentMode) {
+            textCalls.add(new TextCall(text, x, y, color, shadow, textContentMode));
         }
 
         @Override
@@ -2899,13 +2947,15 @@ public class HtmlLikeDocumentWidgetTest {
         private final int y;
         private final int color;
         private final boolean shadow;
+        private final TextContentMode textContentMode;
 
-        private TextCall(String text, int x, int y, int color, boolean shadow) {
+        private TextCall(String text, int x, int y, int color, boolean shadow, TextContentMode textContentMode) {
             this.text = text;
             this.x = x;
             this.y = y;
             this.color = color;
             this.shadow = shadow;
+            this.textContentMode = textContentMode;
         }
     }
 

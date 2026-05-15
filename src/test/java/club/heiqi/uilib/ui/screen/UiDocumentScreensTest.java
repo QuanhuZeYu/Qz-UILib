@@ -15,6 +15,7 @@ import club.heiqi.uilib.ui.dom.UiDocument;
 import club.heiqi.uilib.ui.runtime.UiRuntimeAdapters;
 import club.heiqi.uilib.ui.style.UiOverflow;
 import club.heiqi.uilib.ui.style.UiStyleLength;
+import club.heiqi.uilib.ui.text.TextContentMode;
 import club.heiqi.uilib.ui.text.TextMeasureService;
 import club.heiqi.uilib.ui.widget.Widget;
 
@@ -119,6 +120,21 @@ public class UiDocumentScreensTest {
 
         Assert.assertSame(textMeasureService, environment.getTextMeasureService());
         Assert.assertSame(runtimeAdapters, environment.getRuntimeAdapters());
+        Assert.assertEquals(TextContentMode.UILIB_RAW, environment.getDefaultTextContentMode());
+    }
+
+    /**
+     * 验证业务默认环境与 Minecraft 兼容环境会暴露不同的文本默认模式。
+     */
+    @Test
+    public void shouldExposeDifferentDefaultTextModesForBusinessAndDiagnosticEnvironments() {
+        UiDocumentScreens.DocumentScreenEnvironment rawEnvironment = new UiDocumentScreens.DocumentScreenEnvironment(
+                new NoOpTextMeasureService(), UiRuntimeAdapters.empty(), TextContentMode.UILIB_RAW);
+        UiDocumentScreens.DocumentScreenEnvironment formattedEnvironment = new UiDocumentScreens.DocumentScreenEnvironment(
+                new NoOpTextMeasureService(), UiRuntimeAdapters.empty(), TextContentMode.MINECRAFT_FORMATTED);
+
+        Assert.assertEquals(TextContentMode.UILIB_RAW, rawEnvironment.getDefaultTextContentMode());
+        Assert.assertEquals(TextContentMode.MINECRAFT_FORMATTED, formattedEnvironment.getDefaultTextContentMode());
     }
 
     /**

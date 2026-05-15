@@ -9,6 +9,7 @@ import club.heiqi.uilib.ui.dom.UiDocument;
 import club.heiqi.uilib.ui.runtime.UiRuntimeAdapters;
 import club.heiqi.uilib.ui.style.UiOverflow;
 import club.heiqi.uilib.ui.style.UiStyleLength;
+import club.heiqi.uilib.ui.text.TextContentMode;
 import club.heiqi.uilib.ui.text.DefaultTextMeasureService;
 import club.heiqi.uilib.ui.text.TextMeasureService;
 import net.minecraft.client.gui.GuiScreen;
@@ -33,6 +34,7 @@ public final class UiDocumentScreens {
 
         private final TextMeasureService textMeasureService;
         private final UiRuntimeAdapters runtimeAdapters;
+        private final TextContentMode defaultTextContentMode;
 
         /**
          * 创建文档页面环境。
@@ -42,18 +44,42 @@ public final class UiDocumentScreens {
          */
         public DocumentScreenEnvironment(TextMeasureService textMeasureService,
                 UiRuntimeAdapters runtimeAdapters) {
-            this.textMeasureService = Objects.requireNonNull(textMeasureService, "textMeasureService");
-            this.runtimeAdapters = Objects.requireNonNull(runtimeAdapters, "runtimeAdapters");
+            this(textMeasureService, runtimeAdapters, TextContentMode.UILIB_RAW);
         }
 
         /**
-         * 创建当前 Minecraft 宿主使用的默认文档环境。
+         * 创建文档页面环境。
          *
-         * <p>默认值仍然存在，但现在被限制在最外层入口，调用方也可以显式替换。</p>
+         * @param textMeasureService 文本测量服务
+         * @param runtimeAdapters 运行时适配器集合
+         * @param defaultTextContentMode 新建文本节点默认解析模式
+         */
+        public DocumentScreenEnvironment(TextMeasureService textMeasureService,
+                UiRuntimeAdapters runtimeAdapters, TextContentMode defaultTextContentMode) {
+            this.textMeasureService = Objects.requireNonNull(textMeasureService, "textMeasureService");
+            this.runtimeAdapters = Objects.requireNonNull(runtimeAdapters, "runtimeAdapters");
+            this.defaultTextContentMode = defaultTextContentMode == null
+                    ? TextContentMode.UILIB_RAW : defaultTextContentMode;
+        }
+
+        /**
+         * 创建当前 Minecraft 宿主使用的默认业务文档环境。
+         *
+         * <p>HTML-like 业务页面默认按 UILib 原始文本处理，不再隐式解析 Minecraft `§` 格式码。</p>
          */
         public static DocumentScreenEnvironment minecraftDefaults() {
             return new DocumentScreenEnvironment(DefaultTextMeasureService.getInstance(),
-                    UiRuntimeAdapters.minecraftDefaults());
+                    UiRuntimeAdapters.minecraftDefaults(), TextContentMode.UILIB_RAW);
+        }
+
+        /**
+         * 创建当前 Minecraft 宿主使用的 Minecraft 文本兼容环境。
+         *
+         * <p>该环境会保留 `§` 颜色与样式码语义，供诊断页、兼容页或显式需要旧文本格式的场景使用。</p>
+         */
+        public static DocumentScreenEnvironment minecraftFormattedDefaults() {
+            return new DocumentScreenEnvironment(DefaultTextMeasureService.getMinecraftInstance(),
+                    UiRuntimeAdapters.minecraftDefaults(), TextContentMode.MINECRAFT_FORMATTED);
         }
 
         /**
@@ -72,6 +98,15 @@ public final class UiDocumentScreens {
          */
         public UiRuntimeAdapters getRuntimeAdapters() {
             return runtimeAdapters;
+        }
+
+        /**
+         * 返回当前环境中新建文本节点使用的默认解析模式。
+         *
+         * @return 默认文本内容解析模式
+         */
+        public TextContentMode getDefaultTextContentMode() {
+            return defaultTextContentMode;
         }
     }
 
@@ -148,6 +183,7 @@ public final class UiDocumentScreens {
             DocumentUiScope resolvedDocumentUi = Objects.requireNonNull(documentUi, "documentUi");
             this.documentPage = Objects.requireNonNull(documentPage, "documentPage");
             UiDocument document = UiDocument.create();
+            document.setDefaultTextContentMode(resolvedDocumentUi.getDefaultTextContentMode());
             Objects.requireNonNull(contentBuilder, "contentBuilder").build(document);
             applyDefaultRootContract(document.getRootElement());
             this.htmlLikeDocumentWidget = DocumentHostWidgetFactory.createViewportDocumentWidget(document, 320, 180,

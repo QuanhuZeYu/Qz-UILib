@@ -146,7 +146,8 @@ public final class DocumentPaintRenderer {
         }
         if (command.getType() == DocumentPaintCommandType.TEXT) {
             context.drawText(command.getText(), command.getLeft() + offsetX, command.getTop() + offsetY,
-                    applyOpacity(command.getColor(), replayState.fallbackOpacity), false);
+                    applyOpacity(command.getColor(), replayState.fallbackOpacity), false,
+                    command.getTextContentMode());
         }
     }
 

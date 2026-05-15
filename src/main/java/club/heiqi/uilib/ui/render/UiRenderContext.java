@@ -21,6 +21,7 @@ import club.heiqi.uilib.ui.image.HostImageRenderer;
 import club.heiqi.uilib.ui.image.HostImageSource;
 import club.heiqi.uilib.ui.runtime.UiRuntimeAdapters;
 import club.heiqi.uilib.ui.theme.UiSurfaceStyle;
+import club.heiqi.uilib.ui.text.TextContentMode;
 
 /**
  * UI 渲染上下文。
@@ -754,10 +755,28 @@ public class UiRenderContext {
      * @param shadow 是否带阴影
      */
     public void drawText(String text, int x, int y, int color, boolean shadow) {
+        drawText(text, x, y, color, shadow, TextContentMode.UILIB_RAW);
+    }
+
+    /**
+     * 使用指定文本模式绘制文本。
+     *
+     * @param text 文本
+     * @param x 绘制 X
+     * @param y 绘制 Y
+     * @param color ARGB 颜色
+     * @param shadow 是否带阴影
+     * @param textContentMode 文本内容解析模式
+     */
+    public void drawText(String text, int x, int y, int color, boolean shadow, TextContentMode textContentMode) {
         GL11.glPushMatrix();
         GL11.glTranslatef((float) x, (float) y, 0.0F);
         GL11.glScalef(UI_TEXT_SCALE, UI_TEXT_SCALE, 1.0F);
-        fontRenderer.drawString(text, 0, 0, color, shadow);
+        if (fontRenderer instanceof DefaultFontRendererAdapter) {
+            ((DefaultFontRendererAdapter) fontRenderer).drawString(text, 0, 0, color, shadow, textContentMode);
+        } else {
+            fontRenderer.drawString(text, 0, 0, color, shadow);
+        }
         GL11.glPopMatrix();
         notifyMainLayerContentChanged();
     }
@@ -830,11 +849,41 @@ public class UiRenderContext {
      * @param shadow 是否带阴影
      */
     public void drawCenteredText(String text, int centerX, int y, int color, boolean shadow) {
-        int textWidth = fontRenderer.getStringWidth(text);
-        drawText(text, centerX - Math.round(textWidth * UI_TEXT_SCALE / 2.0F), y, color, shadow);
+        drawCenteredText(text, centerX, y, color, shadow, TextContentMode.UILIB_RAW);
+    }
+
+    /**
+     * 使用指定文本模式绘制水平居中文本。
+     *
+     * @param text 文本
+     * @param centerX 中心 X
+     * @param y 绘制 Y
+     * @param color ARGB 颜色
+     * @param shadow 是否带阴影
+     * @param textContentMode 文本内容解析模式
+     */
+    public void drawCenteredText(String text, int centerX, int y, int color, boolean shadow,
+            TextContentMode textContentMode) {
+        int textWidth = measureTextWidth(text, textContentMode);
+        drawText(text, centerX - Math.round(textWidth / 2.0F), y, color, shadow, textContentMode);
     }
 
     public int measureTextWidth(String text) {
+        return measureTextWidth(text, TextContentMode.UILIB_RAW);
+    }
+
+    /**
+     * 使用指定文本模式测量文本宽度。
+     *
+     * @param text 文本
+     * @param textContentMode 文本内容解析模式
+     * @return UI 坐标系下的文本宽度
+     */
+    public int measureTextWidth(String text, TextContentMode textContentMode) {
+        if (fontRenderer instanceof DefaultFontRendererAdapter) {
+            return Math.round(((DefaultFontRendererAdapter) fontRenderer).getStringWidth(text, textContentMode)
+                    * UI_TEXT_SCALE);
+        }
         return Math.round(fontRenderer.getStringWidth(text) * UI_TEXT_SCALE);
     }
 

@@ -22,6 +22,7 @@ import club.heiqi.uilib.font.glyph.GlyphGenerationTask;
 import club.heiqi.uilib.font.glyph.GlyphInfo;
 import club.heiqi.uilib.font.page.GlyphPageManager;
 import club.heiqi.uilib.font.util.FontMatcher;
+import club.heiqi.uilib.ui.text.TextContentMode;
 
 /**
  * 文本布局与测量服务。
@@ -65,8 +66,28 @@ public class TextLayoutService {
      * @return 文本片段列表
      */
     public List<TextSegment> parseSegments(String text, int baseColor) {
+        return parseSegments(text, baseColor, TextContentMode.MINECRAFT_FORMATTED);
+    }
+
+    /**
+     * 解析文本为带样式的片段序列。
+     *
+     * @param text 文本
+     * @param baseColor 默认颜色
+     * @param textContentMode 文本内容解析模式
+     * @return 文本片段列表
+     */
+    public List<TextSegment> parseSegments(String text, int baseColor, TextContentMode textContentMode) {
         List<TextSegment> segments = new ArrayList<TextSegment>();
         if (text == null || text.isEmpty()) {
+            return segments;
+        }
+
+        TextContentMode resolvedMode = resolveTextContentMode(textContentMode);
+        if (resolvedMode == TextContentMode.UILIB_RAW) {
+            TextStyle style = new TextStyle();
+            style.resetAll(baseColor);
+            segments.add(new TextSegment(text, style));
             return segments;
         }
 
@@ -106,12 +127,23 @@ public class TextLayoutService {
      * @return 宽度
      */
     public int getStringWidth(String text) {
+        return getStringWidth(text, TextContentMode.MINECRAFT_FORMATTED);
+    }
+
+    /**
+     * 计算指定解析模式下的字符串显示宽度。
+     *
+     * @param text 文本
+     * @param textContentMode 文本内容解析模式
+     * @return 宽度
+     */
+    public int getStringWidth(String text, TextContentMode textContentMode) {
         if (text == null || text.isEmpty()) {
             return 0;
         }
 
         double width = 0.0D;
-        for (TextSegment segment : parseSegments(text, 0xFFFFFFFF)) {
+        for (TextSegment segment : parseSegments(text, 0xFFFFFFFF, textContentMode)) {
             width += getSegmentWidth(segment);
         }
         return (int) Math.ceil(width);
@@ -125,8 +157,24 @@ public class TextLayoutService {
      * @return 裁剪结果
      */
     public String trimStringToWidth(String text, int targetWidth) {
+        return trimStringToWidth(text, targetWidth, TextContentMode.MINECRAFT_FORMATTED);
+    }
+
+    /**
+     * 按宽度裁剪指定解析模式下的字符串。
+     *
+     * @param text 原始文本
+     * @param targetWidth 目标宽度
+     * @param textContentMode 文本内容解析模式
+     * @return 裁剪结果
+     */
+    public String trimStringToWidth(String text, int targetWidth, TextContentMode textContentMode) {
         if (text == null || text.isEmpty() || targetWidth <= 0) {
             return "";
+        }
+
+        if (resolveTextContentMode(textContentMode) == TextContentMode.UILIB_RAW) {
+            return trimRawStringToWidth(text, targetWidth);
         }
 
         StringBuilder builder = new StringBuilder();
@@ -167,11 +215,28 @@ public class TextLayoutService {
      * @return 裁剪结果
      */
     public String trimStringToWidth(String text, int targetWidth, boolean reverse) {
+        return trimStringToWidth(text, targetWidth, reverse, TextContentMode.MINECRAFT_FORMATTED);
+    }
+
+    /**
+     * 按宽度裁剪字符串，可选从尾部保留可见内容。
+     *
+     * @param text 原始文本
+     * @param targetWidth 目标宽度
+     * @param reverse 是否从尾部保留
+     * @param textContentMode 文本内容解析模式
+     * @return 裁剪结果
+     */
+    public String trimStringToWidth(String text, int targetWidth, boolean reverse, TextContentMode textContentMode) {
         if (!reverse) {
-            return trimStringToWidth(text, targetWidth);
+            return trimStringToWidth(text, targetWidth, textContentMode);
         }
         if (text == null || text.isEmpty() || targetWidth <= 0) {
             return "";
+        }
+
+        if (resolveTextContentMode(textContentMode) == TextContentMode.UILIB_RAW) {
+            return trimRawStringToWidthFromTail(text, targetWidth);
         }
 
         StringBuilder visibleBuilder = new StringBuilder();
@@ -215,8 +280,24 @@ public class TextLayoutService {
      * @return 包含换行符的新文本
      */
     public String wrapFormattedStringToWidth(String text, int wrapWidth) {
+        return wrapFormattedStringToWidth(text, wrapWidth, TextContentMode.MINECRAFT_FORMATTED);
+    }
+
+    /**
+     * 按宽度插入换行符。
+     *
+     * @param text 文本
+     * @param wrapWidth 换行宽度
+     * @param textContentMode 文本内容解析模式
+     * @return 包含换行符的新文本
+     */
+    public String wrapFormattedStringToWidth(String text, int wrapWidth, TextContentMode textContentMode) {
         if (text == null || text.isEmpty() || wrapWidth <= 0) {
             return "";
+        }
+
+        if (resolveTextContentMode(textContentMode) == TextContentMode.UILIB_RAW) {
+            return wrapRawStringToWidth(text, wrapWidth);
         }
 
         StringBuilder builder = new StringBuilder();
@@ -274,7 +355,19 @@ public class TextLayoutService {
      * @return 行列表
      */
     public List<String> listFormattedStringToWidth(String text, int wrapWidth) {
-        String wrapped = wrapFormattedStringToWidth(text, wrapWidth);
+        return listFormattedStringToWidth(text, wrapWidth, TextContentMode.MINECRAFT_FORMATTED);
+    }
+
+    /**
+     * 将文本按宽度拆分为多行。
+     *
+     * @param text 文本
+     * @param wrapWidth 最大宽度
+     * @param textContentMode 文本内容解析模式
+     * @return 行列表
+     */
+    public List<String> listFormattedStringToWidth(String text, int wrapWidth, TextContentMode textContentMode) {
+        String wrapped = wrapFormattedStringToWidth(text, wrapWidth, textContentMode);
         if (wrapped.isEmpty()) {
             return new ArrayList<String>();
         }
@@ -289,7 +382,19 @@ public class TextLayoutService {
      * @return 多行文本高度
      */
     public int splitStringWidth(String text, int wrapWidth) {
-        List<String> lines = listFormattedStringToWidth(text, wrapWidth);
+        return splitStringWidth(text, wrapWidth, TextContentMode.MINECRAFT_FORMATTED);
+    }
+
+    /**
+     * 计算指定解析模式下的多行文本高度。
+     *
+     * @param text 文本
+     * @param wrapWidth 最大宽度
+     * @param textContentMode 文本内容解析模式
+     * @return 多行文本高度
+     */
+    public int splitStringWidth(String text, int wrapWidth, TextContentMode textContentMode) {
+        List<String> lines = listFormattedStringToWidth(text, wrapWidth, textContentMode);
         if (lines.isEmpty()) {
             return 0;
         }
@@ -329,7 +434,19 @@ public class TextLayoutService {
      * @return 文本片段列表
      */
     public List<TextSegment> layoutSegments(String text, int baseColor) {
-        return parseSegments(text, baseColor);
+        return layoutSegments(text, baseColor, TextContentMode.MINECRAFT_FORMATTED);
+    }
+
+    /**
+     * 为未来渲染层提供标准文本片段入口。
+     *
+     * @param text 原始文本
+     * @param baseColor 默认颜色
+     * @param textContentMode 文本内容解析模式
+     * @return 文本片段列表
+     */
+    public List<TextSegment> layoutSegments(String text, int baseColor, TextContentMode textContentMode) {
+        return parseSegments(text, baseColor, textContentMode);
     }
 
     /**
@@ -479,5 +596,80 @@ public class TextLayoutService {
     private String buildWidthCacheKey(int codepoint, FontType fontType) {
         return runtimeVersion + ":" + codepoint + ":" + fontType.name() + ":" + FontConfig.charSize + ":"
                 + FontConfig.characterSpacing;
+    }
+
+    private TextContentMode resolveTextContentMode(TextContentMode textContentMode) {
+        return textContentMode == null ? TextContentMode.MINECRAFT_FORMATTED : textContentMode;
+    }
+
+    private String trimRawStringToWidth(String text, int targetWidth) {
+        StringBuilder builder = new StringBuilder();
+        TextStyle style = new TextStyle();
+        style.resetAll(0xFFFFFFFF);
+        double width = 0.0D;
+        for (int i = 0; i < text.length();) {
+            int codepoint = text.codePointAt(i);
+            double charWidth = getCodepointWidth(codepoint, style);
+            if (width + charWidth > targetWidth) {
+                break;
+            }
+            width += charWidth;
+            builder.appendCodePoint(codepoint);
+            i += Character.charCount(codepoint);
+        }
+        return builder.toString();
+    }
+
+    private String trimRawStringToWidthFromTail(String text, int targetWidth) {
+        TextStyle style = new TextStyle();
+        style.resetAll(0xFFFFFFFF);
+        StringBuilder builder = new StringBuilder();
+        double width = 0.0D;
+        for (int index = text.length(); index > 0;) {
+            int codepoint = text.codePointBefore(index);
+            int codepointLength = Character.charCount(codepoint);
+            int codepointStart = index - codepointLength;
+            double charWidth = getCodepointWidth(codepoint, style);
+            if (width + charWidth > targetWidth) {
+                break;
+            }
+            width += charWidth;
+            builder.insert(0, text.substring(codepointStart, index));
+            index = codepointStart;
+        }
+        return builder.toString();
+    }
+
+    private String wrapRawStringToWidth(String text, int wrapWidth) {
+        StringBuilder builder = new StringBuilder();
+        TextStyle style = new TextStyle();
+        style.resetAll(0xFFFFFFFF);
+        double width = 0.0D;
+        boolean lineHasVisibleContent = false;
+        for (int i = 0; i < text.length();) {
+            int codepoint = text.codePointAt(i);
+            if (codepoint == '\r' || codepoint == '\n') {
+                i += Character.charCount(codepoint);
+                if (codepoint == '\r' && i < text.length() && text.charAt(i) == '\n') {
+                    i++;
+                }
+                builder.append('\n');
+                width = 0.0D;
+                lineHasVisibleContent = false;
+                continue;
+            }
+
+            double charWidth = getCodepointWidth(codepoint, style);
+            if (width + charWidth > wrapWidth && lineHasVisibleContent) {
+                builder.append('\n');
+                width = 0.0D;
+                lineHasVisibleContent = false;
+            }
+            builder.appendCodePoint(codepoint);
+            width += charWidth;
+            lineHasVisibleContent = true;
+            i += Character.charCount(codepoint);
+        }
+        return builder.toString();
     }
 }

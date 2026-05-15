@@ -306,7 +306,8 @@ public final class DocumentPaintEngine {
             }
             commands.add(new DocumentPaintCommand(DocumentPaintCommandType.TEXT, textRun.getOwnerElement(),
                     textRun.getLeft() + offsetX, textRun.getTop() + offsetY, textRun.getRight() + offsetX,
-                    textRun.getBottom() + offsetY, color, 0, 0, textRun.getText()));
+                    textRun.getBottom() + offsetY, color, 0, 0, textRun.getText(), textRun.getTextContentMode(),
+                    null, 0, 1.0F, 1.0F));
         }
     }
 

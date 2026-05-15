@@ -21,6 +21,7 @@ import club.heiqi.uilib.ui.style.UiStyleInsets;
 import club.heiqi.uilib.ui.style.UiStyleLength;
 import club.heiqi.uilib.ui.style.UiStyleResolver;
 import club.heiqi.uilib.ui.style.UiVerticalAlign;
+import club.heiqi.uilib.ui.text.TextContentMode;
 import club.heiqi.uilib.ui.text.TextMeasureService;
 
 /**
@@ -644,16 +645,19 @@ public final class DocumentLayoutEngine {
             return top;
         }
         int lineHeight = resolveTextLineHeight(textMeasureService);
-        List<String> lines = textMeasureService.listFormattedStringToWidth(text, toRawTextSize(availableWidth));
+        TextContentMode textContentMode = textNode.getTextContentMode();
+        List<String> lines = textMeasureService.listFormattedStringToWidth(text, toRawTextSize(availableWidth),
+                textContentMode);
         if (lines == null || lines.isEmpty()) {
             return top;
         }
         int lineTop = top;
         for (String line : lines) {
             String resolvedLine = line == null ? "" : line;
-            int width = Math.max(0, Math.min(availableWidth, toUiTextSize(textMeasureService.getStringWidth(resolvedLine))));
-            textRuns.add(new DocumentLayoutTextRun(textNode, ownerElement, resolvedLine, left, lineTop, width,
-                    lineHeight));
+            int width = Math.max(0, Math.min(availableWidth,
+                    toUiTextSize(textMeasureService.getStringWidth(resolvedLine, textContentMode))));
+            textRuns.add(new DocumentLayoutTextRun(textNode, ownerElement, resolvedLine, textContentMode, left,
+                    lineTop, width, lineHeight));
             lineTop += lineHeight;
         }
         return lineTop;
@@ -713,14 +717,16 @@ public final class DocumentLayoutEngine {
             if (remainingWidth <= 0) {
                 return;
             }
-            String segment = textMeasureService.trimStringToWidth(remainingText, toRawTextSize(remainingWidth));
+            TextContentMode textContentMode = textNode.getTextContentMode();
+            String segment = textMeasureService.trimStringToWidth(remainingText, toRawTextSize(remainingWidth),
+                    textContentMode);
             if (segment == null) {
                 segment = "";
             }
             if (segment.isEmpty()) {
                 segment = firstCodePoint(remainingText);
             }
-            int width = Math.max(0, toUiTextSize(textMeasureService.getStringWidth(segment)));
+            int width = Math.max(0, toUiTextSize(textMeasureService.getStringWidth(segment, textContentMode)));
             if (width > remainingWidth && inlineLayoutContext.hasLineContent()) {
                 inlineLayoutContext.nextLine();
                 continue;
@@ -1129,7 +1135,9 @@ public final class DocumentLayoutEngine {
         int inlineWidth = 0;
         for (DocumentNode child : element.getChildren()) {
             if (child instanceof TextNode) {
-                inlineWidth += toUiTextSize(textMeasureService.getStringWidth(((TextNode) child).getText()));
+                TextNode textNode = (TextNode) child;
+                inlineWidth += toUiTextSize(textMeasureService.getStringWidth(textNode.getText(),
+                        textNode.getTextContentMode()));
                 continue;
             }
             if (!(child instanceof ElementNode)) {

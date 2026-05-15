@@ -194,7 +194,7 @@ final class InternalHostedScreenFactory {
             this.definition = Objects.requireNonNull(definition, "definition");
             this.pageDescriptor = this.definition.getPageDescriptor();
             this.documentUiScope = new DocumentUiScope(resolvedEnvironment.getTextMeasureService(),
-                    resolvedEnvironment.getRuntimeAdapters());
+                    resolvedEnvironment.getRuntimeAdapters(), resolvedEnvironment.getDefaultTextContentMode());
             this.controller = this.definition.createController(documentUiScope, documentPage, runtimeView,
                     pageDescriptor.getPageId(), provision);
         }

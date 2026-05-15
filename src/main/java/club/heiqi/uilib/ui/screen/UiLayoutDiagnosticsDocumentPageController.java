@@ -87,6 +87,7 @@ final class UiLayoutDiagnosticsDocumentPageController extends DocumentPageContro
         this.fontRuntimeStatsSource = Objects.requireNonNull(fontRuntimeStatsSource, "fontRuntimeStatsSource");
 
         UiDocument document = UiDocument.create();
+        document.setDefaultTextContentMode(resolvedDocumentUi.getDefaultTextContentMode());
         this.themeInput = createTextInput(document, "例如：Qz Layout Probe", "Qz Layout Probe", 48);
         this.namespaceInput = createTextInput(document, "例如：qz_uilib", "qz_uilib", 48);
         this.pathInput = createTextInput(document, "例如：assets/qz_uilib/ui/diagnostic",

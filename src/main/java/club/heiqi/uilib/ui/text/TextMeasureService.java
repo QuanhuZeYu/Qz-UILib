@@ -27,6 +27,19 @@ public interface TextMeasureService {
     int getStringWidth(String text);
 
     /**
+     * 获取指定解析模式下的字符串宽度。
+     *
+     * <p>默认实现回落到不区分模式的旧接口，方便测试替身和旧实现按需渐进升级。</p>
+     *
+     * @param text 文本内容
+     * @param textContentMode 文本内容解析模式
+     * @return 原始文本宽度
+     */
+    default int getStringWidth(String text, TextContentMode textContentMode) {
+        return getStringWidth(text);
+    }
+
+    /**
      * 获取原始文本坐标系下的逻辑行高。
      *
      * <p>该值不包含 UI 层缩放，供布局阶段作为统一的单行高度来源。</p>
@@ -45,6 +58,20 @@ public interface TextMeasureService {
     String trimStringToWidth(String text, int targetWidth);
 
     /**
+     * 按目标宽度裁剪指定解析模式下的字符串。
+     *
+     * <p>默认实现回落到不区分模式的旧接口，方便测试替身和旧实现按需渐进升级。</p>
+     *
+     * @param text 文本内容
+     * @param targetWidth 目标宽度
+     * @param textContentMode 文本内容解析模式
+     * @return 裁剪后的字符串
+     */
+    default String trimStringToWidth(String text, int targetWidth, TextContentMode textContentMode) {
+        return trimStringToWidth(text, targetWidth);
+    }
+
+    /**
      * 按目标宽度拆分字符串列表。
      *
      * @param text 文本内容
@@ -52,4 +79,18 @@ public interface TextMeasureService {
      * @return 拆分后的多行文本
      */
     List<String> listFormattedStringToWidth(String text, int wrapWidth);
+
+    /**
+     * 按目标宽度拆分指定解析模式下的字符串列表。
+     *
+     * <p>默认实现回落到不区分模式的旧接口，方便测试替身和旧实现按需渐进升级。</p>
+     *
+     * @param text 文本内容
+     * @param wrapWidth 换行宽度
+     * @param textContentMode 文本内容解析模式
+     * @return 拆分后的多行文本
+     */
+    default List<String> listFormattedStringToWidth(String text, int wrapWidth, TextContentMode textContentMode) {
+        return listFormattedStringToWidth(text, wrapWidth);
+    }
 }

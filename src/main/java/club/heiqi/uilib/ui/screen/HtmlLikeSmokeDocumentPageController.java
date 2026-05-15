@@ -37,7 +37,6 @@ import club.heiqi.uilib.ui.style.UiPosition;
 import club.heiqi.uilib.ui.style.UiStyleInsets;
 import club.heiqi.uilib.ui.style.UiStyleLength;
 import club.heiqi.uilib.ui.style.UiVerticalAlign;
-import club.heiqi.uilib.ui.text.DefaultTextMeasureService;
 import club.heiqi.uilib.ui.text.TextMeasureService;
 
 /**
@@ -55,7 +54,7 @@ final class HtmlLikeSmokeDocumentPageController extends DocumentPageController {
      * @param documentPage 文档页面壳
      */
     HtmlLikeSmokeDocumentPageController(DocumentUiScope documentUi, DocumentPageAuthoringSurface documentPage) {
-        this(documentUi, documentPage, DefaultTextMeasureService.getInstance());
+        this(Objects.requireNonNull(documentUi, "documentUi"), documentPage, documentUi.getTextMeasureService());
     }
 
     /**
@@ -81,8 +80,9 @@ final class HtmlLikeSmokeDocumentPageController extends DocumentPageController {
             public HtmlLikeDocumentWidget.PerformanceDiagnosticsSnapshot getPerformanceSnapshot() {
                 return widgetReference[0] == null ? HtmlLikeDocumentWidget.PerformanceDiagnosticsSnapshot.empty()
                         : widgetReference[0].getPerformanceDiagnosticsSnapshot();
-            }
+                }
         });
+        smokeDocument.setDefaultTextContentMode(documentUi.getDefaultTextContentMode());
         this.htmlLikeDocumentWidget = new HtmlLikeDocumentWidget(smokeDocument, 760, 320,
                 Objects.requireNonNull(textMeasureService, "textMeasureService"));
         widgetReference[0] = this.htmlLikeDocumentWidget;

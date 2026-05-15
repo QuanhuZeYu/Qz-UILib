@@ -7,6 +7,7 @@ import java.util.Objects;
 import java.util.concurrent.atomic.AtomicLong;
 
 import club.heiqi.uilib.ui.animation.DocumentKeyframes;
+import club.heiqi.uilib.ui.text.TextContentMode;
 
 /**
  * HTML-like 文档作者入口。
@@ -17,6 +18,7 @@ public final class UiDocument {
 
     private final ElementNode rootElement;
     private final Map<String, DocumentKeyframes> keyframes = new LinkedHashMap<String, DocumentKeyframes>();
+    private TextContentMode defaultTextContentMode = TextContentMode.UILIB_RAW;
     private int mutationVersion;
     private int layoutVersion;
     private int paintVersion;
@@ -169,6 +171,39 @@ public final class UiDocument {
      */
     public TextNode text(String text) {
         return new TextNode(this, text);
+    }
+
+    /**
+     * 创建指定文本模式的文本节点。
+     *
+     * @param text 文本内容
+     * @param textContentMode 文本内容解析模式
+     * @return 文本节点
+     */
+    public TextNode text(String text, TextContentMode textContentMode) {
+        return new TextNode(this, text).setTextContentMode(textContentMode);
+    }
+
+    /**
+     * 返回当前文档新建文本节点使用的默认解析模式。
+     *
+     * @return 默认文本内容解析模式
+     */
+    public TextContentMode getDefaultTextContentMode() {
+        return defaultTextContentMode;
+    }
+
+    /**
+     * 设置当前文档新建文本节点使用的默认解析模式。
+     *
+     * <p>该设置只影响后续新建的文本节点；已存在节点可通过 `TextNode#setTextContentMode(...)` 单独调整。</p>
+     *
+     * @param defaultTextContentMode 默认文本内容解析模式
+     * @return 当前文档
+     */
+    public UiDocument setDefaultTextContentMode(TextContentMode defaultTextContentMode) {
+        this.defaultTextContentMode = defaultTextContentMode == null ? TextContentMode.UILIB_RAW : defaultTextContentMode;
+        return this;
     }
 
     /**

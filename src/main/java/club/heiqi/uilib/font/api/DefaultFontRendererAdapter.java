@@ -17,6 +17,7 @@ import club.heiqi.uilib.font.page.GlyphPageManager;
 import club.heiqi.uilib.font.page.GlyphPageSlot;
 import club.heiqi.uilib.font.render.FontRenderFlushCoordinator;
 import club.heiqi.uilib.font.render.FontRenderStateGuard;
+import club.heiqi.uilib.ui.text.TextContentMode;
 
 /**
  * 默认字体适配器。
@@ -44,6 +45,21 @@ public class DefaultFontRendererAdapter implements FontRendererAdapter {
 
     @Override
     public int drawString(String text, int x, int y, int color, boolean dropShadow) {
+        return drawString(text, x, y, color, dropShadow, TextContentMode.MINECRAFT_FORMATTED);
+    }
+
+    /**
+     * 使用指定文本模式绘制字符串。
+     *
+     * @param text 文本
+     * @param x 横坐标
+     * @param y 纵坐标
+     * @param color 颜色
+     * @param dropShadow 是否启用阴影
+     * @param textContentMode 文本内容解析模式
+     * @return 绘制结束后的光标位置
+     */
+    public int drawString(String text, int x, int y, int color, boolean dropShadow, TextContentMode textContentMode) {
         if (text == null || text.isEmpty()) {
             return x;
         }
@@ -55,19 +71,30 @@ public class DefaultFontRendererAdapter implements FontRendererAdapter {
 
             int result = x;
             if (dropShadow) {
-                result = drawInternal(fontService, text, x, y, normalizeColor(color), true);
+                result = drawInternal(fontService, text, x, y, normalizeColor(color), true, textContentMode);
             }
-            result = drawInternal(fontService, text, x, y, normalizeColor(color), false);
+            result = drawInternal(fontService, text, x, y, normalizeColor(color), false, textContentMode);
             return result;
         }
     }
 
     @Override
     public int getStringWidth(String text) {
+        return getStringWidth(text, TextContentMode.MINECRAFT_FORMATTED);
+    }
+
+    /**
+     * 使用指定文本模式测量字符串宽度。
+     *
+     * @param text 文本
+     * @param textContentMode 文本内容解析模式
+     * @return 宽度
+     */
+    public int getStringWidth(String text, TextContentMode textContentMode) {
         FontService fontService = FontService.getInstance();
         synchronized (fontService) {
             fontService.initialize();
-            return fontService.getTextLayoutService().getStringWidth(text);
+            return fontService.getTextLayoutService().getStringWidth(text, textContentMode);
         }
     }
 
@@ -82,45 +109,107 @@ public class DefaultFontRendererAdapter implements FontRendererAdapter {
 
     @Override
     public String trimStringToWidth(String text, int targetWidth) {
+        return trimStringToWidth(text, targetWidth, TextContentMode.MINECRAFT_FORMATTED);
+    }
+
+    /**
+     * 使用指定文本模式按宽度裁剪字符串。
+     *
+     * @param text 文本
+     * @param targetWidth 目标宽度
+     * @param textContentMode 文本内容解析模式
+     * @return 裁剪结果
+     */
+    public String trimStringToWidth(String text, int targetWidth, TextContentMode textContentMode) {
         FontService fontService = FontService.getInstance();
         synchronized (fontService) {
             fontService.initialize();
-            return fontService.getTextLayoutService().trimStringToWidth(text, targetWidth);
+            return fontService.getTextLayoutService().trimStringToWidth(text, targetWidth, textContentMode);
         }
     }
 
     public String trimStringToWidth(String text, int targetWidth, boolean reverse) {
+        return trimStringToWidth(text, targetWidth, reverse, TextContentMode.MINECRAFT_FORMATTED);
+    }
+
+    /**
+     * 使用指定文本模式按宽度裁剪字符串，可选从尾部保留。
+     *
+     * @param text 文本
+     * @param targetWidth 目标宽度
+     * @param reverse 是否从尾部保留
+     * @param textContentMode 文本内容解析模式
+     * @return 裁剪结果
+     */
+    public String trimStringToWidth(String text, int targetWidth, boolean reverse,
+            TextContentMode textContentMode) {
         FontService fontService = FontService.getInstance();
         synchronized (fontService) {
             fontService.initialize();
-            return fontService.getTextLayoutService().trimStringToWidth(text, targetWidth, reverse);
+            return fontService.getTextLayoutService().trimStringToWidth(text, targetWidth, reverse, textContentMode);
         }
     }
 
     @Override
     public String wrapFormattedStringToWidth(String text, int wrapWidth) {
+        return wrapFormattedStringToWidth(text, wrapWidth, TextContentMode.MINECRAFT_FORMATTED);
+    }
+
+    /**
+     * 使用指定文本模式按宽度插入换行。
+     *
+     * @param text 文本
+     * @param wrapWidth 最大宽度
+     * @param textContentMode 文本内容解析模式
+     * @return 包含换行的新文本
+     */
+    public String wrapFormattedStringToWidth(String text, int wrapWidth, TextContentMode textContentMode) {
         FontService fontService = FontService.getInstance();
         synchronized (fontService) {
             fontService.initialize();
-            return fontService.getTextLayoutService().wrapFormattedStringToWidth(text, wrapWidth);
+            return fontService.getTextLayoutService().wrapFormattedStringToWidth(text, wrapWidth, textContentMode);
         }
     }
 
     @Override
     public List<String> listFormattedStringToWidth(String text, int wrapWidth) {
+        return listFormattedStringToWidth(text, wrapWidth, TextContentMode.MINECRAFT_FORMATTED);
+    }
+
+    /**
+     * 使用指定文本模式按宽度拆分文本。
+     *
+     * @param text 文本
+     * @param wrapWidth 最大宽度
+     * @param textContentMode 文本内容解析模式
+     * @return 拆分结果
+     */
+    public List<String> listFormattedStringToWidth(String text, int wrapWidth, TextContentMode textContentMode) {
         FontService fontService = FontService.getInstance();
         synchronized (fontService) {
             fontService.initialize();
-            return fontService.getTextLayoutService().listFormattedStringToWidth(text, wrapWidth);
+            return fontService.getTextLayoutService().listFormattedStringToWidth(text, wrapWidth, textContentMode);
         }
     }
 
     @Override
     public int splitStringWidth(String text, int wrapWidth) {
+        return splitStringWidth(text, wrapWidth, TextContentMode.MINECRAFT_FORMATTED);
+    }
+
+    /**
+     * 使用指定文本模式计算拆行高度。
+     *
+     * @param text 文本
+     * @param wrapWidth 最大宽度
+     * @param textContentMode 文本内容解析模式
+     * @return 高度
+     */
+    public int splitStringWidth(String text, int wrapWidth, TextContentMode textContentMode) {
         FontService fontService = FontService.getInstance();
         synchronized (fontService) {
             fontService.initialize();
-            return fontService.getTextLayoutService().splitStringWidth(text, wrapWidth);
+            return fontService.getTextLayoutService().splitStringWidth(text, wrapWidth, textContentMode);
         }
     }
 
@@ -134,18 +223,33 @@ public class DefaultFontRendererAdapter implements FontRendererAdapter {
      * @param color 颜色
      */
     public void drawSplitString(String text, int x, int y, int wrapWidth, int color) {
-        List<String> lines = listFormattedStringToWidth(text, wrapWidth);
+        drawSplitString(text, x, y, wrapWidth, color, TextContentMode.MINECRAFT_FORMATTED);
+    }
+
+    /**
+     * 使用指定文本模式绘制多行文本。
+     *
+     * @param text 文本
+     * @param x 起始 X
+     * @param y 起始 Y
+     * @param wrapWidth 最大宽度
+     * @param color 颜色
+     * @param textContentMode 文本内容解析模式
+     */
+    public void drawSplitString(String text, int x, int y, int wrapWidth, int color, TextContentMode textContentMode) {
+        List<String> lines = listFormattedStringToWidth(text, wrapWidth, textContentMode);
         int lineHeight = getLineHeight();
         for (String line : lines) {
-            drawString(line, x, y, color, false);
+            drawString(line, x, y, color, false, textContentMode);
             y += lineHeight;
         }
     }
 
-    private int drawInternal(FontService fontService, String text, int x, int y, int color, boolean shadow) {
+    private int drawInternal(FontService fontService, String text, int x, int y, int color, boolean shadow,
+            TextContentMode textContentMode) {
         TextLayoutService textLayoutService = fontService.getTextLayoutService();
         GlyphPageManager glyphPageManager = fontService.getGlyphPageManager();
-        List<TextSegment> segments = textLayoutService.layoutSegments(text, color);
+        List<TextSegment> segments = textLayoutService.layoutSegments(text, color, textContentMode);
         if (segments.isEmpty()) {
             return x;
         }

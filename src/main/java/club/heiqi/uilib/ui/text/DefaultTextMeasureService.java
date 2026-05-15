@@ -12,9 +12,16 @@ import club.heiqi.uilib.font.layout.TextLayoutService;
  */
 public final class DefaultTextMeasureService implements TextMeasureService {
 
-    private static final DefaultTextMeasureService INSTANCE = new DefaultTextMeasureService();
+    private static final DefaultTextMeasureService UILIB_RAW_INSTANCE =
+            new DefaultTextMeasureService(TextContentMode.UILIB_RAW);
+    private static final DefaultTextMeasureService MINECRAFT_FORMATTED_INSTANCE =
+            new DefaultTextMeasureService(TextContentMode.MINECRAFT_FORMATTED);
 
-    private DefaultTextMeasureService() {}
+    private final TextContentMode defaultTextContentMode;
+
+    private DefaultTextMeasureService(TextContentMode defaultTextContentMode) {
+        this.defaultTextContentMode = defaultTextContentMode;
+    }
 
     /**
      * 获取默认文本测量服务单例。
@@ -22,7 +29,16 @@ public final class DefaultTextMeasureService implements TextMeasureService {
      * @return 默认文本测量服务
      */
     public static DefaultTextMeasureService getInstance() {
-        return INSTANCE;
+        return UILIB_RAW_INSTANCE;
+    }
+
+    /**
+     * 获取默认的 Minecraft 格式文本测量服务单例。
+     *
+     * @return Minecraft 格式文本测量服务
+     */
+    public static DefaultTextMeasureService getMinecraftInstance() {
+        return MINECRAFT_FORMATTED_INSTANCE;
     }
 
     @Override
@@ -32,7 +48,12 @@ public final class DefaultTextMeasureService implements TextMeasureService {
 
     @Override
     public int getStringWidth(String text) {
-        return getTextLayoutService().getStringWidth(text);
+        return getStringWidth(text, defaultTextContentMode);
+    }
+
+    @Override
+    public int getStringWidth(String text, TextContentMode textContentMode) {
+        return getTextLayoutService().getStringWidth(text, resolveTextContentMode(textContentMode));
     }
 
     @Override
@@ -42,12 +63,23 @@ public final class DefaultTextMeasureService implements TextMeasureService {
 
     @Override
     public String trimStringToWidth(String text, int targetWidth) {
-        return getTextLayoutService().trimStringToWidth(text, targetWidth);
+        return trimStringToWidth(text, targetWidth, defaultTextContentMode);
+    }
+
+    @Override
+    public String trimStringToWidth(String text, int targetWidth, TextContentMode textContentMode) {
+        return getTextLayoutService().trimStringToWidth(text, targetWidth, resolveTextContentMode(textContentMode));
     }
 
     @Override
     public List<String> listFormattedStringToWidth(String text, int wrapWidth) {
-        return getTextLayoutService().listFormattedStringToWidth(text, wrapWidth);
+        return listFormattedStringToWidth(text, wrapWidth, defaultTextContentMode);
+    }
+
+    @Override
+    public List<String> listFormattedStringToWidth(String text, int wrapWidth, TextContentMode textContentMode) {
+        return getTextLayoutService().listFormattedStringToWidth(text, wrapWidth,
+                resolveTextContentMode(textContentMode));
     }
 
     /**
@@ -59,5 +91,9 @@ public final class DefaultTextMeasureService implements TextMeasureService {
         FontService fontService = FontService.getInstance();
         fontService.ensureLayoutRuntimeReady();
         return fontService.getTextLayoutService();
+    }
+
+    private TextContentMode resolveTextContentMode(TextContentMode textContentMode) {
+        return textContentMode == null ? defaultTextContentMode : textContentMode;
     }
 }

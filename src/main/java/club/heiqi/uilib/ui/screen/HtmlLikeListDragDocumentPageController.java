@@ -23,7 +23,6 @@ import club.heiqi.uilib.ui.style.UiJustifyContent;
 import club.heiqi.uilib.ui.style.UiOverflow;
 import club.heiqi.uilib.ui.style.UiStyleInsets;
 import club.heiqi.uilib.ui.style.UiStyleLength;
-import club.heiqi.uilib.ui.text.DefaultTextMeasureService;
 import club.heiqi.uilib.ui.text.TextMeasureService;
 
 /**
@@ -50,7 +49,7 @@ final class HtmlLikeListDragDocumentPageController extends DocumentPageControlle
      * @param documentPage 文档页面壳
      */
     HtmlLikeListDragDocumentPageController(DocumentUiScope documentUi, DocumentPageAuthoringSurface documentPage) {
-        this(documentUi, documentPage, DefaultTextMeasureService.getInstance());
+        this(Objects.requireNonNull(documentUi, "documentUi"), documentPage, documentUi.getTextMeasureService());
     }
 
     /**
@@ -65,6 +64,7 @@ final class HtmlLikeListDragDocumentPageController extends DocumentPageControlle
         Objects.requireNonNull(documentUi, "documentUi");
         this.documentPage = Objects.requireNonNull(documentPage, "documentPage");
         this.document = UiDocument.create();
+        this.document.setDefaultTextContentMode(documentUi.getDefaultTextContentMode());
         createDocument(document);
         this.htmlLikeDocumentWidget = new HtmlLikeDocumentWidget(document, 760, 520,
                 Objects.requireNonNull(textMeasureService, "textMeasureService"));

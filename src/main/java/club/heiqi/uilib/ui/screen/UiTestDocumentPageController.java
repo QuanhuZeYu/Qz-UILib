@@ -41,6 +41,7 @@ final class UiTestDocumentPageController extends DocumentPageController {
         this.menuModel = Objects.requireNonNull(menuModel, "menuModel");
 
         UiDocument document = UiDocument.create();
+        document.setDefaultTextContentMode(resolvedDocumentUi.getDefaultTextContentMode());
         this.htmlLikeDocumentWidget = new HtmlLikeDocumentWidget(document, 760, 520,
                 resolvedDocumentUi.getTextMeasureService());
         this.htmlLikeDocumentWidget.setViewportRootScrollingEnabled(true);
