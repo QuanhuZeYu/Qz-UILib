@@ -559,7 +559,7 @@ final class FontSortOrderControl {
                 .setBorderColor(item.equals(draggingItem) ? 0xFF93C5FD : 0xFF334155)
                 .setBorderWidth(UiStyleLength.px(1))
                 .setBorderRadius(UiStyleLength.px(999))
-                .setTextColor(enabled ? 0xFF93C5FD : 0xFF64748B)
+                .setTextColor(enabled ? 0xFF9CA3AF : 0xFF64748B)
                 .setOverflowX(UiOverflow.HIDDEN)
                 .setOverflowY(UiOverflow.HIDDEN);
         handle.setAttribute("data-font-sort-handle", item);
