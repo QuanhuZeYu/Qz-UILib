@@ -14,7 +14,7 @@ public final class FontConfig {
     public static final String CATEGORY = "fontSystem";
     public static final String FONT_SIZE_CATEGORY = "fontSizeSetting";
 
-    public static int lerpMode = 0;
+    public static int lerpMode = 3;
     public static int aaMode = 2;
     public static double awtCharSize = 64.0D;
     public static double charSize = 9.0D;
