@@ -150,10 +150,9 @@ public class HtmlLikeDocumentWidgetTest {
     @Test
     public void shouldAllowExplicitMinecraftFormattedTextNodes() {
         UiDocument document = UiDocument.create();
-        document.setDefaultTextContentMode(TextContentMode.MINECRAFT_FORMATTED);
         ElementNode root = document.getRootElement();
         root.style().setWidth(UiStyleLength.px(80));
-        root.appendText("价格：§a100金币");
+        root.appendMinecraftText("价格：§a100金币");
         HtmlLikeDocumentWidget widget = new HtmlLikeDocumentWidget(document, 120, 48,
                 new DeterministicTextMeasureService());
         widget.applyLayoutBounds(0, 0, 120, 48);

@@ -444,6 +444,34 @@ public final class ElementNode extends DocumentNode {
     }
 
     /**
+     * 追加原始文本子节点。
+     *
+     * <p>该入口会显式按 UILib 原始文本处理字符串，不解析 Minecraft `§` 格式码。</p>
+     *
+     * @param text 文本内容
+     * @return 新建文本节点
+     */
+    public TextNode appendRawText(String text) {
+        TextNode textNode = getOwnerDocument().rawText(text);
+        appendChild(textNode);
+        return textNode;
+    }
+
+    /**
+     * 追加 Minecraft 格式文本子节点。
+     *
+     * <p>该入口会显式解析字符串中的 Minecraft `§` 颜色与样式码。</p>
+     *
+     * @param text 文本内容
+     * @return 新建文本节点
+     */
+    public TextNode appendMinecraftText(String text) {
+        TextNode textNode = getOwnerDocument().minecraftText(text);
+        appendChild(textNode);
+        return textNode;
+    }
+
+    /**
      * 追加指定文本模式的文本子节点。
      *
      * @param text 文本内容

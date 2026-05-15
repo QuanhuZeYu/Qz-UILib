@@ -174,6 +174,30 @@ public final class UiDocument {
     }
 
     /**
+     * 创建原始文本节点。
+     *
+     * <p>该入口会显式按 UILib 原始文本处理字符串，不解析 Minecraft `§` 格式码。</p>
+     *
+     * @param text 文本内容
+     * @return 文本节点
+     */
+    public TextNode rawText(String text) {
+        return text(text, TextContentMode.UILIB_RAW);
+    }
+
+    /**
+     * 创建 Minecraft 格式文本节点。
+     *
+     * <p>该入口会显式解析字符串中的 Minecraft `§` 颜色与样式码。</p>
+     *
+     * @param text 文本内容
+     * @return 文本节点
+     */
+    public TextNode minecraftText(String text) {
+        return text(text, TextContentMode.MINECRAFT_FORMATTED);
+    }
+
+    /**
      * 创建指定文本模式的文本节点。
      *
      * @param text 文本内容
@@ -204,6 +228,24 @@ public final class UiDocument {
     public UiDocument setDefaultTextContentMode(TextContentMode defaultTextContentMode) {
         this.defaultTextContentMode = defaultTextContentMode == null ? TextContentMode.UILIB_RAW : defaultTextContentMode;
         return this;
+    }
+
+    /**
+     * 把后续新建文本节点默认模式切为原始文本。
+     *
+     * @return 当前文档
+     */
+    public UiDocument useRawTextByDefault() {
+        return setDefaultTextContentMode(TextContentMode.UILIB_RAW);
+    }
+
+    /**
+     * 把后续新建文本节点默认模式切为 Minecraft 格式文本。
+     *
+     * @return 当前文档
+     */
+    public UiDocument useMinecraftTextByDefault() {
+        return setDefaultTextContentMode(TextContentMode.MINECRAFT_FORMATTED);
     }
 
     /**

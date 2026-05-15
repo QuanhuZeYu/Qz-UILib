@@ -4,6 +4,7 @@ import org.junit.Assert;
 import org.junit.Test;
 
 import club.heiqi.uilib.ui.style.UiStyleLength;
+import club.heiqi.uilib.ui.text.TextContentMode;
 
 /**
  * `UiDocument` 文档树基础契约测试。
@@ -163,5 +164,40 @@ public class UiDocumentTest {
         } catch (UnsupportedOperationException expected) {
             Assert.assertTrue(expected.getMessage().contains("cannot contain children"));
         }
+    }
+
+    /**
+     * 验证作者入口提供语义化的 raw / Minecraft 文本快捷方法。
+     */
+    @Test
+    public void shouldProvideSemanticTextFactoriesAndAppenders() {
+        UiDocument document = UiDocument.create();
+        ElementNode root = document.getRootElement();
+
+        TextNode rawText = document.rawText("价格：§a100金币");
+        TextNode minecraftText = document.minecraftText("§a100金币");
+        TextNode appendedRawText = root.appendRawText("原样 §k 文本");
+        TextNode appendedMinecraftText = root.appendMinecraftText("§a绿色文本");
+
+        Assert.assertEquals(TextContentMode.UILIB_RAW, rawText.getTextContentMode());
+        Assert.assertEquals(TextContentMode.MINECRAFT_FORMATTED, minecraftText.getTextContentMode());
+        Assert.assertEquals(TextContentMode.UILIB_RAW, appendedRawText.getTextContentMode());
+        Assert.assertEquals(TextContentMode.MINECRAFT_FORMATTED, appendedMinecraftText.getTextContentMode());
+    }
+
+    /**
+     * 验证文档支持语义化切换后续文本节点的默认解析模式。
+     */
+    @Test
+    public void shouldProvideSemanticDefaultTextModeSwitchers() {
+        UiDocument document = UiDocument.create();
+
+        document.useMinecraftTextByDefault();
+        TextNode minecraftText = document.text("§a100金币");
+        document.useRawTextByDefault();
+        TextNode rawText = document.text("§a100金币");
+
+        Assert.assertEquals(TextContentMode.MINECRAFT_FORMATTED, minecraftText.getTextContentMode());
+        Assert.assertEquals(TextContentMode.UILIB_RAW, rawText.getTextContentMode());
     }
 }
