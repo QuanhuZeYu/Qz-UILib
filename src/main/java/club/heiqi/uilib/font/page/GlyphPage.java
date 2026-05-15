@@ -20,6 +20,7 @@ public class GlyphPage {
 
     private static ByteBuffer emptyTextureBuffer = createEmptyTextureBuffer(64 * 64 * 4);
 
+    private final int runtimeVersion;
     private final int pageIndex;
     private final int textureSize;
     private final int glyphSize;
@@ -37,7 +38,8 @@ public class GlyphPage {
      * @param textureSize 纹理边长
      * @param glyphSize 字符格大小
      */
-    public GlyphPage(int pageIndex, int textureSize, int glyphSize) {
+    public GlyphPage(int runtimeVersion, int pageIndex, int textureSize, int glyphSize) {
+        this.runtimeVersion = runtimeVersion;
         this.pageIndex = pageIndex;
         this.textureSize = textureSize;
         this.glyphSize = glyphSize;
@@ -132,6 +134,10 @@ public class GlyphPage {
 
     public int getPageIndex() {
         return pageIndex;
+    }
+
+    public int getRuntimeVersion() {
+        return runtimeVersion;
     }
 
     public int getTextureSize() {

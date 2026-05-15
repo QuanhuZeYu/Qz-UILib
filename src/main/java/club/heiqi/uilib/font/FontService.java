@@ -7,6 +7,7 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicReference;
 
 import club.heiqi.uilib.MyMod;
 import club.heiqi.uilib.font.config.FontConfig;
@@ -45,10 +46,16 @@ public class FontService {
     private FontShaderProgram shaderProgram;
     private final Deque<Long> drawStageUploadTimestamps = new ArrayDeque<Long>();
     private final FontReloadDebouncer reloadDebouncer = new FontReloadDebouncer(150L, 750L);
+    private final AtomicReference<ReloadState> reloadState = new AtomicReference<ReloadState>(ReloadState.RUNNING);
 
     private long lastDrawStageUploadAt = 0L;
     private volatile int runtimeVersion;
     private volatile int textMeasureEpoch;
+
+    private enum ReloadState {
+        RUNNING,
+        RELOADING
+    }
 
     private FontService() {}
 
@@ -187,6 +194,15 @@ public class FontService {
     }
 
     /**
+     * 判断字体系统是否正在执行重载屏障。
+     *
+     * @return 是否正在重载
+     */
+    public boolean isReloading() {
+        return reloadState.get() == ReloadState.RELOADING;
+    }
+
+    /**
      * 获取文本测量缓存失效纪元。
      *
      * <p>该纪元在布局期轻量初始化与完整运行时重载共享：只要字体注册、匹配缓存或文本布局缓存基础发生变化，就会递增。</p>
@@ -321,14 +337,35 @@ public class FontService {
     }
 
     private void performReloadLocked(FontReloadRequest request) {
+        reloadState.set(ReloadState.RELOADING);
         int nextRuntimeVersion = runtimeVersion + 1;
         List<GlyphCacheKey> recoverableGlyphs = glyphPageManager.snapshotRecoverableRequests();
-        glyphGenerationDispatcher.reset();
-        glyphGenerationDispatcher.setRuntimeVersion(nextRuntimeVersion);
-        glyphPageManager.setRuntimeVersion(nextRuntimeVersion);
-        textLayoutService.setRuntimeVersion(nextRuntimeVersion);
-        refreshTextMeasureRuntime();
-        glyphPageManager.reset();
+        try {
+            glyphGenerationDispatcher.pause();
+            glyphGenerationDispatcher.reset();
+            glyphPageManager.discardPendingUploads();
+            glyphPageManager.setRuntimeVersion(nextRuntimeVersion);
+            glyphGenerationDispatcher.setRuntimeVersion(nextRuntimeVersion);
+            textLayoutService.setRuntimeVersion(nextRuntimeVersion);
+            clearRenderResources();
+            refreshTextMeasureRuntime();
+            glyphPageManager.reset();
+            drawStageUploadTimestamps.clear();
+            lastDrawStageUploadAt = 0L;
+            glyphGenerationDispatcher.initialize(fontMatcher, glyphPageManager, glyphPageManager::queueUpload);
+            runtimeVersion = nextRuntimeVersion;
+            resubmitRecoverableGlyphs(recoverableGlyphs, nextRuntimeVersion);
+        } finally {
+            reloadState.set(ReloadState.RUNNING);
+        }
+
+        int invalidatedRootCount = UiLayoutInvalidationRegistry.invalidateAll();
+        MyMod.LOG.info("字体系统重载完成，原因：{}，布局树已失效：{}，运行时版本：{}，恢复请求：{}", request.getReason(),
+                Integer.valueOf(invalidatedRootCount), Integer.valueOf(runtimeVersion),
+                Integer.valueOf(recoverableGlyphs.size()));
+    }
+
+    private void clearRenderResources() {
         if (batchRenderer != null) {
             batchRenderer.dispose();
             batchRenderer = null;
@@ -341,15 +378,6 @@ public class FontService {
             shaderProgram.close();
             shaderProgram = null;
         }
-        drawStageUploadTimestamps.clear();
-        lastDrawStageUploadAt = 0L;
-        glyphGenerationDispatcher.initialize(fontMatcher, glyphPageManager, glyphPageManager::queueUpload);
-        runtimeVersion = nextRuntimeVersion;
-        resubmitRecoverableGlyphs(recoverableGlyphs, nextRuntimeVersion);
-
-        int invalidatedRootCount = UiLayoutInvalidationRegistry.invalidateAll();
-        MyMod.LOG.info("字体系统重载完成，原因：{}，布局树已失效：{}，运行时版本：{}", request.getReason(),
-                Integer.valueOf(invalidatedRootCount), Integer.valueOf(runtimeVersion));
     }
 
     private void resubmitRecoverableGlyphs(List<GlyphCacheKey> recoverableGlyphs, int targetRuntimeVersion) {

@@ -85,6 +85,13 @@ public class GlyphPageManager {
     }
 
     /**
+     * 丢弃当前运行时尚未上传的字形结果。
+     */
+    public synchronized void discardPendingUploads() {
+        pendingUploads.clear();
+    }
+
+    /**
      * 尝试将字符切换到生成中状态。
      *
      * @param codepoint 字符码点
@@ -362,7 +369,7 @@ public class GlyphPageManager {
         }
 
         while (availableCount < maintainPageCount) {
-            GlyphPage page = new GlyphPage(pages.size(), textureSize, glyphSize);
+            GlyphPage page = new GlyphPage(runtimeVersion, pages.size(), textureSize, glyphSize);
             pages.add(page);
             availableCount++;
         }
@@ -374,12 +381,15 @@ public class GlyphPageManager {
             if (page.getSlotMap().containsKey(key)) {
                 return page;
             }
+            if (page.getRuntimeVersion() != runtimeVersion) {
+                continue;
+            }
             if (page.canAllocate()) {
                 return page;
             }
         }
 
-        GlyphPage page = new GlyphPage(pages.size(), textureSize, glyphSize);
+        GlyphPage page = new GlyphPage(runtimeVersion, pages.size(), textureSize, glyphSize);
         pages.add(page);
         MyMod.LOG.debug("字符页容量扩展，type={} pageIndex={}", fontType, Integer.valueOf(page.getPageIndex()));
         ensureCapacity(fontType);

@@ -198,6 +198,24 @@ public class GlyphRuntimeVersionIsolationTest {
         Assert.assertEquals(GlyphState.GENERATING, manager.getState('A', FontType.NORMAL));
     }
 
+    /**
+     * 验证重载屏障可显式丢弃旧运行时等待上传的字形结果。
+     */
+    @Test
+    public void shouldDiscardPendingUploadsDuringReloadBarrier() {
+        GlyphPageManager manager = new GlyphPageManager();
+        manager.setRuntimeVersion(1);
+
+        Assert.assertTrue(manager.tryMarkGenerating(1, 'A', FontType.NORMAL));
+        long generationId = manager.getGenerationId(1, 'A', FontType.NORMAL);
+        manager.queueUpload(result(1, generationId, 'A'));
+
+        Assert.assertEquals(1, manager.getPendingUploadCount());
+        manager.discardPendingUploads();
+
+        Assert.assertEquals(0, manager.getPendingUploadCount());
+    }
+
     private static GlyphGenerationResult result(int runtimeVersion, int codepoint) {
         return result(runtimeVersion, 0L, codepoint);
     }

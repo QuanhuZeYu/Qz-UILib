@@ -25,6 +25,7 @@ public class GlyphGenerationDispatcher {
 
     private final AtomicBoolean initialized = new AtomicBoolean(false);
     private final AtomicBoolean acceptingTasks = new AtomicBoolean(true);
+    private final AtomicBoolean reloading = new AtomicBoolean(false);
     private final AtomicInteger generationEpoch = new AtomicInteger(0);
     private final ConcurrentHashMap<GlyphGenerationRequestKey, GlyphGenerationTask> inFlightTasks =
             new ConcurrentHashMap<GlyphGenerationRequestKey, GlyphGenerationTask>();
@@ -62,6 +63,7 @@ public class GlyphGenerationDispatcher {
                     new FontWorkerThreadFactory());
         }
         initialized.compareAndSet(false, true);
+        reloading.set(false);
         acceptingTasks.set(true);
     }
 
@@ -80,7 +82,7 @@ public class GlyphGenerationDispatcher {
      * @param task 生成任务
      */
     public void submit(GlyphGenerationTask task) {
-        if (!initialized.get() || !acceptingTasks.get()) {
+        if (!initialized.get() || !acceptingTasks.get() || reloading.get()) {
             return;
         }
         if (task.getRuntimeVersion() != runtimeVersion) {
@@ -157,6 +159,7 @@ public class GlyphGenerationDispatcher {
      */
     public void pause() {
         acceptingTasks.set(false);
+        reloading.set(true);
     }
 
     /**
@@ -164,6 +167,7 @@ public class GlyphGenerationDispatcher {
      */
     public void resume() {
         if (initialized.get()) {
+            reloading.set(false);
             acceptingTasks.set(true);
         }
     }
@@ -180,6 +184,15 @@ public class GlyphGenerationDispatcher {
             executorService = null;
         }
         initialized.set(false);
+    }
+
+    /**
+     * 判断生成链路是否处于重载屏障中。
+     *
+     * @return 是否正在重载
+     */
+    public boolean isReloading() {
+        return reloading.get();
     }
 
     /**
