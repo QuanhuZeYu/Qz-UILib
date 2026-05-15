@@ -7,6 +7,7 @@ import java.util.concurrent.ThreadFactory;
 import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import club.heiqi.uilib.MyMod;
 import club.heiqi.uilib.font.FontType;
@@ -21,6 +22,7 @@ public class GlyphGenerationDispatcher {
 
     private final AtomicBoolean initialized = new AtomicBoolean(false);
     private final AtomicBoolean acceptingTasks = new AtomicBoolean(true);
+    private final AtomicInteger generationEpoch = new AtomicInteger(0);
     private ExecutorService executorService;
 
     private FontMatcher fontMatcher;
@@ -43,6 +45,7 @@ public class GlyphGenerationDispatcher {
         this.glyphPageManager = glyphPageManager;
         this.resultHandler = resultHandler;
         this.glyphGenerator = new GlyphGenerator(fontMatcher);
+        generationEpoch.incrementAndGet();
         if (executorService == null || executorService.isShutdown()) {
             executorService = new ThreadPoolExecutor(
                     1,
@@ -69,19 +72,26 @@ public class GlyphGenerationDispatcher {
             return;
         }
 
+        final int taskGenerationEpoch = generationEpoch.get();
         executorService.submit(() -> {
-            if (fontMatcher == null) {
+            if (!isTaskCurrent(taskGenerationEpoch) || fontMatcher == null) {
                 return;
             }
 
             FontType fontType = task.getFontType();
             if (fontMatcher.match(task.getCodepoint(), fontType) == null) {
+                if (!isTaskCurrent(taskGenerationEpoch)) {
+                    return;
+                }
                 glyphPageManager.markFailed(task.getCodepoint(), fontType);
                 MyMod.LOG.warn("未找到可显示字符的字体，codepoint={} type={}", task.getCodepoint(), fontType);
                 return;
             }
 
             GlyphGenerationResult result = glyphGenerator.generate(task);
+            if (!isTaskCurrent(taskGenerationEpoch)) {
+                return;
+            }
             if (result == null) {
                 glyphPageManager.markFailed(task.getCodepoint(), fontType);
                 return;
@@ -119,8 +129,10 @@ public class GlyphGenerationDispatcher {
      */
     public void reset() {
         pause();
+        generationEpoch.incrementAndGet();
         if (executorService != null) {
             executorService.shutdownNow();
+            executorService = null;
         }
         initialized.set(false);
     }
@@ -132,6 +144,10 @@ public class GlyphGenerationDispatcher {
      */
     public boolean isInitialized() {
         return initialized.get();
+    }
+
+    private boolean isTaskCurrent(int taskGenerationEpoch) {
+        return acceptingTasks.get() && generationEpoch.get() == taskGenerationEpoch;
     }
 
     /**

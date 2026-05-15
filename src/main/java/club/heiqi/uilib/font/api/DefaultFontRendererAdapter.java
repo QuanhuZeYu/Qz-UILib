@@ -49,63 +49,79 @@ public class DefaultFontRendererAdapter implements FontRendererAdapter {
         }
 
         FontService fontService = FontService.getInstance();
-        fontService.initialize();
-        fontService.tickDrawStage(FontConfig.drawStageUploadBatchSize);
+        synchronized (fontService) {
+            fontService.initialize();
+            fontService.tickDrawStage(FontConfig.drawStageUploadBatchSize);
 
-        int result = x;
-        if (dropShadow) {
-            result = drawInternal(text, x, y, normalizeColor(color), true);
+            int result = x;
+            if (dropShadow) {
+                result = drawInternal(fontService, text, x, y, normalizeColor(color), true);
+            }
+            result = drawInternal(fontService, text, x, y, normalizeColor(color), false);
+            return result;
         }
-        result = drawInternal(text, x, y, normalizeColor(color), false);
-        return result;
     }
 
     @Override
     public int getStringWidth(String text) {
         FontService fontService = FontService.getInstance();
-        fontService.initialize();
-        return fontService.getTextLayoutService().getStringWidth(text);
+        synchronized (fontService) {
+            fontService.initialize();
+            return fontService.getTextLayoutService().getStringWidth(text);
+        }
     }
 
     @Override
     public int getLineHeight() {
         FontService fontService = FontService.getInstance();
-        fontService.initialize();
-        return fontService.getTextLayoutService().getLineHeight();
+        synchronized (fontService) {
+            fontService.initialize();
+            return fontService.getTextLayoutService().getLineHeight();
+        }
     }
 
     @Override
     public String trimStringToWidth(String text, int targetWidth) {
         FontService fontService = FontService.getInstance();
-        fontService.initialize();
-        return fontService.getTextLayoutService().trimStringToWidth(text, targetWidth);
+        synchronized (fontService) {
+            fontService.initialize();
+            return fontService.getTextLayoutService().trimStringToWidth(text, targetWidth);
+        }
     }
 
     public String trimStringToWidth(String text, int targetWidth, boolean reverse) {
         FontService fontService = FontService.getInstance();
-        fontService.initialize();
-        return fontService.getTextLayoutService().trimStringToWidth(text, targetWidth, reverse);
+        synchronized (fontService) {
+            fontService.initialize();
+            return fontService.getTextLayoutService().trimStringToWidth(text, targetWidth, reverse);
+        }
     }
 
     @Override
     public String wrapFormattedStringToWidth(String text, int wrapWidth) {
         FontService fontService = FontService.getInstance();
-        fontService.initialize();
-        return fontService.getTextLayoutService().wrapFormattedStringToWidth(text, wrapWidth);
+        synchronized (fontService) {
+            fontService.initialize();
+            return fontService.getTextLayoutService().wrapFormattedStringToWidth(text, wrapWidth);
+        }
     }
 
     @Override
     public List<String> listFormattedStringToWidth(String text, int wrapWidth) {
         FontService fontService = FontService.getInstance();
-        fontService.initialize();
-        return fontService.getTextLayoutService().listFormattedStringToWidth(text, wrapWidth);
+        synchronized (fontService) {
+            fontService.initialize();
+            return fontService.getTextLayoutService().listFormattedStringToWidth(text, wrapWidth);
+        }
     }
 
     @Override
     public int splitStringWidth(String text, int wrapWidth) {
         FontService fontService = FontService.getInstance();
-        fontService.initialize();
-        return fontService.getTextLayoutService().splitStringWidth(text, wrapWidth);
+        synchronized (fontService) {
+            fontService.initialize();
+            return fontService.getTextLayoutService().splitStringWidth(text, wrapWidth);
+        }
     }
 
     /**
@@ -126,8 +142,7 @@ public class DefaultFontRendererAdapter implements FontRendererAdapter {
         }
     }
 
-    private int drawInternal(String text, int x, int y, int color, boolean shadow) {
-        FontService fontService = FontService.getInstance();
+    private int drawInternal(FontService fontService, String text, int x, int y, int color, boolean shadow) {
         TextLayoutService textLayoutService = fontService.getTextLayoutService();
         GlyphPageManager glyphPageManager = fontService.getGlyphPageManager();
         List<TextSegment> segments = textLayoutService.layoutSegments(text, color);

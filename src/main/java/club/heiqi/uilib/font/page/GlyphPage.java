@@ -17,6 +17,8 @@ import club.heiqi.uilib.font.config.FontConfig;
  */
 public class GlyphPage {
 
+    private static ByteBuffer emptyTextureBuffer = createEmptyTextureBuffer(64 * 64 * 4);
+
     private final int pageIndex;
     private final int textureSize;
     private final int glyphSize;
@@ -93,6 +95,7 @@ public class GlyphPage {
         GL11.glPushAttrib(GL11.GL_ALL_ATTRIB_BITS);
         ensureTexture();
         GL11.glBindTexture(GL11.GL_TEXTURE_2D, textureId);
+        GL11.glPixelStorei(GL11.GL_UNPACK_ALIGNMENT, 1);
         GL11.glTexSubImage2D(
                 GL11.GL_TEXTURE_2D,
                 0,
@@ -146,7 +149,12 @@ public class GlyphPage {
 
         textureId = GL11.glGenTextures();
         GL11.glBindTexture(GL11.GL_TEXTURE_2D, textureId);
-        GL11.glTexImage2D(GL11.GL_TEXTURE_2D, 0, GL11.GL_RGBA, textureSize, textureSize, 0, GL11.GL_RGBA, GL11.GL_UNSIGNED_BYTE, (ByteBuffer) null);
+        ByteBuffer emptyTexture = obtainEmptyTextureBuffer(textureSize * textureSize * 4).duplicate();
+        emptyTexture.clear();
+        emptyTexture.limit(textureSize * textureSize * 4);
+        GL11.glPixelStorei(GL11.GL_UNPACK_ALIGNMENT, 1);
+        GL11.glTexImage2D(GL11.GL_TEXTURE_2D, 0, GL11.GL_RGBA, textureSize, textureSize, 0, GL11.GL_RGBA,
+                GL11.GL_UNSIGNED_BYTE, emptyTexture);
         GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_MIN_FILTER, getLerpMode());
         GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_MAG_FILTER, GL11.GL_LINEAR);
         GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_WRAP_S, GL13.GL_CLAMP_TO_BORDER);
@@ -188,6 +196,23 @@ public class GlyphPage {
             buffer.put((byte) ((pixel >> 8) & 0xFF));
             buffer.put((byte) (pixel & 0xFF));
             buffer.put((byte) ((pixel >> 24) & 0xFF));
+        }
+        buffer.flip();
+        return buffer;
+    }
+
+    private static synchronized ByteBuffer obtainEmptyTextureBuffer(int requiredCapacity) {
+        if (emptyTextureBuffer.capacity() >= requiredCapacity) {
+            return emptyTextureBuffer;
+        }
+        emptyTextureBuffer = createEmptyTextureBuffer(requiredCapacity);
+        return emptyTextureBuffer;
+    }
+
+    private static ByteBuffer createEmptyTextureBuffer(int capacity) {
+        ByteBuffer buffer = BufferUtils.createByteBuffer(capacity);
+        for (int index = 0; index < buffer.capacity(); index++) {
+            buffer.put((byte) 0);
         }
         buffer.flip();
         return buffer;

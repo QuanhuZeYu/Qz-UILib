@@ -34,16 +34,22 @@ public class FontShaderProgram {
      */
     public void initialize() {
         if (initialized.compareAndSet(false, true)) {
-            shaderProgramId = GL20.glCreateProgram();
-            uniformLocations.clear();
-            attributeLocations.clear();
-            attributeLocations.put("pos", Integer.valueOf(0));
-            attributeLocations.put("tex", Integer.valueOf(1));
-            attributeLocations.put("color", Integer.valueOf(2));
-            attributeLocations.put("v_uvBounds", Integer.valueOf(3));
-            attributeLocations.put("v_glyphFlags", Integer.valueOf(4));
-            missingUniforms.clear();
-            loadProgram();
+            try {
+                shaderProgramId = GL20.glCreateProgram();
+                uniformLocations.clear();
+                attributeLocations.clear();
+                attributeLocations.put("pos", Integer.valueOf(0));
+                attributeLocations.put("tex", Integer.valueOf(1));
+                attributeLocations.put("color", Integer.valueOf(2));
+                attributeLocations.put("v_uvBounds", Integer.valueOf(3));
+                attributeLocations.put("v_glyphFlags", Integer.valueOf(4));
+                missingUniforms.clear();
+                loadProgram();
+            } catch (RuntimeException exception) {
+                close();
+                initialized.set(false);
+                throw exception;
+            }
         }
     }
 

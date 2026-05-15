@@ -107,19 +107,24 @@ public class FontService {
                 initialize();
             }
 
+            glyphGenerationDispatcher.reset();
             refreshTextMeasureRuntime();
             glyphPageManager.reset();
-            glyphGenerationDispatcher.initialize(fontMatcher, glyphPageManager, glyphPageManager::queueUpload);
             if (batchRenderer != null) {
                 batchRenderer.dispose();
-                batchRenderer.clearFrame();
+                batchRenderer = null;
             }
             if (decorationRenderer != null) {
                 decorationRenderer.clear();
+                decorationRenderer = null;
             }
             if (shaderProgram != null) {
                 shaderProgram.close();
+                shaderProgram = null;
             }
+            drawStageUploadTimestamps.clear();
+            lastDrawStageUploadAt = 0L;
+            glyphGenerationDispatcher.initialize(fontMatcher, glyphPageManager, glyphPageManager::queueUpload);
             runtimeVersion++;
         }
         int invalidatedRootCount = UiLayoutInvalidationRegistry.invalidateAll();

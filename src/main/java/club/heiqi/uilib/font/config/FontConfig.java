@@ -37,9 +37,13 @@ public final class FontConfig {
     public static String[] fontSort = new String[0];
     public static String[] missingFontSort = new String[0];
 
+    private static int lastLerpMode = lerpMode;
     private static double lastAwtCharSize = awtCharSize;
     private static double lastCharSize = charSize;
     private static double lastFontScale = fontScale;
+    private static double lastSpaceWidth = spaceWidth;
+    private static double lastCharacterSpacing = characterSpacing;
+    private static double lastLineSpacing = lineSpacing;
     private static boolean lastReplaceOrigin = replaceOrigin;
     private static boolean lastCustomInvCountFont = customInvCountFont;
     private static String[] lastFontSort = fontSort;
@@ -87,9 +91,13 @@ public final class FontConfig {
      * @return 是否需要触发字体系统重载
      */
     public static boolean affectsFontRuntime() {
-        return Double.compare(lastAwtCharSize, awtCharSize) != 0
+        return lastLerpMode != lerpMode
+                || Double.compare(lastAwtCharSize, awtCharSize) != 0
                 || Double.compare(lastCharSize, charSize) != 0
                 || Double.compare(lastFontScale, fontScale) != 0
+                || Double.compare(lastSpaceWidth, spaceWidth) != 0
+                || Double.compare(lastCharacterSpacing, characterSpacing) != 0
+                || Double.compare(lastLineSpacing, lineSpacing) != 0
                 || lastReplaceOrigin != replaceOrigin
                 || lastCustomInvCountFont != customInvCountFont
                 || !Arrays.equals(lastFontSort, fontSort);
@@ -99,9 +107,13 @@ public final class FontConfig {
      * 在配置同步后刷新缓存快照。
      */
     public static void onConfigReload() {
+        lastLerpMode = lerpMode;
         lastAwtCharSize = awtCharSize;
         lastCharSize = charSize;
         lastFontScale = fontScale;
+        lastSpaceWidth = spaceWidth;
+        lastCharacterSpacing = characterSpacing;
+        lastLineSpacing = lineSpacing;
         lastReplaceOrigin = replaceOrigin;
         lastCustomInvCountFont = customInvCountFont;
         lastFontSort = fontSort == null ? new String[0] : Arrays.copyOf(fontSort, fontSort.length);
