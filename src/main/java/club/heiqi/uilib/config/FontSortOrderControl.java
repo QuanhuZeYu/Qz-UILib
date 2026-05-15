@@ -45,6 +45,7 @@ final class FontSortOrderControl {
     private static final int ROW_HEIGHT = 40;
     private static final int DEFAULT_PAGE_SIZE = 25;
     private static final int COMPACT_PAGE_SIZE = 50;
+    private static final String DRAG_HANDLE_ICON_SRC = "https://img.icons8.com/ios-filled/50/d1d5db/drag-reorder.png";
     private final UiDocument document;
     private final HtmlLikeDocumentWidget documentWidget;
     private final FontSortOrderChangeListener changeListener;
@@ -559,11 +560,18 @@ final class FontSortOrderControl {
                 .setBorderColor(item.equals(draggingItem) ? 0xFF93C5FD : 0xFF334155)
                 .setBorderWidth(UiStyleLength.px(1))
                 .setBorderRadius(UiStyleLength.px(999))
-                .setTextColor(enabled ? 0xFF9CA3AF : 0xFF64748B)
                 .setOverflowX(UiOverflow.HIDDEN)
                 .setOverflowY(UiOverflow.HIDDEN);
         handle.setAttribute("data-font-sort-handle", item);
-        handle.appendText(enabled ? "|||" : "--");
+        ElementNode handleIcon = document.img();
+        handleIcon.setAttribute("src", DRAG_HANDLE_ICON_SRC)
+                .setAttribute("alt", "拖拽把手")
+                .setAttribute("data-font-sort-handle-icon", item);
+        handleIcon.style()
+                .setWidth(UiStyleLength.px(14))
+                .setHeight(UiStyleLength.px(14))
+                .setOpacity(enabled ? (item.equals(draggingItem) ? 0.95F : 0.72F) : 0.34F);
+        handle.append(handleIcon);
         return handle;
     }
 
