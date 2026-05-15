@@ -8,6 +8,7 @@ import club.heiqi.uilib.font.glyph.GlyphGenerationResult;
 public class PendingGlyphUpload {
 
     private final int runtimeVersion;
+    private final long generationId;
     private final GlyphCacheKey key;
     private final GlyphGenerationResult generationResult;
 
@@ -20,12 +21,17 @@ public class PendingGlyphUpload {
      */
     public PendingGlyphUpload(int runtimeVersion, GlyphCacheKey key, GlyphGenerationResult generationResult) {
         this.runtimeVersion = runtimeVersion;
+        this.generationId = generationResult.getGenerationId();
         this.key = key;
         this.generationResult = generationResult;
     }
 
     public int getRuntimeVersion() {
         return runtimeVersion;
+    }
+
+    public long getGenerationId() {
+        return generationId;
     }
 
     public GlyphCacheKey getKey() {

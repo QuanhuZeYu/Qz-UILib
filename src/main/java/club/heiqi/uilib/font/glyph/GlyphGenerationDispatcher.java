@@ -1,8 +1,11 @@
 package club.heiqi.uilib.font.glyph;
 
 import java.awt.image.BufferedImage;
+import java.util.List;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.LinkedBlockingQueue;
+import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.ThreadFactory;
 import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
@@ -23,6 +26,8 @@ public class GlyphGenerationDispatcher {
     private final AtomicBoolean initialized = new AtomicBoolean(false);
     private final AtomicBoolean acceptingTasks = new AtomicBoolean(true);
     private final AtomicInteger generationEpoch = new AtomicInteger(0);
+    private final ConcurrentHashMap<GlyphGenerationRequestKey, GlyphGenerationTask> inFlightTasks =
+            new ConcurrentHashMap<GlyphGenerationRequestKey, GlyphGenerationTask>();
     private ExecutorService executorService;
     private volatile int runtimeVersion;
 
@@ -86,41 +91,65 @@ public class GlyphGenerationDispatcher {
             return;
         }
 
+        final long taskGenerationId = glyphPageManager.getGenerationId(task.getRuntimeVersion(), task.getCodepoint(),
+                task.getFontType());
+        final GlyphGenerationTask generationTask = task.withGenerationId(taskGenerationId);
         final int taskGenerationEpoch = generationEpoch.get();
-        final int taskRuntimeVersion = task.getRuntimeVersion();
-        executorService.submit(() -> {
-            if (!isTaskCurrent(taskGenerationEpoch) || fontMatcher == null || taskRuntimeVersion != runtimeVersion) {
-                return;
-            }
+        final int taskRuntimeVersion = generationTask.getRuntimeVersion();
+        final GlyphGenerationRequestKey requestKey = new GlyphGenerationRequestKey(taskRuntimeVersion,
+                generationTask.getCodepoint(), generationTask.getFontType());
+        inFlightTasks.put(requestKey, generationTask);
+        ExecutorService currentExecutorService = executorService;
+        if (currentExecutorService == null) {
+            inFlightTasks.remove(requestKey);
+            cancelTask(generationTask);
+            return;
+        }
+        try {
+            currentExecutorService.submit(() -> {
+                try {
+                    if (!isTaskCurrent(taskGenerationEpoch) || fontMatcher == null || taskRuntimeVersion != runtimeVersion) {
+                        cancelTask(generationTask);
+                        return;
+                    }
 
-            FontType fontType = task.getFontType();
-            if (fontMatcher.match(taskRuntimeVersion, task.getCodepoint(), fontType) == null) {
-                if (!isTaskCurrent(taskGenerationEpoch) || taskRuntimeVersion != runtimeVersion) {
-                    return;
+                    FontType fontType = generationTask.getFontType();
+                    if (fontMatcher.match(taskRuntimeVersion, generationTask.getCodepoint(), fontType) == null) {
+                        if (!isTaskCurrent(taskGenerationEpoch) || taskRuntimeVersion != runtimeVersion) {
+                            cancelTask(generationTask);
+                            return;
+                        }
+                        glyphPageManager.markFailed(taskRuntimeVersion, generationTask.getCodepoint(), fontType);
+                        MyMod.LOG.warn("未找到可显示字符的字体，codepoint={} type={}", generationTask.getCodepoint(), fontType);
+                        return;
+                    }
+
+                    GlyphGenerationResult result = glyphGenerator.generate(generationTask);
+                    if (!isTaskCurrent(taskGenerationEpoch) || taskRuntimeVersion != runtimeVersion) {
+                        cancelTask(generationTask);
+                        return;
+                    }
+                    if (result == null) {
+                        glyphPageManager.markFailed(taskRuntimeVersion, generationTask.getCodepoint(), fontType);
+                        return;
+                    }
+                    if (resultHandler != null) {
+                        resultHandler.handle(result);
+                    }
+
+                    MyMod.LOG.debug("已接收字符生成任务 codepoint={} size={} priority={} awtCharSize={}",
+                            generationTask.getCodepoint(),
+                            generationTask.getGlyphSize(),
+                            generationTask.getPriority(),
+                            FontConfig.awtCharSize);
+                } finally {
+                    inFlightTasks.remove(requestKey);
                 }
-                glyphPageManager.markFailed(taskRuntimeVersion, task.getCodepoint(), fontType);
-                MyMod.LOG.warn("未找到可显示字符的字体，codepoint={} type={}", task.getCodepoint(), fontType);
-                return;
-            }
-
-            GlyphGenerationResult result = glyphGenerator.generate(task);
-            if (!isTaskCurrent(taskGenerationEpoch) || taskRuntimeVersion != runtimeVersion) {
-                return;
-            }
-            if (result == null) {
-                glyphPageManager.markFailed(taskRuntimeVersion, task.getCodepoint(), fontType);
-                return;
-            }
-            if (resultHandler != null) {
-                resultHandler.handle(result);
-            }
-
-            MyMod.LOG.debug("已接收字符生成任务 codepoint={} size={} priority={} awtCharSize={}",
-                    task.getCodepoint(),
-                    task.getGlyphSize(),
-                    task.getPriority(),
-                    FontConfig.awtCharSize);
-        });
+            });
+        } catch (RejectedExecutionException exception) {
+            inFlightTasks.remove(requestKey);
+            cancelTask(generationTask);
+        }
     }
 
     /**
@@ -145,6 +174,7 @@ public class GlyphGenerationDispatcher {
     public void reset() {
         pause();
         generationEpoch.incrementAndGet();
+        cancelInFlightTasks();
         if (executorService != null) {
             executorService.shutdownNow();
             executorService = null;
@@ -163,6 +193,68 @@ public class GlyphGenerationDispatcher {
 
     private boolean isTaskCurrent(int taskGenerationEpoch) {
         return acceptingTasks.get() && generationEpoch.get() == taskGenerationEpoch;
+    }
+
+    /**
+     * 获取当前仍在飞行中的字符任务快照。
+     *
+     * @return 字符任务快照
+     */
+    public List<GlyphGenerationTask> snapshotInFlightTasks() {
+        return new java.util.ArrayList<GlyphGenerationTask>(inFlightTasks.values());
+    }
+
+    private void cancelInFlightTasks() {
+        List<GlyphGenerationTask> tasks = snapshotInFlightTasks();
+        inFlightTasks.clear();
+        for (GlyphGenerationTask task : tasks) {
+            cancelTask(task);
+        }
+    }
+
+    private void cancelTask(GlyphGenerationTask task) {
+        GlyphPageManager manager = glyphPageManager;
+        if (manager != null) {
+            manager.markGenerationCancelled(task.getRuntimeVersion(), task.getCodepoint(), task.getFontType());
+        }
+    }
+
+    /**
+     * 生成请求唯一键。
+     */
+    private static class GlyphGenerationRequestKey {
+
+        private final int runtimeVersion;
+        private final int codepoint;
+        private final FontType fontType;
+
+        private GlyphGenerationRequestKey(int runtimeVersion, int codepoint, FontType fontType) {
+            this.runtimeVersion = runtimeVersion;
+            this.codepoint = codepoint;
+            this.fontType = fontType;
+        }
+
+        @Override
+        public boolean equals(Object obj) {
+            if (this == obj) {
+                return true;
+            }
+            if (!(obj instanceof GlyphGenerationRequestKey)) {
+                return false;
+            }
+            GlyphGenerationRequestKey other = (GlyphGenerationRequestKey) obj;
+            return runtimeVersion == other.runtimeVersion
+                    && codepoint == other.codepoint
+                    && fontType == other.fontType;
+        }
+
+        @Override
+        public int hashCode() {
+            int result = Integer.valueOf(runtimeVersion).hashCode();
+            result = 31 * result + Integer.valueOf(codepoint).hashCode();
+            result = 31 * result + fontType.hashCode();
+            return result;
+        }
     }
 
     /**

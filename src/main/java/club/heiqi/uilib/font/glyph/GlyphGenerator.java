@@ -11,6 +11,7 @@ import java.awt.font.LineMetrics;
 import java.awt.geom.Rectangle2D;
 import java.awt.image.BufferedImage;
 
+import club.heiqi.uilib.font.FontRuntimeDiagnostics;
 import club.heiqi.uilib.font.FontType;
 import club.heiqi.uilib.font.config.FontConfig;
 import club.heiqi.uilib.font.util.FontMatcher;
@@ -111,7 +112,9 @@ public class GlyphGenerator {
                 (float) visualBounds.getWidth(),
                 (float) visualBounds.getHeight(),
                 coloredGlyph);
-        return new GlyphGenerationResult(task.getRuntimeVersion(), task.getCodepoint(), task.getFontType(), image, glyphInfo);
+        FontRuntimeDiagnostics.logGeneratedGlyph(task, image, glyphInfo);
+        return new GlyphGenerationResult(task.getRuntimeVersion(), task.getGenerationId(), task.getCodepoint(),
+                task.getFontType(), image, glyphInfo);
     }
 
     private Font deriveFont(Font baseFont, FontType fontType, int glyphSize) {

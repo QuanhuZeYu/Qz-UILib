@@ -58,9 +58,153 @@ public class GlyphRuntimeVersionIsolationTest {
         Assert.assertEquals(GlyphState.GENERATING, manager.getState('A', FontType.NORMAL));
     }
 
+    /**
+     * 验证生成中字符会进入可恢复请求快照，供 reload 后重新提交。
+     */
+    @Test
+    public void shouldSnapshotGeneratingGlyphAsRecoverableRequest() {
+        GlyphPageManager manager = new GlyphPageManager();
+        manager.setRuntimeVersion(1);
+
+        Assert.assertTrue(manager.tryMarkGenerating(1, '中', FontType.NORMAL));
+
+        Assert.assertEquals(1, manager.snapshotRecoverableRequests().size());
+        GlyphCacheKey key = manager.snapshotRecoverableRequests().get(0);
+        Assert.assertEquals(1, key.getRuntimeVersion());
+        Assert.assertEquals('中', key.getCodepoint());
+        Assert.assertEquals(FontType.NORMAL, key.getFontType());
+    }
+
+    /**
+     * 验证任务被取消时不会让字符永久卡在生成中。
+     */
+    @Test
+    public void shouldReleaseGeneratingStateWhenGenerationCancelled() {
+        GlyphPageManager manager = new GlyphPageManager();
+        manager.setRuntimeVersion(1);
+
+        Assert.assertTrue(manager.tryMarkGenerating(1, 'A', FontType.NORMAL));
+        manager.markGenerationCancelled(1, 'A', FontType.NORMAL);
+
+        Assert.assertEquals(GlyphState.NEW, manager.getState('A', FontType.NORMAL));
+        Assert.assertEquals(1, manager.snapshotRecoverableRequests().size());
+    }
+
+    /**
+     * 验证已取消的旧结果不能重新进入待上传队列。
+     */
+    @Test
+    public void shouldRejectCancelledGenerationResultBeforeUploadQueue() {
+        GlyphPageManager manager = new GlyphPageManager();
+        manager.setRuntimeVersion(1);
+
+        Assert.assertTrue(manager.tryMarkGenerating(1, 'A', FontType.NORMAL));
+        manager.markGenerationCancelled(1, 'A', FontType.NORMAL);
+        manager.queueUpload(result(1, 'A'));
+
+        Assert.assertEquals(0, manager.getPendingUploadCount());
+        Assert.assertEquals(GlyphState.NEW, manager.getState('A', FontType.NORMAL));
+    }
+
+    /**
+     * 验证结果必须匹配当前生成请求编号才允许进入上传队列。
+     */
+    @Test
+    public void shouldRejectMismatchedGenerationIdBeforeUploadQueue() {
+        GlyphPageManager manager = new GlyphPageManager();
+        manager.setRuntimeVersion(1);
+
+        Assert.assertTrue(manager.tryMarkGenerating(1, 'A', FontType.NORMAL));
+        long generationId = manager.getGenerationId(1, 'A', FontType.NORMAL);
+        manager.queueUpload(result(1, generationId + 1L, 'A'));
+
+        Assert.assertEquals(0, manager.getPendingUploadCount());
+        Assert.assertEquals(GlyphState.GENERATING, manager.getState('A', FontType.NORMAL));
+    }
+
+    /**
+     * 验证已取消的待上传记录刷新时不会写入字符页。
+     */
+    @Test
+    public void shouldSkipCancelledPendingUploadWhenFlushing() {
+        GlyphPageManager manager = new GlyphPageManager();
+        manager.setRuntimeVersion(1);
+
+        Assert.assertTrue(manager.tryMarkGenerating(1, 'A', FontType.NORMAL));
+        long generationId = manager.getGenerationId(1, 'A', FontType.NORMAL);
+        manager.queueUpload(result(1, generationId, 'A'));
+        manager.markGenerationCancelled(1, 'A', FontType.NORMAL);
+        manager.flushPendingUploads(1);
+
+        Assert.assertEquals(0, manager.getPendingUploadCount());
+        Assert.assertEquals(0, manager.getReadyGlyphCount());
+        Assert.assertEquals(GlyphState.NEW, manager.getState('A', FontType.NORMAL));
+    }
+
+    /**
+     * 验证旧 pending 不能在同码点新请求进入待上传后被当作当前上传记录处理。
+     */
+    @Test
+    public void shouldKeepOldPendingIsolatedAfterSameCodepointResubmitted() {
+        GlyphPageManager manager = new GlyphPageManager();
+        manager.setRuntimeVersion(1);
+
+        Assert.assertTrue(manager.tryMarkGenerating(1, 'A', FontType.NORMAL));
+        long oldGenerationId = manager.getGenerationId(1, 'A', FontType.NORMAL);
+        manager.queueUpload(result(1, oldGenerationId, 'A'));
+        manager.markGenerationCancelled(1, 'A', FontType.NORMAL);
+        Assert.assertTrue(manager.tryMarkGenerating(1, 'A', FontType.NORMAL));
+        long newGenerationId = manager.getGenerationId(1, 'A', FontType.NORMAL);
+        manager.queueUpload(result(1, newGenerationId, 'A'));
+
+        Assert.assertEquals(2, manager.getPendingUploadCount());
+        Assert.assertEquals(GlyphState.UPLOAD_PENDING, manager.getState('A', FontType.NORMAL));
+        Assert.assertNotEquals(oldGenerationId, newGenerationId);
+    }
+
+    /**
+     * 验证同一字符进入待上传后，重复生成结果不会制造重复页槽。
+     */
+    @Test
+    public void shouldRejectDuplicateUploadResultWhilePending() {
+        GlyphPageManager manager = new GlyphPageManager();
+        manager.setRuntimeVersion(1);
+
+        Assert.assertTrue(manager.tryMarkGenerating(1, 'A', FontType.NORMAL));
+        long generationId = manager.getGenerationId(1, 'A', FontType.NORMAL);
+        manager.queueUpload(result(1, generationId, 'A'));
+        manager.queueUpload(result(1, generationId, 'A'));
+
+        Assert.assertEquals(1, manager.getPendingUploadCount());
+        Assert.assertEquals(GlyphState.UPLOAD_PENDING, manager.getState('A', FontType.NORMAL));
+    }
+
+    /**
+     * 验证旧运行时未完成请求在 reset 后可按新版本重新提交。
+     */
+    @Test
+    public void shouldAllowRecoverableRequestToBeResubmittedAfterReset() {
+        GlyphPageManager manager = new GlyphPageManager();
+        manager.setRuntimeVersion(1);
+
+        Assert.assertTrue(manager.tryMarkGenerating(1, 'A', FontType.NORMAL));
+
+        GlyphCacheKey oldRequest = manager.snapshotRecoverableRequests().get(0);
+        manager.setRuntimeVersion(2);
+        manager.reset();
+
+        Assert.assertEquals(GlyphState.NEW, manager.getState('A', FontType.NORMAL));
+        Assert.assertTrue(manager.tryMarkGenerating(2, oldRequest.getCodepoint(), oldRequest.getFontType()));
+        Assert.assertEquals(GlyphState.GENERATING, manager.getState('A', FontType.NORMAL));
+    }
+
     private static GlyphGenerationResult result(int runtimeVersion, int codepoint) {
+        return result(runtimeVersion, 0L, codepoint);
+    }
+
+    private static GlyphGenerationResult result(int runtimeVersion, long generationId, int codepoint) {
         BufferedImage image = new BufferedImage(8, 8, BufferedImage.TYPE_INT_ARGB);
         GlyphInfo glyphInfo = new GlyphInfo(codepoint, 8, 8, 6.0F, 6.0F, 8.0F, false);
-        return new GlyphGenerationResult(runtimeVersion, codepoint, FontType.NORMAL, image, glyphInfo);
+        return new GlyphGenerationResult(runtimeVersion, generationId, codepoint, FontType.NORMAL, image, glyphInfo);
     }
 }

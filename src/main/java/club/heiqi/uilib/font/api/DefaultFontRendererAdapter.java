@@ -177,7 +177,8 @@ public class DefaultFontRendererAdapter implements FontRendererAdapter {
                 } else {
                     int renderColor = shadow ? darkenShadow(style.getColor()) : style.getColor();
                     GlyphInfo glyphInfo = glyphPageManager.getGlyphInfo(renderCodepoint, fontType);
-                    fontService.getBatchRenderer().collect(glyphPage, slot, currentX, drawY, (float) FontConfig.charSize, renderColor, style.isItalic(), glyphInfo);
+                    fontService.getBatchRenderer().collect(glyphPage, slot, currentX, drawY,
+                            (float) FontConfig.charSize, renderColor, style.isItalic(), glyphInfo);
                     collectDecorations(fontService, currentX, drawY, measuredWidth, style, renderColor);
                     currentX += measuredWidth;
                 }

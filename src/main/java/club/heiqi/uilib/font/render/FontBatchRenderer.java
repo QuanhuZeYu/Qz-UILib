@@ -17,9 +17,13 @@ import org.joml.Vector2f;
 import org.lwjgl.BufferUtils;
 import org.lwjgl.opengl.GL11;
 import org.lwjgl.opengl.GL13;
+import org.lwjgl.opengl.GL20;
+import org.lwjgl.opengl.GL30;
 
 import java.nio.FloatBuffer;
 import java.nio.IntBuffer;
+
+import club.heiqi.uilib.font.FontRuntimeDiagnostics;
 
 /**
  * 字体批渲染器。
@@ -154,6 +158,13 @@ public class FontBatchRenderer {
                 GL13.glActiveTexture(GL13.GL_TEXTURE0);
                 GL11.glBindTexture(GL11.GL_TEXTURE_2D, page.getTextureId());
                 shaderProgram.setUniformI("mainTex", 0);
+                FontRuntimeDiagnostics.logFlushState(shaderProgram.getShaderProgramId(),
+                        GL11.glGetInteger(GL20.GL_CURRENT_PROGRAM),
+                        page.getTextureId(),
+                        GL11.glGetInteger(GL11.GL_TEXTURE_BINDING_2D),
+                        GL11.glGetInteger(GL30.GL_VERTEX_ARRAY_BINDING),
+                        GL11.glGetError(),
+                        batch.getQuadCount());
                 renderTool.render(vertexBuffer, uvBuffer, colorBuffer, uvBoundsBuffer, glyphFlagsBuffer, indexBuffer,
                         indexBuffer.limit());
             }

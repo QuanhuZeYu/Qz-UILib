@@ -10,6 +10,7 @@ import club.heiqi.uilib.font.FontType;
 public class GlyphGenerationResult {
 
     private final int runtimeVersion;
+    private final long generationId;
     private final int codepoint;
     private final FontType fontType;
     private final BufferedImage image;
@@ -26,7 +27,23 @@ public class GlyphGenerationResult {
      */
     public GlyphGenerationResult(int runtimeVersion, int codepoint, FontType fontType, BufferedImage image,
             GlyphInfo glyphInfo) {
+        this(runtimeVersion, 0L, codepoint, fontType, image, glyphInfo);
+    }
+
+    /**
+     * 创建带生成请求编号的字符生成结果。
+     *
+     * @param runtimeVersion 运行时版本
+     * @param generationId 生成请求编号
+     * @param codepoint 字符码点
+     * @param fontType 字重类型
+     * @param image 字符图像
+     * @param glyphInfo 字符度量信息
+     */
+    public GlyphGenerationResult(int runtimeVersion, long generationId, int codepoint, FontType fontType,
+            BufferedImage image, GlyphInfo glyphInfo) {
         this.runtimeVersion = runtimeVersion;
+        this.generationId = generationId;
         this.codepoint = codepoint;
         this.fontType = fontType;
         this.image = image;
@@ -35,6 +52,10 @@ public class GlyphGenerationResult {
 
     public int getRuntimeVersion() {
         return runtimeVersion;
+    }
+
+    public long getGenerationId() {
+        return generationId;
     }
 
     public int getCodepoint() {

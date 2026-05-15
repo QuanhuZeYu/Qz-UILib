@@ -8,6 +8,7 @@ import club.heiqi.uilib.font.FontType;
 public class GlyphGenerationTask {
 
     private final int runtimeVersion;
+    private final long generationId;
     private final int codepoint;
     private final FontType fontType;
     private final int glyphSize;
@@ -24,7 +25,23 @@ public class GlyphGenerationTask {
      */
     public GlyphGenerationTask(int runtimeVersion, int codepoint, FontType fontType, int glyphSize,
             GlyphGenerationPriority priority) {
+        this(runtimeVersion, 0L, codepoint, fontType, glyphSize, priority);
+    }
+
+    /**
+     * 创建带生成请求编号的字符生成任务。
+     *
+     * @param runtimeVersion 运行时版本
+     * @param generationId 生成请求编号
+     * @param codepoint 字符码点
+     * @param fontType 字重类型
+     * @param glyphSize 字符格大小
+     * @param priority 生成优先级
+     */
+    public GlyphGenerationTask(int runtimeVersion, long generationId, int codepoint, FontType fontType, int glyphSize,
+            GlyphGenerationPriority priority) {
         this.runtimeVersion = runtimeVersion;
+        this.generationId = generationId;
         this.codepoint = codepoint;
         this.fontType = fontType;
         this.glyphSize = glyphSize;
@@ -33,6 +50,10 @@ public class GlyphGenerationTask {
 
     public int getRuntimeVersion() {
         return runtimeVersion;
+    }
+
+    public long getGenerationId() {
+        return generationId;
     }
 
     public int getCodepoint() {
@@ -49,5 +70,15 @@ public class GlyphGenerationTask {
 
     public GlyphGenerationPriority getPriority() {
         return priority;
+    }
+
+    /**
+     * 派生带生成请求编号的任务。
+     *
+     * @param generationId 生成请求编号
+     * @return 带编号的新任务
+     */
+    public GlyphGenerationTask withGenerationId(long generationId) {
+        return new GlyphGenerationTask(runtimeVersion, generationId, codepoint, fontType, glyphSize, priority);
     }
 }

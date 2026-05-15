@@ -63,8 +63,9 @@
 - 字体系统启动时会把本次已发现字体整理进 `FontConfig.fontSort`：先按配置提示顺序吸收存在项，再把未配置字体按自然顺序追加；配置中缺失的字体只保留在内存缺失态，不参与当前回退链。
 - 原版资源包重载会通过 `FontRenderer.onResourceManagerReload` 的 Mixin 触发字体系统重载；字体 GL 资源、字符页、后台字形任务和布局缓存必须整体重建，避免继续使用资源包重载前的 GL 状态。
 - `FontConfig.replaceOrigin=true` 会让原版 `FontRenderer` 在 SplashProgress 加载线程和客户端主线程都可能进入 UILib 字体管线；字体资源重载、shader/批渲染器重建与 `drawString` 必须在字体运行时锁下串行化，不能用“只允许主线程接管”规避 Splash 字体渲染。
+- SplashProgress 期间仍使用 UILib 自定义字体和批渲染路径；不要为非客户端主线程切换第二套 immediate 字体绘制路径。Splash 特例只保留运行时锁、Mixin 异常保护、Splash reload guard 和资源重载入口跳过。
 - 字体页纹理创建时必须先显式清为透明，再上传单字形并生成 mipmap；不要依赖驱动对未初始化纹理内容的默认值，否则资源重载后的 Splash 文本可能出现整格纯色块。
-- 字体异步字形生成链路必须以运行时版本隔离：任务、结果、待上传队列、字符缓存键、字体匹配缓存和宽度缓存都要区分 runtimeVersion；资源重载或字体排序变化后，旧 worker 的迟到结果不能写入新页，同码点也不能复用旧排序下的字形或宽度语义。
+- 字体异步字形生成链路必须以运行时版本隔离并支持 generation handoff：任务、结果、待上传队列、字符缓存键、字体匹配缓存和宽度缓存都要区分 runtimeVersion；资源重载或字体排序变化后，旧 worker 的迟到结果不能写入新页，同码点也不能复用旧排序下的字形或宽度语义；旧 generation 中仍在 `GENERATING` / `UPLOAD_PENDING` 的字符需求必须迁移或重新提交到新 generation，不能静默丢弃；同一 runtime 内同码点取消后重提交还必须用 per-request generationId 隔离旧 pending 与新 pending，避免旧图像写成当前 ready glyph；快速连续 reload 必须 debounce/coalesce，否则每帧绘制请求也会被持续重建清空，导致字形生成和上传饥饿。
 - `ForgeConfigTemplateScreen` 的列表能力允许通过 `PropertyEditorFactory` 派生专用列表控件；当前 `fontSystem.fontSort` 使用专用二级字体排序页，页面内部用 HTML-like 拖拽列表调整顺序，并支持在每行序号输入框中直接输入目标位置后回写草稿。
 
 ## 运行与验证

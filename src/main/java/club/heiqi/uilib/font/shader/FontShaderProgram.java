@@ -94,6 +94,15 @@ public class FontShaderProgram {
     }
 
     /**
+     * 获取底层 shader 程序 ID。
+     *
+     * @return shader 程序 ID
+     */
+    public int getShaderProgramId() {
+        return shaderProgramId;
+    }
+
+    /**
      * 获取顶点着色器路径。
      *
      * @return 顶点着色器路径

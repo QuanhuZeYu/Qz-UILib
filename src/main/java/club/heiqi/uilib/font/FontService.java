@@ -1,14 +1,21 @@
 package club.heiqi.uilib.font;
 
 import java.util.ArrayDeque;
+import java.util.ArrayList;
 import java.util.Deque;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Set;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 import club.heiqi.uilib.MyMod;
 import club.heiqi.uilib.font.config.FontConfig;
 import club.heiqi.uilib.font.event.FontReloadRequest;
 import club.heiqi.uilib.font.glyph.GlyphGenerationDispatcher;
+import club.heiqi.uilib.font.glyph.GlyphGenerationPriority;
+import club.heiqi.uilib.font.glyph.GlyphGenerationTask;
 import club.heiqi.uilib.font.layout.TextLayoutService;
+import club.heiqi.uilib.font.page.GlyphCacheKey;
 import club.heiqi.uilib.font.page.GlyphPageManager;
 import club.heiqi.uilib.font.render.FontBatchRenderer;
 import club.heiqi.uilib.font.render.TextDecorationRenderer;
@@ -37,6 +44,7 @@ public class FontService {
     private TextDecorationRenderer decorationRenderer;
     private FontShaderProgram shaderProgram;
     private final Deque<Long> drawStageUploadTimestamps = new ArrayDeque<Long>();
+    private final FontReloadDebouncer reloadDebouncer = new FontReloadDebouncer(150L, 750L);
 
     private long lastDrawStageUploadAt = 0L;
     private volatile int runtimeVersion;
@@ -109,35 +117,15 @@ public class FontService {
             if (!initialized.get()) {
                 initialize();
             }
+            FontReloadRequest immediateRequest = reloadDebouncer.request(request, System.currentTimeMillis());
+            if (immediateRequest == null) {
+                MyMod.LOG.debug("字体系统重载请求已合并，原因：{}，待合并数量：{}", request.getReason(),
+                        Integer.valueOf(reloadDebouncer.getPendingCount()));
+                return;
+            }
 
-            int nextRuntimeVersion = runtimeVersion + 1;
-            glyphGenerationDispatcher.reset();
-            glyphGenerationDispatcher.setRuntimeVersion(nextRuntimeVersion);
-            glyphPageManager.setRuntimeVersion(nextRuntimeVersion);
-            textLayoutService.setRuntimeVersion(nextRuntimeVersion);
-            refreshTextMeasureRuntime();
-            glyphPageManager.reset();
-            if (batchRenderer != null) {
-                batchRenderer.dispose();
-                batchRenderer = null;
-            }
-            if (decorationRenderer != null) {
-                decorationRenderer.clear();
-                decorationRenderer = null;
-            }
-            if (shaderProgram != null) {
-                shaderProgram.close();
-                shaderProgram = null;
-            }
-            drawStageUploadTimestamps.clear();
-            lastDrawStageUploadAt = 0L;
-            glyphGenerationDispatcher.initialize(fontMatcher, glyphPageManager, glyphPageManager::queueUpload);
-            runtimeVersion = nextRuntimeVersion;
+            performReloadLocked(immediateRequest);
         }
-        int invalidatedRootCount = UiLayoutInvalidationRegistry.invalidateAll();
-
-        MyMod.LOG.info("字体系统重载完成，原因：{}，布局树已失效：{}，运行时版本：{}", request.getReason(),
-                Integer.valueOf(invalidatedRootCount), Integer.valueOf(runtimeVersion));
     }
 
     /**
@@ -150,6 +138,7 @@ public class FontService {
             if (!initialized.get()) {
                 return;
             }
+            applyPendingReloadIfReadyLocked();
 
             glyphPageManager.flushPendingUploads(maxUploadCount);
             debugLogStats("render_tick");
@@ -166,6 +155,7 @@ public class FontService {
             if (!initialized.get() || maxUploadCount <= 0) {
                 return;
             }
+            applyPendingReloadIfReadyLocked();
             if (!canRunDrawStageUpload()) {
                 return;
             }
@@ -321,6 +311,67 @@ public class FontService {
         textLayoutService.clearCache();
         layoutRuntimeReady.set(true);
         textMeasureEpoch++;
+    }
+
+    private void applyPendingReloadIfReadyLocked() {
+        FontReloadRequest readyRequest = reloadDebouncer.pollReady(System.currentTimeMillis());
+        if (readyRequest != null) {
+            performReloadLocked(readyRequest);
+        }
+    }
+
+    private void performReloadLocked(FontReloadRequest request) {
+        int nextRuntimeVersion = runtimeVersion + 1;
+        List<GlyphCacheKey> recoverableGlyphs = glyphPageManager.snapshotRecoverableRequests();
+        glyphGenerationDispatcher.reset();
+        glyphGenerationDispatcher.setRuntimeVersion(nextRuntimeVersion);
+        glyphPageManager.setRuntimeVersion(nextRuntimeVersion);
+        textLayoutService.setRuntimeVersion(nextRuntimeVersion);
+        refreshTextMeasureRuntime();
+        glyphPageManager.reset();
+        if (batchRenderer != null) {
+            batchRenderer.dispose();
+            batchRenderer = null;
+        }
+        if (decorationRenderer != null) {
+            decorationRenderer.clear();
+            decorationRenderer = null;
+        }
+        if (shaderProgram != null) {
+            shaderProgram.close();
+            shaderProgram = null;
+        }
+        drawStageUploadTimestamps.clear();
+        lastDrawStageUploadAt = 0L;
+        glyphGenerationDispatcher.initialize(fontMatcher, glyphPageManager, glyphPageManager::queueUpload);
+        runtimeVersion = nextRuntimeVersion;
+        resubmitRecoverableGlyphs(recoverableGlyphs, nextRuntimeVersion);
+
+        int invalidatedRootCount = UiLayoutInvalidationRegistry.invalidateAll();
+        MyMod.LOG.info("字体系统重载完成，原因：{}，布局树已失效：{}，运行时版本：{}", request.getReason(),
+                Integer.valueOf(invalidatedRootCount), Integer.valueOf(runtimeVersion));
+    }
+
+    private void resubmitRecoverableGlyphs(List<GlyphCacheKey> recoverableGlyphs, int targetRuntimeVersion) {
+        if (recoverableGlyphs == null || recoverableGlyphs.isEmpty()) {
+            return;
+        }
+
+        Set<GlyphCacheKey> deduplicatedGlyphs = new HashSet<GlyphCacheKey>();
+        for (GlyphCacheKey glyph : recoverableGlyphs) {
+            deduplicatedGlyphs.add(new GlyphCacheKey(targetRuntimeVersion, glyph.getCodepoint(), glyph.getFontType()));
+        }
+
+        List<GlyphGenerationTask> tasks = new ArrayList<GlyphGenerationTask>(deduplicatedGlyphs.size());
+        int glyphSize = Math.max(8, (int) Math.ceil(FontConfig.awtCharSize));
+        for (GlyphCacheKey glyph : deduplicatedGlyphs) {
+            tasks.add(new GlyphGenerationTask(targetRuntimeVersion, glyph.getCodepoint(), glyph.getFontType(), glyphSize,
+                    GlyphGenerationPriority.HIGH));
+        }
+        for (GlyphGenerationTask task : tasks) {
+            glyphGenerationDispatcher.submit(task);
+        }
+        MyMod.LOG.debug("字体系统重载后已恢复字形生成请求：{}", Integer.valueOf(tasks.size()));
     }
 
     private void debugLogStats(String source) {

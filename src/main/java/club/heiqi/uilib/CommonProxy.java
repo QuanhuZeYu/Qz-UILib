@@ -22,7 +22,6 @@ public class CommonProxy {
         File configFile = event.getSuggestedConfigurationFile();
         Config.init(configFile);
         FontService.getInstance().initialize();
-        club.heiqi.uilib.font.config.FontConfig.onConfigReload();
 
         MyMod.LOG.info("Qz-UILib {} 初始化完成", Tags.VERSION);
         MyMod.LOG.info("字体系统已启用：{}", FontService.getInstance().isInitialized());

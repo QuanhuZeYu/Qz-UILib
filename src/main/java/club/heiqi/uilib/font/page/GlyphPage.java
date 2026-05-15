@@ -10,6 +10,7 @@ import org.lwjgl.opengl.GL11;
 import org.lwjgl.opengl.GL13;
 import org.lwjgl.opengl.GL30;
 
+import club.heiqi.uilib.font.FontRuntimeDiagnostics;
 import club.heiqi.uilib.font.config.FontConfig;
 
 /**
@@ -93,22 +94,29 @@ public class GlyphPage {
         }
 
         GL11.glPushAttrib(GL11.GL_ALL_ATTRIB_BITS);
-        ensureTexture();
-        GL11.glBindTexture(GL11.GL_TEXTURE_2D, textureId);
-        GL11.glPixelStorei(GL11.GL_UNPACK_ALIGNMENT, 1);
-        GL11.glTexSubImage2D(
-                GL11.GL_TEXTURE_2D,
-                0,
-                slot.getX(),
-                slot.getY(),
-                slot.getWidth(),
-                slot.getHeight(),
-                GL11.GL_RGBA,
-                GL11.GL_UNSIGNED_BYTE,
-                toByteBuffer(image));
-        GL30.glGenerateMipmap(GL11.GL_TEXTURE_2D);
-        GL11.glBindTexture(GL11.GL_TEXTURE_2D, 0);
-        GL11.glPopAttrib();
+        GL11.glPushClientAttrib(GL11.GL_CLIENT_PIXEL_STORE_BIT);
+        try {
+            ensureTexture();
+            GL11.glBindTexture(GL11.GL_TEXTURE_2D, textureId);
+            prepareUnpackState();
+            GL11.glTexSubImage2D(
+                    GL11.GL_TEXTURE_2D,
+                    0,
+                    slot.getX(),
+                    slot.getY(),
+                    slot.getWidth(),
+                    slot.getHeight(),
+                    GL11.GL_RGBA,
+                    GL11.GL_UNSIGNED_BYTE,
+                    toByteBuffer(image));
+            GL30.glGenerateMipmap(GL11.GL_TEXTURE_2D);
+            FontRuntimeDiagnostics.logGlyphUpload(key.getRuntimeVersion(), key.getCodepoint(), key.getFontType(),
+                    textureId, GL11.glIsTexture(textureId), GL11.glGetError(), image);
+            GL11.glBindTexture(GL11.GL_TEXTURE_2D, 0);
+        } finally {
+            GL11.glPopClientAttrib();
+            GL11.glPopAttrib();
+        }
     }
 
     /**
@@ -152,7 +160,7 @@ public class GlyphPage {
         ByteBuffer emptyTexture = obtainEmptyTextureBuffer(textureSize * textureSize * 4).duplicate();
         emptyTexture.clear();
         emptyTexture.limit(textureSize * textureSize * 4);
-        GL11.glPixelStorei(GL11.GL_UNPACK_ALIGNMENT, 1);
+        prepareUnpackState();
         GL11.glTexImage2D(GL11.GL_TEXTURE_2D, 0, GL11.GL_RGBA, textureSize, textureSize, 0, GL11.GL_RGBA,
                 GL11.GL_UNSIGNED_BYTE, emptyTexture);
         GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_MIN_FILTER, getLerpMode());
@@ -160,6 +168,15 @@ public class GlyphPage {
         GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_WRAP_S, GL13.GL_CLAMP_TO_BORDER);
         GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_WRAP_T, GL13.GL_CLAMP_TO_BORDER);
         GL11.glBindTexture(GL11.GL_TEXTURE_2D, 0);
+    }
+
+    private void prepareUnpackState() {
+        GL11.glPixelStorei(GL11.GL_UNPACK_ALIGNMENT, 1);
+        GL11.glPixelStorei(GL11.GL_UNPACK_ROW_LENGTH, 0);
+        GL11.glPixelStorei(GL11.GL_UNPACK_SKIP_PIXELS, 0);
+        GL11.glPixelStorei(GL11.GL_UNPACK_SKIP_ROWS, 0);
+        GL11.glPixelStorei(GL11.GL_UNPACK_SWAP_BYTES, 0);
+        GL11.glPixelStorei(GL11.GL_UNPACK_LSB_FIRST, 0);
     }
 
     private int getLerpMode() {
