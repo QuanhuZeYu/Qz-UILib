@@ -1532,6 +1532,11 @@ public class ForgeConfigTemplateScreen extends BaseScreen {
                                         binding.setDraftOrder(orderedItems);
                                         requestStatusRefresh();
                                     }
+                                }, new FontSortScreen.FontSortSaveHandler() {
+                                    @Override
+                                    public void onFontSortSaveRequested() {
+                                        getOwnerScreen().saveDraft();
+                                    }
                                 }, getOwnerScreen().getTextMeasureService()));
                     }
                 }

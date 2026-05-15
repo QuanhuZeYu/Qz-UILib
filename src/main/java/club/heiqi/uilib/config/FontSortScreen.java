@@ -36,6 +36,7 @@ final class FontSortScreen extends BaseScreen {
 
     private final GuiScreen parentScreen;
     private final FontSortDraftSink draftSink;
+    private final FontSortSaveHandler saveHandler;
     private final HtmlLikeDocumentWidget documentWidget;
     private final FontSortOrderControl orderControl;
     private final TextNode statusText;
@@ -48,7 +49,7 @@ final class FontSortScreen extends BaseScreen {
      * @param draftSink 草稿回写器
      */
     FontSortScreen(GuiScreen parentScreen, List<String> initialOrder, FontSortDraftSink draftSink) {
-        this(parentScreen, initialOrder, draftSink, DefaultTextMeasureService.getInstance());
+        this(parentScreen, initialOrder, draftSink, null, DefaultTextMeasureService.getInstance());
     }
 
     /**
@@ -57,12 +58,14 @@ final class FontSortScreen extends BaseScreen {
      * @param parentScreen 父配置页
      * @param initialOrder 初始字体顺序
      * @param draftSink 草稿回写器
+     * @param saveHandler 保存处理器
      * @param textMeasureService 文本测量服务
      */
     FontSortScreen(GuiScreen parentScreen, List<String> initialOrder, FontSortDraftSink draftSink,
-            TextMeasureService textMeasureService) {
+            FontSortSaveHandler saveHandler, TextMeasureService textMeasureService) {
         this.parentScreen = parentScreen;
         this.draftSink = draftSink;
+        this.saveHandler = saveHandler;
 
         UiDocument document = UiDocument.create();
         ElementNode root = document.getRootElement();
@@ -159,6 +162,15 @@ final class FontSortScreen extends BaseScreen {
         });
         toolbar.append(backButton.getElement());
 
+        DocumentButtonControl saveButton = createButton(document, "保存并应用");
+        saveButton.setActionHandler(new DocumentButtonActionHandler() {
+            @Override
+            public void onAction(DocumentButtonActionEvent event) {
+                requestSaveNow();
+            }
+        });
+        toolbar.append(saveButton.getElement());
+
         ElementNode status = document.div();
         status.style()
                 .setFlexGrow(1.0F)
@@ -184,9 +196,15 @@ final class FontSortScreen extends BaseScreen {
             return false;
         }
         for (UiKeyEvent keyEvent : frame.getKeyEvents()) {
-            if (keyEvent != null && keyEvent.getAction() == UiKeyEvent.Action.PRESSED
-                    && keyEvent.getKeyCode() == Keyboard.KEY_ESCAPE) {
+            if (keyEvent == null || keyEvent.getAction() != UiKeyEvent.Action.PRESSED) {
+                continue;
+            }
+            if (keyEvent.getKeyCode() == Keyboard.KEY_ESCAPE) {
                 requestBack();
+                return true;
+            }
+            if (keyEvent.getKeyCode() == Keyboard.KEY_S && keyEvent.isControlPressed()) {
+                requestSaveNow();
                 return true;
             }
         }
@@ -202,8 +220,24 @@ final class FontSortScreen extends BaseScreen {
 
     private void refreshStatus(List<String> orderedItems) {
         if (statusText != null) {
-            statusText.setText("未保存草稿会回写到上一级配置页，按 Ctrl+S 保存。当前："
+            statusText.setText("未保存草稿会回写到上一级配置页，可点保存并应用或按 Ctrl+S。当前："
                     + FontSortOrderControl.summarizeItems(orderedItems, 4));
+        }
+    }
+
+    private void requestSaveNow() {
+        updateDraft(orderControl.getItemsSnapshot());
+        if (saveHandler == null) {
+            setStatusMessage("当前宿主未提供立即保存入口，请返回上一级配置页保存。");
+            return;
+        }
+        saveHandler.onFontSortSaveRequested();
+        setStatusMessage("已请求上一级配置页保存并应用当前字体排序。");
+    }
+
+    private void setStatusMessage(String message) {
+        if (statusText != null) {
+            statusText.setText(message == null ? "" : message);
         }
     }
 
@@ -231,5 +265,16 @@ final class FontSortScreen extends BaseScreen {
          * @param orderedItems 最新字体顺序
          */
         void onFontSortDraftChanged(List<String> orderedItems);
+    }
+
+    /**
+     * 字体排序立即保存处理器。
+     */
+    interface FontSortSaveHandler {
+
+        /**
+         * 当二级页请求立即保存并应用字体排序时触发。
+         */
+        void onFontSortSaveRequested();
     }
 }
