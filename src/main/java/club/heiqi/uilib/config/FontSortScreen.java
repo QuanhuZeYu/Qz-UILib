@@ -112,7 +112,7 @@ final class FontSortScreen extends BaseScreen {
         root.style()
                 .setWidth(UiStyleLength.percent(1.0F))
                 .setHeight(UiStyleLength.percent(1.0F))
-                .setPadding(UiStyleLength.px(22))
+                .setPadding(UiStyleLength.px(14))
                 .setBackgroundColor(0xF0080F1C)
                 .setTextColor(0xFFE5EEFF)
                 .setOverflowX(UiOverflow.HIDDEN)
@@ -122,16 +122,16 @@ final class FontSortScreen extends BaseScreen {
     private void appendHero(UiDocument document, ElementNode parent) {
         ElementNode hero = document.element("header");
         hero.style()
-                .setPadding(UiStyleLength.px(18))
+                .setPadding(UiStyleLength.px(12))
                 .setBackgroundColor(0xFF0F172A)
                 .setBorderColor(0xFF60A5FA)
                 .setBorderWidth(UiStyleLength.px(1))
-                .setBorderRadius(UiStyleLength.px(18))
+                .setBorderRadius(UiStyleLength.px(14))
                 .setTextColor(0xFFF8FAFC);
         hero.appendText("字体排序");
         ElementNode description = document.div();
-        description.style().setTextColor(0xFFD7E4FF).setMargin(UiStyleLength.px(6));
-        description.appendText("上方字体优先参与回退匹配。支持拖拽排序，也支持在每行序号输入框中直接输入目标位置。");
+        description.style().setTextColor(0xFFD7E4FF).setMargin(UiStyleLength.px(4));
+        description.appendText("上方字体优先参与回退匹配。大量字体请用搜索、跳转和目标序号移动，当前页内可拖拽微调。");
         hero.append(description);
         parent.append(hero);
     }
@@ -142,13 +142,13 @@ final class FontSortScreen extends BaseScreen {
                 .setDisplay(UiDisplay.FLEX)
                 .setFlexDirection(UiFlexDirection.ROW)
                 .setAlignItems(UiAlignItems.CENTER)
-                .setColumnGap(UiStyleLength.px(10))
-                .setMargin(UiStyleLength.px(14))
-                .setPadding(UiStyleLength.px(14))
+                .setColumnGap(UiStyleLength.px(8))
+                .setMargin(UiStyleLength.px(10))
+                .setPadding(UiStyleLength.px(10))
                 .setBackgroundColor(0xCC111827)
                 .setBorderColor(0xFF334155)
                 .setBorderWidth(UiStyleLength.px(1))
-                .setBorderRadius(UiStyleLength.px(16));
+                .setBorderRadius(UiStyleLength.px(14));
 
         DocumentButtonControl backButton = createButton(document, "返回配置页");
         backButton.setActionHandler(new DocumentButtonActionHandler() {

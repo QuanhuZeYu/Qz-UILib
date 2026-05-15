@@ -4,21 +4,25 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
 
 import org.lwjglx.input.Keyboard;
 
-import club.heiqi.uilib.ui.dom.DocumentElementKeyEvent;
-import club.heiqi.uilib.ui.dom.DocumentElementKeyHandler;
 import club.heiqi.uilib.ui.document.HtmlLikeDocumentWidget;
 import club.heiqi.uilib.ui.dom.DocumentElementDragEndHandler;
 import club.heiqi.uilib.ui.dom.DocumentElementDragEvent;
 import club.heiqi.uilib.ui.dom.DocumentElementDragOverHandler;
 import club.heiqi.uilib.ui.dom.DocumentElementDragStartHandler;
+import club.heiqi.uilib.ui.dom.DocumentElementKeyEvent;
+import club.heiqi.uilib.ui.dom.DocumentElementKeyHandler;
 import club.heiqi.uilib.ui.dom.ElementNode;
 import club.heiqi.uilib.ui.dom.TextNode;
 import club.heiqi.uilib.ui.dom.UiDocument;
+import club.heiqi.uilib.ui.dom.control.DocumentButtonActionEvent;
+import club.heiqi.uilib.ui.dom.control.DocumentButtonActionHandler;
+import club.heiqi.uilib.ui.dom.control.DocumentButtonControl;
 import club.heiqi.uilib.ui.dom.control.DocumentTextInputChangeEvent;
 import club.heiqi.uilib.ui.dom.control.DocumentTextInputChangeHandler;
 import club.heiqi.uilib.ui.dom.control.DocumentTextInputControl;
@@ -34,21 +38,37 @@ import club.heiqi.uilib.ui.style.UiStyleInsets;
 import club.heiqi.uilib.ui.style.UiStyleLength;
 
 /**
- * 字体排序二级页使用的拖拽排序控件。
+ * 字体排序二级页使用的分页排序控件。
  */
 final class FontSortOrderControl {
 
-    private static final int ROW_HEIGHT = 48;
+    private static final int ROW_HEIGHT = 40;
+    private static final int DEFAULT_PAGE_SIZE = 25;
+    private static final int COMPACT_PAGE_SIZE = 50;
     private final UiDocument document;
     private final HtmlLikeDocumentWidget documentWidget;
     private final FontSortOrderChangeListener changeListener;
     private final List<String> items = new ArrayList<String>();
+    private final List<String> visibleItems = new ArrayList<String>();
+    private final List<Integer> visibleGlobalIndexes = new ArrayList<Integer>();
     private final Map<String, FontSortRow> rowsByItem = new LinkedHashMap<String, FontSortRow>();
     private final ElementNode rootElement;
     private final ElementNode listElement;
     private final TextNode stateText;
+    private final TextNode pageText;
+    private final TextNode resultText;
+    private final DocumentTextInputControl searchInput;
+    private final DocumentTextInputControl pageInput;
+    private final DocumentTextInputControl jumpInput;
+    private final DocumentButtonControl clearSearchButton;
+    private final DocumentButtonControl previousPageButton;
+    private final DocumentButtonControl nextPageButton;
+    private final DocumentButtonControl pageSizeButton;
     private final List<Integer> cachedRowMiddleYs = new ArrayList<Integer>();
+    private String filterText = "";
     private String draggingItem;
+    private int pageIndex;
+    private int pageSize = DEFAULT_PAGE_SIZE;
 
     /**
      * 创建字体排序控件。
@@ -68,6 +88,19 @@ final class FontSortOrderControl {
         this.rootElement = document.div();
         configureRoot(rootElement);
         appendGuide(rootElement);
+        ElementNode toolbar = document.div();
+        configureToolbar(toolbar);
+        this.searchInput = createSearchInput();
+        this.clearSearchButton = createToolbarButton("清空");
+        this.resultText = appendSearchControls(toolbar);
+        this.pageInput = createPageInput();
+        this.jumpInput = createJumpInput();
+        this.previousPageButton = createToolbarButton("上一页");
+        this.nextPageButton = createToolbarButton("下一页");
+        this.pageSizeButton = createToolbarButton("每页 25");
+        this.pageText = appendPageControls(toolbar);
+        rootElement.append(toolbar);
+
         this.listElement = document.div();
         configureList(listElement);
         rootElement.append(listElement);
@@ -77,9 +110,7 @@ final class FontSortOrderControl {
         this.stateText = state.appendText("");
         rootElement.append(state);
 
-        createRows();
-        rebuildList();
-        updateStateText();
+        refreshView(false);
     }
 
     /**
@@ -107,10 +138,11 @@ final class FontSortOrderControl {
      */
     void setItems(List<String> updatedItems) {
         replaceItems(updatedItems);
-        createRows();
         draggingItem = null;
-        syncListOrder();
-        updateStateText();
+        pageIndex = 0;
+        filterText = "";
+        searchInput.setText("");
+        refreshView(false);
         fireChange();
     }
 
@@ -125,6 +157,58 @@ final class FontSortOrderControl {
         return moveItemToOrdinal(item, targetOrdinal);
     }
 
+    /**
+     * 设置筛选文本，仅供测试验证视图语义。
+     *
+     * @param text 筛选文本
+     */
+    void setFilterTextForTesting(String text) {
+        filterText = normalizeFilterText(text);
+        searchInput.setText(text == null ? "" : text);
+        pageIndex = 0;
+        draggingItem = null;
+        refreshView(false);
+    }
+
+    /**
+     * 返回当前可见字体快照。
+     *
+     * @return 当前页可见字体
+     */
+    List<String> getVisibleItemsSnapshotForTesting() {
+        return new ArrayList<String>(visibleItems);
+    }
+
+    /**
+     * 设置每页数量，仅供测试验证分页。
+     *
+     * @param pageSize 每页数量
+     */
+    void setPageSizeForTesting(int pageSize) {
+        this.pageSize = Math.max(1, pageSize);
+        pageIndex = 0;
+        refreshView(false);
+    }
+
+    /**
+     * 返回当前页码，仅供测试验证定位。
+     *
+     * @return 零基页码
+     */
+    int getPageIndexForTesting() {
+        return pageIndex;
+    }
+
+    /**
+     * 跳转到全局序号所在页，仅供测试验证定位。
+     *
+     * @param ordinal 一基全局序号
+     * @return 是否完成跳转
+     */
+    boolean jumpToOrdinalForTesting(int ordinal) {
+        return jumpToOrdinal(ordinal);
+    }
+
     private boolean moveItemToOrdinal(String item, int targetOrdinal) {
         if (item == null || targetOrdinal < 1 || targetOrdinal > items.size()) {
             return false;
@@ -135,6 +219,8 @@ final class FontSortOrderControl {
             return false;
         }
         moveItem(currentIndex, targetIndex, true);
+        pageIndex = resolvePageIndexForGlobalIndex(targetIndex);
+        refreshView(false);
         return true;
     }
 
@@ -151,44 +237,210 @@ final class FontSortOrderControl {
         }
     }
 
-    private void createRows() {
-        rowsByItem.clear();
-        listElement.clearChildren();
-        for (int index = 0; index < items.size(); index++) {
-            String item = items.get(index);
-            rowsByItem.put(item, createRow(item, index));
-        }
-    }
-
     private void configureRoot(ElementNode root) {
         root.style()
                 .setDisplay(UiDisplay.FLEX)
                 .setFlexDirection(UiFlexDirection.COLUMN)
-                .setRowGap(UiStyleLength.px(12))
+                .setRowGap(UiStyleLength.px(10))
                 .setWidth(UiStyleLength.percent(1.0F));
     }
 
     private void appendGuide(ElementNode parent) {
         ElementNode guide = document.div();
         guide.style()
-                .setPadding(UiStyleLength.px(14))
+                .setPadding(UiStyleLength.px(12))
                 .setBackgroundColor(0xFF0F172A)
                 .setBorderColor(0xFF38BDF8)
                 .setBorderWidth(UiStyleLength.px(1))
-                .setBorderRadius(UiStyleLength.px(14))
+                .setBorderRadius(UiStyleLength.px(12))
                 .setTextColor(0xFFD7E4FF);
-        guide.appendText("拖住任意字体行可调整优先级；也可以在序号输入框中直接输入 1 ~ " + items.size() + " 的目标位置。");
+        guide.appendText("300+ 字体建议先搜索或跳转定位；跨页移动请在行内输入目标序号，拖拽仅用于当前页微调。筛选不会改变真实顺序。");
         parent.append(guide);
+    }
+
+    private void configureToolbar(ElementNode toolbar) {
+        toolbar.style()
+                .setDisplay(UiDisplay.FLEX)
+                .setFlexDirection(UiFlexDirection.COLUMN)
+                .setRowGap(UiStyleLength.px(8))
+                .setPadding(UiStyleLength.px(10))
+                .setBackgroundColor(0xCC111827)
+                .setBorderColor(0xFF334155)
+                .setBorderWidth(UiStyleLength.px(1))
+                .setBorderRadius(UiStyleLength.px(14));
+    }
+
+    private TextNode appendSearchControls(ElementNode toolbar) {
+        ElementNode row = createToolbarRow();
+        ElementNode label = createToolbarLabel("搜索");
+        row.append(label);
+        searchInput.getElement().setAttribute("data-font-sort-search-input", "fonts");
+        row.append(searchInput.getElement());
+        clearSearchButton.getElement().setAttribute("data-font-sort-clear-search", "fonts");
+        clearSearchButton.setActionHandler(new DocumentButtonActionHandler() {
+            @Override
+            public void onAction(DocumentButtonActionEvent event) {
+                clearFilter();
+            }
+        });
+        row.append(clearSearchButton.getElement());
+        ElementNode result = createToolbarStatus();
+        TextNode text = result.appendText("");
+        row.append(result);
+        toolbar.append(row);
+        return text;
+    }
+
+    private TextNode appendPageControls(ElementNode toolbar) {
+        ElementNode row = createToolbarRow();
+        previousPageButton.getElement().setAttribute("data-font-sort-page-prev", "fonts");
+        previousPageButton.setActionHandler(new DocumentButtonActionHandler() {
+            @Override
+            public void onAction(DocumentButtonActionEvent event) {
+                goToPage(pageIndex - 1);
+            }
+        });
+        row.append(previousPageButton.getElement());
+        nextPageButton.getElement().setAttribute("data-font-sort-page-next", "fonts");
+        nextPageButton.setActionHandler(new DocumentButtonActionHandler() {
+            @Override
+            public void onAction(DocumentButtonActionEvent event) {
+                goToPage(pageIndex + 1);
+            }
+        });
+        row.append(nextPageButton.getElement());
+        pageInput.getElement().setAttribute("data-font-sort-page-input", "fonts");
+        row.append(pageInput.getElement());
+        jumpInput.getElement().setAttribute("data-font-sort-jump-input", "fonts");
+        row.append(jumpInput.getElement());
+        pageSizeButton.getElement().setAttribute("data-font-sort-page-size", "fonts");
+        pageSizeButton.setActionHandler(new DocumentButtonActionHandler() {
+            @Override
+            public void onAction(DocumentButtonActionEvent event) {
+                togglePageSize();
+            }
+        });
+        row.append(pageSizeButton.getElement());
+        ElementNode pageStatus = createToolbarStatus();
+        TextNode text = pageStatus.appendText("");
+        row.append(pageStatus);
+        toolbar.append(row);
+        return text;
+    }
+
+    private ElementNode createToolbarRow() {
+        ElementNode row = document.div();
+        row.style()
+                .setDisplay(UiDisplay.FLEX)
+                .setFlexDirection(UiFlexDirection.ROW)
+                .setAlignItems(UiAlignItems.CENTER)
+                .setColumnGap(UiStyleLength.px(8));
+        return row;
+    }
+
+    private ElementNode createToolbarLabel(String text) {
+        ElementNode label = document.div();
+        label.style()
+                .setWidth(UiStyleLength.px(36))
+                .setTextColor(0xFFBAE6FD)
+                .setOverflowX(UiOverflow.HIDDEN)
+                .setOverflowY(UiOverflow.HIDDEN);
+        label.appendText(text);
+        return label;
+    }
+
+    private ElementNode createToolbarStatus() {
+        ElementNode status = document.div();
+        status.style()
+                .setFlexGrow(1.0F)
+                .setTextColor(0xFFBAE6FD)
+                .setOverflowX(UiOverflow.HIDDEN)
+                .setOverflowY(UiOverflow.HIDDEN);
+        return status;
+    }
+
+    private DocumentTextInputControl createSearchInput() {
+        DocumentTextInputControl input = createToolbarInput("输入字体名片段", 160)
+                .setMaxLength(80)
+                .setChangeHandler(new DocumentTextInputChangeHandler() {
+                    @Override
+                    public void onTextChanged(DocumentTextInputChangeEvent event) {
+                        filterText = normalizeFilterText(event.getText());
+                        pageIndex = 0;
+                        draggingItem = null;
+                        refreshView(false);
+                    }
+                });
+        return input;
+    }
+
+    private DocumentTextInputControl createPageInput() {
+        DocumentTextInputControl input = createToolbarInput("页码", 54)
+                .setMaxLength(4)
+                .setKeyHandler(new DocumentElementKeyHandler() {
+                    @Override
+                    public boolean onKey(DocumentElementKeyEvent event) {
+                        if (!isSubmitKey(event)) {
+                            return false;
+                        }
+                        applyPageInput(event.getCurrentTarget().getAttribute("value"));
+                        return true;
+                    }
+                });
+        return input;
+    }
+
+    private DocumentTextInputControl createJumpInput() {
+        DocumentTextInputControl input = createToolbarInput("跳到序号", 80)
+                .setMaxLength(4)
+                .setKeyHandler(new DocumentElementKeyHandler() {
+                    @Override
+                    public boolean onKey(DocumentElementKeyEvent event) {
+                        if (!isSubmitKey(event)) {
+                            return false;
+                        }
+                        applyJumpInput(event.getCurrentTarget().getAttribute("value"));
+                        return true;
+                    }
+                });
+        return input;
+    }
+
+    private DocumentTextInputControl createToolbarInput(String placeholder, int width) {
+        DocumentTextInputControl input = new DocumentTextInputControl(document)
+                .setPlaceholder(placeholder)
+                .setNormalBackgroundColor(0xFF0F172A)
+                .setNormalBorderColor(0xFF334155)
+                .setFocusBorderColor(0xFF93C5FD)
+                .setTextColors(0xFFF8FAFC, 0xFF64748B, 0xFF64748B);
+        input.getElement().style()
+                .setWidth(UiStyleLength.px(width))
+                .setHeight(UiStyleLength.px(28))
+                .setPadding(UiStyleInsets.of(UiStyleLength.px(6), UiStyleLength.px(8), UiStyleLength.px(6),
+                        UiStyleLength.px(8)));
+        return input;
+    }
+
+    private DocumentButtonControl createToolbarButton(String label) {
+        DocumentButtonControl button = new DocumentButtonControl(document, label)
+                .setBackgroundColors(0xFF1D4ED8, 0xFF2563EB, 0xFF334155)
+                .setFocusBorderColor(0xFFBFDBFE)
+                .setTextColors(0xFFFFFFFF, 0xFFCBD5E1);
+        button.getElement().style()
+                .setHeight(UiStyleLength.px(30))
+                .setPadding(UiStyleInsets.of(UiStyleLength.px(6), UiStyleLength.px(10), UiStyleLength.px(6),
+                        UiStyleLength.px(10)));
+        return button;
     }
 
     private void configureList(ElementNode list) {
         list.setAttribute("data-font-sort-list", "fonts");
         list.style()
-                .setPadding(UiStyleLength.px(10))
+                .setPadding(UiStyleLength.px(8))
                 .setBackgroundColor(0xFF111827)
                 .setBorderColor(0xFF2563EB)
                 .setBorderWidth(UiStyleLength.px(1))
-                .setBorderRadius(UiStyleLength.px(16))
+                .setBorderRadius(UiStyleLength.px(14))
                 .setOverflowX(UiOverflow.HIDDEN)
                 .setOverflowY(UiOverflow.HIDDEN);
         list.setDragOverHandler(createListDragOverHandler());
@@ -196,8 +448,8 @@ final class FontSortOrderControl {
 
     private void configureState(ElementNode state) {
         state.style()
-                .setPadding(UiStyleInsets.of(UiStyleLength.px(12), UiStyleLength.px(14), UiStyleLength.px(12),
-                        UiStyleLength.px(14)))
+                .setPadding(UiStyleInsets.of(UiStyleLength.px(10), UiStyleLength.px(12), UiStyleLength.px(10),
+                        UiStyleLength.px(12)))
                 .setBackgroundColor(0xFF162132)
                 .setBorderColor(0xFF334155)
                 .setBorderWidth(UiStyleLength.px(1))
@@ -205,65 +457,157 @@ final class FontSortOrderControl {
                 .setTextColor(0xFFBAE6FD);
     }
 
-    private void rebuildList() {
-        syncRowVisuals();
-        syncListOrder();
+    private void refreshView(boolean keepPage) {
+        rebuildVisibleItems(keepPage);
+        createVisibleRows();
+        syncToolbarState();
+        updateStateText();
     }
 
-    private FontSortRow createRow(final String item, int index) {
+    private void rebuildVisibleItems(boolean keepPage) {
+        visibleItems.clear();
+        visibleGlobalIndexes.clear();
+        List<Integer> matchedIndexes = collectMatchedIndexes();
+        int totalPages = resolveTotalPages(matchedIndexes.size());
+        if (!keepPage) {
+            pageIndex = Math.max(0, Math.min(pageIndex, totalPages - 1));
+        } else {
+            pageIndex = Math.max(0, Math.min(pageIndex, totalPages - 1));
+        }
+        int start = Math.max(0, pageIndex * pageSize);
+        int end = Math.min(matchedIndexes.size(), start + pageSize);
+        for (int index = start; index < end; index++) {
+            int globalIndex = matchedIndexes.get(index).intValue();
+            visibleGlobalIndexes.add(Integer.valueOf(globalIndex));
+            visibleItems.add(items.get(globalIndex));
+        }
+    }
+
+    private List<Integer> collectMatchedIndexes() {
+        List<Integer> matchedIndexes = new ArrayList<Integer>();
+        for (int index = 0; index < items.size(); index++) {
+            String item = items.get(index);
+            if (filterText.isEmpty() || item.toLowerCase(Locale.ROOT).contains(filterText)) {
+                matchedIndexes.add(Integer.valueOf(index));
+            }
+        }
+        return matchedIndexes;
+    }
+
+    private void createVisibleRows() {
+        listElement.clearChildren();
+        if (visibleItems.isEmpty()) {
+            ElementNode empty = document.div();
+            empty.style()
+                    .setPadding(UiStyleLength.px(16))
+                    .setTextColor(0xFF94A3B8);
+            empty.appendText(filterText.isEmpty() ? "当前没有字体可排序。" : "没有匹配当前搜索条件的字体。");
+            listElement.append(empty);
+            return;
+        }
+        for (int visibleIndex = 0; visibleIndex < visibleItems.size(); visibleIndex++) {
+            String item = visibleItems.get(visibleIndex);
+            int globalIndex = visibleGlobalIndexes.get(visibleIndex).intValue();
+            FontSortRow row = rowsByItem.get(item);
+            if (row == null) {
+                row = createRow(item, globalIndex, isDragEnabled());
+                rowsByItem.put(item, row);
+            } else {
+                updateRow(row, item, globalIndex, isDragEnabled());
+            }
+            listElement.append(row.element);
+        }
+    }
+
+    private FontSortRow createRow(final String item, int globalIndex, boolean dragEnabled) {
         ElementNode row = document.element("li");
         row.setAttribute("data-font-sort-item", item);
-        row.setAttribute("draggable", "true");
+        row.setAttribute("data-font-sort-ordinal", String.valueOf(globalIndex + 1));
+        row.setAttribute("draggable", dragEnabled ? "true" : "false");
         row.style()
                 .setDisplay(UiDisplay.FLEX)
                 .setFlexDirection(UiFlexDirection.ROW)
                 .setAlignItems(UiAlignItems.CENTER)
-                .setColumnGap(UiStyleLength.px(10))
+                .setColumnGap(UiStyleLength.px(8))
                 .setHeight(UiStyleLength.px(ROW_HEIGHT))
-                .setMargin(UiStyleInsets.of(UiStyleLength.px(6), UiStyleLength.px(0), UiStyleLength.px(6),
+                .setMargin(UiStyleInsets.of(UiStyleLength.px(4), UiStyleLength.px(0), UiStyleLength.px(4),
                         UiStyleLength.px(0)))
-                .setPadding(UiStyleInsets.of(UiStyleLength.px(8), UiStyleLength.px(12), UiStyleLength.px(8),
-                        UiStyleLength.px(12)))
+                .setPadding(UiStyleInsets.of(UiStyleLength.px(6), UiStyleLength.px(10), UiStyleLength.px(6),
+                        UiStyleLength.px(10)))
                 .setBackgroundColor(item.equals(draggingItem) ? 0xFF1D4ED8 : 0xFF1E293B)
                 .setBorderColor(item.equals(draggingItem) ? 0xFFBFDBFE : 0xFF475569)
                 .setBorderWidth(UiStyleLength.px(1))
-                .setBorderRadius(UiStyleLength.px(12))
+                .setBorderRadius(UiStyleLength.px(10))
                 .setOpacity(item.equals(draggingItem) ? 0.62F : 1.0F)
                 .setTextColor(0xFFEAF1FF);
 
-        row.append(createHandle(item));
-        DocumentTextInputControl orderInput = createOrderInput(item, index);
+        row.append(createHandle(item, dragEnabled));
+        OrdinalBadge ordinalBadge = createOrdinalBadge(globalIndex);
+        row.append(ordinalBadge.element);
+        DocumentTextInputControl orderInput = createOrderInput(item, globalIndex);
         row.append(orderInput.getElement());
         row.append(createLabel(item));
-        row.setDragStartHandler(createItemDragStartHandler(item));
-        row.setDragEndHandler(createItemDragEndHandler(item));
-        return new FontSortRow(row, orderInput);
+        if (dragEnabled) {
+            row.setDragStartHandler(createItemDragStartHandler(item));
+            row.setDragEndHandler(createItemDragEndHandler(item));
+        }
+        return new FontSortRow(row, orderInput, ordinalBadge.text);
     }
 
-    private ElementNode createHandle(String item) {
+    private void updateRow(FontSortRow row, final String item, int globalIndex, boolean dragEnabled) {
+        row.element.setAttribute("data-font-sort-ordinal", String.valueOf(globalIndex + 1));
+        row.element.setAttribute("draggable", dragEnabled ? "true" : "false");
+        row.element.style()
+                .setBackgroundColor(item.equals(draggingItem) ? 0xFF1D4ED8 : 0xFF1E293B)
+                .setBorderColor(item.equals(draggingItem) ? 0xFFBFDBFE : 0xFF475569)
+                .setOpacity(item.equals(draggingItem) ? 0.62F : 1.0F);
+        row.ordinalText.setText("#" + (globalIndex + 1));
+        row.orderInput.setPlaceholder(String.valueOf(globalIndex + 1));
+        row.orderInput.setText("");
+        if (dragEnabled) {
+            row.element.setDragStartHandler(createItemDragStartHandler(item));
+            row.element.setDragEndHandler(createItemDragEndHandler(item));
+        } else {
+            row.element.setDragStartHandler(null);
+            row.element.setDragEndHandler(null);
+        }
+    }
+
+    private ElementNode createHandle(String item, boolean enabled) {
         ElementNode handle = document.div();
         handle.style()
                 .setDisplay(UiDisplay.FLEX)
                 .setFlexDirection(UiFlexDirection.ROW)
                 .setAlignItems(UiAlignItems.CENTER)
                 .setJustifyContent(UiJustifyContent.CENTER)
-                .setWidth(UiStyleLength.px(30))
-                .setHeight(UiStyleLength.px(26))
+                .setWidth(UiStyleLength.px(26))
+                .setHeight(UiStyleLength.px(24))
                 .setBackgroundColor(item.equals(draggingItem) ? 0xFF172554 : 0xFF0F172A)
                 .setBorderColor(item.equals(draggingItem) ? 0xFF93C5FD : 0xFF334155)
                 .setBorderWidth(UiStyleLength.px(1))
                 .setBorderRadius(UiStyleLength.px(999))
-                .setTextColor(0xFF93C5FD)
+                .setTextColor(enabled ? 0xFF93C5FD : 0xFF64748B)
                 .setOverflowX(UiOverflow.HIDDEN)
                 .setOverflowY(UiOverflow.HIDDEN);
         handle.setAttribute("data-font-sort-handle", item);
-        handle.appendText("|||");
+        handle.appendText(enabled ? "|||" : "--");
         return handle;
     }
 
-    private DocumentTextInputControl createOrderInput(final String item, int index) {
+    private OrdinalBadge createOrdinalBadge(int globalIndex) {
+        ElementNode badge = document.div();
+        badge.style()
+                .setWidth(UiStyleLength.px(42))
+                .setTextColor(0xFFBAE6FD)
+                .setOverflowX(UiOverflow.HIDDEN)
+                .setOverflowY(UiOverflow.HIDDEN);
+        TextNode text = badge.appendText("#" + (globalIndex + 1));
+        return new OrdinalBadge(badge, text);
+    }
+
+    private DocumentTextInputControl createOrderInput(final String item, int globalIndex) {
         DocumentTextInputControl input = new DocumentTextInputControl(document)
-                .setPlaceholder(String.valueOf(index + 1))
+                .setPlaceholder(String.valueOf(globalIndex + 1))
                 .setMaxLength(4)
                 .setNormalBackgroundColor(0xFF0F172A)
                 .setNormalBorderColor(0xFF334155)
@@ -278,7 +622,7 @@ final class FontSortOrderControl {
                 .setKeyHandler(new DocumentElementKeyHandler() {
                     @Override
                     public boolean onKey(DocumentElementKeyEvent event) {
-                        if (event.getAction() != UiKeyEvent.Action.PRESSED || !isEnterKey(event.getKeyCode())) {
+                        if (!isSubmitKey(event)) {
                             return false;
                         }
                         applyOrdinalInput(item, event.getCurrentTarget().getAttribute("value"));
@@ -288,8 +632,8 @@ final class FontSortOrderControl {
         input.getElement().setAttribute("data-font-sort-order-input", item);
         input.getElement().style()
                 .setWidth(UiStyleLength.px(52))
-                .setHeight(UiStyleLength.px(28))
-                .setPadding(UiStyleInsets.of(UiStyleLength.px(6), UiStyleLength.px(8), UiStyleLength.px(6),
+                .setHeight(UiStyleLength.px(26))
+                .setPadding(UiStyleInsets.of(UiStyleLength.px(5), UiStyleLength.px(8), UiStyleLength.px(5),
                         UiStyleLength.px(8)));
         return input;
     }
@@ -306,31 +650,85 @@ final class FontSortOrderControl {
     }
 
     private void applyOrdinalInput(String item, String rawText) {
-        String trimmed = rawText == null ? "" : rawText.trim();
-        if (trimmed.isEmpty()) {
+        Integer ordinal = parseOrdinal(rawText);
+        if (ordinal == null || ordinal.intValue() < 1 || ordinal.intValue() > items.size()) {
+            updateStateText("序号必须是 1 ~ " + items.size() + " 之间的整数。");
             return;
         }
-        try {
-            int ordinal = Integer.parseInt(trimmed);
-            if (ordinal < 1 || ordinal > items.size()) {
-                updateStateText("序号必须是 1 ~ " + items.size() + " 之间的整数。");
-                return;
-            }
-            if (!moveItemToOrdinal(item, ordinal)) {
-                updateStateText("字体已在目标位置，无需移动。");
-            }
-        } catch (NumberFormatException ignored) {
-            updateStateText("序号必须是 1 ~ " + items.size() + " 之间的整数。");
+        if (!moveItemToOrdinal(item, ordinal.intValue())) {
+            updateStateText("字体已在目标位置，无需移动。");
+            return;
         }
+        updateStateText("已将 " + item + " 移到第 " + ordinal + " 位。");
+    }
+
+    private void applyPageInput(String rawText) {
+        Integer ordinal = parseOrdinal(rawText);
+        int totalPages = resolveTotalPages(collectMatchedIndexes().size());
+        if (ordinal == null || ordinal.intValue() < 1 || ordinal.intValue() > totalPages) {
+            updateStateText("页码必须是 1 ~ " + totalPages + " 之间的整数。");
+            return;
+        }
+        goToPage(ordinal.intValue() - 1);
+    }
+
+    private void applyJumpInput(String rawText) {
+        Integer ordinal = parseOrdinal(rawText);
+        if (ordinal == null || ordinal.intValue() < 1 || ordinal.intValue() > items.size()) {
+            updateStateText("跳转序号必须是 1 ~ " + items.size() + " 之间的整数。");
+            return;
+        }
+        if (jumpToOrdinal(ordinal.intValue())) {
+            updateStateText("已跳转到第 " + ordinal + " 位。搜索条件已清空，便于查看全局位置。");
+        }
+    }
+
+    private boolean jumpToOrdinal(int ordinal) {
+        if (ordinal < 1 || ordinal > items.size()) {
+            return false;
+        }
+        clearFilterWithoutRefresh();
+        pageIndex = resolvePageIndexForGlobalIndex(ordinal - 1);
+        refreshView(false);
+        return true;
+    }
+
+    private void clearFilter() {
+        clearFilterWithoutRefresh();
+        pageIndex = 0;
+        refreshView(false);
+    }
+
+    private void clearFilterWithoutRefresh() {
+        filterText = "";
+        draggingItem = null;
+        searchInput.setText("");
+    }
+
+    private void goToPage(int nextPageIndex) {
+        int totalPages = resolveTotalPages(collectMatchedIndexes().size());
+        pageIndex = Math.max(0, Math.min(nextPageIndex, totalPages - 1));
+        draggingItem = null;
+        refreshView(true);
+    }
+
+    private void togglePageSize() {
+        pageSize = pageSize == DEFAULT_PAGE_SIZE ? COMPACT_PAGE_SIZE : DEFAULT_PAGE_SIZE;
+        pageIndex = 0;
+        draggingItem = null;
+        refreshView(false);
     }
 
     private DocumentElementDragStartHandler createItemDragStartHandler(final String item) {
         return new DocumentElementDragStartHandler() {
             @Override
             public boolean onDragStart(DocumentElementDragEvent event) {
+                if (!isDragEnabled()) {
+                    return false;
+                }
                 draggingItem = item;
                 refreshDragLayoutCache();
-                rebuildList();
+                refreshView(true);
                 return true;
             }
         };
@@ -345,7 +743,7 @@ final class FontSortOrderControl {
                 }
                 draggingItem = null;
                 cachedRowMiddleYs.clear();
-                rebuildList();
+                refreshView(true);
                 updateStateText();
                 fireChange();
                 return true;
@@ -357,13 +755,16 @@ final class FontSortOrderControl {
         return new DocumentElementDragOverHandler() {
             @Override
             public boolean onDragOver(DocumentElementDragEvent event) {
-                moveDraggingItem(resolveTargetIndex(event));
+                if (!isDragEnabled()) {
+                    return false;
+                }
+                moveDraggingItem(resolveTargetVisibleIndex(event));
                 return true;
             }
         };
     }
 
-    private int resolveTargetIndex(DocumentElementDragEvent event) {
+    private int resolveTargetVisibleIndex(DocumentElementDragEvent event) {
         if (event == null) {
             return 0;
         }
@@ -397,18 +798,34 @@ final class FontSortOrderControl {
         return itemBoxes.size();
     }
 
-    private void moveDraggingItem(int targetIndex) {
-        if (draggingItem == null) {
+    private void moveDraggingItem(int targetVisibleIndex) {
+        if (draggingItem == null || visibleGlobalIndexes.isEmpty()) {
             return;
         }
         int currentIndex = items.indexOf(draggingItem);
-        if (currentIndex < 0 || currentIndex == targetIndex) {
+        if (currentIndex < 0) {
             return;
+        }
+        int targetIndex = resolveGlobalTargetIndex(targetVisibleIndex, currentIndex);
+        if (currentIndex == targetIndex) {
+            return;
+        }
+        moveItem(currentIndex, targetIndex, false);
+        refreshView(true);
+    }
+
+    private int resolveGlobalTargetIndex(int targetVisibleIndex, int currentIndex) {
+        int clampedVisibleIndex = Math.max(0, Math.min(targetVisibleIndex, visibleGlobalIndexes.size()));
+        int targetIndex;
+        if (clampedVisibleIndex >= visibleGlobalIndexes.size()) {
+            targetIndex = visibleGlobalIndexes.get(visibleGlobalIndexes.size() - 1).intValue() + 1;
+        } else {
+            targetIndex = visibleGlobalIndexes.get(clampedVisibleIndex).intValue();
         }
         if (targetIndex > currentIndex) {
             targetIndex--;
         }
-        moveItem(currentIndex, targetIndex, false);
+        return Math.max(0, Math.min(targetIndex, items.size() - 1));
     }
 
     private void moveItem(int currentIndex, int targetIndex, boolean notifyImmediately) {
@@ -418,15 +835,29 @@ final class FontSortOrderControl {
         }
         String item = items.remove(currentIndex);
         items.add(targetIndex, item);
-        rebuildList();
-        updateStateText();
         if (notifyImmediately) {
             fireChange();
         }
     }
 
+    private void syncToolbarState() {
+        int matchedCount = collectMatchedIndexes().size();
+        int totalPages = resolveTotalPages(matchedCount);
+        resultText.setText(filterText.isEmpty() ? "共 " + items.size() + " 个字体"
+                : "匹配 " + matchedCount + " / " + items.size() + " 个字体");
+        pageText.setText("第 " + (pageIndex + 1) + " / " + totalPages + " 页；当前页 " + visibleItems.size() + " 项");
+        pageSizeButton.setLabel("每页 " + pageSize);
+        previousPageButton.setEnabled(pageIndex > 0);
+        nextPageButton.setEnabled(pageIndex + 1 < totalPages);
+        clearSearchButton.setEnabled(!filterText.isEmpty());
+        pageInput.setPlaceholder("页码");
+        pageInput.setText("");
+        jumpInput.setText("");
+    }
+
     private void updateStateText() {
-        updateStateText("当前字体数量：" + items.size() + "。前 5 个：" + summarizeItems(items, 5));
+        String mode = filterText.isEmpty() ? "完整列表" : "筛选视图";
+        updateStateText(mode + "；当前字体数量：" + items.size() + "。前 5 个：" + summarizeItems(items, 5));
     }
 
     private void updateStateText(String text) {
@@ -436,32 +867,6 @@ final class FontSortOrderControl {
     private void fireChange() {
         if (changeListener != null) {
             changeListener.onOrderChanged(getItemsSnapshot());
-        }
-    }
-
-    private void syncRowVisuals() {
-        for (int index = 0; index < items.size(); index++) {
-            String item = items.get(index);
-            FontSortRow row = rowsByItem.get(item);
-            if (row == null) {
-                continue;
-            }
-            boolean dragging = item.equals(draggingItem);
-            row.element.style()
-                    .setBackgroundColor(dragging ? 0xFF1D4ED8 : 0xFF1E293B)
-                    .setBorderColor(dragging ? 0xFFBFDBFE : 0xFF475569)
-                    .setOpacity(dragging ? 0.62F : 1.0F);
-            row.orderInput.setPlaceholder(String.valueOf(index + 1));
-            row.orderInput.setText("");
-        }
-    }
-
-    private void syncListOrder() {
-        for (String item : items) {
-            FontSortRow row = rowsByItem.get(item);
-            if (row != null) {
-                listElement.append(row.element);
-            }
         }
     }
 
@@ -480,6 +885,21 @@ final class FontSortOrderControl {
         }
     }
 
+    private int resolvePageIndexForGlobalIndex(int globalIndex) {
+        if (pageSize <= 0) {
+            return 0;
+        }
+        return Math.max(0, Math.min(globalIndex, Math.max(0, items.size() - 1)) / pageSize);
+    }
+
+    private int resolveTotalPages(int itemCount) {
+        return Math.max(1, (itemCount + pageSize - 1) / pageSize);
+    }
+
+    private boolean isDragEnabled() {
+        return filterText.isEmpty();
+    }
+
     private static DocumentLayoutBox findLayoutBox(DocumentLayoutBox currentBox, ElementNode element) {
         if (currentBox == null || element == null) {
             return null;
@@ -496,8 +916,28 @@ final class FontSortOrderControl {
         return null;
     }
 
+    private static Integer parseOrdinal(String rawText) {
+        String trimmed = rawText == null ? "" : rawText.trim();
+        if (trimmed.isEmpty()) {
+            return null;
+        }
+        try {
+            return Integer.valueOf(Integer.parseInt(trimmed));
+        } catch (NumberFormatException ignored) {
+            return null;
+        }
+    }
+
     private static String normalizeItem(String item) {
         return item == null ? "" : item.trim();
+    }
+
+    private static String normalizeFilterText(String text) {
+        return text == null ? "" : text.trim().toLowerCase(Locale.ROOT);
+    }
+
+    private static boolean isSubmitKey(DocumentElementKeyEvent event) {
+        return event != null && event.getAction() == UiKeyEvent.Action.PRESSED && isEnterKey(event.getKeyCode());
     }
 
     private static boolean isEnterKey(int keyCode) {
@@ -516,7 +956,7 @@ final class FontSortOrderControl {
         int resolvedLimit = Math.max(1, limit);
         for (int index = 0; index < values.size() && index < resolvedLimit; index++) {
             if (index > 0) {
-                builder.append(" → ");
+                builder.append(" -> ");
             }
             builder.append(values.get(index));
         }
@@ -546,10 +986,26 @@ final class FontSortOrderControl {
 
         private final ElementNode element;
         private final DocumentTextInputControl orderInput;
+        private final TextNode ordinalText;
 
-        private FontSortRow(ElementNode element, DocumentTextInputControl orderInput) {
+        private FontSortRow(ElementNode element, DocumentTextInputControl orderInput, TextNode ordinalText) {
             this.element = element;
             this.orderInput = orderInput;
+            this.ordinalText = ordinalText;
+        }
+    }
+
+    /**
+     * 字体全局序号徽标节点。
+     */
+    private static final class OrdinalBadge {
+
+        private final ElementNode element;
+        private final TextNode text;
+
+        private OrdinalBadge(ElementNode element, TextNode text) {
+            this.element = element;
+            this.text = text;
         }
     }
 }

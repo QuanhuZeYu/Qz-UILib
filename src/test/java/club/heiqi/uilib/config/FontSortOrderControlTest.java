@@ -25,7 +25,7 @@ import club.heiqi.uilib.ui.text.TextMeasureService;
 public class FontSortOrderControlTest {
 
     /**
-     * 验证字体排序控件会构建拖拽列表与序号输入框。
+     * 验证字体排序控件会构建分页工具栏、拖拽列表与序号输入框。
      */
     @Test
     public void shouldBuildFontSortRowsWithDragAndOrdinalInputs() {
@@ -40,7 +40,63 @@ public class FontSortOrderControlTest {
         Assert.assertNotNull(firstItem.getDragStartHandler());
         Assert.assertNotNull(firstItem.getDragEndHandler());
         Assert.assertNotNull(findElementByAttribute(root, "data-font-sort-list", "fonts").getDragOverHandler());
-        Assert.assertTrue(containsText(collectDocumentTexts(root), "直接输入 1 ~ 4 的目标位置"));
+        Assert.assertNotNull(findElementByAttribute(root, "data-font-sort-search-input", "fonts"));
+        Assert.assertNotNull(findElementByAttribute(root, "data-font-sort-page-input", "fonts"));
+        Assert.assertNotNull(findElementByAttribute(root, "data-font-sort-jump-input", "fonts"));
+        Assert.assertTrue(containsText(collectDocumentTexts(root), "跨页移动请在行内输入目标序号"));
+    }
+
+    /**
+     * 验证大量字体时仅渲染当前页，避免 300+ 字体一次性撑成长列表。
+     */
+    @Test
+    public void shouldRenderOnlyCurrentPageForLargeFontLists() {
+        TestFixture fixture = new TestFixture(createFontNames(60));
+
+        Assert.assertEquals(25, fixture.control.getVisibleItemsSnapshotForTesting().size());
+        Assert.assertNotNull(findElementByAttribute(fixture.document.getRootElement(), "data-font-sort-item", "Font-001"));
+        Assert.assertNull(findElementByAttribute(fixture.document.getRootElement(), "data-font-sort-item", "Font-026"));
+    }
+
+    /**
+     * 验证搜索只影响可见集合，不改变真实排序。
+     */
+    @Test
+    public void shouldFilterVisibleFontsWithoutChangingOrder() {
+        TestFixture fixture = new TestFixture(createFontNames(40));
+
+        fixture.control.setFilterTextForTesting("Font-03");
+
+        Assert.assertEquals(Arrays.asList("Font-030", "Font-031", "Font-032", "Font-033", "Font-034", "Font-035",
+                "Font-036", "Font-037", "Font-038", "Font-039"), fixture.control.getVisibleItemsSnapshotForTesting());
+        Assert.assertEquals("Font-001", fixture.control.getItemsSnapshot().get(0));
+    }
+
+    /**
+     * 验证目标序号移动支持跨页定位。
+     */
+    @Test
+    public void shouldMoveFontAcrossPagesWhenOrdinalSubmitted() {
+        TestFixture fixture = new TestFixture(createFontNames(60));
+
+        Assert.assertTrue(fixture.control.moveItemToOrdinalForTesting("Font-001", 40));
+
+        Assert.assertEquals("Font-001", fixture.control.getItemsSnapshot().get(39));
+        Assert.assertEquals(1, fixture.control.getPageIndexForTesting());
+        Assert.assertEquals(fixture.control.getItemsSnapshot(), fixture.lastChangedOrder);
+    }
+
+    /**
+     * 验证跳转序号会定位到对应页。
+     */
+    @Test
+    public void shouldJumpToPageContainingOrdinal() {
+        TestFixture fixture = new TestFixture(createFontNames(60));
+
+        Assert.assertTrue(fixture.control.jumpToOrdinalForTesting(52));
+
+        Assert.assertEquals(2, fixture.control.getPageIndexForTesting());
+        Assert.assertTrue(fixture.control.getVisibleItemsSnapshotForTesting().contains("Font-052"));
     }
 
     /**
@@ -176,7 +232,11 @@ public class FontSortOrderControlTest {
         private List<String> lastChangedOrder = Collections.emptyList();
 
         private TestFixture() {
-            control = new FontSortOrderControl(document, widget, Arrays.asList("Alpha", "Bravo", "Charlie", "Delta"),
+            this(Arrays.asList("Alpha", "Bravo", "Charlie", "Delta"));
+        }
+
+        private TestFixture(List<String> items) {
+            control = new FontSortOrderControl(document, widget, items,
                     new FontSortOrderControl.FontSortOrderChangeListener() {
                         @Override
                         public void onOrderChanged(List<String> orderedItems) {
@@ -185,6 +245,14 @@ public class FontSortOrderControlTest {
                     });
             document.getRootElement().append(control.getElement());
         }
+    }
+
+    private static List<String> createFontNames(int count) {
+        List<String> names = new ArrayList<String>();
+        for (int index = 1; index <= count; index++) {
+            names.add(String.format("Font-%03d", Integer.valueOf(index)));
+        }
+        return names;
     }
 
     private static final class DeterministicTextMeasureService implements TextMeasureService {

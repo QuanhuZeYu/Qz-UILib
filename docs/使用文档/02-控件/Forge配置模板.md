@@ -108,7 +108,7 @@ spec.addPropertyEditorFactory(new ForgeConfigTemplateScreen.PropertyEditorFactor
 - `club.heiqi.uilib.config.ModConfigGui` 已切换为 `ForgeConfigTemplateScreen` 的具体实现，不再继承默认 `GuiConfig`。
 - 当前模板实例覆盖三个分类：`general`、`fontSystem`、`fontSizeSetting`。
 - 当前模板已经把 `validValues` 视为一等语义；但当当前值已不在候选集时，会自动回退为文本输入保留遗留值。
-- 当前 `fontSystem.fontSort` 不再使用专用二级拖拽页，恢复为 `ForgeConfigTemplateScreen` 默认列表文本编辑；启动时仍会根据已发现字体自动补全有效顺序，并在配置数据中保留未发现的历史字体记录。
+- 当前 `fontSystem.fontSort` 使用专用二级排序页；页面面向 300+ 字体列表提供分页、搜索、全局序号跳转、目标序号移动与当前页内拖拽微调。启动时仍会根据已发现字体自动补全有效顺序，并在配置数据中保留未发现的历史字体记录。
 
 ## 验证建议
 
