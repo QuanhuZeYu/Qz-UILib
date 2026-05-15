@@ -14,6 +14,9 @@ import club.heiqi.uilib.ui.dom.ElementNode;
 import club.heiqi.uilib.ui.dom.TextNode;
 import club.heiqi.uilib.ui.dom.UiDocument;
 import club.heiqi.uilib.ui.event.UiKeyEvent;
+import club.heiqi.uilib.ui.style.UiAlignItems;
+import club.heiqi.uilib.ui.style.UiDisplay;
+import club.heiqi.uilib.ui.style.UiJustifyContent;
 import club.heiqi.uilib.ui.style.UiOverflow;
 import club.heiqi.uilib.ui.style.UiStyleLength;
 
@@ -23,6 +26,7 @@ import club.heiqi.uilib.ui.style.UiStyleLength;
 public final class DocumentButtonControl {
 
     private final ElementNode element;
+    private final ElementNode labelElement;
     private final TextNode labelText;
     private DocumentButtonActionHandler actionHandler;
     private boolean enabled = true;
@@ -44,7 +48,9 @@ public final class DocumentButtonControl {
     public DocumentButtonControl(UiDocument document, String label) {
         this.element = document.button();
         this.element.setAttribute("type", "button");
-        this.labelText = element.appendText(normalizeLabel(label));
+        this.labelElement = document.span();
+        this.labelText = labelElement.appendText(normalizeLabel(label));
+        this.element.append(labelElement);
         configureElement();
         installHandlers();
         updateVisualState();
@@ -168,11 +174,17 @@ public final class DocumentButtonControl {
     private void configureElement() {
         element.setFocusable(true);
         element.style()
+                .setDisplay(UiDisplay.FLEX)
+                .setAlignItems(UiAlignItems.CENTER)
+                .setJustifyContent(UiJustifyContent.CENTER)
                 .setPadding(UiStyleLength.px(10))
                 .setBackgroundColor(normalBackgroundColor)
                 .setBorderWidth(UiStyleLength.px(1))
                 .setBorderRadius(UiStyleLength.px(999))
                 .setTextColor(textColor)
+                .setOverflowX(UiOverflow.HIDDEN)
+                .setOverflowY(UiOverflow.HIDDEN);
+        labelElement.style()
                 .setOverflowX(UiOverflow.HIDDEN)
                 .setOverflowY(UiOverflow.HIDDEN);
     }

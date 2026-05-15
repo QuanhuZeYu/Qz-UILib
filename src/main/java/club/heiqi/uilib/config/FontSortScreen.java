@@ -115,7 +115,7 @@ final class FontSortScreen extends BaseScreen {
         root.style()
                 .setWidth(UiStyleLength.percent(1.0F))
                 .setHeight(UiStyleLength.percent(1.0F))
-                .setPadding(UiStyleLength.px(14))
+                .setPadding(UiStyleLength.px(10))
                 .setBackgroundColor(0xF0080F1C)
                 .setTextColor(0xFFE5EEFF)
                 .setOverflowX(UiOverflow.HIDDEN)
@@ -129,13 +129,9 @@ final class FontSortScreen extends BaseScreen {
                 .setBackgroundColor(0xFF0F172A)
                 .setBorderColor(0xFF60A5FA)
                 .setBorderWidth(UiStyleLength.px(1))
-                .setBorderRadius(UiStyleLength.px(14))
+                .setBorderRadius(UiStyleLength.px(12))
                 .setTextColor(0xFFF8FAFC);
         hero.appendText("字体排序");
-        ElementNode description = document.div();
-        description.style().setTextColor(0xFFD7E4FF).setMargin(UiStyleLength.px(4));
-        description.appendText("上方字体优先参与回退匹配。大量字体请用搜索、跳转和目标序号移动，当前页内可拖拽微调。");
-        hero.append(description);
         parent.append(hero);
     }
 
@@ -146,12 +142,12 @@ final class FontSortScreen extends BaseScreen {
                 .setFlexDirection(UiFlexDirection.ROW)
                 .setAlignItems(UiAlignItems.CENTER)
                 .setColumnGap(UiStyleLength.px(8))
-                .setMargin(UiStyleLength.px(10))
-                .setPadding(UiStyleLength.px(10))
+                .setMargin(UiStyleLength.px(8))
+                .setPadding(UiStyleLength.px(8))
                 .setBackgroundColor(0xCC111827)
                 .setBorderColor(0xFF334155)
                 .setBorderWidth(UiStyleLength.px(1))
-                .setBorderRadius(UiStyleLength.px(14));
+                .setBorderRadius(UiStyleLength.px(12));
 
         DocumentButtonControl backButton = createButton(document, "返回配置页");
         backButton.setActionHandler(new DocumentButtonActionHandler() {
@@ -220,19 +216,19 @@ final class FontSortScreen extends BaseScreen {
 
     private void refreshStatus(List<String> orderedItems) {
         if (statusText != null) {
-            statusText.setText("未保存草稿会回写到上一级配置页，可点保存并应用或按 Ctrl+S。当前："
-                    + FontSortOrderControl.summarizeItems(orderedItems, 4));
+            int count = orderedItems == null ? 0 : orderedItems.size();
+            statusText.setText("共 " + count + " 个字体");
         }
     }
 
     private void requestSaveNow() {
         updateDraft(orderControl.getItemsSnapshot());
         if (saveHandler == null) {
-            setStatusMessage("当前宿主未提供立即保存入口，请返回上一级配置页保存。");
+            setStatusMessage("请返回上一级保存");
             return;
         }
         saveHandler.onFontSortSaveRequested();
-        setStatusMessage("已请求上一级配置页保存并应用当前字体排序。");
+        setStatusMessage("已保存并应用");
     }
 
     private void setStatusMessage(String message) {

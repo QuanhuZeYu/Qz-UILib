@@ -43,7 +43,7 @@ public class FontSortOrderControlTest {
         Assert.assertNotNull(findElementByAttribute(root, "data-font-sort-search-input", "fonts"));
         Assert.assertNotNull(findElementByAttribute(root, "data-font-sort-page-input", "fonts"));
         Assert.assertNotNull(findElementByAttribute(root, "data-font-sort-jump-input", "fonts"));
-        Assert.assertTrue(containsText(collectDocumentTexts(root), "跨页移动请在行内输入目标序号"));
+        Assert.assertTrue(containsText(collectDocumentTexts(root), "共 4 个字体"));
     }
 
     /**

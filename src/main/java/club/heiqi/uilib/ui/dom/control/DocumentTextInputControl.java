@@ -12,8 +12,13 @@ import club.heiqi.uilib.ui.dom.ElementNode;
 import club.heiqi.uilib.ui.dom.TextNode;
 import club.heiqi.uilib.ui.dom.UiDocument;
 import club.heiqi.uilib.ui.event.UiKeyEvent;
+import club.heiqi.uilib.ui.paint.DocumentCustomRenderer;
+import club.heiqi.uilib.ui.style.UiAlignItems;
+import club.heiqi.uilib.ui.style.UiDisplay;
+import club.heiqi.uilib.ui.style.UiJustifyContent;
 import club.heiqi.uilib.ui.style.UiOverflow;
 import club.heiqi.uilib.ui.style.UiStyleLength;
+import club.heiqi.uilib.ui.render.UiRenderContext;
 
 /**
  * 基于 HTML-like 元素实现的文本输入框控件适配器。
@@ -21,6 +26,7 @@ import club.heiqi.uilib.ui.style.UiStyleLength;
 public final class DocumentTextInputControl {
 
     private final ElementNode element;
+    private final ElementNode textElement;
     private final TextNode textNode;
     private final StringBuilder textBuilder = new StringBuilder();
     private DocumentTextInputChangeHandler changeHandler;
@@ -46,9 +52,12 @@ public final class DocumentTextInputControl {
     public DocumentTextInputControl(UiDocument document) {
         this.element = document.input();
         this.element.setAttribute("type", "text");
-        this.textNode = element.appendText("");
+        this.textElement = document.span();
+        this.textNode = textElement.appendText("");
+        this.element.append(textElement);
         configureElement();
         installHandlers();
+        installCursorRenderer();
         updateVisualState();
     }
 
@@ -224,6 +233,9 @@ public final class DocumentTextInputControl {
     private void configureElement() {
         element.setFocusable(true);
         element.style()
+                .setDisplay(UiDisplay.FLEX)
+                .setAlignItems(UiAlignItems.CENTER)
+                .setJustifyContent(UiJustifyContent.START)
                 .setPadding(UiStyleLength.px(8))
                 .setBackgroundColor(normalBackgroundColor)
                 .setBorderWidth(UiStyleLength.px(1))
@@ -231,6 +243,28 @@ public final class DocumentTextInputControl {
                 .setTextColor(textColor)
                 .setOverflowX(UiOverflow.HIDDEN)
                 .setOverflowY(UiOverflow.HIDDEN);
+        textElement.style()
+                .setOverflowX(UiOverflow.HIDDEN)
+                .setOverflowY(UiOverflow.HIDDEN);
+    }
+
+    private void installCursorRenderer() {
+        element.setCustomRenderer(new DocumentCustomRenderer() {
+            @Override
+            public void render(UiRenderContext context, int contentLeft, int contentTop, int contentRight,
+                    int contentBottom) {
+                if (!focused || !enabled || context == null || contentRight <= contentLeft || contentBottom <= contentTop) {
+                    return;
+                }
+                int textWidth = Math.min(Math.max(0, context.measureTextWidth(textBuilder.toString())),
+                        Math.max(0, contentRight - contentLeft - 1));
+                int cursorLeft = resolveCursorLeft(contentLeft, contentRight, textWidth);
+                int lineHeight = Math.max(1, Math.min(context.getTextLineHeight(), contentBottom - contentTop));
+                int cursorTop = contentTop + Math.max(0, (contentBottom - contentTop - lineHeight) / 2);
+                int cursorBottom = Math.min(contentBottom, cursorTop + lineHeight);
+                context.fillRect(cursorLeft, cursorTop, Math.min(contentRight, cursorLeft + 1), cursorBottom, textColor);
+            }
+        });
     }
 
     private void installHandlers() {
@@ -320,6 +354,18 @@ public final class DocumentTextInputControl {
         if (showingPlaceholder) {
             element.setAttribute("value", "");
         }
+    }
+
+    private int resolveCursorLeft(int contentLeft, int contentRight, int textWidth) {
+        int availableWidth = Math.max(0, contentRight - contentLeft);
+        UiJustifyContent justifyContent = element.style().getJustifyContent();
+        if (justifyContent == UiJustifyContent.CENTER) {
+            return contentLeft + Math.max(0, (availableWidth - textWidth) / 2) + textWidth;
+        }
+        if (justifyContent == UiJustifyContent.END) {
+            return Math.max(contentLeft, contentRight - textWidth);
+        }
+        return contentLeft + textWidth;
     }
 
     private void fireChange() {

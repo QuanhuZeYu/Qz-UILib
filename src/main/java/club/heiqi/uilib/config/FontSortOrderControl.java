@@ -87,7 +87,6 @@ final class FontSortOrderControl {
 
         this.rootElement = document.div();
         configureRoot(rootElement);
-        appendGuide(rootElement);
         ElementNode toolbar = document.div();
         configureToolbar(toolbar);
         this.searchInput = createSearchInput();
@@ -104,11 +103,7 @@ final class FontSortOrderControl {
         this.listElement = document.div();
         configureList(listElement);
         rootElement.append(listElement);
-
-        ElementNode state = document.div();
-        configureState(state);
-        this.stateText = state.appendText("");
-        rootElement.append(state);
+        this.stateText = this.resultText;
 
         refreshView(false);
     }
@@ -241,33 +236,20 @@ final class FontSortOrderControl {
         root.style()
                 .setDisplay(UiDisplay.FLEX)
                 .setFlexDirection(UiFlexDirection.COLUMN)
-                .setRowGap(UiStyleLength.px(10))
+                .setRowGap(UiStyleLength.px(8))
                 .setWidth(UiStyleLength.percent(1.0F));
-    }
-
-    private void appendGuide(ElementNode parent) {
-        ElementNode guide = document.div();
-        guide.style()
-                .setPadding(UiStyleLength.px(12))
-                .setBackgroundColor(0xFF0F172A)
-                .setBorderColor(0xFF38BDF8)
-                .setBorderWidth(UiStyleLength.px(1))
-                .setBorderRadius(UiStyleLength.px(12))
-                .setTextColor(0xFFD7E4FF);
-        guide.appendText("300+ 字体建议先搜索或跳转定位；跨页移动请在行内输入目标序号，拖拽仅用于当前页微调。筛选不会改变真实顺序。");
-        parent.append(guide);
     }
 
     private void configureToolbar(ElementNode toolbar) {
         toolbar.style()
                 .setDisplay(UiDisplay.FLEX)
                 .setFlexDirection(UiFlexDirection.COLUMN)
-                .setRowGap(UiStyleLength.px(8))
-                .setPadding(UiStyleLength.px(10))
+                .setRowGap(UiStyleLength.px(6))
+                .setPadding(UiStyleLength.px(8))
                 .setBackgroundColor(0xCC111827)
                 .setBorderColor(0xFF334155)
                 .setBorderWidth(UiStyleLength.px(1))
-                .setBorderRadius(UiStyleLength.px(14));
+                .setBorderRadius(UiStyleLength.px(12));
     }
 
     private TextNode appendSearchControls(ElementNode toolbar) {
@@ -387,6 +369,7 @@ final class FontSortOrderControl {
                         return true;
                     }
                 });
+        input.getElement().style().setJustifyContent(UiJustifyContent.CENTER);
         return input;
     }
 
@@ -403,6 +386,7 @@ final class FontSortOrderControl {
                         return true;
                     }
                 });
+        input.getElement().style().setJustifyContent(UiJustifyContent.CENTER);
         return input;
     }
 
@@ -444,17 +428,6 @@ final class FontSortOrderControl {
                 .setOverflowX(UiOverflow.HIDDEN)
                 .setOverflowY(UiOverflow.HIDDEN);
         list.setDragOverHandler(createListDragOverHandler());
-    }
-
-    private void configureState(ElementNode state) {
-        state.style()
-                .setPadding(UiStyleInsets.of(UiStyleLength.px(10), UiStyleLength.px(12), UiStyleLength.px(10),
-                        UiStyleLength.px(12)))
-                .setBackgroundColor(0xFF162132)
-                .setBorderColor(0xFF334155)
-                .setBorderWidth(UiStyleLength.px(1))
-                .setBorderRadius(UiStyleLength.px(12))
-                .setTextColor(0xFFBAE6FD);
     }
 
     private void refreshView(boolean keepPage) {
@@ -633,6 +606,7 @@ final class FontSortOrderControl {
         input.getElement().style()
                 .setWidth(UiStyleLength.px(52))
                 .setHeight(UiStyleLength.px(26))
+                .setJustifyContent(UiJustifyContent.CENTER)
                 .setPadding(UiStyleInsets.of(UiStyleLength.px(5), UiStyleLength.px(8), UiStyleLength.px(5),
                         UiStyleLength.px(8)));
         return input;
@@ -856,8 +830,9 @@ final class FontSortOrderControl {
     }
 
     private void updateStateText() {
-        String mode = filterText.isEmpty() ? "完整列表" : "筛选视图";
-        updateStateText(mode + "；当前字体数量：" + items.size() + "。前 5 个：" + summarizeItems(items, 5));
+        if (stateText != null && !filterText.isEmpty()) {
+            stateText.setText("匹配 " + collectMatchedIndexes().size() + " / " + items.size() + " 个字体");
+        }
     }
 
     private void updateStateText(String text) {

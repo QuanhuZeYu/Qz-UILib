@@ -458,6 +458,9 @@ public class DocumentTextInputControlTest {
         }
 
         @Override
+        public void fillRect(int left, int top, int right, int bottom, int color) {}
+
+        @Override
         public int measureTextWidth(String text) {
             return text == null ? 0 : text.length() * 12;
         }

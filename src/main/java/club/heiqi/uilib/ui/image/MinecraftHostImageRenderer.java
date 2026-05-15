@@ -127,9 +127,11 @@ public final class MinecraftHostImageRenderer implements HostImageRenderer {
         try {
             prepareHostImageState();
             minecraft.getTextureManager().bindTexture(texture);
+            preparePlainTextureQuadState();
             applyImageBlendState();
             Tessellator tessellator = Tessellator.instance;
             tessellator.startDrawingQuads();
+            tessellator.setColorRGBA_F(1.0F, 1.0F, 1.0F, 1.0F);
             tessellator.addVertexWithUV(left, bottom, 0.0D, u0, v1);
             tessellator.addVertexWithUV(right, bottom, 0.0D, u1, v1);
             tessellator.addVertexWithUV(right, top, 0.0D, u1, v0);
@@ -138,6 +140,12 @@ public final class MinecraftHostImageRenderer implements HostImageRenderer {
         } finally {
             GL11.glPopAttrib();
         }
+    }
+
+    private static void preparePlainTextureQuadState() {
+        GL11.glDisable(GL11.GL_LIGHTING);
+        GL11.glDisable(GL12.GL_RESCALE_NORMAL);
+        GL11.glColor4f(1.0F, 1.0F, 1.0F, 1.0F);
     }
 
     private static void prepareHostImageState() {
