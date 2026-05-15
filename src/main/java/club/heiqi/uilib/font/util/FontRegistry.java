@@ -37,7 +37,9 @@ public class FontRegistry {
         List<Font> fonts = new ArrayList<Font>();
         fonts.addAll(loadAssetFonts());
         fonts.addAll(loadInstalledFonts());
-        FontOrderSnapshot snapshot = fontOrderPlanner.plan(fonts, FontConfig.fontSort);
+        String[] orderHints = FontConfig.fontSortConfigured ? FontConfig.fontSort
+                : DefaultFontOrderHints.resolveForCurrentPlatform();
+        FontOrderSnapshot snapshot = fontOrderPlanner.plan(fonts, orderHints, FontConfig.fontSortConfigured);
         fontCatalog.replaceAll(snapshot.getOrderedFonts());
         FontConfig.applyFontOrderSnapshot(snapshot);
 

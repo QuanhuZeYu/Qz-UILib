@@ -60,7 +60,7 @@
 - 新增 layout-affecting、宿主集成或对外能力时，要同步更新 `docs/使用文档/` 并保留最小必要验证。
 - `ForgeConfigTemplateScreen` 已作为对外可复用模板；非列表字符串属性若声明 `validValues` 且当前值仍在候选集中，可走分段选择控件，遗留值应回退到文本输入，避免静默覆盖。
 - `ForgeConfigTemplateScreen` 的列表属性在摘要、默认值和占位展示中默认取“前 5 项摘要”和“200 字符截断”中更长的一种，避免长列表直接撑爆配置页；实际文本编辑、保存和恢复默认仍使用完整列表值。
-- 字体系统启动时会把本次已发现字体整理进 `FontConfig.fontSort`：先按配置提示顺序吸收存在项，再把未配置字体按自然顺序追加；配置中缺失的字体只保留在内存缺失态，不参与当前回退链。
+- 字体系统启动时会把本次已发现字体整理进 `FontConfig.fontSort`：已有 `fontSort` 配置时先按配置提示顺序吸收存在项，再把未配置字体按自然顺序追加，配置中缺失的字体只保留在内存缺失态；首次启动且尚无 `fontSort` 配置时，会按当前平台的常见多语种字体提示优先吸收已安装字体，避免自然排序先命中 CAD 等窄用途字体。
 - 原版资源包重载会通过 `FontRenderer.onResourceManagerReload` 的 Mixin 触发字体系统重载；字体 GL 资源、字符页、后台字形任务和布局缓存必须整体重建，避免继续使用资源包重载前的 GL 状态。
 - `FontConfig.replaceOrigin=true` 会让原版 `FontRenderer` 在 SplashProgress 加载线程和客户端主线程都可能进入 UILib 字体管线；字体资源重载、shader/批渲染器重建与 `drawString` 必须在字体运行时锁下串行化，不能用“只允许主线程接管”规避 Splash 字体渲染。
 - SplashProgress 期间仍使用 UILib 自定义字体和批渲染路径；不要为非客户端主线程切换第二套 immediate 字体绘制路径。Splash 特例只保留运行时锁、Mixin 异常保护、Splash reload guard 和资源重载入口跳过。

@@ -50,6 +50,24 @@ public class FontOrderPlannerTest {
     }
 
     /**
+     * 验证首启默认提示可以提升常见多语种字体，且不会污染缺失字体列表。
+     */
+    @Test
+    public void shouldPrioritizeDefaultHintsWithoutTrackingMissingNames() {
+        FontOrderPlanner planner = new FontOrderPlanner();
+
+        FontOrderSnapshot snapshot = planner.plan(Arrays.asList(
+                font("CADFont"),
+                font("Microsoft YaHei"),
+                font("Font 1")),
+                new String[] { "Missing Preferred", "Microsoft YaHei" }, false);
+
+        Assert.assertArrayEquals(new String[] { "Microsoft YaHei", "CADFont", "Font 1" },
+                snapshot.getResolvedFontNames());
+        Assert.assertArrayEquals(new String[0], snapshot.getMissingConfiguredFontNames());
+    }
+
+    /**
      * 验证同名字体族会保留全部字体实例，但名称只写入一次。
      */
     @Test

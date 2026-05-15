@@ -25,6 +25,19 @@ public final class FontOrderPlanner {
      * @return 排序快照
      */
     public FontOrderSnapshot plan(List<Font> discoveredFonts, String[] configuredOrder) {
+        return plan(discoveredFonts, configuredOrder, true);
+    }
+
+    /**
+     * 基于当前已发现字体和顺序提示生成排序快照。
+     *
+     * @param discoveredFonts 已发现字体
+     * @param configuredOrder 顺序提示
+     * @param trackMissingConfiguredNames 是否把提示中未发现的字体记录为缺失字体
+     * @return 排序快照
+     */
+    public FontOrderSnapshot plan(List<Font> discoveredFonts, String[] configuredOrder,
+            boolean trackMissingConfiguredNames) {
         List<Font> resolvedFonts = new ArrayList<Font>();
         List<String> resolvedNames = new ArrayList<String>();
         List<String> missingNames = new ArrayList<String>();
@@ -42,7 +55,7 @@ public final class FontOrderPlanner {
             String lookupKey = normalizeKey(configuredName);
             FontGroup group = discoveredGroups.get(lookupKey);
             if (group == null) {
-                if (missingKeys.add(lookupKey)) {
+                if (trackMissingConfiguredNames && missingKeys.add(lookupKey)) {
                     missingNames.add(configuredName);
                 }
                 continue;

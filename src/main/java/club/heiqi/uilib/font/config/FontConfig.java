@@ -36,6 +36,7 @@ public final class FontConfig {
     public static boolean customInvCountFont = false;
     public static String[] fontSort = new String[0];
     public static String[] missingFontSort = new String[0];
+    public static boolean fontSortConfigured;
 
     private static int lastLerpMode = lerpMode;
     private static double lastAwtCharSize = awtCharSize;
@@ -75,6 +76,7 @@ public final class FontConfig {
         aaStrength = configuration.get(CATEGORY, "aaStrength", aaStrength, "AA 强度", 1.0D, Double.MAX_VALUE).getDouble();
         replaceOrigin = configuration.get(CATEGORY, "replaceOrigin", replaceOrigin, "是否替换原版字体渲染").getBoolean();
         customInvCountFont = configuration.get(CATEGORY, "customInvCountFont", customInvCountFont, "是否接管物品数量字体").getBoolean();
+        fontSortConfigured = configuration.hasKey(CATEGORY, "fontSort");
         fontSort = configuration.get(CATEGORY, "fontSort", fontSort, "字体排序").getStringList();
         if (fontSort == null) {
             fontSort = new String[0];
