@@ -666,7 +666,8 @@ public class UiRenderContext {
             drawBackdropTextureQuad(left, top, right, bottom, snapshot.getSampleLeft(), snapshot.getSampleTop(),
                     snapshot.getWidth(), snapshot.getHeight(), 0.0F, 0.0F);
             GL11.glEnable(GL11.GL_BLEND);
-            GL11.glBlendFunc(GL11.GL_SRC_ALPHA, GL11.GL_ONE_MINUS_SRC_ALPHA);
+            GL14.glBlendFuncSeparate(GL11.GL_SRC_ALPHA, GL11.GL_ONE_MINUS_SRC_ALPHA,
+                    GL11.GL_ONE, GL11.GL_ONE_MINUS_SRC_ALPHA);
             float sampleStep = (float) resolveBackdropSampleStep(blurRadius);
             for (float[] sample : UI_BACKDROP_BLUR_SAMPLES) {
                 GL11.glColor4f(1.0F, 1.0F, 1.0F, sample[2]);

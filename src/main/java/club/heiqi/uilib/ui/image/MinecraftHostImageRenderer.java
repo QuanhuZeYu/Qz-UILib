@@ -64,6 +64,7 @@ public final class MinecraftHostImageRenderer implements HostImageRenderer {
             itemRenderer.zLevel = 0.0F;
             GL11.glTranslatef(offsetX, offsetY, 0.0F);
             GL11.glScalef(scale, scale, 1.0F);
+            applyImageBlendState();
             itemRenderer.renderItemAndEffectIntoGUI(minecraft.fontRenderer, minecraft.renderEngine, stack, 0, 0);
             applyImageBlendState();
             itemRenderer.renderItemOverlayIntoGUI(minecraft.fontRenderer, minecraft.renderEngine, stack, 0, 0, null);

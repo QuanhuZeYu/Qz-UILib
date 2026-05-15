@@ -49,7 +49,12 @@ public class FontBatchRenderer {
      */
     public void initialize() {
         if (initialized.compareAndSet(false, true)) {
-            renderTool.initialize();
+            stateGuard.run(new Runnable() {
+                @Override
+                public void run() {
+                    renderTool.initialize();
+                }
+            });
         }
     }
 
