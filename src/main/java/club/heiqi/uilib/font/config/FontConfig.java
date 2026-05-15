@@ -1,7 +1,9 @@
 package club.heiqi.uilib.font.config;
 
+import java.io.File;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Locale;
 
 import club.heiqi.uilib.font.util.FontOrderSnapshot;
 import net.minecraftforge.common.config.Configuration;
@@ -49,6 +51,7 @@ public final class FontConfig {
     private static boolean lastCustomInvCountFont = customInvCountFont;
     private static String[] lastFontSort = fontSort;
     private static Configuration activeConfiguration;
+    private static String activeFontCategory = CATEGORY;
 
     private FontConfig() {}
 
@@ -59,31 +62,50 @@ public final class FontConfig {
      */
     public static void load(Configuration configuration) {
         activeConfiguration = configuration;
-        lerpMode = configuration.get(CATEGORY, "lerpMode", lerpMode, "插值模式", 0, 3).getInt();
-        aaMode = configuration.get(CATEGORY, "aaMode", aaMode, "AA 模式", 1, 2).getInt();
-        brightnessGain = configuration.get(CATEGORY, "brightnessGain", readLegacyBrightnessGain(configuration), "HSV 亮度增强，仅增强亮度并保持原有颜色倾向", -Double.MAX_VALUE, Double.MAX_VALUE).getDouble();
-        spaceWidth = configuration.get(CATEGORY, "spaceWidth", spaceWidth, "空格宽度", -Double.MAX_VALUE, Double.MAX_VALUE).getDouble();
-        characterSpacing = configuration.get(CATEGORY, "characterSpacing", characterSpacing, "字间距", -Double.MAX_VALUE, Double.MAX_VALUE).getDouble();
-        shadowOffsetX = configuration.get(CATEGORY, "shadowOffsetX", shadowOffsetX, "阴影 X 偏移", -Double.MAX_VALUE, Double.MAX_VALUE).getDouble();
-        shadowOffsetY = configuration.get(CATEGORY, "shadowOffsetY", shadowOffsetY, "阴影 Y 偏移", -Double.MAX_VALUE, Double.MAX_VALUE).getDouble();
-        lineSpacing = configuration.get(CATEGORY, "lineSpacing", lineSpacing, "行间距", -Double.MAX_VALUE, Double.MAX_VALUE).getDouble();
-        renderOffset = configuration.get(CATEGORY, "renderOffset", renderOffset, "渲染 Z 偏移", -Double.MAX_VALUE, Double.MAX_VALUE).getDouble();
-        smoothRangeMin = configuration.get(CATEGORY, "smoothRangeMin", smoothRangeMin, "平滑下界", 0.0D, Double.MAX_VALUE).getDouble();
-        smoothRangeMax = configuration.get(CATEGORY, "smoothRangeMax", smoothRangeMax, "平滑上界", 0.0D, Double.MAX_VALUE).getDouble();
-        drawStageUploadIntervalMs = configuration.get(CATEGORY, "drawStageUploadIntervalMs", drawStageUploadIntervalMs, "drawString 阶段补充上传的最短间隔（毫秒）", 0.0D, Double.MAX_VALUE).getDouble();
-        drawStageUploadLimitPerSecond = configuration.get(CATEGORY, "drawStageUploadLimitPerSecond", drawStageUploadLimitPerSecond, "drawString 阶段每秒最多补充上传次数", 0, Integer.MAX_VALUE).getInt();
-        drawStageUploadBatchSize = configuration.get(CATEGORY, "drawStageUploadBatchSize", drawStageUploadBatchSize, "drawString 阶段每次最多补充上传字符数", 0, Integer.MAX_VALUE).getInt();
-        aaStrength = configuration.get(CATEGORY, "aaStrength", aaStrength, "AA 强度", 1.0D, Double.MAX_VALUE).getDouble();
-        replaceOrigin = configuration.get(CATEGORY, "replaceOrigin", replaceOrigin, "是否替换原版字体渲染").getBoolean();
-        customInvCountFont = configuration.get(CATEGORY, "customInvCountFont", customInvCountFont, "是否接管物品数量字体").getBoolean();
-        fontSortConfigured = configuration.hasKey(CATEGORY, "fontSort");
-        fontSort = configuration.get(CATEGORY, "fontSort", fontSort, "字体排序").getStringList();
+        String fontCategory = resolveFontCategory(configuration);
+        activeFontCategory = fontCategory;
+        lerpMode = configuration.get(fontCategory, "lerpMode", lerpMode, "插值模式", 0, 3).getInt();
+        aaMode = configuration.get(fontCategory, "aaMode", aaMode, "AA 模式", 1, 2).getInt();
+        brightnessGain = configuration.get(fontCategory, "brightnessGain", readLegacyBrightnessGain(configuration,
+                fontCategory), "HSV 亮度增强，仅增强亮度并保持原有颜色倾向", -Double.MAX_VALUE,
+                Double.MAX_VALUE).getDouble();
+        spaceWidth = configuration.get(fontCategory, "spaceWidth", spaceWidth, "空格宽度", -Double.MAX_VALUE,
+                Double.MAX_VALUE).getDouble();
+        characterSpacing = configuration.get(fontCategory, "characterSpacing", characterSpacing, "字间距",
+                -Double.MAX_VALUE, Double.MAX_VALUE).getDouble();
+        shadowOffsetX = configuration.get(fontCategory, "shadowOffsetX", shadowOffsetX, "阴影 X 偏移",
+                -Double.MAX_VALUE, Double.MAX_VALUE).getDouble();
+        shadowOffsetY = configuration.get(fontCategory, "shadowOffsetY", shadowOffsetY, "阴影 Y 偏移",
+                -Double.MAX_VALUE, Double.MAX_VALUE).getDouble();
+        lineSpacing = configuration.get(fontCategory, "lineSpacing", lineSpacing, "行间距", -Double.MAX_VALUE,
+                Double.MAX_VALUE).getDouble();
+        renderOffset = configuration.get(fontCategory, "renderOffset", renderOffset, "渲染 Z 偏移", -Double.MAX_VALUE,
+                Double.MAX_VALUE).getDouble();
+        smoothRangeMin = configuration.get(fontCategory, "smoothRangeMin", smoothRangeMin, "平滑下界", 0.0D,
+                Double.MAX_VALUE).getDouble();
+        smoothRangeMax = configuration.get(fontCategory, "smoothRangeMax", smoothRangeMax, "平滑上界", 0.0D,
+                Double.MAX_VALUE).getDouble();
+        drawStageUploadIntervalMs = configuration.get(fontCategory, "drawStageUploadIntervalMs",
+                drawStageUploadIntervalMs, "drawString 阶段补充上传的最短间隔（毫秒）", 0.0D,
+                Double.MAX_VALUE).getDouble();
+        drawStageUploadLimitPerSecond = configuration.get(fontCategory, "drawStageUploadLimitPerSecond",
+                drawStageUploadLimitPerSecond, "drawString 阶段每秒最多补充上传次数", 0, Integer.MAX_VALUE).getInt();
+        drawStageUploadBatchSize = configuration.get(fontCategory, "drawStageUploadBatchSize",
+                drawStageUploadBatchSize, "drawString 阶段每次最多补充上传字符数", 0, Integer.MAX_VALUE).getInt();
+        aaStrength = configuration.get(fontCategory, "aaStrength", aaStrength, "AA 强度", 1.0D, Double.MAX_VALUE).getDouble();
+        replaceOrigin = configuration.get(fontCategory, "replaceOrigin", replaceOrigin, "是否替换原版字体渲染").getBoolean();
+        customInvCountFont = configuration.get(fontCategory, "customInvCountFont", customInvCountFont,
+                "是否接管物品数量字体").getBoolean();
+        fontSortConfigured = configuration.hasKey(fontCategory, "fontSort");
+        fontSort = configuration.get(fontCategory, "fontSort", fontSort, "字体排序").getStringList();
         if (fontSort == null) {
             fontSort = new String[0];
         }
 
-        awtCharSize = configuration.get(FONT_SIZE_CATEGORY, "awtCharSize", awtCharSize, "字符生成分辨率", 8.0D, Double.MAX_VALUE).getDouble();
-        charSize = configuration.get(FONT_SIZE_CATEGORY, "charSize", charSize, "默认显示字号", 1.0D, Double.MAX_VALUE).getDouble();
+        awtCharSize = configuration.get(FONT_SIZE_CATEGORY, "awtCharSize", awtCharSize, "字符生成分辨率", 8.0D,
+                Double.MAX_VALUE).getDouble();
+        charSize = configuration.get(FONT_SIZE_CATEGORY, "charSize", charSize, "默认显示字号", 1.0D,
+                Double.MAX_VALUE).getDouble();
         fontScale = configuration.get(FONT_SIZE_CATEGORY, "fontScale", fontScale, "字体缩放系数", 0.0D, 1.0D).getDouble();
     }
 
@@ -191,10 +213,43 @@ public final class FontConfig {
         if (activeConfiguration == null) {
             return;
         }
-        activeConfiguration.get(CATEGORY, "fontSort", fontSort, "字体排序").set(fontSort);
-        if (activeConfiguration.hasChanged()) {
+        String fontCategory = activeConfiguration == null ? activeFontCategory : resolveFontCategory(activeConfiguration);
+        activeFontCategory = fontCategory;
+        activeConfiguration.get(fontCategory, "fontSort", fontSort, "字体排序").set(fontSort);
+        File configFile = activeConfiguration.getConfigFile();
+        if (activeConfiguration.hasChanged() && configFile != null) {
             activeConfiguration.save();
         }
+    }
+
+    private static String resolveFontCategory(Configuration configuration) {
+        if (configuration == null) {
+            return CATEGORY;
+        }
+        String lowerCaseCategory = CATEGORY.toLowerCase(Locale.ENGLISH);
+        if (configuration.hasKey(CATEGORY, "fontSort")) {
+            return CATEGORY;
+        }
+        if (configuration.hasKey(lowerCaseCategory, "fontSort")) {
+            return lowerCaseCategory;
+        }
+        for (String categoryName : configuration.getCategoryNames()) {
+            if (CATEGORY.equalsIgnoreCase(categoryName) && configuration.hasKey(categoryName, "fontSort")) {
+                return categoryName;
+            }
+        }
+        if (configuration.hasCategory(CATEGORY)) {
+            return CATEGORY;
+        }
+        if (configuration.hasCategory(lowerCaseCategory)) {
+            return lowerCaseCategory;
+        }
+        for (String categoryName : configuration.getCategoryNames()) {
+            if (CATEGORY.equalsIgnoreCase(categoryName)) {
+                return categoryName;
+            }
+        }
+        return CATEGORY;
     }
 
     private static boolean containsIgnoreCase(String[] values, String target) {
@@ -209,12 +264,16 @@ public final class FontConfig {
         return false;
     }
 
-    private static double readLegacyBrightnessGain(Configuration configuration) {
-        if (configuration.hasKey(CATEGORY, "brightnessGain")) {
+    private static double readLegacyBrightnessGain(Configuration configuration, String fontCategory) {
+        if (configuration.hasKey(fontCategory, "brightnessGain")) {
             return brightnessGain;
         }
-        if (configuration.hasKey(CATEGORY, "colorGain")) {
-            return configuration.get(CATEGORY, "colorGain", brightnessGain).getDouble();
+        if (configuration.hasKey(fontCategory, "colorGain")) {
+            return configuration.get(fontCategory, "colorGain", brightnessGain).getDouble();
+        }
+        String legacyCategory = fontCategory == null || CATEGORY.equals(fontCategory) ? null : CATEGORY;
+        if (legacyCategory != null && configuration.hasKey(legacyCategory, "colorGain")) {
+            return configuration.get(legacyCategory, "colorGain", brightnessGain).getDouble();
         }
         return brightnessGain;
     }

@@ -242,6 +242,7 @@ final class FontSortScreen extends BaseScreen {
     }
 
     private void requestBack() {
+        updateDraft(orderControl.getItemsSnapshot());
         final GuiScreen targetScreen = parentScreen;
         UiScreenManager.getInstance().enqueue(new Runnable() {
             @Override
