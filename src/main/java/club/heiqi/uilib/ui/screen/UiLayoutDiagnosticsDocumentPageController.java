@@ -207,6 +207,7 @@ final class UiLayoutDiagnosticsDocumentPageController extends DocumentPageContro
         });
         widthPresetSelector.getElement().setAttribute("data-layout-probe-control", "width-preset");
         mutationModeSelector.setSelectedIndex(0);
+        tagSegmentedSelectorOptions(mutationModeSelector.getElement(), "data-layout-probe-mutation-mode-option");
         mutationModeSelector.setSelectionHandler(new DocumentSegmentedSelectionHandler() {
             @Override
             public void onSelectionChanged(DocumentSegmentedSelectionEvent event) {
@@ -225,6 +226,21 @@ final class UiLayoutDiagnosticsDocumentPageController extends DocumentPageContro
             }
         });
         mutationRateSelector.getElement().setAttribute("data-layout-probe-control", "mutation-rate");
+    }
+
+    private static void tagSegmentedSelectorOptions(ElementNode selectorElement, String optionAttributeName) {
+        if (selectorElement == null || optionAttributeName == null || optionAttributeName.isEmpty()) {
+            return;
+        }
+        int optionIndex = 0;
+        for (club.heiqi.uilib.ui.dom.DocumentNode child : selectorElement.getChildren()) {
+            if (!(child instanceof ElementNode)) {
+                continue;
+            }
+            ElementNode optionElement = (ElementNode) child;
+            optionElement.setAttribute(optionAttributeName, Integer.toString(optionIndex));
+            optionIndex++;
+        }
     }
 
     private DocumentBundle createDocumentContent(UiDocument document, ElementNode root) {
@@ -285,7 +301,7 @@ final class UiLayoutDiagnosticsDocumentPageController extends DocumentPageContro
 
         ElementNode mutationCard = appendCard(document, root, 0xFF241A12, 0xFFF97316);
         mutationCard.appendText("高频字符变更探针");
-        mutationCard.appendText("切换 §k、同长替换或长文重排，观察 setText 与换行失效压力。");
+        mutationCard.appendMinecraftText("切换 §k、同长替换或长文重排，观察 setText 与换行失效压力。");
         appendControlRow(document, mutationCard, "自动运行", mutationToggle.getElement());
         appendControlRow(document, mutationCard, "变更模式", mutationModeSelector.getElement());
         appendControlRow(document, mutationCard, "刷新频率", mutationRateSelector.getElement());

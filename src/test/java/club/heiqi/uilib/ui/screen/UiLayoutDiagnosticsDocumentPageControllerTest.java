@@ -159,11 +159,29 @@ public class UiLayoutDiagnosticsDocumentPageControllerTest {
         ElementNode control = findElementByAttribute(widget.getDocument().getRootElement(), "data-layout-probe-control",
                 controlName);
         Assert.assertNotNull(control);
-        ElementNode option = findElementContainingDirectText(control, optionText);
+        ElementNode option = findSegmentedOption(control, controlName, optionText);
         Assert.assertNotNull(option);
         Assert.assertNotNull(option.getClickHandler());
         Assert.assertTrue(option.getClickHandler().onClick(new DocumentElementClickEvent(option, option, 0, 0, 0,
                 timeNanos)));
+    }
+
+    private static ElementNode findSegmentedOption(ElementNode control, String controlName, String optionText) {
+        if (control == null) {
+            return null;
+        }
+        if ("mutation-mode".equals(controlName)) {
+            if ("§k渲染".equals(optionText)) {
+                return findElementByAttribute(control, "data-layout-probe-mutation-mode-option", "0");
+            }
+            if ("同长替换".equals(optionText)) {
+                return findElementByAttribute(control, "data-layout-probe-mutation-mode-option", "1");
+            }
+            if ("长文重排".equals(optionText)) {
+                return findElementByAttribute(control, "data-layout-probe-mutation-mode-option", "2");
+            }
+        }
+        return findElementContainingDirectText(control, optionText);
     }
 
     private static ElementNode findElementByAttribute(ElementNode element, String attributeName, String attributeValue) {
