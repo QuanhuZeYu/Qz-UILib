@@ -1,17 +1,22 @@
 package club.heiqi.uilib.font.render;
 
-import java.util.ArrayList;
-import java.util.List;
-
-import org.lwjgl.opengl.GL11;
-
 /**
- * 文本装饰线渲染器。
+ * 文本装饰线收集门面。
+ *
+ * <p>装饰线实际由 {@link FontBatchRenderer} 走字体主 shader 与 VAO/VBO 管线提交，本类不再执行独立 GL flush。</p>
  */
 public class TextDecorationRenderer {
 
-    private final List<TextLineQuad> lineQuads = new ArrayList<TextLineQuad>();
-    private final FontRenderStateGuard stateGuard = new FontRenderStateGuard();
+    private final FontBatchRenderer batchRenderer;
+
+    /**
+     * 创建文本装饰线收集门面。
+     *
+     * @param batchRenderer 字体主批渲染器
+     */
+    public TextDecorationRenderer(FontBatchRenderer batchRenderer) {
+        this.batchRenderer = batchRenderer;
+    }
 
     /**
      * 收集一个装饰线四边形。
@@ -23,60 +28,22 @@ public class TextDecorationRenderer {
      * @param color 文本颜色
      */
     public void collect(float x, float y, float width, float height, int color) {
-        float alpha = (float) (color >> 24 & 255) / 255.0F;
-        float red = (float) (color >> 16 & 255) / 255.0F;
-        float green = (float) (color >> 8 & 255) / 255.0F;
-        float blue = (float) (color & 255) / 255.0F;
-
-        float[] vertex = new float[] {
-                x + width, y + height, 0.0F,
-                x + width, y, 0.0F,
-                x, y, 0.0F,
-                x, y + height, 0.0F
-        };
-        float[] vertexColor = new float[] {
-                red, green, blue, alpha,
-                red, green, blue, alpha,
-                red, green, blue, alpha,
-                red, green, blue, alpha
-        };
-        lineQuads.add(new TextLineQuad(vertex, vertexColor));
+        batchRenderer.collectDecoration(x, y, width, height, color);
     }
 
     /**
-     * 绘制并清空已收集的装饰线。
+     * 保留旧调用点的空提交入口。
+     *
+     * <p>装饰线已经随 {@link FontBatchRenderer#flush(club.heiqi.uilib.font.shader.FontShaderProgram)}
+     * 在字体主管线中提交，此处不再执行 OpenGL 操作。</p>
      */
     public void flush() {
-        if (lineQuads.isEmpty()) {
-            return;
-        }
-
-        stateGuard.run(new Runnable() {
-            @Override
-            public void run() {
-                FontRenderStateSupport.prepareTextRenderState();
-                GL11.glDisable(GL11.GL_TEXTURE_2D);
-                GL11.glBegin(GL11.GL_QUADS);
-                for (TextLineQuad quad : lineQuads) {
-                    float[] color = quad.getColor();
-                    float[] vertex = quad.getVertex();
-                    for (int i = 0; i < 4; i++) {
-                        int colorOffset = i * 4;
-                        int vertexOffset = i * 3;
-                        GL11.glColor4f(color[colorOffset], color[colorOffset + 1], color[colorOffset + 2], color[colorOffset + 3]);
-                        GL11.glVertex3f(vertex[vertexOffset], vertex[vertexOffset + 1], vertex[vertexOffset + 2]);
-                    }
-                }
-                GL11.glEnd();
-            }
-        });
-        lineQuads.clear();
     }
 
     /**
      * 清空已收集的装饰线。
      */
     public void clear() {
-        lineQuads.clear();
+        batchRenderer.clearDecorationQuads();
     }
 }

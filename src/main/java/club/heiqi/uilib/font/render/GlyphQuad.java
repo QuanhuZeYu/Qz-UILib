@@ -23,7 +23,7 @@ public class GlyphQuad {
      * @param uv 纹理坐标
      * @param color 顶点颜色
      * @param uvBounds UV 边界
-     * @param glyphFlags 字形附加标记
+     * @param glyphFlags 渲染类型标记，0 为单色字形，1 为彩色字形，2 为纯色装饰线
      * @param index 索引数据
      */
     public GlyphQuad(GlyphPage glyphPage, float[] vertex, float[] uv, float[] color, float[] uvBounds, float[] glyphFlags,

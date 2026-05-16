@@ -18,6 +18,9 @@ public final class GlyphRenderBatch {
     static final int COLOR_COMPONENT_COUNT = 4;
     static final int UV_BOUNDS_COMPONENT_COUNT = 4;
     static final int GLYPH_FLAGS_COMPONENT_COUNT = 1;
+    static final float RENDER_TYPE_MONOCHROME_GLYPH = 0.0F;
+    static final float RENDER_TYPE_COLORED_GLYPH = 1.0F;
+    static final float RENDER_TYPE_DECORATION = 2.0F;
     static final int INDICES_PER_QUAD = 6;
     static final int POSITION_OFFSET_FLOATS = 0;
     static final int UV_OFFSET_FLOATS = POSITION_OFFSET_FLOATS + POSITION_COMPONENT_COUNT;
@@ -62,10 +65,10 @@ public final class GlyphRenderBatch {
      * @param green 绿色
      * @param blue 蓝色
      * @param alpha 透明度
-     * @param coloredGlyphFlag 彩色字形标记
+     * @param renderType 渲染类型，0 为单色字形，1 为彩色字形，2 为纯色装饰线
      */
     public void addQuad(float x, float y, float z, float charSize, boolean italic, float u0, float u1, float v0,
-            float v1, float red, float green, float blue, float alpha, float coloredGlyphFlag) {
+            float v1, float red, float green, float blue, float alpha, float renderType) {
         ensureCapacity(quadCount + 1);
 
         int vertexBase = quadCount * VERTICES_PER_QUAD;
@@ -77,13 +80,56 @@ public final class GlyphRenderBatch {
         float rightX = x + charSize + italicOffset;
 
         writeVertex(vertexFloatBase, leftX, y, z, u0, v0, red, green, blue, alpha, u0, v0, u1, v1,
-                coloredGlyphFlag);
+                renderType);
         writeVertex(vertexFloatBase + VERTEX_STRIDE_FLOATS, x, y + charSize, z, u0, v1, red, green, blue, alpha,
-                u0, v0, u1, v1, coloredGlyphFlag);
+                u0, v0, u1, v1, renderType);
         writeVertex(vertexFloatBase + (VERTEX_STRIDE_FLOATS * 2), x + charSize, y + charSize, z, u1, v1, red,
-                green, blue, alpha, u0, v0, u1, v1, coloredGlyphFlag);
+                green, blue, alpha, u0, v0, u1, v1, renderType);
         writeVertex(vertexFloatBase + (VERTEX_STRIDE_FLOATS * 3), rightX, y, z, u1, v0, red, green, blue, alpha,
-                u0, v0, u1, v1, coloredGlyphFlag);
+                u0, v0, u1, v1, renderType);
+
+        indexData[indexBase] = vertexBase;
+        indexData[indexBase + 1] = vertexBase + 1;
+        indexData[indexBase + 2] = vertexBase + 2;
+        indexData[indexBase + 3] = vertexBase + 2;
+        indexData[indexBase + 4] = vertexBase + 3;
+        indexData[indexBase + 5] = vertexBase;
+
+        quadCount++;
+    }
+
+    /**
+     * 追加一个纯色矩形四边形。
+     *
+     * @param x 绘制 X
+     * @param y 绘制 Y
+     * @param z 绘制 Z
+     * @param width 矩形宽度
+     * @param height 矩形高度
+     * @param red 红色
+     * @param green 绿色
+     * @param blue 蓝色
+     * @param alpha 透明度
+     * @param renderType 渲染类型，装饰线应使用 2
+     */
+    public void addRectangleQuad(float x, float y, float z, float width, float height, float red, float green,
+            float blue, float alpha, float renderType) {
+        ensureCapacity(quadCount + 1);
+
+        int vertexBase = quadCount * VERTICES_PER_QUAD;
+        int vertexFloatBase = vertexBase * VERTEX_STRIDE_FLOATS;
+        int indexBase = quadCount * INDICES_PER_QUAD;
+        float rightX = x + width;
+        float bottomY = y + height;
+
+        writeVertex(vertexFloatBase, x, y, z, 0.0F, 0.0F, red, green, blue, alpha, 0.0F, 0.0F, 0.0F, 0.0F,
+                renderType);
+        writeVertex(vertexFloatBase + VERTEX_STRIDE_FLOATS, x, bottomY, z, 0.0F, 0.0F, red, green, blue, alpha,
+                0.0F, 0.0F, 0.0F, 0.0F, renderType);
+        writeVertex(vertexFloatBase + (VERTEX_STRIDE_FLOATS * 2), rightX, bottomY, z, 0.0F, 0.0F, red, green,
+                blue, alpha, 0.0F, 0.0F, 0.0F, 0.0F, renderType);
+        writeVertex(vertexFloatBase + (VERTEX_STRIDE_FLOATS * 3), rightX, y, z, 0.0F, 0.0F, red, green, blue,
+                alpha, 0.0F, 0.0F, 0.0F, 0.0F, renderType);
 
         indexData[indexBase] = vertexBase;
         indexData[indexBase + 1] = vertexBase + 1;
@@ -120,6 +166,13 @@ public final class GlyphRenderBatch {
         indexBuffer.put(indexData, 0, getIndexCount());
     }
 
+    /**
+     * 清空当前批次内容并复用已分配数组。
+     */
+    public void clear() {
+        quadCount = 0;
+    }
+
     private void ensureCapacity(int targetQuadCount) {
         if (targetQuadCount <= (vertexData.length / (VERTICES_PER_QUAD * VERTEX_STRIDE_FLOATS))) {
             return;
@@ -150,7 +203,7 @@ public final class GlyphRenderBatch {
     }
 
     private void writeVertex(int offset, float x, float y, float z, float u, float v, float red, float green,
-            float blue, float alpha, float u0, float v0, float u1, float v1, float coloredGlyphFlag) {
+            float blue, float alpha, float u0, float v0, float u1, float v1, float renderType) {
         vertexData[offset + POSITION_OFFSET_FLOATS] = x;
         vertexData[offset + POSITION_OFFSET_FLOATS + 1] = y;
         vertexData[offset + POSITION_OFFSET_FLOATS + 2] = z;
@@ -164,6 +217,6 @@ public final class GlyphRenderBatch {
         vertexData[offset + UV_BOUNDS_OFFSET_FLOATS + 1] = v0;
         vertexData[offset + UV_BOUNDS_OFFSET_FLOATS + 2] = u1;
         vertexData[offset + UV_BOUNDS_OFFSET_FLOATS + 3] = v1;
-        vertexData[offset + GLYPH_FLAGS_OFFSET_FLOATS] = coloredGlyphFlag;
+        vertexData[offset + GLYPH_FLAGS_OFFSET_FLOATS] = renderType;
     }
 }

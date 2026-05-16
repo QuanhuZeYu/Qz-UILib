@@ -281,7 +281,7 @@ public class FontService {
      */
     public TextDecorationRenderer getDecorationRenderer() {
         if (decorationRenderer == null) {
-            decorationRenderer = new TextDecorationRenderer();
+            decorationRenderer = new TextDecorationRenderer(getBatchRenderer());
         }
         return decorationRenderer;
     }

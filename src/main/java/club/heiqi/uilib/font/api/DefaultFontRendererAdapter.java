@@ -478,8 +478,8 @@ public class DefaultFontRendererAdapter implements FontRendererAdapter {
     }
 
     private void clearCollectedBatches(FontService fontService) {
-        fontService.getBatchRenderer().clearFrame();
         fontService.getDecorationRenderer().clear();
+        fontService.getBatchRenderer().clearFrame();
     }
 
     private int normalizeColor(int color) {

@@ -12,6 +12,7 @@ uniform mat4 projection;
 varying vec2 texCoord;
 varying vec4 Color;
 varying vec4 uvBounds;
+// 0.0 mono glyph, 1.0 colored glyph, 2.0 solid decoration quad.
 varying float glyphFlags;
 
 void main(void) {

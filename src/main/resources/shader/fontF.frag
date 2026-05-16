@@ -3,6 +3,7 @@
 varying vec2 texCoord;
 varying vec4 Color;
 varying vec4 uvBounds;
+// 0.0 mono glyph, 1.0 colored glyph, 2.0 solid decoration quad.
 varying float glyphFlags;
 
 uniform sampler2D mainTex;
@@ -42,6 +43,11 @@ vec3 hsv2rgb(vec3 c) {
 }
 
 void main() {
+    if (glyphFlags > 1.5) {
+        gl_FragColor = Color;
+        return;
+    }
+
     if (texCoord.x < uvBounds.x || texCoord.x > uvBounds.z || texCoord.y < uvBounds.y || texCoord.y > uvBounds.w) {
         gl_FragColor = vec4(0.0);
         return;

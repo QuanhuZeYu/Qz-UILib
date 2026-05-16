@@ -32,6 +32,7 @@ public class FontBatchRenderer {
 
     private final AtomicBoolean initialized = new AtomicBoolean(false);
     private final Map<GlyphPage, GlyphRenderBatch> currentBatches = new LinkedHashMap<GlyphPage, GlyphRenderBatch>();
+    private final GlyphRenderBatch decorationBatch = new GlyphRenderBatch(null);
     private final List<PageRenderCommand> renderCommands = new ArrayList<PageRenderCommand>();
     private final FontRenderTool renderTool = new FontRenderTool();
     private final FontRenderStateGuard stateGuard = new FontRenderStateGuard();
@@ -43,6 +44,7 @@ public class FontBatchRenderer {
     private int lastFlushPageSubmitCount = 0;
     private int lastFlushDrawCallCount = 0;
     private int lastFlushTextureSwitchCount = 0;
+    private int builtPageCommandCount = 0;
 
     /**
      * 初始化批渲染器。
@@ -113,14 +115,41 @@ public class FontBatchRenderer {
         float blue = (float) (color & 255) / 255.0F;
         float z = (float) FontConfig.renderOffset;
 
-        float coloredGlyphFlag = glyphInfo != null && glyphInfo.isColoredGlyph() ? 1.0F : 0.0F;
+        float renderType = glyphInfo != null && glyphInfo.isColoredGlyph()
+                ? GlyphRenderBatch.RENDER_TYPE_COLORED_GLYPH
+                : GlyphRenderBatch.RENDER_TYPE_MONOCHROME_GLYPH;
 
         GlyphRenderBatch batch = currentBatches.get(glyphPage);
         if (batch == null) {
             batch = new GlyphRenderBatch(glyphPage);
             currentBatches.put(glyphPage, batch);
         }
-        batch.addQuad(x, y, z, charSize, italic, u0, u1, v0, v1, red, green, blue, alpha, coloredGlyphFlag);
+        batch.addQuad(x, y, z, charSize, italic, u0, u1, v0, v1, red, green, blue, alpha, renderType);
+        quadCount++;
+    }
+
+    /**
+     * 收集一个纯色文本装饰线矩形到当前帧。
+     *
+     * <p>装饰线不依附任何字符页，flush 时固定排在字形页命令之后，保持“字形先绘制、装饰线后覆盖”的旧语义。</p>
+     *
+     * @param x 起始 X
+     * @param y 起始 Y
+     * @param width 线条宽度
+     * @param height 线条高度
+     * @param color 文本颜色
+     */
+    public void collectDecoration(float x, float y, float width, float height, int color) {
+        initialize();
+
+        float alpha = (float) (color >> 24 & 255) / 255.0F;
+        float red = (float) (color >> 16 & 255) / 255.0F;
+        float green = (float) (color >> 8 & 255) / 255.0F;
+        float blue = (float) (color & 255) / 255.0F;
+        float z = (float) FontConfig.renderOffset;
+
+        decorationBatch.addRectangleQuad(x, y, z, width, height, red, green, blue, alpha,
+                GlyphRenderBatch.RENDER_TYPE_DECORATION);
         quadCount++;
     }
 
@@ -149,6 +178,7 @@ public class FontBatchRenderer {
         }
 
         int commandCount = buildRenderCommands();
+        int pageSubmitCount = builtPageCommandCount;
         if (commandCount <= 0) {
             recordLastFlushStats(0, 0, 0);
             clearFrame();
@@ -193,10 +223,10 @@ public class FontBatchRenderer {
             clearRenderCommands(commandCount);
         }
 
-        recordLastFlushStats(commandCount, drawCallCount, textureSwitchCount);
+        recordLastFlushStats(pageSubmitCount, drawCallCount, textureSwitchCount);
         if (flushedQuadCount > 0) {
-            MyMod.LOG.debug("提交字体批次：pageCommands={} drawCalls={} textureSwitches={} quadCount={}",
-                    Integer.valueOf(commandCount), Integer.valueOf(drawCallCount),
+            MyMod.LOG.debug("提交字体批次：pageCommands={} renderCommands={} drawCalls={} textureSwitches={} quadCount={}",
+                    Integer.valueOf(pageSubmitCount), Integer.valueOf(commandCount), Integer.valueOf(drawCallCount),
                     Integer.valueOf(textureSwitchCount), Integer.valueOf(flushedQuadCount));
         }
         clearFrame();
@@ -208,7 +238,20 @@ public class FontBatchRenderer {
      */
     public void clearFrame() {
         currentBatches.clear();
+        decorationBatch.clear();
         quadCount = 0;
+    }
+
+    /**
+     * 仅清空当前帧已收集的装饰线。
+     */
+    public void clearDecorationQuads() {
+        int decorationQuadCount = decorationBatch.getQuadCount();
+        if (decorationQuadCount <= 0) {
+            return;
+        }
+        decorationBatch.clear();
+        quadCount = Math.max(0, quadCount - decorationQuadCount);
     }
 
     /**
@@ -275,6 +318,7 @@ public class FontBatchRenderer {
 
     private int buildRenderCommands() {
         int commandCount = 0;
+        builtPageCommandCount = 0;
         for (GlyphRenderBatch batch : currentBatches.values()) {
             if (batch == null || batch.isEmpty()) {
                 continue;
@@ -286,6 +330,12 @@ public class FontBatchRenderer {
 
             PageRenderCommand command = obtainRenderCommand(commandCount);
             command.reset(page, batch, page.getTextureId());
+            commandCount++;
+        }
+        builtPageCommandCount = commandCount;
+        if (!decorationBatch.isEmpty()) {
+            PageRenderCommand command = obtainRenderCommand(commandCount);
+            command.reset(null, decorationBatch, 0);
             commandCount++;
         }
         return commandCount;
