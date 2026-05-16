@@ -2,8 +2,6 @@ package club.heiqi.uilib.font.page;
 
 import java.awt.image.BufferedImage;
 import java.nio.ByteBuffer;
-import java.util.Map;
-import java.util.concurrent.ConcurrentHashMap;
 
 import org.lwjgl.BufferUtils;
 import org.lwjgl.opengl.GL11;
@@ -26,7 +24,9 @@ public class GlyphPage {
     private final int glyphSize;
     private final int columnCount;
     private final int rowCount;
-    private final Map<GlyphCacheKey, GlyphPageSlot> slotMap = new ConcurrentHashMap<GlyphCacheKey, GlyphPageSlot>();
+    private final short[] slotXByIndex;
+    private final short[] slotYByIndex;
+    private final int slotCount;
     private ByteBuffer uploadBuffer;
     private int textureId;
     private int nextSlotIndex = 0;
@@ -38,13 +38,17 @@ public class GlyphPage {
      * @param textureSize 纹理边长
      * @param glyphSize 字符格大小
      */
-    public GlyphPage(int runtimeVersion, int pageIndex, int textureSize, int glyphSize) {
+    public GlyphPage(int runtimeVersion, int pageIndex, int textureSize, int glyphSize,
+            short[] slotXByIndex, short[] slotYByIndex) {
         this.runtimeVersion = runtimeVersion;
         this.pageIndex = pageIndex;
         this.textureSize = textureSize;
         this.glyphSize = glyphSize;
         this.columnCount = Math.max(1, textureSize / glyphSize);
         this.rowCount = Math.max(1, textureSize / glyphSize);
+        this.slotXByIndex = slotXByIndex;
+        this.slotYByIndex = slotYByIndex;
+        this.slotCount = Math.min(columnCount * rowCount, Math.min(slotXByIndex.length, slotYByIndex.length));
 
         uploadBuffer = BufferUtils.createByteBuffer(glyphSize * glyphSize * 4);
         textureId = 0;
@@ -56,44 +60,35 @@ public class GlyphPage {
      * @return 是否还能分配
      */
     public boolean canAllocate() {
-        return nextSlotIndex < columnCount * rowCount;
+        return nextSlotIndex < slotCount;
     }
 
     /**
-     * 为指定字符分配槽位。
+     * 分配下一个可用槽位。
      *
-     * @param key 字符缓存键
-     * @return 页槽位信息
+     * @return 槽位索引
      */
-    public GlyphPageSlot allocate(GlyphCacheKey key) {
-        GlyphPageSlot existing = slotMap.get(key);
-        if (existing != null) {
-            return existing;
-        }
-
+    public int allocateSlot() {
         if (!canAllocate()) {
             throw new IllegalStateException("字符页容量不足");
         }
-
-        int x = (nextSlotIndex % columnCount) * glyphSize;
-        int y = (nextSlotIndex / columnCount) * glyphSize;
-        GlyphPageSlot slot = new GlyphPageSlot(x, y, glyphSize, glyphSize);
-        slotMap.put(key, slot);
-        nextSlotIndex++;
-        return slot;
+        return nextSlotIndex++;
     }
 
     /**
      * 将字符图像上传到纹理页。
      *
-     * @param key 字符缓存键
+     * @param slotIndex 槽位索引
+     * @param codepoint 字符码点
+     * @param fontType 字重类型
      * @param image 字符图像
      */
-    public void upload(GlyphCacheKey key, BufferedImage image) {
-        GlyphPageSlot slot = slotMap.get(key);
-        if (slot == null) {
+    public void upload(int slotIndex, int codepoint, club.heiqi.uilib.font.FontType fontType, BufferedImage image) {
+        if (slotIndex < 0 || slotIndex >= slotCount) {
             throw new IllegalStateException("字符未分配页槽位");
         }
+        int slotX = slotXByIndex[slotIndex] & 0xFFFF;
+        int slotY = slotYByIndex[slotIndex] & 0xFFFF;
 
         GL11.glPushAttrib(GL11.GL_ALL_ATTRIB_BITS);
         GL11.glPushClientAttrib(GL11.GL_CLIENT_PIXEL_STORE_BIT);
@@ -104,16 +99,16 @@ public class GlyphPage {
             GL11.glTexSubImage2D(
                     GL11.GL_TEXTURE_2D,
                     0,
-                    slot.getX(),
-                    slot.getY(),
-                    slot.getWidth(),
-                    slot.getHeight(),
+                    slotX,
+                    slotY,
+                    glyphSize,
+                    glyphSize,
                     GL11.GL_RGBA,
                     GL11.GL_UNSIGNED_BYTE,
                     toByteBuffer(image));
             GL30.glGenerateMipmap(GL11.GL_TEXTURE_2D);
-            FontRuntimeDiagnostics.logGlyphUpload(key.getRuntimeVersion(), key.getCodepoint(), key.getFontType(),
-                    textureId, GL11.glIsTexture(textureId), GL11.glGetError(), image);
+            FontRuntimeDiagnostics.logGlyphUpload(runtimeVersion, codepoint, fontType, textureId,
+                    GL11.glIsTexture(textureId), GL11.glGetError(), image);
             GL11.glBindTexture(GL11.GL_TEXTURE_2D, 0);
         } finally {
             GL11.glPopClientAttrib();
@@ -129,7 +124,6 @@ public class GlyphPage {
             GL11.glDeleteTextures(textureId);
             textureId = 0;
         }
-        slotMap.clear();
     }
 
     public int getPageIndex() {
@@ -146,10 +140,6 @@ public class GlyphPage {
 
     public int getGlyphSize() {
         return glyphSize;
-    }
-
-    public Map<GlyphCacheKey, GlyphPageSlot> getSlotMap() {
-        return slotMap;
     }
 
     public int getTextureId() {

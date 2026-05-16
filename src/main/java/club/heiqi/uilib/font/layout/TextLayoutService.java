@@ -7,20 +7,15 @@ import java.awt.font.GlyphVector;
 import java.awt.font.LineMetrics;
 import java.awt.geom.AffineTransform;
 import java.awt.geom.Rectangle2D;
-import java.awt.image.BufferedImage;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
-import java.util.Map;
-import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicLong;
 
 import club.heiqi.uilib.font.FontType;
 import club.heiqi.uilib.font.config.FontConfig;
-import club.heiqi.uilib.font.glyph.GlyphGenerationPriority;
-import club.heiqi.uilib.font.glyph.GlyphGenerationTask;
-import club.heiqi.uilib.font.glyph.GlyphInfo;
 import club.heiqi.uilib.font.page.GlyphPageManager;
+import club.heiqi.uilib.font.page.GlyphRuntimeTables;
 import club.heiqi.uilib.font.util.FontMatcher;
 import club.heiqi.uilib.ui.text.TextContentMode;
 
@@ -33,7 +28,6 @@ public class TextLayoutService {
 
     private final FontMatcher fontMatcher;
     private final GlyphPageManager glyphPageManager;
-    private final Map<String, Double> widthCache = new ConcurrentHashMap<String, Double>();
     private final AtomicLong widthCacheHitCount = new AtomicLong(0L);
     private final AtomicLong widthCacheMissCount = new AtomicLong(0L);
     private volatile int runtimeVersion;
@@ -458,7 +452,6 @@ public class TextLayoutService {
     public double getSegmentWidth(TextSegment segment) {
         double width = 0.0D;
         String text = segment.getText();
-        FontType fontType = segment.getStyle().getFontType();
         for (int i = 0; i < text.length();) {
             int codepoint = text.codePointAt(i);
             width += getCodepointWidth(codepoint, segment.getStyle());
@@ -483,24 +476,22 @@ public class TextLayoutService {
             return FontConfig.spaceWidth;
         }
 
-        String cacheKey = buildWidthCacheKey(codepoint, fontType);
-        Double cachedWidth = widthCache.get(cacheKey);
-        if (cachedWidth != null) {
+        GlyphRuntimeTables tables = glyphPageManager.getRuntimeTables();
+        if (tables == null || !GlyphRuntimeTables.isValidCodepoint(codepoint)) {
+            widthCacheMissCount.incrementAndGet();
+            return measureAwtWidth(codepoint, fontType);
+        }
+
+        float[] widthCache = tables.widthArray(fontType);
+        float cachedWidth = widthCache[codepoint];
+        if (!Float.isNaN(cachedWidth)) {
             widthCacheHitCount.incrementAndGet();
-            return cachedWidth.doubleValue();
+            return cachedWidth;
         }
         widthCacheMissCount.incrementAndGet();
 
-        GlyphInfo info = glyphPageManager.getGlyphInfo(codepoint, fontType);
-        if (info == null) {
-            return measureAwtWidth(codepoint, fontType);
-        }
-
-        if (info.getWidth() <= 0) {
-            return measureAwtWidth(codepoint, fontType);
-        }
-        double measuredWidth = ((info.getAdvance() / info.getWidth()) * FontConfig.charSize) + FontConfig.characterSpacing;
-        widthCache.put(cacheKey, Double.valueOf(measuredWidth));
+        float measuredWidth = (float) measureAwtWidth(codepoint, fontType);
+        widthCache[codepoint] = measuredWidth;
         return measuredWidth;
     }
 
@@ -572,7 +563,10 @@ public class TextLayoutService {
      * 清空宽度缓存。
      */
     public void clearCache() {
-        widthCache.clear();
+        GlyphRuntimeTables tables = glyphPageManager.getRuntimeTables();
+        if (tables != null) {
+            tables.clearWidthCache();
+        }
     }
 
     /**
@@ -591,11 +585,6 @@ public class TextLayoutService {
      */
     public long getWidthCacheMissCount() {
         return widthCacheMissCount.get();
-    }
-
-    private String buildWidthCacheKey(int codepoint, FontType fontType) {
-        return runtimeVersion + ":" + codepoint + ":" + fontType.name() + ":" + FontConfig.charSize + ":"
-                + FontConfig.characterSpacing;
     }
 
     private TextContentMode resolveTextContentMode(TextContentMode textContentMode) {

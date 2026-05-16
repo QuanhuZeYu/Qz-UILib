@@ -9,6 +9,8 @@ public class FontRuntimeStats {
     private final int readyGlyphCount;
     private final int normalPageCount;
     private final int boldPageCount;
+    private final int directTableCodepointCount;
+    private final int directTableSlotsPerPage;
     private final int queuedDrawStageUploadCount;
     private final int frameQuadCount;
     private final int lastFlushPageSubmitCount;
@@ -26,6 +28,8 @@ public class FontRuntimeStats {
      * @param readyGlyphCount 已就绪字符数量
      * @param normalPageCount 普通字符页数量
      * @param boldPageCount 粗体字符页数量
+     * @param directTableCodepointCount direct-index 码点容量
+     * @param directTableSlotsPerPage 每页预计算槽位数量
      * @param queuedDrawStageUploadCount 最近一秒 draw-stage 上传次数
      * @param frameQuadCount 当前帧四边形数量
      * @param lastFlushPageSubmitCount 上次 flush 实际提交的字符页命令数量
@@ -41,6 +45,8 @@ public class FontRuntimeStats {
             int readyGlyphCount,
             int normalPageCount,
             int boldPageCount,
+            int directTableCodepointCount,
+            int directTableSlotsPerPage,
             int queuedDrawStageUploadCount,
             int frameQuadCount,
             int lastFlushPageSubmitCount,
@@ -54,6 +60,8 @@ public class FontRuntimeStats {
         this.readyGlyphCount = readyGlyphCount;
         this.normalPageCount = normalPageCount;
         this.boldPageCount = boldPageCount;
+        this.directTableCodepointCount = directTableCodepointCount;
+        this.directTableSlotsPerPage = directTableSlotsPerPage;
         this.queuedDrawStageUploadCount = queuedDrawStageUploadCount;
         this.frameQuadCount = frameQuadCount;
         this.lastFlushPageSubmitCount = lastFlushPageSubmitCount;
@@ -79,6 +87,14 @@ public class FontRuntimeStats {
 
     public int getBoldPageCount() {
         return boldPageCount;
+    }
+
+    public int getDirectTableCodepointCount() {
+        return directTableCodepointCount;
+    }
+
+    public int getDirectTableSlotsPerPage() {
+        return directTableSlotsPerPage;
     }
 
     public int getQueuedDrawStageUploadCount() {
@@ -123,6 +139,8 @@ public class FontRuntimeStats {
                 + ", readyGlyphs=" + readyGlyphCount
                 + ", normalPages=" + normalPageCount
                 + ", boldPages=" + boldPageCount
+                + ", directTableCodepoints=" + directTableCodepointCount
+                + ", directTableSlotsPerPage=" + directTableSlotsPerPage
                 + ", drawStageUploadsLastSecond=" + queuedDrawStageUploadCount
                 + ", frameQuads=" + frameQuadCount
                 + ", lastFlushPageSubmits=" + lastFlushPageSubmitCount

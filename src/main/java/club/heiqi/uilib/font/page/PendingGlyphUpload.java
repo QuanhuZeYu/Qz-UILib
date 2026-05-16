@@ -9,20 +9,19 @@ public class PendingGlyphUpload {
 
     private final int runtimeVersion;
     private final long generationId;
-    private final GlyphCacheKey key;
+    private final int codepoint;
     private final GlyphGenerationResult generationResult;
 
     /**
      * 创建待上传记录。
      *
      * @param runtimeVersion 运行时版本
-     * @param key 字符缓存键
      * @param generationResult 字符生成结果
      */
-    public PendingGlyphUpload(int runtimeVersion, GlyphCacheKey key, GlyphGenerationResult generationResult) {
+    public PendingGlyphUpload(int runtimeVersion, GlyphGenerationResult generationResult) {
         this.runtimeVersion = runtimeVersion;
         this.generationId = generationResult.getGenerationId();
-        this.key = key;
+        this.codepoint = generationResult.getCodepoint();
         this.generationResult = generationResult;
     }
 
@@ -34,8 +33,8 @@ public class PendingGlyphUpload {
         return generationId;
     }
 
-    public GlyphCacheKey getKey() {
-        return key;
+    public int getCodepoint() {
+        return codepoint;
     }
 
     public GlyphGenerationResult getGenerationResult() {

@@ -27,8 +27,8 @@ public class GlyphGenerationDispatcher {
     private final AtomicBoolean acceptingTasks = new AtomicBoolean(true);
     private final AtomicBoolean reloading = new AtomicBoolean(false);
     private final AtomicInteger generationEpoch = new AtomicInteger(0);
-    private final ConcurrentHashMap<GlyphGenerationRequestKey, GlyphGenerationTask> inFlightTasks =
-            new ConcurrentHashMap<GlyphGenerationRequestKey, GlyphGenerationTask>();
+    private final ConcurrentHashMap<Long, GlyphGenerationTask> inFlightTasks =
+            new ConcurrentHashMap<Long, GlyphGenerationTask>();
     private ExecutorService executorService;
     private volatile int runtimeVersion;
 
@@ -98,8 +98,8 @@ public class GlyphGenerationDispatcher {
         final GlyphGenerationTask generationTask = task.withGenerationId(taskGenerationId);
         final int taskGenerationEpoch = generationEpoch.get();
         final int taskRuntimeVersion = generationTask.getRuntimeVersion();
-        final GlyphGenerationRequestKey requestKey = new GlyphGenerationRequestKey(taskRuntimeVersion,
-                generationTask.getCodepoint(), generationTask.getFontType());
+        final Long requestKey = Long.valueOf(packRequestKey(taskRuntimeVersion, generationTask.getCodepoint(),
+                generationTask.getFontType()));
         inFlightTasks.put(requestKey, generationTask);
         ExecutorService currentExecutorService = executorService;
         if (currentExecutorService == null) {
@@ -232,42 +232,11 @@ public class GlyphGenerationDispatcher {
         }
     }
 
-    /**
-     * 生成请求唯一键。
-     */
-    private static class GlyphGenerationRequestKey {
-
-        private final int runtimeVersion;
-        private final int codepoint;
-        private final FontType fontType;
-
-        private GlyphGenerationRequestKey(int runtimeVersion, int codepoint, FontType fontType) {
-            this.runtimeVersion = runtimeVersion;
-            this.codepoint = codepoint;
-            this.fontType = fontType;
-        }
-
-        @Override
-        public boolean equals(Object obj) {
-            if (this == obj) {
-                return true;
-            }
-            if (!(obj instanceof GlyphGenerationRequestKey)) {
-                return false;
-            }
-            GlyphGenerationRequestKey other = (GlyphGenerationRequestKey) obj;
-            return runtimeVersion == other.runtimeVersion
-                    && codepoint == other.codepoint
-                    && fontType == other.fontType;
-        }
-
-        @Override
-        public int hashCode() {
-            int result = Integer.valueOf(runtimeVersion).hashCode();
-            result = 31 * result + Integer.valueOf(codepoint).hashCode();
-            result = 31 * result + fontType.hashCode();
-            return result;
-        }
+    private long packRequestKey(int runtimeVersion, int codepoint, FontType fontType) {
+        long versionBits = ((long) runtimeVersion & 0xFFFFFFFFL) << 32;
+        long codepointBits = ((long) codepoint & 0x1FFFFFL) << 1;
+        long typeBit = fontType == FontType.BOLD ? 1L : 0L;
+        return versionBits | codepointBits | typeBit;
     }
 
     /**

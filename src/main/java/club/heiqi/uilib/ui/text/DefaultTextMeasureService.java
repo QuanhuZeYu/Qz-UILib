@@ -89,8 +89,10 @@ public final class DefaultTextMeasureService implements TextMeasureService {
      */
     private TextLayoutService getTextLayoutService() {
         FontService fontService = FontService.getInstance();
-        fontService.ensureLayoutRuntimeReady();
-        return fontService.getTextLayoutService();
+        synchronized (fontService) {
+            fontService.ensureLayoutRuntimeReady();
+            return fontService.getTextLayoutService();
+        }
     }
 
     private TextContentMode resolveTextContentMode(TextContentMode textContentMode) {

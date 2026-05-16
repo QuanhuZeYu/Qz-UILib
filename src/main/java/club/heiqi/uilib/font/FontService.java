@@ -3,9 +3,7 @@ package club.heiqi.uilib.font;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Deque;
-import java.util.HashSet;
 import java.util.List;
-import java.util.Set;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
 
@@ -16,8 +14,9 @@ import club.heiqi.uilib.font.glyph.GlyphGenerationDispatcher;
 import club.heiqi.uilib.font.glyph.GlyphGenerationPriority;
 import club.heiqi.uilib.font.glyph.GlyphGenerationTask;
 import club.heiqi.uilib.font.layout.TextLayoutService;
-import club.heiqi.uilib.font.page.GlyphCacheKey;
 import club.heiqi.uilib.font.page.GlyphPageManager;
+import club.heiqi.uilib.font.page.GlyphRuntimeTables;
+import club.heiqi.uilib.font.page.RecoverableGlyphRequest;
 import club.heiqi.uilib.font.render.FontBatchRenderer;
 import club.heiqi.uilib.font.render.TextDecorationRenderer;
 import club.heiqi.uilib.font.shader.FontShaderProgram;
@@ -102,10 +101,10 @@ public class FontService {
             }
 
             runtimeVersion++;
-            ensureLayoutRuntimeReady();
             glyphPageManager.setRuntimeVersion(runtimeVersion);
             glyphGenerationDispatcher.setRuntimeVersion(runtimeVersion);
             textLayoutService.setRuntimeVersion(runtimeVersion);
+            ensureLayoutRuntimeReady();
             glyphPageManager.initialize();
             glyphGenerationDispatcher.initialize(fontMatcher, glyphPageManager, glyphPageManager::queueUpload);
             initialized.set(true);
@@ -301,6 +300,8 @@ public class FontService {
                 glyphPageManager.getReadyGlyphCount(),
                 glyphPageManager.getNormalPageCount(),
                 glyphPageManager.getBoldPageCount(),
+                GlyphRuntimeTables.CODEPOINT_COUNT,
+                glyphPageManager.getRuntimeTables().slotsPerPage,
                 drawStageUploadTimestamps.size(),
                 quadCount,
                 lastFlushPageSubmitCount,
@@ -328,7 +329,9 @@ public class FontService {
      * 刷新文本测量所依赖的基础状态。
      */
     private void refreshTextMeasureRuntime() {
+        fontMatcher.setRuntimeTables(null);
         fontRegistry.reload();
+        fontMatcher.setRuntimeTables(glyphPageManager.getRuntimeTables());
         fontMatcher.clearCache();
         textLayoutService.clearCache();
         layoutRuntimeReady.set(true);
@@ -345,7 +348,7 @@ public class FontService {
     private void performReloadLocked(FontReloadRequest request) {
         reloadState.set(ReloadState.RELOADING);
         int nextRuntimeVersion = runtimeVersion + 1;
-        List<GlyphCacheKey> recoverableGlyphs = glyphPageManager.snapshotRecoverableRequests();
+        List<RecoverableGlyphRequest> recoverableGlyphs = glyphPageManager.snapshotRecoverableRequests();
         try {
             glyphGenerationDispatcher.pause();
             glyphGenerationDispatcher.reset();
@@ -354,8 +357,8 @@ public class FontService {
             glyphGenerationDispatcher.setRuntimeVersion(nextRuntimeVersion);
             textLayoutService.setRuntimeVersion(nextRuntimeVersion);
             clearRenderResources();
-            refreshTextMeasureRuntime();
             glyphPageManager.reset();
+            refreshTextMeasureRuntime();
             drawStageUploadTimestamps.clear();
             lastDrawStageUploadAt = 0L;
             glyphGenerationDispatcher.initialize(fontMatcher, glyphPageManager, glyphPageManager::queueUpload);
@@ -386,20 +389,25 @@ public class FontService {
         }
     }
 
-    private void resubmitRecoverableGlyphs(List<GlyphCacheKey> recoverableGlyphs, int targetRuntimeVersion) {
+    private void resubmitRecoverableGlyphs(List<RecoverableGlyphRequest> recoverableGlyphs, int targetRuntimeVersion) {
         if (recoverableGlyphs == null || recoverableGlyphs.isEmpty()) {
             return;
         }
 
-        Set<GlyphCacheKey> deduplicatedGlyphs = new HashSet<GlyphCacheKey>();
-        for (GlyphCacheKey glyph : recoverableGlyphs) {
-            deduplicatedGlyphs.add(new GlyphCacheKey(targetRuntimeVersion, glyph.getCodepoint(), glyph.getFontType()));
-        }
-
-        List<GlyphGenerationTask> tasks = new ArrayList<GlyphGenerationTask>(deduplicatedGlyphs.size());
+        byte[] requestedFlags = new byte[Character.MAX_CODE_POINT + 1];
         int glyphSize = Math.max(8, (int) Math.ceil(FontConfig.awtCharSize));
-        for (GlyphCacheKey glyph : deduplicatedGlyphs) {
-            tasks.add(new GlyphGenerationTask(targetRuntimeVersion, glyph.getCodepoint(), glyph.getFontType(), glyphSize,
+        List<GlyphGenerationTask> tasks = new ArrayList<GlyphGenerationTask>(recoverableGlyphs.size());
+        for (RecoverableGlyphRequest glyph : recoverableGlyphs) {
+            int codepoint = glyph.getCodepoint();
+            if (codepoint < 0 || codepoint > Character.MAX_CODE_POINT) {
+                continue;
+            }
+            byte typeFlag = glyph.getFontType() == FontType.BOLD ? (byte) 2 : (byte) 1;
+            if ((requestedFlags[codepoint] & typeFlag) != 0) {
+                continue;
+            }
+            requestedFlags[codepoint] = (byte) (requestedFlags[codepoint] | typeFlag);
+            tasks.add(new GlyphGenerationTask(targetRuntimeVersion, codepoint, glyph.getFontType(), glyphSize,
                     GlyphGenerationPriority.HIGH));
         }
         for (GlyphGenerationTask task : tasks) {

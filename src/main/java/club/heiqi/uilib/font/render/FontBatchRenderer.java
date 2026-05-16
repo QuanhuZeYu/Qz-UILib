@@ -8,9 +8,8 @@ import java.util.concurrent.atomic.AtomicBoolean;
 
 import club.heiqi.uilib.MyMod;
 import club.heiqi.uilib.font.config.FontConfig;
-import club.heiqi.uilib.font.glyph.GlyphInfo;
 import club.heiqi.uilib.font.page.GlyphPage;
-import club.heiqi.uilib.font.page.GlyphPageSlot;
+import club.heiqi.uilib.font.page.GlyphRuntimeTables;
 import club.heiqi.uilib.font.shader.FontShaderProgram;
 import org.joml.Matrix4f;
 import org.joml.Vector2f;
@@ -81,33 +80,39 @@ public class FontBatchRenderer {
     }
 
     /**
-     * 收集一个字符四边形到当前帧。
+     * 收集一个 direct-index 定位的字符四边形到当前帧。
      *
      * @param glyphPage 字符页
-     * @param pageSlot 槽位信息
+     * @param slotX 槽位 X
+     * @param slotY 槽位 Y
+     * @param slotWidth 槽位宽度
+     * @param slotHeight 槽位高度
      * @param x 绘制起点 X
      * @param y 绘制起点 Y
      * @param charSize 字体显示尺寸
      * @param color 文本颜色
      * @param italic 是否斜体
-     * @param glyphInfo 字符度量信息
+     * @param glyphFlags 字形标记
      */
     public void collect(
             GlyphPage glyphPage,
-            GlyphPageSlot pageSlot,
+            int slotX,
+            int slotY,
+            int slotWidth,
+            int slotHeight,
             float x,
             float y,
             float charSize,
             int color,
             boolean italic,
-            GlyphInfo glyphInfo) {
+            byte glyphFlags) {
         initialize();
 
         float textureSize = glyphPage.getTextureSize();
-        float u0 = (pageSlot.getX() + 1.0F) / textureSize;
-        float u1 = (pageSlot.getX() + pageSlot.getWidth() - 1.0F) / textureSize;
-        float v0 = (pageSlot.getY() + 1.0F) / textureSize;
-        float v1 = (pageSlot.getY() + pageSlot.getHeight() - 1.0F) / textureSize;
+        float u0 = (slotX + 1.0F) / textureSize;
+        float u1 = (slotX + slotWidth - 1.0F) / textureSize;
+        float v0 = (slotY + 1.0F) / textureSize;
+        float v1 = (slotY + slotHeight - 1.0F) / textureSize;
 
         float alpha = (float) (color >> 24 & 255) / 255.0F;
         float red = (float) (color >> 16 & 255) / 255.0F;
@@ -115,7 +120,7 @@ public class FontBatchRenderer {
         float blue = (float) (color & 255) / 255.0F;
         float z = (float) FontConfig.renderOffset;
 
-        float renderType = glyphInfo != null && glyphInfo.isColoredGlyph()
+        float renderType = (glyphFlags & GlyphRuntimeTables.GLYPH_FLAG_COLORED) != 0
                 ? GlyphRenderBatch.RENDER_TYPE_COLORED_GLYPH
                 : GlyphRenderBatch.RENDER_TYPE_MONOCHROME_GLYPH;
 

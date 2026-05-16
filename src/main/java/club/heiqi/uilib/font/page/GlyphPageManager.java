@@ -1,12 +1,8 @@
 package club.heiqi.uilib.font.page;
 
 import java.util.ArrayList;
-import java.util.Collections;
 import java.util.List;
-import java.util.Map;
 import java.util.Queue;
-import java.util.Set;
-import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
@@ -23,28 +19,24 @@ import club.heiqi.uilib.font.glyph.GlyphInfo;
 public class GlyphPageManager {
 
     private final AtomicBoolean initialized = new AtomicBoolean(false);
-    private final Map<GlyphCacheKey, GlyphState> glyphStates = new ConcurrentHashMap<GlyphCacheKey, GlyphState>();
-    private final Map<GlyphCacheKey, Long> glyphGenerationIds = new ConcurrentHashMap<GlyphCacheKey, Long>();
-    private final Map<GlyphCacheKey, GlyphPage> readyPages = new ConcurrentHashMap<GlyphCacheKey, GlyphPage>();
-    private final Map<GlyphCacheKey, GlyphInfo> glyphInfos = new ConcurrentHashMap<GlyphCacheKey, GlyphInfo>();
     private final Queue<PendingGlyphUpload> pendingUploads = new ConcurrentLinkedQueue<PendingGlyphUpload>();
-    private final Set<GlyphCacheKey> recoverableRequests = Collections.newSetFromMap(
-            new ConcurrentHashMap<GlyphCacheKey, Boolean>());
-    private final List<GlyphPage> normalPages = new ArrayList<GlyphPage>();
-    private final List<GlyphPage> boldPages = new ArrayList<GlyphPage>();
+    private final AtomicLong generationIdSequence = new AtomicLong(0L);
 
+    private GlyphRuntimeTables runtimeTables = new GlyphRuntimeTables();
     private int textureSize;
     private int glyphSize;
+    private int columnCount;
+    private int rowCount;
     private int maintainPageCount = 3;
-    private final AtomicLong generationIdSequence = new AtomicLong(0L);
+    private int readyGlyphCount;
     private volatile int runtimeVersion;
 
     /**
      * 初始化字符页管理器。
      */
     public synchronized void initialize() {
-        textureSize = Math.max(64, (int) (FontConfig.awtCharSize * 64));
-        glyphSize = Math.max(8, (int) FontConfig.awtCharSize);
+        configurePageGeometry();
+        runtimeTables.configureSlotCoordinates(columnCount, rowCount, glyphSize);
         if (initialized.compareAndSet(false, true)) {
             ensureCapacity(FontType.NORMAL);
             ensureCapacity(FontType.BOLD);
@@ -61,23 +53,27 @@ public class GlyphPageManager {
     }
 
     /**
+     * 获取当前运行时直索引表。
+     *
+     * @return 运行时表
+     */
+    public GlyphRuntimeTables getRuntimeTables() {
+        return runtimeTables;
+    }
+
+    /**
      * 重置字符页状态。
      */
     public synchronized void reset() {
         if (initialized.get()) {
-            closePages(normalPages);
-            closePages(boldPages);
+            closePages(runtimeTables.normalPages, runtimeTables.normalPageCount);
+            closePages(runtimeTables.boldPages, runtimeTables.boldPageCount);
         }
-        glyphStates.clear();
-        glyphGenerationIds.clear();
-        readyPages.clear();
-        glyphInfos.clear();
         pendingUploads.clear();
-        recoverableRequests.clear();
-        normalPages.clear();
-        boldPages.clear();
-        textureSize = Math.max(64, (int) (FontConfig.awtCharSize * 64));
-        glyphSize = Math.max(8, (int) FontConfig.awtCharSize);
+        runtimeTables = new GlyphRuntimeTables();
+        configurePageGeometry();
+        runtimeTables.configureSlotCoordinates(columnCount, rowCount, glyphSize);
+        readyGlyphCount = 0;
         if (initialized.get()) {
             ensureCapacity(FontType.NORMAL);
             ensureCapacity(FontType.BOLD);
@@ -111,20 +107,19 @@ public class GlyphPageManager {
      * @return 是否允许开始生成
      */
     public synchronized boolean tryMarkGenerating(int runtimeVersion, int codepoint, FontType fontType) {
-        if (runtimeVersion != this.runtimeVersion) {
+        if (runtimeVersion != this.runtimeVersion || !GlyphRuntimeTables.isValidCodepoint(codepoint)) {
             return false;
         }
-        GlyphCacheKey key = createKey(runtimeVersion, codepoint, fontType);
-        GlyphState currentState = glyphStates.get(key);
-        if (currentState == GlyphState.GENERATING
-                || currentState == GlyphState.UPLOAD_PENDING
-                || currentState == GlyphState.READY) {
+        byte[] states = runtimeTables.stateArray(fontType);
+        byte currentState = states[codepoint];
+        if (currentState == GlyphRuntimeTables.STATE_GENERATING
+                || currentState == GlyphRuntimeTables.STATE_UPLOAD_PENDING
+                || currentState == GlyphRuntimeTables.STATE_READY) {
             return false;
         }
 
-        glyphStates.put(key, GlyphState.GENERATING);
-        glyphGenerationIds.put(key, Long.valueOf(generationIdSequence.incrementAndGet()));
-        recoverableRequests.add(key);
+        states[codepoint] = GlyphRuntimeTables.STATE_GENERATING;
+        runtimeTables.generationArray(fontType)[codepoint] = generationIdSequence.incrementAndGet();
         return true;
     }
 
@@ -137,31 +132,28 @@ public class GlyphPageManager {
      * @return 生成请求编号，未处于生成链路时返回 0
      */
     public synchronized long getGenerationId(int runtimeVersion, int codepoint, FontType fontType) {
-        if (runtimeVersion != this.runtimeVersion) {
+        if (runtimeVersion != this.runtimeVersion || !GlyphRuntimeTables.isValidCodepoint(codepoint)) {
             return 0L;
         }
-        Long generationId = glyphGenerationIds.get(createKey(runtimeVersion, codepoint, fontType));
-        return generationId == null ? 0L : generationId.longValue();
+        return runtimeTables.generationArray(fontType)[codepoint];
     }
 
     /**
      * 标记字符生成被当前运行时取消。
-     *
-     * <p>该入口用于调度器 reset、worker 迟到或任务提交被拒绝等窗口，避免字符长期停留在生成中或待上传状态。</p>
      *
      * @param runtimeVersion 运行时版本
      * @param codepoint 字符码点
      * @param fontType 字重类型
      */
     public synchronized void markGenerationCancelled(int runtimeVersion, int codepoint, FontType fontType) {
-        if (runtimeVersion != this.runtimeVersion) {
+        if (runtimeVersion != this.runtimeVersion || !GlyphRuntimeTables.isValidCodepoint(codepoint)) {
             return;
         }
-        GlyphCacheKey key = createKey(runtimeVersion, codepoint, fontType);
-        GlyphState state = glyphStates.get(key);
-        if (state == GlyphState.GENERATING || state == GlyphState.UPLOAD_PENDING) {
-            glyphStates.put(key, GlyphState.NEW);
-            glyphGenerationIds.remove(key);
+        byte[] states = runtimeTables.stateArray(fontType);
+        byte state = states[codepoint];
+        if (state == GlyphRuntimeTables.STATE_GENERATING || state == GlyphRuntimeTables.STATE_UPLOAD_PENDING) {
+            states[codepoint] = GlyphRuntimeTables.STATE_NEW;
+            runtimeTables.generationArray(fontType)[codepoint] = 0L;
         }
     }
 
@@ -183,13 +175,11 @@ public class GlyphPageManager {
      * @param fontType 字重类型
      */
     public synchronized void markFailed(int runtimeVersion, int codepoint, FontType fontType) {
-        if (runtimeVersion != this.runtimeVersion) {
+        if (runtimeVersion != this.runtimeVersion || !GlyphRuntimeTables.isValidCodepoint(codepoint)) {
             return;
         }
-        GlyphCacheKey key = createKey(runtimeVersion, codepoint, fontType);
-        recoverableRequests.remove(key);
-        glyphGenerationIds.remove(key);
-        glyphStates.put(key, GlyphState.FAILED);
+        runtimeTables.generationArray(fontType)[codepoint] = 0L;
+        runtimeTables.stateArray(fontType)[codepoint] = GlyphRuntimeTables.STATE_FAILED;
     }
 
     /**
@@ -198,18 +188,21 @@ public class GlyphPageManager {
      * @param result 字符生成结果
      */
     public synchronized void queueUpload(GlyphGenerationResult result) {
-        if (result.getRuntimeVersion() != runtimeVersion) {
+        if (result == null || result.getRuntimeVersion() != runtimeVersion
+                || !GlyphRuntimeTables.isValidCodepoint(result.getCodepoint())) {
             return;
         }
-        GlyphCacheKey key = createKey(result.getRuntimeVersion(), result.getCodepoint(), result.getFontType());
-        if (glyphStates.get(key) != GlyphState.GENERATING) {
+        int codepoint = result.getCodepoint();
+        FontType fontType = result.getFontType();
+        byte[] states = runtimeTables.stateArray(fontType);
+        if (states[codepoint] != GlyphRuntimeTables.STATE_GENERATING) {
             return;
         }
-        if (!isCurrentGeneration(key, result.getGenerationId())) {
+        if (!isCurrentGeneration(codepoint, fontType, result.getGenerationId())) {
             return;
         }
-        pendingUploads.add(new PendingGlyphUpload(result.getRuntimeVersion(), key, result));
-        glyphStates.put(key, GlyphState.UPLOAD_PENDING);
+        pendingUploads.add(new PendingGlyphUpload(result.getRuntimeVersion(), result));
+        states[codepoint] = GlyphRuntimeTables.STATE_UPLOAD_PENDING;
     }
 
     /**
@@ -225,25 +218,35 @@ public class GlyphPageManager {
                 break;
             }
 
-            GlyphCacheKey key = upload.getKey();
             GlyphGenerationResult result = upload.getGenerationResult();
             if (upload.getRuntimeVersion() != runtimeVersion || result.getRuntimeVersion() != runtimeVersion) {
                 continue;
             }
-            if (glyphStates.get(key) != GlyphState.UPLOAD_PENDING) {
+            int codepoint = upload.getCodepoint();
+            if (!GlyphRuntimeTables.isValidCodepoint(codepoint)) {
                 continue;
             }
-            if (!isCurrentGeneration(key, upload.getGenerationId())) {
+            FontType fontType = result.getFontType();
+            byte[] states = runtimeTables.stateArray(fontType);
+            if (states[codepoint] != GlyphRuntimeTables.STATE_UPLOAD_PENDING) {
                 continue;
             }
-            GlyphPage glyphPage = allocatePage(result.getFontType(), key);
-            glyphPage.allocate(key);
-            glyphPage.upload(key, result.getImage());
-            readyPages.put(key, glyphPage);
-            glyphInfos.put(key, upload.getGenerationResult().getGlyphInfo());
-            glyphStates.put(key, GlyphState.READY);
-            glyphGenerationIds.remove(key);
-            recoverableRequests.remove(key);
+            if (!isCurrentGeneration(codepoint, fontType, upload.getGenerationId())) {
+                continue;
+            }
+
+            GlyphPage glyphPage = allocatePage(fontType);
+            int slotIndex = glyphPage.allocateSlot();
+            glyphPage.upload(slotIndex, codepoint, fontType, result.getImage());
+            int[] locations = runtimeTables.locationArray(fontType);
+            byte[] flags = runtimeTables.flagsArray(fontType);
+            float[] widths = runtimeTables.widthArray(fontType);
+            locations[codepoint] = GlyphRuntimeTables.packLocation(glyphPage.getPageIndex(), slotIndex);
+            flags[codepoint] = buildGlyphFlags(result.getGlyphInfo());
+            cacheGeneratedWidth(widths, codepoint, result.getGlyphInfo());
+            states[codepoint] = GlyphRuntimeTables.STATE_READY;
+            runtimeTables.generationArray(fontType)[codepoint] = 0L;
+            readyGlyphCount++;
             processed++;
         }
     }
@@ -253,8 +256,11 @@ public class GlyphPageManager {
      *
      * @return 可恢复字符请求快照
      */
-    public synchronized List<GlyphCacheKey> snapshotRecoverableRequests() {
-        return new ArrayList<GlyphCacheKey>(recoverableRequests);
+    public synchronized List<RecoverableGlyphRequest> snapshotRecoverableRequests() {
+        List<RecoverableGlyphRequest> requests = new ArrayList<RecoverableGlyphRequest>();
+        collectRecoverableRequests(requests, runtimeTables.stateNormal, FontType.NORMAL);
+        collectRecoverableRequests(requests, runtimeTables.stateBold, FontType.BOLD);
+        return requests;
     }
 
     /**
@@ -265,7 +271,8 @@ public class GlyphPageManager {
      * @return 是否可用
      */
     public synchronized boolean isReady(int codepoint, FontType fontType) {
-        return glyphStates.get(createKey(codepoint, fontType)) == GlyphState.READY;
+        return GlyphRuntimeTables.isValidCodepoint(codepoint)
+                && runtimeTables.stateArray(fontType)[codepoint] == GlyphRuntimeTables.STATE_READY;
     }
 
     /**
@@ -276,42 +283,47 @@ public class GlyphPageManager {
      * @return 字符状态
      */
     public synchronized GlyphState getState(int codepoint, FontType fontType) {
-        GlyphCacheKey key = createKey(codepoint, fontType);
-        GlyphState state = glyphStates.get(key);
-        return state == null ? GlyphState.NEW : state;
+        if (!GlyphRuntimeTables.isValidCodepoint(codepoint)) {
+            return GlyphState.FAILED;
+        }
+        return toGlyphState(runtimeTables.stateArray(fontType)[codepoint]);
     }
 
     /**
-     * 获取已准备好的字符页。
+     * 获取字形 packed location。
      *
      * @param codepoint 字符码点
      * @param fontType 字重类型
-     * @return 字符页，未准备好时返回 null
+     * @return packed location，未就绪时返回 -1
      */
-    public synchronized GlyphPage getReadyPage(int codepoint, FontType fontType) {
-        return readyPages.get(createKey(codepoint, fontType));
+    public int getPackedLocation(int codepoint, FontType fontType) {
+        if (!GlyphRuntimeTables.isValidCodepoint(codepoint)) {
+            return GlyphRuntimeTables.LOCATION_NOT_READY;
+        }
+        return runtimeTables.locationArray(fontType)[codepoint];
     }
 
     /**
-     * 获取字符度量信息。
+     * 根据 packed location 获取字形页。
      *
-     * @param codepoint 字符码点
+     * @param packedLocation packed location
      * @param fontType 字重类型
-     * @return 字符度量信息，未准备好时返回 null
+     * @return 字形页
      */
-    public synchronized GlyphInfo getGlyphInfo(int codepoint, FontType fontType) {
-        return glyphInfos.get(createKey(codepoint, fontType));
-    }
-
-    /**
-     * 获取当前运行时的字符缓存键。
-     *
-     * @param codepoint 字符码点
-     * @param fontType 字重类型
-     * @return 字符缓存键
-     */
-    public synchronized GlyphCacheKey createKey(int codepoint, FontType fontType) {
-        return createKey(runtimeVersion, codepoint, fontType);
+    public GlyphPage getPageByLocation(int packedLocation, FontType fontType) {
+        if (packedLocation == GlyphRuntimeTables.LOCATION_NOT_READY) {
+            return null;
+        }
+        int pageIndex = GlyphRuntimeTables.unpackPageIndex(packedLocation);
+        GlyphPage[] pages = runtimeTables.pages(fontType);
+        if (pageIndex < 0 || pageIndex >= runtimeTables.pageCount(fontType)) {
+            return null;
+        }
+        GlyphPage page = pages[pageIndex];
+        if (page == null || page.getRuntimeVersion() != runtimeVersion) {
+            return null;
+        }
+        return page;
     }
 
     /**
@@ -338,7 +350,7 @@ public class GlyphPageManager {
      * @return 已就绪字符数量
      */
     public synchronized int getReadyGlyphCount() {
-        return readyPages.size();
+        return readyGlyphCount;
     }
 
     /**
@@ -347,7 +359,7 @@ public class GlyphPageManager {
      * @return 普通字符页数量
      */
     public synchronized int getNormalPageCount() {
-        return normalPages.size();
+        return runtimeTables.normalPageCount;
     }
 
     /**
@@ -356,32 +368,42 @@ public class GlyphPageManager {
      * @return 粗体字符页数量
      */
     public synchronized int getBoldPageCount() {
-        return boldPages.size();
+        return runtimeTables.boldPageCount;
+    }
+
+    private void configurePageGeometry() {
+        textureSize = Math.max(64, (int) (FontConfig.awtCharSize * 64));
+        glyphSize = Math.max(8, (int) FontConfig.awtCharSize);
+        columnCount = Math.max(1, textureSize / glyphSize);
+        rowCount = Math.max(1, textureSize / glyphSize);
     }
 
     private void ensureCapacity(FontType fontType) {
-        List<GlyphPage> pages = getPages(fontType);
         int availableCount = 0;
-        for (GlyphPage page : pages) {
-            if (page.canAllocate()) {
+        GlyphPage[] pages = runtimeTables.pages(fontType);
+        int pageCount = runtimeTables.pageCount(fontType);
+        for (int index = 0; index < pageCount; index++) {
+            GlyphPage page = pages[index];
+            if (page != null && page.canAllocate()) {
                 availableCount++;
             }
         }
 
         while (availableCount < maintainPageCount) {
-            GlyphPage page = new GlyphPage(runtimeVersion, pages.size(), textureSize, glyphSize);
-            pages.add(page);
+            int nextPageIndex = runtimeTables.pageCount(fontType);
+            GlyphPage page = new GlyphPage(runtimeVersion, nextPageIndex, textureSize, glyphSize,
+                    runtimeTables.slotXByIndex, runtimeTables.slotYByIndex);
+            runtimeTables.setPage(fontType, nextPageIndex, page);
             availableCount++;
         }
     }
 
-    private GlyphPage allocatePage(FontType fontType, GlyphCacheKey key) {
-        List<GlyphPage> pages = getPages(fontType);
-        for (GlyphPage page : pages) {
-            if (page.getSlotMap().containsKey(key)) {
-                return page;
-            }
-            if (page.getRuntimeVersion() != runtimeVersion) {
+    private GlyphPage allocatePage(FontType fontType) {
+        GlyphPage[] pages = runtimeTables.pages(fontType);
+        int pageCount = runtimeTables.pageCount(fontType);
+        for (int index = 0; index < pageCount; index++) {
+            GlyphPage page = pages[index];
+            if (page == null || page.getRuntimeVersion() != runtimeVersion) {
                 continue;
             }
             if (page.canAllocate()) {
@@ -389,29 +411,64 @@ public class GlyphPageManager {
             }
         }
 
-        GlyphPage page = new GlyphPage(runtimeVersion, pages.size(), textureSize, glyphSize);
-        pages.add(page);
+        int nextPageIndex = pageCount;
+        GlyphPage page = new GlyphPage(runtimeVersion, nextPageIndex, textureSize, glyphSize,
+                runtimeTables.slotXByIndex, runtimeTables.slotYByIndex);
+        runtimeTables.setPage(fontType, nextPageIndex, page);
         MyMod.LOG.debug("字符页容量扩展，type={} pageIndex={}", fontType, Integer.valueOf(page.getPageIndex()));
         ensureCapacity(fontType);
         return page;
     }
 
-    private GlyphCacheKey createKey(int runtimeVersion, int codepoint, FontType fontType) {
-        return new GlyphCacheKey(runtimeVersion, codepoint, fontType);
+    private boolean isCurrentGeneration(int codepoint, FontType fontType, long generationId) {
+        return runtimeTables.generationArray(fontType)[codepoint] == generationId;
     }
 
-    private boolean isCurrentGeneration(GlyphCacheKey key, long generationId) {
-        Long currentGenerationId = glyphGenerationIds.get(key);
-        return currentGenerationId != null && currentGenerationId.longValue() == generationId;
+    private void cacheGeneratedWidth(float[] widths, int codepoint, GlyphInfo glyphInfo) {
+        if (glyphInfo == null || glyphInfo.getWidth() <= 0 || !GlyphRuntimeTables.isValidCodepoint(codepoint)) {
+            return;
+        }
+        widths[codepoint] = (float) (((glyphInfo.getAdvance() / glyphInfo.getWidth()) * FontConfig.charSize)
+                + FontConfig.characterSpacing);
     }
 
-    private List<GlyphPage> getPages(FontType fontType) {
-        return fontType == FontType.BOLD ? boldPages : normalPages;
+    private byte buildGlyphFlags(GlyphInfo glyphInfo) {
+        if (glyphInfo != null && glyphInfo.isColoredGlyph()) {
+            return GlyphRuntimeTables.GLYPH_FLAG_COLORED;
+        }
+        return 0;
     }
 
-    private void closePages(List<GlyphPage> pages) {
-        for (GlyphPage page : pages) {
-            page.close();
+    private void collectRecoverableRequests(List<RecoverableGlyphRequest> requests, byte[] states, FontType fontType) {
+        for (int codepoint = 0; codepoint < states.length; codepoint++) {
+            byte state = states[codepoint];
+            if (state == GlyphRuntimeTables.STATE_GENERATING || state == GlyphRuntimeTables.STATE_UPLOAD_PENDING) {
+                requests.add(new RecoverableGlyphRequest(codepoint, fontType));
+            }
+        }
+    }
+
+    private GlyphState toGlyphState(byte state) {
+        switch (state) {
+            case GlyphRuntimeTables.STATE_GENERATING:
+                return GlyphState.GENERATING;
+            case GlyphRuntimeTables.STATE_UPLOAD_PENDING:
+                return GlyphState.UPLOAD_PENDING;
+            case GlyphRuntimeTables.STATE_READY:
+                return GlyphState.READY;
+            case GlyphRuntimeTables.STATE_FAILED:
+                return GlyphState.FAILED;
+            default:
+                return GlyphState.NEW;
+        }
+    }
+
+    private void closePages(GlyphPage[] pages, int pageCount) {
+        for (int index = 0; index < pageCount; index++) {
+            GlyphPage page = pages[index];
+            if (page != null) {
+                page.close();
+            }
         }
     }
 }

@@ -35,6 +35,29 @@ public class FontCatalog {
     }
 
     /**
+     * 按目录索引获取字体。
+     *
+     * @param index 字体索引
+     * @return 字体，索引无效时返回 null
+     */
+    public Font getFont(int index) {
+        List<Font> snapshot = fonts;
+        if (index < 0 || index >= snapshot.size()) {
+            return null;
+        }
+        return snapshot.get(index);
+    }
+
+    /**
+     * 获取字体数量。
+     *
+     * @return 字体数量
+     */
+    public int size() {
+        return fonts.size();
+    }
+
+    /**
      * 判断是否为空。
      *
      * @return 是否为空
