@@ -16,6 +16,7 @@ import club.heiqi.uilib.ui.style.UiAlignItems;
 import club.heiqi.uilib.ui.style.UiDisplay;
 import club.heiqi.uilib.ui.style.UiFlexDirection;
 import club.heiqi.uilib.ui.style.UiJustifyContent;
+import club.heiqi.uilib.ui.style.UiOverflow;
 import club.heiqi.uilib.ui.style.UiPosition;
 import club.heiqi.uilib.ui.style.UiStyleInsets;
 import club.heiqi.uilib.ui.style.UiStyleLength;
@@ -957,6 +958,7 @@ public final class DocumentLayoutEngine {
             } else {
                 item.naturalContentMainSize = item.contentMainSize;
             }
+            item.minContentMainSize = resolveColumnFlexItemMinMainSize(item);
             items.add(item);
         }
 
@@ -1002,6 +1004,13 @@ public final class DocumentLayoutEngine {
         return item.contentMainSize == item.naturalContentMainSize;
     }
 
+    private static int resolveColumnFlexItemMinMainSize(FlexItem item) {
+        if (!isAuto(item.style.getHeight()) || item.style.getOverflowY() != UiOverflow.VISIBLE) {
+            return 0;
+        }
+        return Math.max(0, item.naturalContentMainSize);
+    }
+
     private static void distributeMainSpace(List<FlexItem> items, int availableMainSize, int gap, boolean row) {
         int occupiedMain = getOccupiedMainSize(items, gap, row);
         int freeSpace = availableMainSize - occupiedMain;
@@ -1043,32 +1052,43 @@ public final class DocumentLayoutEngine {
     }
 
     private static void distributeShrink(List<FlexItem> items, int overflow) {
-        float totalShrinkWeight = 0.0F;
-        for (FlexItem item : items) {
-            totalShrinkWeight += item.style.getFlexShrink() * item.contentMainSize;
-        }
-        if (totalShrinkWeight <= 0.0F) {
-            return;
-        }
+        int remainingOverflow = Math.max(0, overflow);
+        while (remainingOverflow > 0) {
+            float totalShrinkWeight = 0.0F;
+            int shrinkableCount = 0;
+            for (FlexItem item : items) {
+                if (item.style.getFlexShrink() > 0.0F && item.contentMainSize > item.minContentMainSize) {
+                    totalShrinkWeight += item.style.getFlexShrink() * item.contentMainSize;
+                    shrinkableCount++;
+                }
+            }
+            if (totalShrinkWeight <= 0.0F || shrinkableCount <= 0) {
+                return;
+            }
 
-        int removed = 0;
-        int shrinkableIndex = 0;
-        int shrinkableCount = 0;
-        for (FlexItem item : items) {
-            if (item.style.getFlexShrink() > 0.0F && item.contentMainSize > 0) {
-                shrinkableCount++;
+            int removed = 0;
+            int shrinkableIndex = 0;
+            for (FlexItem item : items) {
+                if (item.style.getFlexShrink() <= 0.0F || item.contentMainSize <= item.minContentMainSize) {
+                    continue;
+                }
+                int pending = remainingOverflow - removed;
+                if (pending <= 0) {
+                    break;
+                }
+                shrinkableIndex++;
+                int cut = shrinkableIndex == shrinkableCount ? pending
+                        : Math.round(remainingOverflow * item.style.getFlexShrink() * item.contentMainSize
+                                / totalShrinkWeight);
+                int maxCut = Math.max(0, item.contentMainSize - item.minContentMainSize);
+                cut = Math.max(0, Math.min(Math.min(cut, pending), maxCut));
+                item.contentMainSize -= cut;
+                removed += cut;
             }
-        }
-        for (FlexItem item : items) {
-            if (item.style.getFlexShrink() <= 0.0F || item.contentMainSize <= 0) {
-                continue;
+            if (removed <= 0) {
+                return;
             }
-            shrinkableIndex++;
-            int cut = shrinkableIndex == shrinkableCount ? overflow - removed
-                    : Math.round(overflow * item.style.getFlexShrink() * item.contentMainSize / totalShrinkWeight);
-            cut = Math.max(0, Math.min(cut, item.contentMainSize));
-            item.contentMainSize -= cut;
-            removed += cut;
+            remainingOverflow -= removed;
         }
     }
 
@@ -1938,6 +1958,7 @@ public final class DocumentLayoutEngine {
         private final DocumentLayoutEdges padding;
         private int contentMainSize;
         private int naturalContentMainSize = AUTO_SIZE;
+        private int minContentMainSize;
         private int forcedCrossSize = AUTO_SIZE;
         private DocumentLayoutBox box;
 

@@ -17,6 +17,7 @@ import club.heiqi.uilib.ui.style.UiAlignItems;
 import club.heiqi.uilib.ui.style.UiDisplay;
 import club.heiqi.uilib.ui.style.UiFlexDirection;
 import club.heiqi.uilib.ui.style.UiJustifyContent;
+import club.heiqi.uilib.ui.style.UiOverflow;
 import club.heiqi.uilib.ui.style.UiPosition;
 import club.heiqi.uilib.ui.style.UiStyleInsets;
 import club.heiqi.uilib.ui.style.UiStyleLength;
@@ -1082,6 +1083,108 @@ public class DocumentLayoutEngineTest {
         Assert.assertEquals(180, bottomBox.getTop());
         Assert.assertEquals(20, bottomBox.getHeight());
         Assert.assertEquals(100, middleBox.getWidth());
+    }
+
+    /**
+     * 验证固定高度 column flex 父容器不足时，普通 auto-height 子项不会被压到低于内容高度。
+     */
+    @Test
+    public void shouldKeepVisibleAutoHeightColumnFlexItemsAtContentHeightWhenParentOverflows() {
+        UiDocument document = UiDocument.create();
+        ElementNode root = document.getRootElement();
+        ElementNode firstCard = document.div();
+        ElementNode secondCard = document.div();
+        ElementNode firstTop = document.div();
+        ElementNode firstBottom = document.div();
+        ElementNode secondTop = document.div();
+        ElementNode secondBottom = document.div();
+
+        root.style()
+                .setDisplay(UiDisplay.FLEX)
+                .setFlexDirection(UiFlexDirection.COLUMN)
+                .setWidth(UiStyleLength.px(100))
+                .setHeight(UiStyleLength.px(70))
+                .setOverflowY(UiOverflow.AUTO);
+        firstTop.style().setHeight(UiStyleLength.px(32));
+        firstBottom.style().setHeight(UiStyleLength.px(28));
+        secondTop.style().setHeight(UiStyleLength.px(32));
+        secondBottom.style().setHeight(UiStyleLength.px(28));
+        firstCard.append(firstTop).append(firstBottom);
+        secondCard.append(secondTop).append(secondBottom);
+        root.append(firstCard).append(secondCard);
+
+        DocumentLayoutBox rootBox = DocumentLayoutEngine.layout(root, 160, 0);
+        DocumentLayoutBox firstCardBox = rootBox.getChildren().get(0);
+        DocumentLayoutBox secondCardBox = rootBox.getChildren().get(1);
+        DocumentScrollState scrollState = new DocumentScrollState();
+        scrollState.updateFromLayout(rootBox);
+
+        Assert.assertEquals(70, rootBox.getContentHeight());
+        Assert.assertEquals(60, firstCardBox.getContentHeight());
+        Assert.assertEquals(60, secondCardBox.getContentHeight());
+        Assert.assertTrue(secondCardBox.getTop() >= firstCardBox.getBottom());
+        Assert.assertTrue(secondCardBox.getBottom() > rootBox.getContentTop() + rootBox.getContentHeight());
+        Assert.assertTrue(scrollState.getMaxScrollTop(root) > 0);
+    }
+
+    /**
+     * 验证 column flex 中自身 overflow-y:auto 的 auto-height 子项仍可收缩并承载内部滚动。
+     */
+    @Test
+    public void shouldAllowOverflowAutoColumnFlexItemToShrinkBelowContentHeight() {
+        UiDocument document = UiDocument.create();
+        ElementNode root = document.getRootElement();
+        ElementNode scroller = document.div();
+        ElementNode content = document.div();
+
+        root.style()
+                .setDisplay(UiDisplay.FLEX)
+                .setFlexDirection(UiFlexDirection.COLUMN)
+                .setWidth(UiStyleLength.px(100))
+                .setHeight(UiStyleLength.px(80));
+        scroller.style().setOverflowY(UiOverflow.AUTO);
+        content.style().setHeight(UiStyleLength.px(160));
+        scroller.append(content);
+        root.append(scroller);
+
+        DocumentLayoutBox rootBox = DocumentLayoutEngine.layout(root, 160, 0);
+        DocumentLayoutBox scrollerBox = rootBox.getChildren().get(0);
+        DocumentLayoutBox contentBox = scrollerBox.getChildren().get(0);
+        DocumentScrollState scrollState = new DocumentScrollState();
+        scrollState.updateFromLayout(rootBox);
+
+        Assert.assertEquals(80, rootBox.getContentHeight());
+        Assert.assertEquals(80, scrollerBox.getContentHeight());
+        Assert.assertEquals(160, contentBox.getContentHeight());
+        Assert.assertTrue(scrollState.getMaxScrollTop(scroller) > 0);
+    }
+
+    /**
+     * 验证显式高度的 column flex 子项仍保留原有 flex-shrink 分配行为。
+     */
+    @Test
+    public void shouldShrinkExplicitHeightColumnFlexItemsWhenContentOverflows() {
+        UiDocument document = UiDocument.create();
+        ElementNode root = document.getRootElement();
+        ElementNode first = document.div();
+        ElementNode second = document.div();
+
+        root.style()
+                .setDisplay(UiDisplay.FLEX)
+                .setFlexDirection(UiFlexDirection.COLUMN)
+                .setWidth(UiStyleLength.px(100))
+                .setHeight(UiStyleLength.px(100));
+        first.style().setHeight(UiStyleLength.px(80));
+        second.style().setHeight(UiStyleLength.px(80));
+        root.append(first).append(second);
+
+        DocumentLayoutBox rootBox = DocumentLayoutEngine.layout(root, 160, 0);
+        DocumentLayoutBox firstBox = rootBox.getChildren().get(0);
+        DocumentLayoutBox secondBox = rootBox.getChildren().get(1);
+
+        Assert.assertEquals(50, firstBox.getHeight());
+        Assert.assertEquals(50, secondBox.getHeight());
+        Assert.assertEquals(50, secondBox.getTop());
     }
 
     /**

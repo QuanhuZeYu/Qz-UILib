@@ -318,11 +318,16 @@ public class DocumentScrollStateTest {
 
         DocumentLayoutBox rootBox = DocumentLayoutEngine.layout(root, 2048, 1152,
                 new DeterministicTextMeasureService());
+        DocumentLayoutBox scrollHostBox = rootBox.getChildren().get(0).getChildren().get(3);
         DocumentScrollState scrollState = new DocumentScrollState();
+        scrollState.updateFromLayout(rootBox);
+        int scrollHostHitX = scrollHostBox.getContentLeft() + 10;
+        int scrollHostHitY = scrollHostBox.getContentTop() + 10;
 
         Assert.assertNotNull(DocumentHitTestEngine.hitTest(rootBox, scrollState, 1784, 54));
-        Assert.assertNotNull(DocumentHitTestEngine.hitTest(rootBox, scrollState, 1784, 204));
-        Assert.assertTrue(scrollState.handleWheel(rootBox, 1784, 204, -120, 1L));
+        Assert.assertTrue(scrollState.getMaxScrollTop(scrollHost) > 0);
+        Assert.assertNotNull(DocumentHitTestEngine.hitTest(rootBox, scrollState, scrollHostHitX, scrollHostHitY));
+        Assert.assertTrue(scrollState.handleWheel(rootBox, scrollHostHitX, scrollHostHitY, -120, 1L));
         Assert.assertTrue(scrollState.getScrollTop(scrollHost) > 0);
     }
 
