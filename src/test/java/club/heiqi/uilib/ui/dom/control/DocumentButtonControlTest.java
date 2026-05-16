@@ -15,6 +15,7 @@ import club.heiqi.uilib.ui.event.UiKeyEvent;
 import club.heiqi.uilib.ui.event.UiMouseEvent;
 import club.heiqi.uilib.ui.render.UiRenderContext;
 import club.heiqi.uilib.ui.style.UiStyleLength;
+import club.heiqi.uilib.ui.text.TextContentMode;
 import club.heiqi.uilib.ui.text.TextMeasureService;
 import club.heiqi.uilib.ui.theme.UiSurfaceStyle;
 
@@ -177,6 +178,10 @@ public class DocumentButtonControlTest {
 
         @Override
         public void drawText(String text, int x, int y, int color, boolean shadow) {}
+
+        @Override
+        public void drawText(String text, int x, int y, int color, boolean shadow,
+                TextContentMode textContentMode) {}
 
         @Override
         public int measureTextWidth(String text) {

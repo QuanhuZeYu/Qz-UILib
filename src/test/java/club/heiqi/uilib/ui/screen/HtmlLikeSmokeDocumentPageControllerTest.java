@@ -753,13 +753,34 @@ public class HtmlLikeSmokeDocumentPageControllerTest {
         if (command == null) {
             command = findPaintCommand(paintCommands, DocumentPaintCommandType.BORDER, element.__getElementUid());
         }
-        Assert.assertNotNull(command);
-        int screenX = findClickablePointX(widget, element, command);
-        int screenY = findClickablePointY(widget, element, command, screenX);
+        int screenX;
+        int screenY;
+        if (command == null) {
+            DocumentLayoutBox box = findLayoutBox(rootBox, element);
+            Assert.assertNotNull(box);
+            screenX = widget.getAbsoluteX() + box.getContentLeft() + Math.max(1, box.getContentWidth()) / 2;
+            screenY = widget.getAbsoluteY() + box.getContentTop() + Math.max(1, box.getContentHeight()) / 2;
+        } else {
+            screenX = findClickablePointX(widget, element, command);
+            screenY = findClickablePointY(widget, element, command, screenX);
+        }
         widget.onMouseDown(new UiMouseEvent(UiMouseEvent.Action.BUTTON_DOWN, screenX, screenY, 0, 0, 0, 0,
                 downTimeNanos));
         widget.onMouseUp(new UiMouseEvent(UiMouseEvent.Action.BUTTON_UP, screenX, screenY, 0, 0, 0, 0,
                 upTimeNanos));
+    }
+
+    private static DocumentLayoutBox findLayoutBox(DocumentLayoutBox box, ElementNode element) {
+        if (box.getElement() == element) {
+            return box;
+        }
+        for (DocumentLayoutBox child : box.getChildren()) {
+            DocumentLayoutBox found = findLayoutBox(child, element);
+            if (found != null) {
+                return found;
+            }
+        }
+        return null;
     }
 
     private static int findClickablePointX(HtmlLikeDocumentWidget widget, ElementNode element,
@@ -913,6 +934,25 @@ public class HtmlLikeSmokeDocumentPageControllerTest {
         @Override
         public void drawText(String text, int x, int y, int color, boolean shadow) {
             textCalls.add(new TextCall(text, x, y, color, shadow));
+        }
+
+        @Override
+        public void drawText(String text, int x, int y, int color, boolean shadow,
+                club.heiqi.uilib.ui.text.TextContentMode textContentMode) {
+            textCalls.add(new TextCall(text, x, y, color, shadow));
+        }
+
+        @Override
+        public void fillRect(int left, int top, int right, int bottom, int color) {}
+
+        @Override
+        public int measureTextWidth(String text) {
+            return text == null ? 0 : text.length() * 12;
+        }
+
+        @Override
+        public int getTextLineHeight() {
+            return 18;
         }
     }
 

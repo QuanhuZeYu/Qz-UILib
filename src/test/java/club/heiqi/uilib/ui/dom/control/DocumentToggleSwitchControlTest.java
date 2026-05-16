@@ -221,6 +221,10 @@ public class DocumentToggleSwitchControlTest {
         public void drawText(String text, int x, int y, int color, boolean shadow) {}
 
         @Override
+        public void drawText(String text, int x, int y, int color, boolean shadow,
+                club.heiqi.uilib.ui.text.TextContentMode textContentMode) {}
+
+        @Override
         public int measureTextWidth(String text) {
             return text == null ? 0 : text.length() * 12;
         }

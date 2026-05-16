@@ -1888,16 +1888,20 @@ public class HtmlLikeDocumentWidgetTest {
         widget.render(new RecordingUiRenderContext());
 
         Assert.assertTrue(widget.getMaxScrollTop(scrollContent) > 0);
-        Assert.assertNotNull(widget.findElementAt(1778, 216));
-        Assert.assertNotNull(widget.findElementAt(1778, 260));
+        int[] textPoint = findVisibleElementPoint(widget, scrollContent,
+                findElementContainingDirectText(widget, "会话概览"));
+        int[] inputPoint = findVisibleElementPoint(widget, scrollContent, input.getElement());
+        Assert.assertNotNull(widget.findElementAt(textPoint[0], textPoint[1]));
+        Assert.assertNotNull(widget.findElementAt(inputPoint[0], inputPoint[1]));
 
-        boolean consumedOnText = widget.onMouseScroll(new UiMouseEvent(UiMouseEvent.Action.SCROLL, 1778, 216, -1,
-                -120, 0, 0, 1L));
+        boolean consumedOnText = widget.onMouseScroll(new UiMouseEvent(UiMouseEvent.Action.SCROLL, textPoint[0],
+                textPoint[1], -1, -120, 0, 0, 1L));
         Assert.assertTrue(consumedOnText);
         Assert.assertTrue(widget.getScrollTop(scrollContent) > 0);
 
-        boolean consumedOnInput = widget.onMouseScroll(new UiMouseEvent(UiMouseEvent.Action.SCROLL, 1778, 260, -1,
-                -120, 0, 0, 2L));
+        inputPoint = findVisibleElementPoint(widget, scrollContent, input.getElement());
+        boolean consumedOnInput = widget.onMouseScroll(new UiMouseEvent(UiMouseEvent.Action.SCROLL, inputPoint[0],
+                inputPoint[1], -1, -120, 0, 0, 2L));
         Assert.assertTrue(consumedOnInput);
         Assert.assertTrue(widget.getScrollTop(scrollContent) > 0);
     }
@@ -2770,6 +2774,72 @@ public class HtmlLikeDocumentWidgetTest {
     private static void assertElementUid(ElementNode expectedElement, ElementNode actualElement) {
         Assert.assertNotNull(actualElement);
         Assert.assertEquals(expectedElement.__getElementUid(), actualElement.__getElementUid());
+    }
+
+    private static int[] findVisibleElementPoint(HtmlLikeDocumentWidget widget, ElementNode scrollHost,
+            ElementNode target) {
+        Assert.assertNotNull(target);
+        for (int attempt = 0; attempt < 20; attempt++) {
+            DocumentLayoutBox rootBox = widget.resolveLayoutBoxForTest();
+            DocumentLayoutBox scrollHostBox = findLayoutBox(rootBox, scrollHost);
+            DocumentLayoutBox targetBox = findLayoutBox(rootBox, target);
+            Assert.assertNotNull(scrollHostBox);
+            Assert.assertNotNull(targetBox);
+            int scrollTop = widget.getScrollTop(scrollHost);
+            int viewportLeft = widget.getAbsoluteX() + scrollHostBox.getContentLeft();
+            int viewportTop = widget.getAbsoluteY() + scrollHostBox.getContentTop();
+            int viewportRight = viewportLeft + scrollHostBox.getContentWidth();
+            int viewportBottom = viewportTop + scrollHostBox.getContentHeight();
+            int targetLeft = widget.getAbsoluteX() + targetBox.getContentLeft();
+            int targetTop = widget.getAbsoluteY() + targetBox.getContentTop() - scrollTop;
+            int targetRight = targetLeft + Math.max(1, targetBox.getContentWidth());
+            int targetBottom = targetTop + Math.max(1, targetBox.getContentHeight());
+            int left = Math.max(viewportLeft, targetLeft);
+            int top = Math.max(viewportTop, targetTop);
+            int right = Math.min(viewportRight, targetRight);
+            int bottom = Math.min(viewportBottom, targetBottom);
+            if (right > left && bottom > top) {
+                return new int[] { left + Math.max(1, right - left) / 2, top + Math.max(1, bottom - top) / 2 };
+            }
+            int wheelDelta = targetTop >= viewportBottom ? -120 : 120;
+            widget.onMouseScroll(new UiMouseEvent(UiMouseEvent.Action.SCROLL, viewportLeft + 4,
+                    viewportTop + Math.max(1, scrollHostBox.getContentHeight()) / 2, -1, wheelDelta, 0, 0,
+                    100L + attempt));
+        }
+        Assert.fail("目标元素未进入滚动视口");
+        return new int[] { widget.getAbsoluteX(), widget.getAbsoluteY() };
+    }
+
+    private static DocumentLayoutBox findLayoutBox(DocumentLayoutBox box, ElementNode element) {
+        if (box.getElement() == element) {
+            return box;
+        }
+        for (DocumentLayoutBox child : box.getChildren()) {
+            DocumentLayoutBox found = findLayoutBox(child, element);
+            if (found != null) {
+                return found;
+            }
+        }
+        return null;
+    }
+
+    private static ElementNode findElementContainingDirectText(HtmlLikeDocumentWidget widget, String expectedText) {
+        return findElementContainingDirectText(widget.getDocument().getRootElement(), expectedText);
+    }
+
+    private static ElementNode findElementContainingDirectText(ElementNode element, String expectedText) {
+        for (club.heiqi.uilib.ui.dom.DocumentNode child : element.getChildren()) {
+            if (child instanceof TextNode && expectedText.equals(((TextNode) child).getText())) {
+                return element;
+            }
+            if (child instanceof ElementNode) {
+                ElementNode found = findElementContainingDirectText((ElementNode) child, expectedText);
+                if (found != null) {
+                    return found;
+                }
+            }
+        }
+        return null;
     }
 
     private static UiInputFrame mouseFrame(UiMouseEvent event) {

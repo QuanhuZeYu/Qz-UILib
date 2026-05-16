@@ -235,6 +235,10 @@ public class DocumentHostImageControlTest {
         public void drawText(String text, int x, int y, int color, boolean shadow) {}
 
         @Override
+        public void drawText(String text, int x, int y, int color, boolean shadow,
+                club.heiqi.uilib.ui.text.TextContentMode textContentMode) {}
+
+        @Override
         public void pushClip(int left, int top, int right, int bottom, int cornerRadius) {}
 
         @Override

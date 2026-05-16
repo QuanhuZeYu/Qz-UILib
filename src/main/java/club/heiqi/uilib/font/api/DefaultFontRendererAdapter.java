@@ -40,6 +40,24 @@ public class DefaultFontRendererAdapter implements FontRendererAdapter {
             return Boolean.FALSE;
         }
     };
+    private final ThreadLocal<Integer> deferredFlushTargetWidth = new ThreadLocal<Integer>() {
+        @Override
+        protected Integer initialValue() {
+            return Integer.valueOf(0);
+        }
+    };
+    private final ThreadLocal<Integer> deferredFlushTargetHeight = new ThreadLocal<Integer>() {
+        @Override
+        protected Integer initialValue() {
+            return Integer.valueOf(0);
+        }
+    };
+    private final ThreadLocal<Boolean> deferredFlushInternalUiProjectionConfigured = new ThreadLocal<Boolean>() {
+        @Override
+        protected Boolean initialValue() {
+            return Boolean.FALSE;
+        }
+    };
 
     private DefaultFontRendererAdapter() {}
 
@@ -70,14 +88,12 @@ public class DefaultFontRendererAdapter implements FontRendererAdapter {
      * @param targetHeight 渲染目标高度
      */
     public void beginDeferredFlushScope(int targetWidth, int targetHeight) {
-        if (!isDeferredFlushScopeActive()) {
-            FontService fontService = FontService.getInstance();
-            if (targetWidth > 0 && targetHeight > 0) {
-                fontService.getBatchRenderer().configureInternalUiProjection(targetWidth, targetHeight);
-                fontService.getBatchRenderer().setAssumeInternalUiMatrices(true);
-            }
-        }
         int depth = deferredFlushScopeDepth.get().intValue();
+        if (depth <= 0) {
+            deferredFlushTargetWidth.set(Integer.valueOf(Math.max(0, targetWidth)));
+            deferredFlushTargetHeight.set(Integer.valueOf(Math.max(0, targetHeight)));
+            deferredFlushInternalUiProjectionConfigured.set(Boolean.FALSE);
+        }
         deferredFlushScopeDepth.set(Integer.valueOf(depth + 1));
     }
 
@@ -97,9 +113,14 @@ public class DefaultFontRendererAdapter implements FontRendererAdapter {
         try {
             flushDeferredFlushScope();
         } finally {
-            FontService.getInstance().getBatchRenderer().setAssumeInternalUiMatrices(false);
+            if (deferredFlushInternalUiProjectionConfigured.get().booleanValue()) {
+                FontService.getInstance().getBatchRenderer().setAssumeInternalUiMatrices(false);
+            }
             deferredFlushScopeDepth.remove();
             deferredFlushDirty.remove();
+            deferredFlushTargetWidth.remove();
+            deferredFlushTargetHeight.remove();
+            deferredFlushInternalUiProjectionConfigured.remove();
         }
     }
 
@@ -507,8 +528,24 @@ public class DefaultFontRendererAdapter implements FontRendererAdapter {
 
     private void markDeferredFlushDirtyIfNeeded() {
         if (isDeferredFlushScopeActive()) {
+            configureDeferredFlushProjectionIfNeeded();
             deferredFlushDirty.set(Boolean.TRUE);
         }
+    }
+
+    private void configureDeferredFlushProjectionIfNeeded() {
+        if (deferredFlushInternalUiProjectionConfigured.get().booleanValue()) {
+            return;
+        }
+        int targetWidth = deferredFlushTargetWidth.get().intValue();
+        int targetHeight = deferredFlushTargetHeight.get().intValue();
+        if (targetWidth <= 0 || targetHeight <= 0) {
+            return;
+        }
+        FontService fontService = FontService.getInstance();
+        fontService.getBatchRenderer().configureInternalUiProjection(targetWidth, targetHeight);
+        fontService.getBatchRenderer().setAssumeInternalUiMatrices(true);
+        deferredFlushInternalUiProjectionConfigured.set(Boolean.TRUE);
     }
 
     private void flushCollectedBatches(final FontService fontService) {

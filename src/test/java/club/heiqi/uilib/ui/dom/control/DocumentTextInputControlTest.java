@@ -458,6 +458,12 @@ public class DocumentTextInputControlTest {
         }
 
         @Override
+        public void drawText(String text, int x, int y, int color, boolean shadow,
+                club.heiqi.uilib.ui.text.TextContentMode textContentMode) {
+            textCalls.add(new TextCall(text));
+        }
+
+        @Override
         public void fillRect(int left, int top, int right, int bottom, int color) {}
 
         @Override

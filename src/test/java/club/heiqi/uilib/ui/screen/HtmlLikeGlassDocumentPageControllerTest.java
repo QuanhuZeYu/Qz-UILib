@@ -208,6 +208,25 @@ public class HtmlLikeGlassDocumentPageControllerTest {
         public void drawText(String text, int x, int y, int color, boolean shadow) {
             textCalls.add(new TextCall(text, x, y, color, shadow));
         }
+
+        @Override
+        public void drawText(String text, int x, int y, int color, boolean shadow,
+                club.heiqi.uilib.ui.text.TextContentMode textContentMode) {
+            textCalls.add(new TextCall(text, x, y, color, shadow));
+        }
+
+        @Override
+        public void fillRect(int left, int top, int right, int bottom, int color) {}
+
+        @Override
+        public int measureTextWidth(String text) {
+            return text == null ? 0 : text.length() * 12;
+        }
+
+        @Override
+        public int getTextLineHeight() {
+            return 18;
+        }
     }
 
     /**
