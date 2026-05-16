@@ -68,6 +68,7 @@
 - SplashProgress 期间仍使用 UILib 自定义字体和批渲染路径；不要为非客户端主线程切换第二套 immediate 字体绘制路径。Splash 特例只保留运行时锁、Mixin 异常保护、Splash reload guard 和资源重载入口跳过。
 - 字体页纹理创建时必须先显式清为透明，再上传单字形并生成 mipmap；不要依赖驱动对未初始化纹理内容的默认值，否则资源重载后的 Splash 文本可能出现整格纯色块。
 - 字体异步字形生成链路必须以运行时版本隔离并支持 generation handoff：任务、结果、待上传队列、字符缓存键、字体匹配缓存和宽度缓存都要区分 runtimeVersion；资源重载或字体排序变化后，reload 必须先进入生成链路屏障，暂停并废弃外部提交、清空旧 pending/upload/批渲染资源和旧 GL 字形页，再按新 runtimeVersion 重建字体目录、字符页和 dispatcher，旧 worker 迟到结果不能写入新页；旧 generation 中仍在 `GENERATING` / `UPLOAD_PENDING` 的字符需求必须迁移或重新提交到新 generation，不能静默丢弃；同一 runtime 内同码点取消后重提交还必须用 per-request generationId 隔离旧 pending 与新 pending，避免旧图像写成当前 ready glyph；快速连续 reload 必须 debounce/coalesce，否则每帧绘制请求也会被持续重建清空，导致字形生成和上传饥饿。
+- 字体 CPU 热路径已固定为 direct-index + 页索引数组批次：文本 flush 默认不再依赖 `Map<GlyphPage,...>`、页命令对象或 `GlyphPage` 作为批次 key；`FontMatcher`、`TextLayoutService` 与 `GlyphGenerator` 共享派生字体缓存与单字符字符串缓存；UILib 内部 deferred text scope 会复用内部正交矩阵，默认关闭 flush/upload GL 诊断查询，只有显式调试开启时才读取 `glGet*` / `glGetError` 状态。
 - `ForgeConfigTemplateScreen` 的列表能力允许通过 `PropertyEditorFactory` 派生专用列表控件；当前 `fontSystem.fontSort` 使用专用二级字体排序页，面向 300+ 字体列表采用分页、搜索、全局序号跳转、目标序号移动、当前页内拖拽微调与立即保存应用入口，变更会先回写上级配置页草稿再复用模板保存链路；字体配置运行时读写必须解析到实际承载 `fontSort` 的 Forge 分类，避免 `fontSystem` / `fontsystem` 大小写差异导致 UI 保存与运行时重载读写不同属性。
 
 ## 运行与验证

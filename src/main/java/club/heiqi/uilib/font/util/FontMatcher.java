@@ -4,10 +4,12 @@ import java.awt.Font;
 import java.awt.font.FontRenderContext;
 import java.awt.font.GlyphVector;
 import java.awt.geom.AffineTransform;
+import java.util.Arrays;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicLong;
 
 import club.heiqi.uilib.font.FontType;
+import club.heiqi.uilib.font.config.FontConfig;
 import club.heiqi.uilib.font.page.GlyphRuntimeTables;
 
 /**
@@ -16,19 +18,28 @@ import club.heiqi.uilib.font.page.GlyphRuntimeTables;
 public class FontMatcher {
 
     private static final FontRenderContext FONT_RENDER_CONTEXT = new FontRenderContext(new AffineTransform(), true, true);
+    private static final int BLOCK_SHIFT = 8;
+    private static final int BLOCK_COUNT = (GlyphRuntimeTables.CODEPOINT_COUNT + (1 << BLOCK_SHIFT) - 1) >> BLOCK_SHIFT;
 
     private final FontCatalog fontCatalog;
+    private final DerivedFontCache derivedFontCache;
     private final AtomicLong cacheHitCount = new AtomicLong(0L);
     private final AtomicLong cacheMissCount = new AtomicLong(0L);
+    private final int[] blockHintNormal = createHintArray();
+    private final int[] blockHintBold = createHintArray();
     private volatile GlyphRuntimeTables runtimeTables;
+    private volatile int lastNormalFontIndex = GlyphRuntimeTables.FONT_INDEX_UNRESOLVED;
+    private volatile int lastBoldFontIndex = GlyphRuntimeTables.FONT_INDEX_UNRESOLVED;
 
     /**
      * 创建字体匹配器。
      *
      * @param fontCatalog 字体目录
+     * @param derivedFontCache 派生字体缓存
      */
-    public FontMatcher(FontCatalog fontCatalog) {
+    public FontMatcher(FontCatalog fontCatalog, DerivedFontCache derivedFontCache) {
         this.fontCatalog = fontCatalog;
+        this.derivedFontCache = derivedFontCache;
     }
 
     /**
@@ -109,20 +120,42 @@ public class FontMatcher {
 
     private int resolveFontIndex(int codepoint, FontType fontType) {
         List<Font> fonts = fontCatalog.getFonts();
-        for (int index = 0; index < fonts.size(); index++) {
-            Font font = fonts.get(index);
-            if (matchesWeight(font, fontType) && canDisplay(font, codepoint)) {
-                return index;
-            }
+        if (fonts.isEmpty()) {
+            rememberMatch(codepoint, fontType, GlyphRuntimeTables.FONT_INDEX_NONE);
+            return GlyphRuntimeTables.FONT_INDEX_NONE;
         }
 
+        String text = CodepointTextCache.getText(codepoint);
+        int hintedFontIndex = resolveHintedFontIndex(codepoint, fontType, text);
+        if (hintedFontIndex >= 0) {
+            rememberMatch(codepoint, fontType, hintedFontIndex);
+            return hintedFontIndex;
+        }
+
+        int firstStrictDisplayIndex = GlyphRuntimeTables.FONT_INDEX_NONE;
+        int firstCanDisplayIndex = GlyphRuntimeTables.FONT_INDEX_NONE;
         for (int index = 0; index < fonts.size(); index++) {
             Font font = fonts.get(index);
-            if (font.canDisplay(codepoint)) {
+            if (!font.canDisplay(codepoint)) {
+                continue;
+            }
+            if (firstCanDisplayIndex == GlyphRuntimeTables.FONT_INDEX_NONE) {
+                firstCanDisplayIndex = index;
+            }
+            if (!canDisplay(index, font, codepoint, fontType, text)) {
+                continue;
+            }
+            if (matchesWeight(font, fontType)) {
+                rememberMatch(codepoint, fontType, index);
                 return index;
             }
+            if (firstStrictDisplayIndex == GlyphRuntimeTables.FONT_INDEX_NONE) {
+                firstStrictDisplayIndex = index;
+            }
         }
-        return GlyphRuntimeTables.FONT_INDEX_NONE;
+        int fallbackIndex = firstStrictDisplayIndex >= 0 ? firstStrictDisplayIndex : firstCanDisplayIndex;
+        rememberMatch(codepoint, fontType, fallbackIndex);
+        return fallbackIndex;
     }
 
     /**
@@ -133,6 +166,12 @@ public class FontMatcher {
         if (tables != null) {
             tables.clearMatchedFontCache();
         }
+        Arrays.fill(blockHintNormal, GlyphRuntimeTables.FONT_INDEX_UNRESOLVED);
+        Arrays.fill(blockHintBold, GlyphRuntimeTables.FONT_INDEX_UNRESOLVED);
+        lastNormalFontIndex = GlyphRuntimeTables.FONT_INDEX_UNRESOLVED;
+        lastBoldFontIndex = GlyphRuntimeTables.FONT_INDEX_UNRESOLVED;
+        cacheHitCount.set(0L);
+        cacheMissCount.set(0L);
     }
 
     /**
@@ -154,24 +193,73 @@ public class FontMatcher {
     }
 
     private boolean matchesWeight(Font font, FontType fontType) {
-        boolean isBoldFont = font.getName().toLowerCase().contains("bold") || font.isBold();
+        String fontName = font.getName();
+        boolean isBoldFont = font.isBold() || fontName != null && fontName.toLowerCase().contains("bold");
         if (fontType == FontType.BOLD) {
             return isBoldFont;
         }
         return !isBoldFont;
     }
 
-    private boolean canDisplay(Font font, int codepoint) {
+    private int resolveHintedFontIndex(int codepoint, FontType fontType, String text) {
+        int blockHint = hintArray(fontType)[codepoint >> BLOCK_SHIFT];
+        if (canUseHint(blockHint, codepoint, fontType, text)) {
+            return blockHint;
+        }
+
+        int lastHint = fontType == FontType.BOLD ? lastBoldFontIndex : lastNormalFontIndex;
+        if (lastHint != blockHint && canUseHint(lastHint, codepoint, fontType, text)) {
+            return lastHint;
+        }
+        return GlyphRuntimeTables.FONT_INDEX_UNRESOLVED;
+    }
+
+    private boolean canUseHint(int fontIndex, int codepoint, FontType fontType, String text) {
+        Font font = fontCatalog.getFont(fontIndex);
+        return font != null && canDisplay(fontIndex, font, codepoint, fontType, text);
+    }
+
+    private boolean canDisplay(int fontIndex, Font font, int codepoint, FontType fontType, String text) {
         if (!font.canDisplay(codepoint)) {
             return false;
         }
 
-        GlyphVector glyphVector = font.createGlyphVector(FONT_RENDER_CONTEXT, new String(Character.toChars(codepoint)));
+        Font derivedFont = derivedFontCache.getDerivedFont(fontIndex, fontType, currentGlyphSize());
+        if (derivedFont == null) {
+            return false;
+        }
+        GlyphVector glyphVector = derivedFont.createGlyphVector(FONT_RENDER_CONTEXT, text);
         int glyphCode = glyphVector.getGlyphCode(0);
-        if (glyphCode == 0 || glyphCode == font.getMissingGlyphCode()) {
+        if (glyphCode == 0 || glyphCode == derivedFont.getMissingGlyphCode()) {
             return false;
         }
         return glyphVector.getGlyphOutline(0) != null;
+    }
+
+    private void rememberMatch(int codepoint, FontType fontType, int fontIndex) {
+        if (!GlyphRuntimeTables.isValidCodepoint(codepoint)) {
+            return;
+        }
+        hintArray(fontType)[codepoint >> BLOCK_SHIFT] = fontIndex;
+        if (fontType == FontType.BOLD) {
+            lastBoldFontIndex = fontIndex;
+        } else {
+            lastNormalFontIndex = fontIndex;
+        }
+    }
+
+    private int[] hintArray(FontType fontType) {
+        return fontType == FontType.BOLD ? blockHintBold : blockHintNormal;
+    }
+
+    private int currentGlyphSize() {
+        return Math.max(8, (int) Math.ceil(FontConfig.awtCharSize));
+    }
+
+    private static int[] createHintArray() {
+        int[] hints = new int[BLOCK_COUNT];
+        Arrays.fill(hints, GlyphRuntimeTables.FONT_INDEX_UNRESOLVED);
+        return hints;
     }
 
 }

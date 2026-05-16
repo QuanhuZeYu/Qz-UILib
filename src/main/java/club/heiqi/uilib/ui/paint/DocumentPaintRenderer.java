@@ -110,7 +110,7 @@ public final class DocumentPaintRenderer {
         FontService fontService = FontService.getInstance();
         int commandIndex = startIndex;
         synchronized (fontService) {
-            fontRenderer.beginDeferredFlushScope();
+            fontRenderer.beginDeferredFlushScope(context.getScreenWidth(), context.getScreenHeight());
             try {
                 while (commandIndex < commands.size()) {
                     DocumentPaintCommand command = commands.get(commandIndex);

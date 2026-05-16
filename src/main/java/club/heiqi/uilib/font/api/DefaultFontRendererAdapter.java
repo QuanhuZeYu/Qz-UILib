@@ -14,7 +14,6 @@ import club.heiqi.uilib.font.layout.TextStyle;
 import club.heiqi.uilib.font.page.GlyphPage;
 import club.heiqi.uilib.font.page.GlyphPageManager;
 import club.heiqi.uilib.font.page.GlyphRuntimeTables;
-import club.heiqi.uilib.font.render.FontRenderFlushCoordinator;
 import club.heiqi.uilib.font.render.FontRenderStateGuard;
 import club.heiqi.uilib.ui.text.TextContentMode;
 
@@ -29,7 +28,6 @@ public class DefaultFontRendererAdapter implements FontRendererAdapter {
             + "ÇüéâäàåçêëèïîìÄÅÉæÆôöòûùÿÖÜø£Ø×ƒáíóúñÑªº¿®¬½¼¡«»░▒▓│┤╡╢╖╕╣║╗╝╜╛┐└┴┬├─┼╞╟╚╔╩╦╠═╬╧╨╤╥╙╘╒╓╫╪┘┌█▄▌▐▀"
             + "αβΓπΣσμτΦΘΩδ∞∅∈∩≡±≥≤⌠⌡÷≈°∙·√ⁿ²■";
     private final FontRenderStateGuard renderStateGuard = new FontRenderStateGuard();
-    private final FontRenderFlushCoordinator flushCoordinator = new FontRenderFlushCoordinator();
     private final ThreadLocal<Integer> deferredFlushScopeDepth = new ThreadLocal<Integer>() {
         @Override
         protected Integer initialValue() {
@@ -62,6 +60,23 @@ public class DefaultFontRendererAdapter implements FontRendererAdapter {
      * try/finally 配对结束边界。</p>
      */
     public void beginDeferredFlushScope() {
+        beginDeferredFlushScope(0, 0);
+    }
+
+    /**
+     * 开始一个可提供内部 UI 投影尺寸的受控延迟 flush 边界。
+     *
+     * @param targetWidth 渲染目标宽度
+     * @param targetHeight 渲染目标高度
+     */
+    public void beginDeferredFlushScope(int targetWidth, int targetHeight) {
+        if (!isDeferredFlushScopeActive()) {
+            FontService fontService = FontService.getInstance();
+            if (targetWidth > 0 && targetHeight > 0) {
+                fontService.getBatchRenderer().configureInternalUiProjection(targetWidth, targetHeight);
+                fontService.getBatchRenderer().setAssumeInternalUiMatrices(true);
+            }
+        }
         int depth = deferredFlushScopeDepth.get().intValue();
         deferredFlushScopeDepth.set(Integer.valueOf(depth + 1));
     }
@@ -82,6 +97,7 @@ public class DefaultFontRendererAdapter implements FontRendererAdapter {
         try {
             flushDeferredFlushScope();
         } finally {
+            FontService.getInstance().getBatchRenderer().setAssumeInternalUiMatrices(false);
             deferredFlushScopeDepth.remove();
             deferredFlushDirty.remove();
         }
@@ -375,32 +391,39 @@ public class DefaultFontRendererAdapter implements FontRendererAdapter {
                 int renderCodepoint = style.isRandomStyle()
                         ? resolveRandomStyleCodepoint(codepoint, style, codepointWidth, textLayoutService)
                         : codepoint;
+                int pageIndex = -1;
+                int textureId = 0;
+                int textureSize = 0;
                 GlyphPage glyphPage = null;
                 int slotIndex = -1;
                 int slotX = 0;
                 int slotY = 0;
                 byte glyphFlags = 0;
                 boolean validCodepoint = GlyphRuntimeTables.isValidCodepoint(renderCodepoint);
+                boolean glyphReady = false;
                 if (validCodepoint) {
                     int packedLocation = locations[renderCodepoint];
                     if (packedLocation != GlyphRuntimeTables.LOCATION_NOT_READY) {
-                        int pageIndex = GlyphRuntimeTables.unpackPageIndex(packedLocation);
+                        pageIndex = GlyphRuntimeTables.unpackPageIndex(packedLocation);
                         if (pageIndex >= 0 && pageIndex < pageCount) {
                             glyphPage = pages[pageIndex];
                             slotIndex = GlyphRuntimeTables.unpackSlotIndex(packedLocation);
                             if (slotIndex >= 0 && slotIndex < slotXByIndex.length
-                                    && slotIndex < slotYByIndex.length && glyphPage != null) {
+                                    && slotIndex < slotYByIndex.length && glyphPage != null
+                                    && glyphPage.getRuntimeVersion() == runtimeVersion) {
+                                textureSize = glyphPage.getTextureSize();
                                 slotX = slotXByIndex[slotIndex] & 0xFFFF;
                                 slotY = slotYByIndex[slotIndex] & 0xFFFF;
                                 glyphFlags = flags[renderCodepoint];
+                                glyphReady = true;
                             } else {
-                                glyphPage = null;
+                                pageIndex = -1;
                             }
                         }
                     }
                 }
 
-                if (glyphPage == null && validCodepoint) {
+                if (!glyphReady && validCodepoint) {
                     fontService.getGlyphGenerationDispatcher().submit(new GlyphGenerationTask(
                             runtimeVersion,
                             renderCodepoint,
@@ -410,13 +433,21 @@ public class DefaultFontRendererAdapter implements FontRendererAdapter {
                 }
 
                 if (dropShadow) {
-                    collectGlyph(fontService, glyphPage, slotX, slotY, glyphFlags,
+                    if (glyphReady && glyphPage != null) {
+                        textureId = glyphPage.getOrCreateTextureId();
+                    }
+                    collectGlyph(fontService, fontType, glyphReady, pageIndex, textureId, textureSize, slotX, slotY,
+                            glyphSize, glyphFlags,
                             currentX + (float) FontConfig.shadowOffsetX * renderScale,
                             drawY + (float) FontConfig.shadowOffsetY * renderScale,
                             measuredWidth, charSize, renderScale, style, darkenShadow(style.getColor()));
                 }
-                collectGlyph(fontService, glyphPage, slotX, slotY, glyphFlags, currentX, drawY,
-                        measuredWidth, charSize, renderScale, style, style.getColor());
+                if (glyphReady && textureId == 0 && glyphPage != null) {
+                    textureId = glyphPage.getOrCreateTextureId();
+                }
+                collectGlyph(fontService, fontType, glyphReady, pageIndex, textureId, textureSize, slotX, slotY,
+                        glyphSize, glyphFlags, currentX, drawY, measuredWidth, charSize, renderScale, style,
+                        style.getColor());
                 currentX += measuredWidth;
 
                 i += Character.charCount(codepoint);
@@ -449,16 +480,15 @@ public class DefaultFontRendererAdapter implements FontRendererAdapter {
         return fallbackCodepoint;
     }
 
-    private void collectGlyph(FontService fontService, GlyphPage glyphPage, int slotX, int slotY, byte glyphFlags,
-            float currentX, float drawY, float measuredWidth, float charSize, float renderScale, TextStyle style,
-            int renderColor) {
-        if (glyphPage != null || style.isUnderline() || style.isStrikethrough()) {
+    private void collectGlyph(FontService fontService, FontType fontType, boolean glyphReady, int pageIndex,
+            int textureId, int textureSize, int slotX, int slotY, int glyphSize, byte glyphFlags, float currentX,
+            float drawY, float measuredWidth, float charSize, float renderScale, TextStyle style, int renderColor) {
+        if (glyphReady || style.isUnderline() || style.isStrikethrough()) {
             markDeferredFlushDirtyIfNeeded();
         }
-        if (glyphPage != null) {
-            int glyphSize = glyphPage.getGlyphSize();
-            fontService.getBatchRenderer().collect(glyphPage, slotX, slotY, glyphSize, glyphSize, currentX, drawY,
-                    charSize, renderColor, style.isItalic(), glyphFlags);
+        if (glyphReady && textureId > 0) {
+            fontService.getBatchRenderer().collect(fontType, pageIndex, textureId, textureSize, slotX, slotY,
+                    glyphSize, glyphSize, currentX, drawY, charSize, renderColor, style.isItalic(), glyphFlags);
         }
         collectDecorations(fontService, currentX, drawY, measuredWidth, charSize, renderScale, style, renderColor);
     }
@@ -466,11 +496,11 @@ public class DefaultFontRendererAdapter implements FontRendererAdapter {
     private void collectDecorations(FontService fontService, float currentX, float drawY, float width, float charSize,
             float renderScale, TextStyle style, int color) {
         if (style.isUnderline()) {
-            fontService.getDecorationRenderer().collect(currentX, drawY + charSize - renderScale, width,
+            fontService.getBatchRenderer().collectDecoration(currentX, drawY + charSize - renderScale, width,
                     renderScale, color);
         }
         if (style.isStrikethrough()) {
-            fontService.getDecorationRenderer().collect(currentX, drawY + (charSize / 2.0F) - (0.5F * renderScale),
+            fontService.getBatchRenderer().collectDecoration(currentX, drawY + (charSize / 2.0F) - (0.5F * renderScale),
                     width, renderScale, color);
         }
     }
@@ -483,17 +513,12 @@ public class DefaultFontRendererAdapter implements FontRendererAdapter {
 
     private void flushCollectedBatches(final FontService fontService) {
         try {
-            flushCoordinator.flush(renderStateGuard, new Runnable() {
+            renderStateGuard.run(new Runnable() {
                 @Override
                 public void run() {
-                    fontService.getBatchRenderer().flush(fontService.getShaderProgram());
+                    fontService.getBatchRenderer().flushWithinActiveState(fontService.getShaderProgram());
                 }
-            }, new Runnable() {
-                @Override
-                public void run() {
-                    fontService.getDecorationRenderer().flush();
-                }
-            });
+            }, !fontService.getBatchRenderer().isAssumingInternalUiMatrices());
         } catch (RuntimeException exception) {
             clearCollectedBatches(fontService);
             throw exception;
@@ -504,7 +529,6 @@ public class DefaultFontRendererAdapter implements FontRendererAdapter {
     }
 
     private void clearCollectedBatches(FontService fontService) {
-        fontService.getDecorationRenderer().clear();
         fontService.getBatchRenderer().clearFrame();
     }
 

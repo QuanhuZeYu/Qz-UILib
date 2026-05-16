@@ -388,10 +388,9 @@ final class UiFontPerformanceBaselineDocumentPageController extends DocumentPage
     }
 
     private String formatFontStats(FontRuntimeStats stats) {
-        FontRuntimeStats resolvedStats = stats == null
-                ? new FontRuntimeStats(0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0L, 0L, 0L, 0L) : stats;
+        FontRuntimeStats resolvedStats = stats == null ? FontRuntimeStats.empty() : stats;
         return String.format(Locale.ROOT,
-                "字体统计：pending upload %d；ready glyph %d；normal/bold page %d/%d；direct table codepoints/slots %d/%d；draw-stage upload %d；frame quad %d；last flush page/draw/texture %d/%d/%d；font match hit/miss %d/%d；width cache hit/miss %d/%d。",
+                "字体统计：pending upload %d；ready glyph %d；normal/bold page %d/%d；direct table codepoints/slots %d/%d；draw-stage upload %d；frame quad %d；last flush page-batch/draw/texture-bind %d/%d/%d；font match hit/miss %d/%d；derived font hit/miss %d/%d；width cache hit/miss %d/%d。",
                 Integer.valueOf(resolvedStats.getPendingUploadCount()),
                 Integer.valueOf(resolvedStats.getReadyGlyphCount()),
                 Integer.valueOf(resolvedStats.getNormalPageCount()),
@@ -402,9 +401,11 @@ final class UiFontPerformanceBaselineDocumentPageController extends DocumentPage
                 Integer.valueOf(resolvedStats.getFrameQuadCount()),
                 Integer.valueOf(resolvedStats.getLastFlushPageSubmitCount()),
                 Integer.valueOf(resolvedStats.getLastFlushDrawCallCount()),
-                Integer.valueOf(resolvedStats.getLastFlushTextureSwitchCount()),
+                Integer.valueOf(resolvedStats.getLastFlushTextureBindCount()),
                 Long.valueOf(resolvedStats.getFontMatchCacheHitCount()),
                 Long.valueOf(resolvedStats.getFontMatchCacheMissCount()),
+                Long.valueOf(resolvedStats.getDerivedFontCacheHitCount()),
+                Long.valueOf(resolvedStats.getDerivedFontCacheMissCount()),
                 Long.valueOf(resolvedStats.getWidthCacheHitCount()),
                 Long.valueOf(resolvedStats.getWidthCacheMissCount()));
     }

@@ -1,7 +1,5 @@
 package club.heiqi.uilib.font.page;
 
-import java.util.ArrayList;
-import java.util.List;
 import java.util.Queue;
 import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -254,12 +252,17 @@ public class GlyphPageManager {
     /**
      * 快照当前仍需要在 reload 后恢复的字符请求。
      *
-     * @return 可恢复字符请求快照
+     * @return 可恢复字符请求 packed 快照
      */
-    public synchronized List<RecoverableGlyphRequest> snapshotRecoverableRequests() {
-        List<RecoverableGlyphRequest> requests = new ArrayList<RecoverableGlyphRequest>();
-        collectRecoverableRequests(requests, runtimeTables.stateNormal, FontType.NORMAL);
-        collectRecoverableRequests(requests, runtimeTables.stateBold, FontType.BOLD);
+    public synchronized long[] snapshotRecoverableRequests() {
+        int requestCount = countRecoverableRequests(runtimeTables.stateNormal)
+                + countRecoverableRequests(runtimeTables.stateBold);
+        if (requestCount <= 0) {
+            return new long[0];
+        }
+        long[] requests = new long[requestCount];
+        int offset = collectRecoverableRequests(requests, 0, runtimeTables.stateNormal, FontType.NORMAL);
+        collectRecoverableRequests(requests, offset, runtimeTables.stateBold, FontType.BOLD);
         return requests;
     }
 
@@ -439,13 +442,50 @@ public class GlyphPageManager {
         return 0;
     }
 
-    private void collectRecoverableRequests(List<RecoverableGlyphRequest> requests, byte[] states, FontType fontType) {
+    private int countRecoverableRequests(byte[] states) {
+        int count = 0;
+        for (byte state : states) {
+            if (state == GlyphRuntimeTables.STATE_GENERATING || state == GlyphRuntimeTables.STATE_UPLOAD_PENDING) {
+                count++;
+            }
+        }
+        return count;
+    }
+
+    private int collectRecoverableRequests(long[] requests, int offset, byte[] states, FontType fontType) {
+        int writeIndex = offset;
         for (int codepoint = 0; codepoint < states.length; codepoint++) {
             byte state = states[codepoint];
             if (state == GlyphRuntimeTables.STATE_GENERATING || state == GlyphRuntimeTables.STATE_UPLOAD_PENDING) {
-                requests.add(new RecoverableGlyphRequest(codepoint, fontType));
+                requests[writeIndex++] = packRecoverableRequest(codepoint, fontType);
             }
         }
+        return writeIndex;
+    }
+
+    private static long packRecoverableRequest(int codepoint, FontType fontType) {
+        long typeBit = fontType == FontType.BOLD ? 1L : 0L;
+        return ((long) codepoint & 0x1FFFFFL) << 1 | typeBit;
+    }
+
+    /**
+     * 从 packed 请求中解出码点。
+     *
+     * @param packedRequest packed 请求
+     * @return 字符码点
+     */
+    public static int unpackRecoverableCodepoint(long packedRequest) {
+        return (int) ((packedRequest >>> 1) & 0x1FFFFFL);
+    }
+
+    /**
+     * 从 packed 请求中解出字重类型。
+     *
+     * @param packedRequest packed 请求
+     * @return 字重类型
+     */
+    public static FontType unpackRecoverableFontType(long packedRequest) {
+        return (packedRequest & 1L) != 0L ? FontType.BOLD : FontType.NORMAL;
     }
 
     private GlyphState toGlyphState(byte state) {

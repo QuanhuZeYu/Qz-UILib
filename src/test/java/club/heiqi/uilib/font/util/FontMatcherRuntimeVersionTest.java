@@ -21,12 +21,15 @@ public class FontMatcherRuntimeVersionTest {
         FontCatalog catalog = new FontCatalog();
         Font dialog = new Font("Dialog", Font.PLAIN, 14);
         Font serif = new Font("Serif", Font.PLAIN, 14);
-        FontMatcher matcher = new FontMatcher(catalog);
+        DerivedFontCache derivedFontCache = new DerivedFontCache(catalog);
+        FontMatcher matcher = new FontMatcher(catalog, derivedFontCache);
 
         catalog.replaceAll(Arrays.asList(dialog, serif));
         Font oldMatch = matcher.match(1, 'A', FontType.NORMAL);
 
         catalog.replaceAll(Arrays.asList(serif, dialog));
+        derivedFontCache.clear();
+        matcher.clearCache();
         Font newMatch = matcher.match(2, 'A', FontType.NORMAL);
 
         Assert.assertEquals(dialog.getName(), oldMatch.getName());

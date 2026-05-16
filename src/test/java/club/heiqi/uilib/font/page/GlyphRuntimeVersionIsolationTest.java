@@ -15,18 +15,6 @@ import club.heiqi.uilib.font.glyph.GlyphInfo;
 public class GlyphRuntimeVersionIsolationTest {
 
     /**
-     * 验证不同运行时版本下的同一字符不会复用同一个缓存键。
-     */
-    @Test
-    public void shouldSeparateGlyphCacheKeyByRuntimeVersion() {
-        GlyphCacheKey oldKey = new GlyphCacheKey(1, 'A', FontType.NORMAL);
-        GlyphCacheKey newKey = new GlyphCacheKey(2, 'A', FontType.NORMAL);
-
-        Assert.assertNotEquals(oldKey, newKey);
-        Assert.assertNotEquals(oldKey.hashCode(), newKey.hashCode());
-    }
-
-    /**
      * 验证旧运行时生成结果不会进入新运行时的上传队列。
      */
     @Test
@@ -68,15 +56,14 @@ public class GlyphRuntimeVersionIsolationTest {
 
         Assert.assertTrue(manager.tryMarkGenerating(1, '中', FontType.NORMAL));
 
-        Assert.assertEquals(1, manager.snapshotRecoverableRequests().size());
-        GlyphCacheKey key = manager.snapshotRecoverableRequests().get(0);
-        Assert.assertEquals(1, key.getRuntimeVersion());
-        Assert.assertEquals('中', key.getCodepoint());
-        Assert.assertEquals(FontType.NORMAL, key.getFontType());
+        long[] requests = manager.snapshotRecoverableRequests();
+        Assert.assertEquals(1, requests.length);
+        Assert.assertEquals('中', GlyphPageManager.unpackRecoverableCodepoint(requests[0]));
+        Assert.assertEquals(FontType.NORMAL, GlyphPageManager.unpackRecoverableFontType(requests[0]));
     }
 
     /**
-     * 验证任务被取消时不会让字符永久卡在生成中。
+     * 验证任务被取消时不会让字符永久卡在生成中，也不会留下可恢复请求对象。
      */
     @Test
     public void shouldReleaseGeneratingStateWhenGenerationCancelled() {
@@ -87,7 +74,7 @@ public class GlyphRuntimeVersionIsolationTest {
         manager.markGenerationCancelled(1, 'A', FontType.NORMAL);
 
         Assert.assertEquals(GlyphState.NEW, manager.getState('A', FontType.NORMAL));
-        Assert.assertEquals(1, manager.snapshotRecoverableRequests().size());
+        Assert.assertEquals(0, manager.snapshotRecoverableRequests().length);
     }
 
     /**
@@ -189,12 +176,13 @@ public class GlyphRuntimeVersionIsolationTest {
 
         Assert.assertTrue(manager.tryMarkGenerating(1, 'A', FontType.NORMAL));
 
-        GlyphCacheKey oldRequest = manager.snapshotRecoverableRequests().get(0);
+        long oldRequest = manager.snapshotRecoverableRequests()[0];
         manager.setRuntimeVersion(2);
         manager.reset();
 
         Assert.assertEquals(GlyphState.NEW, manager.getState('A', FontType.NORMAL));
-        Assert.assertTrue(manager.tryMarkGenerating(2, oldRequest.getCodepoint(), oldRequest.getFontType()));
+        Assert.assertTrue(manager.tryMarkGenerating(2, GlyphPageManager.unpackRecoverableCodepoint(oldRequest),
+                GlyphPageManager.unpackRecoverableFontType(oldRequest)));
         Assert.assertEquals(GlyphState.GENERATING, manager.getState('A', FontType.NORMAL));
     }
 

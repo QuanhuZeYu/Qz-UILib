@@ -16,6 +16,8 @@ import club.heiqi.uilib.font.FontType;
 import club.heiqi.uilib.font.config.FontConfig;
 import club.heiqi.uilib.font.page.GlyphPageManager;
 import club.heiqi.uilib.font.page.GlyphRuntimeTables;
+import club.heiqi.uilib.font.util.CodepointTextCache;
+import club.heiqi.uilib.font.util.DerivedFontCache;
 import club.heiqi.uilib.font.util.FontMatcher;
 import club.heiqi.uilib.ui.text.TextContentMode;
 
@@ -28,6 +30,7 @@ public class TextLayoutService {
 
     private final FontMatcher fontMatcher;
     private final GlyphPageManager glyphPageManager;
+    private final DerivedFontCache derivedFontCache;
     private final AtomicLong widthCacheHitCount = new AtomicLong(0L);
     private final AtomicLong widthCacheMissCount = new AtomicLong(0L);
     private volatile int runtimeVersion;
@@ -38,9 +41,11 @@ public class TextLayoutService {
      * @param fontMatcher 字体匹配器
      * @param glyphPageManager 字符页管理器
      */
-    public TextLayoutService(FontMatcher fontMatcher, GlyphPageManager glyphPageManager) {
+    public TextLayoutService(FontMatcher fontMatcher, GlyphPageManager glyphPageManager,
+            DerivedFontCache derivedFontCache) {
         this.fontMatcher = fontMatcher;
         this.glyphPageManager = glyphPageManager;
+        this.derivedFontCache = derivedFontCache;
     }
 
     /**
@@ -507,25 +512,23 @@ public class TextLayoutService {
     }
 
     private double measureAwtWidth(int codepoint, FontType fontType) {
-        Font font = fontMatcher.match(runtimeVersion, codepoint, fontType);
+        int glyphSize = Math.max(8, (int) Math.ceil(FontConfig.awtCharSize));
+        int fontIndex = fontMatcher.matchFontIndex(runtimeVersion, codepoint, fontType);
+        if (fontIndex < 0) {
+            return FontConfig.spaceWidth;
+        }
+
+        Font font = derivedFontCache.getDerivedFont(fontIndex, fontType, glyphSize);
         if (font == null) {
             return FontConfig.spaceWidth;
         }
 
-        int glyphSize = Math.max(8, (int) Math.ceil(FontConfig.awtCharSize));
-        int style = Font.PLAIN;
-        if (fontType == FontType.BOLD) {
-            style = Font.BOLD;
-        }
-
-        font = font.deriveFont(style, (float) Math.max(glyphSize * FontConfig.fontScale, 6.0D));
-
         GlyphMetrics glyphMetrics;
         Rectangle2D visualBounds;
         LineMetrics lineMetrics;
+        String text = CodepointTextCache.getText(codepoint);
 
         while (true) {
-            String text = new String(Character.toChars(codepoint));
             GlyphVector glyphVector = font.createGlyphVector(FONT_RENDER_CONTEXT, text);
             visualBounds = glyphVector.getVisualBounds();
             glyphMetrics = glyphVector.getGlyphMetrics(0);
@@ -567,6 +570,8 @@ public class TextLayoutService {
         if (tables != null) {
             tables.clearWidthCache();
         }
+        widthCacheHitCount.set(0L);
+        widthCacheMissCount.set(0L);
     }
 
     /**

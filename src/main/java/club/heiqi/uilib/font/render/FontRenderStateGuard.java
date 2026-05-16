@@ -28,16 +28,29 @@ public class FontRenderStateGuard implements FontRenderStateExecutor {
     private int vertexArrayBinding;
     private int arrayBufferBinding;
     private int elementArrayBufferBinding;
+    private boolean matrixStateSaved;
 
     /**
      * 保存当前 OpenGL 状态。
      */
     public void push() {
-        currentMatrixMode = GL11.glGetInteger(GL11.GL_MATRIX_MODE);
+        push(true);
+    }
+
+    /**
+     * 保存当前 OpenGL 状态。
+     *
+     * @param includeMatrixState 是否同时保存固定管线矩阵栈
+     */
+    public void push(boolean includeMatrixState) {
+        matrixStateSaved = includeMatrixState;
         GL11.glPushAttrib(GL11.GL_ALL_ATTRIB_BITS);
-        pushMatrixStack(GL11.GL_MODELVIEW);
-        pushMatrixStack(GL11.GL_PROJECTION);
-        pushMatrixStack(GL11.GL_TEXTURE);
+        if (includeMatrixState) {
+            currentMatrixMode = GL11.glGetInteger(GL11.GL_MATRIX_MODE);
+            pushMatrixStack(GL11.GL_MODELVIEW);
+            pushMatrixStack(GL11.GL_PROJECTION);
+            pushMatrixStack(GL11.GL_TEXTURE);
+        }
 
         activeTexture = GL11.glGetInteger(GL13.GL_ACTIVE_TEXTURE);
         currentProgram = GL11.glGetInteger(GL20.GL_CURRENT_PROGRAM);
@@ -57,10 +70,12 @@ public class FontRenderStateGuard implements FontRenderStateExecutor {
      * 恢复之前保存的 OpenGL 状态。
      */
     public void pop() {
-        popMatrixStack(GL11.GL_TEXTURE);
-        popMatrixStack(GL11.GL_PROJECTION);
-        popMatrixStack(GL11.GL_MODELVIEW);
-        GL11.glMatrixMode(currentMatrixMode);
+        if (matrixStateSaved) {
+            popMatrixStack(GL11.GL_TEXTURE);
+            popMatrixStack(GL11.GL_PROJECTION);
+            popMatrixStack(GL11.GL_MODELVIEW);
+            GL11.glMatrixMode(currentMatrixMode);
+        }
         GL11.glPopAttrib();
 
         GL20.glUseProgram(currentProgram);
@@ -78,7 +93,9 @@ public class FontRenderStateGuard implements FontRenderStateExecutor {
         if (viewportBuffer.remaining() >= 4) {
             GL11.glViewport(viewportBuffer.get(0), viewportBuffer.get(1), viewportBuffer.get(2), viewportBuffer.get(3));
         }
-        GL11.glMatrixMode(currentMatrixMode);
+        if (matrixStateSaved) {
+            GL11.glMatrixMode(currentMatrixMode);
+        }
     }
 
     /**
@@ -88,7 +105,23 @@ public class FontRenderStateGuard implements FontRenderStateExecutor {
      */
     public void run(Runnable task) {
         Objects.requireNonNull(task, "task");
-        push();
+        push(true);
+        try {
+            task.run();
+        } finally {
+            pop();
+        }
+    }
+
+    /**
+     * 在保护的 OpenGL 状态边界中执行任务，可跳过矩阵栈保存。
+     *
+     * @param task 要执行的任务
+     * @param includeMatrixState 是否同时保存固定管线矩阵栈
+     */
+    public void run(Runnable task, boolean includeMatrixState) {
+        Objects.requireNonNull(task, "task");
+        push(includeMatrixState);
         try {
             task.run();
         } finally {

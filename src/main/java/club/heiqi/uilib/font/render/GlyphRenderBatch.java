@@ -4,8 +4,6 @@ import java.nio.FloatBuffer;
 import java.nio.IntBuffer;
 
 import club.heiqi.uilib.font.config.FontConfig;
-import club.heiqi.uilib.font.page.GlyphPage;
-
 /**
  * 同一字符页的批渲染数据。
  */
@@ -35,18 +33,23 @@ public final class GlyphRenderBatch {
     static final int GLYPH_FLAGS_OFFSET_BYTES = GLYPH_FLAGS_OFFSET_FLOATS * Float.BYTES;
     static final int VERTEX_STRIDE_BYTES = VERTEX_STRIDE_FLOATS * Float.BYTES;
 
-    private final GlyphPage glyphPage;
+    private int textureId;
     private float[] vertexData = new float[DEFAULT_QUAD_CAPACITY * VERTICES_PER_QUAD * VERTEX_STRIDE_FLOATS];
     private int[] indexData = new int[DEFAULT_QUAD_CAPACITY * INDICES_PER_QUAD];
     private int quadCount;
 
     /**
-     * 创建字符页批次。
-     *
-     * @param glyphPage 字符页
+     * 创建可复用批次。
      */
-    public GlyphRenderBatch(GlyphPage glyphPage) {
-        this.glyphPage = glyphPage;
+    public GlyphRenderBatch() {}
+
+    /**
+     * 设置当前批次对应纹理。
+     *
+     * @param textureId 纹理 ID
+     */
+    public void setTextureId(int textureId) {
+        this.textureId = textureId;
     }
 
     /**
@@ -141,8 +144,8 @@ public final class GlyphRenderBatch {
         quadCount++;
     }
 
-    public GlyphPage getGlyphPage() {
-        return glyphPage;
+    public int getTextureId() {
+        return textureId;
     }
 
     public boolean isEmpty() {
@@ -171,6 +174,7 @@ public final class GlyphRenderBatch {
      */
     public void clear() {
         quadCount = 0;
+        textureId = 0;
     }
 
     private void ensureCapacity(int targetQuadCount) {

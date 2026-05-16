@@ -89,6 +89,7 @@ public class GlyphPage {
         }
         int slotX = slotXByIndex[slotIndex] & 0xFFFF;
         int slotY = slotYByIndex[slotIndex] & 0xFFFF;
+        boolean logUploadDiagnostics = FontRuntimeDiagnostics.shouldLogGlyphUpload();
 
         GL11.glPushAttrib(GL11.GL_ALL_ATTRIB_BITS);
         GL11.glPushClientAttrib(GL11.GL_CLIENT_PIXEL_STORE_BIT);
@@ -107,8 +108,10 @@ public class GlyphPage {
                     GL11.GL_UNSIGNED_BYTE,
                     toByteBuffer(image));
             GL30.glGenerateMipmap(GL11.GL_TEXTURE_2D);
-            FontRuntimeDiagnostics.logGlyphUpload(runtimeVersion, codepoint, fontType, textureId,
-                    GL11.glIsTexture(textureId), GL11.glGetError(), image);
+            if (logUploadDiagnostics) {
+                FontRuntimeDiagnostics.logGlyphUpload(runtimeVersion, codepoint, fontType, textureId,
+                        GL11.glIsTexture(textureId), GL11.glGetError(), image);
+            }
             GL11.glBindTexture(GL11.GL_TEXTURE_2D, 0);
         } finally {
             GL11.glPopClientAttrib();
@@ -143,6 +146,16 @@ public class GlyphPage {
     }
 
     public int getTextureId() {
+        return textureId;
+    }
+
+    /**
+     * 获取或创建字符页纹理。
+     *
+     * @return 字符页纹理 ID
+     */
+    public int getOrCreateTextureId() {
+        ensureTexture();
         return textureId;
     }
 

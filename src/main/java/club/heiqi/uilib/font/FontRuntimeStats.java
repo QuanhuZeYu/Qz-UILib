@@ -15,11 +15,23 @@ public class FontRuntimeStats {
     private final int frameQuadCount;
     private final int lastFlushPageSubmitCount;
     private final int lastFlushDrawCallCount;
-    private final int lastFlushTextureSwitchCount;
+    private final int lastFlushTextureBindCount;
     private final long fontMatchCacheHitCount;
     private final long fontMatchCacheMissCount;
+    private final long derivedFontCacheHitCount;
+    private final long derivedFontCacheMissCount;
     private final long widthCacheHitCount;
     private final long widthCacheMissCount;
+
+    /**
+     * 创建空运行时统计快照。
+     *
+     * @return 空统计
+     */
+    public static FontRuntimeStats empty() {
+        return new FontRuntimeStats(0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0L, 0L, 0L, 0L, 0L,
+                0L);
+    }
 
     /**
      * 创建运行时统计快照。
@@ -32,11 +44,13 @@ public class FontRuntimeStats {
      * @param directTableSlotsPerPage 每页预计算槽位数量
      * @param queuedDrawStageUploadCount 最近一秒 draw-stage 上传次数
      * @param frameQuadCount 当前帧四边形数量
-     * @param lastFlushPageSubmitCount 上次 flush 实际提交的字符页命令数量
+     * @param lastFlushPageSubmitCount 上次 flush 实际提交的字符页批次数量
      * @param lastFlushDrawCallCount 上次 flush 实际触发的 draw call 数量
-     * @param lastFlushTextureSwitchCount 上次 flush 实际发生的纹理切换数量
+     * @param lastFlushTextureBindCount 上次 flush 由字体批渲染器执行的纹理绑定数量
      * @param fontMatchCacheHitCount 字体匹配缓存命中次数
      * @param fontMatchCacheMissCount 字体匹配缓存未命中次数
+     * @param derivedFontCacheHitCount 派生字体缓存命中次数
+     * @param derivedFontCacheMissCount 派生字体缓存未命中次数
      * @param widthCacheHitCount 宽度缓存命中次数
      * @param widthCacheMissCount 宽度缓存未命中次数
      */
@@ -51,9 +65,11 @@ public class FontRuntimeStats {
             int frameQuadCount,
             int lastFlushPageSubmitCount,
             int lastFlushDrawCallCount,
-            int lastFlushTextureSwitchCount,
+            int lastFlushTextureBindCount,
             long fontMatchCacheHitCount,
             long fontMatchCacheMissCount,
+            long derivedFontCacheHitCount,
+            long derivedFontCacheMissCount,
             long widthCacheHitCount,
             long widthCacheMissCount) {
         this.pendingUploadCount = pendingUploadCount;
@@ -66,9 +82,11 @@ public class FontRuntimeStats {
         this.frameQuadCount = frameQuadCount;
         this.lastFlushPageSubmitCount = lastFlushPageSubmitCount;
         this.lastFlushDrawCallCount = lastFlushDrawCallCount;
-        this.lastFlushTextureSwitchCount = lastFlushTextureSwitchCount;
+        this.lastFlushTextureBindCount = lastFlushTextureBindCount;
         this.fontMatchCacheHitCount = fontMatchCacheHitCount;
         this.fontMatchCacheMissCount = fontMatchCacheMissCount;
+        this.derivedFontCacheHitCount = derivedFontCacheHitCount;
+        this.derivedFontCacheMissCount = derivedFontCacheMissCount;
         this.widthCacheHitCount = widthCacheHitCount;
         this.widthCacheMissCount = widthCacheMissCount;
     }
@@ -113,8 +131,8 @@ public class FontRuntimeStats {
         return lastFlushDrawCallCount;
     }
 
-    public int getLastFlushTextureSwitchCount() {
-        return lastFlushTextureSwitchCount;
+    public int getLastFlushTextureBindCount() {
+        return lastFlushTextureBindCount;
     }
 
     public long getFontMatchCacheHitCount() {
@@ -123,6 +141,14 @@ public class FontRuntimeStats {
 
     public long getFontMatchCacheMissCount() {
         return fontMatchCacheMissCount;
+    }
+
+    public long getDerivedFontCacheHitCount() {
+        return derivedFontCacheHitCount;
+    }
+
+    public long getDerivedFontCacheMissCount() {
+        return derivedFontCacheMissCount;
     }
 
     public long getWidthCacheHitCount() {
@@ -143,11 +169,13 @@ public class FontRuntimeStats {
                 + ", directTableSlotsPerPage=" + directTableSlotsPerPage
                 + ", drawStageUploadsLastSecond=" + queuedDrawStageUploadCount
                 + ", frameQuads=" + frameQuadCount
-                + ", lastFlushPageSubmits=" + lastFlushPageSubmitCount
+                + ", lastFlushPageBatches=" + lastFlushPageSubmitCount
                 + ", lastFlushDrawCalls=" + lastFlushDrawCallCount
-                + ", lastFlushTextureSwitches=" + lastFlushTextureSwitchCount
+                + ", lastFlushTextureBinds=" + lastFlushTextureBindCount
                 + ", fontMatchCacheHits=" + fontMatchCacheHitCount
                 + ", fontMatchCacheMisses=" + fontMatchCacheMissCount
+                + ", derivedFontCacheHits=" + derivedFontCacheHitCount
+                + ", derivedFontCacheMisses=" + derivedFontCacheMissCount
                 + ", widthCacheHits=" + widthCacheHitCount
                 + ", widthCacheMisses=" + widthCacheMissCount;
     }

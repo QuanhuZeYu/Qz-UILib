@@ -12,8 +12,8 @@ import java.awt.geom.Rectangle2D;
 import java.awt.image.BufferedImage;
 
 import club.heiqi.uilib.font.FontRuntimeDiagnostics;
-import club.heiqi.uilib.font.FontType;
-import club.heiqi.uilib.font.config.FontConfig;
+import club.heiqi.uilib.font.util.CodepointTextCache;
+import club.heiqi.uilib.font.util.DerivedFontCache;
 import club.heiqi.uilib.font.util.FontMatcher;
 
 /**
@@ -22,14 +22,17 @@ import club.heiqi.uilib.font.util.FontMatcher;
 public class GlyphGenerator {
 
     private final FontMatcher fontMatcher;
+    private final DerivedFontCache derivedFontCache;
 
     /**
      * 创建字符生成器。
      *
      * @param fontMatcher 字体匹配器
+     * @param derivedFontCache 派生字体缓存
      */
-    public GlyphGenerator(FontMatcher fontMatcher) {
+    public GlyphGenerator(FontMatcher fontMatcher, DerivedFontCache derivedFontCache) {
         this.fontMatcher = fontMatcher;
+        this.derivedFontCache = derivedFontCache;
     }
 
     /**
@@ -39,15 +42,19 @@ public class GlyphGenerator {
      * @return 生成结果，失败时返回 null
      */
     public GlyphGenerationResult generate(GlyphGenerationTask task) {
-        Font baseFont = fontMatcher.match(task.getRuntimeVersion(), task.getCodepoint(), task.getFontType());
-        if (baseFont == null) {
+        int fontIndex = fontMatcher.matchFontIndex(task.getRuntimeVersion(), task.getCodepoint(), task.getFontType());
+        if (fontIndex < 0) {
             return null;
         }
 
-        String text = new String(Character.toChars(task.getCodepoint()));
-        Font font = deriveFont(baseFont, task.getFontType(), task.getGlyphSize());
+        String text = CodepointTextCache.getText(task.getCodepoint());
+        Font font = derivedFontCache.getDerivedFont(fontIndex, task.getFontType(), task.getGlyphSize());
+        if (font == null) {
+            return null;
+        }
 
-        BufferedImage tempImage = new BufferedImage(task.getGlyphSize(), task.getGlyphSize(), BufferedImage.TYPE_INT_ARGB);
+        BufferedImage tempImage = new BufferedImage(task.getGlyphSize(), task.getGlyphSize(),
+                BufferedImage.TYPE_INT_ARGB);
         Graphics2D tempGraphics = tempImage.createGraphics();
         FontRenderContext context = tempGraphics.getFontRenderContext();
 
@@ -83,7 +90,8 @@ public class GlyphGenerator {
         Graphics2D graphics = image.createGraphics();
         graphics.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_OFF);
         graphics.setRenderingHint(RenderingHints.KEY_TEXT_ANTIALIASING, RenderingHints.VALUE_TEXT_ANTIALIAS_ON);
-        graphics.setRenderingHint(RenderingHints.KEY_ALPHA_INTERPOLATION, RenderingHints.VALUE_ALPHA_INTERPOLATION_QUALITY);
+        graphics.setRenderingHint(RenderingHints.KEY_ALPHA_INTERPOLATION,
+                RenderingHints.VALUE_ALPHA_INTERPOLATION_QUALITY);
         graphics.setRenderingHint(RenderingHints.KEY_COLOR_RENDERING, RenderingHints.VALUE_COLOR_RENDER_QUALITY);
         graphics.setRenderingHint(RenderingHints.KEY_FRACTIONALMETRICS, RenderingHints.VALUE_FRACTIONALMETRICS_ON);
         graphics.setRenderingHint(RenderingHints.KEY_RENDERING, RenderingHints.VALUE_RENDER_QUALITY);
@@ -115,14 +123,6 @@ public class GlyphGenerator {
         FontRuntimeDiagnostics.logGeneratedGlyph(task, image, glyphInfo);
         return new GlyphGenerationResult(task.getRuntimeVersion(), task.getGenerationId(), task.getCodepoint(),
                 task.getFontType(), image, glyphInfo);
-    }
-
-    private Font deriveFont(Font baseFont, FontType fontType, int glyphSize) {
-        int style = Font.PLAIN;
-        if (fontType == FontType.BOLD) {
-            style = Font.BOLD;
-        }
-        return baseFont.deriveFont(style, (float) Math.max(glyphSize * FontConfig.fontScale, 6.0D));
     }
 
     private boolean containsColoredPixels(BufferedImage image) {

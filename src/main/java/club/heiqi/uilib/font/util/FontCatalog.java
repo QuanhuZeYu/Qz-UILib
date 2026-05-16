@@ -11,6 +11,7 @@ import java.util.List;
 public class FontCatalog {
 
     private volatile List<Font> fonts = Collections.emptyList();
+    private volatile int version;
 
     /**
      * 使用新字体列表替换当前目录。
@@ -20,9 +21,11 @@ public class FontCatalog {
     public void replaceAll(List<Font> updatedFonts) {
         if (updatedFonts == null || updatedFonts.isEmpty()) {
             fonts = Collections.emptyList();
+            version++;
             return;
         }
         fonts = Collections.unmodifiableList(new ArrayList<Font>(updatedFonts));
+        version++;
     }
 
     /**
@@ -55,6 +58,15 @@ public class FontCatalog {
      */
     public int size() {
         return fonts.size();
+    }
+
+    /**
+     * 获取字体目录快照版本。
+     *
+     * @return 目录版本
+     */
+    public int getVersion() {
+        return version;
     }
 
     /**

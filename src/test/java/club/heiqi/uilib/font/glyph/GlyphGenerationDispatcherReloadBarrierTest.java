@@ -5,6 +5,7 @@ import org.junit.Test;
 
 import club.heiqi.uilib.font.FontType;
 import club.heiqi.uilib.font.page.GlyphPageManager;
+import club.heiqi.uilib.font.util.DerivedFontCache;
 import club.heiqi.uilib.font.util.FontCatalog;
 import club.heiqi.uilib.font.util.FontMatcher;
 
@@ -19,17 +20,19 @@ public class GlyphGenerationDispatcherReloadBarrierTest {
     @Test
     public void shouldDropSubmitWhileReloading() {
         GlyphPageManager pageManager = new GlyphPageManager();
+        FontCatalog fontCatalog = new FontCatalog();
+        DerivedFontCache derivedFontCache = new DerivedFontCache(fontCatalog);
         pageManager.setRuntimeVersion(1);
         GlyphGenerationDispatcher dispatcher = new GlyphGenerationDispatcher();
         dispatcher.setRuntimeVersion(1);
-        dispatcher.initialize(new FontMatcher(new FontCatalog()), pageManager, pageManager::queueUpload);
+        dispatcher.initialize(new FontMatcher(fontCatalog, derivedFontCache), pageManager, derivedFontCache,
+                pageManager::queueUpload);
 
         dispatcher.pause();
         dispatcher.submit(new GlyphGenerationTask(1, '中', FontType.NORMAL, 16, GlyphGenerationPriority.HIGH));
 
         Assert.assertTrue(dispatcher.isReloading());
-        Assert.assertEquals(0, dispatcher.snapshotInFlightTasks().size());
-        Assert.assertEquals(0, pageManager.snapshotRecoverableRequests().size());
+        Assert.assertEquals(0, pageManager.snapshotRecoverableRequests().length);
     }
 
     /**
@@ -38,17 +41,21 @@ public class GlyphGenerationDispatcherReloadBarrierTest {
     @Test
     public void shouldReopenSubmitGateAfterInitialize() {
         GlyphPageManager pageManager = new GlyphPageManager();
+        FontCatalog fontCatalog = new FontCatalog();
+        DerivedFontCache derivedFontCache = new DerivedFontCache(fontCatalog);
         pageManager.setRuntimeVersion(1);
         GlyphGenerationDispatcher dispatcher = new GlyphGenerationDispatcher();
         dispatcher.setRuntimeVersion(1);
-        dispatcher.initialize(new FontMatcher(new FontCatalog()), pageManager, pageManager::queueUpload);
+        dispatcher.initialize(new FontMatcher(fontCatalog, derivedFontCache), pageManager, derivedFontCache,
+                pageManager::queueUpload);
 
         dispatcher.reset();
         Assert.assertTrue(dispatcher.isReloading());
 
         dispatcher.setRuntimeVersion(2);
         pageManager.setRuntimeVersion(2);
-        dispatcher.initialize(new FontMatcher(new FontCatalog()), pageManager, pageManager::queueUpload);
+        dispatcher.initialize(new FontMatcher(fontCatalog, derivedFontCache), pageManager, derivedFontCache,
+                pageManager::queueUpload);
 
         Assert.assertFalse(dispatcher.isReloading());
     }

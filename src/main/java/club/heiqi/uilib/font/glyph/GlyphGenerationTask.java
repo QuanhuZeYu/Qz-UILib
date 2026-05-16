@@ -8,11 +8,12 @@ import club.heiqi.uilib.font.FontType;
 public class GlyphGenerationTask {
 
     private final int runtimeVersion;
-    private final long generationId;
+    private long generationId;
     private final int codepoint;
     private final FontType fontType;
     private final int glyphSize;
     private final GlyphGenerationPriority priority;
+    private boolean generationAssigned;
 
     /**
      * 创建字符生成任务。
@@ -28,17 +29,7 @@ public class GlyphGenerationTask {
         this(runtimeVersion, 0L, codepoint, fontType, glyphSize, priority);
     }
 
-    /**
-     * 创建带生成请求编号的字符生成任务。
-     *
-     * @param runtimeVersion 运行时版本
-     * @param generationId 生成请求编号
-     * @param codepoint 字符码点
-     * @param fontType 字重类型
-     * @param glyphSize 字符格大小
-     * @param priority 生成优先级
-     */
-    public GlyphGenerationTask(int runtimeVersion, long generationId, int codepoint, FontType fontType, int glyphSize,
+    private GlyphGenerationTask(int runtimeVersion, long generationId, int codepoint, FontType fontType, int glyphSize,
             GlyphGenerationPriority priority) {
         this.runtimeVersion = runtimeVersion;
         this.generationId = generationId;
@@ -46,6 +37,7 @@ public class GlyphGenerationTask {
         this.fontType = fontType;
         this.glyphSize = glyphSize;
         this.priority = priority;
+        this.generationAssigned = generationId != 0L;
     }
 
     public int getRuntimeVersion() {
@@ -73,12 +65,15 @@ public class GlyphGenerationTask {
     }
 
     /**
-     * 派生带生成请求编号的任务。
+     * 就地绑定生成请求编号，减少调度热路径任务对象派生。
      *
      * @param generationId 生成请求编号
-     * @return 带编号的新任务
      */
-    public GlyphGenerationTask withGenerationId(long generationId) {
-        return new GlyphGenerationTask(runtimeVersion, generationId, codepoint, fontType, glyphSize, priority);
+    public void assignGenerationId(long generationId) {
+        if (generationAssigned) {
+            throw new IllegalStateException("字符生成任务已绑定 generationId");
+        }
+        this.generationId = generationId;
+        this.generationAssigned = true;
     }
 }

@@ -21,7 +21,8 @@ public class UiTestDiagnosticsPresenterTest {
         UiTestDiagnosticsPresenter.ViewState viewState = presenter.present(createSnapshot(
                 InternalDiagnosticScreenRegistry.uiTestPageId(),
                 UiRuntimeStats.empty(),
-                new FontRuntimeStats(1, 2, 3, 4, 5, 6, 1, 1, 1, 7L, 8L, 9L, 10L),
+                new FontRuntimeStats(1, 2, 3, 4, 5, 6, 1, 1, 1, 1, 1, 7L, 8L, 0L, 0L, 9L,
+                        10L),
                 "已开启自动换行提示",
                 false,
                 "§k渲染",
@@ -50,7 +51,8 @@ public class UiTestDiagnosticsPresenterTest {
         UiTestDiagnosticsPresenter.ViewState viewState = presenter.present(createSnapshot(
                 InternalDiagnosticScreenRegistry.uiTestPageId(),
                 mismatchedStats,
-                new FontRuntimeStats(3, 5, 1, 1, 2, 40, 2, 2, 2, 0L, 0L, 12L, 1L),
+                new FontRuntimeStats(3, 5, 1, 1, 2, 40, 2, 2, 2, 2, 2, 0L, 0L, 0L, 0L, 12L,
+                        1L),
                 "已切换宽度档位到 中页",
                 true,
                 "同长替换",
@@ -74,7 +76,8 @@ public class UiTestDiagnosticsPresenterTest {
         UiTestDiagnosticsPresenter.ViewState viewState = presenter.present(createSnapshot(
                 InternalDiagnosticScreenRegistry.uiTestPageId(),
                 createRuntimeStats(InternalDiagnosticScreenRegistry.uiTestPageId()),
-                new FontRuntimeStats(7, 80, 2, 1, 6, 128, 3, 3, 2, 0L, 0L, 33L, 4L),
+                new FontRuntimeStats(7, 80, 2, 1, 6, 128, 3, 3, 3, 3, 2, 0L, 0L, 21L, 2L,
+                        33L, 4L),
                 "已切换变更模式到 长文重排",
                 true,
                 "长文重排",
@@ -90,7 +93,7 @@ public class UiTestDiagnosticsPresenterTest {
         Assert.assertTrue(viewState.performanceHotspotText.contains("DocumentPaintRenderer 6.50 ms"));
         Assert.assertTrue(viewState.performancePhaseText.contains("阶段热点：measure=4.0ms, layout=2.0ms"));
         Assert.assertTrue(viewState.performanceFontText.contains("字体统计：待上传 7；就绪字形 80；普通/粗体页 2/1"));
-        Assert.assertTrue(viewState.performanceFontText.contains("上次 flush 页/绘制/纹理切换 3/3/2"));
+        Assert.assertTrue(viewState.performanceFontText.contains("上次 flush 页批次/绘制/纹理绑定 3/3/2"));
         Assert.assertTrue(viewState.performanceFontText.contains("字宽缓存命中/未命中 33/4"));
         Assert.assertTrue(viewState.mutationText.contains("实际 setText 次数：3"));
         Assert.assertTrue(viewState.mutationText.contains("样本文本长度：" + mutationSampleText.length()));

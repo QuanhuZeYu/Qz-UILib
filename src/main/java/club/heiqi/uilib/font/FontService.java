@@ -1,9 +1,7 @@
 package club.heiqi.uilib.font;
 
 import java.util.ArrayDeque;
-import java.util.ArrayList;
 import java.util.Deque;
-import java.util.List;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
 
@@ -16,10 +14,9 @@ import club.heiqi.uilib.font.glyph.GlyphGenerationTask;
 import club.heiqi.uilib.font.layout.TextLayoutService;
 import club.heiqi.uilib.font.page.GlyphPageManager;
 import club.heiqi.uilib.font.page.GlyphRuntimeTables;
-import club.heiqi.uilib.font.page.RecoverableGlyphRequest;
 import club.heiqi.uilib.font.render.FontBatchRenderer;
-import club.heiqi.uilib.font.render.TextDecorationRenderer;
 import club.heiqi.uilib.font.shader.FontShaderProgram;
+import club.heiqi.uilib.font.util.DerivedFontCache;
 import club.heiqi.uilib.font.util.FontCatalog;
 import club.heiqi.uilib.font.util.FontMatcher;
 import club.heiqi.uilib.font.util.FontRegistry;
@@ -36,12 +33,13 @@ public class FontService {
     private final AtomicBoolean layoutRuntimeReady = new AtomicBoolean(false);
     private final FontCatalog fontCatalog = new FontCatalog();
     private final FontRegistry fontRegistry = new FontRegistry(fontCatalog);
-    private final FontMatcher fontMatcher = new FontMatcher(fontCatalog);
+    private final DerivedFontCache derivedFontCache = new DerivedFontCache(fontCatalog);
+    private final FontMatcher fontMatcher = new FontMatcher(fontCatalog, derivedFontCache);
     private final GlyphPageManager glyphPageManager = new GlyphPageManager();
     private final GlyphGenerationDispatcher glyphGenerationDispatcher = new GlyphGenerationDispatcher();
-    private final TextLayoutService textLayoutService = new TextLayoutService(fontMatcher, glyphPageManager);
+    private final TextLayoutService textLayoutService = new TextLayoutService(fontMatcher, glyphPageManager,
+            derivedFontCache);
     private FontBatchRenderer batchRenderer;
-    private TextDecorationRenderer decorationRenderer;
     private FontShaderProgram shaderProgram;
     private final Deque<Long> drawStageUploadTimestamps = new ArrayDeque<Long>();
     private final FontReloadDebouncer reloadDebouncer = new FontReloadDebouncer(150L, 750L);
@@ -106,7 +104,8 @@ public class FontService {
             textLayoutService.setRuntimeVersion(runtimeVersion);
             ensureLayoutRuntimeReady();
             glyphPageManager.initialize();
-            glyphGenerationDispatcher.initialize(fontMatcher, glyphPageManager, glyphPageManager::queueUpload);
+            glyphGenerationDispatcher.initialize(fontMatcher, glyphPageManager, derivedFontCache,
+                    glyphPageManager::queueUpload);
             initialized.set(true);
         }
 
@@ -274,18 +273,6 @@ public class FontService {
     }
 
     /**
-     * 获取文本装饰线渲染器。
-     *
-     * @return 装饰线渲染器
-     */
-    public TextDecorationRenderer getDecorationRenderer() {
-        if (decorationRenderer == null) {
-            decorationRenderer = new TextDecorationRenderer(getBatchRenderer());
-        }
-        return decorationRenderer;
-    }
-
-    /**
      * 获取当前字体系统运行时统计。
      *
      * @return 运行时统计快照
@@ -294,7 +281,7 @@ public class FontService {
         int quadCount = batchRenderer == null ? 0 : batchRenderer.getQuadCount();
         int lastFlushPageSubmitCount = batchRenderer == null ? 0 : batchRenderer.getLastFlushPageSubmitCount();
         int lastFlushDrawCallCount = batchRenderer == null ? 0 : batchRenderer.getLastFlushDrawCallCount();
-        int lastFlushTextureSwitchCount = batchRenderer == null ? 0 : batchRenderer.getLastFlushTextureSwitchCount();
+        int lastFlushTextureBindCount = batchRenderer == null ? 0 : batchRenderer.getLastFlushTextureBindCount();
         return new FontRuntimeStats(
                 glyphPageManager.getPendingUploadCount(),
                 glyphPageManager.getReadyGlyphCount(),
@@ -306,9 +293,11 @@ public class FontService {
                 quadCount,
                 lastFlushPageSubmitCount,
                 lastFlushDrawCallCount,
-                lastFlushTextureSwitchCount,
+                lastFlushTextureBindCount,
                 fontMatcher.getCacheHitCount(),
                 fontMatcher.getCacheMissCount(),
+                derivedFontCache.getCacheHitCount(),
+                derivedFontCache.getCacheMissCount(),
                 textLayoutService.getWidthCacheHitCount(),
                 textLayoutService.getWidthCacheMissCount());
     }
@@ -316,7 +305,8 @@ public class FontService {
     private boolean canRunDrawStageUpload() {
         long now = System.currentTimeMillis();
 
-        while (!drawStageUploadTimestamps.isEmpty() && now - drawStageUploadTimestamps.peekFirst().longValue() >= 1000L) {
+        while (!drawStageUploadTimestamps.isEmpty()
+                && now - drawStageUploadTimestamps.peekFirst().longValue() >= 1000L) {
             drawStageUploadTimestamps.pollFirst();
         }
         if (now - lastDrawStageUploadAt < (long) FontConfig.drawStageUploadIntervalMs) {
@@ -331,6 +321,7 @@ public class FontService {
     private void refreshTextMeasureRuntime() {
         fontMatcher.setRuntimeTables(null);
         fontRegistry.reload();
+        derivedFontCache.clear();
         fontMatcher.setRuntimeTables(glyphPageManager.getRuntimeTables());
         fontMatcher.clearCache();
         textLayoutService.clearCache();
@@ -348,7 +339,7 @@ public class FontService {
     private void performReloadLocked(FontReloadRequest request) {
         reloadState.set(ReloadState.RELOADING);
         int nextRuntimeVersion = runtimeVersion + 1;
-        List<RecoverableGlyphRequest> recoverableGlyphs = glyphPageManager.snapshotRecoverableRequests();
+        long[] recoverableGlyphs = glyphPageManager.snapshotRecoverableRequests();
         try {
             glyphGenerationDispatcher.pause();
             glyphGenerationDispatcher.reset();
@@ -361,7 +352,8 @@ public class FontService {
             refreshTextMeasureRuntime();
             drawStageUploadTimestamps.clear();
             lastDrawStageUploadAt = 0L;
-            glyphGenerationDispatcher.initialize(fontMatcher, glyphPageManager, glyphPageManager::queueUpload);
+            glyphGenerationDispatcher.initialize(fontMatcher, glyphPageManager, derivedFontCache,
+                    glyphPageManager::queueUpload);
             runtimeVersion = nextRuntimeVersion;
             resubmitRecoverableGlyphs(recoverableGlyphs, nextRuntimeVersion);
         } finally {
@@ -369,9 +361,9 @@ public class FontService {
         }
 
         int invalidatedRootCount = UiLayoutInvalidationRegistry.invalidateAll();
-        MyMod.LOG.info("字体系统重载完成，原因：{}，布局树已失效：{}，运行时版本：{}，恢复请求：{}", request.getReason(),
-                Integer.valueOf(invalidatedRootCount), Integer.valueOf(runtimeVersion),
-                Integer.valueOf(recoverableGlyphs.size()));
+        MyMod.LOG.info("字体系统重载完成，原因：{}，布局树已失效：{}，运行时版本：{}，恢复请求：{}",
+                request.getReason(), Integer.valueOf(invalidatedRootCount), Integer.valueOf(runtimeVersion),
+                Integer.valueOf(recoverableGlyphs.length));
     }
 
     private void clearRenderResources() {
@@ -379,41 +371,36 @@ public class FontService {
             batchRenderer.dispose();
             batchRenderer = null;
         }
-        if (decorationRenderer != null) {
-            decorationRenderer.clear();
-            decorationRenderer = null;
-        }
         if (shaderProgram != null) {
             shaderProgram.close();
             shaderProgram = null;
         }
     }
 
-    private void resubmitRecoverableGlyphs(List<RecoverableGlyphRequest> recoverableGlyphs, int targetRuntimeVersion) {
-        if (recoverableGlyphs == null || recoverableGlyphs.isEmpty()) {
+    private void resubmitRecoverableGlyphs(long[] recoverableGlyphs, int targetRuntimeVersion) {
+        if (recoverableGlyphs == null || recoverableGlyphs.length == 0) {
             return;
         }
 
         byte[] requestedFlags = new byte[Character.MAX_CODE_POINT + 1];
         int glyphSize = Math.max(8, (int) Math.ceil(FontConfig.awtCharSize));
-        List<GlyphGenerationTask> tasks = new ArrayList<GlyphGenerationTask>(recoverableGlyphs.size());
-        for (RecoverableGlyphRequest glyph : recoverableGlyphs) {
-            int codepoint = glyph.getCodepoint();
+        int submittedCount = 0;
+        for (long glyph : recoverableGlyphs) {
+            int codepoint = GlyphPageManager.unpackRecoverableCodepoint(glyph);
             if (codepoint < 0 || codepoint > Character.MAX_CODE_POINT) {
                 continue;
             }
-            byte typeFlag = glyph.getFontType() == FontType.BOLD ? (byte) 2 : (byte) 1;
+            FontType fontType = GlyphPageManager.unpackRecoverableFontType(glyph);
+            byte typeFlag = fontType == FontType.BOLD ? (byte) 2 : (byte) 1;
             if ((requestedFlags[codepoint] & typeFlag) != 0) {
                 continue;
             }
             requestedFlags[codepoint] = (byte) (requestedFlags[codepoint] | typeFlag);
-            tasks.add(new GlyphGenerationTask(targetRuntimeVersion, codepoint, glyph.getFontType(), glyphSize,
-                    GlyphGenerationPriority.HIGH));
+            glyphGenerationDispatcher.submit(new GlyphGenerationTask(targetRuntimeVersion, codepoint, fontType,
+                    glyphSize, GlyphGenerationPriority.HIGH));
+            submittedCount++;
         }
-        for (GlyphGenerationTask task : tasks) {
-            glyphGenerationDispatcher.submit(task);
-        }
-        MyMod.LOG.debug("字体系统重载后已恢复字形生成请求：{}", Integer.valueOf(tasks.size()));
+        MyMod.LOG.debug("字体系统重载后已恢复字形生成请求：{}", Integer.valueOf(submittedCount));
     }
 
     private void debugLogStats(String source) {

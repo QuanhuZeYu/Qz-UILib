@@ -1,7 +1,5 @@
 package club.heiqi.uilib.font.glyph;
 
-import java.awt.image.BufferedImage;
-import java.util.List;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.LinkedBlockingQueue;
@@ -16,6 +14,7 @@ import club.heiqi.uilib.MyMod;
 import club.heiqi.uilib.font.FontType;
 import club.heiqi.uilib.font.config.FontConfig;
 import club.heiqi.uilib.font.page.GlyphPageManager;
+import club.heiqi.uilib.font.util.DerivedFontCache;
 import club.heiqi.uilib.font.util.FontMatcher;
 
 /**
@@ -42,16 +41,18 @@ public class GlyphGenerationDispatcher {
      *
      * @param fontMatcher 字体匹配器
      * @param glyphPageManager 字符页管理器
+     * @param derivedFontCache 派生字体缓存
      * @param resultHandler 结果处理器
      */
     public void initialize(
             FontMatcher fontMatcher,
             GlyphPageManager glyphPageManager,
+            DerivedFontCache derivedFontCache,
             GlyphGenerationResultHandler resultHandler) {
         this.fontMatcher = fontMatcher;
         this.glyphPageManager = glyphPageManager;
         this.resultHandler = resultHandler;
-        this.glyphGenerator = new GlyphGenerator(fontMatcher);
+        this.glyphGenerator = new GlyphGenerator(fontMatcher, derivedFontCache);
         generationEpoch.incrementAndGet();
         if (executorService == null || executorService.isShutdown()) {
             executorService = new ThreadPoolExecutor(
@@ -93,9 +94,9 @@ public class GlyphGenerationDispatcher {
             return;
         }
 
-        final long taskGenerationId = glyphPageManager.getGenerationId(task.getRuntimeVersion(), task.getCodepoint(),
-                task.getFontType());
-        final GlyphGenerationTask generationTask = task.withGenerationId(taskGenerationId);
+        task.assignGenerationId(glyphPageManager.getGenerationId(task.getRuntimeVersion(), task.getCodepoint(),
+                task.getFontType()));
+        final GlyphGenerationTask generationTask = task;
         final int taskGenerationEpoch = generationEpoch.get();
         final int taskRuntimeVersion = generationTask.getRuntimeVersion();
         final Long requestKey = Long.valueOf(packRequestKey(taskRuntimeVersion, generationTask.getCodepoint(),
@@ -110,19 +111,21 @@ public class GlyphGenerationDispatcher {
         try {
             currentExecutorService.submit(() -> {
                 try {
-                    if (!isTaskCurrent(taskGenerationEpoch) || fontMatcher == null || taskRuntimeVersion != runtimeVersion) {
+                    if (!isTaskCurrent(taskGenerationEpoch) || fontMatcher == null
+                            || taskRuntimeVersion != runtimeVersion) {
                         cancelTask(generationTask);
                         return;
                     }
 
                     FontType fontType = generationTask.getFontType();
-                    if (fontMatcher.match(taskRuntimeVersion, generationTask.getCodepoint(), fontType) == null) {
+                    if (fontMatcher.matchFontIndex(taskRuntimeVersion, generationTask.getCodepoint(), fontType) < 0) {
                         if (!isTaskCurrent(taskGenerationEpoch) || taskRuntimeVersion != runtimeVersion) {
                             cancelTask(generationTask);
                             return;
                         }
                         glyphPageManager.markFailed(taskRuntimeVersion, generationTask.getCodepoint(), fontType);
-                        MyMod.LOG.warn("未找到可显示字符的字体，codepoint={} type={}", generationTask.getCodepoint(), fontType);
+                        MyMod.LOG.warn("未找到可显示字符的字体，codepoint={} type={}",
+                                generationTask.getCodepoint(), fontType);
                         return;
                     }
 
@@ -208,17 +211,8 @@ public class GlyphGenerationDispatcher {
         return acceptingTasks.get() && generationEpoch.get() == taskGenerationEpoch;
     }
 
-    /**
-     * 获取当前仍在飞行中的字符任务快照。
-     *
-     * @return 字符任务快照
-     */
-    public List<GlyphGenerationTask> snapshotInFlightTasks() {
-        return new java.util.ArrayList<GlyphGenerationTask>(inFlightTasks.values());
-    }
-
     private void cancelInFlightTasks() {
-        List<GlyphGenerationTask> tasks = snapshotInFlightTasks();
+        GlyphGenerationTask[] tasks = inFlightTasks.values().toArray(new GlyphGenerationTask[0]);
         inFlightTasks.clear();
         for (GlyphGenerationTask task : tasks) {
             cancelTask(task);

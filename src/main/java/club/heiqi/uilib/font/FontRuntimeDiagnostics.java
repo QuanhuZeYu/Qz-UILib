@@ -3,6 +3,7 @@ package club.heiqi.uilib.font;
 import java.awt.image.BufferedImage;
 import java.util.concurrent.atomic.AtomicInteger;
 
+import club.heiqi.uilib.Config;
 import club.heiqi.uilib.MyMod;
 import club.heiqi.uilib.font.glyph.GlyphGenerationTask;
 import club.heiqi.uilib.font.glyph.GlyphInfo;
@@ -30,13 +31,17 @@ public final class FontRuntimeDiagnostics {
      * @param glyphInfo 字形度量
      */
     public static void logGeneratedGlyph(GlyphGenerationTask task, BufferedImage image, GlyphInfo glyphInfo) {
+        if (!Config.useDebug) {
+            return;
+        }
         int index = generatedLogCount.getAndIncrement();
         if (index >= MAX_GENERATED_LOGS || task == null || image == null) {
             return;
         }
 
         AlphaStats alphaStats = collectAlphaStats(image);
-        MyMod.LOG.info("字体诊断[生成] thread={} runtime={} codepoint={} type={} image={}x{} transparent={} opaque={} partial={} advance={} colored={}",
+        MyMod.LOG.info("字体诊断[生成] thread={} runtime={} codepoint={} type={} image={}x{} transparent={} "
+                + "opaque={} partial={} advance={} colored={}",
                 Thread.currentThread().getName(),
                 Integer.valueOf(task.getRuntimeVersion()),
                 Integer.valueOf(task.getCodepoint()),
@@ -63,13 +68,17 @@ public final class FontRuntimeDiagnostics {
      */
     public static void logGlyphUpload(int runtimeVersion, int codepoint, FontType fontType, int textureId,
             boolean textureValid, int glError, BufferedImage image) {
+        if (!Config.useDebug) {
+            return;
+        }
         int index = uploadLogCount.getAndIncrement();
         if (index >= MAX_UPLOAD_LOGS) {
             return;
         }
 
         AlphaStats alphaStats = image == null ? new AlphaStats() : collectAlphaStats(image);
-        MyMod.LOG.info("字体诊断[上传] thread={} runtime={} codepoint={} type={} textureId={} valid={} glError={} transparent={} opaque={} partial={}",
+        MyMod.LOG.info("字体诊断[上传] thread={} runtime={} codepoint={} type={} textureId={} valid={} "
+                + "glError={} transparent={} opaque={} partial={}",
                 Thread.currentThread().getName(),
                 Integer.valueOf(runtimeVersion),
                 Integer.valueOf(codepoint),
@@ -95,12 +104,16 @@ public final class FontRuntimeDiagnostics {
      */
     public static void logFlushState(int shaderProgramId, int currentProgram, int textureId, int boundTexture, int vao,
             int glError, int quadCount) {
+        if (!Config.useDebug) {
+            return;
+        }
         int index = flushLogCount.getAndIncrement();
         if (index >= MAX_FLUSH_LOGS) {
             return;
         }
 
-        MyMod.LOG.info("字体诊断[绘制] thread={} shader={} currentProgram={} textureId={} boundTexture={} vao={} glError={} quadCount={}",
+        MyMod.LOG.info("字体诊断[绘制] thread={} shader={} currentProgram={} textureId={} boundTexture={} "
+                + "vao={} glError={} quadCount={}",
                 Thread.currentThread().getName(),
                 Integer.valueOf(shaderProgramId),
                 Integer.valueOf(currentProgram),
@@ -109,6 +122,24 @@ public final class FontRuntimeDiagnostics {
                 Integer.valueOf(vao),
                 Integer.valueOf(glError),
                 Integer.valueOf(quadCount));
+    }
+
+    /**
+     * 判断当前是否需要收集绘制阶段 GL 诊断状态。
+     *
+     * @return 是否需要查询并记录 GL 状态
+     */
+    public static boolean shouldLogFlushState() {
+        return Config.useDebug && flushLogCount.get() < MAX_FLUSH_LOGS;
+    }
+
+    /**
+     * 判断当前是否需要收集字形上传阶段 GL 诊断状态。
+     *
+     * @return 是否需要查询并记录 GL 状态
+     */
+    public static boolean shouldLogGlyphUpload() {
+        return Config.useDebug && uploadLogCount.get() < MAX_UPLOAD_LOGS;
     }
 
     private static AlphaStats collectAlphaStats(BufferedImage image) {

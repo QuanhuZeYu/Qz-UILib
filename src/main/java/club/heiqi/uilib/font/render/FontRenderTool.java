@@ -16,6 +16,8 @@ public class FontRenderTool {
     private int vao;
     private int vertexBuffer;
     private int indexBuffer;
+    private int uploadedVertexBytes;
+    private int uploadedIndexBytes;
 
     /**
      * 初始化底层绘制资源。
@@ -71,10 +73,12 @@ public class FontRenderTool {
         GL30.glBindVertexArray(vao);
 
         GL15.glBindBuffer(GL15.GL_ARRAY_BUFFER, vertexBuffer);
-        GL15.glBufferData(GL15.GL_ARRAY_BUFFER, vertexData, GL15.GL_DYNAMIC_DRAW);
+        uploadedVertexBytes = uploadBuffer(GL15.GL_ARRAY_BUFFER, vertexData, uploadedVertexBytes,
+                vertexData.limit() * Float.BYTES);
 
         GL15.glBindBuffer(GL15.GL_ELEMENT_ARRAY_BUFFER, indexBuffer);
-        GL15.glBufferData(GL15.GL_ELEMENT_ARRAY_BUFFER, indexData, GL15.GL_DYNAMIC_DRAW);
+        uploadedIndexBytes = uploadBuffer(GL15.GL_ELEMENT_ARRAY_BUFFER, indexData, uploadedIndexBytes,
+                indexData.limit() * Integer.BYTES);
 
         GL11.glDrawElements(GL11.GL_TRIANGLES, indexCount, GL11.GL_UNSIGNED_INT, 0L);
 
@@ -93,6 +97,26 @@ public class FontRenderTool {
         }
         vertexBuffer = deleteBuffer(vertexBuffer);
         indexBuffer = deleteBuffer(indexBuffer);
+        uploadedVertexBytes = 0;
+        uploadedIndexBytes = 0;
+    }
+
+    private int uploadBuffer(int target, FloatBuffer data, int currentBytes, int requiredBytes) {
+        if (requiredBytes > currentBytes) {
+            GL15.glBufferData(target, data, GL15.GL_DYNAMIC_DRAW);
+            return requiredBytes;
+        }
+        GL15.glBufferSubData(target, 0L, data);
+        return currentBytes;
+    }
+
+    private int uploadBuffer(int target, IntBuffer data, int currentBytes, int requiredBytes) {
+        if (requiredBytes > currentBytes) {
+            GL15.glBufferData(target, data, GL15.GL_DYNAMIC_DRAW);
+            return requiredBytes;
+        }
+        GL15.glBufferSubData(target, 0L, data);
+        return currentBytes;
     }
 
     private int deleteBuffer(int bufferId) {

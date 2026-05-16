@@ -9,10 +9,6 @@ import java.util.Set;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 import club.heiqi.uilib.gl.shader.ShaderProgramSupport;
-import org.joml.Matrix4f;
-import org.joml.Vector2f;
-import org.lwjgl.BufferUtils;
-import org.lwjgl.opengl.GL11;
 import org.lwjgl.opengl.GL20;
 
 /**
@@ -24,7 +20,6 @@ public class FontShaderProgram {
     private final Map<String, Integer> uniformLocations = new LinkedHashMap<String, Integer>();
     private final Map<String, Integer> attributeLocations = new LinkedHashMap<String, Integer>();
     private final Set<String> missingUniforms = new HashSet<String>();
-    private final FloatBuffer matrixBuffer = BufferUtils.createFloatBuffer(16);
     private String vertexShaderPath = "shader/fontV.vert";
     private String fragmentShaderPath = "shader/fontF.frag";
     private int shaderProgramId;
@@ -138,29 +133,30 @@ public class FontShaderProgram {
      * 设置矩阵 uniform。
      *
      * @param name uniform 名称
-     * @param value 矩阵值
+     * @param value 已翻转到读取状态的 4x4 矩阵缓冲
      */
-    public void setUniformM4f(String name, Matrix4f value) {
+    public void setUniformM4f(String name, FloatBuffer value) {
         int location = getUniformLocation(name);
-        if (location == -1) {
+        if (location == -1 || value == null) {
             return;
         }
-        matrixBuffer.clear();
-        matrixBuffer.put(value.get(new float[16]));
-        matrixBuffer.flip();
-        GL20.glUniformMatrix4(location, false, matrixBuffer);
+        FloatBuffer duplicate = value.duplicate();
+        duplicate.position(0);
+        duplicate.limit(16);
+        GL20.glUniformMatrix4(location, false, duplicate);
     }
 
     /**
      * 设置二维向量 uniform。
      *
      * @param name uniform 名称
-     * @param value 向量值
+     * @param x X 分量
+     * @param y Y 分量
      */
-    public void setUniformVec2(String name, Vector2f value) {
+    public void setUniformVec2(String name, float x, float y) {
         int location = getUniformLocation(name);
         if (location != -1) {
-            GL20.glUniform2f(location, value.x, value.y);
+            GL20.glUniform2f(location, x, y);
         }
     }
 
@@ -242,5 +238,4 @@ public class FontShaderProgram {
         uniformLocations.put(name, Integer.valueOf(location));
         return location;
     }
-
 }

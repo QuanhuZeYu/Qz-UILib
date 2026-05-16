@@ -98,7 +98,7 @@ final class UiTestDiagnosticsPresenter {
                         : phaseSummary);
         viewState.performanceFontText = String.format(
                 Locale.ROOT,
-                "字体统计：待上传 %d；就绪字形 %d；普通/粗体页 %d/%d；direct table 码点/槽位 %d/%d；最近 1 秒 draw-stage 上传 %d；本帧四边形 %d；上次 flush 页/绘制/纹理切换 %d/%d/%d；字宽缓存命中/未命中 %d/%d。若未命中或待上传在慢帧时突然升高，再优先怀疑字体系统。",
+                "字体统计：待上传 %d；就绪字形 %d；普通/粗体页 %d/%d；direct table 码点/槽位 %d/%d；最近 1 秒 draw-stage 上传 %d；本帧四边形 %d；上次 flush 页批次/绘制/纹理绑定 %d/%d/%d；派生字体缓存命中/未命中 %d/%d；字宽缓存命中/未命中 %d/%d。若未命中或待上传在慢帧时突然升高，再优先怀疑字体系统。",
                 Integer.valueOf(snapshot.fontStats.getPendingUploadCount()),
                 Integer.valueOf(snapshot.fontStats.getReadyGlyphCount()),
                 Integer.valueOf(snapshot.fontStats.getNormalPageCount()),
@@ -109,7 +109,9 @@ final class UiTestDiagnosticsPresenter {
                 Integer.valueOf(snapshot.fontStats.getFrameQuadCount()),
                 Integer.valueOf(snapshot.fontStats.getLastFlushPageSubmitCount()),
                 Integer.valueOf(snapshot.fontStats.getLastFlushDrawCallCount()),
-                Integer.valueOf(snapshot.fontStats.getLastFlushTextureSwitchCount()),
+                Integer.valueOf(snapshot.fontStats.getLastFlushTextureBindCount()),
+                Long.valueOf(snapshot.fontStats.getDerivedFontCacheHitCount()),
+                Long.valueOf(snapshot.fontStats.getDerivedFontCacheMissCount()),
                 Long.valueOf(snapshot.fontStats.getWidthCacheHitCount()),
                 Long.valueOf(snapshot.fontStats.getWidthCacheMissCount()));
         return viewState;
@@ -229,7 +231,7 @@ final class UiTestDiagnosticsPresenter {
             this.mutationSampleHeight = mutationSampleHeight;
             this.expectedScreenName = expectedScreenName == null ? "" : expectedScreenName;
             this.runtimeStats = runtimeStats == null ? UiRuntimeStats.empty() : runtimeStats;
-            this.fontStats = fontStats == null ? new FontRuntimeStats(0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0L, 0L, 0L, 0L) : fontStats;
+            this.fontStats = fontStats == null ? FontRuntimeStats.empty() : fontStats;
         }
     }
 

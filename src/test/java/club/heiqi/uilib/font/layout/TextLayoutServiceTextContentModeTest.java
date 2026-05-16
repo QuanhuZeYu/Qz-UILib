@@ -8,6 +8,7 @@ import org.junit.Assert;
 import org.junit.Test;
 
 import club.heiqi.uilib.font.page.GlyphPageManager;
+import club.heiqi.uilib.font.util.DerivedFontCache;
 import club.heiqi.uilib.font.util.FontCatalog;
 import club.heiqi.uilib.font.util.FontMatcher;
 import club.heiqi.uilib.ui.text.TextContentMode;
@@ -66,7 +67,9 @@ public class TextLayoutServiceTextContentModeTest {
     private static TextLayoutService createService() {
         FontCatalog fontCatalog = new FontCatalog();
         fontCatalog.replaceAll(Arrays.asList(new Font("Dialog", Font.PLAIN, 14)));
-        TextLayoutService service = new TextLayoutService(new FontMatcher(fontCatalog), new GlyphPageManager());
+        DerivedFontCache derivedFontCache = new DerivedFontCache(fontCatalog);
+        TextLayoutService service = new TextLayoutService(new FontMatcher(fontCatalog, derivedFontCache),
+                new GlyphPageManager(), derivedFontCache);
         service.setRuntimeVersion(1);
         return service;
     }
