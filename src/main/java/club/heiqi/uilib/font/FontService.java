@@ -293,6 +293,9 @@ public class FontService {
      */
     public FontRuntimeStats getRuntimeStats() {
         int quadCount = batchRenderer == null ? 0 : batchRenderer.getQuadCount();
+        int lastFlushPageSubmitCount = batchRenderer == null ? 0 : batchRenderer.getLastFlushPageSubmitCount();
+        int lastFlushDrawCallCount = batchRenderer == null ? 0 : batchRenderer.getLastFlushDrawCallCount();
+        int lastFlushTextureSwitchCount = batchRenderer == null ? 0 : batchRenderer.getLastFlushTextureSwitchCount();
         return new FontRuntimeStats(
                 glyphPageManager.getPendingUploadCount(),
                 glyphPageManager.getReadyGlyphCount(),
@@ -300,6 +303,9 @@ public class FontService {
                 glyphPageManager.getBoldPageCount(),
                 drawStageUploadTimestamps.size(),
                 quadCount,
+                lastFlushPageSubmitCount,
+                lastFlushDrawCallCount,
+                lastFlushTextureSwitchCount,
                 fontMatcher.getCacheHitCount(),
                 fontMatcher.getCacheMissCount(),
                 textLayoutService.getWidthCacheHitCount(),

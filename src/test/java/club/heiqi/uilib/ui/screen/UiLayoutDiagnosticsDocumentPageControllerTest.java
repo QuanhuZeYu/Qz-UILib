@@ -221,7 +221,7 @@ public class UiLayoutDiagnosticsDocumentPageControllerTest {
     }
 
     private static FontRuntimeStats createFontRuntimeStats() {
-        return new FontRuntimeStats(3, 64, 2, 1, 4, 96, 12L, 1L, 24L, 2L);
+        return new FontRuntimeStats(3, 64, 2, 1, 4, 96, 2, 2, 2, 12L, 1L, 24L, 2L);
     }
 
     private static final class TestFixture {

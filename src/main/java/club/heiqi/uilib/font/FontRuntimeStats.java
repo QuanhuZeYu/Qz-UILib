@@ -11,6 +11,9 @@ public class FontRuntimeStats {
     private final int boldPageCount;
     private final int queuedDrawStageUploadCount;
     private final int frameQuadCount;
+    private final int lastFlushPageSubmitCount;
+    private final int lastFlushDrawCallCount;
+    private final int lastFlushTextureSwitchCount;
     private final long fontMatchCacheHitCount;
     private final long fontMatchCacheMissCount;
     private final long widthCacheHitCount;
@@ -25,6 +28,9 @@ public class FontRuntimeStats {
      * @param boldPageCount 粗体字符页数量
      * @param queuedDrawStageUploadCount 最近一秒 draw-stage 上传次数
      * @param frameQuadCount 当前帧四边形数量
+     * @param lastFlushPageSubmitCount 上次 flush 实际提交的字符页命令数量
+     * @param lastFlushDrawCallCount 上次 flush 实际触发的 draw call 数量
+     * @param lastFlushTextureSwitchCount 上次 flush 实际发生的纹理切换数量
      * @param fontMatchCacheHitCount 字体匹配缓存命中次数
      * @param fontMatchCacheMissCount 字体匹配缓存未命中次数
      * @param widthCacheHitCount 宽度缓存命中次数
@@ -37,6 +43,9 @@ public class FontRuntimeStats {
             int boldPageCount,
             int queuedDrawStageUploadCount,
             int frameQuadCount,
+            int lastFlushPageSubmitCount,
+            int lastFlushDrawCallCount,
+            int lastFlushTextureSwitchCount,
             long fontMatchCacheHitCount,
             long fontMatchCacheMissCount,
             long widthCacheHitCount,
@@ -47,6 +56,9 @@ public class FontRuntimeStats {
         this.boldPageCount = boldPageCount;
         this.queuedDrawStageUploadCount = queuedDrawStageUploadCount;
         this.frameQuadCount = frameQuadCount;
+        this.lastFlushPageSubmitCount = lastFlushPageSubmitCount;
+        this.lastFlushDrawCallCount = lastFlushDrawCallCount;
+        this.lastFlushTextureSwitchCount = lastFlushTextureSwitchCount;
         this.fontMatchCacheHitCount = fontMatchCacheHitCount;
         this.fontMatchCacheMissCount = fontMatchCacheMissCount;
         this.widthCacheHitCount = widthCacheHitCount;
@@ -77,6 +89,18 @@ public class FontRuntimeStats {
         return frameQuadCount;
     }
 
+    public int getLastFlushPageSubmitCount() {
+        return lastFlushPageSubmitCount;
+    }
+
+    public int getLastFlushDrawCallCount() {
+        return lastFlushDrawCallCount;
+    }
+
+    public int getLastFlushTextureSwitchCount() {
+        return lastFlushTextureSwitchCount;
+    }
+
     public long getFontMatchCacheHitCount() {
         return fontMatchCacheHitCount;
     }
@@ -101,6 +125,9 @@ public class FontRuntimeStats {
                 + ", boldPages=" + boldPageCount
                 + ", drawStageUploadsLastSecond=" + queuedDrawStageUploadCount
                 + ", frameQuads=" + frameQuadCount
+                + ", lastFlushPageSubmits=" + lastFlushPageSubmitCount
+                + ", lastFlushDrawCalls=" + lastFlushDrawCallCount
+                + ", lastFlushTextureSwitches=" + lastFlushTextureSwitchCount
                 + ", fontMatchCacheHits=" + fontMatchCacheHitCount
                 + ", fontMatchCacheMisses=" + fontMatchCacheMissCount
                 + ", widthCacheHits=" + widthCacheHitCount

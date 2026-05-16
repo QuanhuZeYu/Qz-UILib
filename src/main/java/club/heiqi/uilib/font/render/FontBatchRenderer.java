@@ -32,6 +32,7 @@ public class FontBatchRenderer {
 
     private final AtomicBoolean initialized = new AtomicBoolean(false);
     private final Map<GlyphPage, GlyphRenderBatch> currentBatches = new LinkedHashMap<GlyphPage, GlyphRenderBatch>();
+    private final List<PageRenderCommand> renderCommands = new ArrayList<PageRenderCommand>();
     private final FontRenderTool renderTool = new FontRenderTool();
     private final FontRenderStateGuard stateGuard = new FontRenderStateGuard();
     private FloatBuffer vertexBuffer = BufferUtils.createFloatBuffer(1024 * 64 * GlyphRenderBatch.VERTEX_STRIDE_FLOATS);
@@ -39,6 +40,9 @@ public class FontBatchRenderer {
     private final FloatBuffer modelViewBuffer = BufferUtils.createFloatBuffer(16);
     private final FloatBuffer projectionBuffer = BufferUtils.createFloatBuffer(16);
     private int quadCount = 0;
+    private int lastFlushPageSubmitCount = 0;
+    private int lastFlushDrawCallCount = 0;
+    private int lastFlushTextureSwitchCount = 0;
 
     /**
      * 初始化批渲染器。
@@ -140,42 +144,60 @@ public class FontBatchRenderer {
 
         int flushedQuadCount = quadCount;
         if (flushedQuadCount <= 0) {
+            recordLastFlushStats(0, 0, 0);
             return 0;
         }
 
+        int commandCount = buildRenderCommands();
+        if (commandCount <= 0) {
+            recordLastFlushStats(0, 0, 0);
+            clearFrame();
+            return 0;
+        }
+
+        int drawCallCount = 0;
+        int textureSwitchCount = 0;
         stateGuard.push();
         try {
             FontRenderStateSupport.prepareTextRenderState();
 
             shaderProgram.bind();
             setupUniforms(shaderProgram);
-            for (GlyphRenderBatch batch : currentBatches.values()) {
-                GlyphPage page = batch.getGlyphPage();
-                if (page == null || batch.isEmpty()) {
-                    continue;
+            shaderProgram.setUniformI("mainTex", 0);
+
+            GL13.glActiveTexture(GL13.GL_TEXTURE0);
+            int boundTextureId = GL11.glGetInteger(GL11.GL_TEXTURE_BINDING_2D);
+            for (int index = 0; index < commandCount; index++) {
+                PageRenderCommand command = renderCommands.get(index);
+                int textureId = command.getTextureId();
+                if (boundTextureId != textureId) {
+                    GL11.glBindTexture(GL11.GL_TEXTURE_2D, textureId);
+                    boundTextureId = textureId;
+                    textureSwitchCount++;
                 }
 
-                prepareBuffers(batch);
-                GL13.glActiveTexture(GL13.GL_TEXTURE0);
-                GL11.glBindTexture(GL11.GL_TEXTURE_2D, page.getTextureId());
-                shaderProgram.setUniformI("mainTex", 0);
+                prepareBuffers(command);
                 FontRuntimeDiagnostics.logFlushState(shaderProgram.getShaderProgramId(),
                         GL11.glGetInteger(GL20.GL_CURRENT_PROGRAM),
-                        page.getTextureId(),
+                        textureId,
                         GL11.glGetInteger(GL11.GL_TEXTURE_BINDING_2D),
                         GL11.glGetInteger(GL30.GL_VERTEX_ARRAY_BINDING),
                         GL11.glGetError(),
-                        batch.getQuadCount());
+                        command.getQuadCount());
                 renderTool.render(vertexBuffer, indexBuffer, indexBuffer.limit());
+                drawCallCount++;
             }
             shaderProgram.unbind();
-            GL11.glBindTexture(GL11.GL_TEXTURE_2D, 0);
         } finally {
             stateGuard.pop();
+            clearRenderCommands(commandCount);
         }
 
+        recordLastFlushStats(commandCount, drawCallCount, textureSwitchCount);
         if (flushedQuadCount > 0) {
-            MyMod.LOG.debug("提交字体批次：batchCount={} quadCount={}", Integer.valueOf(currentBatches.size()), Integer.valueOf(flushedQuadCount));
+            MyMod.LOG.debug("提交字体批次：pageCommands={} drawCalls={} textureSwitches={} quadCount={}",
+                    Integer.valueOf(commandCount), Integer.valueOf(drawCallCount),
+                    Integer.valueOf(textureSwitchCount), Integer.valueOf(flushedQuadCount));
         }
         clearFrame();
         return flushedQuadCount;
@@ -207,6 +229,33 @@ public class FontBatchRenderer {
         return quadCount;
     }
 
+    /**
+     * 获取上次 flush 实际提交的字符页命令数量。
+     *
+     * @return 字符页提交数量
+     */
+    public int getLastFlushPageSubmitCount() {
+        return lastFlushPageSubmitCount;
+    }
+
+    /**
+     * 获取上次 flush 实际触发的 draw call 数量。
+     *
+     * @return draw call 数量
+     */
+    public int getLastFlushDrawCallCount() {
+        return lastFlushDrawCallCount;
+    }
+
+    /**
+     * 获取上次 flush 内实际发生的纹理切换数量。
+     *
+     * @return 纹理切换数量
+     */
+    public int getLastFlushTextureSwitchCount() {
+        return lastFlushTextureSwitchCount;
+    }
+
     private void setupUniforms(FontShaderProgram shaderProgram) {
         modelViewBuffer.clear();
         projectionBuffer.clear();
@@ -224,12 +273,50 @@ public class FontBatchRenderer {
         shaderProgram.setUniformVec2("textureSize", new Vector2f((float) (FontConfig.awtCharSize * 64.0D), (float) (FontConfig.awtCharSize * 64.0D)));
     }
 
-    private void prepareBuffers(GlyphRenderBatch batch) {
-        vertexBuffer = ensureFloatCapacity(vertexBuffer, batch.getVertexFloatCount());
-        indexBuffer = ensureIntCapacity(indexBuffer, batch.getIndexCount());
+    private int buildRenderCommands() {
+        int commandCount = 0;
+        for (GlyphRenderBatch batch : currentBatches.values()) {
+            if (batch == null || batch.isEmpty()) {
+                continue;
+            }
+            GlyphPage page = batch.getGlyphPage();
+            if (page == null || page.getTextureId() <= 0) {
+                continue;
+            }
+
+            PageRenderCommand command = obtainRenderCommand(commandCount);
+            command.reset(page, batch, page.getTextureId());
+            commandCount++;
+        }
+        return commandCount;
+    }
+
+    private PageRenderCommand obtainRenderCommand(int index) {
+        while (index >= renderCommands.size()) {
+            renderCommands.add(new PageRenderCommand());
+        }
+        return renderCommands.get(index);
+    }
+
+    private void clearRenderCommands(int commandCount) {
+        int safeCommandCount = Math.min(commandCount, renderCommands.size());
+        for (int index = 0; index < safeCommandCount; index++) {
+            renderCommands.get(index).clear();
+        }
+    }
+
+    private void recordLastFlushStats(int pageSubmitCount, int drawCallCount, int textureSwitchCount) {
+        lastFlushPageSubmitCount = pageSubmitCount;
+        lastFlushDrawCallCount = drawCallCount;
+        lastFlushTextureSwitchCount = textureSwitchCount;
+    }
+
+    private void prepareBuffers(PageRenderCommand command) {
+        vertexBuffer = ensureFloatCapacity(vertexBuffer, command.getVertexFloatCount());
+        indexBuffer = ensureIntCapacity(indexBuffer, command.getIndexCount());
         vertexBuffer.clear();
         indexBuffer.clear();
-        batch.writeToBuffers(vertexBuffer, indexBuffer);
+        command.writeToBuffers(vertexBuffer, indexBuffer);
 
         vertexBuffer.flip();
         indexBuffer.flip();
@@ -255,5 +342,49 @@ public class FontBatchRenderer {
             nextCapacity *= 2;
         }
         return BufferUtils.createIntBuffer(nextCapacity);
+    }
+
+    /**
+     * 一次 flush 内的单页绘制命令。
+     */
+    private static final class PageRenderCommand {
+
+        private GlyphPage page;
+        private GlyphRenderBatch batch;
+        private int textureId;
+
+        private void reset(GlyphPage page, GlyphRenderBatch batch, int textureId) {
+            this.page = page;
+            this.batch = batch;
+            this.textureId = textureId;
+        }
+
+        private void clear() {
+            page = null;
+            batch = null;
+            textureId = 0;
+        }
+
+        private int getTextureId() {
+            return textureId;
+        }
+
+        private int getQuadCount() {
+            return batch == null ? 0 : batch.getQuadCount();
+        }
+
+        private int getIndexCount() {
+            return batch == null ? 0 : batch.getIndexCount();
+        }
+
+        private int getVertexFloatCount() {
+            return batch == null ? 0 : batch.getVertexFloatCount();
+        }
+
+        private void writeToBuffers(FloatBuffer vertexBuffer, IntBuffer indexBuffer) {
+            if (batch != null) {
+                batch.writeToBuffers(vertexBuffer, indexBuffer);
+            }
+        }
     }
 }
