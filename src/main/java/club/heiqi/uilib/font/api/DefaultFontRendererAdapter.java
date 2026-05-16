@@ -69,12 +69,7 @@ public class DefaultFontRendererAdapter implements FontRendererAdapter {
             fontService.initialize();
             fontService.tickDrawStage(FontConfig.drawStageUploadBatchSize);
 
-            int result = x;
-            if (dropShadow) {
-                result = drawInternal(fontService, text, x, y, normalizeColor(color), true, textContentMode);
-            }
-            result = drawInternal(fontService, text, x, y, normalizeColor(color), false, textContentMode);
-            return result;
+            return drawInternal(fontService, text, x, y, normalizeColor(color), dropShadow, textContentMode);
         }
     }
 
@@ -245,7 +240,7 @@ public class DefaultFontRendererAdapter implements FontRendererAdapter {
         }
     }
 
-    private int drawInternal(FontService fontService, String text, int x, int y, int color, boolean shadow,
+    private int drawInternal(FontService fontService, String text, int x, int y, int color, boolean dropShadow,
             TextContentMode textContentMode) {
         TextLayoutService textLayoutService = fontService.getTextLayoutService();
         GlyphPageManager glyphPageManager = fontService.getGlyphPageManager();
@@ -254,20 +249,26 @@ public class DefaultFontRendererAdapter implements FontRendererAdapter {
             return x;
         }
 
-        float currentX = x + (shadow ? (float) FontConfig.shadowOffsetX : 0.0F);
-        float drawY = y + (shadow ? (float) FontConfig.shadowOffsetY : 0.0F);
+        float currentX = x;
+        float drawY = y;
         for (TextSegment segment : segments) {
             TextStyle style = segment.getStyle();
             String segmentText = segment.getText();
             for (int i = 0; i < segmentText.length();) {
                 int codepoint = segmentText.codePointAt(i);
-                int renderCodepoint = style.isRandomStyle() ? resolveRandomStyleCodepoint(codepoint, style, textLayoutService) : codepoint;
+                double codepointWidth = textLayoutService.getCodepointWidth(codepoint, style);
+                float measuredWidth = (float) codepointWidth;
+                int renderCodepoint = style.isRandomStyle()
+                        ? resolveRandomStyleCodepoint(codepoint, style, codepointWidth, textLayoutService)
+                        : codepoint;
                 FontType fontType = style.getFontType();
                 GlyphPage glyphPage = glyphPageManager.getReadyPage(renderCodepoint, fontType);
                 GlyphPageSlot slot = glyphPage == null
                         ? null
                         : glyphPage.getSlotMap().get(glyphPageManager.createKey(renderCodepoint, fontType));
-                float measuredWidth = (float) textLayoutService.getCodepointWidth(codepoint, style);
+                GlyphInfo glyphInfo = glyphPage == null || slot == null
+                        ? null
+                        : glyphPageManager.getGlyphInfo(renderCodepoint, fontType);
 
                 if (glyphPage == null || slot == null) {
                     fontService.getGlyphGenerationDispatcher().submit(new GlyphGenerationTask(
@@ -276,16 +277,17 @@ public class DefaultFontRendererAdapter implements FontRendererAdapter {
                             fontType,
                             Math.max(8, (int) Math.ceil(FontConfig.awtCharSize)),
                             GlyphGenerationPriority.HIGH));
-                    collectDecorations(fontService, currentX, drawY, measuredWidth, style, shadow ? darkenShadow(style.getColor()) : style.getColor());
-                    currentX += measuredWidth;
-                } else {
-                    int renderColor = shadow ? darkenShadow(style.getColor()) : style.getColor();
-                    GlyphInfo glyphInfo = glyphPageManager.getGlyphInfo(renderCodepoint, fontType);
-                    fontService.getBatchRenderer().collect(glyphPage, slot, currentX, drawY,
-                            (float) FontConfig.charSize, renderColor, style.isItalic(), glyphInfo);
-                    collectDecorations(fontService, currentX, drawY, measuredWidth, style, renderColor);
-                    currentX += measuredWidth;
                 }
+
+                if (dropShadow) {
+                    collectGlyph(fontService, glyphPage, slot, glyphInfo,
+                            currentX + (float) FontConfig.shadowOffsetX,
+                            drawY + (float) FontConfig.shadowOffsetY,
+                            measuredWidth, style, darkenShadow(style.getColor()));
+                }
+                collectGlyph(fontService, glyphPage, slot, glyphInfo, currentX, drawY,
+                        measuredWidth, style, style.getColor());
+                currentX += measuredWidth;
 
                 i += Character.charCount(codepoint);
             }
@@ -304,8 +306,8 @@ public class DefaultFontRendererAdapter implements FontRendererAdapter {
         return (int) Math.ceil(currentX);
     }
 
-    private int resolveRandomStyleCodepoint(int originalCodepoint, TextStyle style, TextLayoutService textLayoutService) {
-        double originalWidth = textLayoutService.getCodepointWidth(originalCodepoint, style);
+    private int resolveRandomStyleCodepoint(int originalCodepoint, TextStyle style, double originalWidth,
+            TextLayoutService textLayoutService) {
         int fallbackCodepoint = originalCodepoint;
         double bestDifference = Double.MAX_VALUE;
 
@@ -323,6 +325,15 @@ public class DefaultFontRendererAdapter implements FontRendererAdapter {
             }
         }
         return fallbackCodepoint;
+    }
+
+    private void collectGlyph(FontService fontService, GlyphPage glyphPage, GlyphPageSlot slot, GlyphInfo glyphInfo,
+            float currentX, float drawY, float measuredWidth, TextStyle style, int renderColor) {
+        if (glyphPage != null && slot != null) {
+            fontService.getBatchRenderer().collect(glyphPage, slot, currentX, drawY,
+                    (float) FontConfig.charSize, renderColor, style.isItalic(), glyphInfo);
+        }
+        collectDecorations(fontService, currentX, drawY, measuredWidth, style, renderColor);
     }
 
     private void collectDecorations(FontService fontService, float currentX, float drawY, float width, TextStyle style, int color) {
