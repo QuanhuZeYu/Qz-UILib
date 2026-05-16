@@ -8,6 +8,8 @@ final class InternalDiagnosticScreenRegistry {
     static final InternalScreenIdentity.PageDescriptor UI_TEST = new InternalScreenIdentity.PageDescriptor("ui_test");
     static final InternalScreenIdentity.PageDescriptor UI_TEST_LAYOUT = new InternalScreenIdentity.PageDescriptor(
             "ui_test_layout");
+    static final InternalScreenIdentity.PageDescriptor FONT_PERFORMANCE_BASELINE = new InternalScreenIdentity.PageDescriptor(
+            "font_performance_baseline");
     static final InternalScreenIdentity.PageDescriptor HTML_LIKE_SMOKE = new InternalScreenIdentity.PageDescriptor(
             "html_like_smoke");
     static final InternalScreenIdentity.PageDescriptor HTML_LIKE_GLASS = new InternalScreenIdentity.PageDescriptor(
@@ -41,6 +43,20 @@ final class InternalDiagnosticScreenRegistry {
                         String pageId,
                         Void provision) {
                     return new UiLayoutDiagnosticsDocumentPageController(documentUi, documentPage, runtimeView, pageId);
+                }
+            });
+    static final InternalHostedScreenFactory.InternalHostedScreenDefinition<Void> FONT_PERFORMANCE_BASELINE_DEFINITION = new InternalHostedScreenFactory.InternalHostedScreenDefinition<Void>(
+            FONT_PERFORMANCE_BASELINE,
+            DocumentScreenChrome::resolve,
+            new InternalHostedScreenFactory.InternalDocumentPageControllerFactory<Void>() {
+                @Override
+                public DocumentPageController create(DocumentUiScope documentUi,
+                        DocumentPageAuthoringSurface documentPage,
+                        DocumentPageRuntimeView runtimeView,
+                        String pageId,
+                        Void provision) {
+                    return new UiFontPerformanceBaselineDocumentPageController(documentUi, documentPage, runtimeView,
+                            pageId);
                 }
             });
     static final InternalHostedScreenFactory.InternalHostedScreenDefinition<Void> HTML_LIKE_SMOKE_DEFINITION = new InternalHostedScreenFactory.InternalHostedScreenDefinition<Void>(
@@ -105,6 +121,10 @@ final class InternalDiagnosticScreenRegistry {
 
     static String uiTestLayoutPageId() {
         return UI_TEST_LAYOUT.getPageId();
+    }
+
+    static String fontPerformanceBaselinePageId() {
+        return FONT_PERFORMANCE_BASELINE.getPageId();
     }
 
     static String htmlLikeSmokePageId() {

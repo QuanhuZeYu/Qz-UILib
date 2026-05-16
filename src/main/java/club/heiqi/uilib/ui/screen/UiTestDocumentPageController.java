@@ -162,7 +162,15 @@ final class UiTestDocumentPageController extends DocumentPageController {
                         menuModel.openLayoutDiagnostics();
                     }
                 });
-        appendNavigationCard(document, firstRow, "HTML-like Smoke 子页",
+        appendNavigationCard(document, firstRow, "字体性能基线",
+                "在真实 GUI 环境压测字体绘制，观察字符上传、四边形与 UI 帧耗时基线。", "进入字体基线",
+                new DocumentButtonActionHandler() {
+                    @Override
+                    public void onAction(DocumentButtonActionEvent event) {
+                        menuModel.openFontPerformanceBaseline();
+                    }
+                });
+        appendNavigationCard(document, secondRow, "HTML-like Smoke 子页",
                 "验证 HTML 核心链路、控件输入、裁剪、滚动和绘制命令投影。", "进入 HTML-like Smoke",
                 new DocumentButtonActionHandler() {
                     @Override
@@ -178,7 +186,7 @@ final class UiTestDocumentPageController extends DocumentPageController {
                         menuModel.openHtmlLikeGlass();
                     }
                 });
-        appendNavigationCard(document, secondRow, "背包概览示例页",
+        appendNavigationCard(document, thirdRow, "背包概览示例页",
                 "打开真实 Minecraft 背包数据驱动的 HTML-like 示例页，检查槽位、tooltip 和交互边界。", "进入背包概览",
                 new DocumentButtonActionHandler() {
                     @Override

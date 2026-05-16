@@ -49,6 +49,22 @@ final class UiDiagnosticsScreens {
     }
 
     /**
+     * 创建字体性能基线诊断页。
+     */
+    static GuiScreen createFontPerformanceBaseline() {
+        return createFontPerformanceBaseline(UiDocumentScreens.DocumentScreenEnvironment.minecraftFormattedDefaults());
+    }
+
+    /**
+     * 基于显式环境创建字体性能基线诊断页。
+     */
+    static GuiScreen createFontPerformanceBaseline(UiDocumentScreens.DocumentScreenEnvironment environment) {
+        return InternalHostedScreenFactory.createScreen(
+                InternalDiagnosticScreenRegistry.FONT_PERFORMANCE_BASELINE_DEFINITION,
+                Objects.requireNonNull(environment, "environment"), null);
+    }
+
+    /**
      * 创建 HTML-like smoke 页。
      */
     static GuiScreen createHtmlLikeSmoke() {
@@ -124,6 +140,11 @@ final class UiDiagnosticsScreens {
         return InternalScreenIdentity.hasPageId(screen, InternalDiagnosticScreenRegistry.uiTestLayoutPageId());
     }
 
+    static boolean isFontPerformanceBaseline(Object screen) {
+        return InternalScreenIdentity.hasPageId(screen,
+                InternalDiagnosticScreenRegistry.fontPerformanceBaselinePageId());
+    }
+
     static boolean isHtmlLikeSmoke(Object screen) {
         return InternalScreenIdentity.hasPageId(screen, InternalDiagnosticScreenRegistry.htmlLikeSmokePageId());
     }
@@ -145,6 +166,11 @@ final class UiDiagnosticsScreens {
             @Override
             public void openLayoutDiagnostics() {
                 Minecraft.getMinecraft().displayGuiScreen(createUiTestLayout(environment));
+            }
+
+            @Override
+            public void openFontPerformanceBaseline() {
+                Minecraft.getMinecraft().displayGuiScreen(createFontPerformanceBaseline(environment));
             }
 
             @Override

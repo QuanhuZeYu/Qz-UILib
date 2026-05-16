@@ -43,12 +43,14 @@ public class UiTestDocumentPageControllerTest {
         List<String> texts = collectDocumentTexts(fixture.controller.getHtmlLikeDocumentWidget());
         Assert.assertTrue(containsText(texts, "诊断指挥台"));
         Assert.assertTrue(containsText(texts, "布局诊断子页"));
+        Assert.assertTrue(containsText(texts, "字体性能基线"));
         Assert.assertTrue(containsText(texts, "HTML-like Smoke 子页"));
         Assert.assertTrue(containsText(texts, "Large Glass Lab 子页"));
         Assert.assertTrue(containsText(texts, "背包概览示例页"));
         Assert.assertTrue(containsText(texts, "列表元素组件拖拽"));
         Assert.assertTrue(containsText(texts, "页面作者层不再拼装旧 Widget"));
         Assert.assertFalse(menuModel.openLayoutDiagnosticsCalled);
+        Assert.assertFalse(menuModel.openFontPerformanceBaselineCalled);
         Assert.assertFalse(menuModel.openHtmlLikeSmokeCalled);
         Assert.assertFalse(menuModel.openHtmlLikeGlassCalled);
         Assert.assertFalse(menuModel.openInventoryOverviewCalled);
@@ -69,9 +71,31 @@ public class UiTestDocumentPageControllerTest {
         clickNavigationButton(fixture.controller.getHtmlLikeDocumentWidget(), "进入布局诊断页", 1L);
 
         Assert.assertTrue(menuModel.openLayoutDiagnosticsCalled);
+        Assert.assertFalse(menuModel.openFontPerformanceBaselineCalled);
         Assert.assertFalse(menuModel.openHtmlLikeSmokeCalled);
         Assert.assertFalse(menuModel.openHtmlLikeGlassCalled);
         Assert.assertFalse(menuModel.openInventoryOverviewCalled);
+    }
+
+    /**
+     * 验证菜单按钮会触发字体性能基线诊断页跳转。
+     */
+    @Test
+    public void shouldNavigateToFontPerformanceBaselineWhenMenuButtonClicked() {
+        RecordingMenuModel menuModel = new RecordingMenuModel();
+        TestFixture fixture = new TestFixture(menuModel);
+
+        fixture.controller.configureDocumentPage();
+        fixture.controller.buildDocument();
+
+        clickNavigationButton(fixture.controller.getHtmlLikeDocumentWidget(), "进入字体基线", 1L);
+
+        Assert.assertFalse(menuModel.openLayoutDiagnosticsCalled);
+        Assert.assertTrue(menuModel.openFontPerformanceBaselineCalled);
+        Assert.assertFalse(menuModel.openHtmlLikeSmokeCalled);
+        Assert.assertFalse(menuModel.openHtmlLikeGlassCalled);
+        Assert.assertFalse(menuModel.openInventoryOverviewCalled);
+        Assert.assertFalse(menuModel.openListElementDragCalled);
     }
 
     /**
@@ -88,6 +112,7 @@ public class UiTestDocumentPageControllerTest {
         clickNavigationButton(fixture.controller.getHtmlLikeDocumentWidget(), "进入 HTML-like Smoke", 1L);
 
         Assert.assertFalse(menuModel.openLayoutDiagnosticsCalled);
+        Assert.assertFalse(menuModel.openFontPerformanceBaselineCalled);
         Assert.assertTrue(menuModel.openHtmlLikeSmokeCalled);
         Assert.assertFalse(menuModel.openHtmlLikeGlassCalled);
         Assert.assertFalse(menuModel.openInventoryOverviewCalled);
@@ -107,6 +132,7 @@ public class UiTestDocumentPageControllerTest {
         clickNavigationButton(fixture.controller.getHtmlLikeDocumentWidget(), "进入 Glass Lab", 1L);
 
         Assert.assertFalse(menuModel.openLayoutDiagnosticsCalled);
+        Assert.assertFalse(menuModel.openFontPerformanceBaselineCalled);
         Assert.assertFalse(menuModel.openHtmlLikeSmokeCalled);
         Assert.assertTrue(menuModel.openHtmlLikeGlassCalled);
         Assert.assertFalse(menuModel.openInventoryOverviewCalled);
@@ -126,6 +152,7 @@ public class UiTestDocumentPageControllerTest {
         clickNavigationButton(fixture.controller.getHtmlLikeDocumentWidget(), "进入背包概览", 1L);
 
         Assert.assertFalse(menuModel.openLayoutDiagnosticsCalled);
+        Assert.assertFalse(menuModel.openFontPerformanceBaselineCalled);
         Assert.assertFalse(menuModel.openHtmlLikeSmokeCalled);
         Assert.assertFalse(menuModel.openHtmlLikeGlassCalled);
         Assert.assertTrue(menuModel.openInventoryOverviewCalled);
@@ -146,6 +173,7 @@ public class UiTestDocumentPageControllerTest {
         clickNavigationButton(fixture.controller.getHtmlLikeDocumentWidget(), "进入拖拽列表", 1L);
 
         Assert.assertFalse(menuModel.openLayoutDiagnosticsCalled);
+        Assert.assertFalse(menuModel.openFontPerformanceBaselineCalled);
         Assert.assertFalse(menuModel.openHtmlLikeSmokeCalled);
         Assert.assertFalse(menuModel.openHtmlLikeGlassCalled);
         Assert.assertFalse(menuModel.openInventoryOverviewCalled);
@@ -250,6 +278,7 @@ public class UiTestDocumentPageControllerTest {
     private static final class RecordingMenuModel implements UiTestMenuModel {
 
         private boolean openLayoutDiagnosticsCalled;
+        private boolean openFontPerformanceBaselineCalled;
         private boolean openHtmlLikeSmokeCalled;
         private boolean openHtmlLikeGlassCalled;
         private boolean openInventoryOverviewCalled;
@@ -258,6 +287,11 @@ public class UiTestDocumentPageControllerTest {
         @Override
         public void openLayoutDiagnostics() {
             openLayoutDiagnosticsCalled = true;
+        }
+
+        @Override
+        public void openFontPerformanceBaseline() {
+            openFontPerformanceBaselineCalled = true;
         }
 
         @Override

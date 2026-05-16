@@ -11,6 +11,11 @@ interface UiTestMenuModel {
     void openLayoutDiagnostics();
 
     /**
+     * 打开字体性能基线诊断子页。
+     */
+    void openFontPerformanceBaseline();
+
+    /**
      * 打开 HTML-like smoke 子页。
      */
     void openHtmlLikeSmoke();
