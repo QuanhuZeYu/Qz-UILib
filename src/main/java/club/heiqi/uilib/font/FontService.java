@@ -80,6 +80,12 @@ public class FontService {
                 return;
             }
 
+            if (runtimeVersion == 0) {
+                runtimeVersion++;
+                glyphPageManager.setRuntimeVersion(runtimeVersion);
+                glyphGenerationDispatcher.setRuntimeVersion(runtimeVersion);
+                textLayoutService.setRuntimeVersion(runtimeVersion);
+            }
             refreshTextMeasureRuntime();
             MyMod.LOG.info("字体布局测量运行时初始化完成：{}", FontConfig.buildSummary());
         }
@@ -98,11 +104,12 @@ public class FontService {
                 return;
             }
 
-            runtimeVersion++;
-            glyphPageManager.setRuntimeVersion(runtimeVersion);
-            glyphGenerationDispatcher.setRuntimeVersion(runtimeVersion);
-            textLayoutService.setRuntimeVersion(runtimeVersion);
-            ensureLayoutRuntimeReady();
+            int targetRuntimeVersion = runtimeVersion == 0 ? 1 : runtimeVersion;
+            runtimeVersion = targetRuntimeVersion;
+            glyphPageManager.setRuntimeVersion(targetRuntimeVersion);
+            glyphGenerationDispatcher.setRuntimeVersion(targetRuntimeVersion);
+            textLayoutService.setRuntimeVersion(targetRuntimeVersion);
+            refreshTextMeasureRuntime(targetRuntimeVersion);
             glyphPageManager.initialize();
             glyphGenerationDispatcher.initialize(fontMatcher, glyphPageManager, derivedFontCache,
                     glyphPageManager::queueUpload);
@@ -319,10 +326,19 @@ public class FontService {
      * 刷新文本测量所依赖的基础状态。
      */
     private void refreshTextMeasureRuntime() {
-        fontMatcher.setRuntimeTables(null);
+        refreshTextMeasureRuntime(runtimeVersion);
+    }
+
+    /**
+     * 按指定运行时版本刷新文本测量基础状态。
+     *
+     * @param targetRuntimeVersion 目标运行时版本
+     */
+    private void refreshTextMeasureRuntime(int targetRuntimeVersion) {
+        fontMatcher.setRuntimeTables(targetRuntimeVersion, null);
         fontRegistry.reload();
         derivedFontCache.clear();
-        fontMatcher.setRuntimeTables(glyphPageManager.getRuntimeTables());
+        fontMatcher.setRuntimeTables(targetRuntimeVersion, glyphPageManager.getRuntimeTables());
         fontMatcher.clearCache();
         textLayoutService.clearCache();
         layoutRuntimeReady.set(true);
@@ -344,12 +360,11 @@ public class FontService {
             glyphGenerationDispatcher.pause();
             glyphGenerationDispatcher.reset();
             glyphPageManager.discardPendingUploads();
+            clearRenderResources();
             glyphPageManager.setRuntimeVersion(nextRuntimeVersion);
             glyphGenerationDispatcher.setRuntimeVersion(nextRuntimeVersion);
             textLayoutService.setRuntimeVersion(nextRuntimeVersion);
-            clearRenderResources();
-            glyphPageManager.reset();
-            refreshTextMeasureRuntime();
+            refreshTextMeasureRuntime(nextRuntimeVersion);
             drawStageUploadTimestamps.clear();
             lastDrawStageUploadAt = 0L;
             glyphGenerationDispatcher.initialize(fontMatcher, glyphPageManager, derivedFontCache,

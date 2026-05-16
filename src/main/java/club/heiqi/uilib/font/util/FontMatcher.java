@@ -27,7 +27,7 @@ public class FontMatcher {
     private final AtomicLong cacheMissCount = new AtomicLong(0L);
     private final int[] blockHintNormal = createHintArray();
     private final int[] blockHintBold = createHintArray();
-    private volatile GlyphRuntimeTables runtimeTables;
+    private volatile RuntimeTableBinding runtimeBinding = new RuntimeTableBinding(0, null);
     private volatile int lastNormalFontIndex = GlyphRuntimeTables.FONT_INDEX_UNRESOLVED;
     private volatile int lastBoldFontIndex = GlyphRuntimeTables.FONT_INDEX_UNRESOLVED;
 
@@ -45,10 +45,20 @@ public class FontMatcher {
     /**
      * 绑定当前字体运行时直索引表。
      *
+     * @param runtimeVersion 运行时版本
+     * @param runtimeTables 运行时表
+     */
+    public void setRuntimeTables(int runtimeVersion, GlyphRuntimeTables runtimeTables) {
+        runtimeBinding = new RuntimeTableBinding(runtimeVersion, runtimeTables);
+    }
+
+    /**
+     * 绑定当前字体运行时直索引表。
+     *
      * @param runtimeTables 运行时表
      */
     public void setRuntimeTables(GlyphRuntimeTables runtimeTables) {
-        this.runtimeTables = runtimeTables;
+        setRuntimeTables(runtimeBinding.runtimeVersion, runtimeTables);
     }
 
     /**
@@ -59,10 +69,11 @@ public class FontMatcher {
      * @return 匹配到的字体，未匹配到则返回 null
      */
     public Font match(int runtimeVersion, int codepoint, FontType fontType) {
-        GlyphRuntimeTables tables = runtimeTables;
-        if (tables == null || !GlyphRuntimeTables.isValidCodepoint(codepoint)) {
+        RuntimeTableBinding binding = runtimeBinding;
+        GlyphRuntimeTables tables = binding.runtimeTables;
+        if (!canUseRuntimeTables(runtimeVersion, binding) || !GlyphRuntimeTables.isValidCodepoint(codepoint)) {
             cacheMissCount.incrementAndGet();
-            return resolveFontWithoutCache(codepoint, fontType);
+            return resolveFontWithoutCache(runtimeVersion, binding, codepoint, fontType);
         }
 
         int[] matchedFonts = tables.matchedFontArray(fontType);
@@ -79,8 +90,8 @@ public class FontMatcher {
         }
         cacheMissCount.incrementAndGet();
 
-        int matchedFontIndex = resolveFontIndex(codepoint, fontType);
-        matchedFonts[codepoint] = matchedFontIndex;
+        int matchedFontIndex = resolveFontIndex(runtimeVersion, binding, codepoint, fontType);
+        writeMatchedFont(binding, runtimeVersion, codepoint, fontType, matchedFontIndex);
         if (matchedFontIndex >= 0) {
             return fontCatalog.getFont(matchedFontIndex);
         }
@@ -96,10 +107,11 @@ public class FontMatcher {
      * @return 字体目录索引，未匹配时返回 {@link GlyphRuntimeTables#FONT_INDEX_NONE}
      */
     public int matchFontIndex(int runtimeVersion, int codepoint, FontType fontType) {
-        GlyphRuntimeTables tables = runtimeTables;
-        if (tables == null || !GlyphRuntimeTables.isValidCodepoint(codepoint)) {
+        RuntimeTableBinding binding = runtimeBinding;
+        GlyphRuntimeTables tables = binding.runtimeTables;
+        if (!canUseRuntimeTables(runtimeVersion, binding) || !GlyphRuntimeTables.isValidCodepoint(codepoint)) {
             cacheMissCount.incrementAndGet();
-            return resolveFontIndex(codepoint, fontType);
+            return resolveFontIndex(runtimeVersion, binding, codepoint, fontType);
         }
         int[] matchedFonts = tables.matchedFontArray(fontType);
         int cachedFontIndex = matchedFonts[codepoint];
@@ -108,29 +120,28 @@ public class FontMatcher {
             return cachedFontIndex;
         }
         cacheMissCount.incrementAndGet();
-        int matchedFontIndex = resolveFontIndex(codepoint, fontType);
-        matchedFonts[codepoint] = matchedFontIndex;
+        int matchedFontIndex = resolveFontIndex(runtimeVersion, binding, codepoint, fontType);
+        writeMatchedFont(binding, runtimeVersion, codepoint, fontType, matchedFontIndex);
         return matchedFontIndex;
     }
 
-    private Font resolveFontWithoutCache(int codepoint, FontType fontType) {
-        int fontIndex = resolveFontIndex(codepoint, fontType);
+    private Font resolveFontWithoutCache(int runtimeVersion, RuntimeTableBinding binding, int codepoint,
+            FontType fontType) {
+        int fontIndex = resolveFontIndex(runtimeVersion, binding, codepoint, fontType);
         return fontIndex >= 0 ? fontCatalog.getFont(fontIndex) : null;
     }
 
-    private int resolveFontIndex(int codepoint, FontType fontType) {
-        List<Font> fonts = fontCatalog.getFonts();
+    private int resolveFontIndex(int runtimeVersion, RuntimeTableBinding binding, int codepoint, FontType fontType) {
+        FontCatalog.Snapshot snapshot = fontCatalog.snapshot();
+        List<Font> fonts = snapshot.getFonts();
         if (fonts.isEmpty()) {
-            rememberMatch(codepoint, fontType, GlyphRuntimeTables.FONT_INDEX_NONE);
+            rememberMatch(runtimeVersion, binding, codepoint, fontType, GlyphRuntimeTables.FONT_INDEX_NONE);
             return GlyphRuntimeTables.FONT_INDEX_NONE;
         }
 
         String text = CodepointTextCache.getText(codepoint);
-        int hintedFontIndex = resolveHintedFontIndex(codepoint, fontType, text);
-        if (hintedFontIndex >= 0) {
-            rememberMatch(codepoint, fontType, hintedFontIndex);
-            return hintedFontIndex;
-        }
+        int blockHint = resolveBlockHint(runtimeVersion, binding, codepoint, fontType);
+        int lastHint = resolveLastHint(runtimeVersion, binding, fontType);
 
         int firstStrictDisplayIndex = GlyphRuntimeTables.FONT_INDEX_NONE;
         int firstCanDisplayIndex = GlyphRuntimeTables.FONT_INDEX_NONE;
@@ -142,11 +153,14 @@ public class FontMatcher {
             if (firstCanDisplayIndex == GlyphRuntimeTables.FONT_INDEX_NONE) {
                 firstCanDisplayIndex = index;
             }
-            if (!canDisplay(index, font, codepoint, fontType, text)) {
+            boolean strictDisplay = isHintCandidate(index, blockHint, lastHint)
+                    ? canUseHint(index, font, codepoint, fontType, text)
+                    : canDisplay(index, font, codepoint, fontType, text);
+            if (!strictDisplay) {
                 continue;
             }
             if (matchesWeight(font, fontType)) {
-                rememberMatch(codepoint, fontType, index);
+                rememberMatch(runtimeVersion, binding, codepoint, fontType, index);
                 return index;
             }
             if (firstStrictDisplayIndex == GlyphRuntimeTables.FONT_INDEX_NONE) {
@@ -154,7 +168,7 @@ public class FontMatcher {
             }
         }
         int fallbackIndex = firstStrictDisplayIndex >= 0 ? firstStrictDisplayIndex : firstCanDisplayIndex;
-        rememberMatch(codepoint, fontType, fallbackIndex);
+        rememberMatch(runtimeVersion, binding, codepoint, fontType, fallbackIndex);
         return fallbackIndex;
     }
 
@@ -162,7 +176,7 @@ public class FontMatcher {
      * 清空匹配缓存。
      */
     public void clearCache() {
-        GlyphRuntimeTables tables = runtimeTables;
+        GlyphRuntimeTables tables = runtimeBinding.runtimeTables;
         if (tables != null) {
             tables.clearMatchedFontCache();
         }
@@ -201,22 +215,26 @@ public class FontMatcher {
         return !isBoldFont;
     }
 
-    private int resolveHintedFontIndex(int codepoint, FontType fontType, String text) {
-        int blockHint = hintArray(fontType)[codepoint >> BLOCK_SHIFT];
-        if (canUseHint(blockHint, codepoint, fontType, text)) {
-            return blockHint;
+    private int resolveBlockHint(int runtimeVersion, RuntimeTableBinding binding, int codepoint, FontType fontType) {
+        if (!canUseRuntimeTables(runtimeVersion, binding) || !GlyphRuntimeTables.isValidCodepoint(codepoint)) {
+            return GlyphRuntimeTables.FONT_INDEX_UNRESOLVED;
         }
-
-        int lastHint = fontType == FontType.BOLD ? lastBoldFontIndex : lastNormalFontIndex;
-        if (lastHint != blockHint && canUseHint(lastHint, codepoint, fontType, text)) {
-            return lastHint;
-        }
-        return GlyphRuntimeTables.FONT_INDEX_UNRESOLVED;
+        return hintArray(fontType)[codepoint >> BLOCK_SHIFT];
     }
 
-    private boolean canUseHint(int fontIndex, int codepoint, FontType fontType, String text) {
-        Font font = fontCatalog.getFont(fontIndex);
-        return font != null && canDisplay(fontIndex, font, codepoint, fontType, text);
+    private int resolveLastHint(int runtimeVersion, RuntimeTableBinding binding, FontType fontType) {
+        if (!canUseRuntimeTables(runtimeVersion, binding)) {
+            return GlyphRuntimeTables.FONT_INDEX_UNRESOLVED;
+        }
+        return fontType == FontType.BOLD ? lastBoldFontIndex : lastNormalFontIndex;
+    }
+
+    private boolean isHintCandidate(int fontIndex, int blockHint, int lastHint) {
+        return fontIndex == blockHint || fontIndex == lastHint;
+    }
+
+    private boolean canUseHint(int fontIndex, Font font, int codepoint, FontType fontType, String text) {
+        return fontIndex >= 0 && canDisplay(fontIndex, font, codepoint, fontType, text);
     }
 
     private boolean canDisplay(int fontIndex, Font font, int codepoint, FontType fontType, String text) {
@@ -236,8 +254,17 @@ public class FontMatcher {
         return glyphVector.getGlyphOutline(0) != null;
     }
 
-    private void rememberMatch(int codepoint, FontType fontType, int fontIndex) {
-        if (!GlyphRuntimeTables.isValidCodepoint(codepoint)) {
+    private void writeMatchedFont(RuntimeTableBinding binding, int runtimeVersion, int codepoint, FontType fontType,
+            int fontIndex) {
+        if (!canUseRuntimeTables(runtimeVersion, binding) || !GlyphRuntimeTables.isValidCodepoint(codepoint)) {
+            return;
+        }
+        binding.runtimeTables.matchedFontArray(fontType)[codepoint] = fontIndex;
+    }
+
+    private void rememberMatch(int runtimeVersion, RuntimeTableBinding binding, int codepoint, FontType fontType,
+            int fontIndex) {
+        if (!canUseRuntimeTables(runtimeVersion, binding) || !GlyphRuntimeTables.isValidCodepoint(codepoint)) {
             return;
         }
         hintArray(fontType)[codepoint >> BLOCK_SHIFT] = fontIndex;
@@ -252,6 +279,10 @@ public class FontMatcher {
         return fontType == FontType.BOLD ? blockHintBold : blockHintNormal;
     }
 
+    private boolean canUseRuntimeTables(int runtimeVersion, RuntimeTableBinding binding) {
+        return binding.runtimeTables != null && runtimeVersion == binding.runtimeVersion && binding == runtimeBinding;
+    }
+
     private int currentGlyphSize() {
         return Math.max(8, (int) Math.ceil(FontConfig.awtCharSize));
     }
@@ -260,6 +291,17 @@ public class FontMatcher {
         int[] hints = new int[BLOCK_COUNT];
         Arrays.fill(hints, GlyphRuntimeTables.FONT_INDEX_UNRESOLVED);
         return hints;
+    }
+
+    private static final class RuntimeTableBinding {
+
+        private final int runtimeVersion;
+        private final GlyphRuntimeTables runtimeTables;
+
+        private RuntimeTableBinding(int runtimeVersion, GlyphRuntimeTables runtimeTables) {
+            this.runtimeVersion = runtimeVersion;
+            this.runtimeTables = runtimeTables;
+        }
     }
 
 }

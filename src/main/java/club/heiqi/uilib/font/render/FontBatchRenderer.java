@@ -437,8 +437,6 @@ public class FontBatchRenderer {
                 (float) FontConfig.smoothRangeMax);
         shaderProgram.setUniformI("aaMode", FontConfig.aaMode);
         shaderProgram.setUniformF("aaStrength", (float) (FontConfig.aaStrength / 120.0D));
-        shaderProgram.setUniformVec2("textureSize", (float) (FontConfig.awtCharSize * 64.0D),
-                (float) (FontConfig.awtCharSize * 64.0D));
     }
 
     private void renderBatch(FontShaderProgram shaderProgram, GlyphRenderBatch batch) {

@@ -37,20 +37,21 @@ public class DerivedFontCache {
      * @return 派生字体，索引无效时返回 null
      */
     public Font getDerivedFont(int fontIndex, FontType fontType, int glyphSize) {
-        Font baseFont = fontCatalog.getFont(fontIndex);
-        if (baseFont == null) {
-            return null;
-        }
-
         int style = fontType == FontType.BOLD ? Font.BOLD : Font.PLAIN;
         float size = (float) Math.max(glyphSize * FontConfig.fontScale, 6.0D);
         long key = packKey(fontIndex, style, size);
         synchronized (this) {
-            refreshIfCatalogChanged();
+            FontCatalog.Snapshot snapshot = fontCatalog.snapshot();
+            refreshIfCatalogChanged(snapshot.getVersion());
             Font cachedFont = derivedFonts.get(Long.valueOf(key));
             if (cachedFont != null) {
                 cacheHitCount.incrementAndGet();
                 return cachedFont;
+            }
+
+            Font baseFont = snapshot.getFont(fontIndex);
+            if (baseFont == null) {
+                return null;
             }
 
             cacheMissCount.incrementAndGet();
@@ -88,8 +89,7 @@ public class DerivedFontCache {
         return cacheMissCount.get();
     }
 
-    private void refreshIfCatalogChanged() {
-        int catalogVersion = fontCatalog.getVersion();
+    private void refreshIfCatalogChanged(int catalogVersion) {
         if (catalogVersion == cachedCatalogVersion) {
             return;
         }

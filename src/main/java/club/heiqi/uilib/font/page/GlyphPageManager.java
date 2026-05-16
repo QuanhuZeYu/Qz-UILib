@@ -47,7 +47,11 @@ public class GlyphPageManager {
      * @param runtimeVersion 运行时版本
      */
     public synchronized void setRuntimeVersion(int runtimeVersion) {
+        if (this.runtimeVersion == runtimeVersion) {
+            return;
+        }
         this.runtimeVersion = runtimeVersion;
+        reset();
     }
 
     /**
