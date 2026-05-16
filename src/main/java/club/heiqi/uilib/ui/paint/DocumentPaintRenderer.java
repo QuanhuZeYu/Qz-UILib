@@ -5,6 +5,8 @@ import java.util.Deque;
 import java.util.List;
 import java.util.Objects;
 
+import club.heiqi.uilib.font.FontService;
+import club.heiqi.uilib.font.api.DefaultFontRendererAdapter;
 import club.heiqi.uilib.ui.layout.DocumentEffectType;
 import club.heiqi.uilib.ui.render.UiRenderContext;
 import club.heiqi.uilib.ui.theme.UiSurfaceStyle;
@@ -84,12 +86,47 @@ public final class DocumentPaintRenderer {
         }
         RenderReplayState replayState = new RenderReplayState();
         try {
-            for (DocumentPaintCommand command : commands) {
+            int commandIndex = 0;
+            while (commandIndex < commands.size()) {
+                DocumentPaintCommand command = commands.get(commandIndex);
+                if (isBatchableTextCommand(command, replayState)) {
+                    commandIndex = renderTextBatch(context, commands, commandIndex, offsetX, offsetY,
+                            replayState);
+                    continue;
+                }
                 renderCommand(context, command, offsetX, offsetY, replayState);
+                commandIndex++;
             }
         } finally {
             while (!replayState.isEmpty()) {
                 popOpenState(context, replayState, replayState.pop());
+            }
+        }
+    }
+
+    private static int renderTextBatch(UiRenderContext context, List<DocumentPaintCommand> commands, int startIndex,
+            int offsetX, int offsetY, RenderReplayState replayState) {
+        DefaultFontRendererAdapter fontRenderer = DefaultFontRendererAdapter.getInstance();
+        FontService fontService = FontService.getInstance();
+        int commandIndex = startIndex;
+        synchronized (fontService) {
+            fontRenderer.beginDeferredFlushScope();
+            try {
+                while (commandIndex < commands.size()) {
+                    DocumentPaintCommand command = commands.get(commandIndex);
+                    if (!isBatchableTextCommand(command, replayState)) {
+                        break;
+                    }
+                    renderTextCommand(context, command, offsetX, offsetY, replayState);
+                    commandIndex++;
+                }
+                return commandIndex;
+            } finally {
+                try {
+                    fontRenderer.flushDeferredFlushScope();
+                } finally {
+                    fontRenderer.endDeferredFlushScope();
+                }
             }
         }
     }
@@ -144,11 +181,21 @@ public final class DocumentPaintRenderer {
             }
             return;
         }
-        if (command.getType() == DocumentPaintCommandType.TEXT) {
-            context.drawText(command.getText(), command.getLeft() + offsetX, command.getTop() + offsetY,
-                    applyOpacity(command.getColor(), replayState.fallbackOpacity), false,
-                    command.getTextContentMode());
-        }
+    }
+
+    private static void renderTextCommand(UiRenderContext context, DocumentPaintCommand command, int offsetX,
+            int offsetY, RenderReplayState replayState) {
+        context.drawText(command.getText(), command.getLeft() + offsetX, command.getTop() + offsetY,
+                applyOpacity(command.getColor(), replayState.fallbackOpacity), false,
+                command.getTextContentMode());
+    }
+
+    private static boolean isBatchableTextCommand(DocumentPaintCommand command, RenderReplayState replayState) {
+        return command != null
+                && command.getType() == DocumentPaintCommandType.TEXT
+                && command.getWidth() > 0
+                && command.getHeight() > 0
+                && replayState.fallbackOpacity > 0.001F;
     }
 
     private static void popExpectedRenderState(UiRenderContext context, RenderReplayState replayState,

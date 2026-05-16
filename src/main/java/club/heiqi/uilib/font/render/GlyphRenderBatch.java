@@ -3,6 +3,7 @@ package club.heiqi.uilib.font.render;
 import java.nio.FloatBuffer;
 import java.nio.IntBuffer;
 
+import club.heiqi.uilib.font.config.FontConfig;
 import club.heiqi.uilib.font.page.GlyphPage;
 
 /**
@@ -67,8 +68,9 @@ public final class GlyphRenderBatch {
         int glyphFlagFloatBase = vertexBase * GLYPH_FLAGS_FLOATS_PER_VERTEX;
         int indexBase = quadCount * INDICES_PER_QUAD;
 
-        float leftX = italic ? x + 2.0F : x;
-        float rightX = italic ? x + charSize + 2.0F : x + charSize;
+        float italicOffset = italic ? resolveItalicOffset(charSize) : 0.0F;
+        float leftX = x + italicOffset;
+        float rightX = x + charSize + italicOffset;
 
         writeVertex(vertexFloatBase, leftX, y, z);
         writeVertex(vertexFloatBase + FLOATS_PER_VERTEX, x, y + charSize, z);
@@ -152,6 +154,11 @@ public final class GlyphRenderBatch {
         uvBoundsData = grow(uvBoundsData, nextCapacity * VERTICES_PER_QUAD * UV_BOUNDS_FLOATS_PER_VERTEX);
         glyphFlagsData = grow(glyphFlagsData, nextCapacity * VERTICES_PER_QUAD * GLYPH_FLAGS_FLOATS_PER_VERTEX);
         indexData = grow(indexData, nextCapacity * INDICES_PER_QUAD);
+    }
+
+    private float resolveItalicOffset(float charSize) {
+        float baseCharSize = Math.max(1.0F, (float) FontConfig.charSize);
+        return 2.0F * charSize / baseCharSize;
     }
 
     private static float[] grow(float[] original, int newLength) {

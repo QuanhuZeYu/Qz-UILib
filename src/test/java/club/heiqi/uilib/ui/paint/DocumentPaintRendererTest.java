@@ -8,6 +8,7 @@ import org.junit.Test;
 
 import club.heiqi.uilib.ui.dom.ElementNode;
 import club.heiqi.uilib.ui.dom.UiDocument;
+import club.heiqi.uilib.font.api.DefaultFontRendererAdapter;
 import club.heiqi.uilib.ui.layout.DocumentEffectType;
 import club.heiqi.uilib.ui.layout.DocumentLayoutBox;
 import club.heiqi.uilib.ui.layout.DocumentLayoutEngine;
@@ -294,6 +295,42 @@ public class DocumentPaintRendererTest {
     }
 
     /**
+     * 验证字体延迟提交边界只包住连续文本命令，不跨越自定义渲染器。
+     */
+    @Test
+    public void shouldScopeDeferredFontFlushToTextRunsOnly() {
+        UiDocument document = UiDocument.create();
+        ElementNode root = document.getRootElement();
+        final List<Boolean> customBatchStates = new ArrayList<Boolean>();
+        List<DocumentPaintCommand> commands = new ArrayList<DocumentPaintCommand>();
+        commands.add(new DocumentPaintCommand(DocumentPaintCommandType.TEXT, root, 0, 0, 24, 12,
+                0xFFE2E8F0, 0, 0, "First", TextContentMode.UILIB_RAW, null, 0, 1.0F, 1.0F));
+        commands.add(new DocumentPaintCommand(DocumentPaintCommandType.TEXT, root, 0, 12, 24, 24,
+                0xFFE2E8F0, 0, 0, "Second", TextContentMode.UILIB_RAW, null, 0, 1.0F, 1.0F));
+        commands.add(new DocumentPaintCommand(DocumentPaintCommandType.CUSTOM, root, 0, 24, 24, 36,
+                0, 0, 0, null, new DocumentCustomRenderer() {
+                    @Override
+                    public void render(UiRenderContext context, int contentLeft, int contentTop, int contentRight,
+                            int contentBottom) {
+                        customBatchStates.add(Boolean.valueOf(DefaultFontRendererAdapter.getInstance()
+                                .isDeferredFlushScopeActive()));
+                    }
+                }));
+        commands.add(new DocumentPaintCommand(DocumentPaintCommandType.TEXT, root, 0, 36, 24, 48,
+                0xFFE2E8F0, 0, 0, "Third", TextContentMode.UILIB_RAW, null, 0, 1.0F, 1.0F));
+
+        RecordingUiRenderContext renderContext = new RecordingUiRenderContext();
+        DocumentPaintRenderer.render(renderContext, commands);
+
+        Assert.assertEquals(3, renderContext.textCalls.size());
+        Assert.assertTrue(renderContext.textCalls.get(0).fontBatchScopeActive);
+        Assert.assertTrue(renderContext.textCalls.get(1).fontBatchScopeActive);
+        Assert.assertTrue(renderContext.textCalls.get(2).fontBatchScopeActive);
+        Assert.assertEquals(java.util.Collections.singletonList(Boolean.FALSE), customBatchStates);
+        Assert.assertFalse(DefaultFontRendererAdapter.getInstance().isDeferredFlushScopeActive());
+    }
+
+    /**
      * 验证 HTML-like 滚动条命令会投影为普通 surface 绘制。
      */
     @Test
@@ -563,6 +600,7 @@ public class DocumentPaintRendererTest {
         private final int color;
         private final boolean shadow;
         private final TextContentMode textContentMode;
+        private final boolean fontBatchScopeActive;
 
         private TextCall(String text, int x, int y, int color, boolean shadow, TextContentMode textContentMode) {
             this.text = text;
@@ -571,6 +609,7 @@ public class DocumentPaintRendererTest {
             this.color = color;
             this.shadow = shadow;
             this.textContentMode = textContentMode;
+            this.fontBatchScopeActive = DefaultFontRendererAdapter.getInstance().isDeferredFlushScopeActive();
         }
     }
 

@@ -31,6 +31,18 @@ public class DefaultFontRendererAdapter implements FontRendererAdapter {
             + "αβΓπΣσμτΦΘΩδ∞∅∈∩≡±≥≤⌠⌡÷≈°∙·√ⁿ²■";
     private final FontRenderStateGuard renderStateGuard = new FontRenderStateGuard();
     private final FontRenderFlushCoordinator flushCoordinator = new FontRenderFlushCoordinator();
+    private final ThreadLocal<Integer> deferredFlushScopeDepth = new ThreadLocal<Integer>() {
+        @Override
+        protected Integer initialValue() {
+            return Integer.valueOf(0);
+        }
+    };
+    private final ThreadLocal<Boolean> deferredFlushDirty = new ThreadLocal<Boolean>() {
+        @Override
+        protected Boolean initialValue() {
+            return Boolean.FALSE;
+        }
+    };
 
     private DefaultFontRendererAdapter() {}
 
@@ -41,6 +53,67 @@ public class DefaultFontRendererAdapter implements FontRendererAdapter {
      */
     public static DefaultFontRendererAdapter getInstance() {
         return INSTANCE;
+    }
+
+    /**
+     * 开始一个受控延迟 flush 边界。
+     *
+     * <p>该能力仅供 UILib 内部渲染链路把同一可控 paint pass 中的相邻文本绘制合并提交；
+     * 外部未进入该边界的 `drawString` 仍保持单次调用后立即 flush。调用方需要用
+     * try/finally 配对结束边界。</p>
+     */
+    public void beginDeferredFlushScope() {
+        int depth = deferredFlushScopeDepth.get().intValue();
+        deferredFlushScopeDepth.set(Integer.valueOf(depth + 1));
+    }
+
+    /**
+     * 结束一个受控延迟 flush 边界，并在最外层边界结束时提交已收集的字形与装饰线。
+     */
+    public void endDeferredFlushScope() {
+        int depth = deferredFlushScopeDepth.get().intValue();
+        if (depth <= 0) {
+            throw new IllegalStateException("字体延迟 flush 边界结束调用缺少对应 begin");
+        }
+        if (depth > 1) {
+            deferredFlushScopeDepth.set(Integer.valueOf(depth - 1));
+            return;
+        }
+
+        try {
+            flushDeferredFlushScope();
+        } finally {
+            deferredFlushScopeDepth.remove();
+            deferredFlushDirty.remove();
+        }
+    }
+
+    /**
+     * 提交当前线程已收集的延迟字体批次，但不结束当前 scope。
+     */
+    public void flushDeferredFlushScope() {
+        if (!isDeferredFlushScopeActive() || !deferredFlushDirty.get().booleanValue()) {
+            return;
+        }
+
+        FontService fontService = FontService.getInstance();
+        synchronized (fontService) {
+            fontService.initialize();
+            try {
+                flushCollectedBatches(fontService);
+            } finally {
+                deferredFlushDirty.set(Boolean.FALSE);
+            }
+        }
+    }
+
+    /**
+     * 判断当前线程是否处于受控延迟 flush 边界内。
+     *
+     * @return 是否处于延迟 flush scope
+     */
+    public boolean isDeferredFlushScopeActive() {
+        return deferredFlushScopeDepth.get().intValue() > 0;
     }
 
     @Override
@@ -69,7 +142,38 @@ public class DefaultFontRendererAdapter implements FontRendererAdapter {
             fontService.initialize();
             fontService.tickDrawStage(FontConfig.drawStageUploadBatchSize);
 
-            return drawInternal(fontService, text, x, y, normalizeColor(color), dropShadow, textContentMode);
+            return drawInternal(fontService, text, x, y, normalizeColor(color), dropShadow, textContentMode, 1.0F);
+        }
+    }
+
+    /**
+     * 以指定 UI 缩放收集字符串绘制数据。
+     *
+     * <p>该入口供 `UiRenderContext` 在延迟 flush scope 内使用，直接写入最终屏幕坐标，避免批次提交时
+     * 依赖单次 `drawText` 调用期间的 OpenGL 矩阵状态。</p>
+     *
+     * @param text 文本
+     * @param x 屏幕坐标 X
+     * @param y 屏幕坐标 Y
+     * @param color 颜色
+     * @param dropShadow 是否启用阴影
+     * @param textContentMode 文本内容解析模式
+     * @param renderScale UI 渲染缩放
+     * @return 绘制结束后的光标位置
+     */
+    public int drawStringScaled(String text, float x, float y, int color, boolean dropShadow,
+            TextContentMode textContentMode, float renderScale) {
+        if (text == null || text.isEmpty()) {
+            return (int) Math.ceil(x);
+        }
+
+        FontService fontService = FontService.getInstance();
+        synchronized (fontService) {
+            fontService.initialize();
+            fontService.tickDrawStage(FontConfig.drawStageUploadBatchSize);
+
+            return drawInternal(fontService, text, x, y, normalizeColor(color), dropShadow, textContentMode,
+                    Math.max(0.01F, renderScale));
         }
     }
 
@@ -240,24 +344,25 @@ public class DefaultFontRendererAdapter implements FontRendererAdapter {
         }
     }
 
-    private int drawInternal(FontService fontService, String text, int x, int y, int color, boolean dropShadow,
-            TextContentMode textContentMode) {
+    private int drawInternal(FontService fontService, String text, float x, float y, int color, boolean dropShadow,
+            TextContentMode textContentMode, float renderScale) {
         TextLayoutService textLayoutService = fontService.getTextLayoutService();
         GlyphPageManager glyphPageManager = fontService.getGlyphPageManager();
         List<TextSegment> segments = textLayoutService.layoutSegments(text, color, textContentMode);
         if (segments.isEmpty()) {
-            return x;
+            return (int) Math.ceil(x);
         }
 
         float currentX = x;
         float drawY = y;
+        float charSize = (float) FontConfig.charSize * renderScale;
         for (TextSegment segment : segments) {
             TextStyle style = segment.getStyle();
             String segmentText = segment.getText();
             for (int i = 0; i < segmentText.length();) {
                 int codepoint = segmentText.codePointAt(i);
                 double codepointWidth = textLayoutService.getCodepointWidth(codepoint, style);
-                float measuredWidth = (float) codepointWidth;
+                float measuredWidth = (float) codepointWidth * renderScale;
                 int renderCodepoint = style.isRandomStyle()
                         ? resolveRandomStyleCodepoint(codepoint, style, codepointWidth, textLayoutService)
                         : codepoint;
@@ -281,28 +386,20 @@ public class DefaultFontRendererAdapter implements FontRendererAdapter {
 
                 if (dropShadow) {
                     collectGlyph(fontService, glyphPage, slot, glyphInfo,
-                            currentX + (float) FontConfig.shadowOffsetX,
-                            drawY + (float) FontConfig.shadowOffsetY,
-                            measuredWidth, style, darkenShadow(style.getColor()));
+                            currentX + (float) FontConfig.shadowOffsetX * renderScale,
+                            drawY + (float) FontConfig.shadowOffsetY * renderScale,
+                            measuredWidth, charSize, renderScale, style, darkenShadow(style.getColor()));
                 }
                 collectGlyph(fontService, glyphPage, slot, glyphInfo, currentX, drawY,
-                        measuredWidth, style, style.getColor());
+                        measuredWidth, charSize, renderScale, style, style.getColor());
                 currentX += measuredWidth;
 
                 i += Character.charCount(codepoint);
             }
         }
-        flushCoordinator.flush(renderStateGuard, new Runnable() {
-            @Override
-            public void run() {
-                fontService.getBatchRenderer().flush(fontService.getShaderProgram());
-            }
-        }, new Runnable() {
-            @Override
-            public void run() {
-                fontService.getDecorationRenderer().flush();
-            }
-        });
+        if (!isDeferredFlushScopeActive()) {
+            flushCollectedBatches(fontService);
+        }
         return (int) Math.ceil(currentX);
     }
 
@@ -328,21 +425,61 @@ public class DefaultFontRendererAdapter implements FontRendererAdapter {
     }
 
     private void collectGlyph(FontService fontService, GlyphPage glyphPage, GlyphPageSlot slot, GlyphInfo glyphInfo,
-            float currentX, float drawY, float measuredWidth, TextStyle style, int renderColor) {
+            float currentX, float drawY, float measuredWidth, float charSize, float renderScale, TextStyle style,
+            int renderColor) {
+        if ((glyphPage != null && slot != null) || style.isUnderline() || style.isStrikethrough()) {
+            markDeferredFlushDirtyIfNeeded();
+        }
         if (glyphPage != null && slot != null) {
             fontService.getBatchRenderer().collect(glyphPage, slot, currentX, drawY,
-                    (float) FontConfig.charSize, renderColor, style.isItalic(), glyphInfo);
+                    charSize, renderColor, style.isItalic(), glyphInfo);
         }
-        collectDecorations(fontService, currentX, drawY, measuredWidth, style, renderColor);
+        collectDecorations(fontService, currentX, drawY, measuredWidth, charSize, renderScale, style, renderColor);
     }
 
-    private void collectDecorations(FontService fontService, float currentX, float drawY, float width, TextStyle style, int color) {
+    private void collectDecorations(FontService fontService, float currentX, float drawY, float width, float charSize,
+            float renderScale, TextStyle style, int color) {
         if (style.isUnderline()) {
-            fontService.getDecorationRenderer().collect(currentX, drawY + (float) FontConfig.charSize - 1.0F, width, 1.0F, color);
+            fontService.getDecorationRenderer().collect(currentX, drawY + charSize - renderScale, width,
+                    renderScale, color);
         }
         if (style.isStrikethrough()) {
-            fontService.getDecorationRenderer().collect(currentX, drawY + ((float) FontConfig.charSize / 2.0F) - 0.5F, width, 1.0F, color);
+            fontService.getDecorationRenderer().collect(currentX, drawY + (charSize / 2.0F) - (0.5F * renderScale),
+                    width, renderScale, color);
         }
+    }
+
+    private void markDeferredFlushDirtyIfNeeded() {
+        if (isDeferredFlushScopeActive()) {
+            deferredFlushDirty.set(Boolean.TRUE);
+        }
+    }
+
+    private void flushCollectedBatches(final FontService fontService) {
+        try {
+            flushCoordinator.flush(renderStateGuard, new Runnable() {
+                @Override
+                public void run() {
+                    fontService.getBatchRenderer().flush(fontService.getShaderProgram());
+                }
+            }, new Runnable() {
+                @Override
+                public void run() {
+                    fontService.getDecorationRenderer().flush();
+                }
+            });
+        } catch (RuntimeException exception) {
+            clearCollectedBatches(fontService);
+            throw exception;
+        } catch (Error error) {
+            clearCollectedBatches(fontService);
+            throw error;
+        }
+    }
+
+    private void clearCollectedBatches(FontService fontService) {
+        fontService.getBatchRenderer().clearFrame();
+        fontService.getDecorationRenderer().clear();
     }
 
     private int normalizeColor(int color) {

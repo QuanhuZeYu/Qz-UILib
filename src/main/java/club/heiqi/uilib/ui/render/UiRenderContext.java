@@ -769,6 +769,15 @@ public class UiRenderContext {
      * @param textContentMode 文本内容解析模式
      */
     public void drawText(String text, int x, int y, int color, boolean shadow, TextContentMode textContentMode) {
+        if (fontRenderer instanceof DefaultFontRendererAdapter) {
+            DefaultFontRendererAdapter defaultFontRenderer = (DefaultFontRendererAdapter) fontRenderer;
+            if (defaultFontRenderer.isDeferredFlushScopeActive()) {
+                defaultFontRenderer.drawStringScaled(text, x, y, color, shadow, textContentMode, UI_TEXT_SCALE);
+                notifyMainLayerContentChanged();
+                return;
+            }
+        }
+
         GL11.glPushMatrix();
         GL11.glTranslatef((float) x, (float) y, 0.0F);
         GL11.glScalef(UI_TEXT_SCALE, UI_TEXT_SCALE, 1.0F);
