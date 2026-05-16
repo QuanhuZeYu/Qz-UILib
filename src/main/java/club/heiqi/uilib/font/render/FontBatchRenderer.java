@@ -34,12 +34,8 @@ public class FontBatchRenderer {
     private final Map<GlyphPage, GlyphRenderBatch> currentBatches = new LinkedHashMap<GlyphPage, GlyphRenderBatch>();
     private final FontRenderTool renderTool = new FontRenderTool();
     private final FontRenderStateGuard stateGuard = new FontRenderStateGuard();
-    private final FloatBuffer vertexBuffer = BufferUtils.createFloatBuffer(1024 * 64 * 3);
-    private final FloatBuffer uvBuffer = BufferUtils.createFloatBuffer(1024 * 64 * 2);
-    private final FloatBuffer colorBuffer = BufferUtils.createFloatBuffer(1024 * 64 * 4);
-    private final FloatBuffer uvBoundsBuffer = BufferUtils.createFloatBuffer(1024 * 64 * 4);
-    private final FloatBuffer glyphFlagsBuffer = BufferUtils.createFloatBuffer(1024 * 64 * 1);
-    private final IntBuffer indexBuffer = BufferUtils.createIntBuffer(1024 * 64 * 6);
+    private FloatBuffer vertexBuffer = BufferUtils.createFloatBuffer(1024 * 64 * GlyphRenderBatch.VERTEX_STRIDE_FLOATS);
+    private IntBuffer indexBuffer = BufferUtils.createIntBuffer(1024 * 64 * GlyphRenderBatch.INDICES_PER_QUAD);
     private final FloatBuffer modelViewBuffer = BufferUtils.createFloatBuffer(16);
     private final FloatBuffer projectionBuffer = BufferUtils.createFloatBuffer(16);
     private int quadCount = 0;
@@ -170,8 +166,7 @@ public class FontBatchRenderer {
                         GL11.glGetInteger(GL30.GL_VERTEX_ARRAY_BINDING),
                         GL11.glGetError(),
                         batch.getQuadCount());
-                renderTool.render(vertexBuffer, uvBuffer, colorBuffer, uvBoundsBuffer, glyphFlagsBuffer, indexBuffer,
-                        indexBuffer.limit());
+                renderTool.render(vertexBuffer, indexBuffer, indexBuffer.limit());
             }
             shaderProgram.unbind();
             GL11.glBindTexture(GL11.GL_TEXTURE_2D, 0);
@@ -230,19 +225,35 @@ public class FontBatchRenderer {
     }
 
     private void prepareBuffers(GlyphRenderBatch batch) {
+        vertexBuffer = ensureFloatCapacity(vertexBuffer, batch.getVertexFloatCount());
+        indexBuffer = ensureIntCapacity(indexBuffer, batch.getIndexCount());
         vertexBuffer.clear();
-        uvBuffer.clear();
-        colorBuffer.clear();
-        uvBoundsBuffer.clear();
-        glyphFlagsBuffer.clear();
         indexBuffer.clear();
-        batch.writeToBuffers(vertexBuffer, uvBuffer, colorBuffer, uvBoundsBuffer, glyphFlagsBuffer, indexBuffer);
+        batch.writeToBuffers(vertexBuffer, indexBuffer);
 
         vertexBuffer.flip();
-        uvBuffer.flip();
-        colorBuffer.flip();
-        uvBoundsBuffer.flip();
-        glyphFlagsBuffer.flip();
         indexBuffer.flip();
+    }
+
+    private FloatBuffer ensureFloatCapacity(FloatBuffer buffer, int targetCapacity) {
+        if (targetCapacity <= buffer.capacity()) {
+            return buffer;
+        }
+        int nextCapacity = buffer.capacity();
+        while (nextCapacity < targetCapacity) {
+            nextCapacity *= 2;
+        }
+        return BufferUtils.createFloatBuffer(nextCapacity);
+    }
+
+    private IntBuffer ensureIntCapacity(IntBuffer buffer, int targetCapacity) {
+        if (targetCapacity <= buffer.capacity()) {
+            return buffer;
+        }
+        int nextCapacity = buffer.capacity();
+        while (nextCapacity < targetCapacity) {
+            nextCapacity *= 2;
+        }
+        return BufferUtils.createIntBuffer(nextCapacity);
     }
 }

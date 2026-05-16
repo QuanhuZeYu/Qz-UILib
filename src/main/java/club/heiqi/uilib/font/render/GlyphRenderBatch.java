@@ -12,20 +12,28 @@ import club.heiqi.uilib.font.page.GlyphPage;
 public final class GlyphRenderBatch {
 
     private static final int DEFAULT_QUAD_CAPACITY = 64;
-    private static final int VERTICES_PER_QUAD = 4;
-    private static final int FLOATS_PER_VERTEX = 3;
-    private static final int UV_FLOATS_PER_VERTEX = 2;
-    private static final int COLOR_FLOATS_PER_VERTEX = 4;
-    private static final int UV_BOUNDS_FLOATS_PER_VERTEX = 4;
-    private static final int GLYPH_FLAGS_FLOATS_PER_VERTEX = 1;
-    private static final int INDICES_PER_QUAD = 6;
+    static final int VERTICES_PER_QUAD = 4;
+    static final int POSITION_COMPONENT_COUNT = 3;
+    static final int UV_COMPONENT_COUNT = 2;
+    static final int COLOR_COMPONENT_COUNT = 4;
+    static final int UV_BOUNDS_COMPONENT_COUNT = 4;
+    static final int GLYPH_FLAGS_COMPONENT_COUNT = 1;
+    static final int INDICES_PER_QUAD = 6;
+    static final int POSITION_OFFSET_FLOATS = 0;
+    static final int UV_OFFSET_FLOATS = POSITION_OFFSET_FLOATS + POSITION_COMPONENT_COUNT;
+    static final int COLOR_OFFSET_FLOATS = UV_OFFSET_FLOATS + UV_COMPONENT_COUNT;
+    static final int UV_BOUNDS_OFFSET_FLOATS = COLOR_OFFSET_FLOATS + COLOR_COMPONENT_COUNT;
+    static final int GLYPH_FLAGS_OFFSET_FLOATS = UV_BOUNDS_OFFSET_FLOATS + UV_BOUNDS_COMPONENT_COUNT;
+    static final int VERTEX_STRIDE_FLOATS = GLYPH_FLAGS_OFFSET_FLOATS + GLYPH_FLAGS_COMPONENT_COUNT;
+    static final int POSITION_OFFSET_BYTES = POSITION_OFFSET_FLOATS * Float.BYTES;
+    static final int UV_OFFSET_BYTES = UV_OFFSET_FLOATS * Float.BYTES;
+    static final int COLOR_OFFSET_BYTES = COLOR_OFFSET_FLOATS * Float.BYTES;
+    static final int UV_BOUNDS_OFFSET_BYTES = UV_BOUNDS_OFFSET_FLOATS * Float.BYTES;
+    static final int GLYPH_FLAGS_OFFSET_BYTES = GLYPH_FLAGS_OFFSET_FLOATS * Float.BYTES;
+    static final int VERTEX_STRIDE_BYTES = VERTEX_STRIDE_FLOATS * Float.BYTES;
 
     private final GlyphPage glyphPage;
-    private float[] vertexData = new float[DEFAULT_QUAD_CAPACITY * VERTICES_PER_QUAD * FLOATS_PER_VERTEX];
-    private float[] uvData = new float[DEFAULT_QUAD_CAPACITY * VERTICES_PER_QUAD * UV_FLOATS_PER_VERTEX];
-    private float[] colorData = new float[DEFAULT_QUAD_CAPACITY * VERTICES_PER_QUAD * COLOR_FLOATS_PER_VERTEX];
-    private float[] uvBoundsData = new float[DEFAULT_QUAD_CAPACITY * VERTICES_PER_QUAD * UV_BOUNDS_FLOATS_PER_VERTEX];
-    private float[] glyphFlagsData = new float[DEFAULT_QUAD_CAPACITY * VERTICES_PER_QUAD * GLYPH_FLAGS_FLOATS_PER_VERTEX];
+    private float[] vertexData = new float[DEFAULT_QUAD_CAPACITY * VERTICES_PER_QUAD * VERTEX_STRIDE_FLOATS];
     private int[] indexData = new int[DEFAULT_QUAD_CAPACITY * INDICES_PER_QUAD];
     private int quadCount;
 
@@ -61,41 +69,21 @@ public final class GlyphRenderBatch {
         ensureCapacity(quadCount + 1);
 
         int vertexBase = quadCount * VERTICES_PER_QUAD;
-        int vertexFloatBase = vertexBase * FLOATS_PER_VERTEX;
-        int uvFloatBase = vertexBase * UV_FLOATS_PER_VERTEX;
-        int colorFloatBase = vertexBase * COLOR_FLOATS_PER_VERTEX;
-        int uvBoundsFloatBase = vertexBase * UV_BOUNDS_FLOATS_PER_VERTEX;
-        int glyphFlagFloatBase = vertexBase * GLYPH_FLAGS_FLOATS_PER_VERTEX;
+        int vertexFloatBase = vertexBase * VERTEX_STRIDE_FLOATS;
         int indexBase = quadCount * INDICES_PER_QUAD;
 
         float italicOffset = italic ? resolveItalicOffset(charSize) : 0.0F;
         float leftX = x + italicOffset;
         float rightX = x + charSize + italicOffset;
 
-        writeVertex(vertexFloatBase, leftX, y, z);
-        writeVertex(vertexFloatBase + FLOATS_PER_VERTEX, x, y + charSize, z);
-        writeVertex(vertexFloatBase + (FLOATS_PER_VERTEX * 2), x + charSize, y + charSize, z);
-        writeVertex(vertexFloatBase + (FLOATS_PER_VERTEX * 3), rightX, y, z);
-
-        writeUv(uvFloatBase, u0, v0);
-        writeUv(uvFloatBase + UV_FLOATS_PER_VERTEX, u0, v1);
-        writeUv(uvFloatBase + (UV_FLOATS_PER_VERTEX * 2), u1, v1);
-        writeUv(uvFloatBase + (UV_FLOATS_PER_VERTEX * 3), u1, v0);
-
-        writeColor(colorFloatBase, red, green, blue, alpha);
-        writeColor(colorFloatBase + COLOR_FLOATS_PER_VERTEX, red, green, blue, alpha);
-        writeColor(colorFloatBase + (COLOR_FLOATS_PER_VERTEX * 2), red, green, blue, alpha);
-        writeColor(colorFloatBase + (COLOR_FLOATS_PER_VERTEX * 3), red, green, blue, alpha);
-
-        writeUvBounds(uvBoundsFloatBase, u0, v0, u1, v1);
-        writeUvBounds(uvBoundsFloatBase + UV_BOUNDS_FLOATS_PER_VERTEX, u0, v0, u1, v1);
-        writeUvBounds(uvBoundsFloatBase + (UV_BOUNDS_FLOATS_PER_VERTEX * 2), u0, v0, u1, v1);
-        writeUvBounds(uvBoundsFloatBase + (UV_BOUNDS_FLOATS_PER_VERTEX * 3), u0, v0, u1, v1);
-
-        glyphFlagsData[glyphFlagFloatBase] = coloredGlyphFlag;
-        glyphFlagsData[glyphFlagFloatBase + 1] = coloredGlyphFlag;
-        glyphFlagsData[glyphFlagFloatBase + 2] = coloredGlyphFlag;
-        glyphFlagsData[glyphFlagFloatBase + 3] = coloredGlyphFlag;
+        writeVertex(vertexFloatBase, leftX, y, z, u0, v0, red, green, blue, alpha, u0, v0, u1, v1,
+                coloredGlyphFlag);
+        writeVertex(vertexFloatBase + VERTEX_STRIDE_FLOATS, x, y + charSize, z, u0, v1, red, green, blue, alpha,
+                u0, v0, u1, v1, coloredGlyphFlag);
+        writeVertex(vertexFloatBase + (VERTEX_STRIDE_FLOATS * 2), x + charSize, y + charSize, z, u1, v1, red,
+                green, blue, alpha, u0, v0, u1, v1, coloredGlyphFlag);
+        writeVertex(vertexFloatBase + (VERTEX_STRIDE_FLOATS * 3), rightX, y, z, u1, v0, red, green, blue, alpha,
+                u0, v0, u1, v1, coloredGlyphFlag);
 
         indexData[indexBase] = vertexBase;
         indexData[indexBase + 1] = vertexBase + 1;
@@ -123,36 +111,24 @@ public final class GlyphRenderBatch {
         return quadCount * INDICES_PER_QUAD;
     }
 
-    public void writeToBuffers(FloatBuffer vertexBuffer, FloatBuffer uvBuffer, FloatBuffer colorBuffer,
-            FloatBuffer uvBoundsBuffer, FloatBuffer glyphFlagsBuffer, IntBuffer indexBuffer) {
-        int vertexFloatCount = quadCount * VERTICES_PER_QUAD * FLOATS_PER_VERTEX;
-        int uvFloatCount = quadCount * VERTICES_PER_QUAD * UV_FLOATS_PER_VERTEX;
-        int colorFloatCount = quadCount * VERTICES_PER_QUAD * COLOR_FLOATS_PER_VERTEX;
-        int uvBoundsFloatCount = quadCount * VERTICES_PER_QUAD * UV_BOUNDS_FLOATS_PER_VERTEX;
-        int glyphFlagsFloatCount = quadCount * VERTICES_PER_QUAD * GLYPH_FLAGS_FLOATS_PER_VERTEX;
-        int indexCount = quadCount * INDICES_PER_QUAD;
+    public int getVertexFloatCount() {
+        return quadCount * VERTICES_PER_QUAD * VERTEX_STRIDE_FLOATS;
+    }
 
-        vertexBuffer.put(vertexData, 0, vertexFloatCount);
-        uvBuffer.put(uvData, 0, uvFloatCount);
-        colorBuffer.put(colorData, 0, colorFloatCount);
-        uvBoundsBuffer.put(uvBoundsData, 0, uvBoundsFloatCount);
-        glyphFlagsBuffer.put(glyphFlagsData, 0, glyphFlagsFloatCount);
-        indexBuffer.put(indexData, 0, indexCount);
+    public void writeToBuffers(FloatBuffer vertexBuffer, IntBuffer indexBuffer) {
+        vertexBuffer.put(vertexData, 0, getVertexFloatCount());
+        indexBuffer.put(indexData, 0, getIndexCount());
     }
 
     private void ensureCapacity(int targetQuadCount) {
-        if (targetQuadCount <= (vertexData.length / (VERTICES_PER_QUAD * FLOATS_PER_VERTEX))) {
+        if (targetQuadCount <= (vertexData.length / (VERTICES_PER_QUAD * VERTEX_STRIDE_FLOATS))) {
             return;
         }
-        int nextCapacity = Math.max(DEFAULT_QUAD_CAPACITY, vertexData.length / (VERTICES_PER_QUAD * FLOATS_PER_VERTEX));
+        int nextCapacity = Math.max(DEFAULT_QUAD_CAPACITY, vertexData.length / (VERTICES_PER_QUAD * VERTEX_STRIDE_FLOATS));
         while (nextCapacity < targetQuadCount) {
             nextCapacity *= 2;
         }
-        vertexData = grow(vertexData, nextCapacity * VERTICES_PER_QUAD * FLOATS_PER_VERTEX);
-        uvData = grow(uvData, nextCapacity * VERTICES_PER_QUAD * UV_FLOATS_PER_VERTEX);
-        colorData = grow(colorData, nextCapacity * VERTICES_PER_QUAD * COLOR_FLOATS_PER_VERTEX);
-        uvBoundsData = grow(uvBoundsData, nextCapacity * VERTICES_PER_QUAD * UV_BOUNDS_FLOATS_PER_VERTEX);
-        glyphFlagsData = grow(glyphFlagsData, nextCapacity * VERTICES_PER_QUAD * GLYPH_FLAGS_FLOATS_PER_VERTEX);
+        vertexData = grow(vertexData, nextCapacity * VERTICES_PER_QUAD * VERTEX_STRIDE_FLOATS);
         indexData = grow(indexData, nextCapacity * INDICES_PER_QUAD);
     }
 
@@ -173,28 +149,21 @@ public final class GlyphRenderBatch {
         return expanded;
     }
 
-    private void writeVertex(int offset, float x, float y, float z) {
-        vertexData[offset] = x;
-        vertexData[offset + 1] = y;
-        vertexData[offset + 2] = z;
-    }
-
-    private void writeUv(int offset, float u, float v) {
-        uvData[offset] = u;
-        uvData[offset + 1] = v;
-    }
-
-    private void writeColor(int offset, float red, float green, float blue, float alpha) {
-        colorData[offset] = red;
-        colorData[offset + 1] = green;
-        colorData[offset + 2] = blue;
-        colorData[offset + 3] = alpha;
-    }
-
-    private void writeUvBounds(int offset, float u0, float v0, float u1, float v1) {
-        uvBoundsData[offset] = u0;
-        uvBoundsData[offset + 1] = v0;
-        uvBoundsData[offset + 2] = u1;
-        uvBoundsData[offset + 3] = v1;
+    private void writeVertex(int offset, float x, float y, float z, float u, float v, float red, float green,
+            float blue, float alpha, float u0, float v0, float u1, float v1, float coloredGlyphFlag) {
+        vertexData[offset + POSITION_OFFSET_FLOATS] = x;
+        vertexData[offset + POSITION_OFFSET_FLOATS + 1] = y;
+        vertexData[offset + POSITION_OFFSET_FLOATS + 2] = z;
+        vertexData[offset + UV_OFFSET_FLOATS] = u;
+        vertexData[offset + UV_OFFSET_FLOATS + 1] = v;
+        vertexData[offset + COLOR_OFFSET_FLOATS] = red;
+        vertexData[offset + COLOR_OFFSET_FLOATS + 1] = green;
+        vertexData[offset + COLOR_OFFSET_FLOATS + 2] = blue;
+        vertexData[offset + COLOR_OFFSET_FLOATS + 3] = alpha;
+        vertexData[offset + UV_BOUNDS_OFFSET_FLOATS] = u0;
+        vertexData[offset + UV_BOUNDS_OFFSET_FLOATS + 1] = v0;
+        vertexData[offset + UV_BOUNDS_OFFSET_FLOATS + 2] = u1;
+        vertexData[offset + UV_BOUNDS_OFFSET_FLOATS + 3] = v1;
+        vertexData[offset + GLYPH_FLAGS_OFFSET_FLOATS] = coloredGlyphFlag;
     }
 }

@@ -14,11 +14,7 @@ import org.lwjgl.opengl.GL30;
 public class FontRenderTool {
 
     private int vao;
-    private int positionBuffer;
-    private int uvBuffer;
-    private int colorBuffer;
-    private int uvBoundsBuffer;
-    private int glyphFlagsBuffer;
+    private int vertexBuffer;
     private int indexBuffer;
 
     /**
@@ -32,31 +28,28 @@ public class FontRenderTool {
         vao = GL30.glGenVertexArrays();
         GL30.glBindVertexArray(vao);
 
-        positionBuffer = GL15.glGenBuffers();
-        uvBuffer = GL15.glGenBuffers();
-        colorBuffer = GL15.glGenBuffers();
-        uvBoundsBuffer = GL15.glGenBuffers();
-        glyphFlagsBuffer = GL15.glGenBuffers();
+        vertexBuffer = GL15.glGenBuffers();
         indexBuffer = GL15.glGenBuffers();
 
-        GL15.glBindBuffer(GL15.GL_ARRAY_BUFFER, positionBuffer);
-        GL20.glVertexAttribPointer(0, 3, GL11.GL_FLOAT, false, 0, 0L);
+        GL15.glBindBuffer(GL15.GL_ARRAY_BUFFER, vertexBuffer);
+        GL20.glVertexAttribPointer(0, GlyphRenderBatch.POSITION_COMPONENT_COUNT, GL11.GL_FLOAT, false,
+                GlyphRenderBatch.VERTEX_STRIDE_BYTES, (long) GlyphRenderBatch.POSITION_OFFSET_BYTES);
         GL20.glEnableVertexAttribArray(0);
 
-        GL15.glBindBuffer(GL15.GL_ARRAY_BUFFER, uvBuffer);
-        GL20.glVertexAttribPointer(1, 2, GL11.GL_FLOAT, false, 0, 0L);
+        GL20.glVertexAttribPointer(1, GlyphRenderBatch.UV_COMPONENT_COUNT, GL11.GL_FLOAT, false,
+                GlyphRenderBatch.VERTEX_STRIDE_BYTES, (long) GlyphRenderBatch.UV_OFFSET_BYTES);
         GL20.glEnableVertexAttribArray(1);
 
-        GL15.glBindBuffer(GL15.GL_ARRAY_BUFFER, colorBuffer);
-        GL20.glVertexAttribPointer(2, 4, GL11.GL_FLOAT, false, 0, 0L);
+        GL20.glVertexAttribPointer(2, GlyphRenderBatch.COLOR_COMPONENT_COUNT, GL11.GL_FLOAT, false,
+                GlyphRenderBatch.VERTEX_STRIDE_BYTES, (long) GlyphRenderBatch.COLOR_OFFSET_BYTES);
         GL20.glEnableVertexAttribArray(2);
 
-        GL15.glBindBuffer(GL15.GL_ARRAY_BUFFER, uvBoundsBuffer);
-        GL20.glVertexAttribPointer(3, 4, GL11.GL_FLOAT, false, 0, 0L);
+        GL20.glVertexAttribPointer(3, GlyphRenderBatch.UV_BOUNDS_COMPONENT_COUNT, GL11.GL_FLOAT, false,
+                GlyphRenderBatch.VERTEX_STRIDE_BYTES, (long) GlyphRenderBatch.UV_BOUNDS_OFFSET_BYTES);
         GL20.glEnableVertexAttribArray(3);
 
-        GL15.glBindBuffer(GL15.GL_ARRAY_BUFFER, glyphFlagsBuffer);
-        GL20.glVertexAttribPointer(4, 1, GL11.GL_FLOAT, false, 0, 0L);
+        GL20.glVertexAttribPointer(4, GlyphRenderBatch.GLYPH_FLAGS_COMPONENT_COUNT, GL11.GL_FLOAT, false,
+                GlyphRenderBatch.VERTEX_STRIDE_BYTES, (long) GlyphRenderBatch.GLYPH_FLAGS_OFFSET_BYTES);
         GL20.glEnableVertexAttribArray(4);
 
         GL15.glBindBuffer(GL15.GL_ELEMENT_ARRAY_BUFFER, indexBuffer);
@@ -69,39 +62,16 @@ public class FontRenderTool {
     /**
      * 提交缓冲区并执行绘制。
      *
-     * @param vertexData 顶点缓冲
-     * @param uvData 纹理坐标缓冲
-     * @param colorData 颜色缓冲
-     * @param uvBoundsData UV 边界缓冲
-     * @param glyphFlagsData 字形标记缓冲
+     * @param vertexData interleaved 顶点缓冲
      * @param indexData 索引缓冲
      * @param indexCount 索引数量
      */
-    public void render(
-            FloatBuffer vertexData,
-            FloatBuffer uvData,
-            FloatBuffer colorData,
-            FloatBuffer uvBoundsData,
-            FloatBuffer glyphFlagsData,
-            IntBuffer indexData,
-            int indexCount) {
+    public void render(FloatBuffer vertexData, IntBuffer indexData, int indexCount) {
         initialize();
         GL30.glBindVertexArray(vao);
 
-        GL15.glBindBuffer(GL15.GL_ARRAY_BUFFER, positionBuffer);
+        GL15.glBindBuffer(GL15.GL_ARRAY_BUFFER, vertexBuffer);
         GL15.glBufferData(GL15.GL_ARRAY_BUFFER, vertexData, GL15.GL_DYNAMIC_DRAW);
-
-        GL15.glBindBuffer(GL15.GL_ARRAY_BUFFER, uvBuffer);
-        GL15.glBufferData(GL15.GL_ARRAY_BUFFER, uvData, GL15.GL_DYNAMIC_DRAW);
-
-        GL15.glBindBuffer(GL15.GL_ARRAY_BUFFER, colorBuffer);
-        GL15.glBufferData(GL15.GL_ARRAY_BUFFER, colorData, GL15.GL_DYNAMIC_DRAW);
-
-        GL15.glBindBuffer(GL15.GL_ARRAY_BUFFER, uvBoundsBuffer);
-        GL15.glBufferData(GL15.GL_ARRAY_BUFFER, uvBoundsData, GL15.GL_DYNAMIC_DRAW);
-
-        GL15.glBindBuffer(GL15.GL_ARRAY_BUFFER, glyphFlagsBuffer);
-        GL15.glBufferData(GL15.GL_ARRAY_BUFFER, glyphFlagsData, GL15.GL_DYNAMIC_DRAW);
 
         GL15.glBindBuffer(GL15.GL_ELEMENT_ARRAY_BUFFER, indexBuffer);
         GL15.glBufferData(GL15.GL_ELEMENT_ARRAY_BUFFER, indexData, GL15.GL_DYNAMIC_DRAW);
@@ -121,11 +91,7 @@ public class FontRenderTool {
             GL30.glDeleteVertexArrays(vao);
             vao = 0;
         }
-        positionBuffer = deleteBuffer(positionBuffer);
-        uvBuffer = deleteBuffer(uvBuffer);
-        colorBuffer = deleteBuffer(colorBuffer);
-        uvBoundsBuffer = deleteBuffer(uvBoundsBuffer);
-        glyphFlagsBuffer = deleteBuffer(glyphFlagsBuffer);
+        vertexBuffer = deleteBuffer(vertexBuffer);
         indexBuffer = deleteBuffer(indexBuffer);
     }
 
