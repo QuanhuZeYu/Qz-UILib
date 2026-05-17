@@ -46,6 +46,10 @@ public class UiHudDocumentHostTest {
                 UiHudDocumentHost.classifyScreen(new Object(), "net.minecraft.client.gui.GuiChat"));
         Assert.assertEquals(UiHudScreenCategory.MENU,
                 UiHudDocumentHost.classifyScreen(new Object(), "net.minecraft.client.gui.GuiIngameMenu"));
+        Assert.assertEquals(UiHudScreenCategory.MENU,
+                UiHudDocumentHost.classifyScreen(new Object(), "net.minecraft.client.gui.GuiMainMenu"));
+        Assert.assertEquals(UiHudScreenCategory.MENU,
+                UiHudDocumentHost.classifyScreen(new Object(), "net.minecraft.client.gui.screens.TitleScreen"));
         Assert.assertEquals(UiHudScreenCategory.CONTAINER,
                 UiHudDocumentHost.classifyScreen(new Object(), "example.custom.Screen"));
         Assert.assertEquals(UiHudScreenCategory.MENU,
@@ -121,7 +125,31 @@ public class UiHudDocumentHostTest {
                 "example.custom.Screen", false));
         Assert.assertFalse(UiHudDocumentHost.isInteractiveInputEnabled(new Object(),
                 "net.minecraft.client.gui.GuiIngameMenu", false));
+        Assert.assertFalse(UiHudDocumentHost.isInteractiveInputEnabled(new Object(),
+                "net.minecraft.client.gui.screens.TitleScreen", false));
         Assert.assertFalse(UiHudDocumentHost.isInteractiveInputEnabled(null, null, true));
+    }
+
+    /**
+     * 验证 HUD 浮窗不会在游戏主页上方显示。
+     */
+    @Test
+    public void shouldHideHudLayersOnMainMenuScreens() {
+        UiHudDocumentHost host = UiHudDocumentHost.getInstance();
+        UiHudDocumentRegistration registration = host.register(UiHudLayerType.INTERACTIVE,
+                new UiHudDocumentHost.UiHudDocumentContentBuilder() {
+                    @Override
+                    public void build(UiDocument document) {
+                        document.getRootElement().appendText("HUD");
+                    }
+                }, new DeterministicTextMeasureService(), UiRuntimeAdapters.empty());
+        try {
+            Assert.assertTrue(host.hasVisibleLayerForTest(null, "example.custom.Screen"));
+            Assert.assertFalse(host.hasVisibleLayerForTest(null, "net.minecraft.client.gui.GuiMainMenu"));
+            Assert.assertFalse(host.hasVisibleLayerForTest(null, "net.minecraft.client.gui.screens.TitleScreen"));
+        } finally {
+            registration.unregister();
+        }
     }
 
     /**

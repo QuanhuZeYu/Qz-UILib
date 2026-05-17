@@ -513,6 +513,23 @@ public final class UiHudDocumentHost {
     }
 
     /**
+     * 供测试使用的可见层判断辅助入口。
+     *
+     * @param screen 当前屏幕实例
+     * @param screenClassName 当前屏幕类名
+     * @return 是否存在可见层
+     */
+    synchronized boolean hasVisibleLayerForTest(Object screen, String screenClassName) {
+        UiHudScreenCategory screenCategory = classifyScreen(screen, screenClassName);
+        for (HudEntry entry : entries) {
+            if (entry.isVisibleIn(screenCategory)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
      * 返回当前屏幕的 HUD 分类。
      *
      * @param screen 当前屏幕
@@ -553,7 +570,7 @@ public final class UiHudDocumentHost {
             return UiHudScreenCategory.MENU;
         }
         if ("net.minecraft.client.gui.GuiIngameMenu".equals(screenClassName)
-                || "net.minecraft.client.gui.GuiMainMenu".equals(screenClassName)
+                || isKnownMainMenuScreenClass(screenClassName)
                 || (screenClassName != null && screenClassName.startsWith("net.minecraft.client.gui.Gui"))) {
             return UiHudScreenCategory.MENU;
         }
@@ -561,6 +578,18 @@ public final class UiHudDocumentHost {
             return UiHudScreenCategory.INGAME;
         }
         return UiHudScreenCategory.CONTAINER;
+    }
+
+    /**
+     * 判断类名是否属于已知 Minecraft 游戏主页。
+     *
+     * @param screenClassName 当前屏幕类名
+     * @return 是否为游戏主页类名
+     */
+    private static boolean isKnownMainMenuScreenClass(String screenClassName) {
+        return "net.minecraft.client.gui.GuiMainMenu".equals(screenClassName)
+                || "net.minecraft.client.gui.screen.TitleScreen".equals(screenClassName)
+                || "net.minecraft.client.gui.screens.TitleScreen".equals(screenClassName);
     }
 
     private synchronized void renderVisibleLayers(UiHudScreenCategory screenCategory, float partialTicks) {

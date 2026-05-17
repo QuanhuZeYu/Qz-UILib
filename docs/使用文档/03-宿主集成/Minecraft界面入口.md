@@ -128,7 +128,7 @@ Minecraft.getMinecraft().displayGuiScreen(UiDocumentScreens.createDocumentScreen
 当前内置两类层：
 
 - `UiHudLayerType.PASSIVE`：不可交互，只在纯游戏内 HUD 可见；打开背包、箱子、菜单后会隐藏。
-- `UiHudLayerType.INTERACTIVE`：纯游戏内与容器类界面可见；暂停菜单、主菜单以及大多数原版 `Gui*` 页面会被归为 `MENU` 并直接隐藏。它在纯游戏内只负责渲染，不接通命中或焦点输入；只有容器态且鼠标已释放时，才会进入可交互状态。
+- `UiHudLayerType.INTERACTIVE`：纯游戏内与容器类界面可见；暂停菜单、主菜单（包括新版 `TitleScreen`）以及大多数原版 `Gui*` 页面会被归为 `MENU` 并直接隐藏。它在纯游戏内只负责渲染，不接通命中或焦点输入；只有容器态且鼠标已释放时，才会进入可交互状态。
 
 ```java
 UiHudDocumentRegistration registration = UiHudDocumentHost.getInstance().register(
@@ -150,7 +150,7 @@ UiHudDocumentRegistration registration = UiHudDocumentHost.getInstance().registe
 - HUD 文档仍复用 `UiDocument` 与 `HtmlLikeDocumentWidget`，不是单独的一套渲染语法。
 - HUD 根元素默认补齐 `width:100%`、`height:100%` 与 `overflow:visible`。
 - 被动层会默认标记为整棵子树不可命中。
-- 交互层在实现上仍会随纯游戏界面渲染，但只有容器态才会接通输入。暂停菜单、主菜单、UILib 自身 `BaseScreen` 以及大多数原版 `net.minecraft.client.gui.Gui*` 页面会落入 `MENU` 分类，因此既不会显示可交互状态，也不会接通输入；当前主要适用容器类与部分第三方自定义屏幕。
+- 交互层在实现上仍会随纯游戏界面渲染，但只有容器态才会接通输入。暂停菜单、主菜单（包括新版 `TitleScreen`）、UILib 自身 `BaseScreen` 以及大多数原版 `net.minecraft.client.gui.Gui*` 页面会落入 `MENU` 分类，因此既不会显示可交互状态，也不会接通输入；当前主要适用容器类与部分第三方自定义屏幕。
 - 交互 HUD 当前采用“先鼠标、后键盘”的接管契约：必须先通过鼠标命中建立 HUD 焦点，之后才会继续接管键盘；不支持纯键盘首次进入 HUD。
 - 交互 HUD 默认会阻断命中区域继续落到底层原生界面；若某个面板或其祖先希望显式放行空白区域，需要声明 `data-hit-test-passthrough="true"`。
 - 多个交互 HUD 重叠时，只会把输入路由给最上层命中的那一层，避免多层同时响应同一次点击。
