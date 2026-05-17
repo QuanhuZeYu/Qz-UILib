@@ -239,6 +239,11 @@ public class DocumentHostImageControlTest {
                 club.heiqi.uilib.ui.text.TextContentMode textContentMode) {}
 
         @Override
+        public boolean supportsDeferredTextBatching() {
+            return false;
+        }
+
+        @Override
         public void pushClip(int left, int top, int right, int bottom, int cornerRadius) {}
 
         @Override

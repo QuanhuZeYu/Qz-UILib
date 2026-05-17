@@ -6,7 +6,6 @@ import java.util.List;
 import java.util.Objects;
 
 import club.heiqi.uilib.font.FontService;
-import club.heiqi.uilib.font.api.DefaultFontRendererAdapter;
 import club.heiqi.uilib.ui.layout.DocumentEffectType;
 import club.heiqi.uilib.ui.render.UiRenderContext;
 import club.heiqi.uilib.ui.theme.UiSurfaceStyle;
@@ -106,11 +105,22 @@ public final class DocumentPaintRenderer {
 
     private static int renderTextBatch(UiRenderContext context, List<DocumentPaintCommand> commands, int startIndex,
             int offsetX, int offsetY, RenderReplayState replayState) {
-        DefaultFontRendererAdapter fontRenderer = DefaultFontRendererAdapter.getInstance();
-        FontService fontService = FontService.getInstance();
+        if (!context.supportsDeferredTextBatching()) {
+            int commandIndex = startIndex;
+            while (commandIndex < commands.size()) {
+                DocumentPaintCommand command = commands.get(commandIndex);
+                if (!isBatchableTextCommand(command, replayState)) {
+                    break;
+                }
+                renderTextCommand(context, command, offsetX, offsetY, replayState);
+                commandIndex++;
+            }
+            return commandIndex;
+        }
         int commandIndex = startIndex;
+        FontService fontService = FontService.getInstance();
         synchronized (fontService) {
-            fontRenderer.beginDeferredFlushScope(context.getScreenWidth(), context.getScreenHeight());
+            context.beginDeferredTextBatch(context.getScreenWidth(), context.getScreenHeight());
             try {
                 while (commandIndex < commands.size()) {
                     DocumentPaintCommand command = commands.get(commandIndex);
@@ -123,9 +133,9 @@ public final class DocumentPaintRenderer {
                 return commandIndex;
             } finally {
                 try {
-                    fontRenderer.flushDeferredFlushScope();
+                    context.flushDeferredTextBatch();
                 } finally {
-                    fontRenderer.endDeferredFlushScope();
+                    context.endDeferredTextBatch();
                 }
             }
         }

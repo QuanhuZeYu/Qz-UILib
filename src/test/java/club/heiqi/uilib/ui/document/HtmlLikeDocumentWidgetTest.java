@@ -2976,6 +2976,11 @@ public class HtmlLikeDocumentWidgetTest {
         }
 
         @Override
+        public boolean supportsDeferredTextBatching() {
+            return false;
+        }
+
+        @Override
         public void drawBackdropFilter(int left, int top, int right, int bottom, int blurRadius, float saturation,
                 int cornerRadius) {}
 

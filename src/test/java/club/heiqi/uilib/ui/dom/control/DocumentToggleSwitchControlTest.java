@@ -225,6 +225,11 @@ public class DocumentToggleSwitchControlTest {
                 club.heiqi.uilib.ui.text.TextContentMode textContentMode) {}
 
         @Override
+        public boolean supportsDeferredTextBatching() {
+            return false;
+        }
+
+        @Override
         public int measureTextWidth(String text) {
             return text == null ? 0 : text.length() * 12;
         }

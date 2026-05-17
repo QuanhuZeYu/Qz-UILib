@@ -464,6 +464,11 @@ public class DocumentTextInputControlTest {
         }
 
         @Override
+        public boolean supportsDeferredTextBatching() {
+            return false;
+        }
+
+        @Override
         public void fillRect(int left, int top, int right, int bottom, int color) {}
 
         @Override

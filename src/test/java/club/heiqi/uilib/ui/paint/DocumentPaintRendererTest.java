@@ -8,7 +8,6 @@ import org.junit.Test;
 
 import club.heiqi.uilib.ui.dom.ElementNode;
 import club.heiqi.uilib.ui.dom.UiDocument;
-import club.heiqi.uilib.font.api.DefaultFontRendererAdapter;
 import club.heiqi.uilib.ui.layout.DocumentEffectType;
 import club.heiqi.uilib.ui.layout.DocumentLayoutBox;
 import club.heiqi.uilib.ui.layout.DocumentLayoutEngine;
@@ -312,22 +311,24 @@ public class DocumentPaintRendererTest {
                     @Override
                     public void render(UiRenderContext context, int contentLeft, int contentTop, int contentRight,
                             int contentBottom) {
-                        customBatchStates.add(Boolean.valueOf(DefaultFontRendererAdapter.getInstance()
-                                .isDeferredFlushScopeActive()));
+                        customBatchStates.add(Boolean.valueOf(((BatchingRecordingUiRenderContext) context)
+                                .isDeferredTextBatchActiveForTest()));
                     }
                 }));
         commands.add(new DocumentPaintCommand(DocumentPaintCommandType.TEXT, root, 0, 36, 24, 48,
                 0xFFE2E8F0, 0, 0, "Third", TextContentMode.UILIB_RAW, null, 0, 1.0F, 1.0F));
 
-        RecordingUiRenderContext renderContext = new RecordingUiRenderContext();
+        BatchingRecordingUiRenderContext renderContext = new BatchingRecordingUiRenderContext();
         DocumentPaintRenderer.render(renderContext, commands);
 
         Assert.assertEquals(3, renderContext.textCalls.size());
-        Assert.assertTrue(renderContext.textCalls.get(0).fontBatchScopeActive);
-        Assert.assertTrue(renderContext.textCalls.get(1).fontBatchScopeActive);
-        Assert.assertTrue(renderContext.textCalls.get(2).fontBatchScopeActive);
+        Assert.assertEquals("First", renderContext.textCalls.get(0).text);
+        Assert.assertEquals("Second", renderContext.textCalls.get(1).text);
+        Assert.assertEquals("Third", renderContext.textCalls.get(2).text);
+        Assert.assertEquals(2, renderContext.beginDeferredTextBatchCount);
+        Assert.assertEquals(2, renderContext.flushDeferredTextBatchCount);
+        Assert.assertEquals(2, renderContext.endDeferredTextBatchCount);
         Assert.assertEquals(java.util.Collections.singletonList(Boolean.FALSE), customBatchStates);
-        Assert.assertFalse(DefaultFontRendererAdapter.getInstance().isDeferredFlushScopeActive());
     }
 
     /**
@@ -477,7 +478,7 @@ public class DocumentPaintRendererTest {
     /**
      * 记录 drawSurface 调用的渲染上下文。
      */
-    private static final class RecordingUiRenderContext extends UiRenderContext {
+    private static class RecordingUiRenderContext extends UiRenderContext {
 
         private final List<DrawCall> drawCalls = new ArrayList<DrawCall>();
         private final List<ClipCall> clipCalls = new ArrayList<ClipCall>();
@@ -526,6 +527,11 @@ public class DocumentPaintRendererTest {
         public void drawText(String text, int x, int y, int color, boolean shadow, TextContentMode textContentMode) {
             textCalls.add(new TextCall(text, x, y, color, shadow, textContentMode));
             notifyMainLayerContentChanged();
+        }
+
+        @Override
+        public boolean supportsDeferredTextBatching() {
+            return false;
         }
 
         @Override
@@ -600,7 +606,6 @@ public class DocumentPaintRendererTest {
         private final int color;
         private final boolean shadow;
         private final TextContentMode textContentMode;
-        private final boolean fontBatchScopeActive;
 
         private TextCall(String text, int x, int y, int color, boolean shadow, TextContentMode textContentMode) {
             this.text = text;
@@ -609,7 +614,59 @@ public class DocumentPaintRendererTest {
             this.color = color;
             this.shadow = shadow;
             this.textContentMode = textContentMode;
-            this.fontBatchScopeActive = DefaultFontRendererAdapter.getInstance().isDeferredFlushScopeActive();
+        }
+    }
+
+    /**
+     * 记录延迟文本批处理边界的渲染上下文。
+     */
+    private static final class BatchingRecordingUiRenderContext extends RecordingUiRenderContext {
+
+        private final List<TextCall> textCalls = new ArrayList<TextCall>();
+        private int beginDeferredTextBatchCount;
+        private int flushDeferredTextBatchCount;
+        private int endDeferredTextBatchCount;
+        private boolean deferredTextBatchActive;
+
+        private BatchingRecordingUiRenderContext() {
+            super();
+        }
+
+        @Override
+        public void drawText(String text, int x, int y, int color, boolean shadow) {
+            drawText(text, x, y, color, shadow, TextContentMode.UILIB_RAW);
+        }
+
+        @Override
+        public void drawText(String text, int x, int y, int color, boolean shadow, TextContentMode textContentMode) {
+            textCalls.add(new TextCall(text, x, y, color, shadow, textContentMode));
+            notifyMainLayerContentChanged();
+        }
+
+        @Override
+        public boolean supportsDeferredTextBatching() {
+            return true;
+        }
+
+        @Override
+        public void beginDeferredTextBatch(int targetWidth, int targetHeight) {
+            beginDeferredTextBatchCount++;
+            deferredTextBatchActive = true;
+        }
+
+        @Override
+        public void flushDeferredTextBatch() {
+            flushDeferredTextBatchCount++;
+        }
+
+        @Override
+        public void endDeferredTextBatch() {
+            endDeferredTextBatchCount++;
+            deferredTextBatchActive = false;
+        }
+
+        private boolean isDeferredTextBatchActiveForTest() {
+            return deferredTextBatchActive;
         }
     }
 

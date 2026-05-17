@@ -605,6 +605,7 @@ public final class UiHudDocumentHost {
      */
     private static boolean isKnownMainMenuScreenClass(String screenClassName) {
         return "net.minecraft.client.gui.GuiMainMenu".equals(screenClassName)
+                || "galaxyspace.core.gui.GSGuiMainMenu".equals(screenClassName)
                 || "net.minecraft.client.gui.screen.TitleScreen".equals(screenClassName)
                 || "net.minecraft.client.gui.screens.TitleScreen".equals(screenClassName);
     }

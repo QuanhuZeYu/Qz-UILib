@@ -128,7 +128,7 @@ Minecraft.getMinecraft().displayGuiScreen(UiDocumentScreens.createDocumentScreen
 当前内置两类层：
 
 - `UiHudLayerType.PASSIVE`：不可交互，只在纯游戏内 HUD 可见；打开背包、箱子、菜单后会隐藏。
-- `UiHudLayerType.INTERACTIVE`：纯游戏内与非黑名单界面可见；当前默认黑名单包括游戏主页（含新版 `TitleScreen`）、选图页、服务器列表、游戏内菜单和 Forge 配置页。它在纯游戏内只负责渲染，不接通命中或焦点输入；只有容器态且鼠标已释放时，才会进入可交互状态。
+- `UiHudLayerType.INTERACTIVE`：纯游戏内与非黑名单界面可见；当前默认黑名单包括游戏主页（含原版 `GuiMainMenu`、新版 `TitleScreen`、第三方主页 `galaxyspace.core.gui.GSGuiMainMenu`）、选图页、服务器列表、游戏内菜单和 Forge 配置页。它在纯游戏内只负责渲染，不接通命中或焦点输入；只有容器态且鼠标已释放时，才会进入可交互状态。
 
 ```java
 UiHudDocumentRegistration registration = UiHudDocumentHost.getInstance().register(
@@ -150,7 +150,7 @@ UiHudDocumentRegistration registration = UiHudDocumentHost.getInstance().registe
 - HUD 文档仍复用 `UiDocument` 与 `HtmlLikeDocumentWidget`，不是单独的一套渲染语法。
 - HUD 根元素默认补齐 `width:100%`、`height:100%` 与 `overflow:visible`。
 - 被动层会默认标记为整棵子树不可命中。
-- 交互层在实现上仍会随纯游戏界面渲染，但只有容器态才会接通输入。当前 HUD 隐藏范围采用显式黑名单：游戏主页（含新版 `TitleScreen`）、选图页、服务器列表、游戏内菜单和 Forge 配置页会落入 `MENU` 分类，因此既不会显示，也不会接通输入；未命中黑名单的第三方与大多数原版 `GuiScreen` 默认按容器态处理。
+- 交互层在实现上仍会随纯游戏界面渲染，但只有容器态才会接通输入。当前 HUD 隐藏范围采用显式黑名单：游戏主页（含原版 `GuiMainMenu`、新版 `TitleScreen`、第三方主页 `galaxyspace.core.gui.GSGuiMainMenu`）、选图页、服务器列表、游戏内菜单和 Forge 配置页会落入 `MENU` 分类，因此既不会显示，也不会接通输入；未命中黑名单的第三方与大多数原版 `GuiScreen` 默认按容器态处理。
 - 交互 HUD 当前采用“先鼠标、后键盘”的接管契约：必须先通过鼠标命中建立 HUD 焦点，之后才会继续接管键盘；不支持纯键盘首次进入 HUD。
 - 交互 HUD 默认会阻断命中区域继续落到底层原生界面；若某个面板或其祖先希望显式放行空白区域，需要声明 `data-hit-test-passthrough="true"`。
 - 多个交互 HUD 重叠时，只会把输入路由给最上层命中的那一层，避免多层同时响应同一次点击。

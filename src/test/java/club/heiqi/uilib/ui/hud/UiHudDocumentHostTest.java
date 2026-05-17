@@ -49,6 +49,8 @@ public class UiHudDocumentHostTest {
         Assert.assertEquals(UiHudScreenCategory.MENU,
                 UiHudDocumentHost.classifyScreen(new Object(), "net.minecraft.client.gui.GuiMainMenu"));
         Assert.assertEquals(UiHudScreenCategory.MENU,
+                UiHudDocumentHost.classifyScreen(new Object(), "galaxyspace.core.gui.GSGuiMainMenu"));
+        Assert.assertEquals(UiHudScreenCategory.MENU,
                 UiHudDocumentHost.classifyScreen(new Object(), "net.minecraft.client.gui.screens.TitleScreen"));
         Assert.assertEquals(UiHudScreenCategory.MENU,
                 UiHudDocumentHost.classifyScreen(new Object(), "net.minecraft.client.gui.GuiSelectWorld"));
@@ -136,6 +138,8 @@ public class UiHudDocumentHostTest {
         Assert.assertFalse(UiHudDocumentHost.isInteractiveInputEnabled(new Object(),
                 "net.minecraft.client.gui.GuiIngameMenu", false));
         Assert.assertFalse(UiHudDocumentHost.isInteractiveInputEnabled(new Object(),
+                "galaxyspace.core.gui.GSGuiMainMenu", false));
+        Assert.assertFalse(UiHudDocumentHost.isInteractiveInputEnabled(new Object(),
                 "net.minecraft.client.gui.screens.TitleScreen", false));
         Assert.assertFalse(UiHudDocumentHost.isInteractiveInputEnabled(new Object(),
                 "net.minecraft.client.gui.GuiSelectWorld", false));
@@ -163,6 +167,7 @@ public class UiHudDocumentHostTest {
             Assert.assertTrue(host.hasVisibleLayerForTest(null, "example.custom.Screen"));
             Assert.assertTrue(host.hasVisibleLayerForTest(null, "net.minecraft.client.gui.GuiOptions"));
             Assert.assertFalse(host.hasVisibleLayerForTest(null, "net.minecraft.client.gui.GuiMainMenu"));
+            Assert.assertFalse(host.hasVisibleLayerForTest(null, "galaxyspace.core.gui.GSGuiMainMenu"));
             Assert.assertFalse(host.hasVisibleLayerForTest(null, "net.minecraft.client.gui.screens.TitleScreen"));
             Assert.assertFalse(host.hasVisibleLayerForTest(null, "net.minecraft.client.gui.GuiSelectWorld"));
             Assert.assertFalse(host.hasVisibleLayerForTest(null, "net.minecraft.client.gui.GuiMultiplayer"));

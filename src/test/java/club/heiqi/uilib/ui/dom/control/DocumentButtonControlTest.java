@@ -184,6 +184,11 @@ public class DocumentButtonControlTest {
                 TextContentMode textContentMode) {}
 
         @Override
+        public boolean supportsDeferredTextBatching() {
+            return false;
+        }
+
+        @Override
         public int measureTextWidth(String text) {
             return text == null ? 0 : text.length() * 12;
         }

@@ -468,6 +468,47 @@ public class UiRenderContext {
     }
 
     /**
+     * 判断当前上下文是否支持延迟文本批处理。
+     *
+     * <p>运行时默认支持；测试上下文可覆盖为 `false`，从而让文本按顺序回放而不进入真实字体批处理边界。</p>
+     *
+     * @return 是否支持延迟文本批处理
+     */
+    public boolean supportsDeferredTextBatching() {
+        return true;
+    }
+
+    /**
+     * 开始延迟文本批处理边界。
+     *
+     * @param targetWidth 目标宽度
+     * @param targetHeight 目标高度
+     */
+    public void beginDeferredTextBatch(int targetWidth, int targetHeight) {
+        if (fontRenderer instanceof DefaultFontRendererAdapter) {
+            ((DefaultFontRendererAdapter) fontRenderer).beginDeferredFlushScope(targetWidth, targetHeight);
+        }
+    }
+
+    /**
+     * 刷新当前延迟文本批次，但不结束批处理边界。
+     */
+    public void flushDeferredTextBatch() {
+        if (fontRenderer instanceof DefaultFontRendererAdapter) {
+            ((DefaultFontRendererAdapter) fontRenderer).flushDeferredFlushScope();
+        }
+    }
+
+    /**
+     * 结束延迟文本批处理边界。
+     */
+    public void endDeferredTextBatch() {
+        if (fontRenderer instanceof DefaultFontRendererAdapter) {
+            ((DefaultFontRendererAdapter) fontRenderer).endDeferredFlushScope();
+        }
+    }
+
+    /**
      * 返回当前运行时适配器集合。
      *
      * @return 运行时适配器集合
