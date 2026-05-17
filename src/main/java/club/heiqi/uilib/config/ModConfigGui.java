@@ -33,7 +33,7 @@ public class ModConfigGui extends ForgeConfigTemplateScreen {
                 })
                 .addCategory(new CategorySpec(Config.GENERAL)
                         .setTitle("General")
-                        .setDescription("基础运行开关与通用行为配置。"))
+                        .setDescription("基础运行开关、界面调试显示与通用行为配置。"))
                 .addCategory(new CategorySpec(FontConfig.CATEGORY)
                         .setTitle("Font System")
                         .setDescription("字体渲染运行时、排序和 drawString 上传节流相关配置。"))

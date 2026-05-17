@@ -50,8 +50,16 @@ public class UiHudDocumentHostTest {
                 UiHudDocumentHost.classifyScreen(new Object(), "net.minecraft.client.gui.GuiMainMenu"));
         Assert.assertEquals(UiHudScreenCategory.MENU,
                 UiHudDocumentHost.classifyScreen(new Object(), "net.minecraft.client.gui.screens.TitleScreen"));
+        Assert.assertEquals(UiHudScreenCategory.MENU,
+                UiHudDocumentHost.classifyScreen(new Object(), "net.minecraft.client.gui.GuiSelectWorld"));
+        Assert.assertEquals(UiHudScreenCategory.MENU,
+                UiHudDocumentHost.classifyScreen(new Object(), "net.minecraft.client.gui.GuiMultiplayer"));
+        Assert.assertEquals(UiHudScreenCategory.MENU,
+                UiHudDocumentHost.classifyScreen(new Object(), "cpw.mods.fml.client.config.GuiConfig"));
         Assert.assertEquals(UiHudScreenCategory.CONTAINER,
                 UiHudDocumentHost.classifyScreen(new Object(), "example.custom.Screen"));
+        Assert.assertEquals(UiHudScreenCategory.CONTAINER,
+                UiHudDocumentHost.classifyScreen(new Object(), "net.minecraft.client.gui.GuiOptions"));
         Assert.assertEquals(UiHudScreenCategory.MENU,
                 UiHudDocumentHost.classifyScreen(new Object(), "club.heiqi.uilib.config.ForgeConfigTemplateScreen"));
     }
@@ -123,18 +131,26 @@ public class UiHudDocumentHostTest {
                 "net.minecraft.client.gui.inventory.GuiChest", false));
         Assert.assertTrue(UiHudDocumentHost.isInteractiveInputEnabled(new Object(),
                 "example.custom.Screen", false));
+        Assert.assertTrue(UiHudDocumentHost.isInteractiveInputEnabled(new Object(),
+                "net.minecraft.client.gui.GuiOptions", false));
         Assert.assertFalse(UiHudDocumentHost.isInteractiveInputEnabled(new Object(),
                 "net.minecraft.client.gui.GuiIngameMenu", false));
         Assert.assertFalse(UiHudDocumentHost.isInteractiveInputEnabled(new Object(),
                 "net.minecraft.client.gui.screens.TitleScreen", false));
+        Assert.assertFalse(UiHudDocumentHost.isInteractiveInputEnabled(new Object(),
+                "net.minecraft.client.gui.GuiSelectWorld", false));
+        Assert.assertFalse(UiHudDocumentHost.isInteractiveInputEnabled(new Object(),
+                "net.minecraft.client.gui.GuiMultiplayer", false));
+        Assert.assertFalse(UiHudDocumentHost.isInteractiveInputEnabled(new Object(),
+                "cpw.mods.fml.client.config.GuiConfig", false));
         Assert.assertFalse(UiHudDocumentHost.isInteractiveInputEnabled(null, null, true));
     }
 
     /**
-     * 验证 HUD 浮窗不会在游戏主页上方显示。
+     * 验证 HUD 浮窗不会在黑名单菜单页和配置页上方显示。
      */
     @Test
-    public void shouldHideHudLayersOnMainMenuScreens() {
+    public void shouldHideHudLayersOnConfiguredBlacklistScreens() {
         UiHudDocumentHost host = UiHudDocumentHost.getInstance();
         UiHudDocumentRegistration registration = host.register(UiHudLayerType.INTERACTIVE,
                 new UiHudDocumentHost.UiHudDocumentContentBuilder() {
@@ -145,8 +161,14 @@ public class UiHudDocumentHostTest {
                 }, new DeterministicTextMeasureService(), UiRuntimeAdapters.empty());
         try {
             Assert.assertTrue(host.hasVisibleLayerForTest(null, "example.custom.Screen"));
+            Assert.assertTrue(host.hasVisibleLayerForTest(null, "net.minecraft.client.gui.GuiOptions"));
             Assert.assertFalse(host.hasVisibleLayerForTest(null, "net.minecraft.client.gui.GuiMainMenu"));
             Assert.assertFalse(host.hasVisibleLayerForTest(null, "net.minecraft.client.gui.screens.TitleScreen"));
+            Assert.assertFalse(host.hasVisibleLayerForTest(null, "net.minecraft.client.gui.GuiSelectWorld"));
+            Assert.assertFalse(host.hasVisibleLayerForTest(null, "net.minecraft.client.gui.GuiMultiplayer"));
+            Assert.assertFalse(host.hasVisibleLayerForTest(null, "net.minecraft.client.gui.GuiIngameMenu"));
+            Assert.assertFalse(host.hasVisibleLayerForTest(null, "cpw.mods.fml.client.config.GuiConfig"));
+            Assert.assertFalse(host.hasVisibleLayerForTest(null, "club.heiqi.uilib.config.ForgeConfigTemplateScreen"));
         } finally {
             registration.unregister();
         }

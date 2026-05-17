@@ -9,7 +9,9 @@ import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiChat;
 import net.minecraft.client.gui.GuiIngameMenu;
 import net.minecraft.client.gui.GuiMainMenu;
+import net.minecraft.client.gui.GuiMultiplayer;
 import net.minecraft.client.gui.GuiScreen;
+import net.minecraft.client.gui.GuiSelectWorld;
 import net.minecraft.client.gui.ScaledResolution;
 import net.minecraft.client.gui.inventory.GuiContainer;
 
@@ -36,8 +38,8 @@ import club.heiqi.uilib.ui.style.UiStyleLength;
 import club.heiqi.uilib.ui.text.DefaultTextMeasureService;
 import club.heiqi.uilib.ui.text.TextContentMode;
 import club.heiqi.uilib.ui.text.TextMeasureService;
-import club.heiqi.uilib.ui.screen.BaseScreen;
 import club.heiqi.uilib.ui.widget.UiLayoutInvalidationRegistry;
+import cpw.mods.fml.client.config.GuiConfig;
 
 /**
  * 游戏内 HUD 文档宿主。
@@ -552,13 +554,10 @@ public final class UiHudDocumentHost {
         if (screen == null && (screenClassName == null || screenClassName.isEmpty())) {
             return UiHudScreenCategory.INGAME;
         }
-        if (screen instanceof BaseScreen) {
-            return UiHudScreenCategory.MENU;
-        }
         if (screen instanceof GuiContainer || screen instanceof GuiChat) {
             return UiHudScreenCategory.CONTAINER;
         }
-        if (screen instanceof GuiIngameMenu || screen instanceof GuiMainMenu) {
+        if (isHiddenHudMenuScreen(screen, screenClassName)) {
             return UiHudScreenCategory.MENU;
         }
         if ("net.minecraft.client.gui.inventory.GuiContainer".equals(screenClassName)
@@ -566,18 +565,36 @@ public final class UiHudDocumentHost {
                 || (screenClassName != null && screenClassName.startsWith("net.minecraft.client.gui.inventory."))) {
             return UiHudScreenCategory.CONTAINER;
         }
-        if (screenClassName != null && screenClassName.startsWith("club.heiqi.uilib.")) {
-            return UiHudScreenCategory.MENU;
-        }
-        if ("net.minecraft.client.gui.GuiIngameMenu".equals(screenClassName)
-                || isKnownMainMenuScreenClass(screenClassName)
-                || (screenClassName != null && screenClassName.startsWith("net.minecraft.client.gui.Gui"))) {
-            return UiHudScreenCategory.MENU;
-        }
         if (screen == null) {
             return UiHudScreenCategory.INGAME;
         }
         return UiHudScreenCategory.CONTAINER;
+    }
+
+    /**
+     * 判断当前页面是否属于 HUD 不显示黑名单。
+     *
+     * @param screen 当前屏幕实例
+     * @param screenClassName 当前屏幕类名
+     * @return 是否应归为菜单隐藏态
+     */
+    private static boolean isHiddenHudMenuScreen(Object screen, String screenClassName) {
+        if (screen instanceof GuiIngameMenu
+                || screen instanceof GuiMainMenu
+                || screen instanceof GuiSelectWorld
+                || screen instanceof GuiMultiplayer
+                || screen instanceof GuiConfig) {
+            return true;
+        }
+        if (screenClassName == null || screenClassName.isEmpty()) {
+            return false;
+        }
+        return "net.minecraft.client.gui.GuiIngameMenu".equals(screenClassName)
+                || "net.minecraft.client.gui.GuiSelectWorld".equals(screenClassName)
+                || "net.minecraft.client.gui.GuiMultiplayer".equals(screenClassName)
+                || isKnownMainMenuScreenClass(screenClassName)
+                || screenClassName.startsWith("cpw.mods.fml.client.config.")
+                || screenClassName.startsWith("club.heiqi.uilib.config.");
     }
 
     /**
