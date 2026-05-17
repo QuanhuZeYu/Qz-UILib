@@ -93,8 +93,8 @@ public final class UiStyleResolver {
                 : style.getBackdropSaturation().floatValue();
 
         // 新增属性解析
-        // line-height：不可继承（使用 auto 表示跟随字体默认行高）
-        UiStyleLength lineHeight = style.getLineHeight() == null ? UiStyleLength.auto() : style.getLineHeight();
+        // line-height：可继承，子元素未声明时从父元素继承
+        UiStyleLength lineHeight = style.getLineHeight() == null ? inheritedLineHeight(parentStyle) : style.getLineHeight();
 
         // text-align：可继承，子元素未声明时从父元素继承
         UiTextAlign textAlign = style.getTextAlign() == null ? inheritedTextAlign(parentStyle) : style.getTextAlign();
@@ -141,6 +141,10 @@ public final class UiStyleResolver {
 
     private static int inheritedTextColor(ComputedStyle parentStyle) {
         return parentStyle == null ? DEFAULT_TEXT_COLOR : parentStyle.getTextColor();
+    }
+
+    private static UiStyleLength inheritedLineHeight(ComputedStyle parentStyle) {
+        return parentStyle == null ? UiStyleLength.auto() : parentStyle.getLineHeight();
     }
 
     private static UiTextAlign inheritedTextAlign(ComputedStyle parentStyle) {

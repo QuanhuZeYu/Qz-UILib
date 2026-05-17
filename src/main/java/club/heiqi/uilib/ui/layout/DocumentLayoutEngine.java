@@ -196,13 +196,35 @@ public final class DocumentLayoutEngine {
                 forcedContentWidth, border, padding, textMeasureService, layoutValueResolver);
         int borderBoxWidth = contentWidth + border.getHorizontal() + padding.getHorizontal();
 
-        int borderBoxLeft = containingLeft + margin.getLeft();
+        // #3 修复：block 元素 margin:auto 水平居中
+        int resolvedMarginLeft = margin.getLeft();
+        int resolvedMarginRight = margin.getRight();
+        if (forcedContentWidth < 0 && !isOutOfFlowPositioned(computedStyle)
+                && computedStyle.getDisplay() != UiDisplay.INLINE
+                && computedStyle.getDisplay() != UiDisplay.INLINE_BLOCK) {
+            UiStyleInsets rawMargin = computedStyle.getMargin();
+            boolean autoLeft = isAuto(rawMargin.getLeft());
+            boolean autoRight = isAuto(rawMargin.getRight());
+            if (autoLeft || autoRight) {
+                int remainingSpace = Math.max(0, containingWidth - borderBoxWidth);
+                if (autoLeft && autoRight) {
+                    resolvedMarginLeft = remainingSpace / 2;
+                    resolvedMarginRight = remainingSpace - resolvedMarginLeft;
+                } else if (autoLeft) {
+                    resolvedMarginLeft = remainingSpace;
+                } else {
+                    resolvedMarginRight = remainingSpace;
+                }
+            }
+        }
+
+        int borderBoxLeft = containingLeft + resolvedMarginLeft;
         int borderBoxTop = flowTop + margin.getTop();
         int contentLeft = borderBoxLeft + border.getLeft() + padding.getLeft();
         int contentTop = borderBoxTop + border.getTop() + padding.getTop();
 
         int specifiedContentHeight = resolveSpecifiedHeight(element, computedStyle, forcedContentHeight, contentWidth,
-                layoutValueResolver);
+                containingHeight, layoutValueResolver);
         boolean createsAbsoluteContainingBlock = absoluteContainingBlock == null || isPositioned(computedStyle);
         AbsoluteContainingBlock childrenAbsoluteContainingBlock = createsAbsoluteContainingBlock
                 ? AbsoluteContainingBlock.paddingBox(borderBoxLeft + border.getLeft(), borderBoxTop + border.getTop(),
@@ -226,7 +248,7 @@ public final class DocumentLayoutEngine {
 
         int autoContentHeight = childrenResult.contentHeight;
         int contentHeight = resolveContentHeight(element, computedStyle, forcedContentHeight, autoContentHeight,
-                contentWidth,
+                contentWidth, containingHeight,
                 layoutValueResolver);
         int borderBoxHeight = contentHeight + border.getVertical() + padding.getVertical();
         int positionOffsetX = resolveRelativeOffsetX(computedStyle, containingWidth);
@@ -309,7 +331,18 @@ public final class DocumentLayoutEngine {
                 childFlowTop = inlineLayoutContext.finishLineAndGetBottom();
                 inlineLayoutContext.reset(childFlowTop);
             }
-            DocumentLayoutBox childBox = layoutElement(childElement, contentLeft, childFlowTop, contentWidth,
+            // #1 修复：相邻兄弟垂直 margin collapse（取较大值而非叠加）
+            int previousMarginBottom = 0;
+            if (!childBoxes.isEmpty()) {
+                DocumentLayoutBox previousBox = childBoxes.get(childBoxes.size() - 1);
+                previousMarginBottom = previousBox.getMargin().getBottom();
+            }
+            int childMarginTop = resolveMarginInsets(childElement, childStyle, contentWidth, layoutValueResolver).getTop();
+            int collapsedMargin = Math.max(previousMarginBottom, childMarginTop);
+            int marginCollapseAdjustment = childBoxes.isEmpty() ? 0
+                    : Math.min(previousMarginBottom, childMarginTop);
+            int adjustedFlowTop = childFlowTop - marginCollapseAdjustment;
+            DocumentLayoutBox childBox = layoutElement(childElement, contentLeft, adjustedFlowTop, contentWidth,
                     specifiedContentHeight, AUTO_SIZE, AUTO_SIZE, absoluteContainingBlock, fixedContainingBlock,
                     textMeasureService, layoutValueResolver);
             childBoxes.add(childBox);
@@ -1484,37 +1517,73 @@ public final class DocumentLayoutEngine {
 
     private static int resolveContentHeight(ElementNode element, ComputedStyle computedStyle, int forcedContentHeight,
             int autoContentHeight, int contentWidth, LayoutRuntimeValueResolver layoutValueResolver) {
+        return resolveContentHeight(element, computedStyle, forcedContentHeight, autoContentHeight, contentWidth,
+                AUTO_SIZE, layoutValueResolver);
+    }
+
+    /**
+     * 解析最终内容高度，支持百分比相对 containingHeight 解析。
+     */
+    private static int resolveContentHeight(ElementNode element, ComputedStyle computedStyle, int forcedContentHeight,
+            int autoContentHeight, int contentWidth, int containingHeight,
+            LayoutRuntimeValueResolver layoutValueResolver) {
         if (forcedContentHeight >= 0) {
             return forcedContentHeight;
         }
         if (isAuto(computedStyle.getHeight()) && DocumentImageElementSupport.isImageTag(element.getTagName())) {
             return DocumentImageElementSupport.resolveContentHeight(element, computedStyle, contentWidth);
         }
-        int baseHeight = Math.max(0, computedStyle.getHeight().resolve(0, autoContentHeight));
+        // 百分比高度：当包含块高度为 auto 时，视为 auto（使用内容高度）
+        if (computedStyle.getHeight().getType() == UiStyleLength.Type.PERCENT && containingHeight < 0) {
+            return applyHeightConstraints(computedStyle, autoContentHeight, contentWidth, containingHeight,
+                    resolveUniformEdge(computedStyle.getBorderWidth(), contentWidth),
+                    resolveInsets(computedStyle.getPadding(), contentWidth, true));
+        }
+        int resolveBase = containingHeight >= 0 ? containingHeight : 0;
+        int baseHeight = Math.max(0, computedStyle.getHeight().resolve(resolveBase, autoContentHeight));
         int resolvedHeight = Math.max(0, layoutValueResolver.resolve(element, DocumentAnimationProperty.HEIGHT, baseHeight));
-        DocumentLayoutEdges border = resolveUniformEdge(computedStyle.getBorderWidth(), 0);
-        DocumentLayoutEdges padding = resolveInsets(computedStyle.getPadding(), 0, true);
+        DocumentLayoutEdges border = resolveUniformEdge(computedStyle.getBorderWidth(), contentWidth);
+        DocumentLayoutEdges padding = resolveInsets(computedStyle.getPadding(), contentWidth, true);
         int contentHeight = resolveBoxSizingContentHeight(computedStyle, resolvedHeight, border, padding);
         // 应用 min/max-height 约束
-        contentHeight = applyHeightConstraints(computedStyle, contentHeight, contentWidth, border, padding);
+        contentHeight = applyHeightConstraints(computedStyle, contentHeight, contentWidth, containingHeight, border, padding);
         return contentHeight;
     }
 
     /**
      * 将 min-height / max-height 约束应用到内容高度。
+     *
+     * <p>百分比 min/max-height 相对 containingHeight 解析；containingHeight 为 AUTO_SIZE 时百分比约束不生效。</p>
      */
-    private static int applyHeightConstraints(ComputedStyle style, int contentHeight, int containingWidth,
-            DocumentLayoutEdges border, DocumentLayoutEdges padding) {
-        int minH = Math.max(0, style.getMinHeight().resolve(containingWidth, 0));
+    private static int applyHeightConstraints(ComputedStyle style, int contentHeight, int contentWidth,
+            int containingHeight, DocumentLayoutEdges border, DocumentLayoutEdges padding) {
+        int minH = resolveHeightConstraintValue(style.getMinHeight(), containingHeight, 0);
         int result = Math.max(contentHeight, minH);
         if (!isAuto(style.getMaxHeight())) {
-            int maxH = style.getMaxHeight().resolve(containingWidth, Integer.MAX_VALUE);
-            if (maxH >= 0) {
+            int maxH = resolveHeightConstraintValue(style.getMaxHeight(), containingHeight, Integer.MAX_VALUE);
+            if (maxH >= 0 && maxH < Integer.MAX_VALUE) {
                 maxH = resolveBoxSizingContentHeight(style, maxH, border, padding);
                 result = Math.min(result, maxH);
             }
         }
         return Math.max(0, result);
+    }
+
+    /**
+     * 解析 min/max-height 的约束值，百分比相对 containingHeight。
+     */
+    private static int resolveHeightConstraintValue(UiStyleLength length, int containingHeight, int autoFallback) {
+        if (isAuto(length)) {
+            return autoFallback;
+        }
+        if (length.getType() == UiStyleLength.Type.PERCENT) {
+            // 包含块高度为 auto 时，百分比约束不生效
+            if (containingHeight < 0) {
+                return autoFallback;
+            }
+            return Math.max(0, length.resolve(containingHeight, autoFallback));
+        }
+        return Math.max(0, length.resolve(0, autoFallback));
     }
 
     private static int resolveColumnCrossContentWidth(FlexItem item, UiAlignItems alignItems, UiFlexWrap flexWrap,
@@ -1537,6 +1606,17 @@ public final class DocumentLayoutEngine {
 
     private static int resolveSpecifiedHeight(ElementNode element, ComputedStyle computedStyle, int forcedContentHeight,
             int contentWidth, LayoutRuntimeValueResolver layoutValueResolver) {
+        return resolveSpecifiedHeight(element, computedStyle, forcedContentHeight, contentWidth, AUTO_SIZE,
+                layoutValueResolver);
+    }
+
+    /**
+     * 解析指定高度，支持百分比相对 containingHeight 解析。
+     *
+     * <p>当 containingHeight 为 AUTO_SIZE（-1）时，百分比高度视为 auto（返回 AUTO_SIZE）。</p>
+     */
+    private static int resolveSpecifiedHeight(ElementNode element, ComputedStyle computedStyle, int forcedContentHeight,
+            int contentWidth, int containingHeight, LayoutRuntimeValueResolver layoutValueResolver) {
         if (forcedContentHeight >= 0) {
             return forcedContentHeight;
         }
@@ -1546,10 +1626,15 @@ public final class DocumentLayoutEngine {
             }
             return AUTO_SIZE;
         }
-        int baseHeight = Math.max(0, computedStyle.getHeight().resolve(0, 0));
+        // 百分比高度：当包含块高度为 auto 时，视为 auto
+        if (computedStyle.getHeight().getType() == UiStyleLength.Type.PERCENT && containingHeight < 0) {
+            return AUTO_SIZE;
+        }
+        int resolveBase = containingHeight >= 0 ? containingHeight : 0;
+        int baseHeight = Math.max(0, computedStyle.getHeight().resolve(resolveBase, 0));
         int resolvedHeight = Math.max(0, layoutValueResolver.resolve(element, DocumentAnimationProperty.HEIGHT, baseHeight));
-        DocumentLayoutEdges border = resolveUniformEdge(computedStyle.getBorderWidth(), 0);
-        DocumentLayoutEdges padding = resolveInsets(computedStyle.getPadding(), 0, true);
+        DocumentLayoutEdges border = resolveUniformEdge(computedStyle.getBorderWidth(), contentWidth);
+        DocumentLayoutEdges padding = resolveInsets(computedStyle.getPadding(), contentWidth, true);
         return resolveBoxSizingContentHeight(computedStyle, resolvedHeight, border, padding);
     }
 
@@ -2053,12 +2138,10 @@ public final class DocumentLayoutEngine {
                 return;
             }
             pendingInlineFragments.add(new PendingInlineFragment(owner, left, width));
-            if (owner.verticalAlign == UiVerticalAlign.BASELINE) {
-                maxBaselineTopEdge = Math.max(maxBaselineTopEdge, owner.topEdge);
-                maxBaselineBottomEdge = Math.max(maxBaselineBottomEdge, owner.bottomEdge);
-                return;
-            }
-            maxAlignedItemHeight = Math.max(maxAlignedItemHeight, owner.getHeight(baseLineHeight));
+            // #6 修复：inline 元素的垂直 padding/border 不影响行盒高度计算
+            // 浏览器中 inline 元素的垂直 padding 只影响视觉渲染，不撑大行盒
+            // 行盒高度仅由 line-height 和 vertical-align 决定
+            // 因此这里不再将 topEdge/bottomEdge 计入行高
         }
 
         private void advance(int width) {

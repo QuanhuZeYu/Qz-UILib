@@ -49,6 +49,13 @@
 - flex item 的 `margin:auto` 会吸收主轴/交叉轴剩余空间；flex shrink 权重已修正为使用 flex-basis。
 - `flex-wrap:wrap` 已支持多行换行布局（row 方向）。
 - 事件系统新增独立 `mousedown`/`mouseup` DOM 事件（`DocumentElementMouseDownHandler`/`DocumentElementMouseUpHandler`）；hover 父子切换时父元素不再收到多余 leave；新增 `focusin` 冒泡事件（`DocumentElementFocusInHandler`）。
+- `height` 百分比相对包含块高度解析；包含块高度为 auto 时百分比高度视为 auto（由内容撑开），不再静默解析为 0。
+- Block 元素 `margin: 0 auto` 支持水平居中：有明确宽度的 block 元素，auto left/right margin 会平分剩余空间。
+- `line-height` 是可继承属性：父元素设置后子元素自动继承，除非子元素自行覆盖。
+- `min-height`/`max-height` 百分比相对包含块高度解析（而非宽度）；包含块高度为 auto 时百分比约束不生效。
+- 相邻兄弟元素的垂直 margin 会折叠为两者中较大值（margin collapse），不再简单叠加。
+- `border-box` 下 height 计算中的 padding 以 `contentWidth` 为基准解析百分比，不再以 0 解析。
+- inline 元素的垂直 padding/border 只影响视觉渲染，不撑大行盒高度（行盒高度仅由 line-height 决定）。
 - HUD 文档层统一经 `UiHudDocumentHost` 承载，继续复用 `UiDocument` / `HtmlLikeDocumentWidget`；当前稳定分为 `PASSIVE` 与 `INTERACTIVE` 两层，而不是再开放独立 Widget 作者入口。
 - HUD 浮窗若需要固定外框并承载长内容，优先在面板内部声明固定高度或剩余空间容器，并对子容器使用 `overflow-y:auto`；不要依赖外层 HUD 根节点滚动去撑大浮窗。
 - `INTERACTIVE` HUD 仍可在纯游戏阶段渲染，但只在容器态接通命中与焦点输入；当前稳定隐藏黑名单是游戏主页（含原版 `GuiMainMenu`、新版 `TitleScreen`、第三方主页 `galaxyspace.core.gui.GSGuiMainMenu`）、选图页、服务器列表、游戏内菜单和 Forge 配置页，其余第三方与大多数原版 `GuiScreen` 默认按容器态处理。
