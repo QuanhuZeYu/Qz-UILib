@@ -58,6 +58,12 @@ public class DefaultFontRendererAdapter implements FontRendererAdapter {
             return Boolean.FALSE;
         }
     };
+    private final ThreadLocal<Boolean> deferredFlushRenderStateGuardActive = new ThreadLocal<Boolean>() {
+        @Override
+        protected Boolean initialValue() {
+            return Boolean.FALSE;
+        }
+    };
 
     private DefaultFontRendererAdapter() {}
 
@@ -90,9 +96,11 @@ public class DefaultFontRendererAdapter implements FontRendererAdapter {
     public void beginDeferredFlushScope(int targetWidth, int targetHeight) {
         int depth = deferredFlushScopeDepth.get().intValue();
         if (depth <= 0) {
+            renderStateGuard.push(false);
             deferredFlushTargetWidth.set(Integer.valueOf(Math.max(0, targetWidth)));
             deferredFlushTargetHeight.set(Integer.valueOf(Math.max(0, targetHeight)));
             deferredFlushInternalUiProjectionConfigured.set(Boolean.FALSE);
+            deferredFlushRenderStateGuardActive.set(Boolean.TRUE);
         }
         deferredFlushScopeDepth.set(Integer.valueOf(depth + 1));
     }
@@ -113,14 +121,24 @@ public class DefaultFontRendererAdapter implements FontRendererAdapter {
         try {
             flushDeferredFlushScope();
         } finally {
-            if (deferredFlushInternalUiProjectionConfigured.get().booleanValue()) {
-                FontService.getInstance().getBatchRenderer().setAssumeInternalUiMatrices(false);
+            try {
+                if (deferredFlushInternalUiProjectionConfigured.get().booleanValue()) {
+                    FontService.getInstance().getBatchRenderer().setAssumeInternalUiMatrices(false);
+                }
+            } finally {
+                try {
+                    if (deferredFlushRenderStateGuardActive.get().booleanValue()) {
+                        renderStateGuard.pop();
+                    }
+                } finally {
+                    deferredFlushScopeDepth.remove();
+                    deferredFlushDirty.remove();
+                    deferredFlushTargetWidth.remove();
+                    deferredFlushTargetHeight.remove();
+                    deferredFlushInternalUiProjectionConfigured.remove();
+                    deferredFlushRenderStateGuardActive.remove();
+                }
             }
-            deferredFlushScopeDepth.remove();
-            deferredFlushDirty.remove();
-            deferredFlushTargetWidth.remove();
-            deferredFlushTargetHeight.remove();
-            deferredFlushInternalUiProjectionConfigured.remove();
         }
     }
 
@@ -175,10 +193,15 @@ public class DefaultFontRendererAdapter implements FontRendererAdapter {
 
         FontService fontService = FontService.getInstance();
         synchronized (fontService) {
-            fontService.initialize();
-            fontService.tickDrawStage(FontConfig.drawStageUploadBatchSize);
-
-            return drawInternal(fontService, text, x, y, normalizeColor(color), dropShadow, textContentMode, 1.0F);
+            return drawWithRenderStateGuardIfNeeded(fontService, new DrawStringTask() {
+                @Override
+                public int run() {
+                    fontService.initialize();
+                    fontService.tickDrawStage(FontConfig.drawStageUploadBatchSize);
+                    return drawInternal(fontService, text, x, y, normalizeColor(color), dropShadow, textContentMode,
+                            1.0F);
+                }
+            });
         }
     }
 
@@ -205,11 +228,15 @@ public class DefaultFontRendererAdapter implements FontRendererAdapter {
 
         FontService fontService = FontService.getInstance();
         synchronized (fontService) {
-            fontService.initialize();
-            fontService.tickDrawStage(FontConfig.drawStageUploadBatchSize);
-
-            return drawInternal(fontService, text, x, y, normalizeColor(color), dropShadow, textContentMode,
-                    Math.max(0.01F, renderScale));
+            return drawWithRenderStateGuardIfNeeded(fontService, new DrawStringTask() {
+                @Override
+                public int run() {
+                    fontService.initialize();
+                    fontService.tickDrawStage(FontConfig.drawStageUploadBatchSize);
+                    return drawInternal(fontService, text, x, y, normalizeColor(color), dropShadow, textContentMode,
+                            Math.max(0.01F, renderScale));
+                }
+            });
         }
     }
 
@@ -567,6 +594,23 @@ public class DefaultFontRendererAdapter implements FontRendererAdapter {
 
     private void clearCollectedBatches(FontService fontService) {
         fontService.getBatchRenderer().clearFrame();
+    }
+
+    private int drawWithRenderStateGuardIfNeeded(FontService fontService, DrawStringTask task) {
+        if (isDeferredFlushScopeActive()) {
+            return task.run();
+        }
+        renderStateGuard.push(false);
+        try {
+            return task.run();
+        } finally {
+            renderStateGuard.pop();
+        }
+    }
+
+    private interface DrawStringTask {
+
+        int run();
     }
 
     private int normalizeColor(int color) {

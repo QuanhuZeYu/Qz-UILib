@@ -10,7 +10,6 @@ import club.heiqi.uilib.font.config.FontConfig;
 import club.heiqi.uilib.font.event.FontReloadRequest;
 import net.minecraft.client.gui.FontRenderer;
 import net.minecraft.client.resources.IResourceManager;
-import org.lwjgl.opengl.GL11;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
@@ -42,7 +41,6 @@ public abstract class MixinFontRenderer {
         if (FontConfig.replaceOrigin) {
             try {
                 DefaultFontRendererAdapter.getInstance().drawSplitString(text, x, y, wrapWidth, textColor);
-                qzuilib$applyVanillaFontPostRenderState();
                 ci.cancel();
             } catch (RuntimeException exception) {
                 qzuilib$logFontPipelineFailure(exception);
@@ -55,7 +53,6 @@ public abstract class MixinFontRenderer {
         if (FontConfig.replaceOrigin) {
             try {
                 int width = DefaultFontRendererAdapter.getInstance().drawString(text, x, y, color, false);
-                qzuilib$applyVanillaFontPostRenderState();
                 cir.setReturnValue(Integer.valueOf(width));
             } catch (RuntimeException exception) {
                 qzuilib$logFontPipelineFailure(exception);
@@ -68,7 +65,6 @@ public abstract class MixinFontRenderer {
         if (FontConfig.replaceOrigin) {
             try {
                 int width = DefaultFontRendererAdapter.getInstance().drawString(text, x, y, color, dropShadow);
-                qzuilib$applyVanillaFontPostRenderState();
                 cir.setReturnValue(Integer.valueOf(width));
             } catch (RuntimeException exception) {
                 qzuilib$logFontPipelineFailure(exception);
@@ -81,7 +77,6 @@ public abstract class MixinFontRenderer {
         if (FontConfig.replaceOrigin) {
             try {
                 int width = DefaultFontRendererAdapter.getInstance().drawString(text, x, y, color, true);
-                qzuilib$applyVanillaFontPostRenderState();
                 cir.setReturnValue(Integer.valueOf(width));
             } catch (RuntimeException exception) {
                 qzuilib$logFontPipelineFailure(exception);
@@ -150,14 +145,5 @@ public abstract class MixinFontRenderer {
         }
         qzuilib$fontPipelineFailureLogged = true;
         MyMod.LOG.error("UILib 字体管线接管失败，本次调用回落原版 FontRenderer。", exception);
-    }
-
-    private static void qzuilib$applyVanillaFontPostRenderState() {
-        GL11.glEnable(GL11.GL_TEXTURE_2D);
-        GL11.glEnable(GL11.GL_ALPHA_TEST);
-        GL11.glEnable(GL11.GL_BLEND);
-        GL11.glAlphaFunc(GL11.GL_GREATER, 0.1F);
-        GL11.glBlendFunc(GL11.GL_SRC_ALPHA, GL11.GL_ONE_MINUS_SRC_ALPHA);
-        GL11.glColor4f(1.0F, 1.0F, 1.0F, 1.0F);
     }
 }
