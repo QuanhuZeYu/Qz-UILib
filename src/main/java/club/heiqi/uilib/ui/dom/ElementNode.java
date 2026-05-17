@@ -32,6 +32,9 @@ public final class ElementNode extends DocumentNode {
     private DocumentElementDragEndHandler dragEndHandler;
     private DocumentElementKeyHandler keyHandler;
     private DocumentElementTextInputHandler textInputHandler;
+    private DocumentElementMouseDownHandler mouseDownHandler;
+    private DocumentElementMouseUpHandler mouseUpHandler;
+    private DocumentElementFocusInHandler focusInHandler;
     private DocumentCustomRenderer customRenderer;
     private final UiStyleDeclaration style = new UiStyleDeclaration(new UiStyleChangeListener() {
         @Override
@@ -502,6 +505,66 @@ public final class ElementNode extends DocumentNode {
      */
     public DocumentElementTextInputHandler getTextInputHandler() {
         return textInputHandler;
+    }
+
+    /**
+     * 设置元素鼠标按下处理器。
+     *
+     * @param mouseDownHandler 鼠标按下处理器；为 null 时清除处理器
+     * @return 当前元素
+     */
+    public ElementNode setMouseDownHandler(DocumentElementMouseDownHandler mouseDownHandler) {
+        this.mouseDownHandler = mouseDownHandler;
+        return this;
+    }
+
+    /**
+     * 返回元素鼠标按下处理器。
+     *
+     * @return 鼠标按下处理器；不存在时返回 null
+     */
+    public DocumentElementMouseDownHandler getMouseDownHandler() {
+        return mouseDownHandler;
+    }
+
+    /**
+     * 设置元素鼠标抬起处理器。
+     *
+     * @param mouseUpHandler 鼠标抬起处理器；为 null 时清除处理器
+     * @return 当前元素
+     */
+    public ElementNode setMouseUpHandler(DocumentElementMouseUpHandler mouseUpHandler) {
+        this.mouseUpHandler = mouseUpHandler;
+        return this;
+    }
+
+    /**
+     * 返回元素鼠标抬起处理器。
+     *
+     * @return 鼠标抬起处理器；不存在时返回 null
+     */
+    public DocumentElementMouseUpHandler getMouseUpHandler() {
+        return mouseUpHandler;
+    }
+
+    /**
+     * 设置元素焦点进入处理器（冒泡版 focus）。
+     *
+     * @param focusInHandler 焦点进入处理器；为 null 时清除处理器
+     * @return 当前元素
+     */
+    public ElementNode setFocusInHandler(DocumentElementFocusInHandler focusInHandler) {
+        this.focusInHandler = focusInHandler;
+        return this;
+    }
+
+    /**
+     * 返回元素焦点进入处理器（冒泡版 focus）。
+     *
+     * @return 焦点进入处理器；不存在时返回 null
+     */
+    public DocumentElementFocusInHandler getFocusInHandler() {
+        return focusInHandler;
     }
 
     /**

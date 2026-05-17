@@ -13,16 +13,22 @@ import club.heiqi.uilib.ui.dom.ElementNode;
 import club.heiqi.uilib.ui.dom.TextNode;
 import club.heiqi.uilib.ui.style.ComputedStyle;
 import club.heiqi.uilib.ui.style.UiAlignItems;
+import club.heiqi.uilib.ui.style.UiAlignSelf;
 import club.heiqi.uilib.ui.style.UiBoxSizing;
 import club.heiqi.uilib.ui.style.UiDisplay;
 import club.heiqi.uilib.ui.style.UiFlexDirection;
+import club.heiqi.uilib.ui.style.UiFlexWrap;
 import club.heiqi.uilib.ui.style.UiJustifyContent;
 import club.heiqi.uilib.ui.style.UiOverflow;
 import club.heiqi.uilib.ui.style.UiPosition;
 import club.heiqi.uilib.ui.style.UiStyleInsets;
 import club.heiqi.uilib.ui.style.UiStyleLength;
 import club.heiqi.uilib.ui.style.UiStyleResolver;
+import club.heiqi.uilib.ui.style.UiTextAlign;
+import club.heiqi.uilib.ui.style.UiTextOverflow;
 import club.heiqi.uilib.ui.style.UiVerticalAlign;
+import club.heiqi.uilib.ui.style.UiVisibility;
+import club.heiqi.uilib.ui.style.UiWhiteSpace;
 import club.heiqi.uilib.ui.text.TextContentMode;
 import club.heiqi.uilib.ui.text.TextMeasureService;
 
@@ -240,9 +246,10 @@ public final class DocumentLayoutEngine {
         List<ElementNode> absoluteChildren = new ArrayList<ElementNode>();
         List<ElementNode> fixedChildren = new ArrayList<ElementNode>();
         boolean usesInlineFormatting = hasVisibleInlineElementChild(element);
+        ComputedStyle elementStyle = UiStyleResolver.compute(element);
         InlineLayoutContext inlineLayoutContext = usesInlineFormatting
                 ? new InlineLayoutContext(contentLeft, contentTop, contentWidth,
-                        resolveTextLineHeight(textMeasureService), textRuns, inlineFragments)
+                        resolveTextLineHeight(textMeasureService, elementStyle), textRuns, inlineFragments)
                 : null;
         int childFlowTop = contentTop;
         for (DocumentNode child : element.getChildren()) {
@@ -252,7 +259,7 @@ public final class DocumentLayoutEngine {
                             inlineLayoutContext, textMeasureService);
                     childFlowTop = inlineLayoutContext.getFlowBottom();
                 } else {
-                    childFlowTop = appendTextRun((TextNode) child, element, textRuns, contentLeft, childFlowTop,
+                    childFlowTop = appendTextRun((TextNode) child, element, elementStyle, textRuns, contentLeft, childFlowTop,
                             contentWidth, textMeasureService);
                 }
                 continue;
@@ -665,23 +672,61 @@ public final class DocumentLayoutEngine {
     private static int appendTextRun(TextNode textNode, ElementNode ownerElement,
             List<DocumentLayoutTextRun> textRuns, int left, int top, int availableWidth,
             TextMeasureService textMeasureService) {
+        return appendTextRun(textNode, ownerElement, null, textRuns, left, top, availableWidth, textMeasureService);
+    }
+
+    private static int appendTextRun(TextNode textNode, ElementNode ownerElement, ComputedStyle ownerStyle,
+            List<DocumentLayoutTextRun> textRuns, int left, int top, int availableWidth,
+            TextMeasureService textMeasureService) {
         String text = textNode.getText();
         if (text == null || text.isEmpty()) {
             return top;
         }
-        int lineHeight = resolveTextLineHeight(textMeasureService);
+        int lineHeight = resolveTextLineHeight(textMeasureService, ownerStyle);
         TextContentMode textContentMode = textNode.getTextContentMode();
-        List<String> lines = textMeasureService.listFormattedStringToWidth(text, toRawTextSize(availableWidth),
-                textContentMode);
+        UiWhiteSpace whiteSpace = ownerStyle != null ? ownerStyle.getWhiteSpace() : UiWhiteSpace.NORMAL;
+        UiTextOverflow textOverflow = ownerStyle != null ? ownerStyle.getTextOverflow() : UiTextOverflow.CLIP;
+        UiTextAlign textAlign = ownerStyle != null ? ownerStyle.getTextAlign() : UiTextAlign.START;
+
+        List<String> lines;
+        if (whiteSpace == UiWhiteSpace.NOWRAP) {
+            // nowrap：不换行，只取第一行
+            String singleLine = textMeasureService.trimStringToWidth(text, Integer.MAX_VALUE / 2, textContentMode);
+            if (singleLine == null) {
+                singleLine = text;
+            }
+            lines = new ArrayList<String>();
+            lines.add(singleLine);
+        } else {
+            lines = textMeasureService.listFormattedStringToWidth(text, toRawTextSize(availableWidth), textContentMode);
+        }
         if (lines == null || lines.isEmpty()) {
             return top;
         }
         int lineTop = top;
         for (String line : lines) {
             String resolvedLine = line == null ? "" : line;
-            int width = Math.max(0, Math.min(availableWidth,
-                    toUiTextSize(textMeasureService.getStringWidth(resolvedLine, textContentMode))));
-            textRuns.add(new DocumentLayoutTextRun(textNode, ownerElement, resolvedLine, textContentMode, left,
+            int rawWidth = toUiTextSize(textMeasureService.getStringWidth(resolvedLine, textContentMode));
+            // text-overflow: ellipsis 处理（仅 nowrap 且内容超出时）
+            if (whiteSpace == UiWhiteSpace.NOWRAP && textOverflow == UiTextOverflow.ELLIPSIS
+                    && rawWidth > availableWidth && availableWidth > 0) {
+                // 计算省略号宽度
+                String ellipsis = "\u2026";
+                int ellipsisWidth = toUiTextSize(textMeasureService.getStringWidth(ellipsis, textContentMode));
+                int targetWidth = Math.max(0, availableWidth - ellipsisWidth);
+                String trimmed = textMeasureService.trimStringToWidth(resolvedLine, toRawTextSize(targetWidth),
+                        textContentMode);
+                if (trimmed == null) {
+                    trimmed = "";
+                }
+                resolvedLine = trimmed + ellipsis;
+                rawWidth = Math.min(availableWidth,
+                        toUiTextSize(textMeasureService.getStringWidth(resolvedLine, textContentMode)));
+            }
+            int width = Math.max(0, Math.min(availableWidth, rawWidth));
+            // text-align 偏移
+            int lineLeft = resolveTextAlignOffset(textAlign, availableWidth, width) + left;
+            textRuns.add(new DocumentLayoutTextRun(textNode, ownerElement, resolvedLine, textContentMode, lineLeft,
                     lineTop, width, lineHeight));
             lineTop += lineHeight;
         }
@@ -914,52 +959,100 @@ public final class DocumentLayoutEngine {
             int contentLeft, int contentTop, int contentWidth, int specifiedContentHeight,
             AbsoluteContainingBlock absoluteContainingBlock, AbsoluteContainingBlock fixedContainingBlock,
             TextMeasureService textMeasureService, LayoutRuntimeValueResolver layoutValueResolver) {
-        List<FlexItem> items = new ArrayList<FlexItem>();
+        boolean wrap = parentStyle.getFlexWrap() == UiFlexWrap.WRAP;
+        int gap = Math.max(0, parentStyle.getColumnGap().resolve(contentWidth, 0));
+        int rowGap = Math.max(0, parentStyle.getRowGap().resolve(contentWidth, 0));
+
+        // 第一步：按换行规则将 items 分成若干行
+        List<List<FlexItem>> lines = new ArrayList<List<FlexItem>>();
+        List<FlexItem> currentLine = new ArrayList<FlexItem>();
+        int currentLineOccupied = 0;
         for (ElementNode child : children) {
             FlexItem item = createFlexItem(child, contentWidth, layoutValueResolver);
             item.contentMainSize = resolveContentMainSize(item, contentWidth, true, textMeasureService,
                     layoutValueResolver);
-            items.add(item);
-        }
-
-        int gap = Math.max(0, parentStyle.getColumnGap().resolve(contentWidth, 0));
-        distributeMainSpace(items, contentWidth, gap, true);
-
-        int lineCrossSize = 0;
-        for (FlexItem item : items) {
-            item.box = layoutElement(item.element, 0, 0, contentWidth, specifiedContentHeight,
-                    item.contentMainSize, AUTO_SIZE, absoluteContainingBlock, fixedContainingBlock,
-                    textMeasureService, layoutValueResolver);
-            lineCrossSize = Math.max(lineCrossSize, item.getOuterCrossSize(true));
-        }
-
-        int contentHeight = specifiedContentHeight >= 0 ? specifiedContentHeight : lineCrossSize;
-        for (FlexItem item : items) {
-            if (parentStyle.getAlignItems() == UiAlignItems.STRETCH && isAuto(item.style.getHeight())) {
-                item.forcedCrossSize = Math.max(0,
-                        contentHeight - item.margin.getVertical() - item.border.getVertical() - item.padding.getVertical());
-                item.box = layoutElement(item.element, 0, 0, contentWidth, contentHeight,
-                        item.contentMainSize, item.forcedCrossSize, absoluteContainingBlock, fixedContainingBlock,
-                        textMeasureService, layoutValueResolver);
+            int outerMain = item.getOuterMainSize(true);
+            if (wrap && !currentLine.isEmpty()
+                    && currentLineOccupied + gap + outerMain > contentWidth) {
+                lines.add(currentLine);
+                currentLine = new ArrayList<FlexItem>();
+                currentLineOccupied = 0;
             }
+            if (!currentLine.isEmpty()) {
+                currentLineOccupied += gap;
+            }
+            currentLine.add(item);
+            currentLineOccupied += outerMain;
+        }
+        if (!currentLine.isEmpty()) {
+            lines.add(currentLine);
         }
 
-        int occupiedMain = getOccupiedMainSize(items, gap, true);
-        int remaining = Math.max(0, contentWidth - occupiedMain);
-        int dynamicGap = resolveDynamicGap(parentStyle.getJustifyContent(), gap, remaining, items.size());
-        int cursor = resolveLeadingOffset(parentStyle.getJustifyContent(), remaining);
+        // 第二步：对每行独立进行主轴空间分配与布局
         List<DocumentLayoutBox> childBoxes = new ArrayList<DocumentLayoutBox>();
-        for (FlexItem item : items) {
-            int outerCrossSize = item.getOuterCrossSize(true);
-            int crossOffset = resolveCrossOffset(parentStyle.getAlignItems(), contentHeight, outerCrossSize);
-            int borderLeft = contentLeft + cursor + item.margin.getLeft();
-            int borderTop = contentTop + crossOffset + item.margin.getTop();
-            DocumentLayoutBox childBox = layoutElement(item.element, borderLeft - item.margin.getLeft(),
-                    borderTop - item.margin.getTop(), contentWidth, contentHeight, item.contentMainSize,
-                    item.forcedCrossSize, absoluteContainingBlock, fixedContainingBlock, textMeasureService,
-                    layoutValueResolver);
-            childBoxes.add(childBox);
-            cursor += item.margin.getLeft() + childBox.getWidth() + item.margin.getRight() + dynamicGap;
+        int crossCursor = contentTop;
+        int totalContentHeight = 0;
+
+        for (int lineIndex = 0; lineIndex < lines.size(); lineIndex++) {
+            List<FlexItem> lineItems = lines.get(lineIndex);
+            if (lineIndex > 0) {
+                crossCursor += rowGap;
+            }
+
+            distributeMainSpace(lineItems, contentWidth, gap, true);
+
+            // 测量每行各 item 的 cross size
+            int lineCrossSize = 0;
+            for (FlexItem item : lineItems) {
+                item.box = layoutElement(item.element, 0, 0, contentWidth, specifiedContentHeight,
+                        item.contentMainSize, AUTO_SIZE, absoluteContainingBlock, fixedContainingBlock,
+                        textMeasureService, layoutValueResolver);
+                lineCrossSize = Math.max(lineCrossSize, item.getOuterCrossSize(true));
+            }
+
+            // stretch 处理
+            int lineAvailableCrossSize = specifiedContentHeight >= 0 && lines.size() == 1
+                    ? specifiedContentHeight : lineCrossSize;
+            for (FlexItem item : lineItems) {
+                if (isItemCrossStretch(item.style.getAlignSelf(), parentStyle.getAlignItems())
+                        && isAuto(item.style.getHeight())) {
+                    item.forcedCrossSize = Math.max(0, lineAvailableCrossSize
+                            - item.margin.getVertical() - item.border.getVertical() - item.padding.getVertical());
+                    item.box = layoutElement(item.element, 0, 0, contentWidth, lineAvailableCrossSize,
+                            item.contentMainSize, item.forcedCrossSize, absoluteContainingBlock, fixedContainingBlock,
+                            textMeasureService, layoutValueResolver);
+                    lineCrossSize = Math.max(lineCrossSize, item.getOuterCrossSize(true));
+                }
+            }
+
+            int occupiedMain = getOccupiedMainSize(lineItems, gap, true);
+            int remaining = Math.max(0, contentWidth - occupiedMain);
+            int dynamicGap = resolveDynamicGap(parentStyle.getJustifyContent(), gap, remaining, lineItems.size());
+            int cursor = resolveLeadingOffset(parentStyle.getJustifyContent(), remaining)
+                    + resolveLeadingOffsetForSpacing(parentStyle.getJustifyContent(), remaining, lineItems.size());
+
+            for (FlexItem item : lineItems) {
+                int outerCrossSize = item.getOuterCrossSize(true);
+                int crossOffset = resolveItemCrossOffset(item.style.getAlignSelf(), parentStyle.getAlignItems(),
+                        lineCrossSize, outerCrossSize);
+                int borderLeft = contentLeft + cursor + item.margin.getLeft();
+                int borderTop = crossCursor + crossOffset + item.margin.getTop();
+                DocumentLayoutBox childBox = layoutElement(item.element, borderLeft - item.margin.getLeft(),
+                        borderTop - item.margin.getTop(), contentWidth, lineAvailableCrossSize, item.contentMainSize,
+                        item.forcedCrossSize, absoluteContainingBlock, fixedContainingBlock, textMeasureService,
+                        layoutValueResolver);
+                childBoxes.add(childBox);
+                cursor += item.margin.getLeft() + childBox.getWidth() + item.margin.getRight() + dynamicGap;
+            }
+            crossCursor += lineCrossSize;
+            totalContentHeight = crossCursor - contentTop;
+        }
+
+        int contentHeight;
+        if (specifiedContentHeight >= 0) {
+            contentHeight = specifiedContentHeight;
+        } else {
+            contentHeight = Math.max(0, totalContentHeight);
         }
         return new LayoutChildrenResult(childBoxes, new ArrayList<DocumentLayoutTextRun>(),
                 new ArrayList<DocumentLayoutInlineFragment>(), contentHeight);
@@ -972,8 +1065,8 @@ public final class DocumentLayoutEngine {
         List<FlexItem> items = new ArrayList<FlexItem>();
         for (ElementNode child : children) {
             FlexItem item = createFlexItem(child, contentWidth, layoutValueResolver);
-            item.forcedCrossSize = resolveColumnCrossContentWidth(item, parentStyle.getAlignItems(), contentWidth,
-                    textMeasureService, layoutValueResolver);
+            item.forcedCrossSize = resolveColumnCrossContentWidth(item, parentStyle.getAlignItems(),
+                    parentStyle.getFlexWrap(), contentWidth, textMeasureService, layoutValueResolver);
             item.box = layoutElement(item.element, 0, 0, contentWidth, specifiedContentHeight,
                     item.forcedCrossSize, AUTO_SIZE, absoluteContainingBlock, fixedContainingBlock,
                     textMeasureService, layoutValueResolver);
@@ -998,11 +1091,13 @@ public final class DocumentLayoutEngine {
         int contentHeight = specifiedContentHeight >= 0 ? specifiedContentHeight : occupiedMain;
         int remaining = Math.max(0, contentHeight - occupiedMain);
         int dynamicGap = resolveDynamicGap(parentStyle.getJustifyContent(), gap, remaining, items.size());
-        int cursor = resolveLeadingOffset(parentStyle.getJustifyContent(), remaining);
+        int cursor = resolveLeadingOffset(parentStyle.getJustifyContent(), remaining)
+                + resolveLeadingOffsetForSpacing(parentStyle.getJustifyContent(), remaining, items.size());
         List<DocumentLayoutBox> childBoxes = new ArrayList<DocumentLayoutBox>();
         int measuredContentBottom = contentTop;
         for (FlexItem item : items) {
-            int crossOffset = resolveCrossOffset(parentStyle.getAlignItems(), contentWidth, item.getOuterCrossSize(false));
+            int crossOffset = resolveItemCrossOffset(item.style.getAlignSelf(), parentStyle.getAlignItems(),
+                    contentWidth, item.getOuterCrossSize(false));
             int borderLeft = contentLeft + crossOffset + item.margin.getLeft();
             int borderTop = contentTop + cursor + item.margin.getTop();
             int forcedMainSize = shouldKeepAutoHeightInFinalColumnLayout(item, specifiedContentHeight)
@@ -1086,7 +1181,10 @@ public final class DocumentLayoutEngine {
             int shrinkableCount = 0;
             for (FlexItem item : items) {
                 if (item.style.getFlexShrink() > 0.0F && item.contentMainSize > item.minContentMainSize) {
-                    totalShrinkWeight += item.style.getFlexShrink() * item.contentMainSize;
+                    // #10 修复：shrink 权重应使用 flex-basis（初始主轴尺寸），非 auto 时用 flexBasis，否则用 contentMainSize
+                    int basisSize = isAuto(item.style.getFlexBasis()) ? item.contentMainSize
+                            : Math.max(0, item.style.getFlexBasis().resolve(0, item.contentMainSize));
+                    totalShrinkWeight += item.style.getFlexShrink() * basisSize;
                     shrinkableCount++;
                 }
             }
@@ -1104,9 +1202,11 @@ public final class DocumentLayoutEngine {
                 if (pending <= 0) {
                     break;
                 }
+                int basisSize = isAuto(item.style.getFlexBasis()) ? item.contentMainSize
+                        : Math.max(0, item.style.getFlexBasis().resolve(0, item.contentMainSize));
                 shrinkableIndex++;
                 int cut = shrinkableIndex == shrinkableCount ? pending
-                        : Math.round(remainingOverflow * item.style.getFlexShrink() * item.contentMainSize
+                        : Math.round(remainingOverflow * item.style.getFlexShrink() * basisSize
                                 / totalShrinkWeight);
                 int maxCut = Math.max(0, item.contentMainSize - item.minContentMainSize);
                 cut = Math.max(0, Math.min(Math.min(cut, pending), maxCut));
@@ -1130,6 +1230,16 @@ public final class DocumentLayoutEngine {
 
     private static int resolveContentMainSize(FlexItem item, int containingWidth, boolean row,
             TextMeasureService textMeasureService, LayoutRuntimeValueResolver layoutValueResolver) {
+        // flex-basis 优先：非 auto 时用 flex-basis 作为主轴初始尺寸
+        UiStyleLength flexBasis = item.style.getFlexBasis();
+        if (!isAuto(flexBasis)) {
+            int baseSize = Math.max(0, flexBasis.resolve(containingWidth, 0));
+            if (row) {
+                return resolveBoxSizingContentWidth(item.style, baseSize, item.border, item.padding);
+            }
+            return resolveBoxSizingContentHeight(item.style, baseSize, item.border, item.padding);
+        }
+        // flex-basis:auto 退回 width/height
         UiStyleLength length = row ? item.style.getWidth() : item.style.getHeight();
         if (isAuto(length)) {
             if (row) {
@@ -1275,7 +1385,27 @@ public final class DocumentLayoutEngine {
         int baseWidth = Math.max(0, width.resolve(containingWidth, autoFallback));
         int resolvedWidth = Math.max(0, layoutValueResolver.resolve(element, DocumentAnimationProperty.WIDTH,
                 baseWidth));
-        return resolveBoxSizingContentWidth(computedStyle, resolvedWidth, border, padding);
+        int contentWidth = resolveBoxSizingContentWidth(computedStyle, resolvedWidth, border, padding);
+        // 应用 min/max-width 约束（规范：min-width > max-width > width）
+        contentWidth = applyWidthConstraints(computedStyle, contentWidth, containingWidth, border, padding);
+        return contentWidth;
+    }
+
+    /**
+     * 将 min-width / max-width 约束应用到内容宽度。
+     */
+    private static int applyWidthConstraints(ComputedStyle style, int contentWidth, int containingWidth,
+            DocumentLayoutEdges border, DocumentLayoutEdges padding) {
+        int minW = Math.max(0, style.getMinWidth().resolve(containingWidth, 0));
+        int result = Math.max(contentWidth, minW);
+        if (!isAuto(style.getMaxWidth())) {
+            int maxW = style.getMaxWidth().resolve(containingWidth, Integer.MAX_VALUE);
+            if (maxW >= 0) {
+                maxW = resolveBoxSizingContentWidth(style, maxW, border, padding);
+                result = Math.min(result, maxW);
+            }
+        }
+        return Math.max(0, result);
     }
 
     private static int resolveBoxSizingContentWidth(ComputedStyle computedStyle, int resolvedWidth,
@@ -1312,18 +1442,40 @@ public final class DocumentLayoutEngine {
         int resolvedHeight = Math.max(0, layoutValueResolver.resolve(element, DocumentAnimationProperty.HEIGHT, baseHeight));
         DocumentLayoutEdges border = resolveUniformEdge(computedStyle.getBorderWidth(), 0);
         DocumentLayoutEdges padding = resolveInsets(computedStyle.getPadding(), 0, true);
-        return resolveBoxSizingContentHeight(computedStyle, resolvedHeight, border, padding);
+        int contentHeight = resolveBoxSizingContentHeight(computedStyle, resolvedHeight, border, padding);
+        // 应用 min/max-height 约束
+        contentHeight = applyHeightConstraints(computedStyle, contentHeight, contentWidth, border, padding);
+        return contentHeight;
     }
 
-    private static int resolveColumnCrossContentWidth(FlexItem item, UiAlignItems alignItems, int contentWidth,
-            TextMeasureService textMeasureService, LayoutRuntimeValueResolver layoutValueResolver) {
+    /**
+     * 将 min-height / max-height 约束应用到内容高度。
+     */
+    private static int applyHeightConstraints(ComputedStyle style, int contentHeight, int containingWidth,
+            DocumentLayoutEdges border, DocumentLayoutEdges padding) {
+        int minH = Math.max(0, style.getMinHeight().resolve(containingWidth, 0));
+        int result = Math.max(contentHeight, minH);
+        if (!isAuto(style.getMaxHeight())) {
+            int maxH = style.getMaxHeight().resolve(containingWidth, Integer.MAX_VALUE);
+            if (maxH >= 0) {
+                maxH = resolveBoxSizingContentHeight(style, maxH, border, padding);
+                result = Math.min(result, maxH);
+            }
+        }
+        return Math.max(0, result);
+    }
+
+    private static int resolveColumnCrossContentWidth(FlexItem item, UiAlignItems alignItems, UiFlexWrap flexWrap,
+            int contentWidth, TextMeasureService textMeasureService, LayoutRuntimeValueResolver layoutValueResolver) {
         if (!isAuto(item.style.getWidth())) {
             int baseWidth = Math.max(0, item.style.getWidth().resolve(contentWidth, 0));
             int resolvedWidth = Math.max(0, layoutValueResolver.resolve(item.element,
                     DocumentAnimationProperty.WIDTH, baseWidth));
             return resolveBoxSizingContentWidth(item.style, resolvedWidth, item.border, item.padding);
         }
-        if (alignItems == UiAlignItems.STRETCH) {
+        // align-self 覆盖 align-items
+        boolean stretch = isItemCrossStretch(item.style.getAlignSelf(), alignItems);
+        if (stretch) {
             return Math.max(0, contentWidth - item.margin.getHorizontal() - item.border.getHorizontal()
                     - item.padding.getHorizontal());
         }
@@ -1359,14 +1511,48 @@ public final class DocumentLayoutEngine {
         if (justifyContent == UiJustifyContent.END) {
             return remaining;
         }
+        if (justifyContent == UiJustifyContent.SPACE_AROUND && remaining > 0) {
+            // space-around：首尾各留半个间距，leading = halfGap
+            return 0; // 由 dynamicGap 处理，leading 在 resolveDynamicGap 中已含首尾
+        }
+        if (justifyContent == UiJustifyContent.SPACE_EVENLY && remaining > 0) {
+            return 0; // 同上
+        }
         return 0;
     }
 
     private static int resolveDynamicGap(UiJustifyContent justifyContent, int baseGap, int remaining, int itemCount) {
-        if (justifyContent == UiJustifyContent.SPACE_BETWEEN && itemCount > 1 && remaining > 0) {
+        if (itemCount <= 0 || remaining <= 0) {
+            return baseGap;
+        }
+        if (justifyContent == UiJustifyContent.SPACE_BETWEEN && itemCount > 1) {
             return baseGap + remaining / (itemCount - 1);
         }
+        if (justifyContent == UiJustifyContent.SPACE_AROUND) {
+            // 每个 item 两侧各留相等间距：总间距 = remaining，分成 itemCount 份，每份两侧各半
+            return baseGap + remaining / itemCount;
+        }
+        if (justifyContent == UiJustifyContent.SPACE_EVENLY) {
+            // 每个间隙（含首尾）相等：共 itemCount+1 个间隙
+            return baseGap + remaining / (itemCount + 1);
+        }
         return baseGap;
+    }
+
+    /**
+     * 解析 space-around / space-evenly 的首部偏移量。
+     */
+    private static int resolveLeadingOffsetForSpacing(UiJustifyContent justifyContent, int remaining, int itemCount) {
+        if (remaining <= 0 || itemCount <= 0) {
+            return 0;
+        }
+        if (justifyContent == UiJustifyContent.SPACE_AROUND) {
+            return remaining / itemCount / 2;
+        }
+        if (justifyContent == UiJustifyContent.SPACE_EVENLY) {
+            return remaining / (itemCount + 1);
+        }
+        return 0;
     }
 
     private static int resolveCrossOffset(UiAlignItems alignItems, int availableCrossSize, int itemOuterCrossSize) {
@@ -1377,7 +1563,39 @@ public final class DocumentLayoutEngine {
         if (alignItems == UiAlignItems.END) {
             return remaining;
         }
+        // BASELINE 暂时按 START 处理（完整 baseline 对齐需要收集每行基线偏移）
         return 0;
+    }
+
+    /**
+     * 解析 flex item 的交叉轴对齐偏移，优先使用 item 自身的 align-self，AUTO 时退回父容器 align-items。
+     */
+    private static int resolveItemCrossOffset(UiAlignSelf alignSelf, UiAlignItems parentAlignItems,
+            int availableCrossSize, int itemOuterCrossSize) {
+        UiAlignItems effectiveAlign;
+        if (alignSelf == UiAlignSelf.AUTO) {
+            effectiveAlign = parentAlignItems;
+        } else {
+            switch (alignSelf) {
+                case START:    effectiveAlign = UiAlignItems.START;   break;
+                case CENTER:   effectiveAlign = UiAlignItems.CENTER;  break;
+                case END:      effectiveAlign = UiAlignItems.END;     break;
+                case STRETCH:  effectiveAlign = UiAlignItems.STRETCH; break;
+                case BASELINE: effectiveAlign = UiAlignItems.BASELINE; break;
+                default:       effectiveAlign = parentAlignItems;     break;
+            }
+        }
+        return resolveCrossOffset(effectiveAlign, availableCrossSize, itemOuterCrossSize);
+    }
+
+    /**
+     * 判断 flex item 是否应按 stretch 拉伸交叉轴（考虑 align-self 覆盖）。
+     */
+    private static boolean isItemCrossStretch(UiAlignSelf alignSelf, UiAlignItems parentAlignItems) {
+        if (alignSelf == UiAlignSelf.AUTO) {
+            return parentAlignItems == UiAlignItems.STRETCH;
+        }
+        return alignSelf == UiAlignSelf.STRETCH;
     }
 
     private static List<ElementNode> getVisibleInFlowElementChildren(ElementNode element) {
@@ -1659,15 +1877,15 @@ public final class DocumentLayoutEngine {
         return 0;
     }
 
-    private static int resolveRelativeOffsetY(ComputedStyle computedStyle, int borderBoxHeight) {
+    private static int resolveRelativeOffsetY(ComputedStyle computedStyle, int containingHeight) {
         if (computedStyle.getPosition() != UiPosition.RELATIVE) {
             return 0;
         }
         if (!isAuto(computedStyle.getTop())) {
-            return computedStyle.getTop().resolve(borderBoxHeight, 0);
+            return computedStyle.getTop().resolve(containingHeight, 0);
         }
         if (!isAuto(computedStyle.getBottom())) {
-            return -computedStyle.getBottom().resolve(borderBoxHeight, 0);
+            return -computedStyle.getBottom().resolve(containingHeight, 0);
         }
         return 0;
     }
@@ -1680,8 +1898,36 @@ public final class DocumentLayoutEngine {
         return Math.max(1, Math.round(Math.max(1, uiSize) / UI_TEXT_SCALE));
     }
 
+    /**
+     * 解析 text-align 产生的行内偏移量。
+     */
+    private static int resolveTextAlignOffset(UiTextAlign textAlign, int availableWidth, int lineWidth) {
+        if (textAlign == UiTextAlign.CENTER) {
+            return Math.max(0, availableWidth - lineWidth) / 2;
+        }
+        if (textAlign == UiTextAlign.END) {
+            return Math.max(0, availableWidth - lineWidth);
+        }
+        return 0;
+    }
+
     private static int resolveTextLineHeight(TextMeasureService textMeasureService) {
-        return Math.max(1, toUiTextSize(textMeasureService.getLineHeight()));
+        return resolveTextLineHeight(textMeasureService, null);
+    }
+
+    /**
+     * 解析文本行高。
+     *
+     * <p>如果 ownerStyle 的 line-height 为 auto，则回落到字体默认行高；
+     * 否则用字体默认行高作为 containingSize 解析（支持 px 和百分比）。</p>
+     */
+    private static int resolveTextLineHeight(TextMeasureService textMeasureService, ComputedStyle ownerStyle) {
+        int fontLineHeight = Math.max(1, toUiTextSize(textMeasureService.getLineHeight()));
+        if (ownerStyle == null || isAuto(ownerStyle.getLineHeight())) {
+            return fontLineHeight;
+        }
+        int resolvedHeight = ownerStyle.getLineHeight().resolve(fontLineHeight, fontLineHeight);
+        return Math.max(1, resolvedHeight);
     }
 
     /**

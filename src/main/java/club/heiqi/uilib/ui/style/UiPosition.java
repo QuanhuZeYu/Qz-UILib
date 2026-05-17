@@ -15,7 +15,8 @@ public enum UiPosition {
     RELATIVE,
 
     /**
-     * 脱离普通流，并相对当前父元素 content box 按 inset 定位。
+     * 脱离普通流，并相对最近 positioned ancestor 的 padding box 按 inset 定位；
+     * 无 positioned ancestor 时回退到根元素 padding box。
      */
     ABSOLUTE,
 

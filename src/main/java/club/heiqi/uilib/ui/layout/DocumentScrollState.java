@@ -380,7 +380,7 @@ public final class DocumentScrollState {
             boolean reserveHorizontal) {
         Objects.requireNonNull(box, "box");
         ScrollEntry entry = entries.get(box.getElement());
-        if (entry == null || entry.maxVerticalOffset <= 0 || box.getComputedStyle().getOverflowY() != UiOverflow.AUTO
+        if (entry == null || entry.maxVerticalOffset <= 0 || !isScrollableOverflow(box.getComputedStyle().getOverflowY())
                 || box.getContentWidth() <= 0 || box.getContentHeight() <= 0) {
             return null;
         }
@@ -414,7 +414,7 @@ public final class DocumentScrollState {
         Objects.requireNonNull(box, "box");
         ScrollEntry entry = entries.get(box.getElement());
         if (entry == null || entry.maxHorizontalOffset <= 0
-                || box.getComputedStyle().getOverflowX() != UiOverflow.AUTO
+                || !isScrollableOverflow(box.getComputedStyle().getOverflowX())
                 || box.getContentWidth() <= 0 || box.getContentHeight() <= 0) {
             return null;
         }
@@ -462,10 +462,10 @@ public final class DocumentScrollState {
 
         int contentWidth = Math.max(viewportWidth, contentRight - box.getContentLeft());
         int contentHeight = Math.max(viewportHeight, contentBottom - box.getContentTop());
-        int maxHorizontalOffset = style.getOverflowX() == UiOverflow.AUTO
+        int maxHorizontalOffset = isScrollableOverflow(style.getOverflowX())
                 ? Math.max(0, contentWidth - viewportWidth)
                 : 0;
-        int maxVerticalOffset = style.getOverflowY() == UiOverflow.AUTO
+        int maxVerticalOffset = isScrollableOverflow(style.getOverflowY())
                 ? Math.max(0, contentHeight - viewportHeight)
                 : 0;
         return new ScrollMetrics(viewportWidth, viewportHeight, contentWidth, contentHeight, maxHorizontalOffset,
@@ -685,9 +685,9 @@ public final class DocumentScrollState {
             return null;
         }
         boolean hasVerticalScrollbar = getMaxScrollTop(box.getElement()) > 0
-                && box.getComputedStyle().getOverflowY() == UiOverflow.AUTO;
+                && isScrollableOverflow(box.getComputedStyle().getOverflowY());
         boolean hasHorizontalScrollbar = getMaxScrollLeft(box.getElement()) > 0
-                && box.getComputedStyle().getOverflowX() == UiOverflow.AUTO;
+                && isScrollableOverflow(box.getComputedStyle().getOverflowX());
         ScrollbarMetrics verticalMetrics = getVerticalScrollbarMetrics(box, offsetX, offsetY, hasHorizontalScrollbar);
         if (verticalMetrics != null && verticalMetrics.containsTrack(mouseX, mouseY)) {
             return new ScrollbarHit(box, verticalMetrics, true);
@@ -711,9 +711,9 @@ public final class DocumentScrollState {
         int boxOffsetY = baseOffsetY + box.getPositionOffsetY();
         if (box.getElement() == activeScrollbarDrag.element) {
             boolean hasVerticalScrollbar = getMaxScrollTop(box.getElement()) > 0
-                    && box.getComputedStyle().getOverflowY() == UiOverflow.AUTO;
+                    && isScrollableOverflow(box.getComputedStyle().getOverflowY());
             boolean hasHorizontalScrollbar = getMaxScrollLeft(box.getElement()) > 0
-                    && box.getComputedStyle().getOverflowX() == UiOverflow.AUTO;
+                    && isScrollableOverflow(box.getComputedStyle().getOverflowX());
             ScrollbarMetrics metrics = activeScrollbarDrag.vertical
                     ? getVerticalScrollbarMetrics(box, boxOffsetX, boxOffsetY, hasHorizontalScrollbar)
                     : getHorizontalScrollbarMetrics(box, boxOffsetX, boxOffsetY, hasVerticalScrollbar);
@@ -1037,5 +1037,12 @@ public final class DocumentScrollState {
             this.maxHorizontalOffset = Math.max(0, maxHorizontalOffset);
             this.maxVerticalOffset = Math.max(0, maxVerticalOffset);
         }
+    }
+
+    /**
+     * 判断 overflow 值是否表示可滚动（AUTO 或 SCROLL）。
+     */
+    private static boolean isScrollableOverflow(UiOverflow overflow) {
+        return overflow == UiOverflow.AUTO || overflow == UiOverflow.SCROLL;
     }
 }

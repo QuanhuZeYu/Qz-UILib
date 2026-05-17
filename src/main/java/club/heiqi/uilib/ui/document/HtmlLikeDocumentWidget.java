@@ -23,6 +23,12 @@ import club.heiqi.uilib.ui.dom.DocumentElementDragOverHandler;
 import club.heiqi.uilib.ui.dom.DocumentElementDragStartHandler;
 import club.heiqi.uilib.ui.dom.DocumentElementFocusEvent;
 import club.heiqi.uilib.ui.dom.DocumentElementFocusHandler;
+import club.heiqi.uilib.ui.dom.DocumentElementFocusInEvent;
+import club.heiqi.uilib.ui.dom.DocumentElementFocusInHandler;
+import club.heiqi.uilib.ui.dom.DocumentElementMouseDownEvent;
+import club.heiqi.uilib.ui.dom.DocumentElementMouseDownHandler;
+import club.heiqi.uilib.ui.dom.DocumentElementMouseUpEvent;
+import club.heiqi.uilib.ui.dom.DocumentElementMouseUpHandler;
 import club.heiqi.uilib.ui.dom.DocumentElementHoverEvent;
 import club.heiqi.uilib.ui.dom.DocumentElementHoverHandler;
 import club.heiqi.uilib.ui.dom.DocumentElementKeyEvent;
@@ -425,6 +431,7 @@ public final class HtmlLikeDocumentWidget extends Widget {
         }
         pressedElement = findElementAt(event.getMouseX(), event.getMouseY());
         beginDragIfNeeded(pressedElement, event);
+        dispatchMouseDown(pressedElement, event);
         dispatchActive(pressedElement, true, event);
         focusElement(resolveFocusableElement(pressedElement), false);
     }
@@ -457,6 +464,7 @@ public final class HtmlLikeDocumentWidget extends Widget {
         ElementNode releasedElement = findElementAt(event.getMouseX(), event.getMouseY());
         ElementNode target = pressedElement != null && pressedElement == releasedElement ? releasedElement : null;
         boolean dragHandled = dispatchDragEnd(event);
+        dispatchMouseUp(pressedElement, event);
         dispatchActive(pressedElement, false, event);
         pressedElement = null;
         if (!dragHandled && target != null) {
@@ -1166,6 +1174,19 @@ public final class HtmlLikeDocumentWidget extends Widget {
         if (focusHandler != null) {
             focusHandler.onFocusChanged(new DocumentElementFocusEvent(target, focused, focusVisible));
         }
+        // 冒泡分发 focusin/focusout（#25）
+        for (DocumentNode current = target; current instanceof ElementNode; current = current.getParent()) {
+            ElementNode currentElement = (ElementNode) current;
+            DocumentElementFocusInHandler focusInHandler = currentElement.getFocusInHandler();
+            if (focusInHandler == null) {
+                continue;
+            }
+            DocumentElementFocusInEvent focusInEvent = new DocumentElementFocusInEvent(target, currentElement,
+                    focused, focusVisible);
+            if (focusInHandler.onFocusIn(focusInEvent)) {
+                break;
+            }
+        }
     }
 
     private boolean dispatchActive(ElementNode target, boolean active, UiMouseEvent event) {
@@ -1187,6 +1208,48 @@ public final class HtmlLikeDocumentWidget extends Widget {
         return false;
     }
 
+    private boolean dispatchMouseDown(ElementNode target, UiMouseEvent event) {
+        if (target == null || event == null) {
+            return false;
+        }
+        int documentX = event.getMouseX() - getAbsoluteX();
+        int documentY = event.getMouseY() - getAbsoluteY();
+        for (DocumentNode current = target; current instanceof ElementNode; current = current.getParent()) {
+            ElementNode currentElement = (ElementNode) current;
+            DocumentElementMouseDownHandler handler = currentElement.getMouseDownHandler();
+            if (handler == null) {
+                continue;
+            }
+            DocumentElementMouseDownEvent mouseDownEvent = new DocumentElementMouseDownEvent(target, currentElement,
+                    documentX, documentY, event.getButton(), event.getTimeNanos());
+            if (handler.onMouseDown(mouseDownEvent)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private boolean dispatchMouseUp(ElementNode target, UiMouseEvent event) {
+        if (target == null || event == null) {
+            return false;
+        }
+        int documentX = event.getMouseX() - getAbsoluteX();
+        int documentY = event.getMouseY() - getAbsoluteY();
+        for (DocumentNode current = target; current instanceof ElementNode; current = current.getParent()) {
+            ElementNode currentElement = (ElementNode) current;
+            DocumentElementMouseUpHandler handler = currentElement.getMouseUpHandler();
+            if (handler == null) {
+                continue;
+            }
+            DocumentElementMouseUpEvent mouseUpEvent = new DocumentElementMouseUpEvent(target, currentElement,
+                    documentX, documentY, event.getButton(), event.getTimeNanos());
+            if (handler.onMouseUp(mouseUpEvent)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
     private void updateHoveredElement(ElementNode nextHoveredElement, UiMouseEvent event) {
         ElementNode resolvedElement = nextHoveredElement != null && isElementAttachedToDocument(nextHoveredElement)
                 ? nextHoveredElement : null;
@@ -1195,8 +1258,57 @@ public final class HtmlLikeDocumentWidget extends Widget {
         }
         ElementNode previousElement = hoveredElement;
         hoveredElement = resolvedElement;
-        dispatchHoverChanged(previousElement, false, event);
-        dispatchHoverChanged(hoveredElement, true, event);
+        // 修复 #24：从子元素移到父元素时，父元素不触发 leave（仍在父元素内）
+        // 从父元素移到子元素时，父元素不触发 enter（已经在父元素内）
+        // 只对不在公共祖先路径上的节点触发 leave/enter
+        dispatchHoverChangedWithAncestorAwareness(previousElement, false, resolvedElement, event);
+        dispatchHoverChangedWithAncestorAwareness(resolvedElement, true, previousElement, event);
+    }
+
+    /**
+     * 分发 hover 变化事件，跳过与 otherElement 共享的祖先节点（避免父子切换时多余触发）。
+     */
+    private boolean dispatchHoverChangedWithAncestorAwareness(ElementNode target, boolean hovered,
+            ElementNode otherElement, UiMouseEvent event) {
+        if (target == null) {
+            return false;
+        }
+        int documentX = event == null ? -1 : event.getMouseX() - getAbsoluteX();
+        int documentY = event == null ? -1 : event.getMouseY() - getAbsoluteY();
+        long timeNanos = event == null ? 0L : event.getTimeNanos();
+        for (DocumentNode current = target; current instanceof ElementNode; current = current.getParent()) {
+            ElementNode currentElement = (ElementNode) current;
+            // 如果 currentElement 是 otherElement 的祖先（或就是 otherElement），跳过
+            // 这样从子移到父时，父不会收到 leave；从父移到子时，父不会收到 enter
+            if (isAncestorOrSelf(currentElement, otherElement)) {
+                continue;
+            }
+            DocumentElementHoverHandler hoverHandler = currentElement.getHoverHandler();
+            if (hoverHandler == null) {
+                continue;
+            }
+            DocumentElementHoverEvent hoverEvent = new DocumentElementHoverEvent(target, currentElement, hovered,
+                    documentX, documentY, timeNanos);
+            if (hoverHandler.onHoverChanged(hoverEvent)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * 判断 ancestor 是否是 descendant 的祖先节点（或就是 descendant 本身）。
+     */
+    private static boolean isAncestorOrSelf(ElementNode ancestor, ElementNode descendant) {
+        if (ancestor == null || descendant == null) {
+            return false;
+        }
+        for (DocumentNode current = descendant; current != null; current = current.getParent()) {
+            if (current == ancestor) {
+                return true;
+            }
+        }
+        return false;
     }
 
     private boolean dispatchHoverChanged(ElementNode target, boolean hovered, UiMouseEvent event) {
