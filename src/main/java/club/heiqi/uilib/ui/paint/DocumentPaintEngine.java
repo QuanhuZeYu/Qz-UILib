@@ -18,6 +18,7 @@ import club.heiqi.uilib.ui.layout.DocumentStackingPhase;
 import club.heiqi.uilib.ui.style.ComputedStyle;
 import club.heiqi.uilib.ui.style.UiOverflow;
 import club.heiqi.uilib.ui.style.UiStyleResolver;
+import club.heiqi.uilib.ui.style.UiVisibility;
 import club.heiqi.uilib.ui.theme.UiSurfaceStyle;
 
 /**
@@ -92,6 +93,10 @@ public final class DocumentPaintEngine {
             List<DocumentPaintCommand> commands, DocumentScrollState scrollState,
             DocumentAnimationTimeline animationTimeline, int offsetX, int offsetY, long currentTimeNanos,
             float inheritedOpacity, boolean paintStackingContext) {
+        // #16 visibility:hidden：元素仍占布局空间，但本身及子树均不绘制
+        if (box != rootBox && isVisibilityHidden(box)) {
+            return;
+        }
         int baseOffsetX = box.isFixedPositioned() ? 0 : offsetX;
         int baseOffsetY = box.isFixedPositioned() ? 0 : offsetY;
         int boxOffsetX = baseOffsetX + box.getPositionOffsetX();
@@ -457,8 +462,12 @@ public final class DocumentPaintEngine {
         }
         int maxScrollTop = scrollState.getMaxScrollTop(box.getElement());
         int maxScrollLeft = scrollState.getMaxScrollLeft(box.getElement());
-        boolean hasVerticalScrollbar = maxScrollTop > 0 && box.getComputedStyle().getOverflowY() == UiOverflow.AUTO;
-        boolean hasHorizontalScrollbar = maxScrollLeft > 0 && box.getComputedStyle().getOverflowX() == UiOverflow.AUTO;
+        boolean hasVerticalScrollbar = maxScrollTop > 0
+                && (box.getComputedStyle().getOverflowY() == UiOverflow.AUTO
+                        || box.getComputedStyle().getOverflowY() == UiOverflow.SCROLL);
+        boolean hasHorizontalScrollbar = maxScrollLeft > 0
+                && (box.getComputedStyle().getOverflowX() == UiOverflow.AUTO
+                        || box.getComputedStyle().getOverflowX() == UiOverflow.SCROLL);
         if (!hasVerticalScrollbar && !hasHorizontalScrollbar) {
             return;
         }
@@ -527,6 +536,13 @@ public final class DocumentPaintEngine {
     private static int resolveChildOffsetY(int childOffsetY, DocumentScrollState scrollState, DocumentLayoutBox child) {
         int baseOffsetY = child.isFixedPositioned() ? 0 : childOffsetY;
         return baseOffsetY + child.getPositionOffsetY() - getScrollTop(scrollState, child);
+    }
+
+    /**
+     * 判断布局盒是否因 visibility:hidden 而不绘制。
+     */
+    private static boolean isVisibilityHidden(DocumentLayoutBox box) {
+        return box.getComputedStyle().getVisibility() == UiVisibility.HIDDEN;
     }
 
     /**

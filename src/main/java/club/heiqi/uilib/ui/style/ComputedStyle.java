@@ -54,6 +54,19 @@ public final class ComputedStyle {
     private final DocumentAnimationTimingFunction animationTimingFunction;
     private final UiStyleLength backdropBlurRadius;
     private final float backdropSaturation;
+    // 新增字段
+    private final UiStyleLength lineHeight;
+    private final UiTextAlign textAlign;
+    private final UiWhiteSpace whiteSpace;
+    private final UiTextOverflow textOverflow;
+    private final UiVisibility visibility;
+    private final UiStyleLength minWidth;
+    private final UiStyleLength maxWidth;
+    private final UiStyleLength minHeight;
+    private final UiStyleLength maxHeight;
+    private final UiStyleLength flexBasis;
+    private final UiAlignSelf alignSelf;
+    private final UiFlexWrap flexWrap;
 
     ComputedStyle(UiDisplay display, UiStyleLength width, UiStyleLength height, UiBoxSizing boxSizing,
             UiPosition position,
@@ -67,7 +80,11 @@ public final class ComputedStyle {
             long transitionDelayNanos, DocumentAnimationTimingFunction transitionTimingFunction,
             String animationName, long animationDurationNanos, long animationDelayNanos, int animationIterationCount,
             DocumentAnimationFillMode animationFillMode, DocumentAnimationTimingFunction animationTimingFunction,
-            UiStyleLength backdropBlurRadius, float backdropSaturation) {
+            UiStyleLength backdropBlurRadius, float backdropSaturation,
+            UiStyleLength lineHeight, UiTextAlign textAlign, UiWhiteSpace whiteSpace, UiTextOverflow textOverflow,
+            UiVisibility visibility,
+            UiStyleLength minWidth, UiStyleLength maxWidth, UiStyleLength minHeight, UiStyleLength maxHeight,
+            UiStyleLength flexBasis, UiAlignSelf alignSelf, UiFlexWrap flexWrap) {
         this.display = Objects.requireNonNull(display, "display");
         this.width = Objects.requireNonNull(width, "width");
         this.height = Objects.requireNonNull(height, "height");
@@ -109,6 +126,18 @@ public final class ComputedStyle {
         this.animationTimingFunction = Objects.requireNonNull(animationTimingFunction, "animationTimingFunction");
         this.backdropBlurRadius = Objects.requireNonNull(backdropBlurRadius, "backdropBlurRadius");
         this.backdropSaturation = Math.max(0.0F, backdropSaturation);
+        this.lineHeight = Objects.requireNonNull(lineHeight, "lineHeight");
+        this.textAlign = Objects.requireNonNull(textAlign, "textAlign");
+        this.whiteSpace = Objects.requireNonNull(whiteSpace, "whiteSpace");
+        this.textOverflow = Objects.requireNonNull(textOverflow, "textOverflow");
+        this.visibility = Objects.requireNonNull(visibility, "visibility");
+        this.minWidth = Objects.requireNonNull(minWidth, "minWidth");
+        this.maxWidth = Objects.requireNonNull(maxWidth, "maxWidth");
+        this.minHeight = Objects.requireNonNull(minHeight, "minHeight");
+        this.maxHeight = Objects.requireNonNull(maxHeight, "maxHeight");
+        this.flexBasis = Objects.requireNonNull(flexBasis, "flexBasis");
+        this.alignSelf = Objects.requireNonNull(alignSelf, "alignSelf");
+        this.flexWrap = Objects.requireNonNull(flexWrap, "flexWrap");
     }
 
     public UiDisplay getDisplay() {
@@ -269,5 +298,113 @@ public final class ComputedStyle {
 
     public float getBackdropSaturation() {
         return backdropSaturation;
+    }
+
+    /**
+     * 返回行高。auto 表示跟随字体默认行高。
+     *
+     * @return 行高
+     */
+    public UiStyleLength getLineHeight() {
+        return lineHeight;
+    }
+
+    /**
+     * 返回文本水平对齐方式。
+     *
+     * @return 文本对齐
+     */
+    public UiTextAlign getTextAlign() {
+        return textAlign;
+    }
+
+    /**
+     * 返回空白字符处理与换行行为。
+     *
+     * @return 空白处理
+     */
+    public UiWhiteSpace getWhiteSpace() {
+        return whiteSpace;
+    }
+
+    /**
+     * 返回文本溢出处理方式。
+     *
+     * @return 文本溢出
+     */
+    public UiTextOverflow getTextOverflow() {
+        return textOverflow;
+    }
+
+    /**
+     * 返回元素可见性。
+     *
+     * @return 可见性
+     */
+    public UiVisibility getVisibility() {
+        return visibility;
+    }
+
+    /**
+     * 返回最小宽度约束。
+     *
+     * @return 最小宽度
+     */
+    public UiStyleLength getMinWidth() {
+        return minWidth;
+    }
+
+    /**
+     * 返回最大宽度约束。auto 表示无上限。
+     *
+     * @return 最大宽度
+     */
+    public UiStyleLength getMaxWidth() {
+        return maxWidth;
+    }
+
+    /**
+     * 返回最小高度约束。
+     *
+     * @return 最小高度
+     */
+    public UiStyleLength getMinHeight() {
+        return minHeight;
+    }
+
+    /**
+     * 返回最大高度约束。auto 表示无上限。
+     *
+     * @return 最大高度
+     */
+    public UiStyleLength getMaxHeight() {
+        return maxHeight;
+    }
+
+    /**
+     * 返回 flex item 主轴初始尺寸。auto 时退回 width/height。
+     *
+     * @return flex-basis
+     */
+    public UiStyleLength getFlexBasis() {
+        return flexBasis;
+    }
+
+    /**
+     * 返回 flex item 交叉轴对齐方式（覆盖父容器 align-items）。
+     *
+     * @return align-self
+     */
+    public UiAlignSelf getAlignSelf() {
+        return alignSelf;
+    }
+
+    /**
+     * 返回 flex 换行行为。
+     *
+     * @return flex-wrap
+     */
+    public UiFlexWrap getFlexWrap() {
+        return flexWrap;
     }
 }

@@ -62,6 +62,18 @@ public final class UiStyleDeclaration {
     private DocumentAnimationTimingFunction animationTimingFunction;
     private UiStyleLength backdropBlurRadius;
     private Float backdropSaturation;
+    private UiStyleLength lineHeight;
+    private UiTextAlign textAlign;
+    private UiWhiteSpace whiteSpace;
+    private UiTextOverflow textOverflow;
+    private UiVisibility visibility;
+    private UiStyleLength minWidth;
+    private UiStyleLength maxWidth;
+    private UiStyleLength minHeight;
+    private UiStyleLength maxHeight;
+    private UiStyleLength flexBasis;
+    private UiAlignSelf alignSelf;
+    private UiFlexWrap flexWrap;
 
     public UiStyleDeclaration() {
         this((UiStyleChangeListener) null);
@@ -632,6 +644,222 @@ public final class UiStyleDeclaration {
         return updateBackdropSaturation(null);
     }
 
+    public UiStyleLength getLineHeight() {
+        return lineHeight;
+    }
+
+    /**
+     * 设置行高。auto 表示跟随字体默认行高。
+     *
+     * @param lineHeight 行高
+     * @return 当前声明
+     */
+    public UiStyleDeclaration setLineHeight(UiStyleLength lineHeight) {
+        return updateLineHeight(Objects.requireNonNull(lineHeight, "lineHeight"));
+    }
+
+    public UiStyleDeclaration clearLineHeight() {
+        return updateLineHeight(null);
+    }
+
+    public UiTextAlign getTextAlign() {
+        return textAlign;
+    }
+
+    /**
+     * 设置文本水平对齐方式。
+     *
+     * @param textAlign 对齐方式
+     * @return 当前声明
+     */
+    public UiStyleDeclaration setTextAlign(UiTextAlign textAlign) {
+        return updateTextAlign(Objects.requireNonNull(textAlign, "textAlign"));
+    }
+
+    public UiStyleDeclaration clearTextAlign() {
+        return updateTextAlign(null);
+    }
+
+    public UiWhiteSpace getWhiteSpace() {
+        return whiteSpace;
+    }
+
+    /**
+     * 设置空白字符处理与换行行为。
+     *
+     * @param whiteSpace 空白处理
+     * @return 当前声明
+     */
+    public UiStyleDeclaration setWhiteSpace(UiWhiteSpace whiteSpace) {
+        return updateWhiteSpace(Objects.requireNonNull(whiteSpace, "whiteSpace"));
+    }
+
+    public UiStyleDeclaration clearWhiteSpace() {
+        return updateWhiteSpace(null);
+    }
+
+    public UiTextOverflow getTextOverflow() {
+        return textOverflow;
+    }
+
+    /**
+     * 设置文本溢出处理方式。
+     *
+     * @param textOverflow 文本溢出
+     * @return 当前声明
+     */
+    public UiStyleDeclaration setTextOverflow(UiTextOverflow textOverflow) {
+        return updateTextOverflow(Objects.requireNonNull(textOverflow, "textOverflow"));
+    }
+
+    public UiStyleDeclaration clearTextOverflow() {
+        return updateTextOverflow(null);
+    }
+
+    public UiVisibility getVisibility() {
+        return visibility;
+    }
+
+    /**
+     * 设置元素可见性。{@code HIDDEN} 保留布局空间但不可见且不响应命中测试。
+     *
+     * @param visibility 可见性
+     * @return 当前声明
+     */
+    public UiStyleDeclaration setVisibility(UiVisibility visibility) {
+        return updateVisibility(Objects.requireNonNull(visibility, "visibility"));
+    }
+
+    public UiStyleDeclaration clearVisibility() {
+        return updateVisibility(null);
+    }
+
+    public UiStyleLength getMinWidth() {
+        return minWidth;
+    }
+
+    /**
+     * 设置最小宽度约束。
+     *
+     * @param minWidth 最小宽度
+     * @return 当前声明
+     */
+    public UiStyleDeclaration setMinWidth(UiStyleLength minWidth) {
+        return updateMinWidth(Objects.requireNonNull(minWidth, "minWidth"));
+    }
+
+    public UiStyleDeclaration clearMinWidth() {
+        return updateMinWidth(null);
+    }
+
+    public UiStyleLength getMaxWidth() {
+        return maxWidth;
+    }
+
+    /**
+     * 设置最大宽度约束。auto 表示无上限。
+     *
+     * @param maxWidth 最大宽度
+     * @return 当前声明
+     */
+    public UiStyleDeclaration setMaxWidth(UiStyleLength maxWidth) {
+        return updateMaxWidth(Objects.requireNonNull(maxWidth, "maxWidth"));
+    }
+
+    public UiStyleDeclaration clearMaxWidth() {
+        return updateMaxWidth(null);
+    }
+
+    public UiStyleLength getMinHeight() {
+        return minHeight;
+    }
+
+    /**
+     * 设置最小高度约束。
+     *
+     * @param minHeight 最小高度
+     * @return 当前声明
+     */
+    public UiStyleDeclaration setMinHeight(UiStyleLength minHeight) {
+        return updateMinHeight(Objects.requireNonNull(minHeight, "minHeight"));
+    }
+
+    public UiStyleDeclaration clearMinHeight() {
+        return updateMinHeight(null);
+    }
+
+    public UiStyleLength getMaxHeight() {
+        return maxHeight;
+    }
+
+    /**
+     * 设置最大高度约束。auto 表示无上限。
+     *
+     * @param maxHeight 最大高度
+     * @return 当前声明
+     */
+    public UiStyleDeclaration setMaxHeight(UiStyleLength maxHeight) {
+        return updateMaxHeight(Objects.requireNonNull(maxHeight, "maxHeight"));
+    }
+
+    public UiStyleDeclaration clearMaxHeight() {
+        return updateMaxHeight(null);
+    }
+
+    public UiStyleLength getFlexBasis() {
+        return flexBasis;
+    }
+
+    /**
+     * 设置 flex item 主轴初始尺寸。auto 时退回 width/height。
+     *
+     * @param flexBasis flex-basis
+     * @return 当前声明
+     */
+    public UiStyleDeclaration setFlexBasis(UiStyleLength flexBasis) {
+        return updateFlexBasis(Objects.requireNonNull(flexBasis, "flexBasis"));
+    }
+
+    public UiStyleDeclaration clearFlexBasis() {
+        return updateFlexBasis(null);
+    }
+
+    public UiAlignSelf getAlignSelf() {
+        return alignSelf;
+    }
+
+    /**
+     * 设置 flex item 交叉轴对齐方式（覆盖父容器 align-items）。
+     *
+     * @param alignSelf align-self
+     * @return 当前声明
+     */
+    public UiStyleDeclaration setAlignSelf(UiAlignSelf alignSelf) {
+        return updateAlignSelf(Objects.requireNonNull(alignSelf, "alignSelf"));
+    }
+
+    public UiStyleDeclaration clearAlignSelf() {
+        return updateAlignSelf(null);
+    }
+
+    public UiFlexWrap getFlexWrap() {
+        return flexWrap;
+    }
+
+    /**
+     * 设置 flex 换行行为。
+     *
+     * @param flexWrap flex-wrap
+     * @return 当前声明
+     */
+    public UiStyleDeclaration setFlexWrap(UiFlexWrap flexWrap) {
+        return updateFlexWrap(Objects.requireNonNull(flexWrap, "flexWrap"));
+    }
+
+    public UiStyleDeclaration clearFlexWrap() {
+        return updateFlexWrap(null);
+    }
+
     private UiStyleDeclaration updateDisplay(UiDisplay value) {
         if (display != value) {
             display = value;
@@ -950,6 +1178,103 @@ public final class UiStyleDeclaration {
         if (!Objects.equals(backdropSaturation, value)) {
             backdropSaturation = value;
             recordPaintChange();
+        }
+        return this;
+    }
+
+    private UiStyleDeclaration updateLineHeight(UiStyleLength value) {
+        if (!Objects.equals(lineHeight, value)) {
+            lineHeight = value;
+            recordLayoutChange();
+        }
+        return this;
+    }
+
+    private UiStyleDeclaration updateTextAlign(UiTextAlign value) {
+        if (textAlign != value) {
+            textAlign = value;
+            recordLayoutChange();
+        }
+        return this;
+    }
+
+    private UiStyleDeclaration updateWhiteSpace(UiWhiteSpace value) {
+        if (whiteSpace != value) {
+            whiteSpace = value;
+            recordLayoutChange();
+        }
+        return this;
+    }
+
+    private UiStyleDeclaration updateTextOverflow(UiTextOverflow value) {
+        if (textOverflow != value) {
+            textOverflow = value;
+            recordLayoutChange();
+        }
+        return this;
+    }
+
+    private UiStyleDeclaration updateVisibility(UiVisibility value) {
+        if (visibility != value) {
+            visibility = value;
+            // visibility 变化不影响布局，只影响绘制和命中测试
+            recordPaintChange();
+        }
+        return this;
+    }
+
+    private UiStyleDeclaration updateMinWidth(UiStyleLength value) {
+        if (!Objects.equals(minWidth, value)) {
+            minWidth = value;
+            recordLayoutChange();
+        }
+        return this;
+    }
+
+    private UiStyleDeclaration updateMaxWidth(UiStyleLength value) {
+        if (!Objects.equals(maxWidth, value)) {
+            maxWidth = value;
+            recordLayoutChange();
+        }
+        return this;
+    }
+
+    private UiStyleDeclaration updateMinHeight(UiStyleLength value) {
+        if (!Objects.equals(minHeight, value)) {
+            minHeight = value;
+            recordLayoutChange();
+        }
+        return this;
+    }
+
+    private UiStyleDeclaration updateMaxHeight(UiStyleLength value) {
+        if (!Objects.equals(maxHeight, value)) {
+            maxHeight = value;
+            recordLayoutChange();
+        }
+        return this;
+    }
+
+    private UiStyleDeclaration updateFlexBasis(UiStyleLength value) {
+        if (!Objects.equals(flexBasis, value)) {
+            flexBasis = value;
+            recordLayoutChange();
+        }
+        return this;
+    }
+
+    private UiStyleDeclaration updateAlignSelf(UiAlignSelf value) {
+        if (alignSelf != value) {
+            alignSelf = value;
+            recordLayoutChange();
+        }
+        return this;
+    }
+
+    private UiStyleDeclaration updateFlexWrap(UiFlexWrap value) {
+        if (flexWrap != value) {
+            flexWrap = value;
+            recordLayoutChange();
         }
         return this;
     }

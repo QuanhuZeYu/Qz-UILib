@@ -7,6 +7,9 @@ import java.util.List;
 import java.util.Objects;
 
 import club.heiqi.uilib.ui.dom.ElementNode;
+import club.heiqi.uilib.ui.style.ComputedStyle;
+import club.heiqi.uilib.ui.style.UiStyleResolver;
+import club.heiqi.uilib.ui.style.UiVisibility;
 
 /**
  * HTML-like 布局盒命中测试引擎。
@@ -39,8 +42,11 @@ public final class DocumentHitTestEngine {
         int baseOffsetY = box.isFixedPositioned() ? 0 : offsetY;
         int boxOffsetX = baseOffsetX + box.getPositionOffsetX();
         int boxOffsetY = baseOffsetY + box.getPositionOffsetY();
-        boolean insideBorderBox = containsInRect(documentX, documentY, box.getLeft() + boxOffsetX,
-                box.getTop() + boxOffsetY, box.getRight() + boxOffsetX, box.getBottom() + boxOffsetY);
+        // #26 修复：border-radius 参与命中测试
+        int borderRadius = resolveBorderRadius(box);
+        boolean insideBorderBox = containsInRoundedRect(documentX, documentY,
+                box.getLeft() + boxOffsetX, box.getTop() + boxOffsetY,
+                box.getRight() + boxOffsetX, box.getBottom() + boxOffsetY, borderRadius);
         if (canHitTestChildren(box, documentX, documentY, boxOffsetX, boxOffsetY)) {
             int childOffsetX = boxOffsetX - getScrollLeft(scrollState, box);
             int childOffsetY = boxOffsetY - getScrollTop(scrollState, box);
@@ -202,11 +208,83 @@ public final class DocumentHitTestEngine {
     }
 
     private static boolean isHitTestHidden(ElementNode element) {
-        return element != null && "true".equals(element.getAttribute("data-hit-test-hidden"));
+        if (element == null) {
+            return false;
+        }
+        if ("true".equals(element.getAttribute("data-hit-test-hidden"))) {
+            return true;
+        }
+        // visibility:hidden 的元素不响应命中测试
+        ComputedStyle style = UiStyleResolver.compute(element);
+        return style.getVisibility() == UiVisibility.HIDDEN;
     }
 
     private static boolean containsInRect(int x, int y, int left, int top, int right, int bottom) {
         return x >= left && x < right && y >= top && y < bottom;
+    }
+
+    /**
+     * 圆角感知命中测试。
+     *
+     * <p>当 borderRadius > 0 时，对四个角落进行圆弧判断；其余区域仍按矩形处理。</p>
+     */
+    private static boolean containsInRoundedRect(int x, int y, int left, int top, int right, int bottom,
+            int borderRadius) {
+        if (!containsInRect(x, y, left, top, right, bottom)) {
+            return false;
+        }
+        if (borderRadius <= 0) {
+            return true;
+        }
+        int r = Math.min(borderRadius, Math.min((right - left) / 2, (bottom - top) / 2));
+        if (r <= 0) {
+            return true;
+        }
+        // 检查四个圆角区域
+        int cx, cy;
+        // 左上角
+        cx = left + r;
+        cy = top + r;
+        if (x < cx && y < cy) {
+            return isInsideCircle(x, y, cx, cy, r);
+        }
+        // 右上角
+        cx = right - r;
+        cy = top + r;
+        if (x >= cx && y < cy) {
+            return isInsideCircle(x, y, cx, cy, r);
+        }
+        // 左下角
+        cx = left + r;
+        cy = bottom - r;
+        if (x < cx && y >= cy) {
+            return isInsideCircle(x, y, cx, cy, r);
+        }
+        // 右下角
+        cx = right - r;
+        cy = bottom - r;
+        if (x >= cx && y >= cy) {
+            return isInsideCircle(x, y, cx, cy, r);
+        }
+        return true;
+    }
+
+    private static boolean isInsideCircle(int x, int y, int cx, int cy, int r) {
+        long dx = x - cx;
+        long dy = y - cy;
+        return dx * dx + dy * dy < (long) r * r;
+    }
+
+    /**
+     * 从布局盒的 computed style 解析 border-radius 像素值（已限制上限）。
+     */
+    private static int resolveBorderRadius(DocumentLayoutBox box) {
+        int limit = Math.min(box.getWidth(), box.getHeight());
+        if (limit <= 0) {
+            return 0;
+        }
+        int radius = box.getComputedStyle().getBorderRadius().resolve(limit, 0);
+        return Math.max(0, Math.min(radius, limit / 2));
     }
 
     /**

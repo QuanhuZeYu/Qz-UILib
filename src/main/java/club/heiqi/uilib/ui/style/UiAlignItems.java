@@ -7,5 +7,7 @@ public enum UiAlignItems {
     START,
     CENTER,
     END,
-    STRETCH
+    STRETCH,
+    /** 按第一条基线对齐。 */
+    BASELINE
 }

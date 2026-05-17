@@ -6,5 +6,7 @@ package club.heiqi.uilib.ui.style;
 public enum UiOverflow {
     VISIBLE,
     HIDDEN,
-    AUTO
+    AUTO,
+    /** 始终显示滚动条（即使内容未溢出）。 */
+    SCROLL
 }

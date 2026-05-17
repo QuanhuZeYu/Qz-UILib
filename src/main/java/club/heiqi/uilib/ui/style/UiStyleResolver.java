@@ -91,13 +91,44 @@ public final class UiStyleResolver {
                 : style.getBackdropBlurRadius();
         float backdropSaturation = style.getBackdropSaturation() == null ? 1.0F
                 : style.getBackdropSaturation().floatValue();
+
+        // 新增属性解析
+        // line-height：不可继承（使用 auto 表示跟随字体默认行高）
+        UiStyleLength lineHeight = style.getLineHeight() == null ? UiStyleLength.auto() : style.getLineHeight();
+
+        // text-align：可继承，子元素未声明时从父元素继承
+        UiTextAlign textAlign = style.getTextAlign() == null ? inheritedTextAlign(parentStyle) : style.getTextAlign();
+
+        // white-space：可继承
+        UiWhiteSpace whiteSpace = style.getWhiteSpace() == null ? inheritedWhiteSpace(parentStyle) : style.getWhiteSpace();
+
+        // text-overflow：不可继承，默认 CLIP
+        UiTextOverflow textOverflow = style.getTextOverflow() == null ? UiTextOverflow.CLIP : style.getTextOverflow();
+
+        // visibility：可继承，子元素未声明时从父元素继承
+        UiVisibility visibility = style.getVisibility() == null ? inheritedVisibility(parentStyle) : style.getVisibility();
+
+        // min/max 尺寸约束：不可继承
+        UiStyleLength minWidth = style.getMinWidth() == null ? UiStyleLength.px(0) : style.getMinWidth();
+        UiStyleLength maxWidth = style.getMaxWidth() == null ? UiStyleLength.auto() : style.getMaxWidth();
+        UiStyleLength minHeight = style.getMinHeight() == null ? UiStyleLength.px(0) : style.getMinHeight();
+        UiStyleLength maxHeight = style.getMaxHeight() == null ? UiStyleLength.auto() : style.getMaxHeight();
+
+        // flex 增强：不可继承
+        UiStyleLength flexBasis = style.getFlexBasis() == null ? UiStyleLength.auto() : style.getFlexBasis();
+        UiAlignSelf alignSelf = style.getAlignSelf() == null ? UiAlignSelf.AUTO : style.getAlignSelf();
+        UiFlexWrap flexWrap = style.getFlexWrap() == null ? UiFlexWrap.NOWRAP : style.getFlexWrap();
+
         return new ComputedStyle(display, width, height, boxSizing, position, top, right, bottom, left, zIndex, margin,
                 padding, borderWidth, borderRadius, overflowX, overflowY, flexDirection, alignItems, justifyContent,
                 verticalAlign, rowGap, columnGap, flexGrow, flexShrink, opacity, backgroundColor, borderColor, textColor,
                 transitionProperties, transitionDurationNanos, transitionDelayNanos, transitionTimingFunction,
                 animationName, animationDurationNanos, animationDelayNanos, animationIterationCount, animationFillMode,
                 animationTimingFunction,
-                backdropBlurRadius, backdropSaturation);
+                backdropBlurRadius, backdropSaturation,
+                lineHeight, textAlign, whiteSpace, textOverflow, visibility,
+                minWidth, maxWidth, minHeight, maxHeight,
+                flexBasis, alignSelf, flexWrap);
     }
 
     private static ComputedStyle computeParentStyle(ElementNode element) {
@@ -110,6 +141,19 @@ public final class UiStyleResolver {
 
     private static int inheritedTextColor(ComputedStyle parentStyle) {
         return parentStyle == null ? DEFAULT_TEXT_COLOR : parentStyle.getTextColor();
+    }
+
+    private static UiTextAlign inheritedTextAlign(ComputedStyle parentStyle) {
+        return parentStyle == null ? UiTextAlign.START : parentStyle.getTextAlign();
+    }
+
+    private static UiWhiteSpace inheritedWhiteSpace(ComputedStyle parentStyle) {
+        return parentStyle == null ? UiWhiteSpace.NORMAL : parentStyle.getWhiteSpace();
+    }
+
+    private static UiVisibility inheritedVisibility(ComputedStyle parentStyle) {
+        // 父元素 HIDDEN 时子元素继承 HIDDEN；父不存在或 VISIBLE 则默认 VISIBLE
+        return parentStyle == null ? UiVisibility.VISIBLE : parentStyle.getVisibility();
     }
 
     private static UiDisplay defaultDisplay(String tagName) {

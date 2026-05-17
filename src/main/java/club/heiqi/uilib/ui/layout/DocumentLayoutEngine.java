@@ -1027,22 +1027,48 @@ public final class DocumentLayoutEngine {
 
             int occupiedMain = getOccupiedMainSize(lineItems, gap, true);
             int remaining = Math.max(0, contentWidth - occupiedMain);
-            int dynamicGap = resolveDynamicGap(parentStyle.getJustifyContent(), gap, remaining, lineItems.size());
-            int cursor = resolveLeadingOffset(parentStyle.getJustifyContent(), remaining)
-                    + resolveLeadingOffsetForSpacing(parentStyle.getJustifyContent(), remaining, lineItems.size());
+
+            // #9 修复：auto margin 吸收主轴剩余空间，优先于 justify-content
+            int totalAutoMarginMain = 0;
+            for (FlexItem item : lineItems) {
+                totalAutoMarginMain += item.getAutoMarginMainCount();
+            }
+            int autoMarginMainPerSlot = totalAutoMarginMain > 0 && remaining > 0
+                    ? remaining / totalAutoMarginMain : 0;
+            boolean hasAutoMargin = totalAutoMarginMain > 0;
+
+            int dynamicGap = hasAutoMargin ? gap
+                    : resolveDynamicGap(parentStyle.getJustifyContent(), gap, remaining, lineItems.size());
+            int cursor = hasAutoMargin ? 0
+                    : resolveLeadingOffset(parentStyle.getJustifyContent(), remaining)
+                            + resolveLeadingOffsetForSpacing(parentStyle.getJustifyContent(), remaining, lineItems.size());
 
             for (FlexItem item : lineItems) {
                 int outerCrossSize = item.getOuterCrossSize(true);
                 int crossOffset = resolveItemCrossOffset(item.style.getAlignSelf(), parentStyle.getAlignItems(),
                         lineCrossSize, outerCrossSize);
-                int borderLeft = contentLeft + cursor + item.margin.getLeft();
-                int borderTop = crossCursor + crossOffset + item.margin.getTop();
-                DocumentLayoutBox childBox = layoutElement(item.element, borderLeft - item.margin.getLeft(),
-                        borderTop - item.margin.getTop(), contentWidth, lineAvailableCrossSize, item.contentMainSize,
+                // auto margin 主轴起始侧
+                int marginLeft = item.hasAutoMarginMainStart ? autoMarginMainPerSlot : item.margin.getLeft();
+                int marginRight = item.hasAutoMarginMainEnd ? autoMarginMainPerSlot : item.margin.getRight();
+                // auto margin 交叉轴（row 中 top/bottom）
+                int marginTop = item.margin.getTop();
+                int marginBottom = item.margin.getBottom();
+                if (item.hasAutoMarginCrossStart || item.hasAutoMarginCrossEnd) {
+                    int crossRemaining = Math.max(0, lineCrossSize - item.getOuterCrossSize(true));
+                    int autoCount = (item.hasAutoMarginCrossStart ? 1 : 0) + (item.hasAutoMarginCrossEnd ? 1 : 0);
+                    int autoMarginCross = autoCount > 0 ? crossRemaining / autoCount : 0;
+                    marginTop = item.hasAutoMarginCrossStart ? autoMarginCross : item.margin.getTop();
+                    marginBottom = item.hasAutoMarginCrossEnd ? autoMarginCross : item.margin.getBottom();
+                    crossOffset = marginTop;
+                }
+                int borderLeft = contentLeft + cursor + marginLeft;
+                int borderTop = crossCursor + crossOffset + marginTop;
+                DocumentLayoutBox childBox = layoutElement(item.element, borderLeft - marginLeft,
+                        borderTop - marginTop, contentWidth, lineAvailableCrossSize, item.contentMainSize,
                         item.forcedCrossSize, absoluteContainingBlock, fixedContainingBlock, textMeasureService,
                         layoutValueResolver);
                 childBoxes.add(childBox);
-                cursor += item.margin.getLeft() + childBox.getWidth() + item.margin.getRight() + dynamicGap;
+                cursor += marginLeft + childBox.getWidth() + marginRight + dynamicGap;
             }
             crossCursor += lineCrossSize;
             totalContentHeight = crossCursor - contentTop;
@@ -1064,7 +1090,7 @@ public final class DocumentLayoutEngine {
             TextMeasureService textMeasureService, LayoutRuntimeValueResolver layoutValueResolver) {
         List<FlexItem> items = new ArrayList<FlexItem>();
         for (ElementNode child : children) {
-            FlexItem item = createFlexItem(child, contentWidth, layoutValueResolver);
+            FlexItem item = createFlexItem(child, contentWidth, false, layoutValueResolver);
             item.forcedCrossSize = resolveColumnCrossContentWidth(item, parentStyle.getAlignItems(),
                     parentStyle.getFlexWrap(), contentWidth, textMeasureService, layoutValueResolver);
             item.box = layoutElement(item.element, 0, 0, contentWidth, specifiedContentHeight,
@@ -1090,26 +1116,52 @@ public final class DocumentLayoutEngine {
         int occupiedMain = getOccupiedMainSize(items, gap, false);
         int contentHeight = specifiedContentHeight >= 0 ? specifiedContentHeight : occupiedMain;
         int remaining = Math.max(0, contentHeight - occupiedMain);
-        int dynamicGap = resolveDynamicGap(parentStyle.getJustifyContent(), gap, remaining, items.size());
-        int cursor = resolveLeadingOffset(parentStyle.getJustifyContent(), remaining)
-                + resolveLeadingOffsetForSpacing(parentStyle.getJustifyContent(), remaining, items.size());
+
+        // #9 修复：auto margin 吸收主轴剩余空间（column 中 top/bottom）
+        int totalAutoMarginMain = 0;
+        for (FlexItem item : items) {
+            totalAutoMarginMain += item.getAutoMarginMainCount();
+        }
+        int autoMarginMainPerSlot = totalAutoMarginMain > 0 && remaining > 0
+                ? remaining / totalAutoMarginMain : 0;
+        boolean hasAutoMargin = totalAutoMarginMain > 0;
+
+        int dynamicGap = hasAutoMargin ? gap
+                : resolveDynamicGap(parentStyle.getJustifyContent(), gap, remaining, items.size());
+        int cursor = hasAutoMargin ? 0
+                : resolveLeadingOffset(parentStyle.getJustifyContent(), remaining)
+                        + resolveLeadingOffsetForSpacing(parentStyle.getJustifyContent(), remaining, items.size());
         List<DocumentLayoutBox> childBoxes = new ArrayList<DocumentLayoutBox>();
         int measuredContentBottom = contentTop;
         for (FlexItem item : items) {
+            // auto margin 主轴（column 中 top/bottom）
+            int marginTop = item.hasAutoMarginMainStart ? autoMarginMainPerSlot : item.margin.getTop();
+            int marginBottom = item.hasAutoMarginMainEnd ? autoMarginMainPerSlot : item.margin.getBottom();
+            // auto margin 交叉轴（column 中 left/right）
             int crossOffset = resolveItemCrossOffset(item.style.getAlignSelf(), parentStyle.getAlignItems(),
                     contentWidth, item.getOuterCrossSize(false));
-            int borderLeft = contentLeft + crossOffset + item.margin.getLeft();
-            int borderTop = contentTop + cursor + item.margin.getTop();
+            int marginLeft = item.margin.getLeft();
+            int marginRight = item.margin.getRight();
+            if (item.hasAutoMarginCrossStart || item.hasAutoMarginCrossEnd) {
+                int crossRemaining = Math.max(0, contentWidth - item.getOuterCrossSize(false));
+                int autoCount = (item.hasAutoMarginCrossStart ? 1 : 0) + (item.hasAutoMarginCrossEnd ? 1 : 0);
+                int autoMarginCross = autoCount > 0 ? crossRemaining / autoCount : 0;
+                marginLeft = item.hasAutoMarginCrossStart ? autoMarginCross : item.margin.getLeft();
+                marginRight = item.hasAutoMarginCrossEnd ? autoMarginCross : item.margin.getRight();
+                crossOffset = marginLeft;
+            }
+            int borderLeft = contentLeft + crossOffset + marginLeft;
+            int borderTop = contentTop + cursor + marginTop;
             int forcedMainSize = shouldKeepAutoHeightInFinalColumnLayout(item, specifiedContentHeight)
                     ? AUTO_SIZE
                     : item.contentMainSize;
-            DocumentLayoutBox childBox = layoutElement(item.element, borderLeft - item.margin.getLeft(),
-                    borderTop - item.margin.getTop(), contentWidth, contentHeight, item.forcedCrossSize,
+            DocumentLayoutBox childBox = layoutElement(item.element, borderLeft - marginLeft,
+                    borderTop - marginTop, contentWidth, contentHeight, item.forcedCrossSize,
                     forcedMainSize, absoluteContainingBlock, fixedContainingBlock, textMeasureService,
                     layoutValueResolver);
             childBoxes.add(childBox);
-            measuredContentBottom = Math.max(measuredContentBottom, childBox.getBottom() + item.margin.getBottom());
-            cursor += item.margin.getTop() + childBox.getHeight() + item.margin.getBottom() + dynamicGap;
+            measuredContentBottom = Math.max(measuredContentBottom, childBox.getBottom() + marginBottom);
+            cursor += marginTop + childBox.getHeight() + marginBottom + dynamicGap;
         }
         return new LayoutChildrenResult(childBoxes, new ArrayList<DocumentLayoutTextRun>(),
                 new ArrayList<DocumentLayoutInlineFragment>(), specifiedContentHeight >= 0
@@ -1816,10 +1868,15 @@ public final class DocumentLayoutEngine {
 
     private static FlexItem createFlexItem(ElementNode element, int containingWidth,
             LayoutRuntimeValueResolver layoutValueResolver) {
+        return createFlexItem(element, containingWidth, true, layoutValueResolver);
+    }
+
+    private static FlexItem createFlexItem(ElementNode element, int containingWidth, boolean row,
+            LayoutRuntimeValueResolver layoutValueResolver) {
         ComputedStyle style = UiStyleResolver.compute(element);
         return new FlexItem(element, style, resolveMarginInsets(element, style, containingWidth, layoutValueResolver),
                 resolveUniformEdge(style.getBorderWidth(), containingWidth),
-                resolvePaddingInsets(element, style, containingWidth, layoutValueResolver));
+                resolvePaddingInsets(element, style, containingWidth, layoutValueResolver), row);
     }
 
     private static DocumentLayoutEdges resolveMarginInsets(ElementNode element, ComputedStyle style,
@@ -2279,6 +2336,12 @@ public final class DocumentLayoutEngine {
         private final DocumentLayoutEdges margin;
         private final DocumentLayoutEdges border;
         private final DocumentLayoutEdges padding;
+        /** 主轴方向是否有 auto margin（row: left/right；column: top/bottom）。 */
+        private final boolean hasAutoMarginMainStart;
+        private final boolean hasAutoMarginMainEnd;
+        /** 交叉轴方向是否有 auto margin（row: top/bottom；column: left/right）。 */
+        private final boolean hasAutoMarginCrossStart;
+        private final boolean hasAutoMarginCrossEnd;
         private int contentMainSize;
         private int naturalContentMainSize = AUTO_SIZE;
         private int minContentMainSize;
@@ -2286,12 +2349,28 @@ public final class DocumentLayoutEngine {
         private DocumentLayoutBox box;
 
         private FlexItem(ElementNode element, ComputedStyle style, DocumentLayoutEdges margin,
-                DocumentLayoutEdges border, DocumentLayoutEdges padding) {
+                DocumentLayoutEdges border, DocumentLayoutEdges padding, boolean row) {
             this.element = element;
             this.style = style;
             this.margin = margin;
             this.border = border;
             this.padding = padding;
+            UiStyleInsets rawMargin = style.getMargin();
+            if (row) {
+                this.hasAutoMarginMainStart = isAuto(rawMargin.getLeft());
+                this.hasAutoMarginMainEnd = isAuto(rawMargin.getRight());
+                this.hasAutoMarginCrossStart = isAuto(rawMargin.getTop());
+                this.hasAutoMarginCrossEnd = isAuto(rawMargin.getBottom());
+            } else {
+                this.hasAutoMarginMainStart = isAuto(rawMargin.getTop());
+                this.hasAutoMarginMainEnd = isAuto(rawMargin.getBottom());
+                this.hasAutoMarginCrossStart = isAuto(rawMargin.getLeft());
+                this.hasAutoMarginCrossEnd = isAuto(rawMargin.getRight());
+            }
+        }
+
+        private int getAutoMarginMainCount() {
+            return (hasAutoMarginMainStart ? 1 : 0) + (hasAutoMarginMainEnd ? 1 : 0);
         }
 
         private int getOuterMainSize(boolean row) {
