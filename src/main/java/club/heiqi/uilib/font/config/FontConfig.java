@@ -27,7 +27,7 @@ public final class FontConfig {
     public static double shadowOffsetY = 0.5D;
     public static double lineSpacing = 0.1D;
     public static double renderOffset = 0.0D;
-    public static double brightnessGain = 10.0D;
+    public static double brightnessGain = 2.0D;
     public static double drawStageUploadIntervalMs = 20.0D;
     public static int drawStageUploadLimitPerSecond = 20;
     public static int drawStageUploadBatchSize = 2;
