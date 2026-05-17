@@ -1915,4 +1915,86 @@ public class DocumentLayoutEngineTest {
         block.appendText(text);
         return block;
     }
+
+    /**
+     * 验证 box-sizing:border-box 声明 height 后，content height 扣除 padding/border，border-box height 等于声明值。
+     */
+    @Test
+    public void shouldApplyBorderBoxHeightToBlockElement() {
+        UiDocument document = UiDocument.create();
+        ElementNode root = document.getRootElement();
+        ElementNode child = document.div();
+
+        root.style().setWidth(UiStyleLength.px(200));
+        child.style()
+                .setBoxSizing(UiBoxSizing.BORDER_BOX)
+                .setHeight(UiStyleLength.px(100))
+                .setPadding(UiStyleLength.px(10))
+                .setBorderWidth(UiStyleLength.px(2));
+        root.append(child);
+
+        DocumentLayoutBox childBox = DocumentLayoutEngine.layout(root, 240, 0).getChildren().get(0);
+
+        // border-box height = 100；border(2+2) + padding(10+10) = 24；content height = 76
+        Assert.assertEquals(100, childBox.getHeight());
+        Assert.assertEquals(76, childBox.getContentHeight());
+    }
+
+    /**
+     * 验证 flex column 子项 box-sizing:border-box height 正确折算主轴尺寸，后续兄弟项不重叠。
+     */
+    @Test
+    public void shouldApplyBorderBoxHeightToFlexColumnItem() {
+        UiDocument document = UiDocument.create();
+        ElementNode root = document.getRootElement();
+        ElementNode first = document.div();
+        ElementNode second = document.div();
+
+        root.style()
+                .setDisplay(UiDisplay.FLEX)
+                .setFlexDirection(UiFlexDirection.COLUMN)
+                .setWidth(UiStyleLength.px(120));
+        first.style()
+                .setBoxSizing(UiBoxSizing.BORDER_BOX)
+                .setHeight(UiStyleLength.px(60))
+                .setPadding(UiStyleLength.px(8))
+                .setBorderWidth(UiStyleLength.px(1));
+        second.style().setHeight(UiStyleLength.px(20));
+        root.append(first).append(second);
+
+        DocumentLayoutBox rootBox = DocumentLayoutEngine.layout(root, 160, 0);
+        DocumentLayoutBox firstBox = rootBox.getChildren().get(0);
+        DocumentLayoutBox secondBox = rootBox.getChildren().get(1);
+
+        // border-box height = 60；border(1+1) + padding(8+8) = 18；content height = 42
+        Assert.assertEquals(60, firstBox.getHeight());
+        Assert.assertEquals(42, firstBox.getContentHeight());
+        // second 紧接在 first 下方，不重叠
+        Assert.assertEquals(60, secondBox.getTop());
+        Assert.assertEquals(20, secondBox.getHeight());
+    }
+
+    /**
+     * 验证 img 显式 height + box-sizing:border-box 时 border-box height 等于声明值。
+     */
+    @Test
+    public void shouldApplyBorderBoxHeightToImgWithExplicitHeight() {
+        UiDocument document = UiDocument.create();
+        ElementNode root = document.getRootElement();
+        ElementNode img = document.img();
+
+        root.style().setWidth(UiStyleLength.px(200));
+        img.style()
+                .setBoxSizing(UiBoxSizing.BORDER_BOX)
+                .setHeight(UiStyleLength.px(80))
+                .setPadding(UiStyleLength.px(4))
+                .setBorderWidth(UiStyleLength.px(2));
+        root.append(img);
+
+        DocumentLayoutBox imgBox = DocumentLayoutEngine.layout(root, 240, 0).getChildren().get(0);
+
+        // border-box height = 80；border(2+2) + padding(4+4) = 12；content height = 68
+        Assert.assertEquals(80, imgBox.getHeight());
+        Assert.assertEquals(68, imgBox.getContentHeight());
+    }
 }

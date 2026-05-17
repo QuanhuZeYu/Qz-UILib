@@ -242,6 +242,86 @@ public class DocumentSegmentedSelectorControlTest {
         return false;
     }
 
+    /**
+     * 验证方向键切换后焦点与选中态一致：aria-checked、getFocusedElement 指向同一按钮。
+     */
+    @Test
+    public void shouldMoveFocusWithArrowKeySelection() {
+        UiDocument document = UiDocument.create();
+        ElementNode root = document.getRootElement();
+        DocumentSegmentedSelectorControl selector = new DocumentSegmentedSelectorControl(document, "A", "B", "C");
+        root.style()
+                .setWidth(UiStyleLength.px(180))
+                .setHeight(UiStyleLength.px(40));
+        selector.getElement().style()
+                .setWidth(UiStyleLength.px(180))
+                .setHeight(UiStyleLength.px(32));
+        root.append(selector.getElement());
+        HtmlLikeDocumentWidget widget = new HtmlLikeDocumentWidget(document, 180, 40,
+                new DeterministicTextMeasureService());
+        widget.applyLayoutBounds(0, 0, 180, 40);
+
+        // 初始聚焦第一个选项
+        widget.onFocusTraversalEntered(false);
+        ElementNode firstButton = (ElementNode) selector.getElement().getChildren().get(0);
+        ElementNode secondButton = (ElementNode) selector.getElement().getChildren().get(1);
+        assertElementUid(firstButton, widget.getFocusedElement());
+
+        // 按 Right，selectedIndex == 1，焦点移到第二个选项
+        widget.onKeyEvent(new UiKeyEvent(Keyboard.KEY_RIGHT, 0, 0, UiKeyEvent.Action.PRESSED, false, false,
+                false, false, 1L));
+        Assert.assertEquals(1, selector.getSelectedIndex());
+        assertElementUid(secondButton, widget.getFocusedElement());
+        Assert.assertEquals("true", secondButton.getAttribute("aria-checked"));
+        Assert.assertEquals("false", firstButton.getAttribute("aria-checked"));
+
+        // 按 Space，不会切回第一个（Space 触发的是 DocumentButtonControl 的 action，但当前焦点选项已是第二个）
+        widget.onKeyEvent(new UiKeyEvent(Keyboard.KEY_SPACE, 0, 0, UiKeyEvent.Action.PRESSED, false, false,
+                false, false, 2L));
+        widget.onKeyEvent(new UiKeyEvent(Keyboard.KEY_SPACE, 0, 0, UiKeyEvent.Action.RELEASED, false, false,
+                false, false, 3L));
+        // Space 触发 DocumentButtonControl 的 action → selectIndex(1, ...)，selectedIndex 不变
+        Assert.assertEquals(1, selector.getSelectedIndex());
+    }
+
+    /**
+     * 验证禁用状态下方向键不改变选中项、不触发事件。
+     */
+    @Test
+    public void shouldNotChangeSelectionWithArrowKeysWhenDisabled() {
+        UiDocument document = UiDocument.create();
+        ElementNode root = document.getRootElement();
+        final List<DocumentSegmentedSelectionEvent> events = new ArrayList<DocumentSegmentedSelectionEvent>();
+        DocumentSegmentedSelectorControl selector = new DocumentSegmentedSelectorControl(document, "A", "B", "C")
+                .setSelectionHandler(new DocumentSegmentedSelectionHandler() {
+                    @Override
+                    public void onSelectionChanged(DocumentSegmentedSelectionEvent event) {
+                        events.add(event);
+                    }
+                })
+                .setEnabled(false);
+        root.style()
+                .setWidth(UiStyleLength.px(180))
+                .setHeight(UiStyleLength.px(40));
+        selector.getElement().style()
+                .setWidth(UiStyleLength.px(180))
+                .setHeight(UiStyleLength.px(32));
+        root.append(selector.getElement());
+        HtmlLikeDocumentWidget widget = new HtmlLikeDocumentWidget(document, 180, 40,
+                new DeterministicTextMeasureService());
+        widget.applyLayoutBounds(0, 0, 180, 40);
+
+        // 禁用时 Tab 不聚焦
+        widget.onFocusTraversalEntered(false);
+        Assert.assertNull(widget.getFocusedElement());
+
+        // 模拟键盘事件（即使发到容器也不改变选中项）
+        widget.onKeyEvent(new UiKeyEvent(Keyboard.KEY_RIGHT, 0, 0, UiKeyEvent.Action.PRESSED, false, false,
+                false, false, 1L));
+        Assert.assertEquals(0, selector.getSelectedIndex());
+        Assert.assertTrue(events.isEmpty());
+    }
+
     private static void assertElementUid(ElementNode expectedElement, ElementNode actualElement) {
         Assert.assertNotNull(actualElement);
         Assert.assertEquals(expectedElement.__getElementUid(), actualElement.__getElementUid());

@@ -1141,7 +1141,10 @@ public final class DocumentLayoutEngine {
         int baseSize = Math.max(0, length.resolve(containingWidth, 0));
         DocumentAnimationProperty property = row ? DocumentAnimationProperty.WIDTH : DocumentAnimationProperty.HEIGHT;
         int resolvedSize = Math.max(0, layoutValueResolver.resolve(item.element, property, baseSize));
-        return row ? resolveBoxSizingContentWidth(item.style, resolvedSize, item.border, item.padding) : resolvedSize;
+        if (row) {
+            return resolveBoxSizingContentWidth(item.style, resolvedSize, item.border, item.padding);
+        }
+        return resolveBoxSizingContentHeight(item.style, resolvedSize, item.border, item.padding);
     }
 
     /**
@@ -1283,6 +1286,20 @@ public final class DocumentLayoutEngine {
         return Math.max(0, resolvedWidth - border.getHorizontal() - padding.getHorizontal());
     }
 
+    /**
+     * 将声明高度从 border-box 转换为 content height。
+     *
+     * <p>仅在 box-sizing:border-box 且 height 非 auto 时扣除 border/padding；
+     * forcedContentHeight 已经是 content height，不经过此方法。</p>
+     */
+    private static int resolveBoxSizingContentHeight(ComputedStyle computedStyle, int resolvedHeight,
+            DocumentLayoutEdges border, DocumentLayoutEdges padding) {
+        if (computedStyle.getBoxSizing() != UiBoxSizing.BORDER_BOX || isAuto(computedStyle.getHeight())) {
+            return resolvedHeight;
+        }
+        return Math.max(0, resolvedHeight - border.getVertical() - padding.getVertical());
+    }
+
     private static int resolveContentHeight(ElementNode element, ComputedStyle computedStyle, int forcedContentHeight,
             int autoContentHeight, int contentWidth, LayoutRuntimeValueResolver layoutValueResolver) {
         if (forcedContentHeight >= 0) {
@@ -1292,7 +1309,10 @@ public final class DocumentLayoutEngine {
             return DocumentImageElementSupport.resolveContentHeight(element, computedStyle, contentWidth);
         }
         int baseHeight = Math.max(0, computedStyle.getHeight().resolve(0, autoContentHeight));
-        return Math.max(0, layoutValueResolver.resolve(element, DocumentAnimationProperty.HEIGHT, baseHeight));
+        int resolvedHeight = Math.max(0, layoutValueResolver.resolve(element, DocumentAnimationProperty.HEIGHT, baseHeight));
+        DocumentLayoutEdges border = resolveUniformEdge(computedStyle.getBorderWidth(), 0);
+        DocumentLayoutEdges padding = resolveInsets(computedStyle.getPadding(), 0, true);
+        return resolveBoxSizingContentHeight(computedStyle, resolvedHeight, border, padding);
     }
 
     private static int resolveColumnCrossContentWidth(FlexItem item, UiAlignItems alignItems, int contentWidth,
@@ -1323,7 +1343,10 @@ public final class DocumentLayoutEngine {
             return AUTO_SIZE;
         }
         int baseHeight = Math.max(0, computedStyle.getHeight().resolve(0, 0));
-        return Math.max(0, layoutValueResolver.resolve(element, DocumentAnimationProperty.HEIGHT, baseHeight));
+        int resolvedHeight = Math.max(0, layoutValueResolver.resolve(element, DocumentAnimationProperty.HEIGHT, baseHeight));
+        DocumentLayoutEdges border = resolveUniformEdge(computedStyle.getBorderWidth(), 0);
+        DocumentLayoutEdges padding = resolveInsets(computedStyle.getPadding(), 0, true);
+        return resolveBoxSizingContentHeight(computedStyle, resolvedHeight, border, padding);
     }
 
     private static int resolveLeadingOffset(UiJustifyContent justifyContent, int remaining) {

@@ -223,4 +223,32 @@ public class UiDocumentTest {
         Assert.assertEquals(TextContentMode.MINECRAFT_FORMATTED, minecraftText.getTextContentMode());
         Assert.assertEquals(TextContentMode.UILIB_RAW, rawText.getTextContentMode());
     }
+
+    /**
+     * 验证 getAccessibleLabel 递归收集文本时跳过 aria-hidden 后代子树。
+     */
+    @Test
+    public void shouldSkipAriaHiddenDescendantsInAccessibleLabel() {
+        UiDocument document = UiDocument.create();
+        ElementNode button = document.button();
+        button.appendText("保存");
+        ElementNode decoration = document.span().setAttribute("aria-hidden", "true");
+        decoration.appendText("隐藏文本");
+        button.append(decoration);
+
+        // 只包含非隐藏文本
+        Assert.assertEquals("保存", button.getAccessibleLabel());
+
+        // 多层嵌套 aria-hidden 子树也跳过
+        ElementNode outerHidden = document.div().setAttribute("aria-hidden", "true");
+        ElementNode innerSpan = document.span();
+        innerSpan.appendText("深层隐藏");
+        outerHidden.append(innerSpan);
+        button.append(outerHidden);
+        Assert.assertEquals("保存", button.getAccessibleLabel());
+
+        // 自身 aria-hidden=true 时返回空字符串
+        button.setAttribute("aria-hidden", "true");
+        Assert.assertEquals("", button.getAccessibleLabel());
+    }
 }

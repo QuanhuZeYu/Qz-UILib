@@ -211,6 +211,137 @@ public class DocumentToggleSwitchControlTest {
     }
 
     /**
+     * 验证 Space pressed 后 isToggled() 不变，Space released 后才切换并触发 handler。
+     */
+    @Test
+    public void shouldToggleOnSpaceReleasedNotPressed() {
+        UiDocument document = UiDocument.create();
+        ElementNode root = document.getRootElement();
+        DocumentToggleSwitchControl toggleControl = new DocumentToggleSwitchControl(document);
+        final List<Boolean> toggleStates = new ArrayList<Boolean>();
+        toggleControl.setToggled(false)
+                .setChangeHandler(new DocumentToggleChangeHandler() {
+                    @Override
+                    public void onToggleChanged(DocumentToggleChangeEvent event) {
+                        toggleStates.add(event.isToggled());
+                    }
+                });
+        root.style()
+                .setWidth(UiStyleLength.px(120))
+                .setHeight(UiStyleLength.px(40));
+        toggleControl.getElement().style()
+                .setWidth(UiStyleLength.px(48))
+                .setHeight(UiStyleLength.px(24));
+        root.append(toggleControl.getElement());
+        HtmlLikeDocumentWidget widget = new HtmlLikeDocumentWidget(document, 120, 40,
+                new DeterministicTextMeasureService());
+        widget.applyLayoutBounds(0, 0, 120, 40);
+
+        widget.onFocusTraversalEntered(true);
+
+        // Space pressed：isToggled() 不变，handler 不触发
+        widget.onKeyEvent(new UiKeyEvent(Keyboard.KEY_SPACE, 0, 0, UiKeyEvent.Action.PRESSED, false, false,
+                false, false, 1L));
+        Assert.assertFalse(toggleControl.isToggled());
+        Assert.assertTrue(toggleStates.isEmpty());
+
+        // Space released：isToggled() 改变，handler 触发一次
+        widget.onKeyEvent(new UiKeyEvent(Keyboard.KEY_SPACE, 0, 0, UiKeyEvent.Action.RELEASED, false, false,
+                false, false, 2L));
+        Assert.assertTrue(toggleControl.isToggled());
+        Assert.assertEquals(1, toggleStates.size());
+        Assert.assertTrue(toggleStates.get(0));
+    }
+
+    /**
+     * 验证 Space pressed 后 disabled，再 released 不触发切换。
+     */
+    @Test
+    public void shouldNotToggleOnSpaceReleasedAfterDisabled() {
+        UiDocument document = UiDocument.create();
+        ElementNode root = document.getRootElement();
+        DocumentToggleSwitchControl toggleControl = new DocumentToggleSwitchControl(document);
+        final List<Boolean> toggleStates = new ArrayList<Boolean>();
+        toggleControl.setToggled(false)
+                .setChangeHandler(new DocumentToggleChangeHandler() {
+                    @Override
+                    public void onToggleChanged(DocumentToggleChangeEvent event) {
+                        toggleStates.add(event.isToggled());
+                    }
+                });
+        root.style()
+                .setWidth(UiStyleLength.px(120))
+                .setHeight(UiStyleLength.px(40));
+        toggleControl.getElement().style()
+                .setWidth(UiStyleLength.px(48))
+                .setHeight(UiStyleLength.px(24));
+        root.append(toggleControl.getElement());
+        HtmlLikeDocumentWidget widget = new HtmlLikeDocumentWidget(document, 120, 40,
+                new DeterministicTextMeasureService());
+        widget.applyLayoutBounds(0, 0, 120, 40);
+
+        widget.onFocusTraversalEntered(true);
+
+        // Space pressed
+        widget.onKeyEvent(new UiKeyEvent(Keyboard.KEY_SPACE, 0, 0, UiKeyEvent.Action.PRESSED, false, false,
+                false, false, 1L));
+        Assert.assertFalse(toggleControl.isToggled());
+
+        // 禁用
+        toggleControl.setEnabled(false);
+
+        // Space released 不触发
+        widget.onKeyEvent(new UiKeyEvent(Keyboard.KEY_SPACE, 0, 0, UiKeyEvent.Action.RELEASED, false, false,
+                false, false, 2L));
+        Assert.assertFalse(toggleControl.isToggled());
+        Assert.assertTrue(toggleStates.isEmpty());
+    }
+
+    /**
+     * 验证 Space pressed 后失焦，再 released 不触发切换。
+     */
+    @Test
+    public void shouldNotToggleOnSpaceReleasedAfterFocusLost() {
+        UiDocument document = UiDocument.create();
+        ElementNode root = document.getRootElement();
+        DocumentToggleSwitchControl toggleControl = new DocumentToggleSwitchControl(document);
+        final List<Boolean> toggleStates = new ArrayList<Boolean>();
+        toggleControl.setToggled(false)
+                .setChangeHandler(new DocumentToggleChangeHandler() {
+                    @Override
+                    public void onToggleChanged(DocumentToggleChangeEvent event) {
+                        toggleStates.add(event.isToggled());
+                    }
+                });
+        root.style()
+                .setWidth(UiStyleLength.px(120))
+                .setHeight(UiStyleLength.px(40));
+        toggleControl.getElement().style()
+                .setWidth(UiStyleLength.px(48))
+                .setHeight(UiStyleLength.px(24));
+        root.append(toggleControl.getElement());
+        HtmlLikeDocumentWidget widget = new HtmlLikeDocumentWidget(document, 120, 40,
+                new DeterministicTextMeasureService());
+        widget.applyLayoutBounds(0, 0, 120, 40);
+
+        widget.onFocusTraversalEntered(true);
+
+        // Space pressed
+        widget.onKeyEvent(new UiKeyEvent(Keyboard.KEY_SPACE, 0, 0, UiKeyEvent.Action.PRESSED, false, false,
+                false, false, 1L));
+        Assert.assertFalse(toggleControl.isToggled());
+
+        // 失焦（widget 失去焦点，触发 onFocusChanged(false)，进而 focusElement(null, false)，触发 onFocusChanged 事件清理 spacePressed）
+        widget.onFocusChanged(false);
+
+        // Space released 不触发
+        widget.onKeyEvent(new UiKeyEvent(Keyboard.KEY_SPACE, 0, 0, UiKeyEvent.Action.RELEASED, false, false,
+                false, false, 2L));
+        Assert.assertFalse(toggleControl.isToggled());
+        Assert.assertTrue(toggleStates.isEmpty());
+    }
+
+    /**
      * 记录 surface 绘制调用的渲染上下文。
      */
     private static final class RecordingUiRenderContext extends UiRenderContext {

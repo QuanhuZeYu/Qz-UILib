@@ -5,6 +5,8 @@ import java.util.Collections;
 import java.util.List;
 import java.util.Objects;
 
+import org.lwjglx.input.Keyboard;
+
 import club.heiqi.uilib.ui.animation.DocumentAnimationClock;
 import club.heiqi.uilib.ui.animation.DocumentAnimationImpact;
 import club.heiqi.uilib.ui.animation.DocumentAnimationProperty;
@@ -100,6 +102,8 @@ public final class HtmlLikeDocumentWidget extends Widget {
     private int lastDragDocumentY;
     private boolean dragActivated;
     private boolean htmlDragStarted;
+    /** raw button 默认键盘行为：Space 按下状态追踪（元素 uid -> 是否 spacePressed）。 */
+    private final java.util.Map<Long, Boolean> rawButtonSpacePressed = new java.util.HashMap<Long, Boolean>();
 
     /**
      * 创建 HTML-like 文档适配组件。
@@ -463,15 +467,19 @@ public final class HtmlLikeDocumentWidget extends Widget {
     @Override
     public void onKeyEvent(UiKeyEvent event) {
         ElementNode target = getActiveFocusedElement();
-        if (event != null && target != null) {
-            dispatchKey(target, event);
+        if (event == null || target == null) {
+            return;
+        }
+        boolean consumed = dispatchKey(target, event);
+        if (!consumed) {
+            dispatchNativeButtonDefaultKeyBehavior(target, event);
         }
     }
 
     @Override
     public void onTextInput(UiTextInputEvent event) {
         ElementNode target = getActiveFocusedElement();
-        if (event != null && target != null) {
+        if (event != null && target != null && !target.isDisabled()) {
             dispatchTextInput(target, event);
         }
     }
@@ -697,7 +705,13 @@ public final class HtmlLikeDocumentWidget extends Widget {
             if (keyHandler == null) {
                 continue;
             }
-            if (keyHandler.onKey(new DocumentElementKeyEvent(target, currentElement, event))) {
+            DocumentElementKeyEvent keyEvent = new DocumentElementKeyEvent(target, currentElement, event);
+            if (keyHandler.onKey(keyEvent)) {
+                // 处理 key handler 请求的焦点移动（如分段选择器方向键切换）
+                ElementNode pendingFocus = keyEvent.getPendingFocusTarget();
+                if (pendingFocus != null) {
+                    focusElement(pendingFocus, keyEvent.isPendingFocusVisible());
+                }
                 return true;
             }
         }
@@ -705,6 +719,9 @@ public final class HtmlLikeDocumentWidget extends Widget {
     }
 
     private boolean dispatchTextInput(ElementNode target, UiTextInputEvent event) {
+        if (target != null && target.isDisabled()) {
+            return true;
+        }
         for (DocumentNode current = target; current instanceof ElementNode; current = current.getParent()) {
             ElementNode currentElement = (ElementNode) current;
             DocumentElementTextInputHandler textInputHandler = currentElement.getTextInputHandler();
@@ -716,6 +733,48 @@ public final class HtmlLikeDocumentWidget extends Widget {
             }
         }
         return false;
+    }
+
+    /**
+     * raw button 默认键盘行为：Enter 直接触发 click，Space pressed 进入 active，Space released 触发 click。
+     *
+     * <p>仅对没有 key handler 消费事件的原生 button 元素生效；disabled 时不触发。</p>
+     */
+    private void dispatchNativeButtonDefaultKeyBehavior(ElementNode target, UiKeyEvent event) {
+        if (target == null || !"button".equals(target.getTagName())) {
+            return;
+        }
+        if (target.isDisabled()) {
+            rawButtonSpacePressed.remove(target.__getElementUid());
+            return;
+        }
+        int keyCode = event.getKeyCode();
+        boolean isEnter = keyCode == Keyboard.KEY_RETURN || keyCode == Keyboard.KEY_NUMPADENTER;
+        boolean isSpace = keyCode == Keyboard.KEY_SPACE;
+        if (!isEnter && !isSpace) {
+            return;
+        }
+        long uid = target.__getElementUid();
+        if (isEnter && event.getAction() == UiKeyEvent.Action.PRESSED) {
+            DocumentElementClickHandler clickHandler = target.getClickHandler();
+            if (clickHandler != null) {
+                clickHandler.onClick(new DocumentElementClickEvent(target, target, -1, -1, -1, event.getTimeNanos()));
+            }
+            return;
+        }
+        if (isSpace && event.getAction() == UiKeyEvent.Action.PRESSED) {
+            rawButtonSpacePressed.put(uid, Boolean.TRUE);
+            return;
+        }
+        if (isSpace && event.getAction() == UiKeyEvent.Action.RELEASED) {
+            Boolean pressed = rawButtonSpacePressed.remove(uid);
+            if (Boolean.TRUE.equals(pressed)) {
+                DocumentElementClickHandler clickHandler = target.getClickHandler();
+                if (clickHandler != null) {
+                    clickHandler.onClick(new DocumentElementClickEvent(target, target, -1, -1, -1, event.getTimeNanos()));
+                }
+            }
+        }
     }
 
     private void beginDragIfNeeded(ElementNode target, UiMouseEvent event) {
@@ -980,6 +1039,10 @@ public final class HtmlLikeDocumentWidget extends Widget {
         focusedElement = resolvedElement;
         focusedElementFocusVisible = resolvedFocusVisible;
         focusedElementInvalidationVersion = focusedElement == null ? 0 : focusedElement.getFocusInvalidationVersion();
+        // 失焦时清理 raw button 的 Space 按下状态，避免失焦后 released 仍触发
+        if (previousElement != null && previousElement != focusedElement) {
+            rawButtonSpacePressed.remove(previousElement.__getElementUid());
+        }
         if (previousElement != focusedElement) {
             dispatchFocusChanged(previousElement, false, false);
         }
@@ -1161,7 +1224,7 @@ public final class HtmlLikeDocumentWidget extends Widget {
     private ElementNode resolveFocusableElement(ElementNode target) {
         for (DocumentNode current = target; current instanceof ElementNode; current = current.getParent()) {
             ElementNode currentElement = (ElementNode) current;
-            if (currentElement.isFocusable()) {
+            if (currentElement.isFocusable() && !currentElement.isDisabled()) {
                 return currentElement;
             }
         }
@@ -1182,6 +1245,9 @@ public final class HtmlLikeDocumentWidget extends Widget {
 
     private static boolean isSequentiallyFocusable(ElementNode element) {
         if (element == null || !element.isFocusable()) {
+            return false;
+        }
+        if (element.isDisabled()) {
             return false;
         }
         Integer tabIndex = element.getTabIndex();

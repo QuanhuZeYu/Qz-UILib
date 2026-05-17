@@ -29,6 +29,7 @@ public final class DocumentToggleSwitchControl {
     private boolean toggled;
     private boolean enabled = true;
     private boolean focusVisible;
+    private boolean spacePressed;
     private int trackWidth = 48;
     private int trackHeight = 24;
     private int thumbSize = 18;
@@ -100,6 +101,7 @@ public final class DocumentToggleSwitchControl {
         this.enabled = enabled;
         if (!enabled) {
             focusVisible = false;
+            spacePressed = false;
             element.setAttribute("aria-disabled", "true");
         } else {
             element.removeAttribute("aria-disabled");
@@ -236,6 +238,9 @@ public final class DocumentToggleSwitchControl {
             @Override
             public void onFocusChanged(DocumentElementFocusEvent event) {
                 focusVisible = event.isFocused() && event.isFocusVisible() && enabled;
+                if (!event.isFocused()) {
+                    spacePressed = false;
+                }
                 updateVisualState();
             }
         }).setKeyHandler(new DocumentElementKeyHandler() {
@@ -244,8 +249,25 @@ public final class DocumentToggleSwitchControl {
                 if (!isActivationKey(event.getKeyCode())) {
                     return false;
                 }
-                if (event.getAction() == UiKeyEvent.Action.PRESSED) {
+                boolean isEnter = event.getKeyCode() == Keyboard.KEY_RETURN
+                        || event.getKeyCode() == Keyboard.KEY_NUMPADENTER;
+                boolean isSpace = event.getKeyCode() == Keyboard.KEY_SPACE;
+                if (isEnter && event.getAction() == UiKeyEvent.Action.PRESSED) {
                     if (enabled) {
+                        toggle(true);
+                    }
+                    return true;
+                }
+                if (isSpace && event.getAction() == UiKeyEvent.Action.PRESSED) {
+                    if (enabled) {
+                        spacePressed = true;
+                    }
+                    return true;
+                }
+                if (isSpace && event.getAction() == UiKeyEvent.Action.RELEASED) {
+                    boolean shouldToggle = spacePressed && enabled;
+                    spacePressed = false;
+                    if (shouldToggle) {
                         toggle(true);
                     }
                     return true;

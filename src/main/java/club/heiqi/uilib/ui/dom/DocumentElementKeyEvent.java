@@ -10,6 +10,10 @@ public final class DocumentElementKeyEvent {
     private final ElementNode target;
     private final ElementNode currentTarget;
     private final UiKeyEvent sourceEvent;
+    /** key handler 请求的焦点移动目标；null 表示无请求。 */
+    private ElementNode pendingFocusTarget;
+    /** 请求焦点移动时是否以 focus-visible 方式聚焦。 */
+    private boolean pendingFocusVisible;
 
     /**
      * 创建元素键盘按键事件。
@@ -112,5 +116,36 @@ public final class DocumentElementKeyEvent {
      */
     public long getTimeNanos() {
         return sourceEvent.getTimeNanos();
+    }
+
+    /**
+     * key handler 请求将焦点移动到指定元素。
+     *
+     * <p>仅在 key handler 返回 true 消费事件时，宿主 widget 才会处理此请求。</p>
+     *
+     * @param element 目标焦点元素；为 null 时清除请求
+     * @param focusVisible 是否以 focus-visible 方式聚焦
+     */
+    public void requestFocus(ElementNode element, boolean focusVisible) {
+        this.pendingFocusTarget = element;
+        this.pendingFocusVisible = focusVisible;
+    }
+
+    /**
+     * 返回 key handler 请求的焦点移动目标。
+     *
+     * @return 目标元素；无请求时返回 null
+     */
+    public ElementNode getPendingFocusTarget() {
+        return pendingFocusTarget;
+    }
+
+    /**
+     * 返回焦点移动请求是否以 focus-visible 方式聚焦。
+     *
+     * @return 是否 focus-visible
+     */
+    public boolean isPendingFocusVisible() {
+        return pendingFocusVisible;
     }
 }

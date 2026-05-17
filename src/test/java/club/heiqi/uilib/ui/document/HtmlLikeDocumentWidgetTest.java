@@ -31,6 +31,8 @@ import club.heiqi.uilib.ui.dom.ElementNode;
 import club.heiqi.uilib.ui.dom.TextNode;
 import club.heiqi.uilib.ui.dom.UiDocument;
 import club.heiqi.uilib.ui.dom.control.DocumentButtonControl;
+import club.heiqi.uilib.ui.dom.control.DocumentButtonActionEvent;
+import club.heiqi.uilib.ui.dom.control.DocumentButtonActionHandler;
 import club.heiqi.uilib.ui.dom.control.DocumentDraggableSupport;
 import club.heiqi.uilib.ui.dom.control.DocumentTextInputControl;
 import club.heiqi.uilib.ui.dom.control.DocumentToggleSwitchControl;
@@ -2791,6 +2793,216 @@ public class HtmlLikeDocumentWidgetTest {
 
         assertElementUid(secondInput, widget.getFocusedElement());
         Assert.assertEquals(48, widget.getScrollTop(root));
+    }
+
+    /**
+     * 验证 raw button 设置 disabled 属性后，Tab 不聚焦，鼠标不聚焦，移除 disabled 后可重新聚焦。
+     */
+    @Test
+    public void shouldIgnoreRawDisabledButtonInFocusTraversal() {
+        UiDocument document = UiDocument.create();
+        ElementNode root = document.getRootElement();
+        ElementNode rawButton = document.button();
+        rawButton.setAttribute("disabled", "true");
+        root.style()
+                .setWidth(UiStyleLength.px(120))
+                .setHeight(UiStyleLength.px(40));
+        rawButton.style()
+                .setWidth(UiStyleLength.px(80))
+                .setHeight(UiStyleLength.px(32));
+        root.append(rawButton);
+        HtmlLikeDocumentWidget widget = new HtmlLikeDocumentWidget(document, 120, 40,
+                new DeterministicTextMeasureService());
+        widget.applyLayoutBounds(0, 0, 120, 40);
+
+        // Tab 不聚焦 disabled button
+        widget.onFocusTraversalEntered(false);
+        Assert.assertNull(widget.getFocusedElement());
+
+        // 鼠标点击也不聚焦 disabled button
+        widget.onMouseDown(new UiMouseEvent(UiMouseEvent.Action.BUTTON_DOWN, 4, 4, 0, 0, 0, 0, 1L));
+        Assert.assertNull(widget.getFocusedElement());
+        widget.onMouseUp(new UiMouseEvent(UiMouseEvent.Action.BUTTON_UP, 4, 4, 0, 0, 0, 0, 2L));
+
+        // 移除 disabled 后可重新聚焦
+        rawButton.removeAttribute("disabled");
+        widget.onFocusTraversalEntered(false);
+        assertElementUid(rawButton, widget.getFocusedElement());
+    }
+
+    /**
+     * 验证 raw input 设置 disabled 属性后，Tab 不聚焦，textInput 不响应。
+     */
+    @Test
+    public void shouldIgnoreRawDisabledInputInFocusAndTextInput() {
+        UiDocument document = UiDocument.create();
+        ElementNode root = document.getRootElement();
+        ElementNode rawInput = document.input();
+        final List<DocumentElementTextInputEvent> textEvents = new ArrayList<DocumentElementTextInputEvent>();
+        rawInput.setAttribute("disabled", "true")
+                .setTextInputHandler(new DocumentElementTextInputHandler() {
+                    @Override
+                    public boolean onTextInput(DocumentElementTextInputEvent event) {
+                        textEvents.add(event);
+                        return true;
+                    }
+                });
+        root.style()
+                .setWidth(UiStyleLength.px(120))
+                .setHeight(UiStyleLength.px(40));
+        rawInput.style()
+                .setWidth(UiStyleLength.px(80))
+                .setHeight(UiStyleLength.px(32));
+        root.append(rawInput);
+        HtmlLikeDocumentWidget widget = new HtmlLikeDocumentWidget(document, 120, 40,
+                new DeterministicTextMeasureService());
+        widget.applyLayoutBounds(0, 0, 120, 40);
+
+        // Tab 不聚焦 disabled input
+        widget.onFocusTraversalEntered(false);
+        Assert.assertNull(widget.getFocusedElement());
+
+        // 即使程序化聚焦后，textInput 也不响应（disabled 拦截）
+        rawInput.setFocusable(true);
+        widget.onMouseDown(new UiMouseEvent(UiMouseEvent.Action.BUTTON_DOWN, 4, 4, 0, 0, 0, 0, 1L));
+        // disabled 阻止鼠标聚焦
+        Assert.assertNull(widget.getFocusedElement());
+        widget.onTextInput(new UiTextInputEvent("abc", 2L));
+        Assert.assertTrue(textEvents.isEmpty());
+    }
+
+    /**
+     * 验证 raw button 绑定 click handler 后，Tab 聚焦，Enter 触发 click，Space pressed 不触发，Space released 触发。
+     */
+    @Test
+    public void shouldFireClickOnRawButtonFromKeyboard() {
+        UiDocument document = UiDocument.create();
+        ElementNode root = document.getRootElement();
+        ElementNode rawButton = document.button();
+        final List<DocumentElementClickEvent> clicks = new ArrayList<DocumentElementClickEvent>();
+        rawButton.setClickHandler(new DocumentElementClickHandler() {
+            @Override
+            public boolean onClick(DocumentElementClickEvent event) {
+                clicks.add(event);
+                return true;
+            }
+        });
+        root.style()
+                .setWidth(UiStyleLength.px(120))
+                .setHeight(UiStyleLength.px(40));
+        rawButton.style()
+                .setWidth(UiStyleLength.px(80))
+                .setHeight(UiStyleLength.px(32));
+        root.append(rawButton);
+        HtmlLikeDocumentWidget widget = new HtmlLikeDocumentWidget(document, 120, 40,
+                new DeterministicTextMeasureService());
+        widget.applyLayoutBounds(0, 0, 120, 40);
+
+        // Tab 聚焦
+        widget.onFocusTraversalEntered(false);
+        assertElementUid(rawButton, widget.getFocusedElement());
+
+        // Enter 触发 click
+        widget.onKeyEvent(new UiKeyEvent(Keyboard.KEY_RETURN, 0, 0, UiKeyEvent.Action.PRESSED, false, false,
+                false, false, 1L));
+        Assert.assertEquals(1, clicks.size());
+
+        // Space pressed 不触发
+        widget.onKeyEvent(new UiKeyEvent(Keyboard.KEY_SPACE, 0, 0, UiKeyEvent.Action.PRESSED, false, false,
+                false, false, 2L));
+        Assert.assertEquals(1, clicks.size());
+
+        // Space released 触发
+        widget.onKeyEvent(new UiKeyEvent(Keyboard.KEY_SPACE, 0, 0, UiKeyEvent.Action.RELEASED, false, false,
+                false, false, 3L));
+        Assert.assertEquals(2, clicks.size());
+    }
+
+    /**
+     * 验证 raw button Space pressed 后失焦，released 不触发 click。
+     */
+    @Test
+    public void shouldNotFireClickOnRawButtonSpaceReleaseAfterFocusLost() {
+        UiDocument document = UiDocument.create();
+        ElementNode root = document.getRootElement();
+        ElementNode rawButton = document.button();
+        final List<DocumentElementClickEvent> clicks = new ArrayList<DocumentElementClickEvent>();
+        rawButton.setClickHandler(new DocumentElementClickHandler() {
+            @Override
+            public boolean onClick(DocumentElementClickEvent event) {
+                clicks.add(event);
+                return true;
+            }
+        });
+        root.style()
+                .setWidth(UiStyleLength.px(120))
+                .setHeight(UiStyleLength.px(40));
+        rawButton.style()
+                .setWidth(UiStyleLength.px(80))
+                .setHeight(UiStyleLength.px(32));
+        root.append(rawButton);
+        HtmlLikeDocumentWidget widget = new HtmlLikeDocumentWidget(document, 120, 40,
+                new DeterministicTextMeasureService());
+        widget.applyLayoutBounds(0, 0, 120, 40);
+
+        widget.onFocusTraversalEntered(false);
+        assertElementUid(rawButton, widget.getFocusedElement());
+
+        // Space pressed
+        widget.onKeyEvent(new UiKeyEvent(Keyboard.KEY_SPACE, 0, 0, UiKeyEvent.Action.PRESSED, false, false,
+                false, false, 1L));
+        Assert.assertEquals(0, clicks.size());
+
+        // 失焦
+        widget.onFocusChanged(false);
+        Assert.assertNull(widget.getFocusedElement());
+
+        // Space released 不触发（焦点已丢失，spacePressed 已清理）
+        widget.onKeyEvent(new UiKeyEvent(Keyboard.KEY_SPACE, 0, 0, UiKeyEvent.Action.RELEASED, false, false,
+                false, false, 2L));
+        Assert.assertEquals(0, clicks.size());
+    }
+
+    /**
+     * 验证 DocumentButtonControl 的键盘激活不会被 raw button 默认行为重复触发。
+     */
+    @Test
+    public void shouldNotDuplicateClickOnDocumentButtonControlFromDefaultKeyBehavior() {
+        UiDocument document = UiDocument.create();
+        ElementNode root = document.getRootElement();
+        final List<DocumentButtonActionEvent> actions = new ArrayList<DocumentButtonActionEvent>();
+        DocumentButtonControl buttonControl = new DocumentButtonControl(document, "OK");
+        buttonControl.setActionHandler(new DocumentButtonActionHandler() {
+            @Override
+            public void onAction(DocumentButtonActionEvent event) {
+                actions.add(event);
+            }
+        });
+        root.style()
+                .setWidth(UiStyleLength.px(120))
+                .setHeight(UiStyleLength.px(40));
+        buttonControl.getElement().style()
+                .setWidth(UiStyleLength.px(80))
+                .setHeight(UiStyleLength.px(32));
+        root.append(buttonControl.getElement());
+        HtmlLikeDocumentWidget widget = new HtmlLikeDocumentWidget(document, 120, 40,
+                new DeterministicTextMeasureService());
+        widget.applyLayoutBounds(0, 0, 120, 40);
+
+        widget.onFocusTraversalEntered(false);
+        assertElementUid(buttonControl.getElement(), widget.getFocusedElement());
+
+        // Enter 触发一次（由 DocumentButtonControl 的 key handler 消费，不走默认行为）
+        widget.onKeyEvent(new UiKeyEvent(Keyboard.KEY_RETURN, 0, 0, UiKeyEvent.Action.PRESSED, false, false,
+                false, false, 1L));
+        Assert.assertEquals(1, actions.size());
+
+        // Space pressed + released 触发一次
+        widget.onKeyEvent(new UiKeyEvent(Keyboard.KEY_SPACE, 0, 0, UiKeyEvent.Action.PRESSED, false, false,
+                false, false, 2L));
+        widget.onKeyEvent(new UiKeyEvent(Keyboard.KEY_SPACE, 0, 0, UiKeyEvent.Action.RELEASED, false, false,
+                false, false, 3L));
+        Assert.assertEquals(2, actions.size());
     }
 
     private static void assertDrawCall(DrawCall drawCall, int left, int top, int right, int bottom, int fillColor,

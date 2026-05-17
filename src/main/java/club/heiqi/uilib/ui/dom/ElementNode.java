@@ -229,6 +229,21 @@ public final class ElementNode extends DocumentNode {
     }
 
     /**
+     * 判断原生表单控件是否处于 disabled 状态。
+     *
+     * <p>仅对 button/input 等原生表单标签有效；存在 disabled 属性（无论值为 true 还是空串）均视为 disabled。</p>
+     *
+     * @return 是否处于 disabled 状态
+     */
+    public boolean isDisabled() {
+        if (!isNativeFocusableTag(tagName)) {
+            return false;
+        }
+        String value = getAttribute("disabled");
+        return value != null && !"false".equals(value.trim().toLowerCase(Locale.ROOT));
+    }
+
+    /**
      * 返回元素面向辅助语义的角色。
      *
      * @return 语义角色；无角色时返回 null
@@ -608,6 +623,9 @@ public final class ElementNode extends DocumentNode {
     private static void appendTextContent(DocumentNode node, StringBuilder builder) {
         if (node instanceof TextNode) {
             builder.append(((TextNode) node).getText());
+            return;
+        }
+        if (node instanceof ElementNode && ((ElementNode) node).isAriaHidden()) {
             return;
         }
         for (DocumentNode child : node.getChildren()) {

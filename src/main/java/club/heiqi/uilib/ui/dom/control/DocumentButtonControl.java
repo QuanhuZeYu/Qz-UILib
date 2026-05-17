@@ -217,10 +217,10 @@ public final class DocumentButtonControl {
             @Override
             public void onFocusChanged(DocumentElementFocusEvent event) {
                 focusVisible = event.isFocused() && event.isFocusVisible() && enabled;
-        if (!event.isFocused()) {
-            active = false;
-            spacePressed = false;
-        }
+                if (!event.isFocused()) {
+                    active = false;
+                    spacePressed = false;
+                }
                 updateVisualState();
             }
         }).setKeyHandler(new DocumentElementKeyHandler() {
