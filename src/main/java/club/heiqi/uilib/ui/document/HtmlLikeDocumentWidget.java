@@ -90,6 +90,7 @@ public final class HtmlLikeDocumentWidget extends Widget {
     private boolean lastScrollConsumed;
     private long lastScrollEventTimeNanos;
     private boolean focusedElementFocusVisible;
+    private int focusedElementInvalidationVersion;
     private boolean viewportRootScrollingEnabled;
     private boolean cachedLayoutScrollStateUpdated;
     private List<DocumentPaintCommand> cachedPaintCommands = Collections.emptyList();
@@ -897,6 +898,7 @@ public final class HtmlLikeDocumentWidget extends Widget {
         }
         List<ElementNode> focusableElements = new ArrayList<ElementNode>();
         collectFocusableElements(resolveInteractiveLayoutBox(), focusableElements);
+        sortFocusableElementsByTabIndex(focusableElements);
         return focusableElements;
     }
 
@@ -946,7 +948,7 @@ public final class HtmlLikeDocumentWidget extends Widget {
 
     private void collectFocusableElements(DocumentLayoutBox box, List<ElementNode> focusableElements) {
         ElementNode element = box.getElement();
-        if (element.isFocusable() && box.getWidth() > 0 && box.getHeight() > 0) {
+        if (isSequentiallyFocusable(element) && box.getWidth() > 0 && box.getHeight() > 0) {
             focusableElements.add(element);
         }
         for (DocumentLayoutBox child : box.getChildren()) {
@@ -956,6 +958,10 @@ public final class HtmlLikeDocumentWidget extends Widget {
 
     private ElementNode getActiveFocusedElement() {
         if (focusedElement != null && (!focusedElement.isFocusable() || !isElementAttachedToDocument(focusedElement))) {
+            focusElement(null, false);
+        }
+        if (focusedElement != null
+                && focusedElement.getFocusInvalidationVersion() != focusedElementInvalidationVersion) {
             focusElement(null, false);
         }
         return focusedElement;
@@ -973,6 +979,7 @@ public final class HtmlLikeDocumentWidget extends Widget {
         boolean previousFocusVisible = focusedElementFocusVisible;
         focusedElement = resolvedElement;
         focusedElementFocusVisible = resolvedFocusVisible;
+        focusedElementInvalidationVersion = focusedElement == null ? 0 : focusedElement.getFocusInvalidationVersion();
         if (previousElement != focusedElement) {
             dispatchFocusChanged(previousElement, false, false);
         }
@@ -1171,6 +1178,42 @@ public final class HtmlLikeDocumentWidget extends Widget {
             }
         }
         return false;
+    }
+
+    private static boolean isSequentiallyFocusable(ElementNode element) {
+        if (element == null || !element.isFocusable()) {
+            return false;
+        }
+        Integer tabIndex = element.getTabIndex();
+        return tabIndex == null || tabIndex.intValue() >= 0;
+    }
+
+    private static void sortFocusableElementsByTabIndex(List<ElementNode> focusableElements) {
+        Collections.sort(focusableElements, new java.util.Comparator<ElementNode>() {
+            @Override
+            public int compare(ElementNode first, ElementNode second) {
+                int firstIndex = positiveTabIndexOrZero(first);
+                int secondIndex = positiveTabIndexOrZero(second);
+                if (firstIndex == secondIndex) {
+                    return 0;
+                }
+                if (firstIndex == 0) {
+                    return 1;
+                }
+                if (secondIndex == 0) {
+                    return -1;
+                }
+                return Integer.compare(firstIndex, secondIndex);
+            }
+        });
+    }
+
+    private static int positiveTabIndexOrZero(ElementNode element) {
+        Integer tabIndex = element.getTabIndex();
+        if (tabIndex == null || tabIndex.intValue() <= 0) {
+            return 0;
+        }
+        return tabIndex.intValue();
     }
 
     private boolean isElementAttachedToDocument(ElementNode element) {

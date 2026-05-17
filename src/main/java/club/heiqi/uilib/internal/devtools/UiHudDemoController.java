@@ -23,6 +23,7 @@ import club.heiqi.uilib.ui.hud.UiHudDocumentRegistration;
 import club.heiqi.uilib.ui.hud.UiHudLayerType;
 import club.heiqi.uilib.ui.input.UiInputService;
 import club.heiqi.uilib.ui.style.UiAlignItems;
+import club.heiqi.uilib.ui.style.UiBoxSizing;
 import club.heiqi.uilib.ui.style.UiDisplay;
 import club.heiqi.uilib.ui.style.UiFlexDirection;
 import club.heiqi.uilib.ui.style.UiJustifyContent;
@@ -214,6 +215,7 @@ public final class UiHudDemoController {
                 .setFlexDirection(UiFlexDirection.COLUMN)
                 .setAlignItems(UiAlignItems.START)
                 .setFlexShrink(0.0F)
+                .setBoxSizing(UiBoxSizing.BORDER_BOX)
                 .setWidth(UiStyleLength.percent(1.0F))
                 .setPadding(UiStyleLength.px(10))
                 .setBackgroundColor(0xAA0F172A)
@@ -234,6 +236,7 @@ public final class UiHudDemoController {
                 .setFlexDirection(UiFlexDirection.COLUMN)
                 .setAlignItems(UiAlignItems.START)
                 .setFlexShrink(0.0F)
+                .setBoxSizing(UiBoxSizing.BORDER_BOX)
                 .setWidth(UiStyleLength.percent(1.0F))
                 .setPadding(UiStyleLength.px(8))
                 .setBackgroundColor(0x88121D33)
@@ -268,6 +271,7 @@ public final class UiHudDemoController {
         ElementNode scrollContent = document.div();
         scrollContent.style()
                 .setFlexGrow(1.0F)
+                .setBoxSizing(UiBoxSizing.BORDER_BOX)
                 .setWidth(UiStyleLength.percent(1.0F))
                 .setPadding(UiStyleLength.px(6))
                 .setBackgroundColor(0xCC0B1220)
@@ -294,6 +298,7 @@ public final class UiHudDemoController {
                 .setDisplay(UiDisplay.FLEX)
                 .setFlexDirection(UiFlexDirection.COLUMN)
                 .setAlignItems(UiAlignItems.START)
+                .setBoxSizing(UiBoxSizing.BORDER_BOX)
                 .setWidth(UiStyleLength.percent(1.0F))
                 .setHeight(UiStyleLength.auto())
                 .setPadding(UiStyleLength.px(6))
@@ -322,6 +327,7 @@ public final class UiHudDemoController {
                 });
         noteInput.getElement().style()
                 .setDisplay(UiDisplay.BLOCK)
+                .setBoxSizing(UiBoxSizing.BORDER_BOX)
                 .setWidth(UiStyleLength.percent(1.0F))
                 .setMargin(UiStyleLength.px(0));
         ElementNode noteCard = document.div();
@@ -329,6 +335,7 @@ public final class UiHudDemoController {
                 .setDisplay(UiDisplay.FLEX)
                 .setFlexDirection(UiFlexDirection.COLUMN)
                 .setAlignItems(UiAlignItems.STRETCH)
+                .setBoxSizing(UiBoxSizing.BORDER_BOX)
                 .setWidth(UiStyleLength.percent(1.0F))
                 .setHeight(UiStyleLength.auto())
                 .setPadding(UiStyleLength.px(6))
@@ -357,6 +364,7 @@ public final class UiHudDemoController {
                 });
         button.getElement().style()
                 .setDisplay(UiDisplay.BLOCK)
+                .setBoxSizing(UiBoxSizing.BORDER_BOX)
                 .setWidth(UiStyleLength.percent(1.0F))
                 .setMargin(UiStyleLength.px(0));
         noteCard.append(button.getElement());
@@ -366,6 +374,7 @@ public final class UiHudDemoController {
                 .setDisplay(debugInfoVisible ? UiDisplay.FLEX : UiDisplay.NONE)
                 .setFlexDirection(UiFlexDirection.COLUMN)
                 .setAlignItems(UiAlignItems.START)
+                .setBoxSizing(UiBoxSizing.BORDER_BOX)
                 .setWidth(UiStyleLength.percent(1.0F))
                 .setPadding(UiStyleLength.px(6))
                 .setBackgroundColor(0xAA101826)
@@ -388,6 +397,7 @@ public final class UiHudDemoController {
                 .setDisplay(UiDisplay.FLEX)
                 .setFlexDirection(UiFlexDirection.COLUMN)
                 .setAlignItems(UiAlignItems.START)
+                .setBoxSizing(UiBoxSizing.BORDER_BOX)
                 .setWidth(UiStyleLength.percent(1.0F))
                 .setHeight(UiStyleLength.auto())
                 .setPadding(UiStyleLength.px(6))

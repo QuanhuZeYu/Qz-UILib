@@ -43,6 +43,29 @@ public class UiDocumentTest {
     }
 
     /**
+     * 验证常见 HTML-like 标签拥有可运行的基础语义，而不只是标签字符串。
+     */
+    @Test
+    public void shouldExposeBasicNativeElementSemantics() {
+        UiDocument document = UiDocument.create();
+        ElementNode button = document.button();
+        ElementNode input = document.input();
+        ElementNode image = document.img().setAttribute("alt", "玩家头像");
+        ElementNode hiddenImage = document.img().setAttribute("alt", "装饰").setAttribute("aria-hidden", "true");
+        button.appendText("确认");
+
+        Assert.assertTrue(button.isFocusable());
+        Assert.assertTrue(input.isFocusable());
+        Assert.assertFalse(image.isFocusable());
+        Assert.assertEquals("button", button.getSemanticRole());
+        Assert.assertEquals("textbox", input.getSemanticRole());
+        Assert.assertEquals("img", image.getSemanticRole());
+        Assert.assertEquals("确认", button.getAccessibleLabel());
+        Assert.assertEquals("玩家头像", image.getAccessibleLabel());
+        Assert.assertEquals("", hiddenImage.getAccessibleLabel());
+    }
+
+    /**
      * 验证 append 语义会在同一文档内移动已有子节点。
      */
     @Test

@@ -25,6 +25,7 @@ public final class UiStyleDeclaration {
     private UiDisplay display;
     private UiStyleLength width;
     private UiStyleLength height;
+    private UiBoxSizing boxSizing;
     private UiPosition position;
     private UiStyleLength top;
     private UiStyleLength right;
@@ -100,6 +101,18 @@ public final class UiStyleDeclaration {
 
     public UiStyleLength getHeight() {
         return height;
+    }
+
+    public UiBoxSizing getBoxSizing() {
+        return boxSizing;
+    }
+
+    public UiStyleDeclaration setBoxSizing(UiBoxSizing boxSizing) {
+        return updateBoxSizing(Objects.requireNonNull(boxSizing, "boxSizing"));
+    }
+
+    public UiStyleDeclaration clearBoxSizing() {
+        return updateBoxSizing(null);
     }
 
     public UiStyleDeclaration setHeight(UiStyleLength height) {
@@ -638,6 +651,14 @@ public final class UiStyleDeclaration {
     private UiStyleDeclaration updateHeight(UiStyleLength value) {
         if (!Objects.equals(height, value)) {
             height = value;
+            recordLayoutChange();
+        }
+        return this;
+    }
+
+    private UiStyleDeclaration updateBoxSizing(UiBoxSizing value) {
+        if (boxSizing != value) {
+            boxSizing = value;
             recordLayoutChange();
         }
         return this;

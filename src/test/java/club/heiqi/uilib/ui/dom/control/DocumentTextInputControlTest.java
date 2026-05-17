@@ -207,10 +207,10 @@ public class DocumentTextInputControlTest {
     }
 
     /**
-     * 验证禁用后重新启用不丢失内部焦点状态，无需重新遍历即可继续输入。
+     * 验证禁用后重新启用不会保留旧焦点，需要重新聚焦才能输入。
      */
     @Test
-    public void shouldPreserveFocusAfterDisableReenable() {
+    public void shouldClearFocusAfterDisableReenable() {
         UiDocument document = UiDocument.create();
         ElementNode root = document.getRootElement();
         DocumentTextInputControl textInputControl = new DocumentTextInputControl(document);
@@ -232,6 +232,12 @@ public class DocumentTextInputControlTest {
         textInputControl.setEnabled(false);
         textInputControl.setEnabled(true);
         widget.onTextInput(new UiTextInputEvent("B", 2L));
+
+        Assert.assertEquals("A", textInputControl.getText());
+        Assert.assertNull(widget.getFocusedElement());
+
+        widget.onFocusTraversalEntered(true);
+        widget.onTextInput(new UiTextInputEvent("B", 3L));
 
         Assert.assertEquals("AB", textInputControl.getText());
     }

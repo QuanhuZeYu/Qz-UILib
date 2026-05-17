@@ -100,6 +100,9 @@ public final class DocumentToggleSwitchControl {
         this.enabled = enabled;
         if (!enabled) {
             focusVisible = false;
+            element.setAttribute("aria-disabled", "true");
+        } else {
+            element.removeAttribute("aria-disabled");
         }
         element.setFocusable(enabled);
         updateVisualState();
@@ -197,6 +200,8 @@ public final class DocumentToggleSwitchControl {
     }
 
     private void configureElement() {
+        element.setAttribute("role", "switch")
+                .setAttribute("tabindex", "0");
         element.setFocusable(enabled);
         element.style()
                 .setDisplay(UiDisplay.FLEX)
@@ -276,6 +281,7 @@ public final class DocumentToggleSwitchControl {
                 .setBackgroundColor(trackColor)
                 .setBorderColor(focusVisible ? focusBorderColor : 0)
                 .setJustifyContent(toggled ? UiJustifyContent.END : UiJustifyContent.START);
+        element.setAttribute("aria-checked", String.valueOf(toggled));
         thumb.style().setBackgroundColor(resolvedThumbColor);
     }
 

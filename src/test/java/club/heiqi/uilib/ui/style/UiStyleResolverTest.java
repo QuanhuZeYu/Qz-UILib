@@ -25,6 +25,7 @@ public class UiStyleResolverTest {
 
         panel.style()
                 .setDisplay(UiDisplay.FLEX)
+                .setBoxSizing(UiBoxSizing.BORDER_BOX)
                 .setWidth(UiStyleLength.percent(0.5F))
                 .setPosition(UiPosition.RELATIVE)
                 .setTop(UiStyleLength.px(-4))
@@ -47,6 +48,7 @@ public class UiStyleResolverTest {
         Assert.assertTrue(document.getMutationVersion() > initialVersion);
         Assert.assertSame(panel.style(), panel.getInlineStyle());
         Assert.assertEquals(UiDisplay.FLEX, panel.style().getDisplay());
+        Assert.assertEquals(UiBoxSizing.BORDER_BOX, panel.style().getBoxSizing());
         Assert.assertEquals(UiStyleLength.percent(0.5F), panel.style().getWidth());
         Assert.assertEquals(UiPosition.RELATIVE, panel.style().getPosition());
         Assert.assertEquals(UiStyleLength.px(-4), panel.style().getTop());
@@ -89,6 +91,7 @@ public class UiStyleResolverTest {
         Assert.assertEquals(UiDisplay.INLINE, spanStyle.getDisplay());
         Assert.assertEquals(0xFFD7E3FF, spanStyle.getTextColor());
         Assert.assertEquals(UiStyleLength.auto(), spanStyle.getWidth());
+        Assert.assertEquals(UiBoxSizing.CONTENT_BOX, spanStyle.getBoxSizing());
         Assert.assertEquals(UiPosition.STATIC, spanStyle.getPosition());
         Assert.assertEquals(UiStyleLength.auto(), spanStyle.getTop());
         Assert.assertEquals(UiStyleLength.auto(), spanStyle.getRight());
@@ -135,6 +138,18 @@ public class UiStyleResolverTest {
         Assert.assertEquals(UiDisplay.TABLE_ROW, UiStyleResolver.compute(document.tr()).getDisplay());
         Assert.assertEquals(UiDisplay.TABLE_CELL, UiStyleResolver.compute(document.th()).getDisplay());
         Assert.assertEquals(UiDisplay.TABLE_CELL, UiStyleResolver.compute(document.td()).getDisplay());
+    }
+
+    /**
+     * 验证常见原生控件标签默认更接近浏览器 inline-level 表现。
+     */
+    @Test
+    public void shouldResolveDefaultControlDisplays() {
+        UiDocument document = UiDocument.create();
+
+        Assert.assertEquals(UiDisplay.INLINE_BLOCK, UiStyleResolver.compute(document.button()).getDisplay());
+        Assert.assertEquals(UiDisplay.INLINE_BLOCK, UiStyleResolver.compute(document.input()).getDisplay());
+        Assert.assertEquals(UiDisplay.INLINE_BLOCK, UiStyleResolver.compute(document.img()).getDisplay());
     }
 
     /**

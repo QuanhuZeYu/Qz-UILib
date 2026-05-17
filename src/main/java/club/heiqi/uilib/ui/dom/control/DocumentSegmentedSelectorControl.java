@@ -1,7 +1,12 @@
 package club.heiqi.uilib.ui.dom.control;
 
+import org.lwjglx.input.Keyboard;
+
+import club.heiqi.uilib.ui.dom.DocumentElementKeyEvent;
+import club.heiqi.uilib.ui.dom.DocumentElementKeyHandler;
 import club.heiqi.uilib.ui.dom.ElementNode;
 import club.heiqi.uilib.ui.dom.UiDocument;
+import club.heiqi.uilib.ui.event.UiKeyEvent;
 import club.heiqi.uilib.ui.style.UiAlignItems;
 import club.heiqi.uilib.ui.style.UiDisplay;
 import club.heiqi.uilib.ui.style.UiFlexDirection;
@@ -40,6 +45,7 @@ public final class DocumentSegmentedSelectorControl {
         this.buttons = new DocumentButtonControl[this.options.length];
         configureElement();
         createButtons(document);
+        installHandlers();
         updateVisualState();
     }
 
@@ -196,6 +202,7 @@ public final class DocumentSegmentedSelectorControl {
     }
 
     private void configureElement() {
+        element.setAttribute("role", "radiogroup");
         element.style()
                 .setDisplay(UiDisplay.FLEX)
                 .setFlexDirection(UiFlexDirection.ROW)
@@ -218,9 +225,32 @@ public final class DocumentSegmentedSelectorControl {
             button.getElement().style()
                     .setFlexGrow(1.0F)
                     .setPadding(UiStyleLength.px(6));
+            button.getElement().setAttribute("role", "radio");
             buttons[index] = button;
             element.append(button.getElement());
         }
+    }
+
+    private void installHandlers() {
+        element.setKeyHandler(new DocumentElementKeyHandler() {
+            @Override
+            public boolean onKey(DocumentElementKeyEvent event) {
+                if (event.getAction() != UiKeyEvent.Action.PRESSED) {
+                    return false;
+                }
+                if (event.getKeyCode() == Keyboard.KEY_LEFT) {
+                    selectIndex(Math.max(0, selectedIndex - 1), true, true, event.getKeyCode(), -1,
+                            event.getTimeNanos());
+                    return true;
+                }
+                if (event.getKeyCode() == Keyboard.KEY_RIGHT) {
+                    selectIndex(Math.min(options.length - 1, selectedIndex + 1), true, true, event.getKeyCode(), -1,
+                            event.getTimeNanos());
+                    return true;
+                }
+                return false;
+            }
+        });
     }
 
     private void selectIndex(int selectedIndex, boolean notify, boolean keyboardTriggered, int keyCode, int button,
@@ -245,6 +275,7 @@ public final class DocumentSegmentedSelectorControl {
                             selected ? selectedActiveBackgroundColor : normalActiveBackgroundColor,
                             disabledBackgroundColor)
                     .setTextColors(selected ? selectedTextColor : normalTextColor, disabledTextColor);
+            buttons[index].getElement().setAttribute("aria-checked", String.valueOf(selected));
         }
     }
 

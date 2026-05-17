@@ -78,6 +78,7 @@ public final class DocumentSlotControl {
     private boolean selected;
     private boolean hovered;
     private boolean active;
+    private boolean spacePressed;
     private List<String> visibleTooltipLines = Collections.emptyList();
     private int lastHoverDocumentX = -1;
     private int lastHoverDocumentY = -1;
@@ -364,13 +365,27 @@ public final class DocumentSlotControl {
         if (event == null || !isActivationKey(event.getKeyCode())) {
             return false;
         }
-        if (event.getAction() == UiKeyEvent.Action.PRESSED) {
+        if (isEnterKey(event.getKeyCode()) && event.getAction() == UiKeyEvent.Action.PRESSED) {
             active = true;
             boolean consumed = handleSlotClick(0, event.getTimeNanos());
             applyVisualState();
             return consumed;
         }
+        if (event.getKeyCode() == Keyboard.KEY_SPACE && event.getAction() == UiKeyEvent.Action.PRESSED) {
+            active = true;
+            spacePressed = true;
+            applyVisualState();
+            return true;
+        }
+        if (event.getKeyCode() == Keyboard.KEY_SPACE && event.getAction() == UiKeyEvent.Action.RELEASED) {
+            boolean shouldActivate = spacePressed;
+            spacePressed = false;
+            active = false;
+            applyVisualState();
+            return shouldActivate && handleSlotClick(0, event.getTimeNanos());
+        }
         if (event.getAction() == UiKeyEvent.Action.RELEASED) {
+            spacePressed = false;
             active = false;
             applyVisualState();
             return true;
@@ -458,6 +473,10 @@ public final class DocumentSlotControl {
     }
 
     private static boolean isActivationKey(int keyCode) {
-        return keyCode == Keyboard.KEY_RETURN || keyCode == Keyboard.KEY_NUMPADENTER || keyCode == Keyboard.KEY_SPACE;
+        return isEnterKey(keyCode) || keyCode == Keyboard.KEY_SPACE;
+    }
+
+    private static boolean isEnterKey(int keyCode) {
+        return keyCode == Keyboard.KEY_RETURN || keyCode == Keyboard.KEY_NUMPADENTER;
     }
 }

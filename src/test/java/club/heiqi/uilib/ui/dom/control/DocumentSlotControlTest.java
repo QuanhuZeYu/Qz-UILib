@@ -147,6 +147,10 @@ public class DocumentSlotControlTest {
         Assert.assertTrue(slot.getKeyHandler().onKey(new DocumentElementKeyEvent(slot, slot,
                 new UiKeyEvent(Keyboard.KEY_SPACE, 0, 0, UiKeyEvent.Action.PRESSED, false, false, false,
                         false, 4L))));
+        Assert.assertEquals(1, clickedButtons.size());
+        Assert.assertTrue(slot.getKeyHandler().onKey(new DocumentElementKeyEvent(slot, slot,
+                new UiKeyEvent(Keyboard.KEY_SPACE, 0, 0, UiKeyEvent.Action.RELEASED, false, false, false,
+                        false, 5L))));
 
         Assert.assertEquals(Integer.valueOf(1), clickedButtons.get(0));
         Assert.assertEquals(Integer.valueOf(0), clickedButtons.get(1));

@@ -41,7 +41,8 @@
 - `createDocumentScreen(...)` 已默认补齐根元素 `width:100%`、`height:100%` 和 `overflow-y:auto`；文档与示例不应再把这组样板当作手动必填前置知识。
 - `flex-direction:column` 容器下，非 `stretch` 子项的 `width:auto` 走固有内容宽度测量，并受父内容宽度裁剪；auto 高文本块会按真实换行高度参与兄弟项排布，若业务要求整行占满，仍应显式写 `width:100%` 或继续使用 `stretch`。
 - `flex-direction:column` 固定高度容器下，普通 `height:auto` 且 `overflow-y:visible` 的直接 flex item 会按接近浏览器 `min-height:auto` 的语义以自然内容高度作为收缩下限；若 item 自身声明 `overflow-y:auto` 或非 visible 裁切语义，则允许压缩并由自身滚动/裁切承接内容。
-- 固定宽度父容器中的 `width:100%` block/flex 子项，会把自身 padding/border 收进父内容盒，不再因子项自身盒模型把 border box 撑出父内容盒；若额外声明横向 margin，外侧空间仍需业务自行预留。
+- HTML-like 布局默认按浏览器 content-box 心智处理 `width:100%`：子项自身 padding/border 会叠加到 border box 并可能溢出父内容盒；若业务需要把 padding/border 收进指定宽度，应显式声明 `box-sizing:border-box`（Java API 为 `setBoxSizing(UiBoxSizing.BORDER_BOX)`）。
+- `position:absolute` 的 containing block 锚点按更接近浏览器的 positioned ancestor padding box 处理；relative 定位中 `top/bottom:%` 按 containing block 高度解析，不再按元素自身高度解析。
 - HUD 文档层统一经 `UiHudDocumentHost` 承载，继续复用 `UiDocument` / `HtmlLikeDocumentWidget`；当前稳定分为 `PASSIVE` 与 `INTERACTIVE` 两层，而不是再开放独立 Widget 作者入口。
 - HUD 浮窗若需要固定外框并承载长内容，优先在面板内部声明固定高度或剩余空间容器，并对子容器使用 `overflow-y:auto`；不要依赖外层 HUD 根节点滚动去撑大浮窗。
 - `INTERACTIVE` HUD 仍可在纯游戏阶段渲染，但只在容器态接通命中与焦点输入；当前稳定隐藏黑名单是游戏主页（含原版 `GuiMainMenu`、新版 `TitleScreen`、第三方主页 `galaxyspace.core.gui.GSGuiMainMenu`）、选图页、服务器列表、游戏内菜单和 Forge 配置页，其余第三方与大多数原版 `GuiScreen` 默认按容器态处理。
@@ -57,7 +58,7 @@
 - HTML-like 元素拖拽采用位移阈值激活：短点击保留 `click`，只有超过阈值后才进入真实拖拽并消费抬起事件。
 - HTML-like 拖拽事件沿用 UILib 原生像素坐标体系，事件内 document 坐标只做 widget/document 局部化，不转换为 Minecraft GUI 缩放坐标。
 - 浏览器式拖拽首版支持 `draggable="true"`、`dragstart`、`dragover`、`dragend`；`drop`、`dragenter`、`dragleave`、`DataTransfer` 与 `preventDefault()` 尚未补齐。
-- 结构节点优先直接写 `UiDocument` DOM-like 元素；标准交互节点优先使用 `Document*Control`。
+- 结构节点优先直接写 `UiDocument` DOM-like 元素；标准交互节点优先使用 `Document*Control`。`document.button()` / `document.input()` 默认可聚焦并参与正常 Tab 顺序，`document.img()` 默认 inline-block 且不可聚焦；`tabindex="-1"` 会跳过正常 Tab 遍历但仍允许鼠标/程序聚焦。
 - HTML-like 文本文档默认按 `UILIB_RAW` 处理：页面作者写入的 `§a`、`§k` 等内容会按普通字符原样显示，不再隐式套用 Minecraft 文本格式码；如需兼容旧 `§` 语义，优先使用 `appendMinecraftText(...)`、`minecraftText(...)` 或 Minecraft 文本模式环境。
 - 普通位图优先走浏览器式 `document.img()` / `img[src]`，支持本地 `ResourceLocation` 与远程 HTTP/HTTPS 位图；Minecraft 物品栈、纹理区域和背景装饰继续使用 `DocumentHostImageControl` / `DocumentHostImageDecorations`，不鼓励业务代码直接写底层 `custom renderer`。
 - 新增 layout-affecting、宿主集成或对外能力时，要同步更新 `docs/使用文档/` 并保留最小必要验证。

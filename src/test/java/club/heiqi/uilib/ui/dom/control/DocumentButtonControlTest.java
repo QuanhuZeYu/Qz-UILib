@@ -54,8 +54,13 @@ public class DocumentButtonControlTest {
         widget.onMouseUp(new UiMouseEvent(UiMouseEvent.Action.BUTTON_UP, 8, 8, 0, 0, 0, 0, 2L));
         widget.onKeyEvent(new UiKeyEvent(Keyboard.KEY_SPACE, 0, 0, UiKeyEvent.Action.PRESSED, false, false, false,
                 false, 3L));
+        Assert.assertEquals(1, events.size());
+        widget.onKeyEvent(new UiKeyEvent(Keyboard.KEY_SPACE, 0, 0, UiKeyEvent.Action.RELEASED, false, false, false,
+                false, 4L));
+        widget.onKeyEvent(new UiKeyEvent(Keyboard.KEY_RETURN, 0, 0, UiKeyEvent.Action.PRESSED, false, false, false,
+                false, 5L));
 
-        Assert.assertEquals(2, events.size());
+        Assert.assertEquals(3, events.size());
         Assert.assertEquals("button", buttonControl.getElement().getTagName());
         Assert.assertEquals("button", buttonControl.getElement().getAttribute("type"));
         Assert.assertSame(buttonControl, events.get(0).getSource());
@@ -64,6 +69,7 @@ public class DocumentButtonControlTest {
         Assert.assertEquals(0, events.get(0).getButton());
         Assert.assertTrue(events.get(1).isKeyboardTriggered());
         Assert.assertEquals(Keyboard.KEY_SPACE, events.get(1).getKeyCode());
+        Assert.assertEquals(Keyboard.KEY_RETURN, events.get(2).getKeyCode());
     }
 
     /**

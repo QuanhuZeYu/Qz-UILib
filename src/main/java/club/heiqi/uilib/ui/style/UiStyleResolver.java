@@ -37,6 +37,7 @@ public final class UiStyleResolver {
         UiDisplay display = style.getDisplay() == null ? defaultDisplay(element.getTagName()) : style.getDisplay();
         UiStyleLength width = style.getWidth() == null ? UiStyleLength.auto() : style.getWidth();
         UiStyleLength height = style.getHeight() == null ? UiStyleLength.auto() : style.getHeight();
+        UiBoxSizing boxSizing = style.getBoxSizing() == null ? UiBoxSizing.CONTENT_BOX : style.getBoxSizing();
         UiPosition position = style.getPosition() == null ? UiPosition.STATIC : style.getPosition();
         UiStyleLength top = style.getTop() == null ? UiStyleLength.auto() : style.getTop();
         UiStyleLength right = style.getRight() == null ? UiStyleLength.auto() : style.getRight();
@@ -90,7 +91,7 @@ public final class UiStyleResolver {
                 : style.getBackdropBlurRadius();
         float backdropSaturation = style.getBackdropSaturation() == null ? 1.0F
                 : style.getBackdropSaturation().floatValue();
-        return new ComputedStyle(display, width, height, position, top, right, bottom, left, zIndex, margin,
+        return new ComputedStyle(display, width, height, boxSizing, position, top, right, bottom, left, zIndex, margin,
                 padding, borderWidth, borderRadius, overflowX, overflowY, flexDirection, alignItems, justifyContent,
                 verticalAlign, rowGap, columnGap, flexGrow, flexShrink, opacity, backgroundColor, borderColor, textColor,
                 transitionProperties, transitionDurationNanos, transitionDelayNanos, transitionTimingFunction,
@@ -114,6 +115,9 @@ public final class UiStyleResolver {
     private static UiDisplay defaultDisplay(String tagName) {
         if ("span".equals(tagName)) {
             return UiDisplay.INLINE;
+        }
+        if ("button".equals(tagName) || "input".equals(tagName) || "img".equals(tagName)) {
+            return UiDisplay.INLINE_BLOCK;
         }
         if ("table".equals(tagName)) {
             return UiDisplay.TABLE;

@@ -129,7 +129,7 @@ public class DocumentHitTestEngineTest {
 
         DocumentLayoutBox rootBox = DocumentLayoutEngine.layout(root, 220, 0);
 
-        assertHitElement(absolute, rootBox, 21, 19);
+        assertHitElement(absolute, rootBox, 10, 8);
         assertHitElement(staticParent, rootBox, 34, 28);
     }
 

@@ -31,6 +31,11 @@ public class DocumentToggleSwitchControlTest {
         UiDocument document = UiDocument.create();
         ElementNode root = document.getRootElement();
         DocumentToggleSwitchControl toggleControl = new DocumentToggleSwitchControl(document);
+
+        Assert.assertEquals("switch", toggleControl.getElement().getAttribute("role"));
+        Assert.assertEquals("0", toggleControl.getElement().getAttribute("tabindex"));
+        Assert.assertEquals("false", toggleControl.getElement().getAttribute("aria-checked"));
+
         root.style()
                 .setWidth(UiStyleLength.px(120))
                 .setHeight(UiStyleLength.px(40));
@@ -58,6 +63,7 @@ public class DocumentToggleSwitchControlTest {
         widget.onMouseUp(new UiMouseEvent(UiMouseEvent.Action.BUTTON_UP, 8, 8, 0, 0, 0, 0, 6L));
 
         Assert.assertTrue(toggleControl.isToggled());
+        Assert.assertEquals("true", toggleControl.getElement().getAttribute("aria-checked"));
         Assert.assertEquals(3, toggleStates.size());
         Assert.assertTrue(toggleStates.get(0));
         Assert.assertFalse(toggleStates.get(1));
@@ -96,6 +102,8 @@ public class DocumentToggleSwitchControlTest {
                 false, 1L));
         widget.onKeyEvent(new UiKeyEvent(Keyboard.KEY_SPACE, 0, 0, UiKeyEvent.Action.PRESSED, false, false, false,
                 false, 2L));
+        widget.onKeyEvent(new UiKeyEvent(Keyboard.KEY_SPACE, 0, 0, UiKeyEvent.Action.RELEASED, false, false, false,
+                false, 3L));
 
         Assert.assertFalse(toggleControl.isToggled());
         Assert.assertEquals(2, toggleStates.size());
@@ -139,6 +147,7 @@ public class DocumentToggleSwitchControlTest {
         Assert.assertFalse(toggleControl.isToggled());
         Assert.assertTrue(toggleStates.isEmpty());
         Assert.assertFalse(toggleControl.getElement().isFocusable());
+        Assert.assertEquals("true", toggleControl.getElement().getAttribute("aria-disabled"));
     }
 
     /**

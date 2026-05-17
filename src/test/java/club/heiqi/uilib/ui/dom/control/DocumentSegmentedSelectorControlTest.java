@@ -39,6 +39,10 @@ public class DocumentSegmentedSelectorControlTest {
                         events.add(event);
                     }
                 });
+        Assert.assertEquals("radiogroup", selector.getElement().getAttribute("role"));
+        Assert.assertEquals("radio", ((ElementNode) selector.getElement().getChildren().get(0)).getAttribute("role"));
+        Assert.assertEquals("true", ((ElementNode) selector.getElement().getChildren().get(0))
+                .getAttribute("aria-checked"));
         root.style()
                 .setWidth(UiStyleLength.px(180))
                 .setHeight(UiStyleLength.px(40));
@@ -63,6 +67,45 @@ public class DocumentSegmentedSelectorControlTest {
         Assert.assertFalse(events.get(0).isKeyboardTriggered());
         Assert.assertEquals(0, events.get(0).getButton());
         Assert.assertEquals(2L, events.get(0).getTimeNanos());
+    }
+
+    /**
+     * 验证分段选择器支持 radiogroup 风格的左右方向键切换。
+     */
+    @Test
+    public void shouldSelectOptionWithArrowKeys() {
+        UiDocument document = UiDocument.create();
+        ElementNode root = document.getRootElement();
+        final List<DocumentSegmentedSelectionEvent> events = new ArrayList<DocumentSegmentedSelectionEvent>();
+        DocumentSegmentedSelectorControl selector = new DocumentSegmentedSelectorControl(document, "A", "B", "C")
+                .setSelectionHandler(new DocumentSegmentedSelectionHandler() {
+                    @Override
+                    public void onSelectionChanged(DocumentSegmentedSelectionEvent event) {
+                        events.add(event);
+                    }
+                });
+        root.style()
+                .setWidth(UiStyleLength.px(180))
+                .setHeight(UiStyleLength.px(40));
+        selector.getElement().style()
+                .setWidth(UiStyleLength.px(180))
+                .setHeight(UiStyleLength.px(32));
+        root.append(selector.getElement());
+        HtmlLikeDocumentWidget widget = new HtmlLikeDocumentWidget(document, 180, 40,
+                new DeterministicTextMeasureService());
+        widget.applyLayoutBounds(0, 0, 180, 40);
+
+        widget.onFocusTraversalEntered(false);
+        widget.onKeyEvent(new UiKeyEvent(Keyboard.KEY_RIGHT, 0, 0, UiKeyEvent.Action.PRESSED, false, false,
+                false, false, 3L));
+        widget.onKeyEvent(new UiKeyEvent(Keyboard.KEY_LEFT, 0, 0, UiKeyEvent.Action.PRESSED, false, false,
+                false, false, 4L));
+
+        Assert.assertEquals(0, selector.getSelectedIndex());
+        Assert.assertEquals(2, events.size());
+        Assert.assertEquals(Keyboard.KEY_RIGHT, events.get(0).getKeyCode());
+        Assert.assertEquals("true", ((ElementNode) selector.getElement().getChildren().get(0))
+                .getAttribute("aria-checked"));
     }
 
     /**
@@ -95,6 +138,9 @@ public class DocumentSegmentedSelectorControlTest {
         Assert.assertTrue(widget.onFocusTraversal(false));
         widget.onKeyEvent(new UiKeyEvent(Keyboard.KEY_SPACE, 0, 0, UiKeyEvent.Action.PRESSED, false, false, false,
                 false, 3L));
+        Assert.assertEquals(0, selector.getSelectedIndex());
+        widget.onKeyEvent(new UiKeyEvent(Keyboard.KEY_SPACE, 0, 0, UiKeyEvent.Action.RELEASED, false, false, false,
+                false, 4L));
 
         Assert.assertEquals(1, selector.getSelectedIndex());
         Assert.assertEquals(1, events.size());

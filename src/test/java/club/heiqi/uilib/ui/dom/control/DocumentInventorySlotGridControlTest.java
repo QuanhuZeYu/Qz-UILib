@@ -403,10 +403,14 @@ public class DocumentInventorySlotGridControlTest {
         Assert.assertTrue(firstSlot.getKeyHandler().onKey(new DocumentElementKeyEvent(firstSlot, firstSlot,
                 new UiKeyEvent(Keyboard.KEY_SPACE, 0, 0, UiKeyEvent.Action.PRESSED, false, false, false,
                         false, 4L))));
+        Assert.assertTrue(clickedSlots.isEmpty());
+        Assert.assertTrue(firstSlot.getKeyHandler().onKey(new DocumentElementKeyEvent(firstSlot, firstSlot,
+                new UiKeyEvent(Keyboard.KEY_SPACE, 0, 0, UiKeyEvent.Action.RELEASED, false, false, false,
+                        false, 5L))));
 
         Assert.assertEquals(Collections.singletonList(Integer.valueOf(0)), clickedSlots);
         Assert.assertEquals(Collections.singletonList(Integer.valueOf(0)), clickedButtons);
-        Assert.assertEquals(Integer.valueOf(0xEE334155), firstSlot.style().getBackgroundColor());
+        Assert.assertEquals(Integer.valueOf(0xAA171C24), firstSlot.style().getBackgroundColor());
     }
 
     /**

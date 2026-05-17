@@ -137,7 +137,7 @@ public class DocumentPaintEngineTest {
                 DocumentLayoutEngine.layout(root, 220, 0));
 
         Assert.assertEquals(1, commands.size());
-        assertCommand(commands.get(0), DocumentPaintCommandType.BACKGROUND, absolute, 20, 18, 32, 26, 0xFFFF0000,
+        assertCommand(commands.get(0), DocumentPaintCommandType.BACKGROUND, absolute, 10, 8, 22, 16, 0xFFFF0000,
                 0, 0);
     }
 

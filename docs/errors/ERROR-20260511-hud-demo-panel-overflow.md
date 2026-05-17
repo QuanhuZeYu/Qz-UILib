@@ -11,17 +11,17 @@
 
 ## 根本原因
 
-- 这不是刻意设计，而是旧版 HTML-like 宽度求解链路的实现缺陷。
-- 旧实现里，子项 `width:100%` 会先按父内容宽度求得内容宽，再额外叠加子项自身 padding/border，导致 border box 被撑出父内容盒。
-- 因此问题根因在布局引擎，而不是 HUD demo 结构本身。
+- 早期曾把该现象归因为 HTML-like 宽度求解缺陷，并一度把百分比宽度硬收紧为近似 border-box 行为。
+- 重新对齐浏览器语义后，默认 `width:100%` 应按 content-box 解析；若元素自身还有 padding/border，border box 溢出父内容盒是浏览器默认盒模型下的预期结果。
+- 因此 HUD demo 或业务卡片若要求“不溢出外框”，应显式选择 `box-sizing:border-box`，而不是依赖百分比宽度被引擎裁剪。
 
 ## 修复方案
 
-- 在 `DocumentLayoutEngine.resolveContentWidth(...)` 中收紧百分比宽度求解：`width:100%` 子项的最终内容宽不会超过父内容盒扣除自身 padding/border 后的可用宽度。
-- 补充固定宽父容器下的 `width:100%` 回归测试，确保子项 border box 保持在父内容盒内。
-- 当前无需为此单独引入 `box-sizing` 语义，现有 HTML-like 宽度契约已经可覆盖 HUD demo 与常见表单控件场景。
+- `DocumentLayoutEngine.resolveContentWidth(...)` 不再对百分比宽度做硬裁剪，恢复默认 content-box 语义。
+- 新增最小 `box-sizing` 能力；需要把 padding/border 收进指定宽度时使用 `setBoxSizing(UiBoxSizing.BORDER_BOX)`。
+- 回归测试同时覆盖默认 content-box 溢出与显式 border-box 不溢出，避免再次把浏览器默认语义误固化为错误契约。
 
 ## 预防措施
 
-- 后续新增通用表单控件或浮窗 demo 时，优先验证“固定宽度父容器 + 100% 宽子控件 + padding/border”组合，并同时覆盖带横向 margin 的边界场景。
-- 若布局问题出现在多个宿主场景，应优先认定为 HTML-like 通用能力问题，而不是单独归因到 HUD。
+- 后续新增通用表单控件或浮窗 demo 时，优先验证“固定宽度父容器 + 100% 宽子控件 + padding/border”组合，并明确该场景是否需要 `box-sizing:border-box`。
+- 不要为了保住某个 demo 的不溢出视觉而在布局引擎里重新裁剪百分比宽度。

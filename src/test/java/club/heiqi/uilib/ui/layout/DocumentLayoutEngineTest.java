@@ -14,6 +14,7 @@ import club.heiqi.uilib.ui.dom.control.DocumentButtonControl;
 import club.heiqi.uilib.ui.dom.control.DocumentTextInputControl;
 import club.heiqi.uilib.ui.image.DocumentRemoteImageCache;
 import club.heiqi.uilib.ui.style.UiAlignItems;
+import club.heiqi.uilib.ui.style.UiBoxSizing;
 import club.heiqi.uilib.ui.style.UiDisplay;
 import club.heiqi.uilib.ui.style.UiFlexDirection;
 import club.heiqi.uilib.ui.style.UiJustifyContent;
@@ -211,10 +212,10 @@ public class DocumentLayoutEngineTest {
     }
 
     /**
-     * 验证固定宽父容器中的 100% 宽 block 子项会把自身 padding/border 收进父内容盒。
+     * 验证固定宽父容器中的 100% 宽 block 子项按浏览器默认 content-box 语义解析。
      */
     @Test
-    public void shouldKeepPercentWidthBlockChildInsideParentContentBox() {
+    public void shouldAllowPercentWidthBlockChildToOverflowWithPaddingAndBorder() {
         UiDocument document = UiDocument.create();
         ElementNode root = document.getRootElement();
         ElementNode child = document.div();
@@ -231,9 +232,67 @@ public class DocumentLayoutEngineTest {
         DocumentLayoutBox childBox = rootBox.getChildren().get(0);
 
         Assert.assertEquals(200, rootBox.getContentWidth());
+        Assert.assertEquals(200, childBox.getContentWidth());
+        Assert.assertEquals(218, childBox.getWidth());
+        Assert.assertTrue(childBox.getRight() > rootBox.getContentLeft() + rootBox.getContentWidth());
+    }
+
+    /**
+     * 验证显式 border-box 可让 100% 宽元素把 padding/border 收进指定宽度。
+     */
+    @Test
+    public void shouldKeepPercentWidthInsideParentWhenBorderBoxSizingIsSpecified() {
+        UiDocument document = UiDocument.create();
+        ElementNode root = document.getRootElement();
+        ElementNode child = document.div();
+
+        root.style().setWidth(UiStyleLength.px(200));
+        child.style()
+                .setDisplay(UiDisplay.BLOCK)
+                .setBoxSizing(UiBoxSizing.BORDER_BOX)
+                .setWidth(UiStyleLength.percent(1.0F))
+                .setPadding(UiStyleLength.px(8))
+                .setBorderWidth(UiStyleLength.px(1));
+        root.append(child);
+
+        DocumentLayoutBox rootBox = DocumentLayoutEngine.layout(root, 240, 0);
+        DocumentLayoutBox childBox = rootBox.getChildren().get(0);
+
         Assert.assertEquals(182, childBox.getContentWidth());
         Assert.assertEquals(200, childBox.getWidth());
         Assert.assertTrue(childBox.getRight() <= rootBox.getContentLeft() + rootBox.getContentWidth());
+    }
+
+    /**
+     * 验证 relative 纵向百分比偏移相对 containing block 高度解析。
+     */
+    @Test
+    public void shouldResolveRelativeVerticalPercentOffsetAgainstContainingBlockHeight() {
+        UiDocument document = UiDocument.create();
+        ElementNode root = document.getRootElement();
+        ElementNode top = document.div();
+        ElementNode bottom = document.div();
+
+        root.style()
+                .setWidth(UiStyleLength.px(120))
+                .setHeight(UiStyleLength.px(100));
+        top.style()
+                .setHeight(UiStyleLength.px(20))
+                .setPosition(UiPosition.RELATIVE)
+                .setTop(UiStyleLength.percent(0.5F));
+        bottom.style()
+                .setHeight(UiStyleLength.px(20))
+                .setPosition(UiPosition.RELATIVE)
+                .setBottom(UiStyleLength.percent(0.5F));
+        root.append(top).append(bottom);
+
+        DocumentLayoutBox rootBox = DocumentLayoutEngine.layout(root, 160, 0);
+        DocumentLayoutBox topBox = rootBox.getChildren().get(0);
+        DocumentLayoutBox bottomBox = rootBox.getChildren().get(1);
+
+        Assert.assertEquals(50, topBox.getPositionOffsetY());
+        Assert.assertEquals(-50, bottomBox.getPositionOffsetY());
+        Assert.assertEquals(20, bottomBox.getTop());
     }
 
     /**
@@ -419,7 +478,7 @@ public class DocumentLayoutEngineTest {
     }
 
     /**
-     * 验证 absolute 定位元素相对根 content box 定位，并脱离普通流。
+     * 验证 absolute 定位元素相对根 padding box 定位，并脱离普通流。
      */
     @Test
     public void shouldLayoutAbsolutePositionedElementOutOfNormalFlow() {
@@ -445,8 +504,8 @@ public class DocumentLayoutEngineTest {
         DocumentLayoutBox absoluteBox = rootBox.getChildren().get(0);
         DocumentLayoutBox followingBox = rootBox.getChildren().get(1);
 
-        Assert.assertEquals(21, absoluteBox.getLeft());
-        Assert.assertEquals(19, absoluteBox.getTop());
+        Assert.assertEquals(11, absoluteBox.getLeft());
+        Assert.assertEquals(9, absoluteBox.getTop());
         Assert.assertEquals(30, absoluteBox.getWidth());
         Assert.assertEquals(12, absoluteBox.getHeight());
         Assert.assertEquals(12, followingBox.getLeft());
@@ -455,7 +514,7 @@ public class DocumentLayoutEngineTest {
     }
 
     /**
-     * 验证 absolute 定位元素可通过 right/bottom 从根 content box 反向定位。
+     * 验证 absolute 定位元素可通过 right/bottom 从根 padding box 反向定位。
      */
     @Test
     public void shouldLayoutAbsolutePositionedElementFromRightAndBottomInsets() {
@@ -479,8 +538,8 @@ public class DocumentLayoutEngineTest {
 
         DocumentLayoutBox absoluteBox = DocumentLayoutEngine.layout(root, 140, 0).getChildren().get(1);
 
-        Assert.assertEquals(66, absoluteBox.getLeft());
-        Assert.assertEquals(48, absoluteBox.getTop());
+        Assert.assertEquals(70, absoluteBox.getLeft());
+        Assert.assertEquals(52, absoluteBox.getTop());
     }
 
     /**
@@ -511,12 +570,12 @@ public class DocumentLayoutEngineTest {
 
         DocumentLayoutBox absoluteBox = DocumentLayoutEngine.layout(root, 260, 0).getChildren().get(0);
 
-        Assert.assertEquals(30, absoluteBox.getLeft());
-        Assert.assertEquals(21, absoluteBox.getTop());
-        Assert.assertEquals(152, absoluteBox.getWidth());
-        Assert.assertEquals(72, absoluteBox.getHeight());
-        Assert.assertEquals(142, absoluteBox.getContentWidth());
-        Assert.assertEquals(62, absoluteBox.getContentHeight());
+        Assert.assertEquals(20, absoluteBox.getLeft());
+        Assert.assertEquals(11, absoluteBox.getTop());
+        Assert.assertEquals(172, absoluteBox.getWidth());
+        Assert.assertEquals(92, absoluteBox.getHeight());
+        Assert.assertEquals(162, absoluteBox.getContentWidth());
+        Assert.assertEquals(82, absoluteBox.getContentHeight());
     }
 
     /**
@@ -591,8 +650,8 @@ public class DocumentLayoutEngineTest {
                 .getChildren().get(0)
                 .getChildren().get(0);
 
-        Assert.assertEquals(20, absoluteBox.getLeft());
-        Assert.assertEquals(18, absoluteBox.getTop());
+        Assert.assertEquals(10, absoluteBox.getLeft());
+        Assert.assertEquals(8, absoluteBox.getTop());
     }
 
     /**
@@ -640,12 +699,12 @@ public class DocumentLayoutEngineTest {
                 .getChildren().get(0)
                 .getChildren().get(0);
 
-        Assert.assertEquals(24, absoluteBox.getLeft());
-        Assert.assertEquals(22, absoluteBox.getTop());
+        Assert.assertEquals(19, absoluteBox.getLeft());
+        Assert.assertEquals(17, absoluteBox.getTop());
     }
 
     /**
-     * 验证 right/bottom 会按最近 positioned ancestor 的 content box 反向定位。
+     * 验证 right/bottom 会按最近 positioned ancestor 的 padding box 反向定位。
      */
     @Test
     public void shouldLayoutAbsolutePositionedElementFromNearestPositionedAncestorRightAndBottomInsets() {
@@ -680,12 +739,12 @@ public class DocumentLayoutEngineTest {
                 .getChildren().get(0)
                 .getChildren().get(0);
 
-        Assert.assertEquals(93, absoluteBox.getLeft());
-        Assert.assertEquals(59, absoluteBox.getTop());
+        Assert.assertEquals(103, absoluteBox.getLeft());
+        Assert.assertEquals(69, absoluteBox.getTop());
     }
 
     /**
-     * 验证没有 positioned ancestor 时 absolute 定位回退到根 content box。
+     * 验证没有 positioned ancestor 时 absolute 定位回退到根 padding box。
      */
     @Test
     public void shouldLayoutAbsolutePositionedElementAgainstRootWhenNoPositionedAncestorExists() {
@@ -713,8 +772,8 @@ public class DocumentLayoutEngineTest {
                 .getChildren().get(0)
                 .getChildren().get(0);
 
-        Assert.assertEquals(14, absoluteBox.getLeft());
-        Assert.assertEquals(12, absoluteBox.getTop());
+        Assert.assertEquals(9, absoluteBox.getLeft());
+        Assert.assertEquals(7, absoluteBox.getTop());
     }
 
     /**
@@ -1327,6 +1386,7 @@ public class DocumentLayoutEngineTest {
                 .setDisplay(UiDisplay.FLEX)
                 .setFlexDirection(UiFlexDirection.COLUMN)
                 .setAlignItems(UiAlignItems.START)
+                .setBoxSizing(UiBoxSizing.BORDER_BOX)
                 .setWidth(UiStyleLength.percent(1.0F))
                 .setPadding(UiStyleLength.px(8))
                 .setBorderWidth(UiStyleLength.px(1))
@@ -1385,6 +1445,7 @@ public class DocumentLayoutEngineTest {
                 .setDisplay(UiDisplay.FLEX)
                 .setFlexDirection(UiFlexDirection.COLUMN)
                 .setAlignItems(UiAlignItems.START)
+                .setBoxSizing(UiBoxSizing.BORDER_BOX)
                 .setWidth(UiStyleLength.percent(1.0F))
                 .setPadding(UiStyleLength.px(8))
                 .setBorderWidth(UiStyleLength.px(1))
@@ -1399,6 +1460,7 @@ public class DocumentLayoutEngineTest {
                 .setDisplay(UiDisplay.FLEX)
                 .setFlexDirection(UiFlexDirection.COLUMN)
                 .setAlignItems(UiAlignItems.START)
+                .setBoxSizing(UiBoxSizing.BORDER_BOX)
                 .setWidth(UiStyleLength.percent(1.0F))
                 .setPadding(UiStyleLength.px(8))
                 .setBorderWidth(UiStyleLength.px(1))
@@ -1424,6 +1486,7 @@ public class DocumentLayoutEngineTest {
 
         scrollContent.style()
                 .setFlexGrow(1.0F)
+                .setBoxSizing(UiBoxSizing.BORDER_BOX)
                 .setWidth(UiStyleLength.percent(1.0F))
                 .setPadding(UiStyleLength.px(6))
                 .setBorderWidth(UiStyleLength.px(1));
@@ -1439,6 +1502,7 @@ public class DocumentLayoutEngineTest {
                 .setDisplay(UiDisplay.FLEX)
                 .setFlexDirection(UiFlexDirection.COLUMN)
                 .setAlignItems(UiAlignItems.START)
+                .setBoxSizing(UiBoxSizing.BORDER_BOX)
                 .setWidth(UiStyleLength.percent(1.0F))
                 .setPadding(UiStyleLength.px(6))
                 .setBorderWidth(UiStyleLength.px(1))
@@ -1452,6 +1516,7 @@ public class DocumentLayoutEngineTest {
                 .setDisplay(UiDisplay.FLEX)
                 .setFlexDirection(UiFlexDirection.COLUMN)
                 .setAlignItems(UiAlignItems.STRETCH)
+                .setBoxSizing(UiBoxSizing.BORDER_BOX)
                 .setWidth(UiStyleLength.percent(1.0F))
                 .setPadding(UiStyleLength.px(6))
                 .setBorderWidth(UiStyleLength.px(1))
@@ -1460,10 +1525,12 @@ public class DocumentLayoutEngineTest {
         DocumentTextInputControl input = new DocumentTextInputControl(document)
                 .setPlaceholder("在容器界面中输入备注")
                 .setText("把鼠标移到背包界面后尝试编辑我");
-        input.getElement().style().setDisplay(UiDisplay.BLOCK).setWidth(UiStyleLength.percent(1.0F));
+        input.getElement().style().setDisplay(UiDisplay.BLOCK).setBoxSizing(UiBoxSizing.BORDER_BOX)
+                .setWidth(UiStyleLength.percent(1.0F));
         noteCard.append(input.getElement());
         DocumentButtonControl button = new DocumentButtonControl(document, "记录一次点击");
-        button.getElement().style().setDisplay(UiDisplay.BLOCK).setWidth(UiStyleLength.percent(1.0F));
+        button.getElement().style().setDisplay(UiDisplay.BLOCK).setBoxSizing(UiBoxSizing.BORDER_BOX)
+                .setWidth(UiStyleLength.percent(1.0F));
         noteCard.append(button.getElement());
         contentBody.append(noteCard);
 
@@ -1471,6 +1538,7 @@ public class DocumentLayoutEngineTest {
                 .setDisplay(UiDisplay.FLEX)
                 .setFlexDirection(UiFlexDirection.COLUMN)
                 .setAlignItems(UiAlignItems.START)
+                .setBoxSizing(UiBoxSizing.BORDER_BOX)
                 .setWidth(UiStyleLength.percent(1.0F))
                 .setPadding(UiStyleLength.px(6))
                 .setBorderWidth(UiStyleLength.px(1))

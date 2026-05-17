@@ -2675,7 +2675,7 @@ public class HtmlLikeDocumentWidgetTest {
     }
 
     /**
-     * 验证 HTML-like 组件会按布局树顺序处理内部 Tab 焦点遍历。
+     * 验证 HTML-like 组件会按 tabindex 与文档顺序处理内部 Tab 焦点遍历。
      */
     @Test
     public void shouldTraverseFocusableElementsInLayoutOrder() {
@@ -2712,6 +2712,47 @@ public class HtmlLikeDocumentWidgetTest {
         widget.onFocusChanged(false);
         widget.onFocusTraversalEntered(true);
         assertElementUid(secondInput, widget.getFocusedElement());
+    }
+
+    /**
+     * 验证 tabindex 运行时语义：正数优先，0 保持文档顺序，-1 跳过 Tab 但可鼠标聚焦。
+     */
+    @Test
+    public void shouldRespectTabIndexDuringFocusTraversal() {
+        UiDocument document = UiDocument.create();
+        ElementNode root = document.getRootElement();
+        ElementNode normal = document.div();
+        ElementNode skipped = document.div();
+        ElementNode priority = document.div();
+        root.style()
+                .setWidth(UiStyleLength.px(120))
+                .setHeight(UiStyleLength.px(80));
+        normal.style()
+                .setWidth(UiStyleLength.px(40))
+                .setHeight(UiStyleLength.px(20));
+        skipped.style()
+                .setWidth(UiStyleLength.px(40))
+                .setHeight(UiStyleLength.px(20));
+        priority.style()
+                .setWidth(UiStyleLength.px(40))
+                .setHeight(UiStyleLength.px(20));
+        normal.setFocusable(true).setAttribute("tabindex", "0");
+        skipped.setFocusable(true).setAttribute("tabindex", "-1");
+        priority.setFocusable(true).setAttribute("tabindex", "2");
+        root.append(normal).append(skipped).append(priority);
+        HtmlLikeDocumentWidget widget = new HtmlLikeDocumentWidget(document, 120, 80,
+                new DeterministicTextMeasureService());
+        widget.applyLayoutBounds(0, 0, 120, 80);
+
+        widget.onFocusTraversalEntered(false);
+        assertElementUid(priority, widget.getFocusedElement());
+
+        Assert.assertTrue(widget.onFocusTraversal(false));
+        assertElementUid(normal, widget.getFocusedElement());
+        Assert.assertFalse(widget.onFocusTraversal(false));
+
+        widget.onMouseDown(new UiMouseEvent(UiMouseEvent.Action.BUTTON_DOWN, 4, 24, 0, 0, 0, 0, 1L));
+        assertElementUid(skipped, widget.getFocusedElement());
     }
 
     /**

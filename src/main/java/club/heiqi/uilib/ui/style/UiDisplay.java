@@ -6,6 +6,7 @@ package club.heiqi.uilib.ui.style;
 public enum UiDisplay {
     BLOCK,
     INLINE,
+    INLINE_BLOCK,
     FLEX,
     TABLE,
     TABLE_HEADER_GROUP,

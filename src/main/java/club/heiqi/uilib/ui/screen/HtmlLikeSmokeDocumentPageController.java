@@ -29,6 +29,7 @@ import club.heiqi.uilib.ui.layout.UiLength;
 import club.heiqi.uilib.ui.paint.DocumentCustomRenderer;
 import club.heiqi.uilib.ui.render.UiRenderContext;
 import club.heiqi.uilib.ui.style.UiAlignItems;
+import club.heiqi.uilib.ui.style.UiBoxSizing;
 import club.heiqi.uilib.ui.style.UiDisplay;
 import club.heiqi.uilib.ui.style.UiFlexDirection;
 import club.heiqi.uilib.ui.style.UiJustifyContent;
@@ -438,6 +439,7 @@ final class HtmlLikeSmokeDocumentPageController extends DocumentPageController {
         ElementNode scrollHost = document.div();
         scrollHost.style()
                 .setHeight(UiStyleLength.px(154))
+                .setBoxSizing(UiBoxSizing.BORDER_BOX)
                 .setPadding(UiStyleLength.px(8))
                 .setBackgroundColor(0xAA0F172A)
                 .setBorderColor(0xFF38BDF8)
@@ -466,6 +468,7 @@ final class HtmlLikeSmokeDocumentPageController extends DocumentPageController {
         for (int index = 1; index <= 6; index++) {
             ElementNode card = document.div();
             card.style()
+                    .setBoxSizing(UiBoxSizing.BORDER_BOX)
                     .setWidth(UiStyleLength.percent(1.0F))
                     .setPadding(UiStyleLength.px(8))
                     .setMargin(UiStyleInsets.of(UiStyleLength.px(0), UiStyleLength.px(0), UiStyleLength.px(8),

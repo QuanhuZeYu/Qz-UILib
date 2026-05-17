@@ -17,6 +17,7 @@ public final class ComputedStyle {
     private final UiDisplay display;
     private final UiStyleLength width;
     private final UiStyleLength height;
+    private final UiBoxSizing boxSizing;
     private final UiPosition position;
     private final UiStyleLength top;
     private final UiStyleLength right;
@@ -54,7 +55,8 @@ public final class ComputedStyle {
     private final UiStyleLength backdropBlurRadius;
     private final float backdropSaturation;
 
-    ComputedStyle(UiDisplay display, UiStyleLength width, UiStyleLength height, UiPosition position,
+    ComputedStyle(UiDisplay display, UiStyleLength width, UiStyleLength height, UiBoxSizing boxSizing,
+            UiPosition position,
             UiStyleLength top, UiStyleLength right, UiStyleLength bottom, UiStyleLength left, Integer zIndex,
             UiStyleInsets margin, UiStyleInsets padding, UiStyleLength borderWidth, UiStyleLength borderRadius,
             UiOverflow overflowX, UiOverflow overflowY, UiFlexDirection flexDirection, UiAlignItems alignItems,
@@ -69,6 +71,7 @@ public final class ComputedStyle {
         this.display = Objects.requireNonNull(display, "display");
         this.width = Objects.requireNonNull(width, "width");
         this.height = Objects.requireNonNull(height, "height");
+        this.boxSizing = Objects.requireNonNull(boxSizing, "boxSizing");
         this.position = Objects.requireNonNull(position, "position");
         this.top = Objects.requireNonNull(top, "top");
         this.right = Objects.requireNonNull(right, "right");
@@ -118,6 +121,10 @@ public final class ComputedStyle {
 
     public UiStyleLength getHeight() {
         return height;
+    }
+
+    public UiBoxSizing getBoxSizing() {
+        return boxSizing;
     }
 
     public UiPosition getPosition() {

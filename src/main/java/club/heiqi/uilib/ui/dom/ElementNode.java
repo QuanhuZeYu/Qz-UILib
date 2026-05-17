@@ -21,6 +21,7 @@ public final class ElementNode extends DocumentNode {
     private final long __elementUid;
     private final Map<String, String> attributes = new LinkedHashMap<String, String>();
     private boolean focusable;
+    private int focusInvalidationVersion;
     private DocumentElementActiveHandler activeHandler;
     private DocumentElementClickHandler clickHandler;
     private DocumentElementFocusHandler focusHandler;
@@ -47,6 +48,12 @@ public final class ElementNode extends DocumentNode {
         super(ownerDocument);
         this.__elementUid = ownerDocument.__allocateElementUid();
         this.tagName = normalizeName(tagName, "tagName");
+        if (isNativeFocusableTag(this.tagName)) {
+            this.focusable = true;
+        }
+        if ("input".equals(this.tagName)) {
+            attributes.put("type", "text");
+        }
         if (DocumentImageElementSupport.isImageTag(this.tagName)) {
             DocumentImageElementSupport.attach(this);
         }
@@ -167,6 +174,12 @@ public final class ElementNode extends DocumentNode {
      * @return 当前元素
      */
     public ElementNode setFocusable(boolean focusable) {
+        if (this.focusable && !focusable) {
+            focusInvalidationVersion++;
+        }
+        if (this.focusable != focusable) {
+            markMutated();
+        }
         this.focusable = focusable;
         return this;
     }
@@ -178,6 +191,88 @@ public final class ElementNode extends DocumentNode {
      */
     public boolean isFocusable() {
         return focusable;
+    }
+
+    /**
+     * 返回焦点失效版本，用于宿主在元素禁用后清理旧焦点。
+     *
+     * @return 焦点失效版本
+     */
+    public int getFocusInvalidationVersion() {
+        return focusInvalidationVersion;
+    }
+
+    /**
+     * 返回 tabindex 属性解析值。
+     *
+     * @return tabindex；未声明或无法解析时返回 null
+     */
+    public Integer getTabIndex() {
+        String value = getAttribute("tabindex");
+        if (value == null) {
+            return null;
+        }
+        try {
+            return Integer.valueOf(Integer.parseInt(value.trim()));
+        } catch (NumberFormatException ignored) {
+            return null;
+        }
+    }
+
+    /**
+     * 判断元素是否被 aria-hidden 从语义树隐藏。
+     *
+     * @return 是否语义隐藏
+     */
+    public boolean isAriaHidden() {
+        return "true".equals(getAttribute("aria-hidden"));
+    }
+
+    /**
+     * 返回元素面向辅助语义的角色。
+     *
+     * @return 语义角色；无角色时返回 null
+     */
+    public String getSemanticRole() {
+        String role = trimToNull(getAttribute("role"));
+        if (role != null) {
+            return role;
+        }
+        if ("button".equals(tagName)) {
+            return "button";
+        }
+        if ("input".equals(tagName)) {
+            String type = trimToNull(getAttribute("type"));
+            if ("checkbox".equals(type)) {
+                return "checkbox";
+            }
+            return "textbox";
+        }
+        if (DocumentImageElementSupport.isImageTag(tagName)) {
+            String alt = getAttribute("alt");
+            return alt != null && alt.isEmpty() ? "presentation" : "img";
+        }
+        return null;
+    }
+
+    /**
+     * 返回元素可访问名称的最小解析结果。
+     *
+     * @return 可访问名称；无可用名称或 aria-hidden 时返回空字符串
+     */
+    public String getAccessibleLabel() {
+        if (isAriaHidden()) {
+            return "";
+        }
+        String ariaLabel = trimToNull(getAttribute("aria-label"));
+        if (ariaLabel != null) {
+            return ariaLabel;
+        }
+        if (DocumentImageElementSupport.isImageTag(tagName)) {
+            String alt = getAttribute("alt");
+            return alt == null ? "" : alt;
+        }
+        return collectTextContent(this).trim();
     }
 
     /**
@@ -490,5 +585,33 @@ public final class ElementNode extends DocumentNode {
             throw new IllegalArgumentException(parameterName + " cannot be empty");
         }
         return normalized;
+    }
+
+    private static boolean isNativeFocusableTag(String tagName) {
+        return "button".equals(tagName) || "input".equals(tagName);
+    }
+
+    private static String trimToNull(String value) {
+        if (value == null) {
+            return null;
+        }
+        String trimmed = value.trim();
+        return trimmed.isEmpty() ? null : trimmed;
+    }
+
+    private static String collectTextContent(DocumentNode node) {
+        StringBuilder builder = new StringBuilder();
+        appendTextContent(node, builder);
+        return builder.toString();
+    }
+
+    private static void appendTextContent(DocumentNode node, StringBuilder builder) {
+        if (node instanceof TextNode) {
+            builder.append(((TextNode) node).getText());
+            return;
+        }
+        for (DocumentNode child : node.getChildren()) {
+            appendTextContent(child, builder);
+        }
     }
 }

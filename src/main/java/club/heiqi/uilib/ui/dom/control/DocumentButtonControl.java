@@ -32,6 +32,7 @@ public final class DocumentButtonControl {
     private boolean enabled = true;
     private boolean focusVisible;
     private boolean active;
+    private boolean spacePressed;
     private int normalBackgroundColor = 0xFF3182CE;
     private int activeBackgroundColor = 0xFF2B6CB0;
     private int disabledBackgroundColor = 0xFF4A5568;
@@ -99,9 +100,12 @@ public final class DocumentButtonControl {
         if (!enabled) {
             focusVisible = false;
             active = false;
+            spacePressed = false;
             element.setAttribute("disabled", "true");
+            element.setAttribute("aria-disabled", "true");
         } else {
             element.removeAttribute("disabled");
+            element.removeAttribute("aria-disabled");
         }
         element.setFocusable(enabled);
         updateVisualState();
@@ -213,9 +217,10 @@ public final class DocumentButtonControl {
             @Override
             public void onFocusChanged(DocumentElementFocusEvent event) {
                 focusVisible = event.isFocused() && event.isFocusVisible() && enabled;
-                if (!event.isFocused()) {
-                    active = false;
-                }
+        if (!event.isFocused()) {
+            active = false;
+            spacePressed = false;
+        }
                 updateVisualState();
             }
         }).setKeyHandler(new DocumentElementKeyHandler() {
@@ -224,10 +229,26 @@ public final class DocumentButtonControl {
                 if (!isActivationKey(event.getKeyCode())) {
                     return false;
                 }
-                if (event.getAction() == UiKeyEvent.Action.PRESSED) {
+                if (isEnterKey(event.getKeyCode()) && event.getAction() == UiKeyEvent.Action.PRESSED) {
                     active = enabled;
                     updateVisualState();
                     activate(true, event.getKeyCode(), -1, event.getTimeNanos());
+                    return true;
+                }
+                if (event.getKeyCode() == Keyboard.KEY_SPACE && event.getAction() == UiKeyEvent.Action.PRESSED) {
+                    spacePressed = enabled;
+                    active = enabled;
+                    updateVisualState();
+                    return true;
+                }
+                if (event.getKeyCode() == Keyboard.KEY_SPACE && event.getAction() == UiKeyEvent.Action.RELEASED) {
+                    boolean shouldActivate = spacePressed && enabled;
+                    spacePressed = false;
+                    active = false;
+                    updateVisualState();
+                    if (shouldActivate) {
+                        activate(true, event.getKeyCode(), -1, event.getTimeNanos());
+                    }
                     return true;
                 }
                 if (event.getAction() == UiKeyEvent.Action.RELEASED) {
@@ -268,7 +289,11 @@ public final class DocumentButtonControl {
     }
 
     private static boolean isActivationKey(int keyCode) {
-        return keyCode == Keyboard.KEY_RETURN || keyCode == Keyboard.KEY_NUMPADENTER || keyCode == Keyboard.KEY_SPACE;
+        return isEnterKey(keyCode) || keyCode == Keyboard.KEY_SPACE;
+    }
+
+    private static boolean isEnterKey(int keyCode) {
+        return keyCode == Keyboard.KEY_RETURN || keyCode == Keyboard.KEY_NUMPADENTER;
     }
 
     private static String normalizeLabel(String label) {

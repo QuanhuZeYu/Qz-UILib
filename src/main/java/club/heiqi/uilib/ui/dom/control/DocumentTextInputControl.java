@@ -131,6 +131,14 @@ public final class DocumentTextInputControl {
         }
         this.enabled = enabled;
         element.setFocusable(enabled);
+        if (!enabled) {
+            focused = false;
+            element.setAttribute("disabled", "true");
+            element.setAttribute("aria-disabled", "true");
+        } else {
+            element.removeAttribute("disabled");
+            element.removeAttribute("aria-disabled");
+        }
         updateVisualState();
         return this;
     }
