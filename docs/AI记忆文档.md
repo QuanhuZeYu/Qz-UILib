@@ -55,6 +55,7 @@
 - `UiSelector` 已支持伪类条件（`:hover`/`:focus`/`:focus-visible`/`:active`/`:disabled`）；伪类在特异性中计入 class 级别；`UiStyleResolver.compute(element, activeStates)` 接受 `Set<UiPseudoClass>` 进行状态感知样式计算。
 - `UiDocument` 提供标准 DOM 查询：`getElementById(id)`、`querySelector(selectorText)`、`querySelectorAll(selectorText)`、`getElementsByTagName(tagName)`、`getElementsByClassName(className)`，均按深度优先遍历并复用 `UiSelector` 匹配。
 - 样式系统新增视觉增强属性：`box-shadow`、`border-style`、`cursor`、`border-radius` 分角、`text-decoration`、`pointer-events`、`outline` 均已进入级联计算；当前运行时已接通 `text-decoration` 绘制、`pointer-events:none` 命中穿透、分角圆角绘制/clip/backdrop-filter/命中测试，以及 `box-shadow`、`outline`、虚线/点线/双线边框的基础绘制链路；`border-style:none/hidden` 不绘制边框，普通统一 solid 圆角 border/outline 按逐层圆角轮廓绘制。
+- **【边界修正】`cursor` 属性**：`UiCursor` 枚举（13 种）与级联计算链路已完整，但**从未映射到 Minecraft/LWJGL 真实鼠标光标**（无 `glfwSetCursor`/`Mouse.setCursor` 调用）；设置 `cursor:pointer` 不会改变鼠标外观。`DocumentCursorOverlayControl` 是用图片元素模拟的物品拖拽覆层，与系统光标无关。系统光标映射为待实现项，不应将 cursor 样式列为"已完整工作"的视觉能力。（审查：REVIEW-20260518-browser-capability-gap-audit）
 - `UiStyleVariables` 提供命名颜色/长度/字符串变量容器，挂载在 `UiDocument` 上作为文档级变量作用域；变量值变更会触发布局失效，但当前不支持 CSS `var(...)` 声明级自动解析，页面若要响应主题变量变化仍需读取变量并回写样式。
 - `aspect-ratio` 已在高度 auto 且宽度可解析的普通盒布局中推导内容高度；普通 `img` 绘制阶段已支持 `object-fit` 的 fill/contain/cover/none/scale-down。
 - 诊断页与示例页只展示已接入运行时并有最小验证的能力；仅完成级联解析、值类型承载或手动同步的能力必须明确写成边界，不得包装成浏览器语义已完整支持。
@@ -62,6 +63,7 @@
 - `DocumentNode` 已补齐标准 DOM 操作：`insertBefore(newChild, referenceChild)`、`replaceChild(newChild, oldChild)`，配合已有的 `appendChild`/`removeChild`/`clearChildren` 构成完整 DOM 操作集。
 - 样式系统新增 border 分边控制：`setBorderWidthSides(UiStyleInsets)` 支持四边独立 border-width；`setBorderColors(UiBorderColors)` 支持四边独立 border-color；分边值设置后优先于统一 borderWidth/borderColor 生效。
 - 样式系统新增文本排版控制：`letter-spacing`（字间距，可继承）、`word-break`（NORMAL/BREAK_ALL/KEEP_ALL，可继承）、`overflow-wrap`（NORMAL/BREAK_WORD/ANYWHERE，可继承）。
+- **【边界修正】`word-break` / `overflow-wrap`**：枚举与级联计算链路已完整，但 `DocumentLayoutEngine` 的文本换行逻辑**未读取和消费这两个属性**，实际断词行为固定不变。当前这两个属性属于"样式声明已支持，布局引擎实际断词待接通"，不应列为已完整工作的文本能力。（审查：REVIEW-20260518-browser-capability-gap-audit）
 - `height` 百分比相对包含块高度解析；包含块高度为 auto 时百分比高度视为 auto（由内容撑开），不再静默解析为 0。
 - Block 元素 `margin: 0 auto` 支持水平居中：有明确宽度的 block 元素，auto left/right margin 会平分剩余空间。
 - `line-height` 是可继承属性：父元素设置后子元素自动继承，除非子元素自行覆盖。
@@ -85,6 +87,8 @@
 - HTML-like 拖拽事件沿用 UILib 原生像素坐标体系，事件内 document 坐标只做 widget/document 局部化，不转换为 Minecraft GUI 缩放坐标。
 - 浏览器式拖拽首版支持 `draggable="true"`、`dragstart`、`dragover`、`dragend`；`drop`、`dragenter`、`dragleave`、`DataTransfer` 与 `preventDefault()` 尚未补齐。
 - 结构节点优先直接写 `UiDocument` DOM-like 元素；标准交互节点优先使用 `Document*Control`。`document.button()` / `document.input()` 默认可聚焦并参与正常 Tab 顺序，`document.img()` 默认 inline-block 且不可聚焦；`tabindex="-1"` 会跳过正常 Tab 遍历但仍允许鼠标/程序聚焦。
+- **【边界修正】`focus()` / `blur()` 程序化聚焦**：`HtmlLikeDocumentWidget` 内部焦点管理链路完整，但相关方法为 private，**页面作者当前无法通过 `ElementNode` API 程序化控制焦点**；需要聚焦特定元素时只能依赖鼠标点击或 Tab 键触发。（审查：REVIEW-20260518-browser-capability-gap-audit）
+- **【边界修正】`scrollIntoView` / `scrollTo` 公开 API**：`DocumentScrollState.scrollTo()` 与 `scrollToReveal()` 内部已实现，但**未在 `ElementNode` 或 `UiDocument` 上暴露为公开 API**，页面作者当前无法程序化滚动容器到指定位置或使元素进入视口。（审查：REVIEW-20260518-browser-capability-gap-audit）
 - HTML-like 文本文档默认按 `UILIB_RAW` 处理：页面作者写入的 `§a`、`§k` 等内容会按普通字符原样显示，不再隐式套用 Minecraft 文本格式码；如需兼容旧 `§` 语义，优先使用 `appendMinecraftText(...)`、`minecraftText(...)` 或 Minecraft 文本模式环境。
 - 普通位图优先走浏览器式 `document.img()` / `img[src]`，支持本地 `ResourceLocation` 与远程 HTTP/HTTPS 位图；Minecraft 物品栈、纹理区域和背景装饰继续使用 `DocumentHostImageControl` / `DocumentHostImageDecorations`，不鼓励业务代码直接写底层 `custom renderer`。
 - 新增 layout-affecting、宿主集成或对外能力时，要同步更新 `docs/使用文档/` 并保留最小必要验证。
@@ -92,6 +96,7 @@
 - `ForgeConfigTemplateScreen` 的列表属性在摘要、默认值和占位展示中默认取“前 5 项摘要”和“200 字符截断”中更长的一种，避免长列表直接撑爆配置页；实际文本编辑、保存和恢复默认仍使用完整列表值。
 - 字体系统启动时会把本次已发现字体整理进 `FontConfig.fontSort`：已有 `fontSort` 配置时先按配置提示顺序吸收存在项，再把未配置字体按自然顺序追加，配置中缺失的字体只保留在内存缺失态；首次启动且尚无 `fontSort` 配置时，会按当前平台的常见多语种字体提示优先吸收已安装字体，避免自然排序先命中 CAD 等窄用途字体。
 - 原版资源包重载会通过 `FontRenderer.onResourceManagerReload` 的 Mixin 触发字体系统重载；字体 GL 资源、字符页、后台字形任务和布局缓存必须整体重建，避免继续使用资源包重载前的 GL 状态。
+- **【边界修正】`font-weight` / `font-style` / `font-family`**：底层 `FontType`（REGULAR/BOLD/ITALIC/BOLD_ITALIC）与 `TextStyle` 已有粗体和斜体字形支持，但 **`UiStyleDeclaration` 中没有对应的 CSS 属性字段**，页面作者无法通过样式声明（如 `setFontWeight()`）控制字体粗细或斜体；目前仅有字体排序配置层面的字体族选择。不应将粗体/斜体列为页面作者层可用的 CSS 能力；如需补齐，需在样式系统中新增属性并接通 `TextStyle` 解析。（审查：REVIEW-20260518-browser-capability-gap-audit）
 - UILib 文档主渲染链路的字体批处理边界只覆盖 `DocumentPaintRenderer` 回放中的连续 `TEXT` 命令；遇到 `CUSTOM`、`BACKDROP_FILTER`、`PAINT_CONTEXT`、`CLIP` 以及其他非文本绘制命令前必须结束 scope 并 flush，避免文本跨越依赖即时可见内容或会改写 GL/FBO 状态的边界。
 - `FontConfig.replaceOrigin=true` 会让原版 `FontRenderer` 在 SplashProgress 加载线程和客户端主线程都可能进入 UILib 字体管线；字体资源重载、shader/批渲染器重建与 `drawString` 必须在字体运行时锁下串行化，不能用“只允许主线程接管”规避 Splash 字体渲染。
 - SplashProgress 期间仍使用 UILib 自定义字体和批渲染路径；不要为非客户端主线程切换第二套 immediate 字体绘制路径。Splash 特例只保留运行时锁、Mixin 异常保护、Splash reload guard 和资源重载入口跳过。
