@@ -353,12 +353,23 @@ public final class UiDocument {
      * @return 匹配规则列表（按优先级升序）
      */
     public List<UiStyleRule> findMatchingRules(ElementNode element) {
+        return findMatchingRules(element, null);
+    }
+
+    /**
+     * 查找所有样式表中匹配指定元素的规则（考虑伪类状态），按优先级升序排列。
+     *
+     * @param element 目标元素
+     * @param activeStates 元素当前激活的伪类状态集合；为 null 时伪类选择器不匹配
+     * @return 匹配规则列表（按优先级升序）
+     */
+    public List<UiStyleRule> findMatchingRules(ElementNode element, java.util.Set<club.heiqi.uilib.ui.style.UiPseudoClass> activeStates) {
         if (element == null || styleSheets.isEmpty()) {
             return Collections.emptyList();
         }
         List<UiStyleRule> allMatched = new ArrayList<UiStyleRule>();
         for (UiStyleSheet sheet : styleSheets) {
-            allMatched.addAll(sheet.findMatchingRules(element));
+            allMatched.addAll(sheet.findMatchingRules(element, activeStates));
         }
         if (allMatched.size() > 1) {
             Collections.sort(allMatched, new java.util.Comparator<UiStyleRule>() {

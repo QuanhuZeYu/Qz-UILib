@@ -41,6 +41,24 @@ public final class UiStyleResolver {
     }
 
     /**
+     * 计算元素最终样式（含级联计算，考虑伪类状态）。
+     *
+     * <p>自动从元素所属文档的已挂载样式表中查找匹配规则（含伪类匹配），与 inline style 合并。</p>
+     *
+     * @param element 目标元素
+     * @param activeStates 元素当前激活的伪类状态集合；为 null 时伪类选择器不匹配
+     * @return 计算样式
+     */
+    public static ComputedStyle compute(ElementNode element, java.util.Set<UiPseudoClass> activeStates) {
+        if (element == null) {
+            throw new NullPointerException("element");
+        }
+        UiDocument document = element.getOwnerDocument();
+        List<UiStyleRule> matchingRules = document.findMatchingRules(element, activeStates);
+        return compute(element, computeParentStyle(element), matchingRules);
+    }
+
+    /**
      * 计算元素最终样式（使用指定的匹配规则列表）。
      *
      * <p>规则列表应按优先级升序排列（最后一个优先级最高）。</p>

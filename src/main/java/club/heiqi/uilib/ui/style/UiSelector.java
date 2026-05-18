@@ -27,19 +27,26 @@ public final class UiSelector {
     private final List<String> classNames;
     private final String id;
     private final boolean universal;
+    private final UiPseudoClass pseudoClass;
     private final int specificityId;
     private final int specificityClass;
     private final int specificityTag;
 
-    private UiSelector(String tagName, List<String> classNames, String id, boolean universal) {
+    private UiSelector(String tagName, List<String> classNames, String id, boolean universal, UiPseudoClass pseudoClass) {
         this.tagName = tagName;
         this.classNames = classNames == null ? Collections.<String>emptyList()
                 : Collections.unmodifiableList(new ArrayList<String>(classNames));
         this.id = id;
         this.universal = universal;
+        this.pseudoClass = pseudoClass;
         this.specificityId = id != null ? 1 : 0;
-        this.specificityClass = this.classNames.size();
+        // 伪类在 CSS 特异性中计入 class 级别
+        this.specificityClass = this.classNames.size() + (pseudoClass != null ? 1 : 0);
         this.specificityTag = (tagName != null && !universal) ? 1 : 0;
+    }
+
+    private UiSelector(String tagName, List<String> classNames, String id, boolean universal) {
+        this(tagName, classNames, id, universal, null);
     }
 
     /**
@@ -89,8 +96,9 @@ public final class UiSelector {
     /**
      * 从简易选择器字符串解析。
      *
-     * <p>支持格式：{@code tag.class1.class2#id}、{@code .class}、{@code #id}、{@code *}。
-     * 不支持后代/子代组合器、伪类和属性选择器。</p>
+     * <p>支持格式：{@code tag.class1.class2#id:pseudo}、{@code .class:hover}、{@code #id:focus}、{@code *}。
+     * 支持的伪类：{@code :hover}、{@code :focus}、{@code :focus-visible}、{@code :active}、{@code :disabled}。
+     * 不支持后代/子代组合器和属性选择器。</p>
      *
      * @param selectorText 选择器文本
      * @return 解析后的选择器
@@ -109,15 +117,16 @@ public final class UiSelector {
         String parsedTag = null;
         String parsedId = null;
         List<String> parsedClasses = new ArrayList<String>();
+        UiPseudoClass parsedPseudo = null;
 
-        // 简易解析器：逐字符扫描 tag、.class、#id 片段
+        // 简易解析器：逐字符扫描 tag、.class、#id、:pseudo 片段
         int i = 0;
         int len = text.length();
 
-        // 解析开头的 tag 部分（不以 . 或 # 开头的部分）
-        if (text.charAt(0) != '.' && text.charAt(0) != '#') {
+        // 解析开头的 tag 部分（不以 . 或 # 或 : 开头的部分）
+        if (text.charAt(0) != '.' && text.charAt(0) != '#' && text.charAt(0) != ':') {
             int start = 0;
-            while (i < len && text.charAt(i) != '.' && text.charAt(i) != '#') {
+            while (i < len && text.charAt(i) != '.' && text.charAt(i) != '#' && text.charAt(i) != ':') {
                 i++;
             }
             parsedTag = text.substring(start, i).toLowerCase(java.util.Locale.ROOT);
@@ -126,13 +135,13 @@ public final class UiSelector {
             }
         }
 
-        // 解析后续的 .class 和 #id 片段
+        // 解析后续的 .class、#id 和 :pseudo 片段
         while (i < len) {
             char ch = text.charAt(i);
             if (ch == '.') {
                 i++;
                 int start = i;
-                while (i < len && text.charAt(i) != '.' && text.charAt(i) != '#') {
+                while (i < len && text.charAt(i) != '.' && text.charAt(i) != '#' && text.charAt(i) != ':') {
                     i++;
                 }
                 String cls = text.substring(start, i);
@@ -143,7 +152,7 @@ public final class UiSelector {
             } else if (ch == '#') {
                 i++;
                 int start = i;
-                while (i < len && text.charAt(i) != '.' && text.charAt(i) != '#') {
+                while (i < len && text.charAt(i) != '.' && text.charAt(i) != '#' && text.charAt(i) != ':') {
                     i++;
                 }
                 String idValue = text.substring(start, i);
@@ -154,21 +163,75 @@ public final class UiSelector {
                     throw new IllegalArgumentException("Multiple IDs in selector: " + selectorText);
                 }
                 parsedId = idValue;
+            } else if (ch == ':') {
+                i++;
+                int start = i;
+                while (i < len && text.charAt(i) != '.' && text.charAt(i) != '#' && text.charAt(i) != ':') {
+                    i++;
+                }
+                String pseudoName = text.substring(start, i).toLowerCase(java.util.Locale.ROOT);
+                if (pseudoName.isEmpty()) {
+                    throw new IllegalArgumentException("Empty pseudo-class in selector: " + selectorText);
+                }
+                parsedPseudo = parsePseudoClass(pseudoName, selectorText);
             } else {
                 throw new IllegalArgumentException("Unexpected character '" + ch + "' in selector: " + selectorText);
             }
         }
 
-        return new UiSelector(parsedTag, parsedClasses.isEmpty() ? null : parsedClasses, parsedId, false);
+        return new UiSelector(parsedTag, parsedClasses.isEmpty() ? null : parsedClasses, parsedId, false, parsedPseudo);
     }
 
     /**
-     * 判断选择器是否匹配指定元素。
+     * 基于当前选择器创建带伪类条件的新选择器。
+     *
+     * @param pseudoClass 伪类条件
+     * @return 带伪类的新选择器
+     */
+    public UiSelector withPseudoClass(UiPseudoClass pseudoClass) {
+        return new UiSelector(tagName, classNames.isEmpty() ? null : new ArrayList<String>(classNames),
+                id, universal, pseudoClass);
+    }
+
+    /**
+     * 判断选择器是否匹配指定元素（不考虑伪类状态）。
+     *
+     * <p>含伪类条件的选择器在无状态信息时不匹配。</p>
      *
      * @param element 目标元素
      * @return 是否匹配
      */
     public boolean matches(ElementNode element) {
+        if (pseudoClass != null) {
+            // 含伪类条件但无状态信息时不匹配
+            return false;
+        }
+        return matchesStructure(element);
+    }
+
+    /**
+     * 判断选择器是否匹配指定元素（考虑伪类状态）。
+     *
+     * @param element 目标元素
+     * @param activeStates 元素当前激活的伪类状态集合；为 null 时等同于无状态
+     * @return 是否匹配
+     */
+    public boolean matches(ElementNode element, java.util.Set<UiPseudoClass> activeStates) {
+        if (!matchesStructure(element)) {
+            return false;
+        }
+        if (pseudoClass != null) {
+            if (activeStates == null || !activeStates.contains(pseudoClass)) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    /**
+     * 判断选择器的结构部分（tag/class/id）是否匹配元素，不检查伪类。
+     */
+    private boolean matchesStructure(ElementNode element) {
         if (element == null) {
             return false;
         }
@@ -274,10 +337,19 @@ public final class UiSelector {
         return universal;
     }
 
+    /**
+     * 返回伪类条件。
+     *
+     * @return 伪类；无伪类条件时返回 null
+     */
+    public UiPseudoClass getPseudoClass() {
+        return pseudoClass;
+    }
+
     @Override
     public String toString() {
         StringBuilder sb = new StringBuilder();
-        if (universal && tagName == null && id == null && classNames.isEmpty()) {
+        if (universal && tagName == null && id == null && classNames.isEmpty() && pseudoClass == null) {
             return "*";
         }
         if (tagName != null) {
@@ -288,6 +360,9 @@ public final class UiSelector {
         }
         for (String cls : classNames) {
             sb.append('.').append(cls);
+        }
+        if (pseudoClass != null) {
+            sb.append(':').append(pseudoClassToString(pseudoClass));
         }
         return sb.toString();
     }
@@ -300,7 +375,8 @@ public final class UiSelector {
         return universal == other.universal
                 && Objects.equals(tagName, other.tagName)
                 && Objects.equals(id, other.id)
-                && classNames.equals(other.classNames);
+                && classNames.equals(other.classNames)
+                && pseudoClass == other.pseudoClass;
     }
 
     @Override
@@ -309,6 +385,30 @@ public final class UiSelector {
         result = 31 * result + classNames.hashCode();
         result = 31 * result + (id != null ? id.hashCode() : 0);
         result = 31 * result + (universal ? 1 : 0);
+        result = 31 * result + (pseudoClass != null ? pseudoClass.hashCode() : 0);
         return result;
+    }
+
+    private static UiPseudoClass parsePseudoClass(String name, String selectorText) {
+        switch (name) {
+            case "hover": return UiPseudoClass.HOVER;
+            case "focus": return UiPseudoClass.FOCUS;
+            case "focus-visible": return UiPseudoClass.FOCUS_VISIBLE;
+            case "active": return UiPseudoClass.ACTIVE;
+            case "disabled": return UiPseudoClass.DISABLED;
+            default:
+                throw new IllegalArgumentException("Unknown pseudo-class ':" + name + "' in selector: " + selectorText);
+        }
+    }
+
+    private static String pseudoClassToString(UiPseudoClass pc) {
+        switch (pc) {
+            case HOVER: return "hover";
+            case FOCUS: return "focus";
+            case FOCUS_VISIBLE: return "focus-visible";
+            case ACTIVE: return "active";
+            case DISABLED: return "disabled";
+            default: return pc.name().toLowerCase(java.util.Locale.ROOT);
+        }
     }
 }
