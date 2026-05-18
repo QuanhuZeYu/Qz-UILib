@@ -4,6 +4,7 @@ import java.util.Objects;
 
 import club.heiqi.uilib.ui.dom.ElementNode;
 import club.heiqi.uilib.ui.layout.DocumentEffectType;
+import club.heiqi.uilib.ui.style.UiBorderRadiusResolver;
 import club.heiqi.uilib.ui.theme.UiSurfaceStyle;
 import club.heiqi.uilib.ui.text.TextContentMode;
 
@@ -25,6 +26,7 @@ public final class DocumentPaintCommand {
     private final int borderWidth;
     private final int borderRadius;
     private final int cornerMask;
+    private final UiBorderRadiusResolver.ResolvedCornerRadii cornerRadii;
     private final String text;
     private final TextContentMode textContentMode;
     private final DocumentCustomRenderer customRenderer;
@@ -88,7 +90,8 @@ public final class DocumentPaintCommand {
             DocumentCustomRenderer customRenderer, int backdropBlurRadius, float backdropSaturation,
             float paintContextOpacity,
             DocumentEffectType effectType) {
-        this(type, element, left, top, right, bottom, color, borderWidth, borderRadius, UiSurfaceStyle.CORNER_ALL,
+        this(type, element, left, top, right, bottom, color, borderWidth, borderRadius,
+                UiBorderRadiusResolver.ResolvedCornerRadii.uniform(Math.max(0, borderRadius)), UiSurfaceStyle.CORNER_ALL,
                 text, textContentMode, customRenderer, backdropBlurRadius, backdropSaturation, paintContextOpacity,
                 effectType);
     }
@@ -97,6 +100,17 @@ public final class DocumentPaintCommand {
             int color, int borderWidth, int borderRadius, int cornerMask, String text, TextContentMode textContentMode,
             DocumentCustomRenderer customRenderer, int backdropBlurRadius, float backdropSaturation,
             float paintContextOpacity, DocumentEffectType effectType) {
+        this(type, element, left, top, right, bottom, color, borderWidth, borderRadius,
+                UiBorderRadiusResolver.ResolvedCornerRadii.uniform(Math.max(0, borderRadius)), cornerMask, text,
+                textContentMode, customRenderer, backdropBlurRadius, backdropSaturation, paintContextOpacity,
+                effectType);
+    }
+
+    DocumentPaintCommand(DocumentPaintCommandType type, ElementNode element, int left, int top, int right, int bottom,
+            int color, int borderWidth, int borderRadius, UiBorderRadiusResolver.ResolvedCornerRadii cornerRadii,
+            int cornerMask, String text, TextContentMode textContentMode, DocumentCustomRenderer customRenderer,
+            int backdropBlurRadius, float backdropSaturation, float paintContextOpacity,
+            DocumentEffectType effectType) {
         this.type = Objects.requireNonNull(type, "type");
         this.effectType = resolveEffectType(this.type, effectType);
         this.element = Objects.requireNonNull(element, "element");
@@ -108,6 +122,8 @@ public final class DocumentPaintCommand {
         this.borderWidth = Math.max(0, borderWidth);
         this.borderRadius = Math.max(0, borderRadius);
         this.cornerMask = cornerMask & UiSurfaceStyle.CORNER_ALL;
+        this.cornerRadii = cornerRadii == null ? UiBorderRadiusResolver.ResolvedCornerRadii.uniform(this.borderRadius)
+                : cornerRadii;
         this.text = text == null ? "" : text;
         this.textContentMode = textContentMode == null ? TextContentMode.UILIB_RAW : textContentMode;
         this.customRenderer = customRenderer;
@@ -167,6 +183,15 @@ public final class DocumentPaintCommand {
 
     public int getBorderRadius() {
         return borderRadius;
+    }
+
+    /**
+     * 返回四角圆角值。
+     *
+     * @return 四角圆角；未设置时返回 null
+     */
+    public UiBorderRadiusResolver.ResolvedCornerRadii getCornerRadii() {
+        return cornerRadii;
     }
 
     /**

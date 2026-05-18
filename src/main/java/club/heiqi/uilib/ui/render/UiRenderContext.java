@@ -20,6 +20,7 @@ import club.heiqi.uilib.font.api.FontRendererAdapter;
 import club.heiqi.uilib.ui.image.HostImageRenderer;
 import club.heiqi.uilib.ui.image.HostImageSource;
 import club.heiqi.uilib.ui.runtime.UiRuntimeAdapters;
+import club.heiqi.uilib.ui.style.UiBorderRadiusResolver;
 import club.heiqi.uilib.ui.theme.UiSurfaceStyle;
 import club.heiqi.uilib.ui.text.TextContentMode;
 
@@ -89,11 +90,11 @@ public class UiRenderContext {
     private static final class ClipState {
 
         private final int[] clipRect;
-        private final int cornerRadius;
+        private final UiBorderRadiusResolver.ResolvedCornerRadii cornerRadii;
 
-        private ClipState(int[] clipRect, int cornerRadius) {
+        private ClipState(int[] clipRect, UiBorderRadiusResolver.ResolvedCornerRadii cornerRadii) {
             this.clipRect = clipRect;
-            this.cornerRadius = cornerRadius;
+            this.cornerRadii = cornerRadii;
         }
     }
 
@@ -277,14 +278,15 @@ public class UiRenderContext {
         private final int top;
         private final int right;
         private final int bottom;
-        private final int cornerRadius;
+        private final UiBorderRadiusResolver.ResolvedCornerRadii cornerRadii;
 
-        private RoundedClipRegion(int left, int top, int right, int bottom, int cornerRadius) {
+        private RoundedClipRegion(int left, int top, int right, int bottom,
+                UiBorderRadiusResolver.ResolvedCornerRadii cornerRadii) {
             this.left = left;
             this.top = top;
             this.right = right;
             this.bottom = bottom;
-            this.cornerRadius = cornerRadius;
+            this.cornerRadii = cornerRadii;
         }
 
         public int getLeft() {
@@ -303,8 +305,8 @@ public class UiRenderContext {
             return bottom;
         }
 
-        public int getCornerRadius() {
-            return cornerRadius;
+        public UiBorderRadiusResolver.ResolvedCornerRadii getCornerRadii() {
+            return cornerRadii;
         }
     }
 
@@ -616,22 +618,52 @@ public class UiRenderContext {
             return;
         }
 
-        int radius = clampCornerRadius(right - left, bottom - top, surfaceStyle.cornerRadius);
+        UiBorderRadiusResolver.ResolvedCornerRadii cornerRadii = resolveCornerRadii(surfaceStyle, right - left,
+                bottom - top);
         int cornerMask = surfaceStyle.cornerMask;
         if (surfaceStyle.fillColor != 0) {
-            if (radius <= 0 || cornerMask == 0) {
+            if (!hasAnyCornerRadius(cornerRadii) || cornerMask == 0) {
                 fillRect(left, top, right, bottom, surfaceStyle.fillColor);
             } else {
-                fillRoundedRect(left, top, right, bottom, radius, cornerMask, surfaceStyle.fillColor);
+                fillRoundedRect(left, top, right, bottom, cornerRadii, cornerMask, surfaceStyle.fillColor);
             }
         }
         if (surfaceStyle.borderColor != 0) {
-            if (radius <= 0 || cornerMask == 0) {
+            if (!hasAnyCornerRadius(cornerRadii) || cornerMask == 0) {
                 drawBorder(left, top, right, bottom, surfaceStyle.borderColor);
             } else {
-                drawRoundedBorder(left, top, right, bottom, radius, cornerMask, surfaceStyle.borderColor);
+                drawRoundedBorder(left, top, right, bottom, cornerRadii, cornerMask, surfaceStyle.borderColor);
             }
         }
+    }
+
+    /**
+     * 绘制带分角圆角的表面。
+     *
+     * @param left 左侧坐标
+     * @param top 顶部坐标
+     * @param right 右侧坐标
+     * @param bottom 底部坐标
+     * @param fillColor 填充颜色
+     * @param borderColor 边框颜色
+     * @param cornerRadii 四角圆角
+     */
+    public void drawSurface(int left, int top, int right, int bottom, int fillColor, int borderColor,
+            UiBorderRadiusResolver.ResolvedCornerRadii cornerRadii) {
+        drawSurface(left, top, right, bottom, new UiSurfaceStyle(fillColor, borderColor, cornerRadii));
+    }
+
+    private static UiBorderRadiusResolver.ResolvedCornerRadii resolveCornerRadii(UiSurfaceStyle surfaceStyle,
+            int width, int height) {
+        if (surfaceStyle == null) {
+            return UiBorderRadiusResolver.ResolvedCornerRadii.uniform(0);
+        }
+        return resolveCornerRadii(surfaceStyle.cornerRadii, width, height, surfaceStyle.cornerMask);
+    }
+
+    private static boolean hasAnyCornerRadius(UiBorderRadiusResolver.ResolvedCornerRadii cornerRadii) {
+        return cornerRadii != null && (cornerRadii.getTopLeft() > 0 || cornerRadii.getTopRight() > 0
+                || cornerRadii.getBottomRight() > 0 || cornerRadii.getBottomLeft() > 0);
     }
 
     /**
@@ -659,14 +691,40 @@ public class UiRenderContext {
             recordBackdropFilterPath(BackdropFilterRenderPath.NONE, "skipped");
             return;
         }
-        if (drawCurrentUiBackdropFilter(left, top, right, bottom, blurRadius, saturation, cornerRadius)) {
+        if (drawCurrentUiBackdropFilter(left, top, right, bottom, blurRadius, saturation,
+                UiBorderRadiusResolver.ResolvedCornerRadii.uniform(cornerRadius))) {
             return;
         }
-        drawBackdropFilterFallback(left, top, right, bottom, blurRadius, saturation, cornerRadius);
+        drawBackdropFilterFallback(left, top, right, bottom, blurRadius, saturation,
+                UiBorderRadiusResolver.ResolvedCornerRadii.uniform(cornerRadius));
+    }
+
+    /**
+     * 绘制带分角圆角的背后滤镜。
+     *
+     * @param left 左侧坐标
+     * @param top 顶部坐标
+     * @param right 右侧坐标
+     * @param bottom 底部坐标
+     * @param blurRadius 模糊半径
+     * @param saturation 饱和度
+     * @param cornerRadii 四角圆角
+     */
+    public void drawBackdropFilter(int left, int top, int right, int bottom, int blurRadius, float saturation,
+            UiBorderRadiusResolver.ResolvedCornerRadii cornerRadii) {
+        pendingBackdropFallbackDetail = null;
+        if (right <= left || bottom <= top || (blurRadius <= 0 && Float.compare(saturation, 1.0F) == 0)) {
+            recordBackdropFilterPath(BackdropFilterRenderPath.NONE, "skipped");
+            return;
+        }
+        if (drawCurrentUiBackdropFilter(left, top, right, bottom, blurRadius, saturation, cornerRadii)) {
+            return;
+        }
+        drawBackdropFilterFallback(left, top, right, bottom, blurRadius, saturation, cornerRadii);
     }
 
     private boolean drawCurrentUiBackdropFilter(int left, int top, int right, int bottom, int blurRadius,
-            float saturation, int cornerRadius) {
+            float saturation, UiBorderRadiusResolver.ResolvedCornerRadii cornerRadii) {
         UiMainLayerSnapshotService.SampleRegion sampleRegion = UiMainLayerSnapshotService.resolveSampleRegion(
                 screenWidth, screenHeight, left, top, right, bottom, blurRadius);
         if (sampleRegion == null) {
@@ -681,7 +739,7 @@ public class UiRenderContext {
             return false;
         }
 
-        pushClip(left, top, right, bottom, cornerRadius);
+        pushClip(left, top, right, bottom, cornerRadii);
         GL11.glPushAttrib(GL11.GL_ALL_ATTRIB_BITS);
         int previousProgram = GL11.glGetInteger(GL20.GL_CURRENT_PROGRAM);
         int previousActiveTexture = GL11.glGetInteger(GL13.GL_ACTIVE_TEXTURE);
@@ -784,6 +842,18 @@ public class UiRenderContext {
         int tintColor = tintAlpha << 24 | 0x00FFFFFF;
         int highlightColor = highlightAlpha << 24 | 0x00FFFFFF;
         drawSurface(left, top, right, bottom, new UiSurfaceStyle(tintColor, highlightColor, cornerRadius));
+    }
+
+    private void drawBackdropFilterFallback(int left, int top, int right, int bottom, int blurRadius, float saturation,
+            UiBorderRadiusResolver.ResolvedCornerRadii cornerRadii) {
+        recordBackdropFilterPath(BackdropFilterRenderPath.TINT_FALLBACK,
+                pendingBackdropFallbackDetail == null ? "texture-copy-unavailable" : pendingBackdropFallbackDetail);
+        int tintAlpha = clampInt(18 + Math.max(0, blurRadius) * 2 + Math.round(Math.max(0.0F,
+                saturation - 1.0F) * 16.0F), 18, 72);
+        int highlightAlpha = clampInt(tintAlpha + 22, 32, 96);
+        int tintColor = tintAlpha << 24 | 0x00FFFFFF;
+        int highlightColor = highlightAlpha << 24 | 0x00FFFFFF;
+        drawSurface(left, top, right, bottom, tintColor, highlightColor, cornerRadii);
     }
 
     /**
@@ -1036,6 +1106,20 @@ public class UiRenderContext {
      * @param cornerRadius 圆角半径；为 0 时退化为普通矩形裁剪
      */
     public void pushClip(int left, int top, int right, int bottom, int cornerRadius) {
+        pushClip(left, top, right, bottom, UiBorderRadiusResolver.ResolvedCornerRadii.uniform(cornerRadius));
+    }
+
+    /**
+     * 压入一个支持分角圆角的视觉裁剪区域。
+     *
+     * @param left 左侧坐标
+     * @param top 顶部坐标
+     * @param right 右侧坐标
+     * @param bottom 底部坐标
+     * @param cornerRadii 四角圆角
+     */
+    public void pushClip(int left, int top, int right, int bottom,
+            UiBorderRadiusResolver.ResolvedCornerRadii cornerRadii) {
         int clipLeft = Math.max(0, Math.min(left, right));
         int clipTop = Math.max(0, Math.min(top, bottom));
         int clipRight = Math.min(screenWidth, Math.max(left, right));
@@ -1057,7 +1141,7 @@ public class UiRenderContext {
         }
 
         clipStack.push(new ClipState(new int[] { clipLeft, clipTop, clipRight, clipBottom },
-                clampCornerRadius(clipRight - clipLeft, clipBottom - clipTop, cornerRadius)));
+                UiBorderRadiusResolver.scaleToFit(cornerRadii, clipRight - clipLeft, clipBottom - clipTop)));
         applyCurrentClip();
     }
 
@@ -1078,12 +1162,12 @@ public class UiRenderContext {
         Iterator<ClipState> iterator = clipStack.descendingIterator();
         while (iterator.hasNext()) {
             ClipState clipState = iterator.next();
-            if (clipState.cornerRadius <= 0) {
+            if (clipState.cornerRadii == null || clipState.cornerRadii.getUniformRadius() <= 0) {
                 continue;
             }
             int[] clipRect = clipState.clipRect;
             roundedClipRegions.add(new RoundedClipRegion(clipRect[0], clipRect[1], clipRect[2], clipRect[3],
-                    clipState.cornerRadius));
+                    clipState.cornerRadii));
         }
         return new ClipSnapshot(new int[] { clip[0], clip[1], clip[2], clip[3] },
                 Collections.unmodifiableList(roundedClipRegions));
@@ -1148,7 +1232,7 @@ public class UiRenderContext {
             GL11.glStencilOp(GL11.GL_KEEP, GL11.GL_KEEP, GL11.GL_INCR);
             RoundedClipRegion clipRegion = roundedClipRegions.get(index);
             drawRoundedRectGeometry(clipRegion.getLeft(), clipRegion.getTop(), clipRegion.getRight(),
-                    clipRegion.getBottom(), clipRegion.getCornerRadius(), true);
+                    clipRegion.getBottom(), clipRegion.getCornerRadii(), true, UiSurfaceStyle.CORNER_ALL);
         }
 
         GL11.glEnable(GL11.GL_TEXTURE_2D);
@@ -1159,19 +1243,21 @@ public class UiRenderContext {
         GL11.glStencilOp(GL11.GL_KEEP, GL11.GL_KEEP, GL11.GL_KEEP);
     }
 
-    private void fillRoundedRect(int left, int top, int right, int bottom, int radius, int cornerMask, int color) {
+    private void fillRoundedRect(int left, int top, int right, int bottom,
+            UiBorderRadiusResolver.ResolvedCornerRadii cornerRadii, int cornerMask, int color) {
         applyColor(color);
         GL11.glEnable(GL11.GL_BLEND);
         GL14.glBlendFuncSeparate(GL11.GL_SRC_ALPHA, GL11.GL_ONE_MINUS_SRC_ALPHA,
                 GL11.GL_ONE, GL11.GL_ONE_MINUS_SRC_ALPHA);
         GL11.glDisable(GL11.GL_TEXTURE_2D);
-        drawRoundedRectGeometry(left, top, right, bottom, radius, true, cornerMask);
+        drawRoundedRectGeometry(left, top, right, bottom, cornerRadii, true, cornerMask);
         GL11.glEnable(GL11.GL_TEXTURE_2D);
         GL11.glColor4f(1.0F, 1.0F, 1.0F, 1.0F);
         notifyMainLayerContentChanged();
     }
 
-    private void drawRoundedBorder(int left, int top, int right, int bottom, int radius, int cornerMask, int color) {
+    private void drawRoundedBorder(int left, int top, int right, int bottom,
+            UiBorderRadiusResolver.ResolvedCornerRadii cornerRadii, int cornerMask, int color) {
         applyColor(color);
         GL11.glEnable(GL11.GL_BLEND);
         GL14.glBlendFuncSeparate(GL11.GL_SRC_ALPHA, GL11.GL_ONE_MINUS_SRC_ALPHA,
@@ -1182,7 +1268,7 @@ public class UiRenderContext {
         // 线框边界若直接落在整数像素边缘，会让左/上侧描边有一半落在 clip 外，
         // 在真实运行时看起来像左侧边线被吞掉。这里统一把描边中心内缩到像素中心，
         // 让四条边都以同样的方式落在边框盒内部。
-        drawRoundedRectGeometry(left + 0.5F, top + 0.5F, right - 0.5F, bottom - 0.5F, radius, false,
+        drawRoundedRectGeometry(left + 0.5F, top + 0.5F, right - 0.5F, bottom - 0.5F, cornerRadii, false,
                 cornerMask);
         GL11.glEnd();
         GL11.glEnable(GL11.GL_TEXTURE_2D);
@@ -1194,10 +1280,69 @@ public class UiRenderContext {
         drawRoundedRectGeometry(left, top, right, bottom, radius, filled, UiSurfaceStyle.CORNER_ALL);
     }
 
+    private static void drawRoundedRectGeometry(int left, int top, int right, int bottom,
+            UiBorderRadiusResolver.ResolvedCornerRadii cornerRadii, boolean filled, int cornerMask) {
+        drawRoundedRectGeometry((float) left, (float) top, (float) right, (float) bottom, cornerRadii, filled,
+                cornerMask);
+    }
+
     private static void drawRoundedRectGeometry(int left, int top, int right, int bottom, int radius, boolean filled,
             int cornerMask) {
         drawRoundedRectGeometry((float) left, (float) top, (float) right, (float) bottom, (float) radius, filled,
                 cornerMask);
+    }
+
+    private static void drawRoundedRectGeometry(float left, float top, float right, float bottom,
+            UiBorderRadiusResolver.ResolvedCornerRadii cornerRadii, boolean filled, int cornerMask) {
+        UiBorderRadiusResolver.ResolvedCornerRadii resolvedCornerRadii = resolveCornerRadii(cornerRadii,
+                right - left, bottom - top, cornerMask);
+        float tl = resolvedCornerRadii.getTopLeft();
+        float tr = resolvedCornerRadii.getTopRight();
+        float br = resolvedCornerRadii.getBottomRight();
+        float bl = resolvedCornerRadii.getBottomLeft();
+        if (tl <= 0.0F && tr <= 0.0F && br <= 0.0F && bl <= 0.0F) {
+            if (filled) {
+                GL11.glBegin(GL11.GL_QUADS);
+                GL11.glVertex2f(right, bottom);
+                GL11.glVertex2f(right, top);
+                GL11.glVertex2f(left, top);
+                GL11.glVertex2f(left, bottom);
+                GL11.glEnd();
+            } else {
+                GL11.glVertex2f(left, bottom);
+                GL11.glVertex2f(left, top);
+                GL11.glVertex2f(right, top);
+                GL11.glVertex2f(right, bottom);
+            }
+            return;
+        }
+
+        float startX = left + Math.max(0.0F, tl);
+        float startY = top;
+        if (filled) {
+            GL11.glBegin(GL11.GL_TRIANGLE_FAN);
+            GL11.glVertex2f((left + right) / 2.0F, (top + bottom) / 2.0F);
+        }
+
+        // 上边
+        GL11.glVertex2f(startX, startY);
+        GL11.glVertex2f(right - tr, top);
+        emitCornerVertices(right, top, tr, cornerMask, UiSurfaceStyle.CORNER_TOP_RIGHT,
+                right - tr, top + tr, 270.0D, 360.0D);
+        GL11.glVertex2f(right, bottom - br);
+        emitCornerVertices(right, bottom, br, cornerMask, UiSurfaceStyle.CORNER_BOTTOM_RIGHT,
+                right - br, bottom - br, 0.0D, 90.0D);
+        GL11.glVertex2f(left + bl, bottom);
+        emitCornerVertices(left, bottom, bl, cornerMask, UiSurfaceStyle.CORNER_BOTTOM_LEFT,
+                left + bl, bottom - bl, 90.0D, 180.0D);
+        GL11.glVertex2f(left, top + tl);
+        emitCornerVertices(left, top, tl, cornerMask, UiSurfaceStyle.CORNER_TOP_LEFT,
+                left + tl, top + tl, 180.0D, 270.0D);
+
+        if (filled) {
+            GL11.glVertex2f(startX, startY);
+            GL11.glEnd();
+        }
     }
 
     private static void drawRoundedRectGeometry(float left, float top, float right, float bottom, float radius,
@@ -1221,15 +1366,26 @@ public class UiRenderContext {
             return;
         }
 
-        if (filled) {
-            GL11.glBegin(GL11.GL_TRIANGLE_FAN);
-            GL11.glVertex2f((left + right) / 2.0F, (top + bottom) / 2.0F);
+        drawRoundedRectGeometry(left, top, right, bottom,
+                UiBorderRadiusResolver.ResolvedCornerRadii.uniform(Math.round(resolvedRadius)), filled,
+                resolvedCornerMask);
+    }
+
+    private static UiBorderRadiusResolver.ResolvedCornerRadii resolveCornerRadii(
+            UiBorderRadiusResolver.ResolvedCornerRadii cornerRadii, float width, float height, int cornerMask) {
+        UiBorderRadiusResolver.ResolvedCornerRadii resolvedCornerRadii = UiBorderRadiusResolver.scaleToFit(
+                cornerRadii == null ? UiBorderRadiusResolver.ResolvedCornerRadii.uniform(0) : cornerRadii,
+                Math.round(width), Math.round(height));
+        if ((cornerMask & UiSurfaceStyle.CORNER_TOP_LEFT) == 0 && (cornerMask & UiSurfaceStyle.CORNER_TOP_RIGHT) == 0
+                && (cornerMask & UiSurfaceStyle.CORNER_BOTTOM_RIGHT) == 0
+                && (cornerMask & UiSurfaceStyle.CORNER_BOTTOM_LEFT) == 0) {
+            return UiBorderRadiusResolver.ResolvedCornerRadii.uniform(0);
         }
-        emitRoundedRectVertices(left, top, right, bottom, resolvedRadius, resolvedCornerMask);
-        if (filled) {
-            emitFirstRoundedRectVertex(left, top, resolvedRadius, resolvedCornerMask);
-            GL11.glEnd();
-        }
+        return UiBorderRadiusResolver.ResolvedCornerRadii.of(
+                (cornerMask & UiSurfaceStyle.CORNER_TOP_LEFT) == 0 ? 0 : resolvedCornerRadii.getTopLeft(),
+                (cornerMask & UiSurfaceStyle.CORNER_TOP_RIGHT) == 0 ? 0 : resolvedCornerRadii.getTopRight(),
+                (cornerMask & UiSurfaceStyle.CORNER_BOTTOM_RIGHT) == 0 ? 0 : resolvedCornerRadii.getBottomRight(),
+                (cornerMask & UiSurfaceStyle.CORNER_BOTTOM_LEFT) == 0 ? 0 : resolvedCornerRadii.getBottomLeft());
     }
 
     private static void emitRoundedRectVertices(float left, float top, float right, float bottom, float radius,

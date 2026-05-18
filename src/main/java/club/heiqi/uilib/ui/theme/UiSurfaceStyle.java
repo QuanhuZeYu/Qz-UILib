@@ -1,5 +1,7 @@
 package club.heiqi.uilib.ui.theme;
 
+import club.heiqi.uilib.ui.style.UiBorderRadiusResolver;
+
 /**
  * 通用表面样式。
  *
@@ -20,19 +22,45 @@ public final class UiSurfaceStyle {
     public final int borderColor;
     public final int cornerRadius;
     public final int cornerMask;
+    public final UiBorderRadiusResolver.ResolvedCornerRadii cornerRadii;
 
     public UiSurfaceStyle(int fillColor, int borderColor) {
         this(fillColor, borderColor, 0);
     }
 
     public UiSurfaceStyle(int fillColor, int borderColor, int cornerRadius) {
-        this(fillColor, borderColor, cornerRadius, CORNER_ALL);
+        this(fillColor, borderColor, UiBorderRadiusResolver.ResolvedCornerRadii.uniform(cornerRadius));
     }
 
     public UiSurfaceStyle(int fillColor, int borderColor, int cornerRadius, int cornerMask) {
+        this(fillColor, borderColor, UiBorderRadiusResolver.ResolvedCornerRadii.uniform(cornerRadius), cornerMask);
+    }
+
+    /**
+     * 创建支持分角圆角的表面样式。
+     *
+     * @param fillColor 填充颜色
+     * @param borderColor 边框颜色
+     * @param cornerRadii 四角圆角
+     */
+    public UiSurfaceStyle(int fillColor, int borderColor, UiBorderRadiusResolver.ResolvedCornerRadii cornerRadii) {
+        this(fillColor, borderColor, cornerRadii, CORNER_ALL);
+    }
+
+    /**
+     * 创建支持分角圆角和指定角位掩码的表面样式。
+     *
+     * @param fillColor 填充颜色
+     * @param borderColor 边框颜色
+     * @param cornerRadii 四角圆角
+     * @param cornerMask 角位掩码
+     */
+    public UiSurfaceStyle(int fillColor, int borderColor, UiBorderRadiusResolver.ResolvedCornerRadii cornerRadii,
+            int cornerMask) {
         this.fillColor = fillColor;
         this.borderColor = borderColor;
-        this.cornerRadius = Math.max(0, cornerRadius);
+        this.cornerRadii = cornerRadii == null ? UiBorderRadiusResolver.ResolvedCornerRadii.uniform(0) : cornerRadii;
+        this.cornerRadius = this.cornerRadii.isUniform() ? this.cornerRadii.getUniformRadius() : 0;
         this.cornerMask = cornerMask & CORNER_ALL;
     }
 

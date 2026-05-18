@@ -45,7 +45,7 @@
 - `position:absolute` 的 containing block 锚点按更接近浏览器的 positioned ancestor padding box 处理；relative 定位中 `top/bottom:%` 按 containing block 高度解析，不再按元素自身高度解析。
 - 样式系统新增属性：`line-height`（auto=跟随字体）、`text-align`（START/CENTER/END，可继承）、`white-space`（NORMAL/NOWRAP）、`text-overflow`（CLIP/ELLIPSIS，配合 NOWRAP 生效）、`visibility`（VISIBLE/HIDDEN，可继承，HIDDEN 保留布局空间但不绘制不命中）、`min-width`/`max-width`/`min-height`/`max-height`（约束布局尺寸）、`flex-basis`（主轴初始尺寸，auto 退回 width/height）、`align-self`（覆盖父容器 align-items，AUTO=跟随父）、`flex-wrap`（NOWRAP/WRAP）。
 - `justify-content` 已支持 SPACE_AROUND 和 SPACE_EVENLY；`align-items` 已支持 BASELINE（暂按 START 处理）；`overflow` 已支持 SCROLL（始终显示滚动条）。
-- `border-radius` 现在参与命中测试（圆角外侧不命中）；`visibility:hidden` 同时跳过绘制和命中测试。
+- `border-radius` 现在参与命中测试（圆角外侧不命中）；`visibility:hidden` 同时跳过绘制和命中测试；非等值分角圆角已进入 `UiRenderContext` 表面绘制、clip/backdrop-filter 与命中测试链路。
 - flex item 的 `margin:auto` 会吸收主轴/交叉轴剩余空间；flex shrink 权重已修正为使用 flex-basis。
 - `flex-wrap:wrap` 已支持多行换行布局（row 方向）。
 - 事件系统新增独立 `mousedown`/`mouseup` DOM 事件（`DocumentElementMouseDownHandler`/`DocumentElementMouseUpHandler`）；hover 父子切换时父元素不再收到多余 leave；新增 `focusin` 冒泡事件（`DocumentElementFocusInHandler`）。
@@ -53,7 +53,7 @@
 - 样式系统已支持 CSS-like 选择器和样式表级联：`ElementNode` 提供 `className`/`classList`（`DomTokenList`）和 `id` 便捷方法；`UiSelector` 支持 tag/class/id/通配符/复合选择器及特异性计算；`UiStyleSheet` 容器通过 `UiDocument.addStyleSheet(...)` 挂载；`UiStyleResolver` 按 inline > id > class > tag 特异性级联计算所有属性。
 - `UiSelector` 已支持伪类条件（`:hover`/`:focus`/`:focus-visible`/`:active`/`:disabled`）；伪类在特异性中计入 class 级别；`UiStyleResolver.compute(element, activeStates)` 接受 `Set<UiPseudoClass>` 进行状态感知样式计算。
 - `UiDocument` 提供标准 DOM 查询：`getElementById(id)`、`querySelector(selectorText)`、`querySelectorAll(selectorText)`、`getElementsByTagName(tagName)`、`getElementsByClassName(className)`，均按深度优先遍历并复用 `UiSelector` 匹配。
-- 样式系统新增视觉增强属性：`box-shadow`、`border-style`、`cursor`、`border-radius` 分角、`text-decoration`、`pointer-events`、`outline` 均已进入级联计算；当前运行时只接入 `text-decoration` 绘制、`pointer-events:none` 命中穿透，以及统一圆角或四角等值圆角的绘制/命中，`box-shadow`、`outline`、虚线/点线/双线边框、分边 border 与非等值分角圆角仍不应作为已生效能力展示。
+- 样式系统新增视觉增强属性：`box-shadow`、`border-style`、`cursor`、`border-radius` 分角、`text-decoration`、`pointer-events`、`outline` 均已进入级联计算；当前运行时已接通 `text-decoration` 绘制、`pointer-events:none` 命中穿透、分角圆角绘制/clip/backdrop-filter/命中测试，以及 `box-shadow`、`outline`、虚线/点线/双线边框的基础绘制链路。
 - `UiStyleVariables` 提供命名颜色/长度/字符串变量容器，挂载在 `UiDocument` 上作为文档级变量作用域；变量值变更会触发布局失效，但当前不支持 CSS `var(...)` 声明级自动解析，页面若要响应主题变量变化仍需读取变量并回写样式。
 - `aspect-ratio` 已在高度 auto 且宽度可解析的普通盒布局中推导内容高度；普通 `img` 绘制阶段已支持 `object-fit` 的 fill/contain/cover/none/scale-down。
 - 诊断页与示例页只展示已接入运行时并有最小验证的能力；仅完成级联解析、值类型承载或手动同步的能力必须明确写成边界，不得包装成浏览器语义已完整支持。

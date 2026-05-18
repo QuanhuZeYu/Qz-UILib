@@ -7,7 +7,16 @@ import java.util.Objects;
 
 import club.heiqi.uilib.font.FontService;
 import club.heiqi.uilib.ui.layout.DocumentEffectType;
+import club.heiqi.uilib.ui.layout.DocumentLayoutEdges;
 import club.heiqi.uilib.ui.render.UiRenderContext;
+import club.heiqi.uilib.ui.style.ComputedStyle;
+import club.heiqi.uilib.ui.style.UiBorderColors;
+import club.heiqi.uilib.ui.style.UiBorderRadiusResolver;
+import club.heiqi.uilib.ui.style.UiBorderStyle;
+import club.heiqi.uilib.ui.style.UiBoxShadow;
+import club.heiqi.uilib.ui.style.UiOutline;
+import club.heiqi.uilib.ui.style.UiStyleInsets;
+import club.heiqi.uilib.ui.style.UiStyleResolver;
 import club.heiqi.uilib.ui.theme.UiSurfaceStyle;
 
 /**
@@ -167,7 +176,7 @@ public final class DocumentPaintRenderer {
             context.drawSurface(command.getLeft() + offsetX, command.getTop() + offsetY,
                     command.getRight() + offsetX, command.getBottom() + offsetY,
                     new UiSurfaceStyle(applyOpacity(command.getColor(), replayState.fallbackOpacity), 0,
-                            command.getBorderRadius(), command.getCornerMask()));
+                            resolveCommandCornerRadii(command, true), command.getCornerMask()));
             return;
         }
         if (command.getType() == DocumentPaintCommandType.SCROLLBAR_TRACK
@@ -175,11 +184,20 @@ public final class DocumentPaintRenderer {
             context.drawSurface(command.getLeft() + offsetX, command.getTop() + offsetY,
                     command.getRight() + offsetX, command.getBottom() + offsetY,
                     new UiSurfaceStyle(applyOpacity(command.getColor(), replayState.fallbackOpacity), 0,
-                            command.getBorderRadius(), command.getCornerMask()));
+                            resolveCommandCornerRadii(command, false), command.getCornerMask()));
+            return;
+        }
+        if (command.getType() == DocumentPaintCommandType.BOX_SHADOW
+                || command.getType() == DocumentPaintCommandType.BOX_SHADOW_INSET) {
+            renderBoxShadow(context, command, offsetX, offsetY, replayState.fallbackOpacity);
             return;
         }
         if (command.getType() == DocumentPaintCommandType.BORDER) {
             renderBorder(context, command, offsetX, offsetY, replayState.fallbackOpacity);
+            return;
+        }
+        if (command.getType() == DocumentPaintCommandType.OUTLINE) {
+            renderOutline(context, command, offsetX, offsetY, replayState.fallbackOpacity);
             return;
         }
         if (command.getType() == DocumentPaintCommandType.TEXT_DECORATION) {
@@ -248,7 +266,8 @@ public final class DocumentPaintRenderer {
         }
         if (command.getEffectType() == DocumentEffectType.OVERFLOW_CLIP) {
             context.pushClip(command.getLeft() + offsetX, command.getTop() + offsetY,
-                    command.getRight() + offsetX, command.getBottom() + offsetY, command.getBorderRadius());
+                    command.getRight() + offsetX, command.getBottom() + offsetY,
+                    resolveCommandCornerRadii(command, true));
             replayState.pushClip();
         }
     }
@@ -260,23 +279,241 @@ public final class DocumentPaintRenderer {
         }
         context.drawBackdropFilter(command.getLeft() + offsetX, command.getTop() + offsetY,
                 command.getRight() + offsetX, command.getBottom() + offsetY,
-                command.getBackdropBlurRadius(), command.getBackdropSaturation(), command.getBorderRadius());
+                command.getBackdropBlurRadius(), command.getBackdropSaturation(),
+                resolveCommandCornerRadii(command, true));
         return true;
     }
 
     private static void renderBorder(UiRenderContext context, DocumentPaintCommand command, int offsetX, int offsetY,
             float fallbackOpacity) {
-        int maxBorderWidth = Math.min(command.getBorderWidth(), Math.min(command.getWidth(), command.getHeight()) / 2);
-        int borderColor = applyOpacity(command.getColor(), fallbackOpacity);
-        for (int offset = 0; offset < maxBorderWidth; offset++) {
-            int left = command.getLeft() + offset + offsetX;
-            int top = command.getTop() + offset + offsetY;
-            int right = command.getRight() - offset + offsetX;
-            int bottom = command.getBottom() - offset + offsetY;
-            int radius = Math.max(0, command.getBorderRadius() - offset);
-            context.drawSurface(left, top, right, bottom, new UiSurfaceStyle(0, borderColor, radius,
-                    command.getCornerMask()));
+        ComputedStyle style = UiStyleResolver.compute(command.getElement());
+        UiBorderStyle borderStyle = style.getBorderStyle() == UiBorderStyle.NONE ? UiBorderStyle.SOLID
+                : style.getBorderStyle();
+        if (borderStyle == UiBorderStyle.HIDDEN || borderStyle == UiBorderStyle.NONE) {
+            return;
         }
+        DocumentLayoutEdges widths = resolveBorderWidths(command, style);
+        int topColor = resolveBorderColor(style.getBorderColors(), command.getColor(), fallbackOpacity, 0);
+        int rightColor = resolveBorderColor(style.getBorderColors(), command.getColor(), fallbackOpacity, 1);
+        int bottomColor = resolveBorderColor(style.getBorderColors(), command.getColor(), fallbackOpacity, 2);
+        int leftColor = resolveBorderColor(style.getBorderColors(), command.getColor(), fallbackOpacity, 3);
+        UiBorderRadiusResolver.ResolvedCornerRadii cornerRadii = resolveCommandCornerRadii(command, true);
+        renderRing(context, command.getLeft() + offsetX, command.getTop() + offsetY, command.getRight() + offsetX,
+                command.getBottom() + offsetY, widths, topColor, rightColor, bottomColor, leftColor, borderStyle,
+                cornerRadii);
+    }
+
+    private static void renderOutline(UiRenderContext context, DocumentPaintCommand command, int offsetX, int offsetY,
+            float fallbackOpacity) {
+        ComputedStyle style = UiStyleResolver.compute(command.getElement());
+        UiOutline outline = style.getOutline();
+        if (outline == null || outline.isNone()) {
+            return;
+        }
+        UiBorderStyle outlineStyle = outline.getStyle() == UiBorderStyle.NONE ? UiBorderStyle.SOLID
+                : outline.getStyle();
+        int width = Math.max(0, outline.getWidth());
+        if (width <= 0) {
+            return;
+        }
+        int offset = Math.max(0, outline.getOffset());
+        DocumentLayoutEdges widths = DocumentLayoutEdges.of(width, width, width, width);
+        UiBorderRadiusResolver.ResolvedCornerRadii cornerRadii = resolveCommandCornerRadii(command, true)
+                .outset(width + offset);
+        int left = command.getLeft() + offsetX - width - offset;
+        int top = command.getTop() + offsetY - width - offset;
+        int right = command.getRight() + offsetX + width + offset;
+        int bottom = command.getBottom() + offsetY + width + offset;
+        int color = applyOpacity(outline.getColor(), fallbackOpacity);
+        renderRing(context, left, top, right, bottom, widths, color, color, color, color, outlineStyle, cornerRadii);
+    }
+
+    private static void renderBoxShadow(UiRenderContext context, DocumentPaintCommand command, int offsetX, int offsetY,
+            float fallbackOpacity) {
+        ComputedStyle style = UiStyleResolver.compute(command.getElement());
+        UiBoxShadow boxShadow = style.getBoxShadow();
+        if (boxShadow == null) {
+            return;
+        }
+        int color = applyOpacity(boxShadow.getColor(), fallbackOpacity);
+        int steps = Math.max(1, boxShadow.getBlurRadius());
+        UiBorderRadiusResolver.ResolvedCornerRadii baseRadii = resolveCommandCornerRadii(command, true);
+        if (!boxShadow.isInset()) {
+            for (int index = steps; index >= 0; index--) {
+                int expand = Math.max(0, boxShadow.getSpreadRadius()) + index;
+                int layerColor = fadeColor(color, index + 1, steps + 1);
+                context.drawSurface(command.getLeft() + offsetX + boxShadow.getOffsetX() - expand,
+                        command.getTop() + offsetY + boxShadow.getOffsetY() - expand,
+                        command.getRight() + offsetX + boxShadow.getOffsetX() + expand,
+                        command.getBottom() + offsetY + boxShadow.getOffsetY() + expand, layerColor, 0,
+                        baseRadii.outset(expand));
+            }
+            return;
+        }
+        context.pushClip(command.getLeft() + offsetX, command.getTop() + offsetY, command.getRight() + offsetX,
+                command.getBottom() + offsetY, baseRadii);
+        try {
+            for (int index = 0; index <= steps; index++) {
+                int inset = Math.max(0, boxShadow.getSpreadRadius()) + index;
+                int layerColor = fadeColor(color, steps - index + 1, steps + 1);
+                int left = command.getLeft() + offsetX + Math.max(0, -boxShadow.getOffsetX()) + inset;
+                int top = command.getTop() + offsetY + Math.max(0, -boxShadow.getOffsetY()) + inset;
+                int right = command.getRight() + offsetX - Math.max(0, boxShadow.getOffsetX()) - inset;
+                int bottom = command.getBottom() + offsetY - Math.max(0, boxShadow.getOffsetY()) - inset;
+                if (right <= left || bottom <= top) {
+                    break;
+                }
+                context.drawSurface(left, top, right, bottom, new UiSurfaceStyle(0, layerColor,
+                        Math.max(0, command.getBorderRadius() - inset)));
+            }
+        } finally {
+            context.popClip();
+        }
+    }
+
+    private static void renderRing(UiRenderContext context, int left, int top, int right, int bottom,
+            DocumentLayoutEdges widths, int topColor, int rightColor, int bottomColor, int leftColor,
+            UiBorderStyle borderStyle, UiBorderRadiusResolver.ResolvedCornerRadii cornerRadii) {
+        context.pushClip(left, top, right, bottom, cornerRadii);
+        try {
+            if (borderStyle == UiBorderStyle.DOUBLE) {
+                renderDoubleBorder(context, left, top, right, bottom, widths, topColor, rightColor, bottomColor,
+                        leftColor);
+                return;
+            }
+            if (borderStyle == UiBorderStyle.DASHED || borderStyle == UiBorderStyle.DOTTED) {
+                renderPatternBorder(context, left, top, right, bottom, widths, topColor, rightColor, bottomColor,
+                        leftColor, borderStyle == UiBorderStyle.DOTTED);
+                return;
+            }
+            renderSolidBorder(context, left, top, right, bottom, widths, topColor, rightColor, bottomColor,
+                    leftColor);
+        } finally {
+            context.popClip();
+        }
+    }
+
+    private static void renderSolidBorder(UiRenderContext context, int left, int top, int right, int bottom,
+            DocumentLayoutEdges widths, int topColor, int rightColor, int bottomColor, int leftColor) {
+        if (widths.getTop() > 0 && ((topColor >>> 24) & 0xFF) > 0) {
+            context.drawSurface(left, top, right, top + widths.getTop(), new UiSurfaceStyle(topColor, 0, 0));
+        }
+        if (widths.getRight() > 0 && ((rightColor >>> 24) & 0xFF) > 0) {
+            context.drawSurface(right - widths.getRight(), top, right, bottom, new UiSurfaceStyle(rightColor, 0, 0));
+        }
+        if (widths.getBottom() > 0 && ((bottomColor >>> 24) & 0xFF) > 0) {
+            context.drawSurface(left, bottom - widths.getBottom(), right, bottom,
+                    new UiSurfaceStyle(bottomColor, 0, 0));
+        }
+        if (widths.getLeft() > 0 && ((leftColor >>> 24) & 0xFF) > 0) {
+            context.drawSurface(left, top, left + widths.getLeft(), bottom, new UiSurfaceStyle(leftColor, 0, 0));
+        }
+    }
+
+    private static void renderDoubleBorder(UiRenderContext context, int left, int top, int right, int bottom,
+            DocumentLayoutEdges widths, int topColor, int rightColor, int bottomColor, int leftColor) {
+        int outerTop = Math.max(1, widths.getTop() / 3);
+        int outerRight = Math.max(1, widths.getRight() / 3);
+        int outerBottom = Math.max(1, widths.getBottom() / 3);
+        int outerLeft = Math.max(1, widths.getLeft() / 3);
+        DocumentLayoutEdges outer = DocumentLayoutEdges.of(outerTop, outerRight, outerBottom, outerLeft);
+        renderSolidBorder(context, left, top, right, bottom, outer, topColor, rightColor, bottomColor, leftColor);
+        int innerLeft = left + Math.max(0, widths.getLeft() - outerLeft);
+        int innerTop = top + Math.max(0, widths.getTop() - outerTop);
+        int innerRight = right - Math.max(0, widths.getRight() - outerRight);
+        int innerBottom = bottom - Math.max(0, widths.getBottom() - outerBottom);
+        renderSolidBorder(context, innerLeft, innerTop, innerRight, innerBottom, outer, topColor, rightColor,
+                bottomColor, leftColor);
+    }
+
+    private static void renderPatternBorder(UiRenderContext context, int left, int top, int right, int bottom,
+            DocumentLayoutEdges widths, int topColor, int rightColor, int bottomColor, int leftColor,
+            boolean dotted) {
+        renderHorizontalPattern(context, left, right, top, widths.getTop(), topColor, dotted, true);
+        renderHorizontalPattern(context, left, right, bottom - widths.getBottom(), widths.getBottom(), bottomColor,
+                dotted, false);
+        renderVerticalPattern(context, top, bottom, left, widths.getLeft(), leftColor, dotted, true);
+        renderVerticalPattern(context, top, bottom, right - widths.getRight(), widths.getRight(), rightColor, dotted,
+                false);
+    }
+
+    private static void renderHorizontalPattern(UiRenderContext context, int left, int right, int top, int height,
+            int color, boolean dotted, boolean isTop) {
+        if (height <= 0 || ((color >>> 24) & 0xFF) <= 0) {
+            return;
+        }
+        int unit = Math.max(1, dotted ? height : height * 3);
+        int gap = Math.max(1, dotted ? height : height * 2);
+        for (int cursor = left; cursor < right; cursor += unit + gap) {
+            int segmentRight = Math.min(right, cursor + unit);
+            context.drawSurface(cursor, top, segmentRight, top + height, new UiSurfaceStyle(color, 0, 0));
+        }
+    }
+
+    private static void renderVerticalPattern(UiRenderContext context, int top, int bottom, int left, int width,
+            int color, boolean dotted, boolean isLeft) {
+        if (width <= 0 || ((color >>> 24) & 0xFF) <= 0) {
+            return;
+        }
+        int unit = Math.max(1, dotted ? width : width * 3);
+        int gap = Math.max(1, dotted ? width : width * 2);
+        for (int cursor = top; cursor < bottom; cursor += unit + gap) {
+            int segmentBottom = Math.min(bottom, cursor + unit);
+            context.drawSurface(left, cursor, left + width, segmentBottom, new UiSurfaceStyle(color, 0, 0));
+        }
+    }
+
+    private static DocumentLayoutEdges resolveBorderWidths(DocumentPaintCommand command, ComputedStyle style) {
+        UiStyleInsets borderWidthSides = style.getBorderWidthSides();
+        if (borderWidthSides != null) {
+            return DocumentLayoutEdges.of(Math.max(0, borderWidthSides.getTop().resolve(command.getWidth(), 0)),
+                    Math.max(0, borderWidthSides.getRight().resolve(command.getWidth(), 0)),
+                    Math.max(0, borderWidthSides.getBottom().resolve(command.getWidth(), 0)),
+                    Math.max(0, borderWidthSides.getLeft().resolve(command.getWidth(), 0)));
+        }
+        int width = Math.max(0, command.getBorderWidth());
+        return DocumentLayoutEdges.of(width, width, width, width);
+    }
+
+    private static int resolveBorderColor(UiBorderColors borderColors, int fallbackColor, float fallbackOpacity,
+            int sideIndex) {
+        if (borderColors == null) {
+            return applyOpacity(fallbackColor, fallbackOpacity);
+        }
+        int color;
+        switch (sideIndex) {
+            case 0:
+                color = borderColors.getTop();
+                break;
+            case 1:
+                color = borderColors.getRight();
+                break;
+            case 2:
+                color = borderColors.getBottom();
+                break;
+            default:
+                color = borderColors.getLeft();
+                break;
+        }
+        return applyOpacity(color, fallbackOpacity);
+    }
+
+    private static UiBorderRadiusResolver.ResolvedCornerRadii resolveCommandCornerRadii(DocumentPaintCommand command,
+            boolean useElementStyle) {
+        if (command.getCornerRadii() != null) {
+            return command.getCornerRadii();
+        }
+        if (useElementStyle && command.getElement() != null) {
+            return UiBorderRadiusResolver.resolve(UiStyleResolver.compute(command.getElement()), command.getWidth(),
+                    command.getHeight());
+        }
+        return UiBorderRadiusResolver.ResolvedCornerRadii.uniform(command.getBorderRadius());
+    }
+
+    private static int fadeColor(int color, int numerator, int denominator) {
+        int alpha = (color >>> 24) & 0xFF;
+        int scaledAlpha = denominator <= 0 ? alpha : Math.max(0, Math.min(255, alpha * numerator / denominator));
+        return (scaledAlpha << 24) | (color & 0x00FFFFFF);
     }
 
     private static int applyOpacity(int color, float opacity) {

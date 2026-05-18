@@ -11,12 +11,17 @@ import club.heiqi.uilib.ui.dom.UiDocument;
 import club.heiqi.uilib.ui.layout.UiLayoutSpec;
 import club.heiqi.uilib.ui.layout.UiLength;
 import club.heiqi.uilib.ui.style.UiAlignItems;
+import club.heiqi.uilib.ui.style.UiBorderColors;
+import club.heiqi.uilib.ui.style.UiBorderRadius;
+import club.heiqi.uilib.ui.style.UiBorderStyle;
+import club.heiqi.uilib.ui.style.UiBoxShadow;
 import club.heiqi.uilib.ui.style.UiBoxSizing;
 import club.heiqi.uilib.ui.style.UiCursor;
 import club.heiqi.uilib.ui.style.UiDisplay;
 import club.heiqi.uilib.ui.style.UiFlexDirection;
 import club.heiqi.uilib.ui.style.UiFlexWrap;
 import club.heiqi.uilib.ui.style.UiObjectFit;
+import club.heiqi.uilib.ui.style.UiOutline;
 import club.heiqi.uilib.ui.style.UiOverflow;
 import club.heiqi.uilib.ui.style.UiPointerEvents;
 import club.heiqi.uilib.ui.style.UiPosition;
@@ -213,7 +218,7 @@ final class HtmlLikeBrowserSemanticsShowcaseDocumentPageController extends Docum
         title.append(heading);
         ElementNode summary = document.div();
         summary.style().setTextColor(0xFFAFC7F5);
-        summary.appendText("展示已接入运行时的 CSS 选择器、事件传播、DOM 查询、pointer-events、文本装饰、宽高比、object-fit 与变量容器能力；其余视觉增强属性仅保留级联解析，不作为已完成绘制能力展示。");
+        summary.appendText("展示已接入运行时的 CSS 选择器、事件传播、DOM 查询、pointer-events、文本装饰、box-shadow、outline、分边 border、分角圆角、宽高比、object-fit 与变量容器能力。");
         title.append(summary);
         root.append(title);
     }
@@ -487,15 +492,51 @@ final class HtmlLikeBrowserSemanticsShowcaseDocumentPageController extends Docum
     // ========== Border 控制展示 ==========
 
     private void appendBorderControlDemo(ElementNode root) {
-        ElementNode section = createSection(root, "5. 盒模型与尺寸语义");
+        ElementNode section = createSection(root, "5. 边框与视觉语义");
 
         ElementNode desc = document.div();
-        desc.appendText("对比默认 content-box 与 border-box：同样声明 width:160px 时，padding/border 是否计入最终边框盒宽度。");
+        desc.appendText("展示分边 border-width / border-color、分角圆角、outline 与 box-shadow 的运行时效果；下方仍保留 content-box 与 border-box 对比。");
         section.append(desc);
 
         ElementNode row = document.div();
         row.setClassName("demo-row");
         section.append(row);
+
+        ElementNode shadowCard = document.div();
+        shadowCard.setClassName("demo-box");
+        shadowCard.style()
+                .setPadding(UiStyleInsets.of(UiStyleLength.px(14), UiStyleLength.px(16), UiStyleLength.px(14),
+                        UiStyleLength.px(16)))
+                .setBackgroundColor(0xFF1E293B)
+                .setBorderRadiusCorners(UiBorderRadius.of(UiStyleLength.px(18), UiStyleLength.px(6),
+                        UiStyleLength.px(18), UiStyleLength.px(6)))
+                .setBoxShadow(UiBoxShadow.of(6, 8, 4, 2, 0x6638BDF8));
+        shadowCard.appendText("box-shadow + 分角圆角");
+        row.append(shadowCard);
+
+        ElementNode outlineCard = document.div();
+        outlineCard.setClassName("demo-box");
+        outlineCard.style()
+                .setBackgroundColor(0xFF111827)
+                .setBorderWidth(UiStyleLength.px(2))
+                .setBorderColor(0xFF334155)
+                .setBorderStyle(UiBorderStyle.DOUBLE)
+                .setOutline(UiOutline.of(2, 0xFF67E8F9, UiBorderStyle.DASHED, 2));
+        outlineCard.appendText("double border + dashed outline");
+        row.append(outlineCard);
+
+        ElementNode splitBorderCard = document.div();
+        splitBorderCard.setClassName("demo-box");
+        splitBorderCard.style()
+                .setBackgroundColor(0xFF0F172A)
+                .setBorderWidthSides(UiStyleInsets.of(UiStyleLength.px(1), UiStyleLength.px(4),
+                        UiStyleLength.px(7), UiStyleLength.px(2)))
+                .setBorderColors(UiBorderColors.of(0xFF38BDF8, 0xFFF97316, 0xFF22C55E, 0xFFE879F9))
+                .setBorderStyle(UiBorderStyle.SOLID)
+                .setBorderRadiusCorners(UiBorderRadius.of(UiStyleLength.px(12), UiStyleLength.px(20),
+                        UiStyleLength.px(4), UiStyleLength.px(16)));
+        splitBorderCard.appendText("分边 border-width / border-color");
+        row.append(splitBorderCard);
 
         ElementNode contentBox = document.div();
         contentBox.setClassName("demo-box");

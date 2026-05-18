@@ -9,6 +9,7 @@ import java.util.Objects;
 import club.heiqi.uilib.ui.dom.ElementNode;
 import club.heiqi.uilib.ui.style.ComputedStyle;
 import club.heiqi.uilib.ui.style.UiBorderRadius;
+import club.heiqi.uilib.ui.style.UiBorderRadiusResolver;
 import club.heiqi.uilib.ui.style.UiPointerEvents;
 import club.heiqi.uilib.ui.style.UiStyleResolver;
 import club.heiqi.uilib.ui.style.UiVisibility;
@@ -45,10 +46,10 @@ public final class DocumentHitTestEngine {
         int boxOffsetX = baseOffsetX + box.getPositionOffsetX();
         int boxOffsetY = baseOffsetY + box.getPositionOffsetY();
         // #26 修复：border-radius 参与命中测试
-        int borderRadius = resolveBorderRadius(box);
+        UiBorderRadiusResolver.ResolvedCornerRadii borderRadii = resolveBorderRadii(box);
         boolean insideBorderBox = containsInRoundedRect(documentX, documentY,
                 box.getLeft() + boxOffsetX, box.getTop() + boxOffsetY,
-                box.getRight() + boxOffsetX, box.getBottom() + boxOffsetY, borderRadius);
+                box.getRight() + boxOffsetX, box.getBottom() + boxOffsetY, borderRadii);
         if (canHitTestChildren(box, documentX, documentY, boxOffsetX, boxOffsetY)) {
             int childOffsetX = boxOffsetX - getScrollLeft(scrollState, box);
             int childOffsetY = boxOffsetY - getScrollTop(scrollState, box);
@@ -244,42 +245,41 @@ public final class DocumentHitTestEngine {
      * <p>当 borderRadius > 0 时，对四个角落进行圆弧判断；其余区域仍按矩形处理。</p>
      */
     private static boolean containsInRoundedRect(int x, int y, int left, int top, int right, int bottom,
-            int borderRadius) {
+            UiBorderRadiusResolver.ResolvedCornerRadii borderRadii) {
         if (!containsInRect(x, y, left, top, right, bottom)) {
             return false;
         }
-        if (borderRadius <= 0) {
+        if (borderRadii == null) {
             return true;
         }
-        int r = Math.min(borderRadius, Math.min((right - left) / 2, (bottom - top) / 2));
-        if (r <= 0) {
+        int topLeftRadius = Math.max(0, borderRadii.getTopLeft());
+        int topRightRadius = Math.max(0, borderRadii.getTopRight());
+        int bottomRightRadius = Math.max(0, borderRadii.getBottomRight());
+        int bottomLeftRadius = Math.max(0, borderRadii.getBottomLeft());
+        if (topLeftRadius <= 0 && topRightRadius <= 0 && bottomRightRadius <= 0 && bottomLeftRadius <= 0) {
             return true;
         }
-        // 检查四个圆角区域
-        int cx, cy;
-        // 左上角
-        cx = left + r;
-        cy = top + r;
-        if (x < cx && y < cy) {
-            return isInsideCircle(x, y, cx, cy, r);
+        int cx;
+        int cy;
+        cx = left + topLeftRadius;
+        cy = top + topLeftRadius;
+        if (topLeftRadius > 0 && x < cx && y < cy) {
+            return isInsideCircle(x, y, cx, cy, topLeftRadius);
         }
-        // 右上角
-        cx = right - r;
-        cy = top + r;
-        if (x >= cx && y < cy) {
-            return isInsideCircle(x, y, cx, cy, r);
+        cx = right - topRightRadius;
+        cy = top + topRightRadius;
+        if (topRightRadius > 0 && x >= cx && y < cy) {
+            return isInsideCircle(x, y, cx, cy, topRightRadius);
         }
-        // 左下角
-        cx = left + r;
-        cy = bottom - r;
-        if (x < cx && y >= cy) {
-            return isInsideCircle(x, y, cx, cy, r);
+        cx = right - bottomRightRadius;
+        cy = bottom - bottomRightRadius;
+        if (bottomRightRadius > 0 && x >= cx && y >= cy) {
+            return isInsideCircle(x, y, cx, cy, bottomRightRadius);
         }
-        // 右下角
-        cx = right - r;
-        cy = bottom - r;
-        if (x >= cx && y >= cy) {
-            return isInsideCircle(x, y, cx, cy, r);
+        cx = left + bottomLeftRadius;
+        cy = bottom - bottomLeftRadius;
+        if (bottomLeftRadius > 0 && x < cx && y >= cy) {
+            return isInsideCircle(x, y, cx, cy, bottomLeftRadius);
         }
         return true;
     }
@@ -293,16 +293,11 @@ public final class DocumentHitTestEngine {
     /**
      * 从布局盒的 computed style 解析 border-radius 像素值（已限制上限）。
      */
-    private static int resolveBorderRadius(DocumentLayoutBox box) {
-        int limit = Math.min(box.getWidth(), box.getHeight());
-        if (limit <= 0) {
-            return 0;
+    private static UiBorderRadiusResolver.ResolvedCornerRadii resolveBorderRadii(DocumentLayoutBox box) {
+        if (box.getWidth() <= 0 || box.getHeight() <= 0) {
+            return UiBorderRadiusResolver.ResolvedCornerRadii.uniform(0);
         }
-        UiBorderRadius corners = box.getComputedStyle().getBorderRadiusCorners();
-        int radius = corners != null && corners.isUniform()
-                ? corners.getUniformRadius().resolve(limit, 0)
-                : box.getComputedStyle().getBorderRadius().resolve(limit, 0);
-        return Math.max(0, Math.min(radius, limit / 2));
+        return UiBorderRadiusResolver.resolve(box.getComputedStyle(), box.getWidth(), box.getHeight());
     }
 
     /**

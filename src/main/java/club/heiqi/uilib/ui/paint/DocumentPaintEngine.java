@@ -10,6 +10,7 @@ import club.heiqi.uilib.ui.dom.ElementNode;
 import club.heiqi.uilib.ui.layout.DocumentEffectChain;
 import club.heiqi.uilib.ui.layout.DocumentEffectType;
 import club.heiqi.uilib.ui.layout.DocumentLayoutBox;
+import club.heiqi.uilib.ui.layout.DocumentLayoutEdges;
 import club.heiqi.uilib.ui.layout.DocumentLayoutInlineFragment;
 import club.heiqi.uilib.ui.layout.DocumentLayoutTextRun;
 import club.heiqi.uilib.ui.layout.DocumentScrollState;
@@ -17,12 +18,17 @@ import club.heiqi.uilib.ui.layout.DocumentScrollState.ScrollbarMetrics;
 import club.heiqi.uilib.ui.layout.DocumentStackingPhase;
 import club.heiqi.uilib.ui.style.ComputedStyle;
 import club.heiqi.uilib.ui.style.UiBorderRadius;
+import club.heiqi.uilib.ui.style.UiBorderRadiusResolver;
+import club.heiqi.uilib.ui.style.UiBoxShadow;
 import club.heiqi.uilib.ui.style.UiBorderStyle;
+import club.heiqi.uilib.ui.style.UiOutline;
 import club.heiqi.uilib.ui.style.UiOverflow;
+import club.heiqi.uilib.ui.style.UiStyleInsets;
 import club.heiqi.uilib.ui.style.UiStyleResolver;
 import club.heiqi.uilib.ui.style.UiTextDecoration;
 import club.heiqi.uilib.ui.style.UiVisibility;
 import club.heiqi.uilib.ui.theme.UiSurfaceStyle;
+import club.heiqi.uilib.ui.text.TextContentMode;
 
 /**
  * HTML-like 绘制命令生成器。
@@ -114,9 +120,13 @@ public final class DocumentPaintEngine {
         }
         appendBackdropFilterCommand(box, commands, animationTimeline, currentTimeNanos, effectChain, boxOffsetX,
                 boxOffsetY);
+        appendBoxShadowCommand(box, commands, animationTimeline, currentTimeNanos, boxOpacity, boxOffsetX,
+                boxOffsetY, false);
         appendBackgroundCommand(box, commands, animationTimeline, currentTimeNanos, boxOpacity, boxOffsetX,
                 boxOffsetY);
         appendBorderCommand(box, commands, animationTimeline, currentTimeNanos, boxOpacity, boxOffsetX, boxOffsetY);
+        appendBoxShadowCommand(box, commands, animationTimeline, currentTimeNanos, boxOpacity, boxOffsetX,
+                boxOffsetY, true);
         boolean clipChildren = effectChain.clipsChildren();
         if (clipChildren) {
             appendClipStartCommand(box, commands, animationTimeline, currentTimeNanos, effectChain, boxOffsetX,
@@ -152,6 +162,7 @@ public final class DocumentPaintEngine {
         }
         appendScrollbarCommands(rootBox, box, commands, scrollState, boxOffsetX, boxOffsetY, currentTimeNanos,
                 boxOpacity);
+        appendOutlineCommand(box, commands, animationTimeline, currentTimeNanos, boxOpacity, boxOffsetX, boxOffsetY);
         if (paintContext) {
             appendPaintContextEndCommand(box, commands, boxOffsetX, boxOffsetY);
         }
@@ -244,8 +255,7 @@ public final class DocumentPaintEngine {
         }
         commands.add(new DocumentPaintCommand(DocumentPaintCommandType.BACKGROUND, box.getElement(),
                 box.getLeft() + offsetX, box.getTop() + offsetY, box.getRight() + offsetX,
-                box.getBottom() + offsetY, color, 0, resolveBorderRadius(box, animationTimeline,
-                        currentTimeNanos)));
+                box.getBottom() + offsetY, color, 0, 0, null, null, 0, 1.0F, 1.0F, null));
     }
 
     private static void appendBackdropFilterCommand(DocumentLayoutBox box, List<DocumentPaintCommand> commands,
@@ -262,8 +272,8 @@ public final class DocumentPaintEngine {
         }
         commands.add(new DocumentPaintCommand(DocumentPaintCommandType.BACKDROP_FILTER, box.getElement(),
                 box.getLeft() + offsetX, box.getTop() + offsetY, box.getRight() + offsetX,
-                box.getBottom() + offsetY, 0, 0, resolveBorderRadius(box, animationTimeline, currentTimeNanos),
-                null, null, blurRadius, saturation, 1.0F, DocumentEffectType.BACKDROP_FILTER));
+                box.getBottom() + offsetY, 0, 0, 0, null, null, blurRadius, saturation, 1.0F,
+                DocumentEffectType.BACKDROP_FILTER));
     }
 
     private static void appendBorderCommand(DocumentLayoutBox box, List<DocumentPaintCommand> commands,
@@ -273,17 +283,47 @@ public final class DocumentPaintEngine {
         if (style.getBorderStyle() == UiBorderStyle.HIDDEN || box.getWidth() <= 0 || box.getHeight() <= 0) {
             return;
         }
-        int radius = resolveBorderRadius(box, animationTimeline, currentTimeNanos);
-        int borderWidth = box.getBorder().getTop();
+        DocumentLayoutEdges borderWidths = box.getBorder();
+        UiBorderRadiusResolver.ResolvedCornerRadii cornerRadii = resolveBorderRadii(box, animationTimeline,
+                currentTimeNanos);
         int color = resolveAnimatedColor(animationTimeline, box, DocumentAnimationProperty.BORDER_COLOR,
                 style.getBorderColor(), currentTimeNanos);
         color = applyOpacity(color, opacity);
-        if (isTransparent(color) || borderWidth <= 0) {
+        if (isTransparent(color) || borderWidths.getTop() <= 0 && borderWidths.getRight() <= 0
+                && borderWidths.getBottom() <= 0 && borderWidths.getLeft() <= 0) {
             return;
         }
         commands.add(new DocumentPaintCommand(DocumentPaintCommandType.BORDER, box.getElement(),
                 box.getLeft() + offsetX, box.getTop() + offsetY, box.getRight() + offsetX,
-                box.getBottom() + offsetY, color, borderWidth, radius));
+                box.getBottom() + offsetY, color, borderWidths.getTop(), box.getComputedStyle().getBorderRadius().resolve(
+                        Math.min(box.getWidth(), box.getHeight()), 0)));
+    }
+
+    private static void appendBoxShadowCommand(DocumentLayoutBox box, List<DocumentPaintCommand> commands,
+            DocumentAnimationTimeline animationTimeline, long currentTimeNanos, float opacity, int offsetX,
+            int offsetY, boolean inset) {
+        UiBoxShadow boxShadow = box.getComputedStyle().getBoxShadow();
+        if (boxShadow == null || boxShadow.getColor() == 0 || boxShadow.isInset() != inset) {
+            return;
+        }
+        commands.add(new DocumentPaintCommand(
+                inset ? DocumentPaintCommandType.BOX_SHADOW_INSET : DocumentPaintCommandType.BOX_SHADOW,
+                box.getElement(), box.getLeft() + offsetX, box.getTop() + offsetY,
+                box.getRight() + offsetX, box.getBottom() + offsetY, applyOpacity(boxShadow.getColor(), opacity), 0,
+                box.getComputedStyle().getBorderRadius().resolve(Math.min(box.getWidth(), box.getHeight()), 0)));
+    }
+
+    private static void appendOutlineCommand(DocumentLayoutBox box, List<DocumentPaintCommand> commands,
+            DocumentAnimationTimeline animationTimeline, long currentTimeNanos, float opacity, int offsetX,
+            int offsetY) {
+        UiOutline outline = box.getComputedStyle().getOutline();
+        if (outline == null || outline.isNone()) {
+            return;
+        }
+        commands.add(new DocumentPaintCommand(DocumentPaintCommandType.OUTLINE, box.getElement(),
+                box.getLeft() + offsetX, box.getTop() + offsetY, box.getRight() + offsetX,
+                box.getBottom() + offsetY, applyOpacity(outline.getColor(), opacity), outline.getWidth(),
+                box.getComputedStyle().getBorderRadius().resolve(Math.min(box.getWidth(), box.getHeight()), 0)));
     }
 
     private static void appendCustomCommand(DocumentLayoutBox box, List<DocumentPaintCommand> commands, int offsetX,
@@ -364,7 +404,7 @@ public final class DocumentPaintEngine {
                 commands.add(new DocumentPaintCommand(DocumentPaintCommandType.BACKGROUND, ownerElement,
                         inlineFragment.getLeft() + offsetX, inlineFragment.getTop() + offsetY,
                         inlineFragment.getRight() + offsetX, inlineFragment.getBottom() + offsetY, backgroundColor, 0,
-                        radius, cornerMask, null, null, 0, 1.0F, 1.0F, null));
+                        radius, null));
             }
             int borderWidth = Math.max(0, ownerStyle.getBorderWidth().resolve(inlineFragment.getWidth(), 0));
             int borderColor = resolveAnimatedColor(animationTimeline, ownerElement, DocumentAnimationProperty.BORDER_COLOR,
@@ -375,7 +415,7 @@ public final class DocumentPaintEngine {
                 commands.add(new DocumentPaintCommand(DocumentPaintCommandType.BORDER, ownerElement,
                         inlineFragment.getLeft() + offsetX, inlineFragment.getTop() + offsetY,
                         inlineFragment.getRight() + offsetX, inlineFragment.getBottom() + offsetY, borderColor,
-                        borderWidth, radius, cornerMask, null, null, 0, 1.0F, 1.0F, null));
+                        borderWidth, radius));
             }
         }
     }
@@ -397,9 +437,7 @@ public final class DocumentPaintEngine {
     }
 
     private static int resolveInlineFragmentBorderRadius(ComputedStyle style, int width, int height) {
-        int limit = Math.min(width, height);
-        int radius = style.getBorderRadius().resolve(limit, 0);
-        return Math.max(0, Math.min(radius, limit / 2));
+        return UiBorderRadiusResolver.resolve(style, width, height).getUniformRadius();
     }
 
     private static int resolveTextRunColor(DocumentLayoutTextRun textRun, DocumentAnimationTimeline animationTimeline,
@@ -533,24 +571,38 @@ public final class DocumentPaintEngine {
                 thumbColor, 0, radius));
     }
 
-    private static int resolveBorderRadius(DocumentLayoutBox box, DocumentAnimationTimeline animationTimeline,
+    private static UiBorderRadiusResolver.ResolvedCornerRadii resolveBorderRadii(DocumentLayoutBox box,
+            DocumentAnimationTimeline animationTimeline,
             long currentTimeNanos) {
-        int radius = resolveStaticBorderRadius(box);
+        UiBorderRadiusResolver.ResolvedCornerRadii radii = resolveStaticBorderRadii(box);
         if (animationTimeline != null) {
-            radius = Math.round(animationTimeline.resolveFloat(box.getElement(), DocumentAnimationProperty.BORDER_RADIUS,
-                    radius, currentTimeNanos));
+            int radius = Math.round(animationTimeline.resolveFloat(box.getElement(), DocumentAnimationProperty.BORDER_RADIUS,
+                    radii.getUniformRadius(), currentTimeNanos));
+            radii = UiBorderRadiusResolver.ResolvedCornerRadii.uniform(radius);
         }
-        int limit = Math.min(box.getWidth(), box.getHeight());
-        return Math.max(0, Math.min(radius, limit / 2));
+        return radii;
     }
 
-    private static int resolveStaticBorderRadius(DocumentLayoutBox box) {
-        int limit = Math.min(box.getWidth(), box.getHeight());
+    private static int resolveBorderRadius(DocumentLayoutBox box, DocumentAnimationTimeline animationTimeline,
+            long currentTimeNanos) {
+        return resolveBorderRadii(box, animationTimeline, currentTimeNanos).getUniformRadius();
+    }
+
+    private static UiBorderRadiusResolver.ResolvedCornerRadii resolveStaticBorderRadii(DocumentLayoutBox box) {
         UiBorderRadius corners = box.getComputedStyle().getBorderRadiusCorners();
-        int radius = corners != null && corners.isUniform()
-                ? corners.getUniformRadius().resolve(limit, 0)
-                : box.getComputedStyle().getBorderRadius().resolve(limit, 0);
-        return Math.max(0, Math.min(radius, limit / 2));
+        if (corners != null) {
+            int limit = Math.min(box.getWidth(), box.getHeight());
+            return UiBorderRadiusResolver.ResolvedCornerRadii.of(corners.getTopLeft().resolve(limit, 0),
+                    corners.getTopRight().resolve(limit, 0), corners.getBottomRight().resolve(limit, 0),
+                    corners.getBottomLeft().resolve(limit, 0));
+        }
+        int radius = box.getComputedStyle().getBorderRadius().resolve(Math.min(box.getWidth(), box.getHeight()), 0);
+        return UiBorderRadiusResolver.ResolvedCornerRadii.uniform(radius);
+    }
+
+    private static UiStyleInsets resolveBorderWidthSides(ComputedStyle style) {
+        UiStyleInsets borderWidthSides = style.getBorderWidthSides();
+        return borderWidthSides == null ? UiStyleInsets.all(style.getBorderWidth()) : borderWidthSides;
     }
 
     private static int getScrollLeft(DocumentScrollState scrollState, DocumentLayoutBox box) {
