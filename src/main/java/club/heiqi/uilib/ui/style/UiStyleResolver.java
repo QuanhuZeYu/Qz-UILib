@@ -172,6 +172,12 @@ public final class UiStyleResolver {
         UiWordBreak wordBreak = cascadeWordBreak(inlineStyle, matchingRules, parentStyle);
         UiOverflowWrap overflowWrap = cascadeOverflowWrap(inlineStyle, matchingRules, parentStyle);
 
+        // aspect-ratio：不可继承
+        Float aspectRatio = cascadeAspectRatio(inlineStyle, matchingRules);
+
+        // object-fit：不可继承
+        UiObjectFit objectFit = cascadeObjectFit(inlineStyle, matchingRules);
+
         return new ComputedStyle(display, width, height, boxSizing, position, top, right, bottom, left, zIndex, margin,
                 padding, borderWidth, borderRadius, overflowX, overflowY, flexDirection, alignItems, justifyContent,
                 verticalAlign, rowGap, columnGap, flexGrow, flexShrink, opacity, backgroundColor, borderColor, textColor,
@@ -185,7 +191,8 @@ public final class UiStyleResolver {
                 boxShadow, borderStyle, cursor,
                 borderRadiusCorners, textDecoration, pointerEvents,
                 outline, borderWidthSides, borderColors,
-                letterSpacing, wordBreak, overflowWrap);
+                letterSpacing, wordBreak, overflowWrap,
+                aspectRatio, objectFit);
     }
 
     // ========== 级联属性解析方法 ==========
@@ -656,6 +663,24 @@ public final class UiStyleResolver {
             if (value != null) return value;
         }
         return parentStyle == null ? UiOverflowWrap.NORMAL : parentStyle.getOverflowWrap();
+    }
+
+    private static Float cascadeAspectRatio(UiStyleDeclaration inlineStyle, List<UiStyleRule> rules) {
+        if (inlineStyle.getAspectRatio() != null) return inlineStyle.getAspectRatio();
+        for (int i = rules.size() - 1; i >= 0; i--) {
+            Float value = rules.get(i).getDeclaration().getAspectRatio();
+            if (value != null) return value;
+        }
+        return null;
+    }
+
+    private static UiObjectFit cascadeObjectFit(UiStyleDeclaration inlineStyle, List<UiStyleRule> rules) {
+        if (inlineStyle.getObjectFit() != null) return inlineStyle.getObjectFit();
+        for (int i = rules.size() - 1; i >= 0; i--) {
+            UiObjectFit value = rules.get(i).getDeclaration().getObjectFit();
+            if (value != null) return value;
+        }
+        return UiObjectFit.FILL;
     }
 
     private static UiDisplay defaultDisplay(String tagName) {

@@ -79,6 +79,8 @@ public final class ComputedStyle {
     private final UiStyleLength letterSpacing;
     private final UiWordBreak wordBreak;
     private final UiOverflowWrap overflowWrap;
+    private final Float aspectRatio;
+    private final UiObjectFit objectFit;
 
     ComputedStyle(UiDisplay display, UiStyleLength width, UiStyleLength height, UiBoxSizing boxSizing,
             UiPosition position,
@@ -100,7 +102,8 @@ public final class ComputedStyle {
             UiBoxShadow boxShadow, UiBorderStyle borderStyle, UiCursor cursor,
             UiBorderRadius borderRadiusCorners, UiTextDecoration textDecoration, UiPointerEvents pointerEvents,
             UiOutline outline, UiStyleInsets borderWidthSides, UiBorderColors borderColors,
-            UiStyleLength letterSpacing, UiWordBreak wordBreak, UiOverflowWrap overflowWrap) {
+            UiStyleLength letterSpacing, UiWordBreak wordBreak, UiOverflowWrap overflowWrap,
+            Float aspectRatio, UiObjectFit objectFit) {
         this.display = Objects.requireNonNull(display, "display");
         this.width = Objects.requireNonNull(width, "width");
         this.height = Objects.requireNonNull(height, "height");
@@ -166,6 +169,8 @@ public final class ComputedStyle {
         this.letterSpacing = letterSpacing; // 可为 null（使用默认字间距）
         this.wordBreak = wordBreak == null ? UiWordBreak.NORMAL : wordBreak;
         this.overflowWrap = overflowWrap == null ? UiOverflowWrap.NORMAL : overflowWrap;
+        this.aspectRatio = aspectRatio; // 可为 null（无宽高比约束）
+        this.objectFit = objectFit == null ? UiObjectFit.FILL : objectFit;
     }
 
     public UiDisplay getDisplay() {
@@ -550,5 +555,23 @@ public final class ComputedStyle {
      */
     public UiOverflowWrap getOverflowWrap() {
         return overflowWrap;
+    }
+
+    /**
+     * 返回宽高比约束。
+     *
+     * @return 宽高比（width/height）；无约束时返回 null
+     */
+    public Float getAspectRatio() {
+        return aspectRatio;
+    }
+
+    /**
+     * 返回替换元素内容适配模式。
+     *
+     * @return 内容适配模式
+     */
+    public UiObjectFit getObjectFit() {
+        return objectFit;
     }
 }

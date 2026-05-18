@@ -86,6 +86,8 @@ public final class UiStyleDeclaration {
     private UiStyleLength letterSpacing;
     private UiWordBreak wordBreak;
     private UiOverflowWrap overflowWrap;
+    private Float aspectRatio;
+    private UiObjectFit objectFit;
 
     public UiStyleDeclaration() {
         this((UiStyleChangeListener) null);
@@ -1119,6 +1121,45 @@ public final class UiStyleDeclaration {
         return updateOverflowWrap(null);
     }
 
+    public Float getAspectRatio() {
+        return aspectRatio;
+    }
+
+    /**
+     * 设置宽高比约束。
+     *
+     * <p>值为 width/height 比率，例如 16.0f/9.0f 表示 16:9。
+     * 当元素只有一个维度确定时，另一个维度会按此比率自动计算。</p>
+     *
+     * @param aspectRatio 宽高比（width/height）
+     * @return 当前声明
+     */
+    public UiStyleDeclaration setAspectRatio(float aspectRatio) {
+        return updateAspectRatio(Float.valueOf(aspectRatio));
+    }
+
+    public UiStyleDeclaration clearAspectRatio() {
+        return updateAspectRatio(null);
+    }
+
+    public UiObjectFit getObjectFit() {
+        return objectFit;
+    }
+
+    /**
+     * 设置替换元素（如 img）的内容适配模式。
+     *
+     * @param objectFit 内容适配模式
+     * @return 当前声明
+     */
+    public UiStyleDeclaration setObjectFit(UiObjectFit objectFit) {
+        return updateObjectFit(Objects.requireNonNull(objectFit, "objectFit"));
+    }
+
+    public UiStyleDeclaration clearObjectFit() {
+        return updateObjectFit(null);
+    }
+
     private UiStyleDeclaration updateDisplay(UiDisplay value) {
         if (display != value) {
             display = value;
@@ -1630,6 +1671,22 @@ public final class UiStyleDeclaration {
         if (overflowWrap != value) {
             overflowWrap = value;
             recordLayoutChange();
+        }
+        return this;
+    }
+
+    private UiStyleDeclaration updateAspectRatio(Float value) {
+        if (!Objects.equals(aspectRatio, value)) {
+            aspectRatio = value;
+            recordLayoutChange();
+        }
+        return this;
+    }
+
+    private UiStyleDeclaration updateObjectFit(UiObjectFit value) {
+        if (objectFit != value) {
+            objectFit = value;
+            recordPaintChange();
         }
         return this;
     }
