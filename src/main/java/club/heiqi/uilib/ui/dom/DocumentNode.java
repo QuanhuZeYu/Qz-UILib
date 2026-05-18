@@ -127,6 +127,71 @@ public abstract class DocumentNode {
     }
 
     /**
+     * 在指定参考节点之前插入子节点。
+     *
+     * <p>等价于浏览器的 {@code parentNode.insertBefore(newChild, referenceChild)}。
+     * 如果 referenceChild 为 null，则等同于 appendChild。</p>
+     *
+     * @param newChild 待插入的新子节点
+     * @param referenceChild 参考节点；为 null 时追加到末尾
+     * @return 当前节点
+     */
+    public DocumentNode insertBefore(DocumentNode newChild, DocumentNode referenceChild) {
+        if (!allowsChildren()) {
+            throw new UnsupportedOperationException("This node type cannot contain children");
+        }
+        DocumentNode resolvedChild = Objects.requireNonNull(newChild, "newChild");
+        validateAppendChild(resolvedChild);
+
+        if (referenceChild == null) {
+            return appendChild(resolvedChild);
+        }
+        if (referenceChild.parent != this) {
+            throw new IllegalArgumentException("referenceChild is not a child of this node");
+        }
+
+        int index = children.indexOf(referenceChild);
+        if (resolvedChild.parent != null) {
+            resolvedChild.parent.children.remove(resolvedChild);
+        }
+        resolvedChild.parent = this;
+        children.add(index, resolvedChild);
+        ownerDocument.recordMutation();
+        return this;
+    }
+
+    /**
+     * 用新节点替换指定的旧子节点。
+     *
+     * <p>等价于浏览器的 {@code parentNode.replaceChild(newChild, oldChild)}。</p>
+     *
+     * @param newChild 新子节点
+     * @param oldChild 待替换的旧子节点
+     * @return 被替换的旧子节点
+     */
+    public DocumentNode replaceChild(DocumentNode newChild, DocumentNode oldChild) {
+        if (!allowsChildren()) {
+            throw new UnsupportedOperationException("This node type cannot contain children");
+        }
+        DocumentNode resolvedNew = Objects.requireNonNull(newChild, "newChild");
+        DocumentNode resolvedOld = Objects.requireNonNull(oldChild, "oldChild");
+        if (resolvedOld.parent != this) {
+            throw new IllegalArgumentException("oldChild is not a child of this node");
+        }
+        validateAppendChild(resolvedNew);
+
+        int index = children.indexOf(resolvedOld);
+        if (resolvedNew.parent != null) {
+            resolvedNew.parent.children.remove(resolvedNew);
+        }
+        resolvedOld.parent = null;
+        resolvedNew.parent = this;
+        children.set(index, resolvedNew);
+        ownerDocument.recordMutation();
+        return resolvedOld;
+    }
+
+    /**
      * 清空全部直接子节点。
      */
     public final void clearChildren() {
