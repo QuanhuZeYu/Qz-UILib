@@ -9,6 +9,7 @@ import java.util.Objects;
 import java.util.concurrent.atomic.AtomicLong;
 
 import club.heiqi.uilib.ui.animation.DocumentKeyframes;
+import club.heiqi.uilib.ui.style.UiSelector;
 import club.heiqi.uilib.ui.style.UiStyleRule;
 import club.heiqi.uilib.ui.style.UiStyleSheet;
 import club.heiqi.uilib.ui.text.TextContentMode;
@@ -368,6 +369,163 @@ public final class UiDocument {
             });
         }
         return allMatched;
+    }
+
+    // ========== DOM 查询 ==========
+
+    /**
+     * 按 id 属性查找元素。
+     *
+     * <p>等价于浏览器的 {@code document.getElementById(id)}。
+     * 遍历整棵文档树，返回第一个 id 属性匹配的元素。</p>
+     *
+     * @param id 目标 id 值
+     * @return 匹配的元素；未找到时返回 null
+     */
+    public ElementNode getElementById(String id) {
+        if (id == null || id.isEmpty()) {
+            return null;
+        }
+        return findElementById(rootElement, id);
+    }
+
+    /**
+     * 按选择器查找第一个匹配的元素。
+     *
+     * <p>等价于浏览器的 {@code document.querySelector(selector)}。
+     * 按深度优先顺序遍历文档树，返回第一个匹配的元素。</p>
+     *
+     * @param selectorText 选择器文本（如 ".my-class"、"div#id"、"button"）
+     * @return 第一个匹配的元素；未找到时返回 null
+     */
+    public ElementNode querySelector(String selectorText) {
+        if (selectorText == null || selectorText.isEmpty()) {
+            return null;
+        }
+        UiSelector selector = UiSelector.parse(selectorText);
+        return findFirstMatch(rootElement, selector);
+    }
+
+    /**
+     * 按选择器查找所有匹配的元素。
+     *
+     * <p>等价于浏览器的 {@code document.querySelectorAll(selector)}。
+     * 按深度优先顺序遍历文档树，返回所有匹配的元素。</p>
+     *
+     * @param selectorText 选择器文本
+     * @return 匹配的元素列表（按文档顺序）；无匹配时返回空列表
+     */
+    public List<ElementNode> querySelectorAll(String selectorText) {
+        if (selectorText == null || selectorText.isEmpty()) {
+            return Collections.emptyList();
+        }
+        UiSelector selector = UiSelector.parse(selectorText);
+        List<ElementNode> results = new ArrayList<ElementNode>();
+        collectMatches(rootElement, selector, results);
+        return results;
+    }
+
+    /**
+     * 按标签名查找所有匹配的元素。
+     *
+     * <p>等价于浏览器的 {@code document.getElementsByTagName(tagName)}。</p>
+     *
+     * @param tagName 标签名
+     * @return 匹配的元素列表（按文档顺序）
+     */
+    public List<ElementNode> getElementsByTagName(String tagName) {
+        if (tagName == null || tagName.isEmpty()) {
+            return Collections.emptyList();
+        }
+        String normalizedTag = tagName.trim().toLowerCase(java.util.Locale.ROOT);
+        List<ElementNode> results = new ArrayList<ElementNode>();
+        collectByTagName(rootElement, normalizedTag, results);
+        return results;
+    }
+
+    /**
+     * 按 class 名查找所有匹配的元素。
+     *
+     * <p>等价于浏览器的 {@code document.getElementsByClassName(className)}。</p>
+     *
+     * @param className 类名（单个类名，不含空格）
+     * @return 匹配的元素列表（按文档顺序）
+     */
+    public List<ElementNode> getElementsByClassName(String className) {
+        if (className == null || className.isEmpty()) {
+            return Collections.emptyList();
+        }
+        List<ElementNode> results = new ArrayList<ElementNode>();
+        collectByClassName(rootElement, className.trim(), results);
+        return results;
+    }
+
+    private static ElementNode findElementById(DocumentNode node, String id) {
+        if (node instanceof ElementNode) {
+            ElementNode element = (ElementNode) node;
+            if (id.equals(element.getId())) {
+                return element;
+            }
+        }
+        for (DocumentNode child : node.getChildren()) {
+            ElementNode found = findElementById(child, id);
+            if (found != null) {
+                return found;
+            }
+        }
+        return null;
+    }
+
+    private static ElementNode findFirstMatch(DocumentNode node, UiSelector selector) {
+        if (node instanceof ElementNode) {
+            ElementNode element = (ElementNode) node;
+            if (selector.matches(element)) {
+                return element;
+            }
+        }
+        for (DocumentNode child : node.getChildren()) {
+            ElementNode found = findFirstMatch(child, selector);
+            if (found != null) {
+                return found;
+            }
+        }
+        return null;
+    }
+
+    private static void collectMatches(DocumentNode node, UiSelector selector, List<ElementNode> results) {
+        if (node instanceof ElementNode) {
+            ElementNode element = (ElementNode) node;
+            if (selector.matches(element)) {
+                results.add(element);
+            }
+        }
+        for (DocumentNode child : node.getChildren()) {
+            collectMatches(child, selector, results);
+        }
+    }
+
+    private static void collectByTagName(DocumentNode node, String tagName, List<ElementNode> results) {
+        if (node instanceof ElementNode) {
+            ElementNode element = (ElementNode) node;
+            if (tagName.equals(element.getTagName())) {
+                results.add(element);
+            }
+        }
+        for (DocumentNode child : node.getChildren()) {
+            collectByTagName(child, tagName, results);
+        }
+    }
+
+    private static void collectByClassName(DocumentNode node, String className, List<ElementNode> results) {
+        if (node instanceof ElementNode) {
+            ElementNode element = (ElementNode) node;
+            if (element.getClassList().contains(className)) {
+                results.add(element);
+            }
+        }
+        for (DocumentNode child : node.getChildren()) {
+            collectByClassName(child, className, results);
+        }
     }
 
     /**
