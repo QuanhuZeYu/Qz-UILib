@@ -280,6 +280,7 @@ final class HtmlLikeSmokeDocumentPageController extends DocumentPageController {
         ElementNode backdropStage = document.div();
         backdropStage.style()
                 .setWidth(UiStyleLength.px(282))
+                .setPosition(UiPosition.RELATIVE)
                 .setPadding(UiStyleLength.px(8))
                 .setBackgroundColor(0xFF1A202C)
                 .setBorderColor(0xFF4FD1C5)
@@ -361,8 +362,8 @@ final class HtmlLikeSmokeDocumentPageController extends DocumentPageController {
         glassCard.style()
                 .setWidth(UiStyleLength.px(188))
                 .setHeight(UiStyleLength.px(66))
-                .setPosition(UiPosition.RELATIVE)
-                .setTop(UiStyleLength.px(-58))
+                .setPosition(UiPosition.ABSOLUTE)
+                .setTop(UiStyleLength.px(34))
                 .setLeft(UiStyleLength.px(28))
                 .setZIndex(1)
                 .setPadding(UiStyleLength.px(8))

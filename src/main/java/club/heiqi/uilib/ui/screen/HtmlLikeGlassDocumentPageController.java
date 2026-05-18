@@ -154,6 +154,12 @@ final class HtmlLikeGlassDocumentPageController extends DocumentPageController {
                 .setOverflowY(UiOverflow.HIDDEN);
         stage.append(samplingField);
 
+        ElementNode glassOverlayHost = document.div();
+        glassOverlayHost.style()
+                .setPosition(UiPosition.RELATIVE)
+                .setHeight(UiStyleLength.px(0));
+        samplingField.append(glassOverlayHost);
+
         appendSampleRow(document, samplingField, 0xFFEC4899, 0xFF38BDF8, 0xFFFBBF24,
                 "UI layer sampling field / magenta + cyan + amber");
         appendSampleRow(document, samplingField, 0xFF22C55E, 0xFFA855F7, 0xFFF97316,
@@ -167,10 +173,9 @@ final class HtmlLikeGlassDocumentPageController extends DocumentPageController {
         glassSlab.style()
                 .setWidth(UiStyleLength.percent(0.86F))
                 .setHeight(UiStyleLength.px(260))
-                .setPosition(UiPosition.RELATIVE)
-                .setTop(UiStyleLength.px(-316))
+                .setPosition(UiPosition.ABSOLUTE)
+                .setTop(UiStyleLength.px(20))
                 .setLeft(UiStyleLength.percent(0.07F))
-                .setZIndex(1)
                 .setPadding(UiStyleLength.px(16))
                 .setBackgroundColor(0x44FFFFFF)
                 .setBorderColor(0xDDFFFFFF)
@@ -185,7 +190,7 @@ final class HtmlLikeGlassDocumentPageController extends DocumentPageController {
         glassSlab.appendText("Large backdrop slab: blur 36px / saturate 125%");
         glassSlab.appendText("This slab intentionally covers most of the sampling field so visual regressions are easy to see.");
         glassSlab.appendText("Element text remains sharp; only previously painted UI behind this element is sampled.");
-        samplingField.append(glassSlab);
+        glassOverlayHost.append(glassSlab);
 
         appendNestedGlassRegressionScene(document, stage);
         appendTileAtlasProbeScene(document, stage);
@@ -219,6 +224,7 @@ final class HtmlLikeGlassDocumentPageController extends DocumentPageController {
         ElementNode nestedCanvas = document.div();
         nestedCanvas.style()
                 .setHeight(UiStyleLength.px(286))
+                .setPosition(UiPosition.RELATIVE)
                 .setMargin(UiStyleInsets.of(UiStyleLength.px(10), UiStyleLength.px(0), UiStyleLength.px(0),
                         UiStyleLength.px(0)))
                 .setOverflowX(UiOverflow.HIDDEN)
@@ -235,10 +241,11 @@ final class HtmlLikeGlassDocumentPageController extends DocumentPageController {
         ElementNode outerGlass = createGlassBlock(document, 0x36FFFFFF, 0xCCFFFFFF, 18, 120,
                 "Outer glass shell", "Nested level 1 / backdrop #2");
         outerGlass.style()
+                .setPosition(UiPosition.ABSOLUTE)
                 .setWidth(UiStyleLength.percent(0.78F))
                 .setHeight(UiStyleLength.px(212))
-                .setMargin(UiStyleInsets.of(UiStyleLength.px(-196), UiStyleLength.px(0), UiStyleLength.px(0),
-                        UiStyleLength.px(28)));
+                .setTop(UiStyleLength.px(56))
+                .setLeft(UiStyleLength.px(28));
         nestedCanvas.append(outerGlass);
 
         ElementNode outerLevelGlass = createGlassBlock(document, 0x40D946EF, 0xCCF5D0FE, 12, 116,
@@ -280,10 +287,11 @@ final class HtmlLikeGlassDocumentPageController extends DocumentPageController {
         ElementNode sceneLevelGlass = createGlassBlock(document, 0x40F9A8D4, 0xCCFCE7F3, 12, 114,
                 "Scene level glass", "Direct canvas sibling / additional backdrop");
         sceneLevelGlass.style()
+                .setPosition(UiPosition.ABSOLUTE)
                 .setWidth(UiStyleLength.percent(0.34F))
                 .setHeight(UiStyleLength.px(58))
-                .setMargin(UiStyleInsets.of(UiStyleLength.px(-250), UiStyleLength.px(0), UiStyleLength.px(0),
-                        UiStyleLength.percent(0.58F)));
+                .setTop(UiStyleLength.px(18))
+                .setLeft(UiStyleLength.percent(0.58F));
         nestedCanvas.append(sceneLevelGlass);
     }
 
@@ -316,6 +324,7 @@ final class HtmlLikeGlassDocumentPageController extends DocumentPageController {
         ElementNode probeCanvas = document.div();
         probeCanvas.style()
                 .setHeight(UiStyleLength.px(238))
+                .setPosition(UiPosition.RELATIVE)
                 .setMargin(UiStyleInsets.of(UiStyleLength.px(10), UiStyleLength.px(0), UiStyleLength.px(0),
                         UiStyleLength.px(0)))
                 .setOverflowX(UiOverflow.HIDDEN)
@@ -330,28 +339,31 @@ final class HtmlLikeGlassDocumentPageController extends DocumentPageController {
         ElementNode sourceGlass = createGlassBlock(document, 0x34FFFFFF, 0xCCBAE6FD, 18, 120,
                 "Atlas source slab", "Large source block for tile coverage");
         sourceGlass.style()
+                .setPosition(UiPosition.ABSOLUTE)
                 .setWidth(UiStyleLength.percent(0.62F))
                 .setHeight(UiStyleLength.px(116))
-                .setMargin(UiStyleInsets.of(UiStyleLength.px(-154), UiStyleLength.px(0), UiStyleLength.px(0),
-                        UiStyleLength.px(24)));
+                .setTop(UiStyleLength.px(14))
+                .setLeft(UiStyleLength.px(24));
         probeCanvas.append(sourceGlass);
 
         ElementNode coveredTargetGlass = createGlassBlock(document, 0x40C4B5FD, 0xCCEDE9FE, 18, 120,
                 "Atlas target inside source", "Stable rev may show atlas-block128 or tile-atlas-block128");
         coveredTargetGlass.style()
+                .setPosition(UiPosition.ABSOLUTE)
                 .setWidth(UiStyleLength.percent(0.32F))
                 .setHeight(UiStyleLength.px(58))
-                .setMargin(UiStyleInsets.of(UiStyleLength.px(-96), UiStyleLength.px(0), UiStyleLength.px(0),
-                        UiStyleLength.percent(0.22F)));
+                .setTop(UiStyleLength.px(34))
+                .setLeft(UiStyleLength.percent(0.22F));
         probeCanvas.append(coveredTargetGlass);
 
         ElementNode tileCountTargetGlass = createGlassBlock(document, 0x40BAE6FD, 0xCCE0F2FE, 36, 125,
                 "Tile count target", "Local path line updates with tiles=... and downsample filter");
         tileCountTargetGlass.style()
+                .setPosition(UiPosition.ABSOLUTE)
                 .setWidth(UiStyleLength.percent(0.38F))
                 .setHeight(UiStyleLength.px(64))
-                .setMargin(UiStyleInsets.of(UiStyleLength.px(-64), UiStyleLength.px(0), UiStyleLength.px(0),
-                        UiStyleLength.percent(0.56F)));
+                .setTop(UiStyleLength.px(28))
+                .setLeft(UiStyleLength.percent(0.56F));
         probeCanvas.append(tileCountTargetGlass);
     }
 

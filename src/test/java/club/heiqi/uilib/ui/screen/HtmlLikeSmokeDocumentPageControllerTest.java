@@ -30,6 +30,7 @@ import club.heiqi.uilib.ui.render.UiRenderContext;
 import club.heiqi.uilib.ui.runtime.UiRuntimeAdapters;
 import club.heiqi.uilib.ui.style.UiBorderRadiusResolver;
 import club.heiqi.uilib.ui.style.UiBorderStyle;
+import club.heiqi.uilib.ui.style.UiPosition;
 import club.heiqi.uilib.ui.style.UiStyleInsets;
 import club.heiqi.uilib.ui.style.UiStyleLength;
 import club.heiqi.uilib.ui.text.TextMeasureService;
@@ -57,7 +58,8 @@ public class HtmlLikeSmokeDocumentPageControllerTest {
         Assert.assertSame(blocks.get(0), fixture.controller.getHtmlLikeDocumentWidget());
         Assert.assertTrue(fixture.controller.getHtmlLikeDocumentWidget().isViewportRootScrollingEnabled());
 
-        List<String> texts = collectDocumentTexts(fixture.controller.getHtmlLikeDocumentWidget());
+        HtmlLikeDocumentWidget widget = fixture.controller.getHtmlLikeDocumentWidget();
+        List<String> texts = collectDocumentTexts(widget);
         Assert.assertTrue(containsText(texts, "HTML-like Smoke Lab"));
         Assert.assertTrue(containsText(texts, "UiDocument -> style -> layout -> paint command -> UiRenderContext"));
         Assert.assertTrue(containsText(texts, "FIXED viewport"));
@@ -98,6 +100,11 @@ public class HtmlLikeSmokeDocumentPageControllerTest {
         Assert.assertTrue(containsText(texts, "Stacking context probe: blue cover must stay above red z-99 child"));
         Assert.assertTrue(containsText(texts, "red child z=99"));
         Assert.assertTrue(containsText(texts, "blue sibling z=1 should win"));
+
+        ElementNode glassCard = findElementContainingDirectText(widget, "Backdrop glass transition: click blur 4/22px");
+        Assert.assertNotNull(glassCard);
+        Assert.assertEquals(UiPosition.ABSOLUTE, glassCard.style().getPosition());
+        Assert.assertEquals(UiPosition.RELATIVE, ((ElementNode) glassCard.getParent()).style().getPosition());
     }
 
     /**

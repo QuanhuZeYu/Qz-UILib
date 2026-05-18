@@ -15,6 +15,7 @@ import club.heiqi.uilib.ui.dom.TextNode;
 import club.heiqi.uilib.ui.render.UiRenderContext;
 import club.heiqi.uilib.ui.runtime.UiRuntimeAdapters;
 import club.heiqi.uilib.ui.style.UiBorderRadiusResolver;
+import club.heiqi.uilib.ui.style.UiPosition;
 import club.heiqi.uilib.ui.text.TextMeasureService;
 import club.heiqi.uilib.ui.theme.UiSurfaceStyle;
 import club.heiqi.uilib.ui.widget.Widget;
@@ -42,7 +43,8 @@ public class HtmlLikeGlassDocumentPageControllerTest {
         Assert.assertEquals(3, fixture.controller.getHtmlLikeDocumentWidget().getDocument()
                 .getRootElement().getChildren().size());
 
-        List<String> texts = collectDocumentTexts(fixture.controller.getHtmlLikeDocumentWidget());
+        HtmlLikeDocumentWidget widget = fixture.controller.getHtmlLikeDocumentWidget();
+        List<String> texts = collectDocumentTexts(widget);
         Assert.assertTrue(containsText(texts, "HTML-like Glass Lab"));
         Assert.assertTrue(containsText(texts, "Backdrop path: pending"));
         Assert.assertTrue(containsText(texts, "UI layer sampling field"));
@@ -57,6 +59,26 @@ public class HtmlLikeGlassDocumentPageControllerTest {
         Assert.assertTrue(containsText(texts, "Tile count target"));
         Assert.assertTrue(containsText(texts, "Tile probe Backdrop path: pending"));
         Assert.assertTrue(containsText(texts, "visual regressions are easy to see"));
+
+        ElementNode glassSlab = findElementContainingDirectText(widget.getDocument().getRootElement(),
+                "Large backdrop slab: blur 36px / saturate 125%");
+        Assert.assertNotNull(glassSlab);
+        Assert.assertEquals(UiPosition.ABSOLUTE, glassSlab.style().getPosition());
+
+        ElementNode outerGlass = findElementContainingDirectText(widget.getDocument().getRootElement(),
+                "Outer glass shell");
+        Assert.assertNotNull(outerGlass);
+        Assert.assertEquals(UiPosition.ABSOLUTE, outerGlass.style().getPosition());
+
+        ElementNode sceneLevelGlass = findElementContainingDirectText(widget.getDocument().getRootElement(),
+                "Scene level glass");
+        Assert.assertNotNull(sceneLevelGlass);
+        Assert.assertEquals(UiPosition.ABSOLUTE, sceneLevelGlass.style().getPosition());
+
+        ElementNode sourceGlass = findElementContainingDirectText(widget.getDocument().getRootElement(),
+                "Atlas source slab");
+        Assert.assertNotNull(sourceGlass);
+        Assert.assertEquals(UiPosition.ABSOLUTE, sourceGlass.style().getPosition());
     }
 
     /**
@@ -114,6 +136,11 @@ public class HtmlLikeGlassDocumentPageControllerTest {
         Assert.assertTrue(containsTextCall(renderContext.textCalls, "tiles=N covered=M missing=K reused=R copied=C"));
         Assert.assertTrue(containsTextCall(renderContext.textCalls, "Tile probe Backdrop path"));
         Assert.assertTrue(containsTextCall(renderContext.textCalls, "Local path line updates with tiles="));
+
+        ElementNode glassSlab = findElementContainingDirectText(widget.getDocument().getRootElement(),
+                "Large backdrop slab: blur 36px / saturate 125%");
+        Assert.assertNotNull(glassSlab);
+        Assert.assertEquals(UiPosition.ABSOLUTE, glassSlab.style().getPosition());
     }
 
     private static List<String> collectDocumentTexts(HtmlLikeDocumentWidget widget) {
@@ -156,6 +183,26 @@ public class HtmlLikeGlassDocumentPageControllerTest {
             }
         }
         return false;
+    }
+
+    private static ElementNode findElementContainingDirectText(ElementNode element, String expectedText) {
+        if (element == null) {
+            return null;
+        }
+        for (DocumentNode child : element.getChildren()) {
+            if (child.getNodeType() == DocumentNodeType.TEXT) {
+                String text = ((TextNode) child).getText();
+                if (text != null && text.contains(expectedText)) {
+                    return element;
+                }
+            } else if (child.getNodeType() == DocumentNodeType.ELEMENT) {
+                ElementNode found = findElementContainingDirectText((ElementNode) child, expectedText);
+                if (found != null) {
+                    return found;
+                }
+            }
+        }
+        return null;
     }
 
     private static void assertBackdropCall(BackdropCall backdropCall, int blurRadius, float saturation) {

@@ -43,6 +43,7 @@
 - `flex-direction:column` 固定高度容器下，普通 `height:auto` 且 `overflow-y:visible` 的直接 flex item 会按接近浏览器 `min-height:auto` 的语义以自然内容高度作为收缩下限；若 item 自身声明 `overflow-y:auto` 或非 visible 裁切语义，则允许压缩并由自身滚动/裁切承接内容。
 - HTML-like 布局默认按浏览器 content-box 心智处理 `width:100%`：子项自身 padding/border 会叠加到 border box 并可能溢出父内容盒；若业务需要把 padding/border 收进指定宽度，应显式声明 `box-sizing:border-box`（Java API 为 `setBoxSizing(UiBoxSizing.BORDER_BOX)`）。
 - `position:absolute` 的 containing block 锚点按更接近浏览器的 positioned ancestor padding box 处理；relative 定位中 `top/bottom:%` 按 containing block 高度解析，不再按元素自身高度解析。
+- 需要做玻璃卡片、浮层或测试页叠压展示时，优先在 `position:relative` 的父容器内用 `position:absolute` 子层声明覆盖关系；不要再把负 `top` / 负 `margin` 作为通用叠压手段。
 - 样式系统新增属性：`line-height`（auto=跟随字体）、`text-align`（START/CENTER/END，可继承）、`white-space`（NORMAL/NOWRAP）、`text-overflow`（CLIP/ELLIPSIS，配合 NOWRAP 生效）、`visibility`（VISIBLE/HIDDEN，可继承，HIDDEN 保留布局空间但不绘制不命中）、`min-width`/`max-width`/`min-height`/`max-height`（约束布局尺寸）、`flex-basis`（主轴初始尺寸，auto 退回 width/height）、`align-self`（覆盖父容器 align-items，AUTO=跟随父）、`flex-wrap`（NOWRAP/WRAP）。
 - `justify-content` 已支持 SPACE_AROUND 和 SPACE_EVENLY；`align-items` 已支持 BASELINE（暂按 START 处理）；`overflow` 已支持 SCROLL（始终显示滚动条）。
 - `border-radius` 现在参与命中测试（圆角外侧不命中）；`visibility:hidden` 同时跳过绘制和命中测试；非等值分角圆角已进入 `UiRenderContext` 表面绘制、clip/backdrop-filter 与命中测试链路。
