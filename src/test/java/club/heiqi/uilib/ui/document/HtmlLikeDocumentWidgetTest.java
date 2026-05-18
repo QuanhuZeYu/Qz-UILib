@@ -845,6 +845,52 @@ public class HtmlLikeDocumentWidgetTest {
     }
 
     /**
+     * 验证 `right/bottom` 锚定的 fixed 浮窗首次拖拽时不会跳到左上角基线。
+     */
+    @Test
+    public void shouldDragRightBottomAnchoredFixedElementWithoutJumping() {
+        UiDocument document = UiDocument.create();
+        ElementNode root = document.getRootElement();
+        ElementNode panel = document.div();
+        ElementNode handle = document.div();
+
+        root.style()
+                .setWidth(UiStyleLength.px(240))
+                .setHeight(UiStyleLength.px(120));
+        panel.style()
+                .setPosition(UiPosition.FIXED)
+                .setRight(UiStyleLength.px(20))
+                .setBottom(UiStyleLength.px(10))
+                .setWidth(UiStyleLength.px(80))
+                .setHeight(UiStyleLength.px(30))
+                .setBackgroundColor(0xFF223344);
+        handle.style()
+                .setWidth(UiStyleLength.px(80))
+                .setHeight(UiStyleLength.px(10))
+                .setBackgroundColor(0xFF446688);
+        panel.append(handle);
+        root.append(panel);
+        DocumentDraggableSupport.attach(panel, handle, DocumentDraggableSupport.DragAxis.BOTH);
+
+        HtmlLikeDocumentWidget widget = new HtmlLikeDocumentWidget(document, 240, 120,
+                new DeterministicTextMeasureService());
+        widget.applyLayoutBounds(0, 0, 240, 120);
+
+        widget.onMouseDown(new UiMouseEvent(UiMouseEvent.Action.BUTTON_DOWN, 145, 85, 0, 0, 0, 0, 1L));
+        widget.onMouseMove(new UiMouseEvent(UiMouseEvent.Action.MOVE, 165, 95, -1, 0, 20, 10, 2L));
+        widget.onMouseUp(new UiMouseEvent(UiMouseEvent.Action.BUTTON_UP, 165, 95, 0, 0, 0, 0, 3L));
+
+        Assert.assertNull(panel.style().getLeft());
+        Assert.assertNull(panel.style().getTop());
+        Assert.assertNotNull(panel.style().getRight());
+        Assert.assertNotNull(panel.style().getBottom());
+        Assert.assertEquals(UiStyleLength.Type.PIXEL, panel.style().getRight().getType());
+        Assert.assertEquals(UiStyleLength.Type.PIXEL, panel.style().getBottom().getType());
+        Assert.assertEquals(0.0F, panel.style().getRight().getValue(), 0.001F);
+        Assert.assertEquals(0.0F, panel.style().getBottom().getValue(), 0.001F);
+    }
+
+    /**
      * 验证可拖拽把手在短点击时仍会保留 click 语义。
      */
     @Test

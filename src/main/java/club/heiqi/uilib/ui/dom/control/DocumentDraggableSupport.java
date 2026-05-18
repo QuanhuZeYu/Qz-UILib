@@ -19,6 +19,8 @@ public final class DocumentDraggableSupport {
     private boolean dragging;
     private int accumulatedX;
     private int accumulatedY;
+    private boolean useRightAnchor;
+    private boolean useBottomAnchor;
     private boolean initialized;
 
     private DocumentDraggableSupport(ElementNode target, ElementNode handle, DragAxis dragAxis) {
@@ -86,15 +88,23 @@ public final class DocumentDraggableSupport {
         if (event.getPhase() != DocumentElementDragEvent.DragPhase.DRAG) {
             return false;
         }
-        int nextX = accumulatedX + event.getDeltaDocumentX();
-        int nextY = accumulatedY + event.getDeltaDocumentY();
         if (dragAxis == DragAxis.HORIZONTAL || dragAxis == DragAxis.BOTH) {
+            int nextX = accumulatedX + (useRightAnchor ? -event.getDeltaDocumentX() : event.getDeltaDocumentX());
             accumulatedX = nextX;
-            target.style().setLeft(UiStyleLength.px(accumulatedX)).clearRight();
+            if (useRightAnchor) {
+                target.style().setRight(UiStyleLength.px(accumulatedX)).clearLeft();
+            } else {
+                target.style().setLeft(UiStyleLength.px(accumulatedX)).clearRight();
+            }
         }
         if (dragAxis == DragAxis.VERTICAL || dragAxis == DragAxis.BOTH) {
+            int nextY = accumulatedY + (useBottomAnchor ? -event.getDeltaDocumentY() : event.getDeltaDocumentY());
             accumulatedY = nextY;
-            target.style().setTop(UiStyleLength.px(accumulatedY)).clearBottom();
+            if (useBottomAnchor) {
+                target.style().setBottom(UiStyleLength.px(accumulatedY)).clearTop();
+            } else {
+                target.style().setTop(UiStyleLength.px(accumulatedY)).clearBottom();
+            }
         }
         return true;
     }
@@ -107,12 +117,26 @@ public final class DocumentDraggableSupport {
         if (target.style().getPosition() == null) {
             target.style().setPosition(UiPosition.ABSOLUTE);
         }
-        accumulatedX = resolveInitialOffset(target.style().getLeft());
-        accumulatedY = resolveInitialOffset(target.style().getTop());
+        useRightAnchor = shouldUseRightAnchor();
+        useBottomAnchor = shouldUseBottomAnchor();
+        accumulatedX = resolveInitialOffset(useRightAnchor ? target.style().getRight() : target.style().getLeft());
+        accumulatedY = resolveInitialOffset(useBottomAnchor ? target.style().getBottom() : target.style().getTop());
+    }
+
+    private boolean shouldUseRightAnchor() {
+        return target.style().getLeft() == null && isPixelLength(target.style().getRight());
+    }
+
+    private boolean shouldUseBottomAnchor() {
+        return target.style().getTop() == null && isPixelLength(target.style().getBottom());
+    }
+
+    private static boolean isPixelLength(UiStyleLength length) {
+        return length != null && length.getType() == UiStyleLength.Type.PIXEL;
     }
 
     private static int resolveInitialOffset(UiStyleLength length) {
-        if (length == null || length.getType() != UiStyleLength.Type.PIXEL) {
+        if (!isPixelLength(length)) {
             return 0;
         }
         return Math.round(length.getValue());
