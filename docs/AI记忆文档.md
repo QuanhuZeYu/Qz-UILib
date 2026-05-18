@@ -1,4 +1,4 @@
-# AI记忆文档
+﻿# AI记忆文档
 
 本文件只保留对后续协作长期稳定、跨任务高频复用的高层信息，作为“导航 + 边界”文档使用，不承担阶段流水账、类清单、修复日志、版本兼容试验记录等职责。遇到具体任务时，Agent 必须主动读取对应文档、源码和错误记录确认现状。
 
@@ -11,8 +11,8 @@
 ## 当前主线
 
 - 项目处于第一版开发者入口固化阶段；新增对外能力、文档或 API 门面要优先审视开发者接入体验。
-- 当前主线仍是 HTML-like UI 渲染框架；功能取舍以这条主线为准，不为补“完整浏览器语义”偏离主线。
-- 作者层只暴露 HTML-like / CSS-like 语义，不向页面作者暴露 Minecraft GUI 生命周期或底层渲染实现细节。
+- 当前主线是符合浏览器语义的 UI 渲染框架；功能取舍以浏览器标准行为为参照，逐步补齐常用浏览器能力。
+- 作者层暴露浏览器语义（DOM / CSS / 事件模型），不向页面作者暴露 Minecraft GUI 生命周期或底层渲染实现细节。
 - 需要增强可发现性或交互提示时，可优先从阿里巴巴矢量图标库寻找合适图标，再结合页面既有排版判断是否使用。
 
 ## 文档分工
@@ -49,6 +49,10 @@
 - flex item 的 `margin:auto` 会吸收主轴/交叉轴剩余空间；flex shrink 权重已修正为使用 flex-basis。
 - `flex-wrap:wrap` 已支持多行换行布局（row 方向）。
 - 事件系统新增独立 `mousedown`/`mouseup` DOM 事件（`DocumentElementMouseDownHandler`/`DocumentElementMouseUpHandler`）；hover 父子切换时父元素不再收到多余 leave；新增 `focusin` 冒泡事件（`DocumentElementFocusInHandler`）。
+- 事件系统已支持标准 DOM 三阶段传播模型（capture → target → bubble）：所有事件类提供 `stopPropagation()`、`stopImmediatePropagation()`、`preventDefault()`；`ElementNode` 支持 capture handler 注册（`setCaptureClickHandler`/`setCaptureKeyHandler`/`setCaptureMouseDownHandler`/`setCaptureMouseUpHandler`）；`HtmlLikeDocumentWidget` 的 click/key/mousedown/mouseup 分发已按三阶段执行。
+- 样式系统已支持 CSS-like 选择器和样式表级联：`ElementNode` 提供 `className`/`classList`（`DomTokenList`）和 `id` 便捷方法；`UiSelector` 支持 tag/class/id/通配符/复合选择器及特异性计算；`UiStyleSheet` 容器通过 `UiDocument.addStyleSheet(...)` 挂载；`UiStyleResolver` 按 inline > id > class > tag 特异性级联计算所有属性。
+- `UiDocument` 提供标准 DOM 查询：`getElementById(id)`、`querySelector(selectorText)`、`querySelectorAll(selectorText)`、`getElementsByTagName(tagName)`、`getElementsByClassName(className)`，均按深度优先遍历并复用 `UiSelector` 匹配。
+- 样式系统新增视觉增强属性：`box-shadow`（`UiBoxShadow` 值类型，支持 offsetX/Y、blur、spread、color、inset）、`border-style`（`UiBorderStyle` 枚举：NONE/SOLID/DASHED/DOTTED/DOUBLE/HIDDEN）、`cursor`（`UiCursor` 枚举：DEFAULT/POINTER/TEXT/MOVE/GRAB/NOT_ALLOWED 等，可继承）；三者均已集成到级联计算。
 - `height` 百分比相对包含块高度解析；包含块高度为 auto 时百分比高度视为 auto（由内容撑开），不再静默解析为 0。
 - Block 元素 `margin: 0 auto` 支持水平居中：有明确宽度的 block 元素，auto left/right margin 会平分剩余空间。
 - `line-height` 是可继承属性：父元素设置后子元素自动继承，除非子元素自行覆盖。
