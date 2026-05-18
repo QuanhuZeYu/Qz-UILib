@@ -71,6 +71,8 @@ public final class ComputedStyle {
     private final UiBorderStyle borderStyle;
     private final UiCursor cursor;
     private final UiBorderRadius borderRadiusCorners;
+    private final UiTextDecoration textDecoration;
+    private final UiPointerEvents pointerEvents;
 
     ComputedStyle(UiDisplay display, UiStyleLength width, UiStyleLength height, UiBoxSizing boxSizing,
             UiPosition position,
@@ -90,7 +92,7 @@ public final class ComputedStyle {
             UiStyleLength minWidth, UiStyleLength maxWidth, UiStyleLength minHeight, UiStyleLength maxHeight,
             UiStyleLength flexBasis, UiAlignSelf alignSelf, UiFlexWrap flexWrap,
             UiBoxShadow boxShadow, UiBorderStyle borderStyle, UiCursor cursor,
-            UiBorderRadius borderRadiusCorners) {
+            UiBorderRadius borderRadiusCorners, UiTextDecoration textDecoration, UiPointerEvents pointerEvents) {
         this.display = Objects.requireNonNull(display, "display");
         this.width = Objects.requireNonNull(width, "width");
         this.height = Objects.requireNonNull(height, "height");
@@ -148,6 +150,8 @@ public final class ComputedStyle {
         this.borderStyle = borderStyle == null ? UiBorderStyle.NONE : borderStyle;
         this.cursor = cursor == null ? UiCursor.DEFAULT : cursor;
         this.borderRadiusCorners = borderRadiusCorners; // 可为 null（使用统一 borderRadius）
+        this.textDecoration = textDecoration == null ? UiTextDecoration.NONE : textDecoration;
+        this.pointerEvents = pointerEvents == null ? UiPointerEvents.AUTO : pointerEvents;
     }
 
     public UiDisplay getDisplay() {
@@ -454,5 +458,23 @@ public final class ComputedStyle {
      */
     public UiBorderRadius getBorderRadiusCorners() {
         return borderRadiusCorners;
+    }
+
+    /**
+     * 返回文本装饰线样式。
+     *
+     * @return 文本装饰线
+     */
+    public UiTextDecoration getTextDecoration() {
+        return textDecoration;
+    }
+
+    /**
+     * 返回指针事件响应模式。
+     *
+     * @return 指针事件模式
+     */
+    public UiPointerEvents getPointerEvents() {
+        return pointerEvents;
     }
 }

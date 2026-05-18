@@ -78,6 +78,8 @@ public final class UiStyleDeclaration {
     private UiBorderStyle borderStyle;
     private UiCursor cursor;
     private UiBorderRadius borderRadiusCorners;
+    private UiTextDecoration textDecoration;
+    private UiPointerEvents pointerEvents;
 
     public UiStyleDeclaration() {
         this((UiStyleChangeListener) null);
@@ -945,6 +947,44 @@ public final class UiStyleDeclaration {
         return updateBorderRadiusCorners(null);
     }
 
+    public UiTextDecoration getTextDecoration() {
+        return textDecoration;
+    }
+
+    /**
+     * 设置文本装饰线样式。
+     *
+     * @param textDecoration 文本装饰线
+     * @return 当前声明
+     */
+    public UiStyleDeclaration setTextDecoration(UiTextDecoration textDecoration) {
+        return updateTextDecoration(Objects.requireNonNull(textDecoration, "textDecoration"));
+    }
+
+    public UiStyleDeclaration clearTextDecoration() {
+        return updateTextDecoration(null);
+    }
+
+    public UiPointerEvents getPointerEvents() {
+        return pointerEvents;
+    }
+
+    /**
+     * 设置元素的指针事件响应模式。
+     *
+     * <p>{@code NONE} 表示元素不响应鼠标事件，事件穿透到下层。</p>
+     *
+     * @param pointerEvents 指针事件模式
+     * @return 当前声明
+     */
+    public UiStyleDeclaration setPointerEvents(UiPointerEvents pointerEvents) {
+        return updatePointerEvents(Objects.requireNonNull(pointerEvents, "pointerEvents"));
+    }
+
+    public UiStyleDeclaration clearPointerEvents() {
+        return updatePointerEvents(null);
+    }
+
     private UiStyleDeclaration updateDisplay(UiDisplay value) {
         if (display != value) {
             display = value;
@@ -1391,6 +1431,22 @@ public final class UiStyleDeclaration {
     private UiStyleDeclaration updateBorderRadiusCorners(UiBorderRadius value) {
         if (!Objects.equals(borderRadiusCorners, value)) {
             borderRadiusCorners = value;
+            recordPaintChange();
+        }
+        return this;
+    }
+
+    private UiStyleDeclaration updateTextDecoration(UiTextDecoration value) {
+        if (textDecoration != value) {
+            textDecoration = value;
+            recordPaintChange();
+        }
+        return this;
+    }
+
+    private UiStyleDeclaration updatePointerEvents(UiPointerEvents value) {
+        if (pointerEvents != value) {
+            pointerEvents = value;
             recordPaintChange();
         }
         return this;

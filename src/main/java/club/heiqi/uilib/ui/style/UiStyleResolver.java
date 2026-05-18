@@ -154,6 +154,12 @@ public final class UiStyleResolver {
         // border-radius 分角：不可继承
         UiBorderRadius borderRadiusCorners = cascadeBorderRadiusCorners(inlineStyle, matchingRules);
 
+        // text-decoration：不可继承
+        UiTextDecoration textDecoration = cascadeTextDecoration(inlineStyle, matchingRules);
+
+        // pointer-events：不可继承
+        UiPointerEvents pointerEvents = cascadePointerEvents(inlineStyle, matchingRules);
+
         return new ComputedStyle(display, width, height, boxSizing, position, top, right, bottom, left, zIndex, margin,
                 padding, borderWidth, borderRadius, overflowX, overflowY, flexDirection, alignItems, justifyContent,
                 verticalAlign, rowGap, columnGap, flexGrow, flexShrink, opacity, backgroundColor, borderColor, textColor,
@@ -165,7 +171,7 @@ public final class UiStyleResolver {
                 minWidth, maxWidth, minHeight, maxHeight,
                 flexBasis, alignSelf, flexWrap,
                 boxShadow, borderStyle, cursor,
-                borderRadiusCorners);
+                borderRadiusCorners, textDecoration, pointerEvents);
     }
 
     // ========== 级联属性解析方法 ==========
@@ -384,6 +390,24 @@ public final class UiStyleResolver {
             if (value != null) return value;
         }
         return null;
+    }
+
+    private static UiTextDecoration cascadeTextDecoration(UiStyleDeclaration inlineStyle, List<UiStyleRule> rules) {
+        if (inlineStyle.getTextDecoration() != null) return inlineStyle.getTextDecoration();
+        for (int i = rules.size() - 1; i >= 0; i--) {
+            UiTextDecoration value = rules.get(i).getDeclaration().getTextDecoration();
+            if (value != null) return value;
+        }
+        return UiTextDecoration.NONE;
+    }
+
+    private static UiPointerEvents cascadePointerEvents(UiStyleDeclaration inlineStyle, List<UiStyleRule> rules) {
+        if (inlineStyle.getPointerEvents() != null) return inlineStyle.getPointerEvents();
+        for (int i = rules.size() - 1; i >= 0; i--) {
+            UiPointerEvents value = rules.get(i).getDeclaration().getPointerEvents();
+            if (value != null) return value;
+        }
+        return UiPointerEvents.AUTO;
     }
 
     private static UiTextAlign cascadeTextAlign(UiStyleDeclaration inlineStyle, List<UiStyleRule> rules, ComputedStyle parentStyle) {
