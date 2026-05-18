@@ -81,6 +81,8 @@ public final class UiStyleDeclaration {
     private UiTextDecoration textDecoration;
     private UiPointerEvents pointerEvents;
     private UiOutline outline;
+    private UiStyleInsets borderWidthSides;
+    private UiBorderColors borderColors;
 
     public UiStyleDeclaration() {
         this((UiStyleChangeListener) null);
@@ -1006,6 +1008,60 @@ public final class UiStyleDeclaration {
         return updateOutline(null);
     }
 
+    /**
+     * 返回分边 border-width 值。
+     *
+     * <p>当设置了分边 border-width 时，优先于统一 borderWidth 生效。</p>
+     *
+     * @return 分边 border-width；未设置时返回 null
+     */
+    public UiStyleInsets getBorderWidthSides() {
+        return borderWidthSides;
+    }
+
+    /**
+     * 设置分边 border-width。
+     *
+     * <p>设置后优先于统一 borderWidth 生效。</p>
+     *
+     * @param borderWidthSides 分边 border-width（top/right/bottom/left）
+     * @return 当前声明
+     */
+    public UiStyleDeclaration setBorderWidthSides(UiStyleInsets borderWidthSides) {
+        return updateBorderWidthSides(Objects.requireNonNull(borderWidthSides, "borderWidthSides"));
+    }
+
+    public UiStyleDeclaration clearBorderWidthSides() {
+        return updateBorderWidthSides(null);
+    }
+
+    /**
+     * 返回分边 border-color 值。
+     *
+     * <p>当设置了分边 border-color 时，优先于统一 borderColor 生效。</p>
+     *
+     * @return 分边 border-color；未设置时返回 null
+     */
+    public UiBorderColors getBorderColors() {
+        return borderColors;
+    }
+
+    /**
+     * 设置分边 border-color。
+     *
+     * <p>设置后优先于统一 borderColor 生效。</p>
+     *
+     * @param borderColors 分边 border-color
+     * @return 当前声明
+     */
+    public UiStyleDeclaration setBorderColors(UiBorderColors borderColors) {
+        return updateBorderColors(Objects.requireNonNull(borderColors, "borderColors"));
+    }
+
+    public UiStyleDeclaration clearBorderColors() {
+        return updateBorderColors(null);
+    }
+
     private UiStyleDeclaration updateDisplay(UiDisplay value) {
         if (display != value) {
             display = value;
@@ -1476,6 +1532,22 @@ public final class UiStyleDeclaration {
     private UiStyleDeclaration updateOutline(UiOutline value) {
         if (!Objects.equals(outline, value)) {
             outline = value;
+            recordPaintChange();
+        }
+        return this;
+    }
+
+    private UiStyleDeclaration updateBorderWidthSides(UiStyleInsets value) {
+        if (!Objects.equals(borderWidthSides, value)) {
+            borderWidthSides = value;
+            recordLayoutChange();
+        }
+        return this;
+    }
+
+    private UiStyleDeclaration updateBorderColors(UiBorderColors value) {
+        if (!Objects.equals(borderColors, value)) {
+            borderColors = value;
             recordPaintChange();
         }
         return this;

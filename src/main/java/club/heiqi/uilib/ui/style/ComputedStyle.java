@@ -74,6 +74,8 @@ public final class ComputedStyle {
     private final UiTextDecoration textDecoration;
     private final UiPointerEvents pointerEvents;
     private final UiOutline outline;
+    private final UiStyleInsets borderWidthSides;
+    private final UiBorderColors borderColors;
 
     ComputedStyle(UiDisplay display, UiStyleLength width, UiStyleLength height, UiBoxSizing boxSizing,
             UiPosition position,
@@ -94,7 +96,7 @@ public final class ComputedStyle {
             UiStyleLength flexBasis, UiAlignSelf alignSelf, UiFlexWrap flexWrap,
             UiBoxShadow boxShadow, UiBorderStyle borderStyle, UiCursor cursor,
             UiBorderRadius borderRadiusCorners, UiTextDecoration textDecoration, UiPointerEvents pointerEvents,
-            UiOutline outline) {
+            UiOutline outline, UiStyleInsets borderWidthSides, UiBorderColors borderColors) {
         this.display = Objects.requireNonNull(display, "display");
         this.width = Objects.requireNonNull(width, "width");
         this.height = Objects.requireNonNull(height, "height");
@@ -155,6 +157,8 @@ public final class ComputedStyle {
         this.textDecoration = textDecoration == null ? UiTextDecoration.NONE : textDecoration;
         this.pointerEvents = pointerEvents == null ? UiPointerEvents.AUTO : pointerEvents;
         this.outline = outline; // 可为 null（无轮廓线）
+        this.borderWidthSides = borderWidthSides; // 可为 null（使用统一 borderWidth）
+        this.borderColors = borderColors; // 可为 null（使用统一 borderColor）
     }
 
     public UiDisplay getDisplay() {
@@ -490,5 +494,27 @@ public final class ComputedStyle {
      */
     public UiOutline getOutline() {
         return outline;
+    }
+
+    /**
+     * 返回分边 border-width 值。
+     *
+     * <p>当返回非 null 时，优先于统一 {@link #getBorderWidth()} 使用。</p>
+     *
+     * @return 分边 border-width；未设置时返回 null
+     */
+    public UiStyleInsets getBorderWidthSides() {
+        return borderWidthSides;
+    }
+
+    /**
+     * 返回分边 border-color 值。
+     *
+     * <p>当返回非 null 时，优先于统一 {@link #getBorderColor()} 使用。</p>
+     *
+     * @return 分边 border-color；未设置时返回 null
+     */
+    public UiBorderColors getBorderColors() {
+        return borderColors;
     }
 }

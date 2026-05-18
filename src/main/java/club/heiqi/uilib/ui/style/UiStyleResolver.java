@@ -163,6 +163,10 @@ public final class UiStyleResolver {
         // outline：不可继承
         UiOutline outline = cascadeOutline(inlineStyle, matchingRules);
 
+        // border 分边：不可继承
+        UiStyleInsets borderWidthSides = cascadeBorderWidthSides(inlineStyle, matchingRules);
+        UiBorderColors borderColors = cascadeBorderColors(inlineStyle, matchingRules);
+
         return new ComputedStyle(display, width, height, boxSizing, position, top, right, bottom, left, zIndex, margin,
                 padding, borderWidth, borderRadius, overflowX, overflowY, flexDirection, alignItems, justifyContent,
                 verticalAlign, rowGap, columnGap, flexGrow, flexShrink, opacity, backgroundColor, borderColor, textColor,
@@ -175,7 +179,7 @@ public final class UiStyleResolver {
                 flexBasis, alignSelf, flexWrap,
                 boxShadow, borderStyle, cursor,
                 borderRadiusCorners, textDecoration, pointerEvents,
-                outline);
+                outline, borderWidthSides, borderColors);
     }
 
     // ========== 级联属性解析方法 ==========
@@ -418,6 +422,24 @@ public final class UiStyleResolver {
         if (inlineStyle.getOutline() != null) return inlineStyle.getOutline();
         for (int i = rules.size() - 1; i >= 0; i--) {
             UiOutline value = rules.get(i).getDeclaration().getOutline();
+            if (value != null) return value;
+        }
+        return null;
+    }
+
+    private static UiStyleInsets cascadeBorderWidthSides(UiStyleDeclaration inlineStyle, List<UiStyleRule> rules) {
+        if (inlineStyle.getBorderWidthSides() != null) return inlineStyle.getBorderWidthSides();
+        for (int i = rules.size() - 1; i >= 0; i--) {
+            UiStyleInsets value = rules.get(i).getDeclaration().getBorderWidthSides();
+            if (value != null) return value;
+        }
+        return null;
+    }
+
+    private static UiBorderColors cascadeBorderColors(UiStyleDeclaration inlineStyle, List<UiStyleRule> rules) {
+        if (inlineStyle.getBorderColors() != null) return inlineStyle.getBorderColors();
+        for (int i = rules.size() - 1; i >= 0; i--) {
+            UiBorderColors value = rules.get(i).getDeclaration().getBorderColors();
             if (value != null) return value;
         }
         return null;
