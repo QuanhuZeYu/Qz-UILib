@@ -337,7 +337,7 @@ public final class DocumentPaintRenderer {
         if (boxShadow == null) {
             return;
         }
-        int color = applyOpacity(boxShadow.getColor(), fallbackOpacity);
+        int color = applyOpacity(command.getColor(), fallbackOpacity);
         int steps = Math.max(1, boxShadow.getBlurRadius());
         UiBorderRadiusResolver.ResolvedCornerRadii baseRadii = resolveCommandCornerRadii(command, true);
         if (!boxShadow.isInset()) {
@@ -366,7 +366,7 @@ public final class DocumentPaintRenderer {
                     break;
                 }
                 context.drawSurface(left, top, right, bottom, new UiSurfaceStyle(0, layerColor,
-                        Math.max(0, command.getBorderRadius() - inset)));
+                        insetCornerRadii(baseRadii, inset)));
             }
         } finally {
             context.popClip();

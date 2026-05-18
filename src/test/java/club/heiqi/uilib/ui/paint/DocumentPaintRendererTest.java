@@ -1,6 +1,10 @@
 package club.heiqi.uilib.ui.paint;
 
+import java.lang.reflect.Constructor;
+import java.lang.reflect.Field;
+import java.lang.reflect.Method;
 import java.util.ArrayList;
+import java.util.Deque;
 import java.util.List;
 
 import org.junit.Assert;
@@ -13,6 +17,7 @@ import club.heiqi.uilib.ui.layout.DocumentLayoutBox;
 import club.heiqi.uilib.ui.layout.DocumentLayoutEngine;
 import club.heiqi.uilib.ui.layout.DocumentScrollState;
 import club.heiqi.uilib.ui.render.UiRenderContext;
+import club.heiqi.uilib.ui.style.UiBorderRadius;
 import club.heiqi.uilib.ui.style.UiBorderRadiusResolver;
 import club.heiqi.uilib.ui.style.UiBorderStyle;
 import club.heiqi.uilib.ui.style.UiBoxShadow;
@@ -74,6 +79,29 @@ public class DocumentPaintRendererTest {
     }
 
     /**
+     * 验证背景命令会把左上为 0 的分角圆角完整传给底层 surface。
+     */
+    @Test
+    public void shouldRenderBackgroundCornerRadiiToUiRenderContext() {
+        UiDocument document = UiDocument.create();
+        ElementNode root = document.getRootElement();
+
+        root.style()
+                .setWidth(UiStyleLength.px(40))
+                .setHeight(UiStyleLength.px(20))
+                .setBackgroundColor(0xFF223344)
+                .setBorderRadiusCorners(UiBorderRadius.of(UiStyleLength.px(0), UiStyleLength.px(9),
+                        UiStyleLength.px(4), UiStyleLength.px(0)));
+
+        RecordingUiRenderContext renderContext = new RecordingUiRenderContext();
+        DocumentPaintRenderer.render(renderContext, DocumentPaintEngine.buildPaintCommands(
+                DocumentLayoutEngine.layout(root, 80, 0)), 7, 11);
+
+        Assert.assertEquals(1, renderContext.drawCalls.size());
+        assertDrawCall(renderContext.drawCalls.get(0), 7, 11, 47, 31, 0xFF223344, 0, 0, 9, 4, 0);
+    }
+
+    /**
      * 验证 outline 会按 offset、width、color 和外扩圆角绘制逐层圆角轮廓。
      */
     @Test
@@ -94,6 +122,29 @@ public class DocumentPaintRendererTest {
         Assert.assertEquals(2, renderContext.drawCalls.size());
         assertDrawCall(renderContext.drawCalls.get(0), -3, -3, 43, 23, 0, 0xFF67E8F9, 11);
         assertDrawCall(renderContext.drawCalls.get(1), -2, -2, 42, 22, 0, 0xFF67E8F9, 10);
+    }
+
+    /**
+     * 验证 outline 命令会把分角圆角按外扩轮廓传给 renderer。
+     */
+    @Test
+    public void shouldRenderOutlineCornerRadiiToUiRenderContext() {
+        UiDocument document = UiDocument.create();
+        ElementNode root = document.getRootElement();
+
+        root.style()
+                .setWidth(UiStyleLength.px(40))
+                .setHeight(UiStyleLength.px(20))
+                .setBorderRadiusCorners(UiBorderRadius.of(UiStyleLength.px(0), UiStyleLength.px(9),
+                        UiStyleLength.px(4), UiStyleLength.px(0)))
+                .setOutline(UiOutline.of(1, 0xFF67E8F9, UiBorderStyle.SOLID, 0));
+
+        RecordingUiRenderContext renderContext = new RecordingUiRenderContext();
+        DocumentPaintRenderer.render(renderContext, DocumentPaintEngine.buildPaintCommands(
+                DocumentLayoutEngine.layout(root, 80, 0)));
+
+        Assert.assertEquals(1, renderContext.drawCalls.size());
+        assertDrawCall(renderContext.drawCalls.get(0), -1, -1, 41, 21, 0, 0xFF67E8F9, 1, 10, 5, 1);
     }
 
     /**
@@ -119,7 +170,7 @@ public class DocumentPaintRendererTest {
     }
 
     /**
-     * 验证 box-shadow 与 outline 命令不会在 renderer 中被忽略。
+     * 验证 box-shadow 与 outline 命令会投影出精确的颜色、位置与圆角。
      */
     @Test
     public void shouldRenderBoxShadowAndOutlineCommands() {
@@ -138,7 +189,63 @@ public class DocumentPaintRendererTest {
         DocumentPaintRenderer.render(renderContext, DocumentPaintEngine.buildPaintCommands(
                 DocumentLayoutEngine.layout(root, 80, 0)));
 
-        Assert.assertTrue(renderContext.drawCalls.size() >= 3);
+        Assert.assertEquals(6, renderContext.drawCalls.size());
+        assertDrawCall(renderContext.drawCalls.get(0), 1, 1, 47, 27, 0x6638BDF8, 0, 11);
+        assertDrawCall(renderContext.drawCalls.get(1), 2, 2, 46, 26, 0x4438BDF8, 0, 10);
+        assertDrawCall(renderContext.drawCalls.get(2), 3, 3, 45, 25, 0x2238BDF8, 0, 9);
+        assertDrawCall(renderContext.drawCalls.get(3), 0, 0, 40, 20, 0xFF223344, 0, 8);
+        assertDrawCall(renderContext.drawCalls.get(4), -3, -3, 43, 23, 0, 0xFF67E8F9, 11);
+        assertDrawCall(renderContext.drawCalls.get(5), -2, -2, 42, 22, 0, 0xFF67E8F9, 10);
+    }
+
+    /**
+     * 验证 box-shadow 使用 paint engine 已经应用 opacity 后的命令颜色。
+     */
+    @Test
+    public void shouldRenderBoxShadowWithCommandOpacityColor() {
+        UiDocument document = UiDocument.create();
+        ElementNode root = document.getRootElement();
+
+        root.style()
+                .setWidth(UiStyleLength.px(20))
+                .setHeight(UiStyleLength.px(10))
+                .setOpacity(0.5F)
+                .setBoxShadow(UiBoxShadow.of(0, 0, 1, 0, 0x8038BDF8));
+
+        RecordingUiRenderContext renderContext = new RecordingUiRenderContext();
+        DocumentPaintRenderer.render(renderContext, DocumentPaintEngine.buildPaintCommands(
+                DocumentLayoutEngine.layout(root, 80, 0)));
+
+        Assert.assertEquals(2, renderContext.drawCalls.size());
+        assertDrawCall(renderContext.drawCalls.get(0), -1, -1, 21, 11, 0x4038BDF8, 0, 1);
+        assertDrawCall(renderContext.drawCalls.get(1), 0, 0, 20, 10, 0x2038BDF8, 0, 0);
+    }
+
+    /**
+     * 验证 inset box-shadow 使用分角圆角计算内层轮廓，而不是退回旧单值半径。
+     */
+    @Test
+    public void shouldRenderInsetBoxShadowWithCornerRadii() {
+        UiDocument document = UiDocument.create();
+        ElementNode root = document.getRootElement();
+
+        root.style()
+                .setWidth(UiStyleLength.px(20))
+                .setHeight(UiStyleLength.px(20))
+                .setBorderRadiusCorners(UiBorderRadius.of(UiStyleLength.px(0), UiStyleLength.px(9),
+                        UiStyleLength.px(4), UiStyleLength.px(0)))
+                .setBoxShadow(UiBoxShadow.inset(0, 0, 1, 0, 0x8038BDF8));
+
+        RecordingUiRenderContext renderContext = new RecordingUiRenderContext();
+        DocumentPaintRenderer.render(renderContext, DocumentPaintEngine.buildPaintCommands(
+                DocumentLayoutEngine.layout(root, 80, 0)));
+
+        Assert.assertEquals(1, renderContext.clipCalls.size());
+        assertClipCall(renderContext.clipCalls.get(0), 0, 0, 20, 20, 0, 9, 4, 0);
+        Assert.assertEquals(1, renderContext.popClipCount);
+        Assert.assertEquals(2, renderContext.drawCalls.size());
+        assertDrawCall(renderContext.drawCalls.get(0), 0, 0, 20, 20, 0, 0x8038BDF8, 0, 9, 4, 0);
+        assertDrawCall(renderContext.drawCalls.get(1), 1, 1, 19, 19, 0, 0x4038BDF8, 0, 8, 3, 0);
     }
 
     /**
@@ -232,6 +339,29 @@ public class DocumentPaintRendererTest {
 
         Assert.assertEquals(1, renderContext.backdropCalls.size());
         assertBackdropCall(renderContext.backdropCalls.get(0), 7, 11, 55, 29, 12, 1.25F, 7);
+    }
+
+    /**
+     * 验证 backdrop-filter 会完整携带分角圆角。
+     */
+    @Test
+    public void shouldRenderBackdropFilterCornerRadiiToUiRenderContext() {
+        UiDocument document = UiDocument.create();
+        ElementNode root = document.getRootElement();
+        root.style()
+                .setWidth(UiStyleLength.px(48))
+                .setHeight(UiStyleLength.px(18))
+                .setBorderRadiusCorners(UiBorderRadius.of(UiStyleLength.px(0), UiStyleLength.px(9),
+                        UiStyleLength.px(4), UiStyleLength.px(0)))
+                .setBackdropBlurRadius(UiStyleLength.px(12))
+                .setBackdropSaturation(1.25F);
+
+        RecordingUiRenderContext renderContext = new RecordingUiRenderContext();
+        DocumentPaintRenderer.render(renderContext, DocumentPaintEngine.buildPaintCommands(
+                DocumentLayoutEngine.layout(root, 80, 0)), 7, 11);
+
+        Assert.assertEquals(1, renderContext.backdropCalls.size());
+        assertBackdropCall(renderContext.backdropCalls.get(0), 7, 11, 55, 29, 12, 1.25F, 0, 9, 4, 0);
     }
 
     /**
@@ -333,6 +463,62 @@ public class DocumentPaintRendererTest {
         Assert.assertEquals(1, renderContext.popClipCount);
         Assert.assertEquals(1, renderContext.drawCalls.size());
         assertDrawCall(renderContext.drawCalls.get(0), 12, 22, 92, 30, 0xFF556677, 0, 0);
+    }
+
+    /**
+     * 验证左上角为 0、其他角有值时 overflow clip 不会被误判为无圆角。
+     */
+    @Test
+    public void shouldReplayOverflowClipCornerRadiiToUiRenderContext() {
+        UiDocument document = UiDocument.create();
+        ElementNode root = document.getRootElement();
+        ElementNode child = document.div();
+        root.style()
+                .setWidth(UiStyleLength.px(30))
+                .setHeight(UiStyleLength.px(20))
+                .setBorderRadiusCorners(UiBorderRadius.of(UiStyleLength.px(0), UiStyleLength.px(9),
+                        UiStyleLength.px(4), UiStyleLength.px(0)))
+                .setOverflowX(UiOverflow.HIDDEN)
+                .setOverflowY(UiOverflow.HIDDEN);
+        child.style()
+                .setWidth(UiStyleLength.px(80))
+                .setHeight(UiStyleLength.px(8))
+                .setBackgroundColor(0xFF556677);
+        root.append(child);
+
+        RecordingUiRenderContext renderContext = new RecordingUiRenderContext();
+        DocumentPaintRenderer.render(renderContext, DocumentPaintEngine.buildPaintCommands(
+                DocumentLayoutEngine.layout(root, 60, 0)), 10, 20);
+
+        Assert.assertEquals(1, renderContext.clipCalls.size());
+        assertClipCall(renderContext.clipCalls.get(0), 10, 20, 40, 40, 0, 9, 4, 0);
+        Assert.assertEquals(1, renderContext.popClipCount);
+        Assert.assertEquals(1, renderContext.drawCalls.size());
+        assertDrawCall(renderContext.drawCalls.get(0), 10, 20, 90, 28, 0xFF556677, 0, 0);
+    }
+
+    /**
+     * 验证 clip 快照检查四个角，而不是只看左上角统一半径。
+     */
+    @Test
+    public void shouldKeepRoundedClipSnapshotWhenTopLeftRadiusIsZero() throws Exception {
+        UiRenderContext context = new UiRenderContext(320, 240, 0, 0, 0.0F);
+        setClipStackForTest(context, 0, 0, 40, 20,
+                UiBorderRadiusResolver.ResolvedCornerRadii.of(0, 9, 4, 0));
+
+        Method copyCurrentClipSnapshot = UiRenderContext.class.getDeclaredMethod("copyCurrentClipSnapshot");
+        copyCurrentClipSnapshot.setAccessible(true);
+        UiRenderContext.ClipSnapshot clipSnapshot = (UiRenderContext.ClipSnapshot) copyCurrentClipSnapshot.invoke(
+                context);
+
+        Assert.assertNotNull(clipSnapshot);
+        Assert.assertEquals(1, clipSnapshot.getRoundedClipRegions().size());
+        UiRenderContext.RoundedClipRegion clipRegion = clipSnapshot.getRoundedClipRegions().get(0);
+        Assert.assertEquals(0, clipRegion.getLeft());
+        Assert.assertEquals(0, clipRegion.getTop());
+        Assert.assertEquals(40, clipRegion.getRight());
+        Assert.assertEquals(20, clipRegion.getBottom());
+        assertCornerRadii(clipRegion.getCornerRadii(), 0, 9, 4, 0);
     }
 
     /**
@@ -526,28 +712,46 @@ public class DocumentPaintRendererTest {
 
     private static void assertDrawCall(DrawCall drawCall, int left, int top, int right, int bottom, int fillColor,
             int borderColor, int cornerRadius) {
-        assertDrawCall(drawCall, left, top, right, bottom, fillColor, borderColor, cornerRadius,
+        assertDrawCall(drawCall, left, top, right, bottom, fillColor, borderColor, cornerRadius, cornerRadius,
+                cornerRadius, cornerRadius,
                 UiSurfaceStyle.CORNER_ALL);
     }
 
     private static void assertDrawCall(DrawCall drawCall, int left, int top, int right, int bottom, int fillColor,
             int borderColor, int cornerRadius, int cornerMask) {
+        assertDrawCall(drawCall, left, top, right, bottom, fillColor, borderColor, cornerRadius, cornerRadius,
+                cornerRadius, cornerRadius, cornerMask);
+    }
+
+    private static void assertDrawCall(DrawCall drawCall, int left, int top, int right, int bottom, int fillColor,
+            int borderColor, int topLeft, int topRight, int bottomRight, int bottomLeft) {
+        assertDrawCall(drawCall, left, top, right, bottom, fillColor, borderColor, topLeft, topRight, bottomRight,
+                bottomLeft, UiSurfaceStyle.CORNER_ALL);
+    }
+
+    private static void assertDrawCall(DrawCall drawCall, int left, int top, int right, int bottom, int fillColor,
+            int borderColor, int topLeft, int topRight, int bottomRight, int bottomLeft, int cornerMask) {
         Assert.assertEquals(left, drawCall.left);
         Assert.assertEquals(top, drawCall.top);
         Assert.assertEquals(right, drawCall.right);
         Assert.assertEquals(bottom, drawCall.bottom);
         Assert.assertEquals(fillColor, drawCall.surfaceStyle.fillColor);
         Assert.assertEquals(borderColor, drawCall.surfaceStyle.borderColor);
-        Assert.assertEquals(cornerRadius, drawCall.surfaceStyle.cornerRadius);
+        assertCornerRadii(drawCall.surfaceStyle.cornerRadii, topLeft, topRight, bottomRight, bottomLeft);
         Assert.assertEquals(cornerMask, drawCall.surfaceStyle.cornerMask);
     }
 
     private static void assertClipCall(ClipCall clipCall, int left, int top, int right, int bottom, int cornerRadius) {
+        assertClipCall(clipCall, left, top, right, bottom, cornerRadius, cornerRadius, cornerRadius, cornerRadius);
+    }
+
+    private static void assertClipCall(ClipCall clipCall, int left, int top, int right, int bottom, int topLeft,
+            int topRight, int bottomRight, int bottomLeft) {
         Assert.assertEquals(left, clipCall.left);
         Assert.assertEquals(top, clipCall.top);
         Assert.assertEquals(right, clipCall.right);
         Assert.assertEquals(bottom, clipCall.bottom);
-        Assert.assertEquals(cornerRadius, clipCall.cornerRadius);
+        assertCornerRadii(clipCall.cornerRadii, topLeft, topRight, bottomRight, bottomLeft);
     }
 
     private static void assertTextCall(TextCall textCall, String text, int x, int y, int color, boolean shadow) {
@@ -567,13 +771,28 @@ public class DocumentPaintRendererTest {
 
     private static void assertBackdropCall(BackdropCall backdropCall, int left, int top, int right, int bottom,
             int blurRadius, float saturation, int cornerRadius) {
+        assertBackdropCall(backdropCall, left, top, right, bottom, blurRadius, saturation, cornerRadius, cornerRadius,
+                cornerRadius, cornerRadius);
+    }
+
+    private static void assertBackdropCall(BackdropCall backdropCall, int left, int top, int right, int bottom,
+            int blurRadius, float saturation, int topLeft, int topRight, int bottomRight, int bottomLeft) {
         Assert.assertEquals(left, backdropCall.left);
         Assert.assertEquals(top, backdropCall.top);
         Assert.assertEquals(right, backdropCall.right);
         Assert.assertEquals(bottom, backdropCall.bottom);
         Assert.assertEquals(blurRadius, backdropCall.blurRadius);
         Assert.assertEquals(saturation, backdropCall.saturation, 0.0F);
-        Assert.assertEquals(cornerRadius, backdropCall.cornerRadius);
+        assertCornerRadii(backdropCall.cornerRadii, topLeft, topRight, bottomRight, bottomLeft);
+    }
+
+    private static void assertCornerRadii(UiBorderRadiusResolver.ResolvedCornerRadii cornerRadii, int topLeft,
+            int topRight, int bottomRight, int bottomLeft) {
+        Assert.assertNotNull(cornerRadii);
+        Assert.assertEquals(topLeft, cornerRadii.getTopLeft());
+        Assert.assertEquals(topRight, cornerRadii.getTopRight());
+        Assert.assertEquals(bottomRight, cornerRadii.getBottomRight());
+        Assert.assertEquals(bottomLeft, cornerRadii.getBottomLeft());
     }
 
     private static void assertPaintContextCall(PaintContextCall paintContextCall, int left, int top, int right,
@@ -583,6 +802,21 @@ public class DocumentPaintRendererTest {
         Assert.assertEquals(right, paintContextCall.right);
         Assert.assertEquals(bottom, paintContextCall.bottom);
         Assert.assertEquals(opacity, paintContextCall.opacity, 0.0F);
+    }
+
+    @SuppressWarnings("unchecked")
+    private static void setClipStackForTest(UiRenderContext context, int left, int top, int right, int bottom,
+            UiBorderRadiusResolver.ResolvedCornerRadii cornerRadii) throws Exception {
+        Class<?> clipStateClass = Class.forName("club.heiqi.uilib.ui.render.UiRenderContext$ClipState");
+        Constructor<?> constructor = clipStateClass.getDeclaredConstructor(int[].class,
+                UiBorderRadiusResolver.ResolvedCornerRadii.class);
+        constructor.setAccessible(true);
+        Object clipState = constructor.newInstance(new int[] { left, top, right, bottom }, cornerRadii);
+        Field clipStackField = UiRenderContext.class.getDeclaredField("clipStack");
+        clipStackField.setAccessible(true);
+        Deque<Object> clipStack = (Deque<Object>) clipStackField.get(context);
+        clipStack.clear();
+        clipStack.push(clipState);
     }
 
     /**
@@ -613,28 +847,27 @@ public class DocumentPaintRendererTest {
         @Override
         public void drawBackdropFilter(int left, int top, int right, int bottom, int blurRadius, float saturation,
                 int cornerRadius) {
-            backdropCalls.add(new BackdropCall(left, top, right, bottom, blurRadius, saturation, cornerRadius,
-                    getMainLayerContentRevisionForDiagnostics()));
-            notifyMainLayerContentChanged();
+            drawBackdropFilter(left, top, right, bottom, blurRadius, saturation,
+                    UiBorderRadiusResolver.ResolvedCornerRadii.uniform(cornerRadius));
         }
 
         @Override
         public void drawBackdropFilter(int left, int top, int right, int bottom, int blurRadius, float saturation,
                 UiBorderRadiusResolver.ResolvedCornerRadii cornerRadii) {
-            int radius = cornerRadii == null ? 0 : cornerRadii.getUniformRadius();
-            drawBackdropFilter(left, top, right, bottom, blurRadius, saturation, radius);
+            backdropCalls.add(new BackdropCall(left, top, right, bottom, blurRadius, saturation, cornerRadii,
+                    getMainLayerContentRevisionForDiagnostics()));
+            notifyMainLayerContentChanged();
         }
 
         @Override
         public void pushClip(int left, int top, int right, int bottom, int cornerRadius) {
-            clipCalls.add(new ClipCall(left, top, right, bottom, cornerRadius));
+            pushClip(left, top, right, bottom, UiBorderRadiusResolver.ResolvedCornerRadii.uniform(cornerRadius));
         }
 
         @Override
         public void pushClip(int left, int top, int right, int bottom,
                 UiBorderRadiusResolver.ResolvedCornerRadii cornerRadii) {
-            int radius = cornerRadii == null ? 0 : cornerRadii.getUniformRadius();
-            pushClip(left, top, right, bottom, radius);
+            clipCalls.add(new ClipCall(left, top, right, bottom, cornerRadii));
         }
 
         @Override
@@ -708,14 +941,16 @@ public class DocumentPaintRendererTest {
         private final int top;
         private final int right;
         private final int bottom;
-        private final int cornerRadius;
+        private final UiBorderRadiusResolver.ResolvedCornerRadii cornerRadii;
 
-        private ClipCall(int left, int top, int right, int bottom, int cornerRadius) {
+        private ClipCall(int left, int top, int right, int bottom,
+                UiBorderRadiusResolver.ResolvedCornerRadii cornerRadii) {
             this.left = left;
             this.top = top;
             this.right = right;
             this.bottom = bottom;
-            this.cornerRadius = cornerRadius;
+            this.cornerRadii = cornerRadii == null ? UiBorderRadiusResolver.ResolvedCornerRadii.uniform(0)
+                    : cornerRadii;
         }
     }
 
@@ -823,18 +1058,19 @@ public class DocumentPaintRendererTest {
         private final int bottom;
         private final int blurRadius;
         private final float saturation;
-        private final int cornerRadius;
+        private final UiBorderRadiusResolver.ResolvedCornerRadii cornerRadii;
         private final int contentRevision;
 
         private BackdropCall(int left, int top, int right, int bottom, int blurRadius, float saturation,
-                int cornerRadius, int contentRevision) {
+                UiBorderRadiusResolver.ResolvedCornerRadii cornerRadii, int contentRevision) {
             this.left = left;
             this.top = top;
             this.right = right;
             this.bottom = bottom;
             this.blurRadius = blurRadius;
             this.saturation = saturation;
-            this.cornerRadius = cornerRadius;
+            this.cornerRadii = cornerRadii == null ? UiBorderRadiusResolver.ResolvedCornerRadii.uniform(0)
+                    : cornerRadii;
             this.contentRevision = contentRevision;
         }
     }

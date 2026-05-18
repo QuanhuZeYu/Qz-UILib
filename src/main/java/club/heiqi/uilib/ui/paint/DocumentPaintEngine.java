@@ -310,11 +310,13 @@ public final class DocumentPaintEngine {
         if (boxShadow == null || boxShadow.getColor() == 0 || boxShadow.isInset() != inset) {
             return;
         }
+        UiBorderRadiusResolver.ResolvedCornerRadii cornerRadii = resolveBorderRadii(box, animationTimeline,
+                currentTimeNanos);
         commands.add(new DocumentPaintCommand(
                 inset ? DocumentPaintCommandType.BOX_SHADOW_INSET : DocumentPaintCommandType.BOX_SHADOW,
                 box.getElement(), box.getLeft() + offsetX, box.getTop() + offsetY,
                 box.getRight() + offsetX, box.getBottom() + offsetY, applyOpacity(boxShadow.getColor(), opacity), 0,
-                box.getComputedStyle().getBorderRadius().resolve(Math.min(box.getWidth(), box.getHeight()), 0)));
+                cornerRadii));
     }
 
     private static void appendOutlineCommand(DocumentLayoutBox box, List<DocumentPaintCommand> commands,
@@ -585,7 +587,7 @@ public final class DocumentPaintEngine {
             DocumentAnimationTimeline animationTimeline,
             long currentTimeNanos) {
         UiBorderRadiusResolver.ResolvedCornerRadii radii = resolveStaticBorderRadii(box);
-        if (animationTimeline != null) {
+        if (hasRunningTransition(animationTimeline, box, DocumentAnimationProperty.BORDER_RADIUS)) {
             int radius = Math.round(animationTimeline.resolveFloat(box.getElement(), DocumentAnimationProperty.BORDER_RADIUS,
                     radii.getUniformRadius(), currentTimeNanos));
             radii = UiBorderRadiusResolver.resolve(box.getComputedStyle(), box.getWidth(), box.getHeight(),

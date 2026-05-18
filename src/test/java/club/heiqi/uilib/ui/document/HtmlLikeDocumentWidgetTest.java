@@ -43,6 +43,7 @@ import club.heiqi.uilib.ui.input.UiInputFrame;
 import club.heiqi.uilib.ui.input.UiInputRouter;
 import club.heiqi.uilib.ui.layout.DocumentLayoutBox;
 import club.heiqi.uilib.ui.render.UiRenderContext;
+import club.heiqi.uilib.ui.style.UiBorderStyle;
 import club.heiqi.uilib.ui.style.UiDisplay;
 import club.heiqi.uilib.ui.style.UiOverflow;
 import club.heiqi.uilib.ui.style.UiPosition;
@@ -70,6 +71,7 @@ public class HtmlLikeDocumentWidgetTest {
                 .setBackgroundColor(0xFF102030)
                 .setBorderColor(0xFF80A0FF)
                 .setBorderWidth(UiStyleLength.px(1))
+                .setBorderStyle(UiBorderStyle.SOLID)
                 .setBorderRadius(UiStyleLength.px(6));
         HtmlLikeDocumentWidget widget = new HtmlLikeDocumentWidget(document, 120, 48,
                 new DeterministicTextMeasureService());

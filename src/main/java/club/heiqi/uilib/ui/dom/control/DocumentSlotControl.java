@@ -20,6 +20,7 @@ import club.heiqi.uilib.ui.dom.UiDocument;
 import club.heiqi.uilib.ui.event.UiKeyEvent;
 import club.heiqi.uilib.ui.image.HostImageSource;
 import club.heiqi.uilib.ui.slot.SlotContentSnapshot;
+import club.heiqi.uilib.ui.style.UiBorderStyle;
 import club.heiqi.uilib.ui.style.UiDisplay;
 import club.heiqi.uilib.ui.style.UiOverflow;
 import club.heiqi.uilib.ui.style.UiPosition;
@@ -232,6 +233,7 @@ public final class DocumentSlotControl {
                 .setWidth(UiStyleLength.px(resolvedSize))
                 .setHeight(UiStyleLength.px(resolvedSize))
                 .setBorderWidth(UiStyleLength.px(SLOT_BORDER_WIDTH))
+                .setBorderStyle(UiBorderStyle.SOLID)
                 .setOverflowX(UiOverflow.HIDDEN)
                 .setOverflowY(UiOverflow.HIDDEN);
         contentImageControl.setSize(resolvedSize);

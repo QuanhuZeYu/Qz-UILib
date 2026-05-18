@@ -6,6 +6,7 @@ import java.util.Objects;
 
 import club.heiqi.uilib.ui.dom.ElementNode;
 import club.heiqi.uilib.ui.dom.UiDocument;
+import club.heiqi.uilib.ui.style.UiBorderStyle;
 import club.heiqi.uilib.ui.style.UiOverflow;
 import club.heiqi.uilib.ui.style.UiStyleInsets;
 import club.heiqi.uilib.ui.style.UiStyleLength;
@@ -278,6 +279,7 @@ public final class DocumentTableControl {
                         UiStyleLength.px(cellPadding), UiStyleLength.px(cellPadding)))
                 .setBorderWidth(UiStyleLength.px(borderWidth))
                 .setBorderColor(borderColor)
+                .setBorderStyle(UiBorderStyle.SOLID)
                 .setBackgroundColor(header ? headerBackgroundColor : bodyBackgroundColor)
                 .setTextColor(header ? headerTextColor : textColor)
                 .setOverflowX(UiOverflow.HIDDEN)

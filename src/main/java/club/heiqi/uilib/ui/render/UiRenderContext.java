@@ -1162,7 +1162,7 @@ public class UiRenderContext {
         Iterator<ClipState> iterator = clipStack.descendingIterator();
         while (iterator.hasNext()) {
             ClipState clipState = iterator.next();
-            if (clipState.cornerRadii == null || clipState.cornerRadii.getUniformRadius() <= 0) {
+            if (!hasAnyCornerRadius(clipState.cornerRadii)) {
                 continue;
             }
             int[] clipRect = clipState.clipRect;
