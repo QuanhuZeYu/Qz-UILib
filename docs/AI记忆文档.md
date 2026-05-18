@@ -56,6 +56,9 @@
 - 样式系统新增视觉增强属性：`box-shadow`（`UiBoxShadow` 值类型，支持 offsetX/Y、blur、spread、color、inset）、`border-style`（`UiBorderStyle` 枚举：NONE/SOLID/DASHED/DOTTED/DOUBLE/HIDDEN）、`cursor`（`UiCursor` 枚举：DEFAULT/POINTER/TEXT/MOVE/GRAB/NOT_ALLOWED 等，可继承）、`border-radius` 分角（`UiBorderRadius` 值类型，支持四角独立设置）、`text-decoration`（NONE/UNDERLINE/OVERLINE/LINE_THROUGH）、`pointer-events`（AUTO/NONE，标准化 hit-test 穿透）、`outline`（`UiOutline` 值类型，width/color/style/offset，不占布局空间）；所有属性均已集成到级联计算。
 - `UiStyleVariables` 提供 CSS Variables（自定义属性）能力：命名颜色/长度/字符串变量容器，挂载在 `UiDocument` 上作为 `:root` 级变量作用域；变量值变更自动触发文档样式重算，支持主题切换。
 - `DocumentElementScrollHandler` / `DocumentElementScrollEvent` 提供元素滚动事件监听能力，通过 `ElementNode.setScrollHandler(...)` 注册。
+- `DocumentNode` 已补齐标准 DOM 操作：`insertBefore(newChild, referenceChild)`、`replaceChild(newChild, oldChild)`，配合已有的 `appendChild`/`removeChild`/`clearChildren` 构成完整 DOM 操作集。
+- 样式系统新增 border 分边控制：`setBorderWidthSides(UiStyleInsets)` 支持四边独立 border-width；`setBorderColors(UiBorderColors)` 支持四边独立 border-color；分边值设置后优先于统一 borderWidth/borderColor 生效。
+- 样式系统新增文本排版控制：`letter-spacing`（字间距，可继承）、`word-break`（NORMAL/BREAK_ALL/KEEP_ALL，可继承）、`overflow-wrap`（NORMAL/BREAK_WORD/ANYWHERE，可继承）。
 - `height` 百分比相对包含块高度解析；包含块高度为 auto 时百分比高度视为 auto（由内容撑开），不再静默解析为 0。
 - Block 元素 `margin: 0 auto` 支持水平居中：有明确宽度的 block 元素，auto left/right margin 会平分剩余空间。
 - `line-height` 是可继承属性：父元素设置后子元素自动继承，除非子元素自行覆盖。
