@@ -107,6 +107,22 @@ public final class DocumentPaintCommand {
     }
 
     DocumentPaintCommand(DocumentPaintCommandType type, ElementNode element, int left, int top, int right, int bottom,
+            int color, int borderWidth, UiBorderRadiusResolver.ResolvedCornerRadii cornerRadii) {
+        this(type, element, left, top, right, bottom, color, borderWidth,
+                resolveLegacyBorderRadius(cornerRadii), cornerRadii, UiSurfaceStyle.CORNER_ALL, null,
+                TextContentMode.UILIB_RAW, null, 0, 1.0F, 1.0F, null);
+    }
+
+    DocumentPaintCommand(DocumentPaintCommandType type, ElementNode element, int left, int top, int right, int bottom,
+            int color, int borderWidth, UiBorderRadiusResolver.ResolvedCornerRadii cornerRadii, int cornerMask,
+            String text, DocumentCustomRenderer customRenderer, int backdropBlurRadius, float backdropSaturation,
+            float paintContextOpacity, DocumentEffectType effectType) {
+        this(type, element, left, top, right, bottom, color, borderWidth,
+                resolveLegacyBorderRadius(cornerRadii), cornerRadii, cornerMask, text, TextContentMode.UILIB_RAW,
+                customRenderer, backdropBlurRadius, backdropSaturation, paintContextOpacity, effectType);
+    }
+
+    DocumentPaintCommand(DocumentPaintCommandType type, ElementNode element, int left, int top, int right, int bottom,
             int color, int borderWidth, int borderRadius, UiBorderRadiusResolver.ResolvedCornerRadii cornerRadii,
             int cornerMask, String text, TextContentMode textContentMode, DocumentCustomRenderer customRenderer,
             int backdropBlurRadius, float backdropSaturation, float paintContextOpacity,
@@ -188,7 +204,7 @@ public final class DocumentPaintCommand {
     /**
      * 返回四角圆角值。
      *
-     * @return 四角圆角；未设置时返回 null
+     * @return 四角圆角；旧单值构造器会返回对应的统一圆角
      */
     public UiBorderRadiusResolver.ResolvedCornerRadii getCornerRadii() {
         return cornerRadii;
@@ -255,5 +271,9 @@ public final class DocumentPaintCommand {
             return DocumentEffectType.OVERFLOW_CLIP;
         }
         return null;
+    }
+
+    private static int resolveLegacyBorderRadius(UiBorderRadiusResolver.ResolvedCornerRadii cornerRadii) {
+        return cornerRadii != null && cornerRadii.isUniform() ? cornerRadii.getUniformRadius() : 0;
     }
 }

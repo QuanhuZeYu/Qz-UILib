@@ -17,7 +17,6 @@ import club.heiqi.uilib.ui.layout.DocumentScrollState;
 import club.heiqi.uilib.ui.layout.DocumentScrollState.ScrollbarMetrics;
 import club.heiqi.uilib.ui.layout.DocumentStackingPhase;
 import club.heiqi.uilib.ui.style.ComputedStyle;
-import club.heiqi.uilib.ui.style.UiBorderRadius;
 import club.heiqi.uilib.ui.style.UiBorderRadiusResolver;
 import club.heiqi.uilib.ui.style.UiBoxShadow;
 import club.heiqi.uilib.ui.style.UiBorderStyle;
@@ -253,9 +252,11 @@ public final class DocumentPaintEngine {
         if (isTransparent(color) || box.getWidth() <= 0 || box.getHeight() <= 0) {
             return;
         }
+        UiBorderRadiusResolver.ResolvedCornerRadii cornerRadii = resolveBorderRadii(box, animationTimeline,
+                currentTimeNanos);
         commands.add(new DocumentPaintCommand(DocumentPaintCommandType.BACKGROUND, box.getElement(),
                 box.getLeft() + offsetX, box.getTop() + offsetY, box.getRight() + offsetX,
-                box.getBottom() + offsetY, color, 0, 0, null, null, 0, 1.0F, 1.0F, null));
+                box.getBottom() + offsetY, color, 0, cornerRadii));
     }
 
     private static void appendBackdropFilterCommand(DocumentLayoutBox box, List<DocumentPaintCommand> commands,
@@ -270,9 +271,12 @@ public final class DocumentPaintEngine {
                 || box.getWidth() <= 0 || box.getHeight() <= 0) {
             return;
         }
+        UiBorderRadiusResolver.ResolvedCornerRadii cornerRadii = resolveBorderRadii(box, animationTimeline,
+                currentTimeNanos);
         commands.add(new DocumentPaintCommand(DocumentPaintCommandType.BACKDROP_FILTER, box.getElement(),
                 box.getLeft() + offsetX, box.getTop() + offsetY, box.getRight() + offsetX,
-                box.getBottom() + offsetY, 0, 0, 0, null, null, blurRadius, saturation, 1.0F,
+                box.getBottom() + offsetY, 0, 0, cornerRadii, UiSurfaceStyle.CORNER_ALL, null, null, blurRadius,
+                saturation, 1.0F,
                 DocumentEffectType.BACKDROP_FILTER));
     }
 
@@ -401,10 +405,12 @@ public final class DocumentPaintEngine {
                     DocumentAnimationProperty.BACKGROUND_COLOR, ownerStyle.getBackgroundColor(), currentTimeNanos);
             backgroundColor = applyOpacity(backgroundColor, opacity);
             if (!isTransparent(backgroundColor)) {
+                UiBorderRadiusResolver.ResolvedCornerRadii cornerRadii = resolveInlineFragmentBorderRadii(ownerStyle,
+                        inlineFragment.getWidth(), inlineFragment.getHeight());
                 commands.add(new DocumentPaintCommand(DocumentPaintCommandType.BACKGROUND, ownerElement,
                         inlineFragment.getLeft() + offsetX, inlineFragment.getTop() + offsetY,
                         inlineFragment.getRight() + offsetX, inlineFragment.getBottom() + offsetY, backgroundColor, 0,
-                        radius, null));
+                        cornerRadii, cornerMask, null, null, 0, 1.0F, 1.0F, null));
             }
             int borderWidth = Math.max(0, ownerStyle.getBorderWidth().resolve(inlineFragment.getWidth(), 0));
             int borderColor = resolveAnimatedColor(animationTimeline, ownerElement, DocumentAnimationProperty.BORDER_COLOR,
@@ -438,6 +444,11 @@ public final class DocumentPaintEngine {
 
     private static int resolveInlineFragmentBorderRadius(ComputedStyle style, int width, int height) {
         return UiBorderRadiusResolver.resolve(style, width, height).getUniformRadius();
+    }
+
+    private static UiBorderRadiusResolver.ResolvedCornerRadii resolveInlineFragmentBorderRadii(ComputedStyle style,
+            int width, int height) {
+        return UiBorderRadiusResolver.resolve(style, width, height);
     }
 
     private static int resolveTextRunColor(DocumentLayoutTextRun textRun, DocumentAnimationTimeline animationTimeline,
@@ -508,9 +519,11 @@ public final class DocumentPaintEngine {
             DocumentAnimationTimeline animationTimeline, long currentTimeNanos, DocumentEffectChain effectChain,
             int offsetX, int offsetY) {
         DocumentEffectChain.ClipBounds clipBounds = effectChain.resolveChildClipBounds(offsetX, offsetY);
+        UiBorderRadiusResolver.ResolvedCornerRadii cornerRadii = resolveBorderRadii(box, animationTimeline,
+                currentTimeNanos);
         commands.add(new DocumentPaintCommand(DocumentPaintCommandType.CLIP_START, box.getElement(),
                 clipBounds.getLeft(), clipBounds.getTop(), clipBounds.getRight(), clipBounds.getBottom(), 0, 0,
-                resolveBorderRadius(box, animationTimeline, currentTimeNanos), null, null, 0, 1.0F, 1.0F,
+                cornerRadii, UiSurfaceStyle.CORNER_ALL, null, null, 0, 1.0F, 1.0F,
                 DocumentEffectType.OVERFLOW_CLIP));
     }
 
@@ -578,26 +591,14 @@ public final class DocumentPaintEngine {
         if (animationTimeline != null) {
             int radius = Math.round(animationTimeline.resolveFloat(box.getElement(), DocumentAnimationProperty.BORDER_RADIUS,
                     radii.getUniformRadius(), currentTimeNanos));
-            radii = UiBorderRadiusResolver.ResolvedCornerRadii.uniform(radius);
+            radii = UiBorderRadiusResolver.resolve(box.getComputedStyle(), box.getWidth(), box.getHeight(),
+                    Integer.valueOf(radius));
         }
         return radii;
     }
 
-    private static int resolveBorderRadius(DocumentLayoutBox box, DocumentAnimationTimeline animationTimeline,
-            long currentTimeNanos) {
-        return resolveBorderRadii(box, animationTimeline, currentTimeNanos).getUniformRadius();
-    }
-
     private static UiBorderRadiusResolver.ResolvedCornerRadii resolveStaticBorderRadii(DocumentLayoutBox box) {
-        UiBorderRadius corners = box.getComputedStyle().getBorderRadiusCorners();
-        if (corners != null) {
-            int limit = Math.min(box.getWidth(), box.getHeight());
-            return UiBorderRadiusResolver.ResolvedCornerRadii.of(corners.getTopLeft().resolve(limit, 0),
-                    corners.getTopRight().resolve(limit, 0), corners.getBottomRight().resolve(limit, 0),
-                    corners.getBottomLeft().resolve(limit, 0));
-        }
-        int radius = box.getComputedStyle().getBorderRadius().resolve(Math.min(box.getWidth(), box.getHeight()), 0);
-        return UiBorderRadiusResolver.ResolvedCornerRadii.uniform(radius);
+        return UiBorderRadiusResolver.resolve(box.getComputedStyle(), box.getWidth(), box.getHeight());
     }
 
     private static UiStyleInsets resolveBorderWidthSides(ComputedStyle style) {

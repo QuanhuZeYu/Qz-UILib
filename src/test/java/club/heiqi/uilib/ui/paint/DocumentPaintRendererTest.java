@@ -47,9 +47,12 @@ public class DocumentPaintRendererTest {
         DocumentPaintRenderer.render(renderContext, DocumentPaintEngine.buildPaintCommands(
                 DocumentLayoutEngine.layout(root, 80, 0)));
 
-        Assert.assertTrue(renderContext.drawCalls.size() >= 3);
+        Assert.assertEquals(5, renderContext.drawCalls.size());
         assertDrawCall(renderContext.drawCalls.get(0), 0, 0, 44, 24, 0xAA101820, 0, 8);
-        Assert.assertTrue(containsFillColor(renderContext.drawCalls, 0xFF86A8F0));
+        assertDrawCall(renderContext.drawCalls.get(1), 0, 0, 44, 2, 0xFF86A8F0, 0, 0);
+        assertDrawCall(renderContext.drawCalls.get(2), 42, 0, 44, 24, 0xFF86A8F0, 0, 0);
+        assertDrawCall(renderContext.drawCalls.get(3), 0, 22, 44, 24, 0xFF86A8F0, 0, 0);
+        assertDrawCall(renderContext.drawCalls.get(4), 0, 0, 2, 24, 0xFF86A8F0, 0, 0);
     }
 
     /**
@@ -472,39 +475,8 @@ public class DocumentPaintRendererTest {
         Assert.assertEquals(bottom, drawCall.bottom);
         Assert.assertEquals(fillColor, drawCall.surfaceStyle.fillColor);
         Assert.assertEquals(borderColor, drawCall.surfaceStyle.borderColor);
-        if (cornerRadius != 0) {
-            Assert.assertTrue(drawCall.surfaceStyle.cornerRadius == cornerRadius
-                    || drawCall.surfaceStyle.cornerRadius == 0
-                    || (drawCall.surfaceStyle.cornerRadii != null
-                            && (drawCall.surfaceStyle.cornerRadii.getTopLeft() > 0
-                                    || drawCall.surfaceStyle.cornerRadii.getTopRight() > 0
-                                    || drawCall.surfaceStyle.cornerRadii.getBottomRight() > 0
-                                    || drawCall.surfaceStyle.cornerRadii.getBottomLeft() > 0)));
-        } else {
-            Assert.assertEquals(cornerRadius, drawCall.surfaceStyle.cornerRadius);
-        }
+        Assert.assertEquals(cornerRadius, drawCall.surfaceStyle.cornerRadius);
         Assert.assertEquals(cornerMask, drawCall.surfaceStyle.cornerMask);
-    }
-
-    private static boolean containsDrawCall(List<DrawCall> drawCalls, int left, int top, int right, int bottom,
-            int fillColor, int borderColor) {
-        for (DrawCall drawCall : drawCalls) {
-            if (drawCall.left == left && drawCall.top == top && drawCall.right == right && drawCall.bottom == bottom
-                    && drawCall.surfaceStyle.fillColor == fillColor
-                    && drawCall.surfaceStyle.borderColor == borderColor) {
-                return true;
-            }
-        }
-        return false;
-    }
-
-    private static boolean containsFillColor(List<DrawCall> drawCalls, int fillColor) {
-        for (DrawCall drawCall : drawCalls) {
-            if (drawCall.surfaceStyle.fillColor == fillColor || drawCall.surfaceStyle.borderColor == fillColor) {
-                return true;
-            }
-        }
-        return false;
     }
 
     private static void assertClipCall(ClipCall clipCall, int left, int top, int right, int bottom, int cornerRadius) {
@@ -538,11 +510,7 @@ public class DocumentPaintRendererTest {
         Assert.assertEquals(bottom, backdropCall.bottom);
         Assert.assertEquals(blurRadius, backdropCall.blurRadius);
         Assert.assertEquals(saturation, backdropCall.saturation, 0.0F);
-        if (cornerRadius != 0) {
-            Assert.assertTrue(backdropCall.cornerRadius == 0 || backdropCall.cornerRadius == cornerRadius);
-        } else {
-            Assert.assertEquals(cornerRadius, backdropCall.cornerRadius);
-        }
+        Assert.assertEquals(cornerRadius, backdropCall.cornerRadius);
     }
 
     private static void assertPaintContextCall(PaintContextCall paintContextCall, int left, int top, int right,
