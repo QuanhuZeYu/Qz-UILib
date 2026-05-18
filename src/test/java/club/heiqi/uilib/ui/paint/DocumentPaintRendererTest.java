@@ -41,18 +41,81 @@ public class DocumentPaintRendererTest {
                 .setBackgroundColor(0xAA101820)
                 .setBorderColor(0xFF86A8F0)
                 .setBorderWidth(UiStyleLength.px(2))
+                .setBorderStyle(UiBorderStyle.SOLID)
                 .setBorderRadius(UiStyleLength.px(8));
 
         RecordingUiRenderContext renderContext = new RecordingUiRenderContext();
         DocumentPaintRenderer.render(renderContext, DocumentPaintEngine.buildPaintCommands(
                 DocumentLayoutEngine.layout(root, 80, 0)));
 
-        Assert.assertEquals(5, renderContext.drawCalls.size());
+        Assert.assertEquals(3, renderContext.drawCalls.size());
         assertDrawCall(renderContext.drawCalls.get(0), 0, 0, 44, 24, 0xAA101820, 0, 8);
-        assertDrawCall(renderContext.drawCalls.get(1), 0, 0, 44, 2, 0xFF86A8F0, 0, 0);
-        assertDrawCall(renderContext.drawCalls.get(2), 42, 0, 44, 24, 0xFF86A8F0, 0, 0);
-        assertDrawCall(renderContext.drawCalls.get(3), 0, 22, 44, 24, 0xFF86A8F0, 0, 0);
-        assertDrawCall(renderContext.drawCalls.get(4), 0, 0, 2, 24, 0xFF86A8F0, 0, 0);
+        assertDrawCall(renderContext.drawCalls.get(1), 0, 0, 44, 24, 0, 0xFF86A8F0, 8);
+        assertDrawCall(renderContext.drawCalls.get(2), 1, 1, 43, 23, 0, 0xFF86A8F0, 7);
+    }
+
+    /**
+     * 验证 border-style:none 不会被 renderer 强制当作 solid 绘制。
+     */
+    @Test
+    public void shouldSkipBorderRenderingWhenBorderStyleIsNone() {
+        UiDocument document = UiDocument.create();
+        ElementNode root = document.getRootElement();
+
+        root.style().setBorderStyle(UiBorderStyle.NONE);
+        List<DocumentPaintCommand> commands = new ArrayList<DocumentPaintCommand>();
+        commands.add(new DocumentPaintCommand(DocumentPaintCommandType.BORDER, root, 0, 0, 40, 20,
+                0xFF86A8F0, 2, UiBorderRadiusResolver.ResolvedCornerRadii.uniform(8)));
+
+        RecordingUiRenderContext renderContext = new RecordingUiRenderContext();
+        DocumentPaintRenderer.render(renderContext, commands);
+
+        Assert.assertTrue(renderContext.drawCalls.isEmpty());
+    }
+
+    /**
+     * 验证 outline 会按 offset、width、color 和外扩圆角绘制逐层圆角轮廓。
+     */
+    @Test
+    public void shouldRenderRoundedOutlineWithOffsetWidthColor() {
+        UiDocument document = UiDocument.create();
+        ElementNode root = document.getRootElement();
+
+        root.style()
+                .setWidth(UiStyleLength.px(40))
+                .setHeight(UiStyleLength.px(20))
+                .setBorderRadius(UiStyleLength.px(8))
+                .setOutline(UiOutline.of(2, 0xFF67E8F9, UiBorderStyle.SOLID, 1));
+
+        RecordingUiRenderContext renderContext = new RecordingUiRenderContext();
+        DocumentPaintRenderer.render(renderContext, DocumentPaintEngine.buildPaintCommands(
+                DocumentLayoutEngine.layout(root, 80, 0)));
+
+        Assert.assertEquals(2, renderContext.drawCalls.size());
+        assertDrawCall(renderContext.drawCalls.get(0), -3, -3, 43, 23, 0, 0xFF67E8F9, 11);
+        assertDrawCall(renderContext.drawCalls.get(1), -2, -2, 42, 22, 0, 0xFF67E8F9, 10);
+    }
+
+    /**
+     * 验证 BORDER 命令携带的局部圆角掩码不会在 renderer 回放时丢失。
+     */
+    @Test
+    public void shouldRenderBorderCornerMaskToUiRenderContext() {
+        UiDocument document = UiDocument.create();
+        ElementNode root = document.getRootElement();
+        root.style().setBorderStyle(UiBorderStyle.SOLID);
+        List<DocumentPaintCommand> commands = new ArrayList<DocumentPaintCommand>();
+        commands.add(new DocumentPaintCommand(DocumentPaintCommandType.BORDER, root, 0, 0, 30, 14,
+                0xFF86A8F0, 1, UiBorderRadiusResolver.ResolvedCornerRadii.uniform(6),
+                UiSurfaceStyle.CORNER_TOP_LEFT | UiSurfaceStyle.CORNER_BOTTOM_LEFT,
+                null, null, 0, 1.0F, 1.0F, null));
+
+        RecordingUiRenderContext renderContext = new RecordingUiRenderContext();
+        DocumentPaintRenderer.render(renderContext, commands, 7, 11);
+
+        Assert.assertEquals(1, renderContext.drawCalls.size());
+        assertDrawCall(renderContext.drawCalls.get(0), 7, 11, 37, 25, 0, 0xFF86A8F0, 6,
+                UiSurfaceStyle.CORNER_TOP_LEFT | UiSurfaceStyle.CORNER_BOTTOM_LEFT);
     }
 
     /**

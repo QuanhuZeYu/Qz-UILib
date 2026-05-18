@@ -284,7 +284,8 @@ public final class DocumentPaintEngine {
             DocumentAnimationTimeline animationTimeline, long currentTimeNanos, float opacity, int offsetX,
             int offsetY) {
         ComputedStyle style = box.getComputedStyle();
-        if (style.getBorderStyle() == UiBorderStyle.HIDDEN || box.getWidth() <= 0 || box.getHeight() <= 0) {
+        if (style.getBorderStyle() == UiBorderStyle.NONE || style.getBorderStyle() == UiBorderStyle.HIDDEN
+                || box.getWidth() <= 0 || box.getHeight() <= 0) {
             return;
         }
         DocumentLayoutEdges borderWidths = box.getBorder();
@@ -299,8 +300,7 @@ public final class DocumentPaintEngine {
         }
         commands.add(new DocumentPaintCommand(DocumentPaintCommandType.BORDER, box.getElement(),
                 box.getLeft() + offsetX, box.getTop() + offsetY, box.getRight() + offsetX,
-                box.getBottom() + offsetY, color, borderWidths.getTop(), box.getComputedStyle().getBorderRadius().resolve(
-                        Math.min(box.getWidth(), box.getHeight()), 0)));
+                box.getBottom() + offsetY, color, borderWidths.getTop(), cornerRadii));
     }
 
     private static void appendBoxShadowCommand(DocumentLayoutBox box, List<DocumentPaintCommand> commands,
@@ -321,13 +321,15 @@ public final class DocumentPaintEngine {
             DocumentAnimationTimeline animationTimeline, long currentTimeNanos, float opacity, int offsetX,
             int offsetY) {
         UiOutline outline = box.getComputedStyle().getOutline();
-        if (outline == null || outline.isNone()) {
+        if (outline == null || outline.isNone() || outline.getStyle() == UiBorderStyle.HIDDEN) {
             return;
         }
+        UiBorderRadiusResolver.ResolvedCornerRadii cornerRadii = resolveBorderRadii(box, animationTimeline,
+                currentTimeNanos);
         commands.add(new DocumentPaintCommand(DocumentPaintCommandType.OUTLINE, box.getElement(),
                 box.getLeft() + offsetX, box.getTop() + offsetY, box.getRight() + offsetX,
                 box.getBottom() + offsetY, applyOpacity(outline.getColor(), opacity), outline.getWidth(),
-                box.getComputedStyle().getBorderRadius().resolve(Math.min(box.getWidth(), box.getHeight()), 0)));
+                cornerRadii));
     }
 
     private static void appendCustomCommand(DocumentLayoutBox box, List<DocumentPaintCommand> commands, int offsetX,
@@ -398,15 +400,13 @@ public final class DocumentPaintEngine {
                 continue;
             }
             ComputedStyle ownerStyle = UiStyleResolver.compute(ownerElement);
-            int radius = resolveInlineFragmentBorderRadius(ownerStyle, inlineFragment.getWidth(),
-                    inlineFragment.getHeight());
             int cornerMask = resolveInlineFragmentCornerMask(inlineFragment);
+            UiBorderRadiusResolver.ResolvedCornerRadii cornerRadii = resolveInlineFragmentBorderRadii(ownerStyle,
+                    inlineFragment.getWidth(), inlineFragment.getHeight());
             int backgroundColor = resolveAnimatedColor(animationTimeline, ownerElement,
                     DocumentAnimationProperty.BACKGROUND_COLOR, ownerStyle.getBackgroundColor(), currentTimeNanos);
             backgroundColor = applyOpacity(backgroundColor, opacity);
             if (!isTransparent(backgroundColor)) {
-                UiBorderRadiusResolver.ResolvedCornerRadii cornerRadii = resolveInlineFragmentBorderRadii(ownerStyle,
-                        inlineFragment.getWidth(), inlineFragment.getHeight());
                 commands.add(new DocumentPaintCommand(DocumentPaintCommandType.BACKGROUND, ownerElement,
                         inlineFragment.getLeft() + offsetX, inlineFragment.getTop() + offsetY,
                         inlineFragment.getRight() + offsetX, inlineFragment.getBottom() + offsetY, backgroundColor, 0,
@@ -417,11 +417,12 @@ public final class DocumentPaintEngine {
                     ownerStyle.getBorderColor(), currentTimeNanos);
             borderColor = applyOpacity(borderColor, opacity);
             if (!isTransparent(borderColor) && borderWidth > 0
+                    && ownerStyle.getBorderStyle() != UiBorderStyle.NONE
                     && ownerStyle.getBorderStyle() != UiBorderStyle.HIDDEN) {
                 commands.add(new DocumentPaintCommand(DocumentPaintCommandType.BORDER, ownerElement,
                         inlineFragment.getLeft() + offsetX, inlineFragment.getTop() + offsetY,
                         inlineFragment.getRight() + offsetX, inlineFragment.getBottom() + offsetY, borderColor,
-                        borderWidth, radius));
+                        borderWidth, cornerRadii, cornerMask, null, null, 0, 1.0F, 1.0F, null));
             }
         }
     }
@@ -440,10 +441,6 @@ public final class DocumentPaintEngine {
             cornerMask |= UiSurfaceStyle.CORNER_TOP_RIGHT | UiSurfaceStyle.CORNER_BOTTOM_RIGHT;
         }
         return cornerMask;
-    }
-
-    private static int resolveInlineFragmentBorderRadius(ComputedStyle style, int width, int height) {
-        return UiBorderRadiusResolver.resolve(style, width, height).getUniformRadius();
     }
 
     private static UiBorderRadiusResolver.ResolvedCornerRadii resolveInlineFragmentBorderRadii(ComputedStyle style,

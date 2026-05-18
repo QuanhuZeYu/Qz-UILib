@@ -16,6 +16,9 @@ import club.heiqi.uilib.ui.layout.DocumentLayoutBox;
 import club.heiqi.uilib.ui.layout.DocumentLayoutEngine;
 import club.heiqi.uilib.ui.layout.DocumentScrollState;
 import club.heiqi.uilib.ui.render.UiRenderContext;
+import club.heiqi.uilib.ui.style.UiBorderRadius;
+import club.heiqi.uilib.ui.style.UiBorderRadiusResolver;
+import club.heiqi.uilib.ui.style.UiBorderStyle;
 import club.heiqi.uilib.ui.style.UiOverflow;
 import club.heiqi.uilib.ui.style.UiPosition;
 import club.heiqi.uilib.ui.style.UiStyleInsets;
@@ -43,6 +46,7 @@ public class DocumentPaintEngineTest {
                 .setBackgroundColor(0xAA101820)
                 .setBorderColor(0xFF86A8F0)
                 .setBorderWidth(UiStyleLength.px(2))
+                .setBorderStyle(UiBorderStyle.SOLID)
                 .setBorderRadius(UiStyleLength.px(12));
         child.style()
                 .setWidth(UiStyleLength.px(40))
@@ -60,6 +64,54 @@ public class DocumentPaintEngineTest {
                 12);
         assertCommand(commands.get(2), DocumentPaintCommandType.BACKGROUND, child, 2, 2, 42, 12, 0xFF223344, 0,
                 0);
+    }
+
+    /**
+     * 验证 BORDER 命令携带真实分角圆角，而不是退回旧的单值半径。
+     */
+    @Test
+    public void shouldStoreResolvedCornerRadiiOnBorderCommand() {
+        UiDocument document = UiDocument.create();
+        ElementNode root = document.getRootElement();
+
+        root.style()
+                .setWidth(UiStyleLength.px(40))
+                .setHeight(UiStyleLength.px(20))
+                .setBorderColor(0xFF86A8F0)
+                .setBorderWidth(UiStyleLength.px(2))
+                .setBorderStyle(UiBorderStyle.SOLID)
+                .setBorderRadiusCorners(UiBorderRadius.of(UiStyleLength.px(8), UiStyleLength.px(4),
+                        UiStyleLength.px(2), UiStyleLength.px(0)));
+
+        List<DocumentPaintCommand> commands = DocumentPaintEngine.buildPaintCommands(
+                DocumentLayoutEngine.layout(root, 80, 0));
+
+        Assert.assertEquals(1, commands.size());
+        assertCommand(commands.get(0), DocumentPaintCommandType.BORDER, root, 0, 0, 44, 24, 0xFF86A8F0, 2,
+                0);
+        assertCornerRadii(commands.get(0).getCornerRadii(), 8, 4, 2, 0);
+    }
+
+    /**
+     * 验证 border-style:none 不会生成边框绘制命令。
+     */
+    @Test
+    public void shouldSkipBorderCommandWhenBorderStyleIsNone() {
+        UiDocument document = UiDocument.create();
+        ElementNode root = document.getRootElement();
+
+        root.style()
+                .setWidth(UiStyleLength.px(40))
+                .setHeight(UiStyleLength.px(20))
+                .setBorderColor(0xFF86A8F0)
+                .setBorderWidth(UiStyleLength.px(2))
+                .setBorderStyle(UiBorderStyle.NONE)
+                .setBorderRadius(UiStyleLength.px(8));
+
+        List<DocumentPaintCommand> commands = DocumentPaintEngine.buildPaintCommands(
+                DocumentLayoutEngine.layout(root, 80, 0));
+
+        Assert.assertTrue(commands.isEmpty());
     }
 
     /**
@@ -203,6 +255,7 @@ public class DocumentPaintEngineTest {
                 .setBackgroundColor(0xAA101820)
                 .setBorderColor(0xFF86A8F0)
                 .setBorderWidth(UiStyleLength.px(2))
+                .setBorderStyle(UiBorderStyle.SOLID)
                 .setBorderRadius(UiStyleLength.px(12));
         child.style()
                 .setWidth(UiStyleLength.px(40))
@@ -364,6 +417,7 @@ public class DocumentPaintEngineTest {
                 .setBackgroundColor(0xFF223344)
                 .setBorderColor(0xFF88AADD)
                 .setBorderWidth(UiStyleLength.px(1))
+                .setBorderStyle(UiBorderStyle.SOLID)
                 .setBorderRadius(UiStyleLength.px(0))
                 .setOverflowX(UiOverflow.HIDDEN)
                 .setOverflowY(UiOverflow.HIDDEN)
@@ -519,6 +573,7 @@ public class DocumentPaintEngineTest {
                 .setBackgroundColor(0x44FFFFFF)
                 .setBorderColor(0x99FFFFFF)
                 .setBorderWidth(UiStyleLength.px(1))
+                .setBorderStyle(UiBorderStyle.SOLID)
                 .setBorderRadius(UiStyleLength.px(10))
                 .setBackdropBlurRadius(UiStyleLength.px(14))
                 .setBackdropSaturation(1.4F);
@@ -944,6 +999,7 @@ public class DocumentPaintEngineTest {
                 .setBackgroundColor(0x334F46E5)
                 .setBorderColor(0xFFFFD166)
                 .setBorderWidth(UiStyleLength.px(1))
+                .setBorderStyle(UiBorderStyle.SOLID)
                 .setBorderRadius(UiStyleLength.px(5))
                 .setTextColor(0xFFFFD166);
         root.appendText("AA");
@@ -976,6 +1032,7 @@ public class DocumentPaintEngineTest {
                 .setBackgroundColor(0x334F46E5)
                 .setBorderColor(0xFFFFD166)
                 .setBorderWidth(UiStyleLength.px(1))
+                .setBorderStyle(UiBorderStyle.SOLID)
                 .setBorderRadius(UiStyleLength.px(5))
                 .setTextColor(0xFFFFD166);
         span.appendText("AABBCC");
@@ -1046,6 +1103,7 @@ public class DocumentPaintEngineTest {
                 .setPadding(UiStyleInsets.of(UiStyleLength.px(2), UiStyleLength.px(5), UiStyleLength.px(4),
                         UiStyleLength.px(3)))
                 .setBorderWidth(UiStyleLength.px(1))
+                .setBorderStyle(UiBorderStyle.SOLID)
                 .setBackgroundColor(0x334F46E5)
                 .setBorderColor(0xFFFFD166)
                 .setTextColor(0xFFFFD166);
@@ -1245,6 +1303,14 @@ public class DocumentPaintEngineTest {
         Assert.assertEquals(borderWidth, command.getBorderWidth());
         Assert.assertEquals(borderRadius, command.getBorderRadius());
         Assert.assertEquals(cornerMask, command.getCornerMask());
+    }
+
+    private static void assertCornerRadii(UiBorderRadiusResolver.ResolvedCornerRadii cornerRadii, int topLeft,
+            int topRight, int bottomRight, int bottomLeft) {
+        Assert.assertEquals(topLeft, cornerRadii.getTopLeft());
+        Assert.assertEquals(topRight, cornerRadii.getTopRight());
+        Assert.assertEquals(bottomRight, cornerRadii.getBottomRight());
+        Assert.assertEquals(bottomLeft, cornerRadii.getBottomLeft());
     }
 
     private static int countCommands(List<DocumentPaintCommand> commands, DocumentPaintCommandType type) {

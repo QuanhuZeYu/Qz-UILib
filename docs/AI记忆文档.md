@@ -53,7 +53,7 @@
 - 样式系统已支持 CSS-like 选择器和样式表级联：`ElementNode` 提供 `className`/`classList`（`DomTokenList`）和 `id` 便捷方法；`UiSelector` 支持 tag/class/id/通配符/复合选择器及特异性计算；`UiStyleSheet` 容器通过 `UiDocument.addStyleSheet(...)` 挂载；`UiStyleResolver` 按 inline > id > class > tag 特异性级联计算所有属性。
 - `UiSelector` 已支持伪类条件（`:hover`/`:focus`/`:focus-visible`/`:active`/`:disabled`）；伪类在特异性中计入 class 级别；`UiStyleResolver.compute(element, activeStates)` 接受 `Set<UiPseudoClass>` 进行状态感知样式计算。
 - `UiDocument` 提供标准 DOM 查询：`getElementById(id)`、`querySelector(selectorText)`、`querySelectorAll(selectorText)`、`getElementsByTagName(tagName)`、`getElementsByClassName(className)`，均按深度优先遍历并复用 `UiSelector` 匹配。
-- 样式系统新增视觉增强属性：`box-shadow`、`border-style`、`cursor`、`border-radius` 分角、`text-decoration`、`pointer-events`、`outline` 均已进入级联计算；当前运行时已接通 `text-decoration` 绘制、`pointer-events:none` 命中穿透、分角圆角绘制/clip/backdrop-filter/命中测试，以及 `box-shadow`、`outline`、虚线/点线/双线边框的基础绘制链路。
+- 样式系统新增视觉增强属性：`box-shadow`、`border-style`、`cursor`、`border-radius` 分角、`text-decoration`、`pointer-events`、`outline` 均已进入级联计算；当前运行时已接通 `text-decoration` 绘制、`pointer-events:none` 命中穿透、分角圆角绘制/clip/backdrop-filter/命中测试，以及 `box-shadow`、`outline`、虚线/点线/双线边框的基础绘制链路；`border-style:none/hidden` 不绘制边框，普通统一 solid 圆角 border/outline 按逐层圆角轮廓绘制。
 - `UiStyleVariables` 提供命名颜色/长度/字符串变量容器，挂载在 `UiDocument` 上作为文档级变量作用域；变量值变更会触发布局失效，但当前不支持 CSS `var(...)` 声明级自动解析，页面若要响应主题变量变化仍需读取变量并回写样式。
 - `aspect-ratio` 已在高度 auto 且宽度可解析的普通盒布局中推导内容高度；普通 `img` 绘制阶段已支持 `object-fit` 的 fill/contain/cover/none/scale-down。
 - 诊断页与示例页只展示已接入运行时并有最小验证的能力；仅完成级联解析、值类型承载或手动同步的能力必须明确写成边界，不得包装成浏览器语义已完整支持。
