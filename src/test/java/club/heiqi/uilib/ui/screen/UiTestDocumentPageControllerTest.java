@@ -313,6 +313,10 @@ public class UiTestDocumentPageControllerTest {
         public void openListElementDrag() {
             openListElementDragCalled = true;
         }
+
+        @Override
+        public void openBrowserSemanticsShowcase() {
+        }
     }
 
     private static final class DeterministicTextMeasureService implements TextMeasureService {

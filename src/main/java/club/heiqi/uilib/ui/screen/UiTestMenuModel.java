@@ -34,4 +34,9 @@ interface UiTestMenuModel {
      * 打开列表元素组件拖拽测试子页。
      */
     void openListElementDrag();
+
+    /**
+     * 打开浏览器语义新功能展示子页。
+     */
+    void openBrowserSemanticsShowcase();
 }

@@ -153,6 +153,7 @@ final class UiTestDocumentPageController extends DocumentPageController {
         ElementNode firstRow = appendNavigationRow(document, outer);
         ElementNode secondRow = appendNavigationRow(document, outer);
         ElementNode thirdRow = appendNavigationRow(document, outer);
+        ElementNode fourthRow = appendNavigationRow(document, outer);
 
         appendNavigationCard(document, firstRow, "布局诊断子页",
                 "继续检查页面壳尺寸、文本测量、滚动区域和运行时统计。", "进入布局诊断页",
@@ -200,6 +201,14 @@ final class UiTestDocumentPageController extends DocumentPageController {
                     @Override
                     public void onAction(DocumentButtonActionEvent event) {
                         menuModel.openListElementDrag();
+                    }
+                });
+        appendNavigationCard(document, fourthRow, "浏览器语义展示",
+                "展示新增的 CSS 选择器、事件传播、DOM 查询、视觉增强、伪类、CSS Variables 等能力。", "进入语义展示",
+                new DocumentButtonActionHandler() {
+                    @Override
+                    public void onAction(DocumentButtonActionEvent event) {
+                        menuModel.openBrowserSemanticsShowcase();
                     }
                 });
     }

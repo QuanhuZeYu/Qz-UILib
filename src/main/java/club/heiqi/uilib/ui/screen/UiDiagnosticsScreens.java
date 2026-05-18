@@ -126,6 +126,22 @@ final class UiDiagnosticsScreens {
     }
 
     /**
+     * 创建浏览器语义新功能展示页。
+     */
+    static GuiScreen createBrowserSemanticsShowcase() {
+        return createBrowserSemanticsShowcase(UiDocumentScreens.DocumentScreenEnvironment.minecraftFormattedDefaults());
+    }
+
+    /**
+     * 基于显式环境创建浏览器语义新功能展示页。
+     */
+    static GuiScreen createBrowserSemanticsShowcase(UiDocumentScreens.DocumentScreenEnvironment environment) {
+        return InternalHostedScreenFactory.createScreen(
+                InternalDiagnosticScreenRegistry.BROWSER_SEMANTICS_SHOWCASE_DEFINITION,
+                Objects.requireNonNull(environment, "environment"), null);
+    }
+
+    /**
      * 判断界面是否为诊断菜单。
      */
     static boolean isUiTest(GuiScreen screen) {
@@ -192,6 +208,11 @@ final class UiDiagnosticsScreens {
             @Override
             public void openListElementDrag() {
                 Minecraft.getMinecraft().displayGuiScreen(createListElementDrag(environment));
+            }
+
+            @Override
+            public void openBrowserSemanticsShowcase() {
+                Minecraft.getMinecraft().displayGuiScreen(createBrowserSemanticsShowcase(environment));
             }
         };
     }

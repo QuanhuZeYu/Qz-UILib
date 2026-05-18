@@ -18,6 +18,8 @@ final class InternalDiagnosticScreenRegistry {
             "inventory_overview");
     static final InternalScreenIdentity.PageDescriptor LIST_ELEMENT_DRAG = new InternalScreenIdentity.PageDescriptor(
             "list_element_drag");
+    static final InternalScreenIdentity.PageDescriptor BROWSER_SEMANTICS_SHOWCASE = new InternalScreenIdentity.PageDescriptor(
+            "browser_semantics_showcase");
 
     static final InternalHostedScreenFactory.InternalHostedScreenDefinition<UiTestMenuModel> UI_TEST_DEFINITION = new InternalHostedScreenFactory.InternalHostedScreenDefinition<UiTestMenuModel>(
             UI_TEST,
@@ -112,6 +114,19 @@ final class InternalDiagnosticScreenRegistry {
                     return new HtmlLikeListDragDocumentPageController(documentUi, documentPage);
                 }
             });
+    static final InternalHostedScreenFactory.InternalHostedScreenDefinition<Void> BROWSER_SEMANTICS_SHOWCASE_DEFINITION = new InternalHostedScreenFactory.InternalHostedScreenDefinition<Void>(
+            BROWSER_SEMANTICS_SHOWCASE,
+            DocumentScreenChrome::resolve,
+            new InternalHostedScreenFactory.InternalDocumentPageControllerFactory<Void>() {
+                @Override
+                public DocumentPageController create(DocumentUiScope documentUi,
+                        DocumentPageAuthoringSurface documentPage,
+                        DocumentPageRuntimeView runtimeView,
+                        String pageId,
+                        Void provision) {
+                    return new HtmlLikeBrowserSemanticsShowcaseDocumentPageController(documentUi, documentPage);
+                }
+            });
 
     private InternalDiagnosticScreenRegistry() {}
 
@@ -141,5 +156,9 @@ final class InternalDiagnosticScreenRegistry {
 
     static String listElementDragPageId() {
         return LIST_ELEMENT_DRAG.getPageId();
+    }
+
+    static String browserSemanticsShowcasePageId() {
+        return BROWSER_SEMANTICS_SHOWCASE.getPageId();
     }
 }
