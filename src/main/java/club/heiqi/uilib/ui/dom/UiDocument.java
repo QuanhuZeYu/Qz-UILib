@@ -12,6 +12,7 @@ import club.heiqi.uilib.ui.animation.DocumentKeyframes;
 import club.heiqi.uilib.ui.style.UiSelector;
 import club.heiqi.uilib.ui.style.UiStyleRule;
 import club.heiqi.uilib.ui.style.UiStyleSheet;
+import club.heiqi.uilib.ui.style.UiStyleVariables;
 import club.heiqi.uilib.ui.text.TextContentMode;
 
 /**
@@ -24,6 +25,7 @@ public final class UiDocument {
     private final ElementNode rootElement;
     private final Map<String, DocumentKeyframes> keyframes = new LinkedHashMap<String, DocumentKeyframes>();
     private final List<UiStyleSheet> styleSheets = new ArrayList<UiStyleSheet>();
+    private UiStyleVariables styleVariables;
     private TextContentMode defaultTextContentMode = TextContentMode.UILIB_RAW;
     private int mutationVersion;
     private int layoutVersion;
@@ -302,6 +304,40 @@ public final class UiDocument {
      */
     public Map<String, DocumentKeyframes> getKeyframesRegistry() {
         return Collections.unmodifiableMap(keyframes);
+    }
+
+    /**
+     * 设置文档级样式变量（等同于 CSS :root 变量）。
+     *
+     * <p>变量值变更时会自动触发文档样式重算。</p>
+     *
+     * @param styleVariables 样式变量容器；为 null 时清除变量
+     * @return 当前文档
+     */
+    public UiDocument setStyleVariables(UiStyleVariables styleVariables) {
+        if (this.styleVariables != null) {
+            this.styleVariables.setChangeCallback(null);
+        }
+        this.styleVariables = styleVariables;
+        if (styleVariables != null) {
+            styleVariables.setChangeCallback(new Runnable() {
+                @Override
+                public void run() {
+                    recordLayoutMutation();
+                }
+            });
+        }
+        recordLayoutMutation();
+        return this;
+    }
+
+    /**
+     * 返回文档级样式变量。
+     *
+     * @return 样式变量容器；未设置时返回 null
+     */
+    public UiStyleVariables getStyleVariables() {
+        return styleVariables;
     }
 
     /**
