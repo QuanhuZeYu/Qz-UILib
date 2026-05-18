@@ -1,5 +1,7 @@
 package club.heiqi.uilib.ui.dom;
 
+import java.util.Objects;
+
 import club.heiqi.uilib.ui.event.UiKeyEvent;
 
 /**
@@ -10,6 +12,7 @@ public final class DocumentElementKeyEvent {
     private final ElementNode target;
     private final ElementNode currentTarget;
     private final UiKeyEvent sourceEvent;
+    private final DocumentEventControl eventControl;
     /** key handler 请求的焦点移动目标；null 表示无请求。 */
     private ElementNode pendingFocusTarget;
     /** 请求焦点移动时是否以 focus-visible 方式聚焦。 */
@@ -23,9 +26,23 @@ public final class DocumentElementKeyEvent {
      * @param sourceEvent UI 层原始按键事件
      */
     public DocumentElementKeyEvent(ElementNode target, ElementNode currentTarget, UiKeyEvent sourceEvent) {
+        this(target, currentTarget, sourceEvent, new DocumentEventControl());
+    }
+
+    /**
+     * 创建元素键盘按键事件（共享传播控制器）。
+     *
+     * @param target 当前聚焦元素
+     * @param currentTarget 当前冒泡到的元素
+     * @param sourceEvent UI 层原始按键事件
+     * @param eventControl 共享传播控制器
+     */
+    public DocumentElementKeyEvent(ElementNode target, ElementNode currentTarget, UiKeyEvent sourceEvent,
+            DocumentEventControl eventControl) {
         this.target = target;
         this.currentTarget = currentTarget;
         this.sourceEvent = sourceEvent;
+        this.eventControl = Objects.requireNonNull(eventControl, "eventControl");
     }
 
     /**
@@ -148,4 +165,19 @@ public final class DocumentElementKeyEvent {
     public boolean isPendingFocusVisible() {
         return pendingFocusVisible;
     }
+
+    /** 返回当前事件传播阶段。 */
+    public DocumentEventPhase getEventPhase() { return eventControl.getEventPhase(); }
+    /** 阻止事件继续向后续元素传播。 */
+    public void stopPropagation() { eventControl.stopPropagation(); }
+    /** 阻止事件继续传播，并阻止当前元素上的后续 handler 执行。 */
+    public void stopImmediatePropagation() { eventControl.stopImmediatePropagation(); }
+    /** 阻止事件的默认行为。 */
+    public void preventDefault() { eventControl.preventDefault(); }
+    /** 判断传播是否已被阻止。 */
+    public boolean isPropagationStopped() { return eventControl.isPropagationStopped(); }
+    /** 判断默认行为是否已被阻止。 */
+    public boolean isDefaultPrevented() { return eventControl.isDefaultPrevented(); }
+
+    DocumentEventControl getEventControl() { return eventControl; }
 }

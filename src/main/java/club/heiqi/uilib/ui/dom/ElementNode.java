@@ -36,6 +36,11 @@ public final class ElementNode extends DocumentNode {
     private DocumentElementMouseUpHandler mouseUpHandler;
     private DocumentElementFocusInHandler focusInHandler;
     private DocumentCustomRenderer customRenderer;
+    // 捕获阶段 handler
+    private DocumentElementClickHandler captureClickHandler;
+    private DocumentElementMouseDownHandler captureMouseDownHandler;
+    private DocumentElementMouseUpHandler captureMouseUpHandler;
+    private DocumentElementKeyHandler captureKeyHandler;
     private final DomTokenList classList = new DomTokenList(new Runnable() {
         @Override
         public void run() {
@@ -628,6 +633,90 @@ public final class ElementNode extends DocumentNode {
      */
     public DocumentElementFocusInHandler getFocusInHandler() {
         return focusInHandler;
+    }
+
+    // ========== 捕获阶段 handler ==========
+
+    /**
+     * 设置元素捕获阶段点击处理器。
+     *
+     * <p>捕获阶段 handler 在事件从根元素向目标元素传播时触发，先于冒泡阶段。</p>
+     *
+     * @param captureClickHandler 捕获阶段点击处理器；为 null 时清除
+     * @return 当前元素
+     */
+    public ElementNode setCaptureClickHandler(DocumentElementClickHandler captureClickHandler) {
+        this.captureClickHandler = captureClickHandler;
+        return this;
+    }
+
+    /**
+     * 返回元素捕获阶段点击处理器。
+     *
+     * @return 捕获阶段点击处理器；不存在时返回 null
+     */
+    public DocumentElementClickHandler getCaptureClickHandler() {
+        return captureClickHandler;
+    }
+
+    /**
+     * 设置元素捕获阶段鼠标按下处理器。
+     *
+     * @param captureMouseDownHandler 捕获阶段鼠标按下处理器；为 null 时清除
+     * @return 当前元素
+     */
+    public ElementNode setCaptureMouseDownHandler(DocumentElementMouseDownHandler captureMouseDownHandler) {
+        this.captureMouseDownHandler = captureMouseDownHandler;
+        return this;
+    }
+
+    /**
+     * 返回元素捕获阶段鼠标按下处理器。
+     *
+     * @return 捕获阶段鼠标按下处理器；不存在时返回 null
+     */
+    public DocumentElementMouseDownHandler getCaptureMouseDownHandler() {
+        return captureMouseDownHandler;
+    }
+
+    /**
+     * 设置元素捕获阶段鼠标抬起处理器。
+     *
+     * @param captureMouseUpHandler 捕获阶段鼠标抬起处理器；为 null 时清除
+     * @return 当前元素
+     */
+    public ElementNode setCaptureMouseUpHandler(DocumentElementMouseUpHandler captureMouseUpHandler) {
+        this.captureMouseUpHandler = captureMouseUpHandler;
+        return this;
+    }
+
+    /**
+     * 返回元素捕获阶段鼠标抬起处理器。
+     *
+     * @return 捕获阶段鼠标抬起处理器；不存在时返回 null
+     */
+    public DocumentElementMouseUpHandler getCaptureMouseUpHandler() {
+        return captureMouseUpHandler;
+    }
+
+    /**
+     * 设置元素捕获阶段键盘处理器。
+     *
+     * @param captureKeyHandler 捕获阶段键盘处理器；为 null 时清除
+     * @return 当前元素
+     */
+    public ElementNode setCaptureKeyHandler(DocumentElementKeyHandler captureKeyHandler) {
+        this.captureKeyHandler = captureKeyHandler;
+        return this;
+    }
+
+    /**
+     * 返回元素捕获阶段键盘处理器。
+     *
+     * @return 捕获阶段键盘处理器；不存在时返回 null
+     */
+    public DocumentElementKeyHandler getCaptureKeyHandler() {
+        return captureKeyHandler;
     }
 
     /**

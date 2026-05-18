@@ -16,6 +16,8 @@ import club.heiqi.uilib.ui.dom.DocumentElementActiveEvent;
 import club.heiqi.uilib.ui.dom.DocumentElementActiveHandler;
 import club.heiqi.uilib.ui.dom.DocumentElementClickEvent;
 import club.heiqi.uilib.ui.dom.DocumentElementClickHandler;
+import club.heiqi.uilib.ui.dom.DocumentEventControl;
+import club.heiqi.uilib.ui.dom.DocumentEventPhase;
 import club.heiqi.uilib.ui.dom.DocumentElementDragEvent;
 import club.heiqi.uilib.ui.dom.DocumentElementDragEndHandler;
 import club.heiqi.uilib.ui.dom.DocumentElementDragHandler;
@@ -689,41 +691,147 @@ public final class HtmlLikeDocumentWidget extends Widget {
     }
 
     private boolean dispatchClick(ElementNode target, UiMouseEvent event) {
+        if (target == null || event == null) {
+            return false;
+        }
         int documentX = event.getMouseX() - getAbsoluteX();
         int documentY = event.getMouseY() - getAbsoluteY();
-        for (DocumentNode current = target; current instanceof ElementNode; current = current.getParent()) {
-            ElementNode currentElement = (ElementNode) current;
+        DocumentEventControl eventControl = new DocumentEventControl();
+
+        // 构建祖先路径（target → root）
+        List<ElementNode> path = buildAncestorPath(target);
+
+        // 捕获阶段：从根向目标传播（不含目标）
+        eventControl.setEventPhase(DocumentEventPhase.CAPTURING);
+        for (int i = path.size() - 1; i > 0; i--) {
+            if (eventControl.isPropagationStopped()) break;
+            ElementNode currentElement = path.get(i);
+            DocumentElementClickHandler captureHandler = currentElement.getCaptureClickHandler();
+            if (captureHandler != null) {
+                DocumentElementClickEvent clickEvent = new DocumentElementClickEvent(target, currentElement,
+                        documentX, documentY, event.getButton(), event.getTimeNanos(), eventControl);
+                if (captureHandler.onClick(clickEvent)) {
+                    eventControl.stopPropagation();
+                }
+            }
+        }
+
+        // 目标阶段
+        if (!eventControl.isPropagationStopped()) {
+            eventControl.setEventPhase(DocumentEventPhase.AT_TARGET);
+            // 目标元素的捕获 handler
+            DocumentElementClickHandler targetCaptureHandler = target.getCaptureClickHandler();
+            if (targetCaptureHandler != null) {
+                DocumentElementClickEvent clickEvent = new DocumentElementClickEvent(target, target,
+                        documentX, documentY, event.getButton(), event.getTimeNanos(), eventControl);
+                if (targetCaptureHandler.onClick(clickEvent)) {
+                    eventControl.stopPropagation();
+                }
+            }
+            // 目标元素的冒泡 handler
+            if (!eventControl.isPropagationStopped()) {
+                DocumentElementClickHandler targetHandler = target.getClickHandler();
+                if (targetHandler != null) {
+                    DocumentElementClickEvent clickEvent = new DocumentElementClickEvent(target, target,
+                            documentX, documentY, event.getButton(), event.getTimeNanos(), eventControl);
+                    if (targetHandler.onClick(clickEvent)) {
+                        eventControl.stopPropagation();
+                    }
+                }
+            }
+        }
+
+        // 冒泡阶段：从目标父元素向根传播
+        eventControl.setEventPhase(DocumentEventPhase.BUBBLING);
+        for (int i = 1; i < path.size(); i++) {
+            if (eventControl.isPropagationStopped()) break;
+            ElementNode currentElement = path.get(i);
             DocumentElementClickHandler clickHandler = currentElement.getClickHandler();
             if (clickHandler == null) {
                 continue;
             }
-            DocumentElementClickEvent clickEvent = new DocumentElementClickEvent(target, currentElement, documentX,
-                    documentY, event.getButton(), event.getTimeNanos());
+            DocumentElementClickEvent clickEvent = new DocumentElementClickEvent(target, currentElement,
+                    documentX, documentY, event.getButton(), event.getTimeNanos(), eventControl);
             if (clickHandler.onClick(clickEvent)) {
-                return true;
+                eventControl.stopPropagation();
             }
         }
-        return false;
+        return eventControl.isPropagationStopped();
     }
 
     private boolean dispatchKey(ElementNode target, UiKeyEvent event) {
-        for (DocumentNode current = target; current instanceof ElementNode; current = current.getParent()) {
-            ElementNode currentElement = (ElementNode) current;
+        if (target == null || event == null) {
+            return false;
+        }
+        DocumentEventControl eventControl = new DocumentEventControl();
+        List<ElementNode> path = buildAncestorPath(target);
+
+        // 捕获阶段：从根向目标传播（不含目标）
+        eventControl.setEventPhase(DocumentEventPhase.CAPTURING);
+        for (int i = path.size() - 1; i > 0; i--) {
+            if (eventControl.isPropagationStopped()) break;
+            ElementNode currentElement = path.get(i);
+            DocumentElementKeyHandler captureHandler = currentElement.getCaptureKeyHandler();
+            if (captureHandler != null) {
+                DocumentElementKeyEvent keyEvent = new DocumentElementKeyEvent(target, currentElement, event, eventControl);
+                if (captureHandler.onKey(keyEvent)) {
+                    eventControl.stopPropagation();
+                    ElementNode pendingFocus = keyEvent.getPendingFocusTarget();
+                    if (pendingFocus != null) {
+                        focusElement(pendingFocus, keyEvent.isPendingFocusVisible());
+                    }
+                }
+            }
+        }
+
+        // 目标阶段
+        if (!eventControl.isPropagationStopped()) {
+            eventControl.setEventPhase(DocumentEventPhase.AT_TARGET);
+            DocumentElementKeyHandler targetCaptureHandler = target.getCaptureKeyHandler();
+            if (targetCaptureHandler != null) {
+                DocumentElementKeyEvent keyEvent = new DocumentElementKeyEvent(target, target, event, eventControl);
+                if (targetCaptureHandler.onKey(keyEvent)) {
+                    eventControl.stopPropagation();
+                    ElementNode pendingFocus = keyEvent.getPendingFocusTarget();
+                    if (pendingFocus != null) {
+                        focusElement(pendingFocus, keyEvent.isPendingFocusVisible());
+                    }
+                }
+            }
+            if (!eventControl.isPropagationStopped()) {
+                DocumentElementKeyHandler targetHandler = target.getKeyHandler();
+                if (targetHandler != null) {
+                    DocumentElementKeyEvent keyEvent = new DocumentElementKeyEvent(target, target, event, eventControl);
+                    if (targetHandler.onKey(keyEvent)) {
+                        eventControl.stopPropagation();
+                        ElementNode pendingFocus = keyEvent.getPendingFocusTarget();
+                        if (pendingFocus != null) {
+                            focusElement(pendingFocus, keyEvent.isPendingFocusVisible());
+                        }
+                    }
+                }
+            }
+        }
+
+        // 冒泡阶段：从目标父元素向根传播
+        eventControl.setEventPhase(DocumentEventPhase.BUBBLING);
+        for (int i = 1; i < path.size(); i++) {
+            if (eventControl.isPropagationStopped()) break;
+            ElementNode currentElement = path.get(i);
             DocumentElementKeyHandler keyHandler = currentElement.getKeyHandler();
             if (keyHandler == null) {
                 continue;
             }
-            DocumentElementKeyEvent keyEvent = new DocumentElementKeyEvent(target, currentElement, event);
+            DocumentElementKeyEvent keyEvent = new DocumentElementKeyEvent(target, currentElement, event, eventControl);
             if (keyHandler.onKey(keyEvent)) {
-                // 处理 key handler 请求的焦点移动（如分段选择器方向键切换）
+                eventControl.stopPropagation();
                 ElementNode pendingFocus = keyEvent.getPendingFocusTarget();
                 if (pendingFocus != null) {
                     focusElement(pendingFocus, keyEvent.isPendingFocusVisible());
                 }
-                return true;
             }
         }
-        return false;
+        return eventControl.isPropagationStopped();
     }
 
     private boolean dispatchTextInput(ElementNode target, UiTextInputEvent event) {
@@ -1214,19 +1322,63 @@ public final class HtmlLikeDocumentWidget extends Widget {
         }
         int documentX = event.getMouseX() - getAbsoluteX();
         int documentY = event.getMouseY() - getAbsoluteY();
-        for (DocumentNode current = target; current instanceof ElementNode; current = current.getParent()) {
-            ElementNode currentElement = (ElementNode) current;
+        DocumentEventControl eventControl = new DocumentEventControl();
+        List<ElementNode> path = buildAncestorPath(target);
+
+        // 捕获阶段
+        eventControl.setEventPhase(DocumentEventPhase.CAPTURING);
+        for (int i = path.size() - 1; i > 0; i--) {
+            if (eventControl.isPropagationStopped()) break;
+            ElementNode currentElement = path.get(i);
+            DocumentElementMouseDownHandler captureHandler = currentElement.getCaptureMouseDownHandler();
+            if (captureHandler != null) {
+                DocumentElementMouseDownEvent mouseDownEvent = new DocumentElementMouseDownEvent(target, currentElement,
+                        documentX, documentY, event.getButton(), event.getTimeNanos(), eventControl);
+                if (captureHandler.onMouseDown(mouseDownEvent)) {
+                    eventControl.stopPropagation();
+                }
+            }
+        }
+
+        // 目标阶段
+        if (!eventControl.isPropagationStopped()) {
+            eventControl.setEventPhase(DocumentEventPhase.AT_TARGET);
+            DocumentElementMouseDownHandler targetCaptureHandler = target.getCaptureMouseDownHandler();
+            if (targetCaptureHandler != null) {
+                DocumentElementMouseDownEvent mouseDownEvent = new DocumentElementMouseDownEvent(target, target,
+                        documentX, documentY, event.getButton(), event.getTimeNanos(), eventControl);
+                if (targetCaptureHandler.onMouseDown(mouseDownEvent)) {
+                    eventControl.stopPropagation();
+                }
+            }
+            if (!eventControl.isPropagationStopped()) {
+                DocumentElementMouseDownHandler targetHandler = target.getMouseDownHandler();
+                if (targetHandler != null) {
+                    DocumentElementMouseDownEvent mouseDownEvent = new DocumentElementMouseDownEvent(target, target,
+                            documentX, documentY, event.getButton(), event.getTimeNanos(), eventControl);
+                    if (targetHandler.onMouseDown(mouseDownEvent)) {
+                        eventControl.stopPropagation();
+                    }
+                }
+            }
+        }
+
+        // 冒泡阶段
+        eventControl.setEventPhase(DocumentEventPhase.BUBBLING);
+        for (int i = 1; i < path.size(); i++) {
+            if (eventControl.isPropagationStopped()) break;
+            ElementNode currentElement = path.get(i);
             DocumentElementMouseDownHandler handler = currentElement.getMouseDownHandler();
             if (handler == null) {
                 continue;
             }
             DocumentElementMouseDownEvent mouseDownEvent = new DocumentElementMouseDownEvent(target, currentElement,
-                    documentX, documentY, event.getButton(), event.getTimeNanos());
+                    documentX, documentY, event.getButton(), event.getTimeNanos(), eventControl);
             if (handler.onMouseDown(mouseDownEvent)) {
-                return true;
+                eventControl.stopPropagation();
             }
         }
-        return false;
+        return eventControl.isPropagationStopped();
     }
 
     private boolean dispatchMouseUp(ElementNode target, UiMouseEvent event) {
@@ -1235,19 +1387,63 @@ public final class HtmlLikeDocumentWidget extends Widget {
         }
         int documentX = event.getMouseX() - getAbsoluteX();
         int documentY = event.getMouseY() - getAbsoluteY();
-        for (DocumentNode current = target; current instanceof ElementNode; current = current.getParent()) {
-            ElementNode currentElement = (ElementNode) current;
+        DocumentEventControl eventControl = new DocumentEventControl();
+        List<ElementNode> path = buildAncestorPath(target);
+
+        // 捕获阶段
+        eventControl.setEventPhase(DocumentEventPhase.CAPTURING);
+        for (int i = path.size() - 1; i > 0; i--) {
+            if (eventControl.isPropagationStopped()) break;
+            ElementNode currentElement = path.get(i);
+            DocumentElementMouseUpHandler captureHandler = currentElement.getCaptureMouseUpHandler();
+            if (captureHandler != null) {
+                DocumentElementMouseUpEvent mouseUpEvent = new DocumentElementMouseUpEvent(target, currentElement,
+                        documentX, documentY, event.getButton(), event.getTimeNanos(), eventControl);
+                if (captureHandler.onMouseUp(mouseUpEvent)) {
+                    eventControl.stopPropagation();
+                }
+            }
+        }
+
+        // 目标阶段
+        if (!eventControl.isPropagationStopped()) {
+            eventControl.setEventPhase(DocumentEventPhase.AT_TARGET);
+            DocumentElementMouseUpHandler targetCaptureHandler = target.getCaptureMouseUpHandler();
+            if (targetCaptureHandler != null) {
+                DocumentElementMouseUpEvent mouseUpEvent = new DocumentElementMouseUpEvent(target, target,
+                        documentX, documentY, event.getButton(), event.getTimeNanos(), eventControl);
+                if (targetCaptureHandler.onMouseUp(mouseUpEvent)) {
+                    eventControl.stopPropagation();
+                }
+            }
+            if (!eventControl.isPropagationStopped()) {
+                DocumentElementMouseUpHandler targetHandler = target.getMouseUpHandler();
+                if (targetHandler != null) {
+                    DocumentElementMouseUpEvent mouseUpEvent = new DocumentElementMouseUpEvent(target, target,
+                            documentX, documentY, event.getButton(), event.getTimeNanos(), eventControl);
+                    if (targetHandler.onMouseUp(mouseUpEvent)) {
+                        eventControl.stopPropagation();
+                    }
+                }
+            }
+        }
+
+        // 冒泡阶段
+        eventControl.setEventPhase(DocumentEventPhase.BUBBLING);
+        for (int i = 1; i < path.size(); i++) {
+            if (eventControl.isPropagationStopped()) break;
+            ElementNode currentElement = path.get(i);
             DocumentElementMouseUpHandler handler = currentElement.getMouseUpHandler();
             if (handler == null) {
                 continue;
             }
             DocumentElementMouseUpEvent mouseUpEvent = new DocumentElementMouseUpEvent(target, currentElement,
-                    documentX, documentY, event.getButton(), event.getTimeNanos());
+                    documentX, documentY, event.getButton(), event.getTimeNanos(), eventControl);
             if (handler.onMouseUp(mouseUpEvent)) {
-                return true;
+                eventControl.stopPropagation();
             }
         }
-        return false;
+        return eventControl.isPropagationStopped();
     }
 
     private void updateHoveredElement(ElementNode nextHoveredElement, UiMouseEvent event) {
@@ -1404,6 +1600,22 @@ public final class HtmlLikeDocumentWidget extends Widget {
             }
         }
         return false;
+    }
+
+    /**
+     * 构建从目标元素到根元素的祖先路径。
+     *
+     * <p>返回列表中 index 0 为 target，最后一个为最顶层祖先元素。</p>
+     *
+     * @param target 目标元素
+     * @return 祖先路径列表
+     */
+    private static List<ElementNode> buildAncestorPath(ElementNode target) {
+        List<ElementNode> path = new ArrayList<ElementNode>();
+        for (DocumentNode current = target; current instanceof ElementNode; current = current.getParent()) {
+            path.add((ElementNode) current);
+        }
+        return path;
     }
 
     private static final class LayoutPathEntry {
