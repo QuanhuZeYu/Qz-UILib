@@ -14,6 +14,7 @@ import club.heiqi.uilib.ui.dom.ElementNode;
 import club.heiqi.uilib.ui.dom.TextNode;
 import club.heiqi.uilib.ui.render.UiRenderContext;
 import club.heiqi.uilib.ui.runtime.UiRuntimeAdapters;
+import club.heiqi.uilib.ui.style.UiBorderRadiusResolver;
 import club.heiqi.uilib.ui.text.TextMeasureService;
 import club.heiqi.uilib.ui.theme.UiSurfaceStyle;
 import club.heiqi.uilib.ui.widget.Widget;
@@ -199,7 +200,18 @@ public class HtmlLikeGlassDocumentPageControllerTest {
         }
 
         @Override
+        public void drawBackdropFilter(int left, int top, int right, int bottom, int blurRadius, float saturation,
+                UiBorderRadiusResolver.ResolvedCornerRadii cornerRadii) {
+            int cornerRadius = cornerRadii == null ? 0 : cornerRadii.getUniformRadius();
+            backdropCalls.add(new BackdropCall(left, top, right, bottom, blurRadius, saturation, cornerRadius));
+        }
+
+        @Override
         public void pushClip(int left, int top, int right, int bottom, int cornerRadius) {}
+
+        @Override
+        public void pushClip(int left, int top, int right, int bottom,
+                UiBorderRadiusResolver.ResolvedCornerRadii cornerRadii) {}
 
         @Override
         public void popClip() {}
@@ -232,6 +244,17 @@ public class HtmlLikeGlassDocumentPageControllerTest {
         public int getTextLineHeight() {
             return 18;
         }
+
+        @Override
+        public void pushPaintContext(int left, int top, int right, int bottom, float opacity) {}
+
+        @Override
+        public boolean isCurrentPaintContextLayerActive() {
+            return false;
+        }
+
+        @Override
+        public void popPaintContext() {}
     }
 
     /**

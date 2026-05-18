@@ -28,6 +28,7 @@ import club.heiqi.uilib.ui.paint.DocumentPaintCommandType;
 import club.heiqi.uilib.ui.paint.DocumentPaintEngine;
 import club.heiqi.uilib.ui.render.UiRenderContext;
 import club.heiqi.uilib.ui.runtime.UiRuntimeAdapters;
+import club.heiqi.uilib.ui.style.UiBorderRadiusResolver;
 import club.heiqi.uilib.ui.style.UiBorderStyle;
 import club.heiqi.uilib.ui.style.UiStyleInsets;
 import club.heiqi.uilib.ui.style.UiStyleLength;
@@ -951,7 +952,21 @@ public class HtmlLikeSmokeDocumentPageControllerTest {
         }
 
         @Override
+        public void drawBackdropFilter(int left, int top, int right, int bottom, int blurRadius, float saturation,
+                UiBorderRadiusResolver.ResolvedCornerRadii cornerRadii) {
+            int cornerRadius = cornerRadii == null ? 0 : cornerRadii.getUniformRadius();
+            backdropCalls.add(new BackdropCall(left, top, right, bottom, blurRadius, saturation, cornerRadius));
+        }
+
+        @Override
         public void pushClip(int left, int top, int right, int bottom, int cornerRadius) {
+            clipCalls.add(new ClipCall(left, top, right, bottom, cornerRadius));
+        }
+
+        @Override
+        public void pushClip(int left, int top, int right, int bottom,
+                UiBorderRadiusResolver.ResolvedCornerRadii cornerRadii) {
+            int cornerRadius = cornerRadii == null ? 0 : cornerRadii.getUniformRadius();
             clipCalls.add(new ClipCall(left, top, right, bottom, cornerRadius));
         }
 
@@ -988,6 +1003,17 @@ public class HtmlLikeSmokeDocumentPageControllerTest {
         public int getTextLineHeight() {
             return 18;
         }
+
+        @Override
+        public void pushPaintContext(int left, int top, int right, int bottom, float opacity) {}
+
+        @Override
+        public boolean isCurrentPaintContextLayerActive() {
+            return false;
+        }
+
+        @Override
+        public void popPaintContext() {}
     }
 
     /**

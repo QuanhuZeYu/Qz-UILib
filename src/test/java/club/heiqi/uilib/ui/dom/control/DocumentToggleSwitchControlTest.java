@@ -14,6 +14,7 @@ import club.heiqi.uilib.ui.dom.UiDocument;
 import club.heiqi.uilib.ui.event.UiKeyEvent;
 import club.heiqi.uilib.ui.event.UiMouseEvent;
 import club.heiqi.uilib.ui.render.UiRenderContext;
+import club.heiqi.uilib.ui.style.UiBorderRadiusResolver;
 import club.heiqi.uilib.ui.style.UiBorderStyle;
 import club.heiqi.uilib.ui.style.UiStyleLength;
 import club.heiqi.uilib.ui.text.TextMeasureService;
@@ -385,7 +386,22 @@ public class DocumentToggleSwitchControlTest {
         public void pushClip(int left, int top, int right, int bottom, int cornerRadius) {}
 
         @Override
+        public void pushClip(int left, int top, int right, int bottom,
+                UiBorderRadiusResolver.ResolvedCornerRadii cornerRadii) {}
+
+        @Override
         public void popClip() {}
+
+        @Override
+        public void pushPaintContext(int left, int top, int right, int bottom, float opacity) {}
+
+        @Override
+        public boolean isCurrentPaintContextLayerActive() {
+            return false;
+        }
+
+        @Override
+        public void popPaintContext() {}
     }
 
     /**
