@@ -1,12 +1,16 @@
 package club.heiqi.uilib.ui.dom;
 
+import java.util.ArrayList;
 import java.util.Collections;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.concurrent.atomic.AtomicLong;
 
 import club.heiqi.uilib.ui.animation.DocumentKeyframes;
+import club.heiqi.uilib.ui.style.UiStyleRule;
+import club.heiqi.uilib.ui.style.UiStyleSheet;
 import club.heiqi.uilib.ui.text.TextContentMode;
 
 /**
@@ -18,6 +22,7 @@ public final class UiDocument {
 
     private final ElementNode rootElement;
     private final Map<String, DocumentKeyframes> keyframes = new LinkedHashMap<String, DocumentKeyframes>();
+    private final List<UiStyleSheet> styleSheets = new ArrayList<UiStyleSheet>();
     private TextContentMode defaultTextContentMode = TextContentMode.UILIB_RAW;
     private int mutationVersion;
     private int layoutVersion;
@@ -296,6 +301,73 @@ public final class UiDocument {
      */
     public Map<String, DocumentKeyframes> getKeyframesRegistry() {
         return Collections.unmodifiableMap(keyframes);
+    }
+
+    /**
+     * 挂载样式表到文档。
+     *
+     * <p>样式表按挂载顺序参与级联计算，后挂载的样式表在同特异性时优先级更高。
+     * 挂载后会触发布局失效，使所有元素在下次布局时重新计算样式。</p>
+     *
+     * @param styleSheet 样式表
+     * @return 当前文档
+     */
+    public UiDocument addStyleSheet(UiStyleSheet styleSheet) {
+        Objects.requireNonNull(styleSheet, "styleSheet");
+        if (!styleSheets.contains(styleSheet)) {
+            styleSheets.add(styleSheet);
+            recordLayoutMutation();
+        }
+        return this;
+    }
+
+    /**
+     * 移除已挂载的样式表。
+     *
+     * @param styleSheet 样式表
+     * @return 当前文档
+     */
+    public UiDocument removeStyleSheet(UiStyleSheet styleSheet) {
+        if (styleSheets.remove(styleSheet)) {
+            recordLayoutMutation();
+        }
+        return this;
+    }
+
+    /**
+     * 返回已挂载样式表的只读列表。
+     *
+     * @return 样式表列表
+     */
+    public List<UiStyleSheet> getStyleSheets() {
+        return Collections.unmodifiableList(styleSheets);
+    }
+
+    /**
+     * 查找所有样式表中匹配指定元素的规则，按优先级升序排列。
+     *
+     * <p>跨样式表的规则按特异性排序；同特异性时，后挂载的样式表中的规则优先级更高。</p>
+     *
+     * @param element 目标元素
+     * @return 匹配规则列表（按优先级升序）
+     */
+    public List<UiStyleRule> findMatchingRules(ElementNode element) {
+        if (element == null || styleSheets.isEmpty()) {
+            return Collections.emptyList();
+        }
+        List<UiStyleRule> allMatched = new ArrayList<UiStyleRule>();
+        for (UiStyleSheet sheet : styleSheets) {
+            allMatched.addAll(sheet.findMatchingRules(element));
+        }
+        if (allMatched.size() > 1) {
+            Collections.sort(allMatched, new java.util.Comparator<UiStyleRule>() {
+                @Override
+                public int compare(UiStyleRule a, UiStyleRule b) {
+                    return a.comparePriority(b);
+                }
+            });
+        }
+        return allMatched;
     }
 
     /**

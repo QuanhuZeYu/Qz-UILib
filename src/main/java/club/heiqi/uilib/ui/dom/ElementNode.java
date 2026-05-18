@@ -36,6 +36,12 @@ public final class ElementNode extends DocumentNode {
     private DocumentElementMouseUpHandler mouseUpHandler;
     private DocumentElementFocusInHandler focusInHandler;
     private DocumentCustomRenderer customRenderer;
+    private final DomTokenList classList = new DomTokenList(new Runnable() {
+        @Override
+        public void run() {
+            ElementNode.this.markMutated();
+        }
+    });
     private final UiStyleDeclaration style = new UiStyleDeclaration(new UiStyleChangeListener() {
         @Override
         public void onStyleChanged(UiStyleChangeImpact impact) {
@@ -103,6 +109,63 @@ public final class ElementNode extends DocumentNode {
      */
     public UiStyleDeclaration getInlineStyle() {
         return style;
+    }
+
+    /**
+     * 返回元素的 classList 管理器。
+     *
+     * <p>提供 add/remove/toggle/contains 等标准操作，变更会触发样式重算。</p>
+     *
+     * @return classList 管理器
+     */
+    public DomTokenList getClassList() {
+        return classList;
+    }
+
+    /**
+     * 返回元素的 className（空格分隔的 class 字符串）。
+     *
+     * @return className 字符串；无 class 时返回空字符串
+     */
+    public String getClassName() {
+        return classList.value();
+    }
+
+    /**
+     * 设置元素的 className（空格分隔的 class 字符串）。
+     *
+     * <p>会清除现有 class 并重新解析。</p>
+     *
+     * @param className 空格分隔的 class 字符串；为 null 或空时清空
+     * @return 当前元素
+     */
+    public ElementNode setClassName(String className) {
+        classList.setValue(className);
+        return this;
+    }
+
+    /**
+     * 返回元素的 id 属性。
+     *
+     * <p>等价于 getAttribute("id")，提供便捷访问。</p>
+     *
+     * @return id 值；未设置时返回 null
+     */
+    public String getId() {
+        return getAttribute("id");
+    }
+
+    /**
+     * 设置元素的 id 属性。
+     *
+     * <p>等价于 setAttribute("id", id)，提供便捷访问。</p>
+     *
+     * @param id id 值；为 null 时移除 id 属性
+     * @return 当前元素
+     */
+    public ElementNode setId(String id) {
+        setAttribute("id", id);
+        return this;
     }
 
     /**
