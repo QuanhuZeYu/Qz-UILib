@@ -70,6 +70,7 @@ public final class ComputedStyle {
     private final UiBoxShadow boxShadow;
     private final UiBorderStyle borderStyle;
     private final UiCursor cursor;
+    private final UiBorderRadius borderRadiusCorners;
 
     ComputedStyle(UiDisplay display, UiStyleLength width, UiStyleLength height, UiBoxSizing boxSizing,
             UiPosition position,
@@ -88,7 +89,8 @@ public final class ComputedStyle {
             UiVisibility visibility,
             UiStyleLength minWidth, UiStyleLength maxWidth, UiStyleLength minHeight, UiStyleLength maxHeight,
             UiStyleLength flexBasis, UiAlignSelf alignSelf, UiFlexWrap flexWrap,
-            UiBoxShadow boxShadow, UiBorderStyle borderStyle, UiCursor cursor) {
+            UiBoxShadow boxShadow, UiBorderStyle borderStyle, UiCursor cursor,
+            UiBorderRadius borderRadiusCorners) {
         this.display = Objects.requireNonNull(display, "display");
         this.width = Objects.requireNonNull(width, "width");
         this.height = Objects.requireNonNull(height, "height");
@@ -145,6 +147,7 @@ public final class ComputedStyle {
         this.boxShadow = boxShadow; // 可为 null（无阴影）
         this.borderStyle = borderStyle == null ? UiBorderStyle.NONE : borderStyle;
         this.cursor = cursor == null ? UiCursor.DEFAULT : cursor;
+        this.borderRadiusCorners = borderRadiusCorners; // 可为 null（使用统一 borderRadius）
     }
 
     public UiDisplay getDisplay() {
@@ -440,5 +443,16 @@ public final class ComputedStyle {
      */
     public UiCursor getCursor() {
         return cursor;
+    }
+
+    /**
+     * 返回分角圆角值。
+     *
+     * <p>当返回非 null 时，优先于统一 {@link #getBorderRadius()} 使用。</p>
+     *
+     * @return 分角圆角值；未设置时返回 null
+     */
+    public UiBorderRadius getBorderRadiusCorners() {
+        return borderRadiusCorners;
     }
 }

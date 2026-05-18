@@ -77,6 +77,7 @@ public final class UiStyleDeclaration {
     private UiBoxShadow boxShadow;
     private UiBorderStyle borderStyle;
     private UiCursor cursor;
+    private UiBorderRadius borderRadiusCorners;
 
     public UiStyleDeclaration() {
         this((UiStyleChangeListener) null);
@@ -917,6 +918,33 @@ public final class UiStyleDeclaration {
         return updateCursor(null);
     }
 
+    /**
+     * 返回分角圆角值。
+     *
+     * <p>当设置了分角圆角时，优先于统一 borderRadius 生效。</p>
+     *
+     * @return 分角圆角值；未设置时返回 null
+     */
+    public UiBorderRadius getBorderRadiusCorners() {
+        return borderRadiusCorners;
+    }
+
+    /**
+     * 设置分角圆角。
+     *
+     * <p>设置后优先于统一 borderRadius 生效。</p>
+     *
+     * @param borderRadiusCorners 分角圆角值
+     * @return 当前声明
+     */
+    public UiStyleDeclaration setBorderRadiusCorners(UiBorderRadius borderRadiusCorners) {
+        return updateBorderRadiusCorners(Objects.requireNonNull(borderRadiusCorners, "borderRadiusCorners"));
+    }
+
+    public UiStyleDeclaration clearBorderRadiusCorners() {
+        return updateBorderRadiusCorners(null);
+    }
+
     private UiStyleDeclaration updateDisplay(UiDisplay value) {
         if (display != value) {
             display = value;
@@ -1355,6 +1383,14 @@ public final class UiStyleDeclaration {
     private UiStyleDeclaration updateCursor(UiCursor value) {
         if (cursor != value) {
             cursor = value;
+            recordPaintChange();
+        }
+        return this;
+    }
+
+    private UiStyleDeclaration updateBorderRadiusCorners(UiBorderRadius value) {
+        if (!Objects.equals(borderRadiusCorners, value)) {
+            borderRadiusCorners = value;
             recordPaintChange();
         }
         return this;

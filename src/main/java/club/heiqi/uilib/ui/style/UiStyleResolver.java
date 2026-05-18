@@ -151,6 +151,9 @@ public final class UiStyleResolver {
         // cursor：可继承
         UiCursor cursor = cascadeCursor(inlineStyle, matchingRules, parentStyle);
 
+        // border-radius 分角：不可继承
+        UiBorderRadius borderRadiusCorners = cascadeBorderRadiusCorners(inlineStyle, matchingRules);
+
         return new ComputedStyle(display, width, height, boxSizing, position, top, right, bottom, left, zIndex, margin,
                 padding, borderWidth, borderRadius, overflowX, overflowY, flexDirection, alignItems, justifyContent,
                 verticalAlign, rowGap, columnGap, flexGrow, flexShrink, opacity, backgroundColor, borderColor, textColor,
@@ -161,7 +164,8 @@ public final class UiStyleResolver {
                 lineHeight, textAlign, whiteSpace, textOverflow, visibility,
                 minWidth, maxWidth, minHeight, maxHeight,
                 flexBasis, alignSelf, flexWrap,
-                boxShadow, borderStyle, cursor);
+                boxShadow, borderStyle, cursor,
+                borderRadiusCorners);
     }
 
     // ========== 级联属性解析方法 ==========
@@ -371,6 +375,15 @@ public final class UiStyleResolver {
             if (value != null) return value;
         }
         return inheritedCursor(parentStyle);
+    }
+
+    private static UiBorderRadius cascadeBorderRadiusCorners(UiStyleDeclaration inlineStyle, List<UiStyleRule> rules) {
+        if (inlineStyle.getBorderRadiusCorners() != null) return inlineStyle.getBorderRadiusCorners();
+        for (int i = rules.size() - 1; i >= 0; i--) {
+            UiBorderRadius value = rules.get(i).getDeclaration().getBorderRadiusCorners();
+            if (value != null) return value;
+        }
+        return null;
     }
 
     private static UiTextAlign cascadeTextAlign(UiStyleDeclaration inlineStyle, List<UiStyleRule> rules, ComputedStyle parentStyle) {
