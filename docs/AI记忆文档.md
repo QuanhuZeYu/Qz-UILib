@@ -51,8 +51,9 @@
 - 事件系统新增独立 `mousedown`/`mouseup` DOM 事件（`DocumentElementMouseDownHandler`/`DocumentElementMouseUpHandler`）；hover 父子切换时父元素不再收到多余 leave；新增 `focusin` 冒泡事件（`DocumentElementFocusInHandler`）。
 - 事件系统已支持标准 DOM 三阶段传播模型（capture → target → bubble）：所有事件类提供 `stopPropagation()`、`stopImmediatePropagation()`、`preventDefault()`；`ElementNode` 支持 capture handler 注册（`setCaptureClickHandler`/`setCaptureKeyHandler`/`setCaptureMouseDownHandler`/`setCaptureMouseUpHandler`）；`HtmlLikeDocumentWidget` 的 click/key/mousedown/mouseup 分发已按三阶段执行。
 - 样式系统已支持 CSS-like 选择器和样式表级联：`ElementNode` 提供 `className`/`classList`（`DomTokenList`）和 `id` 便捷方法；`UiSelector` 支持 tag/class/id/通配符/复合选择器及特异性计算；`UiStyleSheet` 容器通过 `UiDocument.addStyleSheet(...)` 挂载；`UiStyleResolver` 按 inline > id > class > tag 特异性级联计算所有属性。
+- `UiSelector` 已支持伪类条件（`:hover`/`:focus`/`:focus-visible`/`:active`/`:disabled`）；伪类在特异性中计入 class 级别；`UiStyleResolver.compute(element, activeStates)` 接受 `Set<UiPseudoClass>` 进行状态感知样式计算。
 - `UiDocument` 提供标准 DOM 查询：`getElementById(id)`、`querySelector(selectorText)`、`querySelectorAll(selectorText)`、`getElementsByTagName(tagName)`、`getElementsByClassName(className)`，均按深度优先遍历并复用 `UiSelector` 匹配。
-- 样式系统新增视觉增强属性：`box-shadow`（`UiBoxShadow` 值类型，支持 offsetX/Y、blur、spread、color、inset）、`border-style`（`UiBorderStyle` 枚举：NONE/SOLID/DASHED/DOTTED/DOUBLE/HIDDEN）、`cursor`（`UiCursor` 枚举：DEFAULT/POINTER/TEXT/MOVE/GRAB/NOT_ALLOWED 等，可继承）；三者均已集成到级联计算。
+- 样式系统新增视觉增强属性：`box-shadow`（`UiBoxShadow` 值类型，支持 offsetX/Y、blur、spread、color、inset）、`border-style`（`UiBorderStyle` 枚举：NONE/SOLID/DASHED/DOTTED/DOUBLE/HIDDEN）、`cursor`（`UiCursor` 枚举：DEFAULT/POINTER/TEXT/MOVE/GRAB/NOT_ALLOWED 等，可继承）、`border-radius` 分角（`UiBorderRadius` 值类型，支持四角独立设置）、`text-decoration`（NONE/UNDERLINE/OVERLINE/LINE_THROUGH）、`pointer-events`（AUTO/NONE，标准化 hit-test 穿透）；所有属性均已集成到级联计算。
 - `height` 百分比相对包含块高度解析；包含块高度为 auto 时百分比高度视为 auto（由内容撑开），不再静默解析为 0。
 - Block 元素 `margin: 0 auto` 支持水平居中：有明确宽度的 block 元素，auto left/right margin 会平分剩余空间。
 - `line-height` 是可继承属性：父元素设置后子元素自动继承，除非子元素自行覆盖。
