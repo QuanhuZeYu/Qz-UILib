@@ -83,6 +83,9 @@ public final class UiStyleDeclaration {
     private UiOutline outline;
     private UiStyleInsets borderWidthSides;
     private UiBorderColors borderColors;
+    private UiStyleLength letterSpacing;
+    private UiWordBreak wordBreak;
+    private UiOverflowWrap overflowWrap;
 
     public UiStyleDeclaration() {
         this((UiStyleChangeListener) null);
@@ -1062,6 +1065,60 @@ public final class UiStyleDeclaration {
         return updateBorderColors(null);
     }
 
+    public UiStyleLength getLetterSpacing() {
+        return letterSpacing;
+    }
+
+    /**
+     * 设置字间距。
+     *
+     * @param letterSpacing 字间距
+     * @return 当前声明
+     */
+    public UiStyleDeclaration setLetterSpacing(UiStyleLength letterSpacing) {
+        return updateLetterSpacing(Objects.requireNonNull(letterSpacing, "letterSpacing"));
+    }
+
+    public UiStyleDeclaration clearLetterSpacing() {
+        return updateLetterSpacing(null);
+    }
+
+    public UiWordBreak getWordBreak() {
+        return wordBreak;
+    }
+
+    /**
+     * 设置单词断行规则。
+     *
+     * @param wordBreak 断行规则
+     * @return 当前声明
+     */
+    public UiStyleDeclaration setWordBreak(UiWordBreak wordBreak) {
+        return updateWordBreak(Objects.requireNonNull(wordBreak, "wordBreak"));
+    }
+
+    public UiStyleDeclaration clearWordBreak() {
+        return updateWordBreak(null);
+    }
+
+    public UiOverflowWrap getOverflowWrap() {
+        return overflowWrap;
+    }
+
+    /**
+     * 设置溢出换行规则。
+     *
+     * @param overflowWrap 溢出换行规则
+     * @return 当前声明
+     */
+    public UiStyleDeclaration setOverflowWrap(UiOverflowWrap overflowWrap) {
+        return updateOverflowWrap(Objects.requireNonNull(overflowWrap, "overflowWrap"));
+    }
+
+    public UiStyleDeclaration clearOverflowWrap() {
+        return updateOverflowWrap(null);
+    }
+
     private UiStyleDeclaration updateDisplay(UiDisplay value) {
         if (display != value) {
             display = value;
@@ -1549,6 +1606,30 @@ public final class UiStyleDeclaration {
         if (!Objects.equals(borderColors, value)) {
             borderColors = value;
             recordPaintChange();
+        }
+        return this;
+    }
+
+    private UiStyleDeclaration updateLetterSpacing(UiStyleLength value) {
+        if (!Objects.equals(letterSpacing, value)) {
+            letterSpacing = value;
+            recordLayoutChange();
+        }
+        return this;
+    }
+
+    private UiStyleDeclaration updateWordBreak(UiWordBreak value) {
+        if (wordBreak != value) {
+            wordBreak = value;
+            recordLayoutChange();
+        }
+        return this;
+    }
+
+    private UiStyleDeclaration updateOverflowWrap(UiOverflowWrap value) {
+        if (overflowWrap != value) {
+            overflowWrap = value;
+            recordLayoutChange();
         }
         return this;
     }

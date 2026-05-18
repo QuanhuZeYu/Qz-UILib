@@ -76,6 +76,9 @@ public final class ComputedStyle {
     private final UiOutline outline;
     private final UiStyleInsets borderWidthSides;
     private final UiBorderColors borderColors;
+    private final UiStyleLength letterSpacing;
+    private final UiWordBreak wordBreak;
+    private final UiOverflowWrap overflowWrap;
 
     ComputedStyle(UiDisplay display, UiStyleLength width, UiStyleLength height, UiBoxSizing boxSizing,
             UiPosition position,
@@ -96,7 +99,8 @@ public final class ComputedStyle {
             UiStyleLength flexBasis, UiAlignSelf alignSelf, UiFlexWrap flexWrap,
             UiBoxShadow boxShadow, UiBorderStyle borderStyle, UiCursor cursor,
             UiBorderRadius borderRadiusCorners, UiTextDecoration textDecoration, UiPointerEvents pointerEvents,
-            UiOutline outline, UiStyleInsets borderWidthSides, UiBorderColors borderColors) {
+            UiOutline outline, UiStyleInsets borderWidthSides, UiBorderColors borderColors,
+            UiStyleLength letterSpacing, UiWordBreak wordBreak, UiOverflowWrap overflowWrap) {
         this.display = Objects.requireNonNull(display, "display");
         this.width = Objects.requireNonNull(width, "width");
         this.height = Objects.requireNonNull(height, "height");
@@ -159,6 +163,9 @@ public final class ComputedStyle {
         this.outline = outline; // 可为 null（无轮廓线）
         this.borderWidthSides = borderWidthSides; // 可为 null（使用统一 borderWidth）
         this.borderColors = borderColors; // 可为 null（使用统一 borderColor）
+        this.letterSpacing = letterSpacing; // 可为 null（使用默认字间距）
+        this.wordBreak = wordBreak == null ? UiWordBreak.NORMAL : wordBreak;
+        this.overflowWrap = overflowWrap == null ? UiOverflowWrap.NORMAL : overflowWrap;
     }
 
     public UiDisplay getDisplay() {
@@ -516,5 +523,32 @@ public final class ComputedStyle {
      */
     public UiBorderColors getBorderColors() {
         return borderColors;
+    }
+
+    /**
+     * 返回字间距。
+     *
+     * @return 字间距；未设置时返回 null（使用默认值）
+     */
+    public UiStyleLength getLetterSpacing() {
+        return letterSpacing;
+    }
+
+    /**
+     * 返回单词断行规则。
+     *
+     * @return 断行规则
+     */
+    public UiWordBreak getWordBreak() {
+        return wordBreak;
+    }
+
+    /**
+     * 返回溢出换行规则。
+     *
+     * @return 溢出换行规则
+     */
+    public UiOverflowWrap getOverflowWrap() {
+        return overflowWrap;
     }
 }

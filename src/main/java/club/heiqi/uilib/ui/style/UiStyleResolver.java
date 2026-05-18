@@ -167,6 +167,11 @@ public final class UiStyleResolver {
         UiStyleInsets borderWidthSides = cascadeBorderWidthSides(inlineStyle, matchingRules);
         UiBorderColors borderColors = cascadeBorderColors(inlineStyle, matchingRules);
 
+        // 文本排版：可继承
+        UiStyleLength letterSpacing = cascadeInheritableLength(inlineStyle.getLetterSpacing(), matchingRules, StyleProperty.LETTER_SPACING, inheritedLetterSpacing(parentStyle));
+        UiWordBreak wordBreak = cascadeWordBreak(inlineStyle, matchingRules, parentStyle);
+        UiOverflowWrap overflowWrap = cascadeOverflowWrap(inlineStyle, matchingRules, parentStyle);
+
         return new ComputedStyle(display, width, height, boxSizing, position, top, right, bottom, left, zIndex, margin,
                 padding, borderWidth, borderRadius, overflowX, overflowY, flexDirection, alignItems, justifyContent,
                 verticalAlign, rowGap, columnGap, flexGrow, flexShrink, opacity, backgroundColor, borderColor, textColor,
@@ -179,7 +184,8 @@ public final class UiStyleResolver {
                 flexBasis, alignSelf, flexWrap,
                 boxShadow, borderStyle, cursor,
                 borderRadiusCorners, textDecoration, pointerEvents,
-                outline, borderWidthSides, borderColors);
+                outline, borderWidthSides, borderColors,
+                letterSpacing, wordBreak, overflowWrap);
     }
 
     // ========== 级联属性解析方法 ==========
@@ -530,6 +536,7 @@ public final class UiStyleResolver {
             case FLEX_BASIS: return decl.getFlexBasis();
             case LINE_HEIGHT: return decl.getLineHeight();
             case BACKDROP_BLUR_RADIUS: return decl.getBackdropBlurRadius();
+            case LETTER_SPACING: return decl.getLetterSpacing();
             default: return null;
         }
     }
@@ -629,6 +636,28 @@ public final class UiStyleResolver {
         return parentStyle == null ? UiCursor.DEFAULT : parentStyle.getCursor();
     }
 
+    private static UiStyleLength inheritedLetterSpacing(ComputedStyle parentStyle) {
+        return parentStyle == null ? null : parentStyle.getLetterSpacing();
+    }
+
+    private static UiWordBreak cascadeWordBreak(UiStyleDeclaration inlineStyle, List<UiStyleRule> rules, ComputedStyle parentStyle) {
+        if (inlineStyle.getWordBreak() != null) return inlineStyle.getWordBreak();
+        for (int i = rules.size() - 1; i >= 0; i--) {
+            UiWordBreak value = rules.get(i).getDeclaration().getWordBreak();
+            if (value != null) return value;
+        }
+        return parentStyle == null ? UiWordBreak.NORMAL : parentStyle.getWordBreak();
+    }
+
+    private static UiOverflowWrap cascadeOverflowWrap(UiStyleDeclaration inlineStyle, List<UiStyleRule> rules, ComputedStyle parentStyle) {
+        if (inlineStyle.getOverflowWrap() != null) return inlineStyle.getOverflowWrap();
+        for (int i = rules.size() - 1; i >= 0; i--) {
+            UiOverflowWrap value = rules.get(i).getDeclaration().getOverflowWrap();
+            if (value != null) return value;
+        }
+        return parentStyle == null ? UiOverflowWrap.NORMAL : parentStyle.getOverflowWrap();
+    }
+
     private static UiDisplay defaultDisplay(String tagName) {
         if ("span".equals(tagName)) {
             return UiDisplay.INLINE;
@@ -670,6 +699,7 @@ public final class UiStyleResolver {
         TRANSITION_DURATION, TRANSITION_DELAY, TRANSITION_TIMING,
         ANIMATION_NAME, ANIMATION_DURATION, ANIMATION_DELAY, ANIMATION_ITERATION_COUNT, ANIMATION_TIMING,
         BACKDROP_BLUR_RADIUS, BACKDROP_SATURATION,
-        LINE_HEIGHT, MIN_WIDTH, MAX_WIDTH, MIN_HEIGHT, MAX_HEIGHT
+        LINE_HEIGHT, MIN_WIDTH, MAX_WIDTH, MIN_HEIGHT, MAX_HEIGHT,
+        LETTER_SPACING
     }
 }
