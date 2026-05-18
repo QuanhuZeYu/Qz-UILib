@@ -8,6 +8,7 @@ import java.util.Objects;
 import club.heiqi.uilib.ui.dom.ElementNode;
 import club.heiqi.uilib.ui.dom.UiDocument;
 import club.heiqi.uilib.ui.style.UiAlignItems;
+import club.heiqi.uilib.ui.style.UiBorderStyle;
 import club.heiqi.uilib.ui.style.UiDisplay;
 import club.heiqi.uilib.ui.style.UiFlexDirection;
 import club.heiqi.uilib.ui.style.UiJustifyContent;
@@ -261,6 +262,7 @@ public final class DocumentTooltipOverlayControl {
                 .setBackgroundColor(backgroundColor)
                 .setBorderColor(borderColor)
                 .setBorderWidth(UiStyleLength.px(1))
+                .setBorderStyle(UiBorderStyle.SOLID)
                 .setBorderRadius(UiStyleLength.px(cornerRadius))
                 .setTextColor(bodyTextColor)
                 .setBackdropBlurRadius(UiStyleLength.px(backdropBlurRadius))

@@ -17,6 +17,7 @@ import club.heiqi.uilib.ui.layout.DocumentLayoutEngine;
 import club.heiqi.uilib.ui.layout.UiLayoutSpec;
 import club.heiqi.uilib.ui.layout.UiLength;
 import club.heiqi.uilib.ui.style.UiAlignItems;
+import club.heiqi.uilib.ui.style.UiBorderStyle;
 import club.heiqi.uilib.ui.style.UiDisplay;
 import club.heiqi.uilib.ui.style.UiFlexDirection;
 import club.heiqi.uilib.ui.style.UiJustifyContent;
@@ -105,6 +106,7 @@ final class HtmlLikeListDragDocumentPageController extends DocumentPageControlle
                 .setBackgroundColor(0xF00A1020)
                 .setBorderColor(0xFF60A5FA)
                 .setBorderWidth(UiStyleLength.px(1))
+                .setBorderStyle(UiBorderStyle.SOLID)
                 .setBorderRadius(UiStyleLength.px(22))
                 .setTextColor(0xFFE8EEFF)
                 .setOverflowX(UiOverflow.HIDDEN)
@@ -117,6 +119,7 @@ final class HtmlLikeListDragDocumentPageController extends DocumentPageControlle
                 .setBackgroundColor(0xFF101827)
                 .setBorderColor(0xFF405F9C)
                 .setBorderWidth(UiStyleLength.px(1))
+                .setBorderStyle(UiBorderStyle.SOLID)
                 .setBorderRadius(UiStyleLength.px(18))
                 .setOverflowX(UiOverflow.HIDDEN)
                 .setOverflowY(UiOverflow.HIDDEN);
@@ -133,6 +136,7 @@ final class HtmlLikeListDragDocumentPageController extends DocumentPageControlle
                 .setBackgroundColor(0xFF0F172A)
                 .setBorderColor(0xFF93C5FD)
                 .setBorderWidth(UiStyleLength.px(1))
+                .setBorderStyle(UiBorderStyle.SOLID)
                 .setBorderRadius(UiStyleLength.px(16))
                 .setTextColor(0xFFF8FAFC)
                 .setOverflowX(UiOverflow.HIDDEN)
@@ -151,6 +155,7 @@ final class HtmlLikeListDragDocumentPageController extends DocumentPageControlle
                 .setBackgroundColor(0xFF17233B)
                 .setBorderColor(0xFF2563EB)
                 .setBorderWidth(UiStyleLength.px(1))
+                .setBorderStyle(UiBorderStyle.SOLID)
                 .setBorderRadius(UiStyleLength.px(16))
                 .setOverflowX(UiOverflow.HIDDEN)
                 .setOverflowY(UiOverflow.HIDDEN);
@@ -167,6 +172,7 @@ final class HtmlLikeListDragDocumentPageController extends DocumentPageControlle
                 .setBackgroundColor(0xFF111827)
                 .setBorderColor(0xFF38BDF8)
                 .setBorderWidth(UiStyleLength.px(1))
+                .setBorderStyle(UiBorderStyle.SOLID)
                 .setBorderRadius(UiStyleLength.px(14))
                 .setTextColor(0xFFBAE6FD)
                 .setOverflowX(UiOverflow.HIDDEN)
@@ -195,6 +201,7 @@ final class HtmlLikeListDragDocumentPageController extends DocumentPageControlle
                     .setBackgroundColor(item.equals(draggingItem) ? 0xFF1D4ED8 : 0xFF1E293B)
                     .setBorderColor(item.equals(draggingItem) ? 0xFFBFDBFE : 0xFF475569)
                     .setBorderWidth(UiStyleLength.px(1))
+                    .setBorderStyle(UiBorderStyle.SOLID)
                     .setBorderRadius(UiStyleLength.px(12))
                     .setOpacity(item.equals(draggingItem) ? 0.62F : 1.0F)
                     .setTextColor(0xFFEAF1FF);
@@ -212,6 +219,7 @@ final class HtmlLikeListDragDocumentPageController extends DocumentPageControlle
                     .setBackgroundColor(item.equals(draggingItem) ? 0xFF172554 : 0xFF0F172A)
                     .setBorderColor(item.equals(draggingItem) ? 0xFF93C5FD : 0xFF334155)
                     .setBorderWidth(UiStyleLength.px(1))
+                    .setBorderStyle(UiBorderStyle.SOLID)
                     .setBorderRadius(UiStyleLength.px(999))
                     .setTextColor(0xFF93C5FD)
                     .setOverflowX(UiOverflow.HIDDEN)

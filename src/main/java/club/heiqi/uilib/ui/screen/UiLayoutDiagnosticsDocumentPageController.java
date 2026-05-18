@@ -21,6 +21,7 @@ import club.heiqi.uilib.ui.dom.control.DocumentToggleSwitchControl;
 import club.heiqi.uilib.ui.layout.UiLength;
 import club.heiqi.uilib.ui.layout.UiLayoutSpec;
 import club.heiqi.uilib.ui.style.UiAlignItems;
+import club.heiqi.uilib.ui.style.UiBorderStyle;
 import club.heiqi.uilib.ui.style.UiDisplay;
 import club.heiqi.uilib.ui.style.UiFlexDirection;
 import club.heiqi.uilib.ui.style.UiJustifyContent;
@@ -249,6 +250,7 @@ final class UiLayoutDiagnosticsDocumentPageController extends DocumentPageContro
                 .setBackgroundColor(0xF00A1020)
                 .setBorderColor(0xFF60A5FA)
                 .setBorderWidth(UiStyleLength.px(1))
+                .setBorderStyle(UiBorderStyle.SOLID)
                 .setBorderRadius(UiStyleLength.px(22))
                 .setOverflowX(UiOverflow.HIDDEN)
                 .setOverflowY(UiOverflow.AUTO)
@@ -329,6 +331,7 @@ final class UiLayoutDiagnosticsDocumentPageController extends DocumentPageContro
                 .setBackgroundColor(0xFF0F172A)
                 .setBorderColor(0xFF93C5FD)
                 .setBorderWidth(UiStyleLength.px(1))
+                .setBorderStyle(UiBorderStyle.SOLID)
                 .setBorderRadius(UiStyleLength.px(18))
                 .setOverflowX(UiOverflow.HIDDEN)
                 .setOverflowY(UiOverflow.HIDDEN)
@@ -347,6 +350,7 @@ final class UiLayoutDiagnosticsDocumentPageController extends DocumentPageContro
                 .setBackgroundColor(backgroundColor)
                 .setBorderColor(borderColor)
                 .setBorderWidth(UiStyleLength.px(1))
+                .setBorderStyle(UiBorderStyle.SOLID)
                 .setBorderRadius(UiStyleLength.px(16))
                 .setTextColor(0xFFE5EEFF);
         parent.append(card);
@@ -382,6 +386,7 @@ final class UiLayoutDiagnosticsDocumentPageController extends DocumentPageContro
                 .setBackgroundColor(0xFF0F1F1F)
                 .setBorderColor(0xFF2DD4BF)
                 .setBorderWidth(UiStyleLength.px(1))
+                .setBorderStyle(UiBorderStyle.SOLID)
                 .setBorderRadius(UiStyleLength.px(12))
                 .setOverflowX(UiOverflow.HIDDEN)
                 .setOverflowY(UiOverflow.AUTO)

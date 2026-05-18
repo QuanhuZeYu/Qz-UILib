@@ -10,6 +10,7 @@ import club.heiqi.uilib.ui.layout.UiLayoutSpec;
 import club.heiqi.uilib.ui.layout.UiLength;
 import club.heiqi.uilib.ui.render.UiRenderContext;
 import club.heiqi.uilib.ui.style.UiAlignItems;
+import club.heiqi.uilib.ui.style.UiBorderStyle;
 import club.heiqi.uilib.ui.style.UiDisplay;
 import club.heiqi.uilib.ui.style.UiFlexDirection;
 import club.heiqi.uilib.ui.style.UiOverflow;
@@ -99,6 +100,7 @@ final class HtmlLikeGlassDocumentPageController extends DocumentPageController {
                 .setBackgroundColor(0xE80B1020)
                 .setBorderColor(0xFF60A5FA)
                 .setBorderWidth(UiStyleLength.px(1))
+                .setBorderStyle(UiBorderStyle.SOLID)
                 .setBorderRadius(UiStyleLength.px(22))
                 .setTextColor(0xFFEFF6FF)
                 .setOverflowX(UiOverflow.HIDDEN)
@@ -118,6 +120,7 @@ final class HtmlLikeGlassDocumentPageController extends DocumentPageController {
                 .setBackgroundColor(0xFF111827)
                 .setBorderColor(0xFF93C5FD)
                 .setBorderWidth(UiStyleLength.px(1))
+                .setBorderStyle(UiBorderStyle.SOLID)
                 .setBorderRadius(UiStyleLength.px(16))
                 .setOverflowX(UiOverflow.HIDDEN)
                 .setOverflowY(UiOverflow.HIDDEN);
@@ -137,6 +140,7 @@ final class HtmlLikeGlassDocumentPageController extends DocumentPageController {
                 .setBackgroundColor(0xFF172033)
                 .setBorderColor(0xFF2563EB)
                 .setBorderWidth(UiStyleLength.px(1))
+                .setBorderStyle(UiBorderStyle.SOLID)
                 .setBorderRadius(UiStyleLength.px(20))
                 .setTextColor(0xFFE0F2FE)
                 .setOverflowX(UiOverflow.HIDDEN)
@@ -171,6 +175,7 @@ final class HtmlLikeGlassDocumentPageController extends DocumentPageController {
                 .setBackgroundColor(0x44FFFFFF)
                 .setBorderColor(0xDDFFFFFF)
                 .setBorderWidth(UiStyleLength.px(1))
+                .setBorderStyle(UiBorderStyle.SOLID)
                 .setBorderRadius(UiStyleLength.px(20))
                 .setTextColor(0xFFFFFFFF)
                 .setBackdropBlurRadius(UiStyleLength.px(36))
@@ -202,6 +207,7 @@ final class HtmlLikeGlassDocumentPageController extends DocumentPageController {
                 .setBackgroundColor(0xFF122235)
                 .setBorderColor(0xFF3B82F6)
                 .setBorderWidth(UiStyleLength.px(1))
+                .setBorderStyle(UiBorderStyle.SOLID)
                 .setBorderRadius(UiStyleLength.px(18))
                 .setTextColor(0xFFD6E9FF)
                 .setOverflowX(UiOverflow.HIDDEN)
@@ -297,6 +303,7 @@ final class HtmlLikeGlassDocumentPageController extends DocumentPageController {
                 .setBackgroundColor(0xFF132033)
                 .setBorderColor(0xFF0EA5E9)
                 .setBorderWidth(UiStyleLength.px(1))
+                .setBorderStyle(UiBorderStyle.SOLID)
                 .setBorderRadius(UiStyleLength.px(18))
                 .setTextColor(0xFFE0F2FE)
                 .setOverflowX(UiOverflow.HIDDEN)
@@ -374,6 +381,7 @@ final class HtmlLikeGlassDocumentPageController extends DocumentPageController {
                 .setBackgroundColor(color)
                 .setBorderColor(0x66FFFFFF)
                 .setBorderWidth(UiStyleLength.px(1))
+                .setBorderStyle(UiBorderStyle.SOLID)
                 .setBorderRadius(UiStyleLength.px(16))
                 .setTextColor(0xFFFFFFFF)
                 .setOverflowX(UiOverflow.HIDDEN)
@@ -402,6 +410,7 @@ final class HtmlLikeGlassDocumentPageController extends DocumentPageController {
                 .setBackgroundColor(backgroundColor)
                 .setBorderColor(borderColor)
                 .setBorderWidth(UiStyleLength.px(1))
+                .setBorderStyle(UiBorderStyle.SOLID)
                 .setBorderRadius(UiStyleLength.px(14))
                 .setTextColor(0xFFFFFFFF)
                 .setBackdropBlurRadius(UiStyleLength.px(blurRadius))
@@ -423,6 +432,7 @@ final class HtmlLikeGlassDocumentPageController extends DocumentPageController {
                 .setBackgroundColor(0xFF0F172A)
                 .setBorderColor(0xFF334155)
                 .setBorderWidth(UiStyleLength.px(1))
+                .setBorderStyle(UiBorderStyle.SOLID)
                 .setBorderRadius(UiStyleLength.px(16))
                 .setTextColor(0xFFCBD5E1)
                 .setOverflowX(UiOverflow.HIDDEN)

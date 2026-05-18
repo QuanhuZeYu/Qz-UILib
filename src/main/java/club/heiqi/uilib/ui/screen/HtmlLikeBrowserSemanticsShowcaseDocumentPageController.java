@@ -106,6 +106,7 @@ final class HtmlLikeBrowserSemanticsShowcaseDocumentPageController extends Docum
                 .setBackgroundColor(0xF00A1020)
                 .setBorderColor(0xFF4A6FA5)
                 .setBorderWidth(UiStyleLength.px(1))
+                .setBorderStyle(UiBorderStyle.SOLID)
                 .setBorderRadius(UiStyleLength.px(20))
                 .setOverflowX(UiOverflow.HIDDEN)
                 .setOverflowY(UiOverflow.AUTO)
@@ -140,6 +141,7 @@ final class HtmlLikeBrowserSemanticsShowcaseDocumentPageController extends Docum
                         .setBackgroundColor(0xFF121E30)
                         .setBorderColor(0xFF2E4C7F)
                         .setBorderWidth(UiStyleLength.px(1))
+                        .setBorderStyle(UiBorderStyle.SOLID)
                         .setBorderRadius(UiStyleLength.px(12)))
                 .addRule(".section-title", new UiStyleDeclaration()
                         .setTextColor(0xFF7EB8FF)
@@ -157,6 +159,7 @@ final class HtmlLikeBrowserSemanticsShowcaseDocumentPageController extends Docum
                         .setBackgroundColor(0xFF1A2A44)
                         .setBorderColor(0xFF3B5998)
                         .setBorderWidth(UiStyleLength.px(1))
+                        .setBorderStyle(UiBorderStyle.SOLID)
                         .setBorderRadius(UiStyleLength.px(8))
                         .setTextColor(0xFFCCDDFF))
                 .addRule("div", new UiStyleDeclaration()
@@ -176,6 +179,7 @@ final class HtmlLikeBrowserSemanticsShowcaseDocumentPageController extends Docum
                         .setBackgroundColor(0xFF0D1520)
                         .setBorderColor(0xFF1E3050)
                         .setBorderWidth(UiStyleLength.px(1))
+                        .setBorderStyle(UiBorderStyle.SOLID)
                         .setBorderRadius(UiStyleLength.px(6))
                         .setTextColor(0xFF88AACC));
         document.addStyleSheet(sheet);
@@ -212,7 +216,8 @@ final class HtmlLikeBrowserSemanticsShowcaseDocumentPageController extends Docum
                 .setBackgroundColor(0xFF162238)
                 .setBorderRadius(UiStyleLength.px(14))
                 .setBorderColor(0xFF4A7ADB)
-                .setBorderWidth(UiStyleLength.px(1));
+                .setBorderWidth(UiStyleLength.px(1))
+                .setBorderStyle(UiBorderStyle.SOLID);
         ElementNode heading = document.div();
         heading.appendText("浏览器语义新功能展示");
         title.append(heading);
@@ -483,6 +488,7 @@ final class HtmlLikeBrowserSemanticsShowcaseDocumentPageController extends Docum
                 .setBackgroundColor(0xAAFF6B6B)
                 .setBorderColor(0xFFFFD6A5)
                 .setBorderWidth(UiStyleLength.px(1))
+                .setBorderStyle(UiBorderStyle.SOLID)
                 .setPointerEvents(UiPointerEvents.NONE);
         pointerOverlay.appendText("覆盖层 pointer-events:none");
         pointerHost.append(pointerOverlay);
@@ -544,7 +550,8 @@ final class HtmlLikeBrowserSemanticsShowcaseDocumentPageController extends Docum
                 .setWidth(UiStyleLength.px(160))
                 .setPadding(UiStyleLength.px(12))
                 .setBorderWidth(UiStyleLength.px(2))
-                .setBorderColor(0xFF7EB8FF);
+                .setBorderColor(0xFF7EB8FF)
+                .setBorderStyle(UiBorderStyle.SOLID);
         contentBox.appendText("默认 content-box：160px 只约束内容区");
         row.append(contentBox);
 
@@ -555,6 +562,7 @@ final class HtmlLikeBrowserSemanticsShowcaseDocumentPageController extends Docum
                 .setPadding(UiStyleLength.px(12))
                 .setBorderWidth(UiStyleLength.px(2))
                 .setBorderColor(0xFFFFD166)
+                .setBorderStyle(UiBorderStyle.SOLID)
                 .setBoxSizing(UiBoxSizing.BORDER_BOX);
         borderBox.appendText("border-box：padding/border 收进 160px");
         row.append(borderBox);
@@ -640,7 +648,8 @@ final class HtmlLikeBrowserSemanticsShowcaseDocumentPageController extends Docum
                 .setObjectFit(UiObjectFit.CONTAIN)
                 .setBackgroundColor(0xFF0D1520)
                 .setBorderWidth(UiStyleLength.px(1))
-                .setBorderColor(0xFF4A6FA5);
+                .setBorderColor(0xFF4A6FA5)
+                .setBorderStyle(UiBorderStyle.SOLID);
         fitCard.append(fitImage);
         ElementNode fitLabel = document.div();
         fitLabel.appendText("img + object-fit: contain");

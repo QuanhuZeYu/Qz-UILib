@@ -28,6 +28,7 @@ import club.heiqi.uilib.ui.paint.DocumentPaintCommandType;
 import club.heiqi.uilib.ui.paint.DocumentPaintEngine;
 import club.heiqi.uilib.ui.render.UiRenderContext;
 import club.heiqi.uilib.ui.runtime.UiRuntimeAdapters;
+import club.heiqi.uilib.ui.style.UiBorderStyle;
 import club.heiqi.uilib.ui.style.UiStyleInsets;
 import club.heiqi.uilib.ui.style.UiStyleLength;
 import club.heiqi.uilib.ui.text.TextMeasureService;
@@ -155,6 +156,29 @@ public class HtmlLikeSmokeDocumentPageControllerTest {
         Assert.assertTrue(containsTextCall(renderContext.textCalls, "bot"));
         assertSmokeInlineProbeSplitsAmberSpan(widget, fixture.textMeasureService);
         Assert.assertTrue(containsTextCall(renderContext.textCalls, "TEXT paint command"));
+    }
+
+    /**
+     * 验证 Smoke 页需要可见边框的旧设计元素显式声明 solid 样式。
+     */
+    @Test
+    public void shouldDeclareSolidBorderStyleForVisibleSmokeBorders() {
+        TestFixture fixture = new TestFixture();
+
+        fixture.controller.configureDocumentPage();
+        fixture.controller.buildDocument();
+        HtmlLikeDocumentWidget widget = fixture.controller.getHtmlLikeDocumentWidget();
+
+        assertSolidBorder(widget.getDocument().getRootElement());
+        assertSolidBorder(findElementContainingDirectText(widget, "HTML-like Smoke Lab"));
+        assertSolidBorder(findElementContainingDirectText(widget, "FIXED viewport"));
+        assertSolidBorder(findElementContainingDirectText(widget, "ABS containing probe"));
+        assertSolidBorder(findElementContainingDirectText(widget, "ABS OK"));
+        assertSolidBorder((ElementNode) findElementContainingDirectText(widget, "Floating scroll probe").getParent());
+        assertSolidBorder(findElementContainingDirectText(widget, "Opacity FBO card: click fade"));
+        assertSolidBorder(findElementContainingDirectText(widget, "Layout card: small"));
+        assertSolidBorder(findElementContainingDirectText(widget, "amber span hit: 0"));
+        assertSolidBorder(findElementContainingDirectText(widget, "blue sibling z=1 should win"));
     }
 
     /**
@@ -592,6 +616,11 @@ public class HtmlLikeSmokeDocumentPageControllerTest {
             }
         }
         return false;
+    }
+
+    private static void assertSolidBorder(ElementNode element) {
+        Assert.assertNotNull(element);
+        Assert.assertEquals(UiBorderStyle.SOLID, element.style().getBorderStyle());
     }
 
     private static boolean containsFillColor(List<DrawCall> drawCalls, int expectedColor) {

@@ -9,6 +9,7 @@ import org.junit.Test;
 import club.heiqi.uilib.ui.dom.DocumentNode;
 import club.heiqi.uilib.ui.dom.ElementNode;
 import club.heiqi.uilib.ui.dom.UiDocument;
+import club.heiqi.uilib.ui.style.UiBorderStyle;
 import club.heiqi.uilib.ui.style.UiDisplay;
 import club.heiqi.uilib.ui.style.UiStyleResolver;
 import club.heiqi.uilib.ui.text.TextMeasureService;
@@ -32,6 +33,7 @@ public class DocumentTooltipOverlayControlTest {
         ElementNode tooltip = control.getElement();
         Assert.assertEquals("tooltip", tooltip.getAttribute("role"));
         Assert.assertEquals("true", tooltip.getAttribute("aria-hidden"));
+        Assert.assertEquals(UiBorderStyle.SOLID, tooltip.style().getBorderStyle());
         Assert.assertEquals(0.0F, tooltip.style().getWidth().getValue(), 0.001F);
         Assert.assertEquals(-10000.0F, tooltip.style().getLeft().getValue(), 0.001F);
     }

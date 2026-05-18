@@ -11,6 +11,7 @@ import club.heiqi.uilib.ui.dom.control.DocumentButtonControl;
 import club.heiqi.uilib.ui.layout.UiLength;
 import club.heiqi.uilib.ui.layout.UiLayoutSpec;
 import club.heiqi.uilib.ui.style.UiAlignItems;
+import club.heiqi.uilib.ui.style.UiBorderStyle;
 import club.heiqi.uilib.ui.style.UiDisplay;
 import club.heiqi.uilib.ui.style.UiFlexDirection;
 import club.heiqi.uilib.ui.style.UiJustifyContent;
@@ -84,6 +85,7 @@ final class UiTestDocumentPageController extends DocumentPageController {
                 .setBackgroundColor(0xF00A1020)
                 .setBorderColor(0xFF5B7CFA)
                 .setBorderWidth(UiStyleLength.px(1))
+                .setBorderStyle(UiBorderStyle.SOLID)
                 .setBorderRadius(UiStyleLength.px(24))
                 .setOverflowX(UiOverflow.HIDDEN)
                 .setOverflowY(UiOverflow.AUTO)
@@ -102,6 +104,7 @@ final class UiTestDocumentPageController extends DocumentPageController {
                 .setBackgroundColor(0xFF101D33)
                 .setBorderColor(0xFF6B96FF)
                 .setBorderWidth(UiStyleLength.px(1))
+                .setBorderStyle(UiBorderStyle.SOLID)
                 .setBorderRadius(UiStyleLength.px(18))
                 .setOverflowX(UiOverflow.HIDDEN)
                 .setOverflowY(UiOverflow.HIDDEN);
@@ -135,6 +138,7 @@ final class UiTestDocumentPageController extends DocumentPageController {
                 .setBackgroundColor(0xFF17243A)
                 .setBorderColor(0xFF2E4C7F)
                 .setBorderWidth(UiStyleLength.px(1))
+                .setBorderStyle(UiBorderStyle.SOLID)
                 .setBorderRadius(UiStyleLength.px(14))
                 .setTextColor(0xFFD8E4FF);
         card.appendText(title);
@@ -234,6 +238,7 @@ final class UiTestDocumentPageController extends DocumentPageController {
                 .setBackgroundColor(0xFF1D2A44)
                 .setBorderColor(0xFF405F9C)
                 .setBorderWidth(UiStyleLength.px(1))
+                .setBorderStyle(UiBorderStyle.SOLID)
                 .setBorderRadius(UiStyleLength.px(16))
                 .setTextColor(0xFFEAF1FF);
         card.appendText(title);

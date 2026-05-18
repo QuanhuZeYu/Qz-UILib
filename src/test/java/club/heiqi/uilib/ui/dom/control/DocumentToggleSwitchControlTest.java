@@ -14,6 +14,7 @@ import club.heiqi.uilib.ui.dom.UiDocument;
 import club.heiqi.uilib.ui.event.UiKeyEvent;
 import club.heiqi.uilib.ui.event.UiMouseEvent;
 import club.heiqi.uilib.ui.render.UiRenderContext;
+import club.heiqi.uilib.ui.style.UiBorderStyle;
 import club.heiqi.uilib.ui.style.UiStyleLength;
 import club.heiqi.uilib.ui.text.TextMeasureService;
 import club.heiqi.uilib.ui.theme.UiSurfaceStyle;
@@ -35,6 +36,7 @@ public class DocumentToggleSwitchControlTest {
         Assert.assertEquals("switch", toggleControl.getElement().getAttribute("role"));
         Assert.assertEquals("0", toggleControl.getElement().getAttribute("tabindex"));
         Assert.assertEquals("false", toggleControl.getElement().getAttribute("aria-checked"));
+        Assert.assertEquals(UiBorderStyle.SOLID, toggleControl.getElement().style().getBorderStyle());
 
         root.style()
                 .setWidth(UiStyleLength.px(120))

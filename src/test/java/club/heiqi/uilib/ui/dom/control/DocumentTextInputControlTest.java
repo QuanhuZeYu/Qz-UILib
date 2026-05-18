@@ -16,6 +16,7 @@ import club.heiqi.uilib.ui.dom.UiDocument;
 import club.heiqi.uilib.ui.event.UiKeyEvent;
 import club.heiqi.uilib.ui.event.UiTextInputEvent;
 import club.heiqi.uilib.ui.render.UiRenderContext;
+import club.heiqi.uilib.ui.style.UiBorderStyle;
 import club.heiqi.uilib.ui.style.UiStyleLength;
 import club.heiqi.uilib.ui.text.TextMeasureService;
 import club.heiqi.uilib.ui.theme.UiSurfaceStyle;
@@ -36,6 +37,7 @@ public class DocumentTextInputControlTest {
         Assert.assertEquals("input", textInputControl.getElement().getTagName());
         Assert.assertEquals("text", textInputControl.getElement().getAttribute("type"));
         Assert.assertEquals("", textInputControl.getElement().getAttribute("value"));
+        Assert.assertEquals(UiBorderStyle.SOLID, textInputControl.getElement().style().getBorderStyle());
     }
 
     /**

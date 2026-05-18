@@ -26,6 +26,7 @@ import club.heiqi.uilib.ui.layout.UiLayoutSpec;
 import club.heiqi.uilib.ui.paint.DocumentCustomRenderer;
 import club.heiqi.uilib.ui.render.UiRenderContext;
 import club.heiqi.uilib.ui.style.UiAlignItems;
+import club.heiqi.uilib.ui.style.UiBorderStyle;
 import club.heiqi.uilib.ui.style.UiDisplay;
 import club.heiqi.uilib.ui.style.UiFlexDirection;
 import club.heiqi.uilib.ui.style.UiJustifyContent;
@@ -115,6 +116,7 @@ final class HtmlLikeInventoryOverviewDocumentPageController extends DocumentPage
                 .setBackgroundColor(0xF0101628)
                 .setBorderColor(0xFF38BDF8)
                 .setBorderWidth(UiStyleLength.px(1))
+                .setBorderStyle(UiBorderStyle.SOLID)
                 .setBorderRadius(UiStyleLength.px(22))
                 .setOverflowX(UiOverflow.HIDDEN)
                 .setOverflowY(UiOverflow.AUTO)
@@ -248,6 +250,7 @@ final class HtmlLikeInventoryOverviewDocumentPageController extends DocumentPage
                 .setBackgroundColor(0xFF0F2742)
                 .setBorderColor(0xFF38BDF8)
                 .setBorderWidth(UiStyleLength.px(1))
+                .setBorderStyle(UiBorderStyle.SOLID)
                 .setBorderRadius(UiStyleLength.px(18))
                 .setOverflowX(UiOverflow.HIDDEN)
                 .setOverflowY(UiOverflow.HIDDEN)
@@ -275,6 +278,7 @@ final class HtmlLikeInventoryOverviewDocumentPageController extends DocumentPage
                 .setBackgroundColor(isFirst ? 0xFF18243A : 0xFF1F2937)
                 .setBorderColor(isFirst ? 0xFF60A5FA : 0xFF818CF8)
                 .setBorderWidth(UiStyleLength.px(1))
+                .setBorderStyle(UiBorderStyle.SOLID)
                 .setBorderRadius(UiStyleLength.px(16))
                 .setPadding(UiStyleLength.px(16))
                 .setMargin(UiStyleLength.px(14))
@@ -349,6 +353,7 @@ final class HtmlLikeInventoryOverviewDocumentPageController extends DocumentPage
                 .setBackgroundColor(0xFF242D40)
                 .setBorderColor(0xFF3B4A66)
                 .setBorderWidth(UiStyleLength.px(1))
+                .setBorderStyle(UiBorderStyle.SOLID)
                 .setBorderRadius(UiStyleLength.px(8))
                 .setPadding(UiStyleLength.px(10));
         return grid;

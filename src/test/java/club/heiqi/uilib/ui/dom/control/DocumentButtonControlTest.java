@@ -14,6 +14,7 @@ import club.heiqi.uilib.ui.dom.UiDocument;
 import club.heiqi.uilib.ui.event.UiKeyEvent;
 import club.heiqi.uilib.ui.event.UiMouseEvent;
 import club.heiqi.uilib.ui.render.UiRenderContext;
+import club.heiqi.uilib.ui.style.UiBorderStyle;
 import club.heiqi.uilib.ui.style.UiStyleLength;
 import club.heiqi.uilib.ui.text.TextContentMode;
 import club.heiqi.uilib.ui.text.TextMeasureService;
@@ -63,6 +64,7 @@ public class DocumentButtonControlTest {
         Assert.assertEquals(3, events.size());
         Assert.assertEquals("button", buttonControl.getElement().getTagName());
         Assert.assertEquals("button", buttonControl.getElement().getAttribute("type"));
+        Assert.assertEquals(UiBorderStyle.SOLID, buttonControl.getElement().style().getBorderStyle());
         Assert.assertSame(buttonControl, events.get(0).getSource());
         assertElementUid(buttonControl.getElement(), events.get(0).getElement());
         Assert.assertFalse(events.get(0).isKeyboardTriggered());

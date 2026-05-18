@@ -12,6 +12,7 @@ import club.heiqi.uilib.ui.dom.ElementNode;
 import club.heiqi.uilib.ui.dom.UiDocument;
 import club.heiqi.uilib.ui.event.UiKeyEvent;
 import club.heiqi.uilib.ui.style.UiAlignItems;
+import club.heiqi.uilib.ui.style.UiBorderStyle;
 import club.heiqi.uilib.ui.style.UiDisplay;
 import club.heiqi.uilib.ui.style.UiFlexDirection;
 import club.heiqi.uilib.ui.style.UiJustifyContent;
@@ -213,6 +214,7 @@ public final class DocumentToggleSwitchControl {
                 .setHeight(UiStyleLength.px(trackHeight))
                 .setPadding(UiStyleLength.px(2))
                 .setBorderWidth(UiStyleLength.px(1))
+                .setBorderStyle(UiBorderStyle.SOLID)
                 .setBorderRadius(UiStyleLength.px(999))
                 .setBackgroundColor(trackOffColor)
                 .setOverflowX(UiOverflow.HIDDEN)
