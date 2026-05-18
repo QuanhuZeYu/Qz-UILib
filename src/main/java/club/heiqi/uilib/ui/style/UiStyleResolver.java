@@ -124,6 +124,15 @@ public final class UiStyleResolver {
         UiAlignSelf alignSelf = cascadeAlignSelf(inlineStyle, matchingRules);
         UiFlexWrap flexWrap = cascadeFlexWrap(inlineStyle, matchingRules);
 
+        // box-shadow：不可继承
+        UiBoxShadow boxShadow = cascadeBoxShadow(inlineStyle, matchingRules);
+
+        // border-style：不可继承
+        UiBorderStyle borderStyle = cascadeBorderStyle(inlineStyle, matchingRules);
+
+        // cursor：可继承
+        UiCursor cursor = cascadeCursor(inlineStyle, matchingRules, parentStyle);
+
         return new ComputedStyle(display, width, height, boxSizing, position, top, right, bottom, left, zIndex, margin,
                 padding, borderWidth, borderRadius, overflowX, overflowY, flexDirection, alignItems, justifyContent,
                 verticalAlign, rowGap, columnGap, flexGrow, flexShrink, opacity, backgroundColor, borderColor, textColor,
@@ -133,7 +142,8 @@ public final class UiStyleResolver {
                 backdropBlurRadius, backdropSaturation,
                 lineHeight, textAlign, whiteSpace, textOverflow, visibility,
                 minWidth, maxWidth, minHeight, maxHeight,
-                flexBasis, alignSelf, flexWrap);
+                flexBasis, alignSelf, flexWrap,
+                boxShadow, borderStyle, cursor);
     }
 
     // ========== 级联属性解析方法 ==========
@@ -318,6 +328,33 @@ public final class UiStyleResolver {
         return UiFlexWrap.NOWRAP;
     }
 
+    private static UiBoxShadow cascadeBoxShadow(UiStyleDeclaration inlineStyle, List<UiStyleRule> rules) {
+        if (inlineStyle.getBoxShadow() != null) return inlineStyle.getBoxShadow();
+        for (int i = rules.size() - 1; i >= 0; i--) {
+            UiBoxShadow value = rules.get(i).getDeclaration().getBoxShadow();
+            if (value != null) return value;
+        }
+        return null;
+    }
+
+    private static UiBorderStyle cascadeBorderStyle(UiStyleDeclaration inlineStyle, List<UiStyleRule> rules) {
+        if (inlineStyle.getBorderStyle() != null) return inlineStyle.getBorderStyle();
+        for (int i = rules.size() - 1; i >= 0; i--) {
+            UiBorderStyle value = rules.get(i).getDeclaration().getBorderStyle();
+            if (value != null) return value;
+        }
+        return UiBorderStyle.NONE;
+    }
+
+    private static UiCursor cascadeCursor(UiStyleDeclaration inlineStyle, List<UiStyleRule> rules, ComputedStyle parentStyle) {
+        if (inlineStyle.getCursor() != null) return inlineStyle.getCursor();
+        for (int i = rules.size() - 1; i >= 0; i--) {
+            UiCursor value = rules.get(i).getDeclaration().getCursor();
+            if (value != null) return value;
+        }
+        return inheritedCursor(parentStyle);
+    }
+
     private static UiTextAlign cascadeTextAlign(UiStyleDeclaration inlineStyle, List<UiStyleRule> rules, ComputedStyle parentStyle) {
         if (inlineStyle.getTextAlign() != null) return inlineStyle.getTextAlign();
         for (int i = rules.size() - 1; i >= 0; i--) {
@@ -496,6 +533,10 @@ public final class UiStyleResolver {
 
     private static UiVisibility inheritedVisibility(ComputedStyle parentStyle) {
         return parentStyle == null ? UiVisibility.VISIBLE : parentStyle.getVisibility();
+    }
+
+    private static UiCursor inheritedCursor(ComputedStyle parentStyle) {
+        return parentStyle == null ? UiCursor.DEFAULT : parentStyle.getCursor();
     }
 
     private static UiDisplay defaultDisplay(String tagName) {

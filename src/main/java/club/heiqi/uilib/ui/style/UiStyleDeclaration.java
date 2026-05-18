@@ -74,6 +74,9 @@ public final class UiStyleDeclaration {
     private UiStyleLength flexBasis;
     private UiAlignSelf alignSelf;
     private UiFlexWrap flexWrap;
+    private UiBoxShadow boxShadow;
+    private UiBorderStyle borderStyle;
+    private UiCursor cursor;
 
     public UiStyleDeclaration() {
         this((UiStyleChangeListener) null);
@@ -860,6 +863,60 @@ public final class UiStyleDeclaration {
         return updateFlexWrap(null);
     }
 
+    public UiBoxShadow getBoxShadow() {
+        return boxShadow;
+    }
+
+    /**
+     * 设置元素阴影。
+     *
+     * @param boxShadow 阴影值
+     * @return 当前声明
+     */
+    public UiStyleDeclaration setBoxShadow(UiBoxShadow boxShadow) {
+        return updateBoxShadow(Objects.requireNonNull(boxShadow, "boxShadow"));
+    }
+
+    public UiStyleDeclaration clearBoxShadow() {
+        return updateBoxShadow(null);
+    }
+
+    public UiBorderStyle getBorderStyle() {
+        return borderStyle;
+    }
+
+    /**
+     * 设置边框样式。
+     *
+     * @param borderStyle 边框样式
+     * @return 当前声明
+     */
+    public UiStyleDeclaration setBorderStyle(UiBorderStyle borderStyle) {
+        return updateBorderStyle(Objects.requireNonNull(borderStyle, "borderStyle"));
+    }
+
+    public UiStyleDeclaration clearBorderStyle() {
+        return updateBorderStyle(null);
+    }
+
+    public UiCursor getCursor() {
+        return cursor;
+    }
+
+    /**
+     * 设置光标样式。
+     *
+     * @param cursor 光标样式
+     * @return 当前声明
+     */
+    public UiStyleDeclaration setCursor(UiCursor cursor) {
+        return updateCursor(Objects.requireNonNull(cursor, "cursor"));
+    }
+
+    public UiStyleDeclaration clearCursor() {
+        return updateCursor(null);
+    }
+
     private UiStyleDeclaration updateDisplay(UiDisplay value) {
         if (display != value) {
             display = value;
@@ -1275,6 +1332,30 @@ public final class UiStyleDeclaration {
         if (flexWrap != value) {
             flexWrap = value;
             recordLayoutChange();
+        }
+        return this;
+    }
+
+    private UiStyleDeclaration updateBoxShadow(UiBoxShadow value) {
+        if (!Objects.equals(boxShadow, value)) {
+            boxShadow = value;
+            recordPaintChange();
+        }
+        return this;
+    }
+
+    private UiStyleDeclaration updateBorderStyle(UiBorderStyle value) {
+        if (borderStyle != value) {
+            borderStyle = value;
+            recordPaintChange();
+        }
+        return this;
+    }
+
+    private UiStyleDeclaration updateCursor(UiCursor value) {
+        if (cursor != value) {
+            cursor = value;
+            recordPaintChange();
         }
         return this;
     }

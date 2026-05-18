@@ -67,6 +67,9 @@ public final class ComputedStyle {
     private final UiStyleLength flexBasis;
     private final UiAlignSelf alignSelf;
     private final UiFlexWrap flexWrap;
+    private final UiBoxShadow boxShadow;
+    private final UiBorderStyle borderStyle;
+    private final UiCursor cursor;
 
     ComputedStyle(UiDisplay display, UiStyleLength width, UiStyleLength height, UiBoxSizing boxSizing,
             UiPosition position,
@@ -84,7 +87,8 @@ public final class ComputedStyle {
             UiStyleLength lineHeight, UiTextAlign textAlign, UiWhiteSpace whiteSpace, UiTextOverflow textOverflow,
             UiVisibility visibility,
             UiStyleLength minWidth, UiStyleLength maxWidth, UiStyleLength minHeight, UiStyleLength maxHeight,
-            UiStyleLength flexBasis, UiAlignSelf alignSelf, UiFlexWrap flexWrap) {
+            UiStyleLength flexBasis, UiAlignSelf alignSelf, UiFlexWrap flexWrap,
+            UiBoxShadow boxShadow, UiBorderStyle borderStyle, UiCursor cursor) {
         this.display = Objects.requireNonNull(display, "display");
         this.width = Objects.requireNonNull(width, "width");
         this.height = Objects.requireNonNull(height, "height");
@@ -138,6 +142,9 @@ public final class ComputedStyle {
         this.flexBasis = Objects.requireNonNull(flexBasis, "flexBasis");
         this.alignSelf = Objects.requireNonNull(alignSelf, "alignSelf");
         this.flexWrap = Objects.requireNonNull(flexWrap, "flexWrap");
+        this.boxShadow = boxShadow; // 可为 null（无阴影）
+        this.borderStyle = borderStyle == null ? UiBorderStyle.NONE : borderStyle;
+        this.cursor = cursor == null ? UiCursor.DEFAULT : cursor;
     }
 
     public UiDisplay getDisplay() {
@@ -406,5 +413,32 @@ public final class ComputedStyle {
      */
     public UiFlexWrap getFlexWrap() {
         return flexWrap;
+    }
+
+    /**
+     * 返回元素阴影。
+     *
+     * @return 阴影值；无阴影时返回 null
+     */
+    public UiBoxShadow getBoxShadow() {
+        return boxShadow;
+    }
+
+    /**
+     * 返回边框样式。
+     *
+     * @return 边框样式
+     */
+    public UiBorderStyle getBorderStyle() {
+        return borderStyle;
+    }
+
+    /**
+     * 返回光标样式。
+     *
+     * @return 光标样式
+     */
+    public UiCursor getCursor() {
+        return cursor;
     }
 }
