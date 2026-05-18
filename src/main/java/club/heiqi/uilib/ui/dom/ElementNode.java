@@ -36,6 +36,7 @@ public final class ElementNode extends DocumentNode {
     private DocumentElementMouseUpHandler mouseUpHandler;
     private DocumentElementFocusInHandler focusInHandler;
     private DocumentCustomRenderer customRenderer;
+    private DocumentElementScrollHandler scrollHandler;
     // 捕获阶段 handler
     private DocumentElementClickHandler captureClickHandler;
     private DocumentElementMouseDownHandler captureMouseDownHandler;
@@ -633,6 +634,28 @@ public final class ElementNode extends DocumentNode {
      */
     public DocumentElementFocusInHandler getFocusInHandler() {
         return focusInHandler;
+    }
+
+    /**
+     * 设置元素滚动事件处理器。
+     *
+     * <p>当元素内部滚动位置变化时触发。</p>
+     *
+     * @param scrollHandler 滚动事件处理器；为 null 时清除
+     * @return 当前元素
+     */
+    public ElementNode setScrollHandler(DocumentElementScrollHandler scrollHandler) {
+        this.scrollHandler = scrollHandler;
+        return this;
+    }
+
+    /**
+     * 返回元素滚动事件处理器。
+     *
+     * @return 滚动事件处理器；不存在时返回 null
+     */
+    public DocumentElementScrollHandler getScrollHandler() {
+        return scrollHandler;
     }
 
     // ========== 捕获阶段 handler ==========

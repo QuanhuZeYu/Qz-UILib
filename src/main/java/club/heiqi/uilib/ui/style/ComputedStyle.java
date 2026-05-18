@@ -73,6 +73,7 @@ public final class ComputedStyle {
     private final UiBorderRadius borderRadiusCorners;
     private final UiTextDecoration textDecoration;
     private final UiPointerEvents pointerEvents;
+    private final UiOutline outline;
 
     ComputedStyle(UiDisplay display, UiStyleLength width, UiStyleLength height, UiBoxSizing boxSizing,
             UiPosition position,
@@ -92,7 +93,8 @@ public final class ComputedStyle {
             UiStyleLength minWidth, UiStyleLength maxWidth, UiStyleLength minHeight, UiStyleLength maxHeight,
             UiStyleLength flexBasis, UiAlignSelf alignSelf, UiFlexWrap flexWrap,
             UiBoxShadow boxShadow, UiBorderStyle borderStyle, UiCursor cursor,
-            UiBorderRadius borderRadiusCorners, UiTextDecoration textDecoration, UiPointerEvents pointerEvents) {
+            UiBorderRadius borderRadiusCorners, UiTextDecoration textDecoration, UiPointerEvents pointerEvents,
+            UiOutline outline) {
         this.display = Objects.requireNonNull(display, "display");
         this.width = Objects.requireNonNull(width, "width");
         this.height = Objects.requireNonNull(height, "height");
@@ -152,6 +154,7 @@ public final class ComputedStyle {
         this.borderRadiusCorners = borderRadiusCorners; // 可为 null（使用统一 borderRadius）
         this.textDecoration = textDecoration == null ? UiTextDecoration.NONE : textDecoration;
         this.pointerEvents = pointerEvents == null ? UiPointerEvents.AUTO : pointerEvents;
+        this.outline = outline; // 可为 null（无轮廓线）
     }
 
     public UiDisplay getDisplay() {
@@ -476,5 +479,16 @@ public final class ComputedStyle {
      */
     public UiPointerEvents getPointerEvents() {
         return pointerEvents;
+    }
+
+    /**
+     * 返回轮廓线样式。
+     *
+     * <p>outline 不占据布局空间，用于焦点指示。</p>
+     *
+     * @return 轮廓线值；无轮廓线时返回 null
+     */
+    public UiOutline getOutline() {
+        return outline;
     }
 }

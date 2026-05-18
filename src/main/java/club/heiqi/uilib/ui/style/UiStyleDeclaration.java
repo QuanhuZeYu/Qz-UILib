@@ -80,6 +80,7 @@ public final class UiStyleDeclaration {
     private UiBorderRadius borderRadiusCorners;
     private UiTextDecoration textDecoration;
     private UiPointerEvents pointerEvents;
+    private UiOutline outline;
 
     public UiStyleDeclaration() {
         this((UiStyleChangeListener) null);
@@ -985,6 +986,26 @@ public final class UiStyleDeclaration {
         return updatePointerEvents(null);
     }
 
+    public UiOutline getOutline() {
+        return outline;
+    }
+
+    /**
+     * 设置轮廓线样式（焦点指示）。
+     *
+     * <p>outline 不占据布局空间，绘制在 border 外侧。</p>
+     *
+     * @param outline 轮廓线值
+     * @return 当前声明
+     */
+    public UiStyleDeclaration setOutline(UiOutline outline) {
+        return updateOutline(Objects.requireNonNull(outline, "outline"));
+    }
+
+    public UiStyleDeclaration clearOutline() {
+        return updateOutline(null);
+    }
+
     private UiStyleDeclaration updateDisplay(UiDisplay value) {
         if (display != value) {
             display = value;
@@ -1447,6 +1468,14 @@ public final class UiStyleDeclaration {
     private UiStyleDeclaration updatePointerEvents(UiPointerEvents value) {
         if (pointerEvents != value) {
             pointerEvents = value;
+            recordPaintChange();
+        }
+        return this;
+    }
+
+    private UiStyleDeclaration updateOutline(UiOutline value) {
+        if (!Objects.equals(outline, value)) {
+            outline = value;
             recordPaintChange();
         }
         return this;

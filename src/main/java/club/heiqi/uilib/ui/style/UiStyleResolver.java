@@ -160,6 +160,9 @@ public final class UiStyleResolver {
         // pointer-events：不可继承
         UiPointerEvents pointerEvents = cascadePointerEvents(inlineStyle, matchingRules);
 
+        // outline：不可继承
+        UiOutline outline = cascadeOutline(inlineStyle, matchingRules);
+
         return new ComputedStyle(display, width, height, boxSizing, position, top, right, bottom, left, zIndex, margin,
                 padding, borderWidth, borderRadius, overflowX, overflowY, flexDirection, alignItems, justifyContent,
                 verticalAlign, rowGap, columnGap, flexGrow, flexShrink, opacity, backgroundColor, borderColor, textColor,
@@ -171,7 +174,8 @@ public final class UiStyleResolver {
                 minWidth, maxWidth, minHeight, maxHeight,
                 flexBasis, alignSelf, flexWrap,
                 boxShadow, borderStyle, cursor,
-                borderRadiusCorners, textDecoration, pointerEvents);
+                borderRadiusCorners, textDecoration, pointerEvents,
+                outline);
     }
 
     // ========== 级联属性解析方法 ==========
@@ -408,6 +412,15 @@ public final class UiStyleResolver {
             if (value != null) return value;
         }
         return UiPointerEvents.AUTO;
+    }
+
+    private static UiOutline cascadeOutline(UiStyleDeclaration inlineStyle, List<UiStyleRule> rules) {
+        if (inlineStyle.getOutline() != null) return inlineStyle.getOutline();
+        for (int i = rules.size() - 1; i >= 0; i--) {
+            UiOutline value = rules.get(i).getDeclaration().getOutline();
+            if (value != null) return value;
+        }
+        return null;
     }
 
     private static UiTextAlign cascadeTextAlign(UiStyleDeclaration inlineStyle, List<UiStyleRule> rules, ComputedStyle parentStyle) {
