@@ -8,6 +8,8 @@ import java.util.Objects;
 
 import club.heiqi.uilib.ui.dom.ElementNode;
 import club.heiqi.uilib.ui.style.ComputedStyle;
+import club.heiqi.uilib.ui.style.UiBorderRadius;
+import club.heiqi.uilib.ui.style.UiPointerEvents;
 import club.heiqi.uilib.ui.style.UiStyleResolver;
 import club.heiqi.uilib.ui.style.UiVisibility;
 
@@ -65,7 +67,7 @@ public final class DocumentHitTestEngine {
                 return inlineFragmentHit;
             }
         }
-        return insideBorderBox ? box.getElement() : null;
+        return insideBorderBox && isPointerEventsEnabled(box.getElement()) ? box.getElement() : null;
     }
 
     private static ElementNode hitStackingContextChildren(DocumentLayoutBox contextRoot,
@@ -157,6 +159,9 @@ public final class DocumentHitTestEngine {
         if (isHitTestHidden(box.getElement())) {
             return null;
         }
+        if (!isPointerEventsEnabled(box.getElement())) {
+            return null;
+        }
         List<DocumentLayoutTextRun> textRuns = box.getTextRuns();
         for (int index = textRuns.size() - 1; index >= 0; index--) {
             DocumentLayoutTextRun textRun = textRuns.get(index);
@@ -176,6 +181,9 @@ public final class DocumentHitTestEngine {
         List<DocumentLayoutInlineFragment> inlineFragments = box.getInlineFragments();
         for (int index = inlineFragments.size() - 1; index >= 0; index--) {
             DocumentLayoutInlineFragment inlineFragment = inlineFragments.get(index);
+            if (!isPointerEventsEnabled(inlineFragment.getOwnerElement())) {
+                continue;
+            }
             if (containsInRect(documentX, documentY, inlineFragment.getLeft() + offsetX,
                     inlineFragment.getTop() + offsetY, inlineFragment.getRight() + offsetX,
                     inlineFragment.getBottom() + offsetY)) {
@@ -217,6 +225,13 @@ public final class DocumentHitTestEngine {
         // visibility:hidden 的元素不响应命中测试
         ComputedStyle style = UiStyleResolver.compute(element);
         return style.getVisibility() == UiVisibility.HIDDEN;
+    }
+
+    private static boolean isPointerEventsEnabled(ElementNode element) {
+        if (element == null) {
+            return true;
+        }
+        return UiStyleResolver.compute(element).getPointerEvents() != UiPointerEvents.NONE;
     }
 
     private static boolean containsInRect(int x, int y, int left, int top, int right, int bottom) {
@@ -283,7 +298,10 @@ public final class DocumentHitTestEngine {
         if (limit <= 0) {
             return 0;
         }
-        int radius = box.getComputedStyle().getBorderRadius().resolve(limit, 0);
+        UiBorderRadius corners = box.getComputedStyle().getBorderRadiusCorners();
+        int radius = corners != null && corners.isUniform()
+                ? corners.getUniformRadius().resolve(limit, 0)
+                : box.getComputedStyle().getBorderRadius().resolve(limit, 0);
         return Math.max(0, Math.min(radius, limit / 2));
     }
 

@@ -265,6 +265,24 @@ public class DocumentPaintRendererTest {
     }
 
     /**
+     * 验证 TEXT_DECORATION 命令会投影为一条普通 surface。
+     */
+    @Test
+    public void shouldRenderTextDecorationCommandToUiRenderContext() {
+        UiDocument document = UiDocument.create();
+        ElementNode root = document.getRootElement();
+        List<DocumentPaintCommand> commands = new ArrayList<DocumentPaintCommand>();
+        commands.add(new DocumentPaintCommand(DocumentPaintCommandType.TEXT_DECORATION, root, 5, 9, 29, 10,
+                0xFFEFF6FF, 0, 0));
+
+        RecordingUiRenderContext renderContext = new RecordingUiRenderContext();
+        DocumentPaintRenderer.render(renderContext, commands, 7, 11);
+
+        Assert.assertEquals(1, renderContext.drawCalls.size());
+        assertDrawCall(renderContext.drawCalls.get(0), 12, 20, 36, 21, 0xFFEFF6FF, 0, 0);
+    }
+
+    /**
      * 验证 CUSTOM 命令会按宿主偏移投影到自定义绘制回调。
      */
     @Test

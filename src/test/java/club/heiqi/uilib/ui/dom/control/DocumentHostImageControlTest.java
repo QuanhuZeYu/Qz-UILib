@@ -27,6 +27,7 @@ import club.heiqi.uilib.ui.render.UiMainLayerSnapshotService;
 import club.heiqi.uilib.ui.render.UiRenderContext;
 import club.heiqi.uilib.ui.runtime.UiRuntimeAdapters;
 import club.heiqi.uilib.ui.style.UiPosition;
+import club.heiqi.uilib.ui.style.UiObjectFit;
 import club.heiqi.uilib.ui.style.UiStyleLength;
 import club.heiqi.uilib.ui.text.TextMeasureService;
 
@@ -170,6 +171,41 @@ public class DocumentHostImageControlTest {
         Assert.assertEquals(1, hostImageRenderer.calls.size());
         Assert.assertTrue(hostImageRenderer.calls.get(0).startsWith("BUFFERED_IMAGE@"));
         Assert.assertTrue(hostImageRenderer.calls.get(0).contains("0,0,40,20"));
+    }
+
+    /**
+     * 验证 `img` 元素的 `object-fit: contain` 会按固有比例在内容区内居中绘制。
+     */
+    @Test
+    public void shouldApplyObjectFitContainWhenRenderingImageElement() {
+        DocumentRemoteImageCache.getInstance().clearForTesting();
+        DocumentRemoteImageCache.getInstance().putForTesting("https://example.test/contain.png",
+                new BufferedImage(40, 20, BufferedImage.TYPE_INT_ARGB));
+        UiDocument document = UiDocument.create();
+        ElementNode root = document.getRootElement();
+        root.style()
+                .setWidth(UiStyleLength.px(160))
+                .setHeight(UiStyleLength.px(120));
+        ElementNode image = document.img();
+        image.setAttribute("src", "https://example.test/contain.png");
+        image.style()
+                .setWidth(UiStyleLength.px(80))
+                .setHeight(UiStyleLength.px(80))
+                .setObjectFit(UiObjectFit.CONTAIN);
+        root.append(image);
+
+        RecordingHostImageRenderer hostImageRenderer = new RecordingHostImageRenderer();
+        RecordingUiRenderContext renderContext = new RecordingUiRenderContext(160, 120,
+                UiRuntimeAdapters.empty().withHostImageRenderer(hostImageRenderer));
+        HtmlLikeDocumentWidget widget = new HtmlLikeDocumentWidget(document, 160, 120,
+                new DeterministicTextMeasureService());
+        widget.applyLayoutBounds(0, 0, 160, 120);
+
+        widget.render(renderContext);
+
+        Assert.assertEquals(1, hostImageRenderer.calls.size());
+        Assert.assertTrue(hostImageRenderer.calls.get(0).startsWith("BUFFERED_IMAGE@"));
+        Assert.assertTrue(hostImageRenderer.calls.get(0).contains("0,20,80,60"));
     }
 
     private static int countCommands(List<DocumentPaintCommand> commands, DocumentPaintCommandType type) {

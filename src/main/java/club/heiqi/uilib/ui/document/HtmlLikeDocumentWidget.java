@@ -51,6 +51,8 @@ import club.heiqi.uilib.ui.paint.DocumentPaintCommand;
 import club.heiqi.uilib.ui.paint.DocumentPaintEngine;
 import club.heiqi.uilib.ui.paint.DocumentPaintRenderer;
 import club.heiqi.uilib.ui.render.UiRenderContext;
+import club.heiqi.uilib.ui.style.UiPointerEvents;
+import club.heiqi.uilib.ui.style.UiStyleResolver;
 import club.heiqi.uilib.ui.text.DefaultTextMeasureService;
 import club.heiqi.uilib.ui.text.TextMeasureService;
 import club.heiqi.uilib.ui.widget.Widget;
@@ -333,6 +335,9 @@ public final class HtmlLikeDocumentWidget extends Widget {
         }
         for (DocumentNode current = target; current instanceof ElementNode; current = current.getParent()) {
             ElementNode currentElement = (ElementNode) current;
+            if (UiStyleResolver.compute(currentElement).getPointerEvents() == UiPointerEvents.NONE) {
+                continue;
+            }
             if (currentElement.isFocusable()
                     || currentElement.getClickHandler() != null
                     || currentElement.getDragHandler() != null

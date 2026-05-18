@@ -979,12 +979,12 @@ public class DocumentLayoutEngineTest {
                 new DeterministicTextMeasureService());
 
         Assert.assertEquals(3, rootBox.getTextRuns().size());
-        assertTextRun(rootBox.getTextRuns().get(0), "AA", 0, 3, 16, 18);
-        assertTextRun(rootBox.getTextRuns().get(1), "BB", 24, 3, 16, 18);
-        assertTextRun(rootBox.getTextRuns().get(2), "CC", 52, 3, 16, 18);
+        assertTextRun(rootBox.getTextRuns().get(0), "AA", 0, 0, 16, 18);
+        assertTextRun(rootBox.getTextRuns().get(1), "BB", 24, 0, 16, 18);
+        assertTextRun(rootBox.getTextRuns().get(2), "CC", 52, 0, 16, 18);
         Assert.assertEquals(1, rootBox.getInlineFragments().size());
-        assertInlineFragment(rootBox.getInlineFragments().get(0), span, 20, 0, 26, 26);
-        Assert.assertEquals(26, rootBox.getContentHeight());
+        assertInlineFragment(rootBox.getInlineFragments().get(0), span, 20, -3, 26, 26);
+        Assert.assertEquals(18, rootBox.getContentHeight());
     }
 
     /**
@@ -995,6 +995,7 @@ public class DocumentLayoutEngineTest {
         UiDocument document = UiDocument.create();
         ElementNode root = document.getRootElement();
         ElementNode baselineSpan = document.span();
+        ElementNode tallInlineBlock = document.div();
         ElementNode topSpan = document.span();
         ElementNode middleSpan = document.span();
         ElementNode bottomSpan = document.span();
@@ -1002,10 +1003,15 @@ public class DocumentLayoutEngineTest {
         root.style().setWidth(UiStyleLength.px(160));
         baselineSpan.style().setPadding(UiStyleInsets.of(UiStyleLength.px(6), UiStyleLength.px(0),
                 UiStyleLength.px(6), UiStyleLength.px(0)));
+        tallInlineBlock.style()
+                .setDisplay(UiDisplay.INLINE_BLOCK)
+                .setWidth(UiStyleLength.px(0))
+                .setHeight(UiStyleLength.px(30));
         topSpan.style().setVerticalAlign(UiVerticalAlign.TOP);
         middleSpan.style().setVerticalAlign(UiVerticalAlign.MIDDLE);
         bottomSpan.style().setVerticalAlign(UiVerticalAlign.BOTTOM);
         root.appendText("A");
+        root.append(tallInlineBlock);
         baselineSpan.appendText("B");
         topSpan.appendText("T");
         middleSpan.appendText("M");
@@ -1016,12 +1022,12 @@ public class DocumentLayoutEngineTest {
                 new DeterministicTextMeasureService());
 
         Assert.assertEquals(30, rootBox.getContentHeight());
-        assertTextRun(rootBox.getTextRuns().get(0), "A", 0, 6, 8, 18);
-        assertTextRun(rootBox.getTextRuns().get(1), "B", 8, 6, 8, 18);
+        assertTextRun(rootBox.getTextRuns().get(0), "A", 0, 0, 8, 18);
+        assertTextRun(rootBox.getTextRuns().get(1), "B", 8, 0, 8, 18);
         assertTextRun(rootBox.getTextRuns().get(2), "T", 16, 0, 8, 18);
         assertTextRun(rootBox.getTextRuns().get(3), "M", 24, 6, 8, 18);
         assertTextRun(rootBox.getTextRuns().get(4), "Z", 32, 12, 8, 18);
-        assertInlineFragment(rootBox.getInlineFragments().get(0), baselineSpan, 8, 0, 8, 30);
+        assertInlineFragment(rootBox.getInlineFragments().get(0), baselineSpan, 8, -6, 8, 30);
         assertInlineFragment(rootBox.getInlineFragments().get(1), topSpan, 16, 0, 8, 18);
         assertInlineFragment(rootBox.getInlineFragments().get(2), middleSpan, 24, 6, 8, 18);
         assertInlineFragment(rootBox.getInlineFragments().get(3), bottomSpan, 32, 12, 8, 18);
@@ -1938,6 +1944,28 @@ public class DocumentLayoutEngineTest {
         // border-box height = 100；border(2+2) + padding(10+10) = 24；content height = 76
         Assert.assertEquals(100, childBox.getHeight());
         Assert.assertEquals(76, childBox.getContentHeight());
+    }
+
+    /**
+     * 验证声明宽度且高度 auto 时，aspect-ratio 会导出内容高度。
+     */
+    @Test
+    public void shouldResolveAspectRatioHeightFromSpecifiedWidth() {
+        UiDocument document = UiDocument.create();
+        ElementNode root = document.getRootElement();
+        ElementNode child = document.div();
+
+        root.style().setWidth(UiStyleLength.px(220));
+        child.style()
+                .setWidth(UiStyleLength.px(128))
+                .setAspectRatio(16.0F / 9.0F);
+        root.append(child);
+
+        DocumentLayoutBox childBox = DocumentLayoutEngine.layout(root, 240, 0,
+                new DeterministicTextMeasureService()).getChildren().get(0);
+
+        Assert.assertEquals(128, childBox.getContentWidth());
+        Assert.assertEquals(72, childBox.getContentHeight());
     }
 
     /**

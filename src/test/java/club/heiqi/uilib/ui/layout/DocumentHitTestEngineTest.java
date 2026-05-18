@@ -6,6 +6,7 @@ import org.junit.Test;
 import club.heiqi.uilib.ui.dom.ElementNode;
 import club.heiqi.uilib.ui.dom.UiDocument;
 import club.heiqi.uilib.ui.style.UiOverflow;
+import club.heiqi.uilib.ui.style.UiPointerEvents;
 import club.heiqi.uilib.ui.style.UiPosition;
 import club.heiqi.uilib.ui.style.UiStyleInsets;
 import club.heiqi.uilib.ui.style.UiStyleLength;
@@ -209,10 +210,10 @@ public class DocumentHitTestEngineTest {
 
         DocumentLayoutBox rootBox = DocumentLayoutEngine.layout(root, 100, 0);
 
-        assertHitElement(root, rootBox, 18, 5);
-        assertHitElement(span, rootBox, 22, 1);
-        assertHitElement(span, rootBox, 42, 24);
-        assertHitElement(root, rootBox, 48, 5);
+        assertHitElement(root, rootBox, 18, 0);
+        assertHitElement(span, rootBox, 22, 0);
+        assertHitElement(span, rootBox, 42, 18);
+        assertHitElement(root, rootBox, 48, 0);
     }
 
     /**
@@ -363,6 +364,35 @@ public class DocumentHitTestEngineTest {
                 .setTop(UiStyleLength.px(0))
                 .setLeft(UiStyleLength.px(0))
                 .setZIndex(1000);
+        root.append(target).append(overlay);
+
+        DocumentLayoutBox rootBox = DocumentLayoutEngine.layout(root, 120, 80);
+
+        assertHitElement(target, rootBox, 10, 10);
+    }
+
+    /**
+     * 验证 pointer-events:none 元素不会截获下层命中。
+     */
+    @Test
+    public void shouldSkipPointerEventsNoneOverlay() {
+        UiDocument document = UiDocument.create();
+        ElementNode root = document.getRootElement();
+        ElementNode target = document.div();
+        ElementNode overlay = document.div();
+
+        root.style().setWidth(UiStyleLength.px(120));
+        target.style()
+                .setWidth(UiStyleLength.px(80))
+                .setHeight(UiStyleLength.px(40));
+        overlay.style()
+                .setWidth(UiStyleLength.px(120))
+                .setHeight(UiStyleLength.px(80))
+                .setPosition(UiPosition.FIXED)
+                .setTop(UiStyleLength.px(0))
+                .setLeft(UiStyleLength.px(0))
+                .setZIndex(1000)
+                .setPointerEvents(UiPointerEvents.NONE);
         root.append(target).append(overlay);
 
         DocumentLayoutBox rootBox = DocumentLayoutEngine.layout(root, 120, 80);

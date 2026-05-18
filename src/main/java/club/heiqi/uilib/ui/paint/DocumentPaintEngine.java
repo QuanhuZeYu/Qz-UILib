@@ -16,8 +16,11 @@ import club.heiqi.uilib.ui.layout.DocumentScrollState;
 import club.heiqi.uilib.ui.layout.DocumentScrollState.ScrollbarMetrics;
 import club.heiqi.uilib.ui.layout.DocumentStackingPhase;
 import club.heiqi.uilib.ui.style.ComputedStyle;
+import club.heiqi.uilib.ui.style.UiBorderRadius;
+import club.heiqi.uilib.ui.style.UiBorderStyle;
 import club.heiqi.uilib.ui.style.UiOverflow;
 import club.heiqi.uilib.ui.style.UiStyleResolver;
+import club.heiqi.uilib.ui.style.UiTextDecoration;
 import club.heiqi.uilib.ui.style.UiVisibility;
 import club.heiqi.uilib.ui.theme.UiSurfaceStyle;
 
@@ -267,17 +270,20 @@ public final class DocumentPaintEngine {
             DocumentAnimationTimeline animationTimeline, long currentTimeNanos, float opacity, int offsetX,
             int offsetY) {
         ComputedStyle style = box.getComputedStyle();
+        if (style.getBorderStyle() == UiBorderStyle.HIDDEN || box.getWidth() <= 0 || box.getHeight() <= 0) {
+            return;
+        }
+        int radius = resolveBorderRadius(box, animationTimeline, currentTimeNanos);
         int borderWidth = box.getBorder().getTop();
         int color = resolveAnimatedColor(animationTimeline, box, DocumentAnimationProperty.BORDER_COLOR,
                 style.getBorderColor(), currentTimeNanos);
         color = applyOpacity(color, opacity);
-        if (isTransparent(color) || borderWidth <= 0 || box.getWidth() <= 0 || box.getHeight() <= 0) {
+        if (isTransparent(color) || borderWidth <= 0) {
             return;
         }
         commands.add(new DocumentPaintCommand(DocumentPaintCommandType.BORDER, box.getElement(),
                 box.getLeft() + offsetX, box.getTop() + offsetY, box.getRight() + offsetX,
-                box.getBottom() + offsetY, color, borderWidth, resolveBorderRadius(box, animationTimeline,
-                        currentTimeNanos)));
+                box.getBottom() + offsetY, color, borderWidth, radius));
     }
 
     private static void appendCustomCommand(DocumentLayoutBox box, List<DocumentPaintCommand> commands, int offsetX,
@@ -309,11 +315,34 @@ public final class DocumentPaintEngine {
             if (isTransparent(color)) {
                 continue;
             }
+            appendTextDecorationCommand(textRun, commands, color, offsetX, offsetY);
             commands.add(new DocumentPaintCommand(DocumentPaintCommandType.TEXT, textRun.getOwnerElement(),
                     textRun.getLeft() + offsetX, textRun.getTop() + offsetY, textRun.getRight() + offsetX,
                     textRun.getBottom() + offsetY, color, 0, 0, textRun.getText(), textRun.getTextContentMode(),
                     null, 0, 1.0F, 1.0F));
         }
+    }
+
+    private static void appendTextDecorationCommand(DocumentLayoutTextRun textRun, List<DocumentPaintCommand> commands,
+            int color, int offsetX, int offsetY) {
+        UiTextDecoration textDecoration = UiStyleResolver.compute(textRun.getOwnerElement()).getTextDecoration();
+        if (textDecoration == UiTextDecoration.NONE || textRun.getWidth() <= 0 || textRun.getHeight() <= 0) {
+            return;
+        }
+        int lineTop = resolveTextDecorationTop(textRun, textDecoration);
+        commands.add(new DocumentPaintCommand(DocumentPaintCommandType.TEXT_DECORATION, textRun.getOwnerElement(),
+                textRun.getLeft() + offsetX, lineTop + offsetY, textRun.getRight() + offsetX,
+                lineTop + 1 + offsetY, color, 0, 0));
+    }
+
+    private static int resolveTextDecorationTop(DocumentLayoutTextRun textRun, UiTextDecoration textDecoration) {
+        if (textDecoration == UiTextDecoration.OVERLINE) {
+            return textRun.getTop();
+        }
+        if (textDecoration == UiTextDecoration.LINE_THROUGH) {
+            return textRun.getTop() + Math.max(0, textRun.getHeight() / 2);
+        }
+        return textRun.getBottom() - Math.max(1, textRun.getHeight() / 6);
     }
 
     private static void appendInlineFragmentSurfaceCommands(DocumentLayoutBox box, List<DocumentPaintCommand> commands,
@@ -341,7 +370,8 @@ public final class DocumentPaintEngine {
             int borderColor = resolveAnimatedColor(animationTimeline, ownerElement, DocumentAnimationProperty.BORDER_COLOR,
                     ownerStyle.getBorderColor(), currentTimeNanos);
             borderColor = applyOpacity(borderColor, opacity);
-            if (!isTransparent(borderColor) && borderWidth > 0) {
+            if (!isTransparent(borderColor) && borderWidth > 0
+                    && ownerStyle.getBorderStyle() != UiBorderStyle.HIDDEN) {
                 commands.add(new DocumentPaintCommand(DocumentPaintCommandType.BORDER, ownerElement,
                         inlineFragment.getLeft() + offsetX, inlineFragment.getTop() + offsetY,
                         inlineFragment.getRight() + offsetX, inlineFragment.getBottom() + offsetY, borderColor,
@@ -516,7 +546,10 @@ public final class DocumentPaintEngine {
 
     private static int resolveStaticBorderRadius(DocumentLayoutBox box) {
         int limit = Math.min(box.getWidth(), box.getHeight());
-        int radius = box.getComputedStyle().getBorderRadius().resolve(limit, 0);
+        UiBorderRadius corners = box.getComputedStyle().getBorderRadiusCorners();
+        int radius = corners != null && corners.isUniform()
+                ? corners.getUniformRadius().resolve(limit, 0)
+                : box.getComputedStyle().getBorderRadius().resolve(limit, 0);
         return Math.max(0, Math.min(radius, limit / 2));
     }
 

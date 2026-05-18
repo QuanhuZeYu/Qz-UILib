@@ -9,6 +9,8 @@ import club.heiqi.uilib.ui.image.HostImageSource;
 import club.heiqi.uilib.ui.paint.DocumentCustomRenderer;
 import club.heiqi.uilib.ui.render.UiRenderContext;
 import club.heiqi.uilib.ui.style.ComputedStyle;
+import club.heiqi.uilib.ui.style.UiObjectFit;
+import club.heiqi.uilib.ui.style.UiStyleResolver;
 import club.heiqi.uilib.ui.style.UiStyleLength;
 
 /**
@@ -45,7 +47,15 @@ public final class DocumentImageElementSupport {
                 if (source == null) {
                     return;
                 }
-                context.drawHostImage(source, contentLeft, contentTop, contentRight, contentBottom);
+                ImageContentRect targetRect = resolveObjectFitRect(element, source, contentLeft, contentTop,
+                        contentRight, contentBottom);
+                context.pushClip(contentLeft, contentTop, contentRight, contentBottom);
+                try {
+                    context.drawHostImage(source, targetRect.left, targetRect.top, targetRect.right,
+                            targetRect.bottom);
+                } finally {
+                    context.popClip();
+                }
             }
         });
     }
@@ -132,6 +142,44 @@ public final class DocumentImageElementSupport {
         return texture == null ? null : HostImageSource.texture(texture, 1, 1);
     }
 
+    private static ImageContentRect resolveObjectFitRect(ElementNode element, HostImageSource source, int contentLeft,
+            int contentTop, int contentRight, int contentBottom) {
+        int boxWidth = Math.max(0, contentRight - contentLeft);
+        int boxHeight = Math.max(0, contentBottom - contentTop);
+        if (boxWidth <= 0 || boxHeight <= 0) {
+            return new ImageContentRect(contentLeft, contentTop, contentLeft, contentTop);
+        }
+        ComputedStyle style = UiStyleResolver.compute(element);
+        UiObjectFit objectFit = style.getObjectFit();
+        if (objectFit == UiObjectFit.FILL) {
+            return new ImageContentRect(contentLeft, contentTop, contentRight, contentBottom);
+        }
+        int intrinsicWidth = Math.max(1, resolveIntrinsicWidth(element));
+        int intrinsicHeight = Math.max(1, resolveIntrinsicHeight(element));
+        float fitScale = resolveObjectFitScale(objectFit, boxWidth, boxHeight, intrinsicWidth, intrinsicHeight);
+        int targetWidth = Math.max(1, Math.round(intrinsicWidth * fitScale));
+        int targetHeight = Math.max(1, Math.round(intrinsicHeight * fitScale));
+        int left = contentLeft + (boxWidth - targetWidth) / 2;
+        int top = contentTop + (boxHeight - targetHeight) / 2;
+        return new ImageContentRect(left, top, left + targetWidth, top + targetHeight);
+    }
+
+    private static float resolveObjectFitScale(UiObjectFit objectFit, int boxWidth, int boxHeight,
+            int intrinsicWidth, int intrinsicHeight) {
+        float containScale = Math.min((float) boxWidth / (float) intrinsicWidth,
+                (float) boxHeight / (float) intrinsicHeight);
+        if (objectFit == UiObjectFit.CONTAIN) {
+            return containScale;
+        }
+        if (objectFit == UiObjectFit.COVER) {
+            return Math.max((float) boxWidth / (float) intrinsicWidth, (float) boxHeight / (float) intrinsicHeight);
+        }
+        if (objectFit == UiObjectFit.SCALE_DOWN) {
+            return Math.min(1.0F, containScale);
+        }
+        return 1.0F;
+    }
+
     private static ImageSize resolveRemoteImageSize(ElementNode element) {
         String src = element.getAttribute("src");
         if (!isRemoteUrl(src)) {
@@ -213,6 +261,21 @@ public final class DocumentImageElementSupport {
         private ImageSize(int width, int height) {
             this.width = Math.max(1, width);
             this.height = Math.max(1, height);
+        }
+    }
+
+    private static final class ImageContentRect {
+
+        private final int left;
+        private final int top;
+        private final int right;
+        private final int bottom;
+
+        private ImageContentRect(int left, int top, int right, int bottom) {
+            this.left = left;
+            this.top = top;
+            this.right = Math.max(left, right);
+            this.bottom = Math.max(top, bottom);
         }
     }
 }

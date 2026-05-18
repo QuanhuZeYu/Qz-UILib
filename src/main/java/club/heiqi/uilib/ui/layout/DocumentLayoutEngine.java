@@ -1057,6 +1057,9 @@ public final class DocumentLayoutEngine {
                     lineCrossSize = Math.max(lineCrossSize, item.getOuterCrossSize(true));
                 }
             }
+            if (specifiedContentHeight >= 0 && lines.size() == 1) {
+                lineCrossSize = Math.max(lineCrossSize, lineAvailableCrossSize);
+            }
 
             int occupiedMain = getOccupiedMainSize(lineItems, gap, true);
             int remaining = Math.max(0, contentWidth - occupiedMain);
@@ -1533,6 +1536,12 @@ public final class DocumentLayoutEngine {
         if (isAuto(computedStyle.getHeight()) && DocumentImageElementSupport.isImageTag(element.getTagName())) {
             return DocumentImageElementSupport.resolveContentHeight(element, computedStyle, contentWidth);
         }
+        if (isAuto(computedStyle.getHeight()) && hasAspectRatio(computedStyle)) {
+            return Math.max(autoContentHeight, applyHeightConstraints(computedStyle,
+                    resolveAspectRatioContentHeight(computedStyle, contentWidth), contentWidth, containingHeight,
+                    resolveUniformEdge(computedStyle.getBorderWidth(), contentWidth),
+                    resolveInsets(computedStyle.getPadding(), contentWidth, true)));
+        }
         // 百分比高度：当包含块高度为 auto 时，视为 auto（使用内容高度）
         if (computedStyle.getHeight().getType() == UiStyleLength.Type.PERCENT && containingHeight < 0) {
             return applyHeightConstraints(computedStyle, autoContentHeight, contentWidth, containingHeight,
@@ -1623,6 +1632,9 @@ public final class DocumentLayoutEngine {
         if (isAuto(computedStyle.getHeight())) {
             if (DocumentImageElementSupport.isImageTag(element.getTagName())) {
                 return DocumentImageElementSupport.resolveContentHeight(element, computedStyle, contentWidth);
+            }
+            if (hasAspectRatio(computedStyle)) {
+                return resolveAspectRatioContentHeight(computedStyle, contentWidth);
             }
             return AUTO_SIZE;
         }
@@ -2000,6 +2012,15 @@ public final class DocumentLayoutEngine {
 
     private static boolean isAuto(UiStyleLength length) {
         return length.getType() == UiStyleLength.Type.AUTO;
+    }
+
+    private static boolean hasAspectRatio(ComputedStyle style) {
+        return style.getAspectRatio() != null && style.getAspectRatio().floatValue() > 0.0F;
+    }
+
+    private static int resolveAspectRatioContentHeight(ComputedStyle style, int contentWidth) {
+        float aspectRatio = style.getAspectRatio().floatValue();
+        return Math.max(0, Math.round(Math.max(0, contentWidth) / aspectRatio));
     }
 
     private static LayoutRuntimeValueResolver resolveLayoutValueResolver(LayoutRuntimeValueResolver layoutValueResolver) {

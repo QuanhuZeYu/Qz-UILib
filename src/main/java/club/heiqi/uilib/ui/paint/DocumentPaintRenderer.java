@@ -182,6 +182,12 @@ public final class DocumentPaintRenderer {
             renderBorder(context, command, offsetX, offsetY, replayState.fallbackOpacity);
             return;
         }
+        if (command.getType() == DocumentPaintCommandType.TEXT_DECORATION) {
+            context.drawSurface(command.getLeft() + offsetX, command.getTop() + offsetY,
+                    command.getRight() + offsetX, command.getBottom() + offsetY,
+                    new UiSurfaceStyle(applyOpacity(command.getColor(), replayState.fallbackOpacity), 0, 0));
+            return;
+        }
         if (command.getType() == DocumentPaintCommandType.CUSTOM) {
             DocumentCustomRenderer customRenderer = command.getCustomRenderer();
             if (customRenderer != null) {

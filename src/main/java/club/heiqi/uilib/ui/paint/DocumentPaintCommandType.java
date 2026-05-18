@@ -9,6 +9,7 @@ public enum DocumentPaintCommandType {
     BACKDROP_FILTER,
     BACKGROUND,
     BORDER,
+    TEXT_DECORATION,
     TEXT,
     CLIP_START,
     CLIP_END,

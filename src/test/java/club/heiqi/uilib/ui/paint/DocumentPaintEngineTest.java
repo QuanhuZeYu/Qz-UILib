@@ -850,6 +850,30 @@ public class DocumentPaintEngineTest {
     }
 
     /**
+     * 验证 text-decoration 会在文本命令之前输出装饰线命令。
+     */
+    @Test
+    public void shouldBuildTextDecorationCommandBeforeTextRun() {
+        UiDocument document = UiDocument.create();
+        ElementNode root = document.getRootElement();
+
+        root.style()
+                .setWidth(UiStyleLength.px(120))
+                .setPadding(UiStyleLength.px(4))
+                .setTextColor(0xFFEFF6FF)
+                .setTextDecoration(club.heiqi.uilib.ui.style.UiTextDecoration.UNDERLINE);
+        root.appendText("Hello");
+
+        List<DocumentPaintCommand> commands = DocumentPaintEngine.buildPaintCommands(
+                DocumentLayoutEngine.layout(root, 160, 0));
+
+        Assert.assertEquals(2, commands.size());
+        assertCommand(commands.get(0), DocumentPaintCommandType.TEXT_DECORATION, root, 4, 19, 44, 20, 0xFFEFF6FF,
+                0, 0);
+        assertCommand(commands.get(1), DocumentPaintCommandType.TEXT, root, 4, 4, 44, 22, 0xFFEFF6FF, 0, 0);
+    }
+
+    /**
      * 验证换行后的文本布局行会各自生成 TEXT 绘制命令。
      */
     @Test
@@ -930,12 +954,12 @@ public class DocumentPaintEngineTest {
                 80, 0, new DeterministicTextMeasureService()));
 
         Assert.assertEquals(4, commands.size());
-        assertCommand(commands.get(0), DocumentPaintCommandType.BACKGROUND, span, 16, 0, 50, 20, 0x334F46E5, 0,
+        assertCommand(commands.get(0), DocumentPaintCommandType.BACKGROUND, span, 16, -1, 50, 19, 0x334F46E5, 0,
                 5);
-        assertCommand(commands.get(1), DocumentPaintCommandType.BORDER, span, 16, 0, 50, 20, 0xFFFFD166, 1,
+        assertCommand(commands.get(1), DocumentPaintCommandType.BORDER, span, 16, -1, 50, 19, 0xFFFFD166, 1,
                 5);
-        assertCommand(commands.get(2), DocumentPaintCommandType.TEXT, root, 0, 1, 16, 19, 0xFFEFF6FF, 0, 0);
-        assertCommand(commands.get(3), DocumentPaintCommandType.TEXT, span, 17, 1, 49, 19, 0xFFFFD166, 0, 0);
+        assertCommand(commands.get(2), DocumentPaintCommandType.TEXT, root, 0, 0, 16, 18, 0xFFEFF6FF, 0, 0);
+        assertCommand(commands.get(3), DocumentPaintCommandType.TEXT, span, 17, 0, 49, 18, 0xFFFFD166, 0, 0);
     }
 
     /**
@@ -961,17 +985,17 @@ public class DocumentPaintEngineTest {
                 80, 0, new DeterministicTextMeasureService()));
 
         Assert.assertEquals(6, commands.size());
-        assertCommand(commands.get(0), DocumentPaintCommandType.BACKGROUND, span, 0, 0, 33, 20, 0x334F46E5, 0, 5,
+        assertCommand(commands.get(0), DocumentPaintCommandType.BACKGROUND, span, 0, -1, 33, 19, 0x334F46E5, 0, 5,
                 UiSurfaceStyle.CORNER_TOP_LEFT | UiSurfaceStyle.CORNER_BOTTOM_LEFT);
-        assertCommand(commands.get(1), DocumentPaintCommandType.BORDER, span, 0, 0, 33, 20, 0xFFFFD166, 1, 5,
+        assertCommand(commands.get(1), DocumentPaintCommandType.BORDER, span, 0, -1, 33, 19, 0xFFFFD166, 1, 5,
                 UiSurfaceStyle.CORNER_TOP_LEFT | UiSurfaceStyle.CORNER_BOTTOM_LEFT);
-        assertCommand(commands.get(2), DocumentPaintCommandType.BACKGROUND, span, 0, 20, 17, 40, 0x334F46E5, 0,
+        assertCommand(commands.get(2), DocumentPaintCommandType.BACKGROUND, span, 0, 17, 17, 37, 0x334F46E5, 0,
                 5, UiSurfaceStyle.CORNER_TOP_RIGHT | UiSurfaceStyle.CORNER_BOTTOM_RIGHT);
-        assertCommand(commands.get(3), DocumentPaintCommandType.BORDER, span, 0, 20, 17, 40, 0xFFFFD166, 1, 5,
+        assertCommand(commands.get(3), DocumentPaintCommandType.BORDER, span, 0, 17, 17, 37, 0xFFFFD166, 1, 5,
                 UiSurfaceStyle.CORNER_TOP_RIGHT | UiSurfaceStyle.CORNER_BOTTOM_RIGHT);
-        assertCommand(commands.get(4), DocumentPaintCommandType.TEXT, span, 1, 1, 33, 19, 0xFFFFD166, 0, 0);
+        assertCommand(commands.get(4), DocumentPaintCommandType.TEXT, span, 1, 0, 33, 18, 0xFFFFD166, 0, 0);
         Assert.assertEquals("AABB", commands.get(4).getText());
-        assertCommand(commands.get(5), DocumentPaintCommandType.TEXT, span, 0, 21, 16, 39, 0xFFFFD166, 0, 0);
+        assertCommand(commands.get(5), DocumentPaintCommandType.TEXT, span, 0, 18, 16, 36, 0xFFFFD166, 0, 0);
         Assert.assertEquals("CC", commands.get(5).getText());
     }
 
@@ -1034,12 +1058,12 @@ public class DocumentPaintEngineTest {
                 100, 0, new DeterministicTextMeasureService()));
 
         Assert.assertEquals(5, commands.size());
-        assertCommand(commands.get(0), DocumentPaintCommandType.BACKGROUND, span, 20, 0, 46, 26, 0x334F46E5, 0,
+        assertCommand(commands.get(0), DocumentPaintCommandType.BACKGROUND, span, 20, -3, 46, 23, 0x334F46E5, 0,
                 0);
-        assertCommand(commands.get(1), DocumentPaintCommandType.BORDER, span, 20, 0, 46, 26, 0xFFFFD166, 1, 0);
-        assertCommand(commands.get(2), DocumentPaintCommandType.TEXT, root, 0, 3, 16, 21, 0xFFEFF6FF, 0, 0);
-        assertCommand(commands.get(3), DocumentPaintCommandType.TEXT, span, 24, 3, 40, 21, 0xFFFFD166, 0, 0);
-        assertCommand(commands.get(4), DocumentPaintCommandType.TEXT, root, 52, 3, 68, 21, 0xFFEFF6FF, 0, 0);
+        assertCommand(commands.get(1), DocumentPaintCommandType.BORDER, span, 20, -3, 46, 23, 0xFFFFD166, 1, 0);
+        assertCommand(commands.get(2), DocumentPaintCommandType.TEXT, root, 0, 0, 16, 18, 0xFFEFF6FF, 0, 0);
+        assertCommand(commands.get(3), DocumentPaintCommandType.TEXT, span, 24, 0, 40, 18, 0xFFFFD166, 0, 0);
+        assertCommand(commands.get(4), DocumentPaintCommandType.TEXT, root, 52, 0, 68, 18, 0xFFEFF6FF, 0, 0);
     }
 
     /**
