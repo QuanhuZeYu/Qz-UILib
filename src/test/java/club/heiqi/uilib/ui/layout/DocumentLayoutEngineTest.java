@@ -17,6 +17,7 @@ import club.heiqi.uilib.ui.style.UiAlignItems;
 import club.heiqi.uilib.ui.style.UiBoxSizing;
 import club.heiqi.uilib.ui.style.UiDisplay;
 import club.heiqi.uilib.ui.style.UiFlexDirection;
+import club.heiqi.uilib.ui.style.UiFontWeight;
 import club.heiqi.uilib.ui.style.UiJustifyContent;
 import club.heiqi.uilib.ui.style.UiOverflowWrap;
 import club.heiqi.uilib.ui.style.UiOverflow;
@@ -1023,6 +1024,48 @@ public class DocumentLayoutEngineTest {
 
         Assert.assertEquals(1, rootBox.getTextRuns().size());
         assertTextRun(rootBox.getTextRuns().get(0), "ab\u2026", 0, 0, 24, 18);
+    }
+
+    /**
+     * 验证断词拟合会使用当前字体粗细参与测量。
+     */
+    @Test
+    public void shouldUseFontWeightWhenResolvingBreakFit() {
+        UiDocument document = UiDocument.create();
+        ElementNode root = document.getRootElement();
+
+        root.style()
+                .setWidth(UiStyleLength.px(28))
+                .setFontWeight(UiFontWeight.BOLD)
+                .setOverflowWrap(UiOverflowWrap.BREAK_WORD);
+        root.appendText("abcd");
+
+        DocumentLayoutBox rootBox = DocumentLayoutEngine.layout(root, 80, 0, new FontAwareTextMeasureService());
+
+        Assert.assertEquals(2, rootBox.getTextRuns().size());
+        assertTextRun(rootBox.getTextRuns().get(0), "ab", 0, 0, 28, 18);
+        assertTextRun(rootBox.getTextRuns().get(1), "cd", 0, 18, 28, 18);
+    }
+
+    /**
+     * 验证 ellipsis 宽度会按当前字体粗细测量。
+     */
+    @Test
+    public void shouldUseFontWeightWhenMeasuringEllipsis() {
+        UiDocument document = UiDocument.create();
+        ElementNode root = document.getRootElement();
+
+        root.style()
+                .setWidth(UiStyleLength.px(52))
+                .setFontWeight(UiFontWeight.BOLD)
+                .setWhiteSpace(UiWhiteSpace.NOWRAP)
+                .setTextOverflow(UiTextOverflow.ELLIPSIS);
+        root.appendText("abcde");
+
+        DocumentLayoutBox rootBox = DocumentLayoutEngine.layout(root, 80, 0, new FontAwareTextMeasureService());
+
+        Assert.assertEquals(1, rootBox.getTextRuns().size());
+        assertTextRun(rootBox.getTextRuns().get(0), "ab\u2026", 0, 0, 42, 18);
     }
 
     /**
@@ -2036,6 +2079,64 @@ public class DocumentLayoutEngineTest {
                 lines.add(text.substring(index, Math.min(text.length(), index + maxCharsPerLine)));
             }
             return lines;
+        }
+    }
+
+    /**
+     * 会区分粗体宽度的文本测量服务，用于验证布局阶段传递字体样式。
+     */
+    private static final class FontAwareTextMeasureService implements TextMeasureService {
+
+        @Override
+        public int getEpoch() {
+            return 1;
+        }
+
+        @Override
+        public int getStringWidth(String text) {
+            return widthOf(text, 4);
+        }
+
+        @Override
+        public int getStringWidth(String text, club.heiqi.uilib.ui.text.TextContentMode textContentMode,
+                UiFontWeight fontWeight, club.heiqi.uilib.ui.style.UiFontStyle fontStyle) {
+            return widthOf(text, fontWeight == UiFontWeight.BOLD ? 7 : 4);
+        }
+
+        @Override
+        public int getLineHeight() {
+            return 9;
+        }
+
+        @Override
+        public String trimStringToWidth(String text, int targetWidth) {
+            return trimByWidth(text, targetWidth, 4);
+        }
+
+        @Override
+        public String trimStringToWidth(String text, int targetWidth,
+                club.heiqi.uilib.ui.text.TextContentMode textContentMode, UiFontWeight fontWeight,
+                club.heiqi.uilib.ui.style.UiFontStyle fontStyle) {
+            return trimByWidth(text, targetWidth, fontWeight == UiFontWeight.BOLD ? 7 : 4);
+        }
+
+        @Override
+        public List<String> listFormattedStringToWidth(String text, int wrapWidth) {
+            List<String> lines = new ArrayList<String>();
+            lines.add(text == null ? "" : text);
+            return lines;
+        }
+
+        private static int widthOf(String text, int charWidth) {
+            return text == null ? 0 : text.length() * charWidth;
+        }
+
+        private static String trimByWidth(String text, int targetWidth, int charWidth) {
+            if (text == null || text.isEmpty() || targetWidth <= 0) {
+                return "";
+            }
+            int maxLength = Math.max(0, targetWidth / charWidth);
+            return text.substring(0, Math.min(text.length(), maxLength));
         }
     }
 

@@ -164,6 +164,23 @@ public class HtmlLikeDocumentWidgetCursorTest {
     }
 
     /**
+     * 验证系统光标宿主失败时会降级为 no-op，而不是打断输入链路。
+     */
+    @Test
+    public void shouldDegradeSystemCursorHostWhenBackendFails() {
+        FailingCursorBackend backend = new FailingCursorBackend();
+        SystemDocumentCursorHost cursorHost = new SystemDocumentCursorHost(backend);
+
+        cursorHost.applyCursor(UiCursor.POINTER);
+        cursorHost.applyCursor(UiCursor.TEXT);
+        cursorHost.applyCursor(UiCursor.NONE);
+
+        Assert.assertEquals(1, backend.showCursorCalls);
+        Assert.assertEquals(0, backend.applySystemCursorCalls);
+        Assert.assertEquals(0, backend.hideCursorCalls);
+    }
+
+    /**
      * 验证样式表中的 `:active` cursor 会在按下时生效，并在抬起后恢复 hover 态光标。
      */
     @Test
@@ -211,6 +228,43 @@ public class HtmlLikeDocumentWidgetCursorTest {
 
         private UiCursor getLatestCursor() {
             return appliedCursors.isEmpty() ? UiCursor.DEFAULT : appliedCursors.get(appliedCursors.size() - 1);
+        }
+    }
+
+    /**
+     * 会在显示光标时失败的测试宿主后端。
+     */
+    private static final class FailingCursorBackend implements SystemDocumentCursorHost.NativeCursorBackend {
+
+        private int showCursorCalls;
+        private int hideCursorCalls;
+        private int applySystemCursorCalls;
+
+        @Override
+        public boolean isRuntimeAvailable() {
+            return true;
+        }
+
+        @Override
+        public void showCursor() {
+            showCursorCalls++;
+            throw new IllegalStateException("boom");
+        }
+
+        @Override
+        public void hideCursor() {
+            hideCursorCalls++;
+            throw new IllegalStateException("boom");
+        }
+
+        @Override
+        public void applyDefaultCursor() {
+            throw new IllegalStateException("boom");
+        }
+
+        @Override
+        public void applySystemCursor(SystemDocumentCursorHost.ResolvedCursorKind cursorKind) {
+            applySystemCursorCalls++;
         }
     }
 

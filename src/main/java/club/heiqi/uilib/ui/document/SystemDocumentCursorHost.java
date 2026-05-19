@@ -10,6 +10,7 @@ import java.lang.reflect.Method;
 
 import org.lwjglx.opengl.Display;
 
+import club.heiqi.uilib.MyMod;
 import club.heiqi.uilib.ui.style.UiCursor;
 
 /**
@@ -23,6 +24,7 @@ final class SystemDocumentCursorHost implements DocumentCursorHost {
     private final NativeCursorBackend backend;
     private ResolvedCursorKind appliedCursor = ResolvedCursorKind.DEFAULT;
     private boolean runtimeCursorSynchronized;
+    private boolean runtimeCursorDisabled;
 
     SystemDocumentCursorHost(NativeCursorBackend backend) {
         this.backend = Objects.requireNonNull(backend, "backend");
@@ -35,7 +37,7 @@ final class SystemDocumentCursorHost implements DocumentCursorHost {
     @Override
     public synchronized void applyCursor(UiCursor cursor) {
         ResolvedCursorKind resolvedCursor = resolveRequestedCursor(cursor);
-        if (!backend.isRuntimeAvailable()) {
+        if (runtimeCursorDisabled || !isRuntimeAvailable(resolvedCursor)) {
             appliedCursor = resolvedCursor;
             runtimeCursorSynchronized = false;
             return;
@@ -43,6 +45,28 @@ final class SystemDocumentCursorHost implements DocumentCursorHost {
         if (runtimeCursorSynchronized && appliedCursor == resolvedCursor) {
             return;
         }
+        try {
+            applyResolvedCursor(resolvedCursor);
+        } catch (RuntimeException exception) {
+            disableRuntimeCursor(resolvedCursor, exception);
+        } catch (LinkageError error) {
+            disableRuntimeCursor(resolvedCursor, error);
+        }
+    }
+
+    private boolean isRuntimeAvailable(ResolvedCursorKind resolvedCursor) {
+        try {
+            return backend.isRuntimeAvailable();
+        } catch (RuntimeException exception) {
+            disableRuntimeCursor(resolvedCursor, exception);
+            return false;
+        } catch (LinkageError error) {
+            disableRuntimeCursor(resolvedCursor, error);
+            return false;
+        }
+    }
+
+    private void applyResolvedCursor(ResolvedCursorKind resolvedCursor) {
         appliedCursor = resolvedCursor;
         if (resolvedCursor == ResolvedCursorKind.HIDDEN) {
             backend.hideCursor();
@@ -57,6 +81,13 @@ final class SystemDocumentCursorHost implements DocumentCursorHost {
         }
         backend.applySystemCursor(resolvedCursor);
         runtimeCursorSynchronized = true;
+    }
+
+    private void disableRuntimeCursor(ResolvedCursorKind resolvedCursor, Throwable cause) {
+        appliedCursor = resolvedCursor;
+        runtimeCursorSynchronized = false;
+        runtimeCursorDisabled = true;
+        MyMod.LOG.warn("UILib 系统光标宿主调用失败，已在本次运行中降级为 no-op。", cause);
     }
 
     static ResolvedCursorKind resolveRequestedCursor(UiCursor cursor) {

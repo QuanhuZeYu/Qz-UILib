@@ -2502,6 +2502,84 @@ public class HtmlLikeDocumentWidgetTest {
     }
 
     /**
+     * 验证右键菜单不会先触发普通 click 行为。
+     */
+    @Test
+    public void shouldNotDispatchClickForContextMenuButton() {
+        UiDocument document = UiDocument.create();
+        ElementNode root = document.getRootElement();
+        final ElementNode child = document.div();
+        final List<DocumentElementClickEvent> clickEvents = new ArrayList<DocumentElementClickEvent>();
+        final List<DocumentElementContextMenuEvent> contextMenuEvents = new ArrayList<DocumentElementContextMenuEvent>();
+        root.style().setWidth(UiStyleLength.px(80)).setHeight(UiStyleLength.px(40));
+        child.style().setWidth(UiStyleLength.px(40)).setHeight(UiStyleLength.px(20));
+        child.setClickHandler(new DocumentElementClickHandler() {
+            @Override
+            public boolean onClick(DocumentElementClickEvent event) {
+                clickEvents.add(event);
+                return true;
+            }
+        });
+        child.setContextMenuHandler(new DocumentElementContextMenuHandler() {
+            @Override
+            public boolean onContextMenu(DocumentElementContextMenuEvent event) {
+                contextMenuEvents.add(event);
+                return true;
+            }
+        });
+        root.append(child);
+        HtmlLikeDocumentWidget widget = new HtmlLikeDocumentWidget(document, 80, 40,
+                new DeterministicTextMeasureService());
+        widget.applyLayoutBounds(0, 0, 80, 40);
+
+        widget.onMouseDown(new UiMouseEvent(UiMouseEvent.Action.BUTTON_DOWN, 10, 10, 1, 0, 0, 0, 1L));
+        widget.onMouseUp(new UiMouseEvent(UiMouseEvent.Action.BUTTON_UP, 10, 10, 1, 0, 0, 0, 2L));
+
+        Assert.assertTrue(clickEvents.isEmpty());
+        Assert.assertEquals(1, contextMenuEvents.size());
+    }
+
+    /**
+     * 验证非主按钮不会触发 dblclick。
+     */
+    @Test
+    public void shouldDispatchDoubleClickOnlyForPrimaryButton() {
+        UiDocument document = UiDocument.create();
+        ElementNode root = document.getRootElement();
+        final ElementNode child = document.div();
+        final List<DocumentElementDoubleClickEvent> doubleClickEvents = new ArrayList<DocumentElementDoubleClickEvent>();
+        final List<DocumentElementContextMenuEvent> contextMenuEvents = new ArrayList<DocumentElementContextMenuEvent>();
+        root.style().setWidth(UiStyleLength.px(80)).setHeight(UiStyleLength.px(40));
+        child.style().setWidth(UiStyleLength.px(40)).setHeight(UiStyleLength.px(20));
+        child.setDoubleClickHandler(new DocumentElementDoubleClickHandler() {
+            @Override
+            public boolean onDoubleClick(DocumentElementDoubleClickEvent event) {
+                doubleClickEvents.add(event);
+                return true;
+            }
+        });
+        child.setContextMenuHandler(new DocumentElementContextMenuHandler() {
+            @Override
+            public boolean onContextMenu(DocumentElementContextMenuEvent event) {
+                contextMenuEvents.add(event);
+                return true;
+            }
+        });
+        root.append(child);
+        HtmlLikeDocumentWidget widget = new HtmlLikeDocumentWidget(document, 80, 40,
+                new DeterministicTextMeasureService());
+        widget.applyLayoutBounds(0, 0, 80, 40);
+
+        widget.onMouseDown(new UiMouseEvent(UiMouseEvent.Action.BUTTON_DOWN, 10, 10, 1, 0, 0, 0, 1L));
+        widget.onMouseUp(new UiMouseEvent(UiMouseEvent.Action.BUTTON_UP, 10, 10, 1, 0, 0, 0, 2L));
+        widget.onMouseDown(new UiMouseEvent(UiMouseEvent.Action.BUTTON_DOWN, 10, 10, 1, 0, 0, 0, 3L));
+        widget.onMouseUp(new UiMouseEvent(UiMouseEvent.Action.BUTTON_UP, 10, 10, 1, 0, 0, 0, 4L));
+
+        Assert.assertTrue(doubleClickEvents.isEmpty());
+        Assert.assertEquals(2, contextMenuEvents.size());
+    }
+
+    /**
      * 验证 transitionend 与 animationend 会向作者派发完成事件。
      */
     @Test
@@ -2951,6 +3029,43 @@ public class HtmlLikeDocumentWidgetTest {
         ElementNode root = document.getRootElement();
         ElementNode input = document.div();
         final List<Boolean> activeEvents = new ArrayList<Boolean>();
+        final List<Integer> activeButtons = new ArrayList<Integer>();
+        root.style()
+                .setWidth(UiStyleLength.px(80))
+                .setHeight(UiStyleLength.px(40));
+        input.style()
+                .setWidth(UiStyleLength.px(40))
+                .setHeight(UiStyleLength.px(20));
+        input.setActiveHandler(new DocumentElementActiveHandler() {
+            @Override
+            public boolean onActiveChanged(DocumentElementActiveEvent event) {
+                activeEvents.add(Boolean.valueOf(event.isActive()));
+                activeButtons.add(Integer.valueOf(event.getButton()));
+                return true;
+            }
+        });
+        root.append(input);
+        HtmlLikeDocumentWidget widget = new HtmlLikeDocumentWidget(document, 80, 40,
+                new DeterministicTextMeasureService());
+        widget.applyLayoutBounds(5, 7, 80, 40);
+
+        widget.onMouseDown(new UiMouseEvent(UiMouseEvent.Action.BUTTON_DOWN, 10, 12, 0, 0, 0, 0, 1L));
+        widget.onMouseUp(new UiMouseEvent(UiMouseEvent.Action.BUTTON_UP, 10, 12, 0, 0, 0, 0, 2L));
+
+        Assert.assertEquals(Boolean.TRUE, activeEvents.get(0));
+        Assert.assertEquals(Boolean.FALSE, activeEvents.get(1));
+        Assert.assertEquals(Integer.valueOf(0), activeButtons.get(1));
+    }
+
+    /**
+     * 验证鼠标离开组件时会释放按下产生的 active 状态。
+     */
+    @Test
+    public void shouldReleaseActiveStateWhenMouseLeavesWidget() {
+        UiDocument document = UiDocument.create();
+        ElementNode root = document.getRootElement();
+        ElementNode input = document.div();
+        final List<Boolean> activeEvents = new ArrayList<Boolean>();
         root.style()
                 .setWidth(UiStyleLength.px(80))
                 .setHeight(UiStyleLength.px(40));
@@ -2970,7 +3085,7 @@ public class HtmlLikeDocumentWidgetTest {
         widget.applyLayoutBounds(5, 7, 80, 40);
 
         widget.onMouseDown(new UiMouseEvent(UiMouseEvent.Action.BUTTON_DOWN, 10, 12, 0, 0, 0, 0, 1L));
-        widget.onMouseUp(new UiMouseEvent(UiMouseEvent.Action.BUTTON_UP, 10, 12, 0, 0, 0, 0, 2L));
+        widget.onMouseLeave();
 
         Assert.assertEquals(Boolean.TRUE, activeEvents.get(0));
         Assert.assertEquals(Boolean.FALSE, activeEvents.get(1));

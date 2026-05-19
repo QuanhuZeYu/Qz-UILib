@@ -751,7 +751,8 @@ public final class DocumentLayoutEngine {
                     && rawWidth > availableWidth && availableWidth > 0) {
                 // 计算省略号宽度
                 String ellipsis = "\u2026";
-                int ellipsisWidth = toUiTextSize(textMeasureService.getStringWidth(ellipsis, textContentMode));
+                int ellipsisWidth = toUiTextSize(measureTextWidth(textMeasureService, ellipsis, textContentMode,
+                        ownerStyle));
                 int targetWidth = Math.max(0, availableWidth - ellipsisWidth);
                 String trimmed = trimTextToWidth(textMeasureService, resolvedLine, toRawTextSize(targetWidth),
                         textContentMode, ownerStyle);
@@ -907,7 +908,8 @@ public final class DocumentLayoutEngine {
 
         UiWordBreak wordBreak = ownerStyle == null ? UiWordBreak.NORMAL : ownerStyle.getWordBreak();
         UiOverflowWrap overflowWrap = ownerStyle == null ? UiOverflowWrap.NORMAL : ownerStyle.getOverflowWrap();
-        int maxFitEnd = resolveMaxFittingTextEnd(paragraph, availableWidth, textContentMode, textMeasureService);
+        int maxFitEnd = resolveMaxFittingTextEnd(paragraph, availableWidth, ownerStyle, textContentMode,
+                textMeasureService);
         TextBreakPoint breakPoint;
         if (maxFitEnd >= paragraph.length()) {
             breakPoint = TextBreakPoint.at(paragraph.length());
@@ -957,10 +959,10 @@ public final class DocumentLayoutEngine {
         return 1;
     }
 
-    private static int resolveMaxFittingTextEnd(String text, int availableWidth, TextContentMode textContentMode,
-            TextMeasureService textMeasureService) {
+    private static int resolveMaxFittingTextEnd(String text, int availableWidth, ComputedStyle ownerStyle,
+            TextContentMode textContentMode, TextMeasureService textMeasureService) {
         String trimmed = trimTextToWidth(textMeasureService, text, toRawTextSize(availableWidth), textContentMode,
-                null);
+                ownerStyle);
         int trimmedEnd = trimmed == null ? 0 : trimmed.length();
         int maxFitEnd = normalizeTextUnitBoundary(text, trimmedEnd, textContentMode);
         if (maxFitEnd <= 0) {

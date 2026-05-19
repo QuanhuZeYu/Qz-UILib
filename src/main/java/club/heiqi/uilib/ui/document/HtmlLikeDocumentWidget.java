@@ -81,6 +81,7 @@ public final class HtmlLikeDocumentWidget extends Widget implements UiDocument.D
             DRAG_ACTIVATION_THRESHOLD_PX * DRAG_ACTIVATION_THRESHOLD_PX;
     private static final long DOUBLE_CLICK_THRESHOLD_NANOS = 500_000_000L;
     private static final int DOUBLE_CLICK_POSITION_THRESHOLD_PX = 4;
+    private static final int PRIMARY_BUTTON = 0;
     private static final int CONTEXT_MENU_BUTTON = 1;
     private static final String HIT_TEST_PASSTHROUGH_ATTRIBUTE = "data-hit-test-passthrough";
 
@@ -115,6 +116,7 @@ public final class HtmlLikeDocumentWidget extends Widget implements UiDocument.D
     private ElementNode hoveredElement;
     private ElementNode draggingElement;
     private ElementNode htmlDragSourceElement;
+    private int pressedButton = -1;
     private int scrollEventCount;
     private int lastScrollWheelDelta;
     private boolean lastScrollConsumed;
@@ -503,7 +505,7 @@ public final class HtmlLikeDocumentWidget extends Widget implements UiDocument.D
     @Override
     public void onMouseDown(UiMouseEvent event) {
         if (event == null) {
-            pressedElement = null;
+            releasePressedElement(null);
             clearDragState();
             return;
         }
@@ -511,10 +513,12 @@ public final class HtmlLikeDocumentWidget extends Widget implements UiDocument.D
         if (event.getButton() == 0 && scrollState.beginScrollbarDrag(rootBox, event.getMouseX() - getAbsoluteX(),
                 event.getMouseY() - getAbsoluteY())) {
             pressedElement = null;
+            pressedButton = -1;
             clearDragState();
             return;
         }
         pressedElement = findElementAt(event.getMouseX(), event.getMouseY());
+        pressedButton = pressedElement == null ? -1 : event.getButton();
         updateHoveredElement(pressedElement, event);
         beginDragIfNeeded(pressedElement, event);
         dispatchMouseDown(pressedElement, event);
@@ -539,12 +543,13 @@ public final class HtmlLikeDocumentWidget extends Widget implements UiDocument.D
     @Override
     public void onMouseUp(UiMouseEvent event) {
         if (event == null) {
-            pressedElement = null;
+            releasePressedElement(null);
             clearDragState();
             return;
         }
         if (event.getButton() == 0 && scrollState.endScrollbarDrag()) {
             pressedElement = null;
+            pressedButton = -1;
             clearDragState();
             return;
         }
@@ -555,10 +560,20 @@ public final class HtmlLikeDocumentWidget extends Widget implements UiDocument.D
         dispatchMouseUp(pressedElement, event);
         dispatchActive(pressedElement, false, event);
         pressedElement = null;
+        pressedButton = -1;
         syncCursorFromHoveredElement();
-        if (!dragHandled && target != null) {
+        if (dragHandled || target == null) {
+            clearLastClickState();
+            return;
+        }
+        if (event.getButton() == PRIMARY_BUTTON) {
             dispatchClick(target, event);
             dispatchPostClickEvents(target, event);
+        } else if (event.getButton() == CONTEXT_MENU_BUTTON) {
+            dispatchContextMenu(target, event.getMouseX() - getAbsoluteX(), event.getMouseY() - getAbsoluteY(), event);
+            clearLastClickState();
+        } else {
+            clearLastClickState();
         }
     }
 
@@ -584,12 +599,14 @@ public final class HtmlLikeDocumentWidget extends Widget implements UiDocument.D
 
     @Override
     public void onMouseLeave() {
+        releasePressedElement(null);
         updateHoveredElement(null, null);
     }
 
     @Override
     public void onFocusChanged(boolean focused) {
         if (!focused) {
+            releasePressedElement(null);
             updateHoveredElement(null, null);
             focusElement(null, false);
         }
@@ -865,7 +882,8 @@ public final class HtmlLikeDocumentWidget extends Widget implements UiDocument.D
     }
 
     private boolean shouldDispatchDoubleClick(ElementNode target, UiMouseEvent event, int documentX, int documentY) {
-        if (target == null || event == null || lastClickedElement != target || lastClickButton != event.getButton()) {
+        if (target == null || event == null || event.getButton() != PRIMARY_BUTTON || lastClickedElement != target
+                || lastClickButton != event.getButton()) {
             return false;
         }
         long elapsedNanos = event.getTimeNanos() - lastClickTimeNanos;
@@ -892,6 +910,24 @@ public final class HtmlLikeDocumentWidget extends Widget implements UiDocument.D
         lastClickDocumentX = Integer.MIN_VALUE;
         lastClickDocumentY = Integer.MIN_VALUE;
         lastClickTimeNanos = Long.MIN_VALUE;
+    }
+
+    private void releasePressedElement(UiMouseEvent event) {
+        if (pressedElement == null) {
+            return;
+        }
+        ElementNode previousPressedElement = pressedElement;
+        int previousPressedButton = pressedButton;
+        pressedElement = null;
+        pressedButton = -1;
+        if (event != null) {
+            dispatchActive(previousPressedElement, false, event);
+        } else {
+            dispatchActive(previousPressedElement, false,
+                    new UiMouseEvent(UiMouseEvent.Action.BUTTON_UP, -1, -1, previousPressedButton, 0, 0, 0,
+                            System.nanoTime()));
+        }
+        syncCursorFromHoveredElement();
     }
 
     private boolean dispatchDoubleClick(ElementNode target, int documentX, int documentY, UiMouseEvent event) {
