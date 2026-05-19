@@ -109,6 +109,63 @@ public class DocumentTextAreaControlTest {
         Assert.assertTrue(widget.getScrollTop(textAreaControl.getElement()) > 0);
     }
 
+    /**
+     * 验证超长单行编辑时会横向滚动到光标位置，而不是每次重置到最左侧。
+     */
+    @Test
+    public void shouldRevealCaretHorizontallyForLongLine() {
+        UiDocument document = UiDocument.create();
+        ElementNode root = document.getRootElement();
+        DocumentTextAreaControl textAreaControl = new DocumentTextAreaControl(document);
+        root.style()
+                .setWidth(UiStyleLength.px(160))
+                .setHeight(UiStyleLength.px(80));
+        textAreaControl.getElement().style()
+                .setWidth(UiStyleLength.px(80))
+                .setHeight(UiStyleLength.px(40));
+        root.append(textAreaControl.getElement());
+        HtmlLikeDocumentWidget widget = new HtmlLikeDocumentWidget(document, 160, 80,
+                new DeterministicTextMeasureService());
+        widget.applyLayoutBounds(0, 0, 160, 80);
+
+        widget.render(new ControlTestRenderContext(160, 80));
+        widget.onMouseDown(new UiMouseEvent(UiMouseEvent.Action.BUTTON_DOWN, 12, 12, 0, 0, 0, 0, 1L));
+        widget.onMouseUp(new UiMouseEvent(UiMouseEvent.Action.BUTTON_UP, 12, 12, 0, 0, 0, 0, 2L));
+        widget.onTextInput(new UiTextInputEvent("abcdefghijklmnopqrstuvwxyz", 3L));
+        widget.render(new ControlTestRenderContext(160, 80));
+
+        Assert.assertTrue(widget.getMaxScrollLeft(textAreaControl.getElement()) > 0);
+        Assert.assertTrue(widget.getScrollLeft(textAreaControl.getElement()) > 0);
+    }
+
+    /**
+     * 验证鼠标点击行内位置会按 X 坐标定位光标，而不是固定跳到行尾。
+     */
+    @Test
+    public void shouldPlaceCaretByClickedLineX() {
+        UiDocument document = UiDocument.create();
+        ElementNode root = document.getRootElement();
+        DocumentTextAreaControl textAreaControl = new DocumentTextAreaControl(document);
+        textAreaControl.setText("abcdef");
+        root.style()
+                .setWidth(UiStyleLength.px(160))
+                .setHeight(UiStyleLength.px(80));
+        textAreaControl.getElement().style()
+                .setWidth(UiStyleLength.px(120))
+                .setHeight(UiStyleLength.px(40));
+        root.append(textAreaControl.getElement());
+        HtmlLikeDocumentWidget widget = new HtmlLikeDocumentWidget(document, 160, 80,
+                new DeterministicTextMeasureService());
+        widget.applyLayoutBounds(0, 0, 160, 80);
+
+        widget.render(new ControlTestRenderContext(160, 80));
+        widget.onMouseDown(new UiMouseEvent(UiMouseEvent.Action.BUTTON_DOWN, 20, 12, 0, 0, 0, 0, 1L));
+        widget.onMouseUp(new UiMouseEvent(UiMouseEvent.Action.BUTTON_UP, 20, 12, 0, 0, 0, 0, 2L));
+        widget.onTextInput(new UiTextInputEvent("X", 3L));
+
+        Assert.assertEquals("abcXdef", textAreaControl.getText());
+    }
+
     private static final class DeterministicTextMeasureService implements TextMeasureService {
 
         @Override

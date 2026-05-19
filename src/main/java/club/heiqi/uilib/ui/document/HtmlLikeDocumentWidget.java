@@ -315,6 +315,17 @@ public final class HtmlLikeDocumentWidget extends Widget implements UiDocument.D
     }
 
     /**
+     * 返回指定元素当前横向滚动偏移。
+     *
+     * @param element HTML-like 元素
+     * @return 横向滚动偏移
+     */
+    public int getScrollLeft(ElementNode element) {
+        resolveInteractiveLayoutBox();
+        return scrollState.getScrollLeft(element);
+    }
+
+    /**
      * 返回指定元素最大纵向滚动偏移。
      *
      * @param element HTML-like 元素
@@ -323,6 +334,17 @@ public final class HtmlLikeDocumentWidget extends Widget implements UiDocument.D
     public int getMaxScrollTop(ElementNode element) {
         resolveInteractiveLayoutBox();
         return scrollState.getMaxScrollTop(element);
+    }
+
+    /**
+     * 返回指定元素最大横向滚动偏移。
+     *
+     * @param element HTML-like 元素
+     * @return 最大横向滚动偏移
+     */
+    public int getMaxScrollLeft(ElementNode element) {
+        resolveInteractiveLayoutBox();
+        return scrollState.getMaxScrollLeft(element);
     }
 
     /**
@@ -392,6 +414,30 @@ public final class HtmlLikeDocumentWidget extends Widget implements UiDocument.D
             dispatchScroll(element, System.nanoTime());
         }
         return true;
+    }
+
+    @Override
+    public int requestScrollLeft(ElementNode element) {
+        resolveInteractiveLayoutBox();
+        return scrollState.getScrollLeft(element);
+    }
+
+    @Override
+    public int requestScrollTop(ElementNode element) {
+        resolveInteractiveLayoutBox();
+        return scrollState.getScrollTop(element);
+    }
+
+    @Override
+    public int requestMaxScrollLeft(ElementNode element) {
+        resolveInteractiveLayoutBox();
+        return scrollState.getMaxScrollLeft(element);
+    }
+
+    @Override
+    public int requestMaxScrollTop(ElementNode element) {
+        resolveInteractiveLayoutBox();
+        return scrollState.getMaxScrollTop(element);
     }
 
     @Override

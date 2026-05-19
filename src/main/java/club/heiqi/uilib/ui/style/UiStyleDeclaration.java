@@ -1301,551 +1301,430 @@ public final class UiStyleDeclaration {
         return updateObjectFit(null);
     }
 
-    private UiStyleDeclaration updateDisplay(UiDisplay value) {
-        if (display != value) {
-            display = value;
-            recordLayoutChange();
+    private UiStyleDeclaration updateProperty(UiStyleProperty property, Object previousValue, Object nextValue,
+            UiStyleChangeImpact impact) {
+        boolean changed = !Objects.equals(previousValue, nextValue);
+        if (nextValue != null && keywords.remove(property) != null) {
+            changed = true;
+        }
+        if (changed) {
+            recordChange(impact);
         }
         return this;
+    }
+
+    private UiStyleDeclaration updateDisplay(UiDisplay value) {
+        UiDisplay previousValue = display;
+        display = value;
+        return updateProperty(UiStyleProperty.DISPLAY, previousValue, value, UiStyleChangeImpact.LAYOUT);
     }
 
     private UiStyleDeclaration updateWidth(UiStyleLength value) {
-        if (!Objects.equals(width, value)) {
-            width = value;
-            recordLayoutChange();
-        }
-        return this;
+        UiStyleLength previousValue = width;
+        width = value;
+        return updateProperty(UiStyleProperty.WIDTH, previousValue, value, UiStyleChangeImpact.LAYOUT);
     }
 
     private UiStyleDeclaration updateHeight(UiStyleLength value) {
-        if (!Objects.equals(height, value)) {
-            height = value;
-            recordLayoutChange();
-        }
-        return this;
+        UiStyleLength previousValue = height;
+        height = value;
+        return updateProperty(UiStyleProperty.HEIGHT, previousValue, value, UiStyleChangeImpact.LAYOUT);
     }
 
     private UiStyleDeclaration updateBoxSizing(UiBoxSizing value) {
-        if (boxSizing != value) {
-            boxSizing = value;
-            recordLayoutChange();
-        }
-        return this;
+        UiBoxSizing previousValue = boxSizing;
+        boxSizing = value;
+        return updateProperty(UiStyleProperty.BOX_SIZING, previousValue, value, UiStyleChangeImpact.LAYOUT);
     }
 
     private UiStyleDeclaration updatePosition(UiPosition value) {
-        if (position != value) {
-            position = value;
-            recordLayoutChange();
-        }
-        return this;
+        UiPosition previousValue = position;
+        position = value;
+        return updateProperty(UiStyleProperty.POSITION, previousValue, value, UiStyleChangeImpact.LAYOUT);
     }
 
     private UiStyleDeclaration updateTop(UiStyleLength value) {
-        if (!Objects.equals(top, value)) {
-            top = value;
-            recordLayoutChange();
-        }
-        return this;
+        UiStyleLength previousValue = top;
+        top = value;
+        return updateProperty(UiStyleProperty.TOP, previousValue, value, UiStyleChangeImpact.LAYOUT);
     }
 
     private UiStyleDeclaration updateRight(UiStyleLength value) {
-        if (!Objects.equals(right, value)) {
-            right = value;
-            recordLayoutChange();
-        }
-        return this;
+        UiStyleLength previousValue = right;
+        right = value;
+        return updateProperty(UiStyleProperty.RIGHT, previousValue, value, UiStyleChangeImpact.LAYOUT);
     }
 
     private UiStyleDeclaration updateBottom(UiStyleLength value) {
-        if (!Objects.equals(bottom, value)) {
-            bottom = value;
-            recordLayoutChange();
-        }
-        return this;
+        UiStyleLength previousValue = bottom;
+        bottom = value;
+        return updateProperty(UiStyleProperty.BOTTOM, previousValue, value, UiStyleChangeImpact.LAYOUT);
     }
 
     private UiStyleDeclaration updateLeft(UiStyleLength value) {
-        if (!Objects.equals(left, value)) {
-            left = value;
-            recordLayoutChange();
-        }
-        return this;
+        UiStyleLength previousValue = left;
+        left = value;
+        return updateProperty(UiStyleProperty.LEFT, previousValue, value, UiStyleChangeImpact.LAYOUT);
     }
 
     private UiStyleDeclaration updateZIndex(Integer value) {
-        if (!Objects.equals(zIndex, value)) {
-            zIndex = value;
-            recordLayoutChange();
-        }
-        return this;
+        Integer previousValue = zIndex;
+        zIndex = value;
+        return updateProperty(UiStyleProperty.Z_INDEX, previousValue, value, UiStyleChangeImpact.LAYOUT);
     }
 
     private UiStyleDeclaration updateMargin(UiStyleInsets value) {
-        if (!Objects.equals(margin, value)) {
-            margin = value;
-            recordLayoutChange();
-        }
-        return this;
+        UiStyleInsets previousValue = margin;
+        margin = value;
+        return updateProperty(UiStyleProperty.MARGIN, previousValue, value, UiStyleChangeImpact.LAYOUT);
     }
 
     private UiStyleDeclaration updatePadding(UiStyleInsets value) {
-        if (!Objects.equals(padding, value)) {
-            padding = value;
-            recordLayoutChange();
-        }
-        return this;
+        UiStyleInsets previousValue = padding;
+        padding = value;
+        return updateProperty(UiStyleProperty.PADDING, previousValue, value, UiStyleChangeImpact.LAYOUT);
     }
 
     private UiStyleDeclaration updateBorderWidth(UiStyleLength value) {
-        if (!Objects.equals(borderWidth, value)) {
-            borderWidth = value;
-            recordLayoutChange();
-        }
-        return this;
+        UiStyleLength previousValue = borderWidth;
+        borderWidth = value;
+        return updateProperty(UiStyleProperty.BORDER_WIDTH, previousValue, value, UiStyleChangeImpact.LAYOUT);
     }
 
     private UiStyleDeclaration updateBorderRadius(UiStyleLength value) {
-        if (!Objects.equals(borderRadius, value)) {
-            borderRadius = value;
-            recordPaintChange();
-        }
-        return this;
+        UiStyleLength previousValue = borderRadius;
+        borderRadius = value;
+        return updateProperty(UiStyleProperty.BORDER_RADIUS, previousValue, value, UiStyleChangeImpact.PAINT);
     }
 
     private UiStyleDeclaration updateOverflowX(UiOverflow value) {
-        if (overflowX != value) {
-            overflowX = value;
-            recordLayoutChange();
-        }
-        return this;
+        UiOverflow previousValue = overflowX;
+        overflowX = value;
+        return updateProperty(UiStyleProperty.OVERFLOW_X, previousValue, value, UiStyleChangeImpact.LAYOUT);
     }
 
     private UiStyleDeclaration updateOverflowY(UiOverflow value) {
-        if (overflowY != value) {
-            overflowY = value;
-            recordLayoutChange();
-        }
-        return this;
+        UiOverflow previousValue = overflowY;
+        overflowY = value;
+        return updateProperty(UiStyleProperty.OVERFLOW_Y, previousValue, value, UiStyleChangeImpact.LAYOUT);
     }
 
     private UiStyleDeclaration updateFlexDirection(UiFlexDirection value) {
-        if (flexDirection != value) {
-            flexDirection = value;
-            recordLayoutChange();
-        }
-        return this;
+        UiFlexDirection previousValue = flexDirection;
+        flexDirection = value;
+        return updateProperty(UiStyleProperty.FLEX_DIRECTION, previousValue, value, UiStyleChangeImpact.LAYOUT);
     }
 
     private UiStyleDeclaration updateAlignItems(UiAlignItems value) {
-        if (alignItems != value) {
-            alignItems = value;
-            recordLayoutChange();
-        }
-        return this;
+        UiAlignItems previousValue = alignItems;
+        alignItems = value;
+        return updateProperty(UiStyleProperty.ALIGN_ITEMS, previousValue, value, UiStyleChangeImpact.LAYOUT);
     }
 
     private UiStyleDeclaration updateJustifyContent(UiJustifyContent value) {
-        if (justifyContent != value) {
-            justifyContent = value;
-            recordLayoutChange();
-        }
-        return this;
+        UiJustifyContent previousValue = justifyContent;
+        justifyContent = value;
+        return updateProperty(UiStyleProperty.JUSTIFY_CONTENT, previousValue, value, UiStyleChangeImpact.LAYOUT);
     }
 
     private UiStyleDeclaration updateVerticalAlign(UiVerticalAlign value) {
-        if (verticalAlign != value) {
-            verticalAlign = value;
-            recordLayoutChange();
-        }
-        return this;
+        UiVerticalAlign previousValue = verticalAlign;
+        verticalAlign = value;
+        return updateProperty(UiStyleProperty.VERTICAL_ALIGN, previousValue, value, UiStyleChangeImpact.LAYOUT);
     }
 
     private UiStyleDeclaration updateRowGap(UiStyleLength value) {
-        if (!Objects.equals(rowGap, value)) {
-            rowGap = value;
-            recordLayoutChange();
-        }
-        return this;
+        UiStyleLength previousValue = rowGap;
+        rowGap = value;
+        return updateProperty(UiStyleProperty.ROW_GAP, previousValue, value, UiStyleChangeImpact.LAYOUT);
     }
 
     private UiStyleDeclaration updateColumnGap(UiStyleLength value) {
-        if (!Objects.equals(columnGap, value)) {
-            columnGap = value;
-            recordLayoutChange();
-        }
-        return this;
+        UiStyleLength previousValue = columnGap;
+        columnGap = value;
+        return updateProperty(UiStyleProperty.COLUMN_GAP, previousValue, value, UiStyleChangeImpact.LAYOUT);
     }
 
     private UiStyleDeclaration updateFlexGrow(Float value) {
-        if (!Objects.equals(flexGrow, value)) {
-            flexGrow = value;
-            recordLayoutChange();
-        }
-        return this;
+        Float previousValue = flexGrow;
+        flexGrow = value;
+        return updateProperty(UiStyleProperty.FLEX_GROW, previousValue, value, UiStyleChangeImpact.LAYOUT);
     }
 
     private UiStyleDeclaration updateFlexShrink(Float value) {
-        if (!Objects.equals(flexShrink, value)) {
-            flexShrink = value;
-            recordLayoutChange();
-        }
-        return this;
+        Float previousValue = flexShrink;
+        flexShrink = value;
+        return updateProperty(UiStyleProperty.FLEX_SHRINK, previousValue, value, UiStyleChangeImpact.LAYOUT);
     }
 
     private UiStyleDeclaration updateOpacity(Float value) {
-        if (!Objects.equals(opacity, value)) {
-            opacity = value;
-            recordPaintChange();
-        }
-        return this;
+        Float previousValue = opacity;
+        opacity = value;
+        return updateProperty(UiStyleProperty.OPACITY, previousValue, value, UiStyleChangeImpact.PAINT);
     }
 
     private UiStyleDeclaration updateBackgroundColor(Integer value) {
-        if (!Objects.equals(backgroundColor, value)) {
-            backgroundColor = value;
-            recordPaintChange();
-        }
-        return this;
+        Integer previousValue = backgroundColor;
+        backgroundColor = value;
+        return updateProperty(UiStyleProperty.BACKGROUND_COLOR, previousValue, value, UiStyleChangeImpact.PAINT);
     }
 
     private UiStyleDeclaration updateBorderColor(Integer value) {
-        if (!Objects.equals(borderColor, value)) {
-            borderColor = value;
-            recordPaintChange();
-        }
-        return this;
+        Integer previousValue = borderColor;
+        borderColor = value;
+        return updateProperty(UiStyleProperty.BORDER_COLOR, previousValue, value, UiStyleChangeImpact.PAINT);
     }
 
     private UiStyleDeclaration updateTextColor(Integer value) {
-        if (!Objects.equals(textColor, value)) {
-            textColor = value;
-            recordPaintChange();
-        }
-        return this;
+        Integer previousValue = textColor;
+        textColor = value;
+        return updateProperty(UiStyleProperty.TEXT_COLOR, previousValue, value, UiStyleChangeImpact.PAINT);
     }
 
     private UiStyleDeclaration updateTransitionProperties(List<DocumentAnimationProperty> value) {
         List<DocumentAnimationProperty> nextValue = value == null ? null
                 : Collections.unmodifiableList(new ArrayList<DocumentAnimationProperty>(value));
-        if (!Objects.equals(transitionProperties, nextValue)) {
-            transitionProperties = nextValue;
-            recordPaintChange();
-        }
-        return this;
+        List<DocumentAnimationProperty> previousValue = transitionProperties;
+        transitionProperties = nextValue;
+        return updateProperty(UiStyleProperty.TRANSITION_PROPERTIES, previousValue, nextValue,
+                UiStyleChangeImpact.PAINT);
     }
 
     private UiStyleDeclaration updateTransitionDurationNanos(Long value) {
-        if (!Objects.equals(transitionDurationNanos, value)) {
-            transitionDurationNanos = value;
-            recordPaintChange();
-        }
-        return this;
+        Long previousValue = transitionDurationNanos;
+        transitionDurationNanos = value;
+        return updateProperty(UiStyleProperty.TRANSITION_DURATION, previousValue, value, UiStyleChangeImpact.PAINT);
     }
 
     private UiStyleDeclaration updateTransitionDelayNanos(Long value) {
-        if (!Objects.equals(transitionDelayNanos, value)) {
-            transitionDelayNanos = value;
-            recordPaintChange();
-        }
-        return this;
+        Long previousValue = transitionDelayNanos;
+        transitionDelayNanos = value;
+        return updateProperty(UiStyleProperty.TRANSITION_DELAY, previousValue, value, UiStyleChangeImpact.PAINT);
     }
 
     private UiStyleDeclaration updateTransitionTimingFunction(DocumentAnimationTimingFunction value) {
-        if (transitionTimingFunction != value) {
-            transitionTimingFunction = value;
-            recordPaintChange();
-        }
-        return this;
+        DocumentAnimationTimingFunction previousValue = transitionTimingFunction;
+        transitionTimingFunction = value;
+        return updateProperty(UiStyleProperty.TRANSITION_TIMING, previousValue, value, UiStyleChangeImpact.PAINT);
     }
 
     private UiStyleDeclaration updateAnimationName(String value) {
-        if (!Objects.equals(animationName, value)) {
-            animationName = value;
-            recordPaintChange();
-        }
-        return this;
+        String previousValue = animationName;
+        animationName = value;
+        return updateProperty(UiStyleProperty.ANIMATION_NAME, previousValue, value, UiStyleChangeImpact.PAINT);
     }
 
     private UiStyleDeclaration updateAnimationDurationNanos(Long value) {
-        if (!Objects.equals(animationDurationNanos, value)) {
-            animationDurationNanos = value;
-            recordPaintChange();
-        }
-        return this;
+        Long previousValue = animationDurationNanos;
+        animationDurationNanos = value;
+        return updateProperty(UiStyleProperty.ANIMATION_DURATION, previousValue, value, UiStyleChangeImpact.PAINT);
     }
 
     private UiStyleDeclaration updateAnimationDelayNanos(Long value) {
-        if (!Objects.equals(animationDelayNanos, value)) {
-            animationDelayNanos = value;
-            recordPaintChange();
-        }
-        return this;
+        Long previousValue = animationDelayNanos;
+        animationDelayNanos = value;
+        return updateProperty(UiStyleProperty.ANIMATION_DELAY, previousValue, value, UiStyleChangeImpact.PAINT);
     }
 
     private UiStyleDeclaration updateAnimationIterationCount(Integer value) {
-        if (!Objects.equals(animationIterationCount, value)) {
-            animationIterationCount = value;
-            recordPaintChange();
-        }
-        return this;
+        Integer previousValue = animationIterationCount;
+        animationIterationCount = value;
+        return updateProperty(UiStyleProperty.ANIMATION_ITERATION_COUNT, previousValue, value,
+                UiStyleChangeImpact.PAINT);
     }
 
     private UiStyleDeclaration updateAnimationFillMode(DocumentAnimationFillMode value) {
-        if (animationFillMode != value) {
-            animationFillMode = value;
-            recordPaintChange();
-        }
-        return this;
+        DocumentAnimationFillMode previousValue = animationFillMode;
+        animationFillMode = value;
+        return updateProperty(UiStyleProperty.ANIMATION_FILL_MODE, previousValue, value, UiStyleChangeImpact.PAINT);
     }
 
     private UiStyleDeclaration updateAnimationTimingFunction(DocumentAnimationTimingFunction value) {
-        if (animationTimingFunction != value) {
-            animationTimingFunction = value;
-            recordPaintChange();
-        }
-        return this;
+        DocumentAnimationTimingFunction previousValue = animationTimingFunction;
+        animationTimingFunction = value;
+        return updateProperty(UiStyleProperty.ANIMATION_TIMING, previousValue, value, UiStyleChangeImpact.PAINT);
     }
 
     private UiStyleDeclaration updateBackdropBlurRadius(UiStyleLength value) {
-        if (!Objects.equals(backdropBlurRadius, value)) {
-            backdropBlurRadius = value;
-            recordPaintChange();
-        }
-        return this;
+        UiStyleLength previousValue = backdropBlurRadius;
+        backdropBlurRadius = value;
+        return updateProperty(UiStyleProperty.BACKDROP_BLUR_RADIUS, previousValue, value, UiStyleChangeImpact.PAINT);
     }
 
     private UiStyleDeclaration updateBackdropSaturation(Float value) {
-        if (!Objects.equals(backdropSaturation, value)) {
-            backdropSaturation = value;
-            recordPaintChange();
-        }
-        return this;
+        Float previousValue = backdropSaturation;
+        backdropSaturation = value;
+        return updateProperty(UiStyleProperty.BACKDROP_SATURATION, previousValue, value, UiStyleChangeImpact.PAINT);
     }
 
     private UiStyleDeclaration updateLineHeight(UiStyleLength value) {
-        if (!Objects.equals(lineHeight, value)) {
-            lineHeight = value;
-            recordLayoutChange();
-        }
-        return this;
+        UiStyleLength previousValue = lineHeight;
+        lineHeight = value;
+        return updateProperty(UiStyleProperty.LINE_HEIGHT, previousValue, value, UiStyleChangeImpact.LAYOUT);
     }
 
     private UiStyleDeclaration updateTextAlign(UiTextAlign value) {
-        if (textAlign != value) {
-            textAlign = value;
-            recordLayoutChange();
-        }
-        return this;
+        UiTextAlign previousValue = textAlign;
+        textAlign = value;
+        return updateProperty(UiStyleProperty.TEXT_ALIGN, previousValue, value, UiStyleChangeImpact.LAYOUT);
     }
 
     private UiStyleDeclaration updateWhiteSpace(UiWhiteSpace value) {
-        if (whiteSpace != value) {
-            whiteSpace = value;
-            recordLayoutChange();
-        }
-        return this;
+        UiWhiteSpace previousValue = whiteSpace;
+        whiteSpace = value;
+        return updateProperty(UiStyleProperty.WHITE_SPACE, previousValue, value, UiStyleChangeImpact.LAYOUT);
     }
 
     private UiStyleDeclaration updateTextOverflow(UiTextOverflow value) {
-        if (textOverflow != value) {
-            textOverflow = value;
-            recordLayoutChange();
-        }
-        return this;
+        UiTextOverflow previousValue = textOverflow;
+        textOverflow = value;
+        return updateProperty(UiStyleProperty.TEXT_OVERFLOW, previousValue, value, UiStyleChangeImpact.LAYOUT);
     }
 
     private UiStyleDeclaration updateVisibility(UiVisibility value) {
-        if (visibility != value) {
-            visibility = value;
-            // visibility 变化不影响布局，只影响绘制和命中测试
-            recordPaintChange();
-        }
-        return this;
+        UiVisibility previousValue = visibility;
+        visibility = value;
+        // visibility 变化不影响布局，只影响绘制和命中测试
+        return updateProperty(UiStyleProperty.VISIBILITY, previousValue, value, UiStyleChangeImpact.PAINT);
     }
 
     private UiStyleDeclaration updateMinWidth(UiStyleLength value) {
-        if (!Objects.equals(minWidth, value)) {
-            minWidth = value;
-            recordLayoutChange();
-        }
-        return this;
+        UiStyleLength previousValue = minWidth;
+        minWidth = value;
+        return updateProperty(UiStyleProperty.MIN_WIDTH, previousValue, value, UiStyleChangeImpact.LAYOUT);
     }
 
     private UiStyleDeclaration updateMaxWidth(UiStyleLength value) {
-        if (!Objects.equals(maxWidth, value)) {
-            maxWidth = value;
-            recordLayoutChange();
-        }
-        return this;
+        UiStyleLength previousValue = maxWidth;
+        maxWidth = value;
+        return updateProperty(UiStyleProperty.MAX_WIDTH, previousValue, value, UiStyleChangeImpact.LAYOUT);
     }
 
     private UiStyleDeclaration updateMinHeight(UiStyleLength value) {
-        if (!Objects.equals(minHeight, value)) {
-            minHeight = value;
-            recordLayoutChange();
-        }
-        return this;
+        UiStyleLength previousValue = minHeight;
+        minHeight = value;
+        return updateProperty(UiStyleProperty.MIN_HEIGHT, previousValue, value, UiStyleChangeImpact.LAYOUT);
     }
 
     private UiStyleDeclaration updateMaxHeight(UiStyleLength value) {
-        if (!Objects.equals(maxHeight, value)) {
-            maxHeight = value;
-            recordLayoutChange();
-        }
-        return this;
+        UiStyleLength previousValue = maxHeight;
+        maxHeight = value;
+        return updateProperty(UiStyleProperty.MAX_HEIGHT, previousValue, value, UiStyleChangeImpact.LAYOUT);
     }
 
     private UiStyleDeclaration updateFlexBasis(UiStyleLength value) {
-        if (!Objects.equals(flexBasis, value)) {
-            flexBasis = value;
-            recordLayoutChange();
-        }
-        return this;
+        UiStyleLength previousValue = flexBasis;
+        flexBasis = value;
+        return updateProperty(UiStyleProperty.FLEX_BASIS, previousValue, value, UiStyleChangeImpact.LAYOUT);
     }
 
     private UiStyleDeclaration updateAlignSelf(UiAlignSelf value) {
-        if (alignSelf != value) {
-            alignSelf = value;
-            recordLayoutChange();
-        }
-        return this;
+        UiAlignSelf previousValue = alignSelf;
+        alignSelf = value;
+        return updateProperty(UiStyleProperty.ALIGN_SELF, previousValue, value, UiStyleChangeImpact.LAYOUT);
     }
 
     private UiStyleDeclaration updateFlexWrap(UiFlexWrap value) {
-        if (flexWrap != value) {
-            flexWrap = value;
-            recordLayoutChange();
-        }
-        return this;
+        UiFlexWrap previousValue = flexWrap;
+        flexWrap = value;
+        return updateProperty(UiStyleProperty.FLEX_WRAP, previousValue, value, UiStyleChangeImpact.LAYOUT);
     }
 
     private UiStyleDeclaration updateBoxShadow(UiBoxShadow value) {
-        if (!Objects.equals(boxShadow, value)) {
-            boxShadow = value;
-            recordPaintChange();
-        }
-        return this;
+        UiBoxShadow previousValue = boxShadow;
+        boxShadow = value;
+        return updateProperty(UiStyleProperty.BOX_SHADOW, previousValue, value, UiStyleChangeImpact.PAINT);
     }
 
     private UiStyleDeclaration updateBorderStyle(UiBorderStyle value) {
-        if (borderStyle != value) {
-            borderStyle = value;
-            recordPaintChange();
-        }
-        return this;
+        UiBorderStyle previousValue = borderStyle;
+        borderStyle = value;
+        return updateProperty(UiStyleProperty.BORDER_STYLE, previousValue, value, UiStyleChangeImpact.PAINT);
     }
 
     private UiStyleDeclaration updateCursor(UiCursor value) {
-        if (cursor != value) {
-            cursor = value;
-            recordPaintChange();
-        }
-        return this;
+        UiCursor previousValue = cursor;
+        cursor = value;
+        return updateProperty(UiStyleProperty.CURSOR, previousValue, value, UiStyleChangeImpact.PAINT);
     }
 
     private UiStyleDeclaration updateBorderRadiusCorners(UiBorderRadius value) {
-        if (!Objects.equals(borderRadiusCorners, value)) {
-            borderRadiusCorners = value;
-            recordPaintChange();
-        }
-        return this;
+        UiBorderRadius previousValue = borderRadiusCorners;
+        borderRadiusCorners = value;
+        return updateProperty(UiStyleProperty.BORDER_RADIUS_CORNERS, previousValue, value,
+                UiStyleChangeImpact.PAINT);
     }
 
     private UiStyleDeclaration updateTextDecoration(UiTextDecoration value) {
-        if (textDecoration != value) {
-            textDecoration = value;
-            recordPaintChange();
-        }
-        return this;
+        UiTextDecoration previousValue = textDecoration;
+        textDecoration = value;
+        return updateProperty(UiStyleProperty.TEXT_DECORATION, previousValue, value, UiStyleChangeImpact.PAINT);
     }
 
     private UiStyleDeclaration updateFontWeight(UiFontWeight value) {
-        if (fontWeight != value) {
-            fontWeight = value;
-            recordLayoutChange();
-        }
-        return this;
+        UiFontWeight previousValue = fontWeight;
+        fontWeight = value;
+        return updateProperty(UiStyleProperty.FONT_WEIGHT, previousValue, value, UiStyleChangeImpact.LAYOUT);
     }
 
     private UiStyleDeclaration updateFontStyle(UiFontStyle value) {
-        if (fontStyle != value) {
-            fontStyle = value;
-            recordPaintChange();
-        }
-        return this;
+        UiFontStyle previousValue = fontStyle;
+        fontStyle = value;
+        return updateProperty(UiStyleProperty.FONT_STYLE, previousValue, value, UiStyleChangeImpact.PAINT);
     }
 
     private UiStyleDeclaration updatePointerEvents(UiPointerEvents value) {
-        if (pointerEvents != value) {
-            pointerEvents = value;
-            recordPaintChange();
-        }
-        return this;
+        UiPointerEvents previousValue = pointerEvents;
+        pointerEvents = value;
+        return updateProperty(UiStyleProperty.POINTER_EVENTS, previousValue, value, UiStyleChangeImpact.PAINT);
     }
 
     private UiStyleDeclaration updateOutline(UiOutline value) {
-        if (!Objects.equals(outline, value)) {
-            outline = value;
-            recordPaintChange();
-        }
-        return this;
+        UiOutline previousValue = outline;
+        outline = value;
+        return updateProperty(UiStyleProperty.OUTLINE, previousValue, value, UiStyleChangeImpact.PAINT);
     }
 
     private UiStyleDeclaration updateBorderWidthSides(UiStyleInsets value) {
-        if (!Objects.equals(borderWidthSides, value)) {
-            borderWidthSides = value;
-            recordLayoutChange();
-        }
-        return this;
+        UiStyleInsets previousValue = borderWidthSides;
+        borderWidthSides = value;
+        return updateProperty(UiStyleProperty.BORDER_WIDTH_SIDES, previousValue, value, UiStyleChangeImpact.LAYOUT);
     }
 
     private UiStyleDeclaration updateBorderColors(UiBorderColors value) {
-        if (!Objects.equals(borderColors, value)) {
-            borderColors = value;
-            recordPaintChange();
-        }
-        return this;
+        UiBorderColors previousValue = borderColors;
+        borderColors = value;
+        return updateProperty(UiStyleProperty.BORDER_COLORS, previousValue, value, UiStyleChangeImpact.PAINT);
     }
 
     private UiStyleDeclaration updateLetterSpacing(UiStyleLength value) {
-        if (!Objects.equals(letterSpacing, value)) {
-            letterSpacing = value;
-            recordLayoutChange();
-        }
-        return this;
+        UiStyleLength previousValue = letterSpacing;
+        letterSpacing = value;
+        return updateProperty(UiStyleProperty.LETTER_SPACING, previousValue, value, UiStyleChangeImpact.LAYOUT);
     }
 
     private UiStyleDeclaration updateWordBreak(UiWordBreak value) {
-        if (wordBreak != value) {
-            wordBreak = value;
-            recordLayoutChange();
-        }
-        return this;
+        UiWordBreak previousValue = wordBreak;
+        wordBreak = value;
+        return updateProperty(UiStyleProperty.WORD_BREAK, previousValue, value, UiStyleChangeImpact.LAYOUT);
     }
 
     private UiStyleDeclaration updateOverflowWrap(UiOverflowWrap value) {
-        if (overflowWrap != value) {
-            overflowWrap = value;
-            recordLayoutChange();
-        }
-        return this;
+        UiOverflowWrap previousValue = overflowWrap;
+        overflowWrap = value;
+        return updateProperty(UiStyleProperty.OVERFLOW_WRAP, previousValue, value, UiStyleChangeImpact.LAYOUT);
     }
 
     private UiStyleDeclaration updateAspectRatio(Float value) {
-        if (!Objects.equals(aspectRatio, value)) {
-            aspectRatio = value;
-            recordLayoutChange();
-        }
-        return this;
+        Float previousValue = aspectRatio;
+        aspectRatio = value;
+        return updateProperty(UiStyleProperty.ASPECT_RATIO, previousValue, value, UiStyleChangeImpact.LAYOUT);
     }
 
     private UiStyleDeclaration updateObjectFit(UiObjectFit value) {
-        if (objectFit != value) {
-            objectFit = value;
-            recordPaintChange();
-        }
-        return this;
+        UiObjectFit previousValue = objectFit;
+        objectFit = value;
+        return updateProperty(UiStyleProperty.OBJECT_FIT, previousValue, value, UiStyleChangeImpact.PAINT);
     }
 
     private boolean hasConcreteProperty(UiStyleProperty property) {

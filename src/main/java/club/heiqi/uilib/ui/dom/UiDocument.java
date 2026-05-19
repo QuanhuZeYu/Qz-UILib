@@ -294,6 +294,26 @@ public final class UiDocument {
         return runtime != null && ownsElement(element) && runtime.requestScrollTo(element, scrollLeft, scrollTop);
     }
 
+    int __getScrollLeft(ElementNode element) {
+        DocumentInteractionRuntime runtime = getInteractionRuntime();
+        return runtime != null && ownsElement(element) ? runtime.requestScrollLeft(element) : 0;
+    }
+
+    int __getScrollTop(ElementNode element) {
+        DocumentInteractionRuntime runtime = getInteractionRuntime();
+        return runtime != null && ownsElement(element) ? runtime.requestScrollTop(element) : 0;
+    }
+
+    int __getMaxScrollLeft(ElementNode element) {
+        DocumentInteractionRuntime runtime = getInteractionRuntime();
+        return runtime != null && ownsElement(element) ? runtime.requestMaxScrollLeft(element) : 0;
+    }
+
+    int __getMaxScrollTop(ElementNode element) {
+        DocumentInteractionRuntime runtime = getInteractionRuntime();
+        return runtime != null && ownsElement(element) ? runtime.requestMaxScrollTop(element) : 0;
+    }
+
     boolean __scrollElementIntoView(ElementNode element) {
         DocumentInteractionRuntime runtime = getInteractionRuntime();
         return runtime != null && ownsElement(element) && runtime.requestScrollIntoView(element);
@@ -472,19 +492,48 @@ public final class UiDocument {
         if (element == null || styleSheets.isEmpty()) {
             return Collections.emptyList();
         }
-        List<UiStyleRule> allMatched = new ArrayList<UiStyleRule>();
-        for (UiStyleSheet sheet : styleSheets) {
-            allMatched.addAll(sheet.findMatchingRules(element, activeStates));
+        List<MatchedStyleRule> allMatched = new ArrayList<MatchedStyleRule>();
+        for (int sheetIndex = 0; sheetIndex < styleSheets.size(); sheetIndex++) {
+            UiStyleSheet sheet = styleSheets.get(sheetIndex);
+            for (UiStyleRule rule : sheet.findMatchingRules(element, activeStates)) {
+                allMatched.add(new MatchedStyleRule(rule, sheetIndex));
+            }
         }
         if (allMatched.size() > 1) {
-            Collections.sort(allMatched, new java.util.Comparator<UiStyleRule>() {
+            Collections.sort(allMatched, new java.util.Comparator<MatchedStyleRule>() {
                 @Override
-                public int compare(UiStyleRule a, UiStyleRule b) {
-                    return a.comparePriority(b);
+                public int compare(MatchedStyleRule a, MatchedStyleRule b) {
+                    int cmp = a.rule.getSelector().compareSpecificity(b.rule.getSelector());
+                    if (cmp != 0) {
+                        return cmp;
+                    }
+                    cmp = Integer.compare(a.styleSheetIndex, b.styleSheetIndex);
+                    if (cmp != 0) {
+                        return cmp;
+                    }
+                    return Integer.compare(a.rule.getSourceOrder(), b.rule.getSourceOrder());
                 }
             });
         }
-        return allMatched;
+        List<UiStyleRule> matchedRules = new ArrayList<UiStyleRule>(allMatched.size());
+        for (MatchedStyleRule matched : allMatched) {
+            matchedRules.add(matched.rule);
+        }
+        return matchedRules;
+    }
+
+    /**
+     * 记录跨样式表匹配规则及其挂载顺序，避免不同样式表的局部 sourceOrder 互相污染。
+     */
+    private static final class MatchedStyleRule {
+
+        private final UiStyleRule rule;
+        private final int styleSheetIndex;
+
+        private MatchedStyleRule(UiStyleRule rule, int styleSheetIndex) {
+            this.rule = rule;
+            this.styleSheetIndex = styleSheetIndex;
+        }
     }
 
     // ========== DOM 查询 ==========
@@ -728,6 +777,38 @@ public final class UiDocument {
          * @return 是否存在可滚动运行态并完成调用
          */
         boolean requestScrollTo(ElementNode element, int scrollLeft, int scrollTop);
+
+        /**
+         * 请求读取指定元素当前横向滚动偏移。
+         *
+         * @param element 目标滚动元素
+         * @return 当前横向滚动偏移
+         */
+        int requestScrollLeft(ElementNode element);
+
+        /**
+         * 请求读取指定元素当前纵向滚动偏移。
+         *
+         * @param element 目标滚动元素
+         * @return 当前纵向滚动偏移
+         */
+        int requestScrollTop(ElementNode element);
+
+        /**
+         * 请求读取指定元素最大横向滚动偏移。
+         *
+         * @param element 目标滚动元素
+         * @return 最大横向滚动偏移
+         */
+        int requestMaxScrollLeft(ElementNode element);
+
+        /**
+         * 请求读取指定元素最大纵向滚动偏移。
+         *
+         * @param element 目标滚动元素
+         * @return 最大纵向滚动偏移
+         */
+        int requestMaxScrollTop(ElementNode element);
 
         /**
          * 请求把指定元素滚动到可见区域。

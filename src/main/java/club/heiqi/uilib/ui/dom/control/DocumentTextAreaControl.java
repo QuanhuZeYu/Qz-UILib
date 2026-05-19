@@ -66,6 +66,8 @@ public final class DocumentTextAreaControl {
     private int selectionColor = 0x664F86F7;
     private int viewportContentLeft;
     private int viewportContentTop;
+    private int viewportContentWidth;
+    private int viewportContentHeight;
 
     /**
      * 创建多行文本输入控件。
@@ -293,7 +295,7 @@ public final class DocumentTextAreaControl {
             @Override
             public void render(UiRenderContext context, int contentLeft, int contentTop, int contentRight,
                     int contentBottom) {
-                updateRenderedLineMetrics(context, contentLeft, contentTop);
+                updateRenderedLineMetrics(context, contentLeft, contentTop, contentRight, contentBottom);
                 renderSelection(context);
             }
         });
@@ -301,7 +303,7 @@ public final class DocumentTextAreaControl {
             @Override
             public void render(UiRenderContext context, int contentLeft, int contentTop, int contentRight,
                     int contentBottom) {
-                updateRenderedLineMetrics(context, contentLeft, contentTop);
+                updateRenderedLineMetrics(context, contentLeft, contentTop, contentRight, contentBottom);
                 renderCaret(context);
             }
         });
@@ -340,7 +342,7 @@ public final class DocumentTextAreaControl {
                     return false;
                 }
                 if (event.getTarget() == element) {
-                    collapseSelection(textBuilder.length());
+                    collapseSelection(resolveCaretIndexAtDocumentPoint(event.getDocumentX(), event.getDocumentY()));
                     requestCaretReveal();
                     return true;
                 }
@@ -437,7 +439,7 @@ public final class DocumentTextAreaControl {
                 if (!enabled || event.getButton() != 0) {
                     return false;
                 }
-                setCaretFromLineClick(lineIndex);
+                setCaretFromLineClick(lineIndex, event.getDocumentX());
                 return true;
             }
         });
@@ -612,20 +614,49 @@ public final class DocumentTextAreaControl {
         preferredColumnCodePoints = -1;
     }
 
-    private void setCaretFromLineClick(int lineIndex) {
-        collapseSelection(logicalLines.get(Math.max(0, Math.min(lineIndex, logicalLines.size() - 1))).endIndex);
+    private void setCaretFromLineClick(int lineIndex, int documentX) {
+        collapseSelection(resolveCaretIndexOnLine(lineIndex, documentX));
         requestCaretReveal();
     }
 
     private void requestCaretReveal() {
         int lineIndex = resolveLineIndexForCaret(caretIndex);
-        int targetScrollTop = Math.max(0, lineIndex * DEFAULT_LINE_HEIGHT - DEFAULT_LINE_HEIGHT);
-        element.scrollTo(0, targetScrollTop);
+        int currentScrollLeft = element.getScrollLeft();
+        int currentScrollTop = element.getScrollTop();
+        int targetScrollLeft = currentScrollLeft;
+        int targetScrollTop = currentScrollTop;
+        int caretX = resolveCaretX(caretIndex);
+        if (viewportContentWidth > 0) {
+            int viewportLeft = currentScrollLeft;
+            int viewportRight = currentScrollLeft + viewportContentWidth - 1;
+            if (caretX < viewportLeft) {
+                targetScrollLeft = caretX;
+            } else if (caretX > viewportRight) {
+                targetScrollLeft = caretX - Math.max(0, viewportContentWidth - 1);
+            }
+        }
+        if (viewportContentHeight > 0) {
+            int lineTop = lineIndex * DEFAULT_LINE_HEIGHT;
+            int lineBottom = lineTop + DEFAULT_LINE_HEIGHT;
+            int viewportTop = currentScrollTop;
+            int viewportBottom = currentScrollTop + viewportContentHeight;
+            if (lineTop < viewportTop) {
+                targetScrollTop = lineTop;
+            } else if (lineBottom > viewportBottom) {
+                targetScrollTop = lineBottom - viewportContentHeight;
+            }
+        } else {
+            targetScrollTop = Math.max(0, lineIndex * DEFAULT_LINE_HEIGHT - DEFAULT_LINE_HEIGHT);
+        }
+        element.scrollTo(Math.max(0, targetScrollLeft), Math.max(0, targetScrollTop));
     }
 
-    private void updateRenderedLineMetrics(UiRenderContext context, int contentLeft, int contentTop) {
+    private void updateRenderedLineMetrics(UiRenderContext context, int contentLeft, int contentTop, int contentRight,
+            int contentBottom) {
         viewportContentLeft = contentLeft;
         viewportContentTop = contentTop;
+        viewportContentWidth = Math.max(0, contentRight - contentLeft);
+        viewportContentHeight = Math.max(0, contentBottom - contentTop);
         if (context == null) {
             renderedLineMetrics = Collections.emptyList();
             return;
@@ -694,6 +725,42 @@ public final class DocumentTextAreaControl {
             }
         }
         return Math.max(0, logicalLines.size() - 1);
+    }
+
+    private int resolveCaretX(int targetCaretIndex) {
+        RenderedLineMetrics lineMetrics = resolveRenderedLineMetricsForCaret(targetCaretIndex);
+        if (lineMetrics == null || targetCaretIndex < lineMetrics.lineStartIndex
+                || targetCaretIndex > lineMetrics.lineEndIndex) {
+            LogicalLine line = logicalLines.get(resolveLineIndexForCaret(targetCaretIndex));
+            int localOffset = Math.max(0, Math.min(line.text.length(), targetCaretIndex - line.startIndex));
+            if (line.text.isEmpty() || viewportContentWidth <= 0) {
+                return 0;
+            }
+            int estimatedLineWidth = element.getMaxScrollLeft() + viewportContentWidth;
+            return Math.round(estimatedLineWidth * (localOffset / (float) line.text.length()));
+        }
+        int localOffset = Math.max(0, Math.min(lineMetrics.text.length(), targetCaretIndex
+                - lineMetrics.lineStartIndex));
+        return lineMetrics.resolveBoundaryX(localOffset);
+    }
+
+    private int resolveCaretIndexAtDocumentPoint(int documentX, int documentY) {
+        if (renderedLineMetrics.isEmpty()) {
+            return textBuilder.length();
+        }
+        int lineIndex = Math.max(0, (documentY - viewportContentTop) / DEFAULT_LINE_HEIGHT);
+        return resolveCaretIndexOnLine(lineIndex, documentX);
+    }
+
+    private int resolveCaretIndexOnLine(int lineIndex, int documentX) {
+        int safeLineIndex = Math.max(0, Math.min(lineIndex, logicalLines.size() - 1));
+        RenderedLineMetrics lineMetrics = safeLineIndex < renderedLineMetrics.size()
+                ? renderedLineMetrics.get(safeLineIndex) : null;
+        if (lineMetrics != null) {
+            int localX = documentX - viewportContentLeft;
+            return lineMetrics.resolveClosestCaretIndex(localX);
+        }
+        return logicalLines.get(safeLineIndex).endIndex;
     }
 
     private boolean hasSelection() {

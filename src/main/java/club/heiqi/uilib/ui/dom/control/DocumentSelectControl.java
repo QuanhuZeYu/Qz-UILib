@@ -346,6 +346,9 @@ public final class DocumentSelectControl {
         this.open = open;
         highlightedIndex = selectedIndex;
         updateVisualState();
+        if (this.open) {
+            revealSelectedOption();
+        }
     }
 
     private void selectIndex(int nextIndex, boolean notify, boolean keyboardTriggered, int keyCode, int button,
@@ -355,10 +358,30 @@ public final class DocumentSelectControl {
         selectedIndex = resolvedIndex;
         highlightedIndex = resolvedIndex;
         updateVisualState();
+        if (open) {
+            revealSelectedOption();
+        }
         if (changed && notify && changeHandler != null) {
             changeHandler.onSelectionChanged(new DocumentSelectChangeEvent(this, element, selectedIndex,
                     options[selectedIndex], keyboardTriggered, keyCode, button, timeNanos));
         }
+    }
+
+    private void revealSelectedOption() {
+        if (selectedIndex < 0 || selectedIndex >= optionElements.length) {
+            return;
+        }
+        int currentScrollTop = popupElement.getScrollTop();
+        int viewportHeight = DEFAULT_OPTION_HEIGHT * 5;
+        int optionTop = selectedIndex * DEFAULT_OPTION_HEIGHT;
+        int optionBottom = optionTop + DEFAULT_OPTION_HEIGHT;
+        int targetScrollTop = currentScrollTop;
+        if (optionTop < currentScrollTop) {
+            targetScrollTop = optionTop;
+        } else if (optionBottom > currentScrollTop + viewportHeight) {
+            targetScrollTop = optionBottom - viewportHeight;
+        }
+        popupElement.scrollTo(popupElement.getScrollLeft(), Math.max(0, targetScrollTop));
     }
 
     private void updateVisualState() {

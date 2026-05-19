@@ -3232,6 +3232,7 @@ public class HtmlLikeDocumentWidgetTest {
 
         Assert.assertTrue(root.scrollTo(0, 30));
         Assert.assertEquals(30, widget.getScrollTop(root));
+        Assert.assertEquals(0, widget.getScrollLeft(root));
 
         Assert.assertTrue(root.scrollTo(0, 999));
         Assert.assertEquals(80, widget.getScrollTop(root));

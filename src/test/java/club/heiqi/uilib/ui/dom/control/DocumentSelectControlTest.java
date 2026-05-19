@@ -113,6 +113,36 @@ public class DocumentSelectControlTest {
         Assert.assertEquals(Keyboard.KEY_DOWN, events.get(0).getKeyCode());
     }
 
+    /**
+     * 验证长列表打开后，键盘导航会把当前选项滚入下拉面板可视区域。
+     */
+    @Test
+    public void shouldRevealSelectedOptionWhenKeyboardNavigatesLongList() {
+        UiDocument document = UiDocument.create();
+        ElementNode root = document.getRootElement();
+        DocumentSelectControl selectControl = new DocumentSelectControl(document, "A", "B", "C", "D", "E", "F",
+                "G");
+        root.style()
+                .setWidth(UiStyleLength.px(240))
+                .setHeight(UiStyleLength.px(260));
+        selectControl.getElement().style().setWidth(UiStyleLength.px(180));
+        root.append(selectControl.getElement());
+        HtmlLikeDocumentWidget widget = new HtmlLikeDocumentWidget(document, 240, 260,
+                new DeterministicTextMeasureService());
+        widget.applyLayoutBounds(0, 0, 240, 260);
+
+        widget.onFocusTraversalEntered(false);
+        widget.onKeyEvent(new UiKeyEvent(Keyboard.KEY_RETURN, 0, 0, UiKeyEvent.Action.PRESSED, false, false, false,
+                false, 1L));
+        widget.onKeyEvent(new UiKeyEvent(Keyboard.KEY_END, 0, 0, UiKeyEvent.Action.PRESSED, false, false, false,
+                false, 2L));
+
+        ElementNode popup = (ElementNode) selectControl.getElement().getChildren().get(1);
+        Assert.assertEquals(6, selectControl.getSelectedIndex());
+        Assert.assertTrue(popup.getMaxScrollTop() > 0);
+        Assert.assertTrue(popup.getScrollTop() > 0);
+    }
+
     private static final class DeterministicTextMeasureService implements TextMeasureService {
 
         @Override

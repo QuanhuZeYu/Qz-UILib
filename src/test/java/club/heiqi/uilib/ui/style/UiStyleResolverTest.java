@@ -201,6 +201,58 @@ public class UiStyleResolverTest {
     }
 
     /**
+     * 验证类型化 setter 会替换同属性旧关键字，后续 clear 不会让旧关键字复活。
+     */
+    @Test
+    public void concreteSetterClearsPreviousKeywordDeclaration() {
+        UiDocument document = UiDocument.create();
+        ElementNode root = document.getRootElement();
+        ElementNode child = document.div();
+        root.style().setTextColor(0xFF00FF00);
+        root.append(child);
+
+        child.style()
+                .setKeyword(UiStyleProperty.WIDTH, UiStyleKeyword.INITIAL)
+                .setWidth(UiStyleLength.px(48))
+                .clearWidth()
+                .setKeyword(UiStyleProperty.TEXT_COLOR, UiStyleKeyword.INHERIT)
+                .setTextColor(0xFFFF0000)
+                .clearTextColor();
+
+        ComputedStyle computedStyle = UiStyleResolver.compute(child);
+
+        Assert.assertEquals(UiStyleLength.auto(), computedStyle.getWidth());
+        Assert.assertEquals(0xFF00FF00, computedStyle.getTextColor());
+        Assert.assertNull(child.style().getKeyword(UiStyleProperty.WIDTH));
+        Assert.assertNull(child.style().getKeyword(UiStyleProperty.TEXT_COLOR));
+    }
+
+    /**
+     * 验证类型化 setter 替换 keyword 时保留 important 标记，但不会让旧 keyword 重新参与级联。
+     */
+    @Test
+    public void concreteSetterKeepsImportantFlagWithoutRevivingKeyword() {
+        UiDocument document = UiDocument.create();
+        ElementNode child = document.div();
+        document.getRootElement().append(child);
+
+        child.style()
+                .setKeyword(UiStyleProperty.BACKGROUND_COLOR, UiStyleKeyword.INITIAL)
+                .setImportant(UiStyleProperty.BACKGROUND_COLOR)
+                .setBackgroundColor(0xFF123456)
+                .clearBackgroundColor();
+
+        UiStyleSheet sheet = UiStyleSheet.create()
+                .addRule("div", new UiStyleDeclaration()
+                        .setBackgroundColor(0xFF654321));
+        document.addStyleSheet(sheet);
+
+        Assert.assertEquals(0xFF654321, UiStyleResolver.compute(child).getBackgroundColor());
+        Assert.assertTrue(child.style().isImportant(UiStyleProperty.BACKGROUND_COLOR));
+        Assert.assertNull(child.style().getKeyword(UiStyleProperty.BACKGROUND_COLOR));
+    }
+
+    /**
      * 验证 table 系列标签拥有 HTML-like 默认 display。
      */
     @Test

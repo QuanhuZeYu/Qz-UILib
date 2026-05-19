@@ -356,6 +356,49 @@ public class UiStyleSheetTest {
     }
 
     @Test
+    public void laterStyleSheetOverridesEarlierSameSpecificityEvenWhenSourceOrderIsSmaller() {
+        UiDocument document = UiDocument.create();
+        ElementNode div = document.div();
+        div.setClassName("panel accent");
+        document.getRootElement().append(div);
+
+        UiStyleSheet firstSheet = UiStyleSheet.create()
+                .addRule(".accent", new UiStyleDeclaration()
+                        .setTextColor(0xFF111111))
+                .addRule(".panel", new UiStyleDeclaration()
+                        .setBackgroundColor(0xFF111111));
+        UiStyleSheet secondSheet = UiStyleSheet.create()
+                .addRule(".panel", new UiStyleDeclaration()
+                        .setBackgroundColor(0xFF222222));
+        document.addStyleSheet(firstSheet).addStyleSheet(secondSheet);
+
+        Assert.assertEquals(0xFF222222, UiStyleResolver.compute(div).getBackgroundColor());
+    }
+
+    @Test
+    public void importantBucketRespectsStyleSheetMountOrder() {
+        UiDocument document = UiDocument.create();
+        ElementNode div = document.div();
+        div.setClassName("panel accent");
+        document.getRootElement().append(div);
+
+        UiStyleSheet firstSheet = UiStyleSheet.create()
+                .addRule(".accent", new UiStyleDeclaration()
+                        .setBackgroundColor(0xFF111111)
+                        .setImportant(UiStyleProperty.BACKGROUND_COLOR))
+                .addRule(".panel", new UiStyleDeclaration()
+                        .setBackgroundColor(0xFF111111)
+                        .setImportant(UiStyleProperty.BACKGROUND_COLOR));
+        UiStyleSheet secondSheet = UiStyleSheet.create()
+                .addRule(".panel", new UiStyleDeclaration()
+                        .setBackgroundColor(0xFF222222)
+                        .setImportant(UiStyleProperty.BACKGROUND_COLOR));
+        document.addStyleSheet(firstSheet).addStyleSheet(secondSheet);
+
+        Assert.assertEquals(0xFF222222, UiStyleResolver.compute(div).getBackgroundColor());
+    }
+
+    @Test
     public void styleSheetCombinatorsAndStructuralPseudoClassesAffectCascade() {
         UiDocument document = UiDocument.create();
         ElementNode list = document.div();

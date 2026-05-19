@@ -316,6 +316,42 @@ public final class ElementNode extends DocumentNode {
     }
 
     /**
+     * 返回当前元素横向滚动偏移。
+     *
+     * @return 横向滚动偏移；未挂载或无运行态时返回 0
+     */
+    public int getScrollLeft() {
+        return getOwnerDocument().__getScrollLeft(this);
+    }
+
+    /**
+     * 返回当前元素纵向滚动偏移。
+     *
+     * @return 纵向滚动偏移；未挂载或无运行态时返回 0
+     */
+    public int getScrollTop() {
+        return getOwnerDocument().__getScrollTop(this);
+    }
+
+    /**
+     * 返回当前元素最大横向滚动偏移。
+     *
+     * @return 最大横向滚动偏移；未挂载或不可横向滚动时返回 0
+     */
+    public int getMaxScrollLeft() {
+        return getOwnerDocument().__getMaxScrollLeft(this);
+    }
+
+    /**
+     * 返回当前元素最大纵向滚动偏移。
+     *
+     * @return 最大纵向滚动偏移；未挂载或不可纵向滚动时返回 0
+     */
+    public int getMaxScrollTop() {
+        return getOwnerDocument().__getMaxScrollTop(this);
+    }
+
+    /**
      * 程序化滚动最近可滚祖先，使当前元素尽量进入可见区域。
      *
      * <p>节点未挂载、不可见或没有布局盒时返回 false；目标已在可见区域内时返回 true 但不改变滚动偏移。</p>
