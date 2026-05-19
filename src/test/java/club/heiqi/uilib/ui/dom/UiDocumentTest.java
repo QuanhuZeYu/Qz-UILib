@@ -50,17 +50,29 @@ public class UiDocumentTest {
         UiDocument document = UiDocument.create();
         ElementNode button = document.button();
         ElementNode input = document.input();
+        ElementNode textarea = document.textarea();
+        ElementNode select = document.select();
+        ElementNode option = document.option();
         ElementNode image = document.img().setAttribute("alt", "玩家头像");
         ElementNode hiddenImage = document.img().setAttribute("alt", "装饰").setAttribute("aria-hidden", "true");
         button.appendText("确认");
+        option.appendText("候选项");
 
         Assert.assertTrue(button.isFocusable());
         Assert.assertTrue(input.isFocusable());
+        Assert.assertTrue(textarea.isFocusable());
+        Assert.assertTrue(select.isFocusable());
+        Assert.assertFalse(option.isFocusable());
         Assert.assertFalse(image.isFocusable());
         Assert.assertEquals("button", button.getSemanticRole());
         Assert.assertEquals("textbox", input.getSemanticRole());
+        Assert.assertEquals("textbox", textarea.getSemanticRole());
+        Assert.assertEquals("combobox", select.getSemanticRole());
+        Assert.assertEquals("option", option.getSemanticRole());
+        Assert.assertEquals("true", textarea.getAttribute("aria-multiline"));
         Assert.assertEquals("img", image.getSemanticRole());
         Assert.assertEquals("确认", button.getAccessibleLabel());
+        Assert.assertEquals("候选项", option.getAccessibleLabel());
         Assert.assertEquals("玩家头像", image.getAccessibleLabel());
         Assert.assertEquals("", hiddenImage.getAccessibleLabel());
     }

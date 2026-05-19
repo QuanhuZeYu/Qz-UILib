@@ -85,7 +85,7 @@
 - HTML-like 元素拖拽采用位移阈值激活：短点击保留 `click`，只有超过阈值后才进入真实拖拽并消费抬起事件。
 - HTML-like 拖拽事件沿用 UILib 原生像素坐标体系，事件内 document 坐标只做 widget/document 局部化，不转换为 Minecraft GUI 缩放坐标。
 - 浏览器式拖拽首版支持 `draggable="true"`、`dragstart`、`dragover`、`dragend`；`drop`、`dragenter`、`dragleave`、`DataTransfer` 与 `preventDefault()` 尚未补齐。
-- 结构节点优先直接写 `UiDocument` DOM-like 元素；标准交互节点优先使用 `Document*Control`。`document.button()` / `document.input()` 默认可聚焦并参与正常 Tab 顺序，`document.img()` 默认 inline-block 且不可聚焦；`tabindex="-1"` 会跳过正常 Tab 遍历但仍允许鼠标/程序聚焦。
+- 结构节点优先直接写 `UiDocument` DOM-like 元素；标准交互节点优先使用 `Document*Control`。`document.button()` / `document.input()` / `document.textarea()` / `document.select()` 默认可聚焦并参与正常 Tab 顺序，`document.option()` 与 `document.img()` 默认不参与正常焦点遍历；`tabindex="-1"` 会跳过正常 Tab 遍历但仍允许鼠标/程序聚焦。
 - `ElementNode` 已向页面作者公开程序化交互入口：`focus()`、`blur()`、`scrollTo(scrollLeft, scrollTop)`、`scrollIntoView()`，并配套 `getNextSibling()` / `getPreviousSibling()`。
 - 这些公开交互 API 只对已挂载到当前 `HtmlLikeDocumentWidget`、且满足可见/可聚焦/可滚动前提的元素生效；未挂载、隐藏、禁用或没有对应滚动范围时保持无副作用并返回 `false`。
 - HTML-like 文本文档默认按 `UILIB_RAW` 处理：页面作者写入的 `§a`、`§k` 等内容会按普通字符原样显示，不再隐式套用 Minecraft 文本格式码；如需兼容旧 `§` 语义，优先使用 `appendMinecraftText(...)`、`minecraftText(...)` 或 Minecraft 文本模式环境。

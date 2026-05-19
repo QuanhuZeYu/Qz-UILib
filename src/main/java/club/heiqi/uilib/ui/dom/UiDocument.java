@@ -102,6 +102,33 @@ public final class UiDocument {
     }
 
     /**
+     * 创建 textarea 元素。
+     *
+     * @return textarea 元素
+     */
+    public ElementNode textarea() {
+        return element("textarea");
+    }
+
+    /**
+     * 创建 select 元素。
+     *
+     * @return select 元素
+     */
+    public ElementNode select() {
+        return element("select");
+    }
+
+    /**
+     * 创建 option 元素。
+     *
+     * @return option 元素
+     */
+    public ElementNode option() {
+        return element("option");
+    }
+
+    /**
      * 创建 img 元素。
      *
      * @return img 元素

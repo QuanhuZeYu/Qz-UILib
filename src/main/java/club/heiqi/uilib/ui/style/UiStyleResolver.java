@@ -719,7 +719,8 @@ public final class UiStyleResolver {
         if ("span".equals(tagName)) {
             return UiDisplay.INLINE;
         }
-        if ("button".equals(tagName) || "input".equals(tagName) || "img".equals(tagName)) {
+        if ("button".equals(tagName) || "input".equals(tagName) || "textarea".equals(tagName)
+                || "select".equals(tagName) || "img".equals(tagName)) {
             return UiDisplay.INLINE_BLOCK;
         }
         if ("table".equals(tagName)) {

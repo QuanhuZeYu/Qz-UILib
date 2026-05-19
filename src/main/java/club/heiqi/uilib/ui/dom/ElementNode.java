@@ -73,6 +73,9 @@ public final class ElementNode extends DocumentNode {
         if ("input".equals(this.tagName)) {
             attributes.put("type", "text");
         }
+        if ("textarea".equals(this.tagName)) {
+            attributes.put("aria-multiline", "true");
+        }
         if (DocumentImageElementSupport.isImageTag(this.tagName)) {
             DocumentImageElementSupport.attach(this);
         }
@@ -383,6 +386,15 @@ public final class ElementNode extends DocumentNode {
                 return "checkbox";
             }
             return "textbox";
+        }
+        if ("textarea".equals(tagName)) {
+            return "textbox";
+        }
+        if ("select".equals(tagName)) {
+            return "combobox";
+        }
+        if ("option".equals(tagName)) {
+            return "option";
         }
         if (DocumentImageElementSupport.isImageTag(tagName)) {
             String alt = getAttribute("alt");
@@ -970,7 +982,8 @@ public final class ElementNode extends DocumentNode {
     }
 
     private static boolean isNativeFocusableTag(String tagName) {
-        return "button".equals(tagName) || "input".equals(tagName);
+        return "button".equals(tagName) || "input".equals(tagName) || "textarea".equals(tagName)
+                || "select".equals(tagName);
     }
 
     private static String trimToNull(String value) {
