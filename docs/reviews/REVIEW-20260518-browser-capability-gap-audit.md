@@ -107,6 +107,7 @@
 - **源码事实**：`FontType.java` 和 `TextStyle.java` 底层有粗体/斜体/字体族支持，但 `UiStyleDeclaration` 中**无对应 CSS 属性字段**，页面作者无法通过样式声明控制字体粗细和斜体
 - **关键文件**：`ui/text/FontType.java`、`ui/style/UiStyleDeclaration.java`
 - **建议**：作为待补充的高优能力，底层代价较小
+- **后续状态（2026-05-19）**：当前源码已在 `UiStyleDeclaration` / `ComputedStyle` / `UiStyleResolver` 开放 `font-weight` 与 `font-style`，并接入 `DocumentLayoutEngine` 文本测量、`DocumentPaintEngine` 文本命令和 `UiRenderContext` 绘制；支持范围为 `UiFontWeight.NORMAL/BOLD` 与 `UiFontStyle.NORMAL/ITALIC`。`font-family` 仍未开放为作者层 CSS-like 样式属性。
 
 ### 4. `scrollIntoView` / `scrollTo` 公开 API — 内部已有，未对外暴露
 
@@ -184,5 +185,5 @@
 
 1. **`cursor` 属性**：使用文档列为"常用样式"，需补注"系统光标外观映射待实现，当前设置不影响鼠标外观"
 2. **`word-break` / `overflow-wrap`**：AI 记忆文档列为"新增文本排版控制属性"，需补注"样式声明与级联已支持，布局引擎实际断词待接通"
-3. **`font-weight`/`font-style`**：底层有能力但无 CSS 属性暴露，不应出现在"可用样式"列表中，应列为"待开放"
+3. **`font-weight`/`font-style`**：当前已开放并接入测量/绘制；`font-family` 仍未开放为 CSS-like 样式属性，不应包装成已支持字体族声明
 4. **拖拽 `drop`/`dragenter`/`dragleave` 事件**：AI 记忆文档已明确标注"尚未补齐"，此处核实一致，无需修改

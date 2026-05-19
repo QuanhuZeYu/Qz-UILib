@@ -882,7 +882,7 @@ public class UiRenderContext {
      * @param textContentMode 文本内容解析模式
      */
     public void drawText(String text, int x, int y, int color, boolean shadow, TextContentMode textContentMode) {
-        drawText(text, x, y, color, shadow, textContentMode, UiFontWeight.NORMAL, UiFontStyle.NORMAL);
+        drawTextResolved(text, x, y, color, shadow, textContentMode, UiFontWeight.NORMAL, UiFontStyle.NORMAL);
     }
 
     /**
@@ -899,16 +899,34 @@ public class UiRenderContext {
      */
     public void drawText(String text, int x, int y, int color, boolean shadow, TextContentMode textContentMode,
             UiFontWeight fontWeight, UiFontStyle fontStyle) {
-        if (fontWeight == null || fontStyle == null
-                || (fontWeight == UiFontWeight.NORMAL && fontStyle == UiFontStyle.NORMAL)) {
+        UiFontWeight resolvedFontWeight = fontWeight == null ? UiFontWeight.NORMAL : fontWeight;
+        UiFontStyle resolvedFontStyle = fontStyle == null ? UiFontStyle.NORMAL : fontStyle;
+        if (resolvedFontWeight == UiFontWeight.NORMAL && resolvedFontStyle == UiFontStyle.NORMAL) {
             drawText(text, x, y, color, shadow, textContentMode);
             return;
         }
+        drawTextResolved(text, x, y, color, shadow, textContentMode, resolvedFontWeight, resolvedFontStyle);
+    }
+
+    /**
+     * 使用已归一化的字体样式执行实际文本绘制。
+     *
+     * @param text 文本
+     * @param x 绘制 X
+     * @param y 绘制 Y
+     * @param color ARGB 颜色
+     * @param shadow 是否带阴影
+     * @param textContentMode 文本内容解析模式
+     * @param resolvedFontWeight 已归一化字体粗细
+     * @param resolvedFontStyle 已归一化字体样式
+     */
+    protected void drawTextResolved(String text, int x, int y, int color, boolean shadow,
+            TextContentMode textContentMode, UiFontWeight resolvedFontWeight, UiFontStyle resolvedFontStyle) {
         if (fontRenderer instanceof DefaultFontRendererAdapter) {
             DefaultFontRendererAdapter defaultFontRenderer = (DefaultFontRendererAdapter) fontRenderer;
             if (defaultFontRenderer.isDeferredFlushScopeActive()) {
-                defaultFontRenderer.drawStringScaled(text, x, y, color, shadow, textContentMode, fontWeight,
-                        fontStyle, UI_TEXT_SCALE);
+                defaultFontRenderer.drawStringScaled(text, x, y, color, shadow, textContentMode, resolvedFontWeight,
+                        resolvedFontStyle, UI_TEXT_SCALE);
                 notifyMainLayerContentChanged();
                 return;
             }
@@ -919,7 +937,7 @@ public class UiRenderContext {
         GL11.glScalef(UI_TEXT_SCALE, UI_TEXT_SCALE, 1.0F);
         if (fontRenderer instanceof DefaultFontRendererAdapter) {
             ((DefaultFontRendererAdapter) fontRenderer).drawString(text, 0, 0, color, shadow, textContentMode,
-                    fontWeight, fontStyle);
+                    resolvedFontWeight, resolvedFontStyle);
         } else {
             fontRenderer.drawString(text, 0, 0, color, shadow);
         }

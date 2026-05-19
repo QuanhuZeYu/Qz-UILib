@@ -21,6 +21,8 @@ import club.heiqi.uilib.ui.style.UiBorderRadius;
 import club.heiqi.uilib.ui.style.UiBorderRadiusResolver;
 import club.heiqi.uilib.ui.style.UiBorderStyle;
 import club.heiqi.uilib.ui.style.UiBoxShadow;
+import club.heiqi.uilib.ui.style.UiFontStyle;
+import club.heiqi.uilib.ui.style.UiFontWeight;
 import club.heiqi.uilib.ui.style.UiOutline;
 import club.heiqi.uilib.ui.style.UiOverflow;
 import club.heiqi.uilib.ui.style.UiStyleLength;
@@ -297,6 +299,27 @@ public class DocumentPaintRendererTest {
 
         Assert.assertEquals(1, renderContext.textCalls.size());
         Assert.assertEquals(TextContentMode.MINECRAFT_FORMATTED, renderContext.textCalls.get(0).textContentMode);
+    }
+
+    /**
+     * 验证普通字体样式也经由最终绘制入口处理，不会在 `drawText` 重载之间递归。
+     */
+    @Test
+    public void shouldReplayNormalFontStyleWithoutRecursiveTextOverload() {
+        UiDocument document = UiDocument.create();
+        ElementNode root = document.getRootElement();
+        List<DocumentPaintCommand> commands = new ArrayList<DocumentPaintCommand>();
+        commands.add(new DocumentPaintCommand(DocumentPaintCommandType.TEXT, root, 0, 0, 24, 12,
+                0xFFE2E8F0, 0, 0, "Normal", TextContentMode.UILIB_RAW,
+                UiFontWeight.NORMAL, UiFontStyle.NORMAL, null, 0, 1.0F, 1.0F));
+
+        RecordingUiRenderContext renderContext = new RecordingUiRenderContext();
+        DocumentPaintRenderer.render(renderContext, commands, 7, 11);
+
+        Assert.assertEquals(1, renderContext.textCalls.size());
+        Assert.assertEquals("Normal", renderContext.textCalls.get(0).text);
+        Assert.assertEquals(UiFontWeight.NORMAL, renderContext.textCalls.get(0).fontWeight);
+        Assert.assertEquals(UiFontStyle.NORMAL, renderContext.textCalls.get(0).fontStyle);
     }
 
     /**
@@ -882,7 +905,13 @@ public class DocumentPaintRendererTest {
 
         @Override
         public void drawText(String text, int x, int y, int color, boolean shadow, TextContentMode textContentMode) {
-            textCalls.add(new TextCall(text, x, y, color, shadow, textContentMode));
+            drawText(text, x, y, color, shadow, textContentMode, UiFontWeight.NORMAL, UiFontStyle.NORMAL);
+        }
+
+        @Override
+        public void drawText(String text, int x, int y, int color, boolean shadow, TextContentMode textContentMode,
+                UiFontWeight fontWeight, UiFontStyle fontStyle) {
+            textCalls.add(new TextCall(text, x, y, color, shadow, textContentMode, fontWeight, fontStyle));
             notifyMainLayerContentChanged();
         }
 
@@ -965,14 +994,23 @@ public class DocumentPaintRendererTest {
         private final int color;
         private final boolean shadow;
         private final TextContentMode textContentMode;
+        private final UiFontWeight fontWeight;
+        private final UiFontStyle fontStyle;
 
         private TextCall(String text, int x, int y, int color, boolean shadow, TextContentMode textContentMode) {
+            this(text, x, y, color, shadow, textContentMode, UiFontWeight.NORMAL, UiFontStyle.NORMAL);
+        }
+
+        private TextCall(String text, int x, int y, int color, boolean shadow, TextContentMode textContentMode,
+                UiFontWeight fontWeight, UiFontStyle fontStyle) {
             this.text = text;
             this.x = x;
             this.y = y;
             this.color = color;
             this.shadow = shadow;
             this.textContentMode = textContentMode;
+            this.fontWeight = fontWeight == null ? UiFontWeight.NORMAL : fontWeight;
+            this.fontStyle = fontStyle == null ? UiFontStyle.NORMAL : fontStyle;
         }
     }
 
@@ -998,7 +1036,13 @@ public class DocumentPaintRendererTest {
 
         @Override
         public void drawText(String text, int x, int y, int color, boolean shadow, TextContentMode textContentMode) {
-            textCalls.add(new TextCall(text, x, y, color, shadow, textContentMode));
+            drawText(text, x, y, color, shadow, textContentMode, UiFontWeight.NORMAL, UiFontStyle.NORMAL);
+        }
+
+        @Override
+        public void drawText(String text, int x, int y, int color, boolean shadow, TextContentMode textContentMode,
+                UiFontWeight fontWeight, UiFontStyle fontStyle) {
+            textCalls.add(new TextCall(text, x, y, color, shadow, textContentMode, fontWeight, fontStyle));
             notifyMainLayerContentChanged();
         }
 
