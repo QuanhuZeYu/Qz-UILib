@@ -88,6 +88,34 @@ public class UiDocumentTest {
     }
 
     /**
+     * 验证兄弟节点访问器始终反映当前文档树顺序。
+     */
+    @Test
+    public void shouldExposeSiblingAccessorsInCurrentTreeOrder() {
+        UiDocument document = UiDocument.create();
+        ElementNode root = document.getRootElement();
+        ElementNode first = document.div();
+        TextNode middle = document.text("middle");
+        ElementNode last = document.span();
+
+        root.append(first).append(middle).append(last);
+
+        Assert.assertNull(first.getPreviousSibling());
+        Assert.assertSame(middle, first.getNextSibling());
+        Assert.assertSame(first, middle.getPreviousSibling());
+        Assert.assertSame(last, middle.getNextSibling());
+        Assert.assertSame(middle, last.getPreviousSibling());
+        Assert.assertNull(last.getNextSibling());
+
+        root.removeChild(middle);
+
+        Assert.assertSame(last, first.getNextSibling());
+        Assert.assertSame(first, last.getPreviousSibling());
+        Assert.assertNull(middle.getPreviousSibling());
+        Assert.assertNull(middle.getNextSibling());
+    }
+
+    /**
      * 验证内部元素唯一身份不会复用 HTML id 属性语义。
      */
     @Test

@@ -51,6 +51,7 @@ import club.heiqi.uilib.ui.style.UiOverflowWrap;
 import club.heiqi.uilib.ui.style.UiPosition;
 import club.heiqi.uilib.ui.style.UiStyleInsets;
 import club.heiqi.uilib.ui.style.UiStyleLength;
+import club.heiqi.uilib.ui.style.UiVisibility;
 import club.heiqi.uilib.ui.text.DefaultTextMeasureService;
 import club.heiqi.uilib.ui.text.TextContentMode;
 import club.heiqi.uilib.ui.text.TextMeasureService;
@@ -2695,6 +2696,84 @@ public class HtmlLikeDocumentWidgetTest {
     }
 
     /**
+     * 验证 ElementNode 公开 focus/blur API 会复用当前 HTML-like 焦点运行态。
+     */
+    @Test
+    public void shouldFocusAndBlurThroughElementNodeApi() {
+        UiDocument document = UiDocument.create();
+        ElementNode root = document.getRootElement();
+        final ElementNode input = document.div();
+        final List<DocumentElementFocusEvent> focusEvents = new ArrayList<DocumentElementFocusEvent>();
+        root.style()
+                .setWidth(UiStyleLength.px(80))
+                .setHeight(UiStyleLength.px(40));
+        input.style()
+                .setWidth(UiStyleLength.px(40))
+                .setHeight(UiStyleLength.px(20));
+        input.setFocusable(true).setFocusHandler(new DocumentElementFocusHandler() {
+            @Override
+            public void onFocusChanged(DocumentElementFocusEvent event) {
+                focusEvents.add(event);
+            }
+        });
+        root.append(input);
+        HtmlLikeDocumentWidget widget = new HtmlLikeDocumentWidget(document, 80, 40,
+                new DeterministicTextMeasureService());
+        widget.applyLayoutBounds(0, 0, 80, 40);
+
+        Assert.assertTrue(input.focus());
+        assertElementUid(input, widget.getFocusedElement());
+        Assert.assertEquals(1, focusEvents.size());
+        Assert.assertTrue(focusEvents.get(0).isFocused());
+        Assert.assertFalse(focusEvents.get(0).isFocusVisible());
+
+        Assert.assertTrue(input.blur());
+        Assert.assertNull(widget.getFocusedElement());
+        Assert.assertEquals(2, focusEvents.size());
+        Assert.assertFalse(focusEvents.get(1).isFocused());
+    }
+
+    /**
+     * 验证 ElementNode focus API 对未挂载、不可聚焦、隐藏和 disabled 节点保持无副作用。
+     */
+    @Test
+    public void shouldIgnoreInvalidProgrammaticFocusTargets() {
+        UiDocument document = UiDocument.create();
+        ElementNode root = document.getRootElement();
+        ElementNode valid = document.div();
+        ElementNode notFocusable = document.div();
+        ElementNode hidden = document.div();
+        ElementNode detached = document.div();
+        ElementNode disabledButton = document.button().setAttribute("disabled", "true");
+        root.style()
+                .setWidth(UiStyleLength.px(120))
+                .setHeight(UiStyleLength.px(80));
+        valid.style().setWidth(UiStyleLength.px(20)).setHeight(UiStyleLength.px(20));
+        notFocusable.style().setWidth(UiStyleLength.px(20)).setHeight(UiStyleLength.px(20));
+        hidden.style()
+                .setWidth(UiStyleLength.px(20))
+                .setHeight(UiStyleLength.px(20))
+                .setVisibility(UiVisibility.HIDDEN);
+        detached.style().setWidth(UiStyleLength.px(20)).setHeight(UiStyleLength.px(20));
+        disabledButton.style().setWidth(UiStyleLength.px(20)).setHeight(UiStyleLength.px(20));
+        valid.setFocusable(true);
+        hidden.setFocusable(true);
+        detached.setFocusable(true);
+        root.append(valid).append(notFocusable).append(hidden).append(disabledButton);
+        HtmlLikeDocumentWidget widget = new HtmlLikeDocumentWidget(document, 120, 80,
+                new DeterministicTextMeasureService());
+        widget.applyLayoutBounds(0, 0, 120, 80);
+
+        Assert.assertTrue(valid.focus());
+        assertElementUid(valid, widget.getFocusedElement());
+        Assert.assertFalse(notFocusable.focus());
+        Assert.assertFalse(hidden.focus());
+        Assert.assertFalse(detached.focus());
+        Assert.assertFalse(disabledButton.focus());
+        assertElementUid(valid, widget.getFocusedElement());
+    }
+
+    /**
      * 验证 HTML-like 组件会分发鼠标按下与松开的 active 状态。
      */
     @Test
@@ -2845,6 +2924,68 @@ public class HtmlLikeDocumentWidgetTest {
 
         assertElementUid(secondInput, widget.getFocusedElement());
         Assert.assertEquals(48, widget.getScrollTop(root));
+    }
+
+    /**
+     * 验证 ElementNode 公开 scrollTo API 会夹取滚动偏移并拒绝不可滚元素。
+     */
+    @Test
+    public void shouldScrollElementToOffsetThroughElementNodeApi() {
+        UiDocument document = UiDocument.create();
+        ElementNode root = document.getRootElement();
+        ElementNode child = document.div();
+        ElementNode detached = document.div();
+        root.style()
+                .setWidth(UiStyleLength.px(80))
+                .setHeight(UiStyleLength.px(40))
+                .setOverflowY(UiOverflow.AUTO);
+        child.style().setHeight(UiStyleLength.px(120));
+        detached.style().setHeight(UiStyleLength.px(120));
+        root.append(child);
+        HtmlLikeDocumentWidget widget = new HtmlLikeDocumentWidget(document, 80, 40,
+                new DeterministicTextMeasureService());
+        widget.applyLayoutBounds(0, 0, 80, 40);
+
+        Assert.assertTrue(root.scrollTo(0, 30));
+        Assert.assertEquals(30, widget.getScrollTop(root));
+
+        Assert.assertTrue(root.scrollTo(0, 999));
+        Assert.assertEquals(80, widget.getScrollTop(root));
+        Assert.assertFalse(child.scrollTo(0, 10));
+        Assert.assertFalse(detached.scrollTo(0, 10));
+    }
+
+    /**
+     * 验证 ElementNode 公开 scrollIntoView API 会滚动最近可滚祖先。
+     */
+    @Test
+    public void shouldScrollElementIntoViewThroughElementNodeApi() {
+        UiDocument document = UiDocument.create();
+        ElementNode root = document.getRootElement();
+        ElementNode first = document.div();
+        ElementNode spacer = document.div();
+        ElementNode target = document.div();
+        ElementNode hidden = document.div();
+        root.style()
+                .setWidth(UiStyleLength.px(80))
+                .setHeight(UiStyleLength.px(40))
+                .setOverflowY(UiOverflow.AUTO);
+        first.style().setHeight(UiStyleLength.px(20));
+        spacer.style().setHeight(UiStyleLength.px(48));
+        target.style().setHeight(UiStyleLength.px(20));
+        hidden.style()
+                .setHeight(UiStyleLength.px(20))
+                .setVisibility(UiVisibility.HIDDEN);
+        root.append(first).append(spacer).append(target).append(hidden);
+        HtmlLikeDocumentWidget widget = new HtmlLikeDocumentWidget(document, 80, 40,
+                new DeterministicTextMeasureService());
+        widget.applyLayoutBounds(0, 0, 80, 40);
+
+        Assert.assertTrue(target.scrollIntoView());
+        Assert.assertEquals(48, widget.getScrollTop(root));
+        Assert.assertTrue(target.scrollIntoView());
+        Assert.assertEquals(48, widget.getScrollTop(root));
+        Assert.assertFalse(hidden.scrollIntoView());
     }
 
     /**

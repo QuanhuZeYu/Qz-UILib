@@ -86,8 +86,8 @@
 - HTML-like 拖拽事件沿用 UILib 原生像素坐标体系，事件内 document 坐标只做 widget/document 局部化，不转换为 Minecraft GUI 缩放坐标。
 - 浏览器式拖拽首版支持 `draggable="true"`、`dragstart`、`dragover`、`dragend`；`drop`、`dragenter`、`dragleave`、`DataTransfer` 与 `preventDefault()` 尚未补齐。
 - 结构节点优先直接写 `UiDocument` DOM-like 元素；标准交互节点优先使用 `Document*Control`。`document.button()` / `document.input()` 默认可聚焦并参与正常 Tab 顺序，`document.img()` 默认 inline-block 且不可聚焦；`tabindex="-1"` 会跳过正常 Tab 遍历但仍允许鼠标/程序聚焦。
-- **【边界修正】`focus()` / `blur()` 程序化聚焦**：`HtmlLikeDocumentWidget` 内部焦点管理链路完整，但相关方法为 private，**页面作者当前无法通过 `ElementNode` API 程序化控制焦点**；需要聚焦特定元素时只能依赖鼠标点击或 Tab 键触发。（审查：REVIEW-20260518-browser-capability-gap-audit）
-- **【边界修正】`scrollIntoView` / `scrollTo` 公开 API**：`DocumentScrollState.scrollTo()` 与 `scrollToReveal()` 内部已实现，但**未在 `ElementNode` 或 `UiDocument` 上暴露为公开 API**，页面作者当前无法程序化滚动容器到指定位置或使元素进入视口。（审查：REVIEW-20260518-browser-capability-gap-audit）
+- `ElementNode` 已向页面作者公开程序化交互入口：`focus()`、`blur()`、`scrollTo(scrollLeft, scrollTop)`、`scrollIntoView()`，并配套 `getNextSibling()` / `getPreviousSibling()`。
+- 这些公开交互 API 只对已挂载到当前 `HtmlLikeDocumentWidget`、且满足可见/可聚焦/可滚动前提的元素生效；未挂载、隐藏、禁用或没有对应滚动范围时保持无副作用并返回 `false`。
 - HTML-like 文本文档默认按 `UILIB_RAW` 处理：页面作者写入的 `§a`、`§k` 等内容会按普通字符原样显示，不再隐式套用 Minecraft 文本格式码；如需兼容旧 `§` 语义，优先使用 `appendMinecraftText(...)`、`minecraftText(...)` 或 Minecraft 文本模式环境。
 - 普通位图优先走浏览器式 `document.img()` / `img[src]`，支持本地 `ResourceLocation` 与远程 HTTP/HTTPS 位图；Minecraft 物品栈、纹理区域和背景装饰继续使用 `DocumentHostImageControl` / `DocumentHostImageDecorations`，不鼓励业务代码直接写底层 `custom renderer`。
 - 新增 layout-affecting、宿主集成或对外能力时，要同步更新 `docs/使用文档/` 并保留最小必要验证。

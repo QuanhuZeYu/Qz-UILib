@@ -105,6 +105,28 @@ public final class DocumentScrollState {
     }
 
     /**
+     * 返回元素滚动内容总宽度。
+     *
+     * @param element 元素
+     * @return 内容总宽度；未参与当前布局时返回 0
+     */
+    public int getScrollWidth(ElementNode element) {
+        ScrollEntry entry = entries.get(element);
+        return entry == null ? 0 : entry.contentWidth;
+    }
+
+    /**
+     * 返回元素滚动内容总高度。
+     *
+     * @param element 元素
+     * @return 内容总高度；未参与当前布局时返回 0
+     */
+    public int getScrollHeight(ElementNode element) {
+        ScrollEntry entry = entries.get(element);
+        return entry == null ? 0 : entry.contentHeight;
+    }
+
+    /**
      * 根据最新布局盒树刷新可滚范围，并移除已不存在元素的滚动状态。
      *
      * @param rootBox 根布局盒
@@ -445,6 +467,8 @@ public final class DocumentScrollState {
         }
         entry.maxHorizontalOffset = metrics.maxHorizontalOffset;
         entry.maxVerticalOffset = metrics.maxVerticalOffset;
+        entry.contentWidth = metrics.contentWidth;
+        entry.contentHeight = metrics.contentHeight;
         updateOffsets(entry, entry.horizontalOffset, entry.verticalOffset);
 
         for (DocumentLayoutBox child : box.getChildren()) {
@@ -875,6 +899,8 @@ public final class DocumentScrollState {
         private int verticalOffset;
         private int maxHorizontalOffset;
         private int maxVerticalOffset;
+        private int contentWidth;
+        private int contentHeight;
         private long lastScrollNanos;
     }
 

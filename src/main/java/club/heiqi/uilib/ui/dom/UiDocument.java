@@ -1,5 +1,6 @@
 package club.heiqi.uilib.ui.dom;
 
+import java.lang.ref.WeakReference;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.LinkedHashMap;
@@ -27,6 +28,7 @@ public final class UiDocument {
     private final List<UiStyleSheet> styleSheets = new ArrayList<UiStyleSheet>();
     private UiStyleVariables styleVariables;
     private TextContentMode defaultTextContentMode = TextContentMode.UILIB_RAW;
+    private WeakReference<DocumentInteractionRuntime> interactionRuntimeReference;
     private int mutationVersion;
     private int layoutVersion;
     private int paintVersion;
@@ -236,6 +238,46 @@ public final class UiDocument {
     public UiDocument setDefaultTextContentMode(TextContentMode defaultTextContentMode) {
         this.defaultTextContentMode = defaultTextContentMode == null ? TextContentMode.UILIB_RAW : defaultTextContentMode;
         return this;
+    }
+
+    /**
+     * 设置当前文档挂载后的交互运行时。
+     *
+     * <p>该入口供 HTML-like 宿主组件绑定焦点与滚动运行态，不作为页面作者业务 API。</p>
+     *
+     * @param interactionRuntime 交互运行时；为 null 时清除绑定
+     */
+    public void __setInteractionRuntime(DocumentInteractionRuntime interactionRuntime) {
+        this.interactionRuntimeReference = interactionRuntime == null ? null
+                : new WeakReference<DocumentInteractionRuntime>(interactionRuntime);
+    }
+
+    boolean __focusElement(ElementNode element) {
+        DocumentInteractionRuntime runtime = getInteractionRuntime();
+        return runtime != null && ownsElement(element) && runtime.requestFocus(element);
+    }
+
+    boolean __blurElement(ElementNode element) {
+        DocumentInteractionRuntime runtime = getInteractionRuntime();
+        return runtime != null && ownsElement(element) && runtime.requestBlur(element);
+    }
+
+    boolean __scrollElementTo(ElementNode element, int scrollLeft, int scrollTop) {
+        DocumentInteractionRuntime runtime = getInteractionRuntime();
+        return runtime != null && ownsElement(element) && runtime.requestScrollTo(element, scrollLeft, scrollTop);
+    }
+
+    boolean __scrollElementIntoView(ElementNode element) {
+        DocumentInteractionRuntime runtime = getInteractionRuntime();
+        return runtime != null && ownsElement(element) && runtime.requestScrollIntoView(element);
+    }
+
+    private DocumentInteractionRuntime getInteractionRuntime() {
+        return interactionRuntimeReference == null ? null : interactionRuntimeReference.get();
+    }
+
+    private boolean ownsElement(ElementNode element) {
+        return element != null && element.getOwnerDocument() == this;
     }
 
     /**
@@ -624,5 +666,48 @@ public final class UiDocument {
      */
     long __allocateElementUid() {
         return NEXT_ELEMENT_UID.getAndIncrement();
+    }
+
+    /**
+     * 文档挂载后的交互运行时桥接。
+     *
+     * <p>由 `HtmlLikeDocumentWidget` 实现，用于让 `ElementNode` 的作者侧 DOM-like API
+     * 操作当前运行时焦点与滚动状态。</p>
+     */
+    public interface DocumentInteractionRuntime {
+
+        /**
+         * 请求聚焦指定元素。
+         *
+         * @param element 目标元素
+         * @return 是否成功聚焦
+         */
+        boolean requestFocus(ElementNode element);
+
+        /**
+         * 请求让指定元素失焦。
+         *
+         * @param element 目标元素
+         * @return 是否发生失焦
+         */
+        boolean requestBlur(ElementNode element);
+
+        /**
+         * 请求设置指定元素滚动偏移。
+         *
+         * @param element 目标滚动元素
+         * @param scrollLeft 横向滚动偏移
+         * @param scrollTop 纵向滚动偏移
+         * @return 是否存在可滚动运行态并完成调用
+         */
+        boolean requestScrollTo(ElementNode element, int scrollLeft, int scrollTop);
+
+        /**
+         * 请求把指定元素滚动到可见区域。
+         *
+         * @param element 目标元素
+         * @return 是否存在有效布局目标并完成调用
+         */
+        boolean requestScrollIntoView(ElementNode element);
     }
 }

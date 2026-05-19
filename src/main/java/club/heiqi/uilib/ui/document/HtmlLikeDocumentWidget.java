@@ -32,6 +32,8 @@ import club.heiqi.uilib.ui.dom.DocumentElementMouseDownEvent;
 import club.heiqi.uilib.ui.dom.DocumentElementMouseDownHandler;
 import club.heiqi.uilib.ui.dom.DocumentElementMouseUpEvent;
 import club.heiqi.uilib.ui.dom.DocumentElementMouseUpHandler;
+import club.heiqi.uilib.ui.dom.DocumentElementScrollEvent;
+import club.heiqi.uilib.ui.dom.DocumentElementScrollHandler;
 import club.heiqi.uilib.ui.dom.DocumentElementHoverEvent;
 import club.heiqi.uilib.ui.dom.DocumentElementHoverHandler;
 import club.heiqi.uilib.ui.dom.DocumentElementKeyEvent;
@@ -56,6 +58,7 @@ import club.heiqi.uilib.ui.style.UiCursor;
 import club.heiqi.uilib.ui.style.UiPseudoClass;
 import club.heiqi.uilib.ui.style.UiPointerEvents;
 import club.heiqi.uilib.ui.style.UiStyleResolver;
+import club.heiqi.uilib.ui.style.UiVisibility;
 import club.heiqi.uilib.ui.text.DefaultTextMeasureService;
 import club.heiqi.uilib.ui.text.TextMeasureService;
 import club.heiqi.uilib.ui.widget.Widget;
@@ -63,7 +66,7 @@ import club.heiqi.uilib.ui.widget.Widget;
 /**
  * 将 HTML-like 文档模型挂接到现有 retained widget 渲染后端的适配器。
  */
-public final class HtmlLikeDocumentWidget extends Widget {
+public final class HtmlLikeDocumentWidget extends Widget implements UiDocument.DocumentInteractionRuntime {
 
     private static final int DRAG_ACTIVATION_THRESHOLD_PX = 4;
     private static final int DRAG_ACTIVATION_THRESHOLD_SQUARED =
@@ -144,6 +147,7 @@ public final class HtmlLikeDocumentWidget extends Widget {
         this.textMeasureService = Objects.requireNonNull(textMeasureService, "textMeasureService");
         this.preferredWidth = Math.max(0, preferredWidth);
         this.preferredHeight = Math.max(0, preferredHeight);
+        this.document.__setInteractionRuntime(this);
     }
 
     /**
@@ -337,6 +341,44 @@ public final class HtmlLikeDocumentWidget extends Widget {
      */
     public ElementNode getFocusedElement() {
         return getActiveFocusedElement();
+    }
+
+    @Override
+    public boolean requestFocus(ElementNode element) {
+        if (!isProgrammaticFocusTarget(element)) {
+            return false;
+        }
+        focusElement(element, false);
+        scrollElementIntoView(element);
+        return getActiveFocusedElement() == element;
+    }
+
+    @Override
+    public boolean requestBlur(ElementNode element) {
+        if (element == null || element.getOwnerDocument() != document || getActiveFocusedElement() != element) {
+            return false;
+        }
+        focusElement(null, false);
+        return true;
+    }
+
+    @Override
+    public boolean requestScrollTo(ElementNode element, int scrollLeft, int scrollTop) {
+        if (!isVisibleLayoutTarget(element)) {
+            return false;
+        }
+        if (scrollState.getMaxScrollLeft(element) <= 0 && scrollState.getMaxScrollTop(element) <= 0) {
+            return false;
+        }
+        if (scrollState.setScrollOffset(element, scrollLeft, scrollTop)) {
+            dispatchScroll(element, System.nanoTime());
+        }
+        return true;
+    }
+
+    @Override
+    public boolean requestScrollIntoView(ElementNode element) {
+        return scrollElementIntoView(element);
     }
 
     /**
@@ -1201,10 +1243,17 @@ public final class HtmlLikeDocumentWidget extends Widget {
         if (focusedElement == null || !focusedElementFocusVisible || getWidth() <= 0 || getHeight() <= 0) {
             return;
         }
+        scrollElementIntoView(focusedElement);
+    }
+
+    private boolean scrollElementIntoView(ElementNode target) {
+        if (target == null || getWidth() <= 0 || getHeight() <= 0) {
+            return false;
+        }
         for (int remainingPasses = 16; remainingPasses > 0; remainingPasses--) {
-            List<LayoutPathEntry> path = resolveFocusedElementLayoutPath();
-            if (path.isEmpty()) {
-                return;
+            List<LayoutPathEntry> path = resolveElementLayoutPath(target);
+            if (!isVisibleLayoutPath(path)) {
+                return false;
             }
             int firstFixedIndex = findFirstFixedIndex(path);
             boolean changed = false;
@@ -1218,20 +1267,38 @@ public final class HtmlLikeDocumentWidget extends Widget {
                 }
             }
             if (!changed) {
-                return;
+                return true;
             }
         }
+        return true;
     }
 
-    private List<LayoutPathEntry> resolveFocusedElementLayoutPath() {
-        if (focusedElement == null) {
+    private List<LayoutPathEntry> resolveElementLayoutPath(ElementNode target) {
+        if (target == null || !isElementAttachedToDocument(target)) {
             return Collections.emptyList();
         }
         List<LayoutPathEntry> path = new ArrayList<LayoutPathEntry>();
-        if (!collectLayoutPath(resolveInteractiveLayoutBox(), focusedElement, 0, 0, path)) {
+        if (!collectLayoutPath(resolveInteractiveLayoutBox(), target, 0, 0, path)) {
             return Collections.emptyList();
         }
         return path;
+    }
+
+    private boolean isVisibleLayoutTarget(ElementNode target) {
+        return isVisibleLayoutPath(resolveElementLayoutPath(target));
+    }
+
+    private boolean isVisibleLayoutPath(List<LayoutPathEntry> path) {
+        if (path.isEmpty()) {
+            return false;
+        }
+        for (LayoutPathEntry entry : path) {
+            if (entry.box.getComputedStyle().getVisibility() == UiVisibility.HIDDEN) {
+                return false;
+            }
+        }
+        DocumentLayoutBox targetBox = path.get(path.size() - 1).box;
+        return targetBox.getWidth() > 0 && targetBox.getHeight() > 0;
     }
 
     private boolean collectLayoutPath(DocumentLayoutBox box, ElementNode target, int offsetX, int offsetY,
@@ -1283,7 +1350,11 @@ public final class HtmlLikeDocumentWidget extends Widget {
         if (currentScrollLeft == nextScrollLeft && currentScrollTop == nextScrollTop) {
             return false;
         }
-        return scrollState.setScrollOffset(ancestorElement, nextScrollLeft, nextScrollTop);
+        if (!scrollState.setScrollOffset(ancestorElement, nextScrollLeft, nextScrollTop)) {
+            return false;
+        }
+        dispatchScroll(ancestorElement, System.nanoTime());
+        return true;
     }
 
     private int resolveScrollOffsetForTarget(int currentOffset, int viewportStart, int viewportEnd, int targetStart,
@@ -1340,6 +1411,19 @@ public final class HtmlLikeDocumentWidget extends Widget {
             }
         }
         return false;
+    }
+
+    private void dispatchScroll(ElementNode target, long timeNanos) {
+        if (target == null) {
+            return;
+        }
+        DocumentElementScrollHandler scrollHandler = target.getScrollHandler();
+        if (scrollHandler == null) {
+            return;
+        }
+        scrollHandler.onScroll(new DocumentElementScrollEvent(target, scrollState.getScrollTop(target),
+                scrollState.getScrollLeft(target), scrollState.getScrollHeight(target),
+                scrollState.getScrollWidth(target), timeNanos));
     }
 
     private boolean dispatchMouseDown(ElementNode target, UiMouseEvent event) {
@@ -1624,6 +1708,10 @@ public final class HtmlLikeDocumentWidget extends Widget {
             }
         }
         return null;
+    }
+
+    private boolean isProgrammaticFocusTarget(ElementNode element) {
+        return element != null && element.isFocusable() && !element.isDisabled() && isVisibleLayoutTarget(element);
     }
 
     private boolean hasFocusableElement(DocumentNode node) {

@@ -82,6 +82,32 @@ public abstract class DocumentNode {
     }
 
     /**
+     * 返回当前节点的前一个兄弟节点。
+     *
+     * @return 前一个兄弟节点；没有父节点或已是第一个子节点时返回 null
+     */
+    public final DocumentNode getPreviousSibling() {
+        if (parent == null) {
+            return null;
+        }
+        int index = parent.children.indexOf(this);
+        return index <= 0 ? null : parent.children.get(index - 1);
+    }
+
+    /**
+     * 返回当前节点的后一个兄弟节点。
+     *
+     * @return 后一个兄弟节点；没有父节点或已是最后一个子节点时返回 null
+     */
+    public final DocumentNode getNextSibling() {
+        if (parent == null) {
+            return null;
+        }
+        int index = parent.children.indexOf(this);
+        return index < 0 || index >= parent.children.size() - 1 ? null : parent.children.get(index + 1);
+    }
+
+    /**
      * 追加子节点。
      *
      * <p>同一文档内已有父节点的子节点会按 DOM appendChild 语义移动到新父节点末尾。</p>

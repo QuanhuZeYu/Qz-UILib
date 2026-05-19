@@ -112,11 +112,13 @@
 
 - **源码事实**：`DocumentScrollState.scrollTo()` 和 `scrollToReveal()` 方法存在且可用，但**未在 `ElementNode` 或 `UiDocument` 上暴露为公开 API**
 - **关键文件**：`ui/layout/DocumentScrollState.java`
+- **后续状态（2026-05-19）**：当前源码已在 `ElementNode` 公开 `scrollTo(scrollLeft, scrollTop)` 与 `scrollIntoView()`，并通过已挂载的 `HtmlLikeDocumentWidget` 运行态执行；未挂载、隐藏或无可滚范围时无副作用并返回 `false`。
 
 ### 5. `focus()` / `blur()` 程序化聚焦 — 内部 private，无公开 API
 
 - **源码事实**：焦点管理内部实现完整，但相关方法为 private，**页面作者无法程序化控制焦点**
 - **关键文件**：`ui/document/HtmlLikeDocumentWidget.java` 焦点相关方法
+- **后续状态（2026-05-19）**：当前源码已在 `ElementNode` 公开 `focus()` 与 `blur()`，并复用 `HtmlLikeDocumentWidget` 现有焦点链路；未挂载、不可聚焦、disabled、隐藏或无布局盒时不会改变当前焦点。
 
 ### 6. 滚动条样式自定义 — 颜色硬编码，不可自定义
 
@@ -132,6 +134,7 @@
 
 - **源码事实**：`ElementNode` 已实现 `parentNode`/`children`/`childNodes`/`firstChild`/`lastChild`，但**缺少 `nextSibling` 和 `previousSibling`**，兄弟节点遍历需通过父节点 children 列表手动计算
 - **关键文件**：`ui/dom/DocumentNode.java`、`ui/dom/ElementNode.java`
+- **后续状态（2026-05-19）**：当前源码已在 `DocumentNode` 提供 `getNextSibling()` 与 `getPreviousSibling()`，语义按当前父节点子列表顺序实时计算。
 
 ---
 

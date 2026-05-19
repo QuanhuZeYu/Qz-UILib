@@ -275,6 +275,51 @@ public final class ElementNode extends DocumentNode {
     }
 
     /**
+     * 程序化聚焦当前元素。
+     *
+     * <p>只有已挂载到当前 HTML-like 运行时、允许聚焦、未 disabled 且存在可见布局盒的元素会成功；
+     * 其他情况保持无副作用并返回 false。</p>
+     *
+     * @return 是否成功聚焦当前元素
+     */
+    public boolean focus() {
+        return getOwnerDocument().__focusElement(this);
+    }
+
+    /**
+     * 程序化清除当前元素的焦点。
+     *
+     * @return 当前元素原本持有焦点并已失焦时返回 true，否则返回 false
+     */
+    public boolean blur() {
+        return getOwnerDocument().__blurElement(this);
+    }
+
+    /**
+     * 程序化设置当前元素的滚动偏移。
+     *
+     * <p>偏移会被限制在当前可滚范围内；节点未挂载、不可见或没有可滚范围时返回 false。</p>
+     *
+     * @param scrollLeft 横向滚动偏移
+     * @param scrollTop 纵向滚动偏移
+     * @return 是否存在可滚动运行态并完成调用
+     */
+    public boolean scrollTo(int scrollLeft, int scrollTop) {
+        return getOwnerDocument().__scrollElementTo(this, scrollLeft, scrollTop);
+    }
+
+    /**
+     * 程序化滚动最近可滚祖先，使当前元素尽量进入可见区域。
+     *
+     * <p>节点未挂载、不可见或没有布局盒时返回 false；目标已在可见区域内时返回 true 但不改变滚动偏移。</p>
+     *
+     * @return 是否找到有效布局目标并完成调用
+     */
+    public boolean scrollIntoView() {
+        return getOwnerDocument().__scrollElementIntoView(this);
+    }
+
+    /**
      * 返回 tabindex 属性解析值。
      *
      * @return tabindex；未声明或无法解析时返回 null
