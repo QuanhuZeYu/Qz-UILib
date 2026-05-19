@@ -79,6 +79,8 @@ public final class UiStyleDeclaration {
     private UiCursor cursor;
     private UiBorderRadius borderRadiusCorners;
     private UiTextDecoration textDecoration;
+    private UiFontWeight fontWeight;
+    private UiFontStyle fontStyle;
     private UiPointerEvents pointerEvents;
     private UiOutline outline;
     private UiStyleInsets borderWidthSides;
@@ -973,6 +975,42 @@ public final class UiStyleDeclaration {
         return updateTextDecoration(null);
     }
 
+    public UiFontWeight getFontWeight() {
+        return fontWeight;
+    }
+
+    /**
+     * 设置字体粗细。
+     *
+     * @param fontWeight 字体粗细
+     * @return 当前声明
+     */
+    public UiStyleDeclaration setFontWeight(UiFontWeight fontWeight) {
+        return updateFontWeight(Objects.requireNonNull(fontWeight, "fontWeight"));
+    }
+
+    public UiStyleDeclaration clearFontWeight() {
+        return updateFontWeight(null);
+    }
+
+    public UiFontStyle getFontStyle() {
+        return fontStyle;
+    }
+
+    /**
+     * 设置字体样式。
+     *
+     * @param fontStyle 字体样式
+     * @return 当前声明
+     */
+    public UiStyleDeclaration setFontStyle(UiFontStyle fontStyle) {
+        return updateFontStyle(Objects.requireNonNull(fontStyle, "fontStyle"));
+    }
+
+    public UiStyleDeclaration clearFontStyle() {
+        return updateFontStyle(null);
+    }
+
     public UiPointerEvents getPointerEvents() {
         return pointerEvents;
     }
@@ -1614,6 +1652,22 @@ public final class UiStyleDeclaration {
     private UiStyleDeclaration updateTextDecoration(UiTextDecoration value) {
         if (textDecoration != value) {
             textDecoration = value;
+            recordPaintChange();
+        }
+        return this;
+    }
+
+    private UiStyleDeclaration updateFontWeight(UiFontWeight value) {
+        if (fontWeight != value) {
+            fontWeight = value;
+            recordLayoutChange();
+        }
+        return this;
+    }
+
+    private UiStyleDeclaration updateFontStyle(UiFontStyle value) {
+        if (fontStyle != value) {
+            fontStyle = value;
             recordPaintChange();
         }
         return this;

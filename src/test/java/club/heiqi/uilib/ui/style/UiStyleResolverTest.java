@@ -122,6 +122,36 @@ public class UiStyleResolverTest {
         Assert.assertEquals(1.0F, spanStyle.getOpacity(), 0.0F);
         Assert.assertEquals(UiStyleLength.px(0), spanStyle.getBackdropBlurRadius());
         Assert.assertEquals(1.0F, spanStyle.getBackdropSaturation(), 0.0F);
+        Assert.assertEquals(UiFontWeight.NORMAL, spanStyle.getFontWeight());
+        Assert.assertEquals(UiFontStyle.NORMAL, spanStyle.getFontStyle());
+    }
+
+    /**
+     * 验证字体粗细和斜体可按样式声明设置，并向子元素继承。
+     */
+    @Test
+    public void shouldResolveFontWeightAndFontStyleAsInheritedStyles() {
+        UiDocument document = UiDocument.create();
+        ElementNode root = document.getRootElement();
+        ElementNode child = document.span();
+        root.append(child);
+
+        root.style()
+                .setFontWeight(UiFontWeight.BOLD)
+                .setFontStyle(UiFontStyle.ITALIC);
+
+        ComputedStyle rootStyle = UiStyleResolver.compute(root);
+        ComputedStyle childStyle = UiStyleResolver.compute(child);
+
+        Assert.assertEquals(UiFontWeight.BOLD, rootStyle.getFontWeight());
+        Assert.assertEquals(UiFontStyle.ITALIC, rootStyle.getFontStyle());
+        Assert.assertEquals(UiFontWeight.BOLD, childStyle.getFontWeight());
+        Assert.assertEquals(UiFontStyle.ITALIC, childStyle.getFontStyle());
+
+        child.style().setFontWeight(UiFontWeight.NORMAL).setFontStyle(UiFontStyle.NORMAL);
+        childStyle = UiStyleResolver.compute(child);
+        Assert.assertEquals(UiFontWeight.NORMAL, childStyle.getFontWeight());
+        Assert.assertEquals(UiFontStyle.NORMAL, childStyle.getFontStyle());
     }
 
     /**

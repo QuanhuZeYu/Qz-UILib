@@ -31,6 +31,88 @@ public final class DocumentAnimationTimeline {
     private final Map<ElementNode, ElementAnimationState> states = new HashMap<ElementNode, ElementAnimationState>();
 
     /**
+     * 单次清理过程中收集到的动画完成结果。
+     */
+    public static final class PruneResult {
+
+        private final List<TransitionEndRecord> transitionEndRecords = new ArrayList<TransitionEndRecord>();
+        private final List<AnimationEndRecord> animationEndRecords = new ArrayList<AnimationEndRecord>();
+        private boolean changed;
+
+        public boolean isChanged() {
+            return changed;
+        }
+
+        public List<TransitionEndRecord> getTransitionEndRecords() {
+            return transitionEndRecords;
+        }
+
+        public List<AnimationEndRecord> getAnimationEndRecords() {
+            return animationEndRecords;
+        }
+
+        private void markChanged() {
+            changed = true;
+        }
+    }
+
+    /**
+     * 单个 transition 结束记录。
+     */
+    public static final class TransitionEndRecord {
+
+        private final ElementNode element;
+        private final DocumentAnimationProperty property;
+        private final long elapsedTimeNanos;
+
+        private TransitionEndRecord(ElementNode element, DocumentAnimationProperty property, long elapsedTimeNanos) {
+            this.element = Objects.requireNonNull(element, "element");
+            this.property = Objects.requireNonNull(property, "property");
+            this.elapsedTimeNanos = Math.max(0L, elapsedTimeNanos);
+        }
+
+        public ElementNode getElement() {
+            return element;
+        }
+
+        public DocumentAnimationProperty getProperty() {
+            return property;
+        }
+
+        public long getElapsedTimeNanos() {
+            return elapsedTimeNanos;
+        }
+    }
+
+    /**
+     * 单个 animation 结束记录。
+     */
+    public static final class AnimationEndRecord {
+
+        private final ElementNode element;
+        private final String animationName;
+        private final long elapsedTimeNanos;
+
+        private AnimationEndRecord(ElementNode element, String animationName, long elapsedTimeNanos) {
+            this.element = Objects.requireNonNull(element, "element");
+            this.animationName = Objects.requireNonNull(animationName, "animationName");
+            this.elapsedTimeNanos = Math.max(0L, elapsedTimeNanos);
+        }
+
+        public ElementNode getElement() {
+            return element;
+        }
+
+        public String getAnimationName() {
+            return animationName;
+        }
+
+        public long getElapsedTimeNanos() {
+            return elapsedTimeNanos;
+        }
+    }
+
+    /**
      * 根据最新布局盒树刷新 transition 状态。
      *
      * @param rootBox 根布局盒
@@ -242,11 +324,21 @@ public final class DocumentAnimationTimeline {
      * @return 是否发生清理
      */
     public boolean pruneFinishedAnimations(long currentTimeNanos) {
-        boolean changed = false;
-        for (ElementAnimationState state : states.values()) {
-            changed |= state.pruneFinishedAnimations(currentTimeNanos);
+        return pruneFinishedAnimationsWithResult(currentTimeNanos).isChanged();
+    }
+
+    /**
+     * 清理已完成动画，并返回完成事件记录。
+     *
+     * @param currentTimeNanos 当前动画时间
+     * @return 清理结果与完成记录
+     */
+    public PruneResult pruneFinishedAnimationsWithResult(long currentTimeNanos) {
+        PruneResult result = new PruneResult();
+        for (Map.Entry<ElementNode, ElementAnimationState> entry : states.entrySet()) {
+            entry.getValue().pruneFinishedAnimations(entry.getKey(), currentTimeNanos, result);
         }
-        return changed;
+        return result;
     }
 
     /**
@@ -853,13 +945,18 @@ public final class DocumentAnimationTimeline {
             collectFillDiagnostics(snapshot, filledFloats);
         }
 
-        private boolean pruneFinishedAnimations(long currentTimeNanos) {
-            boolean changed = false;
-            changed |= pruneFinishedTransitions(colorTransitions, currentTimeNanos);
-            changed |= pruneFinishedTransitions(floatTransitions, currentTimeNanos);
-            changed |= pruneFinishedKeyframeAnimations(colorKeyframeAnimations, filledColors, currentTimeNanos);
-            changed |= pruneFinishedKeyframeAnimations(floatKeyframeAnimations, filledFloats, currentTimeNanos);
-            return changed;
+        private void pruneFinishedAnimations(ElementNode element, long currentTimeNanos, PruneResult result) {
+            pruneFinishedTransitions(element, colorTransitions, currentTimeNanos, result);
+            pruneFinishedTransitions(element, floatTransitions, currentTimeNanos, result);
+            boolean colorKeyframeFinished = pruneFinishedKeyframeAnimations(colorKeyframeAnimations, filledColors,
+                    currentTimeNanos, result);
+            boolean floatKeyframeFinished = pruneFinishedKeyframeAnimations(floatKeyframeAnimations, filledFloats,
+                    currentTimeNanos, result);
+            if ((colorKeyframeFinished || floatKeyframeFinished) && declaredAnimationName != null) {
+                result.getAnimationEndRecords().add(new AnimationEndRecord(element, declaredAnimationName,
+                        declaredDurationNanos * Math.max(1, declaredIterationCount)));
+                result.markChanged();
+            }
         }
 
         private boolean matchesDeclaredKeyframeSignature(String animationName, DocumentKeyframes keyframes,
@@ -944,25 +1041,25 @@ public final class DocumentAnimationTimeline {
             }
         }
 
-        private static <T extends TransitionState> boolean pruneFinishedTransitions(
-                Map<DocumentAnimationProperty, T> values, long currentTimeNanos) {
-            boolean changed = false;
+        private static <T extends TransitionState> void pruneFinishedTransitions(ElementNode element,
+                Map<DocumentAnimationProperty, T> values, long currentTimeNanos, PruneResult result) {
             Iterator<Map.Entry<DocumentAnimationProperty, T>> iterator = values.entrySet().iterator();
             while (iterator.hasNext()) {
                 Map.Entry<DocumentAnimationProperty, T> entry = iterator.next();
                 if (entry.getValue().isFinished(currentTimeNanos)) {
+                    result.getTransitionEndRecords().add(new TransitionEndRecord(element, entry.getKey(),
+                            entry.getValue().getDurationNanos()));
                     iterator.remove();
-                    changed = true;
+                    result.markChanged();
                 }
             }
-            return changed;
         }
 
         private static <T, A extends FillingKeyframeAnimationState<T>> boolean pruneFinishedKeyframeAnimations(
                 Map<DocumentAnimationProperty, A> animations,
                 Map<DocumentAnimationProperty, T> filledValues,
-                long currentTimeNanos) {
-            boolean changed = false;
+                long currentTimeNanos, PruneResult result) {
+            boolean finished = false;
             Iterator<Map.Entry<DocumentAnimationProperty, A>> iterator = animations.entrySet().iterator();
             while (iterator.hasNext()) {
                 Map.Entry<DocumentAnimationProperty, A> entry = iterator.next();
@@ -972,10 +1069,11 @@ public final class DocumentAnimationTimeline {
                         filledValues.put(entry.getKey(), animation.getFilledRuntimeValue());
                     }
                     iterator.remove();
-                    changed = true;
+                    finished = true;
+                    result.markChanged();
                 }
             }
-            return changed;
+            return finished;
         }
 
         private static <T, U> void suppressDeclaredKeyframeProperty(
@@ -1015,6 +1113,13 @@ public final class DocumentAnimationTimeline {
          * @return 是否已完成
          */
         boolean isFinished(long currentTimeNanos);
+
+        /**
+         * 返回该 transition 的有效持续时长（不含 delay）。
+         *
+         * @return 持续时长
+         */
+        long getDurationNanos();
     }
 
     /**
@@ -1269,6 +1374,11 @@ public final class DocumentAnimationTimeline {
         public boolean isFinished(long currentTimeNanos) {
             return currentTimeNanos >= startNanos + durationNanos;
         }
+
+        @Override
+        public long getDurationNanos() {
+            return durationNanos;
+        }
     }
 
     /**
@@ -1306,6 +1416,11 @@ public final class DocumentAnimationTimeline {
         @Override
         public boolean isFinished(long currentTimeNanos) {
             return currentTimeNanos >= startNanos + durationNanos;
+        }
+
+        @Override
+        public long getDurationNanos() {
+            return durationNanos;
         }
     }
 

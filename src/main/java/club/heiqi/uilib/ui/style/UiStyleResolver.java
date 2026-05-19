@@ -157,6 +157,10 @@ public final class UiStyleResolver {
         // text-decoration：不可继承
         UiTextDecoration textDecoration = cascadeTextDecoration(inlineStyle, matchingRules);
 
+        // 字体粗细/样式：可继承
+        UiFontWeight fontWeight = cascadeFontWeight(inlineStyle, matchingRules, parentStyle);
+        UiFontStyle fontStyle = cascadeFontStyle(inlineStyle, matchingRules, parentStyle);
+
         // pointer-events：不可继承
         UiPointerEvents pointerEvents = cascadePointerEvents(inlineStyle, matchingRules);
 
@@ -189,7 +193,7 @@ public final class UiStyleResolver {
                 minWidth, maxWidth, minHeight, maxHeight,
                 flexBasis, alignSelf, flexWrap,
                 boxShadow, borderStyle, cursor,
-                borderRadiusCorners, textDecoration, pointerEvents,
+                borderRadiusCorners, textDecoration, fontWeight, fontStyle, pointerEvents,
                 outline, borderWidthSides, borderColors,
                 letterSpacing, wordBreak, overflowWrap,
                 aspectRatio, objectFit);
@@ -422,6 +426,26 @@ public final class UiStyleResolver {
         return UiTextDecoration.NONE;
     }
 
+    private static UiFontWeight cascadeFontWeight(UiStyleDeclaration inlineStyle, List<UiStyleRule> rules,
+            ComputedStyle parentStyle) {
+        if (inlineStyle.getFontWeight() != null) return inlineStyle.getFontWeight();
+        for (int i = rules.size() - 1; i >= 0; i--) {
+            UiFontWeight value = rules.get(i).getDeclaration().getFontWeight();
+            if (value != null) return value;
+        }
+        return inheritedFontWeight(parentStyle);
+    }
+
+    private static UiFontStyle cascadeFontStyle(UiStyleDeclaration inlineStyle, List<UiStyleRule> rules,
+            ComputedStyle parentStyle) {
+        if (inlineStyle.getFontStyle() != null) return inlineStyle.getFontStyle();
+        for (int i = rules.size() - 1; i >= 0; i--) {
+            UiFontStyle value = rules.get(i).getDeclaration().getFontStyle();
+            if (value != null) return value;
+        }
+        return inheritedFontStyle(parentStyle);
+    }
+
     private static UiPointerEvents cascadePointerEvents(UiStyleDeclaration inlineStyle, List<UiStyleRule> rules) {
         if (inlineStyle.getPointerEvents() != null) return inlineStyle.getPointerEvents();
         for (int i = rules.size() - 1; i >= 0; i--) {
@@ -637,6 +661,14 @@ public final class UiStyleResolver {
 
     private static UiVisibility inheritedVisibility(ComputedStyle parentStyle) {
         return parentStyle == null ? UiVisibility.VISIBLE : parentStyle.getVisibility();
+    }
+
+    private static UiFontWeight inheritedFontWeight(ComputedStyle parentStyle) {
+        return parentStyle == null ? UiFontWeight.NORMAL : parentStyle.getFontWeight();
+    }
+
+    private static UiFontStyle inheritedFontStyle(ComputedStyle parentStyle) {
+        return parentStyle == null ? UiFontStyle.NORMAL : parentStyle.getFontStyle();
     }
 
     private static UiCursor inheritedCursor(ComputedStyle parentStyle) {

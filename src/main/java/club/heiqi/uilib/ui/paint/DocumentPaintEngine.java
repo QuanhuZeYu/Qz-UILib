@@ -20,6 +20,8 @@ import club.heiqi.uilib.ui.style.ComputedStyle;
 import club.heiqi.uilib.ui.style.UiBorderRadiusResolver;
 import club.heiqi.uilib.ui.style.UiBoxShadow;
 import club.heiqi.uilib.ui.style.UiBorderStyle;
+import club.heiqi.uilib.ui.style.UiFontStyle;
+import club.heiqi.uilib.ui.style.UiFontWeight;
 import club.heiqi.uilib.ui.style.UiOutline;
 import club.heiqi.uilib.ui.style.UiOverflow;
 import club.heiqi.uilib.ui.style.UiStyleInsets;
@@ -363,11 +365,13 @@ public final class DocumentPaintEngine {
             if (isTransparent(color)) {
                 continue;
             }
+            ComputedStyle ownerStyle = UiStyleResolver.compute(textRun.getOwnerElement());
             appendTextDecorationCommand(textRun, commands, color, offsetX, offsetY);
             commands.add(new DocumentPaintCommand(DocumentPaintCommandType.TEXT, textRun.getOwnerElement(),
                     textRun.getLeft() + offsetX, textRun.getTop() + offsetY, textRun.getRight() + offsetX,
                     textRun.getBottom() + offsetY, color, 0, 0, textRun.getText(), textRun.getTextContentMode(),
-                    null, 0, 1.0F, 1.0F));
+                    ownerStyle == null ? UiFontWeight.NORMAL : ownerStyle.getFontWeight(),
+                    ownerStyle == null ? UiFontStyle.NORMAL : ownerStyle.getFontStyle(), null, 0, 1.0F, 1.0F));
         }
     }
 

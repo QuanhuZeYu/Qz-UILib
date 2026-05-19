@@ -15,6 +15,8 @@ import club.heiqi.uilib.font.page.GlyphPage;
 import club.heiqi.uilib.font.page.GlyphPageManager;
 import club.heiqi.uilib.font.page.GlyphRuntimeTables;
 import club.heiqi.uilib.font.render.FontRenderStateGuard;
+import club.heiqi.uilib.ui.style.UiFontStyle;
+import club.heiqi.uilib.ui.style.UiFontWeight;
 import club.heiqi.uilib.ui.text.TextContentMode;
 
 /**
@@ -187,6 +189,24 @@ public class DefaultFontRendererAdapter implements FontRendererAdapter {
      * @return 绘制结束后的光标位置
      */
     public int drawString(String text, int x, int y, int color, boolean dropShadow, TextContentMode textContentMode) {
+        return drawString(text, x, y, color, dropShadow, textContentMode, UiFontWeight.NORMAL, UiFontStyle.NORMAL);
+    }
+
+    /**
+     * 使用指定文本模式和基础字体样式绘制字符串。
+     *
+     * @param text 文本
+     * @param x 横坐标
+     * @param y 纵坐标
+     * @param color 颜色
+     * @param dropShadow 是否启用阴影
+     * @param textContentMode 文本内容解析模式
+     * @param fontWeight 字体粗细
+     * @param fontStyle 字体样式
+     * @return 绘制结束后的光标位置
+     */
+    public int drawString(String text, int x, int y, int color, boolean dropShadow, TextContentMode textContentMode,
+            UiFontWeight fontWeight, UiFontStyle fontStyle) {
         if (text == null || text.isEmpty()) {
             return x;
         }
@@ -199,7 +219,7 @@ public class DefaultFontRendererAdapter implements FontRendererAdapter {
                     fontService.initialize();
                     fontService.tickDrawStage(FontConfig.drawStageUploadBatchSize);
                     return drawInternal(fontService, text, x, y, normalizeColor(color), dropShadow, textContentMode,
-                            1.0F);
+                            fontWeight, fontStyle, 1.0F);
                 }
             });
         }
@@ -222,6 +242,26 @@ public class DefaultFontRendererAdapter implements FontRendererAdapter {
      */
     public int drawStringScaled(String text, float x, float y, int color, boolean dropShadow,
             TextContentMode textContentMode, float renderScale) {
+        return drawStringScaled(text, x, y, color, dropShadow, textContentMode, UiFontWeight.NORMAL,
+                UiFontStyle.NORMAL, renderScale);
+    }
+
+    /**
+     * 以指定 UI 缩放和基础字体样式收集字符串绘制数据。
+     *
+     * @param text 文本
+     * @param x 屏幕坐标 X
+     * @param y 屏幕坐标 Y
+     * @param color 颜色
+     * @param dropShadow 是否启用阴影
+     * @param textContentMode 文本内容解析模式
+     * @param fontWeight 字体粗细
+     * @param fontStyle 字体样式
+     * @param renderScale UI 渲染缩放
+     * @return 绘制结束后的光标位置
+     */
+    public int drawStringScaled(String text, float x, float y, int color, boolean dropShadow,
+            TextContentMode textContentMode, UiFontWeight fontWeight, UiFontStyle fontStyle, float renderScale) {
         if (text == null || text.isEmpty()) {
             return (int) Math.ceil(x);
         }
@@ -234,7 +274,7 @@ public class DefaultFontRendererAdapter implements FontRendererAdapter {
                     fontService.initialize();
                     fontService.tickDrawStage(FontConfig.drawStageUploadBatchSize);
                     return drawInternal(fontService, text, x, y, normalizeColor(color), dropShadow, textContentMode,
-                            Math.max(0.01F, renderScale));
+                            fontWeight, fontStyle, Math.max(0.01F, renderScale));
                 }
             });
         }
@@ -408,10 +448,11 @@ public class DefaultFontRendererAdapter implements FontRendererAdapter {
     }
 
     private int drawInternal(FontService fontService, String text, float x, float y, int color, boolean dropShadow,
-            TextContentMode textContentMode, float renderScale) {
+            TextContentMode textContentMode, UiFontWeight fontWeight, UiFontStyle fontStyle, float renderScale) {
         TextLayoutService textLayoutService = fontService.getTextLayoutService();
         GlyphPageManager glyphPageManager = fontService.getGlyphPageManager();
-        List<TextSegment> segments = textLayoutService.layoutSegments(text, color, textContentMode);
+        List<TextSegment> segments = textLayoutService.layoutSegments(text, color, textContentMode, fontWeight,
+                fontStyle);
         if (segments.isEmpty()) {
             return (int) Math.ceil(x);
         }

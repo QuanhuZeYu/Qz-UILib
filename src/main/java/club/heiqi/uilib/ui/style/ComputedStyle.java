@@ -72,6 +72,8 @@ public final class ComputedStyle {
     private final UiCursor cursor;
     private final UiBorderRadius borderRadiusCorners;
     private final UiTextDecoration textDecoration;
+    private final UiFontWeight fontWeight;
+    private final UiFontStyle fontStyle;
     private final UiPointerEvents pointerEvents;
     private final UiOutline outline;
     private final UiStyleInsets borderWidthSides;
@@ -100,7 +102,8 @@ public final class ComputedStyle {
             UiStyleLength minWidth, UiStyleLength maxWidth, UiStyleLength minHeight, UiStyleLength maxHeight,
             UiStyleLength flexBasis, UiAlignSelf alignSelf, UiFlexWrap flexWrap,
             UiBoxShadow boxShadow, UiBorderStyle borderStyle, UiCursor cursor,
-            UiBorderRadius borderRadiusCorners, UiTextDecoration textDecoration, UiPointerEvents pointerEvents,
+            UiBorderRadius borderRadiusCorners, UiTextDecoration textDecoration, UiFontWeight fontWeight,
+            UiFontStyle fontStyle, UiPointerEvents pointerEvents,
             UiOutline outline, UiStyleInsets borderWidthSides, UiBorderColors borderColors,
             UiStyleLength letterSpacing, UiWordBreak wordBreak, UiOverflowWrap overflowWrap,
             Float aspectRatio, UiObjectFit objectFit) {
@@ -162,6 +165,8 @@ public final class ComputedStyle {
         this.cursor = cursor == null ? UiCursor.DEFAULT : cursor;
         this.borderRadiusCorners = borderRadiusCorners; // 可为 null（使用统一 borderRadius）
         this.textDecoration = textDecoration == null ? UiTextDecoration.NONE : textDecoration;
+        this.fontWeight = fontWeight == null ? UiFontWeight.NORMAL : fontWeight;
+        this.fontStyle = fontStyle == null ? UiFontStyle.NORMAL : fontStyle;
         this.pointerEvents = pointerEvents == null ? UiPointerEvents.AUTO : pointerEvents;
         this.outline = outline; // 可为 null（无轮廓线）
         this.borderWidthSides = borderWidthSides; // 可为 null（使用统一 borderWidth）
@@ -486,6 +491,24 @@ public final class ComputedStyle {
      */
     public UiTextDecoration getTextDecoration() {
         return textDecoration;
+    }
+
+    /**
+     * 返回字体粗细。
+     *
+     * @return 字体粗细
+     */
+    public UiFontWeight getFontWeight() {
+        return fontWeight;
+    }
+
+    /**
+     * 返回字体样式。
+     *
+     * @return 字体样式
+     */
+    public UiFontStyle getFontStyle() {
+        return fontStyle;
     }
 
     /**

@@ -18,7 +18,13 @@ import club.heiqi.uilib.ui.dom.DocumentElementActiveEvent;
 import club.heiqi.uilib.ui.dom.DocumentElementActiveHandler;
 import club.heiqi.uilib.ui.dom.DocumentElementClickEvent;
 import club.heiqi.uilib.ui.dom.DocumentElementClickHandler;
+import club.heiqi.uilib.ui.dom.DocumentElementContextMenuEvent;
+import club.heiqi.uilib.ui.dom.DocumentElementContextMenuHandler;
+import club.heiqi.uilib.ui.dom.DocumentElementDoubleClickEvent;
+import club.heiqi.uilib.ui.dom.DocumentElementDoubleClickHandler;
 import club.heiqi.uilib.ui.dom.DocumentElementDragEvent;
+import club.heiqi.uilib.ui.dom.DocumentElementAnimationEndEvent;
+import club.heiqi.uilib.ui.dom.DocumentElementAnimationEndHandler;
 import club.heiqi.uilib.ui.dom.DocumentElementFocusEvent;
 import club.heiqi.uilib.ui.dom.DocumentElementFocusHandler;
 import club.heiqi.uilib.ui.dom.DocumentElementHoverEvent;
@@ -27,6 +33,8 @@ import club.heiqi.uilib.ui.dom.DocumentElementKeyEvent;
 import club.heiqi.uilib.ui.dom.DocumentElementKeyHandler;
 import club.heiqi.uilib.ui.dom.DocumentElementTextInputEvent;
 import club.heiqi.uilib.ui.dom.DocumentElementTextInputHandler;
+import club.heiqi.uilib.ui.dom.DocumentElementTransitionEndEvent;
+import club.heiqi.uilib.ui.dom.DocumentElementTransitionEndHandler;
 import club.heiqi.uilib.ui.dom.ElementNode;
 import club.heiqi.uilib.ui.dom.TextNode;
 import club.heiqi.uilib.ui.dom.UiDocument;
@@ -46,10 +54,14 @@ import club.heiqi.uilib.ui.render.UiRenderContext;
 import club.heiqi.uilib.ui.style.UiBorderRadiusResolver;
 import club.heiqi.uilib.ui.style.UiBorderStyle;
 import club.heiqi.uilib.ui.style.UiDisplay;
+import club.heiqi.uilib.ui.style.UiFontStyle;
+import club.heiqi.uilib.ui.style.UiFontWeight;
 import club.heiqi.uilib.ui.style.UiOverflow;
 import club.heiqi.uilib.ui.style.UiOverflowWrap;
 import club.heiqi.uilib.ui.style.UiPosition;
 import club.heiqi.uilib.ui.style.UiStyleInsets;
+import club.heiqi.uilib.ui.style.UiFontStyle;
+import club.heiqi.uilib.ui.style.UiFontWeight;
 import club.heiqi.uilib.ui.style.UiStyleLength;
 import club.heiqi.uilib.ui.style.UiVisibility;
 import club.heiqi.uilib.ui.text.DefaultTextMeasureService;
@@ -2414,6 +2426,163 @@ public class HtmlLikeDocumentWidgetTest {
     }
 
     /**
+     * 验证双击有独立事件，且与单击共存。
+     */
+    @Test
+    public void shouldDispatchDoubleClickAlongsideSingleClicks() {
+        UiDocument document = UiDocument.create();
+        ElementNode root = document.getRootElement();
+        final ElementNode child = document.div();
+        final List<DocumentElementClickEvent> clickEvents = new ArrayList<DocumentElementClickEvent>();
+        final List<DocumentElementDoubleClickEvent> doubleClickEvents = new ArrayList<DocumentElementDoubleClickEvent>();
+        root.style().setWidth(UiStyleLength.px(80)).setHeight(UiStyleLength.px(40));
+        child.style().setWidth(UiStyleLength.px(40)).setHeight(UiStyleLength.px(20));
+        child.setClickHandler(new DocumentElementClickHandler() {
+            @Override
+            public boolean onClick(DocumentElementClickEvent event) {
+                clickEvents.add(event);
+                return true;
+            }
+        });
+        root.setDoubleClickHandler(new DocumentElementDoubleClickHandler() {
+            @Override
+            public boolean onDoubleClick(DocumentElementDoubleClickEvent event) {
+                doubleClickEvents.add(event);
+                return true;
+            }
+        });
+        root.append(child);
+        HtmlLikeDocumentWidget widget = new HtmlLikeDocumentWidget(document, 80, 40,
+                new DeterministicTextMeasureService());
+        widget.applyLayoutBounds(0, 0, 80, 40);
+
+        widget.onMouseDown(new UiMouseEvent(UiMouseEvent.Action.BUTTON_DOWN, 10, 10, 0, 0, 0, 0, 1L));
+        widget.onMouseUp(new UiMouseEvent(UiMouseEvent.Action.BUTTON_UP, 10, 10, 0, 0, 0, 0, 2L));
+        widget.onMouseDown(new UiMouseEvent(UiMouseEvent.Action.BUTTON_DOWN, 10, 10, 0, 0, 0, 0, 3L));
+        widget.onMouseUp(new UiMouseEvent(UiMouseEvent.Action.BUTTON_UP, 10, 10, 0, 0, 0, 0, 4L));
+
+        Assert.assertEquals(2, clickEvents.size());
+        Assert.assertEquals(1, doubleClickEvents.size());
+        assertElementUid(child, doubleClickEvents.get(0).getTarget());
+        assertElementUid(root, doubleClickEvents.get(0).getCurrentTarget());
+        Assert.assertEquals(10, doubleClickEvents.get(0).getDocumentX());
+        Assert.assertEquals(10, doubleClickEvents.get(0).getDocumentY());
+    }
+
+    /**
+     * 验证右键菜单事件有独立入口。
+     */
+    @Test
+    public void shouldDispatchContextMenuAsIndependentEvent() {
+        UiDocument document = UiDocument.create();
+        ElementNode root = document.getRootElement();
+        final ElementNode child = document.div();
+        final List<DocumentElementContextMenuEvent> contextMenuEvents = new ArrayList<DocumentElementContextMenuEvent>();
+        root.style().setWidth(UiStyleLength.px(80)).setHeight(UiStyleLength.px(40));
+        child.style().setWidth(UiStyleLength.px(40)).setHeight(UiStyleLength.px(20));
+        root.setContextMenuHandler(new DocumentElementContextMenuHandler() {
+            @Override
+            public boolean onContextMenu(DocumentElementContextMenuEvent event) {
+                contextMenuEvents.add(event);
+                return true;
+            }
+        });
+        root.append(child);
+        HtmlLikeDocumentWidget widget = new HtmlLikeDocumentWidget(document, 80, 40,
+                new DeterministicTextMeasureService());
+        widget.applyLayoutBounds(0, 0, 80, 40);
+
+        widget.onMouseDown(new UiMouseEvent(UiMouseEvent.Action.BUTTON_DOWN, 10, 10, 1, 0, 0, 0, 1L));
+        widget.onMouseUp(new UiMouseEvent(UiMouseEvent.Action.BUTTON_UP, 10, 10, 1, 0, 0, 0, 2L));
+
+        Assert.assertEquals(1, contextMenuEvents.size());
+        assertElementUid(child, contextMenuEvents.get(0).getTarget());
+        assertElementUid(root, contextMenuEvents.get(0).getCurrentTarget());
+        Assert.assertEquals(1, contextMenuEvents.get(0).getButton());
+    }
+
+    /**
+     * 验证 transitionend 与 animationend 会向作者派发完成事件。
+     */
+    @Test
+    public void shouldDispatchTransitionEndAndAnimationEndEvents() {
+        UiDocument document = UiDocument.create();
+        document.registerKeyframes(DocumentKeyframes.named("fade")
+                .setColor(DocumentAnimationProperty.BACKGROUND_COLOR, 0xFF000000, 0xFFFFFFFF)
+                .build());
+        ElementNode root = document.getRootElement();
+        final List<DocumentElementTransitionEndEvent> transitionEndEvents =
+                new ArrayList<DocumentElementTransitionEndEvent>();
+        final List<DocumentElementAnimationEndEvent> animationEndEvents =
+                new ArrayList<DocumentElementAnimationEndEvent>();
+        root.style()
+                .setWidth(UiStyleLength.px(80))
+                .setHeight(UiStyleLength.px(40))
+                .setBackgroundColor(0xFF000000)
+                .setOpacity(1.0F)
+                .setTransition(DocumentAnimationProperty.OPACITY, 1000L)
+                .setAnimation("fade", 1000L);
+        root.setTransitionEndHandler(new DocumentElementTransitionEndHandler() {
+            @Override
+            public boolean onTransitionEnd(DocumentElementTransitionEndEvent event) {
+                transitionEndEvents.add(event);
+                return true;
+            }
+        });
+        root.setAnimationEndHandler(new DocumentElementAnimationEndHandler() {
+            @Override
+            public boolean onAnimationEnd(DocumentElementAnimationEndEvent event) {
+                animationEndEvents.add(event);
+                return true;
+            }
+        });
+        ManualAnimationClock animationClock = new ManualAnimationClock();
+        HtmlLikeDocumentWidget widget = new HtmlLikeDocumentWidget(document, 80, 40,
+                new DeterministicTextMeasureService());
+        widget.setAnimationClock(animationClock);
+        widget.applyLayoutBounds(0, 0, 80, 40);
+
+        widget.render(new RecordingUiRenderContext());
+        root.style().setOpacity(0.0F);
+        widget.render(new RecordingUiRenderContext());
+        animationClock.setCurrentTimeNanos(1_000_000_000L);
+        widget.render(new RecordingUiRenderContext());
+
+        Assert.assertEquals(1, transitionEndEvents.size());
+        Assert.assertEquals(DocumentAnimationProperty.OPACITY, transitionEndEvents.get(0).getProperty());
+        Assert.assertEquals(1_000_000_000L, transitionEndEvents.get(0).getElapsedTimeNanos());
+        Assert.assertEquals(1, animationEndEvents.size());
+        Assert.assertEquals("fade", animationEndEvents.get(0).getAnimationName());
+        Assert.assertEquals(1_000_000_000L, animationEndEvents.get(0).getElapsedTimeNanos());
+    }
+
+    /**
+     * 验证字体粗细和斜体会进入文本绘制调用。
+     */
+    @Test
+    public void shouldRenderTextWithFontWeightAndFontStyle() {
+        UiDocument document = UiDocument.create();
+        ElementNode root = document.getRootElement();
+        root.style()
+                .setWidth(UiStyleLength.px(160))
+                .setFontWeight(UiFontWeight.BOLD)
+                .setFontStyle(UiFontStyle.ITALIC);
+        root.appendText("bold italic");
+        HtmlLikeDocumentWidget widget = new HtmlLikeDocumentWidget(document, 80, 40,
+                new DeterministicTextMeasureService());
+        widget.applyLayoutBounds(0, 0, 160, 40);
+
+        RecordingUiRenderContext renderContext = new RecordingUiRenderContext();
+        widget.render(renderContext);
+
+        Assert.assertFalse(renderContext.textCalls.isEmpty());
+        for (TextCall textCall : renderContext.textCalls) {
+            Assert.assertEquals(UiFontWeight.BOLD, textCall.fontWeight);
+            Assert.assertEquals(UiFontStyle.ITALIC, textCall.fontStyle);
+        }
+    }
+
+    /**
      * 验证 layout 动画期间端到端 click 使用运行态命中目标。
      */
     @Test
@@ -3418,7 +3587,13 @@ public class HtmlLikeDocumentWidgetTest {
 
         @Override
         public void drawText(String text, int x, int y, int color, boolean shadow, TextContentMode textContentMode) {
-            textCalls.add(new TextCall(text, x, y, color, shadow, textContentMode));
+            drawText(text, x, y, color, shadow, textContentMode, UiFontWeight.NORMAL, UiFontStyle.NORMAL);
+        }
+
+        @Override
+        public void drawText(String text, int x, int y, int color, boolean shadow, TextContentMode textContentMode,
+                UiFontWeight fontWeight, UiFontStyle fontStyle) {
+            textCalls.add(new TextCall(text, x, y, color, shadow, textContentMode, fontWeight, fontStyle));
         }
 
         @Override
@@ -3476,14 +3651,19 @@ public class HtmlLikeDocumentWidgetTest {
         private final int color;
         private final boolean shadow;
         private final TextContentMode textContentMode;
+        private final UiFontWeight fontWeight;
+        private final UiFontStyle fontStyle;
 
-        private TextCall(String text, int x, int y, int color, boolean shadow, TextContentMode textContentMode) {
+        private TextCall(String text, int x, int y, int color, boolean shadow, TextContentMode textContentMode,
+                UiFontWeight fontWeight, UiFontStyle fontStyle) {
             this.text = text;
             this.x = x;
             this.y = y;
             this.color = color;
             this.shadow = shadow;
             this.textContentMode = textContentMode;
+            this.fontWeight = fontWeight;
+            this.fontStyle = fontStyle;
         }
     }
 

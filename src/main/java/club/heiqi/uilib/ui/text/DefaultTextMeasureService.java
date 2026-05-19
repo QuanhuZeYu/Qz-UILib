@@ -4,6 +4,8 @@ import java.util.List;
 
 import club.heiqi.uilib.font.FontService;
 import club.heiqi.uilib.font.layout.TextLayoutService;
+import club.heiqi.uilib.ui.style.UiFontStyle;
+import club.heiqi.uilib.ui.style.UiFontWeight;
 
 /**
  * 默认文本测量服务实现。
@@ -57,6 +59,13 @@ public final class DefaultTextMeasureService implements TextMeasureService {
     }
 
     @Override
+    public int getStringWidth(String text, TextContentMode textContentMode, UiFontWeight fontWeight,
+            UiFontStyle fontStyle) {
+        return getTextLayoutService().getStringWidth(text, resolveTextContentMode(textContentMode), fontWeight,
+                fontStyle);
+    }
+
+    @Override
     public int getLineHeight() {
         return getTextLayoutService().getLineHeight();
     }
@@ -69,6 +78,13 @@ public final class DefaultTextMeasureService implements TextMeasureService {
     @Override
     public String trimStringToWidth(String text, int targetWidth, TextContentMode textContentMode) {
         return getTextLayoutService().trimStringToWidth(text, targetWidth, resolveTextContentMode(textContentMode));
+    }
+
+    @Override
+    public String trimStringToWidth(String text, int targetWidth, TextContentMode textContentMode,
+            UiFontWeight fontWeight, UiFontStyle fontStyle) {
+        return getTextLayoutService().trimStringToWidth(text, targetWidth, resolveTextContentMode(textContentMode),
+                fontWeight, fontStyle);
     }
 
     @Override

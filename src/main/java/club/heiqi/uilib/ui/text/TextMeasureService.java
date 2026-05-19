@@ -2,6 +2,9 @@ package club.heiqi.uilib.ui.text;
 
 import java.util.List;
 
+import club.heiqi.uilib.ui.style.UiFontStyle;
+import club.heiqi.uilib.ui.style.UiFontWeight;
+
 /**
  * UI 侧文本测量服务抽象。
  *
@@ -40,6 +43,22 @@ public interface TextMeasureService {
     }
 
     /**
+     * 获取指定解析模式和字体样式下的字符串宽度。
+     *
+     * <p>默认实现回落到不区分字体样式的测量逻辑，方便现有测试替身保持兼容。</p>
+     *
+     * @param text 文本内容
+     * @param textContentMode 文本内容解析模式
+     * @param fontWeight 字体粗细
+     * @param fontStyle 字体样式
+     * @return 原始文本宽度
+     */
+    default int getStringWidth(String text, TextContentMode textContentMode, UiFontWeight fontWeight,
+            UiFontStyle fontStyle) {
+        return getStringWidth(text, textContentMode);
+    }
+
+    /**
      * 获取原始文本坐标系下的逻辑行高。
      *
      * <p>该值不包含 UI 层缩放，供布局阶段作为统一的单行高度来源。</p>
@@ -69,6 +88,23 @@ public interface TextMeasureService {
      */
     default String trimStringToWidth(String text, int targetWidth, TextContentMode textContentMode) {
         return trimStringToWidth(text, targetWidth);
+    }
+
+    /**
+     * 按目标宽度裁剪指定解析模式和字体样式下的字符串。
+     *
+     * <p>默认实现回落到不区分字体样式的旧接口。</p>
+     *
+     * @param text 文本内容
+     * @param targetWidth 目标宽度
+     * @param textContentMode 文本内容解析模式
+     * @param fontWeight 字体粗细
+     * @param fontStyle 字体样式
+     * @return 裁剪后的字符串
+     */
+    default String trimStringToWidth(String text, int targetWidth, TextContentMode textContentMode,
+            UiFontWeight fontWeight, UiFontStyle fontStyle) {
+        return trimStringToWidth(text, targetWidth, textContentMode);
     }
 
     /**

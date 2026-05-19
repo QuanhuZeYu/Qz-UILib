@@ -20,6 +20,8 @@ import club.heiqi.uilib.font.api.FontRendererAdapter;
 import club.heiqi.uilib.ui.image.HostImageRenderer;
 import club.heiqi.uilib.ui.image.HostImageSource;
 import club.heiqi.uilib.ui.runtime.UiRuntimeAdapters;
+import club.heiqi.uilib.ui.style.UiFontStyle;
+import club.heiqi.uilib.ui.style.UiFontWeight;
 import club.heiqi.uilib.ui.style.UiBorderRadiusResolver;
 import club.heiqi.uilib.ui.theme.UiSurfaceStyle;
 import club.heiqi.uilib.ui.text.TextContentMode;
@@ -880,10 +882,33 @@ public class UiRenderContext {
      * @param textContentMode 文本内容解析模式
      */
     public void drawText(String text, int x, int y, int color, boolean shadow, TextContentMode textContentMode) {
+        drawText(text, x, y, color, shadow, textContentMode, UiFontWeight.NORMAL, UiFontStyle.NORMAL);
+    }
+
+    /**
+     * 使用指定文本模式和基础字体样式绘制文本。
+     *
+     * @param text 文本
+     * @param x 绘制 X
+     * @param y 绘制 Y
+     * @param color ARGB 颜色
+     * @param shadow 是否带阴影
+     * @param textContentMode 文本内容解析模式
+     * @param fontWeight 字体粗细
+     * @param fontStyle 字体样式
+     */
+    public void drawText(String text, int x, int y, int color, boolean shadow, TextContentMode textContentMode,
+            UiFontWeight fontWeight, UiFontStyle fontStyle) {
+        if (fontWeight == null || fontStyle == null
+                || (fontWeight == UiFontWeight.NORMAL && fontStyle == UiFontStyle.NORMAL)) {
+            drawText(text, x, y, color, shadow, textContentMode);
+            return;
+        }
         if (fontRenderer instanceof DefaultFontRendererAdapter) {
             DefaultFontRendererAdapter defaultFontRenderer = (DefaultFontRendererAdapter) fontRenderer;
             if (defaultFontRenderer.isDeferredFlushScopeActive()) {
-                defaultFontRenderer.drawStringScaled(text, x, y, color, shadow, textContentMode, UI_TEXT_SCALE);
+                defaultFontRenderer.drawStringScaled(text, x, y, color, shadow, textContentMode, fontWeight,
+                        fontStyle, UI_TEXT_SCALE);
                 notifyMainLayerContentChanged();
                 return;
             }
@@ -893,7 +918,8 @@ public class UiRenderContext {
         GL11.glTranslatef((float) x, (float) y, 0.0F);
         GL11.glScalef(UI_TEXT_SCALE, UI_TEXT_SCALE, 1.0F);
         if (fontRenderer instanceof DefaultFontRendererAdapter) {
-            ((DefaultFontRendererAdapter) fontRenderer).drawString(text, 0, 0, color, shadow, textContentMode);
+            ((DefaultFontRendererAdapter) fontRenderer).drawString(text, 0, 0, color, shadow, textContentMode,
+                    fontWeight, fontStyle);
         } else {
             fontRenderer.drawString(text, 0, 0, color, shadow);
         }

@@ -49,7 +49,7 @@
 - `border-radius` 现在参与命中测试（圆角外侧不命中）；`visibility:hidden` 同时跳过绘制和命中测试；非等值分角圆角已进入 `UiRenderContext` 表面绘制、clip/backdrop-filter 与命中测试链路。
 - flex item 的 `margin:auto` 会吸收主轴/交叉轴剩余空间；flex shrink 权重已修正为使用 flex-basis。
 - `flex-wrap:wrap` 已支持多行换行布局（row 方向）。
-- 事件系统新增独立 `mousedown`/`mouseup` DOM 事件（`DocumentElementMouseDownHandler`/`DocumentElementMouseUpHandler`）；hover 父子切换时父元素不再收到多余 leave；新增 `focusin` 冒泡事件（`DocumentElementFocusInHandler`）。
+- 事件系统新增独立 `mousedown`/`mouseup`/`dblclick`/`contextmenu` DOM 事件（`DocumentElementMouseDownHandler`/`DocumentElementMouseUpHandler`/`DocumentElementDoubleClickHandler`/`DocumentElementContextMenuHandler`）；hover 父子切换时父元素不再收到多余 leave；新增 `focusin` 冒泡事件（`DocumentElementFocusInHandler`）；动画运行结束时会向作者侧派发 `transitionend` / `animationend` 冒泡事件（当前最小实现不提供 capture 版本）。
 - 事件系统已支持标准 DOM 三阶段传播模型（capture → target → bubble）：所有事件类提供 `stopPropagation()`、`stopImmediatePropagation()`、`preventDefault()`；`ElementNode` 支持 capture handler 注册（`setCaptureClickHandler`/`setCaptureKeyHandler`/`setCaptureMouseDownHandler`/`setCaptureMouseUpHandler`）；`HtmlLikeDocumentWidget` 的 click/key/mousedown/mouseup 分发已按三阶段执行。
 - 样式系统已支持 CSS-like 选择器和样式表级联：`ElementNode` 提供 `className`/`classList`（`DomTokenList`）和 `id` 便捷方法；`UiSelector` 支持 tag/class/id/通配符/复合选择器及特异性计算；`UiStyleSheet` 容器通过 `UiDocument.addStyleSheet(...)` 挂载；`UiStyleResolver` 按 inline > id > class > tag 特异性级联计算所有属性。
 - `UiSelector` 已支持伪类条件（`:hover`/`:focus`/`:focus-visible`/`:active`/`:disabled`）；伪类在特异性中计入 class 级别；`UiStyleResolver.compute(element, activeStates)` 接受 `Set<UiPseudoClass>` 进行状态感知样式计算。
@@ -95,7 +95,7 @@
 - `ForgeConfigTemplateScreen` 的列表属性在摘要、默认值和占位展示中默认取“前 5 项摘要”和“200 字符截断”中更长的一种，避免长列表直接撑爆配置页；实际文本编辑、保存和恢复默认仍使用完整列表值。
 - 字体系统启动时会把本次已发现字体整理进 `FontConfig.fontSort`：已有 `fontSort` 配置时先按配置提示顺序吸收存在项，再把未配置字体按自然顺序追加，配置中缺失的字体只保留在内存缺失态；首次启动且尚无 `fontSort` 配置时，会按当前平台的常见多语种字体提示优先吸收已安装字体，避免自然排序先命中 CAD 等窄用途字体。
 - 原版资源包重载会通过 `FontRenderer.onResourceManagerReload` 的 Mixin 触发字体系统重载；字体 GL 资源、字符页、后台字形任务和布局缓存必须整体重建，避免继续使用资源包重载前的 GL 状态。
-- **【边界修正】`font-weight` / `font-style` / `font-family`**：底层 `FontType`（REGULAR/BOLD/ITALIC/BOLD_ITALIC）与 `TextStyle` 已有粗体和斜体字形支持，但 **`UiStyleDeclaration` 中没有对应的 CSS 属性字段**，页面作者无法通过样式声明（如 `setFontWeight()`）控制字体粗细或斜体；目前仅有字体排序配置层面的字体族选择。不应将粗体/斜体列为页面作者层可用的 CSS 能力；如需补齐，需在样式系统中新增属性并接通 `TextStyle` 解析。（审查：REVIEW-20260518-browser-capability-gap-audit）
+- 样式系统已向作者层开放 `font-weight`（`UiFontWeight.NORMAL/BOLD`）与 `font-style`（`UiFontStyle.NORMAL/ITALIC`），二者可继承并已接入 HTML-like 文本测量与绘制；其中粗体会影响文本测量/换行，斜体当前主要体现为渲染差异。`font-family` 仍未开放为作者层 CSS 属性，本次仍只保留字体排序配置与底层字体匹配能力。
 - UILib 文档主渲染链路的字体批处理边界只覆盖 `DocumentPaintRenderer` 回放中的连续 `TEXT` 命令；遇到 `CUSTOM`、`BACKDROP_FILTER`、`PAINT_CONTEXT`、`CLIP` 以及其他非文本绘制命令前必须结束 scope 并 flush，避免文本跨越依赖即时可见内容或会改写 GL/FBO 状态的边界。
 - `FontConfig.replaceOrigin=true` 会让原版 `FontRenderer` 在 SplashProgress 加载线程和客户端主线程都可能进入 UILib 字体管线；字体资源重载、shader/批渲染器重建与 `drawString` 必须在字体运行时锁下串行化，不能用“只允许主线程接管”规避 Splash 字体渲染。
 - SplashProgress 期间仍使用 UILib 自定义字体和批渲染路径；不要为非客户端主线程切换第二套 immediate 字体绘制路径。Splash 特例只保留运行时锁、Mixin 异常保护、Splash reload guard 和资源重载入口跳过。

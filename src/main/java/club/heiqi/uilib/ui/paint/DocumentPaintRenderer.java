@@ -221,7 +221,7 @@ public final class DocumentPaintRenderer {
             int offsetY, RenderReplayState replayState) {
         context.drawText(command.getText(), command.getLeft() + offsetX, command.getTop() + offsetY,
                 applyOpacity(command.getColor(), replayState.fallbackOpacity), false,
-                command.getTextContentMode());
+                command.getTextContentMode(), command.getFontWeight(), command.getFontStyle());
     }
 
     private static boolean isBatchableTextCommand(DocumentPaintCommand command, RenderReplayState replayState) {

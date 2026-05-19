@@ -19,6 +19,8 @@ import club.heiqi.uilib.font.page.GlyphRuntimeTables;
 import club.heiqi.uilib.font.util.CodepointTextCache;
 import club.heiqi.uilib.font.util.DerivedFontCache;
 import club.heiqi.uilib.font.util.FontMatcher;
+import club.heiqi.uilib.ui.style.UiFontStyle;
+import club.heiqi.uilib.ui.style.UiFontWeight;
 import club.heiqi.uilib.ui.text.TextContentMode;
 
 /**
@@ -77,6 +79,20 @@ public class TextLayoutService {
      * @return 文本片段列表
      */
     public List<TextSegment> parseSegments(String text, int baseColor, TextContentMode textContentMode) {
+        return parseSegments(text, baseColor, textContentMode, null);
+    }
+
+    /**
+     * 解析文本为带样式的片段序列，并叠加基础字体样式。
+     *
+     * @param text 文本
+     * @param baseColor 默认颜色
+     * @param textContentMode 文本内容解析模式
+     * @param baseStyle 基础字体样式；为 null 时使用默认普通样式
+     * @return 文本片段列表
+     */
+    public List<TextSegment> parseSegments(String text, int baseColor, TextContentMode textContentMode,
+            TextStyle baseStyle) {
         List<TextSegment> segments = new ArrayList<TextSegment>();
         if (text == null || text.isEmpty()) {
             return segments;
@@ -84,14 +100,12 @@ public class TextLayoutService {
 
         TextContentMode resolvedMode = resolveTextContentMode(textContentMode);
         if (resolvedMode == TextContentMode.UILIB_RAW) {
-            TextStyle style = new TextStyle();
-            style.resetAll(baseColor);
+            TextStyle style = createBaseStyle(baseColor, baseStyle);
             segments.add(new TextSegment(text, style));
             return segments;
         }
 
-        TextStyle currentStyle = new TextStyle();
-        currentStyle.resetAll(baseColor);
+        TextStyle currentStyle = createBaseStyle(baseColor, baseStyle);
         StringBuilder builder = new StringBuilder();
 
         for (int i = 0; i < text.length();) {
@@ -137,12 +151,27 @@ public class TextLayoutService {
      * @return 宽度
      */
     public int getStringWidth(String text, TextContentMode textContentMode) {
+        return getStringWidth(text, textContentMode, UiFontWeight.NORMAL, UiFontStyle.NORMAL);
+    }
+
+    /**
+     * 计算指定解析模式和基础字体样式下的字符串显示宽度。
+     *
+     * @param text 文本
+     * @param textContentMode 文本内容解析模式
+     * @param fontWeight 字体粗细
+     * @param fontStyle 字体样式
+     * @return 宽度
+     */
+    public int getStringWidth(String text, TextContentMode textContentMode, UiFontWeight fontWeight,
+            UiFontStyle fontStyle) {
         if (text == null || text.isEmpty()) {
             return 0;
         }
 
         double width = 0.0D;
-        for (TextSegment segment : parseSegments(text, 0xFFFFFFFF, textContentMode)) {
+        TextStyle baseStyle = createBaseStyle(0xFFFFFFFF, fontWeight, fontStyle);
+        for (TextSegment segment : parseSegments(text, 0xFFFFFFFF, textContentMode, baseStyle)) {
             width += getSegmentWidth(segment);
         }
         return (int) Math.ceil(width);
@@ -168,19 +197,32 @@ public class TextLayoutService {
      * @return 裁剪结果
      */
     public String trimStringToWidth(String text, int targetWidth, TextContentMode textContentMode) {
+        return trimStringToWidth(text, targetWidth, textContentMode, UiFontWeight.NORMAL, UiFontStyle.NORMAL);
+    }
+
+    /**
+     * 按宽度裁剪指定解析模式和基础字体样式下的字符串。
+     *
+     * @param text 原始文本
+     * @param targetWidth 目标宽度
+     * @param textContentMode 文本内容解析模式
+     * @param fontWeight 字体粗细
+     * @param fontStyle 字体样式
+     * @return 裁剪结果
+     */
+    public String trimStringToWidth(String text, int targetWidth, TextContentMode textContentMode,
+            UiFontWeight fontWeight, UiFontStyle fontStyle) {
         if (text == null || text.isEmpty() || targetWidth <= 0) {
             return "";
         }
 
         if (resolveTextContentMode(textContentMode) == TextContentMode.UILIB_RAW) {
-            return trimRawStringToWidth(text, targetWidth);
+            return trimRawStringToWidth(text, targetWidth, createBaseStyle(0xFFFFFFFF, fontWeight, fontStyle));
         }
 
         StringBuilder builder = new StringBuilder();
-        TextStyle currentStyle = new TextStyle();
-        currentStyle.resetAll(0xFFFFFFFF);
+        TextStyle currentStyle = createBaseStyle(0xFFFFFFFF, fontWeight, fontStyle);
         double width = 0.0D;
-        boolean lineHasVisibleContent = false;
 
         for (int i = 0; i < text.length();) {
             int codepoint = text.codePointAt(i);
@@ -445,7 +487,22 @@ public class TextLayoutService {
      * @return 文本片段列表
      */
     public List<TextSegment> layoutSegments(String text, int baseColor, TextContentMode textContentMode) {
-        return parseSegments(text, baseColor, textContentMode);
+        return layoutSegments(text, baseColor, textContentMode, UiFontWeight.NORMAL, UiFontStyle.NORMAL);
+    }
+
+    /**
+     * 为未来渲染层提供标准文本片段入口，并叠加基础字体样式。
+     *
+     * @param text 原始文本
+     * @param baseColor 默认颜色
+     * @param textContentMode 文本内容解析模式
+     * @param fontWeight 字体粗细
+     * @param fontStyle 字体样式
+     * @return 文本片段列表
+     */
+    public List<TextSegment> layoutSegments(String text, int baseColor, TextContentMode textContentMode,
+            UiFontWeight fontWeight, UiFontStyle fontStyle) {
+        return parseSegments(text, baseColor, textContentMode, createBaseStyle(baseColor, fontWeight, fontStyle));
     }
 
     /**
@@ -596,10 +653,8 @@ public class TextLayoutService {
         return textContentMode == null ? TextContentMode.MINECRAFT_FORMATTED : textContentMode;
     }
 
-    private String trimRawStringToWidth(String text, int targetWidth) {
+    private String trimRawStringToWidth(String text, int targetWidth, TextStyle style) {
         StringBuilder builder = new StringBuilder();
-        TextStyle style = new TextStyle();
-        style.resetAll(0xFFFFFFFF);
         double width = 0.0D;
         for (int i = 0; i < text.length();) {
             int codepoint = text.codePointAt(i);
@@ -665,5 +720,28 @@ public class TextLayoutService {
             i += Character.charCount(codepoint);
         }
         return builder.toString();
+    }
+
+    private TextStyle createBaseStyle(int baseColor, UiFontWeight fontWeight, UiFontStyle fontStyle) {
+        TextStyle style = new TextStyle();
+        style.resetAll(baseColor);
+        if (fontWeight == UiFontWeight.BOLD) {
+            style.setFontType(FontType.BOLD);
+        }
+        if (fontStyle == UiFontStyle.ITALIC) {
+            style.setItalic(true);
+        }
+        return style;
+    }
+
+    private TextStyle createBaseStyle(int baseColor, TextStyle baseStyle) {
+        TextStyle style = new TextStyle();
+        style.resetAll(baseColor);
+        if (baseStyle == null) {
+            return style;
+        }
+        style.setFontType(baseStyle.getFontType());
+        style.setItalic(baseStyle.isItalic());
+        return style;
     }
 }

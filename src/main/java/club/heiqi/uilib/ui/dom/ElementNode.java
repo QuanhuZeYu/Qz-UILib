@@ -24,6 +24,8 @@ public final class ElementNode extends DocumentNode {
     private int focusInvalidationVersion;
     private DocumentElementActiveHandler activeHandler;
     private DocumentElementClickHandler clickHandler;
+    private DocumentElementDoubleClickHandler doubleClickHandler;
+    private DocumentElementContextMenuHandler contextMenuHandler;
     private DocumentElementFocusHandler focusHandler;
     private DocumentElementHoverHandler hoverHandler;
     private DocumentElementDragHandler dragHandler;
@@ -35,6 +37,8 @@ public final class ElementNode extends DocumentNode {
     private DocumentElementMouseDownHandler mouseDownHandler;
     private DocumentElementMouseUpHandler mouseUpHandler;
     private DocumentElementFocusInHandler focusInHandler;
+    private DocumentElementTransitionEndHandler transitionEndHandler;
+    private DocumentElementAnimationEndHandler animationEndHandler;
     private DocumentCustomRenderer customRenderer;
     private DocumentElementScrollHandler scrollHandler;
     // 捕获阶段 handler
@@ -452,6 +456,46 @@ public final class ElementNode extends DocumentNode {
     }
 
     /**
+     * 设置元素双击处理器。
+     *
+     * @param doubleClickHandler 双击处理器；为 null 时清除处理器
+     * @return 当前元素
+     */
+    public ElementNode setDoubleClickHandler(DocumentElementDoubleClickHandler doubleClickHandler) {
+        this.doubleClickHandler = doubleClickHandler;
+        return this;
+    }
+
+    /**
+     * 返回元素双击处理器。
+     *
+     * @return 双击处理器；不存在时返回 null
+     */
+    public DocumentElementDoubleClickHandler getDoubleClickHandler() {
+        return doubleClickHandler;
+    }
+
+    /**
+     * 设置元素右键菜单处理器。
+     *
+     * @param contextMenuHandler 右键菜单处理器；为 null 时清除处理器
+     * @return 当前元素
+     */
+    public ElementNode setContextMenuHandler(DocumentElementContextMenuHandler contextMenuHandler) {
+        this.contextMenuHandler = contextMenuHandler;
+        return this;
+    }
+
+    /**
+     * 返回元素右键菜单处理器。
+     *
+     * @return 右键菜单处理器；不存在时返回 null
+     */
+    public DocumentElementContextMenuHandler getContextMenuHandler() {
+        return contextMenuHandler;
+    }
+
+    /**
      * 设置元素焦点变化处理器。
      *
      * <p>事件处理器不影响布局和绘制缓存，因此不会提升文档 mutation version。</p>
@@ -679,6 +723,46 @@ public final class ElementNode extends DocumentNode {
      */
     public DocumentElementFocusInHandler getFocusInHandler() {
         return focusInHandler;
+    }
+
+    /**
+     * 设置元素过渡结束处理器。
+     *
+     * @param transitionEndHandler 过渡结束处理器；为 null 时清除处理器
+     * @return 当前元素
+     */
+    public ElementNode setTransitionEndHandler(DocumentElementTransitionEndHandler transitionEndHandler) {
+        this.transitionEndHandler = transitionEndHandler;
+        return this;
+    }
+
+    /**
+     * 返回元素过渡结束处理器。
+     *
+     * @return 过渡结束处理器；不存在时返回 null
+     */
+    public DocumentElementTransitionEndHandler getTransitionEndHandler() {
+        return transitionEndHandler;
+    }
+
+    /**
+     * 设置元素动画结束处理器。
+     *
+     * @param animationEndHandler 动画结束处理器；为 null 时清除处理器
+     * @return 当前元素
+     */
+    public ElementNode setAnimationEndHandler(DocumentElementAnimationEndHandler animationEndHandler) {
+        this.animationEndHandler = animationEndHandler;
+        return this;
+    }
+
+    /**
+     * 返回元素动画结束处理器。
+     *
+     * @return 动画结束处理器；不存在时返回 null
+     */
+    public DocumentElementAnimationEndHandler getAnimationEndHandler() {
+        return animationEndHandler;
     }
 
     /**

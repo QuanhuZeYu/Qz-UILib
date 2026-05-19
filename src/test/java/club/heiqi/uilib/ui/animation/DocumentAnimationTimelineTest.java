@@ -553,6 +553,46 @@ public class DocumentAnimationTimelineTest {
     }
 
     /**
+     * 验证 prune 结果会暴露 transitionend 与 animationend 记录。
+     */
+    @Test
+    public void shouldCollectCompletedTransitionAndAnimationRecords() {
+        UiDocument document = UiDocument.create();
+        document.registerKeyframes(DocumentKeyframes.named("fade")
+                .setColor(DocumentAnimationProperty.BACKGROUND_COLOR, 0xFF000000, 0xFFFFFFFF)
+                .build());
+        ElementNode root = document.getRootElement();
+        root.style()
+                .setWidth(UiStyleLength.px(40))
+                .setHeight(UiStyleLength.px(20))
+                .setBackgroundColor(0xFF000000)
+                .setOpacity(1.0F)
+                .setTransition(DocumentAnimationProperty.OPACITY, 1000L)
+                .setAnimation("fade", 1000L);
+        DocumentAnimationTimeline timeline = new DocumentAnimationTimeline();
+
+        timeline.updateFromLayout(DocumentLayoutEngine.layout(root, 80, 0), 0L);
+        root.style().setOpacity(0.0F);
+        timeline.updateFromLayout(DocumentLayoutEngine.layout(root, 80, 0), 0L);
+
+        DocumentAnimationTimeline.PruneResult pruneResult = timeline.pruneFinishedAnimationsWithResult(
+                1_000_000_000L);
+
+        Assert.assertTrue(pruneResult.isChanged());
+        Assert.assertEquals(1, pruneResult.getTransitionEndRecords().size());
+        Assert.assertEquals(root, pruneResult.getTransitionEndRecords().get(0).getElement());
+        Assert.assertEquals(DocumentAnimationProperty.OPACITY,
+                pruneResult.getTransitionEndRecords().get(0).getProperty());
+        Assert.assertEquals(1_000_000_000L,
+                pruneResult.getTransitionEndRecords().get(0).getElapsedTimeNanos());
+        Assert.assertEquals(1, pruneResult.getAnimationEndRecords().size());
+        Assert.assertEquals(root, pruneResult.getAnimationEndRecords().get(0).getElement());
+        Assert.assertEquals("fade", pruneResult.getAnimationEndRecords().get(0).getAnimationName());
+        Assert.assertEquals(1_000_000_000L,
+                pruneResult.getAnimationEndRecords().get(0).getElapsedTimeNanos());
+    }
+
+    /**
      * 验证作者侧关闭 transition 后，运行中的动画会立即取消并回到 computed style 值。
      */
     @Test

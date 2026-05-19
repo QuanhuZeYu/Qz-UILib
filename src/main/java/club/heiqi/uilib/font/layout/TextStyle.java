@@ -14,6 +14,8 @@ public class TextStyle {
     private boolean underline;
     private boolean strikethrough;
     private boolean italic;
+    private FontType baseFontType = FontType.NORMAL;
+    private boolean baseItalic;
 
     /**
      * 复制当前样式。
@@ -29,6 +31,8 @@ public class TextStyle {
         style.underline = underline;
         style.strikethrough = strikethrough;
         style.italic = italic;
+        style.baseFontType = baseFontType;
+        style.baseItalic = baseItalic;
         return style;
     }
 
@@ -75,22 +79,22 @@ public class TextStyle {
      */
     public void resetAll(int baseColor) {
         color = baseColor;
-        fontType = FontType.NORMAL;
+        fontType = baseFontType == null ? FontType.NORMAL : baseFontType;
         colorExplicit = false;
         randomStyle = false;
         underline = false;
         strikethrough = false;
-        italic = false;
+        italic = baseItalic;
     }
 
     private void resetFlags(int baseColor) {
         color = baseColor;
-        fontType = FontType.NORMAL;
+        fontType = baseFontType == null ? FontType.NORMAL : baseFontType;
         colorExplicit = false;
         randomStyle = false;
         underline = false;
         strikethrough = false;
-        italic = false;
+        italic = baseItalic;
     }
 
     public int getColor() {
@@ -99,6 +103,12 @@ public class TextStyle {
 
     public FontType getFontType() {
         return fontType;
+    }
+
+    public void setFontType(FontType fontType) {
+        FontType resolvedType = fontType == null ? FontType.NORMAL : fontType;
+        this.fontType = resolvedType;
+        this.baseFontType = resolvedType;
     }
 
     public boolean isRandomStyle() {
@@ -115,6 +125,11 @@ public class TextStyle {
 
     public boolean isItalic() {
         return italic;
+    }
+
+    public void setItalic(boolean italic) {
+        this.italic = italic;
+        this.baseItalic = italic;
     }
 
     /**

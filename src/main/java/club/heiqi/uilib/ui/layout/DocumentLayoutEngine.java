@@ -16,6 +16,8 @@ import club.heiqi.uilib.ui.style.UiAlignItems;
 import club.heiqi.uilib.ui.style.UiAlignSelf;
 import club.heiqi.uilib.ui.style.UiBoxSizing;
 import club.heiqi.uilib.ui.style.UiDisplay;
+import club.heiqi.uilib.ui.style.UiFontStyle;
+import club.heiqi.uilib.ui.style.UiFontWeight;
 import club.heiqi.uilib.ui.style.UiFlexDirection;
 import club.heiqi.uilib.ui.style.UiFlexWrap;
 import club.heiqi.uilib.ui.style.UiJustifyContent;
@@ -726,7 +728,8 @@ public final class DocumentLayoutEngine {
         List<String> lines;
         if (whiteSpace == UiWhiteSpace.NOWRAP) {
             // nowrap：不换行，只取第一行
-            String singleLine = textMeasureService.trimStringToWidth(text, Integer.MAX_VALUE / 2, textContentMode);
+            String singleLine = trimTextToWidth(textMeasureService, text, Integer.MAX_VALUE / 2, textContentMode,
+                    ownerStyle);
             if (singleLine == null) {
                 singleLine = text;
             }
@@ -741,7 +744,8 @@ public final class DocumentLayoutEngine {
         int lineTop = top;
         for (String line : lines) {
             String resolvedLine = line == null ? "" : line;
-            int rawWidth = toUiTextSize(textMeasureService.getStringWidth(resolvedLine, textContentMode));
+            int rawWidth = toUiTextSize(measureTextWidth(textMeasureService, resolvedLine, textContentMode,
+                    ownerStyle));
             // text-overflow: ellipsis 处理（仅 nowrap 且内容超出时）
             if (whiteSpace == UiWhiteSpace.NOWRAP && textOverflow == UiTextOverflow.ELLIPSIS
                     && rawWidth > availableWidth && availableWidth > 0) {
@@ -749,14 +753,15 @@ public final class DocumentLayoutEngine {
                 String ellipsis = "\u2026";
                 int ellipsisWidth = toUiTextSize(textMeasureService.getStringWidth(ellipsis, textContentMode));
                 int targetWidth = Math.max(0, availableWidth - ellipsisWidth);
-                String trimmed = textMeasureService.trimStringToWidth(resolvedLine, toRawTextSize(targetWidth),
-                        textContentMode);
+                String trimmed = trimTextToWidth(textMeasureService, resolvedLine, toRawTextSize(targetWidth),
+                        textContentMode, ownerStyle);
                 if (trimmed == null) {
                     trimmed = "";
                 }
                 resolvedLine = trimmed + ellipsis;
                 rawWidth = Math.min(availableWidth,
-                        toUiTextSize(textMeasureService.getStringWidth(resolvedLine, textContentMode)));
+                        toUiTextSize(measureTextWidth(textMeasureService, resolvedLine, textContentMode,
+                                ownerStyle)));
             }
             int width = Math.max(0, Math.min(availableWidth, rawWidth));
             // text-align 偏移
@@ -835,7 +840,8 @@ public final class DocumentLayoutEngine {
                 remainingText = remainingText.substring(segmentResult.consumedLength);
                 continue;
             }
-            int width = Math.max(0, toUiTextSize(textMeasureService.getStringWidth(segment, textContentMode)));
+            int width = Math.max(0, toUiTextSize(measureTextWidth(textMeasureService, segment, textContentMode,
+                    ownerStyle)));
             if (ownerStyle.getWhiteSpace() != UiWhiteSpace.NOWRAP
                     && width > remainingWidth && inlineLayoutContext.hasLineContent()) {
                 inlineLayoutContext.nextLine();
@@ -953,7 +959,8 @@ public final class DocumentLayoutEngine {
 
     private static int resolveMaxFittingTextEnd(String text, int availableWidth, TextContentMode textContentMode,
             TextMeasureService textMeasureService) {
-        String trimmed = textMeasureService.trimStringToWidth(text, toRawTextSize(availableWidth), textContentMode);
+        String trimmed = trimTextToWidth(textMeasureService, text, toRawTextSize(availableWidth), textContentMode,
+                null);
         int trimmedEnd = trimmed == null ? 0 : trimmed.length();
         int maxFitEnd = normalizeTextUnitBoundary(text, trimmedEnd, textContentMode);
         if (maxFitEnd <= 0) {
@@ -1646,23 +1653,43 @@ public final class DocumentLayoutEngine {
         }
         if (ownerStyle != null && (ownerStyle.getOverflowWrap() == UiOverflowWrap.ANYWHERE
                 || ownerStyle.getWordBreak() == UiWordBreak.BREAK_ALL)) {
-            return measureMaxTextUnitWidth(text, textNode.getTextContentMode(), textMeasureService);
+            return measureMaxTextUnitWidth(text, textNode.getTextContentMode(), textMeasureService, ownerStyle);
         }
-        return toUiTextSize(textMeasureService.getStringWidth(text, textNode.getTextContentMode()));
+        return toUiTextSize(measureTextWidth(textMeasureService, text, textNode.getTextContentMode(), ownerStyle));
     }
 
     private static int measureMaxTextUnitWidth(String text, TextContentMode textContentMode,
-            TextMeasureService textMeasureService) {
+            TextMeasureService textMeasureService, ComputedStyle ownerStyle) {
         int maxWidth = 0;
         List<TextWrapUnit> units = collectTextWrapUnits(text, textContentMode);
         for (TextWrapUnit unit : units) {
             if (unit.formattingCode) {
                 continue;
             }
-            maxWidth = Math.max(maxWidth, toUiTextSize(textMeasureService.getStringWidth(
-                    text.substring(unit.start, unit.end), textContentMode)));
+            maxWidth = Math.max(maxWidth, toUiTextSize(measureTextWidth(textMeasureService,
+                    text.substring(unit.start, unit.end), textContentMode, ownerStyle)));
         }
         return maxWidth;
+    }
+
+    private static int measureTextWidth(TextMeasureService textMeasureService, String text,
+            TextContentMode textContentMode, ComputedStyle ownerStyle) {
+        return textMeasureService.getStringWidth(text, textContentMode, resolveFontWeight(ownerStyle),
+                resolveFontStyle(ownerStyle));
+    }
+
+    private static String trimTextToWidth(TextMeasureService textMeasureService, String text, int targetWidth,
+            TextContentMode textContentMode, ComputedStyle ownerStyle) {
+        return textMeasureService.trimStringToWidth(text, targetWidth, textContentMode, resolveFontWeight(ownerStyle),
+                resolveFontStyle(ownerStyle));
+    }
+
+    private static UiFontWeight resolveFontWeight(ComputedStyle ownerStyle) {
+        return ownerStyle == null ? UiFontWeight.NORMAL : ownerStyle.getFontWeight();
+    }
+
+    private static UiFontStyle resolveFontStyle(ComputedStyle ownerStyle) {
+        return ownerStyle == null ? UiFontStyle.NORMAL : ownerStyle.getFontStyle();
     }
 
     private static int measureIntrinsicFlexContentWidth(ElementNode element, ComputedStyle style,

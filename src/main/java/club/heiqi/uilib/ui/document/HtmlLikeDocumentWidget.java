@@ -17,13 +17,19 @@ import club.heiqi.uilib.ui.dom.DocumentElementActiveEvent;
 import club.heiqi.uilib.ui.dom.DocumentElementActiveHandler;
 import club.heiqi.uilib.ui.dom.DocumentElementClickEvent;
 import club.heiqi.uilib.ui.dom.DocumentElementClickHandler;
+import club.heiqi.uilib.ui.dom.DocumentElementContextMenuEvent;
+import club.heiqi.uilib.ui.dom.DocumentElementContextMenuHandler;
 import club.heiqi.uilib.ui.dom.DocumentEventControl;
 import club.heiqi.uilib.ui.dom.DocumentEventPhase;
+import club.heiqi.uilib.ui.dom.DocumentElementDoubleClickEvent;
+import club.heiqi.uilib.ui.dom.DocumentElementDoubleClickHandler;
 import club.heiqi.uilib.ui.dom.DocumentElementDragEvent;
 import club.heiqi.uilib.ui.dom.DocumentElementDragEndHandler;
 import club.heiqi.uilib.ui.dom.DocumentElementDragHandler;
 import club.heiqi.uilib.ui.dom.DocumentElementDragOverHandler;
 import club.heiqi.uilib.ui.dom.DocumentElementDragStartHandler;
+import club.heiqi.uilib.ui.dom.DocumentElementAnimationEndEvent;
+import club.heiqi.uilib.ui.dom.DocumentElementAnimationEndHandler;
 import club.heiqi.uilib.ui.dom.DocumentElementFocusEvent;
 import club.heiqi.uilib.ui.dom.DocumentElementFocusHandler;
 import club.heiqi.uilib.ui.dom.DocumentElementFocusInEvent;
@@ -40,6 +46,8 @@ import club.heiqi.uilib.ui.dom.DocumentElementKeyEvent;
 import club.heiqi.uilib.ui.dom.DocumentElementKeyHandler;
 import club.heiqi.uilib.ui.dom.DocumentElementTextInputEvent;
 import club.heiqi.uilib.ui.dom.DocumentElementTextInputHandler;
+import club.heiqi.uilib.ui.dom.DocumentElementTransitionEndEvent;
+import club.heiqi.uilib.ui.dom.DocumentElementTransitionEndHandler;
 import club.heiqi.uilib.ui.dom.DocumentNode;
 import club.heiqi.uilib.ui.dom.ElementNode;
 import club.heiqi.uilib.ui.dom.UiDocument;
@@ -71,6 +79,9 @@ public final class HtmlLikeDocumentWidget extends Widget implements UiDocument.D
     private static final int DRAG_ACTIVATION_THRESHOLD_PX = 4;
     private static final int DRAG_ACTIVATION_THRESHOLD_SQUARED =
             DRAG_ACTIVATION_THRESHOLD_PX * DRAG_ACTIVATION_THRESHOLD_PX;
+    private static final long DOUBLE_CLICK_THRESHOLD_NANOS = 500_000_000L;
+    private static final int DOUBLE_CLICK_POSITION_THRESHOLD_PX = 4;
+    private static final int CONTEXT_MENU_BUTTON = 1;
     private static final String HIT_TEST_PASSTHROUGH_ATTRIBUTE = "data-hit-test-passthrough";
 
     private final UiDocument document;
@@ -119,6 +130,11 @@ public final class HtmlLikeDocumentWidget extends Widget implements UiDocument.D
     private int lastDragDocumentY;
     private boolean dragActivated;
     private boolean htmlDragStarted;
+    private ElementNode lastClickedElement;
+    private int lastClickButton = -1;
+    private int lastClickDocumentX = Integer.MIN_VALUE;
+    private int lastClickDocumentY = Integer.MIN_VALUE;
+    private long lastClickTimeNanos = Long.MIN_VALUE;
     /** raw button 默认键盘行为：Space 按下状态追踪（元素 uid -> 是否 spacePressed）。 */
     private final java.util.Map<Long, Boolean> rawButtonSpacePressed = new java.util.HashMap<Long, Boolean>();
 
@@ -398,13 +414,17 @@ public final class HtmlLikeDocumentWidget extends Widget implements UiDocument.D
             }
             if (currentElement.isFocusable()
                     || currentElement.getClickHandler() != null
+                    || currentElement.getDoubleClickHandler() != null
+                    || currentElement.getContextMenuHandler() != null
                     || currentElement.getDragHandler() != null
                     || currentElement.getDragStartHandler() != null
                     || currentElement.getDragOverHandler() != null
                     || currentElement.getDragEndHandler() != null
                     || "true".equals(currentElement.getAttribute("draggable"))
                     || currentElement.getKeyHandler() != null
-                    || currentElement.getTextInputHandler() != null) {
+                    || currentElement.getTextInputHandler() != null
+                    || currentElement.getTransitionEndHandler() != null
+                    || currentElement.getAnimationEndHandler() != null) {
                 return true;
             }
         }
@@ -538,6 +558,7 @@ public final class HtmlLikeDocumentWidget extends Widget implements UiDocument.D
         syncCursorFromHoveredElement();
         if (!dragHandled && target != null) {
             dispatchClick(target, event);
+            dispatchPostClickEvents(target, event);
         }
     }
 
@@ -645,7 +666,7 @@ public final class HtmlLikeDocumentWidget extends Widget implements UiDocument.D
         DocumentLayoutBox rootBox = resolvePaintLayoutBox(false);
         long currentTimeNanos = animationClock.getCurrentTimeNanos();
         boolean animationStateChanged = animationTimeline.updateFromLayout(rootBox, currentTimeNanos);
-        animationStateChanged |= animationTimeline.pruneFinishedAnimations(currentTimeNanos);
+        animationStateChanged |= flushCompletedAnimationEvents(currentTimeNanos);
         boolean layoutRuntimeValueActive = animationTimeline.hasRuntimeValue(DocumentAnimationImpact.LAYOUT);
         if (layoutRuntimeValueActive) {
             rootBox = resolveRuntimeLayoutBox(currentTimeNanos,
@@ -820,6 +841,115 @@ public final class HtmlLikeDocumentWidget extends Widget implements UiDocument.D
             DocumentElementClickEvent clickEvent = new DocumentElementClickEvent(target, currentElement,
                     documentX, documentY, event.getButton(), event.getTimeNanos(), eventControl);
             if (clickHandler.onClick(clickEvent)) {
+                eventControl.stopPropagation();
+            }
+        }
+        return eventControl.isPropagationStopped();
+    }
+
+    private void dispatchPostClickEvents(ElementNode target, UiMouseEvent event) {
+        if (target == null || event == null) {
+            return;
+        }
+        int documentX = event.getMouseX() - getAbsoluteX();
+        int documentY = event.getMouseY() - getAbsoluteY();
+        if (event.getButton() == CONTEXT_MENU_BUTTON) {
+            dispatchContextMenu(target, documentX, documentY, event);
+        }
+        if (shouldDispatchDoubleClick(target, event, documentX, documentY)) {
+            dispatchDoubleClick(target, documentX, documentY, event);
+            clearLastClickState();
+            return;
+        }
+        rememberLastClick(target, event.getButton(), documentX, documentY, event.getTimeNanos());
+    }
+
+    private boolean shouldDispatchDoubleClick(ElementNode target, UiMouseEvent event, int documentX, int documentY) {
+        if (target == null || event == null || lastClickedElement != target || lastClickButton != event.getButton()) {
+            return false;
+        }
+        long elapsedNanos = event.getTimeNanos() - lastClickTimeNanos;
+        if (elapsedNanos < 0L || elapsedNanos > DOUBLE_CLICK_THRESHOLD_NANOS) {
+            return false;
+        }
+        int deltaX = documentX - lastClickDocumentX;
+        int deltaY = documentY - lastClickDocumentY;
+        return deltaX * deltaX + deltaY * deltaY
+                <= DOUBLE_CLICK_POSITION_THRESHOLD_PX * DOUBLE_CLICK_POSITION_THRESHOLD_PX;
+    }
+
+    private void rememberLastClick(ElementNode target, int button, int documentX, int documentY, long timeNanos) {
+        lastClickedElement = target;
+        lastClickButton = button;
+        lastClickDocumentX = documentX;
+        lastClickDocumentY = documentY;
+        lastClickTimeNanos = timeNanos;
+    }
+
+    private void clearLastClickState() {
+        lastClickedElement = null;
+        lastClickButton = -1;
+        lastClickDocumentX = Integer.MIN_VALUE;
+        lastClickDocumentY = Integer.MIN_VALUE;
+        lastClickTimeNanos = Long.MIN_VALUE;
+    }
+
+    private boolean dispatchDoubleClick(ElementNode target, int documentX, int documentY, UiMouseEvent event) {
+        DocumentEventControl eventControl = new DocumentEventControl();
+        List<ElementNode> path = buildAncestorPath(target);
+
+        eventControl.setEventPhase(DocumentEventPhase.AT_TARGET);
+        DocumentElementDoubleClickHandler targetHandler = target.getDoubleClickHandler();
+        if (targetHandler != null) {
+            DocumentElementDoubleClickEvent doubleClickEvent = new DocumentElementDoubleClickEvent(target, target,
+                    documentX, documentY, event.getButton(), event.getTimeNanos(), eventControl);
+            if (targetHandler.onDoubleClick(doubleClickEvent)) {
+                eventControl.stopPropagation();
+            }
+        }
+
+        eventControl.setEventPhase(DocumentEventPhase.BUBBLING);
+        for (int i = 1; i < path.size(); i++) {
+            if (eventControl.isPropagationStopped()) break;
+            ElementNode currentElement = path.get(i);
+            DocumentElementDoubleClickHandler handler = currentElement.getDoubleClickHandler();
+            if (handler == null) {
+                continue;
+            }
+            DocumentElementDoubleClickEvent doubleClickEvent = new DocumentElementDoubleClickEvent(target,
+                    currentElement, documentX, documentY, event.getButton(), event.getTimeNanos(), eventControl);
+            if (handler.onDoubleClick(doubleClickEvent)) {
+                eventControl.stopPropagation();
+            }
+        }
+        return eventControl.isPropagationStopped();
+    }
+
+    private boolean dispatchContextMenu(ElementNode target, int documentX, int documentY, UiMouseEvent event) {
+        DocumentEventControl eventControl = new DocumentEventControl();
+        List<ElementNode> path = buildAncestorPath(target);
+
+        eventControl.setEventPhase(DocumentEventPhase.AT_TARGET);
+        DocumentElementContextMenuHandler targetHandler = target.getContextMenuHandler();
+        if (targetHandler != null) {
+            DocumentElementContextMenuEvent contextMenuEvent = new DocumentElementContextMenuEvent(target, target,
+                    documentX, documentY, event.getButton(), event.getTimeNanos(), eventControl);
+            if (targetHandler.onContextMenu(contextMenuEvent)) {
+                eventControl.stopPropagation();
+            }
+        }
+
+        eventControl.setEventPhase(DocumentEventPhase.BUBBLING);
+        for (int i = 1; i < path.size(); i++) {
+            if (eventControl.isPropagationStopped()) break;
+            ElementNode currentElement = path.get(i);
+            DocumentElementContextMenuHandler handler = currentElement.getContextMenuHandler();
+            if (handler == null) {
+                continue;
+            }
+            DocumentElementContextMenuEvent contextMenuEvent = new DocumentElementContextMenuEvent(target,
+                    currentElement, documentX, documentY, event.getButton(), event.getTimeNanos(), eventControl);
+            if (handler.onContextMenu(contextMenuEvent)) {
                 eventControl.stopPropagation();
             }
         }
@@ -1148,7 +1278,7 @@ public final class HtmlLikeDocumentWidget extends Widget implements UiDocument.D
         DocumentLayoutBox rootBox = resolvePaintLayoutBox(false);
         long currentTimeNanos = animationClock.getCurrentTimeNanos();
         animationTimeline.updateFromLayout(rootBox, currentTimeNanos);
-        animationTimeline.pruneFinishedAnimations(currentTimeNanos);
+        flushCompletedAnimationEvents(currentTimeNanos);
         if (animationTimeline.hasRuntimeValue(DocumentAnimationImpact.LAYOUT)) {
             return resolveRuntimeLayoutBox(currentTimeNanos,
                     animationTimeline.hasAnimationWork(DocumentAnimationImpact.LAYOUT));
@@ -1156,6 +1286,96 @@ public final class HtmlLikeDocumentWidget extends Widget implements UiDocument.D
         invalidateRuntimeLayoutCache();
         updateScrollStateFromCachedLayoutIfNeeded();
         return rootBox;
+    }
+
+    private boolean flushCompletedAnimationEvents(long currentTimeNanos) {
+        DocumentAnimationTimeline.PruneResult pruneResult = animationTimeline.pruneFinishedAnimationsWithResult(
+                currentTimeNanos);
+        dispatchCompletedAnimationEvents(pruneResult, currentTimeNanos);
+        return pruneResult.isChanged();
+    }
+
+    private void dispatchCompletedAnimationEvents(DocumentAnimationTimeline.PruneResult pruneResult,
+            long currentTimeNanos) {
+        if (pruneResult == null) {
+            return;
+        }
+        for (DocumentAnimationTimeline.TransitionEndRecord record : pruneResult.getTransitionEndRecords()) {
+            dispatchTransitionEnd(record, currentTimeNanos);
+        }
+        for (DocumentAnimationTimeline.AnimationEndRecord record : pruneResult.getAnimationEndRecords()) {
+            dispatchAnimationEnd(record, currentTimeNanos);
+        }
+    }
+
+    private boolean dispatchTransitionEnd(DocumentAnimationTimeline.TransitionEndRecord record, long timeNanos) {
+        ElementNode target = record == null ? null : record.getElement();
+        if (target == null || !isElementAttachedToDocument(target)) {
+            return false;
+        }
+        DocumentEventControl eventControl = new DocumentEventControl();
+        List<ElementNode> path = buildAncestorPath(target);
+
+        eventControl.setEventPhase(DocumentEventPhase.AT_TARGET);
+        DocumentElementTransitionEndHandler targetHandler = target.getTransitionEndHandler();
+        if (targetHandler != null) {
+            DocumentElementTransitionEndEvent event = new DocumentElementTransitionEndEvent(target, target,
+                    record.getProperty(), record.getElapsedTimeNanos(), timeNanos, eventControl);
+            if (targetHandler.onTransitionEnd(event)) {
+                eventControl.stopPropagation();
+            }
+        }
+
+        eventControl.setEventPhase(DocumentEventPhase.BUBBLING);
+        for (int i = 1; i < path.size(); i++) {
+            if (eventControl.isPropagationStopped()) break;
+            ElementNode currentElement = path.get(i);
+            DocumentElementTransitionEndHandler handler = currentElement.getTransitionEndHandler();
+            if (handler == null) {
+                continue;
+            }
+            DocumentElementTransitionEndEvent event = new DocumentElementTransitionEndEvent(target, currentElement,
+                    record.getProperty(), record.getElapsedTimeNanos(), timeNanos, eventControl);
+            if (handler.onTransitionEnd(event)) {
+                eventControl.stopPropagation();
+            }
+        }
+        return eventControl.isPropagationStopped();
+    }
+
+    private boolean dispatchAnimationEnd(DocumentAnimationTimeline.AnimationEndRecord record, long timeNanos) {
+        ElementNode target = record == null ? null : record.getElement();
+        if (target == null || !isElementAttachedToDocument(target)) {
+            return false;
+        }
+        DocumentEventControl eventControl = new DocumentEventControl();
+        List<ElementNode> path = buildAncestorPath(target);
+
+        eventControl.setEventPhase(DocumentEventPhase.AT_TARGET);
+        DocumentElementAnimationEndHandler targetHandler = target.getAnimationEndHandler();
+        if (targetHandler != null) {
+            DocumentElementAnimationEndEvent event = new DocumentElementAnimationEndEvent(target, target,
+                    record.getAnimationName(), record.getElapsedTimeNanos(), timeNanos, eventControl);
+            if (targetHandler.onAnimationEnd(event)) {
+                eventControl.stopPropagation();
+            }
+        }
+
+        eventControl.setEventPhase(DocumentEventPhase.BUBBLING);
+        for (int i = 1; i < path.size(); i++) {
+            if (eventControl.isPropagationStopped()) break;
+            ElementNode currentElement = path.get(i);
+            DocumentElementAnimationEndHandler handler = currentElement.getAnimationEndHandler();
+            if (handler == null) {
+                continue;
+            }
+            DocumentElementAnimationEndEvent event = new DocumentElementAnimationEndEvent(target, currentElement,
+                    record.getAnimationName(), record.getElapsedTimeNanos(), timeNanos, eventControl);
+            if (handler.onAnimationEnd(event)) {
+                eventControl.stopPropagation();
+            }
+        }
+        return eventControl.isPropagationStopped();
     }
 
     private boolean isRuntimeLayoutCacheReusable() {
