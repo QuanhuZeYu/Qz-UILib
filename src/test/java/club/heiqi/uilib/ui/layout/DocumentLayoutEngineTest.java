@@ -18,11 +18,15 @@ import club.heiqi.uilib.ui.style.UiBoxSizing;
 import club.heiqi.uilib.ui.style.UiDisplay;
 import club.heiqi.uilib.ui.style.UiFlexDirection;
 import club.heiqi.uilib.ui.style.UiJustifyContent;
+import club.heiqi.uilib.ui.style.UiOverflowWrap;
 import club.heiqi.uilib.ui.style.UiOverflow;
 import club.heiqi.uilib.ui.style.UiPosition;
 import club.heiqi.uilib.ui.style.UiStyleInsets;
 import club.heiqi.uilib.ui.style.UiStyleLength;
+import club.heiqi.uilib.ui.style.UiTextOverflow;
 import club.heiqi.uilib.ui.style.UiVerticalAlign;
+import club.heiqi.uilib.ui.style.UiWhiteSpace;
+import club.heiqi.uilib.ui.style.UiWordBreak;
 import club.heiqi.uilib.ui.text.TextMeasureService;
 
 /**
@@ -854,14 +858,34 @@ public class DocumentLayoutEngineTest {
     }
 
     /**
-     * 验证直接文本子节点会使用注入的文本测量服务按可用宽度换行。
+     * 验证 NORMAL 默认不在无空格英文长 token 内部断词。
      */
     @Test
-    public void shouldWrapDirectTextRunsWithInjectedTextMeasureService() {
+    public void shouldKeepLongAsciiTokenUnbrokenWithNormalWordBreak() {
         UiDocument document = UiDocument.create();
         ElementNode root = document.getRootElement();
 
         root.style().setWidth(UiStyleLength.px(24));
+        root.appendText("abcdefg");
+
+        DocumentLayoutBox rootBox = DocumentLayoutEngine.layout(root, 80, 0, new DeterministicTextMeasureService());
+
+        Assert.assertEquals(1, rootBox.getTextRuns().size());
+        assertTextRun(rootBox.getTextRuns().get(0), "abcdefg", 0, 0, 24, 18);
+        Assert.assertEquals(18, rootBox.getHeight());
+    }
+
+    /**
+     * 验证 overflow-wrap:break-word 会在长英文 token 溢出时断词。
+     */
+    @Test
+    public void shouldBreakLongAsciiTokenWithOverflowWrapBreakWord() {
+        UiDocument document = UiDocument.create();
+        ElementNode root = document.getRootElement();
+
+        root.style()
+                .setWidth(UiStyleLength.px(24))
+                .setOverflowWrap(UiOverflowWrap.BREAK_WORD);
         root.appendText("abcdefg");
 
         DocumentLayoutBox rootBox = DocumentLayoutEngine.layout(root, 80, 0, new DeterministicTextMeasureService());
@@ -871,6 +895,134 @@ public class DocumentLayoutEngineTest {
         assertTextRun(rootBox.getTextRuns().get(1), "def", 0, 18, 24, 18);
         assertTextRun(rootBox.getTextRuns().get(2), "g", 0, 36, 8, 18);
         Assert.assertEquals(54, rootBox.getHeight());
+    }
+
+    /**
+     * 验证 overflow-wrap:anywhere 会参与 auto 宽固有尺寸，区别于 break-word。
+     */
+    @Test
+    public void shouldUseAnywhereBreaksForAutoWidthIntrinsicMeasurement() {
+        UiDocument document = UiDocument.create();
+        ElementNode root = document.getRootElement();
+        ElementNode breakWord = document.div();
+        ElementNode anywhere = document.div();
+
+        root.style()
+                .setDisplay(UiDisplay.FLEX)
+                .setFlexDirection(UiFlexDirection.COLUMN)
+                .setAlignItems(UiAlignItems.START)
+                .setWidth(UiStyleLength.px(100));
+        breakWord.style()
+                .setWidth(UiStyleLength.auto())
+                .setOverflowWrap(UiOverflowWrap.BREAK_WORD);
+        anywhere.style()
+                .setWidth(UiStyleLength.auto())
+                .setOverflowWrap(UiOverflowWrap.ANYWHERE);
+        breakWord.appendText("abcdefg");
+        anywhere.appendText("abcdefg");
+        root.append(breakWord).append(anywhere);
+
+        DocumentLayoutBox rootBox = DocumentLayoutEngine.layout(root, 120, 0,
+                new DeterministicTextMeasureService());
+        DocumentLayoutBox breakWordBox = rootBox.getChildren().get(0);
+        DocumentLayoutBox anywhereBox = rootBox.getChildren().get(1);
+
+        Assert.assertEquals(56, breakWordBox.getContentWidth());
+        Assert.assertEquals(8, anywhereBox.getContentWidth());
+        Assert.assertEquals(7, anywhereBox.getTextRuns().size());
+    }
+
+    /**
+     * 验证 word-break:break-all 会在普通英文单词内部产生断点。
+     */
+    @Test
+    public void shouldBreakAsciiTextWithWordBreakBreakAll() {
+        UiDocument document = UiDocument.create();
+        ElementNode root = document.getRootElement();
+
+        root.style()
+                .setWidth(UiStyleLength.px(24))
+                .setWordBreak(UiWordBreak.BREAK_ALL);
+        root.appendText("abcdefg");
+
+        DocumentLayoutBox rootBox = DocumentLayoutEngine.layout(root, 80, 0, new DeterministicTextMeasureService());
+
+        Assert.assertEquals(3, rootBox.getTextRuns().size());
+        assertTextRun(rootBox.getTextRuns().get(0), "abc", 0, 0, 24, 18);
+        assertTextRun(rootBox.getTextRuns().get(1), "def", 0, 18, 24, 18);
+        assertTextRun(rootBox.getTextRuns().get(2), "g", 0, 36, 8, 18);
+    }
+
+    /**
+     * 验证 NORMAL 可按 URL 标点断行。
+     */
+    @Test
+    public void shouldBreakUrlAtPunctuationWithNormalWordBreak() {
+        UiDocument document = UiDocument.create();
+        ElementNode root = document.getRootElement();
+
+        root.style().setWidth(UiStyleLength.px(16));
+        root.appendText("a/b/c");
+
+        DocumentLayoutBox rootBox = DocumentLayoutEngine.layout(root, 80, 0, new DeterministicTextMeasureService());
+
+        Assert.assertEquals(3, rootBox.getTextRuns().size());
+        assertTextRun(rootBox.getTextRuns().get(0), "a/", 0, 0, 16, 18);
+        assertTextRun(rootBox.getTextRuns().get(1), "b/", 0, 18, 16, 18);
+        assertTextRun(rootBox.getTextRuns().get(2), "c", 0, 36, 8, 18);
+    }
+
+    /**
+     * 验证 KEEP_ALL 会禁止 CJK 与英文混排文本在 CJK 边界断行。
+     */
+    @Test
+    public void shouldRespectKeepAllForCjkAndMixedText() {
+        UiDocument document = UiDocument.create();
+        ElementNode root = document.getRootElement();
+        ElementNode normal = document.div();
+        ElementNode keepAll = document.div();
+
+        root.style().setWidth(UiStyleLength.px(16));
+        normal.style().setWidth(UiStyleLength.px(16));
+        keepAll.style()
+                .setWidth(UiStyleLength.px(16))
+                .setWordBreak(UiWordBreak.KEEP_ALL);
+        normal.appendText("中文abc");
+        keepAll.appendText("中文abc");
+        root.append(normal).append(keepAll);
+
+        DocumentLayoutBox rootBox = DocumentLayoutEngine.layout(root, 80, 0,
+                new DeterministicTextMeasureService());
+        DocumentLayoutBox normalBox = rootBox.getChildren().get(0);
+        DocumentLayoutBox keepAllBox = rootBox.getChildren().get(1);
+
+        Assert.assertEquals(2, normalBox.getTextRuns().size());
+        assertTextRun(normalBox.getTextRuns().get(0), "中文", 0, 0, 16, 18);
+        assertTextRun(normalBox.getTextRuns().get(1), "abc", 0, 18, 16, 18);
+        Assert.assertEquals(1, keepAllBox.getTextRuns().size());
+        assertTextRun(keepAllBox.getTextRuns().get(0), "中文abc", 0, 36, 16, 18);
+    }
+
+    /**
+     * 验证 nowrap 仍会压过断词属性，并保留 ellipsis 行为。
+     */
+    @Test
+    public void shouldKeepNowrapAndEllipsisBeforeBreakProperties() {
+        UiDocument document = UiDocument.create();
+        ElementNode root = document.getRootElement();
+
+        root.style()
+                .setWidth(UiStyleLength.px(24))
+                .setWhiteSpace(UiWhiteSpace.NOWRAP)
+                .setTextOverflow(UiTextOverflow.ELLIPSIS)
+                .setOverflowWrap(UiOverflowWrap.ANYWHERE)
+                .setWordBreak(UiWordBreak.BREAK_ALL);
+        root.appendText("abcdefg");
+
+        DocumentLayoutBox rootBox = DocumentLayoutEngine.layout(root, 80, 0, new DeterministicTextMeasureService());
+
+        Assert.assertEquals(1, rootBox.getTextRuns().size());
+        assertTextRun(rootBox.getTextRuns().get(0), "ab\u2026", 0, 0, 24, 18);
     }
 
     /**
@@ -911,6 +1063,7 @@ public class DocumentLayoutEngineTest {
         ElementNode span = document.span();
 
         root.style().setWidth(UiStyleLength.px(32));
+        span.style().setWordBreak(UiWordBreak.BREAK_ALL);
         span.appendText("AABBCC");
         root.append(span);
 

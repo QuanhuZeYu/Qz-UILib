@@ -19,6 +19,7 @@ import club.heiqi.uilib.ui.style.UiDisplay;
 import club.heiqi.uilib.ui.style.UiFlexDirection;
 import club.heiqi.uilib.ui.style.UiFlexWrap;
 import club.heiqi.uilib.ui.style.UiJustifyContent;
+import club.heiqi.uilib.ui.style.UiOverflowWrap;
 import club.heiqi.uilib.ui.style.UiOverflow;
 import club.heiqi.uilib.ui.style.UiPosition;
 import club.heiqi.uilib.ui.style.UiStyleInsets;
@@ -29,6 +30,7 @@ import club.heiqi.uilib.ui.style.UiTextOverflow;
 import club.heiqi.uilib.ui.style.UiVerticalAlign;
 import club.heiqi.uilib.ui.style.UiVisibility;
 import club.heiqi.uilib.ui.style.UiWhiteSpace;
+import club.heiqi.uilib.ui.style.UiWordBreak;
 import club.heiqi.uilib.ui.text.TextContentMode;
 import club.heiqi.uilib.ui.text.TextMeasureService;
 
@@ -731,7 +733,7 @@ public final class DocumentLayoutEngine {
             lines = new ArrayList<String>();
             lines.add(singleLine);
         } else {
-            lines = textMeasureService.listFormattedStringToWidth(text, toRawTextSize(availableWidth), textContentMode);
+            lines = wrapTextToWidth(text, availableWidth, ownerStyle, textContentMode, textMeasureService);
         }
         if (lines == null || lines.isEmpty()) {
             return top;
@@ -812,38 +814,274 @@ public final class DocumentLayoutEngine {
         if (remainingText == null || remainingText.isEmpty() || inlineLayoutContext.getLineWidth() <= 0) {
             return;
         }
+        ComputedStyle ownerStyle = UiStyleResolver.compute(ownerElement);
         while (!remainingText.isEmpty()) {
-            if (inlineLayoutContext.getRemainingWidth() <= 0 && inlineLayoutContext.hasLineContent()) {
+            if (ownerStyle.getWhiteSpace() != UiWhiteSpace.NOWRAP
+                    && inlineLayoutContext.getRemainingWidth() <= 0 && inlineLayoutContext.hasLineContent()) {
                 inlineLayoutContext.nextLine();
             }
             int remainingWidth = inlineLayoutContext.getRemainingWidth();
-            if (remainingWidth <= 0) {
+            if (remainingWidth <= 0 && ownerStyle.getWhiteSpace() != UiWhiteSpace.NOWRAP) {
                 return;
             }
             TextContentMode textContentMode = textNode.getTextContentMode();
-            String segment = textMeasureService.trimStringToWidth(remainingText, toRawTextSize(remainingWidth),
-                    textContentMode);
-            if (segment == null) {
-                segment = "";
-            }
+            int segmentAvailableWidth = ownerStyle.getWhiteSpace() == UiWhiteSpace.NOWRAP
+                    ? Integer.MAX_VALUE / 2
+                    : remainingWidth;
+            TextWrapSegment segmentResult = takeNextTextSegment(remainingText, segmentAvailableWidth, ownerStyle,
+                    textContentMode, textMeasureService);
+            String segment = segmentResult.text;
             if (segment.isEmpty()) {
-                segment = firstCodePoint(remainingText);
+                remainingText = remainingText.substring(segmentResult.consumedLength);
+                continue;
             }
             int width = Math.max(0, toUiTextSize(textMeasureService.getStringWidth(segment, textContentMode)));
-            if (width > remainingWidth && inlineLayoutContext.hasLineContent()) {
+            if (ownerStyle.getWhiteSpace() != UiWhiteSpace.NOWRAP
+                    && width > remainingWidth && inlineLayoutContext.hasLineContent()) {
                 inlineLayoutContext.nextLine();
                 continue;
             }
-            width = Math.min(width, inlineLayoutContext.getRemainingWidth());
+            if (ownerStyle.getWhiteSpace() != UiWhiteSpace.NOWRAP) {
+                width = Math.min(width, inlineLayoutContext.getRemainingWidth());
+            }
             inlineLayoutContext.appendTextRun(textNode, ownerElement, segment, inlineLayoutContext.getCursorLeft(),
                     width, fragmentOwners);
             appendInlineFragments(fragmentOwners, inlineLayoutContext.getCursorLeft(), width, inlineLayoutContext);
             inlineLayoutContext.advance(width);
-            remainingText = remainingText.substring(segment.length());
-            if (!remainingText.isEmpty() && inlineLayoutContext.getRemainingWidth() <= 0) {
+            remainingText = remainingText.substring(segmentResult.consumedLength);
+            if (ownerStyle.getWhiteSpace() != UiWhiteSpace.NOWRAP
+                    && !remainingText.isEmpty() && inlineLayoutContext.getRemainingWidth() <= 0) {
                 inlineLayoutContext.nextLine();
             }
         }
+    }
+
+    /**
+     * 按 CSS-like 断词属性将普通文本拆成布局行。
+     */
+    private static List<String> wrapTextToWidth(String text, int availableWidth, ComputedStyle ownerStyle,
+            TextContentMode textContentMode, TextMeasureService textMeasureService) {
+        if (text == null || text.isEmpty() || availableWidth <= 0) {
+            return Collections.emptyList();
+        }
+        List<String> lines = new ArrayList<String>();
+        String remainingText = text;
+        while (!remainingText.isEmpty()) {
+            TextWrapSegment segment = takeNextTextSegment(remainingText, availableWidth, ownerStyle,
+                    textContentMode, textMeasureService);
+            if (segment.consumedLength <= 0) {
+                break;
+            }
+            if (!segment.text.isEmpty()) {
+                lines.add(segment.text);
+            }
+            remainingText = remainingText.substring(Math.min(segment.consumedLength, remainingText.length()));
+        }
+        return lines;
+    }
+
+    /**
+     * 取出当前行的下一个文本片段，并返回实际消费的源文本长度。
+     */
+    private static TextWrapSegment takeNextTextSegment(String text, int availableWidth, ComputedStyle ownerStyle,
+            TextContentMode textContentMode, TextMeasureService textMeasureService) {
+        if (text == null || text.isEmpty()) {
+            return new TextWrapSegment("", 0);
+        }
+        if (ownerStyle != null && ownerStyle.getWhiteSpace() == UiWhiteSpace.NOWRAP) {
+            return new TextWrapSegment(text, text.length());
+        }
+        int hardLineBreakStart = findHardLineBreakStart(text);
+        int hardLineBreakLength = hardLineBreakStart < text.length()
+                ? resolveHardLineBreakLength(text, hardLineBreakStart) : 0;
+        String paragraph = text.substring(0, hardLineBreakStart);
+        if (paragraph.isEmpty()) {
+            return new TextWrapSegment("", hardLineBreakLength);
+        }
+
+        UiWordBreak wordBreak = ownerStyle == null ? UiWordBreak.NORMAL : ownerStyle.getWordBreak();
+        UiOverflowWrap overflowWrap = ownerStyle == null ? UiOverflowWrap.NORMAL : ownerStyle.getOverflowWrap();
+        int maxFitEnd = resolveMaxFittingTextEnd(paragraph, availableWidth, textContentMode, textMeasureService);
+        TextBreakPoint breakPoint;
+        if (maxFitEnd >= paragraph.length()) {
+            breakPoint = TextBreakPoint.at(paragraph.length());
+        } else if (wordBreak == UiWordBreak.BREAK_ALL || overflowWrap == UiOverflowWrap.ANYWHERE) {
+            breakPoint = TextBreakPoint.at(maxFitEnd);
+        } else {
+            breakPoint = findLastNormalBreakPoint(paragraph, maxFitEnd, wordBreak, textContentMode);
+            if (breakPoint == null && overflowWrap == UiOverflowWrap.BREAK_WORD) {
+                breakPoint = TextBreakPoint.at(maxFitEnd);
+            }
+            if (breakPoint == null) {
+                breakPoint = findFirstNormalBreakPointAfter(paragraph, maxFitEnd, wordBreak, textContentMode);
+            }
+            if (breakPoint == null) {
+                breakPoint = TextBreakPoint.at(paragraph.length());
+            }
+        }
+
+        int consumedLength = Math.max(0, Math.min(breakPoint.consumedEnd, paragraph.length()));
+        int textEnd = Math.max(0, Math.min(breakPoint.textEnd, consumedLength));
+        if (consumedLength >= paragraph.length()) {
+            consumedLength += hardLineBreakLength;
+        }
+        if (consumedLength <= 0) {
+            int firstUnitLength = firstTextUnitLength(paragraph, textContentMode);
+            consumedLength = firstUnitLength;
+            textEnd = firstUnitLength;
+        }
+        return new TextWrapSegment(paragraph.substring(0, textEnd), consumedLength);
+    }
+
+    private static int findHardLineBreakStart(String text) {
+        for (int index = 0; index < text.length(); index++) {
+            char value = text.charAt(index);
+            if (value == '\r' || value == '\n') {
+                return index;
+            }
+        }
+        return text.length();
+    }
+
+    private static int resolveHardLineBreakLength(String text, int breakStart) {
+        if (breakStart < text.length() - 1 && text.charAt(breakStart) == '\r'
+                && text.charAt(breakStart + 1) == '\n') {
+            return 2;
+        }
+        return 1;
+    }
+
+    private static int resolveMaxFittingTextEnd(String text, int availableWidth, TextContentMode textContentMode,
+            TextMeasureService textMeasureService) {
+        String trimmed = textMeasureService.trimStringToWidth(text, toRawTextSize(availableWidth), textContentMode);
+        int trimmedEnd = trimmed == null ? 0 : trimmed.length();
+        int maxFitEnd = normalizeTextUnitBoundary(text, trimmedEnd, textContentMode);
+        if (maxFitEnd <= 0) {
+            return firstTextUnitLength(text, textContentMode);
+        }
+        return maxFitEnd;
+    }
+
+    private static TextBreakPoint findLastNormalBreakPoint(String text, int maxTextEnd, UiWordBreak wordBreak,
+            TextContentMode textContentMode) {
+        TextBreakPoint result = null;
+        List<TextWrapUnit> units = collectTextWrapUnits(text, textContentMode);
+        for (int index = 0; index < units.size(); index++) {
+            TextBreakPoint candidate = resolveNormalBreakPoint(units, index, wordBreak);
+            if (candidate == null || candidate.textEnd > maxTextEnd) {
+                continue;
+            }
+            result = candidate;
+        }
+        return result;
+    }
+
+    private static TextBreakPoint findFirstNormalBreakPointAfter(String text, int minTextEnd, UiWordBreak wordBreak,
+            TextContentMode textContentMode) {
+        List<TextWrapUnit> units = collectTextWrapUnits(text, textContentMode);
+        for (int index = 0; index < units.size(); index++) {
+            TextBreakPoint candidate = resolveNormalBreakPoint(units, index, wordBreak);
+            if (candidate != null && candidate.textEnd > minTextEnd) {
+                return candidate;
+            }
+        }
+        return null;
+    }
+
+    private static TextBreakPoint resolveNormalBreakPoint(List<TextWrapUnit> units, int index,
+            UiWordBreak wordBreak) {
+        TextWrapUnit unit = units.get(index);
+        if (unit.formattingCode) {
+            return null;
+        }
+        if (Character.isWhitespace(unit.codePoint)) {
+            int consumedEnd = unit.end;
+            while (index + 1 < units.size() && Character.isWhitespace(units.get(index + 1).codePoint)) {
+                index++;
+                consumedEnd = units.get(index).end;
+            }
+            return new TextBreakPoint(unit.start, consumedEnd);
+        }
+        if (isUrlBreakCodePoint(unit.codePoint)) {
+            return TextBreakPoint.at(unit.end);
+        }
+        if (wordBreak != UiWordBreak.KEEP_ALL && index + 1 < units.size()) {
+            TextWrapUnit next = units.get(index + 1);
+            if (!next.formattingCode && (isCjkCodePoint(unit.codePoint) || isCjkCodePoint(next.codePoint))) {
+                return TextBreakPoint.at(unit.end);
+            }
+        }
+        return null;
+    }
+
+    private static List<TextWrapUnit> collectTextWrapUnits(String text, TextContentMode textContentMode) {
+        List<TextWrapUnit> units = new ArrayList<TextWrapUnit>();
+        for (int index = 0; index < text.length();) {
+            if (isFormattingCodeStart(text, index, textContentMode)) {
+                units.add(new TextWrapUnit(index, index + 2, 0, true));
+                index += 2;
+                continue;
+            }
+            int codePoint = text.codePointAt(index);
+            int end = index + Character.charCount(codePoint);
+            units.add(new TextWrapUnit(index, end, codePoint, false));
+            index = end;
+        }
+        return units;
+    }
+
+    private static int normalizeTextUnitBoundary(String text, int requestedEnd, TextContentMode textContentMode) {
+        int safeEnd = Math.max(0, Math.min(requestedEnd, text.length()));
+        int boundary = 0;
+        for (int index = 0; index < text.length();) {
+            int nextIndex;
+            if (isFormattingCodeStart(text, index, textContentMode)) {
+                nextIndex = index + 2;
+            } else {
+                nextIndex = index + Character.charCount(text.codePointAt(index));
+            }
+            if (nextIndex > safeEnd) {
+                break;
+            }
+            boundary = nextIndex;
+            index = nextIndex;
+        }
+        return boundary;
+    }
+
+    private static int firstTextUnitLength(String text, TextContentMode textContentMode) {
+        if (text == null || text.isEmpty()) {
+            return 0;
+        }
+        if (isFormattingCodeStart(text, 0, textContentMode)) {
+            return 2;
+        }
+        return Character.charCount(text.codePointAt(0));
+    }
+
+    private static boolean isFormattingCodeStart(String text, int index, TextContentMode textContentMode) {
+        return textContentMode == TextContentMode.MINECRAFT_FORMATTED
+                && index >= 0 && index < text.length() - 1 && text.charAt(index) == '\u00a7';
+    }
+
+    private static boolean isUrlBreakCodePoint(int codePoint) {
+        return codePoint == '/' || codePoint == '\\' || codePoint == '.' || codePoint == ':'
+                || codePoint == '?' || codePoint == '&' || codePoint == '=' || codePoint == '-'
+                || codePoint == '_' || codePoint == '#';
+    }
+
+    private static boolean isCjkCodePoint(int codePoint) {
+        Character.UnicodeBlock block = Character.UnicodeBlock.of(codePoint);
+        return block == Character.UnicodeBlock.CJK_UNIFIED_IDEOGRAPHS
+                || block == Character.UnicodeBlock.CJK_UNIFIED_IDEOGRAPHS_EXTENSION_A
+                || block == Character.UnicodeBlock.CJK_UNIFIED_IDEOGRAPHS_EXTENSION_B
+                || block == Character.UnicodeBlock.CJK_COMPATIBILITY_IDEOGRAPHS
+                || block == Character.UnicodeBlock.CJK_SYMBOLS_AND_PUNCTUATION
+                || block == Character.UnicodeBlock.HIRAGANA
+                || block == Character.UnicodeBlock.KATAKANA
+                || block == Character.UnicodeBlock.HANGUL_SYLLABLES
+                || block == Character.UnicodeBlock.HANGUL_JAMO
+                || block == Character.UnicodeBlock.HANGUL_COMPATIBILITY_JAMO;
     }
 
     private static void appendInlineSpacing(List<InlineFragmentOwner> fragmentOwners,
@@ -941,11 +1179,6 @@ public final class DocumentLayoutEngine {
             }
         }
         return -1;
-    }
-
-    private static String firstCodePoint(String text) {
-        int endIndex = Math.min(text.length(), Character.charCount(text.codePointAt(0)));
-        return text.substring(0, endIndex);
     }
 
     private static InlineElementEdges resolveInlineElementEdges(ElementNode inlineElement, int lineWidth,
@@ -1381,8 +1614,7 @@ public final class DocumentLayoutEngine {
         for (DocumentNode child : element.getChildren()) {
             if (child instanceof TextNode) {
                 TextNode textNode = (TextNode) child;
-                inlineWidth += toUiTextSize(textMeasureService.getStringWidth(textNode.getText(),
-                        textNode.getTextContentMode()));
+                inlineWidth += measureIntrinsicTextWidth(textNode, style, textMeasureService);
                 continue;
             }
             if (!(child instanceof ElementNode)) {
@@ -1404,6 +1636,33 @@ public final class DocumentLayoutEngine {
                     containingWidth, layoutValueResolver));
         }
         return Math.max(maxWidth, inlineWidth);
+    }
+
+    private static int measureIntrinsicTextWidth(TextNode textNode, ComputedStyle ownerStyle,
+            TextMeasureService textMeasureService) {
+        String text = textNode.getText();
+        if (text == null || text.isEmpty()) {
+            return 0;
+        }
+        if (ownerStyle != null && (ownerStyle.getOverflowWrap() == UiOverflowWrap.ANYWHERE
+                || ownerStyle.getWordBreak() == UiWordBreak.BREAK_ALL)) {
+            return measureMaxTextUnitWidth(text, textNode.getTextContentMode(), textMeasureService);
+        }
+        return toUiTextSize(textMeasureService.getStringWidth(text, textNode.getTextContentMode()));
+    }
+
+    private static int measureMaxTextUnitWidth(String text, TextContentMode textContentMode,
+            TextMeasureService textMeasureService) {
+        int maxWidth = 0;
+        List<TextWrapUnit> units = collectTextWrapUnits(text, textContentMode);
+        for (TextWrapUnit unit : units) {
+            if (unit.formattingCode) {
+                continue;
+            }
+            maxWidth = Math.max(maxWidth, toUiTextSize(textMeasureService.getStringWidth(
+                    text.substring(unit.start, unit.end), textContentMode)));
+        }
+        return maxWidth;
     }
 
     private static int measureIntrinsicFlexContentWidth(ElementNode element, ComputedStyle style,
@@ -2336,6 +2595,56 @@ public final class DocumentLayoutEngine {
             this.owner = owner;
             this.left = left;
             this.width = width;
+        }
+    }
+
+    /**
+     * 单次文本换行消费结果。
+     */
+    private static final class TextWrapSegment {
+
+        private final String text;
+        private final int consumedLength;
+
+        private TextWrapSegment(String text, int consumedLength) {
+            this.text = text == null ? "" : text;
+            this.consumedLength = Math.max(0, consumedLength);
+        }
+    }
+
+    /**
+     * 可断行位置，区分实际显示文本末尾和源文本消费末尾。
+     */
+    private static final class TextBreakPoint {
+
+        private final int textEnd;
+        private final int consumedEnd;
+
+        private TextBreakPoint(int textEnd, int consumedEnd) {
+            this.textEnd = Math.max(0, textEnd);
+            this.consumedEnd = Math.max(this.textEnd, consumedEnd);
+        }
+
+        private static TextBreakPoint at(int end) {
+            return new TextBreakPoint(end, end);
+        }
+    }
+
+    /**
+     * 文本断行扫描单元；Minecraft 格式码在格式文本模式下作为不可见单元处理。
+     */
+    private static final class TextWrapUnit {
+
+        private final int start;
+        private final int end;
+        private final int codePoint;
+        private final boolean formattingCode;
+
+        private TextWrapUnit(int start, int end, int codePoint, boolean formattingCode) {
+            this.start = Math.max(0, start);
+            this.end = Math.max(this.start, end);
+            this.codePoint = codePoint;
+            this.formattingCode = formattingCode;
         }
     }
 

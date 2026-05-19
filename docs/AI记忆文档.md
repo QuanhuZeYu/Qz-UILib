@@ -62,8 +62,7 @@
 - `DocumentElementScrollHandler` / `DocumentElementScrollEvent` 提供元素滚动事件监听能力，通过 `ElementNode.setScrollHandler(...)` 注册。
 - `DocumentNode` 已补齐标准 DOM 操作：`insertBefore(newChild, referenceChild)`、`replaceChild(newChild, oldChild)`，配合已有的 `appendChild`/`removeChild`/`clearChildren` 构成完整 DOM 操作集。
 - 样式系统新增 border 分边控制：`setBorderWidthSides(UiStyleInsets)` 支持四边独立 border-width；`setBorderColors(UiBorderColors)` 支持四边独立 border-color；分边值设置后优先于统一 borderWidth/borderColor 生效。
-- 样式系统新增文本排版控制：`letter-spacing`（字间距，可继承）、`word-break`（NORMAL/BREAK_ALL/KEEP_ALL，可继承）、`overflow-wrap`（NORMAL/BREAK_WORD/ANYWHERE，可继承）。
-- **【边界修正】`word-break` / `overflow-wrap`**：枚举与级联计算链路已完整，但 `DocumentLayoutEngine` 的文本换行逻辑**未读取和消费这两个属性**，实际断词行为固定不变。当前这两个属性属于"样式声明已支持，布局引擎实际断词待接通"，不应列为已完整工作的文本能力。（审查：REVIEW-20260518-browser-capability-gap-audit）
+- 样式系统文本排版控制：`letter-spacing`（字间距，可继承）、`word-break`（NORMAL/BREAK_ALL/KEEP_ALL，可继承）、`overflow-wrap`（NORMAL/BREAK_WORD/ANYWHERE，可继承）已进入级联；`DocumentLayoutEngine` 已在文本换行阶段消费 `word-break` / `overflow-wrap`，覆盖普通英文、长 token、URL 标点、CJK 与中英文混排。`white-space:nowrap` 优先禁止换行，`text-overflow:ellipsis` 仍仅在 nowrap 且宽度受限时生效；`overflow-wrap:anywhere` 与 `word-break:break-all` 会影响 auto 宽固有尺寸，`overflow-wrap:break-word` 仅在受限宽度溢出时断长 token，不降低固有 auto 宽。当前仍不支持 `white-space:pre/pre-wrap/pre-line`。
 - `height` 百分比相对包含块高度解析；包含块高度为 auto 时百分比高度视为 auto（由内容撑开），不再静默解析为 0。
 - Block 元素 `margin: 0 auto` 支持水平居中：有明确宽度的 block 元素，auto left/right margin 会平分剩余空间。
 - `line-height` 是可继承属性：父元素设置后子元素自动继承，除非子元素自行覆盖。

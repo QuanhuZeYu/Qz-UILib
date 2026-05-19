@@ -20,9 +20,11 @@ import club.heiqi.uilib.ui.style.UiBorderRadius;
 import club.heiqi.uilib.ui.style.UiBorderRadiusResolver;
 import club.heiqi.uilib.ui.style.UiBorderStyle;
 import club.heiqi.uilib.ui.style.UiOverflow;
+import club.heiqi.uilib.ui.style.UiOverflowWrap;
 import club.heiqi.uilib.ui.style.UiPosition;
 import club.heiqi.uilib.ui.style.UiStyleInsets;
 import club.heiqi.uilib.ui.style.UiStyleLength;
+import club.heiqi.uilib.ui.style.UiWordBreak;
 import club.heiqi.uilib.ui.text.TextMeasureService;
 import club.heiqi.uilib.ui.theme.UiSurfaceStyle;
 
@@ -938,6 +940,7 @@ public class DocumentPaintEngineTest {
 
         root.style()
                 .setWidth(UiStyleLength.px(24))
+                .setOverflowWrap(UiOverflowWrap.BREAK_WORD)
                 .setTextColor(0xFFEFF6FF);
         root.appendText("abcdefg");
 
@@ -1001,7 +1004,8 @@ public class DocumentPaintEngineTest {
                 .setBorderWidth(UiStyleLength.px(1))
                 .setBorderStyle(UiBorderStyle.SOLID)
                 .setBorderRadius(UiStyleLength.px(5))
-                .setTextColor(0xFFFFD166);
+                .setTextColor(0xFFFFD166)
+                .setWordBreak(UiWordBreak.BREAK_ALL);
         root.appendText("AA");
         span.appendText("BBBB");
         root.append(span);
@@ -1034,7 +1038,8 @@ public class DocumentPaintEngineTest {
                 .setBorderWidth(UiStyleLength.px(1))
                 .setBorderStyle(UiBorderStyle.SOLID)
                 .setBorderRadius(UiStyleLength.px(5))
-                .setTextColor(0xFFFFD166);
+                .setTextColor(0xFFFFD166)
+                .setWordBreak(UiWordBreak.BREAK_ALL);
         span.appendText("AABBCC");
         root.append(span);
 

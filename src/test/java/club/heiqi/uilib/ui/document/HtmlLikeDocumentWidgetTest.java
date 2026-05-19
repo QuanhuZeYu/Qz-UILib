@@ -47,6 +47,7 @@ import club.heiqi.uilib.ui.style.UiBorderRadiusResolver;
 import club.heiqi.uilib.ui.style.UiBorderStyle;
 import club.heiqi.uilib.ui.style.UiDisplay;
 import club.heiqi.uilib.ui.style.UiOverflow;
+import club.heiqi.uilib.ui.style.UiOverflowWrap;
 import club.heiqi.uilib.ui.style.UiPosition;
 import club.heiqi.uilib.ui.style.UiStyleInsets;
 import club.heiqi.uilib.ui.style.UiStyleLength;
@@ -113,6 +114,7 @@ public class HtmlLikeDocumentWidgetTest {
         ElementNode root = document.getRootElement();
         root.style()
                 .setWidth(UiStyleLength.px(24))
+                .setOverflowWrap(UiOverflowWrap.BREAK_WORD)
                 .setTextColor(0xFFEFF6FF);
         root.appendText("abcdefg");
         HtmlLikeDocumentWidget widget = new HtmlLikeDocumentWidget(document, 80, 80,
@@ -1577,6 +1579,7 @@ public class HtmlLikeDocumentWidgetTest {
         ElementNode root = document.getRootElement();
         root.style()
                 .setWidth(UiStyleLength.px(24))
+                .setOverflowWrap(UiOverflowWrap.BREAK_WORD)
                 .setBackgroundColor(0xFF000000)
                 .setTextColor(0xFFFFFFFF);
         root.appendText("abcdefg");

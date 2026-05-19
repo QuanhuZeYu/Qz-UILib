@@ -677,12 +677,19 @@ public class HtmlLikeSmokeDocumentPageControllerTest {
     }
 
     private static boolean containsTextCall(List<TextCall> textCalls, String expectedSnippet) {
+        StringBuilder combinedText = new StringBuilder();
         for (TextCall textCall : textCalls) {
             if (textCall.text != null && textCall.text.contains(expectedSnippet)) {
                 return true;
             }
+            if (textCall.text != null && !textCall.text.isEmpty()) {
+                if (combinedText.length() > 0) {
+                    combinedText.append(' ');
+                }
+                combinedText.append(textCall.text);
+            }
         }
-        return false;
+        return combinedText.toString().contains(expectedSnippet);
     }
 
     private static void assertSolidBorder(ElementNode element) {
