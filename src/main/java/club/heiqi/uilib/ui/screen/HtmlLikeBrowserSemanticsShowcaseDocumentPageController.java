@@ -123,6 +123,7 @@ final class HtmlLikeBrowserSemanticsShowcaseDocumentPageController extends Docum
         appendStyleSheetDemo(root);
         appendEventPropagationDemo(root);
         appendDomQueryDemo(root);
+        appendCursorDemo(root);
         appendVisualPropertiesDemo(root);
         appendBorderControlDemo(root);
         appendCssVariablesDemo(root);
@@ -223,7 +224,7 @@ final class HtmlLikeBrowserSemanticsShowcaseDocumentPageController extends Docum
         title.append(heading);
         ElementNode summary = document.div();
         summary.style().setTextColor(0xFFAFC7F5);
-        summary.appendText("展示已接入运行时的 CSS 选择器、事件传播、DOM 查询、pointer-events、文本装饰、box-shadow、outline、分边 border、分角圆角、宽高比、object-fit 与变量容器能力。");
+        summary.appendText("展示已接入运行时的 CSS 选择器、事件传播、DOM 查询、cursor、pointer-events、文本装饰、box-shadow、outline、分边 border、分角圆角、宽高比、object-fit 与变量容器能力。");
         title.append(summary);
         root.append(title);
     }
@@ -439,10 +440,96 @@ final class HtmlLikeBrowserSemanticsShowcaseDocumentPageController extends Docum
         section.append(logArea);
     }
 
+    // ========== cursor 展示 ==========
+
+    private void appendCursorDemo(ElementNode root) {
+        ElementNode section = createSection(root, "4. cursor 与系统光标");
+
+        ElementNode desc = document.div();
+        desc.appendText("把鼠标移到下列卡片上，观察 Minecraft/LWJGL3ify 宿主的真实系统光标变化；移出卡片后应恢复默认箭头。重叠区域会采用最上层命中元素的 cursor。");
+        section.append(desc);
+
+        ElementNode row = document.div();
+        row.setClassName("demo-row");
+        section.append(row);
+
+        row.append(createCursorProbe("pointer", UiCursor.POINTER, 0xFF24435F, 0xFF66CCFF));
+        row.append(createCursorProbe("text", UiCursor.TEXT, 0xFF243B2A, 0xFF6EE7B7));
+        row.append(createCursorProbe("move", UiCursor.MOVE, 0xFF3B2A24, 0xFFF59E0B));
+        row.append(createCursorProbe("not-allowed", UiCursor.NOT_ALLOWED, 0xFF40212A, 0xFFF87171));
+
+        ElementNode overlapStage = document.div();
+        overlapStage.setClassName("demo-box");
+        overlapStage.style()
+                .setPosition(UiPosition.RELATIVE)
+                .setWidth(UiStyleLength.px(240))
+                .setHeight(UiStyleLength.px(84))
+                .setBoxSizing(UiBoxSizing.BORDER_BOX)
+                .setPadding(UiStyleLength.px(10))
+                .setBackgroundColor(0xFF162238)
+                .setBorderColor(0xFF4A6FA5)
+                .setBorderWidth(UiStyleLength.px(1))
+                .setBorderStyle(UiBorderStyle.SOLID);
+        overlapStage.appendText("重叠命中验证：顶部 text 会覆盖底层 pointer");
+
+        ElementNode bottomLayer = document.div();
+        bottomLayer.style()
+                .setCursor(UiCursor.POINTER)
+                .setMargin(UiStyleInsets.of(UiStyleLength.px(10), UiStyleLength.px(0), UiStyleLength.px(0),
+                        UiStyleLength.px(0)))
+                .setWidth(UiStyleLength.px(190))
+                .setHeight(UiStyleLength.px(42))
+                .setBackgroundColor(0xFF24435F)
+                .setBorderColor(0xFF66CCFF)
+                .setBorderWidth(UiStyleLength.px(1))
+                .setBorderStyle(UiBorderStyle.SOLID);
+        bottomLayer.appendText("底层 pointer");
+        overlapStage.append(bottomLayer);
+
+        ElementNode topLayer = document.div();
+        topLayer.style()
+                .setPosition(UiPosition.ABSOLUTE)
+                .setCursor(UiCursor.TEXT)
+                .setLeft(UiStyleLength.px(86))
+                .setTop(UiStyleLength.px(28))
+                .setWidth(UiStyleLength.px(120))
+                .setHeight(UiStyleLength.px(32))
+                .setBackgroundColor(0xEE1F3A2B)
+                .setBorderColor(0xFF6EE7B7)
+                .setBorderWidth(UiStyleLength.px(1))
+                .setBorderStyle(UiBorderStyle.SOLID);
+        topLayer.appendText("顶层 text");
+        overlapStage.append(topLayer);
+        row.append(overlapStage);
+
+        ElementNode fallbackNote = document.div();
+        fallbackNote.setClassName("log-area");
+        fallbackNote.appendText("当前宿主已映射：default / pointer / text / move / not-allowed / wait / crosshair / ew-resize / ns-resize / none。grab 与 grabbing 会降级为 move，help 会降级为 default；不支持自定义图片光标。");
+        section.append(fallbackNote);
+    }
+
+    private ElementNode createCursorProbe(String label, UiCursor cursor, int backgroundColor, int borderColor) {
+        ElementNode probe = document.div();
+        probe.setClassName("demo-box");
+        probe.style()
+                .setCursor(cursor)
+                .setWidth(UiStyleLength.px(128))
+                .setHeight(UiStyleLength.px(54))
+                .setBoxSizing(UiBoxSizing.BORDER_BOX)
+                .setDisplay(UiDisplay.FLEX)
+                .setAlignItems(UiAlignItems.CENTER)
+                .setBackgroundColor(backgroundColor)
+                .setBorderColor(borderColor)
+                .setBorderWidth(UiStyleLength.px(1))
+                .setBorderStyle(UiBorderStyle.SOLID);
+        probe.appendText("cursor: " + label);
+        return probe;
+    }
+
     // ========== 视觉属性展示 ==========
 
     private void appendVisualPropertiesDemo(ElementNode root) {
-        ElementNode section = createSection(root, "4. 交互命中 + 文本装饰");
+        ElementNode section = createSection(root, "5. 交互命中 + 文本装饰");
 
         ElementNode row = document.div();
         row.setClassName("demo-row");
@@ -498,7 +585,7 @@ final class HtmlLikeBrowserSemanticsShowcaseDocumentPageController extends Docum
     // ========== Border 控制展示 ==========
 
     private void appendBorderControlDemo(ElementNode root) {
-        ElementNode section = createSection(root, "5. 边框与视觉语义");
+        ElementNode section = createSection(root, "6. 边框与视觉语义");
 
         ElementNode desc = document.div();
         desc.appendText("展示分边 border-width / border-color、分角圆角、outline 与 box-shadow 的运行时效果；下方仍保留 content-box 与 border-box 对比。");
@@ -571,7 +658,7 @@ final class HtmlLikeBrowserSemanticsShowcaseDocumentPageController extends Docum
     // ========== CSS Variables 展示 ==========
 
     private void appendCssVariablesDemo(ElementNode root) {
-        ElementNode section = createSection(root, "6. 变量容器与主题切换");
+        ElementNode section = createSection(root, "7. 变量容器与主题切换");
 
         ElementNode desc = document.div();
         desc.appendText("当前提供的是文档级变量容器。示例会在点击后读取变量值并手动回写到预览卡片，用来演示主题变量的组织方式；页面尚未实现 CSS `var(...)` 声明级自动解析：");
@@ -616,7 +703,7 @@ final class HtmlLikeBrowserSemanticsShowcaseDocumentPageController extends Docum
     // ========== 文本排版展示 ==========
 
     private void appendTextTypographyDemo(ElementNode root) {
-        ElementNode section = createSection(root, "7. 文本与替换元素");
+        ElementNode section = createSection(root, "8. 文本与替换元素");
 
         ElementNode row = document.div();
         row.setClassName("demo-row");

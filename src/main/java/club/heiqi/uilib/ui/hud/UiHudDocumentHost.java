@@ -55,6 +55,7 @@ public final class UiHudDocumentHost {
     private boolean hudTextInputRequested;
     private HudEntry activeMouseEntry;
     private HudEntry activeKeyboardEntry;
+    private HudEntry hoveredMouseEntry;
 
     private UiHudDocumentHost() {}
 
@@ -335,6 +336,7 @@ public final class UiHudDocumentHost {
             if (targetEntry == null) {
                 return;
             }
+            hoveredMouseEntry = targetEntry;
             activeMouseEntry = targetEntry;
             UiInputFrame mouseFrame = new UiInputFrame(frame.getMouseX(), frame.getMouseY(), frame.getMouseEvents(),
                     Collections.<club.heiqi.uilib.ui.event.UiKeyEvent>emptyList(),
@@ -349,8 +351,10 @@ public final class UiHudDocumentHost {
         HudEntry targetEntry = resolveMouseFrameTargetEntry(screenCategory, frame.getMouseX(), frame.getMouseY(),
                 entrySnapshot);
         if (targetEntry == null) {
+            updateHoveredMouseEntry(null);
             return;
         }
+        updateHoveredMouseEntry(targetEntry);
         UiInputFrame mouseFrame = new UiInputFrame(frame.getMouseX(), frame.getMouseY(), frame.getMouseEvents(),
                 Collections.<club.heiqi.uilib.ui.event.UiKeyEvent>emptyList(),
                 Collections.<club.heiqi.uilib.ui.event.UiTextInputEvent>emptyList());
@@ -714,6 +718,10 @@ public final class UiHudDocumentHost {
             return;
         }
         if (entries.remove(entry)) {
+            if (hoveredMouseEntry == entry) {
+                entry.widget.onMouseLeave();
+                hoveredMouseEntry = null;
+            }
             if (activeMouseEntry == entry) {
                 activeMouseEntry = null;
             }
@@ -727,6 +735,7 @@ public final class UiHudDocumentHost {
     }
 
     private synchronized void clearInteractiveStates() {
+        updateHoveredMouseEntry(null);
         clearActiveInteractionEntries();
         for (HudEntry entry : entries) {
             if (entry.layerType == UiHudLayerType.INTERACTIVE) {
@@ -759,8 +768,19 @@ public final class UiHudDocumentHost {
     }
 
     private void clearActiveInteractionEntries() {
+        hoveredMouseEntry = null;
         activeMouseEntry = null;
         activeKeyboardEntry = null;
+    }
+
+    private void updateHoveredMouseEntry(HudEntry nextHoveredEntry) {
+        if (hoveredMouseEntry == nextHoveredEntry) {
+            return;
+        }
+        if (hoveredMouseEntry != null && entries.contains(hoveredMouseEntry)) {
+            hoveredMouseEntry.widget.onMouseLeave();
+        }
+        hoveredMouseEntry = nextHoveredEntry;
     }
 
     private void syncHudTextInputRequest(boolean shouldRequest) {

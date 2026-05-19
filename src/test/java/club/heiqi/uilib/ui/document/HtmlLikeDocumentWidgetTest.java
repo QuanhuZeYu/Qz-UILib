@@ -43,6 +43,7 @@ import club.heiqi.uilib.ui.input.UiInputFrame;
 import club.heiqi.uilib.ui.input.UiInputRouter;
 import club.heiqi.uilib.ui.layout.DocumentLayoutBox;
 import club.heiqi.uilib.ui.render.UiRenderContext;
+import club.heiqi.uilib.ui.style.UiBorderRadiusResolver;
 import club.heiqi.uilib.ui.style.UiBorderStyle;
 import club.heiqi.uilib.ui.style.UiDisplay;
 import club.heiqi.uilib.ui.style.UiOverflow;
@@ -3286,7 +3287,15 @@ public class HtmlLikeDocumentWidgetTest {
                 int cornerRadius) {}
 
         @Override
+        public void drawBackdropFilter(int left, int top, int right, int bottom, int blurRadius, float saturation,
+                UiBorderRadiusResolver.ResolvedCornerRadii cornerRadii) {}
+
+        @Override
         public void pushClip(int left, int top, int right, int bottom, int cornerRadius) {}
+
+        @Override
+        public void pushClip(int left, int top, int right, int bottom,
+                UiBorderRadiusResolver.ResolvedCornerRadii cornerRadii) {}
 
         @Override
         public void popClip() {}

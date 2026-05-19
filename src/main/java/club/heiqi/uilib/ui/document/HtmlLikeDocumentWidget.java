@@ -2,6 +2,7 @@ package club.heiqi.uilib.ui.document;
 
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.EnumSet;
 import java.util.List;
 import java.util.Objects;
 
@@ -51,6 +52,8 @@ import club.heiqi.uilib.ui.paint.DocumentPaintCommand;
 import club.heiqi.uilib.ui.paint.DocumentPaintEngine;
 import club.heiqi.uilib.ui.paint.DocumentPaintRenderer;
 import club.heiqi.uilib.ui.render.UiRenderContext;
+import club.heiqi.uilib.ui.style.UiCursor;
+import club.heiqi.uilib.ui.style.UiPseudoClass;
 import club.heiqi.uilib.ui.style.UiPointerEvents;
 import club.heiqi.uilib.ui.style.UiStyleResolver;
 import club.heiqi.uilib.ui.text.DefaultTextMeasureService;
@@ -73,6 +76,7 @@ public final class HtmlLikeDocumentWidget extends Widget {
     private final DocumentAnimationTimeline animationTimeline = new DocumentAnimationTimeline();
     private final int preferredWidth;
     private final int preferredHeight;
+    private DocumentCursorHost cursorHost = DocumentCursorHost.system();
     private DocumentAnimationClock animationClock = SystemDocumentAnimationClock.getInstance();
     private int cachedLayoutVersion = -1;
     private int cachedPaintVersion = -1;
@@ -158,6 +162,18 @@ public final class HtmlLikeDocumentWidget extends Widget {
      */
     public TextMeasureService getTextMeasureService() {
         return textMeasureService;
+    }
+
+    /**
+     * 设置系统光标宿主，供运行时与测试替换真实宿主实现。
+     *
+     * @param cursorHost 光标宿主
+     * @return 当前组件
+     */
+    HtmlLikeDocumentWidget setCursorHost(DocumentCursorHost cursorHost) {
+        this.cursorHost = Objects.requireNonNull(cursorHost, "cursorHost");
+        syncCursorFromHoveredElement();
+        return this;
     }
 
     /**
@@ -437,10 +453,12 @@ public final class HtmlLikeDocumentWidget extends Widget {
             return;
         }
         pressedElement = findElementAt(event.getMouseX(), event.getMouseY());
+        updateHoveredElement(pressedElement, event);
         beginDragIfNeeded(pressedElement, event);
         dispatchMouseDown(pressedElement, event);
         dispatchActive(pressedElement, true, event);
         focusElement(resolveFocusableElement(pressedElement), false);
+        syncCursorFromHoveredElement();
     }
 
     @Override
@@ -469,11 +487,13 @@ public final class HtmlLikeDocumentWidget extends Widget {
             return;
         }
         ElementNode releasedElement = findElementAt(event.getMouseX(), event.getMouseY());
+        updateHoveredElement(releasedElement, event);
         ElementNode target = pressedElement != null && pressedElement == releasedElement ? releasedElement : null;
         boolean dragHandled = dispatchDragEnd(event);
         dispatchMouseUp(pressedElement, event);
         dispatchActive(pressedElement, false, event);
         pressedElement = null;
+        syncCursorFromHoveredElement();
         if (!dragHandled && target != null) {
             dispatchClick(target, event);
         }
@@ -1174,6 +1194,7 @@ public final class HtmlLikeDocumentWidget extends Widget {
                 && isElementAttachedToDocument(focusedElement)) {
             ensureFocusedElementVisible();
         }
+        syncCursorFromHoveredElement();
     }
 
     private void ensureFocusedElementVisible() {
@@ -1455,6 +1476,7 @@ public final class HtmlLikeDocumentWidget extends Widget {
         ElementNode resolvedElement = nextHoveredElement != null && isElementAttachedToDocument(nextHoveredElement)
                 ? nextHoveredElement : null;
         if (hoveredElement == resolvedElement) {
+            syncCursorFromHoveredElement();
             return;
         }
         ElementNode previousElement = hoveredElement;
@@ -1464,6 +1486,66 @@ public final class HtmlLikeDocumentWidget extends Widget {
         // 只对不在公共祖先路径上的节点触发 leave/enter
         dispatchHoverChangedWithAncestorAwareness(previousElement, false, resolvedElement, event);
         dispatchHoverChangedWithAncestorAwareness(resolvedElement, true, previousElement, event);
+        syncCursorFromHoveredElement();
+    }
+
+    private void syncCursorFromHoveredElement() {
+        cursorHost.applyCursor(resolveCursorFromHoveredElement());
+    }
+
+    private UiCursor resolveCursorFromHoveredElement() {
+        if (hoveredElement == null || !isElementAttachedToDocument(hoveredElement)) {
+            return UiCursor.DEFAULT;
+        }
+        for (DocumentNode current = hoveredElement; current instanceof ElementNode; current = current.getParent()) {
+            ElementNode currentElement = (ElementNode) current;
+            UiCursor declaredCursor = resolveDeclaredCursor(currentElement, buildCursorPseudoStates(currentElement));
+            if (declaredCursor != null) {
+                return declaredCursor;
+            }
+        }
+        return UiCursor.DEFAULT;
+    }
+
+    private UiCursor resolveDeclaredCursor(ElementNode element, java.util.Set<UiPseudoClass> activeStates) {
+        if (element == null) {
+            return null;
+        }
+        if (element.style().getCursor() != null) {
+            return element.style().getCursor();
+        }
+        List<club.heiqi.uilib.ui.style.UiStyleRule> matchingRules = element.getOwnerDocument()
+                .findMatchingRules(element, activeStates);
+        for (int index = matchingRules.size() - 1; index >= 0; index--) {
+            UiCursor cursor = matchingRules.get(index).getDeclaration().getCursor();
+            if (cursor != null) {
+                return cursor;
+            }
+        }
+        return null;
+    }
+
+    private java.util.Set<UiPseudoClass> buildCursorPseudoStates(ElementNode element) {
+        EnumSet<UiPseudoClass> activeStates = EnumSet.noneOf(UiPseudoClass.class);
+        if (element == null) {
+            return activeStates;
+        }
+        if (hoveredElement != null && isAncestorOrSelf(element, hoveredElement)) {
+            activeStates.add(UiPseudoClass.HOVER);
+        }
+        if (element == getActiveFocusedElement()) {
+            activeStates.add(UiPseudoClass.FOCUS);
+            if (focusedElementFocusVisible) {
+                activeStates.add(UiPseudoClass.FOCUS_VISIBLE);
+            }
+        }
+        if (element == pressedElement) {
+            activeStates.add(UiPseudoClass.ACTIVE);
+        }
+        if (element.isDisabled()) {
+            activeStates.add(UiPseudoClass.DISABLED);
+        }
+        return activeStates;
     }
 
     /**

@@ -26,6 +26,7 @@ import club.heiqi.uilib.ui.paint.DocumentPaintEngine;
 import club.heiqi.uilib.ui.render.UiMainLayerSnapshotService;
 import club.heiqi.uilib.ui.render.UiRenderContext;
 import club.heiqi.uilib.ui.runtime.UiRuntimeAdapters;
+import club.heiqi.uilib.ui.style.UiBorderRadiusResolver;
 import club.heiqi.uilib.ui.style.UiPosition;
 import club.heiqi.uilib.ui.style.UiObjectFit;
 import club.heiqi.uilib.ui.style.UiStyleLength;
@@ -281,6 +282,10 @@ public class DocumentHostImageControlTest {
 
         @Override
         public void pushClip(int left, int top, int right, int bottom, int cornerRadius) {}
+
+        @Override
+        public void pushClip(int left, int top, int right, int bottom,
+                UiBorderRadiusResolver.ResolvedCornerRadii cornerRadii) {}
 
         @Override
         public void popClip() {}

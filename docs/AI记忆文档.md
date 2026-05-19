@@ -55,7 +55,7 @@
 - `UiSelector` 已支持伪类条件（`:hover`/`:focus`/`:focus-visible`/`:active`/`:disabled`）；伪类在特异性中计入 class 级别；`UiStyleResolver.compute(element, activeStates)` 接受 `Set<UiPseudoClass>` 进行状态感知样式计算。
 - `UiDocument` 提供标准 DOM 查询：`getElementById(id)`、`querySelector(selectorText)`、`querySelectorAll(selectorText)`、`getElementsByTagName(tagName)`、`getElementsByClassName(className)`，均按深度优先遍历并复用 `UiSelector` 匹配。
 - 样式系统新增视觉增强属性：`box-shadow`、`border-style`、`cursor`、`border-radius` 分角、`text-decoration`、`pointer-events`、`outline` 均已进入级联计算；当前运行时已接通 `text-decoration` 绘制、`pointer-events:none` 命中穿透、分角圆角绘制/clip/backdrop-filter/命中测试，以及 `box-shadow`、`outline`、虚线/点线/双线边框的基础绘制链路；`border-style:none/hidden` 不绘制边框，普通统一 solid 圆角 border/outline 按逐层圆角轮廓绘制。
-- **【边界修正】`cursor` 属性**：`UiCursor` 枚举（13 种）与级联计算链路已完整，但**从未映射到 Minecraft/LWJGL 真实鼠标光标**（无 `glfwSetCursor`/`Mouse.setCursor` 调用）；设置 `cursor:pointer` 不会改变鼠标外观。`DocumentCursorOverlayControl` 是用图片元素模拟的物品拖拽覆层，与系统光标无关。系统光标映射为待实现项，不应将 cursor 样式列为"已完整工作"的视觉能力。（审查：REVIEW-20260518-browser-capability-gap-audit）
+- `cursor` 已接通宿主真实系统光标：当前稳定支持 `default`、`pointer`、`text`、`move`、`not-allowed`、`wait`、`crosshair`、`ew-resize`、`ns-resize`、`none`；`grab` / `grabbing` 降级为 `move`，`help` 降级为 `default`。命中元素离开、没有命中元素，或命中链未声明 `cursor` 时会恢复默认箭头。`DocumentCursorOverlayControl` 仍只是页面级图片覆层，不等同于系统光标。
 - `UiStyleVariables` 提供命名颜色/长度/字符串变量容器，挂载在 `UiDocument` 上作为文档级变量作用域；变量值变更会触发布局失效，但当前不支持 CSS `var(...)` 声明级自动解析，页面若要响应主题变量变化仍需读取变量并回写样式。
 - `aspect-ratio` 已在高度 auto 且宽度可解析的普通盒布局中推导内容高度；普通 `img` 绘制阶段已支持 `object-fit` 的 fill/contain/cover/none/scale-down。
 - 诊断页与示例页只展示已接入运行时并有最小验证的能力；仅完成级联解析、值类型承载或手动同步的能力必须明确写成边界，不得包装成浏览器语义已完整支持。

@@ -208,7 +208,7 @@ final class UiTestDocumentPageController extends DocumentPageController {
                     }
                 });
         appendNavigationCard(document, fourthRow, "浏览器语义展示",
-                "展示已接入运行时的 CSS 选择器、事件传播、DOM 查询、pointer-events、文本装饰、宽高比、object-fit 与变量容器能力。", "进入语义展示",
+                "展示已接入运行时的 CSS 选择器、事件传播、DOM 查询、cursor、pointer-events、文本装饰、宽高比、object-fit 与变量容器能力。", "进入语义展示",
                 new DocumentButtonActionHandler() {
                     @Override
                     public void onAction(DocumentButtonActionEvent event) {
