@@ -108,6 +108,65 @@ public class HtmlLikeSmokeDocumentPageControllerTest {
     }
 
     /**
+     * 验证 Smoke 页诊断文本容器使用自适应高度，避免固定小高度把文本自身裁掉。
+     */
+    @Test
+    public void shouldUseAutoHeightForSmokeDiagnosticTextRows() {
+        TestFixture fixture = new TestFixture();
+
+        fixture.controller.configureDocumentPage();
+        fixture.controller.buildDocument();
+
+        HtmlLikeDocumentWidget widget = fixture.controller.getHtmlLikeDocumentWidget();
+        widget.applyLayoutBounds(31, 47, 760, 320);
+        ElementNode controlsSection = findElementContainingDirectText(widget,
+                "Controls probe: click, input, Tab, button, toggle");
+        ElementNode animationDiagnostic = findElementContainingDirectText(widget,
+                "Animation diagnostics: pill=paint bg+radius 450ms; glass=blur+radius 700ms; opacity uses separate group probe.");
+        ElementNode keyframeDiagnostic = findElementContainingDirectText(widget,
+                "Keyframe diagnostics: first pill runs smokePulse bg+radius 0/50/100 stops once; fill-mode=both.");
+        ElementNode layoutProbe = findElementContainingDirectText(widget,
+                "Layout animation probe: click cards; transition/keyframe/fill push siblings.");
+        ElementNode coveredProperties = findElementContainingDirectText(widget,
+                "Layout animation coverage: WIDTH/HEIGHT/MARGIN_LEFT/MARGIN_RIGHT/PADDING_LEFT/PADDING_RIGHT");
+        ElementNode runtimeSummaryDiagnostic = findElementContainingDirectTextPrefix(widget, "Animation runtime: active=");
+        ElementNode runtimeImpactDiagnostic = findElementContainingDirectTextPrefix(widget, "Runtime by impact: paint ");
+        ElementNode cacheDiagnostic = findElementContainingDirectTextPrefix(widget, "Cache runtime: paintGen=");
+        ElementNode cacheHint = findElementContainingDirectText(widget,
+                "Cache note: click-frame static +1 is OK; running paint/effect must not grow runtimeLayout.");
+
+        Assert.assertNotNull(controlsSection);
+        Assert.assertNotNull(animationDiagnostic);
+        Assert.assertNotNull(keyframeDiagnostic);
+        Assert.assertNotNull(layoutProbe);
+        Assert.assertNotNull(coveredProperties);
+        Assert.assertNotNull(runtimeSummaryDiagnostic);
+        Assert.assertNotNull(runtimeImpactDiagnostic);
+        Assert.assertNotNull(cacheDiagnostic);
+        Assert.assertNotNull(cacheHint);
+        Assert.assertEquals(UiStyleLength.auto(), controlsSection.style().getHeight());
+        Assert.assertEquals(UiStyleLength.auto(), animationDiagnostic.style().getHeight());
+        Assert.assertEquals(UiStyleLength.auto(), keyframeDiagnostic.style().getHeight());
+        Assert.assertEquals(UiStyleLength.auto(), layoutProbe.style().getHeight());
+        Assert.assertEquals(UiStyleLength.auto(), coveredProperties.style().getHeight());
+        Assert.assertEquals(UiStyleLength.auto(), runtimeSummaryDiagnostic.style().getHeight());
+        Assert.assertEquals(UiStyleLength.auto(), runtimeImpactDiagnostic.style().getHeight());
+        Assert.assertEquals(UiStyleLength.auto(), cacheDiagnostic.style().getHeight());
+        Assert.assertEquals(UiStyleLength.auto(), cacheHint.style().getHeight());
+
+        DocumentLayoutBox rootBox = DocumentLayoutEngine.layoutViewportRoot(widget.getDocument().getRootElement(),
+                widget.getWidth(), widget.getHeight(), fixture.textMeasureService);
+        int minimumLineHeight = 18;
+        Assert.assertTrue(findLayoutBox(rootBox, animationDiagnostic).getHeight() >= minimumLineHeight);
+        Assert.assertTrue(findLayoutBox(rootBox, keyframeDiagnostic).getHeight() >= minimumLineHeight);
+        Assert.assertTrue(findLayoutBox(rootBox, coveredProperties).getHeight() >= minimumLineHeight);
+        Assert.assertTrue(findLayoutBox(rootBox, runtimeSummaryDiagnostic).getHeight() >= minimumLineHeight);
+        Assert.assertTrue(findLayoutBox(rootBox, runtimeImpactDiagnostic).getHeight() >= minimumLineHeight);
+        Assert.assertTrue(findLayoutBox(rootBox, cacheDiagnostic).getHeight() >= minimumLineHeight);
+        Assert.assertTrue(findLayoutBox(rootBox, cacheHint).getHeight() >= minimumLineHeight);
+    }
+
+    /**
      * 验证 smoke 子页中的 HTML-like 组件能产生真实 surface 绘制调用。
      */
     @Test
@@ -849,6 +908,10 @@ public class HtmlLikeSmokeDocumentPageControllerTest {
         return findElementContainingDirectText(widget.getDocument().getRootElement(), expectedText);
     }
 
+    private static ElementNode findElementContainingDirectTextPrefix(HtmlLikeDocumentWidget widget, String expectedPrefix) {
+        return findElementContainingDirectTextPrefix(widget.getDocument().getRootElement(), expectedPrefix);
+    }
+
     private static ElementNode findElementContainingDirectText(ElementNode element, String expectedText) {
         for (DocumentNode child : element.getChildren()) {
             if (child.getNodeType() == DocumentNodeType.TEXT && expectedText.equals(((TextNode) child).getText())) {
@@ -856,6 +919,22 @@ public class HtmlLikeSmokeDocumentPageControllerTest {
             }
             if (child.getNodeType() == DocumentNodeType.ELEMENT) {
                 ElementNode found = findElementContainingDirectText((ElementNode) child, expectedText);
+                if (found != null) {
+                    return found;
+                }
+            }
+        }
+        return null;
+    }
+
+    private static ElementNode findElementContainingDirectTextPrefix(ElementNode element, String expectedPrefix) {
+        for (DocumentNode child : element.getChildren()) {
+            if (child.getNodeType() == DocumentNodeType.TEXT
+                    && ((TextNode) child).getText().startsWith(expectedPrefix)) {
+                return element;
+            }
+            if (child.getNodeType() == DocumentNodeType.ELEMENT) {
+                ElementNode found = findElementContainingDirectTextPrefix((ElementNode) child, expectedPrefix);
                 if (found != null) {
                     return found;
                 }

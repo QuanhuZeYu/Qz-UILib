@@ -511,7 +511,7 @@ final class HtmlLikeSmokeDocumentPageController extends DocumentPageController {
     private static void appendControlsSection(UiDocument document, ElementNode root) {
         ElementNode controlsSection = document.div();
         controlsSection.style()
-                .setHeight(UiStyleLength.px(112))
+                .setHeight(UiStyleLength.auto())
                 .setMargin(UiStyleInsets.of(UiStyleLength.px(14), UiStyleLength.px(0), UiStyleLength.px(0),
                         UiStyleLength.px(0)))
                 .setPadding(UiStyleLength.px(10))
@@ -528,7 +528,7 @@ final class HtmlLikeSmokeDocumentPageController extends DocumentPageController {
 
         ElementNode animationDiagnostic = document.div();
         animationDiagnostic.style()
-                .setHeight(UiStyleLength.px(14))
+                .setHeight(UiStyleLength.auto())
                 .setMargin(UiStyleInsets.of(UiStyleLength.px(4), UiStyleLength.px(0), UiStyleLength.px(0),
                         UiStyleLength.px(0)))
                 .setTextColor(0xFFBAE6FD)
@@ -539,7 +539,7 @@ final class HtmlLikeSmokeDocumentPageController extends DocumentPageController {
 
         ElementNode keyframeDiagnostic = document.div();
         keyframeDiagnostic.style()
-                .setHeight(UiStyleLength.px(14))
+                .setHeight(UiStyleLength.auto())
                 .setMargin(UiStyleInsets.of(UiStyleLength.px(2), UiStyleLength.px(0), UiStyleLength.px(0),
                         UiStyleLength.px(0)))
                 .setTextColor(0xFFC4B5FD)
@@ -848,7 +848,7 @@ final class HtmlLikeSmokeDocumentPageController extends DocumentPageController {
             AnimationRuntimeDiagnostics animationRuntimeDiagnostics) {
         ElementNode probe = document.div();
         probe.style()
-                .setHeight(UiStyleLength.px(364))
+                .setHeight(UiStyleLength.auto())
                 .setMargin(UiStyleInsets.of(UiStyleLength.px(12), UiStyleLength.px(0), UiStyleLength.px(0),
                         UiStyleLength.px(0)))
                 .setPadding(UiStyleLength.px(10))
@@ -865,7 +865,7 @@ final class HtmlLikeSmokeDocumentPageController extends DocumentPageController {
 
         ElementNode coveredProperties = document.div();
         coveredProperties.style()
-                .setHeight(UiStyleLength.px(14))
+                .setHeight(UiStyleLength.auto())
                 .setMargin(UiStyleInsets.of(UiStyleLength.px(4), UiStyleLength.px(0), UiStyleLength.px(0),
                         UiStyleLength.px(0)))
                 .setTextColor(0xFF93C5FD)
@@ -876,7 +876,7 @@ final class HtmlLikeSmokeDocumentPageController extends DocumentPageController {
 
         ElementNode runtimeSummaryDiagnostic = document.div();
         runtimeSummaryDiagnostic.style()
-                .setHeight(UiStyleLength.px(14))
+                .setHeight(UiStyleLength.auto())
                 .setMargin(UiStyleInsets.of(UiStyleLength.px(2), UiStyleLength.px(0), UiStyleLength.px(0),
                         UiStyleLength.px(0)))
                 .setTextColor(0x00000000)
@@ -895,7 +895,7 @@ final class HtmlLikeSmokeDocumentPageController extends DocumentPageController {
 
         ElementNode runtimeImpactDiagnostic = document.div();
         runtimeImpactDiagnostic.style()
-                .setHeight(UiStyleLength.px(14))
+                .setHeight(UiStyleLength.auto())
                 .setMargin(UiStyleInsets.of(UiStyleLength.px(2), UiStyleLength.px(0), UiStyleLength.px(0),
                         UiStyleLength.px(0)))
                 .setTextColor(0x00000000)
@@ -914,7 +914,7 @@ final class HtmlLikeSmokeDocumentPageController extends DocumentPageController {
 
         ElementNode cacheDiagnostic = document.div();
         cacheDiagnostic.style()
-                .setHeight(UiStyleLength.px(14))
+                .setHeight(UiStyleLength.auto())
                 .setMargin(UiStyleInsets.of(UiStyleLength.px(2), UiStyleLength.px(0), UiStyleLength.px(0),
                         UiStyleLength.px(0)))
                 .setTextColor(0x00000000)
@@ -933,7 +933,7 @@ final class HtmlLikeSmokeDocumentPageController extends DocumentPageController {
 
         ElementNode cacheHint = document.div();
         cacheHint.style()
-                .setHeight(UiStyleLength.px(14))
+                .setHeight(UiStyleLength.auto())
                 .setMargin(UiStyleInsets.of(UiStyleLength.px(2), UiStyleLength.px(0), UiStyleLength.px(0),
                         UiStyleLength.px(0)))
                 .setTextColor(0xFF7DD3FC)
