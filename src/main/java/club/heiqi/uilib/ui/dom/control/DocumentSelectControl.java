@@ -13,6 +13,7 @@ import club.heiqi.uilib.ui.dom.TextNode;
 import club.heiqi.uilib.ui.dom.UiDocument;
 import club.heiqi.uilib.ui.event.UiKeyEvent;
 import club.heiqi.uilib.ui.style.UiAlignItems;
+import club.heiqi.uilib.ui.style.UiBoxSizing;
 import club.heiqi.uilib.ui.style.UiBorderStyle;
 import club.heiqi.uilib.ui.style.UiDisplay;
 import club.heiqi.uilib.ui.style.UiFlexDirection;
@@ -202,6 +203,7 @@ public final class DocumentSelectControl {
                 .setTextColor(textColor);
         triggerElement.style()
                 .setDisplay(UiDisplay.FLEX)
+                .setBoxSizing(UiBoxSizing.BORDER_BOX)
                 .setFlexDirection(UiFlexDirection.ROW)
                 .setAlignItems(UiAlignItems.CENTER)
                 .setJustifyContent(UiJustifyContent.SPACE_BETWEEN)
@@ -233,6 +235,7 @@ public final class DocumentSelectControl {
             option.setAttribute("role", "option");
             option.style()
                     .setDisplay(UiDisplay.FLEX)
+                    .setBoxSizing(UiBoxSizing.BORDER_BOX)
                     .setFlexDirection(UiFlexDirection.ROW)
                     .setAlignItems(UiAlignItems.CENTER)
                     .setJustifyContent(UiJustifyContent.START)

@@ -2,6 +2,8 @@ package club.heiqi.uilib.ui.style;
 
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.EnumMap;
+import java.util.EnumSet;
 import java.util.List;
 import java.util.Objects;
 
@@ -90,6 +92,9 @@ public final class UiStyleDeclaration {
     private UiOverflowWrap overflowWrap;
     private Float aspectRatio;
     private UiObjectFit objectFit;
+    private final EnumMap<UiStyleProperty, UiStyleKeyword> keywords =
+            new EnumMap<UiStyleProperty, UiStyleKeyword>(UiStyleProperty.class);
+    private final EnumSet<UiStyleProperty> importantProperties = EnumSet.noneOf(UiStyleProperty.class);
 
     public UiStyleDeclaration() {
         this((UiStyleChangeListener) null);
@@ -101,6 +106,104 @@ public final class UiStyleDeclaration {
 
     public UiStyleDeclaration(UiStyleChangeListener changeListener) {
         this.changeListener = changeListener == null ? NO_OP_CHANGE_LISTENER : changeListener;
+    }
+
+    /**
+     * 返回指定属性的级联关键字声明。
+     *
+     * @param property 样式属性
+     * @return 级联关键字；未声明时返回 null
+     */
+    public UiStyleKeyword getKeyword(UiStyleProperty property) {
+        UiStyleProperty resolvedProperty = Objects.requireNonNull(property, "property");
+        return hasConcreteProperty(resolvedProperty) ? null : keywords.get(resolvedProperty);
+    }
+
+    /**
+     * 设置指定属性的级联关键字。
+     *
+     * <p>设置关键字会清除同属性当前的类型化值；例如对 {@code WIDTH} 设置
+     * {@code INHERIT} 后，原先的 {@link #setWidth(UiStyleLength)} 声明不再参与级联。</p>
+     *
+     * @param property 样式属性
+     * @param keyword 级联关键字
+     * @return 当前声明
+     */
+    public UiStyleDeclaration setKeyword(UiStyleProperty property, UiStyleKeyword keyword) {
+        UiStyleProperty resolvedProperty = Objects.requireNonNull(property, "property");
+        UiStyleKeyword resolvedKeyword = Objects.requireNonNull(keyword, "keyword");
+        UiStyleKeyword previousKeyword = keywords.get(resolvedProperty);
+        boolean hadConcreteValue = hasConcreteProperty(resolvedProperty);
+        clearConcreteProperty(resolvedProperty);
+        if (previousKeyword != resolvedKeyword) {
+            keywords.put(resolvedProperty, resolvedKeyword);
+        }
+        if (hadConcreteValue || previousKeyword != resolvedKeyword) {
+            recordPropertyChange(resolvedProperty);
+        }
+        return this;
+    }
+
+    /**
+     * 清除指定属性的级联关键字声明。
+     *
+     * @param property 样式属性
+     * @return 当前声明
+     */
+    public UiStyleDeclaration clearKeyword(UiStyleProperty property) {
+        UiStyleProperty resolvedProperty = Objects.requireNonNull(property, "property");
+        if (keywords.remove(resolvedProperty) != null) {
+            recordPropertyChange(resolvedProperty);
+        }
+        return this;
+    }
+
+    /**
+     * 将指定属性声明标记为 {@code !important}。
+     *
+     * @param property 样式属性
+     * @return 当前声明
+     */
+    public UiStyleDeclaration setImportant(UiStyleProperty property) {
+        return setImportant(property, true);
+    }
+
+    /**
+     * 设置或取消指定属性的 {@code !important} 标记。
+     *
+     * @param property 样式属性
+     * @param important 是否重要声明
+     * @return 当前声明
+     */
+    public UiStyleDeclaration setImportant(UiStyleProperty property, boolean important) {
+        UiStyleProperty resolvedProperty = Objects.requireNonNull(property, "property");
+        boolean changed = important ? importantProperties.add(resolvedProperty)
+                : importantProperties.remove(resolvedProperty);
+        if (changed) {
+            recordPropertyChange(resolvedProperty);
+        }
+        return this;
+    }
+
+    /**
+     * 清除指定属性的 {@code !important} 标记。
+     *
+     * @param property 样式属性
+     * @return 当前声明
+     */
+    public UiStyleDeclaration clearImportant(UiStyleProperty property) {
+        return setImportant(property, false);
+    }
+
+    /**
+     * 判断指定属性是否被标记为 {@code !important}。
+     *
+     * @param property 样式属性
+     * @return 是否重要声明
+     */
+    public boolean isImportant(UiStyleProperty property) {
+        Objects.requireNonNull(property, "property");
+        return importantProperties.contains(property);
     }
 
     public UiDisplay getDisplay() {
@@ -1743,6 +1846,158 @@ public final class UiStyleDeclaration {
             recordPaintChange();
         }
         return this;
+    }
+
+    private boolean hasConcreteProperty(UiStyleProperty property) {
+        switch (property) {
+            case DISPLAY: return display != null;
+            case WIDTH: return width != null;
+            case HEIGHT: return height != null;
+            case BOX_SIZING: return boxSizing != null;
+            case POSITION: return position != null;
+            case TOP: return top != null;
+            case RIGHT: return right != null;
+            case BOTTOM: return bottom != null;
+            case LEFT: return left != null;
+            case Z_INDEX: return zIndex != null;
+            case MARGIN: return margin != null;
+            case PADDING: return padding != null;
+            case BORDER_WIDTH: return borderWidth != null;
+            case BORDER_RADIUS: return borderRadius != null;
+            case OVERFLOW_X: return overflowX != null;
+            case OVERFLOW_Y: return overflowY != null;
+            case FLEX_DIRECTION: return flexDirection != null;
+            case ALIGN_ITEMS: return alignItems != null;
+            case JUSTIFY_CONTENT: return justifyContent != null;
+            case VERTICAL_ALIGN: return verticalAlign != null;
+            case ROW_GAP: return rowGap != null;
+            case COLUMN_GAP: return columnGap != null;
+            case FLEX_GROW: return flexGrow != null;
+            case FLEX_SHRINK: return flexShrink != null;
+            case OPACITY: return opacity != null;
+            case BACKGROUND_COLOR: return backgroundColor != null;
+            case BORDER_COLOR: return borderColor != null;
+            case TEXT_COLOR: return textColor != null;
+            case TRANSITION_PROPERTIES: return transitionProperties != null;
+            case TRANSITION_DURATION: return transitionDurationNanos != null;
+            case TRANSITION_DELAY: return transitionDelayNanos != null;
+            case TRANSITION_TIMING: return transitionTimingFunction != null;
+            case ANIMATION_NAME: return animationName != null;
+            case ANIMATION_DURATION: return animationDurationNanos != null;
+            case ANIMATION_DELAY: return animationDelayNanos != null;
+            case ANIMATION_ITERATION_COUNT: return animationIterationCount != null;
+            case ANIMATION_FILL_MODE: return animationFillMode != null;
+            case ANIMATION_TIMING: return animationTimingFunction != null;
+            case BACKDROP_BLUR_RADIUS: return backdropBlurRadius != null;
+            case BACKDROP_SATURATION: return backdropSaturation != null;
+            case LINE_HEIGHT: return lineHeight != null;
+            case TEXT_ALIGN: return textAlign != null;
+            case WHITE_SPACE: return whiteSpace != null;
+            case TEXT_OVERFLOW: return textOverflow != null;
+            case VISIBILITY: return visibility != null;
+            case MIN_WIDTH: return minWidth != null;
+            case MAX_WIDTH: return maxWidth != null;
+            case MIN_HEIGHT: return minHeight != null;
+            case MAX_HEIGHT: return maxHeight != null;
+            case FLEX_BASIS: return flexBasis != null;
+            case ALIGN_SELF: return alignSelf != null;
+            case FLEX_WRAP: return flexWrap != null;
+            case BOX_SHADOW: return boxShadow != null;
+            case BORDER_STYLE: return borderStyle != null;
+            case CURSOR: return cursor != null;
+            case BORDER_RADIUS_CORNERS: return borderRadiusCorners != null;
+            case TEXT_DECORATION: return textDecoration != null;
+            case FONT_WEIGHT: return fontWeight != null;
+            case FONT_STYLE: return fontStyle != null;
+            case POINTER_EVENTS: return pointerEvents != null;
+            case OUTLINE: return outline != null;
+            case BORDER_WIDTH_SIDES: return borderWidthSides != null;
+            case BORDER_COLORS: return borderColors != null;
+            case LETTER_SPACING: return letterSpacing != null;
+            case WORD_BREAK: return wordBreak != null;
+            case OVERFLOW_WRAP: return overflowWrap != null;
+            case ASPECT_RATIO: return aspectRatio != null;
+            case OBJECT_FIT: return objectFit != null;
+            default: return false;
+        }
+    }
+
+    private void clearConcreteProperty(UiStyleProperty property) {
+        switch (property) {
+            case DISPLAY: display = null; break;
+            case WIDTH: width = null; break;
+            case HEIGHT: height = null; break;
+            case BOX_SIZING: boxSizing = null; break;
+            case POSITION: position = null; break;
+            case TOP: top = null; break;
+            case RIGHT: right = null; break;
+            case BOTTOM: bottom = null; break;
+            case LEFT: left = null; break;
+            case Z_INDEX: zIndex = null; break;
+            case MARGIN: margin = null; break;
+            case PADDING: padding = null; break;
+            case BORDER_WIDTH: borderWidth = null; break;
+            case BORDER_RADIUS: borderRadius = null; break;
+            case OVERFLOW_X: overflowX = null; break;
+            case OVERFLOW_Y: overflowY = null; break;
+            case FLEX_DIRECTION: flexDirection = null; break;
+            case ALIGN_ITEMS: alignItems = null; break;
+            case JUSTIFY_CONTENT: justifyContent = null; break;
+            case VERTICAL_ALIGN: verticalAlign = null; break;
+            case ROW_GAP: rowGap = null; break;
+            case COLUMN_GAP: columnGap = null; break;
+            case FLEX_GROW: flexGrow = null; break;
+            case FLEX_SHRINK: flexShrink = null; break;
+            case OPACITY: opacity = null; break;
+            case BACKGROUND_COLOR: backgroundColor = null; break;
+            case BORDER_COLOR: borderColor = null; break;
+            case TEXT_COLOR: textColor = null; break;
+            case TRANSITION_PROPERTIES: transitionProperties = null; break;
+            case TRANSITION_DURATION: transitionDurationNanos = null; break;
+            case TRANSITION_DELAY: transitionDelayNanos = null; break;
+            case TRANSITION_TIMING: transitionTimingFunction = null; break;
+            case ANIMATION_NAME: animationName = null; break;
+            case ANIMATION_DURATION: animationDurationNanos = null; break;
+            case ANIMATION_DELAY: animationDelayNanos = null; break;
+            case ANIMATION_ITERATION_COUNT: animationIterationCount = null; break;
+            case ANIMATION_FILL_MODE: animationFillMode = null; break;
+            case ANIMATION_TIMING: animationTimingFunction = null; break;
+            case BACKDROP_BLUR_RADIUS: backdropBlurRadius = null; break;
+            case BACKDROP_SATURATION: backdropSaturation = null; break;
+            case LINE_HEIGHT: lineHeight = null; break;
+            case TEXT_ALIGN: textAlign = null; break;
+            case WHITE_SPACE: whiteSpace = null; break;
+            case TEXT_OVERFLOW: textOverflow = null; break;
+            case VISIBILITY: visibility = null; break;
+            case MIN_WIDTH: minWidth = null; break;
+            case MAX_WIDTH: maxWidth = null; break;
+            case MIN_HEIGHT: minHeight = null; break;
+            case MAX_HEIGHT: maxHeight = null; break;
+            case FLEX_BASIS: flexBasis = null; break;
+            case ALIGN_SELF: alignSelf = null; break;
+            case FLEX_WRAP: flexWrap = null; break;
+            case BOX_SHADOW: boxShadow = null; break;
+            case BORDER_STYLE: borderStyle = null; break;
+            case CURSOR: cursor = null; break;
+            case BORDER_RADIUS_CORNERS: borderRadiusCorners = null; break;
+            case TEXT_DECORATION: textDecoration = null; break;
+            case FONT_WEIGHT: fontWeight = null; break;
+            case FONT_STYLE: fontStyle = null; break;
+            case POINTER_EVENTS: pointerEvents = null; break;
+            case OUTLINE: outline = null; break;
+            case BORDER_WIDTH_SIDES: borderWidthSides = null; break;
+            case BORDER_COLORS: borderColors = null; break;
+            case LETTER_SPACING: letterSpacing = null; break;
+            case WORD_BREAK: wordBreak = null; break;
+            case OVERFLOW_WRAP: overflowWrap = null; break;
+            case ASPECT_RATIO: aspectRatio = null; break;
+            case OBJECT_FIT: objectFit = null; break;
+            default: break;
+        }
+    }
+
+    private void recordPropertyChange(UiStyleProperty property) {
+        recordChange(property.getChangeImpact());
     }
 
     private void recordLayoutChange() {

@@ -1851,18 +1851,72 @@ public final class HtmlLikeDocumentWidget extends Widget implements UiDocument.D
         if (element == null) {
             return null;
         }
-        if (element.style().getCursor() != null) {
-            return element.style().getCursor();
+        CursorCascadeValue inlineValue = readCursorCascadeValue(element.style());
+        if (inlineValue != null && element.style().isImportant(club.heiqi.uilib.ui.style.UiStyleProperty.CURSOR)) {
+            return inlineValue.resolveDeclaredCursor();
         }
         List<club.heiqi.uilib.ui.style.UiStyleRule> matchingRules = element.getOwnerDocument()
                 .findMatchingRules(element, activeStates);
         for (int index = matchingRules.size() - 1; index >= 0; index--) {
-            UiCursor cursor = matchingRules.get(index).getDeclaration().getCursor();
-            if (cursor != null) {
-                return cursor;
+            club.heiqi.uilib.ui.style.UiStyleDeclaration declaration = matchingRules.get(index).getDeclaration();
+            if (declaration.isImportant(club.heiqi.uilib.ui.style.UiStyleProperty.CURSOR)) {
+                CursorCascadeValue cursorValue = readCursorCascadeValue(declaration);
+                if (cursorValue != null) {
+                    return cursorValue.resolveDeclaredCursor();
+                }
+            }
+        }
+        if (inlineValue != null) {
+            return inlineValue.resolveDeclaredCursor();
+        }
+        for (int index = matchingRules.size() - 1; index >= 0; index--) {
+            club.heiqi.uilib.ui.style.UiStyleDeclaration declaration = matchingRules.get(index).getDeclaration();
+            if (!declaration.isImportant(club.heiqi.uilib.ui.style.UiStyleProperty.CURSOR)) {
+                CursorCascadeValue cursorValue = readCursorCascadeValue(declaration);
+                if (cursorValue != null) {
+                    return cursorValue.resolveDeclaredCursor();
+                }
             }
         }
         return null;
+    }
+
+    private CursorCascadeValue readCursorCascadeValue(club.heiqi.uilib.ui.style.UiStyleDeclaration declaration) {
+        if (declaration.getCursor() != null) {
+            return CursorCascadeValue.value(declaration.getCursor());
+        }
+        club.heiqi.uilib.ui.style.UiStyleKeyword keyword = declaration
+                .getKeyword(club.heiqi.uilib.ui.style.UiStyleProperty.CURSOR);
+        return keyword == null ? null : CursorCascadeValue.keyword(keyword);
+    }
+
+    private static final class CursorCascadeValue {
+
+        private final UiCursor cursor;
+        private final club.heiqi.uilib.ui.style.UiStyleKeyword keyword;
+
+        private CursorCascadeValue(UiCursor cursor, club.heiqi.uilib.ui.style.UiStyleKeyword keyword) {
+            this.cursor = cursor;
+            this.keyword = keyword;
+        }
+
+        private static CursorCascadeValue value(UiCursor cursor) {
+            return new CursorCascadeValue(cursor, null);
+        }
+
+        private static CursorCascadeValue keyword(club.heiqi.uilib.ui.style.UiStyleKeyword keyword) {
+            return new CursorCascadeValue(null, keyword);
+        }
+
+        private UiCursor resolveDeclaredCursor() {
+            if (cursor != null) {
+                return cursor;
+            }
+            if (keyword == club.heiqi.uilib.ui.style.UiStyleKeyword.INITIAL) {
+                return UiCursor.DEFAULT;
+            }
+            return null;
+        }
     }
 
     private java.util.Set<UiPseudoClass> buildCursorPseudoStates(ElementNode element) {

@@ -155,6 +155,52 @@ public class UiStyleResolverTest {
     }
 
     /**
+     * 验证 inherit / initial / unset 关键字按属性继承语义解析。
+     */
+    @Test
+    public void shouldResolveCascadeKeywords() {
+        UiDocument document = UiDocument.create();
+        ElementNode root = document.getRootElement();
+        ElementNode child = document.div();
+        root.append(child);
+
+        root.style()
+                .setWidth(UiStyleLength.px(320))
+                .setTextColor(0xFFABCDEF)
+                .setCursor(UiCursor.POINTER);
+
+        child.style()
+                .setKeyword(UiStyleProperty.WIDTH, UiStyleKeyword.INHERIT)
+                .setKeyword(UiStyleProperty.TEXT_COLOR, UiStyleKeyword.INITIAL)
+                .setKeyword(UiStyleProperty.CURSOR, UiStyleKeyword.UNSET)
+                .setKeyword(UiStyleProperty.BACKGROUND_COLOR, UiStyleKeyword.UNSET);
+
+        ComputedStyle computedStyle = UiStyleResolver.compute(child);
+
+        Assert.assertEquals(UiStyleLength.px(320), computedStyle.getWidth());
+        Assert.assertEquals(0xFFFFFFFF, computedStyle.getTextColor());
+        Assert.assertEquals(UiCursor.POINTER, computedStyle.getCursor());
+        Assert.assertEquals(0x00000000, computedStyle.getBackgroundColor());
+    }
+
+    /**
+     * 验证类型化声明优先于同属性残留关键字，避免旧声明状态污染后续 setter。
+     */
+    @Test
+    public void shouldPreferConcreteValueOverKeywordOnSameDeclaration() {
+        UiDocument document = UiDocument.create();
+        ElementNode element = document.div();
+        element.style()
+                .setKeyword(UiStyleProperty.WIDTH, UiStyleKeyword.INITIAL)
+                .setWidth(UiStyleLength.px(48));
+
+        ComputedStyle computedStyle = UiStyleResolver.compute(element);
+
+        Assert.assertEquals(UiStyleLength.px(48), computedStyle.getWidth());
+        Assert.assertNull(element.style().getKeyword(UiStyleProperty.WIDTH));
+    }
+
+    /**
      * 验证 table 系列标签拥有 HTML-like 默认 display。
      */
     @Test

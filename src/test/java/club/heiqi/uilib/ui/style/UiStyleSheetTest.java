@@ -213,6 +213,66 @@ public class UiStyleSheetTest {
         Assert.assertTrue(idSelector.compareSpecificity(tagSelector) > 0);
     }
 
+    @Test
+    public void selectorMatchesDescendantAndChildCombinators() {
+        UiDocument document = UiDocument.create();
+        ElementNode root = document.getRootElement();
+        ElementNode panel = document.div();
+        ElementNode wrapper = document.div();
+        ElementNode label = document.span();
+        panel.setClassName("panel");
+        label.setClassName("label");
+        root.append(panel);
+        panel.append(wrapper);
+        wrapper.append(label);
+
+        Assert.assertTrue(UiSelector.parse(".panel .label").matches(label));
+        Assert.assertFalse(UiSelector.parse(".panel > .label").matches(label));
+        Assert.assertTrue(UiSelector.parse(".panel > div > .label").matches(label));
+        Assert.assertSame(label, document.querySelector(".panel .label"));
+        Assert.assertTrue(document.querySelectorAll(".panel > div > .label").contains(label));
+    }
+
+    @Test
+    public void selectorMatchesStructuralPseudoClasses() {
+        UiDocument document = UiDocument.create();
+        ElementNode root = document.getRootElement();
+        ElementNode first = document.div();
+        ElementNode second = document.div();
+        ElementNode third = document.div();
+        first.setClassName("item");
+        second.setClassName("item");
+        third.setClassName("item");
+        root.append(first);
+        root.appendText("text node should not affect element index");
+        root.append(second);
+        root.append(third);
+
+        Assert.assertTrue(UiSelector.parse(".item:first-child").matches(first));
+        Assert.assertFalse(UiSelector.parse(".item:first-child").matches(second));
+        Assert.assertTrue(UiSelector.parse(".item:last-child").matches(third));
+        Assert.assertTrue(UiSelector.parse(".item:nth-child(2)").matches(second));
+        Assert.assertTrue(UiSelector.parse(".item:nth-child(odd)").matches(first));
+        Assert.assertTrue(UiSelector.parse(".item:nth-child(2n+1)").matches(third));
+        Assert.assertFalse(UiSelector.parse(".item:nth-child(even)").matches(third));
+    }
+
+    @Test
+    public void selectorStatePseudoClassOnlyAppliesToTargetStep() {
+        UiDocument document = UiDocument.create();
+        ElementNode panel = document.div();
+        ElementNode label = document.span();
+        panel.setClassName("panel");
+        label.setClassName("label");
+        document.getRootElement().append(panel);
+        panel.append(label);
+
+        java.util.EnumSet<UiPseudoClass> activeStates = java.util.EnumSet.of(UiPseudoClass.HOVER);
+
+        Assert.assertTrue(UiSelector.parse(".panel .label:hover").matches(label, activeStates));
+        Assert.assertFalse(UiSelector.parse(".panel:hover .label").matches(label, activeStates));
+    }
+
     // ========== UiStyleSheet 级联测试 ==========
 
     @Test
@@ -249,6 +309,73 @@ public class UiStyleSheetTest {
         ComputedStyle computed = UiStyleResolver.compute(div);
         // inline style 优先级最高
         Assert.assertEquals(0xFFFF0000, computed.getBackgroundColor());
+    }
+
+    @Test
+    public void importantRuleOverridesNormalInlineAndStillRespectsImportantInline() {
+        UiDocument document = UiDocument.create();
+        ElementNode div = document.div();
+        div.setClassName("panel");
+        div.style().setBackgroundColor(0xFFFF0000);
+        document.getRootElement().append(div);
+
+        UiStyleSheet sheet = UiStyleSheet.create()
+                .addRule(".panel", new UiStyleDeclaration()
+                        .setBackgroundColor(0xFF333333)
+                        .setImportant(UiStyleProperty.BACKGROUND_COLOR));
+        document.addStyleSheet(sheet);
+
+        Assert.assertEquals(0xFF333333, UiStyleResolver.compute(div).getBackgroundColor());
+
+        div.style().setImportant(UiStyleProperty.BACKGROUND_COLOR);
+        Assert.assertEquals(0xFFFF0000, UiStyleResolver.compute(div).getBackgroundColor());
+    }
+
+    @Test
+    public void importantRulesStillUseSpecificityAndSourceOrderWithinImportantBucket() {
+        UiDocument document = UiDocument.create();
+        ElementNode div = document.div();
+        div.setClassName("panel accent");
+        div.setId("main");
+        document.getRootElement().append(div);
+
+        UiStyleSheet sheet = UiStyleSheet.create()
+                .addRule(".panel", new UiStyleDeclaration()
+                        .setBackgroundColor(0xFF111111)
+                        .setImportant(UiStyleProperty.BACKGROUND_COLOR))
+                .addRule(".accent", new UiStyleDeclaration()
+                        .setBackgroundColor(0xFF222222)
+                        .setImportant(UiStyleProperty.BACKGROUND_COLOR))
+                .addRule("#main", new UiStyleDeclaration()
+                        .setBackgroundColor(0xFF333333)
+                        .setImportant(UiStyleProperty.BACKGROUND_COLOR));
+        document.addStyleSheet(sheet);
+
+        ComputedStyle computed = UiStyleResolver.compute(div);
+        Assert.assertEquals(0xFF333333, computed.getBackgroundColor());
+    }
+
+    @Test
+    public void styleSheetCombinatorsAndStructuralPseudoClassesAffectCascade() {
+        UiDocument document = UiDocument.create();
+        ElementNode list = document.div();
+        ElementNode first = document.div();
+        ElementNode second = document.div();
+        list.setClassName("list");
+        first.setClassName("item");
+        second.setClassName("item");
+        document.getRootElement().append(list);
+        list.append(first).append(second);
+
+        UiStyleSheet sheet = UiStyleSheet.create()
+                .addRule(".list > .item:first-child", new UiStyleDeclaration()
+                        .setBackgroundColor(0xFF111111))
+                .addRule(".list .item:nth-child(2)", new UiStyleDeclaration()
+                        .setBackgroundColor(0xFF222222));
+        document.addStyleSheet(sheet);
+
+        Assert.assertEquals(0xFF111111, UiStyleResolver.compute(first).getBackgroundColor());
+        Assert.assertEquals(0xFF222222, UiStyleResolver.compute(second).getBackgroundColor());
     }
 
     @Test
