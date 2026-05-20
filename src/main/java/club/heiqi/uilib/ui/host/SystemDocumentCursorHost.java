@@ -1,4 +1,4 @@
-package club.heiqi.uilib.ui.document;
+package club.heiqi.uilib.ui.host;
 
 import java.util.EnumMap;
 import java.util.Map;
@@ -16,7 +16,7 @@ import club.heiqi.uilib.ui.style.UiCursor;
 /**
  * 基于 LWJGL3ify SDL 系统光标的宿主实现。
  */
-final class SystemDocumentCursorHost implements DocumentCursorHost {
+public final class SystemDocumentCursorHost implements DocumentCursorHost {
 
     private static final SystemDocumentCursorHost INSTANCE =
             new SystemDocumentCursorHost(new SdlNativeCursorBackend());
@@ -26,11 +26,11 @@ final class SystemDocumentCursorHost implements DocumentCursorHost {
     private boolean runtimeCursorSynchronized;
     private boolean runtimeCursorDisabled;
 
-    SystemDocumentCursorHost(NativeCursorBackend backend) {
+    public SystemDocumentCursorHost(NativeCursorBackend backend) {
         this.backend = Objects.requireNonNull(backend, "backend");
     }
 
-    static SystemDocumentCursorHost getInstance() {
+    public static SystemDocumentCursorHost getInstance() {
         return INSTANCE;
     }
 
@@ -90,7 +90,7 @@ final class SystemDocumentCursorHost implements DocumentCursorHost {
         MyMod.LOG.warn("UILib 系统光标宿主调用失败，已在本次运行中降级为 no-op。", cause);
     }
 
-    static ResolvedCursorKind resolveRequestedCursor(UiCursor cursor) {
+    public static ResolvedCursorKind resolveRequestedCursor(UiCursor cursor) {
         UiCursor resolvedCursor = cursor == null ? UiCursor.DEFAULT : cursor;
         switch (resolvedCursor) {
             case POINTER:
@@ -120,7 +120,10 @@ final class SystemDocumentCursorHost implements DocumentCursorHost {
         }
     }
 
-    enum ResolvedCursorKind {
+    /**
+     * 解析后的系统光标种类。
+     */
+    public enum ResolvedCursorKind {
         DEFAULT,
         POINTER,
         TEXT,
@@ -133,7 +136,10 @@ final class SystemDocumentCursorHost implements DocumentCursorHost {
         HIDDEN
     }
 
-    interface NativeCursorBackend {
+    /**
+     * 系统光标原生后端抽象。
+     */
+    public interface NativeCursorBackend {
 
         boolean isRuntimeAvailable();
 

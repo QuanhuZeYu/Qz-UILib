@@ -10,6 +10,8 @@ import org.junit.Test;
 import club.heiqi.uilib.ui.dom.ElementNode;
 import club.heiqi.uilib.ui.dom.UiDocument;
 import club.heiqi.uilib.ui.event.UiMouseEvent;
+import club.heiqi.uilib.ui.host.DocumentCursorHost;
+import club.heiqi.uilib.ui.host.SystemDocumentCursorHost;
 import club.heiqi.uilib.ui.style.UiCursor;
 import club.heiqi.uilib.ui.style.UiPosition;
 import club.heiqi.uilib.ui.style.UiStyleDeclaration;
