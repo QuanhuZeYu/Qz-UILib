@@ -31,7 +31,7 @@ import club.heiqi.uilib.ui.style.values.UiOutline;
 import club.heiqi.uilib.ui.style.props.UiOverflow;
 import club.heiqi.uilib.ui.style.values.UiStyleLength;
 import club.heiqi.uilib.ui.style.values.UiTextShadow;
-import club.heiqi.uilib.ui.theme.UiSurfaceStyle;
+import club.heiqi.uilib.ui.style.values.UiSurfaceStyle;
 import club.heiqi.uilib.ui.text.TextContentMode;
 
 /**

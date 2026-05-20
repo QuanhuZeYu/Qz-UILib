@@ -24,7 +24,7 @@ import club.heiqi.uilib.ui.style.cascade.UiStyleResolver;
 import club.heiqi.uilib.ui.style.props.UiBorderCollapse;
 import club.heiqi.uilib.ui.style.values.UiTextShadow;
 import club.heiqi.uilib.ui.style.props.UiVisibility;
-import club.heiqi.uilib.ui.theme.UiSurfaceStyle;
+import club.heiqi.uilib.ui.style.values.UiSurfaceStyle;
 
 /**
  * 将 HTML-like 绘制命令投影到现有 UI 渲染上下文。

@@ -70,7 +70,7 @@ import club.heiqi.uilib.ui.style.props.UiVisibility;
 import club.heiqi.uilib.ui.text.DefaultTextMeasureService;
 import club.heiqi.uilib.ui.text.TextContentMode;
 import club.heiqi.uilib.ui.text.TextMeasureService;
-import club.heiqi.uilib.ui.theme.UiSurfaceStyle;
+import club.heiqi.uilib.ui.style.values.UiSurfaceStyle;
 
 /**
  * `HtmlLikeDocumentWidget` 的后端适配契约测试。

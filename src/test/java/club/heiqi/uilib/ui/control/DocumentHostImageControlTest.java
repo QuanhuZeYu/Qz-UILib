@@ -266,7 +266,7 @@ public class DocumentHostImageControlTest {
 
         @Override
         public void drawSurface(int left, int top, int right, int bottom,
-                club.heiqi.uilib.ui.theme.UiSurfaceStyle surfaceStyle) {}
+                club.heiqi.uilib.ui.style.values.UiSurfaceStyle surfaceStyle) {}
 
         @Override
         public void drawText(String text, int x, int y, int color, boolean shadow) {}

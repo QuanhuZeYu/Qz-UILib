@@ -19,7 +19,7 @@ import club.heiqi.uilib.ui.style.props.UiBorderStyle;
 import club.heiqi.uilib.ui.style.values.UiStyleLength;
 import club.heiqi.uilib.ui.text.TextContentMode;
 import club.heiqi.uilib.ui.text.TextMeasureService;
-import club.heiqi.uilib.ui.theme.UiSurfaceStyle;
+import club.heiqi.uilib.ui.style.values.UiSurfaceStyle;
 
 /**
  * `DocumentButtonControl` 的基础行为契约测试。
