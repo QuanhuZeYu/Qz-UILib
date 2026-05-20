@@ -85,6 +85,9 @@ public final class ComputedStyle {
     private final Float aspectRatio;
     private final UiObjectFit objectFit;
     private final UiPseudoElementContent content;
+    private final UiScrollbarColor scrollbarColor;
+    private final UiScrollbarWidth scrollbarWidth;
+    private final UiListStyleType listStyleType;
 
     ComputedStyle(UiDisplay display, UiStyleLength width, UiStyleLength height, UiBoxSizing boxSizing,
             UiPosition position,
@@ -108,7 +111,8 @@ public final class ComputedStyle {
             UiFontStyle fontStyle, UiPointerEvents pointerEvents,
             UiOutline outline, UiStyleInsets borderWidthSides, UiBorderColors borderColors,
             UiStyleLength letterSpacing, UiWordBreak wordBreak, UiOverflowWrap overflowWrap,
-            Float aspectRatio, UiObjectFit objectFit, UiPseudoElementContent content) {
+            Float aspectRatio, UiObjectFit objectFit, UiPseudoElementContent content,
+            UiScrollbarColor scrollbarColor, UiScrollbarWidth scrollbarWidth, UiListStyleType listStyleType) {
         this.display = Objects.requireNonNull(display, "display");
         this.width = Objects.requireNonNull(width, "width");
         this.height = Objects.requireNonNull(height, "height");
@@ -180,6 +184,9 @@ public final class ComputedStyle {
         this.aspectRatio = aspectRatio; // 可为 null（无宽高比约束）
         this.objectFit = objectFit == null ? UiObjectFit.FILL : objectFit;
         this.content = content == null ? UiPseudoElementContent.none() : content;
+        this.scrollbarColor = scrollbarColor == null ? UiScrollbarColor.auto() : scrollbarColor;
+        this.scrollbarWidth = scrollbarWidth == null ? UiScrollbarWidth.AUTO : scrollbarWidth;
+        this.listStyleType = listStyleType == null ? UiListStyleType.NONE : listStyleType;
     }
 
     public UiDisplay getDisplay() {
@@ -618,5 +625,32 @@ public final class ComputedStyle {
      */
     public UiPseudoElementContent getContent() {
         return content;
+    }
+
+    /**
+     * 返回滚动条颜色。
+     *
+     * @return 滚动条颜色
+     */
+    public UiScrollbarColor getScrollbarColor() {
+        return scrollbarColor;
+    }
+
+    /**
+     * 返回滚动条宽度模式。
+     *
+     * @return 滚动条宽度模式
+     */
+    public UiScrollbarWidth getScrollbarWidth() {
+        return scrollbarWidth;
+    }
+
+    /**
+     * 返回列表标记类型。
+     *
+     * @return 列表标记类型
+     */
+    public UiListStyleType getListStyleType() {
+        return listStyleType;
     }
 }

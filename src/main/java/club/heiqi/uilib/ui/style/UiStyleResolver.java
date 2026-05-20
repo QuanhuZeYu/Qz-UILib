@@ -261,6 +261,20 @@ public final class UiStyleResolver {
                 parentStyle == null ? UiObjectFit.FILL : parentStyle.getObjectFit());
         UiPseudoElementContent content = cascade(inlineStyle, matchingRules, UiStyleProperty.CONTENT,
                 UiPseudoElementContent.none(), UiPseudoElementContent.none());
+        UiScrollbarColor scrollbarColor = cascade(inlineStyle, matchingRules, UiStyleProperty.SCROLLBAR_COLOR,
+                UiScrollbarColor.auto(), parentStyle == null ? UiScrollbarColor.auto() : parentStyle.getScrollbarColor());
+        UiScrollbarWidth scrollbarWidth = cascade(inlineStyle, matchingRules, UiStyleProperty.SCROLLBAR_WIDTH,
+                UiScrollbarWidth.AUTO, parentStyle == null ? UiScrollbarWidth.AUTO : parentStyle.getScrollbarWidth());
+        UiListStyleType listStyleType = cascade(inlineStyle, matchingRules, UiStyleProperty.LIST_STYLE_TYPE,
+                UiListStyleType.NONE, parentStyle == null ? UiListStyleType.NONE : parentStyle.getListStyleType());
+
+        if (!hasDeclaredProperty(inlineStyle, matchingRules, UiStyleProperty.LIST_STYLE_TYPE)) {
+            if ("ol".equals(element.getTagName()) && listStyleType == UiListStyleType.NONE) {
+                listStyleType = UiListStyleType.DECIMAL;
+            } else if ("ul".equals(element.getTagName()) && listStyleType == UiListStyleType.NONE) {
+                listStyleType = UiListStyleType.DISC;
+            }
+        }
 
         if (isLinkElement(element) && !hasDeclaredProperty(inlineStyle, matchingRules, UiStyleProperty.TEXT_COLOR)) {
             textColorValue = Integer.valueOf(DEFAULT_LINK_TEXT_COLOR);
@@ -273,6 +287,7 @@ public final class UiStyleResolver {
             cursor = UiCursor.POINTER;
         }
         if (isListItemElement(element) && isInsideListContainer(element)
+                && listStyleType != UiListStyleType.NONE
                 && !hasDeclaredProperty(inlineStyle, matchingRules, UiStyleProperty.PADDING)) {
             padding = DEFAULT_LIST_ITEM_PADDING;
         }
@@ -290,7 +305,7 @@ public final class UiStyleResolver {
                 boxShadow, borderStyle, borderCollapse, cursor, borderRadiusCorners, textDecoration, fontWeight,
                 fontStyle,
                 pointerEvents, outline, borderWidthSides, borderColors, letterSpacing, wordBreak, overflowWrap,
-                aspectRatio, objectFit, content);
+                aspectRatio, objectFit, content, scrollbarColor, scrollbarWidth, listStyleType);
     }
 
     private static boolean hasDeclaredProperty(UiStyleDeclaration inlineStyle, List<UiStyleRule> rules,
@@ -431,6 +446,9 @@ public final class UiStyleResolver {
             case ASPECT_RATIO: return (T) declaration.getAspectRatio();
             case OBJECT_FIT: return (T) declaration.getObjectFit();
             case CONTENT: return (T) declaration.getContent();
+            case SCROLLBAR_COLOR: return (T) declaration.getScrollbarColor();
+            case SCROLLBAR_WIDTH: return (T) declaration.getScrollbarWidth();
+            case LIST_STYLE_TYPE: return (T) declaration.getListStyleType();
             default: return null;
         }
     }

@@ -14,6 +14,7 @@ import java.util.Set;
 import club.heiqi.uilib.ui.dom.ElementNode;
 import club.heiqi.uilib.ui.style.ComputedStyle;
 import club.heiqi.uilib.ui.style.UiOverflow;
+import club.heiqi.uilib.ui.style.UiScrollbarWidth;
 
 /**
  * HTML-like 文档滚动状态。
@@ -26,6 +27,7 @@ public final class DocumentScrollState {
     private static final long TRANSIENT_SCROLLBAR_VISIBLE_NANOS = 900_000_000L;
     private static final int SCROLLBAR_TRACK_GAP = 2;
     private static final int SCROLLBAR_TRACK_THICKNESS = 6;
+    private static final int SCROLLBAR_THIN_TRACK_THICKNESS = 4;
     private static final int SCROLLBAR_MIN_THUMB_SIZE = 24;
 
     private final Map<ElementNode, ScrollEntry> entries = new HashMap<ElementNode, ScrollEntry>();
@@ -407,12 +409,17 @@ public final class DocumentScrollState {
             return null;
         }
 
+        int trackThickness = resolveTrackThickness(box);
+        if (trackThickness <= 0) {
+            return null;
+        }
+
         int contentTop = box.getContentTop() + offsetY;
         int contentRight = box.getContentLeft() + offsetX + box.getContentWidth();
         int contentBottom = box.getContentTop() + offsetY + box.getContentHeight()
-                - (reserveHorizontal ? SCROLLBAR_TRACK_THICKNESS + SCROLLBAR_TRACK_GAP : 0);
+                - (reserveHorizontal ? trackThickness + SCROLLBAR_TRACK_GAP : 0);
         int trackRight = contentRight - SCROLLBAR_TRACK_GAP;
-        int trackLeft = trackRight - SCROLLBAR_TRACK_THICKNESS;
+        int trackLeft = trackRight - trackThickness;
         int trackTop = contentTop + SCROLLBAR_TRACK_GAP;
         int trackBottom = contentBottom - SCROLLBAR_TRACK_GAP;
         if (trackRight <= trackLeft || trackBottom <= trackTop) {
@@ -441,14 +448,19 @@ public final class DocumentScrollState {
             return null;
         }
 
+        int trackThickness = resolveTrackThickness(box);
+        if (trackThickness <= 0) {
+            return null;
+        }
+
         int contentLeft = box.getContentLeft() + offsetX;
         int contentRight = box.getContentLeft() + offsetX + box.getContentWidth()
-                - (reserveVertical ? SCROLLBAR_TRACK_THICKNESS + SCROLLBAR_TRACK_GAP : 0);
+                - (reserveVertical ? trackThickness + SCROLLBAR_TRACK_GAP : 0);
         int contentBottom = box.getContentTop() + offsetY + box.getContentHeight();
         int trackLeft = contentLeft + SCROLLBAR_TRACK_GAP;
         int trackRight = contentRight - SCROLLBAR_TRACK_GAP;
         int trackBottom = contentBottom - SCROLLBAR_TRACK_GAP;
-        int trackTop = trackBottom - SCROLLBAR_TRACK_THICKNESS;
+        int trackTop = trackBottom - trackThickness;
         if (trackRight <= trackLeft || trackBottom <= trackTop) {
             return null;
         }
@@ -888,6 +900,17 @@ public final class DocumentScrollState {
 
     private static int clamp(int value, int maxValue) {
         return Math.max(0, Math.min(value, Math.max(0, maxValue)));
+    }
+
+    private static int resolveTrackThickness(DocumentLayoutBox box) {
+        UiScrollbarWidth scrollbarWidth = box.getComputedStyle().getScrollbarWidth();
+        if (scrollbarWidth == UiScrollbarWidth.NONE) {
+            return 0;
+        }
+        if (scrollbarWidth == UiScrollbarWidth.THIN) {
+            return SCROLLBAR_THIN_TRACK_THICKNESS;
+        }
+        return SCROLLBAR_TRACK_THICKNESS;
     }
 
     /**

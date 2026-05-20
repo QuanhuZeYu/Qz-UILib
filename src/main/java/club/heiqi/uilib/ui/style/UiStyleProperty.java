@@ -77,7 +77,10 @@ public enum UiStyleProperty {
     OVERFLOW_WRAP(true, UiStyleChangeImpact.LAYOUT),
     ASPECT_RATIO(false, UiStyleChangeImpact.LAYOUT),
     OBJECT_FIT(false, UiStyleChangeImpact.PAINT),
-    CONTENT(false, UiStyleChangeImpact.LAYOUT);
+    CONTENT(false, UiStyleChangeImpact.LAYOUT),
+    SCROLLBAR_COLOR(true, UiStyleChangeImpact.PAINT),
+    SCROLLBAR_WIDTH(false, UiStyleChangeImpact.LAYOUT),
+    LIST_STYLE_TYPE(true, UiStyleChangeImpact.LAYOUT);
 
     private final boolean inheritedByDefault;
     private final UiStyleChangeImpact changeImpact;

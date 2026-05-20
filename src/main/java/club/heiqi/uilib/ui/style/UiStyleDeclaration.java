@@ -94,6 +94,9 @@ public final class UiStyleDeclaration {
     private Float aspectRatio;
     private UiObjectFit objectFit;
     private UiPseudoElementContent content;
+    private UiScrollbarColor scrollbarColor;
+    private UiScrollbarWidth scrollbarWidth;
+    private UiListStyleType listStyleType;
     private final EnumMap<UiStyleProperty, UiStyleKeyword> keywords =
             new EnumMap<UiStyleProperty, UiStyleKeyword>(UiStyleProperty.class);
     private final EnumSet<UiStyleProperty> importantProperties = EnumSet.noneOf(UiStyleProperty.class);
@@ -1344,6 +1347,71 @@ public final class UiStyleDeclaration {
         return content;
     }
 
+    public UiScrollbarColor getScrollbarColor() {
+        return scrollbarColor;
+    }
+
+    /**
+     * 设置滚动条滑块与轨道颜色。
+     *
+     * @param scrollbarColor 滚动条颜色
+     * @return 当前声明
+     */
+    public UiStyleDeclaration setScrollbarColor(UiScrollbarColor scrollbarColor) {
+        return updateScrollbarColor(Objects.requireNonNull(scrollbarColor, "scrollbarColor"));
+    }
+
+    /**
+     * 设置滚动条滑块与轨道颜色。
+     *
+     * @param thumbColor 滑块颜色（ARGB）
+     * @param trackColor 轨道颜色（ARGB）
+     * @return 当前声明
+     */
+    public UiStyleDeclaration setScrollbarColor(int thumbColor, int trackColor) {
+        return setScrollbarColor(UiScrollbarColor.of(thumbColor, trackColor));
+    }
+
+    public UiStyleDeclaration clearScrollbarColor() {
+        return updateScrollbarColor(null);
+    }
+
+    public UiScrollbarWidth getScrollbarWidth() {
+        return scrollbarWidth;
+    }
+
+    /**
+     * 设置滚动条宽度模式。
+     *
+     * @param scrollbarWidth 滚动条宽度模式
+     * @return 当前声明
+     */
+    public UiStyleDeclaration setScrollbarWidth(UiScrollbarWidth scrollbarWidth) {
+        return updateScrollbarWidth(Objects.requireNonNull(scrollbarWidth, "scrollbarWidth"));
+    }
+
+    public UiStyleDeclaration clearScrollbarWidth() {
+        return updateScrollbarWidth(null);
+    }
+
+    public UiListStyleType getListStyleType() {
+        return listStyleType;
+    }
+
+    /**
+     * 设置列表标记类型。
+     *
+     * @param listStyleType 列表标记类型
+     * @return 当前声明
+     */
+    public UiStyleDeclaration setListStyleType(UiListStyleType listStyleType) {
+        return updateListStyleType(Objects.requireNonNull(listStyleType, "listStyleType"));
+    }
+
+    public UiStyleDeclaration clearListStyleType() {
+        return updateListStyleType(null);
+    }
+
     private UiStyleDeclaration updateProperty(UiStyleProperty property, Object previousValue, Object nextValue,
             UiStyleChangeImpact impact) {
         boolean changed = !Objects.equals(previousValue, nextValue);
@@ -1782,6 +1850,24 @@ public final class UiStyleDeclaration {
         return updateProperty(UiStyleProperty.CONTENT, previousValue, value, UiStyleChangeImpact.LAYOUT);
     }
 
+    private UiStyleDeclaration updateScrollbarColor(UiScrollbarColor value) {
+        UiScrollbarColor previousValue = scrollbarColor;
+        scrollbarColor = value;
+        return updateProperty(UiStyleProperty.SCROLLBAR_COLOR, previousValue, value, UiStyleChangeImpact.PAINT);
+    }
+
+    private UiStyleDeclaration updateScrollbarWidth(UiScrollbarWidth value) {
+        UiScrollbarWidth previousValue = scrollbarWidth;
+        scrollbarWidth = value;
+        return updateProperty(UiStyleProperty.SCROLLBAR_WIDTH, previousValue, value, UiStyleChangeImpact.LAYOUT);
+    }
+
+    private UiStyleDeclaration updateListStyleType(UiListStyleType value) {
+        UiListStyleType previousValue = listStyleType;
+        listStyleType = value;
+        return updateProperty(UiStyleProperty.LIST_STYLE_TYPE, previousValue, value, UiStyleChangeImpact.LAYOUT);
+    }
+
     private boolean hasConcreteProperty(UiStyleProperty property) {
         switch (property) {
             case DISPLAY: return display != null;
@@ -1854,6 +1940,9 @@ public final class UiStyleDeclaration {
             case ASPECT_RATIO: return aspectRatio != null;
             case OBJECT_FIT: return objectFit != null;
             case CONTENT: return content != null;
+            case SCROLLBAR_COLOR: return scrollbarColor != null;
+            case SCROLLBAR_WIDTH: return scrollbarWidth != null;
+            case LIST_STYLE_TYPE: return listStyleType != null;
             default: return false;
         }
     }
@@ -1930,6 +2019,9 @@ public final class UiStyleDeclaration {
             case ASPECT_RATIO: aspectRatio = null; break;
             case OBJECT_FIT: objectFit = null; break;
             case CONTENT: content = null; break;
+            case SCROLLBAR_COLOR: scrollbarColor = null; break;
+            case SCROLLBAR_WIDTH: scrollbarWidth = null; break;
+            case LIST_STYLE_TYPE: listStyleType = null; break;
             default: break;
         }
     }
@@ -2014,6 +2106,9 @@ public final class UiStyleDeclaration {
         aspectRatio = resolvedSource.aspectRatio;
         objectFit = resolvedSource.objectFit;
         content = resolvedSource.content;
+        scrollbarColor = resolvedSource.scrollbarColor;
+        scrollbarWidth = resolvedSource.scrollbarWidth;
+        listStyleType = resolvedSource.listStyleType;
         keywords.clear();
         keywords.putAll(resolvedSource.keywords);
         importantProperties.clear();

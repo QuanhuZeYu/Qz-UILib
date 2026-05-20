@@ -23,8 +23,10 @@ import club.heiqi.uilib.ui.style.UiBorderStyle;
 import club.heiqi.uilib.ui.style.UiDisplay;
 import club.heiqi.uilib.ui.style.UiFontStyle;
 import club.heiqi.uilib.ui.style.UiFontWeight;
+import club.heiqi.uilib.ui.style.UiListStyleType;
 import club.heiqi.uilib.ui.style.UiOutline;
 import club.heiqi.uilib.ui.style.UiOverflow;
+import club.heiqi.uilib.ui.style.UiScrollbarColor;
 import club.heiqi.uilib.ui.style.UiStyleInsets;
 import club.heiqi.uilib.ui.style.UiStyleResolver;
 import club.heiqi.uilib.ui.style.UiTextDecoration;
@@ -36,9 +38,6 @@ import club.heiqi.uilib.ui.text.TextContentMode;
  * HTML-like 绘制命令生成器。
  */
 public final class DocumentPaintEngine {
-
-    private static final int SCROLLBAR_TRACK_COLOR = 0x663B4A66;
-    private static final int SCROLLBAR_THUMB_COLOR = 0xDDBCD7FF;
 
     private DocumentPaintEngine() {}
 
@@ -389,10 +388,22 @@ public final class DocumentPaintEngine {
             return;
         }
         String parentTagName = parent.getTagName();
+        if (!"ul".equals(parentTagName) && !"ol".equals(parentTagName)) {
+            return;
+        }
+        ComputedStyle style = box.getComputedStyle();
+        UiListStyleType listStyleType = style.getListStyleType();
         String markerText;
-        if ("ol".equals(parentTagName)) {
+        if (listStyleType == UiListStyleType.NONE) {
+            return;
+        }
+        if (listStyleType == UiListStyleType.DECIMAL) {
             markerText = String.valueOf(resolveListItemIndex(element)) + ".";
-        } else if ("ul".equals(parentTagName)) {
+        } else if (listStyleType == UiListStyleType.CIRCLE) {
+            markerText = "◦";
+        } else if (listStyleType == UiListStyleType.SQUARE) {
+            markerText = "▪";
+        } else if (listStyleType == UiListStyleType.DISC) {
             markerText = "•";
         } else {
             return;
@@ -400,7 +411,6 @@ public final class DocumentPaintEngine {
         if (markerText.isEmpty() || box.getContentHeight() <= 0) {
             return;
         }
-        ComputedStyle style = box.getComputedStyle();
         int textColor = applyOpacity(style.getTextColor(), opacity);
         if (isTransparent(textColor)) {
             return;
@@ -648,8 +658,9 @@ public final class DocumentPaintEngine {
         }
         int radius = Math.max(0, Math.min(metrics.getTrackRight() - metrics.getTrackLeft(),
                 metrics.getTrackBottom() - metrics.getTrackTop()) / 2);
-        int trackColor = applyOpacity(SCROLLBAR_TRACK_COLOR, opacity);
-        int thumbColor = applyOpacity(SCROLLBAR_THUMB_COLOR, opacity);
+        UiScrollbarColor scrollbarColor = box.getComputedStyle().getScrollbarColor();
+        int trackColor = applyOpacity(scrollbarColor.getTrackColor(), opacity);
+        int thumbColor = applyOpacity(scrollbarColor.getThumbColor(), opacity);
         commands.add(new DocumentPaintCommand(DocumentPaintCommandType.SCROLLBAR_TRACK, box.getElement(),
                 metrics.getTrackLeft(),
                 metrics.getTrackTop(), metrics.getTrackRight(), metrics.getTrackBottom(), trackColor, 0,

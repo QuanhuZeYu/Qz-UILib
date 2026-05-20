@@ -564,6 +564,69 @@ public class DocumentPaintEngineTest {
     }
 
     /**
+     * 验证滚动条颜色可按样式声明自定义。
+     */
+    @Test
+    public void shouldApplyCustomScrollbarColorsFromStyle() {
+        UiDocument document = UiDocument.create();
+        ElementNode root = document.getRootElement();
+        ElementNode child = document.div();
+
+        root.style()
+                .setWidth(UiStyleLength.px(50))
+                .setHeight(UiStyleLength.px(20))
+                .setOverflowX(UiOverflow.HIDDEN)
+                .setOverflowY(UiOverflow.AUTO)
+                .setScrollbarColor(0xFF102030, 0xFF405060);
+        child.style().setHeight(UiStyleLength.px(50));
+        root.append(child);
+
+        DocumentLayoutBox rootBox = DocumentLayoutEngine.layout(root, 80, 0);
+        DocumentScrollState scrollState = new DocumentScrollState();
+        scrollState.updateFromLayout(rootBox);
+        List<DocumentPaintCommand> commands = DocumentPaintEngine.buildPaintCommands(rootBox, scrollState);
+
+        Assert.assertEquals(4, commands.size());
+        assertCommand(commands.get(2), DocumentPaintCommandType.SCROLLBAR_TRACK, root, 42, 2, 48, 18, 0xFF405060,
+                0, 3);
+        assertCommand(commands.get(3), DocumentPaintCommandType.SCROLLBAR_THUMB, root, 42, 2, 48, 18, 0xFF102030,
+                0, 3);
+    }
+
+    /**
+     * 验证 li 会按列表类型生成不同 marker，none 时不绘制 marker。
+     */
+    @Test
+    public void shouldBuildListMarkersAccordingToListStyleType() {
+        UiDocument document = UiDocument.create();
+        ElementNode root = document.getRootElement();
+        ElementNode unorderedList = document.ul();
+        ElementNode orderedList = document.ol();
+        ElementNode bulletItem = document.li();
+        ElementNode numberedItem = document.li();
+        ElementNode noMarkerItem = document.li();
+
+        root.style().setWidth(UiStyleLength.px(160));
+        bulletItem.appendText("One");
+        numberedItem.appendText("Two");
+        noMarkerItem.appendText("Three");
+        unorderedList.style().setListStyleType(club.heiqi.uilib.ui.style.UiListStyleType.CIRCLE);
+        orderedList.style().setListStyleType(club.heiqi.uilib.ui.style.UiListStyleType.DECIMAL);
+        noMarkerItem.style().setListStyleType(club.heiqi.uilib.ui.style.UiListStyleType.NONE);
+        unorderedList.append(bulletItem);
+        orderedList.append(numberedItem);
+        orderedList.append(noMarkerItem);
+        root.append(unorderedList).append(orderedList);
+
+        List<DocumentPaintCommand> commands = DocumentPaintEngine.buildPaintCommands(DocumentLayoutEngine.layout(root,
+                180, 0, new DeterministicTextMeasureService()));
+
+        Assert.assertTrue(containsTextCommand(commands, bulletItem, "◦"));
+        Assert.assertTrue(containsTextCommand(commands, numberedItem, "1."));
+        Assert.assertFalse(containsTextCommand(commands, noMarkerItem, "3."));
+    }
+
+    /**
      * 验证 backdrop filter 命令会在元素自身背景与边框之前输出。
      */
     @Test

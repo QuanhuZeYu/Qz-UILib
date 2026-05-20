@@ -7,6 +7,7 @@ import club.heiqi.uilib.ui.dom.ElementNode;
 import club.heiqi.uilib.ui.dom.UiDocument;
 import club.heiqi.uilib.ui.style.UiOverflow;
 import club.heiqi.uilib.ui.style.UiPosition;
+import club.heiqi.uilib.ui.style.UiScrollbarWidth;
 import club.heiqi.uilib.ui.style.UiStyleLength;
 
 /**
@@ -196,6 +197,37 @@ public class DocumentScrollStateTest {
         Assert.assertTrue(scrollState.getMaxScrollTop(contentRoot) > 0);
         Assert.assertTrue(scrollState.handleWheel(rootBox, 24, 40, -120, 1L));
         Assert.assertTrue(scrollState.getScrollTop(contentRoot) > 0);
+    }
+
+    /**
+     * 验证 scrollbar-width 会影响滚动条几何，而 none 会隐藏滚动条命中区域。
+     */
+    @Test
+    public void shouldRespectScrollbarWidthInMetrics() {
+        UiDocument document = UiDocument.create();
+        ElementNode root = document.getRootElement();
+        ElementNode child = document.div();
+
+        root.style()
+                .setWidth(UiStyleLength.px(60))
+                .setHeight(UiStyleLength.px(24))
+                .setOverflowX(UiOverflow.HIDDEN)
+                .setOverflowY(UiOverflow.AUTO)
+                .setScrollbarWidth(UiScrollbarWidth.THIN);
+        child.style().setHeight(UiStyleLength.px(80));
+        root.append(child);
+
+        DocumentLayoutBox rootBox = DocumentLayoutEngine.layout(root, 80, 0);
+        DocumentScrollState scrollState = new DocumentScrollState();
+        scrollState.updateFromLayout(rootBox);
+
+        Assert.assertNotNull(scrollState.getVerticalScrollbarMetrics(rootBox, 0, 0, false));
+
+        root.style().setScrollbarWidth(UiScrollbarWidth.NONE);
+        rootBox = DocumentLayoutEngine.layout(root, 80, 0);
+        scrollState.updateFromLayout(rootBox);
+
+        Assert.assertNull(scrollState.getVerticalScrollbarMetrics(rootBox, 0, 0, false));
     }
 
     /**

@@ -190,6 +190,32 @@ public class UiStyleResolverTest {
     }
 
     /**
+     * 验证列表样式、滚动条颜色与宽度可按样式声明解析。
+     */
+    @Test
+    public void shouldResolveListAndScrollbarStyles() {
+        UiDocument document = UiDocument.create();
+        ElementNode unorderedList = document.ul();
+        ElementNode orderedList = document.ol();
+        ElementNode listItem = document.li();
+
+        unorderedList.style().setListStyleType(UiListStyleType.SQUARE).setScrollbarColor(0xFF112233, 0xFF445566)
+                .setScrollbarWidth(UiScrollbarWidth.THIN);
+        orderedList.append(listItem);
+
+        ComputedStyle unorderedStyle = UiStyleResolver.compute(unorderedList);
+        ComputedStyle orderedStyle = UiStyleResolver.compute(orderedList);
+        ComputedStyle listItemStyle = UiStyleResolver.compute(listItem);
+
+        Assert.assertEquals(UiListStyleType.SQUARE, unorderedStyle.getListStyleType());
+        Assert.assertEquals(UiScrollbarWidth.THIN, unorderedStyle.getScrollbarWidth());
+        Assert.assertEquals(0xFF112233, unorderedStyle.getScrollbarColor().getThumbColor());
+        Assert.assertEquals(0xFF445566, unorderedStyle.getScrollbarColor().getTrackColor());
+        Assert.assertEquals(UiListStyleType.DECIMAL, orderedStyle.getListStyleType());
+        Assert.assertEquals(UiListStyleType.DECIMAL, listItemStyle.getListStyleType());
+    }
+
+    /**
      * 验证 inherit / initial / unset 关键字按属性继承语义解析。
      */
     @Test
