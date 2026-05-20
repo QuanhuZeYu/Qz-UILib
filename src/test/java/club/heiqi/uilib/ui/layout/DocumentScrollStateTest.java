@@ -284,7 +284,7 @@ public class DocumentScrollStateTest {
         ElementNode debugToggleHost = document.div();
         debugToggleHost.style().setDisplay(club.heiqi.uilib.ui.style.UiDisplay.BLOCK)
                 .setWidth(UiStyleLength.auto());
-        debugToggleHost.append(new club.heiqi.uilib.ui.dom.control.DocumentToggleSwitchControl(document)
+        debugToggleHost.append(new club.heiqi.uilib.ui.control.DocumentToggleSwitchControl(document)
                 .setToggled(true).getElement());
         debugToggleCard.append(debugToggleHost);
         controlCard.append(debugToggleCard);
@@ -318,11 +318,11 @@ public class DocumentScrollStateTest {
                 .setWidth(UiStyleLength.percent(1.0F))
                 .setRowGap(UiStyleLength.px(4));
         noteCard.append(createAutoWidthTextBlock(document, "容器备注"));
-        noteCard.append(new club.heiqi.uilib.ui.dom.control.DocumentTextInputControl(document)
+        noteCard.append(new club.heiqi.uilib.ui.control.DocumentTextInputControl(document)
                 .setPlaceholder("在容器界面中输入备注")
                 .setText("把鼠标移到背包界面后尝试编辑我")
                 .getElement());
-        noteCard.append(new club.heiqi.uilib.ui.dom.control.DocumentButtonControl(document, "记录一次点击").getElement());
+        noteCard.append(new club.heiqi.uilib.ui.control.DocumentButtonControl(document, "记录一次点击").getElement());
         contentBody.append(noteCard);
 
         ElementNode debugCard = document.div();

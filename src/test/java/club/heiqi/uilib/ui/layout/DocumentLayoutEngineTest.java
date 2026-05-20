@@ -10,8 +10,8 @@ import org.junit.Test;
 
 import club.heiqi.uilib.ui.dom.ElementNode;
 import club.heiqi.uilib.ui.dom.UiDocument;
-import club.heiqi.uilib.ui.dom.control.DocumentButtonControl;
-import club.heiqi.uilib.ui.dom.control.DocumentTextInputControl;
+import club.heiqi.uilib.ui.control.DocumentButtonControl;
+import club.heiqi.uilib.ui.control.DocumentTextInputControl;
 import club.heiqi.uilib.ui.image.DocumentRemoteImageCache;
 import club.heiqi.uilib.ui.paint.DocumentPaintCommand;
 import club.heiqi.uilib.ui.paint.DocumentPaintCommandType;
@@ -1789,7 +1789,7 @@ public class DocumentLayoutEngineTest {
         debugToggleCard.append(createAutoWidthWrappedTextBlock(document, "显示 HUD 调试信息"));
         ElementNode toggleHost = document.div();
         toggleHost.style().setDisplay(UiDisplay.BLOCK).setWidth(UiStyleLength.auto());
-        toggleHost.append(new club.heiqi.uilib.ui.dom.control.DocumentToggleSwitchControl(document)
+        toggleHost.append(new club.heiqi.uilib.ui.control.DocumentToggleSwitchControl(document)
                 .setToggled(true)
                 .getElement());
         debugToggleCard.append(toggleHost);

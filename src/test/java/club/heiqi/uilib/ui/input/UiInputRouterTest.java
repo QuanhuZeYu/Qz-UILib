@@ -7,7 +7,7 @@ import org.junit.Test;
 import org.lwjglx.input.Keyboard;
 
 import club.heiqi.uilib.ui.document.HtmlLikeDocumentWidget;
-import club.heiqi.uilib.ui.dom.control.DocumentTextInputControl;
+import club.heiqi.uilib.ui.control.DocumentTextInputControl;
 import club.heiqi.uilib.ui.dom.UiDocument;
 import club.heiqi.uilib.ui.event.UiKeyEvent;
 import club.heiqi.uilib.ui.event.UiMouseEvent;
