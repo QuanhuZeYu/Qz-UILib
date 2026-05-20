@@ -22,6 +22,7 @@ import club.heiqi.uilib.ui.style.UiBorderRadiusResolver;
 import club.heiqi.uilib.ui.style.UiBorderStyle;
 import club.heiqi.uilib.ui.style.UiOverflow;
 import club.heiqi.uilib.ui.style.UiOverflowWrap;
+import club.heiqi.uilib.ui.style.UiPseudoElementContent;
 import club.heiqi.uilib.ui.style.UiPosition;
 import club.heiqi.uilib.ui.style.UiStyleInsets;
 import club.heiqi.uilib.ui.style.UiStyleLength;
@@ -1368,6 +1369,37 @@ public class DocumentPaintEngineTest {
                 3_000_000_000L);
         Assert.assertEquals(0, countCommands(expiredCommands, DocumentPaintCommandType.SCROLLBAR_TRACK));
         Assert.assertEquals(0, countCommands(expiredCommands, DocumentPaintCommandType.SCROLLBAR_THUMB));
+    }
+
+    /**
+     * 验证伪元素会参与绘制命令生成，而不需要作者手动插入真实 DOM 子节点。
+     */
+    @Test
+    public void shouldBuildPaintCommandsForPseudoElements() {
+        UiDocument document = UiDocument.create();
+        ElementNode root = document.getRootElement();
+        ElementNode badge = document.span();
+
+        root.style().setWidth(UiStyleLength.px(120));
+        badge.appendText("MID");
+        root.append(badge);
+        document.addStyleSheet(club.heiqi.uilib.ui.style.UiStyleSheet.create()
+                .addRule("span::before", new club.heiqi.uilib.ui.style.UiStyleDeclaration()
+                        .setContent(UiPseudoElementContent.text("PRE"))
+                        .setTextColor(0xFF00FF00))
+                .addRule("span::after", new club.heiqi.uilib.ui.style.UiStyleDeclaration()
+                        .setContent(UiPseudoElementContent.text("POST"))
+                        .setTextColor(0xFFFF0000)));
+
+        List<DocumentPaintCommand> commands = DocumentPaintEngine.buildPaintCommands(DocumentLayoutEngine.layout(root,
+                160, 0, new DeterministicTextMeasureService()));
+
+        Assert.assertEquals(3, commands.size());
+        Assert.assertEquals("PRE", commands.get(0).getText());
+        Assert.assertEquals("MID", commands.get(1).getText());
+        Assert.assertEquals("POST", commands.get(2).getText());
+        Assert.assertEquals(0xFF00FF00, commands.get(0).getColor());
+        Assert.assertEquals(0xFFFF0000, commands.get(2).getColor());
     }
 
     private static void assertCommand(DocumentPaintCommand command, DocumentPaintCommandType type,

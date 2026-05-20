@@ -68,7 +68,8 @@ public final class DocumentHitTestEngine {
                 return inlineFragmentHit;
             }
         }
-        return insideBorderBox && isPointerEventsEnabled(box.getElement()) ? box.getElement() : null;
+        return insideBorderBox && isPointerEventsEnabled(box.getElement())
+                ? resolveAuthorFacingElement(box.getElement()) : null;
     }
 
     private static ElementNode hitStackingContextChildren(DocumentLayoutBox contextRoot,
@@ -168,7 +169,7 @@ public final class DocumentHitTestEngine {
             DocumentLayoutTextRun textRun = textRuns.get(index);
             if (containsInRect(documentX, documentY, textRun.getLeft() + offsetX, textRun.getTop() + offsetY,
                     textRun.getRight() + offsetX, textRun.getBottom() + offsetY)) {
-                return textRun.getOwnerElement();
+                return resolveAuthorFacingElement(textRun.getOwnerElement());
             }
         }
         return null;
@@ -188,7 +189,7 @@ public final class DocumentHitTestEngine {
             if (containsInRect(documentX, documentY, inlineFragment.getLeft() + offsetX,
                     inlineFragment.getTop() + offsetY, inlineFragment.getRight() + offsetX,
                     inlineFragment.getBottom() + offsetY)) {
-                return inlineFragment.getOwnerElement();
+                return resolveAuthorFacingElement(inlineFragment.getOwnerElement());
             }
         }
         return null;
@@ -233,6 +234,14 @@ public final class DocumentHitTestEngine {
             return true;
         }
         return UiStyleResolver.compute(element).getPointerEvents() != UiPointerEvents.NONE;
+    }
+
+    private static ElementNode resolveAuthorFacingElement(ElementNode element) {
+        if (element == null) {
+            return null;
+        }
+        return element.isPseudoElement() && element.getPseudoOriginElement() != null
+                ? element.getPseudoOriginElement() : element;
     }
 
     private static boolean containsInRect(int x, int y, int left, int top, int right, int bottom) {

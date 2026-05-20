@@ -7,10 +7,12 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
 import java.util.concurrent.atomic.AtomicLong;
 
 import club.heiqi.uilib.ui.animation.DocumentKeyframes;
 import club.heiqi.uilib.ui.style.UiSelector;
+import club.heiqi.uilib.ui.style.UiPseudoElement;
 import club.heiqi.uilib.ui.style.UiStyleRule;
 import club.heiqi.uilib.ui.style.UiStyleSheet;
 import club.heiqi.uilib.ui.style.UiStyleVariables;
@@ -64,6 +66,10 @@ public final class UiDocument {
      */
     public ElementNode element(String tagName) {
         return new ElementNode(this, tagName);
+    }
+
+    public ElementNode __createPseudoElementRuntime(ElementNode originElement, UiPseudoElement pseudoElement) {
+        return new ElementNode(this, "span", originElement, pseudoElement);
     }
 
     /**
@@ -280,6 +286,15 @@ public final class UiDocument {
      */
     public TextNode text(String text, TextContentMode textContentMode) {
         return new TextNode(this, text).setTextContentMode(textContentMode);
+    }
+
+    /**
+     * 创建文档片段。
+     *
+     * @return 文档片段
+     */
+    public DocumentFragmentNode createDocumentFragment() {
+        return new DocumentFragmentNode(this);
     }
 
     /**
@@ -528,6 +543,43 @@ public final class UiDocument {
         }
     }
 
+    boolean __dispatchCustomEvent(ElementNode target, DocumentCustomEvent event) {
+        if (target == null || event == null || target.getOwnerDocument() != this) {
+            return true;
+        }
+        List<ElementNode> path = buildAncestorPath(target);
+        DocumentEventControl eventControl = event.getEventControl();
+        eventControl.reset();
+
+        eventControl.setEventPhase(DocumentEventPhase.CAPTURING);
+        for (int index = path.size() - 1; index > 0; index--) {
+            if (eventControl.isPropagationStopped()) {
+                break;
+            }
+            dispatchCustomEventOnCurrentTarget(path.get(index), target, event, true, eventControl);
+        }
+
+        if (!eventControl.isPropagationStopped()) {
+            eventControl.setEventPhase(DocumentEventPhase.AT_TARGET);
+            dispatchCustomEventOnCurrentTarget(target, target, event, true, eventControl);
+            if (!eventControl.isImmediatePropagationStopped()) {
+                dispatchCustomEventOnCurrentTarget(target, target, event, false, eventControl);
+            }
+        }
+
+        if (event.isBubbles()) {
+            eventControl.setEventPhase(DocumentEventPhase.BUBBLING);
+            for (int index = 1; index < path.size(); index++) {
+                if (eventControl.isPropagationStopped()) {
+                    break;
+                }
+                dispatchCustomEventOnCurrentTarget(path.get(index), target, event, false, eventControl);
+            }
+        }
+        eventControl.setEventPhase(DocumentEventPhase.NONE);
+        return !event.isDefaultPrevented();
+    }
+
     /**
      * 返回已挂载样式表的只读列表。
      *
@@ -564,6 +616,42 @@ public final class UiDocument {
         for (int sheetIndex = 0; sheetIndex < styleSheets.size(); sheetIndex++) {
             UiStyleSheet sheet = styleSheets.get(sheetIndex);
             for (UiStyleRule rule : sheet.findMatchingRules(element, activeStates)) {
+                allMatched.add(new MatchedStyleRule(rule, sheetIndex));
+            }
+        }
+        if (allMatched.size() > 1) {
+            Collections.sort(allMatched, new java.util.Comparator<MatchedStyleRule>() {
+                @Override
+                public int compare(MatchedStyleRule a, MatchedStyleRule b) {
+                    int cmp = a.rule.getSelector().compareSpecificity(b.rule.getSelector());
+                    if (cmp != 0) {
+                        return cmp;
+                    }
+                    cmp = Integer.compare(a.styleSheetIndex, b.styleSheetIndex);
+                    if (cmp != 0) {
+                        return cmp;
+                    }
+                    return Integer.compare(a.rule.getSourceOrder(), b.rule.getSourceOrder());
+                }
+            });
+        }
+        List<UiStyleRule> matchedRules = new ArrayList<UiStyleRule>(allMatched.size());
+        for (MatchedStyleRule matched : allMatched) {
+            matchedRules.add(matched.rule);
+        }
+        return matchedRules;
+    }
+
+    public List<UiStyleRule> findMatchingRules(ElementNode element,
+            java.util.Set<club.heiqi.uilib.ui.style.UiPseudoClass> activeStates,
+            UiPseudoElement pseudoElement) {
+        if (element == null || styleSheets.isEmpty()) {
+            return Collections.emptyList();
+        }
+        List<MatchedStyleRule> allMatched = new ArrayList<MatchedStyleRule>();
+        for (int sheetIndex = 0; sheetIndex < styleSheets.size(); sheetIndex++) {
+            UiStyleSheet sheet = styleSheets.get(sheetIndex);
+            for (UiStyleRule rule : sheet.findMatchingRules(element, activeStates, pseudoElement)) {
                 allMatched.add(new MatchedStyleRule(rule, sheetIndex));
             }
         }
@@ -810,6 +898,27 @@ public final class UiDocument {
      */
     long __allocateElementUid() {
         return NEXT_ELEMENT_UID.getAndIncrement();
+    }
+
+    private void dispatchCustomEventOnCurrentTarget(ElementNode currentTarget, ElementNode target,
+            DocumentCustomEvent event, boolean capture, DocumentEventControl eventControl) {
+        List<DocumentCustomEventHandler> handlers = currentTarget.__getCustomEventHandlers(event.getType(), capture);
+        for (DocumentCustomEventHandler handler : handlers) {
+            if (eventControl.isImmediatePropagationStopped()) {
+                break;
+            }
+            if (handler.onEvent(event.withDispatchTargets(target, currentTarget))) {
+                eventControl.stopPropagation();
+            }
+        }
+    }
+
+    private static List<ElementNode> buildAncestorPath(ElementNode target) {
+        List<ElementNode> path = new ArrayList<ElementNode>();
+        for (DocumentNode current = target; current instanceof ElementNode; current = current.getParent()) {
+            path.add((ElementNode) current);
+        }
+        return path;
     }
 
     /**

@@ -84,6 +84,7 @@ public final class ComputedStyle {
     private final UiOverflowWrap overflowWrap;
     private final Float aspectRatio;
     private final UiObjectFit objectFit;
+    private final UiPseudoElementContent content;
 
     ComputedStyle(UiDisplay display, UiStyleLength width, UiStyleLength height, UiBoxSizing boxSizing,
             UiPosition position,
@@ -107,7 +108,7 @@ public final class ComputedStyle {
             UiFontStyle fontStyle, UiPointerEvents pointerEvents,
             UiOutline outline, UiStyleInsets borderWidthSides, UiBorderColors borderColors,
             UiStyleLength letterSpacing, UiWordBreak wordBreak, UiOverflowWrap overflowWrap,
-            Float aspectRatio, UiObjectFit objectFit) {
+            Float aspectRatio, UiObjectFit objectFit, UiPseudoElementContent content) {
         this.display = Objects.requireNonNull(display, "display");
         this.width = Objects.requireNonNull(width, "width");
         this.height = Objects.requireNonNull(height, "height");
@@ -178,6 +179,7 @@ public final class ComputedStyle {
         this.overflowWrap = overflowWrap == null ? UiOverflowWrap.NORMAL : overflowWrap;
         this.aspectRatio = aspectRatio; // 可为 null（无宽高比约束）
         this.objectFit = objectFit == null ? UiObjectFit.FILL : objectFit;
+        this.content = content == null ? UiPseudoElementContent.none() : content;
     }
 
     public UiDisplay getDisplay() {
@@ -607,5 +609,14 @@ public final class ComputedStyle {
      */
     public UiObjectFit getObjectFit() {
         return objectFit;
+    }
+
+    /**
+     * 返回伪元素文本内容声明。
+     *
+     * @return 伪元素内容
+     */
+    public UiPseudoElementContent getContent() {
+        return content;
     }
 }

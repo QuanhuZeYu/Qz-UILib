@@ -1,15 +1,20 @@
 package club.heiqi.uilib.ui.dom;
 
+import java.util.ArrayList;
 import java.util.Collections;
+import java.util.LinkedHashSet;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
 
 import club.heiqi.uilib.ui.paint.DocumentCustomRenderer;
 import club.heiqi.uilib.ui.style.UiStyleChangeImpact;
 import club.heiqi.uilib.ui.style.UiStyleChangeListener;
 import club.heiqi.uilib.ui.style.UiStyleDeclaration;
+import club.heiqi.uilib.ui.style.UiPseudoElement;
 import club.heiqi.uilib.ui.text.TextContentMode;
 
 /**
@@ -19,7 +24,13 @@ public final class ElementNode extends DocumentNode {
 
     private final String tagName;
     private final long __elementUid;
+    private final ElementNode pseudoOriginElement;
+    private final UiPseudoElement pseudoElement;
     private final Map<String, String> attributes = new LinkedHashMap<String, String>();
+    private final Map<String, List<DocumentCustomEventHandler>> customEventHandlers =
+            new LinkedHashMap<String, List<DocumentCustomEventHandler>>();
+    private final Map<String, List<DocumentCustomEventHandler>> captureCustomEventHandlers =
+            new LinkedHashMap<String, List<DocumentCustomEventHandler>>();
     private boolean focusable;
     private boolean focusableExplicitlySet;
     private int focusInvalidationVersion;
@@ -65,9 +76,16 @@ public final class ElementNode extends DocumentNode {
     });
 
     ElementNode(UiDocument ownerDocument, String tagName) {
+        this(ownerDocument, tagName, null, null);
+    }
+
+    ElementNode(UiDocument ownerDocument, String tagName, ElementNode pseudoOriginElement,
+            UiPseudoElement pseudoElement) {
         super(ownerDocument);
         this.__elementUid = ownerDocument.__allocateElementUid();
         this.tagName = normalizeName(tagName, "tagName");
+        this.pseudoOriginElement = pseudoOriginElement;
+        this.pseudoElement = pseudoElement;
         if (isNativeFocusableTag(this.tagName)) {
             this.focusable = true;
         }
@@ -87,6 +105,25 @@ public final class ElementNode extends DocumentNode {
         return DocumentNodeType.ELEMENT;
     }
 
+    @Override
+    public DocumentNode cloneNode(boolean deep) {
+        ElementNode clone = getOwnerDocument().element(tagName);
+        for (Map.Entry<String, String> entry : attributes.entrySet()) {
+            clone.attributes.put(entry.getKey(), entry.getValue());
+        }
+        clone.classList.copyFrom(classList);
+        clone.style().copyFrom(style);
+        clone.focusable = focusable;
+        clone.focusableExplicitlySet = focusableExplicitlySet;
+        clone.focusInvalidationVersion = 0;
+        if (deep) {
+            for (DocumentNode child : getChildren()) {
+                clone.__appendGeneratedChild(child.cloneNode(true));
+            }
+        }
+        return clone;
+    }
+
     /**
      * 返回规范化后的标签名。
      *
@@ -94,6 +131,33 @@ public final class ElementNode extends DocumentNode {
      */
     public String getTagName() {
         return tagName;
+    }
+
+    /**
+     * 返回当前元素是否为 `::before` / `::after` 运行时伪元素。
+     *
+     * @return 是否为伪元素
+     */
+    public boolean isPseudoElement() {
+        return pseudoElement != null;
+    }
+
+    /**
+     * 返回当前伪元素类型。
+     *
+     * @return 伪元素类型；普通元素返回 null
+     */
+    public UiPseudoElement getPseudoElement() {
+        return pseudoElement;
+    }
+
+    /**
+     * 返回伪元素的来源元素。
+     *
+     * @return 来源元素；普通元素返回 null
+     */
+    public ElementNode getPseudoOriginElement() {
+        return pseudoOriginElement;
     }
 
     /**
@@ -251,6 +315,103 @@ public final class ElementNode extends DocumentNode {
      */
     public Map<String, String> getAttributes() {
         return Collections.unmodifiableMap(attributes);
+    }
+
+    /**
+     * 注册自定义事件 listener。
+     *
+     * @param type 事件类型
+     * @param handler 事件处理器
+     * @return 当前元素
+     */
+    public ElementNode addEventListener(String type, DocumentCustomEventHandler handler) {
+        return addEventListener(type, handler, false);
+    }
+
+    /**
+     * 注册自定义事件 listener。
+     *
+     * @param type 事件类型
+     * @param handler 事件处理器
+     * @param capture 是否注册到捕获阶段
+     * @return 当前元素
+     */
+    public ElementNode addEventListener(String type, DocumentCustomEventHandler handler, boolean capture) {
+        String resolvedType = normalizeEventType(type);
+        DocumentCustomEventHandler resolvedHandler = Objects.requireNonNull(handler, "handler");
+        Map<String, List<DocumentCustomEventHandler>> targetMap = capture
+                ? captureCustomEventHandlers : customEventHandlers;
+        List<DocumentCustomEventHandler> listeners = targetMap.get(resolvedType);
+        if (listeners == null) {
+            listeners = new ArrayList<DocumentCustomEventHandler>();
+            targetMap.put(resolvedType, listeners);
+        }
+        if (!listeners.contains(resolvedHandler)) {
+            listeners.add(resolvedHandler);
+        }
+        return this;
+    }
+
+    /**
+     * 移除自定义事件 listener。
+     *
+     * @param type 事件类型
+     * @param handler 事件处理器
+     * @return 当前元素
+     */
+    public ElementNode removeEventListener(String type, DocumentCustomEventHandler handler) {
+        return removeEventListener(type, handler, false);
+    }
+
+    /**
+     * 移除自定义事件 listener。
+     *
+     * @param type 事件类型
+     * @param handler 事件处理器
+     * @param capture 是否从捕获阶段移除
+     * @return 当前元素
+     */
+    public ElementNode removeEventListener(String type, DocumentCustomEventHandler handler, boolean capture) {
+        if (type == null || handler == null) {
+            return this;
+        }
+        Map<String, List<DocumentCustomEventHandler>> targetMap = capture
+                ? captureCustomEventHandlers : customEventHandlers;
+        List<DocumentCustomEventHandler> listeners = targetMap.get(normalizeEventType(type));
+        if (listeners == null) {
+            return this;
+        }
+        listeners.remove(handler);
+        if (listeners.isEmpty()) {
+            targetMap.remove(normalizeEventType(type));
+        }
+        return this;
+    }
+
+    /**
+     * 派发自定义事件。
+     *
+     * @param event 自定义事件对象
+     * @return 默认行为是否未被阻止
+     */
+    public boolean dispatchEvent(DocumentCustomEvent event) {
+        return getOwnerDocument().__dispatchCustomEvent(this, event);
+    }
+
+    List<DocumentCustomEventHandler> __getCustomEventHandlers(String type, boolean capture) {
+        List<DocumentCustomEventHandler> handlers = (capture ? captureCustomEventHandlers : customEventHandlers)
+                .get(type);
+        if (handlers == null || handlers.isEmpty()) {
+            return Collections.emptyList();
+        }
+        return Collections.unmodifiableList(new ArrayList<DocumentCustomEventHandler>(handlers));
+    }
+
+    Set<String> __getRegisteredCustomEventTypes() {
+        Set<String> types = new LinkedHashSet<String>();
+        types.addAll(customEventHandlers.keySet());
+        types.addAll(captureCustomEventHandlers.keySet());
+        return Collections.unmodifiableSet(types);
     }
 
     /**
@@ -1028,6 +1189,14 @@ public final class ElementNode extends DocumentNode {
         String normalized = Objects.requireNonNull(value, parameterName).trim().toLowerCase(Locale.ROOT);
         if (normalized.isEmpty()) {
             throw new IllegalArgumentException(parameterName + " cannot be empty");
+        }
+        return normalized;
+    }
+
+    private static String normalizeEventType(String type) {
+        String normalized = Objects.requireNonNull(type, "type").trim();
+        if (normalized.isEmpty()) {
+            throw new IllegalArgumentException("type cannot be empty");
         }
         return normalized;
     }

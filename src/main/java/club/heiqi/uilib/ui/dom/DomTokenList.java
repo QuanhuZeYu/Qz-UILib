@@ -195,6 +195,13 @@ public final class DomTokenList implements Iterable<String> {
         return Collections.unmodifiableSet(new LinkedHashSet<String>(tokens));
     }
 
+    void copyFrom(DomTokenList source) {
+        tokens.clear();
+        if (source != null) {
+            tokens.addAll(source.tokens);
+        }
+    }
+
     @Override
     public Iterator<String> iterator() {
         return Collections.unmodifiableSet(tokens).iterator();

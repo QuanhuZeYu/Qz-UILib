@@ -93,6 +93,7 @@ public final class UiStyleDeclaration {
     private UiOverflowWrap overflowWrap;
     private Float aspectRatio;
     private UiObjectFit objectFit;
+    private UiPseudoElementContent content;
     private final EnumMap<UiStyleProperty, UiStyleKeyword> keywords =
             new EnumMap<UiStyleProperty, UiStyleKeyword>(UiStyleProperty.class);
     private final EnumSet<UiStyleProperty> importantProperties = EnumSet.noneOf(UiStyleProperty.class);
@@ -1325,6 +1326,24 @@ public final class UiStyleDeclaration {
         return updateObjectFit(null);
     }
 
+    /**
+     * 设置伪元素内容。
+     *
+     * @param content 伪元素内容
+     * @return 当前声明
+     */
+    public UiStyleDeclaration setContent(UiPseudoElementContent content) {
+        return updateContent(Objects.requireNonNull(content, "content"));
+    }
+
+    public UiStyleDeclaration clearContent() {
+        return updateContent(null);
+    }
+
+    public UiPseudoElementContent getContent() {
+        return content;
+    }
+
     private UiStyleDeclaration updateProperty(UiStyleProperty property, Object previousValue, Object nextValue,
             UiStyleChangeImpact impact) {
         boolean changed = !Objects.equals(previousValue, nextValue);
@@ -1757,6 +1776,12 @@ public final class UiStyleDeclaration {
         return updateProperty(UiStyleProperty.OBJECT_FIT, previousValue, value, UiStyleChangeImpact.PAINT);
     }
 
+    private UiStyleDeclaration updateContent(UiPseudoElementContent value) {
+        UiPseudoElementContent previousValue = content;
+        content = value;
+        return updateProperty(UiStyleProperty.CONTENT, previousValue, value, UiStyleChangeImpact.LAYOUT);
+    }
+
     private boolean hasConcreteProperty(UiStyleProperty property) {
         switch (property) {
             case DISPLAY: return display != null;
@@ -1828,6 +1853,7 @@ public final class UiStyleDeclaration {
             case OVERFLOW_WRAP: return overflowWrap != null;
             case ASPECT_RATIO: return aspectRatio != null;
             case OBJECT_FIT: return objectFit != null;
+            case CONTENT: return content != null;
             default: return false;
         }
     }
@@ -1903,8 +1929,96 @@ public final class UiStyleDeclaration {
             case OVERFLOW_WRAP: overflowWrap = null; break;
             case ASPECT_RATIO: aspectRatio = null; break;
             case OBJECT_FIT: objectFit = null; break;
+            case CONTENT: content = null; break;
             default: break;
         }
+    }
+
+    /**
+     * 用另一个声明覆盖当前声明的显式值。
+     *
+     * <p>该方法主要供 `cloneNode` 等内部复制场景使用，不触发变更回调。</p>
+     *
+     * @param source 来源声明
+     * @return 当前声明
+     */
+    public UiStyleDeclaration copyFrom(UiStyleDeclaration source) {
+        UiStyleDeclaration resolvedSource = Objects.requireNonNull(source, "source");
+        display = resolvedSource.display;
+        width = resolvedSource.width;
+        height = resolvedSource.height;
+        boxSizing = resolvedSource.boxSizing;
+        position = resolvedSource.position;
+        top = resolvedSource.top;
+        right = resolvedSource.right;
+        bottom = resolvedSource.bottom;
+        left = resolvedSource.left;
+        zIndex = resolvedSource.zIndex;
+        margin = resolvedSource.margin;
+        padding = resolvedSource.padding;
+        borderWidth = resolvedSource.borderWidth;
+        borderRadius = resolvedSource.borderRadius;
+        overflowX = resolvedSource.overflowX;
+        overflowY = resolvedSource.overflowY;
+        flexDirection = resolvedSource.flexDirection;
+        alignItems = resolvedSource.alignItems;
+        justifyContent = resolvedSource.justifyContent;
+        verticalAlign = resolvedSource.verticalAlign;
+        rowGap = resolvedSource.rowGap;
+        columnGap = resolvedSource.columnGap;
+        flexGrow = resolvedSource.flexGrow;
+        flexShrink = resolvedSource.flexShrink;
+        opacity = resolvedSource.opacity;
+        backgroundColor = resolvedSource.backgroundColor;
+        borderColor = resolvedSource.borderColor;
+        textColor = resolvedSource.textColor;
+        transitionProperties = resolvedSource.transitionProperties;
+        transitionDurationNanos = resolvedSource.transitionDurationNanos;
+        transitionDelayNanos = resolvedSource.transitionDelayNanos;
+        transitionTimingFunction = resolvedSource.transitionTimingFunction;
+        animationName = resolvedSource.animationName;
+        animationDurationNanos = resolvedSource.animationDurationNanos;
+        animationDelayNanos = resolvedSource.animationDelayNanos;
+        animationIterationCount = resolvedSource.animationIterationCount;
+        animationFillMode = resolvedSource.animationFillMode;
+        animationTimingFunction = resolvedSource.animationTimingFunction;
+        backdropBlurRadius = resolvedSource.backdropBlurRadius;
+        backdropSaturation = resolvedSource.backdropSaturation;
+        lineHeight = resolvedSource.lineHeight;
+        textAlign = resolvedSource.textAlign;
+        whiteSpace = resolvedSource.whiteSpace;
+        textOverflow = resolvedSource.textOverflow;
+        visibility = resolvedSource.visibility;
+        minWidth = resolvedSource.minWidth;
+        maxWidth = resolvedSource.maxWidth;
+        minHeight = resolvedSource.minHeight;
+        maxHeight = resolvedSource.maxHeight;
+        flexBasis = resolvedSource.flexBasis;
+        alignSelf = resolvedSource.alignSelf;
+        flexWrap = resolvedSource.flexWrap;
+        boxShadow = resolvedSource.boxShadow;
+        borderStyle = resolvedSource.borderStyle;
+        borderCollapse = resolvedSource.borderCollapse;
+        cursor = resolvedSource.cursor;
+        borderRadiusCorners = resolvedSource.borderRadiusCorners;
+        textDecoration = resolvedSource.textDecoration;
+        fontWeight = resolvedSource.fontWeight;
+        fontStyle = resolvedSource.fontStyle;
+        pointerEvents = resolvedSource.pointerEvents;
+        outline = resolvedSource.outline;
+        borderWidthSides = resolvedSource.borderWidthSides;
+        borderColors = resolvedSource.borderColors;
+        letterSpacing = resolvedSource.letterSpacing;
+        wordBreak = resolvedSource.wordBreak;
+        overflowWrap = resolvedSource.overflowWrap;
+        aspectRatio = resolvedSource.aspectRatio;
+        objectFit = resolvedSource.objectFit;
+        content = resolvedSource.content;
+        keywords.clear();
+        keywords.putAll(resolvedSource.keywords);
+        importantProperties.clear();
+        importantProperties.addAll(resolvedSource.importantProperties);
+        return this;
     }
 
     private void recordPropertyChange(UiStyleProperty property) {

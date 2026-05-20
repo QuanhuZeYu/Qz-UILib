@@ -564,4 +564,30 @@ public class UiStyleSheetTest {
         div.setId(null);
         Assert.assertNull(div.getId());
     }
+
+    @Test
+    public void selectorAndCascadeSupportPseudoElements() {
+        UiDocument document = UiDocument.create();
+        ElementNode badge = document.div();
+        badge.setClassName("badge");
+        document.getRootElement().append(badge);
+
+        UiStyleSheet sheet = UiStyleSheet.create()
+                .addRule(".badge::before", new UiStyleDeclaration()
+                        .setContent(UiPseudoElementContent.text("PRE"))
+                        .setTextColor(0xFF112233))
+                .addRule(".badge::after", new UiStyleDeclaration()
+                        .setContent(UiPseudoElementContent.text("POST"))
+                        .setTextColor(0xFF445566));
+        document.addStyleSheet(sheet);
+
+        ComputedStyle before = UiStyleResolver.computePseudoElement(badge, UiPseudoElement.BEFORE, null);
+        ComputedStyle after = UiStyleResolver.computePseudoElement(badge, UiPseudoElement.AFTER, null);
+
+        Assert.assertEquals(UiPseudoElement.BEFORE, UiSelector.parse(".badge::before").getPseudoElement());
+        Assert.assertEquals("PRE", before.getContent().getText());
+        Assert.assertEquals(0xFF112233, before.getTextColor());
+        Assert.assertEquals("POST", after.getContent().getText());
+        Assert.assertEquals(0xFF445566, after.getTextColor());
+    }
 }

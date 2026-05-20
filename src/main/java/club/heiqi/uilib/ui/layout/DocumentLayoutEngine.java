@@ -25,6 +25,8 @@ import club.heiqi.uilib.ui.style.UiJustifyContent;
 import club.heiqi.uilib.ui.style.UiOverflowWrap;
 import club.heiqi.uilib.ui.style.UiOverflow;
 import club.heiqi.uilib.ui.style.UiPosition;
+import club.heiqi.uilib.ui.style.UiPseudoElement;
+import club.heiqi.uilib.ui.style.UiPseudoElementContent;
 import club.heiqi.uilib.ui.style.UiStyleInsets;
 import club.heiqi.uilib.ui.style.UiStyleLength;
 import club.heiqi.uilib.ui.style.UiStyleResolver;
@@ -279,7 +281,7 @@ public final class DocumentLayoutEngine {
                         resolveTextLineHeight(textMeasureService, elementStyle), textRuns, inlineFragments)
                 : null;
         int childFlowTop = contentTop;
-        for (DocumentNode child : element.getChildren()) {
+        for (DocumentNode child : getGeneratedChildNodes(element)) {
             if (child instanceof TextNode) {
                 if (usesInlineFormatting) {
                     appendInlineTextRun((TextNode) child, element, new ArrayList<InlineFragmentOwner>(),
@@ -387,7 +389,7 @@ public final class DocumentLayoutEngine {
             int[] columnWidths = resolveTableColumnWidths(rowPlans, columnCount, contentWidth, columnGap,
                     layoutValueResolver);
             boolean hasPreviousTableChild = false;
-            for (DocumentNode child : element.getChildren()) {
+            for (DocumentNode child : getGeneratedChildNodes(element)) {
                 if (!(child instanceof ElementNode)) {
                     continue;
                 }
@@ -452,7 +454,7 @@ public final class DocumentLayoutEngine {
         List<DocumentLayoutBox> rowBoxes = new ArrayList<DocumentLayoutBox>();
         int rowTop = sectionTop;
         boolean hasPreviousRow = false;
-        for (DocumentNode child : sectionElement.getChildren()) {
+        for (DocumentNode child : getGeneratedChildNodes(sectionElement)) {
             if (!(child instanceof ElementNode)) {
                 continue;
             }
@@ -524,7 +526,7 @@ public final class DocumentLayoutEngine {
 
     private static List<TableRowPlan> collectTableRows(ElementNode tableElement) {
         List<TableRowPlan> rows = new ArrayList<TableRowPlan>();
-        for (DocumentNode child : tableElement.getChildren()) {
+        for (DocumentNode child : getGeneratedChildNodes(tableElement)) {
             if (!(child instanceof ElementNode)) {
                 continue;
             }
@@ -543,7 +545,7 @@ public final class DocumentLayoutEngine {
     }
 
     private static void collectTableSectionRows(ElementNode sectionElement, List<TableRowPlan> rows) {
-        for (DocumentNode child : sectionElement.getChildren()) {
+        for (DocumentNode child : getGeneratedChildNodes(sectionElement)) {
             if (!(child instanceof ElementNode)) {
                 continue;
             }
@@ -557,7 +559,7 @@ public final class DocumentLayoutEngine {
 
     private static List<ElementNode> collectTableRowCells(ElementNode rowElement) {
         List<ElementNode> cells = new ArrayList<ElementNode>();
-        for (DocumentNode child : rowElement.getChildren()) {
+        for (DocumentNode child : getGeneratedChildNodes(rowElement)) {
             if (!(child instanceof ElementNode)) {
                 continue;
             }
@@ -793,7 +795,7 @@ public final class DocumentLayoutEngine {
         appendInlineSpacing(ancestorInlineElements, inlineLayoutContext, edges.margin.getLeft());
         appendInlineSpacing(fragmentOwners, inlineLayoutContext,
                 edges.border.getLeft() + edges.padding.getLeft());
-        for (DocumentNode child : inlineElement.getChildren()) {
+        for (DocumentNode child : getGeneratedChildNodes(inlineElement)) {
             if (child instanceof TextNode) {
                 appendInlineTextRun((TextNode) child, inlineElement, fragmentOwners, inlineLayoutContext,
                         textMeasureService);
@@ -1622,7 +1624,7 @@ public final class DocumentLayoutEngine {
 
         int maxWidth = 0;
         int inlineWidth = 0;
-        for (DocumentNode child : element.getChildren()) {
+        for (DocumentNode child : getGeneratedChildNodes(element)) {
             if (child instanceof TextNode) {
                 TextNode textNode = (TextNode) child;
                 inlineWidth += measureIntrinsicTextWidth(textNode, style, textMeasureService);
@@ -2039,7 +2041,7 @@ public final class DocumentLayoutEngine {
 
     private static List<ElementNode> getVisibleInFlowElementChildren(ElementNode element) {
         List<ElementNode> children = new ArrayList<ElementNode>();
-        for (DocumentNode child : element.getChildren()) {
+        for (DocumentNode child : getGeneratedChildNodes(element)) {
             if (!(child instanceof ElementNode)) {
                 continue;
             }
@@ -2054,7 +2056,7 @@ public final class DocumentLayoutEngine {
     }
 
     private static boolean hasVisibleInlineElementChild(ElementNode element) {
-        for (DocumentNode child : element.getChildren()) {
+        for (DocumentNode child : getGeneratedChildNodes(element)) {
             if (!(child instanceof ElementNode)) {
                 continue;
             }
@@ -2069,7 +2071,7 @@ public final class DocumentLayoutEngine {
 
     private static List<ElementNode> getVisibleAbsoluteElementChildren(ElementNode element) {
         List<ElementNode> children = new ArrayList<ElementNode>();
-        for (DocumentNode child : element.getChildren()) {
+        for (DocumentNode child : getGeneratedChildNodes(element)) {
             if (!(child instanceof ElementNode)) {
                 continue;
             }
@@ -2085,7 +2087,7 @@ public final class DocumentLayoutEngine {
 
     private static List<ElementNode> getVisibleFixedElementChildren(ElementNode element) {
         List<ElementNode> children = new ArrayList<ElementNode>();
-        for (DocumentNode child : element.getChildren()) {
+        for (DocumentNode child : getGeneratedChildNodes(element)) {
             if (!(child instanceof ElementNode)) {
                 continue;
             }
@@ -2215,6 +2217,11 @@ public final class DocumentLayoutEngine {
     }
 
     private static int getChildOrder(ElementNode parentElement, ElementNode targetElement) {
+        if (targetElement != null && targetElement.isPseudoElement()
+                && targetElement.getPseudoOriginElement() == parentElement) {
+            return targetElement.getPseudoElement() == UiPseudoElement.BEFORE ? -1
+                    : parentElement.getChildren().size() + 1;
+        }
         List<DocumentNode> children = parentElement.getChildren();
         for (int index = 0; index < children.size(); index++) {
             if (children.get(index) == targetElement) {
@@ -2310,6 +2317,40 @@ public final class DocumentLayoutEngine {
 
     private static boolean isAuto(UiStyleLength length) {
         return length.getType() == UiStyleLength.Type.AUTO;
+    }
+
+    private static List<DocumentNode> getGeneratedChildNodes(ElementNode element) {
+        if (element.isPseudoElement()) {
+            return element.getChildren();
+        }
+        List<DocumentNode> generatedNodes = new ArrayList<DocumentNode>();
+        ElementNode before = createGeneratedPseudoElement(element, UiPseudoElement.BEFORE);
+        if (before != null) {
+            generatedNodes.add(before);
+        }
+        generatedNodes.addAll(element.getChildren());
+        ElementNode after = createGeneratedPseudoElement(element, UiPseudoElement.AFTER);
+        if (after != null) {
+            generatedNodes.add(after);
+        }
+        return generatedNodes;
+    }
+
+    private static ElementNode createGeneratedPseudoElement(ElementNode originElement, UiPseudoElement pseudoElement) {
+        if (originElement == null || originElement.isPseudoElement()) {
+            return null;
+        }
+        ElementNode pseudoNode = originElement.getOwnerDocument().__createPseudoElementRuntime(originElement,
+                pseudoElement);
+        ComputedStyle pseudoStyle = UiStyleResolver.compute(pseudoNode);
+        UiPseudoElementContent content = pseudoStyle.getContent();
+        if (content == null || content.isNone()) {
+            return null;
+        }
+        if (!content.getText().isEmpty()) {
+            pseudoNode.__appendGeneratedChild(originElement.getOwnerDocument().rawText(content.getText()));
+        }
+        return pseudoNode;
     }
 
     private static boolean hasAspectRatio(ComputedStyle style) {

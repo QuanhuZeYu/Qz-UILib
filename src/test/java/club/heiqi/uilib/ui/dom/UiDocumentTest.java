@@ -3,6 +3,10 @@ package club.heiqi.uilib.ui.dom;
 import org.junit.Assert;
 import org.junit.Test;
 
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.List;
+
 import club.heiqi.uilib.ui.style.UiStyleLength;
 import club.heiqi.uilib.ui.text.TextContentMode;
 
@@ -312,5 +316,137 @@ public class UiDocumentTest {
         // 自身 aria-hidden=true 时返回空字符串
         button.setAttribute("aria-hidden", "true");
         Assert.assertEquals("", button.getAccessibleLabel());
+    }
+
+    /**
+     * 验证 cloneNode 会复制结构、属性与样式，但不会复制运行时监听器。
+     */
+    @Test
+    public void shouldCloneNodeStructureAttributesAndStyleWithoutRuntimeListeners() {
+        UiDocument document = UiDocument.create();
+        ElementNode source = document.div()
+                .setId("source")
+                .setClassName("card active")
+                .setAttribute("data-kind", "panel");
+        source.style()
+                .setWidth(UiStyleLength.px(80))
+                .setPadding(UiStyleLength.px(6));
+        source.addEventListener("save", new DocumentCustomEventHandler() {
+            @Override
+            public boolean onEvent(DocumentCustomEvent event) {
+                return true;
+            }
+        });
+        source.appendText("标题");
+        ElementNode child = document.span().setAttribute("role", "note");
+        child.appendText("说明");
+        source.append(child);
+
+        ElementNode shallowClone = (ElementNode) source.cloneNode();
+        ElementNode deepClone = (ElementNode) source.cloneNode(true);
+
+        Assert.assertEquals("source", shallowClone.getId());
+        Assert.assertEquals("card active", shallowClone.getClassName());
+        Assert.assertEquals("panel", shallowClone.getAttribute("data-kind"));
+        Assert.assertEquals(UiStyleLength.px(80), shallowClone.style().getWidth());
+        Assert.assertEquals(0, shallowClone.getChildCount());
+        Assert.assertTrue(shallowClone.__getRegisteredCustomEventTypes().isEmpty());
+
+        Assert.assertEquals(2, deepClone.getChildCount());
+        Assert.assertTrue(deepClone.getFirstChild() instanceof TextNode);
+        Assert.assertTrue(deepClone.getLastChild() instanceof ElementNode);
+        Assert.assertEquals("标题", ((TextNode) deepClone.getFirstChild()).getText());
+        Assert.assertEquals("note", ((ElementNode) deepClone.getLastChild()).getAttribute("role"));
+        Assert.assertTrue(deepClone.__getRegisteredCustomEventTypes().isEmpty());
+    }
+
+    /**
+     * 验证 DocumentFragment 会在 DOM 操作时按浏览器语义展开子节点。
+     */
+    @Test
+    public void shouldExpandDocumentFragmentDuringDomInsertion() {
+        UiDocument document = UiDocument.create();
+        ElementNode root = document.getRootElement();
+        ElementNode first = document.div().setId("first");
+        ElementNode anchor = document.div().setId("anchor");
+        ElementNode last = document.div().setId("last");
+        root.append(first).append(anchor).append(last);
+
+        DocumentFragmentNode fragment = document.createDocumentFragment();
+        ElementNode insertedA = document.span().setId("inserted-a");
+        ElementNode insertedB = document.span().setId("inserted-b");
+        fragment.appendChild(insertedA);
+        fragment.appendChild(insertedB);
+
+        root.insertBefore(fragment, anchor);
+
+        Assert.assertEquals(0, fragment.getChildCount());
+        Assert.assertEquals(Arrays.asList("first", "inserted-a", "inserted-b", "anchor", "last"),
+                collectElementIds(root));
+
+        DocumentFragmentNode replaceFragment = document.createDocumentFragment();
+        replaceFragment.appendChild(document.div().setId("replace-a"));
+        replaceFragment.appendChild(document.div().setId("replace-b"));
+        root.replaceChild(replaceFragment, last);
+
+        Assert.assertEquals(Arrays.asList("first", "inserted-a", "inserted-b", "anchor", "replace-a",
+                "replace-b"), collectElementIds(root));
+    }
+
+    /**
+     * 验证页面作者可以创建并派发自定义事件，且三阶段传播链路可用。
+     */
+    @Test
+    public void shouldDispatchCustomEventThroughCaptureTargetAndBubble() {
+        UiDocument document = UiDocument.create();
+        ElementNode root = document.getRootElement();
+        ElementNode parent = document.div().setId("parent");
+        ElementNode child = document.div().setId("child");
+        root.append(parent);
+        parent.append(child);
+
+        final List<String> phases = new ArrayList<String>();
+        parent.addEventListener("save", new DocumentCustomEventHandler() {
+            @Override
+            public boolean onEvent(DocumentCustomEvent event) {
+                phases.add("capture:" + event.getCurrentTarget().getId() + ":" + event.getEventPhase());
+                return false;
+            }
+        }, true);
+        child.addEventListener("save", new DocumentCustomEventHandler() {
+            @Override
+            public boolean onEvent(DocumentCustomEvent event) {
+                phases.add("target:" + event.getCurrentTarget().getId() + ":" + event.getEventPhase());
+                Assert.assertEquals(child, event.getTarget());
+                Assert.assertEquals("payload", event.getDetail());
+                event.preventDefault();
+                return false;
+            }
+        });
+        parent.addEventListener("save", new DocumentCustomEventHandler() {
+            @Override
+            public boolean onEvent(DocumentCustomEvent event) {
+                phases.add("bubble:" + event.getCurrentTarget().getId() + ":" + event.getEventPhase());
+                return false;
+            }
+        });
+
+        boolean result = child.dispatchEvent(new DocumentCustomEvent("save", "payload", true, true));
+
+        Assert.assertFalse(result);
+        Assert.assertEquals(Arrays.asList(
+                "capture:parent:CAPTURING",
+                "target:child:AT_TARGET",
+                "bubble:parent:BUBBLING"), phases);
+    }
+
+    private static List<String> collectElementIds(ElementNode parent) {
+        List<String> ids = new ArrayList<String>();
+        for (DocumentNode child : parent.getChildren()) {
+            if (child instanceof ElementNode) {
+                ids.add(((ElementNode) child).getId());
+            }
+        }
+        return ids;
     }
 }

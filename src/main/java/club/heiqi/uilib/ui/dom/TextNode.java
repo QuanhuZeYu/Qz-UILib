@@ -21,6 +21,11 @@ public final class TextNode extends DocumentNode {
         return DocumentNodeType.TEXT;
     }
 
+    @Override
+    public DocumentNode cloneNode(boolean deep) {
+        return getOwnerDocument().text(text, textContentMode);
+    }
+
     /**
      * 返回文本内容。
      *

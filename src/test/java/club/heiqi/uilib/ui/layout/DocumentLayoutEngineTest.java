@@ -22,6 +22,7 @@ import club.heiqi.uilib.ui.style.UiFontWeight;
 import club.heiqi.uilib.ui.style.UiJustifyContent;
 import club.heiqi.uilib.ui.style.UiOverflowWrap;
 import club.heiqi.uilib.ui.style.UiOverflow;
+import club.heiqi.uilib.ui.style.UiPseudoElementContent;
 import club.heiqi.uilib.ui.style.UiPosition;
 import club.heiqi.uilib.ui.style.UiStyleInsets;
 import club.heiqi.uilib.ui.style.UiStyleLength;
@@ -1810,6 +1811,33 @@ public class DocumentLayoutEngineTest {
         Assert.assertTrue(overviewCardBox.getRight() <= scrollContentBox.getContentLeft() + scrollContentBox.getContentWidth());
         Assert.assertTrue(noteInputBox.getRight() <= noteCardBox.getContentLeft() + noteCardBox.getContentWidth());
         Assert.assertTrue(noteButtonBox.getRight() <= noteCardBox.getContentLeft() + noteCardBox.getContentWidth());
+    }
+
+    /**
+     * 验证 `::before` / `::after` 会进入布局树并按文档顺序参与文本排版。
+     */
+    @Test
+    public void shouldLayoutPseudoElementsBeforeAndAfterAroundRealChildren() {
+        UiDocument document = UiDocument.create();
+        ElementNode root = document.getRootElement();
+        ElementNode badge = document.span();
+
+        root.style().setWidth(UiStyleLength.px(120));
+        badge.appendText("MID");
+        root.append(badge);
+        document.addStyleSheet(club.heiqi.uilib.ui.style.UiStyleSheet.create()
+                .addRule("span::before", new club.heiqi.uilib.ui.style.UiStyleDeclaration()
+                        .setContent(UiPseudoElementContent.text("PRE")))
+                .addRule("span::after", new club.heiqi.uilib.ui.style.UiStyleDeclaration()
+                        .setContent(UiPseudoElementContent.text("POST"))));
+
+        DocumentLayoutBox rootBox = DocumentLayoutEngine.layout(root, 160, 0,
+                new DeterministicTextMeasureService());
+
+        Assert.assertEquals(3, rootBox.getTextRuns().size());
+        Assert.assertEquals("PRE", rootBox.getTextRuns().get(0).getText());
+        Assert.assertEquals("MID", rootBox.getTextRuns().get(1).getText());
+        Assert.assertEquals("POST", rootBox.getTextRuns().get(2).getText());
     }
 
     /**

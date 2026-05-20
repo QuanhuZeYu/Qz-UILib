@@ -76,7 +76,8 @@ public enum UiStyleProperty {
     WORD_BREAK(true, UiStyleChangeImpact.LAYOUT),
     OVERFLOW_WRAP(true, UiStyleChangeImpact.LAYOUT),
     ASPECT_RATIO(false, UiStyleChangeImpact.LAYOUT),
-    OBJECT_FIT(false, UiStyleChangeImpact.PAINT);
+    OBJECT_FIT(false, UiStyleChangeImpact.PAINT),
+    CONTENT(false, UiStyleChangeImpact.LAYOUT);
 
     private final boolean inheritedByDefault;
     private final UiStyleChangeImpact changeImpact;

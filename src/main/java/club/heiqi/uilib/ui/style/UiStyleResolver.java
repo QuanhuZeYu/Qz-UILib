@@ -38,6 +38,9 @@ public final class UiStyleResolver {
         if (element == null) {
             throw new NullPointerException("element");
         }
+        if (element.isPseudoElement()) {
+            return computePseudoElement(element.getPseudoOriginElement(), element.getPseudoElement(), null);
+        }
         UiDocument document = element.getOwnerDocument();
         List<UiStyleRule> matchingRules = document.findMatchingRules(element);
         return compute(element, computeParentStyle(element), matchingRules);
@@ -55,6 +58,9 @@ public final class UiStyleResolver {
     public static ComputedStyle compute(ElementNode element, java.util.Set<UiPseudoClass> activeStates) {
         if (element == null) {
             throw new NullPointerException("element");
+        }
+        if (element.isPseudoElement()) {
+            return computePseudoElement(element.getPseudoOriginElement(), element.getPseudoElement(), activeStates);
         }
         UiDocument document = element.getOwnerDocument();
         List<UiStyleRule> matchingRules = document.findMatchingRules(element, activeStates);
@@ -74,7 +80,22 @@ public final class UiStyleResolver {
         if (element == null) {
             throw new NullPointerException("element");
         }
+        if (element.isPseudoElement()) {
+            return computePseudoElement(element.getPseudoOriginElement(), element.getPseudoElement(), null);
+        }
         return compute(element, computeParentStyle(element), matchingRules);
+    }
+
+    public static ComputedStyle computePseudoElement(ElementNode originElement, UiPseudoElement pseudoElement,
+            java.util.Set<UiPseudoClass> activeStates) {
+        if (originElement == null) {
+            throw new NullPointerException("originElement");
+        }
+        UiDocument document = originElement.getOwnerDocument();
+        ElementNode pseudoRuntimeElement = document.__createPseudoElementRuntime(originElement, pseudoElement);
+        List<UiStyleRule> matchingRules = document.findMatchingRules(originElement, activeStates, pseudoElement);
+        ComputedStyle parentStyle = compute(originElement, activeStates);
+        return compute(pseudoRuntimeElement, parentStyle, matchingRules);
     }
 
     private static ComputedStyle compute(ElementNode element, ComputedStyle parentStyle,
@@ -238,6 +259,8 @@ public final class UiStyleResolver {
                 parentStyle == null ? null : parentStyle.getAspectRatio());
         UiObjectFit objectFit = cascade(inlineStyle, matchingRules, UiStyleProperty.OBJECT_FIT, UiObjectFit.FILL,
                 parentStyle == null ? UiObjectFit.FILL : parentStyle.getObjectFit());
+        UiPseudoElementContent content = cascade(inlineStyle, matchingRules, UiStyleProperty.CONTENT,
+                UiPseudoElementContent.none(), UiPseudoElementContent.none());
 
         if (isLinkElement(element) && !hasDeclaredProperty(inlineStyle, matchingRules, UiStyleProperty.TEXT_COLOR)) {
             textColorValue = Integer.valueOf(DEFAULT_LINK_TEXT_COLOR);
@@ -267,7 +290,7 @@ public final class UiStyleResolver {
                 boxShadow, borderStyle, borderCollapse, cursor, borderRadiusCorners, textDecoration, fontWeight,
                 fontStyle,
                 pointerEvents, outline, borderWidthSides, borderColors, letterSpacing, wordBreak, overflowWrap,
-                aspectRatio, objectFit);
+                aspectRatio, objectFit, content);
     }
 
     private static boolean hasDeclaredProperty(UiStyleDeclaration inlineStyle, List<UiStyleRule> rules,
@@ -407,6 +430,7 @@ public final class UiStyleResolver {
             case OVERFLOW_WRAP: return (T) declaration.getOverflowWrap();
             case ASPECT_RATIO: return (T) declaration.getAspectRatio();
             case OBJECT_FIT: return (T) declaration.getObjectFit();
+            case CONTENT: return (T) declaration.getContent();
             default: return null;
         }
     }

@@ -5,5 +5,6 @@ package club.heiqi.uilib.ui.dom;
  */
 public enum DocumentNodeType {
     ELEMENT,
-    TEXT
+    TEXT,
+    DOCUMENT_FRAGMENT
 }

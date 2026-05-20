@@ -13,7 +13,7 @@ import java.util.Objects;
 public abstract class DocumentNode {
 
     private final UiDocument ownerDocument;
-    private final List<DocumentNode> children = new ArrayList<DocumentNode>();
+    final List<DocumentNode> children = new ArrayList<DocumentNode>();
     private DocumentNode parent;
 
     protected DocumentNode(UiDocument ownerDocument) {
@@ -26,6 +26,23 @@ public abstract class DocumentNode {
      * @return 节点类型
      */
     public abstract DocumentNodeType getNodeType();
+
+    /**
+     * 创建当前节点的浅克隆。
+     *
+     * @return 克隆节点
+     */
+    public final DocumentNode cloneNode() {
+        return cloneNode(false);
+    }
+
+    /**
+     * 创建当前节点的克隆。
+     *
+     * @param deep 是否深克隆全部后代
+     * @return 克隆节点
+     */
+    public abstract DocumentNode cloneNode(boolean deep);
 
     /**
      * 返回节点所属文档。
@@ -120,6 +137,10 @@ public abstract class DocumentNode {
             throw new UnsupportedOperationException("This node type cannot contain children");
         }
         DocumentNode resolvedChild = Objects.requireNonNull(child, "child");
+        if (resolvedChild instanceof DocumentFragmentNode) {
+            appendDocumentFragment((DocumentFragmentNode) resolvedChild);
+            return this;
+        }
         validateAppendChild(resolvedChild);
 
         if (resolvedChild.parent == this && children.get(children.size() - 1) == resolvedChild) {
@@ -167,6 +188,10 @@ public abstract class DocumentNode {
             throw new UnsupportedOperationException("This node type cannot contain children");
         }
         DocumentNode resolvedChild = Objects.requireNonNull(newChild, "newChild");
+        if (resolvedChild instanceof DocumentFragmentNode) {
+            insertDocumentFragmentBefore((DocumentFragmentNode) resolvedChild, referenceChild);
+            return this;
+        }
         validateAppendChild(resolvedChild);
 
         if (referenceChild == null) {
@@ -203,6 +228,10 @@ public abstract class DocumentNode {
         DocumentNode resolvedOld = Objects.requireNonNull(oldChild, "oldChild");
         if (resolvedOld.parent != this) {
             throw new IllegalArgumentException("oldChild is not a child of this node");
+        }
+        if (resolvedNew instanceof DocumentFragmentNode) {
+            replaceChildWithDocumentFragment((DocumentFragmentNode) resolvedNew, resolvedOld);
+            return resolvedOld;
         }
         validateAppendChild(resolvedNew);
 
@@ -252,6 +281,79 @@ public abstract class DocumentNode {
      */
     protected final void markPaintMutated() {
         ownerDocument.recordPaintMutation();
+    }
+
+    public final void __appendGeneratedChild(DocumentNode child) {
+        DocumentNode resolvedChild = Objects.requireNonNull(child, "child");
+        if (resolvedChild.parent != null) {
+            resolvedChild.parent.children.remove(resolvedChild);
+        }
+        resolvedChild.parent = this;
+        children.add(resolvedChild);
+    }
+
+    private void appendDocumentFragment(DocumentFragmentNode fragment) {
+        if (fragment == this) {
+            throw new IllegalArgumentException("A node cannot be appended to itself");
+        }
+        if (fragment.children.isEmpty()) {
+            return;
+        }
+        List<DocumentNode> movedChildren = new ArrayList<DocumentNode>(fragment.children);
+        for (DocumentNode movedChild : movedChildren) {
+            validateAppendChild(movedChild);
+        }
+        for (DocumentNode movedChild : movedChildren) {
+            if (movedChild.parent != null) {
+                movedChild.parent.children.remove(movedChild);
+            }
+            movedChild.parent = this;
+            children.add(movedChild);
+        }
+        fragment.children.clear();
+        ownerDocument.recordMutation();
+    }
+
+    private void insertDocumentFragmentBefore(DocumentFragmentNode fragment, DocumentNode referenceChild) {
+        if (referenceChild == null) {
+            appendDocumentFragment(fragment);
+            return;
+        }
+        if (referenceChild.parent != this) {
+            throw new IllegalArgumentException("referenceChild is not a child of this node");
+        }
+        if (fragment == this) {
+            throw new IllegalArgumentException("A node cannot be appended to itself");
+        }
+        if (fragment.children.isEmpty()) {
+            return;
+        }
+        List<DocumentNode> movedChildren = new ArrayList<DocumentNode>(fragment.children);
+        for (DocumentNode movedChild : movedChildren) {
+            validateAppendChild(movedChild);
+        }
+        int index = children.indexOf(referenceChild);
+        for (DocumentNode movedChild : movedChildren) {
+            if (movedChild.parent != null) {
+                movedChild.parent.children.remove(movedChild);
+            }
+            movedChild.parent = this;
+            children.add(index++, movedChild);
+        }
+        fragment.children.clear();
+        ownerDocument.recordMutation();
+    }
+
+    private void replaceChildWithDocumentFragment(DocumentFragmentNode fragment, DocumentNode oldChild) {
+        if (fragment == this) {
+            throw new IllegalArgumentException("A node cannot be appended to itself");
+        }
+        if (fragment.children.isEmpty()) {
+            removeChild(oldChild);
+            return;
+        }
+        insertDocumentFragmentBefore(fragment, oldChild);
+        removeChild(oldChild);
     }
 
     private void validateAppendChild(DocumentNode child) {

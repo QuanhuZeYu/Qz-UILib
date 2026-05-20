@@ -19,6 +19,7 @@ public final class UiSelector {
 
     private final List<SelectorStep> steps;
     private final SimpleSelector rightMostSelector;
+    private final UiPseudoElement pseudoElement;
     private final int specificityId;
     private final int specificityClass;
     private final int specificityTag;
@@ -29,6 +30,7 @@ public final class UiSelector {
         }
         this.steps = Collections.unmodifiableList(new ArrayList<SelectorStep>(steps));
         this.rightMostSelector = this.steps.get(this.steps.size() - 1).selector;
+        this.pseudoElement = this.rightMostSelector.pseudoElement;
         int idCount = 0;
         int classCount = 0;
         int tagCount = 0;
@@ -44,7 +46,7 @@ public final class UiSelector {
 
     private UiSelector(String tagName, List<String> classNames, String id, boolean universal,
             List<PseudoCondition> pseudoConditions) {
-        this(singleStep(new SimpleSelector(tagName, classNames, id, universal, pseudoConditions)));
+        this(singleStep(new SimpleSelector(tagName, classNames, id, universal, pseudoConditions, null)));
     }
 
     private UiSelector(String tagName, List<String> classNames, String id, boolean universal,
@@ -106,7 +108,7 @@ public final class UiSelector {
      *
      * <p>支持格式包括 {@code tag.class#id:pseudo}、{@code A B}、{@code A > B}、
      * {@code :first-child}、{@code :last-child}、{@code :nth-child(2n+1)}。
-     * 当前不支持逗号分组、兄弟组合器、属性选择器或伪元素。</p>
+     * 当前不支持逗号分组、兄弟组合器或属性选择器。</p>
      *
      * @param selectorText 选择器文本
      * @return 解析后的选择器
@@ -163,6 +165,11 @@ public final class UiSelector {
         if (expectingSimpleSelector) {
             throw new IllegalArgumentException("Selector cannot end with a combinator: " + selectorText);
         }
+        for (int stepIndex = 0; stepIndex < parsedSteps.size() - 1; stepIndex++) {
+            if (parsedSteps.get(stepIndex).selector.pseudoElement != null) {
+                throw new IllegalArgumentException("Pseudo-element must be the rightmost selector: " + selectorText);
+            }
+        }
         return new UiSelector(parsedSteps);
     }
 
@@ -196,7 +203,7 @@ public final class UiSelector {
      * @return 是否匹配
      */
     public boolean matches(ElementNode element) {
-        return matches(element, null);
+        return matches(element, null, null);
     }
 
     /**
@@ -207,7 +214,14 @@ public final class UiSelector {
      * @return 是否匹配
      */
     public boolean matches(ElementNode element, Set<UiPseudoClass> activeStates) {
+        return matches(element, activeStates, null);
+    }
+
+    public boolean matches(ElementNode element, Set<UiPseudoClass> activeStates, UiPseudoElement pseudoElement) {
         if (element == null) {
+            return false;
+        }
+        if (this.pseudoElement != pseudoElement) {
             return false;
         }
         return matchesStep(element, steps.size() - 1, activeStates);
@@ -311,7 +325,8 @@ public final class UiSelector {
      */
     public boolean isUniversal() {
         return rightMostSelector.universal && rightMostSelector.tagName == null && rightMostSelector.id == null
-                && rightMostSelector.classNames.isEmpty() && rightMostSelector.pseudoConditions.isEmpty();
+                && rightMostSelector.classNames.isEmpty() && rightMostSelector.pseudoConditions.isEmpty()
+                && rightMostSelector.pseudoElement == null;
     }
 
     /**
@@ -322,6 +337,10 @@ public final class UiSelector {
     public UiPseudoClass getPseudoClass() {
         return rightMostSelector.pseudoConditions.isEmpty() ? null
                 : rightMostSelector.pseudoConditions.get(0).pseudoClass;
+    }
+
+    public UiPseudoElement getPseudoElement() {
+        return pseudoElement;
     }
 
     @Override
@@ -362,6 +381,7 @@ public final class UiSelector {
         boolean parsedUniversal = false;
         List<String> parsedClasses = new ArrayList<String>();
         List<PseudoCondition> parsedPseudos = new ArrayList<PseudoCondition>();
+        UiPseudoElement parsedPseudoElement = null;
 
         int index = start;
         if (index < text.length() && text.charAt(index) == '*') {
@@ -399,6 +419,21 @@ public final class UiSelector {
                 parsedId = text.substring(nameStart, index);
             } else if (ch == ':') {
                 index++;
+                if (index < text.length() && text.charAt(index) == ':') {
+                    index++;
+                    int pseudoElementNameStart = index;
+                    index = readName(text, index);
+                    if (pseudoElementNameStart == index) {
+                        throw new IllegalArgumentException("Empty pseudo-element in selector: " + selectorText);
+                    }
+                    if (parsedPseudoElement != null) {
+                        throw new IllegalArgumentException("Multiple pseudo-elements in selector: " + selectorText);
+                    }
+                    parsedPseudoElement = parsePseudoElement(
+                            text.substring(pseudoElementNameStart, index).toLowerCase(java.util.Locale.ROOT),
+                            selectorText);
+                    continue;
+                }
                 int nameStart = index;
                 index = readName(text, index);
                 if (nameStart == index) {
@@ -427,7 +462,17 @@ public final class UiSelector {
             throw new IllegalArgumentException("Invalid selector: " + selectorText);
         }
         return new ParseResult(new SimpleSelector(parsedTag, parsedClasses.isEmpty() ? null : parsedClasses,
-                parsedId, parsedUniversal, parsedPseudos.isEmpty() ? null : parsedPseudos), index);
+                parsedId, parsedUniversal, parsedPseudos.isEmpty() ? null : parsedPseudos, parsedPseudoElement), index);
+    }
+
+    private static UiPseudoElement parsePseudoElement(String name, String selectorText) {
+        if ("before".equals(name)) {
+            return UiPseudoElement.BEFORE;
+        }
+        if ("after".equals(name)) {
+            return UiPseudoElement.AFTER;
+        }
+        throw new IllegalArgumentException("Unknown pseudo-element '::" + name + "' in selector: " + selectorText);
     }
 
     private static PseudoCondition parsePseudoCondition(String name, String argument, String selectorText) {
@@ -510,12 +555,13 @@ public final class UiSelector {
         private final String id;
         private final boolean universal;
         private final List<PseudoCondition> pseudoConditions;
+        private final UiPseudoElement pseudoElement;
         private final int specificityId;
         private final int specificityClass;
         private final int specificityTag;
 
         private SimpleSelector(String tagName, List<String> classNames, String id, boolean universal,
-                List<PseudoCondition> pseudoConditions) {
+                List<PseudoCondition> pseudoConditions, UiPseudoElement pseudoElement) {
             this.tagName = tagName;
             this.classNames = classNames == null ? Collections.<String>emptyList()
                     : Collections.unmodifiableList(new ArrayList<String>(classNames));
@@ -523,15 +569,17 @@ public final class UiSelector {
             this.universal = universal;
             this.pseudoConditions = pseudoConditions == null ? Collections.<PseudoCondition>emptyList()
                     : Collections.unmodifiableList(new ArrayList<PseudoCondition>(pseudoConditions));
+            this.pseudoElement = pseudoElement;
             this.specificityId = id != null ? 1 : 0;
             this.specificityClass = this.classNames.size() + this.pseudoConditions.size();
-            this.specificityTag = tagName != null && !universal ? 1 : 0;
+            this.specificityTag = (tagName != null && !universal ? 1 : 0) + (pseudoElement == null ? 0 : 1);
         }
 
         private SimpleSelector withPseudoCondition(PseudoCondition pseudoCondition) {
             List<PseudoCondition> nextPseudos = new ArrayList<PseudoCondition>(pseudoConditions);
             nextPseudos.add(pseudoCondition);
-            return new SimpleSelector(tagName, classNames.isEmpty() ? null : classNames, id, universal, nextPseudos);
+            return new SimpleSelector(tagName, classNames.isEmpty() ? null : classNames, id, universal, nextPseudos,
+                    pseudoElement);
         }
 
         private boolean matches(ElementNode element, Set<UiPseudoClass> activeStates) {
@@ -551,7 +599,8 @@ public final class UiSelector {
                     return false;
                 }
             }
-            return universal || tagName != null || id != null || !classNames.isEmpty() || !pseudoConditions.isEmpty();
+            return universal || tagName != null || id != null || !classNames.isEmpty() || !pseudoConditions.isEmpty()
+                    || pseudoElement != null;
         }
 
         private String toSelectorText() {
@@ -573,6 +622,9 @@ public final class UiSelector {
             for (PseudoCondition condition : pseudoConditions) {
                 sb.append(condition.toSelectorText());
             }
+            if (pseudoElement != null) {
+                sb.append(pseudoElement == UiPseudoElement.BEFORE ? "::before" : "::after");
+            }
             return sb.toString();
         }
 
@@ -585,7 +637,8 @@ public final class UiSelector {
                     && Objects.equals(tagName, other.tagName)
                     && Objects.equals(id, other.id)
                     && classNames.equals(other.classNames)
-                    && pseudoConditions.equals(other.pseudoConditions);
+                    && pseudoConditions.equals(other.pseudoConditions)
+                    && pseudoElement == other.pseudoElement;
         }
 
         @Override
@@ -595,6 +648,7 @@ public final class UiSelector {
             result = 31 * result + (id == null ? 0 : id.hashCode());
             result = 31 * result + (universal ? 1 : 0);
             result = 31 * result + pseudoConditions.hashCode();
+            result = 31 * result + (pseudoElement == null ? 0 : pseudoElement.hashCode());
             return result;
         }
     }

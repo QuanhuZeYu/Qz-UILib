@@ -105,12 +105,17 @@ public final class UiStyleSheet {
      * @return 匹配规则列表（按优先级升序）
      */
     public List<UiStyleRule> findMatchingRules(ElementNode element, java.util.Set<UiPseudoClass> activeStates) {
+        return findMatchingRules(element, activeStates, null);
+    }
+
+    public List<UiStyleRule> findMatchingRules(ElementNode element, java.util.Set<UiPseudoClass> activeStates,
+            UiPseudoElement pseudoElement) {
         if (element == null) {
             return Collections.emptyList();
         }
         List<UiStyleRule> matched = new ArrayList<UiStyleRule>();
         for (UiStyleRule rule : rules) {
-            if (rule.getSelector().matches(element, activeStates)) {
+            if (rule.getSelector().matches(element, activeStates, pseudoElement)) {
                 matched.add(rule);
             }
         }
