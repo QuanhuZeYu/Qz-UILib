@@ -1,4 +1,5 @@
-package club.heiqi.uilib.ui.screen;
+package club.heiqi.uilib.ui.screen.example;
+
 
 import org.junit.Assert;
 import org.junit.Test;

@@ -1,4 +1,8 @@
-package club.heiqi.uilib.ui.screen;
+package club.heiqi.uilib.ui.screen.example;
+
+import club.heiqi.uilib.ui.screen.DocumentPageController;
+import club.heiqi.uilib.ui.screen.DocumentPageAuthoringSurface;
+import club.heiqi.uilib.ui.screen.DocumentUiScope;
 
 import java.util.Objects;
 
@@ -44,7 +48,7 @@ import club.heiqi.uilib.ui.text.TextMeasureService;
 /**
  * HTML-like 渲染链路的最小可见 smoke 页面控制器。
  */
-final class HtmlLikeSmokeDocumentPageController extends DocumentPageController {
+public final class HtmlLikeSmokeDocumentPageController extends DocumentPageController {
 
     private final DocumentPageAuthoringSurface documentPage;
     private final HtmlLikeDocumentWidget htmlLikeDocumentWidget;
@@ -55,7 +59,7 @@ final class HtmlLikeSmokeDocumentPageController extends DocumentPageController {
      * @param documentUi 文档组件作用域
      * @param documentPage 文档页面壳
      */
-    HtmlLikeSmokeDocumentPageController(DocumentUiScope documentUi, DocumentPageAuthoringSurface documentPage) {
+    public HtmlLikeSmokeDocumentPageController(DocumentUiScope documentUi, DocumentPageAuthoringSurface documentPage) {
         this(Objects.requireNonNull(documentUi, "documentUi"), documentPage, documentUi.getTextMeasureService());
     }
 
@@ -66,7 +70,7 @@ final class HtmlLikeSmokeDocumentPageController extends DocumentPageController {
      * @param documentPage 文档页面壳
      * @param textMeasureService HTML-like 文本测量服务
      */
-    HtmlLikeSmokeDocumentPageController(DocumentUiScope documentUi, DocumentPageAuthoringSurface documentPage,
+    public HtmlLikeSmokeDocumentPageController(DocumentUiScope documentUi, DocumentPageAuthoringSurface documentPage,
             TextMeasureService textMeasureService) {
         Objects.requireNonNull(documentUi, "documentUi");
         this.documentPage = Objects.requireNonNull(documentPage, "documentPage");
@@ -95,14 +99,14 @@ final class HtmlLikeSmokeDocumentPageController extends DocumentPageController {
     }
 
     @Override
-    void configureDocumentPage() {
+    protected void configureDocumentPage() {
         documentPage.setContentWidthRange(680, 1080)
                 .setMinContentHeight(520)
                 .setViewportFillRatio(0.92F, 0.90F);
     }
 
     @Override
-    void buildDocument() {
+    protected void buildDocument() {
         documentPage.addBlock(htmlLikeDocumentWidget);
     }
 

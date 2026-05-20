@@ -1,5 +1,16 @@
 package club.heiqi.uilib.ui.screen;
 
+import club.heiqi.uilib.ui.screen.example.HtmlLikeBrowserSemanticsShowcaseDocumentPageController;
+import club.heiqi.uilib.ui.screen.example.HtmlLikeGlassDocumentPageController;
+import club.heiqi.uilib.ui.screen.example.HtmlLikeInventoryOverviewDocumentPageController;
+import club.heiqi.uilib.ui.screen.example.HtmlLikeListDragDocumentPageController;
+import club.heiqi.uilib.ui.screen.example.HtmlLikeSmokeDocumentPageController;
+import club.heiqi.uilib.ui.screen.example.InventoryOverviewModel;
+import club.heiqi.uilib.ui.screen.example.UiFontPerformanceBaselineDocumentPageController;
+import club.heiqi.uilib.ui.screen.example.UiLayoutDiagnosticsDocumentPageController;
+import club.heiqi.uilib.ui.screen.example.UiTestDocumentPageController;
+import club.heiqi.uilib.ui.screen.example.UiTestMenuModel;
+
 /**
  * 内建诊断页与示例页的内部注册表。
  */

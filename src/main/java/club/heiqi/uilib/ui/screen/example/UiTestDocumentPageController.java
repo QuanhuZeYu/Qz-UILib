@@ -1,4 +1,8 @@
-package club.heiqi.uilib.ui.screen;
+package club.heiqi.uilib.ui.screen.example;
+
+import club.heiqi.uilib.ui.screen.DocumentPageController;
+import club.heiqi.uilib.ui.screen.DocumentPageAuthoringSurface;
+import club.heiqi.uilib.ui.screen.DocumentUiScope;
 
 import java.util.Objects;
 
@@ -22,7 +26,7 @@ import club.heiqi.uilib.ui.style.UiStyleLength;
 /**
  * 诊断首页菜单控制器。
  */
-final class UiTestDocumentPageController extends DocumentPageController {
+public final class UiTestDocumentPageController extends DocumentPageController {
 
     private final DocumentPageAuthoringSurface diagnosticPage;
     private final UiTestMenuModel menuModel;
@@ -35,7 +39,7 @@ final class UiTestDocumentPageController extends DocumentPageController {
      * @param diagnosticPage 文档页面壳
      * @param menuModel 菜单跳转模型
      */
-    UiTestDocumentPageController(DocumentUiScope documentUi, DocumentPageAuthoringSurface diagnosticPage,
+    public UiTestDocumentPageController(DocumentUiScope documentUi, DocumentPageAuthoringSurface diagnosticPage,
             UiTestMenuModel menuModel) {
         DocumentUiScope resolvedDocumentUi = Objects.requireNonNull(documentUi, "documentUi");
         this.diagnosticPage = Objects.requireNonNull(diagnosticPage, "diagnosticPage");
@@ -53,14 +57,14 @@ final class UiTestDocumentPageController extends DocumentPageController {
     }
 
     @Override
-    void configureDocumentPage() {
+    protected void configureDocumentPage() {
         diagnosticPage.setContentWidthRange(700, 1080)
                 .setMinContentHeight(540)
                 .setViewportFillRatio(0.94F, 0.92F);
     }
 
     @Override
-    void buildDocument() {
+    protected void buildDocument() {
         diagnosticPage.addBlock(htmlLikeDocumentWidget);
     }
 

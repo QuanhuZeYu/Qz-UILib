@@ -1,4 +1,4 @@
-package club.heiqi.uilib.ui.screen;
+package club.heiqi.uilib.ui.screen.example;
 
 import java.util.Collections;
 import java.util.List;

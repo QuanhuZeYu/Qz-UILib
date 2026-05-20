@@ -1,4 +1,5 @@
-package club.heiqi.uilib.ui.screen;
+package club.heiqi.uilib.ui.screen.example;
+
 
 import org.junit.Assert;
 import org.junit.Test;
@@ -19,7 +20,7 @@ public class UiTestDiagnosticsPresenterTest {
         UiTestDiagnosticsPresenter presenter = new UiTestDiagnosticsPresenter();
 
         UiTestDiagnosticsPresenter.ViewState viewState = presenter.present(createSnapshot(
-                InternalDiagnosticScreenRegistry.uiTestPageId(),
+                "ui_test",
                 UiRuntimeStats.empty(),
                 new FontRuntimeStats(1, 2, 3, 4, 5, 6, 1, 1, 1, 1, 1, 7L, 8L, 0L, 0L, 9L,
                         10L),
@@ -49,7 +50,7 @@ public class UiTestDiagnosticsPresenterTest {
         UiRuntimeStats mismatchedStats = createRuntimeStats("OtherScreen");
 
         UiTestDiagnosticsPresenter.ViewState viewState = presenter.present(createSnapshot(
-                InternalDiagnosticScreenRegistry.uiTestPageId(),
+                "ui_test",
                 mismatchedStats,
                 new FontRuntimeStats(3, 5, 1, 1, 2, 40, 2, 2, 2, 2, 2, 0L, 0L, 0L, 0L, 12L,
                         1L),
@@ -74,8 +75,8 @@ public class UiTestDiagnosticsPresenterTest {
         String mutationSampleText = "长文重排样本 000001：当前路径片段为 assets/qz_uilib/ui/diagnostic/ABCDEF";
 
         UiTestDiagnosticsPresenter.ViewState viewState = presenter.present(createSnapshot(
-                InternalDiagnosticScreenRegistry.uiTestPageId(),
-                createRuntimeStats(InternalDiagnosticScreenRegistry.uiTestPageId()),
+                "ui_test",
+                createRuntimeStats("ui_test"),
                 new FontRuntimeStats(7, 80, 2, 1, 6, 128, 3, 3, 3, 3, 2, 0L, 0L, 21L, 2L,
                         33L, 4L),
                 "已切换变更模式到 长文重排",

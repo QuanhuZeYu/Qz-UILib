@@ -191,14 +191,14 @@ public final class UiDocumentScreens {
         }
 
         @Override
-        void configureDocumentPage() {
+        protected void configureDocumentPage() {
             documentPage.setContentWidthRange(1, Integer.MAX_VALUE)
                     .setMinContentHeight(1)
                     .setViewportFillRatio(1.0F, 1.0F);
         }
 
         @Override
-        void buildDocument() {
+        protected void buildDocument() {
             documentPage.addBlock(htmlLikeDocumentWidget);
         }
 

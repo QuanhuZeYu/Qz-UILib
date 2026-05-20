@@ -3,6 +3,8 @@ package club.heiqi.uilib.ui.screen;
 import java.util.Objects;
 
 import club.heiqi.uilib.client.MinecraftInventoryOverviewModel;
+import club.heiqi.uilib.ui.screen.example.InventoryOverviewModel;
+import club.heiqi.uilib.ui.screen.example.UiTestMenuModel;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiScreen;
 

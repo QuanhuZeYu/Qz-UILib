@@ -8,7 +8,7 @@ import club.heiqi.uilib.ui.diagnostic.UiRuntimeStats;
  * <p>该视图只暴露页面控制器在刷新阶段确实需要的只读宿主信息，
  * 避免控制器直接耦合具体 Screen 实现。</p>
  */
-interface DocumentPageRuntimeView {
+public interface DocumentPageRuntimeView {
 
     /**
      * 获取当前宿主宽度。

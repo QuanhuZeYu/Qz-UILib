@@ -1,9 +1,9 @@
-package club.heiqi.uilib.ui.screen;
+package club.heiqi.uilib.ui.screen.example;
 
 /**
  * 诊断菜单页的最小跳转模型。
  */
-interface UiTestMenuModel {
+public interface UiTestMenuModel {
 
     /**
      * 打开布局诊断子页。

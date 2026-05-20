@@ -1,4 +1,9 @@
-package club.heiqi.uilib.ui.screen;
+package club.heiqi.uilib.ui.screen.example;
+
+import club.heiqi.uilib.ui.screen.DocumentPageController;
+import club.heiqi.uilib.ui.screen.DocumentPageAuthoringSurface;
+import club.heiqi.uilib.ui.screen.DocumentPageRuntimeView;
+import club.heiqi.uilib.ui.screen.DocumentUiScope;
 
 import java.util.ArrayList;
 import java.util.HashSet;
@@ -42,7 +47,7 @@ import club.heiqi.uilib.ui.text.TextContentMode;
  * <p>本页只作为内部 GUI 压测工具使用，通过固定尺寸自定义绘制区域把大量字符压缩到可视范围内，
  * 不扩展对外文档 API，也不触碰字体底层渲染实现。</p>
  */
-final class UiFontPerformanceBaselineDocumentPageController extends DocumentPageController {
+public final class UiFontPerformanceBaselineDocumentPageController extends DocumentPageController {
 
     private static final long DEBUG_REFRESH_INTERVAL_NANOS = 500_000_000L;
     private static final int[] COUNT_PRESETS = new int[] { 1000, 5000, 10000, 20000 };
@@ -88,7 +93,7 @@ final class UiFontPerformanceBaselineDocumentPageController extends DocumentPage
     private int generation;
     private long lastDebugRefreshNanos = Long.MIN_VALUE;
 
-    UiFontPerformanceBaselineDocumentPageController(DocumentUiScope documentUi,
+    public UiFontPerformanceBaselineDocumentPageController(DocumentUiScope documentUi,
             DocumentPageAuthoringSurface diagnosticPage, DocumentPageRuntimeView runtimeView, String screenName) {
         this(documentUi, diagnosticPage, runtimeView, screenName, new FontRuntimeStatsSource() {
             @Override
@@ -98,7 +103,7 @@ final class UiFontPerformanceBaselineDocumentPageController extends DocumentPage
         });
     }
 
-    UiFontPerformanceBaselineDocumentPageController(DocumentUiScope documentUi,
+    public UiFontPerformanceBaselineDocumentPageController(DocumentUiScope documentUi,
             DocumentPageAuthoringSurface diagnosticPage, DocumentPageRuntimeView runtimeView, String screenName,
             FontRuntimeStatsSource fontRuntimeStatsSource) {
         DocumentUiScope resolvedDocumentUi = Objects.requireNonNull(documentUi, "documentUi");
@@ -133,29 +138,29 @@ final class UiFontPerformanceBaselineDocumentPageController extends DocumentPage
     }
 
     @Override
-    void configureDocumentPage() {
+    protected void configureDocumentPage() {
         diagnosticPage.setContentWidthRange(760, 1180)
                 .setMinContentHeight(640)
                 .setViewportFillRatio(0.96F, 0.94F);
     }
 
     @Override
-    void buildDocument() {
+    protected void buildDocument() {
         diagnosticPage.addBlock(htmlLikeDocumentWidget);
     }
 
     @Override
-    void afterDocumentBuilt() {
+    protected void afterDocumentBuilt() {
         refreshDebugText(true);
     }
 
     @Override
-    void onDocumentResized() {
+    protected void onDocumentResized() {
         refreshDebugText(true);
     }
 
     @Override
-    void beforeDocumentFrame() {
+    protected void beforeDocumentFrame() {
         refreshDebugText(false);
     }
 

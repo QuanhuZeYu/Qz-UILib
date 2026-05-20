@@ -8,7 +8,7 @@ import club.heiqi.uilib.ui.widget.Widget;
  * <p>该接口只在 `ui.screen` 包内使用，用于收敛 controller 对具体宿主实现的直接依赖。
  * 当前 HTML-like 页面使用 direct surface，不再提供旧页面壳适配入口。</p>
  */
-interface DocumentPageAuthoringSurface {
+public interface DocumentPageAuthoringSurface {
 
     /**
      * 追加文档块级内容。

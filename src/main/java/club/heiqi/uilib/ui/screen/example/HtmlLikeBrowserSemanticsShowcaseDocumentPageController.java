@@ -1,4 +1,8 @@
-package club.heiqi.uilib.ui.screen;
+package club.heiqi.uilib.ui.screen.example;
+
+import club.heiqi.uilib.ui.screen.DocumentPageController;
+import club.heiqi.uilib.ui.screen.DocumentPageAuthoringSurface;
+import club.heiqi.uilib.ui.screen.DocumentUiScope;
 
 import java.util.Objects;
 
@@ -39,7 +43,7 @@ import club.heiqi.uilib.ui.text.TextMeasureService;
  * <p>展示当前已接入运行时的浏览器语义能力：样式表/选择器、事件传播、DOM 查询、
  * pointer-events、文本装饰、宽高比、替换元素适配与变量容器。</p>
  */
-final class HtmlLikeBrowserSemanticsShowcaseDocumentPageController extends DocumentPageController {
+public final class HtmlLikeBrowserSemanticsShowcaseDocumentPageController extends DocumentPageController {
 
     private final DocumentPageAuthoringSurface documentPage;
     private final HtmlLikeDocumentWidget htmlLikeDocumentWidget;
@@ -57,7 +61,7 @@ final class HtmlLikeBrowserSemanticsShowcaseDocumentPageController extends Docum
      * @param documentUi 文档组件作用域
      * @param documentPage 文档页面壳
      */
-    HtmlLikeBrowserSemanticsShowcaseDocumentPageController(DocumentUiScope documentUi,
+    public HtmlLikeBrowserSemanticsShowcaseDocumentPageController(DocumentUiScope documentUi,
             DocumentPageAuthoringSurface documentPage) {
         this(Objects.requireNonNull(documentUi, "documentUi"), documentPage, documentUi.getTextMeasureService());
     }
@@ -69,7 +73,7 @@ final class HtmlLikeBrowserSemanticsShowcaseDocumentPageController extends Docum
      * @param documentPage 文档页面壳
      * @param textMeasureService HTML-like 文本测量服务
      */
-    HtmlLikeBrowserSemanticsShowcaseDocumentPageController(DocumentUiScope documentUi,
+    public HtmlLikeBrowserSemanticsShowcaseDocumentPageController(DocumentUiScope documentUi,
             DocumentPageAuthoringSurface documentPage, TextMeasureService textMeasureService) {
         Objects.requireNonNull(documentUi, "documentUi");
         this.documentPage = Objects.requireNonNull(documentPage, "documentPage");
@@ -85,14 +89,14 @@ final class HtmlLikeBrowserSemanticsShowcaseDocumentPageController extends Docum
     }
 
     @Override
-    void configureDocumentPage() {
+    protected void configureDocumentPage() {
         documentPage.setContentWidthRange(780, 1200)
                 .setMinContentHeight(640)
                 .setViewportFillRatio(0.94F, 0.92F);
     }
 
     @Override
-    void buildDocument() {
+    protected void buildDocument() {
         documentPage.addBlock(htmlLikeDocumentWidget);
     }
 

@@ -13,7 +13,7 @@ import club.heiqi.uilib.ui.widget.Widget;
  * <p>该实现只负责把当前已迁移页面的单个 `HtmlLikeDocumentWidget` 定位到屏幕 frame，
  * 不再创建旧 retained 页面壳。</p>
  */
-final class DirectDocumentPageAuthoringSurface implements DocumentPageAuthoringSurface {
+public final class DirectDocumentPageAuthoringSurface implements DocumentPageAuthoringSurface {
 
     private final List<Widget> blocks = new ArrayList<Widget>();
     private Widget root;
@@ -80,7 +80,7 @@ final class DirectDocumentPageAuthoringSurface implements DocumentPageAuthoringS
      *
      * @return 直接块级 widget 列表
      */
-    List<Widget> getBlocks() {
+    public List<Widget> getBlocks() {
         return Collections.unmodifiableList(blocks);
     }
 

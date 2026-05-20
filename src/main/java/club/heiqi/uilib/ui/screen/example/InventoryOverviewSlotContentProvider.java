@@ -1,4 +1,4 @@
-package club.heiqi.uilib.ui.screen;
+package club.heiqi.uilib.ui.screen.example;
 
 import club.heiqi.uilib.ui.inventory.InventorySlotSnapshot;
 

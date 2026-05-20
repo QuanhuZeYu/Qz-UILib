@@ -1,4 +1,9 @@
-package club.heiqi.uilib.ui.screen;
+package club.heiqi.uilib.ui.screen.example;
+
+import club.heiqi.uilib.ui.screen.DocumentPageController;
+import club.heiqi.uilib.ui.screen.DocumentPageAuthoringSurface;
+import club.heiqi.uilib.ui.screen.DocumentPageRuntimeView;
+import club.heiqi.uilib.ui.screen.DocumentUiScope;
 
 import java.util.ArrayList;
 import java.util.Collections;
@@ -38,7 +43,7 @@ import club.heiqi.uilib.ui.text.TextMeasureService;
 /**
  * HTML-like 背包概览页控制器。
  */
-final class HtmlLikeInventoryOverviewDocumentPageController extends DocumentPageController {
+public final class HtmlLikeInventoryOverviewDocumentPageController extends DocumentPageController {
 
     private final DocumentUiScope documentUi;
     private final DocumentPageAuthoringSurface documentPage;
@@ -78,7 +83,7 @@ final class HtmlLikeInventoryOverviewDocumentPageController extends DocumentPage
     private static final int TOOLTIP_VERTICAL_PADDING = 12;
     private static final int TOOLTIP_HORIZONTAL_PADDING = 14;
 
-    HtmlLikeInventoryOverviewDocumentPageController(DocumentUiScope documentUi,
+    public HtmlLikeInventoryOverviewDocumentPageController(DocumentUiScope documentUi,
             DocumentPageAuthoringSurface documentPage, DocumentPageRuntimeView runtimeView,
             InventoryOverviewModel model) {
         this.documentUi = Objects.requireNonNull(documentUi, "documentUi");
@@ -208,31 +213,31 @@ final class HtmlLikeInventoryOverviewDocumentPageController extends DocumentPage
     }
 
     @Override
-    void configureDocumentPage() {
+    protected void configureDocumentPage() {
         documentPage.setContentWidthRange(720, 1040)
                 .setMinContentHeight(620)
                 .setViewportFillRatio(0.94F, 0.92F);
     }
 
     @Override
-    void buildDocument() {
+    protected void buildDocument() {
         documentPage.addBlock(htmlLikeDocumentWidget);
     }
 
     @Override
-    void afterDocumentBuilt() {
+    protected void afterDocumentBuilt() {
         super.afterDocumentBuilt();
         refreshMetrics();
     }
 
     @Override
-    void onDocumentResized() {
+    protected void onDocumentResized() {
         super.onDocumentResized();
         refreshMetrics();
     }
 
     @Override
-    void beforeDocumentFrame() {
+    protected void beforeDocumentFrame() {
         super.beforeDocumentFrame();
         refreshMetrics();
     }

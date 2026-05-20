@@ -1,4 +1,8 @@
-package club.heiqi.uilib.ui.screen;
+package club.heiqi.uilib.ui.screen.example;
+
+import club.heiqi.uilib.ui.screen.DocumentPageController;
+import club.heiqi.uilib.ui.screen.DocumentPageAuthoringSurface;
+import club.heiqi.uilib.ui.screen.DocumentUiScope;
 
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -29,7 +33,7 @@ import club.heiqi.uilib.ui.text.TextMeasureService;
 /**
  * HTML-like 列表元素组件拖拽测试页控制器。
  */
-final class HtmlLikeListDragDocumentPageController extends DocumentPageController {
+public final class HtmlLikeListDragDocumentPageController extends DocumentPageController {
 
     private static final int ROW_HEIGHT = 48;
     private static final String DRAG_HANDLE_ICON_SRC = "https://img.icons8.com/ios-filled/50/93c5fd/drag-reorder.png";
@@ -49,7 +53,7 @@ final class HtmlLikeListDragDocumentPageController extends DocumentPageControlle
      * @param documentUi 文档组件作用域
      * @param documentPage 文档页面壳
      */
-    HtmlLikeListDragDocumentPageController(DocumentUiScope documentUi, DocumentPageAuthoringSurface documentPage) {
+    public HtmlLikeListDragDocumentPageController(DocumentUiScope documentUi, DocumentPageAuthoringSurface documentPage) {
         this(Objects.requireNonNull(documentUi, "documentUi"), documentPage, documentUi.getTextMeasureService());
     }
 
@@ -60,7 +64,7 @@ final class HtmlLikeListDragDocumentPageController extends DocumentPageControlle
      * @param documentPage 文档页面壳
      * @param textMeasureService HTML-like 文本测量服务
      */
-    HtmlLikeListDragDocumentPageController(DocumentUiScope documentUi, DocumentPageAuthoringSurface documentPage,
+    public HtmlLikeListDragDocumentPageController(DocumentUiScope documentUi, DocumentPageAuthoringSurface documentPage,
             TextMeasureService textMeasureService) {
         Objects.requireNonNull(documentUi, "documentUi");
         this.documentPage = Objects.requireNonNull(documentPage, "documentPage");
@@ -76,14 +80,14 @@ final class HtmlLikeListDragDocumentPageController extends DocumentPageControlle
     }
 
     @Override
-    void configureDocumentPage() {
+    protected void configureDocumentPage() {
         documentPage.setContentWidthRange(700, 1080)
                 .setMinContentHeight(540)
                 .setViewportFillRatio(0.94F, 0.92F);
     }
 
     @Override
-    void buildDocument() {
+    protected void buildDocument() {
         documentPage.addBlock(htmlLikeDocumentWidget);
     }
 

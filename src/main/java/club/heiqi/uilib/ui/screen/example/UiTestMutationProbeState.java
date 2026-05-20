@@ -1,9 +1,9 @@
-package club.heiqi.uilib.ui.screen;
+package club.heiqi.uilib.ui.screen.example;
 
 /**
  * `UiLayoutDiagnosticsDocumentPageController` 的页面局部高频变更探针状态。
  */
-final class UiTestMutationProbeState {
+public final class UiTestMutationProbeState {
 
     private String actionStateText = "尚未操作";
     private long lastMutationUpdateNanos;
@@ -283,7 +283,7 @@ final class UiTestMutationProbeState {
     /**
      * 表示一次样本文本写回决策。
      */
-    static final class MutationTextUpdate {
+    static public final class MutationTextUpdate {
 
         static final MutationTextUpdate NO_CHANGE = new MutationTextUpdate(false, "");
 

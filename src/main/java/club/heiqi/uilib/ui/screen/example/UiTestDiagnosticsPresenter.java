@@ -1,4 +1,4 @@
-package club.heiqi.uilib.ui.screen;
+package club.heiqi.uilib.ui.screen.example;
 
 import java.util.Locale;
 
@@ -8,7 +8,7 @@ import club.heiqi.uilib.ui.diagnostic.UiRuntimeStats;
 /**
  * `UiLayoutDiagnosticsDocumentPageController` 的页面局部诊断文案 presenter。
  */
-final class UiTestDiagnosticsPresenter {
+public final class UiTestDiagnosticsPresenter {
 
     /**
      * 根据纯数据快照生成页面诊断文案。
@@ -120,7 +120,7 @@ final class UiTestDiagnosticsPresenter {
     /**
      * 页面诊断快照。
      */
-    static final class Snapshot {
+    static public final class Snapshot {
 
         final int hostWidth;
         final int hostHeight;
@@ -238,7 +238,7 @@ final class UiTestDiagnosticsPresenter {
     /**
      * 页面诊断标签文案集合。
      */
-    static final class ViewState {
+    static public final class ViewState {
 
         String viewportText;
         String scrollText;

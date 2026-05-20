@@ -1,4 +1,9 @@
-package club.heiqi.uilib.ui.screen;
+package club.heiqi.uilib.ui.screen.example;
+
+import club.heiqi.uilib.ui.screen.DirectDocumentPageAuthoringSurface;
+
+import club.heiqi.uilib.ui.screen.DocumentPageRuntimeView;
+import club.heiqi.uilib.ui.screen.DocumentUiScope;
 
 import java.util.ArrayList;
 import java.util.Collections;
@@ -101,7 +106,7 @@ public class UiLayoutDiagnosticsDocumentPageControllerTest {
         Assert.assertFalse(containsText(textsAfterMismatch, "当前帧 12.00 ms"));
 
         fixture.runtimeView.setHostSize(1600, 960);
-        fixture.runtimeView.setRuntimeStats(createRuntimeStats(InternalDiagnosticScreenRegistry.uiTestLayoutPageId()));
+        fixture.runtimeView.setRuntimeStats(createRuntimeStats("ui_test_layout"));
         fixture.controller.beforeDocumentFrame();
 
         List<String> textsAfterMatch = collectDocumentTexts(fixture.controller.getHtmlLikeDocumentWidget());
@@ -238,7 +243,7 @@ public class UiLayoutDiagnosticsDocumentPageControllerTest {
             }
         };
         private final UiLayoutDiagnosticsDocumentPageController controller = new UiLayoutDiagnosticsDocumentPageController(
-                documentUi, pageSurface, runtimeView, InternalDiagnosticScreenRegistry.uiTestLayoutPageId(),
+                documentUi, pageSurface, runtimeView, "ui_test_layout",
                 fontRuntimeStatsSource);
     }
 

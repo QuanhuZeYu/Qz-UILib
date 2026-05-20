@@ -1,4 +1,8 @@
-package club.heiqi.uilib.ui.screen;
+package club.heiqi.uilib.ui.screen.example;
+
+import club.heiqi.uilib.ui.screen.DocumentPageController;
+import club.heiqi.uilib.ui.screen.DocumentPageAuthoringSurface;
+import club.heiqi.uilib.ui.screen.DocumentUiScope;
 
 import java.util.Objects;
 
@@ -22,7 +26,7 @@ import club.heiqi.uilib.ui.text.TextMeasureService;
 /**
  * HTML-like 大面积磨玻璃测试页控制器。
  */
-final class HtmlLikeGlassDocumentPageController extends DocumentPageController {
+public final class HtmlLikeGlassDocumentPageController extends DocumentPageController {
 
     private final DocumentPageAuthoringSurface documentPage;
     private final HtmlLikeDocumentWidget htmlLikeDocumentWidget;
@@ -35,7 +39,7 @@ final class HtmlLikeGlassDocumentPageController extends DocumentPageController {
      * @param documentUi 文档组件作用域
      * @param documentPage 文档页面壳
      */
-    HtmlLikeGlassDocumentPageController(DocumentUiScope documentUi, DocumentPageAuthoringSurface documentPage) {
+    public HtmlLikeGlassDocumentPageController(DocumentUiScope documentUi, DocumentPageAuthoringSurface documentPage) {
         this(Objects.requireNonNull(documentUi, "documentUi"), documentPage, documentUi.getTextMeasureService());
     }
 
@@ -46,7 +50,7 @@ final class HtmlLikeGlassDocumentPageController extends DocumentPageController {
      * @param documentPage 文档页面壳
      * @param textMeasureService HTML-like 文本测量服务
      */
-    HtmlLikeGlassDocumentPageController(DocumentUiScope documentUi, DocumentPageAuthoringSurface documentPage,
+    public HtmlLikeGlassDocumentPageController(DocumentUiScope documentUi, DocumentPageAuthoringSurface documentPage,
             TextMeasureService textMeasureService) {
         Objects.requireNonNull(documentUi, "documentUi");
         this.documentPage = Objects.requireNonNull(documentPage, "documentPage");
@@ -61,19 +65,19 @@ final class HtmlLikeGlassDocumentPageController extends DocumentPageController {
     }
 
     @Override
-    void configureDocumentPage() {
+    protected void configureDocumentPage() {
         documentPage.setContentWidthRange(760, 1180)
                 .setMinContentHeight(620)
                 .setViewportFillRatio(0.94F, 0.92F);
     }
 
     @Override
-    void buildDocument() {
+    protected void buildDocument() {
         documentPage.addBlock(htmlLikeDocumentWidget);
     }
 
     @Override
-    void beforeDocumentFrame() {
+    protected void beforeDocumentFrame() {
         String pathText = formatBackdropPathText();
         if (backdropPathText != null) {
             backdropPathText.setText(pathText);
