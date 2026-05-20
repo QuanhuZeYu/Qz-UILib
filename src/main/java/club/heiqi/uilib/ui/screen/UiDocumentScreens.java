@@ -2,15 +2,11 @@ package club.heiqi.uilib.ui.screen;
 
 import java.util.Objects;
 
-import club.heiqi.uilib.ui.host.DocumentHostWidgetFactory;
-import club.heiqi.uilib.ui.document.HtmlLikeDocumentWidget;
-import club.heiqi.uilib.ui.dom.ElementNode;
 import club.heiqi.uilib.ui.dom.UiDocument;
 import club.heiqi.uilib.ui.runtime.UiRuntimeAdapters;
-import club.heiqi.uilib.ui.style.props.UiOverflow;
-import club.heiqi.uilib.ui.style.values.UiStyleLength;
-import club.heiqi.uilib.ui.text.TextContentMode;
+import club.heiqi.uilib.ui.screen.internal.InternalHostedScreenFactory;
 import club.heiqi.uilib.ui.text.DefaultTextMeasureService;
+import club.heiqi.uilib.ui.text.TextContentMode;
 import club.heiqi.uilib.ui.text.TextMeasureService;
 import net.minecraft.client.gui.GuiScreen;
 
@@ -152,72 +148,5 @@ public final class UiDocumentScreens {
         return InternalHostedScreenFactory.createScreen(InternalHostedScreenFactory.DOCUMENT_SCREEN_DEFINITION,
                 Objects.requireNonNull(environment, "environment"),
                 Objects.requireNonNull(contentBuilder, "contentBuilder"));
-    }
-
-    /**
-     * 创建调用方内容驱动的文档页面控制器。
-     */
-    static DocumentPageController createInlineDocumentController(DocumentUiScope documentUi,
-            DocumentPageAuthoringSurface documentPage,
-            DocumentScreenContentBuilder contentBuilder) {
-        return new InlineDocumentPageController(documentUi, documentPage, contentBuilder);
-    }
-
-    /**
-     * 调用方内容驱动的 HTML-like 文档页面控制器。
-     */
-    private static final class InlineDocumentPageController extends DocumentPageController {
-
-        private final DocumentPageAuthoringSurface documentPage;
-        private final HtmlLikeDocumentWidget htmlLikeDocumentWidget;
-
-        /**
-         * 创建调用方内容驱动的文档页面控制器。
-         *
-         * @param documentUi 文档组件作用域
-         * @param documentPage 文档页面挂载面
-         * @param contentBuilder 文档内容构建器
-         */
-        private InlineDocumentPageController(DocumentUiScope documentUi, DocumentPageAuthoringSurface documentPage,
-                DocumentScreenContentBuilder contentBuilder) {
-            DocumentUiScope resolvedDocumentUi = Objects.requireNonNull(documentUi, "documentUi");
-            this.documentPage = Objects.requireNonNull(documentPage, "documentPage");
-            UiDocument document = UiDocument.create();
-            document.setDefaultTextContentMode(resolvedDocumentUi.getDefaultTextContentMode());
-            Objects.requireNonNull(contentBuilder, "contentBuilder").build(document);
-            applyDefaultRootContract(document.getRootElement());
-            this.htmlLikeDocumentWidget = DocumentHostWidgetFactory.createViewportDocumentWidget(document, 320, 180,
-                    resolvedDocumentUi.getTextMeasureService(), true);
-        }
-
-        @Override
-        protected void configureDocumentPage() {
-            documentPage.setContentWidthRange(1, Integer.MAX_VALUE)
-                    .setMinContentHeight(1)
-                    .setViewportFillRatio(1.0F, 1.0F);
-        }
-
-        @Override
-        protected void buildDocument() {
-            documentPage.addBlock(htmlLikeDocumentWidget);
-        }
-
-        /**
-         * 为业务入口默认补齐根节点契约，减少首次接入需要记忆的样板。
-         */
-        private static void applyDefaultRootContract(ElementNode rootElement) {
-            if (rootElement == null) {
-                return;
-            }
-            if (rootElement.style().getWidth() == null) {
-                rootElement.style().setWidth(UiStyleLength.percent(1.0F));
-            }
-            if (rootElement.style().getHeight() == null) {
-                rootElement.style().setHeight(UiStyleLength.percent(1.0F));
-            }
-            if (rootElement.style().getOverflowY() == null) {
-                rootElement.style().setOverflowY(UiOverflow.AUTO);
-            }
-        }
     }
 }

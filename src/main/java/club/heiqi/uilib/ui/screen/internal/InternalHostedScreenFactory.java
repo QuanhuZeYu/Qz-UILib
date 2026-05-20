@@ -1,34 +1,44 @@
-package club.heiqi.uilib.ui.screen;
+package club.heiqi.uilib.ui.screen.internal;
 
 import java.util.Objects;
 
 import club.heiqi.uilib.ui.diagnostic.UiRuntimeStats;
 import club.heiqi.uilib.ui.runtime.UiRuntimeAdapters;
+import club.heiqi.uilib.ui.screen.BaseScreen;
+import club.heiqi.uilib.ui.screen.UiDocumentScreens;
+import club.heiqi.uilib.ui.screen.page.DirectDocumentPageAuthoringSurface;
+import club.heiqi.uilib.ui.screen.page.DocumentPageAuthoringSurface;
+import club.heiqi.uilib.ui.screen.page.DocumentPageController;
+import club.heiqi.uilib.ui.screen.page.DocumentPageRuntimeView;
+import club.heiqi.uilib.ui.screen.page.DocumentScreenChrome;
+import club.heiqi.uilib.ui.screen.page.DocumentUiScope;
 import club.heiqi.uilib.ui.widget.Widget;
 import net.minecraft.client.gui.GuiScreen;
 
 /**
  * 内部托管页面工厂。
  *
- * <p>仅供库内诊断页、示例页和宿主托管页面机制使用，不构成对外稳定 API。</p>
+ * <p>仅供库内诊断页、示例页和宿主托管页面机制使用，不构成对业务作者的稳定 API。
+ * 类与必要嵌套类型对外提升为 public，仅供 ui.screen / ui.screen.internal 内的协作类使用。</p>
  */
-final class InternalHostedScreenFactory {
+public final class InternalHostedScreenFactory {
 
-    static final InternalScreenIdentity.PageDescriptor DOCUMENT_SCREEN = new InternalScreenIdentity.PageDescriptor(
-            "document_screen");
-    static final InternalHostedScreenDefinition<UiDocumentScreens.DocumentScreenContentBuilder> DOCUMENT_SCREEN_DEFINITION = new InternalHostedScreenDefinition<UiDocumentScreens.DocumentScreenContentBuilder>(
-            DOCUMENT_SCREEN,
-            DocumentScreenChrome::fillViewport,
-            new InternalDocumentPageControllerFactory<UiDocumentScreens.DocumentScreenContentBuilder>() {
-                @Override
-                public DocumentPageController create(DocumentUiScope documentUi,
-                        DocumentPageAuthoringSurface documentPage,
-                        DocumentPageRuntimeView runtimeView,
-                        String pageId,
-                        UiDocumentScreens.DocumentScreenContentBuilder provision) {
-                    return UiDocumentScreens.createInlineDocumentController(documentUi, documentPage, provision);
-                }
-            });
+    public static final InternalScreenIdentity.PageDescriptor DOCUMENT_SCREEN =
+            new InternalScreenIdentity.PageDescriptor("document_screen");
+    public static final InternalHostedScreenDefinition<UiDocumentScreens.DocumentScreenContentBuilder> DOCUMENT_SCREEN_DEFINITION =
+            new InternalHostedScreenDefinition<UiDocumentScreens.DocumentScreenContentBuilder>(
+                    DOCUMENT_SCREEN,
+                    DocumentScreenChrome::fillViewport,
+                    new InternalDocumentPageControllerFactory<UiDocumentScreens.DocumentScreenContentBuilder>() {
+                        @Override
+                        public DocumentPageController create(DocumentUiScope documentUi,
+                                DocumentPageAuthoringSurface documentPage,
+                                DocumentPageRuntimeView runtimeView,
+                                String pageId,
+                                UiDocumentScreens.DocumentScreenContentBuilder provision) {
+                            return new InternalInlineDocumentPageController(documentUi, documentPage, provision);
+                        }
+                    });
 
     private InternalHostedScreenFactory() {}
 
@@ -41,7 +51,7 @@ final class InternalHostedScreenFactory {
      * @param <P> 页面 provision 类型
      * @return 文档型界面
      */
-    static <P> GuiScreen createScreen(InternalHostedScreenDefinition<P> definition,
+    public static <P> GuiScreen createScreen(InternalHostedScreenDefinition<P> definition,
             UiDocumentScreens.DocumentScreenEnvironment environment,
             P provision) {
         return new InternalDefinitionBackedHtmlLikeDocumentScreen<P>(environment, definition, provision);
@@ -52,7 +62,7 @@ final class InternalHostedScreenFactory {
      *
      * @param <P> 页面控制器所需的专属 provision 类型
      */
-    interface InternalDocumentPageControllerFactory<P> {
+    public interface InternalDocumentPageControllerFactory<P> {
 
         /**
          * 创建页面控制器。
@@ -74,7 +84,7 @@ final class InternalHostedScreenFactory {
     /**
      * 文档页面壳策略解析器。
      */
-    interface InternalScreenChromeResolver {
+    public interface InternalScreenChromeResolver {
 
         /**
          * 基于当前宿主尺寸解析页面壳策略。
@@ -91,13 +101,13 @@ final class InternalHostedScreenFactory {
      *
      * @param <P> 页面控制器所需的专属 provision 类型
      */
-    static final class InternalHostedScreenDefinition<P> {
+    public static final class InternalHostedScreenDefinition<P> {
 
         private final InternalScreenIdentity.PageDescriptor pageDescriptor;
         private final InternalScreenChromeResolver chromeResolver;
         private final InternalDocumentPageControllerFactory<P> controllerFactory;
 
-        InternalHostedScreenDefinition(InternalScreenIdentity.PageDescriptor pageDescriptor,
+        public InternalHostedScreenDefinition(InternalScreenIdentity.PageDescriptor pageDescriptor,
                 InternalScreenChromeResolver chromeResolver,
                 InternalDocumentPageControllerFactory<P> controllerFactory) {
             this.pageDescriptor = Objects.requireNonNull(pageDescriptor, "pageDescriptor");
@@ -110,7 +120,7 @@ final class InternalHostedScreenFactory {
          *
          * @return 页面描述对象
          */
-        InternalScreenIdentity.PageDescriptor getPageDescriptor() {
+        public InternalScreenIdentity.PageDescriptor getPageDescriptor() {
             return pageDescriptor;
         }
 
@@ -121,7 +131,7 @@ final class InternalHostedScreenFactory {
          * @param height 当前宿主高度
          * @return 页面壳策略
          */
-        DocumentScreenChrome resolveChrome(int width, int height) {
+        public DocumentScreenChrome resolveChrome(int width, int height) {
             return chromeResolver.resolve(width, height);
         }
 
@@ -135,7 +145,7 @@ final class InternalHostedScreenFactory {
          * @param provision 页面专属 provision
          * @return 页面控制器
          */
-        DocumentPageController createController(DocumentUiScope documentUi,
+        public DocumentPageController createController(DocumentUiScope documentUi,
                 DocumentPageAuthoringSurface documentPage,
                 DocumentPageRuntimeView runtimeView,
                 String pageId,

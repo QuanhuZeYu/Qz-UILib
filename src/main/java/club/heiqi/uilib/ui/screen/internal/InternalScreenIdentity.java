@@ -1,22 +1,25 @@
-package club.heiqi.uilib.ui.screen;
+package club.heiqi.uilib.ui.screen.internal;
 
 import java.util.Objects;
 
 /**
  * 内部托管页面的稳定身份识别工具。
+ *
+ * <p>类与必要方法对外提升为 public，仅供 ui.screen / ui.screen.internal 内的协作类
+ * 与诊断工具跨包使用，不构成对业务作者的稳定 API。</p>
  */
-final class InternalScreenIdentity {
+public final class InternalScreenIdentity {
 
     private InternalScreenIdentity() {}
 
     /**
      * 页面描述对象，仅承载稳定页面标识。
      */
-    static final class PageDescriptor {
+    public static final class PageDescriptor {
 
         private final String pageId;
 
-        PageDescriptor(String pageId) {
+        public PageDescriptor(String pageId) {
             this.pageId = Objects.requireNonNull(pageId, "pageId");
         }
 
@@ -25,7 +28,7 @@ final class InternalScreenIdentity {
          *
          * @return 页面标识
          */
-        String getPageId() {
+        public String getPageId() {
             return pageId;
         }
     }
@@ -33,7 +36,7 @@ final class InternalScreenIdentity {
     /**
      * 描述对象持有者。
      */
-    interface DescriptorOwner {
+    public interface DescriptorOwner {
 
         /**
          * 返回当前页面的稳定描述对象。
@@ -50,7 +53,7 @@ final class InternalScreenIdentity {
      * @param expectedPageId 目标页面标识
      * @return 是否匹配
      */
-    static boolean hasPageId(Object screen, String expectedPageId) {
+    public static boolean hasPageId(Object screen, String expectedPageId) {
         return expectedPageId != null && expectedPageId.equals(getPageId(screen));
     }
 
@@ -60,7 +63,7 @@ final class InternalScreenIdentity {
      * @param screen 目标对象
      * @return 页面标识，不存在时返回空字符串
      */
-    static String getPageId(Object screen) {
+    public static String getPageId(Object screen) {
         if (!(screen instanceof DescriptorOwner)) {
             return "";
         }
@@ -76,7 +79,7 @@ final class InternalScreenIdentity {
      * @param screen 目标对象
      * @return 运行时身份标识
      */
-    static String runtimeScreenNameOf(Object screen) {
+    public static String runtimeScreenNameOf(Object screen) {
         String pageId = getPageId(screen);
         if (!pageId.isEmpty()) {
             return pageId;

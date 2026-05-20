@@ -1,8 +1,8 @@
 package club.heiqi.uilib.ui.screen.example;
 
-import club.heiqi.uilib.ui.screen.DocumentPageController;
-import club.heiqi.uilib.ui.screen.DocumentPageAuthoringSurface;
-import club.heiqi.uilib.ui.screen.DocumentUiScope;
+import club.heiqi.uilib.ui.screen.page.DocumentPageController;
+import club.heiqi.uilib.ui.screen.page.DocumentPageAuthoringSurface;
+import club.heiqi.uilib.ui.screen.page.DocumentUiScope;
 
 import java.util.Objects;
 
@@ -57,14 +57,14 @@ public final class UiTestDocumentPageController extends DocumentPageController {
     }
 
     @Override
-    protected void configureDocumentPage() {
+    public void configureDocumentPage() {
         diagnosticPage.setContentWidthRange(700, 1080)
                 .setMinContentHeight(540)
                 .setViewportFillRatio(0.94F, 0.92F);
     }
 
     @Override
-    protected void buildDocument() {
+    public void buildDocument() {
         diagnosticPage.addBlock(htmlLikeDocumentWidget);
     }
 

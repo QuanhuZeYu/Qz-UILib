@@ -1,4 +1,4 @@
-package club.heiqi.uilib.ui.screen;
+package club.heiqi.uilib.ui.screen.page;
 
 /**
  * 文档页面宿主壳的尺寸策略。

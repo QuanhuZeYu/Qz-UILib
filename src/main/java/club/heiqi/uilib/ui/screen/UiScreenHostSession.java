@@ -16,6 +16,7 @@ import club.heiqi.uilib.ui.render.UiMainLayerSnapshotService;
 import club.heiqi.uilib.ui.render.UiRenderContext;
 import club.heiqi.uilib.ui.render.UiRenderTarget;
 import club.heiqi.uilib.ui.runtime.UiRuntimeAdapters;
+import club.heiqi.uilib.ui.screen.internal.InternalScreenIdentity;
 import club.heiqi.uilib.ui.widget.WidgetBuildAttachmentTransaction;
 import club.heiqi.uilib.ui.widget.UiLayoutInvalidationRegistry;
 import club.heiqi.uilib.ui.widget.ViewportWidget;

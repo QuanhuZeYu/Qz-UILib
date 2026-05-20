@@ -1,5 +1,15 @@
 package club.heiqi.uilib.ui.screen;
 
+import club.heiqi.uilib.ui.screen.internal.InternalDiagnosticScreenRegistry;
+import club.heiqi.uilib.ui.screen.internal.InternalHostedScreenFactory;
+import club.heiqi.uilib.ui.screen.internal.InternalScreenIdentity;
+import club.heiqi.uilib.ui.screen.internal.UiDiagnosticsScreens;
+import club.heiqi.uilib.ui.screen.page.DocumentPageController;
+import club.heiqi.uilib.ui.screen.page.DirectDocumentPageAuthoringSurface;
+import club.heiqi.uilib.ui.screen.page.DocumentPageRuntimeView;
+import club.heiqi.uilib.ui.screen.page.DocumentScreenChrome;
+import club.heiqi.uilib.ui.screen.page.DocumentUiScope;
+
 import java.lang.reflect.Method;
 import java.lang.reflect.Modifier;
 import java.util.Arrays;
@@ -44,7 +54,8 @@ public class UiDocumentScreensTest {
             Assert.assertTrue("createDocumentScreen".equals(method.getName()));
         }
         Assert.assertEquals(2, publicStaticMethodCount);
-        Assert.assertFalse(Modifier.isPublic(UiDiagnosticsScreens.class.getModifiers()));
+        Assert.assertEquals("club.heiqi.uilib.ui.screen.internal",
+                UiDiagnosticsScreens.class.getPackage().getName());
     }
 
     /**

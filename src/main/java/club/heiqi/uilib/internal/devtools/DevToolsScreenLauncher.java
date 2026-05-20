@@ -11,7 +11,7 @@ import net.minecraft.client.gui.GuiScreen;
  */
 final class DevToolsScreenLauncher {
 
-    private static final String DIAGNOSTIC_SCREENS_CLASS_NAME = "club.heiqi.uilib.ui.screen.UiDiagnosticsScreens";
+    private static final String DIAGNOSTIC_SCREENS_CLASS_NAME = "club.heiqi.uilib.ui.screen.internal.UiDiagnosticsScreens";
 
     private DevToolsScreenLauncher() {}
 

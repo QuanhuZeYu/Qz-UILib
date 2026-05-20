@@ -1,8 +1,8 @@
 package club.heiqi.uilib.ui.screen.example;
 
-import club.heiqi.uilib.ui.screen.DocumentPageController;
-import club.heiqi.uilib.ui.screen.DocumentPageAuthoringSurface;
-import club.heiqi.uilib.ui.screen.DocumentUiScope;
+import club.heiqi.uilib.ui.screen.page.DocumentPageController;
+import club.heiqi.uilib.ui.screen.page.DocumentPageAuthoringSurface;
+import club.heiqi.uilib.ui.screen.page.DocumentUiScope;
 
 import java.util.Objects;
 
@@ -65,19 +65,19 @@ public final class HtmlLikeGlassDocumentPageController extends DocumentPageContr
     }
 
     @Override
-    protected void configureDocumentPage() {
+    public void configureDocumentPage() {
         documentPage.setContentWidthRange(760, 1180)
                 .setMinContentHeight(620)
                 .setViewportFillRatio(0.94F, 0.92F);
     }
 
     @Override
-    protected void buildDocument() {
+    public void buildDocument() {
         documentPage.addBlock(htmlLikeDocumentWidget);
     }
 
     @Override
-    protected void beforeDocumentFrame() {
+    public void beforeDocumentFrame() {
         String pathText = formatBackdropPathText();
         if (backdropPathText != null) {
             backdropPathText.setText(pathText);

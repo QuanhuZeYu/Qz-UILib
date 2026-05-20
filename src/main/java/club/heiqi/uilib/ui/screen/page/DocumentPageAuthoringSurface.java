@@ -1,4 +1,4 @@
-package club.heiqi.uilib.ui.screen;
+package club.heiqi.uilib.ui.screen.page;
 
 import club.heiqi.uilib.ui.widget.Widget;
 

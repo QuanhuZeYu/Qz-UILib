@@ -1,4 +1,4 @@
-package club.heiqi.uilib.ui.screen;
+package club.heiqi.uilib.ui.screen.page;
 
 import java.util.ArrayList;
 import java.util.Collections;
@@ -32,7 +32,7 @@ public final class DirectDocumentPageAuthoringSurface implements DocumentPageAut
      *
      * @param root 根 widget
      */
-    void attachRoot(Widget root) {
+    public void attachRoot(Widget root) {
         this.root = Objects.requireNonNull(root, "root");
         for (Widget block : blocks) {
             if (block.getParent() == null) {
@@ -48,7 +48,7 @@ public final class DirectDocumentPageAuthoringSurface implements DocumentPageAut
      * @param hostHeight 宿主高度
      * @param chrome 屏幕 chrome 策略
      */
-    void applyFrameBounds(int hostWidth, int hostHeight, DocumentScreenChrome chrome) {
+    public void applyFrameBounds(int hostWidth, int hostHeight, DocumentScreenChrome chrome) {
         DocumentScreenChrome.Insets rootPadding = chrome == null ? DocumentScreenChrome.Insets.of(0, 0, 0, 0)
                 : chrome.getRootPadding();
         int availableLeft = rootPadding.getLeft();

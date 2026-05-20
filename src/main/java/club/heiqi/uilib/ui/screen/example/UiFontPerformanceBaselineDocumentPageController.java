@@ -1,9 +1,9 @@
 package club.heiqi.uilib.ui.screen.example;
 
-import club.heiqi.uilib.ui.screen.DocumentPageController;
-import club.heiqi.uilib.ui.screen.DocumentPageAuthoringSurface;
-import club.heiqi.uilib.ui.screen.DocumentPageRuntimeView;
-import club.heiqi.uilib.ui.screen.DocumentUiScope;
+import club.heiqi.uilib.ui.screen.page.DocumentPageController;
+import club.heiqi.uilib.ui.screen.page.DocumentPageAuthoringSurface;
+import club.heiqi.uilib.ui.screen.page.DocumentPageRuntimeView;
+import club.heiqi.uilib.ui.screen.page.DocumentUiScope;
 
 import java.util.ArrayList;
 import java.util.HashSet;
@@ -138,29 +138,29 @@ public final class UiFontPerformanceBaselineDocumentPageController extends Docum
     }
 
     @Override
-    protected void configureDocumentPage() {
+    public void configureDocumentPage() {
         diagnosticPage.setContentWidthRange(760, 1180)
                 .setMinContentHeight(640)
                 .setViewportFillRatio(0.96F, 0.94F);
     }
 
     @Override
-    protected void buildDocument() {
+    public void buildDocument() {
         diagnosticPage.addBlock(htmlLikeDocumentWidget);
     }
 
     @Override
-    protected void afterDocumentBuilt() {
+    public void afterDocumentBuilt() {
         refreshDebugText(true);
     }
 
     @Override
-    protected void onDocumentResized() {
+    public void onDocumentResized() {
         refreshDebugText(true);
     }
 
     @Override
-    protected void beforeDocumentFrame() {
+    public void beforeDocumentFrame() {
         refreshDebugText(false);
     }
 

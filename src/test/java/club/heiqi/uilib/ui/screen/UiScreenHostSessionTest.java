@@ -11,6 +11,8 @@ import club.heiqi.uilib.ui.image.HostImageSource;
 import club.heiqi.uilib.ui.render.UiMainLayerSnapshotService;
 import club.heiqi.uilib.ui.render.UiRenderContext;
 import club.heiqi.uilib.ui.runtime.UiRuntimeAdapters;
+import club.heiqi.uilib.ui.screen.internal.InternalDiagnosticScreenRegistry;
+import club.heiqi.uilib.ui.screen.internal.InternalScreenIdentity;
 
 /**
  * `UiScreenHostSession` 的运行时渲染上下文契约测试。

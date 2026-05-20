@@ -1,9 +1,9 @@
 package club.heiqi.uilib.ui.screen.example;
 
-import club.heiqi.uilib.ui.screen.DirectDocumentPageAuthoringSurface;
+import club.heiqi.uilib.ui.screen.page.DirectDocumentPageAuthoringSurface;
 
-import club.heiqi.uilib.ui.screen.DocumentPageRuntimeView;
-import club.heiqi.uilib.ui.screen.DocumentUiScope;
+import club.heiqi.uilib.ui.screen.page.DocumentPageRuntimeView;
+import club.heiqi.uilib.ui.screen.page.DocumentUiScope;
 
 import java.util.ArrayList;
 import java.util.Collections;
