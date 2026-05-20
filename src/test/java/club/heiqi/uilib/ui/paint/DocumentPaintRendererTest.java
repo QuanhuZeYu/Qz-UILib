@@ -10,8 +10,11 @@ import java.util.List;
 import org.junit.Assert;
 import org.junit.Test;
 
+import net.minecraft.util.ResourceLocation;
+
 import club.heiqi.uilib.ui.dom.ElementNode;
 import club.heiqi.uilib.ui.dom.UiDocument;
+import club.heiqi.uilib.ui.image.HostImageSource;
 import club.heiqi.uilib.ui.layout.DocumentEffectType;
 import club.heiqi.uilib.ui.layout.DocumentLayoutBox;
 import club.heiqi.uilib.ui.layout.DocumentLayoutEngine;
@@ -21,11 +24,13 @@ import club.heiqi.uilib.ui.style.UiBorderRadius;
 import club.heiqi.uilib.ui.style.UiBorderRadiusResolver;
 import club.heiqi.uilib.ui.style.UiBorderStyle;
 import club.heiqi.uilib.ui.style.UiBoxShadow;
+import club.heiqi.uilib.ui.style.UiBackgroundImage;
 import club.heiqi.uilib.ui.style.UiFontStyle;
 import club.heiqi.uilib.ui.style.UiFontWeight;
 import club.heiqi.uilib.ui.style.UiOutline;
 import club.heiqi.uilib.ui.style.UiOverflow;
 import club.heiqi.uilib.ui.style.UiStyleLength;
+import club.heiqi.uilib.ui.style.UiTextShadow;
 import club.heiqi.uilib.ui.theme.UiSurfaceStyle;
 import club.heiqi.uilib.ui.text.TextContentMode;
 
@@ -329,6 +334,66 @@ public class DocumentPaintRendererTest {
 
         Assert.assertEquals(1, renderContext.textCalls.size());
         Assert.assertEquals(TextContentMode.MINECRAFT_FORMATTED, renderContext.textCalls.get(0).textContentMode);
+    }
+
+    /**
+     * 验证 text-shadow 会在实际文本之前按自定义偏移和颜色绘制。
+     */
+    @Test
+    public void shouldRenderTextShadowBeforeText() {
+        UiDocument document = UiDocument.create();
+        ElementNode root = document.getRootElement();
+
+        root.style()
+                .setWidth(UiStyleLength.px(40))
+                .setTextShadow(UiTextShadow.of(2, 1, 0, 0xAA000000));
+        root.appendText("Hi");
+
+        RecordingUiRenderContext renderContext = new RecordingUiRenderContext();
+        DocumentPaintRenderer.render(renderContext, DocumentPaintEngine.buildPaintCommands(
+                DocumentLayoutEngine.layout(root, 80, 0)), 7, 11);
+
+        Assert.assertEquals(2, renderContext.textCalls.size());
+        Assert.assertEquals("Hi", renderContext.textCalls.get(0).text);
+        Assert.assertEquals(9, renderContext.textCalls.get(0).x);
+        Assert.assertEquals(12, renderContext.textCalls.get(0).y);
+        Assert.assertEquals(0xAA000000, renderContext.textCalls.get(0).color);
+        Assert.assertEquals("Hi", renderContext.textCalls.get(1).text);
+        Assert.assertEquals(7, renderContext.textCalls.get(1).x);
+        Assert.assertEquals(11, renderContext.textCalls.get(1).y);
+        Assert.assertEquals(0xFFFFFFFF, renderContext.textCalls.get(1).color);
+    }
+
+    /**
+     * 验证 background-image 样式会在元素圆角裁剪内绘制宿主图片。
+     */
+    @Test
+    public void shouldRenderBackgroundImageCommandToHostImage() {
+        UiDocument document = UiDocument.create();
+        ElementNode root = document.getRootElement();
+        HostImageSource source = HostImageSource.texture(new ResourceLocation("qz_uilib", "textures/test/card.png"),
+                64, 64);
+
+        root.style()
+                .setWidth(UiStyleLength.px(40))
+                .setHeight(UiStyleLength.px(20))
+                .setBorderRadius(UiStyleLength.px(6))
+                .setBackgroundImage(UiBackgroundImage.of(source));
+
+        RecordingUiRenderContext renderContext = new RecordingUiRenderContext();
+        DocumentPaintRenderer.render(renderContext, DocumentPaintEngine.buildPaintCommands(
+                DocumentLayoutEngine.layout(root, 80, 0)), 7, 11);
+
+        Assert.assertEquals(1, renderContext.clipCalls.size());
+        assertClipCall(renderContext.clipCalls.get(0), 7, 11, 47, 31, 6);
+        Assert.assertEquals(1, renderContext.hostImageCalls.size());
+        HostImageCall hostImageCall = renderContext.hostImageCalls.get(0);
+        Assert.assertSame(source, hostImageCall.source);
+        Assert.assertEquals(7, hostImageCall.left);
+        Assert.assertEquals(11, hostImageCall.top);
+        Assert.assertEquals(47, hostImageCall.right);
+        Assert.assertEquals(31, hostImageCall.bottom);
+        Assert.assertEquals(1, renderContext.popClipCount);
     }
 
     /**
@@ -881,6 +946,7 @@ public class DocumentPaintRendererTest {
         private final List<ClipCall> clipCalls = new ArrayList<ClipCall>();
         private final List<TextCall> textCalls = new ArrayList<TextCall>();
         private final List<BackdropCall> backdropCalls = new ArrayList<BackdropCall>();
+        private final List<HostImageCall> hostImageCalls = new ArrayList<HostImageCall>();
         private final List<PaintContextCall> paintContextCalls = new ArrayList<PaintContextCall>();
         private boolean simulatePaintContextLayer;
         private boolean paintContextLayerActive;
@@ -942,6 +1008,12 @@ public class DocumentPaintRendererTest {
         public void drawText(String text, int x, int y, int color, boolean shadow, TextContentMode textContentMode,
                 UiFontWeight fontWeight, UiFontStyle fontStyle) {
             textCalls.add(new TextCall(text, x, y, color, shadow, textContentMode, fontWeight, fontStyle));
+            notifyMainLayerContentChanged();
+        }
+
+        @Override
+        public void drawHostImage(HostImageSource source, int left, int top, int right, int bottom) {
+            hostImageCalls.add(new HostImageCall(source, left, top, right, bottom));
             notifyMainLayerContentChanged();
         }
 
@@ -1041,6 +1113,26 @@ public class DocumentPaintRendererTest {
             this.textContentMode = textContentMode;
             this.fontWeight = fontWeight == null ? UiFontWeight.NORMAL : fontWeight;
             this.fontStyle = fontStyle == null ? UiFontStyle.NORMAL : fontStyle;
+        }
+    }
+
+    /**
+     * 单次宿主图片绘制记录。
+     */
+    private static final class HostImageCall {
+
+        private final HostImageSource source;
+        private final int left;
+        private final int top;
+        private final int right;
+        private final int bottom;
+
+        private HostImageCall(HostImageSource source, int left, int top, int right, int bottom) {
+            this.source = source;
+            this.left = left;
+            this.top = top;
+            this.right = right;
+            this.bottom = bottom;
         }
     }
 

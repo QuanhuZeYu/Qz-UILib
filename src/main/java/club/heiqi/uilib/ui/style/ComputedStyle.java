@@ -73,7 +73,11 @@ public final class ComputedStyle {
     private final UiBorderCollapse borderCollapse;
     private final UiCursor cursor;
     private final UiBorderRadius borderRadiusCorners;
+    private final UiBackgroundImage backgroundImage;
     private final UiTextDecoration textDecoration;
+    private final UiTextShadow textShadow;
+    private final UiTextTransform textTransform;
+    private final UiStyleLength textIndent;
     private final UiFontWeight fontWeight;
     private final UiFontStyle fontStyle;
     private final UiPointerEvents pointerEvents;
@@ -108,8 +112,9 @@ public final class ComputedStyle {
             UiStyleLength minWidth, UiStyleLength maxWidth, UiStyleLength minHeight, UiStyleLength maxHeight,
             UiStyleLength flexBasis, UiAlignSelf alignSelf, UiFlexWrap flexWrap,
             UiBoxShadow boxShadow, UiBorderStyle borderStyle, UiBorderCollapse borderCollapse, UiCursor cursor,
-            UiBorderRadius borderRadiusCorners, UiTextDecoration textDecoration, UiFontWeight fontWeight,
-            UiFontStyle fontStyle, UiPointerEvents pointerEvents,
+            UiBorderRadius borderRadiusCorners, UiBackgroundImage backgroundImage,
+            UiTextDecoration textDecoration, UiTextShadow textShadow, UiTextTransform textTransform,
+            UiStyleLength textIndent, UiFontWeight fontWeight, UiFontStyle fontStyle, UiPointerEvents pointerEvents,
             UiOutline outline, UiStyleInsets borderWidthSides, UiBorderColors borderColors,
             UiStyleLength letterSpacing, UiWordBreak wordBreak, UiOverflowWrap overflowWrap,
             Float aspectRatio, UiObjectFit objectFit, UiPseudoElementContent content,
@@ -173,7 +178,11 @@ public final class ComputedStyle {
         this.borderCollapse = borderCollapse == null ? UiBorderCollapse.SEPARATE : borderCollapse;
         this.cursor = cursor == null ? UiCursor.DEFAULT : cursor;
         this.borderRadiusCorners = borderRadiusCorners; // 可为 null（使用统一 borderRadius）
+        this.backgroundImage = backgroundImage; // 可为 null（无背景图）
         this.textDecoration = textDecoration == null ? UiTextDecoration.NONE : textDecoration;
+        this.textShadow = textShadow; // 可为 null（无文本阴影）
+        this.textTransform = textTransform == null ? UiTextTransform.NONE : textTransform;
+        this.textIndent = textIndent == null ? UiStyleLength.px(0) : textIndent;
         this.fontWeight = fontWeight == null ? UiFontWeight.NORMAL : fontWeight;
         this.fontStyle = fontStyle == null ? UiFontStyle.NORMAL : fontStyle;
         this.pointerEvents = pointerEvents == null ? UiPointerEvents.AUTO : pointerEvents;
@@ -516,12 +525,48 @@ public final class ComputedStyle {
     }
 
     /**
+     * 返回背景图值。
+     *
+     * @return 背景图；无背景图时返回 null
+     */
+    public UiBackgroundImage getBackgroundImage() {
+        return backgroundImage;
+    }
+
+    /**
      * 返回文本装饰线样式。
      *
      * @return 文本装饰线
      */
     public UiTextDecoration getTextDecoration() {
         return textDecoration;
+    }
+
+    /**
+     * 返回文本阴影。
+     *
+     * @return 文本阴影；无阴影时返回 null
+     */
+    public UiTextShadow getTextShadow() {
+        return textShadow;
+    }
+
+    /**
+     * 返回文本大小写变换模式。
+     *
+     * @return 文本变换模式
+     */
+    public UiTextTransform getTextTransform() {
+        return textTransform;
+    }
+
+    /**
+     * 返回首行文本缩进。
+     *
+     * @return 首行文本缩进
+     */
+    public UiStyleLength getTextIndent() {
+        return textIndent;
     }
 
     /**

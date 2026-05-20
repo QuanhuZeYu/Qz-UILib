@@ -30,6 +30,7 @@ import club.heiqi.uilib.ui.style.UiPosition;
 import club.heiqi.uilib.ui.style.UiStyleInsets;
 import club.heiqi.uilib.ui.style.UiStyleLength;
 import club.heiqi.uilib.ui.style.UiTextOverflow;
+import club.heiqi.uilib.ui.style.UiTextTransform;
 import club.heiqi.uilib.ui.style.UiVerticalAlign;
 import club.heiqi.uilib.ui.style.UiWhiteSpace;
 import club.heiqi.uilib.ui.style.UiWordBreak;
@@ -1105,6 +1106,76 @@ public class DocumentLayoutEngineTest {
 
         Assert.assertEquals(1, rootBox.getTextRuns().size());
         assertTextRun(rootBox.getTextRuns().get(0), "ab\u2026", 0, 0, 42, 18);
+    }
+
+    /**
+     * 验证 text-transform 会参与文本测量与断行，text-indent 只影响首行起点。
+     */
+    @Test
+    public void shouldApplyTextTransformAndTextIndentToTextRuns() {
+        UiDocument document = UiDocument.create();
+        ElementNode root = document.getRootElement();
+
+        root.style()
+                .setWidth(UiStyleLength.px(32))
+                .setTextTransform(UiTextTransform.UPPERCASE)
+                .setTextIndent(UiStyleLength.px(8));
+        root.appendText("ab cd");
+
+        DocumentLayoutBox rootBox = DocumentLayoutEngine.layout(root, 80, 0,
+                new DeterministicTextMeasureService());
+
+        Assert.assertEquals(2, rootBox.getTextRuns().size());
+        assertTextRun(rootBox.getTextRuns().get(0), "AB", 8, 0, 16, 18);
+        assertTextRun(rootBox.getTextRuns().get(1), "CD", 0, 18, 16, 18);
+    }
+
+    /**
+     * 验证新增 white-space 模式会分别保留空白、保留换行或禁止软换行。
+     */
+    @Test
+    public void shouldLayoutPreWhiteSpaceModes() {
+        UiDocument preWrapDocument = UiDocument.create();
+        ElementNode preWrapRoot = preWrapDocument.getRootElement();
+        preWrapRoot.style()
+                .setWidth(UiStyleLength.px(64))
+                .setWhiteSpace(UiWhiteSpace.PRE_WRAP);
+        preWrapRoot.appendText("A  B\nC");
+
+        DocumentLayoutBox preWrapBox = DocumentLayoutEngine.layout(preWrapRoot, 80, 0,
+                new DeterministicTextMeasureService());
+
+        Assert.assertEquals(2, preWrapBox.getTextRuns().size());
+        assertTextRun(preWrapBox.getTextRuns().get(0), "A  B", 0, 0, 32, 18);
+        assertTextRun(preWrapBox.getTextRuns().get(1), "C", 0, 18, 8, 18);
+
+        UiDocument preLineDocument = UiDocument.create();
+        ElementNode preLineRoot = preLineDocument.getRootElement();
+        preLineRoot.style()
+                .setWidth(UiStyleLength.px(64))
+                .setWhiteSpace(UiWhiteSpace.PRE_LINE);
+        preLineRoot.appendText("A   B\nC");
+
+        DocumentLayoutBox preLineBox = DocumentLayoutEngine.layout(preLineRoot, 80, 0,
+                new DeterministicTextMeasureService());
+
+        Assert.assertEquals(2, preLineBox.getTextRuns().size());
+        assertTextRun(preLineBox.getTextRuns().get(0), "A B", 0, 0, 24, 18);
+        assertTextRun(preLineBox.getTextRuns().get(1), "C", 0, 18, 8, 18);
+
+        UiDocument preDocument = UiDocument.create();
+        ElementNode preRoot = preDocument.getRootElement();
+        preRoot.style()
+                .setWidth(UiStyleLength.px(16))
+                .setWhiteSpace(UiWhiteSpace.PRE);
+        preRoot.appendText("ABCD\nE");
+
+        DocumentLayoutBox preBox = DocumentLayoutEngine.layout(preRoot, 80, 0,
+                new DeterministicTextMeasureService());
+
+        Assert.assertEquals(2, preBox.getTextRuns().size());
+        assertTextRun(preBox.getTextRuns().get(0), "ABCD", 0, 0, 16, 18);
+        assertTextRun(preBox.getTextRuns().get(1), "E", 0, 18, 8, 18);
     }
 
     /**

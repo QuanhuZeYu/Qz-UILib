@@ -237,8 +237,16 @@ public final class UiStyleResolver {
                 parentStyle == null ? UiCursor.DEFAULT : parentStyle.getCursor());
         UiBorderRadius borderRadiusCorners = cascade(inlineStyle, matchingRules,
                 UiStyleProperty.BORDER_RADIUS_CORNERS, null, parentStyle == null ? null : parentStyle.getBorderRadiusCorners());
+        UiBackgroundImage backgroundImage = cascade(inlineStyle, matchingRules, UiStyleProperty.BACKGROUND_IMAGE, null,
+                parentStyle == null ? null : parentStyle.getBackgroundImage());
         UiTextDecoration textDecoration = cascade(inlineStyle, matchingRules, UiStyleProperty.TEXT_DECORATION,
                 UiTextDecoration.NONE, parentStyle == null ? UiTextDecoration.NONE : parentStyle.getTextDecoration());
+        UiTextShadow textShadow = cascade(inlineStyle, matchingRules, UiStyleProperty.TEXT_SHADOW, null,
+                parentStyle == null ? null : parentStyle.getTextShadow());
+        UiTextTransform textTransform = cascade(inlineStyle, matchingRules, UiStyleProperty.TEXT_TRANSFORM,
+                UiTextTransform.NONE, parentStyle == null ? UiTextTransform.NONE : parentStyle.getTextTransform());
+        UiStyleLength textIndent = cascade(inlineStyle, matchingRules, UiStyleProperty.TEXT_INDENT, UiStyleLength.px(0),
+                parentStyle == null ? UiStyleLength.px(0) : parentStyle.getTextIndent());
         UiFontWeight fontWeight = cascade(inlineStyle, matchingRules, UiStyleProperty.FONT_WEIGHT, UiFontWeight.NORMAL,
                 parentStyle == null ? UiFontWeight.NORMAL : parentStyle.getFontWeight());
         UiFontStyle fontStyle = cascade(inlineStyle, matchingRules, UiStyleProperty.FONT_STYLE, UiFontStyle.NORMAL,
@@ -305,8 +313,8 @@ public final class UiStyleResolver {
                 animationFillMode, animationTimingFunction, backdropBlurRadius, backdropSaturationValue.floatValue(),
                 lineHeight, textAlign, whiteSpace, textOverflow, visibility,
                 minWidth, maxWidth, minHeight, maxHeight, flexBasis, alignSelf, flexWrap,
-                boxShadow, borderStyle, borderCollapse, cursor, borderRadiusCorners, textDecoration, fontWeight,
-                fontStyle,
+                boxShadow, borderStyle, borderCollapse, cursor, borderRadiusCorners, backgroundImage, textDecoration,
+                textShadow, textTransform, textIndent, fontWeight, fontStyle,
                 pointerEvents, outline, borderWidthSides, borderColors, letterSpacing, wordBreak, overflowWrap,
                 aspectRatio, objectFit, content, scrollbarColor, scrollbarWidth, listStyleType);
     }
@@ -437,7 +445,11 @@ public final class UiStyleResolver {
             case BORDER_COLLAPSE: return (T) declaration.getBorderCollapse();
             case CURSOR: return (T) declaration.getCursor();
             case BORDER_RADIUS_CORNERS: return (T) declaration.getBorderRadiusCorners();
+            case BACKGROUND_IMAGE: return (T) declaration.getBackgroundImage();
             case TEXT_DECORATION: return (T) declaration.getTextDecoration();
+            case TEXT_SHADOW: return (T) declaration.getTextShadow();
+            case TEXT_TRANSFORM: return (T) declaration.getTextTransform();
+            case TEXT_INDENT: return (T) declaration.getTextIndent();
             case FONT_WEIGHT: return (T) declaration.getFontWeight();
             case FONT_STYLE: return (T) declaration.getFontStyle();
             case POINTER_EVENTS: return (T) declaration.getPointerEvents();

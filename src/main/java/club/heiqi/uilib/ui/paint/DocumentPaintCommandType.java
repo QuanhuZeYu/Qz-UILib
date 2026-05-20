@@ -8,6 +8,7 @@ public enum DocumentPaintCommandType {
     PAINT_CONTEXT_END,
     BACKDROP_FILTER,
     BACKGROUND,
+    BACKGROUND_IMAGE,
     BOX_SHADOW,
     BOX_SHADOW_INSET,
     BORDER,

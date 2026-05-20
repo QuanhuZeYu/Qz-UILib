@@ -16,7 +16,7 @@
 
 更值得注意的是，部分能力在 AI 记忆文档或使用文档中已列为"当前可用"，但源码核实发现实际仅完成了样式声明和级联计算链路，尚未接通到布局或渲染执行层，属于**文档比实现更乐观**的情形，需要特别标注边界。
 
-> **后续核实（2026-05-20）**：第二节"部分实现"的 8 项差距已全部在后续开发中补齐——cursor 已接通 SDL 系统光标、overflow-wrap/word-break 已接通布局引擎、font-weight/font-style 已全链路开放、scrollIntoView/scrollTo/focus/blur 已公开为 ElementNode API、滚动条样式已从硬编码升级为 CSS 属性、select 下拉控件已实现标准弹出面板体验、nextSibling/previousSibling 已公开。第一节中 `position:sticky`、flex `order`、`calc(percent, pixelOffset)` 最小混合长度也已补齐。当前剩余未实现项集中在 CSS Grid、transform、gradient、float、textarea 多行文本、`::before`/`::after` 伪元素等架构改动较大的能力。
+> **后续核实（2026-05-20）**：第二节"部分实现"的 8 项差距已全部在后续开发中补齐——cursor 已接通 SDL 系统光标、overflow-wrap/word-break 已接通布局引擎、font-weight/font-style 已全链路开放、scrollIntoView/scrollTo/focus/blur 已公开为 ElementNode API、滚动条样式已从硬编码升级为 CSS 属性、select 下拉控件已实现标准弹出面板体验、nextSibling/previousSibling 已公开。第一节中 `position:sticky`、flex `order`、`calc(percent, pixelOffset)` 最小混合长度、`text-shadow`、`text-transform`、`text-indent`、`white-space:pre/pre-wrap/pre-line` 与单图 `background-image` 也已补齐。当前剩余未实现项集中在 CSS Grid、transform、gradient、多背景、多重阴影、float、textarea 软换行等边界。
 
 ---
 
@@ -51,6 +51,7 @@
 | **`background-image` CSS 属性** | 背景图需通过控件 API 设置；不支持声明式 `background-image: url(...)` | `UiStyleDeclaration.java` 无 backgroundImage 字段；仅有 `DocumentHostImageDecorations` 控件 API |
 
 - **后续状态（2026-05-20）**：当前源码已在 `UiStyleLength` 增加 `calc(percent, pixelOffset)` 最小混合长度，统一 `resolve(...)` 后进入宽高、inset、margin、padding、border、gap 等布局计算；仍不提供 CSS 字符串表达式解析器或任意嵌套表达式。
+- **后续状态（2026-05-20）**：`text-shadow`、`text-transform`、`text-indent`、`white-space:pre/pre-wrap/pre-line` 已接入样式级联与布局/绘制；`background-image` 已接入单张 `HostImageSource` 背景图绘制。当前仍不提供渐变、多背景、多重阴影、CSS `url(...)` 字符串解析或完整 background-repeat/position/size 模型。
 
 ### CSS 选择器与规则
 
@@ -174,18 +175,18 @@
 | 🔴 高 | **`overflow-wrap`/`word-break` 接通布局** | 样式已声明，仅需在 `DocumentLayoutEngine` 文本换行段消费这两个属性 | ✅ 已完成（2026-05-20） |
 | 🔴 高 | **`focus()`/`blur()` 公开 API** | 内部已完整实现，仅需将现有 private 方法升为 public 或在 `ElementNode` 上提供代理 | ✅ 已完成（2026-05-19） |
 | 🔴 高 | **`scrollIntoView` 公开 API** | `DocumentScrollState.scrollToReveal()` 已存在，仅需在 `ElementNode` 上暴露 | ✅ 已完成（2026-05-19） |
-| 🔴 高 | **`textarea` 多行文本** | 表单场景几乎必备，当前完全缺失，且单行文本输入控件可作为基础复用 | 待实现 |
+| 🔴 高 | **`textarea` 多行文本** | 表单场景几乎必备，当前已具备最小多行编辑能力，但仍缺浏览器 `pre-wrap` 式软换行 | 最小多行已完成，软换行待完善 |
 | 🟡 中 | **`font-weight`/`font-style` CSS 属性** | 底层 `FontType` 已有 BOLD/ITALIC，仅需在样式声明和级联层添加字段并接通 `TextStyle` | ✅ 已完成（2026-05-19） |
-| 🟡 中 | **`transitionend` 事件** | 动画系统已有完成状态检测，仅需在 timeline 的 tick 结束判断点派发事件给页面作者 | 待实现 |
-| 🟡 中 | **`dblclick` 事件** | 在 click handler 入口处增加时间间隔检测即可实现 | 待实现 |
-| 🟡 中 | **后代/子代选择器** | 扩展 `UiSelector` 的解析器，增加组合器匹配逻辑；无需修改级联计算框架 | 待实现 |
-| 🟡 中 | **`:first-child` / `:last-child` / `:nth-child`** | 在 `UiPseudoClass` 中添加结构伪类，并在 `UiStyleResolver.compute()` 中计算结构位置 | 待实现 |
-| 🟡 中 | **`white-space: pre-wrap`** | 在 `UiWhiteSpace` 枚举中添加值，并在布局引擎文本测量中处理保留换行符的断行逻辑 | 待实现 |
+| 🟡 中 | **`transitionend` 事件** | 动画系统已有完成状态检测，仅需在 timeline 的 tick 结束判断点派发事件给页面作者 | ✅ 已完成（2026-05-20） |
+| 🟡 中 | **`dblclick` 事件** | 在 click handler 入口处增加时间间隔检测即可实现 | ✅ 已完成（2026-05-20） |
+| 🟡 中 | **后代/子代选择器** | 扩展 `UiSelector` 的解析器，增加组合器匹配逻辑；无需修改级联计算框架 | ✅ 已完成（2026-05-20） |
+| 🟡 中 | **`:first-child` / `:last-child` / `:nth-child`** | 在 `UiPseudoClass` 中添加结构伪类，并在 `UiStyleResolver.compute()` 中计算结构位置 | ✅ 已完成（2026-05-20） |
+| 🟡 中 | **`white-space: pre-wrap`** | 在 `UiWhiteSpace` 枚举中添加值，并在布局引擎文本测量中处理保留换行符的断行逻辑 | ✅ 已完成（2026-05-20） |
 | 🟡 中 | **scrollbar 样式可自定义** | 在 `UiStyleDeclaration` 增加 scrollbar-color/scrollbar-width 属性，`DocumentPaintEngine` 消费 | ✅ 已完成（2026-05-20） |
 | 🟠 低 | **CSS `calc()`** | 需要新建长度表达式解析器，改动面较大 | 最小 calc(percent, pixelOffset) 已完成 |
 | 🟠 低 | **CSS transform** | 需要在绘制层引入变换矩阵堆栈，改动较大但效果显著 | 待实现 |
 | 🟠 低 | **gradient 渐变** | 需要新建渐变背景绘制路径，可作为独立功能渐进实现 | 待实现 |
-| 🟠 低 | **`::before`/`::after` 伪元素** | 需要在布局阶段动态插入伪元素节点，架构改动较大 | 待实现 |
+| 🟠 低 | **`::before`/`::after` 伪元素** | 需要在布局阶段动态插入伪元素节点，架构改动较大 | 最小文本闭环已完成（2026-05-20） |
 
 ---
 

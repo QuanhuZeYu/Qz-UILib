@@ -15,12 +15,14 @@ import club.heiqi.uilib.ui.style.UiBorderColors;
 import club.heiqi.uilib.ui.style.UiBorderRadiusResolver;
 import club.heiqi.uilib.ui.style.UiBorderStyle;
 import club.heiqi.uilib.ui.style.UiBoxShadow;
+import club.heiqi.uilib.ui.style.UiBackgroundImage;
 import club.heiqi.uilib.ui.style.UiDisplay;
 import club.heiqi.uilib.ui.style.UiOutline;
 import club.heiqi.uilib.ui.style.UiPosition;
 import club.heiqi.uilib.ui.style.UiStyleInsets;
 import club.heiqi.uilib.ui.style.UiStyleResolver;
 import club.heiqi.uilib.ui.style.UiBorderCollapse;
+import club.heiqi.uilib.ui.style.UiTextShadow;
 import club.heiqi.uilib.ui.style.UiVisibility;
 import club.heiqi.uilib.ui.theme.UiSurfaceStyle;
 
@@ -184,6 +186,10 @@ public final class DocumentPaintRenderer {
                             resolveCommandCornerRadii(command, true), command.getCornerMask()));
             return;
         }
+        if (command.getType() == DocumentPaintCommandType.BACKGROUND_IMAGE) {
+            renderBackgroundImage(context, command, offsetX, offsetY);
+            return;
+        }
         if (command.getType() == DocumentPaintCommandType.SCROLLBAR_TRACK
                 || command.getType() == DocumentPaintCommandType.SCROLLBAR_THUMB) {
             context.drawSurface(command.getLeft() + offsetX, command.getTop() + offsetY,
@@ -224,9 +230,61 @@ public final class DocumentPaintRenderer {
 
     private static void renderTextCommand(UiRenderContext context, DocumentPaintCommand command, int offsetX,
             int offsetY, RenderReplayState replayState) {
+        renderTextShadow(context, command, offsetX, offsetY, replayState.fallbackOpacity);
         context.drawText(command.getText(), command.getLeft() + offsetX, command.getTop() + offsetY,
                 applyOpacity(command.getColor(), replayState.fallbackOpacity), false,
                 command.getTextContentMode(), command.getFontWeight(), command.getFontStyle());
+    }
+
+    private static void renderBackgroundImage(UiRenderContext context, DocumentPaintCommand command, int offsetX,
+            int offsetY) {
+        UiBackgroundImage backgroundImage = command.getBackgroundImage();
+        if (backgroundImage == null) {
+            return;
+        }
+        int left = command.getLeft() + offsetX;
+        int top = command.getTop() + offsetY;
+        int right = command.getRight() + offsetX;
+        int bottom = command.getBottom() + offsetY;
+        context.pushClip(left, top, right, bottom, resolveCommandCornerRadii(command, true));
+        try {
+            context.drawHostImage(backgroundImage.getSource(), left, top, right, bottom);
+        } finally {
+            context.popClip();
+        }
+    }
+
+    private static void renderTextShadow(UiRenderContext context, DocumentPaintCommand command, int offsetX,
+            int offsetY, float fallbackOpacity) {
+        UiTextShadow textShadow = UiStyleResolver.compute(command.getElement()).getTextShadow();
+        if (textShadow == null) {
+            return;
+        }
+        int color = applyOpacity(textShadow.getColor(), fallbackOpacity);
+        if (((color >>> 24) & 0xFF) == 0) {
+            return;
+        }
+        int x = command.getLeft() + offsetX + textShadow.getOffsetX();
+        int y = command.getTop() + offsetY + textShadow.getOffsetY();
+        int blurRadius = Math.min(Math.max(0, textShadow.getBlurRadius()), 3);
+        if (blurRadius <= 0) {
+            context.drawText(command.getText(), x, y, color, false, command.getTextContentMode(),
+                    command.getFontWeight(), command.getFontStyle());
+            return;
+        }
+        int haloColor = fadeColor(color, 1, blurRadius + 2);
+        for (int radius = blurRadius; radius >= 1; radius--) {
+            context.drawText(command.getText(), x - radius, y, haloColor, false, command.getTextContentMode(),
+                    command.getFontWeight(), command.getFontStyle());
+            context.drawText(command.getText(), x + radius, y, haloColor, false, command.getTextContentMode(),
+                    command.getFontWeight(), command.getFontStyle());
+            context.drawText(command.getText(), x, y - radius, haloColor, false, command.getTextContentMode(),
+                    command.getFontWeight(), command.getFontStyle());
+            context.drawText(command.getText(), x, y + radius, haloColor, false, command.getTextContentMode(),
+                    command.getFontWeight(), command.getFontStyle());
+        }
+        context.drawText(command.getText(), x, y, color, false, command.getTextContentMode(),
+                command.getFontWeight(), command.getFontStyle());
     }
 
     private static boolean isBatchableTextCommand(DocumentPaintCommand command, RenderReplayState replayState) {

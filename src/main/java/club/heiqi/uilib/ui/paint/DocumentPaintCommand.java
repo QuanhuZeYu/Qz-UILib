@@ -4,6 +4,7 @@ import java.util.Objects;
 
 import club.heiqi.uilib.ui.dom.ElementNode;
 import club.heiqi.uilib.ui.layout.DocumentEffectType;
+import club.heiqi.uilib.ui.style.UiBackgroundImage;
 import club.heiqi.uilib.ui.style.UiFontStyle;
 import club.heiqi.uilib.ui.style.UiFontWeight;
 import club.heiqi.uilib.ui.style.UiBorderRadiusResolver;
@@ -33,6 +34,7 @@ public final class DocumentPaintCommand {
     private final TextContentMode textContentMode;
     private final UiFontWeight fontWeight;
     private final UiFontStyle fontStyle;
+    private UiBackgroundImage backgroundImage;
     private final DocumentCustomRenderer customRenderer;
     private final int backdropBlurRadius;
     private final float backdropSaturation;
@@ -140,6 +142,15 @@ public final class DocumentPaintCommand {
         this(type, element, left, top, right, bottom, color, borderWidth,
                 resolveLegacyBorderRadius(cornerRadii), cornerRadii, UiSurfaceStyle.CORNER_ALL, null,
                 TextContentMode.UILIB_RAW, UiFontWeight.NORMAL, UiFontStyle.NORMAL, null, 0, 1.0F, 1.0F, null);
+    }
+
+    DocumentPaintCommand(DocumentPaintCommandType type, ElementNode element, int left, int top, int right, int bottom,
+            UiBorderRadiusResolver.ResolvedCornerRadii cornerRadii, UiBackgroundImage backgroundImage) {
+        this(type, element, left, top, right, bottom, 0, 0, cornerRadii);
+        if (type != DocumentPaintCommandType.BACKGROUND_IMAGE) {
+            throw new IllegalArgumentException("backgroundImage command type expected");
+        }
+        this.backgroundImage = Objects.requireNonNull(backgroundImage, "backgroundImage");
     }
 
     DocumentPaintCommand(DocumentPaintCommandType type, ElementNode element, int left, int top, int right, int bottom,
@@ -271,6 +282,15 @@ public final class DocumentPaintCommand {
 
     public UiFontStyle getFontStyle() {
         return fontStyle;
+    }
+
+    /**
+     * 返回背景图值。
+     *
+     * @return 背景图值；非背景图命令返回 null
+     */
+    public UiBackgroundImage getBackgroundImage() {
+        return backgroundImage;
     }
 
     public DocumentCustomRenderer getCustomRenderer() {

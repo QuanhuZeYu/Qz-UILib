@@ -82,7 +82,11 @@ public final class UiStyleDeclaration {
     private UiBorderCollapse borderCollapse;
     private UiCursor cursor;
     private UiBorderRadius borderRadiusCorners;
+    private UiBackgroundImage backgroundImage;
     private UiTextDecoration textDecoration;
+    private UiTextShadow textShadow;
+    private UiTextTransform textTransform;
+    private UiStyleLength textIndent;
     private UiFontWeight fontWeight;
     private UiFontStyle fontStyle;
     private UiPointerEvents pointerEvents;
@@ -1107,6 +1111,26 @@ public final class UiStyleDeclaration {
         return updateBorderRadiusCorners(null);
     }
 
+    public UiBackgroundImage getBackgroundImage() {
+        return backgroundImage;
+    }
+
+    /**
+     * 设置元素背景图。
+     *
+     * <p>当前支持单张宿主图片源，绘制阶段拉伸填充元素 border box。</p>
+     *
+     * @param backgroundImage 背景图值
+     * @return 当前声明
+     */
+    public UiStyleDeclaration setBackgroundImage(UiBackgroundImage backgroundImage) {
+        return updateBackgroundImage(Objects.requireNonNull(backgroundImage, "backgroundImage"));
+    }
+
+    public UiStyleDeclaration clearBackgroundImage() {
+        return updateBackgroundImage(null);
+    }
+
     public UiTextDecoration getTextDecoration() {
         return textDecoration;
     }
@@ -1123,6 +1147,73 @@ public final class UiStyleDeclaration {
 
     public UiStyleDeclaration clearTextDecoration() {
         return updateTextDecoration(null);
+    }
+
+    public UiTextShadow getTextShadow() {
+        return textShadow;
+    }
+
+    /**
+     * 设置文本阴影。
+     *
+     * @param textShadow 文本阴影值
+     * @return 当前声明
+     */
+    public UiStyleDeclaration setTextShadow(UiTextShadow textShadow) {
+        return updateTextShadow(Objects.requireNonNull(textShadow, "textShadow"));
+    }
+
+    /**
+     * 设置文本阴影便捷声明。
+     *
+     * @param offsetX X 轴偏移（像素）
+     * @param offsetY Y 轴偏移（像素）
+     * @param blurRadius 模糊半径（像素）
+     * @param color 阴影颜色（ARGB）
+     * @return 当前声明
+     */
+    public UiStyleDeclaration setTextShadow(int offsetX, int offsetY, int blurRadius, int color) {
+        return setTextShadow(UiTextShadow.of(offsetX, offsetY, blurRadius, color));
+    }
+
+    public UiStyleDeclaration clearTextShadow() {
+        return updateTextShadow(null);
+    }
+
+    public UiTextTransform getTextTransform() {
+        return textTransform;
+    }
+
+    /**
+     * 设置文本大小写变换。
+     *
+     * @param textTransform 大小写变换模式
+     * @return 当前声明
+     */
+    public UiStyleDeclaration setTextTransform(UiTextTransform textTransform) {
+        return updateTextTransform(Objects.requireNonNull(textTransform, "textTransform"));
+    }
+
+    public UiStyleDeclaration clearTextTransform() {
+        return updateTextTransform(null);
+    }
+
+    public UiStyleLength getTextIndent() {
+        return textIndent;
+    }
+
+    /**
+     * 设置首行文本缩进。
+     *
+     * @param textIndent 缩进长度
+     * @return 当前声明
+     */
+    public UiStyleDeclaration setTextIndent(UiStyleLength textIndent) {
+        return updateTextIndent(Objects.requireNonNull(textIndent, "textIndent"));
+    }
+
+    public UiStyleDeclaration clearTextIndent() {
+        return updateTextIndent(null);
     }
 
     public UiFontWeight getFontWeight() {
@@ -1797,10 +1888,34 @@ public final class UiStyleDeclaration {
                 UiStyleChangeImpact.PAINT);
     }
 
+    private UiStyleDeclaration updateBackgroundImage(UiBackgroundImage value) {
+        UiBackgroundImage previousValue = backgroundImage;
+        backgroundImage = value;
+        return updateProperty(UiStyleProperty.BACKGROUND_IMAGE, previousValue, value, UiStyleChangeImpact.PAINT);
+    }
+
     private UiStyleDeclaration updateTextDecoration(UiTextDecoration value) {
         UiTextDecoration previousValue = textDecoration;
         textDecoration = value;
         return updateProperty(UiStyleProperty.TEXT_DECORATION, previousValue, value, UiStyleChangeImpact.PAINT);
+    }
+
+    private UiStyleDeclaration updateTextShadow(UiTextShadow value) {
+        UiTextShadow previousValue = textShadow;
+        textShadow = value;
+        return updateProperty(UiStyleProperty.TEXT_SHADOW, previousValue, value, UiStyleChangeImpact.PAINT);
+    }
+
+    private UiStyleDeclaration updateTextTransform(UiTextTransform value) {
+        UiTextTransform previousValue = textTransform;
+        textTransform = value;
+        return updateProperty(UiStyleProperty.TEXT_TRANSFORM, previousValue, value, UiStyleChangeImpact.LAYOUT);
+    }
+
+    private UiStyleDeclaration updateTextIndent(UiStyleLength value) {
+        UiStyleLength previousValue = textIndent;
+        textIndent = value;
+        return updateProperty(UiStyleProperty.TEXT_INDENT, previousValue, value, UiStyleChangeImpact.LAYOUT);
     }
 
     private UiStyleDeclaration updateFontWeight(UiFontWeight value) {
@@ -1953,7 +2068,11 @@ public final class UiStyleDeclaration {
             case BORDER_COLLAPSE: return borderCollapse != null;
             case CURSOR: return cursor != null;
             case BORDER_RADIUS_CORNERS: return borderRadiusCorners != null;
+            case BACKGROUND_IMAGE: return backgroundImage != null;
             case TEXT_DECORATION: return textDecoration != null;
+            case TEXT_SHADOW: return textShadow != null;
+            case TEXT_TRANSFORM: return textTransform != null;
+            case TEXT_INDENT: return textIndent != null;
             case FONT_WEIGHT: return fontWeight != null;
             case FONT_STYLE: return fontStyle != null;
             case POINTER_EVENTS: return pointerEvents != null;
@@ -2033,7 +2152,11 @@ public final class UiStyleDeclaration {
             case BORDER_COLLAPSE: borderCollapse = null; break;
             case CURSOR: cursor = null; break;
             case BORDER_RADIUS_CORNERS: borderRadiusCorners = null; break;
+            case BACKGROUND_IMAGE: backgroundImage = null; break;
             case TEXT_DECORATION: textDecoration = null; break;
+            case TEXT_SHADOW: textShadow = null; break;
+            case TEXT_TRANSFORM: textTransform = null; break;
+            case TEXT_INDENT: textIndent = null; break;
             case FONT_WEIGHT: fontWeight = null; break;
             case FONT_STYLE: fontStyle = null; break;
             case POINTER_EVENTS: pointerEvents = null; break;
@@ -2121,7 +2244,11 @@ public final class UiStyleDeclaration {
         borderCollapse = resolvedSource.borderCollapse;
         cursor = resolvedSource.cursor;
         borderRadiusCorners = resolvedSource.borderRadiusCorners;
+        backgroundImage = resolvedSource.backgroundImage;
         textDecoration = resolvedSource.textDecoration;
+        textShadow = resolvedSource.textShadow;
+        textTransform = resolvedSource.textTransform;
+        textIndent = resolvedSource.textIndent;
         fontWeight = resolvedSource.fontWeight;
         fontStyle = resolvedSource.fontStyle;
         pointerEvents = resolvedSource.pointerEvents;

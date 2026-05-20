@@ -19,6 +19,7 @@ import club.heiqi.uilib.ui.layout.DocumentStickyPositioning;
 import club.heiqi.uilib.ui.layout.DocumentStickyPositioning.StickyContext;
 import club.heiqi.uilib.ui.layout.DocumentStackingPhase;
 import club.heiqi.uilib.ui.style.ComputedStyle;
+import club.heiqi.uilib.ui.style.UiBackgroundImage;
 import club.heiqi.uilib.ui.style.UiBorderRadiusResolver;
 import club.heiqi.uilib.ui.style.UiBoxShadow;
 import club.heiqi.uilib.ui.style.UiBorderStyle;
@@ -265,14 +266,22 @@ public final class DocumentPaintEngine {
         int color = resolveAnimatedColor(animationTimeline, box, DocumentAnimationProperty.BACKGROUND_COLOR,
                 style.getBackgroundColor(), currentTimeNanos);
         color = applyOpacity(color, opacity);
-        if (isTransparent(color) || box.getWidth() <= 0 || box.getHeight() <= 0) {
+        UiBackgroundImage backgroundImage = style.getBackgroundImage();
+        if (box.getWidth() <= 0 || box.getHeight() <= 0) {
             return;
         }
         UiBorderRadiusResolver.ResolvedCornerRadii cornerRadii = resolveBorderRadii(box, animationTimeline,
                 currentTimeNanos);
-        commands.add(new DocumentPaintCommand(DocumentPaintCommandType.BACKGROUND, box.getElement(),
-                box.getLeft() + offsetX, box.getTop() + offsetY, box.getRight() + offsetX,
-                box.getBottom() + offsetY, color, 0, cornerRadii));
+        if (!isTransparent(color)) {
+            commands.add(new DocumentPaintCommand(DocumentPaintCommandType.BACKGROUND, box.getElement(),
+                    box.getLeft() + offsetX, box.getTop() + offsetY, box.getRight() + offsetX,
+                    box.getBottom() + offsetY, color, 0, cornerRadii));
+        }
+        if (backgroundImage != null) {
+            commands.add(new DocumentPaintCommand(DocumentPaintCommandType.BACKGROUND_IMAGE, box.getElement(),
+                    box.getLeft() + offsetX, box.getTop() + offsetY, box.getRight() + offsetX,
+                    box.getBottom() + offsetY, cornerRadii, backgroundImage));
+        }
     }
 
     private static void appendBackdropFilterCommand(DocumentLayoutBox box, List<DocumentPaintCommand> commands,

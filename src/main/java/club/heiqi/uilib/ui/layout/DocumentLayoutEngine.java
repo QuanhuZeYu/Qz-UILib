@@ -4,6 +4,7 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Comparator;
 import java.util.List;
+import java.util.Locale;
 import java.util.Objects;
 
 import club.heiqi.uilib.ui.animation.DocumentAnimationProperty;
@@ -32,6 +33,7 @@ import club.heiqi.uilib.ui.style.UiStyleLength;
 import club.heiqi.uilib.ui.style.UiStyleResolver;
 import club.heiqi.uilib.ui.style.UiTextAlign;
 import club.heiqi.uilib.ui.style.UiTextOverflow;
+import club.heiqi.uilib.ui.style.UiTextTransform;
 import club.heiqi.uilib.ui.style.UiVerticalAlign;
 import club.heiqi.uilib.ui.style.UiVisibility;
 import club.heiqi.uilib.ui.style.UiWhiteSpace;
@@ -276,11 +278,13 @@ public final class DocumentLayoutEngine {
         List<ElementNode> fixedChildren = new ArrayList<ElementNode>();
         boolean usesInlineFormatting = hasVisibleInlineElementChild(element);
         ComputedStyle elementStyle = UiStyleResolver.compute(element);
+        int textIndent = resolveTextIndent(elementStyle, contentWidth);
         InlineLayoutContext inlineLayoutContext = usesInlineFormatting
                 ? new InlineLayoutContext(contentLeft, contentTop, contentWidth,
-                        resolveTextLineHeight(textMeasureService, elementStyle), textRuns, inlineFragments)
+                        resolveTextLineHeight(textMeasureService, elementStyle), textIndent, textRuns, inlineFragments)
                 : null;
         int childFlowTop = contentTop;
+        boolean textIndentPending = true;
         for (DocumentNode child : getGeneratedChildNodes(element)) {
             if (child instanceof TextNode) {
                 if (usesInlineFormatting) {
@@ -288,8 +292,13 @@ public final class DocumentLayoutEngine {
                             inlineLayoutContext, textMeasureService);
                     childFlowTop = inlineLayoutContext.getFlowBottom();
                 } else {
-                    childFlowTop = appendTextRun((TextNode) child, element, elementStyle, textRuns, contentLeft, childFlowTop,
-                            contentWidth, textMeasureService);
+                    TextNode textNode = (TextNode) child;
+                    int firstLineIndent = textIndentPending ? textIndent : 0;
+                    childFlowTop = appendTextRun(textNode, element, elementStyle, textRuns, contentLeft, childFlowTop,
+                            contentWidth, firstLineIndent, textMeasureService);
+                    if (textNode.getText() != null && !textNode.getText().isEmpty()) {
+                        textIndentPending = false;
+                    }
                 }
                 continue;
             }
@@ -713,41 +722,37 @@ public final class DocumentLayoutEngine {
     private static int appendTextRun(TextNode textNode, ElementNode ownerElement,
             List<DocumentLayoutTextRun> textRuns, int left, int top, int availableWidth,
             TextMeasureService textMeasureService) {
-        return appendTextRun(textNode, ownerElement, null, textRuns, left, top, availableWidth, textMeasureService);
+        return appendTextRun(textNode, ownerElement, null, textRuns, left, top, availableWidth, 0, textMeasureService);
     }
 
     private static int appendTextRun(TextNode textNode, ElementNode ownerElement, ComputedStyle ownerStyle,
-            List<DocumentLayoutTextRun> textRuns, int left, int top, int availableWidth,
+            List<DocumentLayoutTextRun> textRuns, int left, int top, int availableWidth, int firstLineIndent,
             TextMeasureService textMeasureService) {
-        String text = textNode.getText();
+        TextContentMode textContentMode = textNode.getTextContentMode();
+        String text = normalizeTextForLayout(textNode.getText(), ownerStyle, textContentMode);
         if (text == null || text.isEmpty()) {
             return top;
         }
         int lineHeight = resolveTextLineHeight(textMeasureService, ownerStyle);
-        TextContentMode textContentMode = textNode.getTextContentMode();
         UiWhiteSpace whiteSpace = ownerStyle != null ? ownerStyle.getWhiteSpace() : UiWhiteSpace.NORMAL;
         UiTextOverflow textOverflow = ownerStyle != null ? ownerStyle.getTextOverflow() : UiTextOverflow.CLIP;
         UiTextAlign textAlign = ownerStyle != null ? ownerStyle.getTextAlign() : UiTextAlign.START;
 
-        List<String> lines;
-        if (whiteSpace == UiWhiteSpace.NOWRAP) {
-            // nowrap：不换行，只取第一行
-            String singleLine = trimTextToWidth(textMeasureService, text, Integer.MAX_VALUE / 2, textContentMode,
-                    ownerStyle);
-            if (singleLine == null) {
-                singleLine = text;
-            }
-            lines = new ArrayList<String>();
-            lines.add(singleLine);
-        } else {
-            lines = wrapTextToWidth(text, availableWidth, ownerStyle, textContentMode, textMeasureService);
-        }
-        if (lines == null || lines.isEmpty()) {
-            return top;
-        }
+        String remainingText = text;
         int lineTop = top;
-        for (String line : lines) {
-            String resolvedLine = line == null ? "" : line;
+        int lineIndex = 0;
+        while (!remainingText.isEmpty()) {
+            int lineIndent = lineIndex == 0 ? firstLineIndent : 0;
+            int lineAvailableWidth = Math.max(0, availableWidth - lineIndent);
+            int segmentAvailableWidth = allowsSoftWrapping(whiteSpace)
+                    ? lineAvailableWidth
+                    : Integer.MAX_VALUE / 2;
+            TextWrapSegment segment = takeNextTextSegment(remainingText, segmentAvailableWidth, ownerStyle,
+                    textContentMode, textMeasureService);
+            if (segment.consumedLength <= 0) {
+                break;
+            }
+            String resolvedLine = segment.text == null ? "" : segment.text;
             int rawWidth = toUiTextSize(measureTextWidth(textMeasureService, resolvedLine, textContentMode,
                     ownerStyle));
             // text-overflow: ellipsis 处理（仅 nowrap 且内容超出时）
@@ -766,14 +771,16 @@ public final class DocumentLayoutEngine {
                 resolvedLine = trimmed + ellipsis;
                 rawWidth = Math.min(availableWidth,
                         toUiTextSize(measureTextWidth(textMeasureService, resolvedLine, textContentMode,
-                                ownerStyle)));
+                        ownerStyle)));
             }
-            int width = Math.max(0, Math.min(availableWidth, rawWidth));
+            int width = Math.max(0, Math.min(lineAvailableWidth, rawWidth));
             // text-align 偏移
-            int lineLeft = resolveTextAlignOffset(textAlign, availableWidth, width) + left;
+            int lineLeft = resolveTextAlignOffset(textAlign, lineAvailableWidth, width) + left + lineIndent;
             textRuns.add(new DocumentLayoutTextRun(textNode, ownerElement, resolvedLine, textContentMode, lineLeft,
                     lineTop, width, lineHeight));
             lineTop += lineHeight;
+            lineIndex++;
+            remainingText = remainingText.substring(Math.min(segment.consumedLength, remainingText.length()));
         }
         return lineTop;
     }
@@ -820,47 +827,53 @@ public final class DocumentLayoutEngine {
     private static void appendInlineTextRun(TextNode textNode, ElementNode ownerElement,
             List<InlineFragmentOwner> fragmentOwners, InlineLayoutContext inlineLayoutContext,
             TextMeasureService textMeasureService) {
-        String remainingText = textNode.getText();
+        ComputedStyle ownerStyle = UiStyleResolver.compute(ownerElement);
+        TextContentMode textContentMode = textNode.getTextContentMode();
+        String remainingText = normalizeTextForLayout(textNode.getText(), ownerStyle, textContentMode);
         if (remainingText == null || remainingText.isEmpty() || inlineLayoutContext.getLineWidth() <= 0) {
             return;
         }
-        ComputedStyle ownerStyle = UiStyleResolver.compute(ownerElement);
+        UiWhiteSpace whiteSpace = ownerStyle.getWhiteSpace();
         while (!remainingText.isEmpty()) {
-            if (ownerStyle.getWhiteSpace() != UiWhiteSpace.NOWRAP
+            if (allowsSoftWrapping(whiteSpace)
                     && inlineLayoutContext.getRemainingWidth() <= 0 && inlineLayoutContext.hasLineContent()) {
                 inlineLayoutContext.nextLine();
             }
             int remainingWidth = inlineLayoutContext.getRemainingWidth();
-            if (remainingWidth <= 0 && ownerStyle.getWhiteSpace() != UiWhiteSpace.NOWRAP) {
+            if (remainingWidth <= 0 && allowsSoftWrapping(whiteSpace)) {
                 return;
             }
-            TextContentMode textContentMode = textNode.getTextContentMode();
-            int segmentAvailableWidth = ownerStyle.getWhiteSpace() == UiWhiteSpace.NOWRAP
-                    ? Integer.MAX_VALUE / 2
-                    : remainingWidth;
+            int segmentAvailableWidth = allowsSoftWrapping(whiteSpace) ? remainingWidth : Integer.MAX_VALUE / 2;
             TextWrapSegment segmentResult = takeNextTextSegment(remainingText, segmentAvailableWidth, ownerStyle,
                     textContentMode, textMeasureService);
             String segment = segmentResult.text;
             if (segment.isEmpty()) {
-                remainingText = remainingText.substring(segmentResult.consumedLength);
+                remainingText = remainingText.substring(Math.min(segmentResult.consumedLength, remainingText.length()));
+                if (segmentResult.forceLineBreak) {
+                    inlineLayoutContext.forceLineBreak();
+                }
                 continue;
             }
             int width = Math.max(0, toUiTextSize(measureTextWidth(textMeasureService, segment, textContentMode,
                     ownerStyle)));
-            if (ownerStyle.getWhiteSpace() != UiWhiteSpace.NOWRAP
+            if (allowsSoftWrapping(whiteSpace)
                     && width > remainingWidth && inlineLayoutContext.hasLineContent()) {
                 inlineLayoutContext.nextLine();
                 continue;
             }
-            if (ownerStyle.getWhiteSpace() != UiWhiteSpace.NOWRAP) {
+            if (allowsSoftWrapping(whiteSpace)) {
                 width = Math.min(width, inlineLayoutContext.getRemainingWidth());
             }
             inlineLayoutContext.appendTextRun(textNode, ownerElement, segment, inlineLayoutContext.getCursorLeft(),
                     width, fragmentOwners);
             appendInlineFragments(fragmentOwners, inlineLayoutContext.getCursorLeft(), width, inlineLayoutContext);
             inlineLayoutContext.advance(width);
-            remainingText = remainingText.substring(segmentResult.consumedLength);
-            if (ownerStyle.getWhiteSpace() != UiWhiteSpace.NOWRAP
+            remainingText = remainingText.substring(Math.min(segmentResult.consumedLength, remainingText.length()));
+            if (segmentResult.forceLineBreak) {
+                inlineLayoutContext.forceLineBreak();
+                continue;
+            }
+            if (allowsSoftWrapping(whiteSpace)
                     && !remainingText.isEmpty() && inlineLayoutContext.getRemainingWidth() <= 0) {
                 inlineLayoutContext.nextLine();
             }
@@ -899,15 +912,20 @@ public final class DocumentLayoutEngine {
         if (text == null || text.isEmpty()) {
             return new TextWrapSegment("", 0);
         }
-        if (ownerStyle != null && ownerStyle.getWhiteSpace() == UiWhiteSpace.NOWRAP) {
+        UiWhiteSpace whiteSpace = resolveWhiteSpace(ownerStyle);
+        if (!allowsSoftWrapping(whiteSpace) && !preservesHardLineBreaks(whiteSpace)) {
             return new TextWrapSegment(text, text.length());
         }
-        int hardLineBreakStart = findHardLineBreakStart(text);
+        int hardLineBreakStart = preservesHardLineBreaks(whiteSpace) ? findHardLineBreakStart(text) : text.length();
         int hardLineBreakLength = hardLineBreakStart < text.length()
                 ? resolveHardLineBreakLength(text, hardLineBreakStart) : 0;
         String paragraph = text.substring(0, hardLineBreakStart);
+        if (!allowsSoftWrapping(whiteSpace)) {
+            int consumedLength = paragraph.length() + hardLineBreakLength;
+            return new TextWrapSegment(paragraph, consumedLength, hardLineBreakLength > 0);
+        }
         if (paragraph.isEmpty()) {
-            return new TextWrapSegment("", hardLineBreakLength);
+            return new TextWrapSegment("", hardLineBreakLength, hardLineBreakLength > 0);
         }
 
         UiWordBreak wordBreak = ownerStyle == null ? UiWordBreak.NORMAL : ownerStyle.getWordBreak();
@@ -934,15 +952,205 @@ public final class DocumentLayoutEngine {
 
         int consumedLength = Math.max(0, Math.min(breakPoint.consumedEnd, paragraph.length()));
         int textEnd = Math.max(0, Math.min(breakPoint.textEnd, consumedLength));
+        boolean forceLineBreak = false;
         if (consumedLength >= paragraph.length()) {
             consumedLength += hardLineBreakLength;
+            forceLineBreak = hardLineBreakLength > 0;
         }
         if (consumedLength <= 0) {
             int firstUnitLength = firstTextUnitLength(paragraph, textContentMode);
             consumedLength = firstUnitLength;
             textEnd = firstUnitLength;
         }
-        return new TextWrapSegment(paragraph.substring(0, textEnd), consumedLength);
+        return new TextWrapSegment(paragraph.substring(0, textEnd), consumedLength, forceLineBreak);
+    }
+
+    private static UiWhiteSpace resolveWhiteSpace(ComputedStyle ownerStyle) {
+        return ownerStyle == null ? UiWhiteSpace.NORMAL : ownerStyle.getWhiteSpace();
+    }
+
+    private static boolean allowsSoftWrapping(UiWhiteSpace whiteSpace) {
+        return whiteSpace != UiWhiteSpace.NOWRAP && whiteSpace != UiWhiteSpace.PRE;
+    }
+
+    private static boolean preservesHardLineBreaks(UiWhiteSpace whiteSpace) {
+        return whiteSpace == UiWhiteSpace.PRE || whiteSpace == UiWhiteSpace.PRE_WRAP
+                || whiteSpace == UiWhiteSpace.PRE_LINE;
+    }
+
+    private static String normalizeTextForLayout(String text, ComputedStyle ownerStyle,
+            TextContentMode textContentMode) {
+        if (text == null || text.isEmpty()) {
+            return text;
+        }
+        String whitespaceNormalized = normalizeWhiteSpaceForLayout(text, resolveWhiteSpace(ownerStyle),
+                textContentMode);
+        return applyTextTransform(whitespaceNormalized, ownerStyle == null ? UiTextTransform.NONE
+                : ownerStyle.getTextTransform(), textContentMode);
+    }
+
+    private static String normalizeWhiteSpaceForLayout(String text, UiWhiteSpace whiteSpace,
+            TextContentMode textContentMode) {
+        if (whiteSpace == UiWhiteSpace.PRE || whiteSpace == UiWhiteSpace.PRE_WRAP) {
+            return normalizePreservedLineBreaks(text, textContentMode, true);
+        }
+        if (whiteSpace == UiWhiteSpace.PRE_LINE) {
+            return normalizePreLineWhiteSpace(text, textContentMode);
+        }
+        return collapseAllWhiteSpace(text, textContentMode);
+    }
+
+    private static String normalizePreservedLineBreaks(String text, TextContentMode textContentMode,
+            boolean preserveHorizontalSpaces) {
+        StringBuilder builder = new StringBuilder(text.length());
+        for (int index = 0; index < text.length();) {
+            if (isFormattingCodeStart(text, index, textContentMode)) {
+                builder.append(text, index, index + 2);
+                index += 2;
+                continue;
+            }
+            char value = text.charAt(index);
+            if (value == '\r') {
+                builder.append('\n');
+                index += index + 1 < text.length() && text.charAt(index + 1) == '\n' ? 2 : 1;
+                continue;
+            }
+            if (value == '\n') {
+                builder.append('\n');
+                index++;
+                continue;
+            }
+            if (value == '\t') {
+                builder.append(preserveHorizontalSpaces ? "    " : " ");
+                index++;
+                continue;
+            }
+            builder.append(value);
+            index++;
+        }
+        return builder.toString();
+    }
+
+    private static String normalizePreLineWhiteSpace(String text, TextContentMode textContentMode) {
+        StringBuilder builder = new StringBuilder(text.length());
+        boolean pendingSpace = false;
+        for (int index = 0; index < text.length();) {
+            if (isFormattingCodeStart(text, index, textContentMode)) {
+                if (pendingSpace && builder.length() > 0 && builder.charAt(builder.length() - 1) != '\n') {
+                    builder.append(' ');
+                }
+                pendingSpace = false;
+                builder.append(text, index, index + 2);
+                index += 2;
+                continue;
+            }
+            char value = text.charAt(index);
+            if (value == '\r' || value == '\n') {
+                pendingSpace = false;
+                if (builder.length() > 0 && builder.charAt(builder.length() - 1) == ' ') {
+                    builder.setLength(builder.length() - 1);
+                }
+                builder.append('\n');
+                index += value == '\r' && index + 1 < text.length() && text.charAt(index + 1) == '\n' ? 2 : 1;
+                continue;
+            }
+            if (Character.isWhitespace(value)) {
+                pendingSpace = true;
+                index++;
+                continue;
+            }
+            if (pendingSpace && builder.length() > 0 && builder.charAt(builder.length() - 1) != '\n') {
+                builder.append(' ');
+            }
+            pendingSpace = false;
+            builder.append(value);
+            index++;
+        }
+        if (pendingSpace && builder.length() > 0 && builder.charAt(builder.length() - 1) != '\n') {
+            builder.append(' ');
+        }
+        return builder.toString();
+    }
+
+    private static String collapseAllWhiteSpace(String text, TextContentMode textContentMode) {
+        StringBuilder builder = new StringBuilder(text.length());
+        boolean pendingSpace = false;
+        for (int index = 0; index < text.length();) {
+            if (isFormattingCodeStart(text, index, textContentMode)) {
+                if (pendingSpace && builder.length() > 0) {
+                    builder.append(' ');
+                }
+                pendingSpace = false;
+                builder.append(text, index, index + 2);
+                index += 2;
+                continue;
+            }
+            int codePoint = text.codePointAt(index);
+            if (Character.isWhitespace(codePoint)) {
+                pendingSpace = true;
+                index += Character.charCount(codePoint);
+                continue;
+            }
+            if (pendingSpace && builder.length() > 0) {
+                builder.append(' ');
+            }
+            pendingSpace = false;
+            builder.appendCodePoint(codePoint);
+            index += Character.charCount(codePoint);
+        }
+        if (pendingSpace && builder.length() > 0) {
+            builder.append(' ');
+        }
+        return builder.toString();
+    }
+
+    private static String applyTextTransform(String text, UiTextTransform textTransform,
+            TextContentMode textContentMode) {
+        if (text == null || text.isEmpty() || textTransform == null || textTransform == UiTextTransform.NONE) {
+            return text;
+        }
+        StringBuilder builder = new StringBuilder(text.length());
+        boolean capitalizeNext = true;
+        for (int index = 0; index < text.length();) {
+            if (isFormattingCodeStart(text, index, textContentMode)) {
+                builder.append(text, index, index + 2);
+                index += 2;
+                continue;
+            }
+            int codePoint = text.codePointAt(index);
+            if (textTransform == UiTextTransform.UPPERCASE) {
+                builder.append(toUpperCaseText(codePoint));
+            } else if (textTransform == UiTextTransform.LOWERCASE) {
+                builder.append(toLowerCaseText(codePoint));
+            } else if (textTransform == UiTextTransform.CAPITALIZE) {
+                boolean wordCharacter = Character.isLetterOrDigit(codePoint) || codePoint == '_';
+                if (capitalizeNext && Character.isLetter(codePoint)) {
+                    builder.append(toUpperCaseText(codePoint));
+                } else {
+                    builder.appendCodePoint(codePoint);
+                }
+                capitalizeNext = !wordCharacter;
+            } else {
+                builder.appendCodePoint(codePoint);
+            }
+            index += Character.charCount(codePoint);
+        }
+        return builder.toString();
+    }
+
+    private static String toUpperCaseText(int codePoint) {
+        return new String(Character.toChars(codePoint)).toUpperCase(Locale.ROOT);
+    }
+
+    private static String toLowerCaseText(int codePoint) {
+        return new String(Character.toChars(codePoint)).toLowerCase(Locale.ROOT);
+    }
+
+    private static int resolveTextIndent(ComputedStyle style, int contentWidth) {
+        if (style == null || style.getTextIndent() == null) {
+            return 0;
+        }
+        return style.getTextIndent().resolve(contentWidth, 0);
     }
 
     private static int findHardLineBreakStart(String text) {
@@ -1653,15 +1861,33 @@ public final class DocumentLayoutEngine {
 
     private static int measureIntrinsicTextWidth(TextNode textNode, ComputedStyle ownerStyle,
             TextMeasureService textMeasureService) {
-        String text = textNode.getText();
+        TextContentMode textContentMode = textNode.getTextContentMode();
+        String text = normalizeTextForLayout(textNode.getText(), ownerStyle, textContentMode);
         if (text == null || text.isEmpty()) {
             return 0;
         }
         if (ownerStyle != null && (ownerStyle.getOverflowWrap() == UiOverflowWrap.ANYWHERE
                 || ownerStyle.getWordBreak() == UiWordBreak.BREAK_ALL)) {
-            return measureMaxTextUnitWidth(text, textNode.getTextContentMode(), textMeasureService, ownerStyle);
+            return measureMaxTextUnitWidth(text, textContentMode, textMeasureService, ownerStyle);
         }
-        return toUiTextSize(measureTextWidth(textMeasureService, text, textNode.getTextContentMode(), ownerStyle));
+        return measureMaxTextLineWidth(text, textContentMode, textMeasureService, ownerStyle);
+    }
+
+    private static int measureMaxTextLineWidth(String text, TextContentMode textContentMode,
+            TextMeasureService textMeasureService, ComputedStyle ownerStyle) {
+        int maxWidth = 0;
+        int lineStart = 0;
+        while (lineStart <= text.length()) {
+            int lineBreakStart = findHardLineBreakStart(text.substring(lineStart));
+            int lineEnd = lineStart + lineBreakStart;
+            maxWidth = Math.max(maxWidth, toUiTextSize(measureTextWidth(textMeasureService,
+                    text.substring(lineStart, lineEnd), textContentMode, ownerStyle)));
+            if (lineEnd >= text.length()) {
+                break;
+            }
+            lineStart = lineEnd + resolveHardLineBreakLength(text, lineEnd);
+        }
+        return maxWidth;
     }
 
     private static int measureMaxTextUnitWidth(String text, TextContentMode textContentMode,
@@ -1669,7 +1895,7 @@ public final class DocumentLayoutEngine {
         int maxWidth = 0;
         List<TextWrapUnit> units = collectTextWrapUnits(text, textContentMode);
         for (TextWrapUnit unit : units) {
-            if (unit.formattingCode) {
+            if (unit.formattingCode || unit.codePoint == '\r' || unit.codePoint == '\n') {
                 continue;
             }
             maxWidth = Math.max(maxWidth, toUiTextSize(measureTextWidth(textMeasureService,
@@ -2472,29 +2698,42 @@ public final class DocumentLayoutEngine {
      */
     private static final class InlineLayoutContext {
 
-        private final int lineLeft;
-        private final int lineWidth;
+        private final int baseLineLeft;
+        private final int baseLineWidth;
         private final int baseLineHeight;
+        private final int firstLineIndent;
         private final List<DocumentLayoutTextRun> textRuns;
         private final List<DocumentLayoutInlineFragment> inlineFragments;
         private final List<PendingInlineTextRun> pendingTextRuns = new ArrayList<PendingInlineTextRun>();
         private final List<PendingInlineFragment> pendingInlineFragments = new ArrayList<PendingInlineFragment>();
+        private int lineLeft;
+        private int lineWidth;
         private int lineTop;
         private int cursorLeft;
         private int maxBaselineTopEdge;
         private int maxBaselineBottomEdge;
         private int maxAlignedItemHeight;
         private boolean lineContentPresent;
+        private boolean firstLineActive;
 
-        private InlineLayoutContext(int lineLeft, int lineTop, int lineWidth, int lineHeight,
+        private InlineLayoutContext(int lineLeft, int lineTop, int lineWidth, int lineHeight, int firstLineIndent,
                 List<DocumentLayoutTextRun> textRuns, List<DocumentLayoutInlineFragment> inlineFragments) {
-            this.lineLeft = lineLeft;
+            this.baseLineLeft = lineLeft;
+            this.baseLineWidth = Math.max(0, lineWidth);
             this.lineTop = lineTop;
-            this.lineWidth = Math.max(0, lineWidth);
             this.baseLineHeight = Math.max(1, lineHeight);
+            this.firstLineIndent = firstLineIndent;
             this.textRuns = textRuns;
             this.inlineFragments = inlineFragments;
-            this.cursorLeft = lineLeft;
+            this.firstLineActive = true;
+            applyLineStart(true);
+        }
+
+        private void applyLineStart(boolean firstLine) {
+            int indent = firstLine ? firstLineIndent : 0;
+            lineLeft = baseLineLeft + indent;
+            lineWidth = Math.max(0, baseLineWidth - indent);
+            cursorLeft = lineLeft;
         }
 
         private int getLineWidth() {
@@ -2551,7 +2790,16 @@ public final class DocumentLayoutEngine {
         }
 
         private void nextLine() {
-            int nextLineTop = getFlowBottom();
+            breakLine(false);
+        }
+
+        private void forceLineBreak() {
+            breakLine(true);
+        }
+
+        private void breakLine(boolean forceAdvanceIfEmpty) {
+            int nextLineTop = lineContentPresent ? getFlowBottom()
+                    : forceAdvanceIfEmpty ? lineTop + baseLineHeight : lineTop;
             flushCurrentLine();
             lineTop = nextLineTop;
             resetCurrentLineState();
@@ -2630,7 +2878,8 @@ public final class DocumentLayoutEngine {
         }
 
         private void resetCurrentLineState() {
-            cursorLeft = lineLeft;
+            firstLineActive = false;
+            applyLineStart(false);
             maxBaselineTopEdge = 0;
             maxBaselineBottomEdge = 0;
             maxAlignedItemHeight = 0;
@@ -2712,10 +2961,16 @@ public final class DocumentLayoutEngine {
 
         private final String text;
         private final int consumedLength;
+        private final boolean forceLineBreak;
 
         private TextWrapSegment(String text, int consumedLength) {
+            this(text, consumedLength, false);
+        }
+
+        private TextWrapSegment(String text, int consumedLength, boolean forceLineBreak) {
             this.text = text == null ? "" : text;
             this.consumedLength = Math.max(0, consumedLength);
+            this.forceLineBreak = forceLineBreak;
         }
     }
 
