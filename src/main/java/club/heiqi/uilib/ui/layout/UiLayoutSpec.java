@@ -15,7 +15,6 @@ public class UiLayoutSpec {
     private int maxHeight = Integer.MAX_VALUE;
     private float grow;
     private float shrink = 1.0F;
-    private UiAlignSelf alignSelf = UiAlignSelf.AUTO;
 
     public UiInsets getMargin() {
         return margin;
@@ -115,26 +114,6 @@ public class UiLayoutSpec {
 
     public UiLayoutSpec setShrink(float shrink) {
         this.shrink = Math.max(0.0F, shrink);
-        return this;
-    }
-
-    /**
-     * 获取子项交叉轴自对齐方式。
-     *
-     * @return 自对齐方式
-     */
-    public UiAlignSelf getAlignSelf() {
-        return alignSelf;
-    }
-
-    /**
-     * 设置子项交叉轴自对齐方式。
-     *
-     * @param alignSelf 自对齐方式
-     * @return 当前规格
-     */
-    public UiLayoutSpec setAlignSelf(UiAlignSelf alignSelf) {
-        this.alignSelf = alignSelf == null ? UiAlignSelf.AUTO : alignSelf;
         return this;
     }
 }
