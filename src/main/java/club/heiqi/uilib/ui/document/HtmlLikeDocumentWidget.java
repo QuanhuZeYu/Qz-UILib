@@ -23,6 +23,7 @@ import club.heiqi.uilib.ui.dom.DocumentEventControl;
 import club.heiqi.uilib.ui.dom.DocumentEventPhase;
 import club.heiqi.uilib.ui.dom.DocumentElementDoubleClickEvent;
 import club.heiqi.uilib.ui.dom.DocumentElementDoubleClickHandler;
+import club.heiqi.uilib.ui.dom.DocumentLinkActivationEvent;
 import club.heiqi.uilib.ui.dom.DocumentElementDragEvent;
 import club.heiqi.uilib.ui.dom.DocumentElementDragEndHandler;
 import club.heiqi.uilib.ui.dom.DocumentElementDragHandler;
@@ -907,7 +908,33 @@ public final class HtmlLikeDocumentWidget extends Widget implements UiDocument.D
                 eventControl.stopPropagation();
             }
         }
+        if (!eventControl.isDefaultPrevented()) {
+            activateNearestLink(target, event.getTimeNanos());
+        }
         return eventControl.isPropagationStopped();
+    }
+
+    private void activateNearestLink(ElementNode target, long timeNanos) {
+        ElementNode linkElement = findNearestLinkElement(target);
+        if (linkElement == null) {
+            return;
+        }
+        String href = normalizeLinkHref(linkElement.getAttribute("href"));
+        if (href.isEmpty()) {
+            return;
+        }
+        if (href.startsWith("#")) {
+            String id = href.substring(1).trim();
+            if (!id.isEmpty()) {
+                ElementNode fragmentTarget = document.getElementById(id);
+                if (fragmentTarget != null) {
+                    fragmentTarget.scrollIntoView();
+                }
+            }
+        }
+        DocumentLinkActivationEvent activationEvent = new DocumentLinkActivationEvent(linkElement, href,
+                linkElement.getAttribute("target"), timeNanos);
+        document.__dispatchLinkActivation(activationEvent);
     }
 
     private void dispatchPostClickEvents(ElementNode target, UiMouseEvent event) {
@@ -1170,6 +1197,24 @@ public final class HtmlLikeDocumentWidget extends Widget implements UiDocument.D
                 }
             }
         }
+    }
+
+    private ElementNode findNearestLinkElement(ElementNode target) {
+        for (DocumentNode current = target; current instanceof ElementNode; current = current.getParent()) {
+            ElementNode element = (ElementNode) current;
+            if ("a".equals(element.getTagName())) {
+                return element;
+            }
+        }
+        return null;
+    }
+
+    private static String normalizeLinkHref(String href) {
+        if (href == null) {
+            return "";
+        }
+        String trimmed = href.trim();
+        return trimmed.isEmpty() ? "" : trimmed;
     }
 
     private void beginDragIfNeeded(ElementNode target, UiMouseEvent event) {
@@ -1924,7 +1969,18 @@ public final class HtmlLikeDocumentWidget extends Widget implements UiDocument.D
                 }
             }
         }
+        if ("a".equals(element.getTagName()) && hasLinkHref(element)) {
+            return UiCursor.POINTER;
+        }
         return null;
+    }
+
+    private static boolean hasLinkHref(ElementNode element) {
+        if (element == null) {
+            return false;
+        }
+        String href = element.getAttribute("href");
+        return href != null && !href.trim().isEmpty();
     }
 
     private CursorCascadeValue readCursorCascadeValue(club.heiqi.uilib.ui.style.UiStyleDeclaration declaration) {

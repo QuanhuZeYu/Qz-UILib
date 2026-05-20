@@ -17,6 +17,7 @@ import club.heiqi.uilib.ui.layout.DocumentLayoutEngine;
 import club.heiqi.uilib.ui.layout.DocumentScrollState;
 import club.heiqi.uilib.ui.render.UiRenderContext;
 import club.heiqi.uilib.ui.style.UiBorderRadius;
+import club.heiqi.uilib.ui.style.UiBorderCollapse;
 import club.heiqi.uilib.ui.style.UiBorderRadiusResolver;
 import club.heiqi.uilib.ui.style.UiBorderStyle;
 import club.heiqi.uilib.ui.style.UiOverflow;
@@ -957,6 +958,90 @@ public class DocumentPaintEngineTest {
     }
 
     /**
+     * 验证 ul/ol 下的 li 会生成最小真实可见的列表标记文本命令。
+     */
+    @Test
+    public void shouldBuildListMarkerCommandsForListItems() {
+        UiDocument document = UiDocument.create();
+        ElementNode root = document.getRootElement();
+        ElementNode unorderedList = document.ul();
+        ElementNode orderedList = document.ol();
+        ElementNode bulletItem = document.li();
+        ElementNode numberedItem = document.li();
+
+        root.style().setWidth(UiStyleLength.px(160));
+        bulletItem.appendText("One");
+        numberedItem.appendText("Two");
+        unorderedList.append(bulletItem);
+        orderedList.append(numberedItem);
+        root.append(unorderedList).append(orderedList);
+
+        List<DocumentPaintCommand> commands = DocumentPaintEngine.buildPaintCommands(DocumentLayoutEngine.layout(root,
+                180, 0, new DeterministicTextMeasureService()));
+
+        Assert.assertTrue(containsTextCommand(commands, bulletItem, "•"));
+        Assert.assertTrue(containsTextCommand(commands, numberedItem, "1."));
+    }
+
+    /**
+     * 验证列表标记在 stacking context 分支下也会被正常生成。
+     */
+    @Test
+    public void shouldBuildListMarkerCommandsInsidePaintContext() {
+        UiDocument document = UiDocument.create();
+        ElementNode root = document.getRootElement();
+        ElementNode unorderedList = document.ul();
+        ElementNode bulletItem = document.li();
+
+        root.style().setWidth(UiStyleLength.px(160));
+        unorderedList.style().setOpacity(0.5F);
+        bulletItem.appendText("One");
+        unorderedList.append(bulletItem);
+        root.append(unorderedList);
+
+        List<DocumentPaintCommand> commands = DocumentPaintEngine.buildPaintCommands(DocumentLayoutEngine.layout(root,
+                180, 0, new DeterministicTextMeasureService()));
+
+        Assert.assertTrue(containsTextCommand(commands, bulletItem, "•"));
+    }
+
+    /**
+     * 验证 border-collapse 下相邻单元格不会各自重复绘制内部共享竖边。
+     */
+    @Test
+    public void shouldBuildCollapsedTableBordersWithoutDuplicatedInnerCellBorders() {
+        UiDocument document = UiDocument.create();
+        ElementNode root = document.getRootElement();
+        ElementNode table = document.table();
+        ElementNode row = document.tr();
+        ElementNode first = document.td();
+        ElementNode second = document.td();
+
+        root.style().setWidth(UiStyleLength.px(220));
+        table.style().setWidth(UiStyleLength.px(160)).setBorderCollapse(UiBorderCollapse.COLLAPSE);
+        first.style().setWidth(UiStyleLength.px(60)).setBorderWidth(UiStyleLength.px(1)).setBorderStyle(UiBorderStyle.SOLID)
+                .setBorderColor(0xFFFFFFFF);
+        second.style().setBorderWidth(UiStyleLength.px(1)).setBorderStyle(UiBorderStyle.SOLID)
+                .setBorderColor(0xFFFFFFFF);
+        first.appendText("A");
+        second.appendText("B");
+        row.append(first).append(second);
+        table.append(row);
+        root.append(table);
+
+        List<DocumentPaintCommand> commands = DocumentPaintEngine.buildPaintCommands(DocumentLayoutEngine.layout(root,
+                220, 0, new DeterministicTextMeasureService()));
+
+        int secondCellBorderCount = 0;
+        for (DocumentPaintCommand command : commands) {
+            if (command.getType() == DocumentPaintCommandType.BORDER && command.getElement() == second) {
+                secondCellBorderCount++;
+            }
+        }
+        Assert.assertEquals(1, secondCellBorderCount);
+    }
+
+    /**
      * 验证 inline span 文本片段使用自身继承链解析出的文本颜色。
      */
     @Test
@@ -1326,6 +1411,17 @@ public class DocumentPaintEngineTest {
             }
         }
         return count;
+    }
+
+    private static boolean containsTextCommand(List<DocumentPaintCommand> commands, ElementNode element, String text) {
+        for (DocumentPaintCommand command : commands) {
+            if (command.getType() == DocumentPaintCommandType.TEXT
+                    && command.getElement() == element
+                    && text.equals(command.getText())) {
+                return true;
+            }
+        }
+        return false;
     }
 
     private static DocumentEffectType expectedEffectType(DocumentPaintCommandType type) {

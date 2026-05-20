@@ -16,6 +16,7 @@ import club.heiqi.uilib.ui.style.UiAlignItems;
 import club.heiqi.uilib.ui.style.UiAlignSelf;
 import club.heiqi.uilib.ui.style.UiBoxSizing;
 import club.heiqi.uilib.ui.style.UiDisplay;
+import club.heiqi.uilib.ui.style.UiBorderCollapse;
 import club.heiqi.uilib.ui.style.UiFontStyle;
 import club.heiqi.uilib.ui.style.UiFontWeight;
 import club.heiqi.uilib.ui.style.UiFlexDirection;
@@ -378,8 +379,9 @@ public final class DocumentLayoutEngine {
         List<TableRowPlan> rowPlans = collectTableRows(element);
         List<DocumentLayoutBox> childBoxes = new ArrayList<DocumentLayoutBox>();
         int columnCount = resolveTableColumnCount(rowPlans);
-        int rowGap = Math.max(0, tableStyle.getRowGap().resolve(contentWidth, 0));
-        int columnGap = Math.max(0, tableStyle.getColumnGap().resolve(contentWidth, 0));
+        boolean collapsedBorders = tableStyle.getBorderCollapse() == UiBorderCollapse.COLLAPSE;
+        int rowGap = collapsedBorders ? 0 : Math.max(0, tableStyle.getRowGap().resolve(contentWidth, 0));
+        int columnGap = collapsedBorders ? 0 : Math.max(0, tableStyle.getColumnGap().resolve(contentWidth, 0));
         int childFlowTop = contentTop;
         if (columnCount > 0) {
             int[] columnWidths = resolveTableColumnWidths(rowPlans, columnCount, contentWidth, columnGap,

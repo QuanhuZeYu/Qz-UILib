@@ -172,6 +172,36 @@ public class DocumentPaintRendererTest {
     }
 
     /**
+     * 验证 border-collapse 下表头和表体交界只保留最后一行语义，不会把 section 边界当成独立终止行。
+     */
+    @Test
+    public void shouldTreatTableSectionBoundaryAsSharedLastRowOnlyForFinalRow() throws Exception {
+        UiDocument document = UiDocument.create();
+        ElementNode table = document.table();
+        ElementNode thead = document.thead();
+        ElementNode tbody = document.tbody();
+        ElementNode headRow = document.tr();
+        ElementNode bodyRow = document.tr();
+        ElementNode headCell = document.th();
+        ElementNode bodyCell = document.td();
+
+        table.style().setBorderCollapse(club.heiqi.uilib.ui.style.UiBorderCollapse.COLLAPSE);
+        headCell.appendText("H");
+        bodyCell.appendText("B");
+        headRow.append(headCell);
+        bodyRow.append(bodyCell);
+        thead.append(headRow);
+        tbody.append(bodyRow);
+        table.append(thead).append(tbody);
+
+        Method isLastTableRow = DocumentPaintRenderer.class.getDeclaredMethod("isLastTableRow", ElementNode.class);
+        isLastTableRow.setAccessible(true);
+
+        Assert.assertFalse((Boolean) isLastTableRow.invoke(null, headCell));
+        Assert.assertTrue((Boolean) isLastTableRow.invoke(null, bodyCell));
+    }
+
+    /**
      * 验证 box-shadow 与 outline 命令会投影出精确的颜色、位置与圆角。
      */
     @Test

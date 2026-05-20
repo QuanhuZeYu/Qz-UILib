@@ -96,6 +96,21 @@ public final class DocumentRemoteImageCache {
         entries.clear();
     }
 
+    /**
+     * 为测试写入失败状态，便于验证图片回退逻辑。
+     *
+     * @param url 图片 URL
+     */
+    public void putFailedForTesting(String url) {
+        String normalizedUrl = normalizeUrl(url);
+        if (normalizedUrl == null) {
+            return;
+        }
+        Entry entry = new Entry(normalizedUrl);
+        entry.markFailed();
+        entries.put(normalizedUrl, entry);
+    }
+
     private void loadRemoteImage(Entry entry, Runnable completionCallback) {
         HttpURLConnection connection = null;
         try {

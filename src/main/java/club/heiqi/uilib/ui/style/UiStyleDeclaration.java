@@ -78,6 +78,7 @@ public final class UiStyleDeclaration {
     private UiFlexWrap flexWrap;
     private UiBoxShadow boxShadow;
     private UiBorderStyle borderStyle;
+    private UiBorderCollapse borderCollapse;
     private UiCursor cursor;
     private UiBorderRadius borderRadiusCorners;
     private UiTextDecoration textDecoration;
@@ -1002,6 +1003,15 @@ public final class UiStyleDeclaration {
     }
 
     /**
+     * 返回 table 边框合并模式。
+     *
+     * @return 边框合并模式
+     */
+    public UiBorderCollapse getBorderCollapse() {
+        return borderCollapse;
+    }
+
+    /**
      * 设置边框样式。
      *
      * @param borderStyle 边框样式
@@ -1013,6 +1023,20 @@ public final class UiStyleDeclaration {
 
     public UiStyleDeclaration clearBorderStyle() {
         return updateBorderStyle(null);
+    }
+
+    /**
+     * 设置 table 边框合并模式。
+     *
+     * @param borderCollapse 边框合并模式
+     * @return 当前声明
+     */
+    public UiStyleDeclaration setBorderCollapse(UiBorderCollapse borderCollapse) {
+        return updateBorderCollapse(Objects.requireNonNull(borderCollapse, "borderCollapse"));
+    }
+
+    public UiStyleDeclaration clearBorderCollapse() {
+        return updateBorderCollapse(null);
     }
 
     public UiCursor getCursor() {
@@ -1642,6 +1666,12 @@ public final class UiStyleDeclaration {
         return updateProperty(UiStyleProperty.BORDER_STYLE, previousValue, value, UiStyleChangeImpact.PAINT);
     }
 
+    private UiStyleDeclaration updateBorderCollapse(UiBorderCollapse value) {
+        UiBorderCollapse previousValue = borderCollapse;
+        borderCollapse = value;
+        return updateProperty(UiStyleProperty.BORDER_COLLAPSE, previousValue, value, UiStyleChangeImpact.LAYOUT);
+    }
+
     private UiStyleDeclaration updateCursor(UiCursor value) {
         UiCursor previousValue = cursor;
         cursor = value;
@@ -1783,6 +1813,7 @@ public final class UiStyleDeclaration {
             case FLEX_WRAP: return flexWrap != null;
             case BOX_SHADOW: return boxShadow != null;
             case BORDER_STYLE: return borderStyle != null;
+            case BORDER_COLLAPSE: return borderCollapse != null;
             case CURSOR: return cursor != null;
             case BORDER_RADIUS_CORNERS: return borderRadiusCorners != null;
             case TEXT_DECORATION: return textDecoration != null;
@@ -1857,6 +1888,7 @@ public final class UiStyleDeclaration {
             case FLEX_WRAP: flexWrap = null; break;
             case BOX_SHADOW: boxShadow = null; break;
             case BORDER_STYLE: borderStyle = null; break;
+            case BORDER_COLLAPSE: borderCollapse = null; break;
             case CURSOR: cursor = null; break;
             case BORDER_RADIUS_CORNERS: borderRadiusCorners = null; break;
             case TEXT_DECORATION: textDecoration = null; break;

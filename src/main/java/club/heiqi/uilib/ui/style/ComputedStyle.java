@@ -69,6 +69,7 @@ public final class ComputedStyle {
     private final UiFlexWrap flexWrap;
     private final UiBoxShadow boxShadow;
     private final UiBorderStyle borderStyle;
+    private final UiBorderCollapse borderCollapse;
     private final UiCursor cursor;
     private final UiBorderRadius borderRadiusCorners;
     private final UiTextDecoration textDecoration;
@@ -101,7 +102,7 @@ public final class ComputedStyle {
             UiVisibility visibility,
             UiStyleLength minWidth, UiStyleLength maxWidth, UiStyleLength minHeight, UiStyleLength maxHeight,
             UiStyleLength flexBasis, UiAlignSelf alignSelf, UiFlexWrap flexWrap,
-            UiBoxShadow boxShadow, UiBorderStyle borderStyle, UiCursor cursor,
+            UiBoxShadow boxShadow, UiBorderStyle borderStyle, UiBorderCollapse borderCollapse, UiCursor cursor,
             UiBorderRadius borderRadiusCorners, UiTextDecoration textDecoration, UiFontWeight fontWeight,
             UiFontStyle fontStyle, UiPointerEvents pointerEvents,
             UiOutline outline, UiStyleInsets borderWidthSides, UiBorderColors borderColors,
@@ -162,6 +163,7 @@ public final class ComputedStyle {
         this.flexWrap = Objects.requireNonNull(flexWrap, "flexWrap");
         this.boxShadow = boxShadow; // 可为 null（无阴影）
         this.borderStyle = borderStyle == null ? UiBorderStyle.NONE : borderStyle;
+        this.borderCollapse = borderCollapse == null ? UiBorderCollapse.SEPARATE : borderCollapse;
         this.cursor = cursor == null ? UiCursor.DEFAULT : cursor;
         this.borderRadiusCorners = borderRadiusCorners; // 可为 null（使用统一 borderRadius）
         this.textDecoration = textDecoration == null ? UiTextDecoration.NONE : textDecoration;
@@ -462,6 +464,15 @@ public final class ComputedStyle {
      */
     public UiBorderStyle getBorderStyle() {
         return borderStyle;
+    }
+
+    /**
+     * 返回 table 边框合并模式。
+     *
+     * @return 边框合并模式
+     */
+    public UiBorderCollapse getBorderCollapse() {
+        return borderCollapse;
     }
 
     /**

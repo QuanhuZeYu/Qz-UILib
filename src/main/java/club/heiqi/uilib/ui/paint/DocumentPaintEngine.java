@@ -20,6 +20,7 @@ import club.heiqi.uilib.ui.style.ComputedStyle;
 import club.heiqi.uilib.ui.style.UiBorderRadiusResolver;
 import club.heiqi.uilib.ui.style.UiBoxShadow;
 import club.heiqi.uilib.ui.style.UiBorderStyle;
+import club.heiqi.uilib.ui.style.UiDisplay;
 import club.heiqi.uilib.ui.style.UiFontStyle;
 import club.heiqi.uilib.ui.style.UiFontWeight;
 import club.heiqi.uilib.ui.style.UiOutline;
@@ -141,6 +142,7 @@ public final class DocumentPaintEngine {
             appendCustomCommand(box, commands, childOffsetX, childOffsetY);
             appendInlineFragmentSurfaceCommands(box, commands, animationTimeline, currentTimeNanos, boxOpacity,
                     childOffsetX, childOffsetY);
+            appendListMarkerCommand(box, commands, boxOpacity, childOffsetX, childOffsetY);
             appendTextCommands(box, commands, animationTimeline, currentTimeNanos, boxOpacity, childOffsetX,
                     childOffsetY);
             appendNormalFlowChildren(rootBox, box, commands, scrollState, childOffsetX, childOffsetY,
@@ -153,6 +155,7 @@ public final class DocumentPaintEngine {
             appendCustomCommand(box, commands, childOffsetX, childOffsetY);
             appendInlineFragmentSurfaceCommands(box, commands, animationTimeline, currentTimeNanos, boxOpacity,
                     childOffsetX, childOffsetY);
+            appendListMarkerCommand(box, commands, boxOpacity, childOffsetX, childOffsetY);
             appendTextCommands(box, commands, animationTimeline, currentTimeNanos, boxOpacity, childOffsetX,
                     childOffsetY);
             appendNormalFlowChildren(rootBox, box, commands, scrollState, childOffsetX, childOffsetY,
@@ -373,6 +376,75 @@ public final class DocumentPaintEngine {
                     ownerStyle == null ? UiFontWeight.NORMAL : ownerStyle.getFontWeight(),
                     ownerStyle == null ? UiFontStyle.NORMAL : ownerStyle.getFontStyle(), null, 0, 1.0F, 1.0F));
         }
+    }
+
+    private static void appendListMarkerCommand(DocumentLayoutBox box, List<DocumentPaintCommand> commands,
+            float opacity, int offsetX, int offsetY) {
+        ElementNode element = box.getElement();
+        if (!"li".equals(element.getTagName())) {
+            return;
+        }
+        ElementNode parent = resolveParentElement(element);
+        if (parent == null) {
+            return;
+        }
+        String parentTagName = parent.getTagName();
+        String markerText;
+        if ("ol".equals(parentTagName)) {
+            markerText = String.valueOf(resolveListItemIndex(element)) + ".";
+        } else if ("ul".equals(parentTagName)) {
+            markerText = "•";
+        } else {
+            return;
+        }
+        if (markerText.isEmpty() || box.getContentHeight() <= 0) {
+            return;
+        }
+        ComputedStyle style = box.getComputedStyle();
+        int textColor = applyOpacity(style.getTextColor(), opacity);
+        if (isTransparent(textColor)) {
+            return;
+        }
+        int markerWidth = Math.max(4, markerText.length() * 8);
+        int markerRight = box.getContentLeft() + offsetX - 6;
+        int markerLeft = Math.max(box.getLeft() + offsetX, markerRight - markerWidth);
+        int markerTop = box.getContentTop() + offsetY;
+        int markerBottom = Math.min(box.getBottom() + offsetY, markerTop + Math.max(1, box.getContentHeight()));
+        if (markerRight <= markerLeft || markerBottom <= markerTop) {
+            return;
+        }
+        commands.add(new DocumentPaintCommand(DocumentPaintCommandType.TEXT, element, markerLeft, markerTop,
+                markerRight, markerBottom, textColor, 0, 0, markerText, TextContentMode.UILIB_RAW,
+                style.getFontWeight(), style.getFontStyle(), null, 0, 1.0F, 1.0F));
+    }
+
+    private static ElementNode resolveParentElement(ElementNode element) {
+        if (element == null || !(element.getParent() instanceof ElementNode)) {
+            return null;
+        }
+        return (ElementNode) element.getParent();
+    }
+
+    private static int resolveListItemIndex(ElementNode element) {
+        ElementNode parent = resolveParentElement(element);
+        if (parent == null) {
+            return 1;
+        }
+        int index = 0;
+        for (club.heiqi.uilib.ui.dom.DocumentNode child : parent.getChildren()) {
+            if (!(child instanceof ElementNode)) {
+                continue;
+            }
+            ElementNode childElement = (ElementNode) child;
+            if (!"li".equals(childElement.getTagName())) {
+                continue;
+            }
+            index++;
+            if (childElement == element) {
+                return index;
+            }
+        }
+        return Math.max(1, index);
     }
 
     private static void appendTextDecorationCommand(DocumentLayoutTextRun textRun, List<DocumentPaintCommand> commands,

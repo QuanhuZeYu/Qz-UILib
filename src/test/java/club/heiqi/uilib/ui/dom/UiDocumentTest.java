@@ -78,6 +78,28 @@ public class UiDocumentTest {
     }
 
     /**
+     * 验证 a 元素只在拥有非空 href 时才具备链接语义与默认焦点能力。
+     */
+    @Test
+    public void shouldResolveAnchorLinkSemanticsFromHref() {
+        UiDocument document = UiDocument.create();
+        ElementNode anchor = document.a();
+
+        Assert.assertFalse(anchor.isFocusable());
+        Assert.assertNull(anchor.getSemanticRole());
+
+        anchor.setAttribute("href", "https://example.test/docs");
+
+        Assert.assertTrue(anchor.isFocusable());
+        Assert.assertEquals("link", anchor.getSemanticRole());
+
+        anchor.removeAttribute("href");
+
+        Assert.assertFalse(anchor.isFocusable());
+        Assert.assertNull(anchor.getSemanticRole());
+    }
+
+    /**
      * 验证 append 语义会在同一文档内移动已有子节点。
      */
     @Test

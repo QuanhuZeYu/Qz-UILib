@@ -14,6 +14,7 @@ import club.heiqi.uilib.ui.animation.DocumentAnimationImpact;
 import club.heiqi.uilib.ui.animation.DocumentAnimationProperty;
 import club.heiqi.uilib.ui.animation.DocumentAnimationTimeline;
 import club.heiqi.uilib.ui.animation.DocumentKeyframes;
+import club.heiqi.uilib.ui.image.DocumentRemoteImageCache;
 import club.heiqi.uilib.ui.dom.DocumentElementActiveEvent;
 import club.heiqi.uilib.ui.dom.DocumentElementActiveHandler;
 import club.heiqi.uilib.ui.dom.DocumentElementClickEvent;
@@ -22,6 +23,8 @@ import club.heiqi.uilib.ui.dom.DocumentElementContextMenuEvent;
 import club.heiqi.uilib.ui.dom.DocumentElementContextMenuHandler;
 import club.heiqi.uilib.ui.dom.DocumentElementDoubleClickEvent;
 import club.heiqi.uilib.ui.dom.DocumentElementDoubleClickHandler;
+import club.heiqi.uilib.ui.dom.DocumentLinkActivationEvent;
+import club.heiqi.uilib.ui.dom.DocumentLinkActivationHandler;
 import club.heiqi.uilib.ui.dom.DocumentElementDragEvent;
 import club.heiqi.uilib.ui.dom.DocumentElementAnimationEndEvent;
 import club.heiqi.uilib.ui.dom.DocumentElementAnimationEndHandler;
@@ -2426,6 +2429,67 @@ public class HtmlLikeDocumentWidgetTest {
     }
 
     /**
+     * 验证 a[href] 在 click 后会触发文档级链接激活回调。
+     */
+    @Test
+    public void shouldDispatchDocumentLinkActivationForAnchorClick() {
+        UiDocument document = UiDocument.create();
+        ElementNode root = document.getRootElement();
+        ElementNode link = document.a();
+        final List<DocumentLinkActivationEvent> activationEvents = new ArrayList<DocumentLinkActivationEvent>();
+
+        document.setLinkActivationHandler(new DocumentLinkActivationHandler() {
+            @Override
+            public void onLinkActivated(DocumentLinkActivationEvent event) {
+                activationEvents.add(event);
+            }
+        });
+        root.style().setWidth(UiStyleLength.px(120)).setHeight(UiStyleLength.px(40));
+        link.setAttribute("href", "https://example.test/docs");
+        link.appendText("Docs");
+        root.append(link);
+
+        HtmlLikeDocumentWidget widget = new HtmlLikeDocumentWidget(document, 120, 40,
+                new DeterministicTextMeasureService());
+        widget.applyLayoutBounds(0, 0, 120, 40);
+
+        widget.onMouseDown(new UiMouseEvent(UiMouseEvent.Action.BUTTON_DOWN, 4, 4, 0, 0, 0, 0, 1L));
+        widget.onMouseUp(new UiMouseEvent(UiMouseEvent.Action.BUTTON_UP, 4, 4, 0, 0, 0, 0, 2L));
+
+        Assert.assertEquals(1, activationEvents.size());
+        Assert.assertEquals("https://example.test/docs", activationEvents.get(0).getHref());
+        Assert.assertEquals(link.__getElementUid(), activationEvents.get(0).getElement().__getElementUid());
+    }
+
+    /**
+     * 验证 img 加载失败时会绘制 alt 文本回退，而不是静默空白。
+     */
+    @Test
+    public void shouldRenderAltFallbackWhenImageLoadFails() {
+        DocumentRemoteImageCache.getInstance().clearForTesting();
+        DocumentRemoteImageCache.getInstance().putFailedForTesting("https://example.test/missing.png");
+
+        UiDocument document = UiDocument.create();
+        ElementNode root = document.getRootElement();
+        ElementNode image = document.img();
+        image.setAttribute("src", "https://example.test/missing.png");
+        image.setAttribute("alt", "Missing icon");
+        image.style().setWidth(UiStyleLength.px(72)).setHeight(UiStyleLength.px(24));
+        root.append(image);
+
+        HtmlLikeDocumentWidget widget = new HtmlLikeDocumentWidget(document, 120, 60,
+                new DeterministicTextMeasureService());
+        widget.applyLayoutBounds(0, 0, 120, 60);
+
+        RecordingUiRenderContext renderContext = new RecordingUiRenderContext();
+        widget.render(renderContext);
+
+        Assert.assertTrue(renderContext.hostImageCalls.isEmpty());
+        Assert.assertFalse(renderContext.textCalls.isEmpty());
+        Assert.assertEquals("Missing icon", renderContext.textCalls.get(0).text);
+    }
+
+    /**
      * 验证双击有独立事件，且与单击共存。
      */
     @Test
@@ -3686,6 +3750,7 @@ public class HtmlLikeDocumentWidgetTest {
 
         private final List<DrawCall> drawCalls = new ArrayList<DrawCall>();
         private final List<TextCall> textCalls = new ArrayList<TextCall>();
+        private final List<HostImageCall> hostImageCalls = new ArrayList<HostImageCall>();
 
         private RecordingUiRenderContext() {
             super(320, 240, 0, 0, 0.0F);
@@ -3710,6 +3775,22 @@ public class HtmlLikeDocumentWidgetTest {
         public void drawText(String text, int x, int y, int color, boolean shadow, TextContentMode textContentMode,
                 UiFontWeight fontWeight, UiFontStyle fontStyle) {
             textCalls.add(new TextCall(text, x, y, color, shadow, textContentMode, fontWeight, fontStyle));
+        }
+
+        @Override
+        public int measureTextWidth(String text, TextContentMode textContentMode) {
+            return text == null ? 0 : text.length() * 4;
+        }
+
+        @Override
+        public int getTextLineHeight() {
+            return 18;
+        }
+
+        @Override
+        public void drawHostImage(club.heiqi.uilib.ui.image.HostImageSource source, int left, int top, int right,
+                int bottom) {
+            hostImageCalls.add(new HostImageCall(left, top, right, bottom));
         }
 
         @Override
@@ -3780,6 +3861,21 @@ public class HtmlLikeDocumentWidgetTest {
             this.textContentMode = textContentMode;
             this.fontWeight = fontWeight;
             this.fontStyle = fontStyle;
+        }
+    }
+
+    private static final class HostImageCall {
+
+        private final int left;
+        private final int top;
+        private final int right;
+        private final int bottom;
+
+        private HostImageCall(int left, int top, int right, int bottom) {
+            this.left = left;
+            this.top = top;
+            this.right = right;
+            this.bottom = bottom;
         }
     }
 

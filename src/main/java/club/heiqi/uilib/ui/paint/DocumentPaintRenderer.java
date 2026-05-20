@@ -6,6 +6,7 @@ import java.util.List;
 import java.util.Objects;
 
 import club.heiqi.uilib.font.FontService;
+import club.heiqi.uilib.ui.dom.ElementNode;
 import club.heiqi.uilib.ui.layout.DocumentEffectType;
 import club.heiqi.uilib.ui.layout.DocumentLayoutEdges;
 import club.heiqi.uilib.ui.render.UiRenderContext;
@@ -14,9 +15,13 @@ import club.heiqi.uilib.ui.style.UiBorderColors;
 import club.heiqi.uilib.ui.style.UiBorderRadiusResolver;
 import club.heiqi.uilib.ui.style.UiBorderStyle;
 import club.heiqi.uilib.ui.style.UiBoxShadow;
+import club.heiqi.uilib.ui.style.UiDisplay;
 import club.heiqi.uilib.ui.style.UiOutline;
+import club.heiqi.uilib.ui.style.UiPosition;
 import club.heiqi.uilib.ui.style.UiStyleInsets;
 import club.heiqi.uilib.ui.style.UiStyleResolver;
+import club.heiqi.uilib.ui.style.UiBorderCollapse;
+import club.heiqi.uilib.ui.style.UiVisibility;
 import club.heiqi.uilib.ui.theme.UiSurfaceStyle;
 
 /**
@@ -502,14 +507,153 @@ public final class DocumentPaintRenderer {
 
     private static DocumentLayoutEdges resolveBorderWidths(DocumentPaintCommand command, ComputedStyle style) {
         UiStyleInsets borderWidthSides = style.getBorderWidthSides();
+        DocumentLayoutEdges resolvedWidths;
         if (borderWidthSides != null) {
-            return DocumentLayoutEdges.of(Math.max(0, borderWidthSides.getTop().resolve(command.getWidth(), 0)),
+            resolvedWidths = DocumentLayoutEdges.of(Math.max(0, borderWidthSides.getTop().resolve(command.getWidth(), 0)),
                     Math.max(0, borderWidthSides.getRight().resolve(command.getWidth(), 0)),
                     Math.max(0, borderWidthSides.getBottom().resolve(command.getWidth(), 0)),
                     Math.max(0, borderWidthSides.getLeft().resolve(command.getWidth(), 0)));
+        } else {
+            int width = Math.max(0, command.getBorderWidth());
+            resolvedWidths = DocumentLayoutEdges.of(width, width, width, width);
         }
-        int width = Math.max(0, command.getBorderWidth());
-        return DocumentLayoutEdges.of(width, width, width, width);
+        return applyCollapsedTableBorderOverride(command, style, resolvedWidths);
+    }
+
+    private static DocumentLayoutEdges applyCollapsedTableBorderOverride(DocumentPaintCommand command, ComputedStyle style,
+            DocumentLayoutEdges widths) {
+        if (command == null || style == null || widths == null || style.getDisplay() != club.heiqi.uilib.ui.style.UiDisplay.TABLE_CELL) {
+            return widths;
+        }
+        ElementNode element = command.getElement();
+        if (element == null || !isCollapsedTableCell(element)) {
+            return widths;
+        }
+        boolean lastColumn = isLastTableColumn(element);
+        boolean lastRow = isLastTableRow(element);
+        return DocumentLayoutEdges.of(widths.getTop(), lastColumn ? widths.getRight() : 0,
+                lastRow ? widths.getBottom() : 0, widths.getLeft());
+    }
+
+    private static boolean isCollapsedTableCell(ElementNode cell) {
+        if (cell == null || !(cell.getParent() instanceof ElementNode)) {
+            return false;
+        }
+        ElementNode row = (ElementNode) cell.getParent();
+        if (!(row.getParent() instanceof ElementNode)) {
+            return false;
+        }
+        ElementNode parent = (ElementNode) row.getParent();
+        ElementNode table = null;
+        if ("table".equals(parent.getTagName())) {
+            table = parent;
+        } else if (("thead".equals(parent.getTagName()) || "tbody".equals(parent.getTagName())
+                || "tfoot".equals(parent.getTagName())) && parent.getParent() instanceof ElementNode) {
+            table = (ElementNode) parent.getParent();
+        }
+        return table != null && UiStyleResolver.compute(table).getBorderCollapse() == UiBorderCollapse.COLLAPSE;
+    }
+
+    private static boolean isLastTableColumn(ElementNode cell) {
+        ElementNode row = (ElementNode) cell.getParent();
+        if (row == null) {
+            return true;
+        }
+        ElementNode lastCell = null;
+        for (club.heiqi.uilib.ui.dom.DocumentNode child : row.getChildren()) {
+            if (!(child instanceof ElementNode)) {
+                continue;
+            }
+            ElementNode childElement = (ElementNode) child;
+            if ("td".equals(childElement.getTagName()) || "th".equals(childElement.getTagName())) {
+                lastCell = childElement;
+            }
+        }
+        return lastCell == null || lastCell == cell;
+    }
+
+    private static boolean isLastTableRow(ElementNode cell) {
+        if (cell == null || !(cell.getParent() instanceof ElementNode)) {
+            return true;
+        }
+        ElementNode row = (ElementNode) cell.getParent();
+        ElementNode table = resolveTableAncestor(row);
+        if (table == null) {
+            return true;
+        }
+        ElementNode lastRow = findLastVisibleRowInTable(table);
+        return lastRow == null || lastRow == row;
+    }
+
+    private static ElementNode resolveTableAncestor(ElementNode element) {
+        for (club.heiqi.uilib.ui.dom.DocumentNode current = element; current instanceof ElementNode;
+                current = current.getParent()) {
+            ElementNode currentElement = (ElementNode) current;
+            if ("table".equals(currentElement.getTagName())) {
+                return currentElement;
+            }
+        }
+        return null;
+    }
+
+    private static ElementNode findLastVisibleRowInSection(ElementNode section) {
+        ElementNode lastRow = null;
+        for (club.heiqi.uilib.ui.dom.DocumentNode child : section.getChildren()) {
+            if (!(child instanceof ElementNode)) {
+                continue;
+            }
+            ElementNode childElement = (ElementNode) child;
+            if (isVisibleTableRow(childElement)) {
+                lastRow = childElement;
+            }
+        }
+        return lastRow;
+    }
+
+    private static ElementNode findLastVisibleRowInTable(ElementNode table) {
+        ElementNode lastRow = null;
+        for (club.heiqi.uilib.ui.dom.DocumentNode child : table.getChildren()) {
+            if (!(child instanceof ElementNode)) {
+                continue;
+            }
+            ElementNode childElement = (ElementNode) child;
+            if (isVisibleTableRow(childElement)) {
+                lastRow = childElement;
+                continue;
+            }
+            if (isTableRowGroup(childElement)) {
+                ElementNode sectionLastRow = findLastVisibleRowInSection(childElement);
+                if (sectionLastRow != null) {
+                    lastRow = sectionLastRow;
+                }
+            }
+        }
+        return lastRow;
+    }
+
+    private static boolean isVisibleTableRow(ElementNode element) {
+        if (element == null) {
+            return false;
+        }
+        ComputedStyle style = UiStyleResolver.compute(element);
+        return "tr".equals(element.getTagName()) && style.getDisplay() == UiDisplay.TABLE_ROW
+                && style.getVisibility() != UiVisibility.HIDDEN
+                && style.getPosition() != UiPosition.ABSOLUTE
+                && style.getPosition() != UiPosition.FIXED;
+    }
+
+    private static boolean isTableRowGroup(ElementNode element) {
+        if (element == null) {
+            return false;
+        }
+        ComputedStyle style = UiStyleResolver.compute(element);
+        if (style.getVisibility() == UiVisibility.HIDDEN) {
+            return false;
+        }
+        String tagName = element.getTagName();
+        return ("thead".equals(tagName) && style.getDisplay() == UiDisplay.TABLE_HEADER_GROUP)
+                || ("tbody".equals(tagName) && style.getDisplay() == UiDisplay.TABLE_ROW_GROUP)
+                || ("tfoot".equals(tagName) && style.getDisplay() == UiDisplay.TABLE_FOOTER_GROUP);
     }
 
     private static boolean isUniformPositiveWidth(DocumentLayoutEdges widths) {

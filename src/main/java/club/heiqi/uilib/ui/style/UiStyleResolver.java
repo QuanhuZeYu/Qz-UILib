@@ -20,6 +20,9 @@ public final class UiStyleResolver {
 
     private static final int TRANSPARENT = 0x00000000;
     private static final int DEFAULT_TEXT_COLOR = 0xFFFFFFFF;
+    private static final int DEFAULT_LINK_TEXT_COLOR = 0xFF4E8DFF;
+    private static final UiStyleInsets DEFAULT_LIST_ITEM_PADDING = UiStyleInsets.of(UiStyleLength.px(0),
+            UiStyleLength.px(0), UiStyleLength.px(0), UiStyleLength.px(24));
 
     private UiStyleResolver() {}
 
@@ -204,6 +207,9 @@ public final class UiStyleResolver {
                 parentStyle == null ? null : parentStyle.getBoxShadow());
         UiBorderStyle borderStyle = cascade(inlineStyle, matchingRules, UiStyleProperty.BORDER_STYLE,
                 UiBorderStyle.NONE, parentStyle == null ? UiBorderStyle.NONE : parentStyle.getBorderStyle());
+        UiBorderCollapse borderCollapse = cascade(inlineStyle, matchingRules, UiStyleProperty.BORDER_COLLAPSE,
+                UiBorderCollapse.SEPARATE,
+                parentStyle == null ? UiBorderCollapse.SEPARATE : parentStyle.getBorderCollapse());
         UiCursor cursor = cascade(inlineStyle, matchingRules, UiStyleProperty.CURSOR, UiCursor.DEFAULT,
                 parentStyle == null ? UiCursor.DEFAULT : parentStyle.getCursor());
         UiBorderRadius borderRadiusCorners = cascade(inlineStyle, matchingRules,
@@ -233,6 +239,21 @@ public final class UiStyleResolver {
         UiObjectFit objectFit = cascade(inlineStyle, matchingRules, UiStyleProperty.OBJECT_FIT, UiObjectFit.FILL,
                 parentStyle == null ? UiObjectFit.FILL : parentStyle.getObjectFit());
 
+        if (isLinkElement(element) && !hasDeclaredProperty(inlineStyle, matchingRules, UiStyleProperty.TEXT_COLOR)) {
+            textColorValue = Integer.valueOf(DEFAULT_LINK_TEXT_COLOR);
+        }
+        if (isLinkElement(element)
+                && !hasDeclaredProperty(inlineStyle, matchingRules, UiStyleProperty.TEXT_DECORATION)) {
+            textDecoration = UiTextDecoration.UNDERLINE;
+        }
+        if (isLinkElement(element) && !hasDeclaredProperty(inlineStyle, matchingRules, UiStyleProperty.CURSOR)) {
+            cursor = UiCursor.POINTER;
+        }
+        if (isListItemElement(element) && isInsideListContainer(element)
+                && !hasDeclaredProperty(inlineStyle, matchingRules, UiStyleProperty.PADDING)) {
+            padding = DEFAULT_LIST_ITEM_PADDING;
+        }
+
         return new ComputedStyle(display, width, height, boxSizing, position, top, right, bottom, left, zIndex, margin,
                 padding, borderWidth, borderRadius, overflowX, overflowY, flexDirection, alignItems, justifyContent,
                 verticalAlign, rowGap, columnGap, flexGrowValue.floatValue(), flexShrinkValue.floatValue(),
@@ -243,9 +264,15 @@ public final class UiStyleResolver {
                 animationFillMode, animationTimingFunction, backdropBlurRadius, backdropSaturationValue.floatValue(),
                 lineHeight, textAlign, whiteSpace, textOverflow, visibility,
                 minWidth, maxWidth, minHeight, maxHeight, flexBasis, alignSelf, flexWrap,
-                boxShadow, borderStyle, cursor, borderRadiusCorners, textDecoration, fontWeight, fontStyle,
+                boxShadow, borderStyle, borderCollapse, cursor, borderRadiusCorners, textDecoration, fontWeight,
+                fontStyle,
                 pointerEvents, outline, borderWidthSides, borderColors, letterSpacing, wordBreak, overflowWrap,
                 aspectRatio, objectFit);
+    }
+
+    private static boolean hasDeclaredProperty(UiStyleDeclaration inlineStyle, List<UiStyleRule> rules,
+            UiStyleProperty property) {
+        return findDeclaration(inlineStyle, rules, property) != null;
     }
 
     private static <T> T cascade(UiStyleDeclaration inlineStyle, List<UiStyleRule> rules, UiStyleProperty property,
@@ -365,6 +392,7 @@ public final class UiStyleResolver {
             case FLEX_WRAP: return (T) declaration.getFlexWrap();
             case BOX_SHADOW: return (T) declaration.getBoxShadow();
             case BORDER_STYLE: return (T) declaration.getBorderStyle();
+            case BORDER_COLLAPSE: return (T) declaration.getBorderCollapse();
             case CURSOR: return (T) declaration.getCursor();
             case BORDER_RADIUS_CORNERS: return (T) declaration.getBorderRadiusCorners();
             case TEXT_DECORATION: return (T) declaration.getTextDecoration();
@@ -392,7 +420,7 @@ public final class UiStyleResolver {
     }
 
     private static UiDisplay defaultDisplay(String tagName) {
-        if ("span".equals(tagName)) {
+        if ("span".equals(tagName) || "a".equals(tagName)) {
             return UiDisplay.INLINE;
         }
         if ("button".equals(tagName) || "input".equals(tagName) || "textarea".equals(tagName)
@@ -418,6 +446,38 @@ public final class UiStyleResolver {
             return UiDisplay.TABLE_CELL;
         }
         return UiDisplay.BLOCK;
+    }
+
+    private static boolean isAnchorElement(ElementNode element) {
+        return element != null && "a".equals(element.getTagName());
+    }
+
+    private static boolean isLinkElement(ElementNode element) {
+        return isAnchorElement(element) && hasLinkHref(element);
+    }
+
+    private static boolean isListItemElement(ElementNode element) {
+        return element != null && "li".equals(element.getTagName());
+    }
+
+    private static boolean isInsideListContainer(ElementNode element) {
+        if (element == null) {
+            return false;
+        }
+        DocumentNode parent = element.getParent();
+        if (!(parent instanceof ElementNode)) {
+            return false;
+        }
+        String parentTagName = ((ElementNode) parent).getTagName();
+        return "ul".equals(parentTagName) || "ol".equals(parentTagName);
+    }
+
+    private static boolean hasLinkHref(ElementNode element) {
+        if (element == null) {
+            return false;
+        }
+        String href = element.getAttribute("href");
+        return href != null && !href.trim().isEmpty();
     }
 
     private static final class CascadedDeclaration<T> {

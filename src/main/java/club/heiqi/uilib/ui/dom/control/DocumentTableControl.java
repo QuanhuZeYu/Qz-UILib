@@ -7,6 +7,7 @@ import java.util.Objects;
 import club.heiqi.uilib.ui.dom.ElementNode;
 import club.heiqi.uilib.ui.dom.UiDocument;
 import club.heiqi.uilib.ui.style.UiBorderStyle;
+import club.heiqi.uilib.ui.style.UiBorderCollapse;
 import club.heiqi.uilib.ui.style.UiOverflow;
 import club.heiqi.uilib.ui.style.UiStyleInsets;
 import club.heiqi.uilib.ui.style.UiStyleLength;
@@ -34,6 +35,7 @@ public final class DocumentTableControl {
     private int rowGap = 0;
     private int cellPadding = 6;
     private int borderWidth = 1;
+    private boolean borderCollapse;
     private int headerBackgroundColor = DEFAULT_HEADER_BACKGROUND;
     private int bodyBackgroundColor = DEFAULT_BODY_BACKGROUND;
     private int borderColor = DEFAULT_BORDER_COLOR;
@@ -147,6 +149,18 @@ public final class DocumentTableControl {
     }
 
     /**
+     * 设置表格边框是否合并。
+     *
+     * @param borderCollapse true 时使用 collapse 语义，false 时保持 separate
+     * @return 当前表格控件
+     */
+    public DocumentTableControl setBorderCollapse(boolean borderCollapse) {
+        this.borderCollapse = borderCollapse;
+        configureTableElement();
+        return this;
+    }
+
+    /**
      * 设置表格颜色。
      *
      * @param headerBackgroundColor 表头背景色
@@ -256,7 +270,8 @@ public final class DocumentTableControl {
     private void configureTableElement() {
         element.style()
                 .setRowGap(UiStyleLength.px(rowGap))
-                .setColumnGap(UiStyleLength.px(columnGap));
+                .setColumnGap(UiStyleLength.px(columnGap))
+                .setBorderCollapse(borderCollapse ? UiBorderCollapse.COLLAPSE : UiBorderCollapse.SEPARATE);
     }
 
     private void ensureHeaderSectionAttached() {

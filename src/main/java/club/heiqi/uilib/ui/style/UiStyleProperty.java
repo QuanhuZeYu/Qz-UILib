@@ -62,6 +62,7 @@ public enum UiStyleProperty {
     FLEX_WRAP(false, UiStyleChangeImpact.LAYOUT),
     BOX_SHADOW(false, UiStyleChangeImpact.PAINT),
     BORDER_STYLE(false, UiStyleChangeImpact.PAINT),
+    BORDER_COLLAPSE(false, UiStyleChangeImpact.LAYOUT),
     CURSOR(true, UiStyleChangeImpact.PAINT),
     BORDER_RADIUS_CORNERS(false, UiStyleChangeImpact.PAINT),
     TEXT_DECORATION(false, UiStyleChangeImpact.PAINT),

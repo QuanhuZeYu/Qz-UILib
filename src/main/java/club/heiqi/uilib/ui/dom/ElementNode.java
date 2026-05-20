@@ -21,6 +21,7 @@ public final class ElementNode extends DocumentNode {
     private final long __elementUid;
     private final Map<String, String> attributes = new LinkedHashMap<String, String>();
     private boolean focusable;
+    private boolean focusableExplicitlySet;
     private int focusInvalidationVersion;
     private DocumentElementActiveHandler activeHandler;
     private DocumentElementClickHandler clickHandler;
@@ -195,7 +196,11 @@ public final class ElementNode extends DocumentNode {
             return this;
         }
         String previousValue = attributes.put(resolvedName, value);
-        if (!Objects.equals(previousValue, value)) {
+        boolean changed = !Objects.equals(previousValue, value);
+        if (isAnchorElement() && "href".equals(resolvedName)) {
+            changed |= updateAnchorFocusableFromHref();
+        }
+        if (changed) {
             markMutated();
         }
         return this;
@@ -229,7 +234,11 @@ public final class ElementNode extends DocumentNode {
      */
     public ElementNode removeAttribute(String name) {
         String resolvedName = normalizeName(name, "name");
-        if (attributes.remove(resolvedName) != null) {
+        String previousValue = attributes.remove(resolvedName);
+        if (previousValue != null) {
+            if (isAnchorElement() && "href".equals(resolvedName)) {
+                updateAnchorFocusableFromHref();
+            }
             markMutated();
         }
         return this;
@@ -253,13 +262,16 @@ public final class ElementNode extends DocumentNode {
      * @return 当前元素
      */
     public ElementNode setFocusable(boolean focusable) {
+        boolean previousEffectiveFocusable = this.focusable;
         if (this.focusable && !focusable) {
             focusInvalidationVersion++;
         }
-        if (this.focusable != focusable) {
+        this.focusableExplicitlySet = true;
+        this.focusable = focusable;
+        boolean nextEffectiveFocusable = this.focusable;
+        if (previousEffectiveFocusable != nextEffectiveFocusable) {
             markMutated();
         }
-        this.focusable = focusable;
         return this;
     }
 
@@ -431,6 +443,9 @@ public final class ElementNode extends DocumentNode {
         }
         if ("option".equals(tagName)) {
             return "option";
+        }
+        if (isAnchorElement() && hasLinkHref()) {
+            return "link";
         }
         if (DocumentImageElementSupport.isImageTag(tagName)) {
             String alt = getAttribute("alt");
@@ -1020,6 +1035,36 @@ public final class ElementNode extends DocumentNode {
     private static boolean isNativeFocusableTag(String tagName) {
         return "button".equals(tagName) || "input".equals(tagName) || "textarea".equals(tagName)
                 || "select".equals(tagName);
+    }
+
+    private boolean isAnchorElement() {
+        return "a".equals(tagName);
+    }
+
+    private boolean hasLinkHref() {
+        return hasLinkHref(getAttribute("href"));
+    }
+
+    private boolean updateAnchorFocusableFromHref() {
+        if (!isAnchorElement() || focusableExplicitlySet) {
+            return false;
+        }
+        boolean nextFocusable = hasLinkHref();
+        if (focusable == nextFocusable) {
+            return false;
+        }
+        if (focusable && !nextFocusable) {
+            focusInvalidationVersion++;
+        }
+        focusable = nextFocusable;
+        return true;
+    }
+
+    private static boolean hasLinkHref(String href) {
+        if (href == null) {
+            return false;
+        }
+        return !href.trim().isEmpty();
     }
 
     private static String trimToNull(String value) {

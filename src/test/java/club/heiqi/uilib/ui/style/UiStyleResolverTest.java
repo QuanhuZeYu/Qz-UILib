@@ -155,6 +155,41 @@ public class UiStyleResolverTest {
     }
 
     /**
+     * 验证链接、列表和 border-collapse 的最小默认样式。
+     */
+    @Test
+    public void shouldResolveAnchorListAndBorderCollapseDefaults() {
+        UiDocument document = UiDocument.create();
+        ElementNode link = document.a();
+        ElementNode plainAnchor = document.a();
+        ElementNode list = document.ul();
+        ElementNode listItem = document.li();
+        ElementNode table = document.table();
+
+        link.setAttribute("href", "#details");
+        list.append(listItem);
+        table.style().setBorderCollapse(UiBorderCollapse.COLLAPSE);
+
+        ComputedStyle linkStyle = UiStyleResolver.compute(link);
+        ComputedStyle plainAnchorStyle = UiStyleResolver.compute(plainAnchor);
+        ComputedStyle listItemStyle = UiStyleResolver.compute(listItem);
+        ComputedStyle tableStyle = UiStyleResolver.compute(table);
+
+        Assert.assertEquals(UiDisplay.INLINE, linkStyle.getDisplay());
+        Assert.assertEquals(0xFF4E8DFF, linkStyle.getTextColor());
+        Assert.assertEquals(UiTextDecoration.UNDERLINE, linkStyle.getTextDecoration());
+        Assert.assertEquals(UiCursor.POINTER, linkStyle.getCursor());
+        Assert.assertNull(plainAnchor.getSemanticRole());
+        Assert.assertEquals(UiStyleLength.auto(), plainAnchorStyle.getWidth());
+        Assert.assertEquals(0xFFFFFFFF, plainAnchorStyle.getTextColor());
+        Assert.assertEquals(UiTextDecoration.NONE, plainAnchorStyle.getTextDecoration());
+        Assert.assertEquals(UiCursor.DEFAULT, plainAnchorStyle.getCursor());
+        Assert.assertEquals(UiStyleLength.px(24), listItemStyle.getPadding().getLeft());
+        Assert.assertEquals(UiBorderCollapse.COLLAPSE, tableStyle.getBorderCollapse());
+        Assert.assertEquals("link", link.getSemanticRole());
+    }
+
+    /**
      * 验证 inherit / initial / unset 关键字按属性继承语义解析。
      */
     @Test

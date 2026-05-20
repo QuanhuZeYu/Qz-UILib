@@ -59,6 +59,7 @@
 - `cursor` 已接通宿主真实系统光标：当前稳定支持 `default`、`pointer`、`text`、`move`、`not-allowed`、`wait`、`crosshair`、`ew-resize`、`ns-resize`、`none`；`grab` / `grabbing` 降级为 `move`，`help` 降级为 `default`。命中元素离开、没有命中元素，或命中链未声明 `cursor` 时会恢复默认箭头；系统光标宿主调用失败会降级为 no-op，不应打断输入链路。`DocumentCursorOverlayControl` 仍只是页面级图片覆层，不等同于系统光标。
 - `UiStyleVariables` 提供命名颜色/长度/字符串变量容器，挂载在 `UiDocument` 上作为文档级变量作用域；变量值变更会触发布局失效，但当前不支持 CSS `var(...)` 声明级自动解析，页面若要响应主题变量变化仍需读取变量并回写样式。
 - `aspect-ratio` 已在高度 auto 且宽度可解析的普通盒布局中推导内容高度；普通 `img` 绘制阶段已支持 `object-fit` 的 fill/contain/cover/none/scale-down。
+- HTML-like 常用语义元素已补齐最小闭环：`document.a()` 只是链接元素工厂，真正的默认链接语义只在 `a[href]` 上生效，表现为可点击、可聚焦、默认下划线与 `cursor:pointer`；未阻止默认行为时会先处理 `#id` 片段跳转，再通过 `UiDocument.setLinkActivationHandler(...)` 向业务方回调链接激活；`ul/ol/li` 会绘制真实项目符号或序号标记；`table` 已支持最小 `border-collapse`（去 gap + 合并共享边线）；`img` 资源解析失败且声明 `alt` 时会绘制文本回退而不是静默空白。
 - 诊断页与示例页只展示已接入运行时并有最小验证的能力；仅完成级联解析、值类型承载或手动同步的能力必须明确写成边界，不得包装成浏览器语义已完整支持。
 - `DocumentElementScrollHandler` / `DocumentElementScrollEvent` 提供元素滚动事件监听能力，通过 `ElementNode.setScrollHandler(...)` 注册。
 - `DocumentNode` 已补齐标准 DOM 操作：`insertBefore(newChild, referenceChild)`、`replaceChild(newChild, oldChild)`，配合已有的 `appendChild`/`removeChild`/`clearChildren` 构成完整 DOM 操作集。

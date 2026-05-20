@@ -14,6 +14,7 @@ import club.heiqi.uilib.ui.dom.control.DocumentButtonControl;
 import club.heiqi.uilib.ui.dom.control.DocumentTextInputControl;
 import club.heiqi.uilib.ui.image.DocumentRemoteImageCache;
 import club.heiqi.uilib.ui.style.UiAlignItems;
+import club.heiqi.uilib.ui.style.UiBorderCollapse;
 import club.heiqi.uilib.ui.style.UiBoxSizing;
 import club.heiqi.uilib.ui.style.UiDisplay;
 import club.heiqi.uilib.ui.style.UiFlexDirection;
@@ -425,6 +426,40 @@ public class DocumentLayoutEngineTest {
         Assert.assertEquals(40, shortCellBox.getHeight());
         Assert.assertEquals(40, tallCellBox.getHeight());
         Assert.assertEquals(34, shortCellBox.getContentHeight());
+    }
+
+    /**
+     * 验证 border-collapse 会让表格内部不再保留 row/column gap。
+     */
+    @Test
+    public void shouldRemoveInternalGapWhenTableBorderCollapseIsEnabled() {
+        UiDocument document = UiDocument.create();
+        ElementNode root = document.getRootElement();
+        ElementNode table = document.table();
+        ElementNode row = document.tr();
+        ElementNode first = document.td();
+        ElementNode second = document.td();
+
+        root.style().setWidth(UiStyleLength.px(220));
+        table.style()
+                .setWidth(UiStyleLength.px(160))
+                .setRowGap(UiStyleLength.px(6))
+                .setColumnGap(UiStyleLength.px(8))
+                .setBorderCollapse(UiBorderCollapse.COLLAPSE);
+        first.style().setWidth(UiStyleLength.px(60)).setBorderWidth(UiStyleLength.px(1)).setPadding(UiStyleLength.px(2));
+        second.style().setBorderWidth(UiStyleLength.px(1)).setPadding(UiStyleLength.px(2));
+        first.appendText("A");
+        second.appendText("B");
+        row.append(first).append(second);
+        table.append(row);
+        root.append(table);
+
+        DocumentLayoutBox rowBox = DocumentLayoutEngine.layout(root, 220, 0,
+                new DeterministicTextMeasureService()).getChildren().get(0).getChildren().get(0);
+        DocumentLayoutBox firstBox = rowBox.getChildren().get(0);
+        DocumentLayoutBox secondBox = rowBox.getChildren().get(1);
+
+        Assert.assertEquals(firstBox.getRight(), secondBox.getLeft());
     }
 
     /**

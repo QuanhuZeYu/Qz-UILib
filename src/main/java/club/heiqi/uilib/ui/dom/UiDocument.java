@@ -26,6 +26,7 @@ public final class UiDocument {
     private final ElementNode rootElement;
     private final Map<String, DocumentKeyframes> keyframes = new LinkedHashMap<String, DocumentKeyframes>();
     private final List<UiStyleSheet> styleSheets = new ArrayList<UiStyleSheet>();
+    private DocumentLinkActivationHandler linkActivationHandler;
     private UiStyleVariables styleVariables;
     private TextContentMode defaultTextContentMode = TextContentMode.UILIB_RAW;
     private WeakReference<DocumentInteractionRuntime> interactionRuntimeReference;
@@ -90,6 +91,15 @@ public final class UiDocument {
      */
     public ElementNode button() {
         return element("button");
+    }
+
+    /**
+     * 创建 a 元素。
+     *
+     * @return a 元素
+     */
+    public ElementNode a() {
+        return element("a");
     }
 
     /**
@@ -198,6 +208,33 @@ public final class UiDocument {
      */
     public ElementNode td() {
         return element("td");
+    }
+
+    /**
+     * 创建 ul 元素。
+     *
+     * @return ul 元素
+     */
+    public ElementNode ul() {
+        return element("ul");
+    }
+
+    /**
+     * 创建 ol 元素。
+     *
+     * @return ol 元素
+     */
+    public ElementNode ol() {
+        return element("ol");
+    }
+
+    /**
+     * 创建 li 元素。
+     *
+     * @return li 元素
+     */
+    public ElementNode li() {
+        return element("li");
     }
 
     /**
@@ -458,6 +495,37 @@ public final class UiDocument {
             recordLayoutMutation();
         }
         return this;
+    }
+
+    /**
+     * 设置文档级链接激活处理器。
+     *
+     * <p>当作者点击 `a[href]` 且事件未被 `preventDefault()` 阻止时，运行时会先尝试片段跳转，
+     * 再把激活事件交给这里的处理器，供业务方接管外部页面跳转、回调或埋点。</p>
+     *
+     * @param linkActivationHandler 链接激活处理器；为 null 时清除
+     * @return 当前文档
+     */
+    public UiDocument setLinkActivationHandler(DocumentLinkActivationHandler linkActivationHandler) {
+        this.linkActivationHandler = linkActivationHandler;
+        return this;
+    }
+
+    public DocumentLinkActivationHandler getLinkActivationHandler() {
+        return linkActivationHandler;
+    }
+
+    /**
+     * 派发内部链接激活事件。
+     *
+     * <p>该入口供运行时在 `a[href]` 默认激活链路中桥接文档级回调，不作为普通业务 DOM API。</p>
+     *
+     * @param event 链接激活事件
+     */
+    public void __dispatchLinkActivation(DocumentLinkActivationEvent event) {
+        if (linkActivationHandler != null && event != null) {
+            linkActivationHandler.onLinkActivated(event);
+        }
     }
 
     /**

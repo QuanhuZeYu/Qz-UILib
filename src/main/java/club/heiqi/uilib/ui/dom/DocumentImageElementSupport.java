@@ -5,13 +5,18 @@ import java.awt.image.BufferedImage;
 import net.minecraft.util.ResourceLocation;
 
 import club.heiqi.uilib.ui.image.DocumentRemoteImageCache;
+import club.heiqi.uilib.ui.image.DocumentRemoteImageCache.Entry;
+import club.heiqi.uilib.ui.image.DocumentRemoteImageCache.Status;
 import club.heiqi.uilib.ui.image.HostImageSource;
 import club.heiqi.uilib.ui.paint.DocumentCustomRenderer;
 import club.heiqi.uilib.ui.render.UiRenderContext;
 import club.heiqi.uilib.ui.style.ComputedStyle;
+import club.heiqi.uilib.ui.style.UiFontStyle;
+import club.heiqi.uilib.ui.style.UiFontWeight;
 import club.heiqi.uilib.ui.style.UiObjectFit;
 import club.heiqi.uilib.ui.style.UiStyleResolver;
 import club.heiqi.uilib.ui.style.UiStyleLength;
+import club.heiqi.uilib.ui.text.TextContentMode;
 
 /**
  * 浏览器式 `img` 元素的最小宿主位图适配。
@@ -20,6 +25,8 @@ public final class DocumentImageElementSupport {
 
     public static final int DEFAULT_INTRINSIC_WIDTH = 16;
     public static final int DEFAULT_INTRINSIC_HEIGHT = 16;
+    private static final int FALLBACK_TEXT_PADDING_X = 4;
+    private static final int FALLBACK_TEXT_PADDING_Y = 4;
 
     private DocumentImageElementSupport() {}
 
@@ -43,15 +50,18 @@ public final class DocumentImageElementSupport {
             @Override
             public void render(UiRenderContext context, int contentLeft, int contentTop, int contentRight,
                     int contentBottom) {
-                HostImageSource source = resolveSource(element);
-                if (source == null) {
+                ResolvedImageSource resolvedSource = resolveSource(element);
+                if (resolvedSource.hostImageSource == null) {
+                    renderFallbackText(element, resolvedSource, context, contentLeft, contentTop, contentRight,
+                            contentBottom);
                     return;
                 }
-                ImageContentRect targetRect = resolveObjectFitRect(element, source, contentLeft, contentTop,
+                ImageContentRect targetRect = resolveObjectFitRect(element, resolvedSource.hostImageSource, contentLeft,
+                        contentTop,
                         contentRight, contentBottom);
                 context.pushClip(contentLeft, contentTop, contentRight, contentBottom);
                 try {
-                    context.drawHostImage(source, targetRect.left, targetRect.top, targetRect.right,
+                    context.drawHostImage(resolvedSource.hostImageSource, targetRect.left, targetRect.top, targetRect.right,
                             targetRect.bottom);
                 } finally {
                     context.popClip();
@@ -126,20 +136,64 @@ public final class DocumentImageElementSupport {
         return resolveIntrinsicHeight(element);
     }
 
-    private static HostImageSource resolveSource(ElementNode element) {
+    private static ResolvedImageSource resolveSource(ElementNode element) {
         String src = element.getAttribute("src");
         if (isRemoteUrl(src)) {
-            DocumentRemoteImageCache.Entry entry = DocumentRemoteImageCache.getInstance().request(src, new Runnable() {
+            Entry entry = DocumentRemoteImageCache.getInstance().request(src, new Runnable() {
                 @Override
                 public void run() {
                     element.setAttribute("data-img-load-revision", String.valueOf(System.nanoTime()));
                 }
             });
             BufferedImage image = entry.getImage();
-            return image == null ? null : HostImageSource.bufferedImage(image, src.trim());
+            return image == null
+                    ? new ResolvedImageSource(null, entry.getStatus())
+                    : new ResolvedImageSource(HostImageSource.bufferedImage(image, src.trim()), entry.getStatus());
         }
         ResourceLocation texture = resolveResourceLocation(src);
-        return texture == null ? null : HostImageSource.texture(texture, 1, 1);
+        return texture == null
+                ? new ResolvedImageSource(null, Status.FAILED)
+                : new ResolvedImageSource(HostImageSource.texture(texture, 1, 1), Status.LOADED);
+    }
+
+    private static void renderFallbackText(ElementNode element, ResolvedImageSource resolvedSource,
+            UiRenderContext context, int contentLeft, int contentTop, int contentRight, int contentBottom) {
+        if (context == null || element == null) {
+            return;
+        }
+        if (resolvedSource != null && resolvedSource.status != Status.FAILED) {
+            return;
+        }
+        String fallbackText = normalizeFallbackText(element.getAttribute("alt"));
+        if (fallbackText.isEmpty()) {
+            return;
+        }
+        int availableWidth = Math.max(0, contentRight - contentLeft - FALLBACK_TEXT_PADDING_X * 2);
+        if (availableWidth <= 0 || contentBottom <= contentTop) {
+            return;
+        }
+        ComputedStyle style = UiStyleResolver.compute(element);
+        String measuredText = fallbackText;
+        int textWidth = context.measureTextWidth(measuredText, TextContentMode.UILIB_RAW);
+        if (textWidth > availableWidth) {
+            int approxRawWidth = Math.max(0, Math.round(availableWidth / 2.0F));
+            measuredText = context.getFontRenderer().trimStringToWidth(measuredText, approxRawWidth);
+            if (measuredText == null || measuredText.isEmpty()) {
+                return;
+            }
+        }
+        int textX = contentLeft + FALLBACK_TEXT_PADDING_X;
+        int lineHeight = Math.max(context.getTextLineHeight(), 1);
+        int centeredTop = contentTop + Math.max(0, (contentBottom - contentTop - lineHeight) / 2);
+        int textY = centeredTop + FALLBACK_TEXT_PADDING_Y / 2;
+        context.pushClip(contentLeft, contentTop, contentRight, contentBottom);
+        try {
+            context.drawText(measuredText, textX, textY, style.getTextColor(), false, TextContentMode.UILIB_RAW,
+                    style.getFontWeight() == null ? UiFontWeight.NORMAL : style.getFontWeight(),
+                    style.getFontStyle() == null ? UiFontStyle.NORMAL : style.getFontStyle());
+        } finally {
+            context.popClip();
+        }
     }
 
     private static ImageContentRect resolveObjectFitRect(ElementNode element, HostImageSource source, int contentLeft,
@@ -241,6 +295,14 @@ public final class DocumentImageElementSupport {
         return length == null || length.getType() == UiStyleLength.Type.AUTO;
     }
 
+    private static String normalizeFallbackText(String alt) {
+        if (alt == null) {
+            return "";
+        }
+        String trimmed = alt.trim();
+        return trimmed.isEmpty() ? "" : trimmed;
+    }
+
     private static int scaleWidthForHeight(ElementNode element, int height) {
         int intrinsicHeight = Math.max(1, resolveIntrinsicHeight(element));
         int intrinsicWidth = Math.max(1, resolveIntrinsicWidth(element));
@@ -261,6 +323,17 @@ public final class DocumentImageElementSupport {
         private ImageSize(int width, int height) {
             this.width = Math.max(1, width);
             this.height = Math.max(1, height);
+        }
+    }
+
+    private static final class ResolvedImageSource {
+
+        private final HostImageSource hostImageSource;
+        private final Status status;
+
+        private ResolvedImageSource(HostImageSource hostImageSource, Status status) {
+            this.hostImageSource = hostImageSource;
+            this.status = status == null ? Status.PENDING : status;
         }
     }
 
