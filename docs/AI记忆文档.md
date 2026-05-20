@@ -37,6 +37,8 @@
 
 - 业务文档入口以 `UiDocumentScreens.createDocumentScreen(...)` 为主；诊断页与示例页只保留内部开发工具入口，不对外暴露页面工厂类名。
 - `UiDocumentScreens` 已收窄为业务作者公开门面，只保留 `DocumentScreenEnvironment`、`DocumentScreenContentBuilder` 与 `createDocumentScreen(...)`；definition-backed 托管页面、诊断页注册表与 screen identity 已下沉到 `ui.screen` 包内内部实现。
+- 示例 controller 与示例 model 已收敛到 `ui.screen.example` 子包；`DocumentPageController` / `DocumentPageAuthoringSurface` / `DocumentPageRuntimeView` / `DirectDocumentPageAuthoringSurface` 已提升为 public 作为 `ui.screen` 与 `ui.screen.example` 的共享 SPI 边界。
+- DOM 事件类统一继承 `AbstractDocumentElementEvent` 基类，传播控制（`stopPropagation` / `preventDefault` 等）由基类承载；`DocumentLinkActivationEvent.markHandled()` / `isHandled()` 已标记 `@Deprecated`，统一使用 `preventDefault()` / `isDefaultPrevented()`。
 - 不新增扩大直接 `Widget` 作者入口的 API；新增作者能力优先放在 `UiDocument`、DOM、样式系统、控件适配或 HTML-like 后端能力中。
 - `createDocumentScreen(...)` 已默认补齐根元素 `width:100%`、`height:100%` 和 `overflow-y:auto`；文档与示例不应再把这组样板当作手动必填前置知识。
 - `flex-direction:column` 容器下，非 `stretch` 子项的 `width:auto` 走固有内容宽度测量，并受父内容宽度裁剪；auto 高文本块会按真实换行高度参与兄弟项排布，若业务要求整行占满，仍应显式写 `width:100%` 或继续使用 `stretch`。
