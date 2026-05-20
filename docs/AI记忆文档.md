@@ -36,8 +36,11 @@
 ## 长期稳定边界
 
 - 业务文档入口以 `UiDocumentScreens.createDocumentScreen(...)` 为主；诊断页与示例页只保留内部开发工具入口，不对外暴露页面工厂类名。
-- `UiDocumentScreens` 已收窄为业务作者公开门面，只保留 `DocumentScreenEnvironment`、`DocumentScreenContentBuilder` 与 `createDocumentScreen(...)`；definition-backed 托管页面、诊断页注册表与 screen identity 已下沉到 `ui.screen` 包内内部实现。
-- 示例 controller 与示例 model 已收敛到 `ui.screen.example` 子包；`DocumentPageController` / `DocumentPageAuthoringSurface` / `DocumentPageRuntimeView` / `DirectDocumentPageAuthoringSurface` 已提升为 public 作为 `ui.screen` 与 `ui.screen.example` 的共享 SPI 边界。
+- `UiDocumentScreens` 已收窄为业务作者公开门面，只保留 `DocumentScreenEnvironment`、`DocumentScreenContentBuilder` 与 `createDocumentScreen(...)`；definition-backed 托管页面、诊断页注册表、screen identity 与 inline document controller 已下沉到 `ui.screen.internal` 子包，业务作者不再可见。
+- `ui.screen` 包按职责拆开：`ui.screen.page` 承载文档页面 SPI（`DocumentPageController`/`DocumentPageAuthoringSurface`/`DirectDocumentPageAuthoringSurface`/`DocumentPageRuntimeView`/`DocumentScreenChrome`/`DocumentUiScope`，已提升为 public）；`ui.screen.internal` 承载 `InternalScreenIdentity` / `InternalHostedScreenFactory` / `InternalDiagnosticScreenRegistry` / `InternalInlineDocumentPageController` 与 `UiDiagnosticsScreens`，借子包名传达"内部"意图不再依赖 package-private 隐藏；主包仅保留 `BaseScreen` / `UiScreenManager` / `UiDocumentScreens` / `UiScreenHostSession` / `UiHostBackgroundBlurRenderer` 这组门面与协作类。`ui.screen.example` 收敛示例 controller 与示例 model。
+- `ui.style` 包按职责拆为四个子包：`ui.style.values`（值对象，含 `UiSurfaceStyle`）、`ui.style.props`（枚举属性）、`ui.style.cascade`（声明/规则/样式表/变量/Resolver/`ComputedStyle`/`UiBorderRadiusResolver`）、`ui.style.selector`（`UiSelector`/`UiPseudoClass`/`UiPseudoElement`）；主包只保留 `UiStyleProperty`/`UiStyleChangeImpact`/`UiStyleChangeListener` 共享元数据。原 `ui.theme` 单文件包已合并入 `ui.style.values`。
+- 应用级控件归属 `ui.control` 包（按钮、文本输入/文本域、选择器、表格、槽位、覆层、tooltip、cursor 覆层、可拖拽支持等），`ui.dom` 包回归"协议+模型"边界，不再承载控件实现。
+- `DocumentCursorHost` 与 `SystemDocumentCursorHost` 归属 `ui.host` 包，与 `DocumentHostInteractionSession`/`DocumentHostRenderSupport`/`DocumentHostWidgetFactory` 同包承载所有宿主能力抽象。
 - DOM 事件类统一继承 `AbstractDocumentElementEvent` 基类，传播控制（`stopPropagation` / `preventDefault` 等）由基类承载；`DocumentLinkActivationEvent.markHandled()` / `isHandled()` 已标记 `@Deprecated`，统一使用 `preventDefault()` / `isDefaultPrevented()`。
 - 不新增扩大直接 `Widget` 作者入口的 API；新增作者能力优先放在 `UiDocument`、DOM、样式系统、控件适配或 HTML-like 后端能力中。
 - `createDocumentScreen(...)` 已默认补齐根元素 `width:100%`、`height:100%` 和 `overflow-y:auto`；文档与示例不应再把这组样板当作手动必填前置知识。
