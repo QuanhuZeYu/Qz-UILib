@@ -7,9 +7,9 @@ import club.heiqi.uilib.ui.dom.UiDocument;
 import club.heiqi.uilib.ui.image.HostImageSource;
 import club.heiqi.uilib.ui.paint.DocumentCustomRenderer;
 import club.heiqi.uilib.ui.render.UiRenderContext;
-import club.heiqi.uilib.ui.style.UiDisplay;
-import club.heiqi.uilib.ui.style.UiOverflow;
-import club.heiqi.uilib.ui.style.UiStyleLength;
+import club.heiqi.uilib.ui.style.props.UiDisplay;
+import club.heiqi.uilib.ui.style.props.UiOverflow;
+import club.heiqi.uilib.ui.style.values.UiStyleLength;
 
 /**
  * 基于 HTML-like 元素实现的宿主图片控件。

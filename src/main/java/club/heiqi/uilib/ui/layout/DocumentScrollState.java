@@ -12,9 +12,9 @@ import java.util.Objects;
 import java.util.Set;
 
 import club.heiqi.uilib.ui.dom.ElementNode;
-import club.heiqi.uilib.ui.style.ComputedStyle;
-import club.heiqi.uilib.ui.style.UiOverflow;
-import club.heiqi.uilib.ui.style.UiScrollbarWidth;
+import club.heiqi.uilib.ui.style.cascade.ComputedStyle;
+import club.heiqi.uilib.ui.style.props.UiOverflow;
+import club.heiqi.uilib.ui.style.props.UiScrollbarWidth;
 
 /**
  * HTML-like 文档滚动状态。

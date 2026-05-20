@@ -12,7 +12,7 @@ import club.heiqi.uilib.ui.dom.ElementNode;
 import club.heiqi.uilib.ui.dom.UiDocument;
 import club.heiqi.uilib.ui.event.UiKeyEvent;
 import club.heiqi.uilib.ui.event.UiMouseEvent;
-import club.heiqi.uilib.ui.style.UiStyleLength;
+import club.heiqi.uilib.ui.style.values.UiStyleLength;
 import club.heiqi.uilib.ui.text.TextMeasureService;
 
 /**

@@ -8,8 +8,8 @@ import org.junit.Test;
 import club.heiqi.uilib.ui.dom.ElementNode;
 import club.heiqi.uilib.ui.dom.UiDocument;
 import club.heiqi.uilib.ui.image.HostImageSource;
-import club.heiqi.uilib.ui.style.UiDisplay;
-import club.heiqi.uilib.ui.style.UiStyleResolver;
+import club.heiqi.uilib.ui.style.props.UiDisplay;
+import club.heiqi.uilib.ui.style.cascade.UiStyleResolver;
 
 /**
  * `DocumentCursorOverlayControl` 的基础行为契约测试。

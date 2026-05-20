@@ -5,10 +5,10 @@ import org.junit.Test;
 
 import club.heiqi.uilib.ui.dom.ElementNode;
 import club.heiqi.uilib.ui.dom.UiDocument;
-import club.heiqi.uilib.ui.style.UiOverflow;
-import club.heiqi.uilib.ui.style.UiPosition;
-import club.heiqi.uilib.ui.style.UiScrollbarWidth;
-import club.heiqi.uilib.ui.style.UiStyleLength;
+import club.heiqi.uilib.ui.style.props.UiOverflow;
+import club.heiqi.uilib.ui.style.props.UiPosition;
+import club.heiqi.uilib.ui.style.props.UiScrollbarWidth;
+import club.heiqi.uilib.ui.style.values.UiStyleLength;
 
 /**
  * `DocumentScrollState` 的 HTML-like 滚动命中契约。
@@ -251,9 +251,9 @@ public class DocumentScrollStateTest {
                 .setPosition(UiPosition.FIXED)
                 .setLeft(UiStyleLength.px(1648))
                 .setTop(UiStyleLength.px(18))
-                .setDisplay(club.heiqi.uilib.ui.style.UiDisplay.FLEX)
-                .setFlexDirection(club.heiqi.uilib.ui.style.UiFlexDirection.COLUMN)
-                .setAlignItems(club.heiqi.uilib.ui.style.UiAlignItems.START)
+                .setDisplay(club.heiqi.uilib.ui.style.props.UiDisplay.FLEX)
+                .setFlexDirection(club.heiqi.uilib.ui.style.props.UiFlexDirection.COLUMN)
+                .setAlignItems(club.heiqi.uilib.ui.style.props.UiAlignItems.START)
                 .setWidth(UiStyleLength.px(360))
                 .setHeight(UiStyleLength.px(368))
                 .setPadding(UiStyleLength.px(12))
@@ -261,7 +261,7 @@ public class DocumentScrollStateTest {
         dragBar.appendText("HUD 工具浮窗 · 拖住这里移动");
 
         heroCard.style()
-                .setDisplay(club.heiqi.uilib.ui.style.UiDisplay.BLOCK)
+                .setDisplay(club.heiqi.uilib.ui.style.props.UiDisplay.BLOCK)
                 .setWidth(UiStyleLength.percent(1.0F))
                 .setRowGap(UiStyleLength.px(4));
         heroCard.append(createAutoWidthTextBlock(document, "INTERACTIVE HUD"));
@@ -271,18 +271,18 @@ public class DocumentScrollStateTest {
                 "把工具浮窗停在背包右上区域，用于核对 HUD 层可见性、输入接管与滚轮状态。"));
 
         controlCard.style()
-                .setDisplay(club.heiqi.uilib.ui.style.UiDisplay.BLOCK)
+                .setDisplay(club.heiqi.uilib.ui.style.props.UiDisplay.BLOCK)
                 .setWidth(UiStyleLength.percent(1.0F))
                 .setRowGap(UiStyleLength.px(6));
         controlCard.append(createAutoWidthTextBlock(document, "调试开关"));
         ElementNode debugToggleCard = document.div();
         debugToggleCard.style()
-                .setDisplay(club.heiqi.uilib.ui.style.UiDisplay.BLOCK)
+                .setDisplay(club.heiqi.uilib.ui.style.props.UiDisplay.BLOCK)
                 .setWidth(UiStyleLength.percent(1.0F))
                 .setRowGap(UiStyleLength.px(6));
         debugToggleCard.append(createAutoWidthTextBlock(document, "显示 HUD 调试信息"));
         ElementNode debugToggleHost = document.div();
-        debugToggleHost.style().setDisplay(club.heiqi.uilib.ui.style.UiDisplay.BLOCK)
+        debugToggleHost.style().setDisplay(club.heiqi.uilib.ui.style.props.UiDisplay.BLOCK)
                 .setWidth(UiStyleLength.auto());
         debugToggleHost.append(new club.heiqi.uilib.ui.control.DocumentToggleSwitchControl(document)
                 .setToggled(true).getElement());
@@ -296,16 +296,16 @@ public class DocumentScrollStateTest {
                 .setOverflowX(UiOverflow.HIDDEN)
                 .setOverflowY(UiOverflow.AUTO);
         contentBody.style()
-                .setDisplay(club.heiqi.uilib.ui.style.UiDisplay.FLEX)
-                .setFlexDirection(club.heiqi.uilib.ui.style.UiFlexDirection.COLUMN)
-                .setAlignItems(club.heiqi.uilib.ui.style.UiAlignItems.START)
+                .setDisplay(club.heiqi.uilib.ui.style.props.UiDisplay.FLEX)
+                .setFlexDirection(club.heiqi.uilib.ui.style.props.UiFlexDirection.COLUMN)
+                .setAlignItems(club.heiqi.uilib.ui.style.props.UiAlignItems.START)
                 .setWidth(UiStyleLength.auto())
                 .setRowGap(UiStyleLength.px(6));
         scrollHost.append(contentBody);
 
         ElementNode overviewCard = document.div();
         overviewCard.style()
-                .setDisplay(club.heiqi.uilib.ui.style.UiDisplay.BLOCK)
+                .setDisplay(club.heiqi.uilib.ui.style.props.UiDisplay.BLOCK)
                 .setWidth(UiStyleLength.percent(1.0F))
                 .setRowGap(UiStyleLength.px(3));
         overviewCard.append(createAutoWidthTextBlock(document, "会话概览"));
@@ -314,7 +314,7 @@ public class DocumentScrollStateTest {
 
         ElementNode noteCard = document.div();
         noteCard.style()
-                .setDisplay(club.heiqi.uilib.ui.style.UiDisplay.BLOCK)
+                .setDisplay(club.heiqi.uilib.ui.style.props.UiDisplay.BLOCK)
                 .setWidth(UiStyleLength.percent(1.0F))
                 .setRowGap(UiStyleLength.px(4));
         noteCard.append(createAutoWidthTextBlock(document, "容器备注"));
@@ -327,7 +327,7 @@ public class DocumentScrollStateTest {
 
         ElementNode debugCard = document.div();
         debugCard.style()
-                .setDisplay(club.heiqi.uilib.ui.style.UiDisplay.BLOCK)
+                .setDisplay(club.heiqi.uilib.ui.style.props.UiDisplay.BLOCK)
                 .setWidth(UiStyleLength.percent(1.0F))
                 .setRowGap(UiStyleLength.px(3));
         debugCard.append(createAutoWidthTextBlock(document, "HUD DEBUG"));
@@ -336,7 +336,7 @@ public class DocumentScrollStateTest {
 
         ElementNode tipsCard = document.div();
         tipsCard.style()
-                .setDisplay(club.heiqi.uilib.ui.style.UiDisplay.BLOCK)
+                .setDisplay(club.heiqi.uilib.ui.style.props.UiDisplay.BLOCK)
                 .setWidth(UiStyleLength.percent(1.0F))
                 .setRowGap(UiStyleLength.px(3));
         tipsCard.append(createAutoWidthTextBlock(document, "操作建议"));
@@ -383,15 +383,15 @@ public class DocumentScrollStateTest {
                 .setOverflowX(UiOverflow.HIDDEN)
                 .setOverflowY(UiOverflow.AUTO);
         contentBody.style()
-                .setDisplay(club.heiqi.uilib.ui.style.UiDisplay.FLEX)
-                .setFlexDirection(club.heiqi.uilib.ui.style.UiFlexDirection.COLUMN)
-                .setAlignItems(club.heiqi.uilib.ui.style.UiAlignItems.STRETCH)
+                .setDisplay(club.heiqi.uilib.ui.style.props.UiDisplay.FLEX)
+                .setFlexDirection(club.heiqi.uilib.ui.style.props.UiFlexDirection.COLUMN)
+                .setAlignItems(club.heiqi.uilib.ui.style.props.UiAlignItems.STRETCH)
                 .setWidth(UiStyleLength.percent(1.0F))
                 .setRowGap(UiStyleLength.px(6));
         card.style()
-                .setDisplay(club.heiqi.uilib.ui.style.UiDisplay.FLEX)
-                .setFlexDirection(club.heiqi.uilib.ui.style.UiFlexDirection.COLUMN)
-                .setAlignItems(club.heiqi.uilib.ui.style.UiAlignItems.START)
+                .setDisplay(club.heiqi.uilib.ui.style.props.UiDisplay.FLEX)
+                .setFlexDirection(club.heiqi.uilib.ui.style.props.UiFlexDirection.COLUMN)
+                .setAlignItems(club.heiqi.uilib.ui.style.props.UiAlignItems.START)
                 .setWidth(UiStyleLength.percent(1.0F))
                 .setPadding(UiStyleLength.px(6))
                 .setBorderWidth(UiStyleLength.px(1))

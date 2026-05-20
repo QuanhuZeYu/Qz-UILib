@@ -7,9 +7,9 @@ import club.heiqi.uilib.ui.dom.ElementNode;
 import club.heiqi.uilib.ui.dom.UiDocument;
 import club.heiqi.uilib.ui.layout.DocumentLayoutBox;
 import club.heiqi.uilib.ui.layout.DocumentLayoutEngine;
-import club.heiqi.uilib.ui.style.UiStyleDeclaration;
-import club.heiqi.uilib.ui.style.UiStyleInsets;
-import club.heiqi.uilib.ui.style.UiStyleLength;
+import club.heiqi.uilib.ui.style.cascade.UiStyleDeclaration;
+import club.heiqi.uilib.ui.style.values.UiStyleInsets;
+import club.heiqi.uilib.ui.style.values.UiStyleLength;
 
 /**
  * `DocumentAnimationTimeline` 的 paint/effect transition 契约测试。

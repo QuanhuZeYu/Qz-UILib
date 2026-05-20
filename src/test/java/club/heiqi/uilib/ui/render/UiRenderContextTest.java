@@ -3,8 +3,8 @@ package club.heiqi.uilib.ui.render;
 import org.junit.Assert;
 import org.junit.Test;
 
-import club.heiqi.uilib.ui.style.UiFontStyle;
-import club.heiqi.uilib.ui.style.UiFontWeight;
+import club.heiqi.uilib.ui.style.props.UiFontStyle;
+import club.heiqi.uilib.ui.style.props.UiFontWeight;
 import club.heiqi.uilib.ui.text.TextContentMode;
 
 /**

@@ -13,8 +13,8 @@ import java.util.Set;
 import club.heiqi.uilib.ui.dom.ElementNode;
 import club.heiqi.uilib.ui.layout.DocumentEffectChain;
 import club.heiqi.uilib.ui.layout.DocumentLayoutBox;
-import club.heiqi.uilib.ui.style.ComputedStyle;
-import club.heiqi.uilib.ui.style.UiStyleLength;
+import club.heiqi.uilib.ui.style.cascade.ComputedStyle;
+import club.heiqi.uilib.ui.style.values.UiStyleLength;
 
 /**
  * HTML-like 文档级动画时间线。

@@ -54,19 +54,19 @@ import club.heiqi.uilib.ui.input.UiInputFrame;
 import club.heiqi.uilib.ui.input.UiInputRouter;
 import club.heiqi.uilib.ui.layout.DocumentLayoutBox;
 import club.heiqi.uilib.ui.render.UiRenderContext;
-import club.heiqi.uilib.ui.style.UiBorderRadiusResolver;
-import club.heiqi.uilib.ui.style.UiBorderStyle;
-import club.heiqi.uilib.ui.style.UiDisplay;
-import club.heiqi.uilib.ui.style.UiFontStyle;
-import club.heiqi.uilib.ui.style.UiFontWeight;
-import club.heiqi.uilib.ui.style.UiOverflow;
-import club.heiqi.uilib.ui.style.UiOverflowWrap;
-import club.heiqi.uilib.ui.style.UiPosition;
-import club.heiqi.uilib.ui.style.UiStyleInsets;
-import club.heiqi.uilib.ui.style.UiFontStyle;
-import club.heiqi.uilib.ui.style.UiFontWeight;
-import club.heiqi.uilib.ui.style.UiStyleLength;
-import club.heiqi.uilib.ui.style.UiVisibility;
+import club.heiqi.uilib.ui.style.cascade.UiBorderRadiusResolver;
+import club.heiqi.uilib.ui.style.props.UiBorderStyle;
+import club.heiqi.uilib.ui.style.props.UiDisplay;
+import club.heiqi.uilib.ui.style.props.UiFontStyle;
+import club.heiqi.uilib.ui.style.props.UiFontWeight;
+import club.heiqi.uilib.ui.style.props.UiOverflow;
+import club.heiqi.uilib.ui.style.props.UiOverflowWrap;
+import club.heiqi.uilib.ui.style.props.UiPosition;
+import club.heiqi.uilib.ui.style.values.UiStyleInsets;
+import club.heiqi.uilib.ui.style.props.UiFontStyle;
+import club.heiqi.uilib.ui.style.props.UiFontWeight;
+import club.heiqi.uilib.ui.style.values.UiStyleLength;
+import club.heiqi.uilib.ui.style.props.UiVisibility;
 import club.heiqi.uilib.ui.text.DefaultTextMeasureService;
 import club.heiqi.uilib.ui.text.TextContentMode;
 import club.heiqi.uilib.ui.text.TextMeasureService;
@@ -1787,7 +1787,7 @@ public class HtmlLikeDocumentWidgetTest {
                 .setLeft(UiStyleLength.px(0))
                 .setTop(UiStyleLength.px(0))
                 .setDisplay(UiDisplay.FLEX)
-                .setFlexDirection(club.heiqi.uilib.ui.style.UiFlexDirection.COLUMN)
+                .setFlexDirection(club.heiqi.uilib.ui.style.props.UiFlexDirection.COLUMN)
                 .setWidth(UiStyleLength.px(248))
                 .setHeight(UiStyleLength.px(232))
                 .setPadding(UiStyleLength.px(12));
@@ -1844,8 +1844,8 @@ public class HtmlLikeDocumentWidgetTest {
                 .setLeft(UiStyleLength.px(1648))
                 .setTop(UiStyleLength.px(18))
                 .setDisplay(UiDisplay.FLEX)
-                .setFlexDirection(club.heiqi.uilib.ui.style.UiFlexDirection.COLUMN)
-                .setAlignItems(club.heiqi.uilib.ui.style.UiAlignItems.START)
+                .setFlexDirection(club.heiqi.uilib.ui.style.props.UiFlexDirection.COLUMN)
+                .setAlignItems(club.heiqi.uilib.ui.style.props.UiAlignItems.START)
                 .setWidth(UiStyleLength.px(360))
                 .setHeight(UiStyleLength.px(368))
                 .setPadding(UiStyleLength.px(12))
@@ -1890,8 +1890,8 @@ public class HtmlLikeDocumentWidgetTest {
                 .setOverflowY(UiOverflow.AUTO);
         contentBody.style()
                 .setDisplay(UiDisplay.FLEX)
-                .setFlexDirection(club.heiqi.uilib.ui.style.UiFlexDirection.COLUMN)
-                .setAlignItems(club.heiqi.uilib.ui.style.UiAlignItems.START)
+                .setFlexDirection(club.heiqi.uilib.ui.style.props.UiFlexDirection.COLUMN)
+                .setAlignItems(club.heiqi.uilib.ui.style.props.UiAlignItems.START)
                 .setWidth(UiStyleLength.auto())
                 .setRowGap(UiStyleLength.px(6));
         scrollContent.append(contentBody);
@@ -1997,15 +1997,15 @@ public class HtmlLikeDocumentWidgetTest {
                 .setLeft(UiStyleLength.px(1648))
                 .setTop(UiStyleLength.px(18))
                 .setDisplay(UiDisplay.FLEX)
-                .setFlexDirection(club.heiqi.uilib.ui.style.UiFlexDirection.COLUMN)
-                .setAlignItems(club.heiqi.uilib.ui.style.UiAlignItems.START)
+                .setFlexDirection(club.heiqi.uilib.ui.style.props.UiFlexDirection.COLUMN)
+                .setAlignItems(club.heiqi.uilib.ui.style.props.UiAlignItems.START)
                 .setWidth(UiStyleLength.px(360))
                 .setPadding(UiStyleLength.px(12))
                 .setRowGap(UiStyleLength.px(8));
         heroCard.style()
                 .setDisplay(UiDisplay.FLEX)
-                .setFlexDirection(club.heiqi.uilib.ui.style.UiFlexDirection.COLUMN)
-                .setAlignItems(club.heiqi.uilib.ui.style.UiAlignItems.START)
+                .setFlexDirection(club.heiqi.uilib.ui.style.props.UiFlexDirection.COLUMN)
+                .setAlignItems(club.heiqi.uilib.ui.style.props.UiAlignItems.START)
                 .setWidth(UiStyleLength.percent(1.0F))
                 .setPadding(UiStyleLength.px(8))
                 .setBorderWidth(UiStyleLength.px(1))
@@ -2015,8 +2015,8 @@ public class HtmlLikeDocumentWidgetTest {
 
         overviewCard.style()
                 .setDisplay(UiDisplay.FLEX)
-                .setFlexDirection(club.heiqi.uilib.ui.style.UiFlexDirection.COLUMN)
-                .setAlignItems(club.heiqi.uilib.ui.style.UiAlignItems.START)
+                .setFlexDirection(club.heiqi.uilib.ui.style.props.UiFlexDirection.COLUMN)
+                .setAlignItems(club.heiqi.uilib.ui.style.props.UiAlignItems.START)
                 .setWidth(UiStyleLength.percent(1.0F))
                 .setPadding(UiStyleLength.px(6))
                 .setBorderWidth(UiStyleLength.px(1))
@@ -2075,16 +2075,16 @@ public class HtmlLikeDocumentWidgetTest {
                 .setLeft(UiStyleLength.px(1648))
                 .setTop(UiStyleLength.px(18))
                 .setDisplay(UiDisplay.FLEX)
-                .setFlexDirection(club.heiqi.uilib.ui.style.UiFlexDirection.COLUMN)
-                .setAlignItems(club.heiqi.uilib.ui.style.UiAlignItems.START)
+                .setFlexDirection(club.heiqi.uilib.ui.style.props.UiFlexDirection.COLUMN)
+                .setAlignItems(club.heiqi.uilib.ui.style.props.UiAlignItems.START)
                 .setWidth(UiStyleLength.px(360))
                 .setHeight(UiStyleLength.px(368))
                 .setPadding(UiStyleLength.px(12))
                 .setRowGap(UiStyleLength.px(8));
         heroCard.style()
                 .setDisplay(UiDisplay.FLEX)
-                .setFlexDirection(club.heiqi.uilib.ui.style.UiFlexDirection.COLUMN)
-                .setAlignItems(club.heiqi.uilib.ui.style.UiAlignItems.START)
+                .setFlexDirection(club.heiqi.uilib.ui.style.props.UiFlexDirection.COLUMN)
+                .setAlignItems(club.heiqi.uilib.ui.style.props.UiAlignItems.START)
                 .setWidth(UiStyleLength.percent(1.0F))
                 .setPadding(UiStyleLength.px(8))
                 .setBorderWidth(UiStyleLength.px(1))
@@ -2094,8 +2094,8 @@ public class HtmlLikeDocumentWidgetTest {
 
         controlCard.style()
                 .setDisplay(UiDisplay.FLEX)
-                .setFlexDirection(club.heiqi.uilib.ui.style.UiFlexDirection.COLUMN)
-                .setAlignItems(club.heiqi.uilib.ui.style.UiAlignItems.START)
+                .setFlexDirection(club.heiqi.uilib.ui.style.props.UiFlexDirection.COLUMN)
+                .setAlignItems(club.heiqi.uilib.ui.style.props.UiAlignItems.START)
                 .setWidth(UiStyleLength.percent(1.0F))
                 .setPadding(UiStyleLength.px(8))
                 .setBorderWidth(UiStyleLength.px(1))
@@ -2110,8 +2110,8 @@ public class HtmlLikeDocumentWidgetTest {
                 .setOverflowY(UiOverflow.AUTO);
         contentBody.style()
                 .setDisplay(UiDisplay.FLEX)
-                .setFlexDirection(club.heiqi.uilib.ui.style.UiFlexDirection.COLUMN)
-                .setAlignItems(club.heiqi.uilib.ui.style.UiAlignItems.STRETCH)
+                .setFlexDirection(club.heiqi.uilib.ui.style.props.UiFlexDirection.COLUMN)
+                .setAlignItems(club.heiqi.uilib.ui.style.props.UiAlignItems.STRETCH)
                 .setWidth(UiStyleLength.percent(1.0F))
                 .setRowGap(UiStyleLength.px(6));
         contentBody.append(createTextBlock(document, "会话概览"));
@@ -3698,16 +3698,16 @@ public class HtmlLikeDocumentWidgetTest {
                 .setLeft(UiStyleLength.px(1648))
                 .setTop(UiStyleLength.px(18))
                 .setDisplay(UiDisplay.FLEX)
-                .setFlexDirection(club.heiqi.uilib.ui.style.UiFlexDirection.COLUMN)
-                .setAlignItems(club.heiqi.uilib.ui.style.UiAlignItems.START)
+                .setFlexDirection(club.heiqi.uilib.ui.style.props.UiFlexDirection.COLUMN)
+                .setAlignItems(club.heiqi.uilib.ui.style.props.UiAlignItems.START)
                 .setWidth(UiStyleLength.px(360))
                 .setHeight(UiStyleLength.px(368))
                 .setPadding(UiStyleLength.px(12))
                 .setRowGap(UiStyleLength.px(8));
         heroCard.style()
                 .setDisplay(UiDisplay.FLEX)
-                .setFlexDirection(club.heiqi.uilib.ui.style.UiFlexDirection.COLUMN)
-                .setAlignItems(club.heiqi.uilib.ui.style.UiAlignItems.START)
+                .setFlexDirection(club.heiqi.uilib.ui.style.props.UiFlexDirection.COLUMN)
+                .setAlignItems(club.heiqi.uilib.ui.style.props.UiAlignItems.START)
                 .setWidth(UiStyleLength.percent(1.0F))
                 .setPadding(UiStyleLength.px(8))
                 .setBorderWidth(UiStyleLength.px(1))
@@ -3721,8 +3721,8 @@ public class HtmlLikeDocumentWidgetTest {
 
         controlCard.style()
                 .setDisplay(UiDisplay.FLEX)
-                .setFlexDirection(club.heiqi.uilib.ui.style.UiFlexDirection.COLUMN)
-                .setAlignItems(club.heiqi.uilib.ui.style.UiAlignItems.START)
+                .setFlexDirection(club.heiqi.uilib.ui.style.props.UiFlexDirection.COLUMN)
+                .setAlignItems(club.heiqi.uilib.ui.style.props.UiAlignItems.START)
                 .setWidth(UiStyleLength.percent(1.0F))
                 .setPadding(UiStyleLength.px(8))
                 .setBorderWidth(UiStyleLength.px(1))

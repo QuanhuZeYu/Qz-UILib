@@ -13,8 +13,8 @@ import java.util.Set;
 import club.heiqi.uilib.ui.paint.DocumentCustomRenderer;
 import club.heiqi.uilib.ui.style.UiStyleChangeImpact;
 import club.heiqi.uilib.ui.style.UiStyleChangeListener;
-import club.heiqi.uilib.ui.style.UiStyleDeclaration;
-import club.heiqi.uilib.ui.style.UiPseudoElement;
+import club.heiqi.uilib.ui.style.cascade.UiStyleDeclaration;
+import club.heiqi.uilib.ui.style.selector.UiPseudoElement;
 import club.heiqi.uilib.ui.text.TextContentMode;
 
 /**

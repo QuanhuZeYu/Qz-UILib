@@ -5,11 +5,11 @@ import org.junit.Test;
 
 import club.heiqi.uilib.ui.dom.ElementNode;
 import club.heiqi.uilib.ui.dom.UiDocument;
-import club.heiqi.uilib.ui.style.UiOverflow;
-import club.heiqi.uilib.ui.style.UiPointerEvents;
-import club.heiqi.uilib.ui.style.UiPosition;
-import club.heiqi.uilib.ui.style.UiStyleInsets;
-import club.heiqi.uilib.ui.style.UiStyleLength;
+import club.heiqi.uilib.ui.style.props.UiOverflow;
+import club.heiqi.uilib.ui.style.props.UiPointerEvents;
+import club.heiqi.uilib.ui.style.props.UiPosition;
+import club.heiqi.uilib.ui.style.values.UiStyleInsets;
+import club.heiqi.uilib.ui.style.values.UiStyleLength;
 
 /**
  * `DocumentHitTestEngine` 的 HTML-like 命中测试契约。

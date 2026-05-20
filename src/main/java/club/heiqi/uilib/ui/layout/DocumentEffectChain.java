@@ -5,9 +5,9 @@ import java.util.Collections;
 import java.util.List;
 import java.util.Objects;
 
-import club.heiqi.uilib.ui.style.ComputedStyle;
-import club.heiqi.uilib.ui.style.UiOverflow;
-import club.heiqi.uilib.ui.style.UiPosition;
+import club.heiqi.uilib.ui.style.cascade.ComputedStyle;
+import club.heiqi.uilib.ui.style.props.UiOverflow;
+import club.heiqi.uilib.ui.style.props.UiPosition;
 
 /**
  * 单个 HTML-like 布局盒的显式 clip / effect chain。

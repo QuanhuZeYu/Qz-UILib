@@ -16,24 +16,24 @@ import club.heiqi.uilib.ui.image.DocumentRemoteImageCache;
 import club.heiqi.uilib.ui.paint.DocumentPaintCommand;
 import club.heiqi.uilib.ui.paint.DocumentPaintCommandType;
 import club.heiqi.uilib.ui.paint.DocumentPaintEngine;
-import club.heiqi.uilib.ui.style.UiAlignItems;
-import club.heiqi.uilib.ui.style.UiBorderCollapse;
-import club.heiqi.uilib.ui.style.UiBoxSizing;
-import club.heiqi.uilib.ui.style.UiDisplay;
-import club.heiqi.uilib.ui.style.UiFlexDirection;
-import club.heiqi.uilib.ui.style.UiFontWeight;
-import club.heiqi.uilib.ui.style.UiJustifyContent;
-import club.heiqi.uilib.ui.style.UiOverflowWrap;
-import club.heiqi.uilib.ui.style.UiOverflow;
-import club.heiqi.uilib.ui.style.UiPseudoElementContent;
-import club.heiqi.uilib.ui.style.UiPosition;
-import club.heiqi.uilib.ui.style.UiStyleInsets;
-import club.heiqi.uilib.ui.style.UiStyleLength;
-import club.heiqi.uilib.ui.style.UiTextOverflow;
-import club.heiqi.uilib.ui.style.UiTextTransform;
-import club.heiqi.uilib.ui.style.UiVerticalAlign;
-import club.heiqi.uilib.ui.style.UiWhiteSpace;
-import club.heiqi.uilib.ui.style.UiWordBreak;
+import club.heiqi.uilib.ui.style.props.UiAlignItems;
+import club.heiqi.uilib.ui.style.props.UiBorderCollapse;
+import club.heiqi.uilib.ui.style.props.UiBoxSizing;
+import club.heiqi.uilib.ui.style.props.UiDisplay;
+import club.heiqi.uilib.ui.style.props.UiFlexDirection;
+import club.heiqi.uilib.ui.style.props.UiFontWeight;
+import club.heiqi.uilib.ui.style.props.UiJustifyContent;
+import club.heiqi.uilib.ui.style.props.UiOverflowWrap;
+import club.heiqi.uilib.ui.style.props.UiOverflow;
+import club.heiqi.uilib.ui.style.values.UiPseudoElementContent;
+import club.heiqi.uilib.ui.style.props.UiPosition;
+import club.heiqi.uilib.ui.style.values.UiStyleInsets;
+import club.heiqi.uilib.ui.style.values.UiStyleLength;
+import club.heiqi.uilib.ui.style.props.UiTextOverflow;
+import club.heiqi.uilib.ui.style.props.UiTextTransform;
+import club.heiqi.uilib.ui.style.props.UiVerticalAlign;
+import club.heiqi.uilib.ui.style.props.UiWhiteSpace;
+import club.heiqi.uilib.ui.style.props.UiWordBreak;
 import club.heiqi.uilib.ui.text.TextMeasureService;
 
 /**
@@ -1899,10 +1899,10 @@ public class DocumentLayoutEngineTest {
         root.style().setWidth(UiStyleLength.px(120));
         badge.appendText("MID");
         root.append(badge);
-        document.addStyleSheet(club.heiqi.uilib.ui.style.UiStyleSheet.create()
-                .addRule("span::before", new club.heiqi.uilib.ui.style.UiStyleDeclaration()
+        document.addStyleSheet(club.heiqi.uilib.ui.style.cascade.UiStyleSheet.create()
+                .addRule("span::before", new club.heiqi.uilib.ui.style.cascade.UiStyleDeclaration()
                         .setContent(UiPseudoElementContent.text("PRE")))
-                .addRule("span::after", new club.heiqi.uilib.ui.style.UiStyleDeclaration()
+                .addRule("span::after", new club.heiqi.uilib.ui.style.cascade.UiStyleDeclaration()
                         .setContent(UiPseudoElementContent.text("POST"))));
 
         DocumentLayoutBox rootBox = DocumentLayoutEngine.layout(root, 160, 0,
@@ -2345,7 +2345,7 @@ public class DocumentLayoutEngineTest {
 
         @Override
         public int getStringWidth(String text, club.heiqi.uilib.ui.text.TextContentMode textContentMode,
-                UiFontWeight fontWeight, club.heiqi.uilib.ui.style.UiFontStyle fontStyle) {
+                UiFontWeight fontWeight, club.heiqi.uilib.ui.style.props.UiFontStyle fontStyle) {
             return widthOf(text, fontWeight == UiFontWeight.BOLD ? 7 : 4);
         }
 
@@ -2362,7 +2362,7 @@ public class DocumentLayoutEngineTest {
         @Override
         public String trimStringToWidth(String text, int targetWidth,
                 club.heiqi.uilib.ui.text.TextContentMode textContentMode, UiFontWeight fontWeight,
-                club.heiqi.uilib.ui.style.UiFontStyle fontStyle) {
+                club.heiqi.uilib.ui.style.props.UiFontStyle fontStyle) {
             return trimByWidth(text, targetWidth, fontWeight == UiFontWeight.BOLD ? 7 : 4);
         }
 

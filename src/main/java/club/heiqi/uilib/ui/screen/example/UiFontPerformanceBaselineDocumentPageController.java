@@ -31,14 +31,14 @@ import club.heiqi.uilib.ui.layout.UiLength;
 import club.heiqi.uilib.ui.layout.UiLayoutSpec;
 import club.heiqi.uilib.ui.paint.DocumentCustomRenderer;
 import club.heiqi.uilib.ui.render.UiRenderContext;
-import club.heiqi.uilib.ui.style.UiAlignItems;
-import club.heiqi.uilib.ui.style.UiBorderStyle;
-import club.heiqi.uilib.ui.style.UiDisplay;
-import club.heiqi.uilib.ui.style.UiFlexDirection;
-import club.heiqi.uilib.ui.style.UiJustifyContent;
-import club.heiqi.uilib.ui.style.UiOverflow;
-import club.heiqi.uilib.ui.style.UiStyleInsets;
-import club.heiqi.uilib.ui.style.UiStyleLength;
+import club.heiqi.uilib.ui.style.props.UiAlignItems;
+import club.heiqi.uilib.ui.style.props.UiBorderStyle;
+import club.heiqi.uilib.ui.style.props.UiDisplay;
+import club.heiqi.uilib.ui.style.props.UiFlexDirection;
+import club.heiqi.uilib.ui.style.props.UiJustifyContent;
+import club.heiqi.uilib.ui.style.props.UiOverflow;
+import club.heiqi.uilib.ui.style.values.UiStyleInsets;
+import club.heiqi.uilib.ui.style.values.UiStyleLength;
 import club.heiqi.uilib.ui.text.TextContentMode;
 
 /**

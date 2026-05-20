@@ -64,11 +64,11 @@ import club.heiqi.uilib.ui.paint.DocumentPaintCommand;
 import club.heiqi.uilib.ui.paint.DocumentPaintEngine;
 import club.heiqi.uilib.ui.paint.DocumentPaintRenderer;
 import club.heiqi.uilib.ui.render.UiRenderContext;
-import club.heiqi.uilib.ui.style.UiCursor;
-import club.heiqi.uilib.ui.style.UiPseudoClass;
-import club.heiqi.uilib.ui.style.UiPointerEvents;
-import club.heiqi.uilib.ui.style.UiStyleResolver;
-import club.heiqi.uilib.ui.style.UiVisibility;
+import club.heiqi.uilib.ui.style.props.UiCursor;
+import club.heiqi.uilib.ui.style.selector.UiPseudoClass;
+import club.heiqi.uilib.ui.style.props.UiPointerEvents;
+import club.heiqi.uilib.ui.style.cascade.UiStyleResolver;
+import club.heiqi.uilib.ui.style.props.UiVisibility;
 import club.heiqi.uilib.ui.text.DefaultTextMeasureService;
 import club.heiqi.uilib.ui.text.TextMeasureService;
 import club.heiqi.uilib.ui.widget.Widget;
@@ -1947,10 +1947,10 @@ public final class HtmlLikeDocumentWidget extends Widget implements UiDocument.D
         if (inlineValue != null && element.style().isImportant(club.heiqi.uilib.ui.style.UiStyleProperty.CURSOR)) {
             return inlineValue.resolveDeclaredCursor();
         }
-        List<club.heiqi.uilib.ui.style.UiStyleRule> matchingRules = element.getOwnerDocument()
+        List<club.heiqi.uilib.ui.style.cascade.UiStyleRule> matchingRules = element.getOwnerDocument()
                 .findMatchingRules(element, activeStates);
         for (int index = matchingRules.size() - 1; index >= 0; index--) {
-            club.heiqi.uilib.ui.style.UiStyleDeclaration declaration = matchingRules.get(index).getDeclaration();
+            club.heiqi.uilib.ui.style.cascade.UiStyleDeclaration declaration = matchingRules.get(index).getDeclaration();
             if (declaration.isImportant(club.heiqi.uilib.ui.style.UiStyleProperty.CURSOR)) {
                 CursorCascadeValue cursorValue = readCursorCascadeValue(declaration);
                 if (cursorValue != null) {
@@ -1962,7 +1962,7 @@ public final class HtmlLikeDocumentWidget extends Widget implements UiDocument.D
             return inlineValue.resolveDeclaredCursor();
         }
         for (int index = matchingRules.size() - 1; index >= 0; index--) {
-            club.heiqi.uilib.ui.style.UiStyleDeclaration declaration = matchingRules.get(index).getDeclaration();
+            club.heiqi.uilib.ui.style.cascade.UiStyleDeclaration declaration = matchingRules.get(index).getDeclaration();
             if (!declaration.isImportant(club.heiqi.uilib.ui.style.UiStyleProperty.CURSOR)) {
                 CursorCascadeValue cursorValue = readCursorCascadeValue(declaration);
                 if (cursorValue != null) {
@@ -1984,11 +1984,11 @@ public final class HtmlLikeDocumentWidget extends Widget implements UiDocument.D
         return href != null && !href.trim().isEmpty();
     }
 
-    private CursorCascadeValue readCursorCascadeValue(club.heiqi.uilib.ui.style.UiStyleDeclaration declaration) {
+    private CursorCascadeValue readCursorCascadeValue(club.heiqi.uilib.ui.style.cascade.UiStyleDeclaration declaration) {
         if (declaration.getCursor() != null) {
             return CursorCascadeValue.value(declaration.getCursor());
         }
-        club.heiqi.uilib.ui.style.UiStyleKeyword keyword = declaration
+        club.heiqi.uilib.ui.style.values.UiStyleKeyword keyword = declaration
                 .getKeyword(club.heiqi.uilib.ui.style.UiStyleProperty.CURSOR);
         return keyword == null ? null : CursorCascadeValue.keyword(keyword);
     }
@@ -1996,9 +1996,9 @@ public final class HtmlLikeDocumentWidget extends Widget implements UiDocument.D
     private static final class CursorCascadeValue {
 
         private final UiCursor cursor;
-        private final club.heiqi.uilib.ui.style.UiStyleKeyword keyword;
+        private final club.heiqi.uilib.ui.style.values.UiStyleKeyword keyword;
 
-        private CursorCascadeValue(UiCursor cursor, club.heiqi.uilib.ui.style.UiStyleKeyword keyword) {
+        private CursorCascadeValue(UiCursor cursor, club.heiqi.uilib.ui.style.values.UiStyleKeyword keyword) {
             this.cursor = cursor;
             this.keyword = keyword;
         }
@@ -2007,7 +2007,7 @@ public final class HtmlLikeDocumentWidget extends Widget implements UiDocument.D
             return new CursorCascadeValue(cursor, null);
         }
 
-        private static CursorCascadeValue keyword(club.heiqi.uilib.ui.style.UiStyleKeyword keyword) {
+        private static CursorCascadeValue keyword(club.heiqi.uilib.ui.style.values.UiStyleKeyword keyword) {
             return new CursorCascadeValue(null, keyword);
         }
 
@@ -2015,7 +2015,7 @@ public final class HtmlLikeDocumentWidget extends Widget implements UiDocument.D
             if (cursor != null) {
                 return cursor;
             }
-            if (keyword == club.heiqi.uilib.ui.style.UiStyleKeyword.INITIAL) {
+            if (keyword == club.heiqi.uilib.ui.style.values.UiStyleKeyword.INITIAL) {
                 return UiCursor.DEFAULT;
             }
             return null;

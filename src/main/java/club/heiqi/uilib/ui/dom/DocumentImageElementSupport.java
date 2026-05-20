@@ -10,12 +10,12 @@ import club.heiqi.uilib.ui.image.DocumentRemoteImageCache.Status;
 import club.heiqi.uilib.ui.image.HostImageSource;
 import club.heiqi.uilib.ui.paint.DocumentCustomRenderer;
 import club.heiqi.uilib.ui.render.UiRenderContext;
-import club.heiqi.uilib.ui.style.ComputedStyle;
-import club.heiqi.uilib.ui.style.UiFontStyle;
-import club.heiqi.uilib.ui.style.UiFontWeight;
-import club.heiqi.uilib.ui.style.UiObjectFit;
-import club.heiqi.uilib.ui.style.UiStyleResolver;
-import club.heiqi.uilib.ui.style.UiStyleLength;
+import club.heiqi.uilib.ui.style.cascade.ComputedStyle;
+import club.heiqi.uilib.ui.style.props.UiFontStyle;
+import club.heiqi.uilib.ui.style.props.UiFontWeight;
+import club.heiqi.uilib.ui.style.props.UiObjectFit;
+import club.heiqi.uilib.ui.style.cascade.UiStyleResolver;
+import club.heiqi.uilib.ui.style.values.UiStyleLength;
 import club.heiqi.uilib.ui.text.TextContentMode;
 
 /**

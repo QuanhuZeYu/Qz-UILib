@@ -20,11 +20,11 @@ import club.heiqi.uilib.ui.dom.UiDocument;
 import club.heiqi.uilib.ui.event.UiKeyEvent;
 import club.heiqi.uilib.ui.image.HostImageSource;
 import club.heiqi.uilib.ui.slot.SlotContentSnapshot;
-import club.heiqi.uilib.ui.style.UiBorderStyle;
-import club.heiqi.uilib.ui.style.UiDisplay;
-import club.heiqi.uilib.ui.style.UiOverflow;
-import club.heiqi.uilib.ui.style.UiPosition;
-import club.heiqi.uilib.ui.style.UiStyleLength;
+import club.heiqi.uilib.ui.style.props.UiBorderStyle;
+import club.heiqi.uilib.ui.style.props.UiDisplay;
+import club.heiqi.uilib.ui.style.props.UiOverflow;
+import club.heiqi.uilib.ui.style.props.UiPosition;
+import club.heiqi.uilib.ui.style.values.UiStyleLength;
 
 /**
  * 基于 HTML-like 元素实现的通用槽位控件。

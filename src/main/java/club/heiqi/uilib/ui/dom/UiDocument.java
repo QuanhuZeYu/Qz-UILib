@@ -11,11 +11,11 @@ import java.util.Set;
 import java.util.concurrent.atomic.AtomicLong;
 
 import club.heiqi.uilib.ui.animation.DocumentKeyframes;
-import club.heiqi.uilib.ui.style.UiSelector;
-import club.heiqi.uilib.ui.style.UiPseudoElement;
-import club.heiqi.uilib.ui.style.UiStyleRule;
-import club.heiqi.uilib.ui.style.UiStyleSheet;
-import club.heiqi.uilib.ui.style.UiStyleVariables;
+import club.heiqi.uilib.ui.style.selector.UiSelector;
+import club.heiqi.uilib.ui.style.selector.UiPseudoElement;
+import club.heiqi.uilib.ui.style.cascade.UiStyleRule;
+import club.heiqi.uilib.ui.style.cascade.UiStyleSheet;
+import club.heiqi.uilib.ui.style.cascade.UiStyleVariables;
 import club.heiqi.uilib.ui.text.TextContentMode;
 
 /**
@@ -608,7 +608,7 @@ public final class UiDocument {
      * @param activeStates 元素当前激活的伪类状态集合；为 null 时伪类选择器不匹配
      * @return 匹配规则列表（按优先级升序）
      */
-    public List<UiStyleRule> findMatchingRules(ElementNode element, java.util.Set<club.heiqi.uilib.ui.style.UiPseudoClass> activeStates) {
+    public List<UiStyleRule> findMatchingRules(ElementNode element, java.util.Set<club.heiqi.uilib.ui.style.selector.UiPseudoClass> activeStates) {
         if (element == null || styleSheets.isEmpty()) {
             return Collections.emptyList();
         }
@@ -643,7 +643,7 @@ public final class UiDocument {
     }
 
     public List<UiStyleRule> findMatchingRules(ElementNode element,
-            java.util.Set<club.heiqi.uilib.ui.style.UiPseudoClass> activeStates,
+            java.util.Set<club.heiqi.uilib.ui.style.selector.UiPseudoClass> activeStates,
             UiPseudoElement pseudoElement) {
         if (element == null || styleSheets.isEmpty()) {
             return Collections.emptyList();

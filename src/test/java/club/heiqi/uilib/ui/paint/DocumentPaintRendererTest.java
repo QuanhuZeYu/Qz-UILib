@@ -20,17 +20,17 @@ import club.heiqi.uilib.ui.layout.DocumentLayoutBox;
 import club.heiqi.uilib.ui.layout.DocumentLayoutEngine;
 import club.heiqi.uilib.ui.layout.DocumentScrollState;
 import club.heiqi.uilib.ui.render.UiRenderContext;
-import club.heiqi.uilib.ui.style.UiBorderRadius;
-import club.heiqi.uilib.ui.style.UiBorderRadiusResolver;
-import club.heiqi.uilib.ui.style.UiBorderStyle;
-import club.heiqi.uilib.ui.style.UiBoxShadow;
-import club.heiqi.uilib.ui.style.UiBackgroundImage;
-import club.heiqi.uilib.ui.style.UiFontStyle;
-import club.heiqi.uilib.ui.style.UiFontWeight;
-import club.heiqi.uilib.ui.style.UiOutline;
-import club.heiqi.uilib.ui.style.UiOverflow;
-import club.heiqi.uilib.ui.style.UiStyleLength;
-import club.heiqi.uilib.ui.style.UiTextShadow;
+import club.heiqi.uilib.ui.style.values.UiBorderRadius;
+import club.heiqi.uilib.ui.style.cascade.UiBorderRadiusResolver;
+import club.heiqi.uilib.ui.style.props.UiBorderStyle;
+import club.heiqi.uilib.ui.style.values.UiBoxShadow;
+import club.heiqi.uilib.ui.style.values.UiBackgroundImage;
+import club.heiqi.uilib.ui.style.props.UiFontStyle;
+import club.heiqi.uilib.ui.style.props.UiFontWeight;
+import club.heiqi.uilib.ui.style.values.UiOutline;
+import club.heiqi.uilib.ui.style.props.UiOverflow;
+import club.heiqi.uilib.ui.style.values.UiStyleLength;
+import club.heiqi.uilib.ui.style.values.UiTextShadow;
 import club.heiqi.uilib.ui.theme.UiSurfaceStyle;
 import club.heiqi.uilib.ui.text.TextContentMode;
 
@@ -190,7 +190,7 @@ public class DocumentPaintRendererTest {
         ElementNode headCell = document.th();
         ElementNode bodyCell = document.td();
 
-        table.style().setBorderCollapse(club.heiqi.uilib.ui.style.UiBorderCollapse.COLLAPSE);
+        table.style().setBorderCollapse(club.heiqi.uilib.ui.style.props.UiBorderCollapse.COLLAPSE);
         headCell.appendText("H");
         bodyCell.appendText("B");
         headRow.append(headCell);

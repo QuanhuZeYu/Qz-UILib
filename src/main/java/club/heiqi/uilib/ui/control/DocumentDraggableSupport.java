@@ -5,8 +5,8 @@ import java.util.Objects;
 import club.heiqi.uilib.ui.dom.DocumentElementDragEvent;
 import club.heiqi.uilib.ui.dom.DocumentElementDragHandler;
 import club.heiqi.uilib.ui.dom.ElementNode;
-import club.heiqi.uilib.ui.style.UiPosition;
-import club.heiqi.uilib.ui.style.UiStyleLength;
+import club.heiqi.uilib.ui.style.props.UiPosition;
+import club.heiqi.uilib.ui.style.values.UiStyleLength;
 
 /**
  * 通用 HTML-like 元素拖拽辅助器。

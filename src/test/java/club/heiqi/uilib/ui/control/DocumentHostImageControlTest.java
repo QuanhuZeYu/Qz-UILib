@@ -26,10 +26,10 @@ import club.heiqi.uilib.ui.paint.DocumentPaintEngine;
 import club.heiqi.uilib.ui.render.UiMainLayerSnapshotService;
 import club.heiqi.uilib.ui.render.UiRenderContext;
 import club.heiqi.uilib.ui.runtime.UiRuntimeAdapters;
-import club.heiqi.uilib.ui.style.UiBorderRadiusResolver;
-import club.heiqi.uilib.ui.style.UiPosition;
-import club.heiqi.uilib.ui.style.UiObjectFit;
-import club.heiqi.uilib.ui.style.UiStyleLength;
+import club.heiqi.uilib.ui.style.cascade.UiBorderRadiusResolver;
+import club.heiqi.uilib.ui.style.props.UiPosition;
+import club.heiqi.uilib.ui.style.props.UiObjectFit;
+import club.heiqi.uilib.ui.style.values.UiStyleLength;
 import club.heiqi.uilib.ui.text.TextMeasureService;
 
 /**

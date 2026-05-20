@@ -20,15 +20,15 @@ import club.heiqi.uilib.ui.dom.UiDocument;
 import club.heiqi.uilib.ui.event.UiKeyEvent;
 import club.heiqi.uilib.ui.paint.DocumentCustomRenderer;
 import club.heiqi.uilib.ui.render.UiRenderContext;
-import club.heiqi.uilib.ui.style.UiBorderStyle;
-import club.heiqi.uilib.ui.style.UiDisplay;
-import club.heiqi.uilib.ui.style.UiFlexDirection;
-import club.heiqi.uilib.ui.style.UiJustifyContent;
-import club.heiqi.uilib.ui.style.UiOverflow;
-import club.heiqi.uilib.ui.style.UiPointerEvents;
-import club.heiqi.uilib.ui.style.UiPosition;
-import club.heiqi.uilib.ui.style.UiStyleLength;
-import club.heiqi.uilib.ui.style.UiWhiteSpace;
+import club.heiqi.uilib.ui.style.props.UiBorderStyle;
+import club.heiqi.uilib.ui.style.props.UiDisplay;
+import club.heiqi.uilib.ui.style.props.UiFlexDirection;
+import club.heiqi.uilib.ui.style.props.UiJustifyContent;
+import club.heiqi.uilib.ui.style.props.UiOverflow;
+import club.heiqi.uilib.ui.style.props.UiPointerEvents;
+import club.heiqi.uilib.ui.style.props.UiPosition;
+import club.heiqi.uilib.ui.style.values.UiStyleLength;
+import club.heiqi.uilib.ui.style.props.UiWhiteSpace;
 import club.heiqi.uilib.ui.text.TextContentMode;
 
 /**

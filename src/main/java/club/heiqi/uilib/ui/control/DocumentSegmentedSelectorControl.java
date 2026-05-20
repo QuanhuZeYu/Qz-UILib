@@ -7,10 +7,10 @@ import club.heiqi.uilib.ui.dom.DocumentElementKeyHandler;
 import club.heiqi.uilib.ui.dom.ElementNode;
 import club.heiqi.uilib.ui.dom.UiDocument;
 import club.heiqi.uilib.ui.event.UiKeyEvent;
-import club.heiqi.uilib.ui.style.UiAlignItems;
-import club.heiqi.uilib.ui.style.UiDisplay;
-import club.heiqi.uilib.ui.style.UiFlexDirection;
-import club.heiqi.uilib.ui.style.UiStyleLength;
+import club.heiqi.uilib.ui.style.props.UiAlignItems;
+import club.heiqi.uilib.ui.style.props.UiDisplay;
+import club.heiqi.uilib.ui.style.props.UiFlexDirection;
+import club.heiqi.uilib.ui.style.values.UiStyleLength;
 
 /**
  * 基于 HTML-like 元素实现的分段选择控件。

@@ -1,9 +1,9 @@
 package club.heiqi.uilib.ui.layout;
 
-import club.heiqi.uilib.ui.style.ComputedStyle;
-import club.heiqi.uilib.ui.style.UiOverflow;
-import club.heiqi.uilib.ui.style.UiPosition;
-import club.heiqi.uilib.ui.style.UiStyleLength;
+import club.heiqi.uilib.ui.style.cascade.ComputedStyle;
+import club.heiqi.uilib.ui.style.props.UiOverflow;
+import club.heiqi.uilib.ui.style.props.UiPosition;
+import club.heiqi.uilib.ui.style.values.UiStyleLength;
 
 /**
  * position:sticky 的滚动期视觉偏移解析。

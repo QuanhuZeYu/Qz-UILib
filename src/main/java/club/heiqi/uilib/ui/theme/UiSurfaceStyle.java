@@ -1,6 +1,6 @@
 package club.heiqi.uilib.ui.theme;
 
-import club.heiqi.uilib.ui.style.UiBorderRadiusResolver;
+import club.heiqi.uilib.ui.style.cascade.UiBorderRadiusResolver;
 
 /**
  * 通用表面样式。

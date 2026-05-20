@@ -12,11 +12,11 @@ import club.heiqi.uilib.ui.dom.UiDocument;
 import club.heiqi.uilib.ui.event.UiMouseEvent;
 import club.heiqi.uilib.ui.host.DocumentCursorHost;
 import club.heiqi.uilib.ui.host.SystemDocumentCursorHost;
-import club.heiqi.uilib.ui.style.UiCursor;
-import club.heiqi.uilib.ui.style.UiPosition;
-import club.heiqi.uilib.ui.style.UiStyleDeclaration;
-import club.heiqi.uilib.ui.style.UiStyleLength;
-import club.heiqi.uilib.ui.style.UiStyleSheet;
+import club.heiqi.uilib.ui.style.props.UiCursor;
+import club.heiqi.uilib.ui.style.props.UiPosition;
+import club.heiqi.uilib.ui.style.cascade.UiStyleDeclaration;
+import club.heiqi.uilib.ui.style.values.UiStyleLength;
+import club.heiqi.uilib.ui.style.cascade.UiStyleSheet;
 import club.heiqi.uilib.ui.text.TextMeasureService;
 
 /**

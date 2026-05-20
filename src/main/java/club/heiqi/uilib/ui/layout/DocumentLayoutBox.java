@@ -7,9 +7,9 @@ import java.util.List;
 import java.util.Objects;
 
 import club.heiqi.uilib.ui.dom.ElementNode;
-import club.heiqi.uilib.ui.style.ComputedStyle;
-import club.heiqi.uilib.ui.style.UiPosition;
-import club.heiqi.uilib.ui.style.UiStyleResolver;
+import club.heiqi.uilib.ui.style.cascade.ComputedStyle;
+import club.heiqi.uilib.ui.style.props.UiPosition;
+import club.heiqi.uilib.ui.style.cascade.UiStyleResolver;
 
 /**
  * HTML-like 元素布局盒。

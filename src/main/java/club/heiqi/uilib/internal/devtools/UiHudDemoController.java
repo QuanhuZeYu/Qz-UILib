@@ -22,14 +22,14 @@ import club.heiqi.uilib.ui.hud.UiHudDocumentHost;
 import club.heiqi.uilib.ui.hud.UiHudDocumentRegistration;
 import club.heiqi.uilib.ui.hud.UiHudLayerType;
 import club.heiqi.uilib.ui.input.UiInputService;
-import club.heiqi.uilib.ui.style.UiAlignItems;
-import club.heiqi.uilib.ui.style.UiBoxSizing;
-import club.heiqi.uilib.ui.style.UiDisplay;
-import club.heiqi.uilib.ui.style.UiFlexDirection;
-import club.heiqi.uilib.ui.style.UiJustifyContent;
-import club.heiqi.uilib.ui.style.UiOverflow;
-import club.heiqi.uilib.ui.style.UiPosition;
-import club.heiqi.uilib.ui.style.UiStyleLength;
+import club.heiqi.uilib.ui.style.props.UiAlignItems;
+import club.heiqi.uilib.ui.style.props.UiBoxSizing;
+import club.heiqi.uilib.ui.style.props.UiDisplay;
+import club.heiqi.uilib.ui.style.props.UiFlexDirection;
+import club.heiqi.uilib.ui.style.props.UiJustifyContent;
+import club.heiqi.uilib.ui.style.props.UiOverflow;
+import club.heiqi.uilib.ui.style.props.UiPosition;
+import club.heiqi.uilib.ui.style.values.UiStyleLength;
 
 /**
  * 内部开发工具使用的 HUD 双层示例控制器。

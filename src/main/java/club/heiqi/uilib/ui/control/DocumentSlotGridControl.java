@@ -8,7 +8,7 @@ import club.heiqi.uilib.ui.dom.ElementNode;
 import club.heiqi.uilib.ui.dom.UiDocument;
 import club.heiqi.uilib.ui.slot.SlotContentSnapshot;
 import club.heiqi.uilib.ui.slot.SlotGridLayout;
-import club.heiqi.uilib.ui.style.UiStyleLength;
+import club.heiqi.uilib.ui.style.values.UiStyleLength;
 
 /**
  * 基于 HTML-like table 结构实现的通用槽位网格控件。

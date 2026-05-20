@@ -23,8 +23,8 @@ import club.heiqi.uilib.ui.dom.TextNode;
 import club.heiqi.uilib.ui.inventory.InventorySlotSnapshot;
 import club.heiqi.uilib.ui.runtime.UiRuntimeAdapters;
 import club.heiqi.uilib.ui.text.TextMeasureService;
-import club.heiqi.uilib.ui.style.UiDisplay;
-import club.heiqi.uilib.ui.style.UiStyleResolver;
+import club.heiqi.uilib.ui.style.props.UiDisplay;
+import club.heiqi.uilib.ui.style.cascade.UiStyleResolver;
 import club.heiqi.uilib.ui.widget.Widget;
 
 /**

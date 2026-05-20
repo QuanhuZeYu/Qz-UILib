@@ -11,7 +11,7 @@ import java.lang.reflect.Method;
 import org.lwjglx.opengl.Display;
 
 import club.heiqi.uilib.MyMod;
-import club.heiqi.uilib.ui.style.UiCursor;
+import club.heiqi.uilib.ui.style.props.UiCursor;
 
 /**
  * 基于 LWJGL3ify SDL 系统光标的宿主实现。

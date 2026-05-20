@@ -4,10 +4,10 @@ import java.util.Objects;
 
 import club.heiqi.uilib.ui.dom.ElementNode;
 import club.heiqi.uilib.ui.layout.DocumentEffectType;
-import club.heiqi.uilib.ui.style.UiBackgroundImage;
-import club.heiqi.uilib.ui.style.UiFontStyle;
-import club.heiqi.uilib.ui.style.UiFontWeight;
-import club.heiqi.uilib.ui.style.UiBorderRadiusResolver;
+import club.heiqi.uilib.ui.style.values.UiBackgroundImage;
+import club.heiqi.uilib.ui.style.props.UiFontStyle;
+import club.heiqi.uilib.ui.style.props.UiFontWeight;
+import club.heiqi.uilib.ui.style.cascade.UiBorderRadiusResolver;
 import club.heiqi.uilib.ui.theme.UiSurfaceStyle;
 import club.heiqi.uilib.ui.text.TextContentMode;
 

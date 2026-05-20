@@ -4,8 +4,8 @@ import java.util.List;
 
 import club.heiqi.uilib.font.FontService;
 import club.heiqi.uilib.font.layout.TextLayoutService;
-import club.heiqi.uilib.ui.style.UiFontStyle;
-import club.heiqi.uilib.ui.style.UiFontWeight;
+import club.heiqi.uilib.ui.style.props.UiFontStyle;
+import club.heiqi.uilib.ui.style.props.UiFontWeight;
 
 /**
  * 默认文本测量服务实现。

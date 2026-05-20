@@ -16,17 +16,17 @@ import club.heiqi.uilib.ui.layout.DocumentLayoutBox;
 import club.heiqi.uilib.ui.layout.DocumentLayoutEngine;
 import club.heiqi.uilib.ui.layout.DocumentScrollState;
 import club.heiqi.uilib.ui.render.UiRenderContext;
-import club.heiqi.uilib.ui.style.UiBorderRadius;
-import club.heiqi.uilib.ui.style.UiBorderCollapse;
-import club.heiqi.uilib.ui.style.UiBorderRadiusResolver;
-import club.heiqi.uilib.ui.style.UiBorderStyle;
-import club.heiqi.uilib.ui.style.UiOverflow;
-import club.heiqi.uilib.ui.style.UiOverflowWrap;
-import club.heiqi.uilib.ui.style.UiPseudoElementContent;
-import club.heiqi.uilib.ui.style.UiPosition;
-import club.heiqi.uilib.ui.style.UiStyleInsets;
-import club.heiqi.uilib.ui.style.UiStyleLength;
-import club.heiqi.uilib.ui.style.UiWordBreak;
+import club.heiqi.uilib.ui.style.values.UiBorderRadius;
+import club.heiqi.uilib.ui.style.props.UiBorderCollapse;
+import club.heiqi.uilib.ui.style.cascade.UiBorderRadiusResolver;
+import club.heiqi.uilib.ui.style.props.UiBorderStyle;
+import club.heiqi.uilib.ui.style.props.UiOverflow;
+import club.heiqi.uilib.ui.style.props.UiOverflowWrap;
+import club.heiqi.uilib.ui.style.values.UiPseudoElementContent;
+import club.heiqi.uilib.ui.style.props.UiPosition;
+import club.heiqi.uilib.ui.style.values.UiStyleInsets;
+import club.heiqi.uilib.ui.style.values.UiStyleLength;
+import club.heiqi.uilib.ui.style.props.UiWordBreak;
 import club.heiqi.uilib.ui.text.TextMeasureService;
 import club.heiqi.uilib.ui.theme.UiSurfaceStyle;
 
@@ -610,9 +610,9 @@ public class DocumentPaintEngineTest {
         bulletItem.appendText("One");
         numberedItem.appendText("Two");
         noMarkerItem.appendText("Three");
-        unorderedList.style().setListStyleType(club.heiqi.uilib.ui.style.UiListStyleType.CIRCLE);
-        orderedList.style().setListStyleType(club.heiqi.uilib.ui.style.UiListStyleType.DECIMAL);
-        noMarkerItem.style().setListStyleType(club.heiqi.uilib.ui.style.UiListStyleType.NONE);
+        unorderedList.style().setListStyleType(club.heiqi.uilib.ui.style.props.UiListStyleType.CIRCLE);
+        orderedList.style().setListStyleType(club.heiqi.uilib.ui.style.props.UiListStyleType.DECIMAL);
+        noMarkerItem.style().setListStyleType(club.heiqi.uilib.ui.style.props.UiListStyleType.NONE);
         unorderedList.append(bulletItem);
         orderedList.append(numberedItem);
         orderedList.append(noMarkerItem);
@@ -983,7 +983,7 @@ public class DocumentPaintEngineTest {
                 .setWidth(UiStyleLength.px(120))
                 .setPadding(UiStyleLength.px(4))
                 .setTextColor(0xFFEFF6FF)
-                .setTextDecoration(club.heiqi.uilib.ui.style.UiTextDecoration.UNDERLINE);
+                .setTextDecoration(club.heiqi.uilib.ui.style.props.UiTextDecoration.UNDERLINE);
         root.appendText("Hello");
 
         List<DocumentPaintCommand> commands = DocumentPaintEngine.buildPaintCommands(
@@ -1446,11 +1446,11 @@ public class DocumentPaintEngineTest {
         root.style().setWidth(UiStyleLength.px(120));
         badge.appendText("MID");
         root.append(badge);
-        document.addStyleSheet(club.heiqi.uilib.ui.style.UiStyleSheet.create()
-                .addRule("span::before", new club.heiqi.uilib.ui.style.UiStyleDeclaration()
+        document.addStyleSheet(club.heiqi.uilib.ui.style.cascade.UiStyleSheet.create()
+                .addRule("span::before", new club.heiqi.uilib.ui.style.cascade.UiStyleDeclaration()
                         .setContent(UiPseudoElementContent.text("PRE"))
                         .setTextColor(0xFF00FF00))
-                .addRule("span::after", new club.heiqi.uilib.ui.style.UiStyleDeclaration()
+                .addRule("span::after", new club.heiqi.uilib.ui.style.cascade.UiStyleDeclaration()
                         .setContent(UiPseudoElementContent.text("POST"))
                         .setTextColor(0xFFFF0000)));
 

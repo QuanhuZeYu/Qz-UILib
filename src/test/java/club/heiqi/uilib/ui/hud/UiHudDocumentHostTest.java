@@ -24,9 +24,9 @@ import club.heiqi.uilib.ui.input.UiInputFrame;
 import club.heiqi.uilib.ui.render.UiMainLayerSnapshotService;
 import club.heiqi.uilib.ui.render.UiRenderContext;
 import club.heiqi.uilib.ui.runtime.UiRuntimeAdapters;
-import club.heiqi.uilib.ui.style.UiBoxSizing;
-import club.heiqi.uilib.ui.style.UiOverflow;
-import club.heiqi.uilib.ui.style.UiStyleLength;
+import club.heiqi.uilib.ui.style.props.UiBoxSizing;
+import club.heiqi.uilib.ui.style.props.UiOverflow;
+import club.heiqi.uilib.ui.style.values.UiStyleLength;
 import club.heiqi.uilib.ui.text.DefaultTextMeasureService;
 import club.heiqi.uilib.ui.text.TextMeasureService;
 
@@ -516,12 +516,12 @@ public class UiHudDocumentHostTest {
                 .setWidth(UiStyleLength.percent(1.0F))
                 .setHeight(UiStyleLength.percent(1.0F));
         panel.style()
-                .setPosition(club.heiqi.uilib.ui.style.UiPosition.FIXED)
+                .setPosition(club.heiqi.uilib.ui.style.props.UiPosition.FIXED)
                 .setLeft(UiStyleLength.px(1648))
                 .setTop(UiStyleLength.px(18))
-                .setDisplay(club.heiqi.uilib.ui.style.UiDisplay.FLEX)
-                .setFlexDirection(club.heiqi.uilib.ui.style.UiFlexDirection.COLUMN)
-                .setAlignItems(club.heiqi.uilib.ui.style.UiAlignItems.START)
+                .setDisplay(club.heiqi.uilib.ui.style.props.UiDisplay.FLEX)
+                .setFlexDirection(club.heiqi.uilib.ui.style.props.UiFlexDirection.COLUMN)
+                .setAlignItems(club.heiqi.uilib.ui.style.props.UiAlignItems.START)
                 .setWidth(UiStyleLength.px(360))
                 .setHeight(UiStyleLength.px(368))
                 .setPadding(UiStyleLength.px(12))
@@ -534,9 +534,9 @@ public class UiHudDocumentHostTest {
         panel.append(dragBar);
 
         controlCard.style()
-                .setDisplay(club.heiqi.uilib.ui.style.UiDisplay.FLEX)
-                .setFlexDirection(club.heiqi.uilib.ui.style.UiFlexDirection.COLUMN)
-                .setAlignItems(club.heiqi.uilib.ui.style.UiAlignItems.START)
+                .setDisplay(club.heiqi.uilib.ui.style.props.UiDisplay.FLEX)
+                .setFlexDirection(club.heiqi.uilib.ui.style.props.UiFlexDirection.COLUMN)
+                .setAlignItems(club.heiqi.uilib.ui.style.props.UiAlignItems.START)
                 .setBoxSizing(UiBoxSizing.BORDER_BOX)
                 .setWidth(UiStyleLength.percent(1.0F))
                 .setPadding(UiStyleLength.px(8))
@@ -544,9 +544,9 @@ public class UiHudDocumentHostTest {
                 .setRowGap(UiStyleLength.px(6));
         controlCard.append(line(document, "调试开关"));
         debugToggleCard.style()
-                .setDisplay(club.heiqi.uilib.ui.style.UiDisplay.FLEX)
-                .setFlexDirection(club.heiqi.uilib.ui.style.UiFlexDirection.COLUMN)
-                .setAlignItems(club.heiqi.uilib.ui.style.UiAlignItems.START)
+                .setDisplay(club.heiqi.uilib.ui.style.props.UiDisplay.FLEX)
+                .setFlexDirection(club.heiqi.uilib.ui.style.props.UiFlexDirection.COLUMN)
+                .setAlignItems(club.heiqi.uilib.ui.style.props.UiAlignItems.START)
                 .setBoxSizing(UiBoxSizing.BORDER_BOX)
                 .setWidth(UiStyleLength.percent(1.0F))
                 .setPadding(UiStyleLength.px(8))
@@ -554,7 +554,7 @@ public class UiHudDocumentHostTest {
                 .setRowGap(UiStyleLength.px(6));
         debugToggleCard.append(line(document, "显示 HUD 调试信息"));
         ElementNode debugToggleHost = document.div();
-        debugToggleHost.style().setDisplay(club.heiqi.uilib.ui.style.UiDisplay.BLOCK).setWidth(UiStyleLength.auto());
+        debugToggleHost.style().setDisplay(club.heiqi.uilib.ui.style.props.UiDisplay.BLOCK).setWidth(UiStyleLength.auto());
         debugToggleHost.append(new club.heiqi.uilib.ui.control.DocumentToggleSwitchControl(document).setToggled(true).getElement());
         debugToggleCard.append(debugToggleHost);
         controlCard.append(debugToggleCard);
@@ -572,17 +572,17 @@ public class UiHudDocumentHostTest {
         panel.append(scrollContent);
 
         contentBody.style()
-                .setDisplay(club.heiqi.uilib.ui.style.UiDisplay.FLEX)
-                .setFlexDirection(club.heiqi.uilib.ui.style.UiFlexDirection.COLUMN)
-                .setAlignItems(club.heiqi.uilib.ui.style.UiAlignItems.STRETCH)
+                .setDisplay(club.heiqi.uilib.ui.style.props.UiDisplay.FLEX)
+                .setFlexDirection(club.heiqi.uilib.ui.style.props.UiFlexDirection.COLUMN)
+                .setAlignItems(club.heiqi.uilib.ui.style.props.UiAlignItems.STRETCH)
                 .setWidth(UiStyleLength.percent(1.0F))
                 .setRowGap(UiStyleLength.px(6));
         scrollContent.append(contentBody);
 
         overviewCard.style()
-                .setDisplay(club.heiqi.uilib.ui.style.UiDisplay.FLEX)
-                .setFlexDirection(club.heiqi.uilib.ui.style.UiFlexDirection.COLUMN)
-                .setAlignItems(club.heiqi.uilib.ui.style.UiAlignItems.START)
+                .setDisplay(club.heiqi.uilib.ui.style.props.UiDisplay.FLEX)
+                .setFlexDirection(club.heiqi.uilib.ui.style.props.UiFlexDirection.COLUMN)
+                .setAlignItems(club.heiqi.uilib.ui.style.props.UiAlignItems.START)
                 .setBoxSizing(UiBoxSizing.BORDER_BOX)
                 .setWidth(UiStyleLength.percent(1.0F))
                 .setPadding(UiStyleLength.px(6))
@@ -593,9 +593,9 @@ public class UiHudDocumentHostTest {
         contentBody.append(overviewCard);
 
         noteCard.style()
-                .setDisplay(club.heiqi.uilib.ui.style.UiDisplay.FLEX)
-                .setFlexDirection(club.heiqi.uilib.ui.style.UiFlexDirection.COLUMN)
-                .setAlignItems(club.heiqi.uilib.ui.style.UiAlignItems.STRETCH)
+                .setDisplay(club.heiqi.uilib.ui.style.props.UiDisplay.FLEX)
+                .setFlexDirection(club.heiqi.uilib.ui.style.props.UiFlexDirection.COLUMN)
+                .setAlignItems(club.heiqi.uilib.ui.style.props.UiAlignItems.STRETCH)
                 .setBoxSizing(UiBoxSizing.BORDER_BOX)
                 .setWidth(UiStyleLength.percent(1.0F))
                 .setPadding(UiStyleLength.px(6))
@@ -605,21 +605,21 @@ public class UiHudDocumentHostTest {
         DocumentTextInputControl input = new DocumentTextInputControl(document)
                 .setPlaceholder("在容器界面中输入备注")
                 .setText("把鼠标移到背包界面后尝试编辑我");
-        input.getElement().style().setDisplay(club.heiqi.uilib.ui.style.UiDisplay.BLOCK)
+        input.getElement().style().setDisplay(club.heiqi.uilib.ui.style.props.UiDisplay.BLOCK)
                 .setBoxSizing(UiBoxSizing.BORDER_BOX)
                 .setWidth(UiStyleLength.percent(1.0F));
         noteCard.append(input.getElement());
         DocumentButtonControl button = new DocumentButtonControl(document, "记录一次点击");
-        button.getElement().style().setDisplay(club.heiqi.uilib.ui.style.UiDisplay.BLOCK)
+        button.getElement().style().setDisplay(club.heiqi.uilib.ui.style.props.UiDisplay.BLOCK)
                 .setBoxSizing(UiBoxSizing.BORDER_BOX)
                 .setWidth(UiStyleLength.percent(1.0F));
         noteCard.append(button.getElement());
         contentBody.append(noteCard);
 
         debugCard.style()
-                .setDisplay(club.heiqi.uilib.ui.style.UiDisplay.FLEX)
-                .setFlexDirection(club.heiqi.uilib.ui.style.UiFlexDirection.COLUMN)
-                .setAlignItems(club.heiqi.uilib.ui.style.UiAlignItems.START)
+                .setDisplay(club.heiqi.uilib.ui.style.props.UiDisplay.FLEX)
+                .setFlexDirection(club.heiqi.uilib.ui.style.props.UiFlexDirection.COLUMN)
+                .setAlignItems(club.heiqi.uilib.ui.style.props.UiAlignItems.START)
                 .setBoxSizing(UiBoxSizing.BORDER_BOX)
                 .setWidth(UiStyleLength.percent(1.0F))
                 .setPadding(UiStyleLength.px(6))
@@ -874,7 +874,7 @@ public class UiHudDocumentHostTest {
     private static ElementNode line(UiDocument document, String text) {
         ElementNode line = document.div();
         line.style()
-                .setDisplay(club.heiqi.uilib.ui.style.UiDisplay.BLOCK)
+                .setDisplay(club.heiqi.uilib.ui.style.props.UiDisplay.BLOCK)
                 .setWidth(UiStyleLength.auto());
         line.appendText(text);
         return line;

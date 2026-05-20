@@ -10,20 +10,20 @@ import club.heiqi.uilib.ui.dom.ElementNode;
 import club.heiqi.uilib.ui.layout.DocumentEffectType;
 import club.heiqi.uilib.ui.layout.DocumentLayoutEdges;
 import club.heiqi.uilib.ui.render.UiRenderContext;
-import club.heiqi.uilib.ui.style.ComputedStyle;
-import club.heiqi.uilib.ui.style.UiBorderColors;
-import club.heiqi.uilib.ui.style.UiBorderRadiusResolver;
-import club.heiqi.uilib.ui.style.UiBorderStyle;
-import club.heiqi.uilib.ui.style.UiBoxShadow;
-import club.heiqi.uilib.ui.style.UiBackgroundImage;
-import club.heiqi.uilib.ui.style.UiDisplay;
-import club.heiqi.uilib.ui.style.UiOutline;
-import club.heiqi.uilib.ui.style.UiPosition;
-import club.heiqi.uilib.ui.style.UiStyleInsets;
-import club.heiqi.uilib.ui.style.UiStyleResolver;
-import club.heiqi.uilib.ui.style.UiBorderCollapse;
-import club.heiqi.uilib.ui.style.UiTextShadow;
-import club.heiqi.uilib.ui.style.UiVisibility;
+import club.heiqi.uilib.ui.style.cascade.ComputedStyle;
+import club.heiqi.uilib.ui.style.values.UiBorderColors;
+import club.heiqi.uilib.ui.style.cascade.UiBorderRadiusResolver;
+import club.heiqi.uilib.ui.style.props.UiBorderStyle;
+import club.heiqi.uilib.ui.style.values.UiBoxShadow;
+import club.heiqi.uilib.ui.style.values.UiBackgroundImage;
+import club.heiqi.uilib.ui.style.props.UiDisplay;
+import club.heiqi.uilib.ui.style.values.UiOutline;
+import club.heiqi.uilib.ui.style.props.UiPosition;
+import club.heiqi.uilib.ui.style.values.UiStyleInsets;
+import club.heiqi.uilib.ui.style.cascade.UiStyleResolver;
+import club.heiqi.uilib.ui.style.props.UiBorderCollapse;
+import club.heiqi.uilib.ui.style.values.UiTextShadow;
+import club.heiqi.uilib.ui.style.props.UiVisibility;
 import club.heiqi.uilib.ui.theme.UiSurfaceStyle;
 
 /**
@@ -580,7 +580,7 @@ public final class DocumentPaintRenderer {
 
     private static DocumentLayoutEdges applyCollapsedTableBorderOverride(DocumentPaintCommand command, ComputedStyle style,
             DocumentLayoutEdges widths) {
-        if (command == null || style == null || widths == null || style.getDisplay() != club.heiqi.uilib.ui.style.UiDisplay.TABLE_CELL) {
+        if (command == null || style == null || widths == null || style.getDisplay() != club.heiqi.uilib.ui.style.props.UiDisplay.TABLE_CELL) {
             return widths;
         }
         ElementNode element = command.getElement();

@@ -7,12 +7,12 @@ import java.util.List;
 import java.util.Objects;
 
 import club.heiqi.uilib.ui.dom.ElementNode;
-import club.heiqi.uilib.ui.style.ComputedStyle;
-import club.heiqi.uilib.ui.style.UiBorderRadius;
-import club.heiqi.uilib.ui.style.UiBorderRadiusResolver;
-import club.heiqi.uilib.ui.style.UiPointerEvents;
-import club.heiqi.uilib.ui.style.UiStyleResolver;
-import club.heiqi.uilib.ui.style.UiVisibility;
+import club.heiqi.uilib.ui.style.cascade.ComputedStyle;
+import club.heiqi.uilib.ui.style.values.UiBorderRadius;
+import club.heiqi.uilib.ui.style.cascade.UiBorderRadiusResolver;
+import club.heiqi.uilib.ui.style.props.UiPointerEvents;
+import club.heiqi.uilib.ui.style.cascade.UiStyleResolver;
+import club.heiqi.uilib.ui.style.props.UiVisibility;
 
 /**
  * HTML-like 布局盒命中测试引擎。
