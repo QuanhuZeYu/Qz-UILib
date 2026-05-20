@@ -4,16 +4,17 @@ import java.util.Objects;
 
 /**
  * 页面作者可创建并手动派发的自定义 DOM 事件。
+ *
+ * <p>沿用浏览器 {@code Event} 语义：仅在 {@link #isCancelable()} 为 true 时
+ * 调用 {@link #preventDefault()} 才会真正标记 default-prevented，
+ * 否则视为无副作用调用，避免不可取消的事件被业务方误认为可阻止默认行为。</p>
  */
-public final class DocumentCustomEvent {
+public final class DocumentCustomEvent extends AbstractDocumentElementEvent {
 
     private final String type;
     private final Object detail;
     private final boolean bubbles;
     private final boolean cancelable;
-    private final ElementNode target;
-    private final ElementNode currentTarget;
-    private final DocumentEventControl eventControl;
 
     /**
      * 创建默认不冒泡、不可取消的自定义事件。
@@ -48,6 +49,7 @@ public final class DocumentCustomEvent {
 
     DocumentCustomEvent(String type, Object detail, boolean bubbles, boolean cancelable, ElementNode target,
             ElementNode currentTarget, DocumentEventControl eventControl) {
+        super(target, currentTarget, eventControl);
         String resolvedType = Objects.requireNonNull(type, "type").trim();
         if (resolvedType.isEmpty()) {
             throw new IllegalArgumentException("type cannot be empty");
@@ -56,9 +58,6 @@ public final class DocumentCustomEvent {
         this.detail = detail;
         this.bubbles = bubbles;
         this.cancelable = cancelable;
-        this.target = target;
-        this.currentTarget = currentTarget;
-        this.eventControl = Objects.requireNonNull(eventControl, "eventControl");
     }
 
     /**
@@ -80,24 +79,6 @@ public final class DocumentCustomEvent {
     }
 
     /**
-     * 返回事件目标元素。
-     *
-     * @return 目标元素；未派发前返回 null
-     */
-    public ElementNode getTarget() {
-        return target;
-    }
-
-    /**
-     * 返回当前正在处理事件的元素。
-     *
-     * @return 当前处理元素；未派发前返回 null
-     */
-    public ElementNode getCurrentTarget() {
-        return currentTarget;
-    }
-
-    /**
      * 返回是否允许冒泡。
      *
      * @return 是否冒泡
@@ -116,62 +97,18 @@ public final class DocumentCustomEvent {
     }
 
     /**
-     * 返回当前传播阶段。
-     *
-     * @return 传播阶段
-     */
-    public DocumentEventPhase getEventPhase() {
-        return eventControl.getEventPhase();
-    }
-
-    /**
-     * 阻止事件继续传播。
-     */
-    public void stopPropagation() {
-        eventControl.stopPropagation();
-    }
-
-    /**
-     * 阻止事件继续传播，并阻止当前元素上的后续 listener。
-     */
-    public void stopImmediatePropagation() {
-        eventControl.stopImmediatePropagation();
-    }
-
-    /**
      * 阻止默认行为。
      *
-     * <p>仅在当前事件声明为 cancelable 时生效。</p>
+     * <p>仅在当前事件声明为 cancelable 时生效，与浏览器 {@code Event#preventDefault()} 行为一致。</p>
      */
+    @Override
     public void preventDefault() {
         if (cancelable) {
-            eventControl.preventDefault();
+            super.preventDefault();
         }
     }
 
-    /**
-     * 判断事件传播是否已停止。
-     *
-     * @return 是否已停止传播
-     */
-    public boolean isPropagationStopped() {
-        return eventControl.isPropagationStopped();
-    }
-
-    /**
-     * 判断默认行为是否已被阻止。
-     *
-     * @return 是否已阻止默认行为
-     */
-    public boolean isDefaultPrevented() {
-        return eventControl.isDefaultPrevented();
-    }
-
     DocumentCustomEvent withDispatchTargets(ElementNode target, ElementNode currentTarget) {
-        return new DocumentCustomEvent(type, detail, bubbles, cancelable, target, currentTarget, eventControl);
-    }
-
-    DocumentEventControl getEventControl() {
-        return eventControl;
+        return new DocumentCustomEvent(type, detail, bubbles, cancelable, target, currentTarget, getEventControl());
     }
 }
