@@ -15,6 +15,8 @@ import club.heiqi.uilib.ui.layout.DocumentLayoutInlineFragment;
 import club.heiqi.uilib.ui.layout.DocumentLayoutTextRun;
 import club.heiqi.uilib.ui.layout.DocumentScrollState;
 import club.heiqi.uilib.ui.layout.DocumentScrollState.ScrollbarMetrics;
+import club.heiqi.uilib.ui.layout.DocumentStickyPositioning;
+import club.heiqi.uilib.ui.layout.DocumentStickyPositioning.StickyContext;
 import club.heiqi.uilib.ui.layout.DocumentStackingPhase;
 import club.heiqi.uilib.ui.style.ComputedStyle;
 import club.heiqi.uilib.ui.style.UiBorderRadiusResolver;
@@ -95,22 +97,22 @@ public final class DocumentPaintEngine {
         Objects.requireNonNull(rootBox, "rootBox");
         List<DocumentPaintCommand> commands = new ArrayList<DocumentPaintCommand>();
         appendBoxCommands(rootBox, rootBox, commands, scrollState, animationTimeline, 0, 0, currentTimeNanos, 1.0F,
-                true);
+                true, DocumentStickyPositioning.rootContext());
         return commands;
     }
 
     private static void appendBoxCommands(DocumentLayoutBox rootBox, DocumentLayoutBox box,
             List<DocumentPaintCommand> commands, DocumentScrollState scrollState,
             DocumentAnimationTimeline animationTimeline, int offsetX, int offsetY, long currentTimeNanos,
-            float inheritedOpacity, boolean paintStackingContext) {
+            float inheritedOpacity, boolean paintStackingContext, StickyContext stickyContext) {
         // #16 visibility:hidden：元素仍占布局空间，但本身及子树均不绘制
         if (box != rootBox && isVisibilityHidden(box)) {
             return;
         }
-        int baseOffsetX = box.isFixedPositioned() ? 0 : offsetX;
-        int baseOffsetY = box.isFixedPositioned() ? 0 : offsetY;
-        int boxOffsetX = baseOffsetX + box.getPositionOffsetX();
-        int boxOffsetY = baseOffsetY + box.getPositionOffsetY();
+        int boxOffsetX = resolveBoxOffsetX(box, offsetX, stickyContext);
+        int boxOffsetY = resolveBoxOffsetY(box, offsetY, stickyContext);
+        StickyContext childStickyContext = DocumentStickyPositioning.createChildContext(box, boxOffsetX, boxOffsetY,
+                stickyContext);
         float localOpacity = resolveAnimatedOpacity(animationTimeline, box, currentTimeNanos);
         DocumentEffectChain effectChain = DocumentEffectChain.resolve(box);
         boolean paintContext = effectChain.createsPaintContext(box == rootBox, localOpacity);
@@ -137,7 +139,8 @@ public final class DocumentPaintEngine {
         int childOffsetY = boxOffsetY - getScrollTop(scrollState, box);
         if (resolvedPaintStackingContext) {
             appendStackingPhaseItems(rootBox, box, commands, scrollState, childOffsetX, childOffsetY,
-                    animationTimeline, currentTimeNanos, boxOpacity, DocumentStackingPhase.NEGATIVE_POSITIONED);
+                    animationTimeline, currentTimeNanos, boxOpacity, DocumentStackingPhase.NEGATIVE_POSITIONED,
+                    childStickyContext);
             appendCustomCommand(box, commands, childOffsetX, childOffsetY);
             appendInlineFragmentSurfaceCommands(box, commands, animationTimeline, currentTimeNanos, boxOpacity,
                     childOffsetX, childOffsetY);
@@ -145,11 +148,13 @@ public final class DocumentPaintEngine {
             appendTextCommands(box, commands, animationTimeline, currentTimeNanos, boxOpacity, childOffsetX,
                     childOffsetY);
             appendNormalFlowChildren(rootBox, box, commands, scrollState, childOffsetX, childOffsetY,
-                    animationTimeline, currentTimeNanos, boxOpacity);
+                    animationTimeline, currentTimeNanos, boxOpacity, childStickyContext);
             appendStackingPhaseItems(rootBox, box, commands, scrollState, childOffsetX, childOffsetY,
-                    animationTimeline, currentTimeNanos, boxOpacity, DocumentStackingPhase.POSITIONED_AUTO_OR_ZERO);
+                    animationTimeline, currentTimeNanos, boxOpacity, DocumentStackingPhase.POSITIONED_AUTO_OR_ZERO,
+                    childStickyContext);
             appendStackingPhaseItems(rootBox, box, commands, scrollState, childOffsetX, childOffsetY,
-                    animationTimeline, currentTimeNanos, boxOpacity, DocumentStackingPhase.POSITIVE_POSITIONED);
+                    animationTimeline, currentTimeNanos, boxOpacity, DocumentStackingPhase.POSITIVE_POSITIONED,
+                    childStickyContext);
         } else {
             appendCustomCommand(box, commands, childOffsetX, childOffsetY);
             appendInlineFragmentSurfaceCommands(box, commands, animationTimeline, currentTimeNanos, boxOpacity,
@@ -158,7 +163,7 @@ public final class DocumentPaintEngine {
             appendTextCommands(box, commands, animationTimeline, currentTimeNanos, boxOpacity, childOffsetX,
                     childOffsetY);
             appendNormalFlowChildren(rootBox, box, commands, scrollState, childOffsetX, childOffsetY,
-                    animationTimeline, currentTimeNanos, boxOpacity);
+                    animationTimeline, currentTimeNanos, boxOpacity, childStickyContext);
         }
         if (clipChildren) {
             appendClipEndCommand(box, commands, boxOffsetX, boxOffsetY);
@@ -189,7 +194,8 @@ public final class DocumentPaintEngine {
 
     private static void appendNormalFlowChildren(DocumentLayoutBox rootBox, DocumentLayoutBox box,
             List<DocumentPaintCommand> commands, DocumentScrollState scrollState, int childOffsetX, int childOffsetY,
-            DocumentAnimationTimeline animationTimeline, long currentTimeNanos, float inheritedOpacity) {
+            DocumentAnimationTimeline animationTimeline, long currentTimeNanos, float inheritedOpacity,
+            StickyContext stickyContext) {
         for (DocumentLayoutBox child : box.getChildren()) {
             if (child.getStackingPhase() != DocumentStackingPhase.NORMAL_FLOW) {
                 continue;
@@ -199,17 +205,17 @@ public final class DocumentPaintEngine {
             boolean childPaintContext = childEffectChain.createsPaintContext(child == rootBox, localOpacity);
             boolean childPaintStackingContext = childPaintContext || childEffectChain.clipsChildren();
             appendBoxCommands(rootBox, child, commands, scrollState, animationTimeline, childOffsetX, childOffsetY,
-                    currentTimeNanos, inheritedOpacity, childPaintStackingContext);
+                    currentTimeNanos, inheritedOpacity, childPaintStackingContext, stickyContext);
         }
     }
 
     private static void appendStackingPhaseItems(DocumentLayoutBox rootBox, DocumentLayoutBox contextRoot,
             List<DocumentPaintCommand> commands, DocumentScrollState scrollState, int childOffsetX, int childOffsetY,
             DocumentAnimationTimeline animationTimeline, long currentTimeNanos, float inheritedOpacity,
-            DocumentStackingPhase phase) {
+            DocumentStackingPhase phase, StickyContext stickyContext) {
         List<StackingPaintItem> items = new ArrayList<StackingPaintItem>();
         collectStackingPhaseItems(rootBox, contextRoot, items, scrollState, childOffsetX, childOffsetY,
-                animationTimeline, currentTimeNanos, phase);
+                animationTimeline, currentTimeNanos, phase, stickyContext);
         if (phase == DocumentStackingPhase.NEGATIVE_POSITIONED
                 || phase == DocumentStackingPhase.POSITIVE_POSITIONED) {
             java.util.Collections.sort(items, new java.util.Comparator<StackingPaintItem>() {
@@ -221,28 +227,34 @@ public final class DocumentPaintEngine {
         }
         for (StackingPaintItem item : items) {
             appendBoxCommands(rootBox, item.box, commands, scrollState, animationTimeline, item.offsetX,
-                    item.offsetY, currentTimeNanos, inheritedOpacity, item.paintStackingContext);
+                    item.offsetY, currentTimeNanos, inheritedOpacity, item.paintStackingContext, item.stickyContext);
         }
     }
 
     private static void collectStackingPhaseItems(DocumentLayoutBox rootBox, DocumentLayoutBox currentBox,
             List<StackingPaintItem> items, DocumentScrollState scrollState, int childOffsetX, int childOffsetY,
-            DocumentAnimationTimeline animationTimeline, long currentTimeNanos, DocumentStackingPhase phase) {
+            DocumentAnimationTimeline animationTimeline, long currentTimeNanos, DocumentStackingPhase phase,
+            StickyContext stickyContext) {
         for (DocumentLayoutBox child : currentBox.getChildren()) {
             float localOpacity = resolveAnimatedOpacity(animationTimeline, child, currentTimeNanos);
             DocumentEffectChain childEffectChain = DocumentEffectChain.resolve(child);
             boolean childPaintContext = childEffectChain.createsPaintContext(child == rootBox, localOpacity);
             boolean childPaintStackingContext = childPaintContext || childEffectChain.clipsChildren();
             if (child.getStackingPhase() == phase) {
-                items.add(new StackingPaintItem(child, childOffsetX, childOffsetY, childPaintStackingContext));
+                items.add(new StackingPaintItem(child, childOffsetX, childOffsetY, childPaintStackingContext,
+                        stickyContext));
             }
             if (childPaintStackingContext) {
                 continue;
             }
-            int grandChildOffsetX = resolveChildOffsetX(childOffsetX, scrollState, child);
-            int grandChildOffsetY = resolveChildOffsetY(childOffsetY, scrollState, child);
+            int childBoxOffsetX = resolveBoxOffsetX(child, childOffsetX, stickyContext);
+            int childBoxOffsetY = resolveBoxOffsetY(child, childOffsetY, stickyContext);
+            StickyContext childStickyContext = DocumentStickyPositioning.createChildContext(child, childBoxOffsetX,
+                    childBoxOffsetY, stickyContext);
+            int grandChildOffsetX = childBoxOffsetX - getScrollLeft(scrollState, child);
+            int grandChildOffsetY = childBoxOffsetY - getScrollTop(scrollState, child);
             collectStackingPhaseItems(rootBox, child, items, scrollState, grandChildOffsetX, grandChildOffsetY,
-                    animationTimeline, currentTimeNanos, phase);
+                    animationTimeline, currentTimeNanos, phase, childStickyContext);
         }
     }
 
@@ -700,14 +712,16 @@ public final class DocumentPaintEngine {
         return scrollState == null ? 0 : scrollState.getScrollTop(box.getElement());
     }
 
-    private static int resolveChildOffsetX(int childOffsetX, DocumentScrollState scrollState, DocumentLayoutBox child) {
-        int baseOffsetX = child.isFixedPositioned() ? 0 : childOffsetX;
-        return baseOffsetX + child.getPositionOffsetX() - getScrollLeft(scrollState, child);
+    private static int resolveBoxOffsetX(DocumentLayoutBox box, int offsetX, StickyContext stickyContext) {
+        int baseOffsetX = box.isFixedPositioned() ? 0 : offsetX;
+        int positionedOffsetX = baseOffsetX + box.getPositionOffsetX();
+        return DocumentStickyPositioning.resolveOffsetX(box, positionedOffsetX, stickyContext);
     }
 
-    private static int resolveChildOffsetY(int childOffsetY, DocumentScrollState scrollState, DocumentLayoutBox child) {
-        int baseOffsetY = child.isFixedPositioned() ? 0 : childOffsetY;
-        return baseOffsetY + child.getPositionOffsetY() - getScrollTop(scrollState, child);
+    private static int resolveBoxOffsetY(DocumentLayoutBox box, int offsetY, StickyContext stickyContext) {
+        int baseOffsetY = box.isFixedPositioned() ? 0 : offsetY;
+        int positionedOffsetY = baseOffsetY + box.getPositionOffsetY();
+        return DocumentStickyPositioning.resolveOffsetY(box, positionedOffsetY, stickyContext);
     }
 
     /**
@@ -726,12 +740,15 @@ public final class DocumentPaintEngine {
         private final int offsetX;
         private final int offsetY;
         private final boolean paintStackingContext;
+        private final StickyContext stickyContext;
 
-        private StackingPaintItem(DocumentLayoutBox box, int offsetX, int offsetY, boolean paintStackingContext) {
+        private StackingPaintItem(DocumentLayoutBox box, int offsetX, int offsetY, boolean paintStackingContext,
+                StickyContext stickyContext) {
             this.box = box;
             this.offsetX = offsetX;
             this.offsetY = offsetY;
             this.paintStackingContext = paintStackingContext;
+            this.stickyContext = stickyContext;
         }
     }
 }

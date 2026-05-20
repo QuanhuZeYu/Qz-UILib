@@ -38,6 +38,7 @@ public final class ComputedStyle {
     private final UiStyleLength columnGap;
     private final float flexGrow;
     private final float flexShrink;
+    private final int order;
     private final float opacity;
     private final int backgroundColor;
     private final int borderColor;
@@ -95,8 +96,8 @@ public final class ComputedStyle {
             UiStyleInsets margin, UiStyleInsets padding, UiStyleLength borderWidth, UiStyleLength borderRadius,
             UiOverflow overflowX, UiOverflow overflowY, UiFlexDirection flexDirection, UiAlignItems alignItems,
             UiJustifyContent justifyContent, UiVerticalAlign verticalAlign, UiStyleLength rowGap,
-            UiStyleLength columnGap, float flexGrow, float flexShrink, float opacity, int backgroundColor, int borderColor,
-            int textColor,
+            UiStyleLength columnGap, float flexGrow, float flexShrink, int order, float opacity,
+            int backgroundColor, int borderColor, int textColor,
             List<DocumentAnimationProperty> transitionProperties, long transitionDurationNanos,
             long transitionDelayNanos, DocumentAnimationTimingFunction transitionTimingFunction,
             String animationName, long animationDurationNanos, long animationDelayNanos, int animationIterationCount,
@@ -137,6 +138,7 @@ public final class ComputedStyle {
         this.columnGap = Objects.requireNonNull(columnGap, "columnGap");
         this.flexGrow = Math.max(0.0F, flexGrow);
         this.flexShrink = Math.max(0.0F, flexShrink);
+        this.order = order;
         this.opacity = Math.max(0.0F, Math.min(1.0F, opacity));
         this.backgroundColor = backgroundColor;
         this.borderColor = borderColor;
@@ -283,6 +285,15 @@ public final class ComputedStyle {
 
     public float getFlexShrink() {
         return flexShrink;
+    }
+
+    /**
+     * 返回 flex item 排序权重。
+     *
+     * @return 排序权重
+     */
+    public int getOrder() {
+        return order;
     }
 
     public float getOpacity() {

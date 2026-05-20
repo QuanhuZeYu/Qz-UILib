@@ -32,6 +32,7 @@ public enum UiStyleProperty {
     COLUMN_GAP(false, UiStyleChangeImpact.LAYOUT),
     FLEX_GROW(false, UiStyleChangeImpact.LAYOUT),
     FLEX_SHRINK(false, UiStyleChangeImpact.LAYOUT),
+    ORDER(false, UiStyleChangeImpact.LAYOUT),
     OPACITY(false, UiStyleChangeImpact.PAINT),
     BACKGROUND_COLOR(false, UiStyleChangeImpact.PAINT),
     BORDER_COLOR(false, UiStyleChangeImpact.PAINT),

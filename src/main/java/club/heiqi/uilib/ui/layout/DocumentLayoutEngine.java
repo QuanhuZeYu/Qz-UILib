@@ -1209,7 +1209,7 @@ public final class DocumentLayoutEngine {
             LayoutRuntimeValueResolver layoutValueResolver) {
         List<ElementNode> absoluteChildren = getVisibleAbsoluteElementChildren(element);
         List<ElementNode> fixedChildren = getVisibleFixedElementChildren(element);
-        List<ElementNode> visibleChildren = getVisibleInFlowElementChildren(element);
+        List<ElementNode> visibleChildren = sortElementsByFlexOrder(element, getVisibleInFlowElementChildren(element));
         LayoutChildrenResult flowResult;
         if (visibleChildren.isEmpty()) {
             flowResult = new LayoutChildrenResult(new ArrayList<DocumentLayoutBox>(),
@@ -1230,7 +1230,7 @@ public final class DocumentLayoutEngine {
                 flowResult.contentHeight), fixedContainingBlock, textMeasureService, layoutValueResolver);
         appendFixedChildren(childBoxes, fixedChildren, fixedContainingBlock, textMeasureService,
                 layoutValueResolver);
-        return new LayoutChildrenResult(sortByDocumentChildOrder(element, childBoxes), flowResult.textRuns,
+        return new LayoutChildrenResult(sortFlexChildBoxesByOrder(element, childBoxes), flowResult.textRuns,
                 flowResult.inlineFragments, flowResult.contentHeight);
     }
 
@@ -1701,7 +1701,7 @@ public final class DocumentLayoutEngine {
     private static int measureIntrinsicFlexContentWidth(ElementNode element, ComputedStyle style,
             TextMeasureService textMeasureService, int containingWidth,
             LayoutRuntimeValueResolver layoutValueResolver) {
-        List<ElementNode> children = getVisibleInFlowElementChildren(element);
+        List<ElementNode> children = sortElementsByFlexOrder(element, getVisibleInFlowElementChildren(element));
         if (children.isEmpty()) {
             return 0;
         }
@@ -2209,6 +2209,41 @@ public final class DocumentLayoutEngine {
         Collections.sort(sortedBoxes, new Comparator<DocumentLayoutBox>() {
             @Override
             public int compare(DocumentLayoutBox first, DocumentLayoutBox second) {
+                return Integer.compare(getChildOrder(parentElement, first.getElement()),
+                        getChildOrder(parentElement, second.getElement()));
+            }
+        });
+        return sortedBoxes;
+    }
+
+    private static List<ElementNode> sortElementsByFlexOrder(final ElementNode parentElement,
+            List<ElementNode> children) {
+        List<ElementNode> sortedChildren = new ArrayList<ElementNode>(children);
+        Collections.sort(sortedChildren, new Comparator<ElementNode>() {
+            @Override
+            public int compare(ElementNode first, ElementNode second) {
+                int orderCompare = Integer.compare(UiStyleResolver.compute(first).getOrder(),
+                        UiStyleResolver.compute(second).getOrder());
+                if (orderCompare != 0) {
+                    return orderCompare;
+                }
+                return Integer.compare(getChildOrder(parentElement, first), getChildOrder(parentElement, second));
+            }
+        });
+        return sortedChildren;
+    }
+
+    private static List<DocumentLayoutBox> sortFlexChildBoxesByOrder(final ElementNode parentElement,
+            List<DocumentLayoutBox> childBoxes) {
+        List<DocumentLayoutBox> sortedBoxes = new ArrayList<DocumentLayoutBox>(childBoxes);
+        Collections.sort(sortedBoxes, new Comparator<DocumentLayoutBox>() {
+            @Override
+            public int compare(DocumentLayoutBox first, DocumentLayoutBox second) {
+                int orderCompare = Integer.compare(first.getComputedStyle().getOrder(),
+                        second.getComputedStyle().getOrder());
+                if (orderCompare != 0) {
+                    return orderCompare;
+                }
                 return Integer.compare(getChildOrder(parentElement, first.getElement()),
                         getChildOrder(parentElement, second.getElement()));
             }

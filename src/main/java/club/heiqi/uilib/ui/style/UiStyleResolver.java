@@ -151,6 +151,8 @@ public final class UiStyleResolver {
                 parentStyle == null ? Float.valueOf(0.0F) : Float.valueOf(parentStyle.getFlexGrow()));
         Float flexShrinkValue = cascade(inlineStyle, matchingRules, UiStyleProperty.FLEX_SHRINK, Float.valueOf(1.0F),
                 parentStyle == null ? Float.valueOf(1.0F) : Float.valueOf(parentStyle.getFlexShrink()));
+        Integer orderValue = cascade(inlineStyle, matchingRules, UiStyleProperty.ORDER, Integer.valueOf(0),
+                parentStyle == null ? Integer.valueOf(0) : Integer.valueOf(parentStyle.getOrder()));
         Float opacityValue = cascade(inlineStyle, matchingRules, UiStyleProperty.OPACITY, Float.valueOf(1.0F),
                 parentStyle == null ? Float.valueOf(1.0F) : Float.valueOf(parentStyle.getOpacity()));
         Integer backgroundColorValue = cascade(inlineStyle, matchingRules, UiStyleProperty.BACKGROUND_COLOR,
@@ -295,8 +297,9 @@ public final class UiStyleResolver {
         return new ComputedStyle(display, width, height, boxSizing, position, top, right, bottom, left, zIndex, margin,
                 padding, borderWidth, borderRadius, overflowX, overflowY, flexDirection, alignItems, justifyContent,
                 verticalAlign, rowGap, columnGap, flexGrowValue.floatValue(), flexShrinkValue.floatValue(),
-                opacityValue.floatValue(), backgroundColorValue.intValue(), borderColorValue.intValue(),
-                textColorValue.intValue(), transitionProperties, transitionDurationNanos.longValue(),
+                orderValue.intValue(), opacityValue.floatValue(), backgroundColorValue.intValue(),
+                borderColorValue.intValue(), textColorValue.intValue(), transitionProperties,
+                transitionDurationNanos.longValue(),
                 transitionDelayNanos.longValue(), transitionTimingFunction, animationName,
                 animationDurationNanos.longValue(), animationDelayNanos.longValue(), animationIterationCount.intValue(),
                 animationFillMode, animationTimingFunction, backdropBlurRadius, backdropSaturationValue.floatValue(),
@@ -400,6 +403,7 @@ public final class UiStyleResolver {
             case COLUMN_GAP: return (T) declaration.getColumnGap();
             case FLEX_GROW: return (T) declaration.getFlexGrow();
             case FLEX_SHRINK: return (T) declaration.getFlexShrink();
+            case ORDER: return (T) declaration.getOrder();
             case OPACITY: return (T) declaration.getOpacity();
             case BACKGROUND_COLOR: return (T) declaration.getBackgroundColor();
             case BORDER_COLOR: return (T) declaration.getBorderColor();

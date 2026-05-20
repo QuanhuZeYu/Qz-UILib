@@ -13,6 +13,9 @@ import club.heiqi.uilib.ui.dom.UiDocument;
 import club.heiqi.uilib.ui.dom.control.DocumentButtonControl;
 import club.heiqi.uilib.ui.dom.control.DocumentTextInputControl;
 import club.heiqi.uilib.ui.image.DocumentRemoteImageCache;
+import club.heiqi.uilib.ui.paint.DocumentPaintCommand;
+import club.heiqi.uilib.ui.paint.DocumentPaintCommandType;
+import club.heiqi.uilib.ui.paint.DocumentPaintEngine;
 import club.heiqi.uilib.ui.style.UiAlignItems;
 import club.heiqi.uilib.ui.style.UiBorderCollapse;
 import club.heiqi.uilib.ui.style.UiBoxSizing;
@@ -2079,6 +2082,106 @@ public class DocumentLayoutEngineTest {
         Assert.assertEquals(27, childBox.getLeft());
     }
 
+    /**
+     * 验证 flex order 会改变 flex item 的布局与盒树视觉顺序。
+     */
+    @Test
+    public void shouldLayoutFlexItemsByOrder() {
+        UiDocument document = UiDocument.create();
+        ElementNode root = document.getRootElement();
+        ElementNode first = document.div();
+        ElementNode second = document.div();
+        ElementNode third = document.div();
+
+        root.style()
+                .setDisplay(UiDisplay.FLEX)
+                .setWidth(UiStyleLength.px(120));
+        first.style()
+                .setWidth(UiStyleLength.px(20))
+                .setHeight(UiStyleLength.px(10))
+                .setOrder(2);
+        second.style()
+                .setWidth(UiStyleLength.px(20))
+                .setHeight(UiStyleLength.px(10))
+                .setOrder(-1);
+        third.style()
+                .setWidth(UiStyleLength.px(20))
+                .setHeight(UiStyleLength.px(10));
+        root.append(first).append(second).append(third);
+
+        DocumentLayoutBox rootBox = DocumentLayoutEngine.layout(root, 160, 0);
+        DocumentLayoutBox firstVisualBox = rootBox.getChildren().get(0);
+        DocumentLayoutBox secondVisualBox = rootBox.getChildren().get(1);
+        DocumentLayoutBox thirdVisualBox = rootBox.getChildren().get(2);
+
+        assertElementUid(second, firstVisualBox.getElement());
+        assertElementUid(third, secondVisualBox.getElement());
+        assertElementUid(first, thirdVisualBox.getElement());
+        Assert.assertEquals(0, firstVisualBox.getLeft());
+        Assert.assertEquals(20, secondVisualBox.getLeft());
+        Assert.assertEquals(40, thirdVisualBox.getLeft());
+    }
+
+    /**
+     * 验证 calc(percent, px) 会按混合单位参与宽高布局计算。
+     */
+    @Test
+    public void shouldResolveCalcLengthInLayout() {
+        UiDocument document = UiDocument.create();
+        ElementNode root = document.getRootElement();
+        ElementNode child = document.div();
+
+        root.style()
+                .setWidth(UiStyleLength.px(200))
+                .setHeight(UiStyleLength.px(100));
+        child.style()
+                .setWidth(UiStyleLength.calc(1.0F, -24.0F))
+                .setHeight(UiStyleLength.calc(0.5F, 8.0F));
+        root.append(child);
+
+        DocumentLayoutBox childBox = DocumentLayoutEngine.layout(root, 240, 0).getChildren().get(0);
+
+        Assert.assertEquals(176, childBox.getContentWidth());
+        Assert.assertEquals(58, childBox.getContentHeight());
+    }
+
+    /**
+     * 验证 position:sticky 在滚动后参与绘制与命中偏移。
+     */
+    @Test
+    public void shouldApplyStickyPositionDuringScrollPaintAndHitTest() {
+        UiDocument document = UiDocument.create();
+        ElementNode root = document.getRootElement();
+        ElementNode spacer = document.div();
+        ElementNode sticky = document.div();
+        ElementNode tail = document.div();
+
+        root.style()
+                .setWidth(UiStyleLength.px(100))
+                .setHeight(UiStyleLength.px(60))
+                .setOverflowY(UiOverflow.AUTO);
+        spacer.style().setHeight(UiStyleLength.px(40));
+        sticky.style()
+                .setHeight(UiStyleLength.px(10))
+                .setPosition(UiPosition.STICKY)
+                .setTop(UiStyleLength.px(0))
+                .setBackgroundColor(0xFF224466);
+        tail.style().setHeight(UiStyleLength.px(120));
+        root.append(spacer).append(sticky).append(tail);
+
+        DocumentLayoutBox rootBox = DocumentLayoutEngine.layout(root, 120, 0);
+        DocumentScrollState scrollState = new DocumentScrollState();
+        scrollState.updateFromLayout(rootBox);
+        Assert.assertTrue(scrollState.setScrollOffset(root, 0, 50));
+
+        DocumentPaintCommand stickyBackground = findBackgroundCommand(sticky,
+                DocumentPaintEngine.buildPaintCommands(rootBox, scrollState, 0L));
+
+        Assert.assertNotNull(stickyBackground);
+        Assert.assertEquals(0, stickyBackground.getTop());
+        Assert.assertSame(sticky, DocumentHitTestEngine.hitTest(rootBox, scrollState, 5, 5));
+    }
+
     private static void assertTextRun(DocumentLayoutTextRun textRun, String text, int left, int top, int width,
             int height) {
         Assert.assertEquals(text, textRun.getText());
@@ -2100,6 +2203,15 @@ public class DocumentLayoutEngineTest {
     private static void assertElementUid(ElementNode expectedElement, ElementNode actualElement) {
         Assert.assertNotNull(actualElement);
         Assert.assertEquals(expectedElement.__getElementUid(), actualElement.__getElementUid());
+    }
+
+    private static DocumentPaintCommand findBackgroundCommand(ElementNode element, List<DocumentPaintCommand> commands) {
+        for (DocumentPaintCommand command : commands) {
+            if (command.getType() == DocumentPaintCommandType.BACKGROUND && command.getElement() == element) {
+                return command;
+            }
+        }
+        return null;
     }
 
     /**

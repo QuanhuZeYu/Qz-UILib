@@ -61,7 +61,8 @@ public final class DocumentEffectChain {
         boolean overflowClipsY = style.getOverflowY() != UiOverflow.VISIBLE;
         boolean hasOverflowClip = overflowClipsX || overflowClipsY;
         boolean clipsChildren = hasOverflowClip && hasClipSensitiveContent(box);
-        boolean positionedStackingContext = style.getPosition() != UiPosition.STATIC && style.getZIndex() != null;
+        boolean positionedStackingContext = style.getPosition() == UiPosition.STICKY
+                || style.getPosition() != UiPosition.STATIC && style.getZIndex() != null;
         boolean opacityStackingContext = style.getOpacity() < 0.999F;
         int backdropBlurRadius = resolveBackdropBlurRadius(box, style);
         float backdropSaturation = style.getBackdropSaturation();

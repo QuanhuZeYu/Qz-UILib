@@ -30,6 +30,8 @@
 | **position:sticky** | 无粘性定位 | `UiPosition.java` 枚举中无 STICKY 值 |
 | **flex `order`** | 无法通过 order 改变 flex 子项视觉顺序 | `UiStyleDeclaration.java` 无 order 字段；布局引擎按 DOM 顺序固定排列 |
 
+- **后续状态（2026-05-20）**：当前源码已补齐 flex `order` 与 `position:sticky` 首阶段闭环。`order` 已进入样式声明、级联、computed style、flex 主轴布局、盒树视觉顺序、绘制与命中顺序；`position:sticky` 已进入定位枚举，保留普通流占位，并在最近 overflow 非 visible 祖先滚动视口内按 inset 产生绘制与命中偏移。`display:grid` 与 `float` 仍未接入真实布局计算。
+
 ### CSS 样式与视觉
 
 | 能力 | 说明 | 关键证据 |
@@ -45,6 +47,8 @@
 | **`inherit` / `initial` / `unset` 关键字** | 无显式继承/重置关键字；只能通过 clear 方法回退 | `UiStyleResolver.java` 无对应关键字处理逻辑 |
 | **`list-style` / ul / ol / li** | 无列表标记渲染，无有序/无序列表语义 | 全项目无列表项目符号/编号渲染实现 |
 | **`background-image` CSS 属性** | 背景图需通过控件 API 设置；不支持声明式 `background-image: url(...)` | `UiStyleDeclaration.java` 无 backgroundImage 字段；仅有 `DocumentHostImageDecorations` 控件 API |
+
+- **后续状态（2026-05-20）**：当前源码已在 `UiStyleLength` 增加 `calc(percent, pixelOffset)` 最小混合长度，统一 `resolve(...)` 后进入宽高、inset、margin、padding、border、gap 等布局计算；仍不提供 CSS 字符串表达式解析器或任意嵌套表达式。
 
 ### CSS 选择器与规则
 

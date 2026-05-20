@@ -48,6 +48,7 @@ public final class UiStyleDeclaration {
     private UiStyleLength columnGap;
     private Float flexGrow;
     private Float flexShrink;
+    private Integer order;
     private Float opacity;
     private Integer backgroundColor;
     private Integer borderColor;
@@ -518,6 +519,24 @@ public final class UiStyleDeclaration {
 
     public UiStyleDeclaration clearFlexShrink() {
         return updateFlexShrink(null);
+    }
+
+    public Integer getOrder() {
+        return order;
+    }
+
+    /**
+     * 设置 flex item 的排序权重。
+     *
+     * @param order 排序权重，默认 0，数值越小越靠前
+     * @return 当前声明
+     */
+    public UiStyleDeclaration setOrder(int order) {
+        return updateOrder(Integer.valueOf(order));
+    }
+
+    public UiStyleDeclaration clearOrder() {
+        return updateOrder(null);
     }
 
     public Float getOpacity() {
@@ -1568,6 +1587,12 @@ public final class UiStyleDeclaration {
         return updateProperty(UiStyleProperty.FLEX_SHRINK, previousValue, value, UiStyleChangeImpact.LAYOUT);
     }
 
+    private UiStyleDeclaration updateOrder(Integer value) {
+        Integer previousValue = order;
+        order = value;
+        return updateProperty(UiStyleProperty.ORDER, previousValue, value, UiStyleChangeImpact.LAYOUT);
+    }
+
     private UiStyleDeclaration updateOpacity(Float value) {
         Float previousValue = opacity;
         opacity = value;
@@ -1894,6 +1919,7 @@ public final class UiStyleDeclaration {
             case COLUMN_GAP: return columnGap != null;
             case FLEX_GROW: return flexGrow != null;
             case FLEX_SHRINK: return flexShrink != null;
+            case ORDER: return order != null;
             case OPACITY: return opacity != null;
             case BACKGROUND_COLOR: return backgroundColor != null;
             case BORDER_COLOR: return borderColor != null;
@@ -1973,6 +1999,7 @@ public final class UiStyleDeclaration {
             case COLUMN_GAP: columnGap = null; break;
             case FLEX_GROW: flexGrow = null; break;
             case FLEX_SHRINK: flexShrink = null; break;
+            case ORDER: order = null; break;
             case OPACITY: opacity = null; break;
             case BACKGROUND_COLOR: backgroundColor = null; break;
             case BORDER_COLOR: borderColor = null; break;
@@ -2060,6 +2087,7 @@ public final class UiStyleDeclaration {
         columnGap = resolvedSource.columnGap;
         flexGrow = resolvedSource.flexGrow;
         flexShrink = resolvedSource.flexShrink;
+        order = resolvedSource.order;
         opacity = resolvedSource.opacity;
         backgroundColor = resolvedSource.backgroundColor;
         borderColor = resolvedSource.borderColor;

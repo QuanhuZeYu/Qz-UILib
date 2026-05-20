@@ -43,8 +43,9 @@
 - `flex-direction:column` 固定高度容器下，普通 `height:auto` 且 `overflow-y:visible` 的直接 flex item 会按接近浏览器 `min-height:auto` 的语义以自然内容高度作为收缩下限；若 item 自身声明 `overflow-y:auto` 或非 visible 裁切语义，则允许压缩并由自身滚动/裁切承接内容。
 - HTML-like 布局默认按浏览器 content-box 心智处理 `width:100%`：子项自身 padding/border 会叠加到 border box 并可能溢出父内容盒；若业务需要把 padding/border 收进指定宽度，应显式声明 `box-sizing:border-box`（Java API 为 `setBoxSizing(UiBoxSizing.BORDER_BOX)`）。
 - `position:absolute` 的 containing block 锚点按更接近浏览器的 positioned ancestor padding box 处理；relative 定位中 `top/bottom:%` 按 containing block 高度解析，不再按元素自身高度解析。
+- `position:sticky` 已有首阶段闭环：元素保留普通流占位，在最近 overflow 非 visible 祖先的滚动视口内按 inset 产生绘制和命中偏移；当前不承诺完整浏览器 sticky 的所有滚动条交互与复杂 containing block 边界。
 - 需要做玻璃卡片、浮层或测试页叠压展示时，优先在 `position:relative` 的父容器内用 `position:absolute` 子层声明覆盖关系；不要再把负 `top` / 负 `margin` 作为通用叠压手段。
-- 样式系统新增属性：`line-height`（auto=跟随字体）、`text-align`（START/CENTER/END，可继承）、`white-space`（NORMAL/NOWRAP）、`text-overflow`（CLIP/ELLIPSIS，配合 NOWRAP 生效）、`visibility`（VISIBLE/HIDDEN，可继承，HIDDEN 保留布局空间但不绘制不命中）、`min-width`/`max-width`/`min-height`/`max-height`（约束布局尺寸）、`flex-basis`（主轴初始尺寸，auto 退回 width/height）、`align-self`（覆盖父容器 align-items，AUTO=跟随父）、`flex-wrap`（NOWRAP/WRAP）。
+- 样式系统新增属性：`line-height`（auto=跟随字体）、`text-align`（START/CENTER/END，可继承）、`white-space`（NORMAL/NOWRAP）、`text-overflow`（CLIP/ELLIPSIS，配合 NOWRAP 生效）、`visibility`（VISIBLE/HIDDEN，可继承，HIDDEN 保留布局空间但不绘制不命中）、`min-width`/`max-width`/`min-height`/`max-height`（约束布局尺寸）、`flex-basis`（主轴初始尺寸，auto 退回 width/height）、`align-self`（覆盖父容器 align-items，AUTO=跟随父）、`flex-wrap`（NOWRAP/WRAP）、`order`（参与 flex item 主轴布局、盒树视觉顺序、绘制与命中顺序）。
 - `justify-content` 已支持 SPACE_AROUND 和 SPACE_EVENLY；`align-items` 已支持 BASELINE（暂按 START 处理）；`overflow` 已支持 SCROLL（始终显示滚动条）。
 - `border-radius` 现在参与命中测试（圆角外侧不命中）；`visibility:hidden` 同时跳过绘制和命中测试；非等值分角圆角已进入 `UiRenderContext` 表面绘制、clip/backdrop-filter 与命中测试链路。
 - flex item 的 `margin:auto` 会吸收主轴/交叉轴剩余空间；flex shrink 权重已修正为使用 flex-basis。
@@ -70,6 +71,7 @@
 - 样式系统文本排版控制：`letter-spacing`（字间距，可继承）、`word-break`（NORMAL/BREAK_ALL/KEEP_ALL，可继承）、`overflow-wrap`（NORMAL/BREAK_WORD/ANYWHERE，可继承）已进入级联；`DocumentLayoutEngine` 已在文本换行阶段消费 `word-break` / `overflow-wrap`，覆盖普通英文、长 token、URL 标点、CJK 与中英文混排。`white-space:nowrap` 优先禁止换行，`text-overflow:ellipsis` 仍仅在 nowrap 且宽度受限时生效；`overflow-wrap:anywhere` 与 `word-break:break-all` 会影响 auto 宽固有尺寸，`overflow-wrap:break-word` 仅在受限宽度溢出时断长 token，不降低固有 auto 宽。当前仍不支持 `white-space:pre/pre-wrap/pre-line`。
 - `height` 百分比相对包含块高度解析；包含块高度为 auto 时百分比高度视为 auto（由内容撑开），不再静默解析为 0。
 - Block 元素 `margin: 0 auto` 支持水平居中：有明确宽度的 block 元素，auto left/right margin 会平分剩余空间。
+- `UiStyleLength.calc(percent, pixelOffset)` 支持最小混合长度表达式，可覆盖 `calc(100% - 16px)` 这类百分比 + 像素偏移场景，并通过统一 `resolve(...)` 进入宽高、inset、margin、padding、border、gap 等布局计算；当前不提供 CSS 字符串表达式解析器。
 - `line-height` 是可继承属性：父元素设置后子元素自动继承，除非子元素自行覆盖。
 - `min-height`/`max-height` 百分比相对包含块高度解析（而非宽度）；包含块高度为 auto 时百分比约束不生效。
 - 相邻兄弟元素的垂直 margin 会折叠为两者中较大值（margin collapse），不再简单叠加。

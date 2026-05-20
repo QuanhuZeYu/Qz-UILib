@@ -5,15 +5,17 @@ package club.heiqi.uilib.ui.style;
  */
 public final class UiStyleLength {
 
-    private static final UiStyleLength AUTO = new UiStyleLength(Type.AUTO, 0.0F);
-    private static final UiStyleLength ZERO = new UiStyleLength(Type.PIXEL, 0.0F);
+    private static final UiStyleLength AUTO = new UiStyleLength(Type.AUTO, 0.0F, 0.0F);
+    private static final UiStyleLength ZERO = new UiStyleLength(Type.PIXEL, 0.0F, 0.0F);
 
     private final Type type;
     private final float value;
+    private final float pixelOffset;
 
-    private UiStyleLength(Type type, float value) {
+    private UiStyleLength(Type type, float value, float pixelOffset) {
         this.type = type;
         this.value = value;
+        this.pixelOffset = pixelOffset;
     }
 
     /**
@@ -35,7 +37,7 @@ public final class UiStyleLength {
         if (value == 0.0F) {
             return ZERO;
         }
-        return new UiStyleLength(Type.PIXEL, value);
+        return new UiStyleLength(Type.PIXEL, value, 0.0F);
     }
 
     /**
@@ -45,7 +47,27 @@ public final class UiStyleLength {
      * @return 百分比长度
      */
     public static UiStyleLength percent(float value) {
-        return new UiStyleLength(Type.PERCENT, value);
+        return new UiStyleLength(Type.PERCENT, value, 0.0F);
+    }
+
+    /**
+     * 创建最小 calc 长度。
+     *
+     * <p>当前表达式固定为 {@code availableSpace * percent + pixelOffset}，用于覆盖
+     * {@code calc(100% - 16px)} 这类常用混合单位场景；更完整的 CSS 表达式解析器不在本类中展开。</p>
+     *
+     * @param percent 百分比小数值，1.0 表示 100%
+     * @param pixelOffset 像素偏移，可为负数
+     * @return calc 长度
+     */
+    public static UiStyleLength calc(float percent, float pixelOffset) {
+        if (percent == 0.0F) {
+            return px(pixelOffset);
+        }
+        if (pixelOffset == 0.0F) {
+            return percent(percent);
+        }
+        return new UiStyleLength(Type.CALC, percent, pixelOffset);
     }
 
     public Type getType() {
@@ -54,6 +76,15 @@ public final class UiStyleLength {
 
     public float getValue() {
         return value;
+    }
+
+    /**
+     * 返回 calc 的像素偏移量。
+     *
+     * @return 像素偏移；非 calc 长度返回 0
+     */
+    public float getPixelOffset() {
+        return pixelOffset;
     }
 
     /**
@@ -70,6 +101,9 @@ public final class UiStyleLength {
         if (type == Type.PERCENT) {
             return Math.round(Math.max(0, availableSpace) * value);
         }
+        if (type == Type.CALC) {
+            return Math.round(Math.max(0, availableSpace) * value + pixelOffset);
+        }
         return Math.round(value);
     }
 
@@ -82,13 +116,15 @@ public final class UiStyleLength {
             return false;
         }
         UiStyleLength other = (UiStyleLength) obj;
-        return type == other.type && Float.compare(value, other.value) == 0;
+        return type == other.type && Float.compare(value, other.value) == 0
+                && Float.compare(pixelOffset, other.pixelOffset) == 0;
     }
 
     @Override
     public int hashCode() {
         int result = type.hashCode();
         result = 31 * result + Float.floatToIntBits(value);
+        result = 31 * result + Float.floatToIntBits(pixelOffset);
         return result;
     }
 
@@ -98,6 +134,7 @@ public final class UiStyleLength {
     public enum Type {
         AUTO,
         PIXEL,
-        PERCENT
+        PERCENT,
+        CALC
     }
 }

@@ -33,18 +33,20 @@ public final class DocumentHitTestEngine {
     public static ElementNode hitTest(DocumentLayoutBox rootBox, DocumentScrollState scrollState, int documentX,
             int documentY) {
         Objects.requireNonNull(rootBox, "rootBox");
-        return hitTestBox(rootBox, scrollState, documentX, documentY, 0, 0, true);
+        return hitTestBox(rootBox, scrollState, documentX, documentY, 0, 0, true,
+                DocumentStickyPositioning.rootContext());
     }
 
     private static ElementNode hitTestBox(DocumentLayoutBox box, DocumentScrollState scrollState, int documentX,
-            int documentY, int offsetX, int offsetY, boolean searchStackingContext) {
+            int documentY, int offsetX, int offsetY, boolean searchStackingContext,
+            DocumentStickyPositioning.StickyContext stickyContext) {
         if (isHitTestHidden(box.getElement())) {
             return null;
         }
-        int baseOffsetX = box.isFixedPositioned() ? 0 : offsetX;
-        int baseOffsetY = box.isFixedPositioned() ? 0 : offsetY;
-        int boxOffsetX = baseOffsetX + box.getPositionOffsetX();
-        int boxOffsetY = baseOffsetY + box.getPositionOffsetY();
+        int boxOffsetX = resolveBoxOffsetX(box, offsetX, stickyContext);
+        int boxOffsetY = resolveBoxOffsetY(box, offsetY, stickyContext);
+        DocumentStickyPositioning.StickyContext childStickyContext = DocumentStickyPositioning.createChildContext(box,
+                boxOffsetX, boxOffsetY, stickyContext);
         // #26 修复：border-radius 参与命中测试
         UiBorderRadiusResolver.ResolvedCornerRadii borderRadii = resolveBorderRadii(box);
         boolean insideBorderBox = containsInRoundedRect(documentX, documentY,
@@ -54,8 +56,10 @@ public final class DocumentHitTestEngine {
             int childOffsetX = boxOffsetX - getScrollLeft(scrollState, box);
             int childOffsetY = boxOffsetY - getScrollTop(scrollState, box);
             ElementNode childHit = searchStackingContext
-                    ? hitStackingContextChildren(box, scrollState, documentX, documentY, childOffsetX, childOffsetY)
-                    : hitNormalFlowChildren(box, scrollState, documentX, documentY, childOffsetX, childOffsetY);
+                    ? hitStackingContextChildren(box, scrollState, documentX, documentY, childOffsetX, childOffsetY,
+                            childStickyContext)
+                    : hitNormalFlowChildren(box, scrollState, documentX, documentY, childOffsetX, childOffsetY,
+                            childStickyContext);
             if (childHit != null) {
                 return childHit;
             }
@@ -73,27 +77,30 @@ public final class DocumentHitTestEngine {
     }
 
     private static ElementNode hitStackingContextChildren(DocumentLayoutBox contextRoot,
-            DocumentScrollState scrollState, int documentX, int documentY, int childOffsetX, int childOffsetY) {
+            DocumentScrollState scrollState, int documentX, int documentY, int childOffsetX, int childOffsetY,
+            DocumentStickyPositioning.StickyContext stickyContext) {
         ElementNode hit = hitStackingPhaseItems(contextRoot, scrollState, documentX, documentY, childOffsetX,
-                childOffsetY, DocumentStackingPhase.POSITIVE_POSITIONED);
+                childOffsetY, DocumentStackingPhase.POSITIVE_POSITIONED, stickyContext);
         if (hit != null) {
             return hit;
         }
         hit = hitStackingPhaseItems(contextRoot, scrollState, documentX, documentY, childOffsetX, childOffsetY,
-                DocumentStackingPhase.POSITIONED_AUTO_OR_ZERO);
+                DocumentStackingPhase.POSITIONED_AUTO_OR_ZERO, stickyContext);
         if (hit != null) {
             return hit;
         }
-        hit = hitNormalFlowChildren(contextRoot, scrollState, documentX, documentY, childOffsetX, childOffsetY);
+        hit = hitNormalFlowChildren(contextRoot, scrollState, documentX, documentY, childOffsetX, childOffsetY,
+                stickyContext);
         if (hit != null) {
             return hit;
         }
         return hitStackingPhaseItems(contextRoot, scrollState, documentX, documentY, childOffsetX, childOffsetY,
-                DocumentStackingPhase.NEGATIVE_POSITIONED);
+                DocumentStackingPhase.NEGATIVE_POSITIONED, stickyContext);
     }
 
     private static ElementNode hitNormalFlowChildren(DocumentLayoutBox box, DocumentScrollState scrollState,
-            int documentX, int documentY, int childOffsetX, int childOffsetY) {
+            int documentX, int documentY, int childOffsetX, int childOffsetY,
+            DocumentStickyPositioning.StickyContext stickyContext) {
         List<DocumentLayoutBox> children = box.getChildren();
         for (int index = children.size() - 1; index >= 0; index--) {
             DocumentLayoutBox child = children.get(index);
@@ -102,7 +109,7 @@ public final class DocumentHitTestEngine {
             }
             boolean childStackingContext = shouldSearchAsStackingContext(child);
             ElementNode hit = hitTestBox(child, scrollState, documentX, documentY, childOffsetX, childOffsetY,
-                    childStackingContext);
+                    childStackingContext, stickyContext);
             if (hit != null) {
                 return hit;
             }
@@ -112,9 +119,9 @@ public final class DocumentHitTestEngine {
 
     private static ElementNode hitStackingPhaseItems(DocumentLayoutBox contextRoot,
             DocumentScrollState scrollState, int documentX, int documentY, int childOffsetX, int childOffsetY,
-            DocumentStackingPhase phase) {
+            DocumentStackingPhase phase, DocumentStickyPositioning.StickyContext stickyContext) {
         List<StackingHitItem> items = new ArrayList<StackingHitItem>();
-        collectStackingPhaseItems(contextRoot, items, scrollState, childOffsetX, childOffsetY, phase);
+        collectStackingPhaseItems(contextRoot, items, scrollState, childOffsetX, childOffsetY, phase, stickyContext);
         if (phase == DocumentStackingPhase.NEGATIVE_POSITIONED
                 || phase == DocumentStackingPhase.POSITIVE_POSITIONED) {
             Collections.sort(items, new Comparator<StackingHitItem>() {
@@ -127,7 +134,7 @@ public final class DocumentHitTestEngine {
         for (int index = items.size() - 1; index >= 0; index--) {
             StackingHitItem item = items.get(index);
             ElementNode hit = hitTestBox(item.box, scrollState, documentX, documentY, item.offsetX,
-                    item.offsetY, item.searchStackingContext);
+                    item.offsetY, item.searchStackingContext, item.stickyContext);
             if (hit != null) {
                 return hit;
             }
@@ -136,18 +143,25 @@ public final class DocumentHitTestEngine {
     }
 
     private static void collectStackingPhaseItems(DocumentLayoutBox currentBox, List<StackingHitItem> items,
-            DocumentScrollState scrollState, int childOffsetX, int childOffsetY, DocumentStackingPhase phase) {
+            DocumentScrollState scrollState, int childOffsetX, int childOffsetY, DocumentStackingPhase phase,
+            DocumentStickyPositioning.StickyContext stickyContext) {
         for (DocumentLayoutBox child : currentBox.getChildren()) {
             boolean childStackingContext = shouldSearchAsStackingContext(child);
             if (child.getStackingPhase() == phase) {
-                items.add(new StackingHitItem(child, childOffsetX, childOffsetY, childStackingContext));
+                items.add(new StackingHitItem(child, childOffsetX, childOffsetY, childStackingContext,
+                        stickyContext));
             }
             if (childStackingContext) {
                 continue;
             }
-            int grandChildOffsetX = resolveChildOffsetX(childOffsetX, scrollState, child);
-            int grandChildOffsetY = resolveChildOffsetY(childOffsetY, scrollState, child);
-            collectStackingPhaseItems(child, items, scrollState, grandChildOffsetX, grandChildOffsetY, phase);
+            int childBoxOffsetX = resolveBoxOffsetX(child, childOffsetX, stickyContext);
+            int childBoxOffsetY = resolveBoxOffsetY(child, childOffsetY, stickyContext);
+            DocumentStickyPositioning.StickyContext childStickyContext = DocumentStickyPositioning.createChildContext(
+                    child, childBoxOffsetX, childBoxOffsetY, stickyContext);
+            int grandChildOffsetX = childBoxOffsetX - getScrollLeft(scrollState, child);
+            int grandChildOffsetY = childBoxOffsetY - getScrollTop(scrollState, child);
+            collectStackingPhaseItems(child, items, scrollState, grandChildOffsetX, grandChildOffsetY, phase,
+                    childStickyContext);
         }
     }
 
@@ -203,14 +217,18 @@ public final class DocumentHitTestEngine {
         return scrollState == null ? 0 : scrollState.getScrollTop(box.getElement());
     }
 
-    private static int resolveChildOffsetX(int childOffsetX, DocumentScrollState scrollState, DocumentLayoutBox child) {
-        int baseOffsetX = child.isFixedPositioned() ? 0 : childOffsetX;
-        return baseOffsetX + child.getPositionOffsetX() - getScrollLeft(scrollState, child);
+    private static int resolveBoxOffsetX(DocumentLayoutBox box, int offsetX,
+            DocumentStickyPositioning.StickyContext stickyContext) {
+        int baseOffsetX = box.isFixedPositioned() ? 0 : offsetX;
+        int positionedOffsetX = baseOffsetX + box.getPositionOffsetX();
+        return DocumentStickyPositioning.resolveOffsetX(box, positionedOffsetX, stickyContext);
     }
 
-    private static int resolveChildOffsetY(int childOffsetY, DocumentScrollState scrollState, DocumentLayoutBox child) {
-        int baseOffsetY = child.isFixedPositioned() ? 0 : childOffsetY;
-        return baseOffsetY + child.getPositionOffsetY() - getScrollTop(scrollState, child);
+    private static int resolveBoxOffsetY(DocumentLayoutBox box, int offsetY,
+            DocumentStickyPositioning.StickyContext stickyContext) {
+        int baseOffsetY = box.isFixedPositioned() ? 0 : offsetY;
+        int positionedOffsetY = baseOffsetY + box.getPositionOffsetY();
+        return DocumentStickyPositioning.resolveOffsetY(box, positionedOffsetY, stickyContext);
     }
 
     private static boolean shouldSearchAsStackingContext(DocumentLayoutBox box) {
@@ -318,12 +336,15 @@ public final class DocumentHitTestEngine {
         private final int offsetX;
         private final int offsetY;
         private final boolean searchStackingContext;
+        private final DocumentStickyPositioning.StickyContext stickyContext;
 
-        private StackingHitItem(DocumentLayoutBox box, int offsetX, int offsetY, boolean searchStackingContext) {
+        private StackingHitItem(DocumentLayoutBox box, int offsetX, int offsetY, boolean searchStackingContext,
+                DocumentStickyPositioning.StickyContext stickyContext) {
             this.box = box;
             this.offsetX = offsetX;
             this.offsetY = offsetY;
             this.searchStackingContext = searchStackingContext;
+            this.stickyContext = stickyContext;
         }
     }
 }
