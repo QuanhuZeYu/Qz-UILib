@@ -1,40 +1,16 @@
 package club.heiqi.uilib.ui.document;
 
-import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 import java.util.Objects;
-
-import org.lwjglx.input.Keyboard;
 
 import club.heiqi.uilib.ui.animation.DocumentAnimationClock;
 import club.heiqi.uilib.ui.animation.DocumentAnimationImpact;
 import club.heiqi.uilib.ui.animation.DocumentAnimationProperty;
 import club.heiqi.uilib.ui.animation.DocumentAnimationTimeline;
 import club.heiqi.uilib.ui.animation.SystemDocumentAnimationClock;
-import club.heiqi.uilib.ui.dom.DocumentElementClickEvent;
-import club.heiqi.uilib.ui.dom.DocumentElementClickHandler;
-import club.heiqi.uilib.ui.dom.DocumentElementContextMenuEvent;
-import club.heiqi.uilib.ui.dom.DocumentElementContextMenuHandler;
-import club.heiqi.uilib.ui.dom.DocumentEventControl;
-import club.heiqi.uilib.ui.dom.DocumentEventPhase;
-import club.heiqi.uilib.ui.dom.DocumentElementDoubleClickEvent;
-import club.heiqi.uilib.ui.dom.DocumentElementDoubleClickHandler;
-import club.heiqi.uilib.ui.dom.DocumentLinkActivationEvent;
-import club.heiqi.uilib.ui.dom.DocumentElementAnimationEndEvent;
-import club.heiqi.uilib.ui.dom.DocumentElementAnimationEndHandler;
-import club.heiqi.uilib.ui.dom.DocumentElementFocusEvent;
-import club.heiqi.uilib.ui.dom.DocumentElementFocusHandler;
-import club.heiqi.uilib.ui.dom.DocumentElementFocusInEvent;
-import club.heiqi.uilib.ui.dom.DocumentElementFocusInHandler;
 import club.heiqi.uilib.ui.dom.DocumentElementScrollEvent;
 import club.heiqi.uilib.ui.dom.DocumentElementScrollHandler;
-import club.heiqi.uilib.ui.dom.DocumentElementKeyEvent;
-import club.heiqi.uilib.ui.dom.DocumentElementKeyHandler;
-import club.heiqi.uilib.ui.dom.DocumentElementTextInputEvent;
-import club.heiqi.uilib.ui.dom.DocumentElementTextInputHandler;
-import club.heiqi.uilib.ui.dom.DocumentElementTransitionEndEvent;
-import club.heiqi.uilib.ui.dom.DocumentElementTransitionEndHandler;
 import club.heiqi.uilib.ui.dom.DocumentNode;
 import club.heiqi.uilib.ui.dom.ElementNode;
 import club.heiqi.uilib.ui.dom.UiDocument;
@@ -52,7 +28,6 @@ import club.heiqi.uilib.ui.paint.DocumentPaintRenderer;
 import club.heiqi.uilib.ui.render.UiRenderContext;
 import club.heiqi.uilib.ui.style.props.UiPointerEvents;
 import club.heiqi.uilib.ui.style.cascade.UiStyleResolver;
-import club.heiqi.uilib.ui.style.props.UiVisibility;
 import club.heiqi.uilib.ui.text.DefaultTextMeasureService;
 import club.heiqi.uilib.ui.text.TextMeasureService;
 import club.heiqi.uilib.ui.widget.Widget;
@@ -62,16 +37,15 @@ import club.heiqi.uilib.ui.widget.Widget;
  */
 public final class HtmlLikeDocumentWidget extends Widget implements UiDocument.DocumentInteractionRuntime {
 
-    private static final long DOUBLE_CLICK_THRESHOLD_NANOS = 500_000_000L;
-    private static final int DOUBLE_CLICK_POSITION_THRESHOLD_PX = 4;
-    private static final int PRIMARY_BUTTON = 0;
-    private static final int CONTEXT_MENU_BUTTON = 1;
     private static final String HIT_TEST_PASSTHROUGH_ATTRIBUTE = "data-hit-test-passthrough";
 
     private final UiDocument document;
     private final TextMeasureService textMeasureService;
     private final DocumentScrollState scrollState = new DocumentScrollState();
     private final DocumentAnimationTimeline animationTimeline = new DocumentAnimationTimeline();
+    private final DocumentClickEventDispatcher clickEventDispatcher;
+    private final DocumentKeyboardEventDispatcher keyboardEventDispatcher;
+    private final DocumentFocusManager focusManager;
     private final int preferredWidth;
     private final int preferredHeight;
     private DocumentCursorHost cursorHost = DocumentCursorHost.system();
@@ -95,7 +69,6 @@ public final class HtmlLikeDocumentWidget extends Widget implements UiDocument.D
     private int cachedRuntimeHeight = -1;
     private boolean cachedRuntimeViewportRootScrollingEnabled;
     private ElementNode pressedElement;
-    private ElementNode focusedElement;
     private ElementNode hoveredElement;
     private final DocumentDragController dragController = new DocumentDragController(new DocumentDragController.Host() {
         @Override
@@ -123,18 +96,9 @@ public final class HtmlLikeDocumentWidget extends Widget implements UiDocument.D
     private int lastScrollWheelDelta;
     private boolean lastScrollConsumed;
     private long lastScrollEventTimeNanos;
-    private boolean focusedElementFocusVisible;
-    private int focusedElementInvalidationVersion;
     private boolean viewportRootScrollingEnabled;
     private boolean cachedLayoutScrollStateUpdated;
     private List<DocumentPaintCommand> cachedPaintCommands = Collections.emptyList();
-    private ElementNode lastClickedElement;
-    private int lastClickButton = -1;
-    private int lastClickDocumentX = Integer.MIN_VALUE;
-    private int lastClickDocumentY = Integer.MIN_VALUE;
-    private long lastClickTimeNanos = Long.MIN_VALUE;
-    /** raw button 默认键盘行为：Space 按下状态追踪（元素 uid -> 是否 spacePressed）。 */
-    private final java.util.Map<Long, Boolean> rawButtonSpacePressed = new java.util.HashMap<Long, Boolean>();
 
     /**
      * 创建 HTML-like 文档适配组件。
@@ -161,6 +125,49 @@ public final class HtmlLikeDocumentWidget extends Widget implements UiDocument.D
         this.textMeasureService = Objects.requireNonNull(textMeasureService, "textMeasureService");
         this.preferredWidth = Math.max(0, preferredWidth);
         this.preferredHeight = Math.max(0, preferredHeight);
+        this.clickEventDispatcher = new DocumentClickEventDispatcher(this.document);
+        this.focusManager = new DocumentFocusManager(this.document, scrollState, new DocumentFocusManager.Host() {
+            @Override
+            public int getWidth() {
+                return HtmlLikeDocumentWidget.this.getWidth();
+            }
+
+            @Override
+            public int getHeight() {
+                return HtmlLikeDocumentWidget.this.getHeight();
+            }
+
+            @Override
+            public DocumentLayoutBox resolveInteractiveLayoutBox() {
+                return HtmlLikeDocumentWidget.this.resolveInteractiveLayoutBox();
+            }
+
+            @Override
+            public boolean isElementAttachedToDocument(ElementNode element) {
+                return HtmlLikeDocumentWidget.this.isElementAttachedToDocument(element);
+            }
+
+            @Override
+            public void dispatchScroll(ElementNode target, long timeNanos) {
+                HtmlLikeDocumentWidget.this.dispatchScroll(target, timeNanos);
+            }
+
+            @Override
+            public void clearNativeButtonState(ElementNode element) {
+                HtmlLikeDocumentWidget.this.clearNativeButtonState(element);
+            }
+
+            @Override
+            public void syncCursorFromHoveredElement() {
+                HtmlLikeDocumentWidget.this.syncCursorFromHoveredElement();
+            }
+        });
+        this.keyboardEventDispatcher = new DocumentKeyboardEventDispatcher(new DocumentKeyboardEventDispatcher.Host() {
+            @Override
+            public void focusElement(ElementNode element, boolean focusVisible) {
+                HtmlLikeDocumentWidget.this.focusElementFromKeyboard(element, focusVisible);
+            }
+        });
         this.document.__setInteractionRuntime(this);
     }
 
@@ -376,31 +383,22 @@ public final class HtmlLikeDocumentWidget extends Widget implements UiDocument.D
      * @return 聚焦元素；没有元素聚焦时返回 null
      */
     public ElementNode getFocusedElement() {
-        return getActiveFocusedElement();
+        return focusManager.getFocusedElement();
     }
 
     @Override
     public boolean requestFocus(ElementNode element) {
-        if (!isProgrammaticFocusTarget(element)) {
-            return false;
-        }
-        focusElement(element, false);
-        scrollElementIntoView(element);
-        return getActiveFocusedElement() == element;
+        return focusManager.requestFocus(element);
     }
 
     @Override
     public boolean requestBlur(ElementNode element) {
-        if (element == null || element.getOwnerDocument() != document || getActiveFocusedElement() != element) {
-            return false;
-        }
-        focusElement(null, false);
-        return true;
+        return focusManager.requestBlur(element);
     }
 
     @Override
     public boolean requestScrollTo(ElementNode element, int scrollLeft, int scrollTop) {
-        if (!isVisibleLayoutTarget(element)) {
+        if (!focusManager.isVisibleLayoutTarget(element)) {
             return false;
         }
         if (scrollState.getMaxScrollLeft(element) <= 0 && scrollState.getMaxScrollTop(element) <= 0) {
@@ -438,7 +436,7 @@ public final class HtmlLikeDocumentWidget extends Widget implements UiDocument.D
 
     @Override
     public boolean requestScrollIntoView(ElementNode element) {
-        return scrollElementIntoView(element);
+        return focusManager.scrollElementIntoView(element);
     }
 
     /**
@@ -565,7 +563,7 @@ public final class HtmlLikeDocumentWidget extends Widget implements UiDocument.D
         dragController.beginDragIfNeeded(pressedElement, event);
         DocumentMouseEventDispatcher.dispatchMouseDown(pressedElement, event, getAbsoluteX(), getAbsoluteY());
         DocumentMouseEventDispatcher.dispatchActive(pressedElement, true, event);
-        focusElement(resolveFocusableElement(pressedElement), false);
+        focusManager.focusElement(focusManager.resolveFocusableElement(pressedElement), false);
         syncCursorFromHoveredElement();
     }
 
@@ -605,38 +603,28 @@ public final class HtmlLikeDocumentWidget extends Widget implements UiDocument.D
         pressedButton = -1;
         syncCursorFromHoveredElement();
         if (dragHandled || target == null) {
-            clearLastClickState();
+            clickEventDispatcher.clearLastClickState();
             return;
         }
-        if (event.getButton() == PRIMARY_BUTTON) {
-            dispatchClick(target, event);
-            dispatchPostClickEvents(target, event);
-        } else if (event.getButton() == CONTEXT_MENU_BUTTON) {
-            dispatchContextMenu(target, event.getMouseX() - getAbsoluteX(), event.getMouseY() - getAbsoluteY(), event);
-            clearLastClickState();
+        if (event.getButton() == DocumentClickEventDispatcher.PRIMARY_BUTTON) {
+            clickEventDispatcher.dispatchClick(target, event, getAbsoluteX(), getAbsoluteY());
+            clickEventDispatcher.dispatchPostClickEvents(target, event, getAbsoluteX(), getAbsoluteY());
+        } else if (event.getButton() == DocumentClickEventDispatcher.CONTEXT_MENU_BUTTON) {
+            clickEventDispatcher.dispatchContextMenu(target, event, getAbsoluteX(), getAbsoluteY());
+            clickEventDispatcher.clearLastClickState();
         } else {
-            clearLastClickState();
+            clickEventDispatcher.clearLastClickState();
         }
     }
 
     @Override
     public void onKeyEvent(UiKeyEvent event) {
-        ElementNode target = getActiveFocusedElement();
-        if (event == null || target == null) {
-            return;
-        }
-        boolean consumed = dispatchKey(target, event);
-        if (!consumed) {
-            dispatchNativeButtonDefaultKeyBehavior(target, event);
-        }
+        keyboardEventDispatcher.dispatchKeyAndDefault(focusManager.getFocusedElement(), event);
     }
 
     @Override
     public void onTextInput(UiTextInputEvent event) {
-        ElementNode target = getActiveFocusedElement();
-        if (event != null && target != null && !target.isDisabled()) {
-            dispatchTextInput(target, event);
-        }
+        keyboardEventDispatcher.dispatchTextInput(focusManager.getFocusedElement(), event);
     }
 
     @Override
@@ -650,40 +638,23 @@ public final class HtmlLikeDocumentWidget extends Widget implements UiDocument.D
         if (!focused) {
             releasePressedElement(null);
             updateHoveredElement(null, null);
-            focusElement(null, false);
+            focusManager.focusElement(null, false);
         }
     }
 
     @Override
     public void onFocusTraversalEntered(boolean reverse) {
-        focusFirstElementInTraversalOrder(reverse);
+        focusManager.focusFirstElementInTraversalOrder(reverse);
     }
 
     @Override
     public boolean onFocusTraversal(boolean reverse) {
-        List<ElementNode> focusableElements = collectFocusableElements();
-        if (focusableElements.isEmpty()) {
-            return false;
-        }
-
-        ElementNode activeElement = getActiveFocusedElement();
-        int currentIndex = activeElement == null ? -1 : focusableElements.indexOf(activeElement);
-        if (currentIndex < 0) {
-            focusElement(reverse ? focusableElements.get(focusableElements.size() - 1) : focusableElements.get(0), true);
-            return true;
-        }
-
-        int nextIndex = reverse ? currentIndex - 1 : currentIndex + 1;
-        if (nextIndex < 0 || nextIndex >= focusableElements.size()) {
-            return false;
-        }
-        focusElement(focusableElements.get(nextIndex), true);
-        return true;
+        return focusManager.focusTraversal(reverse);
     }
 
     @Override
     public boolean isFocusable() {
-        return hasFocusableElement(document.getRootElement());
+        return focusManager.hasFocusableElement();
     }
 
     /**
@@ -789,10 +760,6 @@ public final class HtmlLikeDocumentWidget extends Widget implements UiDocument.D
         return cachedLayoutBox;
     }
 
-    private DocumentLayoutBox resolveLayoutBox() {
-        return resolveLayoutBox(true);
-    }
-
     private DocumentLayoutBox resolveLayoutBox(boolean updateScrollState) {
         int layoutVersion = document.getLayoutVersion();
         int textMeasureEpoch = textMeasureService.getEpoch();
@@ -837,149 +804,6 @@ public final class HtmlLikeDocumentWidget extends Widget implements UiDocument.D
                         layoutValueResolver);
     }
 
-    private boolean dispatchClick(ElementNode target, UiMouseEvent event) {
-        if (target == null || event == null) {
-            return false;
-        }
-        int documentX = event.getMouseX() - getAbsoluteX();
-        int documentY = event.getMouseY() - getAbsoluteY();
-        DocumentEventControl eventControl = new DocumentEventControl();
-
-        // 构建祖先路径（target → root）
-        List<ElementNode> path = buildAncestorPath(target);
-
-        // 捕获阶段：从根向目标传播（不含目标）
-        eventControl.setEventPhase(DocumentEventPhase.CAPTURING);
-        for (int i = path.size() - 1; i > 0; i--) {
-            if (eventControl.isPropagationStopped()) break;
-            ElementNode currentElement = path.get(i);
-            DocumentElementClickHandler captureHandler = currentElement.getCaptureClickHandler();
-            if (captureHandler != null) {
-                DocumentElementClickEvent clickEvent = new DocumentElementClickEvent(target, currentElement,
-                        documentX, documentY, event.getButton(), event.getTimeNanos(), eventControl);
-                if (captureHandler.onClick(clickEvent)) {
-                    eventControl.stopPropagation();
-                }
-            }
-        }
-
-        // 目标阶段
-        if (!eventControl.isPropagationStopped()) {
-            eventControl.setEventPhase(DocumentEventPhase.AT_TARGET);
-            // 目标元素的捕获 handler
-            DocumentElementClickHandler targetCaptureHandler = target.getCaptureClickHandler();
-            if (targetCaptureHandler != null) {
-                DocumentElementClickEvent clickEvent = new DocumentElementClickEvent(target, target,
-                        documentX, documentY, event.getButton(), event.getTimeNanos(), eventControl);
-                if (targetCaptureHandler.onClick(clickEvent)) {
-                    eventControl.stopPropagation();
-                }
-            }
-            // 目标元素的冒泡 handler
-            if (!eventControl.isPropagationStopped()) {
-                DocumentElementClickHandler targetHandler = target.getClickHandler();
-                if (targetHandler != null) {
-                    DocumentElementClickEvent clickEvent = new DocumentElementClickEvent(target, target,
-                            documentX, documentY, event.getButton(), event.getTimeNanos(), eventControl);
-                    if (targetHandler.onClick(clickEvent)) {
-                        eventControl.stopPropagation();
-                    }
-                }
-            }
-        }
-
-        // 冒泡阶段：从目标父元素向根传播
-        eventControl.setEventPhase(DocumentEventPhase.BUBBLING);
-        for (int i = 1; i < path.size(); i++) {
-            if (eventControl.isPropagationStopped()) break;
-            ElementNode currentElement = path.get(i);
-            DocumentElementClickHandler clickHandler = currentElement.getClickHandler();
-            if (clickHandler == null) {
-                continue;
-            }
-            DocumentElementClickEvent clickEvent = new DocumentElementClickEvent(target, currentElement,
-                    documentX, documentY, event.getButton(), event.getTimeNanos(), eventControl);
-            if (clickHandler.onClick(clickEvent)) {
-                eventControl.stopPropagation();
-            }
-        }
-        if (!eventControl.isDefaultPrevented()) {
-            activateNearestLink(target, event.getTimeNanos());
-        }
-        return eventControl.isPropagationStopped();
-    }
-
-    private void activateNearestLink(ElementNode target, long timeNanos) {
-        ElementNode linkElement = findNearestLinkElement(target);
-        if (linkElement == null) {
-            return;
-        }
-        String href = normalizeLinkHref(linkElement.getAttribute("href"));
-        if (href.isEmpty()) {
-            return;
-        }
-        if (href.startsWith("#")) {
-            String id = href.substring(1).trim();
-            if (!id.isEmpty()) {
-                ElementNode fragmentTarget = document.getElementById(id);
-                if (fragmentTarget != null) {
-                    fragmentTarget.scrollIntoView();
-                }
-            }
-        }
-        DocumentLinkActivationEvent activationEvent = new DocumentLinkActivationEvent(linkElement, href,
-                linkElement.getAttribute("target"), timeNanos);
-        document.__dispatchLinkActivation(activationEvent);
-    }
-
-    private void dispatchPostClickEvents(ElementNode target, UiMouseEvent event) {
-        if (target == null || event == null) {
-            return;
-        }
-        int documentX = event.getMouseX() - getAbsoluteX();
-        int documentY = event.getMouseY() - getAbsoluteY();
-        if (event.getButton() == CONTEXT_MENU_BUTTON) {
-            dispatchContextMenu(target, documentX, documentY, event);
-        }
-        if (shouldDispatchDoubleClick(target, event, documentX, documentY)) {
-            dispatchDoubleClick(target, documentX, documentY, event);
-            clearLastClickState();
-            return;
-        }
-        rememberLastClick(target, event.getButton(), documentX, documentY, event.getTimeNanos());
-    }
-
-    private boolean shouldDispatchDoubleClick(ElementNode target, UiMouseEvent event, int documentX, int documentY) {
-        if (target == null || event == null || event.getButton() != PRIMARY_BUTTON || lastClickedElement != target
-                || lastClickButton != event.getButton()) {
-            return false;
-        }
-        long elapsedNanos = event.getTimeNanos() - lastClickTimeNanos;
-        if (elapsedNanos < 0L || elapsedNanos > DOUBLE_CLICK_THRESHOLD_NANOS) {
-            return false;
-        }
-        int deltaX = documentX - lastClickDocumentX;
-        int deltaY = documentY - lastClickDocumentY;
-        return deltaX * deltaX + deltaY * deltaY
-                <= DOUBLE_CLICK_POSITION_THRESHOLD_PX * DOUBLE_CLICK_POSITION_THRESHOLD_PX;
-    }
-
-    private void rememberLastClick(ElementNode target, int button, int documentX, int documentY, long timeNanos) {
-        lastClickedElement = target;
-        lastClickButton = button;
-        lastClickDocumentX = documentX;
-        lastClickDocumentY = documentY;
-        lastClickTimeNanos = timeNanos;
-    }
-
-    private void clearLastClickState() {
-        lastClickedElement = null;
-        lastClickButton = -1;
-        lastClickDocumentX = Integer.MIN_VALUE;
-        lastClickDocumentY = Integer.MIN_VALUE;
-        lastClickTimeNanos = Long.MIN_VALUE;
-    }
-
     private void releasePressedElement(UiMouseEvent event) {
         if (pressedElement == null) {
             return;
@@ -998,238 +822,12 @@ public final class HtmlLikeDocumentWidget extends Widget implements UiDocument.D
         syncCursorFromHoveredElement();
     }
 
-    private boolean dispatchDoubleClick(ElementNode target, int documentX, int documentY, UiMouseEvent event) {
-        DocumentEventControl eventControl = new DocumentEventControl();
-        List<ElementNode> path = buildAncestorPath(target);
-
-        eventControl.setEventPhase(DocumentEventPhase.AT_TARGET);
-        DocumentElementDoubleClickHandler targetHandler = target.getDoubleClickHandler();
-        if (targetHandler != null) {
-            DocumentElementDoubleClickEvent doubleClickEvent = new DocumentElementDoubleClickEvent(target, target,
-                    documentX, documentY, event.getButton(), event.getTimeNanos(), eventControl);
-            if (targetHandler.onDoubleClick(doubleClickEvent)) {
-                eventControl.stopPropagation();
-            }
-        }
-
-        eventControl.setEventPhase(DocumentEventPhase.BUBBLING);
-        for (int i = 1; i < path.size(); i++) {
-            if (eventControl.isPropagationStopped()) break;
-            ElementNode currentElement = path.get(i);
-            DocumentElementDoubleClickHandler handler = currentElement.getDoubleClickHandler();
-            if (handler == null) {
-                continue;
-            }
-            DocumentElementDoubleClickEvent doubleClickEvent = new DocumentElementDoubleClickEvent(target,
-                    currentElement, documentX, documentY, event.getButton(), event.getTimeNanos(), eventControl);
-            if (handler.onDoubleClick(doubleClickEvent)) {
-                eventControl.stopPropagation();
-            }
-        }
-        return eventControl.isPropagationStopped();
+    private void clearNativeButtonState(ElementNode element) {
+        keyboardEventDispatcher.clearNativeButtonState(element);
     }
 
-    private boolean dispatchContextMenu(ElementNode target, int documentX, int documentY, UiMouseEvent event) {
-        DocumentEventControl eventControl = new DocumentEventControl();
-        List<ElementNode> path = buildAncestorPath(target);
-
-        eventControl.setEventPhase(DocumentEventPhase.AT_TARGET);
-        DocumentElementContextMenuHandler targetHandler = target.getContextMenuHandler();
-        if (targetHandler != null) {
-            DocumentElementContextMenuEvent contextMenuEvent = new DocumentElementContextMenuEvent(target, target,
-                    documentX, documentY, event.getButton(), event.getTimeNanos(), eventControl);
-            if (targetHandler.onContextMenu(contextMenuEvent)) {
-                eventControl.stopPropagation();
-            }
-        }
-
-        eventControl.setEventPhase(DocumentEventPhase.BUBBLING);
-        for (int i = 1; i < path.size(); i++) {
-            if (eventControl.isPropagationStopped()) break;
-            ElementNode currentElement = path.get(i);
-            DocumentElementContextMenuHandler handler = currentElement.getContextMenuHandler();
-            if (handler == null) {
-                continue;
-            }
-            DocumentElementContextMenuEvent contextMenuEvent = new DocumentElementContextMenuEvent(target,
-                    currentElement, documentX, documentY, event.getButton(), event.getTimeNanos(), eventControl);
-            if (handler.onContextMenu(contextMenuEvent)) {
-                eventControl.stopPropagation();
-            }
-        }
-        return eventControl.isPropagationStopped();
-    }
-
-    private boolean dispatchKey(ElementNode target, UiKeyEvent event) {
-        if (target == null || event == null) {
-            return false;
-        }
-        DocumentEventControl eventControl = new DocumentEventControl();
-        List<ElementNode> path = buildAncestorPath(target);
-
-        // 捕获阶段：从根向目标传播（不含目标）
-        eventControl.setEventPhase(DocumentEventPhase.CAPTURING);
-        for (int i = path.size() - 1; i > 0; i--) {
-            if (eventControl.isPropagationStopped()) break;
-            ElementNode currentElement = path.get(i);
-            DocumentElementKeyHandler captureHandler = currentElement.getCaptureKeyHandler();
-            if (captureHandler != null) {
-                DocumentElementKeyEvent keyEvent = new DocumentElementKeyEvent(target, currentElement, event, eventControl);
-                if (captureHandler.onKey(keyEvent)) {
-                    eventControl.stopPropagation();
-                    ElementNode pendingFocus = keyEvent.getPendingFocusTarget();
-                    if (pendingFocus != null) {
-                        focusElement(pendingFocus, keyEvent.isPendingFocusVisible());
-                    }
-                }
-            }
-        }
-
-        // 目标阶段
-        if (!eventControl.isPropagationStopped()) {
-            eventControl.setEventPhase(DocumentEventPhase.AT_TARGET);
-            DocumentElementKeyHandler targetCaptureHandler = target.getCaptureKeyHandler();
-            if (targetCaptureHandler != null) {
-                DocumentElementKeyEvent keyEvent = new DocumentElementKeyEvent(target, target, event, eventControl);
-                if (targetCaptureHandler.onKey(keyEvent)) {
-                    eventControl.stopPropagation();
-                    ElementNode pendingFocus = keyEvent.getPendingFocusTarget();
-                    if (pendingFocus != null) {
-                        focusElement(pendingFocus, keyEvent.isPendingFocusVisible());
-                    }
-                }
-            }
-            if (!eventControl.isPropagationStopped()) {
-                DocumentElementKeyHandler targetHandler = target.getKeyHandler();
-                if (targetHandler != null) {
-                    DocumentElementKeyEvent keyEvent = new DocumentElementKeyEvent(target, target, event, eventControl);
-                    if (targetHandler.onKey(keyEvent)) {
-                        eventControl.stopPropagation();
-                        ElementNode pendingFocus = keyEvent.getPendingFocusTarget();
-                        if (pendingFocus != null) {
-                            focusElement(pendingFocus, keyEvent.isPendingFocusVisible());
-                        }
-                    }
-                }
-            }
-        }
-
-        // 冒泡阶段：从目标父元素向根传播
-        eventControl.setEventPhase(DocumentEventPhase.BUBBLING);
-        for (int i = 1; i < path.size(); i++) {
-            if (eventControl.isPropagationStopped()) break;
-            ElementNode currentElement = path.get(i);
-            DocumentElementKeyHandler keyHandler = currentElement.getKeyHandler();
-            if (keyHandler == null) {
-                continue;
-            }
-            DocumentElementKeyEvent keyEvent = new DocumentElementKeyEvent(target, currentElement, event, eventControl);
-            if (keyHandler.onKey(keyEvent)) {
-                eventControl.stopPropagation();
-                ElementNode pendingFocus = keyEvent.getPendingFocusTarget();
-                if (pendingFocus != null) {
-                    focusElement(pendingFocus, keyEvent.isPendingFocusVisible());
-                }
-            }
-        }
-        return eventControl.isPropagationStopped();
-    }
-
-    private boolean dispatchTextInput(ElementNode target, UiTextInputEvent event) {
-        if (target != null && target.isDisabled()) {
-            return true;
-        }
-        for (DocumentNode current = target; current instanceof ElementNode; current = current.getParent()) {
-            ElementNode currentElement = (ElementNode) current;
-            DocumentElementTextInputHandler textInputHandler = currentElement.getTextInputHandler();
-            if (textInputHandler == null) {
-                continue;
-            }
-            if (textInputHandler.onTextInput(new DocumentElementTextInputEvent(target, currentElement, event))) {
-                return true;
-            }
-        }
-        return false;
-    }
-
-    /**
-     * raw button 默认键盘行为：Enter 直接触发 click，Space pressed 进入 active，Space released 触发 click。
-     *
-     * <p>仅对没有 key handler 消费事件的原生 button 元素生效；disabled 时不触发。</p>
-     */
-    private void dispatchNativeButtonDefaultKeyBehavior(ElementNode target, UiKeyEvent event) {
-        if (target == null || !"button".equals(target.getTagName())) {
-            return;
-        }
-        if (target.isDisabled()) {
-            rawButtonSpacePressed.remove(target.__getElementUid());
-            return;
-        }
-        int keyCode = event.getKeyCode();
-        boolean isEnter = keyCode == Keyboard.KEY_RETURN || keyCode == Keyboard.KEY_NUMPADENTER;
-        boolean isSpace = keyCode == Keyboard.KEY_SPACE;
-        if (!isEnter && !isSpace) {
-            return;
-        }
-        long uid = target.__getElementUid();
-        if (isEnter && event.getAction() == UiKeyEvent.Action.PRESSED) {
-            DocumentElementClickHandler clickHandler = target.getClickHandler();
-            if (clickHandler != null) {
-                clickHandler.onClick(new DocumentElementClickEvent(target, target, -1, -1, -1, event.getTimeNanos()));
-            }
-            return;
-        }
-        if (isSpace && event.getAction() == UiKeyEvent.Action.PRESSED) {
-            rawButtonSpacePressed.put(uid, Boolean.TRUE);
-            return;
-        }
-        if (isSpace && event.getAction() == UiKeyEvent.Action.RELEASED) {
-            Boolean pressed = rawButtonSpacePressed.remove(uid);
-            if (Boolean.TRUE.equals(pressed)) {
-                DocumentElementClickHandler clickHandler = target.getClickHandler();
-                if (clickHandler != null) {
-                    clickHandler.onClick(new DocumentElementClickEvent(target, target, -1, -1, -1, event.getTimeNanos()));
-                }
-            }
-        }
-    }
-
-    private ElementNode findNearestLinkElement(ElementNode target) {
-        for (DocumentNode current = target; current instanceof ElementNode; current = current.getParent()) {
-            ElementNode element = (ElementNode) current;
-            if ("a".equals(element.getTagName())) {
-                return element;
-            }
-        }
-        return null;
-    }
-
-    private static String normalizeLinkHref(String href) {
-        if (href == null) {
-            return "";
-        }
-        String trimmed = href.trim();
-        return trimmed.isEmpty() ? "" : trimmed;
-    }
-
-    private boolean focusFirstElementInTraversalOrder(boolean reverse) {
-        List<ElementNode> focusableElements = collectFocusableElements();
-        if (focusableElements.isEmpty()) {
-            focusElement(null, false);
-            return false;
-        }
-        focusElement(reverse ? focusableElements.get(focusableElements.size() - 1) : focusableElements.get(0), true);
-        return true;
-    }
-
-    private List<ElementNode> collectFocusableElements() {
-        if (getWidth() <= 0 || getHeight() <= 0) {
-            return Collections.emptyList();
-        }
-        List<ElementNode> focusableElements = new ArrayList<ElementNode>();
-        collectFocusableElements(resolveInteractiveLayoutBox(), focusableElements);
-        sortFocusableElementsByTabIndex(focusableElements);
-        return focusableElements;
+    private void focusElementFromKeyboard(ElementNode element, boolean focusVisible) {
+        focusManager.focusElement(element, focusVisible);
     }
 
     private DocumentLayoutBox resolveInteractiveLayoutBox() {
@@ -1249,91 +847,9 @@ public final class HtmlLikeDocumentWidget extends Widget implements UiDocument.D
     private boolean flushCompletedAnimationEvents(long currentTimeNanos) {
         DocumentAnimationTimeline.PruneResult pruneResult = animationTimeline.pruneFinishedAnimationsWithResult(
                 currentTimeNanos);
-        dispatchCompletedAnimationEvents(pruneResult, currentTimeNanos);
+        DocumentAnimationEventDispatcher.dispatchCompletedAnimationEvents(pruneResult, currentTimeNanos,
+                this::isElementAttachedToDocument);
         return pruneResult.isChanged();
-    }
-
-    private void dispatchCompletedAnimationEvents(DocumentAnimationTimeline.PruneResult pruneResult,
-            long currentTimeNanos) {
-        if (pruneResult == null) {
-            return;
-        }
-        for (DocumentAnimationTimeline.TransitionEndRecord record : pruneResult.getTransitionEndRecords()) {
-            dispatchTransitionEnd(record, currentTimeNanos);
-        }
-        for (DocumentAnimationTimeline.AnimationEndRecord record : pruneResult.getAnimationEndRecords()) {
-            dispatchAnimationEnd(record, currentTimeNanos);
-        }
-    }
-
-    private boolean dispatchTransitionEnd(DocumentAnimationTimeline.TransitionEndRecord record, long timeNanos) {
-        ElementNode target = record == null ? null : record.getElement();
-        if (target == null || !isElementAttachedToDocument(target)) {
-            return false;
-        }
-        DocumentEventControl eventControl = new DocumentEventControl();
-        List<ElementNode> path = buildAncestorPath(target);
-
-        eventControl.setEventPhase(DocumentEventPhase.AT_TARGET);
-        DocumentElementTransitionEndHandler targetHandler = target.getTransitionEndHandler();
-        if (targetHandler != null) {
-            DocumentElementTransitionEndEvent event = new DocumentElementTransitionEndEvent(target, target,
-                    record.getProperty(), record.getElapsedTimeNanos(), timeNanos, eventControl);
-            if (targetHandler.onTransitionEnd(event)) {
-                eventControl.stopPropagation();
-            }
-        }
-
-        eventControl.setEventPhase(DocumentEventPhase.BUBBLING);
-        for (int i = 1; i < path.size(); i++) {
-            if (eventControl.isPropagationStopped()) break;
-            ElementNode currentElement = path.get(i);
-            DocumentElementTransitionEndHandler handler = currentElement.getTransitionEndHandler();
-            if (handler == null) {
-                continue;
-            }
-            DocumentElementTransitionEndEvent event = new DocumentElementTransitionEndEvent(target, currentElement,
-                    record.getProperty(), record.getElapsedTimeNanos(), timeNanos, eventControl);
-            if (handler.onTransitionEnd(event)) {
-                eventControl.stopPropagation();
-            }
-        }
-        return eventControl.isPropagationStopped();
-    }
-
-    private boolean dispatchAnimationEnd(DocumentAnimationTimeline.AnimationEndRecord record, long timeNanos) {
-        ElementNode target = record == null ? null : record.getElement();
-        if (target == null || !isElementAttachedToDocument(target)) {
-            return false;
-        }
-        DocumentEventControl eventControl = new DocumentEventControl();
-        List<ElementNode> path = buildAncestorPath(target);
-
-        eventControl.setEventPhase(DocumentEventPhase.AT_TARGET);
-        DocumentElementAnimationEndHandler targetHandler = target.getAnimationEndHandler();
-        if (targetHandler != null) {
-            DocumentElementAnimationEndEvent event = new DocumentElementAnimationEndEvent(target, target,
-                    record.getAnimationName(), record.getElapsedTimeNanos(), timeNanos, eventControl);
-            if (targetHandler.onAnimationEnd(event)) {
-                eventControl.stopPropagation();
-            }
-        }
-
-        eventControl.setEventPhase(DocumentEventPhase.BUBBLING);
-        for (int i = 1; i < path.size(); i++) {
-            if (eventControl.isPropagationStopped()) break;
-            ElementNode currentElement = path.get(i);
-            DocumentElementAnimationEndHandler handler = currentElement.getAnimationEndHandler();
-            if (handler == null) {
-                continue;
-            }
-            DocumentElementAnimationEndEvent event = new DocumentElementAnimationEndEvent(target, currentElement,
-                    record.getAnimationName(), record.getElapsedTimeNanos(), timeNanos, eventControl);
-            if (handler.onAnimationEnd(event)) {
-                eventControl.stopPropagation();
-            }
-        }
-        return eventControl.isPropagationStopped();
     }
 
     private boolean isRuntimeLayoutCacheReusable() {
@@ -1364,212 +880,6 @@ public final class HtmlLikeDocumentWidget extends Widget implements UiDocument.D
         cachedRuntimeWidth = -1;
         cachedRuntimeHeight = -1;
         cachedRuntimeViewportRootScrollingEnabled = viewportRootScrollingEnabled;
-    }
-
-    private void collectFocusableElements(DocumentLayoutBox box, List<ElementNode> focusableElements) {
-        ElementNode element = box.getElement();
-        if (isSequentiallyFocusable(element) && box.getWidth() > 0 && box.getHeight() > 0) {
-            focusableElements.add(element);
-        }
-        for (DocumentLayoutBox child : box.getChildren()) {
-            collectFocusableElements(child, focusableElements);
-        }
-    }
-
-    private ElementNode getActiveFocusedElement() {
-        if (focusedElement != null && (!focusedElement.isFocusable() || !isElementAttachedToDocument(focusedElement))) {
-            focusElement(null, false);
-        }
-        if (focusedElement != null
-                && focusedElement.getFocusInvalidationVersion() != focusedElementInvalidationVersion) {
-            focusElement(null, false);
-        }
-        return focusedElement;
-    }
-
-    private void focusElement(ElementNode nextFocusedElement, boolean focusVisible) {
-        ElementNode resolvedElement = nextFocusedElement != null && nextFocusedElement.isFocusable()
-                && isElementAttachedToDocument(nextFocusedElement) ? nextFocusedElement : null;
-        boolean resolvedFocusVisible = resolvedElement != null && focusVisible;
-        if (focusedElement == resolvedElement && focusedElementFocusVisible == resolvedFocusVisible) {
-            return;
-        }
-
-        ElementNode previousElement = focusedElement;
-        boolean previousFocusVisible = focusedElementFocusVisible;
-        focusedElement = resolvedElement;
-        focusedElementFocusVisible = resolvedFocusVisible;
-        focusedElementInvalidationVersion = focusedElement == null ? 0 : focusedElement.getFocusInvalidationVersion();
-        // 失焦时清理 raw button 的 Space 按下状态，避免失焦后 released 仍触发
-        if (previousElement != null && previousElement != focusedElement) {
-            rawButtonSpacePressed.remove(previousElement.__getElementUid());
-        }
-        if (previousElement != focusedElement) {
-            dispatchFocusChanged(previousElement, false, false);
-        }
-        if (focusedElement != null && (previousElement != focusedElement || previousFocusVisible != focusedElementFocusVisible)) {
-            dispatchFocusChanged(focusedElement, true, focusedElementFocusVisible);
-        }
-        if (focusedElement != null && focusedElementFocusVisible && focusedElement.isFocusable()
-                && isElementAttachedToDocument(focusedElement)) {
-            ensureFocusedElementVisible();
-        }
-        syncCursorFromHoveredElement();
-    }
-
-    private void ensureFocusedElementVisible() {
-        if (focusedElement == null || !focusedElementFocusVisible || getWidth() <= 0 || getHeight() <= 0) {
-            return;
-        }
-        scrollElementIntoView(focusedElement);
-    }
-
-    private boolean scrollElementIntoView(ElementNode target) {
-        if (target == null || getWidth() <= 0 || getHeight() <= 0) {
-            return false;
-        }
-        for (int remainingPasses = 16; remainingPasses > 0; remainingPasses--) {
-            List<LayoutPathEntry> path = resolveElementLayoutPath(target);
-            if (!isVisibleLayoutPath(path)) {
-                return false;
-            }
-            int firstFixedIndex = findFirstFixedIndex(path);
-            boolean changed = false;
-            for (int index = path.size() - 2; index >= 0; index--) {
-                if (firstFixedIndex >= 0 && index < firstFixedIndex) {
-                    break;
-                }
-                if (scrollAncestorToRevealTarget(path.get(index), path.get(path.size() - 1))) {
-                    changed = true;
-                    break;
-                }
-            }
-            if (!changed) {
-                return true;
-            }
-        }
-        return true;
-    }
-
-    private List<LayoutPathEntry> resolveElementLayoutPath(ElementNode target) {
-        if (target == null || !isElementAttachedToDocument(target)) {
-            return Collections.emptyList();
-        }
-        List<LayoutPathEntry> path = new ArrayList<LayoutPathEntry>();
-        if (!collectLayoutPath(resolveInteractiveLayoutBox(), target, 0, 0, path)) {
-            return Collections.emptyList();
-        }
-        return path;
-    }
-
-    private boolean isVisibleLayoutTarget(ElementNode target) {
-        return isVisibleLayoutPath(resolveElementLayoutPath(target));
-    }
-
-    private boolean isVisibleLayoutPath(List<LayoutPathEntry> path) {
-        if (path.isEmpty()) {
-            return false;
-        }
-        for (LayoutPathEntry entry : path) {
-            if (entry.box.getComputedStyle().getVisibility() == UiVisibility.HIDDEN) {
-                return false;
-            }
-        }
-        DocumentLayoutBox targetBox = path.get(path.size() - 1).box;
-        return targetBox.getWidth() > 0 && targetBox.getHeight() > 0;
-    }
-
-    private boolean collectLayoutPath(DocumentLayoutBox box, ElementNode target, int offsetX, int offsetY,
-            List<LayoutPathEntry> path) {
-        int baseOffsetX = box.isFixedPositioned() ? 0 : offsetX;
-        int baseOffsetY = box.isFixedPositioned() ? 0 : offsetY;
-        int boxOffsetX = baseOffsetX + box.getPositionOffsetX();
-        int boxOffsetY = baseOffsetY + box.getPositionOffsetY();
-        path.add(new LayoutPathEntry(box, boxOffsetX, boxOffsetY));
-        if (box.getElement() == target) {
-            return true;
-        }
-        int childOffsetX = boxOffsetX - scrollState.getScrollLeft(box.getElement());
-        int childOffsetY = boxOffsetY - scrollState.getScrollTop(box.getElement());
-        for (DocumentLayoutBox child : box.getChildren()) {
-            if (collectLayoutPath(child, target, childOffsetX, childOffsetY, path)) {
-                return true;
-            }
-        }
-        path.remove(path.size() - 1);
-        return false;
-    }
-
-    private int findFirstFixedIndex(List<LayoutPathEntry> path) {
-        for (int index = 1; index < path.size(); index++) {
-            if (path.get(index).box.isFixedPositioned()) {
-                return index;
-            }
-        }
-        return -1;
-    }
-
-    private boolean scrollAncestorToRevealTarget(LayoutPathEntry ancestorEntry, LayoutPathEntry targetEntry) {
-        ElementNode ancestorElement = ancestorEntry.box.getElement();
-        int currentScrollLeft = scrollState.getScrollLeft(ancestorElement);
-        int currentScrollTop = scrollState.getScrollTop(ancestorElement);
-        int nextScrollLeft = resolveScrollOffsetForTarget(currentScrollLeft,
-                ancestorEntry.box.getContentLeft() + ancestorEntry.boxOffsetX,
-                ancestorEntry.box.getContentLeft() + ancestorEntry.boxOffsetX + ancestorEntry.box.getContentWidth(),
-                targetEntry.box.getLeft() + targetEntry.boxOffsetX,
-                targetEntry.box.getRight() + targetEntry.boxOffsetX,
-                scrollState.getMaxScrollLeft(ancestorElement));
-        int nextScrollTop = resolveScrollOffsetForTarget(currentScrollTop,
-                ancestorEntry.box.getContentTop() + ancestorEntry.boxOffsetY,
-                ancestorEntry.box.getContentTop() + ancestorEntry.boxOffsetY + ancestorEntry.box.getContentHeight(),
-                targetEntry.box.getTop() + targetEntry.boxOffsetY,
-                targetEntry.box.getBottom() + targetEntry.boxOffsetY,
-                scrollState.getMaxScrollTop(ancestorElement));
-        if (currentScrollLeft == nextScrollLeft && currentScrollTop == nextScrollTop) {
-            return false;
-        }
-        if (!scrollState.setScrollOffset(ancestorElement, nextScrollLeft, nextScrollTop)) {
-            return false;
-        }
-        dispatchScroll(ancestorElement, System.nanoTime());
-        return true;
-    }
-
-    private int resolveScrollOffsetForTarget(int currentOffset, int viewportStart, int viewportEnd, int targetStart,
-            int targetEnd, int maxOffset) {
-        if (maxOffset <= 0 || (targetStart >= viewportStart && targetEnd <= viewportEnd)) {
-            return currentOffset;
-        }
-        int nextOffset = currentOffset;
-        if (targetStart < viewportStart) {
-            nextOffset -= viewportStart - targetStart;
-        } else if (targetEnd > viewportEnd) {
-            nextOffset += targetEnd - viewportEnd;
-        }
-        return Math.max(0, Math.min(nextOffset, maxOffset));
-    }
-
-    private void dispatchFocusChanged(ElementNode target, boolean focused, boolean focusVisible) {
-        if (target == null) {
-            return;
-        }
-        DocumentElementFocusHandler focusHandler = target.getFocusHandler();
-        if (focusHandler != null) {
-            focusHandler.onFocusChanged(new DocumentElementFocusEvent(target, focused, focusVisible));
-        }
-        // 冒泡分发 focusin/focusout（#25）
-        for (DocumentNode current = target; current instanceof ElementNode; current = current.getParent()) {
-            ElementNode currentElement = (ElementNode) current;
-            DocumentElementFocusInHandler focusInHandler = currentElement.getFocusInHandler();
-            if (focusInHandler == null) {
-                continue;
-            }
-            DocumentElementFocusInEvent focusInEvent = new DocumentElementFocusInEvent(target, currentElement,
-                    focused, focusVisible);
-            if (focusInHandler.onFocusIn(focusInEvent)) {
-                break;
-            }
-        }
     }
 
     private void dispatchScroll(ElementNode target, long timeNanos) {
@@ -1605,73 +915,8 @@ public final class HtmlLikeDocumentWidget extends Widget implements UiDocument.D
     }
 
     private void syncCursorFromHoveredElement() {
-        cursorHost.applyCursor(DocumentCursorResolver.resolve(hoveredElement, getActiveFocusedElement(),
-                focusedElementFocusVisible, pressedElement, this::isElementAttachedToDocument));
-    }
-
-    private ElementNode resolveFocusableElement(ElementNode target) {
-        for (DocumentNode current = target; current instanceof ElementNode; current = current.getParent()) {
-            ElementNode currentElement = (ElementNode) current;
-            if (currentElement.isFocusable() && !currentElement.isDisabled()) {
-                return currentElement;
-            }
-        }
-        return null;
-    }
-
-    private boolean isProgrammaticFocusTarget(ElementNode element) {
-        return element != null && element.isFocusable() && !element.isDisabled() && isVisibleLayoutTarget(element);
-    }
-
-    private boolean hasFocusableElement(DocumentNode node) {
-        if (node instanceof ElementNode && ((ElementNode) node).isFocusable()) {
-            return true;
-        }
-        for (DocumentNode child : node.getChildren()) {
-            if (hasFocusableElement(child)) {
-                return true;
-            }
-        }
-        return false;
-    }
-
-    private static boolean isSequentiallyFocusable(ElementNode element) {
-        if (element == null || !element.isFocusable()) {
-            return false;
-        }
-        if (element.isDisabled()) {
-            return false;
-        }
-        Integer tabIndex = element.getTabIndex();
-        return tabIndex == null || tabIndex.intValue() >= 0;
-    }
-
-    private static void sortFocusableElementsByTabIndex(List<ElementNode> focusableElements) {
-        Collections.sort(focusableElements, new java.util.Comparator<ElementNode>() {
-            @Override
-            public int compare(ElementNode first, ElementNode second) {
-                int firstIndex = positiveTabIndexOrZero(first);
-                int secondIndex = positiveTabIndexOrZero(second);
-                if (firstIndex == secondIndex) {
-                    return 0;
-                }
-                if (firstIndex == 0) {
-                    return 1;
-                }
-                if (secondIndex == 0) {
-                    return -1;
-                }
-                return Integer.compare(firstIndex, secondIndex);
-            }
-        });
-    }
-
-    private static int positiveTabIndexOrZero(ElementNode element) {
-        Integer tabIndex = element.getTabIndex();
-        if (tabIndex == null || tabIndex.intValue() <= 0) {
-            return 0;
-        }
-        return tabIndex.intValue();
+        cursorHost.applyCursor(DocumentCursorResolver.resolve(hoveredElement, focusManager.getFocusedElement(),
+                focusManager.isFocusVisible(), pressedElement, this::isElementAttachedToDocument));
     }
 
     private boolean isElementAttachedToDocument(ElementNode element) {
@@ -1684,35 +929,6 @@ public final class HtmlLikeDocumentWidget extends Widget implements UiDocument.D
             }
         }
         return false;
-    }
-
-    /**
-     * 构建从目标元素到根元素的祖先路径。
-     *
-     * <p>返回列表中 index 0 为 target，最后一个为最顶层祖先元素。</p>
-     *
-     * @param target 目标元素
-     * @return 祖先路径列表
-     */
-    private static List<ElementNode> buildAncestorPath(ElementNode target) {
-        List<ElementNode> path = new ArrayList<ElementNode>();
-        for (DocumentNode current = target; current instanceof ElementNode; current = current.getParent()) {
-            path.add((ElementNode) current);
-        }
-        return path;
-    }
-
-    private static final class LayoutPathEntry {
-
-        private final DocumentLayoutBox box;
-        private final int boxOffsetX;
-        private final int boxOffsetY;
-
-        private LayoutPathEntry(DocumentLayoutBox box, int boxOffsetX, int boxOffsetY) {
-            this.box = box;
-            this.boxOffsetX = boxOffsetX;
-            this.boxOffsetY = boxOffsetY;
-        }
     }
 
     /**
