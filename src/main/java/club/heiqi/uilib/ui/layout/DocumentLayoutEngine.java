@@ -4,7 +4,6 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Comparator;
 import java.util.List;
-import java.util.Locale;
 import java.util.Objects;
 
 import club.heiqi.uilib.ui.animation.DocumentAnimationProperty;
@@ -12,18 +11,15 @@ import club.heiqi.uilib.ui.dom.DocumentNode;
 import club.heiqi.uilib.ui.dom.DocumentImageElementSupport;
 import club.heiqi.uilib.ui.dom.ElementNode;
 import club.heiqi.uilib.ui.dom.TextNode;
+import club.heiqi.uilib.ui.layout.TextLayoutHelper.TextWrapSegment;
 import club.heiqi.uilib.ui.style.cascade.ComputedStyle;
 import club.heiqi.uilib.ui.style.props.UiAlignItems;
 import club.heiqi.uilib.ui.style.props.UiAlignSelf;
 import club.heiqi.uilib.ui.style.props.UiBoxSizing;
 import club.heiqi.uilib.ui.style.props.UiDisplay;
-import club.heiqi.uilib.ui.style.props.UiBorderCollapse;
-import club.heiqi.uilib.ui.style.props.UiFontStyle;
-import club.heiqi.uilib.ui.style.props.UiFontWeight;
 import club.heiqi.uilib.ui.style.props.UiFlexDirection;
 import club.heiqi.uilib.ui.style.props.UiFlexWrap;
 import club.heiqi.uilib.ui.style.props.UiJustifyContent;
-import club.heiqi.uilib.ui.style.props.UiOverflowWrap;
 import club.heiqi.uilib.ui.style.props.UiOverflow;
 import club.heiqi.uilib.ui.style.props.UiPosition;
 import club.heiqi.uilib.ui.style.selector.UiPseudoElement;
@@ -33,11 +29,8 @@ import club.heiqi.uilib.ui.style.values.UiStyleLength;
 import club.heiqi.uilib.ui.style.cascade.UiStyleResolver;
 import club.heiqi.uilib.ui.style.props.UiTextAlign;
 import club.heiqi.uilib.ui.style.props.UiTextOverflow;
-import club.heiqi.uilib.ui.style.props.UiTextTransform;
 import club.heiqi.uilib.ui.style.props.UiVerticalAlign;
-import club.heiqi.uilib.ui.style.props.UiVisibility;
 import club.heiqi.uilib.ui.style.props.UiWhiteSpace;
-import club.heiqi.uilib.ui.style.props.UiWordBreak;
 import club.heiqi.uilib.ui.text.TextContentMode;
 import club.heiqi.uilib.ui.text.TextMeasureService;
 
@@ -53,7 +46,6 @@ import club.heiqi.uilib.ui.text.TextMeasureService;
 public final class DocumentLayoutEngine {
 
     static final int AUTO_SIZE = -1;
-    private static final float UI_TEXT_SCALE = 2.0F;
     private static final TextMeasureService FALLBACK_TEXT_MEASURE_SERVICE = new FixedTextMeasureService();
     private static final LayoutRuntimeValueResolver STATIC_LAYOUT_VALUE_RESOLVER = new LayoutRuntimeValueResolver() {
         @Override
@@ -278,10 +270,11 @@ public final class DocumentLayoutEngine {
         List<ElementNode> fixedChildren = new ArrayList<ElementNode>();
         boolean usesInlineFormatting = hasVisibleInlineElementChild(element);
         ComputedStyle elementStyle = UiStyleResolver.compute(element);
-        int textIndent = resolveTextIndent(elementStyle, contentWidth);
+        int textIndent = TextLayoutHelper.resolveTextIndent(elementStyle, contentWidth);
         InlineLayoutContext inlineLayoutContext = usesInlineFormatting
                 ? new InlineLayoutContext(contentLeft, contentTop, contentWidth,
-                        resolveTextLineHeight(textMeasureService, elementStyle), textIndent, textRuns, inlineFragments)
+                        TextLayoutHelper.resolveTextLineHeight(textMeasureService, elementStyle), textIndent,
+                        textRuns, inlineFragments)
                 : null;
         int childFlowTop = contentTop;
         boolean textIndentPending = true;
@@ -415,11 +408,11 @@ public final class DocumentLayoutEngine {
             List<DocumentLayoutTextRun> textRuns, int left, int top, int availableWidth, int firstLineIndent,
             TextMeasureService textMeasureService) {
         TextContentMode textContentMode = textNode.getTextContentMode();
-        String text = normalizeTextForLayout(textNode.getText(), ownerStyle, textContentMode);
+        String text = TextLayoutHelper.normalizeTextForLayout(textNode.getText(), ownerStyle, textContentMode);
         if (text == null || text.isEmpty()) {
             return top;
         }
-        int lineHeight = resolveTextLineHeight(textMeasureService, ownerStyle);
+        int lineHeight = TextLayoutHelper.resolveTextLineHeight(textMeasureService, ownerStyle);
         UiWhiteSpace whiteSpace = ownerStyle != null ? ownerStyle.getWhiteSpace() : UiWhiteSpace.NORMAL;
         UiTextOverflow textOverflow = ownerStyle != null ? ownerStyle.getTextOverflow() : UiTextOverflow.CLIP;
         UiTextAlign textAlign = ownerStyle != null ? ownerStyle.getTextAlign() : UiTextAlign.START;
@@ -430,38 +423,39 @@ public final class DocumentLayoutEngine {
         while (!remainingText.isEmpty()) {
             int lineIndent = lineIndex == 0 ? firstLineIndent : 0;
             int lineAvailableWidth = Math.max(0, availableWidth - lineIndent);
-            int segmentAvailableWidth = allowsSoftWrapping(whiteSpace)
+            int segmentAvailableWidth = TextLayoutHelper.allowsSoftWrapping(whiteSpace)
                     ? lineAvailableWidth
                     : Integer.MAX_VALUE / 2;
-            TextWrapSegment segment = takeNextTextSegment(remainingText, segmentAvailableWidth, ownerStyle,
-                    textContentMode, textMeasureService);
+            TextWrapSegment segment = TextLayoutHelper.takeNextTextSegment(remainingText, segmentAvailableWidth,
+                    ownerStyle, textContentMode, textMeasureService);
             if (segment.consumedLength <= 0) {
                 break;
             }
             String resolvedLine = segment.text == null ? "" : segment.text;
-            int rawWidth = toUiTextSize(measureTextWidth(textMeasureService, resolvedLine, textContentMode,
-                    ownerStyle));
+            int rawWidth = TextLayoutHelper.toUiTextSize(TextLayoutHelper.measureTextWidth(textMeasureService,
+                    resolvedLine, textContentMode, ownerStyle));
             // text-overflow: ellipsis 处理（仅 nowrap 且内容超出时）
             if (whiteSpace == UiWhiteSpace.NOWRAP && textOverflow == UiTextOverflow.ELLIPSIS
                     && rawWidth > availableWidth && availableWidth > 0) {
                 // 计算省略号宽度
                 String ellipsis = "\u2026";
-                int ellipsisWidth = toUiTextSize(measureTextWidth(textMeasureService, ellipsis, textContentMode,
-                        ownerStyle));
+                int ellipsisWidth = TextLayoutHelper.toUiTextSize(TextLayoutHelper.measureTextWidth(textMeasureService,
+                        ellipsis, textContentMode, ownerStyle));
                 int targetWidth = Math.max(0, availableWidth - ellipsisWidth);
-                String trimmed = trimTextToWidth(textMeasureService, resolvedLine, toRawTextSize(targetWidth),
-                        textContentMode, ownerStyle);
+                String trimmed = TextLayoutHelper.trimTextToWidth(textMeasureService, resolvedLine,
+                        TextLayoutHelper.toRawTextSize(targetWidth), textContentMode, ownerStyle);
                 if (trimmed == null) {
                     trimmed = "";
                 }
                 resolvedLine = trimmed + ellipsis;
                 rawWidth = Math.min(availableWidth,
-                        toUiTextSize(measureTextWidth(textMeasureService, resolvedLine, textContentMode,
-                        ownerStyle)));
+                        TextLayoutHelper.toUiTextSize(TextLayoutHelper.measureTextWidth(textMeasureService,
+                                resolvedLine, textContentMode, ownerStyle)));
             }
             int width = Math.max(0, Math.min(lineAvailableWidth, rawWidth));
             // text-align 偏移
-            int lineLeft = resolveTextAlignOffset(textAlign, lineAvailableWidth, width) + left + lineIndent;
+            int lineLeft = TextLayoutHelper.resolveTextAlignOffset(textAlign, lineAvailableWidth, width)
+                    + left + lineIndent;
             textRuns.add(new DocumentLayoutTextRun(textNode, ownerElement, resolvedLine, textContentMode, lineLeft,
                     lineTop, width, lineHeight));
             lineTop += lineHeight;
@@ -515,23 +509,24 @@ public final class DocumentLayoutEngine {
             TextMeasureService textMeasureService) {
         ComputedStyle ownerStyle = UiStyleResolver.compute(ownerElement);
         TextContentMode textContentMode = textNode.getTextContentMode();
-        String remainingText = normalizeTextForLayout(textNode.getText(), ownerStyle, textContentMode);
+        String remainingText = TextLayoutHelper.normalizeTextForLayout(textNode.getText(), ownerStyle, textContentMode);
         if (remainingText == null || remainingText.isEmpty() || inlineLayoutContext.getLineWidth() <= 0) {
             return;
         }
         UiWhiteSpace whiteSpace = ownerStyle.getWhiteSpace();
         while (!remainingText.isEmpty()) {
-            if (allowsSoftWrapping(whiteSpace)
+            if (TextLayoutHelper.allowsSoftWrapping(whiteSpace)
                     && inlineLayoutContext.getRemainingWidth() <= 0 && inlineLayoutContext.hasLineContent()) {
                 inlineLayoutContext.nextLine();
             }
             int remainingWidth = inlineLayoutContext.getRemainingWidth();
-            if (remainingWidth <= 0 && allowsSoftWrapping(whiteSpace)) {
+            if (remainingWidth <= 0 && TextLayoutHelper.allowsSoftWrapping(whiteSpace)) {
                 return;
             }
-            int segmentAvailableWidth = allowsSoftWrapping(whiteSpace) ? remainingWidth : Integer.MAX_VALUE / 2;
-            TextWrapSegment segmentResult = takeNextTextSegment(remainingText, segmentAvailableWidth, ownerStyle,
-                    textContentMode, textMeasureService);
+            int segmentAvailableWidth = TextLayoutHelper.allowsSoftWrapping(whiteSpace)
+                    ? remainingWidth : Integer.MAX_VALUE / 2;
+            TextWrapSegment segmentResult = TextLayoutHelper.takeNextTextSegment(remainingText, segmentAvailableWidth,
+                    ownerStyle, textContentMode, textMeasureService);
             String segment = segmentResult.text;
             if (segment.isEmpty()) {
                 remainingText = remainingText.substring(Math.min(segmentResult.consumedLength, remainingText.length()));
@@ -540,14 +535,14 @@ public final class DocumentLayoutEngine {
                 }
                 continue;
             }
-            int width = Math.max(0, toUiTextSize(measureTextWidth(textMeasureService, segment, textContentMode,
-                    ownerStyle)));
-            if (allowsSoftWrapping(whiteSpace)
+            int width = Math.max(0, TextLayoutHelper.toUiTextSize(TextLayoutHelper.measureTextWidth(textMeasureService,
+                    segment, textContentMode, ownerStyle)));
+            if (TextLayoutHelper.allowsSoftWrapping(whiteSpace)
                     && width > remainingWidth && inlineLayoutContext.hasLineContent()) {
                 inlineLayoutContext.nextLine();
                 continue;
             }
-            if (allowsSoftWrapping(whiteSpace)) {
+            if (TextLayoutHelper.allowsSoftWrapping(whiteSpace)) {
                 width = Math.min(width, inlineLayoutContext.getRemainingWidth());
             }
             inlineLayoutContext.appendTextRun(textNode, ownerElement, segment, inlineLayoutContext.getCursorLeft(),
@@ -559,436 +554,11 @@ public final class DocumentLayoutEngine {
                 inlineLayoutContext.forceLineBreak();
                 continue;
             }
-            if (allowsSoftWrapping(whiteSpace)
+            if (TextLayoutHelper.allowsSoftWrapping(whiteSpace)
                     && !remainingText.isEmpty() && inlineLayoutContext.getRemainingWidth() <= 0) {
                 inlineLayoutContext.nextLine();
             }
         }
-    }
-
-    /**
-     * 按 CSS-like 断词属性将普通文本拆成布局行。
-     */
-    private static List<String> wrapTextToWidth(String text, int availableWidth, ComputedStyle ownerStyle,
-            TextContentMode textContentMode, TextMeasureService textMeasureService) {
-        if (text == null || text.isEmpty() || availableWidth <= 0) {
-            return Collections.emptyList();
-        }
-        List<String> lines = new ArrayList<String>();
-        String remainingText = text;
-        while (!remainingText.isEmpty()) {
-            TextWrapSegment segment = takeNextTextSegment(remainingText, availableWidth, ownerStyle,
-                    textContentMode, textMeasureService);
-            if (segment.consumedLength <= 0) {
-                break;
-            }
-            if (!segment.text.isEmpty()) {
-                lines.add(segment.text);
-            }
-            remainingText = remainingText.substring(Math.min(segment.consumedLength, remainingText.length()));
-        }
-        return lines;
-    }
-
-    /**
-     * 取出当前行的下一个文本片段，并返回实际消费的源文本长度。
-     */
-    private static TextWrapSegment takeNextTextSegment(String text, int availableWidth, ComputedStyle ownerStyle,
-            TextContentMode textContentMode, TextMeasureService textMeasureService) {
-        if (text == null || text.isEmpty()) {
-            return new TextWrapSegment("", 0);
-        }
-        UiWhiteSpace whiteSpace = resolveWhiteSpace(ownerStyle);
-        if (!allowsSoftWrapping(whiteSpace) && !preservesHardLineBreaks(whiteSpace)) {
-            return new TextWrapSegment(text, text.length());
-        }
-        int hardLineBreakStart = preservesHardLineBreaks(whiteSpace) ? findHardLineBreakStart(text) : text.length();
-        int hardLineBreakLength = hardLineBreakStart < text.length()
-                ? resolveHardLineBreakLength(text, hardLineBreakStart) : 0;
-        String paragraph = text.substring(0, hardLineBreakStart);
-        if (!allowsSoftWrapping(whiteSpace)) {
-            int consumedLength = paragraph.length() + hardLineBreakLength;
-            return new TextWrapSegment(paragraph, consumedLength, hardLineBreakLength > 0);
-        }
-        if (paragraph.isEmpty()) {
-            return new TextWrapSegment("", hardLineBreakLength, hardLineBreakLength > 0);
-        }
-
-        UiWordBreak wordBreak = ownerStyle == null ? UiWordBreak.NORMAL : ownerStyle.getWordBreak();
-        UiOverflowWrap overflowWrap = ownerStyle == null ? UiOverflowWrap.NORMAL : ownerStyle.getOverflowWrap();
-        int maxFitEnd = resolveMaxFittingTextEnd(paragraph, availableWidth, ownerStyle, textContentMode,
-                textMeasureService);
-        TextBreakPoint breakPoint;
-        if (maxFitEnd >= paragraph.length()) {
-            breakPoint = TextBreakPoint.at(paragraph.length());
-        } else if (wordBreak == UiWordBreak.BREAK_ALL || overflowWrap == UiOverflowWrap.ANYWHERE) {
-            breakPoint = TextBreakPoint.at(maxFitEnd);
-        } else {
-            breakPoint = findLastNormalBreakPoint(paragraph, maxFitEnd, wordBreak, textContentMode);
-            if (breakPoint == null && overflowWrap == UiOverflowWrap.BREAK_WORD) {
-                breakPoint = TextBreakPoint.at(maxFitEnd);
-            }
-            if (breakPoint == null) {
-                breakPoint = findFirstNormalBreakPointAfter(paragraph, maxFitEnd, wordBreak, textContentMode);
-            }
-            if (breakPoint == null) {
-                breakPoint = TextBreakPoint.at(paragraph.length());
-            }
-        }
-
-        int consumedLength = Math.max(0, Math.min(breakPoint.consumedEnd, paragraph.length()));
-        int textEnd = Math.max(0, Math.min(breakPoint.textEnd, consumedLength));
-        boolean forceLineBreak = false;
-        if (consumedLength >= paragraph.length()) {
-            consumedLength += hardLineBreakLength;
-            forceLineBreak = hardLineBreakLength > 0;
-        }
-        if (consumedLength <= 0) {
-            int firstUnitLength = firstTextUnitLength(paragraph, textContentMode);
-            consumedLength = firstUnitLength;
-            textEnd = firstUnitLength;
-        }
-        return new TextWrapSegment(paragraph.substring(0, textEnd), consumedLength, forceLineBreak);
-    }
-
-    private static UiWhiteSpace resolveWhiteSpace(ComputedStyle ownerStyle) {
-        return ownerStyle == null ? UiWhiteSpace.NORMAL : ownerStyle.getWhiteSpace();
-    }
-
-    private static boolean allowsSoftWrapping(UiWhiteSpace whiteSpace) {
-        return whiteSpace != UiWhiteSpace.NOWRAP && whiteSpace != UiWhiteSpace.PRE;
-    }
-
-    private static boolean preservesHardLineBreaks(UiWhiteSpace whiteSpace) {
-        return whiteSpace == UiWhiteSpace.PRE || whiteSpace == UiWhiteSpace.PRE_WRAP
-                || whiteSpace == UiWhiteSpace.PRE_LINE;
-    }
-
-    private static String normalizeTextForLayout(String text, ComputedStyle ownerStyle,
-            TextContentMode textContentMode) {
-        if (text == null || text.isEmpty()) {
-            return text;
-        }
-        String whitespaceNormalized = normalizeWhiteSpaceForLayout(text, resolveWhiteSpace(ownerStyle),
-                textContentMode);
-        return applyTextTransform(whitespaceNormalized, ownerStyle == null ? UiTextTransform.NONE
-                : ownerStyle.getTextTransform(), textContentMode);
-    }
-
-    private static String normalizeWhiteSpaceForLayout(String text, UiWhiteSpace whiteSpace,
-            TextContentMode textContentMode) {
-        if (whiteSpace == UiWhiteSpace.PRE || whiteSpace == UiWhiteSpace.PRE_WRAP) {
-            return normalizePreservedLineBreaks(text, textContentMode, true);
-        }
-        if (whiteSpace == UiWhiteSpace.PRE_LINE) {
-            return normalizePreLineWhiteSpace(text, textContentMode);
-        }
-        return collapseAllWhiteSpace(text, textContentMode);
-    }
-
-    private static String normalizePreservedLineBreaks(String text, TextContentMode textContentMode,
-            boolean preserveHorizontalSpaces) {
-        StringBuilder builder = new StringBuilder(text.length());
-        for (int index = 0; index < text.length();) {
-            if (isFormattingCodeStart(text, index, textContentMode)) {
-                builder.append(text, index, index + 2);
-                index += 2;
-                continue;
-            }
-            char value = text.charAt(index);
-            if (value == '\r') {
-                builder.append('\n');
-                index += index + 1 < text.length() && text.charAt(index + 1) == '\n' ? 2 : 1;
-                continue;
-            }
-            if (value == '\n') {
-                builder.append('\n');
-                index++;
-                continue;
-            }
-            if (value == '\t') {
-                builder.append(preserveHorizontalSpaces ? "    " : " ");
-                index++;
-                continue;
-            }
-            builder.append(value);
-            index++;
-        }
-        return builder.toString();
-    }
-
-    private static String normalizePreLineWhiteSpace(String text, TextContentMode textContentMode) {
-        StringBuilder builder = new StringBuilder(text.length());
-        boolean pendingSpace = false;
-        for (int index = 0; index < text.length();) {
-            if (isFormattingCodeStart(text, index, textContentMode)) {
-                if (pendingSpace && builder.length() > 0 && builder.charAt(builder.length() - 1) != '\n') {
-                    builder.append(' ');
-                }
-                pendingSpace = false;
-                builder.append(text, index, index + 2);
-                index += 2;
-                continue;
-            }
-            char value = text.charAt(index);
-            if (value == '\r' || value == '\n') {
-                pendingSpace = false;
-                if (builder.length() > 0 && builder.charAt(builder.length() - 1) == ' ') {
-                    builder.setLength(builder.length() - 1);
-                }
-                builder.append('\n');
-                index += value == '\r' && index + 1 < text.length() && text.charAt(index + 1) == '\n' ? 2 : 1;
-                continue;
-            }
-            if (Character.isWhitespace(value)) {
-                pendingSpace = true;
-                index++;
-                continue;
-            }
-            if (pendingSpace && builder.length() > 0 && builder.charAt(builder.length() - 1) != '\n') {
-                builder.append(' ');
-            }
-            pendingSpace = false;
-            builder.append(value);
-            index++;
-        }
-        if (pendingSpace && builder.length() > 0 && builder.charAt(builder.length() - 1) != '\n') {
-            builder.append(' ');
-        }
-        return builder.toString();
-    }
-
-    private static String collapseAllWhiteSpace(String text, TextContentMode textContentMode) {
-        StringBuilder builder = new StringBuilder(text.length());
-        boolean pendingSpace = false;
-        for (int index = 0; index < text.length();) {
-            if (isFormattingCodeStart(text, index, textContentMode)) {
-                if (pendingSpace && builder.length() > 0) {
-                    builder.append(' ');
-                }
-                pendingSpace = false;
-                builder.append(text, index, index + 2);
-                index += 2;
-                continue;
-            }
-            int codePoint = text.codePointAt(index);
-            if (Character.isWhitespace(codePoint)) {
-                pendingSpace = true;
-                index += Character.charCount(codePoint);
-                continue;
-            }
-            if (pendingSpace && builder.length() > 0) {
-                builder.append(' ');
-            }
-            pendingSpace = false;
-            builder.appendCodePoint(codePoint);
-            index += Character.charCount(codePoint);
-        }
-        if (pendingSpace && builder.length() > 0) {
-            builder.append(' ');
-        }
-        return builder.toString();
-    }
-
-    private static String applyTextTransform(String text, UiTextTransform textTransform,
-            TextContentMode textContentMode) {
-        if (text == null || text.isEmpty() || textTransform == null || textTransform == UiTextTransform.NONE) {
-            return text;
-        }
-        StringBuilder builder = new StringBuilder(text.length());
-        boolean capitalizeNext = true;
-        for (int index = 0; index < text.length();) {
-            if (isFormattingCodeStart(text, index, textContentMode)) {
-                builder.append(text, index, index + 2);
-                index += 2;
-                continue;
-            }
-            int codePoint = text.codePointAt(index);
-            if (textTransform == UiTextTransform.UPPERCASE) {
-                builder.append(toUpperCaseText(codePoint));
-            } else if (textTransform == UiTextTransform.LOWERCASE) {
-                builder.append(toLowerCaseText(codePoint));
-            } else if (textTransform == UiTextTransform.CAPITALIZE) {
-                boolean wordCharacter = Character.isLetterOrDigit(codePoint) || codePoint == '_';
-                if (capitalizeNext && Character.isLetter(codePoint)) {
-                    builder.append(toUpperCaseText(codePoint));
-                } else {
-                    builder.appendCodePoint(codePoint);
-                }
-                capitalizeNext = !wordCharacter;
-            } else {
-                builder.appendCodePoint(codePoint);
-            }
-            index += Character.charCount(codePoint);
-        }
-        return builder.toString();
-    }
-
-    private static String toUpperCaseText(int codePoint) {
-        return new String(Character.toChars(codePoint)).toUpperCase(Locale.ROOT);
-    }
-
-    private static String toLowerCaseText(int codePoint) {
-        return new String(Character.toChars(codePoint)).toLowerCase(Locale.ROOT);
-    }
-
-    private static int resolveTextIndent(ComputedStyle style, int contentWidth) {
-        if (style == null || style.getTextIndent() == null) {
-            return 0;
-        }
-        return style.getTextIndent().resolve(contentWidth, 0);
-    }
-
-    private static int findHardLineBreakStart(String text) {
-        for (int index = 0; index < text.length(); index++) {
-            char value = text.charAt(index);
-            if (value == '\r' || value == '\n') {
-                return index;
-            }
-        }
-        return text.length();
-    }
-
-    private static int resolveHardLineBreakLength(String text, int breakStart) {
-        if (breakStart < text.length() - 1 && text.charAt(breakStart) == '\r'
-                && text.charAt(breakStart + 1) == '\n') {
-            return 2;
-        }
-        return 1;
-    }
-
-    private static int resolveMaxFittingTextEnd(String text, int availableWidth, ComputedStyle ownerStyle,
-            TextContentMode textContentMode, TextMeasureService textMeasureService) {
-        String trimmed = trimTextToWidth(textMeasureService, text, toRawTextSize(availableWidth), textContentMode,
-                ownerStyle);
-        int trimmedEnd = trimmed == null ? 0 : trimmed.length();
-        int maxFitEnd = normalizeTextUnitBoundary(text, trimmedEnd, textContentMode);
-        if (maxFitEnd <= 0) {
-            return firstTextUnitLength(text, textContentMode);
-        }
-        return maxFitEnd;
-    }
-
-    private static TextBreakPoint findLastNormalBreakPoint(String text, int maxTextEnd, UiWordBreak wordBreak,
-            TextContentMode textContentMode) {
-        TextBreakPoint result = null;
-        List<TextWrapUnit> units = collectTextWrapUnits(text, textContentMode);
-        for (int index = 0; index < units.size(); index++) {
-            TextBreakPoint candidate = resolveNormalBreakPoint(units, index, wordBreak);
-            if (candidate == null || candidate.textEnd > maxTextEnd) {
-                continue;
-            }
-            result = candidate;
-        }
-        return result;
-    }
-
-    private static TextBreakPoint findFirstNormalBreakPointAfter(String text, int minTextEnd, UiWordBreak wordBreak,
-            TextContentMode textContentMode) {
-        List<TextWrapUnit> units = collectTextWrapUnits(text, textContentMode);
-        for (int index = 0; index < units.size(); index++) {
-            TextBreakPoint candidate = resolveNormalBreakPoint(units, index, wordBreak);
-            if (candidate != null && candidate.textEnd > minTextEnd) {
-                return candidate;
-            }
-        }
-        return null;
-    }
-
-    private static TextBreakPoint resolveNormalBreakPoint(List<TextWrapUnit> units, int index,
-            UiWordBreak wordBreak) {
-        TextWrapUnit unit = units.get(index);
-        if (unit.formattingCode) {
-            return null;
-        }
-        if (Character.isWhitespace(unit.codePoint)) {
-            int consumedEnd = unit.end;
-            while (index + 1 < units.size() && Character.isWhitespace(units.get(index + 1).codePoint)) {
-                index++;
-                consumedEnd = units.get(index).end;
-            }
-            return new TextBreakPoint(unit.start, consumedEnd);
-        }
-        if (isUrlBreakCodePoint(unit.codePoint)) {
-            return TextBreakPoint.at(unit.end);
-        }
-        if (wordBreak != UiWordBreak.KEEP_ALL && index + 1 < units.size()) {
-            TextWrapUnit next = units.get(index + 1);
-            if (!next.formattingCode && (isCjkCodePoint(unit.codePoint) || isCjkCodePoint(next.codePoint))) {
-                return TextBreakPoint.at(unit.end);
-            }
-        }
-        return null;
-    }
-
-    private static List<TextWrapUnit> collectTextWrapUnits(String text, TextContentMode textContentMode) {
-        List<TextWrapUnit> units = new ArrayList<TextWrapUnit>();
-        for (int index = 0; index < text.length();) {
-            if (isFormattingCodeStart(text, index, textContentMode)) {
-                units.add(new TextWrapUnit(index, index + 2, 0, true));
-                index += 2;
-                continue;
-            }
-            int codePoint = text.codePointAt(index);
-            int end = index + Character.charCount(codePoint);
-            units.add(new TextWrapUnit(index, end, codePoint, false));
-            index = end;
-        }
-        return units;
-    }
-
-    private static int normalizeTextUnitBoundary(String text, int requestedEnd, TextContentMode textContentMode) {
-        int safeEnd = Math.max(0, Math.min(requestedEnd, text.length()));
-        int boundary = 0;
-        for (int index = 0; index < text.length();) {
-            int nextIndex;
-            if (isFormattingCodeStart(text, index, textContentMode)) {
-                nextIndex = index + 2;
-            } else {
-                nextIndex = index + Character.charCount(text.codePointAt(index));
-            }
-            if (nextIndex > safeEnd) {
-                break;
-            }
-            boundary = nextIndex;
-            index = nextIndex;
-        }
-        return boundary;
-    }
-
-    private static int firstTextUnitLength(String text, TextContentMode textContentMode) {
-        if (text == null || text.isEmpty()) {
-            return 0;
-        }
-        if (isFormattingCodeStart(text, 0, textContentMode)) {
-            return 2;
-        }
-        return Character.charCount(text.codePointAt(0));
-    }
-
-    private static boolean isFormattingCodeStart(String text, int index, TextContentMode textContentMode) {
-        return textContentMode == TextContentMode.MINECRAFT_FORMATTED
-                && index >= 0 && index < text.length() - 1 && text.charAt(index) == '\u00a7';
-    }
-
-    private static boolean isUrlBreakCodePoint(int codePoint) {
-        return codePoint == '/' || codePoint == '\\' || codePoint == '.' || codePoint == ':'
-                || codePoint == '?' || codePoint == '&' || codePoint == '=' || codePoint == '-'
-                || codePoint == '_' || codePoint == '#';
-    }
-
-    private static boolean isCjkCodePoint(int codePoint) {
-        Character.UnicodeBlock block = Character.UnicodeBlock.of(codePoint);
-        return block == Character.UnicodeBlock.CJK_UNIFIED_IDEOGRAPHS
-                || block == Character.UnicodeBlock.CJK_UNIFIED_IDEOGRAPHS_EXTENSION_A
-                || block == Character.UnicodeBlock.CJK_UNIFIED_IDEOGRAPHS_EXTENSION_B
-                || block == Character.UnicodeBlock.CJK_COMPATIBILITY_IDEOGRAPHS
-                || block == Character.UnicodeBlock.CJK_SYMBOLS_AND_PUNCTUATION
-                || block == Character.UnicodeBlock.HIRAGANA
-                || block == Character.UnicodeBlock.KATAKANA
-                || block == Character.UnicodeBlock.HANGUL_SYLLABLES
-                || block == Character.UnicodeBlock.HANGUL_JAMO
-                || block == Character.UnicodeBlock.HANGUL_COMPATIBILITY_JAMO;
     }
 
     private static void appendInlineSpacing(List<InlineFragmentOwner> fragmentOwners,
@@ -1521,7 +1091,7 @@ public final class DocumentLayoutEngine {
         for (DocumentNode child : getGeneratedChildNodes(element)) {
             if (child instanceof TextNode) {
                 TextNode textNode = (TextNode) child;
-                inlineWidth += measureIntrinsicTextWidth(textNode, style, textMeasureService);
+                inlineWidth += TextLayoutHelper.measureIntrinsicTextWidth(textNode, style, textMeasureService);
                 continue;
             }
             if (!(child instanceof ElementNode)) {
@@ -1543,71 +1113,6 @@ public final class DocumentLayoutEngine {
                     containingWidth, layoutValueResolver));
         }
         return Math.max(maxWidth, inlineWidth);
-    }
-
-    private static int measureIntrinsicTextWidth(TextNode textNode, ComputedStyle ownerStyle,
-            TextMeasureService textMeasureService) {
-        TextContentMode textContentMode = textNode.getTextContentMode();
-        String text = normalizeTextForLayout(textNode.getText(), ownerStyle, textContentMode);
-        if (text == null || text.isEmpty()) {
-            return 0;
-        }
-        if (ownerStyle != null && (ownerStyle.getOverflowWrap() == UiOverflowWrap.ANYWHERE
-                || ownerStyle.getWordBreak() == UiWordBreak.BREAK_ALL)) {
-            return measureMaxTextUnitWidth(text, textContentMode, textMeasureService, ownerStyle);
-        }
-        return measureMaxTextLineWidth(text, textContentMode, textMeasureService, ownerStyle);
-    }
-
-    private static int measureMaxTextLineWidth(String text, TextContentMode textContentMode,
-            TextMeasureService textMeasureService, ComputedStyle ownerStyle) {
-        int maxWidth = 0;
-        int lineStart = 0;
-        while (lineStart <= text.length()) {
-            int lineBreakStart = findHardLineBreakStart(text.substring(lineStart));
-            int lineEnd = lineStart + lineBreakStart;
-            maxWidth = Math.max(maxWidth, toUiTextSize(measureTextWidth(textMeasureService,
-                    text.substring(lineStart, lineEnd), textContentMode, ownerStyle)));
-            if (lineEnd >= text.length()) {
-                break;
-            }
-            lineStart = lineEnd + resolveHardLineBreakLength(text, lineEnd);
-        }
-        return maxWidth;
-    }
-
-    private static int measureMaxTextUnitWidth(String text, TextContentMode textContentMode,
-            TextMeasureService textMeasureService, ComputedStyle ownerStyle) {
-        int maxWidth = 0;
-        List<TextWrapUnit> units = collectTextWrapUnits(text, textContentMode);
-        for (TextWrapUnit unit : units) {
-            if (unit.formattingCode || unit.codePoint == '\r' || unit.codePoint == '\n') {
-                continue;
-            }
-            maxWidth = Math.max(maxWidth, toUiTextSize(measureTextWidth(textMeasureService,
-                    text.substring(unit.start, unit.end), textContentMode, ownerStyle)));
-        }
-        return maxWidth;
-    }
-
-    private static int measureTextWidth(TextMeasureService textMeasureService, String text,
-            TextContentMode textContentMode, ComputedStyle ownerStyle) {
-        return textMeasureService.getStringWidth(text, textContentMode, resolveFontWeight(ownerStyle),
-                resolveFontStyle(ownerStyle));
-    }
-
-    private static String trimTextToWidth(TextMeasureService textMeasureService, String text, int targetWidth,
-            TextContentMode textContentMode, ComputedStyle ownerStyle) {
-        return textMeasureService.trimStringToWidth(text, targetWidth, textContentMode, resolveFontWeight(ownerStyle),
-                resolveFontStyle(ownerStyle));
-    }
-
-    private static UiFontWeight resolveFontWeight(ComputedStyle ownerStyle) {
-        return ownerStyle == null ? UiFontWeight.NORMAL : ownerStyle.getFontWeight();
-    }
-
-    private static UiFontStyle resolveFontStyle(ComputedStyle ownerStyle) {
-        return ownerStyle == null ? UiFontStyle.NORMAL : ownerStyle.getFontStyle();
     }
 
     private static int measureIntrinsicFlexContentWidth(ElementNode element, ComputedStyle style,
@@ -2339,46 +1844,6 @@ public final class DocumentLayoutEngine {
         return 0;
     }
 
-    private static int toUiTextSize(int rawSize) {
-        return Math.round(Math.max(0, rawSize) * UI_TEXT_SCALE);
-    }
-
-    private static int toRawTextSize(int uiSize) {
-        return Math.max(1, Math.round(Math.max(1, uiSize) / UI_TEXT_SCALE));
-    }
-
-    /**
-     * 解析 text-align 产生的行内偏移量。
-     */
-    private static int resolveTextAlignOffset(UiTextAlign textAlign, int availableWidth, int lineWidth) {
-        if (textAlign == UiTextAlign.CENTER) {
-            return Math.max(0, availableWidth - lineWidth) / 2;
-        }
-        if (textAlign == UiTextAlign.END) {
-            return Math.max(0, availableWidth - lineWidth);
-        }
-        return 0;
-    }
-
-    private static int resolveTextLineHeight(TextMeasureService textMeasureService) {
-        return resolveTextLineHeight(textMeasureService, null);
-    }
-
-    /**
-     * 解析文本行高。
-     *
-     * <p>如果 ownerStyle 的 line-height 为 auto，则回落到字体默认行高；
-     * 否则用字体默认行高作为 containingSize 解析（支持 px 和百分比）。</p>
-     */
-    private static int resolveTextLineHeight(TextMeasureService textMeasureService, ComputedStyle ownerStyle) {
-        int fontLineHeight = Math.max(1, toUiTextSize(textMeasureService.getLineHeight()));
-        if (ownerStyle == null || isAuto(ownerStyle.getLineHeight())) {
-            return fontLineHeight;
-        }
-        int resolvedHeight = ownerStyle.getLineHeight().resolve(fontLineHeight, fontLineHeight);
-        return Math.max(1, resolvedHeight);
-    }
-
     /**
      * block 容器内的首期 inline 文本排版游标。
      */
@@ -2637,62 +2102,6 @@ public final class DocumentLayoutEngine {
             this.owner = owner;
             this.left = left;
             this.width = width;
-        }
-    }
-
-    /**
-     * 单次文本换行消费结果。
-     */
-    private static final class TextWrapSegment {
-
-        private final String text;
-        private final int consumedLength;
-        private final boolean forceLineBreak;
-
-        private TextWrapSegment(String text, int consumedLength) {
-            this(text, consumedLength, false);
-        }
-
-        private TextWrapSegment(String text, int consumedLength, boolean forceLineBreak) {
-            this.text = text == null ? "" : text;
-            this.consumedLength = Math.max(0, consumedLength);
-            this.forceLineBreak = forceLineBreak;
-        }
-    }
-
-    /**
-     * 可断行位置，区分实际显示文本末尾和源文本消费末尾。
-     */
-    private static final class TextBreakPoint {
-
-        private final int textEnd;
-        private final int consumedEnd;
-
-        private TextBreakPoint(int textEnd, int consumedEnd) {
-            this.textEnd = Math.max(0, textEnd);
-            this.consumedEnd = Math.max(this.textEnd, consumedEnd);
-        }
-
-        private static TextBreakPoint at(int end) {
-            return new TextBreakPoint(end, end);
-        }
-    }
-
-    /**
-     * 文本断行扫描单元；Minecraft 格式码在格式文本模式下作为不可见单元处理。
-     */
-    private static final class TextWrapUnit {
-
-        private final int start;
-        private final int end;
-        private final int codePoint;
-        private final boolean formattingCode;
-
-        private TextWrapUnit(int start, int end, int codePoint, boolean formattingCode) {
-            this.start = Math.max(0, start);
-            this.end = Math.max(this.start, end);
-            this.codePoint = codePoint;
-            this.formattingCode = formattingCode;
         }
     }
 
