@@ -26,7 +26,8 @@ public final class DocumentAnimationTimeline {
     private static final DocumentAnimationProperty[] FLOAT_PROPERTIES = filterPropertiesByValueType(
             DocumentAnimationProperty.ValueType.FLOAT);
 
-    private final Map<ElementNode, ElementAnimationState> states = new HashMap<ElementNode, ElementAnimationState>();
+    private final Map<ElementNode, DocumentAnimationRuntimeState> states =
+            new HashMap<ElementNode, DocumentAnimationRuntimeState>();
 
     /**
      * 单次清理过程中收集到的动画完成结果。
@@ -49,7 +50,7 @@ public final class DocumentAnimationTimeline {
             return animationEndRecords;
         }
 
-        private void markChanged() {
+        void markChanged() {
             changed = true;
         }
     }
@@ -63,7 +64,7 @@ public final class DocumentAnimationTimeline {
         private final DocumentAnimationProperty property;
         private final long elapsedTimeNanos;
 
-        private TransitionEndRecord(ElementNode element, DocumentAnimationProperty property, long elapsedTimeNanos) {
+        TransitionEndRecord(ElementNode element, DocumentAnimationProperty property, long elapsedTimeNanos) {
             this.element = Objects.requireNonNull(element, "element");
             this.property = Objects.requireNonNull(property, "property");
             this.elapsedTimeNanos = Math.max(0L, elapsedTimeNanos);
@@ -91,7 +92,7 @@ public final class DocumentAnimationTimeline {
         private final String animationName;
         private final long elapsedTimeNanos;
 
-        private AnimationEndRecord(ElementNode element, String animationName, long elapsedTimeNanos) {
+        AnimationEndRecord(ElementNode element, String animationName, long elapsedTimeNanos) {
             this.element = Objects.requireNonNull(element, "element");
             this.animationName = Objects.requireNonNull(animationName, "animationName");
             this.elapsedTimeNanos = Math.max(0L, elapsedTimeNanos);
@@ -122,9 +123,9 @@ public final class DocumentAnimationTimeline {
         boolean changed = false;
         Set<ElementNode> activeElements = new HashSet<ElementNode>();
         changed |= updateFromBox(rootBox, currentTimeNanos, activeElements);
-        Iterator<Map.Entry<ElementNode, ElementAnimationState>> iterator = states.entrySet().iterator();
+        Iterator<Map.Entry<ElementNode, DocumentAnimationRuntimeState>> iterator = states.entrySet().iterator();
         while (iterator.hasNext()) {
-            Map.Entry<ElementNode, ElementAnimationState> entry = iterator.next();
+            Map.Entry<ElementNode, DocumentAnimationRuntimeState> entry = iterator.next();
             if (activeElements.contains(entry.getKey())) {
                 continue;
             }
@@ -145,7 +146,7 @@ public final class DocumentAnimationTimeline {
      */
     public int resolveColor(ElementNode element, DocumentAnimationProperty property, int baseColor,
             long currentTimeNanos) {
-        ElementAnimationState state = states.get(element);
+        DocumentAnimationRuntimeState state = states.get(element);
         if (state == null) {
             return baseColor;
         }
@@ -163,7 +164,7 @@ public final class DocumentAnimationTimeline {
      */
     public float resolveFloat(ElementNode element, DocumentAnimationProperty property, float baseValue,
             long currentTimeNanos) {
-        ElementAnimationState state = states.get(element);
+        DocumentAnimationRuntimeState state = states.get(element);
         if (state == null) {
             return baseValue;
         }
@@ -184,7 +185,7 @@ public final class DocumentAnimationTimeline {
             int toColor, long startNanos, long durationNanos) {
         Objects.requireNonNull(element, "element");
         Objects.requireNonNull(property, "property");
-        ElementAnimationState state = getOrCreateState(element);
+        DocumentAnimationRuntimeState state = getOrCreateState(element);
         state.setManualColorKeyframeAnimation(property, fromColor, toColor, startNanos, durationNanos);
     }
 
@@ -202,7 +203,7 @@ public final class DocumentAnimationTimeline {
             float toValue, long startNanos, long durationNanos) {
         Objects.requireNonNull(element, "element");
         Objects.requireNonNull(property, "property");
-        ElementAnimationState state = getOrCreateState(element);
+        DocumentAnimationRuntimeState state = getOrCreateState(element);
         state.setManualFloatKeyframeAnimation(property, fromValue, toValue, startNanos, durationNanos);
     }
 
@@ -213,7 +214,7 @@ public final class DocumentAnimationTimeline {
      */
     public void clearKeyframeAnimations(ElementNode element) {
         Objects.requireNonNull(element, "element");
-        ElementAnimationState state = states.get(element);
+        DocumentAnimationRuntimeState state = states.get(element);
         if (state == null) {
             return;
         }
@@ -226,7 +227,7 @@ public final class DocumentAnimationTimeline {
      * @return 是否有动画工作
      */
     public boolean hasAnimationWork() {
-        for (ElementAnimationState state : states.values()) {
+        for (DocumentAnimationRuntimeState state : states.values()) {
             if (state.hasAnimationWork()) {
                 return true;
             }
@@ -242,7 +243,7 @@ public final class DocumentAnimationTimeline {
      */
     public boolean hasAnimationWork(DocumentAnimationImpact impact) {
         Objects.requireNonNull(impact, "impact");
-        for (ElementAnimationState state : states.values()) {
+        for (DocumentAnimationRuntimeState state : states.values()) {
             if (state.hasAnimationWork(impact)) {
                 return true;
             }
@@ -260,7 +261,7 @@ public final class DocumentAnimationTimeline {
      */
     public boolean hasRuntimeValue(DocumentAnimationImpact impact) {
         Objects.requireNonNull(impact, "impact");
-        for (ElementAnimationState state : states.values()) {
+        for (DocumentAnimationRuntimeState state : states.values()) {
             if (state.hasRuntimeValue(impact)) {
                 return true;
             }
@@ -278,7 +279,7 @@ public final class DocumentAnimationTimeline {
     public boolean hasRunningTransition(ElementNode element, DocumentAnimationProperty property) {
         Objects.requireNonNull(element, "element");
         Objects.requireNonNull(property, "property");
-        ElementAnimationState state = states.get(element);
+        DocumentAnimationRuntimeState state = states.get(element);
         if (state == null) {
             return false;
         }
@@ -293,7 +294,7 @@ public final class DocumentAnimationTimeline {
      */
     public int getActiveAnimationCount(long currentTimeNanos) {
         int count = 0;
-        for (ElementAnimationState state : states.values()) {
+        for (DocumentAnimationRuntimeState state : states.values()) {
             count += state.countActiveAnimations(currentTimeNanos);
         }
         return count;
@@ -309,7 +310,7 @@ public final class DocumentAnimationTimeline {
      */
     public DiagnosticsSnapshot getDiagnosticsSnapshot(long currentTimeNanos) {
         DiagnosticsSnapshot snapshot = new DiagnosticsSnapshot();
-        for (ElementAnimationState state : states.values()) {
+        for (DocumentAnimationRuntimeState state : states.values()) {
             state.collectDiagnostics(snapshot, currentTimeNanos);
         }
         return snapshot;
@@ -333,7 +334,7 @@ public final class DocumentAnimationTimeline {
      */
     public PruneResult pruneFinishedAnimationsWithResult(long currentTimeNanos) {
         PruneResult result = new PruneResult();
-        for (Map.Entry<ElementNode, ElementAnimationState> entry : states.entrySet()) {
+        for (Map.Entry<ElementNode, DocumentAnimationRuntimeState> entry : states.entrySet()) {
             entry.getValue().pruneFinishedAnimations(entry.getKey(), currentTimeNanos, result);
         }
         return result;
@@ -457,17 +458,17 @@ public final class DocumentAnimationTimeline {
             return counts;
         }
 
-        private void incrementTransition(DocumentAnimationImpact impact) {
+        void incrementTransition(DocumentAnimationImpact impact) {
             getCounts(impact)[0]++;
             totalTransitionCount++;
         }
 
-        private void incrementKeyframe(DocumentAnimationImpact impact) {
+        void incrementKeyframe(DocumentAnimationImpact impact) {
             getCounts(impact)[1]++;
             totalKeyframeCount++;
         }
 
-        private void incrementForwardsFill(DocumentAnimationImpact impact) {
+        void incrementForwardsFill(DocumentAnimationImpact impact) {
             getCounts(impact)[2]++;
             totalForwardsFillCount++;
         }
@@ -486,7 +487,7 @@ public final class DocumentAnimationTimeline {
     private boolean updateElementState(DocumentLayoutBox box, long currentTimeNanos) {
         ElementNode element = box.getElement();
         ComputedStyle style = box.getComputedStyle();
-        ElementAnimationState state = states.get(element);
+        DocumentAnimationRuntimeState state = states.get(element);
         boolean changed = false;
         if (state == null) {
             state = getOrCreateState(element);
@@ -495,13 +496,13 @@ public final class DocumentAnimationTimeline {
         changed |= updateDeclaredKeyframeAnimations(box, style, currentTimeNanos, state);
         for (DocumentAnimationProperty property : COLOR_PROPERTIES) {
             int baseColor = getBaseColor(style, property);
-            Integer previousTarget = state.targetColors.get(property);
+            Integer previousTarget = state.getTargetColor(property);
             boolean transitionAllowed = canTransition(style, property);
-            if (!transitionAllowed && state.colorTransitions.remove(property) != null) {
+            if (!transitionAllowed && state.removeColorTransition(property)) {
                 changed = true;
             }
             if (previousTarget == null) {
-                state.targetColors.put(property, Integer.valueOf(baseColor));
+                state.putTargetColor(property, baseColor);
                 changed = true;
                 continue;
             }
@@ -509,60 +510,60 @@ public final class DocumentAnimationTimeline {
                 continue;
             }
             int fromColor = resolveColor(element, property, previousTarget.intValue(), currentTimeNanos);
-            state.targetColors.put(property, Integer.valueOf(baseColor));
+            state.putTargetColor(property, baseColor);
             state.suppressDeclaredColorKeyframeProperty(property);
             if (transitionAllowed && fromColor != baseColor) {
-                state.colorTransitions.put(property, new ColorTransition(fromColor, baseColor,
+                state.setColorTransition(property, fromColor, baseColor,
                         currentTimeNanos + style.getTransitionDelayNanos(), style.getTransitionDurationNanos(),
-                        style.getTransitionTimingFunction()));
+                        style.getTransitionTimingFunction());
             } else {
-                state.colorTransitions.remove(property);
+                state.clearColorTransition(property);
             }
             changed = true;
         }
         for (DocumentAnimationProperty property : FLOAT_PROPERTIES) {
             float baseValue = getBaseFloat(box, property);
-            Float previousTarget = state.targetFloats.get(property);
+            Float previousTarget = state.getTargetFloat(property);
             boolean targetTransitionable = isFloatTransitionTargetAnimatable(box, property);
-            Boolean previousTargetTransitionable = state.targetFloatTransitionable.get(property);
+            Boolean previousTargetTransitionable = state.getTargetFloatTransitionable(property);
             boolean transitionAllowed = canTransition(style, property) && targetTransitionable
                     && Boolean.TRUE.equals(previousTargetTransitionable);
-            if (!transitionAllowed && state.floatTransitions.remove(property) != null) {
+            if (!transitionAllowed && state.removeFloatTransition(property)) {
                 changed = true;
             }
             if (previousTarget == null) {
-                state.targetFloats.put(property, Float.valueOf(baseValue));
-                state.targetFloatTransitionable.put(property, Boolean.valueOf(targetTransitionable));
+                state.putTargetFloat(property, baseValue);
+                state.putTargetFloatTransitionable(property, targetTransitionable);
                 changed = true;
                 continue;
             }
             if (Float.compare(previousTarget.floatValue(), baseValue) == 0) {
                 if (!Objects.equals(previousTargetTransitionable, Boolean.valueOf(targetTransitionable))) {
-                    state.targetFloatTransitionable.put(property, Boolean.valueOf(targetTransitionable));
+                    state.putTargetFloatTransitionable(property, targetTransitionable);
                     changed = true;
                 }
                 continue;
             }
             float fromValue = resolveFloat(element, property, previousTarget.floatValue(), currentTimeNanos);
-            state.targetFloats.put(property, Float.valueOf(baseValue));
-            state.targetFloatTransitionable.put(property, Boolean.valueOf(targetTransitionable));
+            state.putTargetFloat(property, baseValue);
+            state.putTargetFloatTransitionable(property, targetTransitionable);
             state.suppressDeclaredFloatKeyframeProperty(property);
             if (transitionAllowed && Float.compare(fromValue, baseValue) != 0) {
-                state.floatTransitions.put(property, new FloatTransition(fromValue, baseValue,
+                state.setFloatTransition(property, fromValue, baseValue,
                         currentTimeNanos + style.getTransitionDelayNanos(), style.getTransitionDurationNanos(),
-                        style.getTransitionTimingFunction()));
+                        style.getTransitionTimingFunction());
             } else {
-                state.floatTransitions.remove(property);
+                state.clearFloatTransition(property);
             }
             changed = true;
         }
         return changed;
     }
 
-    private ElementAnimationState getOrCreateState(ElementNode element) {
-        ElementAnimationState state = states.get(element);
+    private DocumentAnimationRuntimeState getOrCreateState(ElementNode element) {
+        DocumentAnimationRuntimeState state = states.get(element);
         if (state == null) {
-            state = new ElementAnimationState();
+            state = new DocumentAnimationRuntimeState();
             states.put(element, state);
         }
         return state;
@@ -573,7 +574,7 @@ public final class DocumentAnimationTimeline {
     }
 
     private static boolean updateDeclaredKeyframeAnimations(DocumentLayoutBox box, ComputedStyle style,
-            long currentTimeNanos, ElementAnimationState state) {
+            long currentTimeNanos, DocumentAnimationRuntimeState state) {
         String animationName = style.getAnimationName();
         DocumentKeyframes keyframes = animationName == null ? null
                 : box.getElement().getOwnerDocument().getKeyframes(animationName);
@@ -589,21 +590,6 @@ public final class DocumentAnimationTimeline {
         return true;
     }
 
-    private static float normalizeDeclaredKeyframeFloat(DocumentLayoutBox box, DocumentAnimationProperty property,
-            float value) {
-        return PropertyRuntimeSemantics.forProperty(property).normalizeDeclaredKeyframeFloat(box, value);
-    }
-
-    private static DocumentKeyframes.FloatTrack normalizeDeclaredKeyframeFloatTrack(DocumentLayoutBox box,
-            DocumentAnimationProperty property, DocumentKeyframes.FloatTrack track) {
-        DocumentKeyframes.Builder builder = DocumentKeyframes.named("normalized-float-track");
-        for (DocumentKeyframes.FloatStop stop : track.getStops()) {
-            builder.setFloatStop(property, stop.getOffset(), normalizeDeclaredKeyframeFloat(box, property,
-                    stop.getValue()));
-        }
-        return builder.build().getFloatTracks().get(property);
-    }
-
     private static int getBaseColor(ComputedStyle style, DocumentAnimationProperty property) {
         return PropertyRuntimeSemantics.forProperty(property).resolveBaseColor(style);
     }
@@ -616,8 +602,6 @@ public final class DocumentAnimationTimeline {
         return PropertyRuntimeSemantics.forProperty(property).isFloatTransitionTargetAnimatable(box);
     }
 
-
-
     private static DocumentAnimationProperty[] filterPropertiesByValueType(
             DocumentAnimationProperty.ValueType valueType) {
         List<DocumentAnimationProperty> properties = new ArrayList<DocumentAnimationProperty>();
@@ -627,728 +611,5 @@ public final class DocumentAnimationTimeline {
             }
         }
         return properties.toArray(new DocumentAnimationProperty[properties.size()]);
-    }
-
-    private static int interpolateColor(int fromColor, int toColor, float progress) {
-        int fromA = (fromColor >>> 24) & 0xFF;
-        int fromR = (fromColor >>> 16) & 0xFF;
-        int fromG = (fromColor >>> 8) & 0xFF;
-        int fromB = fromColor & 0xFF;
-        int toA = (toColor >>> 24) & 0xFF;
-        int toR = (toColor >>> 16) & 0xFF;
-        int toG = (toColor >>> 8) & 0xFF;
-        int toB = toColor & 0xFF;
-        int a = interpolateChannel(fromA, toA, progress);
-        int r = interpolateChannel(fromR, toR, progress);
-        int g = interpolateChannel(fromG, toG, progress);
-        int b = interpolateChannel(fromB, toB, progress);
-        return (a << 24) | (r << 16) | (g << 8) | b;
-    }
-
-    private static int interpolateChannel(int from, int to, float progress) {
-        return Math.max(0, Math.min(255, Math.round(from + (to - from) * progress)));
-    }
-
-    private static int resolveColorTrack(DocumentKeyframes.ColorTrack track, float progress,
-            DocumentAnimationTimingFunction timingFunction) {
-        List<DocumentKeyframes.ColorStop> stops = track.getStops();
-        if (progress <= stops.get(0).getOffset()) {
-            return stops.get(0).getColor();
-        }
-        int lastIndex = stops.size() - 1;
-        if (progress >= stops.get(lastIndex).getOffset()) {
-            return stops.get(lastIndex).getColor();
-        }
-        for (int index = 0; index < lastIndex; index++) {
-            DocumentKeyframes.ColorStop fromStop = stops.get(index);
-            DocumentKeyframes.ColorStop toStop = stops.get(index + 1);
-            if (progress > toStop.getOffset()) {
-                continue;
-            }
-            float localProgress = resolveLocalProgress(fromStop.getOffset(), toStop.getOffset(), progress,
-                    timingFunction);
-            return interpolateColor(fromStop.getColor(), toStop.getColor(), localProgress);
-        }
-        return stops.get(lastIndex).getColor();
-    }
-
-    private static float resolveFloatTrack(DocumentKeyframes.FloatTrack track, float progress,
-            DocumentAnimationTimingFunction timingFunction) {
-        List<DocumentKeyframes.FloatStop> stops = track.getStops();
-        if (progress <= stops.get(0).getOffset()) {
-            return stops.get(0).getValue();
-        }
-        int lastIndex = stops.size() - 1;
-        if (progress >= stops.get(lastIndex).getOffset()) {
-            return stops.get(lastIndex).getValue();
-        }
-        for (int index = 0; index < lastIndex; index++) {
-            DocumentKeyframes.FloatStop fromStop = stops.get(index);
-            DocumentKeyframes.FloatStop toStop = stops.get(index + 1);
-            if (progress > toStop.getOffset()) {
-                continue;
-            }
-            float localProgress = resolveLocalProgress(fromStop.getOffset(), toStop.getOffset(), progress,
-                    timingFunction);
-            return fromStop.getValue() + (toStop.getValue() - fromStop.getValue()) * localProgress;
-        }
-        return stops.get(lastIndex).getValue();
-    }
-
-    private static float resolveLocalProgress(float fromOffset, float toOffset, float progress,
-            DocumentAnimationTimingFunction timingFunction) {
-        float span = toOffset - fromOffset;
-        if (span <= 0.0F) {
-            return 1.0F;
-        }
-        float localProgress = (progress - fromOffset) / span;
-        return timingFunction.apply(Math.max(0.0F, Math.min(1.0F, localProgress)));
-    }
-
-    /**
-     * 单元素动画状态。
-     */
-    private static final class ElementAnimationState {
-
-        private final EnumMap<DocumentAnimationProperty, Integer> targetColors =
-                new EnumMap<DocumentAnimationProperty, Integer>(DocumentAnimationProperty.class);
-        private final EnumMap<DocumentAnimationProperty, ColorTransition> colorTransitions =
-                new EnumMap<DocumentAnimationProperty, ColorTransition>(DocumentAnimationProperty.class);
-        private final EnumMap<DocumentAnimationProperty, Float> targetFloats =
-                new EnumMap<DocumentAnimationProperty, Float>(DocumentAnimationProperty.class);
-        private final EnumMap<DocumentAnimationProperty, Boolean> targetFloatTransitionable =
-                new EnumMap<DocumentAnimationProperty, Boolean>(DocumentAnimationProperty.class);
-        private final EnumMap<DocumentAnimationProperty, FloatTransition> floatTransitions =
-                new EnumMap<DocumentAnimationProperty, FloatTransition>(DocumentAnimationProperty.class);
-        private final EnumMap<DocumentAnimationProperty, ColorKeyframeAnimation> colorKeyframeAnimations =
-                new EnumMap<DocumentAnimationProperty, ColorKeyframeAnimation>(DocumentAnimationProperty.class);
-        private final EnumMap<DocumentAnimationProperty, FloatKeyframeAnimation> floatKeyframeAnimations =
-                new EnumMap<DocumentAnimationProperty, FloatKeyframeAnimation>(DocumentAnimationProperty.class);
-        private final EnumMap<DocumentAnimationProperty, Integer> filledColors =
-                new EnumMap<DocumentAnimationProperty, Integer>(DocumentAnimationProperty.class);
-        private final EnumMap<DocumentAnimationProperty, Float> filledFloats =
-                new EnumMap<DocumentAnimationProperty, Float>(DocumentAnimationProperty.class);
-        private final Set<DocumentAnimationProperty> declaredColorKeyframeProperties =
-                new HashSet<DocumentAnimationProperty>();
-        private final Set<DocumentAnimationProperty> declaredFloatKeyframeProperties =
-                new HashSet<DocumentAnimationProperty>();
-        private String declaredAnimationName;
-        private DocumentKeyframes declaredKeyframes;
-        private long declaredDurationNanos;
-        private long declaredDelayNanos;
-        private int declaredIterationCount;
-        private DocumentAnimationFillMode declaredFillMode;
-        private DocumentAnimationTimingFunction declaredTimingFunction;
-        private long declaredStartNanos;
-        private int declaredBoxWidth;
-        private int declaredBoxHeight;
-
-        private int resolveColor(DocumentAnimationProperty property, int baseColor, long currentTimeNanos) {
-            ColorTransition transition = colorTransitions.get(property);
-            if (transition != null) {
-                return transition.resolve(currentTimeNanos);
-            }
-            ColorKeyframeAnimation keyframeAnimation = colorKeyframeAnimations.get(property);
-            if (keyframeAnimation != null) {
-                return keyframeAnimation.resolve(baseColor, currentTimeNanos);
-            }
-            Integer filledColor = filledColors.get(property);
-            return filledColor == null ? baseColor : filledColor.intValue();
-        }
-
-        private float resolveFloat(DocumentAnimationProperty property, float baseValue, long currentTimeNanos) {
-            FloatTransition transition = floatTransitions.get(property);
-            if (transition != null) {
-                return transition.resolve(currentTimeNanos);
-            }
-            FloatKeyframeAnimation keyframeAnimation = floatKeyframeAnimations.get(property);
-            if (keyframeAnimation != null) {
-                return keyframeAnimation.resolve(baseValue, currentTimeNanos);
-            }
-            Float filledValue = filledFloats.get(property);
-            return filledValue == null ? baseValue : filledValue.floatValue();
-        }
-
-        private void setManualColorKeyframeAnimation(DocumentAnimationProperty property, int fromColor, int toColor,
-                long startNanos, long durationNanos) {
-            declaredColorKeyframeProperties.remove(property);
-            filledColors.remove(property);
-            colorKeyframeAnimations.put(property, new ColorKeyframeAnimation(
-                    DocumentKeyframes.named("manual-color")
-                            .setColor(property, fromColor, toColor)
-                            .build()
-                            .getColorTracks()
-                            .get(property), startNanos,
-                    durationNanos, 1, DocumentAnimationFillMode.NONE, DocumentAnimationTimingFunction.LINEAR));
-        }
-
-        private void setManualFloatKeyframeAnimation(DocumentAnimationProperty property, float fromValue,
-                float toValue, long startNanos, long durationNanos) {
-            declaredFloatKeyframeProperties.remove(property);
-            filledFloats.remove(property);
-            floatKeyframeAnimations.put(property, new FloatKeyframeAnimation(
-                    DocumentKeyframes.named("manual-float")
-                            .setFloat(property, fromValue, toValue)
-                            .build()
-                            .getFloatTracks()
-                            .get(property), startNanos,
-                    durationNanos, 1, DocumentAnimationFillMode.NONE, DocumentAnimationTimingFunction.LINEAR));
-        }
-
-        private void clearKeyframeAnimations() {
-            colorKeyframeAnimations.clear();
-            floatKeyframeAnimations.clear();
-            filledColors.clear();
-            filledFloats.clear();
-            clearDeclaredKeyframeSignature();
-        }
-
-        private void suppressDeclaredColorKeyframeProperty(DocumentAnimationProperty property) {
-            suppressDeclaredKeyframeProperty(declaredColorKeyframeProperties, colorKeyframeAnimations, filledColors,
-                    property);
-        }
-
-        private void suppressDeclaredFloatKeyframeProperty(DocumentAnimationProperty property) {
-            suppressDeclaredKeyframeProperty(declaredFloatKeyframeProperties, floatKeyframeAnimations, filledFloats,
-                    property);
-        }
-
-        private void startDeclaredKeyframeAnimations(DocumentLayoutBox box, ComputedStyle style, String animationName,
-                DocumentKeyframes keyframes, long currentTimeNanos) {
-            clearDeclaredKeyframeAnimations();
-            declaredAnimationName = animationName;
-            declaredKeyframes = keyframes;
-            declaredDurationNanos = style.getAnimationDurationNanos();
-            declaredDelayNanos = style.getAnimationDelayNanos();
-            declaredIterationCount = style.getAnimationIterationCount();
-            declaredFillMode = style.getAnimationFillMode();
-            declaredTimingFunction = style.getAnimationTimingFunction();
-            declaredBoxWidth = box.getWidth();
-            declaredBoxHeight = box.getHeight();
-            long startNanos = currentTimeNanos + style.getAnimationDelayNanos();
-            declaredStartNanos = startNanos;
-            for (Map.Entry<DocumentAnimationProperty, DocumentKeyframes.ColorTrack> entry : keyframes.getColorTracks()
-                    .entrySet()) {
-                DocumentAnimationProperty property = entry.getKey();
-                DocumentKeyframes.ColorTrack track = entry.getValue();
-                colorKeyframeAnimations.put(property, new ColorKeyframeAnimation(track, startNanos,
-                        style.getAnimationDurationNanos(), style.getAnimationIterationCount(),
-                        style.getAnimationFillMode(), style.getAnimationTimingFunction()));
-                declaredColorKeyframeProperties.add(property);
-                filledColors.remove(property);
-            }
-            for (Map.Entry<DocumentAnimationProperty, DocumentKeyframes.FloatTrack> entry : keyframes.getFloatTracks()
-                    .entrySet()) {
-                DocumentAnimationProperty property = entry.getKey();
-                DocumentKeyframes.FloatTrack track = entry.getValue();
-                floatKeyframeAnimations.put(property, new FloatKeyframeAnimation(normalizeDeclaredKeyframeFloatTrack(box,
-                        property, track), startNanos, style.getAnimationDurationNanos(),
-                        style.getAnimationIterationCount(), style.getAnimationFillMode(),
-                        style.getAnimationTimingFunction()));
-                declaredFloatKeyframeProperties.add(property);
-                filledFloats.remove(property);
-            }
-        }
-
-        private boolean refreshDeclaredKeyframeGeometry(DocumentLayoutBox box) {
-            if (declaredBoxWidth == box.getWidth() && declaredBoxHeight == box.getHeight()) {
-                return false;
-            }
-            declaredBoxWidth = box.getWidth();
-            declaredBoxHeight = box.getHeight();
-            boolean changed = false;
-            for (DocumentAnimationProperty property : declaredFloatKeyframeProperties) {
-                DocumentKeyframes.FloatTrack track = declaredKeyframes.getFloatTracks().get(property);
-                if (track == null) {
-                    continue;
-                }
-                DocumentKeyframes.FloatTrack normalizedTrack = normalizeDeclaredKeyframeFloatTrack(box, property,
-                        track);
-                if (floatKeyframeAnimations.containsKey(property)) {
-                    floatKeyframeAnimations.put(property, new FloatKeyframeAnimation(normalizedTrack,
-                            declaredStartNanos, declaredDurationNanos, declaredIterationCount, declaredFillMode,
-                            declaredTimingFunction));
-                    changed = true;
-                }
-                if (filledFloats.containsKey(property)) {
-                    float nextFilledValue = normalizedTrack.getLastValue();
-                    if (Float.compare(filledFloats.get(property).floatValue(), nextFilledValue) != 0) {
-                        filledFloats.put(property, Float.valueOf(nextFilledValue));
-                        changed = true;
-                    }
-                }
-            }
-            return changed;
-        }
-
-        private boolean clearDeclaredKeyframeAnimations() {
-            boolean changed = false;
-            changed |= clearDeclaredKeyframeProperties(declaredColorKeyframeProperties, colorKeyframeAnimations,
-                    filledColors);
-            changed |= clearDeclaredKeyframeProperties(declaredFloatKeyframeProperties, floatKeyframeAnimations,
-                    filledFloats);
-            if (declaredAnimationName != null || declaredKeyframes != null) {
-                changed = true;
-            }
-            clearDeclaredKeyframeSignature();
-            return changed;
-        }
-
-        private boolean hasAnimationWork() {
-            return !colorTransitions.isEmpty() || !floatTransitions.isEmpty()
-                    || !colorKeyframeAnimations.isEmpty() || !floatKeyframeAnimations.isEmpty();
-        }
-
-        private boolean hasAnimationWork(DocumentAnimationImpact impact) {
-            return containsPropertyWithImpact(colorTransitions, impact)
-                    || containsPropertyWithImpact(floatTransitions, impact)
-                    || containsPropertyWithImpact(colorKeyframeAnimations, impact)
-                    || containsPropertyWithImpact(floatKeyframeAnimations, impact);
-        }
-
-        private boolean hasRuntimeValue(DocumentAnimationImpact impact) {
-            return hasAnimationWork(impact) || containsPropertyWithImpact(filledColors, impact)
-                    || containsPropertyWithImpact(filledFloats, impact);
-        }
-
-        private boolean hasRunningTransition(DocumentAnimationProperty property) {
-            return colorTransitions.containsKey(property) || floatTransitions.containsKey(property);
-        }
-
-        private int countActiveAnimations(long currentTimeNanos) {
-            int count = 0;
-            count += countActiveTransitions(colorTransitions, currentTimeNanos);
-            count += countActiveTransitions(floatTransitions, currentTimeNanos);
-            count += countActiveKeyframeAnimations(colorKeyframeAnimations, currentTimeNanos);
-            count += countActiveKeyframeAnimations(floatKeyframeAnimations, currentTimeNanos);
-            return count;
-        }
-
-        private void collectDiagnostics(DiagnosticsSnapshot snapshot, long currentTimeNanos) {
-            collectTransitionDiagnostics(snapshot, colorTransitions, currentTimeNanos);
-            collectTransitionDiagnostics(snapshot, floatTransitions, currentTimeNanos);
-            collectKeyframeDiagnostics(snapshot, colorKeyframeAnimations, currentTimeNanos);
-            collectKeyframeDiagnostics(snapshot, floatKeyframeAnimations, currentTimeNanos);
-            collectFillDiagnostics(snapshot, filledColors);
-            collectFillDiagnostics(snapshot, filledFloats);
-        }
-
-        private void pruneFinishedAnimations(ElementNode element, long currentTimeNanos, PruneResult result) {
-            pruneFinishedTransitions(element, colorTransitions, currentTimeNanos, result);
-            pruneFinishedTransitions(element, floatTransitions, currentTimeNanos, result);
-            boolean colorKeyframeFinished = pruneFinishedKeyframeAnimations(colorKeyframeAnimations, filledColors,
-                    currentTimeNanos, result);
-            boolean floatKeyframeFinished = pruneFinishedKeyframeAnimations(floatKeyframeAnimations, filledFloats,
-                    currentTimeNanos, result);
-            if ((colorKeyframeFinished || floatKeyframeFinished) && declaredAnimationName != null) {
-                result.getAnimationEndRecords().add(new AnimationEndRecord(element, declaredAnimationName,
-                        declaredDurationNanos * Math.max(1, declaredIterationCount)));
-                result.markChanged();
-            }
-        }
-
-        private boolean matchesDeclaredKeyframeSignature(String animationName, DocumentKeyframes keyframes,
-                ComputedStyle style) {
-            return Objects.equals(declaredAnimationName, animationName) && declaredKeyframes == keyframes
-                    && declaredDurationNanos == style.getAnimationDurationNanos()
-                    && declaredDelayNanos == style.getAnimationDelayNanos()
-                    && declaredIterationCount == style.getAnimationIterationCount()
-                    && declaredFillMode == style.getAnimationFillMode()
-                    && declaredTimingFunction == style.getAnimationTimingFunction();
-        }
-
-        private void clearDeclaredKeyframeSignature() {
-            declaredColorKeyframeProperties.clear();
-            declaredFloatKeyframeProperties.clear();
-            declaredAnimationName = null;
-            declaredKeyframes = null;
-            declaredDurationNanos = 0L;
-            declaredDelayNanos = 0L;
-            declaredIterationCount = 0;
-            declaredFillMode = null;
-            declaredTimingFunction = null;
-            declaredStartNanos = 0L;
-            declaredBoxWidth = 0;
-            declaredBoxHeight = 0;
-        }
-
-        private static boolean containsPropertyWithImpact(Map<DocumentAnimationProperty, ?> values,
-                DocumentAnimationImpact impact) {
-            for (DocumentAnimationProperty property : values.keySet()) {
-                if (property.getImpact() == impact) {
-                    return true;
-                }
-            }
-            return false;
-        }
-
-        private static <T extends TransitionState> int countActiveTransitions(Map<DocumentAnimationProperty, T> values,
-                long currentTimeNanos) {
-            int count = 0;
-            for (T transition : values.values()) {
-                if (!transition.isFinished(currentTimeNanos)) {
-                    count++;
-                }
-            }
-            return count;
-        }
-
-        private static <T extends KeyframeAnimationState> int countActiveKeyframeAnimations(
-                Map<DocumentAnimationProperty, T> values, long currentTimeNanos) {
-            int count = 0;
-            for (T animation : values.values()) {
-                if (!animation.isFinished(currentTimeNanos)) {
-                    count++;
-                }
-            }
-            return count;
-        }
-
-        private static <T extends TransitionState> void collectTransitionDiagnostics(DiagnosticsSnapshot snapshot,
-                Map<DocumentAnimationProperty, T> values, long currentTimeNanos) {
-            for (Map.Entry<DocumentAnimationProperty, T> entry : values.entrySet()) {
-                if (!entry.getValue().isFinished(currentTimeNanos)) {
-                    snapshot.incrementTransition(entry.getKey().getImpact());
-                }
-            }
-        }
-
-        private static <T extends KeyframeAnimationState> void collectKeyframeDiagnostics(DiagnosticsSnapshot snapshot,
-                Map<DocumentAnimationProperty, T> values, long currentTimeNanos) {
-            for (Map.Entry<DocumentAnimationProperty, T> entry : values.entrySet()) {
-                if (!entry.getValue().isFinished(currentTimeNanos)) {
-                    snapshot.incrementKeyframe(entry.getKey().getImpact());
-                }
-            }
-        }
-
-        private static void collectFillDiagnostics(DiagnosticsSnapshot snapshot,
-                Map<DocumentAnimationProperty, ?> values) {
-            for (DocumentAnimationProperty property : values.keySet()) {
-                snapshot.incrementForwardsFill(property.getImpact());
-            }
-        }
-
-        private static <T extends TransitionState> void pruneFinishedTransitions(ElementNode element,
-                Map<DocumentAnimationProperty, T> values, long currentTimeNanos, PruneResult result) {
-            Iterator<Map.Entry<DocumentAnimationProperty, T>> iterator = values.entrySet().iterator();
-            while (iterator.hasNext()) {
-                Map.Entry<DocumentAnimationProperty, T> entry = iterator.next();
-                if (entry.getValue().isFinished(currentTimeNanos)) {
-                    result.getTransitionEndRecords().add(new TransitionEndRecord(element, entry.getKey(),
-                            entry.getValue().getDurationNanos()));
-                    iterator.remove();
-                    result.markChanged();
-                }
-            }
-        }
-
-        private static <T, A extends FillingKeyframeAnimationState<T>> boolean pruneFinishedKeyframeAnimations(
-                Map<DocumentAnimationProperty, A> animations,
-                Map<DocumentAnimationProperty, T> filledValues,
-                long currentTimeNanos, PruneResult result) {
-            boolean finished = false;
-            Iterator<Map.Entry<DocumentAnimationProperty, A>> iterator = animations.entrySet().iterator();
-            while (iterator.hasNext()) {
-                Map.Entry<DocumentAnimationProperty, A> entry = iterator.next();
-                A animation = entry.getValue();
-                if (animation.isFinished(currentTimeNanos)) {
-                    if (animation.fillsForwards()) {
-                        filledValues.put(entry.getKey(), animation.getFilledRuntimeValue());
-                    }
-                    iterator.remove();
-                    finished = true;
-                    result.markChanged();
-                }
-            }
-            return finished;
-        }
-
-        private static <T, U> void suppressDeclaredKeyframeProperty(
-                Set<DocumentAnimationProperty> declaredProperties,
-                Map<DocumentAnimationProperty, T> keyframeAnimations,
-                Map<DocumentAnimationProperty, U> filledValues,
-                DocumentAnimationProperty property) {
-            if (!declaredProperties.contains(property)) {
-                return;
-            }
-            keyframeAnimations.remove(property);
-            filledValues.remove(property);
-        }
-
-        private static <T, U> boolean clearDeclaredKeyframeProperties(
-                Set<DocumentAnimationProperty> declaredProperties,
-                Map<DocumentAnimationProperty, T> keyframeAnimations,
-                Map<DocumentAnimationProperty, U> filledValues) {
-            boolean changed = false;
-            for (DocumentAnimationProperty property : declaredProperties) {
-                changed |= keyframeAnimations.remove(property) != null;
-                changed |= filledValues.remove(property) != null;
-            }
-            return changed;
-        }
-    }
-
-    /**
-     * 支持统一查询完成状态的 transition 运行对象。
-     */
-    private interface TransitionState {
-
-        /**
-         * 返回 transition 是否已完成。
-         *
-         * @param currentTimeNanos 当前动画时间
-         * @return 是否已完成
-         */
-        boolean isFinished(long currentTimeNanos);
-
-        /**
-         * 返回该 transition 的有效持续时长（不含 delay）。
-         *
-         * @return 持续时长
-         */
-        long getDurationNanos();
-    }
-
-    /**
-     * 支持统一查询完成状态的 keyframe animation 运行对象。
-     */
-    private interface KeyframeAnimationState {
-
-        /**
-         * 返回 keyframe animation 是否已完成。
-         *
-         * @param currentTimeNanos 当前动画时间
-         * @return 是否已完成
-         */
-        boolean isFinished(long currentTimeNanos);
-    }
-
-    /**
-     * 支持 forwards fill 写回运行值的 keyframe animation 运行对象。
-     *
-     * @param <T> fill 运行值类型
-     */
-    private interface FillingKeyframeAnimationState<T> extends KeyframeAnimationState {
-
-        /**
-         * 返回是否应在结束后保留末帧运行值。
-         *
-         * @return 是否启用 forwards fill
-         */
-        boolean fillsForwards();
-
-        /**
-         * 返回结束后需要保留的运行值。
-         *
-         * @return fill 运行值
-         */
-        T getFilledRuntimeValue();
-    }
-
-
-
-    /**
-     * 单个颜色 transition。
-     */
-    private static final class ColorTransition implements TransitionState {
-
-        private final int fromColor;
-        private final int toColor;
-        private final long startNanos;
-        private final long durationNanos;
-        private final DocumentAnimationTimingFunction timingFunction;
-
-        private ColorTransition(int fromColor, int toColor, long startNanos, long durationNanos,
-                DocumentAnimationTimingFunction timingFunction) {
-            this.fromColor = fromColor;
-            this.toColor = toColor;
-            this.startNanos = startNanos;
-            this.durationNanos = Math.max(1L, durationNanos);
-            this.timingFunction = timingFunction == null ? DocumentAnimationTimingFunction.LINEAR : timingFunction;
-        }
-
-        private int resolve(long currentTimeNanos) {
-            if (currentTimeNanos <= startNanos) {
-                return fromColor;
-            }
-            long elapsedNanos = currentTimeNanos - startNanos;
-            if (elapsedNanos >= durationNanos) {
-                return toColor;
-            }
-            float progress = elapsedNanos / (float) durationNanos;
-            return interpolateColor(fromColor, toColor, timingFunction.apply(progress));
-        }
-
-        @Override
-        public boolean isFinished(long currentTimeNanos) {
-            return currentTimeNanos >= startNanos + durationNanos;
-        }
-
-        @Override
-        public long getDurationNanos() {
-            return durationNanos;
-        }
-    }
-
-    /**
-     * 单个数值 transition。
-     */
-    private static final class FloatTransition implements TransitionState {
-
-        private final float fromValue;
-        private final float toValue;
-        private final long startNanos;
-        private final long durationNanos;
-        private final DocumentAnimationTimingFunction timingFunction;
-
-        private FloatTransition(float fromValue, float toValue, long startNanos, long durationNanos,
-                DocumentAnimationTimingFunction timingFunction) {
-            this.fromValue = fromValue;
-            this.toValue = toValue;
-            this.startNanos = startNanos;
-            this.durationNanos = Math.max(1L, durationNanos);
-            this.timingFunction = timingFunction == null ? DocumentAnimationTimingFunction.LINEAR : timingFunction;
-        }
-
-        private float resolve(long currentTimeNanos) {
-            if (currentTimeNanos <= startNanos) {
-                return fromValue;
-            }
-            long elapsedNanos = currentTimeNanos - startNanos;
-            if (elapsedNanos >= durationNanos) {
-                return toValue;
-            }
-            float progress = elapsedNanos / (float) durationNanos;
-            return fromValue + (toValue - fromValue) * timingFunction.apply(progress);
-        }
-
-        @Override
-        public boolean isFinished(long currentTimeNanos) {
-            return currentTimeNanos >= startNanos + durationNanos;
-        }
-
-        @Override
-        public long getDurationNanos() {
-            return durationNanos;
-        }
-    }
-
-    /**
-     * 单个颜色 keyframe animation。
-     */
-    private static final class ColorKeyframeAnimation implements FillingKeyframeAnimationState<Integer> {
-
-        private final DocumentKeyframes.ColorTrack track;
-        private final long startNanos;
-        private final long durationNanos;
-        private final int iterationCount;
-        private final DocumentAnimationFillMode fillMode;
-        private final DocumentAnimationTimingFunction timingFunction;
-
-        private ColorKeyframeAnimation(DocumentKeyframes.ColorTrack track, long startNanos, long durationNanos,
-                int iterationCount, DocumentAnimationFillMode fillMode, DocumentAnimationTimingFunction timingFunction) {
-            this.track = Objects.requireNonNull(track, "track");
-            this.startNanos = startNanos;
-            this.durationNanos = Math.max(1L, durationNanos);
-            this.iterationCount = Math.max(1, iterationCount);
-            this.fillMode = fillMode == null ? DocumentAnimationFillMode.NONE : fillMode;
-            this.timingFunction = timingFunction == null ? DocumentAnimationTimingFunction.LINEAR : timingFunction;
-        }
-
-        private int resolve(int baseColor, long currentTimeNanos) {
-            if (currentTimeNanos <= startNanos) {
-                return fillsBackwards() ? track.getFirstColor() : baseColor;
-            }
-            long activeDurationNanos = getActiveDurationNanos();
-            long elapsedNanos = currentTimeNanos - startNanos;
-            if (elapsedNanos >= activeDurationNanos) {
-                return fillsForwards() ? track.getLastColor() : baseColor;
-            }
-            long iterationElapsedNanos = elapsedNanos % durationNanos;
-            return resolveColorTrack(track, iterationElapsedNanos / (float) durationNanos, timingFunction);
-        }
-
-        @Override
-        public boolean isFinished(long currentTimeNanos) {
-            return currentTimeNanos >= startNanos + getActiveDurationNanos();
-        }
-
-        private boolean fillsBackwards() {
-            return fillMode == DocumentAnimationFillMode.BACKWARDS || fillMode == DocumentAnimationFillMode.BOTH;
-        }
-
-        @Override
-        public boolean fillsForwards() {
-            return fillMode == DocumentAnimationFillMode.FORWARDS || fillMode == DocumentAnimationFillMode.BOTH;
-        }
-
-        @Override
-        public Integer getFilledRuntimeValue() {
-            return Integer.valueOf(track.getLastColor());
-        }
-
-        private long getActiveDurationNanos() {
-            return durationNanos * iterationCount;
-        }
-    }
-
-    /**
-     * 单个数值 keyframe animation。
-     */
-    private static final class FloatKeyframeAnimation implements FillingKeyframeAnimationState<Float> {
-
-        private final DocumentKeyframes.FloatTrack track;
-        private final long startNanos;
-        private final long durationNanos;
-        private final int iterationCount;
-        private final DocumentAnimationFillMode fillMode;
-        private final DocumentAnimationTimingFunction timingFunction;
-
-        private FloatKeyframeAnimation(DocumentKeyframes.FloatTrack track, long startNanos, long durationNanos,
-                int iterationCount, DocumentAnimationFillMode fillMode, DocumentAnimationTimingFunction timingFunction) {
-            this.track = Objects.requireNonNull(track, "track");
-            this.startNanos = startNanos;
-            this.durationNanos = Math.max(1L, durationNanos);
-            this.iterationCount = Math.max(1, iterationCount);
-            this.fillMode = fillMode == null ? DocumentAnimationFillMode.NONE : fillMode;
-            this.timingFunction = timingFunction == null ? DocumentAnimationTimingFunction.LINEAR : timingFunction;
-        }
-
-        private float resolve(float baseValue, long currentTimeNanos) {
-            if (currentTimeNanos <= startNanos) {
-                return fillsBackwards() ? track.getFirstValue() : baseValue;
-            }
-            long activeDurationNanos = getActiveDurationNanos();
-            long elapsedNanos = currentTimeNanos - startNanos;
-            if (elapsedNanos >= activeDurationNanos) {
-                return fillsForwards() ? track.getLastValue() : baseValue;
-            }
-            long iterationElapsedNanos = elapsedNanos % durationNanos;
-            return resolveFloatTrack(track, iterationElapsedNanos / (float) durationNanos, timingFunction);
-        }
-
-        @Override
-        public boolean isFinished(long currentTimeNanos) {
-            return currentTimeNanos >= startNanos + getActiveDurationNanos();
-        }
-
-        private boolean fillsBackwards() {
-            return fillMode == DocumentAnimationFillMode.BACKWARDS || fillMode == DocumentAnimationFillMode.BOTH;
-        }
-
-        @Override
-        public boolean fillsForwards() {
-            return fillMode == DocumentAnimationFillMode.FORWARDS || fillMode == DocumentAnimationFillMode.BOTH;
-        }
-
-        @Override
-        public Float getFilledRuntimeValue() {
-            return Float.valueOf(track.getLastValue());
-        }
-
-        private long getActiveDurationNanos() {
-            return durationNanos * iterationCount;
-        }
     }
 }

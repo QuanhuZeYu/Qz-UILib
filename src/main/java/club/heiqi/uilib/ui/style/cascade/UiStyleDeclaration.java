@@ -145,6 +145,8 @@ public final class UiStyleDeclaration {
     private UiScrollbarColor scrollbarColor;
     private UiScrollbarWidth scrollbarWidth;
     private UiListStyleType listStyleType;
+    private final EnumMap<UiStyleProperty, Object> declaredValues =
+            new EnumMap<UiStyleProperty, Object>(UiStyleProperty.class);
     private final EnumMap<UiStyleProperty, UiStyleKeyword> keywords =
             new EnumMap<UiStyleProperty, UiStyleKeyword>(UiStyleProperty.class);
     private final EnumSet<UiStyleProperty> importantProperties = EnumSet.noneOf(UiStyleProperty.class);
@@ -170,6 +172,11 @@ public final class UiStyleDeclaration {
     public UiStyleKeyword getKeyword(UiStyleProperty property) {
         UiStyleProperty resolvedProperty = Objects.requireNonNull(property, "property");
         return hasConcreteProperty(resolvedProperty) ? null : keywords.get(resolvedProperty);
+    }
+
+    @SuppressWarnings("unchecked")
+    <T> T getDeclaredValue(UiStyleProperty property) {
+        return (T) declaredValues.get(Objects.requireNonNull(property, "property"));
     }
 
     /**
@@ -1568,6 +1575,11 @@ public final class UiStyleDeclaration {
     private UiStyleDeclaration updateProperty(UiStyleProperty property, Object previousValue, Object nextValue,
             UiStyleChangeImpact impact) {
         boolean changed = !Objects.equals(previousValue, nextValue);
+        if (nextValue == null) {
+            declaredValues.remove(property);
+        } else {
+            declaredValues.put(property, nextValue);
+        }
         if (nextValue != null && keywords.remove(property) != null) {
             changed = true;
         }
@@ -2052,90 +2064,11 @@ public final class UiStyleDeclaration {
     }
 
     private boolean hasConcreteProperty(UiStyleProperty property) {
-        switch (property) {
-            case DISPLAY: return display != null;
-            case WIDTH: return width != null;
-            case HEIGHT: return height != null;
-            case BOX_SIZING: return boxSizing != null;
-            case POSITION: return position != null;
-            case TOP: return top != null;
-            case RIGHT: return right != null;
-            case BOTTOM: return bottom != null;
-            case LEFT: return left != null;
-            case Z_INDEX: return zIndex != null;
-            case MARGIN: return margin != null;
-            case PADDING: return padding != null;
-            case BORDER_WIDTH: return borderWidth != null;
-            case BORDER_RADIUS: return borderRadius != null;
-            case OVERFLOW_X: return overflowX != null;
-            case OVERFLOW_Y: return overflowY != null;
-            case FLEX_DIRECTION: return flexDirection != null;
-            case ALIGN_ITEMS: return alignItems != null;
-            case JUSTIFY_CONTENT: return justifyContent != null;
-            case VERTICAL_ALIGN: return verticalAlign != null;
-            case ROW_GAP: return rowGap != null;
-            case COLUMN_GAP: return columnGap != null;
-            case FLEX_GROW: return flexGrow != null;
-            case FLEX_SHRINK: return flexShrink != null;
-            case ORDER: return order != null;
-            case OPACITY: return opacity != null;
-            case BACKGROUND_COLOR: return backgroundColor != null;
-            case BORDER_COLOR: return borderColor != null;
-            case TEXT_COLOR: return textColor != null;
-            case TRANSITION_PROPERTIES: return transitionProperties != null;
-            case TRANSITION_DURATION: return transitionDurationNanos != null;
-            case TRANSITION_DELAY: return transitionDelayNanos != null;
-            case TRANSITION_TIMING: return transitionTimingFunction != null;
-            case ANIMATION_NAME: return animationName != null;
-            case ANIMATION_DURATION: return animationDurationNanos != null;
-            case ANIMATION_DELAY: return animationDelayNanos != null;
-            case ANIMATION_ITERATION_COUNT: return animationIterationCount != null;
-            case ANIMATION_FILL_MODE: return animationFillMode != null;
-            case ANIMATION_TIMING: return animationTimingFunction != null;
-            case BACKDROP_BLUR_RADIUS: return backdropBlurRadius != null;
-            case BACKDROP_SATURATION: return backdropSaturation != null;
-            case LINE_HEIGHT: return lineHeight != null;
-            case TEXT_ALIGN: return textAlign != null;
-            case WHITE_SPACE: return whiteSpace != null;
-            case TEXT_OVERFLOW: return textOverflow != null;
-            case VISIBILITY: return visibility != null;
-            case MIN_WIDTH: return minWidth != null;
-            case MAX_WIDTH: return maxWidth != null;
-            case MIN_HEIGHT: return minHeight != null;
-            case MAX_HEIGHT: return maxHeight != null;
-            case FLEX_BASIS: return flexBasis != null;
-            case ALIGN_SELF: return alignSelf != null;
-            case FLEX_WRAP: return flexWrap != null;
-            case BOX_SHADOW: return boxShadow != null;
-            case BORDER_STYLE: return borderStyle != null;
-            case BORDER_COLLAPSE: return borderCollapse != null;
-            case CURSOR: return cursor != null;
-            case BORDER_RADIUS_CORNERS: return borderRadiusCorners != null;
-            case BACKGROUND_IMAGE: return backgroundImage != null;
-            case TEXT_DECORATION: return textDecoration != null;
-            case TEXT_SHADOW: return textShadow != null;
-            case TEXT_TRANSFORM: return textTransform != null;
-            case TEXT_INDENT: return textIndent != null;
-            case FONT_WEIGHT: return fontWeight != null;
-            case FONT_STYLE: return fontStyle != null;
-            case POINTER_EVENTS: return pointerEvents != null;
-            case OUTLINE: return outline != null;
-            case BORDER_WIDTH_SIDES: return borderWidthSides != null;
-            case BORDER_COLORS: return borderColors != null;
-            case LETTER_SPACING: return letterSpacing != null;
-            case WORD_BREAK: return wordBreak != null;
-            case OVERFLOW_WRAP: return overflowWrap != null;
-            case ASPECT_RATIO: return aspectRatio != null;
-            case OBJECT_FIT: return objectFit != null;
-            case CONTENT: return content != null;
-            case SCROLLBAR_COLOR: return scrollbarColor != null;
-            case SCROLLBAR_WIDTH: return scrollbarWidth != null;
-            case LIST_STYLE_TYPE: return listStyleType != null;
-            default: return false;
-        }
+        return declaredValues.containsKey(property);
     }
 
     private void clearConcreteProperty(UiStyleProperty property) {
+        declaredValues.remove(property);
         switch (property) {
             case DISPLAY: display = null; break;
             case WIDTH: width = null; break;
@@ -2307,6 +2240,8 @@ public final class UiStyleDeclaration {
         scrollbarColor = resolvedSource.scrollbarColor;
         scrollbarWidth = resolvedSource.scrollbarWidth;
         listStyleType = resolvedSource.listStyleType;
+        declaredValues.clear();
+        declaredValues.putAll(resolvedSource.declaredValues);
         keywords.clear();
         keywords.putAll(resolvedSource.keywords);
         importantProperties.clear();

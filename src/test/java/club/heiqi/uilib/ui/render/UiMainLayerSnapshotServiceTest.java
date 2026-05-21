@@ -15,8 +15,8 @@ public class UiMainLayerSnapshotServiceTest {
      */
     @Test
     public void shouldExpandBackdropSampleRegionByBlurRadius() {
-        UiMainLayerSnapshotService.SampleRegion sampleRegion = UiMainLayerSnapshotService.resolveSampleRegion(320,
-                240, 40, 50, 100, 120, 14);
+        SampleRegion sampleRegion = UiMainLayerSnapshotService.resolveSampleRegion(320, 240, 40, 50, 100, 120,
+                14);
 
         Assert.assertNotNull(sampleRegion);
         Assert.assertEquals(20, sampleRegion.getLeft());
@@ -32,8 +32,8 @@ public class UiMainLayerSnapshotServiceTest {
      */
     @Test
     public void shouldClampBackdropSampleRegionToScreenBounds() {
-        UiMainLayerSnapshotService.SampleRegion sampleRegion = UiMainLayerSnapshotService.resolveSampleRegion(100,
-                80, -10, 4, 96, 90, 36);
+        SampleRegion sampleRegion = UiMainLayerSnapshotService.resolveSampleRegion(100, 80, -10, 4, 96, 90,
+                36);
 
         Assert.assertNotNull(sampleRegion);
         Assert.assertEquals(0, sampleRegion.getLeft());
@@ -67,10 +67,10 @@ public class UiMainLayerSnapshotServiceTest {
      */
     @Test
     public void shouldLimitLocalSnapshotBySampleRegionSize() {
-        UiMainLayerSnapshotService.SampleRegion smallRegion = UiMainLayerSnapshotService.resolveSampleRegion(8000,
-                8000, 100, 120, 220, 260, 14);
-        UiMainLayerSnapshotService.SampleRegion oversizedRegion = UiMainLayerSnapshotService.resolveSampleRegion(5000,
-                5000, 0, 0, 5000, 5000, 0);
+        SampleRegion smallRegion = UiMainLayerSnapshotService.resolveSampleRegion(8000, 8000, 100, 120, 220,
+                260, 14);
+        SampleRegion oversizedRegion = UiMainLayerSnapshotService.resolveSampleRegion(5000, 5000, 0, 0, 5000,
+                5000, 0);
 
         Assert.assertTrue(UiMainLayerSnapshotService.isSnapshotSizeAllowed(smallRegion));
         Assert.assertFalse(UiMainLayerSnapshotService.isSnapshotSizeAllowed(oversizedRegion));
@@ -81,8 +81,8 @@ public class UiMainLayerSnapshotServiceTest {
      */
     @Test
     public void shouldResolveOpenGlCopySourceYFromSampleRegion() {
-        UiMainLayerSnapshotService.SampleRegion sampleRegion = UiMainLayerSnapshotService.resolveSampleRegion(320,
-                240, 40, 50, 100, 120, 14);
+        SampleRegion sampleRegion = UiMainLayerSnapshotService.resolveSampleRegion(320, 240, 40, 50, 100, 120,
+                14);
 
         Assert.assertEquals(100, UiMainLayerSnapshotService.resolveCopySourceY(240, sampleRegion));
     }
@@ -92,10 +92,10 @@ public class UiMainLayerSnapshotServiceTest {
      */
     @Test
     public void shouldAlignSampleRegionToSnapshotBlocks() {
-        UiMainLayerSnapshotService.SampleRegion sampleRegion = UiMainLayerSnapshotService.resolveSampleRegion(512,
-                360, 100, 100, 140, 140, 18);
-        UiMainLayerSnapshotService.SampleRegion blockRegion = UiMainLayerSnapshotService.resolveBlockAlignedSampleRegion(
-                512, 360, sampleRegion);
+        SampleRegion sampleRegion = UiMainLayerSnapshotService.resolveSampleRegion(512, 360, 100, 100, 140, 140,
+                18);
+        SampleRegion blockRegion = UiMainLayerSnapshotService.resolveBlockAlignedSampleRegion(512, 360,
+                sampleRegion);
 
         Assert.assertEquals(0, blockRegion.getLeft());
         Assert.assertEquals(0, blockRegion.getTop());
@@ -108,14 +108,12 @@ public class UiMainLayerSnapshotServiceTest {
      */
     @Test
     public void shouldBucketNearbySampleRegionsIntoSameSnapshotBlock() {
-        UiMainLayerSnapshotService.SampleRegion firstRegion = UiMainLayerSnapshotService.resolveSampleRegion(512,
-                360, 100, 100, 140, 140, 18);
-        UiMainLayerSnapshotService.SampleRegion secondRegion = UiMainLayerSnapshotService.resolveSampleRegion(512,
-                360, 110, 108, 150, 148, 18);
-        UiMainLayerSnapshotService.SampleRegion firstBlock = UiMainLayerSnapshotService.resolveBlockAlignedSampleRegion(
-                512, 360, firstRegion);
-        UiMainLayerSnapshotService.SampleRegion secondBlock = UiMainLayerSnapshotService.resolveBlockAlignedSampleRegion(
-                512, 360, secondRegion);
+        SampleRegion firstRegion = UiMainLayerSnapshotService.resolveSampleRegion(512, 360, 100, 100, 140, 140,
+                18);
+        SampleRegion secondRegion = UiMainLayerSnapshotService.resolveSampleRegion(512, 360, 110, 108, 150, 148,
+                18);
+        SampleRegion firstBlock = UiMainLayerSnapshotService.resolveBlockAlignedSampleRegion(512, 360, firstRegion);
+        SampleRegion secondBlock = UiMainLayerSnapshotService.resolveBlockAlignedSampleRegion(512, 360, secondRegion);
 
         Assert.assertEquals(firstBlock.getLeft(), secondBlock.getLeft());
         Assert.assertEquals(firstBlock.getTop(), secondBlock.getTop());
@@ -128,12 +126,12 @@ public class UiMainLayerSnapshotServiceTest {
      */
     @Test
     public void shouldResolveSnapshotTileRegion() {
-        UiMainLayerSnapshotService.SampleRegion sampleRegion = UiMainLayerSnapshotService.resolveSampleRegion(768,
-                512, 180, 130, 250, 260, 18);
-        UiMainLayerSnapshotService.SampleRegion blockRegion = UiMainLayerSnapshotService.resolveBlockAlignedSampleRegion(
-                768, 512, sampleRegion);
+        SampleRegion sampleRegion = UiMainLayerSnapshotService.resolveSampleRegion(768, 512, 180, 130, 250, 260,
+                18);
+        SampleRegion blockRegion = UiMainLayerSnapshotService.resolveBlockAlignedSampleRegion(768, 512,
+                sampleRegion);
 
-        UiMainLayerSnapshotService.TileRegion tileRegion = UiMainLayerSnapshotService.resolveTileRegion(blockRegion);
+        TileRegion tileRegion = UiMainLayerSnapshotService.resolveTileRegion(blockRegion);
 
         Assert.assertEquals(1, tileRegion.getTileLeft());
         Assert.assertEquals(0, tileRegion.getTileTop());
@@ -149,10 +147,10 @@ public class UiMainLayerSnapshotServiceTest {
      */
     @Test
     public void shouldCountTilesCoveredBySampleRegion() {
-        UiMainLayerSnapshotService.SampleRegion blockRegion = UiMainLayerSnapshotService.resolveBlockAlignedSampleRegion(
-                512, 512, UiMainLayerSnapshotService.resolveSampleRegion(512, 512, 100, 100, 140, 140, 18));
-        UiMainLayerSnapshotService.SampleRegion unevenRegion = UiMainLayerSnapshotService.resolveSampleRegion(512,
-                512, 128, 128, 129, 129, 0);
+        SampleRegion blockRegion = UiMainLayerSnapshotService.resolveBlockAlignedSampleRegion(512, 512,
+                UiMainLayerSnapshotService.resolveSampleRegion(512, 512, 100, 100, 140, 140, 18));
+        SampleRegion unevenRegion = UiMainLayerSnapshotService.resolveSampleRegion(512, 512, 128, 128, 129, 129,
+                0);
 
         Assert.assertEquals(4, UiMainLayerSnapshotService.resolveTileCount(blockRegion));
         Assert.assertEquals(4, UiMainLayerSnapshotService.resolveTileCount(unevenRegion));
@@ -163,18 +161,18 @@ public class UiMainLayerSnapshotServiceTest {
      */
     @Test
     public void shouldResolveTileCoveragePlanFromCapturedTileRegions() {
-        UiMainLayerSnapshotService.TileRegion requestedRegion = UiMainLayerSnapshotService.resolveTileRegion(
+        TileRegion requestedRegion = UiMainLayerSnapshotService.resolveTileRegion(
                 UiMainLayerSnapshotService.resolveBlockAlignedSampleRegion(512, 512,
                         UiMainLayerSnapshotService.resolveSampleRegion(512, 512, 1, 1, 383, 255, 0)));
-        UiMainLayerSnapshotService.TileRegion leftCoveredRegion = UiMainLayerSnapshotService.resolveTileRegion(
+        TileRegion leftCoveredRegion = UiMainLayerSnapshotService.resolveTileRegion(
                 UiMainLayerSnapshotService.resolveBlockAlignedSampleRegion(512, 512,
                         UiMainLayerSnapshotService.resolveSampleRegion(512, 512, 1, 1, 127, 255, 0)));
-        UiMainLayerSnapshotService.TileRegion bottomRightCoveredRegion = UiMainLayerSnapshotService.resolveTileRegion(
+        TileRegion bottomRightCoveredRegion = UiMainLayerSnapshotService.resolveTileRegion(
                 UiMainLayerSnapshotService.resolveBlockAlignedSampleRegion(512, 512,
                         UiMainLayerSnapshotService.resolveSampleRegion(512, 512, 257, 129, 383, 255, 0)));
 
-        UiMainLayerSnapshotService.TileCoveragePlan coveragePlan = UiMainLayerSnapshotService.resolveTileCoverage(
-                requestedRegion, Arrays.asList(leftCoveredRegion, bottomRightCoveredRegion, leftCoveredRegion));
+        TileCoveragePlan coveragePlan = UiMainLayerSnapshotService.resolveTileCoverage(requestedRegion,
+                Arrays.asList(leftCoveredRegion, bottomRightCoveredRegion, leftCoveredRegion));
 
         Assert.assertSame(requestedRegion, coveragePlan.getRequestedTileRegion());
         Assert.assertEquals(6, coveragePlan.getTileCount());
@@ -193,15 +191,13 @@ public class UiMainLayerSnapshotServiceTest {
      */
     @Test
     public void shouldResolveTileSampleRegionInsideRequestedRegion() {
-        UiMainLayerSnapshotService.SampleRegion requestedRegion = UiMainLayerSnapshotService.resolveSampleRegion(512,
-                512, 10, 20, 260, 260, 0);
+        SampleRegion requestedRegion = UiMainLayerSnapshotService.resolveSampleRegion(512, 512, 10, 20, 260, 260,
+                0);
 
-        UiMainLayerSnapshotService.SampleRegion topLeftTile = UiMainLayerSnapshotService.resolveTileSampleRegion(
-                requestedRegion, 0, 0, 1, 1);
-        UiMainLayerSnapshotService.SampleRegion centerTile = UiMainLayerSnapshotService.resolveTileSampleRegion(
-                requestedRegion, 1, 1, 2, 2);
-        UiMainLayerSnapshotService.SampleRegion bottomRightTile = UiMainLayerSnapshotService.resolveTileSampleRegion(
-                requestedRegion, 2, 2, 3, 3);
+        SampleRegion topLeftTile = UiMainLayerSnapshotService.resolveTileSampleRegion(requestedRegion, 0, 0, 1, 1);
+        SampleRegion centerTile = UiMainLayerSnapshotService.resolveTileSampleRegion(requestedRegion, 1, 1, 2, 2);
+        SampleRegion bottomRightTile = UiMainLayerSnapshotService.resolveTileSampleRegion(requestedRegion, 2, 2, 3,
+                3);
 
         Assert.assertEquals(9, topLeftTile.getLeft());
         Assert.assertEquals(19, topLeftTile.getTop());
@@ -222,12 +218,10 @@ public class UiMainLayerSnapshotServiceTest {
      */
     @Test
     public void shouldResolveTextureCopyTargetYForAtlasSubRegion() {
-        UiMainLayerSnapshotService.SampleRegion atlasRegion = UiMainLayerSnapshotService.resolveSampleRegion(1024,
-                768, 128, 128, 512, 384, 0);
-        UiMainLayerSnapshotService.SampleRegion topTile = UiMainLayerSnapshotService.resolveTileSampleRegion(
-                atlasRegion, 1, 1, 2, 2);
-        UiMainLayerSnapshotService.SampleRegion bottomTile = UiMainLayerSnapshotService.resolveTileSampleRegion(
-                atlasRegion, 3, 3, 4, 4);
+        SampleRegion atlasRegion = UiMainLayerSnapshotService.resolveSampleRegion(1024, 768, 128, 128, 512, 384,
+                0);
+        SampleRegion topTile = UiMainLayerSnapshotService.resolveTileSampleRegion(atlasRegion, 1, 1, 2, 2);
+        SampleRegion bottomTile = UiMainLayerSnapshotService.resolveTileSampleRegion(atlasRegion, 3, 3, 4, 4);
 
         Assert.assertEquals(129, UiMainLayerSnapshotService.resolveTextureCopyTargetY(atlasRegion, topTile));
         Assert.assertEquals(0, UiMainLayerSnapshotService.resolveTextureCopyTargetY(atlasRegion, bottomTile));
@@ -238,19 +232,19 @@ public class UiMainLayerSnapshotServiceTest {
      */
     @Test
     public void shouldReuseLargerBlockRegionAsSnapshotAtlas() {
-        UiMainLayerSnapshotService.SampleRegion largerRegion = UiMainLayerSnapshotService.resolveSampleRegion(768,
-                512, 90, 90, 330, 230, 18);
-        UiMainLayerSnapshotService.SampleRegion smallerRegion = UiMainLayerSnapshotService.resolveSampleRegion(768,
-                512, 140, 120, 190, 160, 18);
-        UiMainLayerSnapshotService.SampleRegion unrelatedRegion = UiMainLayerSnapshotService.resolveSampleRegion(768,
-                512, 430, 120, 480, 160, 18);
+        SampleRegion largerRegion = UiMainLayerSnapshotService.resolveSampleRegion(768, 512, 90, 90, 330, 230,
+                18);
+        SampleRegion smallerRegion = UiMainLayerSnapshotService.resolveSampleRegion(768, 512, 140, 120, 190, 160,
+                18);
+        SampleRegion unrelatedRegion = UiMainLayerSnapshotService.resolveSampleRegion(768, 512, 430, 120, 480,
+                160, 18);
 
-        UiMainLayerSnapshotService.SampleRegion largerBlock = UiMainLayerSnapshotService.resolveBlockAlignedSampleRegion(
-                768, 512, largerRegion);
-        UiMainLayerSnapshotService.SampleRegion smallerBlock = UiMainLayerSnapshotService.resolveBlockAlignedSampleRegion(
-                768, 512, smallerRegion);
-        UiMainLayerSnapshotService.SampleRegion unrelatedBlock = UiMainLayerSnapshotService.resolveBlockAlignedSampleRegion(
-                768, 512, unrelatedRegion);
+        SampleRegion largerBlock = UiMainLayerSnapshotService.resolveBlockAlignedSampleRegion(768, 512,
+                largerRegion);
+        SampleRegion smallerBlock = UiMainLayerSnapshotService.resolveBlockAlignedSampleRegion(768, 512,
+                smallerRegion);
+        SampleRegion unrelatedBlock = UiMainLayerSnapshotService.resolveBlockAlignedSampleRegion(768, 512,
+                unrelatedRegion);
 
         Assert.assertTrue(UiMainLayerSnapshotService.containsSampleRegion(largerBlock, smallerBlock));
         Assert.assertFalse(UiMainLayerSnapshotService.containsSampleRegion(smallerBlock, largerBlock));

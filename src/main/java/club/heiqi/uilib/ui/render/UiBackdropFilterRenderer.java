@@ -90,16 +90,16 @@ final class UiBackdropFilterRenderer {
         int screenHeight = context.getScreenHeight();
         UiMainLayerSnapshotService snapshotService = context.getMainLayerSnapshotService();
 
-        UiMainLayerSnapshotService.SampleRegion sampleRegion = UiMainLayerSnapshotService.resolveSampleRegion(
-                screenWidth, screenHeight, left, top, right, bottom, blurRadius);
+        SampleRegion sampleRegion = UiMainLayerSnapshotService.resolveSampleRegion(screenWidth, screenHeight, left,
+                top, right, bottom, blurRadius);
         if (sampleRegion == null) {
             return "texture-copy-unavailable";
         }
 
         int backdropReadFramebufferId = context.getCurrentBackdropReadFramebufferId();
-        UiMainLayerSnapshotService.Snapshot snapshot = snapshotService.acquireSnapshot(screenWidth,
-                screenHeight, backdropReadFramebufferId, context.getMainLayerContentRevisionForDiagnostics(),
-                sampleRegion, blurRadius);
+        MainLayerSnapshot snapshot = snapshotService.acquireSnapshot(screenWidth, screenHeight,
+                backdropReadFramebufferId, context.getMainLayerContentRevisionForDiagnostics(), sampleRegion,
+                blurRadius);
         if (snapshot == null) {
             return "snapshot-unavailable: " + snapshotService.getLastFailureDetail();
         }
@@ -159,7 +159,7 @@ final class UiBackdropFilterRenderer {
 
     private static boolean drawBackdropTextureWithShader(int left, int top, int right, int bottom, int sampleLeft,
             int sampleTop, int sampleWidth, int sampleHeight, int textureWidth, int textureHeight,
-            int downsampleFactor, int blurRadius, float saturation, UiMainLayerSnapshotService.Snapshot snapshot) {
+            int downsampleFactor, int blurRadius, float saturation, MainLayerSnapshot snapshot) {
         if (!BACKDROP_SHADER_PROGRAM.ensureInitialized()) {
             recordPath(BackdropFilterRenderPath.FIXED_PIPELINE,
                     "shader unavailable: " + BACKDROP_SHADER_PROGRAM.getLastFailureMessage());
@@ -226,7 +226,7 @@ final class UiBackdropFilterRenderer {
                 / (float) Math.max(1, downsampleFactor)));
     }
 
-    private static String formatSnapshotState(UiMainLayerSnapshotService.Snapshot snapshot) {
+    private static String formatSnapshotState(MainLayerSnapshot snapshot) {
         if (snapshot == null) {
             return "none";
         }

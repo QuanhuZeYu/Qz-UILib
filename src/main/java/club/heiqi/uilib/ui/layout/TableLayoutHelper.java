@@ -81,11 +81,11 @@ final class TableLayoutHelper {
             }
         }
         int contentHeight = Math.max(0, childFlowTop - contentTop);
-        DocumentLayoutEngine.appendAbsoluteChildren(childBoxes, absoluteChildren,
-                DocumentLayoutEngine.resolveDirectAbsoluteContainingBlock(absoluteContainingBlock,
+        PositionedLayoutHelper.appendAbsoluteChildren(childBoxes, absoluteChildren,
+                PositionedLayoutHelper.resolveDirectAbsoluteContainingBlock(absoluteContainingBlock,
                         createsAbsoluteContainingBlock, specifiedContentHeight, contentHeight),
                 fixedContainingBlock, textMeasureService, layoutValueResolver);
-        DocumentLayoutEngine.appendFixedChildren(childBoxes, fixedChildren, fixedContainingBlock,
+        PositionedLayoutHelper.appendFixedChildren(childBoxes, fixedChildren, fixedContainingBlock,
                 textMeasureService, layoutValueResolver);
         return new LayoutChildrenResult(DocumentLayoutEngine.sortByDocumentChildOrder(element, childBoxes),
                 new ArrayList<DocumentLayoutTextRun>(), new ArrayList<DocumentLayoutInlineFragment>(), contentHeight);

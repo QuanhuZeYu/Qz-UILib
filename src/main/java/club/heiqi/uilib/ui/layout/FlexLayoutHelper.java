@@ -68,11 +68,11 @@ final class FlexLayoutHelper {
                     layoutValueResolver);
         }
         List<DocumentLayoutBox> childBoxes = new ArrayList<DocumentLayoutBox>(flowResult.children);
-        DocumentLayoutEngine.appendAbsoluteChildren(childBoxes, absoluteChildren,
-                DocumentLayoutEngine.resolveDirectAbsoluteContainingBlock(absoluteContainingBlock,
+        PositionedLayoutHelper.appendAbsoluteChildren(childBoxes, absoluteChildren,
+                PositionedLayoutHelper.resolveDirectAbsoluteContainingBlock(absoluteContainingBlock,
                         createsAbsoluteContainingBlock, specifiedContentHeight, flowResult.contentHeight),
                 fixedContainingBlock, textMeasureService, layoutValueResolver);
-        DocumentLayoutEngine.appendFixedChildren(childBoxes, fixedChildren, fixedContainingBlock, textMeasureService,
+        PositionedLayoutHelper.appendFixedChildren(childBoxes, fixedChildren, fixedContainingBlock, textMeasureService,
                 layoutValueResolver);
         return new LayoutChildrenResult(sortFlexChildBoxesByOrder(element, childBoxes), flowResult.textRuns,
                 flowResult.inlineFragments, flowResult.contentHeight);

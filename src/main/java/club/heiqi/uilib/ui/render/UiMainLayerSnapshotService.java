@@ -23,12 +23,6 @@ import org.lwjgl.opengl.GL30;
  */
 public final class UiMainLayerSnapshotService {
 
-    private static final int MAX_SNAPSHOT_EDGE = 4096;
-    private static final int MAX_SNAPSHOT_PIXELS = 4096 * 4096;
-    private static final int SNAPSHOT_BLOCK_SIZE = 128;
-    private static final int MAX_DOWNSAMPLE_FACTOR = 4;
-    private static final int MEDIUM_BLUR_DOWNSAMPLE_THRESHOLD = 18;
-    private static final int LARGE_BLUR_DOWNSAMPLE_THRESHOLD = 34;
     private static final float[][] FILTER_BLUR_SAMPLES = new float[][] {
             { 0.0F, 0.40F },
             { -1.0F, 0.24F },
@@ -95,7 +89,7 @@ public final class UiMainLayerSnapshotService {
      * @param requestedReadFramebufferId 指定读取 FBO；小于 0 时使用当前 read framebuffer
      * @return 快照；获取失败时返回 null
      */
-    Snapshot acquireSnapshot(int screenWidth, int screenHeight, int requestedReadFramebufferId) {
+    MainLayerSnapshot acquireSnapshot(int screenWidth, int screenHeight, int requestedReadFramebufferId) {
         return acquireSnapshot(screenWidth, screenHeight, requestedReadFramebufferId, 0);
     }
 
@@ -108,7 +102,8 @@ public final class UiMainLayerSnapshotService {
      * @param contentRevision 当前读取目标的内容版本
      * @return 快照；获取失败时返回 null
      */
-    Snapshot acquireSnapshot(int screenWidth, int screenHeight, int requestedReadFramebufferId, int contentRevision) {
+    MainLayerSnapshot acquireSnapshot(int screenWidth, int screenHeight, int requestedReadFramebufferId,
+            int contentRevision) {
         return acquireSnapshot(screenWidth, screenHeight, requestedReadFramebufferId, contentRevision,
                 resolveFullScreenSampleRegion(screenWidth, screenHeight));
     }
@@ -123,8 +118,8 @@ public final class UiMainLayerSnapshotService {
      * @param sampleRegion 需要复制的 UI 采样区域
      * @return 快照；获取失败时返回 null
      */
-    Snapshot acquireSnapshot(int screenWidth, int screenHeight, int requestedReadFramebufferId, int contentRevision,
-            SampleRegion sampleRegion) {
+    MainLayerSnapshot acquireSnapshot(int screenWidth, int screenHeight, int requestedReadFramebufferId,
+            int contentRevision, SampleRegion sampleRegion) {
         return acquireSnapshot(screenWidth, screenHeight, requestedReadFramebufferId, contentRevision, sampleRegion, 0);
     }
 
@@ -139,8 +134,8 @@ public final class UiMainLayerSnapshotService {
      * @param blurRadius 当前 backdrop 模糊半径，用于决定是否降采样
      * @return 快照；获取失败时返回 null
      */
-    Snapshot acquireSnapshot(int screenWidth, int screenHeight, int requestedReadFramebufferId, int contentRevision,
-            SampleRegion sampleRegion, int blurRadius) {
+    MainLayerSnapshot acquireSnapshot(int screenWidth, int screenHeight, int requestedReadFramebufferId,
+            int contentRevision, SampleRegion sampleRegion, int blurRadius) {
         if (sampleRegion == null || !isSnapshotRegionWithinScreen(screenWidth, screenHeight, sampleRegion)) {
             lastFailureDetail = "snapshot-region-invalid";
             return null;
@@ -172,9 +167,9 @@ public final class UiMainLayerSnapshotService {
             String matchedRegionDetail = capturedSnapshotMatch.exactMatch ? capturedSnapshot.regionDetail
                     : formatAtlasRegionDetail(capturedSnapshot.regionDetail);
             String tileDetail = formatTileDetail(tileCoveragePlan, tileCoveragePlan.getTileCount(), 0);
-            return Snapshot.reused(capturedSnapshot.textureId, capturedRegion, readFramebufferId, contentRevision,
-                    capturedSnapshot.textureWidth, capturedSnapshot.textureHeight, capturedSnapshot.downsampleFactor,
-                    capturedSnapshot.filterDetail, matchedRegionDetail, tileDetail);
+            return MainLayerSnapshot.reused(capturedSnapshot.textureId, capturedRegion, readFramebufferId,
+                    contentRevision, capturedSnapshot.textureWidth, capturedSnapshot.textureHeight,
+                    capturedSnapshot.downsampleFactor, capturedSnapshot.filterDetail, matchedRegionDetail, tileDetail);
         }
 
         FrameSnapshot snapshot = findReusableSnapshot();
@@ -187,7 +182,7 @@ public final class UiMainLayerSnapshotService {
                 downsampleFactor, blurRadius, regionDetail, tileCoveragePlan)) {
             return null;
         }
-        return Snapshot.captured(snapshot.textureId, reusableRegion, readFramebufferId, contentRevision,
+        return MainLayerSnapshot.captured(snapshot.textureId, reusableRegion, readFramebufferId, contentRevision,
                 snapshot.textureWidth, snapshot.textureHeight, snapshot.downsampleFactor, snapshot.filterDetail,
                 snapshot.regionDetail, snapshot.tileDetail);
     }
@@ -197,12 +192,12 @@ public final class UiMainLayerSnapshotService {
      *
      * @param snapshot 快照
      */
-    void releaseSnapshot(Snapshot snapshot) {
+    void releaseSnapshot(MainLayerSnapshot snapshot) {
         if (snapshot == null) {
             return;
         }
         for (FrameSnapshot frameSnapshot : snapshots) {
-            if (frameSnapshot.textureId == snapshot.textureId && frameSnapshot.activeUseCount > 0) {
+            if (frameSnapshot.textureId == snapshot.getTextureId() && frameSnapshot.activeUseCount > 0) {
                 frameSnapshot.activeUseCount--;
                 return;
             }
@@ -232,15 +227,8 @@ public final class UiMainLayerSnapshotService {
      */
     static SampleRegion resolveSampleRegion(int screenWidth, int screenHeight, int left, int top, int right,
             int bottom, int blurRadius) {
-        int sampleInset = Math.max(1, Math.min(64, blurRadius + resolveSampleStep(blurRadius)));
-        int sampleLeft = clampInt(left - sampleInset, 0, screenWidth);
-        int sampleTop = clampInt(top - sampleInset, 0, screenHeight);
-        int sampleRight = clampInt(right + sampleInset, 0, screenWidth);
-        int sampleBottom = clampInt(bottom + sampleInset, 0, screenHeight);
-        if (sampleRight <= sampleLeft || sampleBottom <= sampleTop) {
-            return null;
-        }
-        return new SampleRegion(sampleLeft, sampleTop, sampleRight, sampleBottom);
+        return UiMainLayerSnapshotGeometry.resolveSampleRegion(screenWidth, screenHeight, left, top, right, bottom,
+                blurRadius);
     }
 
     /**
@@ -252,21 +240,7 @@ public final class UiMainLayerSnapshotService {
      * @return block 对齐后的采样区域；无法对齐时返回原始区域
      */
     static SampleRegion resolveBlockAlignedSampleRegion(int screenWidth, int screenHeight, SampleRegion sampleRegion) {
-        if (sampleRegion == null) {
-            return null;
-        }
-        int sampleLeft = alignDown(sampleRegion.getLeft(), SNAPSHOT_BLOCK_SIZE);
-        int sampleTop = alignDown(sampleRegion.getTop(), SNAPSHOT_BLOCK_SIZE);
-        int sampleRight = alignUp(sampleRegion.getRight(), SNAPSHOT_BLOCK_SIZE);
-        int sampleBottom = alignUp(sampleRegion.getBottom(), SNAPSHOT_BLOCK_SIZE);
-        int alignedLeft = clampInt(sampleLeft, 0, screenWidth);
-        int alignedTop = clampInt(sampleTop, 0, screenHeight);
-        int alignedRight = clampInt(sampleRight, 0, screenWidth);
-        int alignedBottom = clampInt(sampleBottom, 0, screenHeight);
-        if (alignedRight <= alignedLeft || alignedBottom <= alignedTop) {
-            return sampleRegion;
-        }
-        return new SampleRegion(alignedLeft, alignedTop, alignedRight, alignedBottom);
+        return UiMainLayerSnapshotGeometry.resolveBlockAlignedSampleRegion(screenWidth, screenHeight, sampleRegion);
     }
 
     /**
@@ -277,13 +251,7 @@ public final class UiMainLayerSnapshotService {
      * @return 是否允许创建快照
      */
     static boolean isSnapshotSizeAllowed(int width, int height) {
-        if (width <= 0 || height <= 0) {
-            return false;
-        }
-        if (width > MAX_SNAPSHOT_EDGE || height > MAX_SNAPSHOT_EDGE) {
-            return false;
-        }
-        return (long) width * (long) height <= MAX_SNAPSHOT_PIXELS;
+        return UiMainLayerSnapshotGeometry.isSnapshotSizeAllowed(width, height);
     }
 
     /**
@@ -293,7 +261,7 @@ public final class UiMainLayerSnapshotService {
      * @return 是否允许创建快照
      */
     static boolean isSnapshotSizeAllowed(SampleRegion sampleRegion) {
-        return sampleRegion != null && isSnapshotSizeAllowed(sampleRegion.getWidth(), sampleRegion.getHeight());
+        return UiMainLayerSnapshotGeometry.isSnapshotSizeAllowed(sampleRegion);
     }
 
     /**
@@ -304,10 +272,7 @@ public final class UiMainLayerSnapshotService {
      * @return OpenGL 底部原点坐标系中的源 Y
      */
     static int resolveCopySourceY(int screenHeight, SampleRegion sampleRegion) {
-        if (sampleRegion == null) {
-            return 0;
-        }
-        return screenHeight - sampleRegion.getBottom();
+        return UiMainLayerSnapshotGeometry.resolveCopySourceY(screenHeight, sampleRegion);
     }
 
     /**
@@ -317,13 +282,7 @@ public final class UiMainLayerSnapshotService {
      * @return 降采样倍率
      */
     static int resolveDownsampleFactor(int blurRadius) {
-        if (blurRadius < MEDIUM_BLUR_DOWNSAMPLE_THRESHOLD) {
-            return 1;
-        }
-        if (blurRadius < LARGE_BLUR_DOWNSAMPLE_THRESHOLD) {
-            return 2;
-        }
-        return MAX_DOWNSAMPLE_FACTOR;
+        return UiMainLayerSnapshotGeometry.resolveDownsampleFactor(blurRadius);
     }
 
     /**
@@ -334,8 +293,7 @@ public final class UiMainLayerSnapshotService {
      * @return 降采样后边长
      */
     static int resolveDownsampledSize(int sourceSize, int downsampleFactor) {
-        int safeFactor = Math.max(1, Math.min(MAX_DOWNSAMPLE_FACTOR, downsampleFactor));
-        return Math.max(1, (Math.max(1, sourceSize) + safeFactor - 1) / safeFactor);
+        return UiMainLayerSnapshotGeometry.resolveDownsampledSize(sourceSize, downsampleFactor);
     }
 
     /**
@@ -346,10 +304,7 @@ public final class UiMainLayerSnapshotService {
      * @return filter pass 半径；为 0 表示不需要独立 blur pass
      */
     static int resolveFilterPassRadius(int blurRadius, int downsampleFactor) {
-        if (blurRadius <= 0 || downsampleFactor <= 1) {
-            return 0;
-        }
-        return Math.max(1, Math.min(8, Math.round((float) blurRadius / (float) (downsampleFactor * 5))));
+        return UiMainLayerSnapshotGeometry.resolveFilterPassRadius(blurRadius, downsampleFactor);
     }
 
     /**
@@ -359,14 +314,7 @@ public final class UiMainLayerSnapshotService {
      * @return tile 区域；无效区域返回空 tile 区域
      */
     static TileRegion resolveTileRegion(SampleRegion sampleRegion) {
-        if (sampleRegion == null || sampleRegion.getRight() <= sampleRegion.getLeft()
-                || sampleRegion.getBottom() <= sampleRegion.getTop()) {
-            return new TileRegion(0, 0, 0, 0);
-        }
-        return new TileRegion(sampleRegion.getLeft() / SNAPSHOT_BLOCK_SIZE,
-                sampleRegion.getTop() / SNAPSHOT_BLOCK_SIZE,
-                alignUp(sampleRegion.getRight(), SNAPSHOT_BLOCK_SIZE) / SNAPSHOT_BLOCK_SIZE,
-                alignUp(sampleRegion.getBottom(), SNAPSHOT_BLOCK_SIZE) / SNAPSHOT_BLOCK_SIZE);
+        return UiMainLayerSnapshotGeometry.resolveTileRegion(sampleRegion);
     }
 
     /**
@@ -376,7 +324,7 @@ public final class UiMainLayerSnapshotService {
      * @return tile 数量
      */
     static int resolveTileCount(SampleRegion sampleRegion) {
-        return resolveTileRegion(sampleRegion).getTileCount();
+        return UiMainLayerSnapshotGeometry.resolveTileCount(sampleRegion);
     }
 
     /**
@@ -391,17 +339,8 @@ public final class UiMainLayerSnapshotService {
      */
     static SampleRegion resolveTileSampleRegion(SampleRegion sampleRegion, int tileLeft, int tileTop,
             int tileRight, int tileBottom) {
-        if (sampleRegion == null || tileRight <= tileLeft || tileBottom <= tileTop) {
-            return null;
-        }
-        int left = Math.max(sampleRegion.getLeft(), tileLeft * SNAPSHOT_BLOCK_SIZE);
-        int top = Math.max(sampleRegion.getTop(), tileTop * SNAPSHOT_BLOCK_SIZE);
-        int right = Math.min(sampleRegion.getRight(), tileRight * SNAPSHOT_BLOCK_SIZE);
-        int bottom = Math.min(sampleRegion.getBottom(), tileBottom * SNAPSHOT_BLOCK_SIZE);
-        if (right <= left || bottom <= top) {
-            return null;
-        }
-        return new SampleRegion(left, top, right, bottom);
+        return UiMainLayerSnapshotGeometry.resolveTileSampleRegion(sampleRegion, tileLeft, tileTop, tileRight,
+                tileBottom);
     }
 
     /**
@@ -412,10 +351,7 @@ public final class UiMainLayerSnapshotService {
      * @return OpenGL 纹理底部原点坐标系中的目标 Y 偏移
      */
     static int resolveTextureCopyTargetY(SampleRegion atlasRegion, SampleRegion copiedRegion) {
-        if (atlasRegion == null || copiedRegion == null) {
-            return 0;
-        }
-        return Math.max(0, atlasRegion.getBottom() - copiedRegion.getBottom());
+        return UiMainLayerSnapshotGeometry.resolveTextureCopyTargetY(atlasRegion, copiedRegion);
     }
 
     /**
@@ -427,37 +363,7 @@ public final class UiMainLayerSnapshotService {
      */
     static TileCoveragePlan resolveTileCoverage(TileRegion requestedTileRegion,
             List<TileRegion> coveredTileRegions) {
-        if (requestedTileRegion == null || requestedTileRegion.getTileCount() <= 0) {
-            return new TileCoveragePlan(new TileRegion(0, 0, 0, 0), 0);
-        }
-        boolean[] coveredTiles = new boolean[requestedTileRegion.getTileCount()];
-        int coveredTileCount = 0;
-        if (coveredTileRegions != null) {
-            for (TileRegion coveredTileRegion : coveredTileRegions) {
-                if (coveredTileRegion == null || coveredTileRegion.getTileCount() <= 0) {
-                    continue;
-                }
-                int overlapLeft = Math.max(requestedTileRegion.getTileLeft(), coveredTileRegion.getTileLeft());
-                int overlapTop = Math.max(requestedTileRegion.getTileTop(), coveredTileRegion.getTileTop());
-                int overlapRight = Math.min(requestedTileRegion.getTileRight(), coveredTileRegion.getTileRight());
-                int overlapBottom = Math.min(requestedTileRegion.getTileBottom(), coveredTileRegion.getTileBottom());
-                if (overlapRight <= overlapLeft || overlapBottom <= overlapTop) {
-                    continue;
-                }
-                for (int tileY = overlapTop; tileY < overlapBottom; tileY++) {
-                    for (int tileX = overlapLeft; tileX < overlapRight; tileX++) {
-                        int localX = tileX - requestedTileRegion.getTileLeft();
-                        int localY = tileY - requestedTileRegion.getTileTop();
-                        int tileIndex = localY * requestedTileRegion.getTileWidth() + localX;
-                        if (!coveredTiles[tileIndex]) {
-                            coveredTiles[tileIndex] = true;
-                            coveredTileCount++;
-                        }
-                    }
-                }
-            }
-        }
-        return new TileCoveragePlan(requestedTileRegion, coveredTileCount, coveredTiles);
+        return UiMainLayerSnapshotGeometry.resolveTileCoverage(requestedTileRegion, coveredTileRegions);
     }
 
     private FrameSnapshotMatch findCapturedSnapshot(int readFramebufferId, SampleRegion sampleRegion,
@@ -1093,7 +999,8 @@ public final class UiMainLayerSnapshotService {
     }
 
     private static int resolveEffectiveDownsampleFactor(int width, int height, int requestedDownsampleFactor) {
-        int safeFactor = Math.max(1, Math.min(MAX_DOWNSAMPLE_FACTOR, requestedDownsampleFactor));
+        int safeFactor = Math.max(1, Math.min(UiMainLayerSnapshotGeometry.MAX_DOWNSAMPLE_FACTOR,
+                requestedDownsampleFactor));
         int targetWidth = resolveDownsampledSize(width, safeFactor);
         int targetHeight = resolveDownsampledSize(height, safeFactor);
         if (targetWidth >= width && targetHeight >= height) {
@@ -1104,50 +1011,24 @@ public final class UiMainLayerSnapshotService {
 
     private static SampleRegion resolveReusableSampleRegion(int screenWidth, int screenHeight,
             SampleRegion sampleRegion) {
-        SampleRegion blockRegion = resolveBlockAlignedSampleRegion(screenWidth, screenHeight, sampleRegion);
-        if (isSnapshotSizeAllowed(blockRegion)) {
-            return blockRegion;
-        }
-        return sampleRegion;
+        return UiMainLayerSnapshotGeometry.resolveReusableSampleRegion(screenWidth, screenHeight, sampleRegion);
     }
 
     private static String formatRegionDetail(SampleRegion requestedRegion, SampleRegion reusableRegion) {
-        if (requestedRegion == null || reusableRegion == null) {
-            return "exact";
-        }
-        if (requestedRegion.getLeft() == reusableRegion.getLeft() && requestedRegion.getTop() == reusableRegion.getTop()
-                && requestedRegion.getRight() == reusableRegion.getRight()
-                && requestedRegion.getBottom() == reusableRegion.getBottom()) {
-            return "exact";
-        }
-        return "block" + SNAPSHOT_BLOCK_SIZE;
+        return UiMainLayerSnapshotGeometry.formatRegionDetail(requestedRegion, reusableRegion);
     }
 
     private static String formatAtlasRegionDetail(String regionDetail) {
-        if (regionDetail == null || regionDetail.isEmpty()) {
-            return "atlas";
-        }
-        if (regionDetail.startsWith("atlas-")) {
-            return regionDetail;
-        }
-        return "atlas-" + regionDetail;
+        return UiMainLayerSnapshotGeometry.formatAtlasRegionDetail(regionDetail);
     }
 
     private static String formatTileAtlasRegionDetail(String regionDetail) {
-        String atlasRegionDetail = formatAtlasRegionDetail(regionDetail);
-        if (atlasRegionDetail.startsWith("tile-")) {
-            return atlasRegionDetail;
-        }
-        return "tile-" + atlasRegionDetail;
+        return UiMainLayerSnapshotGeometry.formatTileAtlasRegionDetail(regionDetail);
     }
 
     private static String formatTileDetail(TileCoveragePlan tileCoveragePlan, int reusedTileCount,
             int copiedTileCount) {
-        TileCoveragePlan safePlan = tileCoveragePlan == null ? new TileCoveragePlan(new TileRegion(0, 0, 0, 0), 0)
-                : tileCoveragePlan;
-        return "tiles=" + safePlan.getTileCount() + " covered=" + safePlan.getCoveredTileCount()
-                + " missing=" + safePlan.getMissingTileCount() + " reused=" + Math.max(0, reusedTileCount)
-                + " copied=" + Math.max(0, copiedTileCount);
+        return UiMainLayerSnapshotGeometry.formatTileDetail(tileCoveragePlan, reusedTileCount, copiedTileCount);
     }
 
     /**
@@ -1158,19 +1039,11 @@ public final class UiMainLayerSnapshotService {
      * @return 是否可由外层区域作为临时 atlas 承载内层区域采样
      */
     static boolean containsSampleRegion(SampleRegion outerRegion, SampleRegion innerRegion) {
-        return outerRegion != null && innerRegion != null
-                && outerRegion.getLeft() <= innerRegion.getLeft()
-                && outerRegion.getTop() <= innerRegion.getTop()
-                && outerRegion.getRight() >= innerRegion.getRight()
-                && outerRegion.getBottom() >= innerRegion.getBottom();
+        return UiMainLayerSnapshotGeometry.containsSampleRegion(outerRegion, innerRegion);
     }
 
     private static boolean isSameSampleRegion(SampleRegion firstRegion, SampleRegion secondRegion) {
-        return firstRegion != null && secondRegion != null
-                && firstRegion.getLeft() == secondRegion.getLeft()
-                && firstRegion.getTop() == secondRegion.getTop()
-                && firstRegion.getRight() == secondRegion.getRight()
-                && firstRegion.getBottom() == secondRegion.getBottom();
+        return UiMainLayerSnapshotGeometry.isSameSampleRegion(firstRegion, secondRegion);
     }
 
     private static boolean isBetterContainingSnapshot(FrameSnapshot currentSnapshot, FrameSnapshot candidateSnapshot) {
@@ -1187,262 +1060,16 @@ public final class UiMainLayerSnapshotService {
                 snapshot.sampleTop + snapshot.height);
     }
 
-    private static int resolveSampleStep(int blurRadius) {
-        return Math.max(1, Math.min(12, Math.round(Math.max(1, blurRadius) / 2.5F)));
-    }
-
     private static SampleRegion resolveFullScreenSampleRegion(int screenWidth, int screenHeight) {
-        if (screenWidth <= 0 || screenHeight <= 0) {
-            return null;
-        }
-        return new SampleRegion(0, 0, screenWidth, screenHeight);
+        return UiMainLayerSnapshotGeometry.resolveFullScreenSampleRegion(screenWidth, screenHeight);
     }
 
     private static boolean isSnapshotRegionWithinScreen(int screenWidth, int screenHeight, SampleRegion sampleRegion) {
-        return screenWidth > 0 && screenHeight > 0
-                && sampleRegion.getLeft() >= 0 && sampleRegion.getTop() >= 0
-                && sampleRegion.getRight() <= screenWidth && sampleRegion.getBottom() <= screenHeight
-                && sampleRegion.getRight() > sampleRegion.getLeft()
-                && sampleRegion.getBottom() > sampleRegion.getTop();
-    }
-
-    private static int clampInt(int value, int min, int max) {
-        return Math.max(min, Math.min(value, max));
+        return UiMainLayerSnapshotGeometry.isSnapshotRegionWithinScreen(screenWidth, screenHeight, sampleRegion);
     }
 
     private static float clampFloat(float value, float min, float max) {
         return Math.max(min, Math.min(value, max));
-    }
-
-    private static int alignDown(int value, int blockSize) {
-        if (blockSize <= 0) {
-            return value;
-        }
-        return value / blockSize * blockSize;
-    }
-
-    private static int alignUp(int value, int blockSize) {
-        if (blockSize <= 0) {
-            return value;
-        }
-        return (value + blockSize - 1) / blockSize * blockSize;
-    }
-
-    /**
-     * 单帧主层快照。
-     */
-    static final class Snapshot {
-
-        private final int textureId;
-        private final int sampleLeft;
-        private final int sampleTop;
-        private final int width;
-        private final int height;
-        private final int textureWidth;
-        private final int textureHeight;
-        private final int readFramebufferId;
-        private final int contentRevision;
-        private final int downsampleFactor;
-        private final String filterDetail;
-        private final String regionDetail;
-        private final String tileDetail;
-        private final boolean reused;
-
-        private Snapshot(int textureId, int sampleLeft, int sampleTop, int width, int height,
-                int readFramebufferId, int contentRevision, int textureWidth, int textureHeight,
-                int downsampleFactor, String filterDetail, String regionDetail, String tileDetail, boolean reused) {
-            this.textureId = textureId;
-            this.sampleLeft = sampleLeft;
-            this.sampleTop = sampleTop;
-            this.width = width;
-            this.height = height;
-            this.textureWidth = textureWidth;
-            this.textureHeight = textureHeight;
-            this.readFramebufferId = readFramebufferId;
-            this.contentRevision = contentRevision;
-            this.downsampleFactor = downsampleFactor;
-            this.filterDetail = filterDetail == null ? "raw" : filterDetail;
-            this.regionDetail = regionDetail == null ? "exact" : regionDetail;
-            this.tileDetail = tileDetail == null ? "tiles=0 covered=0 missing=0 reused=0 copied=0" : tileDetail;
-            this.reused = reused;
-        }
-
-        private static Snapshot captured(int textureId, SampleRegion sampleRegion, int readFramebufferId,
-                int contentRevision, int textureWidth, int textureHeight, int downsampleFactor, String filterDetail,
-                String regionDetail, String tileDetail) {
-            return new Snapshot(textureId, sampleRegion.getLeft(), sampleRegion.getTop(), sampleRegion.getWidth(),
-                    sampleRegion.getHeight(), readFramebufferId, contentRevision, textureWidth, textureHeight,
-                    downsampleFactor, filterDetail, regionDetail, tileDetail, false);
-        }
-
-        private static Snapshot reused(int textureId, SampleRegion sampleRegion, int readFramebufferId,
-                int contentRevision, int textureWidth, int textureHeight, int downsampleFactor, String filterDetail,
-                String regionDetail, String tileDetail) {
-            return new Snapshot(textureId, sampleRegion.getLeft(), sampleRegion.getTop(), sampleRegion.getWidth(),
-                    sampleRegion.getHeight(), readFramebufferId, contentRevision, textureWidth, textureHeight,
-                    downsampleFactor, filterDetail, regionDetail, tileDetail, true);
-        }
-
-        int getTextureId() {
-            return textureId;
-        }
-
-        int getSampleLeft() {
-            return sampleLeft;
-        }
-
-        int getSampleTop() {
-            return sampleTop;
-        }
-
-        int getWidth() {
-            return width;
-        }
-
-        int getHeight() {
-            return height;
-        }
-
-        int getTextureWidth() {
-            return textureWidth;
-        }
-
-        int getTextureHeight() {
-            return textureHeight;
-        }
-
-        int getReadFramebufferId() {
-            return readFramebufferId;
-        }
-
-        int getContentRevision() {
-            return contentRevision;
-        }
-
-        int getDownsampleFactor() {
-            return downsampleFactor;
-        }
-
-        String getFilterDetail() {
-            return filterDetail;
-        }
-
-        String getRegionDetail() {
-            return regionDetail;
-        }
-
-        String getTileDetail() {
-            return tileDetail;
-        }
-
-        boolean isReused() {
-            return reused;
-        }
-    }
-
-    /**
-     * Backdrop 采样区域对应的 tile 网格范围。
-     */
-    static final class TileRegion {
-
-        private final int tileLeft;
-        private final int tileTop;
-        private final int tileRight;
-        private final int tileBottom;
-
-        private TileRegion(int tileLeft, int tileTop, int tileRight, int tileBottom) {
-            this.tileLeft = tileLeft;
-            this.tileTop = tileTop;
-            this.tileRight = tileRight;
-            this.tileBottom = tileBottom;
-        }
-
-        int getTileLeft() {
-            return tileLeft;
-        }
-
-        int getTileTop() {
-            return tileTop;
-        }
-
-        int getTileRight() {
-            return tileRight;
-        }
-
-        int getTileBottom() {
-            return tileBottom;
-        }
-
-        int getTileWidth() {
-            return Math.max(0, tileRight - tileLeft);
-        }
-
-        int getTileHeight() {
-            return Math.max(0, tileBottom - tileTop);
-        }
-
-        int getTileCount() {
-            return getTileWidth() * getTileHeight();
-        }
-    }
-
-    /**
-     * 单次 backdrop 请求的 tile 覆盖计划。
-     */
-    static final class TileCoveragePlan {
-
-        private final TileRegion requestedTileRegion;
-        private final int coveredTileCount;
-        private final boolean[] coveredTiles;
-
-        private TileCoveragePlan(TileRegion requestedTileRegion, int coveredTileCount) {
-            this(requestedTileRegion, coveredTileCount, null);
-        }
-
-        private TileCoveragePlan(TileRegion requestedTileRegion, int coveredTileCount, boolean[] coveredTiles) {
-            this.requestedTileRegion = requestedTileRegion == null ? new TileRegion(0, 0, 0, 0) : requestedTileRegion;
-            this.coveredTiles = new boolean[this.requestedTileRegion.getTileCount()];
-            int actualCoveredTileCount = 0;
-            if (coveredTiles != null) {
-                int copyLength = Math.min(coveredTiles.length, this.coveredTiles.length);
-                for (int index = 0; index < copyLength; index++) {
-                    this.coveredTiles[index] = coveredTiles[index];
-                    if (this.coveredTiles[index]) {
-                        actualCoveredTileCount++;
-                    }
-                }
-            } else {
-                actualCoveredTileCount = coveredTileCount;
-            }
-            this.coveredTileCount = clampInt(actualCoveredTileCount, 0, this.requestedTileRegion.getTileCount());
-        }
-
-        TileRegion getRequestedTileRegion() {
-            return requestedTileRegion;
-        }
-
-        int getTileCount() {
-            return requestedTileRegion.getTileCount();
-        }
-
-        int getCoveredTileCount() {
-            return coveredTileCount;
-        }
-
-        int getMissingTileCount() {
-            return getTileCount() - coveredTileCount;
-        }
-
-        boolean isTileCovered(int tileX, int tileY) {
-            int localX = tileX - requestedTileRegion.getTileLeft();
-            int localY = tileY - requestedTileRegion.getTileTop();
-            if (localX < 0 || localY < 0 || localX >= requestedTileRegion.getTileWidth()
-                    || localY >= requestedTileRegion.getTileHeight()) {
-                return false;
-            }
-            int tileIndex = localY * requestedTileRegion.getTileWidth() + localX;
-            return tileIndex >= 0 && tileIndex < coveredTiles.length && coveredTiles[tileIndex];
-        }
     }
 
     /**
@@ -1456,48 +1083,6 @@ public final class UiMainLayerSnapshotService {
         private TileAssemblyEntry(SampleRegion sampleRegion, FrameSnapshot sourceSnapshot) {
             this.sampleRegion = sampleRegion;
             this.sourceSnapshot = sourceSnapshot;
-        }
-    }
-
-    /**
-     * Backdrop 采样区域。
-     */
-    static final class SampleRegion {
-
-        private final int left;
-        private final int top;
-        private final int right;
-        private final int bottom;
-
-        private SampleRegion(int left, int top, int right, int bottom) {
-            this.left = left;
-            this.top = top;
-            this.right = right;
-            this.bottom = bottom;
-        }
-
-        int getLeft() {
-            return left;
-        }
-
-        int getTop() {
-            return top;
-        }
-
-        int getRight() {
-            return right;
-        }
-
-        int getBottom() {
-            return bottom;
-        }
-
-        int getWidth() {
-            return right - left;
-        }
-
-        int getHeight() {
-            return bottom - top;
         }
     }
 

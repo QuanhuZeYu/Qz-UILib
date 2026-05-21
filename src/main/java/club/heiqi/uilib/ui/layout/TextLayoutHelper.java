@@ -28,8 +28,8 @@ import club.heiqi.uilib.ui.text.TextMeasureService;
  *     <li>文本尺寸放缩（UI 像素 ⇄ 字体原始像素）与行高、对齐偏移、缩进解析</li>
  * </ul>
  *
- * <p>与 inline 行盒相关的 {@code InlineLayoutContext} 及配套 pending 数据结构仍保留在
- * {@link DocumentLayoutEngine} 内，由其调用本类提供的纯方法完成文本侧计算。</p>
+ * <p>与 inline 行盒相关的 {@code InlineLayoutContext} 及配套 pending 数据结构由
+ * {@link InlineLayoutHelper} 承载，并调用本类提供的纯方法完成文本侧计算。</p>
  */
 final class TextLayoutHelper {
 
