@@ -11,10 +11,8 @@ import java.util.Objects;
 import java.util.Set;
 
 import club.heiqi.uilib.ui.dom.ElementNode;
-import club.heiqi.uilib.ui.layout.DocumentEffectChain;
 import club.heiqi.uilib.ui.layout.DocumentLayoutBox;
 import club.heiqi.uilib.ui.style.cascade.ComputedStyle;
-import club.heiqi.uilib.ui.style.values.UiStyleLength;
 
 /**
  * HTML-like 文档级动画时间线。
@@ -618,17 +616,7 @@ public final class DocumentAnimationTimeline {
         return PropertyRuntimeSemantics.forProperty(property).isFloatTransitionTargetAnimatable(box);
     }
 
-    private static int resolveBorderRadius(DocumentLayoutBox box) {
-        int limit = Math.min(box.getWidth(), box.getHeight());
-        int radius = box.getComputedStyle().getBorderRadius().resolve(limit, 0);
-        return Math.max(0, Math.min(radius, limit / 2));
-    }
 
-    private static int resolveBackdropBlurRadius(DocumentLayoutBox box) {
-        int availableSpace = Math.max(box.getWidth(), box.getHeight());
-        int radius = box.getComputedStyle().getBackdropBlurRadius().resolve(availableSpace, 0);
-        return Math.max(0, Math.min(radius, DocumentEffectChain.MAX_BACKDROP_BLUR_RADIUS));
-    }
 
     private static DocumentAnimationProperty[] filterPropertiesByValueType(
             DocumentAnimationProperty.ValueType valueType) {
@@ -1158,185 +1146,7 @@ public final class DocumentAnimationTimeline {
         T getFilledRuntimeValue();
     }
 
-    /**
-     * 单个动画属性的运行时取值与 transition 限制规则。
-     */
-    private enum PropertyRuntimeSemantics {
-        BACKGROUND_COLOR(DocumentAnimationProperty.BACKGROUND_COLOR) {
-            @Override
-            int resolveBaseColor(ComputedStyle style) {
-                return style.getBackgroundColor();
-            }
-        },
-        BORDER_COLOR(DocumentAnimationProperty.BORDER_COLOR) {
-            @Override
-            int resolveBaseColor(ComputedStyle style) {
-                return style.getBorderColor();
-            }
-        },
-        TEXT_COLOR(DocumentAnimationProperty.TEXT_COLOR) {
-            @Override
-            int resolveBaseColor(ComputedStyle style) {
-                return style.getTextColor();
-            }
-        },
-        OPACITY(DocumentAnimationProperty.OPACITY) {
-            @Override
-            float resolveBaseFloat(DocumentLayoutBox box) {
-                return box.getComputedStyle().getOpacity();
-            }
 
-            @Override
-            float normalizeDeclaredKeyframeFloat(DocumentLayoutBox box, float value) {
-                return Math.max(0.0F, Math.min(1.0F, value));
-            }
-        },
-        BORDER_RADIUS(DocumentAnimationProperty.BORDER_RADIUS) {
-            @Override
-            float resolveBaseFloat(DocumentLayoutBox box) {
-                return resolveBorderRadius(box);
-            }
-
-            @Override
-            float normalizeDeclaredKeyframeFloat(DocumentLayoutBox box, float value) {
-                int limit = Math.min(box.getWidth(), box.getHeight());
-                return Math.max(0.0F, Math.min(value, limit / 2.0F));
-            }
-        },
-        BACKDROP_BLUR_RADIUS(DocumentAnimationProperty.BACKDROP_BLUR_RADIUS) {
-            @Override
-            float resolveBaseFloat(DocumentLayoutBox box) {
-                return resolveBackdropBlurRadius(box);
-            }
-
-            @Override
-            float normalizeDeclaredKeyframeFloat(DocumentLayoutBox box, float value) {
-                return Math.max(0.0F, Math.min(value, DocumentEffectChain.MAX_BACKDROP_BLUR_RADIUS));
-            }
-        },
-        WIDTH(DocumentAnimationProperty.WIDTH) {
-            @Override
-            float resolveBaseFloat(DocumentLayoutBox box) {
-                return box.getContentWidth();
-            }
-
-            @Override
-            boolean isFloatTransitionTargetAnimatable(DocumentLayoutBox box) {
-                return isPixelLength(box.getComputedStyle().getWidth());
-            }
-        },
-        HEIGHT(DocumentAnimationProperty.HEIGHT) {
-            @Override
-            float resolveBaseFloat(DocumentLayoutBox box) {
-                return box.getContentHeight();
-            }
-
-            @Override
-            boolean isFloatTransitionTargetAnimatable(DocumentLayoutBox box) {
-                return isPixelLength(box.getComputedStyle().getHeight());
-            }
-        },
-        MARGIN_LEFT(DocumentAnimationProperty.MARGIN_LEFT) {
-            @Override
-            float resolveBaseFloat(DocumentLayoutBox box) {
-                return box.getMargin().getLeft();
-            }
-
-            @Override
-            boolean isFloatTransitionTargetAnimatable(DocumentLayoutBox box) {
-                return isPixelLength(box.getComputedStyle().getMargin().getLeft());
-            }
-        },
-        MARGIN_RIGHT(DocumentAnimationProperty.MARGIN_RIGHT) {
-            @Override
-            float resolveBaseFloat(DocumentLayoutBox box) {
-                return box.getMargin().getRight();
-            }
-
-            @Override
-            boolean isFloatTransitionTargetAnimatable(DocumentLayoutBox box) {
-                return isPixelLength(box.getComputedStyle().getMargin().getRight());
-            }
-        },
-        PADDING_LEFT(DocumentAnimationProperty.PADDING_LEFT) {
-            @Override
-            float resolveBaseFloat(DocumentLayoutBox box) {
-                return box.getPadding().getLeft();
-            }
-
-            @Override
-            boolean isFloatTransitionTargetAnimatable(DocumentLayoutBox box) {
-                return isPixelLength(box.getComputedStyle().getPadding().getLeft());
-            }
-
-            @Override
-            float normalizeDeclaredKeyframeFloat(DocumentLayoutBox box, float value) {
-                return Math.max(0.0F, value);
-            }
-        },
-        PADDING_RIGHT(DocumentAnimationProperty.PADDING_RIGHT) {
-            @Override
-            float resolveBaseFloat(DocumentLayoutBox box) {
-                return box.getPadding().getRight();
-            }
-
-            @Override
-            boolean isFloatTransitionTargetAnimatable(DocumentLayoutBox box) {
-                return isPixelLength(box.getComputedStyle().getPadding().getRight());
-            }
-
-            @Override
-            float normalizeDeclaredKeyframeFloat(DocumentLayoutBox box, float value) {
-                return Math.max(0.0F, value);
-            }
-        };
-
-        private static final EnumMap<DocumentAnimationProperty, PropertyRuntimeSemantics> BY_PROPERTY =
-                createLookup();
-
-        private final DocumentAnimationProperty property;
-
-        private PropertyRuntimeSemantics(DocumentAnimationProperty property) {
-            this.property = property;
-        }
-
-        private static PropertyRuntimeSemantics forProperty(DocumentAnimationProperty property) {
-            PropertyRuntimeSemantics semantics = BY_PROPERTY.get(Objects.requireNonNull(property, "property"));
-            if (semantics == null) {
-                throw new IllegalArgumentException("unsupported animation property: " + property);
-            }
-            return semantics;
-        }
-
-        private static EnumMap<DocumentAnimationProperty, PropertyRuntimeSemantics> createLookup() {
-            EnumMap<DocumentAnimationProperty, PropertyRuntimeSemantics> lookup =
-                    new EnumMap<DocumentAnimationProperty, PropertyRuntimeSemantics>(DocumentAnimationProperty.class);
-            for (PropertyRuntimeSemantics semantics : values()) {
-                lookup.put(semantics.property, semantics);
-            }
-            return lookup;
-        }
-
-        private static boolean isPixelLength(UiStyleLength length) {
-            return length.getType() == UiStyleLength.Type.PIXEL;
-        }
-
-        int resolveBaseColor(ComputedStyle style) {
-            throw new IllegalArgumentException("color value is not supported for: " + property);
-        }
-
-        float resolveBaseFloat(DocumentLayoutBox box) {
-            throw new IllegalArgumentException("float value is not supported for: " + property);
-        }
-
-        boolean isFloatTransitionTargetAnimatable(DocumentLayoutBox box) {
-            return true;
-        }
-
-        float normalizeDeclaredKeyframeFloat(DocumentLayoutBox box, float value) {
-            return value;
-        }
-    }
 
     /**
      * 单个颜色 transition。
