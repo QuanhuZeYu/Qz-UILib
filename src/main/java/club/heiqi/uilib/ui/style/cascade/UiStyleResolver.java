@@ -42,6 +42,7 @@ import club.heiqi.uilib.ui.style.props.UiCursor;
 import club.heiqi.uilib.ui.style.props.UiAlignSelf;
 import club.heiqi.uilib.ui.style.values.UiBorderColors;
 import club.heiqi.uilib.ui.style.props.UiTextDecoration;
+import club.heiqi.uilib.ui.style.values.UiTransform;
 
 import java.util.Collections;
 import java.util.List;
@@ -344,6 +345,8 @@ public final class UiStyleResolver {
                 UiScrollbarWidth.AUTO, parentStyle == null ? UiScrollbarWidth.AUTO : parentStyle.getScrollbarWidth());
         UiListStyleType listStyleType = cascade(inlineStyle, matchingRules, UiStyleProperty.LIST_STYLE_TYPE,
                 UiListStyleType.NONE, parentStyle == null ? UiListStyleType.NONE : parentStyle.getListStyleType());
+        UiTransform transform = cascade(inlineStyle, matchingRules, UiStyleProperty.TRANSFORM, UiTransform.identity(),
+                parentStyle == null ? UiTransform.identity() : parentStyle.getTransform());
 
         if (!hasDeclaredProperty(inlineStyle, matchingRules, UiStyleProperty.LIST_STYLE_TYPE)) {
             if ("ol".equals(element.getTagName()) && listStyleType == UiListStyleType.NONE) {
@@ -383,7 +386,7 @@ public final class UiStyleResolver {
                 boxShadow, borderStyle, borderCollapse, cursor, borderRadiusCorners, backgroundImage, textDecoration,
                 textShadow, textTransform, textIndent, fontWeight, fontStyle,
                 pointerEvents, outline, borderWidthSides, borderColors, letterSpacing, wordBreak, overflowWrap,
-                aspectRatio, objectFit, content, scrollbarColor, scrollbarWidth, listStyleType);
+                aspectRatio, objectFit, content, scrollbarColor, scrollbarWidth, listStyleType, transform);
     }
 
     private static boolean hasDeclaredProperty(UiStyleDeclaration inlineStyle, List<UiStyleRule> rules,

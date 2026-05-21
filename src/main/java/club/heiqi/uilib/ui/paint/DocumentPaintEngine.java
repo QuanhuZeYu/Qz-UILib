@@ -35,6 +35,7 @@ import club.heiqi.uilib.ui.style.cascade.UiStyleResolver;
 import club.heiqi.uilib.ui.style.props.UiTextDecoration;
 import club.heiqi.uilib.ui.style.props.UiVisibility;
 import club.heiqi.uilib.ui.style.values.UiSurfaceStyle;
+import club.heiqi.uilib.ui.style.values.UiTransform;
 import club.heiqi.uilib.ui.text.TextContentMode;
 
 /**
@@ -114,6 +115,11 @@ public final class DocumentPaintEngine {
         int boxOffsetY = resolveBoxOffsetY(box, offsetY, stickyContext);
         StickyContext childStickyContext = DocumentStickyPositioning.createChildContext(box, boxOffsetX, boxOffsetY,
                 stickyContext);
+        UiTransform transform = resolveAnimatedTransform(animationTimeline, box, currentTimeNanos);
+        boolean transformed = transform != null && !transform.isIdentity();
+        if (transformed) {
+            appendTransformStartCommand(box, commands, transform, boxOffsetX, boxOffsetY);
+        }
         float localOpacity = resolveAnimatedOpacity(animationTimeline, box, currentTimeNanos);
         DocumentEffectChain effectChain = DocumentEffectChain.resolve(box);
         boolean paintContext = effectChain.createsPaintContext(box == rootBox, localOpacity);
@@ -175,6 +181,23 @@ public final class DocumentPaintEngine {
         if (paintContext) {
             appendPaintContextEndCommand(box, commands, boxOffsetX, boxOffsetY);
         }
+        if (transformed) {
+            appendTransformEndCommand(box, commands, transform, boxOffsetX, boxOffsetY);
+        }
+    }
+
+    private static void appendTransformStartCommand(DocumentLayoutBox box, List<DocumentPaintCommand> commands,
+            UiTransform transform, int offsetX, int offsetY) {
+        commands.add(new DocumentPaintCommand(DocumentPaintCommandType.TRANSFORM_START, box.getElement(),
+                box.getLeft() + offsetX, box.getTop() + offsetY, box.getRight() + offsetX,
+                box.getBottom() + offsetY, transform));
+    }
+
+    private static void appendTransformEndCommand(DocumentLayoutBox box, List<DocumentPaintCommand> commands,
+            UiTransform transform, int offsetX, int offsetY) {
+        commands.add(new DocumentPaintCommand(DocumentPaintCommandType.TRANSFORM_END, box.getElement(),
+                box.getLeft() + offsetX, box.getTop() + offsetY, box.getRight() + offsetX,
+                box.getBottom() + offsetY, transform));
     }
 
     private static void appendPaintContextStartCommand(DocumentLayoutBox box, List<DocumentPaintCommand> commands,
@@ -204,7 +227,8 @@ public final class DocumentPaintEngine {
             float localOpacity = resolveAnimatedOpacity(animationTimeline, child, currentTimeNanos);
             DocumentEffectChain childEffectChain = DocumentEffectChain.resolve(child);
             boolean childPaintContext = childEffectChain.createsPaintContext(child == rootBox, localOpacity);
-            boolean childPaintStackingContext = childPaintContext || childEffectChain.clipsChildren();
+            boolean childPaintStackingContext = childPaintContext || childEffectChain.isStackingBoundary()
+                    || createsTransformStackingContext(animationTimeline, child, currentTimeNanos);
             appendBoxCommands(rootBox, child, commands, scrollState, animationTimeline, childOffsetX, childOffsetY,
                     currentTimeNanos, inheritedOpacity, childPaintStackingContext, stickyContext);
         }
@@ -240,7 +264,8 @@ public final class DocumentPaintEngine {
             float localOpacity = resolveAnimatedOpacity(animationTimeline, child, currentTimeNanos);
             DocumentEffectChain childEffectChain = DocumentEffectChain.resolve(child);
             boolean childPaintContext = childEffectChain.createsPaintContext(child == rootBox, localOpacity);
-            boolean childPaintStackingContext = childPaintContext || childEffectChain.clipsChildren();
+            boolean childPaintStackingContext = childPaintContext || childEffectChain.isStackingBoundary()
+                    || createsTransformStackingContext(animationTimeline, child, currentTimeNanos);
             if (child.getStackingPhase() == phase) {
                 items.add(new StackingPaintItem(child, childOffsetX, childOffsetY, childPaintStackingContext,
                         stickyContext));
@@ -587,6 +612,36 @@ public final class DocumentPaintEngine {
         }
         return animationTimeline.resolveFloat(box.getElement(), DocumentAnimationProperty.OPACITY, baseOpacity,
                 currentTimeNanos);
+    }
+
+    private static UiTransform resolveAnimatedTransform(DocumentAnimationTimeline animationTimeline,
+            DocumentLayoutBox box, long currentTimeNanos) {
+        UiTransform baseTransform = box.getComputedStyle().getTransform();
+        if (baseTransform == null) {
+            baseTransform = UiTransform.identity();
+        }
+        if (animationTimeline == null) {
+            return baseTransform;
+        }
+        ElementNode element = box.getElement();
+        float translateX = animationTimeline.resolveFloat(element, DocumentAnimationProperty.TRANSLATE_X,
+                baseTransform.getTranslateX(), currentTimeNanos);
+        float translateY = animationTimeline.resolveFloat(element, DocumentAnimationProperty.TRANSLATE_Y,
+                baseTransform.getTranslateY(), currentTimeNanos);
+        float scaleX = animationTimeline.resolveFloat(element, DocumentAnimationProperty.SCALE_X,
+                baseTransform.getScaleX(), currentTimeNanos);
+        float scaleY = animationTimeline.resolveFloat(element, DocumentAnimationProperty.SCALE_Y,
+                baseTransform.getScaleY(), currentTimeNanos);
+        float rotate = animationTimeline.resolveFloat(element, DocumentAnimationProperty.ROTATE,
+                baseTransform.getRotateDegrees(), currentTimeNanos);
+        return UiTransform.of(translateX, translateY, scaleX, scaleY, rotate,
+                baseTransform.getOriginX(), baseTransform.getOriginY());
+    }
+
+    private static boolean createsTransformStackingContext(DocumentAnimationTimeline animationTimeline,
+            DocumentLayoutBox box, long currentTimeNanos) {
+        UiTransform transform = resolveAnimatedTransform(animationTimeline, box, currentTimeNanos);
+        return transform != null && !transform.isIdentity();
     }
 
     private static int resolveAnimatedBackdropBlurRadius(DocumentAnimationTimeline animationTimeline,

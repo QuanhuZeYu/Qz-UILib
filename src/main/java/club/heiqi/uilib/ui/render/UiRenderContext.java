@@ -18,6 +18,7 @@ import club.heiqi.uilib.ui.style.props.UiFontStyle;
 import club.heiqi.uilib.ui.style.props.UiFontWeight;
 import club.heiqi.uilib.ui.style.cascade.UiBorderRadiusResolver;
 import club.heiqi.uilib.ui.style.values.UiSurfaceStyle;
+import club.heiqi.uilib.ui.style.values.UiTransform;
 import club.heiqi.uilib.ui.text.TextContentMode;
 
 /**
@@ -661,6 +662,34 @@ public class UiRenderContext {
             applyCurrentClip();
             notifyMainLayerContentChanged();
         }
+    }
+
+    /**
+     * 压入文档元素 transform 矩阵。
+     *
+     * @param transform transform 值
+     * @param left 元素 border box 左边界
+     * @param top 元素 border box 上边界
+     * @param right 元素 border box 右边界
+     * @param bottom 元素 border box 下边界
+     */
+    public void pushTransform(UiTransform transform, int left, int top, int right, int bottom) {
+        UiTransform resolvedTransform = transform == null ? UiTransform.identity() : transform;
+        GL11.glPushMatrix();
+        float originX = left + resolvedTransform.resolveOriginX(Math.max(0, right - left));
+        float originY = top + resolvedTransform.resolveOriginY(Math.max(0, bottom - top));
+        GL11.glTranslatef(originX + resolvedTransform.getTranslateX(),
+                originY + resolvedTransform.getTranslateY(), 0.0F);
+        GL11.glRotatef(resolvedTransform.getRotateDegrees(), 0.0F, 0.0F, 1.0F);
+        GL11.glScalef(resolvedTransform.getScaleX(), resolvedTransform.getScaleY(), 1.0F);
+        GL11.glTranslatef(-originX, -originY, 0.0F);
+    }
+
+    /**
+     * 弹出最近压入的文档元素 transform 矩阵。
+     */
+    public void popTransform() {
+        GL11.glPopMatrix();
     }
 
     public void pushClip(int left, int top, int right, int bottom) {

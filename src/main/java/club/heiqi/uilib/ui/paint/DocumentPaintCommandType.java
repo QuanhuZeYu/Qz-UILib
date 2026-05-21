@@ -6,6 +6,8 @@ package club.heiqi.uilib.ui.paint;
 public enum DocumentPaintCommandType {
     PAINT_CONTEXT_START,
     PAINT_CONTEXT_END,
+    TRANSFORM_START,
+    TRANSFORM_END,
     BACKDROP_FILTER,
     BACKGROUND,
     BACKGROUND_IMAGE,

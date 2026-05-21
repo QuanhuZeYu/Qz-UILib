@@ -26,6 +26,7 @@ import club.heiqi.uilib.ui.style.values.UiPseudoElementContent;
 import club.heiqi.uilib.ui.style.props.UiPosition;
 import club.heiqi.uilib.ui.style.values.UiStyleInsets;
 import club.heiqi.uilib.ui.style.values.UiStyleLength;
+import club.heiqi.uilib.ui.style.values.UiTransform;
 import club.heiqi.uilib.ui.style.props.UiWordBreak;
 import club.heiqi.uilib.ui.text.TextMeasureService;
 import club.heiqi.uilib.ui.style.values.UiSurfaceStyle;
@@ -404,6 +405,60 @@ public class DocumentPaintEngineTest {
         Assert.assertEquals(1, commands.size());
         assertCommand(commands.get(0), DocumentPaintCommandType.BACKGROUND, root, 0, 0, 40, 20, 0xBF223344, 0,
                 0);
+    }
+
+    /**
+     * 验证 transform 会以成对 paint command 包裹元素子树，不改变布局坐标。
+     */
+    @Test
+    public void shouldWrapTransformedElementWithTransformCommands() {
+        UiDocument document = UiDocument.create();
+        ElementNode root = document.getRootElement();
+        root.style()
+                .setWidth(UiStyleLength.px(40))
+                .setHeight(UiStyleLength.px(20))
+                .setBackgroundColor(0xFF223344)
+                .setTransform(UiTransform.translate(8.0F, 4.0F));
+
+        List<DocumentPaintCommand> commands = DocumentPaintEngine.buildPaintCommands(
+                DocumentLayoutEngine.layout(root, 80, 0));
+
+        Assert.assertEquals(3, commands.size());
+        assertCommand(commands.get(0), DocumentPaintCommandType.TRANSFORM_START, root, 0, 0, 40, 20, 0, 0, 0);
+        Assert.assertEquals(8.0F, commands.get(0).getTransform().getTranslateX(), 0.0F);
+        Assert.assertEquals(4.0F, commands.get(0).getTransform().getTranslateY(), 0.0F);
+        assertCommand(commands.get(1), DocumentPaintCommandType.BACKGROUND, root, 0, 0, 40, 20, 0xFF223344,
+                0, 0);
+        assertCommand(commands.get(2), DocumentPaintCommandType.TRANSFORM_END, root, 0, 0, 40, 20, 0, 0, 0);
+    }
+
+    /**
+     * 验证动画中的 transform 子属性会进入 transform paint command。
+     */
+    @Test
+    public void shouldApplyAnimatedTransformToPaintCommand() {
+        UiDocument document = UiDocument.create();
+        ElementNode root = document.getRootElement();
+        root.style()
+                .setWidth(UiStyleLength.px(40))
+                .setHeight(UiStyleLength.px(20))
+                .setBackgroundColor(0xFF223344)
+                .setTransform(UiTransform.identity())
+                .setTransition(DocumentAnimationProperty.TRANSLATE_X, 1000L);
+        DocumentAnimationTimeline timeline = new DocumentAnimationTimeline();
+        timeline.updateFromLayout(DocumentLayoutEngine.layout(root, 80, 0), 0L);
+
+        root.style().setTransform(UiTransform.translate(40.0F, 0.0F));
+        DocumentLayoutBox layout = DocumentLayoutEngine.layout(root, 80, 0);
+        timeline.updateFromLayout(layout, 0L);
+        List<DocumentPaintCommand> commands = DocumentPaintEngine.buildPaintCommands(layout, null,
+                500_000_000L, timeline);
+
+        Assert.assertEquals(3, commands.size());
+        Assert.assertEquals(DocumentPaintCommandType.TRANSFORM_START, commands.get(0).getType());
+        Assert.assertEquals(20.0F, commands.get(0).getTransform().getTranslateX(), 0.0F);
+        Assert.assertEquals(DocumentPaintCommandType.BACKGROUND, commands.get(1).getType());
+        Assert.assertEquals(DocumentPaintCommandType.TRANSFORM_END, commands.get(2).getType());
     }
 
     /**

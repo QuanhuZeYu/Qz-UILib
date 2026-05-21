@@ -10,6 +10,7 @@ import club.heiqi.uilib.ui.layout.DocumentLayoutEngine;
 import club.heiqi.uilib.ui.style.cascade.UiStyleDeclaration;
 import club.heiqi.uilib.ui.style.values.UiStyleInsets;
 import club.heiqi.uilib.ui.style.values.UiStyleLength;
+import club.heiqi.uilib.ui.style.values.UiTransform;
 
 /**
  * `DocumentAnimationTimeline` 的 paint/effect transition 契约测试。
@@ -27,6 +28,11 @@ public class DocumentAnimationTimelineTest {
         Assert.assertTrue(DocumentAnimationProperty.BACKGROUND_COLOR.isColorValue());
         Assert.assertTrue(DocumentAnimationProperty.BORDER_RADIUS.isPaintOnly());
         Assert.assertTrue(DocumentAnimationProperty.BORDER_RADIUS.isFloatValue());
+        Assert.assertTrue(DocumentAnimationProperty.TRANSLATE_X.isPaintOnly());
+        Assert.assertTrue(DocumentAnimationProperty.TRANSLATE_Y.isPaintOnly());
+        Assert.assertTrue(DocumentAnimationProperty.SCALE_X.isPaintOnly());
+        Assert.assertTrue(DocumentAnimationProperty.SCALE_Y.isPaintOnly());
+        Assert.assertTrue(DocumentAnimationProperty.ROTATE.isPaintOnly());
         Assert.assertSame(DocumentAnimationImpact.EFFECT, DocumentAnimationProperty.OPACITY.getImpact());
         Assert.assertTrue(DocumentAnimationProperty.BACKDROP_BLUR_RADIUS.isEffectAffecting());
         Assert.assertSame(DocumentAnimationImpact.LAYOUT, DocumentAnimationProperty.WIDTH.getImpact());
@@ -35,6 +41,50 @@ public class DocumentAnimationTimelineTest {
         Assert.assertSame(DocumentAnimationImpact.LAYOUT, DocumentAnimationProperty.MARGIN_RIGHT.getImpact());
         Assert.assertTrue(DocumentAnimationProperty.PADDING_LEFT.isLayoutAffecting());
         Assert.assertSame(DocumentAnimationImpact.LAYOUT, DocumentAnimationProperty.PADDING_RIGHT.getImpact());
+    }
+
+    /**
+     * 验证标准 cubic-bezier 缓动会按 X 轴反解曲线进度。
+     */
+    @Test
+    public void shouldApplyStandardCubicBezierTimingFunction() {
+        DocumentAnimationTimingFunction easeIn = DocumentAnimationTimingFunction.cubicBezier(0.42F, 0.0F,
+                1.0F, 1.0F);
+
+        Assert.assertEquals(0.0F, easeIn.apply(0.0F), 0.0F);
+        Assert.assertEquals(1.0F, easeIn.apply(1.0F), 0.0F);
+        Assert.assertEquals(0.315F, easeIn.apply(0.5F), 0.002F);
+        Assert.assertTrue(easeIn.apply(0.5F) > 0.25F);
+    }
+
+    /**
+     * 验证 transform 子属性 transition 会作为 paint-only 数值覆盖层插值。
+     */
+    @Test
+    public void shouldTransitionTransformSubPropertiesWithoutMutatingInlineStyle() {
+        UiDocument document = UiDocument.create();
+        ElementNode root = document.getRootElement();
+        root.style()
+                .setWidth(UiStyleLength.px(40))
+                .setHeight(UiStyleLength.px(20))
+                .setTransform(UiTransform.identity())
+                .setTransitionProperties(DocumentAnimationProperty.TRANSLATE_X, DocumentAnimationProperty.SCALE_X,
+                        DocumentAnimationProperty.ROTATE)
+                .setTransitionDurationMillis(1000L);
+        DocumentAnimationTimeline timeline = new DocumentAnimationTimeline();
+
+        timeline.updateFromLayout(DocumentLayoutEngine.layout(root, 80, 0), 0L);
+        root.style().setTransform(UiTransform.of(40.0F, 0.0F, 2.0F, 1.0F, 90.0F));
+        Assert.assertTrue(timeline.updateFromLayout(DocumentLayoutEngine.layout(root, 80, 0), 0L));
+
+        Assert.assertTrue(timeline.hasAnimationWork(DocumentAnimationImpact.PAINT));
+        Assert.assertEquals(20.0F, timeline.resolveFloat(root, DocumentAnimationProperty.TRANSLATE_X, 40.0F,
+                500_000_000L), 0.0F);
+        Assert.assertEquals(1.5F, timeline.resolveFloat(root, DocumentAnimationProperty.SCALE_X, 2.0F,
+                500_000_000L), 0.0F);
+        Assert.assertEquals(45.0F, timeline.resolveFloat(root, DocumentAnimationProperty.ROTATE, 90.0F,
+                500_000_000L), 0.0F);
+        Assert.assertEquals(40.0F, root.style().getTransform().getTranslateX(), 0.0F);
     }
 
     /**
@@ -493,8 +543,9 @@ public class DocumentAnimationTimelineTest {
 
         Assert.assertEquals(40.0F, timeline.resolveFloat(root, DocumentAnimationProperty.WIDTH, 50.0F,
                 200_000_000L), 0.0F);
-        Assert.assertEquals(50.0F, timeline.resolveFloat(root, DocumentAnimationProperty.WIDTH, 50.0F,
-                750_000_000L), 0.0F);
+        float easedHalf = DocumentAnimationTimingFunction.EASE_IN.apply(0.5F);
+        Assert.assertEquals(40.0F + 40.0F * easedHalf, timeline.resolveFloat(root,
+                DocumentAnimationProperty.WIDTH, 50.0F, 750_000_000L), 0.001F);
         Assert.assertEquals(80.0F, timeline.resolveFloat(root, DocumentAnimationProperty.WIDTH, 50.0F,
                 1_250_000_000L), 0.0F);
 
@@ -548,8 +599,8 @@ public class DocumentAnimationTimelineTest {
 
         Assert.assertEquals(1.0F, timeline.resolveFloat(root, DocumentAnimationProperty.OPACITY, 0.0F,
                 200_000_000L), 0.0F);
-        Assert.assertEquals(0.75F, timeline.resolveFloat(root, DocumentAnimationProperty.OPACITY, 0.0F,
-                750_000_000L), 0.0F);
+        Assert.assertEquals(1.0F - DocumentAnimationTimingFunction.EASE_IN.apply(0.5F),
+                timeline.resolveFloat(root, DocumentAnimationProperty.OPACITY, 0.0F, 750_000_000L), 0.001F);
     }
 
     /**
@@ -874,10 +925,11 @@ public class DocumentAnimationTimelineTest {
 
         Assert.assertEquals(1.0F, timeline.resolveFloat(root, DocumentAnimationProperty.OPACITY, 0.5F,
                 200_000_000L), 0.0F);
-        Assert.assertEquals(0.75F, timeline.resolveFloat(root, DocumentAnimationProperty.OPACITY, 0.5F,
-                750_000_000L), 0.0F);
-        Assert.assertEquals(0.75F, timeline.resolveFloat(root, DocumentAnimationProperty.OPACITY, 0.5F,
-                1_750_000_000L), 0.0F);
+        float easedOpacity = 1.0F - DocumentAnimationTimingFunction.EASE_IN.apply(0.5F);
+        Assert.assertEquals(easedOpacity, timeline.resolveFloat(root, DocumentAnimationProperty.OPACITY, 0.5F,
+                750_000_000L), 0.001F);
+        Assert.assertEquals(easedOpacity, timeline.resolveFloat(root, DocumentAnimationProperty.OPACITY, 0.5F,
+                1_750_000_000L), 0.001F);
         Assert.assertEquals(0.0F, timeline.resolveFloat(root, DocumentAnimationProperty.OPACITY, 0.5F,
                 2_250_000_000L), 0.0F);
     }

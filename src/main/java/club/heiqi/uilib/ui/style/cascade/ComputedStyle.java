@@ -37,6 +37,7 @@ import club.heiqi.uilib.ui.style.props.UiCursor;
 import club.heiqi.uilib.ui.style.props.UiAlignSelf;
 import club.heiqi.uilib.ui.style.values.UiBorderColors;
 import club.heiqi.uilib.ui.style.props.UiTextDecoration;
+import club.heiqi.uilib.ui.style.values.UiTransform;
 
 import java.util.ArrayList;
 import java.util.Collections;
@@ -131,6 +132,7 @@ public final class ComputedStyle {
     private final UiScrollbarColor scrollbarColor;
     private final UiScrollbarWidth scrollbarWidth;
     private final UiListStyleType listStyleType;
+    private final UiTransform transform;
 
     ComputedStyle(UiDisplay display, UiStyleLength width, UiStyleLength height, UiBoxSizing boxSizing,
             UiPosition position,
@@ -156,7 +158,8 @@ public final class ComputedStyle {
             UiOutline outline, UiStyleInsets borderWidthSides, UiBorderColors borderColors,
             UiStyleLength letterSpacing, UiWordBreak wordBreak, UiOverflowWrap overflowWrap,
             Float aspectRatio, UiObjectFit objectFit, UiPseudoElementContent content,
-            UiScrollbarColor scrollbarColor, UiScrollbarWidth scrollbarWidth, UiListStyleType listStyleType) {
+            UiScrollbarColor scrollbarColor, UiScrollbarWidth scrollbarWidth, UiListStyleType listStyleType,
+            UiTransform transform) {
         this.display = Objects.requireNonNull(display, "display");
         this.width = Objects.requireNonNull(width, "width");
         this.height = Objects.requireNonNull(height, "height");
@@ -236,6 +239,7 @@ public final class ComputedStyle {
         this.scrollbarColor = scrollbarColor == null ? UiScrollbarColor.auto() : scrollbarColor;
         this.scrollbarWidth = scrollbarWidth == null ? UiScrollbarWidth.AUTO : scrollbarWidth;
         this.listStyleType = listStyleType == null ? UiListStyleType.NONE : listStyleType;
+        this.transform = transform == null ? UiTransform.identity() : transform;
     }
 
     public UiDisplay getDisplay() {
@@ -746,5 +750,14 @@ public final class ComputedStyle {
      */
     public UiListStyleType getListStyleType() {
         return listStyleType;
+    }
+
+    /**
+     * 返回元素 transform 值。
+     *
+     * @return transform 值
+     */
+    public UiTransform getTransform() {
+        return transform;
     }
 }

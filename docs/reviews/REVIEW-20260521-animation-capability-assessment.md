@@ -10,7 +10,7 @@
 
 | 能力 | 状态 | 关键类 |
 |------|------|--------|
-| Transition（属性过渡） | 完整实现，12 个属性 | `DocumentAnimationTimeline` / `DocumentAnimationRuntimeState` |
+| Transition（属性过渡） | 完整实现，17 个属性 | `DocumentAnimationTimeline` / `DocumentAnimationRuntimeState` |
 | Keyframe Animation（关键帧动画） | 完整实现，多段 stop、fill mode | `DocumentKeyframes` / `DocumentAnimationRuntimeState` |
 | 三级影响分层 | PAINT / EFFECT / LAYOUT | `DocumentAnimationImpact` |
 | 缓动函数 | 简化版多项式近似 | `DocumentAnimationTimingFunction`（enum） |
@@ -18,7 +18,7 @@
 | 时间线管理 | 文档级统一管理 | `DocumentAnimationTimeline` |
 | Forwards Fill | 已实现 | `DocumentAnimationRuntimeState` 内部 `filledColors` / `filledFloats` |
 
-### 1.2 当前可动画属性（12 个）
+### 1.2 当前可动画属性（17 个）
 
 | 属性 | Impact | 值类型 |
 |------|--------|--------|
@@ -26,6 +26,11 @@
 | `border-color` | PAINT | COLOR |
 | `text-color` | PAINT | COLOR |
 | `border-radius` | PAINT | FLOAT |
+| `translate-x` | PAINT | FLOAT |
+| `translate-y` | PAINT | FLOAT |
+| `scale-x` | PAINT | FLOAT |
+| `scale-y` | PAINT | FLOAT |
+| `rotate` | PAINT | FLOAT |
 | `opacity` | EFFECT | FLOAT |
 | `backdrop-blur-radius` | EFFECT | FLOAT |
 | `width` | LAYOUT | FLOAT |
@@ -47,9 +52,9 @@
 
 | 缺口 | 影响 |
 |------|------|
-| 无 `transform` 概念 | 缺少浏览器动画最核心的性能优化手段 |
-| 缓动函数精度不足 | 多项式近似代替标准 cubic-bezier，无法支持自定义曲线 |
-| 可动画属性覆盖面窄 | 缺少 `top/left/right/bottom`、`gap`、`font-size`、`transform` 子属性 |
+| 无 `transform` 概念 | 已在 Phase 1 补齐 `UiTransform` 与 transform 子属性动画 |
+| 缓动函数精度不足 | 已在 Phase 1 改为标准 cubic-bezier，并支持自定义曲线 |
+| 可动画属性覆盖面窄 | 仍缺少 `top/left/right/bottom`、`gap`、`font-size`、`box-shadow` 子属性 |
 | 无 `animation-direction` | 不支持 reverse / alternate |
 | 无 infinite iteration | 强制 >= 1 |
 | 无 per-property timing function | keyframe 内各段不能独立指定缓动 |
@@ -187,6 +192,8 @@
 ## 五、推进计划
 
 ### Phase 1：transform + cubic-bezier（建议首批）
+
+执行状态（2026-05-21）：已完成。当前已新增 `UiTransform`、标准 cubic-bezier timing function、transform 子属性动画、paint command 矩阵回放和 transform 感知命中测试；不引入合成层，transform 仍按 PAINT 级运行值处理，不触发布局重排。
 
 1. 实现 `UiTransform` 值对象
 2. `DocumentAnimationTimingFunction` 从 enum 重构为接口

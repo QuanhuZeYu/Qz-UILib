@@ -373,8 +373,9 @@ public final class HtmlLikeDocumentWidget extends Widget implements UiDocument.D
         if (getWidth() <= 0 || getHeight() <= 0 || !contains(screenX, screenY)) {
             return null;
         }
+        long currentTimeNanos = animationClock.getCurrentTimeNanos();
         return DocumentHitTestEngine.hitTest(resolveInteractiveLayoutBox(), scrollState, screenX - getAbsoluteX(),
-                screenY - getAbsoluteY());
+                screenY - getAbsoluteY(), currentTimeNanos, animationTimeline);
     }
 
     /**

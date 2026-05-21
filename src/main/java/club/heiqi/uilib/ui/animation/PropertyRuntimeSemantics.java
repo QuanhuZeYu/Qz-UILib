@@ -7,6 +7,7 @@ import club.heiqi.uilib.ui.layout.DocumentEffectChain;
 import club.heiqi.uilib.ui.layout.DocumentLayoutBox;
 import club.heiqi.uilib.ui.style.cascade.ComputedStyle;
 import club.heiqi.uilib.ui.style.values.UiStyleLength;
+import club.heiqi.uilib.ui.style.values.UiTransform;
 
 /**
  * 单个动画属性的运行时取值与 transition 限制规则。
@@ -54,6 +55,36 @@ enum PropertyRuntimeSemantics {
         float normalizeDeclaredKeyframeFloat(DocumentLayoutBox box, float value) {
             int limit = Math.min(box.getWidth(), box.getHeight());
             return Math.max(0.0F, Math.min(value, limit / 2.0F));
+        }
+    },
+    TRANSLATE_X(DocumentAnimationProperty.TRANSLATE_X) {
+        @Override
+        float resolveBaseFloat(DocumentLayoutBox box) {
+            return resolveTransform(box).getTranslateX();
+        }
+    },
+    TRANSLATE_Y(DocumentAnimationProperty.TRANSLATE_Y) {
+        @Override
+        float resolveBaseFloat(DocumentLayoutBox box) {
+            return resolveTransform(box).getTranslateY();
+        }
+    },
+    SCALE_X(DocumentAnimationProperty.SCALE_X) {
+        @Override
+        float resolveBaseFloat(DocumentLayoutBox box) {
+            return resolveTransform(box).getScaleX();
+        }
+    },
+    SCALE_Y(DocumentAnimationProperty.SCALE_Y) {
+        @Override
+        float resolveBaseFloat(DocumentLayoutBox box) {
+            return resolveTransform(box).getScaleY();
+        }
+    },
+    ROTATE(DocumentAnimationProperty.ROTATE) {
+        @Override
+        float resolveBaseFloat(DocumentLayoutBox box) {
+            return resolveTransform(box).getRotateDegrees();
         }
     },
     BACKDROP_BLUR_RADIUS(DocumentAnimationProperty.BACKDROP_BLUR_RADIUS) {
@@ -191,6 +222,11 @@ enum PropertyRuntimeSemantics {
         int availableSpace = Math.max(box.getWidth(), box.getHeight());
         int radius = box.getComputedStyle().getBackdropBlurRadius().resolve(availableSpace, 0);
         return Math.max(0, Math.min(radius, DocumentEffectChain.MAX_BACKDROP_BLUR_RADIUS));
+    }
+
+    private static UiTransform resolveTransform(DocumentLayoutBox box) {
+        UiTransform transform = box.getComputedStyle().getTransform();
+        return transform == null ? UiTransform.identity() : transform;
     }
 
     /**

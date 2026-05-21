@@ -42,6 +42,7 @@ import club.heiqi.uilib.ui.style.props.UiCursor;
 import club.heiqi.uilib.ui.style.props.UiAlignSelf;
 import club.heiqi.uilib.ui.style.values.UiBorderColors;
 import club.heiqi.uilib.ui.style.props.UiTextDecoration;
+import club.heiqi.uilib.ui.style.values.UiTransform;
 
 import java.util.ArrayList;
 import java.util.Collections;
@@ -145,6 +146,7 @@ public final class UiStyleDeclaration {
     private UiScrollbarColor scrollbarColor;
     private UiScrollbarWidth scrollbarWidth;
     private UiListStyleType listStyleType;
+    private UiTransform transform;
     private final EnumMap<UiStyleProperty, Object> declaredValues =
             new EnumMap<UiStyleProperty, Object>(UiStyleProperty.class);
     private final EnumMap<UiStyleProperty, UiStyleKeyword> keywords =
@@ -1572,6 +1574,26 @@ public final class UiStyleDeclaration {
         return updateListStyleType(null);
     }
 
+    public UiTransform getTransform() {
+        return transform;
+    }
+
+    /**
+     * 设置元素 transform。
+     *
+     * <p>transform 只影响绘制与命中测试，不参与布局尺寸计算。</p>
+     *
+     * @param transform transform 值
+     * @return 当前声明
+     */
+    public UiStyleDeclaration setTransform(UiTransform transform) {
+        return updateTransform(Objects.requireNonNull(transform, "transform"));
+    }
+
+    public UiStyleDeclaration clearTransform() {
+        return updateTransform(null);
+    }
+
     private UiStyleDeclaration updateProperty(UiStyleProperty property, Object previousValue, Object nextValue,
             UiStyleChangeImpact impact) {
         boolean changed = !Objects.equals(previousValue, nextValue);
@@ -2063,6 +2085,12 @@ public final class UiStyleDeclaration {
         return updateProperty(UiStyleProperty.LIST_STYLE_TYPE, previousValue, value, UiStyleChangeImpact.LAYOUT);
     }
 
+    private UiStyleDeclaration updateTransform(UiTransform value) {
+        UiTransform previousValue = transform;
+        transform = value;
+        return updateProperty(UiStyleProperty.TRANSFORM, previousValue, value, UiStyleChangeImpact.PAINT);
+    }
+
     private boolean hasConcreteProperty(UiStyleProperty property) {
         return declaredValues.containsKey(property);
     }
@@ -2148,6 +2176,7 @@ public final class UiStyleDeclaration {
             case SCROLLBAR_COLOR: scrollbarColor = null; break;
             case SCROLLBAR_WIDTH: scrollbarWidth = null; break;
             case LIST_STYLE_TYPE: listStyleType = null; break;
+            case TRANSFORM: transform = null; break;
             default: break;
         }
     }
@@ -2240,6 +2269,7 @@ public final class UiStyleDeclaration {
         scrollbarColor = resolvedSource.scrollbarColor;
         scrollbarWidth = resolvedSource.scrollbarWidth;
         listStyleType = resolvedSource.listStyleType;
+        transform = resolvedSource.transform;
         declaredValues.clear();
         declaredValues.putAll(resolvedSource.declaredValues);
         keywords.clear();

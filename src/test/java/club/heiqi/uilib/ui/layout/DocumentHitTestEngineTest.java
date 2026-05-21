@@ -3,6 +3,8 @@ package club.heiqi.uilib.ui.layout;
 import org.junit.Assert;
 import org.junit.Test;
 
+import club.heiqi.uilib.ui.animation.DocumentAnimationProperty;
+import club.heiqi.uilib.ui.animation.DocumentAnimationTimeline;
 import club.heiqi.uilib.ui.dom.ElementNode;
 import club.heiqi.uilib.ui.dom.UiDocument;
 import club.heiqi.uilib.ui.style.props.UiOverflow;
@@ -10,6 +12,7 @@ import club.heiqi.uilib.ui.style.props.UiPointerEvents;
 import club.heiqi.uilib.ui.style.props.UiPosition;
 import club.heiqi.uilib.ui.style.values.UiStyleInsets;
 import club.heiqi.uilib.ui.style.values.UiStyleLength;
+import club.heiqi.uilib.ui.style.values.UiTransform;
 
 /**
  * `DocumentHitTestEngine` 的 HTML-like 命中测试契约。
@@ -398,6 +401,78 @@ public class DocumentHitTestEngineTest {
         DocumentLayoutBox rootBox = DocumentLayoutEngine.layout(root, 120, 80);
 
         assertHitElement(target, rootBox, 10, 10);
+    }
+
+    /**
+     * 验证 transform 平移后的视觉区域参与命中，原布局区域不再命中该元素。
+     */
+    @Test
+    public void shouldHitTranslatedElementAtVisualPosition() {
+        UiDocument document = UiDocument.create();
+        ElementNode root = document.getRootElement();
+        ElementNode target = document.div();
+
+        root.style().setWidth(UiStyleLength.px(120));
+        target.style()
+                .setWidth(UiStyleLength.px(20))
+                .setHeight(UiStyleLength.px(10))
+                .setTransform(UiTransform.translate(30.0F, 0.0F));
+        root.append(target);
+
+        DocumentLayoutBox rootBox = DocumentLayoutEngine.layout(root, 120, 0);
+
+        assertHitElement(target, rootBox, 35, 5);
+        assertHitElement(root, rootBox, 5, 5);
+    }
+
+    /**
+     * 验证 transform 缩放会通过反向坐标映射扩大命中区域。
+     */
+    @Test
+    public void shouldHitScaledElementAtVisualPosition() {
+        UiDocument document = UiDocument.create();
+        ElementNode root = document.getRootElement();
+        ElementNode target = document.div();
+
+        root.style().setWidth(UiStyleLength.px(120));
+        target.style()
+                .setWidth(UiStyleLength.px(20))
+                .setHeight(UiStyleLength.px(10))
+                .setTransform(UiTransform.scale(2.0F, 1.0F)
+                        .withTransformOrigin(UiStyleLength.px(0), UiStyleLength.px(0)));
+        root.append(target);
+
+        DocumentLayoutBox rootBox = DocumentLayoutEngine.layout(root, 120, 0);
+
+        assertHitElement(target, rootBox, 35, 5);
+    }
+
+    /**
+     * 验证动画中的 transform 运行值也会参与命中测试。
+     */
+    @Test
+    public void shouldHitAnimatedTransformAtRuntimeVisualPosition() {
+        UiDocument document = UiDocument.create();
+        ElementNode root = document.getRootElement();
+        ElementNode target = document.div();
+
+        root.style().setWidth(UiStyleLength.px(120));
+        target.style()
+                .setWidth(UiStyleLength.px(20))
+                .setHeight(UiStyleLength.px(10))
+                .setTransform(UiTransform.identity())
+                .setTransition(DocumentAnimationProperty.TRANSLATE_X, 1000L);
+        root.append(target);
+        DocumentAnimationTimeline timeline = new DocumentAnimationTimeline();
+        timeline.updateFromLayout(DocumentLayoutEngine.layout(root, 120, 0), 0L);
+
+        target.style().setTransform(UiTransform.translate(40.0F, 0.0F));
+        DocumentLayoutBox rootBox = DocumentLayoutEngine.layout(root, 120, 0);
+        timeline.updateFromLayout(rootBox, 0L);
+
+        ElementNode actualElement = DocumentHitTestEngine.hitTest(rootBox, null, 25, 5, 500_000_000L, timeline);
+        Assert.assertNotNull(actualElement);
+        Assert.assertEquals(target.__getElementUid(), actualElement.__getElementUid());
     }
 
     private static void assertHitElement(ElementNode expectedElement, DocumentLayoutBox rootBox, int x, int y) {

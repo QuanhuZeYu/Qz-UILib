@@ -33,10 +33,13 @@ public final class DocumentPaintRenderer {
 
     private static final class OpenRenderState {
 
+        private final DocumentPaintCommandType commandType;
         private final DocumentEffectType effectType;
         private final float previousFallbackOpacity;
 
-        private OpenRenderState(DocumentEffectType effectType, float previousFallbackOpacity) {
+        private OpenRenderState(DocumentPaintCommandType commandType, DocumentEffectType effectType,
+                float previousFallbackOpacity) {
+            this.commandType = commandType;
             this.effectType = effectType;
             this.previousFallbackOpacity = previousFallbackOpacity;
         }
@@ -48,7 +51,8 @@ public final class DocumentPaintRenderer {
         private float fallbackOpacity = 1.0F;
 
         private void pushClip() {
-            openStates.push(new OpenRenderState(DocumentEffectType.OVERFLOW_CLIP, fallbackOpacity));
+            openStates.push(new OpenRenderState(DocumentPaintCommandType.CLIP_START,
+                    DocumentEffectType.OVERFLOW_CLIP, fallbackOpacity));
         }
 
         private void pushPaintContext(UiRenderContext context, DocumentPaintCommand command, int offsetX, int offsetY) {
@@ -58,7 +62,14 @@ public final class DocumentPaintRenderer {
             if (!context.isCurrentPaintContextLayerActive()) {
                 fallbackOpacity *= command.getPaintContextOpacity();
             }
-            openStates.push(new OpenRenderState(DocumentEffectType.PAINT_CONTEXT, previousFallbackOpacity));
+            openStates.push(new OpenRenderState(DocumentPaintCommandType.PAINT_CONTEXT_START,
+                    DocumentEffectType.PAINT_CONTEXT, previousFallbackOpacity));
+        }
+
+        private void pushTransform(UiRenderContext context, DocumentPaintCommand command, int offsetX, int offsetY) {
+            context.pushTransform(command.getTransform(), command.getLeft() + offsetX, command.getTop() + offsetY,
+                    command.getRight() + offsetX, command.getBottom() + offsetY);
+            openStates.push(new OpenRenderState(DocumentPaintCommandType.TRANSFORM_START, null, fallbackOpacity));
         }
 
         private boolean isEmpty() {
@@ -160,6 +171,14 @@ public final class DocumentPaintRenderer {
     private static void renderCommand(UiRenderContext context, DocumentPaintCommand command, int offsetX, int offsetY,
             RenderReplayState replayState) {
         if (command == null) {
+            return;
+        }
+        if (command.getType() == DocumentPaintCommandType.TRANSFORM_END) {
+            popExpectedTransformState(context, replayState);
+            return;
+        }
+        if (command.getType() == DocumentPaintCommandType.TRANSFORM_START) {
+            replayState.pushTransform(context, command, offsetX, offsetY);
             return;
         }
         if (isEffectEndCommand(command)) {
@@ -302,7 +321,17 @@ public final class DocumentPaintRenderer {
         }
     }
 
+    private static void popExpectedTransformState(UiRenderContext context, RenderReplayState replayState) {
+        if (!replayState.isEmpty() && replayState.peek().commandType == DocumentPaintCommandType.TRANSFORM_START) {
+            popOpenState(context, replayState, replayState.pop());
+        }
+    }
+
     private static void popOpenState(UiRenderContext context, RenderReplayState replayState, OpenRenderState state) {
+        if (state.commandType == DocumentPaintCommandType.TRANSFORM_START) {
+            context.popTransform();
+            return;
+        }
         if (state.effectType == DocumentEffectType.OVERFLOW_CLIP) {
             context.popClip();
             return;

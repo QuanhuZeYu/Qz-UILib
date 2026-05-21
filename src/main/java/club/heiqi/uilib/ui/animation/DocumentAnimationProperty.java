@@ -20,6 +20,31 @@ public enum DocumentAnimationProperty {
     BORDER_RADIUS(DocumentAnimationImpact.PAINT, ValueType.FLOAT),
 
     /**
+     * transform 的 X 方向平移分量，属于 paint-only 属性。
+     */
+    TRANSLATE_X(DocumentAnimationImpact.PAINT, ValueType.FLOAT),
+
+    /**
+     * transform 的 Y 方向平移分量，属于 paint-only 属性。
+     */
+    TRANSLATE_Y(DocumentAnimationImpact.PAINT, ValueType.FLOAT),
+
+    /**
+     * transform 的 X 方向缩放分量，属于 paint-only 属性。
+     */
+    SCALE_X(DocumentAnimationImpact.PAINT, ValueType.FLOAT),
+
+    /**
+     * transform 的 Y 方向缩放分量，属于 paint-only 属性。
+     */
+    SCALE_Y(DocumentAnimationImpact.PAINT, ValueType.FLOAT),
+
+    /**
+     * transform 的旋转角度分量，属于 paint-only 属性。
+     */
+    ROTATE(DocumentAnimationImpact.PAINT, ValueType.FLOAT),
+
+    /**
      * 文本色，属于 paint-only 属性。
      */
     TEXT_COLOR(DocumentAnimationImpact.PAINT, ValueType.COLOR),

@@ -34,6 +34,7 @@ import club.heiqi.uilib.ui.style.props.UiOverflow;
 import club.heiqi.uilib.ui.style.values.UiStyleLength;
 import club.heiqi.uilib.ui.style.values.UiTextShadow;
 import club.heiqi.uilib.ui.style.values.UiSurfaceStyle;
+import club.heiqi.uilib.ui.style.values.UiTransform;
 import club.heiqi.uilib.ui.text.TextContentMode;
 
 /**
@@ -803,6 +804,35 @@ public class DocumentPaintRendererTest {
     }
 
     /**
+     * 验证 transform 命令会按宿主偏移投影到 `UiRenderContext` 矩阵栈。
+     */
+    @Test
+    public void shouldReplayTransformCommands() {
+        UiDocument document = UiDocument.create();
+        ElementNode root = document.getRootElement();
+        List<DocumentPaintCommand> commands = new ArrayList<DocumentPaintCommand>();
+        commands.add(new DocumentPaintCommand(DocumentPaintCommandType.TRANSFORM_START, root, 2, 3, 42, 23,
+                UiTransform.of(8.0F, 4.0F, 1.5F, 0.75F, 12.0F)));
+        commands.add(new DocumentPaintCommand(DocumentPaintCommandType.BACKGROUND, root, 2, 3, 42, 23,
+                0xFF223344, 0, 0));
+        commands.add(new DocumentPaintCommand(DocumentPaintCommandType.TRANSFORM_END, root, 2, 3, 42, 23,
+                UiTransform.of(8.0F, 4.0F, 1.5F, 0.75F, 12.0F)));
+
+        RecordingUiRenderContext renderContext = new RecordingUiRenderContext();
+        DocumentPaintRenderer.render(renderContext, commands, 7, 11);
+
+        Assert.assertEquals(1, renderContext.transformCalls.size());
+        TransformCall transformCall = renderContext.transformCalls.get(0);
+        Assert.assertEquals(9, transformCall.left);
+        Assert.assertEquals(14, transformCall.top);
+        Assert.assertEquals(49, transformCall.right);
+        Assert.assertEquals(34, transformCall.bottom);
+        Assert.assertEquals(8.0F, transformCall.transform.getTranslateX(), 0.0F);
+        Assert.assertEquals(1, renderContext.popTransformCount);
+        Assert.assertEquals(1, renderContext.drawCalls.size());
+    }
+
+    /**
      * 验证真实离屏 paint context 激活时，标准颜色命令不再被 renderer 额外乘以 context opacity。
      */
     @Test
@@ -952,10 +982,12 @@ public class DocumentPaintRendererTest {
         private final List<BackdropCall> backdropCalls = new ArrayList<BackdropCall>();
         private final List<HostImageCall> hostImageCalls = new ArrayList<HostImageCall>();
         private final List<PaintContextCall> paintContextCalls = new ArrayList<PaintContextCall>();
+        private final List<TransformCall> transformCalls = new ArrayList<TransformCall>();
         private boolean simulatePaintContextLayer;
         private boolean paintContextLayerActive;
         private int popClipCount;
         private int popPaintContextCount;
+        private int popTransformCount;
 
         private RecordingUiRenderContext() {
             super(320, 240, 0, 0, 0.0F);
@@ -1044,6 +1076,16 @@ public class DocumentPaintRendererTest {
             }
             paintContextLayerActive = false;
             popPaintContextCount++;
+        }
+
+        @Override
+        public void pushTransform(UiTransform transform, int left, int top, int right, int bottom) {
+            transformCalls.add(new TransformCall(transform, left, top, right, bottom));
+        }
+
+        @Override
+        public void popTransform() {
+            popTransformCount++;
         }
     }
 
@@ -1262,6 +1304,26 @@ public class DocumentPaintRendererTest {
             this.right = right;
             this.bottom = bottom;
             this.opacity = opacity;
+        }
+    }
+
+    /**
+     * 单次 transform 压栈记录。
+     */
+    private static final class TransformCall {
+
+        private final UiTransform transform;
+        private final int left;
+        private final int top;
+        private final int right;
+        private final int bottom;
+
+        private TransformCall(UiTransform transform, int left, int top, int right, int bottom) {
+            this.transform = transform;
+            this.left = left;
+            this.top = top;
+            this.right = right;
+            this.bottom = bottom;
         }
     }
 }

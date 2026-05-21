@@ -9,6 +9,7 @@ import club.heiqi.uilib.ui.style.props.UiFontStyle;
 import club.heiqi.uilib.ui.style.props.UiFontWeight;
 import club.heiqi.uilib.ui.style.cascade.UiBorderRadiusResolver;
 import club.heiqi.uilib.ui.style.values.UiSurfaceStyle;
+import club.heiqi.uilib.ui.style.values.UiTransform;
 import club.heiqi.uilib.ui.text.TextContentMode;
 
 /**
@@ -39,6 +40,7 @@ public final class DocumentPaintCommand {
     private final int backdropBlurRadius;
     private final float backdropSaturation;
     private final float paintContextOpacity;
+    private UiTransform transform;
 
     DocumentPaintCommand(DocumentPaintCommandType type, ElementNode element, int left, int top, int right, int bottom,
             int color, int borderWidth, int borderRadius) {
@@ -154,6 +156,15 @@ public final class DocumentPaintCommand {
     }
 
     DocumentPaintCommand(DocumentPaintCommandType type, ElementNode element, int left, int top, int right, int bottom,
+            UiTransform transform) {
+        this(type, element, left, top, right, bottom, 0, 0, 0);
+        if (type != DocumentPaintCommandType.TRANSFORM_START && type != DocumentPaintCommandType.TRANSFORM_END) {
+            throw new IllegalArgumentException("transform command type expected");
+        }
+        this.transform = transform == null ? UiTransform.identity() : transform;
+    }
+
+    DocumentPaintCommand(DocumentPaintCommandType type, ElementNode element, int left, int top, int right, int bottom,
             int color, int borderWidth, UiBorderRadiusResolver.ResolvedCornerRadii cornerRadii, int cornerMask,
             String text, DocumentCustomRenderer customRenderer, int backdropBlurRadius, float backdropSaturation,
             float paintContextOpacity, DocumentEffectType effectType) {
@@ -190,6 +201,7 @@ public final class DocumentPaintCommand {
         this.backdropBlurRadius = Math.max(0, backdropBlurRadius);
         this.backdropSaturation = Math.max(0.0F, backdropSaturation);
         this.paintContextOpacity = Math.max(0.0F, Math.min(1.0F, paintContextOpacity));
+        this.transform = null;
     }
 
     public DocumentPaintCommandType getType() {
@@ -307,6 +319,15 @@ public final class DocumentPaintCommand {
 
     public float getPaintContextOpacity() {
         return paintContextOpacity;
+    }
+
+    /**
+     * 返回 transform 命令携带的变换值。
+     *
+     * @return transform 值；非 transform 命令返回 null
+     */
+    public UiTransform getTransform() {
+        return transform;
     }
 
     private static DocumentEffectType resolveEffectType(DocumentPaintCommandType type, DocumentEffectType effectType) {

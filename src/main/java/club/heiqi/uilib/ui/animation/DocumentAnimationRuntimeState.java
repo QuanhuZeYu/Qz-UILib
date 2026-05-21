@@ -261,7 +261,7 @@ final class DocumentAnimationRuntimeState {
                 && declaredDelayNanos == style.getAnimationDelayNanos()
                 && declaredIterationCount == style.getAnimationIterationCount()
                 && declaredFillMode == style.getAnimationFillMode()
-                && declaredTimingFunction == style.getAnimationTimingFunction();
+                && Objects.equals(declaredTimingFunction, style.getAnimationTimingFunction());
     }
 
     void setColorTransition(DocumentAnimationProperty property, int fromColor, int toColor, long startNanos,

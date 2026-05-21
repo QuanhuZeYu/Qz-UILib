@@ -8,6 +8,7 @@ import java.util.Objects;
 import club.heiqi.uilib.ui.style.cascade.ComputedStyle;
 import club.heiqi.uilib.ui.style.props.UiOverflow;
 import club.heiqi.uilib.ui.style.props.UiPosition;
+import club.heiqi.uilib.ui.style.values.UiTransform;
 
 /**
  * 单个 HTML-like 布局盒的显式 clip / effect chain。
@@ -30,19 +31,22 @@ public final class DocumentEffectChain {
     private final boolean clipsChildren;
     private final boolean positionedStackingContext;
     private final boolean opacityStackingContext;
+    private final boolean transformStackingContext;
     private final int backdropBlurRadius;
     private final float backdropSaturation;
     private final List<DocumentEffectType> staticEffects;
 
     private DocumentEffectChain(DocumentLayoutBox box, boolean overflowClipsX, boolean overflowClipsY,
             boolean clipsChildren, boolean positionedStackingContext, boolean opacityStackingContext,
-            int backdropBlurRadius, float backdropSaturation, List<DocumentEffectType> staticEffects) {
+            boolean transformStackingContext, int backdropBlurRadius, float backdropSaturation,
+            List<DocumentEffectType> staticEffects) {
         this.box = Objects.requireNonNull(box, "box");
         this.overflowClipsX = overflowClipsX;
         this.overflowClipsY = overflowClipsY;
         this.clipsChildren = clipsChildren;
         this.positionedStackingContext = positionedStackingContext;
         this.opacityStackingContext = opacityStackingContext;
+        this.transformStackingContext = transformStackingContext;
         this.backdropBlurRadius = Math.max(0, backdropBlurRadius);
         this.backdropSaturation = Math.max(0.0F, backdropSaturation);
         this.staticEffects = Collections.unmodifiableList(new ArrayList<DocumentEffectType>(staticEffects));
@@ -64,6 +68,8 @@ public final class DocumentEffectChain {
         boolean positionedStackingContext = style.getPosition() == UiPosition.STICKY
                 || style.getPosition() != UiPosition.STATIC && style.getZIndex() != null;
         boolean opacityStackingContext = style.getOpacity() < 0.999F;
+        UiTransform transform = style.getTransform();
+        boolean transformStackingContext = transform != null && !transform.isIdentity();
         int backdropBlurRadius = resolveBackdropBlurRadius(box, style);
         float backdropSaturation = style.getBackdropSaturation();
 
@@ -75,7 +81,8 @@ public final class DocumentEffectChain {
             staticEffects.add(DocumentEffectType.OVERFLOW_CLIP);
         }
         return new DocumentEffectChain(box, overflowClipsX, overflowClipsY, clipsChildren,
-                positionedStackingContext, opacityStackingContext, backdropBlurRadius, backdropSaturation,
+                positionedStackingContext, opacityStackingContext, transformStackingContext,
+                backdropBlurRadius, backdropSaturation,
                 staticEffects);
     }
 
@@ -110,7 +117,7 @@ public final class DocumentEffectChain {
      * @return 是否建立 stacking context
      */
     public boolean createsStackingContext() {
-        return opacityStackingContext || positionedStackingContext || hasBackdropFilter();
+        return opacityStackingContext || positionedStackingContext || transformStackingContext || hasBackdropFilter();
     }
 
     /**
@@ -208,7 +215,7 @@ public final class DocumentEffectChain {
      * @param offsetY 当前盒视觉 Y 偏移
      * @return 是否可继续访问子内容
      */
-    public boolean canReachChildrenAt(int x, int y, int offsetX, int offsetY) {
+    public boolean canReachChildrenAt(float x, float y, int offsetX, int offsetY) {
         if (!hasOverflowClip()) {
             return true;
         }
@@ -254,7 +261,7 @@ public final class DocumentEffectChain {
          * @param y Y 坐标
          * @return 是否命中边界
          */
-        public boolean contains(int x, int y) {
+        public boolean contains(float x, float y) {
             return x >= left && x < right && y >= top && y < bottom;
         }
 
