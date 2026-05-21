@@ -47,16 +47,40 @@ final class PositionedLayoutHelper {
         ComputedStyle style = layoutContext.computeStyle(element);
         int forcedContentWidth = resolveStretchContentWidth(element, style, containingBlock, layoutContext);
         int forcedContentHeight = resolveStretchContentHeight(element, style, containingBlock, layoutContext);
-        DocumentLayoutBox measuredBox = DocumentLayoutEngine.layoutElement(element, 0, 0, containingBlock.width,
-                containingBlock.height, forcedContentWidth, forcedContentHeight, containingBlock, fixedContainingBlock,
-                layoutContext);
-        int marginBoxWidth = measuredBox.getWidth() + measuredBox.getMargin().getHorizontal();
-        int marginBoxHeight = measuredBox.getHeight() + measuredBox.getMargin().getVertical();
+        boolean needsMeasuredWidth = requiresMeasuredMarginBoxWidth(style);
+        boolean needsMeasuredHeight = requiresMeasuredMarginBoxHeight(style);
+        int marginBoxWidth = 0;
+        int marginBoxHeight = 0;
+        if (needsMeasuredWidth || needsMeasuredHeight) {
+            DocumentLayoutBox measuredBox = DocumentLayoutEngine.layoutElement(element, 0, 0, containingBlock.width,
+                    containingBlock.height, forcedContentWidth, forcedContentHeight, containingBlock,
+                    fixedContainingBlock, layoutContext);
+            if (needsMeasuredWidth) {
+                marginBoxWidth = measuredBox.getWidth() + measuredBox.getMargin().getHorizontal();
+            }
+            if (needsMeasuredHeight) {
+                marginBoxHeight = measuredBox.getHeight() + measuredBox.getMargin().getVertical();
+            }
+        }
         int marginBoxLeft = resolveAbsoluteMarginBoxLeft(style, containingBlock, marginBoxWidth);
         int marginBoxTop = resolveAbsoluteMarginBoxTop(style, containingBlock, marginBoxHeight);
         return DocumentLayoutEngine.layoutElement(element, marginBoxLeft, marginBoxTop, containingBlock.width,
                 containingBlock.height, forcedContentWidth, forcedContentHeight, containingBlock, fixedContainingBlock,
                 layoutContext);
+    }
+
+    /**
+     * 仅 right 单边锚定时需要先测量 margin box 宽度来反推 left。
+     */
+    private static boolean requiresMeasuredMarginBoxWidth(ComputedStyle style) {
+        return DocumentLayoutEngine.isAuto(style.getLeft()) && !DocumentLayoutEngine.isAuto(style.getRight());
+    }
+
+    /**
+     * 仅 bottom 单边锚定时需要先测量 margin box 高度来反推 top。
+     */
+    private static boolean requiresMeasuredMarginBoxHeight(ComputedStyle style) {
+        return DocumentLayoutEngine.isAuto(style.getTop()) && !DocumentLayoutEngine.isAuto(style.getBottom());
     }
 
     private static int resolveStretchContentWidth(ElementNode element, ComputedStyle style,

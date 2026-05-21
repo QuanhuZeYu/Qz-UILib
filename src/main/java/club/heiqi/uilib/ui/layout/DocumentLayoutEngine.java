@@ -3,6 +3,7 @@ package club.heiqi.uilib.ui.layout;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Comparator;
+import java.util.HashMap;
 import java.util.IdentityHashMap;
 import java.util.List;
 import java.util.Map;
@@ -404,6 +405,17 @@ public final class DocumentLayoutEngine {
      * 递归测量元素内容的固有宽度。
      */
     static int measureIntrinsicContentWidth(ElementNode element, int containingWidth, LayoutContext layoutContext) {
+        Integer cachedWidth = layoutContext.getIntrinsicContentWidth(element, containingWidth);
+        if (cachedWidth != null) {
+            return cachedWidth.intValue();
+        }
+        int measuredWidth = computeIntrinsicContentWidth(element, containingWidth, layoutContext);
+        layoutContext.putIntrinsicContentWidth(element, containingWidth, measuredWidth);
+        return measuredWidth;
+    }
+
+    private static int computeIntrinsicContentWidth(ElementNode element, int containingWidth,
+            LayoutContext layoutContext) {
         ComputedStyle style = layoutContext.computeStyle(element);
         if (DocumentImageElementSupport.isImageTag(element.getTagName())) {
             return DocumentImageElementSupport.resolveIntrinsicWidth(element);
@@ -442,6 +454,17 @@ public final class DocumentLayoutEngine {
     }
 
     static int measureIntrinsicOuterWidth(ElementNode element, ComputedStyle style, int containingWidth,
+            LayoutContext layoutContext) {
+        Integer cachedWidth = layoutContext.getIntrinsicOuterWidth(element, containingWidth);
+        if (cachedWidth != null) {
+            return cachedWidth.intValue();
+        }
+        int measuredWidth = computeIntrinsicOuterWidth(element, style, containingWidth, layoutContext);
+        layoutContext.putIntrinsicOuterWidth(element, containingWidth, measuredWidth);
+        return measuredWidth;
+    }
+
+    private static int computeIntrinsicOuterWidth(ElementNode element, ComputedStyle style, int containingWidth,
             LayoutContext layoutContext) {
         DocumentLayoutEdges margin = resolveMarginInsets(element, style, containingWidth,
                 layoutContext.layoutValueResolver);
@@ -872,6 +895,10 @@ public final class DocumentLayoutEngine {
                 new IdentityHashMap<ElementNode, List<DocumentNode>>();
         private final Map<ElementNode, VisibleElementChildren> visibleElementChildrenCache =
                 new IdentityHashMap<ElementNode, VisibleElementChildren>();
+        private final Map<ElementNode, Map<Integer, Integer>> intrinsicContentWidthCache =
+                new IdentityHashMap<ElementNode, Map<Integer, Integer>>();
+        private final Map<ElementNode, Map<Integer, Integer>> intrinsicOuterWidthCache =
+                new IdentityHashMap<ElementNode, Map<Integer, Integer>>();
 
         LayoutContext(TextMeasureService textMeasureService, LayoutRuntimeValueResolver layoutValueResolver) {
             this.textMeasureService = Objects.requireNonNull(textMeasureService, "textMeasureService");
@@ -912,6 +939,22 @@ public final class DocumentLayoutEngine {
             return visibleChildren;
         }
 
+        Integer getIntrinsicContentWidth(ElementNode element, int containingWidth) {
+            return getCachedIntrinsicWidth(intrinsicContentWidthCache, element, containingWidth);
+        }
+
+        void putIntrinsicContentWidth(ElementNode element, int containingWidth, int measuredWidth) {
+            putCachedIntrinsicWidth(intrinsicContentWidthCache, element, containingWidth, measuredWidth);
+        }
+
+        Integer getIntrinsicOuterWidth(ElementNode element, int containingWidth) {
+            return getCachedIntrinsicWidth(intrinsicOuterWidthCache, element, containingWidth);
+        }
+
+        void putIntrinsicOuterWidth(ElementNode element, int containingWidth, int measuredWidth) {
+            putCachedIntrinsicWidth(intrinsicOuterWidthCache, element, containingWidth, measuredWidth);
+        }
+
         private ComputedStyle resolveParentStyle(ElementNode element) {
             if (element.isPseudoElement()) {
                 ElementNode originElement = element.getPseudoOriginElement();
@@ -919,6 +962,22 @@ public final class DocumentLayoutEngine {
             }
             DocumentNode parent = element.getParent();
             return parent instanceof ElementNode ? computeStyle((ElementNode) parent) : null;
+        }
+
+        private static Integer getCachedIntrinsicWidth(Map<ElementNode, Map<Integer, Integer>> cache,
+                ElementNode element, int containingWidth) {
+            Map<Integer, Integer> widthCache = cache.get(element);
+            return widthCache == null ? null : widthCache.get(Integer.valueOf(containingWidth));
+        }
+
+        private static void putCachedIntrinsicWidth(Map<ElementNode, Map<Integer, Integer>> cache,
+                ElementNode element, int containingWidth, int measuredWidth) {
+            Map<Integer, Integer> widthCache = cache.get(element);
+            if (widthCache == null) {
+                widthCache = new HashMap<Integer, Integer>();
+                cache.put(element, widthCache);
+            }
+            widthCache.put(Integer.valueOf(containingWidth), Integer.valueOf(measuredWidth));
         }
     }
 
