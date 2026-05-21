@@ -19,6 +19,10 @@ import club.heiqi.uilib.ui.text.TextContentMode;
 
 /**
  * HTML-like 元素节点。
+ *
+ * <p>本类聚焦于属性表、样式声明、子节点关系等"节点本体"职责。
+ * 14+4 组具名 interaction handler 与自定义渲染回调通过 {@link ElementInteractionHandlers}
+ * 容器持有，ARIA / tabindex / disabled 等纯函数语义计算交给 {@link ElementSemantics}。</p>
  */
 public final class ElementNode extends DocumentNode {
 
@@ -31,33 +35,10 @@ public final class ElementNode extends DocumentNode {
             new LinkedHashMap<String, List<DocumentCustomEventHandler>>();
     private final Map<String, List<DocumentCustomEventHandler>> captureCustomEventHandlers =
             new LinkedHashMap<String, List<DocumentCustomEventHandler>>();
+    private final ElementInteractionHandlers handlers = new ElementInteractionHandlers();
     private boolean focusable;
     private boolean focusableExplicitlySet;
     private int focusInvalidationVersion;
-    private DocumentElementActiveHandler activeHandler;
-    private DocumentElementClickHandler clickHandler;
-    private DocumentElementDoubleClickHandler doubleClickHandler;
-    private DocumentElementContextMenuHandler contextMenuHandler;
-    private DocumentElementFocusHandler focusHandler;
-    private DocumentElementHoverHandler hoverHandler;
-    private DocumentElementDragHandler dragHandler;
-    private DocumentElementDragStartHandler dragStartHandler;
-    private DocumentElementDragOverHandler dragOverHandler;
-    private DocumentElementDragEndHandler dragEndHandler;
-    private DocumentElementKeyHandler keyHandler;
-    private DocumentElementTextInputHandler textInputHandler;
-    private DocumentElementMouseDownHandler mouseDownHandler;
-    private DocumentElementMouseUpHandler mouseUpHandler;
-    private DocumentElementFocusInHandler focusInHandler;
-    private DocumentElementTransitionEndHandler transitionEndHandler;
-    private DocumentElementAnimationEndHandler animationEndHandler;
-    private DocumentCustomRenderer customRenderer;
-    private DocumentElementScrollHandler scrollHandler;
-    // 捕获阶段 handler
-    private DocumentElementClickHandler captureClickHandler;
-    private DocumentElementMouseDownHandler captureMouseDownHandler;
-    private DocumentElementMouseUpHandler captureMouseUpHandler;
-    private DocumentElementKeyHandler captureKeyHandler;
     private final DomTokenList classList = new DomTokenList(new Runnable() {
         @Override
         public void run() {
@@ -86,7 +67,7 @@ public final class ElementNode extends DocumentNode {
         this.tagName = normalizeName(tagName, "tagName");
         this.pseudoOriginElement = pseudoOriginElement;
         this.pseudoElement = pseudoElement;
-        if (isNativeFocusableTag(this.tagName)) {
+        if (ElementSemantics.isNativeFocusableTag(this.tagName)) {
             this.focusable = true;
         }
         if ("input".equals(this.tagName)) {
@@ -261,7 +242,7 @@ public final class ElementNode extends DocumentNode {
         }
         String previousValue = attributes.put(resolvedName, value);
         boolean changed = !Objects.equals(previousValue, value);
-        if (isAnchorElement() && "href".equals(resolvedName)) {
+        if (ElementSemantics.isAnchorElement(tagName) && "href".equals(resolvedName)) {
             changed |= updateAnchorFocusableFromHref();
         }
         if (changed) {
@@ -300,7 +281,7 @@ public final class ElementNode extends DocumentNode {
         String resolvedName = normalizeName(name, "name");
         String previousValue = attributes.remove(resolvedName);
         if (previousValue != null) {
-            if (isAnchorElement() && "href".equals(resolvedName)) {
+            if (ElementSemantics.isAnchorElement(tagName) && "href".equals(resolvedName)) {
                 updateAnchorFocusableFromHref();
             }
             markMutated();
@@ -541,15 +522,7 @@ public final class ElementNode extends DocumentNode {
      * @return tabindex；未声明或无法解析时返回 null
      */
     public Integer getTabIndex() {
-        String value = getAttribute("tabindex");
-        if (value == null) {
-            return null;
-        }
-        try {
-            return Integer.valueOf(Integer.parseInt(value.trim()));
-        } catch (NumberFormatException ignored) {
-            return null;
-        }
+        return ElementSemantics.resolveTabIndex(this);
     }
 
     /**
@@ -558,7 +531,7 @@ public final class ElementNode extends DocumentNode {
      * @return 是否语义隐藏
      */
     public boolean isAriaHidden() {
-        return "true".equals(getAttribute("aria-hidden"));
+        return ElementSemantics.isAriaHidden(this);
     }
 
     /**
@@ -569,11 +542,7 @@ public final class ElementNode extends DocumentNode {
      * @return 是否处于 disabled 状态
      */
     public boolean isDisabled() {
-        if (!isNativeFocusableTag(tagName)) {
-            return false;
-        }
-        String value = getAttribute("disabled");
-        return value != null && !"false".equals(value.trim().toLowerCase(Locale.ROOT));
+        return ElementSemantics.isDisabled(this);
     }
 
     /**
@@ -582,37 +551,7 @@ public final class ElementNode extends DocumentNode {
      * @return 语义角色；无角色时返回 null
      */
     public String getSemanticRole() {
-        String role = trimToNull(getAttribute("role"));
-        if (role != null) {
-            return role;
-        }
-        if ("button".equals(tagName)) {
-            return "button";
-        }
-        if ("input".equals(tagName)) {
-            String type = trimToNull(getAttribute("type"));
-            if ("checkbox".equals(type)) {
-                return "checkbox";
-            }
-            return "textbox";
-        }
-        if ("textarea".equals(tagName)) {
-            return "textbox";
-        }
-        if ("select".equals(tagName)) {
-            return "combobox";
-        }
-        if ("option".equals(tagName)) {
-            return "option";
-        }
-        if (isAnchorElement() && hasLinkHref()) {
-            return "link";
-        }
-        if (DocumentImageElementSupport.isImageTag(tagName)) {
-            String alt = getAttribute("alt");
-            return alt != null && alt.isEmpty() ? "presentation" : "img";
-        }
-        return null;
+        return ElementSemantics.resolveSemanticRole(this);
     }
 
     /**
@@ -621,18 +560,7 @@ public final class ElementNode extends DocumentNode {
      * @return 可访问名称；无可用名称或 aria-hidden 时返回空字符串
      */
     public String getAccessibleLabel() {
-        if (isAriaHidden()) {
-            return "";
-        }
-        String ariaLabel = trimToNull(getAttribute("aria-label"));
-        if (ariaLabel != null) {
-            return ariaLabel;
-        }
-        if (DocumentImageElementSupport.isImageTag(tagName)) {
-            String alt = getAttribute("alt");
-            return alt == null ? "" : alt;
-        }
-        return collectTextContent(this).trim();
+        return ElementSemantics.resolveAccessibleLabel(this);
     }
 
     /**
@@ -644,7 +572,7 @@ public final class ElementNode extends DocumentNode {
      * @return 当前元素
      */
     public ElementNode setActiveHandler(DocumentElementActiveHandler activeHandler) {
-        this.activeHandler = activeHandler;
+        handlers.activeHandler = activeHandler;
         return this;
     }
 
@@ -654,7 +582,7 @@ public final class ElementNode extends DocumentNode {
      * @return active 状态处理器；不存在时返回 null
      */
     public DocumentElementActiveHandler getActiveHandler() {
-        return activeHandler;
+        return handlers.activeHandler;
     }
 
     /**
@@ -666,7 +594,7 @@ public final class ElementNode extends DocumentNode {
      * @return 当前元素
      */
     public ElementNode setClickHandler(DocumentElementClickHandler clickHandler) {
-        this.clickHandler = clickHandler;
+        handlers.clickHandler = clickHandler;
         return this;
     }
 
@@ -676,7 +604,7 @@ public final class ElementNode extends DocumentNode {
      * @return 点击处理器；不存在时返回 null
      */
     public DocumentElementClickHandler getClickHandler() {
-        return clickHandler;
+        return handlers.clickHandler;
     }
 
     /**
@@ -686,7 +614,7 @@ public final class ElementNode extends DocumentNode {
      * @return 当前元素
      */
     public ElementNode setDoubleClickHandler(DocumentElementDoubleClickHandler doubleClickHandler) {
-        this.doubleClickHandler = doubleClickHandler;
+        handlers.doubleClickHandler = doubleClickHandler;
         return this;
     }
 
@@ -696,7 +624,7 @@ public final class ElementNode extends DocumentNode {
      * @return 双击处理器；不存在时返回 null
      */
     public DocumentElementDoubleClickHandler getDoubleClickHandler() {
-        return doubleClickHandler;
+        return handlers.doubleClickHandler;
     }
 
     /**
@@ -706,7 +634,7 @@ public final class ElementNode extends DocumentNode {
      * @return 当前元素
      */
     public ElementNode setContextMenuHandler(DocumentElementContextMenuHandler contextMenuHandler) {
-        this.contextMenuHandler = contextMenuHandler;
+        handlers.contextMenuHandler = contextMenuHandler;
         return this;
     }
 
@@ -716,7 +644,7 @@ public final class ElementNode extends DocumentNode {
      * @return 右键菜单处理器；不存在时返回 null
      */
     public DocumentElementContextMenuHandler getContextMenuHandler() {
-        return contextMenuHandler;
+        return handlers.contextMenuHandler;
     }
 
     /**
@@ -728,7 +656,7 @@ public final class ElementNode extends DocumentNode {
      * @return 当前元素
      */
     public ElementNode setFocusHandler(DocumentElementFocusHandler focusHandler) {
-        this.focusHandler = focusHandler;
+        handlers.focusHandler = focusHandler;
         return this;
     }
 
@@ -738,7 +666,7 @@ public final class ElementNode extends DocumentNode {
      * @return 焦点变化处理器；不存在时返回 null
      */
     public DocumentElementFocusHandler getFocusHandler() {
-        return focusHandler;
+        return handlers.focusHandler;
     }
 
     /**
@@ -750,7 +678,7 @@ public final class ElementNode extends DocumentNode {
      * @return 当前元素
      */
     public ElementNode setHoverHandler(DocumentElementHoverHandler hoverHandler) {
-        this.hoverHandler = hoverHandler;
+        handlers.hoverHandler = hoverHandler;
         return this;
     }
 
@@ -760,7 +688,7 @@ public final class ElementNode extends DocumentNode {
      * @return 悬停状态处理器；不存在时返回 null
      */
     public DocumentElementHoverHandler getHoverHandler() {
-        return hoverHandler;
+        return handlers.hoverHandler;
     }
 
     /**
@@ -772,7 +700,7 @@ public final class ElementNode extends DocumentNode {
      * @return 当前元素
      */
     public ElementNode setDragHandler(DocumentElementDragHandler dragHandler) {
-        this.dragHandler = dragHandler;
+        handlers.dragHandler = dragHandler;
         return this;
     }
 
@@ -782,7 +710,7 @@ public final class ElementNode extends DocumentNode {
      * @return 拖拽处理器；不存在时返回 null
      */
     public DocumentElementDragHandler getDragHandler() {
-        return dragHandler;
+        return handlers.dragHandler;
     }
 
     /**
@@ -792,7 +720,7 @@ public final class ElementNode extends DocumentNode {
      * @return 当前元素
      */
     public ElementNode setDragStartHandler(DocumentElementDragStartHandler dragStartHandler) {
-        this.dragStartHandler = dragStartHandler;
+        handlers.dragStartHandler = dragStartHandler;
         return this;
     }
 
@@ -802,7 +730,7 @@ public final class ElementNode extends DocumentNode {
      * @return dragstart 处理器；不存在时返回 null
      */
     public DocumentElementDragStartHandler getDragStartHandler() {
-        return dragStartHandler;
+        return handlers.dragStartHandler;
     }
 
     /**
@@ -812,7 +740,7 @@ public final class ElementNode extends DocumentNode {
      * @return 当前元素
      */
     public ElementNode setDragOverHandler(DocumentElementDragOverHandler dragOverHandler) {
-        this.dragOverHandler = dragOverHandler;
+        handlers.dragOverHandler = dragOverHandler;
         return this;
     }
 
@@ -822,7 +750,7 @@ public final class ElementNode extends DocumentNode {
      * @return dragover 处理器；不存在时返回 null
      */
     public DocumentElementDragOverHandler getDragOverHandler() {
-        return dragOverHandler;
+        return handlers.dragOverHandler;
     }
 
     /**
@@ -832,7 +760,7 @@ public final class ElementNode extends DocumentNode {
      * @return 当前元素
      */
     public ElementNode setDragEndHandler(DocumentElementDragEndHandler dragEndHandler) {
-        this.dragEndHandler = dragEndHandler;
+        handlers.dragEndHandler = dragEndHandler;
         return this;
     }
 
@@ -842,7 +770,7 @@ public final class ElementNode extends DocumentNode {
      * @return dragend 处理器；不存在时返回 null
      */
     public DocumentElementDragEndHandler getDragEndHandler() {
-        return dragEndHandler;
+        return handlers.dragEndHandler;
     }
 
     /**
@@ -854,7 +782,7 @@ public final class ElementNode extends DocumentNode {
      * @return 当前元素
      */
     public ElementNode setKeyHandler(DocumentElementKeyHandler keyHandler) {
-        this.keyHandler = keyHandler;
+        handlers.keyHandler = keyHandler;
         return this;
     }
 
@@ -864,7 +792,7 @@ public final class ElementNode extends DocumentNode {
      * @return 键盘按键处理器；不存在时返回 null
      */
     public DocumentElementKeyHandler getKeyHandler() {
-        return keyHandler;
+        return handlers.keyHandler;
     }
 
     /**
@@ -876,7 +804,7 @@ public final class ElementNode extends DocumentNode {
      * @return 当前元素
      */
     public ElementNode setTextInputHandler(DocumentElementTextInputHandler textInputHandler) {
-        this.textInputHandler = textInputHandler;
+        handlers.textInputHandler = textInputHandler;
         return this;
     }
 
@@ -886,7 +814,7 @@ public final class ElementNode extends DocumentNode {
      * @return 文本输入处理器；不存在时返回 null
      */
     public DocumentElementTextInputHandler getTextInputHandler() {
-        return textInputHandler;
+        return handlers.textInputHandler;
     }
 
     /**
@@ -896,7 +824,7 @@ public final class ElementNode extends DocumentNode {
      * @return 当前元素
      */
     public ElementNode setMouseDownHandler(DocumentElementMouseDownHandler mouseDownHandler) {
-        this.mouseDownHandler = mouseDownHandler;
+        handlers.mouseDownHandler = mouseDownHandler;
         return this;
     }
 
@@ -906,7 +834,7 @@ public final class ElementNode extends DocumentNode {
      * @return 鼠标按下处理器；不存在时返回 null
      */
     public DocumentElementMouseDownHandler getMouseDownHandler() {
-        return mouseDownHandler;
+        return handlers.mouseDownHandler;
     }
 
     /**
@@ -916,7 +844,7 @@ public final class ElementNode extends DocumentNode {
      * @return 当前元素
      */
     public ElementNode setMouseUpHandler(DocumentElementMouseUpHandler mouseUpHandler) {
-        this.mouseUpHandler = mouseUpHandler;
+        handlers.mouseUpHandler = mouseUpHandler;
         return this;
     }
 
@@ -926,7 +854,7 @@ public final class ElementNode extends DocumentNode {
      * @return 鼠标抬起处理器；不存在时返回 null
      */
     public DocumentElementMouseUpHandler getMouseUpHandler() {
-        return mouseUpHandler;
+        return handlers.mouseUpHandler;
     }
 
     /**
@@ -936,7 +864,7 @@ public final class ElementNode extends DocumentNode {
      * @return 当前元素
      */
     public ElementNode setFocusInHandler(DocumentElementFocusInHandler focusInHandler) {
-        this.focusInHandler = focusInHandler;
+        handlers.focusInHandler = focusInHandler;
         return this;
     }
 
@@ -946,7 +874,7 @@ public final class ElementNode extends DocumentNode {
      * @return 焦点进入处理器；不存在时返回 null
      */
     public DocumentElementFocusInHandler getFocusInHandler() {
-        return focusInHandler;
+        return handlers.focusInHandler;
     }
 
     /**
@@ -956,7 +884,7 @@ public final class ElementNode extends DocumentNode {
      * @return 当前元素
      */
     public ElementNode setTransitionEndHandler(DocumentElementTransitionEndHandler transitionEndHandler) {
-        this.transitionEndHandler = transitionEndHandler;
+        handlers.transitionEndHandler = transitionEndHandler;
         return this;
     }
 
@@ -966,7 +894,7 @@ public final class ElementNode extends DocumentNode {
      * @return 过渡结束处理器；不存在时返回 null
      */
     public DocumentElementTransitionEndHandler getTransitionEndHandler() {
-        return transitionEndHandler;
+        return handlers.transitionEndHandler;
     }
 
     /**
@@ -976,7 +904,7 @@ public final class ElementNode extends DocumentNode {
      * @return 当前元素
      */
     public ElementNode setAnimationEndHandler(DocumentElementAnimationEndHandler animationEndHandler) {
-        this.animationEndHandler = animationEndHandler;
+        handlers.animationEndHandler = animationEndHandler;
         return this;
     }
 
@@ -986,7 +914,7 @@ public final class ElementNode extends DocumentNode {
      * @return 动画结束处理器；不存在时返回 null
      */
     public DocumentElementAnimationEndHandler getAnimationEndHandler() {
-        return animationEndHandler;
+        return handlers.animationEndHandler;
     }
 
     /**
@@ -998,7 +926,7 @@ public final class ElementNode extends DocumentNode {
      * @return 当前元素
      */
     public ElementNode setScrollHandler(DocumentElementScrollHandler scrollHandler) {
-        this.scrollHandler = scrollHandler;
+        handlers.scrollHandler = scrollHandler;
         return this;
     }
 
@@ -1008,7 +936,7 @@ public final class ElementNode extends DocumentNode {
      * @return 滚动事件处理器；不存在时返回 null
      */
     public DocumentElementScrollHandler getScrollHandler() {
-        return scrollHandler;
+        return handlers.scrollHandler;
     }
 
     // ========== 捕获阶段 handler ==========
@@ -1022,7 +950,7 @@ public final class ElementNode extends DocumentNode {
      * @return 当前元素
      */
     public ElementNode setCaptureClickHandler(DocumentElementClickHandler captureClickHandler) {
-        this.captureClickHandler = captureClickHandler;
+        handlers.captureClickHandler = captureClickHandler;
         return this;
     }
 
@@ -1032,7 +960,7 @@ public final class ElementNode extends DocumentNode {
      * @return 捕获阶段点击处理器；不存在时返回 null
      */
     public DocumentElementClickHandler getCaptureClickHandler() {
-        return captureClickHandler;
+        return handlers.captureClickHandler;
     }
 
     /**
@@ -1042,7 +970,7 @@ public final class ElementNode extends DocumentNode {
      * @return 当前元素
      */
     public ElementNode setCaptureMouseDownHandler(DocumentElementMouseDownHandler captureMouseDownHandler) {
-        this.captureMouseDownHandler = captureMouseDownHandler;
+        handlers.captureMouseDownHandler = captureMouseDownHandler;
         return this;
     }
 
@@ -1052,7 +980,7 @@ public final class ElementNode extends DocumentNode {
      * @return 捕获阶段鼠标按下处理器；不存在时返回 null
      */
     public DocumentElementMouseDownHandler getCaptureMouseDownHandler() {
-        return captureMouseDownHandler;
+        return handlers.captureMouseDownHandler;
     }
 
     /**
@@ -1062,7 +990,7 @@ public final class ElementNode extends DocumentNode {
      * @return 当前元素
      */
     public ElementNode setCaptureMouseUpHandler(DocumentElementMouseUpHandler captureMouseUpHandler) {
-        this.captureMouseUpHandler = captureMouseUpHandler;
+        handlers.captureMouseUpHandler = captureMouseUpHandler;
         return this;
     }
 
@@ -1072,7 +1000,7 @@ public final class ElementNode extends DocumentNode {
      * @return 捕获阶段鼠标抬起处理器；不存在时返回 null
      */
     public DocumentElementMouseUpHandler getCaptureMouseUpHandler() {
-        return captureMouseUpHandler;
+        return handlers.captureMouseUpHandler;
     }
 
     /**
@@ -1082,7 +1010,7 @@ public final class ElementNode extends DocumentNode {
      * @return 当前元素
      */
     public ElementNode setCaptureKeyHandler(DocumentElementKeyHandler captureKeyHandler) {
-        this.captureKeyHandler = captureKeyHandler;
+        handlers.captureKeyHandler = captureKeyHandler;
         return this;
     }
 
@@ -1092,7 +1020,7 @@ public final class ElementNode extends DocumentNode {
      * @return 捕获阶段键盘处理器；不存在时返回 null
      */
     public DocumentElementKeyHandler getCaptureKeyHandler() {
-        return captureKeyHandler;
+        return handlers.captureKeyHandler;
     }
 
     /**
@@ -1105,10 +1033,10 @@ public final class ElementNode extends DocumentNode {
      * @param customRenderer 自定义渲染回调
      */
     public void setCustomRenderer(DocumentCustomRenderer customRenderer) {
-        if (this.customRenderer == customRenderer) {
+        if (handlers.customRenderer == customRenderer) {
             return;
         }
-        this.customRenderer = customRenderer;
+        handlers.customRenderer = customRenderer;
         markPaintMutated();
     }
 
@@ -1118,7 +1046,7 @@ public final class ElementNode extends DocumentNode {
      * @return 自定义绘制回调；不存在时返回 null
      */
     public DocumentCustomRenderer getCustomRenderer() {
-        return customRenderer;
+        return handlers.customRenderer;
     }
 
     /**
@@ -1201,24 +1129,11 @@ public final class ElementNode extends DocumentNode {
         return normalized;
     }
 
-    private static boolean isNativeFocusableTag(String tagName) {
-        return "button".equals(tagName) || "input".equals(tagName) || "textarea".equals(tagName)
-                || "select".equals(tagName);
-    }
-
-    private boolean isAnchorElement() {
-        return "a".equals(tagName);
-    }
-
-    private boolean hasLinkHref() {
-        return hasLinkHref(getAttribute("href"));
-    }
-
     private boolean updateAnchorFocusableFromHref() {
-        if (!isAnchorElement() || focusableExplicitlySet) {
+        if (!ElementSemantics.isAnchorElement(tagName) || focusableExplicitlySet) {
             return false;
         }
-        boolean nextFocusable = hasLinkHref();
+        boolean nextFocusable = ElementSemantics.hasLinkHref(getAttribute("href"));
         if (focusable == nextFocusable) {
             return false;
         }
@@ -1227,39 +1142,5 @@ public final class ElementNode extends DocumentNode {
         }
         focusable = nextFocusable;
         return true;
-    }
-
-    private static boolean hasLinkHref(String href) {
-        if (href == null) {
-            return false;
-        }
-        return !href.trim().isEmpty();
-    }
-
-    private static String trimToNull(String value) {
-        if (value == null) {
-            return null;
-        }
-        String trimmed = value.trim();
-        return trimmed.isEmpty() ? null : trimmed;
-    }
-
-    private static String collectTextContent(DocumentNode node) {
-        StringBuilder builder = new StringBuilder();
-        appendTextContent(node, builder);
-        return builder.toString();
-    }
-
-    private static void appendTextContent(DocumentNode node, StringBuilder builder) {
-        if (node instanceof TextNode) {
-            builder.append(((TextNode) node).getText());
-            return;
-        }
-        if (node instanceof ElementNode && ((ElementNode) node).isAriaHidden()) {
-            return;
-        }
-        for (DocumentNode child : node.getChildren()) {
-            appendTextContent(child, builder);
-        }
     }
 }
