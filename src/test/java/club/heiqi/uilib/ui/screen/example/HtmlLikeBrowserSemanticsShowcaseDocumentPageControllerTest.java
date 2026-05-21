@@ -54,6 +54,10 @@ public class HtmlLikeBrowserSemanticsShowcaseDocumentPageControllerTest {
         Assert.assertTrue(containsText(texts, "border-collapse: collapse"));
         Assert.assertTrue(containsText(texts, "scrollbar-color + scrollbar-width: thin"));
         Assert.assertTrue(containsText(texts, "background-image: options_background.png"));
+        Assert.assertTrue(containsText(texts, "#semantic-link-target"));
+        Assert.assertTrue(containsText(texts, "A. NOWRAP + ELLIPSIS"));
+        Assert.assertTrue(containsText(texts, "只执行 scrollTo(0, 72)"));
+        Assert.assertTrue(containsText(texts, "只执行末项 scrollIntoView()"));
 
         ElementNode root = widget.getDocument().getRootElement();
         Assert.assertNotNull(widget.getDocument().querySelector(".pseudo-card"));

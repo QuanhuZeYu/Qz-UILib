@@ -11,6 +11,10 @@ import club.heiqi.uilib.ui.dom.DocumentCustomEvent;
 import club.heiqi.uilib.ui.dom.DocumentCustomEventHandler;
 import club.heiqi.uilib.ui.dom.DocumentElementClickEvent;
 import club.heiqi.uilib.ui.dom.DocumentElementClickHandler;
+import club.heiqi.uilib.ui.dom.DocumentElementFocusEvent;
+import club.heiqi.uilib.ui.dom.DocumentElementFocusHandler;
+import club.heiqi.uilib.ui.dom.DocumentElementHoverEvent;
+import club.heiqi.uilib.ui.dom.DocumentElementHoverHandler;
 import club.heiqi.uilib.ui.dom.DocumentElementScrollEvent;
 import club.heiqi.uilib.ui.dom.DocumentElementScrollHandler;
 import club.heiqi.uilib.ui.dom.DocumentFragmentNode;
@@ -246,13 +250,17 @@ public final class HtmlLikeBrowserSemanticsShowcaseDocumentPageController extend
                         .setBorderColor(0xFFEC4899)
                         .setTextColor(0xFFFBCFE8))
                 .addRule(".hover-card:hover", new UiStyleDeclaration()
-                        .setBackgroundColor(0xFF2563EB)
-                        .setBorderColor(0xFF93C5FD))
+                        .setBackgroundColor(0xFF38BDF8)
+                        .setBorderColor(0xFFE0F2FE)
+                        .setTextColor(0xFF082F49)
+                        .setTransform(UiTransform.translate(0.0F, -4.0F)))
                 .addRule(".focus-card:focus", new UiStyleDeclaration()
                         .setBorderColor(0xFFFFD166)
-                        .setOutline(UiOutline.of(2, 0xFFFFD166, UiBorderStyle.SOLID, 2)))
+                        .setOutline(UiOutline.of(2, 0xFFFFD166, UiBorderStyle.SOLID, 2))
+                        .setTextColor(0xFFFFFFFF))
                 .addRule(".focus-card:focus-visible", new UiStyleDeclaration()
-                        .setBackgroundColor(0xFF3B0764))
+                        .setBackgroundColor(0xFF3B0764)
+                        .setTextColor(0xFFF5D0FE))
                 .addRule("button:disabled", new UiStyleDeclaration()
                         .setTextColor(0xFF94A3B8)
                         .setBackgroundColor(0xFF334155))
@@ -548,26 +556,35 @@ public final class HtmlLikeBrowserSemanticsShowcaseDocumentPageController extend
         row.append(createCursorProbe("move", UiCursor.MOVE, 0xFF3B2A24, 0xFFF59E0B));
         row.append(createCursorProbe("not-allowed", UiCursor.NOT_ALLOWED, 0xFF40212A, 0xFFF87171));
 
+        ElementNode overlapCard = document.div();
+        overlapCard.setClassName("demo-box");
+        overlapCard.style()
+                .setWidth(UiStyleLength.px(276))
+                .setDisplay(UiDisplay.FLEX)
+                .setFlexDirection(UiFlexDirection.COLUMN)
+                .setRowGap(UiStyleLength.px(8));
+        overlapCard.appendText("重叠命中验证：左下蓝色单独区域应显示 pointer，中央重叠区应显示 text");
+
         ElementNode overlapStage = document.div();
-        overlapStage.setClassName("demo-box");
         overlapStage.style()
                 .setPosition(UiPosition.RELATIVE)
-                .setWidth(UiStyleLength.px(240))
-                .setHeight(UiStyleLength.px(84))
+                .setWidth(UiStyleLength.percent(1.0F))
+                .setHeight(UiStyleLength.px(108))
                 .setBoxSizing(UiBoxSizing.BORDER_BOX)
-                .setPadding(UiStyleLength.px(10))
-                .setBackgroundColor(0xFF162238)
+                .setBackgroundColor(0xFF101B2D)
                 .setBorderColor(0xFF4A6FA5)
                 .setBorderWidth(UiStyleLength.px(1))
-                .setBorderStyle(UiBorderStyle.SOLID);
-        overlapStage.appendText("重叠命中验证：顶部 text 会覆盖底层 pointer");
+                .setBorderStyle(UiBorderStyle.DASHED)
+                .setBorderRadius(UiStyleLength.px(10));
+        overlapCard.append(overlapStage);
 
         ElementNode bottomLayer = document.div();
         bottomLayer.style()
+                .setPosition(UiPosition.ABSOLUTE)
                 .setCursor(UiCursor.POINTER)
-                .setMargin(UiStyleInsets.of(UiStyleLength.px(10), UiStyleLength.px(0), UiStyleLength.px(0),
-                        UiStyleLength.px(0)))
-                .setWidth(UiStyleLength.px(190))
+                .setLeft(UiStyleLength.px(18))
+                .setTop(UiStyleLength.px(44))
+                .setWidth(UiStyleLength.px(176))
                 .setHeight(UiStyleLength.px(42))
                 .setBackgroundColor(0xFF24435F)
                 .setBorderColor(0xFF66CCFF)
@@ -580,17 +597,17 @@ public final class HtmlLikeBrowserSemanticsShowcaseDocumentPageController extend
         topLayer.style()
                 .setPosition(UiPosition.ABSOLUTE)
                 .setCursor(UiCursor.TEXT)
-                .setLeft(UiStyleLength.px(86))
-                .setTop(UiStyleLength.px(28))
-                .setWidth(UiStyleLength.px(120))
-                .setHeight(UiStyleLength.px(32))
+                .setLeft(UiStyleLength.px(88))
+                .setTop(UiStyleLength.px(20))
+                .setWidth(UiStyleLength.px(124))
+                .setHeight(UiStyleLength.px(34))
                 .setBackgroundColor(0xEE1F3A2B)
                 .setBorderColor(0xFF6EE7B7)
                 .setBorderWidth(UiStyleLength.px(1))
                 .setBorderStyle(UiBorderStyle.SOLID);
         topLayer.appendText("顶层 text");
         overlapStage.append(topLayer);
-        row.append(overlapStage);
+        row.append(overlapCard);
 
         ElementNode fallbackNote = document.div();
         fallbackNote.setClassName("log-area");
@@ -877,15 +894,32 @@ public final class HtmlLikeBrowserSemanticsShowcaseDocumentPageController extend
         pseudoList.append(createDemoBox(":last-child"));
         row.append(pseudoList);
 
-        ElementNode hoverCard = createDemoBox("hover 我：:hover 改背景");
-        hoverCard.setClassName("demo-box hover-card");
-        hoverCard.style().setWidth(UiStyleLength.px(156));
+        ElementNode hoverCard = createDemoBox("hover 我：应明显变亮并上移");
+        hoverCard.setClassName("demo-box hover-card clickable");
+        hoverCard.style().setWidth(UiStyleLength.px(178));
+        hoverCard.setHoverHandler(new DocumentElementHoverHandler() {
+            @Override
+            public boolean onHoverChanged(DocumentElementHoverEvent event) {
+                updateText(selectorStateText, event.isHovered()
+                        ? ":hover 已进入，卡片应变亮、上移并切换为深色文字"
+                        : ":hover 已离开，卡片应恢复初始样式");
+                return false;
+            }
+        });
         row.append(hoverCard);
 
         ElementNode focusCard = createDemoBox("点击聚焦：:focus / :focus-visible");
         focusCard.setClassName("demo-box focus-card clickable");
         focusCard.setFocusable(true);
         focusCard.style().setWidth(UiStyleLength.px(196));
+        focusCard.setFocusHandler(new DocumentElementFocusHandler() {
+            @Override
+            public void onFocusChanged(DocumentElementFocusEvent event) {
+                updateText(selectorStateText, event.isFocused()
+                        ? ":focus 已生效，focusVisible=" + event.isFocusVisible()
+                        : "焦点已移出 focus-card");
+            }
+        });
         focusCard.setClickHandler(new DocumentElementClickHandler() {
             @Override
             public boolean onClick(DocumentElementClickEvent event) {
@@ -918,7 +952,7 @@ public final class HtmlLikeBrowserSemanticsShowcaseDocumentPageController extend
         keywordParent.append(keywordChild);
         row.append(keywordParent);
 
-        selectorStateText = appendLogLine(section, "高级选择器展示已加载：移动鼠标、点击聚焦卡片、按 Tab 可观察状态伪类。 ");
+        selectorStateText = appendLogLine(section, "高级选择器展示已加载：把鼠标移到 hover 卡片上应明显变亮；点击或按 Tab 可观察 focus 状态。 ");
     }
 
     // ========== DOM 操作展示 ==========
@@ -1036,20 +1070,19 @@ public final class HtmlLikeBrowserSemanticsShowcaseDocumentPageController extend
 
         ElementNode linkCard = createDemoBox("a[href] 默认可点击、可聚焦、cursor:pointer，并支持 #id 片段跳转：");
         linkCard.style()
-                .setWidth(UiStyleLength.px(240))
+                .setWidth(UiStyleLength.px(272))
                 .setDisplay(UiDisplay.FLEX)
                 .setFlexDirection(UiFlexDirection.COLUMN)
                 .setRowGap(UiStyleLength.px(6));
         ElementNode link = document.a();
         link.setAttribute("href", "#semantic-link-target");
         link.setAttribute("target", "_self");
-        link.appendText("跳到语义目标锚点");
+        link.appendText("跳到第 15 节底部锚点");
         linkCard.append(link);
-        ElementNode anchorTarget = document.div();
-        anchorTarget.setId("semantic-link-target");
-        anchorTarget.style().setTextColor(0xFFFFD166);
-        anchorTarget.appendText("#semantic-link-target");
-        linkCard.append(anchorTarget);
+        ElementNode linkHint = document.div();
+        linkHint.style().setTextColor(0xFFFFD166);
+        linkHint.appendText("预期：点击后页面应滚动到第 15 节底部的 #semantic-link-target");
+        linkCard.append(linkHint);
         row.append(linkCard);
 
         ElementNode listCard = createDemoBox("list-style-type");
@@ -1089,7 +1122,7 @@ public final class HtmlLikeBrowserSemanticsShowcaseDocumentPageController extend
         tableCard.append(table);
         row.append(tableCard);
 
-        semanticStateText = appendLogLine(section, "语义元素展示已加载：点击链接可验证链接默认行为与回调。 ");
+        semanticStateText = appendLogLine(section, "语义元素展示已加载：点击链接后应先发生片段滚动，再记录 href/target/defaultPrevented。 ");
     }
 
     // ========== 文本排版能力展示 ==========
@@ -1098,57 +1131,93 @@ public final class HtmlLikeBrowserSemanticsShowcaseDocumentPageController extend
         ElementNode section = createSection(root, "12. 文本排版控制");
 
         ElementNode desc = document.div();
-        desc.appendText("展示 line-height、text-align、white-space、text-overflow、text-transform、text-indent、text-shadow、letter-spacing、word-break、overflow-wrap、font-weight 与 font-style。");
+        desc.appendText("把文本排版拆成更小颗粒度卡片，分别核对省略号、空白保留、对齐/缩进、大小写转换、字距、阴影、粗斜体和长 token 换行。");
         section.append(desc);
 
         ElementNode row = document.div();
         row.setClassName("demo-row");
         section.append(row);
 
-        ElementNode nowrap = createDemoBox("NOWRAP + ELLIPSIS: This is a very long line that should end with ellipsis");
-        nowrap.style()
-                .setWidth(UiStyleLength.px(190))
+        ElementNode ellipsisPanel = createDemoPanel("A. NOWRAP + ELLIPSIS", 228);
+        ElementNode ellipsisSample = document.div();
+        ellipsisSample.style()
+                .setWidth(UiStyleLength.percent(1.0F))
                 .setWhiteSpace(UiWhiteSpace.NOWRAP)
                 .setTextOverflow(UiTextOverflow.ELLIPSIS)
                 .setOverflowX(UiOverflow.HIDDEN)
-                .setOverflowY(UiOverflow.HIDDEN);
-        row.append(nowrap);
+                .setOverflowY(UiOverflow.HIDDEN)
+                .setBackgroundColor(0xFF0F172A);
+        ellipsisSample.appendText("This is a very long line that should end with ellipsis when width is constrained.");
+        ellipsisPanel.append(ellipsisSample);
+        row.append(ellipsisPanel);
 
-        ElementNode preWrap = createDemoBox("PRE_WRAP 保留    空格\n并保留显式换行");
-        preWrap.style()
-                .setWidth(UiStyleLength.px(190))
+        ElementNode preWrapPanel = createDemoPanel("B. PRE_WRAP 保留空白", 220);
+        ElementNode preWrapSample = document.div();
+        preWrapSample.style()
+                .setWidth(UiStyleLength.percent(1.0F))
                 .setWhiteSpace(UiWhiteSpace.PRE_WRAP)
                 .setBackgroundColor(0xFF1D2B3A);
-        row.append(preWrap);
+        preWrapSample.appendText("保留    空格\n显式换行");
+        preWrapPanel.append(preWrapSample);
+        row.append(preWrapPanel);
 
-        ElementNode typography = createDemoBox("capitalized italic bold text shadow");
-        typography.style()
-                .setWidth(UiStyleLength.px(220))
+        ElementNode alignPanel = createDemoPanel("C. 对齐 / 行高 / 缩进 / 大小写", 236);
+        ElementNode alignSample = document.div();
+        alignSample.style()
+                .setWidth(UiStyleLength.percent(1.0F))
                 .setTextAlign(UiTextAlign.CENTER)
                 .setLineHeight(UiStyleLength.px(18))
-                .setTextTransform(UiTextTransform.CAPITALIZE)
                 .setTextIndent(UiStyleLength.px(14))
-                .setTextShadow(UiTextShadow.of(1, 1, 0, 0xFF000000))
-                .setLetterSpacing(UiStyleLength.px(1))
-                .setFontWeight(UiFontWeight.BOLD)
-                .setFontStyle(UiFontStyle.ITALIC);
-        row.append(typography);
+                .setBackgroundColor(0xFF1E293B);
+        alignSample.appendText("center + line-height + indent");
+        ElementNode transformUpper = document.div();
+        transformUpper.style()
+                .setTextTransform(UiTextTransform.UPPERCASE)
+                .setBackgroundColor(0xFF312E81);
+        transformUpper.appendText("uppercase sample");
+        ElementNode transformCap = document.div();
+        transformCap.style()
+                .setTextTransform(UiTextTransform.CAPITALIZE)
+                .setBackgroundColor(0xFF0F766E);
+        transformCap.appendText("capitalize sample words");
+        alignPanel.append(alignSample);
+        alignPanel.append(transformUpper);
+        alignPanel.append(transformCap);
+        row.append(alignPanel);
 
-        ElementNode breakAll = createDemoBox("word-break: break-all -> SuperLongUnbrokenTokenWithCJK混排混排混排");
-        breakAll.style()
-                .setWidth(UiStyleLength.px(190))
+        ElementNode fontPanel = createDemoPanel("D. 字距 / 阴影 / 粗斜体", 224);
+        ElementNode fontSample = document.div();
+        fontSample.style()
+                .setLetterSpacing(UiStyleLength.px(1))
+                .setTextShadow(UiTextShadow.of(1, 1, 0, 0xFF000000))
+                .setFontWeight(UiFontWeight.BOLD)
+                .setFontStyle(UiFontStyle.ITALIC)
+                .setBackgroundColor(0xFF3B2A24);
+        fontSample.appendText("bold italic shadow");
+        fontPanel.append(fontSample);
+        row.append(fontPanel);
+
+        ElementNode breakAllPanel = createDemoPanel("E. word-break: break-all", 224);
+        ElementNode breakAllSample = document.div();
+        breakAllSample.style()
+                .setWidth(UiStyleLength.percent(1.0F))
                 .setWordBreak(UiWordBreak.BREAK_ALL)
                 .setBackgroundColor(0xFF243B2A);
-        row.append(breakAll);
+        breakAllSample.appendText("SuperLongUnbrokenTokenWithCJK混排混排混排");
+        breakAllPanel.append(breakAllSample);
+        row.append(breakAllPanel);
 
-        ElementNode anywhere = createDemoBox("overflow-wrap:anywhere -> https://example.invalid/a/very/long/path/without/spaces");
-        anywhere.style()
-                .setWidth(UiStyleLength.px(210))
+        ElementNode anywherePanel = createDemoPanel("F. overflow-wrap:anywhere", 246);
+        ElementNode anywhereSample = document.div();
+        anywhereSample.style()
+                .setWidth(UiStyleLength.percent(1.0F))
                 .setOverflowWrap(UiOverflowWrap.ANYWHERE)
-                .setBackgroundColor(0xFF3B2A24);
-        row.append(anywhere);
+                .setBackgroundColor(0xFF1F2937);
+        anywhereSample.appendText("https://example.invalid/a/very/long/path/without/spaces");
+        anywherePanel.append(anywhereSample);
+        row.append(anywherePanel);
 
-        textLayoutStateText = appendLogLine(section, "文本排版展示已加载：长 token、显式换行、省略号和字体样式都由布局/绘制链路消费。 ");
+        textLayoutStateText = appendLogLine(section, "文本排版展示已拆分：每张卡只验证一组能力，便于肉眼核对实际表现。 ");
     }
 
     // ========== 布局细节展示 ==========
@@ -1287,23 +1356,37 @@ public final class HtmlLikeBrowserSemanticsShowcaseDocumentPageController extend
         visibilityCard.append(createFlexBadge("右", 0xFF16A34A));
         row.append(visibilityCard);
 
-        ElementNode button = document.button();
-        button.setClassName("demo-box highlight clickable");
-        button.appendText("scrollTo(0, 72) + scrollIntoView()");
-        button.setClickHandler(new DocumentElementClickHandler() {
+        ElementNode scrollToButton = document.button();
+        scrollToButton.setClassName("demo-box highlight clickable");
+        scrollToButton.appendText("只执行 scrollTo(0, 72)");
+        scrollToButton.setClickHandler(new DocumentElementClickHandler() {
             @Override
             public boolean onClick(DocumentElementClickEvent event) {
                 boolean scrollToResult = scrollHost.scrollTo(0, 72);
-                DocumentNode lastChild = scrollHost.getLastChild();
-                boolean intoViewResult = lastChild instanceof ElementNode && ((ElementNode) lastChild).scrollIntoView();
-                updateText(scrollStateText, "scrollTo=" + scrollToResult + "，scrollIntoView=" + intoViewResult
-                        + "，top=" + scrollHost.getScrollTop() + "/" + scrollHost.getMaxScrollTop());
+                updateText(scrollStateText, "scrollTo=" + scrollToResult + "，top=" + scrollHost.getScrollTop()
+                        + "/" + scrollHost.getMaxScrollTop());
                 return true;
             }
         });
-        row.append(button);
+        row.append(scrollToButton);
 
-        scrollStateText = appendLogLine(section, "滚动条展示已加载：滚动左侧列表或点击按钮可观察 scroll 事件与程序化滚动。 ");
+        ElementNode intoViewButton = document.button();
+        intoViewButton.setClassName("demo-box clickable");
+        intoViewButton.appendText("只执行末项 scrollIntoView()");
+        intoViewButton.setClickHandler(new DocumentElementClickHandler() {
+            @Override
+            public boolean onClick(DocumentElementClickEvent event) {
+                DocumentNode lastChild = scrollHost.getLastChild();
+                boolean intoViewResult = lastChild instanceof ElementNode
+                        && ((ElementNode) lastChild).scrollIntoView();
+                updateText(scrollStateText, "scrollIntoView=" + intoViewResult + "，top="
+                        + scrollHost.getScrollTop() + "/" + scrollHost.getMaxScrollTop());
+                return true;
+            }
+        });
+        row.append(intoViewButton);
+
+        scrollStateText = appendLogLine(section, "滚动条展示已加载：左键按钮只测 scrollTo，右键按钮只测 scrollIntoView，避免两者互相覆盖。 ");
     }
 
     // ========== 背景图与 transform 展示 ==========
@@ -1357,7 +1440,7 @@ public final class HtmlLikeBrowserSemanticsShowcaseDocumentPageController extend
                 .setFlexDirection(UiFlexDirection.COLUMN)
                 .setRowGap(UiStyleLength.px(6));
         ElementNode brokenImage = document.img();
-        brokenImage.setAttribute("src", "minecraft:textures/missing_semantics_showcase.png");
+        brokenImage.setAttribute("src", "demo://missing-image");
         brokenImage.setAttribute("alt", "ALT 回退文本");
         brokenImage.style()
                 .setWidth(UiStyleLength.px(160))
@@ -1370,7 +1453,17 @@ public final class HtmlLikeBrowserSemanticsShowcaseDocumentPageController extend
         imageFallback.append(brokenImage);
         row.append(imageFallback);
 
-        mediaStateText = appendLogLine(section, "媒体展示已加载：背景图、transform 与 img alt 回退均走运行时绘制链路。 ");
+        ElementNode anchorTarget = createDemoBox("#semantic-link-target：第 11 节链接应滚动到这里");
+        anchorTarget.setId("semantic-link-target");
+        anchorTarget.style()
+                .setMargin(UiStyleInsets.of(UiStyleLength.px(12), UiStyleLength.px(0), UiStyleLength.px(0),
+                        UiStyleLength.px(0)))
+                .setBackgroundColor(0xFF3B0764)
+                .setBorderColor(0xFFF0ABFC)
+                .setTextColor(0xFFF5D0FE);
+        section.append(anchorTarget);
+
+        mediaStateText = appendLogLine(section, "媒体展示已加载：背景图、transform 与 img alt 回退均走运行时绘制链路；第 11 节链接应滚动到上方锚点。 ");
     }
 
     // ========== 辅助方法 ==========
@@ -1383,6 +1476,19 @@ public final class HtmlLikeBrowserSemanticsShowcaseDocumentPageController extend
         box.setClassName("demo-box");
         box.appendText(text);
         return box;
+    }
+
+    /**
+     * 创建纵向排列的展示面板。
+     */
+    private ElementNode createDemoPanel(String title, int width) {
+        ElementNode panel = createDemoBox(title);
+        panel.style()
+                .setWidth(UiStyleLength.px(width))
+                .setDisplay(UiDisplay.FLEX)
+                .setFlexDirection(UiFlexDirection.COLUMN)
+                .setRowGap(UiStyleLength.px(6));
+        return panel;
     }
 
     /**
