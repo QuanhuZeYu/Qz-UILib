@@ -356,7 +356,7 @@ public final class DocumentPaintEngine {
     private static void appendBoxShadowCommand(DocumentLayoutBox box, List<DocumentPaintCommand> commands,
             DocumentAnimationTimeline animationTimeline, long currentTimeNanos, float opacity, int offsetX,
             int offsetY, boolean inset) {
-        UiBoxShadow boxShadow = box.getComputedStyle().getBoxShadow();
+        UiBoxShadow boxShadow = resolveAnimatedBoxShadow(box, animationTimeline, currentTimeNanos);
         if (boxShadow == null || boxShadow.getColor() == 0 || boxShadow.isInset() != inset) {
             return;
         }
@@ -366,7 +366,7 @@ public final class DocumentPaintEngine {
                 inset ? DocumentPaintCommandType.BOX_SHADOW_INSET : DocumentPaintCommandType.BOX_SHADOW,
                 box.getElement(), box.getLeft() + offsetX, box.getTop() + offsetY,
                 box.getRight() + offsetX, box.getBottom() + offsetY, applyOpacity(boxShadow.getColor(), opacity), 0,
-                cornerRadii));
+                cornerRadii, boxShadow));
     }
 
     private static void appendOutlineCommand(DocumentLayoutBox box, List<DocumentPaintCommand> commands,
@@ -636,6 +636,36 @@ public final class DocumentPaintEngine {
                 baseTransform.getRotateDegrees(), currentTimeNanos);
         return UiTransform.of(translateX, translateY, scaleX, scaleY, rotate,
                 baseTransform.getOriginX(), baseTransform.getOriginY());
+    }
+
+    private static UiBoxShadow resolveAnimatedBoxShadow(DocumentLayoutBox box,
+            DocumentAnimationTimeline animationTimeline, long currentTimeNanos) {
+        UiBoxShadow baseShadow = box.getComputedStyle().getBoxShadow();
+        int baseOffsetX = baseShadow == null ? 0 : baseShadow.getOffsetX();
+        int baseOffsetY = baseShadow == null ? 0 : baseShadow.getOffsetY();
+        int baseBlurRadius = baseShadow == null ? 0 : baseShadow.getBlurRadius();
+        int baseSpreadRadius = baseShadow == null ? 0 : baseShadow.getSpreadRadius();
+        int baseColor = baseShadow == null ? 0 : baseShadow.getColor();
+        boolean inset = baseShadow != null && baseShadow.isInset();
+        if (animationTimeline == null) {
+            return baseShadow;
+        }
+        int offsetX = Math.round(animationTimeline.resolveFloat(box.getElement(),
+                DocumentAnimationProperty.BOX_SHADOW_OFFSET_X, baseOffsetX, currentTimeNanos));
+        int offsetY = Math.round(animationTimeline.resolveFloat(box.getElement(),
+                DocumentAnimationProperty.BOX_SHADOW_OFFSET_Y, baseOffsetY, currentTimeNanos));
+        int blurRadius = Math.round(animationTimeline.resolveFloat(box.getElement(),
+                DocumentAnimationProperty.BOX_SHADOW_BLUR_RADIUS, baseBlurRadius, currentTimeNanos));
+        int spreadRadius = Math.round(animationTimeline.resolveFloat(box.getElement(),
+                DocumentAnimationProperty.BOX_SHADOW_SPREAD_RADIUS, baseSpreadRadius, currentTimeNanos));
+        int color = animationTimeline.resolveColor(box.getElement(), DocumentAnimationProperty.BOX_SHADOW_COLOR,
+                baseColor, currentTimeNanos);
+        if (baseShadow == null && offsetX == 0 && offsetY == 0 && blurRadius == 0 && spreadRadius == 0
+                && color == 0) {
+            return null;
+        }
+        return inset ? UiBoxShadow.inset(offsetX, offsetY, blurRadius, spreadRadius, color)
+                : UiBoxShadow.of(offsetX, offsetY, blurRadius, spreadRadius, color);
     }
 
     private static boolean createsTransformStackingContext(DocumentAnimationTimeline animationTimeline,

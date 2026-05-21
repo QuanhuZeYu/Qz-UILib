@@ -174,7 +174,7 @@ public final class DocumentLayoutEngine {
             return new DocumentLayoutBox(element, computedStyle, Collections.<DocumentLayoutBox>emptyList(),
                     Collections.<DocumentLayoutTextRun>emptyList(), Collections.<DocumentLayoutInlineFragment>emptyList(),
                     DocumentLayoutEdges.zero(), DocumentLayoutEdges.zero(), DocumentLayoutEdges.zero(), containingLeft,
-                    flowTop, 0, 0, 0, 0);
+                    flowTop, 0, 0, 0, 0, 0, 0, 0, 0);
         }
 
         DocumentLayoutEdges margin = resolveMarginInsets(element, computedStyle, containingWidth,
@@ -243,11 +243,20 @@ public final class DocumentLayoutEngine {
         int contentHeight = resolveContentHeight(element, computedStyle, forcedContentHeight, autoContentHeight,
                 contentWidth, containingHeight, layoutContext.layoutValueResolver);
         int borderBoxHeight = contentHeight + border.getVertical() + padding.getVertical();
-        int positionOffsetX = resolveRelativeOffsetX(computedStyle, containingWidth);
-        int positionOffsetY = resolveRelativeOffsetY(computedStyle, containingHeight);
+        int resolvedTopInset = resolvePositionInsetValue(element, computedStyle.getTop(),
+                DocumentAnimationProperty.TOP, containingHeight, layoutContext.layoutValueResolver);
+        int resolvedRightInset = resolvePositionInsetValue(element, computedStyle.getRight(),
+                DocumentAnimationProperty.RIGHT, containingWidth, layoutContext.layoutValueResolver);
+        int resolvedBottomInset = resolvePositionInsetValue(element, computedStyle.getBottom(),
+                DocumentAnimationProperty.BOTTOM, containingHeight, layoutContext.layoutValueResolver);
+        int resolvedLeftInset = resolvePositionInsetValue(element, computedStyle.getLeft(),
+                DocumentAnimationProperty.LEFT, containingWidth, layoutContext.layoutValueResolver);
+        int positionOffsetX = resolveRelativeOffsetX(computedStyle, resolvedLeftInset, resolvedRightInset);
+        int positionOffsetY = resolveRelativeOffsetY(computedStyle, resolvedTopInset, resolvedBottomInset);
         return new DocumentLayoutBox(element, computedStyle, childrenResult.children, childrenResult.textRuns,
                 childrenResult.inlineFragments, margin, border, padding, borderBoxLeft, borderBoxTop, borderBoxWidth,
-                borderBoxHeight, positionOffsetX, positionOffsetY);
+                borderBoxHeight, positionOffsetX, positionOffsetY, resolvedTopInset, resolvedRightInset,
+                resolvedBottomInset, resolvedLeftInset);
     }
 
     private static LayoutChildrenResult layoutBlockChildren(ElementNode element, int contentLeft, int contentTop,
@@ -998,30 +1007,41 @@ public final class DocumentLayoutEngine {
         }
     }
 
-    private static int resolveRelativeOffsetX(ComputedStyle computedStyle, int containingWidth) {
+    private static int resolveRelativeOffsetX(ComputedStyle computedStyle, int resolvedLeftInset,
+            int resolvedRightInset) {
         if (computedStyle.getPosition() != UiPosition.RELATIVE) {
             return 0;
         }
         if (!isAuto(computedStyle.getLeft())) {
-            return computedStyle.getLeft().resolve(containingWidth, 0);
+            return resolvedLeftInset;
         }
         if (!isAuto(computedStyle.getRight())) {
-            return -computedStyle.getRight().resolve(containingWidth, 0);
+            return -resolvedRightInset;
         }
         return 0;
     }
 
-    private static int resolveRelativeOffsetY(ComputedStyle computedStyle, int containingHeight) {
+    private static int resolveRelativeOffsetY(ComputedStyle computedStyle, int resolvedTopInset,
+            int resolvedBottomInset) {
         if (computedStyle.getPosition() != UiPosition.RELATIVE) {
             return 0;
         }
         if (!isAuto(computedStyle.getTop())) {
-            return computedStyle.getTop().resolve(containingHeight, 0);
+            return resolvedTopInset;
         }
         if (!isAuto(computedStyle.getBottom())) {
-            return -computedStyle.getBottom().resolve(containingHeight, 0);
+            return -resolvedBottomInset;
         }
         return 0;
+    }
+
+    static int resolvePositionInsetValue(ElementNode element, UiStyleLength inset,
+            DocumentAnimationProperty property, int containingSize, LayoutRuntimeValueResolver layoutValueResolver) {
+        if (isAuto(inset)) {
+            return 0;
+        }
+        int baseValue = inset.resolve(Math.max(0, containingSize), 0);
+        return layoutValueResolver.resolve(element, property, baseValue);
     }
 
     static final class LayoutChildrenResult {

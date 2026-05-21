@@ -125,7 +125,7 @@ final class TableLayoutHelper {
         return new DocumentLayoutBox(sectionElement, layoutContext.computeStyle(sectionElement), rowBoxes,
                 new ArrayList<DocumentLayoutTextRun>(), new ArrayList<DocumentLayoutInlineFragment>(),
                 DocumentLayoutEdges.zero(), DocumentLayoutEdges.zero(), DocumentLayoutEdges.zero(), contentLeft,
-                sectionTop, contentWidth, Math.max(0, rowTop - sectionTop), 0, 0);
+                sectionTop, contentWidth, Math.max(0, rowTop - sectionTop), 0, 0, 0, 0, 0, 0);
     }
 
     private static DocumentLayoutBox layoutTableRow(TableRowPlan rowPlan, int contentLeft, int rowTop,
@@ -163,7 +163,7 @@ final class TableLayoutHelper {
         return new DocumentLayoutBox(rowPlan.element, layoutContext.computeStyle(rowPlan.element), cellBoxes,
                 new ArrayList<DocumentLayoutTextRun>(), new ArrayList<DocumentLayoutInlineFragment>(),
                 DocumentLayoutEdges.zero(), DocumentLayoutEdges.zero(), DocumentLayoutEdges.zero(), contentLeft,
-                rowTop, contentWidth, rowHeight, 0, 0);
+                rowTop, contentWidth, rowHeight, 0, 0, 0, 0, 0, 0);
     }
 
     private static List<TableRowPlan> collectTableRows(List<ElementNode> tableChildren,

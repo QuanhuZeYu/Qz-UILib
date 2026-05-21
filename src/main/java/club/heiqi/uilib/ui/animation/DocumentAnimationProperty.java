@@ -20,6 +20,31 @@ public enum DocumentAnimationProperty {
     BORDER_RADIUS(DocumentAnimationImpact.PAINT, ValueType.FLOAT),
 
     /**
+     * box-shadow 颜色，属于 paint-only 属性。
+     */
+    BOX_SHADOW_COLOR(DocumentAnimationImpact.PAINT, ValueType.COLOR),
+
+    /**
+     * box-shadow 的 X 方向偏移，属于 paint-only 属性。
+     */
+    BOX_SHADOW_OFFSET_X(DocumentAnimationImpact.PAINT, ValueType.FLOAT),
+
+    /**
+     * box-shadow 的 Y 方向偏移，属于 paint-only 属性。
+     */
+    BOX_SHADOW_OFFSET_Y(DocumentAnimationImpact.PAINT, ValueType.FLOAT),
+
+    /**
+     * box-shadow 的 blur 半径，属于 paint-only 属性。
+     */
+    BOX_SHADOW_BLUR_RADIUS(DocumentAnimationImpact.PAINT, ValueType.FLOAT),
+
+    /**
+     * box-shadow 的 spread 半径，属于 paint-only 属性。
+     */
+    BOX_SHADOW_SPREAD_RADIUS(DocumentAnimationImpact.PAINT, ValueType.FLOAT),
+
+    /**
      * transform 的 X 方向平移分量，属于 paint-only 属性。
      */
     TRANSLATE_X(DocumentAnimationImpact.PAINT, ValueType.FLOAT),
@@ -68,6 +93,26 @@ public enum DocumentAnimationProperty {
      * 元素 content box 高度，属于 layout-affecting 属性。
      */
     HEIGHT(DocumentAnimationImpact.LAYOUT, ValueType.FLOAT),
+
+    /**
+     * 元素 `top` 定位值，属于 layout-affecting 属性。
+     */
+    TOP(DocumentAnimationImpact.LAYOUT, ValueType.FLOAT),
+
+    /**
+     * 元素 `right` 定位值，属于 layout-affecting 属性。
+     */
+    RIGHT(DocumentAnimationImpact.LAYOUT, ValueType.FLOAT),
+
+    /**
+     * 元素 `bottom` 定位值，属于 layout-affecting 属性。
+     */
+    BOTTOM(DocumentAnimationImpact.LAYOUT, ValueType.FLOAT),
+
+    /**
+     * 元素 `left` 定位值，属于 layout-affecting 属性。
+     */
+    LEFT(DocumentAnimationImpact.LAYOUT, ValueType.FLOAT),
 
     /**
      * 元素左外边距，属于 layout-affecting 属性。

@@ -10,6 +10,7 @@ import java.util.HashSet;
 import club.heiqi.uilib.ui.dom.ElementNode;
 import club.heiqi.uilib.ui.layout.DocumentLayoutBox;
 import club.heiqi.uilib.ui.style.cascade.ComputedStyle;
+import club.heiqi.uilib.ui.style.props.UiAnimationDirection;
 
 /**
  * 单元素动画运行态。
@@ -48,6 +49,7 @@ final class DocumentAnimationRuntimeState {
     private int declaredIterationCount;
     private DocumentAnimationFillMode declaredFillMode;
     private DocumentAnimationTimingFunction declaredTimingFunction;
+    private UiAnimationDirection declaredAnimationDirection;
     private long declaredStartNanos;
     private int declaredBoxWidth;
     private int declaredBoxHeight;
@@ -88,7 +90,8 @@ final class DocumentAnimationRuntimeState {
                         .build()
                         .getColorTracks()
                         .get(property), startNanos,
-                durationNanos, 1, DocumentAnimationFillMode.NONE, DocumentAnimationTimingFunction.LINEAR));
+                durationNanos, 1, DocumentAnimationFillMode.NONE, DocumentAnimationTimingFunction.LINEAR,
+                UiAnimationDirection.NORMAL));
     }
 
     void setManualFloatKeyframeAnimation(DocumentAnimationProperty property, float fromValue,
@@ -101,7 +104,8 @@ final class DocumentAnimationRuntimeState {
                         .build()
                         .getFloatTracks()
                         .get(property), startNanos,
-                durationNanos, 1, DocumentAnimationFillMode.NONE, DocumentAnimationTimingFunction.LINEAR));
+                durationNanos, 1, DocumentAnimationFillMode.NONE, DocumentAnimationTimingFunction.LINEAR,
+                UiAnimationDirection.NORMAL));
     }
 
     void clearKeyframeAnimations() {
@@ -132,6 +136,7 @@ final class DocumentAnimationRuntimeState {
         declaredIterationCount = style.getAnimationIterationCount();
         declaredFillMode = style.getAnimationFillMode();
         declaredTimingFunction = style.getAnimationTimingFunction();
+        declaredAnimationDirection = style.getAnimationDirection();
         declaredBoxWidth = box.getWidth();
         declaredBoxHeight = box.getHeight();
         long startNanos = currentTimeNanos + style.getAnimationDelayNanos();
@@ -142,7 +147,7 @@ final class DocumentAnimationRuntimeState {
             DocumentKeyframes.ColorTrack track = entry.getValue();
             colorKeyframeAnimations.put(property, new ColorKeyframeAnimation(track, startNanos,
                     style.getAnimationDurationNanos(), style.getAnimationIterationCount(),
-                    style.getAnimationFillMode(), style.getAnimationTimingFunction()));
+                    style.getAnimationFillMode(), style.getAnimationTimingFunction(), style.getAnimationDirection()));
             declaredColorKeyframeProperties.add(property);
             filledColors.remove(property);
         }
@@ -153,7 +158,7 @@ final class DocumentAnimationRuntimeState {
             floatKeyframeAnimations.put(property, new FloatKeyframeAnimation(normalizeDeclaredKeyframeFloatTrack(box,
                     property, track), startNanos, style.getAnimationDurationNanos(),
                     style.getAnimationIterationCount(), style.getAnimationFillMode(),
-                    style.getAnimationTimingFunction()));
+                    style.getAnimationTimingFunction(), style.getAnimationDirection()));
             declaredFloatKeyframeProperties.add(property);
             filledFloats.remove(property);
         }
@@ -174,7 +179,8 @@ final class DocumentAnimationRuntimeState {
             DocumentKeyframes.FloatTrack normalizedTrack = normalizeDeclaredKeyframeFloatTrack(box, property, track);
             if (floatKeyframeAnimations.containsKey(property)) {
                 floatKeyframeAnimations.put(property, new FloatKeyframeAnimation(normalizedTrack, declaredStartNanos,
-                        declaredDurationNanos, declaredIterationCount, declaredFillMode, declaredTimingFunction));
+                        declaredDurationNanos, declaredIterationCount, declaredFillMode, declaredTimingFunction,
+                        declaredAnimationDirection));
                 changed = true;
             }
             if (filledFloats.containsKey(property)) {
@@ -261,7 +267,8 @@ final class DocumentAnimationRuntimeState {
                 && declaredDelayNanos == style.getAnimationDelayNanos()
                 && declaredIterationCount == style.getAnimationIterationCount()
                 && declaredFillMode == style.getAnimationFillMode()
-                && Objects.equals(declaredTimingFunction, style.getAnimationTimingFunction());
+                && Objects.equals(declaredTimingFunction, style.getAnimationTimingFunction())
+                && declaredAnimationDirection == style.getAnimationDirection();
     }
 
     void setColorTransition(DocumentAnimationProperty property, int fromColor, int toColor, long startNanos,
@@ -326,6 +333,7 @@ final class DocumentAnimationRuntimeState {
         declaredIterationCount = 0;
         declaredFillMode = null;
         declaredTimingFunction = null;
+        declaredAnimationDirection = null;
         declaredStartNanos = 0L;
         declaredBoxWidth = 0;
         declaredBoxHeight = 0;
@@ -536,6 +544,36 @@ final class DocumentAnimationRuntimeState {
         return timingFunction.apply(Math.max(0.0F, Math.min(1.0F, localProgress)));
     }
 
+    private static boolean isReverseIteration(UiAnimationDirection direction, long iterationIndex) {
+        if (direction == null) {
+            return false;
+        }
+        switch (direction) {
+            case REVERSE: return true;
+            case ALTERNATE: return (iterationIndex & 1L) == 1L;
+            case ALTERNATE_REVERSE: return (iterationIndex & 1L) == 0L;
+            default: return false;
+        }
+    }
+
+    private static float resolveDirectionalProgress(UiAnimationDirection direction, long iterationIndex,
+            float iterationProgress) {
+        float clampedProgress = Math.max(0.0F, Math.min(1.0F, iterationProgress));
+        return isReverseIteration(direction, iterationIndex) ? 1.0F - clampedProgress : clampedProgress;
+    }
+
+    private static long resolveActiveDurationNanos(long durationNanos, int iterationCount) {
+        if (iterationCount <= 0) {
+            return Long.MAX_VALUE;
+        }
+        long safeDuration = Math.max(1L, durationNanos);
+        long maxIterations = Long.MAX_VALUE / safeDuration;
+        if (iterationCount > maxIterations) {
+            return Long.MAX_VALUE;
+        }
+        return safeDuration * iterationCount;
+    }
+
     /** 支持统一查询完成状态的 transition 运行对象。 */
     private interface TransitionState {
         boolean isFinished(long currentTimeNanos);
@@ -646,33 +684,46 @@ final class DocumentAnimationRuntimeState {
         private final int iterationCount;
         private final DocumentAnimationFillMode fillMode;
         private final DocumentAnimationTimingFunction timingFunction;
+        private final UiAnimationDirection animationDirection;
+        private final boolean infiniteIteration;
 
         private ColorKeyframeAnimation(DocumentKeyframes.ColorTrack track, long startNanos, long durationNanos,
-                int iterationCount, DocumentAnimationFillMode fillMode, DocumentAnimationTimingFunction timingFunction) {
+                int iterationCount, DocumentAnimationFillMode fillMode, DocumentAnimationTimingFunction timingFunction,
+                UiAnimationDirection animationDirection) {
             this.track = Objects.requireNonNull(track, "track");
             this.startNanos = startNanos;
             this.durationNanos = Math.max(1L, durationNanos);
-            this.iterationCount = Math.max(1, iterationCount);
+            this.infiniteIteration = iterationCount <= 0;
+            this.iterationCount = this.infiniteIteration ? 0 : Math.max(1, iterationCount);
             this.fillMode = fillMode == null ? DocumentAnimationFillMode.NONE : fillMode;
             this.timingFunction = timingFunction == null ? DocumentAnimationTimingFunction.LINEAR : timingFunction;
+            this.animationDirection = animationDirection == null ? UiAnimationDirection.NORMAL : animationDirection;
         }
 
         private int resolve(int baseColor, long currentTimeNanos) {
-            if (currentTimeNanos <= startNanos) {
-                return fillsBackwards() ? track.getFirstColor() : baseColor;
+            if (currentTimeNanos < startNanos) {
+                return fillsBackwards() ? resolveAtIterationBoundary(0L, 0.0F) : baseColor;
             }
-            long activeDurationNanos = getActiveDurationNanos();
             long elapsedNanos = currentTimeNanos - startNanos;
-            if (elapsedNanos >= activeDurationNanos) {
-                return fillsForwards() ? track.getLastColor() : baseColor;
+            if (!infiniteIteration) {
+                long activeDurationNanos = getActiveDurationNanos();
+                if (elapsedNanos >= activeDurationNanos) {
+                    return fillsForwards() ? resolveAtIterationBoundary(iterationCount - 1L, 1.0F) : baseColor;
+                }
             }
             long iterationElapsedNanos = elapsedNanos % durationNanos;
-            return resolveColorTrack(track, iterationElapsedNanos / (float) durationNanos, timingFunction);
+            long iterationIndex = elapsedNanos / durationNanos;
+            float progress = resolveDirectionalProgress(animationDirection, iterationIndex,
+                    iterationElapsedNanos / (float) durationNanos);
+            return resolveColorTrack(track, progress, timingFunction);
         }
 
         @Override
         public boolean isFinished(long currentTimeNanos) {
-            return currentTimeNanos >= startNanos + getActiveDurationNanos();
+            if (infiniteIteration || currentTimeNanos < startNanos) {
+                return false;
+            }
+            return currentTimeNanos - startNanos >= getActiveDurationNanos();
         }
 
         private boolean fillsBackwards() {
@@ -690,7 +741,12 @@ final class DocumentAnimationRuntimeState {
         }
 
         private long getActiveDurationNanos() {
-            return durationNanos * iterationCount;
+            return resolveActiveDurationNanos(durationNanos, iterationCount);
+        }
+
+        private int resolveAtIterationBoundary(long iterationIndex, float iterationProgress) {
+            float progress = resolveDirectionalProgress(animationDirection, iterationIndex, iterationProgress);
+            return resolveColorTrack(track, progress, timingFunction);
         }
     }
 
@@ -703,33 +759,46 @@ final class DocumentAnimationRuntimeState {
         private final int iterationCount;
         private final DocumentAnimationFillMode fillMode;
         private final DocumentAnimationTimingFunction timingFunction;
+        private final UiAnimationDirection animationDirection;
+        private final boolean infiniteIteration;
 
         private FloatKeyframeAnimation(DocumentKeyframes.FloatTrack track, long startNanos, long durationNanos,
-                int iterationCount, DocumentAnimationFillMode fillMode, DocumentAnimationTimingFunction timingFunction) {
+                int iterationCount, DocumentAnimationFillMode fillMode, DocumentAnimationTimingFunction timingFunction,
+                UiAnimationDirection animationDirection) {
             this.track = Objects.requireNonNull(track, "track");
             this.startNanos = startNanos;
             this.durationNanos = Math.max(1L, durationNanos);
-            this.iterationCount = Math.max(1, iterationCount);
+            this.infiniteIteration = iterationCount <= 0;
+            this.iterationCount = this.infiniteIteration ? 0 : Math.max(1, iterationCount);
             this.fillMode = fillMode == null ? DocumentAnimationFillMode.NONE : fillMode;
             this.timingFunction = timingFunction == null ? DocumentAnimationTimingFunction.LINEAR : timingFunction;
+            this.animationDirection = animationDirection == null ? UiAnimationDirection.NORMAL : animationDirection;
         }
 
         private float resolve(float baseValue, long currentTimeNanos) {
-            if (currentTimeNanos <= startNanos) {
-                return fillsBackwards() ? track.getFirstValue() : baseValue;
+            if (currentTimeNanos < startNanos) {
+                return fillsBackwards() ? resolveAtIterationBoundary(0L, 0.0F) : baseValue;
             }
-            long activeDurationNanos = getActiveDurationNanos();
             long elapsedNanos = currentTimeNanos - startNanos;
-            if (elapsedNanos >= activeDurationNanos) {
-                return fillsForwards() ? track.getLastValue() : baseValue;
+            if (!infiniteIteration) {
+                long activeDurationNanos = getActiveDurationNanos();
+                if (elapsedNanos >= activeDurationNanos) {
+                    return fillsForwards() ? resolveAtIterationBoundary(iterationCount - 1L, 1.0F) : baseValue;
+                }
             }
             long iterationElapsedNanos = elapsedNanos % durationNanos;
-            return resolveFloatTrack(track, iterationElapsedNanos / (float) durationNanos, timingFunction);
+            long iterationIndex = elapsedNanos / durationNanos;
+            float progress = resolveDirectionalProgress(animationDirection, iterationIndex,
+                    iterationElapsedNanos / (float) durationNanos);
+            return resolveFloatTrack(track, progress, timingFunction);
         }
 
         @Override
         public boolean isFinished(long currentTimeNanos) {
-            return currentTimeNanos >= startNanos + getActiveDurationNanos();
+            if (infiniteIteration || currentTimeNanos < startNanos) {
+                return false;
+            }
+            return currentTimeNanos - startNanos >= getActiveDurationNanos();
         }
 
         private boolean fillsBackwards() {
@@ -747,7 +816,12 @@ final class DocumentAnimationRuntimeState {
         }
 
         private long getActiveDurationNanos() {
-            return durationNanos * iterationCount;
+            return resolveActiveDurationNanos(durationNanos, iterationCount);
+        }
+
+        private float resolveAtIterationBoundary(long iterationIndex, float iterationProgress) {
+            float progress = resolveDirectionalProgress(animationDirection, iterationIndex, iterationProgress);
+            return resolveFloatTrack(track, progress, timingFunction);
         }
     }
 }

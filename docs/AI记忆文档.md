@@ -50,12 +50,12 @@
 - `position:absolute` 的 containing block 锚点按更接近浏览器的 positioned ancestor padding box 处理；relative 定位中 `top/bottom:%` 按 containing block 高度解析，不再按元素自身高度解析。
 - `position:sticky` 已有首阶段闭环：元素保留普通流占位，在最近 overflow 非 visible 祖先的滚动视口内按 inset 产生绘制和命中偏移；当前不承诺完整浏览器 sticky 的所有滚动条交互与复杂 containing block 边界。
 - 需要做玻璃卡片、浮层或测试页叠压展示时，优先在 `position:relative` 的父容器内用 `position:absolute` 子层声明覆盖关系；不要再把负 `top` / 负 `margin` 作为通用叠压手段。
-- 样式系统新增属性：`line-height`（auto=跟随字体）、`text-align`（START/CENTER/END，可继承）、`white-space`（NORMAL/NOWRAP/PRE/PRE_WRAP/PRE_LINE）、`text-overflow`（CLIP/ELLIPSIS，配合 NOWRAP 生效）、`text-transform`、`text-indent`、`text-shadow`、`background-image`、`visibility`（VISIBLE/HIDDEN，可继承，HIDDEN 保留布局空间但不绘制不命中）、`min-width`/`max-width`/`min-height`/`max-height`（约束布局尺寸）、`flex-basis`（主轴初始尺寸，auto 退回 width/height）、`align-self`（覆盖父容器 align-items，AUTO=跟随父）、`flex-wrap`（NOWRAP/WRAP）、`order`（参与 flex item 主轴布局、盒树视觉顺序、绘制与命中顺序）、`transform`（`UiTransform`，支持 translate/scale/rotate 与 transform-origin）。
+- 样式系统新增属性：`line-height`（auto=跟随字体）、`text-align`（START/CENTER/END，可继承）、`white-space`（NORMAL/NOWRAP/PRE/PRE_WRAP/PRE_LINE）、`text-overflow`（CLIP/ELLIPSIS，配合 NOWRAP 生效）、`text-transform`、`text-indent`、`text-shadow`、`background-image`、`visibility`（VISIBLE/HIDDEN，可继承，HIDDEN 保留布局空间但不绘制不命中）、`min-width`/`max-width`/`min-height`/`max-height`（约束布局尺寸）、`flex-basis`（主轴初始尺寸，auto 退回 width/height）、`align-self`（覆盖父容器 align-items，AUTO=跟随父）、`flex-wrap`（NOWRAP/WRAP）、`order`（参与 flex item 主轴布局、盒树视觉顺序、绘制与命中顺序）、`transform`（`UiTransform`，支持 translate/scale/rotate 与 transform-origin）、`animation-direction`（NORMAL/REVERSE/ALTERNATE/ALTERNATE_REVERSE）。
 - `justify-content` 已支持 SPACE_AROUND 和 SPACE_EVENLY；`align-items` 已支持 BASELINE（暂按 START 处理）；`overflow` 已支持 SCROLL（始终显示滚动条）。
 - `border-radius` 现在参与命中测试（圆角外侧不命中）；`visibility:hidden` 同时跳过绘制和命中测试；非等值分角圆角已进入 `UiRenderContext` 表面绘制、clip/backdrop-filter 与命中测试链路。
 - flex item 的 `margin:auto` 会吸收主轴/交叉轴剩余空间；flex shrink 权重已修正为使用 flex-basis。
 - `flex-wrap:wrap` 已支持多行换行布局（row 方向）。
-- 事件系统新增独立 `mousedown`/`mouseup`/`dblclick`/`contextmenu` DOM 事件（`DocumentElementMouseDownHandler`/`DocumentElementMouseUpHandler`/`DocumentElementDoubleClickHandler`/`DocumentElementContextMenuHandler`）；`dblclick` 仅由主按钮连续 click 触发，右键 `contextmenu` 不再先派发普通 click；hover 父子切换时父元素不再收到多余 leave；新增 `focusin` 冒泡事件（`DocumentElementFocusInHandler`）；动画运行结束时会向作者侧派发 `transitionend` / `animationend` 冒泡事件（当前最小实现不提供 capture 版本）；动画缓动函数已从固定枚举升级为 `DocumentAnimationTimingFunction` 接口，内置常量按标准 cubic-bezier 实现，并支持 `cubicBezier(...)` 自定义曲线。
+- 事件系统新增独立 `mousedown`/`mouseup`/`dblclick`/`contextmenu` DOM 事件（`DocumentElementMouseDownHandler`/`DocumentElementMouseUpHandler`/`DocumentElementDoubleClickHandler`/`DocumentElementContextMenuHandler`）；`dblclick` 仅由主按钮连续 click 触发，右键 `contextmenu` 不再先派发普通 click；hover 父子切换时父元素不再收到多余 leave；新增 `focusin` 冒泡事件（`DocumentElementFocusInHandler`）；动画运行结束时会向作者侧派发 `transitionend` / `animationend` 冒泡事件（当前最小实现不提供 capture 版本）；动画缓动函数已从固定枚举升级为 `DocumentAnimationTimingFunction` 接口，内置常量按标准 cubic-bezier 实现，并支持 `cubicBezier(...)` 自定义曲线；keyframe animation 已支持 `animation-direction` 与无限迭代。
 - 事件系统已支持标准 DOM 三阶段传播模型（capture → target → bubble）：所有事件类提供 `stopPropagation()`、`stopImmediatePropagation()`、`preventDefault()`；`ElementNode` 支持 capture handler 注册（`setCaptureClickHandler`/`setCaptureKeyHandler`/`setCaptureMouseDownHandler`/`setCaptureMouseUpHandler`）；`HtmlLikeDocumentWidget` 的事件路由已按职责下沉，mousedown/mouseup/active/hover 由 `DocumentMouseEventDispatcher` 承载，click/dblclick/contextmenu/link 默认行为由 `DocumentClickEventDispatcher` 承载，key/text/raw button 默认键盘行为由 `DocumentKeyboardEventDispatcher` 承载，焦点遍历与 `scrollIntoView` 由 `DocumentFocusManager` 承载。
 - 样式系统已支持 CSS-like 选择器和样式表级联：`ElementNode` 提供 `className`/`classList`（`DomTokenList`）和 `id` 便捷方法；`UiSelector` 支持 tag/class/id/通配符/复合选择器及特异性计算；`UiStyleSheet` 容器通过 `UiDocument.addStyleSheet(...)` 挂载；`UiStyleResolver` 按 inline > id > class > tag 特异性级联计算所有属性。
 - `UiSelector` 已支持伪类条件（`:hover`/`:focus`/`:focus-visible`/`:active`/`:disabled`/`:first-child`/`:last-child`/`:nth-child(...)`）；伪类在特异性中计入 class 级别；`UiStyleResolver.compute(element, activeStates)` 接受 `Set<UiPseudoClass>` 进行目标元素状态感知样式计算。
@@ -131,6 +131,6 @@
 
 ## 当前阶段
 
-- 继续固化第一版开放文档与业务入口，优先保证真实页面、控件迁移和开发者接入体验。
+- 动画能力增强进入 Phase 2 收尾与回归阶段，优先保证作者侧动画方向、无限迭代、位置布局动画和 box-shadow 子属性的稳定性。
 - 诊断页与示例页只作为开发期工具，不回退到默认 UI 注入或全局热键入口。
 - 是否继续扩展动画、布局或渲染能力，要以真实需求和验证结果决定，不默认扩面。

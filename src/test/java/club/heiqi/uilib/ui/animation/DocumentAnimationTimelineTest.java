@@ -1,5 +1,8 @@
 package club.heiqi.uilib.ui.animation;
 
+import java.util.Collections;
+import java.util.List;
+
 import org.junit.Assert;
 import org.junit.Test;
 
@@ -7,10 +10,13 @@ import club.heiqi.uilib.ui.dom.ElementNode;
 import club.heiqi.uilib.ui.dom.UiDocument;
 import club.heiqi.uilib.ui.layout.DocumentLayoutBox;
 import club.heiqi.uilib.ui.layout.DocumentLayoutEngine;
+import club.heiqi.uilib.ui.style.props.UiAnimationDirection;
+import club.heiqi.uilib.ui.style.props.UiPosition;
 import club.heiqi.uilib.ui.style.cascade.UiStyleDeclaration;
 import club.heiqi.uilib.ui.style.values.UiStyleInsets;
 import club.heiqi.uilib.ui.style.values.UiStyleLength;
 import club.heiqi.uilib.ui.style.values.UiTransform;
+import club.heiqi.uilib.ui.text.TextMeasureService;
 
 /**
  * `DocumentAnimationTimeline` 的 paint/effect transition 契约测试。
@@ -28,6 +34,11 @@ public class DocumentAnimationTimelineTest {
         Assert.assertTrue(DocumentAnimationProperty.BACKGROUND_COLOR.isColorValue());
         Assert.assertTrue(DocumentAnimationProperty.BORDER_RADIUS.isPaintOnly());
         Assert.assertTrue(DocumentAnimationProperty.BORDER_RADIUS.isFloatValue());
+        Assert.assertTrue(DocumentAnimationProperty.BOX_SHADOW_COLOR.isPaintOnly());
+        Assert.assertTrue(DocumentAnimationProperty.BOX_SHADOW_OFFSET_X.isPaintOnly());
+        Assert.assertTrue(DocumentAnimationProperty.BOX_SHADOW_OFFSET_Y.isPaintOnly());
+        Assert.assertTrue(DocumentAnimationProperty.BOX_SHADOW_BLUR_RADIUS.isPaintOnly());
+        Assert.assertTrue(DocumentAnimationProperty.BOX_SHADOW_SPREAD_RADIUS.isPaintOnly());
         Assert.assertTrue(DocumentAnimationProperty.TRANSLATE_X.isPaintOnly());
         Assert.assertTrue(DocumentAnimationProperty.TRANSLATE_Y.isPaintOnly());
         Assert.assertTrue(DocumentAnimationProperty.SCALE_X.isPaintOnly());
@@ -37,6 +48,10 @@ public class DocumentAnimationTimelineTest {
         Assert.assertTrue(DocumentAnimationProperty.BACKDROP_BLUR_RADIUS.isEffectAffecting());
         Assert.assertSame(DocumentAnimationImpact.LAYOUT, DocumentAnimationProperty.WIDTH.getImpact());
         Assert.assertTrue(DocumentAnimationProperty.HEIGHT.isLayoutAffecting());
+        Assert.assertTrue(DocumentAnimationProperty.TOP.isLayoutAffecting());
+        Assert.assertTrue(DocumentAnimationProperty.RIGHT.isLayoutAffecting());
+        Assert.assertTrue(DocumentAnimationProperty.BOTTOM.isLayoutAffecting());
+        Assert.assertTrue(DocumentAnimationProperty.LEFT.isLayoutAffecting());
         Assert.assertTrue(DocumentAnimationProperty.MARGIN_LEFT.isLayoutAffecting());
         Assert.assertSame(DocumentAnimationImpact.LAYOUT, DocumentAnimationProperty.MARGIN_RIGHT.getImpact());
         Assert.assertTrue(DocumentAnimationProperty.PADDING_LEFT.isLayoutAffecting());
@@ -85,6 +100,116 @@ public class DocumentAnimationTimelineTest {
         Assert.assertEquals(45.0F, timeline.resolveFloat(root, DocumentAnimationProperty.ROTATE, 90.0F,
                 500_000_000L), 0.0F);
         Assert.assertEquals(40.0F, root.style().getTransform().getTranslateX(), 0.0F);
+    }
+
+    /**
+     * 验证 keyframe animation 的 reverse 方向会从末帧开始播放。
+     */
+    @Test
+    public void shouldPlayReverseDirectionKeyframes() {
+        UiDocument document = UiDocument.create();
+        document.registerKeyframes(DocumentKeyframes.named("fade")
+                .setFloat(DocumentAnimationProperty.OPACITY, 0.0F, 1.0F)
+                .build());
+        ElementNode root = document.getRootElement();
+        root.style()
+                .setWidth(UiStyleLength.px(40))
+                .setHeight(UiStyleLength.px(20))
+                .setAnimation("fade", 1000L)
+                .setAnimationDirection(UiAnimationDirection.REVERSE);
+
+        DocumentAnimationTimeline timeline = new DocumentAnimationTimeline();
+        timeline.updateFromLayout(DocumentLayoutEngine.layout(root, 80, 0), 0L);
+
+        Assert.assertEquals(1.0F, timeline.resolveFloat(root, DocumentAnimationProperty.OPACITY, 0.0F, 0L), 0.0F);
+        Assert.assertEquals(0.5F, timeline.resolveFloat(root, DocumentAnimationProperty.OPACITY, 0.0F,
+                500_000_000L), 0.001F);
+        Assert.assertEquals(0.0F, timeline.resolveFloat(root, DocumentAnimationProperty.OPACITY, 0.0F,
+                1_000_000_000L), 0.0F);
+    }
+
+    /**
+     * 验证 0 次迭代会被视为无限迭代，并且不会结束。
+     */
+    @Test
+    public void shouldKeepInfiniteKeyframeAnimationRunning() {
+        UiDocument document = UiDocument.create();
+        document.registerKeyframes(DocumentKeyframes.named("pulse")
+                .setFloat(DocumentAnimationProperty.OPACITY, 0.0F, 1.0F)
+                .build());
+        ElementNode root = document.getRootElement();
+        root.style()
+                .setWidth(UiStyleLength.px(40))
+                .setHeight(UiStyleLength.px(20))
+                .setAnimation("pulse", 1000L)
+                .setAnimationIterationCount(0);
+
+        DocumentAnimationTimeline timeline = new DocumentAnimationTimeline();
+        timeline.updateFromLayout(DocumentLayoutEngine.layout(root, 80, 0), 0L);
+
+        Assert.assertTrue(timeline.hasAnimationWork());
+        Assert.assertEquals(0.5F, timeline.resolveFloat(root, DocumentAnimationProperty.OPACITY, 0.0F,
+                2_500_000_000L), 0.001F);
+        Assert.assertFalse(timeline.pruneFinishedAnimations(5_000_000_000L));
+        Assert.assertTrue(timeline.hasAnimationWork());
+    }
+
+    /**
+     * 验证 top/left/right/bottom 的运行态布局值会通过 layout resolver 生效。
+     */
+    @Test
+    public void shouldAnimatePositionInsetsThroughRuntimeLayoutResolver() {
+        UiDocument document = UiDocument.create();
+        ElementNode root = document.getRootElement();
+        ElementNode leftTop = document.div();
+        ElementNode rightBottom = document.div();
+
+        root.style()
+                .setWidth(UiStyleLength.px(200))
+                .setHeight(UiStyleLength.px(100));
+        leftTop.style()
+                .setWidth(UiStyleLength.px(20))
+                .setHeight(UiStyleLength.px(10))
+                .setPosition(UiPosition.ABSOLUTE)
+                .setLeft(UiStyleLength.px(10))
+                .setTop(UiStyleLength.px(8))
+                .setTransitionProperties(DocumentAnimationProperty.LEFT, DocumentAnimationProperty.TOP)
+                .setTransitionDurationMillis(1000L);
+        rightBottom.style()
+                .setWidth(UiStyleLength.px(20))
+                .setHeight(UiStyleLength.px(10))
+                .setPosition(UiPosition.ABSOLUTE)
+                .setRight(UiStyleLength.px(10))
+                .setBottom(UiStyleLength.px(12))
+                .setTransitionProperties(DocumentAnimationProperty.RIGHT, DocumentAnimationProperty.BOTTOM)
+                .setTransitionDurationMillis(1000L);
+        root.append(leftTop).append(rightBottom);
+
+        DocumentAnimationTimeline timeline = new DocumentAnimationTimeline();
+        DocumentLayoutBox firstLayout = DocumentLayoutEngine.layout(root, 200, 100, new DeterministicTextMeasureService());
+        timeline.updateFromLayout(firstLayout, 0L);
+
+        leftTop.style().setLeft(UiStyleLength.px(30)).setTop(UiStyleLength.px(28));
+        rightBottom.style().setRight(UiStyleLength.px(30)).setBottom(UiStyleLength.px(32));
+        DocumentLayoutBox secondLayout = DocumentLayoutEngine.layout(root, 200, 100,
+                new DeterministicTextMeasureService());
+        Assert.assertTrue(timeline.updateFromLayout(secondLayout, 0L));
+
+        DocumentLayoutBox runtimeLayout = DocumentLayoutEngine.layout(root, 200, 100,
+                new DeterministicTextMeasureService(), new DocumentLayoutEngine.LayoutRuntimeValueResolver() {
+                    @Override
+                    public int resolve(ElementNode element, DocumentAnimationProperty property, int baseValue) {
+                        return Math.round(timeline.resolveFloat(element, property, baseValue, 500_000_000L));
+                    }
+                });
+
+        Assert.assertEquals(2, runtimeLayout.getChildren().size());
+        DocumentLayoutBox runtimeLeftTop = runtimeLayout.getChildren().get(0);
+        DocumentLayoutBox runtimeRightBottom = runtimeLayout.getChildren().get(1);
+        Assert.assertEquals(20, runtimeLeftTop.getLeft());
+        Assert.assertEquals(18, runtimeLeftTop.getTop());
+        Assert.assertEquals(160, runtimeRightBottom.getLeft());
+        Assert.assertEquals(68, runtimeRightBottom.getTop());
     }
 
     /**
@@ -1376,5 +1501,43 @@ public class DocumentAnimationTimelineTest {
                 0xFF123456, 1_000_000_000L));
         Assert.assertEquals(0.25F, timeline.resolveFloat(root, DocumentAnimationProperty.OPACITY, 1.0F,
                 1_000_000_000L), 0.0F);
+    }
+
+    /**
+     * 确定性文本测量服务。
+     */
+    private static final class DeterministicTextMeasureService implements TextMeasureService {
+
+        @Override
+        public int getEpoch() {
+            return 1;
+        }
+
+        @Override
+        public int getStringWidth(String text) {
+            return text == null ? 0 : text.length() * 4;
+        }
+
+        @Override
+        public int getLineHeight() {
+            return 9;
+        }
+
+        @Override
+        public String trimStringToWidth(String text, int targetWidth) {
+            if (text == null || text.isEmpty() || targetWidth <= 0) {
+                return "";
+            }
+            int maxLength = Math.max(0, targetWidth / 4);
+            return text.substring(0, Math.min(text.length(), maxLength));
+        }
+
+        @Override
+        public List<String> listFormattedStringToWidth(String text, int wrapWidth) {
+            if (text == null || text.isEmpty() || wrapWidth <= 0) {
+                return Collections.emptyList();
+            }
+            return Collections.singletonList(text);
+        }
     }
 }

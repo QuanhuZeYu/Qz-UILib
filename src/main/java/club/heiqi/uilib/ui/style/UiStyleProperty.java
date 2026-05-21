@@ -47,6 +47,7 @@ public enum UiStyleProperty {
     ANIMATION_ITERATION_COUNT(false, UiStyleChangeImpact.PAINT),
     ANIMATION_FILL_MODE(false, UiStyleChangeImpact.PAINT),
     ANIMATION_TIMING(false, UiStyleChangeImpact.PAINT),
+    ANIMATION_DIRECTION(false, UiStyleChangeImpact.PAINT),
     BACKDROP_BLUR_RADIUS(false, UiStyleChangeImpact.PAINT),
     BACKDROP_SATURATION(false, UiStyleChangeImpact.PAINT),
     LINE_HEIGHT(true, UiStyleChangeImpact.LAYOUT),

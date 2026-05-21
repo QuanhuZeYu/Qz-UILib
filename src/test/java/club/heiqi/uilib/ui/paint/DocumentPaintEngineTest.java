@@ -27,6 +27,7 @@ import club.heiqi.uilib.ui.style.props.UiPosition;
 import club.heiqi.uilib.ui.style.values.UiStyleInsets;
 import club.heiqi.uilib.ui.style.values.UiStyleLength;
 import club.heiqi.uilib.ui.style.values.UiTransform;
+import club.heiqi.uilib.ui.style.values.UiBoxShadow;
 import club.heiqi.uilib.ui.style.props.UiWordBreak;
 import club.heiqi.uilib.ui.text.TextMeasureService;
 import club.heiqi.uilib.ui.style.values.UiSurfaceStyle;
@@ -459,6 +460,42 @@ public class DocumentPaintEngineTest {
         Assert.assertEquals(20.0F, commands.get(0).getTransform().getTranslateX(), 0.0F);
         Assert.assertEquals(DocumentPaintCommandType.BACKGROUND, commands.get(1).getType());
         Assert.assertEquals(DocumentPaintCommandType.TRANSFORM_END, commands.get(2).getType());
+    }
+
+    /**
+     * 验证动画中的 box-shadow 子属性会进入绘制命令。
+     */
+    @Test
+    public void shouldApplyAnimatedBoxShadowToPaintCommands() {
+        UiDocument document = UiDocument.create();
+        ElementNode root = document.getRootElement();
+        root.style()
+                .setWidth(UiStyleLength.px(40))
+                .setHeight(UiStyleLength.px(20))
+                .setBoxShadow(UiBoxShadow.of(2, 4, 1, 0, 0xFF000000))
+                .setTransitionProperties(DocumentAnimationProperty.BOX_SHADOW_OFFSET_X,
+                        DocumentAnimationProperty.BOX_SHADOW_OFFSET_Y, DocumentAnimationProperty.BOX_SHADOW_BLUR_RADIUS,
+                        DocumentAnimationProperty.BOX_SHADOW_SPREAD_RADIUS, DocumentAnimationProperty.BOX_SHADOW_COLOR)
+                .setTransitionDurationMillis(1000L);
+        DocumentAnimationTimeline timeline = new DocumentAnimationTimeline();
+        DocumentLayoutBox firstLayout = DocumentLayoutEngine.layout(root, 80, 0);
+        timeline.updateFromLayout(firstLayout, 0L);
+
+        root.style().setBoxShadow(UiBoxShadow.of(10, 8, 3, 1, 0xFFFFFFFF));
+        DocumentLayoutBox secondLayout = DocumentLayoutEngine.layout(root, 80, 0);
+        timeline.updateFromLayout(secondLayout, 0L);
+
+        List<DocumentPaintCommand> commands = DocumentPaintEngine.buildPaintCommands(secondLayout, null,
+                500_000_000L, timeline);
+
+        Assert.assertEquals(1, commands.size());
+        Assert.assertEquals(DocumentPaintCommandType.BOX_SHADOW, commands.get(0).getType());
+        Assert.assertNotNull(commands.get(0).getBoxShadow());
+        Assert.assertEquals(6, commands.get(0).getBoxShadow().getOffsetX());
+        Assert.assertEquals(6, commands.get(0).getBoxShadow().getOffsetY());
+        Assert.assertEquals(2, commands.get(0).getBoxShadow().getBlurRadius());
+        Assert.assertEquals(1, commands.get(0).getBoxShadow().getSpreadRadius());
+        Assert.assertEquals(0xFF808080, commands.get(0).getBoxShadow().getColor());
     }
 
     /**

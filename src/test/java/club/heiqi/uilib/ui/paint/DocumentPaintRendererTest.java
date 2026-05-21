@@ -262,6 +262,30 @@ public class DocumentPaintRendererTest {
     }
 
     /**
+     * 验证 renderer 会优先使用命令携带的 box-shadow 值，而不是重新读取 style。
+     */
+    @Test
+    public void shouldRenderBoxShadowFromCommandPayload() {
+        UiDocument document = UiDocument.create();
+        ElementNode root = document.getRootElement();
+        root.style().setWidth(UiStyleLength.px(40)).setHeight(UiStyleLength.px(20));
+
+        List<DocumentPaintCommand> commands = new ArrayList<DocumentPaintCommand>();
+        commands.add(new DocumentPaintCommand(DocumentPaintCommandType.BOX_SHADOW, root, 0, 0, 40, 20,
+                0xFF112233, 0, UiBorderRadiusResolver.ResolvedCornerRadii.uniform(0),
+                UiBoxShadow.of(5, 6, 0, 0xFF112233)));
+
+        RecordingUiRenderContext renderContext = new RecordingUiRenderContext();
+        DocumentPaintRenderer.render(renderContext, commands);
+
+        Assert.assertEquals(2, renderContext.drawCalls.size());
+        Assert.assertEquals(5, renderContext.drawCalls.get(1).left);
+        Assert.assertEquals(6, renderContext.drawCalls.get(1).top);
+        Assert.assertEquals(45, renderContext.drawCalls.get(1).right);
+        Assert.assertEquals(26, renderContext.drawCalls.get(1).bottom);
+    }
+
+    /**
      * 验证 inset box-shadow 使用分角圆角计算内层轮廓，而不是退回旧单值半径。
      */
     @Test

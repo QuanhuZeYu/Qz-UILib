@@ -2,6 +2,7 @@ package club.heiqi.uilib.ui.layout;
 
 import java.util.List;
 
+import club.heiqi.uilib.ui.animation.DocumentAnimationProperty;
 import club.heiqi.uilib.ui.dom.ElementNode;
 import club.heiqi.uilib.ui.layout.DocumentLayoutEngine.AbsoluteContainingBlock;
 import club.heiqi.uilib.ui.layout.DocumentLayoutEngine.LayoutContext;
@@ -62,8 +63,10 @@ final class PositionedLayoutHelper {
                 marginBoxHeight = measuredBox.getHeight() + measuredBox.getMargin().getVertical();
             }
         }
-        int marginBoxLeft = resolveAbsoluteMarginBoxLeft(style, containingBlock, marginBoxWidth);
-        int marginBoxTop = resolveAbsoluteMarginBoxTop(style, containingBlock, marginBoxHeight);
+        int marginBoxLeft = resolveAbsoluteMarginBoxLeft(element, style, containingBlock, marginBoxWidth,
+                layoutContext);
+        int marginBoxTop = resolveAbsoluteMarginBoxTop(element, style, containingBlock, marginBoxHeight,
+                layoutContext);
         return DocumentLayoutEngine.layoutElement(element, marginBoxLeft, marginBoxTop, containingBlock.width,
                 containingBlock.height, forcedContentWidth, forcedContentHeight, containingBlock, fixedContainingBlock,
                 layoutContext);
@@ -94,8 +97,10 @@ final class PositionedLayoutHelper {
         DocumentLayoutEdges border = DocumentLayoutEngine.resolveBorderInsets(style, containingBlock.width);
         DocumentLayoutEdges padding = DocumentLayoutEngine.resolvePaddingInsets(element, style, containingBlock.width,
                 layoutContext.layoutValueResolver);
-        int leftInset = style.getLeft().resolve(containingBlock.width, 0);
-        int rightInset = style.getRight().resolve(containingBlock.width, 0);
+        int leftInset = DocumentLayoutEngine.resolvePositionInsetValue(element, style.getLeft(),
+                DocumentAnimationProperty.LEFT, containingBlock.width, layoutContext.layoutValueResolver);
+        int rightInset = DocumentLayoutEngine.resolvePositionInsetValue(element, style.getRight(),
+                DocumentAnimationProperty.RIGHT, containingBlock.width, layoutContext.layoutValueResolver);
         return Math.max(0, containingBlock.width - leftInset - rightInset - margin.getHorizontal()
                 - border.getHorizontal() - padding.getHorizontal());
     }
@@ -112,33 +117,42 @@ final class PositionedLayoutHelper {
         DocumentLayoutEdges border = DocumentLayoutEngine.resolveBorderInsets(style, containingBlock.width);
         DocumentLayoutEdges padding = DocumentLayoutEngine.resolvePaddingInsets(element, style, containingBlock.width,
                 layoutContext.layoutValueResolver);
-        int topInset = style.getTop().resolve(containingHeight, 0);
-        int bottomInset = style.getBottom().resolve(containingHeight, 0);
+        int topInset = DocumentLayoutEngine.resolvePositionInsetValue(element, style.getTop(),
+                DocumentAnimationProperty.TOP, containingHeight, layoutContext.layoutValueResolver);
+        int bottomInset = DocumentLayoutEngine.resolvePositionInsetValue(element, style.getBottom(),
+                DocumentAnimationProperty.BOTTOM, containingHeight, layoutContext.layoutValueResolver);
         return Math.max(0, containingHeight - topInset - bottomInset - margin.getVertical()
                 - border.getVertical() - padding.getVertical());
     }
 
-    private static int resolveAbsoluteMarginBoxLeft(ComputedStyle style,
-            AbsoluteContainingBlock absoluteContainingBlock, int marginBoxWidth) {
+    private static int resolveAbsoluteMarginBoxLeft(ElementNode element, ComputedStyle style,
+            AbsoluteContainingBlock absoluteContainingBlock, int marginBoxWidth, LayoutContext layoutContext) {
         if (!DocumentLayoutEngine.isAuto(style.getLeft())) {
-            return absoluteContainingBlock.left + style.getLeft().resolve(absoluteContainingBlock.width, 0);
+            return absoluteContainingBlock.left + DocumentLayoutEngine.resolvePositionInsetValue(element,
+                    style.getLeft(), DocumentAnimationProperty.LEFT, absoluteContainingBlock.width,
+                    layoutContext.layoutValueResolver);
         }
         if (!DocumentLayoutEngine.isAuto(style.getRight())) {
             return absoluteContainingBlock.left + absoluteContainingBlock.width
-                    - style.getRight().resolve(absoluteContainingBlock.width, 0) - marginBoxWidth;
+                    - DocumentLayoutEngine.resolvePositionInsetValue(element, style.getRight(),
+                            DocumentAnimationProperty.RIGHT, absoluteContainingBlock.width,
+                            layoutContext.layoutValueResolver) - marginBoxWidth;
         }
         return absoluteContainingBlock.left;
     }
 
-    private static int resolveAbsoluteMarginBoxTop(ComputedStyle style,
-            AbsoluteContainingBlock absoluteContainingBlock, int marginBoxHeight) {
+    private static int resolveAbsoluteMarginBoxTop(ElementNode element, ComputedStyle style,
+            AbsoluteContainingBlock absoluteContainingBlock, int marginBoxHeight, LayoutContext layoutContext) {
         int safeContainingHeight = Math.max(0, absoluteContainingBlock.height);
         if (!DocumentLayoutEngine.isAuto(style.getTop())) {
-            return absoluteContainingBlock.top + style.getTop().resolve(safeContainingHeight, 0);
+            return absoluteContainingBlock.top + DocumentLayoutEngine.resolvePositionInsetValue(element, style.getTop(),
+                    DocumentAnimationProperty.TOP, safeContainingHeight, layoutContext.layoutValueResolver);
         }
         if (!DocumentLayoutEngine.isAuto(style.getBottom())) {
             return absoluteContainingBlock.top + safeContainingHeight
-                    - style.getBottom().resolve(safeContainingHeight, 0) - marginBoxHeight;
+                    - DocumentLayoutEngine.resolvePositionInsetValue(element, style.getBottom(),
+                            DocumentAnimationProperty.BOTTOM, safeContainingHeight,
+                            layoutContext.layoutValueResolver) - marginBoxHeight;
         }
         return absoluteContainingBlock.top;
     }

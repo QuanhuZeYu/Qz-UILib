@@ -424,8 +424,11 @@ public final class DocumentPaintRenderer {
 
     private static void renderBoxShadow(UiRenderContext context, DocumentPaintCommand command, int offsetX, int offsetY,
             float fallbackOpacity) {
-        ComputedStyle style = UiStyleResolver.compute(command.getElement());
-        UiBoxShadow boxShadow = style.getBoxShadow();
+        UiBoxShadow boxShadow = command.getBoxShadow();
+        if (boxShadow == null) {
+            ComputedStyle style = UiStyleResolver.compute(command.getElement());
+            boxShadow = style.getBoxShadow();
+        }
         if (boxShadow == null) {
             return;
         }

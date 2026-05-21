@@ -2,6 +2,7 @@ package club.heiqi.uilib.ui.style.cascade;
 
 import club.heiqi.uilib.ui.style.props.UiTextOverflow;
 import club.heiqi.uilib.ui.style.values.UiBackgroundImage;
+import club.heiqi.uilib.ui.style.props.UiAnimationDirection;
 import club.heiqi.uilib.ui.style.props.UiOverflowWrap;
 import club.heiqi.uilib.ui.style.props.UiOverflow;
 import club.heiqi.uilib.ui.style.values.UiBorderRadius;
@@ -92,6 +93,7 @@ public final class ComputedStyle {
     private final int animationIterationCount;
     private final DocumentAnimationFillMode animationFillMode;
     private final DocumentAnimationTimingFunction animationTimingFunction;
+    private final UiAnimationDirection animationDirection;
     private final UiStyleLength backdropBlurRadius;
     private final float backdropSaturation;
     // 新增字段
@@ -146,6 +148,7 @@ public final class ComputedStyle {
             long transitionDelayNanos, DocumentAnimationTimingFunction transitionTimingFunction,
             String animationName, long animationDurationNanos, long animationDelayNanos, int animationIterationCount,
             DocumentAnimationFillMode animationFillMode, DocumentAnimationTimingFunction animationTimingFunction,
+            UiAnimationDirection animationDirection,
             UiStyleLength backdropBlurRadius, float backdropSaturation,
             UiStyleLength lineHeight, UiTextAlign textAlign, UiWhiteSpace whiteSpace, UiTextOverflow textOverflow,
             UiVisibility visibility,
@@ -197,9 +200,10 @@ public final class ComputedStyle {
         this.animationName = animationName;
         this.animationDurationNanos = Math.max(0L, animationDurationNanos);
         this.animationDelayNanos = Math.max(0L, animationDelayNanos);
-        this.animationIterationCount = Math.max(1, animationIterationCount);
+        this.animationIterationCount = Math.max(0, animationIterationCount);
         this.animationFillMode = Objects.requireNonNull(animationFillMode, "animationFillMode");
         this.animationTimingFunction = Objects.requireNonNull(animationTimingFunction, "animationTimingFunction");
+        this.animationDirection = animationDirection == null ? UiAnimationDirection.NORMAL : animationDirection;
         this.backdropBlurRadius = Objects.requireNonNull(backdropBlurRadius, "backdropBlurRadius");
         this.backdropSaturation = Math.max(0.0F, backdropSaturation);
         this.lineHeight = Objects.requireNonNull(lineHeight, "lineHeight");
@@ -401,6 +405,15 @@ public final class ComputedStyle {
 
     public DocumentAnimationTimingFunction getAnimationTimingFunction() {
         return animationTimingFunction;
+    }
+
+    /**
+     * 返回 keyframe animation 播放方向。
+     *
+     * @return 播放方向
+     */
+    public UiAnimationDirection getAnimationDirection() {
+        return animationDirection;
     }
 
     public UiStyleLength getBackdropBlurRadius() {

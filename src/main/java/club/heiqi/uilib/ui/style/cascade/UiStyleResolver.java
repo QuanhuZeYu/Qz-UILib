@@ -40,6 +40,7 @@ import club.heiqi.uilib.ui.style.values.UiStyleKeyword;
 import club.heiqi.uilib.ui.style.props.UiBorderCollapse;
 import club.heiqi.uilib.ui.style.props.UiCursor;
 import club.heiqi.uilib.ui.style.props.UiAlignSelf;
+import club.heiqi.uilib.ui.style.props.UiAnimationDirection;
 import club.heiqi.uilib.ui.style.values.UiBorderColors;
 import club.heiqi.uilib.ui.style.props.UiTextDecoration;
 import club.heiqi.uilib.ui.style.values.UiTransform;
@@ -263,6 +264,9 @@ public final class UiStyleResolver {
         DocumentAnimationTimingFunction animationTimingFunction = cascade(inlineStyle, matchingRules,
                 UiStyleProperty.ANIMATION_TIMING, DocumentAnimationTimingFunction.LINEAR,
                 parentStyle == null ? DocumentAnimationTimingFunction.LINEAR : parentStyle.getAnimationTimingFunction());
+        UiAnimationDirection animationDirection = cascade(inlineStyle, matchingRules,
+                UiStyleProperty.ANIMATION_DIRECTION, UiAnimationDirection.NORMAL,
+                parentStyle == null ? UiAnimationDirection.NORMAL : parentStyle.getAnimationDirection());
         UiStyleLength backdropBlurRadius = cascade(inlineStyle, matchingRules,
                 UiStyleProperty.BACKDROP_BLUR_RADIUS, UiStyleLength.px(0),
                 parentStyle == null ? UiStyleLength.px(0) : parentStyle.getBackdropBlurRadius());
@@ -380,7 +384,8 @@ public final class UiStyleResolver {
                 transitionDurationNanos.longValue(),
                 transitionDelayNanos.longValue(), transitionTimingFunction, animationName,
                 animationDurationNanos.longValue(), animationDelayNanos.longValue(), animationIterationCount.intValue(),
-                animationFillMode, animationTimingFunction, backdropBlurRadius, backdropSaturationValue.floatValue(),
+                animationFillMode, animationTimingFunction, animationDirection, backdropBlurRadius,
+                backdropSaturationValue.floatValue(),
                 lineHeight, textAlign, whiteSpace, textOverflow, visibility,
                 minWidth, maxWidth, minHeight, maxHeight, flexBasis, alignSelf, flexWrap,
                 boxShadow, borderStyle, borderCollapse, cursor, borderRadiusCorners, backgroundImage, textDecoration,

@@ -5,6 +5,7 @@ import java.util.Objects;
 import club.heiqi.uilib.ui.dom.ElementNode;
 import club.heiqi.uilib.ui.layout.DocumentEffectType;
 import club.heiqi.uilib.ui.style.values.UiBackgroundImage;
+import club.heiqi.uilib.ui.style.values.UiBoxShadow;
 import club.heiqi.uilib.ui.style.props.UiFontStyle;
 import club.heiqi.uilib.ui.style.props.UiFontWeight;
 import club.heiqi.uilib.ui.style.cascade.UiBorderRadiusResolver;
@@ -35,6 +36,7 @@ public final class DocumentPaintCommand {
     private final TextContentMode textContentMode;
     private final UiFontWeight fontWeight;
     private final UiFontStyle fontStyle;
+    private UiBoxShadow boxShadow;
     private UiBackgroundImage backgroundImage;
     private final DocumentCustomRenderer customRenderer;
     private final int backdropBlurRadius;
@@ -156,6 +158,18 @@ public final class DocumentPaintCommand {
     }
 
     DocumentPaintCommand(DocumentPaintCommandType type, ElementNode element, int left, int top, int right, int bottom,
+            int color, int borderWidth, UiBorderRadiusResolver.ResolvedCornerRadii cornerRadii,
+            UiBoxShadow boxShadow) {
+        this(type, element, left, top, right, bottom, color, borderWidth,
+                resolveLegacyBorderRadius(cornerRadii), cornerRadii, UiSurfaceStyle.CORNER_ALL, null,
+                TextContentMode.UILIB_RAW, UiFontWeight.NORMAL, UiFontStyle.NORMAL, null, 0, 1.0F, 1.0F, null);
+        if (type != DocumentPaintCommandType.BOX_SHADOW && type != DocumentPaintCommandType.BOX_SHADOW_INSET) {
+            throw new IllegalArgumentException("boxShadow command type expected");
+        }
+        this.boxShadow = Objects.requireNonNull(boxShadow, "boxShadow");
+    }
+
+    DocumentPaintCommand(DocumentPaintCommandType type, ElementNode element, int left, int top, int right, int bottom,
             UiTransform transform) {
         this(type, element, left, top, right, bottom, 0, 0, 0);
         if (type != DocumentPaintCommandType.TRANSFORM_START && type != DocumentPaintCommandType.TRANSFORM_END) {
@@ -201,6 +215,7 @@ public final class DocumentPaintCommand {
         this.backdropBlurRadius = Math.max(0, backdropBlurRadius);
         this.backdropSaturation = Math.max(0.0F, backdropSaturation);
         this.paintContextOpacity = Math.max(0.0F, Math.min(1.0F, paintContextOpacity));
+        this.boxShadow = null;
         this.transform = null;
     }
 
@@ -303,6 +318,15 @@ public final class DocumentPaintCommand {
      */
     public UiBackgroundImage getBackgroundImage() {
         return backgroundImage;
+    }
+
+    /**
+     * 返回 box-shadow 命令携带的阴影值。
+     *
+     * @return 阴影值；非 box-shadow 命令返回 null
+     */
+    public UiBoxShadow getBoxShadow() {
+        return boxShadow;
     }
 
     public DocumentCustomRenderer getCustomRenderer() {

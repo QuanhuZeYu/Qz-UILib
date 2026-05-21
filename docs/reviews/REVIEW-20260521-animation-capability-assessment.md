@@ -10,7 +10,7 @@
 
 | 能力 | 状态 | 关键类 |
 |------|------|--------|
-| Transition（属性过渡） | 完整实现，17 个属性 | `DocumentAnimationTimeline` / `DocumentAnimationRuntimeState` |
+| Transition（属性过渡） | 完整实现，26 个属性 | `DocumentAnimationTimeline` / `DocumentAnimationRuntimeState` |
 | Keyframe Animation（关键帧动画） | 完整实现，多段 stop、fill mode | `DocumentKeyframes` / `DocumentAnimationRuntimeState` |
 | 三级影响分层 | PAINT / EFFECT / LAYOUT | `DocumentAnimationImpact` |
 | 缓动函数 | 简化版多项式近似 | `DocumentAnimationTimingFunction`（enum） |
@@ -18,7 +18,7 @@
 | 时间线管理 | 文档级统一管理 | `DocumentAnimationTimeline` |
 | Forwards Fill | 已实现 | `DocumentAnimationRuntimeState` 内部 `filledColors` / `filledFloats` |
 
-### 1.2 当前可动画属性（17 个）
+### 1.2 当前可动画属性（26 个）
 
 | 属性 | Impact | 值类型 |
 |------|--------|--------|
@@ -26,6 +26,11 @@
 | `border-color` | PAINT | COLOR |
 | `text-color` | PAINT | COLOR |
 | `border-radius` | PAINT | FLOAT |
+| `box-shadow-color` | PAINT | COLOR |
+| `box-shadow-offset-x` | PAINT | FLOAT |
+| `box-shadow-offset-y` | PAINT | FLOAT |
+| `box-shadow-blur-radius` | PAINT | FLOAT |
+| `box-shadow-spread-radius` | PAINT | FLOAT |
 | `translate-x` | PAINT | FLOAT |
 | `translate-y` | PAINT | FLOAT |
 | `scale-x` | PAINT | FLOAT |
@@ -35,6 +40,10 @@
 | `backdrop-blur-radius` | EFFECT | FLOAT |
 | `width` | LAYOUT | FLOAT |
 | `height` | LAYOUT | FLOAT |
+| `top` | LAYOUT | FLOAT |
+| `right` | LAYOUT | FLOAT |
+| `bottom` | LAYOUT | FLOAT |
+| `left` | LAYOUT | FLOAT |
 | `margin-left` | LAYOUT | FLOAT |
 | `margin-right` | LAYOUT | FLOAT |
 | `padding-left` | LAYOUT | FLOAT |
@@ -54,9 +63,9 @@
 |------|------|
 | 无 `transform` 概念 | 已在 Phase 1 补齐 `UiTransform` 与 transform 子属性动画 |
 | 缓动函数精度不足 | 已在 Phase 1 改为标准 cubic-bezier，并支持自定义曲线 |
-| 可动画属性覆盖面窄 | 仍缺少 `top/left/right/bottom`、`gap`、`font-size`、`box-shadow` 子属性 |
-| 无 `animation-direction` | 不支持 reverse / alternate |
-| 无 infinite iteration | 强制 >= 1 |
+| 可动画属性覆盖面窄 | 仍缺少 `gap`、`font-size` 等更高阶布局属性 |
+| 无 `animation-direction` | 已在 Phase 2 补齐 |
+| 无 infinite iteration | 已在 Phase 2 补齐 |
 | 无 per-property timing function | keyframe 内各段不能独立指定缓动 |
 | 无 `animationstart` / `animationiteration` 事件 | 事件覆盖不完整 |
 | 无 `transitionstart` / `transitioncancel` 事件 | 事件覆盖不完整 |
@@ -102,6 +111,8 @@
 
 #### 2.3 `animation-direction` 和 infinite iteration
 
+执行状态（2026-05-22）：已完成。`UiAnimationDirection`、无限迭代、keyframe 方向映射与 fill boundary 语义已接入运行时状态机。
+
 设计要点：
 - `DocumentAnimationRuntimeState` 的 keyframe 状态机中：
   - `iterationCount = 0` 或 `Integer.MAX_VALUE` 表示 infinite
@@ -119,7 +130,7 @@
 | `translate-x` / `translate-y` | PAINT | 高 | transform 子属性 |
 | `scale-x` / `scale-y` | PAINT | 高 | transform 子属性 |
 | `rotate` | PAINT | 高 | transform 子属性 |
-| `box-shadow` (spread/blur/offset) | PAINT | 中 | 阴影动画 |
+| `box-shadow` (offset/blur/spread/color) | PAINT | 中 | 阴影动画 |
 | `top` / `left` / `right` / `bottom` | LAYOUT | 中 | 定位动画 |
 | `gap` | LAYOUT | 低 | flex/grid 间距动画 |
 | `font-size` | LAYOUT | 低 | 文本尺寸动画 |
@@ -222,7 +233,7 @@
 
 | 风险 | 影响 | 缓解措施 |
 |------|------|----------|
-| transform 命中测试复杂度 | 旋转/缩放后坐标反算 | 首版只支持 translate，scale/rotate 后续补齐 |
+| transform 命中测试复杂度 | 旋转/缩放后坐标反算 | 已补齐 translate/scale/rotate 反变换，后续如引入 skew/matrix 仍需继续扩展 |
 | cubic-bezier 从 enum 改接口 | 序列化/反序列化兼容 | 预定义常量保持原名，消费方只用 `.apply()` |
 | LAYOUT 级属性扩展 | 二次布局性能 | 严格控制 LAYOUT 级属性数量，优先用 PAINT 级 transform 替代 |
 | infinite animation 内存 | 长时间运行不清理 | `pruneFinishedAnimations` 对 infinite 不触发清理，但 element 移除时随 states map 清理 |

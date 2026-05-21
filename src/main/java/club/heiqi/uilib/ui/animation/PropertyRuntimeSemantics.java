@@ -6,6 +6,7 @@ import java.util.Objects;
 import club.heiqi.uilib.ui.layout.DocumentEffectChain;
 import club.heiqi.uilib.ui.layout.DocumentLayoutBox;
 import club.heiqi.uilib.ui.style.cascade.ComputedStyle;
+import club.heiqi.uilib.ui.style.values.UiBoxShadow;
 import club.heiqi.uilib.ui.style.values.UiStyleLength;
 import club.heiqi.uilib.ui.style.values.UiTransform;
 
@@ -55,6 +56,41 @@ enum PropertyRuntimeSemantics {
         float normalizeDeclaredKeyframeFloat(DocumentLayoutBox box, float value) {
             int limit = Math.min(box.getWidth(), box.getHeight());
             return Math.max(0.0F, Math.min(value, limit / 2.0F));
+        }
+    },
+    BOX_SHADOW_COLOR(DocumentAnimationProperty.BOX_SHADOW_COLOR) {
+        @Override
+        int resolveBaseColor(ComputedStyle style) {
+            UiBoxShadow shadow = style.getBoxShadow();
+            return shadow == null ? 0 : shadow.getColor();
+        }
+    },
+    BOX_SHADOW_OFFSET_X(DocumentAnimationProperty.BOX_SHADOW_OFFSET_X) {
+        @Override
+        float resolveBaseFloat(DocumentLayoutBox box) {
+            UiBoxShadow shadow = box.getComputedStyle().getBoxShadow();
+            return shadow == null ? 0.0F : shadow.getOffsetX();
+        }
+    },
+    BOX_SHADOW_OFFSET_Y(DocumentAnimationProperty.BOX_SHADOW_OFFSET_Y) {
+        @Override
+        float resolveBaseFloat(DocumentLayoutBox box) {
+            UiBoxShadow shadow = box.getComputedStyle().getBoxShadow();
+            return shadow == null ? 0.0F : shadow.getOffsetY();
+        }
+    },
+    BOX_SHADOW_BLUR_RADIUS(DocumentAnimationProperty.BOX_SHADOW_BLUR_RADIUS) {
+        @Override
+        float resolveBaseFloat(DocumentLayoutBox box) {
+            UiBoxShadow shadow = box.getComputedStyle().getBoxShadow();
+            return shadow == null ? 0.0F : shadow.getBlurRadius();
+        }
+    },
+    BOX_SHADOW_SPREAD_RADIUS(DocumentAnimationProperty.BOX_SHADOW_SPREAD_RADIUS) {
+        @Override
+        float resolveBaseFloat(DocumentLayoutBox box) {
+            UiBoxShadow shadow = box.getComputedStyle().getBoxShadow();
+            return shadow == null ? 0.0F : shadow.getSpreadRadius();
         }
     },
     TRANSLATE_X(DocumentAnimationProperty.TRANSLATE_X) {
@@ -118,6 +154,30 @@ enum PropertyRuntimeSemantics {
         @Override
         boolean isFloatTransitionTargetAnimatable(DocumentLayoutBox box) {
             return isPixelLength(box.getComputedStyle().getHeight());
+        }
+    },
+    TOP(DocumentAnimationProperty.TOP) {
+        @Override
+        float resolveBaseFloat(DocumentLayoutBox box) {
+            return box.getResolvedTopInset();
+        }
+    },
+    RIGHT(DocumentAnimationProperty.RIGHT) {
+        @Override
+        float resolveBaseFloat(DocumentLayoutBox box) {
+            return box.getResolvedRightInset();
+        }
+    },
+    BOTTOM(DocumentAnimationProperty.BOTTOM) {
+        @Override
+        float resolveBaseFloat(DocumentLayoutBox box) {
+            return box.getResolvedBottomInset();
+        }
+    },
+    LEFT(DocumentAnimationProperty.LEFT) {
+        @Override
+        float resolveBaseFloat(DocumentLayoutBox box) {
+            return box.getResolvedLeftInset();
         }
     },
     MARGIN_LEFT(DocumentAnimationProperty.MARGIN_LEFT) {

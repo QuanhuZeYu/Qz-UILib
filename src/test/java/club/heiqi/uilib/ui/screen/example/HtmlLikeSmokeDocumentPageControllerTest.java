@@ -84,7 +84,8 @@ public class HtmlLikeSmokeDocumentPageControllerTest {
         Assert.assertTrue(containsText(texts, "Padding sibling shifts from padding"));
         Assert.assertTrue(containsText(texts, "Keyframe card: idle"));
         Assert.assertTrue(containsText(texts, "Keyframe sibling holds forwards fill"));
-        Assert.assertTrue(containsText(texts, "Layout animation coverage: WIDTH/HEIGHT/MARGIN_LEFT/MARGIN_RIGHT/PADDING_LEFT/PADDING_RIGHT"));
+        Assert.assertTrue(containsText(texts,
+                "Layout animation coverage: WIDTH/HEIGHT/TOP/RIGHT/BOTTOM/LEFT/MARGIN_LEFT/MARGIN_RIGHT/PADDING_LEFT/PADDING_RIGHT"));
         Assert.assertTrue(containsText(texts, "Animation runtime: active="));
         Assert.assertTrue(containsText(texts, "Runtime by impact: paint t="));
         Assert.assertTrue(containsText(texts, "Same-layer sampling grid"));
@@ -132,7 +133,7 @@ public class HtmlLikeSmokeDocumentPageControllerTest {
         ElementNode layoutProbe = findElementContainingDirectText(widget,
                 "Layout animation probe: click cards; transition/keyframe/fill push siblings.");
         ElementNode coveredProperties = findElementContainingDirectText(widget,
-                "Layout animation coverage: WIDTH/HEIGHT/MARGIN_LEFT/MARGIN_RIGHT/PADDING_LEFT/PADDING_RIGHT");
+                "Layout animation coverage: WIDTH/HEIGHT/TOP/RIGHT/BOTTOM/LEFT/MARGIN_LEFT/MARGIN_RIGHT/PADDING_LEFT/PADDING_RIGHT");
         ElementNode runtimeSummaryDiagnostic = findElementContainingDirectTextPrefix(widget, "Animation runtime: active=");
         ElementNode runtimeImpactDiagnostic = findElementContainingDirectTextPrefix(widget, "Runtime by impact: paint ");
         ElementNode cacheDiagnostic = findElementContainingDirectTextPrefix(widget, "Cache runtime: paintGen=");
@@ -214,7 +215,8 @@ public class HtmlLikeSmokeDocumentPageControllerTest {
         Assert.assertTrue(containsTextCall(renderContext.textCalls, "Padding card: tight"));
         Assert.assertTrue(containsTextCall(renderContext.textCalls, "Keyframe card: idle"));
         Assert.assertTrue(containsTextCall(renderContext.textCalls, "Keyframe sibling holds forwards fill"));
-        Assert.assertTrue(containsTextCall(renderContext.textCalls, "Layout animation coverage: WIDTH/HEIGHT/MARGIN_LEFT/MARGIN_RIGHT/PADDING_LEFT/PADDING_RIGHT"));
+        Assert.assertTrue(containsTextCall(renderContext.textCalls,
+                "Layout animation coverage: WIDTH/HEIGHT/TOP/RIGHT/BOTTOM/LEFT/MARGIN_LEFT/MARGIN_RIGHT/PADDING_LEFT/PADDING_RIGHT"));
         Assert.assertTrue(containsTextCall(renderContext.textCalls, "Animation runtime: active="));
         Assert.assertTrue(containsTextCall(renderContext.textCalls, "transition="));
         Assert.assertTrue(containsTextCall(renderContext.textCalls, "keyframe="));
@@ -426,7 +428,7 @@ public class HtmlLikeSmokeDocumentPageControllerTest {
         Assert.assertNull(keyframeCard.style().getAnimationName());
         Assert.assertFalse(widget.hasLayoutRuntimeValueForDiagnostics());
         Assert.assertTrue(containsTextCall(initialRenderContext.textCalls,
-                "Layout animation coverage: WIDTH/HEIGHT/MARGIN_LEFT/MARGIN_RIGHT/PADDING_LEFT/PADDING_RIGHT"));
+                "Layout animation coverage: WIDTH/HEIGHT/TOP/RIGHT/BOTTOM/LEFT/MARGIN_LEFT/MARGIN_RIGHT/PADDING_LEFT/PADDING_RIGHT"));
         Assert.assertTrue(containsTextCall(initialRenderContext.textCalls, "layout t=0 k=0 f=0 active=false"));
         Assert.assertTrue(containsTextCall(initialRenderContext.textCalls, "Cache runtime: paintGen="));
         Assert.assertTrue(containsTextCall(initialRenderContext.textCalls, "staticLayout="));

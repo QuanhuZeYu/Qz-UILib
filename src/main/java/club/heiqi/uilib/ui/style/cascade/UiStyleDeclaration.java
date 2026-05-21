@@ -40,6 +40,7 @@ import club.heiqi.uilib.ui.style.values.UiStyleKeyword;
 import club.heiqi.uilib.ui.style.props.UiBorderCollapse;
 import club.heiqi.uilib.ui.style.props.UiCursor;
 import club.heiqi.uilib.ui.style.props.UiAlignSelf;
+import club.heiqi.uilib.ui.style.props.UiAnimationDirection;
 import club.heiqi.uilib.ui.style.values.UiBorderColors;
 import club.heiqi.uilib.ui.style.props.UiTextDecoration;
 import club.heiqi.uilib.ui.style.values.UiTransform;
@@ -107,6 +108,7 @@ public final class UiStyleDeclaration {
     private Integer animationIterationCount;
     private DocumentAnimationFillMode animationFillMode;
     private DocumentAnimationTimingFunction animationTimingFunction;
+    private UiAnimationDirection animationDirection;
     private UiStyleLength backdropBlurRadius;
     private Float backdropSaturation;
     private UiStyleLength lineHeight;
@@ -774,8 +776,16 @@ public final class UiStyleDeclaration {
         return animationIterationCount;
     }
 
+    /**
+     * 设置 keyframe animation 的迭代次数。
+     *
+     * <p>`0` 表示无限迭代，其余非负值表示有限次数。</p>
+     *
+     * @param animationIterationCount 迭代次数，`0` 表示无限
+     * @return 当前声明
+     */
     public UiStyleDeclaration setAnimationIterationCount(int animationIterationCount) {
-        return updateAnimationIterationCount(Integer.valueOf(Math.max(1, animationIterationCount)));
+        return updateAnimationIterationCount(Integer.valueOf(Math.max(0, animationIterationCount)));
     }
 
     public UiStyleDeclaration clearAnimationIterationCount() {
@@ -804,6 +814,29 @@ public final class UiStyleDeclaration {
 
     public UiStyleDeclaration clearAnimationTimingFunction() {
         return updateAnimationTimingFunction(null);
+    }
+
+    /**
+     * 返回 keyframe animation 的播放方向。
+     *
+     * @return 播放方向；未声明时返回 null
+     */
+    public UiAnimationDirection getAnimationDirection() {
+        return animationDirection;
+    }
+
+    /**
+     * 设置 keyframe animation 的播放方向。
+     *
+     * @param animationDirection 播放方向
+     * @return 当前声明
+     */
+    public UiStyleDeclaration setAnimationDirection(UiAnimationDirection animationDirection) {
+        return updateAnimationDirection(Objects.requireNonNull(animationDirection, "animationDirection"));
+    }
+
+    public UiStyleDeclaration clearAnimationDirection() {
+        return updateAnimationDirection(null);
     }
 
     /**
@@ -1849,6 +1882,12 @@ public final class UiStyleDeclaration {
         return updateProperty(UiStyleProperty.ANIMATION_TIMING, previousValue, value, UiStyleChangeImpact.PAINT);
     }
 
+    private UiStyleDeclaration updateAnimationDirection(UiAnimationDirection value) {
+        UiAnimationDirection previousValue = animationDirection;
+        animationDirection = value;
+        return updateProperty(UiStyleProperty.ANIMATION_DIRECTION, previousValue, value, UiStyleChangeImpact.PAINT);
+    }
+
     private UiStyleDeclaration updateBackdropBlurRadius(UiStyleLength value) {
         UiStyleLength previousValue = backdropBlurRadius;
         backdropBlurRadius = value;
@@ -2137,6 +2176,7 @@ public final class UiStyleDeclaration {
             case ANIMATION_ITERATION_COUNT: animationIterationCount = null; break;
             case ANIMATION_FILL_MODE: animationFillMode = null; break;
             case ANIMATION_TIMING: animationTimingFunction = null; break;
+            case ANIMATION_DIRECTION: animationDirection = null; break;
             case BACKDROP_BLUR_RADIUS: backdropBlurRadius = null; break;
             case BACKDROP_SATURATION: backdropSaturation = null; break;
             case LINE_HEIGHT: lineHeight = null; break;
@@ -2230,6 +2270,7 @@ public final class UiStyleDeclaration {
         animationIterationCount = resolvedSource.animationIterationCount;
         animationFillMode = resolvedSource.animationFillMode;
         animationTimingFunction = resolvedSource.animationTimingFunction;
+        animationDirection = resolvedSource.animationDirection;
         backdropBlurRadius = resolvedSource.backdropBlurRadius;
         backdropSaturation = resolvedSource.backdropSaturation;
         lineHeight = resolvedSource.lineHeight;

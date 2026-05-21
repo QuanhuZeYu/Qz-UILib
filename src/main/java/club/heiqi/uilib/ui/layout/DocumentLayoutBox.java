@@ -33,11 +33,16 @@ public final class DocumentLayoutBox {
     private final int height;
     private final int positionOffsetX;
     private final int positionOffsetY;
+    private final int resolvedTopInset;
+    private final int resolvedRightInset;
+    private final int resolvedBottomInset;
+    private final int resolvedLeftInset;
 
     DocumentLayoutBox(ElementNode element, ComputedStyle computedStyle, List<DocumentLayoutBox> children,
             List<DocumentLayoutTextRun> textRuns, List<DocumentLayoutInlineFragment> inlineFragments,
             DocumentLayoutEdges margin, DocumentLayoutEdges border, DocumentLayoutEdges padding, int left, int top,
-            int width, int height, int positionOffsetX, int positionOffsetY) {
+            int width, int height, int positionOffsetX, int positionOffsetY, int resolvedTopInset,
+            int resolvedRightInset, int resolvedBottomInset, int resolvedLeftInset) {
         this.element = Objects.requireNonNull(element, "element");
         this.computedStyle = Objects.requireNonNull(computedStyle, "computedStyle");
         this.children = Collections.unmodifiableList(Objects.requireNonNull(children, "children"));
@@ -53,6 +58,10 @@ public final class DocumentLayoutBox {
         this.height = Math.max(0, height);
         this.positionOffsetX = positionOffsetX;
         this.positionOffsetY = positionOffsetY;
+        this.resolvedTopInset = resolvedTopInset;
+        this.resolvedRightInset = resolvedRightInset;
+        this.resolvedBottomInset = resolvedBottomInset;
+        this.resolvedLeftInset = resolvedLeftInset;
     }
 
     public ElementNode getElement() {
@@ -76,7 +85,8 @@ public final class DocumentLayoutBox {
             refreshedChildren.add(child.refreshComputedStyles());
         }
         return new DocumentLayoutBox(element, UiStyleResolver.compute(element), refreshedChildren, textRuns,
-                inlineFragments, margin, border, padding, left, top, width, height, positionOffsetX, positionOffsetY);
+                inlineFragments, margin, border, padding, left, top, width, height, positionOffsetX,
+                positionOffsetY, resolvedTopInset, resolvedRightInset, resolvedBottomInset, resolvedLeftInset);
     }
 
     public List<DocumentLayoutBox> getChildren() {
@@ -222,6 +232,42 @@ public final class DocumentLayoutBox {
      */
     public int getPositionOffsetY() {
         return positionOffsetY;
+    }
+
+    /**
+     * 返回布局阶段解析后的 `top` 值。
+     *
+     * @return 已解析的 `top` 像素值；auto 时返回 0
+     */
+    public int getResolvedTopInset() {
+        return resolvedTopInset;
+    }
+
+    /**
+     * 返回布局阶段解析后的 `right` 值。
+     *
+     * @return 已解析的 `right` 像素值；auto 时返回 0
+     */
+    public int getResolvedRightInset() {
+        return resolvedRightInset;
+    }
+
+    /**
+     * 返回布局阶段解析后的 `bottom` 值。
+     *
+     * @return 已解析的 `bottom` 像素值；auto 时返回 0
+     */
+    public int getResolvedBottomInset() {
+        return resolvedBottomInset;
+    }
+
+    /**
+     * 返回布局阶段解析后的 `left` 值。
+     *
+     * @return 已解析的 `left` 像素值；auto 时返回 0
+     */
+    public int getResolvedLeftInset() {
+        return resolvedLeftInset;
     }
 
     /**
