@@ -7,15 +7,27 @@ import club.heiqi.uilib.ui.screen.page.DocumentUiScope;
 import java.util.Objects;
 
 import club.heiqi.uilib.ui.document.HtmlLikeDocumentWidget;
+import club.heiqi.uilib.ui.dom.DocumentCustomEvent;
+import club.heiqi.uilib.ui.dom.DocumentCustomEventHandler;
 import club.heiqi.uilib.ui.dom.DocumentElementClickEvent;
 import club.heiqi.uilib.ui.dom.DocumentElementClickHandler;
+import club.heiqi.uilib.ui.dom.DocumentElementScrollEvent;
+import club.heiqi.uilib.ui.dom.DocumentElementScrollHandler;
+import club.heiqi.uilib.ui.dom.DocumentFragmentNode;
+import club.heiqi.uilib.ui.dom.DocumentLinkActivationEvent;
+import club.heiqi.uilib.ui.dom.DocumentLinkActivationHandler;
+import club.heiqi.uilib.ui.dom.DocumentNode;
 import club.heiqi.uilib.ui.dom.ElementNode;
 import club.heiqi.uilib.ui.dom.TextNode;
 import club.heiqi.uilib.ui.dom.UiDocument;
 import club.heiqi.uilib.ui.layout.UiLayoutSpec;
 import club.heiqi.uilib.ui.layout.UiLength;
+import club.heiqi.uilib.ui.style.UiStyleProperty;
+import club.heiqi.uilib.ui.style.props.UiAlignSelf;
 import club.heiqi.uilib.ui.style.props.UiAlignItems;
+import club.heiqi.uilib.ui.style.values.UiBackgroundImage;
 import club.heiqi.uilib.ui.style.values.UiBorderColors;
+import club.heiqi.uilib.ui.style.props.UiBorderCollapse;
 import club.heiqi.uilib.ui.style.values.UiBorderRadius;
 import club.heiqi.uilib.ui.style.props.UiBorderStyle;
 import club.heiqi.uilib.ui.style.values.UiBoxShadow;
@@ -24,17 +36,34 @@ import club.heiqi.uilib.ui.style.props.UiCursor;
 import club.heiqi.uilib.ui.style.props.UiDisplay;
 import club.heiqi.uilib.ui.style.props.UiFlexDirection;
 import club.heiqi.uilib.ui.style.props.UiFlexWrap;
+import club.heiqi.uilib.ui.style.props.UiFontStyle;
+import club.heiqi.uilib.ui.style.props.UiFontWeight;
 import club.heiqi.uilib.ui.style.props.UiObjectFit;
 import club.heiqi.uilib.ui.style.values.UiOutline;
 import club.heiqi.uilib.ui.style.props.UiOverflow;
+import club.heiqi.uilib.ui.style.props.UiOverflowWrap;
 import club.heiqi.uilib.ui.style.props.UiPointerEvents;
 import club.heiqi.uilib.ui.style.props.UiPosition;
+import club.heiqi.uilib.ui.style.values.UiPseudoElementContent;
+import club.heiqi.uilib.ui.style.values.UiScrollbarColor;
 import club.heiqi.uilib.ui.style.cascade.UiStyleDeclaration;
 import club.heiqi.uilib.ui.style.values.UiStyleInsets;
+import club.heiqi.uilib.ui.style.values.UiStyleKeyword;
 import club.heiqi.uilib.ui.style.values.UiStyleLength;
 import club.heiqi.uilib.ui.style.cascade.UiStyleSheet;
 import club.heiqi.uilib.ui.style.cascade.UiStyleVariables;
+import club.heiqi.uilib.ui.style.props.UiJustifyContent;
+import club.heiqi.uilib.ui.style.props.UiListStyleType;
+import club.heiqi.uilib.ui.style.props.UiScrollbarWidth;
+import club.heiqi.uilib.ui.style.values.UiTextShadow;
+import club.heiqi.uilib.ui.style.props.UiTextAlign;
 import club.heiqi.uilib.ui.style.props.UiTextDecoration;
+import club.heiqi.uilib.ui.style.props.UiTextOverflow;
+import club.heiqi.uilib.ui.style.props.UiTextTransform;
+import club.heiqi.uilib.ui.style.values.UiTransform;
+import club.heiqi.uilib.ui.style.props.UiVisibility;
+import club.heiqi.uilib.ui.style.props.UiWhiteSpace;
+import club.heiqi.uilib.ui.style.props.UiWordBreak;
 import club.heiqi.uilib.ui.text.TextMeasureService;
 
 /**
@@ -52,6 +81,13 @@ public final class HtmlLikeBrowserSemanticsShowcaseDocumentPageController extend
     private TextNode queryResultText;
     private TextNode themeStatusText;
     private ElementNode varBox;
+    private TextNode selectorStateText;
+    private TextNode domMutationStateText;
+    private TextNode semanticStateText;
+    private TextNode textLayoutStateText;
+    private TextNode flexStateText;
+    private TextNode scrollStateText;
+    private TextNode mediaStateText;
     private boolean darkTheme = true;
     private int eventLogCount;
 
@@ -132,6 +168,13 @@ public final class HtmlLikeBrowserSemanticsShowcaseDocumentPageController extend
         appendBorderControlDemo(root);
         appendCssVariablesDemo(root);
         appendTextTypographyDemo(root);
+        appendAdvancedSelectorDemo(root);
+        appendDomMutationDemo(root);
+        appendSemanticElementsDemo(root);
+        appendTextLayoutControlsDemo(root);
+        appendLayoutAndFlexDetailsDemo(root);
+        appendScrollAndVisibilityDemo(root);
+        appendVisualMediaDemo(root);
     }
 
     /**
@@ -186,7 +229,50 @@ public final class HtmlLikeBrowserSemanticsShowcaseDocumentPageController extend
                         .setBorderWidth(UiStyleLength.px(1))
                         .setBorderStyle(UiBorderStyle.SOLID)
                         .setBorderRadius(UiStyleLength.px(6))
-                        .setTextColor(0xFF88AACC));
+                        .setTextColor(0xFF88AACC))
+                .addRule(".selector-stage > .child-card", new UiStyleDeclaration()
+                        .setBorderColor(0xFF38BDF8)
+                        .setBackgroundColor(0xFF123047))
+                .addRule(".selector-stage .descendant-chip", new UiStyleDeclaration()
+                        .setTextColor(0xFFBAE6FD)
+                        .setBackgroundColor(0xFF075985))
+                .addRule(".pseudo-list > div:first-child", new UiStyleDeclaration()
+                        .setBorderColor(0xFF22C55E)
+                        .setTextColor(0xFFBBF7D0))
+                .addRule(".pseudo-list > div:nth-child(2)", new UiStyleDeclaration()
+                        .setBorderColor(0xFFF59E0B)
+                        .setTextColor(0xFFFFEDD5))
+                .addRule(".pseudo-list > div:last-child", new UiStyleDeclaration()
+                        .setBorderColor(0xFFEC4899)
+                        .setTextColor(0xFFFBCFE8))
+                .addRule(".hover-card:hover", new UiStyleDeclaration()
+                        .setBackgroundColor(0xFF2563EB)
+                        .setBorderColor(0xFF93C5FD))
+                .addRule(".focus-card:focus", new UiStyleDeclaration()
+                        .setBorderColor(0xFFFFD166)
+                        .setOutline(UiOutline.of(2, 0xFFFFD166, UiBorderStyle.SOLID, 2)))
+                .addRule(".focus-card:focus-visible", new UiStyleDeclaration()
+                        .setBackgroundColor(0xFF3B0764))
+                .addRule("button:disabled", new UiStyleDeclaration()
+                        .setTextColor(0xFF94A3B8)
+                        .setBackgroundColor(0xFF334155))
+                .addRule(".pseudo-card::before", new UiStyleDeclaration()
+                        .setContent(UiPseudoElementContent.text("::before "))
+                        .setTextColor(0xFF67E8F9)
+                        .setFontWeight(UiFontWeight.BOLD))
+                .addRule(".pseudo-card::after", new UiStyleDeclaration()
+                        .setContent(UiPseudoElementContent.text(" ::after"))
+                        .setTextColor(0xFFF9A8D4)
+                        .setFontStyle(UiFontStyle.ITALIC))
+                .addRule(".important-low", new UiStyleDeclaration()
+                        .setTextColor(0xFF64748B))
+                .addRule(".important-low", new UiStyleDeclaration()
+                        .setTextColor(0xFFFFD166)
+                        .setImportant(UiStyleProperty.TEXT_COLOR))
+                .addRule(".keyword-parent", new UiStyleDeclaration()
+                        .setTextColor(0xFF86EFAC))
+                .addRule(".keyword-child", new UiStyleDeclaration()
+                        .setKeyword(UiStyleProperty.TEXT_COLOR, UiStyleKeyword.INHERIT));
         document.addStyleSheet(sheet);
     }
 
@@ -228,7 +314,7 @@ public final class HtmlLikeBrowserSemanticsShowcaseDocumentPageController extend
         title.append(heading);
         ElementNode summary = document.div();
         summary.style().setTextColor(0xFFAFC7F5);
-        summary.appendText("展示已接入运行时的 CSS 选择器、事件传播、DOM 查询、cursor、pointer-events、文本装饰、box-shadow、outline、分边 border、分角圆角、宽高比、object-fit 与变量容器能力。");
+        summary.appendText("展示已接入运行时的 CSS 选择器、事件传播、DOM 查询、cursor、pointer-events、文本装饰、box-shadow、outline、分边 border、分角圆角、宽高比、object-fit、文本排版、DOM 操作、语义元素、滚动条、background-image、transform 与变量容器能力。");
         title.append(summary);
         root.append(title);
     }
@@ -748,7 +834,640 @@ public final class HtmlLikeBrowserSemanticsShowcaseDocumentPageController extend
         row.append(fitCard);
     }
 
+    // ========== 高级选择器展示 ==========
+
+    private void appendAdvancedSelectorDemo(ElementNode root) {
+        ElementNode section = createSection(root, "9. 高级选择器、伪类与伪元素");
+
+        ElementNode desc = document.div();
+        desc.appendText("补齐后代/子代选择器、结构伪类、交互伪类、::before/::after、!important 和 inherit 关键字的可视化样例：");
+        section.append(desc);
+
+        ElementNode row = document.div();
+        row.setClassName("demo-row");
+        section.append(row);
+
+        ElementNode selectorStage = document.div();
+        selectorStage.setClassName("demo-box selector-stage");
+        selectorStage.style()
+                .setDisplay(UiDisplay.FLEX)
+                .setFlexDirection(UiFlexDirection.COLUMN)
+                .setRowGap(UiStyleLength.px(6))
+                .setWidth(UiStyleLength.px(230));
+        selectorStage.appendText(".selector-stage > .child-card / 后代 .descendant-chip");
+        ElementNode directChild = createDemoBox("直接子代：由 child combinator 命中");
+        directChild.setClassName("demo-box child-card");
+        selectorStage.append(directChild);
+        ElementNode nested = createDemoBox("嵌套容器");
+        ElementNode descendant = createDemoBox("后代 chip：由 descendant selector 命中");
+        descendant.setClassName("demo-box descendant-chip");
+        nested.append(descendant);
+        selectorStage.append(nested);
+        row.append(selectorStage);
+
+        ElementNode pseudoList = document.div();
+        pseudoList.setClassName("demo-box pseudo-list");
+        pseudoList.style()
+                .setDisplay(UiDisplay.FLEX)
+                .setFlexDirection(UiFlexDirection.COLUMN)
+                .setRowGap(UiStyleLength.px(6))
+                .setWidth(UiStyleLength.px(180));
+        pseudoList.append(createDemoBox(":first-child"));
+        pseudoList.append(createDemoBox(":nth-child(2)"));
+        pseudoList.append(createDemoBox(":last-child"));
+        row.append(pseudoList);
+
+        ElementNode hoverCard = createDemoBox("hover 我：:hover 改背景");
+        hoverCard.setClassName("demo-box hover-card");
+        hoverCard.style().setWidth(UiStyleLength.px(156));
+        row.append(hoverCard);
+
+        ElementNode focusCard = createDemoBox("点击聚焦：:focus / :focus-visible");
+        focusCard.setClassName("demo-box focus-card clickable");
+        focusCard.setFocusable(true);
+        focusCard.style().setWidth(UiStyleLength.px(196));
+        focusCard.setClickHandler(new DocumentElementClickHandler() {
+            @Override
+            public boolean onClick(DocumentElementClickEvent event) {
+                boolean focused = event.getCurrentTarget().focus();
+                updateText(selectorStateText, "focus() 调用结果: " + focused + "，键盘 Tab 聚焦时应触发 :focus-visible 样式");
+                return true;
+            }
+        });
+        row.append(focusCard);
+
+        ElementNode disabledButton = document.button();
+        disabledButton.setClassName("demo-box");
+        disabledButton.setAttribute("disabled", "true");
+        disabledButton.appendText("button:disabled");
+        row.append(disabledButton);
+
+        ElementNode pseudoCard = createDemoBox("伪元素正文");
+        pseudoCard.setClassName("demo-box pseudo-card");
+        row.append(pseudoCard);
+
+        ElementNode importantCard = createDemoBox("!important 文本色覆盖后声明");
+        importantCard.setClassName("demo-box important-low");
+        row.append(importantCard);
+
+        ElementNode keywordParent = createDemoBox("inherit 父文本色");
+        keywordParent.setClassName("demo-box keyword-parent");
+        ElementNode keywordChild = document.span();
+        keywordChild.setClassName("keyword-child");
+        keywordChild.appendText(" 子元素显式 inherit");
+        keywordParent.append(keywordChild);
+        row.append(keywordParent);
+
+        selectorStateText = appendLogLine(section, "高级选择器展示已加载：移动鼠标、点击聚焦卡片、按 Tab 可观察状态伪类。 ");
+    }
+
+    // ========== DOM 操作展示 ==========
+
+    private void appendDomMutationDemo(ElementNode root) {
+        ElementNode section = createSection(root, "10. DOM 批量操作与自定义事件");
+
+        ElementNode desc = document.div();
+        desc.appendText("展示 createDocumentFragment、insertBefore、replaceChild、cloneNode(true)、getNextSibling，以及 addEventListener / removeEventListener / dispatchEvent。");
+        section.append(desc);
+
+        ElementNode row = document.div();
+        row.setClassName("demo-row");
+        section.append(row);
+
+        ElementNode mutationList = document.div();
+        mutationList.setClassName("demo-box");
+        mutationList.style()
+                .setDisplay(UiDisplay.FLEX)
+                .setFlexDirection(UiFlexDirection.COLUMN)
+                .setRowGap(UiStyleLength.px(6))
+                .setWidth(UiStyleLength.px(260));
+        row.append(mutationList);
+
+        DocumentFragmentNode fragment = document.createDocumentFragment();
+        fragment.appendChild(createDemoBox("fragment item A"));
+        fragment.appendChild(createDemoBox("fragment item B"));
+        mutationList.append(fragment);
+
+        ElementNode original = createDemoBox("replaceChild 原始节点");
+        mutationList.append(original);
+        ElementNode inserted = createDemoBox("insertBefore 插入到第一位");
+        mutationList.insertBefore(inserted, mutationList.getFirstChild());
+        ElementNode replacement = createDemoBox("replaceChild 替换结果");
+        mutationList.replaceChild(replacement, original);
+        ElementNode clone = (ElementNode) replacement.cloneNode(true);
+        clone.setClassName("demo-box highlight");
+        clone.appendText(" / cloneNode(true)");
+        mutationList.append(clone);
+
+        DocumentNode nextSibling = inserted.getNextSibling();
+        domMutationStateText = appendLogLine(section, "DOM 操作结果：childCount=" + mutationList.getChildCount()
+                + "，first.getNextSibling=" + formatNodeName(nextSibling));
+
+        final ElementNode customTarget = createDemoBox("自定义事件目标：等待 dispatchEvent");
+        customTarget.setClassName("demo-box clickable");
+        row.append(customTarget);
+
+        final int[] eventCount = new int[] { 0 };
+        final DocumentCustomEventHandler customHandler = new DocumentCustomEventHandler() {
+            @Override
+            public boolean onEvent(DocumentCustomEvent event) {
+                eventCount[0]++;
+                event.preventDefault();
+                customTarget.clearChildren();
+                customTarget.appendText("收到 " + event.getType() + " #" + eventCount[0]);
+                updateText(domMutationStateText, "dispatchEvent: detail=" + event.getDetail()
+                        + "，defaultPrevented=" + event.isDefaultPrevented());
+                return false;
+            }
+        };
+        final boolean[] listenerAttached = new boolean[] { true };
+        customTarget.addEventListener("uilib:ping", customHandler);
+
+        ElementNode dispatchButton = document.button();
+        dispatchButton.setClassName("demo-box highlight clickable");
+        dispatchButton.appendText("dispatchEvent('uilib:ping')");
+        dispatchButton.setClickHandler(new DocumentElementClickHandler() {
+            @Override
+            public boolean onClick(DocumentElementClickEvent event) {
+                boolean defaultAllowed = customTarget.dispatchEvent(new DocumentCustomEvent("uilib:ping",
+                        "payload-" + (eventCount[0] + 1), true, true));
+                updateText(domMutationStateText, "dispatchEvent 返回 defaultAllowed=" + defaultAllowed
+                        + "，listenerAttached=" + listenerAttached[0]);
+                return true;
+            }
+        });
+        row.append(dispatchButton);
+
+        ElementNode toggleButton = document.button();
+        toggleButton.setClassName("demo-box clickable");
+        toggleButton.appendText("remove/add listener");
+        toggleButton.setClickHandler(new DocumentElementClickHandler() {
+            @Override
+            public boolean onClick(DocumentElementClickEvent event) {
+                if (listenerAttached[0]) {
+                    customTarget.removeEventListener("uilib:ping", customHandler);
+                    listenerAttached[0] = false;
+                } else {
+                    customTarget.addEventListener("uilib:ping", customHandler);
+                    listenerAttached[0] = true;
+                }
+                updateText(domMutationStateText, "自定义事件 listenerAttached=" + listenerAttached[0]);
+                return true;
+            }
+        });
+        row.append(toggleButton);
+    }
+
+    // ========== 语义元素展示 ==========
+
+    private void appendSemanticElementsDemo(ElementNode root) {
+        ElementNode section = createSection(root, "11. HTML-like 语义元素");
+        document.setLinkActivationHandler(new DocumentLinkActivationHandler() {
+            @Override
+            public void onLinkActivated(DocumentLinkActivationEvent event) {
+                updateText(semanticStateText, "link 激活: href=" + event.getHref() + "，target="
+                        + event.getLinkTarget() + "，defaultPrevented=" + event.isDefaultPrevented());
+            }
+        });
+
+        ElementNode row = document.div();
+        row.setClassName("demo-row");
+        section.append(row);
+
+        ElementNode linkCard = createDemoBox("a[href] 默认可点击、可聚焦、cursor:pointer，并支持 #id 片段跳转：");
+        linkCard.style()
+                .setWidth(UiStyleLength.px(240))
+                .setDisplay(UiDisplay.FLEX)
+                .setFlexDirection(UiFlexDirection.COLUMN)
+                .setRowGap(UiStyleLength.px(6));
+        ElementNode link = document.a();
+        link.setAttribute("href", "#semantic-link-target");
+        link.setAttribute("target", "_self");
+        link.appendText("跳到语义目标锚点");
+        linkCard.append(link);
+        ElementNode anchorTarget = document.div();
+        anchorTarget.setId("semantic-link-target");
+        anchorTarget.style().setTextColor(0xFFFFD166);
+        anchorTarget.appendText("#semantic-link-target");
+        linkCard.append(anchorTarget);
+        row.append(linkCard);
+
+        ElementNode listCard = createDemoBox("list-style-type");
+        listCard.style()
+                .setWidth(UiStyleLength.px(210))
+                .setDisplay(UiDisplay.FLEX)
+                .setFlexDirection(UiFlexDirection.COLUMN)
+                .setRowGap(UiStyleLength.px(6));
+        ElementNode unordered = document.ul();
+        unordered.style().setListStyleType(UiListStyleType.SQUARE);
+        appendListItem(unordered, "square marker");
+        appendListItem(unordered, "继承列表标记");
+        ElementNode ordered = document.ol();
+        ordered.style().setListStyleType(UiListStyleType.DECIMAL);
+        appendListItem(ordered, "decimal 1");
+        appendListItem(ordered, "decimal 2");
+        listCard.append(unordered);
+        listCard.append(ordered);
+        row.append(listCard);
+
+        ElementNode tableCard = createDemoBox("table + border-collapse: collapse");
+        tableCard.style()
+                .setWidth(UiStyleLength.px(300))
+                .setDisplay(UiDisplay.FLEX)
+                .setFlexDirection(UiFlexDirection.COLUMN)
+                .setRowGap(UiStyleLength.px(6));
+        ElementNode table = document.table();
+        table.style()
+                .setWidth(UiStyleLength.percent(1.0F))
+                .setBorderCollapse(UiBorderCollapse.COLLAPSE)
+                .setBorderColor(0xFF38BDF8)
+                .setBorderWidth(UiStyleLength.px(1))
+                .setBorderStyle(UiBorderStyle.SOLID);
+        appendTableRow(table, "能力", "展示", true);
+        appendTableRow(table, "ul/ol/li", "真实标记", false);
+        appendTableRow(table, "table", "合并边线", false);
+        tableCard.append(table);
+        row.append(tableCard);
+
+        semanticStateText = appendLogLine(section, "语义元素展示已加载：点击链接可验证链接默认行为与回调。 ");
+    }
+
+    // ========== 文本排版能力展示 ==========
+
+    private void appendTextLayoutControlsDemo(ElementNode root) {
+        ElementNode section = createSection(root, "12. 文本排版控制");
+
+        ElementNode desc = document.div();
+        desc.appendText("展示 line-height、text-align、white-space、text-overflow、text-transform、text-indent、text-shadow、letter-spacing、word-break、overflow-wrap、font-weight 与 font-style。");
+        section.append(desc);
+
+        ElementNode row = document.div();
+        row.setClassName("demo-row");
+        section.append(row);
+
+        ElementNode nowrap = createDemoBox("NOWRAP + ELLIPSIS: This is a very long line that should end with ellipsis");
+        nowrap.style()
+                .setWidth(UiStyleLength.px(190))
+                .setWhiteSpace(UiWhiteSpace.NOWRAP)
+                .setTextOverflow(UiTextOverflow.ELLIPSIS)
+                .setOverflowX(UiOverflow.HIDDEN)
+                .setOverflowY(UiOverflow.HIDDEN);
+        row.append(nowrap);
+
+        ElementNode preWrap = createDemoBox("PRE_WRAP 保留    空格\n并保留显式换行");
+        preWrap.style()
+                .setWidth(UiStyleLength.px(190))
+                .setWhiteSpace(UiWhiteSpace.PRE_WRAP)
+                .setBackgroundColor(0xFF1D2B3A);
+        row.append(preWrap);
+
+        ElementNode typography = createDemoBox("capitalized italic bold text shadow");
+        typography.style()
+                .setWidth(UiStyleLength.px(220))
+                .setTextAlign(UiTextAlign.CENTER)
+                .setLineHeight(UiStyleLength.px(18))
+                .setTextTransform(UiTextTransform.CAPITALIZE)
+                .setTextIndent(UiStyleLength.px(14))
+                .setTextShadow(UiTextShadow.of(1, 1, 0, 0xFF000000))
+                .setLetterSpacing(UiStyleLength.px(1))
+                .setFontWeight(UiFontWeight.BOLD)
+                .setFontStyle(UiFontStyle.ITALIC);
+        row.append(typography);
+
+        ElementNode breakAll = createDemoBox("word-break: break-all -> SuperLongUnbrokenTokenWithCJK混排混排混排");
+        breakAll.style()
+                .setWidth(UiStyleLength.px(190))
+                .setWordBreak(UiWordBreak.BREAK_ALL)
+                .setBackgroundColor(0xFF243B2A);
+        row.append(breakAll);
+
+        ElementNode anywhere = createDemoBox("overflow-wrap:anywhere -> https://example.invalid/a/very/long/path/without/spaces");
+        anywhere.style()
+                .setWidth(UiStyleLength.px(210))
+                .setOverflowWrap(UiOverflowWrap.ANYWHERE)
+                .setBackgroundColor(0xFF3B2A24);
+        row.append(anywhere);
+
+        textLayoutStateText = appendLogLine(section, "文本排版展示已加载：长 token、显式换行、省略号和字体样式都由布局/绘制链路消费。 ");
+    }
+
+    // ========== 布局细节展示 ==========
+
+    private void appendLayoutAndFlexDetailsDemo(ElementNode root) {
+        ElementNode section = createSection(root, "13. 布局约束与 flex 细节");
+
+        ElementNode row = document.div();
+        row.setClassName("demo-row");
+        section.append(row);
+
+        ElementNode flexStage = createDemoBox("flex-basis / order / align-self / space-evenly");
+        flexStage.style()
+                .setWidth(UiStyleLength.px(460))
+                .setHeight(UiStyleLength.px(120))
+                .setDisplay(UiDisplay.FLEX)
+                .setFlexDirection(UiFlexDirection.ROW)
+                .setAlignItems(UiAlignItems.START)
+                .setJustifyContent(UiJustifyContent.SPACE_EVENLY)
+                .setColumnGap(UiStyleLength.px(8));
+        ElementNode orderTwo = createFlexBadge("order:2 / basis:120", 0xFF1D4ED8);
+        orderTwo.style()
+                .setOrder(2)
+                .setFlexBasis(UiStyleLength.px(120))
+                .setAlignSelf(UiAlignSelf.END);
+        ElementNode orderOne = createFlexBadge("order:1 / center", 0xFF047857);
+        orderOne.style()
+                .setOrder(1)
+                .setFlexBasis(UiStyleLength.px(110))
+                .setAlignSelf(UiAlignSelf.CENTER);
+        ElementNode autoMargin = createFlexBadge("margin:auto", 0xFF92400E);
+        autoMargin.style()
+                .setOrder(3)
+                .setMargin(UiStyleInsets.of(UiStyleLength.px(0), UiStyleLength.auto(), UiStyleLength.px(0),
+                        UiStyleLength.auto()));
+        flexStage.append(orderTwo);
+        flexStage.append(orderOne);
+        flexStage.append(autoMargin);
+        row.append(flexStage);
+
+        ElementNode constraintCard = createDemoBox("calc(100% - 24px) + min/max 尺寸约束");
+        constraintCard.style()
+                .setWidth(UiStyleLength.px(300))
+                .setPadding(UiStyleLength.px(8))
+                .setBoxSizing(UiBoxSizing.BORDER_BOX)
+                .setDisplay(UiDisplay.FLEX)
+                .setFlexDirection(UiFlexDirection.COLUMN)
+                .setRowGap(UiStyleLength.px(6));
+        ElementNode calcBox = createDemoBox("width: calc(100% - 24px)");
+        calcBox.style()
+                .setWidth(UiStyleLength.calc(1.0F, -24.0F))
+                .setMinWidth(UiStyleLength.px(120))
+                .setMaxWidth(UiStyleLength.px(260))
+                .setBackgroundColor(0xFF164E63);
+        ElementNode minMaxHeight = createDemoBox("min-height / max-height 约束文本高度");
+        minMaxHeight.style()
+                .setMinHeight(UiStyleLength.px(34))
+                .setMaxHeight(UiStyleLength.px(46))
+                .setOverflowY(UiOverflow.HIDDEN)
+                .setBackgroundColor(0xFF312E81);
+        constraintCard.append(calcBox);
+        constraintCard.append(minMaxHeight);
+        row.append(constraintCard);
+
+        ElementNode stickyScroller = createDemoBox("position:sticky 内部滚动区");
+        stickyScroller.style()
+                .setWidth(UiStyleLength.px(250))
+                .setHeight(UiStyleLength.px(118))
+                .setOverflowY(UiOverflow.AUTO)
+                .setScrollbarWidth(UiScrollbarWidth.THIN)
+                .setScrollbarColor(0xFF67E8F9, 0x55223A4A);
+        ElementNode stickyHeader = createDemoBox("sticky top:0");
+        stickyHeader.style()
+                .setPosition(UiPosition.STICKY)
+                .setTop(UiStyleLength.px(0))
+                .setZIndex(2)
+                .setBackgroundColor(0xFF0F766E);
+        stickyScroller.append(stickyHeader);
+        for (int index = 1; index <= 8; index++) {
+            stickyScroller.append(createDemoBox("滚动行 " + index));
+        }
+        row.append(stickyScroller);
+
+        flexStateText = appendLogLine(section, "布局细节展示已加载：flex 视觉顺序应为 order:1 -> order:2 -> margin:auto。 ");
+    }
+
+    // ========== 滚动条与可见性展示 ==========
+
+    private void appendScrollAndVisibilityDemo(ElementNode root) {
+        ElementNode section = createSection(root, "14. 滚动条、程序化滚动与 visibility");
+
+        ElementNode row = document.div();
+        row.setClassName("demo-row");
+        section.append(row);
+
+        final ElementNode scrollHost = createDemoBox("scrollbar-color + scrollbar-width: thin");
+        scrollHost.style()
+                .setWidth(UiStyleLength.px(250))
+                .setHeight(UiStyleLength.px(116))
+                .setOverflowY(UiOverflow.SCROLL)
+                .setScrollbarWidth(UiScrollbarWidth.THIN)
+                .setScrollbarColor(UiScrollbarColor.of(0xFF60A5FA, 0x55334155));
+        scrollHost.setScrollHandler(new DocumentElementScrollHandler() {
+            @Override
+            public void onScroll(DocumentElementScrollEvent event) {
+                updateText(scrollStateText, "scroll 事件: top=" + event.getScrollTop() + "，contentHeight="
+                        + event.getScrollHeight());
+            }
+        });
+        for (int index = 1; index <= 9; index++) {
+            scrollHost.append(createDemoBox("scroll 行 " + index));
+        }
+        row.append(scrollHost);
+
+        ElementNode hiddenScrollbar = createDemoBox("scrollbar-width:none 仍可滚动");
+        hiddenScrollbar.style()
+                .setWidth(UiStyleLength.px(220))
+                .setHeight(UiStyleLength.px(116))
+                .setOverflowY(UiOverflow.AUTO)
+                .setScrollbarWidth(UiScrollbarWidth.NONE);
+        for (int index = 1; index <= 7; index++) {
+            hiddenScrollbar.append(createDemoBox("隐藏滚动条行 " + index));
+        }
+        row.append(hiddenScrollbar);
+
+        ElementNode visibilityCard = createDemoBox("visibility:hidden 保留布局空间但不绘制/不命中");
+        visibilityCard.style()
+                .setWidth(UiStyleLength.px(260))
+                .setDisplay(UiDisplay.FLEX)
+                .setFlexDirection(UiFlexDirection.ROW)
+                .setColumnGap(UiStyleLength.px(8));
+        visibilityCard.append(createFlexBadge("左", 0xFF2563EB));
+        ElementNode hidden = createFlexBadge("隐藏", 0xFFDC2626);
+        hidden.style().setVisibility(UiVisibility.HIDDEN);
+        visibilityCard.append(hidden);
+        visibilityCard.append(createFlexBadge("右", 0xFF16A34A));
+        row.append(visibilityCard);
+
+        ElementNode button = document.button();
+        button.setClassName("demo-box highlight clickable");
+        button.appendText("scrollTo(0, 72) + scrollIntoView()");
+        button.setClickHandler(new DocumentElementClickHandler() {
+            @Override
+            public boolean onClick(DocumentElementClickEvent event) {
+                boolean scrollToResult = scrollHost.scrollTo(0, 72);
+                DocumentNode lastChild = scrollHost.getLastChild();
+                boolean intoViewResult = lastChild instanceof ElementNode && ((ElementNode) lastChild).scrollIntoView();
+                updateText(scrollStateText, "scrollTo=" + scrollToResult + "，scrollIntoView=" + intoViewResult
+                        + "，top=" + scrollHost.getScrollTop() + "/" + scrollHost.getMaxScrollTop());
+                return true;
+            }
+        });
+        row.append(button);
+
+        scrollStateText = appendLogLine(section, "滚动条展示已加载：滚动左侧列表或点击按钮可观察 scroll 事件与程序化滚动。 ");
+    }
+
+    // ========== 背景图与 transform 展示 ==========
+
+    private void appendVisualMediaDemo(ElementNode root) {
+        ElementNode section = createSection(root, "15. background-image、transform 与图片回退");
+
+        ElementNode row = document.div();
+        row.setClassName("demo-row");
+        section.append(row);
+
+        ElementNode backgroundCard = createDemoBox("background-image: options_background.png 拉伸填充 border box");
+        backgroundCard.style()
+                .setWidth(UiStyleLength.px(240))
+                .setHeight(UiStyleLength.px(92))
+                .setBackgroundImage(UiBackgroundImage.texture("minecraft:textures/gui/options_background.png", 256, 256))
+                .setTextShadow(UiTextShadow.of(1, 1, 0, 0xFF000000))
+                .setTextColor(0xFFFFFFFF);
+        row.append(backgroundCard);
+
+        ElementNode transformStage = createDemoBox("transform 不参与布局，只影响绘制与命中");
+        transformStage.style()
+                .setWidth(UiStyleLength.px(280))
+                .setHeight(UiStyleLength.px(118))
+                .setPosition(UiPosition.RELATIVE)
+                .setOverflowX(UiOverflow.HIDDEN)
+                .setOverflowY(UiOverflow.HIDDEN);
+        ElementNode rotateBox = createDemoBox("rotate + scale");
+        rotateBox.style()
+                .setPosition(UiPosition.ABSOLUTE)
+                .setLeft(UiStyleLength.px(22))
+                .setTop(UiStyleLength.px(50))
+                .setWidth(UiStyleLength.px(110))
+                .setTransform(UiTransform.of(0.0F, 0.0F, 1.08F, 1.08F, -8.0F));
+        ElementNode translateBox = createDemoBox("translate");
+        translateBox.style()
+                .setPosition(UiPosition.ABSOLUTE)
+                .setLeft(UiStyleLength.px(142))
+                .setTop(UiStyleLength.px(48))
+                .setWidth(UiStyleLength.px(88))
+                .setBackgroundColor(0xFF0F766E)
+                .setTransform(UiTransform.translate(22.0F, -18.0F));
+        transformStage.append(rotateBox);
+        transformStage.append(translateBox);
+        row.append(transformStage);
+
+        ElementNode imageFallback = createDemoBox("img[src] 解析失败时绘制 alt 文本回退：");
+        imageFallback.style()
+                .setWidth(UiStyleLength.px(260))
+                .setDisplay(UiDisplay.FLEX)
+                .setFlexDirection(UiFlexDirection.COLUMN)
+                .setRowGap(UiStyleLength.px(6));
+        ElementNode brokenImage = document.img();
+        brokenImage.setAttribute("src", "minecraft:textures/missing_semantics_showcase.png");
+        brokenImage.setAttribute("alt", "ALT 回退文本");
+        brokenImage.style()
+                .setWidth(UiStyleLength.px(160))
+                .setHeight(UiStyleLength.px(44))
+                .setBackgroundColor(0xFF0F172A)
+                .setBorderWidth(UiStyleLength.px(1))
+                .setBorderColor(0xFF94A3B8)
+                .setBorderStyle(UiBorderStyle.DASHED)
+                .setObjectFit(UiObjectFit.SCALE_DOWN);
+        imageFallback.append(brokenImage);
+        row.append(imageFallback);
+
+        mediaStateText = appendLogLine(section, "媒体展示已加载：背景图、transform 与 img alt 回退均走运行时绘制链路。 ");
+    }
+
     // ========== 辅助方法 ==========
+
+    /**
+     * 创建标准展示卡片。
+     */
+    private ElementNode createDemoBox(String text) {
+        ElementNode box = document.div();
+        box.setClassName("demo-box");
+        box.appendText(text);
+        return box;
+    }
+
+    /**
+     * 创建 flex 展示徽章。
+     */
+    private ElementNode createFlexBadge(String text, int backgroundColor) {
+        ElementNode badge = createDemoBox(text);
+        badge.style()
+                .setPadding(UiStyleLength.px(8))
+                .setBackgroundColor(backgroundColor)
+                .setBorderColor(0xFFFFFFFF)
+                .setBorderWidth(UiStyleLength.px(1))
+                .setBorderStyle(UiBorderStyle.SOLID)
+                .setBorderRadius(UiStyleLength.px(8))
+                .setTextColor(0xFFFFFFFF);
+        return badge;
+    }
+
+    /**
+     * 追加标准日志行。
+     */
+    private TextNode appendLogLine(ElementNode section, String text) {
+        ElementNode logArea = document.div();
+        logArea.setClassName("log-area");
+        TextNode textNode = logArea.appendText(text);
+        section.append(logArea);
+        return textNode;
+    }
+
+    /**
+     * 追加列表项。
+     */
+    private void appendListItem(ElementNode list, String text) {
+        ElementNode item = document.li();
+        item.appendText(text);
+        list.append(item);
+    }
+
+    /**
+     * 追加表格行。
+     */
+    private void appendTableRow(ElementNode table, String first, String second, boolean header) {
+        ElementNode row = document.tr();
+        ElementNode firstCell = header ? document.th() : document.td();
+        ElementNode secondCell = header ? document.th() : document.td();
+        firstCell.appendText(first);
+        secondCell.appendText(second);
+        styleTableCell(firstCell, header);
+        styleTableCell(secondCell, header);
+        row.append(firstCell);
+        row.append(secondCell);
+        table.append(row);
+    }
+
+    /**
+     * 设置表格单元格样式。
+     */
+    private void styleTableCell(ElementNode cell, boolean header) {
+        cell.style()
+                .setPadding(UiStyleLength.px(6))
+                .setBorderColor(0xFF38BDF8)
+                .setBorderWidth(UiStyleLength.px(1))
+                .setBorderStyle(UiBorderStyle.SOLID)
+                .setBackgroundColor(header ? 0xFF164E63 : 0xFF0F172A)
+                .setTextColor(header ? 0xFFE0F2FE : 0xFFCBD5E1);
+    }
+
+    /**
+     * 格式化节点名称。
+     */
+    private String formatNodeName(DocumentNode node) {
+        if (node instanceof ElementNode) {
+            return ((ElementNode) node).getTagName();
+        }
+        return node == null ? "null" : node.getNodeType().name();
+    }
+
+    /**
+     * 安全更新文本节点。
+     */
+    private void updateText(TextNode textNode, String message) {
+        if (textNode != null) {
+            textNode.setText(message);
+        }
+    }
 
     /**
      * 创建一个标准展示区段。
