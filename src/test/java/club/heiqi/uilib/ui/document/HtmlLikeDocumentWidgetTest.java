@@ -3461,6 +3461,62 @@ public class HtmlLikeDocumentWidgetTest {
     }
 
     /**
+     * 验证 raw button 的 key handler 可通过 preventDefault 取消 Enter/Space 默认 click。
+     */
+    @Test
+    public void shouldPreventRawButtonDefaultKeyboardClick() {
+        UiDocument document = UiDocument.create();
+        ElementNode root = document.getRootElement();
+        ElementNode rawButton = document.button();
+        final List<DocumentElementClickEvent> clicks = new ArrayList<DocumentElementClickEvent>();
+        rawButton.setClickHandler(new DocumentElementClickHandler() {
+            @Override
+            public boolean onClick(DocumentElementClickEvent event) {
+                clicks.add(event);
+                return true;
+            }
+        });
+        final DocumentElementKeyHandler preventDefaultKeyHandler = new DocumentElementKeyHandler() {
+            @Override
+            public boolean onKey(DocumentElementKeyEvent event) {
+                event.preventDefault();
+                return false;
+            }
+        };
+        root.style()
+                .setWidth(UiStyleLength.px(120))
+                .setHeight(UiStyleLength.px(40));
+        rawButton.style()
+                .setWidth(UiStyleLength.px(80))
+                .setHeight(UiStyleLength.px(32));
+        root.append(rawButton);
+        HtmlLikeDocumentWidget widget = new HtmlLikeDocumentWidget(document, 120, 40,
+                new DeterministicTextMeasureService());
+        widget.applyLayoutBounds(0, 0, 120, 40);
+
+        widget.onFocusTraversalEntered(false);
+        assertElementUid(rawButton, widget.getFocusedElement());
+
+        rawButton.setKeyHandler(preventDefaultKeyHandler);
+        widget.onKeyEvent(new UiKeyEvent(Keyboard.KEY_RETURN, 0, 0, UiKeyEvent.Action.PRESSED, false, false,
+                false, false, 1L));
+        Assert.assertEquals(0, clicks.size());
+
+        rawButton.setKeyHandler(null);
+        widget.onKeyEvent(new UiKeyEvent(Keyboard.KEY_SPACE, 0, 0, UiKeyEvent.Action.PRESSED, false, false,
+                false, false, 2L));
+        rawButton.setKeyHandler(preventDefaultKeyHandler);
+        widget.onKeyEvent(new UiKeyEvent(Keyboard.KEY_SPACE, 0, 0, UiKeyEvent.Action.RELEASED, false, false,
+                false, false, 3L));
+        Assert.assertEquals(0, clicks.size());
+
+        rawButton.setKeyHandler(null);
+        widget.onKeyEvent(new UiKeyEvent(Keyboard.KEY_SPACE, 0, 0, UiKeyEvent.Action.RELEASED, false, false,
+                false, false, 4L));
+        Assert.assertEquals(0, clicks.size());
+    }
+
+    /**
      * 验证 raw button Space pressed 后失焦，released 不触发 click。
      */
     @Test

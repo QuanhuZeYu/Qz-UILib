@@ -45,11 +45,13 @@ final class DocumentKeyboardEventDispatcher {
         if (event == null || target == null) {
             return false;
         }
-        boolean consumed = dispatchKey(target, event);
-        if (!consumed) {
+        KeyDispatchResult dispatchResult = dispatchKey(target, event);
+        if (!dispatchResult.isPropagationStopped() && !dispatchResult.isDefaultPrevented()) {
             dispatchNativeButtonDefaultKeyBehavior(target, event);
+        } else if (dispatchResult.isDefaultPrevented()) {
+            clearPreventedNativeButtonDefaultState(target, event);
         }
-        return consumed;
+        return dispatchResult.isPropagationStopped();
     }
 
     /**
@@ -90,9 +92,9 @@ final class DocumentKeyboardEventDispatcher {
         }
     }
 
-    private boolean dispatchKey(ElementNode target, UiKeyEvent event) {
+    private KeyDispatchResult dispatchKey(ElementNode target, UiKeyEvent event) {
         if (target == null || event == null) {
-            return false;
+            return KeyDispatchResult.notConsumed();
         }
         DocumentEventControl eventControl = new DocumentEventControl();
         List<ElementNode> path = buildAncestorPath(target);
@@ -154,7 +156,7 @@ final class DocumentKeyboardEventDispatcher {
                 applyPendingFocus(keyEvent);
             }
         }
-        return eventControl.isPropagationStopped();
+        return new KeyDispatchResult(eventControl.isPropagationStopped(), eventControl.isDefaultPrevented());
     }
 
     /**
@@ -191,6 +193,15 @@ final class DocumentKeyboardEventDispatcher {
         }
     }
 
+    private void clearPreventedNativeButtonDefaultState(ElementNode target, UiKeyEvent event) {
+        if (target == null || event == null || !"button".equals(target.getTagName())) {
+            return;
+        }
+        if (event.getKeyCode() == Keyboard.KEY_SPACE) {
+            rawButtonSpacePressed.remove(target.__getElementUid());
+        }
+    }
+
     private void dispatchRawButtonClick(ElementNode target, long timeNanos) {
         DocumentElementClickHandler clickHandler = target.getClickHandler();
         if (clickHandler != null) {
@@ -211,6 +222,29 @@ final class DocumentKeyboardEventDispatcher {
             path.add((ElementNode) current);
         }
         return path;
+    }
+
+    private static final class KeyDispatchResult {
+
+        private final boolean propagationStopped;
+        private final boolean defaultPrevented;
+
+        private KeyDispatchResult(boolean propagationStopped, boolean defaultPrevented) {
+            this.propagationStopped = propagationStopped;
+            this.defaultPrevented = defaultPrevented;
+        }
+
+        private static KeyDispatchResult notConsumed() {
+            return new KeyDispatchResult(false, false);
+        }
+
+        private boolean isPropagationStopped() {
+            return propagationStopped;
+        }
+
+        private boolean isDefaultPrevented() {
+            return defaultPrevented;
+        }
     }
 
     /** 键盘分发器需要从 widget 借用的最小能力集合。 */
