@@ -2,7 +2,6 @@ package club.heiqi.uilib.ui.document;
 
 import java.util.ArrayList;
 import java.util.Collections;
-import java.util.EnumSet;
 import java.util.List;
 import java.util.Objects;
 
@@ -24,11 +23,6 @@ import club.heiqi.uilib.ui.dom.DocumentEventPhase;
 import club.heiqi.uilib.ui.dom.DocumentElementDoubleClickEvent;
 import club.heiqi.uilib.ui.dom.DocumentElementDoubleClickHandler;
 import club.heiqi.uilib.ui.dom.DocumentLinkActivationEvent;
-import club.heiqi.uilib.ui.dom.DocumentElementDragEvent;
-import club.heiqi.uilib.ui.dom.DocumentElementDragEndHandler;
-import club.heiqi.uilib.ui.dom.DocumentElementDragHandler;
-import club.heiqi.uilib.ui.dom.DocumentElementDragOverHandler;
-import club.heiqi.uilib.ui.dom.DocumentElementDragStartHandler;
 import club.heiqi.uilib.ui.dom.DocumentElementAnimationEndEvent;
 import club.heiqi.uilib.ui.dom.DocumentElementAnimationEndHandler;
 import club.heiqi.uilib.ui.dom.DocumentElementFocusEvent;
@@ -64,8 +58,6 @@ import club.heiqi.uilib.ui.paint.DocumentPaintCommand;
 import club.heiqi.uilib.ui.paint.DocumentPaintEngine;
 import club.heiqi.uilib.ui.paint.DocumentPaintRenderer;
 import club.heiqi.uilib.ui.render.UiRenderContext;
-import club.heiqi.uilib.ui.style.props.UiCursor;
-import club.heiqi.uilib.ui.style.selector.UiPseudoClass;
 import club.heiqi.uilib.ui.style.props.UiPointerEvents;
 import club.heiqi.uilib.ui.style.cascade.UiStyleResolver;
 import club.heiqi.uilib.ui.style.props.UiVisibility;
@@ -78,9 +70,6 @@ import club.heiqi.uilib.ui.widget.Widget;
  */
 public final class HtmlLikeDocumentWidget extends Widget implements UiDocument.DocumentInteractionRuntime {
 
-    private static final int DRAG_ACTIVATION_THRESHOLD_PX = 4;
-    private static final int DRAG_ACTIVATION_THRESHOLD_SQUARED =
-            DRAG_ACTIVATION_THRESHOLD_PX * DRAG_ACTIVATION_THRESHOLD_PX;
     private static final long DOUBLE_CLICK_THRESHOLD_NANOS = 500_000_000L;
     private static final int DOUBLE_CLICK_POSITION_THRESHOLD_PX = 4;
     private static final int PRIMARY_BUTTON = 0;
@@ -116,8 +105,27 @@ public final class HtmlLikeDocumentWidget extends Widget implements UiDocument.D
     private ElementNode pressedElement;
     private ElementNode focusedElement;
     private ElementNode hoveredElement;
-    private ElementNode draggingElement;
-    private ElementNode htmlDragSourceElement;
+    private final DocumentDragController dragController = new DocumentDragController(new DocumentDragController.Host() {
+        @Override
+        public int getAbsoluteX() {
+            return HtmlLikeDocumentWidget.this.getAbsoluteX();
+        }
+
+        @Override
+        public int getAbsoluteY() {
+            return HtmlLikeDocumentWidget.this.getAbsoluteY();
+        }
+
+        @Override
+        public ElementNode getPressedElement() {
+            return HtmlLikeDocumentWidget.this.pressedElement;
+        }
+
+        @Override
+        public ElementNode findElementAt(int screenX, int screenY) {
+            return HtmlLikeDocumentWidget.this.findElementAt(screenX, screenY);
+        }
+    });
     private int pressedButton = -1;
     private int scrollEventCount;
     private int lastScrollWheelDelta;
@@ -128,12 +136,6 @@ public final class HtmlLikeDocumentWidget extends Widget implements UiDocument.D
     private boolean viewportRootScrollingEnabled;
     private boolean cachedLayoutScrollStateUpdated;
     private List<DocumentPaintCommand> cachedPaintCommands = Collections.emptyList();
-    private int dragStartDocumentX;
-    private int dragStartDocumentY;
-    private int lastDragDocumentX;
-    private int lastDragDocumentY;
-    private boolean dragActivated;
-    private boolean htmlDragStarted;
     private ElementNode lastClickedElement;
     private int lastClickButton = -1;
     private int lastClickDocumentX = Integer.MIN_VALUE;
@@ -554,7 +556,7 @@ public final class HtmlLikeDocumentWidget extends Widget implements UiDocument.D
     public void onMouseDown(UiMouseEvent event) {
         if (event == null) {
             releasePressedElement(null);
-            clearDragState();
+            dragController.clearDragState();
             return;
         }
         DocumentLayoutBox rootBox = resolveInteractiveLayoutBox();
@@ -562,13 +564,13 @@ public final class HtmlLikeDocumentWidget extends Widget implements UiDocument.D
                 event.getMouseY() - getAbsoluteY())) {
             pressedElement = null;
             pressedButton = -1;
-            clearDragState();
+            dragController.clearDragState();
             return;
         }
         pressedElement = findElementAt(event.getMouseX(), event.getMouseY());
         pressedButton = pressedElement == null ? -1 : event.getButton();
         updateHoveredElement(pressedElement, event);
-        beginDragIfNeeded(pressedElement, event);
+        dragController.beginDragIfNeeded(pressedElement, event);
         dispatchMouseDown(pressedElement, event);
         dispatchActive(pressedElement, true, event);
         focusElement(resolveFocusableElement(pressedElement), false);
@@ -584,7 +586,7 @@ public final class HtmlLikeDocumentWidget extends Widget implements UiDocument.D
             scrollState.updateScrollbarDrag(resolveInteractiveLayoutBox(), event.getMouseX() - getAbsoluteX(),
                     event.getMouseY() - getAbsoluteY());
         }
-        dispatchDragMove(event);
+        dragController.dispatchDragMove(event);
         updateHoveredElement(findElementAt(event.getMouseX(), event.getMouseY()), event);
     }
 
@@ -592,19 +594,19 @@ public final class HtmlLikeDocumentWidget extends Widget implements UiDocument.D
     public void onMouseUp(UiMouseEvent event) {
         if (event == null) {
             releasePressedElement(null);
-            clearDragState();
+            dragController.clearDragState();
             return;
         }
         if (event.getButton() == 0 && scrollState.endScrollbarDrag()) {
             pressedElement = null;
             pressedButton = -1;
-            clearDragState();
+            dragController.clearDragState();
             return;
         }
         ElementNode releasedElement = findElementAt(event.getMouseX(), event.getMouseY());
         updateHoveredElement(releasedElement, event);
         ElementNode target = pressedElement != null && pressedElement == releasedElement ? releasedElement : null;
-        boolean dragHandled = dispatchDragEnd(event);
+        boolean dragHandled = dragController.dispatchDragEnd(event);
         dispatchMouseUp(pressedElement, event);
         dispatchActive(pressedElement, false, event);
         pressedElement = null;
@@ -1218,170 +1220,6 @@ public final class HtmlLikeDocumentWidget extends Widget implements UiDocument.D
         return trimmed.isEmpty() ? "" : trimmed;
     }
 
-    private void beginDragIfNeeded(ElementNode target, UiMouseEvent event) {
-        clearDragState();
-        if (target == null || event == null || event.getButton() != 0) {
-            return;
-        }
-        int documentX = event.getMouseX() - getAbsoluteX();
-        int documentY = event.getMouseY() - getAbsoluteY();
-        for (DocumentNode current = target; current instanceof ElementNode; current = current.getParent()) {
-            ElementNode currentElement = (ElementNode) current;
-            DocumentElementDragHandler dragHandler = currentElement.getDragHandler();
-            if (dragHandler == null) {
-                continue;
-            }
-            dragStartDocumentX = documentX;
-            dragStartDocumentY = documentY;
-            lastDragDocumentX = documentX;
-            lastDragDocumentY = documentY;
-            DocumentElementDragEvent dragEvent = new DocumentElementDragEvent(target, currentElement, documentX,
-                    documentY, documentX, documentY, 0, 0, event.getButton(), event.getTimeNanos(),
-                    DocumentElementDragEvent.DragPhase.START);
-            if (dragHandler.onDrag(dragEvent)) {
-                draggingElement = currentElement;
-                dragActivated = false;
-                return;
-            }
-        }
-        for (DocumentNode current = target; current instanceof ElementNode; current = current.getParent()) {
-            ElementNode currentElement = (ElementNode) current;
-            if (!"true".equals(currentElement.getAttribute("draggable"))) {
-                continue;
-            }
-            dragStartDocumentX = documentX;
-            dragStartDocumentY = documentY;
-            lastDragDocumentX = documentX;
-            lastDragDocumentY = documentY;
-            draggingElement = currentElement;
-            htmlDragSourceElement = currentElement;
-            dragActivated = false;
-            htmlDragStarted = false;
-            return;
-        }
-    }
-
-    private boolean dispatchDragMove(UiMouseEvent event) {
-        if (draggingElement == null || event == null) {
-            return false;
-        }
-        int documentX = event.getMouseX() - getAbsoluteX();
-        int documentY = event.getMouseY() - getAbsoluteY();
-        if (!dragActivated) {
-            int distanceX = documentX - dragStartDocumentX;
-            int distanceY = documentY - dragStartDocumentY;
-            if (distanceX * distanceX + distanceY * distanceY < DRAG_ACTIVATION_THRESHOLD_SQUARED) {
-                return false;
-            }
-            dragActivated = true;
-        }
-        int deltaDocumentX = documentX - lastDragDocumentX;
-        int deltaDocumentY = documentY - lastDragDocumentY;
-        lastDragDocumentX = documentX;
-        lastDragDocumentY = documentY;
-        if (htmlDragSourceElement != null) {
-            if (deltaDocumentX == 0 && deltaDocumentY == 0) {
-                deltaDocumentX = documentX - dragStartDocumentX;
-                deltaDocumentY = documentY - dragStartDocumentY;
-            }
-            dispatchHtmlDragStartIfNeeded(event, documentX, documentY, deltaDocumentX, deltaDocumentY);
-            dispatchHtmlDragOver(event, documentX, documentY, deltaDocumentX, deltaDocumentY);
-            return true;
-        }
-        return dispatchDragEvent(draggingElement, pressedElement, event, documentX, documentY, deltaDocumentX,
-                deltaDocumentY, DocumentElementDragEvent.DragPhase.DRAG);
-    }
-
-    private boolean dispatchDragEnd(UiMouseEvent event) {
-        if (draggingElement == null || event == null) {
-            clearDragState();
-            return false;
-        }
-        int documentX = event.getMouseX() - getAbsoluteX();
-        int documentY = event.getMouseY() - getAbsoluteY();
-        int deltaDocumentX = documentX - lastDragDocumentX;
-        int deltaDocumentY = documentY - lastDragDocumentY;
-        ElementNode dragTarget = pressedElement;
-        ElementNode dragHandlerTarget = draggingElement;
-        boolean activated = dragActivated;
-        ElementNode htmlDragSource = htmlDragSourceElement;
-        clearDragState();
-        if (htmlDragSource != null) {
-            dispatchHtmlDragEnd(htmlDragSource, event, documentX, documentY, deltaDocumentX, deltaDocumentY);
-            return activated;
-        }
-        boolean handled = dispatchDragEvent(dragHandlerTarget, dragTarget, event, documentX, documentY,
-                deltaDocumentX, deltaDocumentY, DocumentElementDragEvent.DragPhase.END);
-        return activated && handled;
-    }
-
-    private void clearDragState() {
-        draggingElement = null;
-        htmlDragSourceElement = null;
-        dragActivated = false;
-        htmlDragStarted = false;
-    }
-
-    private void dispatchHtmlDragStartIfNeeded(UiMouseEvent event, int documentX, int documentY, int deltaDocumentX,
-            int deltaDocumentY) {
-        if (htmlDragStarted) {
-            return;
-        }
-        htmlDragStarted = true;
-        DocumentElementDragStartHandler dragStartHandler = htmlDragSourceElement.getDragStartHandler();
-        if (dragStartHandler == null) {
-            return;
-        }
-        dragStartHandler.onDragStart(new DocumentElementDragEvent(htmlDragSourceElement, htmlDragSourceElement,
-                dragStartDocumentX, dragStartDocumentY, documentX, documentY, deltaDocumentX, deltaDocumentY,
-                event.getButton(), event.getTimeNanos(), DocumentElementDragEvent.DragPhase.START));
-    }
-
-    private boolean dispatchHtmlDragOver(UiMouseEvent event, int documentX, int documentY, int deltaDocumentX,
-            int deltaDocumentY) {
-        ElementNode target = findElementAt(event.getMouseX(), event.getMouseY());
-        for (DocumentNode current = target; current instanceof ElementNode; current = current.getParent()) {
-            ElementNode currentElement = (ElementNode) current;
-            DocumentElementDragOverHandler dragOverHandler = currentElement.getDragOverHandler();
-            if (dragOverHandler == null) {
-                continue;
-            }
-            if (dragOverHandler.onDragOver(new DocumentElementDragEvent(htmlDragSourceElement, currentElement,
-                    dragStartDocumentX, dragStartDocumentY, documentX, documentY, deltaDocumentX, deltaDocumentY,
-                    event.getButton(), event.getTimeNanos(), DocumentElementDragEvent.DragPhase.DRAG))) {
-                return true;
-            }
-        }
-        return false;
-    }
-
-    private void dispatchHtmlDragEnd(ElementNode htmlDragSource, UiMouseEvent event, int documentX, int documentY,
-            int deltaDocumentX, int deltaDocumentY) {
-        DocumentElementDragEndHandler dragEndHandler = htmlDragSource.getDragEndHandler();
-        if (dragEndHandler == null) {
-            return;
-        }
-        dragEndHandler.onDragEnd(new DocumentElementDragEvent(htmlDragSource, htmlDragSource, dragStartDocumentX,
-                dragStartDocumentY, documentX, documentY, deltaDocumentX, deltaDocumentY, event.getButton(),
-                event.getTimeNanos(), DocumentElementDragEvent.DragPhase.END));
-    }
-
-    private boolean dispatchDragEvent(ElementNode dragHandlerTarget, ElementNode dragTarget, UiMouseEvent event,
-            int documentX, int documentY, int deltaDocumentX, int deltaDocumentY,
-            DocumentElementDragEvent.DragPhase phase) {
-        if (dragHandlerTarget == null || event == null) {
-            return false;
-        }
-        DocumentElementDragHandler dragHandler = dragHandlerTarget.getDragHandler();
-        if (dragHandler == null) {
-            return false;
-        }
-        ElementNode resolvedTarget = dragTarget != null ? dragTarget : dragHandlerTarget;
-        return dragHandler.onDrag(new DocumentElementDragEvent(resolvedTarget, dragHandlerTarget,
-                dragStartDocumentX, dragStartDocumentY, documentX, documentY, deltaDocumentX, deltaDocumentY,
-                event.getButton(), event.getTimeNanos(), phase));
-    }
-
     private boolean focusFirstElementInTraversalOrder(boolean reverse) {
         List<ElementNode> focusableElements = collectFocusableElements();
         if (focusableElements.isEmpty()) {
@@ -1922,127 +1760,8 @@ public final class HtmlLikeDocumentWidget extends Widget implements UiDocument.D
     }
 
     private void syncCursorFromHoveredElement() {
-        cursorHost.applyCursor(resolveCursorFromHoveredElement());
-    }
-
-    private UiCursor resolveCursorFromHoveredElement() {
-        if (hoveredElement == null || !isElementAttachedToDocument(hoveredElement)) {
-            return UiCursor.DEFAULT;
-        }
-        for (DocumentNode current = hoveredElement; current instanceof ElementNode; current = current.getParent()) {
-            ElementNode currentElement = (ElementNode) current;
-            UiCursor declaredCursor = resolveDeclaredCursor(currentElement, buildCursorPseudoStates(currentElement));
-            if (declaredCursor != null) {
-                return declaredCursor;
-            }
-        }
-        return UiCursor.DEFAULT;
-    }
-
-    private UiCursor resolveDeclaredCursor(ElementNode element, java.util.Set<UiPseudoClass> activeStates) {
-        if (element == null) {
-            return null;
-        }
-        CursorCascadeValue inlineValue = readCursorCascadeValue(element.style());
-        if (inlineValue != null && element.style().isImportant(club.heiqi.uilib.ui.style.UiStyleProperty.CURSOR)) {
-            return inlineValue.resolveDeclaredCursor();
-        }
-        List<club.heiqi.uilib.ui.style.cascade.UiStyleRule> matchingRules = element.getOwnerDocument()
-                .findMatchingRules(element, activeStates);
-        for (int index = matchingRules.size() - 1; index >= 0; index--) {
-            club.heiqi.uilib.ui.style.cascade.UiStyleDeclaration declaration = matchingRules.get(index).getDeclaration();
-            if (declaration.isImportant(club.heiqi.uilib.ui.style.UiStyleProperty.CURSOR)) {
-                CursorCascadeValue cursorValue = readCursorCascadeValue(declaration);
-                if (cursorValue != null) {
-                    return cursorValue.resolveDeclaredCursor();
-                }
-            }
-        }
-        if (inlineValue != null) {
-            return inlineValue.resolveDeclaredCursor();
-        }
-        for (int index = matchingRules.size() - 1; index >= 0; index--) {
-            club.heiqi.uilib.ui.style.cascade.UiStyleDeclaration declaration = matchingRules.get(index).getDeclaration();
-            if (!declaration.isImportant(club.heiqi.uilib.ui.style.UiStyleProperty.CURSOR)) {
-                CursorCascadeValue cursorValue = readCursorCascadeValue(declaration);
-                if (cursorValue != null) {
-                    return cursorValue.resolveDeclaredCursor();
-                }
-            }
-        }
-        if ("a".equals(element.getTagName()) && hasLinkHref(element)) {
-            return UiCursor.POINTER;
-        }
-        return null;
-    }
-
-    private static boolean hasLinkHref(ElementNode element) {
-        if (element == null) {
-            return false;
-        }
-        String href = element.getAttribute("href");
-        return href != null && !href.trim().isEmpty();
-    }
-
-    private CursorCascadeValue readCursorCascadeValue(club.heiqi.uilib.ui.style.cascade.UiStyleDeclaration declaration) {
-        if (declaration.getCursor() != null) {
-            return CursorCascadeValue.value(declaration.getCursor());
-        }
-        club.heiqi.uilib.ui.style.values.UiStyleKeyword keyword = declaration
-                .getKeyword(club.heiqi.uilib.ui.style.UiStyleProperty.CURSOR);
-        return keyword == null ? null : CursorCascadeValue.keyword(keyword);
-    }
-
-    private static final class CursorCascadeValue {
-
-        private final UiCursor cursor;
-        private final club.heiqi.uilib.ui.style.values.UiStyleKeyword keyword;
-
-        private CursorCascadeValue(UiCursor cursor, club.heiqi.uilib.ui.style.values.UiStyleKeyword keyword) {
-            this.cursor = cursor;
-            this.keyword = keyword;
-        }
-
-        private static CursorCascadeValue value(UiCursor cursor) {
-            return new CursorCascadeValue(cursor, null);
-        }
-
-        private static CursorCascadeValue keyword(club.heiqi.uilib.ui.style.values.UiStyleKeyword keyword) {
-            return new CursorCascadeValue(null, keyword);
-        }
-
-        private UiCursor resolveDeclaredCursor() {
-            if (cursor != null) {
-                return cursor;
-            }
-            if (keyword == club.heiqi.uilib.ui.style.values.UiStyleKeyword.INITIAL) {
-                return UiCursor.DEFAULT;
-            }
-            return null;
-        }
-    }
-
-    private java.util.Set<UiPseudoClass> buildCursorPseudoStates(ElementNode element) {
-        EnumSet<UiPseudoClass> activeStates = EnumSet.noneOf(UiPseudoClass.class);
-        if (element == null) {
-            return activeStates;
-        }
-        if (hoveredElement != null && isAncestorOrSelf(element, hoveredElement)) {
-            activeStates.add(UiPseudoClass.HOVER);
-        }
-        if (element == getActiveFocusedElement()) {
-            activeStates.add(UiPseudoClass.FOCUS);
-            if (focusedElementFocusVisible) {
-                activeStates.add(UiPseudoClass.FOCUS_VISIBLE);
-            }
-        }
-        if (element == pressedElement) {
-            activeStates.add(UiPseudoClass.ACTIVE);
-        }
-        if (element.isDisabled()) {
-            activeStates.add(UiPseudoClass.DISABLED);
-        }
-        return activeStates;
+        cursorHost.applyCursor(DocumentCursorResolver.resolve(hoveredElement, getActiveFocusedElement(),
+                focusedElementFocusVisible, pressedElement, this::isElementAttachedToDocument));
     }
 
     /**
@@ -2060,7 +1779,7 @@ public final class HtmlLikeDocumentWidget extends Widget implements UiDocument.D
             ElementNode currentElement = (ElementNode) current;
             // 如果 currentElement 是 otherElement 的祖先（或就是 otherElement），跳过
             // 这样从子移到父时，父不会收到 leave；从父移到子时，父不会收到 enter
-            if (isAncestorOrSelf(currentElement, otherElement)) {
+            if (DocumentCursorResolver.isAncestorOrSelf(currentElement, otherElement)) {
                 continue;
             }
             DocumentElementHoverHandler hoverHandler = currentElement.getHoverHandler();
@@ -2070,21 +1789,6 @@ public final class HtmlLikeDocumentWidget extends Widget implements UiDocument.D
             DocumentElementHoverEvent hoverEvent = new DocumentElementHoverEvent(target, currentElement, hovered,
                     documentX, documentY, timeNanos);
             if (hoverHandler.onHoverChanged(hoverEvent)) {
-                return true;
-            }
-        }
-        return false;
-    }
-
-    /**
-     * 判断 ancestor 是否是 descendant 的祖先节点（或就是 descendant 本身）。
-     */
-    private static boolean isAncestorOrSelf(ElementNode ancestor, ElementNode descendant) {
-        if (ancestor == null || descendant == null) {
-            return false;
-        }
-        for (DocumentNode current = descendant; current != null; current = current.getParent()) {
-            if (current == ancestor) {
                 return true;
             }
         }
