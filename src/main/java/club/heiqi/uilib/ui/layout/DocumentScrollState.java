@@ -12,7 +12,6 @@ import java.util.Objects;
 import java.util.Set;
 
 import club.heiqi.uilib.ui.dom.ElementNode;
-import club.heiqi.uilib.ui.style.cascade.ComputedStyle;
 import club.heiqi.uilib.ui.style.props.UiOverflow;
 
 /**
@@ -429,7 +428,7 @@ public final class DocumentScrollState {
     private void collectScrollableMetrics(DocumentLayoutBox box, Set<ElementNode> activeElements) {
         ElementNode element = box.getElement();
         activeElements.add(element);
-        ScrollMetrics metrics = computeScrollMetrics(box);
+        DocumentScrollMetricsCalculator.Metrics metrics = DocumentScrollMetricsCalculator.compute(box);
         ScrollEntry entry = entries.get(element);
         if (entry == null) {
             entry = new ScrollEntry();
@@ -444,54 +443,6 @@ public final class DocumentScrollState {
         for (DocumentLayoutBox child : box.getChildren()) {
             collectScrollableMetrics(child, activeElements);
         }
-    }
-
-    private ScrollMetrics computeScrollMetrics(DocumentLayoutBox box) {
-        ComputedStyle style = box.getComputedStyle();
-        int viewportWidth = box.getContentWidth();
-        int viewportHeight = box.getContentHeight();
-        ContentBounds contentBounds = measureContentBounds(box, 0, 0);
-        int contentRight = Math.max(box.getContentLeft() + viewportWidth, contentBounds.right);
-        int contentBottom = Math.max(box.getContentTop() + viewportHeight, contentBounds.bottom);
-
-        int contentWidth = Math.max(viewportWidth, contentRight - box.getContentLeft());
-        int contentHeight = Math.max(viewportHeight, contentBottom - box.getContentTop());
-        int maxHorizontalOffset = isScrollableOverflow(style.getOverflowX())
-                ? Math.max(0, contentWidth - viewportWidth)
-                : 0;
-        int maxVerticalOffset = isScrollableOverflow(style.getOverflowY())
-                ? Math.max(0, contentHeight - viewportHeight)
-                : 0;
-        return new ScrollMetrics(viewportWidth, viewportHeight, contentWidth, contentHeight, maxHorizontalOffset,
-                maxVerticalOffset);
-    }
-
-    private ContentBounds measureContentBounds(DocumentLayoutBox box, int offsetX, int offsetY) {
-        int baseOffsetX = box.isFixedPositioned() ? 0 : offsetX;
-        int baseOffsetY = box.isFixedPositioned() ? 0 : offsetY;
-        int boxOffsetX = baseOffsetX + box.getPositionOffsetX();
-        int boxOffsetY = baseOffsetY + box.getPositionOffsetY();
-        int right = box.getContentLeft() + boxOffsetX + box.getContentWidth();
-        int bottom = box.getContentTop() + boxOffsetY + box.getContentHeight();
-
-        for (DocumentLayoutTextRun textRun : box.getTextRuns()) {
-            right = Math.max(right, textRun.getRight() + boxOffsetX);
-            bottom = Math.max(bottom, textRun.getBottom() + boxOffsetY);
-        }
-
-        int childOffsetX = boxOffsetX;
-        int childOffsetY = boxOffsetY;
-        for (DocumentLayoutBox child : box.getChildren()) {
-            if (child.isFixedPositioned()) {
-                continue;
-            }
-            right = Math.max(right, child.getMarginBoxRight() + childOffsetX);
-            bottom = Math.max(bottom, child.getMarginBoxBottom() + childOffsetY);
-            ContentBounds childBounds = measureContentBounds(child, childOffsetX, childOffsetY);
-            right = Math.max(right, childBounds.right);
-            bottom = Math.max(bottom, childBounds.bottom);
-        }
-        return new ContentBounds(right, bottom);
     }
 
     private boolean updateOffsets(ScrollEntry entry, int horizontalOffset, int verticalOffset) {
@@ -985,29 +936,6 @@ public final class DocumentScrollState {
 
         private static boolean containsInRect(int mouseX, int mouseY, int left, int top, int right, int bottom) {
             return mouseX >= left && mouseX < right && mouseY >= top && mouseY < bottom;
-        }
-    }
-
-    /**
-     * 由布局盒推导出的可滚几何信息。
-     */
-    private static final class ScrollMetrics {
-
-        private final int viewportWidth;
-        private final int viewportHeight;
-        private final int contentWidth;
-        private final int contentHeight;
-        private final int maxHorizontalOffset;
-        private final int maxVerticalOffset;
-
-        private ScrollMetrics(int viewportWidth, int viewportHeight, int contentWidth, int contentHeight,
-                int maxHorizontalOffset, int maxVerticalOffset) {
-            this.viewportWidth = Math.max(0, viewportWidth);
-            this.viewportHeight = Math.max(0, viewportHeight);
-            this.contentWidth = Math.max(this.viewportWidth, contentWidth);
-            this.contentHeight = Math.max(this.viewportHeight, contentHeight);
-            this.maxHorizontalOffset = Math.max(0, maxHorizontalOffset);
-            this.maxVerticalOffset = Math.max(0, maxVerticalOffset);
         }
     }
 

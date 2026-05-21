@@ -68,7 +68,7 @@
 - `aspect-ratio` 已在高度 auto 且宽度可解析的普通盒布局中推导内容高度；普通 `img` 绘制阶段已支持 `object-fit` 的 fill/contain/cover/none/scale-down。
 - HTML-like 常用语义元素已补齐最小闭环：`document.a()` 只是链接元素工厂，真正的默认链接语义只在 `a[href]` 上生效，表现为可点击、可聚焦、默认下划线与 `cursor:pointer`；未阻止默认行为时会先处理 `#id` 片段跳转，再通过 `UiDocument.setLinkActivationHandler(...)` 向业务方回调链接激活；`ul/ol/li` 会绘制真实项目符号或序号标记；`table` 已支持最小 `border-collapse`（去 gap + 合并共享边线）；`img` 资源解析失败且声明 `alt` 时会绘制文本回退而不是静默空白。
 - 滚动条样式已向作者层开放：`scrollbar-color`（`UiScrollbarColor`，可继承）控制滑块与轨道颜色；`scrollbar-width`（`UiScrollbarWidth.AUTO/THIN/NONE`）控制滚动条粗细或完全隐藏；`DocumentPaintEngine` 和 `DocumentScrollState` 已消费这两个属性。
-- `DocumentScrollState` 负责元素滚动状态、滚动命中与拖拽流程；滚动条 track/thumb 几何由 `DocumentScrollbarGeometry` 计算，避免把几何公式继续堆叠在状态容器里。
+- `DocumentScrollState` 负责元素滚动状态、滚动命中与拖拽流程；可滚范围由 `DocumentScrollMetricsCalculator` 推导，滚动条 track/thumb 几何由 `DocumentScrollbarGeometry` 计算，避免把测量和几何公式继续堆叠在状态容器里。
 - 列表标记样式已向作者层开放：`list-style-type`（`UiListStyleType.NONE/DISC/CIRCLE/SQUARE/DECIMAL`，可继承）控制列表标记类型；`ul` 默认 DISC，`ol` 默认 DECIMAL；`li` 继承最近列表容器的标记类型；设置 NONE 可隐藏标记并取消默认 padding-left。
 - 诊断页与示例页只展示已接入运行时并有最小验证的能力；仅完成级联解析、值类型承载或手动同步的能力必须明确写成边界，不得包装成浏览器语义已完整支持。
 - `DocumentElementScrollHandler` / `DocumentElementScrollEvent` 提供元素滚动事件监听能力，通过 `ElementNode.setScrollHandler(...)` 注册。
