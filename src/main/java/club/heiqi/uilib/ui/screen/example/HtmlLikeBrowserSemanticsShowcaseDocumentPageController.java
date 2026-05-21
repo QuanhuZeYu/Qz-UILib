@@ -249,18 +249,6 @@ public final class HtmlLikeBrowserSemanticsShowcaseDocumentPageController extend
                 .addRule(".pseudo-list > div:last-child", new UiStyleDeclaration()
                         .setBorderColor(0xFFEC4899)
                         .setTextColor(0xFFFBCFE8))
-                .addRule(".hover-card:hover", new UiStyleDeclaration()
-                        .setBackgroundColor(0xFF38BDF8)
-                        .setBorderColor(0xFFE0F2FE)
-                        .setTextColor(0xFF082F49)
-                        .setTransform(UiTransform.translate(0.0F, -4.0F)))
-                .addRule(".focus-card:focus", new UiStyleDeclaration()
-                        .setBorderColor(0xFFFFD166)
-                        .setOutline(UiOutline.of(2, 0xFFFFD166, UiBorderStyle.SOLID, 2))
-                        .setTextColor(0xFFFFFFFF))
-                .addRule(".focus-card:focus-visible", new UiStyleDeclaration()
-                        .setBackgroundColor(0xFF3B0764)
-                        .setTextColor(0xFFF5D0FE))
                 .addRule("button:disabled", new UiStyleDeclaration()
                         .setTextColor(0xFF94A3B8)
                         .setBackgroundColor(0xFF334155))
@@ -900,9 +888,22 @@ public final class HtmlLikeBrowserSemanticsShowcaseDocumentPageController extend
         hoverCard.setHoverHandler(new DocumentElementHoverHandler() {
             @Override
             public boolean onHoverChanged(DocumentElementHoverEvent event) {
+                if (event.isHovered()) {
+                    event.getCurrentTarget().style()
+                            .setBackgroundColor(0xFF38BDF8)
+                            .setBorderColor(0xFFE0F2FE)
+                            .setTextColor(0xFF082F49)
+                            .setTransform(UiTransform.translate(0.0F, -4.0F));
+                } else {
+                    event.getCurrentTarget().style()
+                            .setBackgroundColor(0xFF1A2A44)
+                            .setBorderColor(0xFF3B5998)
+                            .setTextColor(0xFFCCDDFF)
+                            .setTransform(UiTransform.identity());
+                }
                 updateText(selectorStateText, event.isHovered()
-                        ? ":hover 已进入，卡片应变亮、上移并切换为深色文字"
-                        : ":hover 已离开，卡片应恢复初始样式");
+                        ? ":hover 已进入：当前卡片应变亮、上移并切换为深色文字"
+                        : ":hover 已离开：当前卡片应恢复默认深色卡片样式");
                 return false;
             }
         });
@@ -915,8 +916,21 @@ public final class HtmlLikeBrowserSemanticsShowcaseDocumentPageController extend
         focusCard.setFocusHandler(new DocumentElementFocusHandler() {
             @Override
             public void onFocusChanged(DocumentElementFocusEvent event) {
+                if (event.isFocused()) {
+                    event.getCurrentTarget().style()
+                            .setBorderColor(0xFFFFD166)
+                            .setOutline(UiOutline.of(2, 0xFFFFD166, UiBorderStyle.SOLID, 2))
+                            .setTextColor(event.isFocusVisible() ? 0xFFF5D0FE : 0xFFFFFFFF)
+                            .setBackgroundColor(event.isFocusVisible() ? 0xFF3B0764 : 0xFF1A2A44);
+                } else {
+                    event.getCurrentTarget().style()
+                            .setBorderColor(0xFF3B5998)
+                            .setOutline(null)
+                            .setTextColor(0xFFCCDDFF)
+                            .setBackgroundColor(0xFF1A2A44);
+                }
                 updateText(selectorStateText, event.isFocused()
-                        ? ":focus 已生效，focusVisible=" + event.isFocusVisible()
+                        ? ":focus 已生效，focusVisible=" + event.isFocusVisible() + "；有焦点时应出现金色描边"
                         : "焦点已移出 focus-card");
             }
         });
@@ -933,7 +947,11 @@ public final class HtmlLikeBrowserSemanticsShowcaseDocumentPageController extend
         ElementNode disabledButton = document.button();
         disabledButton.setClassName("demo-box");
         disabledButton.setAttribute("disabled", "true");
-        disabledButton.appendText("button:disabled");
+        disabledButton.style()
+                .setBackgroundColor(0xFF334155)
+                .setTextColor(0xFF94A3B8)
+                .setBorderColor(0xFF64748B);
+        disabledButton.appendText("disabled 属性按钮");
         row.append(disabledButton);
 
         ElementNode pseudoCard = createDemoBox("伪元素正文");
@@ -952,7 +970,8 @@ public final class HtmlLikeBrowserSemanticsShowcaseDocumentPageController extend
         keywordParent.append(keywordChild);
         row.append(keywordParent);
 
-        selectorStateText = appendLogLine(section, "高级选择器展示已加载：把鼠标移到 hover 卡片上应明显变亮；点击或按 Tab 可观察 focus 状态。 ");
+        selectorStateText = appendLogLine(section,
+                "结构伪类验收：first/nth/last 三块分别应呈绿/橙/粉边框；child-card 应是青色边框；descendant chip 应是亮青文字蓝底；hover/focus 反馈当前通过事件回写保证可见。 ");
     }
 
     // ========== DOM 操作展示 ==========
@@ -1149,6 +1168,7 @@ public final class HtmlLikeBrowserSemanticsShowcaseDocumentPageController extend
                 .setBackgroundColor(0xFF0F172A);
         ellipsisSample.appendText("This is a very long line that should end with ellipsis when width is constrained.");
         ellipsisPanel.append(ellipsisSample);
+        ellipsisPanel.append(createExpectationText("应为单行，尾部出现省略号。"));
         row.append(ellipsisPanel);
 
         ElementNode preWrapPanel = createDemoPanel("B. PRE_WRAP 保留空白", 220);
@@ -1159,17 +1179,18 @@ public final class HtmlLikeBrowserSemanticsShowcaseDocumentPageController extend
                 .setBackgroundColor(0xFF1D2B3A);
         preWrapSample.appendText("保留    空格\n显式换行");
         preWrapPanel.append(preWrapSample);
+        preWrapPanel.append(createExpectationText("中间多个空格不应折叠，且应换成两行。"));
         row.append(preWrapPanel);
 
         ElementNode alignPanel = createDemoPanel("C. 对齐 / 行高 / 缩进 / 大小写", 236);
         ElementNode alignSample = document.div();
         alignSample.style()
-                .setWidth(UiStyleLength.percent(1.0F))
+                .setWidth(UiStyleLength.px(168))
                 .setTextAlign(UiTextAlign.CENTER)
                 .setLineHeight(UiStyleLength.px(18))
                 .setTextIndent(UiStyleLength.px(14))
                 .setBackgroundColor(0xFF1E293B);
-        alignSample.appendText("center + line-height + indent");
+        alignSample.appendText("center line-height indent sample should wrap twice");
         ElementNode transformUpper = document.div();
         transformUpper.style()
                 .setTextTransform(UiTextTransform.UPPERCASE)
@@ -1183,6 +1204,7 @@ public final class HtmlLikeBrowserSemanticsShowcaseDocumentPageController extend
         alignPanel.append(alignSample);
         alignPanel.append(transformUpper);
         alignPanel.append(transformCap);
+        alignPanel.append(createExpectationText("第一块应居中且首行缩进；第二块应全大写；第三块每个单词首字母大写。"));
         row.append(alignPanel);
 
         ElementNode fontPanel = createDemoPanel("D. 字距 / 阴影 / 粗斜体", 224);
@@ -1195,6 +1217,7 @@ public final class HtmlLikeBrowserSemanticsShowcaseDocumentPageController extend
                 .setBackgroundColor(0xFF3B2A24);
         fontSample.appendText("bold italic shadow");
         fontPanel.append(fontSample);
+        fontPanel.append(createExpectationText("文字应更粗、更斜，右下方应能看到阴影，字距比默认更开。"));
         row.append(fontPanel);
 
         ElementNode breakAllPanel = createDemoPanel("E. word-break: break-all", 224);
@@ -1205,6 +1228,7 @@ public final class HtmlLikeBrowserSemanticsShowcaseDocumentPageController extend
                 .setBackgroundColor(0xFF243B2A);
         breakAllSample.appendText("SuperLongUnbrokenTokenWithCJK混排混排混排");
         breakAllPanel.append(breakAllSample);
+        breakAllPanel.append(createExpectationText("长 token 应被直接拆开换行，而不是整串溢出。"));
         row.append(breakAllPanel);
 
         ElementNode anywherePanel = createDemoPanel("F. overflow-wrap:anywhere", 246);
@@ -1215,6 +1239,7 @@ public final class HtmlLikeBrowserSemanticsShowcaseDocumentPageController extend
                 .setBackgroundColor(0xFF1F2937);
         anywhereSample.appendText("https://example.invalid/a/very/long/path/without/spaces");
         anywherePanel.append(anywhereSample);
+        anywherePanel.append(createExpectationText("长 URL 应在任意位置断行，避免横向超出卡片。"));
         row.append(anywherePanel);
 
         textLayoutStateText = appendLogLine(section, "文本排版展示已拆分：每张卡只验证一组能力，便于肉眼核对实际表现。 ");
@@ -1489,6 +1514,21 @@ public final class HtmlLikeBrowserSemanticsShowcaseDocumentPageController extend
                 .setFlexDirection(UiFlexDirection.COLUMN)
                 .setRowGap(UiStyleLength.px(6));
         return panel;
+    }
+
+    /**
+     * 创建每张测试卡片的预期说明文本。
+     */
+    private ElementNode createExpectationText(String text) {
+        ElementNode note = document.div();
+        note.style()
+                .setBackgroundColor(0xFF0F172A)
+                .setBorderColor(0xFF334155)
+                .setBorderWidth(UiStyleLength.px(1))
+                .setBorderStyle(UiBorderStyle.DASHED)
+                .setTextColor(0xFFBFDBFE);
+        note.appendText("预期：" + text);
+        return note;
     }
 
     /**
