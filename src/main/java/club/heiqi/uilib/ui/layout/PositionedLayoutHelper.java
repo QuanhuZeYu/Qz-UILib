@@ -4,10 +4,8 @@ import java.util.List;
 
 import club.heiqi.uilib.ui.dom.ElementNode;
 import club.heiqi.uilib.ui.layout.DocumentLayoutEngine.AbsoluteContainingBlock;
-import club.heiqi.uilib.ui.layout.DocumentLayoutEngine.LayoutRuntimeValueResolver;
+import club.heiqi.uilib.ui.layout.DocumentLayoutEngine.LayoutContext;
 import club.heiqi.uilib.ui.style.cascade.ComputedStyle;
-import club.heiqi.uilib.ui.style.cascade.UiStyleResolver;
-import club.heiqi.uilib.ui.text.TextMeasureService;
 
 /**
  * absolute / fixed 脱流定位布局辅助器。
@@ -18,19 +16,18 @@ final class PositionedLayoutHelper {
 
     static void appendAbsoluteChildren(List<DocumentLayoutBox> childBoxes, List<ElementNode> absoluteChildren,
             AbsoluteContainingBlock absoluteContainingBlock, AbsoluteContainingBlock fixedContainingBlock,
-            TextMeasureService textMeasureService, LayoutRuntimeValueResolver layoutValueResolver) {
+            LayoutContext layoutContext) {
         for (ElementNode child : absoluteChildren) {
             childBoxes.add(layoutPositionedElement(child, absoluteContainingBlock, fixedContainingBlock,
-                    textMeasureService, layoutValueResolver));
+                    layoutContext));
         }
     }
 
     static void appendFixedChildren(List<DocumentLayoutBox> childBoxes, List<ElementNode> fixedChildren,
-            AbsoluteContainingBlock fixedContainingBlock, TextMeasureService textMeasureService,
-            LayoutRuntimeValueResolver layoutValueResolver) {
+            AbsoluteContainingBlock fixedContainingBlock, LayoutContext layoutContext) {
         for (ElementNode child : fixedChildren) {
             childBoxes.add(layoutPositionedElement(child, fixedContainingBlock, fixedContainingBlock,
-                    textMeasureService, layoutValueResolver));
+                    layoutContext));
         }
     }
 
@@ -46,33 +43,33 @@ final class PositionedLayoutHelper {
 
     private static DocumentLayoutBox layoutPositionedElement(ElementNode element,
             AbsoluteContainingBlock containingBlock, AbsoluteContainingBlock fixedContainingBlock,
-            TextMeasureService textMeasureService, LayoutRuntimeValueResolver layoutValueResolver) {
-        ComputedStyle style = UiStyleResolver.compute(element);
-        int forcedContentWidth = resolveStretchContentWidth(element, style, containingBlock, layoutValueResolver);
-        int forcedContentHeight = resolveStretchContentHeight(element, style, containingBlock, layoutValueResolver);
+            LayoutContext layoutContext) {
+        ComputedStyle style = layoutContext.computeStyle(element);
+        int forcedContentWidth = resolveStretchContentWidth(element, style, containingBlock, layoutContext);
+        int forcedContentHeight = resolveStretchContentHeight(element, style, containingBlock, layoutContext);
         DocumentLayoutBox measuredBox = DocumentLayoutEngine.layoutElement(element, 0, 0, containingBlock.width,
                 containingBlock.height, forcedContentWidth, forcedContentHeight, containingBlock, fixedContainingBlock,
-                textMeasureService, layoutValueResolver);
+                layoutContext);
         int marginBoxWidth = measuredBox.getWidth() + measuredBox.getMargin().getHorizontal();
         int marginBoxHeight = measuredBox.getHeight() + measuredBox.getMargin().getVertical();
         int marginBoxLeft = resolveAbsoluteMarginBoxLeft(style, containingBlock, marginBoxWidth);
         int marginBoxTop = resolveAbsoluteMarginBoxTop(style, containingBlock, marginBoxHeight);
         return DocumentLayoutEngine.layoutElement(element, marginBoxLeft, marginBoxTop, containingBlock.width,
                 containingBlock.height, forcedContentWidth, forcedContentHeight, containingBlock, fixedContainingBlock,
-                textMeasureService, layoutValueResolver);
+                layoutContext);
     }
 
     private static int resolveStretchContentWidth(ElementNode element, ComputedStyle style,
-            AbsoluteContainingBlock containingBlock, LayoutRuntimeValueResolver layoutValueResolver) {
+            AbsoluteContainingBlock containingBlock, LayoutContext layoutContext) {
         if (!DocumentLayoutEngine.isAuto(style.getWidth()) || DocumentLayoutEngine.isAuto(style.getLeft())
                 || DocumentLayoutEngine.isAuto(style.getRight())) {
             return DocumentLayoutEngine.AUTO_SIZE;
         }
         DocumentLayoutEdges margin = DocumentLayoutEngine.resolveMarginInsets(element, style, containingBlock.width,
-                layoutValueResolver);
+                layoutContext.layoutValueResolver);
         DocumentLayoutEdges border = DocumentLayoutEngine.resolveBorderInsets(style, containingBlock.width);
         DocumentLayoutEdges padding = DocumentLayoutEngine.resolvePaddingInsets(element, style, containingBlock.width,
-                layoutValueResolver);
+                layoutContext.layoutValueResolver);
         int leftInset = style.getLeft().resolve(containingBlock.width, 0);
         int rightInset = style.getRight().resolve(containingBlock.width, 0);
         return Math.max(0, containingBlock.width - leftInset - rightInset - margin.getHorizontal()
@@ -80,17 +77,17 @@ final class PositionedLayoutHelper {
     }
 
     private static int resolveStretchContentHeight(ElementNode element, ComputedStyle style,
-            AbsoluteContainingBlock containingBlock, LayoutRuntimeValueResolver layoutValueResolver) {
+            AbsoluteContainingBlock containingBlock, LayoutContext layoutContext) {
         if (!DocumentLayoutEngine.isAuto(style.getHeight()) || DocumentLayoutEngine.isAuto(style.getTop())
                 || DocumentLayoutEngine.isAuto(style.getBottom())) {
             return DocumentLayoutEngine.AUTO_SIZE;
         }
         int containingHeight = Math.max(0, containingBlock.height);
         DocumentLayoutEdges margin = DocumentLayoutEngine.resolveMarginInsets(element, style, containingBlock.width,
-                layoutValueResolver);
+                layoutContext.layoutValueResolver);
         DocumentLayoutEdges border = DocumentLayoutEngine.resolveBorderInsets(style, containingBlock.width);
         DocumentLayoutEdges padding = DocumentLayoutEngine.resolvePaddingInsets(element, style, containingBlock.width,
-                layoutValueResolver);
+                layoutContext.layoutValueResolver);
         int topInset = style.getTop().resolve(containingHeight, 0);
         int bottomInset = style.getBottom().resolve(containingHeight, 0);
         return Math.max(0, containingHeight - topInset - bottomInset - margin.getVertical()

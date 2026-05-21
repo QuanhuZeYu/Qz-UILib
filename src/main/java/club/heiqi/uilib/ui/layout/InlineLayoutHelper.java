@@ -6,10 +6,9 @@ import java.util.List;
 import club.heiqi.uilib.ui.dom.DocumentNode;
 import club.heiqi.uilib.ui.dom.ElementNode;
 import club.heiqi.uilib.ui.dom.TextNode;
-import club.heiqi.uilib.ui.layout.DocumentLayoutEngine.LayoutRuntimeValueResolver;
+import club.heiqi.uilib.ui.layout.DocumentLayoutEngine.LayoutContext;
 import club.heiqi.uilib.ui.layout.TextLayoutHelper.TextWrapSegment;
 import club.heiqi.uilib.ui.style.cascade.ComputedStyle;
-import club.heiqi.uilib.ui.style.cascade.UiStyleResolver;
 import club.heiqi.uilib.ui.style.props.UiDisplay;
 import club.heiqi.uilib.ui.style.props.UiTextAlign;
 import club.heiqi.uilib.ui.style.props.UiTextOverflow;
@@ -25,13 +24,13 @@ final class InlineLayoutHelper {
 
     private InlineLayoutHelper() {}
 
-    static boolean hasVisibleInlineElementChild(ElementNode element) {
-        for (DocumentNode child : DocumentLayoutEngine.getGeneratedChildNodes(element)) {
+    static boolean hasVisibleInlineElementChild(ElementNode element, LayoutContext layoutContext) {
+        for (DocumentNode child : DocumentLayoutEngine.getGeneratedChildNodes(element, layoutContext)) {
             if (!(child instanceof ElementNode)) {
                 continue;
             }
             ElementNode childElement = (ElementNode) child;
-            ComputedStyle childStyle = UiStyleResolver.compute(childElement);
+            ComputedStyle childStyle = layoutContext.computeStyle(childElement);
             if (isInlineFormattingDisplay(childStyle.getDisplay())
                     && !DocumentLayoutEngine.isOutOfFlowPositioned(childStyle)) {
                 return true;
@@ -99,15 +98,15 @@ final class InlineLayoutHelper {
     }
 
     static void appendInlineElementTextRuns(ElementNode inlineElement, InlineLayoutContext inlineLayoutContext,
-            TextMeasureService textMeasureService, LayoutRuntimeValueResolver layoutValueResolver) {
-        appendInlineElementTextRuns(inlineElement, inlineLayoutContext, textMeasureService, layoutValueResolver,
+            LayoutContext layoutContext) {
+        appendInlineElementTextRuns(inlineElement, inlineLayoutContext, layoutContext,
                 new ArrayList<InlineFragmentOwner>());
     }
 
     static void appendInlineTextRun(TextNode textNode, ElementNode ownerElement,
-            InlineLayoutContext inlineLayoutContext, TextMeasureService textMeasureService) {
+            InlineLayoutContext inlineLayoutContext, LayoutContext layoutContext) {
         appendInlineTextRun(textNode, ownerElement, new ArrayList<InlineFragmentOwner>(), inlineLayoutContext,
-                textMeasureService);
+                layoutContext);
     }
 
     static List<DocumentLayoutInlineFragment> mergeInlineFragments(
@@ -155,31 +154,30 @@ final class InlineLayoutHelper {
     }
 
     private static void appendInlineElementTextRuns(ElementNode inlineElement, InlineLayoutContext inlineLayoutContext,
-            TextMeasureService textMeasureService, LayoutRuntimeValueResolver layoutValueResolver,
+            LayoutContext layoutContext,
             List<InlineFragmentOwner> ancestorInlineElements) {
         InlineElementEdges edges = resolveInlineElementEdges(inlineElement, inlineLayoutContext.getLineWidth(),
-                layoutValueResolver);
+                layoutContext);
         List<InlineFragmentOwner> fragmentOwners = new ArrayList<InlineFragmentOwner>(ancestorInlineElements);
         fragmentOwners.add(new InlineFragmentOwner(inlineElement, edges.getVerticalTop(),
-                edges.getVerticalBottom(), UiStyleResolver.compute(inlineElement).getVerticalAlign()));
+                edges.getVerticalBottom(), layoutContext.computeStyle(inlineElement).getVerticalAlign()));
         appendInlineSpacing(ancestorInlineElements, inlineLayoutContext, edges.margin.getLeft());
         appendInlineSpacing(fragmentOwners, inlineLayoutContext, edges.border.getLeft() + edges.padding.getLeft());
-        for (DocumentNode child : DocumentLayoutEngine.getGeneratedChildNodes(inlineElement)) {
+        for (DocumentNode child : DocumentLayoutEngine.getGeneratedChildNodes(inlineElement, layoutContext)) {
             if (child instanceof TextNode) {
                 appendInlineTextRun((TextNode) child, inlineElement, fragmentOwners, inlineLayoutContext,
-                        textMeasureService);
+                        layoutContext);
                 continue;
             }
             if (!(child instanceof ElementNode)) {
                 continue;
             }
             ElementNode childElement = (ElementNode) child;
-            ComputedStyle childStyle = UiStyleResolver.compute(childElement);
+            ComputedStyle childStyle = layoutContext.computeStyle(childElement);
             if (childStyle.getDisplay() == UiDisplay.NONE || DocumentLayoutEngine.isOutOfFlowPositioned(childStyle)) {
                 continue;
             }
-            appendInlineElementTextRuns(childElement, inlineLayoutContext, textMeasureService, layoutValueResolver,
-                    fragmentOwners);
+            appendInlineElementTextRuns(childElement, inlineLayoutContext, layoutContext, fragmentOwners);
         }
         appendInlineSpacing(fragmentOwners, inlineLayoutContext, edges.padding.getRight() + edges.border.getRight());
         appendInlineSpacing(ancestorInlineElements, inlineLayoutContext, edges.margin.getRight());
@@ -187,8 +185,9 @@ final class InlineLayoutHelper {
 
     private static void appendInlineTextRun(TextNode textNode, ElementNode ownerElement,
             List<InlineFragmentOwner> fragmentOwners, InlineLayoutContext inlineLayoutContext,
-            TextMeasureService textMeasureService) {
-        ComputedStyle ownerStyle = UiStyleResolver.compute(ownerElement);
+            LayoutContext layoutContext) {
+        ComputedStyle ownerStyle = layoutContext.computeStyle(ownerElement);
+        TextMeasureService textMeasureService = layoutContext.textMeasureService;
         TextContentMode textContentMode = textNode.getTextContentMode();
         String remainingText = TextLayoutHelper.normalizeTextForLayout(textNode.getText(), ownerStyle, textContentMode);
         if (remainingText == null || remainingText.isEmpty() || inlineLayoutContext.getLineWidth() <= 0) {
@@ -296,11 +295,12 @@ final class InlineLayoutHelper {
     }
 
     private static InlineElementEdges resolveInlineElementEdges(ElementNode inlineElement, int lineWidth,
-            LayoutRuntimeValueResolver layoutValueResolver) {
-        ComputedStyle style = UiStyleResolver.compute(inlineElement);
+            LayoutContext layoutContext) {
+        ComputedStyle style = layoutContext.computeStyle(inlineElement);
         return new InlineElementEdges(DocumentLayoutEngine.resolveMarginInsets(inlineElement, style, lineWidth,
-                layoutValueResolver), DocumentLayoutEngine.resolveBorderInsets(style, lineWidth),
-                DocumentLayoutEngine.resolvePaddingInsets(inlineElement, style, lineWidth, layoutValueResolver));
+                layoutContext.layoutValueResolver), DocumentLayoutEngine.resolveBorderInsets(style, lineWidth),
+                DocumentLayoutEngine.resolvePaddingInsets(inlineElement, style, lineWidth,
+                        layoutContext.layoutValueResolver));
     }
 
     private static boolean isInlineFormattingDisplay(UiDisplay display) {

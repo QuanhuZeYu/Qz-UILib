@@ -111,6 +111,30 @@ public final class UiStyleResolver {
     }
 
     /**
+     * 使用已解析的父级样式计算目标元素最终样式。
+     *
+     * <p>该入口用于布局等热路径在单次遍历中复用父级 {@link ComputedStyle}，避免每个元素重复递归计算祖先样式。</p>
+     *
+     * @param element 目标元素
+     * @param parentStyle 已解析的父级样式；根元素为 null
+     * @return 计算样式
+     */
+    public static ComputedStyle computeWithParentStyle(ElementNode element, ComputedStyle parentStyle) {
+        if (element == null) {
+            throw new NullPointerException("element");
+        }
+        UiDocument document = element.getOwnerDocument();
+        if (element.isPseudoElement()) {
+            ElementNode originElement = element.getPseudoOriginElement();
+            List<UiStyleRule> matchingRules = document.findMatchingRules(originElement, null,
+                    element.getPseudoElement());
+            return compute(element, parentStyle == null ? compute(originElement) : parentStyle, matchingRules);
+        }
+        List<UiStyleRule> matchingRules = document.findMatchingRules(element);
+        return compute(element, parentStyle, matchingRules);
+    }
+
+    /**
      * 计算元素最终样式（使用指定的匹配规则列表）。
      *
      * <p>规则列表应按优先级升序排列（最后一个优先级最高）。</p>

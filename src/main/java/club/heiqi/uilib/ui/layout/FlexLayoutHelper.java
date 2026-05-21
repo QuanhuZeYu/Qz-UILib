@@ -8,10 +8,10 @@ import java.util.List;
 import club.heiqi.uilib.ui.animation.DocumentAnimationProperty;
 import club.heiqi.uilib.ui.dom.ElementNode;
 import club.heiqi.uilib.ui.layout.DocumentLayoutEngine.AbsoluteContainingBlock;
+import club.heiqi.uilib.ui.layout.DocumentLayoutEngine.LayoutContext;
 import club.heiqi.uilib.ui.layout.DocumentLayoutEngine.LayoutChildrenResult;
-import club.heiqi.uilib.ui.layout.DocumentLayoutEngine.LayoutRuntimeValueResolver;
+import club.heiqi.uilib.ui.layout.DocumentLayoutEngine.VisibleElementChildren;
 import club.heiqi.uilib.ui.style.cascade.ComputedStyle;
-import club.heiqi.uilib.ui.style.cascade.UiStyleResolver;
 import club.heiqi.uilib.ui.style.props.UiAlignItems;
 import club.heiqi.uilib.ui.style.props.UiAlignSelf;
 import club.heiqi.uilib.ui.style.props.UiFlexDirection;
@@ -20,7 +20,6 @@ import club.heiqi.uilib.ui.style.props.UiJustifyContent;
 import club.heiqi.uilib.ui.style.props.UiOverflow;
 import club.heiqi.uilib.ui.style.values.UiStyleInsets;
 import club.heiqi.uilib.ui.style.values.UiStyleLength;
-import club.heiqi.uilib.ui.text.TextMeasureService;
 
 /**
  * Flex 布局辅助类。
@@ -47,12 +46,13 @@ final class FlexLayoutHelper {
     static LayoutChildrenResult layoutFlexChildren(ElementNode element, ComputedStyle parentStyle,
             int contentLeft, int contentTop, int contentWidth, int specifiedContentHeight,
             AbsoluteContainingBlock absoluteContainingBlock, boolean createsAbsoluteContainingBlock,
-            AbsoluteContainingBlock fixedContainingBlock, TextMeasureService textMeasureService,
-            LayoutRuntimeValueResolver layoutValueResolver) {
-        List<ElementNode> absoluteChildren = DocumentLayoutEngine.getVisibleAbsoluteElementChildren(element);
-        List<ElementNode> fixedChildren = DocumentLayoutEngine.getVisibleFixedElementChildren(element);
+            AbsoluteContainingBlock fixedContainingBlock, LayoutContext layoutContext) {
+        VisibleElementChildren visibleElementChildren = DocumentLayoutEngine.getVisibleElementChildren(element,
+                layoutContext);
+        List<ElementNode> absoluteChildren = visibleElementChildren.absoluteChildren;
+        List<ElementNode> fixedChildren = visibleElementChildren.fixedChildren;
         List<ElementNode> visibleChildren = sortElementsByFlexOrder(element,
-                DocumentLayoutEngine.getVisibleInFlowElementChildren(element));
+                visibleElementChildren.inFlowChildren, layoutContext);
         LayoutChildrenResult flowResult;
         if (visibleChildren.isEmpty()) {
             flowResult = new LayoutChildrenResult(new ArrayList<DocumentLayoutBox>(),
@@ -60,20 +60,17 @@ final class FlexLayoutHelper {
                     Math.max(0, specifiedContentHeight));
         } else if (parentStyle.getFlexDirection() == UiFlexDirection.COLUMN) {
             flowResult = layoutColumnFlexChildren(visibleChildren, parentStyle, contentLeft, contentTop, contentWidth,
-                    specifiedContentHeight, absoluteContainingBlock, fixedContainingBlock, textMeasureService,
-                    layoutValueResolver);
+                    specifiedContentHeight, absoluteContainingBlock, fixedContainingBlock, layoutContext);
         } else {
             flowResult = layoutRowFlexChildren(visibleChildren, parentStyle, contentLeft, contentTop, contentWidth,
-                    specifiedContentHeight, absoluteContainingBlock, fixedContainingBlock, textMeasureService,
-                    layoutValueResolver);
+                    specifiedContentHeight, absoluteContainingBlock, fixedContainingBlock, layoutContext);
         }
         List<DocumentLayoutBox> childBoxes = new ArrayList<DocumentLayoutBox>(flowResult.children);
         PositionedLayoutHelper.appendAbsoluteChildren(childBoxes, absoluteChildren,
                 PositionedLayoutHelper.resolveDirectAbsoluteContainingBlock(absoluteContainingBlock,
                         createsAbsoluteContainingBlock, specifiedContentHeight, flowResult.contentHeight),
-                fixedContainingBlock, textMeasureService, layoutValueResolver);
-        PositionedLayoutHelper.appendFixedChildren(childBoxes, fixedChildren, fixedContainingBlock, textMeasureService,
-                layoutValueResolver);
+                fixedContainingBlock, layoutContext);
+        PositionedLayoutHelper.appendFixedChildren(childBoxes, fixedChildren, fixedContainingBlock, layoutContext);
         return new LayoutChildrenResult(sortFlexChildBoxesByOrder(element, childBoxes), flowResult.textRuns,
                 flowResult.inlineFragments, flowResult.contentHeight);
     }
@@ -81,7 +78,7 @@ final class FlexLayoutHelper {
     private static LayoutChildrenResult layoutRowFlexChildren(List<ElementNode> children, ComputedStyle parentStyle,
             int contentLeft, int contentTop, int contentWidth, int specifiedContentHeight,
             AbsoluteContainingBlock absoluteContainingBlock, AbsoluteContainingBlock fixedContainingBlock,
-            TextMeasureService textMeasureService, LayoutRuntimeValueResolver layoutValueResolver) {
+            LayoutContext layoutContext) {
         boolean wrap = parentStyle.getFlexWrap() == UiFlexWrap.WRAP;
         int gap = Math.max(0, parentStyle.getColumnGap().resolve(contentWidth, 0));
         int rowGap = Math.max(0, parentStyle.getRowGap().resolve(contentWidth, 0));
@@ -91,9 +88,8 @@ final class FlexLayoutHelper {
         List<FlexItem> currentLine = new ArrayList<FlexItem>();
         int currentLineOccupied = 0;
         for (ElementNode child : children) {
-            FlexItem item = createFlexItem(child, contentWidth, layoutValueResolver);
-            item.contentMainSize = resolveContentMainSize(item, contentWidth, true, textMeasureService,
-                    layoutValueResolver);
+            FlexItem item = createFlexItem(child, contentWidth, layoutContext);
+            item.contentMainSize = resolveContentMainSize(item, contentWidth, true, layoutContext);
             int outerMain = item.getOuterMainSize(true);
             if (wrap && !currentLine.isEmpty()
                     && currentLineOccupied + gap + outerMain > contentWidth) {
@@ -129,7 +125,7 @@ final class FlexLayoutHelper {
             for (FlexItem item : lineItems) {
                 item.box = DocumentLayoutEngine.layoutElement(item.element, 0, 0, contentWidth,
                         specifiedContentHeight, item.contentMainSize, DocumentLayoutEngine.AUTO_SIZE,
-                        absoluteContainingBlock, fixedContainingBlock, textMeasureService, layoutValueResolver);
+                        absoluteContainingBlock, fixedContainingBlock, layoutContext);
                 lineCrossSize = Math.max(lineCrossSize, item.getOuterCrossSize(true));
             }
 
@@ -143,7 +139,7 @@ final class FlexLayoutHelper {
                             - item.margin.getVertical() - item.border.getVertical() - item.padding.getVertical());
                     item.box = DocumentLayoutEngine.layoutElement(item.element, 0, 0, contentWidth,
                             lineAvailableCrossSize, item.contentMainSize, item.forcedCrossSize,
-                            absoluteContainingBlock, fixedContainingBlock, textMeasureService, layoutValueResolver);
+                            absoluteContainingBlock, fixedContainingBlock, layoutContext);
                     lineCrossSize = Math.max(lineCrossSize, item.getOuterCrossSize(true));
                 }
             }
@@ -192,8 +188,7 @@ final class FlexLayoutHelper {
                 int borderTop = crossCursor + crossOffset + marginTop;
                 DocumentLayoutBox childBox = DocumentLayoutEngine.layoutElement(item.element, borderLeft - marginLeft,
                         borderTop - marginTop, contentWidth, lineAvailableCrossSize, item.contentMainSize,
-                        item.forcedCrossSize, absoluteContainingBlock, fixedContainingBlock, textMeasureService,
-                        layoutValueResolver);
+                        item.forcedCrossSize, absoluteContainingBlock, fixedContainingBlock, layoutContext);
                 childBoxes.add(childBox);
                 cursor += marginLeft + childBox.getWidth() + marginRight + dynamicGap;
             }
@@ -214,17 +209,16 @@ final class FlexLayoutHelper {
     private static LayoutChildrenResult layoutColumnFlexChildren(List<ElementNode> children, ComputedStyle parentStyle,
             int contentLeft, int contentTop, int contentWidth, int specifiedContentHeight,
             AbsoluteContainingBlock absoluteContainingBlock, AbsoluteContainingBlock fixedContainingBlock,
-            TextMeasureService textMeasureService, LayoutRuntimeValueResolver layoutValueResolver) {
+            LayoutContext layoutContext) {
         List<FlexItem> items = new ArrayList<FlexItem>();
         for (ElementNode child : children) {
-            FlexItem item = createFlexItem(child, contentWidth, false, layoutValueResolver);
+            FlexItem item = createFlexItem(child, contentWidth, false, layoutContext);
             item.forcedCrossSize = resolveColumnCrossContentWidth(item, parentStyle.getAlignItems(),
-                    parentStyle.getFlexWrap(), contentWidth, textMeasureService, layoutValueResolver);
+                    parentStyle.getFlexWrap(), contentWidth, layoutContext);
             item.box = DocumentLayoutEngine.layoutElement(item.element, 0, 0, contentWidth, specifiedContentHeight,
                     item.forcedCrossSize, DocumentLayoutEngine.AUTO_SIZE, absoluteContainingBlock,
-                    fixedContainingBlock, textMeasureService, layoutValueResolver);
-            item.contentMainSize = resolveContentMainSize(item, contentWidth, false, textMeasureService,
-                    layoutValueResolver);
+                    fixedContainingBlock, layoutContext);
+            item.contentMainSize = resolveContentMainSize(item, contentWidth, false, layoutContext);
             if (DocumentLayoutEngine.isAuto(item.style.getHeight())) {
                 item.naturalContentMainSize = item.box.getContentHeight();
                 item.contentMainSize = item.naturalContentMainSize;
@@ -284,8 +278,7 @@ final class FlexLayoutHelper {
                     : item.contentMainSize;
             DocumentLayoutBox childBox = DocumentLayoutEngine.layoutElement(item.element, borderLeft - marginLeft,
                     borderTop - marginTop, contentWidth, contentHeight, item.forcedCrossSize,
-                    forcedMainSize, absoluteContainingBlock, fixedContainingBlock, textMeasureService,
-                    layoutValueResolver);
+                    forcedMainSize, absoluteContainingBlock, fixedContainingBlock, layoutContext);
             childBoxes.add(childBox);
             measuredContentBottom = Math.max(measuredContentBottom, childBox.getBottom() + marginBottom);
             cursor += marginTop + childBox.getHeight() + marginBottom + dynamicGap;
@@ -408,7 +401,7 @@ final class FlexLayoutHelper {
     }
 
     private static int resolveContentMainSize(FlexItem item, int containingWidth, boolean row,
-            TextMeasureService textMeasureService, LayoutRuntimeValueResolver layoutValueResolver) {
+            LayoutContext layoutContext) {
         // flex-basis 优先：非 auto 时用 flex-basis 作为主轴初始尺寸
         UiStyleLength flexBasis = item.style.getFlexBasis();
         if (!DocumentLayoutEngine.isAuto(flexBasis)) {
@@ -423,14 +416,13 @@ final class FlexLayoutHelper {
         UiStyleLength length = row ? item.style.getWidth() : item.style.getHeight();
         if (DocumentLayoutEngine.isAuto(length)) {
             if (row) {
-                return measureAutoFlexAutoWidth(item.element, item.style, containingWidth, textMeasureService,
-                        layoutValueResolver);
+                return measureAutoFlexAutoWidth(item.element, item.style, containingWidth, layoutContext);
             }
             return 0;
         }
         int baseSize = Math.max(0, length.resolve(containingWidth, 0));
         DocumentAnimationProperty property = row ? DocumentAnimationProperty.WIDTH : DocumentAnimationProperty.HEIGHT;
-        int resolvedSize = Math.max(0, layoutValueResolver.resolve(item.element, property, baseSize));
+        int resolvedSize = Math.max(0, layoutContext.layoutValueResolver.resolve(item.element, property, baseSize));
         if (row) {
             return DocumentLayoutEngine.resolveBoxSizingContentWidth(item.style, resolvedSize, item.border,
                     item.padding);
@@ -442,17 +434,19 @@ final class FlexLayoutHelper {
      * 测量 auto 宽度元素的内容宽，统一用于 flex row 主轴与 flex column 交叉轴。
      */
     private static int measureAutoFlexAutoWidth(ElementNode element, ComputedStyle style, int containingWidth,
-            TextMeasureService textMeasureService, LayoutRuntimeValueResolver layoutValueResolver) {
-        int measuredWidth = DocumentLayoutEngine.measureIntrinsicContentWidth(element, textMeasureService,
-                containingWidth, layoutValueResolver);
+            LayoutContext layoutContext) {
+        int measuredWidth = DocumentLayoutEngine.measureIntrinsicContentWidth(element, containingWidth,
+                layoutContext);
         if (measuredWidth <= 0) {
             return 0;
         }
         int availableContentWidth = Math.max(0, containingWidth
-                - DocumentLayoutEngine.resolveMarginInsets(element, style, containingWidth, layoutValueResolver)
+                - DocumentLayoutEngine.resolveMarginInsets(element, style, containingWidth,
+                        layoutContext.layoutValueResolver)
                         .getHorizontal()
                 - DocumentLayoutEngine.resolveBorderInsets(style, containingWidth).getHorizontal()
-                - DocumentLayoutEngine.resolvePaddingInsets(element, style, containingWidth, layoutValueResolver)
+                - DocumentLayoutEngine.resolvePaddingInsets(element, style, containingWidth,
+                        layoutContext.layoutValueResolver)
                         .getHorizontal());
         return Math.min(measuredWidth, availableContentWidth);
     }
@@ -461,10 +455,9 @@ final class FlexLayoutHelper {
      * 测量 flex 容器的固有宽度，供嵌套 flex 容器在父级 auto 宽度下推导内容宽。
      */
     static int measureIntrinsicFlexContentWidth(ElementNode element, ComputedStyle style,
-            TextMeasureService textMeasureService, int containingWidth,
-            LayoutRuntimeValueResolver layoutValueResolver) {
+            int containingWidth, LayoutContext layoutContext) {
         List<ElementNode> children = sortElementsByFlexOrder(element,
-                DocumentLayoutEngine.getVisibleInFlowElementChildren(element));
+                DocumentLayoutEngine.getVisibleInFlowElementChildren(element, layoutContext), layoutContext);
         if (children.isEmpty()) {
             return 0;
         }
@@ -474,9 +467,9 @@ final class FlexLayoutHelper {
         int measuredWidth = 0;
         int itemIndex = 0;
         for (ElementNode child : children) {
-            ComputedStyle childStyle = UiStyleResolver.compute(child);
-            int childWidth = DocumentLayoutEngine.measureIntrinsicOuterWidth(child, childStyle, textMeasureService,
-                    containingWidth, layoutValueResolver);
+            ComputedStyle childStyle = layoutContext.computeStyle(child);
+            int childWidth = DocumentLayoutEngine.measureIntrinsicOuterWidth(child, childStyle, containingWidth,
+                    layoutContext);
             if (style.getFlexDirection() == UiFlexDirection.COLUMN) {
                 measuredWidth = Math.max(measuredWidth, childWidth);
             } else {
@@ -491,10 +484,10 @@ final class FlexLayoutHelper {
     }
 
     private static int resolveColumnCrossContentWidth(FlexItem item, UiAlignItems alignItems, UiFlexWrap flexWrap,
-            int contentWidth, TextMeasureService textMeasureService, LayoutRuntimeValueResolver layoutValueResolver) {
+            int contentWidth, LayoutContext layoutContext) {
         if (!DocumentLayoutEngine.isAuto(item.style.getWidth())) {
             int baseWidth = Math.max(0, item.style.getWidth().resolve(contentWidth, 0));
-            int resolvedWidth = Math.max(0, layoutValueResolver.resolve(item.element,
+            int resolvedWidth = Math.max(0, layoutContext.layoutValueResolver.resolve(item.element,
                     DocumentAnimationProperty.WIDTH, baseWidth));
             return DocumentLayoutEngine.resolveBoxSizingContentWidth(item.style, resolvedWidth, item.border,
                     item.padding);
@@ -505,8 +498,7 @@ final class FlexLayoutHelper {
             return Math.max(0, contentWidth - item.margin.getHorizontal() - item.border.getHorizontal()
                     - item.padding.getHorizontal());
         }
-        return measureAutoFlexAutoWidth(item.element, item.style, contentWidth, textMeasureService,
-                layoutValueResolver);
+        return measureAutoFlexAutoWidth(item.element, item.style, contentWidth, layoutContext);
     }
 
     private static int resolveLeadingOffset(UiJustifyContent justifyContent, int remaining) {
@@ -607,20 +599,29 @@ final class FlexLayoutHelper {
     }
 
     private static List<ElementNode> sortElementsByFlexOrder(final ElementNode parentElement,
-            List<ElementNode> children) {
-        List<ElementNode> sortedChildren = new ArrayList<ElementNode>(children);
-        Collections.sort(sortedChildren, new Comparator<ElementNode>() {
+            List<ElementNode> children, LayoutContext layoutContext) {
+        if (children.size() <= 1) {
+            return children;
+        }
+        List<FlexOrderEntry> orderedChildren = new ArrayList<FlexOrderEntry>(children.size());
+        for (ElementNode child : children) {
+            orderedChildren.add(new FlexOrderEntry(child, layoutContext.computeStyle(child).getOrder(),
+                    DocumentLayoutEngine.getChildOrder(parentElement, child)));
+        }
+        Collections.sort(orderedChildren, new Comparator<FlexOrderEntry>() {
             @Override
-            public int compare(ElementNode first, ElementNode second) {
-                int orderCompare = Integer.compare(UiStyleResolver.compute(first).getOrder(),
-                        UiStyleResolver.compute(second).getOrder());
+            public int compare(FlexOrderEntry first, FlexOrderEntry second) {
+                int orderCompare = Integer.compare(first.order, second.order);
                 if (orderCompare != 0) {
                     return orderCompare;
                 }
-                return Integer.compare(DocumentLayoutEngine.getChildOrder(parentElement, first),
-                        DocumentLayoutEngine.getChildOrder(parentElement, second));
+                return Integer.compare(first.documentOrder, second.documentOrder);
             }
         });
+        List<ElementNode> sortedChildren = new ArrayList<ElementNode>(orderedChildren.size());
+        for (FlexOrderEntry orderedChild : orderedChildren) {
+            sortedChildren.add(orderedChild.element);
+        }
         return sortedChildren;
     }
 
@@ -642,18 +643,35 @@ final class FlexLayoutHelper {
         return sortedBoxes;
     }
 
-    private static FlexItem createFlexItem(ElementNode element, int containingWidth,
-            LayoutRuntimeValueResolver layoutValueResolver) {
-        return createFlexItem(element, containingWidth, true, layoutValueResolver);
+    private static FlexItem createFlexItem(ElementNode element, int containingWidth, LayoutContext layoutContext) {
+        return createFlexItem(element, containingWidth, true, layoutContext);
     }
 
     private static FlexItem createFlexItem(ElementNode element, int containingWidth, boolean row,
-            LayoutRuntimeValueResolver layoutValueResolver) {
-        ComputedStyle style = UiStyleResolver.compute(element);
+            LayoutContext layoutContext) {
+        ComputedStyle style = layoutContext.computeStyle(element);
         return new FlexItem(element, style,
-                DocumentLayoutEngine.resolveMarginInsets(element, style, containingWidth, layoutValueResolver),
+                DocumentLayoutEngine.resolveMarginInsets(element, style, containingWidth,
+                        layoutContext.layoutValueResolver),
                 DocumentLayoutEngine.resolveBorderInsets(style, containingWidth),
-                DocumentLayoutEngine.resolvePaddingInsets(element, style, containingWidth, layoutValueResolver), row);
+                DocumentLayoutEngine.resolvePaddingInsets(element, style, containingWidth,
+                        layoutContext.layoutValueResolver), row);
+    }
+
+    /**
+     * flex order 排序预计算项，避免 Comparator 热路径重复解析 computed style。
+     */
+    private static final class FlexOrderEntry {
+
+        private final ElementNode element;
+        private final int order;
+        private final int documentOrder;
+
+        private FlexOrderEntry(ElementNode element, int order, int documentOrder) {
+            this.element = element;
+            this.order = order;
+            this.documentOrder = documentOrder;
+        }
     }
 
     /**
