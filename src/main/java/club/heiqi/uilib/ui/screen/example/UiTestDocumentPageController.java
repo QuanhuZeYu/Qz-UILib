@@ -219,6 +219,14 @@ public final class UiTestDocumentPageController extends DocumentPageController {
                         menuModel.openBrowserSemanticsShowcase();
                     }
                 });
+        appendNavigationCard(document, fourthRow, "UI 框架结构审查",
+                "将 2026-05-20 UI 框架结构审查整理成可滚动看板，聚合分层链路、优先级、热区和后续动作。", "进入结构审查",
+                new DocumentButtonActionHandler() {
+                    @Override
+                    public void onAction(DocumentButtonActionEvent event) {
+                        menuModel.openUiFrameworkStructureAudit();
+                    }
+                });
     }
 
     private ElementNode appendNavigationRow(UiDocument document, ElementNode parent) {

@@ -70,6 +70,11 @@ public class UiDocumentScreensTest {
         Assert.assertEquals("html_like_smoke", InternalDiagnosticScreenRegistry.htmlLikeSmokePageId());
         Assert.assertEquals("html_like_glass", InternalDiagnosticScreenRegistry.htmlLikeGlassPageId());
         Assert.assertEquals("inventory_overview", InternalDiagnosticScreenRegistry.inventoryOverviewPageId());
+        Assert.assertEquals("list_element_drag", InternalDiagnosticScreenRegistry.listElementDragPageId());
+        Assert.assertEquals("browser_semantics_showcase",
+                InternalDiagnosticScreenRegistry.browserSemanticsShowcasePageId());
+        Assert.assertEquals("ui_framework_structure_audit",
+                InternalDiagnosticScreenRegistry.uiFrameworkStructureAuditPageId());
     }
 
     /**
@@ -102,6 +107,7 @@ public class UiDocumentScreensTest {
         Assert.assertFalse(UiDiagnosticsScreens.isUiTestLayout(screen));
         Assert.assertFalse(UiDiagnosticsScreens.isHtmlLikeSmoke(screen));
         Assert.assertFalse(UiDiagnosticsScreens.isHtmlLikeGlass(screen));
+        Assert.assertFalse(UiDiagnosticsScreens.isUiFrameworkStructureAudit(screen));
         Assert.assertEquals(InternalDiagnosticScreenRegistry.uiTestPageId(), InternalScreenIdentity.runtimeScreenNameOf(screen));
     }
 

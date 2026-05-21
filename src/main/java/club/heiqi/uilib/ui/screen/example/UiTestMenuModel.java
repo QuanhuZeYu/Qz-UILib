@@ -39,4 +39,9 @@ public interface UiTestMenuModel {
      * 打开浏览器语义新功能展示子页。
      */
     void openBrowserSemanticsShowcase();
+
+    /**
+     * 打开 UI 框架结构审查展示子页。
+     */
+    void openUiFrameworkStructureAudit();
 }

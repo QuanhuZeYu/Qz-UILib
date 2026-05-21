@@ -52,6 +52,7 @@ public class UiTestDocumentPageControllerTest {
         Assert.assertTrue(containsText(texts, "Large Glass Lab 子页"));
         Assert.assertTrue(containsText(texts, "背包概览示例页"));
         Assert.assertTrue(containsText(texts, "列表元素组件拖拽"));
+        Assert.assertTrue(containsText(texts, "UI 框架结构审查"));
         Assert.assertTrue(containsText(texts, "页面作者层不再拼装旧 Widget"));
         Assert.assertFalse(menuModel.openLayoutDiagnosticsCalled);
         Assert.assertFalse(menuModel.openFontPerformanceBaselineCalled);
@@ -59,6 +60,7 @@ public class UiTestDocumentPageControllerTest {
         Assert.assertFalse(menuModel.openHtmlLikeGlassCalled);
         Assert.assertFalse(menuModel.openInventoryOverviewCalled);
         Assert.assertFalse(menuModel.openListElementDragCalled);
+        Assert.assertFalse(menuModel.openUiFrameworkStructureAuditCalled);
     }
 
     /**
@@ -185,6 +187,28 @@ public class UiTestDocumentPageControllerTest {
     }
 
     /**
+     * 验证菜单按钮会触发 UI 框架结构审查展示页跳转。
+     */
+    @Test
+    public void shouldNavigateToUiFrameworkStructureAuditWhenMenuButtonClicked() {
+        RecordingMenuModel menuModel = new RecordingMenuModel();
+        TestFixture fixture = new TestFixture(menuModel);
+
+        fixture.controller.configureDocumentPage();
+        fixture.controller.buildDocument();
+
+        clickNavigationButton(fixture.controller.getHtmlLikeDocumentWidget(), "进入结构审查", 1L);
+
+        Assert.assertFalse(menuModel.openLayoutDiagnosticsCalled);
+        Assert.assertFalse(menuModel.openFontPerformanceBaselineCalled);
+        Assert.assertFalse(menuModel.openHtmlLikeSmokeCalled);
+        Assert.assertFalse(menuModel.openHtmlLikeGlassCalled);
+        Assert.assertFalse(menuModel.openInventoryOverviewCalled);
+        Assert.assertFalse(menuModel.openListElementDragCalled);
+        Assert.assertTrue(menuModel.openUiFrameworkStructureAuditCalled);
+    }
+
+    /**
      * 验证菜单按钮不会因 width:100% 与横向外边距组合溢出导航卡片。
      */
     @Test
@@ -287,6 +311,7 @@ public class UiTestDocumentPageControllerTest {
         private boolean openHtmlLikeGlassCalled;
         private boolean openInventoryOverviewCalled;
         private boolean openListElementDragCalled;
+        private boolean openUiFrameworkStructureAuditCalled;
 
         @Override
         public void openLayoutDiagnostics() {
@@ -320,6 +345,11 @@ public class UiTestDocumentPageControllerTest {
 
         @Override
         public void openBrowserSemanticsShowcase() {
+        }
+
+        @Override
+        public void openUiFrameworkStructureAudit() {
+            openUiFrameworkStructureAuditCalled = true;
         }
     }
 

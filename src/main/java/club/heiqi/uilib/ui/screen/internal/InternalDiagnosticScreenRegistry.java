@@ -7,6 +7,7 @@ import club.heiqi.uilib.ui.screen.example.HtmlLikeListDragDocumentPageController
 import club.heiqi.uilib.ui.screen.example.HtmlLikeSmokeDocumentPageController;
 import club.heiqi.uilib.ui.screen.example.InventoryOverviewModel;
 import club.heiqi.uilib.ui.screen.example.UiFontPerformanceBaselineDocumentPageController;
+import club.heiqi.uilib.ui.screen.example.UiFrameworkStructureAuditDocumentPageController;
 import club.heiqi.uilib.ui.screen.example.UiLayoutDiagnosticsDocumentPageController;
 import club.heiqi.uilib.ui.screen.example.UiTestDocumentPageController;
 import club.heiqi.uilib.ui.screen.example.UiTestMenuModel;
@@ -39,6 +40,8 @@ public final class InternalDiagnosticScreenRegistry {
             "list_element_drag");
     public static final InternalScreenIdentity.PageDescriptor BROWSER_SEMANTICS_SHOWCASE = new InternalScreenIdentity.PageDescriptor(
             "browser_semantics_showcase");
+    public static final InternalScreenIdentity.PageDescriptor UI_FRAMEWORK_STRUCTURE_AUDIT = new InternalScreenIdentity.PageDescriptor(
+            "ui_framework_structure_audit");
 
     public static final InternalHostedScreenFactory.InternalHostedScreenDefinition<UiTestMenuModel> UI_TEST_DEFINITION = new InternalHostedScreenFactory.InternalHostedScreenDefinition<UiTestMenuModel>(
             UI_TEST,
@@ -146,6 +149,19 @@ public final class InternalDiagnosticScreenRegistry {
                     return new HtmlLikeBrowserSemanticsShowcaseDocumentPageController(documentUi, documentPage);
                 }
             });
+    public static final InternalHostedScreenFactory.InternalHostedScreenDefinition<Void> UI_FRAMEWORK_STRUCTURE_AUDIT_DEFINITION = new InternalHostedScreenFactory.InternalHostedScreenDefinition<Void>(
+            UI_FRAMEWORK_STRUCTURE_AUDIT,
+            DocumentScreenChrome::resolve,
+            new InternalHostedScreenFactory.InternalDocumentPageControllerFactory<Void>() {
+                @Override
+                public DocumentPageController create(DocumentUiScope documentUi,
+                        DocumentPageAuthoringSurface documentPage,
+                        DocumentPageRuntimeView runtimeView,
+                        String pageId,
+                        Void provision) {
+                    return new UiFrameworkStructureAuditDocumentPageController(documentUi, documentPage);
+                }
+            });
 
     private InternalDiagnosticScreenRegistry() {}
 
@@ -179,5 +195,9 @@ public final class InternalDiagnosticScreenRegistry {
 
     public static String browserSemanticsShowcasePageId() {
         return BROWSER_SEMANTICS_SHOWCASE.getPageId();
+    }
+
+    public static String uiFrameworkStructureAuditPageId() {
+        return UI_FRAMEWORK_STRUCTURE_AUDIT.getPageId();
     }
 }
