@@ -19,6 +19,8 @@ import club.heiqi.uilib.ui.layout.DocumentEffectType;
 import club.heiqi.uilib.ui.layout.DocumentLayoutBox;
 import club.heiqi.uilib.ui.layout.DocumentLayoutEngine;
 import club.heiqi.uilib.ui.layout.DocumentScrollState;
+import club.heiqi.uilib.ui.render.ClipSnapshot;
+import club.heiqi.uilib.ui.render.RoundedClipRegion;
 import club.heiqi.uilib.ui.render.UiRenderContext;
 import club.heiqi.uilib.ui.style.values.UiBorderRadius;
 import club.heiqi.uilib.ui.style.cascade.UiBorderRadiusResolver;
@@ -626,12 +628,11 @@ public class DocumentPaintRendererTest {
 
         Method copyCurrentClipSnapshot = UiRenderContext.class.getDeclaredMethod("copyCurrentClipSnapshot");
         copyCurrentClipSnapshot.setAccessible(true);
-        UiRenderContext.ClipSnapshot clipSnapshot = (UiRenderContext.ClipSnapshot) copyCurrentClipSnapshot.invoke(
-                context);
+        ClipSnapshot clipSnapshot = (ClipSnapshot) copyCurrentClipSnapshot.invoke(context);
 
         Assert.assertNotNull(clipSnapshot);
         Assert.assertEquals(1, clipSnapshot.getRoundedClipRegions().size());
-        UiRenderContext.RoundedClipRegion clipRegion = clipSnapshot.getRoundedClipRegions().get(0);
+        RoundedClipRegion clipRegion = clipSnapshot.getRoundedClipRegions().get(0);
         Assert.assertEquals(0, clipRegion.getLeft());
         Assert.assertEquals(0, clipRegion.getTop());
         Assert.assertEquals(40, clipRegion.getRight());
@@ -925,16 +926,19 @@ public class DocumentPaintRendererTest {
     @SuppressWarnings("unchecked")
     private static void setClipStackForTest(UiRenderContext context, int left, int top, int right, int bottom,
             UiBorderRadiusResolver.ResolvedCornerRadii cornerRadii) throws Exception {
-        Class<?> clipStateClass = Class.forName("club.heiqi.uilib.ui.render.UiRenderContext$ClipState");
+        Class<?> clipStateClass = Class.forName("club.heiqi.uilib.ui.render.ClipStack$ClipState");
         Constructor<?> constructor = clipStateClass.getDeclaredConstructor(int[].class,
                 UiBorderRadiusResolver.ResolvedCornerRadii.class);
         constructor.setAccessible(true);
         Object clipState = constructor.newInstance(new int[] { left, top, right, bottom }, cornerRadii);
         Field clipStackField = UiRenderContext.class.getDeclaredField("clipStack");
         clipStackField.setAccessible(true);
-        Deque<Object> clipStack = (Deque<Object>) clipStackField.get(context);
-        clipStack.clear();
-        clipStack.push(clipState);
+        Object clipStack = clipStackField.get(context);
+        Field entriesField = clipStack.getClass().getDeclaredField("entries");
+        entriesField.setAccessible(true);
+        Deque<Object> entries = (Deque<Object>) entriesField.get(clipStack);
+        entries.clear();
+        entries.push(clipState);
     }
 
     /**

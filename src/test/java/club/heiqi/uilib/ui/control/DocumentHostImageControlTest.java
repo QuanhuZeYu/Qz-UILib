@@ -23,6 +23,7 @@ import club.heiqi.uilib.ui.layout.DocumentLayoutEngine;
 import club.heiqi.uilib.ui.paint.DocumentPaintCommand;
 import club.heiqi.uilib.ui.paint.DocumentPaintCommandType;
 import club.heiqi.uilib.ui.paint.DocumentPaintEngine;
+import club.heiqi.uilib.ui.render.PaintContextCompositor;
 import club.heiqi.uilib.ui.render.UiMainLayerSnapshotService;
 import club.heiqi.uilib.ui.render.UiRenderContext;
 import club.heiqi.uilib.ui.runtime.UiRuntimeAdapters;

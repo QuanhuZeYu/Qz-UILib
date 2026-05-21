@@ -21,6 +21,7 @@ import club.heiqi.uilib.ui.event.UiMouseEvent;
 import club.heiqi.uilib.ui.event.UiTextInputEvent;
 import club.heiqi.uilib.ui.input.UiKeyboardCaptureState;
 import club.heiqi.uilib.ui.input.UiInputFrame;
+import club.heiqi.uilib.ui.render.PaintContextCompositor;
 import club.heiqi.uilib.ui.render.UiMainLayerSnapshotService;
 import club.heiqi.uilib.ui.render.UiRenderContext;
 import club.heiqi.uilib.ui.runtime.UiRuntimeAdapters;
@@ -106,8 +107,7 @@ public class UiHudDocumentHostTest {
     public void shouldPrepareHudDeferredPostMainBatchWithoutDoubleDrain() {
         UiHudDocumentHost host = UiHudDocumentHost.getInstance();
         UiRenderContext context = new UiRenderContext(320, 240, 12, 34, 0.5F,
-                new UiRenderContext.PaintContextCompositor(), new UiMainLayerSnapshotService(),
-                UiRuntimeAdapters.empty());
+                new PaintContextCompositor(), new UiMainLayerSnapshotService(), UiRuntimeAdapters.empty());
         context.enqueueDeferredPostMainPass(() -> {});
 
         CountingRenderTarget renderTarget = new CountingRenderTarget();

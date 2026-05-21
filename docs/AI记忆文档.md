@@ -110,6 +110,7 @@
 - 原版资源包重载会通过 `FontRenderer.onResourceManagerReload` 的 Mixin 触发字体系统重载；字体 GL 资源、字符页、后台字形任务和布局缓存必须整体重建，避免继续使用资源包重载前的 GL 状态。
 - 样式系统已向作者层开放 `font-weight`（`UiFontWeight.NORMAL/BOLD`）与 `font-style`（`UiFontStyle.NORMAL/ITALIC`），二者可继承并已接入 HTML-like 文本测量与绘制；其中粗体会影响文本测量/换行，斜体当前主要体现为渲染差异。`font-family` 仍未开放为作者层 CSS 属性，本次仍只保留字体排序配置与底层字体匹配能力。
 - UILib 文档主渲染链路的字体批处理边界只覆盖 `DocumentPaintRenderer` 回放中的连续 `TEXT` 命令；遇到 `CUSTOM`、`BACKDROP_FILTER`、`PAINT_CONTEXT`、`CLIP` 以及其他非文本绘制命令前必须结束 scope 并 flush，避免文本跨越依赖即时可见内容或会改写 GL/FBO 状态的边界。
+- `UiRenderContext` 只保留渲染上下文门面与基础绘制 API；裁剪状态由 `ClipStack` 维护，paint context group opacity 由 `PaintContextCompositor` 维护，主后置回放记录使用顶级 `DeferredPostMainPass` / `DeferredPostMainPassReplay`，backdrop-filter 路径使用顶级 `BackdropFilterRenderPath`。
 - `FontConfig.replaceOrigin=true` 会让原版 `FontRenderer` 在 SplashProgress 加载线程和客户端主线程都可能进入 UILib 字体管线；字体资源重载、shader/批渲染器重建与 `drawString` 必须在字体运行时锁下串行化，不能用“只允许主线程接管”规避 Splash 字体渲染。
 - SplashProgress 期间仍使用 UILib 自定义字体和批渲染路径；不要为非客户端主线程切换第二套 immediate 字体绘制路径。Splash 特例只保留运行时锁、Mixin 异常保护、Splash reload guard 和资源重载入口跳过。
 - 字体页纹理创建时必须先显式清为透明，再上传单字形并生成 mipmap；不要依赖驱动对未初始化纹理内容的默认值，否则资源重载后的 Splash 文本可能出现整格纯色块。

@@ -1,10 +1,7 @@
 package club.heiqi.uilib.ui.render;
 
-import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Collections;
-import java.util.Deque;
-import java.util.Iterator;
 import java.util.List;
 import java.util.Objects;
 
@@ -47,324 +44,10 @@ public class UiRenderContext {
     private final PaintContextCompositor paintContextCompositor;
     private final UiMainLayerSnapshotService mainLayerSnapshotService;
     private final UiRuntimeAdapters runtimeAdapters;
-    private final Deque<ClipState> clipStack = new ArrayDeque<ClipState>();
+    private final ClipStack clipStack = new ClipStack();
     private final List<DeferredPostMainPass> deferredPostMainPasses = new ArrayList<DeferredPostMainPass>();
     private final List<DeferredPostMainPass> deferredPostMainOverlayPasses = new ArrayList<DeferredPostMainPass>();
     private int mainLayerContentRevision;
-
-    /**
-     * 最近一次 backdrop-filter 实际渲染路径。
-     */
-    public enum BackdropFilterRenderPath {
-        NONE("none"),
-        SHADER("shader"),
-        FIXED_PIPELINE("fixed-pipeline"),
-        TINT_FALLBACK("tint-fallback");
-
-        private final String label;
-
-        BackdropFilterRenderPath(String label) {
-            this.label = label;
-        }
-
-        /**
-         * 返回适合显示的路径标签。
-         *
-         * @return 路径标签
-         */
-        public String getLabel() {
-            return label;
-        }
-    }
-
-    /**
-     * 单层裁剪状态快照。
-     *
-     * <p>测试通过反射 {@code UiRenderContext$ClipState} 访问该类，故保留为内部 package-private。</p>
-     */
-    private static final class ClipState {
-
-        private final int[] clipRect;
-        private final UiBorderRadiusResolver.ResolvedCornerRadii cornerRadii;
-
-        private ClipState(int[] clipRect, UiBorderRadiusResolver.ResolvedCornerRadii cornerRadii) {
-            this.clipRect = clipRect;
-            this.cornerRadii = cornerRadii;
-        }
-    }
-
-    /**
-     * HTML-like paint context 离屏合成器。
-     *
-     * <p>该对象由宿主会话跨帧复用，按需借出同尺寸 {@link UiRenderTarget}。文档作者只接触 CSS-like opacity，
-     * 不直接感知 FBO、framebuffer 或 OpenGL 状态。</p>
-     */
-    public static final class PaintContextCompositor {
-
-        private final Deque<PaintContextFrame> frameStack = new ArrayDeque<PaintContextFrame>();
-        private final List<UiRenderTarget> layerPool = new ArrayList<UiRenderTarget>();
-        private int borrowedLayerCount;
-        private boolean disabledForFrame;
-
-        /**
-         * 开始新一帧 paint context 回放。
-         */
-        public void beginFrame() {
-            finishFrame();
-            borrowedLayerCount = 0;
-            disabledForFrame = false;
-        }
-
-        /**
-         * 结束当前帧，防御性清理仍未弹出的 paint context。
-         */
-        public void finishFrame() {
-            while (!frameStack.isEmpty()) {
-                popPaintContext();
-            }
-            borrowedLayerCount = 0;
-        }
-
-        /**
-         * 释放已缓存的离屏层资源。
-         */
-        public void close() {
-            finishFrame();
-            for (UiRenderTarget renderTarget : layerPool) {
-                renderTarget.close();
-            }
-            layerPool.clear();
-        }
-
-        private void pushPaintContext(int screenWidth, int screenHeight, int left, int top, int right, int bottom,
-                float opacity, ClipSnapshot clipSnapshot) {
-            int clampedLeft = clampInt(Math.min(left, right), 0, screenWidth);
-            int clampedTop = clampInt(Math.min(top, bottom), 0, screenHeight);
-            int clampedRight = clampInt(Math.max(left, right), 0, screenWidth);
-            int clampedBottom = clampInt(Math.max(top, bottom), 0, screenHeight);
-            float clampedOpacity = Math.max(0.0F, Math.min(1.0F, opacity));
-            if (disabledForFrame || clampedOpacity <= 0.0F || clampedOpacity >= 0.999F
-                    || clampedRight <= clampedLeft || clampedBottom <= clampedTop) {
-                frameStack.push(PaintContextFrame.inactive());
-                return;
-            }
-
-            int layerIndex = borrowedLayerCount;
-            UiRenderTarget layer = null;
-            boolean layerBegun = false;
-            try {
-                layer = borrowLayer(screenWidth, screenHeight);
-                int parentFramebufferId = GL11.glGetInteger(org.lwjgl.opengl.GL30.GL_FRAMEBUFFER_BINDING);
-                layer.begin();
-                layerBegun = true;
-                applyClipSnapshot(clipSnapshot, screenHeight);
-                frameStack.push(PaintContextFrame.active(layerIndex, layer, clampedLeft, clampedTop, clampedRight,
-                        clampedBottom, clampedOpacity, parentFramebufferId));
-            } catch (RuntimeException exception) {
-                if (layerBegun && layer != null) {
-                    layer.end();
-                }
-                disabledForFrame = true;
-                borrowedLayerCount = layerIndex;
-                frameStack.push(PaintContextFrame.inactive());
-            } catch (LinkageError error) {
-                if (layerBegun && layer != null) {
-                    layer.end();
-                }
-                disabledForFrame = true;
-                borrowedLayerCount = layerIndex;
-                frameStack.push(PaintContextFrame.inactive());
-            }
-        }
-
-        private boolean popPaintContext() {
-            if (frameStack.isEmpty()) {
-                return false;
-            }
-            PaintContextFrame frame = frameStack.pop();
-            if (!frame.active) {
-                return false;
-            }
-            frame.layer.end();
-            frame.layer.compositeToCurrentFramebuffer(frame.left, frame.top, frame.right, frame.bottom,
-                    frame.opacity);
-            borrowedLayerCount = Math.min(borrowedLayerCount, frame.layerIndex);
-            return true;
-        }
-
-        private boolean isCurrentLayerActive() {
-            return !frameStack.isEmpty() && frameStack.peek().active;
-        }
-
-        private int getCurrentBackdropReadFramebufferId() {
-            if (!isCurrentLayerActive()) {
-                return -1;
-            }
-            return frameStack.peek().parentFramebufferId;
-        }
-
-        private UiRenderTarget borrowLayer(int screenWidth, int screenHeight) {
-            UiRenderTarget layer;
-            if (borrowedLayerCount < layerPool.size()) {
-                layer = layerPool.get(borrowedLayerCount);
-            } else {
-                layer = new UiRenderTarget();
-                layerPool.add(layer);
-            }
-            borrowedLayerCount++;
-            layer.ensureSize(screenWidth, screenHeight);
-            return layer;
-        }
-
-        private UiRenderTarget borrowIsolatedLayer(int screenWidth, int screenHeight) {
-            return borrowLayer(screenWidth, screenHeight);
-        }
-
-        private void releaseIsolatedLayer(UiRenderTarget layer) {
-            if (layer == null || borrowedLayerCount <= 0) {
-                return;
-            }
-            borrowedLayerCount--;
-        }
-    }
-
-    private static final class PaintContextFrame {
-
-        private final int layerIndex;
-        private final UiRenderTarget layer;
-        private final int left;
-        private final int top;
-        private final int right;
-        private final int bottom;
-        private final float opacity;
-        private final int parentFramebufferId;
-        private final boolean active;
-
-        private PaintContextFrame(int layerIndex, UiRenderTarget layer, int left, int top, int right, int bottom,
-                float opacity, int parentFramebufferId, boolean active) {
-            this.layerIndex = layerIndex;
-            this.layer = layer;
-            this.left = left;
-            this.top = top;
-            this.right = right;
-            this.bottom = bottom;
-            this.opacity = opacity;
-            this.parentFramebufferId = parentFramebufferId;
-            this.active = active;
-        }
-
-        private static PaintContextFrame inactive() {
-            return new PaintContextFrame(-1, null, 0, 0, 0, 0, 1.0F, 0, false);
-        }
-
-        private static PaintContextFrame active(int layerIndex, UiRenderTarget layer, int left, int top, int right,
-                int bottom, float opacity, int parentFramebufferId) {
-            return new PaintContextFrame(layerIndex, layer, left, top, right, bottom, opacity, parentFramebufferId,
-                    true);
-        }
-    }
-
-    /**
-     * 圆角裁剪区域快照。
-     */
-    public static final class RoundedClipRegion {
-
-        private final int left;
-        private final int top;
-        private final int right;
-        private final int bottom;
-        private final UiBorderRadiusResolver.ResolvedCornerRadii cornerRadii;
-
-        private RoundedClipRegion(int left, int top, int right, int bottom,
-                UiBorderRadiusResolver.ResolvedCornerRadii cornerRadii) {
-            this.left = left;
-            this.top = top;
-            this.right = right;
-            this.bottom = bottom;
-            this.cornerRadii = cornerRadii;
-        }
-
-        public int getLeft() {
-            return left;
-        }
-
-        public int getTop() {
-            return top;
-        }
-
-        public int getRight() {
-            return right;
-        }
-
-        public int getBottom() {
-            return bottom;
-        }
-
-        public UiBorderRadiusResolver.ResolvedCornerRadii getCornerRadii() {
-            return cornerRadii;
-        }
-    }
-
-    /**
-     * 当前有效裁剪状态快照，供延迟回放阶段复用。
-     */
-    public static final class ClipSnapshot {
-
-        private final int[] clipRect;
-        private final List<RoundedClipRegion> roundedClipRegions;
-
-        private ClipSnapshot(int[] clipRect, List<RoundedClipRegion> roundedClipRegions) {
-            this.clipRect = clipRect;
-            this.roundedClipRegions = roundedClipRegions;
-        }
-
-        public int[] getClipRect() {
-            if (clipRect == null) {
-                return null;
-            }
-            return new int[] { clipRect[0], clipRect[1], clipRect[2], clipRect[3] };
-        }
-
-        public List<RoundedClipRegion> getRoundedClipRegions() {
-            return roundedClipRegions;
-        }
-    }
-
-    /**
-     * 主 UI FBO 完成后的补充回放动作。
-     */
-    public interface DeferredPostMainPassReplay {
-
-        /**
-         * 在第二个 FBO 中回放当前动作。
-         */
-        void replay();
-    }
-
-    /**
-     * 延迟到主渲染完成后再执行的回放记录。
-     *
-     * <p>这里保留 clip/scissor 快照，让宿主能够把同一批补充绘制
-     * 回放到第二个 FBO，再按既有 alpha 合成契约贴回主 UI FBO。</p>
-     */
-    public static final class DeferredPostMainPass {
-
-        private final DeferredPostMainPassReplay replay;
-        private final ClipSnapshot clipSnapshot;
-
-        private DeferredPostMainPass(DeferredPostMainPassReplay replay, ClipSnapshot clipSnapshot) {
-            this.replay = replay;
-            this.clipSnapshot = clipSnapshot;
-        }
-
-        public void replay() {
-            replay.replay();
-        }
-
-        public ClipSnapshot getClipSnapshot() {
-            return clipSnapshot;
-        }
-    }
 
     /**
      * 创建渲染上下文。
@@ -1008,57 +691,17 @@ public class UiRenderContext {
      */
     public void pushClip(int left, int top, int right, int bottom,
             UiBorderRadiusResolver.ResolvedCornerRadii cornerRadii) {
-        int clipLeft = Math.max(0, Math.min(left, right));
-        int clipTop = Math.max(0, Math.min(top, bottom));
-        int clipRight = Math.min(screenWidth, Math.max(left, right));
-        int clipBottom = Math.min(screenHeight, Math.max(top, bottom));
-
-        if (!clipStack.isEmpty()) {
-            int[] parent = clipStack.peek().clipRect;
-            clipLeft = Math.max(clipLeft, parent[0]);
-            clipTop = Math.max(clipTop, parent[1]);
-            clipRight = Math.min(clipRight, parent[2]);
-            clipBottom = Math.min(clipBottom, parent[3]);
-        }
-
-        if (clipRight < clipLeft) {
-            clipRight = clipLeft;
-        }
-        if (clipBottom < clipTop) {
-            clipBottom = clipTop;
-        }
-
-        clipStack.push(new ClipState(new int[] { clipLeft, clipTop, clipRight, clipBottom },
-                UiBorderRadiusResolver.scaleToFit(cornerRadii, clipRight - clipLeft, clipBottom - clipTop)));
+        clipStack.push(left, top, right, bottom, screenWidth, screenHeight, cornerRadii);
         applyCurrentClip();
     }
 
     public void popClip() {
-        if (!clipStack.isEmpty()) {
-            clipStack.pop();
-        }
+        clipStack.pop();
         applyCurrentClip();
     }
 
     private ClipSnapshot copyCurrentClipSnapshot() {
-        if (clipStack.isEmpty()) {
-            return null;
-        }
-
-        int[] clip = clipStack.peek().clipRect;
-        List<RoundedClipRegion> roundedClipRegions = new ArrayList<RoundedClipRegion>();
-        Iterator<ClipState> iterator = clipStack.descendingIterator();
-        while (iterator.hasNext()) {
-            ClipState clipState = iterator.next();
-            if (!UiRoundedRectGeometry.hasAnyCornerRadius(clipState.cornerRadii)) {
-                continue;
-            }
-            int[] clipRect = clipState.clipRect;
-            roundedClipRegions.add(new RoundedClipRegion(clipRect[0], clipRect[1], clipRect[2], clipRect[3],
-                    clipState.cornerRadii));
-        }
-        return new ClipSnapshot(new int[] { clip[0], clip[1], clip[2], clip[3] },
-                Collections.unmodifiableList(roundedClipRegions));
+        return clipStack.copySnapshot();
     }
 
     private void applyCurrentClip() {
@@ -1075,61 +718,14 @@ public class UiRenderContext {
      * @param screenHeight 当前原生屏幕高度
      */
     public static void applyClipSnapshot(ClipSnapshot clipSnapshot, int screenHeight) {
-        if (clipSnapshot == null || clipSnapshot.getClipRect() == null) {
-            clearClipState();
-            return;
-        }
-
-        int[] clipRect = clipSnapshot.getClipRect();
-        int width = Math.max(0, clipRect[2] - clipRect[0]);
-        int height = Math.max(0, clipRect[3] - clipRect[1]);
-        GL11.glEnable(GL11.GL_SCISSOR_TEST);
-        GL11.glScissor(clipRect[0], screenHeight - clipRect[3], width, height);
-
-        List<RoundedClipRegion> roundedClipRegions = clipSnapshot.getRoundedClipRegions();
-        if (roundedClipRegions.isEmpty()) {
-            GL11.glDisable(GL11.GL_STENCIL_TEST);
-            GL11.glStencilMask(0xFF);
-            return;
-        }
-
-        rebuildRoundedClipMask(roundedClipRegions);
+        ClipStack.applySnapshot(clipSnapshot, screenHeight);
     }
 
     /**
      * 清空当前 OpenGL 裁剪状态。
      */
     public static void clearClipState() {
-        GL11.glDisable(GL11.GL_SCISSOR_TEST);
-        GL11.glDisable(GL11.GL_STENCIL_TEST);
-        GL11.glStencilMask(0xFF);
-        GL11.glColorMask(true, true, true, true);
-        GL11.glDepthMask(true);
-    }
-
-    private static void rebuildRoundedClipMask(List<RoundedClipRegion> roundedClipRegions) {
-        GL11.glEnable(GL11.GL_STENCIL_TEST);
-        GL11.glStencilMask(0xFF);
-        GL11.glClear(GL11.GL_STENCIL_BUFFER_BIT);
-        GL11.glColorMask(false, false, false, false);
-        GL11.glDepthMask(false);
-        GL11.glDisable(GL11.GL_TEXTURE_2D);
-
-        for (int index = 0; index < roundedClipRegions.size(); index++) {
-            GL11.glStencilFunc(GL11.GL_EQUAL, index, 0xFF);
-            GL11.glStencilOp(GL11.GL_KEEP, GL11.GL_KEEP, GL11.GL_INCR);
-            RoundedClipRegion clipRegion = roundedClipRegions.get(index);
-            UiRoundedRectGeometry.drawRoundedRectGeometry(clipRegion.getLeft(), clipRegion.getTop(),
-                    clipRegion.getRight(), clipRegion.getBottom(), clipRegion.getCornerRadii(), true,
-                    UiSurfaceStyle.CORNER_ALL);
-        }
-
-        GL11.glEnable(GL11.GL_TEXTURE_2D);
-        GL11.glColorMask(true, true, true, true);
-        GL11.glDepthMask(true);
-        GL11.glStencilMask(0x00);
-        GL11.glStencilFunc(GL11.GL_EQUAL, roundedClipRegions.size(), 0xFF);
-        GL11.glStencilOp(GL11.GL_KEEP, GL11.GL_KEEP, GL11.GL_KEEP);
+        ClipStack.clearState();
     }
 
     private void fillRoundedRect(int left, int top, int right, int bottom,
@@ -1163,10 +759,6 @@ public class UiRenderContext {
         GL11.glEnable(GL11.GL_TEXTURE_2D);
         GL11.glColor4f(1.0F, 1.0F, 1.0F, 1.0F);
         notifyMainLayerContentChanged();
-    }
-
-    private static int clampInt(int value, int min, int max) {
-        return Math.max(min, Math.min(value, max));
     }
 
     private void applyColor(int color) {

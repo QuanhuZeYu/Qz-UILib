@@ -29,6 +29,7 @@ import club.heiqi.uilib.ui.input.UiInputFrame;
 import club.heiqi.uilib.ui.input.UiInputService;
 import club.heiqi.uilib.ui.input.UiKeyboardCaptureState;
 import club.heiqi.uilib.ui.input.UiNativeTextInputInspector;
+import club.heiqi.uilib.ui.render.PaintContextCompositor;
 import club.heiqi.uilib.ui.render.UiMainLayerSnapshotService;
 import club.heiqi.uilib.ui.render.UiRenderContext;
 import club.heiqi.uilib.ui.render.UiRenderTarget;
@@ -49,7 +50,7 @@ public final class UiHudDocumentHost {
     private static final UiHudDocumentHost INSTANCE = new UiHudDocumentHost();
 
     private final List<HudEntry> entries = new ArrayList<HudEntry>();
-    private final UiRenderContext.PaintContextCompositor paintContextCompositor = new UiRenderContext.PaintContextCompositor();
+    private final PaintContextCompositor paintContextCompositor = new PaintContextCompositor();
     private final UiMainLayerSnapshotService mainLayerSnapshotService = new UiMainLayerSnapshotService();
     private UiRenderTarget deferredPostMainRenderTarget;
     private boolean hudTextInputRequested;

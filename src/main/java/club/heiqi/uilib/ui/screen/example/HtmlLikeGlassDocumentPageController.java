@@ -12,6 +12,7 @@ import club.heiqi.uilib.ui.dom.TextNode;
 import club.heiqi.uilib.ui.dom.UiDocument;
 import club.heiqi.uilib.ui.layout.UiLayoutSpec;
 import club.heiqi.uilib.ui.layout.UiLength;
+import club.heiqi.uilib.ui.render.BackdropFilterRenderPath;
 import club.heiqi.uilib.ui.render.UiRenderContext;
 import club.heiqi.uilib.ui.style.props.UiAlignItems;
 import club.heiqi.uilib.ui.style.props.UiBorderStyle;
@@ -458,7 +459,7 @@ public final class HtmlLikeGlassDocumentPageController extends DocumentPageContr
     }
 
     private static String formatBackdropPathText() {
-        UiRenderContext.BackdropFilterRenderPath renderPath = UiRenderContext.getLastBackdropFilterRenderPath();
+        BackdropFilterRenderPath renderPath = UiRenderContext.getLastBackdropFilterRenderPath();
         return "Backdrop path: " + renderPath.getLabel() + " / " + UiRenderContext.getLastBackdropFilterDetail();
     }
 

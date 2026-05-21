@@ -12,6 +12,7 @@ import club.heiqi.uilib.ui.host.DocumentHostRenderSupport;
 import club.heiqi.uilib.ui.input.UiKeyboardCaptureState;
 import club.heiqi.uilib.ui.input.UiInputFrame;
 import club.heiqi.uilib.ui.input.UiInputService;
+import club.heiqi.uilib.ui.render.PaintContextCompositor;
 import club.heiqi.uilib.ui.render.UiMainLayerSnapshotService;
 import club.heiqi.uilib.ui.render.UiRenderContext;
 import club.heiqi.uilib.ui.render.UiRenderTarget;
@@ -33,7 +34,7 @@ final class UiScreenHostSession {
     private final ViewportWidget rootWidget = new ViewportWidget();
     private final DocumentHostInteractionSession interactionSession = new DocumentHostInteractionSession();
     private final UiHostBackgroundBlurRenderer backgroundBlurRenderer = new UiHostBackgroundBlurRenderer();
-    private final UiRenderContext.PaintContextCompositor paintContextCompositor = new UiRenderContext.PaintContextCompositor();
+    private final PaintContextCompositor paintContextCompositor = new PaintContextCompositor();
     private final UiMainLayerSnapshotService mainLayerSnapshotService = new UiMainLayerSnapshotService();
     private UiRenderTarget renderTarget;
     private UiRenderTarget deferredPostMainRenderTarget;

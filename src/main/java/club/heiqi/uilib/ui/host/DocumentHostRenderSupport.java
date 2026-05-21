@@ -6,6 +6,8 @@ import java.util.List;
 import org.lwjgl.opengl.GL11;
 import org.lwjgl.opengl.GL14;
 
+import club.heiqi.uilib.ui.render.DeferredPostMainPass;
+import club.heiqi.uilib.ui.render.PaintContextCompositor;
 import club.heiqi.uilib.ui.render.UiMainLayerSnapshotService;
 import club.heiqi.uilib.ui.render.UiRenderContext;
 import club.heiqi.uilib.ui.render.UiRenderTarget;
@@ -22,14 +24,14 @@ public final class DocumentHostRenderSupport {
     public static final class DeferredPostMainReplayBatch {
 
         private static final DeferredPostMainReplayBatch EMPTY = new DeferredPostMainReplayBatch(null,
-                Collections.<UiRenderContext.DeferredPostMainPass>emptyList());
+                Collections.<DeferredPostMainPass>emptyList());
 
         private final UiRenderContext context;
-        private final List<UiRenderContext.DeferredPostMainPass> deferredPasses;
+        private final List<DeferredPostMainPass> deferredPasses;
         private boolean replayClaimed;
 
         private DeferredPostMainReplayBatch(UiRenderContext context,
-                List<UiRenderContext.DeferredPostMainPass> deferredPasses) {
+                List<DeferredPostMainPass> deferredPasses) {
             this.context = context;
             this.deferredPasses = deferredPasses;
         }
@@ -43,7 +45,7 @@ public final class DocumentHostRenderSupport {
             return deferredPasses.isEmpty() || replayClaimed;
         }
 
-        private List<UiRenderContext.DeferredPostMainPass> claimPasses() {
+        private List<DeferredPostMainPass> claimPasses() {
             if (deferredPasses.isEmpty() || replayClaimed) {
                 return Collections.emptyList();
             }
@@ -74,7 +76,7 @@ public final class DocumentHostRenderSupport {
      * @return 渲染上下文
      */
     public static UiRenderContext createRenderContext(int screenWidth, int screenHeight, int mouseX, int mouseY,
-            float partialTicks, UiRenderContext.PaintContextCompositor paintContextCompositor,
+            float partialTicks, PaintContextCompositor paintContextCompositor,
             UiMainLayerSnapshotService mainLayerSnapshotService, UiRuntimeAdapters runtimeAdapters) {
         return new UiRenderContext(screenWidth, screenHeight, mouseX, mouseY, partialTicks,
                 paintContextCompositor, mainLayerSnapshotService, runtimeAdapters);
@@ -105,7 +107,7 @@ public final class DocumentHostRenderSupport {
             return DeferredPostMainReplayBatch.EMPTY;
         }
 
-        List<UiRenderContext.DeferredPostMainPass> deferredPasses = context.drainDeferredPostMainPasses();
+        List<DeferredPostMainPass> deferredPasses = context.drainDeferredPostMainPasses();
         if (deferredPasses.isEmpty()) {
             return DeferredPostMainReplayBatch.EMPTY;
         }
@@ -121,11 +123,11 @@ public final class DocumentHostRenderSupport {
      * @param replayBatch 已提取的回放批次
      */
     public static void replayDeferredPostMainPasses(DeferredPostMainReplayBatch replayBatch) {
-        List<UiRenderContext.DeferredPostMainPass> deferredPasses = claimDeferredPostMainPasses(replayBatch);
+        List<DeferredPostMainPass> deferredPasses = claimDeferredPostMainPasses(replayBatch);
         if (deferredPasses.isEmpty()) {
             return;
         }
-        for (UiRenderContext.DeferredPostMainPass deferredPass : deferredPasses) {
+        for (DeferredPostMainPass deferredPass : deferredPasses) {
             deferredPass.replay();
         }
         replayBatch.notifyReplayCompleted();
@@ -159,7 +161,7 @@ public final class DocumentHostRenderSupport {
             return;
         }
 
-        List<UiRenderContext.DeferredPostMainPass> deferredPasses = claimDeferredPostMainPasses(replayBatch);
+        List<DeferredPostMainPass> deferredPasses = claimDeferredPostMainPasses(replayBatch);
         if (deferredPasses.isEmpty()) {
             return;
         }
@@ -176,7 +178,7 @@ public final class DocumentHostRenderSupport {
                 GL11.glPushMatrix();
                 try {
                     GL11.glLoadIdentity();
-                    for (UiRenderContext.DeferredPostMainPass deferredPass : deferredPasses) {
+                    for (DeferredPostMainPass deferredPass : deferredPasses) {
                         prepareDeferredPostMainReplayState(nativeWidth, nativeHeight);
                         UiRenderContext.applyClipSnapshot(deferredPass.getClipSnapshot(), nativeHeight);
                         deferredPass.replay();
@@ -207,7 +209,7 @@ public final class DocumentHostRenderSupport {
      * @param mainLayerSnapshotService 主层快照服务
      * @param deferredRenderTarget 主后置离屏目标
      */
-    public static void closeSharedRenderResources(UiRenderContext.PaintContextCompositor paintContextCompositor,
+    public static void closeSharedRenderResources(PaintContextCompositor paintContextCompositor,
             UiMainLayerSnapshotService mainLayerSnapshotService, UiRenderTarget deferredRenderTarget) {
         if (deferredRenderTarget != null) {
             deferredRenderTarget.close();
@@ -246,7 +248,7 @@ public final class DocumentHostRenderSupport {
         GL11.glColor4f(1.0F, 1.0F, 1.0F, 1.0F);
     }
 
-    private static List<UiRenderContext.DeferredPostMainPass> claimDeferredPostMainPasses(
+    private static List<DeferredPostMainPass> claimDeferredPostMainPasses(
             DeferredPostMainReplayBatch replayBatch) {
         if (replayBatch == null) {
             return Collections.emptyList();

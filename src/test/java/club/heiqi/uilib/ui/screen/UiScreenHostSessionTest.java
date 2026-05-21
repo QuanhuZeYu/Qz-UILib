@@ -8,6 +8,7 @@ import org.junit.Test;
 import club.heiqi.uilib.ui.host.DocumentHostRenderSupport;
 import club.heiqi.uilib.ui.image.HostImageRenderer;
 import club.heiqi.uilib.ui.image.HostImageSource;
+import club.heiqi.uilib.ui.render.PaintContextCompositor;
 import club.heiqi.uilib.ui.render.UiMainLayerSnapshotService;
 import club.heiqi.uilib.ui.render.UiRenderContext;
 import club.heiqi.uilib.ui.runtime.UiRuntimeAdapters;
@@ -31,7 +32,7 @@ public class UiScreenHostSessionTest {
         UiRuntimeAdapters runtimeAdapters = UiRuntimeAdapters.empty().withHostImageRenderer(hostImageRenderer);
 
         UiRenderContext context = DocumentHostRenderSupport.createRenderContext(320, 240, 12, 34, 0.5F,
-                new UiRenderContext.PaintContextCompositor(), new UiMainLayerSnapshotService(), runtimeAdapters);
+                new PaintContextCompositor(), new UiMainLayerSnapshotService(), runtimeAdapters);
 
         Assert.assertSame(runtimeAdapters, context.getRuntimeAdapters());
         Assert.assertSame(hostImageRenderer, context.getRuntimeAdapters().getHostImageRenderer());
@@ -43,8 +44,7 @@ public class UiScreenHostSessionTest {
     @Test
     public void shouldReplayDeferredPostMainBatchOnceAndNotifyContext() {
         UiRenderContext context = new UiRenderContext(320, 240, 12, 34, 0.5F,
-                new UiRenderContext.PaintContextCompositor(), new UiMainLayerSnapshotService(),
-                UiRuntimeAdapters.empty());
+                new PaintContextCompositor(), new UiMainLayerSnapshotService(), UiRuntimeAdapters.empty());
         ArrayList<String> replayLog = new ArrayList<String>();
         context.enqueueDeferredPostMainPass(() -> replayLog.add("main"));
         context.enqueueDeferredPostMainOverlayPass(() -> replayLog.add("overlay"));

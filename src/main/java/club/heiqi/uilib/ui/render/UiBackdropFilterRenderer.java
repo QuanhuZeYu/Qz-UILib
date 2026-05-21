@@ -33,8 +33,7 @@ final class UiBackdropFilterRenderer {
             { 1.0F, 1.0F, 0.12F }
     };
 
-    private static volatile UiRenderContext.BackdropFilterRenderPath lastRenderPath =
-            UiRenderContext.BackdropFilterRenderPath.NONE;
+    private static volatile BackdropFilterRenderPath lastRenderPath = BackdropFilterRenderPath.NONE;
     private static volatile String lastDetail = "not-run";
 
     private UiBackdropFilterRenderer() {}
@@ -42,7 +41,7 @@ final class UiBackdropFilterRenderer {
     /**
      * 返回最近一次 backdrop-filter 实际渲染路径。
      */
-    static UiRenderContext.BackdropFilterRenderPath getLastRenderPath() {
+    static BackdropFilterRenderPath getLastRenderPath() {
         return lastRenderPath;
     }
 
@@ -68,7 +67,7 @@ final class UiBackdropFilterRenderer {
     static void render(UiRenderContext context, int left, int top, int right, int bottom, int blurRadius,
             float saturation, UiBorderRadiusResolver.ResolvedCornerRadii cornerRadii) {
         if (right <= left || bottom <= top || (blurRadius <= 0 && Float.compare(saturation, 1.0F) == 0)) {
-            recordPath(UiRenderContext.BackdropFilterRenderPath.NONE, "skipped");
+            recordPath(BackdropFilterRenderPath.NONE, "skipped");
             return;
         }
         String pendingFallbackDetail = drawCurrentUiBackdropFilter(context, left, top, right, bottom, blurRadius,
@@ -141,7 +140,7 @@ final class UiBackdropFilterRenderer {
                         snapshot.getWidth(), snapshot.getHeight(), sample[0] * sampleStep, sample[1] * sampleStep);
             }
             GL11.glColor4f(1.0F, 1.0F, 1.0F, 1.0F);
-            recordPath(UiRenderContext.BackdropFilterRenderPath.FIXED_PIPELINE,
+            recordPath(BackdropFilterRenderPath.FIXED_PIPELINE,
                     "shader-unavailable, snapshot=" + formatSnapshotState(snapshot));
             drewBackdrop = true;
             return null;
@@ -162,7 +161,7 @@ final class UiBackdropFilterRenderer {
             int sampleTop, int sampleWidth, int sampleHeight, int textureWidth, int textureHeight,
             int downsampleFactor, int blurRadius, float saturation, UiMainLayerSnapshotService.Snapshot snapshot) {
         if (!BACKDROP_SHADER_PROGRAM.ensureInitialized()) {
-            recordPath(UiRenderContext.BackdropFilterRenderPath.FIXED_PIPELINE,
+            recordPath(BackdropFilterRenderPath.FIXED_PIPELINE,
                     "shader unavailable: " + BACKDROP_SHADER_PROGRAM.getLastFailureMessage());
             return false;
         }
@@ -175,7 +174,7 @@ final class UiBackdropFilterRenderer {
         drawBackdropTextureQuad(left, top, right, bottom, sampleLeft, sampleTop, sampleWidth, sampleHeight,
                 0.0F, 0.0F);
         BACKDROP_SHADER_PROGRAM.unbind();
-        recordPath(UiRenderContext.BackdropFilterRenderPath.SHADER, "blur=" + blurRadius + ", saturation="
+        recordPath(BackdropFilterRenderPath.SHADER, "blur=" + blurRadius + ", saturation="
                 + String.format(java.util.Locale.ROOT, "%.2f", Float.valueOf(Math.max(0.0F, saturation)))
                 + ", snapshot=" + formatSnapshotState(snapshot));
         return true;
@@ -201,7 +200,7 @@ final class UiBackdropFilterRenderer {
     private static void drawTintFallback(UiRenderContext context, int left, int top, int right, int bottom,
             int blurRadius, float saturation, UiBorderRadiusResolver.ResolvedCornerRadii cornerRadii,
             String fallbackDetail) {
-        recordPath(UiRenderContext.BackdropFilterRenderPath.TINT_FALLBACK, fallbackDetail);
+        recordPath(BackdropFilterRenderPath.TINT_FALLBACK, fallbackDetail);
         int tintAlpha = clampInt(18 + Math.max(0, blurRadius) * 2 + Math.round(Math.max(0.0F,
                 saturation - 1.0F) * 16.0F), 18, 72);
         int highlightAlpha = clampInt(tintAlpha + 22, 32, 96);
@@ -210,8 +209,8 @@ final class UiBackdropFilterRenderer {
         context.drawSurface(left, top, right, bottom, tintColor, highlightColor, cornerRadii);
     }
 
-    private static void recordPath(UiRenderContext.BackdropFilterRenderPath renderPath, String detail) {
-        lastRenderPath = renderPath == null ? UiRenderContext.BackdropFilterRenderPath.NONE : renderPath;
+    private static void recordPath(BackdropFilterRenderPath renderPath, String detail) {
+        lastRenderPath = renderPath == null ? BackdropFilterRenderPath.NONE : renderPath;
         lastDetail = detail == null ? "" : detail;
     }
 
