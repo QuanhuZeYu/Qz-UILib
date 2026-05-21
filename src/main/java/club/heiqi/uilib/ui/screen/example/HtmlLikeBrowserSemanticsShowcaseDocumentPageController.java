@@ -877,9 +877,9 @@ public final class HtmlLikeBrowserSemanticsShowcaseDocumentPageController extend
                 .setFlexDirection(UiFlexDirection.COLUMN)
                 .setRowGap(UiStyleLength.px(6))
                 .setWidth(UiStyleLength.px(180));
-        pseudoList.append(createDemoBox(":first-child"));
-        pseudoList.append(createDemoBox(":nth-child(2)"));
-        pseudoList.append(createDemoBox(":last-child"));
+        pseudoList.append(createDemoBox(":first-child（应是绿色边框）"));
+        pseudoList.append(createDemoBox(":nth-child(2)（应是橙色边框）"));
+        pseudoList.append(createDemoBox(":last-child（应是粉色边框）"));
         row.append(pseudoList);
 
         ElementNode hoverCard = createDemoBox("hover 我：应明显变亮并上移");
@@ -889,13 +889,13 @@ public final class HtmlLikeBrowserSemanticsShowcaseDocumentPageController extend
             @Override
             public boolean onHoverChanged(DocumentElementHoverEvent event) {
                 if (event.isHovered()) {
-                    event.getCurrentTarget().style()
+                    hoverCard.style()
                             .setBackgroundColor(0xFF38BDF8)
                             .setBorderColor(0xFFE0F2FE)
                             .setTextColor(0xFF082F49)
                             .setTransform(UiTransform.translate(0.0F, -4.0F));
                 } else {
-                    event.getCurrentTarget().style()
+                    hoverCard.style()
                             .setBackgroundColor(0xFF1A2A44)
                             .setBorderColor(0xFF3B5998)
                             .setTextColor(0xFFCCDDFF)
@@ -917,15 +917,15 @@ public final class HtmlLikeBrowserSemanticsShowcaseDocumentPageController extend
             @Override
             public void onFocusChanged(DocumentElementFocusEvent event) {
                 if (event.isFocused()) {
-                    event.getCurrentTarget().style()
+                    focusCard.style()
                             .setBorderColor(0xFFFFD166)
                             .setOutline(UiOutline.of(2, 0xFFFFD166, UiBorderStyle.SOLID, 2))
                             .setTextColor(event.isFocusVisible() ? 0xFFF5D0FE : 0xFFFFFFFF)
                             .setBackgroundColor(event.isFocusVisible() ? 0xFF3B0764 : 0xFF1A2A44);
                 } else {
-                    event.getCurrentTarget().style()
+                    focusCard.style()
                             .setBorderColor(0xFF3B5998)
-                            .setOutline(null)
+                            .clearOutline()
                             .setTextColor(0xFFCCDDFF)
                             .setBackgroundColor(0xFF1A2A44);
                 }
@@ -951,7 +951,7 @@ public final class HtmlLikeBrowserSemanticsShowcaseDocumentPageController extend
                 .setBackgroundColor(0xFF334155)
                 .setTextColor(0xFF94A3B8)
                 .setBorderColor(0xFF64748B);
-        disabledButton.appendText("disabled 属性按钮");
+        disabledButton.appendText("disabled 属性按钮（应灰化）");
         row.append(disabledButton);
 
         ElementNode pseudoCard = createDemoBox("伪元素正文");
@@ -971,7 +971,7 @@ public final class HtmlLikeBrowserSemanticsShowcaseDocumentPageController extend
         row.append(keywordParent);
 
         selectorStateText = appendLogLine(section,
-                "结构伪类验收：first/nth/last 三块分别应呈绿/橙/粉边框；child-card 应是青色边框；descendant chip 应是亮青文字蓝底；hover/focus 反馈当前通过事件回写保证可见。 ");
+                "结构伪类验收：first/nth/last 三块分别应呈绿/橙/粉边框；child-card 应是青色边框；descendant chip 应是亮青文字蓝底；disabled 按钮应灰化；hover/focus 反馈当前通过事件回写保证可见。 ");
     }
 
     // ========== DOM 操作展示 ==========

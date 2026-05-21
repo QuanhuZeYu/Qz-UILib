@@ -8,6 +8,8 @@ import org.junit.Assert;
 import org.junit.Test;
 
 import club.heiqi.uilib.ui.document.HtmlLikeDocumentWidget;
+import club.heiqi.uilib.ui.dom.DocumentElementFocusEvent;
+import club.heiqi.uilib.ui.dom.DocumentElementHoverEvent;
 import club.heiqi.uilib.ui.dom.DocumentNode;
 import club.heiqi.uilib.ui.dom.DocumentNodeType;
 import club.heiqi.uilib.ui.dom.ElementNode;
@@ -17,6 +19,7 @@ import club.heiqi.uilib.ui.layout.DocumentLayoutEngine;
 import club.heiqi.uilib.ui.runtime.UiRuntimeAdapters;
 import club.heiqi.uilib.ui.screen.page.DirectDocumentPageAuthoringSurface;
 import club.heiqi.uilib.ui.screen.page.DocumentUiScope;
+import club.heiqi.uilib.ui.style.values.UiTransform;
 import club.heiqi.uilib.ui.text.TextMeasureService;
 import club.heiqi.uilib.ui.widget.Widget;
 
@@ -70,6 +73,39 @@ public class HtmlLikeBrowserSemanticsShowcaseDocumentPageControllerTest {
     }
 
     /**
+     * 验证 hover / focus 反馈不会崩溃，并会把预期样式直接回写到卡片。
+     */
+    @Test
+    public void shouldApplyVisibleHoverAndFocusFeedbackWithoutCrashing() {
+        TestFixture fixture = new TestFixture();
+
+        fixture.controller.configureDocumentPage();
+        fixture.controller.buildDocument();
+        HtmlLikeDocumentWidget widget = (HtmlLikeDocumentWidget) fixture.pageSurface.getBlocks().get(0);
+
+        ElementNode hoverCard = findElementContainingText(widget.getDocument().getRootElement(),
+                "hover 我：应明显变亮并上移");
+        Assert.assertNotNull(hoverCard);
+        Assert.assertNotNull(hoverCard.getHoverHandler());
+        hoverCard.getHoverHandler().onHoverChanged(new DocumentElementHoverEvent(hoverCard, hoverCard, true, 0, 0, 1L));
+        Assert.assertEquals(Integer.valueOf(0xFF38BDF8), Integer.valueOf(hoverCard.style().getBackgroundColor()));
+        Assert.assertEquals(Integer.valueOf(0xFFE0F2FE), Integer.valueOf(hoverCard.style().getBorderColor()));
+        Assert.assertEquals(UiTransform.translate(0.0F, -4.0F), hoverCard.style().getTransform());
+        hoverCard.getHoverHandler().onHoverChanged(new DocumentElementHoverEvent(hoverCard, hoverCard, false, 0, 0, 2L));
+        Assert.assertEquals(Integer.valueOf(0xFF1A2A44), Integer.valueOf(hoverCard.style().getBackgroundColor()));
+        Assert.assertEquals(UiTransform.identity(), hoverCard.style().getTransform());
+
+        ElementNode focusCard = findElementContainingText(widget.getDocument().getRootElement(),
+                "点击聚焦：:focus / :focus-visible");
+        Assert.assertNotNull(focusCard);
+        Assert.assertNotNull(focusCard.getFocusHandler());
+        focusCard.getFocusHandler().onFocusChanged(new DocumentElementFocusEvent(focusCard, true, true));
+        Assert.assertNotNull(focusCard.style().getOutline());
+        focusCard.getFocusHandler().onFocusChanged(new DocumentElementFocusEvent(focusCard, false, false));
+        Assert.assertNull(focusCard.style().getOutline());
+    }
+
+    /**
      * 收集文档树中的全部文本。
      *
      * @param widget HTML-like 文档组件
@@ -119,6 +155,29 @@ public class HtmlLikeBrowserSemanticsShowcaseDocumentPageControllerTest {
             }
         }
         return false;
+    }
+
+    /**
+     * 在文档树中查找包含指定直系文本的元素。
+     */
+    private static ElementNode findElementContainingText(ElementNode element, String expectedText) {
+        if (element == null) {
+            return null;
+        }
+        for (DocumentNode child : element.getChildren()) {
+            if (child.getNodeType() == DocumentNodeType.TEXT) {
+                String text = ((TextNode) child).getText();
+                if (text != null && text.contains(expectedText)) {
+                    return element;
+                }
+            } else if (child.getNodeType() == DocumentNodeType.ELEMENT) {
+                ElementNode found = findElementContainingText((ElementNode) child, expectedText);
+                if (found != null) {
+                    return found;
+                }
+            }
+        }
+        return null;
     }
 
     /**
