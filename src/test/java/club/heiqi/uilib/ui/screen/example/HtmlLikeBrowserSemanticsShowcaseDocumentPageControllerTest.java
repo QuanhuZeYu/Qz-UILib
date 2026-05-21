@@ -56,6 +56,8 @@ public class HtmlLikeBrowserSemanticsShowcaseDocumentPageControllerTest {
         Assert.assertTrue(containsText(texts, "createDocumentFragment"));
         Assert.assertTrue(containsText(texts, "border-collapse: collapse"));
         Assert.assertTrue(containsText(texts, "scrollbar-color + scrollbar-width: thin"));
+        Assert.assertTrue(containsText(texts, "scrollbar-width:none：只隐藏滚动条，内容仍可见"));
+        Assert.assertTrue(containsText(texts, "内容行 1（滚动条本身隐藏）"));
         Assert.assertTrue(containsText(texts, "background-image: options_background.png"));
         Assert.assertTrue(containsText(texts, "#semantic-link-target"));
         Assert.assertTrue(containsText(texts, "A. NOWRAP + ELLIPSIS"));

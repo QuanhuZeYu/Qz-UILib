@@ -1357,14 +1357,14 @@ public final class HtmlLikeBrowserSemanticsShowcaseDocumentPageController extend
         }
         row.append(scrollHost);
 
-        ElementNode hiddenScrollbar = createDemoBox("scrollbar-width:none 仍可滚动");
+        ElementNode hiddenScrollbar = createDemoBox("scrollbar-width:none：只隐藏滚动条，内容仍可见");
         hiddenScrollbar.style()
                 .setWidth(UiStyleLength.px(220))
                 .setHeight(UiStyleLength.px(116))
                 .setOverflowY(UiOverflow.AUTO)
                 .setScrollbarWidth(UiScrollbarWidth.NONE);
         for (int index = 1; index <= 7; index++) {
-            hiddenScrollbar.append(createDemoBox("隐藏滚动条行 " + index));
+            hiddenScrollbar.append(createDemoBox("内容行 " + index + "（滚动条本身隐藏）"));
         }
         row.append(hiddenScrollbar);
 
@@ -1411,7 +1411,8 @@ public final class HtmlLikeBrowserSemanticsShowcaseDocumentPageController extend
         });
         row.append(intoViewButton);
 
-        scrollStateText = appendLogLine(section, "滚动条展示已加载：左键按钮只测 scrollTo，右键按钮只测 scrollIntoView，避免两者互相覆盖。 ");
+        scrollStateText = appendLogLine(section,
+                "滚动条展示已加载：中间卡片只隐藏滚动条轨道/滑块，内容行应仍可见并可滚动；左键按钮只测 scrollTo，右键按钮只测 scrollIntoView。 ");
     }
 
     // ========== 背景图与 transform 展示 ==========
