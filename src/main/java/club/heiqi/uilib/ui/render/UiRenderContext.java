@@ -10,10 +10,7 @@ import java.util.Objects;
 
 import net.minecraft.client.renderer.Tessellator;
 import org.lwjgl.opengl.GL11;
-import org.lwjgl.opengl.GL13;
 import org.lwjgl.opengl.GL14;
-import org.lwjgl.opengl.GL20;
-import org.lwjgl.opengl.GL30;
 
 import club.heiqi.uilib.font.api.DefaultFontRendererAdapter;
 import club.heiqi.uilib.font.api.FontRendererAdapter;
@@ -28,23 +25,18 @@ import club.heiqi.uilib.ui.text.TextContentMode;
 
 /**
  * UI 渲染上下文。
+ *
+ * <p>重构后协调以下协作者：</p>
+ * <ul>
+ *   <li>{@link PaintContextCompositor} 负责离屏 paint context group opacity 合成；</li>
+ *   <li>{@link UiBackdropFilterRenderer} 负责 backdrop-filter 整条渲染链路；</li>
+ *   <li>{@link UiRoundedRectGeometry} 负责圆角矩形几何（填充与描边路径）；</li>
+ *   <li>剪切栈（{@code clipStack}）以及 scissor + stencil mask 应用在本类。</li>
+ * </ul>
  */
 public class UiRenderContext {
 
     private static final float UI_TEXT_SCALE = 2.0F;
-    private static final float[][] UI_BACKDROP_BLUR_SAMPLES = new float[][] {
-            { -1.0F, 0.0F, 0.18F },
-            { 1.0F, 0.0F, 0.18F },
-            { 0.0F, -1.0F, 0.18F },
-            { 0.0F, 1.0F, 0.18F },
-            { -1.0F, -1.0F, 0.12F },
-            { 1.0F, -1.0F, 0.12F },
-            { -1.0F, 1.0F, 0.12F },
-            { 1.0F, 1.0F, 0.12F }
-    };
-    private static final UiBackdropShaderProgram BACKDROP_SHADER_PROGRAM = new UiBackdropShaderProgram();
-    private static volatile BackdropFilterRenderPath lastBackdropFilterRenderPath = BackdropFilterRenderPath.NONE;
-    private static volatile String lastBackdropFilterDetail = "not-run";
 
     private final int screenWidth;
     private final int screenHeight;
@@ -58,7 +50,6 @@ public class UiRenderContext {
     private final Deque<ClipState> clipStack = new ArrayDeque<ClipState>();
     private final List<DeferredPostMainPass> deferredPostMainPasses = new ArrayList<DeferredPostMainPass>();
     private final List<DeferredPostMainPass> deferredPostMainOverlayPasses = new ArrayList<DeferredPostMainPass>();
-    private String pendingBackdropFallbackDetail;
     private int mainLayerContentRevision;
 
     /**
@@ -88,6 +79,8 @@ public class UiRenderContext {
 
     /**
      * 单层裁剪状态快照。
+     *
+     * <p>测试通过反射 {@code UiRenderContext$ClipState} 访问该类，故保留为内部 package-private。</p>
      */
     private static final class ClipState {
 
@@ -103,7 +96,7 @@ public class UiRenderContext {
     /**
      * HTML-like paint context 离屏合成器。
      *
-     * <p>该对象由宿主会话跨帧复用，按需借出同尺寸 `UiRenderTarget`。文档作者只接触 CSS-like opacity，
+     * <p>该对象由宿主会话跨帧复用，按需借出同尺寸 {@link UiRenderTarget}。文档作者只接触 CSS-like opacity，
      * 不直接感知 FBO、framebuffer 或 OpenGL 状态。</p>
      */
     public static final class PaintContextCompositor {
@@ -161,7 +154,7 @@ public class UiRenderContext {
             boolean layerBegun = false;
             try {
                 layer = borrowLayer(screenWidth, screenHeight);
-                int parentFramebufferId = GL11.glGetInteger(GL30.GL_FRAMEBUFFER_BINDING);
+                int parentFramebufferId = GL11.glGetInteger(org.lwjgl.opengl.GL30.GL_FRAMEBUFFER_BINDING);
                 layer.begin();
                 layerBegun = true;
                 applyClipSnapshot(clipSnapshot, screenHeight);
@@ -474,7 +467,7 @@ public class UiRenderContext {
     /**
      * 判断当前上下文是否支持延迟文本批处理。
      *
-     * <p>运行时默认支持；测试上下文可覆盖为 `false`，从而让文本按顺序回放而不进入真实字体批处理边界。</p>
+     * <p>运行时默认支持；测试上下文可覆盖为 {@code false}，从而让文本按顺序回放而不进入真实字体批处理边界。</p>
      *
      * @return 是否支持延迟文本批处理
      */
@@ -526,7 +519,7 @@ public class UiRenderContext {
      *
      * <p>内置的 surface、text、backdrop 与 paint context 合成路径会自动调用该方法；
      * 自定义渲染器如果绕过这些封装直接写入 OpenGL，也应在写入后调用，避免后续
-     * `backdrop-filter` 继续复用写入前的旧快照。</p>
+     * {@code backdrop-filter} 继续复用写入前的旧快照。</p>
      */
     public void notifyMainLayerContentChanged() {
         if (mainLayerContentRevision == Integer.MAX_VALUE) {
@@ -546,12 +539,26 @@ public class UiRenderContext {
     }
 
     /**
+     * 返回当前主层快照服务，供 backdrop-filter 协作者读取。
+     */
+    UiMainLayerSnapshotService getMainLayerSnapshotService() {
+        return mainLayerSnapshotService;
+    }
+
+    /**
+     * 返回当前 paint context 合成器中可用的 backdrop 读取 framebuffer id。
+     */
+    int getCurrentBackdropReadFramebufferId() {
+        return paintContextCompositor.getCurrentBackdropReadFramebufferId();
+    }
+
+    /**
      * 返回最近一次 backdrop-filter 实际渲染路径。
      *
      * @return 渲染路径
      */
     public static BackdropFilterRenderPath getLastBackdropFilterRenderPath() {
-        return lastBackdropFilterRenderPath;
+        return UiBackdropFilterRenderer.getLastRenderPath();
     }
 
     /**
@@ -560,7 +567,7 @@ public class UiRenderContext {
      * @return 诊断说明
      */
     public static String getLastBackdropFilterDetail() {
-        return lastBackdropFilterDetail;
+        return UiBackdropFilterRenderer.getLastDetail();
     }
 
     /**
@@ -620,18 +627,18 @@ public class UiRenderContext {
             return;
         }
 
-        UiBorderRadiusResolver.ResolvedCornerRadii cornerRadii = resolveCornerRadii(surfaceStyle, right - left,
-                bottom - top);
+        UiBorderRadiusResolver.ResolvedCornerRadii cornerRadii = UiRoundedRectGeometry.resolveCornerRadii(surfaceStyle,
+                right - left, bottom - top);
         int cornerMask = surfaceStyle.cornerMask;
         if (surfaceStyle.fillColor != 0) {
-            if (!hasAnyCornerRadius(cornerRadii) || cornerMask == 0) {
+            if (!UiRoundedRectGeometry.hasAnyCornerRadius(cornerRadii) || cornerMask == 0) {
                 fillRect(left, top, right, bottom, surfaceStyle.fillColor);
             } else {
                 fillRoundedRect(left, top, right, bottom, cornerRadii, cornerMask, surfaceStyle.fillColor);
             }
         }
         if (surfaceStyle.borderColor != 0) {
-            if (!hasAnyCornerRadius(cornerRadii) || cornerMask == 0) {
+            if (!UiRoundedRectGeometry.hasAnyCornerRadius(cornerRadii) || cornerMask == 0) {
                 drawBorder(left, top, right, bottom, surfaceStyle.borderColor);
             } else {
                 drawRoundedBorder(left, top, right, bottom, cornerRadii, cornerMask, surfaceStyle.borderColor);
@@ -655,28 +662,15 @@ public class UiRenderContext {
         drawSurface(left, top, right, bottom, new UiSurfaceStyle(fillColor, borderColor, cornerRadii));
     }
 
-    private static UiBorderRadiusResolver.ResolvedCornerRadii resolveCornerRadii(UiSurfaceStyle surfaceStyle,
-            int width, int height) {
-        if (surfaceStyle == null) {
-            return UiBorderRadiusResolver.ResolvedCornerRadii.uniform(0);
-        }
-        return resolveCornerRadii(surfaceStyle.cornerRadii, width, height, surfaceStyle.cornerMask);
-    }
-
-    private static boolean hasAnyCornerRadius(UiBorderRadiusResolver.ResolvedCornerRadii cornerRadii) {
-        return cornerRadii != null && (cornerRadii.getTopLeft() > 0 || cornerRadii.getTopRight() > 0
-                || cornerRadii.getBottomRight() > 0 || cornerRadii.getBottomLeft() > 0);
-    }
-
     /**
      * 绘制元素背后内容滤镜。
      *
      * <p>该入口只采样当前 UI 主层已经绘制到当前 framebuffer 的内容，不主动读取游戏世界 framebuffer。
      * 如果页面壳提前绘制了一张已模糊底图，它会作为普通 UI 背景被采样；否则只处理 UI 自身内容。
      * 当前实现优先使用 GLSL 对同帧 UI 主层快照纹理做平滑采样，失败时回退为固定管线近似 blur，
-     * 快照复制或绘制不可用时再回退为伪玻璃 tint。诊断中的 `region=atlas-*` 表示当前采样复用了同帧
-     * 已捕获且完整覆盖当前区域的较大 block 快照，`region=tile-atlas-*` 表示当前采样由多个 tile 组装，
-     * `tiles=...` 用于观察 tile 覆盖计划和实际复用/复制数量。</p>
+     * 快照复制或绘制不可用时再回退为伪玻璃 tint。诊断中的 {@code region=atlas-*} 表示当前采样复用了同帧
+     * 已捕获且完整覆盖当前区域的较大 block 快照，{@code region=tile-atlas-*} 表示当前采样由多个 tile 组装，
+     * {@code tiles=...} 用于观察 tile 覆盖计划和实际复用/复制数量。</p>
      *
      * @param left 左侧坐标
      * @param top 顶部坐标
@@ -688,16 +682,7 @@ public class UiRenderContext {
      */
     public void drawBackdropFilter(int left, int top, int right, int bottom, int blurRadius, float saturation,
             int cornerRadius) {
-        pendingBackdropFallbackDetail = null;
-        if (right <= left || bottom <= top || (blurRadius <= 0 && Float.compare(saturation, 1.0F) == 0)) {
-            recordBackdropFilterPath(BackdropFilterRenderPath.NONE, "skipped");
-            return;
-        }
-        if (drawCurrentUiBackdropFilter(left, top, right, bottom, blurRadius, saturation,
-                UiBorderRadiusResolver.ResolvedCornerRadii.uniform(cornerRadius))) {
-            return;
-        }
-        drawBackdropFilterFallback(left, top, right, bottom, blurRadius, saturation,
+        UiBackdropFilterRenderer.render(this, left, top, right, bottom, blurRadius, saturation,
                 UiBorderRadiusResolver.ResolvedCornerRadii.uniform(cornerRadius));
     }
 
@@ -714,148 +699,7 @@ public class UiRenderContext {
      */
     public void drawBackdropFilter(int left, int top, int right, int bottom, int blurRadius, float saturation,
             UiBorderRadiusResolver.ResolvedCornerRadii cornerRadii) {
-        pendingBackdropFallbackDetail = null;
-        if (right <= left || bottom <= top || (blurRadius <= 0 && Float.compare(saturation, 1.0F) == 0)) {
-            recordBackdropFilterPath(BackdropFilterRenderPath.NONE, "skipped");
-            return;
-        }
-        if (drawCurrentUiBackdropFilter(left, top, right, bottom, blurRadius, saturation, cornerRadii)) {
-            return;
-        }
-        drawBackdropFilterFallback(left, top, right, bottom, blurRadius, saturation, cornerRadii);
-    }
-
-    private boolean drawCurrentUiBackdropFilter(int left, int top, int right, int bottom, int blurRadius,
-            float saturation, UiBorderRadiusResolver.ResolvedCornerRadii cornerRadii) {
-        UiMainLayerSnapshotService.SampleRegion sampleRegion = UiMainLayerSnapshotService.resolveSampleRegion(
-                screenWidth, screenHeight, left, top, right, bottom, blurRadius);
-        if (sampleRegion == null) {
-            return false;
-        }
-
-        int backdropReadFramebufferId = paintContextCompositor.getCurrentBackdropReadFramebufferId();
-        UiMainLayerSnapshotService.Snapshot snapshot = mainLayerSnapshotService.acquireSnapshot(screenWidth,
-                screenHeight, backdropReadFramebufferId, mainLayerContentRevision, sampleRegion, blurRadius);
-        if (snapshot == null) {
-            pendingBackdropFallbackDetail = "snapshot-unavailable: " + mainLayerSnapshotService.getLastFailureDetail();
-            return false;
-        }
-
-        pushClip(left, top, right, bottom, cornerRadii);
-        GL11.glPushAttrib(GL11.GL_ALL_ATTRIB_BITS);
-        int previousProgram = GL11.glGetInteger(GL20.GL_CURRENT_PROGRAM);
-        int previousActiveTexture = GL11.glGetInteger(GL13.GL_ACTIVE_TEXTURE);
-        boolean drewBackdrop = false;
-        try {
-            GL13.glActiveTexture(GL13.GL_TEXTURE0);
-            GL11.glBindTexture(GL11.GL_TEXTURE_2D, snapshot.getTextureId());
-            GL11.glEnable(GL11.GL_TEXTURE_2D);
-            GL11.glDisable(GL11.GL_DEPTH_TEST);
-            GL11.glDisable(GL11.GL_ALPHA_TEST);
-            GL11.glColor4f(1.0F, 1.0F, 1.0F, 1.0F);
-            GL11.glDisable(GL11.GL_BLEND);
-
-            if (drawBackdropTextureWithShader(left, top, right, bottom, snapshot.getSampleLeft(),
-                    snapshot.getSampleTop(), snapshot.getWidth(), snapshot.getHeight(), snapshot.getTextureWidth(),
-                    snapshot.getTextureHeight(), snapshot.getDownsampleFactor(), blurRadius, saturation, snapshot)) {
-                drewBackdrop = true;
-                return true;
-            }
-            if (blurRadius <= 0) {
-                return false;
-            }
-
-            drawBackdropTextureQuad(left, top, right, bottom, snapshot.getSampleLeft(), snapshot.getSampleTop(),
-                    snapshot.getWidth(), snapshot.getHeight(), 0.0F, 0.0F);
-            GL11.glEnable(GL11.GL_BLEND);
-            GL14.glBlendFuncSeparate(GL11.GL_SRC_ALPHA, GL11.GL_ONE_MINUS_SRC_ALPHA,
-                    GL11.GL_ONE, GL11.GL_ONE_MINUS_SRC_ALPHA);
-            float sampleStep = (float) resolveBackdropSampleStep(blurRadius);
-            for (float[] sample : UI_BACKDROP_BLUR_SAMPLES) {
-                GL11.glColor4f(1.0F, 1.0F, 1.0F, sample[2]);
-                drawBackdropTextureQuad(left, top, right, bottom, snapshot.getSampleLeft(), snapshot.getSampleTop(),
-                        snapshot.getWidth(), snapshot.getHeight(), sample[0] * sampleStep, sample[1] * sampleStep);
-            }
-            GL11.glColor4f(1.0F, 1.0F, 1.0F, 1.0F);
-            recordBackdropFilterPath(BackdropFilterRenderPath.FIXED_PIPELINE,
-                    "shader-unavailable, snapshot=" + formatSnapshotState(snapshot));
-            drewBackdrop = true;
-            return true;
-        } finally {
-            GL20.glUseProgram(previousProgram);
-            GL13.glActiveTexture(previousActiveTexture);
-            GL11.glBindTexture(GL11.GL_TEXTURE_2D, 0);
-            GL11.glPopAttrib();
-            popClip();
-            mainLayerSnapshotService.releaseSnapshot(snapshot);
-            if (drewBackdrop) {
-                notifyMainLayerContentChanged();
-            }
-        }
-    }
-
-    private boolean drawBackdropTextureWithShader(int left, int top, int right, int bottom, int sampleLeft,
-            int sampleTop, int sampleWidth, int sampleHeight, int textureWidth, int textureHeight,
-            int downsampleFactor, int blurRadius, float saturation, UiMainLayerSnapshotService.Snapshot snapshot) {
-        if (!BACKDROP_SHADER_PROGRAM.ensureInitialized()) {
-            recordBackdropFilterPath(BackdropFilterRenderPath.FIXED_PIPELINE,
-                    "shader unavailable: " + BACKDROP_SHADER_PROGRAM.getLastFailureMessage());
-            return false;
-        }
-        BACKDROP_SHADER_PROGRAM.bind();
-        BACKDROP_SHADER_PROGRAM.setUniformI("mainTex", 0);
-        BACKDROP_SHADER_PROGRAM.setUniform2f("texelSize", 1.0F / (float) textureWidth, 1.0F / (float) textureHeight);
-        BACKDROP_SHADER_PROGRAM.setUniformF("blurRadius", resolveBackdropShaderRadius(blurRadius,
-                downsampleFactor));
-        BACKDROP_SHADER_PROGRAM.setUniformF("saturation", Math.max(0.0F, saturation));
-        drawBackdropTextureQuad(left, top, right, bottom, sampleLeft, sampleTop, sampleWidth, sampleHeight,
-                0.0F, 0.0F);
-        BACKDROP_SHADER_PROGRAM.unbind();
-        recordBackdropFilterPath(BackdropFilterRenderPath.SHADER, "blur=" + blurRadius + ", saturation="
-                + String.format(java.util.Locale.ROOT, "%.2f", Float.valueOf(Math.max(0.0F, saturation)))
-                + ", snapshot=" + formatSnapshotState(snapshot));
-        return true;
-    }
-
-    private void drawBackdropTextureQuad(int left, int top, int right, int bottom, int sampleLeft, int sampleTop,
-            int sampleWidth, int sampleHeight, float sampleOffsetX, float sampleOffsetY) {
-        float leftU = clampFloat(((float) left + sampleOffsetX - (float) sampleLeft) / (float) sampleWidth, 0.0F, 1.0F);
-        float rightU = clampFloat(((float) right + sampleOffsetX - (float) sampleLeft) / (float) sampleWidth, 0.0F, 1.0F);
-        float topV = clampFloat(1.0F - ((float) top + sampleOffsetY - (float) sampleTop) / (float) sampleHeight,
-                0.0F, 1.0F);
-        float bottomV = clampFloat(1.0F - ((float) bottom + sampleOffsetY - (float) sampleTop) / (float) sampleHeight,
-                0.0F, 1.0F);
-        Tessellator tessellator = Tessellator.instance;
-        tessellator.startDrawingQuads();
-        tessellator.addVertexWithUV(left, bottom, 0.0D, leftU, bottomV);
-        tessellator.addVertexWithUV(right, bottom, 0.0D, rightU, bottomV);
-        tessellator.addVertexWithUV(right, top, 0.0D, rightU, topV);
-        tessellator.addVertexWithUV(left, top, 0.0D, leftU, topV);
-        tessellator.draw();
-    }
-
-    private void drawBackdropFilterFallback(int left, int top, int right, int bottom, int blurRadius, float saturation,
-            int cornerRadius) {
-        recordBackdropFilterPath(BackdropFilterRenderPath.TINT_FALLBACK,
-                pendingBackdropFallbackDetail == null ? "texture-copy-unavailable" : pendingBackdropFallbackDetail);
-        int tintAlpha = clampInt(18 + Math.max(0, blurRadius) * 2 + Math.round(Math.max(0.0F,
-                saturation - 1.0F) * 16.0F), 18, 72);
-        int highlightAlpha = clampInt(tintAlpha + 22, 32, 96);
-        int tintColor = tintAlpha << 24 | 0x00FFFFFF;
-        int highlightColor = highlightAlpha << 24 | 0x00FFFFFF;
-        drawSurface(left, top, right, bottom, new UiSurfaceStyle(tintColor, highlightColor, cornerRadius));
-    }
-
-    private void drawBackdropFilterFallback(int left, int top, int right, int bottom, int blurRadius, float saturation,
-            UiBorderRadiusResolver.ResolvedCornerRadii cornerRadii) {
-        recordBackdropFilterPath(BackdropFilterRenderPath.TINT_FALLBACK,
-                pendingBackdropFallbackDetail == null ? "texture-copy-unavailable" : pendingBackdropFallbackDetail);
-        int tintAlpha = clampInt(18 + Math.max(0, blurRadius) * 2 + Math.round(Math.max(0.0F,
-                saturation - 1.0F) * 16.0F), 18, 72);
-        int highlightAlpha = clampInt(tintAlpha + 22, 32, 96);
-        int tintColor = tintAlpha << 24 | 0x00FFFFFF;
-        int highlightColor = highlightAlpha << 24 | 0x00FFFFFF;
-        drawSurface(left, top, right, bottom, tintColor, highlightColor, cornerRadii);
+        UiBackdropFilterRenderer.render(this, left, top, right, bottom, blurRadius, saturation, cornerRadii);
     }
 
     /**
@@ -1206,7 +1050,7 @@ public class UiRenderContext {
         Iterator<ClipState> iterator = clipStack.descendingIterator();
         while (iterator.hasNext()) {
             ClipState clipState = iterator.next();
-            if (!hasAnyCornerRadius(clipState.cornerRadii)) {
+            if (!UiRoundedRectGeometry.hasAnyCornerRadius(clipState.cornerRadii)) {
                 continue;
             }
             int[] clipRect = clipState.clipRect;
@@ -1275,8 +1119,9 @@ public class UiRenderContext {
             GL11.glStencilFunc(GL11.GL_EQUAL, index, 0xFF);
             GL11.glStencilOp(GL11.GL_KEEP, GL11.GL_KEEP, GL11.GL_INCR);
             RoundedClipRegion clipRegion = roundedClipRegions.get(index);
-            drawRoundedRectGeometry(clipRegion.getLeft(), clipRegion.getTop(), clipRegion.getRight(),
-                    clipRegion.getBottom(), clipRegion.getCornerRadii(), true, UiSurfaceStyle.CORNER_ALL);
+            UiRoundedRectGeometry.drawRoundedRectGeometry(clipRegion.getLeft(), clipRegion.getTop(),
+                    clipRegion.getRight(), clipRegion.getBottom(), clipRegion.getCornerRadii(), true,
+                    UiSurfaceStyle.CORNER_ALL);
         }
 
         GL11.glEnable(GL11.GL_TEXTURE_2D);
@@ -1294,7 +1139,7 @@ public class UiRenderContext {
         GL14.glBlendFuncSeparate(GL11.GL_SRC_ALPHA, GL11.GL_ONE_MINUS_SRC_ALPHA,
                 GL11.GL_ONE, GL11.GL_ONE_MINUS_SRC_ALPHA);
         GL11.glDisable(GL11.GL_TEXTURE_2D);
-        drawRoundedRectGeometry(left, top, right, bottom, cornerRadii, true, cornerMask);
+        UiRoundedRectGeometry.drawRoundedRectGeometry(left, top, right, bottom, cornerRadii, true, cornerMask);
         GL11.glEnable(GL11.GL_TEXTURE_2D);
         GL11.glColor4f(1.0F, 1.0F, 1.0F, 1.0F);
         notifyMainLayerContentChanged();
@@ -1312,210 +1157,16 @@ public class UiRenderContext {
         // 线框边界若直接落在整数像素边缘，会让左/上侧描边有一半落在 clip 外，
         // 在真实运行时看起来像左侧边线被吞掉。这里统一把描边中心内缩到像素中心，
         // 让四条边都以同样的方式落在边框盒内部。
-        drawRoundedRectGeometry(left + 0.5F, top + 0.5F, right - 0.5F, bottom - 0.5F, cornerRadii, false,
-                cornerMask);
+        UiRoundedRectGeometry.drawRoundedRectGeometry(left + 0.5F, top + 0.5F, right - 0.5F, bottom - 0.5F,
+                cornerRadii, false, cornerMask);
         GL11.glEnd();
         GL11.glEnable(GL11.GL_TEXTURE_2D);
         GL11.glColor4f(1.0F, 1.0F, 1.0F, 1.0F);
         notifyMainLayerContentChanged();
     }
 
-    private static void drawRoundedRectGeometry(int left, int top, int right, int bottom, int radius, boolean filled) {
-        drawRoundedRectGeometry(left, top, right, bottom, radius, filled, UiSurfaceStyle.CORNER_ALL);
-    }
-
-    private static void drawRoundedRectGeometry(int left, int top, int right, int bottom,
-            UiBorderRadiusResolver.ResolvedCornerRadii cornerRadii, boolean filled, int cornerMask) {
-        drawRoundedRectGeometry((float) left, (float) top, (float) right, (float) bottom, cornerRadii, filled,
-                cornerMask);
-    }
-
-    private static void drawRoundedRectGeometry(int left, int top, int right, int bottom, int radius, boolean filled,
-            int cornerMask) {
-        drawRoundedRectGeometry((float) left, (float) top, (float) right, (float) bottom, (float) radius, filled,
-                cornerMask);
-    }
-
-    private static void drawRoundedRectGeometry(float left, float top, float right, float bottom,
-            UiBorderRadiusResolver.ResolvedCornerRadii cornerRadii, boolean filled, int cornerMask) {
-        UiBorderRadiusResolver.ResolvedCornerRadii resolvedCornerRadii = resolveCornerRadii(cornerRadii,
-                right - left, bottom - top, cornerMask);
-        float tl = resolvedCornerRadii.getTopLeft();
-        float tr = resolvedCornerRadii.getTopRight();
-        float br = resolvedCornerRadii.getBottomRight();
-        float bl = resolvedCornerRadii.getBottomLeft();
-        if (tl <= 0.0F && tr <= 0.0F && br <= 0.0F && bl <= 0.0F) {
-            if (filled) {
-                GL11.glBegin(GL11.GL_QUADS);
-                GL11.glVertex2f(right, bottom);
-                GL11.glVertex2f(right, top);
-                GL11.glVertex2f(left, top);
-                GL11.glVertex2f(left, bottom);
-                GL11.glEnd();
-            } else {
-                GL11.glVertex2f(left, bottom);
-                GL11.glVertex2f(left, top);
-                GL11.glVertex2f(right, top);
-                GL11.glVertex2f(right, bottom);
-            }
-            return;
-        }
-
-        float startX = left + Math.max(0.0F, tl);
-        float startY = top;
-        if (filled) {
-            GL11.glBegin(GL11.GL_TRIANGLE_FAN);
-            GL11.glVertex2f((left + right) / 2.0F, (top + bottom) / 2.0F);
-        }
-
-        // 上边
-        GL11.glVertex2f(startX, startY);
-        GL11.glVertex2f(right - tr, top);
-        emitCornerVertices(right, top, tr, cornerMask, UiSurfaceStyle.CORNER_TOP_RIGHT,
-                right - tr, top + tr, 270.0D, 360.0D);
-        GL11.glVertex2f(right, bottom - br);
-        emitCornerVertices(right, bottom, br, cornerMask, UiSurfaceStyle.CORNER_BOTTOM_RIGHT,
-                right - br, bottom - br, 0.0D, 90.0D);
-        GL11.glVertex2f(left + bl, bottom);
-        emitCornerVertices(left, bottom, bl, cornerMask, UiSurfaceStyle.CORNER_BOTTOM_LEFT,
-                left + bl, bottom - bl, 90.0D, 180.0D);
-        GL11.glVertex2f(left, top + tl);
-        emitCornerVertices(left, top, tl, cornerMask, UiSurfaceStyle.CORNER_TOP_LEFT,
-                left + tl, top + tl, 180.0D, 270.0D);
-
-        if (filled) {
-            GL11.glVertex2f(startX, startY);
-            GL11.glEnd();
-        }
-    }
-
-    private static void drawRoundedRectGeometry(float left, float top, float right, float bottom, float radius,
-            boolean filled, int cornerMask) {
-        float resolvedRadius = clampCornerRadius(right - left, bottom - top, radius);
-        int resolvedCornerMask = cornerMask & UiSurfaceStyle.CORNER_ALL;
-        if (resolvedRadius <= 0.0F || resolvedCornerMask == 0) {
-            if (filled) {
-                GL11.glBegin(GL11.GL_QUADS);
-                GL11.glVertex2f(right, bottom);
-                GL11.glVertex2f(right, top);
-                GL11.glVertex2f(left, top);
-                GL11.glVertex2f(left, bottom);
-                GL11.glEnd();
-            } else {
-                GL11.glVertex2f(left, bottom);
-                GL11.glVertex2f(left, top);
-                GL11.glVertex2f(right, top);
-                GL11.glVertex2f(right, bottom);
-            }
-            return;
-        }
-
-        drawRoundedRectGeometry(left, top, right, bottom,
-                UiBorderRadiusResolver.ResolvedCornerRadii.uniform(Math.round(resolvedRadius)), filled,
-                resolvedCornerMask);
-    }
-
-    private static UiBorderRadiusResolver.ResolvedCornerRadii resolveCornerRadii(
-            UiBorderRadiusResolver.ResolvedCornerRadii cornerRadii, float width, float height, int cornerMask) {
-        UiBorderRadiusResolver.ResolvedCornerRadii resolvedCornerRadii = UiBorderRadiusResolver.scaleToFit(
-                cornerRadii == null ? UiBorderRadiusResolver.ResolvedCornerRadii.uniform(0) : cornerRadii,
-                Math.round(width), Math.round(height));
-        if ((cornerMask & UiSurfaceStyle.CORNER_TOP_LEFT) == 0 && (cornerMask & UiSurfaceStyle.CORNER_TOP_RIGHT) == 0
-                && (cornerMask & UiSurfaceStyle.CORNER_BOTTOM_RIGHT) == 0
-                && (cornerMask & UiSurfaceStyle.CORNER_BOTTOM_LEFT) == 0) {
-            return UiBorderRadiusResolver.ResolvedCornerRadii.uniform(0);
-        }
-        return UiBorderRadiusResolver.ResolvedCornerRadii.of(
-                (cornerMask & UiSurfaceStyle.CORNER_TOP_LEFT) == 0 ? 0 : resolvedCornerRadii.getTopLeft(),
-                (cornerMask & UiSurfaceStyle.CORNER_TOP_RIGHT) == 0 ? 0 : resolvedCornerRadii.getTopRight(),
-                (cornerMask & UiSurfaceStyle.CORNER_BOTTOM_RIGHT) == 0 ? 0 : resolvedCornerRadii.getBottomRight(),
-                (cornerMask & UiSurfaceStyle.CORNER_BOTTOM_LEFT) == 0 ? 0 : resolvedCornerRadii.getBottomLeft());
-    }
-
-    private static void emitRoundedRectVertices(float left, float top, float right, float bottom, float radius,
-            int cornerMask) {
-        emitCornerVertices(left, top, radius, cornerMask, UiSurfaceStyle.CORNER_TOP_LEFT,
-                left + radius, top + radius, 180.0D, 270.0D);
-        emitCornerVertices(right, top, radius, cornerMask, UiSurfaceStyle.CORNER_TOP_RIGHT,
-                right - radius, top + radius, 270.0D, 360.0D);
-        emitCornerVertices(right, bottom, radius, cornerMask, UiSurfaceStyle.CORNER_BOTTOM_RIGHT,
-                right - radius, bottom - radius, 0.0D, 90.0D);
-        emitCornerVertices(left, bottom, radius, cornerMask, UiSurfaceStyle.CORNER_BOTTOM_LEFT,
-                left + radius, bottom - radius, 90.0D, 180.0D);
-    }
-
-    private static void emitCornerVertices(float sharpX, float sharpY, float radius, int cornerMask, int cornerBit,
-            float centerX, float centerY, double startAngle, double endAngle) {
-        if ((cornerMask & cornerBit) == 0) {
-            GL11.glVertex2f(sharpX, sharpY);
-            return;
-        }
-        emitArcVertices(centerX, centerY, radius, startAngle, endAngle, false);
-    }
-
-    private static void emitFirstRoundedRectVertex(float left, float top, float radius, int cornerMask) {
-        if ((cornerMask & UiSurfaceStyle.CORNER_TOP_LEFT) == 0) {
-            GL11.glVertex2f(left, top);
-            return;
-        }
-        GL11.glVertex2f(left, top + radius);
-    }
-
-    private static void emitArcVertices(float centerX, float centerY, float radius, double startAngle, double endAngle,
-            boolean skipFirst) {
-        int segments = resolveCornerSegments(radius);
-        for (int index = skipFirst ? 1 : 0; index <= segments; index++) {
-            double angle = Math.toRadians(startAngle + (endAngle - startAngle) * index / (double) segments);
-            GL11.glVertex2f((float) (centerX + Math.cos(angle) * radius), (float) (centerY + Math.sin(angle) * radius));
-        }
-    }
-
-    private static int resolveCornerSegments(float radius) {
-        return Math.max(6, Math.min(18, Math.round(radius)));
-    }
-
-    private static int clampCornerRadius(int width, int height, int radius) {
-        return Math.max(0, Math.min(radius, Math.min(Math.max(0, width), Math.max(0, height)) / 2));
-    }
-
     private static int clampInt(int value, int min, int max) {
         return Math.max(min, Math.min(value, max));
-    }
-
-    private static float clampFloat(float value, float min, float max) {
-        return Math.max(min, Math.min(value, max));
-    }
-
-    private static int resolveBackdropSampleStep(int blurRadius) {
-        return Math.max(1, Math.min(12, Math.round(Math.max(1, blurRadius) / 2.5F)));
-    }
-
-    private static String formatSnapshotState(UiMainLayerSnapshotService.Snapshot snapshot) {
-        if (snapshot == null) {
-            return "none";
-        }
-        return (snapshot.isReused() ? "reused" : "captured") + " " + snapshot.getWidth() + "x"
-                + snapshot.getHeight() + " @" + snapshot.getSampleLeft() + "," + snapshot.getSampleTop()
-                + " fbo=" + snapshot.getReadFramebufferId() + " rev=" + snapshot.getContentRevision()
-                + " region=" + snapshot.getRegionDetail() + " " + snapshot.getTileDetail()
-                + " filter=" + snapshot.getFilterDetail();
-    }
-
-    private static float resolveBackdropShaderRadius(int blurRadius, int downsampleFactor) {
-        if (blurRadius <= 0) {
-            return 0.0F;
-        }
-        return Math.max(1.0F, Math.min(32.0F, (float) blurRadius * 0.75F
-                / (float) Math.max(1, downsampleFactor)));
-    }
-
-    private static void recordBackdropFilterPath(BackdropFilterRenderPath renderPath, String detail) {
-        lastBackdropFilterRenderPath = renderPath == null ? BackdropFilterRenderPath.NONE : renderPath;
-        lastBackdropFilterDetail = detail == null ? "" : detail;
-    }
-
-    private static float clampCornerRadius(float width, float height, float radius) {
-        return Math.max(0.0F, Math.min(radius, Math.min(Math.max(0.0F, width), Math.max(0.0F, height)) / 2.0F));
     }
 
     private void applyColor(int color) {
