@@ -29,6 +29,8 @@ public class NumericControlOptionsTest {
         Assert.assertEquals(NumericControlMode.SLIDER, NumericControlOptions.slider().getMode());
         Assert.assertEquals(NumericControlMode.SLIDER_WITH_LABEL,
                 NumericControlOptions.sliderWithLabel().getMode());
+        Assert.assertEquals(NumericControlMode.SLIDER_WITH_INPUT,
+                NumericControlOptions.sliderWithInput().getMode());
     }
 
     /**

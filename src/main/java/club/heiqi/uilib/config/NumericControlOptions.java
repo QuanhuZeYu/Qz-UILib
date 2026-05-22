@@ -66,6 +66,15 @@ public final class NumericControlOptions {
     }
 
     /**
+     * 优先使用滑块并附带可编辑数值输入框，必要时降级为单独输入框。
+     *
+     * @return 新配置
+     */
+    public static NumericControlOptions sliderWithInput() {
+        return of(NumericControlMode.SLIDER_WITH_INPUT);
+    }
+
+    /**
      * 替换最大可滑动范围阈值；超出则降级为输入框。
      *
      * @param maxSliderRange 最大允许范围；非正值视为不限制

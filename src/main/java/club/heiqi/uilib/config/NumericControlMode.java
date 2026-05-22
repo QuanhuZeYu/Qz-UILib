@@ -15,5 +15,11 @@ public enum NumericControlMode {
     SLIDER,
 
     /** 使用滑块并在右侧显示当前值标签。同样在缺少边界或超出阈值时降级为 {@link #TEXT_INPUT}。 */
-    SLIDER_WITH_LABEL
+    SLIDER_WITH_LABEL,
+
+    /**
+     * 使用滑块并在右侧附带可编辑数值输入框，两者双向同步。
+     * 同样在缺少边界或超出阈值时降级为 {@link #TEXT_INPUT}。
+     */
+    SLIDER_WITH_INPUT
 }

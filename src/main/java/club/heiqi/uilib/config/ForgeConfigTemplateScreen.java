@@ -61,6 +61,8 @@ import net.minecraftforge.common.config.Property;
  */
 public class ForgeConfigTemplateScreen extends BaseScreen {
 
+    private static final double NUMERIC_EPSILON = 1.0E-9D;
+
     private final GuiScreen parentScreen;
     private final Spec spec;
     private final HtmlLikeDocumentWidget documentWidget;
@@ -465,7 +467,9 @@ public class ForgeConfigTemplateScreen extends BaseScreen {
                     property.getName());
             boolean authorDeclared = numericOptions != null;
             if (!authorDeclared) {
-                numericOptions = NumericControlOptions.sliderWithLabel();
+                numericOptions = property.getType() == Property.Type.DOUBLE
+                        ? NumericControlOptions.sliderWithInput()
+                        : NumericControlOptions.sliderWithLabel();
             }
             return new NumericPropertyBinding(document, categorySpec, property, numericOptions, authorDeclared);
         }
@@ -1700,13 +1704,17 @@ public class ForgeConfigTemplateScreen extends BaseScreen {
         private final boolean integerType;
         private final NumericControlMode resolvedMode;
         private final boolean sliderActive;
+        private final boolean inlineInputActive;
         private final double sliderMin;
         private final double sliderMax;
         private final double sliderStep;
         private final DocumentSliderControl sliderControl;
         private final DocumentTextInputControl textControl;
+        private final DocumentTextInputControl inlineInputControl;
         private final TextNode sliderValueLabel;
         private final String sliderValueLabelFormat;
+        private boolean suppressInlineInputSync;
+        private boolean suppressSliderSync;
 
         private NumericPropertyBinding(UiDocument document, CategorySpec categorySpec, Property property,
                 NumericControlOptions options, boolean authorDeclared) {
@@ -1723,7 +1731,8 @@ public class ForgeConfigTemplateScreen extends BaseScreen {
 
             NumericControlMode requestedMode = options.getMode();
             boolean wantSlider = requestedMode == NumericControlMode.SLIDER
-                    || requestedMode == NumericControlMode.SLIDER_WITH_LABEL;
+                    || requestedMode == NumericControlMode.SLIDER_WITH_LABEL
+                    || requestedMode == NumericControlMode.SLIDER_WITH_INPUT;
             if (wantSlider && !hasFiniteRange) {
                 if (authorDeclared) {
                     MyMod.LOG.warn(
@@ -1741,6 +1750,7 @@ public class ForgeConfigTemplateScreen extends BaseScreen {
             }
             this.sliderActive = wantSlider;
             this.resolvedMode = wantSlider ? requestedMode : NumericControlMode.TEXT_INPUT;
+            this.inlineInputActive = wantSlider && requestedMode == NumericControlMode.SLIDER_WITH_INPUT;
             this.sliderMin = wantSlider ? minValue : 0.0D;
             this.sliderMax = wantSlider ? maxValue : 0.0D;
             this.sliderStep = wantSlider ? resolveSliderStep(options.getSliderStep(), integerType) : 0.0D;
@@ -1754,7 +1764,11 @@ public class ForgeConfigTemplateScreen extends BaseScreen {
                         .setChangeHandler(new DocumentSliderChangeHandler() {
                             @Override
                             public void onSliderChanged(DocumentSliderChangeEvent event) {
+                                if (suppressSliderSync) {
+                                    return;
+                                }
                                 updateSliderValueLabel();
+                                syncInlineInputFromSlider();
                                 refreshStatusText(null);
                             }
                         });
@@ -1795,11 +1809,34 @@ public class ForgeConfigTemplateScreen extends BaseScreen {
                     this.sliderValueLabel = null;
                 }
 
+                if (inlineInputActive) {
+                    this.inlineInputControl = new DocumentTextInputControl(document)
+                            .setMaxLength(ForgeConfigTemplatePropertyDrafts.resolveMaxLength(property))
+                            .setChangeHandler(new DocumentTextInputChangeHandler() {
+                                @Override
+                                public void onTextChanged(DocumentTextInputChangeEvent event) {
+                                    if (suppressInlineInputSync) {
+                                        return;
+                                    }
+                                    syncSliderFromInlineInput();
+                                    refreshStatusText(null);
+                                }
+                            });
+                    this.inlineInputControl.getElement().setAttribute("data-config-control",
+                            "numeric-slider-input");
+                    this.inlineInputControl.getElement().style()
+                            .setWidth(UiStyleLength.px(80));
+                    editor.append(inlineInputControl.getElement());
+                } else {
+                    this.inlineInputControl = null;
+                }
+
                 restoreCurrentValue();
                 initializeCard(document, editor);
             } else {
                 this.sliderControl = null;
                 this.sliderValueLabel = null;
+                this.inlineInputControl = null;
                 this.textControl = new DocumentTextInputControl(document)
                         .setPlaceholder(ForgeConfigTemplatePropertyDrafts.resolvePlaceholder(property))
                         .setMaxLength(ForgeConfigTemplatePropertyDrafts.resolveMaxLength(property))
@@ -1819,8 +1856,16 @@ public class ForgeConfigTemplateScreen extends BaseScreen {
         @Override
         public boolean isDirty() {
             if (sliderActive) {
+                if (inlineInputActive) {
+                    Double parsed = parseInlineDraft();
+                    if (parsed == null) {
+                        return true;
+                    }
+                    double current = readPropertyAsDouble(getProperty(), integerType);
+                    return Math.abs(current - parsed.doubleValue()) > NUMERIC_EPSILON;
+                }
                 double current = readPropertyAsDouble(getProperty(), integerType);
-                return Math.abs(current - sliderControl.getValue()) > 1.0E-9D;
+                return Math.abs(current - sliderControl.getValue()) > NUMERIC_EPSILON;
             }
             return !Objects.equals(readCurrentDisplayValue(), textControl.getText());
         }
@@ -1828,8 +1873,7 @@ public class ForgeConfigTemplateScreen extends BaseScreen {
         @Override
         public void restoreCurrentValue() {
             if (sliderActive) {
-                sliderControl.setValue(readPropertyAsDouble(getProperty(), integerType));
-                updateSliderValueLabel();
+                applySliderValueQuiet(readPropertyAsDouble(getProperty(), integerType));
             } else {
                 textControl.setText(readCurrentDisplayValue());
             }
@@ -1838,8 +1882,7 @@ public class ForgeConfigTemplateScreen extends BaseScreen {
         @Override
         public void restoreDefaultValue() {
             if (sliderActive) {
-                sliderControl.setValue(parsePropertyDefaultValue(getProperty(), integerType));
-                updateSliderValueLabel();
+                applySliderValueQuiet(parsePropertyDefaultValue(getProperty(), integerType));
             } else {
                 textControl.setText(readDefaultDisplayValue());
             }
@@ -1848,6 +1891,10 @@ public class ForgeConfigTemplateScreen extends BaseScreen {
         @Override
         public String validateDraft() {
             if (sliderActive) {
+                if (inlineInputActive) {
+                    return ForgeConfigTemplatePropertyDrafts.validateDraft(getProperty(),
+                            inlineInputControl.getText());
+                }
                 return null;
             }
             return ForgeConfigTemplatePropertyDrafts.validateDraft(getProperty(), textControl.getText());
@@ -1856,6 +1903,10 @@ public class ForgeConfigTemplateScreen extends BaseScreen {
         @Override
         public void applyDraft() {
             if (sliderActive) {
+                if (inlineInputActive) {
+                    ForgeConfigTemplatePropertyDrafts.applyDraft(getProperty(), inlineInputControl.getText());
+                    return;
+                }
                 if (integerType) {
                     getProperty().set((int) Math.round(sliderControl.getValue()));
                 } else {
@@ -1864,6 +1915,67 @@ public class ForgeConfigTemplateScreen extends BaseScreen {
                 return;
             }
             ForgeConfigTemplatePropertyDrafts.applyDraft(getProperty(), textControl.getText());
+        }
+
+        private void applySliderValueQuiet(double value) {
+            suppressSliderSync = true;
+            try {
+                sliderControl.setValue(value);
+            } finally {
+                suppressSliderSync = false;
+            }
+            updateSliderValueLabel();
+            syncInlineInputFromSlider();
+        }
+
+        private void syncInlineInputFromSlider() {
+            if (!inlineInputActive) {
+                return;
+            }
+            suppressInlineInputSync = true;
+            try {
+                inlineInputControl.setText(formatSliderValueForInput(sliderControl.getValue()));
+            } finally {
+                suppressInlineInputSync = false;
+            }
+        }
+
+        private void syncSliderFromInlineInput() {
+            Double parsed = parseInlineDraft();
+            if (parsed == null) {
+                return;
+            }
+            double clamped = Math.max(sliderMin, Math.min(parsed.doubleValue(), sliderMax));
+            suppressSliderSync = true;
+            try {
+                sliderControl.setValue(clamped);
+            } finally {
+                suppressSliderSync = false;
+            }
+            updateSliderValueLabel();
+        }
+
+        private Double parseInlineDraft() {
+            if (!inlineInputActive || inlineInputControl == null) {
+                return null;
+            }
+            String trimmed = inlineInputControl.getText().trim();
+            if (trimmed.isEmpty()) {
+                return null;
+            }
+            try {
+                return integerType ? Double.valueOf(Integer.parseInt(trimmed))
+                        : Double.valueOf(Double.parseDouble(trimmed));
+            } catch (NumberFormatException ignored) {
+                return null;
+            }
+        }
+
+        private String formatSliderValueForInput(double value) {
+            if (integerType) {
+                return Long.toString(Math.round(value));
+            }
+            return formatDoubleValue(value);
         }
 
         private void updateSliderValueLabel() {
