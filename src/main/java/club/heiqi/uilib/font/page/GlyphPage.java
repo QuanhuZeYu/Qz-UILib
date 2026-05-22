@@ -16,6 +16,14 @@ import club.heiqi.uilib.font.config.FontConfig;
  */
 public class GlyphPage {
 
+    /**
+     * 主线程专用零数据纹理缓冲。
+     *
+     * <p>{@link #ensureTexture()} 只在渲染主线程调用，因此无并发风险。
+     * 按需扩容，避免每次创建新页都分配 + 填零一块 direct buffer。</p>
+     */
+    private static ByteBuffer renderThreadEmptyBuffer;
+
     private final int runtimeVersion;
     private final int pageIndex;
     private final int textureSize;
@@ -164,7 +172,7 @@ public class GlyphPage {
 
         textureId = GL11.glGenTextures();
         GL11.glBindTexture(GL11.GL_TEXTURE_2D, textureId);
-        ByteBuffer emptyTexture = createEmptyTextureBuffer(textureSize * textureSize * 4);
+        ByteBuffer emptyTexture = obtainRenderThreadEmptyBuffer(textureSize * textureSize * 4);
         prepareUnpackState();
         GL11.glTexImage2D(GL11.GL_TEXTURE_2D, 0, GL11.GL_RGBA, textureSize, textureSize, 0, GL11.GL_RGBA,
                 GL11.GL_UNSIGNED_BYTE, emptyTexture);
@@ -221,6 +229,16 @@ public class GlyphPage {
         }
         buffer.flip();
         return buffer;
+    }
+
+    private static ByteBuffer obtainRenderThreadEmptyBuffer(int requiredCapacity) {
+        if (renderThreadEmptyBuffer != null && renderThreadEmptyBuffer.capacity() >= requiredCapacity) {
+            renderThreadEmptyBuffer.clear();
+            renderThreadEmptyBuffer.limit(requiredCapacity);
+            return renderThreadEmptyBuffer;
+        }
+        renderThreadEmptyBuffer = createEmptyTextureBuffer(requiredCapacity);
+        return renderThreadEmptyBuffer;
     }
 
     private static ByteBuffer createEmptyTextureBuffer(int capacity) {

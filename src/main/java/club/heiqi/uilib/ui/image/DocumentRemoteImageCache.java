@@ -63,6 +63,7 @@ public final class DocumentRemoteImageCache {
             Entry previousEntry = entries.putIfAbsent(normalizedUrl, createdEntry);
             entry = previousEntry == null ? createdEntry : previousEntry;
         }
+        entry.lastAccessedAt = System.nanoTime();
         if (entry.markLoading()) {
             final Entry loadingEntry = entry;
             executorService.submit(new Runnable() {
@@ -173,11 +174,20 @@ public final class DocumentRemoteImageCache {
             return;
         }
         try {
-            for (String key : entries.keySet()) {
-                if (entries.size() <= MAX_CACHE_ENTRIES) {
-                    return;
+            while (entries.size() > MAX_CACHE_ENTRIES) {
+                String oldestKey = null;
+                long oldestAccess = Long.MAX_VALUE;
+                for (Map.Entry<String, Entry> mapEntry : entries.entrySet()) {
+                    long accessed = mapEntry.getValue().lastAccessedAt;
+                    if (accessed < oldestAccess) {
+                        oldestAccess = accessed;
+                        oldestKey = mapEntry.getKey();
+                    }
                 }
-                entries.remove(key);
+                if (oldestKey == null) {
+                    break;
+                }
+                entries.remove(oldestKey);
             }
         } finally {
             trimInProgress.set(false);
@@ -204,9 +214,11 @@ public final class DocumentRemoteImageCache {
         private final String url;
         private volatile BufferedImage image;
         private volatile Status status = Status.PENDING;
+        volatile long lastAccessedAt;
 
         private Entry(String url) {
             this.url = url;
+            this.lastAccessedAt = System.nanoTime();
         }
 
         private static Entry failed() {
