@@ -22,6 +22,7 @@ import club.heiqi.uilib.ui.style.props.UiCursor;
 import club.heiqi.uilib.ui.style.props.UiDisplay;
 import club.heiqi.uilib.ui.style.props.UiJustifyContent;
 import club.heiqi.uilib.ui.style.props.UiOverflow;
+import club.heiqi.uilib.ui.style.props.UiWhiteSpace;
 import club.heiqi.uilib.ui.style.values.UiStyleLength;
 import club.heiqi.uilib.ui.render.UiRenderContext;
 
@@ -323,9 +324,11 @@ public final class DocumentTextInputControl {
                 .setBorderRadius(UiStyleLength.px(4))
                 .setTextColor(textColor)
                 .setCursor(UiCursor.TEXT)
+                .setWhiteSpace(UiWhiteSpace.NOWRAP)
                 .setOverflowX(UiOverflow.HIDDEN)
                 .setOverflowY(UiOverflow.HIDDEN);
         textElement.style()
+                .setWhiteSpace(UiWhiteSpace.NOWRAP)
                 .setOverflowX(UiOverflow.HIDDEN)
                 .setOverflowY(UiOverflow.HIDDEN);
     }
