@@ -246,6 +246,69 @@ public final class UiDocument {
     }
 
     /**
+     * 创建 p（段落）元素。
+     *
+     * @return p 元素
+     */
+    public ElementNode p() {
+        return element("p");
+    }
+
+    /**
+     * 创建 h1 标题元素。
+     *
+     * @return h1 元素
+     */
+    public ElementNode h1() {
+        return element("h1");
+    }
+
+    /**
+     * 创建 h2 标题元素。
+     *
+     * @return h2 元素
+     */
+    public ElementNode h2() {
+        return element("h2");
+    }
+
+    /**
+     * 创建 h3 标题元素。
+     *
+     * @return h3 元素
+     */
+    public ElementNode h3() {
+        return element("h3");
+    }
+
+    /**
+     * 创建 h4 标题元素。
+     *
+     * @return h4 元素
+     */
+    public ElementNode h4() {
+        return element("h4");
+    }
+
+    /**
+     * 创建 h5 标题元素。
+     *
+     * @return h5 元素
+     */
+    public ElementNode h5() {
+        return element("h5");
+    }
+
+    /**
+     * 创建 h6 标题元素。
+     *
+     * @return h6 元素
+     */
+    public ElementNode h6() {
+        return element("h6");
+    }
+
+    /**
      * 创建文本节点。
      *
      * @param text 文本内容

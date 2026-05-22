@@ -404,6 +404,50 @@ public final class UiStyleDeclaration {
         return updateMargin(Objects.requireNonNull(margin, "margin"));
     }
 
+    /**
+     * 设置上边距，其余边距保持不变（未设置过则视为 0）。
+     *
+     * @param value 上边距长度
+     * @return this
+     */
+    public UiStyleDeclaration setMarginTop(UiStyleLength value) {
+        UiStyleInsets current = margin != null ? margin : UiStyleInsets.zero();
+        return setMargin(current.withTop(Objects.requireNonNull(value, "value")));
+    }
+
+    /**
+     * 设置右边距，其余边距保持不变（未设置过则视为 0）。
+     *
+     * @param value 右边距长度
+     * @return this
+     */
+    public UiStyleDeclaration setMarginRight(UiStyleLength value) {
+        UiStyleInsets current = margin != null ? margin : UiStyleInsets.zero();
+        return setMargin(current.withRight(Objects.requireNonNull(value, "value")));
+    }
+
+    /**
+     * 设置下边距，其余边距保持不变（未设置过则视为 0）。
+     *
+     * @param value 下边距长度
+     * @return this
+     */
+    public UiStyleDeclaration setMarginBottom(UiStyleLength value) {
+        UiStyleInsets current = margin != null ? margin : UiStyleInsets.zero();
+        return setMargin(current.withBottom(Objects.requireNonNull(value, "value")));
+    }
+
+    /**
+     * 设置左边距，其余边距保持不变（未设置过则视为 0）。
+     *
+     * @param value 左边距长度
+     * @return this
+     */
+    public UiStyleDeclaration setMarginLeft(UiStyleLength value) {
+        UiStyleInsets current = margin != null ? margin : UiStyleInsets.zero();
+        return setMargin(current.withLeft(Objects.requireNonNull(value, "value")));
+    }
+
     public UiStyleDeclaration clearMargin() {
         return updateMargin(null);
     }
@@ -418,6 +462,50 @@ public final class UiStyleDeclaration {
 
     public UiStyleDeclaration setPadding(UiStyleInsets padding) {
         return updatePadding(Objects.requireNonNull(padding, "padding"));
+    }
+
+    /**
+     * 设置上内边距，其余内边距保持不变（未设置过则视为 0）。
+     *
+     * @param value 上内边距长度
+     * @return this
+     */
+    public UiStyleDeclaration setPaddingTop(UiStyleLength value) {
+        UiStyleInsets current = padding != null ? padding : UiStyleInsets.zero();
+        return setPadding(current.withTop(Objects.requireNonNull(value, "value")));
+    }
+
+    /**
+     * 设置右内边距，其余内边距保持不变（未设置过则视为 0）。
+     *
+     * @param value 右内边距长度
+     * @return this
+     */
+    public UiStyleDeclaration setPaddingRight(UiStyleLength value) {
+        UiStyleInsets current = padding != null ? padding : UiStyleInsets.zero();
+        return setPadding(current.withRight(Objects.requireNonNull(value, "value")));
+    }
+
+    /**
+     * 设置下内边距，其余内边距保持不变（未设置过则视为 0）。
+     *
+     * @param value 下内边距长度
+     * @return this
+     */
+    public UiStyleDeclaration setPaddingBottom(UiStyleLength value) {
+        UiStyleInsets current = padding != null ? padding : UiStyleInsets.zero();
+        return setPadding(current.withBottom(Objects.requireNonNull(value, "value")));
+    }
+
+    /**
+     * 设置左内边距，其余内边距保持不变（未设置过则视为 0）。
+     *
+     * @param value 左内边距长度
+     * @return this
+     */
+    public UiStyleDeclaration setPaddingLeft(UiStyleLength value) {
+        UiStyleInsets current = padding != null ? padding : UiStyleInsets.zero();
+        return setPadding(current.withLeft(Objects.requireNonNull(value, "value")));
     }
 
     public UiStyleDeclaration clearPadding() {
