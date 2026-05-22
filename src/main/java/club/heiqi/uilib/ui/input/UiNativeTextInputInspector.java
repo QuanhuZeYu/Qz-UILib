@@ -5,6 +5,7 @@ import java.lang.reflect.Field;
 import java.lang.reflect.Modifier;
 import java.util.IdentityHashMap;
 import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 import net.minecraft.client.gui.GuiChat;
@@ -24,6 +25,14 @@ public final class UiNativeTextInputInspector {
     private static final int MAX_SCAN_DEPTH = 2;
     private static final Logger LOG = LogManager.getLogger("QzUiLib/UiNativeTextInputInspector");
     private static final AtomicBoolean GUI_CHAT_INPUT_FIELD_REFLECTION_LOGGED = new AtomicBoolean(false);
+    /**
+     * 反射深扫遇到的每个 (声明类 + 字段) 失败仅记录一次。
+     *
+     * <p>用 {@link ConcurrentHashMap#putIfAbsent} 做访问去重，避免同一个字段在每次屏幕扫描里
+     * 重复刷屏，但又能保证每个真正出过问题的字段都至少被诊断到一次。</p>
+     */
+    private static final ConcurrentHashMap<String, Boolean> SCAN_FIELD_REFLECTION_LOGGED =
+            new ConcurrentHashMap<String, Boolean>();
     private static final NativeTextInputAdapter[] ADAPTERS = new NativeTextInputAdapter[] {
             new GuiChatTextInputAdapter() };
 
@@ -126,8 +135,8 @@ public final class UiNativeTextInputInspector {
                     if (hasFocusedTextInputReflectively(field.get(value), depth + 1, visited)) {
                         return true;
                     }
-                } catch (ReflectiveOperationException ignored) {
-                    // 反射失败时忽略该字段，继续检查其他候选输入框。
+                } catch (ReflectiveOperationException exception) {
+                    logScanFieldReflectionFailureOnce(field, "hasFocusedTextInput", exception);
                 }
             }
         }
@@ -183,12 +192,32 @@ public final class UiNativeTextInputInspector {
                 try {
                     field.setAccessible(true);
                     changed |= blurFocusedTextInputsReflectively(field.get(value), depth + 1, visited);
-                } catch (ReflectiveOperationException ignored) {
-                    // 反射失败时忽略该字段，继续清理其他候选输入框。
+                } catch (ReflectiveOperationException exception) {
+                    logScanFieldReflectionFailureOnce(field, "blurFocusedTextInputs", exception);
                 }
             }
         }
         return changed;
+    }
+
+    /**
+     * 反射深扫遇到字段访问失败时的一次性诊断日志。
+     *
+     * <p>按 (声明类全名 + 字段名 + 用途) 做去重，保证同一字段在同一用途下只记录一次。
+     * 避免同一个屏幕扫描里递归深扫引发数十/上百次重复刷屏。</p>
+     *
+     * @param field 反射失败的字段
+     * @param scanContext 扫描用途（hasFocusedTextInput / blurFocusedTextInputs）
+     * @param exception 反射异常
+     */
+    private static void logScanFieldReflectionFailureOnce(Field field, String scanContext,
+            ReflectiveOperationException exception) {
+        Class<?> declaringClass = field.getDeclaringClass();
+        String dedupKey = declaringClass.getName() + "#" + field.getName() + "@" + scanContext;
+        if (SCAN_FIELD_REFLECTION_LOGGED.putIfAbsent(dedupKey, Boolean.TRUE) == null) {
+            LOG.debug("UILib 反射深扫读取 {}#{} 失败 ({})，已跳过该字段。", declaringClass.getName(), field.getName(),
+                    scanContext, exception);
+        }
     }
 
     private static boolean isJdkValueObject(Class<?> valueClass) {
