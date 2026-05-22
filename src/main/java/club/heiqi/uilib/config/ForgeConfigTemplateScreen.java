@@ -22,6 +22,9 @@ import club.heiqi.uilib.ui.control.DocumentButtonControl;
 import club.heiqi.uilib.ui.control.DocumentSegmentedSelectionEvent;
 import club.heiqi.uilib.ui.control.DocumentSegmentedSelectionHandler;
 import club.heiqi.uilib.ui.control.DocumentSegmentedSelectorControl;
+import club.heiqi.uilib.ui.control.DocumentSliderChangeEvent;
+import club.heiqi.uilib.ui.control.DocumentSliderChangeHandler;
+import club.heiqi.uilib.ui.control.DocumentSliderControl;
 import club.heiqi.uilib.ui.control.DocumentTextInputChangeEvent;
 import club.heiqi.uilib.ui.control.DocumentTextInputChangeHandler;
 import club.heiqi.uilib.ui.control.DocumentTextInputControl;
@@ -43,6 +46,7 @@ import club.heiqi.uilib.ui.runtime.UiRuntimeAdapters;
 import club.heiqi.uilib.ui.text.DefaultTextMeasureService;
 import club.heiqi.uilib.ui.text.TextMeasureService;
 import club.heiqi.uilib.ui.widget.Widget;
+import club.heiqi.uilib.MyMod;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiScreen;
 import net.minecraftforge.common.config.ConfigCategory;
@@ -455,6 +459,16 @@ public class ForgeConfigTemplateScreen extends BaseScreen {
         if (ForgeConfigTemplatePropertyDrafts.shouldUseDiscreteValidValuesEditor(property)) {
             return new ChoicePropertyBinding(document, categorySpec, property);
         }
+        if (!property.isList() && (property.getType() == Property.Type.INTEGER
+                || property.getType() == Property.Type.DOUBLE)) {
+            NumericControlOptions numericOptions = spec.getNumericControlOptions(categorySpec.getCategoryName(),
+                    property.getName());
+            boolean authorDeclared = numericOptions != null;
+            if (!authorDeclared) {
+                numericOptions = NumericControlOptions.sliderWithLabel();
+            }
+            return new NumericPropertyBinding(document, categorySpec, property, numericOptions, authorDeclared);
+        }
         return new TextPropertyBinding(document, categorySpec, property);
     }
 
@@ -674,6 +688,8 @@ public class ForgeConfigTemplateScreen extends BaseScreen {
         private TextSet textSet = TextSet.defaultTextSet();
         private final List<CategorySpec> categories = new ArrayList<CategorySpec>();
         private final List<PropertyEditorFactory> propertyEditorFactories = new ArrayList<PropertyEditorFactory>();
+        private final Map<String, NumericControlOptions> numericControlOptions =
+                new LinkedHashMap<String, NumericControlOptions>();
 
         /**
          * 创建模板规格。
@@ -790,6 +806,41 @@ public class ForgeConfigTemplateScreen extends BaseScreen {
          */
         public Spec addCategory(String categoryName) {
             return addCategory(new CategorySpec(categoryName));
+        }
+
+        /**
+         * 为指定数值属性配置展示形态（滑块/输入框等）。
+         *
+         * @param categoryName 分类名
+         * @param propertyName 属性名
+         * @param options 数值控件配置；为 null 时清除已声明的配置
+         * @return 当前规格
+         */
+        public Spec setNumericControlOptions(String categoryName, String propertyName,
+                NumericControlOptions options) {
+            String key = buildBindingKey(categoryName, propertyName);
+            if (options == null) {
+                numericControlOptions.remove(key);
+            } else {
+                numericControlOptions.put(key, options);
+            }
+            return this;
+        }
+
+        /**
+         * 便捷方法：声明指定数值属性使用 {@link NumericControlMode} 模式。
+         *
+         * @param categoryName 分类名
+         * @param propertyName 属性名
+         * @param mode 展示模式
+         * @return 当前规格
+         */
+        public Spec setNumericControlMode(String categoryName, String propertyName, NumericControlMode mode) {
+            return setNumericControlOptions(categoryName, propertyName, NumericControlOptions.of(mode));
+        }
+
+        NumericControlOptions getNumericControlOptions(String categoryName, String propertyName) {
+            return numericControlOptions.get(buildBindingKey(categoryName, propertyName));
         }
 
         public String getModId() {
@@ -1634,6 +1685,285 @@ public class ForgeConfigTemplateScreen extends BaseScreen {
         public void applyDraft() {
             getProperty().set(control.getSelectedOption());
         }
+    }
+
+    /**
+     * 数值（整数/小数）属性绑定。
+     *
+     * <p>展示形态由作者通过 {@link Spec#setNumericControlOptions(String, String, NumericControlOptions)}
+     * 显式声明；运行时根据属性的 min/max 与 {@link NumericControlOptions#getMaxSliderRange()} 阈值
+     * 决定是否降级为文本输入框。</p>
+     */
+    private final class NumericPropertyBinding extends PropertyBinding {
+
+        private final NumericControlOptions options;
+        private final boolean integerType;
+        private final NumericControlMode resolvedMode;
+        private final boolean sliderActive;
+        private final double sliderMin;
+        private final double sliderMax;
+        private final double sliderStep;
+        private final DocumentSliderControl sliderControl;
+        private final DocumentTextInputControl textControl;
+        private final TextNode sliderValueLabel;
+        private final String sliderValueLabelFormat;
+
+        private NumericPropertyBinding(UiDocument document, CategorySpec categorySpec, Property property,
+                NumericControlOptions options, boolean authorDeclared) {
+            super(document, categorySpec, property);
+            this.options = options;
+            this.integerType = property.getType() == Property.Type.INTEGER;
+
+            double minValue = parsePropertyMinValue(property, integerType);
+            double maxValue = parsePropertyMaxValue(property, integerType);
+            boolean hasFiniteRange = !Double.isInfinite(minValue) && !Double.isInfinite(maxValue) && maxValue > minValue;
+            double range = hasFiniteRange ? (maxValue - minValue) : Double.POSITIVE_INFINITY;
+            double maxSliderRange = options.getMaxSliderRange();
+            boolean withinThreshold = Double.isInfinite(maxSliderRange) || range <= maxSliderRange;
+
+            NumericControlMode requestedMode = options.getMode();
+            boolean wantSlider = requestedMode == NumericControlMode.SLIDER
+                    || requestedMode == NumericControlMode.SLIDER_WITH_LABEL;
+            if (wantSlider && !hasFiniteRange) {
+                if (authorDeclared) {
+                    MyMod.LOG.warn(
+                            "数值属性 [{}/{}] 声明了滑块模式但缺少上下界，已降级为文本输入框。",
+                            categorySpec.getCategoryName(), property.getName());
+                }
+                wantSlider = false;
+            } else if (wantSlider && !withinThreshold) {
+                if (authorDeclared) {
+                    MyMod.LOG.warn(
+                            "数值属性 [{}/{}] 数值跨度 {} 超过阈值 {}，已降级为文本输入框。",
+                            categorySpec.getCategoryName(), property.getName(), range, maxSliderRange);
+                }
+                wantSlider = false;
+            }
+            this.sliderActive = wantSlider;
+            this.resolvedMode = wantSlider ? requestedMode : NumericControlMode.TEXT_INPUT;
+            this.sliderMin = wantSlider ? minValue : 0.0D;
+            this.sliderMax = wantSlider ? maxValue : 0.0D;
+            this.sliderStep = wantSlider ? resolveSliderStep(options.getSliderStep(), integerType) : 0.0D;
+            this.sliderValueLabelFormat = options.getLabelFormat();
+
+            if (sliderActive) {
+                this.textControl = null;
+                this.sliderControl = new DocumentSliderControl(document)
+                        .setRange(sliderMin, sliderMax)
+                        .setStep(sliderStep)
+                        .setChangeHandler(new DocumentSliderChangeHandler() {
+                            @Override
+                            public void onSliderChanged(DocumentSliderChangeEvent event) {
+                                updateSliderValueLabel();
+                                refreshStatusText(null);
+                            }
+                        });
+                this.sliderControl.getElement().setAttribute("data-config-control", "numeric-slider");
+                this.sliderControl.getElement().style().setWidth(UiStyleLength.percent(1.0F));
+
+                ElementNode editor = document.div();
+                editor.style()
+                        .setDisplay(UiDisplay.FLEX)
+                        .setFlexDirection(UiFlexDirection.ROW)
+                        .setAlignItems(UiAlignItems.CENTER)
+                        .setColumnGap(UiStyleLength.px(8));
+
+                ElementNode sliderShell = document.div();
+                sliderShell.style()
+                        .setDisplay(UiDisplay.FLEX)
+                        .setFlexDirection(UiFlexDirection.ROW)
+                        .setAlignItems(UiAlignItems.CENTER)
+                        .setWidth(UiStyleLength.percent(1.0F));
+                sliderShell.append(sliderControl.getElement());
+                editor.append(sliderShell);
+
+                if (resolvedMode == NumericControlMode.SLIDER_WITH_LABEL) {
+                    ElementNode labelElement = document.div();
+                    labelElement.setAttribute("data-config-control", "numeric-slider-label");
+                    labelElement.style()
+                            .setPadding(UiStyleLength.px(4))
+                            .setBorderColor(0xFF334155)
+                            .setBorderWidth(UiStyleLength.px(1))
+                            .setBorderRadius(UiStyleLength.px(8))
+                            .setBackgroundColor(0xFF0F172A)
+                            .setTextColor(0xFFE2E8F0)
+                            .setOverflowX(UiOverflow.HIDDEN)
+                            .setOverflowY(UiOverflow.HIDDEN);
+                    this.sliderValueLabel = labelElement.appendText("");
+                    editor.append(labelElement);
+                } else {
+                    this.sliderValueLabel = null;
+                }
+
+                restoreCurrentValue();
+                initializeCard(document, editor);
+            } else {
+                this.sliderControl = null;
+                this.sliderValueLabel = null;
+                this.textControl = new DocumentTextInputControl(document)
+                        .setPlaceholder(ForgeConfigTemplatePropertyDrafts.resolvePlaceholder(property))
+                        .setMaxLength(ForgeConfigTemplatePropertyDrafts.resolveMaxLength(property))
+                        .setChangeHandler(new DocumentTextInputChangeHandler() {
+                            @Override
+                            public void onTextChanged(DocumentTextInputChangeEvent event) {
+                                refreshStatusText(null);
+                            }
+                        });
+                this.textControl.getElement().setAttribute("data-config-control", "numeric-text");
+                this.textControl.getElement().style().setWidth(UiStyleLength.percent(1.0F));
+                restoreCurrentValue();
+                initializeCard(document, textControl.getElement());
+            }
+        }
+
+        @Override
+        public boolean isDirty() {
+            if (sliderActive) {
+                double current = readPropertyAsDouble(getProperty(), integerType);
+                return Math.abs(current - sliderControl.getValue()) > 1.0E-9D;
+            }
+            return !Objects.equals(readCurrentDisplayValue(), textControl.getText());
+        }
+
+        @Override
+        public void restoreCurrentValue() {
+            if (sliderActive) {
+                sliderControl.setValue(readPropertyAsDouble(getProperty(), integerType));
+                updateSliderValueLabel();
+            } else {
+                textControl.setText(readCurrentDisplayValue());
+            }
+        }
+
+        @Override
+        public void restoreDefaultValue() {
+            if (sliderActive) {
+                sliderControl.setValue(parsePropertyDefaultValue(getProperty(), integerType));
+                updateSliderValueLabel();
+            } else {
+                textControl.setText(readDefaultDisplayValue());
+            }
+        }
+
+        @Override
+        public String validateDraft() {
+            if (sliderActive) {
+                return null;
+            }
+            return ForgeConfigTemplatePropertyDrafts.validateDraft(getProperty(), textControl.getText());
+        }
+
+        @Override
+        public void applyDraft() {
+            if (sliderActive) {
+                if (integerType) {
+                    getProperty().set((int) Math.round(sliderControl.getValue()));
+                } else {
+                    getProperty().set(sliderControl.getValue());
+                }
+                return;
+            }
+            ForgeConfigTemplatePropertyDrafts.applyDraft(getProperty(), textControl.getText());
+        }
+
+        private void updateSliderValueLabel() {
+            if (sliderValueLabel == null) {
+                return;
+            }
+            double value = sliderControl.getValue();
+            if (sliderValueLabelFormat != null && !sliderValueLabelFormat.isEmpty()) {
+                try {
+                    sliderValueLabel.setText(String.format(sliderValueLabelFormat,
+                            integerType ? Long.valueOf(Math.round(value)) : Double.valueOf(value)));
+                    return;
+                } catch (RuntimeException exception) {
+                    MyMod.LOG.warn("数值标签格式化失败：{}", exception.getMessage());
+                }
+            }
+            if (integerType) {
+                sliderValueLabel.setText(Long.toString(Math.round(value)));
+            } else {
+                sliderValueLabel.setText(formatDoubleValue(value));
+            }
+        }
+
+        private String readCurrentDisplayValue() {
+            return ForgeConfigTemplatePropertyDrafts.readCurrentDisplayValue(getProperty());
+        }
+
+        private String readDefaultDisplayValue() {
+            return ForgeConfigTemplatePropertyDrafts.readDefaultDisplayValue(getProperty());
+        }
+    }
+
+    private static double parsePropertyMinValue(Property property, boolean integerType) {
+        if (property == null) {
+            return integerType ? Integer.MIN_VALUE : -Double.MAX_VALUE;
+        }
+        String raw = property.getMinValue();
+        if (raw == null || raw.isEmpty()) {
+            return Double.NEGATIVE_INFINITY;
+        }
+        try {
+            return integerType ? Integer.parseInt(raw.trim()) : Double.parseDouble(raw.trim());
+        } catch (NumberFormatException exception) {
+            return Double.NEGATIVE_INFINITY;
+        }
+    }
+
+    private static double parsePropertyMaxValue(Property property, boolean integerType) {
+        if (property == null) {
+            return integerType ? Integer.MAX_VALUE : Double.MAX_VALUE;
+        }
+        String raw = property.getMaxValue();
+        if (raw == null || raw.isEmpty()) {
+            return Double.POSITIVE_INFINITY;
+        }
+        try {
+            return integerType ? Integer.parseInt(raw.trim()) : Double.parseDouble(raw.trim());
+        } catch (NumberFormatException exception) {
+            return Double.POSITIVE_INFINITY;
+        }
+    }
+
+    private static double readPropertyAsDouble(Property property, boolean integerType) {
+        if (property == null) {
+            return 0.0D;
+        }
+        try {
+            return integerType ? property.getInt() : property.getDouble();
+        } catch (RuntimeException exception) {
+            try {
+                return Double.parseDouble(property.getString());
+            } catch (NumberFormatException ignored) {
+                return 0.0D;
+            }
+        }
+    }
+
+    private static double parsePropertyDefaultValue(Property property, boolean integerType) {
+        if (property == null) {
+            return 0.0D;
+        }
+        try {
+            return integerType ? Integer.parseInt(property.getDefault()) : Double.parseDouble(property.getDefault());
+        } catch (RuntimeException ignored) {
+            return readPropertyAsDouble(property, integerType);
+        }
+    }
+
+    private static double resolveSliderStep(double declaredStep, boolean integerType) {
+        if (declaredStep > 0.0D) {
+            return declaredStep;
+        }
+        return integerType ? 1.0D : 0.0D;
+    }
+
+    private static String formatDoubleValue(double value) {
+        if (value == Math.floor(value) && !Double.isInfinite(value)) {
+            return Long.toString((long) value);
+        }
+        return Double.toString(value);
     }
 
     private static String resolveTypeLabel(Property property) {

@@ -39,6 +39,10 @@ public class ModConfigGui extends ForgeConfigTemplateScreen {
                         .setDescription("字体渲染运行时、排序和 drawString 上传节流相关配置。"))
                 .addCategory(new CategorySpec(FontConfig.FONT_SIZE_CATEGORY)
                         .setTitle("Font Size")
-                        .setDescription("默认字号、生成分辨率与缩放系数配置。"));
+                        .setDescription("默认字号、生成分辨率与缩放系数配置。"))
+                .setNumericControlOptions(FontConfig.FONT_SIZE_CATEGORY, "fontScale",
+                        NumericControlOptions.sliderWithLabel()
+                                .withSliderStep(0.05D)
+                                .withLabelFormat("%.2f"));
     }
 }
