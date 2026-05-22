@@ -418,7 +418,10 @@ public final class DocumentSliderControl {
     }
 
     private boolean handleDrag(DocumentElementDragEvent event) {
-        if (!enabled || event.getButton() != 0) {
+        if (!enabled) {
+            return false;
+        }
+        if (event.getPhase() == DocumentElementDragEvent.DragPhase.START && event.getButton() != 0) {
             return false;
         }
         if (event.getPhase() == DocumentElementDragEvent.DragPhase.START) {

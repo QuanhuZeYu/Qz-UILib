@@ -244,6 +244,39 @@ public class DocumentSliderControlTest {
         Assert.assertTrue(events.isEmpty());
     }
 
+    /**
+     * 验证真实 widget 拖动释放时即使 button 状态归零也会提交最终值。
+     */
+    @Test
+    public void shouldDragFromWidgetMouseEvents() {
+        UiDocument document = UiDocument.create();
+        ElementNode root = document.getRootElement();
+        root.style()
+                .setWidth(UiStyleLength.px(200))
+                .setHeight(UiStyleLength.px(40));
+        final List<DocumentSliderChangeEvent> events = new ArrayList<DocumentSliderChangeEvent>();
+        DocumentSliderControl slider = new DocumentSliderControl(document)
+                .setChangeHandler(new DocumentSliderChangeHandler() {
+                    @Override
+                    public void onSliderChanged(DocumentSliderChangeEvent event) {
+                        events.add(event);
+                    }
+                });
+        root.append(slider.getElement());
+        HtmlLikeDocumentWidget widget = new HtmlLikeDocumentWidget(document, 200, 40,
+                new DeterministicTextMeasureService());
+        widget.applyLayoutBounds(0, 0, 200, 40);
+
+        widget.onMouseDown(new UiMouseEvent(UiMouseEvent.Action.BUTTON_DOWN, 1, 8, 0, 0, 0, 0, 1L));
+        widget.onMouseMove(new UiMouseEvent(UiMouseEvent.Action.MOVE, 81, 8, -1, 0, 80, 0, 2L));
+        widget.onMouseUp(new UiMouseEvent(UiMouseEvent.Action.BUTTON_UP, 81, 8, 0, 0, 0, 0, 3L));
+
+        Assert.assertEquals(50.0D, slider.getValue(), 0.0001D);
+        Assert.assertEquals(2, events.size());
+        Assert.assertFalse(events.get(0).isCommitting());
+        Assert.assertTrue(events.get(1).isCommitting());
+    }
+
     private static DocumentElementKeyEvent keyEvent(ElementNode element, int keyCode, long timeNanos) {
         return new DocumentElementKeyEvent(element, element, new UiKeyEvent(keyCode, 0, 0,
                 UiKeyEvent.Action.PRESSED, false, false, false, false, timeNanos));
