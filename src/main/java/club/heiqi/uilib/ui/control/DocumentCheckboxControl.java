@@ -48,6 +48,8 @@ public final class DocumentCheckboxControl {
     private int labelColor = 0xFFE5E7EB;
     private int labelDisabledColor = 0xFF64748B;
     private int focusBorderColor = 0xFFBFDBFE;
+    private int boxSize = 16;
+    private int boxCornerRadius = 3;
 
     /**
      * 创建无标签复选框控件。
@@ -271,6 +273,44 @@ public final class DocumentCheckboxControl {
         return this;
     }
 
+    /**
+     * 设置方框尺寸（同时作为方框宽度和高度，单位 px）。
+     *
+     * <p>非正值会被夹取为最小 1px。</p>
+     *
+     * @param sizePx 方框边长（像素）
+     * @return 当前复选框控件
+     */
+    public DocumentCheckboxControl setBoxSize(int sizePx) {
+        int resolved = sizePx <= 0 ? 1 : sizePx;
+        if (this.boxSize == resolved) {
+            return this;
+        }
+        this.boxSize = resolved;
+        boxElement.style()
+                .setWidth(UiStyleLength.px(resolved))
+                .setHeight(UiStyleLength.px(resolved));
+        return this;
+    }
+
+    /**
+     * 设置方框圆角半径（单位 px）。
+     *
+     * <p>负值会被夹取为 0。</p>
+     *
+     * @param radiusPx 方框圆角半径（像素）
+     * @return 当前复选框控件
+     */
+    public DocumentCheckboxControl setBoxCornerRadius(int radiusPx) {
+        int resolved = radiusPx < 0 ? 0 : radiusPx;
+        if (this.boxCornerRadius == resolved) {
+            return this;
+        }
+        this.boxCornerRadius = resolved;
+        boxElement.style().setBorderRadius(UiStyleLength.px(resolved));
+        return this;
+    }
+
     private void configureElement() {
         element.setAttribute("role", "checkbox")
                 .setAttribute("tabindex", "0");
@@ -286,11 +326,11 @@ public final class DocumentCheckboxControl {
                 .setDisplay(UiDisplay.FLEX)
                 .setAlignItems(UiAlignItems.CENTER)
                 .setJustifyContent(UiJustifyContent.CENTER)
-                .setWidth(UiStyleLength.px(16))
-                .setHeight(UiStyleLength.px(16))
+                .setWidth(UiStyleLength.px(boxSize))
+                .setHeight(UiStyleLength.px(boxSize))
                 .setBorderWidth(UiStyleLength.px(1))
                 .setBorderStyle(UiBorderStyle.SOLID)
-                .setBorderRadius(UiStyleLength.px(3))
+                .setBorderRadius(UiStyleLength.px(boxCornerRadius))
                 .setBackgroundColor(boxNormalColor);
         checkmarkElement.style()
                 .setDisplay(UiDisplay.NONE)

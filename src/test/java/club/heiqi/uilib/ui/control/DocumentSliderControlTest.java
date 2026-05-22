@@ -170,6 +170,80 @@ public class DocumentSliderControlTest {
         Assert.assertFalse(events.get(0).isUserTriggered());
     }
 
+    /**
+     * 验证禁用时鼠标点击不会修改数值或派发事件。
+     */
+    @Test
+    public void shouldIgnoreClickWhenDisabled() {
+        UiDocument document = UiDocument.create();
+        final List<DocumentSliderChangeEvent> events = new ArrayList<DocumentSliderChangeEvent>();
+        DocumentSliderControl slider = new DocumentSliderControl(document)
+                .setEnabled(false)
+                .setChangeHandler(new DocumentSliderChangeHandler() {
+                    @Override
+                    public void onSliderChanged(DocumentSliderChangeEvent event) {
+                        events.add(event);
+                    }
+                });
+        ElementNode element = slider.getElement();
+
+        Assert.assertFalse(element.getClickHandler().onClick(new DocumentElementClickEvent(element, element, 80, 0, 0,
+                1L)));
+        Assert.assertEquals(0.0D, slider.getValue(), 0.0001D);
+        Assert.assertTrue(events.isEmpty());
+    }
+
+    /**
+     * 验证禁用时键盘步进不会修改数值或派发事件。
+     */
+    @Test
+    public void shouldIgnoreKeyboardWhenDisabled() {
+        UiDocument document = UiDocument.create();
+        final List<DocumentSliderChangeEvent> events = new ArrayList<DocumentSliderChangeEvent>();
+        DocumentSliderControl slider = new DocumentSliderControl(document)
+                .setStep(5.0D)
+                .setEnabled(false)
+                .setChangeHandler(new DocumentSliderChangeHandler() {
+                    @Override
+                    public void onSliderChanged(DocumentSliderChangeEvent event) {
+                        events.add(event);
+                    }
+                });
+        ElementNode element = slider.getElement();
+
+        Assert.assertFalse(element.getKeyHandler().onKey(keyEvent(element, Keyboard.KEY_RIGHT, 1L)));
+        Assert.assertEquals(0.0D, slider.getValue(), 0.0001D);
+        Assert.assertTrue(events.isEmpty());
+    }
+
+    /**
+     * 验证禁用时拖动不会修改数值或派发事件。
+     */
+    @Test
+    public void shouldIgnoreDragWhenDisabled() {
+        UiDocument document = UiDocument.create();
+        final List<DocumentSliderChangeEvent> events = new ArrayList<DocumentSliderChangeEvent>();
+        DocumentSliderControl slider = new DocumentSliderControl(document)
+                .setEnabled(false)
+                .setChangeHandler(new DocumentSliderChangeHandler() {
+                    @Override
+                    public void onSliderChanged(DocumentSliderChangeEvent event) {
+                        events.add(event);
+                    }
+                });
+        ElementNode element = slider.getElement();
+
+        Assert.assertFalse(element.getDragHandler().onDrag(dragEvent(element, 0, 0, 0,
+                DocumentElementDragEvent.DragPhase.START, 1L)));
+        Assert.assertFalse(element.getDragHandler().onDrag(dragEvent(element, 0, 16, 16,
+                DocumentElementDragEvent.DragPhase.DRAG, 2L)));
+        Assert.assertFalse(element.getDragHandler().onDrag(dragEvent(element, 0, 16, 0,
+                DocumentElementDragEvent.DragPhase.END, 3L)));
+
+        Assert.assertEquals(0.0D, slider.getValue(), 0.0001D);
+        Assert.assertTrue(events.isEmpty());
+    }
+
     private static DocumentElementKeyEvent keyEvent(ElementNode element, int keyCode, long timeNanos) {
         return new DocumentElementKeyEvent(element, element, new UiKeyEvent(keyCode, 0, 0,
                 UiKeyEvent.Action.PRESSED, false, false, false, false, timeNanos));

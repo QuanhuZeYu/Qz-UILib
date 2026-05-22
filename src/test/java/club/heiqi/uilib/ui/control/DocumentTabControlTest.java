@@ -131,6 +131,82 @@ public class DocumentTabControlTest {
         Assert.assertEquals(-1, tabs.getActiveIndex());
     }
 
+    /**
+     * 验证禁用时点击标签不会切换活动页或派发事件。
+     */
+    @Test
+    public void shouldIgnoreClickWhenDisabled() {
+        UiDocument document = UiDocument.create();
+        final List<DocumentTabChangeEvent> events = new ArrayList<DocumentTabChangeEvent>();
+        DocumentTabControl tabs = new DocumentTabControl(document)
+                .addTab("常规", builder("常规内容", new int[] { 0 }))
+                .addTab("高级", builder("高级内容", new int[] { 0 }))
+                .setActiveIndex(0)
+                .setEnabled(false)
+                .setChangeHandler(new DocumentTabChangeHandler() {
+                    @Override
+                    public void onTabChanged(DocumentTabChangeEvent event) {
+                        events.add(event);
+                    }
+                });
+        ElementNode secondTab = tabAt(tabs, 1);
+
+        Assert.assertFalse(secondTab.getClickHandler().onClick(new DocumentElementClickEvent(secondTab, secondTab,
+                0, 0, 0, 1L)));
+
+        Assert.assertEquals(0, tabs.getActiveIndex());
+        Assert.assertTrue(events.isEmpty());
+    }
+
+    /**
+     * 验证禁用时键盘方向键不会切换标签或派发事件。
+     */
+    @Test
+    public void shouldIgnoreKeyboardWhenDisabled() {
+        UiDocument document = UiDocument.create();
+        final List<DocumentTabChangeEvent> events = new ArrayList<DocumentTabChangeEvent>();
+        DocumentTabControl tabs = new DocumentTabControl(document)
+                .addTab("常规", builder("常规内容", new int[] { 0 }))
+                .addTab("高级", builder("高级内容", new int[] { 0 }))
+                .setActiveIndex(0)
+                .setEnabled(false)
+                .setChangeHandler(new DocumentTabChangeHandler() {
+                    @Override
+                    public void onTabChanged(DocumentTabChangeEvent event) {
+                        events.add(event);
+                    }
+                });
+        ElementNode tabBar = (ElementNode) tabs.getElement().getChildren().get(0);
+
+        Assert.assertFalse(tabBar.getKeyHandler().onKey(keyEvent(tabAt(tabs, 0), tabBar, Keyboard.KEY_RIGHT, 1L)));
+
+        Assert.assertEquals(0, tabs.getActiveIndex());
+        Assert.assertTrue(events.isEmpty());
+    }
+
+    /**
+     * 验证 tab 与 panel 通过 aria-controls / aria-labelledby 互相关联。
+     */
+    @Test
+    public void shouldExposeAriaControlsAndLabelledBy() {
+        UiDocument document = UiDocument.create();
+        DocumentTabControl tabs = new DocumentTabControl(document)
+                .addTab("常规", builder("常规内容", new int[] { 0 }))
+                .addTab("高级", builder("高级内容", new int[] { 0 }))
+                .setActiveIndex(0);
+
+        ElementNode firstTab = tabAt(tabs, 0);
+        ElementNode panel = (ElementNode) tabs.getElement().getChildren().get(1);
+
+        Assert.assertNotNull(firstTab.getId());
+        Assert.assertNotNull(panel.getId());
+        Assert.assertEquals(panel.getId(), firstTab.getAttribute("aria-controls"));
+        Assert.assertEquals(firstTab.getId(), panel.getAttribute("aria-labelledby"));
+
+        tabs.setActiveIndex(1);
+        Assert.assertEquals(tabAt(tabs, 1).getId(), panel.getAttribute("aria-labelledby"));
+    }
+
     private static DocumentTabContentBuilder builder(final String text, final int[] buildCount) {
         return new DocumentTabContentBuilder() {
             @Override

@@ -31,11 +31,19 @@ import club.heiqi.uilib.ui.style.values.UiStyleLength;
  */
 public final class DocumentTabControl {
 
+    private static final java.util.concurrent.atomic.AtomicLong INSTANCE_COUNTER = new java.util.concurrent.atomic.AtomicLong();
+
+    private static long nextInstanceId() {
+        return INSTANCE_COUNTER.incrementAndGet();
+    }
+
     private final UiDocument document;
     private final ElementNode element;
     private final ElementNode tabBarElement;
     private final ElementNode panelElement;
     private final List<TabEntry> tabs = new ArrayList<TabEntry>();
+    private final long controlInstanceId;
+    private final String panelId;
     private DocumentTabChangeHandler changeHandler;
     private int activeIndex = -1;
     private int focusedIndex = -1;
@@ -63,6 +71,8 @@ public final class DocumentTabControl {
         this.element = document.div();
         this.tabBarElement = document.div();
         this.panelElement = document.div();
+        this.controlInstanceId = nextInstanceId();
+        this.panelId = "qz-tabpanel-" + controlInstanceId;
         element.append(tabBarElement);
         element.append(panelElement);
         configureElement();
@@ -92,8 +102,11 @@ public final class DocumentTabControl {
         ElementNode labelElement = document.span();
         TextNode labelText = labelElement.appendText(normalizeLabel(label));
         tabElement.append(labelElement);
+        String tabId = "qz-tab-" + controlInstanceId + "-" + tabs.size();
+        tabElement.setId(tabId);
         tabElement.setAttribute("role", "tab")
-                .setAttribute("tabindex", "0");
+                .setAttribute("tabindex", "0")
+                .setAttribute("aria-controls", panelId);
         tabElement.setFocusable(enabled);
         tabElement.style()
                 .setDisplay(UiDisplay.FLEX)
@@ -383,6 +396,7 @@ public final class DocumentTabControl {
                 .setPadding(UiStyleLength.px(6))
                 .setBorderRadius(UiStyleLength.px(10))
                 .setBackgroundColor(tabBarBackgroundColor);
+        panelElement.setId(panelId);
         panelElement.setAttribute("role", "tabpanel");
         panelElement.style()
                 .setDisplay(UiDisplay.BLOCK)
@@ -467,8 +481,10 @@ public final class DocumentTabControl {
     private void mountActiveTab() {
         panelElement.clearChildren();
         if (activeIndex < 0 || activeIndex >= tabs.size()) {
+            panelElement.removeAttribute("aria-labelledby");
             return;
         }
+        panelElement.setAttribute("aria-labelledby", tabs.get(activeIndex).tabElement.getId());
         panelElement.append(ensureContent(activeIndex));
     }
 
