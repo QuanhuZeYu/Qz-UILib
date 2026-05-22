@@ -9,7 +9,7 @@
 
 ## 审查方法
 
-- 先阅读 `docs/AI记忆文档.md`、`docs/使用文档/README.md`、`docs/开放化调整.md`、`docs/审查报告.md` 与既有审查结论，明确项目自述边界。
+- 先阅读 `docs/AI记忆文档.md`、`docs/使用文档/README.md`、`docs/开发者文档/开放化调整.md`、`docs/开发者文档/reviews/README.md` 与既有审查结论，明确项目自述边界。
 - 逐项核对 `UiDocumentScreens`、`UiDiagnosticsScreens`、`UiHudDocumentHost`、`UiHostInputCoordinator`、`MixinGuiScreenKeyboardIsolation`、`QzUiLibClientCommand` 等关键入口与链路实现。
 - 结合 `UiDocumentScreensTest`、`UiHudDocumentHostTest`、`QzUiLibClientCommandTest` 等测试，判断现有结论属于“代码已证明”还是“文档描述更乐观”。
 
@@ -107,7 +107,7 @@
 ### 9. 宿主图片能力对运行时适配器透传存在强依赖，当前更像条件成立时可用，而不是天然稳固能力
 
 - 参考位置：`src/main/java/club/heiqi/uilib/ui/runtime/UiRuntimeAdapters.java`、`src/main/java/club/heiqi/uilib/ui/dom/control/DocumentHostImageControl.java`
-- 历史问题：`docs/errors/ERROR-20260509-screen-context-missing-runtime-adapters.md`
+- 历史问题：`docs/开发者文档/errors/ERROR-20260509-screen-context-missing-runtime-adapters.md`
 - 现状：文档把 `DocumentHostImageControl` 描述成“像 `img` 一样挂到文档中”的宿主图片能力。
 - 代码事实：控件本身只是在元素内容区调用 `context.drawHostImage(...)`；真正能否画出 Minecraft 物品或贴图，完全依赖 `UiRuntimeAdapters` 是否沿宿主链路完整透传到 `UiRenderContext`。
 - 结论：这项能力在默认宿主链路正确时可用，但其成立前提比文档直觉更强，而且项目已经出现过一次因适配器丢失导致页面图片整体缺失的回归。
