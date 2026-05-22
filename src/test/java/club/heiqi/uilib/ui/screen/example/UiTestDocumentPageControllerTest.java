@@ -338,6 +338,7 @@ public class UiTestDocumentPageControllerTest {
         private boolean openListElementDragCalled;
         private boolean openAnimationCapabilityShowcaseCalled;
         private boolean openUiFrameworkStructureAuditCalled;
+        private boolean openRuntimeSelfTestCalled;
 
         @Override
         public void openLayoutDiagnostics() {
@@ -381,6 +382,11 @@ public class UiTestDocumentPageControllerTest {
         @Override
         public void openUiFrameworkStructureAudit() {
             openUiFrameworkStructureAuditCalled = true;
+        }
+
+        @Override
+        public void openRuntimeSelfTest() {
+            openRuntimeSelfTestCalled = true;
         }
     }
 

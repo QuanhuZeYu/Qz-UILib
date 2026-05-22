@@ -49,4 +49,9 @@ public interface UiTestMenuModel {
      * 打开 UI 框架结构审查展示子页。
      */
     void openUiFrameworkStructureAudit();
+
+    /**
+     * 打开运行时自检子页。
+     */
+    void openRuntimeSelfTest();
 }

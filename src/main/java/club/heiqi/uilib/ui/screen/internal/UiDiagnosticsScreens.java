@@ -183,6 +183,22 @@ public final class UiDiagnosticsScreens {
     }
 
     /**
+     * 创建运行时自检页。
+     */
+    static GuiScreen createRuntimeSelfTest() {
+        return createRuntimeSelfTest(UiDocumentScreens.DocumentScreenEnvironment.minecraftFormattedDefaults());
+    }
+
+    /**
+     * 基于显式环境创建运行时自检页。
+     */
+    static GuiScreen createRuntimeSelfTest(UiDocumentScreens.DocumentScreenEnvironment environment) {
+        return InternalHostedScreenFactory.createScreen(
+                InternalDiagnosticScreenRegistry.RUNTIME_SELF_TEST_DEFINITION,
+                Objects.requireNonNull(environment, "environment"), null);
+    }
+
+    /**
      * 判断界面是否为诊断菜单。
      */
     public static boolean isUiTest(GuiScreen screen) {
@@ -222,6 +238,11 @@ public final class UiDiagnosticsScreens {
     public static boolean isUiFrameworkStructureAudit(Object screen) {
         return InternalScreenIdentity.hasPageId(screen,
                 InternalDiagnosticScreenRegistry.uiFrameworkStructureAuditPageId());
+    }
+
+    public static boolean isRuntimeSelfTest(Object screen) {
+        return InternalScreenIdentity.hasPageId(screen,
+                InternalDiagnosticScreenRegistry.runtimeSelfTestPageId());
     }
 
     /**
@@ -274,6 +295,11 @@ public final class UiDiagnosticsScreens {
             @Override
             public void openUiFrameworkStructureAudit() {
                 Minecraft.getMinecraft().displayGuiScreen(createUiFrameworkStructureAudit(environment));
+            }
+
+            @Override
+            public void openRuntimeSelfTest() {
+                Minecraft.getMinecraft().displayGuiScreen(createRuntimeSelfTest(environment));
             }
         };
     }

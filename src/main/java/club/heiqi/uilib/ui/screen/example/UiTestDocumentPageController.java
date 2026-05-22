@@ -163,6 +163,7 @@ public final class UiTestDocumentPageController extends DocumentPageController {
         ElementNode thirdRow = appendNavigationRow(document, outer);
         ElementNode fourthRow = appendNavigationRow(document, outer);
         ElementNode fifthRow = appendNavigationRow(document, outer);
+        ElementNode sixthRow = appendNavigationRow(document, outer);
 
         appendNavigationCard(document, firstRow, "布局诊断子页",
                 "继续检查页面壳尺寸、文本测量、滚动区域和运行时统计。", "进入布局诊断页",
@@ -234,6 +235,15 @@ public final class UiTestDocumentPageController extends DocumentPageController {
                     @Override
                     public void onAction(DocumentButtonActionEvent event) {
                         menuModel.openUiFrameworkStructureAudit();
+                    }
+                });
+        appendNavigationCard(document, sixthRow, "运行时自检",
+                "在游戏内对 FontService reload/fallback/并发、ForgeConfigTemplate 冷构造、线程池关停做现场断言。失败立即抛出异常进入崩溃面板。",
+                "进入运行时自检",
+                new DocumentButtonActionHandler() {
+                    @Override
+                    public void onAction(DocumentButtonActionEvent event) {
+                        menuModel.openRuntimeSelfTest();
                     }
                 });
     }

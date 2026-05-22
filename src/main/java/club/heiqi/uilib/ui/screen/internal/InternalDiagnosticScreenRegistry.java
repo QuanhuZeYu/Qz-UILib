@@ -10,6 +10,7 @@ import club.heiqi.uilib.ui.screen.example.UiAnimationCapabilityShowcaseDocumentP
 import club.heiqi.uilib.ui.screen.example.UiFontPerformanceBaselineDocumentPageController;
 import club.heiqi.uilib.ui.screen.example.UiFrameworkStructureAuditDocumentPageController;
 import club.heiqi.uilib.ui.screen.example.UiLayoutDiagnosticsDocumentPageController;
+import club.heiqi.uilib.ui.screen.example.UiRuntimeSelfTestDocumentPageController;
 import club.heiqi.uilib.ui.screen.example.UiTestDocumentPageController;
 import club.heiqi.uilib.ui.screen.example.UiTestMenuModel;
 import club.heiqi.uilib.ui.screen.page.DocumentPageAuthoringSurface;
@@ -48,6 +49,8 @@ public final class InternalDiagnosticScreenRegistry {
             "animation_capability_showcase");
     public static final InternalScreenIdentity.PageDescriptor UI_FRAMEWORK_STRUCTURE_AUDIT = new InternalScreenIdentity.PageDescriptor(
             "ui_framework_structure_audit");
+    public static final InternalScreenIdentity.PageDescriptor RUNTIME_SELF_TEST = new InternalScreenIdentity.PageDescriptor(
+            "runtime_self_test");
 
     public static final InternalHostedScreenFactory.InternalHostedScreenDefinition<UiTestMenuModel> UI_TEST_DEFINITION = new InternalHostedScreenFactory.InternalHostedScreenDefinition<UiTestMenuModel>(
             UI_TEST,
@@ -181,6 +184,19 @@ public final class InternalDiagnosticScreenRegistry {
                     return new UiFrameworkStructureAuditDocumentPageController(documentUi, documentPage);
                 }
             });
+    public static final InternalHostedScreenFactory.InternalHostedScreenDefinition<Void> RUNTIME_SELF_TEST_DEFINITION = new InternalHostedScreenFactory.InternalHostedScreenDefinition<Void>(
+            RUNTIME_SELF_TEST,
+            DocumentScreenChrome::resolve,
+            new InternalHostedScreenFactory.InternalDocumentPageControllerFactory<Void>() {
+                @Override
+                public DocumentPageController create(DocumentUiScope documentUi,
+                        DocumentPageAuthoringSurface documentPage,
+                        DocumentPageRuntimeView runtimeView,
+                        String pageId,
+                        Void provision) {
+                    return new UiRuntimeSelfTestDocumentPageController(documentUi, documentPage);
+                }
+            });
 
     private InternalDiagnosticScreenRegistry() {}
 
@@ -222,5 +238,9 @@ public final class InternalDiagnosticScreenRegistry {
 
     public static String uiFrameworkStructureAuditPageId() {
         return UI_FRAMEWORK_STRUCTURE_AUDIT.getPageId();
+    }
+
+    public static String runtimeSelfTestPageId() {
+        return RUNTIME_SELF_TEST.getPageId();
     }
 }
