@@ -8,3 +8,4 @@
 
 - `inventory-overview-tooltip.md`：`inventory_overview` 背包概览示例页的 tooltip 专项规格。
 - `settings-form-controls-plan.md`：设置页核心控件（Checkbox、Radio、Slider、Tab）实现计划与 API 形状。
+- `network-layer-plan.md`：4.1LTS 网络层（Channel + Fetch + Store 三层 API + Vanilla mixin 适配器 + Forge 兼容适配器）实验性方案。
