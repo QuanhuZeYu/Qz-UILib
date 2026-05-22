@@ -21,6 +21,7 @@ import club.heiqi.uilib.ui.event.UiKeyEvent;
 import club.heiqi.uilib.ui.paint.DocumentCustomRenderer;
 import club.heiqi.uilib.ui.render.UiRenderContext;
 import club.heiqi.uilib.ui.style.props.UiBorderStyle;
+import club.heiqi.uilib.ui.style.props.UiCursor;
 import club.heiqi.uilib.ui.style.props.UiDisplay;
 import club.heiqi.uilib.ui.style.props.UiFlexDirection;
 import club.heiqi.uilib.ui.style.props.UiJustifyContent;
@@ -267,7 +268,8 @@ public final class DocumentTextAreaControl {
                 .setBorderRadius(UiStyleLength.px(4))
                 .setOverflowX(UiOverflow.AUTO)
                 .setOverflowY(UiOverflow.AUTO)
-                .setTextColor(textColor);
+                .setTextColor(textColor)
+                .setCursor(UiCursor.TEXT);
         selectionLayer.setAttribute("data-hit-test-hidden", "true");
         selectionLayer.style()
                 .setPosition(UiPosition.ABSOLUTE)
@@ -485,7 +487,8 @@ public final class DocumentTextAreaControl {
         element.style()
                 .setBackgroundColor(backgroundColor)
                 .setBorderColor(borderColor)
-                .setTextColor(enabled ? textColor : disabledTextColor);
+                .setTextColor(enabled ? textColor : disabledTextColor)
+                .setCursor(enabled ? UiCursor.TEXT : UiCursor.NOT_ALLOWED);
     }
 
     private boolean replaceSelection(String replacement, boolean fireChange) {

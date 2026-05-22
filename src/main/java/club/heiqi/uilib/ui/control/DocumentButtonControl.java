@@ -16,6 +16,7 @@ import club.heiqi.uilib.ui.dom.UiDocument;
 import club.heiqi.uilib.ui.event.UiKeyEvent;
 import club.heiqi.uilib.ui.style.props.UiAlignItems;
 import club.heiqi.uilib.ui.style.props.UiBorderStyle;
+import club.heiqi.uilib.ui.style.props.UiCursor;
 import club.heiqi.uilib.ui.style.props.UiDisplay;
 import club.heiqi.uilib.ui.style.props.UiJustifyContent;
 import club.heiqi.uilib.ui.style.props.UiOverflow;
@@ -188,6 +189,7 @@ public final class DocumentButtonControl {
                 .setBorderStyle(UiBorderStyle.SOLID)
                 .setBorderRadius(UiStyleLength.px(999))
                 .setTextColor(textColor)
+                .setCursor(UiCursor.POINTER)
                 .setOverflowX(UiOverflow.HIDDEN)
                 .setOverflowY(UiOverflow.HIDDEN);
         labelElement.style()
@@ -287,7 +289,8 @@ public final class DocumentButtonControl {
         element.style()
                 .setBackgroundColor(backgroundColor)
                 .setBorderColor(focusVisible ? focusBorderColor : 0)
-                .setTextColor(resolvedTextColor);
+                .setTextColor(resolvedTextColor)
+                .setCursor(enabled ? UiCursor.POINTER : UiCursor.NOT_ALLOWED);
     }
 
     private static boolean isActivationKey(int keyCode) {

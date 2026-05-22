@@ -21,6 +21,7 @@ import club.heiqi.uilib.ui.event.UiKeyEvent;
 import club.heiqi.uilib.ui.image.HostImageSource;
 import club.heiqi.uilib.ui.slot.SlotContentSnapshot;
 import club.heiqi.uilib.ui.style.props.UiBorderStyle;
+import club.heiqi.uilib.ui.style.props.UiCursor;
 import club.heiqi.uilib.ui.style.props.UiDisplay;
 import club.heiqi.uilib.ui.style.props.UiOverflow;
 import club.heiqi.uilib.ui.style.props.UiPosition;
@@ -303,6 +304,7 @@ public final class DocumentSlotControl {
                 .setAttribute("tabindex", "0")
                 .setAttribute("data-slot-control", "true")
                 .setFocusable(true);
+        element.style().setCursor(UiCursor.POINTER);
     }
 
     private void appendContentImage() {

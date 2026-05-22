@@ -13,6 +13,7 @@ import club.heiqi.uilib.ui.dom.UiDocument;
 import club.heiqi.uilib.ui.event.UiKeyEvent;
 import club.heiqi.uilib.ui.style.props.UiAlignItems;
 import club.heiqi.uilib.ui.style.props.UiBorderStyle;
+import club.heiqi.uilib.ui.style.props.UiCursor;
 import club.heiqi.uilib.ui.style.props.UiDisplay;
 import club.heiqi.uilib.ui.style.props.UiFlexDirection;
 import club.heiqi.uilib.ui.style.props.UiJustifyContent;
@@ -217,6 +218,7 @@ public final class DocumentToggleSwitchControl {
                 .setBorderStyle(UiBorderStyle.SOLID)
                 .setBorderRadius(UiStyleLength.px(999))
                 .setBackgroundColor(trackOffColor)
+                .setCursor(UiCursor.POINTER)
                 .setOverflowX(UiOverflow.HIDDEN)
                 .setOverflowY(UiOverflow.HIDDEN);
         thumb.style()
@@ -304,6 +306,7 @@ public final class DocumentToggleSwitchControl {
         element.style()
                 .setBackgroundColor(trackColor)
                 .setBorderColor(focusVisible ? focusBorderColor : 0)
+                .setCursor(enabled ? UiCursor.POINTER : UiCursor.NOT_ALLOWED)
                 .setJustifyContent(toggled ? UiJustifyContent.END : UiJustifyContent.START);
         element.setAttribute("aria-checked", String.valueOf(toggled));
         thumb.style().setBackgroundColor(resolvedThumbColor);

@@ -15,6 +15,7 @@ import club.heiqi.uilib.ui.event.UiKeyEvent;
 import club.heiqi.uilib.ui.paint.DocumentCustomRenderer;
 import club.heiqi.uilib.ui.style.props.UiAlignItems;
 import club.heiqi.uilib.ui.style.props.UiBorderStyle;
+import club.heiqi.uilib.ui.style.props.UiCursor;
 import club.heiqi.uilib.ui.style.props.UiDisplay;
 import club.heiqi.uilib.ui.style.props.UiJustifyContent;
 import club.heiqi.uilib.ui.style.props.UiOverflow;
@@ -251,6 +252,7 @@ public final class DocumentTextInputControl {
                 .setBorderStyle(UiBorderStyle.SOLID)
                 .setBorderRadius(UiStyleLength.px(4))
                 .setTextColor(textColor)
+                .setCursor(UiCursor.TEXT)
                 .setOverflowX(UiOverflow.HIDDEN)
                 .setOverflowY(UiOverflow.HIDDEN);
         textElement.style()
@@ -341,7 +343,8 @@ public final class DocumentTextInputControl {
         }
         element.style()
                 .setBackgroundColor(backgroundColor)
-                .setBorderColor(borderColor);
+                .setBorderColor(borderColor)
+                .setCursor(enabled ? UiCursor.TEXT : UiCursor.NOT_ALLOWED);
         syncText();
     }
 

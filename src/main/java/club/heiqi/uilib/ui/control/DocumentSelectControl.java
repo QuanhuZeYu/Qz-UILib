@@ -15,6 +15,7 @@ import club.heiqi.uilib.ui.event.UiKeyEvent;
 import club.heiqi.uilib.ui.style.props.UiAlignItems;
 import club.heiqi.uilib.ui.style.props.UiBoxSizing;
 import club.heiqi.uilib.ui.style.props.UiBorderStyle;
+import club.heiqi.uilib.ui.style.props.UiCursor;
 import club.heiqi.uilib.ui.style.props.UiDisplay;
 import club.heiqi.uilib.ui.style.props.UiFlexDirection;
 import club.heiqi.uilib.ui.style.props.UiJustifyContent;
@@ -198,6 +199,7 @@ public final class DocumentSelectControl {
                 .setBorderWidth(UiStyleLength.px(1))
                 .setBorderStyle(UiBorderStyle.SOLID)
                 .setBorderRadius(UiStyleLength.px(4))
+                .setCursor(UiCursor.POINTER)
                 .setOverflowX(UiOverflow.VISIBLE)
                 .setOverflowY(UiOverflow.VISIBLE)
                 .setTextColor(textColor);
@@ -241,6 +243,7 @@ public final class DocumentSelectControl {
                     .setJustifyContent(UiJustifyContent.START)
                     .setWidth(UiStyleLength.percent(1.0F))
                     .setHeight(UiStyleLength.px(DEFAULT_OPTION_HEIGHT))
+                    .setCursor(UiCursor.POINTER)
                     .setPadding(UiStyleLength.px(8));
             option.setClickHandler(new DocumentElementClickHandler() {
                 @Override
@@ -393,6 +396,7 @@ public final class DocumentSelectControl {
         element.style()
                 .setBackgroundColor(backgroundColor)
                 .setBorderColor(borderColor)
+                .setCursor(enabled ? UiCursor.POINTER : UiCursor.NOT_ALLOWED)
                 .setTextColor(resolvedTextColor);
         labelElement.style().setTextColor(resolvedTextColor);
         arrowElement.style().setTextColor(enabled ? mutedTextColor : disabledTextColor);
@@ -414,6 +418,7 @@ public final class DocumentSelectControl {
             optionElements[index].style()
                     .setBackgroundColor(enabled ? (selected ? selectedOptionBackgroundColor : optionBackgroundColor)
                             : disabledBackgroundColor)
+                    .setCursor(enabled ? UiCursor.POINTER : UiCursor.NOT_ALLOWED)
                     .setTextColor(enabled ? (selected ? textColor : mutedTextColor) : disabledTextColor);
         }
     }
