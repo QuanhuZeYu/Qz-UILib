@@ -19,6 +19,7 @@
 6. [Forge 配置模板](02-控件/Forge配置模板.md)
 7. [Minecraft 界面入口](03-宿主集成/Minecraft界面入口.md)
 8. [指令触发方案](04-诊断入口/指令触发方案.md)
+9. [v4.x LTS 稳定 API 清单](v4.x-LTS-稳定API清单.md)
 
 ## 核心要点
 
