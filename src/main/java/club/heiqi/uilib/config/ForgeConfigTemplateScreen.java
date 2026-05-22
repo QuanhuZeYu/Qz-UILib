@@ -100,6 +100,12 @@ public class ForgeConfigTemplateScreen extends BaseScreen {
         this.textMeasureService = Objects.requireNonNull(textMeasureService, "textMeasureService");
 
         UiDocument document = UiDocument.create();
+        this.documentWidget = new HtmlLikeDocumentWidget(document, 960, 720, this.textMeasureService);
+        this.documentWidget.setViewportRootScrollingEnabled(true);
+        this.documentWidget.setLayoutSpec(new UiLayoutSpec()
+                .setWidth(UiLength.percent(1.0F))
+                .setHeight(UiLength.percent(1.0F)));
+
         this.saveButton = createActionButton(document, spec.getTextSet().saveButtonLabel,
                 spec.getTheme().primaryButtonColor, spec.getTheme().primaryButtonActiveColor,
                 spec.getTheme().disabledButtonColor);
@@ -115,11 +121,6 @@ public class ForgeConfigTemplateScreen extends BaseScreen {
 
         configureActionButtons();
         this.statusText = buildDocument(document);
-        this.documentWidget = new HtmlLikeDocumentWidget(document, 960, 720, this.textMeasureService);
-        this.documentWidget.setViewportRootScrollingEnabled(true);
-        this.documentWidget.setLayoutSpec(new UiLayoutSpec()
-                .setWidth(UiLength.percent(1.0F))
-                .setHeight(UiLength.percent(1.0F)));
         refreshStatusText(null);
     }
 
@@ -162,9 +163,10 @@ public class ForgeConfigTemplateScreen extends BaseScreen {
         return binding instanceof TextPropertyBinding ? ((TextPropertyBinding) binding).getControl() : null;
     }
 
-    DocumentButtonControl getFontSortOpenButtonForTesting(String categoryName, String propertyName) {
+    ElementNode getFontSortOrderElementForTesting(String categoryName, String propertyName) {
         PropertyBinding binding = bindingsByKey.get(buildBindingKey(categoryName, propertyName));
-        return binding instanceof FontSortPropertyBinding ? ((FontSortPropertyBinding) binding).getOpenButton() : null;
+        return binding instanceof FontSortPropertyBinding ? ((FontSortPropertyBinding) binding)
+                .getFontSortOrderElementForTesting() : null;
     }
 
     String getStatusText() {
@@ -1496,55 +1498,42 @@ public class ForgeConfigTemplateScreen extends BaseScreen {
     final class FontSortPropertyBinding extends PropertyBinding {
 
         private final List<String> draftOrder = new ArrayList<String>();
-        private final DocumentButtonControl openButton;
-        private final TextNode summaryText;
+        private final FontSortOrderControl orderControl;
 
         FontSortPropertyBinding(UiDocument document, CategorySpec categorySpec, Property property) {
             super(document, categorySpec, property);
 
             ElementNode editor = document.div();
+            editor.setAttribute("data-config-control", "font-sort");
             editor.style()
                     .setDisplay(UiDisplay.FLEX)
                     .setFlexDirection(UiFlexDirection.COLUMN)
                     .setRowGap(UiStyleLength.px(8));
 
-            ElementNode summary = document.div();
-            summary.style()
-                    .setPadding(UiStyleLength.px(10))
-                    .setBackgroundColor(0xFF0F172A)
-                    .setBorderColor(0xFF334155)
-                    .setBorderWidth(UiStyleLength.px(1))
-                    .setBorderRadius(UiStyleLength.px(12))
-                    .setTextColor(0xFFBAE6FD)
-                    .setOverflowX(UiOverflow.HIDDEN)
-                    .setOverflowY(UiOverflow.HIDDEN);
-            this.summaryText = summary.appendText("");
-            editor.append(summary);
-
-            this.openButton = createActionButton(document, "打开字体排序", spec.getTheme().primaryButtonColor,
-                    spec.getTheme().primaryButtonActiveColor, spec.getTheme().disabledButtonColor);
-            this.openButton.getElement().setAttribute("data-config-control", "font-sort-open");
-            this.openButton.getElement().style().setWidth(UiStyleLength.percent(1.0F));
-            this.openButton.setActionHandler(new DocumentButtonActionHandler() {
-                @Override
-                public void onAction(DocumentButtonActionEvent event) {
-                    openFontSortScreen();
-                }
-            });
-            editor.append(openButton.getElement());
+            final FontSortPropertyBinding binding = this;
+            this.orderControl = new FontSortOrderControl(document, documentWidget,
+                    FontSortOrderControl.toItemList(property.getStringList()),
+                    new FontSortOrderControl.FontSortOrderChangeListener() {
+                        @Override
+                        public void onOrderChanged(List<String> orderedItems) {
+                            binding.applyDraftOrder(orderedItems);
+                            requestStatusRefresh();
+                        }
+                    });
+            editor.append(orderControl.getElement());
 
             restoreCurrentValue();
             initializeCard(document, editor);
         }
 
-        DocumentButtonControl getOpenButton() {
-            return openButton;
+        ElementNode getFontSortOrderElementForTesting() {
+            return orderControl.getElement();
         }
 
         @Override
         protected String buildHelperText() {
             String inherited = super.buildHelperText();
-            String suffix = "字体排序已改为二级页面编辑：拖拽字体行或直接输入目标序号调整顺序。";
+            String suffix = "拖拽字体行或直接输入目标序号调整顺序。";
             return inherited.isEmpty() ? suffix : inherited + " " + suffix;
         }
 
@@ -1555,12 +1544,12 @@ public class ForgeConfigTemplateScreen extends BaseScreen {
 
         @Override
         public void restoreCurrentValue() {
-            setDraftOrder(FontSortOrderControl.toItemList(getProperty().getStringList()));
+            applyToControl(FontSortOrderControl.toItemList(getProperty().getStringList()));
         }
 
         @Override
         public void restoreDefaultValue() {
-            setDraftOrder(FontSortOrderControl.toItemList(getProperty().getDefaults()));
+            applyToControl(FontSortOrderControl.toItemList(getProperty().getDefaults()));
         }
 
         @Override
@@ -1573,36 +1562,14 @@ public class ForgeConfigTemplateScreen extends BaseScreen {
             getProperty().set(toDraftArray());
         }
 
-        private void openFontSortScreen() {
-            final FontSortPropertyBinding binding = this;
-            UiScreenManager.getInstance().enqueue(new Runnable() {
-                @Override
-                public void run() {
-                    Minecraft minecraft = Minecraft.getMinecraft();
-                    if (minecraft != null) {
-                        minecraft.displayGuiScreen(new FontSortScreen(getOwnerScreen(), binding.getDraftOrderSnapshot(),
-                                new FontSortScreen.FontSortDraftSink() {
-                                    @Override
-                                    public void onFontSortDraftChanged(List<String> orderedItems) {
-                                        binding.setDraftOrder(orderedItems);
-                                        requestStatusRefresh();
-                                    }
-                                }, new FontSortScreen.FontSortSaveHandler() {
-                                    @Override
-                                    public void onFontSortSaveRequested() {
-                                        getOwnerScreen().saveDraft();
-                                    }
-                                }, getOwnerScreen().getTextMeasureService()));
-                    }
-                }
-            });
+        private void applyToControl(List<String> updatedOrder) {
+            applyDraftOrder(updatedOrder);
+            if (orderControl != null) {
+                orderControl.setItems(new ArrayList<String>(draftOrder));
+            }
         }
 
-        private List<String> getDraftOrderSnapshot() {
-            return new ArrayList<String>(draftOrder);
-        }
-
-        private void setDraftOrder(List<String> updatedOrder) {
+        private void applyDraftOrder(List<String> updatedOrder) {
             draftOrder.clear();
             if (updatedOrder != null) {
                 for (String item : updatedOrder) {
@@ -1612,12 +1579,6 @@ public class ForgeConfigTemplateScreen extends BaseScreen {
                     }
                 }
             }
-            updateSummaryText();
-        }
-
-        private void updateSummaryText() {
-            summaryText.setText("当前字体数量：" + draftOrder.size() + "。优先级："
-                    + FontSortOrderControl.summarizeItems(draftOrder, 5));
         }
 
         private String[] toDraftArray() {

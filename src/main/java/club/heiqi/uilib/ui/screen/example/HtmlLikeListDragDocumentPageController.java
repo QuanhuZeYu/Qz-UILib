@@ -22,6 +22,7 @@ import club.heiqi.uilib.ui.layout.UiLayoutSpec;
 import club.heiqi.uilib.ui.layout.UiLength;
 import club.heiqi.uilib.ui.style.props.UiAlignItems;
 import club.heiqi.uilib.ui.style.props.UiBorderStyle;
+import club.heiqi.uilib.ui.style.props.UiCursor;
 import club.heiqi.uilib.ui.style.props.UiDisplay;
 import club.heiqi.uilib.ui.style.props.UiFlexDirection;
 import club.heiqi.uilib.ui.style.props.UiJustifyContent;
@@ -208,7 +209,8 @@ public final class HtmlLikeListDragDocumentPageController extends DocumentPageCo
                     .setBorderStyle(UiBorderStyle.SOLID)
                     .setBorderRadius(UiStyleLength.px(12))
                     .setOpacity(item.equals(draggingItem) ? 0.62F : 1.0F)
-                    .setTextColor(0xFFEAF1FF);
+                    .setTextColor(0xFFEAF1FF)
+                    .setCursor(UiCursor.MOVE);
 
             ElementNode handle = document.div();
             handle.style()

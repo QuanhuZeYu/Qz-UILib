@@ -30,6 +30,7 @@ import club.heiqi.uilib.ui.event.UiKeyEvent;
 import club.heiqi.uilib.ui.layout.DocumentLayoutBox;
 import club.heiqi.uilib.ui.layout.DocumentLayoutEngine;
 import club.heiqi.uilib.ui.style.props.UiAlignItems;
+import club.heiqi.uilib.ui.style.props.UiCursor;
 import club.heiqi.uilib.ui.style.props.UiDisplay;
 import club.heiqi.uilib.ui.style.props.UiFlexDirection;
 import club.heiqi.uilib.ui.style.props.UiJustifyContent;
@@ -513,7 +514,8 @@ final class FontSortOrderControl {
                 .setBorderWidth(UiStyleLength.px(1))
                 .setBorderRadius(UiStyleLength.px(10))
                 .setOpacity(item.equals(draggingItem) ? 0.62F : 1.0F)
-                .setTextColor(0xFFEAF1FF);
+                .setTextColor(0xFFEAF1FF)
+                .setCursor(dragEnabled ? UiCursor.MOVE : UiCursor.DEFAULT);
 
         row.append(createHandle(item, dragEnabled));
         OrdinalBadge ordinalBadge = createOrdinalBadge(globalIndex);
@@ -534,7 +536,8 @@ final class FontSortOrderControl {
         row.element.style()
                 .setBackgroundColor(item.equals(draggingItem) ? 0xFF1D4ED8 : 0xFF1E293B)
                 .setBorderColor(item.equals(draggingItem) ? 0xFFBFDBFE : 0xFF475569)
-                .setOpacity(item.equals(draggingItem) ? 0.62F : 1.0F);
+                .setOpacity(item.equals(draggingItem) ? 0.62F : 1.0F)
+                .setCursor(dragEnabled ? UiCursor.MOVE : UiCursor.DEFAULT);
         row.ordinalText.setText("#" + (globalIndex + 1));
         row.orderInput.setPlaceholder(String.valueOf(globalIndex + 1));
         row.orderInput.setText("");
@@ -750,8 +753,9 @@ final class FontSortOrderControl {
         if (event == null) {
             return 0;
         }
+        int rootScrollTop = documentWidget.getScrollTop(document.getRootElement());
+        int documentY = event.getDocumentY() + rootScrollTop;
         if (!cachedRowMiddleYs.isEmpty()) {
-            int documentY = event.getDocumentY();
             for (int index = 0; index < cachedRowMiddleYs.size(); index++) {
                 if (documentY < cachedRowMiddleYs.get(index).intValue()) {
                     return index;
@@ -765,7 +769,6 @@ final class FontSortOrderControl {
         if (listBox == null || listBox.getChildren().isEmpty()) {
             return 0;
         }
-        int documentY = event.getDocumentY();
         List<DocumentLayoutBox> itemBoxes = listBox.getChildren();
         for (int index = 0; index < itemBoxes.size(); index++) {
             DocumentLayoutBox itemBox = itemBoxes.get(index);

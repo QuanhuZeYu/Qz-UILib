@@ -30,6 +30,7 @@ public class ModConfigGui extends ForgeConfigTemplateScreen {
                         Config.saveAndReload();
                     }
                 })
+                .addPropertyEditorFactory(new FontSortPropertyEditorFactory())
                 .addCategory(new CategorySpec(Config.GENERAL)
                         .setTitle("General")
                         .setDescription("基础运行开关、界面调试显示与通用行为配置。"))

@@ -374,10 +374,6 @@ public final class UiStyleResolver {
         if (isLinkElement(element) && !hasDeclaredProperty(inlineStyle, matchingRules, UiStyleProperty.CURSOR)) {
             cursor = UiCursor.POINTER;
         }
-        if (isDraggableElement(element)
-                && !hasDeclaredProperty(inlineStyle, matchingRules, UiStyleProperty.CURSOR)) {
-            cursor = UiCursor.POINTER;
-        }
         if (isListItemElement(element) && isInsideListContainer(element)
                 && listStyleType != UiListStyleType.NONE
                 && !hasDeclaredProperty(inlineStyle, matchingRules, UiStyleProperty.PADDING)) {
@@ -515,13 +511,6 @@ public final class UiStyleResolver {
 
     private static boolean isLinkElement(ElementNode element) {
         return isAnchorElement(element) && hasLinkHref(element);
-    }
-
-    private static boolean isDraggableElement(ElementNode element) {
-        if (element == null) {
-            return false;
-        }
-        return "true".equals(element.getAttribute("draggable"));
     }
 
     private static boolean isListItemElement(ElementNode element) {
