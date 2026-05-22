@@ -124,8 +124,8 @@ public final class UiRuntimeSelfTestDocumentPageController extends DocumentPageC
                         runFontServiceReloadDebounce();
                     }
                 });
-        registerEntry(root, "FontService 并发 reload",
-                "4 个线程并发调用 reload(...)，应能正常返回，且不会让 isReloading 卡死。", new SelfTestRunnable() {
+        registerEntry(root, "FontService 异步 reload 拦截",
+                "4 个 worker 线程并发调用 reload(...)，应全部被丢弃；主线程 reload 不受影响。", new SelfTestRunnable() {
                     @Override
                     public void run() {
                         runFontServiceConcurrentReload();
@@ -275,13 +275,20 @@ public final class UiRuntimeSelfTestDocumentPageController extends DocumentPageC
     }
 
     /**
-     * Test 2：并发 reload。
+     * Test 2：异步线程 reload 拦截。
+     *
+     * <p>4 个 worker 线程并发调用 reload，应全部被 FontService 在线程归属检查阶段丢弃；
+     * 主线程在测试前后再 reload 一次以确认主线程路径仍可用。整个过程不应抛出任何异常，
+     * 也不应触发 GL 资源释放（之前真机会抛 "No context is current"）。</p>
      */
     private void runFontServiceConcurrentReload() {
         final FontService fontService = FontService.getInstance();
         if (!fontService.isInitialized()) {
             fontService.initialize();
         }
+        // 主线程先发一次，确认主线程路径活着，并把渲染主线程引用记录下来。
+        fontService.reload(new FontReloadRequest("self-test-concurrent-main-pre"));
+
         final int threadCount = 4;
         final CountDownLatch startGate = new CountDownLatch(1);
         final CountDownLatch finishGate = new CountDownLatch(threadCount);
@@ -295,7 +302,8 @@ public final class UiRuntimeSelfTestDocumentPageController extends DocumentPageC
                 public void run() {
                     try {
                         startGate.await();
-                        fontService.reload(new FontReloadRequest("self-test-concurrent-" + taskId));
+                        // 异步线程的 reload 会被 FontService 丢弃；该调用不应抛异常。
+                        fontService.reload(new FontReloadRequest("self-test-concurrent-worker-" + taskId));
                     } catch (Throwable throwable) {
                         failureCount.incrementAndGet();
                         synchronized (failures) {
@@ -311,11 +319,11 @@ public final class UiRuntimeSelfTestDocumentPageController extends DocumentPageC
         try {
             if (!finishGate.await(5L, TimeUnit.SECONDS)) {
                 pool.shutdownNow();
-                throw new IllegalStateException("FontService 并发 reload 5 秒内未全部返回（threadCount=" + threadCount + "）");
+                throw new IllegalStateException("FontService 异步 reload 拦截 5 秒内未全部返回（threadCount=" + threadCount + "）");
             }
         } catch (InterruptedException exception) {
             Thread.currentThread().interrupt();
-            throw new IllegalStateException("FontService 并发 reload 被打断", exception);
+            throw new IllegalStateException("FontService 异步 reload 拦截被打断", exception);
         } finally {
             pool.shutdown();
         }
@@ -324,8 +332,10 @@ public final class UiRuntimeSelfTestDocumentPageController extends DocumentPageC
             synchronized (failures) {
                 first = failures.isEmpty() ? null : failures.get(0);
             }
-            throw new IllegalStateException("FontService 并发 reload 出现 " + failureCount.get() + " 个错误", first);
+            throw new IllegalStateException("FontService 异步 reload 出现 " + failureCount.get() + " 个错误", first);
         }
+        // 主线程再发一次，确认拦截没有把主线程通道一起破坏。
+        fontService.reload(new FontReloadRequest("self-test-concurrent-main-post"));
     }
 
     /**

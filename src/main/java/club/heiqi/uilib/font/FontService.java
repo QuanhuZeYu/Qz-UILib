@@ -31,6 +31,14 @@ public class FontService {
 
     private final AtomicBoolean initialized = new AtomicBoolean(false);
     private final AtomicBoolean layoutRuntimeReady = new AtomicBoolean(false);
+    /**
+     * 渲染主线程引用。
+     *
+     * <p>{@link #reload(FontReloadRequest)} 内部会调用 {@link #clearRenderResources()} 直接释放 GL
+     * 资源（VAO / VBO / shader program），这些 GL 调用必须在持有 OpenGL context 的渲染主线程上执行。
+     * 由 {@link #tickMainThread(int)} 首次调用时填充，之后所有 reload 请求都按这一引用做线程归属判断。</p>
+     */
+    private volatile Thread renderThread;
     private final FontCatalog fontCatalog = new FontCatalog();
     private final FontRegistry fontRegistry = new FontRegistry(fontCatalog);
     private final DerivedFontCache derivedFontCache = new DerivedFontCache(fontCatalog);
@@ -44,6 +52,7 @@ public class FontService {
     private final Deque<Long> drawStageUploadTimestamps = new ArrayDeque<Long>();
     private final FontReloadDebouncer reloadDebouncer = new FontReloadDebouncer(150L, 750L);
     private final AtomicReference<ReloadState> reloadState = new AtomicReference<ReloadState>(ReloadState.RUNNING);
+    private static final AtomicBoolean NON_RENDER_THREAD_RELOAD_LOGGED = new AtomicBoolean(false);
 
     private long lastDrawStageUploadAt = 0L;
     private volatile int runtimeVersion;
@@ -122,9 +131,22 @@ public class FontService {
     /**
      * 重新加载字体系统基础状态。
      *
+     * <p>该方法会在主线程上释放 GL 资源（{@link #clearRenderResources()}）并重建调度器，因此只允许
+     * 在渲染主线程调用。其他线程（包括字体生成 worker、远程图片下载线程、自定义模组线程）发起的
+     * reload 会被静默丢弃并产生一次性 debug 日志，避免在 worker 线程里直接走 OpenGL 路径触发
+     * "No context is current" 致命崩溃。</p>
+     *
+     * <p>主线程身份在 {@link #tickMainThread(int)} 首次调用时确定。如果在 tickMainThread 之前发起
+     * reload，会通过 {@link Thread#getName()} 兜底匹配 "Client thread" / "Server thread"，匹配失败
+     * 时同样静默丢弃。</p>
+     *
      * @param request 重载请求
      */
     public void reload(FontReloadRequest request) {
+        if (!isCurrentThreadAllowedToReload()) {
+            logNonRenderThreadReloadOnce(request);
+            return;
+        }
         synchronized (this) {
             if (!initialized.get()) {
                 initialize();
@@ -143,9 +165,12 @@ public class FontService {
     /**
      * 刷新字体系统主线程状态。
      *
+     * <p>同时记录渲染主线程引用，供 {@link #reload(FontReloadRequest)} 做线程归属判断。</p>
+     *
      * @param maxUploadCount 本次最多处理的待上传数量
      */
     public void tickMainThread(int maxUploadCount) {
+        captureRenderThreadIfAbsent();
         synchronized (this) {
             if (!initialized.get()) {
                 return;
@@ -416,6 +441,34 @@ public class FontService {
         if (shaderProgram != null) {
             shaderProgram.close();
             shaderProgram = null;
+        }
+    }
+
+    private boolean isCurrentThreadAllowedToReload() {
+        Thread current = Thread.currentThread();
+        Thread captured = renderThread;
+        if (captured == null) {
+            // tickMainThread 还没跑过，按线程名兜底匹配。Forge 1.7.10 下渲染主线程名为 "Client thread"，
+            // 集成服务器为 "Server thread"。其他名称视为异步线程，禁止 reload。
+            String name = current.getName();
+            return name != null && (name.startsWith("Client thread") || name.startsWith("Server thread"));
+        }
+        return current == captured;
+    }
+
+    private void captureRenderThreadIfAbsent() {
+        if (renderThread == null) {
+            renderThread = Thread.currentThread();
+        }
+    }
+
+    private void logNonRenderThreadReloadOnce(FontReloadRequest request) {
+        if (NON_RENDER_THREAD_RELOAD_LOGGED.compareAndSet(false, true)) {
+            MyMod.LOG.warn(
+                    "FontService.reload 已被异步线程调用并被丢弃，避免在 worker 线程释放 GL 资源触发崩溃。"
+                            + " thread={} reason={}",
+                    Thread.currentThread().getName(),
+                    request == null ? "<null>" : request.getReason());
         }
     }
 
