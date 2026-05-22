@@ -1,24 +1,26 @@
 # Qz UILib
 
-面向 Minecraft 1.7.10 / GTNH / LWJGL3ify 环境的 HTML-like UI 框架。
+[English](README.md) | [简体中文](README.zh-CN.md)
 
-## 简介
+An HTML-like UI framework for Minecraft 1.7.10 / GTNH / LWJGL3ify.
 
-Qz UILib 提供类似 Web 的文档式 UI 开发体验：通过 Java API 构建 DOM 树、声明 CSS-like 样式、注册 DOM 事件，由框架负责布局计算、绘制命令生成和 OpenGL 渲染。
+## Overview
 
-核心特性：
+Qz UILib brings a web-like, document-based UI development experience to Minecraft modding. Build DOM trees, declare CSS-like styles and register DOM events through a Java API; the framework handles layout, paint command generation, and OpenGL rendering.
 
-- DOM-like 文档树（`UiDocument` / `ElementNode` / `TextNode`）
-- CSS-like 样式系统（选择器、层叠、伪类、伪元素）
-- Flex / Block / Table / Inline 布局引擎
-- Transition / Keyframe 动画系统
-- 完整 DOM 事件模型（capture → target → bubble）
-- 内建控件（按钮、输入框、文本域、选择器、表格、物品栏槽位等）
-- 自定义字体渲染管线
-- HUD 文档层支持
-- 背景模糊、圆角裁剪、box-shadow 等视觉效果
+Highlights:
 
-## 快速开始
+- DOM-like document tree (`UiDocument` / `ElementNode` / `TextNode`)
+- CSS-like style system (selectors, cascade, pseudo-classes, pseudo-elements)
+- Flex / Block / Table / Inline layout engine
+- Transition / Keyframe animation system
+- Full DOM event model (capture → target → bubble)
+- Built-in controls (buttons, text inputs, text areas, selectors, tables, inventory slots, and more)
+- Custom font rendering pipeline
+- HUD document layer support
+- Backdrop blur, rounded clipping, box-shadow and other visual effects
+
+## Quick Start
 
 ```java
 GuiScreen screen = UiDocumentScreens.createDocumentScreen(document -> {
@@ -36,37 +38,39 @@ GuiScreen screen = UiDocumentScreens.createDocumentScreen(document -> {
 Minecraft.getMinecraft().displayGuiScreen(screen);
 ```
 
-## 环境要求
+## Requirements
 
-- Minecraft 1.7.10 + Forge 10.13.4.1614
-- GTNH 生态（GTNHLib、lwjgl3ify）
-- Java 8 运行时（源码使用 Jabel 支持现代语法）
+- Minecraft 1.7.10 with Forge 10.13.4.1614
+- GTNH ecosystem (GTNHLib, lwjgl3ify)
+- Java 8 runtime (source uses Jabel for modern syntax)
 
-## 文档
+## Documentation
 
-| 文档 | 说明 |
-|------|------|
-| [使用文档](docs/使用文档/README.md) | 面向接入开发者的入门指南、控件、宿主集成 |
-| [开发者文档](docs/开发者文档/README.md) | 面向框架维护者的内部架构、审查、错误记录 |
+| Document | Description |
+|----------|-------------|
+| [Usage Docs (Chinese)](docs/使用文档/README.md) | Onboarding guide, controls and host integration for integrators |
+| [Developer Docs (Chinese)](docs/开发者文档/README.md) | Internal architecture, reviews, and error records for framework maintainers |
 
-完整文档导航见 [docs/README.md](docs/README.md)。
+Full documentation index: [docs/README.md](docs/README.md).
 
-## 构建
+> Note: detailed documentation is currently authored in Simplified Chinese.
 
-```bash
-# 设置 Gradle Home（Windows 中文路径环境必须）
+## Build
+
+```powershell
+# Set Gradle Home (required on Windows when the user path contains non-ASCII characters)
 $env:GRADLE_USER_HOME="D:\.MyApps\.ENV\gradle-home"
 
-# 编译
+# Compile
 ./gradlew.bat compileJava
 
-# 测试
+# Run tests
 ./gradlew.bat test
 
-# 启动客户端
+# Launch the client
 ./gradlew.bat runClient21
 ```
 
-## 许可证
+## License
 
-见 [LICENSE-template](LICENSE-template)。
+See [LICENSE](LICENSE).
