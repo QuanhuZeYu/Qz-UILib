@@ -42,6 +42,9 @@ public final class ShaderProgramSupport {
     /**
      * 编译单个 shader。
      *
+     * <p>失败路径会显式调用 {@code glDeleteShader} 释放已分配的 shader 对象，
+     * 避免 LTS 期间在频繁字体重载或运行时 reload 场景下泄漏 GL 资源。</p>
+     *
      * @param source shader 源码
      * @param shaderType shader 类型
      * @param errorPrefix 失败提示前缀
@@ -49,12 +52,21 @@ public final class ShaderProgramSupport {
      */
     public static int compileShader(String source, int shaderType, String errorPrefix) {
         int shaderId = GL20.glCreateShader(shaderType);
-        GL20.glShaderSource(shaderId, source);
-        GL20.glCompileShader(shaderId);
-        if (GL20.glGetShaderi(shaderId, GL20.GL_COMPILE_STATUS) == GL11.GL_FALSE) {
-            throw new IllegalStateException(errorPrefix + GL20.glGetShaderInfoLog(shaderId, 4096));
+        boolean success = false;
+        try {
+            GL20.glShaderSource(shaderId, source);
+            GL20.glCompileShader(shaderId);
+            if (GL20.glGetShaderi(shaderId, GL20.GL_COMPILE_STATUS) == GL11.GL_FALSE) {
+                String infoLog = GL20.glGetShaderInfoLog(shaderId, 4096);
+                throw new IllegalStateException(errorPrefix + infoLog);
+            }
+            success = true;
+            return shaderId;
+        } finally {
+            if (!success && shaderId != 0) {
+                GL20.glDeleteShader(shaderId);
+            }
         }
-        return shaderId;
     }
 
     /**

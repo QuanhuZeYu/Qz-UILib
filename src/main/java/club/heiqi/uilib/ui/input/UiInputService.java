@@ -10,6 +10,8 @@ import java.util.concurrent.atomic.AtomicBoolean;
 
 import net.minecraft.client.Minecraft;
 
+import org.apache.logging.log4j.LogManager;
+import org.apache.logging.log4j.Logger;
 import org.lwjglx.Sys;
 import org.lwjglx.input.Keyboard;
 import org.lwjglx.input.Mouse;
@@ -29,6 +31,9 @@ import me.eigenraven.lwjgl3ify.api.InputEvents;
 public class UiInputService implements InputEvents.KeyboardListener {
 
     private static final UiInputService INSTANCE = new UiInputService();
+    private static final Logger LOG = LogManager.getLogger("QzUiLib/UiInputService");
+    private static final AtomicBoolean INPUT_FIELD_REFLECTION_LOGGED = new AtomicBoolean(false);
+    private static final AtomicBoolean INPUT_EVENTS_REFLECTION_LOGGED = new AtomicBoolean(false);
     private static final short SDL_KMOD_LSHIFT = 0x0001;
     private static final short SDL_KMOD_RSHIFT = 0x0002;
     private static final short SDL_KMOD_LCTRL = 0x0040;
@@ -326,7 +331,8 @@ public class UiInputService implements InputEvents.KeyboardListener {
         try {
             Field field = instance.getClass().getField(fieldName);
             return field.getInt(instance);
-        } catch (ReflectiveOperationException ignored) {
+        } catch (ReflectiveOperationException exception) {
+            logInputFieldReflectionFailureOnce(fieldName, exception);
             return fallback;
         }
     }
@@ -335,7 +341,8 @@ public class UiInputService implements InputEvents.KeyboardListener {
         try {
             Field field = instance.getClass().getField(fieldName);
             return field.getShort(instance);
-        } catch (ReflectiveOperationException ignored) {
+        } catch (ReflectiveOperationException exception) {
+            logInputFieldReflectionFailureOnce(fieldName, exception);
             return fallback;
         }
     }
@@ -344,8 +351,15 @@ public class UiInputService implements InputEvents.KeyboardListener {
         try {
             Field field = instance.getClass().getField(fieldName);
             return field.getBoolean(instance);
-        } catch (ReflectiveOperationException ignored) {
+        } catch (ReflectiveOperationException exception) {
+            logInputFieldReflectionFailureOnce(fieldName, exception);
             return fallback;
+        }
+    }
+
+    private static void logInputFieldReflectionFailureOnce(String fieldName, ReflectiveOperationException exception) {
+        if (INPUT_FIELD_REFLECTION_LOGGED.compareAndSet(false, true)) {
+            LOG.debug("UILib 输入字段反射读取失败，已降级为 fallback：fieldName={}", fieldName, exception);
         }
     }
 
@@ -408,8 +422,10 @@ public class UiInputService implements InputEvents.KeyboardListener {
         try {
             Method method = InputEvents.class.getMethod(methodName);
             method.invoke(null);
-        } catch (ReflectiveOperationException ignored) {
-            // 当前编译期或运行期实现未提供该方法时直接忽略。
+        } catch (ReflectiveOperationException exception) {
+            if (INPUT_EVENTS_REFLECTION_LOGGED.compareAndSet(false, true)) {
+                LOG.debug("UILib 输入事件方法反射调用失败，当前实现未提供该方法：methodName={}", methodName, exception);
+            }
         }
     }
 }

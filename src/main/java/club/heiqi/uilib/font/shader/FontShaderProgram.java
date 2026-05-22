@@ -200,26 +200,40 @@ public class FontShaderProgram {
     }
 
     private void loadProgram() {
-        int vertexShaderId = ShaderProgramSupport.compileShader(
-                ShaderProgramSupport.readText(getClass(), vertexShaderPath, "读取字体着色器失败: "),
-                GL20.GL_VERTEX_SHADER,
-                "字体着色器编译失败: ");
-        int fragmentShaderId = ShaderProgramSupport.compileShader(
-                ShaderProgramSupport.readText(getClass(), fragmentShaderPath, "读取字体着色器失败: "),
-                GL20.GL_FRAGMENT_SHADER,
-                "字体着色器编译失败: ");
+        int vertexShaderId = 0;
+        int fragmentShaderId = 0;
+        boolean linkedSuccessfully = false;
+        try {
+            vertexShaderId = ShaderProgramSupport.compileShader(
+                    ShaderProgramSupport.readText(getClass(), vertexShaderPath, "读取字体着色器失败: "),
+                    GL20.GL_VERTEX_SHADER,
+                    "字体着色器编译失败: ");
+            fragmentShaderId = ShaderProgramSupport.compileShader(
+                    ShaderProgramSupport.readText(getClass(), fragmentShaderPath, "读取字体着色器失败: "),
+                    GL20.GL_FRAGMENT_SHADER,
+                    "字体着色器编译失败: ");
 
-        GL20.glAttachShader(shaderProgramId, vertexShaderId);
-        GL20.glAttachShader(shaderProgramId, fragmentShaderId);
-        GL20.glBindAttribLocation(shaderProgramId, 0, "pos");
-        GL20.glBindAttribLocation(shaderProgramId, 1, "tex");
-        GL20.glBindAttribLocation(shaderProgramId, 2, "color");
-        GL20.glBindAttribLocation(shaderProgramId, 3, "v_uvBounds");
-        GL20.glBindAttribLocation(shaderProgramId, 4, "v_glyphFlags");
-        ShaderProgramSupport.linkAndValidateProgram(shaderProgramId, "字体着色器链接失败: ", "字体着色器验证失败: ");
-
-        GL20.glDeleteShader(vertexShaderId);
-        GL20.glDeleteShader(fragmentShaderId);
+            GL20.glAttachShader(shaderProgramId, vertexShaderId);
+            GL20.glAttachShader(shaderProgramId, fragmentShaderId);
+            GL20.glBindAttribLocation(shaderProgramId, 0, "pos");
+            GL20.glBindAttribLocation(shaderProgramId, 1, "tex");
+            GL20.glBindAttribLocation(shaderProgramId, 2, "color");
+            GL20.glBindAttribLocation(shaderProgramId, 3, "v_uvBounds");
+            GL20.glBindAttribLocation(shaderProgramId, 4, "v_glyphFlags");
+            ShaderProgramSupport.linkAndValidateProgram(shaderProgramId, "字体着色器链接失败: ", "字体着色器验证失败: ");
+            linkedSuccessfully = true;
+        } finally {
+            if (vertexShaderId != 0) {
+                GL20.glDeleteShader(vertexShaderId);
+            }
+            if (fragmentShaderId != 0) {
+                GL20.glDeleteShader(fragmentShaderId);
+            }
+            if (!linkedSuccessfully && shaderProgramId != 0) {
+                GL20.glDeleteProgram(shaderProgramId);
+                shaderProgramId = 0;
+            }
+        }
     }
 
     private int getUniformLocation(String name) {

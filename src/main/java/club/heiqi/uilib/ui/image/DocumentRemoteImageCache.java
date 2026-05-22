@@ -11,6 +11,7 @@ import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.ThreadFactory;
 import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import javax.imageio.ImageIO;
@@ -28,6 +29,7 @@ public final class DocumentRemoteImageCache {
     private static final DocumentRemoteImageCache INSTANCE = new DocumentRemoteImageCache();
 
     private final Map<String, Entry> entries = new ConcurrentHashMap<String, Entry>();
+    private final AtomicBoolean trimInProgress = new AtomicBoolean(false);
     private final ExecutorService executorService = new ThreadPoolExecutor(1, 2, 60L, TimeUnit.SECONDS,
             new LinkedBlockingQueue<Runnable>(), new RemoteImageThreadFactory());
 
@@ -97,6 +99,25 @@ public final class DocumentRemoteImageCache {
     }
 
     /**
+     * 关停内部远程位图下载线程池。
+     *
+     * <p>用于客户端断连或 JVM 退出阶段：在线程池静默存活会让全局 GC 与诊断进程级线程数据出现干扰，
+     * 因此 LTS 期间由 {@link club.heiqi.uilib.ClientProxy} 在生命周期事件中显式调用此入口。</p>
+     */
+    public void shutdown() {
+        executorService.shutdown();
+        try {
+            if (!executorService.awaitTermination(2L, TimeUnit.SECONDS)) {
+                executorService.shutdownNow();
+            }
+        } catch (InterruptedException exception) {
+            executorService.shutdownNow();
+            Thread.currentThread().interrupt();
+        }
+        entries.clear();
+    }
+
+    /**
      * 为测试写入失败状态，便于验证图片回退逻辑。
      *
      * @param url 图片 URL
@@ -148,11 +169,18 @@ public final class DocumentRemoteImageCache {
         if (entries.size() <= MAX_CACHE_ENTRIES) {
             return;
         }
-        for (String key : entries.keySet()) {
-            if (entries.size() <= MAX_CACHE_ENTRIES) {
-                return;
+        if (!trimInProgress.compareAndSet(false, true)) {
+            return;
+        }
+        try {
+            for (String key : entries.keySet()) {
+                if (entries.size() <= MAX_CACHE_ENTRIES) {
+                    return;
+                }
+                entries.remove(key);
             }
-            entries.remove(key);
+        } finally {
+            trimInProgress.set(false);
         }
     }
 

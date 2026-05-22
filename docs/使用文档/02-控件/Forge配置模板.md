@@ -93,8 +93,8 @@ spec.addPropertyEditorFactory(new ForgeConfigTemplateScreen.PropertyEditorFactor
 说明：
 
 - 返回 `null` 表示当前工厂不处理该属性，模板会继续尝试后续工厂和默认编辑器。
-- `PropertyBinding` 已开放给外部继承，可自定义 `isDirty()`、`restoreCurrentValue()`、`validateDraft()`、`applyDraft()`。
-- 如果某类列表属性需要可视化重排、拖拽或其他专属交互，建议派生一个专用列表控件，再通过 `PropertyBinding` 接入，不要直接修改通用文本列表编辑语义。
+- `PropertyBinding` 是 `ForgeConfigTemplateScreen` 的非静态内部类，必须由属于当前页面实例的工厂内部 `new` 出来；外部独立继承一个 `PropertyBinding` 子类几乎不可行，真正的扩展点是 `PropertyEditorFactory`。子类化 `PropertyBinding` 仅用于在工厂内自定义 `isDirty()`、`restoreCurrentValue()`、`validateDraft()`、`applyDraft()` 等钩子。
+- 如果某类列表属性需要可视化重排、拖拽或其他专属交互，建议派生一个专用列表控件，再通过 `PropertyEditorFactory` 在内部实例化 `PropertyBinding` 子类接入，不要直接修改通用文本列表编辑语义。
 
 ### 主题与文案
 

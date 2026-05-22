@@ -7,6 +7,11 @@ import java.util.Objects;
  *
  * <p>类与必要方法对外提升为 public，仅供 ui.screen / ui.screen.internal 内的协作类
  * 与诊断工具跨包使用，不构成对业务作者的稳定 API。</p>
+ *
+ * @apiNote 内部类型，LTS 不承诺其稳定性。{@link PageDescriptor}、{@link DescriptorOwner}
+ *          以及静态方法仅供框架运行时识别诊断/托管页面身份，业务代码不应直接依赖这些类型。
+ *          稳定页面 id 字符串可作为只读契约通过 {@link InternalDiagnosticScreenRegistry}
+ *          的查询方法使用。
  */
 public final class InternalScreenIdentity {
 

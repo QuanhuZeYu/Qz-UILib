@@ -20,6 +20,10 @@ import net.minecraft.client.gui.GuiScreen;
  *
  * <p>仅供库内诊断页、示例页和宿主托管页面机制使用，不构成对业务作者的稳定 API。
  * 类与必要嵌套类型对外提升为 public，仅供 ui.screen / ui.screen.internal 内的协作类使用。</p>
+ *
+ * @apiNote 内部类型，LTS 不承诺其稳定性。本类、嵌套接口与 definition 持有者对外 public 仅是
+ *          为了让 {@code ui.screen} 包内的协作类与诊断工具跨包使用，业务代码不应直接引用这些类型。
+ *          未来可能在 minor 版本调整结构。
  */
 public final class InternalHostedScreenFactory {
 

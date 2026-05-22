@@ -3,10 +3,15 @@ package club.heiqi.uilib;
 import club.heiqi.uilib.client.FontRenderTickListener;
 import club.heiqi.uilib.client.UiHudRenderListener;
 import club.heiqi.uilib.client.UiInputTickListener;
+import club.heiqi.uilib.font.FontService;
 import club.heiqi.uilib.internal.devtools.DevToolsClientBootstrap;
+import club.heiqi.uilib.ui.hud.UiHudDocumentHost;
+import club.heiqi.uilib.ui.image.DocumentRemoteImageCache;
 import club.heiqi.uilib.ui.input.UiInputService;
 import cpw.mods.fml.common.FMLCommonHandler;
 import cpw.mods.fml.common.event.FMLPreInitializationEvent;
+import cpw.mods.fml.common.eventhandler.SubscribeEvent;
+import cpw.mods.fml.common.network.FMLNetworkEvent;
 import net.minecraftforge.common.MinecraftForge;
 
 /**
@@ -32,5 +37,38 @@ public class ClientProxy extends CommonProxy {
         MinecraftForge.EVENT_BUS.register(uiHudRenderListener);
         FMLCommonHandler.instance().bus().register(fontRenderTickListener);
         FMLCommonHandler.instance().bus().register(uiInputTickListener);
+        FMLCommonHandler.instance().bus().register(this);
+        Runtime.getRuntime().addShutdownHook(new Thread(this::onJvmShutdown, "QzUiLibShutdown"));
+    }
+
+    /**
+     * 客户端从服务端断连时清理 HUD 注册表。
+     *
+     * <p>HUD 入口由作者手动调用 {@code unregister()}，但世界切换时旧 widget 已经失效，
+     * 这里统一兜底清空注册表与捕获状态，避免下一个世界继续保留过期引用。
+     * 在 1.7.10 Forge 中 {@link FMLNetworkEvent.ClientDisconnectionFromServerEvent} 同时覆盖单人退出与多人断连。</p>
+     *
+     * @param event 客户端断连事件
+     */
+    @SubscribeEvent
+    public void onClientDisconnect(FMLNetworkEvent.ClientDisconnectionFromServerEvent event) {
+        try {
+            UiHudDocumentHost.getInstance().clearAllRegistrations();
+        } catch (RuntimeException exception) {
+            MyMod.LOG.warn("HUD 断连清理异常", exception);
+        }
+    }
+
+    private void onJvmShutdown() {
+        try {
+            DocumentRemoteImageCache.getInstance().shutdown();
+        } catch (RuntimeException exception) {
+            MyMod.LOG.warn("远程图片缓存关停异常", exception);
+        }
+        try {
+            FontService.getInstance().shutdown();
+        } catch (RuntimeException exception) {
+            MyMod.LOG.warn("字体系统关停异常", exception);
+        }
     }
 }

@@ -44,6 +44,11 @@ import cpw.mods.fml.client.config.GuiConfig;
 
 /**
  * 游戏内 HUD 文档宿主。
+ *
+ * @apiNote 类本身对外暴露 {@link #getInstance()} 与 {@link #register} 系列稳定 API；
+ *          {@link #handleInputFrame}、{@link #handleImmediateKeyboardInput}、
+ *          {@link #handleImmediateMouseInput}、{@link #renderHud}、{@link #renderOnScreen}
+ *          仅供框架内部 forge 事件钩子调用，业务代码不应直接触发。LTS 不承诺这些钩子方法的兼容性。
  */
 public final class UiHudDocumentHost {
 
@@ -72,6 +77,14 @@ public final class UiHudDocumentHost {
     /**
      * 注册一个 HUD 文档。
      *
+     * <p>HUD 层语义：</p>
+     * <ul>
+     *   <li>{@link UiHudLayerType#INTERACTIVE INTERACTIVE}：仅在 {@link GuiContainer} 类宿主界面下可交互，
+     *       且只在主鼠标按键释放阶段路由输入；其他 {@link GuiScreen} 子类（如主菜单、聊天、设置）只渲染不可点。</li>
+     *   <li>{@link UiHudLayerType#PASSIVE PASSIVE}：只在没有任何 {@link GuiScreen} 打开（纯游戏内 HUD 阶段）时可见，
+     *       不接收输入；用于战斗/状态指示等仅显示用途。</li>
+     * </ul>
+     *
      * @param layerType HUD 层类型
      * @param contentBuilder 文档内容构建器
      * @return 注册句柄
@@ -83,6 +96,8 @@ public final class UiHudDocumentHost {
 
     /**
      * 使用显式环境注册一个 HUD 文档。
+     *
+     * <p>层语义同 {@link #register(UiHudLayerType, UiHudDocumentContentBuilder)}。</p>
      *
      * @param layerType HUD 层类型
      * @param contentBuilder 文档内容构建器
@@ -113,6 +128,7 @@ public final class UiHudDocumentHost {
      * 在输入帧中刷新交互层输入。
      *
      * @param frame 输入快照
+     * @apiNote 仅供框架内部输入分发链路调用，业务代码不应直接触发。LTS 不承诺签名稳定。
      */
     public synchronized void handleInputFrame(UiInputFrame frame) {
         if (frame == null || entries.isEmpty()) {
@@ -152,6 +168,7 @@ public final class UiHudDocumentHost {
      * @param currentScreen 当前宿主界面
      * @param frame 当前键盘事件对应的即时输入快照
      * @return 是否应阻断宿主继续处理该键盘事件
+     * @apiNote 仅供框架内部 forge 事件钩子调用，业务代码不应直接触发。LTS 不承诺签名稳定。
      */
     public synchronized boolean handleImmediateKeyboardInput(GuiScreen currentScreen, UiInputFrame frame) {
         if (frame == null || entries.isEmpty()) {
@@ -184,6 +201,7 @@ public final class UiHudDocumentHost {
      * @param currentScreen 当前宿主界面
      * @param frame 当前鼠标事件对应的即时输入快照
      * @return 是否应阻断宿主继续处理该鼠标事件
+     * @apiNote 仅供框架内部 forge 事件钩子调用，业务代码不应直接触发。LTS 不承诺签名稳定。
      */
     public synchronized boolean handleImmediateMouseInput(GuiScreen currentScreen, UiInputFrame frame) {
         if (frame == null || frame.getMouseEvents().isEmpty() || entries.isEmpty()) {
@@ -485,6 +503,7 @@ public final class UiHudDocumentHost {
      * 在纯游戏 HUD 阶段绘制可见层。
      *
      * @param partialTicks 插值帧参数
+     * @apiNote 仅供框架内部 forge {@code RenderGameOverlayEvent} 钩子调用，业务代码不应直接触发。
      */
     public void renderHud(float partialTicks) {
         renderVisibleLayers(UiHudScreenCategory.INGAME, partialTicks);
@@ -494,6 +513,7 @@ public final class UiHudDocumentHost {
      * 在普通 GuiScreen 上方绘制可见层。
      *
      * @param partialTicks 插值帧参数
+     * @apiNote 仅供框架内部 forge {@code GuiScreenEvent.DrawScreenEvent.Post} 钩子调用，业务代码不应直接触发。
      */
     public void renderOnScreen(float partialTicks) {
         Minecraft minecraft = Minecraft.getMinecraft();
@@ -733,6 +753,39 @@ public final class UiHudDocumentHost {
             UiLayoutInvalidationRegistry.unregisterRoot(entry.widget);
             updateHudKeyboardCaptureState();
         }
+    }
+
+    /**
+     * 清空全部 HUD 注册并复位输入捕获状态。
+     *
+     * <p>用于客户端断开连接、退出到主菜单等生命周期切换：HUD 入口本身要求调用方手动 {@code unregister()}，
+     * 但宿主切换世界时旧 HUD 的 widget 与会话已经失去意义，需要在显式钩子上一次性清理，
+     * 避免世界切换后旧引用继续占用 {@link UiLayoutInvalidationRegistry} 与 HUD 键盘捕获状态。</p>
+     */
+    public synchronized void clearAllRegistrations() {
+        if (entries.isEmpty()) {
+            UiKeyboardCaptureState.getInstance().setHudKeyboardCaptured(false);
+            syncHudTextInputRequest(false);
+            return;
+        }
+        List<HudEntry> snapshot = new ArrayList<HudEntry>(entries);
+        for (HudEntry entry : snapshot) {
+            try {
+                if (hoveredMouseEntry == entry) {
+                    entry.widget.onMouseLeave();
+                }
+                entry.interactionSession.clearInteractionState();
+                UiLayoutInvalidationRegistry.unregisterRoot(entry.widget);
+            } catch (RuntimeException exception) {
+                // 清理路径不应抛出，最坏情况只是单个 widget 未释放，记录后继续推进。
+            }
+        }
+        entries.clear();
+        hoveredMouseEntry = null;
+        activeMouseEntry = null;
+        activeKeyboardEntry = null;
+        UiKeyboardCaptureState.getInstance().setHudKeyboardCaptured(false);
+        syncHudTextInputRequest(false);
     }
 
     private synchronized void clearInteractiveStates() {

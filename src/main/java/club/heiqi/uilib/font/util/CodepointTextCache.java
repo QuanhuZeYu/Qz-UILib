@@ -31,12 +31,14 @@ public final class CodepointTextCache {
             return "?";
         }
         if (codepoint >= 0 && codepoint <= Character.MAX_VALUE) {
-            String text = BMP_TEXTS[codepoint];
-            if (text == null) {
-                text = String.valueOf((char) codepoint);
-                BMP_TEXTS[codepoint] = text;
+            synchronized (BMP_TEXTS) {
+                String text = BMP_TEXTS[codepoint];
+                if (text == null) {
+                    text = String.valueOf((char) codepoint);
+                    BMP_TEXTS[codepoint] = text;
+                }
+                return text;
             }
-            return text;
         }
 
         int index = codepoint & (SUPPLEMENTARY_CACHE_SIZE - 1);

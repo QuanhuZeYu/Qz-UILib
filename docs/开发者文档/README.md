@@ -10,6 +10,7 @@
 |-----------|------|
 | [项目建议.md](项目建议.md) | 协作阶段的技术方向与取舍原则 |
 | [开放化调整.md](开放化调整.md) | 从内部验证转向开发者入口的开放化方案 |
+| [Minecraft原版输入链路.md](Minecraft原版输入链路.md) | 原版 GuiScreen/GuiContainer 键鼠分发与 HUD 抢占内部架构分析 |
 | [reviews/](reviews/README.md) | 审查报告索引与详细报告 |
 | [errors/](errors/README.md) | 错误记录索引与详细问题分析 |
 | [specs/](specs/README.md) | 示例页专属规格与专项方案定稿 |

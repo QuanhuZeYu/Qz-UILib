@@ -70,6 +70,15 @@ public final class UiDocument {
         return new ElementNode(this, tagName);
     }
 
+    /**
+     * 为指定原始元素创建伪元素运行时载体。
+     *
+     * @param originElement 关联的原始元素
+     * @param pseudoElement 伪元素类型
+     * @return 伪元素运行时载体
+     * @apiNote 框架内部 API，仅供 UI 库样式与布局运行时调用，业务代码不应使用。
+     *          LTS 不承诺此方法的兼容性，未来可能迁移至 {@code dom.internal} 子包或私有化。
+     */
     public ElementNode __createPseudoElementRuntime(ElementNode originElement, UiPseudoElement pseudoElement) {
         return new ElementNode(this, "span", originElement, pseudoElement);
     }
@@ -390,6 +399,8 @@ public final class UiDocument {
      * <p>该入口供 HTML-like 宿主组件绑定焦点与滚动运行态，不作为页面作者业务 API。</p>
      *
      * @param interactionRuntime 交互运行时；为 null 时清除绑定
+     * @apiNote 框架内部 API，仅供宿主接入层调用，业务代码不应使用。
+     *          LTS 不承诺此方法的兼容性，未来可能迁移至 {@code dom.internal} 子包或私有化。
      */
     public void __setInteractionRuntime(DocumentInteractionRuntime interactionRuntime) {
         this.interactionRuntimeReference = interactionRuntime == null ? null
@@ -618,6 +629,8 @@ public final class UiDocument {
      * <p>该入口供运行时在 `a[href]` 默认激活链路中桥接文档级回调，不作为普通业务 DOM API。</p>
      *
      * @param event 链接激活事件
+     * @apiNote 框架内部 API，仅供运行时在链接激活链路中调用，业务代码不应使用。
+     *          LTS 不承诺此方法的兼容性，未来可能迁移至 {@code dom.internal} 子包或私有化。
      */
     public void __dispatchLinkActivation(DocumentLinkActivationEvent event) {
         if (linkActivationHandler != null && event != null) {

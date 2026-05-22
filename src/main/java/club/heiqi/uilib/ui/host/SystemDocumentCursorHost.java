@@ -3,6 +3,7 @@ package club.heiqi.uilib.ui.host;
 import java.util.EnumMap;
 import java.util.Map;
 import java.util.Objects;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 import java.lang.reflect.Field;
 import java.lang.reflect.InvocationTargetException;
@@ -154,6 +155,8 @@ public final class SystemDocumentCursorHost implements DocumentCursorHost {
 
     private static final class SdlNativeCursorBackend implements NativeCursorBackend {
 
+        private static final AtomicBoolean DISPLAY_PROBE_FAILURE_LOGGED = new AtomicBoolean(false);
+
         private final SdlReflectionBridge reflectionBridge = SdlReflectionBridge.getInstance();
         private final Map<ResolvedCursorKind, Long> cursorHandles =
                 new EnumMap<ResolvedCursorKind, Long>(ResolvedCursorKind.class);
@@ -165,10 +168,18 @@ public final class SystemDocumentCursorHost implements DocumentCursorHost {
             }
             try {
                 return Display.isCreated();
-            } catch (LinkageError ignored) {
+            } catch (LinkageError error) {
+                logDisplayProbeFailureOnce(error);
                 return false;
-            } catch (RuntimeException ignored) {
+            } catch (RuntimeException exception) {
+                logDisplayProbeFailureOnce(exception);
                 return false;
+            }
+        }
+
+        private static void logDisplayProbeFailureOnce(Throwable cause) {
+            if (DISPLAY_PROBE_FAILURE_LOGGED.compareAndSet(false, true)) {
+                MyMod.LOG.debug("UILib 系统光标宿主探测 Display 状态失败，已降级为不应用系统光标。", cause);
             }
         }
 
@@ -242,6 +253,7 @@ public final class SystemDocumentCursorHost implements DocumentCursorHost {
 
         private static final String SDL_MOUSE_CLASS_NAME = "org.lwjgl.sdl.SDLMouse";
         private static final String MAIN_THREAD_EXEC_CLASS_NAME = "me.eigenraven.lwjgl3ify.client.MainThreadExec";
+        private static final AtomicBoolean BRIDGE_RESOLUTION_FAILURE_LOGGED = new AtomicBoolean(false);
         private static final SdlReflectionBridge INSTANCE = new SdlReflectionBridge();
 
         private final Method showCursorMethod;
@@ -293,8 +305,11 @@ public final class SystemDocumentCursorHost implements DocumentCursorHost {
                 resolvedSystemCursorConstants.put(ResolvedCursorKind.NS_RESIZE,
                         Integer.valueOf(readStaticInt(sdlMouseClass, "SDL_SYSTEM_CURSOR_NS_RESIZE")));
                 resolvedAvailable = true;
-            } catch (ReflectiveOperationException ignored) {
+            } catch (ReflectiveOperationException exception) {
                 resolvedSystemCursorConstants.clear();
+                if (BRIDGE_RESOLUTION_FAILURE_LOGGED.compareAndSet(false, true)) {
+                    MyMod.LOG.debug("UILib 系统光标桥接反射解析失败，已在本次运行中降级为 no-op。", exception);
+                }
             }
             this.showCursorMethod = resolvedShowCursorMethod;
             this.hideCursorMethod = resolvedHideCursorMethod;

@@ -62,6 +62,8 @@ import net.minecraftforge.common.config.Property;
 public class ForgeConfigTemplateScreen extends BaseScreen {
 
     private static final double NUMERIC_EPSILON = 1.0E-9D;
+    private static final java.util.concurrent.atomic.AtomicBoolean DEFAULT_VALUE_PARSE_FAILURE_LOGGED =
+            new java.util.concurrent.atomic.AtomicBoolean(false);
 
     private final GuiScreen parentScreen;
     private final Spec spec;
@@ -2020,7 +2022,11 @@ public class ForgeConfigTemplateScreen extends BaseScreen {
         }
         try {
             return integerType ? Integer.parseInt(property.getDefault()) : Double.parseDouble(property.getDefault());
-        } catch (RuntimeException ignored) {
+        } catch (RuntimeException exception) {
+            if (DEFAULT_VALUE_PARSE_FAILURE_LOGGED.compareAndSet(false, true)) {
+                MyMod.LOG.debug("UILib 配置模板解析 default 数值失败，已回退到当前值：propertyName={} default={}",
+                        property.getName(), property.getDefault(), exception);
+            }
             return readPropertyAsDouble(property, integerType);
         }
     }

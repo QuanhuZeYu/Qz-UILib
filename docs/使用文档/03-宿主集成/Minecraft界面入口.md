@@ -4,7 +4,7 @@
 
 本文是宿主集成说明；内置诊断页和示例页仅作为开发调试入口，不构成对外稳定业务 API。
 
-如果需要排查原版 `GuiScreen` / `GuiContainer` 的键鼠分发细节、HUD 抢占时序或注入层级，请同时参考 `Minecraft原版输入链路.md`。
+如果需要排查原版 `GuiScreen` / `GuiContainer` 的键鼠分发细节、HUD 抢占时序或注入层级，请参考 `../../开发者文档/Minecraft原版输入链路.md`。
 
 ## 业务文档入口
 
@@ -127,8 +127,12 @@ Minecraft.getMinecraft().displayGuiScreen(UiDocumentScreens.createDocumentScreen
 
 当前内置两类层：
 
-- `UiHudLayerType.PASSIVE`：不可交互，只在纯游戏内 HUD 可见；打开背包、箱子、菜单后会隐藏。
-- `UiHudLayerType.INTERACTIVE`：纯游戏内与非黑名单界面可见；当前默认黑名单包括游戏主页（含原版 `GuiMainMenu`、新版 `TitleScreen`、第三方主页 `galaxyspace.core.gui.GSGuiMainMenu`）、选图页、服务器列表、游戏内菜单和 Forge 配置页。它在纯游戏内只负责渲染，不接通命中或焦点输入；只有容器态且鼠标已释放时，才会进入可交互状态。
+- `UiHudLayerType.PASSIVE`
+    - 可见性：只在纯游戏内 HUD 阶段可见，任何 `GuiScreen`（含背包、箱子、菜单）打开后立即隐藏。
+    - 输入：永不接收输入；整棵子树默认不可命中。
+- `UiHudLayerType.INTERACTIVE`
+    - 可见性：纯游戏内与非黑名单 `GuiScreen` 都可见。当前默认黑名单包括游戏主页（含原版 `GuiMainMenu`、新版 `TitleScreen`、第三方主页 `galaxyspace.core.gui.GSGuiMainMenu`）、选图页、服务器列表、游戏内菜单和 Forge 配置页（落入 `MENU` 分类时既不显示也不接通输入）。
+    - 输入：仅在容器态（`GuiContainer` 子类宿主界面）且鼠标已释放时接通命中与键盘焦点输入；纯游戏内只渲染，不可点。
 
 ```java
 UiHudDocumentRegistration registration = UiHudDocumentHost.getInstance().register(

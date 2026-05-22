@@ -16,8 +16,6 @@ import club.heiqi.uilib.font.config.FontConfig;
  */
 public class GlyphPage {
 
-    private static ByteBuffer emptyTextureBuffer = createEmptyTextureBuffer(64 * 64 * 4);
-
     private final int runtimeVersion;
     private final int pageIndex;
     private final int textureSize;
@@ -166,9 +164,7 @@ public class GlyphPage {
 
         textureId = GL11.glGenTextures();
         GL11.glBindTexture(GL11.GL_TEXTURE_2D, textureId);
-        ByteBuffer emptyTexture = obtainEmptyTextureBuffer(textureSize * textureSize * 4).duplicate();
-        emptyTexture.clear();
-        emptyTexture.limit(textureSize * textureSize * 4);
+        ByteBuffer emptyTexture = createEmptyTextureBuffer(textureSize * textureSize * 4);
         prepareUnpackState();
         GL11.glTexImage2D(GL11.GL_TEXTURE_2D, 0, GL11.GL_RGBA, textureSize, textureSize, 0, GL11.GL_RGBA,
                 GL11.GL_UNSIGNED_BYTE, emptyTexture);
@@ -225,14 +221,6 @@ public class GlyphPage {
         }
         buffer.flip();
         return buffer;
-    }
-
-    private static synchronized ByteBuffer obtainEmptyTextureBuffer(int requiredCapacity) {
-        if (emptyTextureBuffer.capacity() >= requiredCapacity) {
-            return emptyTextureBuffer;
-        }
-        emptyTextureBuffer = createEmptyTextureBuffer(requiredCapacity);
-        return emptyTextureBuffer;
     }
 
     private static ByteBuffer createEmptyTextureBuffer(int capacity) {

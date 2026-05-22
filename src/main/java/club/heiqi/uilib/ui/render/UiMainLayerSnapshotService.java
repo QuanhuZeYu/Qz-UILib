@@ -31,6 +31,15 @@ public final class UiMainLayerSnapshotService {
             { 2.0F, 0.06F }
     };
 
+    /**
+     * 池容量保护上限。
+     *
+     * <p>避免异常关屏路径导致 {@link FrameSnapshot} 持续累积，进而让 GL 纹理 / FBO 无界增长。
+     * 命中上限时优先驱逐当前帧未活跃的最旧 snapshot 复用其槽位；全部活跃时放弃当帧捕获并降级为
+     * 直接读取主层。</p>
+     */
+    private static final int MAX_POOLED_SNAPSHOTS = 32;
+
     private final List<FrameSnapshot> snapshots = new ArrayList<FrameSnapshot>();
     private int frameId;
     private boolean frameActive;
@@ -174,8 +183,11 @@ public final class UiMainLayerSnapshotService {
 
         FrameSnapshot snapshot = findReusableSnapshot();
         if (snapshot == null) {
-            snapshot = new FrameSnapshot();
-            snapshots.add(snapshot);
+            snapshot = allocateOrEvictSnapshot();
+            if (snapshot == null) {
+                lastFailureDetail = "snapshot-pool-exhausted";
+                return null;
+            }
         }
         String tileDetail = formatTileDetail(tileCoveragePlan, 0, tileCoveragePlan.getTileCount());
         if (!captureSnapshot(snapshot, screenHeight, reusableRegion, readFramebufferId, contentRevision,
@@ -397,6 +409,34 @@ public final class UiMainLayerSnapshotService {
             }
         }
         return null;
+    }
+
+    /**
+     * 分配新 snapshot 槽，未达上限时直接 new；达到上限时驱逐当前帧未活跃的最旧 snapshot 复用其槽位。
+     *
+     * @return 可用 snapshot 槽；池已满且全部活跃时返回 null
+     */
+    private FrameSnapshot allocateOrEvictSnapshot() {
+        if (snapshots.size() < MAX_POOLED_SNAPSHOTS) {
+            FrameSnapshot newSnapshot = new FrameSnapshot();
+            snapshots.add(newSnapshot);
+            return newSnapshot;
+        }
+        FrameSnapshot oldestEvictableSnapshot = null;
+        for (FrameSnapshot snapshot : snapshots) {
+            if (snapshot.activeUseCount > 0) {
+                continue;
+            }
+            if (oldestEvictableSnapshot == null
+                    || snapshot.capturedFrameId < oldestEvictableSnapshot.capturedFrameId) {
+                oldestEvictableSnapshot = snapshot;
+            }
+        }
+        if (oldestEvictableSnapshot == null) {
+            return null;
+        }
+        closeSnapshot(oldestEvictableSnapshot);
+        return oldestEvictableSnapshot;
     }
 
     private TileCoveragePlan resolveTileCoveragePlan(int readFramebufferId, SampleRegion sampleRegion,

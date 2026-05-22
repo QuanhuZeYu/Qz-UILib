@@ -14,6 +14,10 @@ import net.minecraft.client.gui.GuiScreen;
  *
  * <p>类放在 ui.screen.internal 子包内，名称仍以 Ui 开头但语义上仅供库内开发工具调用，
  * 不构成对业务作者的稳定 API。当前由 {@code DevToolsScreenLauncher} 通过反射调起。</p>
+ *
+ * @apiNote 内部类型，LTS 不承诺其稳定性。诊断页统一通过 {@code /qzuilib test} 命令打开，
+ *          所有 {@code createXxx} 工厂方法均为包级私有，仅供同包工具与 {@code DevToolsScreenLauncher}
+ *          反射调起。{@code isXxx} 判断方法对外保持公开，以便宿主与测试识别诊断界面。
  */
 public final class UiDiagnosticsScreens {
 
@@ -22,14 +26,14 @@ public final class UiDiagnosticsScreens {
     /**
      * 创建诊断菜单。
      */
-    public static GuiScreen createUiTest() {
+    static GuiScreen createUiTest() {
         return createUiTest(UiDocumentScreens.DocumentScreenEnvironment.minecraftFormattedDefaults());
     }
 
     /**
      * 基于显式环境创建诊断菜单。
      */
-    public static GuiScreen createUiTest(UiDocumentScreens.DocumentScreenEnvironment environment) {
+    static GuiScreen createUiTest(UiDocumentScreens.DocumentScreenEnvironment environment) {
         UiDocumentScreens.DocumentScreenEnvironment resolvedEnvironment = Objects.requireNonNull(environment,
                 "environment");
         return InternalHostedScreenFactory.createScreen(InternalDiagnosticScreenRegistry.UI_TEST_DEFINITION,
@@ -40,14 +44,14 @@ public final class UiDiagnosticsScreens {
     /**
      * 创建布局诊断页。
      */
-    public static GuiScreen createUiTestLayout() {
+    static GuiScreen createUiTestLayout() {
         return createUiTestLayout(UiDocumentScreens.DocumentScreenEnvironment.minecraftFormattedDefaults());
     }
 
     /**
      * 基于显式环境创建布局诊断页。
      */
-    public static GuiScreen createUiTestLayout(UiDocumentScreens.DocumentScreenEnvironment environment) {
+    static GuiScreen createUiTestLayout(UiDocumentScreens.DocumentScreenEnvironment environment) {
         return InternalHostedScreenFactory.createScreen(InternalDiagnosticScreenRegistry.UI_TEST_LAYOUT_DEFINITION,
                 Objects.requireNonNull(environment, "environment"), null);
     }
@@ -55,14 +59,14 @@ public final class UiDiagnosticsScreens {
     /**
      * 创建字体性能基线诊断页。
      */
-    public static GuiScreen createFontPerformanceBaseline() {
+    static GuiScreen createFontPerformanceBaseline() {
         return createFontPerformanceBaseline(UiDocumentScreens.DocumentScreenEnvironment.minecraftFormattedDefaults());
     }
 
     /**
      * 基于显式环境创建字体性能基线诊断页。
      */
-    public static GuiScreen createFontPerformanceBaseline(UiDocumentScreens.DocumentScreenEnvironment environment) {
+    static GuiScreen createFontPerformanceBaseline(UiDocumentScreens.DocumentScreenEnvironment environment) {
         return InternalHostedScreenFactory.createScreen(
                 InternalDiagnosticScreenRegistry.FONT_PERFORMANCE_BASELINE_DEFINITION,
                 Objects.requireNonNull(environment, "environment"), null);
@@ -71,14 +75,14 @@ public final class UiDiagnosticsScreens {
     /**
      * 创建 HTML-like smoke 页。
      */
-    public static GuiScreen createHtmlLikeSmoke() {
+    static GuiScreen createHtmlLikeSmoke() {
         return createHtmlLikeSmoke(UiDocumentScreens.DocumentScreenEnvironment.minecraftFormattedDefaults());
     }
 
     /**
      * 基于显式环境创建 HTML-like smoke 页。
      */
-    public static GuiScreen createHtmlLikeSmoke(UiDocumentScreens.DocumentScreenEnvironment environment) {
+    static GuiScreen createHtmlLikeSmoke(UiDocumentScreens.DocumentScreenEnvironment environment) {
         return InternalHostedScreenFactory.createScreen(InternalDiagnosticScreenRegistry.HTML_LIKE_SMOKE_DEFINITION,
                 Objects.requireNonNull(environment, "environment"), null);
     }
@@ -86,14 +90,14 @@ public final class UiDiagnosticsScreens {
     /**
      * 创建 Glass Lab 页。
      */
-    public static GuiScreen createHtmlLikeGlass() {
+    static GuiScreen createHtmlLikeGlass() {
         return createHtmlLikeGlass(UiDocumentScreens.DocumentScreenEnvironment.minecraftFormattedDefaults());
     }
 
     /**
      * 基于显式环境创建 Glass Lab 页。
      */
-    public static GuiScreen createHtmlLikeGlass(UiDocumentScreens.DocumentScreenEnvironment environment) {
+    static GuiScreen createHtmlLikeGlass(UiDocumentScreens.DocumentScreenEnvironment environment) {
         return InternalHostedScreenFactory.createScreen(InternalDiagnosticScreenRegistry.HTML_LIKE_GLASS_DEFINITION,
                 Objects.requireNonNull(environment, "environment"), null);
     }
@@ -101,14 +105,14 @@ public final class UiDiagnosticsScreens {
     /**
      * 创建背包概览示例页。
      */
-    public static GuiScreen createInventoryOverview(InventoryOverviewModel model) {
+    static GuiScreen createInventoryOverview(InventoryOverviewModel model) {
         return createInventoryOverview(UiDocumentScreens.DocumentScreenEnvironment.minecraftFormattedDefaults(), model);
     }
 
     /**
      * 基于显式环境创建背包概览示例页。
      */
-    public static GuiScreen createInventoryOverview(UiDocumentScreens.DocumentScreenEnvironment environment,
+    static GuiScreen createInventoryOverview(UiDocumentScreens.DocumentScreenEnvironment environment,
             InventoryOverviewModel model) {
         return InternalHostedScreenFactory.createScreen(InternalDiagnosticScreenRegistry.INVENTORY_OVERVIEW_DEFINITION,
                 Objects.requireNonNull(environment, "environment"), Objects.requireNonNull(model, "model"));
@@ -117,14 +121,14 @@ public final class UiDiagnosticsScreens {
     /**
      * 创建列表元素组件拖拽测试页。
      */
-    public static GuiScreen createListElementDrag() {
+    static GuiScreen createListElementDrag() {
         return createListElementDrag(UiDocumentScreens.DocumentScreenEnvironment.minecraftFormattedDefaults());
     }
 
     /**
      * 基于显式环境创建列表元素组件拖拽测试页。
      */
-    public static GuiScreen createListElementDrag(UiDocumentScreens.DocumentScreenEnvironment environment) {
+    static GuiScreen createListElementDrag(UiDocumentScreens.DocumentScreenEnvironment environment) {
         return InternalHostedScreenFactory.createScreen(InternalDiagnosticScreenRegistry.LIST_ELEMENT_DRAG_DEFINITION,
                 Objects.requireNonNull(environment, "environment"), null);
     }
@@ -132,14 +136,14 @@ public final class UiDiagnosticsScreens {
     /**
      * 创建浏览器语义新功能展示页。
      */
-    public static GuiScreen createBrowserSemanticsShowcase() {
+    static GuiScreen createBrowserSemanticsShowcase() {
         return createBrowserSemanticsShowcase(UiDocumentScreens.DocumentScreenEnvironment.minecraftFormattedDefaults());
     }
 
     /**
      * 基于显式环境创建浏览器语义新功能展示页。
      */
-    public static GuiScreen createBrowserSemanticsShowcase(UiDocumentScreens.DocumentScreenEnvironment environment) {
+    static GuiScreen createBrowserSemanticsShowcase(UiDocumentScreens.DocumentScreenEnvironment environment) {
         return InternalHostedScreenFactory.createScreen(
                 InternalDiagnosticScreenRegistry.BROWSER_SEMANTICS_SHOWCASE_DEFINITION,
                 Objects.requireNonNull(environment, "environment"), null);
@@ -148,7 +152,7 @@ public final class UiDiagnosticsScreens {
     /**
      * 创建动画能力成功展示页。
      */
-    public static GuiScreen createAnimationCapabilityShowcase() {
+    static GuiScreen createAnimationCapabilityShowcase() {
         return createAnimationCapabilityShowcase(
                 UiDocumentScreens.DocumentScreenEnvironment.minecraftFormattedDefaults());
     }
@@ -156,7 +160,7 @@ public final class UiDiagnosticsScreens {
     /**
      * 基于显式环境创建动画能力成功展示页。
      */
-    public static GuiScreen createAnimationCapabilityShowcase(UiDocumentScreens.DocumentScreenEnvironment environment) {
+    static GuiScreen createAnimationCapabilityShowcase(UiDocumentScreens.DocumentScreenEnvironment environment) {
         return InternalHostedScreenFactory.createScreen(
                 InternalDiagnosticScreenRegistry.ANIMATION_CAPABILITY_SHOWCASE_DEFINITION,
                 Objects.requireNonNull(environment, "environment"), null);
@@ -165,14 +169,14 @@ public final class UiDiagnosticsScreens {
     /**
      * 创建 UI 框架结构审查展示页。
      */
-    public static GuiScreen createUiFrameworkStructureAudit() {
+    static GuiScreen createUiFrameworkStructureAudit() {
         return createUiFrameworkStructureAudit(UiDocumentScreens.DocumentScreenEnvironment.minecraftFormattedDefaults());
     }
 
     /**
      * 基于显式环境创建 UI 框架结构审查展示页。
      */
-    public static GuiScreen createUiFrameworkStructureAudit(UiDocumentScreens.DocumentScreenEnvironment environment) {
+    static GuiScreen createUiFrameworkStructureAudit(UiDocumentScreens.DocumentScreenEnvironment environment) {
         return InternalHostedScreenFactory.createScreen(
                 InternalDiagnosticScreenRegistry.UI_FRAMEWORK_STRUCTURE_AUDIT_DEFINITION,
                 Objects.requireNonNull(environment, "environment"), null);

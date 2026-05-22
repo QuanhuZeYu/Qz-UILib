@@ -84,25 +84,4 @@ public final class DocumentLinkActivationEvent extends AbstractDocumentElementEv
     public long getTimeNanos() {
         return timeNanos;
     }
-
-    /**
-     * 标记链接激活已被业务方处理。
-     *
-     * @deprecated 改用 {@link #preventDefault()}，与浏览器原生事件保持一致。
-     */
-    @Deprecated
-    public void markHandled() {
-        preventDefault();
-    }
-
-    /**
-     * 判断链接激活是否已被业务方处理。
-     *
-     * @return 是否已处理
-     * @deprecated 改用 {@link #isDefaultPrevented()}，与浏览器原生事件保持一致。
-     */
-    @Deprecated
-    public boolean isHandled() {
-        return isDefaultPrevented();
-    }
 }

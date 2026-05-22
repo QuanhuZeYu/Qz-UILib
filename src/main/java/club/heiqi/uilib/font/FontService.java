@@ -309,6 +309,33 @@ public class FontService {
                 textLayoutService.getWidthCacheMissCount());
     }
 
+    /**
+     * 关停字体系统，释放调度器线程池、批渲染器与着色器。
+     *
+     * <p>用于客户端断连或 JVM 退出阶段。LTS 期间统一在 {@link club.heiqi.uilib.ClientProxy} 中
+     * 通过 Forge 客户端断连事件触发，避免线程池在 JVM 退出后仍持有运行时引用。</p>
+     */
+    public void shutdown() {
+        synchronized (this) {
+            if (!initialized.get()) {
+                return;
+            }
+            try {
+                glyphGenerationDispatcher.pause();
+                glyphGenerationDispatcher.reset();
+            } catch (RuntimeException exception) {
+                MyMod.LOG.warn("字体调度器关停异常", exception);
+            }
+            try {
+                clearRenderResources();
+            } catch (RuntimeException exception) {
+                MyMod.LOG.warn("字体渲染资源关停异常", exception);
+            }
+            initialized.set(false);
+            layoutRuntimeReady.set(false);
+        }
+    }
+
     private boolean canRunDrawStageUpload() {
         long now = System.currentTimeMillis();
 

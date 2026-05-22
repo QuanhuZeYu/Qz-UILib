@@ -148,6 +148,8 @@ public final class ElementNode extends ElementInteractionNode {
      * <p>该值只供测试、调试、缓存和内部追踪使用，不等同于 HTML `id` 属性，也不会进入属性表或样式选择器。</p>
      *
      * @return 进程内唯一元素身份
+     * @apiNote 框架内部 API，仅供测试、调试与运行时缓存使用，业务代码不应依赖此值。
+     *          LTS 不承诺此方法的兼容性，未来可能迁移至 {@code dom.internal} 子包或私有化。
      */
     public long __getElementUid() {
         return __elementUid;

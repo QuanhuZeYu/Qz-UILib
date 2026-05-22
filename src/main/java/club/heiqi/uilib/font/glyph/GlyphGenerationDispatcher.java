@@ -39,6 +39,9 @@ public class GlyphGenerationDispatcher {
     /**
      * 初始化调度器。
      *
+     * <p>若调度器已初始化，会先走完 {@link #reset()} 的关停流程（含 awaitTermination 与代际隔离），
+     * 再用新的协作对象重新建池，避免旧任务继续访问已被替换的 {@link GlyphPageManager}。</p>
+     *
      * @param fontMatcher 字体匹配器
      * @param glyphPageManager 字符页管理器
      * @param derivedFontCache 派生字体缓存
@@ -49,20 +52,21 @@ public class GlyphGenerationDispatcher {
             GlyphPageManager glyphPageManager,
             DerivedFontCache derivedFontCache,
             GlyphGenerationResultHandler resultHandler) {
+        if (initialized.get() || executorService != null) {
+            reset();
+        }
         this.fontMatcher = fontMatcher;
         this.glyphPageManager = glyphPageManager;
         this.resultHandler = resultHandler;
         this.glyphGenerator = new GlyphGenerator(fontMatcher, derivedFontCache);
         generationEpoch.incrementAndGet();
-        if (executorService == null || executorService.isShutdown()) {
-            executorService = new ThreadPoolExecutor(
-                    1,
-                    2,
-                    60L,
-                    TimeUnit.SECONDS,
-                    new LinkedBlockingQueue<Runnable>(),
-                    new FontWorkerThreadFactory());
-        }
+        executorService = new ThreadPoolExecutor(
+                1,
+                2,
+                60L,
+                TimeUnit.SECONDS,
+                new LinkedBlockingQueue<Runnable>(),
+                new FontWorkerThreadFactory());
         initialized.compareAndSet(false, true);
         reloading.set(false);
         acceptingTasks.set(true);
@@ -177,6 +181,8 @@ public class GlyphGenerationDispatcher {
 
     /**
      * 清理调度状态。
+     *
+     * <p>会在终止线程池后短暂等待残留任务退出，避免代际隔离尚未完成时旧任务继续访问 {@link GlyphPageManager}。</p>
      */
     public void reset() {
         pause();
@@ -184,6 +190,13 @@ public class GlyphGenerationDispatcher {
         cancelInFlightTasks();
         if (executorService != null) {
             executorService.shutdownNow();
+            try {
+                if (!executorService.awaitTermination(2L, TimeUnit.SECONDS)) {
+                    MyMod.LOG.warn("字体生成线程池在 2 秒内未完全关停，继续推进重载流程");
+                }
+            } catch (InterruptedException exception) {
+                Thread.currentThread().interrupt();
+            }
             executorService = null;
         }
         initialized.set(false);
@@ -238,11 +251,11 @@ public class GlyphGenerationDispatcher {
      */
     private static class FontWorkerThreadFactory implements ThreadFactory {
 
-        private int index = 0;
+        private final AtomicInteger index = new AtomicInteger();
 
         @Override
         public Thread newThread(Runnable runnable) {
-            Thread thread = new Thread(runnable, "QzFontWorker-" + index++);
+            Thread thread = new Thread(runnable, "QzFontWorker-" + index.getAndIncrement());
             thread.setDaemon(true);
             return thread;
         }

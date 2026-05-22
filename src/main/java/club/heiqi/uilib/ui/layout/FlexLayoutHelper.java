@@ -555,6 +555,11 @@ final class FlexLayoutHelper {
         return 0;
     }
 
+    private static final java.util.concurrent.atomic.AtomicBoolean BASELINE_FALLBACK_LOGGED =
+            new java.util.concurrent.atomic.AtomicBoolean(false);
+    private static final org.apache.logging.log4j.Logger LOG =
+            org.apache.logging.log4j.LogManager.getLogger("QzUiLib/FlexLayout");
+
     private static int resolveCrossOffset(UiAlignItems alignItems, int availableCrossSize, int itemOuterCrossSize) {
         int remaining = Math.max(0, availableCrossSize - itemOuterCrossSize);
         if (alignItems == UiAlignItems.CENTER) {
@@ -563,7 +568,9 @@ final class FlexLayoutHelper {
         if (alignItems == UiAlignItems.END) {
             return remaining;
         }
-        // BASELINE 暂时按 START 处理（完整 baseline 对齐需要收集每行基线偏移）
+        if (alignItems == UiAlignItems.BASELINE && BASELINE_FALLBACK_LOGGED.compareAndSet(false, true)) {
+            LOG.warn("flex align-items: baseline 当前等价于 START；首版未实现完整基线对齐，请改用 padding/transform 偏移");
+        }
         return 0;
     }
 

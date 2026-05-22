@@ -80,7 +80,8 @@ public final class DocumentLayoutEngine {
      *
      * @param rootElement 根元素
      * @param viewportWidth 视口宽度
-     * @param viewportHeight 视口高度；当前仅作为后续视口约束扩展预留
+     * @param viewportHeight 视口高度；用作根元素初始 containingHeight 与 {@code position:fixed} 的固定 containing block 高度。
+     *                       当前不会强制收缩根 border box；如需让根 border box 等于视口尺寸，请改用 {@link #layoutViewportRoot}。
      * @param textMeasureService 文本测量服务
      * @return 根布局盒
      */
@@ -94,7 +95,8 @@ public final class DocumentLayoutEngine {
      *
      * @param rootElement 根元素
      * @param viewportWidth 视口宽度
-     * @param viewportHeight 视口高度；当前仅作为后续视口约束扩展预留
+     * @param viewportHeight 视口高度；用作根元素初始 containingHeight 与 {@code position:fixed} 的固定 containing block 高度。
+     *                       当前不会强制收缩根 border box；如需让根 border box 等于视口尺寸，请改用 {@link #layoutViewportRoot}。
      * @param textMeasureService 文本测量服务
      * @param layoutValueResolver 运行态布局值解析器
      * @return 根布局盒

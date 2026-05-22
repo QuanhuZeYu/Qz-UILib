@@ -283,6 +283,13 @@ public abstract class DocumentNode {
         ownerDocument.recordPaintMutation();
     }
 
+    /**
+     * 在框架内部追加由运行时生成的子节点（如克隆生成的伪元素载体）。
+     *
+     * @param child 待追加的子节点
+     * @apiNote 框架内部 API，仅供 UI 库的克隆与伪元素生成链路调用。业务代码请使用 {@link ElementNode#append} 等公开 API。
+     *          LTS 不承诺此方法的兼容性，未来可能迁移至 {@code dom.internal} 子包或私有化。
+     */
     public final void __appendGeneratedChild(DocumentNode child) {
         DocumentNode resolvedChild = Objects.requireNonNull(child, "child");
         if (resolvedChild.parent != null) {

@@ -23,6 +23,9 @@ import club.heiqi.uilib.ui.screen.page.DocumentUiScope;
  *
  * <p>类与 page 描述/定义/标识查询入口对外提升为 public，仅供 ui.screen / ui.screen.internal
  * 内的协作类与诊断工具跨包使用，不构成对业务作者的稳定 API。</p>
+ *
+ * @apiNote 内部类型，LTS 不承诺其稳定性。诊断页注册表中的页面 id、definition 引用仅供框架内部
+ *          与诊断工具识别页面身份使用，业务代码不应直接引用。未来可能在 minor 版本调整结构。
  */
 public final class InternalDiagnosticScreenRegistry {
 

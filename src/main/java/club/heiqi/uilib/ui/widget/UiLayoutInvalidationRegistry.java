@@ -8,9 +8,15 @@ import java.util.WeakHashMap;
 
 /**
  * 已打开 UI 根节点的布局失效注册表。
+ *
+ * <p>底层使用 {@link WeakHashMap} 包装的 Set，因此当 UI 根节点不再被强引用时会被 GC 自动剔除。
+ * 由于 {@code WeakHashMap} 不是线程安全的，且 GC 触发的隐式 entry 清理与显式
+ * {@link #registerRoot}/{@link #unregisterRoot}/{@link #invalidateAll} 之间存在并发风险，
+ * 所有访问 {@link #ROOTS} 的入口必须持有 {@link #LOCK}。</p>
  */
 public final class UiLayoutInvalidationRegistry {
 
+    private static final Object LOCK = new Object();
     private static final Set<Widget> ROOTS = Collections.newSetFromMap(new WeakHashMap<Widget, Boolean>());
 
     private UiLayoutInvalidationRegistry() {}
@@ -20,11 +26,13 @@ public final class UiLayoutInvalidationRegistry {
      *
      * @param root 根节点
      */
-    public static synchronized void registerRoot(Widget root) {
+    public static void registerRoot(Widget root) {
         if (root == null) {
             return;
         }
-        ROOTS.add(root);
+        synchronized (LOCK) {
+            ROOTS.add(root);
+        }
     }
 
     /**
@@ -32,11 +40,13 @@ public final class UiLayoutInvalidationRegistry {
      *
      * @param root 根节点
      */
-    public static synchronized void unregisterRoot(Widget root) {
+    public static void unregisterRoot(Widget root) {
         if (root == null) {
             return;
         }
-        ROOTS.remove(root);
+        synchronized (LOCK) {
+            ROOTS.remove(root);
+        }
     }
 
     /**
@@ -44,8 +54,11 @@ public final class UiLayoutInvalidationRegistry {
      *
      * @return 失效的根节点数量
      */
-    public static synchronized int invalidateAll() {
-        List<Widget> snapshot = new ArrayList<Widget>(ROOTS);
+    public static int invalidateAll() {
+        List<Widget> snapshot;
+        synchronized (LOCK) {
+            snapshot = new ArrayList<Widget>(ROOTS);
+        }
         for (Widget root : snapshot) {
             if (root != null) {
                 root.invalidateLayoutTree();

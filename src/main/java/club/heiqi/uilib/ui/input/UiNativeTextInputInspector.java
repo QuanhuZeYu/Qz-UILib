@@ -5,10 +5,14 @@ import java.lang.reflect.Field;
 import java.lang.reflect.Modifier;
 import java.util.IdentityHashMap;
 import java.util.Map;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 import net.minecraft.client.gui.GuiChat;
 import net.minecraft.client.gui.GuiScreen;
 import net.minecraft.client.gui.GuiTextField;
+
+import org.apache.logging.log4j.LogManager;
+import org.apache.logging.log4j.Logger;
 
 import club.heiqi.uilib.ui.screen.BaseScreen;
 
@@ -18,6 +22,8 @@ import club.heiqi.uilib.ui.screen.BaseScreen;
 public final class UiNativeTextInputInspector {
 
     private static final int MAX_SCAN_DEPTH = 2;
+    private static final Logger LOG = LogManager.getLogger("QzUiLib/UiNativeTextInputInspector");
+    private static final AtomicBoolean GUI_CHAT_INPUT_FIELD_REFLECTION_LOGGED = new AtomicBoolean(false);
     private static final NativeTextInputAdapter[] ADAPTERS = new NativeTextInputAdapter[] {
             new GuiChatTextInputAdapter() };
 
@@ -238,7 +244,10 @@ public final class UiNativeTextInputInspector {
             try {
                 Object value = inputField.get(screen);
                 return value instanceof GuiTextField ? (GuiTextField) value : null;
-            } catch (ReflectiveOperationException ignored) {
+            } catch (ReflectiveOperationException exception) {
+                if (GUI_CHAT_INPUT_FIELD_REFLECTION_LOGGED.compareAndSet(false, true)) {
+                    LOG.debug("UILib 反射读取 GuiChat.inputField 失败，已降级为不识别原生 chat 输入框焦点。", exception);
+                }
                 return null;
             }
         }

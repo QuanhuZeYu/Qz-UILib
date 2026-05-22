@@ -1,2 +1,4 @@
 before_install:
   - ./gradlew setupCIWorkspace
+install:
+  - ./gradlew --no-configuration-cache --no-daemon -x test publishToMavenLocal
