@@ -6,6 +6,8 @@ import club.heiqi.uilib.ui.dom.DocumentElementClickEvent;
 import club.heiqi.uilib.ui.dom.DocumentElementClickHandler;
 import club.heiqi.uilib.ui.dom.DocumentElementFocusEvent;
 import club.heiqi.uilib.ui.dom.DocumentElementFocusHandler;
+import club.heiqi.uilib.ui.dom.DocumentElementHoverEvent;
+import club.heiqi.uilib.ui.dom.DocumentElementHoverHandler;
 import club.heiqi.uilib.ui.dom.DocumentElementKeyEvent;
 import club.heiqi.uilib.ui.dom.DocumentElementKeyHandler;
 import club.heiqi.uilib.ui.dom.ElementNode;
@@ -44,10 +46,12 @@ public final class DocumentSelectControl {
     private boolean enabled = true;
     private boolean open;
     private boolean focusVisible;
+    private boolean hovered;
     private int selectedIndex;
     private int highlightedIndex;
     private int triggerBackgroundColor = 0xFF222233;
     private int triggerBorderColor = 0xFF555577;
+    private int hoverBorderColor = 0xFF7777AA;
     private int focusBorderColor = 0xFF5A9EF7;
     private int popupBackgroundColor = 0xFF161625;
     private int optionBackgroundColor = 0xFF2A2A3A;
@@ -154,6 +158,7 @@ public final class DocumentSelectControl {
         this.enabled = enabled;
         if (!enabled) {
             focusVisible = false;
+            hovered = false;
             open = false;
             element.setAttribute("disabled", "true");
             element.setAttribute("aria-disabled", "true");
@@ -288,6 +293,13 @@ public final class DocumentSelectControl {
                 }
                 return handleKeyEvent(event);
             }
+        }).setHoverHandler(new DocumentElementHoverHandler() {
+            @Override
+            public boolean onHoverChanged(DocumentElementHoverEvent event) {
+                hovered = event.isHovered() && enabled;
+                updateVisualState();
+                return false;
+            }
         });
     }
 
@@ -389,7 +401,14 @@ public final class DocumentSelectControl {
 
     private void updateVisualState() {
         int backgroundColor = enabled ? triggerBackgroundColor : disabledBackgroundColor;
-        int borderColor = enabled && focusVisible ? focusBorderColor : triggerBorderColor;
+        int borderColor;
+        if (enabled && focusVisible) {
+            borderColor = focusBorderColor;
+        } else if (enabled && hovered) {
+            borderColor = hoverBorderColor;
+        } else {
+            borderColor = triggerBorderColor;
+        }
         int resolvedTextColor = enabled ? textColor : disabledTextColor;
         labelText.setText(options[selectedIndex]);
         arrowText.setText(open ? "^" : "v");

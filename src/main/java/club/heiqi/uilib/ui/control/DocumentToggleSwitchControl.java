@@ -6,6 +6,8 @@ import club.heiqi.uilib.ui.dom.DocumentElementClickEvent;
 import club.heiqi.uilib.ui.dom.DocumentElementClickHandler;
 import club.heiqi.uilib.ui.dom.DocumentElementFocusEvent;
 import club.heiqi.uilib.ui.dom.DocumentElementFocusHandler;
+import club.heiqi.uilib.ui.dom.DocumentElementHoverEvent;
+import club.heiqi.uilib.ui.dom.DocumentElementHoverHandler;
 import club.heiqi.uilib.ui.dom.DocumentElementKeyEvent;
 import club.heiqi.uilib.ui.dom.DocumentElementKeyHandler;
 import club.heiqi.uilib.ui.dom.ElementNode;
@@ -31,11 +33,13 @@ public final class DocumentToggleSwitchControl {
     private boolean toggled;
     private boolean enabled = true;
     private boolean focusVisible;
+    private boolean hovered;
     private boolean spacePressed;
     private int trackWidth = 48;
     private int trackHeight = 24;
     private int thumbSize = 18;
     private int trackOffColor = 0xFF4A5568;
+    private int trackOffHoverColor = 0xFF5A6578;
     private int trackOnColor = 0xFF38A169;
     private int trackDisabledColor = 0xFF333344;
     private int thumbColor = 0xFFFFFFFF;
@@ -103,6 +107,7 @@ public final class DocumentToggleSwitchControl {
         this.enabled = enabled;
         if (!enabled) {
             focusVisible = false;
+            hovered = false;
             spacePressed = false;
             element.setAttribute("aria-disabled", "true");
         } else {
@@ -278,6 +283,13 @@ public final class DocumentToggleSwitchControl {
                 }
                 return true;
             }
+        }).setHoverHandler(new DocumentElementHoverHandler() {
+            @Override
+            public boolean onHoverChanged(DocumentElementHoverEvent event) {
+                hovered = event.isHovered() && enabled;
+                updateVisualState();
+                return false;
+            }
         });
     }
 
@@ -298,6 +310,9 @@ public final class DocumentToggleSwitchControl {
             resolvedThumbColor = thumbDisabledColor;
         } else if (toggled) {
             trackColor = trackOnColor;
+            resolvedThumbColor = thumbColor;
+        } else if (hovered) {
+            trackColor = trackOffHoverColor;
             resolvedThumbColor = thumbColor;
         } else {
             trackColor = trackOffColor;

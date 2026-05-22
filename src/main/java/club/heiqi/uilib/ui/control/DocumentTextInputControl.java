@@ -2,8 +2,11 @@ package club.heiqi.uilib.ui.control;
 
 import org.lwjglx.input.Keyboard;
 
+import club.heiqi.uilib.ui.animation.SystemDocumentAnimationClock;
 import club.heiqi.uilib.ui.dom.DocumentElementFocusEvent;
 import club.heiqi.uilib.ui.dom.DocumentElementFocusHandler;
+import club.heiqi.uilib.ui.dom.DocumentElementHoverEvent;
+import club.heiqi.uilib.ui.dom.DocumentElementHoverHandler;
 import club.heiqi.uilib.ui.dom.DocumentElementKeyEvent;
 import club.heiqi.uilib.ui.dom.DocumentElementKeyHandler;
 import club.heiqi.uilib.ui.dom.DocumentElementTextInputEvent;
@@ -27,6 +30,8 @@ import club.heiqi.uilib.ui.render.UiRenderContext;
  */
 public final class DocumentTextInputControl {
 
+    private static final long BLINK_PERIOD_NANOS = 530_000_000L;
+
     private final ElementNode element;
     private final ElementNode textElement;
     private final TextNode textNode;
@@ -37,8 +42,13 @@ public final class DocumentTextInputControl {
     private int maxLength = 128;
     private boolean enabled = true;
     private boolean focused;
+    private boolean hovered;
+    private boolean readOnly;
+    private boolean required;
+    private long caretBlinkResetNanos;
     private int normalBackgroundColor = 0xFF222233;
     private int normalBorderColor = 0xFF555577;
+    private int hoverBorderColor = 0xFF7777AA;
     private int focusBorderColor = 0xFF5A9EF7;
     private int disabledBackgroundColor = 0xFF333344;
     private int disabledBorderColor = 0xFF444455;
@@ -164,6 +174,66 @@ public final class DocumentTextInputControl {
     }
 
     /**
+     * 设置文本输入控件是否只读。
+     *
+     * @param readOnly 是否只读
+     * @return 当前文本输入控件
+     */
+    public DocumentTextInputControl setReadOnly(boolean readOnly) {
+        if (this.readOnly == readOnly) {
+            return this;
+        }
+        this.readOnly = readOnly;
+        if (readOnly) {
+            element.setAttribute("readonly", "true");
+            element.setAttribute("aria-readonly", "true");
+        } else {
+            element.removeAttribute("readonly");
+            element.removeAttribute("aria-readonly");
+        }
+        return this;
+    }
+
+    /**
+     * 判断文本输入控件是否只读。
+     *
+     * @return 是否只读
+     */
+    public boolean isReadOnly() {
+        return readOnly;
+    }
+
+    /**
+     * 设置文本输入控件是否必填。
+     *
+     * @param required 是否必填
+     * @return 当前文本输入控件
+     */
+    public DocumentTextInputControl setRequired(boolean required) {
+        if (this.required == required) {
+            return this;
+        }
+        this.required = required;
+        if (required) {
+            element.setAttribute("required", "true");
+            element.setAttribute("aria-required", "true");
+        } else {
+            element.removeAttribute("required");
+            element.removeAttribute("aria-required");
+        }
+        return this;
+    }
+
+    /**
+     * 判断文本输入控件是否必填。
+     *
+     * @return 是否必填
+     */
+    public boolean isRequired() {
+        return required;
+    }
+
+    /**
      * 设置文本变更处理器。
      *
      * @param changeHandler 文本变更处理器；为 null 时清除
@@ -268,6 +338,13 @@ public final class DocumentTextInputControl {
                 if (!focused || !enabled || context == null || contentRight <= contentLeft || contentBottom <= contentTop) {
                     return;
                 }
+                long elapsed = SystemDocumentAnimationClock.getInstance().getCurrentTimeNanos() - caretBlinkResetNanos;
+                if (elapsed < 0) {
+                    elapsed = 0;
+                }
+                if ((elapsed / BLINK_PERIOD_NANOS) % 2 != 0) {
+                    return;
+                }
                 int textWidth = Math.min(Math.max(0, context.measureTextWidth(textBuilder.toString())),
                         Math.max(0, contentRight - contentLeft - 1));
                 int cursorLeft = resolveCursorLeft(contentLeft, contentRight, textWidth);
@@ -284,12 +361,15 @@ public final class DocumentTextInputControl {
             @Override
             public void onFocusChanged(DocumentElementFocusEvent event) {
                 focused = event.isFocused() && enabled;
+                if (focused) {
+                    resetCaretBlink();
+                }
                 updateVisualState();
             }
         }).setTextInputHandler(new DocumentElementTextInputHandler() {
             @Override
             public boolean onTextInput(DocumentElementTextInputEvent event) {
-                if (!focused || !enabled) {
+                if (!focused || !enabled || readOnly) {
                     return false;
                 }
                 String inputText = event.getText();
@@ -298,6 +378,7 @@ public final class DocumentTextInputControl {
                 }
                 boolean changed = appendAcceptedCodePoints(textBuilder, inputText, maxLength);
                 if (changed) {
+                    resetCaretBlink();
                     syncText();
                     fireChange();
                 }
@@ -312,9 +393,10 @@ public final class DocumentTextInputControl {
                 if (event.getKeyCode() == Keyboard.KEY_BACK
                         && (event.getAction() == UiKeyEvent.Action.PRESSED
                                 || event.getAction() == UiKeyEvent.Action.REPEATED)) {
-                    if (textBuilder.length() > 0) {
+                    if (!readOnly && textBuilder.length() > 0) {
                         int deleteStart = textBuilder.offsetByCodePoints(textBuilder.length(), -1);
                         textBuilder.delete(deleteStart, textBuilder.length());
+                        resetCaretBlink();
                         syncText();
                         fireChange();
                     }
@@ -323,6 +405,13 @@ public final class DocumentTextInputControl {
                 if (keyHandler != null) {
                     return keyHandler.onKey(event);
                 }
+                return false;
+            }
+        }).setHoverHandler(new DocumentElementHoverHandler() {
+            @Override
+            public boolean onHoverChanged(DocumentElementHoverEvent event) {
+                hovered = event.isHovered() && enabled;
+                updateVisualState();
                 return false;
             }
         });
@@ -337,6 +426,9 @@ public final class DocumentTextInputControl {
         } else if (focused) {
             backgroundColor = normalBackgroundColor;
             borderColor = focusBorderColor;
+        } else if (hovered) {
+            backgroundColor = normalBackgroundColor;
+            borderColor = hoverBorderColor;
         } else {
             backgroundColor = normalBackgroundColor;
             borderColor = normalBorderColor;
@@ -385,6 +477,10 @@ public final class DocumentTextInputControl {
         if (changeHandler != null) {
             changeHandler.onTextChanged(new DocumentTextInputChangeEvent(this, element, textBuilder.toString()));
         }
+    }
+
+    private void resetCaretBlink() {
+        caretBlinkResetNanos = SystemDocumentAnimationClock.getInstance().getCurrentTimeNanos();
     }
 
     private static boolean appendAcceptedCodePoints(StringBuilder target, String input, int maxCodePointCount) {

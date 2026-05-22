@@ -6,10 +6,13 @@ import java.util.List;
 
 import org.lwjglx.input.Keyboard;
 
+import club.heiqi.uilib.ui.animation.SystemDocumentAnimationClock;
 import club.heiqi.uilib.ui.dom.DocumentElementClickEvent;
 import club.heiqi.uilib.ui.dom.DocumentElementClickHandler;
 import club.heiqi.uilib.ui.dom.DocumentElementFocusEvent;
 import club.heiqi.uilib.ui.dom.DocumentElementFocusHandler;
+import club.heiqi.uilib.ui.dom.DocumentElementHoverEvent;
+import club.heiqi.uilib.ui.dom.DocumentElementHoverHandler;
 import club.heiqi.uilib.ui.dom.DocumentElementKeyEvent;
 import club.heiqi.uilib.ui.dom.DocumentElementKeyHandler;
 import club.heiqi.uilib.ui.dom.DocumentElementTextInputEvent;
@@ -39,6 +42,7 @@ public final class DocumentTextAreaControl {
 
     private static final int DEFAULT_LINE_HEIGHT = 18;
     private static final int CLICK_EMPTY_LINE_HIGHLIGHT_WIDTH = 4;
+    private static final long BLINK_PERIOD_NANOS = 530_000_000L;
 
     private final ElementNode element;
     private final ElementNode selectionLayer;
@@ -53,11 +57,15 @@ public final class DocumentTextAreaControl {
     private int maxLength = 4096;
     private boolean enabled = true;
     private boolean focused;
+    private boolean hovered;
+    private boolean readOnly;
+    private boolean required;
     private int caretIndex;
     private int selectionAnchorIndex;
     private int preferredColumnCodePoints = -1;
     private int normalBackgroundColor = 0xFF222233;
     private int normalBorderColor = 0xFF555577;
+    private int hoverBorderColor = 0xFF7777AA;
     private int focusBorderColor = 0xFF5A9EF7;
     private int disabledBackgroundColor = 0xFF333344;
     private int disabledBorderColor = 0xFF444455;
@@ -69,6 +77,7 @@ public final class DocumentTextAreaControl {
     private int viewportContentTop;
     private int viewportContentWidth;
     private int viewportContentHeight;
+    private long caretBlinkResetNanos;
 
     /**
      * 创建多行文本输入控件。
@@ -204,6 +213,66 @@ public final class DocumentTextAreaControl {
     }
 
     /**
+     * 设置文本区是否只读。
+     *
+     * @param readOnly 是否只读
+     * @return 当前文本区
+     */
+    public DocumentTextAreaControl setReadOnly(boolean readOnly) {
+        if (this.readOnly == readOnly) {
+            return this;
+        }
+        this.readOnly = readOnly;
+        if (readOnly) {
+            element.setAttribute("readonly", "true");
+            element.setAttribute("aria-readonly", "true");
+        } else {
+            element.removeAttribute("readonly");
+            element.removeAttribute("aria-readonly");
+        }
+        return this;
+    }
+
+    /**
+     * 判断文本区是否只读。
+     *
+     * @return 是否只读
+     */
+    public boolean isReadOnly() {
+        return readOnly;
+    }
+
+    /**
+     * 设置文本区是否必填。
+     *
+     * @param required 是否必填
+     * @return 当前文本区
+     */
+    public DocumentTextAreaControl setRequired(boolean required) {
+        if (this.required == required) {
+            return this;
+        }
+        this.required = required;
+        if (required) {
+            element.setAttribute("required", "true");
+            element.setAttribute("aria-required", "true");
+        } else {
+            element.removeAttribute("required");
+            element.removeAttribute("aria-required");
+        }
+        return this;
+    }
+
+    /**
+     * 判断文本区是否必填。
+     *
+     * @return 是否必填
+     */
+    public boolean isRequired() {
+        return required;
+    }
+
+    /**
      * 设置文本变更处理器。
      *
      * @param changeHandler 文本变更处理器；为 null 时清除
@@ -256,6 +325,7 @@ public final class DocumentTextAreaControl {
     }
 
     private void configureElement() {
+        element.setAttribute("aria-multiline", "true");
         element.style()
                 .setDisplay(UiDisplay.BLOCK)
                 .setPosition(UiPosition.RELATIVE)
@@ -318,6 +388,7 @@ public final class DocumentTextAreaControl {
                 focused = enabled && event.isFocused();
                 updateVisualState();
                 if (focused) {
+                    resetCaretBlink();
                     requestCaretReveal();
                 }
             }
@@ -350,6 +421,13 @@ public final class DocumentTextAreaControl {
                 }
                 return false;
             }
+        }).setHoverHandler(new DocumentElementHoverHandler() {
+            @Override
+            public boolean onHoverChanged(DocumentElementHoverEvent event) {
+                hovered = event.isHovered() && enabled;
+                updateVisualState();
+                return false;
+            }
         });
     }
 
@@ -361,6 +439,7 @@ public final class DocumentTextAreaControl {
             selectionAnchorIndex = 0;
             caretIndex = textBuilder.length();
             preferredColumnCodePoints = -1;
+            resetCaretBlink();
             requestCaretReveal();
             return true;
         }
@@ -480,6 +559,9 @@ public final class DocumentTextAreaControl {
         } else if (focused) {
             backgroundColor = normalBackgroundColor;
             borderColor = focusBorderColor;
+        } else if (hovered) {
+            backgroundColor = normalBackgroundColor;
+            borderColor = hoverBorderColor;
         } else {
             backgroundColor = normalBackgroundColor;
             borderColor = normalBorderColor;
@@ -493,6 +575,9 @@ public final class DocumentTextAreaControl {
 
     private boolean replaceSelection(String replacement, boolean fireChange) {
         String normalized = normalizeInput(replacement);
+        if (readOnly) {
+            return false;
+        }
         if (normalized.isEmpty() && !hasSelection()) {
             return false;
         }
@@ -512,6 +597,7 @@ public final class DocumentTextAreaControl {
         caretIndex = selectionStart + inserted.length();
         selectionAnchorIndex = caretIndex;
         preferredColumnCodePoints = -1;
+        resetCaretBlink();
         syncContent();
         updateVisualState();
         requestCaretReveal();
@@ -606,6 +692,7 @@ public final class DocumentTextAreaControl {
             caretIndex = resolvedCaretIndex;
             selectionAnchorIndex = resolvedCaretIndex;
         }
+        resetCaretBlink();
         requestCaretReveal();
     }
 
@@ -615,11 +702,16 @@ public final class DocumentTextAreaControl {
         caretIndex = resolvedCaretIndex;
         selectionAnchorIndex = resolvedCaretIndex;
         preferredColumnCodePoints = -1;
+        resetCaretBlink();
     }
 
     private void setCaretFromLineClick(int lineIndex, int documentX) {
         collapseSelection(resolveCaretIndexOnLine(lineIndex, documentX));
         requestCaretReveal();
+    }
+
+    private void resetCaretBlink() {
+        caretBlinkResetNanos = SystemDocumentAnimationClock.getInstance().getCurrentTimeNanos();
     }
 
     private void requestCaretReveal() {
@@ -699,6 +791,13 @@ public final class DocumentTextAreaControl {
 
     private void renderCaret(UiRenderContext context) {
         if (context == null || !focused || !enabled) {
+            return;
+        }
+        long elapsed = SystemDocumentAnimationClock.getInstance().getCurrentTimeNanos() - caretBlinkResetNanos;
+        if (elapsed < 0) {
+            elapsed = 0;
+        }
+        if ((elapsed / BLINK_PERIOD_NANOS) % 2 != 0) {
             return;
         }
         RenderedLineMetrics lineMetrics = resolveRenderedLineMetricsForCaret(caretIndex);
