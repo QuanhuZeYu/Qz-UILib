@@ -436,6 +436,12 @@ public final class UiDocument {
         return runtime != null && ownsElement(element) && runtime.requestScrollIntoView(element);
     }
 
+    DocumentElementBounds __getElementBounds(ElementNode element) {
+        DocumentInteractionRuntime runtime = getInteractionRuntime();
+        return runtime != null && ownsElement(element) ? runtime.requestElementBounds(element)
+                : DocumentElementBounds.unavailable();
+    }
+
     DocumentAnimation __animateElement(ElementNode element, DocumentKeyframes keyframes,
             DocumentAnimationOptions options) {
         DocumentKeyframes resolvedKeyframes = Objects.requireNonNull(keyframes, "keyframes");
@@ -1070,6 +1076,16 @@ public final class UiDocument {
          * @return 是否存在有效布局目标并完成调用
          */
         boolean requestScrollIntoView(ElementNode element);
+
+        /**
+         * 请求读取指定元素当前布局边界。
+         *
+         * @param element 目标元素
+         * @return 元素布局边界；不可用时返回不可用边界
+         */
+        default DocumentElementBounds requestElementBounds(ElementNode element) {
+            return DocumentElementBounds.unavailable();
+        }
 
         /**
          * 请求对指定元素启动命令式 keyframe animation。

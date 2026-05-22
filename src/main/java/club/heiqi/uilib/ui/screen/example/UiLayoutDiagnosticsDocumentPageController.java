@@ -16,13 +16,27 @@ import club.heiqi.uilib.ui.dom.UiDocument;
 import club.heiqi.uilib.ui.control.DocumentButtonActionEvent;
 import club.heiqi.uilib.ui.control.DocumentButtonActionHandler;
 import club.heiqi.uilib.ui.control.DocumentButtonControl;
+import club.heiqi.uilib.ui.control.DocumentCheckboxChangeEvent;
+import club.heiqi.uilib.ui.control.DocumentCheckboxChangeHandler;
+import club.heiqi.uilib.ui.control.DocumentCheckboxControl;
+import club.heiqi.uilib.ui.control.DocumentRadioChangeEvent;
+import club.heiqi.uilib.ui.control.DocumentRadioChangeHandler;
+import club.heiqi.uilib.ui.control.DocumentRadioGroupControl;
 import club.heiqi.uilib.ui.control.DocumentSegmentedSelectionEvent;
 import club.heiqi.uilib.ui.control.DocumentSegmentedSelectionHandler;
 import club.heiqi.uilib.ui.control.DocumentSegmentedSelectorControl;
+import club.heiqi.uilib.ui.control.DocumentSliderChangeEvent;
+import club.heiqi.uilib.ui.control.DocumentSliderChangeHandler;
+import club.heiqi.uilib.ui.control.DocumentSliderControl;
+import club.heiqi.uilib.ui.control.DocumentTabChangeEvent;
+import club.heiqi.uilib.ui.control.DocumentTabChangeHandler;
+import club.heiqi.uilib.ui.control.DocumentTabContentBuilder;
+import club.heiqi.uilib.ui.control.DocumentTabControl;
 import club.heiqi.uilib.ui.control.DocumentTextInputControl;
 import club.heiqi.uilib.ui.control.DocumentToggleChangeEvent;
 import club.heiqi.uilib.ui.control.DocumentToggleChangeHandler;
 import club.heiqi.uilib.ui.control.DocumentToggleSwitchControl;
+import club.heiqi.uilib.ui.control.UiRadioOrientation;
 import club.heiqi.uilib.ui.layout.UiLength;
 import club.heiqi.uilib.ui.layout.UiLayoutSpec;
 import club.heiqi.uilib.ui.style.props.UiAlignItems;
@@ -315,6 +329,8 @@ public final class UiLayoutDiagnosticsDocumentPageController extends DocumentPag
         TextNode mutationMetricsText = mutationCard.appendText("");
         TextNode mutationSampleText = mutationCard.appendText("");
 
+        appendSettingsControlsProbe(document, root);
+
         ElementNode divCard = appendCard(document, root, 0xFF102A2A, 0xFF2DD4BF);
         divCard.appendText("统一尺寸契约探针");
         divCard.appendText("内部区域使用 fixed height + overflow auto，验证 HTML-like 滚动状态与裁剪。 ");
@@ -401,6 +417,70 @@ public final class UiLayoutDiagnosticsDocumentPageController extends DocumentPag
                     + "：fixed height + overflow auto 应只移动内部文本内容，背景、边框和裁剪框保持固定。");
         }
         return probe;
+    }
+
+    private void appendSettingsControlsProbe(UiDocument document, ElementNode root) {
+        ElementNode settingsCard = appendCard(document, root, 0xFF162033, 0xFF60A5FA);
+        settingsCard.appendText("设置页核心控件探针");
+        settingsCard.appendText("Checkbox、Radio、Slider 与 Tab 都以 HTML-like DOM 子树挂载，供内部诊断页最小验证。 ");
+        final TextNode settingsStateText = settingsCard.appendText("设置控件状态：等待交互");
+
+        DocumentCheckboxControl checkbox = new DocumentCheckboxControl(document, "启用高级提示")
+                .setChecked(true)
+                .setChangeHandler(new DocumentCheckboxChangeHandler() {
+                    @Override
+                    public void onCheckboxChanged(DocumentCheckboxChangeEvent event) {
+                        settingsStateText.setText("设置控件状态：复选框=" + event.isChecked());
+                    }
+                });
+        appendControlRow(document, settingsCard, "复选框", checkbox.getElement());
+
+        DocumentRadioGroupControl radioGroup = new DocumentRadioGroupControl(document, "低", "中", "高")
+                .setOrientation(UiRadioOrientation.HORIZONTAL)
+                .setSelectedIndex(1)
+                .setChangeHandler(new DocumentRadioChangeHandler() {
+                    @Override
+                    public void onRadioChanged(DocumentRadioChangeEvent event) {
+                        settingsStateText.setText("设置控件状态：单选=" + event.getSelectedOption());
+                    }
+                });
+        appendControlRow(document, settingsCard, "单选组", radioGroup.getElement());
+
+        DocumentSliderControl slider = new DocumentSliderControl(document)
+                .setRange(0.0D, 100.0D)
+                .setStep(5.0D)
+                .setValue(50.0D)
+                .setChangeHandler(new DocumentSliderChangeHandler() {
+                    @Override
+                    public void onSliderChanged(DocumentSliderChangeEvent event) {
+                        settingsStateText.setText("设置控件状态：滑块=" + Math.round(event.getValue())
+                                + (event.isCommitting() ? " 已提交" : " 调整中"));
+                    }
+                });
+        appendControlRow(document, settingsCard, "滑块", slider.getElement());
+
+        DocumentTabControl tabControl = new DocumentTabControl(document)
+                .addTab("图形", new DocumentTabContentBuilder() {
+                    @Override
+                    public void build(ElementNode panel, UiDocument document) {
+                        panel.appendText("图形设置：亮度、粒子与界面缩放。 ");
+                    }
+                })
+                .addTab("音频", new DocumentTabContentBuilder() {
+                    @Override
+                    public void build(ElementNode panel, UiDocument document) {
+                        panel.appendText("音频设置：主音量、环境音与提示音。 ");
+                    }
+                })
+                .setActiveIndex(0)
+                .setChangeHandler(new DocumentTabChangeHandler() {
+                    @Override
+                    public void onTabChanged(DocumentTabChangeEvent event) {
+                        settingsStateText.setText("设置控件状态：标签=" + event.getActiveLabel());
+                    }
+                });
+        tabControl.getElement().style().setMargin(UiStyleLength.px(8));
+        settingsCard.append(tabControl.getElement());
     }
 
     private DocumentTextInputControl createTextInput(UiDocument document, String placeholder, String text,

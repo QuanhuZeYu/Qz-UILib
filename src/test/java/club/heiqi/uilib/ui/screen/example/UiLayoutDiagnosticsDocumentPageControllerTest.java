@@ -48,6 +48,8 @@ public class UiLayoutDiagnosticsDocumentPageControllerTest {
         Assert.assertTrue(containsText(texts, "表单约束探针"));
         Assert.assertTrue(containsText(texts, "文本换行与最小宽度探针"));
         Assert.assertTrue(containsText(texts, "高频字符变更探针"));
+        Assert.assertTrue(containsText(texts, "设置页核心控件探针"));
+        Assert.assertTrue(containsText(texts, "图形设置：亮度、粒子与界面缩放"));
         Assert.assertTrue(containsText(texts, "窗口 1280x720"));
         Assert.assertTrue(containsText(texts, "最近状态：尚未操作"));
         Assert.assertTrue(containsText(texts, "探针状态：已停止"));

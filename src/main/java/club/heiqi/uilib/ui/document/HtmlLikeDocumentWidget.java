@@ -12,6 +12,7 @@ import club.heiqi.uilib.ui.animation.DocumentAnimationProperty;
 import club.heiqi.uilib.ui.animation.DocumentAnimationTimeline;
 import club.heiqi.uilib.ui.animation.DocumentKeyframes;
 import club.heiqi.uilib.ui.animation.SystemDocumentAnimationClock;
+import club.heiqi.uilib.ui.dom.DocumentElementBounds;
 import club.heiqi.uilib.ui.dom.DocumentElementScrollEvent;
 import club.heiqi.uilib.ui.dom.DocumentElementScrollHandler;
 import club.heiqi.uilib.ui.dom.DocumentNode;
@@ -447,6 +448,20 @@ public final class HtmlLikeDocumentWidget extends Widget implements UiDocument.D
     @Override
     public boolean requestScrollIntoView(ElementNode element) {
         return focusManager.scrollElementIntoView(element);
+    }
+
+    @Override
+    public DocumentElementBounds requestElementBounds(ElementNode element) {
+        if (element == null || !isElementAttachedToDocument(element)) {
+            return DocumentElementBounds.unavailable();
+        }
+        LayoutBoundsEntry entry = findLayoutBoundsEntry(resolveInteractiveLayoutBox(), element, 0, 0);
+        if (entry == null) {
+            return DocumentElementBounds.unavailable();
+        }
+        return DocumentElementBounds.of(entry.box.getLeft() + entry.offsetX, entry.box.getTop() + entry.offsetY,
+                entry.box.getWidth(), entry.box.getHeight(), entry.box.getContentLeft() + entry.offsetX,
+                entry.box.getContentTop() + entry.offsetY, entry.box.getContentWidth(), entry.box.getContentHeight());
     }
 
     @Override
@@ -892,6 +907,42 @@ public final class HtmlLikeDocumentWidget extends Widget implements UiDocument.D
             }
         }
         return null;
+    }
+
+    private LayoutBoundsEntry findLayoutBoundsEntry(DocumentLayoutBox box, ElementNode element, int offsetX,
+            int offsetY) {
+        if (box == null || element == null) {
+            return null;
+        }
+        int baseOffsetX = box.isFixedPositioned() ? 0 : offsetX;
+        int baseOffsetY = box.isFixedPositioned() ? 0 : offsetY;
+        int boxOffsetX = baseOffsetX + box.getPositionOffsetX();
+        int boxOffsetY = baseOffsetY + box.getPositionOffsetY();
+        if (box.getElement() == element) {
+            return new LayoutBoundsEntry(box, boxOffsetX, boxOffsetY);
+        }
+        int childOffsetX = boxOffsetX - scrollState.getScrollLeft(box.getElement());
+        int childOffsetY = boxOffsetY - scrollState.getScrollTop(box.getElement());
+        for (DocumentLayoutBox child : box.getChildren()) {
+            LayoutBoundsEntry found = findLayoutBoundsEntry(child, element, childOffsetX, childOffsetY);
+            if (found != null) {
+                return found;
+            }
+        }
+        return null;
+    }
+
+    private static final class LayoutBoundsEntry {
+
+        private final DocumentLayoutBox box;
+        private final int offsetX;
+        private final int offsetY;
+
+        private LayoutBoundsEntry(DocumentLayoutBox box, int offsetX, int offsetY) {
+            this.box = box;
+            this.offsetX = offsetX;
+            this.offsetY = offsetY;
+        }
     }
 
     private boolean flushCompletedAnimationEvents(long currentTimeNanos) {

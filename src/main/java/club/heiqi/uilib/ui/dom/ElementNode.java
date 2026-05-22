@@ -589,6 +589,17 @@ public final class ElementNode extends ElementInteractionNode {
     }
 
     /**
+     * 返回元素在文档局部坐标系下的当前布局边界。
+     *
+     * <p>文档尚未挂载到运行时或元素不在当前布局树中时返回不可用边界。</p>
+     *
+     * @return 当前布局边界
+     */
+    public DocumentElementBounds getDocumentBounds() {
+        return getOwnerDocument().__getElementBounds(this);
+    }
+
+    /**
      * 追加子节点并保持元素链式调用。
      *
      * @param child 子节点
