@@ -7,3 +7,4 @@
 ## 当前文档
 
 - `inventory-overview-tooltip.md`：`inventory_overview` 背包概览示例页的 tooltip 专项规格。
+- `settings-form-controls-plan.md`：设置页核心控件（Checkbox、Radio、Slider、Tab）实现计划与 API 形状。
