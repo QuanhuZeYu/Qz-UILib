@@ -162,6 +162,7 @@ public final class UiTestDocumentPageController extends DocumentPageController {
         ElementNode secondRow = appendNavigationRow(document, outer);
         ElementNode thirdRow = appendNavigationRow(document, outer);
         ElementNode fourthRow = appendNavigationRow(document, outer);
+        ElementNode fifthRow = appendNavigationRow(document, outer);
 
         appendNavigationCard(document, firstRow, "布局诊断子页",
                 "继续检查页面壳尺寸、文本测量、滚动区域和运行时统计。", "进入布局诊断页",
@@ -219,7 +220,15 @@ public final class UiTestDocumentPageController extends DocumentPageController {
                         menuModel.openBrowserSemanticsShowcase();
                     }
                 });
-        appendNavigationCard(document, fourthRow, "UI 框架结构审查",
+        appendNavigationCard(document, fourthRow, "动画能力成功展示",
+                "把 REVIEW-20260521 中已完成的 transform、direction、infinite、per-property transition、steps()、animate() 与生命周期事件做成游戏内成功展示页。", "进入动画展示",
+                new DocumentButtonActionHandler() {
+                    @Override
+                    public void onAction(DocumentButtonActionEvent event) {
+                        menuModel.openAnimationCapabilityShowcase();
+                    }
+                });
+        appendNavigationCard(document, fifthRow, "UI 框架结构审查",
                 "将 2026-05-20 UI 框架结构审查整理成可滚动看板，聚合分层链路、优先级、热区和后续动作。", "进入结构审查",
                 new DocumentButtonActionHandler() {
                     @Override

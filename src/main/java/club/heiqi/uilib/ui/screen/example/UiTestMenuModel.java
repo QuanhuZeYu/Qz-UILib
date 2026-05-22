@@ -41,6 +41,11 @@ public interface UiTestMenuModel {
     void openBrowserSemanticsShowcase();
 
     /**
+     * 打开动画能力成功展示子页。
+     */
+    void openAnimationCapabilityShowcase();
+
+    /**
      * 打开 UI 框架结构审查展示子页。
      */
     void openUiFrameworkStructureAudit();

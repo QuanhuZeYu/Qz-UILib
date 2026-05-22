@@ -73,6 +73,8 @@ public class UiDocumentScreensTest {
         Assert.assertEquals("list_element_drag", InternalDiagnosticScreenRegistry.listElementDragPageId());
         Assert.assertEquals("browser_semantics_showcase",
                 InternalDiagnosticScreenRegistry.browserSemanticsShowcasePageId());
+        Assert.assertEquals("animation_capability_showcase",
+                InternalDiagnosticScreenRegistry.animationCapabilityShowcasePageId());
         Assert.assertEquals("ui_framework_structure_audit",
                 InternalDiagnosticScreenRegistry.uiFrameworkStructureAuditPageId());
     }
@@ -107,6 +109,7 @@ public class UiDocumentScreensTest {
         Assert.assertFalse(UiDiagnosticsScreens.isUiTestLayout(screen));
         Assert.assertFalse(UiDiagnosticsScreens.isHtmlLikeSmoke(screen));
         Assert.assertFalse(UiDiagnosticsScreens.isHtmlLikeGlass(screen));
+        Assert.assertFalse(UiDiagnosticsScreens.isAnimationCapabilityShowcase(screen));
         Assert.assertFalse(UiDiagnosticsScreens.isUiFrameworkStructureAudit(screen));
         Assert.assertEquals(InternalDiagnosticScreenRegistry.uiTestPageId(), InternalScreenIdentity.runtimeScreenNameOf(screen));
     }
@@ -121,6 +124,7 @@ public class UiDocumentScreensTest {
         Assert.assertEquals("", InternalScreenIdentity.getPageId(screen));
         Assert.assertFalse(UiDiagnosticsScreens.isUiTest(screen));
         Assert.assertFalse(UiDiagnosticsScreens.isHtmlLikeGlass(screen));
+        Assert.assertFalse(UiDiagnosticsScreens.isAnimationCapabilityShowcase(screen));
         Assert.assertEquals("Object", InternalScreenIdentity.runtimeScreenNameOf(screen));
     }
 

@@ -146,6 +146,23 @@ public final class UiDiagnosticsScreens {
     }
 
     /**
+     * 创建动画能力成功展示页。
+     */
+    public static GuiScreen createAnimationCapabilityShowcase() {
+        return createAnimationCapabilityShowcase(
+                UiDocumentScreens.DocumentScreenEnvironment.minecraftFormattedDefaults());
+    }
+
+    /**
+     * 基于显式环境创建动画能力成功展示页。
+     */
+    public static GuiScreen createAnimationCapabilityShowcase(UiDocumentScreens.DocumentScreenEnvironment environment) {
+        return InternalHostedScreenFactory.createScreen(
+                InternalDiagnosticScreenRegistry.ANIMATION_CAPABILITY_SHOWCASE_DEFINITION,
+                Objects.requireNonNull(environment, "environment"), null);
+    }
+
+    /**
      * 创建 UI 框架结构审查展示页。
      */
     public static GuiScreen createUiFrameworkStructureAudit() {
@@ -193,6 +210,11 @@ public final class UiDiagnosticsScreens {
         return InternalScreenIdentity.hasPageId(screen, InternalDiagnosticScreenRegistry.listElementDragPageId());
     }
 
+    public static boolean isAnimationCapabilityShowcase(Object screen) {
+        return InternalScreenIdentity.hasPageId(screen,
+                InternalDiagnosticScreenRegistry.animationCapabilityShowcasePageId());
+    }
+
     public static boolean isUiFrameworkStructureAudit(Object screen) {
         return InternalScreenIdentity.hasPageId(screen,
                 InternalDiagnosticScreenRegistry.uiFrameworkStructureAuditPageId());
@@ -238,6 +260,11 @@ public final class UiDiagnosticsScreens {
             @Override
             public void openBrowserSemanticsShowcase() {
                 Minecraft.getMinecraft().displayGuiScreen(createBrowserSemanticsShowcase(environment));
+            }
+
+            @Override
+            public void openAnimationCapabilityShowcase() {
+                Minecraft.getMinecraft().displayGuiScreen(createAnimationCapabilityShowcase(environment));
             }
 
             @Override
