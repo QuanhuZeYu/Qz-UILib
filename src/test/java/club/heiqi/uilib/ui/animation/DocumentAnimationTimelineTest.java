@@ -73,6 +73,122 @@ public class DocumentAnimationTimelineTest {
     }
 
     /**
+     * 验证 steps 缓动会产生离散阶梯进度。
+     */
+    @Test
+    public void shouldApplyStepsTimingFunction() {
+        DocumentAnimationTimingFunction endSteps = DocumentAnimationTimingFunction.steps(4);
+        DocumentAnimationTimingFunction startSteps = DocumentAnimationTimingFunction.steps(4,
+                DocumentAnimationTimingFunction.StepPosition.START);
+
+        Assert.assertEquals(0.0F, endSteps.apply(0.0F), 0.0F);
+        Assert.assertEquals(0.25F, endSteps.apply(0.25F), 0.0F);
+        Assert.assertEquals(0.5F, endSteps.apply(0.74F), 0.0F);
+        Assert.assertEquals(1.0F, endSteps.apply(1.0F), 0.0F);
+        Assert.assertEquals(0.25F, startSteps.apply(0.01F), 0.0F);
+        Assert.assertEquals(0.75F, startSteps.apply(0.51F), 0.0F);
+    }
+
+    /**
+     * 验证 per-property transition 四元组会为不同属性使用独立 duration/delay/timing。
+     */
+    @Test
+    public void shouldUsePerPropertyTransitionSpecs() {
+        UiDocument document = UiDocument.create();
+        ElementNode root = document.getRootElement();
+        root.style()
+                .setWidth(UiStyleLength.px(40))
+                .setHeight(UiStyleLength.px(20))
+                .setOpacity(1.0F)
+                .setTransitions(
+                        DocumentTransitionSpec.ofMillis(DocumentAnimationProperty.OPACITY, 1000L, 0L,
+                                DocumentAnimationTimingFunction.LINEAR),
+                        DocumentTransitionSpec.ofMillis(DocumentAnimationProperty.WIDTH, 2000L, 0L,
+                                DocumentAnimationTimingFunction.LINEAR));
+        DocumentAnimationTimeline timeline = new DocumentAnimationTimeline();
+
+        timeline.updateFromLayout(DocumentLayoutEngine.layout(root, 120, 0), 0L);
+        root.style().setOpacity(0.0F).setWidth(UiStyleLength.px(80));
+        timeline.updateFromLayout(DocumentLayoutEngine.layout(root, 120, 0), 0L);
+
+        Assert.assertEquals(0.5F, timeline.resolveFloat(root, DocumentAnimationProperty.OPACITY, 0.0F,
+                500_000_000L), 0.0F);
+        Assert.assertEquals(50.0F, timeline.resolveFloat(root, DocumentAnimationProperty.WIDTH, 80.0F,
+                500_000_000L), 0.0F);
+    }
+
+    /**
+     * 验证动画时间线会收集 start / iteration / cancel 生命周期事件记录。
+     */
+    @Test
+    public void shouldCollectAnimationLifecycleRecords() {
+        UiDocument document = UiDocument.create();
+        document.registerKeyframes(DocumentKeyframes.named("pulse")
+                .setColor(DocumentAnimationProperty.BACKGROUND_COLOR, 0xFF000000, 0xFFFFFFFF)
+                .build());
+        ElementNode root = document.getRootElement();
+        root.style()
+                .setWidth(UiStyleLength.px(40))
+                .setHeight(UiStyleLength.px(20))
+                .setBackgroundColor(0xFF000000)
+                .setOpacity(1.0F)
+                .setTransition(DocumentAnimationProperty.OPACITY, 1000L)
+                .setAnimation("pulse", 1000L)
+                .setAnimationIterationCount(3);
+        DocumentAnimationTimeline timeline = new DocumentAnimationTimeline();
+
+        timeline.updateFromLayout(DocumentLayoutEngine.layout(root, 80, 0), 0L);
+        root.style().setOpacity(0.0F);
+        timeline.updateFromLayout(DocumentLayoutEngine.layout(root, 80, 0), 0L);
+
+        DocumentAnimationTimeline.PruneResult startResult = timeline.pruneFinishedAnimationsWithResult(0L);
+        Assert.assertEquals(1, startResult.getTransitionStartRecords().size());
+        Assert.assertEquals(1, startResult.getAnimationStartRecords().size());
+        Assert.assertEquals("pulse", startResult.getAnimationStartRecords().get(0).getAnimationName());
+
+        root.style().setTransitionDurationMillis(0L);
+        timeline.updateFromLayout(DocumentLayoutEngine.layout(root, 80, 0), 500_000_000L);
+        DocumentAnimationTimeline.PruneResult cancelResult = timeline.pruneFinishedAnimationsWithResult(
+                500_000_000L);
+        Assert.assertEquals(1, cancelResult.getTransitionCancelRecords().size());
+        Assert.assertEquals(DocumentAnimationProperty.OPACITY,
+                cancelResult.getTransitionCancelRecords().get(0).getProperty());
+
+        DocumentAnimationTimeline.PruneResult iterationResult = timeline.pruneFinishedAnimationsWithResult(
+                1_000_000_000L);
+        Assert.assertEquals(1, iterationResult.getAnimationIterationRecords().size());
+        Assert.assertEquals(1L, iterationResult.getAnimationIterationRecords().get(0).getIterationIndex());
+    }
+
+    /**
+     * 验证命令式 keyframe animation 会返回可查询和可取消的句柄。
+     */
+    @Test
+    public void shouldRunImperativeKeyframeAnimationHandle() {
+        UiDocument document = UiDocument.create();
+        ElementNode root = document.getRootElement();
+        root.style()
+                .setWidth(UiStyleLength.px(40))
+                .setHeight(UiStyleLength.px(20))
+                .setOpacity(1.0F);
+        DocumentKeyframes keyframes = DocumentKeyframes.named("imperativeFade")
+                .setFloat(DocumentAnimationProperty.OPACITY, 1.0F, 0.0F)
+                .build();
+        DocumentAnimationTimeline timeline = new DocumentAnimationTimeline();
+        DocumentLayoutBox layoutBox = DocumentLayoutEngine.layout(root, 80, 0);
+
+        DocumentAnimation animation = timeline.startKeyframeAnimation(layoutBox, keyframes,
+                DocumentAnimationOptions.ofMillis(1000L), 0L);
+
+        Assert.assertTrue(animation.isRunning());
+        Assert.assertEquals(0.5F, timeline.resolveFloat(root, DocumentAnimationProperty.OPACITY, 1.0F,
+                500_000_000L), 0.0F);
+        Assert.assertTrue(animation.cancel());
+        Assert.assertFalse(animation.isRunning());
+        Assert.assertFalse(timeline.hasAnimationWork());
+    }
+
+    /**
      * 验证 transform 子属性 transition 会作为 paint-only 数值覆盖层插值。
      */
     @Test

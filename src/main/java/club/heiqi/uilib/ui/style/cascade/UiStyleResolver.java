@@ -51,6 +51,7 @@ import java.util.List;
 import club.heiqi.uilib.ui.animation.DocumentAnimationFillMode;
 import club.heiqi.uilib.ui.animation.DocumentAnimationProperty;
 import club.heiqi.uilib.ui.animation.DocumentAnimationTimingFunction;
+import club.heiqi.uilib.ui.animation.DocumentTransitionSpec;
 import club.heiqi.uilib.ui.dom.DocumentNode;
 import club.heiqi.uilib.ui.dom.ElementNode;
 import club.heiqi.uilib.ui.dom.UiDocument;
@@ -247,6 +248,9 @@ public final class UiStyleResolver {
         DocumentAnimationTimingFunction transitionTimingFunction = cascade(inlineStyle, matchingRules,
                 UiStyleProperty.TRANSITION_TIMING, DocumentAnimationTimingFunction.LINEAR,
                 parentStyle == null ? DocumentAnimationTimingFunction.LINEAR : parentStyle.getTransitionTimingFunction());
+        List<DocumentTransitionSpec> transitionSpecs = cascade(inlineStyle, matchingRules,
+                UiStyleProperty.TRANSITION_SPECS, Collections.<DocumentTransitionSpec>emptyList(),
+                parentStyle == null ? Collections.<DocumentTransitionSpec>emptyList() : parentStyle.getTransitionSpecs());
         String animationName = cascade(inlineStyle, matchingRules, UiStyleProperty.ANIMATION_NAME, null,
                 parentStyle == null ? null : parentStyle.getAnimationName());
         Long animationDurationNanos = cascade(inlineStyle, matchingRules, UiStyleProperty.ANIMATION_DURATION,
@@ -382,7 +386,7 @@ public final class UiStyleResolver {
                 orderValue.intValue(), opacityValue.floatValue(), backgroundColorValue.intValue(),
                 borderColorValue.intValue(), textColorValue.intValue(), transitionProperties,
                 transitionDurationNanos.longValue(),
-                transitionDelayNanos.longValue(), transitionTimingFunction, animationName,
+                transitionDelayNanos.longValue(), transitionTimingFunction, transitionSpecs, animationName,
                 animationDurationNanos.longValue(), animationDelayNanos.longValue(), animationIterationCount.intValue(),
                 animationFillMode, animationTimingFunction, animationDirection, backdropBlurRadius,
                 backdropSaturationValue.floatValue(),

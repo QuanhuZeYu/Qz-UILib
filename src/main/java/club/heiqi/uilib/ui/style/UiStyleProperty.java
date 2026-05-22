@@ -41,6 +41,7 @@ public enum UiStyleProperty {
     TRANSITION_DURATION(false, UiStyleChangeImpact.PAINT),
     TRANSITION_DELAY(false, UiStyleChangeImpact.PAINT),
     TRANSITION_TIMING(false, UiStyleChangeImpact.PAINT),
+    TRANSITION_SPECS(false, UiStyleChangeImpact.PAINT),
     ANIMATION_NAME(false, UiStyleChangeImpact.PAINT),
     ANIMATION_DURATION(false, UiStyleChangeImpact.PAINT),
     ANIMATION_DELAY(false, UiStyleChangeImpact.PAINT),

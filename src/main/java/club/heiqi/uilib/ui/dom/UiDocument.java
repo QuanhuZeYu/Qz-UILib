@@ -10,6 +10,8 @@ import java.util.Objects;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicLong;
 
+import club.heiqi.uilib.ui.animation.DocumentAnimation;
+import club.heiqi.uilib.ui.animation.DocumentAnimationOptions;
 import club.heiqi.uilib.ui.animation.DocumentKeyframes;
 import club.heiqi.uilib.ui.style.selector.UiSelector;
 import club.heiqi.uilib.ui.style.selector.UiPseudoElement;
@@ -369,6 +371,17 @@ public final class UiDocument {
     boolean __scrollElementIntoView(ElementNode element) {
         DocumentInteractionRuntime runtime = getInteractionRuntime();
         return runtime != null && ownsElement(element) && runtime.requestScrollIntoView(element);
+    }
+
+    DocumentAnimation __animateElement(ElementNode element, DocumentKeyframes keyframes,
+            DocumentAnimationOptions options) {
+        DocumentKeyframes resolvedKeyframes = Objects.requireNonNull(keyframes, "keyframes");
+        DocumentAnimationOptions resolvedOptions = options == null ? DocumentAnimationOptions.ofMillis(0L) : options;
+        DocumentInteractionRuntime runtime = getInteractionRuntime();
+        if (runtime == null || !ownsElement(element)) {
+            return DocumentAnimation.inactive(element, resolvedKeyframes.getName(), resolvedOptions);
+        }
+        return runtime.requestAnimation(element, resolvedKeyframes, resolvedOptions);
     }
 
     private DocumentInteractionRuntime getInteractionRuntime() {
@@ -994,5 +1007,16 @@ public final class UiDocument {
          * @return 是否存在有效布局目标并完成调用
          */
         boolean requestScrollIntoView(ElementNode element);
+
+        /**
+         * 请求对指定元素启动命令式 keyframe animation。
+         *
+         * @param element 目标元素
+         * @param keyframes keyframes 定义
+         * @param options 播放选项
+         * @return 动画句柄
+         */
+        DocumentAnimation requestAnimation(ElementNode element, DocumentKeyframes keyframes,
+                DocumentAnimationOptions options);
     }
 }

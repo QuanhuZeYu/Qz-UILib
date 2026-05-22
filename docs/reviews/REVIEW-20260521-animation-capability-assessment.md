@@ -66,9 +66,9 @@
 | 可动画属性覆盖面窄 | 仍缺少 `gap`、`font-size` 等更高阶布局属性 |
 | 无 `animation-direction` | 已在 Phase 2 补齐 |
 | 无 infinite iteration | 已在 Phase 2 补齐 |
-| 无 per-property timing function | keyframe 内各段不能独立指定缓动 |
-| 无 `animationstart` / `animationiteration` 事件 | 事件覆盖不完整 |
-| 无 `transitionstart` / `transitioncancel` 事件 | 事件覆盖不完整 |
+| 无 per-property timing function | transition 已在 Phase 3 支持 per-property duration / delay / timing；keyframe 内 per-stop timing 仍未补齐 |
+| 无 `animationstart` / `animationiteration` 事件 | 已在 Phase 3 补齐声明式 animation 的 start / iteration 事件 |
+| 无 `transitionstart` / `transitioncancel` 事件 | 已在 Phase 3 补齐 transitionstart / transitioncancel |
 
 ## 二、框架层最优解方案
 
@@ -223,6 +223,8 @@
 4. 补齐 `box-shadow` 动画子属性
 
 ### Phase 3：高级能力（按需求驱动）
+
+执行状态（2026-05-22）：已完成首批高级能力闭环。新增 `DocumentTransitionSpec` 支持 per-property transition duration / delay / timing；`DocumentAnimationTimingFunction.steps(...)` 支持离散阶梯缓动；`ElementNode.animate(...)` 可通过 `DocumentAnimationOptions` 启动命令式 keyframe animation 并返回 `DocumentAnimation` 句柄；事件覆盖补齐 `transitionstart` / `transitioncancel` / `animationstart` / `animationiteration`（仍保持 target+bubble 最小模型）。当前仍未实现 keyframe per-stop timing 与完整 Web Animations API 时间轴、暂停/反向播放等高级控制。
 
 1. per-property transition timing
 2. `steps()` 缓动

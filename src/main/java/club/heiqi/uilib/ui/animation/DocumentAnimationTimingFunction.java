@@ -46,6 +46,27 @@ public interface DocumentAnimationTimingFunction {
     }
 
     /**
+     * 创建 steps timing function，默认等同于 {@code steps(count, end)}。
+     *
+     * @param count 阶梯数量，必须大于 0
+     * @return steps timing function
+     */
+    static DocumentAnimationTimingFunction steps(int count) {
+        return steps(count, StepPosition.END);
+    }
+
+    /**
+     * 创建 steps timing function。
+     *
+     * @param count 阶梯数量，必须大于 0
+     * @param position 阶梯跳变位置
+     * @return steps timing function
+     */
+    static DocumentAnimationTimingFunction steps(int count, StepPosition position) {
+        return new StepsTimingFunction(count, position);
+    }
+
+    /**
      * 计算缓动后的进度。
      *
      * @param progress 原始 0..1 进度
@@ -189,6 +210,68 @@ public interface DocumentAnimationTimingFunction {
         public String toString() {
             return String.format(Locale.ROOT, "cubic-bezier(%s, %s, %s, %s)",
                     Float.valueOf(x1), Float.valueOf(y1), Float.valueOf(x2), Float.valueOf(y2));
+        }
+    }
+
+    /** steps timing function 的跳变位置。 */
+    enum StepPosition {
+        /** 在区间起点跳变，等同 CSS steps(..., start)。 */
+        START,
+
+        /** 在区间终点跳变，等同 CSS steps(..., end)。 */
+        END
+    }
+
+    /** 离散阶梯 timing function。 */
+    final class StepsTimingFunction implements DocumentAnimationTimingFunction {
+
+        private final int count;
+        private final StepPosition position;
+
+        private StepsTimingFunction(int count, StepPosition position) {
+            if (count <= 0) {
+                throw new IllegalArgumentException("steps count must be positive");
+            }
+            this.count = count;
+            this.position = position == null ? StepPosition.END : position;
+        }
+
+        @Override
+        public float apply(float progress) {
+            float clampedProgress = clampProgress(progress);
+            if (clampedProgress >= 1.0F) {
+                return 1.0F;
+            }
+            if (position == StepPosition.START) {
+                return Math.min(1.0F, (float) Math.ceil(clampedProgress * count) / count);
+            }
+            if (clampedProgress <= 0.0F) {
+                return 0.0F;
+            }
+            return (float) Math.floor(clampedProgress * count) / count;
+        }
+
+        @Override
+        public boolean equals(Object obj) {
+            if (this == obj) {
+                return true;
+            }
+            if (!(obj instanceof StepsTimingFunction)) {
+                return false;
+            }
+            StepsTimingFunction other = (StepsTimingFunction) obj;
+            return count == other.count && position == other.position;
+        }
+
+        @Override
+        public int hashCode() {
+            return 31 * count + position.hashCode();
+        }
+
+        @Override
+        public String toString() {
+            return String.format(Locale.ROOT, "steps(%d, %s)", Integer.valueOf(count),
+                    position == StepPosition.START ? "start" : "end");
         }
     }
 

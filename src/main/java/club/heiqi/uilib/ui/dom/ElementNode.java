@@ -10,6 +10,9 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 
+import club.heiqi.uilib.ui.animation.DocumentAnimation;
+import club.heiqi.uilib.ui.animation.DocumentAnimationOptions;
+import club.heiqi.uilib.ui.animation.DocumentKeyframes;
 import club.heiqi.uilib.ui.style.UiStyleChangeImpact;
 import club.heiqi.uilib.ui.style.UiStyleChangeListener;
 import club.heiqi.uilib.ui.style.cascade.UiStyleDeclaration;
@@ -512,6 +515,30 @@ public final class ElementNode extends ElementInteractionNode {
      */
     public boolean scrollIntoView() {
         return getOwnerDocument().__scrollElementIntoView(this);
+    }
+
+    /**
+     * 以命令式方式启动 keyframe animation。
+     *
+     * <p>只有元素已挂载到当前 HTML-like 运行时时才会实际启动；未挂载时返回未运行句柄。</p>
+     *
+     * @param keyframes keyframes 定义
+     * @param options 播放选项
+     * @return 动画句柄
+     */
+    public DocumentAnimation animate(DocumentKeyframes keyframes, DocumentAnimationOptions options) {
+        return getOwnerDocument().__animateElement(this, keyframes, options);
+    }
+
+    /**
+     * 以命令式方式启动 keyframe animation。
+     *
+     * @param keyframes keyframes 定义
+     * @param durationMillis 持续时间，单位毫秒
+     * @return 动画句柄
+     */
+    public DocumentAnimation animate(DocumentKeyframes keyframes, long durationMillis) {
+        return animate(keyframes, DocumentAnimationOptions.ofMillis(durationMillis));
     }
 
     /**

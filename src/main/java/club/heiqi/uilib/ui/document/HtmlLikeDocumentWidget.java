@@ -6,8 +6,11 @@ import java.util.Objects;
 
 import club.heiqi.uilib.ui.animation.DocumentAnimationClock;
 import club.heiqi.uilib.ui.animation.DocumentAnimationImpact;
+import club.heiqi.uilib.ui.animation.DocumentAnimation;
+import club.heiqi.uilib.ui.animation.DocumentAnimationOptions;
 import club.heiqi.uilib.ui.animation.DocumentAnimationProperty;
 import club.heiqi.uilib.ui.animation.DocumentAnimationTimeline;
+import club.heiqi.uilib.ui.animation.DocumentKeyframes;
 import club.heiqi.uilib.ui.animation.SystemDocumentAnimationClock;
 import club.heiqi.uilib.ui.dom.DocumentElementScrollEvent;
 import club.heiqi.uilib.ui.dom.DocumentElementScrollHandler;
@@ -166,6 +169,12 @@ public final class HtmlLikeDocumentWidget extends Widget implements UiDocument.D
             @Override
             public void focusElement(ElementNode element, boolean focusVisible) {
                 HtmlLikeDocumentWidget.this.focusElementFromKeyboard(element, focusVisible);
+            }
+        });
+        this.animationTimeline.setRuntimeChangeCallback(new Runnable() {
+            @Override
+            public void run() {
+                HtmlLikeDocumentWidget.this.invalidateAnimationRuntimeCaches();
             }
         });
         this.document.__setInteractionRuntime(this);
@@ -440,6 +449,26 @@ public final class HtmlLikeDocumentWidget extends Widget implements UiDocument.D
         return focusManager.scrollElementIntoView(element);
     }
 
+    @Override
+    public DocumentAnimation requestAnimation(ElementNode element, DocumentKeyframes keyframes,
+            DocumentAnimationOptions options) {
+        ElementNode resolvedElement = Objects.requireNonNull(element, "element");
+        DocumentKeyframes resolvedKeyframes = Objects.requireNonNull(keyframes, "keyframes");
+        if (!isElementAttachedToDocument(resolvedElement)) {
+            return DocumentAnimation.inactive(resolvedElement, resolvedKeyframes.getName(), options);
+        }
+        long currentTimeNanos = animationClock.getCurrentTimeNanos();
+        DocumentLayoutBox rootBox = resolveInteractiveLayoutBox();
+        DocumentLayoutBox targetBox = findLayoutBox(rootBox, resolvedElement);
+        if (targetBox == null) {
+            return DocumentAnimation.inactive(resolvedElement, resolvedKeyframes.getName(), options);
+        }
+        DocumentAnimation animation = animationTimeline.startKeyframeAnimation(targetBox, resolvedKeyframes, options,
+                currentTimeNanos);
+        invalidateAnimationRuntimeCaches();
+        return animation;
+    }
+
     /**
      * 判断指定元素是否会在当前文档内形成实际交互命中。
      *
@@ -466,7 +495,11 @@ public final class HtmlLikeDocumentWidget extends Widget implements UiDocument.D
                     || "true".equals(currentElement.getAttribute("draggable"))
                     || currentElement.getKeyHandler() != null
                     || currentElement.getTextInputHandler() != null
+                    || currentElement.getTransitionStartHandler() != null
                     || currentElement.getTransitionEndHandler() != null
+                    || currentElement.getTransitionCancelHandler() != null
+                    || currentElement.getAnimationStartHandler() != null
+                    || currentElement.getAnimationIterationHandler() != null
                     || currentElement.getAnimationEndHandler() != null) {
                 return true;
             }
@@ -845,6 +878,22 @@ public final class HtmlLikeDocumentWidget extends Widget implements UiDocument.D
         return rootBox;
     }
 
+    private static DocumentLayoutBox findLayoutBox(DocumentLayoutBox box, ElementNode element) {
+        if (box == null || element == null) {
+            return null;
+        }
+        if (box.getElement() == element) {
+            return box;
+        }
+        for (DocumentLayoutBox child : box.getChildren()) {
+            DocumentLayoutBox found = findLayoutBox(child, element);
+            if (found != null) {
+                return found;
+            }
+        }
+        return null;
+    }
+
     private boolean flushCompletedAnimationEvents(long currentTimeNanos) {
         DocumentAnimationTimeline.PruneResult pruneResult = animationTimeline.pruneFinishedAnimationsWithResult(
                 currentTimeNanos);
@@ -881,6 +930,11 @@ public final class HtmlLikeDocumentWidget extends Widget implements UiDocument.D
         cachedRuntimeWidth = -1;
         cachedRuntimeHeight = -1;
         cachedRuntimeViewportRootScrollingEnabled = viewportRootScrollingEnabled;
+    }
+
+    private void invalidateAnimationRuntimeCaches() {
+        cachedPaintScrollVersion = -1;
+        invalidateRuntimeLayoutCache();
     }
 
     private void dispatchScroll(ElementNode target, long timeNanos) {

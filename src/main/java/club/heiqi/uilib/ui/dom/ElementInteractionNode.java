@@ -331,6 +331,26 @@ abstract class ElementInteractionNode extends DocumentNode {
     }
 
     /**
+     * 设置元素过渡开始处理器。
+     *
+     * @param transitionStartHandler 过渡开始处理器；为 null 时清除处理器
+     * @return 当前元素
+     */
+    public ElementNode setTransitionStartHandler(DocumentElementTransitionStartHandler transitionStartHandler) {
+        handlers.transitionStartHandler = transitionStartHandler;
+        return self();
+    }
+
+    /**
+     * 返回元素过渡开始处理器。
+     *
+     * @return 过渡开始处理器；不存在时返回 null
+     */
+    public DocumentElementTransitionStartHandler getTransitionStartHandler() {
+        return handlers.transitionStartHandler;
+    }
+
+    /**
      * 设置元素过渡结束处理器。
      *
      * @param transitionEndHandler 过渡结束处理器；为 null 时清除处理器
@@ -348,6 +368,67 @@ abstract class ElementInteractionNode extends DocumentNode {
      */
     public DocumentElementTransitionEndHandler getTransitionEndHandler() {
         return handlers.transitionEndHandler;
+    }
+
+    /**
+     * 设置元素过渡取消处理器。
+     *
+     * @param transitionCancelHandler 过渡取消处理器；为 null 时清除处理器
+     * @return 当前元素
+     */
+    public ElementNode setTransitionCancelHandler(DocumentElementTransitionCancelHandler transitionCancelHandler) {
+        handlers.transitionCancelHandler = transitionCancelHandler;
+        return self();
+    }
+
+    /**
+     * 返回元素过渡取消处理器。
+     *
+     * @return 过渡取消处理器；不存在时返回 null
+     */
+    public DocumentElementTransitionCancelHandler getTransitionCancelHandler() {
+        return handlers.transitionCancelHandler;
+    }
+
+    /**
+     * 设置元素动画开始处理器。
+     *
+     * @param animationStartHandler 动画开始处理器；为 null 时清除处理器
+     * @return 当前元素
+     */
+    public ElementNode setAnimationStartHandler(DocumentElementAnimationStartHandler animationStartHandler) {
+        handlers.animationStartHandler = animationStartHandler;
+        return self();
+    }
+
+    /**
+     * 返回元素动画开始处理器。
+     *
+     * @return 动画开始处理器；不存在时返回 null
+     */
+    public DocumentElementAnimationStartHandler getAnimationStartHandler() {
+        return handlers.animationStartHandler;
+    }
+
+    /**
+     * 设置元素动画迭代处理器。
+     *
+     * @param animationIterationHandler 动画迭代处理器；为 null 时清除处理器
+     * @return 当前元素
+     */
+    public ElementNode setAnimationIterationHandler(
+            DocumentElementAnimationIterationHandler animationIterationHandler) {
+        handlers.animationIterationHandler = animationIterationHandler;
+        return self();
+    }
+
+    /**
+     * 返回元素动画迭代处理器。
+     *
+     * @return 动画迭代处理器；不存在时返回 null
+     */
+    public DocumentElementAnimationIterationHandler getAnimationIterationHandler() {
+        return handlers.animationIterationHandler;
     }
 
     /**

@@ -48,6 +48,7 @@ import java.util.Objects;
 import club.heiqi.uilib.ui.animation.DocumentAnimationProperty;
 import club.heiqi.uilib.ui.animation.DocumentAnimationFillMode;
 import club.heiqi.uilib.ui.animation.DocumentAnimationTimingFunction;
+import club.heiqi.uilib.ui.animation.DocumentTransitionSpec;
 
 /**
  * 元素最终计算样式。
@@ -87,6 +88,7 @@ public final class ComputedStyle {
     private final long transitionDurationNanos;
     private final long transitionDelayNanos;
     private final DocumentAnimationTimingFunction transitionTimingFunction;
+    private final List<DocumentTransitionSpec> transitionSpecs;
     private final String animationName;
     private final long animationDurationNanos;
     private final long animationDelayNanos;
@@ -146,6 +148,7 @@ public final class ComputedStyle {
             int backgroundColor, int borderColor, int textColor,
             List<DocumentAnimationProperty> transitionProperties, long transitionDurationNanos,
             long transitionDelayNanos, DocumentAnimationTimingFunction transitionTimingFunction,
+            List<DocumentTransitionSpec> transitionSpecs,
             String animationName, long animationDurationNanos, long animationDelayNanos, int animationIterationCount,
             DocumentAnimationFillMode animationFillMode, DocumentAnimationTimingFunction animationTimingFunction,
             UiAnimationDirection animationDirection,
@@ -197,6 +200,8 @@ public final class ComputedStyle {
         this.transitionDurationNanos = Math.max(0L, transitionDurationNanos);
         this.transitionDelayNanos = Math.max(0L, transitionDelayNanos);
         this.transitionTimingFunction = Objects.requireNonNull(transitionTimingFunction, "transitionTimingFunction");
+        this.transitionSpecs = Collections.unmodifiableList(new ArrayList<DocumentTransitionSpec>(
+                Objects.requireNonNull(transitionSpecs, "transitionSpecs")));
         this.animationName = animationName;
         this.animationDurationNanos = Math.max(0L, animationDurationNanos);
         this.animationDelayNanos = Math.max(0L, animationDelayNanos);
@@ -381,6 +386,70 @@ public final class ComputedStyle {
 
     public DocumentAnimationTimingFunction getTransitionTimingFunction() {
         return transitionTimingFunction;
+    }
+
+    /**
+     * 返回 per-property transition 四元组列表。
+     *
+     * @return transition 条目列表
+     */
+    public List<DocumentTransitionSpec> getTransitionSpecs() {
+        return transitionSpecs;
+    }
+
+    /**
+     * 判断指定属性当前是否允许 transition。
+     *
+     * @param property 动画属性
+     * @return 是否允许 transition
+     */
+    public boolean canTransition(DocumentAnimationProperty property) {
+        return getTransitionDurationNanos(property) > 0L;
+    }
+
+    /**
+     * 返回指定属性的 transition 持续时间。
+     *
+     * @param property 动画属性
+     * @return 持续时间，单位纳秒
+     */
+    public long getTransitionDurationNanos(DocumentAnimationProperty property) {
+        DocumentTransitionSpec spec = findTransitionSpec(property);
+        if (!transitionSpecs.isEmpty()) {
+            return spec == null ? 0L : spec.getDurationNanos();
+        }
+        if (spec != null) {
+            return spec.getDurationNanos();
+        }
+        return transitionProperties.contains(property) ? transitionDurationNanos : 0L;
+    }
+
+    /**
+     * 返回指定属性的 transition 延迟时间。
+     *
+     * @param property 动画属性
+     * @return 延迟时间，单位纳秒
+     */
+    public long getTransitionDelayNanos(DocumentAnimationProperty property) {
+        DocumentTransitionSpec spec = findTransitionSpec(property);
+        if (!transitionSpecs.isEmpty()) {
+            return spec == null ? 0L : spec.getDelayNanos();
+        }
+        return spec == null ? transitionDelayNanos : spec.getDelayNanos();
+    }
+
+    /**
+     * 返回指定属性的 transition 缓动函数。
+     *
+     * @param property 动画属性
+     * @return 缓动函数
+     */
+    public DocumentAnimationTimingFunction getTransitionTimingFunction(DocumentAnimationProperty property) {
+        DocumentTransitionSpec spec = findTransitionSpec(property);
+        if (!transitionSpecs.isEmpty()) {
+            return spec == null ? DocumentAnimationTimingFunction.LINEAR : spec.getTimingFunction();
+        }
+        return spec == null ? transitionTimingFunction : spec.getTimingFunction();
     }
 
     public String getAnimationName() {
@@ -772,5 +841,18 @@ public final class ComputedStyle {
      */
     public UiTransform getTransform() {
         return transform;
+    }
+
+    private DocumentTransitionSpec findTransitionSpec(DocumentAnimationProperty property) {
+        if (property == null || transitionSpecs.isEmpty()) {
+            return null;
+        }
+        for (int index = transitionSpecs.size() - 1; index >= 0; index--) {
+            DocumentTransitionSpec spec = transitionSpecs.get(index);
+            if (spec.getProperty() == property) {
+                return spec;
+            }
+        }
+        return null;
     }
 }

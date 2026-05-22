@@ -55,6 +55,7 @@ import java.util.Objects;
 import club.heiqi.uilib.ui.animation.DocumentAnimationProperty;
 import club.heiqi.uilib.ui.animation.DocumentAnimationFillMode;
 import club.heiqi.uilib.ui.animation.DocumentAnimationTimingFunction;
+import club.heiqi.uilib.ui.animation.DocumentTransitionSpec;
 
 /**
  * 元素作者侧样式声明。
@@ -102,6 +103,7 @@ public final class UiStyleDeclaration {
     private Long transitionDurationNanos;
     private Long transitionDelayNanos;
     private DocumentAnimationTimingFunction transitionTimingFunction;
+    private List<DocumentTransitionSpec> transitionSpecs;
     private String animationName;
     private Long animationDurationNanos;
     private Long animationDelayNanos;
@@ -709,6 +711,40 @@ public final class UiStyleDeclaration {
 
     public UiStyleDeclaration clearTransitionTimingFunction() {
         return updateTransitionTimingFunction(null);
+    }
+
+    /**
+     * 返回 per-property transition 四元组声明。
+     *
+     * @return transition 条目列表；未声明时返回 null
+     */
+    public List<DocumentTransitionSpec> getTransitionSpecs() {
+        return transitionSpecs;
+    }
+
+    /**
+     * 设置 per-property transition 四元组列表。
+     *
+     * <p>声明该列表后，运行时会优先使用列表内对应属性的 duration / delay / timing。</p>
+     *
+     * @param transitionSpecs transition 条目
+     * @return 当前声明
+     */
+    public UiStyleDeclaration setTransitions(DocumentTransitionSpec... transitionSpecs) {
+        if (transitionSpecs == null || transitionSpecs.length == 0) {
+            return updateTransitionSpecs(Collections.<DocumentTransitionSpec>emptyList());
+        }
+        List<DocumentTransitionSpec> specs = new ArrayList<DocumentTransitionSpec>();
+        for (DocumentTransitionSpec spec : transitionSpecs) {
+            if (spec != null) {
+                specs.add(spec);
+            }
+        }
+        return updateTransitionSpecs(specs);
+    }
+
+    public UiStyleDeclaration clearTransitions() {
+        return updateTransitionSpecs(null);
     }
 
     /**
@@ -1845,6 +1881,15 @@ public final class UiStyleDeclaration {
         return updateProperty(UiStyleProperty.TRANSITION_TIMING, previousValue, value, UiStyleChangeImpact.PAINT);
     }
 
+    private UiStyleDeclaration updateTransitionSpecs(List<DocumentTransitionSpec> value) {
+        List<DocumentTransitionSpec> nextValue = value == null ? null
+                : Collections.unmodifiableList(new ArrayList<DocumentTransitionSpec>(value));
+        List<DocumentTransitionSpec> previousValue = transitionSpecs;
+        transitionSpecs = nextValue;
+        return updateProperty(UiStyleProperty.TRANSITION_SPECS, previousValue, nextValue,
+                UiStyleChangeImpact.PAINT);
+    }
+
     private UiStyleDeclaration updateAnimationName(String value) {
         String previousValue = animationName;
         animationName = value;
@@ -2170,6 +2215,7 @@ public final class UiStyleDeclaration {
             case TRANSITION_DURATION: transitionDurationNanos = null; break;
             case TRANSITION_DELAY: transitionDelayNanos = null; break;
             case TRANSITION_TIMING: transitionTimingFunction = null; break;
+            case TRANSITION_SPECS: transitionSpecs = null; break;
             case ANIMATION_NAME: animationName = null; break;
             case ANIMATION_DURATION: animationDurationNanos = null; break;
             case ANIMATION_DELAY: animationDelayNanos = null; break;
@@ -2264,6 +2310,7 @@ public final class UiStyleDeclaration {
         transitionDurationNanos = resolvedSource.transitionDurationNanos;
         transitionDelayNanos = resolvedSource.transitionDelayNanos;
         transitionTimingFunction = resolvedSource.transitionTimingFunction;
+        transitionSpecs = resolvedSource.transitionSpecs;
         animationName = resolvedSource.animationName;
         animationDurationNanos = resolvedSource.animationDurationNanos;
         animationDelayNanos = resolvedSource.animationDelayNanos;

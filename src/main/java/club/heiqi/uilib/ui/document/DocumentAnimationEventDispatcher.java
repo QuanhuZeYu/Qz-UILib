@@ -6,8 +6,16 @@ import java.util.List;
 import club.heiqi.uilib.ui.animation.DocumentAnimationTimeline;
 import club.heiqi.uilib.ui.dom.DocumentElementAnimationEndEvent;
 import club.heiqi.uilib.ui.dom.DocumentElementAnimationEndHandler;
+import club.heiqi.uilib.ui.dom.DocumentElementAnimationIterationEvent;
+import club.heiqi.uilib.ui.dom.DocumentElementAnimationIterationHandler;
+import club.heiqi.uilib.ui.dom.DocumentElementAnimationStartEvent;
+import club.heiqi.uilib.ui.dom.DocumentElementAnimationStartHandler;
+import club.heiqi.uilib.ui.dom.DocumentElementTransitionCancelEvent;
+import club.heiqi.uilib.ui.dom.DocumentElementTransitionCancelHandler;
 import club.heiqi.uilib.ui.dom.DocumentElementTransitionEndEvent;
 import club.heiqi.uilib.ui.dom.DocumentElementTransitionEndHandler;
+import club.heiqi.uilib.ui.dom.DocumentElementTransitionStartEvent;
+import club.heiqi.uilib.ui.dom.DocumentElementTransitionStartHandler;
 import club.heiqi.uilib.ui.dom.DocumentEventControl;
 import club.heiqi.uilib.ui.dom.DocumentEventPhase;
 import club.heiqi.uilib.ui.dom.DocumentNode;
@@ -16,7 +24,7 @@ import club.heiqi.uilib.ui.dom.ElementNode;
 /**
  * HTML-like 文档动画生命周期事件分发器。
  *
- * <p>承载 transitionend 与 animationend 的冒泡分发，避免 widget 主体持有具体事件构造细节。</p>
+ * <p>承载 transition / animation 生命周期事件的冒泡分发，避免 widget 主体持有具体事件构造细节。</p>
  */
 final class DocumentAnimationEventDispatcher {
 
@@ -34,12 +42,100 @@ final class DocumentAnimationEventDispatcher {
         if (pruneResult == null) {
             return;
         }
+        for (DocumentAnimationTimeline.TransitionStartRecord record : pruneResult.getTransitionStartRecords()) {
+            dispatchTransitionStart(record, currentTimeNanos, attachedChecker);
+        }
+        for (DocumentAnimationTimeline.TransitionCancelRecord record : pruneResult.getTransitionCancelRecords()) {
+            dispatchTransitionCancel(record, currentTimeNanos, attachedChecker);
+        }
         for (DocumentAnimationTimeline.TransitionEndRecord record : pruneResult.getTransitionEndRecords()) {
             dispatchTransitionEnd(record, currentTimeNanos, attachedChecker);
+        }
+        for (DocumentAnimationTimeline.AnimationStartRecord record : pruneResult.getAnimationStartRecords()) {
+            dispatchAnimationStart(record, currentTimeNanos, attachedChecker);
+        }
+        for (DocumentAnimationTimeline.AnimationIterationRecord record : pruneResult.getAnimationIterationRecords()) {
+            dispatchAnimationIteration(record, currentTimeNanos, attachedChecker);
         }
         for (DocumentAnimationTimeline.AnimationEndRecord record : pruneResult.getAnimationEndRecords()) {
             dispatchAnimationEnd(record, currentTimeNanos, attachedChecker);
         }
+    }
+
+    private static boolean dispatchTransitionStart(DocumentAnimationTimeline.TransitionStartRecord record,
+            long timeNanos, AttachedChecker attachedChecker) {
+        ElementNode target = record == null ? null : record.getElement();
+        if (target == null || !attachedChecker.isAttached(target)) {
+            return false;
+        }
+        DocumentEventControl eventControl = new DocumentEventControl();
+        List<ElementNode> path = buildAncestorPath(target);
+
+        eventControl.setEventPhase(DocumentEventPhase.AT_TARGET);
+        DocumentElementTransitionStartHandler targetHandler = target.getTransitionStartHandler();
+        if (targetHandler != null) {
+            DocumentElementTransitionStartEvent event = new DocumentElementTransitionStartEvent(target, target,
+                    record.getProperty(), record.getElapsedTimeNanos(), timeNanos, eventControl);
+            if (targetHandler.onTransitionStart(event)) {
+                eventControl.stopPropagation();
+            }
+        }
+
+        eventControl.setEventPhase(DocumentEventPhase.BUBBLING);
+        for (int index = 1; index < path.size(); index++) {
+            if (eventControl.isPropagationStopped()) {
+                break;
+            }
+            ElementNode currentElement = path.get(index);
+            DocumentElementTransitionStartHandler handler = currentElement.getTransitionStartHandler();
+            if (handler == null) {
+                continue;
+            }
+            DocumentElementTransitionStartEvent event = new DocumentElementTransitionStartEvent(target, currentElement,
+                    record.getProperty(), record.getElapsedTimeNanos(), timeNanos, eventControl);
+            if (handler.onTransitionStart(event)) {
+                eventControl.stopPropagation();
+            }
+        }
+        return eventControl.isPropagationStopped();
+    }
+
+    private static boolean dispatchTransitionCancel(DocumentAnimationTimeline.TransitionCancelRecord record,
+            long timeNanos, AttachedChecker attachedChecker) {
+        ElementNode target = record == null ? null : record.getElement();
+        if (target == null || !attachedChecker.isAttached(target)) {
+            return false;
+        }
+        DocumentEventControl eventControl = new DocumentEventControl();
+        List<ElementNode> path = buildAncestorPath(target);
+
+        eventControl.setEventPhase(DocumentEventPhase.AT_TARGET);
+        DocumentElementTransitionCancelHandler targetHandler = target.getTransitionCancelHandler();
+        if (targetHandler != null) {
+            DocumentElementTransitionCancelEvent event = new DocumentElementTransitionCancelEvent(target, target,
+                    record.getProperty(), record.getElapsedTimeNanos(), timeNanos, eventControl);
+            if (targetHandler.onTransitionCancel(event)) {
+                eventControl.stopPropagation();
+            }
+        }
+
+        eventControl.setEventPhase(DocumentEventPhase.BUBBLING);
+        for (int index = 1; index < path.size(); index++) {
+            if (eventControl.isPropagationStopped()) {
+                break;
+            }
+            ElementNode currentElement = path.get(index);
+            DocumentElementTransitionCancelHandler handler = currentElement.getTransitionCancelHandler();
+            if (handler == null) {
+                continue;
+            }
+            DocumentElementTransitionCancelEvent event = new DocumentElementTransitionCancelEvent(target, currentElement,
+                    record.getProperty(), record.getElapsedTimeNanos(), timeNanos, eventControl);
+            if (handler.onTransitionCancel(event)) {
+                eventControl.stopPropagation();
+            }
+        }
+        return eventControl.isPropagationStopped();
     }
 
     private static boolean dispatchTransitionEnd(DocumentAnimationTimeline.TransitionEndRecord record, long timeNanos,
@@ -112,6 +208,84 @@ final class DocumentAnimationEventDispatcher {
             DocumentElementAnimationEndEvent event = new DocumentElementAnimationEndEvent(target, currentElement,
                     record.getAnimationName(), record.getElapsedTimeNanos(), timeNanos, eventControl);
             if (handler.onAnimationEnd(event)) {
+                eventControl.stopPropagation();
+            }
+        }
+        return eventControl.isPropagationStopped();
+    }
+
+    private static boolean dispatchAnimationStart(DocumentAnimationTimeline.AnimationStartRecord record, long timeNanos,
+            AttachedChecker attachedChecker) {
+        ElementNode target = record == null ? null : record.getElement();
+        if (target == null || !attachedChecker.isAttached(target)) {
+            return false;
+        }
+        DocumentEventControl eventControl = new DocumentEventControl();
+        List<ElementNode> path = buildAncestorPath(target);
+
+        eventControl.setEventPhase(DocumentEventPhase.AT_TARGET);
+        DocumentElementAnimationStartHandler targetHandler = target.getAnimationStartHandler();
+        if (targetHandler != null) {
+            DocumentElementAnimationStartEvent event = new DocumentElementAnimationStartEvent(target, target,
+                    record.getAnimationName(), record.getElapsedTimeNanos(), timeNanos, eventControl);
+            if (targetHandler.onAnimationStart(event)) {
+                eventControl.stopPropagation();
+            }
+        }
+
+        eventControl.setEventPhase(DocumentEventPhase.BUBBLING);
+        for (int index = 1; index < path.size(); index++) {
+            if (eventControl.isPropagationStopped()) {
+                break;
+            }
+            ElementNode currentElement = path.get(index);
+            DocumentElementAnimationStartHandler handler = currentElement.getAnimationStartHandler();
+            if (handler == null) {
+                continue;
+            }
+            DocumentElementAnimationStartEvent event = new DocumentElementAnimationStartEvent(target, currentElement,
+                    record.getAnimationName(), record.getElapsedTimeNanos(), timeNanos, eventControl);
+            if (handler.onAnimationStart(event)) {
+                eventControl.stopPropagation();
+            }
+        }
+        return eventControl.isPropagationStopped();
+    }
+
+    private static boolean dispatchAnimationIteration(DocumentAnimationTimeline.AnimationIterationRecord record,
+            long timeNanos, AttachedChecker attachedChecker) {
+        ElementNode target = record == null ? null : record.getElement();
+        if (target == null || !attachedChecker.isAttached(target)) {
+            return false;
+        }
+        DocumentEventControl eventControl = new DocumentEventControl();
+        List<ElementNode> path = buildAncestorPath(target);
+
+        eventControl.setEventPhase(DocumentEventPhase.AT_TARGET);
+        DocumentElementAnimationIterationHandler targetHandler = target.getAnimationIterationHandler();
+        if (targetHandler != null) {
+            DocumentElementAnimationIterationEvent event = new DocumentElementAnimationIterationEvent(target, target,
+                    record.getAnimationName(), record.getElapsedTimeNanos(), timeNanos, record.getIterationIndex(),
+                    eventControl);
+            if (targetHandler.onAnimationIteration(event)) {
+                eventControl.stopPropagation();
+            }
+        }
+
+        eventControl.setEventPhase(DocumentEventPhase.BUBBLING);
+        for (int index = 1; index < path.size(); index++) {
+            if (eventControl.isPropagationStopped()) {
+                break;
+            }
+            ElementNode currentElement = path.get(index);
+            DocumentElementAnimationIterationHandler handler = currentElement.getAnimationIterationHandler();
+            if (handler == null) {
+                continue;
+            }
+            DocumentElementAnimationIterationEvent event = new DocumentElementAnimationIterationEvent(target,
+                    currentElement, record.getAnimationName(), record.getElapsedTimeNanos(), timeNanos,
+                    record.getIterationIndex(), eventControl);
+            if (handler.onAnimationIteration(event)) {
                 eventControl.stopPropagation();
             }
         }

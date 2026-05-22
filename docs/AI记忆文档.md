@@ -55,7 +55,7 @@
 - `border-radius` 现在参与命中测试（圆角外侧不命中）；`visibility:hidden` 同时跳过绘制和命中测试；非等值分角圆角已进入 `UiRenderContext` 表面绘制、clip/backdrop-filter 与命中测试链路。
 - flex item 的 `margin:auto` 会吸收主轴/交叉轴剩余空间；flex shrink 权重已修正为使用 flex-basis。
 - `flex-wrap:wrap` 已支持多行换行布局（row 方向）。
-- 事件系统新增独立 `mousedown`/`mouseup`/`dblclick`/`contextmenu` DOM 事件（`DocumentElementMouseDownHandler`/`DocumentElementMouseUpHandler`/`DocumentElementDoubleClickHandler`/`DocumentElementContextMenuHandler`）；`dblclick` 仅由主按钮连续 click 触发，右键 `contextmenu` 不再先派发普通 click；hover 父子切换时父元素不再收到多余 leave；新增 `focusin` 冒泡事件（`DocumentElementFocusInHandler`）；动画运行结束时会向作者侧派发 `transitionend` / `animationend` 冒泡事件（当前最小实现不提供 capture 版本）；动画缓动函数已从固定枚举升级为 `DocumentAnimationTimingFunction` 接口，内置常量按标准 cubic-bezier 实现，并支持 `cubicBezier(...)` 自定义曲线；keyframe animation 已支持 `animation-direction` 与无限迭代。
+- 事件系统新增独立 `mousedown`/`mouseup`/`dblclick`/`contextmenu` DOM 事件（`DocumentElementMouseDownHandler`/`DocumentElementMouseUpHandler`/`DocumentElementDoubleClickHandler`/`DocumentElementContextMenuHandler`）；`dblclick` 仅由主按钮连续 click 触发，右键 `contextmenu` 不再先派发普通 click；hover 父子切换时父元素不再收到多余 leave；新增 `focusin` 冒泡事件（`DocumentElementFocusInHandler`）；动画生命周期会向作者侧派发 `transitionstart` / `transitionend` / `transitioncancel` 与 `animationstart` / `animationiteration` / `animationend` 冒泡事件（当前最小实现不提供 capture 版本）；动画缓动函数已从固定枚举升级为 `DocumentAnimationTimingFunction` 接口，内置常量按标准 cubic-bezier 实现，并支持 `cubicBezier(...)` 与 `steps(...)`；transition 可通过 `DocumentTransitionSpec` 配置 per-property duration / delay / timing；keyframe animation 已支持 `animation-direction`、无限迭代与 `ElementNode.animate(...)` 命令式启动。
 - 事件系统已支持标准 DOM 三阶段传播模型（capture → target → bubble）：所有事件类提供 `stopPropagation()`、`stopImmediatePropagation()`、`preventDefault()`；`ElementNode` 支持 capture handler 注册（`setCaptureClickHandler`/`setCaptureKeyHandler`/`setCaptureMouseDownHandler`/`setCaptureMouseUpHandler`）；`HtmlLikeDocumentWidget` 的事件路由已按职责下沉，mousedown/mouseup/active/hover 由 `DocumentMouseEventDispatcher` 承载，click/dblclick/contextmenu/link 默认行为由 `DocumentClickEventDispatcher` 承载，key/text/raw button 默认键盘行为由 `DocumentKeyboardEventDispatcher` 承载，焦点遍历与 `scrollIntoView` 由 `DocumentFocusManager` 承载。
 - 样式系统已支持 CSS-like 选择器和样式表级联：`ElementNode` 提供 `className`/`classList`（`DomTokenList`）和 `id` 便捷方法；`UiSelector` 支持 tag/class/id/通配符/复合选择器及特异性计算；`UiStyleSheet` 容器通过 `UiDocument.addStyleSheet(...)` 挂载；`UiStyleResolver` 按 inline > id > class > tag 特异性级联计算所有属性。
 - `UiSelector` 已支持伪类条件（`:hover`/`:focus`/`:focus-visible`/`:active`/`:disabled`/`:first-child`/`:last-child`/`:nth-child(...)`）；伪类在特异性中计入 class 级别；`UiStyleResolver.compute(element, activeStates)` 接受 `Set<UiPseudoClass>` 进行目标元素状态感知样式计算。
@@ -131,6 +131,6 @@
 
 ## 当前阶段
 
-- 动画能力增强进入 Phase 2 收尾与回归阶段，优先保证作者侧动画方向、无限迭代、位置布局动画和 box-shadow 子属性的稳定性。
+- 动画能力增强 Phase 3 首批高级能力已完成，后续如继续扩展应优先评估 keyframe per-stop timing、完整 Web Animations API 时间轴控制或更大范围 CSS 语法解析是否有真实需求。
 - 诊断页与示例页只作为开发期工具，不回退到默认 UI 注入或全局热键入口。
 - 是否继续扩展动画、布局或渲染能力，要以真实需求和验证结果决定，不默认扩面。

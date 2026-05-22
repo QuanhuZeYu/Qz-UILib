@@ -28,7 +28,11 @@ final class ElementInteractionHandlers {
     DocumentElementMouseDownHandler mouseDownHandler;
     DocumentElementMouseUpHandler mouseUpHandler;
     DocumentElementFocusInHandler focusInHandler;
+    DocumentElementTransitionStartHandler transitionStartHandler;
     DocumentElementTransitionEndHandler transitionEndHandler;
+    DocumentElementTransitionCancelHandler transitionCancelHandler;
+    DocumentElementAnimationStartHandler animationStartHandler;
+    DocumentElementAnimationIterationHandler animationIterationHandler;
     DocumentElementAnimationEndHandler animationEndHandler;
     DocumentElementScrollHandler scrollHandler;
 

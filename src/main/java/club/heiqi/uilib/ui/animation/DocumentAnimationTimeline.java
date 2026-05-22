@@ -28,6 +28,19 @@ public final class DocumentAnimationTimeline {
 
     private final Map<ElementNode, DocumentAnimationRuntimeState> states =
             new HashMap<ElementNode, DocumentAnimationRuntimeState>();
+    private long nextImperativeAnimationId = 1L;
+    private Runnable runtimeChangeCallback;
+
+    /**
+     * 设置命令式动画运行态变化回调。
+     *
+     * @param runtimeChangeCallback 变化回调；为 null 时清除
+     * @return 当前时间线
+     */
+    public DocumentAnimationTimeline setRuntimeChangeCallback(Runnable runtimeChangeCallback) {
+        this.runtimeChangeCallback = runtimeChangeCallback;
+        return this;
+    }
 
     /**
      * 单次清理过程中收集到的动画完成结果。
@@ -35,6 +48,11 @@ public final class DocumentAnimationTimeline {
     public static final class PruneResult {
 
         private final List<TransitionEndRecord> transitionEndRecords = new ArrayList<TransitionEndRecord>();
+        private final List<TransitionStartRecord> transitionStartRecords = new ArrayList<TransitionStartRecord>();
+        private final List<TransitionCancelRecord> transitionCancelRecords = new ArrayList<TransitionCancelRecord>();
+        private final List<AnimationStartRecord> animationStartRecords = new ArrayList<AnimationStartRecord>();
+        private final List<AnimationIterationRecord> animationIterationRecords =
+                new ArrayList<AnimationIterationRecord>();
         private final List<AnimationEndRecord> animationEndRecords = new ArrayList<AnimationEndRecord>();
         private boolean changed;
 
@@ -46,12 +64,84 @@ public final class DocumentAnimationTimeline {
             return transitionEndRecords;
         }
 
+        public List<TransitionStartRecord> getTransitionStartRecords() {
+            return transitionStartRecords;
+        }
+
+        public List<TransitionCancelRecord> getTransitionCancelRecords() {
+            return transitionCancelRecords;
+        }
+
+        public List<AnimationStartRecord> getAnimationStartRecords() {
+            return animationStartRecords;
+        }
+
+        public List<AnimationIterationRecord> getAnimationIterationRecords() {
+            return animationIterationRecords;
+        }
+
         public List<AnimationEndRecord> getAnimationEndRecords() {
             return animationEndRecords;
         }
 
         void markChanged() {
             changed = true;
+        }
+    }
+
+    /**
+     * 单个 transition 开始记录。
+     */
+    public static final class TransitionStartRecord {
+
+        private final ElementNode element;
+        private final DocumentAnimationProperty property;
+        private final long elapsedTimeNanos;
+
+        TransitionStartRecord(ElementNode element, DocumentAnimationProperty property, long elapsedTimeNanos) {
+            this.element = Objects.requireNonNull(element, "element");
+            this.property = Objects.requireNonNull(property, "property");
+            this.elapsedTimeNanos = Math.max(0L, elapsedTimeNanos);
+        }
+
+        public ElementNode getElement() {
+            return element;
+        }
+
+        public DocumentAnimationProperty getProperty() {
+            return property;
+        }
+
+        public long getElapsedTimeNanos() {
+            return elapsedTimeNanos;
+        }
+    }
+
+    /**
+     * 单个 transition 取消记录。
+     */
+    public static final class TransitionCancelRecord {
+
+        private final ElementNode element;
+        private final DocumentAnimationProperty property;
+        private final long elapsedTimeNanos;
+
+        TransitionCancelRecord(ElementNode element, DocumentAnimationProperty property, long elapsedTimeNanos) {
+            this.element = Objects.requireNonNull(element, "element");
+            this.property = Objects.requireNonNull(property, "property");
+            this.elapsedTimeNanos = Math.max(0L, elapsedTimeNanos);
+        }
+
+        public ElementNode getElement() {
+            return element;
+        }
+
+        public DocumentAnimationProperty getProperty() {
+            return property;
+        }
+
+        public long getElapsedTimeNanos() {
+            return elapsedTimeNanos;
         }
     }
 
@@ -108,6 +198,69 @@ public final class DocumentAnimationTimeline {
 
         public long getElapsedTimeNanos() {
             return elapsedTimeNanos;
+        }
+    }
+
+    /**
+     * 单个 animation 开始记录。
+     */
+    public static final class AnimationStartRecord {
+
+        private final ElementNode element;
+        private final String animationName;
+        private final long elapsedTimeNanos;
+
+        AnimationStartRecord(ElementNode element, String animationName, long elapsedTimeNanos) {
+            this.element = Objects.requireNonNull(element, "element");
+            this.animationName = Objects.requireNonNull(animationName, "animationName");
+            this.elapsedTimeNanos = Math.max(0L, elapsedTimeNanos);
+        }
+
+        public ElementNode getElement() {
+            return element;
+        }
+
+        public String getAnimationName() {
+            return animationName;
+        }
+
+        public long getElapsedTimeNanos() {
+            return elapsedTimeNanos;
+        }
+    }
+
+    /**
+     * 单个 animation 迭代记录。
+     */
+    public static final class AnimationIterationRecord {
+
+        private final ElementNode element;
+        private final String animationName;
+        private final long elapsedTimeNanos;
+        private final long iterationIndex;
+
+        AnimationIterationRecord(ElementNode element, String animationName, long elapsedTimeNanos,
+                long iterationIndex) {
+            this.element = Objects.requireNonNull(element, "element");
+            this.animationName = Objects.requireNonNull(animationName, "animationName");
+            this.elapsedTimeNanos = Math.max(0L, elapsedTimeNanos);
+            this.iterationIndex = Math.max(0L, iterationIndex);
+        }
+
+        public ElementNode getElement() {
+            return element;
+        }
+
+        public String getAnimationName() {
+            return animationName;
+        }
+
+        public long getElapsedTimeNanos() {
+            return elapsedTimeNanos;
+        }
+
+        public long getIterationIndex() {
+            return iterationIndex;
         }
     }
 
@@ -219,6 +372,45 @@ public final class DocumentAnimationTimeline {
             return;
         }
         state.clearKeyframeAnimations();
+    }
+
+    /**
+     * 启动命令式 keyframe animation。
+     *
+     * @param box 目标元素当前布局盒
+     * @param keyframes keyframes 定义
+     * @param options 播放选项
+     * @param currentTimeNanos 当前动画时间
+     * @return 命令式动画句柄
+     */
+    public DocumentAnimation startKeyframeAnimation(DocumentLayoutBox box, DocumentKeyframes keyframes,
+            DocumentAnimationOptions options, long currentTimeNanos) {
+        Objects.requireNonNull(box, "box");
+        final ElementNode element = box.getElement();
+        final DocumentKeyframes resolvedKeyframes = Objects.requireNonNull(keyframes, "keyframes");
+        final DocumentAnimationOptions resolvedOptions = options == null
+                ? DocumentAnimationOptions.ofMillis(0L) : options;
+        if (resolvedOptions.getDurationNanos() <= 0L || resolvedKeyframes.isEmpty()) {
+            return DocumentAnimation.inactive(element, resolvedKeyframes.getName(), resolvedOptions);
+        }
+        final long animationId = nextImperativeAnimationId++;
+        long startNanos = currentTimeNanos + resolvedOptions.getDelayNanos();
+        DocumentAnimationRuntimeState state = getOrCreateState(element);
+        state.startImperativeKeyframeAnimations(box, resolvedKeyframes, startNanos, resolvedOptions, animationId);
+        notifyRuntimeChanged();
+        return new DocumentAnimation(element, animationId, resolvedKeyframes.getName(), startNanos,
+                resolvedOptions.getDurationNanos(), new DocumentAnimation.Controller() {
+                    @Override
+                    public boolean cancel(DocumentAnimation animation) {
+                        return cancelImperativeAnimation(element, animationId);
+                    }
+
+                    @Override
+                    public boolean isRunning(DocumentAnimation animation) {
+                        DocumentAnimationRuntimeState currentState = states.get(element);
+                        return currentState != null && currentState.hasKeyframeAnimationOwner(animationId);
+                    }
+                });
     }
 
     /**
@@ -498,7 +690,7 @@ public final class DocumentAnimationTimeline {
             int baseColor = getBaseColor(style, property);
             Integer previousTarget = state.getTargetColor(property);
             boolean transitionAllowed = canTransition(style, property);
-            if (!transitionAllowed && state.removeColorTransition(property)) {
+            if (!transitionAllowed && state.removeColorTransition(property, currentTimeNanos)) {
                 changed = true;
             }
             if (previousTarget == null) {
@@ -514,10 +706,11 @@ public final class DocumentAnimationTimeline {
             state.suppressDeclaredColorKeyframeProperty(property);
             if (transitionAllowed && fromColor != baseColor) {
                 state.setColorTransition(property, fromColor, baseColor,
-                        currentTimeNanos + style.getTransitionDelayNanos(), style.getTransitionDurationNanos(),
-                        style.getTransitionTimingFunction());
+                        currentTimeNanos + style.getTransitionDelayNanos(property),
+                        style.getTransitionDurationNanos(property), style.getTransitionTimingFunction(property),
+                        currentTimeNanos);
             } else {
-                state.clearColorTransition(property);
+                state.clearColorTransition(property, currentTimeNanos);
             }
             changed = true;
         }
@@ -528,7 +721,7 @@ public final class DocumentAnimationTimeline {
             Boolean previousTargetTransitionable = state.getTargetFloatTransitionable(property);
             boolean transitionAllowed = canTransition(style, property) && targetTransitionable
                     && Boolean.TRUE.equals(previousTargetTransitionable);
-            if (!transitionAllowed && state.removeFloatTransition(property)) {
+            if (!transitionAllowed && state.removeFloatTransition(property, currentTimeNanos)) {
                 changed = true;
             }
             if (previousTarget == null) {
@@ -550,10 +743,11 @@ public final class DocumentAnimationTimeline {
             state.suppressDeclaredFloatKeyframeProperty(property);
             if (transitionAllowed && Float.compare(fromValue, baseValue) != 0) {
                 state.setFloatTransition(property, fromValue, baseValue,
-                        currentTimeNanos + style.getTransitionDelayNanos(), style.getTransitionDurationNanos(),
-                        style.getTransitionTimingFunction());
+                        currentTimeNanos + style.getTransitionDelayNanos(property),
+                        style.getTransitionDurationNanos(property), style.getTransitionTimingFunction(property),
+                        currentTimeNanos);
             } else {
-                state.clearFloatTransition(property);
+                state.clearFloatTransition(property, currentTimeNanos);
             }
             changed = true;
         }
@@ -570,7 +764,22 @@ public final class DocumentAnimationTimeline {
     }
 
     private static boolean canTransition(ComputedStyle style, DocumentAnimationProperty property) {
-        return style.getTransitionDurationNanos() > 0L && style.getTransitionProperties().contains(property);
+        return style.canTransition(property);
+    }
+
+    private boolean cancelImperativeAnimation(ElementNode element, long animationId) {
+        DocumentAnimationRuntimeState state = states.get(element);
+        boolean changed = state != null && state.cancelKeyframeAnimationsByOwner(animationId);
+        if (changed) {
+            notifyRuntimeChanged();
+        }
+        return changed;
+    }
+
+    private void notifyRuntimeChanged() {
+        if (runtimeChangeCallback != null) {
+            runtimeChangeCallback.run();
+        }
     }
 
     private static boolean updateDeclaredKeyframeAnimations(DocumentLayoutBox box, ComputedStyle style,
