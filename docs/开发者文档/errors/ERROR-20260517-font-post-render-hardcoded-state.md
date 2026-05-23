@@ -22,9 +22,11 @@
 - 在 `DefaultFontRendererAdapter` 的非 deferred 绘制入口进入字符渲染前 `push` GL 状态，完成后 `pop` 恢复真实调用前状态。
 - 在 deferred text scope 开始时建立状态保护边界，直到 scope 结束后恢复，覆盖字形上传、纹理创建和 flush。
 - `FontRenderStateGuard` 改为栈式保存状态，并额外保存/恢复 client pixel store、active texture、shader program、texture binding、VAO/VBO、viewport 和固定管线矩阵栈。
+- 之后发现不能把原版 `FontRenderer.drawString(...)` 的 `enableAlpha()` 契约也一并抹掉；当前只在 `drawString` 接管入口补回 alpha test 开启副作用，不再恢复 blend、颜色、纹理等硬编码收尾状态。
 
 ## 预防措施
 
 - 字体绘制不能靠硬编码状态“猜测原版结束态”，必须保存并恢复调用前真实 GL 状态。
+- 若替换的是原版公开 API，需要单独识别原 API 的最小可观察副作用；只补契约需要的状态，不把具体 GUI 场景或整套固定管线状态写进字体收尾。
 - 字符页纹理创建、字形上传、shader/VAO/VBO 初始化和批次 flush 都属于会污染 GL 的渲染生命周期，保护边界必须覆盖完整链路。
 - 后续新增 deferred 或跨命令字体批处理时，要确认 scope 能正确嵌套，且异常路径一定恢复状态并清理待提交批次。

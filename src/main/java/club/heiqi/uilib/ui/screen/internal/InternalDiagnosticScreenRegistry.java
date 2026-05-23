@@ -5,6 +5,7 @@ import club.heiqi.uilib.ui.screen.example.HtmlLikeGlassDocumentPageController;
 import club.heiqi.uilib.ui.screen.example.HtmlLikeInventoryOverviewDocumentPageController;
 import club.heiqi.uilib.ui.screen.example.HtmlLikeListDragDocumentPageController;
 import club.heiqi.uilib.ui.screen.example.HtmlLikeSmokeDocumentPageController;
+import club.heiqi.uilib.internal.devtools.NetSelfCheckPage;
 import club.heiqi.uilib.ui.screen.example.InventoryOverviewModel;
 import club.heiqi.uilib.ui.screen.example.UiAnimationCapabilityShowcaseDocumentPageController;
 import club.heiqi.uilib.ui.screen.example.UiFontPerformanceBaselineDocumentPageController;
@@ -51,6 +52,8 @@ public final class InternalDiagnosticScreenRegistry {
             "ui_framework_structure_audit");
     public static final InternalScreenIdentity.PageDescriptor RUNTIME_SELF_TEST = new InternalScreenIdentity.PageDescriptor(
             "runtime_self_test");
+    public static final InternalScreenIdentity.PageDescriptor NET_SELF_CHECK = new InternalScreenIdentity.PageDescriptor(
+            "net_self_check");
 
     public static final InternalHostedScreenFactory.InternalHostedScreenDefinition<UiTestMenuModel> UI_TEST_DEFINITION = new InternalHostedScreenFactory.InternalHostedScreenDefinition<UiTestMenuModel>(
             UI_TEST,
@@ -197,6 +200,19 @@ public final class InternalDiagnosticScreenRegistry {
                     return new UiRuntimeSelfTestDocumentPageController(documentUi, documentPage);
                 }
             });
+    public static final InternalHostedScreenFactory.InternalHostedScreenDefinition<Void> NET_SELF_CHECK_DEFINITION = new InternalHostedScreenFactory.InternalHostedScreenDefinition<Void>(
+            NET_SELF_CHECK,
+            DocumentScreenChrome::resolve,
+            new InternalHostedScreenFactory.InternalDocumentPageControllerFactory<Void>() {
+                @Override
+                public DocumentPageController create(DocumentUiScope documentUi,
+                        DocumentPageAuthoringSurface documentPage,
+                        DocumentPageRuntimeView runtimeView,
+                        String pageId,
+                        Void provision) {
+                    return new NetSelfCheckPage(documentUi, documentPage);
+                }
+            });
 
     private InternalDiagnosticScreenRegistry() {}
 
@@ -242,5 +258,9 @@ public final class InternalDiagnosticScreenRegistry {
 
     public static String runtimeSelfTestPageId() {
         return RUNTIME_SELF_TEST.getPageId();
+    }
+
+    public static String netSelfCheckPageId() {
+        return NET_SELF_CHECK.getPageId();
     }
 }

@@ -246,6 +246,14 @@ public final class UiTestDocumentPageController extends DocumentPageController {
                         menuModel.openRuntimeSelfTest();
                     }
                 });
+        appendNavigationCard(document, sixthRow, "网络层自检",
+                "检查内容信封、Header、Store bridge、Channel/Fetch/Store 真实往返，可逐项执行或全部执行。", "进入网络自检",
+                new DocumentButtonActionHandler() {
+                    @Override
+                    public void onAction(DocumentButtonActionEvent event) {
+                        menuModel.openNetSelfCheck();
+                    }
+                });
     }
 
     private ElementNode appendNavigationRow(UiDocument document, ElementNode parent) {

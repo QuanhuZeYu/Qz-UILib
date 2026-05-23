@@ -110,6 +110,7 @@ Toolchain、依赖版本、构建配置与运行时类路径。
 - [`ERROR-20260518-gradle-parallel-build-race.md`](ERROR-20260518-gradle-parallel-build-race.md) — 并行 Gradle 进程竞争 build 目录导致编译失败
 - [`ERROR-20260509-runclient21-angelica-gtnhlib-mismatch.md`](ERROR-20260509-runclient21-angelica-gtnhlib-mismatch.md) — Angelica 与 GTNHLib 版本错配导致 runClient21 崩溃
 - [`ERROR-20260519-lwjgl3ify-runtime-compile-classpath-gap.md`](ERROR-20260519-lwjgl3ify-runtime-compile-classpath-gap.md) — lwjgl3ify 运行时类路径与编译类路径不一致
+- [`ERROR-20260523-runserver-lwjgl3ify-relauncher.md`](ERROR-20260523-runserver-lwjgl3ify-relauncher.md) — runServer 被 LWJGL3ify relauncher 中止，未进入完整 dedicated server smoke
 
 **共性教训**：`GRADLE_USER_HOME` 必须显式设置避免中文路径；依赖版本必须锁定一致；并行构建需避免共享 build 目录。
 
@@ -152,6 +153,14 @@ Toolchain、依赖版本、构建配置与运行时类路径。
 - [`ERROR-20260506-client-command-gui-open-timing.md`](ERROR-20260506-client-command-gui-open-timing.md) — 客户端命令直接开屏被聊天关闭覆盖（生命周期时序）
 
 **共性教训**：默认行为必须在事件传播完成后检查 `isDefaultPrevented()` 再执行；GUI 打开必须延迟到当前帧结束后。
+
+---
+
+## 网络生命周期类（1 条）
+
+- [`ERROR-20260523-net-client-handshake-net-handler-race.md`](ERROR-20260523-net-client-handshake-net-handler-race.md) — 客户端能力握手在 NetHandler 构造期反查全局 NetHandler 导致连接崩溃
+
+**共性教训**：早期 mixin 已拿到的生命周期对象应优先直接传递或缓存，不能在构造期依赖全局单例反查。
 
 ---
 

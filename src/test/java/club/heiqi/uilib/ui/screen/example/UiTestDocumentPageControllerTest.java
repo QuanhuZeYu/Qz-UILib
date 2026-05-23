@@ -54,6 +54,7 @@ public class UiTestDocumentPageControllerTest {
         Assert.assertTrue(containsText(texts, "列表元素组件拖拽"));
         Assert.assertTrue(containsText(texts, "动画能力成功展示"));
         Assert.assertTrue(containsText(texts, "UI 框架结构审查"));
+        Assert.assertTrue(containsText(texts, "网络层自检"));
         Assert.assertTrue(containsText(texts, "页面作者层不再拼装旧 Widget"));
         Assert.assertFalse(menuModel.openLayoutDiagnosticsCalled);
         Assert.assertFalse(menuModel.openFontPerformanceBaselineCalled);
@@ -63,6 +64,7 @@ public class UiTestDocumentPageControllerTest {
         Assert.assertFalse(menuModel.openListElementDragCalled);
         Assert.assertFalse(menuModel.openAnimationCapabilityShowcaseCalled);
         Assert.assertFalse(menuModel.openUiFrameworkStructureAuditCalled);
+        Assert.assertFalse(menuModel.openNetSelfCheckCalled);
     }
 
     /**
@@ -234,6 +236,30 @@ public class UiTestDocumentPageControllerTest {
     }
 
     /**
+     * 验证菜单按钮会触发网络层自检页跳转。
+     */
+    @Test
+    public void shouldNavigateToNetSelfCheckWhenMenuButtonClicked() {
+        RecordingMenuModel menuModel = new RecordingMenuModel();
+        TestFixture fixture = new TestFixture(menuModel);
+
+        fixture.controller.configureDocumentPage();
+        fixture.controller.buildDocument();
+
+        clickNavigationButton(fixture.controller.getHtmlLikeDocumentWidget(), "进入网络自检", 1L);
+
+        Assert.assertFalse(menuModel.openLayoutDiagnosticsCalled);
+        Assert.assertFalse(menuModel.openFontPerformanceBaselineCalled);
+        Assert.assertFalse(menuModel.openHtmlLikeSmokeCalled);
+        Assert.assertFalse(menuModel.openHtmlLikeGlassCalled);
+        Assert.assertFalse(menuModel.openInventoryOverviewCalled);
+        Assert.assertFalse(menuModel.openListElementDragCalled);
+        Assert.assertFalse(menuModel.openAnimationCapabilityShowcaseCalled);
+        Assert.assertFalse(menuModel.openUiFrameworkStructureAuditCalled);
+        Assert.assertTrue(menuModel.openNetSelfCheckCalled);
+    }
+
+    /**
      * 验证菜单按钮不会因 width:100% 与横向外边距组合溢出导航卡片。
      */
     @Test
@@ -339,6 +365,7 @@ public class UiTestDocumentPageControllerTest {
         private boolean openAnimationCapabilityShowcaseCalled;
         private boolean openUiFrameworkStructureAuditCalled;
         private boolean openRuntimeSelfTestCalled;
+        private boolean openNetSelfCheckCalled;
 
         @Override
         public void openLayoutDiagnostics() {
@@ -387,6 +414,11 @@ public class UiTestDocumentPageControllerTest {
         @Override
         public void openRuntimeSelfTest() {
             openRuntimeSelfTestCalled = true;
+        }
+
+        @Override
+        public void openNetSelfCheck() {
+            openNetSelfCheckCalled = true;
         }
     }
 

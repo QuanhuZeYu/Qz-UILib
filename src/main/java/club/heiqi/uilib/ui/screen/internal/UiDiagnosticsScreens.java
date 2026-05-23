@@ -199,6 +199,22 @@ public final class UiDiagnosticsScreens {
     }
 
     /**
+     * 创建网络层自检页。
+     */
+    static GuiScreen createNetSelfCheck() {
+        return createNetSelfCheck(UiDocumentScreens.DocumentScreenEnvironment.minecraftFormattedDefaults());
+    }
+
+    /**
+     * 基于显式环境创建网络层自检页。
+     */
+    static GuiScreen createNetSelfCheck(UiDocumentScreens.DocumentScreenEnvironment environment) {
+        return InternalHostedScreenFactory.createScreen(
+                InternalDiagnosticScreenRegistry.NET_SELF_CHECK_DEFINITION,
+                Objects.requireNonNull(environment, "environment"), null);
+    }
+
+    /**
      * 判断界面是否为诊断菜单。
      */
     public static boolean isUiTest(GuiScreen screen) {
@@ -243,6 +259,11 @@ public final class UiDiagnosticsScreens {
     public static boolean isRuntimeSelfTest(Object screen) {
         return InternalScreenIdentity.hasPageId(screen,
                 InternalDiagnosticScreenRegistry.runtimeSelfTestPageId());
+    }
+
+    public static boolean isNetSelfCheck(Object screen) {
+        return InternalScreenIdentity.hasPageId(screen,
+                InternalDiagnosticScreenRegistry.netSelfCheckPageId());
     }
 
     /**
@@ -300,6 +321,11 @@ public final class UiDiagnosticsScreens {
             @Override
             public void openRuntimeSelfTest() {
                 Minecraft.getMinecraft().displayGuiScreen(createRuntimeSelfTest(environment));
+            }
+
+            @Override
+            public void openNetSelfCheck() {
+                Minecraft.getMinecraft().displayGuiScreen(createNetSelfCheck(environment));
             }
         };
     }
