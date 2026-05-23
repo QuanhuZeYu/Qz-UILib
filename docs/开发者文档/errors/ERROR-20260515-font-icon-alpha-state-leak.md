@@ -17,6 +17,7 @@
 - `MinecraftHostImageRenderer.renderItemStack()` 只在物品 overlay 前设置图片混合状态，物品主体可能吃到字体管线残留状态。
 - `FontBatchRenderer.initialize()` 首次创建 VAO/VBO 时发生在字体 flush 状态保护边界外，可能把调用方绑定的 VAO/VBO 清到 0。
 - 原版多人列表等固定管线界面会在文本之后继续绘制透明图标；早期修复曾尝试在替换原版 `FontRenderer` 后硬编码补齐 `GL_ALPHA_TEST`、blend 和白色顶点颜色，但这只能覆盖少数原版路径，在动态 GL 环境中会覆盖调用方真实状态。
+- 后续为修复硬编码收尾状态而完整恢复字体绘制前 GL 状态时，也一并抹掉了原版 `FontRenderer.drawString(...)` 会留下的 `enableAlpha()` 可观察副作用，导致依赖原版字体契约的后续透明贴图再次吃到关闭的 alpha test。
 
 ## 修复方案
 
@@ -24,6 +25,7 @@
 - 宿主物品图标主体绘制前先调用图片混合状态初始化，避免继承前置阶段状态。
 - 字体批渲染器首次初始化底层 GL 资源时使用 `FontRenderStateGuard` 包裹，恢复调用方 shader、纹理、VAO/VBO 与矩阵状态。
 - `MixinFontRenderer` 不再硬编码模拟原版字体结束状态；字体适配器在字符渲染前建立 `FontRenderStateGuard` 边界，并在完成后恢复调用前真实 GL 状态。
+- `MixinFontRenderer` 的 `drawString` / `drawStringWithShadow` 接管入口在字体主体状态恢复后，仅补回原版 `drawString` 会留下的 alpha test 开启副作用；不触碰 blend、颜色、纹理绑定或其他调用方自定义状态。
 
 ## 预防措施
 
@@ -31,4 +33,5 @@
 - 任何调用 Minecraft 原版物品、字体或第三方 renderer 的入口，都要在主体和 overlay 前分别建立稳定 GL 状态，或把完整调用生命周期放进状态保护边界，不能只依赖调用后硬编码某一套状态。
 - 字体、shader、VAO、VBO 等 GL 资源的首次初始化也要视为会污染状态的渲染操作，必须包进状态保护边界。
 - Mixin 替换原版渲染方法时，不能用一组固定 `glEnable`、blend 或颜色状态假定调用方后续需求；应优先保存并恢复进入字体绘制前的真实 GL 状态。
+- 替换原版 API 时要区分“应恢复的内部渲染污染”和“原 API 本来对外可观察的最小副作用”。`drawString` 的 alpha test 契约应在字体替换入口恢复，而不是在具体 GUI 或贴图位置做特判。
 - 以后排查图标白底/黑底时，优先检查 `GL_ALPHA_TEST`、`GL_BLEND`、blend src/dst、`GL_COLOR_WRITEMASK`、`GL_CURRENT_PROGRAM`、active texture、texture binding 与 VAO/VBO。

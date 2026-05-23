@@ -10,6 +10,7 @@ import club.heiqi.uilib.font.config.FontConfig;
 import club.heiqi.uilib.font.event.FontReloadRequest;
 import net.minecraft.client.gui.FontRenderer;
 import net.minecraft.client.resources.IResourceManager;
+import org.lwjgl.opengl.GL11;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
@@ -53,6 +54,7 @@ public abstract class MixinFontRenderer {
         if (FontConfig.replaceOrigin) {
             try {
                 int width = DefaultFontRendererAdapter.getInstance().drawString(text, x, y, color, false);
+                qzuilib$applyVanillaDrawStringAlphaSideEffect();
                 cir.setReturnValue(Integer.valueOf(width));
             } catch (RuntimeException exception) {
                 qzuilib$logFontPipelineFailure(exception);
@@ -65,6 +67,7 @@ public abstract class MixinFontRenderer {
         if (FontConfig.replaceOrigin) {
             try {
                 int width = DefaultFontRendererAdapter.getInstance().drawString(text, x, y, color, dropShadow);
+                qzuilib$applyVanillaDrawStringAlphaSideEffect();
                 cir.setReturnValue(Integer.valueOf(width));
             } catch (RuntimeException exception) {
                 qzuilib$logFontPipelineFailure(exception);
@@ -77,6 +80,7 @@ public abstract class MixinFontRenderer {
         if (FontConfig.replaceOrigin) {
             try {
                 int width = DefaultFontRendererAdapter.getInstance().drawString(text, x, y, color, true);
+                qzuilib$applyVanillaDrawStringAlphaSideEffect();
                 cir.setReturnValue(Integer.valueOf(width));
             } catch (RuntimeException exception) {
                 qzuilib$logFontPipelineFailure(exception);
@@ -145,5 +149,16 @@ public abstract class MixinFontRenderer {
         }
         qzuilib$fontPipelineFailureLogged = true;
         MyMod.LOG.error("UILib 字体管线接管失败，本次调用回落原版 FontRenderer。", exception);
+    }
+
+    /**
+     * 保留原版 drawString 会对调用链可见的最小固定管线副作用。
+     *
+     * <p>这里不恢复旧版硬编码的 blend、颜色或纹理状态；UILib 字体渲染主体仍由状态保护器恢复。
+     * 仅补回原版 `FontRenderer.drawString(...)` 在入口调用 `enableAlpha()` 后留下的 alpha test 开启状态，
+     * 避免后续透明贴图隐式依赖该契约时出现黑底或白底。</p>
+     */
+    private static void qzuilib$applyVanillaDrawStringAlphaSideEffect() {
+        GL11.glEnable(GL11.GL_ALPHA_TEST);
     }
 }
