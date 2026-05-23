@@ -864,6 +864,49 @@ public class HtmlLikeDocumentWidgetTest {
     }
 
     /**
+     * 验证 fixed fallback 作用于已 fixed 元素时只沿用现有 left/top 基线。
+     */
+    @Test
+    public void shouldDragAlreadyFixedElementThroughFixedDragSupportWithoutPositionSwitch() {
+        UiDocument document = UiDocument.create();
+        ElementNode root = document.getRootElement();
+        ElementNode panel = document.div();
+        ElementNode handle = document.div();
+
+        root.style()
+                .setWidth(UiStyleLength.px(320))
+                .setHeight(UiStyleLength.px(180));
+        panel.style()
+                .setPosition(UiPosition.FIXED)
+                .setLeft(UiStyleLength.px(96))
+                .setTop(UiStyleLength.px(64))
+                .setWidth(UiStyleLength.px(120))
+                .setHeight(UiStyleLength.px(48))
+                .setBackgroundColor(0xFF223344);
+        handle.style()
+                .setWidth(UiStyleLength.px(120))
+                .setHeight(UiStyleLength.px(20))
+                .setBackgroundColor(0xFF446688);
+        panel.append(handle);
+        root.append(panel);
+        DocumentDraggableSupport.attachFixed(panel, handle, DocumentDraggableSupport.DragAxis.BOTH);
+
+        HtmlLikeDocumentWidget widget = new HtmlLikeDocumentWidget(document, 320, 180,
+                new DeterministicTextMeasureService());
+        widget.applyLayoutBounds(0, 0, 320, 180);
+
+        widget.onMouseDown(new UiMouseEvent(UiMouseEvent.Action.BUTTON_DOWN, 108, 72, 0, 0, 0, 0, 1L));
+        widget.onMouseMove(new UiMouseEvent(UiMouseEvent.Action.MOVE, 138, 94, -1, 0, 30, 22, 2L));
+        widget.onMouseUp(new UiMouseEvent(UiMouseEvent.Action.BUTTON_UP, 138, 94, 0, 0, 0, 0, 3L));
+
+        Assert.assertEquals(UiPosition.FIXED, panel.style().getPosition());
+        Assert.assertEquals(126.0F, panel.style().getLeft().getValue(), 0.001F);
+        Assert.assertEquals(86.0F, panel.style().getTop().getValue(), 0.001F);
+        Assert.assertNull(panel.style().getRight());
+        Assert.assertNull(panel.style().getBottom());
+    }
+
+    /**
      * 验证 fixed 拖拽模式会从 static 元素当前视觉位置开始移动。
      */
     @Test

@@ -43,6 +43,7 @@ RemoteHudOverlays.open(player, RemoteHudOverlay.danmaku("notice-1",
 ## 模式
 
 - `DIALOG`：居中浮窗，默认显示关闭按钮；在 HUD 可交互的宿主界面中可点击按钮、输入表单。
+  宿主 shell 从创建开始就是 fixed 浮窗，并在真实 HUD 视口可用后完成初始居中；拖拽只更新已有 `left/top`，不会在第一次拖拽时切换定位模型。
   宿主只提供居中、拖拽和关闭按钮承载，不生成额外标题栏或可见父容器；页面内容的背景、边框、内边距等视觉外观由下发 HTML/CSS 决定。
   若页面内存在 `data-qz-hud-drag-handle="true"` 元素，会优先把它作为拖拽把手；否则整块解析内容作为兜底拖拽区域。
   下拉选择框展开后按顶层弹出层处理，点击选项会优先被 HUD 页面消费，不应穿透到下方按钮或原生界面。

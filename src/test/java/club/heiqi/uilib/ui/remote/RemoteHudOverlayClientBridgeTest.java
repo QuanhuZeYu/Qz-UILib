@@ -10,6 +10,8 @@ import club.heiqi.uilib.ui.dom.DocumentNode;
 import club.heiqi.uilib.ui.dom.ElementNode;
 import club.heiqi.uilib.ui.dom.TextNode;
 import club.heiqi.uilib.ui.dom.UiDocument;
+import club.heiqi.uilib.ui.document.HtmlLikeDocumentWidget;
+import club.heiqi.uilib.ui.event.UiMouseEvent;
 import club.heiqi.uilib.ui.layout.DocumentLayoutBox;
 import club.heiqi.uilib.ui.layout.DocumentLayoutEngine;
 import club.heiqi.uilib.ui.paint.DocumentPaintCommand;
@@ -18,6 +20,7 @@ import club.heiqi.uilib.ui.paint.DocumentPaintEngine;
 import club.heiqi.uilib.ui.style.props.UiCursor;
 import club.heiqi.uilib.ui.style.props.UiDisplay;
 import club.heiqi.uilib.ui.style.props.UiPosition;
+import club.heiqi.uilib.ui.style.props.UiVisibility;
 import club.heiqi.uilib.ui.style.values.UiStyleLength;
 import club.heiqi.uilib.ui.text.TextMeasureService;
 
@@ -56,6 +59,12 @@ public class RemoteHudOverlayClientBridgeTest {
         Assert.assertFalse("DIALOG 不应再生成宿主标题栏文本", text.contains("HUD 标题"));
         Assert.assertNull("DIALOG 根层不应额外绘制全屏暗色父容器",
                 document.getRootElement().style().getBackgroundColor());
+        Assert.assertEquals("DIALOG 根层不应依赖 flex 居中驱动 shell 位置",
+                UiDisplay.BLOCK, document.getRootElement().style().getDisplay());
+        Assert.assertEquals("DIALOG shell 初始即应是 fixed 浮窗，避免首拖切换定位模型",
+                UiPosition.FIXED, parts.movingElement.style().getPosition());
+        Assert.assertEquals("DIALOG shell 放置前保持隐藏，避免首帧在左上角闪现",
+                UiVisibility.HIDDEN, parts.movingElement.style().getVisibility());
         Assert.assertNull("DIALOG shell 应只承担定位和拖拽，不额外绘制背景",
                 parts.movingElement.style().getBackgroundColor());
         Assert.assertNull("DIALOG shell 应只承担定位和拖拽，不额外绘制边框",
@@ -76,6 +85,78 @@ public class RemoteHudOverlayClientBridgeTest {
                 UiDisplay.FLEX, closeButton.style().getDisplay());
         Assert.assertEquals(UiStyleLength.px(44), closeButton.style().getWidth());
         Assert.assertEquals(UiStyleLength.px(24), closeButton.style().getHeight());
+    }
+
+    @Test
+    public void shouldCenterDialogBeforeFirstDragAndMoveByMouseDelta() {
+        RemoteHudOverlays.OpenOffer offer = new RemoteHudOverlays.OpenOffer();
+        offer.sessionId = "session";
+        offer.overlayId = "overlay";
+        offer.pageId = "page";
+        offer.title = "HUD 标题";
+        offer.mode = RemoteHudOverlayMode.DIALOG.name();
+        offer.resourcePolicy = RemoteDocumentResourcePolicy.LOCAL_RESOURCES_ONLY.name();
+        offer.defaultCloseButtonVisible = false;
+
+        UiDocument document = UiDocument.create();
+        RemoteHudOverlayClientBridge.OverlayDocumentParts parts =
+                RemoteHudOverlayClientBridge.buildOverlayDocument(document, offer,
+                        "<section style=\"height:120px;background:#111827;\">"
+                                + "<div data-qz-hud-drag-handle=\"true\" style=\"height:40px;cursor:move;\">拖动</div>"
+                                + "<p>正文</p></section>");
+        DeterministicTextMeasureService textMeasureService = new DeterministicTextMeasureService();
+
+        parts.updateDialogPlacementForTest(1024, 768, textMeasureService);
+        float initialLeft = parts.movingElement.style().getLeft().getValue();
+        float initialTop = parts.movingElement.style().getTop().getValue();
+
+        Assert.assertEquals(UiVisibility.VISIBLE, parts.movingElement.style().getVisibility());
+        Assert.assertEquals(UiPosition.FIXED, parts.movingElement.style().getPosition());
+        Assert.assertTrue("初始放置不应停留在左上角 X", initialLeft > 100.0F);
+        Assert.assertTrue("初始放置不应停留在左上角 Y", initialTop > 100.0F);
+
+        HtmlLikeDocumentWidget widget = new HtmlLikeDocumentWidget(document, 320, 180, textMeasureService);
+        widget.applyLayoutBounds(0, 0, 1024, 768);
+        int mouseX = Math.round(initialLeft) + 24;
+        int mouseY = Math.round(initialTop) + 16;
+        widget.onMouseDown(new UiMouseEvent(UiMouseEvent.Action.BUTTON_DOWN, mouseX, mouseY, 0, 0, 0, 0, 1L));
+        widget.onMouseMove(new UiMouseEvent(UiMouseEvent.Action.MOVE, mouseX + 30, mouseY + 20, -1, 0, 30, 20, 2L));
+        widget.onMouseUp(new UiMouseEvent(UiMouseEvent.Action.BUTTON_UP, mouseX + 30, mouseY + 20, 0, 0, 0, 0, 3L));
+
+        Assert.assertEquals(initialLeft + 30.0F, parts.movingElement.style().getLeft().getValue(), 0.001F);
+        Assert.assertEquals(initialTop + 20.0F, parts.movingElement.style().getTop().getValue(), 0.001F);
+
+        parts.updateDialogPlacementForTest(1024, 768, textMeasureService);
+        Assert.assertEquals("用户拖拽后，相同视口刷新不应重新居中",
+                initialLeft + 30.0F, parts.movingElement.style().getLeft().getValue(), 0.001F);
+        Assert.assertEquals("用户拖拽后，相同视口刷新不应重新居中",
+                initialTop + 20.0F, parts.movingElement.style().getTop().getValue(), 0.001F);
+    }
+
+    @Test
+    public void shouldRecenterDialogWhenViewportBecomesRealBeforeUserDrag() {
+        RemoteHudOverlays.OpenOffer offer = new RemoteHudOverlays.OpenOffer();
+        offer.sessionId = "session";
+        offer.overlayId = "overlay";
+        offer.pageId = "page";
+        offer.title = "HUD 标题";
+        offer.mode = RemoteHudOverlayMode.DIALOG.name();
+        offer.resourcePolicy = RemoteDocumentResourcePolicy.LOCAL_RESOURCES_ONLY.name();
+        offer.defaultCloseButtonVisible = false;
+
+        UiDocument document = UiDocument.create();
+        RemoteHudOverlayClientBridge.OverlayDocumentParts parts =
+                RemoteHudOverlayClientBridge.buildOverlayDocument(document, offer,
+                        "<section style=\"height:80px;\"><div data-qz-hud-drag-handle=\"true\">拖动</div></section>");
+        DeterministicTextMeasureService textMeasureService = new DeterministicTextMeasureService();
+
+        parts.updateDialogPlacementForTest(320, 180, textMeasureService);
+        float temporaryLeft = parts.movingElement.style().getLeft().getValue();
+        parts.updateDialogPlacementForTest(1024, 768, textMeasureService);
+
+        Assert.assertTrue("真实视口到达且尚未拖拽时，应从临时小视口重新居中",
+                parts.movingElement.style().getLeft().getValue() > temporaryLeft + 100.0F);
+        Assert.assertEquals(UiVisibility.VISIBLE, parts.movingElement.style().getVisibility());
     }
 
     @Test

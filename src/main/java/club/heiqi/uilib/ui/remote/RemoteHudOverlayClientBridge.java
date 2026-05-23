@@ -10,11 +10,13 @@ import java.util.function.BiConsumer;
 import club.heiqi.uilib.MyMod;
 import club.heiqi.uilib.net.api.NetResponse;
 import club.heiqi.uilib.net.api.NetStreamCall;
-import club.heiqi.uilib.ui.control.DocumentDraggableSupport;
 import club.heiqi.uilib.ui.control.DocumentButtonActionEvent;
 import club.heiqi.uilib.ui.control.DocumentButtonActionHandler;
 import club.heiqi.uilib.ui.control.DocumentButtonControl;
+import club.heiqi.uilib.ui.control.DocumentDraggableSupport;
 import club.heiqi.uilib.ui.dom.DocumentElementBounds;
+import club.heiqi.uilib.ui.dom.DocumentElementDragEvent;
+import club.heiqi.uilib.ui.dom.DocumentElementDragHandler;
 import club.heiqi.uilib.ui.dom.DocumentNode;
 import club.heiqi.uilib.ui.dom.ElementNode;
 import club.heiqi.uilib.ui.dom.TextNode;
@@ -22,6 +24,8 @@ import club.heiqi.uilib.ui.dom.UiDocument;
 import club.heiqi.uilib.ui.hud.UiHudDocumentHost;
 import club.heiqi.uilib.ui.hud.UiHudDocumentRegistration;
 import club.heiqi.uilib.ui.hud.UiHudLayerType;
+import club.heiqi.uilib.ui.layout.DocumentLayoutBox;
+import club.heiqi.uilib.ui.layout.DocumentLayoutEngine;
 import club.heiqi.uilib.ui.screen.UiScreenManager;
 import club.heiqi.uilib.ui.style.props.UiAlignItems;
 import club.heiqi.uilib.ui.style.props.UiBoxSizing;
@@ -33,8 +37,11 @@ import club.heiqi.uilib.ui.style.props.UiJustifyContent;
 import club.heiqi.uilib.ui.style.props.UiOverflow;
 import club.heiqi.uilib.ui.style.props.UiPointerEvents;
 import club.heiqi.uilib.ui.style.props.UiPosition;
+import club.heiqi.uilib.ui.style.props.UiVisibility;
 import club.heiqi.uilib.ui.style.props.UiWhiteSpace;
 import club.heiqi.uilib.ui.style.values.UiStyleLength;
+import club.heiqi.uilib.ui.text.DefaultTextMeasureService;
+import club.heiqi.uilib.ui.text.TextMeasureService;
 import net.minecraft.client.Minecraft;
 
 /**
@@ -46,6 +53,8 @@ public final class RemoteHudOverlayClientBridge {
 
     private static final RemoteHudOverlayClientBridge INSTANCE = new RemoteHudOverlayClientBridge();
     private static final int DANMAKU_FALLBACK_WIDTH = 320;
+    private static final int DIALOG_HORIZONTAL_MARGIN = 16;
+    private static final int DIALOG_VERTICAL_MARGIN = 24;
 
     private final Map<String, ActiveOverlay> activeOverlays =
             new java.util.concurrent.ConcurrentHashMap<String, ActiveOverlay>();
@@ -94,6 +103,8 @@ public final class RemoteHudOverlayClientBridge {
             }
             if (overlay.mode == RemoteHudOverlayMode.DANMAKU) {
                 updateDanmakuPosition(overlay, nowMillis);
+            } else if (overlay.mode == RemoteHudOverlayMode.DIALOG) {
+                updateDialogPlacement(overlay);
             }
         }
     }
@@ -236,6 +247,8 @@ public final class RemoteHudOverlayClientBridge {
         activeOverlays.put(offer.overlayId, activeOverlay);
         if (activeOverlay.mode == RemoteHudOverlayMode.DANMAKU) {
             updateDanmakuPosition(activeOverlay, activeOverlay.openedAtMillis);
+        } else if (activeOverlay.mode == RemoteHudOverlayMode.DIALOG) {
+            updateDialogPlacement(activeOverlay);
         }
     }
 
@@ -298,6 +311,13 @@ public final class RemoteHudOverlayClientBridge {
         overlay.parts.movingElement.style().setLeft(UiStyleLength.px(screenWidth + 24.0F - progress * travel));
     }
 
+    private void updateDialogPlacement(ActiveOverlay overlay) {
+        if (overlay == null || overlay.parts == null || overlay.parts.dialogPlacement == null) {
+            return;
+        }
+        overlay.parts.dialogPlacement.updateForViewport(resolveScreenWidth(), resolveScreenHeight());
+    }
+
     static OverlayDocumentParts buildOverlayDocument(UiDocument document, final RemoteHudOverlays.OpenOffer offer,
             String html) {
         RemoteHudOverlayMode mode = resolveMode(offer.mode);
@@ -307,6 +327,8 @@ public final class RemoteHudOverlayClientBridge {
         ElementNode shell = document.div();
         root.append(shell);
         configureShell(shell, offer, mode);
+        DialogPlacementSupport dialogPlacement = mode == RemoteHudOverlayMode.DIALOG
+                ? new DialogPlacementSupport(root, shell) : null;
         ElementNode content = document.div();
         configureContent(content, mode);
         shell.append(content);
@@ -327,7 +349,7 @@ public final class RemoteHudOverlayClientBridge {
         RemoteHtmlDocumentParser.parseInto(document, content, html,
                 RemoteHtmlDocumentParser.Options.of(offer.sessionId, offer.pageId, policy, submitSink, false));
         if (mode == RemoteHudOverlayMode.DIALOG) {
-            installDialogDrag(shell, content);
+            installDialogDrag(shell, content, dialogPlacement);
             if (offer.defaultCloseButtonVisible) {
                 shell.append(createCloseButton(document, offer));
             }
@@ -342,12 +364,12 @@ public final class RemoteHudOverlayClientBridge {
                 RemoteHudOverlayClientBridge.showNotice(notice, noticeText, message);
             }
         });
-        return new OverlayDocumentParts(shell, content, notice, noticeText, mode);
+        return new OverlayDocumentParts(shell, content, notice, noticeText, mode, dialogPlacement);
     }
 
     private static void applyRootContract(ElementNode root, RemoteHudOverlayMode mode) {
         root.style()
-                .setDisplay(mode == RemoteHudOverlayMode.DIALOG ? UiDisplay.FLEX : UiDisplay.BLOCK)
+                .setDisplay(UiDisplay.BLOCK)
                 .setPosition(UiPosition.FIXED)
                 .setLeft(UiStyleLength.px(0))
                 .setTop(UiStyleLength.px(0))
@@ -357,12 +379,6 @@ public final class RemoteHudOverlayClientBridge {
                 .setOverflowX(UiOverflow.VISIBLE)
                 .setOverflowY(UiOverflow.VISIBLE)
                 .setTextColor(0xFFE5E7EB);
-        if (mode == RemoteHudOverlayMode.DIALOG) {
-            root.style()
-                    .setAlignItems(UiAlignItems.CENTER)
-                    .setJustifyContent(UiJustifyContent.CENTER)
-                    .setPadding(UiStyleLength.px(16));
-        }
         if (mode != RemoteHudOverlayMode.DIALOG) {
             root.setAttribute("data-hit-test-hidden", "true");
             root.style().setPointerEvents(UiPointerEvents.NONE);
@@ -374,7 +390,9 @@ public final class RemoteHudOverlayClientBridge {
         shell.style().setBoxSizing(UiBoxSizing.BORDER_BOX).setZIndex(9000);
         if (mode == RemoteHudOverlayMode.DIALOG) {
             shell.style()
-                    .setPosition(UiPosition.RELATIVE)
+                    .setPosition(UiPosition.FIXED)
+                    .setLeft(UiStyleLength.px(0))
+                    .setTop(UiStyleLength.px(0))
                     .setDisplay(UiDisplay.FLEX)
                     .setFlexDirection(UiFlexDirection.COLUMN)
                     .setWidth(UiStyleLength.px(480))
@@ -382,7 +400,8 @@ public final class RemoteHudOverlayClientBridge {
                     .setMaxHeight(UiStyleLength.calc(1.0F, -48.0F))
                     .setRowGap(UiStyleLength.px(8))
                     .setOverflowX(UiOverflow.VISIBLE)
-                    .setOverflowY(UiOverflow.VISIBLE);
+                    .setOverflowY(UiOverflow.VISIBLE)
+                    .setVisibility(UiVisibility.HIDDEN);
             return;
         }
         if (mode == RemoteHudOverlayMode.TOAST) {
@@ -451,14 +470,33 @@ public final class RemoteHudOverlayClientBridge {
      *
      * @param shell 负责移动的宿主 shell
      * @param content 解析后的远程 HTML 内容容器
+     * @param placementSupport DIALOG 初始 fixed 放置支持
      */
-    private static void installDialogDrag(ElementNode shell, ElementNode content) {
+    private static void installDialogDrag(ElementNode shell, ElementNode content,
+            final DialogPlacementSupport placementSupport) {
         ElementNode explicitHandle = findElementByAttribute(content, "data-qz-hud-drag-handle", "true");
-        ElementNode dragHandle = explicitHandle == null ? content : explicitHandle;
+        final ElementNode dragHandle = explicitHandle == null ? content : explicitHandle;
         if (explicitHandle != null) {
             explicitHandle.style().setCursor(UiCursor.MOVE);
         }
         DocumentDraggableSupport.attachFixed(shell, dragHandle, DocumentDraggableSupport.DragAxis.BOTH);
+        if (placementSupport == null) {
+            return;
+        }
+        final DocumentElementDragHandler delegate = dragHandle.getDragHandler();
+        dragHandle.setDragHandler(new DocumentElementDragHandler() {
+            @Override
+            public boolean onDrag(DocumentElementDragEvent event) {
+                if (event != null && event.getPhase() == DocumentElementDragEvent.DragPhase.START) {
+                    placementSupport.ensurePlacedForCurrentViewport();
+                }
+                boolean handled = delegate != null && delegate.onDrag(event);
+                if (handled && event != null && event.getPhase() == DocumentElementDragEvent.DragPhase.DRAG) {
+                    placementSupport.markUserMoved();
+                }
+                return handled;
+            }
+        });
     }
 
     private static ElementNode createCloseButton(UiDocument document, final RemoteHudOverlays.OpenOffer offer) {
@@ -622,6 +660,17 @@ public final class RemoteHudOverlayClientBridge {
         }
     }
 
+    private static int resolveScreenHeight() {
+        try {
+            Minecraft minecraft = Minecraft.getMinecraft();
+            return minecraft == null ? 180 : Math.max(1, minecraft.displayHeight);
+        } catch (RuntimeException exception) {
+            return 180;
+        } catch (LinkageError error) {
+            return 180;
+        }
+    }
+
     private static void unregisterQuietly(UiHudDocumentRegistration registration) {
         if (registration == null) {
             return;
@@ -640,14 +689,153 @@ public final class RemoteHudOverlayClientBridge {
         final ElementNode noticeElement;
         final TextNode noticeText;
         final RemoteHudOverlayMode mode;
+        private final DialogPlacementSupport dialogPlacement;
 
         private OverlayDocumentParts(ElementNode movingElement, ElementNode contentElement, ElementNode noticeElement,
-                TextNode noticeText, RemoteHudOverlayMode mode) {
+                TextNode noticeText, RemoteHudOverlayMode mode, DialogPlacementSupport dialogPlacement) {
             this.movingElement = movingElement;
             this.contentElement = contentElement;
             this.noticeElement = noticeElement;
             this.noticeText = noticeText;
             this.mode = mode;
+            this.dialogPlacement = dialogPlacement;
+        }
+
+        void updateDialogPlacementForTest(int viewportWidth, int viewportHeight, TextMeasureService textMeasureService) {
+            if (dialogPlacement != null) {
+                dialogPlacement.updateForViewport(viewportWidth, viewportHeight, textMeasureService);
+            }
+        }
+    }
+
+    /**
+     * DIALOG fixed 浮窗的初始放置状态。
+     */
+    private static final class DialogPlacementSupport {
+
+        private final ElementNode root;
+        private final ElementNode shell;
+        private boolean placed;
+        private boolean userMoved;
+        private int lastViewportWidth = -1;
+        private int lastViewportHeight = -1;
+
+        private DialogPlacementSupport(ElementNode root, ElementNode shell) {
+            this.root = root;
+            this.shell = shell;
+        }
+
+        private void ensurePlacedForCurrentViewport() {
+            if (!placed) {
+                updateForViewport(resolveScreenWidth(), resolveScreenHeight());
+            }
+        }
+
+        private void updateForViewport(int viewportWidth, int viewportHeight) {
+            updateForViewport(viewportWidth, viewportHeight, DefaultTextMeasureService.getInstance());
+        }
+
+        private void updateForViewport(int viewportWidth, int viewportHeight, TextMeasureService textMeasureService) {
+            int safeViewportWidth = Math.max(1, viewportWidth);
+            int safeViewportHeight = Math.max(1, viewportHeight);
+            if (userMoved) {
+                if (placed && (safeViewportWidth != lastViewportWidth || safeViewportHeight != lastViewportHeight)) {
+                    clampCurrentPosition(safeViewportWidth, safeViewportHeight, textMeasureService);
+                }
+                lastViewportWidth = safeViewportWidth;
+                lastViewportHeight = safeViewportHeight;
+                return;
+            }
+            if (!placed || safeViewportWidth != lastViewportWidth || safeViewportHeight != lastViewportHeight) {
+                centerInViewport(safeViewportWidth, safeViewportHeight, textMeasureService);
+            }
+        }
+
+        private void markUserMoved() {
+            userMoved = true;
+            placed = true;
+        }
+
+        private void centerInViewport(int viewportWidth, int viewportHeight, TextMeasureService textMeasureService) {
+            Size shellSize = measureShell(viewportWidth, viewportHeight, textMeasureService);
+            int left = clampPosition(Math.round((viewportWidth - shellSize.width) / 2.0F), viewportWidth,
+                    shellSize.width, DIALOG_HORIZONTAL_MARGIN);
+            int top = clampPosition(Math.round((viewportHeight - shellSize.height) / 2.0F), viewportHeight,
+                    shellSize.height, DIALOG_VERTICAL_MARGIN);
+            applyPosition(left, top);
+            lastViewportWidth = viewportWidth;
+            lastViewportHeight = viewportHeight;
+            placed = true;
+        }
+
+        private void clampCurrentPosition(int viewportWidth, int viewportHeight, TextMeasureService textMeasureService) {
+            Size shellSize = measureShell(viewportWidth, viewportHeight, textMeasureService);
+            int left = clampPosition(resolvePixel(shell.style().getLeft(), 0), viewportWidth, shellSize.width,
+                    DIALOG_HORIZONTAL_MARGIN);
+            int top = clampPosition(resolvePixel(shell.style().getTop(), 0), viewportHeight, shellSize.height,
+                    DIALOG_VERTICAL_MARGIN);
+            applyPosition(left, top);
+        }
+
+        private Size measureShell(int viewportWidth, int viewportHeight, TextMeasureService textMeasureService) {
+            TextMeasureService resolvedMeasureService = textMeasureService == null ? DefaultTextMeasureService.getInstance()
+                    : textMeasureService;
+            DocumentLayoutBox rootBox = DocumentLayoutEngine.layout(root, viewportWidth, viewportHeight,
+                    resolvedMeasureService);
+            DocumentLayoutBox shellBox = findLayoutBox(rootBox, shell);
+            if (shellBox == null) {
+                return new Size(0, 0);
+            }
+            return new Size(Math.max(0, shellBox.getWidth()), Math.max(0, shellBox.getHeight()));
+        }
+
+        private void applyPosition(int left, int top) {
+            shell.style()
+                    .setPosition(UiPosition.FIXED)
+                    .setLeft(UiStyleLength.px(left))
+                    .setTop(UiStyleLength.px(top))
+                    .clearRight()
+                    .clearBottom()
+                    .setVisibility(UiVisibility.VISIBLE);
+        }
+
+        private static DocumentLayoutBox findLayoutBox(DocumentLayoutBox box, ElementNode element) {
+            if (box == null || element == null) {
+                return null;
+            }
+            if (box.getElement() == element) {
+                return box;
+            }
+            for (DocumentLayoutBox child : box.getChildren()) {
+                DocumentLayoutBox found = findLayoutBox(child, element);
+                if (found != null) {
+                    return found;
+                }
+            }
+            return null;
+        }
+
+        private static int clampPosition(int value, int viewportSize, int elementSize, int margin) {
+            int max = Math.max(margin, viewportSize - elementSize - margin);
+            return Math.max(margin, Math.min(value, max));
+        }
+
+        private static int resolvePixel(UiStyleLength length, int fallback) {
+            if (length == null || length.getType() != UiStyleLength.Type.PIXEL) {
+                return fallback;
+            }
+            return Math.round(length.getValue());
+        }
+    }
+
+    private static final class Size {
+
+        private final int width;
+        private final int height;
+
+        private Size(int width, int height) {
+            this.width = width;
+            this.height = height;
         }
     }
 
