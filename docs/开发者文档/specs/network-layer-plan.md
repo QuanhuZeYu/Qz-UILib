@@ -85,8 +85,20 @@ p.playerNetServerHandler.netManager
 
 #### 包大小处理
 
-- C→S：vanilla 锁 `Short.MAX_VALUE - 1 = 32766` 字节，core 层强制分片
-- S→C：Forge 在 1.7.10 把 S3F 限制放开到 ~2MB（`writeVarShort`），但走 vanilla 适配器不能依赖 Forge 这个改动 → core 层对 S→C 也按 `Short.MAX_VALUE - 1` 分片，保证两个适配器行为一致
+网络层采用"兼容物理帧 + 逻辑消息 + 大消息流式"三层限制，不再把 32KB 当成默认业务上限：
+
+| 限制项 | 默认值 | 用途 |
+|---|---:|---|
+| `COMPAT_PHYSICAL_FRAME_LIMIT` | `32766` bytes | 最低兼容物理帧上限，覆盖原生 C17 与无扩展环境 |
+| `LARGE_MESSAGE_WARN_THRESHOLD` | `8 MiB` | 普通消息进入大消息路径或记录提示的阈值 |
+| `DEFAULT_LOGICAL_MESSAGE_LIMIT` | `16 MiB` | Channel / Fetch / Store 普通逻辑消息默认上限 |
+| `GTNH_DEFAULT_PHYSICAL_LIMIT` | `256 MiB` | GTNH/Hodgepodge 环境可理解的默认物理包能力 |
+| `GTNH_HARD_PHYSICAL_LIMIT` | `1 GiB` | 物理包硬上限，只作为防滥用边界，不鼓励业务使用 |
+
+- C→S：vanilla `C17PacketCustomPayload` 仍锁 `Short.MAX_VALUE - 1 = 32766` 字节；超过兼容物理帧的客户端消息默认走 Qz 内部分片/重组。除非后续明确实现并验证 C17 扩展，否则不能假设客户端可单帧发 256 MiB。
+- S→C：Forge 1.7.10 已把 `S3FPacketCustomPayload` 放宽到约 `2,097,050` 字节；GTNH/Hodgepodge 2.8.4 默认 `packetSizeLimit=268435456`，配置硬边界可到 `1,073,741,824` 字节。Transport 允许按握手能力使用更大的物理帧，但普通逻辑消息仍受 16 MiB 默认上限约束。
+- 超过 16 MiB 的数据不作为普通 Channel / Fetch / Store 消息发送，必须走后续 stream/chunk API；超大资源、快照、文件类数据都归入该路径。
+- 分片仍是 core 层能力：当消息低于逻辑上限但超过当前协商物理帧上限时，自动切成 `NetChunkFrame(chunkSeq, totalChunks, chunkBytes)` 并重组。
 
 #### Channel 名约定
 
@@ -100,7 +112,7 @@ p.playerNetServerHandler.netManager
 
 | 关注项 | 发现 | 对本方案影响 |
 |---|---|---|
-| `Hodgepodge` | early mixin 修改 `S3FPacketCustomPayload` 构造、读写长度、channel 名校验，并修补 `NetworkDispatcher` fallback | 保留 32KB 分片上限，不依赖 Hodgepodge 放宽后的 S3F 大包；`qz:0` channel 名满足 20 字符限制 |
+| `Hodgepodge` | early mixin 修改 `S3FPacketCustomPayload` 构造、读写长度、channel 名校验，并修补 `NetworkDispatcher` fallback | 32KB 作为兼容下限；GTNH 环境可协商使用 256 MiB 默认物理能力，但普通逻辑消息仍默认限制 16 MiB；`qz:0` channel 名满足 20 字符限制 |
 | `ServerUtilities` | `MixinNetHandlerPlayServer` 在 `onDisconnect` 包装 vanish 断开消息 | 我方 `onDisconnect` 只做 HEAD 信号，不取消、不改返回，保持幂等，避免和 vanish 消息逻辑争抢 |
 | `ModularUI` / `ModularUI2` | 分别改 `PacketBuffer`、`NetHandlerPlayClient.handleSetSlot` 与 `SimpleNetworkWrapper` | 默认 vanilla transport 不碰 `SimpleNetworkWrapper`；Forge 兼容适配器要单独跑自检 |
 | `Backhand`、`NotEnoughIds`、`Angelica`、`CoreTweaks` | 都 mixin `NetHandlerPlayClient/Server`，但集中在 held item、multiblock、respawn/join 等其它方法 | 我方只注入 custom payload、构造和断连，当前源审计未发现同方法 HEAD cancellable 冲突 |
@@ -110,7 +122,8 @@ p.playerNetServerHandler.netManager
 
 1. 网络 Mixin 走 early loader，不新增 late 档 vanilla 目标。
 2. `handleCustomPayload` / `processVanilla250Packet` 的 `ci.cancel()` 只在 `qz:` 前缀命中后执行，其它 channel 完全放行。
-3. Forge 适配器仅作为回退路径，不能成为默认路径；它需要额外验证 ModularUI2 对 `SimpleNetworkWrapper` 的 overwrite 行为。
+3. 32KB 只是兼容下限，不是现代逻辑消息上限；默认逻辑消息 16 MiB，GTNH 物理能力按 256 MiB 默认、1 GiB 硬上限处理。
+4. Forge 适配器仅作为回退路径，不能成为默认路径；它需要额外验证 ModularUI2 对 `SimpleNetworkWrapper` 的 overwrite 行为。
 
 ### 决策 3：Forge 适配器（兼容层）
 
@@ -249,7 +262,7 @@ view.bind(elementNode, (el, snapshot) -> {
 
 ### 决策 10：安全与防滥用
 
-- **C→S/S→C 分片**：core 层强制 32KB 切片（双方向同步上限，避免依赖 Forge `writeVarShort`），`NetChunkFrame(chunkSeq, totalChunks, chunkBytes)`，30s 重组超时丢弃
+- **大小限制与分片**：32KB 是兼容物理帧下限；普通逻辑消息默认 16 MiB，8 MiB 以上进入大消息提示/路径；GTNH 物理能力默认按 256 MiB、硬上限 1 GiB 理解。超过当前协商物理帧上限但未超过逻辑上限时切 `NetChunkFrame(chunkSeq, totalChunks, chunkBytes)`，30s 重组超时丢弃；超过逻辑上限必须走 stream/chunk API
 - **方向校验**：mixin 客户端/服务端各一份，envelope 头 1 byte direction 字段对不上 LOG.warn 丢弃
 - **Store 访问控制**：`.accessControl(BiPredicate<EntityPlayerMP, NetStore>)` 玩家初次订阅时调用，false 不进订阅表。`PER_PLAYER` 强制只能订阅自己那份
 - **Fetch 限流**：每玩家滑动窗口默认 100 req/s，超额 `NetRateLimitException`
@@ -277,7 +290,7 @@ view.bind(elementNode, (el, snapshot) -> {
 | `src/main/java/club/heiqi/uilib/net/transport/forge/ForgeTransport.java` | 兼容适配器（NetworkRegistry.newChannel） |
 | `src/main/java/club/heiqi/uilib/mixin/early/network/MixinNetHandlerPlayClient.java` | 客户端 early mixin，由 `EarlyMixins` 按 client side 返回 |
 | `src/main/java/club/heiqi/uilib/mixin/early/network/MixinNetHandlerPlayServer.java` | 服务端/common early mixin，由 `EarlyMixins` 返回 |
-| `src/main/java/club/heiqi/uilib/net/core/NetEnvelope.java`、`NetRequestRegistry.java`、`NetChunkAssembler.java`、`MainThreadDispatcher.java`、`SchemaHandshake.java` | 框架内核 |
+| `src/main/java/club/heiqi/uilib/net/core/NetEnvelope.java`、`NetRequestRegistry.java`、`NetChunkAssembler.java`、`NetPayloadLimits.java`、`MainThreadDispatcher.java`、`SchemaHandshake.java` | 框架内核、大小限制、分片、握手 |
 | `src/main/java/club/heiqi/uilib/net/store/StoreEngine.java`、`FieldDeltaEncoder.java`、`StoreSubscriptionRegistry.java` | Store 引擎 |
 | `src/main/java/club/heiqi/uilib/net/client/NetStoreUiBridge.java` | **仅客户端**：Store ↔ ElementNode |
 | `src/main/java/club/heiqi/uilib/internal/devtools/NetSelfCheckPage.java` | 自检页 |
@@ -303,18 +316,19 @@ view.bind(elementNode, (el, snapshot) -> {
 
 ## 验证
 
-新增 `NetSelfCheckPage` 挂 `/qzuilib test`，五个场景 + 一个适配器对比：
+新增 `NetSelfCheckPage` 挂 `/qzuilib test`，六个功能场景 + 一个适配器对比：
 
 1. **Channel ping**：客户端按钮发 `NetPingMsg(localNanos)`，服务端回 `NetPongMsg(serverTick, echoNanos)`，UI 显示往返延迟与单帧字节数
 2. **Fetch slow**：内部 endpoint `qz:devSlow` 接 `Duration`，服务端 sleep 后 reply。`1500ms` 验 future 在 1.5s 完成；`10s` 同时点取消 → `cancel(true)` → future cancelled
 3. **Store counter**：内部 `NetStore<DevCounter>` GLOBAL，服务端 1Hz 自增，客户端 `view.bind(elem, renderer)` 写文本节点，UI 旁显示**字段增量字节数** vs **全量快照字节数**
 4. **断连恢复**：客户端登出再登入，store 重新 snapshot、所有 pending future 以 `NetDisconnectedException` 终结
-5. **C→S/S→C 分片**：客户端发 100KB 字符串 `NetBigMsg`，core 自动切 4 片，服务端拼回校验内容；反向同
-6. **适配器一致性**：自检页有按钮"切换到 Forge 适配器并重启"，重启后跑同样 5 场景，结果应一致（验证 `ITransport` SPI 站得住）
+5. **大小限制与分片**：客户端发 100KB 字符串 `NetBigMsg`，C→S 在原生 C17 限制下自动分片，服务端拼回校验内容；S→C 在 GTNH/Hodgepodge 环境优先验证可协商大物理帧，缺失能力时降级分片
+6. **8-16 MiB 大消息**：发送 8 MiB 与 16 MiB 边界消息，验证提示、策略选择、成功重组与默认逻辑上限；超过 16 MiB 的普通消息应明确拒绝并提示改用 stream/chunk
+7. **适配器一致性**：自检页有按钮"切换到 Forge 适配器并重启"，重启后跑同样场景，结果应一致（验证 `ITransport` SPI 站得住）
 
 构建验证：
 - `gradlew build` 必须通过
-- `runClient21`（lwjgl3ify+JBR 21）人工跑一遍 6 场景
+- `runClient21`（lwjgl3ify+JBR 21）人工跑一遍 7 场景
 - 多人服联机用 `runServer` + `runClient21` 两实例，重点验证 mixin 在 dedicated server 上的加载（确保 `EarlyMixins` 不会在服务端返回 `MixinNetHandlerPlayClient`）
 
 带宽对比基准（场景 1 与 3 显示）：
