@@ -17,16 +17,22 @@ import club.heiqi.uilib.net.api.NetChannel;
 import club.heiqi.uilib.net.api.NetChannelId;
 import club.heiqi.uilib.net.api.NetEndpointId;
 import club.heiqi.uilib.net.api.NetFetchEndpoint;
+import club.heiqi.uilib.net.api.NetFetchRateLimit;
 import club.heiqi.uilib.net.api.NetMessage;
 import club.heiqi.uilib.net.api.NetReceiveContext;
 import club.heiqi.uilib.net.api.NetRequest;
 import club.heiqi.uilib.net.api.NetResponse;
 import club.heiqi.uilib.net.api.NetService;
+import club.heiqi.uilib.net.api.NetStreamCall;
+import club.heiqi.uilib.net.api.NetStreamEndpoint;
+import club.heiqi.uilib.net.api.NetStreamProgress;
+import club.heiqi.uilib.net.api.NetStreamProgressListener;
 import club.heiqi.uilib.net.api.NetStore;
 import club.heiqi.uilib.net.api.NetStoreId;
 import club.heiqi.uilib.net.api.NetStoreScope;
 import club.heiqi.uilib.net.api.NetStoreView;
 import club.heiqi.uilib.net.api.NetTimeoutException;
+import club.heiqi.uilib.net.core.NetPayloadLimits;
 import club.heiqi.uilib.net.transport.NetSide;
 
 /**
@@ -42,12 +48,18 @@ public final class NetRuntimeSelfChecks {
     private static final NetEndpointId FETCH_ERROR_ID = NetEndpointId.of(NAMESPACE, "runtimeFetchErrorCheck");
     private static final NetEndpointId FETCH_TIMEOUT_ID = NetEndpointId.of(NAMESPACE, "runtimeFetchTimeoutCheck");
     private static final NetEndpointId FETCH_CANCEL_ID = NetEndpointId.of(NAMESPACE, "runtimeFetchCancelCheck");
+    private static final NetEndpointId FETCH_RATE_LIMIT_ID = NetEndpointId.of(NAMESPACE, "runtimeFetchLimitCheck");
+    private static final NetEndpointId STREAM_ID = NetEndpointId.of(NAMESPACE, "runtimeStreamCheck");
     private static final NetEndpointId STORE_TRIGGER_ID = NetEndpointId.of(NAMESPACE, "runtimeStoreTrigger");
+    private static final NetEndpointId STORE_DELTA_TRIGGER_ID = NetEndpointId.of(NAMESPACE,
+            "runtimeStoreDeltaTrigger");
     private static final NetEndpointId PLAYER_STORE_TRIGGER_ID = NetEndpointId.of(NAMESPACE,
             "runtimePlayerStoreTrigger");
     private static final NetStoreId STORE_ID = NetStoreId.of(NAMESPACE, "runtimeStoreCheck");
+    private static final NetStoreId STORE_DELTA_ID = NetStoreId.of(NAMESPACE, "runtimeStoreDeltaCheck");
     private static final NetStoreId PLAYER_STORE_ID = NetStoreId.of(NAMESPACE, "runtimePlayerStoreCheck");
     private static final int CHUNKED_CHANNEL_BYTES = 100 * 1024;
+    private static final int STREAM_DOWNLOAD_BYTES = NetPayloadLimits.DEFAULT_LOGICAL_MESSAGE_LIMIT + 32 * 1024;
     private static final long FETCH_TIMEOUT_MILLIS = 120L;
     private static final long FETCH_TIMEOUT_WAKEUP_MILLIS = 240L;
     private static final long FETCH_CANCEL_REPLY_MILLIS = 240L;
@@ -75,8 +87,12 @@ public final class NetRuntimeSelfChecks {
     private static NetFetchEndpoint fetchErrorEndpoint;
     private static NetFetchEndpoint fetchTimeoutEndpoint;
     private static NetFetchEndpoint fetchCancelEndpoint;
+    private static NetFetchEndpoint fetchRateLimitEndpoint;
+    private static NetStreamEndpoint streamEndpoint;
     private static NetFetchEndpoint storeTriggerEndpoint;
+    private static NetFetchEndpoint storeDeltaTriggerEndpoint;
     private static NetStore store;
+    private static NetStore storeDelta;
     private static NetFetchEndpoint playerStoreTriggerEndpoint;
     private static NetStore playerStore;
 
@@ -135,11 +151,52 @@ public final class NetRuntimeSelfChecks {
                     }
                 })
                 .register();
+        fetchRateLimitEndpoint = service.fetch(FETCH_RATE_LIMIT_ID)
+                .rateLimit(NetFetchRateLimit.of(1, Duration.ofMillis(500)))
+                .onRequest(new NetFetchEndpoint.NetFetchHandler() {
+                    @Override
+                    public void onRequest(NetRequest request, NetFetchEndpoint.NetFetchRequestContext context) {
+                        String checkId = request.getHeader(CHECK_ID_HEADER);
+                        context.reply(NetResponse.json(jsonFor(checkId, "fetchRateLimit"))
+                                .withHeader(CHECK_ID_HEADER, checkId)
+                                .withHeader(CHECK_KIND_HEADER, "fetchRateLimit"));
+                    }
+                })
+                .register();
+        streamEndpoint = service.stream(STREAM_ID)
+                .timeout(Duration.ofSeconds(60))
+                .onRequest(new NetStreamEndpoint.NetStreamHandler() {
+                    @Override
+                    public void onRequest(NetRequest request, NetStreamEndpoint.NetStreamRequestContext context) {
+                        String checkId = request.getHeader(CHECK_ID_HEADER);
+                        context.reply(NetResponse.ok(NetBody.binary(streamPayload()))
+                                .withHeader(CHECK_ID_HEADER, checkId)
+                                .withHeader(CHECK_KIND_HEADER, "stream"));
+                    }
+                })
+                .register();
         store = service.store(STORE_ID)
                 .scope(NetStoreScope.GLOBAL)
                 .initialJson(jsonFor("initial", "store"))
                 .register();
         store.view().subscribe(new NetStoreView.NetStoreSubscriber() {
+            @Override
+            public void onSnapshot(NetBody snapshot) {
+                completeStoreSnapshot(snapshot);
+            }
+        });
+        storeDelta = service.store(STORE_DELTA_ID)
+                .scope(NetStoreScope.GLOBAL)
+                .initialJson(jsonFor("initial", "storeDelta"))
+                .deltaApplier(new NetStore.StoreDeltaApplier() {
+                    @Override
+                    public NetBody apply(NetBody current, NetBody delta) {
+                        String checkId = extractId(delta.asUtf8String());
+                        return NetBody.json(jsonFor(checkId, "storeDelta"));
+                    }
+                })
+                .register();
+        storeDelta.view().subscribe(new NetStoreView.NetStoreSubscriber() {
             @Override
             public void onSnapshot(NetBody snapshot) {
                 completeStoreSnapshot(snapshot);
@@ -170,6 +227,18 @@ public final class NetRuntimeSelfChecks {
                         context.reply(NetResponse.json(jsonFor(checkId, "storeAck"))
                                 .withHeader(CHECK_ID_HEADER, checkId)
                                 .withHeader(CHECK_KIND_HEADER, "store"));
+                    }
+                })
+                .register();
+        storeDeltaTriggerEndpoint = service.fetch(STORE_DELTA_TRIGGER_ID)
+                .onRequest(new NetFetchEndpoint.NetFetchHandler() {
+                    @Override
+                    public void onRequest(NetRequest request, NetFetchEndpoint.NetFetchRequestContext context) {
+                        String checkId = request.getHeader(CHECK_ID_HEADER);
+                        storeDelta.applyDelta(NetBody.json(jsonFor(checkId, "storeDelta")));
+                        context.reply(NetResponse.json(jsonFor(checkId, "storeDeltaAck"))
+                                .withHeader(CHECK_ID_HEADER, checkId)
+                                .withHeader(CHECK_KIND_HEADER, "storeDelta"));
                     }
                 })
                 .register();
@@ -390,6 +459,75 @@ public final class NetRuntimeSelfChecks {
     }
 
     /**
+     * 运行 Fetch 限流自检。
+     *
+     * @return 自检 future
+     */
+    public static CompletableFuture<String> runFetchRateLimit() {
+        ensureRegistered();
+        final String checkId = nextCheckId("fetchRateLimit");
+        CompletableFuture<NetResponse> first = fetchRateLimitEndpoint.call(NetRequest.json(jsonFor(checkId,
+                "fetchRateLimitFirst"))
+                .withHeader(CHECK_ID_HEADER, checkId)
+                .withHeader(CHECK_KIND_HEADER, "fetchRateLimit"));
+        CompletableFuture<NetResponse> second = fetchRateLimitEndpoint.call(NetRequest.json(jsonFor(checkId,
+                "fetchRateLimitSecond"))
+                .withHeader(CHECK_ID_HEADER, checkId)
+                .withHeader(CHECK_KIND_HEADER, "fetchRateLimit"));
+        return withTimeout(first, "Fetch rate limit first", checkId)
+                .thenCombine(withTimeout(second, "Fetch rate limit second", checkId),
+                        new java.util.function.BiFunction<NetResponse, NetResponse, String>() {
+                            @Override
+                            public String apply(NetResponse firstResponse, NetResponse secondResponse) {
+                                require(firstResponse.isOk(), "Fetch rate limit 首包应通过");
+                                require(secondResponse.getStatusCode() == 429, "Fetch rate limit 第二包应为 429");
+                                require(secondResponse.getHeader("retry-after-ms") != null,
+                                        "Fetch rate limit 缺少 retry-after-ms");
+                                return "Fetch rate limit 已返回 429，id=" + checkId;
+                            }
+                        });
+    }
+
+    /**
+     * 运行 Stream 大内容下载自检。
+     *
+     * @return 自检 future
+     */
+    public static CompletableFuture<String> runStreamDownload() {
+        ensureRegistered();
+        final String checkId = nextCheckId("stream");
+        final boolean[] sawProgress = new boolean[1];
+        final long[] progressBytes = new long[2];
+        NetStreamCall call = streamEndpoint.call(NetRequest.json(jsonFor(checkId, "stream"))
+                .withHeader(CHECK_ID_HEADER, checkId)
+                .withHeader(CHECK_KIND_HEADER, "stream"));
+        call.onProgress(new NetStreamProgressListener() {
+            @Override
+            public void onProgress(NetStreamProgress progress) {
+                sawProgress[0] = true;
+                progressBytes[0] = progress.getReceivedBytes();
+                progressBytes[1] = progress.getTotalBytes();
+            }
+        });
+        return withTimeout(call.future(), "Stream download", checkId, 30_000L)
+                .thenApply(new java.util.function.Function<NetResponse, String>() {
+                    @Override
+                    public String apply(NetResponse response) {
+                        require(response.isOk(), "Stream status 应为 2xx");
+                        requireEquals(checkId, response.getHeader(CHECK_ID_HEADER), "Stream check id");
+                        requireEquals("stream", response.getHeader(CHECK_KIND_HEADER), "Stream kind");
+                        require(response.getBody().size() == STREAM_DOWNLOAD_BYTES, "Stream body 长度不一致");
+                        require(Arrays.equals(streamPayload(), response.getBody().getBytes()),
+                                "Stream body 内容不一致");
+                        require(sawProgress[0], "Stream progress 未回调");
+                        require(progressBytes[0] == STREAM_DOWNLOAD_BYTES, "Stream progress received 不一致");
+                        require(progressBytes[1] == STREAM_DOWNLOAD_BYTES, "Stream progress total 不一致");
+                        return "Stream download 已完成，bytes=" + STREAM_DOWNLOAD_BYTES + "，id=" + checkId;
+                    }
+                });
+    }
+
+    /**
      * 运行 Store snapshot 自检。
      *
      * @return 自检 future
@@ -422,6 +560,48 @@ public final class NetRuntimeSelfChecks {
                     public String apply(NetBody body) {
                         requireContains(body.asUtf8String(), "\"kind\":\"store\"", "Store body");
                         return "Store snapshot 已完成，id=" + checkId;
+                    }
+                });
+    }
+
+    /**
+     * 运行 Store delta 自检。
+     *
+     * @return 自检 future
+     */
+    public static CompletableFuture<String> runStoreDelta() {
+        ensureRegistered();
+        final String checkId = nextCheckId("storeDelta");
+        final CompletableFuture<NetBody> pending = new CompletableFuture<NetBody>();
+        STORE_PENDING.put(checkId, pending);
+        pending.whenComplete(new java.util.function.BiConsumer<NetBody, Throwable>() {
+            @Override
+            public void accept(NetBody body, Throwable throwable) {
+                STORE_PENDING.remove(checkId);
+            }
+        });
+        CompletableFuture<NetResponse> trigger = storeDeltaTriggerEndpoint.call(NetRequest.json(jsonFor(checkId,
+                "storeDelta"))
+                .withHeader(CHECK_ID_HEADER, checkId)
+                .withHeader(CHECK_KIND_HEADER, "storeDelta"));
+        trigger.whenComplete(new java.util.function.BiConsumer<NetResponse, Throwable>() {
+            @Override
+            public void accept(NetResponse response, Throwable throwable) {
+                if (throwable != null) {
+                    pending.completeExceptionally(throwable);
+                    return;
+                }
+                if (!response.isOk()) {
+                    pending.completeExceptionally(new IllegalStateException(response.getBody().asUtf8String()));
+                }
+            }
+        });
+        return withTimeout(pending, "Store delta", checkId)
+                .thenApply(new java.util.function.Function<NetBody, String>() {
+                    @Override
+                    public String apply(NetBody body) {
+                        requireContains(body.asUtf8String(), "\"kind\":\"storeDelta\"", "Store delta body");
+                        return "Store delta 已完成，id=" + checkId;
                     }
                 });
     }
@@ -567,12 +747,17 @@ public final class NetRuntimeSelfChecks {
 
     private static <T> CompletableFuture<T> withTimeout(final CompletableFuture<T> future,
             final String label, final String checkId) {
+        return withTimeout(future, label, checkId, TIMEOUT_MILLIS);
+    }
+
+    private static <T> CompletableFuture<T> withTimeout(final CompletableFuture<T> future,
+            final String label, final String checkId, long timeoutMillis) {
         TIMEOUT_EXECUTOR.schedule(new Runnable() {
             @Override
             public void run() {
                 future.completeExceptionally(new NetTimeoutException(label + " 自检超时: " + checkId));
             }
-        }, TIMEOUT_MILLIS, TimeUnit.MILLISECONDS);
+        }, timeoutMillis, TimeUnit.MILLISECONDS);
         return future;
     }
 
@@ -580,6 +765,14 @@ public final class NetRuntimeSelfChecks {
         byte[] payload = new byte[CHUNKED_CHANNEL_BYTES];
         for (int index = 0; index < payload.length; index++) {
             payload[index] = (byte) (index & 0xFF);
+        }
+        return payload;
+    }
+
+    private static byte[] streamPayload() {
+        byte[] payload = new byte[STREAM_DOWNLOAD_BYTES];
+        for (int index = 0; index < payload.length; index++) {
+            payload[index] = (byte) ((index * 31) & 0xFF);
         }
         return payload;
     }

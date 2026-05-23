@@ -1,9 +1,12 @@
 package club.heiqi.uilib.net.api;
 
+import java.io.ByteArrayOutputStream;
 import java.nio.charset.StandardCharsets;
 import java.util.Collections;
+import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.Executor;
@@ -31,14 +34,24 @@ public final class NetService {
     public static final String PHYSICAL_CHANNEL = "qz:0";
     private static final String META_KEY = "qz:meta";
     private static final String CHUNK_KEY = "qz:chunk";
+    private static final String STREAM_TOTAL_BYTES_HEADER = "x-qz-stream-total-bytes";
+    private static final String STREAM_CHUNK_COUNT_HEADER = "x-qz-stream-chunk-count";
+    private static final String STREAM_SEQUENCE_HEADER = "x-qz-stream-sequence";
+    private static final int STREAM_FRAME_MARGIN_BYTES = 2048;
+    private static final int PREFERRED_STREAM_CHUNK_BYTES = 256 * 1024;
     private static final NetService INSTANCE = new NetService();
 
     private final Map<String, NetChannel> channels = new ConcurrentHashMap<String, NetChannel>();
     private final Map<String, NetFetchEndpoint> fetchEndpoints = new ConcurrentHashMap<String, NetFetchEndpoint>();
+    private final Map<String, NetStreamEndpoint> streamEndpoints = new ConcurrentHashMap<String, NetStreamEndpoint>();
     private final Map<String, NetStore> stores = new ConcurrentHashMap<String, NetStore>();
     private final NetRequestRegistry requestRegistry = new NetRequestRegistry();
     private final NetChunkAssembler chunkAssembler = new NetChunkAssembler();
     private final AtomicLong nextChunkStreamId = new AtomicLong(1L);
+    private final AtomicLong nextStreamRequestId = new AtomicLong(1L);
+    private final Map<Long, StreamDownload> pendingStreams = new ConcurrentHashMap<Long, StreamDownload>();
+    private final Set<Long> remoteCancelledStreams =
+            Collections.newSetFromMap(new ConcurrentHashMap<Long, Boolean>());
     private final FrameHandler frameHandler = new FrameHandler() {
         @Override
         public void handleFrame(String channelName, byte[] payload, NetReceiveOrigin origin) {
@@ -102,8 +115,8 @@ public final class NetService {
      */
     public synchronized void freeze() {
         this.frozen = true;
-        MyMod.LOG.info("Qz 网络层注册表已冻结：channels={} fetchEndpoints={} stores={}", channels.size(),
-                fetchEndpoints.size(), stores.size());
+        MyMod.LOG.info("Qz 网络层注册表已冻结：channels={} fetchEndpoints={} streamEndpoints={} stores={}",
+                channels.size(), fetchEndpoints.size(), streamEndpoints.size(), stores.size());
     }
 
     /**
@@ -124,6 +137,16 @@ public final class NetService {
      */
     public NetFetchEndpoint.Builder fetch(NetEndpointId id) {
         return new NetFetchEndpoint.Builder(this, id);
+    }
+
+    /**
+     * 创建 Stream 构造器。
+     *
+     * @param id endpoint id
+     * @return 构造器
+     */
+    public NetStreamEndpoint.Builder stream(NetEndpointId id) {
+        return new NetStreamEndpoint.Builder(this, id);
     }
 
     /**
@@ -154,6 +177,15 @@ public final class NetService {
         return endpoint;
     }
 
+    synchronized NetStreamEndpoint registerStreamEndpoint(NetStreamEndpoint endpoint) {
+        ensureRegistrable();
+        String key = endpoint.getId().asKey();
+        if (streamEndpoints.putIfAbsent(key, endpoint) != null) {
+            throw new IllegalStateException("Stream endpoint 已注册: " + key);
+        }
+        return endpoint;
+    }
+
     synchronized NetStore registerStore(NetStore store) {
         ensureRegistrable();
         String key = store.getId().asKey();
@@ -180,7 +212,29 @@ public final class NetService {
         return pending.getFuture();
     }
 
+    NetStreamCall callStreamEndpoint(NetStreamEndpoint endpoint, NetRequest request) {
+        long requestId = nextStreamRequestId.getAndIncrement();
+        NetStreamCall call = new NetStreamCall(this, endpoint.getId().asKey(), requestId);
+        StreamDownload download = new StreamDownload(call, System.currentTimeMillis() + endpoint.getTimeoutMillis(),
+                endpoint.getMaxBytes());
+        pendingStreams.put(Long.valueOf(requestId), download);
+        try {
+            sendEnvelope(NetTarget.server(), NetEnvelope.of(NetEnvelope.Kind.STREAM_REQUEST, NetSide.SERVER,
+                    endpoint.getId().asKey(), requestId, 0, request.getHeaders(), request.getBody()));
+        } catch (RuntimeException exception) {
+            pendingStreams.remove(Long.valueOf(requestId), download);
+            call.fail(exception);
+            throw exception;
+        }
+        return call;
+    }
+
     void replyFetch(Object player, String endpointKey, long requestId, NetResponse response) {
+        if (player == null) {
+            MyMod.LOG.warn("Qz Fetch 回复缺少发送者，无法发送：endpoint={} requestId={}", endpointKey,
+                    Long.valueOf(requestId));
+            return;
+        }
         sendEnvelope(NetTarget.player(player), NetEnvelope.of(NetEnvelope.Kind.FETCH_RESPONSE, NetSide.CLIENT,
                 endpointKey, requestId, response.getStatusCode(), response.getHeaders(), response.getBody()));
     }
@@ -191,9 +245,88 @@ public final class NetService {
         replyFetch(player, endpointKey, requestId, NetResponse.error(500, message));
     }
 
+    void replyStream(Object player, String endpointKey, long requestId, NetResponse response) {
+        Objects.requireNonNull(response, "response");
+        if (isStreamCancelled(requestId)) {
+            remoteCancelledStreams.remove(Long.valueOf(requestId));
+            MyMod.LOG.info("Qz Stream 在开始前已被远端取消，跳过发送：endpoint={} requestId={}", endpointKey,
+                    Long.valueOf(requestId));
+            return;
+        }
+        NetStreamEndpoint endpoint = streamEndpoints.get(endpointKey);
+        long maxBytes = endpoint == null ? NetPayloadLimits.DEFAULT_STREAM_CONTENT_LIMIT : endpoint.getMaxBytes();
+        if (player == null) {
+            MyMod.LOG.warn("Qz Stream 回复缺少发送者，无法发送：endpoint={} requestId={}", endpointKey,
+                    Long.valueOf(requestId));
+            return;
+        }
+        NetBody body = response.getBody();
+        NetPayloadLimits.requireStreamContentSize(body.size(), maxBytes);
+        NetTarget target = NetTarget.player(player);
+        byte[] bytes = body.getBytes();
+        int physicalLimit = requireTransport().getPhysicalFrameLimit(NetSide.CLIENT);
+        int chunkSize = streamChunkSize(physicalLimit);
+        int chunkCount = bytes.length == 0 ? 0 : (bytes.length + chunkSize - 1) / chunkSize;
+
+        Map<String, String> startHeaders = new LinkedHashMap<String, String>(response.getHeaders());
+        startHeaders.put(STREAM_TOTAL_BYTES_HEADER, Long.toString(bytes.length));
+        startHeaders.put(STREAM_CHUNK_COUNT_HEADER, Integer.toString(chunkCount));
+        sendStreamEnvelope(target, NetEnvelope.of(NetEnvelope.Kind.STREAM_START, NetSide.CLIENT, endpointKey,
+                requestId, response.getStatusCode(), startHeaders, NetBody.of(body.getContentType(), new byte[0])));
+
+        for (int sequence = 0; sequence < chunkCount; sequence++) {
+            if (isStreamCancelled(requestId)) {
+                MyMod.LOG.info("Qz Stream 已被远端取消，停止发送：endpoint={} requestId={}", endpointKey,
+                        Long.valueOf(requestId));
+                break;
+            }
+            int offset = sequence * chunkSize;
+            int length = Math.min(chunkSize, bytes.length - offset);
+            byte[] chunk = new byte[length];
+            System.arraycopy(bytes, offset, chunk, 0, length);
+            Map<String, String> chunkHeaders = new LinkedHashMap<String, String>();
+            chunkHeaders.put(STREAM_SEQUENCE_HEADER, Integer.toString(sequence));
+            sendStreamEnvelope(target, NetEnvelope.of(NetEnvelope.Kind.STREAM_CHUNK, NetSide.CLIENT, endpointKey,
+                    requestId, 0, chunkHeaders, NetBody.binary(chunk)));
+        }
+        remoteCancelledStreams.remove(Long.valueOf(requestId));
+    }
+
+    void failStream(Object player, String endpointKey, long requestId, Throwable throwable) {
+        String message = throwable == null ? "远端 Stream 处理失败" : throwable.getClass().getSimpleName() + ": "
+                + (throwable.getMessage() == null ? "" : throwable.getMessage());
+        if (player == null) {
+            MyMod.LOG.warn("Qz Stream 错误帧缺少发送者，无法回复：endpoint={} requestId={}", endpointKey,
+                    Long.valueOf(requestId));
+            return;
+        }
+        sendStreamEnvelope(NetTarget.player(player), NetEnvelope.of(NetEnvelope.Kind.STREAM_ERROR, NetSide.CLIENT,
+                endpointKey, requestId, 500, Collections.<String, String>emptyMap(), NetBody.text(message)));
+    }
+
+    boolean isStreamCancelled(long requestId) {
+        return remoteCancelledStreams.contains(Long.valueOf(requestId));
+    }
+
+    void cancelStreamCall(String endpointKey, long requestId) {
+        pendingStreams.remove(Long.valueOf(requestId));
+        try {
+            sendEnvelope(NetTarget.server(), NetEnvelope.binary(NetEnvelope.Kind.STREAM_CANCEL, NetSide.SERVER,
+                    endpointKey, requestId, new byte[0]));
+        } catch (RuntimeException exception) {
+            MyMod.LOG.warn("发送 Qz Stream 取消帧失败：endpoint={} requestId={}", endpointKey,
+                    Long.valueOf(requestId), exception);
+        }
+    }
+
     void sendStoreSnapshot(NetStore store, NetTarget target, NetBody snapshot) {
         sendStoreEnvelope(store, target, NetEnvelope.of(NetEnvelope.Kind.STORE_SNAPSHOT, targetSideOf(target),
                 store.getId().asKey(), 0L, 0, Collections.<String, String>emptyMap(), snapshot));
+    }
+
+    void sendStoreDelta(NetStore store, NetTarget target, NetBody delta) {
+        sendStoreEnvelope(store, target, NetEnvelope.of(NetEnvelope.Kind.STORE_DELTA, targetSideOf(target),
+                store.getId().asKey(), 0L, 0, Collections.<String, String>emptyMap(), delta));
     }
 
     /**
@@ -217,7 +350,9 @@ public final class NetService {
      */
     public void onClientDisconnected() {
         requestRegistry.failAllDisconnected();
+        failAllPendingStreams(new NetDisconnectedException("网络连接已断开"));
         chunkAssembler.clear();
+        remoteCancelledStreams.clear();
     }
 
     /**
@@ -225,7 +360,9 @@ public final class NetService {
      */
     public synchronized void shutdown() {
         requestRegistry.failAllDisconnected();
+        failAllPendingStreams(new NetDisconnectedException("网络连接已断开"));
         chunkAssembler.clear();
+        remoteCancelledStreams.clear();
         ITransport activeTransport = transport;
         if (activeTransport != null) {
             activeTransport.shutdown();
@@ -260,9 +397,12 @@ public final class NetService {
     void resetForTests() {
         channels.clear();
         fetchEndpoints.clear();
+        streamEndpoints.clear();
         stores.clear();
         requestRegistry.failAllDisconnected();
+        failAllPendingStreams(new NetDisconnectedException("网络连接已断开"));
         chunkAssembler.clear();
+        remoteCancelledStreams.clear();
         frozen = false;
         transport = null;
     }
@@ -298,6 +438,7 @@ public final class NetService {
 
     private void dispatchEnvelope(NetEnvelope envelope, NetReceiveOrigin origin) {
         requestRegistry.expireTimedOut();
+        expireTimedOutStreams();
         if (envelope.getKind() == NetEnvelope.Kind.META) {
             MyMod.LOG.debug("收到 Qz 网络能力握手：side={} body={}", origin.getSide(),
                     new String(envelope.getPayload(), StandardCharsets.UTF_8));
@@ -319,9 +460,57 @@ public final class NetService {
                 MyMod.LOG.warn("收到未注册 Fetch 请求：{}", envelope.getKey());
                 return;
             }
-            endpoint.receiveRequest(NetRequest.fromWire(envelope.getHeaders(), envelope.toBody()),
-                    new NetFetchEndpoint.NetFetchRequestContext(this, envelope.getKey(), envelope.getRequestId(),
-                            new NetReceiveContext(this, origin.getSide(), origin.getSender()), origin.getSender()));
+            NetFetchEndpoint.RateLimitDecision decision = endpoint.checkRateLimit(origin.getSender());
+            if (!decision.isAllowed()) {
+                MyMod.LOG.warn("Qz Fetch 请求被限流：endpoint={} sender={} retryAfterMs={}", envelope.getKey(),
+                        String.valueOf(origin.getSender()), Long.valueOf(decision.getRetryAfterMillis()));
+                endpointRateLimited(origin.getSender(), envelope.getKey(), envelope.getRequestId(), decision);
+                return;
+            }
+            try {
+                endpoint.receiveRequest(NetRequest.fromWire(envelope.getHeaders(), envelope.toBody()),
+                        new NetFetchEndpoint.NetFetchRequestContext(this, envelope.getKey(), envelope.getRequestId(),
+                                new NetReceiveContext(this, origin.getSide(), origin.getSender()),
+                                origin.getSender()));
+            } catch (RuntimeException exception) {
+                failFetch(origin.getSender(), envelope.getKey(), envelope.getRequestId(), exception);
+            }
+            return;
+        }
+        if (envelope.getKind() == NetEnvelope.Kind.STREAM_REQUEST) {
+            NetStreamEndpoint endpoint = streamEndpoints.get(envelope.getKey());
+            if (endpoint == null) {
+                MyMod.LOG.warn("收到未注册 Stream 请求：{}", envelope.getKey());
+                failStream(origin.getSender(), envelope.getKey(), envelope.getRequestId(),
+                        new IllegalStateException("Stream endpoint 未注册: " + envelope.getKey()));
+                return;
+            }
+            try {
+                endpoint.receiveRequest(NetRequest.fromWire(envelope.getHeaders(), envelope.toBody()),
+                        new NetStreamEndpoint.NetStreamRequestContext(this, envelope.getKey(), envelope.getRequestId(),
+                                new NetReceiveContext(this, origin.getSide(), origin.getSender()),
+                                origin.getSender()));
+            } catch (RuntimeException exception) {
+                failStream(origin.getSender(), envelope.getKey(), envelope.getRequestId(), exception);
+            }
+            return;
+        }
+        if (envelope.getKind() == NetEnvelope.Kind.STREAM_START) {
+            handleStreamStart(envelope);
+            return;
+        }
+        if (envelope.getKind() == NetEnvelope.Kind.STREAM_CHUNK) {
+            handleStreamChunk(envelope);
+            return;
+        }
+        if (envelope.getKind() == NetEnvelope.Kind.STREAM_ERROR) {
+            handleStreamError(envelope);
+            return;
+        }
+        if (envelope.getKind() == NetEnvelope.Kind.STREAM_CANCEL) {
+            remoteCancelledStreams.add(Long.valueOf(envelope.getRequestId()));
+            MyMod.LOG.info("收到 Qz Stream 取消帧：endpoint={} requestId={} sender={}", envelope.getKey(),
+                    Long.valueOf(envelope.getRequestId()), String.valueOf(origin.getSender()));
             return;
         }
         if (envelope.getKind() == NetEnvelope.Kind.FETCH_RESPONSE) {
@@ -334,13 +523,22 @@ public final class NetService {
             requestRegistry.fail(envelope.getRequestId(), new NetRemoteException(message));
             return;
         }
-        if (envelope.getKind() == NetEnvelope.Kind.STORE_SNAPSHOT || envelope.getKind() == NetEnvelope.Kind.STORE_DELTA) {
+        if (envelope.getKind() == NetEnvelope.Kind.STORE_SNAPSHOT) {
             NetStore store = stores.get(envelope.getKey());
             if (store == null) {
                 MyMod.LOG.warn("收到未注册 Store 帧：{}", envelope.getKey());
                 return;
             }
             store.receiveSnapshot(envelope.toBody());
+            return;
+        }
+        if (envelope.getKind() == NetEnvelope.Kind.STORE_DELTA) {
+            NetStore store = stores.get(envelope.getKey());
+            if (store == null) {
+                MyMod.LOG.warn("收到未注册 Store 增量帧：{}", envelope.getKey());
+                return;
+            }
+            store.receiveDelta(envelope.toBody());
         }
     }
 
@@ -383,7 +581,7 @@ public final class NetService {
                 sendStoreEnvelopeToAccessiblePlayers(store, Integer.valueOf(target.getDimensionId()), envelope);
                 return;
             default:
-                throw new IllegalStateException("Store snapshot 只能发送到客户端目标：" + target.getType());
+                throw new IllegalStateException("Store 同步帧只能发送到客户端目标：" + target.getType());
         }
     }
 
@@ -404,6 +602,133 @@ public final class NetService {
         if (player != null && store.canAccess(player)) {
             sendEnvelope(NetTarget.player(player), envelope);
         }
+    }
+
+    private void endpointRateLimited(Object sender, String endpointKey, long requestId,
+            NetFetchEndpoint.RateLimitDecision decision) {
+        if (sender == null) {
+            MyMod.LOG.warn("Qz Fetch 限流响应缺少发送者，无法回复：endpoint={} requestId={}", endpointKey,
+                    Long.valueOf(requestId));
+            return;
+        }
+        NetResponse response = NetResponse.error(429, "Fetch 请求过于频繁")
+                .withHeader("retry-after-ms", Long.toString(decision.getRetryAfterMillis()));
+        replyFetch(sender, endpointKey, requestId, response);
+    }
+
+    private void handleStreamStart(NetEnvelope envelope) {
+        StreamDownload download = pendingStreams.get(Long.valueOf(envelope.getRequestId()));
+        if (download == null) {
+            MyMod.LOG.warn("收到未知 Stream start：endpoint={} requestId={}", envelope.getKey(),
+                    Long.valueOf(envelope.getRequestId()));
+            return;
+        }
+        boolean started;
+        try {
+            started = download.markStarted(envelope);
+        } catch (RuntimeException exception) {
+            pendingStreams.remove(Long.valueOf(envelope.getRequestId()), download);
+            download.getCall().fail(exception);
+            return;
+        }
+        if (!started) {
+            MyMod.LOG.warn("收到重复 Stream start：endpoint={} requestId={}", envelope.getKey(),
+                    Long.valueOf(envelope.getRequestId()));
+            return;
+        }
+        download.getCall().emitProgress(new NetStreamProgress(envelope.getRequestId(), 0L,
+                download.getTotalBytes()));
+        if (download.getTotalBytes() == 0L) {
+            completeStreamDownload(envelope.getRequestId(), download);
+        }
+    }
+
+    private void handleStreamChunk(NetEnvelope envelope) {
+        StreamDownload download = pendingStreams.get(Long.valueOf(envelope.getRequestId()));
+        if (download == null) {
+            MyMod.LOG.warn("收到未知 Stream chunk：endpoint={} requestId={}", envelope.getKey(),
+                    Long.valueOf(envelope.getRequestId()));
+            return;
+        }
+        boolean accepted;
+        try {
+            accepted = download.acceptChunk(envelope);
+        } catch (RuntimeException exception) {
+            pendingStreams.remove(Long.valueOf(envelope.getRequestId()), download);
+            download.getCall().fail(exception);
+            return;
+        }
+        if (!accepted) {
+            pendingStreams.remove(Long.valueOf(envelope.getRequestId()), download);
+            download.getCall().fail(new IllegalStateException("Stream 分片序号或长度不一致: " + envelope.getKey()));
+            return;
+        }
+        download.getCall().emitProgress(new NetStreamProgress(envelope.getRequestId(), download.getReceivedBytes(),
+                download.getTotalBytes()));
+        if (download.isComplete()) {
+            completeStreamDownload(envelope.getRequestId(), download);
+        }
+    }
+
+    private void handleStreamError(NetEnvelope envelope) {
+        StreamDownload download = pendingStreams.remove(Long.valueOf(envelope.getRequestId()));
+        if (download == null) {
+            MyMod.LOG.warn("收到未知 Stream error：endpoint={} requestId={}", envelope.getKey(),
+                    Long.valueOf(envelope.getRequestId()));
+            return;
+        }
+        download.getCall().fail(new NetRemoteException(new String(envelope.getPayload(), StandardCharsets.UTF_8)));
+    }
+
+    private void completeStreamDownload(long requestId, StreamDownload download) {
+        pendingStreams.remove(Long.valueOf(requestId), download);
+        try {
+            download.getCall().complete(NetResponse.fromWire(download.getStatusCode(), download.getHeaders(),
+                    NetBody.of(download.getContentType(), download.getBytes())));
+        } catch (RuntimeException exception) {
+            download.getCall().fail(exception);
+        }
+    }
+
+    private void expireTimedOutStreams() {
+        long now = System.currentTimeMillis();
+        for (StreamDownload download : pendingStreams.values()) {
+            if (download.isExpired(now) && pendingStreams.remove(Long.valueOf(download.getRequestId()), download)) {
+                download.getCall().fail(new NetTimeoutException("Stream 请求超时: " + download.getRequestId()));
+            }
+        }
+    }
+
+    private void failAllPendingStreams(Throwable throwable) {
+        for (StreamDownload download : pendingStreams.values()) {
+            if (pendingStreams.remove(Long.valueOf(download.getRequestId()), download)) {
+                download.getCall().fail(throwable);
+            }
+        }
+    }
+
+    private void sendStreamEnvelope(NetTarget target, NetEnvelope envelope) {
+        ITransport activeTransport = requireTransport();
+        byte[] encoded = envelope.encode();
+        int physicalLimit = activeTransport.getPhysicalFrameLimit(envelope.getTargetSide());
+        if (encoded.length > physicalLimit) {
+            throw new IllegalStateException("Stream 帧超过物理上限：" + encoded.length + " > " + physicalLimit);
+        }
+        sendPhysical(target, encoded);
+    }
+
+    private int streamChunkSize(int physicalLimit) {
+        int normalizedLimit = NetPayloadLimits.clampPhysicalLimit(physicalLimit);
+        int preferred = Math.min(PREFERRED_STREAM_CHUNK_BYTES, Math.max(1, normalizedLimit - STREAM_FRAME_MARGIN_BYTES));
+        return Math.max(1, preferred);
+    }
+
+    private ITransport requireTransport() {
+        ITransport activeTransport = transport;
+        if (activeTransport == null) {
+            throw new IllegalStateException("网络层尚未 bootstrap");
+        }
+        return activeTransport;
     }
 
     private void sendChunked(NetTarget target, NetSide targetSide, byte[] encoded, int physicalLimit) {
@@ -450,8 +775,119 @@ public final class NetService {
         }
     }
 
+    private static final class StreamDownload {
+
+        private final NetStreamCall call;
+        private final long deadlineMillis;
+        private final long maxBytes;
+        private final ByteArrayOutputStream bytes = new ByteArrayOutputStream();
+        private Map<String, String> headers = Collections.emptyMap();
+        private NetContentType contentType = NetContentType.BINARY;
+        private int statusCode;
+        private long totalBytes = -1L;
+        private int expectedSequence;
+        private boolean started;
+
+        StreamDownload(NetStreamCall call, long deadlineMillis, long maxBytes) {
+            this.call = call;
+            this.deadlineMillis = deadlineMillis;
+            this.maxBytes = maxBytes;
+        }
+
+        long getRequestId() {
+            return call.getRequestId();
+        }
+
+        NetStreamCall getCall() {
+            return call;
+        }
+
+        long getTotalBytes() {
+            return totalBytes;
+        }
+
+        long getReceivedBytes() {
+            return bytes.size();
+        }
+
+        boolean isExpired(long nowMillis) {
+            return nowMillis >= deadlineMillis;
+        }
+
+        boolean markStarted(NetEnvelope envelope) {
+            if (started) {
+                return false;
+            }
+            started = true;
+            statusCode = envelope.getStatusCode();
+            contentType = envelope.getContentType();
+            headers = filterStreamHeaders(envelope.getHeaders());
+            totalBytes = parseLongHeader(envelope.getHeaders(), STREAM_TOTAL_BYTES_HEADER, 0L);
+            NetPayloadLimits.requireStreamContentSize(totalBytes, maxBytes);
+            return true;
+        }
+
+        boolean acceptChunk(NetEnvelope envelope) {
+            if (!started) {
+                return false;
+            }
+            int sequence = (int) parseLongHeader(envelope.getHeaders(), STREAM_SEQUENCE_HEADER, -1L);
+            if (sequence != expectedSequence) {
+                return false;
+            }
+            byte[] payload = envelope.getPayload();
+            if (((long) bytes.size()) + payload.length > totalBytes) {
+                return false;
+            }
+            bytes.write(payload, 0, payload.length);
+            expectedSequence++;
+            return true;
+        }
+
+        boolean isComplete() {
+            return started && totalBytes >= 0L && ((long) bytes.size()) >= totalBytes;
+        }
+
+        Map<String, String> getHeaders() {
+            return headers;
+        }
+
+        NetContentType getContentType() {
+            return contentType;
+        }
+
+        int getStatusCode() {
+            return statusCode;
+        }
+
+        byte[] getBytes() {
+            return bytes.toByteArray();
+        }
+
+        private Map<String, String> filterStreamHeaders(Map<String, String> source) {
+            Map<String, String> filtered = new LinkedHashMap<String, String>();
+            for (Map.Entry<String, String> entry : source.entrySet()) {
+                String key = entry.getKey();
+                if (STREAM_TOTAL_BYTES_HEADER.equals(key) || STREAM_CHUNK_COUNT_HEADER.equals(key)
+                        || STREAM_SEQUENCE_HEADER.equals(key)) {
+                    continue;
+                }
+                filtered.put(key, entry.getValue());
+            }
+            return filtered;
+        }
+    }
+
     private NetSide targetSideOf(NetTarget target) {
         return target.getType() == NetTarget.Type.SERVER ? NetSide.SERVER : NetSide.CLIENT;
+    }
+
+    private static long parseLongHeader(Map<String, String> headers, String name, long defaultValue) {
+        String value = headers.get(name);
+        if (value == null || value.length() == 0) {
+            return defaultValue;
+        }
+        return Long.parseLong(value);
     }
 
     private void ensureRegistrable() {

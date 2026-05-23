@@ -20,7 +20,7 @@ qz:0
 |---|---|---|
 | magic | int | 固定 `QZNL` |
 | version | u8 | 当前为 `2` |
-| kind | u8 | `CHANNEL` / `FETCH_REQUEST` / `FETCH_RESPONSE` / `FETCH_ERROR` / `STORE_SNAPSHOT` / `STORE_DELTA` / `META` / `CHUNK` |
+| kind | u8 | `CHANNEL` / `FETCH_REQUEST` / `FETCH_RESPONSE` / `FETCH_ERROR` / `STORE_SNAPSHOT` / `STORE_DELTA` / `META` / `CHUNK` / `STREAM_REQUEST` / `STREAM_START` / `STREAM_CHUNK` / `STREAM_ERROR` / `STREAM_CANCEL` |
 | targetSide | u8 | `CLIENT=1` / `SERVER=2` |
 | key | bytes | UTF-8 + varint 长度，业务 route / channel / store id |
 | contentType | bytes | UTF-8 + varint 长度，MIME-like 内容类型 |
@@ -74,7 +74,7 @@ application/x-mymod-binary
 
 ## 分片
 
-当 envelope 编码后超过当前方向物理帧上限，但没有超过 16 MiB 普通逻辑消息上限时，`NetService` 自动切成 `CHUNK` 帧。
+当普通 envelope 编码后超过当前方向物理帧上限，但没有超过 16 MiB 普通逻辑消息上限时，`NetService` 自动切成 `CHUNK` 帧。
 
 `CHUNK` payload：
 
@@ -88,3 +88,15 @@ application/x-mymod-binary
 | chunkBytes | bytes | 分片内容 |
 
 `NetChunkAssembler` 默认 30 秒重组超时，完成后再按普通 envelope 解码。
+
+## Stream
+
+超过 16 MiB 的大内容不再走普通 envelope，而是进入 Stream 语义：
+
+- `STREAM_REQUEST`：轻量请求帧，携带业务 route / headers / body。
+- `STREAM_START`：服务端声明结果元数据，包含 statusCode、contentType、总字节数和业务 headers。
+- `STREAM_CHUNK`：按顺序传输大 body 的 chunk。
+- `STREAM_ERROR`：服务端把 Stream 失败写成可读错误文本。
+- `STREAM_CANCEL`：客户端取消后通知服务端停止后续 chunk。
+
+客户端根据 `STREAM_START` 和后续 `STREAM_CHUNK` 重组 body，同时可订阅进度和取消状态。Stream 默认内容上限为 256 MiB，硬上限为 1 GiB。

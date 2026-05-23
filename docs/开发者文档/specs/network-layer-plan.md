@@ -1,13 +1,13 @@
 # 网络层实验性方案：HTTP-like 内容语义双端通信
 
 > **状态：实验性方案（内容语义版已落地）**
-> 本文档记录 4.1LTS 阶段网络层（Channel + Fetch + Store 三层 API）的设计决策。当前实现已从“每种请求一个 Java 类型”调整为 `route/key + contentType + headers + body` 的内容模型；POJO 反射 codec 仅作为可选辅助，不再是协议身份。
+> 本文档记录 4.1LTS 阶段网络层（Channel + Fetch + Stream + Store 四层 API）的设计决策。当前实现已从“每种请求一个 Java 类型”调整为 `route/key + contentType + headers + body` 的内容模型；POJO 反射 codec 仅作为可选辅助，不再是协议身份。
 
 ## 当前实现范围
 
 已落地：
 
-- `club.heiqi.uilib.net.api`：`NetService`、`NetBody`、`NetContentType`、`NetMessage`、`NetRequest`、`NetResponse`、Channel、Fetch、Store、id、上下文与异常。
+- `club.heiqi.uilib.net.api`：`NetService`、`NetBody`、`NetContentType`、`NetMessage`、`NetRequest`、`NetResponse`、Channel、Fetch、Stream、Store、id、上下文与异常。
 - `club.heiqi.uilib.net.core`：envelope v2、分片重组、大小策略、request registry、能力握手、主线程派发队列。
 - `club.heiqi.uilib.net.codec`：可选 POJO 二进制辅助 codec、字段布局、varint、`@NetField` / `@NetTransient`。
 - `club.heiqi.uilib.net.transport.vanilla`：默认 vanilla custom payload 传输适配器与 mixin 入站分发。
@@ -36,10 +36,10 @@ route/key + contentType + headers + body
 
 ## 设计原则
 
-1. **Web 心智模型优先**：Channel / Fetch / Store 的协议身份是 route 与内容类型，不是 Java class。
+1. **Web 心智模型优先**：Channel / Fetch / Stream / Store 的协议身份是 route 与内容类型，不是 Java class。
 2. **不复用 `ui` 包**：服务端 dedicated jar 没有 LWJGL/GL/Minecraft client 类，网络核心必须双端可加载，UI 绑定单独抽出客户端桥。
 3. **上层不依赖 Forge 网络栈**：上层 API 0 个 `cpw.mods.fml.common.network` import；默认走 vanilla mixin 适配器，Forge 适配器作为兼容退路。
-4. **大小限制分层**：32KB 是兼容物理帧下限，普通逻辑消息默认 16 MiB，超大内容进入后续 stream/chunk 路径。
+4. **大小限制分层**：32KB 是兼容物理帧下限，普通逻辑消息默认 16 MiB，超大内容进入 Stream/chunk 路径。
 5. **可选 codec 不支配协议**：`NetCodec` 可帮助业务做紧凑二进制 body，但不会决定路由、握手或消息身份。
 6. **适配器仅启动期可选**：`NetService.bootstrap(ITransport)` 后不可热切换。
 
@@ -86,7 +86,36 @@ CompletableFuture<NetResponse> future = getUser.callJson("{\"id\":\"p1\"}");
 ```
 
 `NetResponse` 有 `statusCode`、headers 与 body。服务端主动推送请使用 Channel 或 Store。
-返回的 `CompletableFuture` 支持本地 `cancel(false)`：取消会移除 pending 请求，远端迟到响应会被忽略，不再完成调用方 future。
+返回的 `CompletableFuture` 支持本地 `cancel(false)`：取消会移除 pending 请求，远端迟到响应会被忽略，不再完成调用方 future。endpoint 可配置滑动窗口限流，超限时返回 429 并带 `retry-after-ms`。
+
+### Stream
+
+`NetStreamEndpoint` 类似带进度与取消语义的长内容下载，适合超过 16 MiB 的资源、文件或大快照：
+
+```java
+NetStreamEndpoint downloadAsset = NetService.getInstance()
+    .stream(NetEndpointId.of("mymod", "downloadAsset"))
+    .timeout(Duration.ofSeconds(60))
+    .maxBytes(256L * 1024 * 1024)
+    .onRequest(new NetStreamEndpoint.NetStreamHandler() {
+        @Override
+        public void onRequest(NetRequest request, NetStreamEndpoint.NetStreamRequestContext context) {
+            context.reply(NetResponse.ok(NetBody.binary(loadLargePayload())));
+        }
+    })
+    .register();
+
+NetStreamCall call = downloadAsset.callJson("{\"path\":\"assets/ui.zip\"}");
+call.onProgress(new NetStreamProgressListener() {
+    @Override
+    public void onProgress(NetStreamProgress progress) {
+        // 业务在这里更新进度。
+    }
+});
+CompletableFuture<NetResponse> future = call.future();
+```
+
+Stream 的请求仍是轻量 `NetRequest`，响应 body 走独立 chunk 生命周期，支持 `cancel()` / `cancel(false)`、进度回调和大内容上限控制。普通 Channel / Fetch / Store 不承载超过 16 MiB 的内容。
 
 ### Store
 
@@ -109,6 +138,8 @@ counter.view().subscribe(new NetStoreView.NetStoreSubscriber() {
 ```
 
 `GLOBAL` 默认可广播；配置 `.accessControl(...)` 后会枚举在线玩家逐个过滤。`PER_PLAYER` 与 `DIMENSION` 通过 `setForPlayer(...)`、`mutateForPlayer(...)`、`getForPlayer(...)`、`setForDimension(...)`、`mutateForDimension(...)`、`getForDimension(...)` 表达隔离状态。
+
+Store 支持业务定义增量：通过 `.deltaApplier(...)` 注册 delta 解释器后，可调用 `applyDelta(...)`、`applyDeltaForPlayer(...)`、`applyDeltaForDimension(...)` 发送 `STORE_DELTA` 帧；客户端收到增量帧后按同一个业务 applier 计算新快照，再通知视图订阅者。
 
 仅客户端的 `NetStoreUiBridge` 负责把 Store 视图绑定到 `ElementNode`，它是 net → ui 的唯一单向依赖点。
 
@@ -210,7 +241,7 @@ channel.toServer().send(body);
 
 - C→S：原生 C17 单帧仍按 `32766` 字节兼容下限处理；超过当前物理能力但低于逻辑上限时自动分片。
 - S→C：GTNH/Hodgepodge 环境可理解为 256 MiB 默认物理能力，但普通逻辑消息仍受 16 MiB 默认上限约束。
-- 超过 16 MiB 的数据不作为普通 Channel / Fetch / Store 消息发送，必须走后续 stream/chunk API。
+- 超过 16 MiB 的数据不作为普通 Channel / Fetch / Store 消息发送，必须走 Stream/chunk API。
 
 ### 决策 7：GTNH 2.8.4 兼容性约束
 
@@ -234,7 +265,7 @@ channel.toServer().send(body);
 
 | 包 | 加载侧 | 内容 | 是否依赖 Forge |
 |---|---|---|---|
-| `club.heiqi.uilib.net.api` | 双端 | `NetService` 门面、三层 API、内容语义类型 | ❌ |
+| `club.heiqi.uilib.net.api` | 双端 | `NetService` 门面、Channel / Fetch / Stream / Store API、内容语义类型 | ❌ |
 | `club.heiqi.uilib.net.codec` | 双端 | 可选 POJO codec、字段布局、varint | ❌ |
 | `club.heiqi.uilib.net.core` | 双端 | envelope、requestId、超时、分片、能力握手 | ❌ |
 | `club.heiqi.uilib.net.transport` | 双端 | `ITransport` SPI、`NetSide`、`NetReceiveOrigin` | ❌ |
@@ -263,12 +294,12 @@ channel.toServer().send(body);
 - **大小限制与分片**：超过当前物理帧能力但低于逻辑上限时切 `CHUNK`，30 秒重组超时丢弃；超过逻辑上限拒绝并提示改用大内容路径。
 - **方向校验**：envelope 头携带 target side，方向对不上 LOG.warn 丢弃。
 - **Store 访问控制**：`.accessControl(...)` 决定玩家是否可访问 Store；存在访问控制时不会走盲目广播，而是逐个在线玩家过滤。
-- **Fetch 限流**：保留后续滑动窗口限流规划。
+- **Fetch 限流**：endpoint 可配置每玩家滑动窗口；超限返回 429、`retry-after-ms`，并记录可观测 warn 日志。
 - **内容解析责任**：框架不解析业务 JSON，不信任远端 body；业务 handler 必须做输入校验。
 
 ### 决策 11：注册时机
 
-下游 mod 在 `preInit` 调 `NetService.getInstance().channel/fetch/store(...).register()`。所有注册必须在 `FMLPostInitializationEvent` 之前完成，之后冻结。Qz-UILib 在 `CommonProxy.postInit` 末尾把 `NetService` 切到已冻结状态，再注册抛 `IllegalStateException`。
+下游 mod 在 `preInit` 调 `NetService.getInstance().channel/fetch/stream/store(...).register()`。所有注册必须在 `FMLPostInitializationEvent` 之前完成，之后冻结。Qz-UILib 在 `CommonProxy.postInit` 末尾把 `NetService` 切到已冻结状态，再注册抛 `IllegalStateException`。
 
 ## 关键文件
 
@@ -276,7 +307,7 @@ channel.toServer().send(body);
 |---|---|
 | `src/main/java/club/heiqi/uilib/net/api/NetBody.java`、`NetContentType.java`、`NetMessage.java`、`NetRequest.java`、`NetResponse.java` | 内容语义公共模型 |
 | `src/main/java/club/heiqi/uilib/net/api/NetService.java` | 单例门面、注册表、发送/接收分发 |
-| `src/main/java/club/heiqi/uilib/net/api/NetChannel.java`、`NetFetchEndpoint.java`、`NetStore.java`、`NetStoreView.java` | 三层 API |
+| `src/main/java/club/heiqi/uilib/net/api/NetChannel.java`、`NetFetchEndpoint.java`、`NetStreamEndpoint.java`、`NetStore.java`、`NetStoreView.java` | Channel / Fetch / Stream / Store API |
 | `src/main/java/club/heiqi/uilib/net/core/NetEnvelope.java` | v2 内容 envelope |
 | `src/main/java/club/heiqi/uilib/net/core/NetChunkAssembler.java`、`NetPayloadLimits.java`、`NetRequestRegistry.java`、`MainThreadDispatcher.java` | 分片、大小、请求与线程队列 |
 | `src/main/java/club/heiqi/uilib/net/codec/NetCodec.java`、`FieldLayout.java`、`Varint.java`、`NetField.java`、`NetTransient.java` | 可选二进制 codec |
@@ -294,7 +325,8 @@ channel.toServer().send(body);
 - `NetBody` 与 `NetContentType`：JSON / binary / custom MIME-like 内容语义。
 - `NetEnvelope`：contentType、headers、statusCode、body 往返。
 - `NetService`：Channel 发送内容 envelope、注册冻结、超过物理帧自动分片。
-- `NetService`：Store accessControl 过滤、per-player/dimension 定向快照。
+- `NetService`：Stream 大内容响应、进度、取消与 16 MiB 以上普通消息绕行。
+- `NetService`：Fetch 滑动窗口限流、Store accessControl 过滤、per-player/dimension 定向快照。
 - `NetChunkAssembler`：大 envelope 分片重组。
 - `NetRequestRegistry`：Fetch cancel 移除 pending、超时与断连清理。
 - `NetStoreUiBridge`：Store DOM renderer 投递到客户端主线程。
@@ -307,8 +339,10 @@ channel.toServer().send(body);
 - Channel C2S/S2C ping/pong。
 - 超过 32KB 的 Channel C2S 分片与服务端重组。
 - Fetch C2S 请求响应。
-- Fetch 远端错误响应、pending timeout 与本地 cancel。
+- Fetch 远端错误响应、pending timeout、本地 cancel 与限流 429。
+- Stream 超过 16 MiB 的大内容下载、进度回调与取消。
 - Store snapshot 从服务端到客户端视图同步。
+- Store delta 从服务端到客户端视图同步。
 - PER_PLAYER Store + accessControl + setForPlayer 定向 snapshot。
 - Store DOM bridge 主线程渲染。
 
@@ -319,7 +353,4 @@ channel.toServer().send(body);
 
 ## 后续待解边界
 
-- stream/chunk 大内容 API：超过 16 MiB 的资源、文件或大快照要走独立生命周期、进度与取消模型。
-- Fetch 限流：每玩家滑动窗口、错误状态码、可观测日志仍需补全。
-- Store 增量：内容模型下可以选择 JSON Patch、业务二进制 delta 或全量快照，需要单独规格化。
 - 代理服务器：BungeeCord/Velocity 类代理对 `qz:0` custom payload 的转发行为仍需联机实测。

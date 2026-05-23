@@ -24,7 +24,7 @@
 ## 对外入口边界
 
 - 业务文档入口：`UiDocumentScreens.createDocumentScreen(...)`。
-- 双端网络入口：`NetService.getInstance()`，在 `preInit` 注册 Channel / Fetch / Store，`postInit` 后注册表冻结；网络消息以 `route/key + contentType + headers + body` 为核心，不以 Java 类型作为协议身份；默认 vanilla 传输，可用 `netTransport` 或 `-Dqzuilib.net.transport=forge` 切 Forge 回退。
+- 双端网络入口：`NetService.getInstance()`，在 `preInit` 注册 Channel / Fetch / Stream / Store，`postInit` 后注册表冻结；网络消息以 `route/key + contentType + headers + body` 为核心，不以 Java 类型作为协议身份；普通逻辑消息默认 16 MiB，超过阈值走 Stream/chunk；Fetch endpoint 可配滑动窗口限流，Store 可注册业务 delta applier；默认 vanilla 传输，可用 `netTransport` 或 `-Dqzuilib.net.transport=forge` 切 Forge 回退。
 - 诊断/示例页只保留内部开发工具入口（`/qzuilib test`），不对外暴露页面工厂。
 - 不新增扩大直接 `Widget` 作者入口的 API。
 
@@ -45,7 +45,7 @@
   - 测试：`$env:GRADLE_USER_HOME="D:\.MyApps\.ENV\gradle-home"; ./gradlew.bat --no-configuration-cache test`
   - 客户端：`$env:GRADLE_USER_HOME="D:\.MyApps\.ENV\gradle-home"; ./gradlew.bat --no-configuration-cache runClient21`
 - 纯 JVM 测试不要直接实例化继承 `GuiScreen` / `BaseScreen` 的页面类。
-- 网络层运行时自检入口为 `/qzuilib test`，支持逐项或全部执行；真实 Channel / Fetch / Store 往返、C2S 分片、Fetch 错误/超时/取消、玩家 Store 检查需要已连接到本地或测试服务器。
+- 网络层运行时自检入口为 `/qzuilib test`，支持逐项或全部执行；真实 Channel / Fetch / Stream / Store 往返、C2S 分片、Fetch 错误/超时/取消/限流、玩家 Store、Store delta 检查需要已连接到本地或测试服务器。
 - 默认 `runServer` 目前会被 LWJGL3ify relauncher 中止；dedicated server 完整 smoke 需换用不带该 relauncher 的服务端配置，相关记录见 `docs/开发者文档/errors/ERROR-20260523-runserver-lwjgl3ify-relauncher.md`。
 
 ## 本文件的维护规则

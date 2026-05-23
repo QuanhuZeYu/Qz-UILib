@@ -3,6 +3,7 @@ package club.heiqi.uilib.net.api;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.TimeUnit;
 
 import org.junit.After;
 import org.junit.Assert;
@@ -13,6 +14,7 @@ import club.heiqi.uilib.net.core.NetEnvelope;
 import club.heiqi.uilib.net.core.NetPayloadLimits;
 import club.heiqi.uilib.net.transport.FrameHandler;
 import club.heiqi.uilib.net.transport.ITransport;
+import club.heiqi.uilib.net.transport.NetReceiveOrigin;
 import club.heiqi.uilib.net.transport.NetSide;
 
 /**
@@ -78,6 +80,135 @@ public class NetServiceRegistrationTest {
         for (byte[] payload : transport.clientToServerPayloads) {
             Assert.assertTrue(payload.length <= transport.getPhysicalFrameLimit(NetSide.SERVER));
         }
+    }
+
+    @Test
+    public void shouldStreamLargeResponsesThroughIndependentLifecycle() throws Exception {
+        FakePlayer player = new FakePlayer("streamPlayer", 0);
+        final byte[] largeBody = new byte[NetPayloadLimits.DEFAULT_LOGICAL_MESSAGE_LIMIT + 1024];
+        for (int index = 0; index < largeBody.length; index++) {
+            largeBody[index] = (byte) (index & 0xFF);
+        }
+        NetStreamEndpoint endpoint = service.stream(NetEndpointId.of("test", "download"))
+                .onRequest(new NetStreamEndpoint.NetStreamHandler() {
+                    @Override
+                    public void onRequest(NetRequest request, NetStreamEndpoint.NetStreamRequestContext context) {
+                        context.reply(NetResponse.ok(NetBody.binary(largeBody))
+                                .withHeader("x-stream-kind", "large"));
+                    }
+                })
+                .register();
+        service.freeze();
+
+        final List<NetStreamProgress> progress = new ArrayList<NetStreamProgress>();
+        NetStreamCall call = endpoint.call(NetRequest.json("{\"download\":true}"))
+                .onProgress(new NetStreamProgressListener() {
+                    @Override
+                    public void onProgress(NetStreamProgress progressSnapshot) {
+                        progress.add(progressSnapshot);
+                    }
+                });
+
+        Assert.assertEquals(1, transport.clientToServerPayloads.size());
+        NetEnvelope requestEnvelope = NetEnvelope.decode(transport.clientToServerPayloads.get(0));
+        Assert.assertEquals(NetEnvelope.Kind.STREAM_REQUEST, requestEnvelope.getKind());
+
+        transport.deliverToServer(transport.clientToServerPayloads.get(0), player);
+
+        Assert.assertTrue(transport.playerPayloads.size() > 1);
+        List<PlayerPayload> frames = new ArrayList<PlayerPayload>(transport.playerPayloads);
+        for (PlayerPayload frame : frames) {
+            transport.deliverToClient(frame.payload);
+        }
+
+        NetResponse response = call.getFuture().get(2, TimeUnit.SECONDS);
+        Assert.assertTrue(response.isOk());
+        Assert.assertEquals("large", response.getHeader("x-stream-kind"));
+        Assert.assertArrayEquals(largeBody, response.getBody().getBytes());
+        Assert.assertFalse(progress.isEmpty());
+        Assert.assertTrue(progress.get(progress.size() - 1).isComplete());
+    }
+
+    @Test
+    public void shouldCancelStreamCallAndEmitCancelFrame() {
+        NetStreamEndpoint endpoint = service.stream(NetEndpointId.of("test", "cancelStream"))
+                .register();
+        service.freeze();
+
+        NetStreamCall call = endpoint.call(NetRequest.json("{\"download\":true}"));
+        Assert.assertTrue(call.cancel());
+        Assert.assertTrue(call.getFuture().isCancelled());
+
+        Assert.assertEquals(2, transport.clientToServerPayloads.size());
+        NetEnvelope cancelEnvelope = NetEnvelope.decode(transport.clientToServerPayloads.get(1));
+        Assert.assertEquals(NetEnvelope.Kind.STREAM_CANCEL, cancelEnvelope.getKind());
+
+        transport.deliverToServer(transport.clientToServerPayloads.get(1), new FakePlayer("streamPlayer", 0));
+        Assert.assertTrue(service.isStreamCancelled(cancelEnvelope.getRequestId()));
+    }
+
+    @Test
+    public void shouldRateLimitFetchRequestsPerSender() {
+        final int[] handled = new int[1];
+        NetFetchEndpoint endpoint = service.fetch(NetEndpointId.of("test", "limitedFetch"))
+                .rateLimit(1, java.time.Duration.ofSeconds(30))
+                .onRequest(new NetFetchEndpoint.NetFetchHandler() {
+                    @Override
+                    public void onRequest(NetRequest request, NetFetchEndpoint.NetFetchRequestContext context) {
+                        handled[0]++;
+                        context.reply(NetResponse.ok(NetBody.text("ok")).withHeader("x-fetch-kind", "limited"));
+                    }
+                })
+                .register();
+        service.freeze();
+
+        FakePlayer player = new FakePlayer("fetchPlayer", 1);
+        transport.deliverToServer(NetEnvelope.of(NetEnvelope.Kind.FETCH_REQUEST, NetSide.SERVER,
+                endpoint.getId().asKey(), 101L, 0, java.util.Collections.<String, String>emptyMap(),
+                NetRequest.json("{\"n\":1}").getBody()).encode(), player);
+        transport.deliverToServer(NetEnvelope.of(NetEnvelope.Kind.FETCH_REQUEST, NetSide.SERVER,
+                endpoint.getId().asKey(), 102L, 0, java.util.Collections.<String, String>emptyMap(),
+                NetRequest.json("{\"n\":2}").getBody()).encode(), player);
+
+        Assert.assertEquals(1, handled[0]);
+        Assert.assertEquals(2, transport.playerPayloads.size());
+        NetEnvelope firstResponse = NetEnvelope.decode(transport.playerPayloads.get(0).payload);
+        NetEnvelope secondResponse = NetEnvelope.decode(transport.playerPayloads.get(1).payload);
+        Assert.assertEquals(200, firstResponse.getStatusCode());
+        Assert.assertEquals("limited", firstResponse.getHeaders().get("x-fetch-kind"));
+        Assert.assertEquals(429, secondResponse.getStatusCode());
+        Assert.assertNotNull(secondResponse.getHeaders().get("retry-after-ms"));
+    }
+
+    @Test
+    public void shouldApplyStoreDeltaThroughCustomApplier() {
+        NetStore store = service.store(NetStoreId.of("test", "delta"))
+                .initial(NetBody.text("hello"))
+                .deltaApplier(new NetStore.StoreDeltaApplier() {
+                    @Override
+                    public NetBody apply(NetBody current, NetBody delta) {
+                        return NetBody.text(current.asUtf8String() + delta.asUtf8String());
+                    }
+                })
+                .register();
+        service.freeze();
+
+        store.applyDelta(NetBody.text(" world"));
+
+        Assert.assertEquals("hello world", store.get().asUtf8String());
+        Assert.assertEquals(1, transport.allPayloads.size());
+        NetEnvelope envelope = NetEnvelope.decode(transport.allPayloads.get(0));
+        Assert.assertEquals(NetEnvelope.Kind.STORE_DELTA, envelope.getKind());
+        Assert.assertEquals(" world", envelope.toBody().asUtf8String());
+
+        store.receiveDelta(envelope.toBody());
+        Assert.assertEquals("hello world", store.get().asUtf8String());
+        Assert.assertEquals("hello world", store.view().getSnapshot().asUtf8String());
+
+        store.receiveSnapshot(NetBody.text("start"));
+        store.receiveDelta(NetBody.text("!"));
+        Assert.assertEquals("start!", store.get().asUtf8String());
+        Assert.assertEquals("start!", store.view().getSnapshot().asUtf8String());
     }
 
     @Test
@@ -165,6 +296,7 @@ public class NetServiceRegistrationTest {
         final List<DimensionPayload> dimensionPayloads = new ArrayList<DimensionPayload>();
         final List<PlayerPayload> playerPayloads = new ArrayList<PlayerPayload>();
         final List<FakePlayer> connectedPlayers = new ArrayList<FakePlayer>();
+        FrameHandler frameHandler;
 
         @Override
         public String getName() {
@@ -173,6 +305,7 @@ public class NetServiceRegistrationTest {
 
         @Override
         public void bootstrap(FrameHandler frameHandler) {
+            this.frameHandler = frameHandler;
         }
 
         @Override
@@ -215,6 +348,14 @@ public class NetServiceRegistrationTest {
         @Override
         public int getPhysicalFrameLimit(NetSide targetSide) {
             return targetSide == NetSide.SERVER ? 256 : NetPayloadLimits.GTNH_DEFAULT_PHYSICAL_LIMIT;
+        }
+
+        void deliverToServer(byte[] payload, FakePlayer sender) {
+            frameHandler.handleFrame(NetService.PHYSICAL_CHANNEL, payload, NetReceiveOrigin.server(sender));
+        }
+
+        void deliverToClient(byte[] payload) {
+            frameHandler.handleFrame(NetService.PHYSICAL_CHANNEL, payload, NetReceiveOrigin.client());
         }
     }
 

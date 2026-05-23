@@ -108,7 +108,7 @@ public final class NetSelfCheckPage extends DocumentPageController {
                 .setMargin(UiStyleInsets.of(UiStyleLength.px(0), UiStyleLength.px(0), UiStyleLength.px(12),
                         UiStyleLength.px(0)));
         header.appendText("网络层自检");
-        header.appendText("覆盖大小策略、内容信封、Header、可选 codec、分片重组、主线程队列、真实联机往返、错误与超时。");
+        header.appendText("覆盖大小策略、内容信封、Header、可选 codec、分片重组、主线程队列、真实联机往返、错误、超时、限流、Stream 与 Store 增量。");
         root.append(header);
 
         ElementNode toolbar = document.div();
@@ -221,11 +221,32 @@ public final class NetSelfCheckPage extends DocumentPageController {
                         return NetRuntimeSelfChecks.runFetchCancellation();
                     }
                 });
+        registerAsync(root, "运行时 Fetch 限流", "同一玩家连续请求限流 endpoint，第二次应返回 429 与 retry-after-ms。",
+                new SelfCheckAsyncRunnable() {
+                    @Override
+                    public CompletableFuture<String> run() {
+                        return NetRuntimeSelfChecks.runFetchRateLimit();
+                    }
+                });
+        registerAsync(root, "运行时 Stream 大内容", "通过 Stream endpoint 下载超过 16 MiB 的二进制响应并验证进度。",
+                new SelfCheckAsyncRunnable() {
+                    @Override
+                    public CompletableFuture<String> run() {
+                        return NetRuntimeSelfChecks.runStreamDownload();
+                    }
+                });
         registerAsync(root, "运行时 Store 快照", "通过 Fetch 触发服务端 Store set，再等待客户端 Store snapshot。",
                 new SelfCheckAsyncRunnable() {
                     @Override
                     public CompletableFuture<String> run() {
                         return NetRuntimeSelfChecks.runStoreSnapshot();
+                    }
+                });
+        registerAsync(root, "运行时 Store 增量", "通过 Fetch 触发服务端 Store delta，再等待客户端用业务 applier 得到新快照。",
+                new SelfCheckAsyncRunnable() {
+                    @Override
+                    public CompletableFuture<String> run() {
+                        return NetRuntimeSelfChecks.runStoreDelta();
                     }
                 });
         registerAsync(root, "运行时玩家 Store", "通过 PER_PLAYER Store 与 accessControl 验证 setForPlayer 定向快照。",
@@ -407,6 +428,7 @@ public final class NetSelfCheckPage extends DocumentPageController {
         require(NetPayloadLimits.DEFAULT_LOGICAL_MESSAGE_LIMIT == 16 * 1024 * 1024, "默认逻辑消息上限应为 16 MiB");
         require(NetPayloadLimits.GTNH_DEFAULT_PHYSICAL_LIMIT == 256 * 1024 * 1024, "GTNH 默认物理能力应为 256 MiB");
         require(NetPayloadLimits.GTNH_HARD_PHYSICAL_LIMIT == 1024 * 1024 * 1024, "硬上限应为 1 GiB");
+        require(NetPayloadLimits.DEFAULT_STREAM_CONTENT_LIMIT == 256 * 1024 * 1024, "默认 Stream 上限应为 256 MiB");
     }
 
     private void checkContentEnvelope() {

@@ -1,8 +1,10 @@
 package club.heiqi.uilib.net.api;
 
 import java.time.Duration;
+import java.util.ArrayDeque;
 import java.util.Objects;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * C2S Fetch endpoint。
@@ -12,12 +14,15 @@ public final class NetFetchEndpoint {
     private final NetService service;
     private final NetEndpointId id;
     private final long timeoutMillis;
+    private final SlidingWindowRateLimiter rateLimiter;
     private final NetFetchHandler handler;
 
-    NetFetchEndpoint(NetService service, NetEndpointId id, long timeoutMillis, NetFetchHandler handler) {
+    NetFetchEndpoint(NetService service, NetEndpointId id, long timeoutMillis,
+            NetFetchRateLimit rateLimit, NetFetchHandler handler) {
         this.service = service;
         this.id = id;
         this.timeoutMillis = timeoutMillis;
+        this.rateLimiter = rateLimit == null ? null : new SlidingWindowRateLimiter(rateLimit);
         this.handler = handler;
     }
 
@@ -49,6 +54,13 @@ public final class NetFetchEndpoint {
         return timeoutMillis;
     }
 
+    RateLimitDecision checkRateLimit(Object sender) {
+        if (rateLimiter == null) {
+            return RateLimitDecision.allowed();
+        }
+        return rateLimiter.check(sender);
+    }
+
     void receiveRequest(NetRequest request, NetFetchRequestContext context) {
         if (handler == null) {
             context.reply(NetResponse.error(404, "Fetch endpoint 未注册处理器: " + id));
@@ -65,6 +77,7 @@ public final class NetFetchEndpoint {
         private final NetService service;
         private final NetEndpointId id;
         private long timeoutMillis = 5_000L;
+        private NetFetchRateLimit rateLimit;
         private NetFetchHandler handler;
 
         Builder(NetService service, NetEndpointId id) {
@@ -80,6 +93,28 @@ public final class NetFetchEndpoint {
          */
         public Builder timeout(Duration timeout) {
             this.timeoutMillis = Objects.requireNonNull(timeout, "timeout").toMillis();
+            return this;
+        }
+
+        /**
+         * 设置每个发送者的滑动窗口限流。
+         *
+         * @param maxRequests 窗口内允许的请求数
+         * @param window 窗口时长
+         * @return 构造器
+         */
+        public Builder rateLimit(int maxRequests, Duration window) {
+            return rateLimit(NetFetchRateLimit.of(maxRequests, window));
+        }
+
+        /**
+         * 设置滑动窗口限流配置。
+         *
+         * @param rateLimit 限流配置
+         * @return 构造器
+         */
+        public Builder rateLimit(NetFetchRateLimit rateLimit) {
+            this.rateLimit = Objects.requireNonNull(rateLimit, "rateLimit");
             return this;
         }
 
@@ -100,7 +135,8 @@ public final class NetFetchEndpoint {
          * @return endpoint
          */
         public NetFetchEndpoint register() {
-            return service.registerFetchEndpoint(new NetFetchEndpoint(service, id, timeoutMillis, handler));
+            return service.registerFetchEndpoint(new NetFetchEndpoint(service, id, timeoutMillis, rateLimit,
+                    handler));
         }
     }
 
@@ -167,6 +203,80 @@ public final class NetFetchEndpoint {
 
         public NetReceiveContext getReceiveContext() {
             return receiveContext;
+        }
+    }
+
+    /**
+     * Fetch 限流决策。
+     */
+    static final class RateLimitDecision {
+
+        private static final RateLimitDecision ALLOWED = new RateLimitDecision(true, 0L);
+
+        private final boolean allowed;
+        private final long retryAfterMillis;
+
+        private RateLimitDecision(boolean allowed, long retryAfterMillis) {
+            this.allowed = allowed;
+            this.retryAfterMillis = retryAfterMillis;
+        }
+
+        static RateLimitDecision allowed() {
+            return ALLOWED;
+        }
+
+        static RateLimitDecision rejected(long retryAfterMillis) {
+            return new RateLimitDecision(false, retryAfterMillis);
+        }
+
+        boolean isAllowed() {
+            return allowed;
+        }
+
+        long getRetryAfterMillis() {
+            return retryAfterMillis;
+        }
+    }
+
+    private static final class SlidingWindowRateLimiter {
+
+        private static final Object ANONYMOUS_SENDER = new Object();
+
+        private final NetFetchRateLimit rateLimit;
+        private final ConcurrentHashMap<Object, Window> windows = new ConcurrentHashMap<Object, Window>();
+
+        SlidingWindowRateLimiter(NetFetchRateLimit rateLimit) {
+            this.rateLimit = rateLimit;
+        }
+
+        RateLimitDecision check(Object sender) {
+            Object key = sender == null ? ANONYMOUS_SENDER : sender;
+            Window window = windows.get(key);
+            if (window == null) {
+                Window created = new Window();
+                Window existing = windows.putIfAbsent(key, created);
+                window = existing == null ? created : existing;
+            }
+            return window.check(rateLimit, System.currentTimeMillis());
+        }
+    }
+
+    private static final class Window {
+
+        private final ArrayDeque<Long> timestamps = new ArrayDeque<Long>();
+
+        synchronized RateLimitDecision check(NetFetchRateLimit rateLimit, long nowMillis) {
+            long cutoff = nowMillis - rateLimit.getWindowMillis();
+            while (!timestamps.isEmpty() && timestamps.peekFirst().longValue() <= cutoff) {
+                timestamps.removeFirst();
+            }
+            if (timestamps.size() >= rateLimit.getMaxRequests()) {
+                long first = timestamps.peekFirst().longValue();
+                long retryAfter = Math.max(1L, rateLimit.getWindowMillis() - (nowMillis - first));
+                return RateLimitDecision.rejected(retryAfter);
+            }
+            timestamps.addLast(Long.valueOf(nowMillis));
+            return RateLimitDecision.allowed();
         }
     }
 }

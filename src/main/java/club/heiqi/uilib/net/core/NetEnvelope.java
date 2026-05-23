@@ -229,7 +229,12 @@ public final class NetEnvelope {
         STORE_SNAPSHOT(5),
         STORE_DELTA(6),
         META(7),
-        CHUNK(8);
+        CHUNK(8),
+        STREAM_REQUEST(9),
+        STREAM_START(10),
+        STREAM_CHUNK(11),
+        STREAM_ERROR(12),
+        STREAM_CANCEL(13);
 
         private final int wireId;
 

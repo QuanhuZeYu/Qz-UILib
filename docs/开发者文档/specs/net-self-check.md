@@ -23,7 +23,10 @@ net_self_check
 | 运行时 Fetch 错误 | `context.fail(...)` 经真实网络返回 500 错误响应 |
 | 运行时 Fetch 超时 | 短超时 endpoint 不回复，由后续网络帧触发 pending timeout |
 | 运行时 Fetch 取消 | 本地 `cancel(false)` 移除 pending，服务端迟到响应被忽略 |
+| 运行时 Fetch 限流 | 同一玩家连续请求受限 endpoint，第二次返回 429 与 `retry-after-ms` |
+| 运行时 Stream 大内容 | 预注册内部 Stream endpoint 下载超过 16 MiB 的二进制响应，并验证进度 |
 | 运行时 Store 快照 | 预注册内部 Fetch 触发服务端 Store set，再等待客户端 Store snapshot |
+| 运行时 Store 增量 | 预注册内部 Fetch 触发服务端 Store delta，再等待客户端按业务 applier 计算新快照 |
 | 运行时玩家 Store | `PER_PLAYER` Store + `accessControl` + `setForPlayer` 定向快照 |
 
 仍需人工场景：

@@ -1,5 +1,7 @@
 package club.heiqi.uilib.net.api;
 
+import java.util.ArrayDeque;
+import java.util.Arrays;
 import java.util.Map;
 import java.util.Objects;
 import java.util.concurrent.ConcurrentHashMap;
@@ -13,17 +15,21 @@ public final class NetStore {
     private final NetStoreId id;
     private final NetStoreScope scope;
     private final AccessControl accessControl;
+    private final StoreDeltaApplier deltaApplier;
     private final NetStoreView view;
+    private final ArrayDeque<NetBody> pendingLocalDeltas = new ArrayDeque<NetBody>();
     private final Map<Object, NetBody> playerStates = new ConcurrentHashMap<Object, NetBody>();
     private final Map<Integer, NetBody> dimensionStates = new ConcurrentHashMap<Integer, NetBody>();
     private NetBody state;
 
-    NetStore(NetService service, NetStoreId id, NetStoreScope scope, NetBody initial, AccessControl accessControl) {
+    NetStore(NetService service, NetStoreId id, NetStoreScope scope, NetBody initial, AccessControl accessControl,
+            StoreDeltaApplier deltaApplier) {
         this.service = service;
         this.id = id;
         this.scope = scope;
         this.state = initial == null ? NetBody.empty() : initial;
         this.accessControl = accessControl;
+        this.deltaApplier = deltaApplier;
         this.view = new NetStoreView(this.state);
     }
 
@@ -141,6 +147,60 @@ public final class NetStore {
                 .mutate(getForDimension(dimensionId)));
     }
 
+    /**
+     * 基于业务自定义 delta 更新默认状态，并向客户端发送增量帧。
+     *
+     * @param delta 业务 delta body
+     */
+    public synchronized void applyDelta(NetBody delta) {
+        NetBody resolved = Objects.requireNonNull(delta, "delta");
+        state = applyDeltaTo(state, resolved);
+        pendingLocalDeltas.addLast(resolved);
+        try {
+            service.sendStoreDelta(this, NetTarget.all(), resolved);
+        } catch (RuntimeException exception) {
+            pendingLocalDeltas.removeLastOccurrence(resolved);
+            throw exception;
+        }
+    }
+
+    /**
+     * 基于业务自定义 delta 更新指定玩家状态，并仅向该玩家发送增量帧。
+     *
+     * @param player 玩家对象
+     * @param delta 业务 delta body
+     */
+    public synchronized void applyDeltaForPlayer(Object player, NetBody delta) {
+        Objects.requireNonNull(player, "player");
+        NetBody resolved = Objects.requireNonNull(delta, "delta");
+        playerStates.put(player, applyDeltaTo(getForPlayer(player), resolved));
+        pendingLocalDeltas.addLast(resolved);
+        try {
+            service.sendStoreDelta(this, NetTarget.player(player), resolved);
+        } catch (RuntimeException exception) {
+            pendingLocalDeltas.removeLastOccurrence(resolved);
+            throw exception;
+        }
+    }
+
+    /**
+     * 基于业务自定义 delta 更新指定维度状态，并向该维度玩家发送增量帧。
+     *
+     * @param dimensionId 维度 id
+     * @param delta 业务 delta body
+     */
+    public synchronized void applyDeltaForDimension(int dimensionId, NetBody delta) {
+        NetBody resolved = Objects.requireNonNull(delta, "delta");
+        dimensionStates.put(Integer.valueOf(dimensionId), applyDeltaTo(getForDimension(dimensionId), resolved));
+        pendingLocalDeltas.addLast(resolved);
+        try {
+            service.sendStoreDelta(this, NetTarget.dimension(dimensionId), resolved);
+        } catch (RuntimeException exception) {
+            pendingLocalDeltas.removeLastOccurrence(resolved);
+            throw exception;
+        }
+    }
+
     boolean hasAccessControl() {
         return accessControl != null;
     }
@@ -152,8 +212,43 @@ public final class NetStore {
     void receiveSnapshot(NetBody snapshot) {
         synchronized (this) {
             this.state = snapshot;
+            pendingLocalDeltas.clear();
         }
         view.update(snapshot);
+    }
+
+    void receiveDelta(NetBody delta) {
+        NetBody next;
+        boolean echo;
+        synchronized (this) {
+            echo = matchesPendingLocalDelta(delta);
+            if (echo) {
+                pendingLocalDeltas.removeFirst();
+                next = state;
+            } else {
+                next = applyDeltaTo(state, delta);
+                this.state = next;
+            }
+        }
+        view.update(next);
+    }
+
+    private boolean matchesPendingLocalDelta(NetBody delta) {
+        NetBody pending = pendingLocalDeltas.peekFirst();
+        if (pending == null) {
+            return false;
+        }
+        if (!pending.getContentType().equals(delta.getContentType())) {
+            return false;
+        }
+        return Arrays.equals(pending.getBytes(), delta.getBytes());
+    }
+
+    private NetBody applyDeltaTo(NetBody current, NetBody delta) {
+        if (deltaApplier == null) {
+            throw new IllegalStateException("Store 未配置 deltaApplier，不能处理增量帧: " + id);
+        }
+        return Objects.requireNonNull(deltaApplier.apply(current, delta), "deltaApplier result");
     }
 
     /**
@@ -166,6 +261,7 @@ public final class NetStore {
         private NetStoreScope scope = NetStoreScope.GLOBAL;
         private NetBody initial = NetBody.empty();
         private AccessControl accessControl;
+        private StoreDeltaApplier deltaApplier;
 
         Builder(NetService service, NetStoreId id) {
             this.service = service;
@@ -191,8 +287,13 @@ public final class NetStore {
             return this;
         }
 
+        public Builder deltaApplier(StoreDeltaApplier deltaApplier) {
+            this.deltaApplier = Objects.requireNonNull(deltaApplier, "deltaApplier");
+            return this;
+        }
+
         public NetStore register() {
-            return service.registerStore(new NetStore(service, id, scope, initial, accessControl));
+            return service.registerStore(new NetStore(service, id, scope, initial, accessControl, deltaApplier));
         }
     }
 
@@ -208,6 +309,21 @@ public final class NetStore {
          * @return 新 body
          */
         NetBody mutate(NetBody current);
+    }
+
+    /**
+     * Store 增量应用器。
+     */
+    public interface StoreDeltaApplier {
+
+        /**
+         * 根据当前快照和业务 delta 计算新快照。
+         *
+         * @param current 当前快照
+         * @param delta 业务 delta
+         * @return 新快照
+         */
+        NetBody apply(NetBody current, NetBody delta);
     }
 
     /**
