@@ -45,6 +45,7 @@
   - 测试：`$env:GRADLE_USER_HOME="D:\.MyApps\.ENV\gradle-home"; ./gradlew.bat --no-configuration-cache test`
   - 客户端：`$env:GRADLE_USER_HOME="D:\.MyApps\.ENV\gradle-home"; ./gradlew.bat --no-configuration-cache runClient21`
 - 纯 JVM 测试不要直接实例化继承 `GuiScreen` / `BaseScreen` 的页面类。
+- 网络层运行时自检入口为 `/qzuilib test`，真实 Channel / Fetch / Store 往返、C2S 分片、Fetch 错误与超时检查需要已连接到本地或测试服务器。
 
 ## 本文件的维护规则
 

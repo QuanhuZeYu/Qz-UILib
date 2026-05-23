@@ -291,11 +291,19 @@ channel.toServer().send(body);
 - `NetService`：Channel 发送内容 envelope、注册冻结、超过物理帧自动分片。
 - `NetChunkAssembler`：大 envelope 分片重组。
 
+已纳入运行时自检页的重点：
+
+- 内容信封与 Header 规则运行时断言。
+- Channel C2S/S2C ping/pong。
+- 超过 32KB 的 Channel C2S 分片与服务端重组。
+- Fetch C2S 请求响应。
+- Fetch 远端错误响应与 pending timeout。
+- Store snapshot 从服务端到客户端视图同步。
+
 仍需人工验证：
 
-- `runServer` + `runClient21` 双实例验证 C2S/S2C Channel。
-- Fetch 超时、取消和远端异常。
-- Store snapshot 与 DOM bridge。
+- Fetch 取消语义。
+- Store DOM bridge。
 - dedicated server 上确认 `EarlyMixins` 不返回客户端 mixin。
 - Forge 回退适配器与 ModularUI2 环境的兼容性。
 

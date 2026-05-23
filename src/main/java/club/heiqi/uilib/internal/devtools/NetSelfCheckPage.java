@@ -1,11 +1,19 @@
 package club.heiqi.uilib.internal.devtools;
 
+import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CompletionException;
 
-import club.heiqi.uilib.net.api.NetService;
 import club.heiqi.uilib.net.api.NetBody;
+import club.heiqi.uilib.net.api.NetContentType;
+import club.heiqi.uilib.net.api.NetHeaders;
+import club.heiqi.uilib.net.api.NetMessage;
+import club.heiqi.uilib.net.api.NetService;
 import club.heiqi.uilib.net.codec.NetCodec;
 import club.heiqi.uilib.net.core.NetChunkAssembler;
 import club.heiqi.uilib.net.core.NetEnvelope;
@@ -34,8 +42,7 @@ import club.heiqi.uilib.ui.style.values.UiStyleLength;
 /**
  * 网络层自检页。
  *
- * <p>该页覆盖不依赖真实联机环境的基础链路；真实 Channel / Fetch / Store 往返仍需要
- * runClient + runServer 人工场景补验。</p>
+ * <p>该页覆盖本地运行时断言与真实客户端-服务端网络往返。</p>
  */
 public final class NetSelfCheckPage extends DocumentPageController {
 
@@ -100,7 +107,7 @@ public final class NetSelfCheckPage extends DocumentPageController {
                 .setMargin(UiStyleInsets.of(UiStyleLength.px(0), UiStyleLength.px(0), UiStyleLength.px(12),
                         UiStyleLength.px(0)));
         header.appendText("网络层自检");
-        header.appendText("覆盖大小策略、内容信封、可选 codec、分片重组与主线程队列。真实联机往返请配合 runClient/runServer 验证。");
+        header.appendText("覆盖大小策略、内容信封、Header、可选 codec、分片重组、主线程队列、真实联机往返、错误与超时。");
         root.append(header);
 
         register(root, "大小策略", "验证 32KB 兼容帧、8/16 MiB 普通消息边界、256 MiB 默认物理能力与 1 GiB 硬上限。",
@@ -108,6 +115,20 @@ public final class NetSelfCheckPage extends DocumentPageController {
                     @Override
                     public void run() {
                         checkPayloadLimits();
+                    }
+                });
+        register(root, "内容信封", "运行时编解码 route/key、contentType、headers、statusCode 与 body。",
+                new SelfCheckRunnable() {
+                    @Override
+                    public void run() {
+                        checkContentEnvelope();
+                    }
+                });
+        register(root, "Header 规则", "运行时验证 header 大小写归一、token 校验、数量上限与 CR/LF 拒绝。",
+                new SelfCheckRunnable() {
+                    @Override
+                    public void run() {
+                        checkHeaders();
                     }
                 });
         register(root, "可选 POJO codec", "作为业务二进制辅助，编码并解码带枚举、List、Map、嵌套对象和 @NetTransient 字段的 POJO。",
@@ -131,6 +152,48 @@ public final class NetSelfCheckPage extends DocumentPageController {
                         checkMainThreadQueue();
                     }
                 });
+        registerAsync(root, "运行时 Channel 往返", "通过预注册内部 Channel 执行 C2S ping 与 S2C pong。",
+                new SelfCheckAsyncRunnable() {
+                    @Override
+                    public CompletableFuture<String> run() {
+                        return NetRuntimeSelfChecks.runChannelRoundTrip();
+                    }
+                });
+        registerAsync(root, "运行时分片 Channel", "发送超过 32KB 的二进制 body，验证 C2S 分片与服务端重组。",
+                new SelfCheckAsyncRunnable() {
+                    @Override
+                    public CompletableFuture<String> run() {
+                        return NetRuntimeSelfChecks.runChunkedChannelRoundTrip();
+                    }
+                });
+        registerAsync(root, "运行时 Fetch 往返", "通过预注册内部 Fetch endpoint 执行 C2S 请求与响应。",
+                new SelfCheckAsyncRunnable() {
+                    @Override
+                    public CompletableFuture<String> run() {
+                        return NetRuntimeSelfChecks.runFetchRoundTrip();
+                    }
+                });
+        registerAsync(root, "运行时 Fetch 错误", "通过 Fetch context.fail 验证服务端错误会返回 500 响应。",
+                new SelfCheckAsyncRunnable() {
+                    @Override
+                    public CompletableFuture<String> run() {
+                        return NetRuntimeSelfChecks.runFetchErrorRoundTrip();
+                    }
+                });
+        registerAsync(root, "运行时 Fetch 超时", "调用短超时 endpoint，并由后续网络帧触发 pending timeout。",
+                new SelfCheckAsyncRunnable() {
+                    @Override
+                    public CompletableFuture<String> run() {
+                        return NetRuntimeSelfChecks.runFetchTimeout();
+                    }
+                });
+        registerAsync(root, "运行时 Store 快照", "通过 Fetch 触发服务端 Store set，再等待客户端 Store snapshot。",
+                new SelfCheckAsyncRunnable() {
+                    @Override
+                    public CompletableFuture<String> run() {
+                        return NetRuntimeSelfChecks.runStoreSnapshot();
+                    }
+                });
 
         ElementNode summaryBlock = document.div();
         summaryBlock.style()
@@ -147,6 +210,27 @@ public final class NetSelfCheckPage extends DocumentPageController {
     }
 
     private void register(ElementNode root, String title, String description, final SelfCheckRunnable runnable) {
+        final SelfCheckEntry entry = appendEntry(root, title, description);
+        entry.button.setActionHandler(new DocumentButtonActionHandler() {
+            @Override
+            public void onAction(DocumentButtonActionEvent event) {
+                execute(entry, runnable);
+            }
+        });
+    }
+
+    private void registerAsync(ElementNode root, String title, String description,
+            final SelfCheckAsyncRunnable runnable) {
+        final SelfCheckEntry entry = appendEntry(root, title, description);
+        entry.button.setActionHandler(new DocumentButtonActionHandler() {
+            @Override
+            public void onAction(DocumentButtonActionEvent event) {
+                executeAsync(entry, runnable);
+            }
+        });
+    }
+
+    private SelfCheckEntry appendEntry(ElementNode root, String title, String description) {
         ElementNode card = document.div();
         card.style()
                 .setMargin(UiStyleInsets.of(UiStyleLength.px(0), UiStyleLength.px(0), UiStyleLength.px(10),
@@ -181,22 +265,66 @@ public final class NetSelfCheckPage extends DocumentPageController {
         card.append(button.getElement());
         root.append(card);
 
-        final SelfCheckEntry entry = new SelfCheckEntry(title, statusLabel, runnable);
+        final SelfCheckEntry entry = new SelfCheckEntry(title, statusLabel, button);
         entries.add(entry);
-        button.setActionHandler(new DocumentButtonActionHandler() {
+        return entry;
+    }
+
+    private void execute(SelfCheckEntry entry, SelfCheckRunnable runnable) {
+        long startedAt = System.nanoTime();
+        try {
+            runnable.run();
+            markPassed(entry, startedAt, null);
+        } catch (RuntimeException exception) {
+            markFailed(entry, exception);
+        }
+    }
+
+    private void executeAsync(final SelfCheckEntry entry, SelfCheckAsyncRunnable runnable) {
+        final long startedAt = System.nanoTime();
+        entry.statusText.setText("执行中");
+        summaryText.setText("[" + entry.title + "] 执行中，等待网络响应。");
+        CompletableFuture<String> future;
+        try {
+            future = runnable.run();
+        } catch (RuntimeException exception) {
+            markFailed(entry, exception);
+            return;
+        }
+        future.whenComplete(new java.util.function.BiConsumer<String, Throwable>() {
             @Override
-            public void onAction(DocumentButtonActionEvent event) {
-                execute(entry);
+            public void accept(final String result, final Throwable throwable) {
+                NetService.getInstance().runOnMainThread(NetSide.CLIENT, new Runnable() {
+                    @Override
+                    public void run() {
+                        if (throwable != null) {
+                            markFailed(entry, unwrap(throwable));
+                            return;
+                        }
+                        markPassed(entry, startedAt, result);
+                    }
+                });
             }
         });
     }
 
-    private void execute(SelfCheckEntry entry) {
-        long startedAt = System.nanoTime();
-        entry.runnable.run();
+    private void markPassed(SelfCheckEntry entry, long startedAt, String detail) {
         long durationMs = (System.nanoTime() - startedAt) / 1_000_000L;
         entry.statusText.setText("通过 (" + durationMs + "ms)");
-        summaryText.setText("[" + entry.title + "] 通过，用时 " + durationMs + "ms。");
+        String suffix = detail == null ? "" : " " + detail;
+        summaryText.setText("[" + entry.title + "] 通过，用时 " + durationMs + "ms。" + suffix);
+    }
+
+    private void markFailed(SelfCheckEntry entry, Throwable throwable) {
+        entry.statusText.setText("失败");
+        summaryText.setText("[" + entry.title + "] 失败：" + throwable.getMessage());
+    }
+
+    private Throwable unwrap(Throwable throwable) {
+        if (throwable instanceof CompletionException && throwable.getCause() != null) {
+            return throwable.getCause();
+        }
+        return throwable;
     }
 
     private void checkPayloadLimits() {
@@ -205,6 +333,53 @@ public final class NetSelfCheckPage extends DocumentPageController {
         require(NetPayloadLimits.DEFAULT_LOGICAL_MESSAGE_LIMIT == 16 * 1024 * 1024, "默认逻辑消息上限应为 16 MiB");
         require(NetPayloadLimits.GTNH_DEFAULT_PHYSICAL_LIMIT == 256 * 1024 * 1024, "GTNH 默认物理能力应为 256 MiB");
         require(NetPayloadLimits.GTNH_HARD_PHYSICAL_LIMIT == 1024 * 1024 * 1024, "硬上限应为 1 GiB");
+    }
+
+    private void checkContentEnvelope() {
+        Map<String, String> headers = new LinkedHashMap<String, String>();
+        headers.put("X-Qz-Event", "self-check");
+        NetBody body = NetBody.of(NetContentType.of("application/vnd.qz.selfcheck+json; charset=utf-8"),
+                "{\"value\":42}".getBytes(StandardCharsets.UTF_8));
+
+        NetEnvelope decoded = NetEnvelope.decode(NetEnvelope.of(NetEnvelope.Kind.FETCH_RESPONSE, NetSide.CLIENT,
+                "qz:selfCheck", 99L, 202, headers, body).encode());
+
+        require(decoded.getKind() == NetEnvelope.Kind.FETCH_RESPONSE, "信封 kind 不一致");
+        require(decoded.getTargetSide() == NetSide.CLIENT, "信封方向不一致");
+        require("qz:selfCheck".equals(decoded.getKey()), "信封 key 不一致");
+        require(decoded.getRequestId() == 99L, "requestId 不一致");
+        require(decoded.getStatusCode() == 202, "statusCode 不一致");
+        require(decoded.getContentType().isJson(), "contentType 应识别为 JSON");
+        require("self-check".equals(decoded.getHeaders().get("x-qz-event")), "header 未归一或丢失");
+        require("{\"value\":42}".equals(decoded.toBody().asUtf8String()), "body 不一致");
+    }
+
+    private void checkHeaders() {
+        NetMessage message = NetMessage.text("ok").withHeader("X-Qz-Trace", "abc");
+        require("abc".equals(message.getHeader("x-qz-trace")), "header 小写读取失败");
+        require("abc".equals(message.getHeader("X-QZ-TRACE")), "header 大写读取失败");
+        require(message.getHeaders().containsKey("x-qz-trace"), "header 未归一成小写");
+        try {
+            NetMessage.text("bad").withHeader("bad header", "value");
+            throw new IllegalStateException("非法 header 名未被拒绝");
+        } catch (IllegalArgumentException expected) {
+            // 预期路径。
+        }
+        try {
+            NetMessage.text("bad").withHeader("x-qz", "line1\nline2");
+            throw new IllegalStateException("带换行 header 值未被拒绝");
+        } catch (IllegalArgumentException expected) {
+            // 预期路径。
+        }
+        NetMessage manyHeaders = NetMessage.text("many");
+        try {
+            for (int index = 0; index <= NetHeaders.MAX_HEADER_COUNT; index++) {
+                manyHeaders = manyHeaders.withHeader("x-qz-" + index, "v");
+            }
+            throw new IllegalStateException("超过 header 数量上限未被拒绝");
+        } catch (IllegalArgumentException expected) {
+            // 预期路径。
+        }
     }
 
     private void checkReflectionCodec() {
@@ -271,16 +446,20 @@ public final class NetSelfCheckPage extends DocumentPageController {
         void run();
     }
 
+    private interface SelfCheckAsyncRunnable {
+        CompletableFuture<String> run();
+    }
+
     private static final class SelfCheckEntry {
 
         final String title;
         final TextNode statusText;
-        final SelfCheckRunnable runnable;
+        final DocumentButtonControl button;
 
-        SelfCheckEntry(String title, TextNode statusText, SelfCheckRunnable runnable) {
+        SelfCheckEntry(String title, TextNode statusText, DocumentButtonControl button) {
             this.title = title;
             this.statusText = statusText;
-            this.runnable = runnable;
+            this.button = button;
         }
     }
 

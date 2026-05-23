@@ -1,6 +1,7 @@
 package club.heiqi.uilib;
 
 import club.heiqi.uilib.font.FontService;
+import club.heiqi.uilib.internal.devtools.NetRuntimeSelfChecks;
 import club.heiqi.uilib.net.api.NetService;
 import club.heiqi.uilib.net.transport.forge.ForgeMainThreadDispatcherBridge;
 import club.heiqi.uilib.net.transport.vanilla.VanillaMixinTransport;
@@ -27,6 +28,7 @@ public class CommonProxy {
         Config.init(configFile);
         FontService.getInstance().initialize();
         NetService.getInstance().bootstrap(new VanillaMixinTransport());
+        NetRuntimeSelfChecks.register();
         FMLCommonHandler.instance().bus().register(ForgeMainThreadDispatcherBridge.getInstance());
 
         MyMod.LOG.info("Qz-UILib {} 初始化完成", Tags.VERSION);
