@@ -39,7 +39,7 @@ RemoteHudOverlays.open(player, RemoteHudOverlay.danmaku("notice-1",
 
 ## 模式
 
-- `DIALOG`：居中浮窗，默认显示关闭按钮；在 HUD 可交互的宿主界面中可点击按钮、输入表单。
+- `DIALOG`：居中浮窗，默认显示关闭按钮；标题栏可拖拽移动；在 HUD 可交互的宿主界面中可点击按钮、输入表单。
 - `TOAST`：角落提示，默认几秒后自动消失；默认不接收命中测试，适合作为纯展示通知。
 - `DANMAKU`：从右向左移动的弹幕浮层；默认自动消失并不接收命中测试。
 

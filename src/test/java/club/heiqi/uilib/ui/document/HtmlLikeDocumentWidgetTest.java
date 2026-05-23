@@ -864,6 +864,52 @@ public class HtmlLikeDocumentWidgetTest {
     }
 
     /**
+     * 验证 fixed 拖拽模式会从 static 元素当前视觉位置开始移动。
+     */
+    @Test
+    public void shouldDragStaticElementFromCurrentBoundsThroughFixedDragSupport() {
+        UiDocument document = UiDocument.create();
+        ElementNode root = document.getRootElement();
+        ElementNode panel = document.div();
+        ElementNode handle = document.div();
+
+        root.style()
+                .setWidth(UiStyleLength.px(240))
+                .setHeight(UiStyleLength.px(120))
+                .setPadding(UiStyleLength.px(20));
+        panel.style()
+                .setPosition(UiPosition.STATIC)
+                .setWidth(UiStyleLength.px(80))
+                .setHeight(UiStyleLength.px(30))
+                .setBackgroundColor(0xFF223344);
+        handle.style()
+                .setWidth(UiStyleLength.px(80))
+                .setHeight(UiStyleLength.px(10))
+                .setBackgroundColor(0xFF446688);
+        panel.append(handle);
+        root.append(panel);
+        DocumentDraggableSupport.attachFixed(panel, panel, DocumentDraggableSupport.DragAxis.BOTH);
+
+        HtmlLikeDocumentWidget widget = new HtmlLikeDocumentWidget(document, 240, 120,
+                new DeterministicTextMeasureService());
+        widget.applyLayoutBounds(0, 0, 240, 120);
+        widget.findElementAt(25, 25);
+
+        panel.getDragHandler().onDrag(new DocumentElementDragEvent(panel, panel, 25, 25, 25, 25, 0, 0, 0,
+                1L, DocumentElementDragEvent.DragPhase.START));
+        panel.getDragHandler().onDrag(new DocumentElementDragEvent(panel, panel, 25, 25, 45, 35, 20, 10, 0,
+                2L, DocumentElementDragEvent.DragPhase.DRAG));
+        panel.getDragHandler().onDrag(new DocumentElementDragEvent(panel, panel, 25, 25, 45, 35, 0, 0, 0,
+                3L, DocumentElementDragEvent.DragPhase.END));
+
+        Assert.assertEquals(UiPosition.FIXED, panel.style().getPosition());
+        Assert.assertEquals(40.0F, panel.style().getLeft().getValue(), 0.001F);
+        Assert.assertEquals(30.0F, panel.style().getTop().getValue(), 0.001F);
+        Assert.assertNull(panel.style().getRight());
+        Assert.assertNull(panel.style().getBottom());
+    }
+
+    /**
      * 验证 `right/bottom` 锚定的 fixed 浮窗首次拖拽时不会跳到左上角基线。
      */
     @Test

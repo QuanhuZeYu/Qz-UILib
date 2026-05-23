@@ -10,6 +10,7 @@ import java.util.function.BiConsumer;
 import club.heiqi.uilib.MyMod;
 import club.heiqi.uilib.net.api.NetResponse;
 import club.heiqi.uilib.net.api.NetStreamCall;
+import club.heiqi.uilib.ui.control.DocumentDraggableSupport;
 import club.heiqi.uilib.ui.control.DocumentButtonActionEvent;
 import club.heiqi.uilib.ui.control.DocumentButtonActionHandler;
 import club.heiqi.uilib.ui.control.DocumentButtonControl;
@@ -24,6 +25,7 @@ import club.heiqi.uilib.ui.screen.UiScreenManager;
 import club.heiqi.uilib.ui.style.props.UiAlignItems;
 import club.heiqi.uilib.ui.style.props.UiBoxSizing;
 import club.heiqi.uilib.ui.style.props.UiBorderStyle;
+import club.heiqi.uilib.ui.style.props.UiCursor;
 import club.heiqi.uilib.ui.style.props.UiDisplay;
 import club.heiqi.uilib.ui.style.props.UiFlexDirection;
 import club.heiqi.uilib.ui.style.props.UiJustifyContent;
@@ -317,6 +319,7 @@ public final class RemoteHudOverlayClientBridge {
                 titleBar.append(createCloseButton(document, offer));
             }
             shell.append(titleBar);
+            DocumentDraggableSupport.attachFixed(shell, titleBar, DocumentDraggableSupport.DragAxis.BOTH);
         }
         ElementNode content = document.div();
         configureContent(content, mode);
@@ -463,7 +466,9 @@ public final class RemoteHudOverlayClientBridge {
                 .setAlignItems(UiAlignItems.CENTER)
                 .setJustifyContent(UiJustifyContent.SPACE_BETWEEN)
                 .setColumnGap(UiStyleLength.px(8))
-                .setFlexShrink(0.0F);
+                .setFlexShrink(0.0F)
+                .setCursor(UiCursor.MOVE);
+        titleBar.setAttribute("data-qz-hud-drag-handle", "true");
     }
 
     private static ElementNode createCloseButton(UiDocument document, final RemoteHudOverlays.OpenOffer offer) {
@@ -485,9 +490,10 @@ public final class RemoteHudOverlayClientBridge {
 
     private static void configureContent(ElementNode content, RemoteHudOverlayMode mode) {
         content.style()
-                .setDisplay(UiDisplay.BLOCK)
+                .setDisplay(mode == RemoteHudOverlayMode.DANMAKU ? UiDisplay.INLINE_BLOCK : UiDisplay.BLOCK)
                 .setBoxSizing(UiBoxSizing.BORDER_BOX)
-                .setWidth(UiStyleLength.percent(1.0F))
+                .setWidth(mode == RemoteHudOverlayMode.DANMAKU ? UiStyleLength.auto()
+                        : UiStyleLength.percent(1.0F))
                 .setMinWidth(UiStyleLength.px(0))
                 .setTextColor(0xFFE5E7EB);
         if (mode == RemoteHudOverlayMode.DIALOG) {
@@ -500,6 +506,9 @@ public final class RemoteHudOverlayClientBridge {
             content.style()
                     .setOverflowX(UiOverflow.VISIBLE)
                     .setOverflowY(UiOverflow.VISIBLE);
+            if (mode == RemoteHudOverlayMode.DANMAKU) {
+                content.style().setWhiteSpace(UiWhiteSpace.NOWRAP);
+            }
         }
     }
 

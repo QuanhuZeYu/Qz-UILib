@@ -1,5 +1,6 @@
 package club.heiqi.uilib.ui.remote;
 
+import java.util.Collections;
 import java.util.List;
 
 import org.junit.Assert;
@@ -9,6 +10,13 @@ import club.heiqi.uilib.ui.dom.DocumentNode;
 import club.heiqi.uilib.ui.dom.ElementNode;
 import club.heiqi.uilib.ui.dom.TextNode;
 import club.heiqi.uilib.ui.dom.UiDocument;
+import club.heiqi.uilib.ui.layout.DocumentLayoutBox;
+import club.heiqi.uilib.ui.layout.DocumentLayoutEngine;
+import club.heiqi.uilib.ui.paint.DocumentPaintCommand;
+import club.heiqi.uilib.ui.paint.DocumentPaintCommandType;
+import club.heiqi.uilib.ui.paint.DocumentPaintEngine;
+import club.heiqi.uilib.ui.style.props.UiCursor;
+import club.heiqi.uilib.ui.text.TextMeasureService;
 
 /**
  * 远程 HUD 客户端文档构建测试。
@@ -40,6 +48,11 @@ public class RemoteHudOverlayClientBridgeTest {
         Assert.assertTrue(text.contains("关闭"));
         Assert.assertTrue(text.contains("提交"));
         Assert.assertTrue(text.contains("B"));
+        ElementNode dragHandle = findElementByAttribute(document.getRootElement(), "data-qz-hud-drag-handle",
+                "true");
+        Assert.assertNotNull(dragHandle);
+        Assert.assertNotNull(dragHandle.getDragHandler());
+        Assert.assertEquals(UiCursor.MOVE, dragHandle.style().getCursor());
     }
 
     @Test
@@ -59,6 +72,30 @@ public class RemoteHudOverlayClientBridgeTest {
         Assert.assertTrue(collectText(document.getRootElement()).contains("toast-ok"));
     }
 
+    @Test
+    public void shouldBuildDanmakuAsShrinkWrappedDrawableText() {
+        RemoteHudOverlays.OpenOffer offer = new RemoteHudOverlays.OpenOffer();
+        offer.sessionId = "session";
+        offer.overlayId = "danmaku";
+        offer.pageId = "page";
+        offer.title = "弹幕";
+        offer.mode = RemoteHudOverlayMode.DANMAKU.name();
+        offer.resourcePolicy = RemoteDocumentResourcePolicy.LOCAL_RESOURCES_ONLY.name();
+
+        UiDocument document = UiDocument.create();
+        RemoteHudOverlayClientBridge.OverlayDocumentParts parts =
+                RemoteHudOverlayClientBridge.buildOverlayDocument(document, offer,
+                        "<div style=\"padding:4px 8px;\">HUD 弹幕文字</div>");
+        DocumentLayoutBox rootBox = DocumentLayoutEngine.layout(document.getRootElement(), 320, 180,
+                new DeterministicTextMeasureService());
+        List<DocumentPaintCommand> commands = DocumentPaintEngine.buildPaintCommands(rootBox);
+        DocumentLayoutBox movingBox = findLayoutBox(rootBox, parts.movingElement);
+
+        Assert.assertNotNull(movingBox);
+        Assert.assertTrue("弹幕 shell 应按内容收缩，而不是撑成整屏", movingBox.getWidth() < 220);
+        Assert.assertTrue(containsTextCommand(commands, "HUD 弹幕文字"));
+    }
+
     private static String collectText(DocumentNode node) {
         if (node instanceof TextNode) {
             return ((TextNode) node).getText();
@@ -69,5 +106,77 @@ public class RemoteHudOverlayClientBridgeTest {
             builder.append(collectText(child));
         }
         return builder.toString();
+    }
+
+    private static ElementNode findElementByAttribute(DocumentNode node, String name, String value) {
+        if (node instanceof ElementNode) {
+            ElementNode element = (ElementNode) node;
+            if (value.equals(element.getAttribute(name))) {
+                return element;
+            }
+        }
+        for (DocumentNode child : node.getChildren()) {
+            ElementNode found = findElementByAttribute(child, name, value);
+            if (found != null) {
+                return found;
+            }
+        }
+        return null;
+    }
+
+    private static DocumentLayoutBox findLayoutBox(DocumentLayoutBox box, ElementNode element) {
+        if (box.getElement().__getElementUid() == element.__getElementUid()) {
+            return box;
+        }
+        for (DocumentLayoutBox child : box.getChildren()) {
+            DocumentLayoutBox found = findLayoutBox(child, element);
+            if (found != null) {
+                return found;
+            }
+        }
+        return null;
+    }
+
+    private static boolean containsTextCommand(List<DocumentPaintCommand> commands, String expectedText) {
+        for (DocumentPaintCommand command : commands) {
+            if (command.getType() == DocumentPaintCommandType.TEXT
+                    && command.getText() != null
+                    && command.getText().contains(expectedText)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private static final class DeterministicTextMeasureService implements TextMeasureService {
+
+        @Override
+        public int getEpoch() {
+            return 0;
+        }
+
+        @Override
+        public int getStringWidth(String text) {
+            return text == null ? 0 : text.length() * 8;
+        }
+
+        @Override
+        public int getLineHeight() {
+            return 18;
+        }
+
+        @Override
+        public String trimStringToWidth(String text, int targetWidth) {
+            if (text == null) {
+                return "";
+            }
+            int maxChars = Math.max(0, targetWidth / 8);
+            return text.length() <= maxChars ? text : text.substring(0, maxChars);
+        }
+
+        @Override
+        public List<String> listFormattedStringToWidth(String text, int wrapWidth) {
+            return Collections.singletonList(text == null ? "" : text);
+        }
     }
 }

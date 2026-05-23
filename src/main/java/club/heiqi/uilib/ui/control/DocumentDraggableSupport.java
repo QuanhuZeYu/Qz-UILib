@@ -2,6 +2,7 @@ package club.heiqi.uilib.ui.control;
 
 import java.util.Objects;
 
+import club.heiqi.uilib.ui.dom.DocumentElementBounds;
 import club.heiqi.uilib.ui.dom.DocumentElementDragEvent;
 import club.heiqi.uilib.ui.dom.DocumentElementDragHandler;
 import club.heiqi.uilib.ui.dom.ElementNode;
@@ -16,6 +17,7 @@ public final class DocumentDraggableSupport {
     private final ElementNode target;
     private final ElementNode handle;
     private final DragAxis dragAxis;
+    private final boolean fixedFallback;
     private boolean dragging;
     private int accumulatedX;
     private int accumulatedY;
@@ -23,10 +25,12 @@ public final class DocumentDraggableSupport {
     private boolean useBottomAnchor;
     private boolean initialized;
 
-    private DocumentDraggableSupport(ElementNode target, ElementNode handle, DragAxis dragAxis) {
+    private DocumentDraggableSupport(ElementNode target, ElementNode handle, DragAxis dragAxis,
+            boolean fixedFallback) {
         this.target = Objects.requireNonNull(target, "target");
         this.handle = Objects.requireNonNull(handle, "handle");
         this.dragAxis = dragAxis == null ? DragAxis.BOTH : dragAxis;
+        this.fixedFallback = fixedFallback;
     }
 
     /**
@@ -48,7 +52,24 @@ public final class DocumentDraggableSupport {
      * @return 拖拽辅助器
      */
     public static DocumentDraggableSupport attach(ElementNode target, ElementNode handle, DragAxis dragAxis) {
-        DocumentDraggableSupport support = new DocumentDraggableSupport(target, handle, dragAxis);
+        DocumentDraggableSupport support = new DocumentDraggableSupport(target, handle, dragAxis, false);
+        support.install();
+        return support;
+    }
+
+    /**
+     * 让目标元素可通过指定把手按 fixed 定位语义拖拽。
+     *
+     * <p>当目标元素尚未显式定位，或仍是 {@code static} 定位时，首次拖拽会以元素当前布局边界为
+     * fixed 起点，适合 HUD、浮窗这类相对视口移动的场景。</p>
+     *
+     * @param target 目标元素
+     * @param handle 拖拽把手
+     * @param dragAxis 拖拽轴
+     * @return 拖拽辅助器
+     */
+    public static DocumentDraggableSupport attachFixed(ElementNode target, ElementNode handle, DragAxis dragAxis) {
+        DocumentDraggableSupport support = new DocumentDraggableSupport(target, handle, dragAxis, true);
         support.install();
         return support;
     }
@@ -114,13 +135,17 @@ public final class DocumentDraggableSupport {
             return;
         }
         initialized = true;
-        if (target.style().getPosition() == null) {
-            target.style().setPosition(UiPosition.ABSOLUTE);
+        DocumentElementBounds bounds = target.getDocumentBounds();
+        UiPosition currentPosition = target.style().getPosition();
+        if (currentPosition == null || (fixedFallback && currentPosition == UiPosition.STATIC)) {
+            target.style().setPosition(fixedFallback ? UiPosition.FIXED : UiPosition.ABSOLUTE);
         }
         useRightAnchor = shouldUseRightAnchor();
         useBottomAnchor = shouldUseBottomAnchor();
-        accumulatedX = resolveInitialOffset(useRightAnchor ? target.style().getRight() : target.style().getLeft());
-        accumulatedY = resolveInitialOffset(useBottomAnchor ? target.style().getBottom() : target.style().getTop());
+        accumulatedX = resolveInitialOffset(useRightAnchor ? target.style().getRight() : target.style().getLeft(),
+                bounds.isAvailable() ? bounds.getLeft() : 0);
+        accumulatedY = resolveInitialOffset(useBottomAnchor ? target.style().getBottom() : target.style().getTop(),
+                bounds.isAvailable() ? bounds.getTop() : 0);
     }
 
     private boolean shouldUseRightAnchor() {
@@ -135,9 +160,9 @@ public final class DocumentDraggableSupport {
         return length != null && length.getType() == UiStyleLength.Type.PIXEL;
     }
 
-    private static int resolveInitialOffset(UiStyleLength length) {
+    private static int resolveInitialOffset(UiStyleLength length, int visualFallback) {
         if (!isPixelLength(length)) {
-            return 0;
+            return visualFallback;
         }
         return Math.round(length.getValue());
     }
