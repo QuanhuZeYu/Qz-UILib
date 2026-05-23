@@ -5,6 +5,8 @@ import club.heiqi.uilib.client.UiHudRenderListener;
 import club.heiqi.uilib.client.UiInputTickListener;
 import club.heiqi.uilib.font.FontService;
 import club.heiqi.uilib.internal.devtools.DevToolsClientBootstrap;
+import club.heiqi.uilib.net.api.NetService;
+import club.heiqi.uilib.net.client.NetStoreUiBridge;
 import club.heiqi.uilib.ui.hud.UiHudDocumentHost;
 import club.heiqi.uilib.ui.image.DocumentRemoteImageCache;
 import club.heiqi.uilib.ui.input.UiInputService;
@@ -32,6 +34,7 @@ public class ClientProxy extends CommonProxy {
     public void preInit(FMLPreInitializationEvent event) {
         super.preInit(event);
         UiInputService.getInstance().initialize();
+        NetStoreUiBridge.getInstance().initialize();
         DevToolsClientBootstrap.registerClientDevTools();
         MinecraftForge.EVENT_BUS.register(fontRenderTickListener);
         MinecraftForge.EVENT_BUS.register(uiHudRenderListener);
@@ -57,6 +60,11 @@ public class ClientProxy extends CommonProxy {
         } catch (RuntimeException exception) {
             MyMod.LOG.warn("HUD 断连清理异常", exception);
         }
+        try {
+            NetService.getInstance().onClientDisconnected();
+        } catch (RuntimeException exception) {
+            MyMod.LOG.warn("网络层断连清理异常", exception);
+        }
     }
 
     private void onJvmShutdown() {
@@ -69,6 +77,11 @@ public class ClientProxy extends CommonProxy {
             FontService.getInstance().shutdown();
         } catch (RuntimeException exception) {
             MyMod.LOG.warn("字体系统关停异常", exception);
+        }
+        try {
+            NetService.getInstance().shutdown();
+        } catch (RuntimeException exception) {
+            MyMod.LOG.warn("网络层关停异常", exception);
         }
     }
 }

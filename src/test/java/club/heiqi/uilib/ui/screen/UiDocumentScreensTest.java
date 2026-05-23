@@ -77,6 +77,8 @@ public class UiDocumentScreensTest {
                 InternalDiagnosticScreenRegistry.animationCapabilityShowcasePageId());
         Assert.assertEquals("ui_framework_structure_audit",
                 InternalDiagnosticScreenRegistry.uiFrameworkStructureAuditPageId());
+        Assert.assertEquals("runtime_self_test", InternalDiagnosticScreenRegistry.runtimeSelfTestPageId());
+        Assert.assertEquals("net_self_check", InternalDiagnosticScreenRegistry.netSelfCheckPageId());
     }
 
     /**
@@ -111,6 +113,7 @@ public class UiDocumentScreensTest {
         Assert.assertFalse(UiDiagnosticsScreens.isHtmlLikeGlass(screen));
         Assert.assertFalse(UiDiagnosticsScreens.isAnimationCapabilityShowcase(screen));
         Assert.assertFalse(UiDiagnosticsScreens.isUiFrameworkStructureAudit(screen));
+        Assert.assertFalse(UiDiagnosticsScreens.isNetSelfCheck(screen));
         Assert.assertEquals(InternalDiagnosticScreenRegistry.uiTestPageId(), InternalScreenIdentity.runtimeScreenNameOf(screen));
     }
 

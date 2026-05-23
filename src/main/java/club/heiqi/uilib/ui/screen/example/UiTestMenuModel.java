@@ -54,4 +54,9 @@ public interface UiTestMenuModel {
      * 打开运行时自检子页。
      */
     void openRuntimeSelfTest();
+
+    /**
+     * 打开网络层自检子页。
+     */
+    void openNetSelfCheck();
 }

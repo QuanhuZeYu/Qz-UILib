@@ -1,7 +1,26 @@
 # 网络层实验性方案：web 语义双端通信
 
-> **状态：实验性方案（未实现）**
+> **状态：实验性方案（第一版已落地）**
 > 本文档记录 4.1LTS 阶段网络层（Channel + Fetch + Store 三层 API）的设计决策，作为后续分步实现的依据。LTS 期间公共面一旦定准不破坏，因此先固化文档边界，再进入代码落地。
+
+## 当前实现范围
+
+第一版已落地：
+
+- `club.heiqi.uilib.net.api`：`NetService`、Channel、Fetch、Store、id、上下文与异常。
+- `club.heiqi.uilib.net.codec`：反射 codec、字段布局、varint、schema 注册、`@NetField` / `@NetTransient`。
+- `club.heiqi.uilib.net.core`：envelope、分片重组、大小策略、request registry、schema handshake、主线程派发队列。
+- `club.heiqi.uilib.net.transport.vanilla`：默认 vanilla custom payload 传输适配器与 mixin 入站分发。
+- `club.heiqi.uilib.net.transport.forge`：Forge/FML 回退适配器与 tick bridge。
+- `club.heiqi.uilib.mixin.early.network`：client/server NetHandler early mixin。
+- `/qzuilib test` 诊断菜单中的 `net_self_check` 自检页。
+
+已补充配套文档：
+
+- `docs/使用文档/02-控件/网络层入门.md`
+- `docs/开发者文档/specs/net-codec-wire-format.md`
+- `docs/开发者文档/specs/net-vanilla-mixin-strategy.md`
+- `docs/开发者文档/specs/net-self-check.md`
 
 ## 背景
 

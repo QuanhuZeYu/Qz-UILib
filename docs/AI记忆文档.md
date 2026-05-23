@@ -24,6 +24,7 @@
 ## 对外入口边界
 
 - 业务文档入口：`UiDocumentScreens.createDocumentScreen(...)`。
+- 双端网络入口：`NetService.getInstance()`，在 `preInit` 注册 Channel / Fetch / Store，`postInit` 后注册表冻结。
 - 诊断/示例页只保留内部开发工具入口（`/qzuilib test`），不对外暴露页面工厂。
 - 不新增扩大直接 `Widget` 作者入口的 API。
 

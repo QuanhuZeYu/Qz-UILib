@@ -1,12 +1,14 @@
 package club.heiqi.uilib.mixin.early;
 
-import java.util.Arrays;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
 import com.gtnewhorizon.gtnhmixins.IEarlyMixinLoader;
 import cpw.mods.fml.relauncher.IFMLLoadingPlugin;
+import cpw.mods.fml.relauncher.FMLLaunchHandler;
+import cpw.mods.fml.relauncher.Side;
 
 /**
  * 原版类的早期 Mixin 加载器。
@@ -21,8 +23,15 @@ public class EarlyMixins implements IEarlyMixinLoader, IFMLLoadingPlugin {
 
     @Override
     public List<String> getMixins(Set<String> loadedCoreMods) {
-        return Arrays.asList("MixinFontRenderer", "MixinGuiScreenKeyboardIsolation",
-                "MixinGuiContainerKeyTypedIsolation");
+        List<String> mixins = new ArrayList<String>();
+        if (FMLLaunchHandler.side() == Side.CLIENT) {
+            mixins.add("MixinFontRenderer");
+            mixins.add("MixinGuiScreenKeyboardIsolation");
+            mixins.add("MixinGuiContainerKeyTypedIsolation");
+            mixins.add("network.MixinNetHandlerPlayClient");
+        }
+        mixins.add("network.MixinNetHandlerPlayServer");
+        return mixins;
     }
 
     @Override
