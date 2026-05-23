@@ -1019,13 +1019,18 @@ public final class NetRuntimeSelfChecks {
                 + ".hud-body{box-sizing:border-box;width:100%;padding:12px 14px 14px 14px;}"
                 + ".hint{color:#bfdbfe;margin:6px 0;}"
                 + ".field{margin:8px 0 4px 0;color:#cbd5e1;}"
+                + ".probe{box-sizing:border-box;margin:8px 0;padding:8px;border:1px solid #334155;border-radius:6px;overflow:visible;}"
+                + ".probe-title{margin:0 0 4px 0;color:#e0f2fe;}"
+                + ".overlap-probe{position:relative;min-height:78px;overflow:visible;}"
+                + ".under-button{margin-top:4px;background-color:#312e81;color:#e0e7ff;}"
+                + ".clip-probe{height:48px;overflow:hidden;background-color:#0f172a;}"
                 + "input,textarea,select{width:calc(100% - 8px);margin:4px 0;padding:6px;}"
                 + "button{margin-top:10px;padding:8px 12px;}"
                 + "</style></head><body><div class=\"hud\">"
                 + "<div class=\"drag-handle\" data-qz-hud-drag-handle=\"true\">远程 HUD 运行时自检 · 拖住这里移动</div>"
                 + "<div class=\"hud-body\">"
                 + "<p class=\"hint\">这页由服务端通过 RemoteHudOverlays.open 下发，客户端会用 Stream 拉取 HTML。</p>"
-                + "<p class=\"hint\">保持默认值，点击提交即可验证 HUD 解析、表单收集和 C2S 回传。</p>"
+                + "<p class=\"hint\">phase 保持默认；将三个对比下拉改为通过项后提交，可验证 HUD top-layer 命中。</p>"
                 + "<form id=\"remote-hud-smoke-form\" action=\"runtime-hud-submit\">"
                 + "<input type=\"hidden\" name=\"checkId\" value=\"" + escapedCheckId + "\">"
                 + "<p class=\"field\">只读文本字段</p>"
@@ -1038,6 +1043,16 @@ public final class NetRuntimeSelfChecks {
                 + "<p class=\"field\">选择字段</p>"
                 + "<select name=\"phase\"><option value=\"wrong\">错误项</option>"
                 + "<option value=\"hud-ok\" selected>HUD 已渲染</option></select>"
+                + "<div class=\"probe\"><p class=\"probe-title\">普通下拉对比</p>"
+                + "<select name=\"normalProbe\"><option value=\"normal-wrong\">普通下拉未通过</option>"
+                + "<option value=\"normal-ok\">普通下拉通过</option></select></div>"
+                + "<div class=\"probe overlap-probe\"><p class=\"probe-title\">覆盖按钮下拉对比</p>"
+                + "<select name=\"overlapProbe\"><option value=\"overlap-wrong\">覆盖下拉未通过</option>"
+                + "<option value=\"overlap-ok\">覆盖下拉通过</option></select>"
+                + "<button class=\"under-button\" type=\"button\" name=\"underButton\" value=\"下层按钮\">下层按钮</button></div>"
+                + "<div class=\"probe clip-probe\"><p class=\"probe-title\">裁剪容器下拉对比</p>"
+                + "<select name=\"clippedProbe\"><option value=\"clipped-wrong\">裁剪下拉未通过</option>"
+                + "<option value=\"clipped-ok\">裁剪下拉通过</option></select></div>"
                 + "<p><a href=\"#submit-area\">跳到提交按钮</a></p>"
                 + "<button id=\"submit-area\" type=\"submit\" name=\"submitter\" value=\"提交远程 HUD 自检\"></button>"
                 + "</form></div></div></body></html>";
@@ -1059,6 +1074,9 @@ public final class NetRuntimeSelfChecks {
         requireSubmitted(problems, "textEcho", "text-ok", event.getFirstValue("textEcho"));
         requireSubmitted(problems, "note", "textarea-ok", event.getFirstValue("note"));
         requireSubmitted(problems, "phase", "hud-ok", event.getFirstValue("phase"));
+        requireSubmitted(problems, "normalProbe", "normal-ok", event.getFirstValue("normalProbe"));
+        requireSubmitted(problems, "overlapProbe", "overlap-ok", event.getFirstValue("overlapProbe"));
+        requireSubmitted(problems, "clippedProbe", "clipped-ok", event.getFirstValue("clippedProbe"));
         requireSubmitted(problems, "submitter", "提交远程 HUD 自检", event.getFirstValue("submitter"));
         if (!hasValue(event.getValues(), "flag", "checked-ok")) {
             appendSubmitProblem(problems, "flag 未提交 checked-ok");

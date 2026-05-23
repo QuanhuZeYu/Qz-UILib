@@ -7,6 +7,7 @@ import org.junit.Assert;
 import org.junit.Test;
 
 import club.heiqi.uilib.ui.dom.DocumentNode;
+import club.heiqi.uilib.ui.dom.DocumentElementBounds;
 import club.heiqi.uilib.ui.dom.ElementNode;
 import club.heiqi.uilib.ui.dom.TextNode;
 import club.heiqi.uilib.ui.dom.UiDocument;
@@ -160,6 +161,55 @@ public class RemoteHudOverlayClientBridgeTest {
     }
 
     @Test
+    public void shouldHitDialogSelectPopupAfterShellMovesAndEscapeOverflow() {
+        RemoteHudOverlays.OpenOffer offer = new RemoteHudOverlays.OpenOffer();
+        offer.sessionId = "session";
+        offer.overlayId = "overlay";
+        offer.pageId = "page";
+        offer.title = "HUD 标题";
+        offer.mode = RemoteHudOverlayMode.DIALOG.name();
+        offer.resourcePolicy = RemoteDocumentResourcePolicy.LOCAL_RESOURCES_ONLY.name();
+        offer.defaultCloseButtonVisible = false;
+        String html = "<section style=\"width:100%;background:#111827;\">"
+                + "<div data-qz-hud-drag-handle=\"true\" style=\"height:28px;\">拖动</div>"
+                + "<form id=\"hud-form\" action=\"save\">"
+                + "<select id=\"moving-select\" name=\"moving\" style=\"width:160px;\">"
+                + "<option value=\"wrong\">错误</option><option value=\"moving-ok\">移动后通过</option></select>"
+                + "<div style=\"height:40px;overflow:hidden;margin-top:8px;\">"
+                + "<select id=\"clipped-select\" name=\"clipped\" style=\"width:160px;\">"
+                + "<option value=\"wrong\">错误</option><option value=\"clipped-ok\">裁剪通过</option></select>"
+                + "</div></form></section>";
+        UiDocument document = UiDocument.create();
+        RemoteHudOverlayClientBridge.OverlayDocumentParts parts =
+                RemoteHudOverlayClientBridge.buildOverlayDocument(document, offer, html);
+        DeterministicTextMeasureService textMeasureService = new DeterministicTextMeasureService();
+        parts.updateDialogPlacementForTest(640, 480, textMeasureService);
+        HtmlLikeDocumentWidget widget = new HtmlLikeDocumentWidget(document, 640, 480, textMeasureService);
+        widget.applyLayoutBounds(0, 0, 640, 480);
+        ElementNode movingSelect = document.getElementById("moving-select");
+
+        click(widget, pointInsideX(movingSelect), pointInsideY(movingSelect), 1L);
+        Assert.assertEquals("true", movingSelect.getAttribute("aria-expanded"));
+        parts.movingElement.style()
+                .setLeft(UiStyleLength.px(parts.movingElement.style().getLeft().getValue() + 48.0F))
+                .setTop(UiStyleLength.px(parts.movingElement.style().getTop().getValue() + 24.0F));
+        click(widget, pointInsideX(movingSelect), optionY(movingSelect, 1), 3L);
+
+        Assert.assertEquals("移动后通过", movingSelect.getAttribute("value"));
+
+        ElementNode clippedSelect = document.getElementById("clipped-select");
+        click(widget, pointInsideX(clippedSelect), pointInsideY(clippedSelect), 5L);
+        ElementNode popup = findListboxElement(clippedSelect);
+        Assert.assertTrue("裁剪容器中的 popup 应保持 select 逻辑 DOM 归属",
+                popup != null && popup.getParent() == clippedSelect);
+        Assert.assertTrue("裁剪容器中的 popup 应提升到 top-layer",
+                document.__isTopLayerElement(popup));
+        click(widget, pointInsideX(clippedSelect), optionY(clippedSelect, 1), 7L);
+
+        Assert.assertEquals("裁剪通过", clippedSelect.getAttribute("value"));
+    }
+
+    @Test
     public void shouldFallbackDialogDragToParsedContentWhenNoAuthorHandleExists() {
         RemoteHudOverlays.OpenOffer offer = new RemoteHudOverlays.OpenOffer();
         offer.sessionId = "session";
@@ -247,6 +297,45 @@ public class RemoteHudOverlayClientBridgeTest {
             }
         }
         return null;
+    }
+
+    private static ElementNode findListboxElement(DocumentNode node) {
+        if (node instanceof ElementNode) {
+            ElementNode element = (ElementNode) node;
+            if ("listbox".equals(element.getAttribute("role"))) {
+                return element;
+            }
+        }
+        for (DocumentNode child : node.getChildren()) {
+            ElementNode found = findListboxElement(child);
+            if (found != null) {
+                return found;
+            }
+        }
+        return null;
+    }
+
+    private static int pointInsideX(ElementNode element) {
+        DocumentElementBounds bounds = element.getDocumentBounds();
+        Assert.assertTrue(bounds.isAvailable());
+        return bounds.getLeft() + 8;
+    }
+
+    private static int pointInsideY(ElementNode element) {
+        DocumentElementBounds bounds = element.getDocumentBounds();
+        Assert.assertTrue(bounds.isAvailable());
+        return bounds.getTop() + 8;
+    }
+
+    private static int optionY(ElementNode select, int optionIndex) {
+        DocumentElementBounds bounds = select.getDocumentBounds();
+        Assert.assertTrue(bounds.isAvailable());
+        return bounds.getTop() + bounds.getHeight() + optionIndex * 28 + 8;
+    }
+
+    private static void click(HtmlLikeDocumentWidget widget, int x, int y, long timeNanos) {
+        widget.onMouseDown(new UiMouseEvent(UiMouseEvent.Action.BUTTON_DOWN, x, y, 0, 0, 0, 0, timeNanos));
+        widget.onMouseUp(new UiMouseEvent(UiMouseEvent.Action.BUTTON_UP, x, y, 0, 0, 0, 0, timeNanos + 1L));
     }
 
     private static DocumentLayoutBox findLayoutBox(DocumentLayoutBox box, ElementNode element) {

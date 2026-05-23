@@ -177,6 +177,44 @@ public class DocumentSelectControlTest {
     }
 
     /**
+     * 验证 select 锚点在 popup 打开后移动时，top-layer 面板会跟随新的文档坐标。
+     */
+    @Test
+    public void shouldRepositionOpenPopupWhenAnchorMoves() {
+        UiDocument document = UiDocument.create();
+        ElementNode root = document.getRootElement();
+        ElementNode shell = document.div();
+        DocumentSelectControl selectControl = new DocumentSelectControl(document, "A", "B", "C");
+
+        root.style()
+                .setWidth(UiStyleLength.px(320))
+                .setHeight(UiStyleLength.px(240));
+        shell.style()
+                .setPosition(UiPosition.FIXED)
+                .setLeft(UiStyleLength.px(40))
+                .setTop(UiStyleLength.px(30))
+                .setWidth(UiStyleLength.px(180))
+                .setOverflowX(UiOverflow.VISIBLE)
+                .setOverflowY(UiOverflow.VISIBLE);
+        selectControl.getElement().style().setWidth(UiStyleLength.px(180));
+        shell.append(selectControl.getElement());
+        root.append(shell);
+        HtmlLikeDocumentWidget widget = new HtmlLikeDocumentWidget(document, 320, 240,
+                new DeterministicTextMeasureService());
+        widget.applyLayoutBounds(0, 0, 320, 240);
+
+        click(widget, 48, 38, 1L);
+        Assert.assertEquals("true", selectControl.getElement().getAttribute("aria-expanded"));
+
+        shell.style()
+                .setLeft(UiStyleLength.px(90))
+                .setTop(UiStyleLength.px(54));
+        click(widget, 98, 122, 3L);
+
+        Assert.assertEquals("B", selectControl.getSelectedOption());
+    }
+
+    /**
      * 验证 top-layer 命中顺序高于普通 fixed 内容，且后注册的顶层元素在更上层。
      */
     @Test

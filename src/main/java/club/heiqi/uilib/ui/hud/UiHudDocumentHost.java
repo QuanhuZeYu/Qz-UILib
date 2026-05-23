@@ -352,10 +352,11 @@ public final class UiHudDocumentHost {
         if (primaryDown) {
             HudEntry targetEntry = resolveMouseTargetEntry(screenCategory, frame.getMouseX(), frame.getMouseY(),
                     entrySnapshot);
-            clearInteractiveStates();
             if (targetEntry == null) {
+                clearInteractiveStates();
                 return;
             }
+            clearInteractiveStatesExcept(targetEntry);
             hoveredMouseEntry = targetEntry;
             activeMouseEntry = targetEntry;
             UiInputFrame mouseFrame = new UiInputFrame(frame.getMouseX(), frame.getMouseY(), frame.getMouseEvents(),
@@ -832,6 +833,21 @@ public final class UiHudDocumentHost {
         }
         UiKeyboardCaptureState.getInstance().setHudKeyboardCaptured(false);
         syncHudTextInputRequest(false);
+    }
+
+    private synchronized void clearInteractiveStatesExcept(HudEntry preservedEntry) {
+        if (hoveredMouseEntry != preservedEntry) {
+            updateHoveredMouseEntry(null);
+        }
+        activeMouseEntry = null;
+        if (activeKeyboardEntry != preservedEntry) {
+            activeKeyboardEntry = null;
+        }
+        for (HudEntry entry : entries) {
+            if (entry.layerType == UiHudLayerType.INTERACTIVE && entry != preservedEntry) {
+                entry.interactionSession.clearInteractionState();
+            }
+        }
     }
 
     private synchronized void updateHudKeyboardCaptureState() {

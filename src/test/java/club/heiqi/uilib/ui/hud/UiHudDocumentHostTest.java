@@ -13,6 +13,7 @@ import club.heiqi.uilib.ui.dom.UiDocument;
 import club.heiqi.uilib.ui.control.DocumentButtonActionEvent;
 import club.heiqi.uilib.ui.control.DocumentButtonActionHandler;
 import club.heiqi.uilib.ui.control.DocumentButtonControl;
+import club.heiqi.uilib.ui.control.DocumentSelectControl;
 import club.heiqi.uilib.ui.control.DocumentTextInputControl;
 import club.heiqi.uilib.ui.layout.DocumentLayoutBox;
 import club.heiqi.uilib.ui.host.DocumentHostRenderSupport;
@@ -26,7 +27,9 @@ import club.heiqi.uilib.ui.render.UiMainLayerSnapshotService;
 import club.heiqi.uilib.ui.render.UiRenderContext;
 import club.heiqi.uilib.ui.runtime.UiRuntimeAdapters;
 import club.heiqi.uilib.ui.style.props.UiBoxSizing;
+import club.heiqi.uilib.ui.style.props.UiDisplay;
 import club.heiqi.uilib.ui.style.props.UiOverflow;
+import club.heiqi.uilib.ui.style.props.UiPosition;
 import club.heiqi.uilib.ui.style.values.UiStyleLength;
 import club.heiqi.uilib.ui.text.DefaultTextMeasureService;
 import club.heiqi.uilib.ui.text.TextMeasureService;
@@ -846,6 +849,75 @@ public class UiHudDocumentHostTest {
         } finally {
             topRegistration.unregister();
             bottomRegistration.unregister();
+        }
+    }
+
+    /**
+     * 验证 HUD 即时输入会优先命中 select 的 top-layer 下拉项，不穿透到视觉下方按钮。
+     */
+    @Test
+    public void shouldRouteImmediateMouseInputToSelectTopLayerOption() {
+        UiHudDocumentHost host = UiHudDocumentHost.getInstance();
+        UiKeyboardCaptureState.getInstance().clear();
+        final int[] buttonClicks = new int[1];
+        final DocumentSelectControl[] selectHolder = new DocumentSelectControl[1];
+        UiHudDocumentRegistration registration = host.register(UiHudLayerType.INTERACTIVE,
+                new UiHudDocumentHost.UiHudDocumentContentBuilder() {
+                    @Override
+                    public void build(UiDocument document) {
+                        ElementNode root = document.getRootElement();
+                        ElementNode shell = document.div();
+                        DocumentSelectControl selectControl = new DocumentSelectControl(document, "错误", "HUD 通过");
+                        DocumentButtonControl buttonControl = new DocumentButtonControl(document, "下层按钮");
+                        selectHolder[0] = selectControl;
+                        root.style()
+                                .setWidth(UiStyleLength.px(320))
+                                .setHeight(UiStyleLength.px(180));
+                        shell.style()
+                                .setPosition(UiPosition.FIXED)
+                                .setLeft(UiStyleLength.px(40))
+                                .setTop(UiStyleLength.px(24))
+                                .setWidth(UiStyleLength.px(180))
+                                .setOverflowX(UiOverflow.VISIBLE)
+                                .setOverflowY(UiOverflow.VISIBLE);
+                        selectControl.getElement().style().setWidth(UiStyleLength.px(180));
+                        buttonControl.getElement().style()
+                                .setPosition(UiPosition.FIXED)
+                                .setLeft(UiStyleLength.px(40))
+                                .setTop(UiStyleLength.px(84))
+                                .setDisplay(UiDisplay.BLOCK)
+                                .setWidth(UiStyleLength.px(180))
+                                .setHeight(UiStyleLength.px(32));
+                        buttonControl.setActionHandler(new DocumentButtonActionHandler() {
+                            @Override
+                            public void onAction(DocumentButtonActionEvent event) {
+                                buttonClicks[0]++;
+                            }
+                        });
+                        shell.append(selectControl.getElement());
+                        root.append(shell);
+                        root.append(buttonControl.getElement());
+                    }
+                }, new DeterministicTextMeasureService(), UiRuntimeAdapters.empty());
+        try {
+            host.handleInputFrameForTest(mouseFrame(UiMouseEvent.Action.MOVE, 48, 32, 0L),
+                    UiHudScreenCategory.CONTAINER, 320, 180);
+            Assert.assertTrue(host.handleImmediateMouseInputForTest(
+                    mouseFrame(UiMouseEvent.Action.BUTTON_DOWN, 48, 32, 1L), UiHudScreenCategory.CONTAINER));
+            Assert.assertTrue(host.handleImmediateMouseInputForTest(
+                    mouseFrame(UiMouseEvent.Action.BUTTON_UP, 48, 32, 2L), UiHudScreenCategory.CONTAINER));
+            Assert.assertEquals("true", selectHolder[0].getElement().getAttribute("aria-expanded"));
+
+            Assert.assertTrue(host.handleImmediateMouseInputForTest(
+                    mouseFrame(UiMouseEvent.Action.BUTTON_DOWN, 48, 92, 3L), UiHudScreenCategory.CONTAINER));
+            Assert.assertTrue(host.handleImmediateMouseInputForTest(
+                    mouseFrame(UiMouseEvent.Action.BUTTON_UP, 48, 92, 4L), UiHudScreenCategory.CONTAINER));
+
+            Assert.assertEquals(1, selectHolder[0].getSelectedIndex());
+            Assert.assertEquals(0, buttonClicks[0]);
+        } finally {
+            registration.unregister();
+            UiKeyboardCaptureState.getInstance().clear();
         }
     }
 
