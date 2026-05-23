@@ -23,10 +23,12 @@ public final class VanillaMixinTransport implements ITransport {
     @Override
     public void bootstrap(FrameHandler frameHandler) {
         VanillaInboundDispatcher.setFrameHandler(frameHandler);
+        VanillaConnectionLifecycle.getInstance().register();
     }
 
     @Override
     public void shutdown() {
+        VanillaConnectionLifecycle.getInstance().unregister();
         VanillaPacketBuilders.clearClientNetworkManager();
         VanillaInboundDispatcher.setFrameHandler(null);
     }
@@ -77,7 +79,6 @@ public final class VanillaMixinTransport implements ITransport {
     public static void onClientHandshakeReady(NetworkManager networkManager) {
         MyMod.LOG.debug("Qz vanilla transport client handshake ready: {}", networkManager);
         VanillaPacketBuilders.rememberClientNetworkManager(networkManager);
-        NetService.getInstance().sendCapabilityHandshakeToServer();
     }
 
     /**
@@ -87,18 +88,20 @@ public final class VanillaMixinTransport implements ITransport {
      */
     public static void onClientDisconnected(IChatComponent reason) {
         MyMod.LOG.debug("Qz vanilla transport client disconnected: {}", reason);
+        VanillaConnectionLifecycle.getInstance().onClientDisconnected();
         VanillaPacketBuilders.clearClientNetworkManager();
         NetService.getInstance().onClientDisconnected();
     }
 
     /**
-     * 服务端玩家连接就绪。
+     * 服务端玩家 Play handler 构造完成。
      *
+     * @param networkManager 网络管理器
      * @param player 玩家
      */
-    public static void onServerPlayerJoined(EntityPlayerMP player) {
-        MyMod.LOG.debug("Qz vanilla transport server player joined: {}", player);
-        NetService.getInstance().sendCapabilityHandshakeToPlayer(player);
+    public static void onServerPlayHandlerReady(NetworkManager networkManager, EntityPlayerMP player) {
+        MyMod.LOG.debug("Qz vanilla transport server play handler ready: networkManager={} player={}",
+                networkManager, player);
     }
 
     /**
@@ -108,6 +111,7 @@ public final class VanillaMixinTransport implements ITransport {
      */
     public static void onServerPlayerLeft(EntityPlayerMP player) {
         MyMod.LOG.debug("Qz vanilla transport server player left: {}", player);
+        VanillaConnectionLifecycle.getInstance().onServerPlayerLeft(player);
     }
 
     /**

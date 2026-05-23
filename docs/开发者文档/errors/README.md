@@ -157,11 +157,12 @@ Toolchain、依赖版本、构建配置与运行时类路径。
 
 ---
 
-## 网络生命周期类（1 条）
+## 网络生命周期类（2 条）
 
 - [`ERROR-20260523-net-client-handshake-net-handler-race.md`](ERROR-20260523-net-client-handshake-net-handler-race.md) — 客户端能力握手在 NetHandler 构造期反查全局 NetHandler 导致连接崩溃
+- [`ERROR-20260523-net-fml-pipeline-first-login-race.md`](ERROR-20260523-net-fml-pipeline-first-login-race.md) — 首次连接时 Qz 能力握手早于 FML connection-established 语义导致登录握手竞态
 
-**共性教训**：早期 mixin 已拿到的生命周期对象应优先直接传递或缓存，不能在构造期依赖全局单例反查。
+**共性教训**：早期 mixin 已拿到的生命周期对象应优先直接传递或缓存，不能在构造期依赖全局单例反查；跨模组网络协议握手必须等 FML connection-established 语义成立后再发送。
 
 ---
 

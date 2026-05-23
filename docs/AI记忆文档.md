@@ -24,7 +24,7 @@
 ## 对外入口边界
 
 - 业务文档入口：`UiDocumentScreens.createDocumentScreen(...)`；服务端生成的安全子集 HTML 远程页面入口为 `RemoteDocumentPages.open(...)`，不执行 JavaScript、不嵌入真实浏览器。
-- 双端网络入口：`NetService.getInstance()`，在 `preInit` 注册 Channel / Fetch / Stream / Store，`postInit` 后注册表冻结；网络消息以 `route/key + contentType + headers + body` 为核心，不以 Java 类型作为协议身份；普通逻辑消息默认 16 MiB，超过阈值走 Stream/chunk；Fetch endpoint 可配滑动窗口限流，Store 可注册业务 delta applier；默认 vanilla 传输，可用 `netTransport` 或 `-Dqzuilib.net.transport=forge` 切 Forge 回退。
+- 双端网络入口：`NetService.getInstance()`，在 `preInit` 注册 Channel / Fetch / Stream / Store，`postInit` 后注册表冻结；网络消息以 `route/key + contentType + headers + body` 为核心，不以 Java 类型作为协议身份；普通逻辑消息默认 16 MiB，超过阈值走 Stream/chunk；Fetch endpoint 可配滑动窗口限流，Store 可注册业务 delta applier；默认 vanilla 传输，其能力握手在 FML connection-established 事件之后触发，不在 Play NetHandler 构造期发送；可用 `netTransport` 或 `-Dqzuilib.net.transport=forge` 切 Forge 回退。
 - 诊断/示例页只保留内部开发工具入口（`/qzuilib test`），不对外暴露页面工厂。
 - 不新增扩大直接 `Widget` 作者入口的 API。
 
