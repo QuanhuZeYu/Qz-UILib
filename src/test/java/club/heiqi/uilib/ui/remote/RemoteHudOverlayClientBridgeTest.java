@@ -48,6 +48,12 @@ public class RemoteHudOverlayClientBridgeTest {
         Assert.assertTrue(text.contains("关闭"));
         Assert.assertTrue(text.contains("提交"));
         Assert.assertTrue(text.contains("B"));
+        Assert.assertNull("DIALOG 根层不应额外绘制全屏暗色父容器",
+                document.getRootElement().style().getBackgroundColor());
+        Assert.assertNull("DIALOG shell 应只承担定位和拖拽，不额外绘制背景",
+                parts.movingElement.style().getBackgroundColor());
+        Assert.assertNull("DIALOG shell 应只承担定位和拖拽，不额外绘制边框",
+                parts.movingElement.style().getBorderWidth());
         ElementNode dragHandle = findElementByAttribute(document.getRootElement(), "data-qz-hud-drag-handle",
                 "true");
         Assert.assertNotNull(dragHandle);
@@ -94,6 +100,8 @@ public class RemoteHudOverlayClientBridgeTest {
         Assert.assertNotNull(movingBox);
         Assert.assertTrue("弹幕 shell 应按内容收缩，而不是撑成整屏", movingBox.getWidth() < 220);
         Assert.assertTrue(containsTextCommand(commands, "HUD 弹幕文字"));
+        Assert.assertFalse("弹幕移动应使用布局坐标，避免 deferred text batch 脱离 transform",
+                containsCommand(commands, DocumentPaintCommandType.TRANSFORM_START));
     }
 
     private static String collectText(DocumentNode node) {
@@ -142,6 +150,15 @@ public class RemoteHudOverlayClientBridgeTest {
             if (command.getType() == DocumentPaintCommandType.TEXT
                     && command.getText() != null
                     && command.getText().contains(expectedText)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private static boolean containsCommand(List<DocumentPaintCommand> commands, DocumentPaintCommandType type) {
+        for (DocumentPaintCommand command : commands) {
+            if (command.getType() == type) {
                 return true;
             }
         }

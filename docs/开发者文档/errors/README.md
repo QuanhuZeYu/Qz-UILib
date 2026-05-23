@@ -75,7 +75,7 @@ Flex、block、positioned 定位与尺寸计算。
 
 ---
 
-## HUD 系统类（合并，4 条）
+## HUD 系统类（合并，5 条）
 
 HUD 输入分发、显示控制与生命周期。
 
@@ -83,6 +83,7 @@ HUD 输入分发、显示控制与生命周期。
 - [`ERROR-20260511-hud-overlay-click-through-and-missing-drag.md`](ERROR-20260511-hud-overlay-click-through-and-missing-drag.md) — HUD 交互浮窗点击穿透下层容器且缺少拖拽能力
 - [`ERROR-20260513-hud-deferred-post-main-double-drain.md`](ERROR-20260513-hud-deferred-post-main-double-drain.md) — HUD deferred post-main 双重 drain 导致回放丢失
 - [`ERROR-20260517-hud-main-menu-title-screen-leak.md`](ERROR-20260517-hud-main-menu-title-screen-leak.md) — HUD 在主页类屏幕上误显（主页识别名单不完整）
+- [`ERROR-20260523-remote-hud-danmaku-drag.md`](ERROR-20260523-remote-hud-danmaku-drag.md) — 远程 HUD 弹幕文字不可见、DIALOG 额外父容器与首次拖拽跳位
 
 **共性教训**：HUD 注册表遍历必须基于快照或等效防御；多层 HUD 输入只路由最上层命中层；主页黑名单需覆盖第三方主页类。
 

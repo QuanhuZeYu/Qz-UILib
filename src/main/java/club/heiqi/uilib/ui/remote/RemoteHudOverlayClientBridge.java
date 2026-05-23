@@ -34,7 +34,6 @@ import club.heiqi.uilib.ui.style.props.UiPointerEvents;
 import club.heiqi.uilib.ui.style.props.UiPosition;
 import club.heiqi.uilib.ui.style.props.UiWhiteSpace;
 import club.heiqi.uilib.ui.style.values.UiStyleLength;
-import club.heiqi.uilib.ui.style.values.UiTransform;
 import net.minecraft.client.Minecraft;
 
 /**
@@ -93,7 +92,7 @@ public final class RemoteHudOverlayClientBridge {
                 continue;
             }
             if (overlay.mode == RemoteHudOverlayMode.DANMAKU) {
-                updateDanmakuTransform(overlay, nowMillis);
+                updateDanmakuPosition(overlay, nowMillis);
             }
         }
     }
@@ -235,7 +234,7 @@ public final class RemoteHudOverlayClientBridge {
                 System.currentTimeMillis(), resolveMode(offer.mode));
         activeOverlays.put(offer.overlayId, activeOverlay);
         if (activeOverlay.mode == RemoteHudOverlayMode.DANMAKU) {
-            updateDanmakuTransform(activeOverlay, activeOverlay.openedAtMillis);
+            updateDanmakuPosition(activeOverlay, activeOverlay.openedAtMillis);
         }
     }
 
@@ -280,7 +279,7 @@ public final class RemoteHudOverlayClientBridge {
         }
     }
 
-    private void updateDanmakuTransform(ActiveOverlay overlay, long nowMillis) {
+    private void updateDanmakuPosition(ActiveOverlay overlay, long nowMillis) {
         if (overlay == null || overlay.parts == null || overlay.parts.movingElement == null) {
             return;
         }
@@ -295,7 +294,7 @@ public final class RemoteHudOverlayClientBridge {
             contentWidth = bounds.getWidth();
         }
         float travel = screenWidth + contentWidth + 48.0F;
-        overlay.parts.movingElement.style().setTransform(UiTransform.translate(-progress * travel, 0.0F));
+        overlay.parts.movingElement.style().setLeft(UiStyleLength.px(screenWidth + 24.0F - progress * travel));
     }
 
     static OverlayDocumentParts buildOverlayDocument(UiDocument document, final RemoteHudOverlays.OpenOffer offer,
@@ -369,8 +368,7 @@ public final class RemoteHudOverlayClientBridge {
             root.style()
                     .setAlignItems(UiAlignItems.CENTER)
                     .setJustifyContent(UiJustifyContent.CENTER)
-                    .setPadding(UiStyleLength.px(16))
-                    .setBackgroundColor(0x66000000);
+                    .setPadding(UiStyleLength.px(16));
         }
         if (mode != RemoteHudOverlayMode.DIALOG) {
             root.setAttribute("data-hit-test-hidden", "true");
@@ -389,13 +387,7 @@ public final class RemoteHudOverlayClientBridge {
                     .setWidth(UiStyleLength.px(480))
                     .setMaxWidth(UiStyleLength.calc(1.0F, -32.0F))
                     .setMaxHeight(UiStyleLength.calc(1.0F, -48.0F))
-                    .setPadding(UiStyleLength.px(12))
                     .setRowGap(UiStyleLength.px(8))
-                    .setBackgroundColor(0xEE111827)
-                    .setBorderWidth(UiStyleLength.px(1))
-                    .setBorderStyle(UiBorderStyle.SOLID)
-                    .setBorderColor(0xFF334155)
-                    .setBorderRadius(UiStyleLength.px(8))
                     .setOverflowX(UiOverflow.VISIBLE)
                     .setOverflowY(UiOverflow.VISIBLE);
             return;
@@ -443,20 +435,19 @@ public final class RemoteHudOverlayClientBridge {
         }
         shell.style()
                 .setPosition(UiPosition.FIXED)
-                .setLeft(UiStyleLength.percent(1.0F))
+                .setLeft(UiStyleLength.px(DANMAKU_FALLBACK_WIDTH + 24.0F))
                 .setTop(UiStyleLength.px(18 + lane * 32))
                 .setDisplay(UiDisplay.INLINE_BLOCK)
                 .setWidth(UiStyleLength.auto())
-                .setPadding(UiStyleLength.px(6))
-                .setBackgroundColor(0xAA0F172A)
-                .setBorderWidth(UiStyleLength.px(1))
-                .setBorderStyle(UiBorderStyle.SOLID)
-                .setBorderColor(0xAAFFFFFF)
-                .setBorderRadius(UiStyleLength.px(999))
+                .setPadding(UiStyleLength.px(0))
+                .setBackgroundColor(0)
+                .setBorderWidth(UiStyleLength.px(0))
+                .setBorderStyle(UiBorderStyle.NONE)
+                .setBorderColor(0)
+                .setBorderRadius(UiStyleLength.px(0))
                 .setWhiteSpace(UiWhiteSpace.NOWRAP)
                 .setOverflowX(UiOverflow.VISIBLE)
-                .setOverflowY(UiOverflow.VISIBLE)
-                .setTransform(UiTransform.translate(0.0F, 0.0F));
+                .setOverflowY(UiOverflow.VISIBLE);
     }
 
     private static void configureDialogTitleBar(ElementNode titleBar) {
@@ -587,6 +578,8 @@ public final class RemoteHudOverlayClientBridge {
             Minecraft minecraft = Minecraft.getMinecraft();
             return minecraft == null ? DANMAKU_FALLBACK_WIDTH : Math.max(1, minecraft.displayWidth);
         } catch (RuntimeException exception) {
+            return DANMAKU_FALLBACK_WIDTH;
+        } catch (LinkageError error) {
             return DANMAKU_FALLBACK_WIDTH;
         }
     }
