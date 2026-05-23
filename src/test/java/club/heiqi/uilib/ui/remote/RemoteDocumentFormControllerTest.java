@@ -3,6 +3,7 @@ package club.heiqi.uilib.ui.remote;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.atomic.AtomicReference;
 
 import org.junit.Assert;
 import org.junit.Test;
@@ -64,5 +65,29 @@ public class RemoteDocumentFormControllerTest {
         Map<String, List<String>> values = form.collectValues(null);
 
         Assert.assertEquals(Arrays.asList("a", "c"), values.get("tag"));
+    }
+
+    @Test
+    public void shouldSubmitThroughInjectedSink() {
+        final AtomicReference<Map<String, List<String>>> capturedValues =
+                new AtomicReference<Map<String, List<String>>>();
+        RemoteDocumentFormController.FormState form = new RemoteDocumentFormController.FormState("session",
+                "page", "/save", "profile", new RemoteFormSubmitSink() {
+                    @Override
+                    public void submit(String sessionId, String pageId, String action, String formId,
+                            Map<String, List<String>> values) {
+                        Assert.assertEquals("session", sessionId);
+                        Assert.assertEquals("page", pageId);
+                        Assert.assertEquals("/save", action);
+                        Assert.assertEquals("profile", formId);
+                        capturedValues.set(values);
+                    }
+                });
+        form.addHidden("token", "abc", false);
+
+        form.submit(null);
+
+        Assert.assertNotNull(capturedValues.get());
+        Assert.assertEquals("abc", capturedValues.get().get("token").get(0));
     }
 }

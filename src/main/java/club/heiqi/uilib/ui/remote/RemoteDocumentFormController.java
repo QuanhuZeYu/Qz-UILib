@@ -36,13 +36,20 @@ final class RemoteDocumentFormController {
         private final String pageId;
         private final String action;
         private final String formId;
+        private final RemoteFormSubmitSink submitSink;
         private final List<FieldBinding> fields = new ArrayList<FieldBinding>();
 
         FormState(String sessionId, String pageId, String action, String formId) {
+            this(sessionId, pageId, action, formId, defaultSubmitSink());
+        }
+
+        FormState(String sessionId, String pageId, String action, String formId,
+                RemoteFormSubmitSink submitSink) {
             this.sessionId = safe(sessionId);
             this.pageId = safe(pageId);
             this.action = safe(action);
             this.formId = safe(formId);
+            this.submitSink = submitSink == null ? defaultSubmitSink() : submitSink;
         }
 
         String getAction() {
@@ -103,19 +110,29 @@ final class RemoteDocumentFormController {
         }
 
         void submit(Submitter submitter) {
-            RemoteDocumentPages.SubmitPayload payload = new RemoteDocumentPages.SubmitPayload();
-            payload.sessionId = sessionId;
-            payload.pageId = pageId;
-            payload.action = action;
-            payload.formId = formId;
-            payload.values = collectValues(submitter);
-            RemoteDocumentPages.submitFromClient(payload);
+            submitSink.submit(sessionId, pageId, action, formId, collectValues(submitter));
         }
 
         private void addField(FieldBinding field) {
             if (field != null && field.hasName()) {
                 fields.add(field);
             }
+        }
+
+        private static RemoteFormSubmitSink defaultSubmitSink() {
+            return new RemoteFormSubmitSink() {
+                @Override
+                public void submit(String sessionId, String pageId, String action, String formId,
+                        Map<String, List<String>> values) {
+                    RemoteDocumentPages.SubmitPayload payload = new RemoteDocumentPages.SubmitPayload();
+                    payload.sessionId = sessionId;
+                    payload.pageId = pageId;
+                    payload.action = action;
+                    payload.formId = formId;
+                    payload.values = values;
+                    RemoteDocumentPages.submitFromClient(payload);
+                }
+            };
         }
     }
 

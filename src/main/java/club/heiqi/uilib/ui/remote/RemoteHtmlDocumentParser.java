@@ -52,6 +52,7 @@ final class RemoteHtmlDocumentParser {
     private final String source;
     private final Options options;
     private final UiDocument document;
+    private final ElementNode parseRoot;
     private final Deque<StackEntry> stack = new ArrayDeque<StackEntry>();
     private final List<String> warnings = new ArrayList<String>();
     private final Map<String, List<DocumentCheckboxControl>> radioGroups =
@@ -59,12 +60,13 @@ final class RemoteHtmlDocumentParser {
     private String title = "";
     private int index;
 
-    private RemoteHtmlDocumentParser(String html, Options options, UiDocument document) {
+    private RemoteHtmlDocumentParser(String html, Options options, UiDocument document, ElementNode parseRoot) {
         this.source = html == null ? "" : html;
         this.options = options == null ? Options.defaults() : options;
         this.document = document == null ? UiDocument.create().useRawTextByDefault() : document.useRawTextByDefault();
-        installDefaultStyles(this.document);
-        this.stack.push(new StackEntry("document", this.document.getRootElement(), null, false));
+        this.parseRoot = parseRoot == null ? this.document.getRootElement() : parseRoot;
+        installDefaultStyles(this.document, this.options.applyDocumentDefaults);
+        this.stack.push(new StackEntry("document", this.parseRoot, null, false));
     }
 
     /**
@@ -75,7 +77,7 @@ final class RemoteHtmlDocumentParser {
      * @return 解析结果
      */
     static Result parse(String html, Options options) {
-        RemoteHtmlDocumentParser parser = new RemoteHtmlDocumentParser(html, options, UiDocument.create());
+        RemoteHtmlDocumentParser parser = new RemoteHtmlDocumentParser(html, options, UiDocument.create(), null);
         parser.parse();
         return new Result(parser.document, parser.title, parser.warnings);
     }
@@ -89,7 +91,22 @@ final class RemoteHtmlDocumentParser {
      * @return 解析结果
      */
     static Result parseInto(UiDocument document, String html, Options options) {
-        RemoteHtmlDocumentParser parser = new RemoteHtmlDocumentParser(html, options, document);
+        RemoteHtmlDocumentParser parser = new RemoteHtmlDocumentParser(html, options, document, null);
+        parser.parse();
+        return new Result(parser.document, parser.title, parser.warnings);
+    }
+
+    /**
+     * 将远程页面解析到调用方提供的文档容器中。
+     *
+     * @param document 目标文档
+     * @param container 内容容器
+     * @param html HTML 文本
+     * @param options 解析选项
+     * @return 解析结果
+     */
+    static Result parseInto(UiDocument document, ElementNode container, String html, Options options) {
+        RemoteHtmlDocumentParser parser = new RemoteHtmlDocumentParser(html, options, document, container);
         parser.parse();
         return new Result(parser.document, parser.title, parser.warnings);
     }
@@ -368,7 +385,8 @@ final class RemoteHtmlDocumentParser {
         }
         String formId = normalizeAttribute(element.getId(), tag.attributes.get("name"));
         String action = normalizeAttribute(tag.attributes.get("data-action"), tag.attributes.get("action"));
-        return new RemoteDocumentFormController.FormState(options.sessionId, options.pageId, action, formId);
+        return new RemoteDocumentFormController.FormState(options.sessionId, options.pageId, action, formId,
+                options.submitSink);
     }
 
     private void applyAttributes(ElementNode element, Map<String, String> attributes) {
@@ -509,7 +527,7 @@ final class RemoteHtmlDocumentParser {
                 return entry.element;
             }
         }
-        return document.getRootElement();
+        return parseRoot;
     }
 
     private RemoteDocumentFormController.FormState currentForm() {
@@ -712,7 +730,7 @@ final class RemoteHtmlDocumentParser {
     }
 
     private TagToken readDetachedTag(String html, int tagStart) {
-        RemoteHtmlDocumentParser parser = new RemoteHtmlDocumentParser(html, options, UiDocument.create());
+        RemoteHtmlDocumentParser parser = new RemoteHtmlDocumentParser(html, options, UiDocument.create(), null);
         parser.index = tagStart;
         return parser.readTag(tagStart);
     }
@@ -814,14 +832,16 @@ final class RemoteHtmlDocumentParser {
         MyMod.LOG.debug("远程页面解析提示：{}", warning);
     }
 
-    private static void installDefaultStyles(UiDocument document) {
-        document.getRootElement().style()
-                .setWidth(UiStyleLength.percent(1.0F))
-                .setHeight(UiStyleLength.percent(1.0F))
-                .setBoxSizing(club.heiqi.uilib.ui.style.props.UiBoxSizing.BORDER_BOX)
-                .setPadding(UiStyleLength.px(12))
-                .setOverflowY(UiOverflow.AUTO)
-                .setTextColor(DEFAULT_TEXT_COLOR);
+    private static void installDefaultStyles(UiDocument document, boolean applyRootDefaults) {
+        if (applyRootDefaults) {
+            document.getRootElement().style()
+                    .setWidth(UiStyleLength.percent(1.0F))
+                    .setHeight(UiStyleLength.percent(1.0F))
+                    .setBoxSizing(club.heiqi.uilib.ui.style.props.UiBoxSizing.BORDER_BOX)
+                    .setPadding(UiStyleLength.px(12))
+                    .setOverflowY(UiOverflow.AUTO)
+                    .setTextColor(DEFAULT_TEXT_COLOR);
+        }
         UiStyleSheet sheet = UiStyleSheet.create();
         sheet.addRule("a", new UiStyleDeclaration()
                 .setTextColor(DEFAULT_LINK_COLOR)
@@ -972,20 +992,58 @@ final class RemoteHtmlDocumentParser {
         private final String sessionId;
         private final String pageId;
         private final RemoteDocumentResourcePolicy resourcePolicy;
+        private final RemoteFormSubmitSink submitSink;
+        private final boolean applyDocumentDefaults;
 
         private Options(String sessionId, String pageId, RemoteDocumentResourcePolicy resourcePolicy) {
+            this(sessionId, pageId, resourcePolicy, null, true);
+        }
+
+        private Options(String sessionId, String pageId, RemoteDocumentResourcePolicy resourcePolicy,
+                RemoteFormSubmitSink submitSink, boolean applyDocumentDefaults) {
             this.sessionId = sessionId == null ? "" : sessionId;
             this.pageId = pageId == null ? "" : pageId;
             this.resourcePolicy = resourcePolicy == null
                     ? RemoteDocumentResourcePolicy.FULL_EXTERNAL_LINKS : resourcePolicy;
+            this.submitSink = submitSink == null ? defaultSubmitSink() : submitSink;
+            this.applyDocumentDefaults = applyDocumentDefaults;
         }
 
         static Options of(String sessionId, String pageId, RemoteDocumentResourcePolicy resourcePolicy) {
             return new Options(sessionId, pageId, resourcePolicy);
         }
 
+        static Options of(String sessionId, String pageId, RemoteDocumentResourcePolicy resourcePolicy,
+                RemoteFormSubmitSink submitSink, boolean applyDocumentDefaults) {
+            return new Options(sessionId, pageId, resourcePolicy, submitSink, applyDocumentDefaults);
+        }
+
         static Options defaults() {
             return new Options("", "", RemoteDocumentResourcePolicy.FULL_EXTERNAL_LINKS);
+        }
+
+        Options withSubmitSink(RemoteFormSubmitSink nextSubmitSink) {
+            return new Options(sessionId, pageId, resourcePolicy, nextSubmitSink, applyDocumentDefaults);
+        }
+
+        Options withDocumentDefaults(boolean nextApplyDocumentDefaults) {
+            return new Options(sessionId, pageId, resourcePolicy, submitSink, nextApplyDocumentDefaults);
+        }
+
+        private static RemoteFormSubmitSink defaultSubmitSink() {
+            return new RemoteFormSubmitSink() {
+                @Override
+                public void submit(String sessionId, String pageId, String action, String formId,
+                        Map<String, List<String>> values) {
+                    RemoteDocumentPages.SubmitPayload payload = new RemoteDocumentPages.SubmitPayload();
+                    payload.sessionId = sessionId;
+                    payload.pageId = pageId;
+                    payload.action = action;
+                    payload.formId = formId;
+                    payload.values = values;
+                    RemoteDocumentPages.submitFromClient(payload);
+                }
+            };
         }
     }
 

@@ -40,6 +40,10 @@ import club.heiqi.uilib.ui.remote.RemoteDocumentPages;
 import club.heiqi.uilib.ui.remote.RemoteDocumentResourcePolicy;
 import club.heiqi.uilib.ui.remote.RemoteDocumentSubmitEvent;
 import club.heiqi.uilib.ui.remote.RemoteDocumentSubmitHandler;
+import club.heiqi.uilib.ui.remote.RemoteHudOverlay;
+import club.heiqi.uilib.ui.remote.RemoteHudOverlays;
+import club.heiqi.uilib.ui.remote.RemoteHudSubmitEvent;
+import club.heiqi.uilib.ui.remote.RemoteHudSubmitHandler;
 
 /**
  * 网络层运行时自检端点。
@@ -63,6 +67,8 @@ public final class NetRuntimeSelfChecks {
             "runtimePlayerStoreTrigger");
     private static final NetEndpointId REMOTE_PAGE_TRIGGER_ID = NetEndpointId.of(NAMESPACE,
             "runtimeRemotePageTrigger");
+    private static final NetEndpointId REMOTE_HUD_TRIGGER_ID = NetEndpointId.of(NAMESPACE,
+            "runtimeRemoteHudTrigger");
     private static final NetStoreId STORE_ID = NetStoreId.of(NAMESPACE, "runtimeStoreCheck");
     private static final NetStoreId STORE_DELTA_ID = NetStoreId.of(NAMESPACE, "runtimeStoreDeltaCheck");
     private static final NetStoreId PLAYER_STORE_ID = NetStoreId.of(NAMESPACE, "runtimePlayerStoreCheck");
@@ -104,6 +110,7 @@ public final class NetRuntimeSelfChecks {
     private static NetFetchEndpoint playerStoreTriggerEndpoint;
     private static NetStore playerStore;
     private static NetFetchEndpoint remotePageTriggerEndpoint;
+    private static NetFetchEndpoint remoteHudTriggerEndpoint;
 
     private NetRuntimeSelfChecks() {}
 
@@ -289,6 +296,37 @@ public final class NetRuntimeSelfChecks {
                             context.reply(NetResponse.json(jsonFor(checkId, "remotePageOpen"))
                                     .withHeader(CHECK_ID_HEADER, checkId)
                                     .withHeader(CHECK_KIND_HEADER, "remotePage")
+                                    .withHeader("x-qz-session-id", sessionId));
+                        } catch (IllegalArgumentException exception) {
+                            context.reply(NetResponse.error(400, exception.getMessage()));
+                        } catch (IllegalStateException exception) {
+                            context.fail(exception);
+                        }
+                    }
+                })
+                .register();
+        remoteHudTriggerEndpoint = service.fetch(REMOTE_HUD_TRIGGER_ID)
+                .onRequest(new NetFetchEndpoint.NetFetchHandler() {
+                    @Override
+                    public void onRequest(NetRequest request, NetFetchEndpoint.NetFetchRequestContext context) {
+                        final String checkId = request.getHeader(CHECK_ID_HEADER);
+                        Object player = context.getReceiveContext().getSenderPlayer();
+                        if (player == null) {
+                            context.reply(NetResponse.error(400, "缺少发送玩家"));
+                            return;
+                        }
+                        try {
+                            String sessionId = RemoteHudOverlays.open(player, buildRemoteHudSmokeOverlay(checkId),
+                                    new RemoteHudSubmitHandler() {
+                                        @Override
+                                        public void onSubmit(RemoteHudSubmitEvent event) {
+                                            handleRemoteHudSmokeSubmit(event, checkId);
+                                        }
+                                    });
+                            RemoteHudOverlays.open(player, buildRemoteHudDanmakuOverlay(checkId), null);
+                            context.reply(NetResponse.json(jsonFor(checkId, "remoteHudOpen"))
+                                    .withHeader(CHECK_ID_HEADER, checkId)
+                                    .withHeader(CHECK_KIND_HEADER, "remoteHud")
                                     .withHeader("x-qz-session-id", sessionId));
                         } catch (IllegalArgumentException exception) {
                             context.reply(NetResponse.error(400, exception.getMessage()));
@@ -716,6 +754,35 @@ public final class NetRuntimeSelfChecks {
                 });
     }
 
+    /**
+     * 运行远程 HUD 下发 smoke 自检。
+     *
+     * <p>该检查会让服务端通过正式 `RemoteHudOverlays.open(...)` 打开 HUD 浮层。
+     * HUD 内提交按钮负责完成人工确认。</p>
+     *
+     * @return 自检 future
+     */
+    public static CompletableFuture<String> runRemoteHudOverlaySmoke() {
+        ensureRegistered();
+        final String checkId = nextCheckId("remoteHud");
+        CompletableFuture<NetResponse> response = remoteHudTriggerEndpoint.call(NetRequest.json(jsonFor(checkId,
+                "remoteHudSmoke"))
+                .withHeader(CHECK_ID_HEADER, checkId)
+                .withHeader(CHECK_KIND_HEADER, "remoteHud"));
+        return withTimeout(response, "Remote HUD overlay", checkId)
+                .thenApply(new java.util.function.Function<NetResponse, String>() {
+                    @Override
+                    public String apply(NetResponse value) {
+                        require(value.isOk(), "Remote HUD status 应为 2xx");
+                        requireEquals(checkId, value.getHeader(CHECK_ID_HEADER), "Remote HUD check id");
+                        requireEquals("remoteHud", value.getHeader(CHECK_KIND_HEADER), "Remote HUD kind");
+                        requireContains(value.getBody().asUtf8String(), "\"kind\":\"remoteHudOpen\"",
+                                "Remote HUD body");
+                        return "远程 HUD 打开请求已送达，最终以 HUD 内提交后的结果浮窗为准，id=" + checkId;
+                    }
+                });
+    }
+
     private static void handleChannelMessage(NetMessage message, NetReceiveContext context) {
         String checkId = message.getHeader(CHECK_ID_HEADER);
         if (context.getSide() == NetSide.SERVER) {
@@ -880,6 +947,152 @@ public final class NetRuntimeSelfChecks {
                 .metadata("checkId", checkId)
                 .html("<html><body><div style=\"padding:16px;background-color:#0f172a;color:#e5e7eb;\">"
                         + body + "<p>checkId: " + escapeHtml(checkId) + "</p></div></body></html>")
+                .build();
+    }
+
+    /**
+     * 创建远程 HUD 运行时 smoke 浮层。
+     *
+     * @param checkId 自检标识
+     * @return 远程 HUD 浮层
+     */
+    private static RemoteHudOverlay buildRemoteHudSmokeOverlay(String checkId) {
+        return RemoteHudOverlay.dialog("qz-runtime-remote-hud-dialog", buildRemoteHudSmokePage(checkId))
+                .metadata("checkId", checkId)
+                .build();
+    }
+
+    /**
+     * 创建远程 HUD 弹幕浮层。
+     *
+     * @param checkId 自检标识
+     * @return 远程 HUD 浮层
+     */
+    private static RemoteHudOverlay buildRemoteHudDanmakuOverlay(String checkId) {
+        return RemoteHudOverlay.danmaku("qz-runtime-remote-hud-danmaku", buildRemoteHudDanmakuPage(checkId))
+                .metadata("checkId", checkId)
+                .build();
+    }
+
+    /**
+     * 创建远程 HUD smoke 页面。
+     *
+     * @param checkId 自检标识
+     * @return 远程页面
+     */
+    private static RemoteDocumentPage buildRemoteHudSmokePage(String checkId) {
+        return RemoteDocumentPage.builder("qz-runtime-remote-hud-page")
+                .title("远程 HUD 运行时自检")
+                .resourcePolicy(RemoteDocumentResourcePolicy.LOCAL_RESOURCES_ONLY)
+                .metadata("checkId", checkId)
+                .html(buildRemoteHudSmokeHtml(checkId))
+                .build();
+    }
+
+    /**
+     * 创建远程 HUD 弹幕页面。
+     *
+     * @param checkId 自检标识
+     * @return 远程页面
+     */
+    private static RemoteDocumentPage buildRemoteHudDanmakuPage(String checkId) {
+        return RemoteDocumentPage.builder("qz-runtime-remote-hud-danmaku-page")
+                .title("远程 HUD 弹幕自检")
+                .resourcePolicy(RemoteDocumentResourcePolicy.LOCAL_RESOURCES_ONLY)
+                .metadata("checkId", checkId)
+                .html("<div style=\"padding:6px 10px;background-color:#0f172a;color:#e0f2fe;\">"
+                        + "HUD 弹幕已发送，checkId: " + escapeHtml(checkId) + "</div>")
+                .build();
+    }
+
+    /**
+     * 生成远程 HUD smoke HTML。
+     *
+     * @param checkId 自检标识
+     * @return HTML 文本
+     */
+    private static String buildRemoteHudSmokeHtml(String checkId) {
+        String escapedCheckId = escapeHtml(checkId);
+        return "<html><head><title>远程 HUD 运行时自检</title><style>"
+                + ".hud{box-sizing:border-box;width:100%;padding:14px;background-color:#111827;color:#e5e7eb;}"
+                + ".hint{color:#bfdbfe;margin:6px 0;}"
+                + ".field{margin:8px 0 4px 0;color:#cbd5e1;}"
+                + "input,textarea,select{width:calc(100% - 8px);margin:4px 0;padding:6px;}"
+                + "button{margin-top:10px;padding:8px 12px;}"
+                + "</style></head><body><div class=\"hud\">"
+                + "<h1>远程 HUD 运行时自检</h1>"
+                + "<p class=\"hint\">这页由服务端通过 RemoteHudOverlays.open 下发，客户端会用 Stream 拉取 HTML。</p>"
+                + "<p class=\"hint\">保持默认值，点击提交即可验证 HUD 解析、表单收集和 C2S 回传。</p>"
+                + "<form id=\"remote-hud-smoke-form\" action=\"runtime-hud-submit\">"
+                + "<input type=\"hidden\" name=\"checkId\" value=\"" + escapedCheckId + "\">"
+                + "<p class=\"field\">只读文本字段</p>"
+                + "<input type=\"text\" name=\"textEcho\" value=\"text-ok\" readonly maxlength=\"32\">"
+                + "<input type=\"checkbox\" name=\"flag\" value=\"checked-ok\" checked data-label=\"复选框字段\">"
+                + "<input type=\"radio\" name=\"mode\" value=\"ignored\" data-label=\"未选模式\">"
+                + "<input type=\"radio\" name=\"mode\" value=\"selected-ok\" checked data-label=\"已选模式\">"
+                + "<p class=\"field\">只读多行文本</p>"
+                + "<textarea name=\"note\" readonly maxlength=\"64\">textarea-ok</textarea>"
+                + "<p class=\"field\">选择字段</p>"
+                + "<select name=\"phase\"><option value=\"wrong\">错误项</option>"
+                + "<option value=\"hud-ok\" selected>HUD 已渲染</option></select>"
+                + "<p><a href=\"#submit-area\">跳到提交按钮</a></p>"
+                + "<button id=\"submit-area\" type=\"submit\" name=\"submitter\" value=\"提交远程 HUD 自检\"></button>"
+                + "</form></div></body></html>";
+    }
+
+    /**
+     * 校验远程 HUD smoke 表单提交。
+     *
+     * @param event 提交事件
+     * @param checkId 自检标识
+     */
+    private static void handleRemoteHudSmokeSubmit(RemoteHudSubmitEvent event, String checkId) {
+        StringBuilder problems = new StringBuilder();
+        requireSubmitted(problems, "overlayId", "qz-runtime-remote-hud-dialog", event.getOverlayId());
+        requireSubmitted(problems, "pageId", "qz-runtime-remote-hud-page", event.getPageId());
+        requireSubmitted(problems, "action", "runtime-hud-submit", event.getAction());
+        requireSubmitted(problems, "formId", "remote-hud-smoke-form", event.getFormId());
+        requireSubmitted(problems, "checkId", checkId, event.getFirstValue("checkId"));
+        requireSubmitted(problems, "textEcho", "text-ok", event.getFirstValue("textEcho"));
+        requireSubmitted(problems, "note", "textarea-ok", event.getFirstValue("note"));
+        requireSubmitted(problems, "phase", "hud-ok", event.getFirstValue("phase"));
+        requireSubmitted(problems, "submitter", "提交远程 HUD 自检", event.getFirstValue("submitter"));
+        if (!hasValue(event.getValues(), "flag", "checked-ok")) {
+            appendSubmitProblem(problems, "flag 未提交 checked-ok");
+        }
+        if (!hasValue(event.getValues(), "mode", "selected-ok")) {
+            appendSubmitProblem(problems, "mode 未提交 selected-ok");
+        }
+        if (hasValue(event.getValues(), "mode", "ignored")) {
+            appendSubmitProblem(problems, "未选中的 radio 被提交");
+        }
+        event.reply(buildRemoteHudSmokeResultOverlay(checkId, problems.length() == 0, problems.toString()), null);
+        event.dismiss();
+    }
+
+    /**
+     * 创建远程 HUD smoke 结果浮层。
+     *
+     * @param checkId 自检标识
+     * @param success 是否通过
+     * @param detail 失败详情
+     * @return 结果浮层
+     */
+    private static RemoteHudOverlay buildRemoteHudSmokeResultOverlay(String checkId, boolean success, String detail) {
+        String title = success ? "远程 HUD 自检通过" : "远程 HUD 自检失败";
+        String body = success
+                ? "<h1>远程 HUD 运行时自检通过</h1>"
+                        + "<p>HTML Stream 拉取、解析、表单收集和 C2S 提交回调均已完成。</p>"
+                : "<h1>远程 HUD 运行时自检失败</h1><p>" + escapeHtmlLines(detail) + "</p>";
+        RemoteDocumentPage page = RemoteDocumentPage.builder("qz-runtime-remote-hud-result")
+                .title(title)
+                .resourcePolicy(RemoteDocumentResourcePolicy.LOCAL_RESOURCES_ONLY)
+                .metadata("checkId", checkId)
+                .html("<html><body><div style=\"padding:16px;background-color:#0f172a;color:#e5e7eb;\">"
+                        + body + "<p>checkId: " + escapeHtml(checkId) + "</p></div></body></html>")
+                .build();
+        return RemoteHudOverlay.toast("qz-runtime-remote-hud-result", page)
+                .durationMillis(6000L)
                 .build();
     }
 

@@ -1,16 +1,11 @@
 package club.heiqi.uilib.ui.remote;
 
-import java.awt.Desktop;
-import java.net.URI;
 import java.nio.charset.StandardCharsets;
 import java.util.concurrent.CompletionException;
 import java.util.function.BiConsumer;
 
-import club.heiqi.uilib.MyMod;
 import club.heiqi.uilib.net.api.NetResponse;
 import club.heiqi.uilib.net.api.NetStreamCall;
-import club.heiqi.uilib.ui.dom.DocumentLinkActivationEvent;
-import club.heiqi.uilib.ui.dom.DocumentLinkActivationHandler;
 import club.heiqi.uilib.ui.dom.ElementNode;
 import club.heiqi.uilib.ui.dom.TextNode;
 import club.heiqi.uilib.ui.dom.UiDocument;
@@ -21,9 +16,7 @@ import club.heiqi.uilib.ui.style.props.UiDisplay;
 import club.heiqi.uilib.ui.style.props.UiPosition;
 import club.heiqi.uilib.ui.style.values.UiStyleLength;
 import net.minecraft.client.Minecraft;
-import net.minecraft.client.gui.GuiConfirmOpenLink;
 import net.minecraft.client.gui.GuiScreen;
-import net.minecraft.client.gui.GuiYesNoCallback;
 
 /**
  * 远程页面客户端桥。
@@ -182,65 +175,12 @@ public final class RemoteDocumentClientBridge {
                 .setTextColor(0xFFE5E7EB)
                 .setZIndex(1000);
         document.getRootElement().append(notice);
-        document.setLinkActivationHandler(new DocumentLinkActivationHandler() {
+        RemoteDocumentLinkSupport.install(document, policy, new RemoteDocumentLinkSupport.NoticeSink() {
             @Override
-            public void onLinkActivated(DocumentLinkActivationEvent event) {
-                String href = event.getHref() == null ? "" : event.getHref().trim();
-                if (href.startsWith("#")) {
-                    return;
-                }
-                event.preventDefault();
-                if (!isHttpUrl(href)) {
-                    showNotice(notice, noticeText, "已阻止不安全链接：" + href);
-                    return;
-                }
-                if (!policy.allowsExternalLinks()) {
-                    showNotice(notice, noticeText, "当前页面策略不允许打开外部链接");
-                    return;
-                }
-                confirmExternalLink(href, notice, noticeText);
+            public void showNotice(String message) {
+                RemoteDocumentClientBridge.showNotice(notice, noticeText, message);
             }
         });
-    }
-
-    private static void confirmExternalLink(final String href, final ElementNode notice, final TextNode noticeText) {
-        final Minecraft minecraft = Minecraft.getMinecraft();
-        if (minecraft == null) {
-            return;
-        }
-        final GuiScreen previousScreen = minecraft.currentScreen;
-        GuiConfirmOpenLink confirm = new GuiConfirmOpenLink(new GuiYesNoCallback() {
-            @Override
-            public void confirmClicked(boolean result, int id) {
-                minecraft.displayGuiScreen(previousScreen);
-                if (!result) {
-                    showNotice(notice, noticeText, "已取消打开外部链接");
-                    return;
-                }
-                try {
-                    openSystemBrowser(href);
-                    showNotice(notice, noticeText, "已请求系统浏览器打开链接");
-                } catch (RuntimeException exception) {
-                    MyMod.LOG.warn("远程页面外部链接打开失败：{}", href, exception);
-                    showNotice(notice, noticeText, "外部链接打开失败：" + exception.getMessage());
-                }
-            }
-        }, href, 0, false);
-        confirm.func_146358_g();
-        minecraft.displayGuiScreen(confirm);
-    }
-
-    private static void openSystemBrowser(String href) {
-        try {
-            if (!Desktop.isDesktopSupported()) {
-                throw new IllegalStateException("当前环境不支持系统浏览器");
-            }
-            Desktop.getDesktop().browse(URI.create(href));
-        } catch (RuntimeException exception) {
-            throw exception;
-        } catch (Exception exception) {
-            throw new IllegalStateException(exception.getMessage(), exception);
-        }
     }
 
     private static void showNotice(ElementNode notice, TextNode noticeText, String message) {
@@ -271,8 +211,4 @@ public final class RemoteDocumentClientBridge {
         return message == null || message.trim().isEmpty() ? current.getClass().getName() : message;
     }
 
-    private static boolean isHttpUrl(String href) {
-        return href != null && (href.regionMatches(true, 0, "http://", 0, 7)
-                || href.regionMatches(true, 0, "https://", 0, 8));
-    }
 }

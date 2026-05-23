@@ -77,6 +77,25 @@ public class RemoteHtmlDocumentParserTest {
         Assert.assertEquals("https://example.test/a.png", full.getElementById("remote-img").getAttribute("src"));
     }
 
+    @Test
+    public void shouldParseIntoProvidedContainerWithoutReplacingRootWrapper() {
+        UiDocument document = UiDocument.create();
+        ElementNode shell = document.div();
+        ElementNode content = document.div();
+        shell.append(content);
+        document.getRootElement().append(shell);
+
+        RemoteHtmlDocumentParser.parseInto(document, content,
+                "<div id=\"parsed\"><select><option>A</option><option selected>B</option></select></div>",
+                RemoteHtmlDocumentParser.Options.defaults().withDocumentDefaults(false));
+
+        ElementNode parsed = document.getElementById("parsed");
+        Assert.assertNotNull(parsed);
+        Assert.assertSame(content, parsed.getParent());
+        Assert.assertEquals(1, document.getRootElement().getChildCount());
+        Assert.assertTrue(collectText(content).contains("B"));
+    }
+
     private static String collectText(DocumentNode node) {
         if (node instanceof TextNode) {
             return ((TextNode) node).getText();
