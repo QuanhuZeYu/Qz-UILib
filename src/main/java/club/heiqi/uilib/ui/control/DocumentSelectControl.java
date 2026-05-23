@@ -2,6 +2,7 @@ package club.heiqi.uilib.ui.control;
 
 import org.lwjglx.input.Keyboard;
 
+import club.heiqi.uilib.ui.dom.DocumentElementBounds;
 import club.heiqi.uilib.ui.dom.DocumentElementClickEvent;
 import club.heiqi.uilib.ui.dom.DocumentElementClickHandler;
 import club.heiqi.uilib.ui.dom.DocumentElementFocusEvent;
@@ -32,6 +33,8 @@ public final class DocumentSelectControl {
 
     private static final int DEFAULT_TRIGGER_HEIGHT = 32;
     private static final int DEFAULT_OPTION_HEIGHT = 28;
+    private static final int POPUP_TOP_LAYER_Z_INDEX = 10000;
+    private static final String PRESERVE_FOCUS_ON_MOUSE_DOWN_ATTRIBUTE = "data-qz-preserve-focus-on-mousedown";
 
     private final ElementNode element;
     private final ElementNode triggerElement;
@@ -155,11 +158,11 @@ public final class DocumentSelectControl {
         if (this.enabled == enabled) {
             return this;
         }
+        setOpen(false);
         this.enabled = enabled;
         if (!enabled) {
             focusVisible = false;
             hovered = false;
-            open = false;
             element.setAttribute("disabled", "true");
             element.setAttribute("aria-disabled", "true");
             element.setFocusable(false);
@@ -218,6 +221,7 @@ public final class DocumentSelectControl {
                 .setHeight(UiStyleLength.percent(1.0F))
                 .setPadding(UiStyleLength.px(8));
         popupElement.setAttribute("role", "listbox");
+        popupElement.setAttribute(PRESERVE_FOCUS_ON_MOUSE_DOWN_ATTRIBUTE, "true");
         popupElement.style()
                 .setDisplay(UiDisplay.NONE)
                 .setPosition(UiPosition.ABSOLUTE)
@@ -281,7 +285,8 @@ public final class DocumentSelectControl {
             public void onFocusChanged(DocumentElementFocusEvent event) {
                 focusVisible = enabled && event.isFocused() && event.isFocusVisible();
                 if (!event.isFocused()) {
-                    open = false;
+                    setOpen(false);
+                    return;
                 }
                 updateVisualState();
             }
@@ -360,6 +365,11 @@ public final class DocumentSelectControl {
         }
         this.open = open;
         highlightedIndex = selectedIndex;
+        if (this.open) {
+            syncPopupTopLayerPlacement();
+        } else {
+            restorePopupInlinePlacement();
+        }
         updateVisualState();
         if (this.open) {
             revealSelectedOption();
@@ -424,6 +434,9 @@ public final class DocumentSelectControl {
                 .setFlexDirection(UiFlexDirection.COLUMN)
                 .setBorderColor(triggerBorderColor)
                 .setBackgroundColor(enabled ? popupBackgroundColor : disabledBackgroundColor);
+        if (open) {
+            syncPopupTopLayerPlacement();
+        }
         element.setAttribute("aria-expanded", String.valueOf(open));
         element.setAttribute("value", options[selectedIndex]);
         for (int index = 0; index < optionElements.length; index++) {
@@ -440,6 +453,45 @@ public final class DocumentSelectControl {
                     .setCursor(enabled ? UiCursor.POINTER : UiCursor.NOT_ALLOWED)
                     .setTextColor(enabled ? (selected ? textColor : mutedTextColor) : disabledTextColor);
         }
+    }
+
+    /**
+     * 将展开面板提升到文档顶层。
+     *
+     * <p>浏览器原生 select 的下拉面板不受普通内容滚动容器裁剪；这里用 fixed 顶层节点表达同类语义，
+     * 避免 HUD 场景中点击选项时命中落到下方按钮或原生界面。</p>
+     */
+    private void syncPopupTopLayerPlacement() {
+        if (!open) {
+            return;
+        }
+        DocumentElementBounds bounds = element.getDocumentBounds();
+        if (!bounds.isAvailable() || bounds.getWidth() <= 0) {
+            restorePopupInlinePlacement();
+            return;
+        }
+        ElementNode root = element.getOwnerDocument().getRootElement();
+        if (popupElement.getParent() != root) {
+            root.append(popupElement);
+        }
+        popupElement.style()
+                .setPosition(UiPosition.FIXED)
+                .setLeft(UiStyleLength.px(bounds.getLeft()))
+                .setTop(UiStyleLength.px(bounds.getTop() + bounds.getHeight()))
+                .setWidth(UiStyleLength.px(bounds.getWidth()))
+                .setZIndex(POPUP_TOP_LAYER_Z_INDEX);
+    }
+
+    private void restorePopupInlinePlacement() {
+        if (popupElement.getParent() != element) {
+            element.append(popupElement);
+        }
+        popupElement.style()
+                .setPosition(UiPosition.ABSOLUTE)
+                .setLeft(UiStyleLength.px(0))
+                .setTop(UiStyleLength.percent(1.0F))
+                .setWidth(UiStyleLength.percent(1.0F))
+                .setZIndex(20);
     }
 
     private static String[] normalizeOptions(String[] options) {

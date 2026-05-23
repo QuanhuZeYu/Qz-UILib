@@ -16,7 +16,9 @@ import club.heiqi.uilib.ui.paint.DocumentPaintCommand;
 import club.heiqi.uilib.ui.paint.DocumentPaintCommandType;
 import club.heiqi.uilib.ui.paint.DocumentPaintEngine;
 import club.heiqi.uilib.ui.style.props.UiCursor;
+import club.heiqi.uilib.ui.style.props.UiDisplay;
 import club.heiqi.uilib.ui.style.props.UiPosition;
+import club.heiqi.uilib.ui.style.values.UiStyleLength;
 import club.heiqi.uilib.ui.text.TextMeasureService;
 
 /**
@@ -70,6 +72,10 @@ public class RemoteHudOverlayClientBridgeTest {
         Assert.assertNotNull(closeButton);
         Assert.assertSame(parts.movingElement, closeButton.getParent());
         Assert.assertEquals(UiPosition.ABSOLUTE, closeButton.style().getPosition());
+        Assert.assertEquals("默认关闭按钮应保持紧凑，不应按 flex/block 语义横向铺满内容",
+                UiDisplay.FLEX, closeButton.style().getDisplay());
+        Assert.assertEquals(UiStyleLength.px(44), closeButton.style().getWidth());
+        Assert.assertEquals(UiStyleLength.px(24), closeButton.style().getHeight());
     }
 
     @Test

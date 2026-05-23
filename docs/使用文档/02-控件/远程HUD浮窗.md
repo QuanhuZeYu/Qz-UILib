@@ -13,7 +13,10 @@
 ```java
 RemoteDocumentPage page = RemoteDocumentPage.builder("reward-dialog")
         .title("奖励已送达")
-        .html("<h1>奖励已送达</h1><p>请确认领取。</p>")
+        .html("<div style=\"background:#111827;color:#e5e7eb;border:1px solid #38bdf8;border-radius:8px;\">"
+                + "<div data-qz-hud-drag-handle=\"true\" style=\"padding:10px 56px 10px 12px;cursor:move;\">"
+                + "奖励已送达 · 拖住这里移动</div>"
+                + "<div style=\"padding:12px;\"><p>请确认领取。</p></div></div>")
         .build();
 
 RemoteHudOverlays.open(player, RemoteHudOverlay.dialog("reward-dialog", page).build());
@@ -42,6 +45,7 @@ RemoteHudOverlays.open(player, RemoteHudOverlay.danmaku("notice-1",
 - `DIALOG`：居中浮窗，默认显示关闭按钮；在 HUD 可交互的宿主界面中可点击按钮、输入表单。
   宿主只提供居中、拖拽和关闭按钮承载，不生成额外标题栏或可见父容器；页面内容的背景、边框、内边距等视觉外观由下发 HTML/CSS 决定。
   若页面内存在 `data-qz-hud-drag-handle="true"` 元素，会优先把它作为拖拽把手；否则整块解析内容作为兜底拖拽区域。
+  下拉选择框展开后按顶层弹出层处理，点击选项会优先被 HUD 页面消费，不应穿透到下方按钮或原生界面。
 - `TOAST`：角落提示，默认几秒后自动消失；默认不接收命中测试，适合作为纯展示通知。
 - `DANMAKU`：从右向左移动的弹幕浮层；默认自动消失并不接收命中测试。弹幕外观由下发 HTML/CSS 决定，
   HUD 宿主只负责轨道、位移和生命周期，不额外绘制默认胶囊外壳。

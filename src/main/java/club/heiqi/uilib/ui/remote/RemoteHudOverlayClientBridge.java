@@ -469,10 +469,17 @@ public final class RemoteHudOverlayClientBridge {
                 .setPosition(UiPosition.ABSOLUTE)
                 .setTop(UiStyleLength.px(8))
                 .setRight(UiStyleLength.px(8))
-                .setPadding(UiStyleLength.px(6))
+                .setDisplay(UiDisplay.FLEX)
+                .setAlignItems(UiAlignItems.CENTER)
+                .setJustifyContent(UiJustifyContent.CENTER)
+                .setWidth(UiStyleLength.px(44))
+                .setHeight(UiStyleLength.px(24))
+                .setMinWidth(UiStyleLength.px(0))
+                .setMaxWidth(UiStyleLength.px(44))
+                .setPadding(UiStyleLength.px(0))
                 .setBorderRadius(UiStyleLength.px(6))
                 .setFlexShrink(0.0F)
-                .setZIndex(1);
+                .setZIndex(2);
         closeButton.getElement().setAttribute("data-qz-hud-close-button", "true");
         closeButton.setActionHandler(new DocumentButtonActionHandler() {
             @Override

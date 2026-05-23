@@ -1014,13 +1014,16 @@ public final class NetRuntimeSelfChecks {
     private static String buildRemoteHudSmokeHtml(String checkId) {
         String escapedCheckId = escapeHtml(checkId);
         return "<html><head><title>远程 HUD 运行时自检</title><style>"
-                + ".hud{box-sizing:border-box;width:100%;padding:14px;padding-right:56px;background-color:#111827;color:#e5e7eb;}"
+                + ".hud{box-sizing:border-box;width:100%;background-color:#111827;color:#e5e7eb;border:1px solid #38bdf8;border-radius:8px;overflow:visible;}"
+                + ".drag-handle{box-sizing:border-box;width:100%;padding:10px 56px 10px 12px;background-color:#1f2937;color:#e0f2fe;cursor:move;}"
+                + ".hud-body{box-sizing:border-box;width:100%;padding:12px 14px 14px 14px;}"
                 + ".hint{color:#bfdbfe;margin:6px 0;}"
                 + ".field{margin:8px 0 4px 0;color:#cbd5e1;}"
                 + "input,textarea,select{width:calc(100% - 8px);margin:4px 0;padding:6px;}"
                 + "button{margin-top:10px;padding:8px 12px;}"
                 + "</style></head><body><div class=\"hud\">"
-                + "<h1 data-qz-hud-drag-handle=\"true\">远程 HUD 运行时自检</h1>"
+                + "<div class=\"drag-handle\" data-qz-hud-drag-handle=\"true\">远程 HUD 运行时自检 · 拖住这里移动</div>"
+                + "<div class=\"hud-body\">"
                 + "<p class=\"hint\">这页由服务端通过 RemoteHudOverlays.open 下发，客户端会用 Stream 拉取 HTML。</p>"
                 + "<p class=\"hint\">保持默认值，点击提交即可验证 HUD 解析、表单收集和 C2S 回传。</p>"
                 + "<form id=\"remote-hud-smoke-form\" action=\"runtime-hud-submit\">"
@@ -1037,7 +1040,7 @@ public final class NetRuntimeSelfChecks {
                 + "<option value=\"hud-ok\" selected>HUD 已渲染</option></select>"
                 + "<p><a href=\"#submit-area\">跳到提交按钮</a></p>"
                 + "<button id=\"submit-area\" type=\"submit\" name=\"submitter\" value=\"提交远程 HUD 自检\"></button>"
-                + "</form></div></body></html>";
+                + "</form></div></div></body></html>";
     }
 
     /**

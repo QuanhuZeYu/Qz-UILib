@@ -12,6 +12,8 @@ import club.heiqi.uilib.ui.dom.ElementNode;
 import club.heiqi.uilib.ui.dom.UiDocument;
 import club.heiqi.uilib.ui.event.UiKeyEvent;
 import club.heiqi.uilib.ui.event.UiMouseEvent;
+import club.heiqi.uilib.ui.style.props.UiDisplay;
+import club.heiqi.uilib.ui.style.props.UiOverflow;
 import club.heiqi.uilib.ui.style.values.UiStyleLength;
 import club.heiqi.uilib.ui.text.TextMeasureService;
 
@@ -71,6 +73,52 @@ public class DocumentSelectControlTest {
         Assert.assertEquals(1, events.size());
         Assert.assertEquals("B", events.get(0).getSelectedOption());
         Assert.assertFalse(events.get(0).isKeyboardTriggered());
+    }
+
+    /**
+     * 验证展开的下拉选项会截获点击，不会穿透到视觉下方的按钮。
+     */
+    @Test
+    public void shouldNotClickUnderlyingButtonWhenOptionPopupOverlapsIt() {
+        UiDocument document = UiDocument.create();
+        ElementNode root = document.getRootElement();
+        ElementNode clippedPanel = document.div();
+        final int[] buttonClicks = new int[1];
+        DocumentSelectControl selectControl = new DocumentSelectControl(document, "A", "B", "C");
+        DocumentButtonControl buttonControl = new DocumentButtonControl(document, "Under");
+
+        root.style()
+                .setWidth(UiStyleLength.px(240))
+                .setHeight(UiStyleLength.px(180));
+        clippedPanel.style()
+                .setWidth(UiStyleLength.px(180))
+                .setHeight(UiStyleLength.px(40))
+                .setOverflowX(UiOverflow.HIDDEN)
+                .setOverflowY(UiOverflow.HIDDEN);
+        selectControl.getElement().style().setWidth(UiStyleLength.px(180));
+        buttonControl.getElement().style()
+                .setDisplay(UiDisplay.BLOCK)
+                .setWidth(UiStyleLength.px(180))
+                .setHeight(UiStyleLength.px(40));
+        buttonControl.setActionHandler(event -> buttonClicks[0]++);
+        clippedPanel.append(selectControl.getElement());
+        root.append(clippedPanel);
+        root.append(buttonControl.getElement());
+        HtmlLikeDocumentWidget widget = new HtmlLikeDocumentWidget(document, 240, 180,
+                new DeterministicTextMeasureService());
+        widget.applyLayoutBounds(0, 0, 240, 180);
+
+        widget.onMouseDown(new UiMouseEvent(UiMouseEvent.Action.BUTTON_DOWN, 20, 12, 0, 0, 0, 0, 1L));
+        widget.onMouseUp(new UiMouseEvent(UiMouseEvent.Action.BUTTON_UP, 20, 12, 0, 0, 0, 0, 2L));
+        ElementNode popup = findListboxElement(root);
+        Assert.assertNotNull(popup);
+        Assert.assertSame("展开面板应升到文档顶层，避免被滚动/裁剪容器吞掉命中",
+                root, popup.getParent());
+        widget.onMouseDown(new UiMouseEvent(UiMouseEvent.Action.BUTTON_DOWN, 20, 72, 0, 0, 0, 0, 3L));
+        widget.onMouseUp(new UiMouseEvent(UiMouseEvent.Action.BUTTON_UP, 20, 72, 0, 0, 0, 0, 4L));
+
+        Assert.assertEquals(1, selectControl.getSelectedIndex());
+        Assert.assertEquals(0, buttonClicks[0]);
     }
 
     /**
@@ -164,7 +212,7 @@ public class DocumentSelectControlTest {
         widget.onKeyEvent(new UiKeyEvent(Keyboard.KEY_END, 0, 0, UiKeyEvent.Action.PRESSED, false, false, false,
                 false, 2L));
 
-        ElementNode popup = (ElementNode) selectControl.getElement().getChildren().get(1);
+        ElementNode popup = findListboxElement(root);
         Assert.assertEquals(6, selectControl.getSelectedIndex());
         Assert.assertTrue(popup.getMaxScrollTop() > 0);
         Assert.assertTrue(popup.getScrollTop() > 0);
@@ -182,6 +230,21 @@ public class DocumentSelectControlTest {
             }
         }
         return count;
+    }
+
+    private static ElementNode findListboxElement(ElementNode element) {
+        if ("listbox".equals(element.getAttribute("role"))) {
+            return element;
+        }
+        for (club.heiqi.uilib.ui.dom.DocumentNode child : element.getChildren()) {
+            if (child instanceof ElementNode) {
+                ElementNode found = findListboxElement((ElementNode) child);
+                if (found != null) {
+                    return found;
+                }
+            }
+        }
+        return null;
     }
 
     private static final class DeterministicTextMeasureService implements TextMeasureService {

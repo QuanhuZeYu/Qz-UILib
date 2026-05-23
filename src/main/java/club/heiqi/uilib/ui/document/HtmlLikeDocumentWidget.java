@@ -42,6 +42,7 @@ import club.heiqi.uilib.ui.widget.Widget;
 public final class HtmlLikeDocumentWidget extends Widget implements UiDocument.DocumentInteractionRuntime {
 
     private static final String HIT_TEST_PASSTHROUGH_ATTRIBUTE = "data-hit-test-passthrough";
+    private static final String PRESERVE_FOCUS_ON_MOUSE_DOWN_ATTRIBUTE = "data-qz-preserve-focus-on-mousedown";
 
     private final UiDocument document;
     private final TextMeasureService textMeasureService;
@@ -612,7 +613,9 @@ public final class HtmlLikeDocumentWidget extends Widget implements UiDocument.D
         dragController.beginDragIfNeeded(pressedElement, event);
         DocumentMouseEventDispatcher.dispatchMouseDown(pressedElement, event, getAbsoluteX(), getAbsoluteY());
         DocumentMouseEventDispatcher.dispatchActive(pressedElement, true, event);
-        focusManager.focusElement(focusManager.resolveFocusableElement(pressedElement), false);
+        if (!shouldPreserveFocusOnMouseDown(pressedElement)) {
+            focusManager.focusElement(focusManager.resolveFocusableElement(pressedElement), false);
+        }
         syncCursorFromHoveredElement();
     }
 
@@ -1031,6 +1034,16 @@ public final class HtmlLikeDocumentWidget extends Widget implements UiDocument.D
         }
         for (DocumentNode current = element; current != null; current = current.getParent()) {
             if (current == document.getRootElement()) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private boolean shouldPreserveFocusOnMouseDown(ElementNode target) {
+        for (DocumentNode current = target; current instanceof ElementNode; current = current.getParent()) {
+            ElementNode element = (ElementNode) current;
+            if ("true".equals(element.getAttribute(PRESERVE_FOCUS_ON_MOUSE_DOWN_ATTRIBUTE))) {
                 return true;
             }
         }
