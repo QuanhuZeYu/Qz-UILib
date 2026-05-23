@@ -346,10 +346,15 @@ channel.toServer().send(body);
 - PER_PLAYER Store + accessControl + setForPlayer 定向 snapshot。
 - Store DOM bridge 主线程渲染。
 
+已人工验收：
+
+- GTNH / ModularUI2 服务端环境默认 vanilla 传输路径可正常进服；`NetHandlerPlayServer` 与 ServerUtilities、Hodgepodge 同目标 mixin 并存未阻断连接。
+- `/qzuilib test` 网络层自检全部通过：18 项通过、0 项失败，覆盖 Channel / Fetch / Stream / Store 真实往返。
+- 服务端出现的 `Qz Fetch 请求被限流` warn 为限流自检的预期可观测日志，证明 429 路径已触发。
+
 仍需人工验证：
 
-- dedicated server 完整启动 smoke：当前默认 `runServer` 已确认 Mixin 环境为 `SERVER`，但会被 LWJGL3ify relauncher 中止，需换用不带该 relauncher 的服务端配置后复跑。
-- Forge 回退适配器与 ModularUI2 环境的兼容性。
+- Forge 回退适配器与 ModularUI2 环境的兼容性；默认 vanilla 传输已通过，Forge 回退仍需用 `netTransport=forge` 或 `-Dqzuilib.net.transport=forge` 单独跑自检。
 
 ## 后续待解边界
 

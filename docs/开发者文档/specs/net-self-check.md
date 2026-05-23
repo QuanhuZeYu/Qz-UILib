@@ -29,6 +29,8 @@ net_self_check
 | 运行时 Store 增量 | 预注册内部 Fetch 触发服务端 Store delta，再等待客户端按业务 applier 计算新快照 |
 | 运行时玩家 Store | `PER_PLAYER` Store + `accessControl` + `setForPlayer` 定向快照 |
 
-仍需人工场景：
+已人工验收：
 
-- dedicated server 完整启动 smoke：默认 `runServer` 当前会被 LWJGL3ify relauncher 中止；`EarlyMixins` 的 SERVER 侧过滤已由 JVM 测试覆盖。
+- GTNH / ModularUI2 服务端环境默认 vanilla 传输路径下，玩家可正常进服，`NetHandlerPlayServer` 同目标 mixin 未阻断连接。
+- 网络层自检全部执行通过：18 项通过、0 项失败。
+- `运行时 Fetch 限流` 会在服务端留下 `Qz Fetch 请求被限流` warn，这是预期的限流可观测日志。

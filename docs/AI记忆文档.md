@@ -45,7 +45,7 @@
   - 测试：`$env:GRADLE_USER_HOME="D:\.MyApps\.ENV\gradle-home"; ./gradlew.bat --no-configuration-cache test`
   - 客户端：`$env:GRADLE_USER_HOME="D:\.MyApps\.ENV\gradle-home"; ./gradlew.bat --no-configuration-cache runClient21`
 - 纯 JVM 测试不要直接实例化继承 `GuiScreen` / `BaseScreen` 的页面类。
-- 网络层运行时自检入口为 `/qzuilib test`，支持逐项或全部执行；真实 Channel / Fetch / Stream / Store 往返、C2S 分片、Fetch 错误/超时/取消/限流、玩家 Store、Store delta 检查需要已连接到本地或测试服务器。
+- 网络层运行时自检入口为 `/qzuilib test`，支持逐项或全部执行；真实 Channel / Fetch / Stream / Store 往返、C2S 分片、Fetch 错误/超时/取消/限流、玩家 Store、Store delta 检查已在当前 GTNH / ModularUI2 服务端环境完成一次完整联机验收（18/18 通过）；Forge 回退仍需单独切换 `netTransport=forge` 验证。
 - 默认 `runServer` 目前会被 LWJGL3ify relauncher 中止；dedicated server 完整 smoke 需换用不带该 relauncher 的服务端配置，相关记录见 `docs/开发者文档/errors/ERROR-20260523-runserver-lwjgl3ify-relauncher.md`。
 
 ## 本文件的维护规则
