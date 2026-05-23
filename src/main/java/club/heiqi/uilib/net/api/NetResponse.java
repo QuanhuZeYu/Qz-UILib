@@ -19,7 +19,7 @@ public final class NetResponse {
             throw new IllegalArgumentException("statusCode must be 100..999");
         }
         this.statusCode = statusCode;
-        this.headers = Collections.unmodifiableMap(new LinkedHashMap<String, String>(headers));
+        this.headers = Collections.unmodifiableMap(new LinkedHashMap<String, String>(NetHeaders.normalize(headers)));
         this.body = Objects.requireNonNull(body, "body");
     }
 
@@ -49,7 +49,7 @@ public final class NetResponse {
 
     public NetResponse withHeader(String name, String value) {
         Map<String, String> next = new LinkedHashMap<String, String>(headers);
-        next.put(validateHeaderName(name), value == null ? "" : value);
+        next.put(NetHeaders.normalizeName(name), NetHeaders.normalizeValue(value));
         return new NetResponse(statusCode, next, body);
     }
 
@@ -66,7 +66,7 @@ public final class NetResponse {
     }
 
     public String getHeader(String name) {
-        return headers.get(validateHeaderName(name));
+        return headers.get(NetHeaders.normalizeName(name));
     }
 
     public NetBody getBody() {
@@ -79,12 +79,5 @@ public final class NetResponse {
 
     static NetResponse fromWire(int statusCode, Map<String, String> headers, NetBody body) {
         return new NetResponse(statusCode, headers, body);
-    }
-
-    private static String validateHeaderName(String name) {
-        if (name == null || name.trim().length() == 0) {
-            throw new IllegalArgumentException("header name must not be blank");
-        }
-        return name.trim();
     }
 }

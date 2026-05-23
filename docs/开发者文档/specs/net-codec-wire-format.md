@@ -33,6 +33,17 @@ qz:0
 
 `typeId` 不再属于 envelope。协议身份由 `key` 与 `contentType` 表达，业务自己的 JSON 或二进制格式由业务 handler 解析。
 
+## Header 规则
+
+Header 是轻量元数据通道，不能绕过 body 与大内容传输边界：
+
+- header 名大小写不敏感，线协议写入前归一成小写 token。
+- token 字符集为 ``a-z 0-9 !#$%&'*+-.^_`|~``。
+- 单帧最多 32 个 header。
+- 单个 header 名最多 64 字节，单个值最多 1024 字节。
+- 单帧 header 名和值合计最多 8192 字节。
+- header 值不允许 CR/LF。
+
 ## 内容类型
 
 内置内容类型：

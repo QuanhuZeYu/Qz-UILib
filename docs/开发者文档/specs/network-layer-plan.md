@@ -158,6 +158,8 @@ counter.view().subscribe(new NetStoreView.NetStoreSubscriber() {
 
 `NetEnvelope` 不再携带 Java `typeId`。`NetMessage`、`NetRequest`、`NetResponse` 都只是 headers + body 的业务容器。
 
+Header 采用轻量 HTTP-like 规则：名称大小写不敏感并归一为小写 token，单帧最多 32 个 header，单名最多 64 字节，单值最多 1024 字节，总 header 字节最多 8192，值不允许 CR/LF。Header 只用于元数据，不承担大内容传输。
+
 ### 决策 4：能力握手，不做类型握手
 
 客户端连接就绪与服务端玩家加入时发送 `META` 帧，当前内容是 JSON：
@@ -302,5 +304,4 @@ channel.toServer().send(body);
 - stream/chunk 大内容 API：超过 16 MiB 的资源、文件或大快照要走独立生命周期、进度与取消模型。
 - Fetch 限流：每玩家滑动窗口、错误状态码、可观测日志仍需补全。
 - Store 增量：内容模型下可以选择 JSON Patch、业务二进制 delta 或全量快照，需要单独规格化。
-- Header 语义：当前为轻量 map，是否需要大小限制、大小写归一和保留 header 名需要后续定稿。
 - 代理服务器：BungeeCord/Velocity 类代理对 `qz:0` custom payload 的转发行为仍需联机实测。

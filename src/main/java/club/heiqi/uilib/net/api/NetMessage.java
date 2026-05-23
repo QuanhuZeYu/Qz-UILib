@@ -14,7 +14,7 @@ public final class NetMessage {
     private final NetBody body;
 
     private NetMessage(Map<String, String> headers, NetBody body) {
-        this.headers = Collections.unmodifiableMap(new LinkedHashMap<String, String>(headers));
+        this.headers = Collections.unmodifiableMap(new LinkedHashMap<String, String>(NetHeaders.normalize(headers)));
         this.body = Objects.requireNonNull(body, "body");
     }
 
@@ -67,7 +67,7 @@ public final class NetMessage {
      */
     public NetMessage withHeader(String name, String value) {
         Map<String, String> next = new LinkedHashMap<String, String>(headers);
-        next.put(validateHeaderName(name), value == null ? "" : value);
+        next.put(NetHeaders.normalizeName(name), NetHeaders.normalizeValue(value));
         return new NetMessage(next, body);
     }
 
@@ -76,7 +76,7 @@ public final class NetMessage {
     }
 
     public String getHeader(String name) {
-        return headers.get(validateHeaderName(name));
+        return headers.get(NetHeaders.normalizeName(name));
     }
 
     public NetBody getBody() {
@@ -89,12 +89,5 @@ public final class NetMessage {
 
     static NetMessage fromWire(Map<String, String> headers, NetBody body) {
         return new NetMessage(headers, body);
-    }
-
-    private static String validateHeaderName(String name) {
-        if (name == null || name.trim().length() == 0) {
-            throw new IllegalArgumentException("header name must not be blank");
-        }
-        return name.trim();
     }
 }

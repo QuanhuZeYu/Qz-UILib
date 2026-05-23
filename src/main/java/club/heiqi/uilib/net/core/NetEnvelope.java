@@ -13,6 +13,7 @@ import java.util.Map;
 
 import club.heiqi.uilib.net.api.NetBody;
 import club.heiqi.uilib.net.api.NetContentType;
+import club.heiqi.uilib.net.api.NetHeaders;
 import club.heiqi.uilib.net.codec.Varint;
 import club.heiqi.uilib.net.transport.NetSide;
 
@@ -44,7 +45,7 @@ public final class NetEnvelope {
         this.contentType = contentType == null ? NetContentType.BINARY : contentType;
         this.requestId = requestId;
         this.statusCode = statusCode;
-        this.headers = Collections.unmodifiableMap(new LinkedHashMap<String, String>(headers));
+        this.headers = Collections.unmodifiableMap(new LinkedHashMap<String, String>(NetHeaders.normalize(headers)));
         this.payload = payload == null ? new byte[0] : Arrays.copyOf(payload, payload.length);
     }
 
@@ -185,10 +186,14 @@ public final class NetEnvelope {
 
     private static Map<String, String> readHeaders(DataInputStream input) throws IOException {
         int size = Varint.readUnsignedInt(input);
+        if (size > NetHeaders.MAX_HEADER_COUNT) {
+            throw new IllegalArgumentException("too many headers: " + size + " > " + NetHeaders.MAX_HEADER_COUNT);
+        }
         Map<String, String> headers = new LinkedHashMap<String, String>();
         for (int index = 0; index < size; index++) {
-            headers.put(readString(input), readString(input));
+            headers.put(NetHeaders.normalizeName(readString(input)), NetHeaders.normalizeValue(readString(input)));
         }
+        NetHeaders.requireWithinLimits(headers);
         return headers;
     }
 

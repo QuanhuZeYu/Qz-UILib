@@ -14,7 +14,7 @@ public final class NetRequest {
     private final NetBody body;
 
     private NetRequest(Map<String, String> headers, NetBody body) {
-        this.headers = Collections.unmodifiableMap(new LinkedHashMap<String, String>(headers));
+        this.headers = Collections.unmodifiableMap(new LinkedHashMap<String, String>(NetHeaders.normalize(headers)));
         this.body = Objects.requireNonNull(body, "body");
     }
 
@@ -36,7 +36,7 @@ public final class NetRequest {
 
     public NetRequest withHeader(String name, String value) {
         Map<String, String> next = new LinkedHashMap<String, String>(headers);
-        next.put(validateHeaderName(name), value == null ? "" : value);
+        next.put(NetHeaders.normalizeName(name), NetHeaders.normalizeValue(value));
         return new NetRequest(next, body);
     }
 
@@ -45,7 +45,7 @@ public final class NetRequest {
     }
 
     public String getHeader(String name) {
-        return headers.get(validateHeaderName(name));
+        return headers.get(NetHeaders.normalizeName(name));
     }
 
     public NetBody getBody() {
@@ -58,12 +58,5 @@ public final class NetRequest {
 
     static NetRequest fromWire(Map<String, String> headers, NetBody body) {
         return new NetRequest(headers, body);
-    }
-
-    private static String validateHeaderName(String name) {
-        if (name == null || name.trim().length() == 0) {
-            throw new IllegalArgumentException("header name must not be blank");
-        }
-        return name.trim();
     }
 }
