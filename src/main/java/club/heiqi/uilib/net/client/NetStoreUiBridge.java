@@ -1,5 +1,6 @@
 package club.heiqi.uilib.net.client;
 
+import club.heiqi.uilib.net.api.NetBody;
 import club.heiqi.uilib.net.api.NetStoreView;
 import club.heiqi.uilib.ui.dom.ElementNode;
 
@@ -36,15 +37,14 @@ public final class NetStoreUiBridge {
      * @param view Store 视图
      * @param element DOM 元素
      * @param renderer 渲染器
-     * @param <T> 快照类型
      */
-    public <T> void bind(NetStoreView<T> view, final ElementNode element, final NetStoreRenderer<T> renderer) {
+    public void bind(NetStoreView view, final ElementNode element, final NetStoreRenderer renderer) {
         if (!initialized) {
             initialize();
         }
-        view.subscribe(new NetStoreView.NetStoreSubscriber<T>() {
+        view.subscribe(new NetStoreView.NetStoreSubscriber() {
             @Override
-            public void onSnapshot(T snapshot) {
+            public void onSnapshot(NetBody snapshot) {
                 renderer.render(element, snapshot);
             }
         });
@@ -52,10 +52,8 @@ public final class NetStoreUiBridge {
 
     /**
      * Store 快照到 DOM 的渲染函数。
-     *
-     * @param <T> 快照类型
      */
-    public interface NetStoreRenderer<T> {
+    public interface NetStoreRenderer {
 
         /**
          * 渲染快照。
@@ -63,6 +61,6 @@ public final class NetStoreUiBridge {
          * @param element DOM 元素
          * @param snapshot 快照
          */
-        void render(ElementNode element, T snapshot);
+        void render(ElementNode element, NetBody snapshot);
     }
 }

@@ -5,6 +5,7 @@ import java.util.List;
 import java.util.Objects;
 
 import club.heiqi.uilib.net.api.NetService;
+import club.heiqi.uilib.net.api.NetBody;
 import club.heiqi.uilib.net.codec.NetCodec;
 import club.heiqi.uilib.net.core.NetChunkAssembler;
 import club.heiqi.uilib.net.core.NetEnvelope;
@@ -99,7 +100,7 @@ public final class NetSelfCheckPage extends DocumentPageController {
                 .setMargin(UiStyleInsets.of(UiStyleLength.px(0), UiStyleLength.px(0), UiStyleLength.px(12),
                         UiStyleLength.px(0)));
         header.appendText("网络层自检");
-        header.appendText("覆盖大小策略、反射 codec、分片重组与主线程队列。真实联机往返请配合 runClient/runServer 验证。");
+        header.appendText("覆盖大小策略、内容信封、可选 codec、分片重组与主线程队列。真实联机往返请配合 runClient/runServer 验证。");
         root.append(header);
 
         register(root, "大小策略", "验证 32KB 兼容帧、8/16 MiB 普通消息边界、256 MiB 默认物理能力与 1 GiB 硬上限。",
@@ -109,7 +110,7 @@ public final class NetSelfCheckPage extends DocumentPageController {
                         checkPayloadLimits();
                     }
                 });
-        register(root, "反射 codec", "编码并解码带枚举、List、Map、嵌套对象和 @NetTransient 字段的 POJO。",
+        register(root, "可选 POJO codec", "作为业务二进制辅助，编码并解码带枚举、List、Map、嵌套对象和 @NetTransient 字段的 POJO。",
                 new SelfCheckRunnable() {
                     @Override
                     public void run() {
@@ -223,8 +224,8 @@ public final class NetSelfCheckPage extends DocumentPageController {
         for (int index = 0; index < payload.length; index++) {
             payload[index] = (byte) (index & 0xFF);
         }
-        byte[] envelope = NetEnvelope.of(NetEnvelope.Kind.CHANNEL, NetSide.SERVER, "qz:selfCheck", 1, 0L,
-                payload).encode();
+        byte[] envelope = NetEnvelope.of(NetEnvelope.Kind.CHANNEL, NetSide.SERVER, "qz:selfCheck", 0L, 0,
+                java.util.Collections.<String, String>emptyMap(), NetBody.binary(payload)).encode();
         NetChunkAssembler assembler = new NetChunkAssembler();
         int chunkSize = NetPayloadLimits.COMPAT_PHYSICAL_FRAME_LIMIT - 160;
         int total = (envelope.length + chunkSize - 1) / chunkSize;

@@ -5,26 +5,18 @@ import java.util.Objects;
 import java.util.concurrent.CompletableFuture;
 
 /**
- * C2S Fetch/RPC endpoint。
- *
- * @param <Req> 请求类型
- * @param <Resp> 响应类型
+ * C2S Fetch endpoint。
  */
-public final class NetFetchEndpoint<Req, Resp> {
+public final class NetFetchEndpoint {
 
     private final NetService service;
     private final NetEndpointId id;
-    private final Class<Req> requestType;
-    private final Class<Resp> responseType;
     private final long timeoutMillis;
-    private final NetFetchHandler<Req, Resp> handler;
+    private final NetFetchHandler handler;
 
-    NetFetchEndpoint(NetService service, NetEndpointId id, Class<Req> requestType, Class<Resp> responseType,
-            long timeoutMillis, NetFetchHandler<Req, Resp> handler) {
+    NetFetchEndpoint(NetService service, NetEndpointId id, long timeoutMillis, NetFetchHandler handler) {
         this.service = service;
         this.id = id;
-        this.requestType = requestType;
-        this.responseType = responseType;
         this.timeoutMillis = timeoutMillis;
         this.handler = handler;
     }
@@ -33,31 +25,33 @@ public final class NetFetchEndpoint<Req, Resp> {
         return id;
     }
 
-    public Class<Req> getRequestType() {
-        return requestType;
-    }
-
-    public Class<Resp> getResponseType() {
-        return responseType;
-    }
-
     /**
      * 客户端调用服务端 endpoint。
      *
      * @param request 请求
-     * @return future
+     * @return response future
      */
-    public CompletableFuture<Resp> call(Req request) {
+    public CompletableFuture<NetResponse> call(NetRequest request) {
         return service.callFetchEndpoint(this, Objects.requireNonNull(request, "request"));
+    }
+
+    /**
+     * 客户端以 JSON body 调用。
+     *
+     * @param json JSON 文本
+     * @return response future
+     */
+    public CompletableFuture<NetResponse> callJson(String json) {
+        return call(NetRequest.json(json));
     }
 
     long getTimeoutMillis() {
         return timeoutMillis;
     }
 
-    void receiveRequest(Req request, NetFetchRequestContext<Resp> context) {
+    void receiveRequest(NetRequest request, NetFetchRequestContext context) {
         if (handler == null) {
-            context.fail(new NetRemoteException("Fetch endpoint 未注册处理器: " + id));
+            context.reply(NetResponse.error(404, "Fetch endpoint 未注册处理器: " + id));
             return;
         }
         handler.onRequest(request, context);
@@ -65,24 +59,17 @@ public final class NetFetchEndpoint<Req, Resp> {
 
     /**
      * Fetch 注册构造器。
-     *
-     * @param <Req> 请求类型
-     * @param <Resp> 响应类型
      */
-    public static final class Builder<Req, Resp> {
+    public static final class Builder {
 
         private final NetService service;
         private final NetEndpointId id;
-        private final Class<Req> requestType;
-        private final Class<Resp> responseType;
         private long timeoutMillis = 5_000L;
-        private NetFetchHandler<Req, Resp> handler;
+        private NetFetchHandler handler;
 
-        Builder(NetService service, NetEndpointId id, Class<Req> requestType, Class<Resp> responseType) {
+        Builder(NetService service, NetEndpointId id) {
             this.service = service;
             this.id = id;
-            this.requestType = requestType;
-            this.responseType = responseType;
         }
 
         /**
@@ -91,7 +78,7 @@ public final class NetFetchEndpoint<Req, Resp> {
          * @param timeout 超时时长
          * @return 构造器
          */
-        public Builder<Req, Resp> timeout(Duration timeout) {
+        public Builder timeout(Duration timeout) {
             this.timeoutMillis = Objects.requireNonNull(timeout, "timeout").toMillis();
             return this;
         }
@@ -102,7 +89,7 @@ public final class NetFetchEndpoint<Req, Resp> {
          * @param handler 处理器
          * @return 构造器
          */
-        public Builder<Req, Resp> onRequest(NetFetchHandler<Req, Resp> handler) {
+        public Builder onRequest(NetFetchHandler handler) {
             this.handler = handler;
             return this;
         }
@@ -112,19 +99,15 @@ public final class NetFetchEndpoint<Req, Resp> {
          *
          * @return endpoint
          */
-        public NetFetchEndpoint<Req, Resp> register() {
-            return service.registerFetchEndpoint(new NetFetchEndpoint<Req, Resp>(service, id, requestType,
-                    responseType, timeoutMillis, handler));
+        public NetFetchEndpoint register() {
+            return service.registerFetchEndpoint(new NetFetchEndpoint(service, id, timeoutMillis, handler));
         }
     }
 
     /**
      * Fetch 处理器。
-     *
-     * @param <Req> 请求类型
-     * @param <Resp> 响应类型
      */
-    public interface NetFetchHandler<Req, Resp> {
+    public interface NetFetchHandler {
 
         /**
          * 处理请求。
@@ -132,29 +115,25 @@ public final class NetFetchEndpoint<Req, Resp> {
          * @param request 请求
          * @param context 请求上下文
          */
-        void onRequest(Req request, NetFetchRequestContext<Resp> context);
+        void onRequest(NetRequest request, NetFetchRequestContext context);
     }
 
     /**
      * Fetch 请求上下文。
-     *
-     * @param <Resp> 响应类型
      */
-    public static final class NetFetchRequestContext<Resp> {
+    public static final class NetFetchRequestContext {
 
         private final NetService service;
         private final String endpointKey;
         private final long requestId;
-        private final Class<Resp> responseType;
         private final NetReceiveContext receiveContext;
         private final Object replyTarget;
 
-        NetFetchRequestContext(NetService service, String endpointKey, long requestId, Class<Resp> responseType,
+        NetFetchRequestContext(NetService service, String endpointKey, long requestId,
                 NetReceiveContext receiveContext, Object replyTarget) {
             this.service = service;
             this.endpointKey = endpointKey;
             this.requestId = requestId;
-            this.responseType = responseType;
             this.receiveContext = receiveContext;
             this.replyTarget = replyTarget;
         }
@@ -164,8 +143,17 @@ public final class NetFetchEndpoint<Req, Resp> {
          *
          * @param response 响应
          */
-        public void reply(Resp response) {
-            service.replyFetch(replyTarget, endpointKey, requestId, responseType, response);
+        public void reply(NetResponse response) {
+            service.replyFetch(replyTarget, endpointKey, requestId, Objects.requireNonNull(response, "response"));
+        }
+
+        /**
+         * 回复 JSON 成功结果。
+         *
+         * @param json JSON 文本
+         */
+        public void replyJson(String json) {
+            reply(NetResponse.json(json));
         }
 
         /**

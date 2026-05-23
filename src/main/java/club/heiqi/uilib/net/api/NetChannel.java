@@ -3,21 +3,17 @@ package club.heiqi.uilib.net.api;
 import java.util.Objects;
 
 /**
- * 双向消息 Channel。
- *
- * @param <T> 消息类型
+ * 双向内容语义 Channel。
  */
-public final class NetChannel<T> {
+public final class NetChannel {
 
     private final NetService service;
     private final NetChannelId id;
-    private final Class<T> messageType;
-    private final NetChannelHandler<T> handler;
+    private final NetChannelHandler handler;
 
-    NetChannel(NetService service, NetChannelId id, Class<T> messageType, NetChannelHandler<T> handler) {
+    NetChannel(NetService service, NetChannelId id, NetChannelHandler handler) {
         this.service = service;
         this.id = id;
-        this.messageType = messageType;
         this.handler = handler;
     }
 
@@ -25,17 +21,13 @@ public final class NetChannel<T> {
         return id;
     }
 
-    public Class<T> getMessageType() {
-        return messageType;
-    }
-
     /**
      * 创建发往服务端的发送器。
      *
      * @return 发送器
      */
-    public Sender<T> toServer() {
-        return new Sender<T>(this, NetTarget.server());
+    public Sender toServer() {
+        return new Sender(this, NetTarget.server());
     }
 
     /**
@@ -44,8 +36,8 @@ public final class NetChannel<T> {
      * @param player 玩家对象
      * @return 发送器
      */
-    public Sender<T> toPlayer(Object player) {
-        return new Sender<T>(this, NetTarget.player(player));
+    public Sender toPlayer(Object player) {
+        return new Sender(this, NetTarget.player(player));
     }
 
     /**
@@ -54,8 +46,8 @@ public final class NetChannel<T> {
      * @param players 玩家集合
      * @return 发送器
      */
-    public Sender<T> toPlayers(Iterable<?> players) {
-        return new Sender<T>(this, NetTarget.players(players));
+    public Sender toPlayers(Iterable<?> players) {
+        return new Sender(this, NetTarget.players(players));
     }
 
     /**
@@ -63,8 +55,8 @@ public final class NetChannel<T> {
      *
      * @return 发送器
      */
-    public Sender<T> toAll() {
-        return new Sender<T>(this, NetTarget.all());
+    public Sender toAll() {
+        return new Sender(this, NetTarget.all());
     }
 
     /**
@@ -73,36 +65,32 @@ public final class NetChannel<T> {
      * @param dimensionId 维度 id
      * @return 发送器
      */
-    public Sender<T> toDimension(int dimensionId) {
-        return new Sender<T>(this, NetTarget.dimension(dimensionId));
+    public Sender toDimension(int dimensionId) {
+        return new Sender(this, NetTarget.dimension(dimensionId));
     }
 
-    void receive(T message, NetReceiveContext context) {
+    void receive(NetMessage message, NetReceiveContext context) {
         if (handler != null) {
             handler.onReceive(message, context);
         }
     }
 
-    private void send(NetTarget target, T message) {
+    private void send(NetTarget target, NetMessage message) {
         service.sendChannelMessage(this, target, message);
     }
 
     /**
      * Channel 注册构造器。
-     *
-     * @param <T> 消息类型
      */
-    public static final class Builder<T> {
+    public static final class Builder {
 
         private final NetService service;
         private final NetChannelId id;
-        private final Class<T> messageType;
-        private NetChannelHandler<T> handler;
+        private NetChannelHandler handler;
 
-        Builder(NetService service, NetChannelId id, Class<T> messageType) {
+        Builder(NetService service, NetChannelId id) {
             this.service = service;
             this.id = id;
-            this.messageType = messageType;
         }
 
         /**
@@ -111,7 +99,7 @@ public final class NetChannel<T> {
          * @param handler 接收回调
          * @return 构造器
          */
-        public Builder<T> onReceive(NetChannelHandler<T> handler) {
+        public Builder onReceive(NetChannelHandler handler) {
             this.handler = handler;
             return this;
         }
@@ -121,42 +109,65 @@ public final class NetChannel<T> {
          *
          * @return Channel
          */
-        public NetChannel<T> register() {
-            return service.registerChannel(new NetChannel<T>(service, id, messageType, handler));
+        public NetChannel register() {
+            return service.registerChannel(new NetChannel(service, id, handler));
         }
     }
 
     /**
      * 定向发送器。
-     *
-     * @param <T> 消息类型
      */
-    public static final class Sender<T> {
+    public static final class Sender {
 
-        private final NetChannel<T> channel;
+        private final NetChannel channel;
         private final NetTarget target;
 
-        private Sender(NetChannel<T> channel, NetTarget target) {
+        private Sender(NetChannel channel, NetTarget target) {
             this.channel = channel;
             this.target = target;
         }
 
         /**
-         * 发送消息。
+         * 发送完整消息。
          *
          * @param message 消息
          */
-        public void send(T message) {
+        public void send(NetMessage message) {
             channel.send(target, Objects.requireNonNull(message, "message"));
+        }
+
+        /**
+         * 发送 body。
+         *
+         * @param body body
+         */
+        public void send(NetBody body) {
+            send(NetMessage.of(body));
+        }
+
+        /**
+         * 发送 JSON 文本。
+         *
+         * @param json JSON 文本
+         */
+        public void sendJson(String json) {
+            send(NetMessage.json(json));
+        }
+
+        /**
+         * 发送二进制数据。
+         *
+         * @param bytes 字节
+         */
+        public void sendBinary(byte[] bytes) {
+            send(NetMessage.binary(bytes));
         }
     }
 
     /**
      * Channel 接收回调。
-     *
-     * @param <T> 消息类型
      */
-    public interface NetChannelHandler<T> {
+    public interface NetChannelHandler {
 
         /**
          * 处理消息。
@@ -164,6 +175,6 @@ public final class NetChannel<T> {
          * @param message 消息
          * @param context 上下文
          */
-        void onReceive(T message, NetReceiveContext context);
+        void onReceive(NetMessage message, NetReceiveContext context);
     }
 }

@@ -65,7 +65,7 @@ public final class VanillaMixinTransport implements ITransport {
      */
     public static void onClientHandshakeReady(NetworkManager networkManager) {
         MyMod.LOG.debug("Qz vanilla transport client handshake ready: {}", networkManager);
-        NetService.getInstance().sendSchemaHandshakeToServer();
+        NetService.getInstance().sendCapabilityHandshakeToServer();
     }
 
     /**
@@ -85,7 +85,7 @@ public final class VanillaMixinTransport implements ITransport {
      */
     public static void onServerPlayerJoined(EntityPlayerMP player) {
         MyMod.LOG.debug("Qz vanilla transport server player joined: {}", player);
-        NetService.getInstance().sendSchemaHandshakeToPlayer(player);
+        NetService.getInstance().sendCapabilityHandshakeToPlayer(player);
     }
 
     /**

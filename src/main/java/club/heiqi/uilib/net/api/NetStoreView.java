@@ -5,24 +5,22 @@ import java.util.concurrent.CopyOnWriteArrayList;
 
 /**
  * 客户端 Store 视图。
- *
- * @param <T> 快照类型
  */
-public final class NetStoreView<T> {
+public final class NetStoreView {
 
-    private final List<NetStoreSubscriber<T>> subscribers = new CopyOnWriteArrayList<NetStoreSubscriber<T>>();
-    private volatile T snapshot;
+    private final List<NetStoreSubscriber> subscribers = new CopyOnWriteArrayList<NetStoreSubscriber>();
+    private volatile NetBody snapshot;
 
-    NetStoreView(T snapshot) {
+    NetStoreView(NetBody snapshot) {
         this.snapshot = snapshot;
     }
 
     /**
-     * 返回当前快照。
+     * 返回当前快照 body。
      *
-     * @return 快照
+     * @return 快照 body
      */
-    public T getSnapshot() {
+    public NetBody getSnapshot() {
         return snapshot;
     }
 
@@ -31,32 +29,30 @@ public final class NetStoreView<T> {
      *
      * @param subscriber 订阅者
      */
-    public void subscribe(NetStoreSubscriber<T> subscriber) {
+    public void subscribe(NetStoreSubscriber subscriber) {
         subscribers.add(subscriber);
         if (snapshot != null) {
             subscriber.onSnapshot(snapshot);
         }
     }
 
-    void update(T snapshot) {
+    void update(NetBody snapshot) {
         this.snapshot = snapshot;
-        for (NetStoreSubscriber<T> subscriber : subscribers) {
+        for (NetStoreSubscriber subscriber : subscribers) {
             subscriber.onSnapshot(snapshot);
         }
     }
 
     /**
      * Store 订阅者。
-     *
-     * @param <T> 快照类型
      */
-    public interface NetStoreSubscriber<T> {
+    public interface NetStoreSubscriber {
 
         /**
-         * 接收快照。
+         * 接收快照 body。
          *
-         * @param snapshot 快照
+         * @param snapshot 快照 body
          */
-        void onSnapshot(T snapshot);
+        void onSnapshot(NetBody snapshot);
     }
 }

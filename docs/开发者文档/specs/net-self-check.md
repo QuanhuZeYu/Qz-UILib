@@ -11,7 +11,8 @@ net_self_check
 | 场景 | 覆盖内容 |
 |---|---|
 | 大小策略 | 32KB 兼容帧、8 MiB 大消息提示、16 MiB 默认逻辑上限、256 MiB 默认物理能力、1 GiB 硬上限 |
-| 反射 codec | enum、List、Map、嵌套对象、`@NetTransient` |
+| 内容信封 | `route/key + contentType + headers + body` 的 envelope 编解码 |
+| 可选 POJO codec | enum、List、Map、嵌套对象、`@NetTransient`，仅作为业务二进制辅助 |
 | 分片重组 | 100KB envelope 在 32KB 兼容帧下分片并重组 |
 | 主线程队列 | client/server 主线程任务入队与 drain |
 

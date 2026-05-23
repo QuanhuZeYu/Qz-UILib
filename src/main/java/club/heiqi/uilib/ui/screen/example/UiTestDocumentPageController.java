@@ -247,7 +247,7 @@ public final class UiTestDocumentPageController extends DocumentPageController {
                     }
                 });
         appendNavigationCard(document, sixthRow, "网络层自检",
-                "检查网络层大小策略、反射 codec、分片重组与主线程队列，真实联机往返需配合 runClient/runServer。", "进入网络自检",
+                "检查网络层大小策略、内容信封、可选 codec、分片重组与主线程队列，真实联机往返需配合 runClient/runServer。", "进入网络自检",
                 new DocumentButtonActionHandler() {
                     @Override
                     public void onAction(DocumentButtonActionEvent event) {

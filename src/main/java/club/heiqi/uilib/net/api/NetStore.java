@@ -3,37 +3,28 @@ package club.heiqi.uilib.net.api;
 import java.util.Objects;
 
 /**
- * 状态同步 Store。
- *
- * @param <T> 状态类型
+ * 内容语义状态同步 Store。
  */
-public final class NetStore<T> {
+public final class NetStore {
 
     private final NetService service;
     private final NetStoreId id;
-    private final Class<T> stateType;
     private final NetStoreScope scope;
     private final AccessControl accessControl;
-    private final NetStoreView<T> view;
-    private T state;
+    private final NetStoreView view;
+    private NetBody state;
 
-    NetStore(NetService service, NetStoreId id, Class<T> stateType, NetStoreScope scope, T initial,
-            AccessControl accessControl) {
+    NetStore(NetService service, NetStoreId id, NetStoreScope scope, NetBody initial, AccessControl accessControl) {
         this.service = service;
         this.id = id;
-        this.stateType = stateType;
         this.scope = scope;
-        this.state = initial;
+        this.state = initial == null ? NetBody.empty() : initial;
         this.accessControl = accessControl;
-        this.view = new NetStoreView<T>(initial);
+        this.view = new NetStoreView(this.state);
     }
 
     public NetStoreId getId() {
         return id;
-    }
-
-    public Class<T> getStateType() {
-        return stateType;
     }
 
     public NetStoreScope getScope() {
@@ -45,34 +36,43 @@ public final class NetStore<T> {
      *
      * @return 视图
      */
-    public NetStoreView<T> view() {
+    public NetStoreView view() {
         return view;
     }
 
     /**
-     * 返回当前状态。
+     * 返回当前状态 body。
      *
-     * @return 状态
+     * @return 状态 body
      */
-    public synchronized T get() {
+    public synchronized NetBody get() {
         return state;
     }
 
     /**
-     * 服务端修改状态并广播快照。
+     * 服务端替换状态并广播快照。
+     *
+     * @param next 新状态
+     */
+    public synchronized void set(NetBody next) {
+        state = Objects.requireNonNull(next, "next");
+        service.sendStoreSnapshot(this, NetTarget.all(), state);
+    }
+
+    /**
+     * 基于当前 body 计算新 body 并广播。
      *
      * @param mutator 修改函数
      */
-    public synchronized void mutate(StoreMutator<T> mutator) {
-        mutator.mutate(state);
-        service.sendStoreSnapshot(this, NetTarget.all(), state);
+    public synchronized void mutate(StoreMutator mutator) {
+        set(Objects.requireNonNull(mutator, "mutator").mutate(state));
     }
 
     boolean canAccess(Object player) {
         return accessControl == null || accessControl.canAccess(player, this);
     }
 
-    void receiveSnapshot(T snapshot) {
+    void receiveSnapshot(NetBody snapshot) {
         synchronized (this) {
             this.state = snapshot;
         }
@@ -81,57 +81,56 @@ public final class NetStore<T> {
 
     /**
      * Store 注册构造器。
-     *
-     * @param <T> 状态类型
      */
-    public static final class Builder<T> {
+    public static final class Builder {
 
         private final NetService service;
         private final NetStoreId id;
-        private final Class<T> stateType;
         private NetStoreScope scope = NetStoreScope.GLOBAL;
-        private T initial;
+        private NetBody initial = NetBody.empty();
         private AccessControl accessControl;
 
-        Builder(NetService service, NetStoreId id, Class<T> stateType) {
+        Builder(NetService service, NetStoreId id) {
             this.service = service;
             this.id = id;
-            this.stateType = stateType;
         }
 
-        public Builder<T> scope(NetStoreScope scope) {
+        public Builder scope(NetStoreScope scope) {
             this.scope = Objects.requireNonNull(scope, "scope");
             return this;
         }
 
-        public Builder<T> initial(T initial) {
-            this.initial = initial;
+        public Builder initial(NetBody initial) {
+            this.initial = Objects.requireNonNull(initial, "initial");
             return this;
         }
 
-        public Builder<T> accessControl(AccessControl accessControl) {
+        public Builder initialJson(String json) {
+            return initial(NetBody.json(json));
+        }
+
+        public Builder accessControl(AccessControl accessControl) {
             this.accessControl = accessControl;
             return this;
         }
 
-        public NetStore<T> register() {
-            return service.registerStore(new NetStore<T>(service, id, stateType, scope, initial, accessControl));
+        public NetStore register() {
+            return service.registerStore(new NetStore(service, id, scope, initial, accessControl));
         }
     }
 
     /**
      * Store 修改函数。
-     *
-     * @param <T> 状态类型
      */
-    public interface StoreMutator<T> {
+    public interface StoreMutator {
 
         /**
-         * 修改状态。
+         * 根据当前 body 返回新 body。
          *
-         * @param state 状态
+         * @param current 当前 body
+         * @return 新 body
          */
-        void mutate(T state);
+        NetBody mutate(NetBody current);
     }
 
     /**
@@ -146,6 +145,6 @@ public final class NetStore<T> {
          * @param store Store
          * @return true 表示允许访问
          */
-        boolean canAccess(Object player, NetStore<?> store);
+        boolean canAccess(Object player, NetStore store);
     }
 }

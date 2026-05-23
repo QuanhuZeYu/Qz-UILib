@@ -3,6 +3,7 @@ package club.heiqi.uilib.net.core;
 import org.junit.Assert;
 import org.junit.Test;
 
+import club.heiqi.uilib.net.api.NetBody;
 import club.heiqi.uilib.net.transport.NetSide;
 
 /**
@@ -16,8 +17,8 @@ public class NetChunkAssemblerTest {
         for (int index = 0; index < payload.length; index++) {
             payload[index] = (byte) index;
         }
-        byte[] envelope = NetEnvelope.of(NetEnvelope.Kind.CHANNEL, NetSide.SERVER, "test:big", 1, 0L,
-                payload).encode();
+        byte[] envelope = NetEnvelope.of(NetEnvelope.Kind.CHANNEL, NetSide.SERVER, "test:big", 0L, 0,
+                java.util.Collections.<String, String>emptyMap(), NetBody.binary(payload)).encode();
         NetChunkAssembler assembler = new NetChunkAssembler();
 
         byte[] completed = null;

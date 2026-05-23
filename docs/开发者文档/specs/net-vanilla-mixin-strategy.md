@@ -23,7 +23,7 @@
 | `MixinNetHandlerPlayClient` | `NetHandlerPlayClient.<init>` TAIL | 调 `VanillaMixinTransport.onClientHandshakeReady(...)` |
 | `MixinNetHandlerPlayClient` | `handleCustomPayload` HEAD cancellable | channel 名以 `qz:` 开头时交给 Qz 网络层并 `cancel` |
 | `MixinNetHandlerPlayClient` | `onDisconnect` HEAD | 清理 pending fetch 与分片状态 |
-| `MixinNetHandlerPlayServer` | `NetHandlerPlayServer.<init>` TAIL | 玩家 NetHandler 就绪后发送 schema 握手 |
+| `MixinNetHandlerPlayServer` | `NetHandlerPlayServer.<init>` TAIL | 玩家 NetHandler 就绪后发送协议能力握手 |
 | `MixinNetHandlerPlayServer` | `processVanilla250Packet` HEAD cancellable | channel 名以 `qz:` 开头时交给 Qz 网络层并 `cancel` |
 | `MixinNetHandlerPlayServer` | `onDisconnect` HEAD | 服务端玩家离开信号 |
 
