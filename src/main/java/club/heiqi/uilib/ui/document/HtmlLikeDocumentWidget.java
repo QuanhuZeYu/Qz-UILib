@@ -1,5 +1,6 @@
 package club.heiqi.uilib.ui.document;
 
+import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 import java.util.Objects;
@@ -385,8 +386,15 @@ public final class HtmlLikeDocumentWidget extends Widget implements UiDocument.D
             return null;
         }
         long currentTimeNanos = animationClock.getCurrentTimeNanos();
-        return DocumentHitTestEngine.hitTest(resolveInteractiveLayoutBox(), scrollState, screenX - getAbsoluteX(),
-                screenY - getAbsoluteY(), currentTimeNanos, animationTimeline);
+        int documentX = screenX - getAbsoluteX();
+        int documentY = screenY - getAbsoluteY();
+        DocumentLayoutBox rootBox = resolveInteractiveLayoutBox();
+        ElementNode topLayerHit = findTopLayerElementAt(documentX, documentY, currentTimeNanos, null);
+        if (topLayerHit != null) {
+            return topLayerHit;
+        }
+        return DocumentHitTestEngine.hitTest(rootBox, scrollState, documentX, documentY, currentTimeNanos,
+                animationTimeline);
     }
 
     /**
@@ -410,7 +418,8 @@ public final class HtmlLikeDocumentWidget extends Widget implements UiDocument.D
 
     @Override
     public boolean requestScrollTo(ElementNode element, int scrollLeft, int scrollTop) {
-        if (!focusManager.isVisibleLayoutTarget(element)) {
+        resolveInteractiveLayoutBox();
+        if (!focusManager.isVisibleLayoutTarget(element) && findTopLayerLayoutBoundsEntry(element, null) == null) {
             return false;
         }
         if (scrollState.getMaxScrollLeft(element) <= 0 && scrollState.getMaxScrollTop(element) <= 0) {
@@ -456,7 +465,11 @@ public final class HtmlLikeDocumentWidget extends Widget implements UiDocument.D
         if (element == null || !isElementAttachedToDocument(element)) {
             return DocumentElementBounds.unavailable();
         }
-        LayoutBoundsEntry entry = findLayoutBoundsEntry(resolveInteractiveLayoutBox(), element, 0, 0);
+        DocumentLayoutBox rootBox = resolveInteractiveLayoutBox();
+        LayoutBoundsEntry entry = findTopLayerLayoutBoundsEntry(element, null);
+        if (entry == null) {
+            entry = findLayoutBoundsEntry(rootBox, element, 0, 0);
+        }
         if (entry == null) {
             return DocumentElementBounds.unavailable();
         }
@@ -583,8 +596,9 @@ public final class HtmlLikeDocumentWidget extends Widget implements UiDocument.D
         lastScrollWheelDelta = event.getWheelDelta();
         lastScrollEventTimeNanos = event.getTimeNanos();
         DocumentLayoutBox rootBox = resolveInteractiveLayoutBox();
-        boolean consumed = scrollState.handleWheel(rootBox, event.getMouseX() - getAbsoluteX(),
-                event.getMouseY() - getAbsoluteY(), event.getWheelDelta());
+        boolean consumed = scrollState.handleWheel(rootBox, resolveTopLayerLayoutBoxes(null),
+                event.getMouseX() - getAbsoluteX(), event.getMouseY() - getAbsoluteY(), event.getWheelDelta(),
+                event.getTimeNanos());
         lastScrollConsumed = consumed;
         if (consumed) {
             updateHoveredElement(findElementAt(event.getMouseX(), event.getMouseY()), event);
@@ -600,8 +614,8 @@ public final class HtmlLikeDocumentWidget extends Widget implements UiDocument.D
             return;
         }
         DocumentLayoutBox rootBox = resolveInteractiveLayoutBox();
-        if (event.getButton() == 0 && scrollState.beginScrollbarDrag(rootBox, event.getMouseX() - getAbsoluteX(),
-                event.getMouseY() - getAbsoluteY())) {
+        if (event.getButton() == 0 && scrollState.beginScrollbarDrag(rootBox, resolveTopLayerLayoutBoxes(null),
+                event.getMouseX() - getAbsoluteX(), event.getMouseY() - getAbsoluteY(), event.getTimeNanos())) {
             pressedElement = null;
             pressedButton = -1;
             dragController.clearDragState();
@@ -625,8 +639,8 @@ public final class HtmlLikeDocumentWidget extends Widget implements UiDocument.D
             return;
         }
         if (scrollState.isDraggingScrollbar()) {
-            scrollState.updateScrollbarDrag(resolveInteractiveLayoutBox(), event.getMouseX() - getAbsoluteX(),
-                    event.getMouseY() - getAbsoluteY());
+            scrollState.updateScrollbarDrag(resolveInteractiveLayoutBox(), resolveTopLayerLayoutBoxes(null),
+                    event.getMouseX() - getAbsoluteX(), event.getMouseY() - getAbsoluteY(), event.getTimeNanos());
         }
         dragController.dispatchDragMove(event);
         updateHoveredElement(findElementAt(event.getMouseX(), event.getMouseY()), event);
@@ -765,8 +779,14 @@ public final class HtmlLikeDocumentWidget extends Widget implements UiDocument.D
             return cachedPaintCommands;
         }
 
+        List<DocumentLayoutBox> topLayerBoxes = resolveTopLayerLayoutBoxes(layoutRuntimeValueActive
+                ? createAnimationLayoutValueResolver(currentTimeNanos) : null);
         cachedPaintCommands = DocumentPaintEngine.buildPaintCommands(rootBox, scrollState, currentTimeNanos,
                 animationTimeline);
+        for (DocumentLayoutBox topLayerBox : topLayerBoxes) {
+            cachedPaintCommands.addAll(DocumentPaintEngine.buildPaintCommands(topLayerBox, scrollState,
+                    currentTimeNanos, animationTimeline));
+        }
         paintCacheGeneration++;
         cachedPaintScrollVersion = scrollVersion;
         cachedPaintTransientScrollbarActive = transientScrollbarActive;
@@ -775,18 +795,12 @@ public final class HtmlLikeDocumentWidget extends Widget implements UiDocument.D
 
     private DocumentLayoutBox resolveRuntimeLayoutBox(final long currentTimeNanos, boolean layoutAnimationWork) {
         if (!layoutAnimationWork && isRuntimeLayoutCacheReusable()) {
-            scrollState.updateFromLayout(cachedRuntimeLayoutBox);
+            scrollState.updateFromLayout(cachedRuntimeLayoutBox, resolveTopLayerLayoutBoxes(null));
             return cachedRuntimeLayoutBox;
         }
 
         DocumentLayoutEngine.LayoutRuntimeValueResolver layoutValueResolver =
-                new DocumentLayoutEngine.LayoutRuntimeValueResolver() {
-                    @Override
-                    public int resolve(ElementNode element, DocumentAnimationProperty property, int baseValue) {
-                        return Math.round(animationTimeline.resolveFloat(element, property, baseValue,
-                                currentTimeNanos));
-                    }
-        };
+                createAnimationLayoutValueResolver(currentTimeNanos);
         DocumentLayoutBox rootBox = layoutDocument(layoutValueResolver);
         runtimeLayoutGeneration++;
         if (layoutAnimationWork) {
@@ -794,7 +808,7 @@ public final class HtmlLikeDocumentWidget extends Widget implements UiDocument.D
         } else {
             cacheRuntimeLayoutBox(rootBox);
         }
-        scrollState.updateFromLayout(rootBox);
+        scrollState.updateFromLayout(rootBox, resolveTopLayerLayoutBoxes(layoutValueResolver));
         return rootBox;
     }
 
@@ -844,7 +858,7 @@ public final class HtmlLikeDocumentWidget extends Widget implements UiDocument.D
                 || animationTimeline.hasRuntimeValue(DocumentAnimationImpact.LAYOUT)) {
             return;
         }
-        scrollState.updateFromLayout(cachedLayoutBox);
+        scrollState.updateFromLayout(cachedLayoutBox, resolveTopLayerLayoutBoxes(null));
         cachedLayoutScrollStateUpdated = true;
     }
 
@@ -896,6 +910,52 @@ public final class HtmlLikeDocumentWidget extends Widget implements UiDocument.D
         return rootBox;
     }
 
+    private DocumentAnimationTimelineLayoutResolver createAnimationLayoutValueResolver(final long currentTimeNanos) {
+        return new DocumentAnimationTimelineLayoutResolver(currentTimeNanos);
+    }
+
+    private List<DocumentLayoutBox> resolveTopLayerLayoutBoxes(
+            DocumentLayoutEngine.LayoutRuntimeValueResolver layoutValueResolver) {
+        List<ElementNode> topLayerElements = document.__getTopLayerElements();
+        if (topLayerElements.isEmpty()) {
+            return Collections.emptyList();
+        }
+        List<DocumentLayoutBox> boxes = new ArrayList<DocumentLayoutBox>(topLayerElements.size());
+        for (ElementNode topLayerElement : topLayerElements) {
+            if (!isElementAttachedToDocument(topLayerElement)) {
+                continue;
+            }
+            boxes.add(DocumentLayoutEngine.layoutTopLayerElement(topLayerElement, getWidth(), getHeight(),
+                    textMeasureService, layoutValueResolver));
+        }
+        return boxes;
+    }
+
+    private ElementNode findTopLayerElementAt(int documentX, int documentY, long currentTimeNanos,
+            DocumentLayoutEngine.LayoutRuntimeValueResolver layoutValueResolver) {
+        List<DocumentLayoutBox> topLayerBoxes = resolveTopLayerLayoutBoxes(layoutValueResolver);
+        for (int index = topLayerBoxes.size() - 1; index >= 0; index--) {
+            ElementNode hit = DocumentHitTestEngine.hitTest(topLayerBoxes.get(index), scrollState, documentX,
+                    documentY, currentTimeNanos, animationTimeline);
+            if (hit != null) {
+                return hit;
+            }
+        }
+        return null;
+    }
+
+    private LayoutBoundsEntry findTopLayerLayoutBoundsEntry(ElementNode element,
+            DocumentLayoutEngine.LayoutRuntimeValueResolver layoutValueResolver) {
+        List<DocumentLayoutBox> topLayerBoxes = resolveTopLayerLayoutBoxes(layoutValueResolver);
+        for (int index = topLayerBoxes.size() - 1; index >= 0; index--) {
+            LayoutBoundsEntry entry = findLayoutBoundsEntry(topLayerBoxes.get(index), element, 0, 0);
+            if (entry != null) {
+                return entry;
+            }
+        }
+        return null;
+    }
+
     private static DocumentLayoutBox findLayoutBox(DocumentLayoutBox box, ElementNode element) {
         if (box == null || element == null) {
             return null;
@@ -945,6 +1005,21 @@ public final class HtmlLikeDocumentWidget extends Widget implements UiDocument.D
             this.box = box;
             this.offsetX = offsetX;
             this.offsetY = offsetY;
+        }
+    }
+
+    private final class DocumentAnimationTimelineLayoutResolver
+            implements DocumentLayoutEngine.LayoutRuntimeValueResolver {
+
+        private final long currentTimeNanos;
+
+        private DocumentAnimationTimelineLayoutResolver(long currentTimeNanos) {
+            this.currentTimeNanos = currentTimeNanos;
+        }
+
+        @Override
+        public int resolve(ElementNode element, DocumentAnimationProperty property, int baseValue) {
+            return Math.round(animationTimeline.resolveFloat(element, property, baseValue, currentTimeNanos));
         }
     }
 

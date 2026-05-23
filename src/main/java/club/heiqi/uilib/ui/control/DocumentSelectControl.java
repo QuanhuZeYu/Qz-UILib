@@ -33,7 +33,6 @@ public final class DocumentSelectControl {
 
     private static final int DEFAULT_TRIGGER_HEIGHT = 32;
     private static final int DEFAULT_OPTION_HEIGHT = 28;
-    private static final int POPUP_TOP_LAYER_Z_INDEX = 10000;
     private static final String PRESERVE_FOCUS_ON_MOUSE_DOWN_ATTRIBUTE = "data-qz-preserve-focus-on-mousedown";
 
     private final ElementNode element;
@@ -365,9 +364,7 @@ public final class DocumentSelectControl {
         }
         this.open = open;
         highlightedIndex = selectedIndex;
-        if (this.open) {
-            syncPopupTopLayerPlacement();
-        } else {
+        if (!this.open) {
             restorePopupInlinePlacement();
         }
         updateVisualState();
@@ -421,7 +418,6 @@ public final class DocumentSelectControl {
         }
         int resolvedTextColor = enabled ? textColor : disabledTextColor;
         labelText.setText(options[selectedIndex]);
-        arrowText.setText(open ? "^" : "v");
         element.style()
                 .setBackgroundColor(backgroundColor)
                 .setBorderColor(borderColor)
@@ -429,15 +425,16 @@ public final class DocumentSelectControl {
                 .setTextColor(resolvedTextColor);
         labelElement.style().setTextColor(resolvedTextColor);
         arrowElement.style().setTextColor(enabled ? mutedTextColor : disabledTextColor);
+        if (open && !syncPopupTopLayerPlacement()) {
+            this.open = false;
+        }
+        arrowText.setText(this.open ? "^" : "v");
         popupElement.style()
-                .setDisplay(open ? UiDisplay.FLEX : UiDisplay.NONE)
+                .setDisplay(this.open ? UiDisplay.FLEX : UiDisplay.NONE)
                 .setFlexDirection(UiFlexDirection.COLUMN)
                 .setBorderColor(triggerBorderColor)
                 .setBackgroundColor(enabled ? popupBackgroundColor : disabledBackgroundColor);
-        if (open) {
-            syncPopupTopLayerPlacement();
-        }
-        element.setAttribute("aria-expanded", String.valueOf(open));
+        element.setAttribute("aria-expanded", String.valueOf(this.open));
         element.setAttribute("value", options[selectedIndex]);
         for (int index = 0; index < optionElements.length; index++) {
             boolean selected = index == selectedIndex;
@@ -456,33 +453,34 @@ public final class DocumentSelectControl {
     }
 
     /**
-     * 将展开面板提升到文档顶层。
+     * 将展开面板注册到文档运行时顶层。
      *
-     * <p>浏览器原生 select 的下拉面板不受普通内容滚动容器裁剪；这里用 fixed 顶层节点表达同类语义，
-     * 避免 HUD 场景中点击选项时命中落到下方按钮或原生界面。</p>
+     * <p>浏览器原生 select 的下拉面板由 UA 以 top-layer 语义管理，不会离开 select 的逻辑 DOM
+     * 归属，也不受普通祖先 overflow 或 stacking context 裁剪。</p>
+     *
+     * @return 是否成功完成顶层放置
      */
-    private void syncPopupTopLayerPlacement() {
+    private boolean syncPopupTopLayerPlacement() {
         if (!open) {
-            return;
+            return false;
         }
         DocumentElementBounds bounds = element.getDocumentBounds();
         if (!bounds.isAvailable() || bounds.getWidth() <= 0) {
             restorePopupInlinePlacement();
-            return;
-        }
-        ElementNode root = element.getOwnerDocument().getRootElement();
-        if (popupElement.getParent() != root) {
-            root.append(popupElement);
+            return false;
         }
         popupElement.style()
                 .setPosition(UiPosition.FIXED)
                 .setLeft(UiStyleLength.px(bounds.getLeft()))
                 .setTop(UiStyleLength.px(bounds.getTop() + bounds.getHeight()))
                 .setWidth(UiStyleLength.px(bounds.getWidth()))
-                .setZIndex(POPUP_TOP_LAYER_Z_INDEX);
+                .clearZIndex();
+        element.getOwnerDocument().__showTopLayerElement(popupElement);
+        return true;
     }
 
     private void restorePopupInlinePlacement() {
+        element.getOwnerDocument().__hideTopLayerElement(popupElement);
         if (popupElement.getParent() != element) {
             element.append(popupElement);
         }

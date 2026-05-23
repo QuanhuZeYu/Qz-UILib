@@ -115,6 +115,32 @@ public final class DocumentLayoutEngine {
     }
 
     /**
+     * 按浏览器 top-layer 语义布局单个顶层元素。
+     *
+     * <p>顶层元素的 DOM 归属不变，但其布局 containing block 为当前 HTML-like 视口，不受原父级
+     * overflow、stacking context 或滚动容器影响。</p>
+     *
+     * @param element 顶层元素
+     * @param viewportWidth 视口宽度
+     * @param viewportHeight 视口高度
+     * @param textMeasureService 文本测量服务
+     * @param layoutValueResolver 运行态布局值解析器
+     * @return 顶层元素布局盒
+     */
+    public static DocumentLayoutBox layoutTopLayerElement(ElementNode element, int viewportWidth, int viewportHeight,
+            TextMeasureService textMeasureService, LayoutRuntimeValueResolver layoutValueResolver) {
+        Objects.requireNonNull(element, "element");
+        int safeViewportWidth = Math.max(0, viewportWidth);
+        int safeViewportHeight = Math.max(0, viewportHeight);
+        LayoutContext layoutContext = new LayoutContext(Objects.requireNonNull(textMeasureService,
+                "textMeasureService"), resolveLayoutValueResolver(layoutValueResolver));
+        AbsoluteContainingBlock fixedContainingBlock = new AbsoluteContainingBlock(0, 0, safeViewportWidth,
+                safeViewportHeight);
+        return PositionedLayoutHelper.layoutPositionedElement(element, fixedContainingBlock, fixedContainingBlock,
+                layoutContext);
+    }
+
+    /**
      * 对根元素执行视口布局，让根 border box 固定为传入视口尺寸。
      *
      * <p>该入口用于页面级 HTML-like 滚动：根元素本身保持固定视口，超出的子内容由
@@ -301,6 +327,9 @@ public final class DocumentLayoutEngine {
                 continue;
             }
             ElementNode childElement = (ElementNode) child;
+            if (childElement.getOwnerDocument().__isTopLayerElement(childElement)) {
+                continue;
+            }
             ComputedStyle childStyle = layoutContext.computeStyle(childElement);
             if (childStyle.getDisplay() == UiDisplay.NONE) {
                 continue;

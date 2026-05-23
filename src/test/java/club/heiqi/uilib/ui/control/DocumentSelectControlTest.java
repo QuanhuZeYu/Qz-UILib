@@ -14,6 +14,7 @@ import club.heiqi.uilib.ui.event.UiKeyEvent;
 import club.heiqi.uilib.ui.event.UiMouseEvent;
 import club.heiqi.uilib.ui.style.props.UiDisplay;
 import club.heiqi.uilib.ui.style.props.UiOverflow;
+import club.heiqi.uilib.ui.style.props.UiPosition;
 import club.heiqi.uilib.ui.style.values.UiStyleLength;
 import club.heiqi.uilib.ui.text.TextMeasureService;
 
@@ -112,13 +113,120 @@ public class DocumentSelectControlTest {
         widget.onMouseUp(new UiMouseEvent(UiMouseEvent.Action.BUTTON_UP, 20, 12, 0, 0, 0, 0, 2L));
         ElementNode popup = findListboxElement(root);
         Assert.assertNotNull(popup);
-        Assert.assertSame("展开面板应升到文档顶层，避免被滚动/裁剪容器吞掉命中",
-                root, popup.getParent());
+        Assert.assertSame("展开面板仍应保持 select 逻辑 DOM 归属",
+                selectControl.getElement(), popup.getParent());
+        Assert.assertTrue("展开面板应由文档运行时注册为 top-layer",
+                document.__isTopLayerElement(popup));
         widget.onMouseDown(new UiMouseEvent(UiMouseEvent.Action.BUTTON_DOWN, 20, 72, 0, 0, 0, 0, 3L));
         widget.onMouseUp(new UiMouseEvent(UiMouseEvent.Action.BUTTON_UP, 20, 72, 0, 0, 0, 0, 4L));
 
         Assert.assertEquals(1, selectControl.getSelectedIndex());
         Assert.assertEquals(0, buttonClicks[0]);
+        Assert.assertFalse(document.__isTopLayerElement(popup));
+    }
+
+    /**
+     * 验证 fixed HUD 浮窗中的 select 仍按 top-layer 真实命中候选项。
+     */
+    @Test
+    public void shouldSelectOptionInsideFixedShellWithoutClickingUnderlyingButton() {
+        UiDocument document = UiDocument.create();
+        ElementNode root = document.getRootElement();
+        ElementNode shell = document.div();
+        final int[] buttonClicks = new int[1];
+        DocumentSelectControl selectControl = new DocumentSelectControl(document, "A", "B", "C");
+        DocumentButtonControl buttonControl = new DocumentButtonControl(document, "Submit");
+
+        root.style()
+                .setWidth(UiStyleLength.px(320))
+                .setHeight(UiStyleLength.px(240));
+        shell.style()
+                .setPosition(UiPosition.FIXED)
+                .setLeft(UiStyleLength.px(60))
+                .setTop(UiStyleLength.px(40))
+                .setWidth(UiStyleLength.px(180))
+                .setOverflowX(UiOverflow.VISIBLE)
+                .setOverflowY(UiOverflow.VISIBLE);
+        selectControl.getElement().style().setWidth(UiStyleLength.px(180));
+        buttonControl.getElement().style()
+                .setPosition(UiPosition.FIXED)
+                .setLeft(UiStyleLength.px(60))
+                .setTop(UiStyleLength.px(100))
+                .setDisplay(UiDisplay.BLOCK)
+                .setWidth(UiStyleLength.px(180))
+                .setHeight(UiStyleLength.px(40));
+        buttonControl.setActionHandler(event -> buttonClicks[0]++);
+        shell.append(selectControl.getElement());
+        root.append(shell);
+        root.append(buttonControl.getElement());
+        HtmlLikeDocumentWidget widget = new HtmlLikeDocumentWidget(document, 320, 240,
+                new DeterministicTextMeasureService());
+        widget.applyLayoutBounds(0, 0, 320, 240);
+
+        widget.onMouseDown(new UiMouseEvent(UiMouseEvent.Action.BUTTON_DOWN, 70, 52, 0, 0, 0, 0, 1L));
+        widget.onMouseUp(new UiMouseEvent(UiMouseEvent.Action.BUTTON_UP, 70, 52, 0, 0, 0, 0, 2L));
+        ElementNode popup = findListboxElement(root);
+        Assert.assertSame(selectControl.getElement(), popup.getParent());
+        Assert.assertTrue(document.__isTopLayerElement(popup));
+
+        widget.onMouseDown(new UiMouseEvent(UiMouseEvent.Action.BUTTON_DOWN, 70, 112, 0, 0, 0, 0, 3L));
+        widget.onMouseUp(new UiMouseEvent(UiMouseEvent.Action.BUTTON_UP, 70, 112, 0, 0, 0, 0, 4L));
+
+        Assert.assertEquals(1, selectControl.getSelectedIndex());
+        Assert.assertEquals(0, buttonClicks[0]);
+    }
+
+    /**
+     * 验证 top-layer 命中顺序高于普通 fixed 内容，且后注册的顶层元素在更上层。
+     */
+    @Test
+    public void shouldHitLatestTopLayerAboveFixedContent() {
+        UiDocument document = UiDocument.create();
+        ElementNode root = document.getRootElement();
+        ElementNode normalFixed = createHitSurface(document, 0xFF334455);
+        ElementNode firstTopLayer = createHitSurface(document, 0xFF556677);
+        ElementNode secondTopLayer = createHitSurface(document, 0xFF778899);
+        final int[] normalClicks = new int[1];
+        final int[] firstClicks = new int[1];
+        final int[] secondClicks = new int[1];
+
+        root.style()
+                .setWidth(UiStyleLength.px(160))
+                .setHeight(UiStyleLength.px(120));
+        normalFixed.setClickHandler(event -> {
+            normalClicks[0]++;
+            return true;
+        });
+        firstTopLayer.setClickHandler(event -> {
+            firstClicks[0]++;
+            return true;
+        });
+        secondTopLayer.setClickHandler(event -> {
+            secondClicks[0]++;
+            return true;
+        });
+        root.append(normalFixed).append(firstTopLayer).append(secondTopLayer);
+        document.__showTopLayerElement(firstTopLayer);
+        document.__showTopLayerElement(secondTopLayer);
+        HtmlLikeDocumentWidget widget = new HtmlLikeDocumentWidget(document, 160, 120,
+                new DeterministicTextMeasureService());
+        widget.applyLayoutBounds(0, 0, 160, 120);
+
+        click(widget, 20, 20, 1L);
+        Assert.assertEquals(0, normalClicks[0]);
+        Assert.assertEquals(0, firstClicks[0]);
+        Assert.assertEquals(1, secondClicks[0]);
+
+        document.__hideTopLayerElement(secondTopLayer);
+        secondTopLayer.style().setDisplay(UiDisplay.NONE);
+        click(widget, 20, 20, 3L);
+        Assert.assertEquals(0, normalClicks[0]);
+        Assert.assertEquals(1, firstClicks[0]);
+
+        document.__hideTopLayerElement(firstTopLayer);
+        firstTopLayer.style().setDisplay(UiDisplay.NONE);
+        click(widget, 20, 20, 5L);
+        Assert.assertEquals(1, normalClicks[0]);
     }
 
     /**
@@ -245,6 +353,23 @@ public class DocumentSelectControlTest {
             }
         }
         return null;
+    }
+
+    private static ElementNode createHitSurface(UiDocument document, int color) {
+        ElementNode element = document.div();
+        element.style()
+                .setPosition(UiPosition.FIXED)
+                .setLeft(UiStyleLength.px(10))
+                .setTop(UiStyleLength.px(10))
+                .setWidth(UiStyleLength.px(80))
+                .setHeight(UiStyleLength.px(40))
+                .setBackgroundColor(color);
+        return element;
+    }
+
+    private static void click(HtmlLikeDocumentWidget widget, int x, int y, long timeNanos) {
+        widget.onMouseDown(new UiMouseEvent(UiMouseEvent.Action.BUTTON_DOWN, x, y, 0, 0, 0, 0, timeNanos));
+        widget.onMouseUp(new UiMouseEvent(UiMouseEvent.Action.BUTTON_UP, x, y, 0, 0, 0, 0, timeNanos + 1L));
     }
 
     private static final class DeterministicTextMeasureService implements TextMeasureService {

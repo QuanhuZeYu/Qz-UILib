@@ -20,6 +20,7 @@
 - Minecraft 1.7.10 / GTNH / LWJGL3ify 环境下的 HTML-like UI 框架 Mod。
 - 根包：`club.heiqi.uilib`，Mod ID：`qz_uilib`。
 - 作者层暴露浏览器语义（DOM / CSS / 事件模型），不向页面作者暴露 Minecraft GUI 生命周期或底层渲染实现细节。
+- 内置弹出型控件按浏览器 top-layer 语义处理：DOM 归属不变，布局/绘制/命中由文档运行时提升到视口顶层；top-layer 仍是内部能力，不作为业务作者 API。
 
 ## 对外入口边界
 
