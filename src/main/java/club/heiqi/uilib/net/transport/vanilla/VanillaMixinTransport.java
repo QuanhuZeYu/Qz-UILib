@@ -27,6 +27,7 @@ public final class VanillaMixinTransport implements ITransport {
 
     @Override
     public void shutdown() {
+        VanillaPacketBuilders.clearClientNetworkManager();
         VanillaInboundDispatcher.setFrameHandler(null);
     }
 
@@ -65,6 +66,7 @@ public final class VanillaMixinTransport implements ITransport {
      */
     public static void onClientHandshakeReady(NetworkManager networkManager) {
         MyMod.LOG.debug("Qz vanilla transport client handshake ready: {}", networkManager);
+        VanillaPacketBuilders.rememberClientNetworkManager(networkManager);
         NetService.getInstance().sendCapabilityHandshakeToServer();
     }
 
@@ -75,6 +77,7 @@ public final class VanillaMixinTransport implements ITransport {
      */
     public static void onClientDisconnected(IChatComponent reason) {
         MyMod.LOG.debug("Qz vanilla transport client disconnected: {}", reason);
+        VanillaPacketBuilders.clearClientNetworkManager();
         NetService.getInstance().onClientDisconnected();
     }
 

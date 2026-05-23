@@ -2,6 +2,7 @@ package club.heiqi.uilib.net.transport.vanilla;
 
 import java.lang.reflect.Method;
 import java.util.List;
+import java.util.Objects;
 
 import net.minecraft.entity.player.EntityPlayerMP;
 import net.minecraft.network.NetworkManager;
@@ -14,7 +15,25 @@ import net.minecraft.server.MinecraftServer;
  */
 public final class VanillaPacketBuilders {
 
+    private static volatile NetworkManager clientNetworkManager;
+
     private VanillaPacketBuilders() {}
+
+    /**
+     * 记录客户端 NetHandler 构造期已可用的 NetworkManager。
+     *
+     * @param networkManager 网络管理器
+     */
+    static void rememberClientNetworkManager(NetworkManager networkManager) {
+        clientNetworkManager = Objects.requireNonNull(networkManager, "networkManager");
+    }
+
+    /**
+     * 清理已记录的客户端 NetworkManager。
+     */
+    static void clearClientNetworkManager() {
+        clientNetworkManager = null;
+    }
 
     /**
      * 客户端发送到服务端。
@@ -86,6 +105,10 @@ public final class VanillaPacketBuilders {
     }
 
     private static NetworkManager resolveClientNetworkManager() {
+        NetworkManager rememberedNetworkManager = clientNetworkManager;
+        if (rememberedNetworkManager != null) {
+            return rememberedNetworkManager;
+        }
         try {
             Class<?> minecraftClass = Class.forName("net.minecraft.client.Minecraft");
             Method getMinecraft = minecraftClass.getMethod("getMinecraft");

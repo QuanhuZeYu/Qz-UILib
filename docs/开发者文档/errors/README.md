@@ -155,6 +155,14 @@ Toolchain、依赖版本、构建配置与运行时类路径。
 
 ---
 
+## 网络生命周期类（1 条）
+
+- [`ERROR-20260523-net-client-handshake-net-handler-race.md`](ERROR-20260523-net-client-handshake-net-handler-race.md) — 客户端能力握手在 NetHandler 构造期反查全局 NetHandler 导致连接崩溃
+
+**共性教训**：早期 mixin 已拿到的生命周期对象应优先直接传递或缓存，不能在构造期依赖全局单例反查。
+
+---
+
 ## 其他（1 条）
 
 - [`ERROR-20260426-powershell-git-commit-quoting.md`](ERROR-20260426-powershell-git-commit-quoting.md) — PowerShell git commit 消息转义错误导致提交失败
