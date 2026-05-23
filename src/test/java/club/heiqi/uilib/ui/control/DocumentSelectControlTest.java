@@ -74,6 +74,33 @@ public class DocumentSelectControlTest {
     }
 
     /**
+     * 验证下拉面板展开后 option 的直接文本会被绘制。
+     */
+    @Test
+    public void shouldRenderOptionTextWhenPopupIsOpen() {
+        UiDocument document = UiDocument.create();
+        ElementNode root = document.getRootElement();
+        DocumentSelectControl selectControl = new DocumentSelectControl(document, "A", "B", "C");
+        root.style()
+                .setWidth(UiStyleLength.px(240))
+                .setHeight(UiStyleLength.px(160));
+        selectControl.getElement().style().setWidth(UiStyleLength.px(180));
+        root.append(selectControl.getElement());
+        HtmlLikeDocumentWidget widget = new HtmlLikeDocumentWidget(document, 240, 160,
+                new DeterministicTextMeasureService());
+        widget.applyLayoutBounds(0, 0, 240, 160);
+
+        widget.onMouseDown(new UiMouseEvent(UiMouseEvent.Action.BUTTON_DOWN, 20, 12, 0, 0, 0, 0, 1L));
+        widget.onMouseUp(new UiMouseEvent(UiMouseEvent.Action.BUTTON_UP, 20, 12, 0, 0, 0, 0, 2L));
+        ControlTestRenderContext renderContext = new ControlTestRenderContext(240, 160);
+        widget.render(renderContext);
+
+        Assert.assertTrue(countTextCalls(renderContext, "A") >= 2);
+        Assert.assertTrue(containsTextCall(renderContext, "B"));
+        Assert.assertTrue(containsTextCall(renderContext, "C"));
+    }
+
+    /**
      * 验证键盘方向键可以切换当前值，Enter 可以展开/收起。
      */
     @Test
@@ -141,6 +168,20 @@ public class DocumentSelectControlTest {
         Assert.assertEquals(6, selectControl.getSelectedIndex());
         Assert.assertTrue(popup.getMaxScrollTop() > 0);
         Assert.assertTrue(popup.getScrollTop() > 0);
+    }
+
+    private static boolean containsTextCall(ControlTestRenderContext renderContext, String text) {
+        return countTextCalls(renderContext, text) > 0;
+    }
+
+    private static int countTextCalls(ControlTestRenderContext renderContext, String text) {
+        int count = 0;
+        for (ControlTestRenderContext.TextCall textCall : renderContext.textCalls) {
+            if (text.equals(textCall.text)) {
+                count++;
+            }
+        }
+        return count;
     }
 
     private static final class DeterministicTextMeasureService implements TextMeasureService {

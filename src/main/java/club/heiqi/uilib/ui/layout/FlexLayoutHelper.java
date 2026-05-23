@@ -6,20 +6,25 @@ import java.util.Comparator;
 import java.util.List;
 
 import club.heiqi.uilib.ui.animation.DocumentAnimationProperty;
+import club.heiqi.uilib.ui.dom.DocumentNode;
 import club.heiqi.uilib.ui.dom.ElementNode;
+import club.heiqi.uilib.ui.dom.TextNode;
 import club.heiqi.uilib.ui.layout.DocumentLayoutEngine.AbsoluteContainingBlock;
 import club.heiqi.uilib.ui.layout.DocumentLayoutEngine.LayoutContext;
 import club.heiqi.uilib.ui.layout.DocumentLayoutEngine.LayoutChildrenResult;
-import club.heiqi.uilib.ui.layout.DocumentLayoutEngine.VisibleElementChildren;
 import club.heiqi.uilib.ui.style.cascade.ComputedStyle;
+import club.heiqi.uilib.ui.style.cascade.UiStyleResolver;
 import club.heiqi.uilib.ui.style.props.UiAlignItems;
 import club.heiqi.uilib.ui.style.props.UiAlignSelf;
+import club.heiqi.uilib.ui.style.props.UiDisplay;
 import club.heiqi.uilib.ui.style.props.UiFlexDirection;
 import club.heiqi.uilib.ui.style.props.UiFlexWrap;
 import club.heiqi.uilib.ui.style.props.UiJustifyContent;
 import club.heiqi.uilib.ui.style.props.UiOverflow;
+import club.heiqi.uilib.ui.style.props.UiPosition;
 import club.heiqi.uilib.ui.style.values.UiStyleInsets;
 import club.heiqi.uilib.ui.style.values.UiStyleLength;
+import club.heiqi.uilib.ui.text.TextContentMode;
 
 /**
  * Flex 布局辅助类。
@@ -38,6 +43,8 @@ import club.heiqi.uilib.ui.style.values.UiStyleLength;
  */
 final class FlexLayoutHelper {
 
+    static final String ANONYMOUS_FLEX_ITEM_TAG = "qz-anonymous-flex-item";
+
     private FlexLayoutHelper() {}
 
     /**
@@ -47,12 +54,10 @@ final class FlexLayoutHelper {
             int contentLeft, int contentTop, int contentWidth, int specifiedContentHeight,
             AbsoluteContainingBlock absoluteContainingBlock, boolean createsAbsoluteContainingBlock,
             AbsoluteContainingBlock fixedContainingBlock, LayoutContext layoutContext) {
-        VisibleElementChildren visibleElementChildren = DocumentLayoutEngine.getVisibleElementChildren(element,
-                layoutContext);
-        List<ElementNode> absoluteChildren = visibleElementChildren.absoluteChildren;
-        List<ElementNode> fixedChildren = visibleElementChildren.fixedChildren;
-        List<ElementNode> visibleChildren = sortElementsByFlexOrder(element,
-                visibleElementChildren.inFlowChildren, layoutContext);
+        FlexChildren flexChildren = collectFlexChildren(element, parentStyle, layoutContext);
+        List<ElementNode> absoluteChildren = flexChildren.absoluteChildren;
+        List<ElementNode> fixedChildren = flexChildren.fixedChildren;
+        List<FlexChild> visibleChildren = sortFlexChildrenByOrder(flexChildren.inFlowChildren);
         LayoutChildrenResult flowResult;
         if (visibleChildren.isEmpty()) {
             flowResult = new LayoutChildrenResult(new ArrayList<DocumentLayoutBox>(),
@@ -71,11 +76,11 @@ final class FlexLayoutHelper {
                         createsAbsoluteContainingBlock, specifiedContentHeight, flowResult.contentHeight),
                 fixedContainingBlock, layoutContext);
         PositionedLayoutHelper.appendFixedChildren(childBoxes, fixedChildren, fixedContainingBlock, layoutContext);
-        return new LayoutChildrenResult(sortFlexChildBoxesByOrder(element, childBoxes), flowResult.textRuns,
-                flowResult.inlineFragments, flowResult.contentHeight);
+        return new LayoutChildrenResult(sortFlexChildBoxesByOrder(element, childBoxes, flexChildren, layoutContext),
+                flowResult.textRuns, flowResult.inlineFragments, flowResult.contentHeight);
     }
 
-    private static LayoutChildrenResult layoutRowFlexChildren(List<ElementNode> children, ComputedStyle parentStyle,
+    private static LayoutChildrenResult layoutRowFlexChildren(List<FlexChild> children, ComputedStyle parentStyle,
             int contentLeft, int contentTop, int contentWidth, int specifiedContentHeight,
             AbsoluteContainingBlock absoluteContainingBlock, AbsoluteContainingBlock fixedContainingBlock,
             LayoutContext layoutContext) {
@@ -87,8 +92,8 @@ final class FlexLayoutHelper {
         List<List<FlexItem>> lines = new ArrayList<List<FlexItem>>();
         List<FlexItem> currentLine = new ArrayList<FlexItem>();
         int currentLineOccupied = 0;
-        for (ElementNode child : children) {
-            FlexItem item = createFlexItem(child, contentWidth, layoutContext);
+        for (FlexChild child : children) {
+            FlexItem item = createFlexItem(child, parentStyle, contentWidth, layoutContext);
             item.contentMainSize = resolveContentMainSize(item, contentWidth, true, layoutContext);
             int outerMain = item.getOuterMainSize(true);
             if (wrap && !currentLine.isEmpty()
@@ -123,7 +128,7 @@ final class FlexLayoutHelper {
             // 测量每行各 item 的 cross size
             int lineCrossSize = 0;
             for (FlexItem item : lineItems) {
-                item.box = DocumentLayoutEngine.layoutElement(item.element, 0, 0, contentWidth,
+                item.box = layoutFlexItem(item, 0, 0, contentWidth,
                         specifiedContentHeight, item.contentMainSize, DocumentLayoutEngine.AUTO_SIZE,
                         absoluteContainingBlock, fixedContainingBlock, layoutContext);
                 lineCrossSize = Math.max(lineCrossSize, item.getOuterCrossSize(true));
@@ -137,7 +142,7 @@ final class FlexLayoutHelper {
                         && DocumentLayoutEngine.isAuto(item.style.getHeight())) {
                     item.forcedCrossSize = Math.max(0, lineAvailableCrossSize
                             - item.margin.getVertical() - item.border.getVertical() - item.padding.getVertical());
-                    item.box = DocumentLayoutEngine.layoutElement(item.element, 0, 0, contentWidth,
+                    item.box = layoutFlexItem(item, 0, 0, contentWidth,
                             lineAvailableCrossSize, item.contentMainSize, item.forcedCrossSize,
                             absoluteContainingBlock, fixedContainingBlock, layoutContext);
                     lineCrossSize = Math.max(lineCrossSize, item.getOuterCrossSize(true));
@@ -186,7 +191,7 @@ final class FlexLayoutHelper {
                 }
                 int borderLeft = contentLeft + cursor + marginLeft;
                 int borderTop = crossCursor + crossOffset + marginTop;
-                DocumentLayoutBox childBox = DocumentLayoutEngine.layoutElement(item.element, borderLeft - marginLeft,
+                DocumentLayoutBox childBox = layoutFlexItem(item, borderLeft - marginLeft,
                         borderTop - marginTop, contentWidth, lineAvailableCrossSize, item.contentMainSize,
                         item.forcedCrossSize, absoluteContainingBlock, fixedContainingBlock, layoutContext);
                 childBoxes.add(childBox);
@@ -206,16 +211,16 @@ final class FlexLayoutHelper {
                 new ArrayList<DocumentLayoutInlineFragment>(), contentHeight);
     }
 
-    private static LayoutChildrenResult layoutColumnFlexChildren(List<ElementNode> children, ComputedStyle parentStyle,
+    private static LayoutChildrenResult layoutColumnFlexChildren(List<FlexChild> children, ComputedStyle parentStyle,
             int contentLeft, int contentTop, int contentWidth, int specifiedContentHeight,
             AbsoluteContainingBlock absoluteContainingBlock, AbsoluteContainingBlock fixedContainingBlock,
             LayoutContext layoutContext) {
         List<FlexItem> items = new ArrayList<FlexItem>();
-        for (ElementNode child : children) {
-            FlexItem item = createFlexItem(child, contentWidth, false, layoutContext);
+        for (FlexChild child : children) {
+            FlexItem item = createFlexItem(child, parentStyle, contentWidth, false, layoutContext);
             item.forcedCrossSize = resolveColumnCrossContentWidth(item, parentStyle.getAlignItems(),
                     parentStyle.getFlexWrap(), contentWidth, layoutContext);
-            item.box = DocumentLayoutEngine.layoutElement(item.element, 0, 0, contentWidth, specifiedContentHeight,
+            item.box = layoutFlexItem(item, 0, 0, contentWidth, specifiedContentHeight,
                     item.forcedCrossSize, DocumentLayoutEngine.AUTO_SIZE, absoluteContainingBlock,
                     fixedContainingBlock, layoutContext);
             item.contentMainSize = resolveContentMainSize(item, contentWidth, false, layoutContext);
@@ -276,7 +281,7 @@ final class FlexLayoutHelper {
             int forcedMainSize = shouldKeepAutoHeightInFinalColumnLayout(item, specifiedContentHeight)
                     ? DocumentLayoutEngine.AUTO_SIZE
                     : item.contentMainSize;
-            DocumentLayoutBox childBox = DocumentLayoutEngine.layoutElement(item.element, borderLeft - marginLeft,
+            DocumentLayoutBox childBox = layoutFlexItem(item, borderLeft - marginLeft,
                     borderTop - marginTop, contentWidth, contentHeight, item.forcedCrossSize,
                     forcedMainSize, absoluteContainingBlock, fixedContainingBlock, layoutContext);
             childBoxes.add(childBox);
@@ -416,7 +421,7 @@ final class FlexLayoutHelper {
         UiStyleLength length = row ? item.style.getWidth() : item.style.getHeight();
         if (DocumentLayoutEngine.isAuto(length)) {
             if (row) {
-                return measureAutoFlexAutoWidth(item.element, item.style, containingWidth, layoutContext);
+                return measureAutoFlexAutoWidth(item, containingWidth, layoutContext);
             }
             return 0;
         }
@@ -433,21 +438,18 @@ final class FlexLayoutHelper {
     /**
      * 测量 auto 宽度元素的内容宽，统一用于 flex row 主轴与 flex column 交叉轴。
      */
-    private static int measureAutoFlexAutoWidth(ElementNode element, ComputedStyle style, int containingWidth,
+    private static int measureAutoFlexAutoWidth(FlexItem item, int containingWidth,
             LayoutContext layoutContext) {
-        int measuredWidth = DocumentLayoutEngine.measureIntrinsicContentWidth(element, containingWidth,
-                layoutContext);
+        int measuredWidth = item.anonymousText
+                ? TextLayoutHelper.measureIntrinsicTextWidth(item.textNode, item.style, layoutContext.textMeasureService)
+                : DocumentLayoutEngine.measureIntrinsicContentWidth(item.element, containingWidth, layoutContext);
         if (measuredWidth <= 0) {
             return 0;
         }
         int availableContentWidth = Math.max(0, containingWidth
-                - DocumentLayoutEngine.resolveMarginInsets(element, style, containingWidth,
-                        layoutContext.layoutValueResolver)
-                        .getHorizontal()
-                - DocumentLayoutEngine.resolveBorderInsets(style, containingWidth).getHorizontal()
-                - DocumentLayoutEngine.resolvePaddingInsets(element, style, containingWidth,
-                        layoutContext.layoutValueResolver)
-                        .getHorizontal());
+                - item.margin.getHorizontal()
+                - item.border.getHorizontal()
+                - item.padding.getHorizontal());
         return Math.min(measuredWidth, availableContentWidth);
     }
 
@@ -456,8 +458,8 @@ final class FlexLayoutHelper {
      */
     static int measureIntrinsicFlexContentWidth(ElementNode element, ComputedStyle style,
             int containingWidth, LayoutContext layoutContext) {
-        List<ElementNode> children = sortElementsByFlexOrder(element,
-                DocumentLayoutEngine.getVisibleInFlowElementChildren(element, layoutContext), layoutContext);
+        List<FlexChild> children = sortFlexChildrenByOrder(collectFlexChildren(element, style,
+                layoutContext).inFlowChildren);
         if (children.isEmpty()) {
             return 0;
         }
@@ -466,10 +468,11 @@ final class FlexLayoutHelper {
                 : style.getColumnGap()).resolve(containingWidth, 0));
         int measuredWidth = 0;
         int itemIndex = 0;
-        for (ElementNode child : children) {
-            ComputedStyle childStyle = layoutContext.computeStyle(child);
-            int childWidth = DocumentLayoutEngine.measureIntrinsicOuterWidth(child, childStyle, containingWidth,
-                    layoutContext);
+        for (FlexChild child : children) {
+            int childWidth = child.anonymousText
+                    ? measureAnonymousTextIntrinsicWidth(child, style, layoutContext)
+                    : DocumentLayoutEngine.measureIntrinsicOuterWidth(child.element,
+                            layoutContext.computeStyle(child.element), containingWidth, layoutContext);
             if (style.getFlexDirection() == UiFlexDirection.COLUMN) {
                 measuredWidth = Math.max(measuredWidth, childWidth);
             } else {
@@ -498,7 +501,7 @@ final class FlexLayoutHelper {
             return Math.max(0, contentWidth - item.margin.getHorizontal() - item.border.getHorizontal()
                     - item.padding.getHorizontal());
         }
-        return measureAutoFlexAutoWidth(item.element, item.style, contentWidth, layoutContext);
+        return measureAutoFlexAutoWidth(item, contentWidth, layoutContext);
     }
 
     private static int resolveLeadingOffset(UiJustifyContent justifyContent, int remaining) {
@@ -605,19 +608,119 @@ final class FlexLayoutHelper {
         return alignSelf == UiAlignSelf.STRETCH;
     }
 
-    private static List<ElementNode> sortElementsByFlexOrder(final ElementNode parentElement,
-            List<ElementNode> children, LayoutContext layoutContext) {
+    private static FlexChildren collectFlexChildren(ElementNode element, ComputedStyle parentStyle,
+            LayoutContext layoutContext) {
+        List<DocumentNode> generatedChildren = DocumentLayoutEngine.getGeneratedChildNodes(element, layoutContext);
+        List<FlexChild> inFlowChildren = new ArrayList<FlexChild>();
+        List<ElementNode> absoluteChildren = new ArrayList<ElementNode>();
+        List<ElementNode> fixedChildren = new ArrayList<ElementNode>();
+        StringBuilder pendingText = new StringBuilder();
+        TextContentMode pendingTextContentMode = null;
+        int pendingTextOrder = -1;
+        for (int childIndex = 0; childIndex < generatedChildren.size(); childIndex++) {
+            DocumentNode child = generatedChildren.get(childIndex);
+            if (child instanceof TextNode) {
+                TextNode textNode = (TextNode) child;
+                if (pendingText.length() > 0 && pendingTextContentMode != textNode.getTextContentMode()) {
+                    flushAnonymousTextItem(element, parentStyle, inFlowChildren, pendingText,
+                            pendingTextContentMode, pendingTextOrder);
+                    pendingText.setLength(0);
+                    pendingTextContentMode = null;
+                    pendingTextOrder = -1;
+                }
+                if (pendingText.length() == 0) {
+                    pendingTextOrder = childIndex;
+                    pendingTextContentMode = textNode.getTextContentMode();
+                }
+                pendingText.append(textNode.getText());
+                continue;
+            }
+            flushAnonymousTextItem(element, parentStyle, inFlowChildren, pendingText,
+                    pendingTextContentMode, pendingTextOrder);
+            pendingText.setLength(0);
+            pendingTextContentMode = null;
+            pendingTextOrder = -1;
+            if (!(child instanceof ElementNode)) {
+                continue;
+            }
+            ElementNode childElement = (ElementNode) child;
+            ComputedStyle childStyle = layoutContext.computeStyle(childElement);
+            if (childStyle.getDisplay() == UiDisplay.NONE) {
+                continue;
+            }
+            if (childStyle.getPosition() == UiPosition.FIXED) {
+                fixedChildren.add(childElement);
+                continue;
+            }
+            if (childStyle.getPosition() == UiPosition.ABSOLUTE) {
+                absoluteChildren.add(childElement);
+                continue;
+            }
+            inFlowChildren.add(FlexChild.element(childElement, childStyle.getOrder(), childIndex));
+        }
+        flushAnonymousTextItem(element, parentStyle, inFlowChildren, pendingText,
+                pendingTextContentMode, pendingTextOrder);
+        return new FlexChildren(inFlowChildren, absoluteChildren, fixedChildren);
+    }
+
+    private static void flushAnonymousTextItem(ElementNode ownerElement, ComputedStyle parentStyle,
+            List<FlexChild> inFlowChildren, StringBuilder pendingText,
+            TextContentMode textContentMode, int documentOrder) {
+        if (pendingText.length() <= 0) {
+            return;
+        }
+        TextContentMode resolvedMode = textContentMode == null ? TextContentMode.UILIB_RAW : textContentMode;
+        String mergedText = pendingText.toString();
+        String normalizedText = TextLayoutHelper.normalizeTextForLayout(mergedText, parentStyle, resolvedMode);
+        if (normalizedText == null || normalizedText.isEmpty()) {
+            return;
+        }
+        ElementNode anonymousElement = ownerElement.getOwnerDocument().element(ANONYMOUS_FLEX_ITEM_TAG);
+        anonymousElement.setAttribute("data-hit-test-hidden", "true");
+        TextNode textNode = ownerElement.getOwnerDocument().text(mergedText, resolvedMode);
+        inFlowChildren.add(FlexChild.anonymousText(anonymousElement, textNode, ownerElement, documentOrder));
+    }
+
+    private static DocumentLayoutBox layoutFlexItem(FlexItem item, int containingLeft, int flowTop,
+            int containingWidth, int containingHeight, int forcedContentWidth, int forcedContentHeight,
+            AbsoluteContainingBlock absoluteContainingBlock, AbsoluteContainingBlock fixedContainingBlock,
+            LayoutContext layoutContext) {
+        if (item.anonymousText) {
+            return layoutAnonymousTextItem(item, containingLeft, flowTop, forcedContentWidth, forcedContentHeight,
+                    layoutContext);
+        }
+        return DocumentLayoutEngine.layoutElement(item.element, containingLeft, flowTop, containingWidth,
+                containingHeight, forcedContentWidth, forcedContentHeight, absoluteContainingBlock,
+                fixedContainingBlock, layoutContext);
+    }
+
+    private static DocumentLayoutBox layoutAnonymousTextItem(FlexItem item, int left, int top, int forcedContentWidth,
+            int forcedContentHeight, LayoutContext layoutContext) {
+        int contentWidth = Math.max(0, forcedContentWidth);
+        List<DocumentLayoutTextRun> textRuns = new ArrayList<DocumentLayoutTextRun>();
+        int textBottom = InlineLayoutHelper.appendTextRun(item.textNode, item.textOwnerElement, item.style, textRuns,
+                left, top, contentWidth, 0, layoutContext.textMeasureService);
+        int contentHeight = forcedContentHeight >= 0 ? forcedContentHeight : Math.max(0, textBottom - top);
+        return new DocumentLayoutBox(item.element, item.style, new ArrayList<DocumentLayoutBox>(), textRuns,
+                new ArrayList<DocumentLayoutInlineFragment>(), item.margin, item.border, item.padding, left, top,
+                contentWidth, Math.max(0, contentHeight), 0, 0, 0, 0, 0, 0);
+    }
+
+    private static int measureAnonymousTextIntrinsicWidth(FlexChild child, ComputedStyle parentStyle,
+            LayoutContext layoutContext) {
+        ComputedStyle anonymousStyle = UiStyleResolver.computeAnonymousFlexItemStyle(child.element, parentStyle);
+        return TextLayoutHelper.measureIntrinsicTextWidth(child.textNode, anonymousStyle,
+                layoutContext.textMeasureService);
+    }
+
+    private static List<FlexChild> sortFlexChildrenByOrder(List<FlexChild> children) {
         if (children.size() <= 1) {
             return children;
         }
-        List<FlexOrderEntry> orderedChildren = new ArrayList<FlexOrderEntry>(children.size());
-        for (ElementNode child : children) {
-            orderedChildren.add(new FlexOrderEntry(child, layoutContext.computeStyle(child).getOrder(),
-                    DocumentLayoutEngine.getChildOrder(parentElement, child)));
-        }
-        Collections.sort(orderedChildren, new Comparator<FlexOrderEntry>() {
+        List<FlexChild> sortedChildren = new ArrayList<FlexChild>(children);
+        Collections.sort(sortedChildren, new Comparator<FlexChild>() {
             @Override
-            public int compare(FlexOrderEntry first, FlexOrderEntry second) {
+            public int compare(FlexChild first, FlexChild second) {
                 int orderCompare = Integer.compare(first.order, second.order);
                 if (orderCompare != 0) {
                     return orderCompare;
@@ -625,57 +728,123 @@ final class FlexLayoutHelper {
                 return Integer.compare(first.documentOrder, second.documentOrder);
             }
         });
-        List<ElementNode> sortedChildren = new ArrayList<ElementNode>(orderedChildren.size());
-        for (FlexOrderEntry orderedChild : orderedChildren) {
-            sortedChildren.add(orderedChild.element);
-        }
         return sortedChildren;
     }
 
     private static List<DocumentLayoutBox> sortFlexChildBoxesByOrder(final ElementNode parentElement,
-            List<DocumentLayoutBox> childBoxes) {
+            List<DocumentLayoutBox> childBoxes, final FlexChildren flexChildren, final LayoutContext layoutContext) {
+        if (childBoxes.size() <= 1) {
+            return childBoxes;
+        }
         List<DocumentLayoutBox> sortedBoxes = new ArrayList<DocumentLayoutBox>(childBoxes);
         Collections.sort(sortedBoxes, new Comparator<DocumentLayoutBox>() {
             @Override
             public int compare(DocumentLayoutBox first, DocumentLayoutBox second) {
-                int orderCompare = Integer.compare(first.getComputedStyle().getOrder(),
-                        second.getComputedStyle().getOrder());
+                FlexBoxOrder firstOrder = resolveFlexBoxOrder(parentElement, first, flexChildren, layoutContext);
+                FlexBoxOrder secondOrder = resolveFlexBoxOrder(parentElement, second, flexChildren, layoutContext);
+                int orderCompare = Integer.compare(firstOrder.order, secondOrder.order);
                 if (orderCompare != 0) {
                     return orderCompare;
                 }
-                return Integer.compare(DocumentLayoutEngine.getChildOrder(parentElement, first.getElement()),
-                        DocumentLayoutEngine.getChildOrder(parentElement, second.getElement()));
+                return Integer.compare(firstOrder.documentOrder, secondOrder.documentOrder);
             }
         });
         return sortedBoxes;
     }
 
-    private static FlexItem createFlexItem(ElementNode element, int containingWidth, LayoutContext layoutContext) {
-        return createFlexItem(element, containingWidth, true, layoutContext);
+    private static FlexBoxOrder resolveFlexBoxOrder(ElementNode parentElement, DocumentLayoutBox box,
+            FlexChildren flexChildren, LayoutContext layoutContext) {
+        for (FlexChild child : flexChildren.inFlowChildren) {
+            if (child.element == box.getElement()) {
+                return new FlexBoxOrder(child.order, child.documentOrder);
+            }
+        }
+        ElementNode element = box.getElement();
+        int documentOrder = DocumentLayoutEngine.getChildOrder(parentElement, element);
+        int order = layoutContext.computeStyle(element).getOrder();
+        return new FlexBoxOrder(order, documentOrder);
     }
 
-    private static FlexItem createFlexItem(ElementNode element, int containingWidth, boolean row,
+    private static FlexItem createFlexItem(FlexChild child, ComputedStyle parentStyle, int containingWidth,
             LayoutContext layoutContext) {
-        ComputedStyle style = layoutContext.computeStyle(element);
-        return new FlexItem(element, style,
-                DocumentLayoutEngine.resolveMarginInsets(element, style, containingWidth,
+        return createFlexItem(child, parentStyle, containingWidth, true, layoutContext);
+    }
+
+    private static FlexItem createFlexItem(FlexChild child, ComputedStyle parentStyle, int containingWidth, boolean row,
+            LayoutContext layoutContext) {
+        ComputedStyle style = child.anonymousText
+                ? UiStyleResolver.computeAnonymousFlexItemStyle(child.element, parentStyle)
+                : layoutContext.computeStyle(child.element);
+        return new FlexItem(child.element, style, child.anonymousText, child.textNode, child.textOwnerElement,
+                child.anonymousText ? DocumentLayoutEdges.zero()
+                        : DocumentLayoutEngine.resolveMarginInsets(child.element, style, containingWidth,
                         layoutContext.layoutValueResolver),
-                DocumentLayoutEngine.resolveBorderInsets(style, containingWidth),
-                DocumentLayoutEngine.resolvePaddingInsets(element, style, containingWidth,
-                        layoutContext.layoutValueResolver), row);
+                child.anonymousText ? DocumentLayoutEdges.zero()
+                        : DocumentLayoutEngine.resolveBorderInsets(style, containingWidth),
+                child.anonymousText ? DocumentLayoutEdges.zero()
+                        : DocumentLayoutEngine.resolvePaddingInsets(child.element, style, containingWidth,
+                                layoutContext.layoutValueResolver),
+                row);
     }
 
     /**
-     * flex order 排序预计算项，避免 Comparator 热路径重复解析 computed style。
+     * flex 容器直接子项收集结果。
      */
-    private static final class FlexOrderEntry {
+    private static final class FlexChildren {
+
+        private final List<FlexChild> inFlowChildren;
+        private final List<ElementNode> absoluteChildren;
+        private final List<ElementNode> fixedChildren;
+
+        private FlexChildren(List<FlexChild> inFlowChildren, List<ElementNode> absoluteChildren,
+                List<ElementNode> fixedChildren) {
+            this.inFlowChildren = inFlowChildren;
+            this.absoluteChildren = absoluteChildren;
+            this.fixedChildren = fixedChildren;
+        }
+    }
+
+    /**
+     * flex item 输入子项，包含真实元素和直接文本生成的匿名 flex item。
+     */
+    private static final class FlexChild {
 
         private final ElementNode element;
+        private final boolean anonymousText;
+        private final TextNode textNode;
+        private final ElementNode textOwnerElement;
         private final int order;
         private final int documentOrder;
 
-        private FlexOrderEntry(ElementNode element, int order, int documentOrder) {
+        private static FlexChild element(ElementNode element, int order, int documentOrder) {
+            return new FlexChild(element, false, null, null, order, documentOrder);
+        }
+
+        private static FlexChild anonymousText(ElementNode element, TextNode textNode, ElementNode textOwnerElement,
+                int documentOrder) {
+            return new FlexChild(element, true, textNode, textOwnerElement, 0, documentOrder);
+        }
+
+        private FlexChild(ElementNode element, boolean anonymousText, TextNode textNode,
+                ElementNode textOwnerElement, int order, int documentOrder) {
             this.element = element;
+            this.anonymousText = anonymousText;
+            this.textNode = textNode;
+            this.textOwnerElement = textOwnerElement;
+            this.order = order;
+            this.documentOrder = documentOrder;
+        }
+    }
+
+    /**
+     * 盒树最终顺序排序键，兼容真实元素和匿名 flex item。
+     */
+    private static final class FlexBoxOrder {
+
+        private final int order;
+        private final int documentOrder;
+
+        private FlexBoxOrder(int order, int documentOrder) {
             this.order = order;
             this.documentOrder = documentOrder;
         }
@@ -688,6 +857,9 @@ final class FlexLayoutHelper {
 
         private final ElementNode element;
         private final ComputedStyle style;
+        private final boolean anonymousText;
+        private final TextNode textNode;
+        private final ElementNode textOwnerElement;
         private final DocumentLayoutEdges margin;
         private final DocumentLayoutEdges border;
         private final DocumentLayoutEdges padding;
@@ -703,10 +875,14 @@ final class FlexLayoutHelper {
         private int forcedCrossSize = DocumentLayoutEngine.AUTO_SIZE;
         private DocumentLayoutBox box;
 
-        private FlexItem(ElementNode element, ComputedStyle style, DocumentLayoutEdges margin,
-                DocumentLayoutEdges border, DocumentLayoutEdges padding, boolean row) {
+        private FlexItem(ElementNode element, ComputedStyle style, boolean anonymousText, TextNode textNode,
+                ElementNode textOwnerElement, DocumentLayoutEdges margin, DocumentLayoutEdges border,
+                DocumentLayoutEdges padding, boolean row) {
             this.element = element;
             this.style = style;
+            this.anonymousText = anonymousText;
+            this.textNode = textNode;
+            this.textOwnerElement = textOwnerElement;
             this.margin = margin;
             this.border = border;
             this.padding = padding;
