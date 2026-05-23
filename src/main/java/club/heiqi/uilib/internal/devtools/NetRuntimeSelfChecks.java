@@ -1014,13 +1014,13 @@ public final class NetRuntimeSelfChecks {
     private static String buildRemoteHudSmokeHtml(String checkId) {
         String escapedCheckId = escapeHtml(checkId);
         return "<html><head><title>远程 HUD 运行时自检</title><style>"
-                + ".hud{box-sizing:border-box;width:100%;padding:14px;background-color:#111827;color:#e5e7eb;}"
+                + ".hud{box-sizing:border-box;width:100%;padding:14px;padding-right:56px;background-color:#111827;color:#e5e7eb;}"
                 + ".hint{color:#bfdbfe;margin:6px 0;}"
                 + ".field{margin:8px 0 4px 0;color:#cbd5e1;}"
                 + "input,textarea,select{width:calc(100% - 8px);margin:4px 0;padding:6px;}"
                 + "button{margin-top:10px;padding:8px 12px;}"
                 + "</style></head><body><div class=\"hud\">"
-                + "<h1>远程 HUD 运行时自检</h1>"
+                + "<h1 data-qz-hud-drag-handle=\"true\">远程 HUD 运行时自检</h1>"
                 + "<p class=\"hint\">这页由服务端通过 RemoteHudOverlays.open 下发，客户端会用 Stream 拉取 HTML。</p>"
                 + "<p class=\"hint\">保持默认值，点击提交即可验证 HUD 解析、表单收集和 C2S 回传。</p>"
                 + "<form id=\"remote-hud-smoke-form\" action=\"runtime-hud-submit\">"

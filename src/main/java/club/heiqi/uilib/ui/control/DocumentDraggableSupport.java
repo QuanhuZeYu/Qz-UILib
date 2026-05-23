@@ -60,7 +60,7 @@ public final class DocumentDraggableSupport {
     /**
      * 让目标元素可通过指定把手按 fixed 定位语义拖拽。
      *
-     * <p>当目标元素尚未显式定位，或仍是 {@code static} 定位时，首次拖拽会以元素当前布局边界为
+     * <p>当目标元素尚未显式 fixed 定位时，首次拖拽会以元素当前布局边界为
      * fixed 起点，适合 HUD、浮窗这类相对视口移动的场景。</p>
      *
      * @param target 目标元素
@@ -137,7 +137,7 @@ public final class DocumentDraggableSupport {
         initialized = true;
         DocumentElementBounds bounds = target.getDocumentBounds();
         UiPosition currentPosition = target.style().getPosition();
-        if (currentPosition == null || (fixedFallback && currentPosition == UiPosition.STATIC)) {
+        if (currentPosition == null || (fixedFallback && currentPosition != UiPosition.FIXED)) {
             target.style().setPosition(fixedFallback ? UiPosition.FIXED : UiPosition.ABSOLUTE);
         }
         useRightAnchor = shouldUseRightAnchor();

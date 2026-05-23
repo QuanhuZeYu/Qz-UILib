@@ -16,6 +16,7 @@ import club.heiqi.uilib.ui.paint.DocumentPaintCommand;
 import club.heiqi.uilib.ui.paint.DocumentPaintCommandType;
 import club.heiqi.uilib.ui.paint.DocumentPaintEngine;
 import club.heiqi.uilib.ui.style.props.UiCursor;
+import club.heiqi.uilib.ui.style.props.UiPosition;
 import club.heiqi.uilib.ui.text.TextMeasureService;
 
 /**
@@ -34,9 +35,10 @@ public class RemoteHudOverlayClientBridgeTest {
         offer.resourcePolicy = RemoteDocumentResourcePolicy.LOCAL_RESOURCES_ONLY.name();
         offer.defaultCloseButtonVisible = true;
         offer.closeButtonLabel = "关闭";
-        String html = "<form id=\"hud-form\" action=\"save\">"
+        String html = "<section><h1 data-qz-hud-drag-handle=\"true\">作者标题</h1>"
+                + "<form id=\"hud-form\" action=\"save\">"
                 + "<select name=\"choice\"><option>A</option><option selected>B</option></select>"
-                + "<button type=\"submit\" name=\"submitter\" value=\"提交\"></button></form>";
+                + "<button type=\"submit\" name=\"submitter\" value=\"提交\"></button></form></section>";
 
         UiDocument document = UiDocument.create();
         RemoteHudOverlayClientBridge.OverlayDocumentParts parts =
@@ -48,17 +50,45 @@ public class RemoteHudOverlayClientBridgeTest {
         Assert.assertTrue(text.contains("关闭"));
         Assert.assertTrue(text.contains("提交"));
         Assert.assertTrue(text.contains("B"));
+        Assert.assertTrue(text.contains("作者标题"));
+        Assert.assertFalse("DIALOG 不应再生成宿主标题栏文本", text.contains("HUD 标题"));
         Assert.assertNull("DIALOG 根层不应额外绘制全屏暗色父容器",
                 document.getRootElement().style().getBackgroundColor());
         Assert.assertNull("DIALOG shell 应只承担定位和拖拽，不额外绘制背景",
                 parts.movingElement.style().getBackgroundColor());
         Assert.assertNull("DIALOG shell 应只承担定位和拖拽，不额外绘制边框",
                 parts.movingElement.style().getBorderWidth());
+        Assert.assertSame("DIALOG shell 的第一项应是解析出的远程 HTML 内容，不应插入宿主标题栏",
+                parts.contentElement, parts.movingElement.getChildren().get(0));
         ElementNode dragHandle = findElementByAttribute(document.getRootElement(), "data-qz-hud-drag-handle",
                 "true");
         Assert.assertNotNull(dragHandle);
         Assert.assertNotNull(dragHandle.getDragHandler());
         Assert.assertEquals(UiCursor.MOVE, dragHandle.style().getCursor());
+        ElementNode closeButton = findElementByAttribute(document.getRootElement(), "data-qz-hud-close-button",
+                "true");
+        Assert.assertNotNull(closeButton);
+        Assert.assertSame(parts.movingElement, closeButton.getParent());
+        Assert.assertEquals(UiPosition.ABSOLUTE, closeButton.style().getPosition());
+    }
+
+    @Test
+    public void shouldFallbackDialogDragToParsedContentWhenNoAuthorHandleExists() {
+        RemoteHudOverlays.OpenOffer offer = new RemoteHudOverlays.OpenOffer();
+        offer.sessionId = "session";
+        offer.overlayId = "overlay";
+        offer.pageId = "page";
+        offer.title = "HUD 标题";
+        offer.mode = RemoteHudOverlayMode.DIALOG.name();
+        offer.resourcePolicy = RemoteDocumentResourcePolicy.LOCAL_RESOURCES_ONLY.name();
+        offer.defaultCloseButtonVisible = false;
+
+        UiDocument document = UiDocument.create();
+        RemoteHudOverlayClientBridge.OverlayDocumentParts parts =
+                RemoteHudOverlayClientBridge.buildOverlayDocument(document, offer, "<div>无显式拖拽把手</div>");
+
+        Assert.assertNotNull("没有作者拖拽把手时，DIALOG 内容本身作为兜底拖拽区域",
+                parts.contentElement.getDragHandler());
     }
 
     @Test

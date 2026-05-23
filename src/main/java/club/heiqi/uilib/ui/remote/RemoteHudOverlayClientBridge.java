@@ -15,6 +15,7 @@ import club.heiqi.uilib.ui.control.DocumentButtonActionEvent;
 import club.heiqi.uilib.ui.control.DocumentButtonActionHandler;
 import club.heiqi.uilib.ui.control.DocumentButtonControl;
 import club.heiqi.uilib.ui.dom.DocumentElementBounds;
+import club.heiqi.uilib.ui.dom.DocumentNode;
 import club.heiqi.uilib.ui.dom.ElementNode;
 import club.heiqi.uilib.ui.dom.TextNode;
 import club.heiqi.uilib.ui.dom.UiDocument;
@@ -306,27 +307,9 @@ public final class RemoteHudOverlayClientBridge {
         ElementNode shell = document.div();
         root.append(shell);
         configureShell(shell, offer, mode);
-        ElementNode titleBar = null;
-        if (mode == RemoteHudOverlayMode.DIALOG) {
-            titleBar = document.div();
-            configureDialogTitleBar(titleBar);
-            ElementNode title = document.div();
-            title.appendRawText(offer.title == null || offer.title.trim().isEmpty() ? "远程 HUD" : offer.title);
-            title.style().setTextColor(0xFFE5E7EB);
-            titleBar.append(title);
-            if (offer.defaultCloseButtonVisible) {
-                titleBar.append(createCloseButton(document, offer));
-            }
-            shell.append(titleBar);
-            DocumentDraggableSupport.attachFixed(shell, titleBar, DocumentDraggableSupport.DragAxis.BOTH);
-        }
         ElementNode content = document.div();
         configureContent(content, mode);
         shell.append(content);
-        ElementNode notice = document.div();
-        TextNode noticeText = notice.appendRawText("");
-        configureNotice(notice);
-        shell.append(notice);
         RemoteFormSubmitSink submitSink = new RemoteFormSubmitSink() {
             @Override
             public void submit(String sessionId, String pageId, String action, String formId,
@@ -343,6 +326,16 @@ public final class RemoteHudOverlayClientBridge {
         };
         RemoteHtmlDocumentParser.parseInto(document, content, html,
                 RemoteHtmlDocumentParser.Options.of(offer.sessionId, offer.pageId, policy, submitSink, false));
+        if (mode == RemoteHudOverlayMode.DIALOG) {
+            installDialogDrag(shell, content);
+            if (offer.defaultCloseButtonVisible) {
+                shell.append(createCloseButton(document, offer));
+            }
+        }
+        ElementNode notice = document.div();
+        TextNode noticeText = notice.appendRawText("");
+        configureNotice(notice);
+        shell.append(notice);
         RemoteDocumentLinkSupport.install(document, policy, new RemoteDocumentLinkSupport.NoticeSink() {
             @Override
             public void showNotice(String message) {
@@ -381,7 +374,7 @@ public final class RemoteHudOverlayClientBridge {
         shell.style().setBoxSizing(UiBoxSizing.BORDER_BOX).setZIndex(9000);
         if (mode == RemoteHudOverlayMode.DIALOG) {
             shell.style()
-                    .setPosition(UiPosition.STATIC)
+                    .setPosition(UiPosition.RELATIVE)
                     .setDisplay(UiDisplay.FLEX)
                     .setFlexDirection(UiFlexDirection.COLUMN)
                     .setWidth(UiStyleLength.px(480))
@@ -450,16 +443,22 @@ public final class RemoteHudOverlayClientBridge {
                 .setOverflowY(UiOverflow.VISIBLE);
     }
 
-    private static void configureDialogTitleBar(ElementNode titleBar) {
-        titleBar.style()
-                .setDisplay(UiDisplay.FLEX)
-                .setFlexDirection(UiFlexDirection.ROW)
-                .setAlignItems(UiAlignItems.CENTER)
-                .setJustifyContent(UiJustifyContent.SPACE_BETWEEN)
-                .setColumnGap(UiStyleLength.px(8))
-                .setFlexShrink(0.0F)
-                .setCursor(UiCursor.MOVE);
-        titleBar.setAttribute("data-qz-hud-drag-handle", "true");
+    /**
+     * 为 DIALOG 安装拖拽语义。
+     *
+     * <p>优先尊重作者 HTML 中声明的拖拽把手；没有声明时使用解析内容作为兜底拖拽区域，
+     * 避免为了拖拽额外生成可见宿主标题栏。</p>
+     *
+     * @param shell 负责移动的宿主 shell
+     * @param content 解析后的远程 HTML 内容容器
+     */
+    private static void installDialogDrag(ElementNode shell, ElementNode content) {
+        ElementNode explicitHandle = findElementByAttribute(content, "data-qz-hud-drag-handle", "true");
+        ElementNode dragHandle = explicitHandle == null ? content : explicitHandle;
+        if (explicitHandle != null) {
+            explicitHandle.style().setCursor(UiCursor.MOVE);
+        }
+        DocumentDraggableSupport.attachFixed(shell, dragHandle, DocumentDraggableSupport.DragAxis.BOTH);
     }
 
     private static ElementNode createCloseButton(UiDocument document, final RemoteHudOverlays.OpenOffer offer) {
@@ -467,9 +466,14 @@ public final class RemoteHudOverlayClientBridge {
                 offer.closeButtonLabel == null || offer.closeButtonLabel.trim().isEmpty()
                         ? "关闭" : offer.closeButtonLabel);
         closeButton.getElement().style()
+                .setPosition(UiPosition.ABSOLUTE)
+                .setTop(UiStyleLength.px(8))
+                .setRight(UiStyleLength.px(8))
                 .setPadding(UiStyleLength.px(6))
                 .setBorderRadius(UiStyleLength.px(6))
-                .setFlexShrink(0.0F);
+                .setFlexShrink(0.0F)
+                .setZIndex(1);
+        closeButton.getElement().setAttribute("data-qz-hud-close-button", "true");
         closeButton.setActionHandler(new DocumentButtonActionHandler() {
             @Override
             public void onAction(DocumentButtonActionEvent event) {
@@ -551,6 +555,33 @@ public final class RemoteHudOverlayClientBridge {
         }
         String value = metadata.get(name);
         return value == null || value.trim().isEmpty() ? fallback : value.trim();
+    }
+
+    /**
+     * 在节点子树中查找首个带指定属性值的元素。
+     *
+     * @param node 起始节点
+     * @param name 属性名
+     * @param value 属性值
+     * @return 匹配元素；不存在时返回 null
+     */
+    private static ElementNode findElementByAttribute(DocumentNode node, String name, String value) {
+        if (node == null) {
+            return null;
+        }
+        if (node instanceof ElementNode) {
+            ElementNode element = (ElementNode) node;
+            if (value.equals(element.getAttribute(name))) {
+                return element;
+            }
+        }
+        for (DocumentNode child : node.getChildren()) {
+            ElementNode found = findElementByAttribute(child, name, value);
+            if (found != null) {
+                return found;
+            }
+        }
+        return null;
     }
 
     private static String readableError(Throwable throwable) {
