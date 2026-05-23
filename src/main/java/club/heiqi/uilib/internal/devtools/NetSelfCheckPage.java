@@ -108,7 +108,7 @@ public final class NetSelfCheckPage extends DocumentPageController {
                 .setMargin(UiStyleInsets.of(UiStyleLength.px(0), UiStyleLength.px(0), UiStyleLength.px(12),
                         UiStyleLength.px(0)));
         header.appendText("网络层自检");
-        header.appendText("覆盖大小策略、内容信封、Header、可选 codec、分片重组、主线程队列、真实联机往返、错误、超时、限流、Stream 与 Store 增量。");
+        header.appendText("覆盖大小策略、内容信封、Header、可选 codec、分片重组、主线程队列、真实联机往返、错误、超时、限流、Stream、Store 增量与远程页面。");
         root.append(header);
 
         ElementNode toolbar = document.div();
@@ -254,6 +254,13 @@ public final class NetSelfCheckPage extends DocumentPageController {
                     @Override
                     public CompletableFuture<String> run() {
                         return NetRuntimeSelfChecks.runPlayerStoreSnapshot();
+                    }
+                });
+        registerAsync(root, "运行时远程页面", "服务端下发安全子集 HTML，客户端 Stream 拉取后打开页面；最终以页面内提交后的回复页为准。",
+                new SelfCheckAsyncRunnable() {
+                    @Override
+                    public CompletableFuture<String> run() {
+                        return NetRuntimeSelfChecks.runRemoteDocumentPageSmoke();
                     }
                 });
 

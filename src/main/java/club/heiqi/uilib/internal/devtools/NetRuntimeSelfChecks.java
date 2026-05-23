@@ -2,6 +2,7 @@ package club.heiqi.uilib.internal.devtools;
 
 import java.time.Duration;
 import java.util.Arrays;
+import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionException;
@@ -34,6 +35,11 @@ import club.heiqi.uilib.net.api.NetStoreView;
 import club.heiqi.uilib.net.api.NetTimeoutException;
 import club.heiqi.uilib.net.core.NetPayloadLimits;
 import club.heiqi.uilib.net.transport.NetSide;
+import club.heiqi.uilib.ui.remote.RemoteDocumentPage;
+import club.heiqi.uilib.ui.remote.RemoteDocumentPages;
+import club.heiqi.uilib.ui.remote.RemoteDocumentResourcePolicy;
+import club.heiqi.uilib.ui.remote.RemoteDocumentSubmitEvent;
+import club.heiqi.uilib.ui.remote.RemoteDocumentSubmitHandler;
 
 /**
  * 网络层运行时自检端点。
@@ -55,6 +61,8 @@ public final class NetRuntimeSelfChecks {
             "runtimeStoreDeltaTrigger");
     private static final NetEndpointId PLAYER_STORE_TRIGGER_ID = NetEndpointId.of(NAMESPACE,
             "runtimePlayerStoreTrigger");
+    private static final NetEndpointId REMOTE_PAGE_TRIGGER_ID = NetEndpointId.of(NAMESPACE,
+            "runtimeRemotePageTrigger");
     private static final NetStoreId STORE_ID = NetStoreId.of(NAMESPACE, "runtimeStoreCheck");
     private static final NetStoreId STORE_DELTA_ID = NetStoreId.of(NAMESPACE, "runtimeStoreDeltaCheck");
     private static final NetStoreId PLAYER_STORE_ID = NetStoreId.of(NAMESPACE, "runtimePlayerStoreCheck");
@@ -95,6 +103,7 @@ public final class NetRuntimeSelfChecks {
     private static NetStore storeDelta;
     private static NetFetchEndpoint playerStoreTriggerEndpoint;
     private static NetStore playerStore;
+    private static NetFetchEndpoint remotePageTriggerEndpoint;
 
     private NetRuntimeSelfChecks() {}
 
@@ -256,6 +265,36 @@ public final class NetRuntimeSelfChecks {
                         context.reply(NetResponse.json(jsonFor(checkId, "playerStoreAck"))
                                 .withHeader(CHECK_ID_HEADER, checkId)
                                 .withHeader(CHECK_KIND_HEADER, "playerStore"));
+                    }
+                })
+                .register();
+        remotePageTriggerEndpoint = service.fetch(REMOTE_PAGE_TRIGGER_ID)
+                .onRequest(new NetFetchEndpoint.NetFetchHandler() {
+                    @Override
+                    public void onRequest(NetRequest request, NetFetchEndpoint.NetFetchRequestContext context) {
+                        final String checkId = request.getHeader(CHECK_ID_HEADER);
+                        Object player = context.getReceiveContext().getSenderPlayer();
+                        if (player == null) {
+                            context.reply(NetResponse.error(400, "缺少发送玩家"));
+                            return;
+                        }
+                        try {
+                            String sessionId = RemoteDocumentPages.open(player, buildRemotePageSmokePage(checkId),
+                                    new RemoteDocumentSubmitHandler() {
+                                        @Override
+                                        public void onSubmit(RemoteDocumentSubmitEvent event) {
+                                            handleRemotePageSmokeSubmit(event, checkId);
+                                        }
+                                    });
+                            context.reply(NetResponse.json(jsonFor(checkId, "remotePageOpen"))
+                                    .withHeader(CHECK_ID_HEADER, checkId)
+                                    .withHeader(CHECK_KIND_HEADER, "remotePage")
+                                    .withHeader("x-qz-session-id", sessionId));
+                        } catch (IllegalArgumentException exception) {
+                            context.reply(NetResponse.error(400, exception.getMessage()));
+                        } catch (IllegalStateException exception) {
+                            context.fail(exception);
+                        }
                     }
                 })
                 .register();
@@ -648,6 +687,35 @@ public final class NetRuntimeSelfChecks {
                 });
     }
 
+    /**
+     * 运行远程页面下发 smoke 自检。
+     *
+     * <p>该检查会让服务端通过正式 `RemoteDocumentPages.open(...)` 打开页面。
+     * 页面内提交按钮负责完成 HTML Stream 拉取、解析、表单收集和 C2S 提交回调的最终人工确认。</p>
+     *
+     * @return 自检 future
+     */
+    public static CompletableFuture<String> runRemoteDocumentPageSmoke() {
+        ensureRegistered();
+        final String checkId = nextCheckId("remotePage");
+        CompletableFuture<NetResponse> response = remotePageTriggerEndpoint.call(NetRequest.json(jsonFor(checkId,
+                "remotePageSmoke"))
+                .withHeader(CHECK_ID_HEADER, checkId)
+                .withHeader(CHECK_KIND_HEADER, "remotePage"));
+        return withTimeout(response, "Remote document page", checkId)
+                .thenApply(new java.util.function.Function<NetResponse, String>() {
+                    @Override
+                    public String apply(NetResponse value) {
+                        require(value.isOk(), "Remote page status 应为 2xx");
+                        requireEquals(checkId, value.getHeader(CHECK_ID_HEADER), "Remote page check id");
+                        requireEquals("remotePage", value.getHeader(CHECK_KIND_HEADER), "Remote page kind");
+                        requireContains(value.getBody().asUtf8String(), "\"kind\":\"remotePageOpen\"",
+                                "Remote page body");
+                        return "远程页面打开请求已送达，最终以页面内提交后的回复页为准，id=" + checkId;
+                    }
+                });
+    }
+
     private static void handleChannelMessage(NetMessage message, NetReceiveContext context) {
         String checkId = message.getHeader(CHECK_ID_HEADER);
         if (context.getSide() == NetSide.SERVER) {
@@ -708,6 +776,159 @@ public final class NetRuntimeSelfChecks {
         if (pending != null) {
             pending.complete(snapshot);
         }
+    }
+
+    /**
+     * 创建远程页面运行时 smoke 页面。
+     *
+     * @param checkId 自检标识
+     * @return 远程页面
+     */
+    private static RemoteDocumentPage buildRemotePageSmokePage(String checkId) {
+        return RemoteDocumentPage.builder("qz-runtime-remote-page")
+                .title("远程页面运行时自检")
+                .resourcePolicy(RemoteDocumentResourcePolicy.LOCAL_RESOURCES_ONLY)
+                .metadata("checkId", checkId)
+                .html(buildRemotePageSmokeHtml(checkId))
+                .build();
+    }
+
+    /**
+     * 生成远程页面 smoke HTML。
+     *
+     * @param checkId 自检标识
+     * @return HTML 文本
+     */
+    private static String buildRemotePageSmokeHtml(String checkId) {
+        String escapedCheckId = escapeHtml(checkId);
+        return "<html><head><title>远程页面运行时自检</title><style>"
+                + ".smoke{box-sizing:border-box;width:100%;padding:14px;background-color:#0f172a;color:#e5e7eb;}"
+                + ".hint{color:#bfdbfe;margin:6px 0;}"
+                + ".field{margin:8px 0 4px 0;color:#cbd5e1;}"
+                + "input,textarea,select{width:calc(100% - 8px);margin:4px 0;padding:6px;}"
+                + "button{margin-top:10px;padding:8px 12px;}"
+                + "</style></head><body><div class=\"smoke\">"
+                + "<h1>远程页面运行时自检</h1>"
+                + "<p class=\"hint\">这页由服务端通过 RemoteDocumentPages.open 下发，客户端会用 Stream 拉取 HTML。</p>"
+                + "<p class=\"hint\">保持默认值，点击提交即可验证表单收集与 C2S 回传。</p>"
+                + "<form id=\"remote-smoke-form\" action=\"runtime-remote-submit\">"
+                + "<input type=\"hidden\" name=\"checkId\" value=\"" + escapedCheckId + "\">"
+                + "<input type=\"hidden\" name=\"disabledField\" value=\"blocked\" disabled>"
+                + "<p class=\"field\">只读文本字段</p>"
+                + "<input type=\"text\" name=\"textEcho\" value=\"text-ok\" readonly maxlength=\"32\">"
+                + "<input type=\"checkbox\" name=\"flag\" value=\"checked-ok\" checked data-label=\"复选框字段\">"
+                + "<input type=\"radio\" name=\"mode\" value=\"ignored\" data-label=\"未选模式\">"
+                + "<input type=\"radio\" name=\"mode\" value=\"selected-ok\" checked data-label=\"已选模式\">"
+                + "<p class=\"field\">只读多行文本</p>"
+                + "<textarea name=\"note\" readonly maxlength=\"64\">textarea-ok</textarea>"
+                + "<p class=\"field\">选择字段</p>"
+                + "<select name=\"phase\"><option value=\"wrong\">错误项</option>"
+                + "<option value=\"stream-ok\" selected>Stream 已拉取</option></select>"
+                + "<p><a href=\"#submit-area\">跳到提交按钮</a></p>"
+                + "<button id=\"submit-area\" type=\"submit\" name=\"submitter\" value=\"提交运行时自检\"></button>"
+                + "</form></div></body></html>";
+    }
+
+    /**
+     * 校验远程页面 smoke 表单提交。
+     *
+     * @param event 提交事件
+     * @param checkId 自检标识
+     */
+    private static void handleRemotePageSmokeSubmit(RemoteDocumentSubmitEvent event, String checkId) {
+        StringBuilder problems = new StringBuilder();
+        requireSubmitted(problems, "pageId", "qz-runtime-remote-page", event.getPageId());
+        requireSubmitted(problems, "action", "runtime-remote-submit", event.getAction());
+        requireSubmitted(problems, "formId", "remote-smoke-form", event.getFormId());
+        requireSubmitted(problems, "checkId", checkId, event.getFirstValue("checkId"));
+        requireSubmitted(problems, "textEcho", "text-ok", event.getFirstValue("textEcho"));
+        requireSubmitted(problems, "note", "textarea-ok", event.getFirstValue("note"));
+        requireSubmitted(problems, "phase", "stream-ok", event.getFirstValue("phase"));
+        requireSubmitted(problems, "submitter", "提交运行时自检", event.getFirstValue("submitter"));
+        if (!hasValue(event.getValues(), "flag", "checked-ok")) {
+            appendSubmitProblem(problems, "flag 未提交 checked-ok");
+        }
+        if (!hasValue(event.getValues(), "mode", "selected-ok")) {
+            appendSubmitProblem(problems, "mode 未提交 selected-ok");
+        }
+        if (hasValue(event.getValues(), "mode", "ignored")) {
+            appendSubmitProblem(problems, "未选中的 radio 被提交");
+        }
+        if (event.getValues().containsKey("disabledField")) {
+            appendSubmitProblem(problems, "disabled 字段不应被提交");
+        }
+        event.reply(buildRemotePageSmokeResultPage(checkId, problems.length() == 0, problems.toString()), null);
+    }
+
+    /**
+     * 创建远程页面 smoke 结果页。
+     *
+     * @param checkId 自检标识
+     * @param success 是否通过
+     * @param detail 失败详情
+     * @return 结果页
+     */
+    private static RemoteDocumentPage buildRemotePageSmokeResultPage(String checkId, boolean success, String detail) {
+        String title = success ? "远程页面自检通过" : "远程页面自检失败";
+        String body = success
+                ? "<h1>远程页面运行时自检通过</h1>"
+                        + "<p>HTML Stream 拉取、解析、表单收集和 C2S 提交回调均已完成。</p>"
+                : "<h1>远程页面运行时自检失败</h1><p>" + escapeHtmlLines(detail) + "</p>";
+        return RemoteDocumentPage.builder("qz-runtime-remote-page-result")
+                .title(title)
+                .resourcePolicy(RemoteDocumentResourcePolicy.LOCAL_RESOURCES_ONLY)
+                .metadata("checkId", checkId)
+                .html("<html><body><div style=\"padding:16px;background-color:#0f172a;color:#e5e7eb;\">"
+                        + body + "<p>checkId: " + escapeHtml(checkId) + "</p></div></body></html>")
+                .build();
+    }
+
+    /**
+     * 校验单个字段的首值。
+     */
+    private static void requireSubmitted(StringBuilder problems, String name, String expected, String actual) {
+        if (!expected.equals(actual)) {
+            appendSubmitProblem(problems, name + " 不一致: expected=" + expected + ", actual=" + actual);
+        }
+    }
+
+    /**
+     * 判断字段是否包含指定值。
+     */
+    private static boolean hasValue(Map<String, List<String>> values, String name, String expected) {
+        List<String> list = values.get(name);
+        return list != null && list.contains(expected);
+    }
+
+    /**
+     * 追加提交校验问题。
+     */
+    private static void appendSubmitProblem(StringBuilder problems, String message) {
+        if (problems.length() > 0) {
+            problems.append('\n');
+        }
+        problems.append("- ").append(message);
+    }
+
+    /**
+     * HTML 转义普通文本。
+     */
+    private static String escapeHtml(String value) {
+        if (value == null) {
+            return "";
+        }
+        return value.replace("&", "&amp;")
+                .replace("<", "&lt;")
+                .replace(">", "&gt;")
+                .replace("\"", "&quot;")
+                .replace("'", "&#39;");
+    }
+
+    /**
+     * HTML 转义多行文本，并保留换行展示。
+     */
+    private static String escapeHtmlLines(String value) {
+        return escapeHtml(value).replace("\n", "<br>");
     }
 
     private static void ensureRegistered() {

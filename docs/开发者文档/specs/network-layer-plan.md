@@ -345,11 +345,12 @@ channel.toServer().send(body);
 - Store delta 从服务端到客户端视图同步。
 - PER_PLAYER Store + accessControl + setForPlayer 定向 snapshot。
 - Store DOM bridge 主线程渲染。
+- 远程页面通过服务端 `RemoteDocumentPages.open(...)` 下发，客户端 Stream 拉取 HTML，页面表单提交后由服务端回调回复结果页。
 
 已人工验收：
 
 - GTNH / ModularUI2 服务端环境默认 vanilla 传输路径可正常进服；`NetHandlerPlayServer` 与 ServerUtilities、Hodgepodge 同目标 mixin 并存未阻断连接。
-- `/qzuilib test` 网络层自检全部通过：18 项通过、0 项失败，覆盖 Channel / Fetch / Stream / Store 真实往返。
+- `/qzuilib test` 基础网络层自检全部通过：18 项通过、0 项失败，覆盖 Channel / Fetch / Stream / Store 真实往返；远程页面项是后续接入的交互 smoke，需在打开的远程页面内点击提交完成最终验证。
 - 服务端出现的 `Qz Fetch 请求被限流` warn 为限流自检的预期可观测日志，证明 429 路径已触发。
 
 仍需人工验证：
