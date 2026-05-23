@@ -1,5 +1,7 @@
 package club.heiqi.uilib.net.transport.vanilla;
 
+import java.util.ArrayList;
+import java.util.Collections;
 import java.lang.reflect.Method;
 import java.util.List;
 import java.util.Objects;
@@ -95,6 +97,32 @@ public final class VanillaPacketBuilders {
                 sendToPlayer(entityPlayer, channelName, payload);
             }
         }
+    }
+
+    /**
+     * 返回服务端在线玩家快照。
+     *
+     * @return 在线玩家快照
+     */
+    public static List<?> getConnectedPlayers() {
+        MinecraftServer server = MinecraftServer.getServer();
+        if (server == null || server.getConfigurationManager() == null) {
+            return Collections.emptyList();
+        }
+        return new ArrayList<Object>(server.getConfigurationManager().playerEntityList);
+    }
+
+    /**
+     * 返回玩家维度。
+     *
+     * @param player 玩家对象
+     * @return 维度 id
+     */
+    public static Integer getPlayerDimensionId(Object player) {
+        if (!(player instanceof EntityPlayerMP)) {
+            return null;
+        }
+        return Integer.valueOf(((EntityPlayerMP) player).dimension);
     }
 
     private static EntityPlayerMP requirePlayer(Object player) {

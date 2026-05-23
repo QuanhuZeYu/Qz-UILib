@@ -170,8 +170,13 @@ public final class NetService {
 
     CompletableFuture<NetResponse> callFetchEndpoint(NetFetchEndpoint endpoint, NetRequest request) {
         NetRequestRegistry.PendingRequest<NetResponse> pending = requestRegistry.register(endpoint.getTimeoutMillis());
-        sendEnvelope(NetTarget.server(), NetEnvelope.of(NetEnvelope.Kind.FETCH_REQUEST, NetSide.SERVER,
-                endpoint.getId().asKey(), pending.getRequestId(), 0, request.getHeaders(), request.getBody()));
+        try {
+            sendEnvelope(NetTarget.server(), NetEnvelope.of(NetEnvelope.Kind.FETCH_REQUEST, NetSide.SERVER,
+                    endpoint.getId().asKey(), pending.getRequestId(), 0, request.getHeaders(), request.getBody()));
+        } catch (RuntimeException exception) {
+            requestRegistry.fail(pending.getRequestId(), exception);
+            throw exception;
+        }
         return pending.getFuture();
     }
 
@@ -187,7 +192,7 @@ public final class NetService {
     }
 
     void sendStoreSnapshot(NetStore store, NetTarget target, NetBody snapshot) {
-        sendEnvelope(target, NetEnvelope.of(NetEnvelope.Kind.STORE_SNAPSHOT, targetSideOf(target),
+        sendStoreEnvelope(store, target, NetEnvelope.of(NetEnvelope.Kind.STORE_SNAPSHOT, targetSideOf(target),
                 store.getId().asKey(), 0L, 0, Collections.<String, String>emptyMap(), snapshot));
     }
 
@@ -355,6 +360,50 @@ public final class NetService {
             return;
         }
         sendChunked(target, envelope.getTargetSide(), encoded, physicalLimit);
+    }
+
+    private void sendStoreEnvelope(NetStore store, NetTarget target, NetEnvelope envelope) {
+        if (!store.hasAccessControl()) {
+            sendEnvelope(target, envelope);
+            return;
+        }
+        switch (target.getType()) {
+            case PLAYER:
+                sendStoreEnvelopeToPlayerIfAllowed(store, target.getPlayer(), envelope);
+                return;
+            case PLAYERS:
+                for (Object player : target.getPlayers()) {
+                    sendStoreEnvelopeToPlayerIfAllowed(store, player, envelope);
+                }
+                return;
+            case ALL:
+                sendStoreEnvelopeToAccessiblePlayers(store, null, envelope);
+                return;
+            case DIMENSION:
+                sendStoreEnvelopeToAccessiblePlayers(store, Integer.valueOf(target.getDimensionId()), envelope);
+                return;
+            default:
+                throw new IllegalStateException("Store snapshot 只能发送到客户端目标：" + target.getType());
+        }
+    }
+
+    private void sendStoreEnvelopeToAccessiblePlayers(NetStore store, Integer dimensionId, NetEnvelope envelope) {
+        ITransport activeTransport = transport;
+        if (activeTransport == null) {
+            throw new IllegalStateException("网络层尚未 bootstrap");
+        }
+        for (Object player : activeTransport.getConnectedPlayers()) {
+            if (dimensionId != null && !dimensionId.equals(activeTransport.getPlayerDimensionId(player))) {
+                continue;
+            }
+            sendStoreEnvelopeToPlayerIfAllowed(store, player, envelope);
+        }
+    }
+
+    private void sendStoreEnvelopeToPlayerIfAllowed(NetStore store, Object player, NetEnvelope envelope) {
+        if (player != null && store.canAccess(player)) {
+            sendEnvelope(NetTarget.player(player), envelope);
+        }
     }
 
     private void sendChunked(NetTarget target, NetSide targetSide, byte[] encoded, int physicalLimit) {

@@ -23,8 +23,18 @@ public class EarlyMixins implements IEarlyMixinLoader, IFMLLoadingPlugin {
 
     @Override
     public List<String> getMixins(Set<String> loadedCoreMods) {
+        return buildMixinsForSide(FMLLaunchHandler.side());
+    }
+
+    /**
+     * 按 Forge 启动侧生成 early mixin 列表。
+     *
+     * @param side 当前启动侧
+     * @return mixin 列表
+     */
+    static List<String> buildMixinsForSide(Side side) {
         List<String> mixins = new ArrayList<String>();
-        if (FMLLaunchHandler.side() == Side.CLIENT) {
+        if (side == Side.CLIENT) {
             mixins.add("MixinFontRenderer");
             mixins.add("MixinGuiScreenKeyboardIsolation");
             mixins.add("MixinGuiContainerKeyTypedIsolation");

@@ -1,5 +1,7 @@
 package club.heiqi.uilib.net.transport;
 
+import java.util.Collections;
+
 /**
  * 网络传输适配器 SPI。
  */
@@ -57,6 +59,28 @@ public interface ITransport {
      * @param payload 数据
      */
     void sendToDimension(int dimensionId, String channelName, byte[] payload);
+
+    /**
+     * 返回当前服务端在线玩家快照。
+     *
+     * <p>仅 Store accessControl 过滤和 per-player/dimension 定向同步需要枚举玩家。
+     * 不支持枚举的适配器可返回空集合，此时带访问控制的 Store 不会退回盲目广播。</p>
+     *
+     * @return 在线玩家快照
+     */
+    default Iterable<?> getConnectedPlayers() {
+        return Collections.emptyList();
+    }
+
+    /**
+     * 返回玩家所在维度。
+     *
+     * @param player 玩家对象
+     * @return 维度 id；无法识别时返回 null
+     */
+    default Integer getPlayerDimensionId(Object player) {
+        return null;
+    }
 
     /**
      * 返回当前方向物理帧上限。

@@ -86,6 +86,7 @@ CompletableFuture<NetResponse> future = getUser.callJson("{\"id\":\"p1\"}");
 ```
 
 `NetResponse` 有 `statusCode`、headers 与 body。服务端主动推送请使用 Channel 或 Store。
+返回的 `CompletableFuture` 支持本地 `cancel(false)`：取消会移除 pending 请求，远端迟到响应会被忽略，不再完成调用方 future。
 
 ### Store
 
@@ -107,6 +108,8 @@ counter.view().subscribe(new NetStoreView.NetStoreSubscriber() {
 });
 ```
 
+`GLOBAL` 默认可广播；配置 `.accessControl(...)` 后会枚举在线玩家逐个过滤。`PER_PLAYER` 与 `DIMENSION` 通过 `setForPlayer(...)`、`mutateForPlayer(...)`、`getForPlayer(...)`、`setForDimension(...)`、`mutateForDimension(...)`、`getForDimension(...)` 表达隔离状态。
+
 仅客户端的 `NetStoreUiBridge` 负责把 Store 视图绑定到 `ElementNode`，它是 net → ui 的唯一单向依赖点。
 
 ## 关键决策
@@ -119,6 +122,8 @@ counter.view().subscribe(new NetStoreView.NetStoreSubscriber() {
 |---|---|---|---|
 | `VanillaMixinTransport` | `net.transport.vanilla` | ✅ | 主路径，mixin 拦 vanilla custom payload，绕开 Forge 网络栈 |
 | `ForgeTransport` | `net.transport.forge` | 备选 | 兼容退路，用 FML pipeline 排查或兜底 |
+
+启动期选择顺序为 JVM 参数 `-Dqzuilib.net.transport=<vanilla|forge>` 优先，其次读取 Forge 配置 `netTransport`，默认 `vanilla`。适配器在 `NetService.bootstrap(ITransport)` 后不可热切换。
 
 默认 vanilla mixin 的核心理由：
 
@@ -249,7 +254,7 @@ channel.toServer().send(body);
 | Fetch `onRequest` | 网络线程 | 需要读世界时显式切主线程 |
 | Fetch future complete | 网络线程 | `thenAcceptAsync(.., NetService.mainThreadExecutor())` |
 | Store mutate / set | 调用方线程 | 后续可收敛到服务端主线程约束 |
-| Store subscriber | 当前实现为收到快照时的调用线程 | DOM bridge 应确保在客户端主线程使用 |
+| Store subscriber | 当前实现为收到快照时的调用线程 | `NetStoreUiBridge` 会投递到客户端主线程 |
 
 `MainThreadDispatcher` 单例挂 tick bridge drain 队列。未来切到非 Forge 环境时可替换 tick 信号，SPI 不变。
 
@@ -257,7 +262,7 @@ channel.toServer().send(body);
 
 - **大小限制与分片**：超过当前物理帧能力但低于逻辑上限时切 `CHUNK`，30 秒重组超时丢弃；超过逻辑上限拒绝并提示改用大内容路径。
 - **方向校验**：envelope 头携带 target side，方向对不上 LOG.warn 丢弃。
-- **Store 访问控制**：`.accessControl(...)` 决定玩家是否可访问 Store。
+- **Store 访问控制**：`.accessControl(...)` 决定玩家是否可访问 Store；存在访问控制时不会走盲目广播，而是逐个在线玩家过滤。
 - **Fetch 限流**：保留后续滑动窗口限流规划。
 - **内容解析责任**：框架不解析业务 JSON，不信任远端 body；业务 handler 必须做输入校验。
 
@@ -289,7 +294,12 @@ channel.toServer().send(body);
 - `NetBody` 与 `NetContentType`：JSON / binary / custom MIME-like 内容语义。
 - `NetEnvelope`：contentType、headers、statusCode、body 往返。
 - `NetService`：Channel 发送内容 envelope、注册冻结、超过物理帧自动分片。
+- `NetService`：Store accessControl 过滤、per-player/dimension 定向快照。
 - `NetChunkAssembler`：大 envelope 分片重组。
+- `NetRequestRegistry`：Fetch cancel 移除 pending、超时与断连清理。
+- `NetStoreUiBridge`：Store DOM renderer 投递到客户端主线程。
+- `NetTransportFactory`：配置和 JVM 参数选择 vanilla/forge 传输适配器。
+- `EarlyMixins`：SERVER 侧不返回客户端 mixin。
 
 已纳入运行时自检页的重点：
 
@@ -297,14 +307,14 @@ channel.toServer().send(body);
 - Channel C2S/S2C ping/pong。
 - 超过 32KB 的 Channel C2S 分片与服务端重组。
 - Fetch C2S 请求响应。
-- Fetch 远端错误响应与 pending timeout。
+- Fetch 远端错误响应、pending timeout 与本地 cancel。
 - Store snapshot 从服务端到客户端视图同步。
+- PER_PLAYER Store + accessControl + setForPlayer 定向 snapshot。
+- Store DOM bridge 主线程渲染。
 
 仍需人工验证：
 
-- Fetch 取消语义。
-- Store DOM bridge。
-- dedicated server 上确认 `EarlyMixins` 不返回客户端 mixin。
+- dedicated server 完整启动 smoke：当前默认 `runServer` 已确认 Mixin 环境为 `SERVER`，但会被 LWJGL3ify relauncher 中止，需换用不带该 relauncher 的服务端配置后复跑。
 - Forge 回退适配器与 ModularUI2 环境的兼容性。
 
 ## 后续待解边界

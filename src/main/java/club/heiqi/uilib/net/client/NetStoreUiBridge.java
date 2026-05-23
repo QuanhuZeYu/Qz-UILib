@@ -1,7 +1,11 @@
 package club.heiqi.uilib.net.client;
 
+import java.util.Objects;
+
 import club.heiqi.uilib.net.api.NetBody;
+import club.heiqi.uilib.net.api.NetService;
 import club.heiqi.uilib.net.api.NetStoreView;
+import club.heiqi.uilib.net.transport.NetSide;
 import club.heiqi.uilib.ui.dom.ElementNode;
 
 /**
@@ -39,13 +43,21 @@ public final class NetStoreUiBridge {
      * @param renderer 渲染器
      */
     public void bind(NetStoreView view, final ElementNode element, final NetStoreRenderer renderer) {
+        Objects.requireNonNull(view, "view");
+        Objects.requireNonNull(element, "element");
+        Objects.requireNonNull(renderer, "renderer");
         if (!initialized) {
             initialize();
         }
         view.subscribe(new NetStoreView.NetStoreSubscriber() {
             @Override
-            public void onSnapshot(NetBody snapshot) {
-                renderer.render(element, snapshot);
+            public void onSnapshot(final NetBody snapshot) {
+                NetService.getInstance().runOnMainThread(NetSide.CLIENT, new Runnable() {
+                    @Override
+                    public void run() {
+                        renderer.render(element, snapshot);
+                    }
+                });
             }
         });
     }

@@ -41,11 +41,17 @@ public final class NetRuntimeSelfChecks {
     private static final NetEndpointId FETCH_ID = NetEndpointId.of(NAMESPACE, "runtimeFetchCheck");
     private static final NetEndpointId FETCH_ERROR_ID = NetEndpointId.of(NAMESPACE, "runtimeFetchErrorCheck");
     private static final NetEndpointId FETCH_TIMEOUT_ID = NetEndpointId.of(NAMESPACE, "runtimeFetchTimeoutCheck");
+    private static final NetEndpointId FETCH_CANCEL_ID = NetEndpointId.of(NAMESPACE, "runtimeFetchCancelCheck");
     private static final NetEndpointId STORE_TRIGGER_ID = NetEndpointId.of(NAMESPACE, "runtimeStoreTrigger");
+    private static final NetEndpointId PLAYER_STORE_TRIGGER_ID = NetEndpointId.of(NAMESPACE,
+            "runtimePlayerStoreTrigger");
     private static final NetStoreId STORE_ID = NetStoreId.of(NAMESPACE, "runtimeStoreCheck");
+    private static final NetStoreId PLAYER_STORE_ID = NetStoreId.of(NAMESPACE, "runtimePlayerStoreCheck");
     private static final int CHUNKED_CHANNEL_BYTES = 100 * 1024;
     private static final long FETCH_TIMEOUT_MILLIS = 120L;
     private static final long FETCH_TIMEOUT_WAKEUP_MILLIS = 240L;
+    private static final long FETCH_CANCEL_REPLY_MILLIS = 240L;
+    private static final long FETCH_CANCEL_VERIFY_MILLIS = 520L;
     private static final long TIMEOUT_MILLIS = 5_000L;
 
     private static final AtomicLong NEXT_CHECK_ID = new AtomicLong(1L);
@@ -68,8 +74,11 @@ public final class NetRuntimeSelfChecks {
     private static NetFetchEndpoint fetchEndpoint;
     private static NetFetchEndpoint fetchErrorEndpoint;
     private static NetFetchEndpoint fetchTimeoutEndpoint;
+    private static NetFetchEndpoint fetchCancelEndpoint;
     private static NetFetchEndpoint storeTriggerEndpoint;
     private static NetStore store;
+    private static NetFetchEndpoint playerStoreTriggerEndpoint;
+    private static NetStore playerStore;
 
     private NetRuntimeSelfChecks() {}
 
@@ -118,11 +127,35 @@ public final class NetRuntimeSelfChecks {
                     }
                 })
                 .register();
+        fetchCancelEndpoint = service.fetch(FETCH_CANCEL_ID)
+                .onRequest(new NetFetchEndpoint.NetFetchHandler() {
+                    @Override
+                    public void onRequest(NetRequest request, NetFetchEndpoint.NetFetchRequestContext context) {
+                        scheduleFetchCancelReply(request.getHeader(CHECK_ID_HEADER), context);
+                    }
+                })
+                .register();
         store = service.store(STORE_ID)
                 .scope(NetStoreScope.GLOBAL)
                 .initialJson(jsonFor("initial", "store"))
                 .register();
         store.view().subscribe(new NetStoreView.NetStoreSubscriber() {
+            @Override
+            public void onSnapshot(NetBody snapshot) {
+                completeStoreSnapshot(snapshot);
+            }
+        });
+        playerStore = service.store(PLAYER_STORE_ID)
+                .scope(NetStoreScope.PER_PLAYER)
+                .initialJson(jsonFor("initial", "playerStore"))
+                .accessControl(new NetStore.AccessControl() {
+                    @Override
+                    public boolean canAccess(Object player, NetStore store) {
+                        return player != null;
+                    }
+                })
+                .register();
+        playerStore.view().subscribe(new NetStoreView.NetStoreSubscriber() {
             @Override
             public void onSnapshot(NetBody snapshot) {
                 completeStoreSnapshot(snapshot);
@@ -137,6 +170,23 @@ public final class NetRuntimeSelfChecks {
                         context.reply(NetResponse.json(jsonFor(checkId, "storeAck"))
                                 .withHeader(CHECK_ID_HEADER, checkId)
                                 .withHeader(CHECK_KIND_HEADER, "store"));
+                    }
+                })
+                .register();
+        playerStoreTriggerEndpoint = service.fetch(PLAYER_STORE_TRIGGER_ID)
+                .onRequest(new NetFetchEndpoint.NetFetchHandler() {
+                    @Override
+                    public void onRequest(NetRequest request, NetFetchEndpoint.NetFetchRequestContext context) {
+                        String checkId = request.getHeader(CHECK_ID_HEADER);
+                        Object player = context.getReceiveContext().getSenderPlayer();
+                        if (player == null) {
+                            context.reply(NetResponse.error(400, "缺少发送玩家"));
+                            return;
+                        }
+                        playerStore.setForPlayer(player, NetBody.json(jsonFor(checkId, "playerStore")));
+                        context.reply(NetResponse.json(jsonFor(checkId, "playerStoreAck"))
+                                .withHeader(CHECK_ID_HEADER, checkId)
+                                .withHeader(CHECK_KIND_HEADER, "playerStore"));
                     }
                 })
                 .register();
@@ -177,6 +227,16 @@ public final class NetRuntimeSelfChecks {
                         return "Channel ping 已完成，id=" + checkId;
                     }
                 });
+    }
+
+    /**
+     * 返回运行时 Store 视图，供客户端 DOM bridge 自检使用。
+     *
+     * @return Store 视图
+     */
+    public static NetStoreView getRuntimeStoreView() {
+        ensureRegistered();
+        return store.view();
     }
 
     /**
@@ -298,6 +358,38 @@ public final class NetRuntimeSelfChecks {
     }
 
     /**
+     * 运行 Fetch 本地取消自检。
+     *
+     * @return 自检 future
+     */
+    public static CompletableFuture<String> runFetchCancellation() {
+        ensureRegistered();
+        final String checkId = nextCheckId("fetchCancel");
+        final CompletableFuture<NetResponse> response = fetchCancelEndpoint.call(NetRequest.json(jsonFor(checkId,
+                "fetchCancel"))
+                .withHeader(CHECK_ID_HEADER, checkId)
+                .withHeader(CHECK_KIND_HEADER, "fetchCancel"));
+        final CompletableFuture<String> result = new CompletableFuture<String>();
+        boolean cancelled = response.cancel(false);
+        if (!cancelled) {
+            result.completeExceptionally(new IllegalStateException("Fetch cancel 返回 false: " + checkId));
+            return result;
+        }
+        TIMEOUT_EXECUTOR.schedule(new Runnable() {
+            @Override
+            public void run() {
+                if (!response.isCancelled()) {
+                    result.completeExceptionally(new IllegalStateException("Fetch future 未保持取消状态: "
+                            + checkId));
+                    return;
+                }
+                result.complete("Fetch cancel 已保持本地取消，迟到响应被忽略，id=" + checkId);
+            }
+        }, FETCH_CANCEL_VERIFY_MILLIS, TimeUnit.MILLISECONDS);
+        return withTimeout(result, "Fetch cancel", checkId);
+    }
+
+    /**
      * 运行 Store snapshot 自检。
      *
      * @return 自检 future
@@ -330,6 +422,48 @@ public final class NetRuntimeSelfChecks {
                     public String apply(NetBody body) {
                         requireContains(body.asUtf8String(), "\"kind\":\"store\"", "Store body");
                         return "Store snapshot 已完成，id=" + checkId;
+                    }
+                });
+    }
+
+    /**
+     * 运行 per-player Store snapshot 自检。
+     *
+     * @return 自检 future
+     */
+    public static CompletableFuture<String> runPlayerStoreSnapshot() {
+        ensureRegistered();
+        final String checkId = nextCheckId("playerStore");
+        final CompletableFuture<NetBody> pending = new CompletableFuture<NetBody>();
+        STORE_PENDING.put(checkId, pending);
+        pending.whenComplete(new java.util.function.BiConsumer<NetBody, Throwable>() {
+            @Override
+            public void accept(NetBody body, Throwable throwable) {
+                STORE_PENDING.remove(checkId);
+            }
+        });
+        CompletableFuture<NetResponse> trigger = playerStoreTriggerEndpoint.call(NetRequest.json(jsonFor(checkId,
+                "playerStore"))
+                .withHeader(CHECK_ID_HEADER, checkId)
+                .withHeader(CHECK_KIND_HEADER, "playerStore"));
+        trigger.whenComplete(new java.util.function.BiConsumer<NetResponse, Throwable>() {
+            @Override
+            public void accept(NetResponse response, Throwable throwable) {
+                if (throwable != null) {
+                    pending.completeExceptionally(throwable);
+                    return;
+                }
+                if (!response.isOk()) {
+                    pending.completeExceptionally(new IllegalStateException(response.getBody().asUtf8String()));
+                }
+            }
+        });
+        return withTimeout(pending, "Player Store snapshot", checkId)
+                .thenApply(new java.util.function.Function<NetBody, String>() {
+                    @Override
+                    public String apply(NetBody body) {
+                        requireContains(body.asUtf8String(), "\"kind\":\"playerStore\"", "Player Store body");
+                        return "Player Store snapshot 已完成，id=" + checkId;
                     }
                 });
     }
@@ -369,6 +503,23 @@ public final class NetRuntimeSelfChecks {
                 });
             }
         }, FETCH_TIMEOUT_WAKEUP_MILLIS, TimeUnit.MILLISECONDS);
+    }
+
+    private static void scheduleFetchCancelReply(final String checkId,
+            final NetFetchEndpoint.NetFetchRequestContext context) {
+        TIMEOUT_EXECUTOR.schedule(new Runnable() {
+            @Override
+            public void run() {
+                NetService.getInstance().runOnMainThread(NetSide.SERVER, new Runnable() {
+                    @Override
+                    public void run() {
+                        context.reply(NetResponse.json(jsonFor(checkId, "fetchCancelLateReply"))
+                                .withHeader(CHECK_ID_HEADER, checkId)
+                                .withHeader(CHECK_KIND_HEADER, "fetchCancel"));
+                    }
+                });
+            }
+        }, FETCH_CANCEL_REPLY_MILLIS, TimeUnit.MILLISECONDS);
     }
 
     private static void completeStoreSnapshot(NetBody snapshot) {

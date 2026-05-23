@@ -52,6 +52,16 @@ public final class VanillaMixinTransport implements ITransport {
     }
 
     @Override
+    public Iterable<?> getConnectedPlayers() {
+        return VanillaPacketBuilders.getConnectedPlayers();
+    }
+
+    @Override
+    public Integer getPlayerDimensionId(Object player) {
+        return VanillaPacketBuilders.getPlayerDimensionId(player);
+    }
+
+    @Override
     public int getPhysicalFrameLimit(NetSide targetSide) {
         if (targetSide == NetSide.SERVER) {
             return NetPayloadLimits.COMPAT_PHYSICAL_FRAME_LIMIT;

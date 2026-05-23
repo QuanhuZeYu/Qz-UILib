@@ -80,6 +80,76 @@ public class NetServiceRegistrationTest {
         }
     }
 
+    @Test
+    public void shouldFilterGlobalStoreSnapshotsWithAccessControl() {
+        final FakePlayer allowed = new FakePlayer("allowed", 0);
+        final FakePlayer denied = new FakePlayer("denied", 0);
+        transport.connectedPlayers.add(allowed);
+        transport.connectedPlayers.add(denied);
+        NetStore store = service.store(NetStoreId.of("test", "secure"))
+                .accessControl(new NetStore.AccessControl() {
+                    @Override
+                    public boolean canAccess(Object player, NetStore store) {
+                        return player == allowed;
+                    }
+                })
+                .register();
+        service.freeze();
+
+        store.set(NetBody.json("{\"secure\":true}"));
+
+        Assert.assertEquals(0, transport.allPayloads.size());
+        Assert.assertEquals(1, transport.playerPayloads.size());
+        Assert.assertSame(allowed, transport.playerPayloads.get(0).player);
+        NetEnvelope envelope = NetEnvelope.decode(transport.playerPayloads.get(0).payload);
+        Assert.assertEquals(NetEnvelope.Kind.STORE_SNAPSHOT, envelope.getKind());
+        Assert.assertEquals("test:secure", envelope.getKey());
+    }
+
+    @Test
+    public void shouldSendPerPlayerStoreSnapshotsToSinglePlayer() {
+        FakePlayer player = new FakePlayer("alex", 3);
+        NetStore store = service.store(NetStoreId.of("test", "playerState"))
+                .scope(NetStoreScope.PER_PLAYER)
+                .initialJson("{\"value\":0}")
+                .register();
+        service.freeze();
+
+        store.setForPlayer(player, NetBody.json("{\"value\":7}"));
+
+        Assert.assertEquals("{\"value\":7}", store.getForPlayer(player).asUtf8String());
+        Assert.assertEquals(1, transport.playerPayloads.size());
+        Assert.assertSame(player, transport.playerPayloads.get(0).player);
+        Assert.assertEquals(0, transport.allPayloads.size());
+    }
+
+    @Test
+    public void shouldFilterDimensionStoreSnapshotsWithAccessControl() {
+        final FakePlayer allowed = new FakePlayer("allowed", 7);
+        final FakePlayer denied = new FakePlayer("denied", 7);
+        final FakePlayer otherDimension = new FakePlayer("other", 8);
+        transport.connectedPlayers.add(allowed);
+        transport.connectedPlayers.add(denied);
+        transport.connectedPlayers.add(otherDimension);
+        NetStore store = service.store(NetStoreId.of("test", "dimensionState"))
+                .scope(NetStoreScope.DIMENSION)
+                .accessControl(new NetStore.AccessControl() {
+                    @Override
+                    public boolean canAccess(Object player, NetStore store) {
+                        return player == allowed || player == otherDimension;
+                    }
+                })
+                .register();
+        service.freeze();
+
+        store.setForDimension(7, NetBody.json("{\"dimension\":7}"));
+
+        Assert.assertEquals("{\"dimension\":7}", store.getForDimension(7).asUtf8String());
+        Assert.assertEquals(1, transport.playerPayloads.size());
+        Assert.assertSame(allowed, transport.playerPayloads.get(0).player);
+        Assert.assertEquals(0, transport.dimensionPayloads.size());
+    }
+
     private static String repeat(char value, int count) {
         StringBuilder builder = new StringBuilder(count);
         for (int index = 0; index < count; index++) {
@@ -91,6 +161,10 @@ public class NetServiceRegistrationTest {
     private static final class RecordingTransport implements ITransport {
 
         final List<byte[]> clientToServerPayloads = new ArrayList<byte[]>();
+        final List<byte[]> allPayloads = new ArrayList<byte[]>();
+        final List<DimensionPayload> dimensionPayloads = new ArrayList<DimensionPayload>();
+        final List<PlayerPayload> playerPayloads = new ArrayList<PlayerPayload>();
+        final List<FakePlayer> connectedPlayers = new ArrayList<FakePlayer>();
 
         @Override
         public String getName() {
@@ -112,19 +186,68 @@ public class NetServiceRegistrationTest {
 
         @Override
         public void sendToPlayer(Object player, String channelName, byte[] payload) {
+            playerPayloads.add(new PlayerPayload(player, payload));
         }
 
         @Override
         public void sendToAll(String channelName, byte[] payload) {
+            allPayloads.add(payload);
         }
 
         @Override
         public void sendToDimension(int dimensionId, String channelName, byte[] payload) {
+            dimensionPayloads.add(new DimensionPayload(dimensionId, payload));
+        }
+
+        @Override
+        public Iterable<?> getConnectedPlayers() {
+            return connectedPlayers;
+        }
+
+        @Override
+        public Integer getPlayerDimensionId(Object player) {
+            if (!(player instanceof FakePlayer)) {
+                return null;
+            }
+            return Integer.valueOf(((FakePlayer) player).dimensionId);
         }
 
         @Override
         public int getPhysicalFrameLimit(NetSide targetSide) {
             return targetSide == NetSide.SERVER ? 256 : NetPayloadLimits.GTNH_DEFAULT_PHYSICAL_LIMIT;
+        }
+    }
+
+    private static final class FakePlayer {
+
+        final String name;
+        final int dimensionId;
+
+        FakePlayer(String name, int dimensionId) {
+            this.name = name;
+            this.dimensionId = dimensionId;
+        }
+    }
+
+    private static final class PlayerPayload {
+
+        final Object player;
+        final byte[] payload;
+
+        PlayerPayload(Object player, byte[] payload) {
+            this.player = player;
+            this.payload = payload;
+        }
+    }
+
+    private static final class DimensionPayload {
+
+        final int dimensionId;
+        final byte[] payload;
+
+        DimensionPayload(int dimensionId, byte[] payload) {
+            this.dimensionId = dimensionId;
+            this.payload = payload;
         }
     }
 }

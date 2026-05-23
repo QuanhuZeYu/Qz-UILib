@@ -6,7 +6,7 @@
 net_self_check
 ```
 
-当前自检覆盖两类场景：不依赖真实联机的本地运行时断言，以及需要客户端已连接服务端的真实网络往返。
+当前自检覆盖两类场景：不依赖真实联机的本地运行时断言，以及需要客户端已连接服务端的真实网络往返。页面支持逐项执行和“全部执行”聚合验收。
 
 | 场景 | 覆盖内容 |
 |---|---|
@@ -16,15 +16,16 @@ net_self_check
 | 可选 POJO codec | enum、List、Map、嵌套对象、`@NetTransient`，仅作为业务二进制辅助 |
 | 分片重组 | 100KB envelope 在 32KB 兼容帧下分片并重组 |
 | 主线程队列 | client/server 主线程任务入队与 drain |
+| Store DOM bridge | Store 视图绑定 DOM 后投递到客户端主线程渲染 |
 | 运行时 Channel 往返 | 预注册内部 Channel 执行 C2S ping 与 S2C pong |
 | 运行时分片 Channel | 超过 32KB 的二进制 body 走真实 C2S 分片并在服务端重组 |
 | 运行时 Fetch 往返 | 预注册内部 Fetch endpoint 执行 C2S 请求与响应 |
 | 运行时 Fetch 错误 | `context.fail(...)` 经真实网络返回 500 错误响应 |
 | 运行时 Fetch 超时 | 短超时 endpoint 不回复，由后续网络帧触发 pending timeout |
+| 运行时 Fetch 取消 | 本地 `cancel(false)` 移除 pending，服务端迟到响应被忽略 |
 | 运行时 Store 快照 | 预注册内部 Fetch 触发服务端 Store set，再等待客户端 Store snapshot |
+| 运行时玩家 Store | `PER_PLAYER` Store + `accessControl` + `setForPlayer` 定向快照 |
 
 仍需人工场景：
 
-- Fetch 取消语义。
-- Store DOM bridge。
-- dedicated server 上确认 `EarlyMixins` 不返回客户端 mixin。
+- dedicated server 完整启动 smoke：默认 `runServer` 当前会被 LWJGL3ify relauncher 中止；`EarlyMixins` 的 SERVER 侧过滤已由 JVM 测试覆盖。

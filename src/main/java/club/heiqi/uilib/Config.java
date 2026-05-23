@@ -22,6 +22,7 @@ public class Config {
     private static final Config CONFIG_LISTENER = new Config();
     public static boolean useDebug = false;
     public static boolean uiDebug = false;
+    public static String netTransport = "vanilla";
 
     /**
      * 初始化并装载全部配置。
@@ -44,6 +45,9 @@ public class Config {
     public static void load() {
         useDebug = configuration.getBoolean("useDebug", GENERAL, useDebug, "是否启用调试输出");
         uiDebug = configuration.getBoolean("uiDebug", GENERAL, uiDebug, "是否在屏幕右上角显示当前页面类名");
+        netTransport = configuration.getString("netTransport", GENERAL, netTransport,
+                "网络传输适配器：vanilla 为默认 early mixin 路径，forge 仅用于兼容排障。",
+                new String[] { "vanilla", "forge" });
         FontConfig.load(configuration);
 
         if (configuration.hasChanged()) {

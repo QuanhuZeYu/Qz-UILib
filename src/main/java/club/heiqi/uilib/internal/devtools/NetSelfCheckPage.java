@@ -14,6 +14,7 @@ import club.heiqi.uilib.net.api.NetContentType;
 import club.heiqi.uilib.net.api.NetHeaders;
 import club.heiqi.uilib.net.api.NetMessage;
 import club.heiqi.uilib.net.api.NetService;
+import club.heiqi.uilib.net.client.NetStoreUiBridge;
 import club.heiqi.uilib.net.codec.NetCodec;
 import club.heiqi.uilib.net.core.NetChunkAssembler;
 import club.heiqi.uilib.net.core.NetEnvelope;
@@ -110,6 +111,25 @@ public final class NetSelfCheckPage extends DocumentPageController {
         header.appendText("覆盖大小策略、内容信封、Header、可选 codec、分片重组、主线程队列、真实联机往返、错误与超时。");
         root.append(header);
 
+        ElementNode toolbar = document.div();
+        toolbar.style()
+                .setDisplay(UiDisplay.FLEX)
+                .setFlexDirection(UiFlexDirection.ROW)
+                .setColumnGap(UiStyleLength.px(10))
+                .setMargin(UiStyleInsets.of(UiStyleLength.px(0), UiStyleLength.px(0), UiStyleLength.px(12),
+                        UiStyleLength.px(0)));
+        DocumentButtonControl runAllButton = new DocumentButtonControl(document, "全部执行");
+        runAllButton.setBackgroundColors(0xFF10B981, 0xFF047857, 0xFF334155)
+                .setFocusBorderColor(0xFFA7F3D0);
+        runAllButton.setActionHandler(new DocumentButtonActionHandler() {
+            @Override
+            public void onAction(DocumentButtonActionEvent event) {
+                executeAll();
+            }
+        });
+        toolbar.append(runAllButton.getElement());
+        root.append(toolbar);
+
         register(root, "大小策略", "验证 32KB 兼容帧、8/16 MiB 普通消息边界、256 MiB 默认物理能力与 1 GiB 硬上限。",
                 new SelfCheckRunnable() {
                     @Override
@@ -152,6 +172,13 @@ public final class NetSelfCheckPage extends DocumentPageController {
                         checkMainThreadQueue();
                     }
                 });
+        register(root, "Store DOM bridge", "绑定运行时 Store 视图，确认 DOM renderer 会投递到客户端主线程执行。",
+                new SelfCheckRunnable() {
+                    @Override
+                    public void run() {
+                        checkStoreDomBridge();
+                    }
+                });
         registerAsync(root, "运行时 Channel 往返", "通过预注册内部 Channel 执行 C2S ping 与 S2C pong。",
                 new SelfCheckAsyncRunnable() {
                     @Override
@@ -187,11 +214,25 @@ public final class NetSelfCheckPage extends DocumentPageController {
                         return NetRuntimeSelfChecks.runFetchTimeout();
                     }
                 });
+        registerAsync(root, "运行时 Fetch 取消", "本地 cancel 后移除 pending，服务端迟到响应应被忽略。",
+                new SelfCheckAsyncRunnable() {
+                    @Override
+                    public CompletableFuture<String> run() {
+                        return NetRuntimeSelfChecks.runFetchCancellation();
+                    }
+                });
         registerAsync(root, "运行时 Store 快照", "通过 Fetch 触发服务端 Store set，再等待客户端 Store snapshot。",
                 new SelfCheckAsyncRunnable() {
                     @Override
                     public CompletableFuture<String> run() {
                         return NetRuntimeSelfChecks.runStoreSnapshot();
+                    }
+                });
+        registerAsync(root, "运行时玩家 Store", "通过 PER_PLAYER Store 与 accessControl 验证 setForPlayer 定向快照。",
+                new SelfCheckAsyncRunnable() {
+                    @Override
+                    public CompletableFuture<String> run() {
+                        return NetRuntimeSelfChecks.runPlayerStoreSnapshot();
                     }
                 });
 
@@ -210,27 +251,28 @@ public final class NetSelfCheckPage extends DocumentPageController {
     }
 
     private void register(ElementNode root, String title, String description, final SelfCheckRunnable runnable) {
-        final SelfCheckEntry entry = appendEntry(root, title, description);
+        final SelfCheckEntry entry = appendEntry(root, title, description, runnable, null);
         entry.button.setActionHandler(new DocumentButtonActionHandler() {
             @Override
             public void onAction(DocumentButtonActionEvent event) {
-                execute(entry, runnable);
+                execute(entry);
             }
         });
     }
 
     private void registerAsync(ElementNode root, String title, String description,
             final SelfCheckAsyncRunnable runnable) {
-        final SelfCheckEntry entry = appendEntry(root, title, description);
+        final SelfCheckEntry entry = appendEntry(root, title, description, null, runnable);
         entry.button.setActionHandler(new DocumentButtonActionHandler() {
             @Override
             public void onAction(DocumentButtonActionEvent event) {
-                executeAsync(entry, runnable);
+                execute(entry);
             }
         });
     }
 
-    private SelfCheckEntry appendEntry(ElementNode root, String title, String description) {
+    private SelfCheckEntry appendEntry(ElementNode root, String title, String description,
+            SelfCheckRunnable runnable, SelfCheckAsyncRunnable asyncRunnable) {
         ElementNode card = document.div();
         card.style()
                 .setMargin(UiStyleInsets.of(UiStyleLength.px(0), UiStyleLength.px(0), UiStyleLength.px(10),
@@ -265,32 +307,37 @@ public final class NetSelfCheckPage extends DocumentPageController {
         card.append(button.getElement());
         root.append(card);
 
-        final SelfCheckEntry entry = new SelfCheckEntry(title, statusLabel, button);
+        final SelfCheckEntry entry = new SelfCheckEntry(title, statusLabel, button, runnable, asyncRunnable);
         entries.add(entry);
         return entry;
     }
 
-    private void execute(SelfCheckEntry entry, SelfCheckRunnable runnable) {
-        long startedAt = System.nanoTime();
-        try {
-            runnable.run();
-            markPassed(entry, startedAt, null);
-        } catch (RuntimeException exception) {
-            markFailed(entry, exception);
-        }
+    private void execute(SelfCheckEntry entry) {
+        executeEntry(entry);
     }
 
-    private void executeAsync(final SelfCheckEntry entry, SelfCheckAsyncRunnable runnable) {
-        final long startedAt = System.nanoTime();
+    private CompletableFuture<Boolean> executeEntry(final SelfCheckEntry entry) {
+        long startedAt = System.nanoTime();
+        if (entry.runnable != null) {
+            try {
+                entry.runnable.run();
+                markPassed(entry, startedAt, null);
+                return CompletableFuture.completedFuture(Boolean.TRUE);
+            } catch (RuntimeException exception) {
+                markFailed(entry, exception);
+                return CompletableFuture.completedFuture(Boolean.FALSE);
+            }
+        }
         entry.statusText.setText("执行中");
         summaryText.setText("[" + entry.title + "] 执行中，等待网络响应。");
         CompletableFuture<String> future;
         try {
-            future = runnable.run();
+            future = entry.asyncRunnable.run();
         } catch (RuntimeException exception) {
             markFailed(entry, exception);
-            return;
+            return CompletableFuture.completedFuture(Boolean.FALSE);
         }
+        final CompletableFuture<Boolean> completed = new CompletableFuture<Boolean>();
         future.whenComplete(new java.util.function.BiConsumer<String, Throwable>() {
             @Override
             public void accept(final String result, final Throwable throwable) {
@@ -299,11 +346,38 @@ public final class NetSelfCheckPage extends DocumentPageController {
                     public void run() {
                         if (throwable != null) {
                             markFailed(entry, unwrap(throwable));
+                            completed.complete(Boolean.FALSE);
                             return;
                         }
                         markPassed(entry, startedAt, result);
+                        completed.complete(Boolean.TRUE);
                     }
                 });
+            }
+        });
+        return completed;
+    }
+
+    private void executeAll() {
+        if (entries.isEmpty()) {
+            summaryText.setText("没有可执行的网络层自检。");
+            return;
+        }
+        summaryText.setText("开始执行全部网络层自检。");
+        executeAllFrom(0, 0, 0);
+    }
+
+    private void executeAllFrom(final int index, final int passed, final int failed) {
+        if (index >= entries.size()) {
+            summaryText.setText("全部网络层自检完成：通过 " + passed + "，失败 " + failed + "。");
+            return;
+        }
+        final SelfCheckEntry entry = entries.get(index);
+        executeEntry(entry).whenComplete(new java.util.function.BiConsumer<Boolean, Throwable>() {
+            @Override
+            public void accept(Boolean passedEntry, Throwable throwable) {
+                boolean ok = throwable == null && Boolean.TRUE.equals(passedEntry);
+                executeAllFrom(index + 1, passed + (ok ? 1 : 0), failed + (ok ? 0 : 1));
             }
         });
     }
@@ -436,6 +510,20 @@ public final class NetSelfCheckPage extends DocumentPageController {
         require(counters[0] == 1 && counters[1] == 1, "主线程队列未正确执行");
     }
 
+    private void checkStoreDomBridge() {
+        final ElementNode element = document.div();
+        NetStoreUiBridge.getInstance().bind(NetRuntimeSelfChecks.getRuntimeStoreView(), element,
+                new NetStoreUiBridge.NetStoreRenderer() {
+                    @Override
+                    public void render(ElementNode element, NetBody snapshot) {
+                        element.setAttribute("data-net-store", snapshot.asUtf8String());
+                    }
+                });
+        require(element.getAttribute("data-net-store") == null, "Store DOM bridge 不应同步直接渲染");
+        NetService.getInstance().drainClientMainThreadTasks();
+        require(element.getAttribute("data-net-store") != null, "Store DOM bridge 未在客户端主线程渲染");
+    }
+
     private static void require(boolean condition, String message) {
         if (!condition) {
             throw new IllegalStateException(message);
@@ -455,11 +543,16 @@ public final class NetSelfCheckPage extends DocumentPageController {
         final String title;
         final TextNode statusText;
         final DocumentButtonControl button;
+        final SelfCheckRunnable runnable;
+        final SelfCheckAsyncRunnable asyncRunnable;
 
-        SelfCheckEntry(String title, TextNode statusText, DocumentButtonControl button) {
+        SelfCheckEntry(String title, TextNode statusText, DocumentButtonControl button,
+                SelfCheckRunnable runnable, SelfCheckAsyncRunnable asyncRunnable) {
             this.title = title;
             this.statusText = statusText;
             this.button = button;
+            this.runnable = runnable;
+            this.asyncRunnable = asyncRunnable;
         }
     }
 

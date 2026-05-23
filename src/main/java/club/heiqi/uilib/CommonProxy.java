@@ -3,8 +3,9 @@ package club.heiqi.uilib;
 import club.heiqi.uilib.font.FontService;
 import club.heiqi.uilib.internal.devtools.NetRuntimeSelfChecks;
 import club.heiqi.uilib.net.api.NetService;
+import club.heiqi.uilib.net.transport.ITransport;
+import club.heiqi.uilib.net.transport.NetTransportFactory;
 import club.heiqi.uilib.net.transport.forge.ForgeMainThreadDispatcherBridge;
-import club.heiqi.uilib.net.transport.vanilla.VanillaMixinTransport;
 import cpw.mods.fml.common.FMLCommonHandler;
 import cpw.mods.fml.common.event.FMLInitializationEvent;
 import cpw.mods.fml.common.event.FMLPostInitializationEvent;
@@ -27,12 +28,14 @@ public class CommonProxy {
         File configFile = event.getSuggestedConfigurationFile();
         Config.init(configFile);
         FontService.getInstance().initialize();
-        NetService.getInstance().bootstrap(new VanillaMixinTransport());
+        ITransport transport = NetTransportFactory.create(Config.netTransport);
+        NetService.getInstance().bootstrap(transport);
         NetRuntimeSelfChecks.register();
         FMLCommonHandler.instance().bus().register(ForgeMainThreadDispatcherBridge.getInstance());
 
         MyMod.LOG.info("Qz-UILib {} 初始化完成", Tags.VERSION);
         MyMod.LOG.info("字体系统已启用：{}", FontService.getInstance().isInitialized());
+        MyMod.LOG.info("网络传输适配器：{}", transport.getName());
         MyMod.LOG.info("I am Qz-UILib at version " + Tags.VERSION);
     }
 

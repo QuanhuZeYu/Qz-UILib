@@ -1,6 +1,9 @@
 package club.heiqi.uilib.net.transport.forge;
 
+import java.util.ArrayList;
+import java.util.Collections;
 import java.util.EnumMap;
+import java.util.List;
 
 import club.heiqi.uilib.net.api.NetService;
 import club.heiqi.uilib.net.core.NetPayloadLimits;
@@ -19,6 +22,7 @@ import io.netty.channel.ChannelHandlerContext;
 import io.netty.channel.SimpleChannelInboundHandler;
 import net.minecraft.entity.player.EntityPlayerMP;
 import net.minecraft.network.NetHandlerPlayServer;
+import net.minecraft.server.MinecraftServer;
 
 /**
  * Forge/FML 兼容传输适配器。
@@ -80,6 +84,24 @@ public final class ForgeTransport implements ITransport {
         channel.attr(FMLOutboundHandler.FML_MESSAGETARGET).set(FMLOutboundHandler.OutboundTarget.DIMENSION);
         channel.attr(FMLOutboundHandler.FML_MESSAGETARGETARGS).set(Integer.valueOf(dimensionId));
         channel.writeAndFlush(packet);
+    }
+
+    @Override
+    public Iterable<?> getConnectedPlayers() {
+        MinecraftServer server = MinecraftServer.getServer();
+        if (server == null || server.getConfigurationManager() == null) {
+            return Collections.emptyList();
+        }
+        List<?> players = server.getConfigurationManager().playerEntityList;
+        return new ArrayList<Object>(players);
+    }
+
+    @Override
+    public Integer getPlayerDimensionId(Object player) {
+        if (!(player instanceof EntityPlayerMP)) {
+            return null;
+        }
+        return Integer.valueOf(((EntityPlayerMP) player).dimension);
     }
 
     @Override

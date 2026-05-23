@@ -25,7 +25,7 @@ public final class NetRequestRegistry {
      */
     public <T> PendingRequest<T> register(long timeoutMillis) {
         long requestId = nextRequestId.getAndIncrement();
-        PendingRequest<T> pending = new PendingRequest<T>(requestId, System.currentTimeMillis() + timeoutMillis);
+        PendingRequest<T> pending = new PendingRequest<T>(this, requestId, System.currentTimeMillis() + timeoutMillis);
         pendingRequests.put(Long.valueOf(requestId), pending);
         return pending;
     }
@@ -82,6 +82,19 @@ public final class NetRequestRegistry {
     }
 
     /**
+     * 返回当前 pending 数量。
+     *
+     * @return pending 数量
+     */
+    public int size() {
+        return pendingRequests.size();
+    }
+
+    private void cancelFromFuture(long requestId, PendingRequest<?> pending) {
+        pendingRequests.remove(Long.valueOf(requestId), pending);
+    }
+
+    /**
      * pending 请求。
      *
      * @param <T> 响应类型
@@ -90,11 +103,12 @@ public final class NetRequestRegistry {
 
         private final long requestId;
         private final long deadlineMillis;
-        private final CompletableFuture<T> future = new CompletableFuture<T>();
+        private final CompletableFuture<T> future;
 
-        private PendingRequest(long requestId, long deadlineMillis) {
+        private PendingRequest(NetRequestRegistry registry, long requestId, long deadlineMillis) {
             this.requestId = requestId;
             this.deadlineMillis = deadlineMillis;
+            this.future = new RegistryFuture<T>(registry, this);
         }
 
         public long getRequestId() {
@@ -103,6 +117,26 @@ public final class NetRequestRegistry {
 
         public CompletableFuture<T> getFuture() {
             return future;
+        }
+    }
+
+    private static final class RegistryFuture<T> extends CompletableFuture<T> {
+
+        private final NetRequestRegistry registry;
+        private final PendingRequest<T> pending;
+
+        RegistryFuture(NetRequestRegistry registry, PendingRequest<T> pending) {
+            this.registry = registry;
+            this.pending = pending;
+        }
+
+        @Override
+        public boolean cancel(boolean mayInterruptIfRunning) {
+            boolean cancelled = super.cancel(mayInterruptIfRunning);
+            if (cancelled) {
+                registry.cancelFromFuture(pending.requestId, pending);
+            }
+            return cancelled;
         }
     }
 }

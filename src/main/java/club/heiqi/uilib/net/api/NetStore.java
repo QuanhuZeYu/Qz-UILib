@@ -1,6 +1,8 @@
 package club.heiqi.uilib.net.api;
 
+import java.util.Map;
 import java.util.Objects;
+import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * 内容语义状态同步 Store。
@@ -12,6 +14,8 @@ public final class NetStore {
     private final NetStoreScope scope;
     private final AccessControl accessControl;
     private final NetStoreView view;
+    private final Map<Object, NetBody> playerStates = new ConcurrentHashMap<Object, NetBody>();
+    private final Map<Integer, NetBody> dimensionStates = new ConcurrentHashMap<Integer, NetBody>();
     private NetBody state;
 
     NetStore(NetService service, NetStoreId id, NetStoreScope scope, NetBody initial, AccessControl accessControl) {
@@ -50,7 +54,7 @@ public final class NetStore {
     }
 
     /**
-     * 服务端替换状态并广播快照。
+     * 服务端替换默认状态并按 Store scope 广播快照。
      *
      * @param next 新状态
      */
@@ -60,12 +64,85 @@ public final class NetStore {
     }
 
     /**
+     * 返回指定玩家的状态。
+     *
+     * @param player 玩家对象
+     * @return 玩家状态；未单独设置时返回默认状态
+     */
+    public synchronized NetBody getForPlayer(Object player) {
+        Objects.requireNonNull(player, "player");
+        NetBody body = playerStates.get(player);
+        return body == null ? state : body;
+    }
+
+    /**
+     * 服务端替换指定玩家状态并仅向该玩家发送快照。
+     *
+     * @param player 玩家对象
+     * @param next 新状态
+     */
+    public synchronized void setForPlayer(Object player, NetBody next) {
+        Objects.requireNonNull(player, "player");
+        NetBody resolved = Objects.requireNonNull(next, "next");
+        playerStates.put(player, resolved);
+        service.sendStoreSnapshot(this, NetTarget.player(player), resolved);
+    }
+
+    /**
+     * 返回指定维度状态。
+     *
+     * @param dimensionId 维度 id
+     * @return 维度状态；未单独设置时返回默认状态
+     */
+    public synchronized NetBody getForDimension(int dimensionId) {
+        NetBody body = dimensionStates.get(Integer.valueOf(dimensionId));
+        return body == null ? state : body;
+    }
+
+    /**
+     * 服务端替换指定维度状态并向该维度玩家发送快照。
+     *
+     * @param dimensionId 维度 id
+     * @param next 新状态
+     */
+    public synchronized void setForDimension(int dimensionId, NetBody next) {
+        NetBody resolved = Objects.requireNonNull(next, "next");
+        dimensionStates.put(Integer.valueOf(dimensionId), resolved);
+        service.sendStoreSnapshot(this, NetTarget.dimension(dimensionId), resolved);
+    }
+
+    /**
      * 基于当前 body 计算新 body 并广播。
      *
      * @param mutator 修改函数
      */
     public synchronized void mutate(StoreMutator mutator) {
         set(Objects.requireNonNull(mutator, "mutator").mutate(state));
+    }
+
+    /**
+     * 基于指定玩家状态计算新 body 并发送给该玩家。
+     *
+     * @param player 玩家对象
+     * @param mutator 修改函数
+     */
+    public synchronized void mutateForPlayer(Object player, StoreMutator mutator) {
+        setForPlayer(player, Objects.requireNonNull(mutator, "mutator").mutate(getForPlayer(player)));
+    }
+
+    /**
+     * 基于指定维度状态计算新 body 并发送给该维度。
+     *
+     * @param dimensionId 维度 id
+     * @param mutator 修改函数
+     */
+    public synchronized void mutateForDimension(int dimensionId, StoreMutator mutator) {
+        setForDimension(dimensionId, Objects.requireNonNull(mutator, "mutator")
+                .mutate(getForDimension(dimensionId)));
+    }
+
+    boolean hasAccessControl() {
+        return accessControl != null;
     }
 
     boolean canAccess(Object player) {
