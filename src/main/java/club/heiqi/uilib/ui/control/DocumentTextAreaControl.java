@@ -7,6 +7,7 @@ import java.util.List;
 import org.lwjglx.input.Keyboard;
 
 import club.heiqi.uilib.ui.animation.SystemDocumentAnimationClock;
+import club.heiqi.uilib.ui.dom.DocumentElementBounds;
 import club.heiqi.uilib.ui.dom.DocumentElementClickEvent;
 import club.heiqi.uilib.ui.dom.DocumentElementClickHandler;
 import club.heiqi.uilib.ui.dom.DocumentElementFocusEvent;
@@ -748,10 +749,14 @@ public final class DocumentTextAreaControl {
 
     private void updateRenderedLineMetrics(UiRenderContext context, int contentLeft, int contentTop, int contentRight,
             int contentBottom) {
-        viewportContentLeft = contentLeft;
-        viewportContentTop = contentTop;
-        viewportContentWidth = Math.max(0, contentRight - contentLeft);
-        viewportContentHeight = Math.max(0, contentBottom - contentTop);
+        DocumentElementBounds textBounds = contentElement.getDocumentBounds();
+        DocumentElementBounds viewportBounds = element.getDocumentBounds();
+        viewportContentLeft = textBounds.isAvailable() ? textBounds.getContentLeft() : contentLeft;
+        viewportContentTop = textBounds.isAvailable() ? textBounds.getContentTop() : contentTop;
+        viewportContentWidth = viewportBounds.isAvailable() ? viewportBounds.getContentWidth()
+                : Math.max(0, contentRight - contentLeft);
+        viewportContentHeight = viewportBounds.isAvailable() ? viewportBounds.getContentHeight()
+                : Math.max(0, contentBottom - contentTop);
         if (context == null) {
             renderedLineMetrics = Collections.emptyList();
             return;

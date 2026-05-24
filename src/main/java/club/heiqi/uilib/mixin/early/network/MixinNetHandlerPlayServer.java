@@ -19,7 +19,7 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 public abstract class MixinNetHandlerPlayServer {
 
     /**
-     * 玩家 NetHandler 建立后通知网络层可发送 schema 与 Store 快照。
+     * 玩家 NetHandler 建立后通知网络层记录 Play handler 就绪。
      *
      * @param server Minecraft 服务端
      * @param networkManager 网络管理器
@@ -27,9 +27,9 @@ public abstract class MixinNetHandlerPlayServer {
      * @param ci 回调
      */
     @Inject(method = "<init>", at = @At("TAIL"))
-    private void qzuilib$onServerPlayerJoined(MinecraftServer server, NetworkManager networkManager,
+    private void qzuilib$onServerPlayHandlerReady(MinecraftServer server, NetworkManager networkManager,
             EntityPlayerMP player, CallbackInfo ci) {
-        VanillaMixinTransport.onServerPlayerJoined(player);
+        VanillaMixinTransport.onServerPlayHandlerReady(networkManager, player);
     }
 
     /**

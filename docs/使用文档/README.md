@@ -17,17 +17,21 @@
 4. [基础控件](02-控件/基础控件.md)
 5. [表格与背包槽位](02-控件/表格与背包槽位.md)
 6. [Forge 配置模板](02-控件/Forge配置模板.md)
-7. [网络层入门](02-控件/网络层入门.md)
-8. [Minecraft 界面入口](03-宿主集成/Minecraft界面入口.md)
-9. [指令触发方案](04-诊断入口/指令触发方案.md)
-10. [v4.x LTS 稳定 API 清单](v4.x-LTS-稳定API清单.md)
+7. [远程页面](02-控件/远程页面.md)
+8. [远程 HUD 浮窗](02-控件/远程HUD浮窗.md)
+9. [网络层入门](02-控件/网络层入门.md)
+10. [Minecraft 界面入口](03-宿主集成/Minecraft界面入口.md)
+11. [指令触发方案](04-诊断入口/指令触发方案.md)
+12. [v4.x LTS 稳定 API 清单](v4.x-LTS-稳定API清单.md)
 
 ## 核心要点
 
 - 使用 Java API 构建 UI，不是编写 HTML/CSS 文件。
 - 通过 `UiDocumentScreens.createDocumentScreen(...)` 创建业务界面。
+- 服务端生成的安全子集 HTML 可通过 `RemoteDocumentPages.open(...)` 下发给客户端显示。
+- 同样的安全子集 HTML 可通过 `RemoteHudOverlays.open(...)` 做成 HUD 弹窗、提示和弹幕。
 - 页面内容通过 `UiDocument`、`ElementNode`、样式和控件组织。
-- 双端通信通过 `NetService` 注册 Channel / Fetch / Store。
+- 双端通信通过 `NetService` 注册 Channel / Fetch / Stream / Store。
 - 诊断页和示例页只作为开发期工具，不作为玩家默认入口。
 
 ## 相关文档

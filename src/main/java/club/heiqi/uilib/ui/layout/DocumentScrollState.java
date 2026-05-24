@@ -128,9 +128,26 @@ public final class DocumentScrollState {
      * @param rootBox 根布局盒
      */
     public void updateFromLayout(DocumentLayoutBox rootBox) {
+        updateFromLayout(rootBox, Collections.<DocumentLayoutBox>emptyList());
+    }
+
+    /**
+     * 根据最新普通布局盒树和顶层盒树刷新可滚范围，并移除已不存在元素的滚动状态。
+     *
+     * @param rootBox 根布局盒
+     * @param topLayerBoxes 顶层布局盒；后面的盒位于更上层
+     */
+    public void updateFromLayout(DocumentLayoutBox rootBox, List<DocumentLayoutBox> topLayerBoxes) {
         Objects.requireNonNull(rootBox, "rootBox");
         Set<ElementNode> activeElements = new HashSet<ElementNode>();
         collectScrollableMetrics(rootBox, activeElements);
+        if (topLayerBoxes != null) {
+            for (DocumentLayoutBox topLayerBox : topLayerBoxes) {
+                if (topLayerBox != null) {
+                    collectScrollableMetrics(topLayerBox, activeElements);
+                }
+            }
+        }
         Iterator<Map.Entry<ElementNode, ScrollEntry>> iterator = entries.entrySet().iterator();
         while (iterator.hasNext()) {
             Map.Entry<ElementNode, ScrollEntry> mapEntry = iterator.next();
@@ -196,12 +213,32 @@ public final class DocumentScrollState {
      */
     public boolean handleWheel(DocumentLayoutBox rootBox, int mouseX, int mouseY, int wheelDelta,
             long eventTimeNanos) {
+        return handleWheel(rootBox, Collections.<DocumentLayoutBox>emptyList(), mouseX, mouseY, wheelDelta,
+                eventTimeNanos);
+    }
+
+    /**
+     * 按鼠标位置和滚轮增量滚动命中的最深层可滚元素，顶层盒优先于普通文档树。
+     *
+     * @param rootBox 根布局盒
+     * @param topLayerBoxes 顶层布局盒；后面的盒位于更上层
+     * @param mouseX 文档局部鼠标 X
+     * @param mouseY 文档局部鼠标 Y
+     * @param wheelDelta 滚轮增量
+     * @param eventTimeNanos 滚轮事件时间戳
+     * @return 是否消费滚轮事件
+     */
+    public boolean handleWheel(DocumentLayoutBox rootBox, List<DocumentLayoutBox> topLayerBoxes, int mouseX,
+            int mouseY, int wheelDelta, long eventTimeNanos) {
         Objects.requireNonNull(rootBox, "rootBox");
         if (wheelDelta == 0) {
             return false;
         }
-        updateFromLayout(rootBox);
-        DocumentLayoutBox target = findScrollableBoxAt(rootBox, mouseX, mouseY, 0, 0, true);
+        updateFromLayout(rootBox, topLayerBoxes);
+        DocumentLayoutBox target = findTopLayerScrollableBoxAt(topLayerBoxes, mouseX, mouseY);
+        if (target == null) {
+            target = findScrollableBoxAt(rootBox, mouseX, mouseY, 0, 0, true);
+        }
         if (target == null) {
             return false;
         }
@@ -248,9 +285,28 @@ public final class DocumentScrollState {
      * @return 是否命中并消费滚动条操作
      */
     public boolean beginScrollbarDrag(DocumentLayoutBox rootBox, int mouseX, int mouseY, long eventTimeNanos) {
+        return beginScrollbarDrag(rootBox, Collections.<DocumentLayoutBox>emptyList(), mouseX, mouseY,
+                eventTimeNanos);
+    }
+
+    /**
+     * 开始拖拽或点击 HTML-like 滚动条，顶层盒优先于普通文档树。
+     *
+     * @param rootBox 根布局盒
+     * @param topLayerBoxes 顶层布局盒；后面的盒位于更上层
+     * @param mouseX 文档局部鼠标 X
+     * @param mouseY 文档局部鼠标 Y
+     * @param eventTimeNanos 事件时间戳
+     * @return 是否命中并消费滚动条操作
+     */
+    public boolean beginScrollbarDrag(DocumentLayoutBox rootBox, List<DocumentLayoutBox> topLayerBoxes, int mouseX,
+            int mouseY, long eventTimeNanos) {
         Objects.requireNonNull(rootBox, "rootBox");
-        updateFromLayout(rootBox);
-        ScrollbarHit hit = findScrollbarHit(rootBox, rootBox, mouseX, mouseY, 0, 0, eventTimeNanos, true);
+        updateFromLayout(rootBox, topLayerBoxes);
+        ScrollbarHit hit = findTopLayerScrollbarHit(topLayerBoxes, mouseX, mouseY, eventTimeNanos);
+        if (hit == null) {
+            hit = findScrollbarHit(rootBox, rootBox, mouseX, mouseY, 0, 0, eventTimeNanos, true);
+        }
         if (hit == null) {
             return false;
         }
@@ -294,12 +350,31 @@ public final class DocumentScrollState {
      * @return 当前是否处于滚动条拖拽流程
      */
     public boolean updateScrollbarDrag(DocumentLayoutBox rootBox, int mouseX, int mouseY, long eventTimeNanos) {
+        return updateScrollbarDrag(rootBox, Collections.<DocumentLayoutBox>emptyList(), mouseX, mouseY,
+                eventTimeNanos);
+    }
+
+    /**
+     * 根据鼠标位置更新正在拖拽的滚动条，顶层盒与普通文档树共同维护滚动状态。
+     *
+     * @param rootBox 根布局盒
+     * @param topLayerBoxes 顶层布局盒；后面的盒位于更上层
+     * @param mouseX 文档局部鼠标 X
+     * @param mouseY 文档局部鼠标 Y
+     * @param eventTimeNanos 事件时间戳
+     * @return 当前是否处于滚动条拖拽流程
+     */
+    public boolean updateScrollbarDrag(DocumentLayoutBox rootBox, List<DocumentLayoutBox> topLayerBoxes, int mouseX,
+            int mouseY, long eventTimeNanos) {
         Objects.requireNonNull(rootBox, "rootBox");
         if (activeScrollbarDrag == null) {
             return false;
         }
-        updateFromLayout(rootBox);
-        ScrollbarHit hit = findActiveScrollbar(rootBox, rootBox, 0, 0, eventTimeNanos);
+        updateFromLayout(rootBox, topLayerBoxes);
+        ScrollbarHit hit = findActiveScrollbarInTopLayers(topLayerBoxes, eventTimeNanos);
+        if (hit == null) {
+            hit = findActiveScrollbar(rootBox, rootBox, 0, 0, eventTimeNanos);
+        }
         if (hit == null) {
             activeScrollbarDrag = null;
             return false;
@@ -543,6 +618,61 @@ public final class DocumentScrollState {
     private boolean isScrollable(ElementNode element) {
         ScrollEntry entry = entries.get(element);
         return entry != null && (entry.maxHorizontalOffset > 0 || entry.maxVerticalOffset > 0);
+    }
+
+    private DocumentLayoutBox findTopLayerScrollableBoxAt(List<DocumentLayoutBox> topLayerBoxes, int mouseX,
+            int mouseY) {
+        if (topLayerBoxes == null) {
+            return null;
+        }
+        for (int index = topLayerBoxes.size() - 1; index >= 0; index--) {
+            DocumentLayoutBox topLayerBox = topLayerBoxes.get(index);
+            if (topLayerBox == null) {
+                continue;
+            }
+            DocumentLayoutBox hit = findScrollableBoxAt(topLayerBox, mouseX, mouseY, 0, 0, true);
+            if (hit != null) {
+                return hit;
+            }
+        }
+        return null;
+    }
+
+    private ScrollbarHit findTopLayerScrollbarHit(List<DocumentLayoutBox> topLayerBoxes, int mouseX, int mouseY,
+            long currentTimeNanos) {
+        if (topLayerBoxes == null) {
+            return null;
+        }
+        for (int index = topLayerBoxes.size() - 1; index >= 0; index--) {
+            DocumentLayoutBox topLayerBox = topLayerBoxes.get(index);
+            if (topLayerBox == null) {
+                continue;
+            }
+            ScrollbarHit hit = findScrollbarHit(topLayerBox, topLayerBox, mouseX, mouseY, 0, 0, currentTimeNanos,
+                    true);
+            if (hit != null) {
+                return hit;
+            }
+        }
+        return null;
+    }
+
+    private ScrollbarHit findActiveScrollbarInTopLayers(List<DocumentLayoutBox> topLayerBoxes,
+            long currentTimeNanos) {
+        if (topLayerBoxes == null) {
+            return null;
+        }
+        for (int index = topLayerBoxes.size() - 1; index >= 0; index--) {
+            DocumentLayoutBox topLayerBox = topLayerBoxes.get(index);
+            if (topLayerBox == null) {
+                continue;
+            }
+            ScrollbarHit hit = findActiveScrollbar(topLayerBox, topLayerBox, 0, 0, currentTimeNanos);
+            if (hit != null) {
+                return hit;
+            }
+        }
+        return null;
     }
 
     private ScrollbarHit findScrollbarHit(DocumentLayoutBox rootBox, DocumentLayoutBox box, int mouseX, int mouseY,

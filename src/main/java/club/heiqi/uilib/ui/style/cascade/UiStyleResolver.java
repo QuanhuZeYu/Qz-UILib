@@ -138,6 +138,23 @@ public final class UiStyleResolver {
     }
 
     /**
+     * 计算 flex 匿名文本项的内部样式。
+     *
+     * <p>匿名 flex item 不在 DOM/CSS 选择器中暴露，布局属性取初始值，文本相关继承属性来自父级 flex
+     * 容器。</p>
+     *
+     * @param element 匿名 flex item 的运行时载体
+     * @param parentStyle 父级 flex 容器样式
+     * @return 匿名 flex item 的计算样式
+     */
+    public static ComputedStyle computeAnonymousFlexItemStyle(ElementNode element, ComputedStyle parentStyle) {
+        if (element == null) {
+            throw new NullPointerException("element");
+        }
+        return compute(element, parentStyle, Collections.<UiStyleRule>emptyList());
+    }
+
+    /**
      * 计算元素最终样式（使用指定的匹配规则列表）。
      *
      * <p>规则列表应按优先级升序排列（最后一个优先级最高）。</p>

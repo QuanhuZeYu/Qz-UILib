@@ -20,11 +20,12 @@
 - Minecraft 1.7.10 / GTNH / LWJGL3ify 环境下的 HTML-like UI 框架 Mod。
 - 根包：`club.heiqi.uilib`，Mod ID：`qz_uilib`。
 - 作者层暴露浏览器语义（DOM / CSS / 事件模型），不向页面作者暴露 Minecraft GUI 生命周期或底层渲染实现细节。
+- 内置弹出型控件按浏览器 top-layer 语义处理：DOM 归属不变，布局/绘制/命中由文档运行时提升到视口顶层；top-layer 仍是内部能力，不作为业务作者 API。
 
 ## 对外入口边界
 
-- 业务文档入口：`UiDocumentScreens.createDocumentScreen(...)`。
-- 双端网络入口：`NetService.getInstance()`，在 `preInit` 注册 Channel / Fetch / Stream / Store，`postInit` 后注册表冻结；网络消息以 `route/key + contentType + headers + body` 为核心，不以 Java 类型作为协议身份；普通逻辑消息默认 16 MiB，超过阈值走 Stream/chunk；Fetch endpoint 可配滑动窗口限流，Store 可注册业务 delta applier；默认 vanilla 传输，可用 `netTransport` 或 `-Dqzuilib.net.transport=forge` 切 Forge 回退。
+- 业务文档入口：`UiDocumentScreens.createDocumentScreen(...)`；服务端生成的安全子集 HTML 远程页面入口为 `RemoteDocumentPages.open(...)`，HUD 浮窗入口为 `RemoteHudOverlays.open(...)`，两者都不执行 JavaScript、不嵌入真实浏览器。
+- 双端网络入口：`NetService.getInstance()`，在 `preInit` 注册 Channel / Fetch / Stream / Store，`postInit` 后注册表冻结；网络消息以 `route/key + contentType + headers + body` 为核心，不以 Java 类型作为协议身份；普通逻辑消息默认 16 MiB，超过阈值走 Stream/chunk；Fetch endpoint 可配滑动窗口限流，Store 可注册业务 delta applier；默认 vanilla 传输，其能力握手在 FML connection-established 事件之后触发，不在 Play NetHandler 构造期发送；可用 `netTransport` 或 `-Dqzuilib.net.transport=forge` 切 Forge 回退。
 - 诊断/示例页只保留内部开发工具入口（`/qzuilib test`），不对外暴露页面工厂。
 - 不新增扩大直接 `Widget` 作者入口的 API。
 
@@ -45,7 +46,7 @@
   - 测试：`$env:GRADLE_USER_HOME="D:\.MyApps\.ENV\gradle-home"; ./gradlew.bat --no-configuration-cache test`
   - 客户端：`$env:GRADLE_USER_HOME="D:\.MyApps\.ENV\gradle-home"; ./gradlew.bat --no-configuration-cache runClient21`
 - 纯 JVM 测试不要直接实例化继承 `GuiScreen` / `BaseScreen` 的页面类。
-- 网络层运行时自检入口为 `/qzuilib test`，支持逐项或全部执行；真实 Channel / Fetch / Stream / Store 往返、C2S 分片、Fetch 错误/超时/取消/限流、玩家 Store、Store delta 检查已在当前 GTNH / ModularUI2 服务端环境完成一次完整联机验收（18/18 通过）；Forge 回退仍需单独切换 `netTransport=forge` 验证。
+- 网络层运行时自检入口为 `/qzuilib test`，支持逐项或全部执行；真实 Channel / Fetch / Stream / Store 往返、C2S 分片、Fetch 错误/超时/取消/限流、玩家 Store、Store delta 检查已在当前 GTNH / ModularUI2 服务端环境完成一次基础联机验收（18/18 通过）；远程页面与远程 HUD 自检都属于交互 smoke，会分别触发 `RemoteDocumentPages.open(...)` 和 `RemoteHudOverlays.open(...)` 并需要提交按钮完成表单回传验证；Forge 回退仍需单独切换 `netTransport=forge` 验证。
 - 默认 `runServer` 目前会被 LWJGL3ify relauncher 中止；dedicated server 完整 smoke 需换用不带该 relauncher 的服务端配置，相关记录见 `docs/开发者文档/errors/ERROR-20260523-runserver-lwjgl3ify-relauncher.md`。
 
 ## 本文件的维护规则

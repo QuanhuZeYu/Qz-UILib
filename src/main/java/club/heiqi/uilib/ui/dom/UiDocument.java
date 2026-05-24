@@ -30,6 +30,7 @@ public final class UiDocument {
     private final ElementNode rootElement;
     private final Map<String, DocumentKeyframes> keyframes = new LinkedHashMap<String, DocumentKeyframes>();
     private final List<UiStyleSheet> styleSheets = new ArrayList<UiStyleSheet>();
+    private final List<ElementNode> topLayerElements = new ArrayList<ElementNode>();
     private DocumentLinkActivationHandler linkActivationHandler;
     private UiStyleVariables styleVariables;
     private TextContentMode defaultTextContentMode = TextContentMode.UILIB_RAW;
@@ -58,6 +59,63 @@ public final class UiDocument {
      */
     public ElementNode getRootElement() {
         return rootElement;
+    }
+
+    /**
+     * 把指定元素注册为文档运行时顶层元素。
+     *
+     * <p>该入口模拟浏览器 UA top-layer：元素保留原 DOM 父子关系，但布局、绘制与命中由运行时提升到视口顶层。
+     * 仅供内置控件表达 select picker、菜单等弹出层语义，页面作者不应直接调用。</p>
+     *
+     * @param element 待提升的元素
+     * @apiNote 框架内部 API，LTS 不承诺兼容性。
+     */
+    public void __showTopLayerElement(ElementNode element) {
+        ElementNode resolvedElement = Objects.requireNonNull(element, "element");
+        if (resolvedElement.getOwnerDocument() != this) {
+            throw new IllegalArgumentException("top layer element belongs to a different document");
+        }
+        if (topLayerElements.contains(resolvedElement)) {
+            return;
+        }
+        topLayerElements.add(resolvedElement);
+        recordLayoutMutation();
+    }
+
+    /**
+     * 从文档运行时顶层移除指定元素。
+     *
+     * @param element 待移除元素
+     * @apiNote 框架内部 API，LTS 不承诺兼容性。
+     */
+    public void __hideTopLayerElement(ElementNode element) {
+        if (element == null) {
+            return;
+        }
+        if (topLayerElements.remove(element)) {
+            recordLayoutMutation();
+        }
+    }
+
+    /**
+     * 返回当前文档运行时顶层元素快照。
+     *
+     * @return 顶层元素列表
+     * @apiNote 框架内部 API，LTS 不承诺兼容性。
+     */
+    public List<ElementNode> __getTopLayerElements() {
+        return Collections.unmodifiableList(new ArrayList<ElementNode>(topLayerElements));
+    }
+
+    /**
+     * 判断元素是否处于文档运行时顶层。
+     *
+     * @param element 待判断元素
+     * @return 是否处于顶层
+     * @apiNote 框架内部 API，LTS 不承诺兼容性。
+     */
+    public boolean __isTopLayerElement(ElementNode element) {
+        return topLayerElements.contains(element);
     }
 
     /**

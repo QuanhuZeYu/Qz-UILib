@@ -84,9 +84,11 @@ public final class DocumentLayoutBox {
         for (DocumentLayoutBox child : children) {
             refreshedChildren.add(child.refreshComputedStyles());
         }
-        return new DocumentLayoutBox(element, UiStyleResolver.compute(element), refreshedChildren, textRuns,
-                inlineFragments, margin, border, padding, left, top, width, height, positionOffsetX,
-                positionOffsetY, resolvedTopInset, resolvedRightInset, resolvedBottomInset, resolvedLeftInset);
+        ComputedStyle refreshedStyle = FlexLayoutHelper.ANONYMOUS_FLEX_ITEM_TAG.equals(element.getTagName())
+                ? computedStyle : UiStyleResolver.compute(element);
+        return new DocumentLayoutBox(element, refreshedStyle, refreshedChildren, textRuns, inlineFragments, margin,
+                border, padding, left, top, width, height, positionOffsetX, positionOffsetY, resolvedTopInset,
+                resolvedRightInset, resolvedBottomInset, resolvedLeftInset);
     }
 
     public List<DocumentLayoutBox> getChildren() {

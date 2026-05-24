@@ -2,6 +2,7 @@ package club.heiqi.uilib.ui.control;
 
 import org.lwjglx.input.Keyboard;
 
+import club.heiqi.uilib.ui.dom.DocumentElementBounds;
 import club.heiqi.uilib.ui.dom.DocumentElementClickEvent;
 import club.heiqi.uilib.ui.dom.DocumentElementClickHandler;
 import club.heiqi.uilib.ui.dom.DocumentElementFocusEvent;
@@ -32,6 +33,7 @@ public final class DocumentSelectControl {
 
     private static final int DEFAULT_TRIGGER_HEIGHT = 32;
     private static final int DEFAULT_OPTION_HEIGHT = 28;
+    private static final String PRESERVE_FOCUS_ON_MOUSE_DOWN_ATTRIBUTE = "data-qz-preserve-focus-on-mousedown";
 
     private final ElementNode element;
     private final ElementNode triggerElement;
@@ -155,11 +157,11 @@ public final class DocumentSelectControl {
         if (this.enabled == enabled) {
             return this;
         }
+        setOpen(false);
         this.enabled = enabled;
         if (!enabled) {
             focusVisible = false;
             hovered = false;
-            open = false;
             element.setAttribute("disabled", "true");
             element.setAttribute("aria-disabled", "true");
             element.setFocusable(false);
@@ -218,6 +220,7 @@ public final class DocumentSelectControl {
                 .setHeight(UiStyleLength.percent(1.0F))
                 .setPadding(UiStyleLength.px(8));
         popupElement.setAttribute("role", "listbox");
+        popupElement.setAttribute(PRESERVE_FOCUS_ON_MOUSE_DOWN_ATTRIBUTE, "true");
         popupElement.style()
                 .setDisplay(UiDisplay.NONE)
                 .setPosition(UiPosition.ABSOLUTE)
@@ -281,7 +284,8 @@ public final class DocumentSelectControl {
             public void onFocusChanged(DocumentElementFocusEvent event) {
                 focusVisible = enabled && event.isFocused() && event.isFocusVisible();
                 if (!event.isFocused()) {
-                    open = false;
+                    setOpen(false);
+                    return;
                 }
                 updateVisualState();
             }
@@ -360,6 +364,9 @@ public final class DocumentSelectControl {
         }
         this.open = open;
         highlightedIndex = selectedIndex;
+        if (!this.open) {
+            restorePopupInlinePlacement();
+        }
         updateVisualState();
         if (this.open) {
             revealSelectedOption();
@@ -411,7 +418,6 @@ public final class DocumentSelectControl {
         }
         int resolvedTextColor = enabled ? textColor : disabledTextColor;
         labelText.setText(options[selectedIndex]);
-        arrowText.setText(open ? "^" : "v");
         element.style()
                 .setBackgroundColor(backgroundColor)
                 .setBorderColor(borderColor)
@@ -419,12 +425,16 @@ public final class DocumentSelectControl {
                 .setTextColor(resolvedTextColor);
         labelElement.style().setTextColor(resolvedTextColor);
         arrowElement.style().setTextColor(enabled ? mutedTextColor : disabledTextColor);
+        if (open && !syncPopupTopLayerPlacement()) {
+            this.open = false;
+        }
+        arrowText.setText(this.open ? "^" : "v");
         popupElement.style()
-                .setDisplay(open ? UiDisplay.FLEX : UiDisplay.NONE)
+                .setDisplay(this.open ? UiDisplay.FLEX : UiDisplay.NONE)
                 .setFlexDirection(UiFlexDirection.COLUMN)
                 .setBorderColor(triggerBorderColor)
                 .setBackgroundColor(enabled ? popupBackgroundColor : disabledBackgroundColor);
-        element.setAttribute("aria-expanded", String.valueOf(open));
+        element.setAttribute("aria-expanded", String.valueOf(this.open));
         element.setAttribute("value", options[selectedIndex]);
         for (int index = 0; index < optionElements.length; index++) {
             boolean selected = index == selectedIndex;
@@ -440,6 +450,46 @@ public final class DocumentSelectControl {
                     .setCursor(enabled ? UiCursor.POINTER : UiCursor.NOT_ALLOWED)
                     .setTextColor(enabled ? (selected ? textColor : mutedTextColor) : disabledTextColor);
         }
+    }
+
+    /**
+     * 将展开面板注册到文档运行时顶层。
+     *
+     * <p>浏览器原生 select 的下拉面板由 UA 以 top-layer 语义管理，不会离开 select 的逻辑 DOM
+     * 归属，也不受普通祖先 overflow 或 stacking context 裁剪。</p>
+     *
+     * @return 是否成功完成顶层放置
+     */
+    private boolean syncPopupTopLayerPlacement() {
+        if (!open) {
+            return false;
+        }
+        DocumentElementBounds bounds = element.getDocumentBounds();
+        if (!bounds.isAvailable() || bounds.getWidth() <= 0) {
+            restorePopupInlinePlacement();
+            return false;
+        }
+        popupElement.style()
+                .setPosition(UiPosition.FIXED)
+                .setLeft(UiStyleLength.px(bounds.getLeft()))
+                .setTop(UiStyleLength.px(bounds.getTop() + bounds.getHeight()))
+                .setWidth(UiStyleLength.px(bounds.getWidth()))
+                .clearZIndex();
+        element.getOwnerDocument().__showTopLayerElement(popupElement);
+        return true;
+    }
+
+    private void restorePopupInlinePlacement() {
+        element.getOwnerDocument().__hideTopLayerElement(popupElement);
+        if (popupElement.getParent() != element) {
+            element.append(popupElement);
+        }
+        popupElement.style()
+                .setPosition(UiPosition.ABSOLUTE)
+                .setLeft(UiStyleLength.px(0))
+                .setTop(UiStyleLength.percent(1.0F))
+                .setWidth(UiStyleLength.percent(1.0F))
+                .setZIndex(20);
     }
 
     private static String[] normalizeOptions(String[] options) {

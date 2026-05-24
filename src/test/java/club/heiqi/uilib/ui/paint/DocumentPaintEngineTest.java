@@ -20,6 +20,7 @@ import club.heiqi.uilib.ui.style.values.UiBorderRadius;
 import club.heiqi.uilib.ui.style.props.UiBorderCollapse;
 import club.heiqi.uilib.ui.style.cascade.UiBorderRadiusResolver;
 import club.heiqi.uilib.ui.style.props.UiBorderStyle;
+import club.heiqi.uilib.ui.style.props.UiDisplay;
 import club.heiqi.uilib.ui.style.props.UiOverflow;
 import club.heiqi.uilib.ui.style.props.UiOverflowWrap;
 import club.heiqi.uilib.ui.style.values.UiPseudoElementContent;
@@ -1555,6 +1556,26 @@ public class DocumentPaintEngineTest {
         Assert.assertEquals("POST", commands.get(2).getText());
         Assert.assertEquals(0xFF00FF00, commands.get(0).getColor());
         Assert.assertEquals(0xFFFF0000, commands.get(2).getColor());
+    }
+
+    /**
+     * 验证 flex 容器中的直接文本按匿名 flex item 参与布局并生成文本绘制命令。
+     */
+    @Test
+    public void shouldPaintDirectTextInsideFlexContainer() {
+        UiDocument document = UiDocument.create();
+        ElementNode root = document.getRootElement();
+
+        root.style()
+                .setDisplay(UiDisplay.FLEX)
+                .setWidth(UiStyleLength.px(120))
+                .setHeight(UiStyleLength.px(32));
+        root.appendText("Alpha");
+
+        List<DocumentPaintCommand> commands = DocumentPaintEngine.buildPaintCommands(DocumentLayoutEngine.layout(root,
+                160, 0, new DeterministicTextMeasureService()));
+
+        Assert.assertTrue(containsTextCommand(commands, root, "Alpha"));
     }
 
     private static void assertCommand(DocumentPaintCommand command, DocumentPaintCommandType type,

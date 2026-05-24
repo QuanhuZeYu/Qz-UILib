@@ -46,7 +46,7 @@ Stencil、clip、圆角相关的渲染问题。
 
 ---
 
-## 布局引擎类（合并，5 条）
+## 布局引擎类（合并，6 条）
 
 Flex、block、positioned 定位与尺寸计算。
 
@@ -55,8 +55,9 @@ Flex、block、positioned 定位与尺寸计算。
 - [`ERROR-20260511-hud-demo-panel-overflow.md`](ERROR-20260511-hud-demo-panel-overflow.md) — HUD 面板子控件溢出（content-box 语义下百分比宽度预期行为）
 - [`ERROR-20260427-custom-paint-content-box.md`](ERROR-20260427-custom-paint-content-box.md) — CustomRenderer 参数传入 padding box 而非 content box
 - [`ERROR-20260518-browser-semantics-audit.md`](ERROR-20260518-browser-semantics-audit.md) — 全面审查发现 28 处不符合浏览器语义的实现
+- [`ERROR-20260523-form-control-browser-semantics.md`](ERROR-20260523-form-control-browser-semantics.md) — 表单控件渲染缺少 flex 匿名文本与 textarea 内容盒语义
 
-**共性教训**：flex column 的交叉轴 auto 尺寸必须走固有内容宽度测量；盒模型 API 必须明确传递 content box 还是 padding box。
+**共性教训**：flex column 的交叉轴 auto 尺寸必须走固有内容宽度测量；盒模型 API 必须明确传递 content box 还是 padding box；控件渲染异常优先补齐通用 HTML-like/CSS 语义。
 
 ---
 
@@ -74,7 +75,7 @@ Flex、block、positioned 定位与尺寸计算。
 
 ---
 
-## HUD 系统类（合并，4 条）
+## HUD 系统类（合并，6 条）
 
 HUD 输入分发、显示控制与生命周期。
 
@@ -82,8 +83,10 @@ HUD 输入分发、显示控制与生命周期。
 - [`ERROR-20260511-hud-overlay-click-through-and-missing-drag.md`](ERROR-20260511-hud-overlay-click-through-and-missing-drag.md) — HUD 交互浮窗点击穿透下层容器且缺少拖拽能力
 - [`ERROR-20260513-hud-deferred-post-main-double-drain.md`](ERROR-20260513-hud-deferred-post-main-double-drain.md) — HUD deferred post-main 双重 drain 导致回放丢失
 - [`ERROR-20260517-hud-main-menu-title-screen-leak.md`](ERROR-20260517-hud-main-menu-title-screen-leak.md) — HUD 在主页类屏幕上误显（主页识别名单不完整）
+- [`ERROR-20260523-remote-hud-danmaku-drag.md`](ERROR-20260523-remote-hud-danmaku-drag.md) — 远程 HUD 弹幕文字不可见、DIALOG 额外父容器与首次拖拽跳位
+- [`ERROR-20260523-remote-hud-select-popup-click-through.md`](ERROR-20260523-remote-hud-select-popup-click-through.md) — 远程 HUD select 下拉选项点击穿透到下方按钮或原生界面
 
-**共性教训**：HUD 注册表遍历必须基于快照或等效防御；多层 HUD 输入只路由最上层命中层；主页黑名单需覆盖第三方主页类。
+**共性教训**：HUD 注册表遍历必须基于快照或等效防御；多层 HUD 输入只路由最上层命中层；弹出型控件要按顶层语义处理；主页黑名单需覆盖第三方主页类。
 
 ---
 
@@ -156,11 +159,12 @@ Toolchain、依赖版本、构建配置与运行时类路径。
 
 ---
 
-## 网络生命周期类（1 条）
+## 网络生命周期类（2 条）
 
 - [`ERROR-20260523-net-client-handshake-net-handler-race.md`](ERROR-20260523-net-client-handshake-net-handler-race.md) — 客户端能力握手在 NetHandler 构造期反查全局 NetHandler 导致连接崩溃
+- [`ERROR-20260523-net-fml-pipeline-first-login-race.md`](ERROR-20260523-net-fml-pipeline-first-login-race.md) — 首次连接时 Qz 能力握手早于 FML connection-established 语义导致登录握手竞态
 
-**共性教训**：早期 mixin 已拿到的生命周期对象应优先直接传递或缓存，不能在构造期依赖全局单例反查。
+**共性教训**：早期 mixin 已拿到的生命周期对象应优先直接传递或缓存，不能在构造期依赖全局单例反查；跨模组网络协议握手必须等 FML connection-established 语义成立后再发送。
 
 ---
 

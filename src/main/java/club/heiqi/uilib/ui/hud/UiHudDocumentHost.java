@@ -346,15 +346,17 @@ public final class UiHudDocumentHost {
         if (frame == null || frame.getMouseEvents().isEmpty()) {
             return;
         }
+        applyCurrentViewportBounds(entrySnapshot);
         boolean primaryDown = isPrimaryMouseButtonDown(frame);
         boolean primaryUp = isPrimaryMouseButtonUp(frame);
         if (primaryDown) {
             HudEntry targetEntry = resolveMouseTargetEntry(screenCategory, frame.getMouseX(), frame.getMouseY(),
                     entrySnapshot);
-            clearInteractiveStates();
             if (targetEntry == null) {
+                clearInteractiveStates();
                 return;
             }
+            clearInteractiveStatesExcept(targetEntry);
             hoveredMouseEntry = targetEntry;
             activeMouseEntry = targetEntry;
             UiInputFrame mouseFrame = new UiInputFrame(frame.getMouseX(), frame.getMouseY(), frame.getMouseEvents(),
@@ -446,6 +448,7 @@ public final class UiHudDocumentHost {
         if (screenCategory != UiHudScreenCategory.CONTAINER) {
             return null;
         }
+        applyCurrentViewportBounds(entrySnapshot);
         for (int index = entrySnapshot.size() - 1; index >= 0; index--) {
             HudEntry entry = entrySnapshot.get(index);
             if (!isInteractiveEntryAvailable(entry, screenCategory)) {
@@ -457,6 +460,38 @@ public final class UiHudDocumentHost {
             }
         }
         return null;
+    }
+
+    /**
+     * 在输入命中测试前同步 HUD widget 的真实原生视口尺寸。
+     *
+     * <p>HUD 注册时会先使用临时尺寸创建 widget；如果首次鼠标事件早于渲染阶段，
+     * 拖拽辅助器会从过期布局边界初始化 fixed 坐标，造成首拖跳位。</p>
+     *
+     * @param entrySnapshot 当前输入帧的 HUD 条目快照
+     */
+    private void applyCurrentViewportBounds(List<HudEntry> entrySnapshot) {
+        if (entrySnapshot == null || entrySnapshot.isEmpty()) {
+            return;
+        }
+        Minecraft minecraft;
+        try {
+            minecraft = Minecraft.getMinecraft();
+        } catch (RuntimeException exception) {
+            return;
+        } catch (LinkageError error) {
+            return;
+        }
+        if (minecraft == null) {
+            return;
+        }
+        int nativeWidth = Math.max(1, minecraft.displayWidth);
+        int nativeHeight = Math.max(1, minecraft.displayHeight);
+        for (HudEntry entry : entrySnapshot) {
+            if (entry != null) {
+                entry.widget.applyLayoutBounds(0, 0, nativeWidth, nativeHeight);
+            }
+        }
     }
 
     private HudEntry resolveKeyboardTargetEntry(UiHudScreenCategory screenCategory, List<HudEntry> entrySnapshot) {
@@ -798,6 +833,21 @@ public final class UiHudDocumentHost {
         }
         UiKeyboardCaptureState.getInstance().setHudKeyboardCaptured(false);
         syncHudTextInputRequest(false);
+    }
+
+    private synchronized void clearInteractiveStatesExcept(HudEntry preservedEntry) {
+        if (hoveredMouseEntry != preservedEntry) {
+            updateHoveredMouseEntry(null);
+        }
+        activeMouseEntry = null;
+        if (activeKeyboardEntry != preservedEntry) {
+            activeKeyboardEntry = null;
+        }
+        for (HudEntry entry : entries) {
+            if (entry.layerType == UiHudLayerType.INTERACTIVE && entry != preservedEntry) {
+                entry.interactionSession.clearInteractionState();
+            }
+        }
     }
 
     private synchronized void updateHudKeyboardCaptureState() {

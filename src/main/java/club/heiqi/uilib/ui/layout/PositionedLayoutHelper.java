@@ -42,7 +42,7 @@ final class PositionedLayoutHelper {
         return absoluteContainingBlock.withContentHeight(contentBoxHeight);
     }
 
-    private static DocumentLayoutBox layoutPositionedElement(ElementNode element,
+    static DocumentLayoutBox layoutPositionedElement(ElementNode element,
             AbsoluteContainingBlock containingBlock, AbsoluteContainingBlock fixedContainingBlock,
             LayoutContext layoutContext) {
         ComputedStyle style = layoutContext.computeStyle(element);

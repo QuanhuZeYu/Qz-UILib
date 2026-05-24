@@ -10,6 +10,7 @@ import club.heiqi.uilib.net.client.NetStoreUiBridge;
 import club.heiqi.uilib.ui.hud.UiHudDocumentHost;
 import club.heiqi.uilib.ui.image.DocumentRemoteImageCache;
 import club.heiqi.uilib.ui.input.UiInputService;
+import club.heiqi.uilib.ui.remote.RemoteHudOverlayClientBridge;
 import cpw.mods.fml.common.FMLCommonHandler;
 import cpw.mods.fml.common.event.FMLPreInitializationEvent;
 import cpw.mods.fml.common.eventhandler.SubscribeEvent;
@@ -61,6 +62,11 @@ public class ClientProxy extends CommonProxy {
             MyMod.LOG.warn("HUD 断连清理异常", exception);
         }
         try {
+            RemoteHudOverlayClientBridge.getInstance().clearAll();
+        } catch (RuntimeException exception) {
+            MyMod.LOG.warn("远程 HUD 断连清理异常", exception);
+        }
+        try {
             NetService.getInstance().onClientDisconnected();
         } catch (RuntimeException exception) {
             MyMod.LOG.warn("网络层断连清理异常", exception);
@@ -82,6 +88,11 @@ public class ClientProxy extends CommonProxy {
             NetService.getInstance().shutdown();
         } catch (RuntimeException exception) {
             MyMod.LOG.warn("网络层关停异常", exception);
+        }
+        try {
+            RemoteHudOverlayClientBridge.getInstance().clearAll();
+        } catch (RuntimeException exception) {
+            MyMod.LOG.warn("远程 HUD 关停清理异常", exception);
         }
     }
 }

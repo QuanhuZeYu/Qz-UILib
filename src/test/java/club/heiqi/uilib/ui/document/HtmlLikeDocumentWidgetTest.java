@@ -864,6 +864,135 @@ public class HtmlLikeDocumentWidgetTest {
     }
 
     /**
+     * 验证 fixed fallback 作用于已 fixed 元素时只沿用现有 left/top 基线。
+     */
+    @Test
+    public void shouldDragAlreadyFixedElementThroughFixedDragSupportWithoutPositionSwitch() {
+        UiDocument document = UiDocument.create();
+        ElementNode root = document.getRootElement();
+        ElementNode panel = document.div();
+        ElementNode handle = document.div();
+
+        root.style()
+                .setWidth(UiStyleLength.px(320))
+                .setHeight(UiStyleLength.px(180));
+        panel.style()
+                .setPosition(UiPosition.FIXED)
+                .setLeft(UiStyleLength.px(96))
+                .setTop(UiStyleLength.px(64))
+                .setWidth(UiStyleLength.px(120))
+                .setHeight(UiStyleLength.px(48))
+                .setBackgroundColor(0xFF223344);
+        handle.style()
+                .setWidth(UiStyleLength.px(120))
+                .setHeight(UiStyleLength.px(20))
+                .setBackgroundColor(0xFF446688);
+        panel.append(handle);
+        root.append(panel);
+        DocumentDraggableSupport.attachFixed(panel, handle, DocumentDraggableSupport.DragAxis.BOTH);
+
+        HtmlLikeDocumentWidget widget = new HtmlLikeDocumentWidget(document, 320, 180,
+                new DeterministicTextMeasureService());
+        widget.applyLayoutBounds(0, 0, 320, 180);
+
+        widget.onMouseDown(new UiMouseEvent(UiMouseEvent.Action.BUTTON_DOWN, 108, 72, 0, 0, 0, 0, 1L));
+        widget.onMouseMove(new UiMouseEvent(UiMouseEvent.Action.MOVE, 138, 94, -1, 0, 30, 22, 2L));
+        widget.onMouseUp(new UiMouseEvent(UiMouseEvent.Action.BUTTON_UP, 138, 94, 0, 0, 0, 0, 3L));
+
+        Assert.assertEquals(UiPosition.FIXED, panel.style().getPosition());
+        Assert.assertEquals(126.0F, panel.style().getLeft().getValue(), 0.001F);
+        Assert.assertEquals(86.0F, panel.style().getTop().getValue(), 0.001F);
+        Assert.assertNull(panel.style().getRight());
+        Assert.assertNull(panel.style().getBottom());
+    }
+
+    /**
+     * 验证 fixed 拖拽模式会从 static 元素当前视觉位置开始移动。
+     */
+    @Test
+    public void shouldDragStaticElementFromCurrentBoundsThroughFixedDragSupport() {
+        UiDocument document = UiDocument.create();
+        ElementNode root = document.getRootElement();
+        ElementNode panel = document.div();
+        ElementNode handle = document.div();
+
+        root.style()
+                .setWidth(UiStyleLength.px(240))
+                .setHeight(UiStyleLength.px(120))
+                .setPadding(UiStyleLength.px(20));
+        panel.style()
+                .setPosition(UiPosition.STATIC)
+                .setWidth(UiStyleLength.px(80))
+                .setHeight(UiStyleLength.px(30))
+                .setBackgroundColor(0xFF223344);
+        handle.style()
+                .setWidth(UiStyleLength.px(80))
+                .setHeight(UiStyleLength.px(10))
+                .setBackgroundColor(0xFF446688);
+        panel.append(handle);
+        root.append(panel);
+        DocumentDraggableSupport.attachFixed(panel, panel, DocumentDraggableSupport.DragAxis.BOTH);
+
+        HtmlLikeDocumentWidget widget = new HtmlLikeDocumentWidget(document, 240, 120,
+                new DeterministicTextMeasureService());
+        widget.applyLayoutBounds(0, 0, 240, 120);
+        widget.findElementAt(25, 25);
+
+        panel.getDragHandler().onDrag(new DocumentElementDragEvent(panel, panel, 25, 25, 25, 25, 0, 0, 0,
+                1L, DocumentElementDragEvent.DragPhase.START));
+        panel.getDragHandler().onDrag(new DocumentElementDragEvent(panel, panel, 25, 25, 45, 35, 20, 10, 0,
+                2L, DocumentElementDragEvent.DragPhase.DRAG));
+        panel.getDragHandler().onDrag(new DocumentElementDragEvent(panel, panel, 25, 25, 45, 35, 0, 0, 0,
+                3L, DocumentElementDragEvent.DragPhase.END));
+
+        Assert.assertEquals(UiPosition.FIXED, panel.style().getPosition());
+        Assert.assertEquals(40.0F, panel.style().getLeft().getValue(), 0.001F);
+        Assert.assertEquals(30.0F, panel.style().getTop().getValue(), 0.001F);
+        Assert.assertNull(panel.style().getRight());
+        Assert.assertNull(panel.style().getBottom());
+    }
+
+    /**
+     * 验证 fixed 拖拽模式也能从 relative 元素当前视觉位置开始移动。
+     */
+    @Test
+    public void shouldDragRelativeElementFromCurrentBoundsThroughFixedDragSupport() {
+        UiDocument document = UiDocument.create();
+        ElementNode root = document.getRootElement();
+        ElementNode panel = document.div();
+        ElementNode handle = document.div();
+
+        root.style()
+                .setWidth(UiStyleLength.px(240))
+                .setHeight(UiStyleLength.px(120))
+                .setPadding(UiStyleLength.px(20));
+        panel.style()
+                .setPosition(UiPosition.RELATIVE)
+                .setWidth(UiStyleLength.px(80))
+                .setHeight(UiStyleLength.px(30))
+                .setBackgroundColor(0xFF223344);
+        handle.style()
+                .setWidth(UiStyleLength.px(80))
+                .setHeight(UiStyleLength.px(10))
+                .setBackgroundColor(0xFF446688);
+        panel.append(handle);
+        root.append(panel);
+        DocumentDraggableSupport.attachFixed(panel, handle, DocumentDraggableSupport.DragAxis.BOTH);
+
+        HtmlLikeDocumentWidget widget = new HtmlLikeDocumentWidget(document, 240, 120,
+                new DeterministicTextMeasureService());
+        widget.applyLayoutBounds(0, 0, 240, 120);
+
+        widget.onMouseDown(new UiMouseEvent(UiMouseEvent.Action.BUTTON_DOWN, 25, 25, 0, 0, 0, 0, 1L));
+        widget.onMouseMove(new UiMouseEvent(UiMouseEvent.Action.MOVE, 45, 35, -1, 0, 20, 10, 2L));
+        widget.onMouseUp(new UiMouseEvent(UiMouseEvent.Action.BUTTON_UP, 45, 35, 0, 0, 0, 0, 3L));
+
+        Assert.assertEquals(UiPosition.FIXED, panel.style().getPosition());
+        Assert.assertEquals(40.0F, panel.style().getLeft().getValue(), 0.001F);
+        Assert.assertEquals(30.0F, panel.style().getTop().getValue(), 0.001F);
+    }
+
+    /**
      * 验证 `right/bottom` 锚定的 fixed 浮窗首次拖拽时不会跳到左上角基线。
      */
     @Test

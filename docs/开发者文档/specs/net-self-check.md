@@ -28,9 +28,12 @@ net_self_check
 | 运行时 Store 快照 | 预注册内部 Fetch 触发服务端 Store set，再等待客户端 Store snapshot |
 | 运行时 Store 增量 | 预注册内部 Fetch 触发服务端 Store delta，再等待客户端按业务 applier 计算新快照 |
 | 运行时玩家 Store | `PER_PLAYER` Store + `accessControl` + `setForPlayer` 定向快照 |
+| 运行时远程页面 | 通过 Fetch 触发服务端 `RemoteDocumentPages.open(...)`，客户端 Stream 拉取安全子集 HTML 并打开页面；页面内提交按钮验证表单 C2S 回调和回复页 |
+
+`运行时远程页面` 是交互式 smoke：自检项收到服务端 open ack 后会打开远程页面，测试者需要在页面内点击提交按钮，最终以远程页面回复的“通过/失败”结果确认 HTML 拉取、解析和表单回传。
 
 已人工验收：
 
 - GTNH / ModularUI2 服务端环境默认 vanilla 传输路径下，玩家可正常进服，`NetHandlerPlayServer` 同目标 mixin 未阻断连接。
-- 网络层自检全部执行通过：18 项通过、0 项失败。
+- 基础网络层自检全部执行通过：18 项通过、0 项失败。
 - `运行时 Fetch 限流` 会在服务端留下 `Qz Fetch 请求被限流` warn，这是预期的限流可观测日志。

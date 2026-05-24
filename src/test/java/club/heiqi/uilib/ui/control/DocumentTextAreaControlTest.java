@@ -9,12 +9,14 @@ import org.junit.Test;
 import org.lwjglx.input.Keyboard;
 
 import club.heiqi.uilib.ui.document.HtmlLikeDocumentWidget;
+import club.heiqi.uilib.ui.dom.DocumentElementBounds;
 import club.heiqi.uilib.ui.dom.ElementNode;
 import club.heiqi.uilib.ui.dom.UiDocument;
 import club.heiqi.uilib.ui.event.UiKeyEvent;
 import club.heiqi.uilib.ui.event.UiMouseEvent;
 import club.heiqi.uilib.ui.event.UiTextInputEvent;
 import club.heiqi.uilib.ui.style.values.UiStyleLength;
+import club.heiqi.uilib.ui.text.TextContentMode;
 import club.heiqi.uilib.ui.text.TextMeasureService;
 
 /**
@@ -158,12 +160,73 @@ public class DocumentTextAreaControlTest {
                 new DeterministicTextMeasureService());
         widget.applyLayoutBounds(0, 0, 160, 80);
 
-        widget.render(new ControlTestRenderContext(160, 80));
-        widget.onMouseDown(new UiMouseEvent(UiMouseEvent.Action.BUTTON_DOWN, 20, 12, 0, 0, 0, 0, 1L));
-        widget.onMouseUp(new UiMouseEvent(UiMouseEvent.Action.BUTTON_UP, 20, 12, 0, 0, 0, 0, 2L));
+        ControlTestRenderContext renderContext = new ControlTestRenderContext(160, 80);
+        widget.render(renderContext);
+        DocumentElementBounds bounds = textAreaControl.getElement().getDocumentBounds();
+        int clickX = bounds.getContentLeft() + renderContext.measureTextWidth("abc", TextContentMode.UILIB_RAW);
+        int clickY = bounds.getContentTop() + 4;
+        widget.onMouseDown(new UiMouseEvent(UiMouseEvent.Action.BUTTON_DOWN, clickX, clickY, 0, 0, 0, 0, 1L));
+        widget.onMouseUp(new UiMouseEvent(UiMouseEvent.Action.BUTTON_UP, clickX, clickY, 0, 0, 0, 0, 2L));
         widget.onTextInput(new UiTextInputEvent("X", 3L));
 
         Assert.assertEquals("abcXdef", textAreaControl.getText());
+    }
+
+    /**
+     * 验证多行文本光标使用实际内容盒坐标，与对应文本行末尾对齐。
+     */
+    @Test
+    public void shouldRenderMultilineCaretAtTextContentBoxLineEnd() {
+        UiDocument document = UiDocument.create();
+        ElementNode root = document.getRootElement();
+        DocumentTextAreaControl textAreaControl = new DocumentTextAreaControl(document);
+        textAreaControl.setText("Alpha\nBeta");
+        root.style()
+                .setWidth(UiStyleLength.px(200))
+                .setHeight(UiStyleLength.px(120));
+        textAreaControl.getElement().style()
+                .setWidth(UiStyleLength.px(160))
+                .setHeight(UiStyleLength.px(80));
+        root.append(textAreaControl.getElement());
+        HtmlLikeDocumentWidget widget = new HtmlLikeDocumentWidget(document, 200, 120,
+                new DeterministicTextMeasureService());
+        widget.applyLayoutBounds(0, 0, 200, 120);
+
+        widget.onFocusTraversalEntered(false);
+        ControlTestRenderContext renderContext = new ControlTestRenderContext(200, 120);
+        widget.render(renderContext);
+
+        ControlTestRenderContext.TextCall betaText = findTextCall(renderContext, "Beta");
+        ControlTestRenderContext.FillRectCall caret = findCaretFillRect(renderContext);
+
+        Assert.assertNotNull(betaText);
+        Assert.assertNotNull(caret);
+        Assert.assertEquals(betaText.x + renderContext.measureTextWidth("Beta", TextContentMode.UILIB_RAW),
+                caret.left);
+        Assert.assertEquals(betaText.y, caret.top);
+        Assert.assertEquals(caret.left + 1, caret.right);
+        Assert.assertEquals(betaText.y + 18, caret.bottom);
+    }
+
+    private static ControlTestRenderContext.TextCall findTextCall(ControlTestRenderContext renderContext,
+            String text) {
+        for (ControlTestRenderContext.TextCall textCall : renderContext.textCalls) {
+            if (text.equals(textCall.text)) {
+                return textCall;
+            }
+        }
+        return null;
+    }
+
+    private static ControlTestRenderContext.FillRectCall findCaretFillRect(ControlTestRenderContext renderContext) {
+        for (ControlTestRenderContext.FillRectCall fillRectCall : renderContext.fillRectCalls) {
+            if (fillRectCall.right - fillRectCall.left == 1
+                    && fillRectCall.bottom - fillRectCall.top == 18
+                    && fillRectCall.color == 0xFFEEEEFF) {
+                return fillRectCall;
+            }
+        }
+        return null;
     }
 
     private static final class DeterministicTextMeasureService implements TextMeasureService {
