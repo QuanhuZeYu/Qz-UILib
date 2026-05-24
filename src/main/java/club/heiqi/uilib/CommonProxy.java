@@ -1,6 +1,7 @@
 package club.heiqi.uilib;
 
 import club.heiqi.uilib.font.FontService;
+import club.heiqi.uilib.internal.devtools.BirthdayRemotePushController;
 import club.heiqi.uilib.internal.devtools.NetRuntimeSelfChecks;
 import club.heiqi.uilib.net.api.NetService;
 import club.heiqi.uilib.net.transport.ITransport;
@@ -36,6 +37,7 @@ public class CommonProxy {
         RemoteDocumentPages.register();
         RemoteHudOverlays.register();
         FMLCommonHandler.instance().bus().register(ForgeMainThreadDispatcherBridge.getInstance());
+        FMLCommonHandler.instance().bus().register(BirthdayRemotePushController.getInstance());
 
         MyMod.LOG.info("Qz-UILib {} 初始化完成", Tags.VERSION);
         MyMod.LOG.info("字体系统已启用：{}", FontService.getInstance().isInitialized());
