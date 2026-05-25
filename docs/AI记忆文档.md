@@ -21,13 +21,14 @@
 - 根包：`club.heiqi.uilib`，Mod ID：`qz_uilib`。
 - 作者层暴露浏览器语义（DOM / CSS / 事件模型），不向页面作者暴露 Minecraft GUI 生命周期或底层渲染实现细节。
 - 内置弹出型控件按浏览器 top-layer 语义处理：DOM 归属不变，布局/绘制/命中由文档运行时提升到视口顶层；top-layer 仍是内部能力，不作为业务作者 API。
-- 2026-05-25 代码结构 P2 整改已收口：样式声明 paint-only slot 试点、HUD 渲染/DOM 查询/TextArea 文本支持拆分、`NetService` 内部 dispatch/Stream/Store 协作者和字体 fallback invoker 已落地；后续结构债主要看 P3 public `__` 内部 API 与 input 反向依赖。
+- 2026-05-25 代码结构 P0-P3 整改已收口：`__` public 内部 API 暂保持君子协定并明确不保证未来稳定，input 包改为消费宿主注册抽象，远程图片缓存拆分 `clear()` / JVM 退出 `shutdown()`，`DocumentCustomRenderer` / `CUSTOM` 仅作为宿主级逃生口。
 
 ## 对外入口边界
 
 - 业务文档入口：`UiDocumentScreens.createDocumentScreen(...)`；服务端生成的安全子集 HTML 远程页面入口为 `RemoteDocumentPages.open(...)`，HUD 浮窗入口为 `RemoteHudOverlays.open(...)`，两者都不执行 JavaScript、不嵌入真实浏览器，并共享内部远程 HTML session / Stream 网关。
 - 双端网络入口：`NetService.getInstance()`，在 `preInit` 注册 Channel / Fetch / Stream / Store，`postInit` 后注册表冻结；网络消息以 `route/key + contentType + headers + body` 为核心，不以 Java 类型作为协议身份；普通逻辑消息默认 16 MiB，超过阈值走 Stream/chunk；Fetch endpoint 可配滑动窗口限流，Store 可注册业务 delta applier；默认 vanilla 传输，其能力握手在 FML connection-established 事件之后触发，不在 Play NetHandler 构造期发送；可用 `netTransport` 或 `-Dqzuilib.net.transport=forge` 切 Forge 回退。
 - 诊断/示例页只保留内部开发工具入口（`/qzuilib test`），页面实现归入 `internal.devtools.pages`；可被真实客户端适配复用的库存概览模型归入 `ui.inventory`；不对外暴露页面工厂。
+- `__` 双下划线 public 方法是内部协作君子协定：为特殊宿主、兼容层和诊断路径保留可见性，不属于稳定 API，未来可替换为 internal accessor 或 package-private bridge。
 - 不新增扩大直接 `Widget` 作者入口的 API。
 
 ## 主动读取原则

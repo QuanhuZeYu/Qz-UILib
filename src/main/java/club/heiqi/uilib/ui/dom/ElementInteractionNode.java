@@ -560,6 +560,8 @@ abstract class ElementInteractionNode extends DocumentNode {
      *
      * <p>回调会在 paint engine 的 appendBoxCommands 中被包装为 CUSTOM 命令，
      * 在元素背景和边框绘制之后、clip/子树之前执行。</p>
+     * <p>CUSTOM 属于宿主级逃生口，普通业务表面应优先使用标准 DOM / 样式 /
+     * paint command 表达，不应直接依赖渲染后端手绘。</p>
      * <p>回调会影响绘制命令生成，变更时只提升文档 paint version。</p>
      *
      * @param customRenderer 自定义渲染回调

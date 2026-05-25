@@ -155,6 +155,16 @@
 
 ### P3 — 长期设计债
 
+> 整改状态（2026-05-25）：P3-1 ~ P3-4 已收口。P3-1 按当前兼容策略保持 public
+> `__` 方法不动，仅在稳定 API 清单中明确其属于内部协作的君子协定：公开出来方便特殊宿主、
+> 兼容层或诊断路径使用，但不保证未来稳定。P3-2 已通过 `UiHostInputCaptureParticipant`
+> 与 `UiManagedInputScreen` 收口 input 包对 HUD / `BaseScreen` 的反向 import。P3-3 已为
+> `DocumentRemoteImageCache` 拆分 `clear()` 与 JVM 退出阶段 `shutdown()`，并允许 shutdown
+> 后按需重建下载线程池。P3-4 已在使用文档与 Javadoc 中强调 `DocumentCustomRenderer` /
+> `CUSTOM` 只是宿主级逃生口，普通业务表面应优先走标准 DOM / 样式 / paint command。
+>
+> 下列 P3 条目保留原审查发现，最新状态以上方整改状态为准。
+
 #### P3-1 内部 `public __` API 仍靠文档约束而非编译边界约束
 
 - 当前仍存在 `UiDocument.__showTopLayerElement`、`__hideTopLayerElement`、`__getTopLayerElements`、`__isTopLayerElement`、`__createPseudoElementRuntime`、`__setInteractionRuntime`、`__dispatchLinkActivation`，以及 `ElementNode.__getElementUid`、`DocumentNode.__appendGeneratedChild`。
@@ -197,7 +207,7 @@
 | P2 | 对 HUD、TextArea、UiDocument 做第二轮按状态/生命周期拆分 | 中 | 已完成 HUD 渲染、TextArea 文本支持、DOM 查询拆分 |
 | P2 | 拆 `NetService` 内部协作者 | 中 | 已完成 envelope dispatch、Stream 下载注册器、Store sender 下沉 |
 | P2 | 抽字体 mixin fallback 调用器 | 低 | 已完成 `FontRendererFallbackInvoker` 收口 |
-| P3 | 收口 public `__` 内部 API 与 input 反向依赖 | 中 | 需要兼容策略 |
+| P3 | 收口 public `__` 内部 API、input 反向依赖、远程图片缓存生命周期与 CUSTOM 使用边界 | 中 | 已完成兼容性收口；`__` 仍按内部君子协定公开 |
 
 ## 不建议立即做的事
 

@@ -24,6 +24,7 @@ import club.heiqi.uilib.ui.host.DocumentHostRenderSupport;
 import club.heiqi.uilib.ui.host.DocumentHostWidgetFactory;
 import club.heiqi.uilib.ui.input.UiInputFrame;
 import club.heiqi.uilib.ui.input.UiInputService;
+import club.heiqi.uilib.ui.input.UiHostInputCaptureParticipant;
 import club.heiqi.uilib.ui.input.UiKeyboardCaptureState;
 import club.heiqi.uilib.ui.input.UiNativeTextInputInspector;
 import club.heiqi.uilib.ui.render.UiRenderContext;
@@ -44,7 +45,7 @@ import cpw.mods.fml.client.config.GuiConfig;
  *          {@link #handleImmediateMouseInput}、{@link #renderHud}、{@link #renderOnScreen}
  *          仅供框架内部 forge 事件钩子调用，业务代码不应直接触发。LTS 不承诺这些钩子方法的兼容性。
  */
-public final class UiHudDocumentHost {
+public final class UiHudDocumentHost implements UiHostInputCaptureParticipant {
 
     private static final UiHudDocumentHost INSTANCE = new UiHudDocumentHost();
 
@@ -827,8 +828,13 @@ public final class UiHudDocumentHost {
     }
 
     private static boolean isInteractiveInputEnabled(GuiScreen currentScreen) {
-        return isInteractiveInputEnabled(currentScreen, currentScreen == null ? null : currentScreen.getClass().getName(),
-                Mouse.isGrabbed());
+        return isInteractiveInputEnabled((Object) currentScreen,
+                currentScreen == null ? null : currentScreen.getClass().getName(), Mouse.isGrabbed());
+    }
+
+    @Override
+    public boolean isHostInputCaptureEnabled(GuiScreen currentScreen, String screenClassName, boolean mouseGrabbed) {
+        return isInteractiveInputEnabled((Object) currentScreen, screenClassName, mouseGrabbed);
     }
 
     public static boolean isInteractiveInputEnabled(Object screen, String screenClassName, boolean mouseGrabbed) {

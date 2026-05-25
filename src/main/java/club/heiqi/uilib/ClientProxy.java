@@ -9,6 +9,7 @@ import club.heiqi.uilib.net.api.NetService;
 import club.heiqi.uilib.net.client.NetStoreUiBridge;
 import club.heiqi.uilib.ui.hud.UiHudDocumentHost;
 import club.heiqi.uilib.ui.image.DocumentRemoteImageCache;
+import club.heiqi.uilib.ui.input.UiHostInputCoordinator;
 import club.heiqi.uilib.ui.input.UiInputService;
 import club.heiqi.uilib.ui.remote.RemoteHudOverlayClientBridge;
 import cpw.mods.fml.common.FMLCommonHandler;
@@ -35,6 +36,7 @@ public class ClientProxy extends CommonProxy {
     public void preInit(FMLPreInitializationEvent event) {
         super.preInit(event);
         UiInputService.getInstance().initialize();
+        UiHostInputCoordinator.getInstance().setCaptureParticipant(UiHudDocumentHost.getInstance());
         NetStoreUiBridge.getInstance().initialize();
         DevToolsClientBootstrap.registerClientDevTools();
         MinecraftForge.EVENT_BUS.register(fontRenderTickListener);
@@ -65,6 +67,11 @@ public class ClientProxy extends CommonProxy {
             RemoteHudOverlayClientBridge.getInstance().clearAll();
         } catch (RuntimeException exception) {
             MyMod.LOG.warn("远程 HUD 断连清理异常", exception);
+        }
+        try {
+            DocumentRemoteImageCache.getInstance().clear();
+        } catch (RuntimeException exception) {
+            MyMod.LOG.warn("远程图片缓存断连清理异常", exception);
         }
         try {
             NetService.getInstance().onClientDisconnected();

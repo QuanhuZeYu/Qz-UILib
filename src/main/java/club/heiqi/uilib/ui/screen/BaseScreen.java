@@ -4,6 +4,7 @@ import net.minecraft.client.gui.GuiScreen;
 
 import club.heiqi.uilib.ui.diagnostic.UiRuntimeStats;
 import club.heiqi.uilib.ui.input.UiInputFrame;
+import club.heiqi.uilib.ui.input.UiManagedInputScreen;
 import club.heiqi.uilib.ui.diagnostic.UiPerformanceMonitor;
 import club.heiqi.uilib.ui.runtime.UiRuntimeAdapters;
 import club.heiqi.uilib.ui.widget.Widget;
@@ -11,7 +12,7 @@ import club.heiqi.uilib.ui.widget.Widget;
 /**
  * 新 UI 系统的界面基类。
  */
-public abstract class BaseScreen extends GuiScreen {
+public abstract class BaseScreen extends GuiScreen implements UiManagedInputScreen {
 
     private static final UiRuntimeAdapters DEFAULT_RUNTIME_ADAPTERS = UiRuntimeAdapters.minecraftDefaults();
 

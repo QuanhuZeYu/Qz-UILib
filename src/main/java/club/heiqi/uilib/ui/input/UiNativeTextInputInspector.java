@@ -15,8 +15,6 @@ import net.minecraft.client.gui.GuiTextField;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 
-import club.heiqi.uilib.ui.screen.BaseScreen;
-
 /**
  * 检查当前原生界面是否正由 Minecraft 文本输入框持有键盘焦点。
  */
@@ -45,7 +43,7 @@ public final class UiNativeTextInputInspector {
      * @return 是否存在已聚焦的原生文本输入框
      */
     public static boolean hasFocusedTextInput(GuiScreen screen) {
-        if (screen == null || screen instanceof BaseScreen) {
+        if (screen == null || screen instanceof UiManagedInputScreen) {
             return false;
         }
         NativeTextInputAdapter adapter = findAdapter(screen);
@@ -62,7 +60,7 @@ public final class UiNativeTextInputInspector {
      * @return 是否实际清除了至少一个文本输入框焦点
      */
     public static boolean blurFocusedTextInputs(GuiScreen screen) {
-        if (screen == null || screen instanceof BaseScreen) {
+        if (screen == null || screen instanceof UiManagedInputScreen) {
             return false;
         }
         NativeTextInputAdapter adapter = findAdapter(screen);

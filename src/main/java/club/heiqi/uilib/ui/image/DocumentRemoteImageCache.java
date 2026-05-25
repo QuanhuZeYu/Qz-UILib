@@ -11,6 +11,7 @@ import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.ThreadFactory;
 import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 
@@ -30,8 +31,8 @@ public final class DocumentRemoteImageCache {
 
     private final Map<String, Entry> entries = new ConcurrentHashMap<String, Entry>();
     private final AtomicBoolean trimInProgress = new AtomicBoolean(false);
-    private final ExecutorService executorService = new ThreadPoolExecutor(1, 2, 60L, TimeUnit.SECONDS,
-            new LinkedBlockingQueue<Runnable>(), new RemoteImageThreadFactory());
+    private final Object executorLock = new Object();
+    private ExecutorService executorService = createExecutorService();
 
     private DocumentRemoteImageCache() {}
 
@@ -66,7 +67,7 @@ public final class DocumentRemoteImageCache {
         entry.lastAccessedAt = System.nanoTime();
         if (entry.markLoading()) {
             final Entry loadingEntry = entry;
-            executorService.submit(new Runnable() {
+            submitLoadTask(new Runnable() {
                 @Override
                 public void run() {
                     loadRemoteImage(loadingEntry, completionCallback);
@@ -93,26 +94,46 @@ public final class DocumentRemoteImageCache {
     }
 
     /**
+     * 清空远程图片缓存条目。
+     *
+     * <p>该入口只清理缓存数据，不关停下载线程池；适合客户端断连、世界切换或测试隔离。
+     * JVM 退出阶段才应调用 {@link #shutdown()}。</p>
+     */
+    public void clear() {
+        entries.clear();
+    }
+
+    /**
      * 清空缓存，供测试隔离使用。
      */
     public void clearForTesting() {
-        entries.clear();
+        clear();
     }
 
     /**
      * 关停内部远程位图下载线程池。
      *
-     * <p>用于客户端断连或 JVM 退出阶段：在线程池静默存活会让全局 GC 与诊断进程级线程数据出现干扰，
-     * 因此 LTS 期间由 {@link club.heiqi.uilib.ClientProxy} 在生命周期事件中显式调用此入口。</p>
+     * <p>该入口只用于 JVM 退出阶段，由 {@link club.heiqi.uilib.ClientProxy} 的 shutdown hook
+     * 调用。若诊断或特殊宿主在运行期误调用，后续 {@link #request(String, Runnable)} 会按需重建
+     * 下载线程池，避免进程级单例进入不可恢复状态；普通断连清理请使用 {@link #clear()}。</p>
      */
     public void shutdown() {
-        executorService.shutdown();
+        ExecutorService executorToShutdown;
+        synchronized (executorLock) {
+            executorToShutdown = executorService;
+            executorService = null;
+        }
+        if (executorToShutdown == null) {
+            entries.clear();
+            return;
+        }
+        executorToShutdown.shutdown();
         try {
-            if (!executorService.awaitTermination(2L, TimeUnit.SECONDS)) {
-                executorService.shutdownNow();
+            if (!executorToShutdown.awaitTermination(2L, TimeUnit.SECONDS)) {
+                executorToShutdown.shutdownNow();
             }
         } catch (InterruptedException exception) {
-            executorService.shutdownNow();
+            executorToShutdown.shutdownNow();
             Thread.currentThread().interrupt();
         }
         entries.clear();
@@ -131,6 +152,30 @@ public final class DocumentRemoteImageCache {
         Entry entry = new Entry(normalizedUrl);
         entry.markFailed();
         entries.put(normalizedUrl, entry);
+    }
+
+    private void submitLoadTask(Runnable task) {
+        try {
+            synchronized (executorLock) {
+                ensureExecutorServiceLocked().submit(task);
+            }
+        } catch (RejectedExecutionException exception) {
+            synchronized (executorLock) {
+                ensureExecutorServiceLocked().submit(task);
+            }
+        }
+    }
+
+    private ExecutorService ensureExecutorServiceLocked() {
+        if (executorService == null || executorService.isShutdown() || executorService.isTerminated()) {
+            executorService = createExecutorService();
+        }
+        return executorService;
+    }
+
+    private static ExecutorService createExecutorService() {
+        return new ThreadPoolExecutor(1, 2, 60L, TimeUnit.SECONDS, new LinkedBlockingQueue<Runnable>(),
+                new RemoteImageThreadFactory());
     }
 
     private void loadRemoteImage(Entry entry, Runnable completionCallback) {

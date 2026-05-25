@@ -6,7 +6,6 @@ import org.lwjglx.input.Keyboard;
 import org.lwjglx.input.Mouse;
 
 import club.heiqi.uilib.ui.event.UiKeyEvent;
-import club.heiqi.uilib.ui.hud.UiHudDocumentHost;
 
 /**
  * 统一协调宿主原生输入链路与 UILib 即时输入抢占。
@@ -14,6 +13,8 @@ import club.heiqi.uilib.ui.hud.UiHudDocumentHost;
 public final class UiHostInputCoordinator {
 
     private static final UiHostInputCoordinator INSTANCE = new UiHostInputCoordinator();
+
+    private volatile UiHostInputCaptureParticipant captureParticipant;
 
     private UiHostInputCoordinator() {}
 
@@ -27,18 +28,29 @@ public final class UiHostInputCoordinator {
     }
 
     /**
+     * 注册当前宿主输入抢占参与者。
+     *
+     * <p>该入口由客户端宿主初始化调用；input 包不直接引用具体 HUD / screen 实现。</p>
+     *
+     * @param captureParticipant 输入抢占参与者；传入 null 表示禁用即时抢占
+     */
+    public void setCaptureParticipant(UiHostInputCaptureParticipant captureParticipant) {
+        this.captureParticipant = captureParticipant;
+    }
+
+    /**
      * 处理 `handleKeyboardInput()` 阶段的即时键盘抢占。
      *
      * @param currentScreen 当前宿主界面
      * @return 是否应阻断宿主继续处理当前键盘事件
      */
     public boolean shouldCancelNativeKeyboardInput(GuiScreen currentScreen) {
-        UiInputFrame immediateFrame = UiInputService.getInstance().createImmediateKeyboardFrame();
-        if (!UiHudDocumentHost.isInteractiveInputEnabled(currentScreen,
-                currentScreen == null ? null : currentScreen.getClass().getName(), Mouse.isGrabbed())) {
+        UiHostInputCaptureParticipant participant = captureParticipant;
+        if (!isInteractiveInputEnabled(participant, currentScreen)) {
             return false;
         }
-        if (handleImmediateKeyboardFrame(currentScreen, immediateFrame)) {
+        UiInputFrame immediateFrame = UiInputService.getInstance().createImmediateKeyboardFrame();
+        if (handleImmediateKeyboardFrame(participant, currentScreen, immediateFrame)) {
             return true;
         }
         return UiKeyboardCaptureState.getInstance().shouldCancelNativeKeyboardInput();
@@ -51,11 +63,12 @@ public final class UiHostInputCoordinator {
      * @return 是否应阻断宿主继续处理当前鼠标事件
      */
     public boolean shouldCancelNativeMouseInput(GuiScreen currentScreen) {
-        if (!UiHudDocumentHost.isInteractiveInputEnabled(currentScreen,
-                currentScreen == null ? null : currentScreen.getClass().getName(), Mouse.isGrabbed())) {
+        UiHostInputCaptureParticipant participant = captureParticipant;
+        if (!isInteractiveInputEnabled(participant, currentScreen)) {
             return false;
         }
-        return handleImmediateMouseFrame(currentScreen, UiInputService.getInstance().createImmediateMouseFrame());
+        return handleImmediateMouseFrame(participant, currentScreen,
+                UiInputService.getInstance().createImmediateMouseFrame());
     }
 
     /**
@@ -65,13 +78,13 @@ public final class UiHostInputCoordinator {
      * @return 是否保留一个应继续交给宿主处理的原生键盘事件
      */
     public boolean advanceKeyboardEventForHudPriority(GuiScreen currentScreen) {
-        if (!UiHudDocumentHost.isInteractiveInputEnabled(currentScreen,
-                currentScreen == null ? null : currentScreen.getClass().getName(), Mouse.isGrabbed())) {
+        UiHostInputCaptureParticipant participant = captureParticipant;
+        if (!isInteractiveInputEnabled(participant, currentScreen)) {
             return Keyboard.next();
         }
         while (Keyboard.next()) {
             UiInputFrame immediateFrame = UiInputService.getInstance().createImmediateKeyboardFrame();
-            if (!handleImmediateKeyboardFrame(currentScreen, immediateFrame)) {
+            if (!handleImmediateKeyboardFrame(participant, currentScreen, immediateFrame)) {
                 return true;
             }
         }
@@ -85,29 +98,36 @@ public final class UiHostInputCoordinator {
      * @return 是否保留一个应继续交给宿主处理的原生鼠标事件
      */
     public boolean advanceMouseEventForHudPriority(GuiScreen currentScreen) {
-        if (!UiHudDocumentHost.isInteractiveInputEnabled(currentScreen,
-                currentScreen == null ? null : currentScreen.getClass().getName(), Mouse.isGrabbed())) {
+        UiHostInputCaptureParticipant participant = captureParticipant;
+        if (!isInteractiveInputEnabled(participant, currentScreen)) {
             return Mouse.next();
         }
         while (Mouse.next()) {
             UiInputFrame immediateFrame = UiInputService.getInstance().createImmediateMouseFrame();
-            if (!handleImmediateMouseFrame(currentScreen, immediateFrame)) {
+            if (!handleImmediateMouseFrame(participant, currentScreen, immediateFrame)) {
                 return true;
             }
         }
         return false;
     }
 
-    private boolean handleImmediateKeyboardFrame(GuiScreen currentScreen, UiInputFrame immediateFrame) {
-        if (!UiHudDocumentHost.getInstance().handleImmediateKeyboardInput(currentScreen, immediateFrame)) {
+    private boolean isInteractiveInputEnabled(UiHostInputCaptureParticipant participant, GuiScreen currentScreen) {
+        return participant != null && participant.isHostInputCaptureEnabled(currentScreen,
+                currentScreen == null ? null : currentScreen.getClass().getName(), Mouse.isGrabbed());
+    }
+
+    private boolean handleImmediateKeyboardFrame(UiHostInputCaptureParticipant participant, GuiScreen currentScreen,
+            UiInputFrame immediateFrame) {
+        if (!participant.handleImmediateKeyboardInput(currentScreen, immediateFrame)) {
             return false;
         }
         suppressCollectedKeyboardFrame(immediateFrame);
         return true;
     }
 
-    private boolean handleImmediateMouseFrame(GuiScreen currentScreen, UiInputFrame immediateFrame) {
-        return UiHudDocumentHost.getInstance().handleImmediateMouseInput(currentScreen, immediateFrame);
+    private boolean handleImmediateMouseFrame(UiHostInputCaptureParticipant participant, GuiScreen currentScreen,
+            UiInputFrame immediateFrame) {
+        return participant.handleImmediateMouseInput(currentScreen, immediateFrame);
     }
 
     private void suppressCollectedKeyboardFrame(UiInputFrame immediateFrame) {
