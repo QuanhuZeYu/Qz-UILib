@@ -62,6 +62,7 @@ public class ForgeConfigTemplateScreen extends BaseScreen {
     private final TextMeasureService textMeasureService;
     private final List<String> missingCategories = new ArrayList<String>();
     private int visibleCategoryCount;
+    private final RemoteSyncSession remoteSyncSession;
 
     /**
      * 创建一个可复用的 Forge 配置模板页面。
@@ -110,7 +111,27 @@ public class ForgeConfigTemplateScreen extends BaseScreen {
                 restoreDefaultsButton, backButton).build(document);
         this.statusText = buildResult.getStatusText();
         this.visibleCategoryCount = buildResult.getVisibleCategoryCount();
+        this.remoteSyncSession = spec.createRemoteSyncSession(this);
         refreshStatusText(null);
+    }
+
+    @Override
+    public void initGui() {
+        super.initGui();
+        if (remoteSyncSession != null) {
+            remoteSyncSession.onScreenOpened();
+        }
+    }
+
+    @Override
+    public void onGuiClosed() {
+        try {
+            if (remoteSyncSession != null) {
+                remoteSyncSession.onScreenClosed();
+            }
+        } finally {
+            super.onGuiClosed();
+        }
     }
 
     @Override
@@ -166,7 +187,15 @@ public class ForgeConfigTemplateScreen extends BaseScreen {
         return statusText == null ? "" : statusText.getText();
     }
 
+    List<PropertyBinding> getBindingsForRemoteSync() {
+        return bindings;
+    }
+
     void saveDraft() {
+        if (remoteSyncSession != null && remoteSyncSession.isRemoteModeActive()) {
+            remoteSyncSession.saveRemoteDraft();
+            return;
+        }
         if (bindings.isEmpty()) {
             refreshStatusText("当前模板没有可保存的配置项。");
             return;
@@ -214,6 +243,10 @@ public class ForgeConfigTemplateScreen extends BaseScreen {
     }
 
     void restoreCurrentValues() {
+        if (remoteSyncSession != null && remoteSyncSession.isRemoteModeActive()) {
+            remoteSyncSession.restoreFromRemoteSnapshot();
+            return;
+        }
         for (PropertyBinding binding : bindings) {
             binding.restoreCurrentValue();
         }
@@ -223,6 +256,9 @@ public class ForgeConfigTemplateScreen extends BaseScreen {
     void restoreDefaultValues() {
         for (PropertyBinding binding : bindings) {
             binding.restoreDefaultValue();
+        }
+        if (remoteSyncSession != null && remoteSyncSession.isRemoteModeActive()) {
+            remoteSyncSession.pushCurrentDraftToRemote();
         }
         refreshStatusText(spec.getTextSet().restoredDefaultValuesText);
     }
@@ -366,6 +402,13 @@ public class ForgeConfigTemplateScreen extends BaseScreen {
      */
     protected final void requestStatusRefresh() {
         refreshStatusText(null);
+        if (remoteSyncSession != null && remoteSyncSession.isRemoteModeActive()) {
+            remoteSyncSession.pushCurrentDraftToRemote();
+        }
+    }
+
+    void showStatusMessage(String message) {
+        refreshStatusText(message == null ? "" : message);
     }
 
     private DocumentButtonControl createActionButton(UiDocument document, String label, int normalColor, int activeColor,
@@ -464,6 +507,8 @@ public class ForgeConfigTemplateScreen extends BaseScreen {
         private final List<PropertyEditorFactory> propertyEditorFactories = new ArrayList<PropertyEditorFactory>();
         private final Map<String, NumericControlOptions> numericControlOptions =
                 new LinkedHashMap<String, NumericControlOptions>();
+        private RemoteSyncController remoteSyncController;
+        private String remoteSyncScreenId = "";
 
         /**
          * 创建模板规格。
@@ -543,6 +588,30 @@ public class ForgeConfigTemplateScreen extends BaseScreen {
          */
         public Spec setTextSet(TextSet textSet) {
             this.textSet = textSet == null ? TextSet.defaultTextSet() : textSet;
+            return this;
+        }
+
+        /**
+         * 设置可选的服务端权威同步控制器。
+         *
+         * @param remoteSyncController 同步控制器
+         * @return 当前规格
+         */
+        public Spec setRemoteSyncController(RemoteSyncController remoteSyncController) {
+            this.remoteSyncController = remoteSyncController;
+            return this;
+        }
+
+        /**
+         * 设置当前模板绑定的远端配置目标标识。
+         *
+         * <p>当页面启用服务端权威同步时，控制器会用该标识打开同名配置会话。</p>
+         *
+         * @param remoteSyncScreenId 配置目标标识
+         * @return 当前规格
+         */
+        public Spec setRemoteSyncScreenId(String remoteSyncScreenId) {
+            this.remoteSyncScreenId = remoteSyncScreenId == null ? "" : remoteSyncScreenId.trim();
             return this;
         }
 
@@ -653,6 +722,10 @@ public class ForgeConfigTemplateScreen extends BaseScreen {
             return textSet;
         }
 
+        String getRemoteSyncScreenId() {
+            return remoteSyncScreenId;
+        }
+
         PropertyBinding createBinding(UiDocument document, CategorySpec categorySpec, Property property,
                 ForgeConfigTemplateScreen owner) {
             for (PropertyEditorFactory propertyEditorFactory : propertyEditorFactories) {
@@ -676,6 +749,13 @@ public class ForgeConfigTemplateScreen extends BaseScreen {
                 resolvedCategories.add(new CategorySpec(categoryName));
             }
             return resolvedCategories;
+        }
+
+        RemoteSyncSession createRemoteSyncSession(ForgeConfigTemplateScreen owner) {
+            if (remoteSyncController == null || owner == null) {
+                return null;
+            }
+            return remoteSyncController.create(owner, this);
         }
     }
 
@@ -761,6 +841,59 @@ public class ForgeConfigTemplateScreen extends BaseScreen {
          */
         PropertyBinding create(UiDocument document, CategorySpec categorySpec, Property property,
                 ForgeConfigTemplateScreen owner);
+    }
+
+    /**
+     * 配置模板远端同步控制器。
+     */
+    public interface RemoteSyncController {
+
+        /**
+         * 为指定页面创建远端同步会话。
+         *
+         * @param owner 页面实例
+         * @param spec 当前规格
+         * @return 同步会话；返回 null 表示禁用
+         */
+        RemoteSyncSession create(ForgeConfigTemplateScreen owner, Spec spec);
+    }
+
+    /**
+     * 页面级远端同步会话。
+     */
+    public interface RemoteSyncSession {
+
+        /**
+         * 页面打开后初始化。
+         */
+        void onScreenOpened();
+
+        /**
+         * 页面关闭时清理。
+         */
+        void onScreenClosed();
+
+        /**
+         * 当前是否启用远端模式。
+         *
+         * @return true 表示远端模式生效
+         */
+        boolean isRemoteModeActive();
+
+        /**
+         * 将当前 UI 草稿推送到远端草稿。
+         */
+        void pushCurrentDraftToRemote();
+
+        /**
+         * 从远端快照恢复当前 UI 草稿。
+         */
+        void restoreFromRemoteSnapshot();
+
+        /**
+         * 保存远端草稿。
+         */
+        void saveRemoteDraft();
     }
 
     /**
@@ -1137,6 +1270,20 @@ public class ForgeConfigTemplateScreen extends BaseScreen {
         public abstract String validateDraft();
 
         public abstract void applyDraft();
+
+        /**
+         * 导出当前控件中的草稿文本。
+         *
+         * @return 草稿文本
+         */
+        public abstract String exportDraftValue();
+
+        /**
+         * 使用远端草稿文本回填当前控件。
+         *
+         * @param draftValue 远端草稿文本
+         */
+        public abstract void applyRemoteDraftValue(String draftValue);
     }
 
     private static String resolveTypeLabel(Property property) {

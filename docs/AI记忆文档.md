@@ -26,6 +26,7 @@
 ## 对外入口边界
 
 - 业务文档入口：`UiDocumentScreens.createDocumentScreen(...)`；服务端生成的安全子集 HTML 远程页面入口为 `RemoteDocumentPages.open(...)`，HUD 浮窗入口为 `RemoteHudOverlays.open(...)`，两者都不执行 JavaScript、不嵌入真实浏览器，并共享内部远程 HTML session / Stream 网关。
+- 配置页现支持基于 UILIB 自建网络的服务端权威同步：本地模板页可通过 `ForgeConfigTemplateScreen.Spec.setRemoteSyncController(...)` / `setRemoteSyncScreenId(...)` 绑定配置会话，服务端远程配置页入口为 `RemoteConfigDocumentPages.open(...)`；两条路线共享同一个 `ConfigTemplateSyncManager` 配置目标 / 草稿 / 显式保存模型。
 - 双端网络入口：`NetService.getInstance()`，在 `preInit` 注册 Channel / Fetch / Stream / Store，`postInit` 后注册表冻结；网络消息以 `route/key + contentType + headers + body` 为核心，不以 Java 类型作为协议身份；普通逻辑消息默认 16 MiB，超过阈值走 Stream/chunk；Fetch endpoint 可配滑动窗口限流，Store 可注册业务 delta applier；默认 vanilla 传输，其能力握手在 FML connection-established 事件之后触发，不在 Play NetHandler 构造期发送；可用 `netTransport` 或 `-Dqzuilib.net.transport=forge` 切 Forge 回退。
 - 诊断/示例页只保留内部开发工具入口（`/qzuilib test`），页面实现归入 `internal.devtools.pages`；可被真实客户端适配复用的库存概览模型归入 `ui.inventory`；不对外暴露页面工厂。
 - `__` 双下划线 public 方法是内部协作君子协定：为特殊宿主、兼容层和诊断路径保留可见性，不属于稳定 API，未来可替换为 internal accessor 或 package-private bridge。
@@ -49,6 +50,7 @@
   - 客户端：`$env:GRADLE_USER_HOME="D:\.MyApps\.ENV\gradle-home"; ./gradlew.bat --no-configuration-cache runClient21`
 - 纯 JVM 测试不要直接实例化继承 `GuiScreen` / `BaseScreen` 的页面类。
 - 网络层运行时自检入口为 `/qzuilib test`，端点注册、用例执行、远程页面/HUD smoke 构造在内部拆分协作；真实 Channel / Fetch / Stream / Store 往返、C2S 分片、Fetch 错误/超时/取消/限流、玩家 Store、Store delta 检查已在当前 GTNH / ModularUI2 服务端环境完成一次基础联机验收（18/18 通过）；远程页面与远程 HUD 自检都属于交互 smoke，会分别触发 `RemoteDocumentPages.open(...)` 和 `RemoteHudOverlays.open(...)` 并需要提交按钮完成表单回传验证；Forge 回退仍需单独切换 `netTransport=forge` 验证。
+- `/qzuilib test` 现已新增“配置同步” smoke：客户端会通过同一套 `NetService` 端点完成配置会话打开、草稿同步和显式保存链路自检。
 - 默认 `runServer` 目前会被 LWJGL3ify relauncher 中止；dedicated server 完整 smoke 需换用不带该 relauncher 的服务端配置，相关记录见 `docs/开发者文档/errors/ERROR-20260523-runserver-lwjgl3ify-relauncher.md`。
 
 ## 本文件的维护规则

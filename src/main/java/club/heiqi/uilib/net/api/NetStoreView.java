@@ -36,6 +36,18 @@ public final class NetStoreView {
         }
     }
 
+    /**
+     * 取消订阅快照变化。
+     *
+     * @param subscriber 订阅者
+     */
+    public void unsubscribe(NetStoreSubscriber subscriber) {
+        if (subscriber == null) {
+            return;
+        }
+        subscribers.remove(subscriber);
+    }
+
     void update(NetBody snapshot) {
         this.snapshot = snapshot;
         for (NetStoreSubscriber subscriber : subscribers) {

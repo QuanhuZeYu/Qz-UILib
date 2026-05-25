@@ -144,6 +144,7 @@ Toolchain、依赖版本、构建配置与运行时类路径。
 - [`ERROR-20260509-screen-context-missing-runtime-adapters.md`](ERROR-20260509-screen-context-missing-runtime-adapters.md) — 页面渲染上下文遗漏 runtimeAdapters 导致物品图标不显示
 - [`ERROR-20260519-smoke-diagnostic-text-clipped.md`](ERROR-20260519-smoke-diagnostic-text-clipped.md) — Smoke 诊断文本被固定小高度裁切
 - [`ERROR-20260522-browser-semantics-outline-null-crash.md`](ERROR-20260522-browser-semantics-outline-null-crash.md) — 语义展示页 focus 回写向非空 setter 传 null 导致崩溃
+- [`ERROR-20260525-config-sync-headless-static-init.md`](ERROR-20260525-config-sync-headless-static-init.md) — 配置同步模型误借 GuiScreen 类上的静态工具，导致纯 JVM 测试触发 Minecraft 客户端静态初始化
 
 **共性教训**：配置保存必须先验证再写入，失败时回滚内存值；渲染上下文必须完整传递所有运行时适配器。
 

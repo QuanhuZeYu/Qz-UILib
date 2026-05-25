@@ -270,6 +270,13 @@ public final class NetSelfCheckPage extends DocumentPageController {
                         return NetRuntimeSelfChecks.runRemoteHudOverlaySmoke();
                     }
                 });
+        registerAsync(root, "运行时配置同步", "通过 UILIB 自建网络打开配置会话、同步草稿并执行显式保存，验证服务端权威配置页链路。",
+                new SelfCheckAsyncRunnable() {
+                    @Override
+                    public CompletableFuture<String> run() {
+                        return NetRuntimeSelfChecks.runConfigSyncSmoke();
+                    }
+                });
 
         ElementNode summaryBlock = document.div();
         summaryBlock.style()

@@ -219,6 +219,16 @@ final class TogglePropertyBinding extends ForgeConfigTemplateScreen.PropertyBind
     public void applyDraft() {
         getProperty().set(control.isToggled());
     }
+
+    @Override
+    public String exportDraftValue() {
+        return Boolean.toString(control.isToggled());
+    }
+
+    @Override
+    public void applyRemoteDraftValue(String draftValue) {
+        control.setToggled(Boolean.parseBoolean(draftValue));
+    }
 }
 
 /**
@@ -273,6 +283,16 @@ final class TextPropertyBinding extends ForgeConfigTemplateScreen.PropertyBindin
     @Override
     public void applyDraft() {
         ForgeConfigTemplatePropertyDrafts.applyDraft(getProperty(), control.getText());
+    }
+
+    @Override
+    public String exportDraftValue() {
+        return control.getText();
+    }
+
+    @Override
+    public void applyRemoteDraftValue(String draftValue) {
+        control.setText(draftValue == null ? "" : draftValue);
     }
 
     private String readCurrentDisplayValue() {
@@ -360,6 +380,29 @@ final class FontSortPropertyBinding extends ForgeConfigTemplateScreen.PropertyBi
     @Override
     public void applyDraft() {
         getProperty().set(toDraftArray());
+    }
+
+    @Override
+    public String exportDraftValue() {
+        StringBuilder builder = new StringBuilder();
+        for (String value : draftOrder) {
+            if (value == null || value.trim().isEmpty()) {
+                continue;
+            }
+            if (builder.length() > 0) {
+                builder.append(", ");
+            }
+            builder.append(value.trim());
+        }
+        return builder.toString();
+    }
+
+    @Override
+    public void applyRemoteDraftValue(String draftValue) {
+        applyDraftOrder(java.util.Arrays.asList((draftValue == null ? "" : draftValue).split("[,，;；\\n\\r]+")));
+        if (orderControl != null) {
+            orderControl.setItems(new ArrayList<String>(draftOrder));
+        }
     }
 
     private void applyToControl(List<String> updatedOrder) {
@@ -450,6 +493,24 @@ final class ChoicePropertyBinding extends ForgeConfigTemplateScreen.PropertyBind
     @Override
     public void applyDraft() {
         getProperty().set(control.getSelectedOption());
+    }
+
+    @Override
+    public String exportDraftValue() {
+        String selected = control.getSelectedOption();
+        return selected == null ? "" : selected;
+    }
+
+    @Override
+    public void applyRemoteDraftValue(String draftValue) {
+        int targetIndex = 0;
+        for (int index = 0; index < options.length; index++) {
+            if (Objects.equals(options[index], draftValue)) {
+                targetIndex = index;
+                break;
+            }
+        }
+        control.setSelectedIndex(targetIndex);
     }
 }
 
@@ -676,6 +737,37 @@ final class NumericPropertyBinding extends ForgeConfigTemplateScreen.PropertyBin
             return;
         }
         ForgeConfigTemplatePropertyDrafts.applyDraft(getProperty(), textControl.getText());
+    }
+
+    @Override
+    public String exportDraftValue() {
+        if (sliderActive) {
+            if (inlineInputActive && inlineInputControl != null) {
+                return inlineInputControl.getText();
+            }
+            return formatSliderValueForInput(sliderControl.getValue());
+        }
+        return textControl.getText();
+    }
+
+    @Override
+    public void applyRemoteDraftValue(String draftValue) {
+        String resolved = draftValue == null ? "" : draftValue;
+        if (sliderActive) {
+            if (inlineInputActive && inlineInputControl != null) {
+                inlineInputControl.setText(resolved);
+                syncSliderFromInlineInput();
+                return;
+            }
+            try {
+                double parsed = integerType ? Integer.parseInt(resolved.trim()) : Double.parseDouble(resolved.trim());
+                applySliderValueQuiet(parsed);
+            } catch (NumberFormatException ignored) {
+                applySliderValueQuiet(ConfigTemplatePropertyBindings.readPropertyAsDouble(getProperty(), integerType));
+            }
+            return;
+        }
+        textControl.setText(resolved);
     }
 
     private void applySliderValueQuiet(double value) {

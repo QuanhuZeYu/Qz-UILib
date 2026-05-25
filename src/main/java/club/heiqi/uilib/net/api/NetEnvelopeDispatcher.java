@@ -3,6 +3,7 @@ package club.heiqi.uilib.net.api;
 import java.nio.charset.StandardCharsets;
 import java.util.Map;
 
+import club.heiqi.uilib.config.ConfigTemplateSyncManager;
 import club.heiqi.uilib.MyMod;
 import club.heiqi.uilib.net.core.NetEnvelope;
 import club.heiqi.uilib.net.core.NetRequestRegistry;
@@ -46,6 +47,9 @@ final class NetEnvelopeDispatcher {
         if (envelope.getKind() == NetEnvelope.Kind.META) {
             MyMod.LOG.debug("收到 Qz 网络能力握手：side={} body={}", origin.getSide(),
                     new String(envelope.getPayload(), StandardCharsets.UTF_8));
+            if (origin.getSide() == club.heiqi.uilib.net.transport.NetSide.CLIENT) {
+                ConfigTemplateSyncManager.getInstance().setClientRemoteAvailable(true);
+            }
             return;
         }
         if (envelope.getKind() == NetEnvelope.Kind.CHANNEL) {
