@@ -157,7 +157,7 @@ UiHudDocumentRegistration registration = UiHudDocumentHost.getInstance().registe
 - 交互层在实现上仍会随纯游戏界面渲染，但只有容器态才会接通输入。当前 HUD 隐藏范围采用显式黑名单：游戏主页（含原版 `GuiMainMenu`、新版 `TitleScreen`、第三方主页 `galaxyspace.core.gui.GSGuiMainMenu`）、选图页、服务器列表、游戏内菜单和 Forge 配置页会落入 `MENU` 分类，因此既不会显示，也不会接通输入；未命中黑名单的第三方与大多数原版 `GuiScreen` 默认按容器态处理。
 - 交互 HUD 当前采用“先鼠标、后键盘”的接管契约：必须先通过鼠标命中建立 HUD 焦点，之后才会继续接管键盘；不支持纯键盘首次进入 HUD。
 - 交互 HUD 的键盘抢占以“HUD 内是否仍有有效焦点控件”为唯一依据；鼠标悬停、HUD 可见但未聚焦都不会单独触发键盘抢占。
-- 交互 HUD 默认会阻断命中区域继续落到底层原生界面；若某个面板或其祖先希望显式放行空白区域，需要声明 `data-hit-test-passthrough="true"`。
+- 交互 HUD 只会拦截实际浮窗面板及其非穿透子树；命中 HUD root 自身空白区域时会默认放行到底层原生界面。若某个面板或其祖先也希望显式放行空白区域，需要声明 `data-hit-test-passthrough="true"`。
 - 多个交互 HUD 重叠时，只会把输入路由给最上层命中的那一层，避免多层同时响应同一次点击。
 - 当当前原生界面已有聚焦的 Minecraft 文本输入框时，交互层不会继续接管键盘；一旦 UILib 获得焦点，会阻断宿主原生键盘链路，避免双方同时响应同一输入。
 - `GuiChat` 打开时 HUD 仍可见，但不会沿用上一个屏幕里的旧 HUD 焦点继续抢占键盘；聊天框会先保留原生输入权，只有在当前聊天界面里再次鼠标命中 HUD 并形成有效焦点后，HUD 才会重新接管。
@@ -169,4 +169,4 @@ UiHudDocumentRegistration registration = UiHudDocumentHost.getInstance().registe
 1. 可交互判定：只有容器态且鼠标未被游戏重新抓取时，交互 HUD 才接通输入。
 2. 鼠标命中仲裁：每次鼠标事件先从最上层 HUD 做命中测试；命中非穿透区域时由 HUD 消费，否则放行宿主。
 3. 焦点归属：只有命中的 HUD 文档实际获得有效焦点后，才会建立 HUD 键盘捕获状态。
-4. 原生输入阻断：一旦 HUD 已聚焦，后续即时键盘事件会在宿主 `handleKeyboardInput()` 之前先路由到 HUD，并阻断原生页面继续处理同一事件；同一轮即时键盘事件与 collected 键盘帧会做去重，避免退格等无文本按键重复落到 HUD。
+4. 原生输入阻断：一旦 HUD 已聚焦，后续即时键盘事件会在宿主 `handleKeyboardInput()` 之前先路由到 HUD，并阻断原生页面继续处理同一事件；原生 `GuiScreen` 上的 HUD 键盘/文本只走 immediate 路径，不再消费 collected 键盘帧，避免退格等无文本按键重复落到 HUD。

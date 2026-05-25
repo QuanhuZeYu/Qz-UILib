@@ -101,6 +101,7 @@ public class UiHudDocumentHostTest {
         Assert.assertEquals(UiOverflow.VISIBLE, root.style().getOverflowY());
         Assert.assertEquals("interactive", root.getAttribute("data-hud-layer"));
         Assert.assertNull(root.getAttribute("data-hit-test-hidden"));
+        Assert.assertNull(root.getAttribute("data-hit-test-passthrough"));
     }
 
     /**
@@ -772,7 +773,7 @@ public class UiHudDocumentHostTest {
      * 验证只命中 HUD 根空白区域时，也会按默认阻断契约拦截原生鼠标输入。
      */
     @Test
-    public void shouldCaptureImmediateMouseInputOnHudRootWhitespaceByDefault() {
+    public void shouldNotCaptureImmediateMouseInputOnHudRootWhitespaceByDefault() {
         UiHudDocumentHost host = UiHudDocumentHost.getInstance();
         UiHudDocumentRegistration registration = host.register(UiHudLayerType.INTERACTIVE,
                 new UiHudDocumentHost.UiHudDocumentContentBuilder() {
@@ -792,9 +793,48 @@ public class UiHudDocumentHostTest {
                     mouseFrame(UiMouseEvent.Action.BUTTON_DOWN, 8, 8, 2L),
                     UiHudScreenCategory.CONTAINER);
 
-            Assert.assertTrue(captured);
+            Assert.assertFalse(captured);
         } finally {
             registration.unregister();
+        }
+    }
+
+    /**
+     * 验证 HUD 已聚焦后点击 HUD 外部，会主动清掉 HUD 键盘捕获。
+     */
+    @Test
+    public void shouldReleaseHudCaptureWhenPrimaryDownMissesHudPanel() {
+        UiHudDocumentHost host = UiHudDocumentHost.getInstance();
+        UiKeyboardCaptureState.getInstance().clear();
+        UiHudDocumentRegistration registration = host.register(UiHudLayerType.INTERACTIVE,
+                new UiHudDocumentHost.UiHudDocumentContentBuilder() {
+                    @Override
+                    public void build(UiDocument document) {
+                        ElementNode root = document.getRootElement();
+                        root.style()
+                                .setWidth(UiStyleLength.px(320))
+                                .setHeight(UiStyleLength.px(180));
+                        DocumentTextInputControl inputControl = new DocumentTextInputControl(document);
+                        inputControl.getElement().style()
+                                .setWidth(UiStyleLength.px(120))
+                                .setHeight(UiStyleLength.px(24));
+                        root.append(inputControl.getElement());
+                    }
+                }, new DeterministicTextMeasureService(), UiRuntimeAdapters.empty());
+        try {
+            host.handleInputFrameForTest(mouseFrame(UiMouseEvent.Action.BUTTON_DOWN, 8, 8, 1L),
+                    UiHudScreenCategory.CONTAINER, 320, 180);
+            Assert.assertTrue(UiKeyboardCaptureState.getInstance().isHudKeyboardCaptured());
+
+            boolean captured = host.handleImmediateMouseInputForTest(
+                    mouseFrame(UiMouseEvent.Action.BUTTON_DOWN, 220, 120, 2L),
+                    UiHudScreenCategory.CONTAINER);
+
+            Assert.assertFalse(captured);
+            Assert.assertFalse(UiKeyboardCaptureState.getInstance().isHudKeyboardCaptured());
+        } finally {
+            registration.unregister();
+            UiKeyboardCaptureState.getInstance().clear();
         }
     }
 

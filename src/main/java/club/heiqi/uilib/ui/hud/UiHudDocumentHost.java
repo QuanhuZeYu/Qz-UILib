@@ -145,13 +145,6 @@ public final class UiHudDocumentHost implements UiHostInputCaptureParticipant {
         }
         routeMouseFrame(frame, inputContext);
         updateHudKeyboardCaptureState();
-        if (UiKeyboardCaptureState.getInstance().isHudKeyboardCaptured()) {
-            UiInputFrame keyboardFrame = filterKeyboardInput(extractKeyboardFrame(frame),
-                    UiNativeTextInputInspector.hasFocusedTextInput(currentScreen),
-                    UiKeyboardCaptureState.getInstance().isUiLibKeyboardCaptured());
-            routeKeyboardFrame(keyboardFrame, inputContext);
-            updateHudKeyboardCaptureState();
-        }
     }
 
     /**
@@ -395,7 +388,10 @@ public final class UiHudDocumentHost implements UiHostInputCaptureParticipant {
 
     private boolean routeImmediateKeyboardFrame(HudInputContext inputContext, UiInputFrame frame,
             boolean nativeTextInputFocused, boolean uiLibKeyboardCaptured) {
-        if (inputContext.nativeTextInputFocused && !screenSession.screenHudFocusEstablished) {
+        if (!screenSession.screenHudFocusEstablished) {
+            return false;
+        }
+        if (inputContext.nativeTextInputFocused && !UiKeyboardCaptureState.getInstance().isHudKeyboardCaptured()) {
             return false;
         }
         UiInputFrame routedFrame = filterKeyboardInput(frame, nativeTextInputFocused, uiLibKeyboardCaptured);
@@ -512,9 +508,6 @@ public final class UiHudDocumentHost implements UiHostInputCaptureParticipant {
                     ? HudMouseDecision.capture()
                     : HudMouseDecision.release();
         }
-        if (isInteractiveEntryAvailable(activeMouseEntry, inputContext.screenCategory)) {
-            return HudMouseDecision.capture();
-        }
         return resolveMouseTargetEntry(inputContext, frame == null ? 0 : frame.getMouseX(),
                 frame == null ? 0 : frame.getMouseY()) == null
                 ? HudMouseDecision.release()
@@ -611,6 +604,9 @@ public final class UiHudDocumentHost implements UiHostInputCaptureParticipant {
         if (hitElement == null) {
             return false;
         }
+        if (isInteractiveRootWhitespaceHit(entry, hitElement)) {
+            return false;
+        }
         if (entry.widget.isPassthroughHit(hitElement)) {
             return false;
         }
@@ -618,6 +614,14 @@ public final class UiHudDocumentHost implements UiHostInputCaptureParticipant {
             return true;
         }
         return true;
+    }
+
+    private boolean isInteractiveRootWhitespaceHit(HudEntry entry, ElementNode hitElement) {
+        if (entry == null || entry.layerType != UiHudLayerType.INTERACTIVE || hitElement == null) {
+            return false;
+        }
+        ElementNode rootElement = entry.widget.getDocument().getRootElement();
+        return hitElement == rootElement && !entry.widget.isInteractiveHit(hitElement);
     }
 
     /**

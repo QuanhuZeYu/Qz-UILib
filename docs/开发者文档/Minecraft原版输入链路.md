@@ -190,7 +190,7 @@ if (Keyboard.isCreated()) {
 当前 HUD 业务状态机还需要额外记住两条实现边界：
 
 1. `GuiChat` 仍按 `CONTAINER` 分类，以保证 HUD 在聊天态继续可见；但聊天态不会继承前一个屏幕里的旧 HUD 焦点。进入新的 `currentScreen` 实例时，`UiHudDocumentHost` 会清掉旧 HUD 焦点，先把输入归还给原生文本框；只有在当前聊天界面里再次鼠标命中 HUD 并形成有效焦点后，HUD 才重新抢占。
-2. `UiInputService` 对即时键盘抢占与 collected 输入帧之间采用“同一轮 collected 窗口去重”而不是单槽位抑制。这样像 `BACKSPACE`、`TAB`、方向键、回车这类没有文本事件可配对的按键，也不会在 HUD 即时路由后又从 collected 队列再落一次。
+2. 原生 `GuiScreen` 上的 HUD 键盘/文本现在只走 immediate 路径；`UiInputTickListener -> collectFrame -> handleInputFrame(frame)` 对 HUD 仅继续承担鼠标、滚轮、悬停和状态清理，不再消费 collected 键盘/文本。`UiInputService` 保留的 collected-window 去重因此退回成 immediate 与全局监听收集链之间的兜底，而不是 HUD 生产运行时的主去重手段。
 
 ## 当前边界与后续排查建议
 

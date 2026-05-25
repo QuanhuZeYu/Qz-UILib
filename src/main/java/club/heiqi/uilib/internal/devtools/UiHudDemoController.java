@@ -58,7 +58,8 @@ public final class UiHudDemoController {
     private boolean debugInfoVisible = true;
     private String noteText = "abc";
     private String lastObservedNoteText = "abc";
-    private String lastInputSource = "尚未观察到输入";
+    private String lastInputSource = "immediate only";
+    private String lastPointerHitState = "尚未点击";
     private ElementNode interactiveScrollContent;
     private ElementNode interactiveDebugSection;
 
@@ -102,7 +103,8 @@ public final class UiHudDemoController {
         debugInfoVisible = true;
         noteText = "abc";
         lastObservedNoteText = noteText;
-        lastInputSource = "尚未观察到输入";
+        lastInputSource = "immediate only";
+        lastPointerHitState = "尚未点击";
         passiveRegistration = UiHudDocumentHost.getInstance().register(UiHudLayerType.PASSIVE,
                 new UiHudDocumentHost.UiHudDocumentContentBuilder() {
                     @Override
@@ -360,7 +362,7 @@ public final class UiHudDemoController {
                 .setChangeHandler(new DocumentTextInputChangeHandler() {
                     @Override
                     public void onTextChanged(DocumentTextInputChangeEvent event) {
-                        lastInputSource = "HUD text/change";
+                        lastInputSource = "immediate only";
                         noteText = event.getText();
                         lastObservedNoteText = noteText;
                         refreshTexts();
@@ -574,9 +576,12 @@ public final class UiHudDemoController {
 
     private String buildCaptureStateText() {
         HudInputDiagnosticsSnapshot diagnostics = UiHudDocumentHost.getInstance().getInputDiagnosticsSnapshot();
+        boolean hasEffectiveFocus = diagnostics.isHudKeyboardCaptured()
+                && !"none".equals(diagnostics.getFocusedHudElementTag());
         return "捕获状态\nHUD 键盘: " + yesNo(diagnostics.isHudKeyboardCaptured())
                 + "  UILib: " + yesNo(UiKeyboardCaptureState.getInstance().isUiLibKeyboardCaptured())
                 + "\nHUD 已在本屏重新聚焦: " + yesNo(diagnostics.isScreenHudFocusEstablished())
+                + "  HUD 当前有效焦点: " + yesNo(hasEffectiveFocus)
                 + "\n活动层: " + diagnostics.getActiveHudName()
                 + "  焦点元素: " + diagnostics.getFocusedHudElementTag();
     }
@@ -596,11 +601,14 @@ public final class UiHudDemoController {
         if (!noteText.equals(lastObservedNoteText)) {
             lastObservedNoteText = noteText;
         }
+        HudInputDiagnosticsSnapshot diagnostics = UiHudDocumentHost.getInstance().getInputDiagnosticsSnapshot();
+        lastPointerHitState = diagnostics.isHudKeyboardCaptured() ? "最近点击命中 HUD 面板" : "最近点击已放行原生";
         String backspaceExpectation = "abc".equals(lastObservedNoteText) || "ab".equals(noteText)
                 ? "按一次退格后应为 ab"
                 : "若看到一次退格删两个字符，则仍有重复处理";
         return "输入结果\n当前文本: " + noteText
                 + "\n最近来源: " + lastInputSource
+                + "\n最近点击: " + lastPointerHitState
                 + "\n退格对照: " + backspaceExpectation;
     }
 
