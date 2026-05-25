@@ -6,9 +6,9 @@ import java.util.Objects;
  * HTML-like 链接激活事件。
  *
  * <p>统一通过 {@link AbstractDocumentElementEvent} 暴露 {@code preventDefault()} /
- * {@code isDefaultPrevented()} 等标准取消语义。原 {@link #markHandled()} 与
- * {@link #isHandled()} 已映射为 {@code preventDefault()} 的别名并标记为废弃，
- * 业务方应改用浏览器一致的 {@code preventDefault()} 与 {@code isDefaultPrevented()}。</p>
+ * {@code isDefaultPrevented()} 等标准取消语义。旧版 {@code markHandled()} 与
+ * {@code isHandled()} 别名已移除，业务方应使用浏览器一致的 {@code preventDefault()}
+ * 与 {@code isDefaultPrevented()}。</p>
  */
 public final class DocumentLinkActivationEvent extends AbstractDocumentElementEvent {
 
