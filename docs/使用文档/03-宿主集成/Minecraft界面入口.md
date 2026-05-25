@@ -169,4 +169,4 @@ UiHudDocumentRegistration registration = UiHudDocumentHost.getInstance().registe
 1. 可交互判定：只有容器态且鼠标未被游戏重新抓取时，交互 HUD 才接通输入。
 2. 鼠标命中仲裁：每次鼠标事件先从最上层 HUD 做命中测试；命中非穿透区域时由 HUD 消费，否则放行宿主。
 3. 焦点归属：只有命中的 HUD 文档实际获得有效焦点后，才会建立 HUD 键盘捕获状态。
-4. 原生输入阻断：一旦 HUD 已聚焦，后续即时键盘事件会在宿主 `handleKeyboardInput()` 之前先路由到 HUD，并阻断原生页面继续处理同一事件；原生 `GuiScreen` 上的 HUD 键盘/文本只走 immediate 路径，不再消费 collected 键盘帧，避免退格等无文本按键重复落到 HUD。
+4. 原生输入阻断：一旦 HUD 已聚焦，后续即时键盘事件会在宿主 `handleKeyboardInput()` 之前先路由到 HUD，并阻断原生页面继续处理同一事件；原生 `GuiScreen` 上的 HUD 按键事件只走 immediate 路径，不再消费 collected 键盘帧，文本输入仍复用 collected 文本事件，避免退格等无文本按键重复落到 HUD。

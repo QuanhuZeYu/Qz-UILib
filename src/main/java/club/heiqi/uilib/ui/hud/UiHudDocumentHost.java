@@ -145,6 +145,13 @@ public final class UiHudDocumentHost implements UiHostInputCaptureParticipant {
         }
         routeMouseFrame(frame, inputContext);
         updateHudKeyboardCaptureState();
+        if (UiKeyboardCaptureState.getInstance().isHudKeyboardCaptured()) {
+            UiInputFrame textFrame = extractCollectedTextFrame(frame);
+            if (textFrame != null) {
+                routeKeyboardFrame(textFrame, inputContext);
+                updateHudKeyboardCaptureState();
+            }
+        }
     }
 
     /**
@@ -491,6 +498,16 @@ public final class UiHudDocumentHost implements UiHostInputCaptureParticipant {
         }
         return new UiInputFrame(frame.getMouseX(), frame.getMouseY(), Collections.<club.heiqi.uilib.ui.event.UiMouseEvent>emptyList(),
                 frame.getKeyEvents(), frame.getTextEvents());
+    }
+
+    private UiInputFrame extractCollectedTextFrame(UiInputFrame frame) {
+        if (frame == null || frame.getTextEvents().isEmpty()) {
+            return null;
+        }
+        return new UiInputFrame(frame.getMouseX(), frame.getMouseY(),
+                Collections.<club.heiqi.uilib.ui.event.UiMouseEvent>emptyList(),
+                Collections.<club.heiqi.uilib.ui.event.UiKeyEvent>emptyList(),
+                frame.getTextEvents());
     }
 
     private HudMouseDecision resolveImmediateMouseDecision(HudInputContext inputContext, UiInputFrame frame) {

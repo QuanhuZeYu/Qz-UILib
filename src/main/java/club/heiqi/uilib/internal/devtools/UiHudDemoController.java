@@ -58,7 +58,7 @@ public final class UiHudDemoController {
     private boolean debugInfoVisible = true;
     private String noteText = "abc";
     private String lastObservedNoteText = "abc";
-    private String lastInputSource = "immediate only";
+    private String lastInputSource = "key immediate + text collected";
     private String lastPointerHitState = "尚未点击";
     private ElementNode interactiveScrollContent;
     private ElementNode interactiveDebugSection;
@@ -103,7 +103,7 @@ public final class UiHudDemoController {
         debugInfoVisible = true;
         noteText = "abc";
         lastObservedNoteText = noteText;
-        lastInputSource = "immediate only";
+        lastInputSource = "key immediate + text collected";
         lastPointerHitState = "尚未点击";
         passiveRegistration = UiHudDocumentHost.getInstance().register(UiHudLayerType.PASSIVE,
                 new UiHudDocumentHost.UiHudDocumentContentBuilder() {
@@ -362,7 +362,7 @@ public final class UiHudDemoController {
                 .setChangeHandler(new DocumentTextInputChangeHandler() {
                     @Override
                     public void onTextChanged(DocumentTextInputChangeEvent event) {
-                        lastInputSource = "immediate only";
+                        lastInputSource = "key immediate + text collected";
                         noteText = event.getText();
                         lastObservedNoteText = noteText;
                         refreshTexts();
