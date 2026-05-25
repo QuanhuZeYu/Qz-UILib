@@ -187,6 +187,11 @@ if (Keyboard.isCreated()) {
 
 需要额外记住的一点是：`UiHostInputCoordinator` 只是“原生输入链路上的宿主桥”。它负责在 mixin 注入点问当前宿主参与者“这一条原始事件是否该先被 UILib 消费”，但不承载 HUD 的业务规则本身。HUD 是否可交互、鼠标是否命中、是否已经建立有效焦点、当前键盘是否应继续阻断，都应由 `UiHudDocumentHost` 自己的状态机判断；协调器只消费判断结果。
 
+当前 HUD 业务状态机还需要额外记住两条实现边界：
+
+1. `GuiChat` 仍按 `CONTAINER` 分类，以保证 HUD 在聊天态继续可见；但聊天态不会继承前一个屏幕里的旧 HUD 焦点。进入新的 `currentScreen` 实例时，`UiHudDocumentHost` 会清掉旧 HUD 焦点，先把输入归还给原生文本框；只有在当前聊天界面里再次鼠标命中 HUD 并形成有效焦点后，HUD 才重新抢占。
+2. `UiInputService` 对即时键盘抢占与 collected 输入帧之间采用“同一轮 collected 窗口去重”而不是单槽位抑制。这样像 `BACKSPACE`、`TAB`、方向键、回车这类没有文本事件可配对的按键，也不会在 HUD 即时路由后又从 collected 队列再落一次。
+
 ## 当前边界与后续排查建议
 
 当前实现虽然层级合理，但仍有两个需要长期记住的边界：

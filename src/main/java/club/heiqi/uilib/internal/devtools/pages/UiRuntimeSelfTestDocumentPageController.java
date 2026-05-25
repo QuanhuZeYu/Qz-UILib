@@ -14,6 +14,7 @@ import net.minecraftforge.common.config.Property;
 
 import club.heiqi.uilib.font.FontService;
 import club.heiqi.uilib.font.event.FontReloadRequest;
+import club.heiqi.uilib.internal.devtools.UiHudDemoController;
 import club.heiqi.uilib.ui.control.DocumentButtonActionEvent;
 import club.heiqi.uilib.ui.control.DocumentButtonActionHandler;
 import club.heiqi.uilib.ui.control.DocumentButtonControl;
@@ -150,6 +151,13 @@ public final class UiRuntimeSelfTestDocumentPageController extends DocumentPageC
                     @Override
                     public void run() {
                         runRemoteImageCacheShutdown();
+                    }
+                });
+        registerEntry(root, "HUD 输入抢占 smoke",
+                "打开本地 HUD 输入 smoke 浮窗，并把聊天框 / 退格 / 焦点交接的预期结果直接写在浮窗里供人工对照。", new SelfTestRunnable() {
+                    @Override
+                    public void run() {
+                        runHudInputCaptureSmoke();
                     }
                 });
         registerEntry(root, "全部依次执行",
@@ -396,6 +404,18 @@ public final class UiRuntimeSelfTestDocumentPageController extends DocumentPageC
         if (durationMs > 2_000L) {
             throw new IllegalStateException("DocumentRemoteImageCache.shutdown() 用时 " + durationMs + "ms > 2000ms");
         }
+    }
+
+    /**
+     * Test 6：HUD 输入抢占 smoke。
+     *
+     * <p>该项不做 JVM 断言，而是启用游戏内 HUD 浮窗，并把人工验证步骤与预期直接显示在浮窗内。</p>
+     */
+    private void runHudInputCaptureSmoke() {
+        if (!UiHudDemoController.getInstance().isEnabled()) {
+            UiHudDemoController.getInstance().toggle();
+        }
+        updateSummary("[HUD 输入抢占 smoke] 已打开。请在容器页与聊天框场景下对照浮窗中的预期结果逐项验证。");
     }
 
     private void updateSummary(String message) {

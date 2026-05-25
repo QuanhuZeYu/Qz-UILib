@@ -4,6 +4,9 @@ import java.text.SimpleDateFormat;
 import java.util.Date;
 import java.util.Locale;
 
+import net.minecraft.client.Minecraft;
+import net.minecraft.client.gui.GuiScreen;
+
 import club.heiqi.uilib.ui.dom.ElementNode;
 import club.heiqi.uilib.ui.dom.TextNode;
 import club.heiqi.uilib.ui.dom.UiDocument;
@@ -19,9 +22,11 @@ import club.heiqi.uilib.ui.control.DocumentToggleChangeEvent;
 import club.heiqi.uilib.ui.control.DocumentToggleChangeHandler;
 import club.heiqi.uilib.ui.control.DocumentToggleSwitchControl;
 import club.heiqi.uilib.ui.hud.UiHudDocumentHost;
+import club.heiqi.uilib.ui.hud.UiHudDocumentHost.HudInputDiagnosticsSnapshot;
 import club.heiqi.uilib.ui.hud.UiHudDocumentRegistration;
 import club.heiqi.uilib.ui.hud.UiHudLayerType;
 import club.heiqi.uilib.ui.input.UiInputService;
+import club.heiqi.uilib.ui.input.UiKeyboardCaptureState;
 import club.heiqi.uilib.ui.style.props.UiAlignItems;
 import club.heiqi.uilib.ui.style.props.UiBoxSizing;
 import club.heiqi.uilib.ui.style.props.UiDisplay;
@@ -45,9 +50,15 @@ public final class UiHudDemoController {
     private TextNode passiveClockText;
     private TextNode interactiveScrollProbeText;
     private TextNode interactiveBodySummaryText;
+    private TextNode interactiveExpectationText;
+    private TextNode interactiveCaptureStateText;
+    private TextNode interactiveHostStateText;
+    private TextNode interactiveInputResultText;
     private int interactiveClickCount;
     private boolean debugInfoVisible = true;
-    private String noteText = "把鼠标移到背包界面后尝试编辑我";
+    private String noteText = "abc";
+    private String lastObservedNoteText = "abc";
+    private String lastInputSource = "尚未观察到输入";
     private ElementNode interactiveScrollContent;
     private ElementNode interactiveDebugSection;
 
@@ -89,7 +100,9 @@ public final class UiHudDemoController {
         disable();
         interactiveClickCount = 0;
         debugInfoVisible = true;
-        noteText = "把鼠标移到背包界面后尝试编辑我";
+        noteText = "abc";
+        lastObservedNoteText = noteText;
+        lastInputSource = "尚未观察到输入";
         passiveRegistration = UiHudDocumentHost.getInstance().register(UiHudLayerType.PASSIVE,
                 new UiHudDocumentHost.UiHudDocumentContentBuilder() {
                     @Override
@@ -120,6 +133,10 @@ public final class UiHudDemoController {
         passiveClockText = null;
         interactiveScrollProbeText = null;
         interactiveBodySummaryText = null;
+        interactiveExpectationText = null;
+        interactiveCaptureStateText = null;
+        interactiveHostStateText = null;
+        interactiveInputResultText = null;
         interactiveScrollContent = null;
         interactiveDebugSection = null;
     }
@@ -315,13 +332,37 @@ public final class UiHudDemoController {
         overviewCard.append(overviewTitle);
         interactiveBodySummaryText = appendScrollTextLine(document, overviewCard, "");
 
+        ElementNode expectationCard = document.div();
+        expectationCard.style()
+                .setDisplay(UiDisplay.FLEX)
+                .setFlexDirection(UiFlexDirection.COLUMN)
+                .setAlignItems(UiAlignItems.START)
+                .setBoxSizing(UiBoxSizing.BORDER_BOX)
+                .setWidth(UiStyleLength.percent(1.0F))
+                .setHeight(UiStyleLength.auto())
+                .setPadding(UiStyleLength.px(6))
+                .setBackgroundColor(0xAA1E293B)
+                .setBorderColor(0xFF38BDF8)
+                .setBorderWidth(UiStyleLength.px(1))
+                .setBorderRadius(UiStyleLength.px(10))
+                .setRowGap(UiStyleLength.px(3));
+        contentBody.append(expectationCard);
+
+        ElementNode expectationTitle = document.div();
+        expectationTitle.style().setTextColor(0xFF7DD3FC);
+        expectationTitle.appendText("人工对照");
+        expectationCard.append(expectationTitle);
+        interactiveExpectationText = appendScrollTextLine(document, expectationCard, "");
+
         DocumentTextInputControl noteInput = new DocumentTextInputControl(document)
-                .setPlaceholder("在容器界面中输入备注")
+                .setPlaceholder("先输入 abc，再按一次退格")
                 .setText(noteText)
                 .setChangeHandler(new DocumentTextInputChangeHandler() {
                     @Override
                     public void onTextChanged(DocumentTextInputChangeEvent event) {
+                        lastInputSource = "HUD text/change";
                         noteText = event.getText();
+                        lastObservedNoteText = noteText;
                         refreshTexts();
                     }
                 });
@@ -348,7 +389,7 @@ public final class UiHudDemoController {
 
         ElementNode noteTitle = document.div();
         noteTitle.style().setTextColor(0xFF93C5FD);
-        noteTitle.appendText("容器备注");
+        noteTitle.appendText("HUD 输入框");
         noteCard.append(noteTitle);
         noteCard.append(noteInput.getElement());
 
@@ -390,6 +431,9 @@ public final class UiHudDemoController {
         debugTitle.appendText("HUD DEBUG");
         interactiveDebugSection.append(debugTitle);
 
+        interactiveCaptureStateText = appendScrollTextLine(document, interactiveDebugSection, "");
+        interactiveHostStateText = appendScrollTextLine(document, interactiveDebugSection, "");
+        interactiveInputResultText = appendScrollTextLine(document, interactiveDebugSection, "");
         interactiveScrollProbeText = appendScrollTextLine(document, interactiveDebugSection, "");
 
         ElementNode tipsCard = document.div();
@@ -413,9 +457,11 @@ public final class UiHudDemoController {
         tipsTitle.appendText("操作建议");
         tipsCard.append(tipsTitle);
 
-        for (int index = 1; index <= 5; index++) {
-            appendTextLine(document, tipsCard, "滚轮停在这里可查看内部内容，第 " + index + " 条示例说明。");
-        }
+        appendTextLine(document, tipsCard, "1. 在容器页点击 HUD 输入框，输入 abc，再按一次退格，结果应为 ab。");
+        appendTextLine(document, tipsCard, "2. HUD 已聚焦时打开聊天框，聊天框应先可输入，HUD 不应沿用旧焦点抢键盘。");
+        appendTextLine(document, tipsCard, "3. 聊天框打开后再次点击 HUD 输入框，聊天框应失焦，HUD 再次接管键盘。");
+        appendTextLine(document, tipsCard, "4. 未点击 HUD 前按 Tab，不应进入 HUD。仅悬停 HUD 也不应抢键盘。");
+        appendTextLine(document, tipsCard, "5. 点 HUD 外部后，HUD 应释放捕获，原生界面重新接管。");
     }
 
     private synchronized void refreshTexts() {
@@ -425,11 +471,24 @@ public final class UiHudDemoController {
         if (passiveClockText != null) {
             passiveClockText.setText("最近刷新：" + TIME_FORMAT.format(new Date()));
         }
+        if (interactiveExpectationText != null) {
+            interactiveExpectationText.setText(buildExpectationText());
+        }
         if (interactiveScrollProbeText != null) {
             interactiveScrollProbeText.setText(buildScrollProbeText());
         }
         if (interactiveBodySummaryText != null) {
-            interactiveBodySummaryText.setText("容器界面上方可见。点击次数 " + interactiveClickCount + "，备注：" + noteText + "。");
+            interactiveBodySummaryText.setText("容器/聊天框上方可见。点击次数 " + interactiveClickCount
+                    + "，当前文本：" + noteText + "。");
+        }
+        if (interactiveCaptureStateText != null) {
+            interactiveCaptureStateText.setText(buildCaptureStateText());
+        }
+        if (interactiveHostStateText != null) {
+            interactiveHostStateText.setText(buildHostStateText());
+        }
+        if (interactiveInputResultText != null) {
+            interactiveInputResultText.setText(buildInputResultText());
         }
         if (interactiveDebugSection != null) {
             interactiveDebugSection.style().setDisplay(debugInfoVisible ? UiDisplay.FLEX : UiDisplay.NONE);
@@ -505,6 +564,48 @@ public final class UiHudDemoController {
                 + "  delta: " + inputSnapshot.getLastWheelDelta()
                 + "  消费: " + (inputSnapshot.isLastConsumed() ? "是" : "否")
                 + "\n偏移: " + scrollTop + " / " + maxScrollTop;
+    }
+
+    private String buildExpectationText() {
+        return "预期 1：容器页 HUD 输入框里输入 abc 后按一次退格，最终应是 ab。\n"
+                + "预期 2：聊天框打开后，若未再次点击 HUD，聊天框应先能输入。\n"
+                + "预期 3：聊天框打开后再次点击 HUD 输入框，HUD 才重新抢占键盘。";
+    }
+
+    private String buildCaptureStateText() {
+        HudInputDiagnosticsSnapshot diagnostics = UiHudDocumentHost.getInstance().getInputDiagnosticsSnapshot();
+        return "捕获状态\nHUD 键盘: " + yesNo(diagnostics.isHudKeyboardCaptured())
+                + "  UILib: " + yesNo(UiKeyboardCaptureState.getInstance().isUiLibKeyboardCaptured())
+                + "\nHUD 已在本屏重新聚焦: " + yesNo(diagnostics.isScreenHudFocusEstablished())
+                + "\n活动层: " + diagnostics.getActiveHudName()
+                + "  焦点元素: " + diagnostics.getFocusedHudElementTag();
+    }
+
+    private String buildHostStateText() {
+        HudInputDiagnosticsSnapshot diagnostics = UiHudDocumentHost.getInstance().getInputDiagnosticsSnapshot();
+        Minecraft minecraft = Minecraft.getMinecraft();
+        GuiScreen currentScreen = minecraft == null ? null : minecraft.currentScreen;
+        String currentScreenName = diagnostics.getScreenClassName() == null
+                ? (currentScreen == null ? "<null>" : currentScreen.getClass().getName())
+                : diagnostics.getScreenClassName();
+        return "宿主状态\nScreen: " + currentScreenName
+                + "\n原生文本框聚焦: " + yesNo(diagnostics.isNativeTextInputFocused());
+    }
+
+    private String buildInputResultText() {
+        if (!noteText.equals(lastObservedNoteText)) {
+            lastObservedNoteText = noteText;
+        }
+        String backspaceExpectation = "abc".equals(lastObservedNoteText) || "ab".equals(noteText)
+                ? "按一次退格后应为 ab"
+                : "若看到一次退格删两个字符，则仍有重复处理";
+        return "输入结果\n当前文本: " + noteText
+                + "\n最近来源: " + lastInputSource
+                + "\n退格对照: " + backspaceExpectation;
+    }
+
+    private String yesNo(boolean value) {
+        return value ? "是" : "否";
     }
 
     private boolean isSameOrDescendantOf(ElementNode element, ElementNode ancestor) {

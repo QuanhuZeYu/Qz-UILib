@@ -48,6 +48,8 @@ import cpw.mods.fml.client.config.GuiConfig;
 public final class UiHudDocumentHost implements UiHostInputCaptureParticipant {
 
     private static final UiHudDocumentHost INSTANCE = new UiHudDocumentHost();
+    private static final String RUNTIME_NAME_INTERACTIVE = "hud_interactive";
+    private static final String RUNTIME_NAME_PASSIVE = "hud_passive";
 
     private final List<HudEntry> entries = new ArrayList<HudEntry>();
     private final UiHudRenderPipeline renderPipeline = new UiHudRenderPipeline();
@@ -55,6 +57,7 @@ public final class UiHudDocumentHost implements UiHostInputCaptureParticipant {
     private HudEntry activeMouseEntry;
     private HudEntry activeKeyboardEntry;
     private HudEntry hoveredMouseEntry;
+    private HudHostScreenSession screenSession = HudHostScreenSession.empty();
 
     private UiHudDocumentHost() {}
 
@@ -135,6 +138,7 @@ public final class UiHudDocumentHost implements UiHostInputCaptureParticipant {
         }
         GuiScreen currentScreen = minecraft.currentScreen;
         HudInputContext inputContext = createInputContext(currentScreen);
+        syncScreenSession(inputContext);
         if (!inputContext.interactiveInputEnabled) {
             clearInteractiveStates();
             return;
@@ -166,6 +170,7 @@ public final class UiHudDocumentHost implements UiHostInputCaptureParticipant {
             return false;
         }
         HudInputContext inputContext = createInputContext(currentScreen);
+        syncScreenSession(inputContext);
         if (!inputContext.interactiveInputEnabled) {
             clearInteractiveStates();
             return false;
@@ -193,6 +198,7 @@ public final class UiHudDocumentHost implements UiHostInputCaptureParticipant {
         }
         updateLatestPointer(frame);
         HudInputContext inputContext = createInputContext(currentScreen);
+        syncScreenSession(inputContext);
         if (!inputContext.interactiveInputEnabled) {
             clearInteractiveStates();
             return false;
@@ -204,7 +210,9 @@ public final class UiHudDocumentHost implements UiHostInputCaptureParticipant {
             }
             return false;
         }
-        UiNativeTextInputInspector.blurFocusedTextInputs(currentScreen);
+        if (mouseDecision.shouldBlurNativeTextInput) {
+            UiNativeTextInputInspector.blurFocusedTextInputs(currentScreen);
+        }
         routeMouseFrame(frame, inputContext);
         updateHudKeyboardCaptureState();
         return true;
@@ -216,6 +224,7 @@ public final class UiHudDocumentHost implements UiHostInputCaptureParticipant {
         }
         updateLatestPointer(frame);
         HudInputContext inputContext = createInputContextForTest(screenCategory);
+        syncScreenSession(inputContext);
         if (!inputContext.interactiveInputEnabled) {
             clearInteractiveStates();
             return false;
@@ -265,6 +274,7 @@ public final class UiHudDocumentHost implements UiHostInputCaptureParticipant {
             return false;
         }
         HudInputContext inputContext = createInputContextForTest(screenCategory);
+        syncScreenSession(inputContext);
         if (!inputContext.interactiveInputEnabled) {
             clearInteractiveStates();
             return false;
@@ -284,6 +294,7 @@ public final class UiHudDocumentHost implements UiHostInputCaptureParticipant {
         }
         updateLatestPointer(frame);
         HudInputContext inputContext = createInputContextForTest(screenCategory);
+        syncScreenSession(inputContext);
         if (!inputContext.interactiveInputEnabled) {
             clearInteractiveStates();
             return;
@@ -314,6 +325,21 @@ public final class UiHudDocumentHost implements UiHostInputCaptureParticipant {
         return null;
     }
 
+    /**
+     * 返回当前 HUD 输入态诊断快照。
+     *
+     * @return HUD 输入态诊断快照
+     */
+    public synchronized HudInputDiagnosticsSnapshot getInputDiagnosticsSnapshot() {
+        String screenClassName = screenSession.screenClassName;
+        boolean nativeTextInputFocused = screenSession.nativeTextInputFocused;
+        boolean hudKeyboardCaptured = UiKeyboardCaptureState.getInstance().isHudKeyboardCaptured();
+        String focusedHudElementTag = resolveFocusedHudElementTag();
+        String activeHudName = activeKeyboardEntry == null ? "none" : activeKeyboardEntry.getRuntimeName();
+        return new HudInputDiagnosticsSnapshot(screenClassName, nativeTextInputFocused, hudKeyboardCaptured,
+                activeHudName, focusedHudElementTag, screenSession.screenHudFocusEstablished);
+    }
+
     static UiInputFrame filterKeyboardInput(UiInputFrame frame, boolean nativeTextInputFocused,
             boolean uiLibKeyboardCaptured) {
         if (frame == null || !nativeTextInputFocused || uiLibKeyboardCaptured) {
@@ -327,6 +353,27 @@ public final class UiHudDocumentHost implements UiHostInputCaptureParticipant {
                 Collections.<club.heiqi.uilib.ui.event.UiTextInputEvent>emptyList());
     }
 
+    private void syncScreenSession(HudInputContext inputContext) {
+        HudHostScreenSession nextSession = HudHostScreenSession.from(inputContext);
+        if (screenSession.isSameScreen(nextSession)) {
+            screenSession = screenSession.withSnapshot(nextSession);
+            if (screenSession.shouldReleaseHudCaptureForNativeTextInput()) {
+                clearInteractiveStates();
+            }
+            return;
+        }
+        screenSession = nextSession;
+        clearInteractiveStates();
+    }
+
+    private String resolveFocusedHudElementTag() {
+        if (activeKeyboardEntry == null || !entries.contains(activeKeyboardEntry)) {
+            return "none";
+        }
+        ElementNode focusedElement = activeKeyboardEntry.widget.getFocusedElement();
+        return focusedElement == null ? "none" : focusedElement.getTagName();
+    }
+
     private void updateLatestPointer(UiInputFrame frame) {
         for (HudEntry entry : entries) {
             entry.interactionSession.recordPointer(frame);
@@ -335,17 +382,22 @@ public final class UiHudDocumentHost implements UiHostInputCaptureParticipant {
 
     private HudInputContext createInputContext(GuiScreen currentScreen) {
         UiHudScreenCategory screenCategory = classifyScreen(currentScreen);
-        return new HudInputContext(screenCategory, isInteractiveInputEnabled(currentScreen),
-                new ArrayList<HudEntry>(entries), true);
+        boolean nativeTextInputFocused = UiNativeTextInputInspector.hasFocusedTextInput(currentScreen);
+        return new HudInputContext(currentScreen, currentScreen == null ? null : currentScreen.getClass().getName(),
+                screenCategory, isInteractiveInputEnabled(currentScreen), new ArrayList<HudEntry>(entries), true,
+                nativeTextInputFocused);
     }
 
     private HudInputContext createInputContextForTest(UiHudScreenCategory screenCategory) {
-        return new HudInputContext(screenCategory, screenCategory == UiHudScreenCategory.CONTAINER,
-                new ArrayList<HudEntry>(entries), false);
+        return new HudInputContext(null, null, screenCategory, screenCategory == UiHudScreenCategory.CONTAINER,
+                new ArrayList<HudEntry>(entries), false, false);
     }
 
     private boolean routeImmediateKeyboardFrame(HudInputContext inputContext, UiInputFrame frame,
             boolean nativeTextInputFocused, boolean uiLibKeyboardCaptured) {
+        if (inputContext.nativeTextInputFocused && !screenSession.screenHudFocusEstablished) {
+            return false;
+        }
         UiInputFrame routedFrame = filterKeyboardInput(frame, nativeTextInputFocused, uiLibKeyboardCaptured);
         if (routedFrame == null || (routedFrame.getKeyEvents().isEmpty() && routedFrame.getTextEvents().isEmpty())) {
             return false;
@@ -372,6 +424,7 @@ public final class UiHudDocumentHost implements UiHostInputCaptureParticipant {
             HudEntry targetEntry = resolveMouseTargetEntry(inputContext, frame.getMouseX(), frame.getMouseY());
             if (targetEntry == null) {
                 clearInteractiveStates();
+                screenSession = screenSession.withHudFocusEstablished(false);
                 return;
             }
             clearInteractiveStatesExcept(targetEntry);
@@ -383,6 +436,9 @@ public final class UiHudDocumentHost implements UiHostInputCaptureParticipant {
             targetEntry.interactionSession.route(targetEntry.getRuntimeName(), targetEntry.widget, mouseFrame);
             if (targetEntry.interactionSession.hasFocusedWidget()) {
                 activeKeyboardEntry = targetEntry;
+                screenSession = screenSession.withHudFocusEstablished(true);
+            } else {
+                screenSession = screenSession.withHudFocusEstablished(false);
             }
             updateHudKeyboardCaptureState();
             return;
@@ -399,6 +455,7 @@ public final class UiHudDocumentHost implements UiHostInputCaptureParticipant {
         targetEntry.interactionSession.route(targetEntry.getRuntimeName(), targetEntry.widget, mouseFrame);
         if (targetEntry.interactionSession.hasFocusedWidget()) {
             activeKeyboardEntry = targetEntry;
+            screenSession = screenSession.withHudFocusEstablished(true);
         }
         if (primaryUp) {
             activeMouseEntry = null;
@@ -422,8 +479,10 @@ public final class UiHudDocumentHost implements UiHostInputCaptureParticipant {
         if (targetEntry.interactionSession.hasFocusedWidget()) {
             activeKeyboardEntry = targetEntry;
             activeMouseEntry = targetEntry;
+            screenSession = screenSession.withHudFocusEstablished(true);
         } else if (activeKeyboardEntry == targetEntry) {
             activeKeyboardEntry = null;
+            screenSession = screenSession.withHudFocusEstablished(false);
         }
     }
 
@@ -443,9 +502,10 @@ public final class UiHudDocumentHost implements UiHostInputCaptureParticipant {
             return HudMouseDecision.release();
         }
         if (frame != null && isPrimaryMouseButtonDown(frame)) {
-            return resolveMouseTargetEntry(inputContext, frame.getMouseX(), frame.getMouseY()) == null
+            HudEntry targetEntry = resolveMouseTargetEntry(inputContext, frame.getMouseX(), frame.getMouseY());
+            return targetEntry == null
                     ? HudMouseDecision.missAndClearFocus()
-                    : HudMouseDecision.capture();
+                    : HudMouseDecision.capture(inputContext.nativeTextInputFocused);
         }
         if (frame != null && isPrimaryMouseButtonUp(frame)) {
             return isInteractiveEntryAvailable(activeMouseEntry, inputContext.screenCategory)
@@ -746,6 +806,7 @@ public final class UiHudDocumentHost implements UiHostInputCaptureParticipant {
         if (entries.isEmpty()) {
             UiKeyboardCaptureState.getInstance().setHudKeyboardCaptured(false);
             syncHudTextInputRequest(false);
+            screenSession = HudHostScreenSession.empty();
             return;
         }
         List<HudEntry> snapshot = new ArrayList<HudEntry>(entries);
@@ -764,6 +825,7 @@ public final class UiHudDocumentHost implements UiHostInputCaptureParticipant {
         hoveredMouseEntry = null;
         activeMouseEntry = null;
         activeKeyboardEntry = null;
+        screenSession = HudHostScreenSession.empty();
         UiKeyboardCaptureState.getInstance().setHudKeyboardCaptured(false);
         syncHudTextInputRequest(false);
     }
@@ -776,6 +838,7 @@ public final class UiHudDocumentHost implements UiHostInputCaptureParticipant {
                 entry.interactionSession.clearInteractionState();
             }
         }
+        screenSession = screenSession.withHudFocusEstablished(false);
         UiKeyboardCaptureState.getInstance().setHudKeyboardCaptured(false);
         syncHudTextInputRequest(false);
     }
@@ -811,6 +874,9 @@ public final class UiHudDocumentHost implements UiHostInputCaptureParticipant {
                     break;
                 }
             }
+        }
+        if (!captured) {
+            screenSession = screenSession.withHudFocusEstablished(false);
         }
         UiKeyboardCaptureState.getInstance().setHudKeyboardCaptured(captured);
         syncHudTextInputRequest(captured);
@@ -925,42 +991,55 @@ public final class UiHudDocumentHost implements UiHostInputCaptureParticipant {
         }
 
         String getRuntimeName() {
-            return layerType == UiHudLayerType.PASSIVE ? "hud_passive" : "hud_interactive";
+            return layerType == UiHudLayerType.PASSIVE ? RUNTIME_NAME_PASSIVE : RUNTIME_NAME_INTERACTIVE;
         }
     }
 
     private static final class HudInputContext {
 
+        private final GuiScreen currentScreen;
+        private final String screenClassName;
         private final UiHudScreenCategory screenCategory;
         private final boolean interactiveInputEnabled;
         private final List<HudEntry> entrySnapshot;
         private final boolean syncNativeViewportBounds;
+        private final boolean nativeTextInputFocused;
 
-        private HudInputContext(UiHudScreenCategory screenCategory, boolean interactiveInputEnabled,
-                List<HudEntry> entrySnapshot, boolean syncNativeViewportBounds) {
+        private HudInputContext(GuiScreen currentScreen, String screenClassName, UiHudScreenCategory screenCategory,
+                boolean interactiveInputEnabled, List<HudEntry> entrySnapshot, boolean syncNativeViewportBounds,
+                boolean nativeTextInputFocused) {
+            this.currentScreen = currentScreen;
+            this.screenClassName = screenClassName;
             this.screenCategory = screenCategory;
             this.interactiveInputEnabled = interactiveInputEnabled;
             this.entrySnapshot = entrySnapshot;
             this.syncNativeViewportBounds = syncNativeViewportBounds;
+            this.nativeTextInputFocused = nativeTextInputFocused;
         }
     }
 
     private static final class HudMouseDecision {
 
-        private static final HudMouseDecision CAPTURE = new HudMouseDecision(true, false);
-        private static final HudMouseDecision RELEASE = new HudMouseDecision(false, false);
-        private static final HudMouseDecision MISS_AND_CLEAR_FOCUS = new HudMouseDecision(false, true);
+        private static final HudMouseDecision CAPTURE = new HudMouseDecision(true, false, false);
+        private static final HudMouseDecision RELEASE = new HudMouseDecision(false, false, false);
+        private static final HudMouseDecision MISS_AND_CLEAR_FOCUS = new HudMouseDecision(false, true, false);
 
         private final boolean shouldCapture;
         private final boolean shouldClearFocus;
+        private final boolean shouldBlurNativeTextInput;
 
-        private HudMouseDecision(boolean shouldCapture, boolean shouldClearFocus) {
+        private HudMouseDecision(boolean shouldCapture, boolean shouldClearFocus, boolean shouldBlurNativeTextInput) {
             this.shouldCapture = shouldCapture;
             this.shouldClearFocus = shouldClearFocus;
+            this.shouldBlurNativeTextInput = shouldBlurNativeTextInput;
         }
 
         private static HudMouseDecision capture() {
             return CAPTURE;
+        }
+
+        private static HudMouseDecision capture(boolean shouldBlurNativeTextInput) {
+            return shouldBlurNativeTextInput ? new HudMouseDecision(true, false, true) : CAPTURE;
         }
 
         private static HudMouseDecision release() {
@@ -969,6 +1048,99 @@ public final class UiHudDocumentHost implements UiHostInputCaptureParticipant {
 
         private static HudMouseDecision missAndClearFocus() {
             return MISS_AND_CLEAR_FOCUS;
+        }
+    }
+
+    private static final class HudHostScreenSession {
+
+        private final GuiScreen screen;
+        private final String screenClassName;
+        private final UiHudScreenCategory screenCategory;
+        private final boolean nativeTextInputFocused;
+        private final boolean screenHudFocusEstablished;
+
+        private HudHostScreenSession(GuiScreen screen, String screenClassName, UiHudScreenCategory screenCategory,
+                boolean nativeTextInputFocused, boolean screenHudFocusEstablished) {
+            this.screen = screen;
+            this.screenClassName = screenClassName;
+            this.screenCategory = screenCategory;
+            this.nativeTextInputFocused = nativeTextInputFocused;
+            this.screenHudFocusEstablished = screenHudFocusEstablished;
+        }
+
+        private static HudHostScreenSession empty() {
+            return new HudHostScreenSession(null, null, UiHudScreenCategory.INGAME, false, false);
+        }
+
+        private static HudHostScreenSession from(HudInputContext inputContext) {
+            if (inputContext == null) {
+                return empty();
+            }
+            return new HudHostScreenSession(inputContext.currentScreen, inputContext.screenClassName,
+                    inputContext.screenCategory, inputContext.nativeTextInputFocused, false);
+        }
+
+        private HudHostScreenSession withHudFocusEstablished(boolean established) {
+            return new HudHostScreenSession(screen, screenClassName, screenCategory, nativeTextInputFocused,
+                    established);
+        }
+
+        private HudHostScreenSession withSnapshot(HudHostScreenSession snapshot) {
+            return new HudHostScreenSession(screen, snapshot.screenClassName, snapshot.screenCategory,
+                    snapshot.nativeTextInputFocused, screenHudFocusEstablished);
+        }
+
+        private boolean isSameScreen(HudHostScreenSession other) {
+            return other != null && screen == other.screen;
+        }
+
+        private boolean shouldReleaseHudCaptureForNativeTextInput() {
+            return nativeTextInputFocused && !screenHudFocusEstablished;
+        }
+    }
+
+    public static final class HudInputDiagnosticsSnapshot {
+
+        private final String screenClassName;
+        private final boolean nativeTextInputFocused;
+        private final boolean hudKeyboardCaptured;
+        private final String activeHudName;
+        private final String focusedHudElementTag;
+        private final boolean screenHudFocusEstablished;
+
+        private HudInputDiagnosticsSnapshot(String screenClassName, boolean nativeTextInputFocused,
+                boolean hudKeyboardCaptured, String activeHudName, String focusedHudElementTag,
+                boolean screenHudFocusEstablished) {
+            this.screenClassName = screenClassName;
+            this.nativeTextInputFocused = nativeTextInputFocused;
+            this.hudKeyboardCaptured = hudKeyboardCaptured;
+            this.activeHudName = activeHudName;
+            this.focusedHudElementTag = focusedHudElementTag;
+            this.screenHudFocusEstablished = screenHudFocusEstablished;
+        }
+
+        public String getScreenClassName() {
+            return screenClassName;
+        }
+
+        public boolean isNativeTextInputFocused() {
+            return nativeTextInputFocused;
+        }
+
+        public boolean isHudKeyboardCaptured() {
+            return hudKeyboardCaptured;
+        }
+
+        public String getActiveHudName() {
+            return activeHudName;
+        }
+
+        public String getFocusedHudElementTag() {
+            return focusedHudElementTag;
+        }
+
+        public boolean isScreenHudFocusEstablished() {
+            return screenHudFocusEstablished;
         }
     }
 

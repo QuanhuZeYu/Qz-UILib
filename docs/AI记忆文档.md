@@ -26,7 +26,7 @@
 ## 对外入口边界
 
 - 业务文档入口：`UiDocumentScreens.createDocumentScreen(...)`；服务端生成的安全子集 HTML 远程页面入口为 `RemoteDocumentPages.open(...)`，HUD 浮窗入口为 `RemoteHudOverlays.open(...)`，两者都不执行 JavaScript、不嵌入真实浏览器，并共享内部远程 HTML session / Stream 网关。
-- HUD 输入抢占的长期契约保持为：交互 HUD 仅在容器态接通输入，必须先鼠标命中建立 HUD 焦点，键盘抢占只由 HUD 内有效焦点驱动；`UiHostInputCoordinator` 只作为宿主原生输入链路上的协调桥，不承载 HUD 业务规则。
+- HUD 输入抢占的长期契约保持为：交互 HUD 仅在容器态接通输入，必须先鼠标命中建立 HUD 焦点，键盘抢占只由 HUD 内有效焦点驱动；`GuiChat` 打开时 HUD 可继续显示，但不会沿用旧 HUD 焦点继续抢占，必须在当前聊天界面里再次点击 HUD 才会重新接管；`UiHostInputCoordinator` 只作为宿主原生输入链路上的协调桥，不承载 HUD 业务规则。
 - 配置页现支持基于 UILIB 自建网络的服务端权威同步：本地模板页可通过 `ForgeConfigTemplateScreen.Spec.setRemoteSyncController(...)` / `setRemoteSyncScreenId(...)` 绑定配置会话，服务端远程配置页入口为 `RemoteConfigDocumentPages.open(...)`；两条路线共享同一个 `ConfigTemplateSyncManager` 配置目标 / 草稿 / 显式保存模型；配置分类名默认大小写敏感，只有通过 `CategorySpec.addAlias(...)` / `ConfigSyncCategorySpec.addAlias(...)` 显式声明的历史名称才参与兼容查找。
 - 双端网络入口：`NetService.getInstance()`，在 `preInit` 注册 Channel / Fetch / Stream / Store，`postInit` 后注册表冻结；网络消息以 `route/key + contentType + headers + body` 为核心，不以 Java 类型作为协议身份；普通逻辑消息默认 16 MiB，超过阈值走 Stream/chunk；Fetch endpoint 可配滑动窗口限流，Store 可注册业务 delta applier；默认 vanilla 传输，其能力握手在 FML connection-established 事件之后触发，不在 Play NetHandler 构造期发送；可用 `netTransport` 或 `-Dqzuilib.net.transport=forge` 切 Forge 回退。
 - 诊断/示例页只保留内部开发工具入口（`/qzuilib test`），页面实现归入 `internal.devtools.pages`；可被真实客户端适配复用的库存概览模型归入 `ui.inventory`；不对外暴露页面工厂。
