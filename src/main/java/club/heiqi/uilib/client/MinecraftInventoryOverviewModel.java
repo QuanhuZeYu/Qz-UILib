@@ -4,9 +4,9 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 
+import club.heiqi.uilib.ui.inventory.InventoryOverviewModel;
+import club.heiqi.uilib.ui.inventory.InventoryOverviewSlotContentProvider;
 import club.heiqi.uilib.ui.inventory.InventorySlotSnapshot;
-import club.heiqi.uilib.ui.screen.example.InventoryOverviewModel;
-import club.heiqi.uilib.ui.screen.example.InventoryOverviewSlotContentProvider;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.inventory.GuiInventory;
 import net.minecraft.entity.player.InventoryPlayer;

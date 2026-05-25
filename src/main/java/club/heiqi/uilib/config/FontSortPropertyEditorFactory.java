@@ -15,7 +15,7 @@ final class FontSortPropertyEditorFactory implements ForgeConfigTemplateScreen.P
         if (!matches(categorySpec, property) || owner == null) {
             return null;
         }
-        return owner.new FontSortPropertyBinding(document, categorySpec, property);
+        return ConfigTemplatePropertyBindings.createFontSort(owner, document, categorySpec, property);
     }
 
     boolean matchesForTesting(ForgeConfigTemplateScreen.CategorySpec categorySpec, Property property) {

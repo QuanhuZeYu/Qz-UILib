@@ -79,6 +79,10 @@
 
 ### P1 — 影响维护效率的结构问题
 
+> 整改状态（2026-05-25）：P1-1 ~ P1-4 已完成。诊断页迁入 `internal.devtools.pages`，库存概览模型迁入 `ui.inventory`；远程页面与远程 HUD 共享内部 `RemoteHtmlSessionGateway`；配置模板拆出 `ConfigTemplateDocumentBuilder` 与默认属性绑定类族；网络运行时自检保留 `NetRuntimeSelfChecks` 门面，端点注册、用例执行、远程 smoke 页面构造分别拆入包内协作者。
+>
+> 下列 P1 条目保留原审查发现，最新状态以上方整改状态为准。
+
 #### P1-1 诊断/示例页仍有约 1 万行进入主产物
 
 - `ui/screen/example` 当前 17 个 Java 文件，合计约 10315 行。
@@ -175,16 +179,16 @@
 |---|---|---|---|
 | P0 | 修正稳定 API 清单与 `DocumentLinkActivationEvent` 注释漂移 | 低 | 文档/注释级提交 |
 | P0 | 用本报告替代旧索引里的过期当前基线 | 低 | 索引只保留摘要，避免继续追加长流水 |
-| P1 | 抽远程页面/HUD 共享 session + Stream gateway | 中 | 行为测试已有基础，可小步迁移 |
-| P1 | 拆配置模板绑定类族与文档构建器 | 中 | 不改公开 `Spec` 入口 |
-| P1 | 拆网络自检注册/运行/HTML 构造 | 低 | 内部 devtools，回归面可控 |
+| P1 | 抽远程页面/HUD 共享 session + Stream gateway | 中 | 已完成，页面/HUD 共享内部远程 HTML session gateway |
+| P1 | 拆配置模板绑定类族与文档构建器 | 中 | 已完成，保留公开 `Spec` 入口 |
+| P1 | 拆网络自检注册/运行/HTML 构造 | 低 | 已完成，保留 `NetRuntimeSelfChecks` 门面 |
 | P2 | 分批推进 `UiStyleDeclaration` 属性描述符化 | 高 | 需要逐属性族迁移 |
 | P2 | 对 HUD、TextArea、UiDocument 做第二轮按状态/生命周期拆分 | 中 | 先选真实变更频率最高的文件 |
 | P3 | 收口 public `__` 内部 API 与 input 反向依赖 | 中 | 需要兼容策略 |
 
 ## 不建议立即做的事
 
-- 不建议为了“瘦身”直接删除 `ui.screen.example`：这些页面仍是 `/qzuilib test` 和大量回归测试的主要载体。
+- 不建议为了“瘦身”直接删除诊断页本身：这些页面已收口到内部开发工具包，仍是 `/qzuilib test` 和大量回归测试的主要载体。
 - 不建议一次性重写 `UiStyleDeclaration` / `ComputedStyle`：涉及样式、控件、动画、布局和测试，应该以属性族为单位迁移。
 - 不建议把 `NetService` 对外 API 拆散：当前门面心智是优点，应该只拆内部协作者。
 
@@ -193,3 +197,4 @@
 - 本报告是文档审查，不修改生产源码。
 - 建议文档提交前运行 `git diff --check`。
 - 因本次只新增/更新 Markdown 文档，默认不运行完整 `test`；若后续启动任一 P1/P2 重构，应至少运行 `compileJava` 与相关模块单元测试。
+- P1 整改完成后已运行 `$env:GRADLE_USER_HOME="D:\.MyApps\.ENV\gradle-home"; ./gradlew.bat --no-configuration-cache test`，结果通过。

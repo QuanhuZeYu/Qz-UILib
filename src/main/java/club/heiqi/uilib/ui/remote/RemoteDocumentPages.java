@@ -2,19 +2,13 @@ package club.heiqi.uilib.ui.remote;
 
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
-import java.nio.charset.StandardCharsets;
-import java.security.MessageDigest;
-import java.security.NoSuchAlgorithmException;
 import java.time.Duration;
 import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.UUID;
-import java.util.concurrent.ConcurrentHashMap;
 
 import club.heiqi.uilib.MyMod;
-import club.heiqi.uilib.net.api.NetBody;
 import club.heiqi.uilib.net.api.NetChannel;
 import club.heiqi.uilib.net.api.NetChannelId;
 import club.heiqi.uilib.net.api.NetContentType;
@@ -37,13 +31,12 @@ import club.heiqi.uilib.net.transport.NetSide;
 public final class RemoteDocumentPages {
 
     public static final NetContentType REMOTE_HTML_CONTENT_TYPE =
-            NetContentType.of("text/vnd.qzuilib.remote-html; charset=utf-8");
+            RemoteHtmlSessionGateway.REMOTE_HTML_CONTENT_TYPE;
     private static final String CLIENT_BRIDGE_CLASS =
             "club.heiqi.uilib.ui.remote.RemoteDocumentClientBridge";
-    private static final long SESSION_TTL_MILLIS = Duration.ofMinutes(10L).toMillis();
-    private static final long STREAM_MAX_BYTES = 256L * 1024L * 1024L;
-    private static final Map<String, ServerSession> SERVER_SESSIONS =
-            new ConcurrentHashMap<String, ServerSession>();
+    private static final long STREAM_MAX_BYTES = RemoteHtmlSessionGateway.DEFAULT_STREAM_MAX_BYTES;
+    private static final RemoteHtmlSessionGateway<PageSession> SERVER_SESSIONS =
+            new RemoteHtmlSessionGateway<PageSession>("远程页面");
 
     private static volatile boolean registered;
     private static NetChannel openChannel;
@@ -122,15 +115,11 @@ public final class RemoteDocumentPages {
             throw new IllegalArgumentException("player must not be null");
         }
         RemoteDocumentPage resolvedPage = requirePage(page);
-        cleanupExpiredSessions();
-        String sessionId = UUID.randomUUID().toString();
-        byte[] htmlBytes = resolvedPage.getHtml().getBytes(StandardCharsets.UTF_8);
-        String sha256 = sha256Hex(htmlBytes);
-        SERVER_SESSIONS.put(sessionId, new ServerSession(sessionId, player, resolvedPage, handler, htmlBytes,
-                sha256, System.currentTimeMillis() + SESSION_TTL_MILLIS));
-        openChannel.toPlayer(player).send(NetMessage.json(RemoteJson.toJson(OpenOffer.from(sessionId,
-                resolvedPage, htmlBytes.length, sha256))));
-        return sessionId;
+        RemoteHtmlSessionGateway.RemoteHtmlSession<PageSession> session = SERVER_SESSIONS.createSession(player,
+                new PageSession(resolvedPage, handler), resolvedPage.getHtml());
+        openChannel.toPlayer(player).send(NetMessage.json(RemoteJson.toJson(OpenOffer.from(session.getSessionId(),
+                resolvedPage, session.getHtmlByteCount(), session.getSha256()))));
+        return session.getSessionId();
     }
 
     /**
@@ -146,9 +135,7 @@ public final class RemoteDocumentPages {
 
     static NetStreamCall callPageStream(String sessionId) {
         ensureRegistered();
-        StreamRequest request = new StreamRequest();
-        request.sessionId = sessionId == null ? "" : sessionId;
-        return streamEndpoint.call(NetRequest.json(RemoteJson.toJson(request)));
+        return SERVER_SESSIONS.callStream(streamEndpoint, sessionId);
     }
 
     static void submitFromClient(SubmitPayload payload) {
@@ -158,7 +145,7 @@ public final class RemoteDocumentPages {
 
     static OpenOffer decodeOpenOffer(String json) {
         OpenOffer offer = RemoteJson.fromJson(json, OpenOffer.class);
-        if (offer == null || isBlank(offer.sessionId)) {
+        if (offer == null || RemoteHtmlSessionGateway.isBlank(offer.sessionId)) {
             throw new IllegalArgumentException("远程页面 open offer 缺少 sessionId");
         }
         return offer;
@@ -166,7 +153,7 @@ public final class RemoteDocumentPages {
 
     static SubmitPayload decodeSubmitPayload(String json) {
         SubmitPayload payload = RemoteJson.fromJson(json, SubmitPayload.class);
-        if (payload == null || isBlank(payload.sessionId)) {
+        if (payload == null || RemoteHtmlSessionGateway.isBlank(payload.sessionId)) {
             throw new IllegalArgumentException("远程页面提交缺少 sessionId");
         }
         if (payload.values == null) {
@@ -176,21 +163,7 @@ public final class RemoteDocumentPages {
     }
 
     static String sha256Hex(byte[] bytes) {
-        try {
-            MessageDigest digest = MessageDigest.getInstance("SHA-256");
-            byte[] hash = digest.digest(bytes == null ? new byte[0] : bytes);
-            StringBuilder builder = new StringBuilder(hash.length * 2);
-            for (byte value : hash) {
-                String hex = Integer.toHexString(value & 0xFF);
-                if (hex.length() == 1) {
-                    builder.append('0');
-                }
-                builder.append(hex);
-            }
-            return builder.toString();
-        } catch (NoSuchAlgorithmException exception) {
-            throw new IllegalStateException("当前 JVM 不支持 SHA-256", exception);
-        }
+        return RemoteHtmlSessionGateway.sha256Hex(bytes);
     }
 
     static void resetForTests() {
@@ -203,32 +176,17 @@ public final class RemoteDocumentPages {
 
     private static void handleStreamRequest(NetRequest request,
             NetStreamEndpoint.NetStreamRequestContext context) {
-        if (context.getReceiveContext().getSide() != NetSide.SERVER) {
-            context.reply(NetResponse.error(400, "远程页面 Stream 仅接受客户端请求"));
-            return;
-        }
-        StreamRequest streamRequest;
-        try {
-            streamRequest = RemoteJson.fromJson(request.getBody().asUtf8String(), StreamRequest.class);
-        } catch (IllegalArgumentException exception) {
-            context.reply(NetResponse.error(400, exception.getMessage()));
-            return;
-        }
-        ServerSession session = streamRequest == null ? null : SERVER_SESSIONS.get(streamRequest.sessionId);
-        if (session == null || session.isExpired(System.currentTimeMillis())) {
-            context.reply(NetResponse.error(404, "远程页面 session 已失效"));
-            return;
-        }
-        if (!session.matchesPlayer(context.getReceiveContext().getSenderPlayer())) {
-            context.reply(NetResponse.error(403, "远程页面 session 不属于当前玩家"));
-            return;
-        }
-        context.reply(NetResponse.ok(NetBody.of(REMOTE_HTML_CONTENT_TYPE, session.htmlBytes))
-                .withHeader("x-qz-page-id", session.page.getPageId())
-                .withHeader("x-qz-session-id", session.sessionId)
-                .withHeader("x-qz-sha256", session.sha256)
-                .withHeader("x-qz-resource-policy", session.page.getResourcePolicy().name())
-                .withHeader("x-qz-html-bytes", Integer.toString(session.htmlBytes.length)));
+        SERVER_SESSIONS.handleStreamRequest(request, context,
+                new RemoteHtmlSessionGateway.HeaderContributor<PageSession>() {
+                    @Override
+                    public NetResponse addHeaders(NetResponse response,
+                            RemoteHtmlSessionGateway.RemoteHtmlSession<PageSession> session) {
+                        RemoteDocumentPage page = session.getPayload().page;
+                        return response
+                                .withHeader("x-qz-page-id", page.getPageId())
+                                .withHeader("x-qz-resource-policy", page.getResourcePolicy().name());
+                    }
+                });
     }
 
     private static void handleSubmit(String json, Object senderPlayer) {
@@ -239,8 +197,9 @@ public final class RemoteDocumentPages {
             MyMod.LOG.warn("远程页面提交协议无效", exception);
             return;
         }
-        cleanupExpiredSessions();
-        ServerSession session = SERVER_SESSIONS.get(payload.sessionId);
+        SERVER_SESSIONS.cleanupExpiredSessions(null);
+        RemoteHtmlSessionGateway.RemoteHtmlSession<PageSession> session =
+                SERVER_SESSIONS.getSession(payload.sessionId);
         if (session == null) {
             MyMod.LOG.warn("远程页面提交 session 不存在：{}", payload.sessionId);
             return;
@@ -250,17 +209,18 @@ public final class RemoteDocumentPages {
                     String.valueOf(senderPlayer));
             return;
         }
-        if (!session.page.getPageId().equals(payload.pageId)) {
+        PageSession pageSession = session.getPayload();
+        if (!pageSession.page.getPageId().equals(payload.pageId)) {
             MyMod.LOG.warn("远程页面提交 pageId 不匹配：session={} expected={} actual={}",
-                    payload.sessionId, session.page.getPageId(), payload.pageId);
+                    payload.sessionId, pageSession.page.getPageId(), payload.pageId);
             return;
         }
-        if (session.handler == null) {
+        if (pageSession.handler == null) {
             MyMod.LOG.debug("远程页面提交无 handler：session={} page={}", payload.sessionId, payload.pageId);
             return;
         }
-        session.handler.onSubmit(new RemoteDocumentSubmitEvent(senderPlayer, payload.sessionId, payload.pageId,
-                payload.action, payload.formId, payload.values, session.handler));
+        pageSession.handler.onSubmit(new RemoteDocumentSubmitEvent(senderPlayer, payload.sessionId, payload.pageId,
+                payload.action, payload.formId, payload.values, pageSession.handler));
     }
 
     private static void dispatchClientOpenOffer(String json) {
@@ -280,15 +240,6 @@ public final class RemoteDocumentPages {
         }
     }
 
-    private static void cleanupExpiredSessions() {
-        long now = System.currentTimeMillis();
-        for (ServerSession session : SERVER_SESSIONS.values()) {
-            if (session.isExpired(now)) {
-                SERVER_SESSIONS.remove(session.sessionId, session);
-            }
-        }
-    }
-
     private static RemoteDocumentPage requirePage(RemoteDocumentPage page) {
         if (page == null) {
             throw new IllegalArgumentException("page must not be null");
@@ -300,10 +251,6 @@ public final class RemoteDocumentPages {
         if (!registered || openChannel == null || submitChannel == null || streamEndpoint == null) {
             throw new IllegalStateException("远程页面网络端点尚未注册，请确认 Qz UILib preInit 已完成");
         }
-    }
-
-    private static boolean isBlank(String value) {
-        return value == null || value.trim().isEmpty();
     }
 
     static final class OpenOffer {
@@ -329,10 +276,6 @@ public final class RemoteDocumentPages {
         }
     }
 
-    static final class StreamRequest {
-        String sessionId;
-    }
-
     static final class SubmitPayload {
         String sessionId;
         String pageId;
@@ -341,33 +284,14 @@ public final class RemoteDocumentPages {
         Map<String, List<String>> values = Collections.emptyMap();
     }
 
-    private static final class ServerSession {
+    private static final class PageSession {
 
-        private final String sessionId;
-        private final Object player;
         private final RemoteDocumentPage page;
         private final RemoteDocumentSubmitHandler handler;
-        private final byte[] htmlBytes;
-        private final String sha256;
-        private final long expiresAtMillis;
 
-        private ServerSession(String sessionId, Object player, RemoteDocumentPage page,
-                RemoteDocumentSubmitHandler handler, byte[] htmlBytes, String sha256, long expiresAtMillis) {
-            this.sessionId = sessionId;
-            this.player = player;
+        private PageSession(RemoteDocumentPage page, RemoteDocumentSubmitHandler handler) {
             this.page = page;
             this.handler = handler;
-            this.htmlBytes = htmlBytes.clone();
-            this.sha256 = sha256;
-            this.expiresAtMillis = expiresAtMillis;
-        }
-
-        private boolean isExpired(long nowMillis) {
-            return nowMillis >= expiresAtMillis;
-        }
-
-        private boolean matchesPlayer(Object candidate) {
-            return player == candidate || player.equals(candidate);
         }
     }
 }

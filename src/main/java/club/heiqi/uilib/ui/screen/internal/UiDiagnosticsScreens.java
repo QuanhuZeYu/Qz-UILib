@@ -3,9 +3,9 @@ package club.heiqi.uilib.ui.screen.internal;
 import java.util.Objects;
 
 import club.heiqi.uilib.client.MinecraftInventoryOverviewModel;
+import club.heiqi.uilib.internal.devtools.pages.UiTestMenuModel;
+import club.heiqi.uilib.ui.inventory.InventoryOverviewModel;
 import club.heiqi.uilib.ui.screen.UiDocumentScreens;
-import club.heiqi.uilib.ui.screen.example.InventoryOverviewModel;
-import club.heiqi.uilib.ui.screen.example.UiTestMenuModel;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiScreen;
 

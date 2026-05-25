@@ -2,19 +2,14 @@ package club.heiqi.uilib.ui.remote;
 
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
-import java.nio.charset.StandardCharsets;
-import java.security.MessageDigest;
-import java.security.NoSuchAlgorithmException;
 import java.time.Duration;
 import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 
 import club.heiqi.uilib.MyMod;
-import club.heiqi.uilib.net.api.NetBody;
 import club.heiqi.uilib.net.api.NetChannel;
 import club.heiqi.uilib.net.api.NetChannelId;
 import club.heiqi.uilib.net.api.NetContentType;
@@ -37,13 +32,12 @@ import club.heiqi.uilib.net.transport.NetSide;
 public final class RemoteHudOverlays {
 
     public static final NetContentType REMOTE_HTML_CONTENT_TYPE =
-            RemoteDocumentPages.REMOTE_HTML_CONTENT_TYPE;
+            RemoteHtmlSessionGateway.REMOTE_HTML_CONTENT_TYPE;
     private static final String CLIENT_BRIDGE_CLASS =
             "club.heiqi.uilib.ui.remote.RemoteHudOverlayClientBridge";
-    private static final long SESSION_TTL_MILLIS = Duration.ofMinutes(10L).toMillis();
-    private static final long STREAM_MAX_BYTES = 256L * 1024L * 1024L;
-    private static final Map<String, ServerSession> SERVER_SESSIONS =
-            new ConcurrentHashMap<String, ServerSession>();
+    private static final long STREAM_MAX_BYTES = RemoteHtmlSessionGateway.DEFAULT_STREAM_MAX_BYTES;
+    private static final RemoteHtmlSessionGateway<HudSession> SERVER_SESSIONS =
+            new RemoteHtmlSessionGateway<HudSession>("远程 HUD");
     private static final Map<OverlayKey, String> ACTIVE_SESSION_IDS_BY_OVERLAY_KEY =
             new ConcurrentHashMap<OverlayKey, String>();
 
@@ -147,20 +141,16 @@ public final class RemoteHudOverlays {
         }
         RemoteHudOverlay resolvedOverlay = requireOverlay(overlay);
         cleanupExpiredSessions();
-        String sessionId = UUID.randomUUID().toString();
-        byte[] htmlBytes = resolvedOverlay.getPage().getHtml().getBytes(StandardCharsets.UTF_8);
-        String sha256 = sha256Hex(htmlBytes);
+        RemoteHtmlSessionGateway.RemoteHtmlSession<HudSession> session = SERVER_SESSIONS.createSession(player,
+                new HudSession(resolvedOverlay, handler), resolvedOverlay.getPage().getHtml());
         OverlayKey overlayKey = OverlayKey.of(player, resolvedOverlay.getOverlayId());
-        String previousSessionId = ACTIVE_SESSION_IDS_BY_OVERLAY_KEY.put(overlayKey, sessionId);
+        String previousSessionId = ACTIVE_SESSION_IDS_BY_OVERLAY_KEY.put(overlayKey, session.getSessionId());
         if (previousSessionId != null) {
-            SERVER_SESSIONS.remove(previousSessionId);
+            SERVER_SESSIONS.removeSession(previousSessionId);
         }
-        ServerSession session = new ServerSession(sessionId, player, resolvedOverlay, handler, htmlBytes, sha256,
-                System.currentTimeMillis() + SESSION_TTL_MILLIS);
-        SERVER_SESSIONS.put(sessionId, session);
-        openChannel.toPlayer(player).send(NetMessage.json(RemoteJson.toJson(OpenOffer.from(sessionId, resolvedOverlay,
-                htmlBytes.length, sha256))));
-        return sessionId;
+        openChannel.toPlayer(player).send(NetMessage.json(RemoteJson.toJson(OpenOffer.from(session.getSessionId(),
+                resolvedOverlay, session.getHtmlByteCount(), session.getSha256()))));
+        return session.getSessionId();
     }
 
     /**
@@ -256,7 +246,7 @@ public final class RemoteHudOverlays {
      */
     public static boolean dismiss(Object player, String overlayId) {
         ensureRegistered();
-        if (player == null || isBlank(overlayId)) {
+        if (player == null || RemoteHtmlSessionGateway.isBlank(overlayId)) {
             return false;
         }
         OverlayKey key = OverlayKey.of(player, overlayId);
@@ -266,7 +256,8 @@ public final class RemoteHudOverlays {
         payload.overlayId = overlayId;
         payload.reason = "server-dismiss";
         if (sessionId != null) {
-            ServerSession session = SERVER_SESSIONS.remove(sessionId);
+            RemoteHtmlSessionGateway.RemoteHtmlSession<HudSession> session =
+                    SERVER_SESSIONS.removeSession(sessionId);
             if (session != null) {
                 contextSendDismissToClient(player, payload);
                 return true;
@@ -278,9 +269,7 @@ public final class RemoteHudOverlays {
 
     static NetStreamCall callOverlayStream(String sessionId) {
         ensureRegistered();
-        StreamRequest request = new StreamRequest();
-        request.sessionId = sessionId == null ? "" : sessionId;
-        return streamEndpoint.call(NetRequest.json(RemoteJson.toJson(request)));
+        return SERVER_SESSIONS.callStream(streamEndpoint, sessionId);
     }
 
     static void submitFromClient(SubmitPayload payload) {
@@ -295,7 +284,8 @@ public final class RemoteHudOverlays {
 
     static OpenOffer decodeOpenOffer(String json) {
         OpenOffer offer = RemoteJson.fromJson(json, OpenOffer.class);
-        if (offer == null || isBlank(offer.sessionId) || isBlank(offer.overlayId)) {
+        if (offer == null || RemoteHtmlSessionGateway.isBlank(offer.sessionId)
+                || RemoteHtmlSessionGateway.isBlank(offer.overlayId)) {
             throw new IllegalArgumentException("远程 HUD open offer 缺少 sessionId 或 overlayId");
         }
         return offer;
@@ -303,7 +293,8 @@ public final class RemoteHudOverlays {
 
     static SubmitPayload decodeSubmitPayload(String json) {
         SubmitPayload payload = RemoteJson.fromJson(json, SubmitPayload.class);
-        if (payload == null || isBlank(payload.sessionId) || isBlank(payload.overlayId)) {
+        if (payload == null || RemoteHtmlSessionGateway.isBlank(payload.sessionId)
+                || RemoteHtmlSessionGateway.isBlank(payload.overlayId)) {
             throw new IllegalArgumentException("远程 HUD 提交缺少 sessionId 或 overlayId");
         }
         if (payload.values == null) {
@@ -314,7 +305,7 @@ public final class RemoteHudOverlays {
 
     static DismissPayload decodeDismissPayload(String json) {
         DismissPayload payload = RemoteJson.fromJson(json, DismissPayload.class);
-        if (payload == null || isBlank(payload.overlayId)) {
+        if (payload == null || RemoteHtmlSessionGateway.isBlank(payload.overlayId)) {
             throw new IllegalArgumentException("远程 HUD dismiss 缺少 overlayId");
         }
         payload.sessionId = payload.sessionId == null ? "" : payload.sessionId;
@@ -323,21 +314,7 @@ public final class RemoteHudOverlays {
     }
 
     static String sha256Hex(byte[] bytes) {
-        try {
-            MessageDigest digest = MessageDigest.getInstance("SHA-256");
-            byte[] hash = digest.digest(bytes == null ? new byte[0] : bytes);
-            StringBuilder builder = new StringBuilder(hash.length * 2);
-            for (byte value : hash) {
-                String hex = Integer.toHexString(value & 0xFF);
-                if (hex.length() == 1) {
-                    builder.append('0');
-                }
-                builder.append(hex);
-            }
-            return builder.toString();
-        } catch (NoSuchAlgorithmException exception) {
-            throw new IllegalStateException("当前 JVM 不支持 SHA-256", exception);
-        }
+        return RemoteHtmlSessionGateway.sha256Hex(bytes);
     }
 
     static void resetForTests() {
@@ -352,37 +329,23 @@ public final class RemoteHudOverlays {
 
     private static void handleStreamRequest(NetRequest request,
             NetStreamEndpoint.NetStreamRequestContext context) {
-        if (context.getReceiveContext().getSide() != NetSide.SERVER) {
-            context.reply(NetResponse.error(400, "远程 HUD Stream 仅接受客户端请求"));
-            return;
-        }
-        StreamRequest streamRequest;
-        try {
-            streamRequest = RemoteJson.fromJson(request.getBody().asUtf8String(), StreamRequest.class);
-        } catch (IllegalArgumentException exception) {
-            context.reply(NetResponse.error(400, exception.getMessage()));
-            return;
-        }
-        ServerSession session = streamRequest == null ? null : SERVER_SESSIONS.get(streamRequest.sessionId);
-        if (session == null || session.isExpired(System.currentTimeMillis())) {
-            context.reply(NetResponse.error(404, "远程 HUD session 已失效"));
-            return;
-        }
-        if (!session.matchesPlayer(context.getReceiveContext().getSenderPlayer())) {
-            context.reply(NetResponse.error(403, "远程 HUD session 不属于当前玩家"));
-            return;
-        }
-        context.reply(NetResponse.ok(NetBody.of(REMOTE_HTML_CONTENT_TYPE, session.htmlBytes))
-                .withHeader("x-qz-session-id", session.sessionId)
-                .withHeader("x-qz-overlay-id", session.overlay.getOverlayId())
-                .withHeader("x-qz-page-id", session.overlay.getPage().getPageId())
-                .withHeader("x-qz-sha256", session.sha256)
-                .withHeader("x-qz-resource-policy", session.overlay.getPage().getResourcePolicy().name())
-                .withHeader("x-qz-html-bytes", Integer.toString(session.htmlBytes.length))
-                .withHeader("x-qz-overlay-mode", session.overlay.getMode().name())
-                .withHeader("x-qz-overlay-duration", Long.toString(session.overlay.getDurationMillis()))
-                .withHeader("x-qz-overlay-close-button", Boolean.toString(session.overlay.isDefaultCloseButtonVisible()))
-                .withHeader("x-qz-overlay-close-label", session.overlay.getCloseButtonLabel()));
+        SERVER_SESSIONS.handleStreamRequest(request, context,
+                new RemoteHtmlSessionGateway.HeaderContributor<HudSession>() {
+                    @Override
+                    public NetResponse addHeaders(NetResponse response,
+                            RemoteHtmlSessionGateway.RemoteHtmlSession<HudSession> session) {
+                        RemoteHudOverlay overlay = session.getPayload().overlay;
+                        return response
+                                .withHeader("x-qz-overlay-id", overlay.getOverlayId())
+                                .withHeader("x-qz-page-id", overlay.getPage().getPageId())
+                                .withHeader("x-qz-resource-policy", overlay.getPage().getResourcePolicy().name())
+                                .withHeader("x-qz-overlay-mode", overlay.getMode().name())
+                                .withHeader("x-qz-overlay-duration", Long.toString(overlay.getDurationMillis()))
+                                .withHeader("x-qz-overlay-close-button",
+                                        Boolean.toString(overlay.isDefaultCloseButtonVisible()))
+                                .withHeader("x-qz-overlay-close-label", overlay.getCloseButtonLabel());
+                    }
+                });
     }
 
     private static void handleSubmit(String json, Object senderPlayer) {
@@ -394,7 +357,8 @@ public final class RemoteHudOverlays {
             return;
         }
         cleanupExpiredSessions();
-        ServerSession session = SERVER_SESSIONS.get(payload.sessionId);
+        RemoteHtmlSessionGateway.RemoteHtmlSession<HudSession> session =
+                SERVER_SESSIONS.getSession(payload.sessionId);
         if (session == null) {
             MyMod.LOG.warn("远程 HUD 提交 session 不存在：{}", payload.sessionId);
             return;
@@ -404,22 +368,23 @@ public final class RemoteHudOverlays {
                     String.valueOf(senderPlayer));
             return;
         }
-        if (!session.overlay.getOverlayId().equals(payload.overlayId)) {
+        HudSession hudSession = session.getPayload();
+        if (!hudSession.overlay.getOverlayId().equals(payload.overlayId)) {
             MyMod.LOG.warn("远程 HUD 提交 overlayId 不匹配：session={} expected={} actual={}",
-                    payload.sessionId, session.overlay.getOverlayId(), payload.overlayId);
+                    payload.sessionId, hudSession.overlay.getOverlayId(), payload.overlayId);
             return;
         }
-        if (!session.overlay.getPage().getPageId().equals(payload.pageId)) {
+        if (!hudSession.overlay.getPage().getPageId().equals(payload.pageId)) {
             MyMod.LOG.warn("远程 HUD 提交 pageId 不匹配：session={} expected={} actual={}",
-                    payload.sessionId, session.overlay.getPage().getPageId(), payload.pageId);
+                    payload.sessionId, hudSession.overlay.getPage().getPageId(), payload.pageId);
             return;
         }
-        if (session.handler == null) {
+        if (hudSession.handler == null) {
             MyMod.LOG.debug("远程 HUD 提交无 handler：session={} overlay={}", payload.sessionId, payload.overlayId);
             return;
         }
-        session.handler.onSubmit(new RemoteHudSubmitEvent(senderPlayer, payload.sessionId, payload.overlayId,
-                payload.pageId, payload.action, payload.formId, payload.values, session.handler));
+        hudSession.handler.onSubmit(new RemoteHudSubmitEvent(senderPlayer, payload.sessionId, payload.overlayId,
+                payload.pageId, payload.action, payload.formId, payload.values, hudSession.handler));
     }
 
     private static void handleClientDismiss(String json, Object senderPlayer) {
@@ -431,10 +396,11 @@ public final class RemoteHudOverlays {
             return;
         }
         String sessionId = payload.sessionId;
-        if (!isBlank(sessionId)) {
-            ServerSession session = SERVER_SESSIONS.get(sessionId);
+        if (!RemoteHtmlSessionGateway.isBlank(sessionId)) {
+            RemoteHtmlSessionGateway.RemoteHtmlSession<HudSession> session =
+                    SERVER_SESSIONS.getSession(sessionId);
             if (session != null && session.matchesPlayer(senderPlayer)) {
-                removeSession(session.sessionId);
+                removeSession(session.getSessionId());
                 return;
             }
         }
@@ -446,14 +412,16 @@ public final class RemoteHudOverlays {
     }
 
     private static void removeSession(String sessionId) {
-        if (isBlank(sessionId)) {
+        if (RemoteHtmlSessionGateway.isBlank(sessionId)) {
             return;
         }
-        ServerSession session = SERVER_SESSIONS.remove(sessionId);
+        RemoteHtmlSessionGateway.RemoteHtmlSession<HudSession> session =
+                SERVER_SESSIONS.removeSession(sessionId);
         if (session == null) {
             return;
         }
-        ACTIVE_SESSION_IDS_BY_OVERLAY_KEY.remove(OverlayKey.of(session.player, session.overlay.getOverlayId()),
+        HudSession hudSession = session.getPayload();
+        ACTIVE_SESSION_IDS_BY_OVERLAY_KEY.remove(OverlayKey.of(session.getPlayer(), hudSession.overlay.getOverlayId()),
                 sessionId);
     }
 
@@ -499,12 +467,14 @@ public final class RemoteHudOverlays {
     }
 
     private static void cleanupExpiredSessions() {
-        long now = System.currentTimeMillis();
-        for (ServerSession session : SERVER_SESSIONS.values()) {
-            if (session.isExpired(now)) {
-                removeSession(session.sessionId);
+        SERVER_SESSIONS.cleanupExpiredSessions(new RemoteHtmlSessionGateway.SessionRemovalListener<HudSession>() {
+            @Override
+            public void onSessionRemoved(RemoteHtmlSessionGateway.RemoteHtmlSession<HudSession> session) {
+                HudSession hudSession = session.getPayload();
+                ACTIVE_SESSION_IDS_BY_OVERLAY_KEY.remove(OverlayKey.of(session.getPlayer(),
+                        hudSession.overlay.getOverlayId()), session.getSessionId());
             }
-        }
+        });
     }
 
     private static RemoteHudOverlay requireOverlay(RemoteHudOverlay overlay) {
@@ -519,10 +489,6 @@ public final class RemoteHudOverlays {
                 || streamEndpoint == null) {
             throw new IllegalStateException("远程 HUD 网络端点尚未注册，请确认 Qz UILib preInit 已完成");
         }
-    }
-
-    private static boolean isBlank(String value) {
-        return value == null || value.trim().isEmpty();
     }
 
     static final class OpenOffer {
@@ -560,10 +526,6 @@ public final class RemoteHudOverlays {
         }
     }
 
-    static final class StreamRequest {
-        String sessionId;
-    }
-
     static final class SubmitPayload {
         String sessionId;
         String overlayId;
@@ -579,33 +541,14 @@ public final class RemoteHudOverlays {
         String reason;
     }
 
-    private static final class ServerSession {
+    private static final class HudSession {
 
-        private final String sessionId;
-        private final Object player;
         private final RemoteHudOverlay overlay;
         private final RemoteHudSubmitHandler handler;
-        private final byte[] htmlBytes;
-        private final String sha256;
-        private final long expiresAtMillis;
 
-        private ServerSession(String sessionId, Object player, RemoteHudOverlay overlay,
-                RemoteHudSubmitHandler handler, byte[] htmlBytes, String sha256, long expiresAtMillis) {
-            this.sessionId = sessionId;
-            this.player = player;
+        private HudSession(RemoteHudOverlay overlay, RemoteHudSubmitHandler handler) {
             this.overlay = overlay;
             this.handler = handler;
-            this.htmlBytes = htmlBytes.clone();
-            this.sha256 = sha256;
-            this.expiresAtMillis = expiresAtMillis;
-        }
-
-        private boolean isExpired(long nowMillis) {
-            return nowMillis >= expiresAtMillis;
-        }
-
-        private boolean matchesPlayer(Object candidate) {
-            return player == candidate || (player != null && player.equals(candidate));
         }
     }
 
