@@ -115,6 +115,17 @@
 
 ### P2 — 需要分阶段推进的重构
 
+> 整改状态（2026-05-25）：P2-1 ~ P2-4 已完成。`UiStyleDeclaration`
+> 已以 paint-only 属性族引入 `StyleDeclarationSlot<T>` 试点，先移除
+> `opacity/backgroundColor/borderColor/textColor` 与声明表的双份状态；UI 核心完成第二轮低风险拆分，
+> 包括 HUD 渲染流水线下沉到 `UiHudRenderPipeline`、DOM 查询下沉到 `DocumentQuerySupport`、
+> TextArea 文本规范化/索引辅助下沉到 `DocumentTextAreaTextSupport`；`NetService` 保持对外门面不变，
+> 入站信封分发、Stream 下载/取消状态、Store 访问控制发送分别拆入 `NetEnvelopeDispatcher`、
+> `NetStreamDownloadRegistry`、`NetStoreSender`；字体 mixin fallback 重复逻辑收口到
+> `FontRendererFallbackInvoker`。
+>
+> 下列 P2 条目保留原审查发现，最新状态以上方整改状态为准。
+
 #### P2-1 `UiStyleDeclaration` 的类型化字段与 `EnumMap` 过渡态仍然双轨
 
 - 当前 `UiStyleDeclaration` 同时维护大量类型化字段和 `EnumMap<UiStyleProperty, Object> declaredValues`。
@@ -182,8 +193,10 @@
 | P1 | 抽远程页面/HUD 共享 session + Stream gateway | 中 | 已完成，页面/HUD 共享内部远程 HTML session gateway |
 | P1 | 拆配置模板绑定类族与文档构建器 | 中 | 已完成，保留公开 `Spec` 入口 |
 | P1 | 拆网络自检注册/运行/HTML 构造 | 低 | 已完成，保留 `NetRuntimeSelfChecks` 门面 |
-| P2 | 分批推进 `UiStyleDeclaration` 属性描述符化 | 高 | 需要逐属性族迁移 |
-| P2 | 对 HUD、TextArea、UiDocument 做第二轮按状态/生命周期拆分 | 中 | 先选真实变更频率最高的文件 |
+| P2 | 分批推进 `UiStyleDeclaration` 属性描述符化 | 高 | 已完成 paint-only 属性族试点，后续新增属性按 slot 模板延展 |
+| P2 | 对 HUD、TextArea、UiDocument 做第二轮按状态/生命周期拆分 | 中 | 已完成 HUD 渲染、TextArea 文本支持、DOM 查询拆分 |
+| P2 | 拆 `NetService` 内部协作者 | 中 | 已完成 envelope dispatch、Stream 下载注册器、Store sender 下沉 |
+| P2 | 抽字体 mixin fallback 调用器 | 低 | 已完成 `FontRendererFallbackInvoker` 收口 |
 | P3 | 收口 public `__` 内部 API 与 input 反向依赖 | 中 | 需要兼容策略 |
 
 ## 不建议立即做的事

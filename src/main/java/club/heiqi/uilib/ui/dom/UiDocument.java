@@ -7,13 +7,11 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
-import java.util.Set;
 import java.util.concurrent.atomic.AtomicLong;
 
 import club.heiqi.uilib.ui.animation.DocumentAnimation;
 import club.heiqi.uilib.ui.animation.DocumentAnimationOptions;
 import club.heiqi.uilib.ui.animation.DocumentKeyframes;
-import club.heiqi.uilib.ui.style.selector.UiSelector;
 import club.heiqi.uilib.ui.style.selector.UiPseudoElement;
 import club.heiqi.uilib.ui.style.cascade.UiStyleRule;
 import club.heiqi.uilib.ui.style.cascade.UiStyleSheet;
@@ -857,10 +855,7 @@ public final class UiDocument {
      * @return 匹配的元素；未找到时返回 null
      */
     public ElementNode getElementById(String id) {
-        if (id == null || id.isEmpty()) {
-            return null;
-        }
-        return findElementById(rootElement, id);
+        return DocumentQuerySupport.getElementById(rootElement, id);
     }
 
     /**
@@ -873,11 +868,7 @@ public final class UiDocument {
      * @return 第一个匹配的元素；未找到时返回 null
      */
     public ElementNode querySelector(String selectorText) {
-        if (selectorText == null || selectorText.isEmpty()) {
-            return null;
-        }
-        UiSelector selector = UiSelector.parse(selectorText);
-        return findFirstMatch(rootElement, selector);
+        return DocumentQuerySupport.querySelector(rootElement, selectorText);
     }
 
     /**
@@ -890,13 +881,7 @@ public final class UiDocument {
      * @return 匹配的元素列表（按文档顺序）；无匹配时返回空列表
      */
     public List<ElementNode> querySelectorAll(String selectorText) {
-        if (selectorText == null || selectorText.isEmpty()) {
-            return Collections.emptyList();
-        }
-        UiSelector selector = UiSelector.parse(selectorText);
-        List<ElementNode> results = new ArrayList<ElementNode>();
-        collectMatches(rootElement, selector, results);
-        return results;
+        return DocumentQuerySupport.querySelectorAll(rootElement, selectorText);
     }
 
     /**
@@ -908,13 +893,7 @@ public final class UiDocument {
      * @return 匹配的元素列表（按文档顺序）
      */
     public List<ElementNode> getElementsByTagName(String tagName) {
-        if (tagName == null || tagName.isEmpty()) {
-            return Collections.emptyList();
-        }
-        String normalizedTag = tagName.trim().toLowerCase(java.util.Locale.ROOT);
-        List<ElementNode> results = new ArrayList<ElementNode>();
-        collectByTagName(rootElement, normalizedTag, results);
-        return results;
+        return DocumentQuerySupport.getElementsByTagName(rootElement, tagName);
     }
 
     /**
@@ -926,80 +905,7 @@ public final class UiDocument {
      * @return 匹配的元素列表（按文档顺序）
      */
     public List<ElementNode> getElementsByClassName(String className) {
-        if (className == null || className.isEmpty()) {
-            return Collections.emptyList();
-        }
-        List<ElementNode> results = new ArrayList<ElementNode>();
-        collectByClassName(rootElement, className.trim(), results);
-        return results;
-    }
-
-    private static ElementNode findElementById(DocumentNode node, String id) {
-        if (node instanceof ElementNode) {
-            ElementNode element = (ElementNode) node;
-            if (id.equals(element.getId())) {
-                return element;
-            }
-        }
-        for (DocumentNode child : node.getChildren()) {
-            ElementNode found = findElementById(child, id);
-            if (found != null) {
-                return found;
-            }
-        }
-        return null;
-    }
-
-    private static ElementNode findFirstMatch(DocumentNode node, UiSelector selector) {
-        if (node instanceof ElementNode) {
-            ElementNode element = (ElementNode) node;
-            if (selector.matches(element)) {
-                return element;
-            }
-        }
-        for (DocumentNode child : node.getChildren()) {
-            ElementNode found = findFirstMatch(child, selector);
-            if (found != null) {
-                return found;
-            }
-        }
-        return null;
-    }
-
-    private static void collectMatches(DocumentNode node, UiSelector selector, List<ElementNode> results) {
-        if (node instanceof ElementNode) {
-            ElementNode element = (ElementNode) node;
-            if (selector.matches(element)) {
-                results.add(element);
-            }
-        }
-        for (DocumentNode child : node.getChildren()) {
-            collectMatches(child, selector, results);
-        }
-    }
-
-    private static void collectByTagName(DocumentNode node, String tagName, List<ElementNode> results) {
-        if (node instanceof ElementNode) {
-            ElementNode element = (ElementNode) node;
-            if (tagName.equals(element.getTagName())) {
-                results.add(element);
-            }
-        }
-        for (DocumentNode child : node.getChildren()) {
-            collectByTagName(child, tagName, results);
-        }
-    }
-
-    private static void collectByClassName(DocumentNode node, String className, List<ElementNode> results) {
-        if (node instanceof ElementNode) {
-            ElementNode element = (ElementNode) node;
-            if (element.getClassList().contains(className)) {
-                results.add(element);
-            }
-        }
-        for (DocumentNode child : node.getChildren()) {
-            collectByClassName(child, className, results);
-        }
+        return DocumentQuerySupport.getElementsByClassName(rootElement, className);
     }
 
     /**

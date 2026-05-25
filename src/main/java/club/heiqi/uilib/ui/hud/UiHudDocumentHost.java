@@ -12,13 +12,10 @@ import net.minecraft.client.gui.GuiMainMenu;
 import net.minecraft.client.gui.GuiMultiplayer;
 import net.minecraft.client.gui.GuiScreen;
 import net.minecraft.client.gui.GuiSelectWorld;
-import net.minecraft.client.gui.ScaledResolution;
 import net.minecraft.client.gui.inventory.GuiContainer;
 
-import org.lwjgl.opengl.GL11;
 import org.lwjglx.input.Mouse;
 
-import club.heiqi.uilib.ui.diagnostic.UiPerformanceMonitor;
 import club.heiqi.uilib.ui.document.HtmlLikeDocumentWidget;
 import club.heiqi.uilib.ui.dom.ElementNode;
 import club.heiqi.uilib.ui.dom.UiDocument;
@@ -29,10 +26,7 @@ import club.heiqi.uilib.ui.input.UiInputFrame;
 import club.heiqi.uilib.ui.input.UiInputService;
 import club.heiqi.uilib.ui.input.UiKeyboardCaptureState;
 import club.heiqi.uilib.ui.input.UiNativeTextInputInspector;
-import club.heiqi.uilib.ui.render.PaintContextCompositor;
-import club.heiqi.uilib.ui.render.UiMainLayerSnapshotService;
 import club.heiqi.uilib.ui.render.UiRenderContext;
-import club.heiqi.uilib.ui.render.UiRenderTarget;
 import club.heiqi.uilib.ui.runtime.UiRuntimeAdapters;
 import club.heiqi.uilib.ui.style.props.UiOverflow;
 import club.heiqi.uilib.ui.style.values.UiStyleLength;
@@ -55,9 +49,7 @@ public final class UiHudDocumentHost {
     private static final UiHudDocumentHost INSTANCE = new UiHudDocumentHost();
 
     private final List<HudEntry> entries = new ArrayList<HudEntry>();
-    private final PaintContextCompositor paintContextCompositor = new PaintContextCompositor();
-    private final UiMainLayerSnapshotService mainLayerSnapshotService = new UiMainLayerSnapshotService();
-    private UiRenderTarget deferredPostMainRenderTarget;
+    private final UiHudRenderPipeline renderPipeline = new UiHudRenderPipeline();
     private boolean hudTextInputRequested;
     private HudEntry activeMouseEntry;
     private HudEntry activeKeyboardEntry;
@@ -671,83 +663,7 @@ public final class UiHudDocumentHost {
     }
 
     private synchronized void renderVisibleLayers(UiHudScreenCategory screenCategory, float partialTicks) {
-        if (entries.isEmpty() || screenCategory == UiHudScreenCategory.MENU) {
-            return;
-        }
-        Minecraft minecraft = Minecraft.getMinecraft();
-        if (minecraft == null) {
-            return;
-        }
-        int nativeWidth = Math.max(1, minecraft.displayWidth);
-        int nativeHeight = Math.max(1, minecraft.displayHeight);
-        ScaledResolution scaledResolution = new ScaledResolution(minecraft, nativeWidth, nativeHeight);
-        int guiWidth = scaledResolution.getScaledWidth();
-        int guiHeight = scaledResolution.getScaledHeight();
-        int mouseX = UiInputService.getInstance().getMouseX();
-        int mouseY = UiInputService.getInstance().getMouseY();
-        int fallbackMouseX = mouseX;
-        int fallbackMouseY = mouseY;
-        if (!entries.isEmpty()) {
-            fallbackMouseX = resolveFallbackMouseX(mouseX, nativeWidth);
-            fallbackMouseY = resolveFallbackMouseY(mouseY, nativeHeight);
-        }
-
-        int previousMatrixMode = GL11.glGetInteger(GL11.GL_MATRIX_MODE);
-        UiPerformanceMonitor performanceMonitor = UiPerformanceMonitor.getInstance();
-        try {
-            GL11.glMatrixMode(GL11.GL_PROJECTION);
-            GL11.glPushMatrix();
-            GL11.glLoadIdentity();
-            GL11.glOrtho(0.0D, nativeWidth, nativeHeight, 0.0D, -1000.0D, 1000.0D);
-            GL11.glMatrixMode(GL11.GL_MODELVIEW);
-            GL11.glPushMatrix();
-            GL11.glLoadIdentity();
-            DocumentHostRenderSupport.prepareMainUiRenderState();
-            paintContextCompositor.beginFrame();
-            mainLayerSnapshotService.beginFrame();
-            try {
-                for (HudEntry entry : entries) {
-                    if (!entry.isVisibleIn(screenCategory)) {
-                        continue;
-                    }
-                    entry.widget.applyLayoutBounds(0, 0, nativeWidth, nativeHeight);
-                    performanceMonitor.beginFrame(entry.getRuntimeName(), guiWidth, guiHeight, nativeWidth, nativeHeight);
-                    try {
-                        UiRenderContext context = DocumentHostRenderSupport.createRenderContext(nativeWidth,
-                                nativeHeight,
-                                resolveEntryMouseX(entry, fallbackMouseX, nativeWidth),
-                                resolveEntryMouseY(entry, fallbackMouseY, nativeHeight),
-                                partialTicks, paintContextCompositor, mainLayerSnapshotService, entry.runtimeAdapters);
-                        entry.widget.render(context);
-                        flushDeferredPostMainPasses(context, nativeWidth, nativeHeight);
-                    } finally {
-                        performanceMonitor.finishFrame();
-                    }
-                }
-            } finally {
-                mainLayerSnapshotService.finishFrame();
-                paintContextCompositor.finishFrame();
-            }
-        } finally {
-            GL11.glMatrixMode(GL11.GL_MODELVIEW);
-            GL11.glPopMatrix();
-            GL11.glMatrixMode(GL11.GL_PROJECTION);
-            GL11.glPopMatrix();
-            GL11.glMatrixMode(previousMatrixMode);
-        }
-    }
-
-    private void flushDeferredPostMainPasses(UiRenderContext context, int nativeWidth, int nativeHeight) {
-        if (context == null || !context.hasDeferredPostMainPasses()) {
-            return;
-        }
-        UiRenderTarget renderTarget = getOrCreateDeferredPostMainRenderTarget();
-        DocumentHostRenderSupport.DeferredPostMainReplayBatch replayBatch = prepareDeferredPostMainPasses(context,
-                renderTarget::ensureSize, nativeWidth, nativeHeight);
-        if (replayBatch.isEmpty()) {
-            return;
-        }
-        DocumentHostRenderSupport.flushDeferredPostMainPasses(replayBatch, renderTarget, nativeWidth, nativeHeight);
+        renderPipeline.renderVisibleLayers(new ArrayList<HudEntry>(entries), screenCategory, partialTicks);
     }
 
     /**
@@ -761,12 +677,7 @@ public final class UiHudDocumentHost {
      */
     DocumentHostRenderSupport.DeferredPostMainReplayBatch prepareDeferredPostMainPasses(UiRenderContext context,
             DeferredPostMainRenderTarget renderTargetSizer, int nativeWidth, int nativeHeight) {
-        DocumentHostRenderSupport.DeferredPostMainReplayBatch replayBatch = DocumentHostRenderSupport
-                .drainDeferredPostMainReplayBatch(context);
-        if (!replayBatch.isEmpty()) {
-            renderTargetSizer.ensureSize(nativeWidth, nativeHeight);
-        }
-        return replayBatch;
+        return renderPipeline.prepareDeferredPostMainPasses(context, renderTargetSizer, nativeWidth, nativeHeight);
     }
 
     private synchronized void unregister(HudEntry entry) {
@@ -924,51 +835,6 @@ public final class UiHudDocumentHost {
         return classifyScreen(screen, screenClassName) == UiHudScreenCategory.CONTAINER && !mouseGrabbed;
     }
 
-    private UiRenderTarget getOrCreateDeferredPostMainRenderTarget() {
-        if (deferredPostMainRenderTarget == null) {
-            deferredPostMainRenderTarget = new UiRenderTarget();
-        }
-        return deferredPostMainRenderTarget;
-    }
-
-    private int resolveFallbackMouseX(int mouseX, int nativeWidth) {
-        if (mouseX > 0) {
-            return Math.min(mouseX, nativeWidth);
-        }
-        for (HudEntry entry : entries) {
-            if (entry.interactionSession.getLatestMouseX() > 0) {
-                return Math.min(entry.interactionSession.getLatestMouseX(), nativeWidth);
-            }
-        }
-        return 0;
-    }
-
-    private int resolveFallbackMouseY(int mouseY, int nativeHeight) {
-        if (mouseY > 0) {
-            return Math.min(mouseY, nativeHeight);
-        }
-        for (HudEntry entry : entries) {
-            if (entry.interactionSession.getLatestMouseY() > 0) {
-                return Math.min(entry.interactionSession.getLatestMouseY(), nativeHeight);
-            }
-        }
-        return 0;
-    }
-
-    private static int resolveEntryMouseX(HudEntry entry, int fallbackMouseX, int nativeWidth) {
-        if (entry != null && entry.interactionSession.getLatestMouseX() > 0) {
-            return Math.min(entry.interactionSession.getLatestMouseX(), nativeWidth);
-        }
-        return fallbackMouseX;
-    }
-
-    private static int resolveEntryMouseY(HudEntry entry, int fallbackMouseY, int nativeHeight) {
-        if (entry != null && entry.interactionSession.getLatestMouseY() > 0) {
-            return Math.min(entry.interactionSession.getLatestMouseY(), nativeHeight);
-        }
-        return fallbackMouseY;
-    }
-
     /**
      * HUD 文档内容构建器。
      */
@@ -996,12 +862,12 @@ public final class UiHudDocumentHost {
         void ensureSize(int width, int height);
     }
 
-    private static final class HudEntry {
+    static final class HudEntry {
 
-        private final UiHudLayerType layerType;
-        private final HtmlLikeDocumentWidget widget;
-        private final DocumentHostInteractionSession interactionSession = new DocumentHostInteractionSession();
-        private final UiRuntimeAdapters runtimeAdapters;
+        final UiHudLayerType layerType;
+        final HtmlLikeDocumentWidget widget;
+        final DocumentHostInteractionSession interactionSession = new DocumentHostInteractionSession();
+        final UiRuntimeAdapters runtimeAdapters;
 
         private HudEntry(UiHudLayerType layerType, HtmlLikeDocumentWidget widget, UiRuntimeAdapters runtimeAdapters) {
             this.layerType = layerType;
@@ -1009,7 +875,7 @@ public final class UiHudDocumentHost {
             this.runtimeAdapters = runtimeAdapters;
         }
 
-        private boolean isVisibleIn(UiHudScreenCategory screenCategory) {
+        boolean isVisibleIn(UiHudScreenCategory screenCategory) {
             if (screenCategory == UiHudScreenCategory.MENU) {
                 return false;
             }
@@ -1019,7 +885,7 @@ public final class UiHudDocumentHost {
             return screenCategory == UiHudScreenCategory.INGAME || screenCategory == UiHudScreenCategory.CONTAINER;
         }
 
-        private String getRuntimeName() {
+        String getRuntimeName() {
             return layerType == UiHudLayerType.PASSIVE ? "hud_passive" : "hud_interactive";
         }
     }

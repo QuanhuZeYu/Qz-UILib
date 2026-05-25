@@ -21,6 +21,7 @@
 - 根包：`club.heiqi.uilib`，Mod ID：`qz_uilib`。
 - 作者层暴露浏览器语义（DOM / CSS / 事件模型），不向页面作者暴露 Minecraft GUI 生命周期或底层渲染实现细节。
 - 内置弹出型控件按浏览器 top-layer 语义处理：DOM 归属不变，布局/绘制/命中由文档运行时提升到视口顶层；top-layer 仍是内部能力，不作为业务作者 API。
+- 2026-05-25 代码结构 P2 整改已收口：样式声明 paint-only slot 试点、HUD 渲染/DOM 查询/TextArea 文本支持拆分、`NetService` 内部 dispatch/Stream/Store 协作者和字体 fallback invoker 已落地；后续结构债主要看 P3 public `__` 内部 API 与 input 反向依赖。
 
 ## 对外入口边界
 

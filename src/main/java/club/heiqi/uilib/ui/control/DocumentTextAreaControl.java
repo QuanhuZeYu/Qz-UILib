@@ -124,7 +124,8 @@ public final class DocumentTextAreaControl {
      * @return 当前控件
      */
     public DocumentTextAreaControl setText(String text) {
-        String normalized = truncateToMaxLength(normalizeInput(text), maxLength);
+        String normalized = DocumentTextAreaTextSupport.truncateToMaxLength(
+                DocumentTextAreaTextSupport.normalizeInput(text), maxLength);
         textBuilder.setLength(0);
         textBuilder.append(normalized);
         caretIndex = textBuilder.length();
@@ -157,13 +158,14 @@ public final class DocumentTextAreaControl {
      */
     public DocumentTextAreaControl setMaxLength(int maxLength) {
         this.maxLength = Math.max(1, maxLength);
-        String truncated = truncateToMaxLength(textBuilder.toString(), this.maxLength);
+        String truncated = DocumentTextAreaTextSupport.truncateToMaxLength(textBuilder.toString(), this.maxLength);
         if (!truncated.equals(textBuilder.toString())) {
             textBuilder.setLength(0);
             textBuilder.append(truncated);
-            caretIndex = normalizeCaretIndex(textBuilder.toString(), Math.min(caretIndex, textBuilder.length()));
-            selectionAnchorIndex = normalizeCaretIndex(textBuilder.toString(), Math.min(selectionAnchorIndex,
-                    textBuilder.length()));
+            caretIndex = DocumentTextAreaTextSupport.normalizeCaretIndex(textBuilder.toString(),
+                    Math.min(caretIndex, textBuilder.length()));
+            selectionAnchorIndex = DocumentTextAreaTextSupport.normalizeCaretIndex(textBuilder.toString(),
+                    Math.min(selectionAnchorIndex, textBuilder.length()));
             syncContent();
         }
         updateVisualState();
@@ -399,7 +401,7 @@ public final class DocumentTextAreaControl {
                 if (!focused || !enabled) {
                     return false;
                 }
-                return replaceSelection(normalizeInput(event.getText()), true);
+                return replaceSelection(DocumentTextAreaTextSupport.normalizeInput(event.getText()), true);
             }
         }).setKeyHandler(new DocumentElementKeyHandler() {
             @Override
@@ -547,8 +549,9 @@ public final class DocumentTextAreaControl {
             lineStart = index + 1;
         }
         logicalLines.add(new LogicalLine(lineStart, text.length(), text.substring(lineStart)));
-        caretIndex = normalizeCaretIndex(text, Math.min(caretIndex, text.length()));
-        selectionAnchorIndex = normalizeCaretIndex(text, Math.min(selectionAnchorIndex, text.length()));
+        caretIndex = DocumentTextAreaTextSupport.normalizeCaretIndex(text, Math.min(caretIndex, text.length()));
+        selectionAnchorIndex = DocumentTextAreaTextSupport.normalizeCaretIndex(text, Math.min(selectionAnchorIndex,
+                text.length()));
     }
 
     private void updateVisualState() {
@@ -575,7 +578,7 @@ public final class DocumentTextAreaControl {
     }
 
     private boolean replaceSelection(String replacement, boolean fireChange) {
-        String normalized = normalizeInput(replacement);
+        String normalized = DocumentTextAreaTextSupport.normalizeInput(replacement);
         if (readOnly) {
             return false;
         }
@@ -587,8 +590,10 @@ public final class DocumentTextAreaControl {
         int selectionEnd = getSelectionEnd();
         String prefix = currentText.substring(0, selectionStart);
         String suffix = currentText.substring(selectionEnd);
-        int remainingCodePoints = maxLength - countCodePoints(prefix) - countCodePoints(suffix);
-        String inserted = remainingCodePoints <= 0 ? "" : truncateToMaxLength(normalized, remainingCodePoints);
+        int remainingCodePoints = maxLength - DocumentTextAreaTextSupport.countCodePoints(prefix)
+                - DocumentTextAreaTextSupport.countCodePoints(suffix);
+        String inserted = remainingCodePoints <= 0 ? ""
+                : DocumentTextAreaTextSupport.truncateToMaxLength(normalized, remainingCodePoints);
         String nextText = prefix + inserted + suffix;
         if (nextText.equals(currentText)) {
             return false;
@@ -685,7 +690,7 @@ public final class DocumentTextAreaControl {
     }
 
     private void moveCaretTo(int nextCaretIndex, boolean extendSelection) {
-        int resolvedCaretIndex = normalizeCaretIndex(textBuilder.toString(), Math.max(0,
+        int resolvedCaretIndex = DocumentTextAreaTextSupport.normalizeCaretIndex(textBuilder.toString(), Math.max(0,
                 Math.min(nextCaretIndex, textBuilder.length())));
         if (extendSelection) {
             caretIndex = resolvedCaretIndex;
@@ -698,7 +703,7 @@ public final class DocumentTextAreaControl {
     }
 
     private void collapseSelection(int collapsedCaretIndex) {
-        int resolvedCaretIndex = normalizeCaretIndex(textBuilder.toString(), Math.max(0,
+        int resolvedCaretIndex = DocumentTextAreaTextSupport.normalizeCaretIndex(textBuilder.toString(), Math.max(0,
                 Math.min(collapsedCaretIndex, textBuilder.length())));
         caretIndex = resolvedCaretIndex;
         selectionAnchorIndex = resolvedCaretIndex;
@@ -886,62 +891,6 @@ public final class DocumentTextAreaControl {
         if (changeHandler != null) {
             changeHandler.onTextChanged(new DocumentTextAreaChangeEvent(this, element, textBuilder.toString()));
         }
-    }
-
-    private static String normalizeInput(String input) {
-        if (input == null || input.isEmpty()) {
-            return "";
-        }
-        StringBuilder builder = new StringBuilder();
-        for (int index = 0; index < input.length();) {
-            char current = input.charAt(index);
-            if (current == '\r') {
-                builder.append('\n');
-                index++;
-                if (index < input.length() && input.charAt(index) == '\n') {
-                    index++;
-                }
-                continue;
-            }
-            int codePoint = input.codePointAt(index);
-            if (codePoint == '\n' || codePoint == '\t' || !Character.isISOControl(codePoint)) {
-                builder.appendCodePoint(codePoint);
-            }
-            index += Character.charCount(codePoint);
-        }
-        return builder.toString();
-    }
-
-    private static String truncateToMaxLength(String text, int maxCodePoints) {
-        if (text == null || text.isEmpty()) {
-            return "";
-        }
-        if (maxCodePoints <= 0) {
-            return "";
-        }
-        int codePointCount = text.codePointCount(0, text.length());
-        if (codePointCount <= maxCodePoints) {
-            return text;
-        }
-        int endIndex = text.offsetByCodePoints(0, maxCodePoints);
-        return text.substring(0, endIndex);
-    }
-
-    private static int countCodePoints(String text) {
-        return text == null || text.isEmpty() ? 0 : text.codePointCount(0, text.length());
-    }
-
-    private static int normalizeCaretIndex(String text, int index) {
-        if (text == null || text.isEmpty()) {
-            return 0;
-        }
-        int boundedIndex = Math.max(0, Math.min(index, text.length()));
-        if (boundedIndex > 0 && boundedIndex < text.length()
-                && Character.isLowSurrogate(text.charAt(boundedIndex))
-                && Character.isHighSurrogate(text.charAt(boundedIndex - 1))) {
-            return boundedIndex - 1;
-        }
-        return boundedIndex;
     }
 
     private static final class LogicalLine {

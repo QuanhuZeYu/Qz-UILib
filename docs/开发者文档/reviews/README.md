@@ -7,7 +7,7 @@
 ## 2026-05-25-project-code-structure-audit
 - 类型：全项目代码结构深度审查（覆盖 UI / font / net / config / client / mixin / internal）
 - 详情文档：[REVIEW-20260525-project-code-structure-audit.md](REVIEW-20260525-project-code-structure-audit.md)
-- 结论摘要：当前主代码约 445 个 Java 文件、约 8 万行；项目主线设计仍然成立，对外入口与网络协议心智较克制，但内部能力扩张后出现第二层复用边界不足。审查时重点问题包括：稳定 API 清单与源码漂移、旧审查索引中的当前行数摘要过期、`ui.screen.example` 约 1 万行诊断/示例代码仍进主产物、远程页面与远程 HUD 的 session/Stream/提交逻辑重复、`ForgeConfigTemplateScreen` / `NetRuntimeSelfChecks` / `UiStyleDeclaration` 等子系统级大文件继续膨胀、public `__` 内部 API 与 input 反向依赖仍未收口。P0 文档漂移与旧索引过期摘要已完成整改；P1 已完成诊断页边界收口、远程页面/HUD session gateway 复用、配置模板绑定与文档构建拆分、网络自检注册/执行/远程 smoke 构造拆分；后续剩余重点转为 P2/P3 的样式声明、HUD/TextArea 二轮拆分、NetService 内部协作者和内部 API 收口。
+- 结论摘要：当前主代码约 445 个 Java 文件、约 8 万行；项目主线设计仍然成立，对外入口与网络协议心智较克制，但内部能力扩张后出现第二层复用边界不足。审查时重点问题包括：稳定 API 清单与源码漂移、旧审查索引中的当前行数摘要过期、`ui.screen.example` 约 1 万行诊断/示例代码仍进主产物、远程页面与远程 HUD 的 session/Stream/提交逻辑重复、`ForgeConfigTemplateScreen` / `NetRuntimeSelfChecks` / `UiStyleDeclaration` 等子系统级大文件继续膨胀、public `__` 内部 API 与 input 反向依赖仍未收口。P0 文档漂移与旧索引过期摘要已完成整改；P1 已完成诊断页边界收口、远程页面/HUD session gateway 复用、配置模板绑定与文档构建拆分、网络自检注册/执行/远程 smoke 构造拆分；P2 已完成样式声明 paint-only slot 试点、HUD/TextArea/UiDocument 二轮拆分、`NetService` 内部协作者拆分和字体 mixin fallback 收口；后续剩余重点转为 P3 的 public `__` 内部 API 与 input 反向依赖收口。
 
 ## 2026-05-08-html-like-developer-usability
 - 类型：HTML-like 框架开发者易用性审查

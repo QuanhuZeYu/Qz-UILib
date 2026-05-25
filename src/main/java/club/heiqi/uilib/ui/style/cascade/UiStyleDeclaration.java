@@ -95,10 +95,6 @@ public final class UiStyleDeclaration {
     private Float flexGrow;
     private Float flexShrink;
     private Integer order;
-    private Float opacity;
-    private Integer backgroundColor;
-    private Integer borderColor;
-    private Integer textColor;
     private List<DocumentAnimationProperty> transitionProperties;
     private Long transitionDurationNanos;
     private Long transitionDelayNanos;
@@ -151,6 +147,14 @@ public final class UiStyleDeclaration {
     private UiScrollbarWidth scrollbarWidth;
     private UiListStyleType listStyleType;
     private UiTransform transform;
+    private final StyleDeclarationSlot<Float> opacitySlot =
+            new StyleDeclarationSlot<Float>(UiStyleProperty.OPACITY, UiStyleChangeImpact.PAINT);
+    private final StyleDeclarationSlot<Integer> backgroundColorSlot =
+            new StyleDeclarationSlot<Integer>(UiStyleProperty.BACKGROUND_COLOR, UiStyleChangeImpact.PAINT);
+    private final StyleDeclarationSlot<Integer> borderColorSlot =
+            new StyleDeclarationSlot<Integer>(UiStyleProperty.BORDER_COLOR, UiStyleChangeImpact.PAINT);
+    private final StyleDeclarationSlot<Integer> textColorSlot =
+            new StyleDeclarationSlot<Integer>(UiStyleProperty.TEXT_COLOR, UiStyleChangeImpact.PAINT);
     private final EnumMap<UiStyleProperty, Object> declaredValues =
             new EnumMap<UiStyleProperty, Object>(UiStyleProperty.class);
     private final EnumMap<UiStyleProperty, UiStyleKeyword> keywords =
@@ -688,7 +692,7 @@ public final class UiStyleDeclaration {
     }
 
     public Float getOpacity() {
-        return opacity;
+        return opacitySlot.get();
     }
 
     public UiStyleDeclaration setOpacity(float opacity) {
@@ -700,7 +704,7 @@ public final class UiStyleDeclaration {
     }
 
     public Integer getBackgroundColor() {
-        return backgroundColor;
+        return backgroundColorSlot.get();
     }
 
     public UiStyleDeclaration setBackgroundColor(int backgroundColor) {
@@ -712,7 +716,7 @@ public final class UiStyleDeclaration {
     }
 
     public Integer getBorderColor() {
-        return borderColor;
+        return borderColorSlot.get();
     }
 
     public UiStyleDeclaration setBorderColor(int borderColor) {
@@ -724,7 +728,7 @@ public final class UiStyleDeclaration {
     }
 
     public Integer getTextColor() {
-        return textColor;
+        return textColorSlot.get();
     }
 
     public UiStyleDeclaration setTextColor(int textColor) {
@@ -1919,27 +1923,19 @@ public final class UiStyleDeclaration {
     }
 
     private UiStyleDeclaration updateOpacity(Float value) {
-        Float previousValue = opacity;
-        opacity = value;
-        return updateProperty(UiStyleProperty.OPACITY, previousValue, value, UiStyleChangeImpact.PAINT);
+        return opacitySlot.update(value);
     }
 
     private UiStyleDeclaration updateBackgroundColor(Integer value) {
-        Integer previousValue = backgroundColor;
-        backgroundColor = value;
-        return updateProperty(UiStyleProperty.BACKGROUND_COLOR, previousValue, value, UiStyleChangeImpact.PAINT);
+        return backgroundColorSlot.update(value);
     }
 
     private UiStyleDeclaration updateBorderColor(Integer value) {
-        Integer previousValue = borderColor;
-        borderColor = value;
-        return updateProperty(UiStyleProperty.BORDER_COLOR, previousValue, value, UiStyleChangeImpact.PAINT);
+        return borderColorSlot.update(value);
     }
 
     private UiStyleDeclaration updateTextColor(Integer value) {
-        Integer previousValue = textColor;
-        textColor = value;
-        return updateProperty(UiStyleProperty.TEXT_COLOR, previousValue, value, UiStyleChangeImpact.PAINT);
+        return textColorSlot.update(value);
     }
 
     private UiStyleDeclaration updateTransitionProperties(List<DocumentAnimationProperty> value) {
@@ -2295,10 +2291,6 @@ public final class UiStyleDeclaration {
             case FLEX_GROW: flexGrow = null; break;
             case FLEX_SHRINK: flexShrink = null; break;
             case ORDER: order = null; break;
-            case OPACITY: opacity = null; break;
-            case BACKGROUND_COLOR: backgroundColor = null; break;
-            case BORDER_COLOR: borderColor = null; break;
-            case TEXT_COLOR: textColor = null; break;
             case TRANSITION_PROPERTIES: transitionProperties = null; break;
             case TRANSITION_DURATION: transitionDurationNanos = null; break;
             case TRANSITION_DELAY: transitionDelayNanos = null; break;
@@ -2390,10 +2382,6 @@ public final class UiStyleDeclaration {
         flexGrow = resolvedSource.flexGrow;
         flexShrink = resolvedSource.flexShrink;
         order = resolvedSource.order;
-        opacity = resolvedSource.opacity;
-        backgroundColor = resolvedSource.backgroundColor;
-        borderColor = resolvedSource.borderColor;
-        textColor = resolvedSource.textColor;
         transitionProperties = resolvedSource.transitionProperties;
         transitionDurationNanos = resolvedSource.transitionDurationNanos;
         transitionDelayNanos = resolvedSource.transitionDelayNanos;
@@ -2469,6 +2457,29 @@ public final class UiStyleDeclaration {
 
     private void recordChange(UiStyleChangeImpact impact) {
         changeListener.onStyleChanged(impact);
+    }
+
+    /**
+     * 低风险属性族的声明槽，避免类型化字段与声明表各存一份状态。
+     */
+    private final class StyleDeclarationSlot<T> {
+
+        private final UiStyleProperty property;
+        private final UiStyleChangeImpact impact;
+
+        private StyleDeclarationSlot(UiStyleProperty property, UiStyleChangeImpact impact) {
+            this.property = Objects.requireNonNull(property, "property");
+            this.impact = Objects.requireNonNull(impact, "impact");
+        }
+
+        @SuppressWarnings("unchecked")
+        private T get() {
+            return (T) declaredValues.get(property);
+        }
+
+        private UiStyleDeclaration update(T value) {
+            return updateProperty(property, get(), value, impact);
+        }
     }
 
     /**
