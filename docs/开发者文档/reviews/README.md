@@ -4,6 +4,11 @@
 
 详细报告存放在本目录下；本文件只保留指针、主题和必要摘要，避免单文件持续膨胀。
 
+## 2026-05-25-project-code-structure-audit
+- 类型：全项目代码结构深度审查（覆盖 UI / font / net / config / client / mixin / internal）
+- 详情文档：[REVIEW-20260525-project-code-structure-audit.md](REVIEW-20260525-project-code-structure-audit.md)
+- 结论摘要：当前主代码约 445 个 Java 文件、约 8 万行；项目主线设计仍然成立，对外入口与网络协议心智较克制，但内部能力扩张后出现第二层复用边界不足。重点问题包括：稳定 API 清单与源码漂移（`UiStyleColor` / `UiColor`、链接事件旧别名说明）、旧审查索引中的当前行数摘要过期、`ui.screen.example` 约 1 万行诊断/示例代码仍进主产物、远程页面与远程 HUD 的 session/Stream/提交逻辑重复、`ForgeConfigTemplateScreen` / `NetRuntimeSelfChecks` / `UiStyleDeclaration` 等子系统级大文件继续膨胀、public `__` 内部 API 与 input 反向依赖仍未收口。建议先做文档漂移修复和远程页面/HUD 共享 session gateway，再分批推进配置模板、网络自检、样式声明与 HUD/TextArea 等二轮拆分。
+
 ## 2026-05-08-html-like-developer-usability
 - 类型：HTML-like 框架开发者易用性审查
 - 详情文档：[REVIEW-20260508-html-like-developer-usability.md](REVIEW-20260508-html-like-developer-usability.md)
