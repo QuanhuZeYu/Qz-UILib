@@ -402,6 +402,47 @@ public class UiHudDocumentHostTest {
     }
 
     /**
+     * 验证仅鼠标悬停 HUD 而未建立焦点时，不会开始抢占键盘。
+     */
+    @Test
+    public void shouldNotCaptureKeyboardWhenHudOnlyHovered() {
+        UiHudDocumentHost host = UiHudDocumentHost.getInstance();
+        UiKeyboardCaptureState.getInstance().clear();
+        UiHudDocumentRegistration registration = host.register(UiHudLayerType.INTERACTIVE,
+                new UiHudDocumentHost.UiHudDocumentContentBuilder() {
+                    @Override
+                    public void build(UiDocument document) {
+                        ElementNode root = document.getRootElement();
+                        root.style()
+                                .setWidth(UiStyleLength.px(160))
+                                .setHeight(UiStyleLength.px(80));
+                        DocumentTextInputControl inputControl = new DocumentTextInputControl(document);
+                        inputControl.getElement().style()
+                                .setWidth(UiStyleLength.px(120))
+                                .setHeight(UiStyleLength.px(24));
+                        root.append(inputControl.getElement());
+                    }
+                }, new DeterministicTextMeasureService(), UiRuntimeAdapters.empty());
+        try {
+            host.handleInputFrameForTest(mouseFrame(UiMouseEvent.Action.MOVE, 8, 8, 1L),
+                    UiHudScreenCategory.CONTAINER, 160, 80);
+
+            boolean captured = host.handleImmediateKeyboardInputForTest(
+                    new UiInputFrame(8, 8, Collections.<UiMouseEvent>emptyList(),
+                            Collections.singletonList(new UiKeyEvent(Keyboard.KEY_TAB, 0, 0,
+                                    UiKeyEvent.Action.PRESSED, false, false, false, false, 2L)),
+                            Collections.<UiTextInputEvent>emptyList()),
+                    UiHudScreenCategory.CONTAINER);
+
+            Assert.assertFalse(captured);
+            Assert.assertFalse(UiKeyboardCaptureState.getInstance().isHudKeyboardCaptured());
+        } finally {
+            registration.unregister();
+            UiKeyboardCaptureState.getInstance().clear();
+        }
+    }
+
+    /**
      * 验证命中交互元素时，HUD 会在原生页面之前拦截鼠标按下。
      */
     @Test

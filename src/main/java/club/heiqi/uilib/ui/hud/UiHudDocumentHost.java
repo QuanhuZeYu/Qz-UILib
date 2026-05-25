@@ -134,22 +134,20 @@ public final class UiHudDocumentHost implements UiHostInputCaptureParticipant {
             return;
         }
         GuiScreen currentScreen = minecraft.currentScreen;
-        UiHudScreenCategory screenCategory = classifyScreen(currentScreen);
-        boolean interactiveEnabled = isInteractiveInputEnabled(currentScreen);
-        if (!interactiveEnabled) {
+        HudInputContext inputContext = createInputContext(currentScreen);
+        if (!inputContext.interactiveInputEnabled) {
             clearInteractiveStates();
             return;
         }
-        boolean keyboardCapturedBeforeRouting = UiKeyboardCaptureState.getInstance().isHudKeyboardCaptured();
-        routeMouseFrame(frame, screenCategory, new ArrayList<HudEntry>(entries));
+        routeMouseFrame(frame, inputContext);
+        updateHudKeyboardCaptureState();
         if (UiKeyboardCaptureState.getInstance().isHudKeyboardCaptured()) {
             UiInputFrame keyboardFrame = filterKeyboardInput(extractKeyboardFrame(frame),
-                    UiNativeTextInputInspector.hasFocusedTextInput(currentScreen), keyboardCapturedBeforeRouting);
-            routeKeyboardFrame(keyboardFrame, screenCategory, new ArrayList<HudEntry>(entries));
+                    UiNativeTextInputInspector.hasFocusedTextInput(currentScreen),
+                    UiKeyboardCaptureState.getInstance().isUiLibKeyboardCaptured());
+            routeKeyboardFrame(keyboardFrame, inputContext);
             updateHudKeyboardCaptureState();
-            return;
         }
-        updateHudKeyboardCaptureState();
     }
 
     /**
@@ -167,7 +165,8 @@ public final class UiHudDocumentHost implements UiHostInputCaptureParticipant {
         if (frame == null || entries.isEmpty()) {
             return false;
         }
-        if (!isInteractiveInputEnabled(currentScreen)) {
+        HudInputContext inputContext = createInputContext(currentScreen);
+        if (!inputContext.interactiveInputEnabled) {
             clearInteractiveStates();
             return false;
         }
@@ -175,17 +174,9 @@ public final class UiHudDocumentHost implements UiHostInputCaptureParticipant {
             return false;
         }
         updateLatestPointer(frame);
-        UiHudScreenCategory screenCategory = classifyScreen(currentScreen);
-        boolean keyboardCapturedBeforeRouting = UiKeyboardCaptureState.getInstance().isUiLibKeyboardCaptured();
-        UiInputFrame routedFrame = filterKeyboardInput(frame,
+        return routeImmediateKeyboardFrame(inputContext, frame,
                 UiNativeTextInputInspector.hasFocusedTextInput(currentScreen),
-                keyboardCapturedBeforeRouting);
-        if (routedFrame.getKeyEvents().isEmpty() && routedFrame.getTextEvents().isEmpty()) {
-            return false;
-        }
-        routeKeyboardFrame(routedFrame, screenCategory, new ArrayList<HudEntry>(entries));
-        updateHudKeyboardCaptureState();
-        return UiKeyboardCaptureState.getInstance().isUiLibKeyboardCaptured();
+                UiKeyboardCaptureState.getInstance().isUiLibKeyboardCaptured());
     }
 
     /**
@@ -201,20 +192,20 @@ public final class UiHudDocumentHost implements UiHostInputCaptureParticipant {
             return false;
         }
         updateLatestPointer(frame);
-        UiHudScreenCategory screenCategory = classifyScreen(currentScreen);
-        if (!isInteractiveInputEnabled(currentScreen)) {
+        HudInputContext inputContext = createInputContext(currentScreen);
+        if (!inputContext.interactiveInputEnabled) {
             clearInteractiveStates();
             return false;
         }
-        boolean shouldCapture = shouldCaptureImmediateMouseInput(screenCategory, frame);
-        if (!shouldCapture) {
-            if (isPrimaryMouseButtonDown(frame)) {
+        HudMouseDecision mouseDecision = resolveImmediateMouseDecision(inputContext, frame);
+        if (!mouseDecision.shouldCapture) {
+            if (mouseDecision.shouldClearFocus) {
                 clearInteractiveStates();
             }
             return false;
         }
         UiNativeTextInputInspector.blurFocusedTextInputs(currentScreen);
-        routeMouseFrame(frame, screenCategory, new ArrayList<HudEntry>(entries));
+        routeMouseFrame(frame, inputContext);
         updateHudKeyboardCaptureState();
         return true;
     }
@@ -224,14 +215,19 @@ public final class UiHudDocumentHost implements UiHostInputCaptureParticipant {
             return false;
         }
         updateLatestPointer(frame);
-        if (screenCategory != UiHudScreenCategory.CONTAINER) {
+        HudInputContext inputContext = createInputContextForTest(screenCategory);
+        if (!inputContext.interactiveInputEnabled) {
             clearInteractiveStates();
             return false;
         }
-        if (!shouldCaptureImmediateMouseInput(screenCategory, frame)) {
+        HudMouseDecision mouseDecision = resolveImmediateMouseDecision(inputContext, frame);
+        if (!mouseDecision.shouldCapture) {
+            if (mouseDecision.shouldClearFocus) {
+                clearInteractiveStates();
+            }
             return false;
         }
-        routeMouseFrame(frame, screenCategory, new ArrayList<HudEntry>(entries));
+        routeMouseFrame(frame, inputContext);
         updateHudKeyboardCaptureState();
         return true;
     }
@@ -268,7 +264,8 @@ public final class UiHudDocumentHost implements UiHostInputCaptureParticipant {
         if (frame == null || entries.isEmpty()) {
             return false;
         }
-        if (screenCategory != UiHudScreenCategory.CONTAINER) {
+        HudInputContext inputContext = createInputContextForTest(screenCategory);
+        if (!inputContext.interactiveInputEnabled) {
             clearInteractiveStates();
             return false;
         }
@@ -276,9 +273,8 @@ public final class UiHudDocumentHost implements UiHostInputCaptureParticipant {
             return false;
         }
         updateLatestPointer(frame);
-        routeKeyboardFrame(frame, screenCategory, new ArrayList<HudEntry>(entries));
-        updateHudKeyboardCaptureState();
-        return UiKeyboardCaptureState.getInstance().isUiLibKeyboardCaptured();
+        return routeImmediateKeyboardFrame(inputContext, frame, false,
+                UiKeyboardCaptureState.getInstance().isUiLibKeyboardCaptured());
     }
 
     synchronized void handleInputFrameForTest(UiInputFrame frame, UiHudScreenCategory screenCategory, int width,
@@ -287,17 +283,19 @@ public final class UiHudDocumentHost implements UiHostInputCaptureParticipant {
             return;
         }
         updateLatestPointer(frame);
-        if (screenCategory != UiHudScreenCategory.CONTAINER) {
+        HudInputContext inputContext = createInputContextForTest(screenCategory);
+        if (!inputContext.interactiveInputEnabled) {
             clearInteractiveStates();
             return;
         }
-        for (HudEntry entry : entries) {
+        for (HudEntry entry : inputContext.entrySnapshot) {
             entry.widget.applyLayoutBounds(0, 0, Math.max(0, width), Math.max(0, height));
         }
-        routeMouseFrame(frame, screenCategory, new ArrayList<HudEntry>(entries));
+        routeMouseFrame(frame, inputContext);
+        updateHudKeyboardCaptureState();
         UiInputFrame keyboardFrame = extractKeyboardFrame(frame);
-        if (keyboardFrame != null) {
-            routeKeyboardFrame(keyboardFrame, screenCategory, new ArrayList<HudEntry>(entries));
+        if (keyboardFrame != null && UiKeyboardCaptureState.getInstance().isHudKeyboardCaptured()) {
+            routeKeyboardFrame(keyboardFrame, inputContext);
         }
         updateHudKeyboardCaptureState();
     }
@@ -335,16 +333,43 @@ public final class UiHudDocumentHost implements UiHostInputCaptureParticipant {
         }
     }
 
-    private void routeMouseFrame(UiInputFrame frame, UiHudScreenCategory screenCategory, List<HudEntry> entrySnapshot) {
+    private HudInputContext createInputContext(GuiScreen currentScreen) {
+        UiHudScreenCategory screenCategory = classifyScreen(currentScreen);
+        return new HudInputContext(screenCategory, isInteractiveInputEnabled(currentScreen),
+                new ArrayList<HudEntry>(entries), true);
+    }
+
+    private HudInputContext createInputContextForTest(UiHudScreenCategory screenCategory) {
+        return new HudInputContext(screenCategory, screenCategory == UiHudScreenCategory.CONTAINER,
+                new ArrayList<HudEntry>(entries), false);
+    }
+
+    private boolean routeImmediateKeyboardFrame(HudInputContext inputContext, UiInputFrame frame,
+            boolean nativeTextInputFocused, boolean uiLibKeyboardCaptured) {
+        UiInputFrame routedFrame = filterKeyboardInput(frame, nativeTextInputFocused, uiLibKeyboardCaptured);
+        if (routedFrame == null || (routedFrame.getKeyEvents().isEmpty() && routedFrame.getTextEvents().isEmpty())) {
+            return false;
+        }
+        routeKeyboardFrame(routedFrame, inputContext);
+        updateHudKeyboardCaptureState();
+        return UiKeyboardCaptureState.getInstance().isUiLibKeyboardCaptured();
+    }
+
+    private void routeMouseFrame(UiInputFrame frame, HudInputContext inputContext) {
         if (frame == null || frame.getMouseEvents().isEmpty()) {
             return;
         }
-        applyCurrentViewportBounds(entrySnapshot);
+        if (!inputContext.interactiveInputEnabled) {
+            clearInteractiveStates();
+            return;
+        }
+        if (inputContext.syncNativeViewportBounds) {
+            applyCurrentViewportBounds(inputContext.entrySnapshot);
+        }
         boolean primaryDown = isPrimaryMouseButtonDown(frame);
         boolean primaryUp = isPrimaryMouseButtonUp(frame);
         if (primaryDown) {
-            HudEntry targetEntry = resolveMouseTargetEntry(screenCategory, frame.getMouseX(), frame.getMouseY(),
-                    entrySnapshot);
+            HudEntry targetEntry = resolveMouseTargetEntry(inputContext, frame.getMouseX(), frame.getMouseY());
             if (targetEntry == null) {
                 clearInteractiveStates();
                 return;
@@ -362,8 +387,7 @@ public final class UiHudDocumentHost implements UiHostInputCaptureParticipant {
             updateHudKeyboardCaptureState();
             return;
         }
-        HudEntry targetEntry = resolveMouseFrameTargetEntry(screenCategory, frame.getMouseX(), frame.getMouseY(),
-                entrySnapshot);
+        HudEntry targetEntry = resolveMouseFrameTargetEntry(inputContext, frame.getMouseX(), frame.getMouseY());
         if (targetEntry == null) {
             updateHoveredMouseEntry(null);
             return;
@@ -382,11 +406,15 @@ public final class UiHudDocumentHost implements UiHostInputCaptureParticipant {
         updateHudKeyboardCaptureState();
     }
 
-    private void routeKeyboardFrame(UiInputFrame frame, UiHudScreenCategory screenCategory, List<HudEntry> entrySnapshot) {
+    private void routeKeyboardFrame(UiInputFrame frame, HudInputContext inputContext) {
         if (frame == null || (frame.getKeyEvents().isEmpty() && frame.getTextEvents().isEmpty())) {
             return;
         }
-        HudEntry targetEntry = resolveKeyboardTargetEntry(screenCategory, entrySnapshot);
+        if (!inputContext.interactiveInputEnabled) {
+            clearInteractiveStates();
+            return;
+        }
+        HudEntry targetEntry = resolveKeyboardTargetEntry(inputContext);
         if (targetEntry == null) {
             return;
         }
@@ -410,41 +438,46 @@ public final class UiHudDocumentHost implements UiHostInputCaptureParticipant {
                 frame.getKeyEvents(), frame.getTextEvents());
     }
 
-    private boolean shouldCaptureImmediateMouseInput(UiHudScreenCategory screenCategory, UiInputFrame frame) {
-        if (screenCategory != UiHudScreenCategory.CONTAINER) {
-            return false;
+    private HudMouseDecision resolveImmediateMouseDecision(HudInputContext inputContext, UiInputFrame frame) {
+        if (!inputContext.interactiveInputEnabled) {
+            return HudMouseDecision.release();
         }
         if (frame != null && isPrimaryMouseButtonDown(frame)) {
-            return resolveMouseTargetEntry(screenCategory, frame.getMouseX(), frame.getMouseY(),
-                    new ArrayList<HudEntry>(entries)) != null;
+            return resolveMouseTargetEntry(inputContext, frame.getMouseX(), frame.getMouseY()) == null
+                    ? HudMouseDecision.missAndClearFocus()
+                    : HudMouseDecision.capture();
         }
         if (frame != null && isPrimaryMouseButtonUp(frame)) {
-            return activeMouseEntry != null && isInteractiveEntryAvailable(activeMouseEntry, screenCategory);
+            return isInteractiveEntryAvailable(activeMouseEntry, inputContext.screenCategory)
+                    ? HudMouseDecision.capture()
+                    : HudMouseDecision.release();
         }
-        if (activeMouseEntry != null && isInteractiveEntryAvailable(activeMouseEntry, screenCategory)) {
-            return true;
+        if (isInteractiveEntryAvailable(activeMouseEntry, inputContext.screenCategory)) {
+            return HudMouseDecision.capture();
         }
-        return resolveMouseTargetEntry(screenCategory, frame == null ? 0 : frame.getMouseX(),
-                frame == null ? 0 : frame.getMouseY(), new ArrayList<HudEntry>(entries)) != null;
+        return resolveMouseTargetEntry(inputContext, frame == null ? 0 : frame.getMouseX(),
+                frame == null ? 0 : frame.getMouseY()) == null
+                ? HudMouseDecision.release()
+                : HudMouseDecision.capture();
     }
 
-    private HudEntry resolveMouseFrameTargetEntry(UiHudScreenCategory screenCategory, int mouseX, int mouseY,
-            List<HudEntry> entrySnapshot) {
-        if (activeMouseEntry != null && isInteractiveEntryAvailable(activeMouseEntry, screenCategory)) {
+    private HudEntry resolveMouseFrameTargetEntry(HudInputContext inputContext, int mouseX, int mouseY) {
+        if (isInteractiveEntryAvailable(activeMouseEntry, inputContext.screenCategory)) {
             return activeMouseEntry;
         }
-        return resolveMouseTargetEntry(screenCategory, mouseX, mouseY, entrySnapshot);
+        return resolveMouseTargetEntry(inputContext, mouseX, mouseY);
     }
 
-    private HudEntry resolveMouseTargetEntry(UiHudScreenCategory screenCategory, int mouseX, int mouseY,
-            List<HudEntry> entrySnapshot) {
-        if (screenCategory != UiHudScreenCategory.CONTAINER) {
+    private HudEntry resolveMouseTargetEntry(HudInputContext inputContext, int mouseX, int mouseY) {
+        if (!inputContext.interactiveInputEnabled) {
             return null;
         }
-        applyCurrentViewportBounds(entrySnapshot);
-        for (int index = entrySnapshot.size() - 1; index >= 0; index--) {
-            HudEntry entry = entrySnapshot.get(index);
-            if (!isInteractiveEntryAvailable(entry, screenCategory)) {
+        if (inputContext.syncNativeViewportBounds) {
+            applyCurrentViewportBounds(inputContext.entrySnapshot);
+        }
+        for (int index = inputContext.entrySnapshot.size() - 1; index >= 0; index--) {
+            HudEntry entry = inputContext.entrySnapshot.get(index);
+            if (!isInteractiveEntryAvailable(entry, inputContext.screenCategory)) {
                 continue;
             }
             ElementNode hitElement = entry.widget.findElementAt(mouseX, mouseY);
@@ -487,18 +520,18 @@ public final class UiHudDocumentHost implements UiHostInputCaptureParticipant {
         }
     }
 
-    private HudEntry resolveKeyboardTargetEntry(UiHudScreenCategory screenCategory, List<HudEntry> entrySnapshot) {
-        if (screenCategory != UiHudScreenCategory.CONTAINER) {
+    private HudEntry resolveKeyboardTargetEntry(HudInputContext inputContext) {
+        if (!inputContext.interactiveInputEnabled) {
             return null;
         }
-        if (isInteractiveEntryAvailable(activeKeyboardEntry, screenCategory)
+        if (isInteractiveEntryAvailable(activeKeyboardEntry, inputContext.screenCategory)
                 && activeKeyboardEntry.interactionSession.hasFocusedWidget()) {
             return activeKeyboardEntry;
         }
         activeKeyboardEntry = null;
-        for (int index = entrySnapshot.size() - 1; index >= 0; index--) {
-            HudEntry entry = entrySnapshot.get(index);
-            if (!isInteractiveEntryAvailable(entry, screenCategory)) {
+        for (int index = inputContext.entrySnapshot.size() - 1; index >= 0; index--) {
+            HudEntry entry = inputContext.entrySnapshot.get(index);
+            if (!isInteractiveEntryAvailable(entry, inputContext.screenCategory)) {
                 continue;
             }
             if (entry.interactionSession.hasFocusedWidget()) {
@@ -893,6 +926,49 @@ public final class UiHudDocumentHost implements UiHostInputCaptureParticipant {
 
         String getRuntimeName() {
             return layerType == UiHudLayerType.PASSIVE ? "hud_passive" : "hud_interactive";
+        }
+    }
+
+    private static final class HudInputContext {
+
+        private final UiHudScreenCategory screenCategory;
+        private final boolean interactiveInputEnabled;
+        private final List<HudEntry> entrySnapshot;
+        private final boolean syncNativeViewportBounds;
+
+        private HudInputContext(UiHudScreenCategory screenCategory, boolean interactiveInputEnabled,
+                List<HudEntry> entrySnapshot, boolean syncNativeViewportBounds) {
+            this.screenCategory = screenCategory;
+            this.interactiveInputEnabled = interactiveInputEnabled;
+            this.entrySnapshot = entrySnapshot;
+            this.syncNativeViewportBounds = syncNativeViewportBounds;
+        }
+    }
+
+    private static final class HudMouseDecision {
+
+        private static final HudMouseDecision CAPTURE = new HudMouseDecision(true, false);
+        private static final HudMouseDecision RELEASE = new HudMouseDecision(false, false);
+        private static final HudMouseDecision MISS_AND_CLEAR_FOCUS = new HudMouseDecision(false, true);
+
+        private final boolean shouldCapture;
+        private final boolean shouldClearFocus;
+
+        private HudMouseDecision(boolean shouldCapture, boolean shouldClearFocus) {
+            this.shouldCapture = shouldCapture;
+            this.shouldClearFocus = shouldClearFocus;
+        }
+
+        private static HudMouseDecision capture() {
+            return CAPTURE;
+        }
+
+        private static HudMouseDecision release() {
+            return RELEASE;
+        }
+
+        private static HudMouseDecision missAndClearFocus() {
+            return MISS_AND_CLEAR_FOCUS;
         }
     }
 
