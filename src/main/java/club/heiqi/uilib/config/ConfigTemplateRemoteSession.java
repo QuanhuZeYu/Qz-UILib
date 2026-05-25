@@ -4,7 +4,9 @@ import java.util.List;
 import java.util.Objects;
 import java.util.UUID;
 
+import net.minecraftforge.common.config.ConfigCategory;
 import net.minecraftforge.common.config.Configuration;
+import net.minecraftforge.common.config.Property;
 
 /**
  * 配置模板的服务端权威会话。
@@ -98,11 +100,34 @@ final class ConfigTemplateRemoteSession {
                 return result;
             }
             for (ConfigSyncModels.ConfigCategorySnapshot category : definition.categories) {
+                ConfigCategory authoritativeCategory =
+                        ConfigSyncModels.resolveDefinitionCategory(authoritativeConfiguration, category);
+                if (authoritativeCategory == null) {
+                    String message = "配置同步分类不存在：" + category.categoryName;
+                    state.statusMessage = "保存前校验失败。";
+                    for (ConfigSyncModels.ConfigFieldSnapshot field : category.properties) {
+                        state.fieldErrors.put(ConfigSyncModels.buildFieldKey(category.categoryName,
+                                field.propertyName), message);
+                    }
+                    result.success = false;
+                    result.message = message;
+                    result.committedDraft = snapshotDraft();
+                    return result;
+                }
                 for (ConfigSyncModels.ConfigFieldSnapshot field : category.properties) {
                     String fieldKey = ConfigSyncModels.buildFieldKey(category.categoryName, field.propertyName);
                     String draftValue = state.draft.values.get(fieldKey);
-                    String validationError = ForgeConfigTemplatePropertyDrafts.validateDraft(
-                            authoritativeConfiguration.getCategory(category.categoryName).get(field.propertyName),
+                    Property authoritativeProperty = authoritativeCategory.get(field.propertyName);
+                    if (authoritativeProperty == null) {
+                        String message = "配置同步字段不存在：" + fieldKey;
+                        state.fieldErrors.put(fieldKey, "配置同步字段不存在。");
+                        state.statusMessage = "保存前校验失败。";
+                        result.success = false;
+                        result.message = message;
+                        result.committedDraft = snapshotDraft();
+                        return result;
+                    }
+                    String validationError = ForgeConfigTemplatePropertyDrafts.validateDraft(authoritativeProperty,
                             draftValue);
                     if (validationError != null && !validationError.isEmpty()) {
                         state.fieldErrors.put(fieldKey, validationError);
@@ -166,9 +191,15 @@ final class ConfigTemplateRemoteSession {
                 new java.util.ArrayList<net.minecraftforge.common.config.Property>();
         for (ConfigSyncModels.ConfigCategorySnapshot category : definition.categories) {
             net.minecraftforge.common.config.ConfigCategory authoritativeCategory =
-                    authoritativeConfiguration.getCategory(category.categoryName);
+                    ConfigSyncModels.resolveDefinitionCategory(authoritativeConfiguration, category);
+            if (authoritativeCategory == null) {
+                continue;
+            }
             for (ConfigSyncModels.ConfigFieldSnapshot field : category.properties) {
-                properties.add(authoritativeCategory.get(field.propertyName));
+                net.minecraftforge.common.config.Property property = authoritativeCategory.get(field.propertyName);
+                if (property != null) {
+                    properties.add(property);
+                }
             }
         }
         return properties;

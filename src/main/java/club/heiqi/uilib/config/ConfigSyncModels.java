@@ -35,12 +35,13 @@ final class ConfigSyncModels {
             if (categorySpec == null) {
                 continue;
             }
-            ConfigCategory category = resolveCategory(configuration, categorySpec.getCategoryName());
+            ConfigCategory category = ConfigCategoryResolver.resolve(configuration, categorySpec);
             if (category == null || !category.showInGui()) {
                 continue;
             }
             ConfigCategorySnapshot categorySnapshot = new ConfigCategorySnapshot();
             categorySnapshot.categoryName = categorySpec.getCategoryName();
+            categorySnapshot.actualCategoryName = category.getQualifiedName();
             categorySnapshot.displayTitle = categorySpec.getDisplayTitle();
             categorySnapshot.description = mergeCategoryDescription(categorySpec, category);
             categorySnapshot.showInGui = category.showInGui();
@@ -67,7 +68,8 @@ final class ConfigSyncModels {
                     continue;
                 }
                 converted.add(new ConfigSyncCategorySpec(categorySpec.getCategoryName(),
-                        categorySpec.getDisplayTitle(), categorySpec.getDescription()));
+                        categorySpec.getDisplayTitle(), categorySpec.getDescription())
+                                .addAliases(categorySpec.getAliases()));
             }
         }
         return captureDefinition(configuration, converted);
@@ -89,7 +91,7 @@ final class ConfigSyncModels {
             if (categorySnapshot == null) {
                 continue;
             }
-            ConfigCategory originalCategory = resolveCategory(configuration, categorySnapshot.categoryName);
+            ConfigCategory originalCategory = resolveDefinitionCategory(configuration, categorySnapshot);
             if (originalCategory == null) {
                 continue;
             }
@@ -122,7 +124,7 @@ final class ConfigSyncModels {
             return snapshot;
         }
         for (ConfigCategorySnapshot category : definition.categories) {
-            ConfigCategory resolvedCategory = resolveCategory(configuration, category.categoryName);
+            ConfigCategory resolvedCategory = resolveDefinitionCategory(configuration, category);
             if (resolvedCategory == null) {
                 continue;
             }
@@ -150,7 +152,7 @@ final class ConfigSyncModels {
             return;
         }
         for (ConfigCategorySnapshot category : definition.categories) {
-            ConfigCategory resolvedCategory = resolveCategory(configuration, category.categoryName);
+            ConfigCategory resolvedCategory = resolveDefinitionCategory(configuration, category);
             if (resolvedCategory == null) {
                 continue;
             }
@@ -230,7 +232,7 @@ final class ConfigSyncModels {
         for (ConfigCategorySnapshot category : definition.categories) {
             for (ConfigFieldSnapshot field : category.properties) {
                 if (buildFieldKey(category.categoryName, field.propertyName).equals(fieldKey)) {
-                    return new ConfigFieldRef(category.categoryName, field.propertyName, field);
+                    return new ConfigFieldRef(category, field.propertyName, field);
                 }
             }
         }
@@ -238,23 +240,28 @@ final class ConfigSyncModels {
     }
 
     private static Property resolveProperty(Configuration configuration, ConfigFieldRef fieldRef) {
-        ConfigCategory category = resolveCategory(configuration, fieldRef.categoryName);
+        ConfigCategory category = resolveDefinitionCategory(configuration, fieldRef.category);
         return category == null ? null : category.get(fieldRef.propertyName);
     }
 
-    private static ConfigCategory resolveCategory(Configuration configuration, String categoryName) {
-        if (configuration == null || categoryName == null || categoryName.trim().isEmpty()) {
+    /**
+     * 按定义快照解析真实存在的 Forge 分类。
+     *
+     * @param configuration 配置对象
+     * @param categorySnapshot 分类快照
+     * @return 分类；找不到时返回 null
+     */
+    static ConfigCategory resolveDefinitionCategory(Configuration configuration,
+            ConfigCategorySnapshot categorySnapshot) {
+        if (categorySnapshot == null) {
             return null;
         }
-        String requestedName = categoryName.trim();
-        if (configuration.hasCategory(requestedName)) {
-            return configuration.getCategory(requestedName);
+        ConfigCategory category = ConfigCategoryResolver.resolveExisting(configuration,
+                categorySnapshot.actualCategoryName);
+        if (category != null) {
+            return category;
         }
-        String lowerCaseName = requestedName.toLowerCase(Locale.ENGLISH);
-        if (configuration.hasCategory(lowerCaseName)) {
-            return configuration.getCategory(lowerCaseName);
-        }
-        return null;
+        return ConfigCategoryResolver.resolveExisting(configuration, categorySnapshot.categoryName);
     }
 
     private static String normalizeKeyPart(String value) {
@@ -344,6 +351,7 @@ final class ConfigSyncModels {
      */
     static final class ConfigCategorySnapshot {
         String categoryName = "";
+        String actualCategoryName = "";
         String displayTitle = "";
         String description = "";
         boolean showInGui = true;
@@ -544,12 +552,12 @@ final class ConfigSyncModels {
      * 字段引用。
      */
     static final class ConfigFieldRef {
-        final String categoryName;
+        final ConfigCategorySnapshot category;
         final String propertyName;
         final ConfigFieldSnapshot field;
 
-        ConfigFieldRef(String categoryName, String propertyName, ConfigFieldSnapshot field) {
-            this.categoryName = categoryName;
+        ConfigFieldRef(ConfigCategorySnapshot category, String propertyName, ConfigFieldSnapshot field) {
+            this.category = category;
             this.propertyName = propertyName;
             this.field = field;
         }

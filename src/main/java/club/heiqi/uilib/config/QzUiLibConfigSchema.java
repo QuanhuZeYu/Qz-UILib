@@ -52,7 +52,8 @@ public final class QzUiLibConfigSchema {
         categories.add(new ConfigSyncCategorySpec(Config.GENERAL, "General",
                 "基础运行开关、界面调试显示与通用行为配置。"));
         categories.add(new ConfigSyncCategorySpec(FontConfig.CATEGORY, "Font System",
-                "字体渲染运行时、排序和 drawString 上传节流相关配置。"));
+                "字体渲染运行时、排序和 drawString 上传节流相关配置。")
+                        .addAlias("fontsystem"));
         categories.add(new ConfigSyncCategorySpec(FontConfig.FONT_SIZE_CATEGORY, "Font Size",
                 "默认字号、生成分辨率与缩放系数配置。"));
         return Collections.unmodifiableList(categories);

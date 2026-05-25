@@ -330,7 +330,8 @@ public final class ConfigTemplateSyncManager {
                         }
                         ConfigSyncModels.ConfigFieldChange change = firstNoopChange(openResponse.draft);
                         submitClientFieldChange(change);
-                        ConfigSyncModels.ConfigDraftSnapshot draft = new ConfigSyncModels.ConfigDraftSnapshot();
+                        ConfigSyncModels.ConfigDraftSnapshot draft = openResponse.draft == null
+                                ? new ConfigSyncModels.ConfigDraftSnapshot() : openResponse.draft.copy();
                         draft.values.put(change.fieldKey, change.draftValue);
                         return saveClientSessionAsync(draft);
                     }

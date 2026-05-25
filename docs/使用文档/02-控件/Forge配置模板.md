@@ -20,6 +20,7 @@
 - 页面内置 `Ctrl+S` 保存、`ESC` 返回、恢复当前值、恢复默认值四个基础动作。
 - 保存动作若在写盘或宿主 `saveAndReload()` 阶段失败，页面会回滚本次已写回的属性值，并保留失败提示。
 - 页面在找不到显式声明的分类时，会在状态区提示缺失分类名；空状态区也会优先显示缺失分类信息。
+- 分类名默认按大小写敏感精确匹配；只有通过 `CategorySpec.addAlias(...)` 或 `ConfigSyncCategorySpec.addAlias(...)` 显式声明的历史名称才会参与兼容查找。
 - 模板现在支持可选的“服务端权威配置同步”模式：页面本地编辑先进入客户端草稿，再通过 UILIB 自建网络同步到服务端配置会话，只有显式点击保存时才由服务端执行最终提交。
 - 如果客户端尚未完成 Qz 网络能力握手，或服务端未注册对应配置目标，模板会自动回退到原有纯本地 `Configuration` 模式，不影响旧接入。
 
@@ -64,6 +65,7 @@ public Class<? extends GuiScreen> mainConfigGuiClass() {
 - 如果不显式追加分类，模板会遍历 `configuration.getCategoryNames()` 自动生成分类卡片。
 - `CategorySpec.setTitle(...)` 用于覆盖页面显示标题。
 - `CategorySpec.setDescription(...)` 用于补充分类说明；页面会与 Forge `ConfigCategory.comment` 合并展示。
+- `CategorySpec.addAlias(...)` 仅用于兼容已经存在的历史分类名，例如旧配置文件中曾写成小写分类；不要把它当作默认忽略大小写匹配。
 
 ## 扩展点
 
@@ -106,7 +108,9 @@ ConfigTemplateSyncManager.getInstance().registerTarget(
                 .description("通过 UILIB 自建网络同步草稿并显式保存。")
                 .configPath(ExampleConfig.getConfigPath())
                 .categories(Arrays.asList(
-                        new ConfigSyncCategorySpec("general", "General", "基础配置")))
+                        new ConfigSyncCategorySpec("general", "General", "基础配置"),
+                        new ConfigSyncCategorySpec("fontSystem", "Font System", "字体配置")
+                                .addAlias("fontsystem")))
                 .saveAction(new ConfigSyncTarget.SaveAction() {
                     @Override
                     public void save(Configuration configuration) {
@@ -161,6 +165,7 @@ spec.addPropertyEditorFactory(new ForgeConfigTemplateScreen.PropertyEditorFactor
 - `club.heiqi.uilib.config.ModGuiFactory` 继续作为 Forge `guiFactory` 入口。
 - `club.heiqi.uilib.config.ModConfigGui` 已切换为 `ForgeConfigTemplateScreen` 的具体实现，不再继承默认 `GuiConfig`。
 - 当前模板实例覆盖三个分类：`general`、`fontSystem`、`fontSizeSetting`。
+- Qz-UILib 自身为历史小写 `fontsystem` 分类显式声明 alias；其他分类仍按精确分类名匹配。
 - `ModConfigGui` 现已作为 `ConfigTemplateSyncManager` 的首个接入方，默认绑定 `screenId=mod-config` 的服务端权威配置目标。
 - 当前模板已经把 `validValues` 视为一等语义；但当当前值已不在候选集时，会自动回退为文本输入保留遗留值。
 - 当前 `fontSystem.fontSort` 使用专用二级排序页；页面面向 300+ 字体列表提供分页、搜索、全局序号跳转、目标序号移动、当前页内拖拽微调与“保存并应用”按钮。启动时仍会根据已发现字体自动补全有效顺序，并在配置数据中保留未发现的历史字体记录。

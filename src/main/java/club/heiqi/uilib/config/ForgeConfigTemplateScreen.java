@@ -298,20 +298,8 @@ public class ForgeConfigTemplateScreen extends BaseScreen {
         return ConfigTemplatePropertyBindings.createDefault(this, spec, document, categorySpec, property);
     }
 
-    ConfigCategory resolveCategory(String categoryName) {
-        Configuration configuration = spec.getConfiguration();
-        if (configuration == null || categoryName == null || categoryName.trim().isEmpty()) {
-            return null;
-        }
-        String requestedName = categoryName.trim();
-        if (configuration.hasCategory(requestedName)) {
-            return configuration.getCategory(requestedName);
-        }
-        String lowerCaseName = requestedName.toLowerCase(Locale.ENGLISH);
-        if (configuration.hasCategory(lowerCaseName)) {
-            return configuration.getCategory(lowerCaseName);
-        }
-        return null;
+    ConfigCategory resolveCategory(CategorySpec categorySpec) {
+        return ConfigCategoryResolver.resolve(spec.getConfiguration(), categorySpec);
     }
 
     private boolean handleGlobalShortcuts(UiInputFrame frame) {
@@ -767,6 +755,7 @@ public class ForgeConfigTemplateScreen extends BaseScreen {
         private final String categoryName;
         private String title = "";
         private String description = "";
+        private final List<String> aliases = new ArrayList<String>();
 
         /**
          * 创建分类描述。
@@ -799,6 +788,54 @@ public class ForgeConfigTemplateScreen extends BaseScreen {
             return this;
         }
 
+        /**
+         * 声明显式分类 alias。
+         *
+         * <p>分类匹配默认大小写敏感；只有通过 alias 声明的历史名称才会参与查找。</p>
+         *
+         * @param alias 分类 alias
+         * @return 当前分类描述
+         */
+        public CategorySpec addAlias(String alias) {
+            String normalized = alias == null ? "" : alias.trim();
+            if (!normalized.isEmpty() && !aliases.contains(normalized) && !categoryName.equals(normalized)) {
+                aliases.add(normalized);
+            }
+            return this;
+        }
+
+        /**
+         * 批量声明分类 alias。
+         *
+         * @param aliases 分类 alias 数组
+         * @return 当前分类描述
+         */
+        public CategorySpec addAliases(String... aliases) {
+            if (aliases == null) {
+                return this;
+            }
+            for (String alias : aliases) {
+                addAlias(alias);
+            }
+            return this;
+        }
+
+        /**
+         * 批量声明分类 alias。
+         *
+         * @param aliases 分类 alias 列表
+         * @return 当前分类描述
+         */
+        public CategorySpec addAliases(List<String> aliases) {
+            if (aliases == null) {
+                return this;
+            }
+            for (String alias : aliases) {
+                addAlias(alias);
+            }
+            return this;
+        }
+
         public String getCategoryName() {
             return categoryName;
         }
@@ -809,6 +846,26 @@ public class ForgeConfigTemplateScreen extends BaseScreen {
 
         public String getDisplayTitle() {
             return title.isEmpty() ? formatDisplayLabel(categoryName) : title;
+        }
+
+        /**
+         * 判断指定分类名是否匹配主分类名或显式 alias。
+         *
+         * @param categoryName 待匹配分类名
+         * @return true 表示精确匹配
+         */
+        boolean matchesCategoryName(String categoryName) {
+            String normalized = categoryName == null ? "" : categoryName.trim();
+            return this.categoryName.equals(normalized) || aliases.contains(normalized);
+        }
+
+        /**
+         * 返回显式声明的分类 alias。
+         *
+         * @return 只读 alias 列表
+         */
+        public List<String> getAliases() {
+            return Collections.unmodifiableList(aliases);
         }
     }
 

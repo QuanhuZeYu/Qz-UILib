@@ -6,6 +6,7 @@ import java.util.Collections;
 import org.junit.Assert;
 import org.junit.Test;
 
+import club.heiqi.uilib.font.config.FontConfig;
 import net.minecraftforge.common.config.Configuration;
 import net.minecraftforge.common.config.Property;
 
@@ -66,6 +67,47 @@ public class ConfigSyncModelsTest {
         valid.fieldKey = ConfigSyncModels.buildFieldKey("general", "mode");
         valid.draftValue = "safe";
         Assert.assertTrue(ConfigSyncModels.validateChange(configuration, definition, valid).accepted);
+    }
+
+    /**
+     * 验证分类名默认按大小写敏感精确匹配。
+     */
+    @Test
+    public void shouldNotMatchLowercaseCategoryWithoutExplicitAlias() {
+        Configuration configuration = new Configuration();
+        configuration.get("fontsystem", "fontSort", new String[] { "Alpha" }, "字体排序");
+
+        ConfigSyncModels.ConfigDefinitionSnapshot definition = ConfigSyncModels.captureDefinition(configuration,
+                Collections.singletonList(new ConfigSyncCategorySpec(FontConfig.CATEGORY, "Font System",
+                        "字体配置")));
+
+        Assert.assertTrue(definition.categories.isEmpty());
+    }
+
+    /**
+     * 验证显式 alias 可以读写历史分类名。
+     */
+    @Test
+    public void shouldResolveLowercaseCategoryWithExplicitAlias() {
+        Configuration configuration = new Configuration();
+        configuration.get("fontsystem", "fontSort", new String[] { "Alpha" }, "字体排序");
+
+        ConfigSyncModels.ConfigDefinitionSnapshot definition = ConfigSyncModels.captureDefinition(configuration,
+                Collections.singletonList(new ConfigSyncCategorySpec(FontConfig.CATEGORY, "Font System",
+                        "字体配置").addAlias("fontsystem")));
+
+        Assert.assertEquals(1, definition.categories.size());
+        Assert.assertEquals(FontConfig.CATEGORY, definition.categories.get(0).categoryName);
+        Assert.assertEquals("fontsystem", definition.categories.get(0).actualCategoryName);
+
+        ConfigSyncModels.ConfigDraftSnapshot draft = ConfigSyncModels.captureDraft(configuration, definition);
+        draft.values.put(ConfigSyncModels.buildFieldKey(FontConfig.CATEGORY, "fontSort"), "Beta, Gamma");
+        ConfigSyncModels.applyDraft(configuration, definition, draft);
+
+        Assert.assertArrayEquals(new String[] { "Beta", "Gamma" },
+                configuration.getCategory("fontsystem").get("fontSort").getStringList());
+        Assert.assertFalse(configuration.hasCategory(FontConfig.CATEGORY)
+                && configuration.getCategory(FontConfig.CATEGORY).containsKey("fontSort"));
     }
 
     /**

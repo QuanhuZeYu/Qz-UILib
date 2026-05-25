@@ -39,6 +39,7 @@ public class ModConfigGui extends ForgeConfigTemplateScreen {
                 .setDescription(QzUiLibConfigSchema.description());
         for (ConfigSyncCategorySpec category : QzUiLibConfigSchema.categories()) {
             spec.addCategory(new CategorySpec(category.getCategoryName())
+                    .addAliases(category.getAliases())
                     .setTitle(category.getDisplayTitle())
                     .setDescription(category.getDescription()));
         }
