@@ -160,7 +160,7 @@ UiHudDocumentRegistration registration = UiHudDocumentHost.getInstance().registe
 - 交互 HUD 只会拦截实际浮窗面板及其非穿透子树；命中 HUD root 自身空白区域时会默认放行到底层原生界面。若某个面板或其祖先也希望显式放行空白区域，需要声明 `data-hit-test-passthrough="true"`。
 - 多个交互 HUD 重叠时，只会把输入路由给最上层命中的那一层，避免多层同时响应同一次点击。
 - 当当前原生界面已有聚焦的 Minecraft 文本输入框时，交互层不会继续接管键盘；一旦 UILib 获得焦点，会阻断宿主原生键盘链路，避免双方同时响应同一输入。
-- `GuiChat` 打开时 HUD 仍可见，但不会沿用上一个屏幕里的旧 HUD 焦点继续抢占键盘；聊天框会先保留原生输入权，只有在当前聊天界面里再次鼠标命中 HUD 并形成有效焦点后，HUD 才会重新接管。
+- `GuiChat` 打开时 HUD 仍可见，但不会沿用上一个屏幕里的旧 HUD 焦点继续抢占键盘；聊天框会先保留原生输入权，只有在当前聊天界面里再次鼠标命中 HUD 并形成有效焦点后，HUD 才会重新接管。若 HUD 已抢占过聊天框输入，随后主键点击浮窗外部会显式恢复聊天框原生输入焦点。
 - 交互层的键盘抢占发生在原生 `handleKeyboardInput()` 之前，避免背包、容器或其他页面先消费 Tab / 文本输入。
 - `Config.GENERAL.uiDebug=true` 时，会在屏幕右上角显示当前 `GuiScreen` 类名，并自动裁剪到屏幕内，适合排查某个页面为什么会被 HUD 黑名单隐藏或继续显示。
 

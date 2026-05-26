@@ -463,7 +463,7 @@ public final class UiHudDemoController {
         appendTextLine(document, tipsCard, "2. HUD 已聚焦时打开聊天框，聊天框应先可输入，HUD 不应沿用旧焦点抢键盘。");
         appendTextLine(document, tipsCard, "3. 聊天框打开后再次点击 HUD 输入框，聊天框应失焦，HUD 再次接管键盘。");
         appendTextLine(document, tipsCard, "4. 未点击 HUD 前按 Tab，不应进入 HUD。仅悬停 HUD 也不应抢键盘。");
-        appendTextLine(document, tipsCard, "5. 点 HUD 外部后，HUD 应释放捕获，原生界面重新接管。");
+        appendTextLine(document, tipsCard, "5. 聊天态点 HUD 外部后，HUD 应释放捕获，并显式恢复聊天框输入焦点。");
     }
 
     private synchronized void refreshTexts() {
@@ -571,7 +571,8 @@ public final class UiHudDemoController {
     private String buildExpectationText() {
         return "预期 1：容器页 HUD 输入框里输入 abc 后按一次退格，最终应是 ab。\n"
                 + "预期 2：聊天框打开后，若未再次点击 HUD，聊天框应先能输入。\n"
-                + "预期 3：聊天框打开后再次点击 HUD 输入框，HUD 才重新抢占键盘。";
+                + "预期 3：聊天框打开后再次点击 HUD 输入框，HUD 才重新抢占键盘。\n"
+                + "预期 4：聊天态点浮窗外部后，聊天框应立即恢复可输入。";
     }
 
     private String buildCaptureStateText() {

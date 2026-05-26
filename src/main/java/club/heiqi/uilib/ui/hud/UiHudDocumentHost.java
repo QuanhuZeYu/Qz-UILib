@@ -207,6 +207,7 @@ public final class UiHudDocumentHost implements UiHostInputCaptureParticipant {
         if (!mouseDecision.shouldCapture) {
             if (mouseDecision.shouldClearFocus) {
                 clearInteractiveStates();
+                restoreNativeTextInputFocusAfterHudRelease(currentScreen, mouseDecision);
             }
             return false;
         }
@@ -517,7 +518,7 @@ public final class UiHudDocumentHost implements UiHostInputCaptureParticipant {
         if (frame != null && isPrimaryMouseButtonDown(frame)) {
             HudEntry targetEntry = resolveMouseTargetEntry(inputContext, frame.getMouseX(), frame.getMouseY());
             return targetEntry == null
-                    ? HudMouseDecision.missAndClearFocus()
+                    ? HudMouseDecision.missAndClearFocus(currentScreenSupportsNativeRefocus(inputContext.currentScreen))
                     : HudMouseDecision.capture(inputContext.nativeTextInputFocused);
         }
         if (frame != null && isPrimaryMouseButtonUp(frame)) {
@@ -631,6 +632,18 @@ public final class UiHudDocumentHost implements UiHostInputCaptureParticipant {
             return true;
         }
         return true;
+    }
+
+    private void restoreNativeTextInputFocusAfterHudRelease(GuiScreen currentScreen, HudMouseDecision mouseDecision) {
+        if (mouseDecision == null || !mouseDecision.shouldRestoreNativeTextInputFocus) {
+            return;
+        }
+        UiNativeTextInputInspector.focusPreferredTextInput(currentScreen);
+    }
+
+    private boolean currentScreenSupportsNativeRefocus(GuiScreen currentScreen) {
+        return UiNativeTextInputInspector.supportsPreferredTextInputRefocus(currentScreen,
+                currentScreen == null ? null : currentScreen.getClass().getName());
     }
 
     private boolean isInteractiveRootWhitespaceHit(HudEntry entry, ElementNode hitElement) {
@@ -1041,18 +1054,21 @@ public final class UiHudDocumentHost implements UiHostInputCaptureParticipant {
 
     private static final class HudMouseDecision {
 
-        private static final HudMouseDecision CAPTURE = new HudMouseDecision(true, false, false);
-        private static final HudMouseDecision RELEASE = new HudMouseDecision(false, false, false);
-        private static final HudMouseDecision MISS_AND_CLEAR_FOCUS = new HudMouseDecision(false, true, false);
+        private static final HudMouseDecision CAPTURE = new HudMouseDecision(true, false, false, false);
+        private static final HudMouseDecision RELEASE = new HudMouseDecision(false, false, false, false);
+        private static final HudMouseDecision MISS_AND_CLEAR_FOCUS = new HudMouseDecision(false, true, false, false);
 
         private final boolean shouldCapture;
         private final boolean shouldClearFocus;
         private final boolean shouldBlurNativeTextInput;
+        private final boolean shouldRestoreNativeTextInputFocus;
 
-        private HudMouseDecision(boolean shouldCapture, boolean shouldClearFocus, boolean shouldBlurNativeTextInput) {
+        private HudMouseDecision(boolean shouldCapture, boolean shouldClearFocus, boolean shouldBlurNativeTextInput,
+                boolean shouldRestoreNativeTextInputFocus) {
             this.shouldCapture = shouldCapture;
             this.shouldClearFocus = shouldClearFocus;
             this.shouldBlurNativeTextInput = shouldBlurNativeTextInput;
+            this.shouldRestoreNativeTextInputFocus = shouldRestoreNativeTextInputFocus;
         }
 
         private static HudMouseDecision capture() {
@@ -1060,7 +1076,7 @@ public final class UiHudDocumentHost implements UiHostInputCaptureParticipant {
         }
 
         private static HudMouseDecision capture(boolean shouldBlurNativeTextInput) {
-            return shouldBlurNativeTextInput ? new HudMouseDecision(true, false, true) : CAPTURE;
+            return shouldBlurNativeTextInput ? new HudMouseDecision(true, false, true, false) : CAPTURE;
         }
 
         private static HudMouseDecision release() {
@@ -1069,6 +1085,12 @@ public final class UiHudDocumentHost implements UiHostInputCaptureParticipant {
 
         private static HudMouseDecision missAndClearFocus() {
             return MISS_AND_CLEAR_FOCUS;
+        }
+
+        private static HudMouseDecision missAndClearFocus(boolean shouldRestoreNativeTextInputFocus) {
+            return shouldRestoreNativeTextInputFocus
+                    ? new HudMouseDecision(false, true, false, true)
+                    : MISS_AND_CLEAR_FOCUS;
         }
     }
 

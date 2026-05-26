@@ -70,6 +70,35 @@ public final class UiNativeTextInputInspector {
         return blurFocusedTextInputsReflectively(screen, 0, new IdentityHashMap<Object, Boolean>());
     }
 
+    /**
+     * 优先恢复当前屏幕上最适合接回输入权的原生文本输入框焦点。
+     *
+     * <p>当前仅对存在显式适配器的原生界面生效；未知页面仍保持只释放 HUD、不主动回填原生焦点的策略。</p>
+     *
+     * @param screen 当前屏幕
+     * @return 是否实际恢复了文本输入框焦点
+     */
+    public static boolean focusPreferredTextInput(GuiScreen screen) {
+        if (screen == null || screen instanceof UiManagedInputScreen) {
+            return false;
+        }
+        NativeTextInputAdapter adapter = findAdapter(screen);
+        return adapter != null && adapter.focusPreferredTextInput(screen);
+    }
+
+    /**
+     * 判断当前宿主是否属于支持原生文本框回焦的已知页面。
+     *
+     * <p>该入口仅供宿主输入协调链内部使用，不作为稳定 API 承诺。</p>
+     *
+     * @param screen 当前屏幕实例
+     * @param screenClassName 当前屏幕类名
+     * @return 是否支持原生文本框回焦
+     */
+    public static boolean supportsPreferredTextInputRefocus(Object screen, String screenClassName) {
+        return screen instanceof GuiChat || "net.minecraft.client.gui.GuiChat".equals(screenClassName);
+    }
+
     private static NativeTextInputAdapter findAdapter(GuiScreen screen) {
         if (screen == null) {
             return null;
@@ -237,6 +266,8 @@ public final class UiNativeTextInputInspector {
         boolean hasFocusedTextInput(GuiScreen screen);
 
         boolean blurFocusedTextInputs(GuiScreen screen);
+
+        boolean focusPreferredTextInput(GuiScreen screen);
     }
 
     private static final class GuiChatTextInputAdapter implements NativeTextInputAdapter {
@@ -262,6 +293,19 @@ public final class UiNativeTextInputInspector {
             }
             textField.setFocused(false);
             return true;
+        }
+
+        @Override
+        public boolean focusPreferredTextInput(GuiScreen screen) {
+            GuiTextField textField = resolveTextField(screen);
+            if (textField == null) {
+                return false;
+            }
+            if (textField.isFocused()) {
+                return true;
+            }
+            textField.setFocused(true);
+            return textField.isFocused();
         }
 
         private GuiTextField resolveTextField(GuiScreen screen) {
