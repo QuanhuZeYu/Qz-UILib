@@ -137,8 +137,9 @@ Minecraft.getMinecraft().displayGuiScreen(UiDocumentScreens.createDocumentScreen
 ```java
 UiHudDocumentRegistration registration = UiHudDocumentHost.getInstance().register(
         UiHudLayerType.PASSIVE,
-        document -> {
-            ElementNode root = document.getRootElement();
+        context -> {
+            UiDocument document = context.getDocument();
+            ElementNode root = context.getMountRoot();
             ElementNode badge = document.div();
             badge.style()
                     .setPosition(UiPosition.FIXED)
@@ -151,13 +152,14 @@ UiHudDocumentRegistration registration = UiHudDocumentHost.getInstance().registe
 
 当前稳定边界：
 
-- HUD 文档仍复用 `UiDocument` 与 `HtmlLikeDocumentWidget`，不是单独的一套渲染语法。
-- HUD 根元素默认补齐 `width:100%`、`height:100%` 与 `overflow:visible`。
+- HUD 文档仍复用 `UiDocument` 与 `HtmlLikeDocumentWidget`，不是单独的一套渲染语法；但宿主内部现已改为“单共享 document/widget + 每个 HUD 一棵挂载子树”。
+- `register(...)` 传入的 builder 会收到 `UiHudMountContext`：`getDocument()` 用于创建节点，`getMountRoot()` 才是当前 HUD 专属根；不要再假设 `document.getRootElement()` 归当前 HUD 独占。
+- 每个 HUD 的挂载根默认补齐 `width:100%`、`height:100%` 与 `overflow:visible`。
 - 被动层会默认标记为整棵子树不可命中。
 - 交互层在实现上仍会随纯游戏界面渲染，但只有容器态才会接通输入。当前 HUD 隐藏范围采用显式黑名单：游戏主页（含原版 `GuiMainMenu`、新版 `TitleScreen`、第三方主页 `galaxyspace.core.gui.GSGuiMainMenu`）、选图页、服务器列表、游戏内菜单和 Forge 配置页会落入 `MENU` 分类，因此既不会显示，也不会接通输入；未命中黑名单的第三方与大多数原版 `GuiScreen` 默认按容器态处理。
 - 交互 HUD 当前采用“先鼠标、后键盘”的接管契约：必须先通过鼠标命中建立 HUD 焦点，之后才会继续接管键盘；不支持纯键盘首次进入 HUD。
 - 交互 HUD 的键盘抢占以“HUD 内是否仍有有效焦点控件”为唯一依据；鼠标悬停、HUD 可见但未聚焦都不会单独触发键盘抢占。
-- 交互 HUD 只会拦截实际浮窗面板及其非穿透子树；命中 HUD root 自身空白区域时会默认放行到底层原生界面。若某个面板或其祖先也希望显式放行空白区域，需要声明 `data-hit-test-passthrough="true"`。
+- 交互 HUD 只会拦截实际浮窗面板及其非穿透子树；命中挂载根自身空白区域时会默认放行到底层原生界面。若某个面板或其祖先也希望显式放行空白区域，需要声明 `data-hit-test-passthrough="true"`；该语义在共享根下会把整棵子树视为透明，并继续命中视觉下方 HUD。
 - 多个交互 HUD 重叠时，只会把输入路由给最上层命中的那一层，避免多层同时响应同一次点击。
 - 当当前原生界面已有聚焦的 Minecraft 文本输入框时，交互层不会继续接管键盘；一旦 UILib 获得焦点，会阻断宿主原生键盘链路，避免双方同时响应同一输入。
 - `GuiChat` 打开时 HUD 仍可见，但不会沿用上一个屏幕里的旧 HUD 焦点继续抢占键盘；聊天框会先保留原生输入权，只有在当前聊天界面里再次鼠标命中 HUD 并形成有效焦点后，HUD 才会重新接管。若 HUD 已抢占过聊天框输入，随后主键点击浮窗外部会显式恢复聊天框原生输入焦点。

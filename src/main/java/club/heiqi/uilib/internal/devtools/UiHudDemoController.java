@@ -108,15 +108,15 @@ public final class UiHudDemoController {
         passiveRegistration = UiHudDocumentHost.getInstance().register(UiHudLayerType.PASSIVE,
                 new UiHudDocumentHost.UiHudDocumentContentBuilder() {
                     @Override
-                    public void build(UiDocument document) {
-                        buildPassiveDocument(document);
+                    public void build(UiHudDocumentHost.UiHudMountContext context) {
+                        buildPassiveDocument(context.getDocument(), context.getMountRoot());
                     }
                 });
         interactiveRegistration = UiHudDocumentHost.getInstance().register(UiHudLayerType.INTERACTIVE,
                 new UiHudDocumentHost.UiHudDocumentContentBuilder() {
                     @Override
-                    public void build(UiDocument document) {
-                        buildInteractiveDocument(document);
+                    public void build(UiHudDocumentHost.UiHudMountContext context) {
+                        buildInteractiveDocument(context.getDocument(), context.getMountRoot());
                     }
                 });
         refreshTexts();
@@ -143,8 +143,7 @@ public final class UiHudDemoController {
         interactiveDebugSection = null;
     }
 
-    private void buildPassiveDocument(UiDocument document) {
-        ElementNode root = document.getRootElement();
+    private void buildPassiveDocument(UiDocument document, ElementNode root) {
 
         ElementNode panel = document.div();
         panel.style()
@@ -193,8 +192,7 @@ public final class UiHudDemoController {
         anchor.append(badge);
     }
 
-    private void buildInteractiveDocument(UiDocument document) {
-        ElementNode root = document.getRootElement();
+    private void buildInteractiveDocument(UiDocument document, ElementNode root) {
 
         ElementNode panel = document.div();
         panel.style()

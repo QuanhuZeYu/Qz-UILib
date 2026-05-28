@@ -57,6 +57,28 @@ public final class DocumentHitTestEngine {
                 DocumentStickyPositioning.rootContext());
     }
 
+    /**
+     * 在指定偏移下对某棵子树布局盒执行命中测试。
+     *
+     * @param rootBox 子树根布局盒
+     * @param scrollState 滚动状态
+     * @param documentX 文档局部 X
+     * @param documentY 文档局部 Y
+     * @param offsetX 根布局盒相对文档原点的 X 偏移
+     * @param offsetY 根布局盒相对文档原点的 Y 偏移
+     * @param currentTimeNanos 当前动画时间
+     * @param animationTimeline 动画时间线
+     * @return 命中的最深元素；未命中时返回 null
+     */
+    public static ElementNode hitTest(DocumentLayoutBox rootBox, DocumentScrollState scrollState, int documentX,
+            int documentY, int offsetX, int offsetY, long currentTimeNanos,
+            DocumentAnimationTimeline animationTimeline) {
+        Objects.requireNonNull(rootBox, "rootBox");
+        return hitTestBox(rootBox, scrollState, documentX, documentY, offsetX, offsetY, true,
+                currentTimeNanos, animationTimeline,
+                DocumentStickyPositioning.rootContext());
+    }
+
     private static ElementNode hitTestBox(DocumentLayoutBox box, DocumentScrollState scrollState, int documentX,
             int documentY, int offsetX, int offsetY, boolean searchStackingContext, long currentTimeNanos,
             DocumentAnimationTimeline animationTimeline,
@@ -294,6 +316,10 @@ public final class DocumentHitTestEngine {
             return false;
         }
         if ("true".equals(element.getAttribute("data-hit-test-hidden"))) {
+            return true;
+        }
+        // 显式穿透区域按整棵子树透明处理，允许同一宿主内继续命中视觉下方内容。
+        if ("true".equals(element.getAttribute("data-hit-test-passthrough"))) {
             return true;
         }
         // visibility:hidden 的元素不响应命中测试

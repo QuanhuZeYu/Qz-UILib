@@ -17,19 +17,24 @@ import net.minecraft.client.gui.inventory.GuiContainer;
 import org.lwjglx.input.Mouse;
 
 import club.heiqi.uilib.ui.document.HtmlLikeDocumentWidget;
+import club.heiqi.uilib.ui.dom.DocumentNode;
 import club.heiqi.uilib.ui.dom.ElementNode;
 import club.heiqi.uilib.ui.dom.UiDocument;
 import club.heiqi.uilib.ui.host.DocumentHostInteractionSession;
 import club.heiqi.uilib.ui.host.DocumentHostRenderSupport;
 import club.heiqi.uilib.ui.host.DocumentHostWidgetFactory;
+import club.heiqi.uilib.ui.input.UiHostInputCaptureParticipant;
 import club.heiqi.uilib.ui.input.UiInputFrame;
 import club.heiqi.uilib.ui.input.UiInputService;
-import club.heiqi.uilib.ui.input.UiHostInputCaptureParticipant;
 import club.heiqi.uilib.ui.input.UiKeyboardCaptureState;
 import club.heiqi.uilib.ui.input.UiNativeTextInputInspector;
 import club.heiqi.uilib.ui.render.UiRenderContext;
 import club.heiqi.uilib.ui.runtime.UiRuntimeAdapters;
+import club.heiqi.uilib.ui.style.props.UiDisplay;
 import club.heiqi.uilib.ui.style.props.UiOverflow;
+import club.heiqi.uilib.ui.style.props.UiPointerEvents;
+import club.heiqi.uilib.ui.style.props.UiPosition;
+import club.heiqi.uilib.ui.style.props.UiVisibility;
 import club.heiqi.uilib.ui.style.values.UiStyleLength;
 import club.heiqi.uilib.ui.text.DefaultTextMeasureService;
 import club.heiqi.uilib.ui.text.TextContentMode;
@@ -50,14 +55,31 @@ public final class UiHudDocumentHost implements UiHostInputCaptureParticipant {
     private static final UiHudDocumentHost INSTANCE = new UiHudDocumentHost();
     private static final String RUNTIME_NAME_INTERACTIVE = "hud_interactive";
     private static final String RUNTIME_NAME_PASSIVE = "hud_passive";
+    private static final String RUNTIME_NAME_SHARED = "hud_shared";
+    private static final String REGISTRATION_ID_ATTRIBUTE = "data-qz-hud-registration-id";
+    private static final String LAYER_ROOT_ATTRIBUTE = "data-qz-hud-layer-root";
+    private static final String HOST_SHELL_ATTRIBUTE = "data-qz-hud-host-shell";
 
     private final List<HudEntry> entries = new ArrayList<HudEntry>();
     private final UiHudRenderPipeline renderPipeline = new UiHudRenderPipeline();
+    private final DocumentHostInteractionSession interactionSession = new DocumentHostInteractionSession();
+
     private boolean hudTextInputRequested;
     private HudEntry activeMouseEntry;
     private HudEntry activeKeyboardEntry;
     private HudEntry hoveredMouseEntry;
     private HudHostScreenSession screenSession = HudHostScreenSession.empty();
+
+    private UiDocument sharedDocument;
+    private HtmlLikeDocumentWidget sharedWidget;
+    private ElementNode passiveLayerRoot;
+    private ElementNode interactiveLayerRoot;
+    private UiRuntimeAdapters sharedRuntimeAdapters;
+
+    private long nextRegistrationId = 1L;
+    private int routingDepth;
+    private boolean pendingInteractionReset;
+    private boolean pendingSceneDestroy;
 
     private UiHudDocumentHost() {}
 
@@ -73,13 +95,8 @@ public final class UiHudDocumentHost implements UiHostInputCaptureParticipant {
     /**
      * 注册一个 HUD 文档。
      *
-     * <p>HUD 层语义：</p>
-     * <ul>
-     *   <li>{@link UiHudLayerType#INTERACTIVE INTERACTIVE}：仅在 {@link GuiContainer} 类宿主界面下可交互，
-     *       且只在主鼠标按键释放阶段路由输入；其他 {@link GuiScreen} 子类（如主菜单、聊天、设置）只渲染不可点。</li>
-     *   <li>{@link UiHudLayerType#PASSIVE PASSIVE}：只在没有任何 {@link GuiScreen} 打开（纯游戏内 HUD 阶段）时可见，
-     *       不接收输入；用于战斗/状态指示等仅显示用途。</li>
-     * </ul>
+     * <p>共享宿主会为每个注册项创建一棵独立的挂载根子树；所有 HUD 共享同一份底层文档与 widget，
+     * 但作者只应操作当前注册项的 {@link UiHudMountContext#getMountRoot()}。</p>
      *
      * @param layerType HUD 层类型
      * @param contentBuilder 文档内容构建器
@@ -93,7 +110,8 @@ public final class UiHudDocumentHost implements UiHostInputCaptureParticipant {
     /**
      * 使用显式环境注册一个 HUD 文档。
      *
-     * <p>层语义同 {@link #register(UiHudLayerType, UiHudDocumentContentBuilder)}。</p>
+     * <p>共享宿主生命周期内只有一套底层 widget 环境；并存 HUD 会复用首个活动注册项建立的
+     * {@link TextMeasureService} 与 {@link UiRuntimeAdapters}，直到全部 HUD 注销后下一次重新初始化。</p>
      *
      * @param layerType HUD 层类型
      * @param contentBuilder 文档内容构建器
@@ -105,19 +123,34 @@ public final class UiHudDocumentHost implements UiHostInputCaptureParticipant {
             UiHudDocumentContentBuilder contentBuilder, TextMeasureService textMeasureService,
             UiRuntimeAdapters runtimeAdapters) {
         UiHudLayerType resolvedLayerType = Objects.requireNonNull(layerType, "layerType");
-        UiDocument document = UiDocument.create();
-        document.setDefaultTextContentMode(TextContentMode.UILIB_RAW);
-        applyDefaultRootContract(document, resolvedLayerType);
-        Objects.requireNonNull(contentBuilder, "contentBuilder").build(document);
+        UiHudDocumentContentBuilder resolvedBuilder = Objects.requireNonNull(contentBuilder, "contentBuilder");
+        ensureSharedScene(Objects.requireNonNull(textMeasureService, "textMeasureService"),
+                Objects.requireNonNull(runtimeAdapters, "runtimeAdapters"));
 
-        HtmlLikeDocumentWidget widget = DocumentHostWidgetFactory.createViewportDocumentWidget(document, 320, 180,
-                Objects.requireNonNull(textMeasureService, "textMeasureService"), false);
+        String registrationId = Long.toString(nextRegistrationId++);
+        ElementNode hostShell = sharedDocument.div();
+        ElementNode mountRoot = sharedDocument.div();
+        applyHostShellContract(hostShell, registrationId);
+        applyDefaultMountRootContract(mountRoot, resolvedLayerType, registrationId);
+        hostShell.append(mountRoot);
 
-        HudEntry entry = new HudEntry(resolvedLayerType, widget, Objects.requireNonNull(runtimeAdapters,
-                "runtimeAdapters"));
+        ElementNode layerRoot = resolvedLayerType == UiHudLayerType.PASSIVE ? passiveLayerRoot : interactiveLayerRoot;
+        layerRoot.append(hostShell);
+
+        HudEntry entry = new HudEntry(registrationId, resolvedLayerType, hostShell, mountRoot);
         entries.add(entry);
-        UiLayoutInvalidationRegistry.registerRoot(widget);
-        return new RegistrationHandle(entry);
+        try {
+            resolvedBuilder.build(new UiHudMountContext(sharedDocument, mountRoot, resolvedLayerType, registrationId));
+            syncEntryVisibility(resolveCurrentScreenCategory());
+            return new RegistrationHandle(entry);
+        } catch (RuntimeException exception) {
+            entries.remove(entry);
+            layerRoot.removeChild(hostShell);
+            if (entries.isEmpty()) {
+                destroySharedScene();
+            }
+            throw exception;
+        }
     }
 
     /**
@@ -127,7 +160,7 @@ public final class UiHudDocumentHost implements UiHostInputCaptureParticipant {
      * @apiNote 仅供框架内部输入分发链路调用，业务代码不应直接触发。LTS 不承诺签名稳定。
      */
     public synchronized void handleInputFrame(UiInputFrame frame) {
-        if (frame == null || entries.isEmpty()) {
+        if (frame == null || entries.isEmpty() || sharedWidget == null) {
             clearInteractiveStates();
             return;
         }
@@ -139,17 +172,18 @@ public final class UiHudDocumentHost implements UiHostInputCaptureParticipant {
         GuiScreen currentScreen = minecraft.currentScreen;
         HudInputContext inputContext = createInputContext(currentScreen);
         syncScreenSession(inputContext);
+        syncEntryVisibility(inputContext.screenCategory);
         if (!inputContext.interactiveInputEnabled) {
             clearInteractiveStates();
             return;
         }
         routeMouseFrame(frame, inputContext);
-        updateHudKeyboardCaptureState();
+        updateHudKeyboardCaptureState(inputContext.screenCategory);
         if (UiKeyboardCaptureState.getInstance().isHudKeyboardCaptured()) {
             UiInputFrame textFrame = extractCollectedTextFrame(frame);
             if (textFrame != null) {
                 routeKeyboardFrame(textFrame, inputContext);
-                updateHudKeyboardCaptureState();
+                updateHudKeyboardCaptureState(inputContext.screenCategory);
             }
         }
     }
@@ -166,11 +200,12 @@ public final class UiHudDocumentHost implements UiHostInputCaptureParticipant {
      * @apiNote 仅供框架内部 forge 事件钩子调用，业务代码不应直接触发。LTS 不承诺签名稳定。
      */
     public synchronized boolean handleImmediateKeyboardInput(GuiScreen currentScreen, UiInputFrame frame) {
-        if (frame == null || entries.isEmpty()) {
+        if (frame == null || entries.isEmpty() || sharedWidget == null) {
             return false;
         }
         HudInputContext inputContext = createInputContext(currentScreen);
         syncScreenSession(inputContext);
+        syncEntryVisibility(inputContext.screenCategory);
         if (!inputContext.interactiveInputEnabled) {
             clearInteractiveStates();
             return false;
@@ -193,12 +228,13 @@ public final class UiHudDocumentHost implements UiHostInputCaptureParticipant {
      * @apiNote 仅供框架内部 forge 事件钩子调用，业务代码不应直接触发。LTS 不承诺签名稳定。
      */
     public synchronized boolean handleImmediateMouseInput(GuiScreen currentScreen, UiInputFrame frame) {
-        if (frame == null || frame.getMouseEvents().isEmpty() || entries.isEmpty()) {
+        if (frame == null || frame.getMouseEvents().isEmpty() || entries.isEmpty() || sharedWidget == null) {
             return false;
         }
         updateLatestPointer(frame);
         HudInputContext inputContext = createInputContext(currentScreen);
         syncScreenSession(inputContext);
+        syncEntryVisibility(inputContext.screenCategory);
         if (!inputContext.interactiveInputEnabled) {
             clearInteractiveStates();
             return false;
@@ -215,17 +251,18 @@ public final class UiHudDocumentHost implements UiHostInputCaptureParticipant {
             UiNativeTextInputInspector.blurFocusedTextInputs(currentScreen);
         }
         routeMouseFrame(frame, inputContext);
-        updateHudKeyboardCaptureState();
+        updateHudKeyboardCaptureState(inputContext.screenCategory);
         return true;
     }
 
     synchronized boolean handleImmediateMouseInputForTest(UiInputFrame frame, UiHudScreenCategory screenCategory) {
-        if (frame == null || frame.getMouseEvents().isEmpty() || entries.isEmpty()) {
+        if (frame == null || frame.getMouseEvents().isEmpty() || entries.isEmpty() || sharedWidget == null) {
             return false;
         }
         updateLatestPointer(frame);
         HudInputContext inputContext = createInputContextForTest(screenCategory);
         syncScreenSession(inputContext);
+        syncEntryVisibility(inputContext.screenCategory);
         if (!inputContext.interactiveInputEnabled) {
             clearInteractiveStates();
             return false;
@@ -238,44 +275,17 @@ public final class UiHudDocumentHost implements UiHostInputCaptureParticipant {
             return false;
         }
         routeMouseFrame(frame, inputContext);
-        updateHudKeyboardCaptureState();
+        updateHudKeyboardCaptureState(inputContext.screenCategory);
         return true;
     }
 
-    private boolean isPrimaryMouseButtonDown(UiInputFrame frame) {
-        if (frame == null) {
-            return false;
-        }
-        for (club.heiqi.uilib.ui.event.UiMouseEvent mouseEvent : frame.getMouseEvents()) {
-            if (mouseEvent != null
-                    && mouseEvent.getAction() == club.heiqi.uilib.ui.event.UiMouseEvent.Action.BUTTON_DOWN
-                    && mouseEvent.getButton() == 0) {
-                return true;
-            }
-        }
-        return false;
-    }
-
-    private boolean isPrimaryMouseButtonUp(UiInputFrame frame) {
-        if (frame == null) {
-            return false;
-        }
-        for (club.heiqi.uilib.ui.event.UiMouseEvent mouseEvent : frame.getMouseEvents()) {
-            if (mouseEvent != null
-                    && mouseEvent.getAction() == club.heiqi.uilib.ui.event.UiMouseEvent.Action.BUTTON_UP
-                    && mouseEvent.getButton() == 0) {
-                return true;
-            }
-        }
-        return false;
-    }
-
     synchronized boolean handleImmediateKeyboardInputForTest(UiInputFrame frame, UiHudScreenCategory screenCategory) {
-        if (frame == null || entries.isEmpty()) {
+        if (frame == null || entries.isEmpty() || sharedWidget == null) {
             return false;
         }
         HudInputContext inputContext = createInputContextForTest(screenCategory);
         syncScreenSession(inputContext);
+        syncEntryVisibility(inputContext.screenCategory);
         if (!inputContext.interactiveInputEnabled) {
             clearInteractiveStates();
             return false;
@@ -290,108 +300,25 @@ public final class UiHudDocumentHost implements UiHostInputCaptureParticipant {
 
     synchronized void handleInputFrameForTest(UiInputFrame frame, UiHudScreenCategory screenCategory, int width,
             int height) {
-        if (frame == null || entries.isEmpty()) {
+        if (frame == null || entries.isEmpty() || sharedWidget == null) {
             return;
         }
         updateLatestPointer(frame);
         HudInputContext inputContext = createInputContextForTest(screenCategory);
         syncScreenSession(inputContext);
+        syncEntryVisibility(inputContext.screenCategory);
         if (!inputContext.interactiveInputEnabled) {
             clearInteractiveStates();
             return;
         }
-        for (HudEntry entry : inputContext.entrySnapshot) {
-            entry.widget.applyLayoutBounds(0, 0, Math.max(0, width), Math.max(0, height));
-        }
+        applyViewportBounds(width, height);
         routeMouseFrame(frame, inputContext);
-        updateHudKeyboardCaptureState();
+        updateHudKeyboardCaptureState(inputContext.screenCategory);
         UiInputFrame keyboardFrame = extractKeyboardFrame(frame);
         if (keyboardFrame != null && UiKeyboardCaptureState.getInstance().isHudKeyboardCaptured()) {
             routeKeyboardFrame(keyboardFrame, inputContext);
         }
-        updateHudKeyboardCaptureState();
-    }
-
-    /**
-     * 返回首个交互 HUD 对应的 HTML-like 组件，供诊断读取滚动与输入状态。
-     *
-     * @return 首个交互 HUD 组件；不存在时返回 null
-     */
-    public synchronized HtmlLikeDocumentWidget getFirstInteractiveWidgetForDiagnostics() {
-        for (HudEntry entry : entries) {
-            if (entry.layerType == UiHudLayerType.INTERACTIVE) {
-                return entry.widget;
-            }
-        }
-        return null;
-    }
-
-    /**
-     * 返回当前 HUD 输入态诊断快照。
-     *
-     * @return HUD 输入态诊断快照
-     */
-    public synchronized HudInputDiagnosticsSnapshot getInputDiagnosticsSnapshot() {
-        String screenClassName = screenSession.screenClassName;
-        boolean nativeTextInputFocused = screenSession.nativeTextInputFocused;
-        boolean hudKeyboardCaptured = UiKeyboardCaptureState.getInstance().isHudKeyboardCaptured();
-        String focusedHudElementTag = resolveFocusedHudElementTag();
-        String activeHudName = activeKeyboardEntry == null ? "none" : activeKeyboardEntry.getRuntimeName();
-        return new HudInputDiagnosticsSnapshot(screenClassName, nativeTextInputFocused, hudKeyboardCaptured,
-                activeHudName, focusedHudElementTag, screenSession.screenHudFocusEstablished);
-    }
-
-    static UiInputFrame filterKeyboardInput(UiInputFrame frame, boolean nativeTextInputFocused,
-            boolean uiLibKeyboardCaptured) {
-        if (frame == null || !nativeTextInputFocused || uiLibKeyboardCaptured) {
-            return frame;
-        }
-        if (frame.getKeyEvents().isEmpty() && frame.getTextEvents().isEmpty()) {
-            return frame;
-        }
-        return new UiInputFrame(frame.getMouseX(), frame.getMouseY(), frame.getMouseEvents(),
-                Collections.<club.heiqi.uilib.ui.event.UiKeyEvent>emptyList(),
-                Collections.<club.heiqi.uilib.ui.event.UiTextInputEvent>emptyList());
-    }
-
-    private void syncScreenSession(HudInputContext inputContext) {
-        HudHostScreenSession nextSession = HudHostScreenSession.from(inputContext);
-        if (screenSession.isSameScreen(nextSession)) {
-            screenSession = screenSession.withSnapshot(nextSession);
-            if (screenSession.shouldReleaseHudCaptureForNativeTextInput()) {
-                clearInteractiveStates();
-            }
-            return;
-        }
-        screenSession = nextSession;
-        clearInteractiveStates();
-    }
-
-    private String resolveFocusedHudElementTag() {
-        if (activeKeyboardEntry == null || !entries.contains(activeKeyboardEntry)) {
-            return "none";
-        }
-        ElementNode focusedElement = activeKeyboardEntry.widget.getFocusedElement();
-        return focusedElement == null ? "none" : focusedElement.getTagName();
-    }
-
-    private void updateLatestPointer(UiInputFrame frame) {
-        for (HudEntry entry : entries) {
-            entry.interactionSession.recordPointer(frame);
-        }
-    }
-
-    private HudInputContext createInputContext(GuiScreen currentScreen) {
-        UiHudScreenCategory screenCategory = classifyScreen(currentScreen);
-        boolean nativeTextInputFocused = UiNativeTextInputInspector.hasFocusedTextInput(currentScreen);
-        return new HudInputContext(currentScreen, currentScreen == null ? null : currentScreen.getClass().getName(),
-                screenCategory, isInteractiveInputEnabled(currentScreen), new ArrayList<HudEntry>(entries), true,
-                nativeTextInputFocused);
-    }
-
-    private HudInputContext createInputContextForTest(UiHudScreenCategory screenCategory) {
-        return new HudInputContext(null, null, screenCategory, screenCategory == UiHudScreenCategory.CONTAINER,
-                new ArrayList<HudEntry>(entries), false, false);
+        updateHudKeyboardCaptureState(inputContext.screenCategory);
     }
 
     private boolean routeImmediateKeyboardFrame(HudInputContext inputContext, UiInputFrame frame,
@@ -407,12 +334,12 @@ public final class UiHudDocumentHost implements UiHostInputCaptureParticipant {
             return false;
         }
         routeKeyboardFrame(routedFrame, inputContext);
-        updateHudKeyboardCaptureState();
+        updateHudKeyboardCaptureState(inputContext.screenCategory);
         return UiKeyboardCaptureState.getInstance().isUiLibKeyboardCaptured();
     }
 
     private void routeMouseFrame(UiInputFrame frame, HudInputContext inputContext) {
-        if (frame == null || frame.getMouseEvents().isEmpty()) {
+        if (frame == null || frame.getMouseEvents().isEmpty() || sharedWidget == null) {
             return;
         }
         if (!inputContext.interactiveInputEnabled) {
@@ -420,7 +347,7 @@ public final class UiHudDocumentHost implements UiHostInputCaptureParticipant {
             return;
         }
         if (inputContext.syncNativeViewportBounds) {
-            applyCurrentViewportBounds(inputContext.entrySnapshot);
+            applyCurrentViewportBounds();
         }
         boolean primaryDown = isPrimaryMouseButtonDown(frame);
         boolean primaryUp = isPrimaryMouseButtonUp(frame);
@@ -431,44 +358,31 @@ public final class UiHudDocumentHost implements UiHostInputCaptureParticipant {
                 screenSession = screenSession.withHudFocusEstablished(false);
                 return;
             }
-            clearInteractiveStatesExcept(targetEntry);
             hoveredMouseEntry = targetEntry;
             activeMouseEntry = targetEntry;
-            UiInputFrame mouseFrame = new UiInputFrame(frame.getMouseX(), frame.getMouseY(), frame.getMouseEvents(),
-                    Collections.<club.heiqi.uilib.ui.event.UiKeyEvent>emptyList(),
-                    Collections.<club.heiqi.uilib.ui.event.UiTextInputEvent>emptyList());
-            targetEntry.interactionSession.route(targetEntry.getRuntimeName(), targetEntry.widget, mouseFrame);
-            if (targetEntry.interactionSession.hasFocusedWidget()) {
-                activeKeyboardEntry = targetEntry;
-                screenSession = screenSession.withHudFocusEstablished(true);
-            } else {
-                screenSession = screenSession.withHudFocusEstablished(false);
-            }
-            updateHudKeyboardCaptureState();
+            routeSharedSceneFrame(targetEntry.getRuntimeName(), mouseOnlyFrame(frame));
+            refreshActiveKeyboardEntry(inputContext.screenCategory);
+            screenSession = screenSession.withHudFocusEstablished(activeKeyboardEntry != null);
             return;
         }
+
         HudEntry targetEntry = resolveMouseFrameTargetEntry(inputContext, frame.getMouseX(), frame.getMouseY());
         if (targetEntry == null) {
             updateHoveredMouseEntry(null);
             return;
         }
         updateHoveredMouseEntry(targetEntry);
-        UiInputFrame mouseFrame = new UiInputFrame(frame.getMouseX(), frame.getMouseY(), frame.getMouseEvents(),
-                Collections.<club.heiqi.uilib.ui.event.UiKeyEvent>emptyList(),
-                Collections.<club.heiqi.uilib.ui.event.UiTextInputEvent>emptyList());
-        targetEntry.interactionSession.route(targetEntry.getRuntimeName(), targetEntry.widget, mouseFrame);
-        if (targetEntry.interactionSession.hasFocusedWidget()) {
-            activeKeyboardEntry = targetEntry;
-            screenSession = screenSession.withHudFocusEstablished(true);
-        }
+        routeSharedSceneFrame(targetEntry.getRuntimeName(), mouseOnlyFrame(frame));
+        refreshActiveKeyboardEntry(inputContext.screenCategory);
+        screenSession = screenSession.withHudFocusEstablished(activeKeyboardEntry != null);
         if (primaryUp) {
             activeMouseEntry = null;
         }
-        updateHudKeyboardCaptureState();
     }
 
     private void routeKeyboardFrame(UiInputFrame frame, HudInputContext inputContext) {
-        if (frame == null || (frame.getKeyEvents().isEmpty() && frame.getTextEvents().isEmpty())) {
+        if (frame == null || (frame.getKeyEvents().isEmpty() && frame.getTextEvents().isEmpty())
+                || sharedWidget == null) {
             return;
         }
         if (!inputContext.interactiveInputEnabled) {
@@ -479,15 +393,61 @@ public final class UiHudDocumentHost implements UiHostInputCaptureParticipant {
         if (targetEntry == null) {
             return;
         }
-        targetEntry.interactionSession.route(targetEntry.getRuntimeName(), targetEntry.widget, frame);
-        if (targetEntry.interactionSession.hasFocusedWidget()) {
-            activeKeyboardEntry = targetEntry;
-            activeMouseEntry = targetEntry;
-            screenSession = screenSession.withHudFocusEstablished(true);
-        } else if (activeKeyboardEntry == targetEntry) {
-            activeKeyboardEntry = null;
-            screenSession = screenSession.withHudFocusEstablished(false);
+        routeSharedSceneFrame(targetEntry.getRuntimeName(), frame);
+        refreshActiveKeyboardEntry(inputContext.screenCategory);
+        screenSession = screenSession.withHudFocusEstablished(activeKeyboardEntry != null);
+    }
+
+    private void routeSharedSceneFrame(String runtimeName, UiInputFrame frame) {
+        if (sharedWidget == null || frame == null) {
+            return;
         }
+        routingDepth++;
+        try {
+            interactionSession.route(runtimeName == null ? RUNTIME_NAME_SHARED : runtimeName, sharedWidget, frame);
+        } finally {
+            routingDepth--;
+            if (routingDepth <= 0) {
+                flushPendingStateResets();
+            }
+        }
+    }
+
+    private void flushPendingStateResets() {
+        if (pendingSceneDestroy) {
+            pendingSceneDestroy = false;
+            pendingInteractionReset = false;
+            interactionSession.clearInteractionState();
+            destroySharedScene();
+            return;
+        }
+        if (pendingInteractionReset) {
+            pendingInteractionReset = false;
+            interactionSession.clearInteractionState();
+        }
+    }
+
+    private void scheduleInteractionReset() {
+        if (routingDepth > 0) {
+            pendingInteractionReset = true;
+            return;
+        }
+        interactionSession.clearInteractionState();
+    }
+
+    private void scheduleSceneDestroy() {
+        if (routingDepth > 0) {
+            pendingSceneDestroy = true;
+            return;
+        }
+        interactionSession.clearInteractionState();
+        destroySharedScene();
+    }
+
+    private static UiInputFrame mouseOnlyFrame(UiInputFrame frame) {
+        return new UiInputFrame(frame.getMouseX(), frame.getMouseY(), frame.getMouseEvents(),
+                Collections.<club.heiqi.uilib.ui.event.UiKeyEvent>emptyList(),
+                Collections.<club.heiqi.uilib.ui.event.UiTextInputEvent>emptyList());
     }
 
     private UiInputFrame extractKeyboardFrame(UiInputFrame frame) {
@@ -497,7 +457,8 @@ public final class UiHudDocumentHost implements UiHostInputCaptureParticipant {
         if (frame.getKeyEvents().isEmpty() && frame.getTextEvents().isEmpty()) {
             return null;
         }
-        return new UiInputFrame(frame.getMouseX(), frame.getMouseY(), Collections.<club.heiqi.uilib.ui.event.UiMouseEvent>emptyList(),
+        return new UiInputFrame(frame.getMouseX(), frame.getMouseY(),
+                Collections.<club.heiqi.uilib.ui.event.UiMouseEvent>emptyList(),
                 frame.getKeyEvents(), frame.getTextEvents());
     }
 
@@ -540,37 +501,479 @@ public final class UiHudDocumentHost implements UiHostInputCaptureParticipant {
     }
 
     private HudEntry resolveMouseTargetEntry(HudInputContext inputContext, int mouseX, int mouseY) {
-        if (!inputContext.interactiveInputEnabled) {
+        if (!inputContext.interactiveInputEnabled || sharedWidget == null) {
             return null;
         }
         if (inputContext.syncNativeViewportBounds) {
-            applyCurrentViewportBounds(inputContext.entrySnapshot);
+            applyCurrentViewportBounds();
         }
         for (int index = inputContext.entrySnapshot.size() - 1; index >= 0; index--) {
             HudEntry entry = inputContext.entrySnapshot.get(index);
             if (!isInteractiveEntryAvailable(entry, inputContext.screenCategory)) {
                 continue;
             }
-            ElementNode hitElement = entry.widget.findElementAt(mouseX, mouseY);
-            if (shouldCaptureHit(entry, hitElement)) {
+            ElementNode hitElement = sharedWidget.findElementAtWithin(entry.mountRoot, mouseX, mouseY);
+            if (shouldCaptureHit(hitElement)) {
                 return entry;
             }
         }
         return null;
     }
 
-    /**
-     * 在输入命中测试前同步 HUD widget 的真实原生视口尺寸。
-     *
-     * <p>HUD 注册时会先使用临时尺寸创建 widget；如果首次鼠标事件早于渲染阶段，
-     * 拖拽辅助器会从过期布局边界初始化 fixed 坐标，造成首拖跳位。</p>
-     *
-     * @param entrySnapshot 当前输入帧的 HUD 条目快照
-     */
-    private void applyCurrentViewportBounds(List<HudEntry> entrySnapshot) {
-        if (entrySnapshot == null || entrySnapshot.isEmpty()) {
+    private boolean shouldCaptureHit(ElementNode hitElement) {
+        return hitElement != null && (sharedWidget == null || !sharedWidget.isPassthroughHit(hitElement));
+    }
+
+    private void refreshActiveKeyboardEntry(UiHudScreenCategory screenCategory) {
+        activeKeyboardEntry = resolveFocusedInteractiveEntry(screenCategory);
+    }
+
+    private HudEntry resolveKeyboardTargetEntry(HudInputContext inputContext) {
+        activeKeyboardEntry = resolveFocusedInteractiveEntry(inputContext.screenCategory);
+        return activeKeyboardEntry;
+    }
+
+    private HudEntry resolveFocusedInteractiveEntry(UiHudScreenCategory screenCategory) {
+        if (sharedWidget == null) {
+            return null;
+        }
+        HudEntry entry = resolveEntryForElement(sharedWidget.getFocusedElement());
+        return isInteractiveEntryAvailable(entry, screenCategory) ? entry : null;
+    }
+
+    static UiInputFrame filterKeyboardInput(UiInputFrame frame, boolean nativeTextInputFocused,
+            boolean uiLibKeyboardCaptured) {
+        if (frame == null || !nativeTextInputFocused || uiLibKeyboardCaptured) {
+            return frame;
+        }
+        if (frame.getKeyEvents().isEmpty() && frame.getTextEvents().isEmpty()) {
+            return frame;
+        }
+        return new UiInputFrame(frame.getMouseX(), frame.getMouseY(), frame.getMouseEvents(),
+                Collections.<club.heiqi.uilib.ui.event.UiKeyEvent>emptyList(),
+                Collections.<club.heiqi.uilib.ui.event.UiTextInputEvent>emptyList());
+    }
+
+    private void syncScreenSession(HudInputContext inputContext) {
+        HudHostScreenSession nextSession = HudHostScreenSession.from(inputContext);
+        if (screenSession.isSameScreen(nextSession)) {
+            screenSession = screenSession.withSnapshot(nextSession);
+            if (screenSession.shouldReleaseHudCaptureForNativeTextInput()) {
+                clearInteractiveStates();
+            }
             return;
         }
+        screenSession = nextSession;
+        clearInteractiveStates();
+    }
+
+    private void updateLatestPointer(UiInputFrame frame) {
+        interactionSession.recordPointer(frame);
+    }
+
+    private HudInputContext createInputContext(GuiScreen currentScreen) {
+        UiHudScreenCategory screenCategory = classifyScreen(currentScreen);
+        boolean nativeTextInputFocused = UiNativeTextInputInspector.hasFocusedTextInput(currentScreen);
+        return new HudInputContext(currentScreen, currentScreen == null ? null : currentScreen.getClass().getName(),
+                screenCategory, isInteractiveInputEnabled(currentScreen), new ArrayList<HudEntry>(entries), true,
+                nativeTextInputFocused);
+    }
+
+    private HudInputContext createInputContextForTest(UiHudScreenCategory screenCategory) {
+        return new HudInputContext(null, null, screenCategory, screenCategory == UiHudScreenCategory.CONTAINER,
+                new ArrayList<HudEntry>(entries), false, false);
+    }
+
+    /**
+     * 返回首个交互 HUD 对应的 HTML-like 组件，供诊断读取滚动与输入状态。
+     *
+     * @return 首个交互 HUD 组件；不存在时返回 null
+     */
+    public synchronized HtmlLikeDocumentWidget getFirstInteractiveWidgetForDiagnostics() {
+        if (sharedWidget == null) {
+            return null;
+        }
+        for (HudEntry entry : entries) {
+            if (entry.layerType == UiHudLayerType.INTERACTIVE) {
+                return sharedWidget;
+            }
+        }
+        return null;
+    }
+
+    /**
+     * 返回当前 HUD 输入态诊断快照。
+     *
+     * @return HUD 输入态诊断快照
+     */
+    public synchronized HudInputDiagnosticsSnapshot getInputDiagnosticsSnapshot() {
+        String screenClassName = screenSession.screenClassName;
+        boolean nativeTextInputFocused = screenSession.nativeTextInputFocused;
+        boolean hudKeyboardCaptured = UiKeyboardCaptureState.getInstance().isHudKeyboardCaptured();
+        String focusedHudElementTag = resolveFocusedHudElementTag();
+        String activeHudName = activeKeyboardEntry == null ? "none" : activeKeyboardEntry.getDiagnosticName();
+        return new HudInputDiagnosticsSnapshot(screenClassName, nativeTextInputFocused, hudKeyboardCaptured,
+                activeHudName, focusedHudElementTag, screenSession.screenHudFocusEstablished);
+    }
+
+    private String resolveFocusedHudElementTag() {
+        if (sharedWidget == null) {
+            return "none";
+        }
+        ElementNode focusedElement = sharedWidget.getFocusedElement();
+        HudEntry entry = resolveEntryForElement(focusedElement);
+        if (entry == null || !entries.contains(entry)) {
+            return "none";
+        }
+        return focusedElement == null ? "none" : focusedElement.getTagName();
+    }
+
+    /**
+     * 在纯游戏 HUD 阶段绘制可见层。
+     *
+     * @param partialTicks 插值帧参数
+     * @apiNote 仅供框架内部 forge {@code RenderGameOverlayEvent} 钩子调用，业务代码不应直接触发。
+     */
+    public synchronized void renderHud(float partialTicks) {
+        renderVisibleLayers(UiHudScreenCategory.INGAME, partialTicks);
+    }
+
+    /**
+     * 在普通 GuiScreen 上方绘制可见层。
+     *
+     * @param partialTicks 插值帧参数
+     * @apiNote 仅供框架内部 forge {@code GuiScreenEvent.DrawScreenEvent.Post} 钩子调用，业务代码不应直接触发。
+     */
+    public synchronized void renderOnScreen(float partialTicks) {
+        Minecraft minecraft = Minecraft.getMinecraft();
+        if (minecraft == null) {
+            return;
+        }
+        renderVisibleLayers(classifyScreen(minecraft.currentScreen), partialTicks);
+    }
+
+    private void renderVisibleLayers(UiHudScreenCategory screenCategory, float partialTicks) {
+        if (sharedWidget == null || sharedRuntimeAdapters == null || screenCategory == UiHudScreenCategory.MENU) {
+            syncEntryVisibility(screenCategory);
+            return;
+        }
+        syncEntryVisibility(screenCategory);
+        if (!hasVisibleEntryIn(screenCategory)) {
+            return;
+        }
+        renderPipeline.renderVisibleLayers(sharedWidget, partialTicks, sharedRuntimeAdapters,
+                interactionSession.getLatestMouseX(), interactionSession.getLatestMouseY());
+    }
+
+    private boolean hasVisibleEntryIn(UiHudScreenCategory screenCategory) {
+        for (HudEntry entry : entries) {
+            if (entry.isVisibleIn(screenCategory)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * 判断当前是否存在可见的 HUD 文档。
+     *
+     * @param currentScreen 当前屏幕
+     * @return 是否存在可见层
+     */
+    public synchronized boolean hasVisibleLayer(GuiScreen currentScreen) {
+        return hasVisibleLayerIn(classifyScreen(currentScreen));
+    }
+
+    synchronized boolean hasVisibleLayerForTest(Object screen, String screenClassName) {
+        return hasVisibleLayerIn(classifyScreen(screen, screenClassName));
+    }
+
+    private boolean hasVisibleLayerIn(UiHudScreenCategory screenCategory) {
+        for (HudEntry entry : entries) {
+            if (entry.isVisibleIn(screenCategory)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * 准备 HUD 主后置回放批次并同步目标尺寸。
+     *
+     * @param context 当前渲染上下文
+     * @param renderTargetSizer HUD 后置离屏目标尺寸同步器
+     * @param nativeWidth 原生宽度
+     * @param nativeHeight 原生高度
+     * @return 已提取的回放批次
+     */
+    DocumentHostRenderSupport.DeferredPostMainReplayBatch prepareDeferredPostMainPasses(UiRenderContext context,
+            DeferredPostMainRenderTarget renderTargetSizer, int nativeWidth, int nativeHeight) {
+        return renderPipeline.prepareDeferredPostMainPasses(context, renderTargetSizer, nativeWidth, nativeHeight);
+    }
+
+    private synchronized void unregister(HudEntry entry) {
+        if (entry == null || sharedDocument == null) {
+            return;
+        }
+        if (!entries.remove(entry)) {
+            return;
+        }
+        detachTopLayerDescendants(entry.mountRoot);
+        if (entry.hostShell.getParent() != null) {
+            entry.hostShell.getParent().removeChild(entry.hostShell);
+        }
+
+        boolean shouldResetInteraction = entry == activeMouseEntry || entry == activeKeyboardEntry
+                || entry == hoveredMouseEntry || entry.contains(resolveFocusedElement());
+
+        if (activeMouseEntry == entry) {
+            activeMouseEntry = null;
+        }
+        if (activeKeyboardEntry == entry) {
+            activeKeyboardEntry = null;
+        }
+        if (hoveredMouseEntry == entry) {
+            hoveredMouseEntry = null;
+        }
+
+        if (shouldResetInteraction) {
+            scheduleInteractionReset();
+        }
+
+        if (entries.isEmpty()) {
+            clearActiveInteractionEntries();
+            screenSession = screenSession.withHudFocusEstablished(false);
+            UiKeyboardCaptureState.getInstance().setHudKeyboardCaptured(false);
+            syncHudTextInputRequest(false);
+            scheduleSceneDestroy();
+            return;
+        }
+        updateHudKeyboardCaptureState(screenSession.screenCategory);
+    }
+
+    /**
+     * 清空全部 HUD 注册并复位输入捕获状态。
+     *
+     * <p>用于客户端断开连接、退出到主菜单等生命周期切换：HUD 入口本身要求调用方手动 {@code unregister()}，
+     * 但宿主切换世界时旧 HUD 的 widget 与会话已经失去意义，需要在显式钩子上一次性清理。</p>
+     */
+    public synchronized void clearAllRegistrations() {
+        if (entries.isEmpty()) {
+            UiKeyboardCaptureState.getInstance().setHudKeyboardCaptured(false);
+            syncHudTextInputRequest(false);
+            screenSession = HudHostScreenSession.empty();
+            destroySharedScene();
+            return;
+        }
+        for (HudEntry entry : new ArrayList<HudEntry>(entries)) {
+            try {
+                detachTopLayerDescendants(entry.mountRoot);
+                if (entry.hostShell.getParent() != null) {
+                    entry.hostShell.getParent().removeChild(entry.hostShell);
+                }
+            } catch (RuntimeException exception) {
+                // 清理路径不应抛出，最坏情况只是单个子树未释放，继续推进其余清理。
+            }
+        }
+        entries.clear();
+        clearActiveInteractionEntries();
+        screenSession = HudHostScreenSession.empty();
+        UiKeyboardCaptureState.getInstance().setHudKeyboardCaptured(false);
+        syncHudTextInputRequest(false);
+        scheduleSceneDestroy();
+    }
+
+    private void clearInteractiveStates() {
+        clearActiveInteractionEntries();
+        if (sharedWidget != null) {
+            scheduleInteractionReset();
+        }
+        screenSession = screenSession.withHudFocusEstablished(false);
+        UiKeyboardCaptureState.getInstance().setHudKeyboardCaptured(false);
+        syncHudTextInputRequest(false);
+    }
+
+    private void updateHudKeyboardCaptureState(UiHudScreenCategory screenCategory) {
+        activeKeyboardEntry = resolveFocusedInteractiveEntry(screenCategory);
+        boolean captured = activeKeyboardEntry != null;
+        if (!captured) {
+            screenSession = screenSession.withHudFocusEstablished(false);
+        }
+        UiKeyboardCaptureState.getInstance().setHudKeyboardCaptured(captured);
+        syncHudTextInputRequest(captured);
+    }
+
+    private void clearActiveInteractionEntries() {
+        hoveredMouseEntry = null;
+        activeMouseEntry = null;
+        activeKeyboardEntry = null;
+    }
+
+    private void updateHoveredMouseEntry(HudEntry nextHoveredEntry) {
+        if (hoveredMouseEntry == nextHoveredEntry) {
+            return;
+        }
+        if (nextHoveredEntry == null && sharedWidget != null) {
+            sharedWidget.onMouseLeave();
+        }
+        hoveredMouseEntry = nextHoveredEntry;
+    }
+
+    private void syncHudTextInputRequest(boolean shouldRequest) {
+        if (hudTextInputRequested == shouldRequest) {
+            return;
+        }
+        hudTextInputRequested = shouldRequest;
+        UiKeyboardCaptureState.getInstance().setHudTextInputRequested(shouldRequest);
+        if (shouldRequest) {
+            UiInputService.getInstance().beginTextInput();
+            return;
+        }
+        if (!UiKeyboardCaptureState.getInstance().shouldKeepTextInputActive()) {
+            UiInputService.getInstance().endTextInput();
+        }
+    }
+
+    private void ensureSharedScene(TextMeasureService textMeasureService, UiRuntimeAdapters runtimeAdapters) {
+        if (sharedDocument != null && sharedWidget != null) {
+            return;
+        }
+        sharedDocument = UiDocument.create();
+        sharedDocument.setDefaultTextContentMode(TextContentMode.UILIB_RAW);
+        applySharedRootContract(sharedDocument.getRootElement());
+
+        passiveLayerRoot = sharedDocument.div();
+        interactiveLayerRoot = sharedDocument.div();
+        applyLayerRootContract(passiveLayerRoot, UiHudLayerType.PASSIVE);
+        applyLayerRootContract(interactiveLayerRoot, UiHudLayerType.INTERACTIVE);
+        sharedDocument.getRootElement().append(passiveLayerRoot);
+        sharedDocument.getRootElement().append(interactiveLayerRoot);
+
+        sharedWidget = DocumentHostWidgetFactory.createViewportDocumentWidget(sharedDocument, 320, 180,
+                textMeasureService, false);
+        sharedRuntimeAdapters = runtimeAdapters;
+        UiLayoutInvalidationRegistry.registerRoot(sharedWidget);
+    }
+
+    private void destroySharedScene() {
+        if (sharedWidget != null) {
+            UiLayoutInvalidationRegistry.unregisterRoot(sharedWidget);
+        }
+        sharedDocument = null;
+        sharedWidget = null;
+        passiveLayerRoot = null;
+        interactiveLayerRoot = null;
+        sharedRuntimeAdapters = null;
+        pendingInteractionReset = false;
+        pendingSceneDestroy = false;
+    }
+
+    private void detachTopLayerDescendants(ElementNode subtreeRoot) {
+        if (sharedDocument == null || subtreeRoot == null) {
+            return;
+        }
+        for (ElementNode topLayerElement : new ArrayList<ElementNode>(sharedDocument.__getTopLayerElements())) {
+            if (isElementWithinSubtree(topLayerElement, subtreeRoot)) {
+                sharedDocument.__hideTopLayerElement(topLayerElement);
+            }
+        }
+    }
+
+    private void syncEntryVisibility(UiHudScreenCategory screenCategory) {
+        for (HudEntry entry : entries) {
+            entry.setHostVisible(entry.isVisibleIn(screenCategory));
+        }
+    }
+
+    private ElementNode resolveFocusedElement() {
+        return sharedWidget == null ? null : sharedWidget.getFocusedElement();
+    }
+
+    private HudEntry resolveEntryForElement(ElementNode element) {
+        if (element == null) {
+            return null;
+        }
+        for (DocumentNode current = element; current != null; current = current.getParent()) {
+            for (HudEntry entry : entries) {
+                if (entry.mountRoot == current || entry.hostShell == current) {
+                    return entry;
+                }
+            }
+        }
+        return null;
+    }
+
+    private static boolean isElementWithinSubtree(ElementNode element, ElementNode subtreeRoot) {
+        if (element == null || subtreeRoot == null) {
+            return false;
+        }
+        for (DocumentNode current = element; current != null; current = current.getParent()) {
+            if (current == subtreeRoot) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private static void applySharedRootContract(ElementNode root) {
+        root.style()
+                .setWidth(UiStyleLength.percent(1.0F))
+                .setHeight(UiStyleLength.percent(1.0F))
+                .setOverflowX(UiOverflow.VISIBLE)
+                .setOverflowY(UiOverflow.VISIBLE)
+                .setPointerEvents(UiPointerEvents.NONE);
+        root.setAttribute("data-qz-hud-shared-root", "true");
+    }
+
+    private static void applyLayerRootContract(ElementNode layerRoot, UiHudLayerType layerType) {
+        layerRoot.style()
+                .setDisplay(UiDisplay.BLOCK)
+                .setPosition(UiPosition.FIXED)
+                .setLeft(UiStyleLength.px(0))
+                .setTop(UiStyleLength.px(0))
+                .setWidth(UiStyleLength.percent(1.0F))
+                .setHeight(UiStyleLength.percent(1.0F))
+                .setOverflowX(UiOverflow.VISIBLE)
+                .setOverflowY(UiOverflow.VISIBLE)
+                .setPointerEvents(UiPointerEvents.NONE);
+        layerRoot.setAttribute(LAYER_ROOT_ATTRIBUTE, layerType.name().toLowerCase());
+        if (layerType == UiHudLayerType.PASSIVE) {
+            layerRoot.setAttribute("data-hit-test-hidden", "true");
+        }
+    }
+
+    private static void applyHostShellContract(ElementNode hostShell, String registrationId) {
+        hostShell.style()
+                .setDisplay(UiDisplay.BLOCK)
+                .setPosition(UiPosition.FIXED)
+                .setLeft(UiStyleLength.px(0))
+                .setTop(UiStyleLength.px(0))
+                .setWidth(UiStyleLength.percent(1.0F))
+                .setHeight(UiStyleLength.percent(1.0F))
+                .setOverflowX(UiOverflow.VISIBLE)
+                .setOverflowY(UiOverflow.VISIBLE)
+                .setVisibility(UiVisibility.VISIBLE)
+                .setPointerEvents(UiPointerEvents.NONE);
+        hostShell.setAttribute(REGISTRATION_ID_ATTRIBUTE, registrationId);
+        hostShell.setAttribute(HOST_SHELL_ATTRIBUTE, "true");
+    }
+
+    private static void applyDefaultMountRootContract(ElementNode mountRoot, UiHudLayerType layerType,
+            String registrationId) {
+        mountRoot.style()
+                .setWidth(UiStyleLength.percent(1.0F))
+                .setHeight(UiStyleLength.percent(1.0F))
+                .setOverflowX(UiOverflow.VISIBLE)
+                .setOverflowY(UiOverflow.VISIBLE)
+                .setPointerEvents(UiPointerEvents.NONE);
+        mountRoot.setAttribute(REGISTRATION_ID_ATTRIBUTE, registrationId);
+        mountRoot.setAttribute("data-hud-layer", layerType.name().toLowerCase());
+        if (layerType == UiHudLayerType.PASSIVE) {
+            mountRoot.setAttribute("data-hit-test-hidden", "true");
+        }
+    }
+
+    private void applyCurrentViewportBounds() {
         Minecraft minecraft;
         try {
             minecraft = Minecraft.getMinecraft();
@@ -582,56 +985,43 @@ public final class UiHudDocumentHost implements UiHostInputCaptureParticipant {
         if (minecraft == null) {
             return;
         }
-        int nativeWidth = Math.max(1, minecraft.displayWidth);
-        int nativeHeight = Math.max(1, minecraft.displayHeight);
-        for (HudEntry entry : entrySnapshot) {
-            if (entry != null) {
-                entry.widget.applyLayoutBounds(0, 0, nativeWidth, nativeHeight);
-            }
+        applyViewportBounds(Math.max(1, minecraft.displayWidth), Math.max(1, minecraft.displayHeight));
+    }
+
+    private void applyViewportBounds(int width, int height) {
+        if (sharedWidget != null) {
+            sharedWidget.applyLayoutBounds(0, 0, Math.max(0, width), Math.max(0, height));
         }
     }
 
-    private HudEntry resolveKeyboardTargetEntry(HudInputContext inputContext) {
-        if (!inputContext.interactiveInputEnabled) {
-            return null;
+    private UiHudScreenCategory resolveCurrentScreenCategory() {
+        try {
+            Minecraft minecraft = Minecraft.getMinecraft();
+            return classifyScreen(minecraft == null ? null : minecraft.currentScreen);
+        } catch (RuntimeException exception) {
+            return screenSession.screenCategory;
+        } catch (LinkageError error) {
+            return screenSession.screenCategory;
         }
-        if (isInteractiveEntryAvailable(activeKeyboardEntry, inputContext.screenCategory)
-                && activeKeyboardEntry.interactionSession.hasFocusedWidget()) {
-            return activeKeyboardEntry;
-        }
-        activeKeyboardEntry = null;
-        for (int index = inputContext.entrySnapshot.size() - 1; index >= 0; index--) {
-            HudEntry entry = inputContext.entrySnapshot.get(index);
-            if (!isInteractiveEntryAvailable(entry, inputContext.screenCategory)) {
-                continue;
-            }
-            if (entry.interactionSession.hasFocusedWidget()) {
-                activeKeyboardEntry = entry;
-                return entry;
-            }
-        }
-        return null;
+    }
+
+    private static boolean isInteractiveInputEnabled(GuiScreen currentScreen) {
+        return isInteractiveInputEnabled((Object) currentScreen,
+                currentScreen == null ? null : currentScreen.getClass().getName(), Mouse.isGrabbed());
+    }
+
+    @Override
+    public boolean isHostInputCaptureEnabled(GuiScreen currentScreen, String screenClassName, boolean mouseGrabbed) {
+        return isInteractiveInputEnabled((Object) currentScreen, screenClassName, mouseGrabbed);
+    }
+
+    public static boolean isInteractiveInputEnabled(Object screen, String screenClassName, boolean mouseGrabbed) {
+        return classifyScreen(screen, screenClassName) == UiHudScreenCategory.CONTAINER && !mouseGrabbed;
     }
 
     private boolean isInteractiveEntryAvailable(HudEntry entry, UiHudScreenCategory screenCategory) {
         return entry != null && entries.contains(entry) && entry.layerType == UiHudLayerType.INTERACTIVE
                 && entry.isVisibleIn(screenCategory);
-    }
-
-    private boolean shouldCaptureHit(HudEntry entry, ElementNode hitElement) {
-        if (hitElement == null) {
-            return false;
-        }
-        if (isInteractiveRootWhitespaceHit(entry, hitElement)) {
-            return false;
-        }
-        if (entry.widget.isPassthroughHit(hitElement)) {
-            return false;
-        }
-        if (entry.widget.isInteractiveHit(hitElement)) {
-            return true;
-        }
-        return true;
     }
 
     private void restoreNativeTextInputFocusAfterHudRelease(GuiScreen currentScreen, HudMouseDecision mouseDecision) {
@@ -646,73 +1036,8 @@ public final class UiHudDocumentHost implements UiHostInputCaptureParticipant {
                 currentScreen == null ? null : currentScreen.getClass().getName());
     }
 
-    private boolean isInteractiveRootWhitespaceHit(HudEntry entry, ElementNode hitElement) {
-        if (entry == null || entry.layerType != UiHudLayerType.INTERACTIVE || hitElement == null) {
-            return false;
-        }
-        ElementNode rootElement = entry.widget.getDocument().getRootElement();
-        return hitElement == rootElement && !entry.widget.isInteractiveHit(hitElement);
-    }
-
     /**
-     * 在纯游戏 HUD 阶段绘制可见层。
-     *
-     * @param partialTicks 插值帧参数
-     * @apiNote 仅供框架内部 forge {@code RenderGameOverlayEvent} 钩子调用，业务代码不应直接触发。
-     */
-    public void renderHud(float partialTicks) {
-        renderVisibleLayers(UiHudScreenCategory.INGAME, partialTicks);
-    }
-
-    /**
-     * 在普通 GuiScreen 上方绘制可见层。
-     *
-     * @param partialTicks 插值帧参数
-     * @apiNote 仅供框架内部 forge {@code GuiScreenEvent.DrawScreenEvent.Post} 钩子调用，业务代码不应直接触发。
-     */
-    public void renderOnScreen(float partialTicks) {
-        Minecraft minecraft = Minecraft.getMinecraft();
-        if (minecraft == null) {
-            return;
-        }
-        renderVisibleLayers(classifyScreen(minecraft.currentScreen), partialTicks);
-    }
-
-    /**
-     * 判断当前是否存在可见的 HUD 文档。
-     *
-     * @param currentScreen 当前屏幕
-     * @return 是否存在可见层
-     */
-    public synchronized boolean hasVisibleLayer(GuiScreen currentScreen) {
-        UiHudScreenCategory screenCategory = classifyScreen(currentScreen);
-        for (HudEntry entry : entries) {
-            if (entry.isVisibleIn(screenCategory)) {
-                return true;
-            }
-        }
-        return false;
-    }
-
-    /**
-     * 供测试使用的可见层判断辅助入口。
-     *
-     * @param screen 当前屏幕实例
-     * @param screenClassName 当前屏幕类名
-     * @return 是否存在可见层
-     */
-    synchronized boolean hasVisibleLayerForTest(Object screen, String screenClassName) {
-        UiHudScreenCategory screenCategory = classifyScreen(screen, screenClassName);
-        for (HudEntry entry : entries) {
-            if (entry.isVisibleIn(screenCategory)) {
-                return true;
-            }
-        }
-        return false;
-    }
-
-    /**
-     * 返回当前屏幕的 HUD 分类。
+     * 判断当前屏幕的 HUD 分类。
      *
      * @param screen 当前屏幕
      * @return 屏幕分类
@@ -751,13 +1076,6 @@ public final class UiHudDocumentHost implements UiHostInputCaptureParticipant {
         return UiHudScreenCategory.CONTAINER;
     }
 
-    /**
-     * 判断当前页面是否属于 HUD 不显示黑名单。
-     *
-     * @param screen 当前屏幕实例
-     * @param screenClassName 当前屏幕类名
-     * @return 是否应归为菜单隐藏态
-     */
     private static boolean isHiddenHudMenuScreen(Object screen, String screenClassName) {
         if (screen instanceof GuiIngameMenu
                 || screen instanceof GuiMainMenu
@@ -777,12 +1095,6 @@ public final class UiHudDocumentHost implements UiHostInputCaptureParticipant {
                 || screenClassName.startsWith("club.heiqi.uilib.config.");
     }
 
-    /**
-     * 判断类名是否属于已知 Minecraft 游戏主页。
-     *
-     * @param screenClassName 当前屏幕类名
-     * @return 是否为游戏主页类名
-     */
     private static boolean isKnownMainMenuScreenClass(String screenClassName) {
         return "net.minecraft.client.gui.GuiMainMenu".equals(screenClassName)
                 || "galaxyspace.core.gui.GSGuiMainMenu".equals(screenClassName)
@@ -790,188 +1102,32 @@ public final class UiHudDocumentHost implements UiHostInputCaptureParticipant {
                 || "net.minecraft.client.gui.screens.TitleScreen".equals(screenClassName);
     }
 
-    private synchronized void renderVisibleLayers(UiHudScreenCategory screenCategory, float partialTicks) {
-        renderPipeline.renderVisibleLayers(new ArrayList<HudEntry>(entries), screenCategory, partialTicks);
-    }
-
-    /**
-     * 准备 HUD 主后置回放批次并同步目标尺寸。
-     *
-     * @param context 当前渲染上下文
-     * @param renderTargetSizer HUD 后置离屏目标尺寸同步器
-     * @param nativeWidth 原生宽度
-     * @param nativeHeight 原生高度
-     * @return 已提取的回放批次
-     */
-    DocumentHostRenderSupport.DeferredPostMainReplayBatch prepareDeferredPostMainPasses(UiRenderContext context,
-            DeferredPostMainRenderTarget renderTargetSizer, int nativeWidth, int nativeHeight) {
-        return renderPipeline.prepareDeferredPostMainPasses(context, renderTargetSizer, nativeWidth, nativeHeight);
-    }
-
-    private synchronized void unregister(HudEntry entry) {
-        if (entry == null) {
-            return;
+    private boolean isPrimaryMouseButtonDown(UiInputFrame frame) {
+        if (frame == null) {
+            return false;
         }
-        if (entries.remove(entry)) {
-            if (hoveredMouseEntry == entry) {
-                entry.widget.onMouseLeave();
-                hoveredMouseEntry = null;
-            }
-            if (activeMouseEntry == entry) {
-                activeMouseEntry = null;
-            }
-            if (activeKeyboardEntry == entry) {
-                activeKeyboardEntry = null;
-            }
-            entry.interactionSession.clearInteractionState();
-            UiLayoutInvalidationRegistry.unregisterRoot(entry.widget);
-            updateHudKeyboardCaptureState();
-        }
-    }
-
-    /**
-     * 清空全部 HUD 注册并复位输入捕获状态。
-     *
-     * <p>用于客户端断开连接、退出到主菜单等生命周期切换：HUD 入口本身要求调用方手动 {@code unregister()}，
-     * 但宿主切换世界时旧 HUD 的 widget 与会话已经失去意义，需要在显式钩子上一次性清理，
-     * 避免世界切换后旧引用继续占用 {@link UiLayoutInvalidationRegistry} 与 HUD 键盘捕获状态。</p>
-     */
-    public synchronized void clearAllRegistrations() {
-        if (entries.isEmpty()) {
-            UiKeyboardCaptureState.getInstance().setHudKeyboardCaptured(false);
-            syncHudTextInputRequest(false);
-            screenSession = HudHostScreenSession.empty();
-            return;
-        }
-        List<HudEntry> snapshot = new ArrayList<HudEntry>(entries);
-        for (HudEntry entry : snapshot) {
-            try {
-                if (hoveredMouseEntry == entry) {
-                    entry.widget.onMouseLeave();
-                }
-                entry.interactionSession.clearInteractionState();
-                UiLayoutInvalidationRegistry.unregisterRoot(entry.widget);
-            } catch (RuntimeException exception) {
-                // 清理路径不应抛出，最坏情况只是单个 widget 未释放，记录后继续推进。
+        for (club.heiqi.uilib.ui.event.UiMouseEvent mouseEvent : frame.getMouseEvents()) {
+            if (mouseEvent != null
+                    && mouseEvent.getAction() == club.heiqi.uilib.ui.event.UiMouseEvent.Action.BUTTON_DOWN
+                    && mouseEvent.getButton() == 0) {
+                return true;
             }
         }
-        entries.clear();
-        hoveredMouseEntry = null;
-        activeMouseEntry = null;
-        activeKeyboardEntry = null;
-        screenSession = HudHostScreenSession.empty();
-        UiKeyboardCaptureState.getInstance().setHudKeyboardCaptured(false);
-        syncHudTextInputRequest(false);
+        return false;
     }
 
-    private synchronized void clearInteractiveStates() {
-        updateHoveredMouseEntry(null);
-        clearActiveInteractionEntries();
-        for (HudEntry entry : entries) {
-            if (entry.layerType == UiHudLayerType.INTERACTIVE) {
-                entry.interactionSession.clearInteractionState();
+    private boolean isPrimaryMouseButtonUp(UiInputFrame frame) {
+        if (frame == null) {
+            return false;
+        }
+        for (club.heiqi.uilib.ui.event.UiMouseEvent mouseEvent : frame.getMouseEvents()) {
+            if (mouseEvent != null
+                    && mouseEvent.getAction() == club.heiqi.uilib.ui.event.UiMouseEvent.Action.BUTTON_UP
+                    && mouseEvent.getButton() == 0) {
+                return true;
             }
         }
-        screenSession = screenSession.withHudFocusEstablished(false);
-        UiKeyboardCaptureState.getInstance().setHudKeyboardCaptured(false);
-        syncHudTextInputRequest(false);
-    }
-
-    private synchronized void clearInteractiveStatesExcept(HudEntry preservedEntry) {
-        if (hoveredMouseEntry != preservedEntry) {
-            updateHoveredMouseEntry(null);
-        }
-        activeMouseEntry = null;
-        if (activeKeyboardEntry != preservedEntry) {
-            activeKeyboardEntry = null;
-        }
-        for (HudEntry entry : entries) {
-            if (entry.layerType == UiHudLayerType.INTERACTIVE && entry != preservedEntry) {
-                entry.interactionSession.clearInteractionState();
-            }
-        }
-    }
-
-    private synchronized void updateHudKeyboardCaptureState() {
-        boolean captured = false;
-        if (activeKeyboardEntry != null && entries.contains(activeKeyboardEntry)
-                && activeKeyboardEntry.layerType == UiHudLayerType.INTERACTIVE
-                && activeKeyboardEntry.interactionSession.hasFocusedWidget()) {
-            captured = true;
-        } else {
-            activeKeyboardEntry = null;
-            for (int index = entries.size() - 1; index >= 0; index--) {
-                HudEntry entry = entries.get(index);
-                if (entry.layerType == UiHudLayerType.INTERACTIVE && entry.interactionSession.hasFocusedWidget()) {
-                    activeKeyboardEntry = entry;
-                    captured = true;
-                    break;
-                }
-            }
-        }
-        if (!captured) {
-            screenSession = screenSession.withHudFocusEstablished(false);
-        }
-        UiKeyboardCaptureState.getInstance().setHudKeyboardCaptured(captured);
-        syncHudTextInputRequest(captured);
-    }
-
-    private void clearActiveInteractionEntries() {
-        hoveredMouseEntry = null;
-        activeMouseEntry = null;
-        activeKeyboardEntry = null;
-    }
-
-    private void updateHoveredMouseEntry(HudEntry nextHoveredEntry) {
-        if (hoveredMouseEntry == nextHoveredEntry) {
-            return;
-        }
-        if (hoveredMouseEntry != null && entries.contains(hoveredMouseEntry)) {
-            hoveredMouseEntry.widget.onMouseLeave();
-        }
-        hoveredMouseEntry = nextHoveredEntry;
-    }
-
-    private void syncHudTextInputRequest(boolean shouldRequest) {
-        if (hudTextInputRequested == shouldRequest) {
-            return;
-        }
-        hudTextInputRequested = shouldRequest;
-        UiKeyboardCaptureState.getInstance().setHudTextInputRequested(shouldRequest);
-        if (shouldRequest) {
-            UiInputService.getInstance().beginTextInput();
-            return;
-        }
-        if (!UiKeyboardCaptureState.getInstance().shouldKeepTextInputActive()) {
-            UiInputService.getInstance().endTextInput();
-        }
-    }
-
-    private static void applyDefaultRootContract(UiDocument document, UiHudLayerType layerType) {
-        ElementNode root = Objects.requireNonNull(document, "document").getRootElement();
-        root.style()
-                .setWidth(UiStyleLength.percent(1.0F))
-                .setHeight(UiStyleLength.percent(1.0F))
-                .setOverflowX(UiOverflow.VISIBLE)
-                .setOverflowY(UiOverflow.VISIBLE);
-        root.setAttribute("data-hud-layer", layerType.name().toLowerCase());
-        if (layerType == UiHudLayerType.PASSIVE) {
-            root.setAttribute("data-hit-test-hidden", "true");
-        }
-    }
-
-    private static boolean isInteractiveInputEnabled(GuiScreen currentScreen) {
-        return isInteractiveInputEnabled((Object) currentScreen,
-                currentScreen == null ? null : currentScreen.getClass().getName(), Mouse.isGrabbed());
-    }
-
-    @Override
-    public boolean isHostInputCaptureEnabled(GuiScreen currentScreen, String screenClassName, boolean mouseGrabbed) {
-        return isInteractiveInputEnabled((Object) currentScreen, screenClassName, mouseGrabbed);
-    }
-
-    public static boolean isInteractiveInputEnabled(Object screen, String screenClassName, boolean mouseGrabbed) {
-        return classifyScreen(screen, screenClassName) == UiHudScreenCategory.CONTAINER && !mouseGrabbed;
+        return false;
     }
 
     /**
@@ -982,9 +1138,44 @@ public final class UiHudDocumentHost implements UiHostInputCaptureParticipant {
         /**
          * 组装 HUD 文档内容。
          *
-         * @param document HUD 文档
+         * @param context 当前注册项的挂载上下文
          */
-        void build(UiDocument document);
+        void build(UiHudMountContext context);
+    }
+
+    /**
+     * HUD 挂载上下文。
+     */
+    public static final class UiHudMountContext {
+
+        private final UiDocument document;
+        private final ElementNode mountRoot;
+        private final UiHudLayerType layerType;
+        private final String registrationId;
+
+        private UiHudMountContext(UiDocument document, ElementNode mountRoot, UiHudLayerType layerType,
+                String registrationId) {
+            this.document = document;
+            this.mountRoot = mountRoot;
+            this.layerType = layerType;
+            this.registrationId = registrationId;
+        }
+
+        public UiDocument getDocument() {
+            return document;
+        }
+
+        public ElementNode getMountRoot() {
+            return mountRoot;
+        }
+
+        public UiHudLayerType getLayerType() {
+            return layerType;
+        }
+
+        public String getRegistrationId() {
+            return registrationId;
+        }
     }
 
     /**
@@ -1003,15 +1194,18 @@ public final class UiHudDocumentHost implements UiHostInputCaptureParticipant {
 
     static final class HudEntry {
 
+        final String registrationId;
         final UiHudLayerType layerType;
-        final HtmlLikeDocumentWidget widget;
-        final DocumentHostInteractionSession interactionSession = new DocumentHostInteractionSession();
-        final UiRuntimeAdapters runtimeAdapters;
+        final ElementNode hostShell;
+        final ElementNode mountRoot;
+        private boolean hostVisible = true;
 
-        private HudEntry(UiHudLayerType layerType, HtmlLikeDocumentWidget widget, UiRuntimeAdapters runtimeAdapters) {
+        private HudEntry(String registrationId, UiHudLayerType layerType, ElementNode hostShell,
+                ElementNode mountRoot) {
+            this.registrationId = registrationId;
             this.layerType = layerType;
-            this.widget = widget;
-            this.runtimeAdapters = runtimeAdapters;
+            this.hostShell = hostShell;
+            this.mountRoot = mountRoot;
         }
 
         boolean isVisibleIn(UiHudScreenCategory screenCategory) {
@@ -1024,8 +1218,24 @@ public final class UiHudDocumentHost implements UiHostInputCaptureParticipant {
             return screenCategory == UiHudScreenCategory.INGAME || screenCategory == UiHudScreenCategory.CONTAINER;
         }
 
+        boolean contains(ElementNode element) {
+            return isElementWithinSubtree(element, mountRoot);
+        }
+
+        void setHostVisible(boolean visible) {
+            if (hostVisible == visible) {
+                return;
+            }
+            hostVisible = visible;
+            hostShell.style().setVisibility(visible ? UiVisibility.VISIBLE : UiVisibility.HIDDEN);
+        }
+
         String getRuntimeName() {
             return layerType == UiHudLayerType.PASSIVE ? RUNTIME_NAME_PASSIVE : RUNTIME_NAME_INTERACTIVE;
+        }
+
+        String getDiagnosticName() {
+            return getRuntimeName() + "#" + registrationId;
         }
     }
 
@@ -1081,10 +1291,6 @@ public final class UiHudDocumentHost implements UiHostInputCaptureParticipant {
 
         private static HudMouseDecision release() {
             return RELEASE;
-        }
-
-        private static HudMouseDecision missAndClearFocus() {
-            return MISS_AND_CLEAR_FOCUS;
         }
 
         private static HudMouseDecision missAndClearFocus(boolean shouldRestoreNativeTextInputFocus) {

@@ -238,8 +238,8 @@ public final class RemoteHudOverlayClientBridge {
         UiHudDocumentRegistration registration = UiHudDocumentHost.getInstance().register(UiHudLayerType.INTERACTIVE,
                 new UiHudDocumentHost.UiHudDocumentContentBuilder() {
                     @Override
-                    public void build(UiDocument document) {
-                        partsRef[0] = buildOverlayDocument(document, offer, html);
+                    public void build(UiHudDocumentHost.UiHudMountContext context) {
+                        partsRef[0] = buildOverlayDocument(context.getDocument(), context.getMountRoot(), offer, html);
                     }
                 });
         ActiveOverlay activeOverlay = new ActiveOverlay(offer, registration, partsRef[0],
@@ -318,11 +318,10 @@ public final class RemoteHudOverlayClientBridge {
         overlay.parts.dialogPlacement.updateForViewport(resolveScreenWidth(), resolveScreenHeight());
     }
 
-    static OverlayDocumentParts buildOverlayDocument(UiDocument document, final RemoteHudOverlays.OpenOffer offer,
-            String html) {
+    static OverlayDocumentParts buildOverlayDocument(UiDocument document, ElementNode root,
+            final RemoteHudOverlays.OpenOffer offer, String html) {
         RemoteHudOverlayMode mode = resolveMode(offer.mode);
         RemoteDocumentResourcePolicy policy = resolvePolicy(offer.resourcePolicy);
-        ElementNode root = document.getRootElement();
         applyRootContract(root, mode);
         ElementNode shell = document.div();
         root.append(shell);
@@ -365,6 +364,11 @@ public final class RemoteHudOverlayClientBridge {
             }
         });
         return new OverlayDocumentParts(shell, content, notice, noticeText, mode, dialogPlacement);
+    }
+
+    static OverlayDocumentParts buildOverlayDocument(UiDocument document, final RemoteHudOverlays.OpenOffer offer,
+            String html) {
+        return buildOverlayDocument(document, document == null ? null : document.getRootElement(), offer, html);
     }
 
     private static void applyRootContract(ElementNode root, RemoteHudOverlayMode mode) {
