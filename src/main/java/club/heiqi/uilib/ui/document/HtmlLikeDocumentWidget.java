@@ -400,6 +400,39 @@ public final class HtmlLikeDocumentWidget extends Widget implements UiDocument.D
     }
 
     /**
+     * 返回屏幕坐标命中的、且属于指定子树的 HTML-like 元素。
+     *
+     * @param subtreeRoot 目标子树根
+     * @param screenX 屏幕 X
+     * @param screenY 屏幕 Y
+     * @return 命中的最深元素；未命中或命中不在子树内时返回 null
+     */
+    public ElementNode findElementAtWithin(ElementNode subtreeRoot, int screenX, int screenY) {
+        if (subtreeRoot == null || !isElementAttachedToDocument(subtreeRoot)
+                || getWidth() <= 0 || getHeight() <= 0 || !contains(screenX, screenY)) {
+            return null;
+        }
+        long currentTimeNanos = animationClock.getCurrentTimeNanos();
+        int documentX = screenX - getAbsoluteX();
+        int documentY = screenY - getAbsoluteY();
+        DocumentLayoutBox rootBox = resolveInteractiveLayoutBox();
+
+        ElementNode topLayerHit = findTopLayerElementAtWithin(subtreeRoot, documentX, documentY, currentTimeNanos,
+                rootBox, null);
+        if (topLayerHit != null) {
+            return topLayerHit;
+        }
+
+        LayoutBoundsEntry subtreeEntry = findLayoutBoundsEntry(rootBox, subtreeRoot, 0, 0);
+        if (subtreeEntry == null) {
+            return null;
+        }
+        ElementNode hit = DocumentHitTestEngine.hitTest(subtreeEntry.box, scrollState, documentX, documentY,
+                subtreeEntry.offsetX, subtreeEntry.offsetY, currentTimeNanos, animationTimeline);
+        return isElementWithinSubtree(hit, subtreeRoot) ? hit : null;
+    }
+
+    /**
      * 返回当前获得 HTML-like 焦点的元素。
      *
      * @return 聚焦元素；没有元素聚焦时返回 null
@@ -953,6 +986,24 @@ public final class HtmlLikeDocumentWidget extends Widget implements UiDocument.D
         return null;
     }
 
+    private ElementNode findTopLayerElementAtWithin(ElementNode subtreeRoot, int documentX, int documentY,
+            long currentTimeNanos, DocumentLayoutBox rootBox,
+            DocumentLayoutEngine.LayoutRuntimeValueResolver layoutValueResolver) {
+        List<DocumentLayoutBox> topLayerBoxes = resolveTopLayerLayoutBoxes(rootBox, layoutValueResolver);
+        for (int index = topLayerBoxes.size() - 1; index >= 0; index--) {
+            DocumentLayoutBox topLayerBox = topLayerBoxes.get(index);
+            if (!isElementWithinSubtree(topLayerBox.getElement(), subtreeRoot)) {
+                continue;
+            }
+            ElementNode hit = DocumentHitTestEngine.hitTest(topLayerBox, scrollState, documentX, documentY,
+                    currentTimeNanos, animationTimeline);
+            if (isElementWithinSubtree(hit, subtreeRoot)) {
+                return hit;
+            }
+        }
+        return null;
+    }
+
     private LayoutBoundsEntry findTopLayerLayoutBoundsEntry(ElementNode element,
             DocumentLayoutBox rootBox,
             DocumentLayoutEngine.LayoutRuntimeValueResolver layoutValueResolver) {
@@ -1144,6 +1195,18 @@ public final class HtmlLikeDocumentWidget extends Widget implements UiDocument.D
         }
         for (DocumentNode current = element; current != null; current = current.getParent()) {
             if (current == document.getRootElement()) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private static boolean isElementWithinSubtree(ElementNode element, ElementNode subtreeRoot) {
+        if (element == null || subtreeRoot == null) {
+            return false;
+        }
+        for (DocumentNode current = element; current != null; current = current.getParent()) {
+            if (current == subtreeRoot) {
                 return true;
             }
         }

@@ -76,8 +76,7 @@ public class UiHudDocumentHostTest {
      */
     @Test
     public void shouldApplyPassiveHudRootContract() {
-        UiDocument document = captureRegisteredDocument(UiHudLayerType.PASSIVE);
-        ElementNode root = document.getRootElement();
+        ElementNode root = captureRegisteredMountRoot(UiHudLayerType.PASSIVE);
 
         Assert.assertEquals(UiStyleLength.percent(1.0F), root.style().getWidth());
         Assert.assertEquals(UiStyleLength.percent(1.0F), root.style().getHeight());
@@ -92,8 +91,7 @@ public class UiHudDocumentHostTest {
      */
     @Test
     public void shouldApplyInteractiveHudRootContract() {
-        UiDocument document = captureRegisteredDocument(UiHudLayerType.INTERACTIVE);
-        ElementNode root = document.getRootElement();
+        ElementNode root = captureRegisteredMountRoot(UiHudLayerType.INTERACTIVE);
 
         Assert.assertEquals(UiStyleLength.percent(1.0F), root.style().getWidth());
         Assert.assertEquals(UiStyleLength.percent(1.0F), root.style().getHeight());
@@ -101,6 +99,7 @@ public class UiHudDocumentHostTest {
         Assert.assertEquals(UiOverflow.VISIBLE, root.style().getOverflowY());
         Assert.assertEquals("interactive", root.getAttribute("data-hud-layer"));
         Assert.assertNull(root.getAttribute("data-hit-test-hidden"));
+        Assert.assertNull(root.getAttribute("data-hit-test-passthrough"));
     }
 
     /**
@@ -163,8 +162,8 @@ public class UiHudDocumentHostTest {
         UiHudDocumentRegistration registration = host.register(UiHudLayerType.INTERACTIVE,
                 new UiHudDocumentHost.UiHudDocumentContentBuilder() {
                     @Override
-                    public void build(UiDocument document) {
-                        document.getRootElement().appendText("HUD");
+                    public void build(UiHudDocumentHost.UiHudMountContext context) {
+                        context.getMountRoot().appendText("HUD");
                     }
                 }, new DeterministicTextMeasureService(), UiRuntimeAdapters.empty());
         try {
@@ -204,8 +203,9 @@ public class UiHudDocumentHostTest {
         registrationHolder[0] = host.register(UiHudLayerType.INTERACTIVE,
                 new UiHudDocumentHost.UiHudDocumentContentBuilder() {
                     @Override
-                    public void build(UiDocument document) {
-                        ElementNode root = document.getRootElement();
+                    public void build(UiHudDocumentHost.UiHudMountContext context) {
+                        UiDocument document = context.getDocument();
+                        ElementNode root = context.getMountRoot();
                         root.style()
                                 .setWidth(UiStyleLength.px(160))
                                 .setHeight(UiStyleLength.px(80));
@@ -281,8 +281,9 @@ public class UiHudDocumentHostTest {
         UiHudDocumentRegistration registration = host.register(UiHudLayerType.INTERACTIVE,
                 new UiHudDocumentHost.UiHudDocumentContentBuilder() {
                     @Override
-                    public void build(UiDocument document) {
-                        ElementNode root = document.getRootElement();
+                    public void build(UiHudDocumentHost.UiHudMountContext context) {
+                        UiDocument document = context.getDocument();
+                        ElementNode root = context.getMountRoot();
                         root.style()
                                 .setWidth(UiStyleLength.px(160))
                                 .setHeight(UiStyleLength.px(80));
@@ -323,8 +324,9 @@ public class UiHudDocumentHostTest {
         UiHudDocumentRegistration registration = host.register(UiHudLayerType.INTERACTIVE,
                 new UiHudDocumentHost.UiHudDocumentContentBuilder() {
                     @Override
-                    public void build(UiDocument document) {
-                        ElementNode root = document.getRootElement();
+                    public void build(UiHudDocumentHost.UiHudMountContext context) {
+                        UiDocument document = context.getDocument();
+                        ElementNode root = context.getMountRoot();
                         root.style()
                                 .setWidth(UiStyleLength.px(160))
                                 .setHeight(UiStyleLength.px(80));
@@ -373,8 +375,9 @@ public class UiHudDocumentHostTest {
         UiHudDocumentRegistration registration = host.register(UiHudLayerType.INTERACTIVE,
                 new UiHudDocumentHost.UiHudDocumentContentBuilder() {
                     @Override
-                    public void build(UiDocument document) {
-                        ElementNode root = document.getRootElement();
+                    public void build(UiHudDocumentHost.UiHudMountContext context) {
+                        UiDocument document = context.getDocument();
+                        ElementNode root = context.getMountRoot();
                         root.style()
                                 .setWidth(UiStyleLength.px(160))
                                 .setHeight(UiStyleLength.px(80));
@@ -402,6 +405,48 @@ public class UiHudDocumentHostTest {
     }
 
     /**
+     * 验证仅鼠标悬停 HUD 而未建立焦点时，不会开始抢占键盘。
+     */
+    @Test
+    public void shouldNotCaptureKeyboardWhenHudOnlyHovered() {
+        UiHudDocumentHost host = UiHudDocumentHost.getInstance();
+        UiKeyboardCaptureState.getInstance().clear();
+        UiHudDocumentRegistration registration = host.register(UiHudLayerType.INTERACTIVE,
+                new UiHudDocumentHost.UiHudDocumentContentBuilder() {
+                    @Override
+                    public void build(UiHudDocumentHost.UiHudMountContext context) {
+                        UiDocument document = context.getDocument();
+                        ElementNode root = context.getMountRoot();
+                        root.style()
+                                .setWidth(UiStyleLength.px(160))
+                                .setHeight(UiStyleLength.px(80));
+                        DocumentTextInputControl inputControl = new DocumentTextInputControl(document);
+                        inputControl.getElement().style()
+                                .setWidth(UiStyleLength.px(120))
+                                .setHeight(UiStyleLength.px(24));
+                        root.append(inputControl.getElement());
+                    }
+                }, new DeterministicTextMeasureService(), UiRuntimeAdapters.empty());
+        try {
+            host.handleInputFrameForTest(mouseFrame(UiMouseEvent.Action.MOVE, 8, 8, 1L),
+                    UiHudScreenCategory.CONTAINER, 160, 80);
+
+            boolean captured = host.handleImmediateKeyboardInputForTest(
+                    new UiInputFrame(8, 8, Collections.<UiMouseEvent>emptyList(),
+                            Collections.singletonList(new UiKeyEvent(Keyboard.KEY_TAB, 0, 0,
+                                    UiKeyEvent.Action.PRESSED, false, false, false, false, 2L)),
+                            Collections.<UiTextInputEvent>emptyList()),
+                    UiHudScreenCategory.CONTAINER);
+
+            Assert.assertFalse(captured);
+            Assert.assertFalse(UiKeyboardCaptureState.getInstance().isHudKeyboardCaptured());
+        } finally {
+            registration.unregister();
+            UiKeyboardCaptureState.getInstance().clear();
+        }
+    }
+
+    /**
      * 验证命中交互元素时，HUD 会在原生页面之前拦截鼠标按下。
      */
     @Test
@@ -410,8 +455,9 @@ public class UiHudDocumentHostTest {
         UiHudDocumentRegistration registration = host.register(UiHudLayerType.INTERACTIVE,
                 new UiHudDocumentHost.UiHudDocumentContentBuilder() {
                     @Override
-                    public void build(UiDocument document) {
-                        ElementNode root = document.getRootElement();
+                    public void build(UiHudDocumentHost.UiHudMountContext context) {
+                        UiDocument document = context.getDocument();
+                        ElementNode root = context.getMountRoot();
                         root.style()
                                 .setWidth(UiStyleLength.px(160))
                                 .setHeight(UiStyleLength.px(80));
@@ -445,8 +491,9 @@ public class UiHudDocumentHostTest {
         UiHudDocumentRegistration registration = host.register(UiHudLayerType.INTERACTIVE,
                 new UiHudDocumentHost.UiHudDocumentContentBuilder() {
                     @Override
-                    public void build(UiDocument document) {
-                        ElementNode root = document.getRootElement();
+                    public void build(UiHudDocumentHost.UiHudMountContext context) {
+                        UiDocument document = context.getDocument();
+                        ElementNode root = context.getMountRoot();
                         root.style()
                                 .setWidth(UiStyleLength.px(320))
                                 .setHeight(UiStyleLength.px(180));
@@ -480,10 +527,18 @@ public class UiHudDocumentHostTest {
         UiHudDocumentRegistration registration = host.register(UiHudLayerType.INTERACTIVE,
                 new UiHudDocumentHost.UiHudDocumentContentBuilder() {
                     @Override
-                    public void build(UiDocument document) {
-                        document.getRootElement().style()
+                    public void build(UiHudDocumentHost.UiHudMountContext context) {
+                        UiDocument document = context.getDocument();
+                        ElementNode root = context.getMountRoot();
+                        root.style()
                                 .setWidth(UiStyleLength.px(160))
                                 .setHeight(UiStyleLength.px(80));
+                        ElementNode panel = document.div();
+                        panel.style()
+                                .setWidth(UiStyleLength.px(120))
+                                .setHeight(UiStyleLength.px(40))
+                                .setBackgroundColor(0xFF223344);
+                        root.append(panel);
                     }
                 }, new DeterministicTextMeasureService(), UiRuntimeAdapters.empty());
         try {
@@ -663,8 +718,9 @@ public class UiHudDocumentHostTest {
         UiHudDocumentRegistration registration = host.register(UiHudLayerType.INTERACTIVE,
                 new UiHudDocumentHost.UiHudDocumentContentBuilder() {
                     @Override
-                    public void build(UiDocument document) {
-                        ElementNode root = document.getRootElement();
+                    public void build(UiHudDocumentHost.UiHudMountContext context) {
+                        UiDocument document = context.getDocument();
+                        ElementNode root = context.getMountRoot();
                         root.style()
                                 .setWidth(UiStyleLength.px(320))
                                 .setHeight(UiStyleLength.px(180));
@@ -699,8 +755,9 @@ public class UiHudDocumentHostTest {
         UiHudDocumentRegistration registration = host.register(UiHudLayerType.INTERACTIVE,
                 new UiHudDocumentHost.UiHudDocumentContentBuilder() {
                     @Override
-                    public void build(UiDocument document) {
-                        ElementNode root = document.getRootElement();
+                    public void build(UiHudDocumentHost.UiHudMountContext context) {
+                        UiDocument document = context.getDocument();
+                        ElementNode root = context.getMountRoot();
                         root.style()
                                 .setWidth(UiStyleLength.px(320))
                                 .setHeight(UiStyleLength.px(180));
@@ -731,13 +788,14 @@ public class UiHudDocumentHostTest {
      * 验证只命中 HUD 根空白区域时，也会按默认阻断契约拦截原生鼠标输入。
      */
     @Test
-    public void shouldCaptureImmediateMouseInputOnHudRootWhitespaceByDefault() {
+    public void shouldNotCaptureImmediateMouseInputOnHudRootWhitespaceByDefault() {
         UiHudDocumentHost host = UiHudDocumentHost.getInstance();
         UiHudDocumentRegistration registration = host.register(UiHudLayerType.INTERACTIVE,
                 new UiHudDocumentHost.UiHudDocumentContentBuilder() {
                     @Override
-                    public void build(UiDocument document) {
-                        ElementNode root = document.getRootElement();
+                    public void build(UiHudDocumentHost.UiHudMountContext context) {
+                        UiDocument document = context.getDocument();
+                        ElementNode root = context.getMountRoot();
                         root.style()
                                 .setWidth(UiStyleLength.px(160))
                                 .setHeight(UiStyleLength.px(80));
@@ -751,9 +809,49 @@ public class UiHudDocumentHostTest {
                     mouseFrame(UiMouseEvent.Action.BUTTON_DOWN, 8, 8, 2L),
                     UiHudScreenCategory.CONTAINER);
 
-            Assert.assertTrue(captured);
+            Assert.assertFalse(captured);
         } finally {
             registration.unregister();
+        }
+    }
+
+    /**
+     * 验证 HUD 已聚焦后点击 HUD 外部，会主动清掉 HUD 键盘捕获。
+     */
+    @Test
+    public void shouldReleaseHudCaptureWhenPrimaryDownMissesHudPanel() {
+        UiHudDocumentHost host = UiHudDocumentHost.getInstance();
+        UiKeyboardCaptureState.getInstance().clear();
+        UiHudDocumentRegistration registration = host.register(UiHudLayerType.INTERACTIVE,
+                new UiHudDocumentHost.UiHudDocumentContentBuilder() {
+                    @Override
+                    public void build(UiHudDocumentHost.UiHudMountContext context) {
+                        UiDocument document = context.getDocument();
+                        ElementNode root = context.getMountRoot();
+                        root.style()
+                                .setWidth(UiStyleLength.px(320))
+                                .setHeight(UiStyleLength.px(180));
+                        DocumentTextInputControl inputControl = new DocumentTextInputControl(document);
+                        inputControl.getElement().style()
+                                .setWidth(UiStyleLength.px(120))
+                                .setHeight(UiStyleLength.px(24));
+                        root.append(inputControl.getElement());
+                    }
+                }, new DeterministicTextMeasureService(), UiRuntimeAdapters.empty());
+        try {
+            host.handleInputFrameForTest(mouseFrame(UiMouseEvent.Action.BUTTON_DOWN, 8, 8, 1L),
+                    UiHudScreenCategory.CONTAINER, 320, 180);
+            Assert.assertTrue(UiKeyboardCaptureState.getInstance().isHudKeyboardCaptured());
+
+            boolean captured = host.handleImmediateMouseInputForTest(
+                    mouseFrame(UiMouseEvent.Action.BUTTON_DOWN, 220, 120, 2L),
+                    UiHudScreenCategory.CONTAINER);
+
+            Assert.assertFalse(captured);
+            Assert.assertFalse(UiKeyboardCaptureState.getInstance().isHudKeyboardCaptured());
+        } finally {
+            registration.unregister();
+            UiKeyboardCaptureState.getInstance().clear();
         }
     }
 
@@ -767,8 +865,9 @@ public class UiHudDocumentHostTest {
         UiHudDocumentRegistration registration = host.register(UiHudLayerType.INTERACTIVE,
                 new UiHudDocumentHost.UiHudDocumentContentBuilder() {
                     @Override
-                    public void build(UiDocument document) {
-                        ElementNode root = document.getRootElement();
+                    public void build(UiHudDocumentHost.UiHudMountContext context) {
+                        UiDocument document = context.getDocument();
+                        ElementNode root = context.getMountRoot();
                         root.style()
                                 .setWidth(UiStyleLength.px(160))
                                 .setHeight(UiStyleLength.px(80));
@@ -809,8 +908,9 @@ public class UiHudDocumentHostTest {
         UiHudDocumentRegistration bottomRegistration = host.register(UiHudLayerType.INTERACTIVE,
                 new UiHudDocumentHost.UiHudDocumentContentBuilder() {
                     @Override
-                    public void build(UiDocument document) {
-                        ElementNode root = document.getRootElement();
+                    public void build(UiHudDocumentHost.UiHudMountContext context) {
+                        UiDocument document = context.getDocument();
+                        ElementNode root = context.getMountRoot();
                         root.style()
                                 .setWidth(UiStyleLength.px(160))
                                 .setHeight(UiStyleLength.px(80));
@@ -825,8 +925,9 @@ public class UiHudDocumentHostTest {
         UiHudDocumentRegistration topRegistration = host.register(UiHudLayerType.INTERACTIVE,
                 new UiHudDocumentHost.UiHudDocumentContentBuilder() {
                     @Override
-                    public void build(UiDocument document) {
-                        ElementNode root = document.getRootElement();
+                    public void build(UiHudDocumentHost.UiHudMountContext context) {
+                        UiDocument document = context.getDocument();
+                        ElementNode root = context.getMountRoot();
                         root.style()
                                 .setWidth(UiStyleLength.px(160))
                                 .setHeight(UiStyleLength.px(80));
@@ -864,8 +965,9 @@ public class UiHudDocumentHostTest {
         UiHudDocumentRegistration registration = host.register(UiHudLayerType.INTERACTIVE,
                 new UiHudDocumentHost.UiHudDocumentContentBuilder() {
                     @Override
-                    public void build(UiDocument document) {
-                        ElementNode root = document.getRootElement();
+                    public void build(UiHudDocumentHost.UiHudMountContext context) {
+                        UiDocument document = context.getDocument();
+                        ElementNode root = context.getMountRoot();
                         ElementNode shell = document.div();
                         DocumentSelectControl selectControl = new DocumentSelectControl(document, "错误", "HUD 通过");
                         DocumentButtonControl buttonControl = new DocumentButtonControl(document, "下层按钮");
@@ -921,13 +1023,41 @@ public class UiHudDocumentHostTest {
         }
     }
 
-    private static UiDocument captureRegisteredDocument(UiHudLayerType layerType) {
-        final UiDocument[] holder = new UiDocument[1];
+    @Test
+    public void shouldShareSingleDocumentAcrossMultipleHudRegistrations() {
+        UiHudDocumentHost host = UiHudDocumentHost.getInstance();
+        final UiDocument[] firstDocument = new UiDocument[1];
+        final UiDocument[] secondDocument = new UiDocument[1];
+        UiHudDocumentRegistration first = host.register(UiHudLayerType.INTERACTIVE,
+                new UiHudDocumentHost.UiHudDocumentContentBuilder() {
+                    @Override
+                    public void build(UiHudDocumentHost.UiHudMountContext context) {
+                        firstDocument[0] = context.getDocument();
+                    }
+                }, DefaultTextMeasureService.getInstance(), UiRuntimeAdapters.empty());
+        UiHudDocumentRegistration second = host.register(UiHudLayerType.INTERACTIVE,
+                new UiHudDocumentHost.UiHudDocumentContentBuilder() {
+                    @Override
+                    public void build(UiHudDocumentHost.UiHudMountContext context) {
+                        secondDocument[0] = context.getDocument();
+                    }
+                }, DefaultTextMeasureService.getInstance(), UiRuntimeAdapters.empty());
+        try {
+            Assert.assertNotNull(firstDocument[0]);
+            Assert.assertSame(firstDocument[0], secondDocument[0]);
+        } finally {
+            second.unregister();
+            first.unregister();
+        }
+    }
+
+    private static ElementNode captureRegisteredMountRoot(UiHudLayerType layerType) {
+        final ElementNode[] holder = new ElementNode[1];
         UiHudDocumentRegistration registration = UiHudDocumentHost.getInstance().register(layerType,
                 new UiHudDocumentHost.UiHudDocumentContentBuilder() {
                     @Override
-                    public void build(UiDocument document) {
-                        holder[0] = document;
+                    public void build(UiHudDocumentHost.UiHudMountContext context) {
+                        holder[0] = context.getMountRoot();
                     }
                 }, DefaultTextMeasureService.getInstance(), UiRuntimeAdapters.empty());
         try {

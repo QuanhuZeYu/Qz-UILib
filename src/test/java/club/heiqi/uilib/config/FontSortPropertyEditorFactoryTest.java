@@ -30,15 +30,17 @@ public class FontSortPropertyEditorFactoryTest {
     }
 
     /**
-     * 验证工厂在 Forge 实际分类为小写时仍能匹配字体排序属性。
+     * 验证工厂只在显式 alias 声明后匹配历史小写分类。
      */
     @Test
-    public void shouldMatchLowercaseFontSystemCategory() {
+    public void shouldMatchLowercaseFontSystemCategoryOnlyWithExplicitAlias() {
         Configuration configuration = new Configuration();
         Property fontSort = configuration.get("fontsystem", "fontSort", new String[] { "Alpha" }, "字体排序");
         FontSortPropertyEditorFactory factory = new FontSortPropertyEditorFactory();
 
-        Assert.assertTrue(factory.matchesForTesting(new ForgeConfigTemplateScreen.CategorySpec(FontConfig.CATEGORY),
+        Assert.assertFalse(factory.matchesForTesting(new ForgeConfigTemplateScreen.CategorySpec("fontsystem"),
                 fontSort));
+        Assert.assertTrue(factory.matchesForTesting(new ForgeConfigTemplateScreen.CategorySpec(FontConfig.CATEGORY)
+                .addAlias("fontsystem"), fontSort));
     }
 }

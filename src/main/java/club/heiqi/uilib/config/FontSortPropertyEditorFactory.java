@@ -24,7 +24,7 @@ final class FontSortPropertyEditorFactory implements ForgeConfigTemplateScreen.P
 
     private boolean matches(ForgeConfigTemplateScreen.CategorySpec categorySpec, Property property) {
         return categorySpec != null && property != null
-                && FontConfig.CATEGORY.equalsIgnoreCase(categorySpec.getCategoryName())
+                && categorySpec.matchesCategoryName(FontConfig.CATEGORY)
                 && "fontSort".equals(property.getName())
                 && property.isList();
     }

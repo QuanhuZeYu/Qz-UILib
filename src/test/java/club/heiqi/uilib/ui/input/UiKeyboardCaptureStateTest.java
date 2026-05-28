@@ -61,4 +61,28 @@ public class UiKeyboardCaptureStateTest {
         }
     }
 
+    /**
+     * 验证 HUD 释放键盘捕获时，不会误清 Screen 仍在持有的文本输入请求。
+     */
+    @Test
+    public void shouldNotClearScreenTextInputRequestWhenHudCaptureReleases() {
+        UiKeyboardCaptureState state = UiKeyboardCaptureState.getInstance();
+        state.clear();
+        try {
+            state.setScreenKeyboardCaptured(true);
+            state.setScreenTextInputRequested(true);
+            state.setHudKeyboardCaptured(true);
+            state.setHudTextInputRequested(true);
+
+            state.setHudKeyboardCaptured(false);
+            state.setHudTextInputRequested(false);
+
+            Assert.assertTrue(state.isUiLibKeyboardCaptured());
+            Assert.assertEquals(UiKeyboardCaptureState.Owner.SCREEN, state.getKeyboardCaptureOwner());
+            Assert.assertTrue(state.shouldKeepTextInputActive());
+        } finally {
+            state.clear();
+        }
+    }
+
 }

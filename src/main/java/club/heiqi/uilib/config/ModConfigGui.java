@@ -20,9 +20,7 @@ public class ModConfigGui extends ForgeConfigTemplateScreen {
     }
 
     private static Spec createSpec() {
-        return new Spec(MyMod.MODID, MyMod.MOD_NAME + " 配置", Config.configuration)
-                .setSubtitle("Forge In-Game Config Replacement")
-                .setDescription("使用 Qz UILib 的 HTML-like 文档页面替代默认 Forge 配置页，并作为可复用模板开放给其他开发者。")
+        return createBaseSpec(Config.configuration)
                 .setConfigPath(Config.getConfigPath())
                 .setSaveHandler(new SaveHandler() {
                     @Override
@@ -31,14 +29,20 @@ public class ModConfigGui extends ForgeConfigTemplateScreen {
                     }
                 })
                 .addPropertyEditorFactory(new FontSortPropertyEditorFactory())
-                .addCategory(new CategorySpec(Config.GENERAL)
-                        .setTitle("General")
-                        .setDescription("基础运行开关、界面调试显示与通用行为配置。"))
-                .addCategory(new CategorySpec(FontConfig.CATEGORY)
-                        .setTitle("Font System")
-                        .setDescription("字体渲染运行时、排序和 drawString 上传节流相关配置。"))
-                .addCategory(new CategorySpec(FontConfig.FONT_SIZE_CATEGORY)
-                        .setTitle("Font Size")
-                        .setDescription("默认字号、生成分辨率与缩放系数配置。"));
+                .setRemoteSyncScreenId(ConfigTemplateSyncManager.QZ_UI_LIB_SCREEN_ID)
+                .setRemoteSyncController(new ConfigTemplateRemoteSyncController());
+    }
+
+    private static Spec createBaseSpec(net.minecraftforge.common.config.Configuration configuration) {
+        Spec spec = new Spec(MyMod.MODID, QzUiLibConfigSchema.title(), configuration)
+                .setSubtitle(QzUiLibConfigSchema.subtitle())
+                .setDescription(QzUiLibConfigSchema.description());
+        for (ConfigSyncCategorySpec category : QzUiLibConfigSchema.categories()) {
+            spec.addCategory(new CategorySpec(category.getCategoryName())
+                    .addAliases(category.getAliases())
+                    .setTitle(category.getDisplayTitle())
+                    .setDescription(category.getDescription()));
+        }
+        return spec;
     }
 }

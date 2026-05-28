@@ -7,6 +7,7 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionException;
 import java.util.concurrent.TimeUnit;
 
+import club.heiqi.uilib.config.ConfigTemplateSyncManager;
 import club.heiqi.uilib.net.api.NetBody;
 import club.heiqi.uilib.net.api.NetMessage;
 import club.heiqi.uilib.net.api.NetRequest;
@@ -453,6 +454,24 @@ final class NetSelfCheckRunner {
                         requireContains(value.getBody().asUtf8String(), "\"kind\":\"remoteHudOpen\"",
                                 "Remote HUD body");
                         return "远程 HUD 打开请求已送达，最终以 HUD 内提交后的结果浮窗为准，id=" + checkId;
+                    }
+                });
+    }
+
+    /**
+     * 运行配置同步本地模板页 smoke。
+     *
+     * @return 自检 future
+     */
+    static CompletableFuture<String> runConfigSyncSmoke() {
+        ensureRegistered();
+        final String checkId = nextCheckId("configSync");
+        return ConfigTemplateSyncManager.getInstance().runClientSmokeCheck()
+                .thenApply(new java.util.function.Function<String, String>() {
+                    @Override
+                    public String apply(String detail) {
+                        requireContains(detail, "open/change/save/result", "Config sync smoke");
+                        return "配置同步 smoke 已完成，id=" + checkId + "，" + detail;
                     }
                 });
     }

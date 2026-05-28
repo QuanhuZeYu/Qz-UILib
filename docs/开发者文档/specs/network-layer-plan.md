@@ -1,14 +1,14 @@
 # 网络层实验性方案：HTTP-like 内容语义双端通信
 
 > **状态：实验性方案（内容语义版已落地）**
-> 本文档记录 4.1LTS 阶段网络层（Channel + Fetch + Stream + Store 四层 API）的设计决策。当前实现已从“每种请求一个 Java 类型”调整为 `route/key + contentType + headers + body` 的内容模型；POJO 反射 codec 仅作为可选辅助，不再是协议身份。
+> 本文档记录 4.1LTS 阶段网络层（Channel + Fetch + Stream + Store 四层 API，以及实验性 Realtime 子层）的设计决策。当前实现已从“每种请求一个 Java 类型”调整为 `route/key + contentType + headers + body` 的内容模型；POJO 反射 codec 仅作为可选辅助，不再是协议身份。
 
 ## 当前实现范围
 
 已落地：
 
-- `club.heiqi.uilib.net.api`：`NetService`、`NetBody`、`NetContentType`、`NetMessage`、`NetRequest`、`NetResponse`、Channel、Fetch、Stream、Store、id、上下文与异常。
-- `club.heiqi.uilib.net.core`：envelope v2、分片重组、大小策略、request registry、能力握手、主线程派发队列。
+- `club.heiqi.uilib.net.api`：`NetService`、`NetBody`、`NetContentType`、`NetMessage`、`NetRequest`、`NetResponse`、Channel、RealtimeChannel、Fetch、Stream、Store、id、上下文与异常。
+- `club.heiqi.uilib.net.core`：envelope v2、Realtime frame v1、分片重组、大小策略、request registry、能力握手、主线程派发队列、出站优先级调度。
 - `club.heiqi.uilib.net.codec`：可选 POJO 二进制辅助 codec、字段布局、varint、`@NetField` / `@NetTransient`。
 - `club.heiqi.uilib.net.transport.vanilla`：默认 vanilla custom payload 传输适配器与 mixin 入站分发。
 - `club.heiqi.uilib.net.transport.forge`：Forge/FML 回退适配器与 tick bridge。
@@ -42,6 +42,7 @@ route/key + contentType + headers + body
 4. **大小限制分层**：32KB 是兼容物理帧下限，普通逻辑消息默认 16 MiB，超大内容进入 Stream/chunk 路径。
 5. **可选 codec 不支配协议**：`NetCodec` 可帮助业务做紧凑二进制 body，但不会决定路由、握手或消息身份。
 6. **适配器仅启动期可选**：`NetService.bootstrap(ITransport)` 后不可热切换。
+7. **实时子层独立于通用 envelope**：高频小帧应走专用 realtime frame，避免把 route/header/contentType 的通用开销施加到每一帧。
 
 ## 核心心智模型
 
@@ -116,6 +117,36 @@ CompletableFuture<NetResponse> future = call.future();
 ```
 
 Stream 的请求仍是轻量 `NetRequest`，响应 body 走独立 chunk 生命周期，支持 `cancel()` / `cancel(false)`、进度回调和大内容上限控制。普通 Channel / Fetch / Store 不承载超过 16 MiB 的内容。
+
+### Realtime Channel
+
+`NetRealtimeChannel` 是长期为高频小包准备的实验性低延迟子层：
+
+```java
+NetRealtimeChannel voice = NetService.getInstance()
+    .realtime(NetRealtimeChannelId.of("mymod", "voice"))
+    .maxFrameBytes(1200)
+    .maxQueuedFrames(3)
+    .maxLatency(Duration.ofMillis(250))
+    .dropPolicy(NetRealtimeDropPolicy.DROP_OLDEST)
+    .onReceive(new NetRealtimeChannel.NetRealtimeHandler() {
+        @Override
+        public void onReceive(NetRealtimeMessage message, NetReceiveContext context) {
+            consume(message.getPayload());
+        }
+    })
+    .register();
+
+voice.toServer().sendFrame(1L, 42, System.currentTimeMillis(), opusFrameBytes);
+```
+
+它的设计约束：
+
+- 仍走现有 Minecraft TCP/custom payload，不承诺 UDP 级实时性。
+- 使用独立 `QZRT` 小帧协议：`targetSide + key + streamId + sequence + timestamp + flags + payload`。
+- 单帧禁止自动分片；超过业务或物理上限直接失败。
+- 出站走 realtime 优先级队列，允许在 bulk/chunk 之间插入更高优先级的小帧。
+- 队列满时按策略丢弃旧帧或新帧，强调新鲜度优先。
 
 ### Store
 
@@ -194,6 +225,8 @@ Store 支持业务定义增量：通过 `.deltaApplier(...)` 注册 delta 解释
 
 `NetEnvelope` 不再携带 Java `typeId`。`NetMessage`、`NetRequest`、`NetResponse` 都只是 headers + body 的业务容器。
 
+Realtime Channel 不复用 `NetEnvelope`。它使用独立 `NetRealtimeFrame`，并与 `QZNL` envelope 共享同一个物理 channel `qz:0`；入站时通过 magic 区分 `QZNL` 与 `QZRT`。
+
 Header 采用轻量 HTTP-like 规则：名称大小写不敏感并归一为小写 token，单帧最多 32 个 header，单名最多 64 字节，单值最多 1024 字节，总 header 字节最多 8192，值不允许 CR/LF。Header 只用于元数据，不承担大内容传输。
 
 ### 决策 4：能力握手，不做类型握手
@@ -204,7 +237,8 @@ Header 采用轻量 HTTP-like 规则：名称大小写不敏感并归一为小�
 {
   "protocol": 2,
   "contentTypes": ["application/json", "application/octet-stream", "text/plain; charset=utf-8"],
-  "ordinaryLogicalLimit": 16777216
+  "ordinaryLogicalLimit": 16777216,
+  "features": ["realtime-channel-v1"]
 }
 ```
 
@@ -242,6 +276,17 @@ channel.toServer().send(body);
 - C→S：原生 C17 单帧仍按 `32766` 字节兼容下限处理；超过当前物理能力但低于逻辑上限时自动分片。
 - S→C：GTNH/Hodgepodge 环境可理解为 256 MiB 默认物理能力，但普通逻辑消息仍受 16 MiB 默认上限约束。
 - 超过 16 MiB 的数据不作为普通 Channel / Fetch / Store 消息发送，必须走 Stream/chunk API。
+- Realtime Channel 明确不做自动分片，推荐业务负载保持在约 `1 KiB` 量级。
+
+### 决策 6-1：出站优先级调度
+
+新增 `NetOutboundScheduler` 统一仲裁 Qz 出站帧：
+
+- `REALTIME`：`NetRealtimeChannel` 小帧。
+- `CONTROL`：普通 `Channel` / `Fetch` / `Store snapshot|delta` / `META`。
+- `BULK`：`Stream` 响应与普通消息的 `CHUNK` 分片。
+
+当前实现仍在调用线程中同步排空，但每发完一帧都会重新仲裁优先级，因此 realtime 帧可以插到后续 bulk 帧之前，避免长串 chunk 独占整个出站窗口。
 
 ### 决策 7：GTNH 2.8.4 兼容性约束
 
@@ -305,11 +350,12 @@ channel.toServer().send(body);
 
 | 路径 | 职责 |
 |---|---|
-| `src/main/java/club/heiqi/uilib/net/api/NetBody.java`、`NetContentType.java`、`NetMessage.java`、`NetRequest.java`、`NetResponse.java` | 内容语义公共模型 |
+| `src/main/java/club/heiqi/uilib/net/api/NetBody.java`、`NetContentType.java`、`NetMessage.java`、`NetRequest.java`、`NetResponse.java`、`NetRealtimeMessage.java` | 内容语义公共模型 |
 | `src/main/java/club/heiqi/uilib/net/api/NetService.java` | 单例门面、注册表、发送/接收分发 |
-| `src/main/java/club/heiqi/uilib/net/api/NetChannel.java`、`NetFetchEndpoint.java`、`NetStreamEndpoint.java`、`NetStore.java`、`NetStoreView.java` | Channel / Fetch / Stream / Store API |
+| `src/main/java/club/heiqi/uilib/net/api/NetChannel.java`、`NetRealtimeChannel.java`、`NetFetchEndpoint.java`、`NetStreamEndpoint.java`、`NetStore.java`、`NetStoreView.java` | Channel / Realtime / Fetch / Stream / Store API |
 | `src/main/java/club/heiqi/uilib/net/core/NetEnvelope.java` | v2 内容 envelope |
-| `src/main/java/club/heiqi/uilib/net/core/NetChunkAssembler.java`、`NetPayloadLimits.java`、`NetRequestRegistry.java`、`MainThreadDispatcher.java` | 分片、大小、请求与线程队列 |
+| `src/main/java/club/heiqi/uilib/net/core/NetRealtimeFrame.java` | realtime 小帧协议 |
+| `src/main/java/club/heiqi/uilib/net/core/NetChunkAssembler.java`、`NetPayloadLimits.java`、`NetRequestRegistry.java`、`MainThreadDispatcher.java`、`NetOutboundScheduler.java` | 分片、大小、请求、线程队列与出站优先级 |
 | `src/main/java/club/heiqi/uilib/net/codec/NetCodec.java`、`FieldLayout.java`、`Varint.java`、`NetField.java`、`NetTransient.java` | 可选二进制 codec |
 | `src/main/java/club/heiqi/uilib/net/transport/ITransport.java`、`FrameHandler.java`、`NetReceiveOrigin.java`、`NetSide.java` | 传输 SPI |
 | `src/main/java/club/heiqi/uilib/net/transport/vanilla/VanillaMixinTransport.java` | 默认 vanilla 适配器 |
@@ -324,7 +370,9 @@ channel.toServer().send(body);
 
 - `NetBody` 与 `NetContentType`：JSON / binary / custom MIME-like 内容语义。
 - `NetEnvelope`：contentType、headers、statusCode、body 往返。
+- `NetRealtimeFrame`：streamId / sequence / timestamp / flags / payload 往返。
 - `NetService`：Channel 发送内容 envelope、注册冻结、超过物理帧自动分片。
+- `NetService`：Realtime Channel 小帧往返、负载上限与 bulk 后续分片抢占优先级。
 - `NetService`：Stream 大内容响应、进度、取消与 16 MiB 以上普通消息绕行。
 - `NetService`：Fetch 滑动窗口限流、Store accessControl 过滤、per-player/dimension 定向快照。
 - `NetChunkAssembler`：大 envelope 分片重组。

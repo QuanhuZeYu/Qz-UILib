@@ -47,11 +47,10 @@ public class UiInputService implements InputEvents.KeyboardListener {
     private final Queue<UiMouseEvent> mouseEvents = new ConcurrentLinkedQueue<UiMouseEvent>();
     private final Queue<UiKeyEvent> keyEvents = new ConcurrentLinkedQueue<UiKeyEvent>();
     private final Queue<UiTextInputEvent> textEvents = new ConcurrentLinkedQueue<UiTextInputEvent>();
+    private final Queue<SuppressedCollectedKeyWindow> suppressedCollectedKeys =
+            new ConcurrentLinkedQueue<SuppressedCollectedKeyWindow>();
+    private final Queue<String> suppressedCollectedTexts = new ConcurrentLinkedQueue<String>();
     private final boolean[] previousMouseButtonStates = new boolean[8];
-    private volatile boolean suppressNextCollectedKeyEvent;
-    private volatile int suppressNextCollectedKeyCode;
-    private volatile UiKeyEvent.Action suppressNextCollectedKeyAction;
-    private volatile String suppressNextCollectedText;
 
     private volatile int mouseX;
     private volatile int mouseY;
@@ -98,7 +97,10 @@ public class UiInputService implements InputEvents.KeyboardListener {
      * @return 输入快照
      */
     public UiInputFrame collectFrame() {
-        return new UiInputFrame(mouseX, mouseY, drainQueue(mouseEvents), drainQueue(keyEvents), drainQueue(textEvents));
+        UiInputFrame frame = new UiInputFrame(mouseX, mouseY, drainQueue(mouseEvents), drainQueue(keyEvents),
+                drainQueue(textEvents));
+        clearCollectedSuppressionWindow();
+        return frame;
     }
 
     /**
@@ -108,10 +110,7 @@ public class UiInputService implements InputEvents.KeyboardListener {
         mouseEvents.clear();
         keyEvents.clear();
         textEvents.clear();
-        suppressNextCollectedKeyEvent = false;
-        suppressNextCollectedKeyCode = 0;
-        suppressNextCollectedKeyAction = null;
-        suppressNextCollectedText = null;
+        clearCollectedSuppressionWindow();
     }
 
     /**
@@ -200,13 +199,13 @@ public class UiInputService implements InputEvents.KeyboardListener {
      * @param text 当前原生事件对应的文本；无文本时传 null
      */
     public void suppressNextCollectedKeyboardEvent(int keyCode, UiKeyEvent.Action action, String text) {
-        suppressNextCollectedKeyEvent = true;
-        suppressNextCollectedKeyCode = keyCode;
-        suppressNextCollectedKeyAction = action;
-        suppressNextCollectedText = text;
-        removeQueuedKeyEvent(keyCode, action);
+        if (isCollectedKeyDownAction(action) && keyCode != 0) {
+            suppressedCollectedKeys.add(new SuppressedCollectedKeyWindow(keyCode));
+        }
+        removeQueuedKeyEvents(keyCode, action);
         if (text != null) {
-            removeQueuedTextEvent(text);
+            suppressedCollectedTexts.add(text);
+            removeQueuedTextEvents(text);
         }
     }
 
@@ -214,11 +213,7 @@ public class UiInputService implements InputEvents.KeyboardListener {
     public void onKeyEvent(InputEvents.KeyEvent event) {
         int keyCode = readIntField(event, "lwjgl2KeyCode", 0);
         UiKeyEvent.Action action = mapAction(event.action);
-        if (suppressNextCollectedKeyEvent && suppressNextCollectedKeyCode == keyCode
-                && suppressNextCollectedKeyAction == action) {
-            suppressNextCollectedKeyEvent = false;
-            suppressNextCollectedKeyCode = 0;
-            suppressNextCollectedKeyAction = null;
+        if (isSuppressedCollectedKeyEvent(keyCode, action)) {
             return;
         }
         int glfwKeyCode = readIntField(event, "glfwKeyCode", readIntField(event, "sdlKeyCode", 0));
@@ -242,8 +237,7 @@ public class UiInputService implements InputEvents.KeyboardListener {
         if (event.text == null || event.text.isEmpty()) {
             return;
         }
-        if (suppressNextCollectedText != null && suppressNextCollectedText.equals(event.text)) {
-            suppressNextCollectedText = null;
+        if (isSuppressedCollectedText(event.text)) {
             return;
         }
         textEvents.add(new UiTextInputEvent(event.text, Sys.getNanoTime()));
@@ -287,19 +281,17 @@ public class UiInputService implements InputEvents.KeyboardListener {
         return result;
     }
 
-    private void removeQueuedKeyEvent(int keyCode, UiKeyEvent.Action action) {
-        if (action == null || keyEvents.isEmpty()) {
+    private void removeQueuedKeyEvents(int keyCode, UiKeyEvent.Action action) {
+        if (keyCode == 0 || !isCollectedKeyDownAction(action) || keyEvents.isEmpty()) {
             return;
         }
         List<UiKeyEvent> retainedEvents = new ArrayList<UiKeyEvent>();
-        boolean removed = false;
         while (!keyEvents.isEmpty()) {
             UiKeyEvent event = keyEvents.poll();
             if (event == null) {
                 continue;
             }
-            if (!removed && event.getKeyCode() == keyCode && event.getAction() == action) {
-                removed = true;
+            if (event.getKeyCode() == keyCode && isCollectedKeyDownAction(event.getAction())) {
                 continue;
             }
             retainedEvents.add(event);
@@ -307,19 +299,17 @@ public class UiInputService implements InputEvents.KeyboardListener {
         keyEvents.addAll(retainedEvents);
     }
 
-    private void removeQueuedTextEvent(String text) {
+    private void removeQueuedTextEvents(String text) {
         if (text == null || text.isEmpty() || textEvents.isEmpty()) {
             return;
         }
         List<UiTextInputEvent> retainedEvents = new ArrayList<UiTextInputEvent>();
-        boolean removed = false;
         while (!textEvents.isEmpty()) {
             UiTextInputEvent event = textEvents.poll();
             if (event == null) {
                 continue;
             }
-            if (!removed && text.equals(event.getText())) {
-                removed = true;
+            if (text.equals(event.getText())) {
                 continue;
             }
             retainedEvents.add(event);
@@ -365,6 +355,39 @@ public class UiInputService implements InputEvents.KeyboardListener {
 
     private boolean hasAnyFlag(short mask, short firstFlag, short secondFlag) {
         return (mask & firstFlag) != 0 || (mask & secondFlag) != 0;
+    }
+
+    private boolean isSuppressedCollectedKeyEvent(int keyCode, UiKeyEvent.Action action) {
+        if (keyCode == 0 || !isCollectedKeyDownAction(action)) {
+            return false;
+        }
+        for (SuppressedCollectedKeyWindow suppressedKey : suppressedCollectedKeys) {
+            if (suppressedKey != null && suppressedKey.matches(keyCode)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private boolean isSuppressedCollectedText(String text) {
+        if (text == null || text.isEmpty()) {
+            return false;
+        }
+        for (String suppressedText : suppressedCollectedTexts) {
+            if (text.equals(suppressedText)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private boolean isCollectedKeyDownAction(UiKeyEvent.Action action) {
+        return action == UiKeyEvent.Action.PRESSED || action == UiKeyEvent.Action.REPEATED;
+    }
+
+    private void clearCollectedSuppressionWindow() {
+        suppressedCollectedKeys.clear();
+        suppressedCollectedTexts.clear();
     }
 
     private void updateMouseState() {
@@ -426,6 +449,19 @@ public class UiInputService implements InputEvents.KeyboardListener {
             if (INPUT_EVENTS_REFLECTION_LOGGED.compareAndSet(false, true)) {
                 LOG.debug("UILib 输入事件方法反射调用失败，当前实现未提供该方法：methodName={}", methodName, exception);
             }
+        }
+    }
+
+    private static final class SuppressedCollectedKeyWindow {
+
+        private final int keyCode;
+
+        private SuppressedCollectedKeyWindow(int keyCode) {
+            this.keyCode = keyCode;
+        }
+
+        private boolean matches(int keyCode) {
+            return this.keyCode == keyCode;
         }
     }
 }

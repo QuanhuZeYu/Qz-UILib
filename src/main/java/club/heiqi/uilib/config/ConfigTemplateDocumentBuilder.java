@@ -167,7 +167,7 @@ final class ConfigTemplateDocumentBuilder {
         missingCategories.clear();
         List<ForgeConfigTemplateScreen.CategorySpec> categories = spec.getResolvedCategories();
         for (ForgeConfigTemplateScreen.CategorySpec categorySpec : categories) {
-            ConfigCategory category = owner.resolveCategory(categorySpec.getCategoryName());
+            ConfigCategory category = owner.resolveCategory(categorySpec);
             if (category == null) {
                 missingCategories.add(categorySpec.getCategoryName());
                 continue;
