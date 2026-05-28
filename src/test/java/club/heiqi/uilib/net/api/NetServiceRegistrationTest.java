@@ -12,6 +12,7 @@ import org.junit.Test;
 
 import club.heiqi.uilib.net.core.NetEnvelope;
 import club.heiqi.uilib.net.core.NetPayloadLimits;
+import club.heiqi.uilib.net.core.NetRealtimeFrame;
 import club.heiqi.uilib.net.transport.FrameHandler;
 import club.heiqi.uilib.net.transport.ITransport;
 import club.heiqi.uilib.net.transport.NetReceiveOrigin;
@@ -80,6 +81,63 @@ public class NetServiceRegistrationTest {
         for (byte[] payload : transport.clientToServerPayloads) {
             Assert.assertTrue(payload.length <= transport.getPhysicalFrameLimit(NetSide.SERVER));
         }
+    }
+
+    @Test
+    public void shouldSendRealtimeFrameThroughDedicatedFastPath() {
+        final List<NetRealtimeMessage> received = new ArrayList<NetRealtimeMessage>();
+        NetRealtimeChannel channel = service.realtime(NetRealtimeChannelId.of("test", "voice"))
+                .maxFrameBytes(64)
+                .onReceive(new NetRealtimeChannel.NetRealtimeHandler() {
+                    @Override
+                    public void onReceive(NetRealtimeMessage message, NetReceiveContext context) {
+                        received.add(message);
+                    }
+                })
+                .register();
+        service.freeze();
+
+        byte[] payload = new byte[] { 9, 8, 7, 6 };
+        channel.toServer().sendFrame(12L, 4, 999L, payload);
+
+        Assert.assertEquals(1, transport.clientToServerPayloads.size());
+        Assert.assertTrue(NetRealtimeFrame.hasMagic(transport.clientToServerPayloads.get(0)));
+        NetRealtimeFrame frame = NetRealtimeFrame.decode(transport.clientToServerPayloads.get(0));
+        Assert.assertEquals("test:voice", frame.getKey());
+        Assert.assertEquals(12L, frame.getStreamId());
+        Assert.assertEquals(4, frame.getSequence());
+        Assert.assertArrayEquals(payload, frame.getPayload());
+
+        transport.deliverToServer(transport.clientToServerPayloads.get(0), new FakePlayer("voice", 0));
+        Assert.assertEquals(1, received.size());
+        Assert.assertEquals(12L, received.get(0).getStreamId());
+        Assert.assertEquals(4, received.get(0).getSequence());
+        Assert.assertArrayEquals(payload, received.get(0).getPayload());
+    }
+
+    @Test
+    public void shouldPrioritizeRealtimeFramesAheadOfRemainingBulkQueue() {
+        NetChannel bulkChannel = service.channel(NetChannelId.of("test", "bulkPriority"))
+                .register();
+        NetRealtimeChannel realtime = service.realtime(NetRealtimeChannelId.of("test", "priorityVoice"))
+                .maxFrameBytes(64)
+                .register();
+        service.freeze();
+
+        transport.setClientToServerHook(new Runnable() {
+            @Override
+            public void run() {
+                realtime.toServer().sendFrame(1L, 1, 111L, new byte[] { 3, 4, 5 });
+            }
+        });
+        bulkChannel.toServer().send(NetMessage.text(repeat('b', 2000)));
+
+        Assert.assertTrue(transport.clientToServerPayloads.size() > 2);
+        NetEnvelope first = NetEnvelope.decode(transport.clientToServerPayloads.get(0));
+        Assert.assertEquals(NetEnvelope.Kind.CHUNK, first.getKind());
+        Assert.assertTrue(NetRealtimeFrame.hasMagic(transport.clientToServerPayloads.get(1)));
+        NetEnvelope third = NetEnvelope.decode(transport.clientToServerPayloads.get(2));
+        Assert.assertEquals(NetEnvelope.Kind.CHUNK, third.getKind());
     }
 
     @Test
@@ -297,6 +355,7 @@ public class NetServiceRegistrationTest {
         final List<PlayerPayload> playerPayloads = new ArrayList<PlayerPayload>();
         final List<FakePlayer> connectedPlayers = new ArrayList<FakePlayer>();
         FrameHandler frameHandler;
+        Runnable clientToServerHook;
 
         @Override
         public String getName() {
@@ -315,6 +374,11 @@ public class NetServiceRegistrationTest {
         @Override
         public void sendToServer(String channelName, byte[] payload) {
             clientToServerPayloads.add(payload);
+            Runnable hook = clientToServerHook;
+            if (hook != null) {
+                clientToServerHook = null;
+                hook.run();
+            }
         }
 
         @Override
@@ -356,6 +420,10 @@ public class NetServiceRegistrationTest {
 
         void deliverToClient(byte[] payload) {
             frameHandler.handleFrame(NetService.PHYSICAL_CHANNEL, payload, NetReceiveOrigin.client());
+        }
+
+        void setClientToServerHook(Runnable clientToServerHook) {
+            this.clientToServerHook = clientToServerHook;
         }
     }
 

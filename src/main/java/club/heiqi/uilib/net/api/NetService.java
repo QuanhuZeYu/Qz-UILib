@@ -12,7 +12,9 @@ import club.heiqi.uilib.MyMod;
 import club.heiqi.uilib.net.core.MainThreadDispatcher;
 import club.heiqi.uilib.net.core.NetChunkAssembler;
 import club.heiqi.uilib.net.core.NetEnvelope;
+import club.heiqi.uilib.net.core.NetOutboundScheduler;
 import club.heiqi.uilib.net.core.NetPayloadLimits;
+import club.heiqi.uilib.net.core.NetRealtimeFrame;
 import club.heiqi.uilib.net.core.NetRequestRegistry;
 import club.heiqi.uilib.net.transport.FrameHandler;
 import club.heiqi.uilib.net.transport.ITransport;
@@ -33,6 +35,7 @@ public final class NetService {
     private static final NetService INSTANCE = new NetService();
 
     private final Map<String, NetChannel> channels = new ConcurrentHashMap<String, NetChannel>();
+    private final Map<String, NetRealtimeChannel> realtimeChannels = new ConcurrentHashMap<String, NetRealtimeChannel>();
     private final Map<String, NetFetchEndpoint> fetchEndpoints = new ConcurrentHashMap<String, NetFetchEndpoint>();
     private final Map<String, NetStreamEndpoint> streamEndpoints = new ConcurrentHashMap<String, NetStreamEndpoint>();
     private final Map<String, NetStore> stores = new ConcurrentHashMap<String, NetStore>();
@@ -43,6 +46,8 @@ public final class NetService {
     private final NetStoreSender storeSender = new NetStoreSender(this);
     private final NetEnvelopeDispatcher envelopeDispatcher = new NetEnvelopeDispatcher(this, channels, fetchEndpoints,
             streamEndpoints, stores, requestRegistry, streamDownloads);
+    private final NetRealtimeDispatcher realtimeDispatcher = new NetRealtimeDispatcher(this, realtimeChannels);
+    private final NetOutboundScheduler outboundScheduler = new NetOutboundScheduler();
     private final FrameHandler frameHandler = new FrameHandler() {
         @Override
         public void handleFrame(String channelName, byte[] payload, NetReceiveOrigin origin) {
@@ -106,8 +111,8 @@ public final class NetService {
      */
     public synchronized void freeze() {
         this.frozen = true;
-        MyMod.LOG.info("Qz 网络层注册表已冻结：channels={} fetchEndpoints={} streamEndpoints={} stores={}",
-                channels.size(), fetchEndpoints.size(), streamEndpoints.size(), stores.size());
+        MyMod.LOG.info("Qz 网络层注册表已冻结：channels={} realtimeChannels={} fetchEndpoints={} streamEndpoints={} stores={}",
+                channels.size(), realtimeChannels.size(), fetchEndpoints.size(), streamEndpoints.size(), stores.size());
     }
 
     /**
@@ -128,6 +133,16 @@ public final class NetService {
      */
     public NetFetchEndpoint.Builder fetch(NetEndpointId id) {
         return new NetFetchEndpoint.Builder(this, id);
+    }
+
+    /**
+     * 创建实时 Channel 构造器。
+     *
+     * @param id Channel id
+     * @return 构造器
+     */
+    public NetRealtimeChannel.Builder realtime(NetRealtimeChannelId id) {
+        return new NetRealtimeChannel.Builder(this, id);
     }
 
     /**
@@ -168,6 +183,15 @@ public final class NetService {
         return endpoint;
     }
 
+    synchronized NetRealtimeChannel registerRealtimeChannel(NetRealtimeChannel channel) {
+        ensureRegistrable();
+        String key = channel.getId().asKey();
+        if (realtimeChannels.putIfAbsent(key, channel) != null) {
+            throw new IllegalStateException("Realtime Channel 已注册: " + key);
+        }
+        return channel;
+    }
+
     synchronized NetStreamEndpoint registerStreamEndpoint(NetStreamEndpoint endpoint) {
         ensureRegistrable();
         String key = endpoint.getId().asKey();
@@ -189,6 +213,22 @@ public final class NetService {
     void sendChannelMessage(NetChannel channel, NetTarget target, NetMessage message) {
         sendEnvelope(target, NetEnvelope.of(NetEnvelope.Kind.CHANNEL, targetSideOf(target), channel.getId().asKey(),
                 0L, 0, message.getHeaders(), message.getBody()));
+    }
+
+    void sendRealtimeMessage(NetRealtimeChannel channel, NetTarget target, NetRealtimeMessage message) {
+        if (message.size() > channel.getMaxFrameBytes()) {
+            throw new IllegalArgumentException("Realtime 帧超过负载上限: " + message.size() + " > "
+                    + channel.getMaxFrameBytes());
+        }
+        NetRealtimeFrame frame = NetRealtimeFrame.of(targetSideOf(target), channel.getId().asKey(), message);
+        byte[] encoded = frame.encode();
+        int physicalLimit = requireTransport().getPhysicalFrameLimit(frame.getTargetSide());
+        if (encoded.length > physicalLimit) {
+            throw new IllegalStateException("Realtime 帧超过物理上限：" + encoded.length + " > " + physicalLimit);
+        }
+        long expireAtMillis = System.currentTimeMillis() + channel.getMaxLatencyMillis();
+        enqueueSend(target, encoded, NetOutboundScheduler.Priority.REALTIME, realtimeQueueKey(target, channel),
+                channel.getMaxQueuedFrames(), channel.getDropPolicy(), expireAtMillis);
     }
 
     CompletableFuture<NetResponse> callFetchEndpoint(NetFetchEndpoint endpoint, NetRequest request) {
@@ -283,6 +323,7 @@ public final class NetService {
         streamDownloads.failAll(new NetDisconnectedException("网络连接已断开"));
         chunkAssembler.clear();
         streamDownloads.clearRemoteCancelled();
+        outboundScheduler.clear();
         ITransport activeTransport = transport;
         if (activeTransport != null) {
             activeTransport.shutdown();
@@ -316,6 +357,7 @@ public final class NetService {
 
     void resetForTests() {
         channels.clear();
+        realtimeChannels.clear();
         fetchEndpoints.clear();
         streamEndpoints.clear();
         stores.clear();
@@ -323,6 +365,7 @@ public final class NetService {
         streamDownloads.failAll(new NetDisconnectedException("网络连接已断开"));
         chunkAssembler.clear();
         streamDownloads.clearRemoteCancelled();
+        outboundScheduler.clear();
         frozen = false;
         transport = null;
     }
@@ -330,13 +373,25 @@ public final class NetService {
     private void sendMeta(NetTarget target, NetSide targetSide) {
         String json = "{\"protocol\":2,\"contentTypes\":[\"application/json\",\"application/octet-stream\","
                 + "\"text/plain; charset=utf-8\"],\"ordinaryLogicalLimit\":"
-                + NetPayloadLimits.DEFAULT_LOGICAL_MESSAGE_LIMIT + "}";
+                + NetPayloadLimits.DEFAULT_LOGICAL_MESSAGE_LIMIT
+                + ",\"features\":[\"realtime-channel-v1\"]";
+        json += "}";
         sendEnvelope(target, NetEnvelope.of(NetEnvelope.Kind.META, targetSide, META_KEY, 0L, 0,
                 Collections.<String, String>emptyMap(), NetBody.json(json)));
     }
 
     private void handleInboundFrame(String channelName, byte[] payload, NetReceiveOrigin origin) {
         try {
+            if (NetRealtimeFrame.hasMagic(payload)) {
+                NetRealtimeFrame realtimeFrame = NetRealtimeFrame.decode(payload);
+                if (realtimeFrame.getTargetSide() != origin.getSide()) {
+                    MyMod.LOG.warn("丢弃方向不匹配的 Qz 实时帧：channel={} key={} expectedSide={} actualSide={}",
+                            channelName, realtimeFrame.getKey(), realtimeFrame.getTargetSide(), origin.getSide());
+                    return;
+                }
+                realtimeDispatcher.dispatch(realtimeFrame, origin);
+                return;
+            }
             NetEnvelope envelope = NetEnvelope.decode(payload);
             if (envelope.getKind() == NetEnvelope.Kind.CHUNK) {
                 byte[] completed = chunkAssembler.accept(envelope.getPayload());
@@ -368,7 +423,8 @@ public final class NetService {
         }
         int physicalLimit = activeTransport.getPhysicalFrameLimit(envelope.getTargetSide());
         if (encoded.length <= physicalLimit) {
-            sendPhysical(target, encoded);
+            enqueueSend(target, encoded, NetOutboundScheduler.Priority.CONTROL, null, 0,
+                    NetRealtimeDropPolicy.DROP_NEWEST, 0L);
             return;
         }
         sendChunked(target, envelope.getTargetSide(), encoded, physicalLimit);
@@ -381,7 +437,8 @@ public final class NetService {
         if (encoded.length > physicalLimit) {
             throw new IllegalStateException("Stream 帧超过物理上限：" + encoded.length + " > " + physicalLimit);
         }
-        sendPhysical(target, encoded);
+        enqueueSend(target, encoded, NetOutboundScheduler.Priority.BULK, null, 0,
+                NetRealtimeDropPolicy.DROP_NEWEST, 0L);
     }
 
     ITransport requireTransport() {
@@ -407,11 +464,46 @@ public final class NetService {
             if (chunkBytes.length > physicalLimit) {
                 throw new IllegalStateException("分片帧仍超过物理上限：" + chunkBytes.length + " > " + physicalLimit);
             }
-            sendPhysical(target, chunkBytes);
+            enqueueSend(target, chunkBytes, NetOutboundScheduler.Priority.BULK, null, 0,
+                    NetRealtimeDropPolicy.DROP_NEWEST, 0L);
         }
     }
 
-    private void sendPhysical(NetTarget target, byte[] payload) {
+    private void enqueueSend(final NetTarget target, final byte[] payload, NetOutboundScheduler.Priority priority,
+            String realtimeQueueKey, int maxQueuedFrames, NetRealtimeDropPolicy dropPolicy, long expireAtMillis) {
+        Runnable dispatch = new Runnable() {
+            @Override
+            public void run() {
+                sendPhysicalNow(target, payload);
+            }
+        };
+        if (priority == NetOutboundScheduler.Priority.REALTIME) {
+            outboundScheduler.enqueueRealtime(realtimeQueueKey, maxQueuedFrames, dropPolicy, expireAtMillis, dispatch);
+            return;
+        }
+        outboundScheduler.enqueue(priority, dispatch);
+    }
+
+    private String realtimeQueueKey(NetTarget target, NetRealtimeChannel channel) {
+        StringBuilder builder = new StringBuilder(channel.getId().asKey());
+        builder.append('|').append(target.getType().name());
+        switch (target.getType()) {
+            case SERVER:
+                return builder.toString();
+            case PLAYER:
+                return builder.append('|').append(System.identityHashCode(target.getPlayer())).toString();
+            case PLAYERS:
+                return builder.append('|').append(System.identityHashCode(target.getPlayers())).toString();
+            case ALL:
+                return builder.toString();
+            case DIMENSION:
+                return builder.append('|').append(target.getDimensionId()).toString();
+            default:
+                return builder.toString();
+        }
+    }
+
+    private void sendPhysicalNow(NetTarget target, byte[] payload) {
         ITransport activeTransport = transport;
         switch (target.getType()) {
             case SERVER:
