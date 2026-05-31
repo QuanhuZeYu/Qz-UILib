@@ -80,7 +80,7 @@ final class DocumentMouseEventDispatcher {
                     eventControl.stopPropagation();
                 }
             }
-            if (!eventControl.isPropagationStopped()) {
+            if (!eventControl.isImmediatePropagationStopped()) {
                 DocumentElementMouseDownHandler targetHandler = target.getMouseDownHandler();
                 if (targetHandler != null) {
                     DocumentElementMouseDownEvent mouseDownEvent = new DocumentElementMouseDownEvent(target, target,
@@ -146,7 +146,7 @@ final class DocumentMouseEventDispatcher {
                     eventControl.stopPropagation();
                 }
             }
-            if (!eventControl.isPropagationStopped()) {
+            if (!eventControl.isImmediatePropagationStopped()) {
                 DocumentElementMouseUpHandler targetHandler = target.getMouseUpHandler();
                 if (targetHandler != null) {
                     DocumentElementMouseUpEvent mouseUpEvent = new DocumentElementMouseUpEvent(target, target,

@@ -23,6 +23,7 @@ import club.heiqi.uilib.ui.dom.DocumentElementContextMenuEvent;
 import club.heiqi.uilib.ui.dom.DocumentElementContextMenuHandler;
 import club.heiqi.uilib.ui.dom.DocumentElementDoubleClickEvent;
 import club.heiqi.uilib.ui.dom.DocumentElementDoubleClickHandler;
+import club.heiqi.uilib.ui.dom.DocumentEventPhase;
 import club.heiqi.uilib.ui.dom.DocumentLinkActivationEvent;
 import club.heiqi.uilib.ui.dom.DocumentLinkActivationHandler;
 import club.heiqi.uilib.ui.dom.DocumentElementDragEvent;
@@ -2560,6 +2561,52 @@ public class HtmlLikeDocumentWidgetTest {
     }
 
     /**
+     * 验证 click 在 AT_TARGET 阶段会先执行 target capture，再执行 target handler；
+     * target capture 返回 true 只会阻止祖先冒泡，不会跳过当前 target handler。
+     */
+    @Test
+    public void shouldInvokeTargetClickHandlerAfterTargetCaptureStopsPropagation() {
+        UiDocument document = UiDocument.create();
+        ElementNode root = document.getRootElement();
+        ElementNode child = document.div();
+        final List<String> eventLog = new ArrayList<String>();
+        root.style().setWidth(UiStyleLength.px(80)).setHeight(UiStyleLength.px(40));
+        child.style().setWidth(UiStyleLength.px(40)).setHeight(UiStyleLength.px(20));
+        child.setCaptureClickHandler(new DocumentElementClickHandler() {
+            @Override
+            public boolean onClick(DocumentElementClickEvent event) {
+                eventLog.add("target-capture:" + event.getEventPhase());
+                return true;
+            }
+        });
+        child.setClickHandler(new DocumentElementClickHandler() {
+            @Override
+            public boolean onClick(DocumentElementClickEvent event) {
+                eventLog.add("target:" + event.getEventPhase());
+                return false;
+            }
+        });
+        root.setClickHandler(new DocumentElementClickHandler() {
+            @Override
+            public boolean onClick(DocumentElementClickEvent event) {
+                eventLog.add("root:" + event.getEventPhase());
+                return false;
+            }
+        });
+        root.append(child);
+        HtmlLikeDocumentWidget widget = new HtmlLikeDocumentWidget(document, 80, 40,
+                new DeterministicTextMeasureService());
+        widget.applyLayoutBounds(0, 0, 80, 40);
+
+        widget.onMouseDown(new UiMouseEvent(UiMouseEvent.Action.BUTTON_DOWN, 10, 10, 0, 0, 0, 0, 1L));
+        widget.onMouseUp(new UiMouseEvent(UiMouseEvent.Action.BUTTON_UP, 10, 10, 0, 0, 0, 0, 2L));
+
+        Assert.assertEquals(2, eventLog.size());
+        Assert.assertEquals("target-capture:" + DocumentEventPhase.AT_TARGET, eventLog.get(0));
+        Assert.assertEquals("target:" + DocumentEventPhase.AT_TARGET, eventLog.get(1));
+    }
+
+    /**
      * 验证 down/up 落在不同后代时，会将最近公共祖先作为 click target。
      */
     @Test
@@ -3672,6 +3719,55 @@ public class HtmlLikeDocumentWidgetTest {
         Assert.assertEquals(1, clicks.size());
 
         // Space released 触发
+        widget.onKeyEvent(new UiKeyEvent(Keyboard.KEY_SPACE, 0, 0, UiKeyEvent.Action.RELEASED, false, false,
+                false, false, 3L));
+        Assert.assertEquals(2, clicks.size());
+    }
+
+    /**
+     * 验证 raw button 的 key handler 返回 true 只会停止传播，不会隐式取消默认 keyboard click。
+     */
+    @Test
+    public void shouldKeepRawButtonDefaultKeyboardClickWhenKeyHandlerStopsPropagation() {
+        UiDocument document = UiDocument.create();
+        ElementNode root = document.getRootElement();
+        ElementNode rawButton = document.button();
+        final List<DocumentElementClickEvent> clicks = new ArrayList<DocumentElementClickEvent>();
+        rawButton.setClickHandler(new DocumentElementClickHandler() {
+            @Override
+            public boolean onClick(DocumentElementClickEvent event) {
+                clicks.add(event);
+                return true;
+            }
+        });
+        rawButton.setKeyHandler(new DocumentElementKeyHandler() {
+            @Override
+            public boolean onKey(DocumentElementKeyEvent event) {
+                return true;
+            }
+        });
+        root.style()
+                .setWidth(UiStyleLength.px(120))
+                .setHeight(UiStyleLength.px(40));
+        rawButton.style()
+                .setWidth(UiStyleLength.px(80))
+                .setHeight(UiStyleLength.px(32));
+        root.append(rawButton);
+        HtmlLikeDocumentWidget widget = new HtmlLikeDocumentWidget(document, 120, 40,
+                new DeterministicTextMeasureService());
+        widget.applyLayoutBounds(0, 0, 120, 40);
+
+        widget.onFocusTraversalEntered(false);
+        assertElementUid(rawButton, widget.getFocusedElement());
+
+        widget.onKeyEvent(new UiKeyEvent(Keyboard.KEY_RETURN, 0, 0, UiKeyEvent.Action.PRESSED, false, false,
+                false, false, 1L));
+        Assert.assertEquals(1, clicks.size());
+
+        widget.onKeyEvent(new UiKeyEvent(Keyboard.KEY_SPACE, 0, 0, UiKeyEvent.Action.PRESSED, false, false,
+                false, false, 2L));
+        Assert.assertEquals(1, clicks.size());
+
         widget.onKeyEvent(new UiKeyEvent(Keyboard.KEY_SPACE, 0, 0, UiKeyEvent.Action.RELEASED, false, false,
                 false, false, 3L));
         Assert.assertEquals(2, clicks.size());

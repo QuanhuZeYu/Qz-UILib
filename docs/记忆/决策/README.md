@@ -34,3 +34,4 @@
 ## 索引
 
 - [`DECISION-20260531-记忆框架.md`](DECISION-20260531-记忆框架.md) - 采用分层 AI 协作记忆框架，拆分规则层、当前态层、长期事实层和决策层
+- [`DECISION-20260531-event-return-value-vs-prevent-default.md`](DECISION-20260531-event-return-value-vs-prevent-default.md) - 事件 handler 返回值只停止传播，取消默认行为统一依赖 `preventDefault()`

@@ -233,6 +233,7 @@ public final class DocumentButtonControl {
                 if (!isActivationKey(event.getKeyCode())) {
                     return false;
                 }
+                event.preventDefault();
                 if (isEnterKey(event.getKeyCode()) && event.getAction() == UiKeyEvent.Action.PRESSED) {
                     active = enabled;
                     updateVisualState();

@@ -44,7 +44,7 @@ final class DocumentKeyboardEventDispatcher {
             return false;
         }
         KeyDispatchResult dispatchResult = dispatchKey(target, event);
-        if (!dispatchResult.isPropagationStopped() && !dispatchResult.isDefaultPrevented()) {
+        if (!dispatchResult.isDefaultPrevented()) {
             dispatchNativeButtonDefaultKeyBehavior(target, event);
         } else if (dispatchResult.isDefaultPrevented()) {
             clearPreventedNativeButtonDefaultState(target, event);
@@ -124,7 +124,7 @@ final class DocumentKeyboardEventDispatcher {
                     applyPendingFocus(keyEvent);
                 }
             }
-            if (!eventControl.isPropagationStopped()) {
+            if (!eventControl.isImmediatePropagationStopped()) {
                 DocumentElementKeyHandler targetHandler = target.getKeyHandler();
                 if (targetHandler != null) {
                     DocumentElementKeyEvent keyEvent = new DocumentElementKeyEvent(target, target, event,

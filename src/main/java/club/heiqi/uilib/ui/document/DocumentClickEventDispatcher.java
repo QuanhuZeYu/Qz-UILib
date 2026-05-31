@@ -107,7 +107,7 @@ final class DocumentClickEventDispatcher {
                     eventControl.stopPropagation();
                 }
             }
-            if (!eventControl.isPropagationStopped()) {
+            if (!eventControl.isImmediatePropagationStopped()) {
                 DocumentElementClickHandler targetHandler = target.getClickHandler();
                 if (targetHandler != null) {
                     DocumentElementClickEvent clickEvent = new DocumentElementClickEvent(target, target,
