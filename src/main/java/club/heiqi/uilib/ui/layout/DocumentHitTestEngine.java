@@ -91,7 +91,7 @@ public final class DocumentHitTestEngine {
             float documentY, int offsetX, int offsetY, boolean searchStackingContext, long currentTimeNanos,
             DocumentAnimationTimeline animationTimeline,
             DocumentStickyPositioning.StickyContext stickyContext) {
-        if (isHitTestHidden(box.getElement())) {
+        if (isHitTestSubtreeSuppressed(box.getElement())) {
             return null;
         }
         int boxOffsetX = resolveBoxOffsetX(box, offsetX, stickyContext);
@@ -130,7 +130,7 @@ public final class DocumentHitTestEngine {
                 return inlineFragmentHit;
             }
         }
-        return insideBorderBox && isPointerEventsEnabled(box.getElement())
+        return insideBorderBox && isSelfHitTestVisible(box.getElement()) && isPointerEventsEnabled(box.getElement())
                 ? resolveAuthorFacingElement(box.getElement()) : null;
     }
 
@@ -237,18 +237,16 @@ public final class DocumentHitTestEngine {
 
     private static ElementNode hitTextRuns(DocumentLayoutBox box, float documentX, float documentY, int offsetX,
             int offsetY) {
-        if (isHitTestHidden(box.getElement())) {
-            return null;
-        }
-        if (!isPointerEventsEnabled(box.getElement())) {
-            return null;
-        }
         List<DocumentLayoutTextRun> textRuns = box.getTextRuns();
         for (int index = textRuns.size() - 1; index >= 0; index--) {
             DocumentLayoutTextRun textRun = textRuns.get(index);
+            ElementNode ownerElement = textRun.getOwnerElement();
+            if (isSelfHitTestSuppressed(ownerElement) || !isPointerEventsEnabled(ownerElement)) {
+                continue;
+            }
             if (containsInRect(documentX, documentY, textRun.getLeft() + offsetX, textRun.getTop() + offsetY,
                     textRun.getRight() + offsetX, textRun.getBottom() + offsetY)) {
-                return resolveAuthorFacingElement(textRun.getOwnerElement());
+                return resolveAuthorFacingElement(ownerElement);
             }
         }
         return null;
@@ -256,19 +254,17 @@ public final class DocumentHitTestEngine {
 
     private static ElementNode hitInlineFragments(DocumentLayoutBox box, float documentX, float documentY, int offsetX,
             int offsetY) {
-        if (isHitTestHidden(box.getElement())) {
-            return null;
-        }
         List<DocumentLayoutInlineFragment> inlineFragments = box.getInlineFragments();
         for (int index = inlineFragments.size() - 1; index >= 0; index--) {
             DocumentLayoutInlineFragment inlineFragment = inlineFragments.get(index);
-            if (!isPointerEventsEnabled(inlineFragment.getOwnerElement())) {
+            ElementNode ownerElement = inlineFragment.getOwnerElement();
+            if (isSelfHitTestSuppressed(ownerElement) || !isPointerEventsEnabled(ownerElement)) {
                 continue;
             }
             if (containsInRect(documentX, documentY, inlineFragment.getLeft() + offsetX,
                     inlineFragment.getTop() + offsetY, inlineFragment.getRight() + offsetX,
                     inlineFragment.getBottom() + offsetY)) {
-                return resolveAuthorFacingElement(inlineFragment.getOwnerElement());
+                return resolveAuthorFacingElement(ownerElement);
             }
         }
         return null;
@@ -311,7 +307,7 @@ public final class DocumentHitTestEngine {
                 || createsTransformStackingContext(box, currentTimeNanos, animationTimeline);
     }
 
-    private static boolean isHitTestHidden(ElementNode element) {
+    private static boolean isHitTestSubtreeSuppressed(ElementNode element) {
         if (element == null) {
             return false;
         }
@@ -322,7 +318,21 @@ public final class DocumentHitTestEngine {
         if ("true".equals(element.getAttribute("data-hit-test-passthrough"))) {
             return true;
         }
-        // visibility:hidden 的元素不响应命中测试
+        return false;
+    }
+
+    private static boolean isSelfHitTestSuppressed(ElementNode element) {
+        return isHitTestSubtreeSuppressed(element) || isVisibilityHidden(element);
+    }
+
+    private static boolean isSelfHitTestVisible(ElementNode element) {
+        return !isSelfHitTestSuppressed(element);
+    }
+
+    private static boolean isVisibilityHidden(ElementNode element) {
+        if (element == null) {
+            return false;
+        }
         ComputedStyle style = UiStyleResolver.compute(element);
         return style.getVisibility() == UiVisibility.HIDDEN;
     }

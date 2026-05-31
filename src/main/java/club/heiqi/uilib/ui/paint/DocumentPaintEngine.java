@@ -107,10 +107,8 @@ public final class DocumentPaintEngine {
             List<DocumentPaintCommand> commands, DocumentScrollState scrollState,
             DocumentAnimationTimeline animationTimeline, int offsetX, int offsetY, long currentTimeNanos,
             float inheritedOpacity, boolean paintStackingContext, StickyContext stickyContext) {
-        // #16 visibility:hidden：元素仍占布局空间，但本身及子树均不绘制
-        if (box != rootBox && isVisibilityHidden(box)) {
-            return;
-        }
+        // visibility:hidden 只隐藏当前元素自身，允许显式 visibility:visible 的后代恢复绘制。
+        boolean visibilityHidden = isVisibilityHidden(box);
         int boxOffsetX = resolveBoxOffsetX(box, offsetX, stickyContext);
         int boxOffsetY = resolveBoxOffsetY(box, offsetY, stickyContext);
         StickyContext childStickyContext = DocumentStickyPositioning.createChildContext(box, boxOffsetX, boxOffsetY,
@@ -128,15 +126,18 @@ public final class DocumentPaintEngine {
         if (paintContext) {
             appendPaintContextStartCommand(box, commands, localOpacity, boxOffsetX, boxOffsetY);
         }
-        appendBackdropFilterCommand(box, commands, animationTimeline, currentTimeNanos, effectChain, boxOffsetX,
-                boxOffsetY);
-        appendBoxShadowCommand(box, commands, animationTimeline, currentTimeNanos, boxOpacity, boxOffsetX,
-                boxOffsetY, false);
-        appendBackgroundCommand(box, commands, animationTimeline, currentTimeNanos, boxOpacity, boxOffsetX,
-                boxOffsetY);
-        appendBorderCommand(box, commands, animationTimeline, currentTimeNanos, boxOpacity, boxOffsetX, boxOffsetY);
-        appendBoxShadowCommand(box, commands, animationTimeline, currentTimeNanos, boxOpacity, boxOffsetX,
-                boxOffsetY, true);
+        if (!visibilityHidden) {
+            appendBackdropFilterCommand(box, commands, animationTimeline, currentTimeNanos, effectChain, boxOffsetX,
+                    boxOffsetY);
+            appendBoxShadowCommand(box, commands, animationTimeline, currentTimeNanos, boxOpacity, boxOffsetX,
+                    boxOffsetY, false);
+            appendBackgroundCommand(box, commands, animationTimeline, currentTimeNanos, boxOpacity, boxOffsetX,
+                    boxOffsetY);
+            appendBorderCommand(box, commands, animationTimeline, currentTimeNanos, boxOpacity, boxOffsetX,
+                    boxOffsetY);
+            appendBoxShadowCommand(box, commands, animationTimeline, currentTimeNanos, boxOpacity, boxOffsetX,
+                    boxOffsetY, true);
+        }
         boolean clipChildren = effectChain.clipsChildren();
         if (clipChildren) {
             appendClipStartCommand(box, commands, animationTimeline, currentTimeNanos, effectChain, boxOffsetX,
@@ -148,7 +149,9 @@ public final class DocumentPaintEngine {
             appendStackingPhaseItems(rootBox, box, commands, scrollState, childOffsetX, childOffsetY,
                     animationTimeline, currentTimeNanos, boxOpacity, DocumentStackingPhase.NEGATIVE_POSITIONED,
                     childStickyContext);
-            appendCustomCommand(box, commands, childOffsetX, childOffsetY);
+            if (!visibilityHidden) {
+                appendCustomCommand(box, commands, childOffsetX, childOffsetY);
+            }
             appendInlineFragmentSurfaceCommands(box, commands, animationTimeline, currentTimeNanos, boxOpacity,
                     childOffsetX, childOffsetY);
             appendListMarkerCommand(box, commands, boxOpacity, childOffsetX, childOffsetY);
@@ -163,7 +166,9 @@ public final class DocumentPaintEngine {
                     animationTimeline, currentTimeNanos, boxOpacity, DocumentStackingPhase.POSITIVE_POSITIONED,
                     childStickyContext);
         } else {
-            appendCustomCommand(box, commands, childOffsetX, childOffsetY);
+            if (!visibilityHidden) {
+                appendCustomCommand(box, commands, childOffsetX, childOffsetY);
+            }
             appendInlineFragmentSurfaceCommands(box, commands, animationTimeline, currentTimeNanos, boxOpacity,
                     childOffsetX, childOffsetY);
             appendListMarkerCommand(box, commands, boxOpacity, childOffsetX, childOffsetY);
@@ -175,9 +180,12 @@ public final class DocumentPaintEngine {
         if (clipChildren) {
             appendClipEndCommand(box, commands, boxOffsetX, boxOffsetY);
         }
-        appendScrollbarCommands(rootBox, box, commands, scrollState, boxOffsetX, boxOffsetY, currentTimeNanos,
-                boxOpacity);
-        appendOutlineCommand(box, commands, animationTimeline, currentTimeNanos, boxOpacity, boxOffsetX, boxOffsetY);
+        if (!visibilityHidden) {
+            appendScrollbarCommands(rootBox, box, commands, scrollState, boxOffsetX, boxOffsetY, currentTimeNanos,
+                    boxOpacity);
+            appendOutlineCommand(box, commands, animationTimeline, currentTimeNanos, boxOpacity, boxOffsetX,
+                    boxOffsetY);
+        }
         if (paintContext) {
             appendPaintContextEndCommand(box, commands, boxOffsetX, boxOffsetY);
         }
@@ -409,6 +417,9 @@ public final class DocumentPaintEngine {
             if (textRun.getText().isEmpty() || textRun.getWidth() <= 0 || textRun.getHeight() <= 0) {
                 continue;
             }
+            if (isVisibilityHidden(textRun.getOwnerElement())) {
+                continue;
+            }
             int color = resolveTextRunColor(textRun, animationTimeline, currentTimeNanos, opacity);
             if (isTransparent(color)) {
                 continue;
@@ -438,6 +449,9 @@ public final class DocumentPaintEngine {
             return;
         }
         ComputedStyle style = box.getComputedStyle();
+        if (style.getVisibility() == UiVisibility.HIDDEN) {
+            return;
+        }
         UiListStyleType listStyleType = style.getListStyleType();
         String markerText;
         if (listStyleType == UiListStyleType.NONE) {
@@ -534,6 +548,9 @@ public final class DocumentPaintEngine {
                 continue;
             }
             ComputedStyle ownerStyle = UiStyleResolver.compute(ownerElement);
+            if (ownerStyle.getVisibility() == UiVisibility.HIDDEN) {
+                continue;
+            }
             int cornerMask = resolveInlineFragmentCornerMask(inlineFragment);
             UiBorderRadiusResolver.ResolvedCornerRadii cornerRadii = resolveInlineFragmentBorderRadii(ownerStyle,
                     inlineFragment.getWidth(), inlineFragment.getHeight());
@@ -822,7 +839,14 @@ public final class DocumentPaintEngine {
      * 判断布局盒是否因 visibility:hidden 而不绘制。
      */
     private static boolean isVisibilityHidden(DocumentLayoutBox box) {
-        return box.getComputedStyle().getVisibility() == UiVisibility.HIDDEN;
+        return isVisibilityHidden(box.getElement());
+    }
+
+    private static boolean isVisibilityHidden(ElementNode element) {
+        if (element == null) {
+            return false;
+        }
+        return UiStyleResolver.compute(element).getVisibility() == UiVisibility.HIDDEN;
     }
 
     /**

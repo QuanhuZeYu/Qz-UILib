@@ -25,6 +25,7 @@ import club.heiqi.uilib.ui.style.props.UiOverflow;
 import club.heiqi.uilib.ui.style.props.UiOverflowWrap;
 import club.heiqi.uilib.ui.style.values.UiPseudoElementContent;
 import club.heiqi.uilib.ui.style.props.UiPosition;
+import club.heiqi.uilib.ui.style.props.UiVisibility;
 import club.heiqi.uilib.ui.style.values.UiStyleInsets;
 import club.heiqi.uilib.ui.style.values.UiStyleLength;
 import club.heiqi.uilib.ui.style.values.UiTransform;
@@ -1112,6 +1113,34 @@ public class DocumentPaintEngineTest {
         Assert.assertEquals("def", commands.get(1).getText());
         assertCommand(commands.get(2), DocumentPaintCommandType.TEXT, root, 0, 36, 8, 54, 0xFFEFF6FF, 0, 0);
         Assert.assertEquals("g", commands.get(2).getText());
+    }
+
+    /**
+     * 验证 visibility:hidden 祖先不会阻断显式 visibility:visible 后代的文本绘制。
+     */
+    @Test
+    public void shouldPaintVisibleInlineDescendantInsideHiddenAncestor() {
+        UiDocument document = UiDocument.create();
+        ElementNode root = document.getRootElement();
+        ElementNode hidden = document.div();
+        ElementNode visible = document.span();
+
+        root.style().setWidth(UiStyleLength.px(80));
+        hidden.style().setVisibility(UiVisibility.HIDDEN);
+        hidden.appendText("AA");
+        visible.style()
+                .setVisibility(UiVisibility.VISIBLE)
+                .setTextColor(0xFFFFD166);
+        visible.appendText("BB");
+        hidden.append(visible);
+        root.append(hidden);
+
+        List<DocumentPaintCommand> commands = DocumentPaintEngine.buildPaintCommands(DocumentLayoutEngine.layout(root,
+                80, 0, new DeterministicTextMeasureService()));
+
+        Assert.assertEquals(1, commands.size());
+        assertCommand(commands.get(0), DocumentPaintCommandType.TEXT, visible, 16, 0, 32, 18, 0xFFFFD166, 0, 0);
+        Assert.assertEquals("BB", commands.get(0).getText());
     }
 
     /**

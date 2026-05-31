@@ -75,7 +75,7 @@ public enum UiStyleProperty {
     TEXT_INDENT(true, UiStyleChangeImpact.LAYOUT),
     FONT_WEIGHT(true, UiStyleChangeImpact.LAYOUT),
     FONT_STYLE(true, UiStyleChangeImpact.PAINT),
-    POINTER_EVENTS(false, UiStyleChangeImpact.PAINT),
+    POINTER_EVENTS(true, UiStyleChangeImpact.PAINT),
     OUTLINE(false, UiStyleChangeImpact.PAINT),
     BORDER_WIDTH_SIDES(false, UiStyleChangeImpact.LAYOUT),
     BORDER_COLORS(false, UiStyleChangeImpact.PAINT),

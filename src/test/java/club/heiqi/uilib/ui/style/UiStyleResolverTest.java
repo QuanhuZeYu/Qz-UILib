@@ -18,6 +18,7 @@ import club.heiqi.uilib.ui.style.props.UiBoxSizing;
 import club.heiqi.uilib.ui.style.props.UiFlexDirection;
 import club.heiqi.uilib.ui.style.props.UiPosition;
 import club.heiqi.uilib.ui.style.props.UiFontWeight;
+import club.heiqi.uilib.ui.style.props.UiPointerEvents;
 import club.heiqi.uilib.ui.style.values.UiStyleKeyword;
 import club.heiqi.uilib.ui.style.props.UiBorderCollapse;
 import club.heiqi.uilib.ui.style.props.UiCursor;
@@ -175,6 +176,25 @@ public class UiStyleResolverTest {
         childStyle = UiStyleResolver.compute(child);
         Assert.assertEquals(UiFontWeight.NORMAL, childStyle.getFontWeight());
         Assert.assertEquals(UiFontStyle.NORMAL, childStyle.getFontStyle());
+    }
+
+    /**
+     * 验证 pointer-events 默认继承父元素计算值。
+     */
+    @Test
+    public void shouldResolvePointerEventsAsInheritedStyle() {
+        UiDocument document = UiDocument.create();
+        ElementNode root = document.getRootElement();
+        ElementNode child = document.span();
+        root.append(child);
+
+        root.style().setPointerEvents(UiPointerEvents.NONE);
+
+        ComputedStyle childStyle = UiStyleResolver.compute(child);
+        Assert.assertEquals(UiPointerEvents.NONE, childStyle.getPointerEvents());
+
+        child.style().setPointerEvents(UiPointerEvents.AUTO);
+        Assert.assertEquals(UiPointerEvents.AUTO, UiStyleResolver.compute(child).getPointerEvents());
     }
 
     /**
