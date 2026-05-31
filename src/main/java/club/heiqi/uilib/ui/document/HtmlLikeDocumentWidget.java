@@ -175,6 +175,11 @@ public final class HtmlLikeDocumentWidget extends Widget implements UiDocument.D
             public void focusElement(ElementNode element, boolean focusVisible) {
                 HtmlLikeDocumentWidget.this.focusElementFromKeyboard(element, focusVisible);
             }
+
+            @Override
+            public void dispatchSyntheticClick(ElementNode element, long timeNanos) {
+                HtmlLikeDocumentWidget.this.dispatchSyntheticClick(element, timeNanos);
+            }
         });
         this.animationTimeline.setRuntimeChangeCallback(new Runnable() {
             @Override
@@ -699,22 +704,27 @@ public final class HtmlLikeDocumentWidget extends Widget implements UiDocument.D
         }
         ElementNode releasedElement = findElementAt(event.getMouseX(), event.getMouseY());
         updateHoveredElement(releasedElement, event);
-        ElementNode target = pressedElement != null && pressedElement == releasedElement ? releasedElement : null;
+        ElementNode previousPressedElement = pressedElement;
         boolean dragHandled = dragController.dispatchDragEnd(event);
-        DocumentMouseEventDispatcher.dispatchMouseUp(pressedElement, event, getAbsoluteX(), getAbsoluteY());
-        DocumentMouseEventDispatcher.dispatchActive(pressedElement, false, event);
+        DocumentMouseEventDispatcher.dispatchMouseUp(releasedElement, event, getAbsoluteX(), getAbsoluteY());
+        DocumentMouseEventDispatcher.dispatchActive(previousPressedElement, false, event);
         pressedElement = null;
         pressedButton = -1;
         syncCursorFromHoveredElement();
-        if (dragHandled || target == null) {
+        if (dragHandled) {
             clickEventDispatcher.clearLastClickState();
             return;
         }
         if (event.getButton() == DocumentClickEventDispatcher.PRIMARY_BUTTON) {
+            ElementNode target = clickEventDispatcher.resolveClickTarget(previousPressedElement, releasedElement);
+            if (target == null) {
+                clickEventDispatcher.clearLastClickState();
+                return;
+            }
             clickEventDispatcher.dispatchClick(target, event, getAbsoluteX(), getAbsoluteY());
             clickEventDispatcher.dispatchPostClickEvents(target, event, getAbsoluteX(), getAbsoluteY());
         } else if (event.getButton() == DocumentClickEventDispatcher.CONTEXT_MENU_BUTTON) {
-            clickEventDispatcher.dispatchContextMenu(target, event, getAbsoluteX(), getAbsoluteY());
+            clickEventDispatcher.dispatchContextMenu(releasedElement, event, getAbsoluteX(), getAbsoluteY());
             clickEventDispatcher.clearLastClickState();
         } else {
             clickEventDispatcher.clearLastClickState();
@@ -933,6 +943,10 @@ public final class HtmlLikeDocumentWidget extends Widget implements UiDocument.D
 
     private void focusElementFromKeyboard(ElementNode element, boolean focusVisible) {
         focusManager.focusElement(element, focusVisible);
+    }
+
+    private void dispatchSyntheticClick(ElementNode target, long timeNanos) {
+        clickEventDispatcher.dispatchSyntheticClick(target, timeNanos);
     }
 
     private DocumentLayoutBox resolveInteractiveLayoutBox() {
