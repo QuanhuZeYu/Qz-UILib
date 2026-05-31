@@ -11,6 +11,7 @@
 | [项目建议.md](项目建议.md) | 协作阶段的技术方向与取舍原则 |
 | [开放化调整.md](开放化调整.md) | 从内部验证转向开发者入口的开放化方案 |
 | [Minecraft原版输入链路.md](Minecraft原版输入链路.md) | 原版 GuiScreen/GuiContainer 键鼠分发与 HUD 抢占内部架构分析 |
+| [../记忆/决策/](../记忆/决策/README.md) | 关键技术取舍、边界约束和重要设计决定 |
 | [reviews/](reviews/README.md) | 审查报告索引与详细报告 |
 | [errors/](errors/README.md) | 错误记录索引与详细问题分析 |
 | [specs/](specs/README.md) | 示例页专属规格与专项方案定稿 |
@@ -20,6 +21,7 @@
 - 审查结论 → `reviews/REVIEW-YYYYMMDD-主题.md`，并在 `reviews/README.md` 添加索引条目
 - 可复现错误 → `errors/ERROR-YYYYMMDD-简述.md`，并在 `errors/README.md` 添加索引条目
 - 示例页规格 → `specs/` 下按功能命名
+- 关键方案取舍 → `../记忆/决策/DECISION-YYYYMMDD-主题.md`
 - 技术方向变更 → 更新 `项目建议.md`
 - 开放化边界变更 → 更新 `开放化调整.md`
 
@@ -27,5 +29,5 @@
 
 - 本区记录"为什么这样做"和"踩过什么坑"
 - `使用文档/` 记录"怎么用"
-- `AI记忆文档.md` 只保留跨任务长期稳定的导航指针
+- `AI记忆文档.md` 只保留总导航；`记忆/` 分层记录当前态、长期事实和关键决策
 - 根目录 `README.md` 只面向首次访问者
