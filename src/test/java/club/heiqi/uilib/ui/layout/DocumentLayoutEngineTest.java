@@ -395,6 +395,95 @@ public class DocumentLayoutEngineTest {
     }
 
     /**
+     * 验证相邻块级兄弟的垂直 margin collapse 会被 overflow 创建的 BFC 阻断。
+     */
+    @Test
+    public void shouldNotCollapseSiblingMarginsAcrossOverflowBlockFormattingContext() {
+        UiDocument document = UiDocument.create();
+        ElementNode root = document.getRootElement();
+        ElementNode first = document.div();
+        ElementNode second = document.div();
+
+        root.style().setWidth(UiStyleLength.px(160));
+        first.style()
+                .setHeight(UiStyleLength.px(20))
+                .setMargin(UiStyleInsets.of(UiStyleLength.px(0), UiStyleLength.px(0), UiStyleLength.px(30),
+                        UiStyleLength.px(0)))
+                .setOverflowY(UiOverflow.HIDDEN);
+        second.style()
+                .setHeight(UiStyleLength.px(20))
+                .setMargin(UiStyleInsets.of(UiStyleLength.px(40), UiStyleLength.px(0), UiStyleLength.px(0),
+                        UiStyleLength.px(0)));
+        root.append(first).append(second);
+
+        DocumentLayoutBox rootBox = DocumentLayoutEngine.layout(root, 200, 0);
+        DocumentLayoutBox firstBox = rootBox.getChildren().get(0);
+        DocumentLayoutBox secondBox = rootBox.getChildren().get(1);
+
+        Assert.assertEquals(0, firstBox.getTop());
+        Assert.assertEquals(90, secondBox.getTop());
+    }
+
+    /**
+     * 验证普通块容器会与首个子块发生父子顶部 margin collapse。
+     */
+    @Test
+    public void shouldCollapseParentAndFirstChildTopMarginsInNormalBlockFlow() {
+        UiDocument document = UiDocument.create();
+        ElementNode root = document.getRootElement();
+        ElementNode parent = document.div();
+        ElementNode child = document.div();
+
+        root.style().setWidth(UiStyleLength.px(160));
+        parent.style()
+                .setMargin(UiStyleInsets.of(UiStyleLength.px(20), UiStyleLength.px(0), UiStyleLength.px(0),
+                        UiStyleLength.px(0)));
+        child.style()
+                .setHeight(UiStyleLength.px(10))
+                .setMargin(UiStyleInsets.of(UiStyleLength.px(30), UiStyleLength.px(0), UiStyleLength.px(0),
+                        UiStyleLength.px(0)));
+        parent.append(child);
+        root.append(parent);
+
+        DocumentLayoutBox rootBox = DocumentLayoutEngine.layout(root, 200, 0);
+        DocumentLayoutBox parentBox = rootBox.getChildren().get(0);
+        DocumentLayoutBox childBox = parentBox.getChildren().get(0);
+
+        Assert.assertEquals(30, parentBox.getTop());
+        Assert.assertEquals(30, childBox.getTop());
+    }
+
+    /**
+     * 验证 overflow 创建的 BFC 会阻断父子顶部 margin collapse。
+     */
+    @Test
+    public void shouldNotCollapseParentAndFirstChildTopMarginsAcrossOverflowBlockFormattingContext() {
+        UiDocument document = UiDocument.create();
+        ElementNode root = document.getRootElement();
+        ElementNode parent = document.div();
+        ElementNode child = document.div();
+
+        root.style().setWidth(UiStyleLength.px(160));
+        parent.style()
+                .setOverflowY(UiOverflow.HIDDEN)
+                .setMargin(UiStyleInsets.of(UiStyleLength.px(20), UiStyleLength.px(0), UiStyleLength.px(0),
+                        UiStyleLength.px(0)));
+        child.style()
+                .setHeight(UiStyleLength.px(10))
+                .setMargin(UiStyleInsets.of(UiStyleLength.px(30), UiStyleLength.px(0), UiStyleLength.px(0),
+                        UiStyleLength.px(0)));
+        parent.append(child);
+        root.append(parent);
+
+        DocumentLayoutBox rootBox = DocumentLayoutEngine.layout(root, 200, 0);
+        DocumentLayoutBox parentBox = rootBox.getChildren().get(0);
+        DocumentLayoutBox childBox = parentBox.getChildren().get(0);
+
+        Assert.assertEquals(20, parentBox.getTop());
+        Assert.assertEquals(50, childBox.getTop());
+    }
+
+    /**
      * 验证 table 布局会让同一行的单元格拉伸到统一行高。
      */
     @Test

@@ -220,6 +220,30 @@ public class DocumentEventPropagationTest {
         Assert.assertSame(handler, div.getCaptureMouseUpHandler());
     }
 
+    @Test
+    public void captureDoubleClickHandlerRegistration() {
+        UiDocument document = UiDocument.create();
+        ElementNode div = document.div();
+
+        Assert.assertNull(div.getCaptureDoubleClickHandler());
+
+        DocumentElementDoubleClickHandler handler = event -> true;
+        div.setCaptureDoubleClickHandler(handler);
+        Assert.assertSame(handler, div.getCaptureDoubleClickHandler());
+    }
+
+    @Test
+    public void captureContextMenuHandlerRegistration() {
+        UiDocument document = UiDocument.create();
+        ElementNode div = document.div();
+
+        Assert.assertNull(div.getCaptureContextMenuHandler());
+
+        DocumentElementContextMenuHandler handler = event -> true;
+        div.setCaptureContextMenuHandler(handler);
+        Assert.assertSame(handler, div.getCaptureContextMenuHandler());
+    }
+
     // ========== 共享 EventControl 跨事件实例测试 ==========
 
     @Test

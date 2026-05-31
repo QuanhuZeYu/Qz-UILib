@@ -2865,6 +2865,114 @@ public class HtmlLikeDocumentWidgetTest {
     }
 
     /**
+     * 验证 dblclick 已接入 capture -> target -> bubble 三阶段链路。
+     */
+    @Test
+    public void shouldDispatchDoubleClickThroughCaptureTargetAndBubble() {
+        UiDocument document = UiDocument.create();
+        ElementNode root = document.getRootElement();
+        final ElementNode child = document.div();
+        final List<String> phases = new ArrayList<String>();
+        root.style().setWidth(UiStyleLength.px(80)).setHeight(UiStyleLength.px(40));
+        child.style().setWidth(UiStyleLength.px(40)).setHeight(UiStyleLength.px(20));
+        root.setCaptureDoubleClickHandler(new DocumentElementDoubleClickHandler() {
+            @Override
+            public boolean onDoubleClick(DocumentElementDoubleClickEvent event) {
+                phases.add("capture:" + event.getCurrentTarget().getTagName() + ":" + event.getEventPhase());
+                return false;
+            }
+        });
+        child.setCaptureDoubleClickHandler(new DocumentElementDoubleClickHandler() {
+            @Override
+            public boolean onDoubleClick(DocumentElementDoubleClickEvent event) {
+                phases.add("target-capture:" + event.getCurrentTarget().getTagName() + ":" + event.getEventPhase());
+                return true;
+            }
+        });
+        child.setDoubleClickHandler(new DocumentElementDoubleClickHandler() {
+            @Override
+            public boolean onDoubleClick(DocumentElementDoubleClickEvent event) {
+                phases.add("target:" + event.getCurrentTarget().getTagName() + ":" + event.getEventPhase());
+                return false;
+            }
+        });
+        root.setDoubleClickHandler(new DocumentElementDoubleClickHandler() {
+            @Override
+            public boolean onDoubleClick(DocumentElementDoubleClickEvent event) {
+                phases.add("bubble:" + event.getCurrentTarget().getTagName() + ":" + event.getEventPhase());
+                return false;
+            }
+        });
+        root.append(child);
+        HtmlLikeDocumentWidget widget = new HtmlLikeDocumentWidget(document, 80, 40,
+                new DeterministicTextMeasureService());
+        widget.applyLayoutBounds(0, 0, 80, 40);
+
+        widget.onMouseDown(new UiMouseEvent(UiMouseEvent.Action.BUTTON_DOWN, 10, 10, 0, 0, 0, 0, 1L));
+        widget.onMouseUp(new UiMouseEvent(UiMouseEvent.Action.BUTTON_UP, 10, 10, 0, 0, 0, 0, 2L));
+        widget.onMouseDown(new UiMouseEvent(UiMouseEvent.Action.BUTTON_DOWN, 10, 10, 0, 0, 0, 0, 3L));
+        widget.onMouseUp(new UiMouseEvent(UiMouseEvent.Action.BUTTON_UP, 10, 10, 0, 0, 0, 0, 4L));
+
+        Assert.assertEquals(3, phases.size());
+        Assert.assertEquals("capture:document:CAPTURING", phases.get(0));
+        Assert.assertEquals("target-capture:div:AT_TARGET", phases.get(1));
+        Assert.assertEquals("target:div:AT_TARGET", phases.get(2));
+    }
+
+    /**
+     * 验证 contextmenu 已接入 capture -> target -> bubble 三阶段链路。
+     */
+    @Test
+    public void shouldDispatchContextMenuThroughCaptureTargetAndBubble() {
+        UiDocument document = UiDocument.create();
+        ElementNode root = document.getRootElement();
+        final ElementNode child = document.div();
+        final List<String> phases = new ArrayList<String>();
+        root.style().setWidth(UiStyleLength.px(80)).setHeight(UiStyleLength.px(40));
+        child.style().setWidth(UiStyleLength.px(40)).setHeight(UiStyleLength.px(20));
+        root.setCaptureContextMenuHandler(new DocumentElementContextMenuHandler() {
+            @Override
+            public boolean onContextMenu(DocumentElementContextMenuEvent event) {
+                phases.add("capture:" + event.getCurrentTarget().getTagName() + ":" + event.getEventPhase());
+                return false;
+            }
+        });
+        child.setCaptureContextMenuHandler(new DocumentElementContextMenuHandler() {
+            @Override
+            public boolean onContextMenu(DocumentElementContextMenuEvent event) {
+                phases.add("target-capture:" + event.getCurrentTarget().getTagName() + ":" + event.getEventPhase());
+                return true;
+            }
+        });
+        child.setContextMenuHandler(new DocumentElementContextMenuHandler() {
+            @Override
+            public boolean onContextMenu(DocumentElementContextMenuEvent event) {
+                phases.add("target:" + event.getCurrentTarget().getTagName() + ":" + event.getEventPhase());
+                return false;
+            }
+        });
+        root.setContextMenuHandler(new DocumentElementContextMenuHandler() {
+            @Override
+            public boolean onContextMenu(DocumentElementContextMenuEvent event) {
+                phases.add("bubble:" + event.getCurrentTarget().getTagName() + ":" + event.getEventPhase());
+                return false;
+            }
+        });
+        root.append(child);
+        HtmlLikeDocumentWidget widget = new HtmlLikeDocumentWidget(document, 80, 40,
+                new DeterministicTextMeasureService());
+        widget.applyLayoutBounds(0, 0, 80, 40);
+
+        widget.onMouseDown(new UiMouseEvent(UiMouseEvent.Action.BUTTON_DOWN, 10, 10, 1, 0, 0, 0, 1L));
+        widget.onMouseUp(new UiMouseEvent(UiMouseEvent.Action.BUTTON_UP, 10, 10, 1, 0, 0, 0, 2L));
+
+        Assert.assertEquals(3, phases.size());
+        Assert.assertEquals("capture:document:CAPTURING", phases.get(0));
+        Assert.assertEquals("target-capture:div:AT_TARGET", phases.get(1));
+        Assert.assertEquals("target:div:AT_TARGET", phases.get(2));
+    }
+
+    /**
      * 验证 transitionend 与 animationend 会向作者派发完成事件。
      */
     @Test

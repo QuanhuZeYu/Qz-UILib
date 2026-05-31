@@ -215,6 +215,8 @@ public final class DocumentLayoutEngine {
         int autoContentWidth = Math.max(0, availableBorderBoxWidth - border.getHorizontal() - padding.getHorizontal());
         int contentWidth = resolveContentWidth(element, computedStyle, containingWidth, autoContentWidth,
                 forcedContentWidth, border, padding, layoutContext);
+        int firstChildTopMargin = resolveCollapsibleFirstChildTopMargin(element, computedStyle, contentWidth,
+                layoutContext);
         int borderBoxWidth = contentWidth + border.getHorizontal() + padding.getHorizontal();
 
         // #3 修复：block 元素 margin:auto 水平居中
@@ -240,7 +242,10 @@ public final class DocumentLayoutEngine {
         }
 
         int borderBoxLeft = containingLeft + resolvedMarginLeft;
-        int borderBoxTop = flowTop + margin.getTop();
+        int collapsedTopMargin = Math.max(margin.getTop(), firstChildTopMargin);
+        int marginTopAdjustment = allowsFirstChildTopMarginCollapse(computedStyle) && firstChildTopMargin > 0
+                ? Math.min(margin.getTop(), firstChildTopMargin) : 0;
+        int borderBoxTop = flowTop + collapsedTopMargin;
         int contentLeft = borderBoxLeft + border.getLeft() + padding.getLeft();
         int contentTop = borderBoxTop + border.getTop() + padding.getTop();
 
@@ -264,7 +269,7 @@ public final class DocumentLayoutEngine {
         } else {
             childrenResult = layoutBlockChildren(element, contentLeft, contentTop, contentWidth, specifiedContentHeight,
                     childrenAbsoluteContainingBlock, createsAbsoluteContainingBlock, fixedContainingBlock,
-                    layoutContext);
+                    marginTopAdjustment, layoutContext);
         }
 
         int autoContentHeight = childrenResult.contentHeight;
@@ -290,6 +295,7 @@ public final class DocumentLayoutEngine {
     private static LayoutChildrenResult layoutBlockChildren(ElementNode element, int contentLeft, int contentTop,
             int contentWidth, int specifiedContentHeight, AbsoluteContainingBlock absoluteContainingBlock,
             boolean createsAbsoluteContainingBlock, AbsoluteContainingBlock fixedContainingBlock,
+            int firstChildTopMarginAdjustment,
             LayoutContext layoutContext) {
         List<DocumentLayoutBox> childBoxes = new ArrayList<DocumentLayoutBox>();
         List<DocumentLayoutTextRun> textRuns = new ArrayList<DocumentLayoutTextRun>();
@@ -298,6 +304,7 @@ public final class DocumentLayoutEngine {
         List<ElementNode> fixedChildren = new ArrayList<ElementNode>();
         boolean usesInlineFormatting = InlineLayoutHelper.hasVisibleInlineElementChild(element, layoutContext);
         ComputedStyle elementStyle = layoutContext.computeStyle(element);
+        boolean parentAllowsFirstChildMarginCollapse = allowsFirstChildTopMarginCollapse(elementStyle);
         int textIndent = TextLayoutHelper.resolveTextIndent(elementStyle, contentWidth);
         InlineLayoutHelper.InlineLayoutContext inlineLayoutContext = usesInlineFormatting
                 ? new InlineLayoutHelper.InlineLayoutContext(contentLeft, contentTop, contentWidth,
@@ -372,15 +379,23 @@ public final class DocumentLayoutEngine {
             }
             // #1 修复：相邻兄弟垂直 margin collapse（取较大值而非叠加）
             int previousMarginBottom = 0;
+            boolean previousAllowsSiblingMarginCollapse = false;
             if (!childBoxes.isEmpty()) {
                 DocumentLayoutBox previousBox = childBoxes.get(childBoxes.size() - 1);
                 previousMarginBottom = previousBox.getMargin().getBottom();
+                previousAllowsSiblingMarginCollapse = allowsSiblingMarginCollapse(previousBox.getComputedStyle());
             }
             int childMarginTop = resolveMarginInsets(childElement, childStyle, contentWidth,
                     layoutContext.layoutValueResolver).getTop();
-            int collapsedMargin = Math.max(previousMarginBottom, childMarginTop);
-            int marginCollapseAdjustment = childBoxes.isEmpty() ? 0
-                    : Math.min(previousMarginBottom, childMarginTop);
+            boolean childAllowsSiblingMarginCollapse = allowsSiblingMarginCollapse(childStyle);
+            int marginCollapseAdjustment = 0;
+            if (childBoxes.isEmpty()) {
+                if (parentAllowsFirstChildMarginCollapse && childAllowsSiblingMarginCollapse) {
+                    marginCollapseAdjustment = Math.max(firstChildTopMarginAdjustment, childMarginTop);
+                }
+            } else if (previousAllowsSiblingMarginCollapse && childAllowsSiblingMarginCollapse) {
+                marginCollapseAdjustment = Math.min(previousMarginBottom, childMarginTop);
+            }
             int adjustedFlowTop = childFlowTop - marginCollapseAdjustment;
             DocumentLayoutBox childBox = layoutElement(childElement, contentLeft, adjustedFlowTop, contentWidth,
                     specifiedContentHeight, AUTO_SIZE, AUTO_SIZE, absoluteContainingBlock, fixedContainingBlock,
@@ -809,6 +824,76 @@ public final class DocumentLayoutEngine {
 
     private static boolean isInlineFormattingDisplay(UiDisplay display) {
         return display == UiDisplay.INLINE || display == UiDisplay.INLINE_BLOCK;
+    }
+
+    private static boolean allowsSiblingMarginCollapse(ComputedStyle style) {
+        if (style == null) {
+            return false;
+        }
+        if (style.getDisplay() == UiDisplay.INLINE || style.getDisplay() == UiDisplay.INLINE_BLOCK
+                || style.getDisplay() == UiDisplay.FLEX || style.getDisplay() == UiDisplay.TABLE) {
+            return false;
+        }
+        if (isOutOfFlowPositioned(style)) {
+            return false;
+        }
+        return !createsBlockFormattingContext(style);
+    }
+
+    private static boolean allowsFirstChildTopMarginCollapse(ComputedStyle style) {
+        if (!allowsSiblingMarginCollapse(style)) {
+            return false;
+        }
+        return resolveBorderInsets(style, 0).getTop() == 0 && resolvePaddingInsets(null, style, 0,
+                STATIC_LAYOUT_VALUE_RESOLVER).getTop() == 0;
+    }
+
+    private static int resolveCollapsibleFirstChildTopMargin(ElementNode element, ComputedStyle style, int contentWidth,
+            LayoutContext layoutContext) {
+        if (!allowsFirstChildTopMarginCollapse(style)) {
+            return 0;
+        }
+        for (DocumentNode child : getGeneratedChildNodes(element, layoutContext)) {
+            if (child instanceof TextNode) {
+                String text = ((TextNode) child).getText();
+                if (text != null && !text.trim().isEmpty()) {
+                    return 0;
+                }
+                continue;
+            }
+            if (!(child instanceof ElementNode)) {
+                continue;
+            }
+            ElementNode childElement = (ElementNode) child;
+            if (childElement.getOwnerDocument().__isTopLayerElement(childElement)) {
+                continue;
+            }
+            ComputedStyle childStyle = layoutContext.computeStyle(childElement);
+            if (childStyle.getDisplay() == UiDisplay.NONE || isOutOfFlowPositioned(childStyle)) {
+                continue;
+            }
+            if (!allowsSiblingMarginCollapse(childStyle)) {
+                return 0;
+            }
+            return resolveMarginInsets(childElement, childStyle, contentWidth, layoutContext.layoutValueResolver)
+                    .getTop();
+        }
+        return 0;
+    }
+
+    private static boolean createsBlockFormattingContext(ComputedStyle style) {
+        if (style == null) {
+            return false;
+        }
+        UiDisplay display = style.getDisplay();
+        if (display == UiDisplay.INLINE_BLOCK || display == UiDisplay.FLEX || display == UiDisplay.TABLE) {
+            return true;
+        }
+        if (isOutOfFlowPositioned(style)) {
+            return true;
+        }
+        return style.getOverflowX() != club.heiqi.uilib.ui.style.props.UiOverflow.VISIBLE
+                || style.getOverflowY() != club.heiqi.uilib.ui.style.props.UiOverflow.VISIBLE;
     }
 
     static boolean isTableRowGroupDisplay(UiDisplay display) {

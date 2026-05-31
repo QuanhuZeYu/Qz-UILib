@@ -556,6 +556,46 @@ abstract class ElementInteractionNode extends DocumentNode {
     }
 
     /**
+     * 设置元素捕获阶段双击处理器。
+     *
+     * @param captureDoubleClickHandler 捕获阶段双击处理器；为 null 时清除
+     * @return 当前元素
+     */
+    public ElementNode setCaptureDoubleClickHandler(DocumentElementDoubleClickHandler captureDoubleClickHandler) {
+        handlers.captureDoubleClickHandler = captureDoubleClickHandler;
+        return self();
+    }
+
+    /**
+     * 返回元素捕获阶段双击处理器。
+     *
+     * @return 捕获阶段双击处理器；不存在时返回 null
+     */
+    public DocumentElementDoubleClickHandler getCaptureDoubleClickHandler() {
+        return handlers.captureDoubleClickHandler;
+    }
+
+    /**
+     * 设置元素捕获阶段右键菜单处理器。
+     *
+     * @param captureContextMenuHandler 捕获阶段右键菜单处理器；为 null 时清除
+     * @return 当前元素
+     */
+    public ElementNode setCaptureContextMenuHandler(DocumentElementContextMenuHandler captureContextMenuHandler) {
+        handlers.captureContextMenuHandler = captureContextMenuHandler;
+        return self();
+    }
+
+    /**
+     * 返回元素捕获阶段右键菜单处理器。
+     *
+     * @return 捕获阶段右键菜单处理器；不存在时返回 null
+     */
+    public DocumentElementContextMenuHandler getCaptureContextMenuHandler() {
+        return handlers.captureContextMenuHandler;
+    }
+
+    /**
      * 设置元素自定义绘制回调，供控件在背景/边框之后注入额外渲染。
      *
      * <p>回调会在 paint engine 的 appendBoxCommands 中被包装为 CUSTOM 命令，
