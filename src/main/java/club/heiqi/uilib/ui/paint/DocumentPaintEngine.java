@@ -162,10 +162,10 @@ public final class DocumentPaintEngine {
                     boxOffsetY, false);
             appendBackgroundCommand(box, commands, animationTimeline, currentTimeNanos, boxOpacity, boxOffsetX,
                     boxOffsetY);
-            appendBorderCommand(box, commands, animationTimeline, currentTimeNanos, boxOpacity, boxOffsetX,
-                    boxOffsetY);
             appendBoxShadowCommand(box, commands, animationTimeline, currentTimeNanos, boxOpacity, boxOffsetX,
                     boxOffsetY, true);
+            appendBorderCommand(box, commands, animationTimeline, currentTimeNanos, boxOpacity, boxOffsetX,
+                    boxOffsetY);
         }
         int childOffsetX = boxContext.getChildOffsetX();
         int childOffsetY = boxContext.getChildOffsetY();

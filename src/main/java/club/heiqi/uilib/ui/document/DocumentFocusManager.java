@@ -9,6 +9,9 @@ import club.heiqi.uilib.ui.dom.DocumentElementFocusEvent;
 import club.heiqi.uilib.ui.dom.DocumentElementFocusHandler;
 import club.heiqi.uilib.ui.dom.DocumentElementFocusInEvent;
 import club.heiqi.uilib.ui.dom.DocumentElementFocusInHandler;
+import club.heiqi.uilib.ui.dom.DocumentElementFocusOutEvent;
+import club.heiqi.uilib.ui.dom.DocumentElementFocusOutHandler;
+import club.heiqi.uilib.ui.dom.DocumentEventControl;
 import club.heiqi.uilib.ui.dom.DocumentNode;
 import club.heiqi.uilib.ui.dom.ElementNode;
 import club.heiqi.uilib.ui.dom.UiDocument;
@@ -176,10 +179,11 @@ final class DocumentFocusManager {
             host.clearNativeButtonState(previousElement);
         }
         if (previousElement != focusedElement) {
+            dispatchFocusOut(previousElement, previousFocusVisible);
+            dispatchFocusIn(focusedElement, focusedElementFocusVisible);
             dispatchFocusChanged(previousElement, false, false);
-        }
-        if (focusedElement != null
-                && (previousElement != focusedElement || previousFocusVisible != focusedElementFocusVisible)) {
+            dispatchFocusChanged(focusedElement, true, focusedElementFocusVisible);
+        } else if (focusedElement != null && previousFocusVisible != focusedElementFocusVisible) {
             dispatchFocusChanged(focusedElement, true, focusedElementFocusVisible);
         }
         if (focusedElement != null && focusedElementFocusVisible && focusedElement.isFocusable()
@@ -382,16 +386,48 @@ final class DocumentFocusManager {
         if (focusHandler != null) {
             focusHandler.onFocusChanged(new DocumentElementFocusEvent(target, focused, focusVisible));
         }
+    }
+
+    private void dispatchFocusIn(ElementNode target, boolean focusVisible) {
+        if (target == null) {
+            return;
+        }
+        DocumentEventControl eventControl = new DocumentEventControl();
         for (DocumentNode current = target; current instanceof ElementNode; current = current.getParent()) {
+            if (eventControl.isPropagationStopped()) {
+                break;
+            }
             ElementNode currentElement = (ElementNode) current;
             DocumentElementFocusInHandler focusInHandler = currentElement.getFocusInHandler();
             if (focusInHandler == null) {
                 continue;
             }
             DocumentElementFocusInEvent focusInEvent = new DocumentElementFocusInEvent(target, currentElement,
-                    focused, focusVisible);
+                    true, focusVisible, eventControl);
             if (focusInHandler.onFocusIn(focusInEvent)) {
+                eventControl.stopPropagation();
+            }
+        }
+    }
+
+    private void dispatchFocusOut(ElementNode target, boolean focusVisible) {
+        if (target == null) {
+            return;
+        }
+        DocumentEventControl eventControl = new DocumentEventControl();
+        for (DocumentNode current = target; current instanceof ElementNode; current = current.getParent()) {
+            if (eventControl.isPropagationStopped()) {
                 break;
+            }
+            ElementNode currentElement = (ElementNode) current;
+            DocumentElementFocusOutHandler focusOutHandler = currentElement.getFocusOutHandler();
+            if (focusOutHandler == null) {
+                continue;
+            }
+            DocumentElementFocusOutEvent focusOutEvent = new DocumentElementFocusOutEvent(target, currentElement,
+                    focusVisible, eventControl);
+            if (focusOutHandler.onFocusOut(focusOutEvent)) {
+                eventControl.stopPropagation();
             }
         }
     }

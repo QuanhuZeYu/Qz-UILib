@@ -2172,7 +2172,7 @@ public final class UiStyleDeclaration {
     private UiStyleDeclaration updateFontStyle(UiFontStyle value) {
         UiFontStyle previousValue = fontStyle;
         fontStyle = value;
-        return updateProperty(UiStyleProperty.FONT_STYLE, previousValue, value, UiStyleChangeImpact.PAINT);
+        return updateProperty(UiStyleProperty.FONT_STYLE, previousValue, value, UiStyleChangeImpact.LAYOUT);
     }
 
     private UiStyleDeclaration updatePointerEvents(UiPointerEvents value) {

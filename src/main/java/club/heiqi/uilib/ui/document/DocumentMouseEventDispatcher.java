@@ -26,9 +26,9 @@ final class DocumentMouseEventDispatcher {
 
     private DocumentMouseEventDispatcher() {}
 
-    static boolean dispatchActive(ElementNode target, boolean active, UiMouseEvent event) {
+    static void dispatchActive(ElementNode target, boolean active, UiMouseEvent event) {
         if (target == null || event == null) {
-            return false;
+            return;
         }
         for (DocumentNode current = target; current instanceof ElementNode; current = current.getParent()) {
             ElementNode currentElement = (ElementNode) current;
@@ -38,11 +38,8 @@ final class DocumentMouseEventDispatcher {
             }
             DocumentElementActiveEvent activeEvent = new DocumentElementActiveEvent(target, currentElement, active,
                     event.getButton(), event.getTimeNanos());
-            if (activeHandler.onActiveChanged(activeEvent)) {
-                return true;
-            }
+            activeHandler.onActiveChanged(activeEvent);
         }
-        return false;
     }
 
     static boolean dispatchMouseDown(ElementNode target, UiMouseEvent event, int absoluteX, int absoluteY) {
@@ -177,10 +174,10 @@ final class DocumentMouseEventDispatcher {
         return eventControl.isPropagationStopped();
     }
 
-    static boolean dispatchHoverChangedWithAncestorAwareness(ElementNode target, boolean hovered,
+    static void dispatchHoverChangedWithAncestorAwareness(ElementNode target, boolean hovered,
             ElementNode otherElement, UiMouseEvent event, int absoluteX, int absoluteY) {
         if (target == null) {
-            return false;
+            return;
         }
         int documentX = event == null ? -1 : event.getMouseX() - absoluteX;
         int documentY = event == null ? -1 : event.getMouseY() - absoluteY;
@@ -196,11 +193,8 @@ final class DocumentMouseEventDispatcher {
             }
             DocumentElementHoverEvent hoverEvent = new DocumentElementHoverEvent(target, currentElement, hovered,
                     documentX, documentY, timeNanos);
-            if (hoverHandler.onHoverChanged(hoverEvent)) {
-                return true;
-            }
+            hoverHandler.onHoverChanged(hoverEvent);
         }
-        return false;
     }
 
     private static List<ElementNode> buildAncestorPath(ElementNode target) {

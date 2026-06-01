@@ -23,6 +23,7 @@ import club.heiqi.uilib.ui.style.values.UiStyleKeyword;
 import club.heiqi.uilib.ui.style.props.UiBorderCollapse;
 import club.heiqi.uilib.ui.style.props.UiCursor;
 import club.heiqi.uilib.ui.style.props.UiTextDecoration;
+import club.heiqi.uilib.ui.style.values.UiTextShadow;
 
 import org.junit.Assert;
 import org.junit.Test;
@@ -285,6 +286,37 @@ public class UiStyleResolverTest {
         Assert.assertEquals(0xFFFFFFFF, computedStyle.getTextColor());
         Assert.assertEquals(UiCursor.POINTER, computedStyle.getCursor());
         Assert.assertEquals(0x00000000, computedStyle.getBackgroundColor());
+    }
+
+    /**
+     * 验证非继承与继承属性元数据会实际影响 computed style 与 unset 语义。
+     */
+    @Test
+    public void shouldApplyBrowserInheritanceMetadataForTableAndTextStyles() {
+        UiDocument document = UiDocument.create();
+        ElementNode root = document.getRootElement();
+        ElementNode child = document.div();
+        UiTextShadow parentShadow = UiTextShadow.of(1, 2, 3, 0xFF000000);
+        root.append(child);
+        root.style()
+                .setBorderCollapse(UiBorderCollapse.COLLAPSE)
+                .setTextShadow(parentShadow)
+                .setFontStyle(UiFontStyle.ITALIC);
+
+        ComputedStyle childStyle = UiStyleResolver.compute(child);
+
+        Assert.assertEquals(UiBorderCollapse.COLLAPSE, childStyle.getBorderCollapse());
+        Assert.assertEquals(parentShadow, childStyle.getTextShadow());
+        Assert.assertEquals(UiFontStyle.ITALIC, childStyle.getFontStyle());
+
+        child.style()
+                .setKeyword(UiStyleProperty.BORDER_COLLAPSE, UiStyleKeyword.UNSET)
+                .setKeyword(UiStyleProperty.TEXT_SHADOW, UiStyleKeyword.UNSET);
+        childStyle = UiStyleResolver.compute(child);
+
+        Assert.assertEquals(UiBorderCollapse.COLLAPSE, childStyle.getBorderCollapse());
+        Assert.assertEquals(parentShadow, childStyle.getTextShadow());
+        Assert.assertEquals(UiStyleChangeImpact.LAYOUT, UiStyleProperty.FONT_STYLE.getChangeImpact());
     }
 
     /**

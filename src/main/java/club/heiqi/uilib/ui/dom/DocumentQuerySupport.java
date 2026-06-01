@@ -39,7 +39,14 @@ final class DocumentQuerySupport {
         if (root == null || selectorText == null || selectorText.isEmpty()) {
             return null;
         }
-        return findFirstMatch(root, UiSelector.parse(selectorText));
+        UiSelector selector = UiSelector.parse(selectorText);
+        for (DocumentNode child : root.getChildren()) {
+            ElementNode found = findFirstMatch(child, selector);
+            if (found != null) {
+                return found;
+            }
+        }
+        return null;
     }
 
     /**
@@ -54,7 +61,10 @@ final class DocumentQuerySupport {
             return Collections.emptyList();
         }
         List<ElementNode> results = new ArrayList<ElementNode>();
-        collectMatches(root, UiSelector.parse(selectorText), results);
+        UiSelector selector = UiSelector.parse(selectorText);
+        for (DocumentNode child : root.getChildren()) {
+            collectMatches(child, selector, results);
+        }
         return results;
     }
 

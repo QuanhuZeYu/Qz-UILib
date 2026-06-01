@@ -5,7 +5,7 @@ import club.heiqi.uilib.ui.paint.DocumentCustomRenderer;
 /**
  * 元素具名 handler 容器。
  *
- * <p>把 {@link ElementNode} 上 14 组冒泡 handler、6 组捕获 handler、自定义渲染回调和滚动 handler
+ * <p>把 {@link ElementNode} 上的冒泡 handler、捕获 handler、自定义渲染回调和滚动 handler
  * 拆出来集中存放，避免 ElementNode 字段表持续膨胀。</p>
  *
  * <p>对外仍由 ElementNode 转发；本类不直接出现在公开 API 中。</p>
@@ -28,6 +28,7 @@ final class ElementInteractionHandlers {
     DocumentElementMouseDownHandler mouseDownHandler;
     DocumentElementMouseUpHandler mouseUpHandler;
     DocumentElementFocusInHandler focusInHandler;
+    DocumentElementFocusOutHandler focusOutHandler;
     DocumentElementTransitionStartHandler transitionStartHandler;
     DocumentElementTransitionEndHandler transitionEndHandler;
     DocumentElementTransitionCancelHandler transitionCancelHandler;
