@@ -417,6 +417,89 @@ public class DocumentTextInputControlTest {
         Assert.assertEquals("Initial", textInputControl.getText());
     }
 
+    /**
+     * 验证 number 类型只接受数字与数值语法字符。
+     */
+    @Test
+    public void shouldAcceptOnlyNumericCharactersForNumberType() {
+        UiDocument document = UiDocument.create();
+        ElementNode root = document.getRootElement();
+        DocumentTextInputControl textInputControl = new DocumentTextInputControl(document);
+        textInputControl.setType(DocumentInputType.NUMBER);
+        root.style().setWidth(UiStyleLength.px(200)).setHeight(UiStyleLength.px(40));
+        textInputControl.getElement().style().setWidth(UiStyleLength.px(160)).setHeight(UiStyleLength.px(24));
+        root.append(textInputControl.getElement());
+        HtmlLikeDocumentWidget widget = new HtmlLikeDocumentWidget(document, 200, 40,
+                new DeterministicTextMeasureService());
+        widget.applyLayoutBounds(0, 0, 200, 40);
+
+        widget.onFocusTraversalEntered(true);
+        widget.onTextInput(new UiTextInputEvent("-12.5abcE3", 1L));
+
+        Assert.assertEquals("number", textInputControl.getElement().getAttribute("type"));
+        Assert.assertEquals("-12.5E3", textInputControl.getText());
+    }
+
+    /**
+     * 验证 password 类型显示掩码但真实值可读，且 value 属性不暴露明文。
+     */
+    @Test
+    public void shouldMaskPasswordButKeepRealValue() {
+        UiDocument document = UiDocument.create();
+        ElementNode root = document.getRootElement();
+        DocumentTextInputControl textInputControl = new DocumentTextInputControl(document);
+        textInputControl.setType(DocumentInputType.PASSWORD);
+        root.style().setWidth(UiStyleLength.px(200)).setHeight(UiStyleLength.px(40));
+        textInputControl.getElement().style().setWidth(UiStyleLength.px(160)).setHeight(UiStyleLength.px(24));
+        root.append(textInputControl.getElement());
+        HtmlLikeDocumentWidget widget = new HtmlLikeDocumentWidget(document, 200, 40,
+                new DeterministicTextMeasureService());
+        widget.applyLayoutBounds(0, 0, 200, 40);
+
+        widget.onFocusTraversalEntered(true);
+        widget.onTextInput(new UiTextInputEvent("Secret", 1L));
+
+        Assert.assertEquals("password", textInputControl.getElement().getAttribute("type"));
+        Assert.assertEquals("Secret", textInputControl.getText());
+        Assert.assertEquals("\u2022\u2022\u2022\u2022\u2022\u2022",
+                textInputControl.getElement().getAttribute("value"));
+
+        RecordingUiRenderContext renderContext = new RecordingUiRenderContext();
+        widget.render(renderContext);
+        Assert.assertTrue(containsTextCall(renderContext.textCalls, "\u2022\u2022\u2022\u2022\u2022\u2022"));
+        Assert.assertFalse(containsTextCall(renderContext.textCalls, "Secret"));
+    }
+
+    /**
+     * 验证自定义密码掩码字符生效。
+     */
+    @Test
+    public void shouldUseCustomPasswordMaskCharacter() {
+        UiDocument document = UiDocument.create();
+        DocumentTextInputControl textInputControl = new DocumentTextInputControl(document);
+        textInputControl.setType(DocumentInputType.PASSWORD);
+        textInputControl.setPasswordMaskCharacter('*');
+        textInputControl.setText("abc");
+
+        Assert.assertEquals("abc", textInputControl.getText());
+        Assert.assertEquals("***", textInputControl.getElement().getAttribute("value"));
+    }
+
+    /**
+     * 验证从 text 切换到 number 时会剔除已有非数值字符。
+     */
+    @Test
+    public void shouldRefilterExistingTextWhenSwitchingToNumber() {
+        UiDocument document = UiDocument.create();
+        DocumentTextInputControl textInputControl = new DocumentTextInputControl(document);
+        textInputControl.setText("a1b2c3");
+
+        textInputControl.setType(DocumentInputType.NUMBER);
+
+        Assert.assertEquals("123", textInputControl.getText());
+        Assert.assertEquals("123", textInputControl.getElement().getAttribute("value"));
+    }
+
     private static boolean containsFillColor(List<DrawCall> drawCalls, int expectedColor) {
         for (DrawCall drawCall : drawCalls) {
             if (drawCall.surfaceStyle.fillColor == expectedColor) {
