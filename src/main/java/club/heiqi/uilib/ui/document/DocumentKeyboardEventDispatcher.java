@@ -7,8 +7,6 @@ import java.util.Map;
 
 import org.lwjglx.input.Keyboard;
 
-import club.heiqi.uilib.ui.dom.DocumentElementClickEvent;
-import club.heiqi.uilib.ui.dom.DocumentElementClickHandler;
 import club.heiqi.uilib.ui.dom.DocumentElementKeyEvent;
 import club.heiqi.uilib.ui.dom.DocumentElementKeyHandler;
 import club.heiqi.uilib.ui.dom.DocumentElementTextInputEvent;
@@ -46,7 +44,7 @@ final class DocumentKeyboardEventDispatcher {
             return false;
         }
         KeyDispatchResult dispatchResult = dispatchKey(target, event);
-        if (!dispatchResult.isPropagationStopped() && !dispatchResult.isDefaultPrevented()) {
+        if (!dispatchResult.isDefaultPrevented()) {
             dispatchNativeButtonDefaultKeyBehavior(target, event);
         } else if (dispatchResult.isDefaultPrevented()) {
             clearPreventedNativeButtonDefaultState(target, event);
@@ -126,7 +124,7 @@ final class DocumentKeyboardEventDispatcher {
                     applyPendingFocus(keyEvent);
                 }
             }
-            if (!eventControl.isPropagationStopped()) {
+            if (!eventControl.isImmediatePropagationStopped()) {
                 DocumentElementKeyHandler targetHandler = target.getKeyHandler();
                 if (targetHandler != null) {
                     DocumentElementKeyEvent keyEvent = new DocumentElementKeyEvent(target, target, event,
@@ -203,9 +201,8 @@ final class DocumentKeyboardEventDispatcher {
     }
 
     private void dispatchRawButtonClick(ElementNode target, long timeNanos) {
-        DocumentElementClickHandler clickHandler = target.getClickHandler();
-        if (clickHandler != null) {
-            clickHandler.onClick(new DocumentElementClickEvent(target, target, -1, -1, -1, timeNanos));
+        if (target != null) {
+            host.dispatchSyntheticClick(target, timeNanos);
         }
     }
 
@@ -252,5 +249,8 @@ final class DocumentKeyboardEventDispatcher {
 
         /** 根据 key handler 请求切换焦点。 */
         void focusElement(ElementNode element, boolean focusVisible);
+
+        /** 通过完整 click 分发链触发合成点击。 */
+        void dispatchSyntheticClick(ElementNode element, long timeNanos);
     }
 }

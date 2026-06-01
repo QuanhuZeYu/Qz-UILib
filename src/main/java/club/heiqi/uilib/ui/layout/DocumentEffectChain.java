@@ -121,9 +121,13 @@ public final class DocumentEffectChain {
     }
 
     /**
-     * 判断当前盒是否应作为命中/滚动/绘制的局部排序边界。
+     * 判断当前盒是否应作为命中/滚动/绘制共享遍历中的局部边界。
      *
-     * @return 是否为局部排序边界
+     * <p>这里保留“stacking context 或 clip boundary 都会截断递归收集”的工程含义，
+     * 不等同于浏览器规范里的 stacking context 定义；规范语义上的 stacking context
+     * 应通过 {@link #createsStackingContext()} 判断。</p>
+     *
+     * @return 是否为共享遍历局部边界
      */
     public boolean isStackingBoundary() {
         return createsStackingContext() || clipsChildren;

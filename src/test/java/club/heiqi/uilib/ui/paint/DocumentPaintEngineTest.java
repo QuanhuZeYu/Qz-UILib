@@ -25,12 +25,14 @@ import club.heiqi.uilib.ui.style.props.UiOverflow;
 import club.heiqi.uilib.ui.style.props.UiOverflowWrap;
 import club.heiqi.uilib.ui.style.values.UiPseudoElementContent;
 import club.heiqi.uilib.ui.style.props.UiPosition;
+import club.heiqi.uilib.ui.style.props.UiVisibility;
 import club.heiqi.uilib.ui.style.values.UiStyleInsets;
 import club.heiqi.uilib.ui.style.values.UiStyleLength;
 import club.heiqi.uilib.ui.style.values.UiTransform;
 import club.heiqi.uilib.ui.style.values.UiBoxShadow;
 import club.heiqi.uilib.ui.style.props.UiWordBreak;
 import club.heiqi.uilib.ui.text.TextMeasureService;
+import club.heiqi.uilib.ui.text.DefaultTextMeasureService;
 import club.heiqi.uilib.ui.style.values.UiSurfaceStyle;
 
 /**
@@ -201,7 +203,7 @@ public class DocumentPaintEngineTest {
     }
 
     /**
-     * 验证 fixed 子元素在根滚动后仍按视口固定位置绘制。
+     * 验证 fixed 子元素在根滚动后仍按视口固定位置绘制，且不属于被滚动内容裁剪块。
      */
     @Test
     public void shouldPaintFixedPositionedChildAtViewportPositionAfterRootScroll() {
@@ -241,9 +243,9 @@ public class DocumentPaintEngineTest {
         assertCommand(commands.get(1), DocumentPaintCommandType.CLIP_START, root, 0, 0, 100, 50, 0, 0, 0);
         assertCommand(commands.get(2), DocumentPaintCommandType.BACKGROUND, spacer, 0, -36, 100, 104, 0xFF0000FF,
                 0, 0);
-        assertCommand(commands.get(3), DocumentPaintCommandType.BACKGROUND, fixed, 10, 6, 40, 18, 0xFFFF0000,
+        assertCommand(commands.get(3), DocumentPaintCommandType.CLIP_END, root, 0, 0, 100, 50, 0, 0, 0);
+        assertCommand(commands.get(4), DocumentPaintCommandType.BACKGROUND, fixed, 10, 6, 40, 18, 0xFFFF0000,
                 0, 0);
-        assertCommand(commands.get(4), DocumentPaintCommandType.CLIP_END, root, 0, 0, 100, 50, 0, 0, 0);
     }
 
     /**
@@ -916,7 +918,7 @@ public class DocumentPaintEngineTest {
     }
 
     /**
-     * 验证 overflow clip 作为 effect boundary 会隔离高 z-index 后代。
+     * 验证 overflow clip 只裁剪后代，不会把高 z-index positioned 后代隔离出祖先 stacking phase。
      */
     @Test
     public void shouldKeepPositionedDescendantInsideOverflowClipBoundary() {
@@ -954,14 +956,66 @@ public class DocumentPaintEngineTest {
         Assert.assertEquals(5, paintCommands.size());
         assertCommand(paintCommands.get(0), DocumentPaintCommandType.BACKGROUND, clippedParent, 0, 0, 80, 20,
                 0xFF111827, 0, 0);
-        assertCommand(paintCommands.get(1), DocumentPaintCommandType.CLIP_START, clippedParent, 0, 0, 80, 20,
-                0, 0, 0);
-        assertCommand(paintCommands.get(2), DocumentPaintCommandType.BACKGROUND, raisedDescendant, 0, 12, 70, 32,
-                0xFFFF3333, 0, 0);
-        assertCommand(paintCommands.get(3), DocumentPaintCommandType.CLIP_END, clippedParent, 0, 0, 80, 20,
-                0, 0, 0);
-        assertCommand(paintCommands.get(4), DocumentPaintCommandType.BACKGROUND, normalCover, 0, 20, 80, 40,
+        assertCommand(paintCommands.get(1), DocumentPaintCommandType.BACKGROUND, normalCover, 0, 20, 80, 40,
                 0xFF2563EB, 0, 0);
+        assertCommand(paintCommands.get(2), DocumentPaintCommandType.CLIP_START, clippedParent, 0, 0, 80, 20,
+                0, 0, 0);
+        assertCommand(paintCommands.get(3), DocumentPaintCommandType.BACKGROUND, raisedDescendant, 0, 12, 70, 32,
+                0xFFFF3333, 0, 0);
+        assertCommand(paintCommands.get(4), DocumentPaintCommandType.CLIP_END, clippedParent, 0, 0, 80, 20,
+                0, 0, 0);
+    }
+
+    /**
+     * 验证 top-layer 根盒会在普通树之后绘制，且后注册顶层元素位于更上层。
+     */
+    @Test
+    public void shouldPaintTopLayerRootsAfterDocumentTree() {
+        UiDocument document = UiDocument.create();
+        ElementNode root = document.getRootElement();
+        ElementNode normal = document.div();
+        ElementNode firstTopLayer = document.div();
+        ElementNode secondTopLayer = document.div();
+
+        root.style().setWidth(UiStyleLength.px(120)).setHeight(UiStyleLength.px(80));
+        normal.style()
+                .setWidth(UiStyleLength.px(60))
+                .setHeight(UiStyleLength.px(30))
+                .setBackgroundColor(0xFF334455);
+        firstTopLayer.style()
+                .setPosition(UiPosition.FIXED)
+                .setLeft(UiStyleLength.px(10))
+                .setTop(UiStyleLength.px(10))
+                .setWidth(UiStyleLength.px(60))
+                .setHeight(UiStyleLength.px(30))
+                .setBackgroundColor(0xFF556677);
+        secondTopLayer.style()
+                .setPosition(UiPosition.FIXED)
+                .setLeft(UiStyleLength.px(10))
+                .setTop(UiStyleLength.px(10))
+                .setWidth(UiStyleLength.px(60))
+                .setHeight(UiStyleLength.px(30))
+                .setBackgroundColor(0xFF778899);
+        root.append(normal).append(firstTopLayer).append(secondTopLayer);
+        document.__showTopLayerElement(firstTopLayer);
+        document.__showTopLayerElement(secondTopLayer);
+
+        DocumentLayoutBox rootBox = DocumentLayoutEngine.layout(root, 120, 80);
+        List<DocumentLayoutBox> topLayerBoxes = java.util.Arrays.asList(
+                DocumentLayoutEngine.layoutTopLayerElement(firstTopLayer, 120, 80,
+                        DefaultTextMeasureService.getInstance(), null),
+                DocumentLayoutEngine.layoutTopLayerElement(secondTopLayer, 120, 80,
+                        DefaultTextMeasureService.getInstance(), null));
+
+        List<DocumentPaintCommand> commands = withoutScrollbarCommands(DocumentPaintEngine.buildPaintCommands(rootBox,
+                topLayerBoxes, null, 1L, null));
+
+        Assert.assertEquals(3, commands.size());
+        assertCommand(commands.get(0), DocumentPaintCommandType.BACKGROUND, normal, 0, 0, 60, 30, 0xFF334455, 0, 0);
+        assertCommand(commands.get(1), DocumentPaintCommandType.BACKGROUND, firstTopLayer, 10, 10, 70, 40,
+                0xFF556677, 0, 0);
+        assertCommand(commands.get(2), DocumentPaintCommandType.BACKGROUND, secondTopLayer, 10, 10, 70, 40,
+                0xFF778899, 0, 0);
     }
 
     /**
@@ -1112,6 +1166,34 @@ public class DocumentPaintEngineTest {
         Assert.assertEquals("def", commands.get(1).getText());
         assertCommand(commands.get(2), DocumentPaintCommandType.TEXT, root, 0, 36, 8, 54, 0xFFEFF6FF, 0, 0);
         Assert.assertEquals("g", commands.get(2).getText());
+    }
+
+    /**
+     * 验证 visibility:hidden 祖先不会阻断显式 visibility:visible 后代的文本绘制。
+     */
+    @Test
+    public void shouldPaintVisibleInlineDescendantInsideHiddenAncestor() {
+        UiDocument document = UiDocument.create();
+        ElementNode root = document.getRootElement();
+        ElementNode hidden = document.div();
+        ElementNode visible = document.span();
+
+        root.style().setWidth(UiStyleLength.px(80));
+        hidden.style().setVisibility(UiVisibility.HIDDEN);
+        hidden.appendText("AA");
+        visible.style()
+                .setVisibility(UiVisibility.VISIBLE)
+                .setTextColor(0xFFFFD166);
+        visible.appendText("BB");
+        hidden.append(visible);
+        root.append(hidden);
+
+        List<DocumentPaintCommand> commands = DocumentPaintEngine.buildPaintCommands(DocumentLayoutEngine.layout(root,
+                80, 0, new DeterministicTextMeasureService()));
+
+        Assert.assertEquals(1, commands.size());
+        assertCommand(commands.get(0), DocumentPaintCommandType.TEXT, visible, 16, 0, 32, 18, 0xFFFFD166, 0, 0);
+        Assert.assertEquals("BB", commands.get(0).getText());
     }
 
     /**

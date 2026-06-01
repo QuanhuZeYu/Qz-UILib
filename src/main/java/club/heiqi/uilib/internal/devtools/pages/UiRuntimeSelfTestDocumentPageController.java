@@ -9,9 +9,13 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 
+import org.apache.logging.log4j.LogManager;
+import org.apache.logging.log4j.Logger;
+
 import net.minecraftforge.common.config.Configuration;
 import net.minecraftforge.common.config.Property;
 
+import club.heiqi.uilib.MyMod;
 import club.heiqi.uilib.font.FontService;
 import club.heiqi.uilib.font.event.FontReloadRequest;
 import club.heiqi.uilib.internal.devtools.UiHudDemoController;
@@ -19,6 +23,11 @@ import club.heiqi.uilib.ui.control.DocumentButtonActionEvent;
 import club.heiqi.uilib.ui.control.DocumentButtonActionHandler;
 import club.heiqi.uilib.ui.control.DocumentButtonControl;
 import club.heiqi.uilib.ui.document.HtmlLikeDocumentWidget;
+import club.heiqi.uilib.ui.dom.DocumentElementClickEvent;
+import club.heiqi.uilib.ui.dom.DocumentElementClickHandler;
+import club.heiqi.uilib.ui.dom.DocumentElementKeyEvent;
+import club.heiqi.uilib.ui.dom.DocumentElementKeyHandler;
+import club.heiqi.uilib.ui.dom.DocumentEventPhase;
 import club.heiqi.uilib.ui.dom.ElementNode;
 import club.heiqi.uilib.ui.dom.TextNode;
 import club.heiqi.uilib.ui.dom.UiDocument;
@@ -28,6 +37,8 @@ import club.heiqi.uilib.ui.layout.UiLength;
 import club.heiqi.uilib.ui.screen.page.DocumentPageAuthoringSurface;
 import club.heiqi.uilib.ui.screen.page.DocumentPageController;
 import club.heiqi.uilib.ui.screen.page.DocumentUiScope;
+import club.heiqi.uilib.ui.event.UiKeyEvent;
+import club.heiqi.uilib.ui.event.UiMouseEvent;
 import club.heiqi.uilib.ui.style.props.UiAlignItems;
 import club.heiqi.uilib.ui.style.props.UiBorderStyle;
 import club.heiqi.uilib.ui.style.props.UiDisplay;
@@ -35,6 +46,7 @@ import club.heiqi.uilib.ui.style.props.UiFlexDirection;
 import club.heiqi.uilib.ui.style.props.UiOverflow;
 import club.heiqi.uilib.ui.style.values.UiStyleInsets;
 import club.heiqi.uilib.ui.style.values.UiStyleLength;
+import club.heiqi.uilib.ui.text.TextMeasureService;
 
 /**
  * 运行时自检页：在游戏内对 LTS 阶段无法用 JVM 单测覆盖的关键路径做现场断言，
@@ -53,11 +65,17 @@ import club.heiqi.uilib.ui.style.values.UiStyleLength;
  */
 public final class UiRuntimeSelfTestDocumentPageController extends DocumentPageController {
 
+    private static final Logger LOG = LogManager.getLogger("QzUiLib/UiRuntimeSelfTest");
+    private static final int MAX_LOG_LINES = 18;
+
     private final DocumentPageAuthoringSurface documentPage;
     private final HtmlLikeDocumentWidget htmlLikeDocumentWidget;
     private final UiDocument document;
+    private final TextMeasureService textMeasureService;
     private final List<TestEntry> entries = new ArrayList<TestEntry>();
+    private final List<String> runtimeLogLines = new ArrayList<String>();
     private TextNode summaryText;
+    private TextNode runtimeLogText;
 
     /**
      * 创建运行时自检页控制器。
@@ -71,6 +89,7 @@ public final class UiRuntimeSelfTestDocumentPageController extends DocumentPageC
         this.documentPage = Objects.requireNonNull(documentPage, "documentPage");
         this.document = UiDocument.create();
         this.document.setDefaultTextContentMode(documentUi.getDefaultTextContentMode());
+        this.textMeasureService = documentUi.getTextMeasureService();
         this.htmlLikeDocumentWidget = new HtmlLikeDocumentWidget(document, 760, 520,
                 documentUi.getTextMeasureService());
         this.htmlLikeDocumentWidget.setViewportRootScrollingEnabled(true);
@@ -153,6 +172,14 @@ public final class UiRuntimeSelfTestDocumentPageController extends DocumentPageC
                         runRemoteImageCacheShutdown();
                     }
                 });
+        registerEntry(root, "浏览器事件语义",
+                "运行时断言 click 的 AT_TARGET 顺序、raw button 键盘默认 click 与 preventDefault 去重语义。",
+                new SelfTestRunnable() {
+                    @Override
+                    public void run() {
+                        runBrowserEventSemanticsAssertions();
+                    }
+                });
         registerEntry(root, "HUD 输入抢占 smoke",
                 "打开本地 HUD 输入 smoke 浮窗，并把聊天框 / 退格 / 焦点交接的预期结果直接写在浮窗里供人工对照。", new SelfTestRunnable() {
                     @Override
@@ -180,6 +207,21 @@ public final class UiRuntimeSelfTestDocumentPageController extends DocumentPageC
                 .setBorderRadius(UiStyleLength.px(12));
         summaryText = summaryBlock.appendText("尚未执行任何自检项。");
         root.append(summaryBlock);
+
+        ElementNode logBlock = document.div();
+        logBlock.style()
+                .setMargin(UiStyleInsets.of(UiStyleLength.px(12), UiStyleLength.px(0), UiStyleLength.px(0),
+                        UiStyleLength.px(0)))
+                .setPadding(UiStyleLength.px(12))
+                .setBackgroundColor(0xFF101A29)
+                .setBorderColor(0xFF2A426A)
+                .setBorderWidth(UiStyleLength.px(1))
+                .setBorderStyle(UiBorderStyle.SOLID)
+                .setBorderRadius(UiStyleLength.px(12));
+        logBlock.appendText("运行时日志（最近 18 条）");
+        runtimeLogText = logBlock.appendText("尚无日志。");
+        root.append(logBlock);
+        appendRuntimeLog("init", "运行时自检页已构建，可直接在游戏内触发断言。", null);
     }
 
     private void registerEntry(ElementNode root, String title, String description,
@@ -230,22 +272,26 @@ public final class UiRuntimeSelfTestDocumentPageController extends DocumentPageC
 
     private void executeAndDecorate(TestEntry entry) {
         long startedAt = System.nanoTime();
+        appendRuntimeLog(entry.title, "开始执行", null);
         try {
             entry.runnable.run();
         } catch (RuntimeException exception) {
             entry.statusLabel.setText("✗ 失败");
             updateSummary("[" + entry.title + "] 失败：" + exception.getClass().getSimpleName() + " - "
                     + safeMessage(exception));
+            appendRuntimeLog(entry.title, "失败：" + safeMessage(exception), exception);
             throw exception;
         } catch (Error error) {
             entry.statusLabel.setText("✗ 错误");
             updateSummary("[" + entry.title + "] 错误：" + error.getClass().getSimpleName() + " - "
                     + safeMessage(error));
+            appendRuntimeLog(entry.title, "错误：" + safeMessage(error), error);
             throw error;
         }
         long durationMs = (System.nanoTime() - startedAt) / 1_000_000L;
         entry.statusLabel.setText("✓ 通过 (" + durationMs + "ms)");
         updateSummary("[" + entry.title + "] 通过，用时 " + durationMs + "ms。");
+        appendRuntimeLog(entry.title, "通过，用时 " + durationMs + "ms", null);
     }
 
     private void runAllInSequence() {
@@ -407,7 +453,17 @@ public final class UiRuntimeSelfTestDocumentPageController extends DocumentPageC
     }
 
     /**
-     * Test 6：HUD 输入抢占 smoke。
+     * Test 6：浏览器事件语义运行时断言。
+     */
+    private void runBrowserEventSemanticsAssertions() {
+        runTargetPhaseOrderingAssertion();
+        runRawButtonDefaultKeyboardClickAssertion();
+        runRawButtonPreventDefaultAssertion();
+        runDocumentButtonNoDuplicateKeyboardActivationAssertion();
+    }
+
+    /**
+     * Test 7：HUD 输入抢占 smoke。
      *
      * <p>该项不做 JVM 断言，而是启用游戏内 HUD 浮窗，并把人工验证步骤与预期直接显示在浮窗内。</p>
      */
@@ -421,6 +477,196 @@ public final class UiRuntimeSelfTestDocumentPageController extends DocumentPageC
     private void updateSummary(String message) {
         if (summaryText != null) {
             summaryText.setText(message);
+        }
+    }
+
+    private void appendRuntimeLog(String category, String message, Throwable throwable) {
+        String resolvedCategory = category == null ? "self-test" : category;
+        String resolvedMessage = message == null ? "<no message>" : message;
+        String line = "[" + resolvedCategory + "] " + resolvedMessage;
+        if (throwable == null) {
+            LOG.info(line);
+            MyMod.LOG.info(line);
+        } else {
+            LOG.error(line, throwable);
+            MyMod.LOG.error(line, throwable);
+        }
+        runtimeLogLines.add(line);
+        while (runtimeLogLines.size() > MAX_LOG_LINES) {
+            runtimeLogLines.remove(0);
+        }
+        if (runtimeLogText != null) {
+            runtimeLogText.setText(joinLines(runtimeLogLines));
+        }
+    }
+
+    private void runTargetPhaseOrderingAssertion() {
+        appendRuntimeLog("浏览器事件语义", "子项1：断言 target capture 返回 true 后 target handler 仍执行", null);
+        UiDocument runtimeDocument = UiDocument.create();
+        ElementNode root = runtimeDocument.getRootElement();
+        ElementNode child = runtimeDocument.div();
+        final List<String> eventLog = new ArrayList<String>();
+        root.style().setWidth(UiStyleLength.px(80)).setHeight(UiStyleLength.px(40));
+        child.style().setWidth(UiStyleLength.px(40)).setHeight(UiStyleLength.px(20));
+        child.setCaptureClickHandler(new DocumentElementClickHandler() {
+            @Override
+            public boolean onClick(DocumentElementClickEvent event) {
+                eventLog.add("target-capture:" + event.getEventPhase());
+                return true;
+            }
+        });
+        child.setClickHandler(new DocumentElementClickHandler() {
+            @Override
+            public boolean onClick(DocumentElementClickEvent event) {
+                eventLog.add("target:" + event.getEventPhase());
+                return false;
+            }
+        });
+        root.setClickHandler(new DocumentElementClickHandler() {
+            @Override
+            public boolean onClick(DocumentElementClickEvent event) {
+                eventLog.add("root:" + event.getEventPhase());
+                return false;
+            }
+        });
+        root.append(child);
+        HtmlLikeDocumentWidget widget = createProbeWidget(runtimeDocument, 80, 40);
+        widget.onMouseDown(new UiMouseEvent(UiMouseEvent.Action.BUTTON_DOWN, 10, 10, 0, 0, 0, 0, 1L));
+        widget.onMouseUp(new UiMouseEvent(UiMouseEvent.Action.BUTTON_UP, 10, 10, 0, 0, 0, 0, 2L));
+        appendRuntimeLog("浏览器事件语义", "子项1事件链=" + eventLog, null);
+        require(eventLog.size() == 2,
+                "AT_TARGET 顺序异常：期望 2 条事件，实际 " + eventLog.size() + "，eventLog=" + eventLog);
+        require(("target-capture:" + DocumentEventPhase.AT_TARGET).equals(eventLog.get(0)),
+                "AT_TARGET 顺序异常：第1条不是 target capture，eventLog=" + eventLog);
+        require(("target:" + DocumentEventPhase.AT_TARGET).equals(eventLog.get(1)),
+                "AT_TARGET 顺序异常：第2条不是 target handler，eventLog=" + eventLog);
+    }
+
+    private void runRawButtonDefaultKeyboardClickAssertion() {
+        appendRuntimeLog("浏览器事件语义", "子项2：断言 raw button key handler 返回 true 时默认 keyboard click 仍执行", null);
+        UiDocument runtimeDocument = UiDocument.create();
+        ElementNode root = runtimeDocument.getRootElement();
+        ElementNode rawButton = runtimeDocument.button();
+        final List<DocumentElementClickEvent> clicks = new ArrayList<DocumentElementClickEvent>();
+        rawButton.setClickHandler(new DocumentElementClickHandler() {
+            @Override
+            public boolean onClick(DocumentElementClickEvent event) {
+                clicks.add(event);
+                return true;
+            }
+        });
+        rawButton.setKeyHandler(new DocumentElementKeyHandler() {
+            @Override
+            public boolean onKey(DocumentElementKeyEvent event) {
+                return true;
+            }
+        });
+        root.style().setWidth(UiStyleLength.px(120)).setHeight(UiStyleLength.px(40));
+        rawButton.style().setWidth(UiStyleLength.px(80)).setHeight(UiStyleLength.px(32));
+        root.append(rawButton);
+        HtmlLikeDocumentWidget widget = createProbeWidget(runtimeDocument, 120, 40);
+        widget.onFocusTraversalEntered(false);
+        require(widget.getFocusedElement() == rawButton, "raw button 未获得键盘焦点，无法继续默认 click 断言");
+        widget.onKeyEvent(new UiKeyEvent(org.lwjglx.input.Keyboard.KEY_RETURN, 0, 0, UiKeyEvent.Action.PRESSED,
+                false, false, false, false, 1L));
+        widget.onKeyEvent(new UiKeyEvent(org.lwjglx.input.Keyboard.KEY_SPACE, 0, 0, UiKeyEvent.Action.PRESSED,
+                false, false, false, false, 2L));
+        widget.onKeyEvent(new UiKeyEvent(org.lwjglx.input.Keyboard.KEY_SPACE, 0, 0, UiKeyEvent.Action.RELEASED,
+                false, false, false, false, 3L));
+        appendRuntimeLog("浏览器事件语义", "子项2 click 数量=" + clicks.size(), null);
+        require(clicks.size() == 2,
+                "raw button 默认 keyboard click 异常：期望 2 次 click，实际 " + clicks.size());
+    }
+
+    private void runRawButtonPreventDefaultAssertion() {
+        appendRuntimeLog("浏览器事件语义", "子项3：断言 preventDefault 会取消 raw button 默认 keyboard click", null);
+        UiDocument runtimeDocument = UiDocument.create();
+        ElementNode root = runtimeDocument.getRootElement();
+        ElementNode rawButton = runtimeDocument.button();
+        final List<DocumentElementClickEvent> clicks = new ArrayList<DocumentElementClickEvent>();
+        rawButton.setClickHandler(new DocumentElementClickHandler() {
+            @Override
+            public boolean onClick(DocumentElementClickEvent event) {
+                clicks.add(event);
+                return true;
+            }
+        });
+        rawButton.setKeyHandler(new DocumentElementKeyHandler() {
+            @Override
+            public boolean onKey(DocumentElementKeyEvent event) {
+                event.preventDefault();
+                return false;
+            }
+        });
+        root.style().setWidth(UiStyleLength.px(120)).setHeight(UiStyleLength.px(40));
+        rawButton.style().setWidth(UiStyleLength.px(80)).setHeight(UiStyleLength.px(32));
+        root.append(rawButton);
+        HtmlLikeDocumentWidget widget = createProbeWidget(runtimeDocument, 120, 40);
+        widget.onFocusTraversalEntered(false);
+        require(widget.getFocusedElement() == rawButton, "raw button 未获得键盘焦点，无法继续 preventDefault 断言");
+        widget.onKeyEvent(new UiKeyEvent(org.lwjglx.input.Keyboard.KEY_RETURN, 0, 0, UiKeyEvent.Action.PRESSED,
+                false, false, false, false, 1L));
+        widget.onKeyEvent(new UiKeyEvent(org.lwjglx.input.Keyboard.KEY_SPACE, 0, 0, UiKeyEvent.Action.PRESSED,
+                false, false, false, false, 2L));
+        widget.onKeyEvent(new UiKeyEvent(org.lwjglx.input.Keyboard.KEY_SPACE, 0, 0, UiKeyEvent.Action.RELEASED,
+                false, false, false, false, 3L));
+        appendRuntimeLog("浏览器事件语义", "子项3 click 数量=" + clicks.size(), null);
+        require(clicks.isEmpty(), "preventDefault 未取消 raw button 默认 keyboard click，clicks=" + clicks.size());
+    }
+
+    private void runDocumentButtonNoDuplicateKeyboardActivationAssertion() {
+        appendRuntimeLog("浏览器事件语义", "子项4：断言 DocumentButtonControl 键盘激活不会与 raw button 默认行为重复叠加", null);
+        UiDocument runtimeDocument = UiDocument.create();
+        ElementNode root = runtimeDocument.getRootElement();
+        final List<DocumentButtonActionEvent> actions = new ArrayList<DocumentButtonActionEvent>();
+        DocumentButtonControl buttonControl = new DocumentButtonControl(runtimeDocument, "OK");
+        buttonControl.setActionHandler(new DocumentButtonActionHandler() {
+            @Override
+            public void onAction(DocumentButtonActionEvent event) {
+                actions.add(event);
+            }
+        });
+        root.style().setWidth(UiStyleLength.px(120)).setHeight(UiStyleLength.px(40));
+        buttonControl.getElement().style().setWidth(UiStyleLength.px(80)).setHeight(UiStyleLength.px(32));
+        root.append(buttonControl.getElement());
+        HtmlLikeDocumentWidget widget = createProbeWidget(runtimeDocument, 120, 40);
+        widget.onFocusTraversalEntered(false);
+        require(widget.getFocusedElement() == buttonControl.getElement(),
+                "DocumentButtonControl 未获得键盘焦点，无法继续去重断言");
+        widget.onKeyEvent(new UiKeyEvent(org.lwjglx.input.Keyboard.KEY_RETURN, 0, 0, UiKeyEvent.Action.PRESSED,
+                false, false, false, false, 1L));
+        widget.onKeyEvent(new UiKeyEvent(org.lwjglx.input.Keyboard.KEY_SPACE, 0, 0, UiKeyEvent.Action.PRESSED,
+                false, false, false, false, 2L));
+        widget.onKeyEvent(new UiKeyEvent(org.lwjglx.input.Keyboard.KEY_SPACE, 0, 0, UiKeyEvent.Action.RELEASED,
+                false, false, false, false, 3L));
+        appendRuntimeLog("浏览器事件语义", "子项4 action 数量=" + actions.size(), null);
+        require(actions.size() == 2,
+                "DocumentButtonControl 键盘激活重复触发：期望 2 次 action，实际 " + actions.size());
+    }
+
+    private HtmlLikeDocumentWidget createProbeWidget(UiDocument runtimeDocument, int width, int height) {
+        HtmlLikeDocumentWidget widget = new HtmlLikeDocumentWidget(runtimeDocument, width, height, textMeasureService);
+        widget.applyLayoutBounds(0, 0, width, height);
+        return widget;
+    }
+
+    private static String joinLines(List<String> lines) {
+        if (lines == null || lines.isEmpty()) {
+            return "尚无日志。";
+        }
+        StringBuilder builder = new StringBuilder();
+        for (int index = 0; index < lines.size(); index++) {
+            if (index > 0) {
+                builder.append('\n');
+            }
+            builder.append(lines.get(index));
+        }
+        return builder.toString();
+    }
+
+    private static void require(boolean condition, String message) {
+        if (!condition) {
+            throw new IllegalStateException(message);
         }
     }
 

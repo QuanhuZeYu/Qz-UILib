@@ -7,9 +7,11 @@ import club.heiqi.uilib.ui.animation.DocumentAnimationProperty;
 import club.heiqi.uilib.ui.animation.DocumentAnimationTimeline;
 import club.heiqi.uilib.ui.dom.ElementNode;
 import club.heiqi.uilib.ui.dom.UiDocument;
+import club.heiqi.uilib.ui.text.TextMeasureService;
 import club.heiqi.uilib.ui.style.props.UiOverflow;
 import club.heiqi.uilib.ui.style.props.UiPointerEvents;
 import club.heiqi.uilib.ui.style.props.UiPosition;
+import club.heiqi.uilib.ui.style.props.UiVisibility;
 import club.heiqi.uilib.ui.style.values.UiStyleInsets;
 import club.heiqi.uilib.ui.style.values.UiStyleLength;
 import club.heiqi.uilib.ui.style.values.UiTransform;
@@ -404,6 +406,108 @@ public class DocumentHitTestEngineTest {
     }
 
     /**
+     * 验证 pointer-events:none 会按继承语义让覆盖层后代一并透传命中。
+     */
+    @Test
+    public void shouldSkipPointerEventsInheritedFromOverlayAncestor() {
+        UiDocument document = UiDocument.create();
+        ElementNode root = document.getRootElement();
+        ElementNode target = document.div();
+        ElementNode overlay = document.div();
+        ElementNode overlayChild = document.div();
+
+        root.style().setWidth(UiStyleLength.px(120));
+        target.style()
+                .setWidth(UiStyleLength.px(80))
+                .setHeight(UiStyleLength.px(40));
+        overlay.style()
+                .setWidth(UiStyleLength.px(120))
+                .setHeight(UiStyleLength.px(80))
+                .setPosition(UiPosition.FIXED)
+                .setTop(UiStyleLength.px(0))
+                .setLeft(UiStyleLength.px(0))
+                .setZIndex(1000)
+                .setPointerEvents(UiPointerEvents.NONE);
+        overlayChild.style()
+                .setWidth(UiStyleLength.px(120))
+                .setHeight(UiStyleLength.px(80));
+        overlay.append(overlayChild);
+        root.append(target).append(overlay);
+
+        DocumentLayoutBox rootBox = DocumentLayoutEngine.layout(root, 120, 80);
+
+        assertHitElement(target, rootBox, 10, 10);
+    }
+
+    /**
+     * 验证共享场景命中会优先返回后注册的 top-layer 根盒。
+     */
+    @Test
+    public void shouldHitLatestTopLayerRootBeforeDocumentTree() {
+        UiDocument document = UiDocument.create();
+        ElementNode root = document.getRootElement();
+        ElementNode normal = document.div();
+        ElementNode firstTopLayer = document.div();
+        ElementNode secondTopLayer = document.div();
+
+        root.style().setWidth(UiStyleLength.px(120)).setHeight(UiStyleLength.px(80));
+        normal.style()
+                .setWidth(UiStyleLength.px(80))
+                .setHeight(UiStyleLength.px(40));
+        firstTopLayer.style()
+                .setPosition(UiPosition.FIXED)
+                .setLeft(UiStyleLength.px(8))
+                .setTop(UiStyleLength.px(8))
+                .setWidth(UiStyleLength.px(80))
+                .setHeight(UiStyleLength.px(40));
+        secondTopLayer.style()
+                .setPosition(UiPosition.FIXED)
+                .setLeft(UiStyleLength.px(8))
+                .setTop(UiStyleLength.px(8))
+                .setWidth(UiStyleLength.px(80))
+                .setHeight(UiStyleLength.px(40));
+        root.append(normal).append(firstTopLayer).append(secondTopLayer);
+        document.__showTopLayerElement(firstTopLayer);
+        document.__showTopLayerElement(secondTopLayer);
+
+        DocumentLayoutBox rootBox = DocumentLayoutEngine.layout(root, 120, 80);
+        java.util.List<DocumentLayoutBox> topLayerBoxes = java.util.Arrays.asList(
+                DocumentLayoutEngine.layoutTopLayerElement(firstTopLayer, 120, 80,
+                        club.heiqi.uilib.ui.text.DefaultTextMeasureService.getInstance(), null),
+                DocumentLayoutEngine.layoutTopLayerElement(secondTopLayer, 120, 80,
+                        club.heiqi.uilib.ui.text.DefaultTextMeasureService.getInstance(), null));
+
+        ElementNode actualElement = DocumentHitTestEngine.hitTest(rootBox, topLayerBoxes, null, 10, 10, 0L, null);
+
+        Assert.assertNotNull(actualElement);
+        Assert.assertEquals(secondTopLayer.__getElementUid(), actualElement.__getElementUid());
+    }
+
+    /**
+     * 验证 visibility:hidden 祖先不会阻断显式 visibility:visible 后代的文本命中。
+     */
+    @Test
+    public void shouldHitVisibleInlineDescendantInsideHiddenAncestor() {
+        UiDocument document = UiDocument.create();
+        ElementNode root = document.getRootElement();
+        ElementNode hidden = document.div();
+        ElementNode visible = document.span();
+
+        root.style().setWidth(UiStyleLength.px(80));
+        hidden.style().setVisibility(UiVisibility.HIDDEN);
+        hidden.appendText("AA");
+        visible.style().setVisibility(UiVisibility.VISIBLE);
+        visible.appendText("BB");
+        hidden.append(visible);
+        root.append(hidden);
+
+        DocumentLayoutBox rootBox = DocumentLayoutEngine.layout(root, 80, 0, new DeterministicTextMeasureService());
+
+        assertHitElement(root, rootBox, 2, 5);
+        assertHitElement(visible, rootBox, 20, 5);
+    }
+
+    /**
      * 验证 transform 平移后的视觉区域参与命中，原布局区域不再命中该元素。
      */
     @Test
@@ -486,5 +590,45 @@ public class DocumentHitTestEngineTest {
         ElementNode actualElement = DocumentHitTestEngine.hitTest(rootBox, scrollState, x, y);
         Assert.assertNotNull(actualElement);
         Assert.assertEquals(expectedElement.__getElementUid(), actualElement.__getElementUid());
+    }
+
+    private static final class DeterministicTextMeasureService implements TextMeasureService {
+
+        @Override
+        public int getEpoch() {
+            return 1;
+        }
+
+        @Override
+        public int getStringWidth(String text) {
+            return text == null ? 0 : text.length() * 4;
+        }
+
+        @Override
+        public int getLineHeight() {
+            return 9;
+        }
+
+        @Override
+        public String trimStringToWidth(String text, int targetWidth) {
+            if (text == null || text.isEmpty() || targetWidth <= 0) {
+                return "";
+            }
+            int maxLength = Math.max(0, targetWidth / 4);
+            return text.substring(0, Math.min(text.length(), maxLength));
+        }
+
+        @Override
+        public java.util.List<String> listFormattedStringToWidth(String text, int wrapWidth) {
+            java.util.List<String> lines = new java.util.ArrayList<String>();
+            if (text == null || text.isEmpty() || wrapWidth <= 0) {
+                return lines;
+            }
+            int maxCharsPerLine = Math.max(1, wrapWidth / 4);
+            for (int index = 0; index < text.length(); index += maxCharsPerLine) {
+                lines.add(text.substring(index, Math.min(text.length(), index + maxCharsPerLine)));
+            }
+            return lines;
+        }
     }
 }

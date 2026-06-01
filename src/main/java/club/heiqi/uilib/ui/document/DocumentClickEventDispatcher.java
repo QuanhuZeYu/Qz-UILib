@@ -56,8 +56,28 @@ final class DocumentClickEventDispatcher {
         if (target == null || event == null) {
             return false;
         }
-        int documentX = event.getMouseX() - absoluteX;
-        int documentY = event.getMouseY() - absoluteY;
+        return dispatchClick(target, event.getMouseX() - absoluteX, event.getMouseY() - absoluteY,
+                event.getButton(), event.getTimeNanos());
+    }
+
+    /**
+     * 分发不依赖鼠标坐标的合成 click 事件。
+     */
+    boolean dispatchSyntheticClick(ElementNode target, long timeNanos) {
+        if (target == null) {
+            return false;
+        }
+        return dispatchClick(target, -1, -1, PRIMARY_BUTTON, timeNanos);
+    }
+
+    /**
+     * 根据按下与释放目标解析最终 click target。
+     */
+    ElementNode resolveClickTarget(ElementNode pressedElement, ElementNode releasedElement) {
+        return findNearestCommonInclusiveAncestor(pressedElement, releasedElement);
+    }
+
+    private boolean dispatchClick(ElementNode target, int documentX, int documentY, int button, long timeNanos) {
         DocumentEventControl eventControl = new DocumentEventControl();
         List<ElementNode> path = buildAncestorPath(target);
 
@@ -70,7 +90,7 @@ final class DocumentClickEventDispatcher {
             DocumentElementClickHandler captureHandler = currentElement.getCaptureClickHandler();
             if (captureHandler != null) {
                 DocumentElementClickEvent clickEvent = new DocumentElementClickEvent(target, currentElement,
-                        documentX, documentY, event.getButton(), event.getTimeNanos(), eventControl);
+                        documentX, documentY, button, timeNanos, eventControl);
                 if (captureHandler.onClick(clickEvent)) {
                     eventControl.stopPropagation();
                 }
@@ -82,16 +102,16 @@ final class DocumentClickEventDispatcher {
             DocumentElementClickHandler targetCaptureHandler = target.getCaptureClickHandler();
             if (targetCaptureHandler != null) {
                 DocumentElementClickEvent clickEvent = new DocumentElementClickEvent(target, target,
-                        documentX, documentY, event.getButton(), event.getTimeNanos(), eventControl);
+                        documentX, documentY, button, timeNanos, eventControl);
                 if (targetCaptureHandler.onClick(clickEvent)) {
                     eventControl.stopPropagation();
                 }
             }
-            if (!eventControl.isPropagationStopped()) {
+            if (!eventControl.isImmediatePropagationStopped()) {
                 DocumentElementClickHandler targetHandler = target.getClickHandler();
                 if (targetHandler != null) {
                     DocumentElementClickEvent clickEvent = new DocumentElementClickEvent(target, target,
-                            documentX, documentY, event.getButton(), event.getTimeNanos(), eventControl);
+                            documentX, documentY, button, timeNanos, eventControl);
                     if (targetHandler.onClick(clickEvent)) {
                         eventControl.stopPropagation();
                     }
@@ -110,13 +130,13 @@ final class DocumentClickEventDispatcher {
                 continue;
             }
             DocumentElementClickEvent clickEvent = new DocumentElementClickEvent(target, currentElement,
-                    documentX, documentY, event.getButton(), event.getTimeNanos(), eventControl);
+                    documentX, documentY, button, timeNanos, eventControl);
             if (clickHandler.onClick(clickEvent)) {
                 eventControl.stopPropagation();
             }
         }
         if (!eventControl.isDefaultPrevented()) {
-            activateNearestLink(target, event.getTimeNanos());
+            activateNearestLink(target, timeNanos);
         }
         return eventControl.isPropagationStopped();
     }
@@ -221,13 +241,42 @@ final class DocumentClickEventDispatcher {
         DocumentEventControl eventControl = new DocumentEventControl();
         List<ElementNode> path = buildAncestorPath(target);
 
-        eventControl.setEventPhase(DocumentEventPhase.AT_TARGET);
-        DocumentElementDoubleClickHandler targetHandler = target.getDoubleClickHandler();
-        if (targetHandler != null) {
-            DocumentElementDoubleClickEvent doubleClickEvent = new DocumentElementDoubleClickEvent(target, target,
-                    documentX, documentY, event.getButton(), event.getTimeNanos(), eventControl);
-            if (targetHandler.onDoubleClick(doubleClickEvent)) {
+        eventControl.setEventPhase(DocumentEventPhase.CAPTURING);
+        for (int index = path.size() - 1; index > 0; index--) {
+            if (eventControl.isPropagationStopped()) {
+                break;
+            }
+            ElementNode currentElement = path.get(index);
+            DocumentElementDoubleClickHandler captureHandler = currentElement.getCaptureDoubleClickHandler();
+            if (captureHandler == null) {
+                continue;
+            }
+            DocumentElementDoubleClickEvent doubleClickEvent = new DocumentElementDoubleClickEvent(target,
+                    currentElement, documentX, documentY, event.getButton(), event.getTimeNanos(), eventControl);
+            if (captureHandler.onDoubleClick(doubleClickEvent)) {
                 eventControl.stopPropagation();
+            }
+        }
+
+        if (!eventControl.isPropagationStopped()) {
+            eventControl.setEventPhase(DocumentEventPhase.AT_TARGET);
+            DocumentElementDoubleClickHandler targetCaptureHandler = target.getCaptureDoubleClickHandler();
+            if (targetCaptureHandler != null) {
+                DocumentElementDoubleClickEvent doubleClickEvent = new DocumentElementDoubleClickEvent(target, target,
+                        documentX, documentY, event.getButton(), event.getTimeNanos(), eventControl);
+                if (targetCaptureHandler.onDoubleClick(doubleClickEvent)) {
+                    eventControl.stopPropagation();
+                }
+            }
+            if (!eventControl.isImmediatePropagationStopped()) {
+                DocumentElementDoubleClickHandler targetHandler = target.getDoubleClickHandler();
+                if (targetHandler != null) {
+                    DocumentElementDoubleClickEvent doubleClickEvent = new DocumentElementDoubleClickEvent(target,
+                            target, documentX, documentY, event.getButton(), event.getTimeNanos(), eventControl);
+                    if (targetHandler.onDoubleClick(doubleClickEvent)) {
+                        eventControl.stopPropagation();
+                    }
+                }
             }
         }
 
@@ -254,13 +303,42 @@ final class DocumentClickEventDispatcher {
         DocumentEventControl eventControl = new DocumentEventControl();
         List<ElementNode> path = buildAncestorPath(target);
 
-        eventControl.setEventPhase(DocumentEventPhase.AT_TARGET);
-        DocumentElementContextMenuHandler targetHandler = target.getContextMenuHandler();
-        if (targetHandler != null) {
-            DocumentElementContextMenuEvent contextMenuEvent = new DocumentElementContextMenuEvent(target, target,
-                    documentX, documentY, event.getButton(), event.getTimeNanos(), eventControl);
-            if (targetHandler.onContextMenu(contextMenuEvent)) {
+        eventControl.setEventPhase(DocumentEventPhase.CAPTURING);
+        for (int index = path.size() - 1; index > 0; index--) {
+            if (eventControl.isPropagationStopped()) {
+                break;
+            }
+            ElementNode currentElement = path.get(index);
+            DocumentElementContextMenuHandler captureHandler = currentElement.getCaptureContextMenuHandler();
+            if (captureHandler == null) {
+                continue;
+            }
+            DocumentElementContextMenuEvent contextMenuEvent = new DocumentElementContextMenuEvent(target,
+                    currentElement, documentX, documentY, event.getButton(), event.getTimeNanos(), eventControl);
+            if (captureHandler.onContextMenu(contextMenuEvent)) {
                 eventControl.stopPropagation();
+            }
+        }
+
+        if (!eventControl.isPropagationStopped()) {
+            eventControl.setEventPhase(DocumentEventPhase.AT_TARGET);
+            DocumentElementContextMenuHandler targetCaptureHandler = target.getCaptureContextMenuHandler();
+            if (targetCaptureHandler != null) {
+                DocumentElementContextMenuEvent contextMenuEvent = new DocumentElementContextMenuEvent(target,
+                        target, documentX, documentY, event.getButton(), event.getTimeNanos(), eventControl);
+                if (targetCaptureHandler.onContextMenu(contextMenuEvent)) {
+                    eventControl.stopPropagation();
+                }
+            }
+            if (!eventControl.isImmediatePropagationStopped()) {
+                DocumentElementContextMenuHandler targetHandler = target.getContextMenuHandler();
+                if (targetHandler != null) {
+                    DocumentElementContextMenuEvent contextMenuEvent = new DocumentElementContextMenuEvent(target,
+                            target, documentX, documentY, event.getButton(), event.getTimeNanos(), eventControl);
+                    if (targetHandler.onContextMenu(contextMenuEvent)) {
+                        eventControl.stopPropagation();
+                    }
+                }
             }
         }
 
@@ -307,5 +385,21 @@ final class DocumentClickEventDispatcher {
             path.add((ElementNode) current);
         }
         return path;
+    }
+
+    private static ElementNode findNearestCommonInclusiveAncestor(ElementNode first, ElementNode second) {
+        if (first == null || second == null) {
+            return null;
+        }
+        List<ElementNode> secondPath = buildAncestorPath(second);
+        for (DocumentNode current = first; current instanceof ElementNode; current = current.getParent()) {
+            ElementNode currentElement = (ElementNode) current;
+            for (ElementNode candidate : secondPath) {
+                if (candidate == currentElement) {
+                    return currentElement;
+                }
+            }
+        }
+        return null;
     }
 }

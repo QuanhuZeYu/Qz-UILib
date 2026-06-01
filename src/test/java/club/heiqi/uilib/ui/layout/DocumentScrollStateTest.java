@@ -168,6 +168,56 @@ public class DocumentScrollStateTest {
     }
 
     /**
+     * 验证共享场景滚轮命中会优先命中后注册的 top-layer 滚动容器。
+     */
+    @Test
+    public void shouldScrollLatestTopLayerScrollerBeforeDocumentTree() {
+        UiDocument document = UiDocument.create();
+        ElementNode root = document.getRootElement();
+        ElementNode normalScroller = document.div();
+        ElementNode normalContent = document.div();
+        ElementNode firstTopLayer = document.div();
+        ElementNode firstTopLayerContent = document.div();
+        ElementNode secondTopLayer = document.div();
+        ElementNode secondTopLayerContent = document.div();
+
+        root.style().setWidth(UiStyleLength.px(140)).setHeight(UiStyleLength.px(100));
+        configureScroller(normalScroller);
+        normalContent.style().setHeight(UiStyleLength.px(100));
+        configureScroller(firstTopLayer);
+        firstTopLayer.style()
+                .setPosition(UiPosition.FIXED)
+                .setLeft(UiStyleLength.px(8))
+                .setTop(UiStyleLength.px(8));
+        firstTopLayerContent.style().setHeight(UiStyleLength.px(100));
+        configureScroller(secondTopLayer);
+        secondTopLayer.style()
+                .setPosition(UiPosition.FIXED)
+                .setLeft(UiStyleLength.px(8))
+                .setTop(UiStyleLength.px(8));
+        secondTopLayerContent.style().setHeight(UiStyleLength.px(100));
+        normalScroller.append(normalContent);
+        firstTopLayer.append(firstTopLayerContent);
+        secondTopLayer.append(secondTopLayerContent);
+        root.append(normalScroller).append(firstTopLayer).append(secondTopLayer);
+        document.__showTopLayerElement(firstTopLayer);
+        document.__showTopLayerElement(secondTopLayer);
+
+        DocumentLayoutBox rootBox = DocumentLayoutEngine.layout(root, 140, 100);
+        java.util.List<DocumentLayoutBox> topLayerBoxes = java.util.Arrays.asList(
+                DocumentLayoutEngine.layoutTopLayerElement(firstTopLayer, 140, 100,
+                        club.heiqi.uilib.ui.text.DefaultTextMeasureService.getInstance(), null),
+                DocumentLayoutEngine.layoutTopLayerElement(secondTopLayer, 140, 100,
+                        club.heiqi.uilib.ui.text.DefaultTextMeasureService.getInstance(), null));
+        DocumentScrollState scrollState = new DocumentScrollState();
+
+        Assert.assertTrue(scrollState.handleWheel(rootBox, topLayerBoxes, 10, 10, -120, 1L));
+        Assert.assertEquals(0, scrollState.getScrollTop(normalScroller));
+        Assert.assertEquals(0, scrollState.getScrollTop(firstTopLayer));
+        Assert.assertTrue(scrollState.getScrollTop(secondTopLayer) > 0);
+    }
+
+    /**
      * 验证 HUD 风格固定内容区能计算出正向滚动范围并消费滚轮。
      */
     @Test

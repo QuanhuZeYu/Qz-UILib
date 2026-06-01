@@ -272,10 +272,31 @@ public final class DocumentAnimationTimeline {
      * @return 动画状态是否发生变化
      */
     public boolean updateFromLayout(DocumentLayoutBox rootBox, long currentTimeNanos) {
-        Objects.requireNonNull(rootBox, "rootBox");
+        return updateFromLayout(java.util.Collections.singletonList(rootBox), currentTimeNanos);
+    }
+
+    /**
+     * 根据最新布局盒根列表刷新 transition 状态。
+     *
+     * @param rootBoxes 布局盒根列表
+     * @param currentTimeNanos 当前动画时间
+     * @return 动画状态是否发生变化
+     */
+    public boolean updateFromLayout(List<DocumentLayoutBox> rootBoxes, long currentTimeNanos) {
+        Objects.requireNonNull(rootBoxes, "rootBoxes");
+        if (rootBoxes.isEmpty()) {
+            boolean changed = !states.isEmpty();
+            states.clear();
+            return changed;
+        }
         boolean changed = false;
         Set<ElementNode> activeElements = new HashSet<ElementNode>();
-        changed |= updateFromBox(rootBox, currentTimeNanos, activeElements);
+        for (DocumentLayoutBox rootBox : rootBoxes) {
+            if (rootBox == null) {
+                continue;
+            }
+            changed |= updateFromBox(rootBox, currentTimeNanos, activeElements);
+        }
         Iterator<Map.Entry<ElementNode, DocumentAnimationRuntimeState>> iterator = states.entrySet().iterator();
         while (iterator.hasNext()) {
             Map.Entry<ElementNode, DocumentAnimationRuntimeState> entry = iterator.next();

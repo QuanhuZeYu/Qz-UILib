@@ -1,8 +1,6 @@
 package club.heiqi.uilib.ui.layout;
 
-import java.util.ArrayList;
 import java.util.Collections;
-import java.util.Comparator;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Iterator;
@@ -12,6 +10,11 @@ import java.util.Objects;
 import java.util.Set;
 
 import club.heiqi.uilib.ui.dom.ElementNode;
+import club.heiqi.uilib.ui.layout.DocumentVisualTraversal.BoxContext;
+import club.heiqi.uilib.ui.layout.DocumentVisualTraversal.RootEntry;
+import club.heiqi.uilib.ui.layout.DocumentVisualTraversal.StackingContextResolver;
+import club.heiqi.uilib.ui.layout.DocumentVisualTraversal.TraversalEntry;
+import club.heiqi.uilib.ui.layout.DocumentVisualTraversal.VisualScene;
 import club.heiqi.uilib.ui.style.props.UiOverflow;
 
 /**
@@ -23,6 +26,13 @@ public final class DocumentScrollState {
 
     private static final int DEFAULT_SCROLL_STEP = 36;
     private static final long TRANSIENT_SCROLLBAR_VISIBLE_NANOS = 900_000_000L;
+    private static final StackingContextResolver STATIC_STACKING_CONTEXT_RESOLVER =
+            new StackingContextResolver() {
+                @Override
+                public boolean createsStackingContext(DocumentLayoutBox box) {
+                    return DocumentEffectChain.resolve(box).createsStackingContext();
+                }
+            };
 
     private final Map<ElementNode, ScrollEntry> entries = new HashMap<ElementNode, ScrollEntry>();
     private int scrollStep = DEFAULT_SCROLL_STEP;
@@ -235,14 +245,12 @@ public final class DocumentScrollState {
             return false;
         }
         updateFromLayout(rootBox, topLayerBoxes);
-        DocumentLayoutBox target = findTopLayerScrollableBoxAt(topLayerBoxes, mouseX, mouseY);
-        if (target == null) {
-            target = findScrollableBoxAt(rootBox, mouseX, mouseY, 0, 0, true);
-        }
+        BoxContext target = findScrollableBoxAt(DocumentVisualTraversal.resolveVisualScene(rootBox, topLayerBoxes, this),
+                mouseX, mouseY);
         if (target == null) {
             return false;
         }
-        ScrollEntry entry = entries.get(target.getElement());
+        ScrollEntry entry = entries.get(target.getBox().getElement());
         if (entry == null) {
             return false;
         }
@@ -303,10 +311,8 @@ public final class DocumentScrollState {
             int mouseY, long eventTimeNanos) {
         Objects.requireNonNull(rootBox, "rootBox");
         updateFromLayout(rootBox, topLayerBoxes);
-        ScrollbarHit hit = findTopLayerScrollbarHit(topLayerBoxes, mouseX, mouseY, eventTimeNanos);
-        if (hit == null) {
-            hit = findScrollbarHit(rootBox, rootBox, mouseX, mouseY, 0, 0, eventTimeNanos, true);
-        }
+        ScrollbarHit hit = findScrollbarHit(DocumentVisualTraversal.resolveVisualScene(rootBox, topLayerBoxes, this),
+                mouseX, mouseY, eventTimeNanos);
         if (hit == null) {
             return false;
         }
@@ -371,10 +377,8 @@ public final class DocumentScrollState {
             return false;
         }
         updateFromLayout(rootBox, topLayerBoxes);
-        ScrollbarHit hit = findActiveScrollbarInTopLayers(topLayerBoxes, eventTimeNanos);
-        if (hit == null) {
-            hit = findActiveScrollbar(rootBox, rootBox, 0, 0, eventTimeNanos);
-        }
+        ScrollbarHit hit = findActiveScrollbar(DocumentVisualTraversal.resolveVisualScene(rootBox, topLayerBoxes, this),
+                eventTimeNanos);
         if (hit == null) {
             activeScrollbarDrag = null;
             return false;
@@ -532,66 +536,61 @@ public final class DocumentScrollState {
         return true;
     }
 
-    private DocumentLayoutBox findScrollableBoxAt(DocumentLayoutBox box, int mouseX, int mouseY, int offsetX,
-            int offsetY, boolean searchStackingContext) {
-        int baseOffsetX = box.isFixedPositioned() ? 0 : offsetX;
-        int baseOffsetY = box.isFixedPositioned() ? 0 : offsetY;
-        int boxOffsetX = baseOffsetX + box.getPositionOffsetX();
-        int boxOffsetY = baseOffsetY + box.getPositionOffsetY();
+    private BoxContext findScrollableBoxAt(BoxContext boxContext, int mouseX, int mouseY,
+            boolean searchStackingContext) {
+        DocumentLayoutBox box = boxContext.getBox();
+        boolean insideAncestorClipChain = DocumentVisualTraversal.isPointInsideClipChain(boxContext, mouseX, mouseY);
+        if (!insideAncestorClipChain) {
+            return null;
+        }
+        int boxOffsetX = boxContext.getBoxOffsetX();
+        int boxOffsetY = boxContext.getBoxOffsetY();
         int viewportLeft = box.getContentLeft() + boxOffsetX;
         int viewportTop = box.getContentTop() + boxOffsetY;
         int viewportRight = viewportLeft + box.getContentWidth();
         int viewportBottom = viewportTop + box.getContentHeight();
         boolean pointerInViewport = containsInRect(mouseX, mouseY, viewportLeft, viewportTop, viewportRight,
                 viewportBottom);
-        boolean childrenReachable = canReachChildren(box, mouseX, mouseY, boxOffsetX, boxOffsetY);
+        boolean childrenReachable = DocumentVisualTraversal.canReachChildren(boxContext, mouseX, mouseY);
         if (childrenReachable) {
-            int childOffsetX = boxOffsetX - getScrollLeft(box.getElement());
-            int childOffsetY = boxOffsetY - getScrollTop(box.getElement());
-            DocumentLayoutBox hit = searchStackingContext
-                    ? findScrollableInStackingContext(box, mouseX, mouseY, childOffsetX, childOffsetY)
-                    : findScrollableInNormalFlow(box, mouseX, mouseY, childOffsetX, childOffsetY);
+            BoxContext hit = searchStackingContext
+                    ? findScrollableInStackingContext(boxContext, mouseX, mouseY)
+                    : findScrollableInNormalFlow(boxContext, mouseX, mouseY);
             if (hit != null) {
                 return hit;
             }
         }
 
         if (pointerInViewport && isScrollable(box.getElement())) {
-            return box;
+            return boxContext;
         }
         return null;
     }
 
-    private DocumentLayoutBox findScrollableInStackingContext(DocumentLayoutBox contextRoot, int mouseX, int mouseY,
-            int childOffsetX, int childOffsetY) {
-        DocumentLayoutBox hit = findScrollableInStackingPhase(contextRoot, mouseX, mouseY, childOffsetX,
-                childOffsetY, DocumentStackingPhase.POSITIVE_POSITIONED);
+    private BoxContext findScrollableInStackingContext(BoxContext contextRootContext, int mouseX, int mouseY) {
+        BoxContext hit = findScrollableInStackingPhase(contextRootContext, mouseX, mouseY,
+                DocumentStackingPhase.POSITIVE_POSITIONED);
         if (hit != null) {
             return hit;
         }
-        hit = findScrollableInStackingPhase(contextRoot, mouseX, mouseY, childOffsetX, childOffsetY,
+        hit = findScrollableInStackingPhase(contextRootContext, mouseX, mouseY,
                 DocumentStackingPhase.POSITIONED_AUTO_OR_ZERO);
         if (hit != null) {
             return hit;
         }
-        hit = findScrollableInNormalFlow(contextRoot, mouseX, mouseY, childOffsetX, childOffsetY);
+        hit = findScrollableInNormalFlow(contextRootContext, mouseX, mouseY);
         if (hit != null) {
             return hit;
         }
-        return findScrollableInStackingPhase(contextRoot, mouseX, mouseY, childOffsetX, childOffsetY,
+        return findScrollableInStackingPhase(contextRootContext, mouseX, mouseY,
                 DocumentStackingPhase.NEGATIVE_POSITIONED);
     }
 
-    private DocumentLayoutBox findScrollableInNormalFlow(DocumentLayoutBox box, int mouseX, int mouseY,
-            int childOffsetX, int childOffsetY) {
-        List<DocumentLayoutBox> children = box.getChildren();
-        for (int index = children.size() - 1; index >= 0; index--) {
-            DocumentLayoutBox child = children.get(index);
-            if (child.getStackingPhase() != DocumentStackingPhase.NORMAL_FLOW) {
-                continue;
-            }
-            DocumentLayoutBox hit = findScrollableBoxAt(child, mouseX, mouseY, childOffsetX, childOffsetY,
-                    shouldSearchAsStackingContext(child));
+    private BoxContext findScrollableInNormalFlow(BoxContext contextRootContext, int mouseX, int mouseY) {
+        List<TraversalEntry> children = DocumentVisualTraversal.getNormalFlowEntries(contextRootContext.getBox(),
+                contextRootContext, this, STATIC_STACKING_CONTEXT_RESOLVER, true);
+        for (TraversalEntry child : children) {
+            BoxContext hit = findScrollableBoxAt(child.getBoxContext(), mouseX, mouseY, child.isStackingContext());
             if (hit != null) {
                 return hit;
             }
@@ -599,15 +598,13 @@ public final class DocumentScrollState {
         return null;
     }
 
-    private DocumentLayoutBox findScrollableInStackingPhase(DocumentLayoutBox contextRoot, int mouseX, int mouseY,
-            int childOffsetX, int childOffsetY, DocumentStackingPhase phase) {
-        List<StackingScrollItem> items = new ArrayList<StackingScrollItem>();
-        collectStackingPhaseItems(contextRoot, items, childOffsetX, childOffsetY, phase);
-        sortStackingItemsIfNeeded(items, phase);
+    private BoxContext findScrollableInStackingPhase(BoxContext contextRootContext, int mouseX, int mouseY,
+            DocumentStackingPhase phase) {
+        List<TraversalEntry> items = DocumentVisualTraversal.collectStackingPhaseEntries(contextRootContext.getBox(),
+                contextRootContext, this, STATIC_STACKING_CONTEXT_RESOLVER, phase);
         for (int index = items.size() - 1; index >= 0; index--) {
-            StackingScrollItem item = items.get(index);
-            DocumentLayoutBox hit = findScrollableBoxAt(item.box, mouseX, mouseY, item.offsetX, item.offsetY,
-                    item.searchStackingContext);
+            TraversalEntry item = items.get(index);
+            BoxContext hit = findScrollableBoxAt(item.getBoxContext(), mouseX, mouseY, item.isStackingContext());
             if (hit != null) {
                 return hit;
             }
@@ -620,17 +617,13 @@ public final class DocumentScrollState {
         return entry != null && (entry.maxHorizontalOffset > 0 || entry.maxVerticalOffset > 0);
     }
 
-    private DocumentLayoutBox findTopLayerScrollableBoxAt(List<DocumentLayoutBox> topLayerBoxes, int mouseX,
-            int mouseY) {
-        if (topLayerBoxes == null) {
+    private BoxContext findScrollableBoxAt(VisualScene scene, int mouseX, int mouseY) {
+        if (scene == null) {
             return null;
         }
-        for (int index = topLayerBoxes.size() - 1; index >= 0; index--) {
-            DocumentLayoutBox topLayerBox = topLayerBoxes.get(index);
-            if (topLayerBox == null) {
-                continue;
-            }
-            DocumentLayoutBox hit = findScrollableBoxAt(topLayerBox, mouseX, mouseY, 0, 0, true);
+        List<RootEntry> rootEntries = scene.getRootEntries();
+        for (int index = rootEntries.size() - 1; index >= 0; index--) {
+            BoxContext hit = findScrollableBoxAt(rootEntries.get(index).getRootContext(), mouseX, mouseY, true);
             if (hit != null) {
                 return hit;
             }
@@ -638,18 +631,15 @@ public final class DocumentScrollState {
         return null;
     }
 
-    private ScrollbarHit findTopLayerScrollbarHit(List<DocumentLayoutBox> topLayerBoxes, int mouseX, int mouseY,
-            long currentTimeNanos) {
-        if (topLayerBoxes == null) {
+    private ScrollbarHit findScrollbarHit(VisualScene scene, int mouseX, int mouseY, long currentTimeNanos) {
+        if (scene == null) {
             return null;
         }
-        for (int index = topLayerBoxes.size() - 1; index >= 0; index--) {
-            DocumentLayoutBox topLayerBox = topLayerBoxes.get(index);
-            if (topLayerBox == null) {
-                continue;
-            }
-            ScrollbarHit hit = findScrollbarHit(topLayerBox, topLayerBox, mouseX, mouseY, 0, 0, currentTimeNanos,
-                    true);
+        List<RootEntry> rootEntries = scene.getRootEntries();
+        for (int index = rootEntries.size() - 1; index >= 0; index--) {
+            RootEntry rootEntry = rootEntries.get(index);
+            ScrollbarHit hit = findScrollbarHit(rootEntry.getRootContext(), rootEntry.getRootBox(), mouseX, mouseY,
+                    currentTimeNanos, true);
             if (hit != null) {
                 return hit;
             }
@@ -657,17 +647,14 @@ public final class DocumentScrollState {
         return null;
     }
 
-    private ScrollbarHit findActiveScrollbarInTopLayers(List<DocumentLayoutBox> topLayerBoxes,
-            long currentTimeNanos) {
-        if (topLayerBoxes == null) {
+    private ScrollbarHit findActiveScrollbar(VisualScene scene, long currentTimeNanos) {
+        if (scene == null) {
             return null;
         }
-        for (int index = topLayerBoxes.size() - 1; index >= 0; index--) {
-            DocumentLayoutBox topLayerBox = topLayerBoxes.get(index);
-            if (topLayerBox == null) {
-                continue;
-            }
-            ScrollbarHit hit = findActiveScrollbar(topLayerBox, topLayerBox, 0, 0, currentTimeNanos);
+        List<RootEntry> rootEntries = scene.getRootEntries();
+        for (int index = rootEntries.size() - 1; index >= 0; index--) {
+            RootEntry rootEntry = rootEntries.get(index);
+            ScrollbarHit hit = findActiveScrollbar(rootEntry.getRootContext(), rootEntry.getRootBox(), currentTimeNanos);
             if (hit != null) {
                 return hit;
             }
@@ -675,61 +662,53 @@ public final class DocumentScrollState {
         return null;
     }
 
-    private ScrollbarHit findScrollbarHit(DocumentLayoutBox rootBox, DocumentLayoutBox box, int mouseX, int mouseY,
-            int offsetX, int offsetY, long currentTimeNanos, boolean searchStackingContext) {
-        int baseOffsetX = box.isFixedPositioned() ? 0 : offsetX;
-        int baseOffsetY = box.isFixedPositioned() ? 0 : offsetY;
-        int boxOffsetX = baseOffsetX + box.getPositionOffsetX();
-        int boxOffsetY = baseOffsetY + box.getPositionOffsetY();
-        ScrollbarHit currentHit = findCurrentScrollbarHit(rootBox, box, mouseX, mouseY, boxOffsetX, boxOffsetY,
+    private ScrollbarHit findScrollbarHit(BoxContext boxContext, DocumentLayoutBox rootBox, int mouseX, int mouseY,
+            long currentTimeNanos, boolean searchStackingContext) {
+        DocumentLayoutBox box = boxContext.getBox();
+        if (!DocumentVisualTraversal.isPointInsideClipChain(boxContext, mouseX, mouseY)) {
+            return null;
+        }
+        ScrollbarHit currentHit = findCurrentScrollbarHit(rootBox, boxContext, mouseX, mouseY,
                 currentTimeNanos);
         if (currentHit != null) {
             return currentHit;
         }
-        if (!canReachChildren(box, mouseX, mouseY, boxOffsetX, boxOffsetY)) {
+        if (!DocumentVisualTraversal.canReachChildren(boxContext, mouseX, mouseY)) {
             return null;
         }
 
-        int childOffsetX = boxOffsetX - getScrollLeft(box.getElement());
-        int childOffsetY = boxOffsetY - getScrollTop(box.getElement());
         return searchStackingContext
-                ? findScrollbarHitInStackingContext(rootBox, box, mouseX, mouseY, childOffsetX, childOffsetY,
-                        currentTimeNanos)
-                : findScrollbarHitInNormalFlow(rootBox, box, mouseX, mouseY, childOffsetX, childOffsetY,
-                        currentTimeNanos);
+                ? findScrollbarHitInStackingContext(boxContext, rootBox, mouseX, mouseY, currentTimeNanos)
+                : findScrollbarHitInNormalFlow(boxContext, rootBox, mouseX, mouseY, currentTimeNanos);
     }
 
-    private ScrollbarHit findScrollbarHitInStackingContext(DocumentLayoutBox rootBox, DocumentLayoutBox contextRoot,
-            int mouseX, int mouseY, int childOffsetX, int childOffsetY, long currentTimeNanos) {
-        ScrollbarHit hit = findScrollbarHitInStackingPhase(rootBox, contextRoot, mouseX, mouseY, childOffsetX,
-                childOffsetY, currentTimeNanos, DocumentStackingPhase.POSITIVE_POSITIONED);
+    private ScrollbarHit findScrollbarHitInStackingContext(BoxContext contextRootContext, DocumentLayoutBox rootBox,
+            int mouseX, int mouseY, long currentTimeNanos) {
+        ScrollbarHit hit = findScrollbarHitInStackingPhase(contextRootContext, rootBox, mouseX, mouseY,
+                currentTimeNanos, DocumentStackingPhase.POSITIVE_POSITIONED);
         if (hit != null) {
             return hit;
         }
-        hit = findScrollbarHitInStackingPhase(rootBox, contextRoot, mouseX, mouseY, childOffsetX, childOffsetY,
-                currentTimeNanos, DocumentStackingPhase.POSITIONED_AUTO_OR_ZERO);
+        hit = findScrollbarHitInStackingPhase(contextRootContext, rootBox, mouseX, mouseY, currentTimeNanos,
+                DocumentStackingPhase.POSITIONED_AUTO_OR_ZERO);
         if (hit != null) {
             return hit;
         }
-        hit = findScrollbarHitInNormalFlow(rootBox, contextRoot, mouseX, mouseY, childOffsetX, childOffsetY,
-                currentTimeNanos);
+        hit = findScrollbarHitInNormalFlow(contextRootContext, rootBox, mouseX, mouseY, currentTimeNanos);
         if (hit != null) {
             return hit;
         }
-        return findScrollbarHitInStackingPhase(rootBox, contextRoot, mouseX, mouseY, childOffsetX, childOffsetY,
-                currentTimeNanos, DocumentStackingPhase.NEGATIVE_POSITIONED);
+        return findScrollbarHitInStackingPhase(contextRootContext, rootBox, mouseX, mouseY, currentTimeNanos,
+                DocumentStackingPhase.NEGATIVE_POSITIONED);
     }
 
-    private ScrollbarHit findScrollbarHitInNormalFlow(DocumentLayoutBox rootBox, DocumentLayoutBox box, int mouseX,
-            int mouseY, int childOffsetX, int childOffsetY, long currentTimeNanos) {
-        List<DocumentLayoutBox> children = box.getChildren();
-        for (int index = children.size() - 1; index >= 0; index--) {
-            DocumentLayoutBox child = children.get(index);
-            if (child.getStackingPhase() != DocumentStackingPhase.NORMAL_FLOW) {
-                continue;
-            }
-            ScrollbarHit hit = findScrollbarHit(rootBox, child, mouseX, mouseY, childOffsetX, childOffsetY,
-                    currentTimeNanos, shouldSearchAsStackingContext(child));
+    private ScrollbarHit findScrollbarHitInNormalFlow(BoxContext contextRootContext, DocumentLayoutBox rootBox,
+            int mouseX, int mouseY, long currentTimeNanos) {
+        List<TraversalEntry> children = DocumentVisualTraversal.getNormalFlowEntries(contextRootContext.getBox(),
+                contextRootContext, this, STATIC_STACKING_CONTEXT_RESOLVER, true);
+        for (TraversalEntry child : children) {
+            ScrollbarHit hit = findScrollbarHit(child.getBoxContext(), rootBox, mouseX, mouseY, currentTimeNanos,
+                    child.isStackingContext());
             if (hit != null) {
                 return hit;
             }
@@ -737,16 +716,14 @@ public final class DocumentScrollState {
         return null;
     }
 
-    private ScrollbarHit findScrollbarHitInStackingPhase(DocumentLayoutBox rootBox, DocumentLayoutBox contextRoot,
-            int mouseX, int mouseY, int childOffsetX, int childOffsetY, long currentTimeNanos,
-            DocumentStackingPhase phase) {
-        List<StackingScrollItem> items = new ArrayList<StackingScrollItem>();
-        collectStackingPhaseItems(contextRoot, items, childOffsetX, childOffsetY, phase);
-        sortStackingItemsIfNeeded(items, phase);
+    private ScrollbarHit findScrollbarHitInStackingPhase(BoxContext contextRootContext, DocumentLayoutBox rootBox,
+            int mouseX, int mouseY, long currentTimeNanos, DocumentStackingPhase phase) {
+        List<TraversalEntry> items = DocumentVisualTraversal.collectStackingPhaseEntries(contextRootContext.getBox(),
+                contextRootContext, this, STATIC_STACKING_CONTEXT_RESOLVER, phase);
         for (int index = items.size() - 1; index >= 0; index--) {
-            StackingScrollItem item = items.get(index);
-            ScrollbarHit hit = findScrollbarHit(rootBox, item.box, mouseX, mouseY, item.offsetX, item.offsetY,
-                    currentTimeNanos, item.searchStackingContext);
+            TraversalEntry item = items.get(index);
+            ScrollbarHit hit = findScrollbarHit(item.getBoxContext(), rootBox, mouseX, mouseY, currentTimeNanos,
+                    item.isStackingContext());
             if (hit != null) {
                 return hit;
             }
@@ -754,8 +731,9 @@ public final class DocumentScrollState {
         return null;
     }
 
-    private ScrollbarHit findCurrentScrollbarHit(DocumentLayoutBox rootBox, DocumentLayoutBox box, int mouseX,
-            int mouseY, int offsetX, int offsetY, long currentTimeNanos) {
+    private ScrollbarHit findCurrentScrollbarHit(DocumentLayoutBox rootBox, BoxContext boxContext, int mouseX,
+            int mouseY, long currentTimeNanos) {
+        DocumentLayoutBox box = boxContext.getBox();
         if (box != rootBox && !shouldShowTransientScrollbar(box.getElement(), currentTimeNanos)) {
             return null;
         }
@@ -763,11 +741,13 @@ public final class DocumentScrollState {
                 && isScrollableOverflow(box.getComputedStyle().getOverflowY());
         boolean hasHorizontalScrollbar = getMaxScrollLeft(box.getElement()) > 0
                 && isScrollableOverflow(box.getComputedStyle().getOverflowX());
-        ScrollbarMetrics verticalMetrics = getVerticalScrollbarMetrics(box, offsetX, offsetY, hasHorizontalScrollbar);
+        ScrollbarMetrics verticalMetrics = getVerticalScrollbarMetrics(box, boxContext.getBoxOffsetX(),
+                boxContext.getBoxOffsetY(), hasHorizontalScrollbar);
         if (verticalMetrics != null && verticalMetrics.containsTrack(mouseX, mouseY)) {
             return new ScrollbarHit(box, verticalMetrics, true);
         }
-        ScrollbarMetrics horizontalMetrics = getHorizontalScrollbarMetrics(box, offsetX, offsetY,
+        ScrollbarMetrics horizontalMetrics = getHorizontalScrollbarMetrics(box, boxContext.getBoxOffsetX(),
+                boxContext.getBoxOffsetY(),
                 hasVerticalScrollbar);
         if (horizontalMetrics != null && horizontalMetrics.containsTrack(mouseX, mouseY)) {
             return new ScrollbarHit(box, horizontalMetrics, false);
@@ -775,91 +755,33 @@ public final class DocumentScrollState {
         return null;
     }
 
-    private ScrollbarHit findActiveScrollbar(DocumentLayoutBox rootBox, DocumentLayoutBox box, int offsetX,
-            int offsetY, long currentTimeNanos) {
+    private ScrollbarHit findActiveScrollbar(BoxContext boxContext, DocumentLayoutBox rootBox, long currentTimeNanos) {
         if (activeScrollbarDrag == null) {
             return null;
         }
-        int baseOffsetX = box.isFixedPositioned() ? 0 : offsetX;
-        int baseOffsetY = box.isFixedPositioned() ? 0 : offsetY;
-        int boxOffsetX = baseOffsetX + box.getPositionOffsetX();
-        int boxOffsetY = baseOffsetY + box.getPositionOffsetY();
+        DocumentLayoutBox box = boxContext.getBox();
         if (box.getElement() == activeScrollbarDrag.element) {
             boolean hasVerticalScrollbar = getMaxScrollTop(box.getElement()) > 0
                     && isScrollableOverflow(box.getComputedStyle().getOverflowY());
             boolean hasHorizontalScrollbar = getMaxScrollLeft(box.getElement()) > 0
                     && isScrollableOverflow(box.getComputedStyle().getOverflowX());
             ScrollbarMetrics metrics = activeScrollbarDrag.vertical
-                    ? getVerticalScrollbarMetrics(box, boxOffsetX, boxOffsetY, hasHorizontalScrollbar)
-                    : getHorizontalScrollbarMetrics(box, boxOffsetX, boxOffsetY, hasVerticalScrollbar);
+                    ? getVerticalScrollbarMetrics(box, boxContext.getBoxOffsetX(), boxContext.getBoxOffsetY(),
+                            hasHorizontalScrollbar)
+                    : getHorizontalScrollbarMetrics(box, boxContext.getBoxOffsetX(), boxContext.getBoxOffsetY(),
+                            hasVerticalScrollbar);
             return metrics == null ? null : new ScrollbarHit(box, metrics, activeScrollbarDrag.vertical);
         }
 
-        int childOffsetX = boxOffsetX - getScrollLeft(box.getElement());
-        int childOffsetY = boxOffsetY - getScrollTop(box.getElement());
-        for (DocumentLayoutBox child : box.getChildrenInStackingOrder()) {
-            ScrollbarHit hit = findActiveScrollbar(rootBox, child, resolveDescendantBaseOffsetX(childOffsetX, child),
-                    resolveDescendantBaseOffsetY(childOffsetY, child), currentTimeNanos);
+        for (DocumentLayoutBox child : box.getChildren()) {
+            ScrollbarHit hit = findActiveScrollbar(DocumentVisualTraversal.resolveChildBoxContext(boxContext, child,
+                    this),
+                    rootBox, currentTimeNanos);
             if (hit != null) {
                 return hit;
             }
         }
         return null;
-    }
-
-    private void collectStackingPhaseItems(DocumentLayoutBox currentBox, List<StackingScrollItem> items,
-            int childOffsetX, int childOffsetY, DocumentStackingPhase phase) {
-        for (DocumentLayoutBox child : currentBox.getChildren()) {
-            boolean childStackingContext = shouldSearchAsStackingContext(child);
-            if (child.getStackingPhase() == phase) {
-                items.add(new StackingScrollItem(child, childOffsetX, childOffsetY, childStackingContext));
-            }
-            if (childStackingContext) {
-                continue;
-            }
-            int grandChildOffsetX = resolveChildOffsetX(childOffsetX, child);
-            int grandChildOffsetY = resolveChildOffsetY(childOffsetY, child);
-            collectStackingPhaseItems(child, items, grandChildOffsetX, grandChildOffsetY, phase);
-        }
-    }
-
-    private int resolveDescendantBaseOffsetX(int offsetX, DocumentLayoutBox child) {
-        return child.isFixedPositioned() ? 0 : offsetX;
-    }
-
-    private int resolveDescendantBaseOffsetY(int offsetY, DocumentLayoutBox child) {
-        return child.isFixedPositioned() ? 0 : offsetY;
-    }
-
-    private int resolveChildOffsetX(int childOffsetX, DocumentLayoutBox child) {
-        int baseOffsetX = child.isFixedPositioned() ? 0 : childOffsetX;
-        return baseOffsetX + child.getPositionOffsetX() - getScrollLeft(child.getElement());
-    }
-
-    private int resolveChildOffsetY(int childOffsetY, DocumentLayoutBox child) {
-        int baseOffsetY = child.isFixedPositioned() ? 0 : childOffsetY;
-        return baseOffsetY + child.getPositionOffsetY() - getScrollTop(child.getElement());
-    }
-
-    private void sortStackingItemsIfNeeded(List<StackingScrollItem> items, DocumentStackingPhase phase) {
-        if (phase != DocumentStackingPhase.NEGATIVE_POSITIONED
-                && phase != DocumentStackingPhase.POSITIVE_POSITIONED) {
-            return;
-        }
-        Collections.sort(items, new Comparator<StackingScrollItem>() {
-            @Override
-            public int compare(StackingScrollItem first, StackingScrollItem second) {
-                return Integer.compare(first.box.getStackingZIndex(), second.box.getStackingZIndex());
-            }
-        });
-    }
-
-    private boolean shouldSearchAsStackingContext(DocumentLayoutBox box) {
-        return DocumentEffectChain.resolve(box).isStackingBoundary();
-    }
-
-    private boolean canReachChildren(DocumentLayoutBox box, int mouseX, int mouseY, int offsetX, int offsetY) {
-        return DocumentEffectChain.resolve(box).canReachChildrenAt(mouseX, mouseY, offsetX, offsetY);
     }
 
     private boolean updateOffsetFromScrollbarPointer(ScrollEntry entry, ScrollbarMetrics metrics, int pointerPosition,
@@ -971,24 +893,6 @@ public final class DocumentScrollState {
             this.box = box;
             this.metrics = metrics;
             this.vertical = vertical;
-        }
-    }
-
-    /**
-     * 最近 stacking context 中可被阶段排序的滚动命中项。
-     */
-    private static final class StackingScrollItem {
-
-        private final DocumentLayoutBox box;
-        private final int offsetX;
-        private final int offsetY;
-        private final boolean searchStackingContext;
-
-        private StackingScrollItem(DocumentLayoutBox box, int offsetX, int offsetY, boolean searchStackingContext) {
-            this.box = box;
-            this.offsetX = offsetX;
-            this.offsetY = offsetY;
-            this.searchStackingContext = searchStackingContext;
         }
     }
 

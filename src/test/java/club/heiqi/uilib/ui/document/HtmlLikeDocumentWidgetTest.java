@@ -23,6 +23,7 @@ import club.heiqi.uilib.ui.dom.DocumentElementContextMenuEvent;
 import club.heiqi.uilib.ui.dom.DocumentElementContextMenuHandler;
 import club.heiqi.uilib.ui.dom.DocumentElementDoubleClickEvent;
 import club.heiqi.uilib.ui.dom.DocumentElementDoubleClickHandler;
+import club.heiqi.uilib.ui.dom.DocumentEventPhase;
 import club.heiqi.uilib.ui.dom.DocumentLinkActivationEvent;
 import club.heiqi.uilib.ui.dom.DocumentLinkActivationHandler;
 import club.heiqi.uilib.ui.dom.DocumentElementDragEvent;
@@ -34,10 +35,13 @@ import club.heiqi.uilib.ui.dom.DocumentElementHoverEvent;
 import club.heiqi.uilib.ui.dom.DocumentElementHoverHandler;
 import club.heiqi.uilib.ui.dom.DocumentElementKeyEvent;
 import club.heiqi.uilib.ui.dom.DocumentElementKeyHandler;
+import club.heiqi.uilib.ui.dom.DocumentElementMouseUpEvent;
+import club.heiqi.uilib.ui.dom.DocumentElementMouseUpHandler;
 import club.heiqi.uilib.ui.dom.DocumentElementTextInputEvent;
 import club.heiqi.uilib.ui.dom.DocumentElementTextInputHandler;
 import club.heiqi.uilib.ui.dom.DocumentElementTransitionEndEvent;
 import club.heiqi.uilib.ui.dom.DocumentElementTransitionEndHandler;
+import club.heiqi.uilib.ui.dom.DocumentNode;
 import club.heiqi.uilib.ui.dom.ElementNode;
 import club.heiqi.uilib.ui.dom.TextNode;
 import club.heiqi.uilib.ui.dom.UiDocument;
@@ -45,6 +49,7 @@ import club.heiqi.uilib.ui.control.DocumentButtonControl;
 import club.heiqi.uilib.ui.control.DocumentButtonActionEvent;
 import club.heiqi.uilib.ui.control.DocumentButtonActionHandler;
 import club.heiqi.uilib.ui.control.DocumentDraggableSupport;
+import club.heiqi.uilib.ui.control.DocumentSelectControl;
 import club.heiqi.uilib.ui.control.DocumentTextInputControl;
 import club.heiqi.uilib.ui.control.DocumentToggleSwitchControl;
 import club.heiqi.uilib.ui.event.UiKeyEvent;
@@ -2558,6 +2563,95 @@ public class HtmlLikeDocumentWidgetTest {
     }
 
     /**
+     * 验证 click 在 AT_TARGET 阶段会先执行 target capture，再执行 target handler；
+     * target capture 返回 true 只会阻止祖先冒泡，不会跳过当前 target handler。
+     */
+    @Test
+    public void shouldInvokeTargetClickHandlerAfterTargetCaptureStopsPropagation() {
+        UiDocument document = UiDocument.create();
+        ElementNode root = document.getRootElement();
+        ElementNode child = document.div();
+        final List<String> eventLog = new ArrayList<String>();
+        root.style().setWidth(UiStyleLength.px(80)).setHeight(UiStyleLength.px(40));
+        child.style().setWidth(UiStyleLength.px(40)).setHeight(UiStyleLength.px(20));
+        child.setCaptureClickHandler(new DocumentElementClickHandler() {
+            @Override
+            public boolean onClick(DocumentElementClickEvent event) {
+                eventLog.add("target-capture:" + event.getEventPhase());
+                return true;
+            }
+        });
+        child.setClickHandler(new DocumentElementClickHandler() {
+            @Override
+            public boolean onClick(DocumentElementClickEvent event) {
+                eventLog.add("target:" + event.getEventPhase());
+                return false;
+            }
+        });
+        root.setClickHandler(new DocumentElementClickHandler() {
+            @Override
+            public boolean onClick(DocumentElementClickEvent event) {
+                eventLog.add("root:" + event.getEventPhase());
+                return false;
+            }
+        });
+        root.append(child);
+        HtmlLikeDocumentWidget widget = new HtmlLikeDocumentWidget(document, 80, 40,
+                new DeterministicTextMeasureService());
+        widget.applyLayoutBounds(0, 0, 80, 40);
+
+        widget.onMouseDown(new UiMouseEvent(UiMouseEvent.Action.BUTTON_DOWN, 10, 10, 0, 0, 0, 0, 1L));
+        widget.onMouseUp(new UiMouseEvent(UiMouseEvent.Action.BUTTON_UP, 10, 10, 0, 0, 0, 0, 2L));
+
+        Assert.assertEquals(2, eventLog.size());
+        Assert.assertEquals("target-capture:" + DocumentEventPhase.AT_TARGET, eventLog.get(0));
+        Assert.assertEquals("target:" + DocumentEventPhase.AT_TARGET, eventLog.get(1));
+    }
+
+    /**
+     * 验证 down/up 落在不同后代时，会将最近公共祖先作为 click target。
+     */
+    @Test
+    public void shouldDispatchClickToNearestCommonAncestorWhenPressAndReleaseLandOnDifferentDescendants() {
+        UiDocument document = UiDocument.create();
+        ElementNode root = document.getRootElement();
+        ElementNode container = document.div();
+        ElementNode first = document.div();
+        ElementNode second = document.div();
+        final List<DocumentElementClickEvent> clickEvents = new ArrayList<DocumentElementClickEvent>();
+        root.style().setWidth(UiStyleLength.px(120)).setHeight(UiStyleLength.px(40));
+        container.style()
+                .setDisplay(UiDisplay.FLEX)
+                .setWidth(UiStyleLength.px(80))
+                .setHeight(UiStyleLength.px(20));
+        first.style().setWidth(UiStyleLength.px(40)).setHeight(UiStyleLength.px(20));
+        second.style().setWidth(UiStyleLength.px(40)).setHeight(UiStyleLength.px(20));
+        container.setClickHandler(new DocumentElementClickHandler() {
+            @Override
+            public boolean onClick(DocumentElementClickEvent event) {
+                clickEvents.add(event);
+                return true;
+            }
+        });
+        container.append(first).append(second);
+        root.append(container);
+        HtmlLikeDocumentWidget widget = new HtmlLikeDocumentWidget(document, 120, 40,
+                new DeterministicTextMeasureService());
+        widget.applyLayoutBounds(0, 0, 120, 40);
+
+        widget.onMouseDown(new UiMouseEvent(UiMouseEvent.Action.BUTTON_DOWN, 10, 10, 0, 0, 0, 0, 1L));
+        widget.onMouseUp(new UiMouseEvent(UiMouseEvent.Action.BUTTON_UP, 50, 10, 0, 0, 0, 0, 2L));
+
+        Assert.assertEquals(1, clickEvents.size());
+        assertElementUid(container, clickEvents.get(0).getTarget());
+        assertElementUid(container, clickEvents.get(0).getCurrentTarget());
+        Assert.assertEquals(50, clickEvents.get(0).getDocumentX());
+        Assert.assertEquals(10, clickEvents.get(0).getDocumentY());
+        Assert.assertEquals(0, clickEvents.get(0).getButton());
+        Assert.assertEquals(2L, clickEvents.get(0).getTimeNanos());
+    }
+
+    /**
      * 验证 a[href] 在 click 后会触发文档级链接激活回调。
      */
     @Test
@@ -2773,6 +2867,114 @@ public class HtmlLikeDocumentWidgetTest {
     }
 
     /**
+     * 验证 dblclick 已接入 capture -> target -> bubble 三阶段链路。
+     */
+    @Test
+    public void shouldDispatchDoubleClickThroughCaptureTargetAndBubble() {
+        UiDocument document = UiDocument.create();
+        ElementNode root = document.getRootElement();
+        final ElementNode child = document.div();
+        final List<String> phases = new ArrayList<String>();
+        root.style().setWidth(UiStyleLength.px(80)).setHeight(UiStyleLength.px(40));
+        child.style().setWidth(UiStyleLength.px(40)).setHeight(UiStyleLength.px(20));
+        root.setCaptureDoubleClickHandler(new DocumentElementDoubleClickHandler() {
+            @Override
+            public boolean onDoubleClick(DocumentElementDoubleClickEvent event) {
+                phases.add("capture:" + event.getCurrentTarget().getTagName() + ":" + event.getEventPhase());
+                return false;
+            }
+        });
+        child.setCaptureDoubleClickHandler(new DocumentElementDoubleClickHandler() {
+            @Override
+            public boolean onDoubleClick(DocumentElementDoubleClickEvent event) {
+                phases.add("target-capture:" + event.getCurrentTarget().getTagName() + ":" + event.getEventPhase());
+                return true;
+            }
+        });
+        child.setDoubleClickHandler(new DocumentElementDoubleClickHandler() {
+            @Override
+            public boolean onDoubleClick(DocumentElementDoubleClickEvent event) {
+                phases.add("target:" + event.getCurrentTarget().getTagName() + ":" + event.getEventPhase());
+                return false;
+            }
+        });
+        root.setDoubleClickHandler(new DocumentElementDoubleClickHandler() {
+            @Override
+            public boolean onDoubleClick(DocumentElementDoubleClickEvent event) {
+                phases.add("bubble:" + event.getCurrentTarget().getTagName() + ":" + event.getEventPhase());
+                return false;
+            }
+        });
+        root.append(child);
+        HtmlLikeDocumentWidget widget = new HtmlLikeDocumentWidget(document, 80, 40,
+                new DeterministicTextMeasureService());
+        widget.applyLayoutBounds(0, 0, 80, 40);
+
+        widget.onMouseDown(new UiMouseEvent(UiMouseEvent.Action.BUTTON_DOWN, 10, 10, 0, 0, 0, 0, 1L));
+        widget.onMouseUp(new UiMouseEvent(UiMouseEvent.Action.BUTTON_UP, 10, 10, 0, 0, 0, 0, 2L));
+        widget.onMouseDown(new UiMouseEvent(UiMouseEvent.Action.BUTTON_DOWN, 10, 10, 0, 0, 0, 0, 3L));
+        widget.onMouseUp(new UiMouseEvent(UiMouseEvent.Action.BUTTON_UP, 10, 10, 0, 0, 0, 0, 4L));
+
+        Assert.assertEquals(3, phases.size());
+        Assert.assertEquals("capture:document:CAPTURING", phases.get(0));
+        Assert.assertEquals("target-capture:div:AT_TARGET", phases.get(1));
+        Assert.assertEquals("target:div:AT_TARGET", phases.get(2));
+    }
+
+    /**
+     * 验证 contextmenu 已接入 capture -> target -> bubble 三阶段链路。
+     */
+    @Test
+    public void shouldDispatchContextMenuThroughCaptureTargetAndBubble() {
+        UiDocument document = UiDocument.create();
+        ElementNode root = document.getRootElement();
+        final ElementNode child = document.div();
+        final List<String> phases = new ArrayList<String>();
+        root.style().setWidth(UiStyleLength.px(80)).setHeight(UiStyleLength.px(40));
+        child.style().setWidth(UiStyleLength.px(40)).setHeight(UiStyleLength.px(20));
+        root.setCaptureContextMenuHandler(new DocumentElementContextMenuHandler() {
+            @Override
+            public boolean onContextMenu(DocumentElementContextMenuEvent event) {
+                phases.add("capture:" + event.getCurrentTarget().getTagName() + ":" + event.getEventPhase());
+                return false;
+            }
+        });
+        child.setCaptureContextMenuHandler(new DocumentElementContextMenuHandler() {
+            @Override
+            public boolean onContextMenu(DocumentElementContextMenuEvent event) {
+                phases.add("target-capture:" + event.getCurrentTarget().getTagName() + ":" + event.getEventPhase());
+                return true;
+            }
+        });
+        child.setContextMenuHandler(new DocumentElementContextMenuHandler() {
+            @Override
+            public boolean onContextMenu(DocumentElementContextMenuEvent event) {
+                phases.add("target:" + event.getCurrentTarget().getTagName() + ":" + event.getEventPhase());
+                return false;
+            }
+        });
+        root.setContextMenuHandler(new DocumentElementContextMenuHandler() {
+            @Override
+            public boolean onContextMenu(DocumentElementContextMenuEvent event) {
+                phases.add("bubble:" + event.getCurrentTarget().getTagName() + ":" + event.getEventPhase());
+                return false;
+            }
+        });
+        root.append(child);
+        HtmlLikeDocumentWidget widget = new HtmlLikeDocumentWidget(document, 80, 40,
+                new DeterministicTextMeasureService());
+        widget.applyLayoutBounds(0, 0, 80, 40);
+
+        widget.onMouseDown(new UiMouseEvent(UiMouseEvent.Action.BUTTON_DOWN, 10, 10, 1, 0, 0, 0, 1L));
+        widget.onMouseUp(new UiMouseEvent(UiMouseEvent.Action.BUTTON_UP, 10, 10, 1, 0, 0, 0, 2L));
+
+        Assert.assertEquals(3, phases.size());
+        Assert.assertEquals("capture:document:CAPTURING", phases.get(0));
+        Assert.assertEquals("target-capture:div:AT_TARGET", phases.get(1));
+        Assert.assertEquals("target:div:AT_TARGET", phases.get(2));
+    }
+
+    /**
      * 验证 transitionend 与 animationend 会向作者派发完成事件。
      */
     @Test
@@ -2828,6 +3030,45 @@ public class HtmlLikeDocumentWidgetTest {
     }
 
     /**
+     * 验证 top-layer popup 也会进入共享动画时间线更新与命令式动画启动链路。
+     */
+    @Test
+    public void shouldAnimateTopLayerPopupThroughSharedScene() {
+        UiDocument document = UiDocument.create();
+        ElementNode root = document.getRootElement();
+        DocumentSelectControl selectControl = new DocumentSelectControl(document, "A", "B", "C");
+        root.style()
+                .setWidth(UiStyleLength.px(240))
+                .setHeight(UiStyleLength.px(180));
+        selectControl.getElement().style().setWidth(UiStyleLength.px(180));
+        ManualAnimationClock animationClock = new ManualAnimationClock();
+        HtmlLikeDocumentWidget widget = new HtmlLikeDocumentWidget(document, 240, 180,
+                new DeterministicTextMeasureService());
+        widget.setAnimationClock(animationClock);
+        widget.applyLayoutBounds(0, 0, 240, 180);
+        root.append(selectControl.getElement());
+
+        widget.onMouseDown(new UiMouseEvent(UiMouseEvent.Action.BUTTON_DOWN, 20, 12, 0, 0, 0, 0, 1L));
+        widget.onMouseUp(new UiMouseEvent(UiMouseEvent.Action.BUTTON_UP, 20, 12, 0, 0, 0, 0, 2L));
+        ElementNode popup = findListboxElement(root);
+        Assert.assertNotNull(popup);
+        Assert.assertTrue(document.__isTopLayerElement(popup));
+
+        widget.render(new RecordingUiRenderContext());
+        popup.animate(DocumentKeyframes.named("popup-fade")
+                .setFloat(DocumentAnimationProperty.OPACITY, 1.0F, 0.0F)
+                .build(), 1000L);
+        widget.render(new RecordingUiRenderContext());
+
+        Assert.assertTrue(widget.getActiveAnimationCount() > 0);
+
+        animationClock.setCurrentTimeNanos(1_000_000_000L);
+        widget.render(new RecordingUiRenderContext());
+
+        Assert.assertEquals(0, widget.getActiveAnimationCount());
+    }
+
+    /**
      * 验证字体粗细和斜体会进入文本绘制调用。
      */
     @Test
@@ -2851,6 +3092,25 @@ public class HtmlLikeDocumentWidgetTest {
             Assert.assertEquals(UiFontWeight.BOLD, textCall.fontWeight);
             Assert.assertEquals(UiFontStyle.ITALIC, textCall.fontStyle);
         }
+    }
+
+    private static ElementNode findListboxElement(ElementNode element) {
+        if (element == null) {
+            return null;
+        }
+        if ("listbox".equals(element.getAttribute("role"))) {
+            return element;
+        }
+        for (DocumentNode child : element.getChildren()) {
+            if (!(child instanceof ElementNode)) {
+                continue;
+            }
+            ElementNode found = findListboxElement((ElementNode) child);
+            if (found != null) {
+                return found;
+            }
+        }
+        return null;
     }
 
     /**
@@ -3251,6 +3511,49 @@ public class HtmlLikeDocumentWidgetTest {
     }
 
     /**
+     * 验证 mouseup 事件会按释放位置命中目标，而不是沿用按下目标。
+     */
+    @Test
+    public void shouldDispatchMouseUpToReleasedElement() {
+        UiDocument document = UiDocument.create();
+        ElementNode root = document.getRootElement();
+        ElementNode row = document.div();
+        ElementNode first = document.div();
+        ElementNode second = document.div();
+        final List<DocumentElementMouseUpEvent> mouseUpEvents = new ArrayList<DocumentElementMouseUpEvent>();
+        root.style().setWidth(UiStyleLength.px(120)).setHeight(UiStyleLength.px(40));
+        row.style()
+                .setDisplay(UiDisplay.FLEX)
+                .setWidth(UiStyleLength.px(80))
+                .setHeight(UiStyleLength.px(20));
+        first.style().setWidth(UiStyleLength.px(40)).setHeight(UiStyleLength.px(20));
+        second.style().setWidth(UiStyleLength.px(40)).setHeight(UiStyleLength.px(20));
+        second.setMouseUpHandler(new DocumentElementMouseUpHandler() {
+            @Override
+            public boolean onMouseUp(DocumentElementMouseUpEvent event) {
+                mouseUpEvents.add(event);
+                return true;
+            }
+        });
+        row.append(first).append(second);
+        root.append(row);
+        HtmlLikeDocumentWidget widget = new HtmlLikeDocumentWidget(document, 120, 40,
+                new DeterministicTextMeasureService());
+        widget.applyLayoutBounds(0, 0, 120, 40);
+
+        widget.onMouseDown(new UiMouseEvent(UiMouseEvent.Action.BUTTON_DOWN, 10, 10, 0, 0, 0, 0, 1L));
+        widget.onMouseUp(new UiMouseEvent(UiMouseEvent.Action.BUTTON_UP, 50, 10, 0, 0, 0, 0, 2L));
+
+        Assert.assertEquals(1, mouseUpEvents.size());
+        assertElementUid(second, mouseUpEvents.get(0).getTarget());
+        assertElementUid(second, mouseUpEvents.get(0).getCurrentTarget());
+        Assert.assertEquals(50, mouseUpEvents.get(0).getDocumentX());
+        Assert.assertEquals(10, mouseUpEvents.get(0).getDocumentY());
+        Assert.assertEquals(0, mouseUpEvents.get(0).getButton());
+        Assert.assertEquals(2L, mouseUpEvents.get(0).getTimeNanos());
+    }
+
+    /**
      * 验证鼠标离开组件时会释放按下产生的 active 状态。
      */
     @Test
@@ -3587,6 +3890,104 @@ public class HtmlLikeDocumentWidgetTest {
         widget.onKeyEvent(new UiKeyEvent(Keyboard.KEY_SPACE, 0, 0, UiKeyEvent.Action.RELEASED, false, false,
                 false, false, 3L));
         Assert.assertEquals(2, clicks.size());
+    }
+
+    /**
+     * 验证 raw button 的 key handler 返回 true 只会停止传播，不会隐式取消默认 keyboard click。
+     */
+    @Test
+    public void shouldKeepRawButtonDefaultKeyboardClickWhenKeyHandlerStopsPropagation() {
+        UiDocument document = UiDocument.create();
+        ElementNode root = document.getRootElement();
+        ElementNode rawButton = document.button();
+        final List<DocumentElementClickEvent> clicks = new ArrayList<DocumentElementClickEvent>();
+        rawButton.setClickHandler(new DocumentElementClickHandler() {
+            @Override
+            public boolean onClick(DocumentElementClickEvent event) {
+                clicks.add(event);
+                return true;
+            }
+        });
+        rawButton.setKeyHandler(new DocumentElementKeyHandler() {
+            @Override
+            public boolean onKey(DocumentElementKeyEvent event) {
+                return true;
+            }
+        });
+        root.style()
+                .setWidth(UiStyleLength.px(120))
+                .setHeight(UiStyleLength.px(40));
+        rawButton.style()
+                .setWidth(UiStyleLength.px(80))
+                .setHeight(UiStyleLength.px(32));
+        root.append(rawButton);
+        HtmlLikeDocumentWidget widget = new HtmlLikeDocumentWidget(document, 120, 40,
+                new DeterministicTextMeasureService());
+        widget.applyLayoutBounds(0, 0, 120, 40);
+
+        widget.onFocusTraversalEntered(false);
+        assertElementUid(rawButton, widget.getFocusedElement());
+
+        widget.onKeyEvent(new UiKeyEvent(Keyboard.KEY_RETURN, 0, 0, UiKeyEvent.Action.PRESSED, false, false,
+                false, false, 1L));
+        Assert.assertEquals(1, clicks.size());
+
+        widget.onKeyEvent(new UiKeyEvent(Keyboard.KEY_SPACE, 0, 0, UiKeyEvent.Action.PRESSED, false, false,
+                false, false, 2L));
+        Assert.assertEquals(1, clicks.size());
+
+        widget.onKeyEvent(new UiKeyEvent(Keyboard.KEY_SPACE, 0, 0, UiKeyEvent.Action.RELEASED, false, false,
+                false, false, 3L));
+        Assert.assertEquals(2, clicks.size());
+    }
+
+    /**
+     * 验证 raw button 的默认键盘激活会走完整 click 分发链并向祖先冒泡。
+     */
+    @Test
+    public void shouldBubbleRawButtonKeyboardClickThroughDocumentClickPipeline() {
+        UiDocument document = UiDocument.create();
+        ElementNode root = document.getRootElement();
+        final ElementNode rawButton = document.button();
+        final List<DocumentElementClickEvent> clickEvents = new ArrayList<DocumentElementClickEvent>();
+        rawButton.setClickHandler(new DocumentElementClickHandler() {
+            @Override
+            public boolean onClick(DocumentElementClickEvent event) {
+                clickEvents.add(event);
+                return false;
+            }
+        });
+        root.setClickHandler(new DocumentElementClickHandler() {
+            @Override
+            public boolean onClick(DocumentElementClickEvent event) {
+                clickEvents.add(event);
+                return true;
+            }
+        });
+        root.style().setWidth(UiStyleLength.px(120)).setHeight(UiStyleLength.px(40));
+        rawButton.style().setWidth(UiStyleLength.px(80)).setHeight(UiStyleLength.px(32));
+        root.append(rawButton);
+        HtmlLikeDocumentWidget widget = new HtmlLikeDocumentWidget(document, 120, 40,
+                new DeterministicTextMeasureService());
+        widget.applyLayoutBounds(0, 0, 120, 40);
+
+        widget.onFocusTraversalEntered(false);
+        assertElementUid(rawButton, widget.getFocusedElement());
+
+        widget.onKeyEvent(new UiKeyEvent(Keyboard.KEY_RETURN, 0, 0, UiKeyEvent.Action.PRESSED, false, false,
+                false, false, 1L));
+
+        Assert.assertEquals(2, clickEvents.size());
+        assertElementUid(rawButton, clickEvents.get(0).getTarget());
+        assertElementUid(rawButton, clickEvents.get(0).getCurrentTarget());
+        Assert.assertEquals(-1, clickEvents.get(0).getDocumentX());
+        Assert.assertEquals(-1, clickEvents.get(0).getDocumentY());
+        Assert.assertEquals(0, clickEvents.get(0).getButton());
+        Assert.assertEquals(1L, clickEvents.get(0).getTimeNanos());
+        assertElementUid(rawButton, clickEvents.get(1).getTarget());
+        assertElementUid(root, clickEvents.get(1).getCurrentTarget());
+        Assert.assertEquals(0, clickEvents.get(1).getButton());
+        Assert.assertEquals(1L, clickEvents.get(1).getTimeNanos());
     }
 
     /**
