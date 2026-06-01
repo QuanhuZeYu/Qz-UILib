@@ -25,7 +25,7 @@
 - 多背景（逗号分隔）：`backgroundImage` 为单值，`backgroundColor` 为单 int
 - 多重 box-shadow / 多重 text-shadow：均为单值字段
 - background-repeat / position / size 模型：背景图固定拉伸填充 border box，无平铺/定位/尺寸
-- background-image 的 `url()` CSS 字符串解析：`RemoteCssParser` 无 `background-image` case，只能经 Java API 设置
+- background-image 的 `url()` CSS 字符串解析已完成：远程 CSS 支持 `background-image:url(namespace:path)` 映射到 `ResourceLocation` 单图纹理，也支持 `none` 清除；HTTP 背景图、渐变、多背景和 repeat/position/size 仍不属于该项
 
 选择器与规则：
 - 兄弟组合器（`A + B` 相邻 / `A ~ B` 通用）：`Combinator` 仅 DESCENDANT/CHILD
