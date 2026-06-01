@@ -42,7 +42,7 @@
 - 逗号分组选择器：仅 `RemoteCssParser` 样式表解析层按 `,` 拆分等效支持，`UiSelector` 对象层不支持，编程式无法构造分组
 - 结构性伪类：仅 `:first-child/:last-child/:nth-child`（含 odd/even/an+b），缺 `:nth-of-type/:nth-last-child/:only-child/:not()`
 - flex `align-items: baseline`：退化为 START（`FlexLayoutHelper` 有 fallback 告警），无真实基线对齐
-- textarea：支持 `\n` 多行编辑/光标/选区/maxLength，但无 `pre-wrap` 式按容器宽度软换行（逻辑行固定 NOWRAP）
+- textarea：已支持 `\n` 多行编辑/光标/选区/maxLength，并新增按容器内容宽度软换行的视觉行模型；显示、caret、选区、点击命中、上下方向键和滚动揭示按视觉行工作
 - input type：固定 `type=text`，无 number/password/email、密码掩码、类型校验
 - 表单校验：仅 `required` + `maxLength`，缺 `pattern/min/max/checkValidity/ValidityState` 与校验态样式
 - 拖拽：drag/dragstart/dragover/dragend 已实现，缺独立 `dragenter/dragleave/drop`（dragover 兼做进入/释放语义）
@@ -76,7 +76,7 @@
 ### B 类：性价比待评估的真缺口（可作为集中填补候选）
 
 按"实现代价 vs 作者层收益"粗排：
-- 高性价比候选：input type（password/number，已完成）、textContent/innerHTML 读写（标准 API 缺失，作者高频用）、textarea 软换行（已跳过，见 `DECISION-20260601-textarea-soft-wrap-deferred.md`）、background-image 的 CSS `url()` 解析（已完成，远程 CSS 支持 ResourceLocation 单图 URL）
+- 高性价比候选：input type（password/number，已完成）、textContent/innerHTML 读写（标准 API 缺失，作者高频用）、textarea 软换行（已完成，旧暂缓决策已被本轮实现取代）、background-image 的 CSS `url()` 解析（已完成，远程 CSS 支持 ResourceLocation 单图 URL）
 - 中等：属性选择器、兄弟组合器、结构伪类细分（nth-of-type/not）、表单校验扩展、拖拽 dragenter/dragleave/drop、vertical-align 扩展、多背景/多重阴影
 - 低：@media、background-repeat/position/size、text-overflow 多行、contextmenu 触发路径、`DocumentScrollMetricsCalculator` fixed 一致性
 
