@@ -30,9 +30,10 @@ import club.heiqi.uilib.ui.text.TextMeasureService;
  *
  * <p>当前实现覆盖元素盒、box model、block flow、最小 flex flow、table flow、relative 定位偏移、absolute 脱流定位
  * 与 fixed 视口定位。absolute 元素会相对最近 positioned ancestor 的 padding box 定位，没有 positioned
- * ancestor 时回退根 padding box；fixed 元素相对当前 HTML-like 视口定位。当前已支持 positioned 元素
- * 在横向或纵向两侧 inset 同时存在且尺寸为 auto 时进行 stretch 求解，并支持包含 inline 元素的
- * text/span 初版混排和 inline fragment 盒边；更完整 inline box、多行 flex wrap 和滚动布局会在后续阶段继续扩展。</p>
+ * ancestor 时回退根 padding box；fixed 元素默认相对当前 HTML-like 视口定位，遇到 transform 祖先时相对该祖先
+ * padding box 定位。当前已支持 positioned 元素在横向或纵向两侧 inset 同时存在且尺寸为 auto 时进行 stretch 求解，
+ * 并支持包含 inline 元素的 text/span 初版混排和 inline fragment 盒边；更完整 inline box、多行 flex wrap
+ * 和滚动布局会在后续阶段继续扩展。</p>
  */
 public final class DocumentLayoutEngine {
 
@@ -250,25 +251,29 @@ public final class DocumentLayoutEngine {
 
         int specifiedContentHeight = resolveSpecifiedHeight(element, computedStyle, forcedContentHeight, contentWidth,
                 containingHeight, layoutContext.layoutValueResolver);
+        AbsoluteContainingBlock directContainingBlock = AbsoluteContainingBlock.paddingBox(
+                borderBoxLeft + border.getLeft(), borderBoxTop + border.getTop(),
+                contentWidth + padding.getHorizontal(), resolveInitialAbsoluteContainingBlockHeight(
+                        specifiedContentHeight), padding.getVertical());
         boolean createsAbsoluteContainingBlock = absoluteContainingBlock == null || isPositioned(computedStyle);
+        boolean createsFixedContainingBlock = DocumentEffectChain.createsFixedContainingBlock(computedStyle);
         AbsoluteContainingBlock childrenAbsoluteContainingBlock = createsAbsoluteContainingBlock
-                ? AbsoluteContainingBlock.paddingBox(borderBoxLeft + border.getLeft(), borderBoxTop + border.getTop(),
-                        contentWidth + padding.getHorizontal(), resolveInitialAbsoluteContainingBlockHeight(
-                                specifiedContentHeight), padding.getVertical())
-                : absoluteContainingBlock;
+                ? directContainingBlock : absoluteContainingBlock;
+        AbsoluteContainingBlock childrenFixedContainingBlock = createsFixedContainingBlock
+                ? directContainingBlock : fixedContainingBlock;
         LayoutChildrenResult childrenResult;
         if (computedStyle.getDisplay() == UiDisplay.FLEX) {
             childrenResult = layoutFlexChildren(element, computedStyle, contentLeft, contentTop, contentWidth,
                     specifiedContentHeight, childrenAbsoluteContainingBlock, createsAbsoluteContainingBlock,
-                    fixedContainingBlock, layoutContext);
+                    childrenFixedContainingBlock, createsFixedContainingBlock, layoutContext);
         } else if (computedStyle.getDisplay() == UiDisplay.TABLE) {
             childrenResult = layoutTableChildren(element, computedStyle, contentLeft, contentTop, contentWidth,
                     specifiedContentHeight, childrenAbsoluteContainingBlock, createsAbsoluteContainingBlock,
-                    fixedContainingBlock, layoutContext);
+                    childrenFixedContainingBlock, createsFixedContainingBlock, layoutContext);
         } else {
             childrenResult = layoutBlockChildren(element, contentLeft, contentTop, contentWidth, specifiedContentHeight,
-                    childrenAbsoluteContainingBlock, createsAbsoluteContainingBlock, fixedContainingBlock,
-                    marginTopAdjustment, layoutContext);
+                    childrenAbsoluteContainingBlock, createsAbsoluteContainingBlock, childrenFixedContainingBlock,
+                    createsFixedContainingBlock, marginTopAdjustment, layoutContext);
         }
 
         int autoContentHeight = childrenResult.contentHeight;
@@ -294,7 +299,7 @@ public final class DocumentLayoutEngine {
     private static LayoutChildrenResult layoutBlockChildren(ElementNode element, int contentLeft, int contentTop,
             int contentWidth, int specifiedContentHeight, AbsoluteContainingBlock absoluteContainingBlock,
             boolean createsAbsoluteContainingBlock, AbsoluteContainingBlock fixedContainingBlock,
-            int firstChildTopMarginAdjustment,
+            boolean createsFixedContainingBlock, int firstChildTopMarginAdjustment,
             LayoutContext layoutContext) {
         List<DocumentLayoutBox> childBoxes = new ArrayList<DocumentLayoutBox>();
         List<DocumentLayoutTextRun> textRuns = new ArrayList<DocumentLayoutTextRun>();
@@ -413,7 +418,10 @@ public final class DocumentLayoutEngine {
                 PositionedLayoutHelper.resolveDirectAbsoluteContainingBlock(
                         absoluteContainingBlock, createsAbsoluteContainingBlock, specifiedContentHeight, contentHeight),
                 fixedContainingBlock, layoutContext);
-        PositionedLayoutHelper.appendFixedChildren(childBoxes, fixedChildren, fixedContainingBlock, layoutContext);
+        PositionedLayoutHelper.appendFixedChildren(childBoxes, fixedChildren,
+                PositionedLayoutHelper.resolveDirectAbsoluteContainingBlock(
+                        fixedContainingBlock, createsFixedContainingBlock, specifiedContentHeight, contentHeight),
+                layoutContext);
         return new LayoutChildrenResult(sortByDocumentChildOrder(element, childBoxes), textRuns,
                 InlineLayoutHelper.markInlineFragmentSequence(InlineLayoutHelper.mergeInlineFragments(inlineFragments)),
                 contentHeight);
@@ -425,10 +433,11 @@ public final class DocumentLayoutEngine {
     static LayoutChildrenResult layoutTableChildren(ElementNode element, ComputedStyle tableStyle,
             int contentLeft, int contentTop, int contentWidth, int specifiedContentHeight,
             AbsoluteContainingBlock absoluteContainingBlock, boolean createsAbsoluteContainingBlock,
-            AbsoluteContainingBlock fixedContainingBlock, LayoutContext layoutContext) {
+            AbsoluteContainingBlock fixedContainingBlock, boolean createsFixedContainingBlock,
+            LayoutContext layoutContext) {
         return TableLayoutHelper.layoutTableChildren(element, tableStyle, contentLeft, contentTop, contentWidth,
                 specifiedContentHeight, absoluteContainingBlock, createsAbsoluteContainingBlock,
-                fixedContainingBlock, layoutContext);
+                fixedContainingBlock, createsFixedContainingBlock, layoutContext);
     }
 
     static int getOuterBlockHeight(DocumentLayoutBox box) {
@@ -449,10 +458,11 @@ public final class DocumentLayoutEngine {
     private static LayoutChildrenResult layoutFlexChildren(ElementNode element, ComputedStyle parentStyle,
             int contentLeft, int contentTop, int contentWidth, int specifiedContentHeight,
             AbsoluteContainingBlock absoluteContainingBlock, boolean createsAbsoluteContainingBlock,
-            AbsoluteContainingBlock fixedContainingBlock, LayoutContext layoutContext) {
+            AbsoluteContainingBlock fixedContainingBlock, boolean createsFixedContainingBlock,
+            LayoutContext layoutContext) {
         return FlexLayoutHelper.layoutFlexChildren(element, parentStyle, contentLeft, contentTop, contentWidth,
                 specifiedContentHeight, absoluteContainingBlock, createsAbsoluteContainingBlock,
-                fixedContainingBlock, layoutContext);
+                fixedContainingBlock, createsFixedContainingBlock, layoutContext);
     }
 
     /**

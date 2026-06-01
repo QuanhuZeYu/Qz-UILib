@@ -10,6 +10,9 @@ import club.heiqi.uilib.ui.style.cascade.ComputedStyle;
 
 /**
  * absolute / fixed 脱流定位布局辅助器。
+ *
+ * <p>fixed 的 containing block 由调用方按浏览器语义传入：默认是视口，遇到 transform 祖先时为该祖先
+ * padding box。</p>
  */
 final class PositionedLayoutHelper {
 

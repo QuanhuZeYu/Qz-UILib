@@ -15,8 +15,8 @@ import club.heiqi.uilib.ui.style.values.UiTransform;
 /**
  * HTML-like 视觉遍历辅助层。
  *
- * <p>统一封装 stacking phase 收集、fixed/sticky 偏移、scroll offset 传播与 overflow clip 可达判定，
- * 让 paint、hit-test 与 scroll 共享同一套视觉树解释规则。</p>
+ * <p>统一封装 stacking phase 收集、fixed/sticky 偏移、fixed containing block 继承、scroll offset 传播
+ * 与 overflow clip 可达判定，让 paint、hit-test 与 scroll 共享同一套视觉树解释规则。</p>
  */
 public final class DocumentVisualTraversal {
 
@@ -127,13 +127,21 @@ public final class DocumentVisualTraversal {
 
     private static BoxContext resolveBoxContext(DocumentLayoutBox box, DocumentScrollState scrollState, int offsetX,
             int offsetY, StickyContext stickyContext, List<ClipContext> clipChain) {
-        StickyContext resolvedStickyContext = box.isFixedPositioned()
+        return resolveBoxContext(box, scrollState, offsetX, offsetY, stickyContext, clipChain, false, 0, 0);
+    }
+
+    private static BoxContext resolveBoxContext(DocumentLayoutBox box, DocumentScrollState scrollState, int offsetX,
+            int offsetY, StickyContext stickyContext, List<ClipContext> clipChain,
+            boolean fixedContainingBlockActive, int fixedContainingBlockOffsetX, int fixedContainingBlockOffsetY) {
+        boolean fixedInViewport = box.isFixedPositioned() && !fixedContainingBlockActive;
+        StickyContext resolvedStickyContext = fixedInViewport
                 ? DocumentStickyPositioning.rootContext()
                 : stickyContext;
-        List<ClipContext> resolvedClipChain = box.isFixedPositioned() ? Collections.<ClipContext>emptyList()
-                : clipChain;
-        int baseOffsetX = box.isFixedPositioned() ? 0 : offsetX;
-        int baseOffsetY = box.isFixedPositioned() ? 0 : offsetY;
+        List<ClipContext> resolvedClipChain = fixedInViewport ? Collections.<ClipContext>emptyList() : clipChain;
+        int baseOffsetX = resolveBaseOffsetX(box, fixedInViewport, fixedContainingBlockActive,
+                fixedContainingBlockOffsetX, offsetX);
+        int baseOffsetY = resolveBaseOffsetY(box, fixedInViewport, fixedContainingBlockActive,
+                fixedContainingBlockOffsetY, offsetY);
         int positionedOffsetX = baseOffsetX + box.getPositionOffsetX();
         int positionedOffsetY = baseOffsetY + box.getPositionOffsetY();
         int boxOffsetX = DocumentStickyPositioning.resolveOffsetX(box, positionedOffsetX, resolvedStickyContext);
@@ -146,8 +154,16 @@ public final class DocumentVisualTraversal {
                 : resolvedClipChain;
         int childOffsetX = boxOffsetX - getScrollLeft(scrollState, box);
         int childOffsetY = boxOffsetY - getScrollTop(scrollState, box);
+        boolean createsFixedContainingBlock = effectChain.createsFixedContainingBlock();
+        boolean childFixedContainingBlockActive = createsFixedContainingBlock
+                || !fixedInViewport && fixedContainingBlockActive;
+        int childFixedContainingBlockOffsetX = createsFixedContainingBlock ? childOffsetX
+                : fixedContainingBlockOffsetX;
+        int childFixedContainingBlockOffsetY = createsFixedContainingBlock ? childOffsetY
+                : fixedContainingBlockOffsetY;
         return new BoxContext(box, boxOffsetX, boxOffsetY, childOffsetX, childOffsetY, resolvedStickyContext,
-                childStickyContext, effectChain, resolvedClipChain, childClipChain);
+                childStickyContext, effectChain, resolvedClipChain, childClipChain, childFixedContainingBlockActive,
+                childFixedContainingBlockOffsetX, childFixedContainingBlockOffsetY);
     }
 
     /**
@@ -245,7 +261,9 @@ public final class DocumentVisualTraversal {
     public static BoxContext resolveChildBoxContext(BoxContext parentContext, DocumentLayoutBox child,
             DocumentScrollState scrollState) {
         return resolveBoxContext(child, scrollState, parentContext.childOffsetX, parentContext.childOffsetY,
-                parentContext.childStickyContext, parentContext.childClipChain);
+                parentContext.childStickyContext, parentContext.childClipChain,
+                parentContext.childFixedContainingBlockActive, parentContext.childFixedContainingBlockOffsetX,
+                parentContext.childFixedContainingBlockOffsetY);
     }
 
     /**
@@ -284,6 +302,22 @@ public final class DocumentVisualTraversal {
         return Collections.unmodifiableList(nextChain);
     }
 
+    private static int resolveBaseOffsetX(DocumentLayoutBox box, boolean fixedInViewport,
+            boolean fixedContainingBlockActive, int fixedContainingBlockOffsetX, int parentOffsetX) {
+        if (fixedInViewport) {
+            return 0;
+        }
+        return box.isFixedPositioned() && fixedContainingBlockActive ? fixedContainingBlockOffsetX : parentOffsetX;
+    }
+
+    private static int resolveBaseOffsetY(DocumentLayoutBox box, boolean fixedInViewport,
+            boolean fixedContainingBlockActive, int fixedContainingBlockOffsetY, int parentOffsetY) {
+        if (fixedInViewport) {
+            return 0;
+        }
+        return box.isFixedPositioned() && fixedContainingBlockActive ? fixedContainingBlockOffsetY : parentOffsetY;
+    }
+
     private static void appendNormalFlowEntry(DocumentLayoutBox child, List<TraversalEntry> entries,
             BoxContext rootContext, DocumentScrollState scrollState, StackingContextResolver resolver) {
         if (child.getStackingPhase() != DocumentStackingPhase.NORMAL_FLOW) {
@@ -310,7 +344,9 @@ public final class DocumentVisualTraversal {
     private static TraversalEntry createEntry(DocumentLayoutBox child, BoxContext parentContext,
             DocumentScrollState scrollState, StackingContextResolver resolver) {
         BoxContext childContext = resolveBoxContext(child, scrollState, parentContext.childOffsetX,
-                parentContext.childOffsetY, parentContext.childStickyContext, parentContext.childClipChain);
+                parentContext.childOffsetY, parentContext.childStickyContext, parentContext.childClipChain,
+                parentContext.childFixedContainingBlockActive, parentContext.childFixedContainingBlockOffsetX,
+                parentContext.childFixedContainingBlockOffsetY);
         boolean stackingContext = resolver != null && resolver.createsStackingContext(child);
         return new TraversalEntry(childContext, stackingContext);
     }
@@ -448,10 +484,15 @@ public final class DocumentVisualTraversal {
         private final DocumentEffectChain effectChain;
         private final List<ClipContext> clipChain;
         private final List<ClipContext> childClipChain;
+        private final boolean childFixedContainingBlockActive;
+        private final int childFixedContainingBlockOffsetX;
+        private final int childFixedContainingBlockOffsetY;
 
         private BoxContext(DocumentLayoutBox box, int boxOffsetX, int boxOffsetY, int childOffsetX, int childOffsetY,
                 StickyContext stickyContext, StickyContext childStickyContext, DocumentEffectChain effectChain,
-                List<ClipContext> clipChain, List<ClipContext> childClipChain) {
+                List<ClipContext> clipChain, List<ClipContext> childClipChain,
+                boolean childFixedContainingBlockActive, int childFixedContainingBlockOffsetX,
+                int childFixedContainingBlockOffsetY) {
             this.box = box;
             this.boxOffsetX = boxOffsetX;
             this.boxOffsetY = boxOffsetY;
@@ -462,6 +503,9 @@ public final class DocumentVisualTraversal {
             this.effectChain = effectChain;
             this.clipChain = clipChain;
             this.childClipChain = childClipChain;
+            this.childFixedContainingBlockActive = childFixedContainingBlockActive;
+            this.childFixedContainingBlockOffsetX = childFixedContainingBlockOffsetX;
+            this.childFixedContainingBlockOffsetY = childFixedContainingBlockOffsetY;
         }
 
         public DocumentLayoutBox getBox() {
