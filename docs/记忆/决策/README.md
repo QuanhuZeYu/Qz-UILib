@@ -37,3 +37,4 @@
 - [`DECISION-20260531-event-return-value-vs-prevent-default.md`](DECISION-20260531-event-return-value-vs-prevent-default.md) - 事件 handler 返回值只停止传播，取消默认行为统一依赖 `preventDefault()`
 - [`DECISION-20260601-visual-traversal-shared-semantics.md`](DECISION-20260601-visual-traversal-shared-semantics.md) - 新增共享视觉遍历层 `DocumentVisualTraversal`，统一 paint / hit-test / scroll 的 `fixed/sticky`、clip 链与 stacking phase 语义
 - [`DECISION-20260601-font-family-deferred.md`](DECISION-20260601-font-family-deferred.md) - font-family 暂不接通，底层字体引擎无字体族维度，归为后续字体运行时改造专项，避免产出"只记录不生效"的假能力
+- [`DECISION-20260601-textarea-soft-wrap-deferred.md`](DECISION-20260601-textarea-soft-wrap-deferred.md) - textarea 软换行暂不实现，归为独立行模型重构专项，避免在单级行模型上打补丁
