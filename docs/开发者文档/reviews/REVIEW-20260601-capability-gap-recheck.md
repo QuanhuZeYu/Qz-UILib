@@ -76,9 +76,11 @@
 ### B 类：性价比待评估的真缺口（可作为集中填补候选）
 
 按"实现代价 vs 作者层收益"粗排：
-- 高性价比候选：font-family CSS 属性（底层已具备，开放代价小）、input type（password/number，表单高频）、textarea 软换行、DOM `textContent`/`innerHTML` 读写、background-image 的 CSS `url()` 解析（远程页面易用性）
+- 高性价比候选：input type（password/number，已完成）、textContent/innerHTML 读写（标准 API 缺失，作者高频用）、textarea 软换行（补完多行表单）、background-image 的 CSS `url()` 解析（远程页面易用性）
 - 中等：属性选择器、兄弟组合器、结构伪类细分（nth-of-type/not）、表单校验扩展、拖拽 dragenter/dragleave/drop、vertical-align 扩展、多背景/多重阴影
 - 低：@media、background-repeat/position/size、text-overflow 多行、contextmenu 触发路径、`DocumentScrollMetricsCalculator` fixed 一致性
+
+> **font-family 已移出 B 类（2026-06-01）**：原以为底层 `FontType` 已具备字体能力、开放代价小，核实后发现字体引擎（`FontMatcher`/`FontCatalog`/字形表）无字体族维度，只能按全局 `fontSort` 选字体。低成本路径会产出"只记录不生效"的假能力，真正生效需独立的字体运行时改造大工程。详见 `docs/记忆/决策/DECISION-20260601-font-family-deferred.md`。
 
 ## 五、后续动作建议
 
