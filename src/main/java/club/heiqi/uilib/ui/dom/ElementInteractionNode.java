@@ -311,6 +311,26 @@ abstract class ElementInteractionNode extends DocumentNode {
     }
 
     /**
+     * 设置元素滚轮事件处理器。
+     *
+     * @param wheelHandler 滚轮事件处理器；为 null 时清除处理器
+     * @return 当前元素
+     */
+    public ElementNode setWheelHandler(DocumentElementWheelHandler wheelHandler) {
+        handlers.wheelHandler = wheelHandler;
+        return self();
+    }
+
+    /**
+     * 返回元素滚轮事件处理器。
+     *
+     * @return 滚轮事件处理器；不存在时返回 null
+     */
+    public DocumentElementWheelHandler getWheelHandler() {
+        return handlers.wheelHandler;
+    }
+
+    /**
      * 设置元素焦点进入处理器（冒泡版 focus）。
      *
      * @param focusInHandler 焦点进入处理器；为 null 时清除处理器
@@ -553,6 +573,28 @@ abstract class ElementInteractionNode extends DocumentNode {
      */
     public DocumentElementMouseUpHandler getCaptureMouseUpHandler() {
         return handlers.captureMouseUpHandler;
+    }
+
+    /**
+     * 设置元素捕获阶段滚轮处理器。
+     *
+     * <p>捕获阶段 handler 在默认滚动发生前，从根元素向目标元素传播。</p>
+     *
+     * @param captureWheelHandler 捕获阶段滚轮处理器；为 null 时清除
+     * @return 当前元素
+     */
+    public ElementNode setCaptureWheelHandler(DocumentElementWheelHandler captureWheelHandler) {
+        handlers.captureWheelHandler = captureWheelHandler;
+        return self();
+    }
+
+    /**
+     * 返回元素捕获阶段滚轮处理器。
+     *
+     * @return 捕获阶段滚轮处理器；不存在时返回 null
+     */
+    public DocumentElementWheelHandler getCaptureWheelHandler() {
+        return handlers.captureWheelHandler;
     }
 
     /**

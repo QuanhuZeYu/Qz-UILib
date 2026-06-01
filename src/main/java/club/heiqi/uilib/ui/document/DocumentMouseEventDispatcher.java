@@ -11,6 +11,8 @@ import club.heiqi.uilib.ui.dom.DocumentElementMouseDownEvent;
 import club.heiqi.uilib.ui.dom.DocumentElementMouseDownHandler;
 import club.heiqi.uilib.ui.dom.DocumentElementMouseUpEvent;
 import club.heiqi.uilib.ui.dom.DocumentElementMouseUpHandler;
+import club.heiqi.uilib.ui.dom.DocumentElementWheelEvent;
+import club.heiqi.uilib.ui.dom.DocumentElementWheelHandler;
 import club.heiqi.uilib.ui.dom.DocumentEventControl;
 import club.heiqi.uilib.ui.dom.DocumentEventPhase;
 import club.heiqi.uilib.ui.dom.DocumentNode;
@@ -174,6 +176,72 @@ final class DocumentMouseEventDispatcher {
         return eventControl.isPropagationStopped();
     }
 
+    static WheelDispatchResult dispatchWheel(ElementNode target, UiMouseEvent event, int absoluteX, int absoluteY) {
+        if (target == null || event == null) {
+            return WheelDispatchResult.notConsumed();
+        }
+        int documentX = event.getMouseX() - absoluteX;
+        int documentY = event.getMouseY() - absoluteY;
+        DocumentEventControl eventControl = new DocumentEventControl();
+        List<ElementNode> path = buildAncestorPath(target);
+
+        eventControl.setEventPhase(DocumentEventPhase.CAPTURING);
+        for (int index = path.size() - 1; index > 0; index--) {
+            if (eventControl.isPropagationStopped()) {
+                break;
+            }
+            ElementNode currentElement = path.get(index);
+            DocumentElementWheelHandler captureHandler = currentElement.getCaptureWheelHandler();
+            if (captureHandler != null) {
+                DocumentElementWheelEvent wheelEvent = new DocumentElementWheelEvent(target, currentElement,
+                        documentX, documentY, event.getWheelDelta(), event.getTimeNanos(), eventControl);
+                if (captureHandler.onWheel(wheelEvent)) {
+                    eventControl.stopPropagation();
+                }
+            }
+        }
+
+        if (!eventControl.isPropagationStopped()) {
+            eventControl.setEventPhase(DocumentEventPhase.AT_TARGET);
+            DocumentElementWheelHandler targetCaptureHandler = target.getCaptureWheelHandler();
+            if (targetCaptureHandler != null) {
+                DocumentElementWheelEvent wheelEvent = new DocumentElementWheelEvent(target, target, documentX,
+                        documentY, event.getWheelDelta(), event.getTimeNanos(), eventControl);
+                if (targetCaptureHandler.onWheel(wheelEvent)) {
+                    eventControl.stopPropagation();
+                }
+            }
+            if (!eventControl.isImmediatePropagationStopped()) {
+                DocumentElementWheelHandler targetHandler = target.getWheelHandler();
+                if (targetHandler != null) {
+                    DocumentElementWheelEvent wheelEvent = new DocumentElementWheelEvent(target, target, documentX,
+                            documentY, event.getWheelDelta(), event.getTimeNanos(), eventControl);
+                    if (targetHandler.onWheel(wheelEvent)) {
+                        eventControl.stopPropagation();
+                    }
+                }
+            }
+        }
+
+        eventControl.setEventPhase(DocumentEventPhase.BUBBLING);
+        for (int index = 1; index < path.size(); index++) {
+            if (eventControl.isPropagationStopped()) {
+                break;
+            }
+            ElementNode currentElement = path.get(index);
+            DocumentElementWheelHandler handler = currentElement.getWheelHandler();
+            if (handler == null) {
+                continue;
+            }
+            DocumentElementWheelEvent wheelEvent = new DocumentElementWheelEvent(target, currentElement, documentX,
+                    documentY, event.getWheelDelta(), event.getTimeNanos(), eventControl);
+            if (handler.onWheel(wheelEvent)) {
+                eventControl.stopPropagation();
+            }
+        }
+        return new WheelDispatchResult(eventControl.isPropagationStopped(), eventControl.isDefaultPrevented());
+    }
+
     static void dispatchHoverChangedWithAncestorAwareness(ElementNode target, boolean hovered,
             ElementNode otherElement, UiMouseEvent event, int absoluteX, int absoluteY) {
         if (target == null) {
@@ -203,5 +271,28 @@ final class DocumentMouseEventDispatcher {
             path.add((ElementNode) current);
         }
         return path;
+    }
+
+    static final class WheelDispatchResult {
+
+        private final boolean propagationStopped;
+        private final boolean defaultPrevented;
+
+        private WheelDispatchResult(boolean propagationStopped, boolean defaultPrevented) {
+            this.propagationStopped = propagationStopped;
+            this.defaultPrevented = defaultPrevented;
+        }
+
+        private static WheelDispatchResult notConsumed() {
+            return new WheelDispatchResult(false, false);
+        }
+
+        boolean isPropagationStopped() {
+            return propagationStopped;
+        }
+
+        boolean isDefaultPrevented() {
+            return defaultPrevented;
+        }
     }
 }

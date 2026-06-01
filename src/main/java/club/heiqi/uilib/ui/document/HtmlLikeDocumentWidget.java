@@ -559,6 +559,8 @@ public final class HtmlLikeDocumentWidget extends Widget implements UiDocument.D
                     || currentElement.getDragStartHandler() != null
                     || currentElement.getDragOverHandler() != null
                     || currentElement.getDragEndHandler() != null
+                    || currentElement.getWheelHandler() != null
+                    || currentElement.getCaptureWheelHandler() != null
                     || "true".equals(currentElement.getAttribute("draggable"))
                     || currentElement.getKeyHandler() != null
                     || currentElement.getTextInputHandler() != null
@@ -633,12 +635,20 @@ public final class HtmlLikeDocumentWidget extends Widget implements UiDocument.D
         scrollEventCount++;
         lastScrollWheelDelta = event.getWheelDelta();
         lastScrollEventTimeNanos = event.getTimeNanos();
+        DocumentMouseEventDispatcher.WheelDispatchResult dispatchResult = DocumentMouseEventDispatcher.dispatchWheel(
+                findElementAt(event.getMouseX(), event.getMouseY()), event, getAbsoluteX(), getAbsoluteY());
+        if (dispatchResult.isDefaultPrevented()) {
+            lastScrollConsumed = true;
+            return true;
+        }
         DocumentLayoutBox rootBox = resolveInteractiveLayoutBox();
-        boolean consumed = scrollState.handleWheel(rootBox, resolveTopLayerLayoutBoxes(rootBox, null),
+        int previousScrollVersion = scrollState.getVersion();
+        boolean scrolled = scrollState.handleWheel(rootBox, resolveTopLayerLayoutBoxes(rootBox, null),
                 event.getMouseX() - getAbsoluteX(), event.getMouseY() - getAbsoluteY(), event.getWheelDelta(),
                 event.getTimeNanos());
+        boolean consumed = scrolled || dispatchResult.isPropagationStopped();
         lastScrollConsumed = consumed;
-        if (consumed) {
+        if (scrollState.getVersion() != previousScrollVersion) {
             updateHoveredElement(findElementAt(event.getMouseX(), event.getMouseY()), event);
         }
         return consumed;

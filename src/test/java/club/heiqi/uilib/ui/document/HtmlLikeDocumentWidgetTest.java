@@ -45,6 +45,8 @@ import club.heiqi.uilib.ui.dom.DocumentElementTextInputEvent;
 import club.heiqi.uilib.ui.dom.DocumentElementTextInputHandler;
 import club.heiqi.uilib.ui.dom.DocumentElementTransitionEndEvent;
 import club.heiqi.uilib.ui.dom.DocumentElementTransitionEndHandler;
+import club.heiqi.uilib.ui.dom.DocumentElementWheelEvent;
+import club.heiqi.uilib.ui.dom.DocumentElementWheelHandler;
 import club.heiqi.uilib.ui.dom.DocumentNode;
 import club.heiqi.uilib.ui.dom.ElementNode;
 import club.heiqi.uilib.ui.dom.TextNode;
@@ -1798,6 +1800,142 @@ public class HtmlLikeDocumentWidgetTest {
         assertDrawCall(scrolledRenderContext.drawCalls.get(0), 5, -29, 85, 51, 0xFFAA5500, 0, 0);
         assertDrawCall(scrolledRenderContext.drawCalls.get(1), 77, 9, 83, 25, 0x663B4A66, 0, 3);
         assertDrawCall(scrolledRenderContext.drawCalls.get(2), 77, 9, 83, 25, 0xDDBCD7FF, 0, 3);
+    }
+
+    /**
+     * 验证 wheel 事件会在默认滚动前按 capture、target、bubble 顺序分发。
+     */
+    @Test
+    public void shouldDispatchWheelEventBeforeDefaultScrollInDomOrder() {
+        UiDocument document = UiDocument.create();
+        ElementNode root = document.getRootElement();
+        ElementNode child = document.div();
+        final List<String> events = new ArrayList<String>();
+        root.style()
+                .setWidth(UiStyleLength.px(80))
+                .setHeight(UiStyleLength.px(20))
+                .setOverflowY(UiOverflow.AUTO);
+        child.style()
+                .setWidth(UiStyleLength.px(80))
+                .setHeight(UiStyleLength.px(80));
+        root.setCaptureWheelHandler(new DocumentElementWheelHandler() {
+            @Override
+            public boolean onWheel(DocumentElementWheelEvent event) {
+                events.add("root-capture:" + event.getEventPhase());
+                return false;
+            }
+        });
+        child.setCaptureWheelHandler(new DocumentElementWheelHandler() {
+            @Override
+            public boolean onWheel(DocumentElementWheelEvent event) {
+                events.add("child-capture:" + event.getEventPhase());
+                return false;
+            }
+        });
+        child.setWheelHandler(new DocumentElementWheelHandler() {
+            @Override
+            public boolean onWheel(DocumentElementWheelEvent event) {
+                events.add("child:" + event.getEventPhase() + ":" + event.getDocumentX() + ":"
+                        + event.getDocumentY() + ":" + event.getWheelDelta() + ":" + event.getDeltaY());
+                return false;
+            }
+        });
+        root.setWheelHandler(new DocumentElementWheelHandler() {
+            @Override
+            public boolean onWheel(DocumentElementWheelEvent event) {
+                events.add("root-bubble:" + event.getEventPhase());
+                return false;
+            }
+        });
+        root.append(child);
+        HtmlLikeDocumentWidget widget = new HtmlLikeDocumentWidget(document, 80, 20,
+                new DeterministicTextMeasureService());
+        widget.applyLayoutBounds(0, 0, 80, 20);
+
+        boolean consumed = widget.onMouseScroll(new UiMouseEvent(UiMouseEvent.Action.SCROLL, 10, 10, -1, -120, 0,
+                0, 1L));
+
+        Assert.assertTrue(consumed);
+        Assert.assertEquals(36, widget.getScrollTop(root));
+        Assert.assertEquals("[root-capture:CAPTURING, child-capture:AT_TARGET, child:AT_TARGET:10:10:-120:120, "
+                + "root-bubble:BUBBLING]", events.toString());
+    }
+
+    /**
+     * 验证 wheel handler 返回 true 只停止传播，不会隐式取消默认滚动。
+     */
+    @Test
+    public void shouldKeepDefaultWheelScrollWhenHandlerOnlyStopsPropagation() {
+        UiDocument document = UiDocument.create();
+        ElementNode root = document.getRootElement();
+        ElementNode child = document.div();
+        final List<String> events = new ArrayList<String>();
+        root.style()
+                .setWidth(UiStyleLength.px(80))
+                .setHeight(UiStyleLength.px(20))
+                .setOverflowY(UiOverflow.AUTO);
+        child.style()
+                .setWidth(UiStyleLength.px(80))
+                .setHeight(UiStyleLength.px(80));
+        child.setWheelHandler(new DocumentElementWheelHandler() {
+            @Override
+            public boolean onWheel(DocumentElementWheelEvent event) {
+                events.add("child");
+                return true;
+            }
+        });
+        root.setWheelHandler(new DocumentElementWheelHandler() {
+            @Override
+            public boolean onWheel(DocumentElementWheelEvent event) {
+                events.add("root");
+                return false;
+            }
+        });
+        root.append(child);
+        HtmlLikeDocumentWidget widget = new HtmlLikeDocumentWidget(document, 80, 20,
+                new DeterministicTextMeasureService());
+        widget.applyLayoutBounds(0, 0, 80, 20);
+
+        boolean consumed = widget.onMouseScroll(new UiMouseEvent(UiMouseEvent.Action.SCROLL, 10, 10, -1, -120, 0,
+                0, 1L));
+
+        Assert.assertTrue(consumed);
+        Assert.assertEquals(36, widget.getScrollTop(root));
+        Assert.assertEquals("[child]", events.toString());
+    }
+
+    /**
+     * 验证 wheel 事件调用 preventDefault 后会阻止默认滚动。
+     */
+    @Test
+    public void shouldPreventDefaultWheelScrollFromWheelEvent() {
+        UiDocument document = UiDocument.create();
+        ElementNode root = document.getRootElement();
+        ElementNode child = document.div();
+        root.style()
+                .setWidth(UiStyleLength.px(80))
+                .setHeight(UiStyleLength.px(20))
+                .setOverflowY(UiOverflow.AUTO);
+        child.style()
+                .setWidth(UiStyleLength.px(80))
+                .setHeight(UiStyleLength.px(80));
+        child.setWheelHandler(new DocumentElementWheelHandler() {
+            @Override
+            public boolean onWheel(DocumentElementWheelEvent event) {
+                event.preventDefault();
+                return false;
+            }
+        });
+        root.append(child);
+        HtmlLikeDocumentWidget widget = new HtmlLikeDocumentWidget(document, 80, 20,
+                new DeterministicTextMeasureService());
+        widget.applyLayoutBounds(0, 0, 80, 20);
+
+        boolean consumed = widget.onMouseScroll(new UiMouseEvent(UiMouseEvent.Action.SCROLL, 10, 10, -1, -120, 0,
+                0, 1L));
+
+        Assert.assertTrue(consumed);
+        Assert.assertEquals(0, widget.getScrollTop(root));
     }
 
     /**
