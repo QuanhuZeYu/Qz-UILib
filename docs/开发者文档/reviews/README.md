@@ -4,6 +4,11 @@
 
 详细报告存放在本目录下；本文件只保留指针、主题和必要摘要，避免单文件持续膨胀。
 
+## 2026-06-01-browser-semantics-phase2-audit
+- 类型：浏览器语义一致性审查（Phase 2）
+- 详情文档：[REVIEW-20260601-browser-semantics-phase2-audit.md](REVIEW-20260601-browser-semantics-phase2-audit.md)
+- 结论摘要：Phase 1 合并后系统性检查全子系统，发现 28 处与浏览器标准不一致（高 9 / 中 13 / 低 6）。高严重度集中在：min/max 约束应用顺序错误、负 margin collapse 不完整、flex item min-width 默认值为 0 而非 auto、flex-basis box-sizing 转换条件错误、insertBefore/replaceChild 同父节点索引偏移 bug、position:fixed 不创建 stacking context、overflow+border-radius 裁剪缺失、disabled 布尔属性语义错误。P0 修复代价低且影响面大，建议优先处理。
+
 ## 2026-05-25-project-code-structure-audit
 - 类型：全项目代码结构深度审查（覆盖 UI / font / net / config / client / mixin / internal）
 - 详情文档：[REVIEW-20260525-project-code-structure-audit.md](REVIEW-20260525-project-code-structure-audit.md)
