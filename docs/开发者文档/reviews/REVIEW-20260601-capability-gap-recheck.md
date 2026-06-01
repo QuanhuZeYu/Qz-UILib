@@ -76,7 +76,7 @@
 ### B 类：性价比待评估的真缺口（可作为集中填补候选）
 
 按"实现代价 vs 作者层收益"粗排：
-- 高性价比候选：input type（password/number，已完成）、textContent/innerHTML 读写（标准 API 缺失，作者高频用）、textarea 软换行（补完多行表单）、background-image 的 CSS `url()` 解析（远程页面易用性）
+- 高性价比候选：input type（password/number，已完成）、textContent/innerHTML 读写（标准 API 缺失，作者高频用）、textarea 软换行（已跳过，见 `DECISION-20260601-textarea-soft-wrap-deferred.md`）、background-image 的 CSS `url()` 解析（已完成，远程 CSS 支持 ResourceLocation 单图 URL）
 - 中等：属性选择器、兄弟组合器、结构伪类细分（nth-of-type/not）、表单校验扩展、拖拽 dragenter/dragleave/drop、vertical-align 扩展、多背景/多重阴影
 - 低：@media、background-repeat/position/size、text-overflow 多行、contextmenu 触发路径、`DocumentScrollMetricsCalculator` fixed 一致性
 

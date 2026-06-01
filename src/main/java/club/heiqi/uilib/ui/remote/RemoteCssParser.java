@@ -6,6 +6,8 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 
+import net.minecraft.util.ResourceLocation;
+
 import club.heiqi.uilib.MyMod;
 import club.heiqi.uilib.ui.style.UiStyleProperty;
 import club.heiqi.uilib.ui.style.cascade.UiStyleDeclaration;
@@ -31,6 +33,8 @@ import club.heiqi.uilib.ui.style.props.UiTextOverflow;
 import club.heiqi.uilib.ui.style.props.UiVerticalAlign;
 import club.heiqi.uilib.ui.style.props.UiVisibility;
 import club.heiqi.uilib.ui.style.props.UiWhiteSpace;
+import club.heiqi.uilib.ui.style.values.UiBackgroundImage;
+import club.heiqi.uilib.ui.style.values.UiStyleKeyword;
 import club.heiqi.uilib.ui.style.values.UiStyleInsets;
 import club.heiqi.uilib.ui.style.values.UiStyleLength;
 
@@ -281,6 +285,9 @@ final class RemoteCssParser {
             case "background-color":
                 declaration.setBackgroundColor(parseColor(value));
                 return UiStyleProperty.BACKGROUND_COLOR;
+            case "background-image":
+                applyBackgroundImage(declaration, value);
+                return UiStyleProperty.BACKGROUND_IMAGE;
             case "color":
                 declaration.setTextColor(parseColor(value));
                 return UiStyleProperty.TEXT_COLOR;
@@ -450,6 +457,67 @@ final class RemoteCssParser {
         } catch (IllegalArgumentException ignored) {
             return false;
         }
+    }
+
+    /**
+     * 解析远程 CSS 的单图 background-image 声明。
+     *
+     * @param declaration 目标声明
+     * @param value CSS 属性值
+     */
+    private static void applyBackgroundImage(UiStyleDeclaration declaration, String value) {
+        if ("none".equals(normalizeIdentifier(value))) {
+            declaration.setKeyword(UiStyleProperty.BACKGROUND_IMAGE, UiStyleKeyword.INITIAL);
+            return;
+        }
+        declaration.setBackgroundImage(parseBackgroundImage(value));
+    }
+
+    private static UiBackgroundImage parseBackgroundImage(String value) {
+        String url = parseCssUrl(value);
+        ResourceLocation texture = parseResourceLocation(url);
+        return UiBackgroundImage.texture(texture, 1, 1);
+    }
+
+    private static String parseCssUrl(String value) {
+        String text = value == null ? "" : value.trim();
+        if (!text.regionMatches(true, 0, "url(", 0, 4) || !text.endsWith(")")) {
+            throw new IllegalArgumentException("background-image must be url(...)");
+        }
+        String url = text.substring(4, text.length() - 1).trim();
+        if (url.length() >= 2 && isMatchingQuote(url.charAt(0), url.charAt(url.length() - 1))) {
+            url = url.substring(1, url.length() - 1).trim();
+        }
+        if (url.isEmpty()) {
+            throw new IllegalArgumentException("background-image url is empty");
+        }
+        return url;
+    }
+
+    private static ResourceLocation parseResourceLocation(String value) {
+        String text = value == null ? "" : value.trim();
+        if (text.isEmpty() || isRemoteUrl(text) || text.indexOf("://") >= 0) {
+            throw new IllegalArgumentException("background-image only supports ResourceLocation urls");
+        }
+        int namespaceSeparator = text.indexOf(':');
+        if (namespaceSeparator < 0) {
+            return new ResourceLocation(text);
+        }
+        String namespace = text.substring(0, namespaceSeparator).trim();
+        String path = text.substring(namespaceSeparator + 1).trim();
+        if (namespace.isEmpty() || path.isEmpty()) {
+            throw new IllegalArgumentException("invalid ResourceLocation url");
+        }
+        return new ResourceLocation(namespace, path);
+    }
+
+    private static boolean isMatchingQuote(char first, char last) {
+        return first == last && (first == '\'' || first == '"');
+    }
+
+    private static boolean isRemoteUrl(String value) {
+        return value.regionMatches(true, 0, "http://", 0, 7)
+                || value.regionMatches(true, 0, "https://", 0, 8);
     }
 
     static UiStyleLength parseLength(String value, boolean allowAuto) {
