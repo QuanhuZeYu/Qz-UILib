@@ -32,6 +32,7 @@ import club.heiqi.uilib.ui.render.UiRenderContext;
 public final class DocumentTextInputControl {
 
     private static final long BLINK_PERIOD_NANOS = 530_000_000L;
+    private static final char DEFAULT_PASSWORD_MASK = '\u2022';
 
     private final ElementNode element;
     private final ElementNode textElement;
@@ -39,6 +40,8 @@ public final class DocumentTextInputControl {
     private final StringBuilder textBuilder = new StringBuilder();
     private DocumentTextInputChangeHandler changeHandler;
     private DocumentElementKeyHandler keyHandler;
+    private DocumentInputType inputType = DocumentInputType.TEXT;
+    private char passwordMaskCharacter = DEFAULT_PASSWORD_MASK;
     private String placeholder = "";
     private int maxLength = 128;
     private boolean enabled = true;
@@ -129,6 +132,55 @@ public final class DocumentTextInputControl {
      */
     public DocumentTextInputControl setMaxLength(int maxLength) {
         this.maxLength = Math.max(1, maxLength);
+        return this;
+    }
+
+    /**
+     * 设置输入类型。
+     *
+     * <p>切换类型会按新类型的字符规则重新过滤当前内容，被新类型拒绝的字符会被剔除；
+     * 真实值始终通过 {@link #getText()} 返回，不受 PASSWORD 掩码影响。</p>
+     *
+     * @param inputType 输入类型；为 null 时回退为 {@link DocumentInputType#TEXT}
+     * @return 当前文本输入控件
+     */
+    public DocumentTextInputControl setType(DocumentInputType inputType) {
+        DocumentInputType resolvedType = inputType == null ? DocumentInputType.TEXT : inputType;
+        if (this.inputType == resolvedType) {
+            return this;
+        }
+        this.inputType = resolvedType;
+        element.setAttribute("type", resolvedType.getAttributeValue());
+        refilterCurrentText();
+        syncText();
+        return this;
+    }
+
+    /**
+     * 返回当前输入类型。
+     *
+     * @return 输入类型
+     */
+    public DocumentInputType getType() {
+        return inputType;
+    }
+
+    /**
+     * 设置密码掩码字符。
+     *
+     * <p>仅在 {@link DocumentInputType#PASSWORD} 下影响显示，真实值不受影响。</p>
+     *
+     * @param maskCharacter 掩码字符
+     * @return 当前文本输入控件
+     */
+    public DocumentTextInputControl setPasswordMaskCharacter(char maskCharacter) {
+        if (this.passwordMaskCharacter == maskCharacter) {
+            return this;
+        }
+        this.passwordMaskCharacter = maskCharacter;
+        if (inputType == DocumentInputType.PASSWORD) {
+            syncText();
+        }
         return this;
     }
 
@@ -348,7 +400,7 @@ public final class DocumentTextInputControl {
                 if ((elapsed / BLINK_PERIOD_NANOS) % 2 != 0) {
                     return;
                 }
-                int textWidth = Math.min(Math.max(0, context.measureTextWidth(textBuilder.toString())),
+                int textWidth = Math.min(Math.max(0, context.measureTextWidth(buildDisplayText())),
                         Math.max(0, contentRight - contentLeft - 1));
                 int cursorLeft = resolveCursorLeft(contentLeft, contentRight, textWidth);
                 int lineHeight = Math.max(1, Math.min(context.getTextLineHeight(), contentBottom - contentTop));
@@ -450,8 +502,9 @@ public final class DocumentTextInputControl {
             element.setAttribute("placeholder", placeholder);
             element.style().setTextColor(enabled ? placeholderColor : disabledTextColor);
         } else {
-            textNode.setText(textBuilder.toString());
-            element.setAttribute("value", textBuilder.toString());
+            String displayText = buildDisplayText();
+            textNode.setText(displayText);
+            element.setAttribute("value", displayText);
             if (placeholder == null || placeholder.isEmpty()) {
                 element.removeAttribute("placeholder");
             } else {
@@ -462,6 +515,35 @@ public final class DocumentTextInputControl {
         if (showingPlaceholder) {
             element.setAttribute("value", "");
         }
+    }
+
+    /**
+     * 构建用于显示与几何测量的文本。
+     *
+     * <p>PASSWORD 类型按码点数量替换为等量掩码字符，避免明文进入显示树、`value` 属性与光标测量；
+     * 其余类型直接返回真实文本。</p>
+     *
+     * @return 显示文本
+     */
+    private String buildDisplayText() {
+        if (inputType != DocumentInputType.PASSWORD) {
+            return textBuilder.toString();
+        }
+        int codePointCount = textBuilder.codePointCount(0, textBuilder.length());
+        StringBuilder masked = new StringBuilder(codePointCount);
+        for (int index = 0; index < codePointCount; index++) {
+            masked.append(passwordMaskCharacter);
+        }
+        return masked.toString();
+    }
+
+    /**
+     * 按当前输入类型重新过滤已有内容，剔除新类型不接受的字符。
+     */
+    private void refilterCurrentText() {
+        String current = textBuilder.toString();
+        textBuilder.setLength(0);
+        appendAcceptedCodePoints(textBuilder, current, maxLength);
     }
 
     private int resolveCursorLeft(int contentLeft, int contentRight, int textWidth) {
@@ -486,14 +568,14 @@ public final class DocumentTextInputControl {
         caretBlinkResetNanos = SystemDocumentAnimationClock.getInstance().getCurrentTimeNanos();
     }
 
-    private static boolean appendAcceptedCodePoints(StringBuilder target, String input, int maxCodePointCount) {
+    private boolean appendAcceptedCodePoints(StringBuilder target, String input, int maxCodePointCount) {
         if (input == null || input.isEmpty()) {
             return false;
         }
         boolean changed = false;
         for (int index = 0; index < input.length();) {
             int codepoint = input.codePointAt(index);
-            if (isAcceptedCodepoint(codepoint)
+            if (inputType.acceptsCodepoint(codepoint)
                     && target.codePointCount(0, target.length()) < maxCodePointCount) {
                 target.appendCodePoint(codepoint);
                 changed = true;
@@ -501,10 +583,6 @@ public final class DocumentTextInputControl {
             index += Character.charCount(codepoint);
         }
         return changed;
-    }
-
-    private static boolean isAcceptedCodepoint(int codepoint) {
-        return !Character.isISOControl(codepoint) && codepoint != '\n' && codepoint != '\r' && codepoint != '\t';
     }
 
     private static String normalizePlaceholder(String placeholder) {
