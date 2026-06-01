@@ -19,6 +19,7 @@
 
 - 先直接重试相同 Gradle 命令。
 - 若重试后成功，按“外部波动已恢复”处理，不要误判为本轮代码回归。
+- 依赖已在本地缓存时，可加 `--offline` 跳过配置阶段的 GitHub manifest 拉取，离线复跑目标测试做验证（已验证：`--offline --no-configuration-cache test --tests ...` 可在 manifest 不可达时通过）。
 - 若持续失败，再进一步检查网络、代理、GitHub 可达性与插件上游状态。
 
 ## 预防措施
