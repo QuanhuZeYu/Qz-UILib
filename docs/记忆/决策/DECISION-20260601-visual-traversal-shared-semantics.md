@@ -46,4 +46,6 @@
 
 - 后续处理 `top-layer` 时，优先继续接入 `DocumentVisualTraversal`，不要重新在宿主层维护一套普通树/顶层树并行排序逻辑。
 - `DocumentEffectChain.isStackingBoundary()` 现在保留工程遍历边界含义，不能直接当成规范语义上的 stacking context 使用；需要规范判定时应显式使用 `createsStackingContext()`。
+- `position:fixed` 即使 `z-index:auto` 也应通过 `createsStackingContext()` 表达 CSS-like stacking context；绘制测试若只校验几何，可显式剥离无视觉差异的 paint context 命令。
+- overflow 子内容 clip 的命中可达性应使用 padding box 圆角，不能只按矩形边界判断；仅单轴裁剪时不额外施加圆角约束。
 - 如果后续引入更完整的浏览器绘制顺序分层，应继续扩展共享层，而不是回退到 `paint/hit/scroll` 各自收集 phase item 的方式。

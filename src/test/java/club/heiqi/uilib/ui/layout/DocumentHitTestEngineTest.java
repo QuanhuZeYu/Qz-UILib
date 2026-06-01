@@ -348,6 +348,35 @@ public class DocumentHitTestEngineTest {
     }
 
     /**
+     * 验证 overflow:hidden + border-radius 会按圆角区域阻断子元素命中。
+     */
+    @Test
+    public void shouldRejectChildHitOutsideRoundedOverflowClip() {
+        UiDocument document = UiDocument.create();
+        ElementNode root = document.getRootElement();
+        ElementNode clippedParent = document.div();
+        ElementNode child = document.div();
+
+        root.style().setWidth(UiStyleLength.px(100));
+        clippedParent.style()
+                .setWidth(UiStyleLength.px(60))
+                .setHeight(UiStyleLength.px(60))
+                .setBorderRadius(UiStyleLength.px(20))
+                .setOverflowX(UiOverflow.HIDDEN)
+                .setOverflowY(UiOverflow.HIDDEN);
+        child.style()
+                .setWidth(UiStyleLength.px(60))
+                .setHeight(UiStyleLength.px(60));
+        clippedParent.append(child);
+        root.append(clippedParent);
+
+        DocumentLayoutBox rootBox = DocumentLayoutEngine.layout(root, 120, 0);
+
+        assertHitElement(root, rootBox, 1, 1);
+        assertHitElement(child, rootBox, 20, 1);
+    }
+
+    /**
      * 验证声明为命中隐藏的 fixed overlay 不会截获下层元素命中。
      */
     @Test

@@ -6,6 +6,7 @@ import java.util.List;
 import java.util.Objects;
 
 import club.heiqi.uilib.ui.style.cascade.ComputedStyle;
+import club.heiqi.uilib.ui.style.cascade.UiBorderRadiusResolver;
 import club.heiqi.uilib.ui.style.props.UiOverflow;
 import club.heiqi.uilib.ui.style.props.UiPosition;
 import club.heiqi.uilib.ui.style.values.UiTransform;
@@ -65,7 +66,8 @@ public final class DocumentEffectChain {
         boolean overflowClipsY = style.getOverflowY() != UiOverflow.VISIBLE;
         boolean hasOverflowClip = overflowClipsX || overflowClipsY;
         boolean clipsChildren = hasOverflowClip && hasClipSensitiveContent(box);
-        boolean positionedStackingContext = style.getPosition() == UiPosition.STICKY
+        boolean positionedStackingContext = style.getPosition() == UiPosition.FIXED
+                || style.getPosition() == UiPosition.STICKY
                 || style.getPosition() != UiPosition.STATIC && style.getZIndex() != null;
         boolean opacityStackingContext = style.getOpacity() < 0.999F;
         UiTransform transform = style.getTransform();
@@ -207,7 +209,7 @@ public final class DocumentEffectChain {
         int right = overflowClipsX ? box.getRight() - box.getBorder().getRight() + offsetX : UNBOUNDED_MAX;
         int top = overflowClipsY ? box.getTop() + box.getBorder().getTop() + offsetY : UNBOUNDED_MIN;
         int bottom = overflowClipsY ? box.getBottom() - box.getBorder().getBottom() + offsetY : UNBOUNDED_MAX;
-        return new ClipBounds(left, top, right, bottom);
+        return new ClipBounds(left, top, right, bottom, resolveChildClipRadii());
     }
 
     /**
@@ -224,6 +226,19 @@ public final class DocumentEffectChain {
             return true;
         }
         return resolveChildClipBounds(offsetX, offsetY).contains(x, y);
+    }
+
+    private UiBorderRadiusResolver.ResolvedCornerRadii resolveChildClipRadii() {
+        if (!hasOverflowClip()) {
+            return UiBorderRadiusResolver.ResolvedCornerRadii.uniform(0);
+        }
+        UiBorderRadiusResolver.ResolvedCornerRadii borderBoxRadii = UiBorderRadiusResolver.resolve(
+                box.getComputedStyle(), box.getWidth(), box.getHeight());
+        UiBorderRadiusResolver.ResolvedCornerRadii paddingBoxRadii = borderBoxRadii.inset(box.getBorder());
+        if (!overflowClipsX || !overflowClipsY) {
+            return UiBorderRadiusResolver.ResolvedCornerRadii.uniform(0);
+        }
+        return paddingBoxRadii;
     }
 
     private static boolean hasClipSensitiveContent(DocumentLayoutBox box) {
@@ -250,12 +265,16 @@ public final class DocumentEffectChain {
         private final int top;
         private final int right;
         private final int bottom;
+        private final UiBorderRadiusResolver.ResolvedCornerRadii cornerRadii;
 
-        private ClipBounds(int left, int top, int right, int bottom) {
+        private ClipBounds(int left, int top, int right, int bottom,
+                UiBorderRadiusResolver.ResolvedCornerRadii cornerRadii) {
             this.left = left;
             this.top = top;
             this.right = Math.max(left, right);
             this.bottom = Math.max(top, bottom);
+            this.cornerRadii = cornerRadii == null ? UiBorderRadiusResolver.ResolvedCornerRadii.uniform(0)
+                    : UiBorderRadiusResolver.scaleToFit(cornerRadii, this.right - this.left, this.bottom - this.top);
         }
 
         /**
@@ -266,7 +285,36 @@ public final class DocumentEffectChain {
          * @return 是否命中边界
          */
         public boolean contains(float x, float y) {
-            return x >= left && x < right && y >= top && y < bottom;
+            if (x < left || x >= right || y < top || y >= bottom) {
+                return false;
+            }
+            int topLeftRadius = cornerRadii.getTopLeft();
+            int topRightRadius = cornerRadii.getTopRight();
+            int bottomRightRadius = cornerRadii.getBottomRight();
+            int bottomLeftRadius = cornerRadii.getBottomLeft();
+            if (topLeftRadius <= 0 && topRightRadius <= 0 && bottomRightRadius <= 0 && bottomLeftRadius <= 0) {
+                return true;
+            }
+            if (topLeftRadius > 0 && x < left + topLeftRadius && y < top + topLeftRadius) {
+                return isInsideCircle(x, y, left + topLeftRadius, top + topLeftRadius, topLeftRadius);
+            }
+            if (topRightRadius > 0 && x >= right - topRightRadius && y < top + topRightRadius) {
+                return isInsideCircle(x, y, right - topRightRadius, top + topRightRadius, topRightRadius);
+            }
+            if (bottomRightRadius > 0 && x >= right - bottomRightRadius && y >= bottom - bottomRightRadius) {
+                return isInsideCircle(x, y, right - bottomRightRadius, bottom - bottomRightRadius,
+                        bottomRightRadius);
+            }
+            if (bottomLeftRadius > 0 && x < left + bottomLeftRadius && y >= bottom - bottomLeftRadius) {
+                return isInsideCircle(x, y, left + bottomLeftRadius, bottom - bottomLeftRadius, bottomLeftRadius);
+            }
+            return true;
+        }
+
+        private static boolean isInsideCircle(float x, float y, int cx, int cy, int radius) {
+            double dx = x - cx;
+            double dy = y - cy;
+            return dx * dx + dy * dy < (double) radius * radius;
         }
 
         /**
@@ -303,6 +351,15 @@ public final class DocumentEffectChain {
          */
         public int getBottom() {
             return bottom;
+        }
+
+        /**
+         * 返回子内容裁剪圆角。
+         *
+         * @return 裁剪圆角
+         */
+        public UiBorderRadiusResolver.ResolvedCornerRadii getCornerRadii() {
+            return cornerRadii;
         }
     }
 }

@@ -95,6 +95,8 @@ final class FlexLayoutHelper {
         for (FlexChild child : children) {
             FlexItem item = createFlexItem(child, parentStyle, contentWidth, layoutContext);
             item.contentMainSize = resolveContentMainSize(item, contentWidth, true, layoutContext);
+            item.minContentMainSize = resolveRowFlexItemMinMainSize(item, contentWidth, layoutContext);
+            item.contentMainSize = Math.max(item.contentMainSize, item.minContentMainSize);
             int outerMain = item.getOuterMainSize(true);
             if (wrap && !currentLine.isEmpty()
                     && currentLineOccupied + gap + outerMain > contentWidth) {
@@ -413,9 +415,10 @@ final class FlexLayoutHelper {
             int baseSize = Math.max(0, flexBasis.resolve(containingWidth, 0));
             if (row) {
                 return DocumentLayoutEngine.resolveBoxSizingContentWidth(item.style, baseSize, item.border,
-                        item.padding);
+                        item.padding, true);
             }
-            return DocumentLayoutEngine.resolveBoxSizingContentHeight(item.style, baseSize, item.border, item.padding);
+            return DocumentLayoutEngine.resolveBoxSizingContentHeight(item.style, baseSize, item.border, item.padding,
+                    true);
         }
         // flex-basis:auto 退回 width/height
         UiStyleLength length = row ? item.style.getWidth() : item.style.getHeight();
@@ -451,6 +454,27 @@ final class FlexLayoutHelper {
                 - item.border.getHorizontal()
                 - item.padding.getHorizontal());
         return Math.min(measuredWidth, availableContentWidth);
+    }
+
+    private static int resolveRowFlexItemMinMainSize(FlexItem item, int containingWidth,
+            LayoutContext layoutContext) {
+        if (!DocumentLayoutEngine.isAuto(item.style.getMinWidth())) {
+            int minWidth = Math.max(0, item.style.getMinWidth().resolve(containingWidth, 0));
+            return DocumentLayoutEngine.resolveBoxSizingContentWidth(item.style, minWidth, item.border, item.padding,
+                    true);
+        }
+        if (item.style.getOverflowX() != UiOverflow.VISIBLE) {
+            return 0;
+        }
+        if (!DocumentLayoutEngine.isAuto(item.style.getWidth())) {
+            return Math.min(item.contentMainSize, DocumentLayoutEngine.measureIntrinsicContentWidth(item.element,
+                    containingWidth, layoutContext));
+        }
+        if (item.anonymousText) {
+            return TextLayoutHelper.measureIntrinsicTextWidth(item.textNode, item.style,
+                    layoutContext.textMeasureService);
+        }
+        return DocumentLayoutEngine.measureIntrinsicContentWidth(item.element, containingWidth, layoutContext);
     }
 
     /**

@@ -234,8 +234,8 @@ public class DocumentPaintEngineTest {
         DocumentScrollState scrollState = new DocumentScrollState();
         scrollState.updateFromLayout(rootBox);
         Assert.assertTrue(scrollState.setScrollOffset(root, 0, 36));
-        List<DocumentPaintCommand> commands = withoutScrollbarCommands(DocumentPaintEngine.buildPaintCommands(rootBox,
-                scrollState, 1L));
+        List<DocumentPaintCommand> commands = withoutPaintContextCommands(withoutScrollbarCommands(
+                DocumentPaintEngine.buildPaintCommands(rootBox, scrollState, 1L)));
 
         Assert.assertEquals(5, commands.size());
         assertCommand(commands.get(0), DocumentPaintCommandType.BACKGROUND, root, 0, 0, 100, 50, 0xFF101820,

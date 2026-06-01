@@ -10,6 +10,7 @@ import org.junit.Test;
 import club.heiqi.uilib.ui.dom.ElementNode;
 import club.heiqi.uilib.ui.dom.UiDocument;
 import club.heiqi.uilib.ui.style.props.UiAlignItems;
+import club.heiqi.uilib.ui.style.props.UiBoxSizing;
 import club.heiqi.uilib.ui.style.props.UiDisplay;
 import club.heiqi.uilib.ui.style.props.UiFlexDirection;
 import club.heiqi.uilib.ui.style.values.UiStyleLength;
@@ -80,6 +81,55 @@ public class FlexLayoutHelperBoundaryTest {
         Assert.assertEquals(30, columnBox.getHeight());
         Assert.assertEquals(40, rowBox.getWidth());
         Assert.assertEquals(30, rowBox.getHeight());
+    }
+
+    /**
+     * 验证 row flex item 默认 min-width:auto，不会被 flex-shrink 缩小到内容宽以下。
+     */
+    @Test
+    public void shouldKeepRowFlexItemAtAutoMinContentWidthByDefault() {
+        UiDocument document = UiDocument.create();
+        ElementNode root = document.getRootElement();
+        ElementNode item = document.div();
+
+        root.style()
+                .setDisplay(UiDisplay.FLEX)
+                .setFlexDirection(UiFlexDirection.ROW)
+                .setWidth(UiStyleLength.px(20));
+        item.appendText("abcdefghij");
+        root.append(item);
+
+        DocumentLayoutBox itemBox = DocumentLayoutEngine.layout(root, 80, 0, new DeterministicMeasure())
+                .getChildren().get(0);
+
+        Assert.assertEquals(80, itemBox.getContentWidth());
+    }
+
+    /**
+     * 验证 flex-basis 在 border-box 下独立于 width:auto 扣除 padding/border。
+     */
+    @Test
+    public void shouldApplyBorderBoxSizingToFlexBasisWhenWidthIsAuto() {
+        UiDocument document = UiDocument.create();
+        ElementNode root = document.getRootElement();
+        ElementNode item = document.div();
+
+        root.style()
+                .setDisplay(UiDisplay.FLEX)
+                .setFlexDirection(UiFlexDirection.ROW)
+                .setWidth(UiStyleLength.px(120));
+        item.style()
+                .setBoxSizing(UiBoxSizing.BORDER_BOX)
+                .setFlexBasis(UiStyleLength.px(60))
+                .setPadding(UiStyleLength.px(8))
+                .setBorderWidth(UiStyleLength.px(1));
+        root.append(item);
+
+        DocumentLayoutBox itemBox = DocumentLayoutEngine.layout(root, 160, 0, new DeterministicMeasure())
+                .getChildren().get(0);
+
+        Assert.assertEquals(60, itemBox.getWidth());
+        Assert.assertEquals(42, itemBox.getContentWidth());
     }
 
     private static final class DeterministicMeasure implements TextMeasureService {

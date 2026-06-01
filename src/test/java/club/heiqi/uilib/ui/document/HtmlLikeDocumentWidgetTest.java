@@ -3805,6 +3805,31 @@ public class HtmlLikeDocumentWidgetTest {
     }
 
     /**
+     * 验证 disabled="false" 仍按 HTML 布尔属性语义禁用 raw button。
+     */
+    @Test
+    public void shouldTreatDisabledFalseRawButtonAsDisabled() {
+        UiDocument document = UiDocument.create();
+        ElementNode root = document.getRootElement();
+        ElementNode rawButton = document.button();
+        rawButton.setAttribute("disabled", "false");
+        root.style()
+                .setWidth(UiStyleLength.px(120))
+                .setHeight(UiStyleLength.px(40));
+        rawButton.style()
+                .setWidth(UiStyleLength.px(80))
+                .setHeight(UiStyleLength.px(32));
+        root.append(rawButton);
+        HtmlLikeDocumentWidget widget = new HtmlLikeDocumentWidget(document, 120, 40,
+                new DeterministicTextMeasureService());
+        widget.applyLayoutBounds(0, 0, 120, 40);
+
+        widget.onFocusTraversalEntered(false);
+
+        Assert.assertNull(widget.getFocusedElement());
+    }
+
+    /**
      * 验证 raw input 设置 disabled 属性后，Tab 不聚焦，textInput 不响应。
      */
     @Test

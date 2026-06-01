@@ -1,7 +1,5 @@
 package club.heiqi.uilib.ui.dom;
 
-import java.util.Locale;
-
 /**
  * 元素语义计算工具。
  *
@@ -26,8 +24,7 @@ final class ElementSemantics {
         if (!isNativeFocusableTag(element.getTagName())) {
             return false;
         }
-        String value = element.getAttribute("disabled");
-        return value != null && !"false".equals(value.trim().toLowerCase(Locale.ROOT));
+        return element.hasAttribute("disabled");
     }
 
     /**

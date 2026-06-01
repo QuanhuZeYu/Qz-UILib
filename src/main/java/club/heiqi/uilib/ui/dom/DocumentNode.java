@@ -130,7 +130,7 @@ public abstract class DocumentNode {
      * <p>同一文档内已有父节点的子节点会按 DOM appendChild 语义移动到新父节点末尾。</p>
      *
      * @param child 子节点
-     * @return 当前节点
+     * @return 被追加的子节点；DocumentFragment 会返回已清空的 fragment 节点
      */
     public DocumentNode appendChild(DocumentNode child) {
         if (!allowsChildren()) {
@@ -139,12 +139,12 @@ public abstract class DocumentNode {
         DocumentNode resolvedChild = Objects.requireNonNull(child, "child");
         if (resolvedChild instanceof DocumentFragmentNode) {
             appendDocumentFragment((DocumentFragmentNode) resolvedChild);
-            return this;
+            return resolvedChild;
         }
         validateAppendChild(resolvedChild);
 
         if (resolvedChild.parent == this && children.get(children.size() - 1) == resolvedChild) {
-            return this;
+            return resolvedChild;
         }
         if (resolvedChild.parent != null) {
             resolvedChild.parent.children.remove(resolvedChild);
@@ -152,7 +152,7 @@ public abstract class DocumentNode {
         resolvedChild.parent = this;
         children.add(resolvedChild);
         ownerDocument.recordMutation();
-        return this;
+        return resolvedChild;
     }
 
     /**
@@ -181,7 +181,7 @@ public abstract class DocumentNode {
      *
      * @param newChild 待插入的新子节点
      * @param referenceChild 参考节点；为 null 时追加到末尾
-     * @return 当前节点
+     * @return 被插入的新子节点；DocumentFragment 会返回已清空的 fragment 节点
      */
     public DocumentNode insertBefore(DocumentNode newChild, DocumentNode referenceChild) {
         if (!allowsChildren()) {
@@ -190,7 +190,7 @@ public abstract class DocumentNode {
         DocumentNode resolvedChild = Objects.requireNonNull(newChild, "newChild");
         if (resolvedChild instanceof DocumentFragmentNode) {
             insertDocumentFragmentBefore((DocumentFragmentNode) resolvedChild, referenceChild);
-            return this;
+            return resolvedChild;
         }
         validateAppendChild(resolvedChild);
 
@@ -200,15 +200,18 @@ public abstract class DocumentNode {
         if (referenceChild.parent != this) {
             throw new IllegalArgumentException("referenceChild is not a child of this node");
         }
+        if (resolvedChild == referenceChild) {
+            return resolvedChild;
+        }
 
-        int index = children.indexOf(referenceChild);
         if (resolvedChild.parent != null) {
             resolvedChild.parent.children.remove(resolvedChild);
         }
+        int index = children.indexOf(referenceChild);
         resolvedChild.parent = this;
         children.add(index, resolvedChild);
         ownerDocument.recordMutation();
-        return this;
+        return resolvedChild;
     }
 
     /**
@@ -234,11 +237,14 @@ public abstract class DocumentNode {
             return resolvedOld;
         }
         validateAppendChild(resolvedNew);
+        if (resolvedNew == resolvedOld) {
+            return resolvedOld;
+        }
 
-        int index = children.indexOf(resolvedOld);
         if (resolvedNew.parent != null) {
             resolvedNew.parent.children.remove(resolvedNew);
         }
+        int index = children.indexOf(resolvedOld);
         resolvedOld.parent = null;
         resolvedNew.parent = this;
         children.set(index, resolvedNew);
