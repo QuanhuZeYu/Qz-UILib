@@ -202,7 +202,7 @@ public class DocumentPaintEngineTest {
     }
 
     /**
-     * 验证 fixed 子元素在根滚动后仍按视口固定位置绘制。
+     * 验证 fixed 子元素在根滚动后仍按视口固定位置绘制，且不属于被滚动内容裁剪块。
      */
     @Test
     public void shouldPaintFixedPositionedChildAtViewportPositionAfterRootScroll() {
@@ -242,9 +242,9 @@ public class DocumentPaintEngineTest {
         assertCommand(commands.get(1), DocumentPaintCommandType.CLIP_START, root, 0, 0, 100, 50, 0, 0, 0);
         assertCommand(commands.get(2), DocumentPaintCommandType.BACKGROUND, spacer, 0, -36, 100, 104, 0xFF0000FF,
                 0, 0);
-        assertCommand(commands.get(3), DocumentPaintCommandType.BACKGROUND, fixed, 10, 6, 40, 18, 0xFFFF0000,
+        assertCommand(commands.get(3), DocumentPaintCommandType.CLIP_END, root, 0, 0, 100, 50, 0, 0, 0);
+        assertCommand(commands.get(4), DocumentPaintCommandType.BACKGROUND, fixed, 10, 6, 40, 18, 0xFFFF0000,
                 0, 0);
-        assertCommand(commands.get(4), DocumentPaintCommandType.CLIP_END, root, 0, 0, 100, 50, 0, 0, 0);
     }
 
     /**
@@ -917,7 +917,7 @@ public class DocumentPaintEngineTest {
     }
 
     /**
-     * 验证 overflow clip 作为 effect boundary 会隔离高 z-index 后代。
+     * 验证 overflow clip 只裁剪后代，不会把高 z-index positioned 后代隔离出祖先 stacking phase。
      */
     @Test
     public void shouldKeepPositionedDescendantInsideOverflowClipBoundary() {
@@ -955,14 +955,14 @@ public class DocumentPaintEngineTest {
         Assert.assertEquals(5, paintCommands.size());
         assertCommand(paintCommands.get(0), DocumentPaintCommandType.BACKGROUND, clippedParent, 0, 0, 80, 20,
                 0xFF111827, 0, 0);
-        assertCommand(paintCommands.get(1), DocumentPaintCommandType.CLIP_START, clippedParent, 0, 0, 80, 20,
-                0, 0, 0);
-        assertCommand(paintCommands.get(2), DocumentPaintCommandType.BACKGROUND, raisedDescendant, 0, 12, 70, 32,
-                0xFFFF3333, 0, 0);
-        assertCommand(paintCommands.get(3), DocumentPaintCommandType.CLIP_END, clippedParent, 0, 0, 80, 20,
-                0, 0, 0);
-        assertCommand(paintCommands.get(4), DocumentPaintCommandType.BACKGROUND, normalCover, 0, 20, 80, 40,
+        assertCommand(paintCommands.get(1), DocumentPaintCommandType.BACKGROUND, normalCover, 0, 20, 80, 40,
                 0xFF2563EB, 0, 0);
+        assertCommand(paintCommands.get(2), DocumentPaintCommandType.CLIP_START, clippedParent, 0, 0, 80, 20,
+                0, 0, 0);
+        assertCommand(paintCommands.get(3), DocumentPaintCommandType.BACKGROUND, raisedDescendant, 0, 12, 70, 32,
+                0xFFFF3333, 0, 0);
+        assertCommand(paintCommands.get(4), DocumentPaintCommandType.CLIP_END, clippedParent, 0, 0, 80, 20,
+                0, 0, 0);
     }
 
     /**

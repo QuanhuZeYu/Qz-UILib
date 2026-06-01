@@ -1,14 +1,14 @@
 package club.heiqi.uilib.ui.layout;
 
-import java.util.ArrayList;
-import java.util.Collections;
-import java.util.Comparator;
 import java.util.List;
 import java.util.Objects;
 
 import club.heiqi.uilib.ui.animation.DocumentAnimationProperty;
 import club.heiqi.uilib.ui.animation.DocumentAnimationTimeline;
 import club.heiqi.uilib.ui.dom.ElementNode;
+import club.heiqi.uilib.ui.layout.DocumentVisualTraversal.BoxContext;
+import club.heiqi.uilib.ui.layout.DocumentVisualTraversal.StackingContextResolver;
+import club.heiqi.uilib.ui.layout.DocumentVisualTraversal.TraversalEntry;
 import club.heiqi.uilib.ui.style.cascade.ComputedStyle;
 import club.heiqi.uilib.ui.style.values.UiBorderRadius;
 import club.heiqi.uilib.ui.style.cascade.UiBorderRadiusResolver;
@@ -52,9 +52,9 @@ public final class DocumentHitTestEngine {
     public static ElementNode hitTest(DocumentLayoutBox rootBox, DocumentScrollState scrollState, int documentX,
             int documentY, long currentTimeNanos, DocumentAnimationTimeline animationTimeline) {
         Objects.requireNonNull(rootBox, "rootBox");
-        return hitTestBox(rootBox, scrollState, documentX, documentY, 0, 0, true,
-                currentTimeNanos, animationTimeline,
-                DocumentStickyPositioning.rootContext());
+        StackingContextResolver resolver = createStackingContextResolver(currentTimeNanos, animationTimeline);
+        return hitTestBox(DocumentVisualTraversal.resolveRootBoxContext(rootBox, scrollState), scrollState,
+                documentX, documentY, true, currentTimeNanos, animationTimeline, resolver);
     }
 
     /**
@@ -74,28 +74,28 @@ public final class DocumentHitTestEngine {
             int documentY, int offsetX, int offsetY, long currentTimeNanos,
             DocumentAnimationTimeline animationTimeline) {
         Objects.requireNonNull(rootBox, "rootBox");
-        return hitTestBox(rootBox, scrollState, documentX, documentY, offsetX, offsetY, true,
-                currentTimeNanos, animationTimeline,
-                DocumentStickyPositioning.rootContext());
+        StackingContextResolver resolver = createStackingContextResolver(currentTimeNanos, animationTimeline);
+        return hitTestBox(DocumentVisualTraversal.resolveBoxContext(rootBox, scrollState, offsetX, offsetY,
+                DocumentStickyPositioning.rootContext()), scrollState, documentX, documentY, true,
+                currentTimeNanos, animationTimeline, resolver);
     }
 
-    private static ElementNode hitTestBox(DocumentLayoutBox box, DocumentScrollState scrollState, int documentX,
-            int documentY, int offsetX, int offsetY, boolean searchStackingContext, long currentTimeNanos,
-            DocumentAnimationTimeline animationTimeline,
-            DocumentStickyPositioning.StickyContext stickyContext) {
-        return hitTestBox(box, scrollState, (float) documentX, (float) documentY, offsetX, offsetY,
-                searchStackingContext, currentTimeNanos, animationTimeline, stickyContext);
+    private static ElementNode hitTestBox(BoxContext boxContext, DocumentScrollState scrollState, int documentX,
+            int documentY, boolean searchStackingContext, long currentTimeNanos,
+            DocumentAnimationTimeline animationTimeline, StackingContextResolver resolver) {
+        return hitTestBox(boxContext, scrollState, (float) documentX, (float) documentY, searchStackingContext,
+                currentTimeNanos, animationTimeline, resolver);
     }
 
-    private static ElementNode hitTestBox(DocumentLayoutBox box, DocumentScrollState scrollState, float documentX,
-            float documentY, int offsetX, int offsetY, boolean searchStackingContext, long currentTimeNanos,
-            DocumentAnimationTimeline animationTimeline,
-            DocumentStickyPositioning.StickyContext stickyContext) {
+    private static ElementNode hitTestBox(BoxContext boxContext, DocumentScrollState scrollState, float documentX,
+            float documentY, boolean searchStackingContext, long currentTimeNanos,
+            DocumentAnimationTimeline animationTimeline, StackingContextResolver resolver) {
+        DocumentLayoutBox box = boxContext.getBox();
         if (isHitTestSubtreeSuppressed(box.getElement())) {
             return null;
         }
-        int boxOffsetX = resolveBoxOffsetX(box, offsetX, stickyContext);
-        int boxOffsetY = resolveBoxOffsetY(box, offsetY, stickyContext);
+        int boxOffsetX = boxContext.getBoxOffsetX();
+        int boxOffsetY = boxContext.getBoxOffsetY();
         UiTransform.Point inversePoint = inverseTransformPoint(box, boxOffsetX, boxOffsetY, documentX, documentY,
                 currentTimeNanos, animationTimeline);
         if (inversePoint == null) {
@@ -103,29 +103,30 @@ public final class DocumentHitTestEngine {
         }
         float hitX = inversePoint.getX();
         float hitY = inversePoint.getY();
-        DocumentStickyPositioning.StickyContext childStickyContext = DocumentStickyPositioning.createChildContext(box,
-                boxOffsetX, boxOffsetY, stickyContext);
+        if (!DocumentVisualTraversal.isPointInsideClipChain(boxContext, hitX, hitY)) {
+            return null;
+        }
         // #26 修复：border-radius 参与命中测试
         UiBorderRadiusResolver.ResolvedCornerRadii borderRadii = resolveBorderRadii(box);
         boolean insideBorderBox = containsInRoundedRect(hitX, hitY,
                 box.getLeft() + boxOffsetX, box.getTop() + boxOffsetY,
                 box.getRight() + boxOffsetX, box.getBottom() + boxOffsetY, borderRadii);
-        if (canHitTestChildren(box, hitX, hitY, boxOffsetX, boxOffsetY)) {
-            int childOffsetX = boxOffsetX - getScrollLeft(scrollState, box);
-            int childOffsetY = boxOffsetY - getScrollTop(scrollState, box);
+        if (DocumentVisualTraversal.canReachChildren(boxContext, hitX, hitY)) {
             ElementNode childHit = searchStackingContext
-                    ? hitStackingContextChildren(box, scrollState, hitX, hitY, childOffsetX, childOffsetY,
-                            currentTimeNanos, animationTimeline, childStickyContext)
-                    : hitNormalFlowChildren(box, scrollState, hitX, hitY, childOffsetX, childOffsetY,
-                            currentTimeNanos, animationTimeline, childStickyContext);
+                    ? hitStackingContextChildren(boxContext, scrollState, hitX, hitY, currentTimeNanos,
+                            animationTimeline, resolver)
+                    : hitNormalFlowChildren(boxContext, scrollState, hitX, hitY, currentTimeNanos,
+                            animationTimeline, resolver);
             if (childHit != null) {
                 return childHit;
             }
-            ElementNode inlineTextHit = hitTextRuns(box, hitX, hitY, childOffsetX, childOffsetY);
+            ElementNode inlineTextHit = hitTextRuns(box, hitX, hitY, boxContext.getChildOffsetX(),
+                    boxContext.getChildOffsetY());
             if (inlineTextHit != null) {
                 return inlineTextHit;
             }
-            ElementNode inlineFragmentHit = hitInlineFragments(box, hitX, hitY, childOffsetX, childOffsetY);
+            ElementNode inlineFragmentHit = hitInlineFragments(box, hitX, hitY, boxContext.getChildOffsetX(),
+                    boxContext.getChildOffsetY());
             if (inlineFragmentHit != null) {
                 return inlineFragmentHit;
             }
@@ -134,43 +135,36 @@ public final class DocumentHitTestEngine {
                 ? resolveAuthorFacingElement(box.getElement()) : null;
     }
 
-    private static ElementNode hitStackingContextChildren(DocumentLayoutBox contextRoot,
-            DocumentScrollState scrollState, float documentX, float documentY, int childOffsetX, int childOffsetY,
-            long currentTimeNanos, DocumentAnimationTimeline animationTimeline,
-            DocumentStickyPositioning.StickyContext stickyContext) {
-        ElementNode hit = hitStackingPhaseItems(contextRoot, scrollState, documentX, documentY, childOffsetX,
-                childOffsetY, DocumentStackingPhase.POSITIVE_POSITIONED, currentTimeNanos, animationTimeline,
-                stickyContext);
+    private static ElementNode hitStackingContextChildren(BoxContext contextRootContext,
+            DocumentScrollState scrollState, float documentX, float documentY, long currentTimeNanos,
+            DocumentAnimationTimeline animationTimeline, StackingContextResolver resolver) {
+        ElementNode hit = hitStackingPhaseItems(contextRootContext, scrollState, documentX, documentY,
+                DocumentStackingPhase.POSITIVE_POSITIONED, currentTimeNanos, animationTimeline, resolver);
         if (hit != null) {
             return hit;
         }
-        hit = hitStackingPhaseItems(contextRoot, scrollState, documentX, documentY, childOffsetX, childOffsetY,
-                DocumentStackingPhase.POSITIONED_AUTO_OR_ZERO, currentTimeNanos, animationTimeline, stickyContext);
+        hit = hitStackingPhaseItems(contextRootContext, scrollState, documentX, documentY,
+                DocumentStackingPhase.POSITIONED_AUTO_OR_ZERO, currentTimeNanos, animationTimeline, resolver);
         if (hit != null) {
             return hit;
         }
-        hit = hitNormalFlowChildren(contextRoot, scrollState, documentX, documentY, childOffsetX, childOffsetY,
-                currentTimeNanos, animationTimeline, stickyContext);
+        hit = hitNormalFlowChildren(contextRootContext, scrollState, documentX, documentY, currentTimeNanos,
+                animationTimeline, resolver);
         if (hit != null) {
             return hit;
         }
-        return hitStackingPhaseItems(contextRoot, scrollState, documentX, documentY, childOffsetX, childOffsetY,
-                DocumentStackingPhase.NEGATIVE_POSITIONED, currentTimeNanos, animationTimeline, stickyContext);
+        return hitStackingPhaseItems(contextRootContext, scrollState, documentX, documentY,
+                DocumentStackingPhase.NEGATIVE_POSITIONED, currentTimeNanos, animationTimeline, resolver);
     }
 
-    private static ElementNode hitNormalFlowChildren(DocumentLayoutBox box, DocumentScrollState scrollState,
-            float documentX, float documentY, int childOffsetX, int childOffsetY,
-            long currentTimeNanos, DocumentAnimationTimeline animationTimeline,
-            DocumentStickyPositioning.StickyContext stickyContext) {
-        List<DocumentLayoutBox> children = box.getChildren();
-        for (int index = children.size() - 1; index >= 0; index--) {
-            DocumentLayoutBox child = children.get(index);
-            if (child.getStackingPhase() != DocumentStackingPhase.NORMAL_FLOW) {
-                continue;
-            }
-            boolean childStackingContext = shouldSearchAsStackingContext(child, currentTimeNanos, animationTimeline);
-            ElementNode hit = hitTestBox(child, scrollState, documentX, documentY, childOffsetX, childOffsetY,
-                    childStackingContext, currentTimeNanos, animationTimeline, stickyContext);
+    private static ElementNode hitNormalFlowChildren(BoxContext contextRootContext, DocumentScrollState scrollState,
+            float documentX, float documentY, long currentTimeNanos, DocumentAnimationTimeline animationTimeline,
+            StackingContextResolver resolver) {
+        List<TraversalEntry> entries = DocumentVisualTraversal.getNormalFlowEntries(contextRootContext.getBox(),
+                contextRootContext, scrollState, resolver, true);
+        for (TraversalEntry entry : entries) {
+            ElementNode hit = hitTestBox(entry.getBoxContext(), scrollState, documentX, documentY,
+                    entry.isStackingContext(), currentTimeNanos, animationTimeline, resolver);
             if (hit != null) {
                 return hit;
             }
@@ -178,61 +172,20 @@ public final class DocumentHitTestEngine {
         return null;
     }
 
-    private static ElementNode hitStackingPhaseItems(DocumentLayoutBox contextRoot,
-            DocumentScrollState scrollState, float documentX, float documentY, int childOffsetX, int childOffsetY,
-            DocumentStackingPhase phase, long currentTimeNanos, DocumentAnimationTimeline animationTimeline,
-            DocumentStickyPositioning.StickyContext stickyContext) {
-        List<StackingHitItem> items = new ArrayList<StackingHitItem>();
-        collectStackingPhaseItems(contextRoot, items, scrollState, childOffsetX, childOffsetY, phase,
-                currentTimeNanos, animationTimeline, stickyContext);
-        if (phase == DocumentStackingPhase.NEGATIVE_POSITIONED
-                || phase == DocumentStackingPhase.POSITIVE_POSITIONED) {
-            Collections.sort(items, new Comparator<StackingHitItem>() {
-                @Override
-                public int compare(StackingHitItem first, StackingHitItem second) {
-                    return Integer.compare(first.box.getStackingZIndex(), second.box.getStackingZIndex());
-                }
-            });
-        }
+    private static ElementNode hitStackingPhaseItems(BoxContext contextRootContext,
+            DocumentScrollState scrollState, float documentX, float documentY, DocumentStackingPhase phase,
+            long currentTimeNanos, DocumentAnimationTimeline animationTimeline, StackingContextResolver resolver) {
+        List<TraversalEntry> items = DocumentVisualTraversal.collectStackingPhaseEntries(contextRootContext.getBox(),
+                contextRootContext, scrollState, resolver, phase);
         for (int index = items.size() - 1; index >= 0; index--) {
-            StackingHitItem item = items.get(index);
-            ElementNode hit = hitTestBox(item.box, scrollState, documentX, documentY, item.offsetX,
-                    item.offsetY, item.searchStackingContext, currentTimeNanos, animationTimeline,
-                    item.stickyContext);
+            TraversalEntry item = items.get(index);
+            ElementNode hit = hitTestBox(item.getBoxContext(), scrollState, documentX, documentY,
+                    item.isStackingContext(), currentTimeNanos, animationTimeline, resolver);
             if (hit != null) {
                 return hit;
             }
         }
         return null;
-    }
-
-    private static void collectStackingPhaseItems(DocumentLayoutBox currentBox, List<StackingHitItem> items,
-            DocumentScrollState scrollState, int childOffsetX, int childOffsetY, DocumentStackingPhase phase,
-            long currentTimeNanos, DocumentAnimationTimeline animationTimeline,
-            DocumentStickyPositioning.StickyContext stickyContext) {
-        for (DocumentLayoutBox child : currentBox.getChildren()) {
-            boolean childStackingContext = shouldSearchAsStackingContext(child, currentTimeNanos, animationTimeline);
-            if (child.getStackingPhase() == phase) {
-                items.add(new StackingHitItem(child, childOffsetX, childOffsetY, childStackingContext,
-                        stickyContext));
-            }
-            if (childStackingContext) {
-                continue;
-            }
-            int childBoxOffsetX = resolveBoxOffsetX(child, childOffsetX, stickyContext);
-            int childBoxOffsetY = resolveBoxOffsetY(child, childOffsetY, stickyContext);
-            DocumentStickyPositioning.StickyContext childStickyContext = DocumentStickyPositioning.createChildContext(
-                    child, childBoxOffsetX, childBoxOffsetY, stickyContext);
-            int grandChildOffsetX = childBoxOffsetX - getScrollLeft(scrollState, child);
-            int grandChildOffsetY = childBoxOffsetY - getScrollTop(scrollState, child);
-            collectStackingPhaseItems(child, items, scrollState, grandChildOffsetX, grandChildOffsetY, phase,
-                    currentTimeNanos, animationTimeline, childStickyContext);
-        }
-    }
-
-    private static boolean canHitTestChildren(DocumentLayoutBox box, float documentX, float documentY, int offsetX,
-            int offsetY) {
-        return DocumentEffectChain.resolve(box).canReachChildrenAt(documentX, documentY, offsetX, offsetY);
     }
 
     private static ElementNode hitTextRuns(DocumentLayoutBox box, float documentX, float documentY, int offsetX,
@@ -270,41 +223,16 @@ public final class DocumentHitTestEngine {
         return null;
     }
 
-    private static int getScrollLeft(DocumentScrollState scrollState, DocumentLayoutBox box) {
-        return scrollState == null ? 0 : scrollState.getScrollLeft(box.getElement());
-    }
 
-    private static int getScrollTop(DocumentScrollState scrollState, DocumentLayoutBox box) {
-        return scrollState == null ? 0 : scrollState.getScrollTop(box.getElement());
-    }
-
-    private static int resolveBoxOffsetX(DocumentLayoutBox box, int offsetX,
-            DocumentStickyPositioning.StickyContext stickyContext) {
-        int baseOffsetX = box.isFixedPositioned() ? 0 : offsetX;
-        int positionedOffsetX = baseOffsetX + box.getPositionOffsetX();
-        return DocumentStickyPositioning.resolveOffsetX(box, positionedOffsetX, stickyContext);
-    }
-
-    private static int resolveBoxOffsetY(DocumentLayoutBox box, int offsetY,
-            DocumentStickyPositioning.StickyContext stickyContext) {
-        int baseOffsetY = box.isFixedPositioned() ? 0 : offsetY;
-        int positionedOffsetY = baseOffsetY + box.getPositionOffsetY();
-        return DocumentStickyPositioning.resolveOffsetY(box, positionedOffsetY, stickyContext);
-    }
-
-    private static boolean shouldSearchAsStackingContext(DocumentLayoutBox box, long currentTimeNanos,
-            DocumentAnimationTimeline animationTimeline) {
-        DocumentEffectChain effectChain = DocumentEffectChain.resolve(box);
-        if (effectChain.isStackingBoundary()) {
-            return true;
-        }
-        if (animationTimeline == null) {
-            return false;
-        }
-        float opacity = animationTimeline.resolveFloat(box.getElement(), DocumentAnimationProperty.OPACITY,
-                box.getComputedStyle().getOpacity(), currentTimeNanos);
-        return effectChain.createsPaintContext(false, opacity)
-                || createsTransformStackingContext(box, currentTimeNanos, animationTimeline);
+    private static StackingContextResolver createStackingContextResolver(final long currentTimeNanos,
+            final DocumentAnimationTimeline animationTimeline) {
+        return new StackingContextResolver() {
+            @Override
+            public boolean createsStackingContext(DocumentLayoutBox box) {
+                return DocumentVisualTraversal.createsRuntimeStackingContext(box, currentTimeNanos,
+                        animationTimeline);
+            }
+        };
     }
 
     private static boolean isHitTestSubtreeSuppressed(ElementNode element) {
@@ -445,12 +373,6 @@ public final class DocumentHitTestEngine {
                 baseTransform.getOriginX(), baseTransform.getOriginY());
     }
 
-    private static boolean createsTransformStackingContext(DocumentLayoutBox box, long currentTimeNanos,
-            DocumentAnimationTimeline animationTimeline) {
-        UiTransform transform = resolveTransform(box, currentTimeNanos, animationTimeline);
-        return transform != null && !transform.isIdentity();
-    }
-
     /**
      * 从布局盒的 computed style 解析 border-radius 像素值（已限制上限）。
      */
@@ -461,24 +383,4 @@ public final class DocumentHitTestEngine {
         return UiBorderRadiusResolver.resolve(box.getComputedStyle(), box.getWidth(), box.getHeight());
     }
 
-    /**
-     * 最近 stacking context 中可被阶段排序的命中项。
-     */
-    private static final class StackingHitItem {
-
-        private final DocumentLayoutBox box;
-        private final int offsetX;
-        private final int offsetY;
-        private final boolean searchStackingContext;
-        private final DocumentStickyPositioning.StickyContext stickyContext;
-
-        private StackingHitItem(DocumentLayoutBox box, int offsetX, int offsetY, boolean searchStackingContext,
-                DocumentStickyPositioning.StickyContext stickyContext) {
-            this.box = box;
-            this.offsetX = offsetX;
-            this.offsetY = offsetY;
-            this.searchStackingContext = searchStackingContext;
-            this.stickyContext = stickyContext;
-        }
-    }
 }
