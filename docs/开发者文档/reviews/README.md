@@ -18,6 +18,12 @@
 - 审查提交：`7371007`（合并入 `73a46e1`）
 - 结论摘要：**通过**。7 项修复全部方向正确，代码质量达到工程化标准，测试覆盖完整，回归测试全绿。修复项：`removeChild` 返回值与异常语义（WHATWG DOM §4.2.6）、`querySelector*` 排除内部根节点（WHATWG DOM §4.5.6）、`focusout` 独立冒泡事件与焦点切换顺序（W3C UI Events §4.3.7，顺序为 focusout→focusin→blur→focus）、hover/active 状态通知不中断祖先（CSS 伪类状态与事件分发层正确分离）、`border-collapse` 继承标记修正（CSS 2.1 §17.6）、`font-style` 变更影响级别从 PAINT 改为 LAYOUT、inset box-shadow 绘制层级修正（CSS Backgrounds Level 3 §9，顺序为 outset shadow→background→inset shadow→border）。遗留：`focusin`/`focusout` 的 `cancelable: false` 语义未区分（已知取舍）；wheel 事件 DOM 分发（3.4 P2）本批未覆盖。
 
+## 2026-06-01-wheel-dom-event
+- 类型：wheel DOM 事件语义修复代码审查（Phase 2 第三批）
+- 详情文档：[REVIEW-20260601-wheel-dom-event.md](REVIEW-20260601-wheel-dom-event.md)
+- 审查提交：`f846cce`（合并入 `9a283f3`）
+- 结论摘要：**通过**。对应 audit 报告 3.4，方向正确、达到工程化质量而非临时补丁。核对要点：`DocumentElementWheelEvent` 同时暴露原始 `wheelDelta` 与浏览器式 `deltaY`（取反正确）；`dispatchWheel` 与 `mousedown`/`mouseup` 同构，capture→target→bubble 顺序正确；严格遵守 `DECISION-20260531`（返回 true 仅停止传播、`preventDefault()` 才取消默认滚动）；wheel target 由命中测试给出且不依赖 handler 注册，与默认滚动目标（最深可滚盒）解耦，符合浏览器 scroll chaining；滚动后 hover 刷新口径由 `consumed` 改为 `scrollState.getVersion()` 变化，更精确（修正 `ERROR-20260509` 根因）。遗留边界（非缺陷）：未实现 `deltaX` 横向滚轮、`deltaMode`/`deltaZ`、passive listener；fixed clip chain、父子 margin collapse 递归仍属后续批次。验证：`git diff --check` 通过；本轮离线 `test` 因 `ERROR-20260601` GitHub manifest 外部波动未复跑，待网络恢复补跑收口。
+
 ## 2026-05-25-project-code-structure-audit
 - 类型：全项目代码结构深度审查（覆盖 UI / font / net / config / client / mixin / internal）
 - 详情文档：[REVIEW-20260525-project-code-structure-audit.md](REVIEW-20260525-project-code-structure-audit.md)
