@@ -268,6 +268,49 @@ public abstract class DocumentNode {
     }
 
     /**
+     * 返回当前节点子树的纯文本内容。
+     *
+     * <p>等价于浏览器的 {@code Node.textContent}：递归拼接所有后代文本节点的文本，
+     * 不含任何标签或样式信息。与无障碍标签不同，这里不跳过 aria-hidden 子树。</p>
+     *
+     * @return 子树纯文本内容
+     */
+    public String getTextContent() {
+        StringBuilder builder = new StringBuilder();
+        appendTextContent(builder);
+        return builder.toString();
+    }
+
+    /**
+     * 设置当前节点的纯文本内容。
+     *
+     * <p>等价于浏览器的 {@code Node.textContent} setter：移除全部现有子节点，
+     * 再以给定文本作为唯一文本子节点。文本为 null 时按清空处理。</p>
+     *
+     * @param textContent 纯文本内容；为 null 时清空子节点
+     */
+    public void setTextContent(String textContent) {
+        if (!allowsChildren()) {
+            throw new UnsupportedOperationException("This node type cannot contain children");
+        }
+        clearChildren();
+        if (textContent != null && !textContent.isEmpty()) {
+            appendChild(ownerDocument.text(textContent));
+        }
+    }
+
+    /**
+     * 递归收集当前节点子树的文本内容。
+     *
+     * @param builder 文本累加器
+     */
+    void appendTextContent(StringBuilder builder) {
+        for (DocumentNode child : children) {
+            child.appendTextContent(builder);
+        }
+    }
+
+    /**
      * 判断当前节点是否允许拥有子节点。
      *
      * @return 是否允许子节点

@@ -367,6 +367,85 @@ public class UiDocumentTest {
     }
 
     /**
+     * 验证 textContent 递归收集子树纯文本，包含 aria-hidden 子树。
+     */
+    @Test
+    public void shouldCollectTextContentAcrossDescendants() {
+        UiDocument document = UiDocument.create();
+        ElementNode panel = document.div();
+        panel.appendText("Hello");
+        ElementNode inner = document.span();
+        inner.appendText(" World");
+        ElementNode hidden = document.span().setAttribute("aria-hidden", "true");
+        hidden.appendText("!");
+        inner.append(hidden);
+        panel.append(inner);
+
+        Assert.assertEquals("Hello World!", panel.getTextContent());
+    }
+
+    /**
+     * 验证文本节点 textContent 返回自身文本。
+     */
+    @Test
+    public void shouldReturnOwnTextForTextNodeTextContent() {
+        UiDocument document = UiDocument.create();
+        TextNode textNode = document.text("片段");
+
+        Assert.assertEquals("片段", textNode.getTextContent());
+    }
+
+    /**
+     * 验证 setTextContent 移除现有子节点并以单个文本子节点替换。
+     */
+    @Test
+    public void shouldReplaceChildrenWhenSettingTextContent() {
+        UiDocument document = UiDocument.create();
+        ElementNode panel = document.div();
+        panel.append(document.span().setId("old-child"));
+        panel.appendText("旧文本");
+
+        panel.setTextContent("新文本");
+
+        Assert.assertEquals(1, panel.getChildCount());
+        Assert.assertTrue(panel.getFirstChild() instanceof TextNode);
+        Assert.assertEquals("新文本", panel.getTextContent());
+    }
+
+    /**
+     * 验证 setTextContent 传入 null 或空文本时清空子节点。
+     */
+    @Test
+    public void shouldClearChildrenWhenSettingNullOrEmptyTextContent() {
+        UiDocument document = UiDocument.create();
+        ElementNode panel = document.div();
+        panel.appendText("内容");
+
+        panel.setTextContent(null);
+        Assert.assertEquals(0, panel.getChildCount());
+        Assert.assertEquals("", panel.getTextContent());
+
+        panel.appendText("内容");
+        panel.setTextContent("");
+        Assert.assertEquals(0, panel.getChildCount());
+        Assert.assertEquals("", panel.getTextContent());
+    }
+
+    /**
+     * 验证设置文本节点 textContent 等价于更新其文本。
+     */
+    @Test
+    public void shouldUpdateTextNodeWhenSettingTextContent() {
+        UiDocument document = UiDocument.create();
+        TextNode textNode = document.text("原始");
+
+        textNode.setTextContent("更新");
+
+        Assert.assertEquals("更新", textNode.getText());
+        Assert.assertEquals("更新", textNode.getTextContent());
+    }
+
+    /**
      * 验证 DocumentFragment 会在 DOM 操作时按浏览器语义展开子节点。
      */
     @Test
