@@ -484,6 +484,75 @@ public class DocumentLayoutEngineTest {
     }
 
     /**
+     * 验证相邻块级负 margin collapse 按正负相加语义处理。
+     */
+    @Test
+    public void shouldCollapseAdjacentPositiveAndNegativeMarginsByAddingThem() {
+        UiDocument document = UiDocument.create();
+        ElementNode root = document.getRootElement();
+        ElementNode first = document.div();
+        ElementNode second = document.div();
+
+        root.style().setWidth(UiStyleLength.px(160));
+        first.style()
+                .setHeight(UiStyleLength.px(20))
+                .setMargin(UiStyleInsets.of(UiStyleLength.px(0), UiStyleLength.px(0), UiStyleLength.px(30),
+                        UiStyleLength.px(0)));
+        second.style()
+                .setHeight(UiStyleLength.px(20))
+                .setMargin(UiStyleInsets.of(UiStyleLength.px(-10), UiStyleLength.px(0), UiStyleLength.px(0),
+                        UiStyleLength.px(0)));
+        root.append(first).append(second);
+
+        DocumentLayoutBox rootBox = DocumentLayoutEngine.layout(root, 200, 0);
+        DocumentLayoutBox secondBox = rootBox.getChildren().get(1);
+
+        Assert.assertEquals(40, secondBox.getTop());
+    }
+
+    /**
+     * 验证 min-width 大于 max-width 时 min-width 胜出。
+     */
+    @Test
+    public void shouldLetMinWidthWinWhenGreaterThanMaxWidth() {
+        UiDocument document = UiDocument.create();
+        ElementNode root = document.getRootElement();
+        ElementNode child = document.div();
+
+        root.style().setWidth(UiStyleLength.px(200));
+        child.style()
+                .setWidth(UiStyleLength.px(40))
+                .setMinWidth(UiStyleLength.px(120))
+                .setMaxWidth(UiStyleLength.px(80));
+        root.append(child);
+
+        DocumentLayoutBox childBox = DocumentLayoutEngine.layout(root, 240, 0).getChildren().get(0);
+
+        Assert.assertEquals(120, childBox.getContentWidth());
+    }
+
+    /**
+     * 验证 min-height 大于 max-height 时 min-height 胜出。
+     */
+    @Test
+    public void shouldLetMinHeightWinWhenGreaterThanMaxHeight() {
+        UiDocument document = UiDocument.create();
+        ElementNode root = document.getRootElement();
+        ElementNode child = document.div();
+
+        root.style().setWidth(UiStyleLength.px(200));
+        child.style()
+                .setHeight(UiStyleLength.px(40))
+                .setMinHeight(UiStyleLength.px(120))
+                .setMaxHeight(UiStyleLength.px(80));
+        root.append(child);
+
+        DocumentLayoutBox childBox = DocumentLayoutEngine.layout(root, 240, 0).getChildren().get(0);
+
+        Assert.assertEquals(120, childBox.getContentHeight());
+    }
+
+    /**
      * 验证 table 布局会让同一行的单元格拉伸到统一行高。
      */
     @Test

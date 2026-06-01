@@ -305,8 +305,8 @@ public final class UiStyleResolver {
                 UiTextOverflow.CLIP, parentStyle == null ? UiTextOverflow.CLIP : parentStyle.getTextOverflow());
         UiVisibility visibility = cascade(inlineStyle, matchingRules, UiStyleProperty.VISIBILITY, UiVisibility.VISIBLE,
                 parentStyle == null ? UiVisibility.VISIBLE : parentStyle.getVisibility());
-        UiStyleLength minWidth = cascade(inlineStyle, matchingRules, UiStyleProperty.MIN_WIDTH, UiStyleLength.px(0),
-                parentStyle == null ? UiStyleLength.px(0) : parentStyle.getMinWidth());
+        UiStyleLength minWidth = cascade(inlineStyle, matchingRules, UiStyleProperty.MIN_WIDTH, UiStyleLength.auto(),
+                parentStyle == null ? UiStyleLength.auto() : parentStyle.getMinWidth());
         UiStyleLength maxWidth = cascade(inlineStyle, matchingRules, UiStyleProperty.MAX_WIDTH, UiStyleLength.auto(),
                 parentStyle == null ? UiStyleLength.auto() : parentStyle.getMaxWidth());
         UiStyleLength minHeight = cascade(inlineStyle, matchingRules, UiStyleProperty.MIN_HEIGHT, UiStyleLength.px(0),

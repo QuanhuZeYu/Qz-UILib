@@ -105,4 +105,53 @@ public class DocumentEffectChainTest {
         Assert.assertTrue(DocumentEffectChain.resolve(rootBox.getChildren().get(0)).isStackingBoundary());
         Assert.assertTrue(DocumentEffectChain.resolve(rootBox.getChildren().get(1)).isStackingBoundary());
     }
+
+    /**
+     * 验证 fixed 元素即使 z-index 为 auto 也建立 stacking context。
+     */
+    @Test
+    public void shouldTreatFixedPositionAsStackingContextWithAutoZIndex() {
+        UiDocument document = UiDocument.create();
+        ElementNode root = document.getRootElement();
+        ElementNode fixed = document.div();
+
+        root.style().setWidth(UiStyleLength.px(100));
+        fixed.style()
+                .setWidth(UiStyleLength.px(20))
+                .setHeight(UiStyleLength.px(10))
+                .setPosition(UiPosition.FIXED);
+        root.append(fixed);
+
+        DocumentEffectChain effectChain = DocumentEffectChain.resolve(DocumentLayoutEngine.layout(root, 120, 80)
+                .getChildren().get(0));
+
+        Assert.assertTrue(effectChain.createsStackingContext());
+        Assert.assertTrue(effectChain.isStackingBoundary());
+    }
+
+    /**
+     * 验证 overflow clip 的可达判断按 padding box 内圆角裁剪。
+     */
+    @Test
+    public void shouldApplyBorderRadiusToOverflowClipHitReachability() {
+        UiDocument document = UiDocument.create();
+        ElementNode root = document.getRootElement();
+        ElementNode child = document.div();
+
+        root.style()
+                .setWidth(UiStyleLength.px(60))
+                .setHeight(UiStyleLength.px(60))
+                .setBorderRadius(UiStyleLength.px(20))
+                .setOverflowX(UiOverflow.HIDDEN)
+                .setOverflowY(UiOverflow.HIDDEN);
+        child.style().setWidth(UiStyleLength.px(80)).setHeight(UiStyleLength.px(80));
+        root.append(child);
+
+        DocumentEffectChain effectChain = DocumentEffectChain.resolve(DocumentLayoutEngine.layout(root, 100, 0));
+        DocumentEffectChain.ClipBounds clipBounds = effectChain.resolveChildClipBounds(0, 0);
+
+        Assert.assertFalse(clipBounds.contains(1, 1));
+        Assert.assertTrue(clipBounds.contains(20, 1));
+        Assert.assertEquals(20, clipBounds.getCornerRadii().getTopLeft());
+    }
 }

@@ -242,9 +242,8 @@ public final class DocumentLayoutEngine {
         }
 
         int borderBoxLeft = containingLeft + resolvedMarginLeft;
-        int collapsedTopMargin = Math.max(margin.getTop(), firstChildTopMargin);
-        int marginTopAdjustment = allowsFirstChildTopMarginCollapse(computedStyle) && firstChildTopMargin > 0
-                ? Math.min(margin.getTop(), firstChildTopMargin) : 0;
+        int collapsedTopMargin = collapseVerticalMargins(margin.getTop(), firstChildTopMargin);
+        int marginTopAdjustment = allowsFirstChildTopMarginCollapse(computedStyle) ? firstChildTopMargin : 0;
         int borderBoxTop = flowTop + collapsedTopMargin;
         int contentLeft = borderBoxLeft + border.getLeft() + padding.getLeft();
         int contentTop = borderBoxTop + border.getTop() + padding.getTop();
@@ -394,7 +393,7 @@ public final class DocumentLayoutEngine {
                     marginCollapseAdjustment = Math.max(firstChildTopMarginAdjustment, childMarginTop);
                 }
             } else if (previousAllowsSiblingMarginCollapse && childAllowsSiblingMarginCollapse) {
-                marginCollapseAdjustment = Math.min(previousMarginBottom, childMarginTop);
+                marginCollapseAdjustment = resolveSiblingMarginCollapseAdjustment(previousMarginBottom, childMarginTop);
             }
             int adjustedFlowTop = childFlowTop - marginCollapseAdjustment;
             DocumentLayoutBox childBox = layoutElement(childElement, contentLeft, adjustedFlowTop, contentWidth,
@@ -566,21 +565,29 @@ public final class DocumentLayoutEngine {
      */
     private static int applyWidthConstraints(ComputedStyle style, int contentWidth, int containingWidth,
             DocumentLayoutEdges border, DocumentLayoutEdges padding) {
-        int minW = Math.max(0, style.getMinWidth().resolve(containingWidth, 0));
-        int result = Math.max(contentWidth, minW);
+        int result = contentWidth;
         if (!isAuto(style.getMaxWidth())) {
             int maxW = style.getMaxWidth().resolve(containingWidth, Integer.MAX_VALUE);
             if (maxW >= 0) {
-                maxW = resolveBoxSizingContentWidth(style, maxW, border, padding);
+                maxW = resolveBoxSizingContentWidth(style, maxW, border, padding, true);
                 result = Math.min(result, maxW);
             }
         }
+        int minW = Math.max(0, style.getMinWidth().resolve(containingWidth, 0));
+        minW = resolveBoxSizingContentWidth(style, minW, border, padding, true);
+        result = Math.max(result, minW);
         return Math.max(0, result);
     }
 
     static int resolveBoxSizingContentWidth(ComputedStyle computedStyle, int resolvedWidth,
             DocumentLayoutEdges border, DocumentLayoutEdges padding) {
-        if (computedStyle.getBoxSizing() != UiBoxSizing.BORDER_BOX || isAuto(computedStyle.getWidth())) {
+        return resolveBoxSizingContentWidth(computedStyle, resolvedWidth, border, padding,
+                !isAuto(computedStyle.getWidth()));
+    }
+
+    static int resolveBoxSizingContentWidth(ComputedStyle computedStyle, int resolvedWidth,
+            DocumentLayoutEdges border, DocumentLayoutEdges padding, boolean declaredBorderBoxSize) {
+        if (computedStyle.getBoxSizing() != UiBoxSizing.BORDER_BOX || !declaredBorderBoxSize) {
             return resolvedWidth;
         }
         return Math.max(0, resolvedWidth - border.getHorizontal() - padding.getHorizontal());
@@ -594,7 +601,13 @@ public final class DocumentLayoutEngine {
      */
     static int resolveBoxSizingContentHeight(ComputedStyle computedStyle, int resolvedHeight,
             DocumentLayoutEdges border, DocumentLayoutEdges padding) {
-        if (computedStyle.getBoxSizing() != UiBoxSizing.BORDER_BOX || isAuto(computedStyle.getHeight())) {
+        return resolveBoxSizingContentHeight(computedStyle, resolvedHeight, border, padding,
+                !isAuto(computedStyle.getHeight()));
+    }
+
+    static int resolveBoxSizingContentHeight(ComputedStyle computedStyle, int resolvedHeight,
+            DocumentLayoutEdges border, DocumentLayoutEdges padding, boolean declaredBorderBoxSize) {
+        if (computedStyle.getBoxSizing() != UiBoxSizing.BORDER_BOX || !declaredBorderBoxSize) {
             return resolvedHeight;
         }
         return Math.max(0, resolvedHeight - border.getVertical() - padding.getVertical());
@@ -648,15 +661,17 @@ public final class DocumentLayoutEngine {
      */
     private static int applyHeightConstraints(ComputedStyle style, int contentHeight, int contentWidth,
             int containingHeight, DocumentLayoutEdges border, DocumentLayoutEdges padding) {
-        int minH = resolveHeightConstraintValue(style.getMinHeight(), containingHeight, 0);
-        int result = Math.max(contentHeight, minH);
+        int result = contentHeight;
         if (!isAuto(style.getMaxHeight())) {
             int maxH = resolveHeightConstraintValue(style.getMaxHeight(), containingHeight, Integer.MAX_VALUE);
             if (maxH >= 0 && maxH < Integer.MAX_VALUE) {
-                maxH = resolveBoxSizingContentHeight(style, maxH, border, padding);
+                maxH = resolveBoxSizingContentHeight(style, maxH, border, padding, true);
                 result = Math.min(result, maxH);
             }
         }
+        int minH = resolveHeightConstraintValue(style.getMinHeight(), containingHeight, 0);
+        minH = resolveBoxSizingContentHeight(style, minH, border, padding, true);
+        result = Math.max(result, minH);
         return Math.max(0, result);
     }
 
@@ -838,6 +853,20 @@ public final class DocumentLayoutEngine {
             return false;
         }
         return !createsBlockFormattingContext(style);
+    }
+
+    private static int resolveSiblingMarginCollapseAdjustment(int previousMarginBottom, int childMarginTop) {
+        return previousMarginBottom + childMarginTop - collapseVerticalMargins(previousMarginBottom, childMarginTop);
+    }
+
+    private static int collapseVerticalMargins(int firstMargin, int secondMargin) {
+        if (firstMargin >= 0 && secondMargin >= 0) {
+            return Math.max(firstMargin, secondMargin);
+        }
+        if (firstMargin <= 0 && secondMargin <= 0) {
+            return Math.min(firstMargin, secondMargin);
+        }
+        return firstMargin + secondMargin;
     }
 
     private static boolean allowsFirstChildTopMarginCollapse(ComputedStyle style) {

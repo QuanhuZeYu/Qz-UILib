@@ -394,6 +394,73 @@ public class UiDocumentTest {
     }
 
     /**
+     * 验证同父节点移动到后方参考节点前时不会因旧索引产生偏移。
+     */
+    @Test
+    public void shouldMoveExistingChildBeforeLaterSiblingWithoutIndexDrift() {
+        UiDocument document = UiDocument.create();
+        ElementNode root = document.getRootElement();
+        ElementNode first = document.div().setId("first");
+        ElementNode second = document.div().setId("second");
+        ElementNode third = document.div().setId("third");
+        root.append(first).append(second).append(third);
+
+        DocumentNode inserted = root.insertBefore(first, third);
+
+        Assert.assertSame(first, inserted);
+        Assert.assertEquals(Arrays.asList("second", "first", "third"), collectElementIds(root));
+    }
+
+    /**
+     * 验证同父节点 replaceChild 使用已存在且靠前的新节点时仍替换正确旧节点。
+     */
+    @Test
+    public void shouldReplaceLaterSiblingWithExistingEarlierChildWithoutIndexDrift() {
+        UiDocument document = UiDocument.create();
+        ElementNode root = document.getRootElement();
+        ElementNode first = document.div().setId("first");
+        ElementNode second = document.div().setId("second");
+        ElementNode third = document.div().setId("third");
+        root.append(first).append(second).append(third);
+
+        DocumentNode replaced = root.replaceChild(first, third);
+
+        Assert.assertSame(third, replaced);
+        Assert.assertNull(third.getParent());
+        Assert.assertEquals(Arrays.asList("second", "first"), collectElementIds(root));
+    }
+
+    /**
+     * 验证 appendChild / insertBefore 返回被插入节点，而不是父节点。
+     */
+    @Test
+    public void shouldReturnInsertedNodeFromAppendAndInsertBefore() {
+        UiDocument document = UiDocument.create();
+        ElementNode root = document.getRootElement();
+        ElementNode first = document.div().setId("first");
+        ElementNode second = document.div().setId("second");
+
+        Assert.assertSame(first, root.appendChild(first));
+        Assert.assertSame(second, root.insertBefore(second, first));
+        Assert.assertEquals(Arrays.asList("second", "first"), collectElementIds(root));
+    }
+
+    /**
+     * 验证 disabled 作为 HTML 布尔属性只要存在就表示禁用。
+     */
+    @Test
+    public void shouldTreatDisabledFalseAttributeAsDisabled() {
+        UiDocument document = UiDocument.create();
+        ElementNode button = document.button().setAttribute("disabled", "false");
+
+        Assert.assertTrue(button.isDisabled());
+
+        button.removeAttribute("disabled");
+
+        Assert.assertFalse(button.isDisabled());
+    }
+
+    /**
      * 验证页面作者可以创建并派发自定义事件，且三阶段传播链路可用。
      */
     @Test
