@@ -1,5 +1,7 @@
 # 浏览器常用能力差距审查
 
+> **结论已失效（2026-06-01）**：本文正文的"30 项完全没有实现 / 8 项部分实现 / 27 项已实现"统计与清单已严重滞后，其列为"待实现"的 20+ 项（transform、sticky、flex order、`::before/::after`、结构伪类、contextmenu、dblclick、CustomEvent、cloneNode、`<a>` 链接等）实际已落地。当前真实剩余缺口请以 `REVIEW-20260601-capability-gap-recheck.md` 为准。本文以下内容仅保留历史审查价值，不再作为现状依据。
+
 ## 审查信息
 
 - 审查日期：2026-05-18
