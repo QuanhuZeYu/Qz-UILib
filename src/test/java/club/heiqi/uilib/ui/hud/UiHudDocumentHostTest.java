@@ -483,6 +483,40 @@ public class UiHudDocumentHostTest {
     }
 
     /**
+     * 验证交互 HUD 挂载根在 pointer-events 继承语义下仍允许子控件命中，但根自身空白不拦截。
+     */
+    @Test
+    public void shouldAllowInteractiveMountRootChildrenToHitWithoutCapturingRootWhitespace() {
+        UiHudDocumentHost host = UiHudDocumentHost.getInstance();
+        UiHudDocumentRegistration registration = host.register(UiHudLayerType.INTERACTIVE,
+                new UiHudDocumentHost.UiHudDocumentContentBuilder() {
+                    @Override
+                    public void build(UiHudDocumentHost.UiHudMountContext context) {
+                        UiDocument document = context.getDocument();
+                        ElementNode root = context.getMountRoot();
+                        root.style()
+                                .setWidth(UiStyleLength.px(160))
+                                .setHeight(UiStyleLength.px(80));
+                        DocumentButtonControl buttonControl = new DocumentButtonControl(document, "Hit");
+                        buttonControl.getElement().style()
+                                .setWidth(UiStyleLength.px(120))
+                                .setHeight(UiStyleLength.px(24));
+                        root.append(buttonControl.getElement());
+                    }
+                }, new DeterministicTextMeasureService(), UiRuntimeAdapters.empty());
+        try {
+            host.handleInputFrameForTest(mouseFrame(UiMouseEvent.Action.MOVE, 8, 8, 1L), UiHudScreenCategory.CONTAINER,
+                    160, 80);
+            Assert.assertTrue(host.handleImmediateMouseInputForTest(
+                    mouseFrame(UiMouseEvent.Action.BUTTON_DOWN, 8, 8, 2L), UiHudScreenCategory.CONTAINER));
+            Assert.assertFalse(host.handleImmediateMouseInputForTest(
+                    mouseFrame(UiMouseEvent.Action.BUTTON_DOWN, 140, 60, 3L), UiHudScreenCategory.CONTAINER));
+        } finally {
+            registration.unregister();
+        }
+    }
+
+    /**
      * 验证即时鼠标拦截与常规 HUD 输入路由使用同一套原生像素坐标，不会因缩放坐标不一致导致点击穿透。
      */
     @Test

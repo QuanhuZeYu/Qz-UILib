@@ -8,8 +8,11 @@ import org.junit.Test;
 import club.heiqi.uilib.ui.dom.ElementNode;
 import club.heiqi.uilib.ui.dom.UiDocument;
 import club.heiqi.uilib.ui.layout.DocumentVisualTraversal.BoxContext;
+import club.heiqi.uilib.ui.layout.DocumentVisualTraversal.BoxLocation;
+import club.heiqi.uilib.ui.layout.DocumentVisualTraversal.RootEntry;
 import club.heiqi.uilib.ui.layout.DocumentVisualTraversal.StackingContextResolver;
 import club.heiqi.uilib.ui.layout.DocumentVisualTraversal.TraversalEntry;
+import club.heiqi.uilib.ui.layout.DocumentVisualTraversal.VisualScene;
 import club.heiqi.uilib.ui.style.props.UiOverflow;
 import club.heiqi.uilib.ui.style.props.UiPosition;
 import club.heiqi.uilib.ui.style.values.UiStyleLength;
@@ -102,6 +105,90 @@ public class DocumentVisualTraversalTest {
         Assert.assertEquals(6, fixedContext.getBox().getTop() + fixedContext.getBoxOffsetY());
         Assert.assertTrue(fixedContext.getClipChain().isEmpty());
         Assert.assertTrue(fixedContext.getChildClipChain().isEmpty());
+    }
+
+    /**
+     * 验证共享视觉场景会把普通树放在底部，把后注册 top-layer 放在更上层。
+     */
+    @Test
+    public void shouldExposeRootEntriesInDocumentThenTopLayerOrder() {
+        UiDocument document = UiDocument.create();
+        ElementNode root = document.getRootElement();
+        ElementNode firstTopLayer = document.div();
+        ElementNode secondTopLayer = document.div();
+
+        root.style().setWidth(UiStyleLength.px(120)).setHeight(UiStyleLength.px(80));
+        firstTopLayer.style()
+                .setPosition(UiPosition.FIXED)
+                .setLeft(UiStyleLength.px(4))
+                .setTop(UiStyleLength.px(6))
+                .setWidth(UiStyleLength.px(20))
+                .setHeight(UiStyleLength.px(10));
+        secondTopLayer.style()
+                .setPosition(UiPosition.FIXED)
+                .setLeft(UiStyleLength.px(8))
+                .setTop(UiStyleLength.px(12))
+                .setWidth(UiStyleLength.px(24))
+                .setHeight(UiStyleLength.px(12));
+        root.append(firstTopLayer).append(secondTopLayer);
+        document.__showTopLayerElement(firstTopLayer);
+        document.__showTopLayerElement(secondTopLayer);
+
+        VisualScene scene = DocumentVisualTraversal.resolveVisualScene(DocumentLayoutEngine.layout(root, 120, 80),
+                java.util.Arrays.asList(
+                        DocumentLayoutEngine.layoutTopLayerElement(firstTopLayer, 120, 80,
+                                club.heiqi.uilib.ui.text.DefaultTextMeasureService.getInstance(), null),
+                        DocumentLayoutEngine.layoutTopLayerElement(secondTopLayer, 120, 80,
+                                club.heiqi.uilib.ui.text.DefaultTextMeasureService.getInstance(), null)),
+                null);
+
+        Assert.assertEquals(3, scene.getRootEntries().size());
+        RootEntry documentEntry = scene.getRootEntries().get(0);
+        RootEntry firstTopLayerEntry = scene.getRootEntries().get(1);
+        RootEntry secondTopLayerEntry = scene.getRootEntries().get(2);
+        Assert.assertFalse(documentEntry.isTopLayer());
+        Assert.assertSame(root, documentEntry.getRootBox().getElement());
+        Assert.assertTrue(firstTopLayerEntry.isTopLayer());
+        Assert.assertSame(firstTopLayer, firstTopLayerEntry.getRootBox().getElement());
+        Assert.assertTrue(secondTopLayerEntry.isTopLayer());
+        Assert.assertSame(secondTopLayer, secondTopLayerEntry.getRootBox().getElement());
+    }
+
+    /**
+     * 验证共享定位查询会返回 top-layer 根盒的视口坐标。
+     */
+    @Test
+    public void shouldFindTopLayerElementLocationThroughSharedTraversal() {
+        UiDocument document = UiDocument.create();
+        ElementNode root = document.getRootElement();
+        ElementNode anchor = document.div();
+        ElementNode popup = document.div();
+
+        root.style().setWidth(UiStyleLength.px(140)).setHeight(UiStyleLength.px(100));
+        anchor.style()
+                .setWidth(UiStyleLength.px(40))
+                .setHeight(UiStyleLength.px(16));
+        popup.style()
+                .setPosition(UiPosition.FIXED)
+                .setLeft(UiStyleLength.px(18))
+                .setTop(UiStyleLength.px(30))
+                .setWidth(UiStyleLength.px(50))
+                .setHeight(UiStyleLength.px(20));
+        root.append(anchor).append(popup);
+        document.__showTopLayerElement(popup);
+
+        DocumentLayoutBox rootBox = DocumentLayoutEngine.layout(root, 140, 100);
+        List<DocumentLayoutBox> topLayerBoxes = java.util.Collections.singletonList(
+                DocumentLayoutEngine.layoutTopLayerElement(popup, 140, 100,
+                        club.heiqi.uilib.ui.text.DefaultTextMeasureService.getInstance(), null));
+
+        BoxLocation location = DocumentVisualTraversal.findBoxLocation(rootBox, topLayerBoxes, null, popup);
+
+        Assert.assertNotNull(location);
+        Assert.assertTrue(location.isTopLayer());
+        Assert.assertSame(popup, location.getBoxContext().getBox().getElement());
+        Assert.assertEquals(18, location.getBoxContext().getBox().getLeft() + location.getBoxContext().getBoxOffsetX());
+        Assert.assertEquals(30, location.getBoxContext().getBox().getTop() + location.getBoxContext().getBoxOffsetY());
     }
 
     private static StackingContextResolver staticResolver() {

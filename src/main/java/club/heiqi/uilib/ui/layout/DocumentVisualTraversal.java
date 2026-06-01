@@ -4,9 +4,11 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Comparator;
 import java.util.List;
+import java.util.Objects;
 
 import club.heiqi.uilib.ui.animation.DocumentAnimationProperty;
 import club.heiqi.uilib.ui.animation.DocumentAnimationTimeline;
+import club.heiqi.uilib.ui.dom.ElementNode;
 import club.heiqi.uilib.ui.layout.DocumentStickyPositioning.StickyContext;
 import club.heiqi.uilib.ui.style.values.UiTransform;
 
@@ -44,6 +46,67 @@ public final class DocumentVisualTraversal {
     public static BoxContext resolveRootBoxContext(DocumentLayoutBox rootBox, DocumentScrollState scrollState) {
         return resolveBoxContext(rootBox, scrollState, 0, 0, DocumentStickyPositioning.rootContext(),
                 Collections.<ClipContext>emptyList());
+    }
+
+    /**
+     * 构建“普通文档树 + top-layer 根盒”的统一视觉场景。
+     *
+     * @param rootBox 普通文档根盒
+     * @param topLayerBoxes top-layer 根盒列表；后面的盒位于更上层
+     * @param scrollState 滚动状态
+     * @return 统一视觉场景
+     */
+    public static VisualScene resolveVisualScene(DocumentLayoutBox rootBox, List<DocumentLayoutBox> topLayerBoxes,
+            DocumentScrollState scrollState) {
+        Objects.requireNonNull(rootBox, "rootBox");
+        List<RootEntry> rootEntries = new ArrayList<RootEntry>();
+        rootEntries.add(new RootEntry(rootBox, resolveRootBoxContext(rootBox, scrollState), false));
+        if (topLayerBoxes != null) {
+            for (DocumentLayoutBox topLayerBox : topLayerBoxes) {
+                if (topLayerBox == null) {
+                    continue;
+                }
+                rootEntries.add(new RootEntry(topLayerBox, resolveRootBoxContext(topLayerBox, scrollState), true));
+            }
+        }
+        return new VisualScene(rootEntries, scrollState);
+    }
+
+    /**
+     * 在统一视觉场景中定位指定元素对应的布局盒与视觉上下文。
+     *
+     * @param rootBox 普通文档根盒
+     * @param topLayerBoxes top-layer 根盒列表
+     * @param scrollState 滚动状态
+     * @param element 待定位元素
+     * @return 定位结果；未参与当前视觉场景时返回 null
+     */
+    public static BoxLocation findBoxLocation(DocumentLayoutBox rootBox, List<DocumentLayoutBox> topLayerBoxes,
+            DocumentScrollState scrollState, ElementNode element) {
+        if (element == null) {
+            return null;
+        }
+        return findBoxLocation(resolveVisualScene(rootBox, topLayerBoxes, scrollState), element);
+    }
+
+    /**
+     * 在统一视觉场景中定位指定元素对应的布局盒与视觉上下文。
+     *
+     * @param scene 统一视觉场景
+     * @param element 待定位元素
+     * @return 定位结果；未参与当前视觉场景时返回 null
+     */
+    public static BoxLocation findBoxLocation(VisualScene scene, ElementNode element) {
+        if (scene == null || element == null) {
+            return null;
+        }
+        for (RootEntry rootEntry : scene.rootEntries) {
+            BoxLocation location = findBoxLocation(rootEntry, rootEntry.rootContext, element, scene.scrollState);
+            if (location != null) {
+                return location;
+            }
+        }
+        return null;
     }
 
     /**
@@ -281,6 +344,93 @@ public final class DocumentVisualTraversal {
                 baseTransform.getRotateDegrees(), currentTimeNanos);
         return UiTransform.of(translateX, translateY, scaleX, scaleY, rotate, baseTransform.getOriginX(),
                 baseTransform.getOriginY());
+    }
+
+    private static BoxLocation findBoxLocation(RootEntry rootEntry, BoxContext currentContext, ElementNode element,
+            DocumentScrollState scrollState) {
+        if (currentContext.getBox().getElement() == element) {
+            return new BoxLocation(rootEntry, currentContext);
+        }
+        for (DocumentLayoutBox child : currentContext.getBox().getChildren()) {
+            BoxLocation location = findBoxLocation(rootEntry, resolveChildBoxContext(currentContext, child, scrollState),
+                    element, scrollState);
+            if (location != null) {
+                return location;
+            }
+        }
+        return null;
+    }
+
+    /**
+     * 普通文档根盒与 top-layer 根盒组成的统一视觉场景。
+     */
+    public static final class VisualScene {
+
+        private final List<RootEntry> rootEntries;
+        private final DocumentScrollState scrollState;
+
+        private VisualScene(List<RootEntry> rootEntries, DocumentScrollState scrollState) {
+            this.rootEntries = Collections.unmodifiableList(new ArrayList<RootEntry>(rootEntries));
+            this.scrollState = scrollState;
+        }
+
+        public List<RootEntry> getRootEntries() {
+            return rootEntries;
+        }
+    }
+
+    /**
+     * 统一视觉场景中的根访问项。
+     */
+    public static final class RootEntry {
+
+        private final DocumentLayoutBox rootBox;
+        private final BoxContext rootContext;
+        private final boolean topLayer;
+
+        private RootEntry(DocumentLayoutBox rootBox, BoxContext rootContext, boolean topLayer) {
+            this.rootBox = rootBox;
+            this.rootContext = rootContext;
+            this.topLayer = topLayer;
+        }
+
+        public DocumentLayoutBox getRootBox() {
+            return rootBox;
+        }
+
+        public BoxContext getRootContext() {
+            return rootContext;
+        }
+
+        public boolean isTopLayer() {
+            return topLayer;
+        }
+    }
+
+    /**
+     * 共享视觉场景中的元素定位结果。
+     */
+    public static final class BoxLocation {
+
+        private final RootEntry rootEntry;
+        private final BoxContext boxContext;
+
+        private BoxLocation(RootEntry rootEntry, BoxContext boxContext) {
+            this.rootEntry = rootEntry;
+            this.boxContext = boxContext;
+        }
+
+        public RootEntry getRootEntry() {
+            return rootEntry;
+        }
+
+        public BoxContext getBoxContext() {
+            return boxContext;
+        }
+
+        public boolean isTopLayer() {
+            return rootEntry != null && rootEntry.isTopLayer();
+        }
     }
 
     /**

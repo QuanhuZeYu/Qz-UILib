@@ -513,14 +513,17 @@ public final class UiHudDocumentHost implements UiHostInputCaptureParticipant {
                 continue;
             }
             ElementNode hitElement = sharedWidget.findElementAtWithin(entry.mountRoot, mouseX, mouseY);
-            if (shouldCaptureHit(hitElement)) {
+            if (shouldCaptureHit(entry, hitElement)) {
                 return entry;
             }
         }
         return null;
     }
 
-    private boolean shouldCaptureHit(ElementNode hitElement) {
+    private boolean shouldCaptureHit(HudEntry entry, ElementNode hitElement) {
+        if (entry == null || hitElement == null || hitElement == entry.mountRoot) {
+            return false;
+        }
         return hitElement != null && (sharedWidget == null || !sharedWidget.isPassthroughHit(hitElement));
     }
 
@@ -965,7 +968,7 @@ public final class UiHudDocumentHost implements UiHostInputCaptureParticipant {
                 .setHeight(UiStyleLength.percent(1.0F))
                 .setOverflowX(UiOverflow.VISIBLE)
                 .setOverflowY(UiOverflow.VISIBLE)
-                .setPointerEvents(UiPointerEvents.NONE);
+                .setPointerEvents(layerType == UiHudLayerType.PASSIVE ? UiPointerEvents.NONE : UiPointerEvents.AUTO);
         mountRoot.setAttribute(REGISTRATION_ID_ATTRIBUTE, registrationId);
         mountRoot.setAttribute("data-hud-layer", layerType.name().toLowerCase());
         if (layerType == UiHudLayerType.PASSIVE) {

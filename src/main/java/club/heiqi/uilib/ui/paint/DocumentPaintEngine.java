@@ -20,8 +20,10 @@ import club.heiqi.uilib.ui.layout.DocumentStackingPhase;
 import club.heiqi.uilib.ui.layout.DocumentVisualTraversal;
 import club.heiqi.uilib.ui.layout.DocumentVisualTraversal.BoxContext;
 import club.heiqi.uilib.ui.layout.DocumentVisualTraversal.ClipContext;
+import club.heiqi.uilib.ui.layout.DocumentVisualTraversal.RootEntry;
 import club.heiqi.uilib.ui.layout.DocumentVisualTraversal.StackingContextResolver;
 import club.heiqi.uilib.ui.layout.DocumentVisualTraversal.TraversalEntry;
+import club.heiqi.uilib.ui.layout.DocumentVisualTraversal.VisualScene;
 import club.heiqi.uilib.ui.style.cascade.ComputedStyle;
 import club.heiqi.uilib.ui.style.values.UiBackgroundImage;
 import club.heiqi.uilib.ui.style.cascade.UiBorderRadiusResolver;
@@ -100,12 +102,31 @@ public final class DocumentPaintEngine {
      */
     public static List<DocumentPaintCommand> buildPaintCommands(DocumentLayoutBox rootBox,
             DocumentScrollState scrollState, long currentTimeNanos, DocumentAnimationTimeline animationTimeline) {
+        return buildPaintCommands(rootBox, Collections.<DocumentLayoutBox>emptyList(), scrollState, currentTimeNanos,
+                animationTimeline);
+    }
+
+    /**
+     * 从普通布局盒树、top-layer 根盒、滚动状态和动画时间线生成绘制命令。
+     *
+     * @param rootBox 普通文档根盒
+     * @param topLayerBoxes top-layer 根盒；后面的盒位于更上层
+     * @param scrollState 滚动状态；为 null 时按无滚动处理
+     * @param currentTimeNanos 当前时间戳
+     * @param animationTimeline 动画时间线；为 null 时不应用动画覆盖
+     * @return 绘制命令列表
+     */
+    public static List<DocumentPaintCommand> buildPaintCommands(DocumentLayoutBox rootBox,
+            List<DocumentLayoutBox> topLayerBoxes, DocumentScrollState scrollState, long currentTimeNanos,
+            DocumentAnimationTimeline animationTimeline) {
         Objects.requireNonNull(rootBox, "rootBox");
         List<DocumentPaintCommand> commands = new ArrayList<DocumentPaintCommand>();
         StackingContextResolver resolver = createPaintStackingContextResolver(currentTimeNanos, animationTimeline);
-        appendBoxCommands(rootBox, DocumentVisualTraversal.resolveRootBoxContext(rootBox, scrollState), commands,
-                scrollState, animationTimeline, currentTimeNanos, 1.0F, true,
-                Collections.<ClipContext>emptyList(), resolver);
+        VisualScene scene = DocumentVisualTraversal.resolveVisualScene(rootBox, topLayerBoxes, scrollState);
+        for (RootEntry rootEntry : scene.getRootEntries()) {
+            appendBoxCommands(rootEntry.getRootBox(), rootEntry.getRootContext(), commands, scrollState,
+                    animationTimeline, currentTimeNanos, 1.0F, true, Collections.<ClipContext>emptyList(), resolver);
+        }
         return commands;
     }
 

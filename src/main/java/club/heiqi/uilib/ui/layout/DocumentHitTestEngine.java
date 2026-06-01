@@ -7,8 +7,10 @@ import club.heiqi.uilib.ui.animation.DocumentAnimationProperty;
 import club.heiqi.uilib.ui.animation.DocumentAnimationTimeline;
 import club.heiqi.uilib.ui.dom.ElementNode;
 import club.heiqi.uilib.ui.layout.DocumentVisualTraversal.BoxContext;
+import club.heiqi.uilib.ui.layout.DocumentVisualTraversal.RootEntry;
 import club.heiqi.uilib.ui.layout.DocumentVisualTraversal.StackingContextResolver;
 import club.heiqi.uilib.ui.layout.DocumentVisualTraversal.TraversalEntry;
+import club.heiqi.uilib.ui.layout.DocumentVisualTraversal.VisualScene;
 import club.heiqi.uilib.ui.style.cascade.ComputedStyle;
 import club.heiqi.uilib.ui.style.values.UiBorderRadius;
 import club.heiqi.uilib.ui.style.cascade.UiBorderRadiusResolver;
@@ -51,10 +53,37 @@ public final class DocumentHitTestEngine {
      */
     public static ElementNode hitTest(DocumentLayoutBox rootBox, DocumentScrollState scrollState, int documentX,
             int documentY, long currentTimeNanos, DocumentAnimationTimeline animationTimeline) {
+        return hitTest(rootBox, java.util.Collections.<DocumentLayoutBox>emptyList(), scrollState, documentX,
+                documentY, currentTimeNanos, animationTimeline);
+    }
+
+    /**
+     * 在普通文档树与 top-layer 场景中查找命中的最深元素。
+     *
+     * @param rootBox 普通文档根盒
+     * @param topLayerBoxes top-layer 根盒；后面的盒位于更上层
+     * @param scrollState 滚动状态；为 null 时按无滚动处理
+     * @param documentX 文档局部 X
+     * @param documentY 文档局部 Y
+     * @param currentTimeNanos 当前动画时间
+     * @param animationTimeline 动画时间线；为 null 时只使用 computed style
+     * @return 命中的最深元素；未命中时返回 null
+     */
+    public static ElementNode hitTest(DocumentLayoutBox rootBox, List<DocumentLayoutBox> topLayerBoxes,
+            DocumentScrollState scrollState, int documentX, int documentY, long currentTimeNanos,
+            DocumentAnimationTimeline animationTimeline) {
         Objects.requireNonNull(rootBox, "rootBox");
         StackingContextResolver resolver = createStackingContextResolver(currentTimeNanos, animationTimeline);
-        return hitTestBox(DocumentVisualTraversal.resolveRootBoxContext(rootBox, scrollState), scrollState,
-                documentX, documentY, true, currentTimeNanos, animationTimeline, resolver);
+        VisualScene scene = DocumentVisualTraversal.resolveVisualScene(rootBox, topLayerBoxes, scrollState);
+        List<RootEntry> rootEntries = scene.getRootEntries();
+        for (int index = rootEntries.size() - 1; index >= 0; index--) {
+            ElementNode hit = hitTestBox(rootEntries.get(index).getRootContext(), scrollState, documentX, documentY,
+                    true, currentTimeNanos, animationTimeline, resolver);
+            if (hit != null) {
+                return hit;
+            }
+        }
+        return null;
     }
 
     /**

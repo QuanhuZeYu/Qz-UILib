@@ -440,6 +440,50 @@ public class DocumentHitTestEngineTest {
     }
 
     /**
+     * 验证共享场景命中会优先返回后注册的 top-layer 根盒。
+     */
+    @Test
+    public void shouldHitLatestTopLayerRootBeforeDocumentTree() {
+        UiDocument document = UiDocument.create();
+        ElementNode root = document.getRootElement();
+        ElementNode normal = document.div();
+        ElementNode firstTopLayer = document.div();
+        ElementNode secondTopLayer = document.div();
+
+        root.style().setWidth(UiStyleLength.px(120)).setHeight(UiStyleLength.px(80));
+        normal.style()
+                .setWidth(UiStyleLength.px(80))
+                .setHeight(UiStyleLength.px(40));
+        firstTopLayer.style()
+                .setPosition(UiPosition.FIXED)
+                .setLeft(UiStyleLength.px(8))
+                .setTop(UiStyleLength.px(8))
+                .setWidth(UiStyleLength.px(80))
+                .setHeight(UiStyleLength.px(40));
+        secondTopLayer.style()
+                .setPosition(UiPosition.FIXED)
+                .setLeft(UiStyleLength.px(8))
+                .setTop(UiStyleLength.px(8))
+                .setWidth(UiStyleLength.px(80))
+                .setHeight(UiStyleLength.px(40));
+        root.append(normal).append(firstTopLayer).append(secondTopLayer);
+        document.__showTopLayerElement(firstTopLayer);
+        document.__showTopLayerElement(secondTopLayer);
+
+        DocumentLayoutBox rootBox = DocumentLayoutEngine.layout(root, 120, 80);
+        java.util.List<DocumentLayoutBox> topLayerBoxes = java.util.Arrays.asList(
+                DocumentLayoutEngine.layoutTopLayerElement(firstTopLayer, 120, 80,
+                        club.heiqi.uilib.ui.text.DefaultTextMeasureService.getInstance(), null),
+                DocumentLayoutEngine.layoutTopLayerElement(secondTopLayer, 120, 80,
+                        club.heiqi.uilib.ui.text.DefaultTextMeasureService.getInstance(), null));
+
+        ElementNode actualElement = DocumentHitTestEngine.hitTest(rootBox, topLayerBoxes, null, 10, 10, 0L, null);
+
+        Assert.assertNotNull(actualElement);
+        Assert.assertEquals(secondTopLayer.__getElementUid(), actualElement.__getElementUid());
+    }
+
+    /**
      * 验证 visibility:hidden 祖先不会阻断显式 visibility:visible 后代的文本命中。
      */
     @Test

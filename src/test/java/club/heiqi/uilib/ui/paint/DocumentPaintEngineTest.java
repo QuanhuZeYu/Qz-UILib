@@ -32,6 +32,7 @@ import club.heiqi.uilib.ui.style.values.UiTransform;
 import club.heiqi.uilib.ui.style.values.UiBoxShadow;
 import club.heiqi.uilib.ui.style.props.UiWordBreak;
 import club.heiqi.uilib.ui.text.TextMeasureService;
+import club.heiqi.uilib.ui.text.DefaultTextMeasureService;
 import club.heiqi.uilib.ui.style.values.UiSurfaceStyle;
 
 /**
@@ -963,6 +964,58 @@ public class DocumentPaintEngineTest {
                 0xFFFF3333, 0, 0);
         assertCommand(paintCommands.get(4), DocumentPaintCommandType.CLIP_END, clippedParent, 0, 0, 80, 20,
                 0, 0, 0);
+    }
+
+    /**
+     * 验证 top-layer 根盒会在普通树之后绘制，且后注册顶层元素位于更上层。
+     */
+    @Test
+    public void shouldPaintTopLayerRootsAfterDocumentTree() {
+        UiDocument document = UiDocument.create();
+        ElementNode root = document.getRootElement();
+        ElementNode normal = document.div();
+        ElementNode firstTopLayer = document.div();
+        ElementNode secondTopLayer = document.div();
+
+        root.style().setWidth(UiStyleLength.px(120)).setHeight(UiStyleLength.px(80));
+        normal.style()
+                .setWidth(UiStyleLength.px(60))
+                .setHeight(UiStyleLength.px(30))
+                .setBackgroundColor(0xFF334455);
+        firstTopLayer.style()
+                .setPosition(UiPosition.FIXED)
+                .setLeft(UiStyleLength.px(10))
+                .setTop(UiStyleLength.px(10))
+                .setWidth(UiStyleLength.px(60))
+                .setHeight(UiStyleLength.px(30))
+                .setBackgroundColor(0xFF556677);
+        secondTopLayer.style()
+                .setPosition(UiPosition.FIXED)
+                .setLeft(UiStyleLength.px(10))
+                .setTop(UiStyleLength.px(10))
+                .setWidth(UiStyleLength.px(60))
+                .setHeight(UiStyleLength.px(30))
+                .setBackgroundColor(0xFF778899);
+        root.append(normal).append(firstTopLayer).append(secondTopLayer);
+        document.__showTopLayerElement(firstTopLayer);
+        document.__showTopLayerElement(secondTopLayer);
+
+        DocumentLayoutBox rootBox = DocumentLayoutEngine.layout(root, 120, 80);
+        List<DocumentLayoutBox> topLayerBoxes = java.util.Arrays.asList(
+                DocumentLayoutEngine.layoutTopLayerElement(firstTopLayer, 120, 80,
+                        DefaultTextMeasureService.getInstance(), null),
+                DocumentLayoutEngine.layoutTopLayerElement(secondTopLayer, 120, 80,
+                        DefaultTextMeasureService.getInstance(), null));
+
+        List<DocumentPaintCommand> commands = withoutScrollbarCommands(DocumentPaintEngine.buildPaintCommands(rootBox,
+                topLayerBoxes, null, 1L, null));
+
+        Assert.assertEquals(3, commands.size());
+        assertCommand(commands.get(0), DocumentPaintCommandType.BACKGROUND, normal, 0, 0, 60, 30, 0xFF334455, 0, 0);
+        assertCommand(commands.get(1), DocumentPaintCommandType.BACKGROUND, firstTopLayer, 10, 10, 70, 40,
+                0xFF556677, 0, 0);
+        assertCommand(commands.get(2), DocumentPaintCommandType.BACKGROUND, secondTopLayer, 10, 10, 70, 40,
+                0xFF778899, 0, 0);
     }
 
     /**

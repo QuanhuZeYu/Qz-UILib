@@ -41,6 +41,7 @@ import club.heiqi.uilib.ui.dom.DocumentElementTextInputEvent;
 import club.heiqi.uilib.ui.dom.DocumentElementTextInputHandler;
 import club.heiqi.uilib.ui.dom.DocumentElementTransitionEndEvent;
 import club.heiqi.uilib.ui.dom.DocumentElementTransitionEndHandler;
+import club.heiqi.uilib.ui.dom.DocumentNode;
 import club.heiqi.uilib.ui.dom.ElementNode;
 import club.heiqi.uilib.ui.dom.TextNode;
 import club.heiqi.uilib.ui.dom.UiDocument;
@@ -48,6 +49,7 @@ import club.heiqi.uilib.ui.control.DocumentButtonControl;
 import club.heiqi.uilib.ui.control.DocumentButtonActionEvent;
 import club.heiqi.uilib.ui.control.DocumentButtonActionHandler;
 import club.heiqi.uilib.ui.control.DocumentDraggableSupport;
+import club.heiqi.uilib.ui.control.DocumentSelectControl;
 import club.heiqi.uilib.ui.control.DocumentTextInputControl;
 import club.heiqi.uilib.ui.control.DocumentToggleSwitchControl;
 import club.heiqi.uilib.ui.event.UiKeyEvent;
@@ -3028,6 +3030,45 @@ public class HtmlLikeDocumentWidgetTest {
     }
 
     /**
+     * 验证 top-layer popup 也会进入共享动画时间线更新与命令式动画启动链路。
+     */
+    @Test
+    public void shouldAnimateTopLayerPopupThroughSharedScene() {
+        UiDocument document = UiDocument.create();
+        ElementNode root = document.getRootElement();
+        DocumentSelectControl selectControl = new DocumentSelectControl(document, "A", "B", "C");
+        root.style()
+                .setWidth(UiStyleLength.px(240))
+                .setHeight(UiStyleLength.px(180));
+        selectControl.getElement().style().setWidth(UiStyleLength.px(180));
+        ManualAnimationClock animationClock = new ManualAnimationClock();
+        HtmlLikeDocumentWidget widget = new HtmlLikeDocumentWidget(document, 240, 180,
+                new DeterministicTextMeasureService());
+        widget.setAnimationClock(animationClock);
+        widget.applyLayoutBounds(0, 0, 240, 180);
+        root.append(selectControl.getElement());
+
+        widget.onMouseDown(new UiMouseEvent(UiMouseEvent.Action.BUTTON_DOWN, 20, 12, 0, 0, 0, 0, 1L));
+        widget.onMouseUp(new UiMouseEvent(UiMouseEvent.Action.BUTTON_UP, 20, 12, 0, 0, 0, 0, 2L));
+        ElementNode popup = findListboxElement(root);
+        Assert.assertNotNull(popup);
+        Assert.assertTrue(document.__isTopLayerElement(popup));
+
+        widget.render(new RecordingUiRenderContext());
+        popup.animate(DocumentKeyframes.named("popup-fade")
+                .setFloat(DocumentAnimationProperty.OPACITY, 1.0F, 0.0F)
+                .build(), 1000L);
+        widget.render(new RecordingUiRenderContext());
+
+        Assert.assertTrue(widget.getActiveAnimationCount() > 0);
+
+        animationClock.setCurrentTimeNanos(1_000_000_000L);
+        widget.render(new RecordingUiRenderContext());
+
+        Assert.assertEquals(0, widget.getActiveAnimationCount());
+    }
+
+    /**
      * 验证字体粗细和斜体会进入文本绘制调用。
      */
     @Test
@@ -3051,6 +3092,25 @@ public class HtmlLikeDocumentWidgetTest {
             Assert.assertEquals(UiFontWeight.BOLD, textCall.fontWeight);
             Assert.assertEquals(UiFontStyle.ITALIC, textCall.fontStyle);
         }
+    }
+
+    private static ElementNode findListboxElement(ElementNode element) {
+        if (element == null) {
+            return null;
+        }
+        if ("listbox".equals(element.getAttribute("role"))) {
+            return element;
+        }
+        for (DocumentNode child : element.getChildren()) {
+            if (!(child instanceof ElementNode)) {
+                continue;
+            }
+            ElementNode found = findListboxElement((ElementNode) child);
+            if (found != null) {
+                return found;
+            }
+        }
+        return null;
     }
 
     /**

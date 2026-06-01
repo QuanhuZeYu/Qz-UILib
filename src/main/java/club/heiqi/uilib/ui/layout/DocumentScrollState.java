@@ -11,8 +11,10 @@ import java.util.Set;
 
 import club.heiqi.uilib.ui.dom.ElementNode;
 import club.heiqi.uilib.ui.layout.DocumentVisualTraversal.BoxContext;
+import club.heiqi.uilib.ui.layout.DocumentVisualTraversal.RootEntry;
 import club.heiqi.uilib.ui.layout.DocumentVisualTraversal.StackingContextResolver;
 import club.heiqi.uilib.ui.layout.DocumentVisualTraversal.TraversalEntry;
+import club.heiqi.uilib.ui.layout.DocumentVisualTraversal.VisualScene;
 import club.heiqi.uilib.ui.style.props.UiOverflow;
 
 /**
@@ -243,11 +245,8 @@ public final class DocumentScrollState {
             return false;
         }
         updateFromLayout(rootBox, topLayerBoxes);
-        BoxContext target = findTopLayerScrollableBoxAt(topLayerBoxes, mouseX, mouseY);
-        if (target == null) {
-            target = findScrollableBoxAt(DocumentVisualTraversal.resolveRootBoxContext(rootBox, this), mouseX, mouseY,
-                    true);
-        }
+        BoxContext target = findScrollableBoxAt(DocumentVisualTraversal.resolveVisualScene(rootBox, topLayerBoxes, this),
+                mouseX, mouseY);
         if (target == null) {
             return false;
         }
@@ -312,11 +311,8 @@ public final class DocumentScrollState {
             int mouseY, long eventTimeNanos) {
         Objects.requireNonNull(rootBox, "rootBox");
         updateFromLayout(rootBox, topLayerBoxes);
-        ScrollbarHit hit = findTopLayerScrollbarHit(topLayerBoxes, mouseX, mouseY, eventTimeNanos);
-        if (hit == null) {
-            hit = findScrollbarHit(DocumentVisualTraversal.resolveRootBoxContext(rootBox, this), rootBox, mouseX,
-                    mouseY, eventTimeNanos, true);
-        }
+        ScrollbarHit hit = findScrollbarHit(DocumentVisualTraversal.resolveVisualScene(rootBox, topLayerBoxes, this),
+                mouseX, mouseY, eventTimeNanos);
         if (hit == null) {
             return false;
         }
@@ -381,11 +377,8 @@ public final class DocumentScrollState {
             return false;
         }
         updateFromLayout(rootBox, topLayerBoxes);
-        ScrollbarHit hit = findActiveScrollbarInTopLayers(topLayerBoxes, eventTimeNanos);
-        if (hit == null) {
-            hit = findActiveScrollbar(DocumentVisualTraversal.resolveRootBoxContext(rootBox, this), rootBox,
-                    eventTimeNanos);
-        }
+        ScrollbarHit hit = findActiveScrollbar(DocumentVisualTraversal.resolveVisualScene(rootBox, topLayerBoxes, this),
+                eventTimeNanos);
         if (hit == null) {
             activeScrollbarDrag = null;
             return false;
@@ -624,18 +617,13 @@ public final class DocumentScrollState {
         return entry != null && (entry.maxHorizontalOffset > 0 || entry.maxVerticalOffset > 0);
     }
 
-    private BoxContext findTopLayerScrollableBoxAt(List<DocumentLayoutBox> topLayerBoxes, int mouseX,
-            int mouseY) {
-        if (topLayerBoxes == null) {
+    private BoxContext findScrollableBoxAt(VisualScene scene, int mouseX, int mouseY) {
+        if (scene == null) {
             return null;
         }
-        for (int index = topLayerBoxes.size() - 1; index >= 0; index--) {
-            DocumentLayoutBox topLayerBox = topLayerBoxes.get(index);
-            if (topLayerBox == null) {
-                continue;
-            }
-            BoxContext hit = findScrollableBoxAt(DocumentVisualTraversal.resolveRootBoxContext(topLayerBox, this),
-                    mouseX, mouseY, true);
+        List<RootEntry> rootEntries = scene.getRootEntries();
+        for (int index = rootEntries.size() - 1; index >= 0; index--) {
+            BoxContext hit = findScrollableBoxAt(rootEntries.get(index).getRootContext(), mouseX, mouseY, true);
             if (hit != null) {
                 return hit;
             }
@@ -643,18 +631,15 @@ public final class DocumentScrollState {
         return null;
     }
 
-    private ScrollbarHit findTopLayerScrollbarHit(List<DocumentLayoutBox> topLayerBoxes, int mouseX, int mouseY,
-            long currentTimeNanos) {
-        if (topLayerBoxes == null) {
+    private ScrollbarHit findScrollbarHit(VisualScene scene, int mouseX, int mouseY, long currentTimeNanos) {
+        if (scene == null) {
             return null;
         }
-        for (int index = topLayerBoxes.size() - 1; index >= 0; index--) {
-            DocumentLayoutBox topLayerBox = topLayerBoxes.get(index);
-            if (topLayerBox == null) {
-                continue;
-            }
-            ScrollbarHit hit = findScrollbarHit(DocumentVisualTraversal.resolveRootBoxContext(topLayerBox, this),
-                    topLayerBox, mouseX, mouseY, currentTimeNanos, true);
+        List<RootEntry> rootEntries = scene.getRootEntries();
+        for (int index = rootEntries.size() - 1; index >= 0; index--) {
+            RootEntry rootEntry = rootEntries.get(index);
+            ScrollbarHit hit = findScrollbarHit(rootEntry.getRootContext(), rootEntry.getRootBox(), mouseX, mouseY,
+                    currentTimeNanos, true);
             if (hit != null) {
                 return hit;
             }
@@ -662,18 +647,14 @@ public final class DocumentScrollState {
         return null;
     }
 
-    private ScrollbarHit findActiveScrollbarInTopLayers(List<DocumentLayoutBox> topLayerBoxes,
-            long currentTimeNanos) {
-        if (topLayerBoxes == null) {
+    private ScrollbarHit findActiveScrollbar(VisualScene scene, long currentTimeNanos) {
+        if (scene == null) {
             return null;
         }
-        for (int index = topLayerBoxes.size() - 1; index >= 0; index--) {
-            DocumentLayoutBox topLayerBox = topLayerBoxes.get(index);
-            if (topLayerBox == null) {
-                continue;
-            }
-            ScrollbarHit hit = findActiveScrollbar(DocumentVisualTraversal.resolveRootBoxContext(topLayerBox, this),
-                    topLayerBox, currentTimeNanos);
+        List<RootEntry> rootEntries = scene.getRootEntries();
+        for (int index = rootEntries.size() - 1; index >= 0; index--) {
+            RootEntry rootEntry = rootEntries.get(index);
+            ScrollbarHit hit = findActiveScrollbar(rootEntry.getRootContext(), rootEntry.getRootBox(), currentTimeNanos);
             if (hit != null) {
                 return hit;
             }

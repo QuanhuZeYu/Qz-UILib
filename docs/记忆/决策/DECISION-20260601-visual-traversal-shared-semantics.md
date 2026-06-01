@@ -38,6 +38,7 @@
 - `DocumentHitTestEngine` 改为复用 `DocumentVisualTraversal`
 - `DocumentScrollState` 的滚轮目标选择、滚动条命中与活动拖拽几何改为复用 `DocumentVisualTraversal`
 - `DocumentPaintEngine` 改为复用 `DocumentVisualTraversal`，并按 clip 链差量切换输出 `CLIP_START/CLIP_END`
+- 后续已继续扩展到普通树 + `top-layer` 根盒的统一视觉场景与共享元素定位查询，`HtmlLikeDocumentWidget` 不再单独维护顶层命中/绘制顺序
 - 新增 `DocumentVisualTraversalTest` 作为共享层浏览器契约测试
 - `DocumentPaintEngineTest` 中 `fixed` / `overflow clip` 相关预期调整为浏览器语义
 
