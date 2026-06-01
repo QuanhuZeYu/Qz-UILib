@@ -112,10 +112,10 @@ public class DocumentTextAreaControlTest {
     }
 
     /**
-     * 验证超长单行编辑时会横向滚动到光标位置，而不是每次重置到最左侧。
+     * 验证超长单行编辑会通过软换行保持横向滚动在起点。
      */
     @Test
-    public void shouldRevealCaretHorizontallyForLongLine() {
+    public void shouldKeepHorizontalScrollAtOriginForSoftWrappedLongLine() {
         UiDocument document = UiDocument.create();
         ElementNode root = document.getRootElement();
         DocumentTextAreaControl textAreaControl = new DocumentTextAreaControl(document);
@@ -136,8 +136,7 @@ public class DocumentTextAreaControlTest {
         widget.onTextInput(new UiTextInputEvent("abcdefghijklmnopqrstuvwxyz", 3L));
         widget.render(new ControlTestRenderContext(160, 80));
 
-        Assert.assertTrue(widget.getMaxScrollLeft(textAreaControl.getElement()) > 0);
-        Assert.assertTrue(widget.getScrollLeft(textAreaControl.getElement()) > 0);
+        Assert.assertEquals(0, widget.getScrollLeft(textAreaControl.getElement()));
     }
 
     /**
@@ -206,6 +205,97 @@ public class DocumentTextAreaControlTest {
         Assert.assertEquals(betaText.y, caret.top);
         Assert.assertEquals(caret.left + 1, caret.right);
         Assert.assertEquals(betaText.y + 18, caret.bottom);
+    }
+
+    /**
+     * 验证超长逻辑行会按内容宽度软换行，而不是继续生成横向滚动。
+     */
+    @Test
+    public void shouldSoftWrapLongLogicalLineToTextareaWidth() {
+        UiDocument document = UiDocument.create();
+        ElementNode root = document.getRootElement();
+        DocumentTextAreaControl textAreaControl = new DocumentTextAreaControl(document);
+        textAreaControl.setText("abcdefghi");
+        root.style()
+                .setWidth(UiStyleLength.px(200))
+                .setHeight(UiStyleLength.px(120));
+        textAreaControl.getElement().style()
+                .setWidth(UiStyleLength.px(48))
+                .setHeight(UiStyleLength.px(44));
+        root.append(textAreaControl.getElement());
+        HtmlLikeDocumentWidget widget = new HtmlLikeDocumentWidget(document, 200, 120,
+                new DeterministicTextMeasureService());
+        widget.applyLayoutBounds(0, 0, 200, 120);
+
+        ControlTestRenderContext renderContext = new ControlTestRenderContext(200, 120);
+        widget.render(renderContext);
+
+        Assert.assertNotNull(findTextCall(renderContext, "abcd"));
+        Assert.assertNotNull(findTextCall(renderContext, "efgh"));
+        Assert.assertNotNull(findTextCall(renderContext, "i"));
+        Assert.assertEquals(0, widget.getScrollLeft(textAreaControl.getElement()));
+        Assert.assertTrue(widget.getMaxScrollTop(textAreaControl.getElement()) > 0);
+    }
+
+    /**
+     * 验证点击软换行后的第二条视觉行时，光标会落在同一逻辑行的对应位置。
+     */
+    @Test
+    public void shouldPlaceCaretByClickedSoftWrappedVisualLine() {
+        UiDocument document = UiDocument.create();
+        ElementNode root = document.getRootElement();
+        DocumentTextAreaControl textAreaControl = new DocumentTextAreaControl(document);
+        textAreaControl.setText("abcdefghi");
+        root.style()
+                .setWidth(UiStyleLength.px(200))
+                .setHeight(UiStyleLength.px(120));
+        textAreaControl.getElement().style()
+                .setWidth(UiStyleLength.px(48))
+                .setHeight(UiStyleLength.px(62));
+        root.append(textAreaControl.getElement());
+        HtmlLikeDocumentWidget widget = new HtmlLikeDocumentWidget(document, 200, 120,
+                new DeterministicTextMeasureService());
+        widget.applyLayoutBounds(0, 0, 200, 120);
+
+        ControlTestRenderContext renderContext = new ControlTestRenderContext(200, 120);
+        widget.render(renderContext);
+        DocumentElementBounds bounds = textAreaControl.getElement().getDocumentBounds();
+        int clickX = bounds.getContentLeft() + renderContext.measureTextWidth("efg", TextContentMode.UILIB_RAW);
+        int clickY = bounds.getContentTop() + 18 + 4;
+        widget.onMouseDown(new UiMouseEvent(UiMouseEvent.Action.BUTTON_DOWN, clickX, clickY, 0, 0, 0, 0, 1L));
+        widget.onMouseUp(new UiMouseEvent(UiMouseEvent.Action.BUTTON_UP, clickX, clickY, 0, 0, 0, 0, 2L));
+        widget.onTextInput(new UiTextInputEvent("X", 3L));
+
+        Assert.assertEquals("abcdefgXhi", textAreaControl.getText());
+    }
+
+    /**
+     * 验证上下方向键在软换行产生的视觉行之间移动，而不是直接跳过整条逻辑行。
+     */
+    @Test
+    public void shouldMoveCaretVerticallyAcrossSoftWrappedVisualLines() {
+        UiDocument document = UiDocument.create();
+        ElementNode root = document.getRootElement();
+        DocumentTextAreaControl textAreaControl = new DocumentTextAreaControl(document);
+        textAreaControl.setText("abcdefghi");
+        root.style()
+                .setWidth(UiStyleLength.px(200))
+                .setHeight(UiStyleLength.px(120));
+        textAreaControl.getElement().style()
+                .setWidth(UiStyleLength.px(48))
+                .setHeight(UiStyleLength.px(62));
+        root.append(textAreaControl.getElement());
+        HtmlLikeDocumentWidget widget = new HtmlLikeDocumentWidget(document, 200, 120,
+                new DeterministicTextMeasureService());
+        widget.applyLayoutBounds(0, 0, 200, 120);
+
+        widget.onFocusTraversalEntered(false);
+        widget.render(new ControlTestRenderContext(200, 120));
+        widget.onKeyEvent(new UiKeyEvent(Keyboard.KEY_UP, 0, 0, UiKeyEvent.Action.PRESSED, false, false, false,
+                false, 1L));
+        widget.onTextInput(new UiTextInputEvent("X", 2L));
+
+        Assert.assertEquals("abcdeXfghi", textAreaControl.getText());
     }
 
     private static ControlTestRenderContext.TextCall findTextCall(ControlTestRenderContext renderContext,
