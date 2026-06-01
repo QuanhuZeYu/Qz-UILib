@@ -79,6 +79,16 @@ public final class TextNode extends DocumentNode {
         return false;
     }
 
+    @Override
+    void appendTextContent(StringBuilder builder) {
+        builder.append(text);
+    }
+
+    @Override
+    public void setTextContent(String textContent) {
+        setText(textContent);
+    }
+
     private static String normalizeText(String text) {
         return text == null ? "" : text;
     }
