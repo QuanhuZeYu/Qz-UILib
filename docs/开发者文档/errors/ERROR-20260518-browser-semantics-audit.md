@@ -30,7 +30,7 @@
 - 布局引擎未接入 min/max 约束、flex-basis、align-self、flex-wrap 等
 - 命中测试引擎未考虑 border-radius 和 visibility
 - 绘制引擎未处理 visibility:hidden
-- 事件系统缺少 mousedown/mouseup/focusin/focusout 独立事件
+- 事件系统缺少 mousedown/mouseup/focusin/focusout 独立事件，且焦点进入/离开需要区分独立冒泡事件与目标 focus/blur 事件
 
 ## 修复方案
 
@@ -75,7 +75,7 @@
 - `ElementNode` 添加 mouseDownHandler/mouseUpHandler 字段
 - `HtmlLikeDocumentWidget` 在 onMouseDown/onMouseUp 中分发独立事件
 - hover 父子切换修复：`updateHoveredElement` 改用 `dispatchHoverChangedWithAncestorAwareness`，跳过公共祖先节点
-- 新建 `DocumentElementFocusInEvent`/`Handler`，`dispatchFocusChanged` 添加冒泡分发
+- 新建 `DocumentElementFocusInEvent`/`Handler` 与 `DocumentElementFocusOutEvent`/`Handler`，焦点切换按 `focusout` → `focusin` → `blur` → `focus` 顺序分发
 
 ## 预防措施
 

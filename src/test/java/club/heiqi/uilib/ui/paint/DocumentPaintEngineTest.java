@@ -502,6 +502,31 @@ public class DocumentPaintEngineTest {
     }
 
     /**
+     * 验证 inset box-shadow 位于背景之上、边框之下，符合 CSS 绘制层级。
+     */
+    @Test
+    public void shouldPaintInsetBoxShadowAboveBackgroundAndBelowBorder() {
+        UiDocument document = UiDocument.create();
+        ElementNode root = document.getRootElement();
+        root.style()
+                .setWidth(UiStyleLength.px(40))
+                .setHeight(UiStyleLength.px(20))
+                .setBackgroundColor(0xFF223344)
+                .setBoxShadow(UiBoxShadow.inset(0, 0, 2, 0, 0x80000000))
+                .setBorderColor(0xFFFFFFFF)
+                .setBorderWidth(UiStyleLength.px(1))
+                .setBorderStyle(UiBorderStyle.SOLID);
+
+        List<DocumentPaintCommand> commands = DocumentPaintEngine.buildPaintCommands(
+                DocumentLayoutEngine.layout(root, 80, 0));
+
+        Assert.assertEquals(3, commands.size());
+        Assert.assertEquals(DocumentPaintCommandType.BACKGROUND, commands.get(0).getType());
+        Assert.assertEquals(DocumentPaintCommandType.BOX_SHADOW_INSET, commands.get(1).getType());
+        Assert.assertEquals(DocumentPaintCommandType.BORDER, commands.get(2).getType());
+    }
+
+    /**
      * 验证动画中的 border-radius 运行值会参与表面、边框和裁剪命令。
      */
     @Test

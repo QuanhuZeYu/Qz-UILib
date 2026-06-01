@@ -19,10 +19,11 @@
 
 - 先直接重试相同 Gradle 命令。
 - 若重试后成功，按“外部波动已恢复”处理，不要误判为本轮代码回归。
-- 依赖已在本地缓存时，可加 `--offline` 跳过配置阶段的 GitHub manifest 拉取，离线复跑目标测试做验证（已验证：`--offline --no-configuration-cache test --tests ...` 可在 manifest 不可达时通过）。
+- 依赖已在本地缓存时，单独 `--offline` 仍可能在 Blowdryer 设置拉取阶段失败；需要同时用命令行属性 `"-Pgtnh.settings.blowdryerTag="` 临时覆盖为空，跳过远端设置 tag 拉取。
+- 已验证可用命令：`$env:GRADLE_USER_HOME="D:\.MyApps\.ENV\gradle-home"; ./gradlew.bat --offline --no-configuration-cache "-Pgtnh.settings.blowdryerTag=" test --tests "<类名>"`。
 - 若持续失败，再进一步检查网络、代理、GitHub 可达性与插件上游状态。
 
 ## 预防措施
 
-- 记录一次成功的 `compileJava` 或目标测试结果后，再做末次收口验证时，若只出现该错误，应在交接与验证结论中明确标注“外部 manifest 波动”。
+- 记录一次成功的 `compileJava` 或目标测试结果后，再做末次收口验证时，若只出现该错误，应先尝试 `--offline "-Pgtnh.settings.blowdryerTag="`；仍失败时再在交接与验证结论中明确标注“外部 manifest 波动”。
 - 不要因为该错误回退本地源码或随意修改业务实现。

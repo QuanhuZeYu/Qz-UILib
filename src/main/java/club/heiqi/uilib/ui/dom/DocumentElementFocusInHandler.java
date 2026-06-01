@@ -5,7 +5,7 @@ package club.heiqi.uilib.ui.dom;
  */
 public interface DocumentElementFocusInHandler {
     /**
-     * 处理元素焦点进入/离开事件（冒泡）。
+     * 处理元素焦点进入事件（冒泡）。
      *
      * @param event 焦点进入事件
      * @return 是否消费事件

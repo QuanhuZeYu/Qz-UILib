@@ -31,6 +31,10 @@ import club.heiqi.uilib.ui.dom.DocumentElementAnimationEndEvent;
 import club.heiqi.uilib.ui.dom.DocumentElementAnimationEndHandler;
 import club.heiqi.uilib.ui.dom.DocumentElementFocusEvent;
 import club.heiqi.uilib.ui.dom.DocumentElementFocusHandler;
+import club.heiqi.uilib.ui.dom.DocumentElementFocusInEvent;
+import club.heiqi.uilib.ui.dom.DocumentElementFocusInHandler;
+import club.heiqi.uilib.ui.dom.DocumentElementFocusOutEvent;
+import club.heiqi.uilib.ui.dom.DocumentElementFocusOutHandler;
 import club.heiqi.uilib.ui.dom.DocumentElementHoverEvent;
 import club.heiqi.uilib.ui.dom.DocumentElementHoverHandler;
 import club.heiqi.uilib.ui.dom.DocumentElementKeyEvent;
@@ -3434,6 +3438,59 @@ public class HtmlLikeDocumentWidgetTest {
     }
 
     /**
+     * 验证焦点从一个元素切到另一个元素时按浏览器 focusout/focusin/blur/focus 顺序分发。
+     */
+    @Test
+    public void shouldDispatchFocusTransitionInBrowserOrder() {
+        UiDocument document = UiDocument.create();
+        ElementNode root = document.getRootElement();
+        ElementNode firstInput = document.div();
+        ElementNode secondInput = document.div();
+        final List<String> events = new ArrayList<String>();
+        root.style().setWidth(UiStyleLength.px(80)).setHeight(UiStyleLength.px(40));
+        firstInput.style().setWidth(UiStyleLength.px(40)).setHeight(UiStyleLength.px(20));
+        secondInput.style().setWidth(UiStyleLength.px(40)).setHeight(UiStyleLength.px(20));
+        firstInput.setFocusable(true)
+                .setFocusOutHandler(new DocumentElementFocusOutHandler() {
+                    @Override
+                    public boolean onFocusOut(DocumentElementFocusOutEvent event) {
+                        events.add("focusout:first");
+                        return false;
+                    }
+                })
+                .setFocusHandler(new DocumentElementFocusHandler() {
+                    @Override
+                    public void onFocusChanged(DocumentElementFocusEvent event) {
+                        events.add((event.isFocused() ? "focus" : "blur") + ":first");
+                    }
+                });
+        secondInput.setFocusable(true)
+                .setFocusInHandler(new DocumentElementFocusInHandler() {
+                    @Override
+                    public boolean onFocusIn(DocumentElementFocusInEvent event) {
+                        events.add("focusin:second");
+                        return false;
+                    }
+                })
+                .setFocusHandler(new DocumentElementFocusHandler() {
+                    @Override
+                    public void onFocusChanged(DocumentElementFocusEvent event) {
+                        events.add((event.isFocused() ? "focus" : "blur") + ":second");
+                    }
+                });
+        root.append(firstInput).append(secondInput);
+        HtmlLikeDocumentWidget widget = new HtmlLikeDocumentWidget(document, 80, 40,
+                new DeterministicTextMeasureService());
+        widget.applyLayoutBounds(0, 0, 80, 40);
+
+        Assert.assertTrue(firstInput.focus());
+        events.clear();
+        Assert.assertTrue(secondInput.focus());
+
+        Assert.assertEquals("[focusout:first, focusin:second, blur:first, focus:second]", events.toString());
+    }
+
+    /**
      * 验证 ElementNode focus API 对未挂载、不可聚焦、隐藏和 disabled 节点保持无副作用。
      */
     @Test
@@ -3508,6 +3565,84 @@ public class HtmlLikeDocumentWidgetTest {
         Assert.assertEquals(Boolean.TRUE, activeEvents.get(0));
         Assert.assertEquals(Boolean.FALSE, activeEvents.get(1));
         Assert.assertEquals(Integer.valueOf(0), activeButtons.get(1));
+    }
+
+    /**
+     * 验证 active 状态通知不会被目标 handler 返回值截断，祖先仍能同步 :active 状态。
+     */
+    @Test
+    public void shouldNotifyActiveStateAncestorsEvenWhenTargetConsumes() {
+        UiDocument document = UiDocument.create();
+        ElementNode root = document.getRootElement();
+        ElementNode parent = document.div();
+        ElementNode child = document.div();
+        final List<String> activeEvents = new ArrayList<String>();
+        root.style().setWidth(UiStyleLength.px(80)).setHeight(UiStyleLength.px(40));
+        parent.style().setWidth(UiStyleLength.px(40)).setHeight(UiStyleLength.px(20));
+        child.style().setWidth(UiStyleLength.px(40)).setHeight(UiStyleLength.px(20));
+        child.setActiveHandler(new DocumentElementActiveHandler() {
+            @Override
+            public boolean onActiveChanged(DocumentElementActiveEvent event) {
+                activeEvents.add("child:" + event.isActive());
+                return true;
+            }
+        });
+        parent.setActiveHandler(new DocumentElementActiveHandler() {
+            @Override
+            public boolean onActiveChanged(DocumentElementActiveEvent event) {
+                activeEvents.add("parent:" + event.isActive());
+                return false;
+            }
+        });
+        parent.append(child);
+        root.append(parent);
+        HtmlLikeDocumentWidget widget = new HtmlLikeDocumentWidget(document, 80, 40,
+                new DeterministicTextMeasureService());
+        widget.applyLayoutBounds(0, 0, 80, 40);
+
+        widget.onMouseDown(new UiMouseEvent(UiMouseEvent.Action.BUTTON_DOWN, 10, 10, 0, 0, 0, 0, 1L));
+        widget.onMouseUp(new UiMouseEvent(UiMouseEvent.Action.BUTTON_UP, 10, 10, 0, 0, 0, 0, 2L));
+
+        Assert.assertEquals("[child:true, parent:true, child:false, parent:false]", activeEvents.toString());
+    }
+
+    /**
+     * 验证 hover enter/leave 状态通知不会被目标 handler 返回值截断。
+     */
+    @Test
+    public void shouldNotifyHoverAncestorsEvenWhenTargetConsumes() {
+        UiDocument document = UiDocument.create();
+        ElementNode root = document.getRootElement();
+        ElementNode parent = document.div();
+        ElementNode child = document.div();
+        final List<String> hoverEvents = new ArrayList<String>();
+        root.style().setWidth(UiStyleLength.px(80)).setHeight(UiStyleLength.px(40));
+        parent.style().setWidth(UiStyleLength.px(40)).setHeight(UiStyleLength.px(20));
+        child.style().setWidth(UiStyleLength.px(40)).setHeight(UiStyleLength.px(20));
+        child.setHoverHandler(new DocumentElementHoverHandler() {
+            @Override
+            public boolean onHoverChanged(DocumentElementHoverEvent event) {
+                hoverEvents.add("child:" + event.isHovered());
+                return true;
+            }
+        });
+        parent.setHoverHandler(new DocumentElementHoverHandler() {
+            @Override
+            public boolean onHoverChanged(DocumentElementHoverEvent event) {
+                hoverEvents.add("parent:" + event.isHovered());
+                return false;
+            }
+        });
+        parent.append(child);
+        root.append(parent);
+        HtmlLikeDocumentWidget widget = new HtmlLikeDocumentWidget(document, 80, 40,
+                new DeterministicTextMeasureService());
+        widget.applyLayoutBounds(0, 0, 80, 40);
+
+        widget.onMouseMove(new UiMouseEvent(UiMouseEvent.Action.MOVE, 10, 10, -1, 0, 0, 0, 1L));
+        widget.onMouseLeave();
+
+        Assert.assertEquals("[child:true, parent:true, child:false, parent:false]", hoverEvents.toString());
     }
 
     /**

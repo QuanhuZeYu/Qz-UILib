@@ -331,6 +331,26 @@ abstract class ElementInteractionNode extends DocumentNode {
     }
 
     /**
+     * 设置元素焦点离开处理器（冒泡版 blur）。
+     *
+     * @param focusOutHandler 焦点离开处理器；为 null 时清除处理器
+     * @return 当前元素
+     */
+    public ElementNode setFocusOutHandler(DocumentElementFocusOutHandler focusOutHandler) {
+        handlers.focusOutHandler = focusOutHandler;
+        return self();
+    }
+
+    /**
+     * 返回元素焦点离开处理器（冒泡版 blur）。
+     *
+     * @return 焦点离开处理器；不存在时返回 null
+     */
+    public DocumentElementFocusOutHandler getFocusOutHandler() {
+        return handlers.focusOutHandler;
+    }
+
+    /**
      * 设置元素过渡开始处理器。
      *
      * @param transitionStartHandler 过渡开始处理器；为 null 时清除处理器

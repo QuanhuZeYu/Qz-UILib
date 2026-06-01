@@ -24,6 +24,11 @@ public final class DocumentElementFocusInEvent extends AbstractDocumentElementEv
         this.focusVisible = focusVisible;
     }
 
+    /**
+     * 判断元素是否获得焦点。
+     *
+     * @return 始终为 true；失焦请使用 {@link DocumentElementFocusOutEvent}
+     */
     public boolean isFocused() { return focused; }
     public boolean isFocusVisible() { return focusVisible; }
 }

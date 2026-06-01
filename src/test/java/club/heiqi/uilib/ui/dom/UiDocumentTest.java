@@ -7,6 +7,7 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 
+import club.heiqi.uilib.ui.style.props.UiFontStyle;
 import club.heiqi.uilib.ui.style.values.UiStyleLength;
 import club.heiqi.uilib.ui.text.TextContentMode;
 
@@ -194,6 +195,11 @@ public class UiDocumentTest {
 
         Assert.assertTrue(document.getLayoutVersion() > paintOnlyLayoutVersion);
         Assert.assertTrue(document.getPaintVersion() > paintOnlyPaintVersion);
+
+        int fontStyleLayoutVersion = document.getLayoutVersion();
+        root.style().setFontStyle(UiFontStyle.ITALIC);
+
+        Assert.assertTrue(document.getLayoutVersion() > fontStyleLayoutVersion);
     }
 
     /**
@@ -443,6 +449,30 @@ public class UiDocumentTest {
         Assert.assertSame(first, root.appendChild(first));
         Assert.assertSame(second, root.insertBefore(second, first));
         Assert.assertEquals(Arrays.asList("second", "first"), collectElementIds(root));
+    }
+
+    /**
+     * 验证 removeChild 返回被移除节点，且非直接子节点按 DOM 语义报错。
+     */
+    @Test
+    public void shouldReturnRemovedNodeAndRejectNonChildFromRemoveChild() {
+        UiDocument document = UiDocument.create();
+        ElementNode root = document.getRootElement();
+        ElementNode child = document.div().setId("child");
+        ElementNode other = document.div().setId("other");
+        root.append(child);
+
+        DocumentNode removed = root.removeChild(child);
+
+        Assert.assertSame(child, removed);
+        Assert.assertNull(child.getParent());
+
+        try {
+            root.removeChild(other);
+            Assert.fail("非直接子节点不应静默移除");
+        } catch (IllegalArgumentException expected) {
+            Assert.assertTrue(expected.getMessage().contains("not a child"));
+        }
     }
 
     /**

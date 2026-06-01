@@ -159,18 +159,19 @@ public abstract class DocumentNode {
      * 移除直接子节点。
      *
      * @param child 子节点
-     * @return 是否实际移除
+     * @return 被移除的子节点
      */
-    public final boolean removeChild(DocumentNode child) {
-        if (child == null || child.parent != this) {
-            return false;
+    public final DocumentNode removeChild(DocumentNode child) {
+        DocumentNode resolvedChild = Objects.requireNonNull(child, "child");
+        if (resolvedChild.parent != this) {
+            throw new IllegalArgumentException("child is not a child of this node");
         }
-        boolean removed = children.remove(child);
+        boolean removed = children.remove(resolvedChild);
         if (removed) {
-            child.parent = null;
+            resolvedChild.parent = null;
             ownerDocument.recordMutation();
         }
-        return removed;
+        return resolvedChild;
     }
 
     /**

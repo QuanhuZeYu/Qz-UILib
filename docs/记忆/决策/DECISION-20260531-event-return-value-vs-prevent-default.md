@@ -27,8 +27,10 @@
 - target 阶段必须区分 `stopPropagation()` 与 `stopImmediatePropagation()`：capture handler 停止传播后，target 自身的非 capture handler 仍应执行。
 - raw button 键盘默认 click、链接默认激活等默认行为只检查 `isDefaultPrevented()`，不再因 `return true` / `stopPropagation()` 被隐式取消。
 - 自己实现键盘激活的控件，如 `DocumentButtonControl`，若要阻止宿主默认行为，必须显式调用 `preventDefault()`。
+- `hover` / `active` 这类状态通知不等同于会传播 DOM 事件；为保持 `mouseenter` / `mouseleave` 与 `:active` 祖先状态语义，handler 返回值不截断后续祖先通知。
 
 ## 后续注意事项
 
 - 后续补 `dblclick` / `contextmenu` capture、表单默认行为、drag/drop 默认语义时，优先复用这条规则。
 - 新增运行时自检项时，至少覆盖“返回 true 但默认行为仍执行”和“preventDefault 后默认行为取消”两条路径。
+- 新增状态通知类 handler 时，先判断它是否真是可传播 DOM 事件；若只是运行态状态同步，不应机械套用 `return true` 停止传播。

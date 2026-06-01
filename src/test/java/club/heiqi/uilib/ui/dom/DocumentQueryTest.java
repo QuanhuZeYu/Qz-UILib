@@ -117,6 +117,19 @@ public class DocumentQueryTest {
     }
 
     @Test
+    public void querySelectorDoesNotReturnInternalDocumentRoot() {
+        UiDocument document = UiDocument.create();
+        ElementNode root = document.getRootElement();
+        ElementNode child = document.div();
+        root.setId("internal-root");
+        child.setId("child");
+        root.append(child);
+
+        Assert.assertSame(child, document.querySelector("*"));
+        Assert.assertNull(document.querySelector("#internal-root"));
+    }
+
+    @Test
     public void querySelectorAllReturnsAllMatches() {
         UiDocument document = UiDocument.create();
         ElementNode root = document.getRootElement();
@@ -134,6 +147,21 @@ public class DocumentQueryTest {
         Assert.assertEquals(2, results.size());
         Assert.assertSame(div1, results.get(0));
         Assert.assertSame(div2, results.get(1));
+    }
+
+    @Test
+    public void querySelectorAllDoesNotIncludeInternalDocumentRoot() {
+        UiDocument document = UiDocument.create();
+        ElementNode root = document.getRootElement();
+        ElementNode first = document.div();
+        ElementNode second = document.span();
+        root.append(first).append(second);
+
+        List<ElementNode> results = document.querySelectorAll("*");
+
+        Assert.assertEquals(2, results.size());
+        Assert.assertSame(first, results.get(0));
+        Assert.assertSame(second, results.get(1));
     }
 
     @Test
