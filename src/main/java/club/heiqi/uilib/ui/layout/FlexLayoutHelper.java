@@ -53,7 +53,8 @@ final class FlexLayoutHelper {
     static LayoutChildrenResult layoutFlexChildren(ElementNode element, ComputedStyle parentStyle,
             int contentLeft, int contentTop, int contentWidth, int specifiedContentHeight,
             AbsoluteContainingBlock absoluteContainingBlock, boolean createsAbsoluteContainingBlock,
-            AbsoluteContainingBlock fixedContainingBlock, LayoutContext layoutContext) {
+            AbsoluteContainingBlock fixedContainingBlock, boolean createsFixedContainingBlock,
+            LayoutContext layoutContext) {
         FlexChildren flexChildren = collectFlexChildren(element, parentStyle, layoutContext);
         List<ElementNode> absoluteChildren = flexChildren.absoluteChildren;
         List<ElementNode> fixedChildren = flexChildren.fixedChildren;
@@ -75,7 +76,10 @@ final class FlexLayoutHelper {
                 PositionedLayoutHelper.resolveDirectAbsoluteContainingBlock(absoluteContainingBlock,
                         createsAbsoluteContainingBlock, specifiedContentHeight, flowResult.contentHeight),
                 fixedContainingBlock, layoutContext);
-        PositionedLayoutHelper.appendFixedChildren(childBoxes, fixedChildren, fixedContainingBlock, layoutContext);
+        PositionedLayoutHelper.appendFixedChildren(childBoxes, fixedChildren,
+                PositionedLayoutHelper.resolveDirectAbsoluteContainingBlock(fixedContainingBlock,
+                        createsFixedContainingBlock, specifiedContentHeight, flowResult.contentHeight),
+                layoutContext);
         return new LayoutChildrenResult(sortFlexChildBoxesByOrder(element, childBoxes, flexChildren, layoutContext),
                 flowResult.textRuns, flowResult.inlineFragments, flowResult.contentHeight);
     }

@@ -16,6 +16,7 @@ import club.heiqi.uilib.ui.layout.DocumentVisualTraversal.VisualScene;
 import club.heiqi.uilib.ui.style.props.UiOverflow;
 import club.heiqi.uilib.ui.style.props.UiPosition;
 import club.heiqi.uilib.ui.style.values.UiStyleLength;
+import club.heiqi.uilib.ui.style.values.UiTransform;
 
 /**
  * `DocumentVisualTraversal` 的浏览器语义契约测试。
@@ -105,6 +106,55 @@ public class DocumentVisualTraversalTest {
         Assert.assertEquals(6, fixedContext.getBox().getTop() + fixedContext.getBoxOffsetY());
         Assert.assertTrue(fixedContext.getClipChain().isEmpty());
         Assert.assertTrue(fixedContext.getChildClipChain().isEmpty());
+    }
+
+    /**
+     * 验证 transform 祖先会成为 fixed containing block，fixed 后代不再清空该祖先 clip 链。
+     */
+    @Test
+    public void shouldKeepFixedDescendantInTransformedAncestorClipChain() {
+        UiDocument document = UiDocument.create();
+        ElementNode root = document.getRootElement();
+        ElementNode transformedClip = document.div();
+        ElementNode staticWrapper = document.div();
+        ElementNode fixed = document.div();
+
+        root.style().setWidth(UiStyleLength.px(120)).setHeight(UiStyleLength.px(80));
+        transformedClip.style()
+                .setWidth(UiStyleLength.px(50))
+                .setHeight(UiStyleLength.px(40))
+                .setMarginLeft(UiStyleLength.px(20))
+                .setOverflowX(UiOverflow.HIDDEN)
+                .setOverflowY(UiOverflow.HIDDEN)
+                .setTransform(UiTransform.translate(0.01F, 0.0F));
+        staticWrapper.style()
+                .setWidth(UiStyleLength.px(40))
+                .setHeight(UiStyleLength.px(20))
+                .setMarginLeft(UiStyleLength.px(7))
+                .setMarginTop(UiStyleLength.px(9));
+        fixed.style()
+                .setWidth(UiStyleLength.px(20))
+                .setHeight(UiStyleLength.px(10))
+                .setPosition(UiPosition.FIXED)
+                .setTop(UiStyleLength.px(5))
+                .setLeft(UiStyleLength.px(10));
+        staticWrapper.append(fixed);
+        transformedClip.append(staticWrapper);
+        root.append(transformedClip);
+
+        DocumentLayoutBox rootBox = DocumentLayoutEngine.layout(root, 120, 80);
+        BoxContext rootContext = DocumentVisualTraversal.resolveRootBoxContext(rootBox, null);
+        BoxContext transformedContext = DocumentVisualTraversal.resolveChildBoxContext(rootContext,
+                rootBox.getChildren().get(0), null);
+        BoxContext wrapperContext = DocumentVisualTraversal.resolveChildBoxContext(transformedContext,
+                transformedContext.getBox().getChildren().get(0), null);
+        BoxContext fixedContext = DocumentVisualTraversal.resolveChildBoxContext(wrapperContext,
+                wrapperContext.getBox().getChildren().get(0), null);
+
+        Assert.assertEquals(1, fixedContext.getClipChain().size());
+        Assert.assertSame(transformedClip, fixedContext.getClipChain().get(0).getBox().getElement());
+        Assert.assertEquals(30, fixedContext.getBox().getLeft() + fixedContext.getBoxOffsetX());
+        Assert.assertEquals(5, fixedContext.getBox().getTop() + fixedContext.getBoxOffsetY());
     }
 
     /**

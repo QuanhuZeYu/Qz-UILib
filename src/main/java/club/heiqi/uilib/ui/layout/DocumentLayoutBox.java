@@ -273,7 +273,7 @@ public final class DocumentLayoutBox {
     }
 
     /**
-     * 判断当前布局盒是否是相对 HTML-like 视口固定定位的元素。
+     * 判断当前布局盒是否是 fixed 定位元素。
      *
      * @return 是否为 fixed 定位盒
      */

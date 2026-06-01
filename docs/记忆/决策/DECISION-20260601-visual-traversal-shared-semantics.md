@@ -31,7 +31,8 @@
 - 单独抽共享层后，可以明确表达：
   - `overflow:hidden/auto/scroll` 祖先提供 clip 链
   - clip 本身不自动等同于 CSS 规范意义上的 stacking context
-  - `position:fixed` 脱离祖先 scroll/clip 链，以视口为基准
+  - `position:fixed` 默认脱离祖先 scroll/clip 链，以视口为基准
+  - `transform` 祖先会成为 fixed containing block，fixed 后代仍受该祖先 scroll/clip 约束
 
 ## 影响范围
 
@@ -39,6 +40,7 @@
 - `DocumentScrollState` 的滚轮目标选择、滚动条命中与活动拖拽几何改为复用 `DocumentVisualTraversal`
 - `DocumentPaintEngine` 改为复用 `DocumentVisualTraversal`，并按 clip 链差量切换输出 `CLIP_START/CLIP_END`
 - 后续已继续扩展到普通树 + `top-layer` 根盒的统一视觉场景与共享元素定位查询，`HtmlLikeDocumentWidget` 不再单独维护顶层命中/绘制顺序
+- 后续已继续扩展 fixed containing block 状态传播：当 fixed 后代位于 `transform` 祖先内部时，共享遍历层不再清空该祖先 clip chain
 - 新增 `DocumentVisualTraversalTest` 作为共享层浏览器契约测试
 - `DocumentPaintEngineTest` 中 `fixed` / `overflow clip` 相关预期调整为浏览器语义
 
@@ -47,5 +49,6 @@
 - 后续处理 `top-layer` 时，优先继续接入 `DocumentVisualTraversal`，不要重新在宿主层维护一套普通树/顶层树并行排序逻辑。
 - `DocumentEffectChain.isStackingBoundary()` 现在保留工程遍历边界含义，不能直接当成规范语义上的 stacking context 使用；需要规范判定时应显式使用 `createsStackingContext()`。
 - `position:fixed` 即使 `z-index:auto` 也应通过 `createsStackingContext()` 表达 CSS-like stacking context；绘制测试若只校验几何，可显式剥离无视觉差异的 paint context 命令。
+- 当前 fixed containing block 触发源只覆盖项目已建模的 `transform`；`filter` / `perspective` 尚未作为 CSS 属性实现，不应通过假属性或硬编码补丁模拟。
 - overflow 子内容 clip 的命中可达性应使用 padding box 圆角，不能只按矩形边界判断；仅单轴裁剪时不额外施加圆角约束。
 - 如果后续引入更完整的浏览器绘制顺序分层，应继续扩展共享层，而不是回退到 `paint/hit/scroll` 各自收集 phase item 的方式。

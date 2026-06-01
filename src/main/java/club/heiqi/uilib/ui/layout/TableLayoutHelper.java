@@ -29,7 +29,8 @@ final class TableLayoutHelper {
     static LayoutChildrenResult layoutTableChildren(ElementNode element, ComputedStyle tableStyle,
             int contentLeft, int contentTop, int contentWidth, int specifiedContentHeight,
             AbsoluteContainingBlock absoluteContainingBlock, boolean createsAbsoluteContainingBlock,
-            AbsoluteContainingBlock fixedContainingBlock, LayoutContext layoutContext) {
+            AbsoluteContainingBlock fixedContainingBlock, boolean createsFixedContainingBlock,
+            LayoutContext layoutContext) {
         VisibleElementChildren visibleElementChildren = DocumentLayoutEngine.getVisibleElementChildren(element,
                 layoutContext);
         List<ElementNode> absoluteChildren = visibleElementChildren.absoluteChildren;
@@ -75,7 +76,10 @@ final class TableLayoutHelper {
                 PositionedLayoutHelper.resolveDirectAbsoluteContainingBlock(absoluteContainingBlock,
                         createsAbsoluteContainingBlock, specifiedContentHeight, contentHeight),
                 fixedContainingBlock, layoutContext);
-        PositionedLayoutHelper.appendFixedChildren(childBoxes, fixedChildren, fixedContainingBlock, layoutContext);
+        PositionedLayoutHelper.appendFixedChildren(childBoxes, fixedChildren,
+                PositionedLayoutHelper.resolveDirectAbsoluteContainingBlock(fixedContainingBlock,
+                        createsFixedContainingBlock, specifiedContentHeight, contentHeight),
+                layoutContext);
         return new LayoutChildrenResult(DocumentLayoutEngine.sortByDocumentChildOrder(element, childBoxes),
                 new ArrayList<DocumentLayoutTextRun>(), new ArrayList<DocumentLayoutInlineFragment>(), contentHeight);
     }

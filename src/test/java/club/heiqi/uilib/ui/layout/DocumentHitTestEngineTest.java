@@ -172,6 +172,46 @@ public class DocumentHitTestEngineTest {
     }
 
     /**
+     * 验证 fixed 后代在 transform 祖先内仍受该祖先 overflow clip 约束。
+     */
+    @Test
+    public void shouldClipFixedDescendantInsideTransformedAncestor() {
+        UiDocument document = UiDocument.create();
+        ElementNode root = document.getRootElement();
+        ElementNode transformedClip = document.div();
+        ElementNode staticWrapper = document.div();
+        ElementNode fixed = document.div();
+
+        root.style().setWidth(UiStyleLength.px(120)).setHeight(UiStyleLength.px(80));
+        transformedClip.style()
+                .setWidth(UiStyleLength.px(50))
+                .setHeight(UiStyleLength.px(40))
+                .setMarginLeft(UiStyleLength.px(20))
+                .setOverflowX(UiOverflow.HIDDEN)
+                .setOverflowY(UiOverflow.HIDDEN)
+                .setTransform(UiTransform.translate(0.01F, 0.0F));
+        staticWrapper.style()
+                .setWidth(UiStyleLength.px(40))
+                .setHeight(UiStyleLength.px(20))
+                .setMarginLeft(UiStyleLength.px(7))
+                .setMarginTop(UiStyleLength.px(9));
+        fixed.style()
+                .setWidth(UiStyleLength.px(20))
+                .setHeight(UiStyleLength.px(10))
+                .setPosition(UiPosition.FIXED)
+                .setTop(UiStyleLength.px(5))
+                .setLeft(UiStyleLength.px(40));
+        staticWrapper.append(fixed);
+        transformedClip.append(staticWrapper);
+        root.append(transformedClip);
+
+        DocumentLayoutBox rootBox = DocumentLayoutEngine.layout(root, 120, 80);
+
+        assertHitElement(fixed, rootBox, 62, 8);
+        assertHitElement(root, rootBox, 72, 8);
+    }
+
+    /**
      * 验证 inline span 文本片段可以作为最深元素被命中。
      */
     @Test

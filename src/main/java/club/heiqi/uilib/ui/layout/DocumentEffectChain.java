@@ -180,6 +180,26 @@ public final class DocumentEffectChain {
     }
 
     /**
+     * 判断当前盒是否会为 fixed 后代建立局部 containing block。
+     *
+     * @return 是否约束 fixed 后代
+     */
+    public boolean createsFixedContainingBlock() {
+        return createsFixedContainingBlock(box.getComputedStyle());
+    }
+
+    /**
+     * 判断样式是否会为 fixed 后代建立局部 containing block。
+     *
+     * @param style 当前样式
+     * @return 是否约束 fixed 后代
+     */
+    static boolean createsFixedContainingBlock(ComputedStyle style) {
+        UiTransform transform = style.getTransform();
+        return transform != null && !transform.isIdentity();
+    }
+
+    /**
      * 返回已限制上限的 backdrop blur 半径。
      *
      * @return blur 半径
