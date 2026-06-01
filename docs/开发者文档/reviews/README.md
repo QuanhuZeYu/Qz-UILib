@@ -4,6 +4,11 @@
 
 详细报告存放在本目录下；本文件只保留指针、主题和必要摘要，避免单文件持续膨胀。
 
+## 2026-06-01-capability-gap-recheck
+- 类型：浏览器能力缺口复核（取代 2026-05-18 结论）
+- 详情文档：[REVIEW-20260601-capability-gap-recheck.md](REVIEW-20260601-capability-gap-recheck.md)
+- 结论摘要：以当前源码为准重新核实，确认 `REVIEW-20260518` 正文结论已严重滞后——其列为"待实现/部分实现"的 20+ 项（transform 主体、sticky、flex order、border-collapse、text-shadow/transform/indent、white-space 五模式、list-style、`!important`、`::before/::after`、结构伪类、后代/子代选择器、contextmenu、dblclick、transitionend/animationend、CustomEvent、cloneNode、DocumentFragment、`<a>` 链接、select/checkbox/radio 等）已完整落地。当前真实剩余缺口约 23 主项：12 项完全未实现、约 11 项部分实现，另发现 `DocumentScrollMetricsCalculator` 未跟随 fixed containing block 语义这一运行时一致性缺口。重点提示：剩余缺口需先按 A 类（已声明有意边界：Grid/float/gradient/transform 矩阵/baseline/完整 Web Animations/var() 等）与 B 类（性价比待评估真缺口）分级，避免把有意边界当待补缺陷。`REVIEW-20260518` 正文结论以本复核取代。
+
 ## 2026-06-01-browser-semantics-phase2-audit
 - 类型：浏览器语义一致性审查（Phase 2）
 - 详情文档：[REVIEW-20260601-browser-semantics-phase2-audit.md](REVIEW-20260601-browser-semantics-phase2-audit.md)
@@ -42,6 +47,7 @@
 ## 2026-05-18-browser-capability-gap-audit
 - 类型：浏览器常用能力差距审查
 - 详情文档：[REVIEW-20260518-browser-capability-gap-audit.md](REVIEW-20260518-browser-capability-gap-audit.md)
+- **结论已失效**：正文"30 项完全没有实现"等数字与清单已严重滞后，现状以 [2026-06-01-capability-gap-recheck](#2026-06-01-capability-gap-recheck) 为准；本条目仅保留历史审查价值。
 - 结论摘要：共核查 65 项浏览器常用能力（CSS 布局/样式/选择器、事件、DOM、表单），其中 27 项完整实现、8 项部分实现（声明与实现不一致）、30 项完全没有实现。发现 `cursor` 属性声明链路完整但系统光标从未映射、`overflow-wrap`/`word-break` 样式已声明但布局引擎未消费、`font-weight`/`font-style` 底层有能力但 CSS 属性层未暴露，三处属"文档比实现更乐观"。后续补齐状态：`cursor`、`overflow-wrap` / `word-break`、`focus()` / `blur()` / `scrollTo()` / `scrollIntoView()`、兄弟节点遍历、`font-weight` / `font-style`、`dblclick` / `contextmenu` / `transitionend` / `animationend`、`textarea`、最小 `select`、flex `order`、`calc()` 最小混合长度、`position:sticky` 首阶段闭环、`text-shadow`、`text-transform`、`text-indent`、`white-space:pre/pre-wrap/pre-line` 和单图 `background-image` 已落地；`font-family`、`display:grid`、`transform`、gradient、多背景、多重阴影、`float`、完整 `textarea` 软换行和完整浏览器原生下拉能力仍按详情文档边界处理。
 
 ## 2026-05-21-animation-capability-assessment
