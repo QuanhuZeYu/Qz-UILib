@@ -233,8 +233,40 @@ public class DocumentTextAreaControlTest {
         Assert.assertEquals(betaText.x + renderContext.measureTextWidth("Beta", TextContentMode.UILIB_RAW),
                 caret.left);
         Assert.assertEquals(betaText.y, caret.top);
-        Assert.assertEquals(caret.left + 1, caret.right);
+        Assert.assertEquals(caret.left + 2, caret.right);
         Assert.assertEquals(betaText.y + 18, caret.bottom);
+    }
+
+    /**
+     * 验证 textarea 光标使用独立高对比颜色，不被普通文本色覆盖到不可见。
+     */
+    @Test
+    public void shouldRenderCaretWithDedicatedColor() {
+        UiDocument document = UiDocument.create();
+        ElementNode root = document.getRootElement();
+        DocumentTextAreaControl textAreaControl = new DocumentTextAreaControl(document)
+                .setText("Visible caret")
+                .setTextColors(0x00000000, 0xFF777799, 0xFF666677, 0x664F86F7)
+                .setCaretColor(0xFFFFCC00);
+        root.style()
+                .setWidth(UiStyleLength.px(220))
+                .setHeight(UiStyleLength.px(90));
+        textAreaControl.getElement().style()
+                .setWidth(UiStyleLength.px(180))
+                .setHeight(UiStyleLength.px(54));
+        root.append(textAreaControl.getElement());
+        HtmlLikeDocumentWidget widget = new HtmlLikeDocumentWidget(document, 220, 90,
+                new DeterministicTextMeasureService());
+        widget.applyLayoutBounds(0, 0, 220, 90);
+
+        widget.onFocusTraversalEntered(false);
+        ControlTestRenderContext renderContext = new ControlTestRenderContext(220, 90);
+        widget.render(renderContext);
+
+        ControlTestRenderContext.FillRectCall caret = findFillRectByColor(renderContext, 0xFFFFCC00);
+        Assert.assertNotNull(caret);
+        Assert.assertEquals(2, caret.right - caret.left);
+        Assert.assertEquals(18, caret.bottom - caret.top);
     }
 
     /**
@@ -340,9 +372,19 @@ public class DocumentTextAreaControlTest {
 
     private static ControlTestRenderContext.FillRectCall findCaretFillRect(ControlTestRenderContext renderContext) {
         for (ControlTestRenderContext.FillRectCall fillRectCall : renderContext.fillRectCalls) {
-            if (fillRectCall.right - fillRectCall.left == 1
+            if (fillRectCall.right - fillRectCall.left == 2
                     && fillRectCall.bottom - fillRectCall.top == 18
-                    && fillRectCall.color == 0xFFEEEEFF) {
+                    && fillRectCall.color == 0xFFFFFFFF) {
+                return fillRectCall;
+            }
+        }
+        return null;
+    }
+
+    private static ControlTestRenderContext.FillRectCall findFillRectByColor(ControlTestRenderContext renderContext,
+            int color) {
+        for (ControlTestRenderContext.FillRectCall fillRectCall : renderContext.fillRectCalls) {
+            if (fillRectCall.color == color) {
                 return fillRectCall;
             }
         }

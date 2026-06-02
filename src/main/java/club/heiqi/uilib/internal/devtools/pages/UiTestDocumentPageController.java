@@ -6,11 +6,16 @@ import java.util.Collections;
 import java.util.List;
 import java.util.Objects;
 
+import org.lwjglx.input.Keyboard;
+
 import club.heiqi.uilib.Config;
 import club.heiqi.uilib.net.transport.NetTransportFactory;
+import club.heiqi.uilib.ui.animation.DocumentAnimation;
 import club.heiqi.uilib.ui.animation.DocumentAnimationFillMode;
+import club.heiqi.uilib.ui.animation.DocumentAnimationOptions;
 import club.heiqi.uilib.ui.animation.DocumentAnimationProperty;
 import club.heiqi.uilib.ui.animation.DocumentAnimationTimingFunction;
+import club.heiqi.uilib.ui.animation.DocumentKeyframes;
 import club.heiqi.uilib.ui.animation.DocumentTransitionSpec;
 import club.heiqi.uilib.ui.control.DocumentButtonActionEvent;
 import club.heiqi.uilib.ui.control.DocumentButtonActionHandler;
@@ -20,10 +25,12 @@ import club.heiqi.uilib.ui.control.DocumentTextAreaControl;
 import club.heiqi.uilib.ui.control.DocumentTextInputControl;
 import club.heiqi.uilib.ui.diagnostic.UiRuntimeStats;
 import club.heiqi.uilib.ui.document.HtmlLikeDocumentWidget;
+import club.heiqi.uilib.ui.dom.DocumentElementBounds;
 import club.heiqi.uilib.ui.dom.DocumentElementClickEvent;
 import club.heiqi.uilib.ui.dom.DocumentElementClickHandler;
 import club.heiqi.uilib.ui.dom.DocumentElementDoubleClickEvent;
 import club.heiqi.uilib.ui.dom.DocumentElementDoubleClickHandler;
+import club.heiqi.uilib.ui.dom.DocumentElementFocusEvent;
 import club.heiqi.uilib.ui.dom.DocumentElementMouseDownEvent;
 import club.heiqi.uilib.ui.dom.DocumentElementMouseDownHandler;
 import club.heiqi.uilib.ui.dom.DocumentElementMouseUpEvent;
@@ -37,16 +44,21 @@ import club.heiqi.uilib.ui.dom.DocumentFragmentNode;
 import club.heiqi.uilib.ui.dom.ElementNode;
 import club.heiqi.uilib.ui.dom.TextNode;
 import club.heiqi.uilib.ui.dom.UiDocument;
+import club.heiqi.uilib.ui.event.UiKeyEvent;
 import club.heiqi.uilib.ui.event.UiMouseEvent;
+import club.heiqi.uilib.ui.event.UiTextInputEvent;
+import club.heiqi.uilib.ui.image.HostImageSource;
 import club.heiqi.uilib.ui.layout.DocumentLayoutBox;
 import club.heiqi.uilib.ui.layout.DocumentLayoutEngine;
 import club.heiqi.uilib.ui.layout.UiLayoutSpec;
 import club.heiqi.uilib.ui.layout.UiLength;
+import club.heiqi.uilib.ui.render.UiRenderContext;
 import club.heiqi.uilib.ui.screen.page.DocumentPageAuthoringSurface;
 import club.heiqi.uilib.ui.screen.page.DocumentPageController;
 import club.heiqi.uilib.ui.screen.page.DocumentPageRuntimeView;
 import club.heiqi.uilib.ui.screen.page.DocumentUiScope;
 import club.heiqi.uilib.ui.style.props.UiAnimationDirection;
+import club.heiqi.uilib.ui.style.cascade.UiBorderRadiusResolver;
 import club.heiqi.uilib.ui.style.cascade.ComputedStyle;
 import club.heiqi.uilib.ui.style.cascade.UiStyleDeclaration;
 import club.heiqi.uilib.ui.style.cascade.UiStyleResolver;
@@ -57,10 +69,12 @@ import club.heiqi.uilib.ui.style.props.UiBoxSizing;
 import club.heiqi.uilib.ui.style.props.UiDisplay;
 import club.heiqi.uilib.ui.style.props.UiFlexDirection;
 import club.heiqi.uilib.ui.style.props.UiFlexWrap;
+import club.heiqi.uilib.ui.style.props.UiFontStyle;
 import club.heiqi.uilib.ui.style.props.UiFontWeight;
 import club.heiqi.uilib.ui.style.props.UiJustifyContent;
 import club.heiqi.uilib.ui.style.props.UiOverflow;
 import club.heiqi.uilib.ui.style.props.UiPosition;
+import club.heiqi.uilib.ui.style.values.UiSurfaceStyle;
 import club.heiqi.uilib.ui.style.values.UiStyleLength;
 import club.heiqi.uilib.ui.style.values.UiTransform;
 import club.heiqi.uilib.ui.text.TextContentMode;
@@ -504,9 +518,9 @@ public final class UiTestDocumentPageController extends DocumentPageController {
                         "CTRL-002",
                         CONTROLS_GROUP,
                         "text input value、selection、caret",
-                        "运行时按钮会校验文本输入控件 value；selection 与 caret 留给人工观察。",
+                        "运行时按钮会在页面演示输入框上真实聚焦、追加文本并退格，校验 value 与 caret 可见状态。",
                         "进入 Controls 二级页后点击 `执行自动测试`；观察输入值和光标区域；需要时点击人工通过或人工失败。",
-                        "预期结果：输入、删除、选择替换后 value 与光标位置文本一致。"),
+                        "预期结果：输入框被聚焦并显示光标，value 变为 `alpha-X`，摘要显示 `caretVisible=true`。"),
                 new RuntimeTestCase(
                         "CTRL-003",
                         CONTROLS_GROUP,
@@ -518,16 +532,16 @@ public final class UiTestDocumentPageController extends DocumentPageController {
                         "CTRL-004",
                         CONTROLS_GROUP,
                         "number input 解析、非法值、step",
-                        "运行时按钮会校验 number 类型过滤非法字符；step 调整需人工或后续控件扩展确认。",
+                        "运行时按钮会在页面演示 number 输入框上真实输入非法字符并断言运行时过滤结果。",
                         "进入 Controls 二级页后点击 `执行自动测试`；观察数字输入与错误状态说明；需要时点击人工通过或人工失败。",
-                        "预期结果：有效数字按 step 调整，非法输入显示错误状态且不提交。"),
+                        "预期结果：输入 `12bad.5e+2` 后显示值为 `12.5e+2`，非法字符不会进入控件 value。"),
                 new RuntimeTestCase(
                         "CTRL-005",
                         CONTROLS_GROUP,
                         "textarea 逻辑行与视觉软换行",
-                        "运行时按钮会校验 textarea 真实 value 保留逻辑换行，视觉软换行等待人工确认。",
+                        "运行时按钮会在页面 textarea 上真实聚焦、输入换行和长文本，并用运行时布局校验软换行。",
                         "进入 Controls 二级页后点击 `执行自动测试`；观察长文本在窄容器内软换行；需要时点击人工通过或人工失败。",
-                        "预期结果：长文本自动软换行，value 中只保留真实换行。"),
+                        "预期结果：textarea 显示高对比光标，长逻辑行自动软换行，value 中只保留真实换行。"),
                 new RuntimeTestCase(
                         "TEXT-001",
                         TEXT_FONT_GROUP,
@@ -567,37 +581,37 @@ public final class UiTestDocumentPageController extends DocumentPageController {
                         "ANIM-001",
                         ANIMATION_GROUP,
                         "transition start/end/cancel",
-                        "运行时按钮会校验 transition 声明存在；start/end/cancel 事件需动画时钟和人工观察。",
+                        "运行时按钮会在页面样例上启动真实 opacity keyframe 动画，并校验运行时动画进入活动时间线。",
                         "进入 Animation 二级页后点击 `执行自动测试`；触发样例动画并观察日志；需要时点击人工通过或人工失败。",
-                        "预期结果：触发动画后日志出现 start/end，中途反向触发 cancel。"),
+                        "预期结果：触发后样例进入淡入动画，摘要显示 `animationRunning=true`。"),
                 new RuntimeTestCase(
                         "ANIM-002",
                         ANIMATION_GROUP,
                         "per-property transition",
-                        "运行时按钮会校验 opacity 与 transform 的 per-property transition 时长不同。",
+                        "运行时按钮会启动同时改变文本色与位移的真实动画，并校验两条属性轨道与运行态。",
                         "进入 Animation 二级页后点击 `执行自动测试`；观察属性完成时间不同；需要时点击人工通过或人工失败。",
-                        "预期结果：颜色和 transform 按不同 duration 结束，日志分属性记录。"),
+                        "预期结果：样例同时变色并向右移动，摘要显示颜色轨道和 translateX 轨道已进入运行态。"),
                 new RuntimeTestCase(
                         "ANIM-003",
                         ANIMATION_GROUP,
                         "keyframes from/to 与百分比帧",
-                        "运行时按钮会校验 animation 名称、持续时间与 transform 终点结构。",
+                        "运行时按钮会启动包含 0/50/100% stop 的真实路径动画，并校验页面动画时间线。",
                         "进入 Animation 二级页后点击 `执行自动测试`；观察盒子沿标注路径移动；需要时点击人工通过或人工失败。",
-                        "预期结果：盒子按关键帧路径移动，最终停在标注终点。"),
+                        "预期结果：盒子沿 0/50/100% 标注路径移动，摘要显示 stop 数和 active 动画数量。"),
                 new RuntimeTestCase(
                         "ANIM-004",
                         ANIMATION_GROUP,
                         "delay、duration、iteration-count",
-                        "运行时按钮会校验 delay、duration 与 iteration-count 计算样式。",
+                        "运行时按钮会以 delay、duration 与 iteration-count 选项启动真实动画并校验句柄运行态。",
                         "进入 Animation 二级页后点击 `执行自动测试`；观察延迟和循环次数；需要时点击人工通过或人工失败。",
-                        "预期结果：延迟期不移动，循环次数与日志 iteration 数一致。"),
+                        "预期结果：样例延迟后开始循环，摘要显示 delay、duration、iteration 和运行中句柄。"),
                 new RuntimeTestCase(
                         "ANIM-005",
                         ANIMATION_GROUP,
                         "direction normal/reverse/alternate",
-                        "运行时按钮会校验 normal、reverse、alternate 三种方向声明。",
+                        "运行时按钮会为 normal、reverse、alternate 三个页面样例启动真实方向动画并校验句柄运行态。",
                         "进入 Animation 二级页后点击 `执行自动测试`；观察三个样例起点与方向；需要时点击人工通过或人工失败。",
-                        "预期结果：reverse 从终点开始，alternate 每轮方向翻转。"),
+                        "预期结果：三个样例同时播放，reverse 从终点侧开始，alternate 每轮方向翻转，摘要显示 3 个运行句柄。"),
                 new RuntimeTestCase(
                         "HOST-001",
                         RUNTIME_HOST_GROUP,
@@ -1682,51 +1696,58 @@ public final class UiTestDocumentPageController extends DocumentPageController {
         ElementNode demo = createRuntimeDemoContainer(document);
         ElementNode row = createRuntimeDemoRow(document);
         if ("CTRL-001".equals(testCase.getId())) {
-            DocumentButtonControl enabled = new DocumentButtonControl(document, "enabled +1");
+            final DocumentButtonControl enabled = new DocumentButtonControl(document, "enabled +1");
             DocumentButtonControl disabled = new DocumentButtonControl(document, "disabled no-op")
                     .setEnabled(false);
+            enabled.getElement().setAttribute("data-runtime-action-count", "0");
+            enabled.setActionHandler(new DocumentButtonActionHandler() {
+                @Override
+                public void onAction(DocumentButtonActionEvent event) {
+                    incrementRuntimeActionCount(enabled.getElement());
+                }
+            });
             row.append(enabled.getElement()).append(disabled.getElement());
             demo.append(row);
             TextNode summary = appendDemoSummary(document, demo, "button action：未执行");
-            testCase.setElementDemo(row, summary, enabled.getElement(), disabled.getElement());
+            testCase.setButtonDemo(row, summary, enabled, disabled);
         } else if ("CTRL-002".equals(testCase.getId())) {
             DocumentTextInputControl input = new DocumentTextInputControl(document)
                     .setPlaceholder("输入 value")
-                    .setText("alpha");
+                    .setText("alpha-");
             input.getElement().style().setWidth(UiStyleLength.px(170));
-            row.append(input.getElement()).append(createDemoPanel(document, "selection/caret 人工观察", 0xFF334155));
+            row.append(input.getElement()).append(createDemoPanel(document, "执行后自动聚焦并显示 caret", 0xFF334155));
             demo.append(row);
             TextNode summary = appendDemoSummary(document, demo, "text input value：未执行");
-            testCase.setElementDemo(row, summary, input.getElement());
+            testCase.setTextInputDemo(row, summary, input);
         } else if ("CTRL-003".equals(testCase.getId())) {
             DocumentTextInputControl password = new DocumentTextInputControl(document)
                     .setPasswordMaskCharacter('*')
                     .setType(DocumentInputType.PASSWORD)
-                    .setText("secret");
+                    .setText("");
             password.getElement().style().setWidth(UiStyleLength.px(150));
-            row.append(password.getElement()).append(createDemoPanel(document, "真实 value 长度=6", 0xFF334155));
+            row.append(password.getElement()).append(createDemoPanel(document, "执行后输入 secret", 0xFF334155));
             demo.append(row);
             TextNode summary = appendDemoSummary(document, demo, "password：未执行");
-            testCase.setElementDemo(row, summary, password.getElement());
+            testCase.setTextInputDemo(row, summary, password);
         } else if ("CTRL-004".equals(testCase.getId())) {
             DocumentTextInputControl number = new DocumentTextInputControl(document)
                     .setType(DocumentInputType.NUMBER)
-                    .setText("12bad.5e+2");
+                    .setText("");
             number.getElement().style().setWidth(UiStyleLength.px(150));
-            row.append(number.getElement()).append(createDemoPanel(document, "step=0.5 人工调整", 0xFF334155));
+            row.append(number.getElement()).append(createDemoPanel(document, "执行后输入 12bad.5e+2", 0xFF334155));
             demo.append(row);
             TextNode summary = appendDemoSummary(document, demo, "number input：未执行");
-            testCase.setElementDemo(row, summary, number.getElement());
+            testCase.setTextInputDemo(row, summary, number);
         } else if ("CTRL-005".equals(testCase.getId())) {
             DocumentTextAreaControl textArea = new DocumentTextAreaControl(document)
-                    .setText("逻辑行一\n很长的逻辑行需要在窄容器内软换行");
+                    .setText("点击执行后会自动聚焦并重写内容");
             textArea.getElement().style()
                     .setWidth(UiStyleLength.px(210))
-                    .setHeight(UiStyleLength.px(64));
-            row.append(textArea.getElement()).append(createDemoPanel(document, "value 只含真实换行", 0xFF334155));
+                    .setHeight(UiStyleLength.px(82));
+            row.append(textArea.getElement()).append(createDemoPanel(document, "执行后显示光标与软换行", 0xFF334155));
             demo.append(row);
             TextNode summary = appendDemoSummary(document, demo, "textarea：未执行");
-            testCase.setElementDemo(row, summary, textArea.getElement());
+            testCase.setTextAreaDemo(row, summary, textArea);
         } else if ("TEXT-001".equals(testCase.getId())) {
             ElementNode raw = createDemoPanel(document, "UILIB_RAW ", 0xFF1E3A8A);
             raw.appendText("§a原始字符", TextContentMode.UILIB_RAW);
@@ -1778,16 +1799,20 @@ public final class UiTestDocumentPageController extends DocumentPageController {
             TextNode summary = appendDemoSummary(document, demo, "per-property transition：未执行");
             testCase.setElementDemo(row, summary, sample);
         } else if ("ANIM-003".equals(testCase.getId())) {
+            row.style().setAlignItems(UiAlignItems.START);
+            ElementNode track = createAnimationTrack(document, "0% -> 50% -> 100%");
             ElementNode sample = createDemoPanel(document, "keyframes path", 0xFF059669);
+            sample.style().setWidth(UiStyleLength.px(90));
+            track.append(sample);
             sample.style()
                     .setAnimationName("runtime-path")
                     .setAnimationDurationMillis(300)
                     .setAnimationFillMode(DocumentAnimationFillMode.FORWARDS)
-                    .setTransform(UiTransform.of(40.0F, 0.0F, 1.0F, 1.0F, 0.0F));
-            row.append(sample);
+                    .setTransform(UiTransform.of(0.0F, 0.0F, 1.0F, 1.0F, 0.0F));
+            row.append(track);
             demo.append(row);
             TextNode summary = appendDemoSummary(document, demo, "keyframes：未执行");
-            testCase.setElementDemo(row, summary, sample);
+            testCase.setElementDemo(track, summary, sample);
         } else if ("ANIM-004".equals(testCase.getId())) {
             ElementNode sample = createDemoPanel(document, "delay/duration/iteration", 0xFFB45309);
             sample.style()
@@ -2109,6 +2134,27 @@ public final class UiTestDocumentPageController extends DocumentPageController {
     }
 
     /**
+     * 创建动画轨道容器，让运行时动画的位移路径直接显示在卡片中。
+     *
+     * @param document 文档实例
+     * @param label 轨道说明
+     * @return 动画轨道容器
+     */
+    private ElementNode createAnimationTrack(UiDocument document, String label) {
+        ElementNode track = document.div();
+        track.style()
+                .setWidth(UiStyleLength.px(230))
+                .setPadding(UiStyleLength.px(6))
+                .setBackgroundColor(0xFF111827)
+                .setBorderColor(0xFF64748B)
+                .setBorderWidth(UiStyleLength.px(1))
+                .setBorderStyle(UiBorderStyle.SOLID)
+                .setBorderRadius(UiStyleLength.px(8));
+        appendMutedText(document, track, label);
+        return track;
+    }
+
+    /**
      * 追加演示摘要。
      *
      * @param document 文档实例
@@ -2176,6 +2222,7 @@ public final class UiTestDocumentPageController extends DocumentPageController {
      * @param testCase 用例模型
      */
     private void executeRuntimeTest(RuntimeTestCase testCase) {
+        ensureRuntimeWidgetBounds();
         applyRuntimeTestResult(testCase, RuntimeTestResult.running("自动测试正在执行。"));
         try {
             if ("DOM-001".equals(testCase.getId())) {
@@ -2850,47 +2897,46 @@ public final class UiTestDocumentPageController extends DocumentPageController {
      */
     private RuntimeTestResult executeControlsGroupRuntimeTest(RuntimeTestCase testCase) {
         if ("CTRL-001".equals(testCase.getId())) {
-            final int[] actionCount = new int[] {0};
-            DocumentButtonControl enabled = new DocumentButtonControl(document, "enabled");
-            enabled.setActionHandler(new DocumentButtonActionHandler() {
-                @Override
-                public void onAction(DocumentButtonActionEvent event) {
-                    actionCount[0]++;
-                }
-            });
-            DocumentButtonControl disabled = new DocumentButtonControl(document, "disabled")
-                    .setEnabled(false)
-                    .setActionHandler(new DocumentButtonActionHandler() {
-                        @Override
-                        public void onAction(DocumentButtonActionEvent event) {
-                            actionCount[0]++;
-                        }
-                    });
+            DocumentButtonControl enabled = Objects.requireNonNull(testCase.getDemoButtonControl(0),
+                    "enabledButton");
+            DocumentButtonControl disabled = Objects.requireNonNull(testCase.getDemoButtonControl(1),
+                    "disabledButton");
+            enabled.getElement().setAttribute("data-runtime-action-count", "0");
+            enabled.setLabel("enabled +1");
             enabled.getElement().getClickHandler().onClick(new DocumentElementClickEvent(enabled.getElement(),
                     enabled.getElement(), 0, 0, 0, 1L));
             disabled.getElement().getClickHandler().onClick(new DocumentElementClickEvent(disabled.getElement(),
                     disabled.getElement(), 0, 0, 0, 2L));
-            boolean passed = actionCount[0] == 1 && enabled.isEnabled() && !disabled.isEnabled();
-            String summary = "button action count=" + actionCount[0] + "；disabledEnabled=" + disabled.isEnabled();
+            int actionCount = readRuntimeActionCount(enabled.getElement());
+            enabled.setLabel("enabled count=" + actionCount);
+            boolean passed = actionCount == 1 && enabled.isEnabled() && !disabled.isEnabled();
+            String summary = "button action count=" + actionCount + "；disabledEnabled=" + disabled.isEnabled()
+                    + "；页面按钮文本=" + enabled.getLabel();
             testCase.updateDemoSummary(summary);
             return passed ? RuntimeTestResult.passed(summary)
                     : RuntimeTestResult.failed(summary, "button enabled/disabled 动作计数异常");
         }
         if ("CTRL-002".equals(testCase.getId())) {
-            DocumentTextInputControl input = new DocumentTextInputControl(document)
-                    .setText("alpha-beta");
-            boolean valuePassed = "alpha-beta".equals(input.getText()) && input.getType() == DocumentInputType.TEXT;
+            DocumentTextInputControl input = Objects.requireNonNull(testCase.getDemoTextInputControl(), "textInput");
+            input.setText("alpha-");
+            focusElementForRuntimeAssertion(input.getElement());
+            dispatchTextInputToFocusedElement("X", 10L);
+            dispatchKeyToFocusedElement(Keyboard.KEY_BACK, false, false, 11L);
+            dispatchTextInputToFocusedElement("X", 12L);
+            boolean valuePassed = "alpha-X".equals(input.getText()) && input.getType() == DocumentInputType.TEXT;
+            boolean caretVisible = input.isFocused() && htmlLikeDocumentWidget.getFocusedElement() == input.getElement();
             String summary = "text input value=" + input.getText() + "；type=" + input.getType()
-                    + "；selection/caret=人工确认";
+                    + "；caretVisible=" + caretVisible;
             testCase.updateDemoSummary(summary);
-            return valuePassed ? RuntimeTestResult.running(summary)
+            return valuePassed && caretVisible ? RuntimeTestResult.passed(summary)
                     : RuntimeTestResult.failed(summary, "文本输入 value 或类型异常");
         }
         if ("CTRL-003".equals(testCase.getId())) {
-            DocumentTextInputControl password = new DocumentTextInputControl(document)
-                    .setPasswordMaskCharacter('*')
-                    .setType(DocumentInputType.PASSWORD)
-                    .setText("secret");
+            DocumentTextInputControl password = Objects.requireNonNull(testCase.getDemoTextInputControl(),
+                    "passwordInput");
+            password.setType(DocumentInputType.PASSWORD).setText("");
+            focusElementForRuntimeAssertion(password.getElement());
+            dispatchTextInputToFocusedElement("secret", 20L);
             String visibleText = password.getElement().getTextContent();
             boolean passed = password.getType() == DocumentInputType.PASSWORD
                     && "secret".equals(password.getText()) && "******".equals(visibleText);
@@ -2901,25 +2947,41 @@ public final class UiTestDocumentPageController extends DocumentPageController {
                     : RuntimeTestResult.failed(summary, "password 掩码显示或真实值异常");
         }
         if ("CTRL-004".equals(testCase.getId())) {
-            DocumentTextInputControl number = new DocumentTextInputControl(document)
-                    .setType(DocumentInputType.NUMBER)
-                    .setText("12bad.5e+2");
+            DocumentTextInputControl number = Objects.requireNonNull(testCase.getDemoTextInputControl(),
+                    "numberInput");
+            number.setType(DocumentInputType.NUMBER).setText("");
+            focusElementForRuntimeAssertion(number.getElement());
+            dispatchTextInputToFocusedElement("12bad.5e+2", 30L);
             boolean valueFiltered = "12.5e+2".equals(number.getText()) && number.getType() == DocumentInputType.NUMBER;
             String summary = "number value=" + number.getText() + "；type=" + number.getType()
-                    + "；step=人工确认";
+                    + "；filteredIllegalChars=" + valueFiltered;
             testCase.updateDemoSummary(summary);
-            return valueFiltered ? RuntimeTestResult.running(summary)
+            return valueFiltered ? RuntimeTestResult.passed(summary)
                     : RuntimeTestResult.failed(summary, "number 输入未过滤非法字符");
         }
         if ("CTRL-005".equals(testCase.getId())) {
-            DocumentTextAreaControl textArea = new DocumentTextAreaControl(document)
-                    .setText("逻辑行一\n视觉软换行长文本");
+            DocumentTextAreaControl textArea = Objects.requireNonNull(testCase.getDemoTextAreaControl(), "textArea");
+            textArea.setText("");
+            focusElementForRuntimeAssertion(textArea.getElement());
+            dispatchTextInputToFocusedElement("逻辑行一", 40L);
+            dispatchKeyToFocusedElement(Keyboard.KEY_RETURN, false, false, 41L);
+            dispatchTextInputToFocusedElement(
+                    "abcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyz", 42L);
             boolean hasRealNewline = textArea.getText().indexOf('\n') >= 0;
+            htmlLikeDocumentWidget.render(new RuntimeAssertionRenderContext(htmlLikeDocumentWidget.getWidth(),
+                    htmlLikeDocumentWidget.getHeight(), textMeasureService));
+            int maxScrollTop = textArea.getElement().getMaxScrollTop();
+            boolean softWrapped = maxScrollTop > 0;
+            DocumentElementBounds textAreaBounds = textArea.getElement().getDocumentBounds();
+            boolean caretVisible = textArea.isFocused() && htmlLikeDocumentWidget.getFocusedElement() == textArea.getElement()
+                    && textAreaBounds.isAvailable();
             String summary = "textarea realNewline=" + hasRealNewline + "；value="
-                    + textArea.getText().replace('\n', '|') + "；softWrap=人工确认";
+                    + textArea.getText().replace('\n', '|') + "；softWrap=" + softWrapped
+                    + "；caretVisible=" + caretVisible + "；scrollMax=" + maxScrollTop
+                    + "；bounds=" + textAreaBounds.getWidth() + "x" + textAreaBounds.getHeight();
             testCase.updateDemoSummary(summary);
-            return hasRealNewline ? RuntimeTestResult.running(summary)
-                    : RuntimeTestResult.failed(summary, "textarea 真实换行丢失");
+            return hasRealNewline && softWrapped && caretVisible ? RuntimeTestResult.passed(summary)
+                    : RuntimeTestResult.failed(summary, "textarea 换行、软换行或光标可见状态异常");
         }
         return RuntimeTestResult.failed("未知 Controls 用例。", "没有匹配的 Controls 执行器");
     }
@@ -2988,13 +3050,23 @@ public final class UiTestDocumentPageController extends DocumentPageController {
             ComputedStyle style = UiStyleResolver.compute(sample);
             boolean declared = style.getTransitionProperties().contains(DocumentAnimationProperty.OPACITY)
                     && style.getTransitionDurationNanos(DocumentAnimationProperty.OPACITY) == 120_000_000L;
+            DocumentAnimation animation = sample.animate(DocumentKeyframes.named("runtime-opacity-live")
+                    .setFloat(DocumentAnimationProperty.OPACITY, 0.35F, 1.0F)
+                    .build(), DocumentAnimationOptions.builder()
+                            .setDurationMillis(240)
+                            .setFillMode(DocumentAnimationFillMode.FORWARDS)
+                            .build());
+            boolean animationRunning = animation.isRunning();
+            sample.clearChildren();
+            sample.appendText("opacity running");
             String summary = "transition properties=" + style.getTransitionProperties()
                     + "；duration=" + formatDurationMillis(style.getTransitionDurationNanos(
                             DocumentAnimationProperty.OPACITY))
-                    + "；事件日志=人工确认";
+                    + "；animationRunning=" + animationRunning
+                    + "；activeAnimations=" + htmlLikeDocumentWidget.getActiveAnimationCount();
             testCase.updateDemoSummary(summary);
-            return declared ? RuntimeTestResult.running(summary)
-                    : RuntimeTestResult.failed(summary, "transition 声明未生效");
+            return declared && animationRunning ? RuntimeTestResult.passed(summary)
+                    : RuntimeTestResult.failed(summary, "transition 声明或运行时动画未生效");
         }
         if ("ANIM-002".equals(testCase.getId())) {
             ElementNode sample = testCase.getDemoElement(0);
@@ -3003,26 +3075,61 @@ public final class UiTestDocumentPageController extends DocumentPageController {
             boolean passed = specs.size() == 2
                     && style.getTransitionDurationNanos(DocumentAnimationProperty.TEXT_COLOR) == 80_000_000L
                     && style.getTransitionDurationNanos(DocumentAnimationProperty.TRANSLATE_X) == 160_000_000L;
+            DocumentKeyframes keyframes = DocumentKeyframes.named("runtime-color-move-live")
+                    .setColor(DocumentAnimationProperty.TEXT_COLOR, 0xFFFFFFFF, 0xFF93C5FD)
+                    .setFloat(DocumentAnimationProperty.TRANSLATE_X, 0.0F, 42.0F)
+                    .build();
+            DocumentAnimation animation = sample.animate(keyframes, DocumentAnimationOptions.builder()
+                    .setDurationMillis(260)
+                    .setTimingFunction(DocumentAnimationTimingFunction.EASE_OUT)
+                    .setFillMode(DocumentAnimationFillMode.FORWARDS)
+                    .build());
+            boolean runtimeTracks = keyframes.getColorTracks().containsKey(DocumentAnimationProperty.TEXT_COLOR)
+                    && keyframes.getFloatTracks().containsKey(DocumentAnimationProperty.TRANSLATE_X);
+            sample.clearChildren();
+            sample.appendText("color + move");
             String summary = "per-property specs=" + specs.size()
                     + "；textColor=" + formatDurationMillis(style.getTransitionDurationNanos(
                             DocumentAnimationProperty.TEXT_COLOR))
                     + "；translateX=" + formatDurationMillis(style.getTransitionDurationNanos(
-                            DocumentAnimationProperty.TRANSLATE_X));
+                            DocumentAnimationProperty.TRANSLATE_X))
+                    + "；runtimeTracks=" + runtimeTracks
+                    + "；animationRunning=" + animation.isRunning();
             testCase.updateDemoSummary(summary);
-            return passed ? RuntimeTestResult.passed(summary)
-                    : RuntimeTestResult.failed(summary, "per-property transition 时长异常");
+            return passed && runtimeTracks && animation.isRunning() ? RuntimeTestResult.passed(summary)
+                    : RuntimeTestResult.failed(summary, "per-property transition 或运行时轨道异常");
         }
         if ("ANIM-003".equals(testCase.getId())) {
             ElementNode sample = testCase.getDemoElement(0);
             ComputedStyle style = UiStyleResolver.compute(sample);
+            DocumentKeyframes keyframes = DocumentKeyframes.named("runtime-path-live")
+                    .setFloatStop(DocumentAnimationProperty.TRANSLATE_X, 0.0F, 0.0F)
+                    .setFloatStop(DocumentAnimationProperty.TRANSLATE_X, 0.5F, 72.0F)
+                    .setFloatStop(DocumentAnimationProperty.TRANSLATE_X, 1.0F, 144.0F)
+                    .setFloatStop(DocumentAnimationProperty.TRANSLATE_Y, 0.0F, 0.0F)
+                    .setFloatStop(DocumentAnimationProperty.TRANSLATE_Y, 0.5F, 14.0F)
+                    .setFloatStop(DocumentAnimationProperty.TRANSLATE_Y, 1.0F, 0.0F)
+                    .build();
+            DocumentAnimation animation = sample.animate(keyframes, DocumentAnimationOptions.builder()
+                    .setDurationMillis(300)
+                    .setFillMode(DocumentAnimationFillMode.FORWARDS)
+                    .setTimingFunction(DocumentAnimationTimingFunction.EASE_OUT)
+                    .build());
+            int translateXStops = keyframes.getFloatTracks().get(DocumentAnimationProperty.TRANSLATE_X)
+                    .getStops().size();
             boolean declared = "runtime-path".equals(style.getAnimationName())
                     && style.getAnimationDurationNanos() == 300_000_000L
-                    && !style.getTransform().isIdentity();
+                    && translateXStops == 3
+                    && animation.isRunning();
+            sample.clearChildren();
+            sample.appendText("path running");
             String summary = "animationName=" + style.getAnimationName()
                     + "；duration=" + formatDurationMillis(style.getAnimationDurationNanos())
-                    + "；" + formatTransformSummary(style.getTransform()) + "；路径=人工确认";
+                    + "；keyframeStops=" + translateXStops
+                    + "；animationRunning=" + animation.isRunning()
+                    + "；activeAnimations=" + htmlLikeDocumentWidget.getActiveAnimationCount();
             testCase.updateDemoSummary(summary);
-            return declared ? RuntimeTestResult.running(summary)
+            return declared ? RuntimeTestResult.passed(summary)
                     : RuntimeTestResult.failed(summary, "keyframes 结构声明异常");
         }
         if ("ANIM-004".equals(testCase.getId())) {
@@ -3031,23 +3138,56 @@ public final class UiTestDocumentPageController extends DocumentPageController {
             boolean passed = style.getAnimationDelayNanos() == 100_000_000L
                     && style.getAnimationDurationNanos() == 200_000_000L
                     && style.getAnimationIterationCount() == 3;
+            DocumentAnimation animation = sample.animate(DocumentKeyframes.named("runtime-loop-live")
+                    .setFloat(DocumentAnimationProperty.TRANSLATE_X, 0.0F, 36.0F)
+                    .build(), DocumentAnimationOptions.builder()
+                            .setDelayMillis(100)
+                            .setDurationMillis(200)
+                            .setIterationCount(3)
+                            .build());
+            sample.clearChildren();
+            sample.appendText("loop running");
             String summary = "delay=" + formatDurationMillis(style.getAnimationDelayNanos())
                     + "；duration=" + formatDurationMillis(style.getAnimationDurationNanos())
-                    + "；iteration=" + style.getAnimationIterationCount();
+                    + "；iteration=" + style.getAnimationIterationCount()
+                    + "；animationRunning=" + animation.isRunning();
             testCase.updateDemoSummary(summary);
-            return passed ? RuntimeTestResult.passed(summary)
-                    : RuntimeTestResult.failed(summary, "animation delay/duration/iteration 计算异常");
+            return passed && animation.isRunning() ? RuntimeTestResult.passed(summary)
+                    : RuntimeTestResult.failed(summary, "animation delay/duration/iteration 或运行态异常");
         }
         if ("ANIM-005".equals(testCase.getId())) {
-            UiAnimationDirection normal = UiStyleResolver.compute(testCase.getDemoElement(0)).getAnimationDirection();
-            UiAnimationDirection reverse = UiStyleResolver.compute(testCase.getDemoElement(1)).getAnimationDirection();
-            UiAnimationDirection alternate = UiStyleResolver.compute(testCase.getDemoElement(2)).getAnimationDirection();
+            ElementNode normalElement = testCase.getDemoElement(0);
+            ElementNode reverseElement = testCase.getDemoElement(1);
+            ElementNode alternateElement = testCase.getDemoElement(2);
+            UiAnimationDirection normal = UiStyleResolver.compute(normalElement).getAnimationDirection();
+            UiAnimationDirection reverse = UiStyleResolver.compute(reverseElement).getAnimationDirection();
+            UiAnimationDirection alternate = UiStyleResolver.compute(alternateElement).getAnimationDirection();
             boolean declared = normal == UiAnimationDirection.NORMAL && reverse == UiAnimationDirection.REVERSE
                     && alternate == UiAnimationDirection.ALTERNATE;
+            DocumentKeyframes keyframes = DocumentKeyframes.named("runtime-direction-live")
+                    .setFloat(DocumentAnimationProperty.TRANSLATE_X, 0.0F, 30.0F)
+                    .build();
+            DocumentAnimation normalAnimation = normalElement.animate(keyframes, DocumentAnimationOptions.builder()
+                    .setDurationMillis(240)
+                    .setIterationCount(2)
+                    .setDirection(UiAnimationDirection.NORMAL)
+                    .build());
+            DocumentAnimation reverseAnimation = reverseElement.animate(keyframes, DocumentAnimationOptions.builder()
+                    .setDurationMillis(240)
+                    .setIterationCount(2)
+                    .setDirection(UiAnimationDirection.REVERSE)
+                    .build());
+            DocumentAnimation alternateAnimation = alternateElement.animate(keyframes, DocumentAnimationOptions.builder()
+                    .setDurationMillis(240)
+                    .setIterationCount(2)
+                    .setDirection(UiAnimationDirection.ALTERNATE)
+                    .build());
             String summary = "directions=" + normal + "," + reverse + "," + alternate
-                    + "；方向视觉=人工确认";
+                    + "；running=" + normalAnimation.isRunning() + "," + reverseAnimation.isRunning()
+                    + "," + alternateAnimation.isRunning();
             testCase.updateDemoSummary(summary);
-            return declared ? RuntimeTestResult.running(summary)
+            return declared && normalAnimation.isRunning() && reverseAnimation.isRunning()
+                    && alternateAnimation.isRunning() ? RuntimeTestResult.passed(summary)
                     : RuntimeTestResult.failed(summary, "animation direction 声明异常");
         }
         return RuntimeTestResult.failed("未知 Animation 用例。", "没有匹配的 Animation 执行器");
@@ -3151,6 +3291,94 @@ public final class UiTestDocumentPageController extends DocumentPageController {
             long upTimeNanos) {
         widget.onMouseDown(new UiMouseEvent(UiMouseEvent.Action.BUTTON_DOWN, x, y, 0, 0, 0, 0, downTimeNanos));
         widget.onMouseUp(new UiMouseEvent(UiMouseEvent.Action.BUTTON_UP, x, y, 0, 0, 0, 0, upTimeNanos));
+    }
+
+    /**
+     * 确保运行时测试使用的 HTML-like widget 已拥有可布局尺寸。
+     *
+     * <p>游戏内通常由页面宿主写入尺寸；JVM 黑盒测试直接调用按钮 handler 时没有外层布局，
+     * 这里补齐边界以便 focus、scroll 与 animation 走同一套运行时路径。</p>
+     */
+    private void ensureRuntimeWidgetBounds() {
+        if (htmlLikeDocumentWidget.getWidth() > 0 && htmlLikeDocumentWidget.getHeight() > 0) {
+            return;
+        }
+        int fallbackWidth = runtimeView.getHostWidth() > 0 ? runtimeView.getHostWidth() : 760;
+        int fallbackHeight = runtimeView.getHostHeight() > 0 ? runtimeView.getHostHeight() : 520;
+        htmlLikeDocumentWidget.applyLayoutBounds(0, 0, fallbackWidth, fallbackHeight);
+    }
+
+    /**
+     * 在当前运行时文档中聚焦元素，作为后续键盘和文本输入事件目标。
+     *
+     * @param element 目标元素
+     */
+    private void focusElementForRuntimeAssertion(ElementNode element) {
+        ensureRuntimeWidgetBounds();
+        if (element == null) {
+            return;
+        }
+        boolean focused = element.focus();
+        if (!focused && element.getFocusHandler() != null) {
+            element.getFocusHandler().onFocusChanged(new DocumentElementFocusEvent(element, true, false));
+        }
+    }
+
+    /**
+     * 向当前聚焦元素派发真实文本输入事件。
+     *
+     * @param text 输入文本
+     * @param timeNanos 时间戳
+     */
+    private void dispatchTextInputToFocusedElement(String text, long timeNanos) {
+        htmlLikeDocumentWidget.onTextInput(new UiTextInputEvent(text, timeNanos));
+    }
+
+    /**
+     * 向当前聚焦元素派发真实键盘事件。
+     *
+     * @param keyCode LWJGL2 键码
+     * @param controlPressed 是否按下 Ctrl
+     * @param shiftPressed 是否按下 Shift
+     * @param timeNanos 时间戳
+     */
+    private void dispatchKeyToFocusedElement(int keyCode, boolean controlPressed, boolean shiftPressed,
+            long timeNanos) {
+        htmlLikeDocumentWidget.onKeyEvent(new UiKeyEvent(keyCode, 0, 0, UiKeyEvent.Action.PRESSED, controlPressed,
+                shiftPressed, false, false, timeNanos));
+    }
+
+    /**
+     * 递增运行时按钮计数属性。
+     *
+     * @param element 记录计数的元素
+     */
+    private void incrementRuntimeActionCount(ElementNode element) {
+        if (element == null) {
+            return;
+        }
+        element.setAttribute("data-runtime-action-count", String.valueOf(readRuntimeActionCount(element) + 1));
+    }
+
+    /**
+     * 读取运行时按钮计数属性。
+     *
+     * @param element 记录计数的元素
+     * @return 当前计数
+     */
+    private int readRuntimeActionCount(ElementNode element) {
+        if (element == null) {
+            return 0;
+        }
+        String rawValue = element.getAttribute("data-runtime-action-count");
+        if (rawValue == null || rawValue.length() == 0) {
+            return 0;
+        }
+        try {
+            return Integer.parseInt(rawValue);
+        } catch (NumberFormatException exception) {
+            return 0;
+        }
     }
 
     /**
@@ -3611,6 +3839,85 @@ public final class UiTestDocumentPageController extends DocumentPageController {
     }
 
     /**
+     * 运行时自动断言使用的无副作用渲染上下文。
+     *
+     * <p>它只提供布局后自定义 renderer 所需的文本测量能力，所有绘制动作均为空实现，
+     * 避免 JVM 测试把游戏内 GL 调用当作断言前提。</p>
+     */
+    private static final class RuntimeAssertionRenderContext extends UiRenderContext {
+
+        private final TextMeasureService textMeasureService;
+
+        /**
+         * 创建运行时断言渲染上下文。
+         *
+         * @param screenWidth 屏幕宽度
+         * @param screenHeight 屏幕高度
+         * @param textMeasureService 文本测量服务
+         */
+        private RuntimeAssertionRenderContext(int screenWidth, int screenHeight,
+                TextMeasureService textMeasureService) {
+            super(screenWidth, screenHeight, 0, 0, 0.0F);
+            this.textMeasureService = Objects.requireNonNull(textMeasureService, "textMeasureService");
+        }
+
+        @Override
+        public void fillRect(int left, int top, int right, int bottom, int color) {}
+
+        @Override
+        public void drawSurface(int left, int top, int right, int bottom, UiSurfaceStyle surfaceStyle) {}
+
+        @Override
+        public void drawText(String text, int x, int y, int color, boolean shadow,
+                TextContentMode textContentMode, UiFontWeight fontWeight, UiFontStyle fontStyle) {}
+
+        @Override
+        public void drawBackdropFilter(int left, int top, int right, int bottom, int blurRadius, float saturation,
+                int cornerRadius) {}
+
+        @Override
+        public void drawBackdropFilter(int left, int top, int right, int bottom, int blurRadius, float saturation,
+                UiBorderRadiusResolver.ResolvedCornerRadii cornerRadii) {}
+
+        @Override
+        public void drawHostImage(HostImageSource source, int left, int top, int right, int bottom) {}
+
+        @Override
+        public int measureTextWidth(String text, TextContentMode textContentMode) {
+            return textMeasureService.getStringWidth(text);
+        }
+
+        @Override
+        public int getTextLineHeight() {
+            return textMeasureService.getLineHeight();
+        }
+
+        @Override
+        public boolean supportsDeferredTextBatching() {
+            return false;
+        }
+
+        @Override
+        public void pushPaintContext(int left, int top, int right, int bottom, float opacity) {}
+
+        @Override
+        public void popPaintContext() {}
+
+        @Override
+        public void pushTransform(UiTransform transform, int left, int top, int right, int bottom) {}
+
+        @Override
+        public void popTransform() {}
+
+        @Override
+        public void pushClip(int left, int top, int right, int bottom,
+                UiBorderRadiusResolver.ResolvedCornerRadii cornerRadii) {}
+
+        @Override
+        public void popClip() {}
+    }
+
+    /**
      * 运行时测试用例模型。
      */
     private static final class RuntimeTestCase {
@@ -3633,6 +3940,9 @@ public final class UiTestDocumentPageController extends DocumentPageController {
         private ElementNode paintSample;
         private ElementNode demoRoot;
         private ElementNode[] demoElements = new ElementNode[0];
+        private DocumentButtonControl[] demoButtonControls = new DocumentButtonControl[0];
+        private DocumentTextInputControl demoTextInputControl;
+        private DocumentTextAreaControl demoTextAreaControl;
 
         /**
          * 创建运行时测试用例模型。
@@ -3781,6 +4091,9 @@ public final class UiTestDocumentPageController extends DocumentPageController {
             paintSample = null;
             demoRoot = null;
             demoElements = new ElementNode[0];
+            demoButtonControls = new DocumentButtonControl[0];
+            demoTextInputControl = null;
+            demoTextAreaControl = null;
         }
 
         /**
@@ -3843,6 +4156,56 @@ public final class UiTestDocumentPageController extends DocumentPageController {
             this.demoRoot = demoRoot;
             this.demoSummaryText = demoSummaryText;
             this.demoElements = demoElements == null ? new ElementNode[0] : demoElements;
+        }
+
+        /**
+         * 设置按钮控件演示节点。
+         *
+         * @param demoRoot 演示根节点
+         * @param demoSummaryText 摘要文本节点
+         * @param buttonControls 页面上的按钮控件实例
+         */
+        private void setButtonDemo(ElementNode demoRoot, TextNode demoSummaryText,
+                DocumentButtonControl... buttonControls) {
+            this.demoRoot = demoRoot;
+            this.demoSummaryText = demoSummaryText;
+            this.demoButtonControls = buttonControls == null ? new DocumentButtonControl[0] : buttonControls;
+            this.demoElements = new ElementNode[this.demoButtonControls.length];
+            for (int index = 0; index < this.demoButtonControls.length; index++) {
+                this.demoElements[index] = this.demoButtonControls[index].getElement();
+            }
+        }
+
+        /**
+         * 设置文本输入控件演示节点。
+         *
+         * @param demoRoot 演示根节点
+         * @param demoSummaryText 摘要文本节点
+         * @param textInputControl 页面上的文本输入控件实例
+         */
+        private void setTextInputDemo(ElementNode demoRoot, TextNode demoSummaryText,
+                DocumentTextInputControl textInputControl) {
+            this.demoRoot = demoRoot;
+            this.demoSummaryText = demoSummaryText;
+            this.demoTextInputControl = textInputControl;
+            this.demoElements = textInputControl == null ? new ElementNode[0]
+                    : new ElementNode[] {textInputControl.getElement()};
+        }
+
+        /**
+         * 设置 textarea 控件演示节点。
+         *
+         * @param demoRoot 演示根节点
+         * @param demoSummaryText 摘要文本节点
+         * @param textAreaControl 页面上的 textarea 控件实例
+         */
+        private void setTextAreaDemo(ElementNode demoRoot, TextNode demoSummaryText,
+                DocumentTextAreaControl textAreaControl) {
+            this.demoRoot = demoRoot;
+            this.demoSummaryText = demoSummaryText;
+            this.demoTextAreaControl = textAreaControl;
+            this.demoElements = textAreaControl == null ? new ElementNode[0]
+                    : new ElementNode[] {textAreaControl.getElement()};
         }
 
         /**
@@ -3930,6 +4293,43 @@ public final class UiTestDocumentPageController extends DocumentPageController {
                 throw new IllegalStateException("缺少演示元素：" + id + " #" + index);
             }
             return Objects.requireNonNull(demoElements[index], "demoElement");
+        }
+
+        /**
+         * 返回页面上的按钮控件实例。
+         *
+         * @param index 控件下标
+         * @return 按钮控件实例
+         */
+        private DocumentButtonControl getDemoButtonControl(int index) {
+            if (index < 0 || index >= demoButtonControls.length) {
+                throw new IllegalStateException("缺少按钮演示控件：" + id + " #" + index);
+            }
+            return Objects.requireNonNull(demoButtonControls[index], "demoButtonControl");
+        }
+
+        /**
+         * 返回页面上的文本输入控件实例。
+         *
+         * @return 文本输入控件实例
+         */
+        private DocumentTextInputControl getDemoTextInputControl() {
+            if (demoTextInputControl == null) {
+                throw new IllegalStateException("缺少文本输入演示控件：" + id);
+            }
+            return demoTextInputControl;
+        }
+
+        /**
+         * 返回页面上的 textarea 控件实例。
+         *
+         * @return textarea 控件实例
+         */
+        private DocumentTextAreaControl getDemoTextAreaControl() {
+            if (demoTextAreaControl == null) {
+                throw new IllegalStateException("缺少 textarea 演示控件：" + id);
+            }
+            return demoTextAreaControl;
         }
     }
 

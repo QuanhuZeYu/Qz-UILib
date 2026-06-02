@@ -41,6 +41,7 @@ import club.heiqi.uilib.ui.text.TextContentMode;
 public final class DocumentTextAreaControl {
 
     private static final int DEFAULT_LINE_HEIGHT = 18;
+    private static final int DEFAULT_CARET_WIDTH = 2;
     private static final int CLICK_EMPTY_LINE_HIGHLIGHT_WIDTH = 4;
     private static final long BLINK_PERIOD_NANOS = 530_000_000L;
     private static final UiStyleLength DEFAULT_LINE_HEIGHT_LENGTH = UiStyleLength.px(DEFAULT_LINE_HEIGHT);
@@ -70,6 +71,7 @@ public final class DocumentTextAreaControl {
     private int disabledBackgroundColor = 0xFF333344;
     private int disabledBorderColor = 0xFF444455;
     private int textColor = 0xFFEEEEFF;
+    private int caretColor = 0xFFFFFFFF;
     private int placeholderColor = 0xFF777799;
     private int disabledTextColor = 0xFF666677;
     private int selectionColor = 0x664F86F7;
@@ -326,6 +328,21 @@ public final class DocumentTextAreaControl {
         return this;
     }
 
+    /**
+     * 设置文本光标颜色。
+     *
+     * @param caretColor 光标颜色
+     * @return 当前控件
+     */
+    public DocumentTextAreaControl setCaretColor(int caretColor) {
+        if (this.caretColor == caretColor) {
+            return this;
+        }
+        this.caretColor = caretColor;
+        caretLayer.style().setTextColor(caretColor);
+        return this;
+    }
+
     private void configureElement() {
         element.setAttribute("aria-multiline", "true");
         element.style()
@@ -365,6 +382,7 @@ public final class DocumentTextAreaControl {
                 .setWidth(UiStyleLength.percent(1.0F))
                 .setHeight(UiStyleLength.percent(1.0F))
                 .setZIndex(2)
+                .setTextColor(caretColor)
                 .setPointerEvents(UiPointerEvents.NONE);
         selectionLayer.setCustomRenderer(new DocumentCustomRenderer() {
             @Override
@@ -876,8 +894,8 @@ public final class DocumentTextAreaControl {
         int localOffset = Math.max(0, Math.min(lineMetrics.text.length(), caretIndex - lineMetrics.visualStartIndex));
         int cursorX = viewportContentLeft + lineMetrics.resolveBoundaryX(localOffset);
         int cursorTop = viewportContentTop + lineMetrics.visualTop;
-        context.fillRect(cursorX, cursorTop, cursorX + 1, cursorTop + DEFAULT_LINE_HEIGHT,
-                enabled ? textColor : disabledTextColor);
+        context.fillRect(cursorX, cursorTop, cursorX + DEFAULT_CARET_WIDTH, cursorTop + DEFAULT_LINE_HEIGHT,
+                enabled ? caretColor : disabledTextColor);
     }
 
     private VisualLineMetrics resolveVisualLineMetricsForCaret(int targetCaretIndex) {

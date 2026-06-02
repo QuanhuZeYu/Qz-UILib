@@ -239,8 +239,13 @@ public class UiTestDocumentPageControllerTest {
         Assert.assertTrue(containsText(controlTexts, "CTRL-001"));
         Assert.assertTrue(containsText(controlTexts, "CTRL-005"));
         Assert.assertTrue(containsText(controlTexts, "button action count=1"));
+        Assert.assertTrue(containsText(controlTexts, "text input value=alpha-X"));
+        Assert.assertTrue(containsText(controlTexts, "caretVisible=true"));
         Assert.assertTrue(containsText(controlTexts, "password valueLength=6"));
+        Assert.assertTrue(containsText(controlTexts, "number value=12.5e+2"));
+        Assert.assertTrue(containsText(controlTexts, "filteredIllegalChars=true"));
         Assert.assertTrue(containsText(controlTexts, "textarea realNewline=true"));
+        Assert.assertTrue(containsText(controlTexts, "softWrap=true"));
 
         clickButtonByLabel(fixture.controller.getHtmlLikeDocumentWidget(), "TEXT", 0);
         for (int index = 0; index < 5; index++) {
@@ -261,8 +266,12 @@ public class UiTestDocumentPageControllerTest {
         Assert.assertTrue(containsText(animationTexts, "ANIM-001"));
         Assert.assertTrue(containsText(animationTexts, "ANIM-005"));
         Assert.assertTrue(containsText(animationTexts, "transition properties=[OPACITY]"));
+        Assert.assertTrue(containsText(animationTexts, "animationRunning=true"));
         Assert.assertTrue(containsText(animationTexts, "per-property specs=2"));
+        Assert.assertTrue(containsText(animationTexts, "runtimeTracks=true"));
+        Assert.assertTrue(containsText(animationTexts, "keyframeStops=3"));
         Assert.assertTrue(containsText(animationTexts, "directions=NORMAL,REVERSE,ALTERNATE"));
+        Assert.assertTrue(containsText(animationTexts, "running=true,true,true"));
 
         clickButtonByLabel(fixture.controller.getHtmlLikeDocumentWidget(), "HOST", 0);
         for (int index = 0; index < 5; index++) {
