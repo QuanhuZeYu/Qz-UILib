@@ -13,11 +13,24 @@ import club.heiqi.uilib.ui.control.DocumentButtonActionHandler;
 import club.heiqi.uilib.ui.control.DocumentButtonControl;
 import club.heiqi.uilib.ui.diagnostic.UiRuntimeStats;
 import club.heiqi.uilib.ui.document.HtmlLikeDocumentWidget;
+import club.heiqi.uilib.ui.dom.DocumentElementClickEvent;
+import club.heiqi.uilib.ui.dom.DocumentElementClickHandler;
+import club.heiqi.uilib.ui.dom.DocumentElementDoubleClickEvent;
+import club.heiqi.uilib.ui.dom.DocumentElementDoubleClickHandler;
+import club.heiqi.uilib.ui.dom.DocumentElementMouseDownEvent;
+import club.heiqi.uilib.ui.dom.DocumentElementMouseDownHandler;
+import club.heiqi.uilib.ui.dom.DocumentElementMouseUpEvent;
+import club.heiqi.uilib.ui.dom.DocumentElementMouseUpHandler;
+import club.heiqi.uilib.ui.dom.DocumentElementWheelEvent;
+import club.heiqi.uilib.ui.dom.DocumentElementWheelHandler;
+import club.heiqi.uilib.ui.dom.DocumentLinkActivationEvent;
+import club.heiqi.uilib.ui.dom.DocumentLinkActivationHandler;
 import club.heiqi.uilib.ui.dom.DocumentNode;
 import club.heiqi.uilib.ui.dom.DocumentFragmentNode;
 import club.heiqi.uilib.ui.dom.ElementNode;
 import club.heiqi.uilib.ui.dom.TextNode;
 import club.heiqi.uilib.ui.dom.UiDocument;
+import club.heiqi.uilib.ui.event.UiMouseEvent;
 import club.heiqi.uilib.ui.layout.DocumentLayoutBox;
 import club.heiqi.uilib.ui.layout.DocumentLayoutEngine;
 import club.heiqi.uilib.ui.layout.UiLayoutSpec;
@@ -86,7 +99,7 @@ public final class UiTestDocumentPageController extends DocumentPageController {
             "Input 输入与事件语义",
             "事件传播、默认行为、键盘、焦点、滚轮与拖拽。",
             13,
-            0);
+            5);
     private static final TestGroup CONTROLS_GROUP = new TestGroup(
             "CTRL",
             "Controls 控件与表单语义",
@@ -435,7 +448,42 @@ public final class UiTestDocumentPageController extends DocumentPageController {
                         "transform 平移、缩放、旋转命中",
                         "运行时按钮会校验 transform 样例的计算样式，并等待人工确认命中位置。",
                         "进入 Paint 二级页后点击 `执行自动测试`；观察 transform 后视觉位置；需要时点击人工通过或人工失败。",
-                        "预期结果：视觉位置与点击命中位置一致，未变换原位置点击无效。")));
+                        "预期结果：视觉位置与点击命中位置一致，未变换原位置点击无效。"),
+                new RuntimeTestCase(
+                        "INPUT-001",
+                        INPUT_GROUP,
+                        "capture、target、bubble 顺序",
+                        "运行时按钮会通过真实点击输入路径校验 root、parent、target 的事件传播顺序。",
+                        "进入 Input 二级页后点击 `执行自动测试`；观察事件日志；需要时点击人工通过或人工失败。",
+                        "预期结果：点击子节点后事件日志顺序为 `root capture -> parent capture -> target -> parent bubble -> root bubble`。"),
+                new RuntimeTestCase(
+                        "INPUT-002",
+                        INPUT_GROUP,
+                        "stopPropagation 只停止后续传播",
+                        "运行时按钮会让目标 handler 停止传播，并校验链接默认激活仍执行。",
+                        "进入 Input 二级页后点击 `执行自动测试`；观察事件日志和默认动作结果；需要时点击人工通过或人工失败。",
+                        "预期结果：目标处理后祖先 bubble 不再记录，但默认动作仍执行。"),
+                new RuntimeTestCase(
+                        "INPUT-003",
+                        INPUT_GROUP,
+                        "preventDefault 阻止默认行为",
+                        "运行时按钮会在 click handler 中 preventDefault，并校验事件仍冒泡但链接不激活。",
+                        "进入 Input 二级页后点击 `执行自动测试`；观察事件日志和默认动作结果；需要时点击人工通过或人工失败。",
+                        "预期结果：链接或滚动默认动作不执行，事件日志仍完整显示。"),
+                new RuntimeTestCase(
+                        "INPUT-004",
+                        INPUT_GROUP,
+                        "handler 返回 true 与默认行为分离",
+                        "运行时按钮会让 wheel handler 返回 true，并校验传播停止但默认滚动仍发生。",
+                        "进入 Input 二级页后点击 `执行自动测试`；观察滚轮日志和 scrollTop；需要时点击人工通过或人工失败。",
+                        "预期结果：返回 true 后传播停止，但未 preventDefault 的默认滚动仍执行。"),
+                new RuntimeTestCase(
+                        "INPUT-005",
+                        INPUT_GROUP,
+                        "mousedown、mouseup、click、doubleclick",
+                        "运行时按钮会模拟两次主键点击，校验 down/up/click 和第二次 dblclick 顺序。",
+                        "进入 Input 二级页后点击 `执行自动测试`；观察 pointer 日志；需要时点击人工通过或人工失败。",
+                        "预期结果：单击日志为 down/up/click，双击额外记录 doubleclick。")));
     }
 
     /**
@@ -562,7 +610,7 @@ public final class UiTestDocumentPageController extends DocumentPageController {
         appendMetricCard(document, grid, "二级页数量", String.valueOf(TEST_GROUPS.size()));
         section.append(grid);
         appendPlanItem(document, section, "运行时卡片不再直接放在首页；首页只显示 DOM、CSS、Layout、Paint、Input、Controls、TextFont、Animation、RuntimeHost、RemoteNet 二级入口。");
-        appendPlanItem(document, section, "DOM / CSS / Layout / Paint 二级页各已接入 5 张运行时卡片；后续类型页按同一契约分批恢复。");
+        appendPlanItem(document, section, "DOM / CSS / Layout / Paint / Input 二级页各已接入 5 张运行时卡片；后续类型页按同一契约分批恢复。");
         root.append(section);
     }
 
@@ -950,6 +998,10 @@ public final class UiTestDocumentPageController extends DocumentPageController {
         }
         if (testCase.getGroup() == PAINT_GROUP) {
             appendPaintGroupRuntimeDemo(document, parent, testCase);
+            return;
+        }
+        if (testCase.getGroup() == INPUT_GROUP) {
+            appendInputGroupRuntimeDemo(document, parent, testCase);
         }
     }
 
@@ -1376,6 +1428,60 @@ public final class UiTestDocumentPageController extends DocumentPageController {
     }
 
     /**
+     * 追加 Input 分组通用演示区域。
+     *
+     * @param document 文档实例
+     * @param parent 父元素
+     * @param testCase 用例模型
+     */
+    private void appendInputGroupRuntimeDemo(UiDocument document, ElementNode parent, RuntimeTestCase testCase) {
+        ElementNode demo = createRuntimeDemoContainer(document);
+        if ("INPUT-001".equals(testCase.getId())) {
+            ElementNode row = createRuntimeDemoRow(document);
+            ElementNode rootBadge = createDemoPanel(document, "root capture/bubble", 0xFF1E3A8A);
+            ElementNode parentBadge = createDemoPanel(document, "parent capture/bubble", 0xFF7C3AED);
+            ElementNode targetBadge = createDemoPanel(document, "target", 0xFF059669);
+            row.append(rootBadge).append(parentBadge).append(targetBadge);
+            demo.append(row);
+            TextNode summary = appendDemoSummary(document, demo, "click 传播顺序：未执行");
+            testCase.setElementDemo(row, summary, rootBadge, parentBadge, targetBadge);
+        } else if ("INPUT-002".equals(testCase.getId())) {
+            ElementNode row = createRuntimeDemoRow(document);
+            ElementNode target = createDemoPanel(document, "target stopPropagation", 0xFFB45309);
+            ElementNode defaultAction = createDemoPanel(document, "link default action", 0xFF2563EB);
+            row.append(target).append(defaultAction);
+            demo.append(row);
+            TextNode summary = appendDemoSummary(document, demo, "stopPropagation 与默认动作：未执行");
+            testCase.setElementDemo(row, summary, target, defaultAction);
+        } else if ("INPUT-003".equals(testCase.getId())) {
+            ElementNode row = createRuntimeDemoRow(document);
+            ElementNode target = createDemoPanel(document, "target preventDefault", 0xFFB91C1C);
+            ElementNode bubble = createDemoPanel(document, "bubble still runs", 0xFF475569);
+            row.append(target).append(bubble);
+            demo.append(row);
+            TextNode summary = appendDemoSummary(document, demo, "preventDefault 与冒泡：未执行");
+            testCase.setElementDemo(row, summary, target, bubble);
+        } else if ("INPUT-004".equals(testCase.getId())) {
+            ElementNode row = createRuntimeDemoRow(document);
+            ElementNode wheelTarget = createDemoPanel(document, "wheel handler returns true", 0xFF2563EB);
+            ElementNode scrollHost = createDemoPanel(document, "default scroll host", 0xFF059669);
+            row.append(wheelTarget).append(scrollHost);
+            demo.append(row);
+            TextNode summary = appendDemoSummary(document, demo, "wheel 默认滚动：未执行");
+            testCase.setElementDemo(row, summary, wheelTarget, scrollHost);
+        } else if ("INPUT-005".equals(testCase.getId())) {
+            ElementNode row = createRuntimeDemoRow(document);
+            ElementNode target = createDemoPanel(document, "pointer target", 0xFF7C3AED);
+            ElementNode doubleClick = createDemoPanel(document, "second click -> dblclick", 0xFF059669);
+            row.append(target).append(doubleClick);
+            demo.append(row);
+            TextNode summary = appendDemoSummary(document, demo, "pointer 事件序列：未执行");
+            testCase.setElementDemo(row, summary, target, doubleClick);
+        }
+        parent.append(demo);
+    }
+
+    /**
      * 追加运行时操作按钮。
      *
      * @param document 文档实例
@@ -1740,6 +1846,10 @@ public final class UiTestDocumentPageController extends DocumentPageController {
             }
             if (testCase.getGroup() == PAINT_GROUP) {
                 applyRuntimeTestResult(testCase, executePaintGroupRuntimeTest(testCase));
+                return;
+            }
+            if (testCase.getGroup() == INPUT_GROUP) {
+                applyRuntimeTestResult(testCase, executeInputGroupRuntimeTest(testCase));
                 return;
             }
             applyRuntimeTestResult(testCase, RuntimeTestResult.failed("未知用例，未执行。", "没有匹配的执行器"));
@@ -2107,6 +2217,276 @@ public final class UiTestDocumentPageController extends DocumentPageController {
                     : RuntimeTestResult.failed(summary, "transform 未生效");
         }
         return RuntimeTestResult.failed("未知 Paint 用例。", "没有匹配的 Paint 执行器");
+    }
+
+    /**
+     * 执行 Input 分组补充用例断言。
+     *
+     * @param testCase 用例模型
+     * @return 运行时结果
+     */
+    private RuntimeTestResult executeInputGroupRuntimeTest(RuntimeTestCase testCase) {
+        if ("INPUT-001".equals(testCase.getId())) {
+            UiDocument inputDocument = UiDocument.create();
+            ElementNode root = inputDocument.getRootElement();
+            ElementNode parent = inputDocument.div();
+            ElementNode target = inputDocument.div();
+            final List<String> events = new ArrayList<String>();
+            root.style().setWidth(UiStyleLength.px(120)).setHeight(UiStyleLength.px(60));
+            parent.style().setWidth(UiStyleLength.px(90)).setHeight(UiStyleLength.px(40));
+            target.style().setWidth(UiStyleLength.px(48)).setHeight(UiStyleLength.px(24));
+            root.setCaptureClickHandler(new DocumentElementClickHandler() {
+                @Override
+                public boolean onClick(DocumentElementClickEvent event) {
+                    events.add("root-capture:" + event.getEventPhase());
+                    return false;
+                }
+            }).setClickHandler(new DocumentElementClickHandler() {
+                @Override
+                public boolean onClick(DocumentElementClickEvent event) {
+                    events.add("root-bubble:" + event.getEventPhase());
+                    return false;
+                }
+            });
+            parent.setCaptureClickHandler(new DocumentElementClickHandler() {
+                @Override
+                public boolean onClick(DocumentElementClickEvent event) {
+                    events.add("parent-capture:" + event.getEventPhase());
+                    return false;
+                }
+            }).setClickHandler(new DocumentElementClickHandler() {
+                @Override
+                public boolean onClick(DocumentElementClickEvent event) {
+                    events.add("parent-bubble:" + event.getEventPhase());
+                    return false;
+                }
+            });
+            target.setClickHandler(new DocumentElementClickHandler() {
+                @Override
+                public boolean onClick(DocumentElementClickEvent event) {
+                    events.add("target:" + event.getEventPhase());
+                    return false;
+                }
+            });
+            parent.append(target);
+            root.append(parent);
+            HtmlLikeDocumentWidget widget = createInputAssertionWidget(inputDocument, 120, 60);
+
+            dispatchPrimaryClick(widget, 10, 10, 1L, 2L);
+
+            String expected = "[root-capture:CAPTURING, parent-capture:CAPTURING, target:AT_TARGET, "
+                    + "parent-bubble:BUBBLING, root-bubble:BUBBLING]";
+            String summary = "click 顺序=" + events.toString();
+            testCase.updateDemoSummary(summary);
+            return expected.equals(events.toString()) ? RuntimeTestResult.passed(summary)
+                    : RuntimeTestResult.failed(summary, "click 三阶段传播顺序异常");
+        }
+        if ("INPUT-002".equals(testCase.getId())) {
+            UiDocument inputDocument = UiDocument.create();
+            ElementNode root = inputDocument.getRootElement();
+            ElementNode link = inputDocument.a();
+            final List<String> events = new ArrayList<String>();
+            final List<String> activations = new ArrayList<String>();
+            inputDocument.setLinkActivationHandler(new DocumentLinkActivationHandler() {
+                @Override
+                public void onLinkActivated(DocumentLinkActivationEvent event) {
+                    activations.add(event.getHref());
+                }
+            });
+            root.style().setWidth(UiStyleLength.px(140)).setHeight(UiStyleLength.px(48));
+            link.setAttribute("href", "https://example.test/input-002");
+            link.style()
+                    .setDisplay(UiDisplay.BLOCK)
+                    .setWidth(UiStyleLength.px(120))
+                    .setHeight(UiStyleLength.px(28));
+            link.setClickHandler(new DocumentElementClickHandler() {
+                @Override
+                public boolean onClick(DocumentElementClickEvent event) {
+                    events.add("target:" + event.getEventPhase());
+                    return true;
+                }
+            });
+            root.setClickHandler(new DocumentElementClickHandler() {
+                @Override
+                public boolean onClick(DocumentElementClickEvent event) {
+                    events.add("root-bubble:" + event.getEventPhase());
+                    return false;
+                }
+            });
+            root.append(link);
+            HtmlLikeDocumentWidget widget = createInputAssertionWidget(inputDocument, 140, 48);
+
+            dispatchPrimaryClick(widget, 10, 10, 1L, 2L);
+
+            String activation = activations.isEmpty() ? "none" : activations.get(0);
+            String summary = "stopPropagation 日志=" + events.toString() + "；linkActivated=" + activation;
+            boolean passed = "[target:AT_TARGET]".equals(events.toString())
+                    && "https://example.test/input-002".equals(activation);
+            testCase.updateDemoSummary(summary);
+            return passed ? RuntimeTestResult.passed(summary)
+                    : RuntimeTestResult.failed(summary, "stopPropagation 阻断了默认动作或未阻断冒泡");
+        }
+        if ("INPUT-003".equals(testCase.getId())) {
+            UiDocument inputDocument = UiDocument.create();
+            ElementNode root = inputDocument.getRootElement();
+            ElementNode link = inputDocument.a();
+            final List<String> events = new ArrayList<String>();
+            final List<String> activations = new ArrayList<String>();
+            inputDocument.setLinkActivationHandler(new DocumentLinkActivationHandler() {
+                @Override
+                public void onLinkActivated(DocumentLinkActivationEvent event) {
+                    activations.add(event.getHref());
+                }
+            });
+            root.style().setWidth(UiStyleLength.px(140)).setHeight(UiStyleLength.px(48));
+            link.setAttribute("href", "https://example.test/input-003");
+            link.style()
+                    .setDisplay(UiDisplay.BLOCK)
+                    .setWidth(UiStyleLength.px(120))
+                    .setHeight(UiStyleLength.px(28));
+            link.setClickHandler(new DocumentElementClickHandler() {
+                @Override
+                public boolean onClick(DocumentElementClickEvent event) {
+                    events.add("target:" + event.getEventPhase());
+                    event.preventDefault();
+                    return false;
+                }
+            });
+            root.setClickHandler(new DocumentElementClickHandler() {
+                @Override
+                public boolean onClick(DocumentElementClickEvent event) {
+                    events.add("root-bubble:" + event.getEventPhase());
+                    return false;
+                }
+            });
+            root.append(link);
+            HtmlLikeDocumentWidget widget = createInputAssertionWidget(inputDocument, 140, 48);
+
+            dispatchPrimaryClick(widget, 10, 10, 1L, 2L);
+
+            String summary = "preventDefault 日志=" + events.toString()
+                    + "；linkActivated=" + !activations.isEmpty();
+            boolean passed = "[target:AT_TARGET, root-bubble:BUBBLING]".equals(events.toString())
+                    && activations.isEmpty();
+            testCase.updateDemoSummary(summary);
+            return passed ? RuntimeTestResult.passed(summary)
+                    : RuntimeTestResult.failed(summary, "preventDefault 未阻止默认动作或错误阻断冒泡");
+        }
+        if ("INPUT-004".equals(testCase.getId())) {
+            UiDocument inputDocument = UiDocument.create();
+            ElementNode root = inputDocument.getRootElement();
+            ElementNode child = inputDocument.div();
+            final List<String> events = new ArrayList<String>();
+            root.style()
+                    .setWidth(UiStyleLength.px(80))
+                    .setHeight(UiStyleLength.px(20))
+                    .setOverflowY(UiOverflow.AUTO);
+            child.style()
+                    .setWidth(UiStyleLength.px(80))
+                    .setHeight(UiStyleLength.px(80));
+            child.setWheelHandler(new DocumentElementWheelHandler() {
+                @Override
+                public boolean onWheel(DocumentElementWheelEvent event) {
+                    events.add("child:" + event.getEventPhase() + ":" + event.getDeltaY());
+                    return true;
+                }
+            });
+            root.setWheelHandler(new DocumentElementWheelHandler() {
+                @Override
+                public boolean onWheel(DocumentElementWheelEvent event) {
+                    events.add("root-bubble:" + event.getEventPhase());
+                    return false;
+                }
+            });
+            root.append(child);
+            HtmlLikeDocumentWidget widget = createInputAssertionWidget(inputDocument, 80, 20);
+
+            boolean consumed = widget.onMouseScroll(new UiMouseEvent(UiMouseEvent.Action.SCROLL, 10, 10,
+                    -1, -120, 0, 0, 1L));
+            int scrollTop = widget.getScrollTop(root);
+
+            String summary = "wheel 返回 true 日志=" + events.toString() + "；scrollTop=" + scrollTop
+                    + "；consumed=" + consumed;
+            boolean passed = consumed && scrollTop == 36 && "[child:AT_TARGET:120]".equals(events.toString());
+            testCase.updateDemoSummary(summary);
+            return passed ? RuntimeTestResult.passed(summary)
+                    : RuntimeTestResult.failed(summary, "handler 返回 true 后默认滚动或传播状态异常");
+        }
+        if ("INPUT-005".equals(testCase.getId())) {
+            UiDocument inputDocument = UiDocument.create();
+            ElementNode root = inputDocument.getRootElement();
+            ElementNode target = inputDocument.div();
+            final List<String> events = new ArrayList<String>();
+            root.style().setWidth(UiStyleLength.px(90)).setHeight(UiStyleLength.px(44));
+            target.style().setWidth(UiStyleLength.px(60)).setHeight(UiStyleLength.px(28));
+            target.setMouseDownHandler(new DocumentElementMouseDownHandler() {
+                @Override
+                public boolean onMouseDown(DocumentElementMouseDownEvent event) {
+                    events.add("down:" + event.getEventPhase());
+                    return false;
+                }
+            }).setMouseUpHandler(new DocumentElementMouseUpHandler() {
+                @Override
+                public boolean onMouseUp(DocumentElementMouseUpEvent event) {
+                    events.add("up:" + event.getEventPhase());
+                    return false;
+                }
+            }).setClickHandler(new DocumentElementClickHandler() {
+                @Override
+                public boolean onClick(DocumentElementClickEvent event) {
+                    events.add("click:" + event.getEventPhase());
+                    return false;
+                }
+            }).setDoubleClickHandler(new DocumentElementDoubleClickHandler() {
+                @Override
+                public boolean onDoubleClick(DocumentElementDoubleClickEvent event) {
+                    events.add("dblclick:" + event.getEventPhase());
+                    return false;
+                }
+            });
+            root.append(target);
+            HtmlLikeDocumentWidget widget = createInputAssertionWidget(inputDocument, 90, 44);
+
+            dispatchPrimaryClick(widget, 10, 10, 1L, 2L);
+            dispatchPrimaryClick(widget, 10, 10, 3L, 4L);
+
+            String expected = "[down:AT_TARGET, up:AT_TARGET, click:AT_TARGET, down:AT_TARGET, up:AT_TARGET, "
+                    + "click:AT_TARGET, dblclick:AT_TARGET]";
+            String summary = "pointer 日志=" + events.toString();
+            testCase.updateDemoSummary(summary);
+            return expected.equals(events.toString()) ? RuntimeTestResult.passed(summary)
+                    : RuntimeTestResult.failed(summary, "mousedown/up/click/doubleclick 顺序异常");
+        }
+        return RuntimeTestResult.failed("未知 Input 用例。", "没有匹配的 Input 执行器");
+    }
+
+    /**
+     * 创建 Input 自动断言用的独立 HTML-like widget。
+     *
+     * @param inputDocument 独立测试文档
+     * @param width widget 宽度
+     * @param height widget 高度
+     * @return 已应用布局边界的 widget
+     */
+    private HtmlLikeDocumentWidget createInputAssertionWidget(UiDocument inputDocument, int width, int height) {
+        HtmlLikeDocumentWidget widget = new HtmlLikeDocumentWidget(inputDocument, width, height, textMeasureService);
+        widget.applyLayoutBounds(0, 0, width, height);
+        return widget;
+    }
+
+    /**
+     * 向 Input 自动断言 widget 派发一次主键点击。
+     *
+     * @param widget 目标 widget
+     * @param x 鼠标 X
+     * @param y 鼠标 Y
+     * @param downTimeNanos 按下时间戳
+     * @param upTimeNanos 抬起时间戳
+     */
+    private void dispatchPrimaryClick(HtmlLikeDocumentWidget widget, int x, int y, long downTimeNanos,
+            long upTimeNanos) {
+        widget.onMouseDown(new UiMouseEvent(UiMouseEvent.Action.BUTTON_DOWN, x, y, 0, 0, 0, 0, downTimeNanos));
+        widget.onMouseUp(new UiMouseEvent(UiMouseEvent.Action.BUTTON_UP, x, y, 0, 0, 0, 0, upTimeNanos));
     }
 
     /**
