@@ -6,7 +6,7 @@ import club.heiqi.uilib.ui.screen.UiDocumentScreens;
 import net.minecraft.client.gui.GuiScreen;
 
 /**
- * 内建 test 规划页入口。
+ * 内建 test 首页入口。
  *
  * <p>类放在 ui.screen.internal 子包内，语义上仅供库内开发工具调用，不构成对业务作者的稳定 API。</p>
  *
@@ -17,14 +17,14 @@ public final class UiDiagnosticsScreens {
     private UiDiagnosticsScreens() {}
 
     /**
-     * 创建 test 规划页。
+     * 创建 test 首页。
      */
     static GuiScreen createUiTest() {
         return createUiTest(UiDocumentScreens.DocumentScreenEnvironment.minecraftFormattedDefaults());
     }
 
     /**
-     * 基于显式环境创建 test 规划页。
+     * 基于显式环境创建 test 首页。
      */
     static GuiScreen createUiTest(UiDocumentScreens.DocumentScreenEnvironment environment) {
         return InternalHostedScreenFactory.createScreen(InternalDiagnosticScreenRegistry.UI_TEST_DEFINITION,
@@ -32,14 +32,14 @@ public final class UiDiagnosticsScreens {
     }
 
     /**
-     * 判断界面是否为 test 规划页。
+     * 判断界面是否为 test 首页。
      */
     public static boolean isUiTest(GuiScreen screen) {
         return isUiTest((Object) screen);
     }
 
     /**
-     * 判断对象是否为 test 规划页。
+     * 判断对象是否为 test 首页。
      */
     public static boolean isUiTest(Object screen) {
         return InternalScreenIdentity.hasPageId(screen, InternalDiagnosticScreenRegistry.uiTestPageId());

@@ -81,7 +81,7 @@ public class ExampleConfigGui extends ForgeConfigTemplateScreen {
 - 诊断页只作为开发期工具使用，不应作为玩家默认入口。
 - 默认不向原版背包注入按钮。
 - 默认不注册全局右 Shift 打开诊断菜单。
-- 当前测试入口统一为 `/qzuilib test`，并通过 `UiScreenManager` 延后开屏；旧内置子页已清空，当前打开 test 页面重构规划页。
+- 当前测试入口统一为 `/qzuilib test`，并通过 `UiScreenManager` 延后开屏；旧内置子页已清空，当前打开 test P0 语义首页。
 
 ## 环境对象
 
