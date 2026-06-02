@@ -1,19 +1,6 @@
 package club.heiqi.uilib.ui.screen.internal;
 
-import club.heiqi.uilib.internal.devtools.NetSelfCheckPage;
-import club.heiqi.uilib.internal.devtools.pages.HtmlLikeBrowserSemanticsShowcaseDocumentPageController;
-import club.heiqi.uilib.internal.devtools.pages.HtmlLikeGlassDocumentPageController;
-import club.heiqi.uilib.internal.devtools.pages.HtmlLikeInventoryOverviewDocumentPageController;
-import club.heiqi.uilib.internal.devtools.pages.HtmlLikeListDragDocumentPageController;
-import club.heiqi.uilib.internal.devtools.pages.HtmlLikeSmokeDocumentPageController;
-import club.heiqi.uilib.internal.devtools.pages.UiAnimationCapabilityShowcaseDocumentPageController;
-import club.heiqi.uilib.internal.devtools.pages.UiFontPerformanceBaselineDocumentPageController;
-import club.heiqi.uilib.internal.devtools.pages.UiFrameworkStructureAuditDocumentPageController;
-import club.heiqi.uilib.internal.devtools.pages.UiLayoutDiagnosticsDocumentPageController;
-import club.heiqi.uilib.internal.devtools.pages.UiRuntimeSelfTestDocumentPageController;
 import club.heiqi.uilib.internal.devtools.pages.UiTestDocumentPageController;
-import club.heiqi.uilib.internal.devtools.pages.UiTestMenuModel;
-import club.heiqi.uilib.ui.inventory.InventoryOverviewModel;
 import club.heiqi.uilib.ui.screen.page.DocumentPageAuthoringSurface;
 import club.heiqi.uilib.ui.screen.page.DocumentPageController;
 import club.heiqi.uilib.ui.screen.page.DocumentPageRuntimeView;
@@ -21,56 +8,20 @@ import club.heiqi.uilib.ui.screen.page.DocumentScreenChrome;
 import club.heiqi.uilib.ui.screen.page.DocumentUiScope;
 
 /**
- * 内建诊断页与示例页的内部注册表。
+ * `/qzuilib test` 内部页面注册表。
  *
- * <p>类与 page 描述/定义/标识查询入口对外提升为 public，仅供 ui.screen / ui.screen.internal
- * 内的协作类与诊断工具跨包使用，不构成对业务作者的稳定 API。</p>
+ * <p>当前 test 页面集合进入系统性重构期，注册表暂时只保留规划页入口。</p>
  *
- * @apiNote 内部类型，LTS 不承诺其稳定性。诊断页注册表中的页面 id、definition 引用仅供框架内部
- *          与诊断工具识别页面身份使用，业务代码不应直接引用。未来可能在 minor 版本调整结构。
+ * @apiNote 内部类型，LTS 不承诺其稳定性。业务代码不应直接引用页面 id 或 definition。
  */
 public final class InternalDiagnosticScreenRegistry {
 
-    public static final InternalScreenIdentity.PageDescriptor UI_TEST = new InternalScreenIdentity.PageDescriptor("ui_test");
-    public static final InternalScreenIdentity.PageDescriptor UI_TEST_LAYOUT = new InternalScreenIdentity.PageDescriptor(
-            "ui_test_layout");
-    public static final InternalScreenIdentity.PageDescriptor FONT_PERFORMANCE_BASELINE = new InternalScreenIdentity.PageDescriptor(
-            "font_performance_baseline");
-    public static final InternalScreenIdentity.PageDescriptor HTML_LIKE_SMOKE = new InternalScreenIdentity.PageDescriptor(
-            "html_like_smoke");
-    public static final InternalScreenIdentity.PageDescriptor HTML_LIKE_GLASS = new InternalScreenIdentity.PageDescriptor(
-            "html_like_glass");
-    public static final InternalScreenIdentity.PageDescriptor INVENTORY_OVERVIEW = new InternalScreenIdentity.PageDescriptor(
-            "inventory_overview");
-    public static final InternalScreenIdentity.PageDescriptor LIST_ELEMENT_DRAG = new InternalScreenIdentity.PageDescriptor(
-            "list_element_drag");
-    public static final InternalScreenIdentity.PageDescriptor BROWSER_SEMANTICS_SHOWCASE = new InternalScreenIdentity.PageDescriptor(
-            "browser_semantics_showcase");
-    public static final InternalScreenIdentity.PageDescriptor ANIMATION_CAPABILITY_SHOWCASE = new InternalScreenIdentity.PageDescriptor(
-            "animation_capability_showcase");
-    public static final InternalScreenIdentity.PageDescriptor UI_FRAMEWORK_STRUCTURE_AUDIT = new InternalScreenIdentity.PageDescriptor(
-            "ui_framework_structure_audit");
-    public static final InternalScreenIdentity.PageDescriptor RUNTIME_SELF_TEST = new InternalScreenIdentity.PageDescriptor(
-            "runtime_self_test");
-    public static final InternalScreenIdentity.PageDescriptor NET_SELF_CHECK = new InternalScreenIdentity.PageDescriptor(
-            "net_self_check");
+    public static final InternalScreenIdentity.PageDescriptor UI_TEST = new InternalScreenIdentity.PageDescriptor(
+            "ui_test");
 
-    public static final InternalHostedScreenFactory.InternalHostedScreenDefinition<UiTestMenuModel> UI_TEST_DEFINITION = new InternalHostedScreenFactory.InternalHostedScreenDefinition<UiTestMenuModel>(
+    public static final InternalHostedScreenFactory.InternalHostedScreenDefinition<Void> UI_TEST_DEFINITION = new InternalHostedScreenFactory.InternalHostedScreenDefinition<Void>(
             UI_TEST,
             DocumentScreenChrome::resolve,
-            new InternalHostedScreenFactory.InternalDocumentPageControllerFactory<UiTestMenuModel>() {
-                @Override
-                public DocumentPageController create(DocumentUiScope documentUi,
-                        DocumentPageAuthoringSurface documentPage,
-                        DocumentPageRuntimeView runtimeView,
-                        String pageId,
-                        UiTestMenuModel provision) {
-                    return new UiTestDocumentPageController(documentUi, documentPage, provision);
-                }
-            });
-    public static final InternalHostedScreenFactory.InternalHostedScreenDefinition<Void> UI_TEST_LAYOUT_DEFINITION = new InternalHostedScreenFactory.InternalHostedScreenDefinition<Void>(
-            UI_TEST_LAYOUT,
-            DocumentScreenChrome::resolve,
             new InternalHostedScreenFactory.InternalDocumentPageControllerFactory<Void>() {
                 @Override
                 public DocumentPageController create(DocumentUiScope documentUi,
@@ -78,189 +29,18 @@ public final class InternalDiagnosticScreenRegistry {
                         DocumentPageRuntimeView runtimeView,
                         String pageId,
                         Void provision) {
-                    return new UiLayoutDiagnosticsDocumentPageController(documentUi, documentPage, runtimeView, pageId);
-                }
-            });
-    public static final InternalHostedScreenFactory.InternalHostedScreenDefinition<Void> FONT_PERFORMANCE_BASELINE_DEFINITION = new InternalHostedScreenFactory.InternalHostedScreenDefinition<Void>(
-            FONT_PERFORMANCE_BASELINE,
-            DocumentScreenChrome::resolve,
-            new InternalHostedScreenFactory.InternalDocumentPageControllerFactory<Void>() {
-                @Override
-                public DocumentPageController create(DocumentUiScope documentUi,
-                        DocumentPageAuthoringSurface documentPage,
-                        DocumentPageRuntimeView runtimeView,
-                        String pageId,
-                        Void provision) {
-                    return new UiFontPerformanceBaselineDocumentPageController(documentUi, documentPage, runtimeView,
-                            pageId);
-                }
-            });
-    public static final InternalHostedScreenFactory.InternalHostedScreenDefinition<Void> HTML_LIKE_SMOKE_DEFINITION = new InternalHostedScreenFactory.InternalHostedScreenDefinition<Void>(
-            HTML_LIKE_SMOKE,
-            DocumentScreenChrome::resolve,
-            new InternalHostedScreenFactory.InternalDocumentPageControllerFactory<Void>() {
-                @Override
-                public DocumentPageController create(DocumentUiScope documentUi,
-                        DocumentPageAuthoringSurface documentPage,
-                        DocumentPageRuntimeView runtimeView,
-                        String pageId,
-                        Void provision) {
-                    return new HtmlLikeSmokeDocumentPageController(documentUi, documentPage);
-                }
-            });
-    public static final InternalHostedScreenFactory.InternalHostedScreenDefinition<Void> HTML_LIKE_GLASS_DEFINITION = new InternalHostedScreenFactory.InternalHostedScreenDefinition<Void>(
-            HTML_LIKE_GLASS,
-            DocumentScreenChrome::resolve,
-            new InternalHostedScreenFactory.InternalDocumentPageControllerFactory<Void>() {
-                @Override
-                public DocumentPageController create(DocumentUiScope documentUi,
-                        DocumentPageAuthoringSurface documentPage,
-                        DocumentPageRuntimeView runtimeView,
-                        String pageId,
-                        Void provision) {
-                    return new HtmlLikeGlassDocumentPageController(documentUi, documentPage);
-                }
-            });
-    public static final InternalHostedScreenFactory.InternalHostedScreenDefinition<InventoryOverviewModel> INVENTORY_OVERVIEW_DEFINITION = new InternalHostedScreenFactory.InternalHostedScreenDefinition<InventoryOverviewModel>(
-            INVENTORY_OVERVIEW,
-            DocumentScreenChrome::resolve,
-            new InternalHostedScreenFactory.InternalDocumentPageControllerFactory<InventoryOverviewModel>() {
-                @Override
-                public DocumentPageController create(DocumentUiScope documentUi,
-                        DocumentPageAuthoringSurface documentPage,
-                        DocumentPageRuntimeView runtimeView,
-                        String pageId,
-                        InventoryOverviewModel provision) {
-                    return new HtmlLikeInventoryOverviewDocumentPageController(documentUi, documentPage, runtimeView,
-                            provision);
-                }
-            });
-    public static final InternalHostedScreenFactory.InternalHostedScreenDefinition<Void> LIST_ELEMENT_DRAG_DEFINITION = new InternalHostedScreenFactory.InternalHostedScreenDefinition<Void>(
-            LIST_ELEMENT_DRAG,
-            DocumentScreenChrome::resolve,
-            new InternalHostedScreenFactory.InternalDocumentPageControllerFactory<Void>() {
-                @Override
-                public DocumentPageController create(DocumentUiScope documentUi,
-                        DocumentPageAuthoringSurface documentPage,
-                        DocumentPageRuntimeView runtimeView,
-                        String pageId,
-                        Void provision) {
-                    return new HtmlLikeListDragDocumentPageController(documentUi, documentPage);
-                }
-            });
-    public static final InternalHostedScreenFactory.InternalHostedScreenDefinition<Void> BROWSER_SEMANTICS_SHOWCASE_DEFINITION = new InternalHostedScreenFactory.InternalHostedScreenDefinition<Void>(
-            BROWSER_SEMANTICS_SHOWCASE,
-            DocumentScreenChrome::resolve,
-            new InternalHostedScreenFactory.InternalDocumentPageControllerFactory<Void>() {
-                @Override
-                public DocumentPageController create(DocumentUiScope documentUi,
-                        DocumentPageAuthoringSurface documentPage,
-                        DocumentPageRuntimeView runtimeView,
-                        String pageId,
-                        Void provision) {
-                    return new HtmlLikeBrowserSemanticsShowcaseDocumentPageController(documentUi, documentPage);
-                }
-            });
-    public static final InternalHostedScreenFactory.InternalHostedScreenDefinition<Void> ANIMATION_CAPABILITY_SHOWCASE_DEFINITION = new InternalHostedScreenFactory.InternalHostedScreenDefinition<Void>(
-            ANIMATION_CAPABILITY_SHOWCASE,
-            DocumentScreenChrome::resolve,
-            new InternalHostedScreenFactory.InternalDocumentPageControllerFactory<Void>() {
-                @Override
-                public DocumentPageController create(DocumentUiScope documentUi,
-                        DocumentPageAuthoringSurface documentPage,
-                        DocumentPageRuntimeView runtimeView,
-                        String pageId,
-                        Void provision) {
-                    return new UiAnimationCapabilityShowcaseDocumentPageController(documentUi, documentPage);
-                }
-            });
-    public static final InternalHostedScreenFactory.InternalHostedScreenDefinition<Void> UI_FRAMEWORK_STRUCTURE_AUDIT_DEFINITION = new InternalHostedScreenFactory.InternalHostedScreenDefinition<Void>(
-            UI_FRAMEWORK_STRUCTURE_AUDIT,
-            DocumentScreenChrome::resolve,
-            new InternalHostedScreenFactory.InternalDocumentPageControllerFactory<Void>() {
-                @Override
-                public DocumentPageController create(DocumentUiScope documentUi,
-                        DocumentPageAuthoringSurface documentPage,
-                        DocumentPageRuntimeView runtimeView,
-                        String pageId,
-                        Void provision) {
-                    return new UiFrameworkStructureAuditDocumentPageController(documentUi, documentPage);
-                }
-            });
-    public static final InternalHostedScreenFactory.InternalHostedScreenDefinition<Void> RUNTIME_SELF_TEST_DEFINITION = new InternalHostedScreenFactory.InternalHostedScreenDefinition<Void>(
-            RUNTIME_SELF_TEST,
-            DocumentScreenChrome::resolve,
-            new InternalHostedScreenFactory.InternalDocumentPageControllerFactory<Void>() {
-                @Override
-                public DocumentPageController create(DocumentUiScope documentUi,
-                        DocumentPageAuthoringSurface documentPage,
-                        DocumentPageRuntimeView runtimeView,
-                        String pageId,
-                        Void provision) {
-                    return new UiRuntimeSelfTestDocumentPageController(documentUi, documentPage);
-                }
-            });
-    public static final InternalHostedScreenFactory.InternalHostedScreenDefinition<Void> NET_SELF_CHECK_DEFINITION = new InternalHostedScreenFactory.InternalHostedScreenDefinition<Void>(
-            NET_SELF_CHECK,
-            DocumentScreenChrome::resolve,
-            new InternalHostedScreenFactory.InternalDocumentPageControllerFactory<Void>() {
-                @Override
-                public DocumentPageController create(DocumentUiScope documentUi,
-                        DocumentPageAuthoringSurface documentPage,
-                        DocumentPageRuntimeView runtimeView,
-                        String pageId,
-                        Void provision) {
-                    return new NetSelfCheckPage(documentUi, documentPage);
+                    return new UiTestDocumentPageController(documentUi, documentPage);
                 }
             });
 
     private InternalDiagnosticScreenRegistry() {}
 
+    /**
+     * 返回 test 规划页稳定 id。
+     *
+     * @return 页面 id
+     */
     public static String uiTestPageId() {
         return UI_TEST.getPageId();
-    }
-
-    public static String uiTestLayoutPageId() {
-        return UI_TEST_LAYOUT.getPageId();
-    }
-
-    public static String fontPerformanceBaselinePageId() {
-        return FONT_PERFORMANCE_BASELINE.getPageId();
-    }
-
-    public static String htmlLikeSmokePageId() {
-        return HTML_LIKE_SMOKE.getPageId();
-    }
-
-    public static String htmlLikeGlassPageId() {
-        return HTML_LIKE_GLASS.getPageId();
-    }
-
-    public static String inventoryOverviewPageId() {
-        return INVENTORY_OVERVIEW.getPageId();
-    }
-
-    public static String listElementDragPageId() {
-        return LIST_ELEMENT_DRAG.getPageId();
-    }
-
-    public static String browserSemanticsShowcasePageId() {
-        return BROWSER_SEMANTICS_SHOWCASE.getPageId();
-    }
-
-    public static String animationCapabilityShowcasePageId() {
-        return ANIMATION_CAPABILITY_SHOWCASE.getPageId();
-    }
-
-    public static String uiFrameworkStructureAuditPageId() {
-        return UI_FRAMEWORK_STRUCTURE_AUDIT.getPageId();
-    }
-
-    public static String runtimeSelfTestPageId() {
-        return RUNTIME_SELF_TEST.getPageId();
-    }
-
-    public static String netSelfCheckPageId() {
-        return NET_SELF_CHECK.getPageId();
     }
 }

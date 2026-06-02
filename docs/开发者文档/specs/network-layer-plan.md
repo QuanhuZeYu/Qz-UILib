@@ -13,7 +13,7 @@
 - `club.heiqi.uilib.net.transport.vanilla`：默认 vanilla custom payload 传输适配器与 mixin 入站分发。
 - `club.heiqi.uilib.net.transport.forge`：Forge/FML 回退适配器与 tick bridge。
 - `club.heiqi.uilib.mixin.early.network`：client/server NetHandler early mixin。
-- `/qzuilib test` 诊断菜单中的 `net_self_check` 自检页。
+- 网络自检场景规格保留在 `docs/开发者文档/specs/net-self-check.md`；当前 `/qzuilib test` 进入系统性重构期，旧 `net_self_check` 页面入口已清空，后续按 RemoteNet 分组恢复。
 
 配套文档：
 
@@ -398,7 +398,7 @@ channel.toServer().send(body);
 已人工验收：
 
 - GTNH / ModularUI2 服务端环境默认 vanilla 传输路径可正常进服；`NetHandlerPlayServer` 与 ServerUtilities、Hodgepodge 同目标 mixin 并存未阻断连接。
-- `/qzuilib test` 基础网络层自检全部通过：18 项通过、0 项失败，覆盖 Channel / Fetch / Stream / Store 真实往返；远程页面项是后续接入的交互 smoke，需在打开的远程页面内点击提交完成最终验证。
+- 历史验收：旧 `/qzuilib test` 基础网络层自检曾全部通过：18 项通过、0 项失败，覆盖 Channel / Fetch / Stream / Store 真实往返；当前旧页面入口已清空，后续按 RemoteNet 分组恢复。
 - 服务端出现的 `Qz Fetch 请求被限流` warn 为限流自检的预期可观测日志，证明 429 路径已触发。
 
 仍需人工验证：
