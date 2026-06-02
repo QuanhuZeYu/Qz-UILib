@@ -6,11 +6,13 @@
 
 - `compileJava` 报错 `Unable to delete directory '...build\classes\java\main'`。
 - 后续 `compileTestJava` 大量报 `找不到符号`，看起来像源码类消失。
+- 并行执行 `compileJava` 与 `test --tests ...` 时，可能出现其中一个 PowerShell/Gradle 子进程被杀，另一个进程的 `compileTestJava` 随后大量报主源码类不可见。
 - 单独重跑相同测试时又可以通过，说明不是业务源码本身编译失败。
 
 ## 触发场景
 
 - 使用并行工具同时执行多个 `./gradlew.bat test --tests ...` 命令。
+- 使用并行工具同时执行 `./gradlew.bat compileJava` 与 `./gradlew.bat test --tests ...`。
 - 多个 Gradle 进程共享同一个工作区、同一个 `build` 目录和同一个 Gradle 用户缓存。
 - 某个进程正在写入或清理 `build/classes/java/main`，另一个进程同时开始编译或测试。
 
@@ -26,7 +28,7 @@ Gradle 项目输出目录不是多进程并发写安全资源。并行启动多�
 
 ## 预防措施
 
-- 同一工作区内不要并行执行多个 Gradle 命令，尤其是 `test`、`compileJava`、`compileTestJava`。
+- 同一工作区内不要并行执行多个 Gradle 命令，尤其是 `test`、`compileJava`、`compileTestJava`；即使一个是“只编译”、另一个是“只跑目标测试”也必须串行。
 - 需要并行验证时，必须使用彼此隔离的工作区或独立 build 目录。
 - 看到大量无关 `找不到符号` 且伴随 `Unable to delete directory build/classes` 时，先按构建目录竞争处理，不要直接修改源码。
 - 对验证结果做结论前，必须串行重跑关键命令确认是否为真实代码失败。
