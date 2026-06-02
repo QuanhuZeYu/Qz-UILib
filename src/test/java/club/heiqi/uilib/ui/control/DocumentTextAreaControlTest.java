@@ -85,6 +85,36 @@ public class DocumentTextAreaControlTest {
     }
 
     /**
+     * 验证删除换行后会丢弃旧视觉行缓存，避免光标滚动复用过期逻辑行索引。
+     */
+    @Test
+    public void shouldDropStaleVisualLinesWhenDeletingLineBreak() {
+        UiDocument document = UiDocument.create();
+        ElementNode root = document.getRootElement();
+        DocumentTextAreaControl textAreaControl = new DocumentTextAreaControl(document);
+        textAreaControl.setText("A\nB");
+        root.style()
+                .setWidth(UiStyleLength.px(160))
+                .setHeight(UiStyleLength.px(80));
+        textAreaControl.getElement().style()
+                .setWidth(UiStyleLength.px(120))
+                .setHeight(UiStyleLength.px(54));
+        root.append(textAreaControl.getElement());
+        HtmlLikeDocumentWidget widget = new HtmlLikeDocumentWidget(document, 160, 80,
+                new DeterministicTextMeasureService());
+        widget.applyLayoutBounds(0, 0, 160, 80);
+
+        widget.onFocusTraversalEntered(false);
+        widget.render(new ControlTestRenderContext(160, 80));
+        widget.onKeyEvent(new UiKeyEvent(Keyboard.KEY_LEFT, 0, 0, UiKeyEvent.Action.PRESSED, false, false, false,
+                false, 1L));
+        widget.onKeyEvent(new UiKeyEvent(Keyboard.KEY_BACK, 0, 0, UiKeyEvent.Action.PRESSED, false, false, false,
+                false, 2L));
+
+        Assert.assertEquals("AB", textAreaControl.getText());
+    }
+
+    /**
      * 验证多行内容在聚焦时会滚动到当前光标行附近。
      */
     @Test
@@ -203,8 +233,73 @@ public class DocumentTextAreaControlTest {
         Assert.assertEquals(betaText.x + renderContext.measureTextWidth("Beta", TextContentMode.UILIB_RAW),
                 caret.left);
         Assert.assertEquals(betaText.y, caret.top);
-        Assert.assertEquals(caret.left + 1, caret.right);
+        Assert.assertEquals(caret.left + 2, caret.right);
         Assert.assertEquals(betaText.y + 18, caret.bottom);
+    }
+
+    /**
+     * 验证 textarea 光标使用独立高对比颜色，不被普通文本色覆盖到不可见。
+     */
+    @Test
+    public void shouldRenderCaretWithDedicatedColor() {
+        UiDocument document = UiDocument.create();
+        ElementNode root = document.getRootElement();
+        DocumentTextAreaControl textAreaControl = new DocumentTextAreaControl(document)
+                .setText("Visible caret")
+                .setTextColors(0x00000000, 0xFF777799, 0xFF666677, 0x664F86F7)
+                .setCaretColor(0xFFFFCC00);
+        root.style()
+                .setWidth(UiStyleLength.px(220))
+                .setHeight(UiStyleLength.px(90));
+        textAreaControl.getElement().style()
+                .setWidth(UiStyleLength.px(180))
+                .setHeight(UiStyleLength.px(54));
+        root.append(textAreaControl.getElement());
+        HtmlLikeDocumentWidget widget = new HtmlLikeDocumentWidget(document, 220, 90,
+                new DeterministicTextMeasureService());
+        widget.applyLayoutBounds(0, 0, 220, 90);
+
+        widget.onFocusTraversalEntered(false);
+        ControlTestRenderContext renderContext = new ControlTestRenderContext(220, 90);
+        widget.render(renderContext);
+
+        ControlTestRenderContext.FillRectCall caret = findFillRectByColor(renderContext, 0xFFFFCC00);
+        Assert.assertNotNull(caret);
+        Assert.assertEquals(2, caret.right - caret.left);
+        Assert.assertEquals(18, caret.bottom - caret.top);
+    }
+
+    /**
+     * 验证 widget 位于非零屏幕坐标时，textarea 光标仍使用屏幕坐标与文本对齐。
+     */
+    @Test
+    public void shouldRenderCaretAtScreenOffsetWhenWidgetOffsetIsNonZero() {
+        UiDocument document = UiDocument.create();
+        ElementNode root = document.getRootElement();
+        DocumentTextAreaControl textAreaControl = new DocumentTextAreaControl(document);
+        textAreaControl.setText("Offset");
+        root.style()
+                .setWidth(UiStyleLength.px(180))
+                .setHeight(UiStyleLength.px(90));
+        textAreaControl.getElement().style()
+                .setWidth(UiStyleLength.px(140))
+                .setHeight(UiStyleLength.px(54));
+        root.append(textAreaControl.getElement());
+        HtmlLikeDocumentWidget widget = new HtmlLikeDocumentWidget(document, 180, 90,
+                new DeterministicTextMeasureService());
+        widget.applyLayoutBounds(30, 20, 180, 90);
+
+        widget.onFocusTraversalEntered(false);
+        ControlTestRenderContext renderContext = new ControlTestRenderContext(240, 160);
+        widget.render(renderContext);
+
+        ControlTestRenderContext.TextCall text = findTextCall(renderContext, "Offset");
+        ControlTestRenderContext.FillRectCall caret = findCaretFillRect(renderContext);
+
+        Assert.assertNotNull(text);
+        Assert.assertNotNull(caret);
+        Assert.assertEquals(text.x + renderContext.measureTextWidth("Offset", TextContentMode.UILIB_RAW), caret.left);
+        Assert.assertEquals(text.y, caret.top);
     }
 
     /**
@@ -310,9 +405,19 @@ public class DocumentTextAreaControlTest {
 
     private static ControlTestRenderContext.FillRectCall findCaretFillRect(ControlTestRenderContext renderContext) {
         for (ControlTestRenderContext.FillRectCall fillRectCall : renderContext.fillRectCalls) {
-            if (fillRectCall.right - fillRectCall.left == 1
+            if (fillRectCall.right - fillRectCall.left == 2
                     && fillRectCall.bottom - fillRectCall.top == 18
-                    && fillRectCall.color == 0xFFEEEEFF) {
+                    && fillRectCall.color == 0xFFFFFFFF) {
+                return fillRectCall;
+            }
+        }
+        return null;
+    }
+
+    private static ControlTestRenderContext.FillRectCall findFillRectByColor(ControlTestRenderContext renderContext,
+            int color) {
+        for (ControlTestRenderContext.FillRectCall fillRectCall : renderContext.fillRectCalls) {
+            if (fillRectCall.color == color) {
                 return fillRectCall;
             }
         }

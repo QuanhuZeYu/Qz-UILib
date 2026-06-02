@@ -57,12 +57,13 @@ Flex、block、positioned 定位与尺寸计算。
 - [`ERROR-20260427-custom-paint-content-box.md`](ERROR-20260427-custom-paint-content-box.md) — CustomRenderer 参数传入 padding box 而非 content box
 - [`ERROR-20260518-browser-semantics-audit.md`](ERROR-20260518-browser-semantics-audit.md) — 全面审查发现 28 处不符合浏览器语义的实现
 - [`ERROR-20260523-form-control-browser-semantics.md`](ERROR-20260523-form-control-browser-semantics.md) — 表单控件渲染缺少 flex 匿名文本与 textarea 内容盒语义
+- [`ERROR-20260602-form-control-input-textarea-caret.md`](ERROR-20260602-form-control-input-textarea-caret.md) — input 空值缺少原生编辑高度且 textarea 光标混用文档/屏幕坐标
 
 **共性教训**：flex column 的交叉轴 auto 尺寸必须走固有内容宽度测量；盒模型 API 必须明确传递 content box 还是 padding box；控件渲染异常优先补齐通用 HTML-like/CSS 语义。
 
 ---
 
-## 滚动/交互类（合并，5 条）
+## 滚动/交互类（合并，6 条）
 
 滚动条、hover 状态、焦点与拖拽。
 
@@ -71,6 +72,7 @@ Flex、block、positioned 定位与尺寸计算。
 - [`ERROR-20260427-html-scrollbar-missing.md`](ERROR-20260427-html-scrollbar-missing.md) — 根视口滚动后缺少可见滚动条
 - [`ERROR-20260509-html-hover-stale-after-scroll.md`](ERROR-20260509-html-hover-stale-after-scroll.md) — 滚动后 hover 状态未同步更新
 - [`ERROR-20260518-html-drag-right-bottom-anchor-jump.md`](ERROR-20260518-html-drag-right-bottom-anchor-jump.md) — 浮窗首次拖拽时因 right/bottom 锚点跳位
+- [`ERROR-20260602-textarea-stale-visual-line-cache.md`](ERROR-20260602-textarea-stale-visual-line-cache.md) — textarea 删除换行后复用过期视觉行缓存导致运行时崩溃
 
 **共性教训**：滚动偏移变化后必须重新命中测试更新 hover；拖拽起始必须先将锚点归一化为 left/top。
 

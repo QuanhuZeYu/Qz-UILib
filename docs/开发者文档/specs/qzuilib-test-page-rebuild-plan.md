@@ -31,7 +31,11 @@
 | Layout | 已接入 LAYOUT-001 到 LAYOUT-005 | block、margin collapse、空块、inline/inline-block 可断言；baseline 标记已知缺口并等待人工确认 |
 | Paint | 已接入 PAINT-001 到 PAINT-005 | 结构和 stacking 可断言；绘制层级、opacity、clip、transform 命中等待人工确认 |
 | Input | 已接入 INPUT-001 到 INPUT-005 | 点击传播、默认行为分离、滚轮默认滚动和 doubleclick 均可通过按钮断言 |
-| Controls / TextFont / Animation / RuntimeHost / RemoteNet | 已预留二级入口，运行时卡片待后续批次恢复 | 不混入首页，不按旧页面名组织 |
+| Controls | 已接入 CTRL-001 到 CTRL-005 | button、text/password/number input、textarea 均有运行时卡片；selection/caret、step、软换行保留人工确认 |
+| TextFont | 已接入 TEXT-001 到 TEXT-005 | raw/formatted 文本、测量、fallback、font reload epoch 均有运行时卡片；fallback/reload 保留人工确认 |
+| Animation | 已接入 ANIM-001 到 ANIM-005 | transition、per-property、keyframes、delay/duration/iteration、direction 均有运行时卡片；动态事件/视觉保留人工确认 |
+| RuntimeHost | 已接入 HOST-001 到 HOST-005 | 开屏时序、resize、runtime stats、GL render context、HUD 层级均有运行时卡片；宿主行为保留人工确认 |
+| RemoteNet | 已接入 NET-001 到 NET-005 | Channel、分片、Fetch、Stream、Store 均有运行时卡片；服务端链路保留人工确认 |
 
 ## 运行时用例卡片规范
 
@@ -49,7 +53,7 @@
 
 ## P1/P2 二级页接入范围
 
-P0 已建立分组索引、运行时测试结果模型和统一用例卡片契约。P1 将运行时卡片迁移到类型二级页，首页不再直接展示卡片；DOM / CSS / Layout / Paint 每页先恢复 5 张运行时卡片。P2 已启动 Input 二级页恢复，先接入 INPUT-001 到 INPUT-005。
+P0 已建立分组索引、运行时测试结果模型和统一用例卡片契约。P1 将运行时卡片迁移到类型二级页，首页不再直接展示卡片；DOM / CSS / Layout / Paint 每页先恢复 5 张运行时卡片。P2 已完成 Input / Controls / TextFont / Animation 二级页前 5 张运行时卡片恢复。P3 已完成 RuntimeHost / RemoteNet 二级页前 5 张运行时卡片恢复，其中宿主与网络链路类用例明确保留人工确认状态，不伪造服务端或游戏内结果。
 
 | 二级页卡片 | 覆盖语义 | 运行时预期文本 | 当前状态 |
 |---|---|---|---|
@@ -78,6 +82,31 @@ P0 已建立分组索引、运行时测试结果模型和统一用例卡片契�
 | INPUT-003 | `preventDefault` 阻止默认行为 | 预期结果：链接或滚动默认动作不执行，事件日志仍完整显示。 | 已接入自动执行与人工确认 |
 | INPUT-004 | handler 返回 true 与默认行为分离 | 预期结果：返回 true 后传播停止，但未 preventDefault 的默认滚动仍执行。 | 已接入自动执行与人工确认 |
 | INPUT-005 | mousedown、mouseup、click、doubleclick | 预期结果：单击日志为 down/up/click，双击额外记录 doubleclick。 | 已接入自动执行与人工确认 |
+| CTRL-001 | button enabled/disabled/action | 预期结果：可用按钮点击计数加 1，disabled 按钮点击无变化。 | 已接入自动执行与人工确认 |
+| CTRL-002 | text input value、selection、caret | 预期结果：输入、删除、选择替换后 value 与光标位置文本一致。 | 已接入 value 自动检查；selection/caret 等待人工确认 |
+| CTRL-003 | password input 掩码 | 预期结果：页面只显示掩码字符，结果区保存真实 value 长度。 | 已接入自动执行与人工确认 |
+| CTRL-004 | number input 解析、非法值、step | 预期结果：有效数字按 step 调整，非法输入显示错误状态且不提交。 | 已接入非法字符过滤自动检查；step 等待人工确认 |
+| CTRL-005 | textarea 逻辑行与视觉软换行 | 预期结果：长文本自动软换行，value 中只保留真实换行。 | 已接入真实换行自动检查；软换行等待人工确认 |
+| TEXT-001 | `TextContentMode.UILIB_RAW` | 预期结果：`§a` 等字符按普通文本显示，不触发 Minecraft 格式化。 | 已接入自动执行与人工确认 |
+| TEXT-002 | `TextContentMode.MINECRAFT_FORMATTED` | 预期结果：`§a绿色` 显示为绿色，结果区仍能显示原始文本长度。 | 已接入自动执行与人工确认 |
+| TEXT-003 | 字符宽度、line-height、baseline | 预期结果：中英文混排行高稳定，标尺线与文本基线位置一致。 | 已接入文本测量自动检查；baseline 等待人工确认 |
+| TEXT-004 | 字体 fallback | 预期结果：缺字字符使用 fallback 字体显示，不出现空白方块。 | 已接入结构检查；fallback 等待游戏内人工确认 |
+| TEXT-005 | font reload debounce | 预期结果：连续 reload 后只显示最终 epoch，页面不崩溃。 | 已接入 epoch 记录；reload debounce 等待游戏内人工确认 |
+| ANIM-001 | transition start/end/cancel | 预期结果：触发动画后日志出现 start/end，中途反向触发 cancel。 | 已接入 transition 声明检查；事件日志等待人工确认 |
+| ANIM-002 | per-property transition | 预期结果：颜色和 transform 按不同 duration 结束，日志分属性记录。 | 已接入自动执行与人工确认 |
+| ANIM-003 | keyframes from/to 与百分比帧 | 预期结果：盒子按关键帧路径移动，最终停在标注终点。 | 已接入结构检查；路径视觉等待人工确认 |
+| ANIM-004 | delay、duration、iteration-count | 预期结果：延迟期不移动，循环次数与日志 iteration 数一致。 | 已接入自动执行与人工确认 |
+| ANIM-005 | direction normal/reverse/alternate | 预期结果：reverse 从终点开始，alternate 每轮方向翻转。 | 已接入方向声明检查；方向视觉等待人工确认 |
+| HOST-001 | `/qzuilib test` 延后开屏时序 | 预期结果：从聊天框执行命令后页面稳定打开，不被聊天关闭流程吞掉。 | 已接入入口检查；聊天命令时序等待游戏内人工确认 |
+| HOST-002 | resize 与 viewport fill | 预期结果：调整窗口后卡片重新排布，滚动位置不异常跳变。 | 已接入窗口状态读取；resize 等待人工确认 |
+| HOST-003 | runtime stats 与帧耗时 | 预期结果：页面显示 host 尺寸、鼠标坐标、draw/update 指标且数值持续刷新。 | 已接入自动执行与人工确认 |
+| HOST-004 | GL-backed render context | 预期结果：标准背景、边框、文本、图片和自定义绘制都可见，无 GL 状态污染。 | 已接入结构检查；GL 状态等待游戏内人工确认 |
+| HOST-005 | HUD 纯显示层与交互层 | 预期结果：纯 HUD 在容器界面中隐藏，交互 HUD 可接收点击和键盘焦点。 | 已接入结构检查；HUD 层级等待游戏内人工确认 |
+| NET-001 | Channel C2S/S2C 往返 | 预期结果：点击执行后显示 `通过：Channel 往返完成`。 | 已接入运行时入口；服务端往返等待人工确认 |
+| NET-002 | C2S 分片与重组 | 预期结果：超过 32KB 的消息成功分片重组，结果显示原始长度一致。 | 已接入运行时入口；服务端重组等待人工确认 |
+| NET-003 | Fetch 成功、错误、超时、取消、限流 | 预期结果：五个按钮分别显示 200、500、timeout、cancelled、429。 | 已接入运行时入口；服务端 endpoint 等待人工确认 |
+| NET-004 | Stream 大内容下载 | 预期结果：下载进度递增到 100%，最终校验大小通过。 | 已接入运行时入口；服务端 stream 等待人工确认 |
+| NET-005 | Store snapshot/delta/player store | 预期结果：Store 视图按服务端推送更新，玩家定向 Store 只影响当前玩家。 | 已接入运行时入口；服务端推送等待人工确认 |
 
 二级页卡片必须完整显示 `用例编号`、`覆盖语义`、`自动断言`、`操作步骤`、`预期结果`、`实际结果`、`状态` 七个字段，并提供 `执行自动测试`、`人工通过`、`人工失败` 操作。后续每个分组页恢复运行时按钮前，仍必须先在本文对应分组表补齐编号、语义和 `预期结果：...` 文本。
 

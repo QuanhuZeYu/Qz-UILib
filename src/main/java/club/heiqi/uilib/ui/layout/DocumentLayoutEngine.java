@@ -276,7 +276,8 @@ public final class DocumentLayoutEngine {
                     createsFixedContainingBlock, marginTopAdjustment, layoutContext);
         }
 
-        int autoContentHeight = childrenResult.contentHeight;
+        int autoContentHeight = resolveNativeTextControlAutoContentHeight(element, computedStyle,
+                childrenResult.contentHeight, layoutContext);
         int contentHeight = resolveContentHeight(element, computedStyle, forcedContentHeight, autoContentHeight,
                 contentWidth, containingHeight, layoutContext.layoutValueResolver);
         if (isEmptyBlockWithCollapsibleOwnMargins(element, computedStyle, forcedContentHeight, autoContentHeight,
@@ -298,6 +299,18 @@ public final class DocumentLayoutEngine {
                 childrenResult.inlineFragments, margin, border, padding, borderBoxLeft, borderBoxTop, borderBoxWidth,
                 borderBoxHeight, positionOffsetX, positionOffsetY, resolvedTopInset, resolvedRightInset,
                 resolvedBottomInset, resolvedLeftInset);
+    }
+
+    /**
+     * 为原生文本输入控件提供浏览器式 auto 高度下限。
+     */
+    private static int resolveNativeTextControlAutoContentHeight(ElementNode element, ComputedStyle computedStyle,
+            int autoContentHeight, LayoutContext layoutContext) {
+        if (!"input".equals(element.getTagName()) || !isAuto(computedStyle.getHeight())) {
+            return autoContentHeight;
+        }
+        int textLineHeight = TextLayoutHelper.resolveTextLineHeight(layoutContext.textMeasureService, computedStyle);
+        return Math.max(autoContentHeight, textLineHeight);
     }
 
     private static LayoutChildrenResult layoutBlockChildren(ElementNode element, int contentLeft, int contentTop,
