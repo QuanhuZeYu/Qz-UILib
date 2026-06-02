@@ -49,6 +49,7 @@ public final class DocumentPaintRenderer {
 
         private final Deque<OpenRenderState> openStates = new ArrayDeque<OpenRenderState>();
         private float fallbackOpacity = 1.0F;
+        private int transformDepth;
 
         private void pushClip() {
             openStates.push(new OpenRenderState(DocumentPaintCommandType.CLIP_START,
@@ -69,7 +70,19 @@ public final class DocumentPaintRenderer {
         private void pushTransform(UiRenderContext context, DocumentPaintCommand command, int offsetX, int offsetY) {
             context.pushTransform(command.getTransform(), command.getLeft() + offsetX, command.getTop() + offsetY,
                     command.getRight() + offsetX, command.getBottom() + offsetY);
+            transformDepth++;
             openStates.push(new OpenRenderState(DocumentPaintCommandType.TRANSFORM_START, null, fallbackOpacity));
+        }
+
+        private void popTransform(UiRenderContext context) {
+            context.popTransform();
+            if (transformDepth > 0) {
+                transformDepth--;
+            }
+        }
+
+        private boolean isTransformActive() {
+            return transformDepth > 0;
         }
 
         private boolean isEmpty() {
@@ -115,9 +128,14 @@ public final class DocumentPaintRenderer {
             int commandIndex = 0;
             while (commandIndex < commands.size()) {
                 DocumentPaintCommand command = commands.get(commandIndex);
-                if (isBatchableTextCommand(command, replayState)) {
-                    commandIndex = renderTextBatch(context, commands, commandIndex, offsetX, offsetY,
-                            replayState);
+                if (isRenderableTextCommand(command, replayState)) {
+                    if (isBatchableTextCommand(command, replayState)) {
+                        commandIndex = renderTextBatch(context, commands, commandIndex, offsetX, offsetY,
+                                replayState);
+                    } else {
+                        renderTextCommand(context, command, offsetX, offsetY, replayState);
+                        commandIndex++;
+                    }
                     continue;
                 }
                 renderCommand(context, command, offsetX, offsetY, replayState);
@@ -307,6 +325,10 @@ public final class DocumentPaintRenderer {
     }
 
     private static boolean isBatchableTextCommand(DocumentPaintCommand command, RenderReplayState replayState) {
+        return isRenderableTextCommand(command, replayState) && !replayState.isTransformActive();
+    }
+
+    private static boolean isRenderableTextCommand(DocumentPaintCommand command, RenderReplayState replayState) {
         return command != null
                 && command.getType() == DocumentPaintCommandType.TEXT
                 && command.getWidth() > 0
@@ -329,7 +351,7 @@ public final class DocumentPaintRenderer {
 
     private static void popOpenState(UiRenderContext context, RenderReplayState replayState, OpenRenderState state) {
         if (state.commandType == DocumentPaintCommandType.TRANSFORM_START) {
-            context.popTransform();
+            replayState.popTransform(context);
             return;
         }
         if (state.effectType == DocumentEffectType.OVERFLOW_CLIP) {

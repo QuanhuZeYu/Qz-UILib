@@ -857,6 +857,39 @@ public class DocumentPaintRendererTest {
     }
 
     /**
+     * 验证 transform 内文本不进入延迟字体批处理，避免批次 flush 时绕过父元素矩阵。
+     */
+    @Test
+    public void shouldRenderTransformedTextWithoutDeferredBatching() {
+        UiDocument document = UiDocument.create();
+        ElementNode root = document.getRootElement();
+        List<DocumentPaintCommand> commands = new ArrayList<DocumentPaintCommand>();
+        commands.add(new DocumentPaintCommand(DocumentPaintCommandType.TRANSFORM_START, root, 2, 3, 42, 23,
+                UiTransform.of(8.0F, 4.0F, 1.5F, 0.75F, 12.0F)));
+        commands.add(new DocumentPaintCommand(DocumentPaintCommandType.TEXT, root, 4, 5, 28, 17,
+                0xFFE2E8F0, 0, 0, "Inner", TextContentMode.UILIB_RAW, null, 0, 1.0F, 1.0F));
+        commands.add(new DocumentPaintCommand(DocumentPaintCommandType.TEXT, root, 4, 17, 28, 29,
+                0xFFE2E8F0, 0, 0, "Text", TextContentMode.UILIB_RAW, null, 0, 1.0F, 1.0F));
+        commands.add(new DocumentPaintCommand(DocumentPaintCommandType.TRANSFORM_END, root, 2, 3, 42, 23,
+                UiTransform.of(8.0F, 4.0F, 1.5F, 0.75F, 12.0F)));
+        commands.add(new DocumentPaintCommand(DocumentPaintCommandType.TEXT, root, 0, 30, 24, 42,
+                0xFFE2E8F0, 0, 0, "Outer", TextContentMode.UILIB_RAW, null, 0, 1.0F, 1.0F));
+
+        BatchingRecordingUiRenderContext renderContext = new BatchingRecordingUiRenderContext();
+        DocumentPaintRenderer.render(renderContext, commands, 7, 11);
+
+        Assert.assertEquals(3, renderContext.textCalls.size());
+        assertTextCall(renderContext.textCalls.get(0), "Inner", 11, 16, 0xFFE2E8F0, false);
+        assertTextCall(renderContext.textCalls.get(1), "Text", 11, 28, 0xFFE2E8F0, false);
+        assertTextCall(renderContext.textCalls.get(2), "Outer", 7, 41, 0xFFE2E8F0, false);
+        Assert.assertEquals(1, renderContext.beginDeferredTextBatchCount);
+        Assert.assertEquals(1, renderContext.flushDeferredTextBatchCount);
+        Assert.assertEquals(1, renderContext.endDeferredTextBatchCount);
+        Assert.assertEquals(1, ((RecordingUiRenderContext) renderContext).transformCalls.size());
+        Assert.assertEquals(1, ((RecordingUiRenderContext) renderContext).popTransformCount);
+    }
+
+    /**
      * 验证真实离屏 paint context 激活时，标准颜色命令不再被 renderer 额外乘以 context opacity。
      */
     @Test
