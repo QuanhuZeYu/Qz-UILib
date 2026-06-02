@@ -30,7 +30,8 @@
 | CSS | 已接入 CSS-001 到 CSS-005 | 级联、继承、display、box-sizing 均可通过按钮断言 |
 | Layout | 已接入 LAYOUT-001 到 LAYOUT-005 | block、margin collapse、空块、inline/inline-block 可断言；baseline 标记已知缺口并等待人工确认 |
 | Paint | 已接入 PAINT-001 到 PAINT-005 | 结构和 stacking 可断言；绘制层级、opacity、clip、transform 命中等待人工确认 |
-| Input / Controls / TextFont / Animation / RuntimeHost / RemoteNet | 已预留二级入口，运行时卡片待后续批次恢复 | 不混入首页，不按旧页面名组织 |
+| Input | 已接入 INPUT-001 到 INPUT-005 | 点击传播、默认行为分离、滚轮默认滚动和 doubleclick 均可通过按钮断言 |
+| Controls / TextFont / Animation / RuntimeHost / RemoteNet | 已预留二级入口，运行时卡片待后续批次恢复 | 不混入首页，不按旧页面名组织 |
 
 ## 运行时用例卡片规范
 
@@ -46,9 +47,9 @@
 | 实际结果 | 执行后由按钮或人工填写，失败时保留差异说明 |
 | 状态 | `未执行`、`执行中`、`通过：观察结果与预期一致`、`失败：观察结果与预期不一致 - <差异说明>` |
 
-## P1 二级页接入范围
+## P1/P2 二级页接入范围
 
-P0 已建立分组索引、运行时测试结果模型和统一用例卡片契约。P1 将运行时卡片迁移到类型二级页，首页不再直接展示卡片；DOM / CSS / Layout / Paint 每页先恢复 5 张运行时卡片。
+P0 已建立分组索引、运行时测试结果模型和统一用例卡片契约。P1 将运行时卡片迁移到类型二级页，首页不再直接展示卡片；DOM / CSS / Layout / Paint 每页先恢复 5 张运行时卡片。P2 已启动 Input 二级页恢复，先接入 INPUT-001 到 INPUT-005。
 
 | 二级页卡片 | 覆盖语义 | 运行时预期文本 | 当前状态 |
 |---|---|---|---|
@@ -72,6 +73,11 @@ P0 已建立分组索引、运行时测试结果模型和统一用例卡片契�
 | PAINT-003 | opacity stacking context | 预期结果：半透明组整体混合，组内高 z-index 不越过外部兄弟。 | 已接入结构校验，自动结果保持执行中并等待人工确认 |
 | PAINT-004 | overflow clip 与圆角 clip | 预期结果：子元素超出圆角容器部分被裁剪，命中也不可达。 | 已接入结构校验，自动结果保持执行中并等待人工确认 |
 | PAINT-005 | transform 平移、缩放、旋转命中 | 预期结果：视觉位置与点击命中位置一致，未变换原位置点击无效。 | 已接入结构校验，自动结果保持执行中并等待人工确认 |
+| INPUT-001 | capture、target、bubble 顺序 | 预期结果：点击子节点后事件日志顺序为 `root capture -> parent capture -> target -> parent bubble -> root bubble`。 | 已接入自动执行与人工确认 |
+| INPUT-002 | `stopPropagation` 只停止后续传播 | 预期结果：目标处理后祖先 bubble 不再记录，但默认动作仍执行。 | 已接入自动执行与人工确认 |
+| INPUT-003 | `preventDefault` 阻止默认行为 | 预期结果：链接或滚动默认动作不执行，事件日志仍完整显示。 | 已接入自动执行与人工确认 |
+| INPUT-004 | handler 返回 true 与默认行为分离 | 预期结果：返回 true 后传播停止，但未 preventDefault 的默认滚动仍执行。 | 已接入自动执行与人工确认 |
+| INPUT-005 | mousedown、mouseup、click、doubleclick | 预期结果：单击日志为 down/up/click，双击额外记录 doubleclick。 | 已接入自动执行与人工确认 |
 
 二级页卡片必须完整显示 `用例编号`、`覆盖语义`、`自动断言`、`操作步骤`、`预期结果`、`实际结果`、`状态` 七个字段，并提供 `执行自动测试`、`人工通过`、`人工失败` 操作。后续每个分组页恢复运行时按钮前，仍必须先在本文对应分组表补齐编号、语义和 `预期结果：...` 文本。
 

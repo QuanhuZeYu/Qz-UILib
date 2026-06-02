@@ -201,6 +201,22 @@ public class UiTestDocumentPageControllerTest {
                 "transform=translate(18.0,6.0) scale(1.20,1.20) rotate(8.0deg)"));
         Assert.assertFalse(containsText(paintTexts, "UiStyleLength@"));
         Assert.assertTrue(containsText(paintTexts, "等待人工确认变换后命中"));
+
+        clickButtonByLabel(fixture.controller.getHtmlLikeDocumentWidget(), "INPUT", 0);
+        for (int index = 0; index < 5; index++) {
+            clickButtonByLabel(fixture.controller.getHtmlLikeDocumentWidget(), "执行自动测试", index);
+        }
+        List<String> inputTexts = collectDocumentTexts(fixture.controller.getHtmlLikeDocumentWidget());
+        Assert.assertTrue(containsText(inputTexts, "INPUT-001"));
+        Assert.assertTrue(containsText(inputTexts, "click 顺序=[root-capture:CAPTURING"));
+        Assert.assertTrue(containsText(inputTexts,
+                "stopPropagation 日志=[target:AT_TARGET]；linkActivated=https://example.test/input-002"));
+        Assert.assertTrue(containsText(inputTexts,
+                "preventDefault 日志=[target:AT_TARGET, root-bubble:BUBBLING]；linkActivated=false"));
+        Assert.assertTrue(containsText(inputTexts,
+                "wheel 返回 true 日志=[child:AT_TARGET:120]；scrollTop=36；consumed=true"));
+        Assert.assertTrue(containsText(inputTexts,
+                "pointer 日志=[down:AT_TARGET, up:AT_TARGET, click:AT_TARGET"));
     }
 
     /**
