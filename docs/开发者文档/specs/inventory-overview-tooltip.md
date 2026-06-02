@@ -1,10 +1,12 @@
 # 背包概览 Tooltip 规格
 
-本文固化 `inventory_overview` 背包页 tooltip 的视觉与交互需求，后续实现与验收以本文件为准。
+本文固化旧 `inventory_overview` 背包页 tooltip 的视觉与交互需求，后续若恢复背包槽位运行时测试，以本文件为历史规格参考。
+
+> 当前 `/qzuilib test` 进入系统性重构期，旧 `inventory_overview` 页面已删除。若恢复背包槽位运行时测试，应归入新 test 体系的 Controls / RuntimeHost 分组。
 
 ## 适用范围
 
-- 当前适用于内部开发工具链打开的背包概览示例页。
+- 当前仅作为旧背包概览示例页的历史规格保留。
 - 当前聚焦背包槽位 hover tooltip，不扩展到普通按钮、表格或其他通用浮层。
 
 ## 设计目标

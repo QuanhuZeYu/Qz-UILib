@@ -84,5 +84,4 @@ RemoteHudOverlays.open(player, RemoteHudOverlay.dialog("rename-hud", page).build
 
 ## 运行时验证
 
-`/qzuilib test` 的“运行时远程 HUD”会打开一个远程 HUD 表单和一条弹幕。点击 HUD 内提交按钮后，
-服务端会验证字段收集和 C2S 回调，并用一个结果 toast 显示通过或失败。
+当前 `/qzuilib test` 进入 test 页面系统性重构期，旧“运行时远程 HUD”入口已清空。远程 HUD 交互 smoke 会按 `docs/开发者文档/specs/qzuilib-test-page-rebuild-plan.md` 的 RemoteNet 分组恢复：预期仍是打开远程 HUD 表单和弹幕，点击 HUD 内提交按钮后由服务端验证字段收集和 C2S 回调，并显示通过或失败结果。
