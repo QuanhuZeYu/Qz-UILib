@@ -138,6 +138,7 @@ public final class UiTestDocumentPageController extends DocumentPageController {
         ElementNode card = document.div();
         card.style()
                 .setFlexGrow(1.0F)
+                .setMinWidth(UiStyleLength.px(0))
                 .setPadding(UiStyleLength.px(12))
                 .setBackgroundColor(0xFF17243A)
                 .setBorderColor(0xFF2E4C7F)
@@ -273,6 +274,7 @@ public final class UiTestDocumentPageController extends DocumentPageController {
         ElementNode card = document.div();
         card.style()
                 .setFlexGrow(1.0F)
+                .setMinWidth(UiStyleLength.px(0))
                 .setPadding(UiStyleLength.px(16))
                 .setBackgroundColor(0xFF1D2A44)
                 .setBorderColor(0xFF405F9C)

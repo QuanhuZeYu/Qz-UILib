@@ -24,7 +24,7 @@ import club.heiqi.uilib.ui.text.TextMeasureService;
  * <ul>
  *     <li>文本规范化（white-space 折叠 / 保留、text-transform）</li>
  *     <li>软换行决策（按 word-break / overflow-wrap / CJK / URL 标点选择断行点）</li>
- *     <li>固有宽度测量（max-line-width / max-unit-width）</li>
+ *     <li>固有宽度测量（max-content / min-content）</li>
  *     <li>文本尺寸放缩（UI 像素 ⇄ 字体原始像素）与行高、对齐偏移、缩进解析</li>
  * </ul>
  *
@@ -559,6 +559,55 @@ final class TextLayoutHelper {
             return measureMaxTextUnitWidth(text, textContentMode, textMeasureService, ownerStyle);
         }
         return measureMaxTextLineWidth(text, textContentMode, textMeasureService, ownerStyle);
+    }
+
+    /**
+     * 测量文本节点的 CSS-like min-content 宽度，用于 flex item 的 auto 最小宽度。
+     */
+    static int measureMinContentTextWidth(TextNode textNode, ComputedStyle ownerStyle,
+            TextMeasureService textMeasureService) {
+        TextContentMode textContentMode = textNode.getTextContentMode();
+        String text = normalizeTextForLayout(textNode.getText(), ownerStyle, textContentMode);
+        if (text == null || text.isEmpty()) {
+            return 0;
+        }
+        UiWhiteSpace whiteSpace = resolveWhiteSpace(ownerStyle);
+        if (!allowsSoftWrapping(whiteSpace)) {
+            return measureMaxTextLineWidth(text, textContentMode, textMeasureService, ownerStyle);
+        }
+        UiWordBreak wordBreak = ownerStyle == null ? UiWordBreak.NORMAL : ownerStyle.getWordBreak();
+        UiOverflowWrap overflowWrap = ownerStyle == null ? UiOverflowWrap.NORMAL : ownerStyle.getOverflowWrap();
+        if (wordBreak == UiWordBreak.BREAK_ALL || overflowWrap == UiOverflowWrap.ANYWHERE) {
+            return measureMaxTextUnitWidth(text, textContentMode, textMeasureService, ownerStyle);
+        }
+        return measureMaxTextBreakRunWidth(text, textContentMode, textMeasureService, ownerStyle, wordBreak);
+    }
+
+    private static int measureMaxTextBreakRunWidth(String text, TextContentMode textContentMode,
+            TextMeasureService textMeasureService, ComputedStyle ownerStyle, UiWordBreak wordBreak) {
+        int maxWidth = 0;
+        int runStart = 0;
+        List<TextWrapUnit> units = collectTextWrapUnits(text, textContentMode);
+        for (int index = 0; index < units.size(); index++) {
+            TextBreakPoint breakPoint = resolveNormalBreakPoint(units, index, wordBreak);
+            if (breakPoint == null) {
+                continue;
+            }
+            maxWidth = Math.max(maxWidth, measureTextRunWidth(text, runStart, breakPoint.textEnd,
+                    textContentMode, textMeasureService, ownerStyle));
+            runStart = Math.max(runStart, Math.min(breakPoint.consumedEnd, text.length()));
+        }
+        return Math.max(maxWidth, measureTextRunWidth(text, runStart, text.length(), textContentMode,
+                textMeasureService, ownerStyle));
+    }
+
+    private static int measureTextRunWidth(String text, int start, int end, TextContentMode textContentMode,
+            TextMeasureService textMeasureService, ComputedStyle ownerStyle) {
+        if (start < 0 || end <= start) {
+            return 0;
+        }
+        return toUiTextSize(measureTextWidth(textMeasureService, text.substring(start, end), textContentMode,
+                ownerStyle));
     }
 
     private static int measureMaxTextLineWidth(String text, TextContentMode textContentMode,

@@ -608,7 +608,8 @@ final class NumericPropertyBinding extends ForgeConfigTemplateScreen.PropertyBin
                     .setDisplay(UiDisplay.FLEX)
                     .setFlexDirection(UiFlexDirection.ROW)
                     .setAlignItems(UiAlignItems.CENTER)
-                    .setWidth(UiStyleLength.percent(1.0F));
+                    .setWidth(UiStyleLength.percent(1.0F))
+                    .setMinWidth(UiStyleLength.px(0));
             sliderShell.append(sliderControl.getElement());
             editor.append(sliderShell);
 

@@ -293,7 +293,9 @@ public final class UiLayoutDiagnosticsDocumentPageController extends DocumentPag
         root.append(cardsRow);
 
         ElementNode formCard = appendCard(document, cardsRow, 0xFF17233B, 0xFF6366F1);
-        formCard.style().setFlexGrow(1.35F);
+        formCard.style()
+                .setFlexGrow(1.35F)
+                .setMinWidth(UiStyleLength.px(0));
         formCard.appendText("表单约束探针");
         formCard.appendText("文本输入、开关与分段选择都由 ElementNode-backed 控件组成。");
         appendControlRow(document, formCard, "主题名称", themeInput.getElement());
@@ -305,7 +307,9 @@ public final class UiLayoutDiagnosticsDocumentPageController extends DocumentPag
         formCard.append(refreshButton.getElement());
 
         ElementNode wrapCard = appendCard(document, cardsRow, 0xFF1E293B, 0xFF14B8A6);
-        wrapCard.style().setFlexGrow(1.0F);
+        wrapCard.style()
+                .setFlexGrow(1.0F)
+                .setMinWidth(UiStyleLength.px(0));
         wrapCard.appendText("文本换行与最小宽度探针");
         wrapCard.appendText("中英混排、路径与较长字段值应跟随 HTML-like 文本测量结果自然换行。");
         TextNode wrapSampleText = wrapCard.appendText("");
@@ -392,7 +396,9 @@ public final class UiLayoutDiagnosticsDocumentPageController extends DocumentPag
                 .setWidth(UiStyleLength.px(92))
                 .setTextColor(0xFFBFD0EE);
         labelElement.appendText(label);
-        field.style().setFlexGrow(1.0F);
+        field.style()
+                .setFlexGrow(1.0F)
+                .setMinWidth(UiStyleLength.px(0));
         row.append(labelElement);
         row.append(field);
         parent.append(row);

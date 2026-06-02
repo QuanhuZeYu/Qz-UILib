@@ -242,7 +242,9 @@ public final class UiRuntimeSelfTestDocumentPageController extends DocumentPageC
                 .setColumnGap(UiStyleLength.px(14));
 
         ElementNode textColumn = document.div();
-        textColumn.style().setFlexGrow(1.0F);
+        textColumn.style()
+                .setFlexGrow(1.0F)
+                .setMinWidth(UiStyleLength.px(0));
         textColumn.appendText(title);
         textColumn.appendText(description);
         card.append(textColumn);

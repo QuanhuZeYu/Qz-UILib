@@ -9,6 +9,11 @@
 - 详情文档：[REVIEW-20260601-capability-gap-recheck.md](REVIEW-20260601-capability-gap-recheck.md)
 - 结论摘要：以当前源码为准重新核实，确认 `REVIEW-20260518` 正文结论已严重滞后——其列为"待实现/部分实现"的 20+ 项（transform 主体、sticky、flex order、border-collapse、text-shadow/transform/indent、white-space 五模式、list-style、`!important`、`::before/::after`、结构伪类、后代/子代选择器、contextmenu、dblclick、transitionend/animationend、CustomEvent、cloneNode、DocumentFragment、`<a>` 链接、select/checkbox/radio 等）已完整落地。当前真实剩余缺口约 23 主项：12 项完全未实现、约 11 项部分实现，另发现 `DocumentScrollMetricsCalculator` 未跟随 fixed containing block 语义这一运行时一致性缺口。重点提示：剩余缺口需先按 A 类（已声明有意边界：Grid/float/gradient/transform 矩阵/baseline/完整 Web Animations/var() 等）与 B 类（性价比待评估真缺口）分级，避免把有意边界当待补缺陷。`REVIEW-20260518` 正文结论以本复核取代。
 
+## 2026-06-02-flex-min-content-runtime-pages
+- 类型：运行时页面浏览器语义回归复查与修复
+- 详情文档：[REVIEW-20260602-flex-min-content-runtime-pages.md](REVIEW-20260602-flex-min-content-runtime-pages.md)
+- 结论摘要：运行时页面在浏览器语义修复后暴露的主要显示风险源于库侧 row flex item `min-width:auto` 仍用 max-content 近似，导致可换行文本比真实浏览器更难收缩。已将 auto 最小宽度改为 CSS-like min-content 测量，并将诊断页、配置模板和字体排序等确需等分收缩的 row flex 子项显式设置 `min-width:0`。
+
 ## 2026-06-01-browser-semantics-phase2-audit
 - 类型：浏览器语义一致性审查（Phase 2）
 - 详情文档：[REVIEW-20260601-browser-semantics-phase2-audit.md](REVIEW-20260601-browser-semantics-phase2-audit.md)
