@@ -447,7 +447,7 @@ public final class UiTestDocumentPageController extends DocumentPageController {
         return UiStyleSheet.create()
                 .addRule(".css-001-target", new UiStyleDeclaration()
                         .setTextColor(CSS_STYLESHEET_TEXT_COLOR))
-                .addRule(".css-002-type", new UiStyleDeclaration()
+                .addRule("csscase", new UiStyleDeclaration()
                         .setTextColor(0xFF60A5FA))
                 .addRule(".css-002-class", new UiStyleDeclaration()
                         .setTextColor(0xFF34D399))
@@ -1097,9 +1097,9 @@ public final class UiTestDocumentPageController extends DocumentPageController {
         ElementNode demo = createRuntimeDemoContainer(document);
         if ("CSS-002".equals(testCase.getId())) {
             ElementNode row = createRuntimeDemoRow(document);
-            ElementNode type = createCssSample(document, "type", "css-002-type", null);
+            ElementNode type = createCssSpecificitySample(document, "csscase", "type", null, null);
             ElementNode klass = createCssSample(document, "class", "css-002-class", null);
-            ElementNode id = createCssSample(document, "id", "css-002-type", "css-002-id");
+            ElementNode id = createCssSample(document, "id", "css-002-class", "css-002-id");
             ElementNode order = createCssSample(document, "order", "css-002-order", null);
             row.append(type);
             row.append(klass);
@@ -1331,6 +1331,13 @@ public final class UiTestDocumentPageController extends DocumentPageController {
                     .setOpacity(0.55F)
                     .setPosition(UiPosition.RELATIVE)
                     .setZIndex(1);
+            ElementNode inner = createPaintSample(document, "inner z=99", 0xFFDC2626);
+            inner.style()
+                    .setPosition(UiPosition.RELATIVE)
+                    .setZIndex(99)
+                    .setMarginTop(UiStyleLength.px(-4))
+                    .setMarginLeft(UiStyleLength.px(18));
+            group.append(inner);
             ElementNode sibling = createPaintSample(document, "outside", 0xFF059669);
             sibling.style()
                     .setPosition(UiPosition.RELATIVE)
@@ -1340,7 +1347,7 @@ public final class UiTestDocumentPageController extends DocumentPageController {
             stage.append(sibling);
             demo.append(stage);
             TextNode summary = appendDemoSummary(document, demo, "opacity stacking：未校验");
-            testCase.setElementDemo(stage, summary, group, sibling);
+            testCase.setElementDemo(stage, summary, group, sibling, inner);
         } else if ("PAINT-004".equals(testCase.getId())) {
             ElementNode clip = createPaintStage(document);
             clip.style()
@@ -1495,11 +1502,36 @@ public final class UiTestDocumentPageController extends DocumentPageController {
      * @return 样例元素
      */
     private ElementNode createCssSample(UiDocument document, String label, String className, String id) {
-        ElementNode sample = createDemoPanel(document, label, 0xFF111827);
-        sample.setClassName(className);
+        return createCssSpecificitySample(document, "div", label, className, id);
+    }
+
+    /**
+     * 创建 CSS specificity 专用演示样例。
+     *
+     * @param document 文档实例
+     * @param tagName 标签名
+     * @param label 样例文本
+     * @param className class 名
+     * @param id id 值
+     * @return 样例元素
+     */
+    private ElementNode createCssSpecificitySample(UiDocument document, String tagName, String label,
+            String className, String id) {
+        ElementNode sample = document.element(tagName);
+        sample.style()
+                .setPadding(UiStyleLength.px(8))
+                .setBackgroundColor(0xFF111827)
+                .setBorderColor(0xFF64748B)
+                .setBorderWidth(UiStyleLength.px(1))
+                .setBorderStyle(UiBorderStyle.SOLID)
+                .setBorderRadius(UiStyleLength.px(8));
+        if (className != null) {
+            sample.setClassName(className);
+        }
         if (id != null) {
             sample.setId(id);
         }
+        sample.appendText(label);
         return sample;
     }
 
@@ -2059,7 +2091,8 @@ public final class UiTestDocumentPageController extends DocumentPageController {
                     && clipStyle.getOverflowY() == UiOverflow.HIDDEN
                     && !UiStyleLength.px(0).equals(clipStyle.getBorderRadius());
             String summary = "overflow=" + clipStyle.getOverflowX() + "/" + clipStyle.getOverflowY()
-                    + "；radius=" + clipStyle.getBorderRadius() + "；等待人工确认裁剪命中";
+                    + "；radius=" + formatLengthSummary(clipStyle.getBorderRadius())
+                    + "；等待人工确认裁剪命中";
             testCase.updateDemoSummary(summary);
             return passed ? RuntimeTestResult.running(summary)
                     : RuntimeTestResult.failed(summary, "overflow clip 或圆角结构异常");
@@ -2068,7 +2101,7 @@ public final class UiTestDocumentPageController extends DocumentPageController {
             ElementNode transformed = testCase.getDemoElement(0);
             UiTransform transform = UiStyleResolver.compute(transformed).getTransform();
             boolean passed = !transform.isIdentity();
-            String summary = "transform=" + transform + "；等待人工确认变换后命中";
+            String summary = formatTransformSummary(transform) + "；等待人工确认变换后命中";
             testCase.updateDemoSummary(summary);
             return passed ? RuntimeTestResult.running(summary)
                     : RuntimeTestResult.failed(summary, "transform 未生效");
@@ -2193,6 +2226,43 @@ public final class UiTestDocumentPageController extends DocumentPageController {
      */
     private String formatColor(int color) {
         return String.format(java.util.Locale.ROOT, "#%08X", Integer.valueOf(color));
+    }
+
+    /**
+     * 格式化 transform 摘要，避免把值对象内部地址暴露到运行时页面。
+     *
+     * @param transform transform 值
+     * @return transform 摘要
+     */
+    private String formatTransformSummary(UiTransform transform) {
+        return String.format(java.util.Locale.ROOT,
+                "transform=translate(%.1f,%.1f) scale(%.2f,%.2f) rotate(%.1fdeg)",
+                Float.valueOf(transform.getTranslateX()), Float.valueOf(transform.getTranslateY()),
+                Float.valueOf(transform.getScaleX()), Float.valueOf(transform.getScaleY()),
+                Float.valueOf(transform.getRotateDegrees()));
+    }
+
+    /**
+     * 格式化样式长度摘要，避免值对象默认地址进入运行时页面。
+     *
+     * @param length 样式长度
+     * @return 可读长度摘要
+     */
+    private String formatLengthSummary(UiStyleLength length) {
+        if (length == null) {
+            return "none";
+        }
+        if (length.getType() == UiStyleLength.Type.AUTO) {
+            return "auto";
+        }
+        if (length.getType() == UiStyleLength.Type.PERCENT) {
+            return String.format(java.util.Locale.ROOT, "%.0f%%", Float.valueOf(length.getValue() * 100.0F));
+        }
+        if (length.getType() == UiStyleLength.Type.CALC) {
+            return String.format(java.util.Locale.ROOT, "calc(%.0f%% %+,.1fpx)",
+                    Float.valueOf(length.getValue() * 100.0F), Float.valueOf(length.getPixelOffset()));
+        }
+        return String.format(java.util.Locale.ROOT, "%.1fpx", Float.valueOf(length.getValue()));
     }
 
     /**
