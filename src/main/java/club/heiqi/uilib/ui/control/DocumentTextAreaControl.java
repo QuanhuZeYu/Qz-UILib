@@ -79,6 +79,8 @@ public final class DocumentTextAreaControl {
     private int viewportContentTop;
     private int viewportContentWidth;
     private int viewportContentHeight;
+    private int viewportScreenOffsetX;
+    private int viewportScreenOffsetY;
     private long caretBlinkResetNanos;
 
     /**
@@ -388,7 +390,8 @@ public final class DocumentTextAreaControl {
             @Override
             public void render(UiRenderContext context, int contentLeft, int contentTop, int contentRight,
                     int contentBottom) {
-                updateRenderedLineMetrics(context, contentLeft, contentTop, contentRight, contentBottom);
+                updateRenderedLineMetrics(context, selectionLayer, contentLeft, contentTop, contentRight,
+                        contentBottom);
                 renderSelection(context);
             }
         });
@@ -396,7 +399,8 @@ public final class DocumentTextAreaControl {
             @Override
             public void render(UiRenderContext context, int contentLeft, int contentTop, int contentRight,
                     int contentBottom) {
-                updateRenderedLineMetrics(context, contentLeft, contentTop, contentRight, contentBottom);
+                updateRenderedLineMetrics(context, caretLayer, contentLeft, contentTop, contentRight,
+                        contentBottom);
                 renderCaret(context);
             }
         });
@@ -821,12 +825,17 @@ public final class DocumentTextAreaControl {
         return resolveLineIndexForCaret(targetCaretIndex) * DEFAULT_LINE_HEIGHT;
     }
 
-    private void updateRenderedLineMetrics(UiRenderContext context, int contentLeft, int contentTop, int contentRight,
-            int contentBottom) {
+    private void updateRenderedLineMetrics(UiRenderContext context, ElementNode renderLayer, int contentLeft,
+            int contentTop, int contentRight, int contentBottom) {
         DocumentElementBounds textBounds = contentElement.getDocumentBounds();
         DocumentElementBounds viewportBounds = element.getDocumentBounds();
-        viewportContentLeft = textBounds.isAvailable() ? textBounds.getContentLeft() : contentLeft;
-        viewportContentTop = textBounds.isAvailable() ? textBounds.getContentTop() : contentTop;
+        DocumentElementBounds layerBounds = renderLayer.getDocumentBounds();
+        viewportScreenOffsetX = layerBounds.isAvailable() ? contentLeft - layerBounds.getContentLeft() : 0;
+        viewportScreenOffsetY = layerBounds.isAvailable() ? contentTop - layerBounds.getContentTop() : 0;
+        int fallbackDocumentContentLeft = contentLeft - viewportScreenOffsetX;
+        int fallbackDocumentContentTop = contentTop - viewportScreenOffsetY;
+        viewportContentLeft = textBounds.isAvailable() ? textBounds.getContentLeft() : fallbackDocumentContentLeft;
+        viewportContentTop = textBounds.isAvailable() ? textBounds.getContentTop() : fallbackDocumentContentTop;
         viewportContentWidth = viewportBounds.isAvailable() ? viewportBounds.getContentWidth()
                 : Math.max(0, contentRight - contentLeft);
         viewportContentHeight = viewportBounds.isAvailable() ? viewportBounds.getContentHeight()
@@ -863,16 +872,16 @@ public final class DocumentTextAreaControl {
                     - lineMetrics.visualStartIndex));
             int localEnd = Math.max(0, Math.min(lineMetrics.text.length(), selectionEnd
                     - lineMetrics.visualStartIndex));
-            int startX = viewportContentLeft + lineMetrics.resolveBoundaryX(localStart);
-            int endX = viewportContentLeft + lineMetrics.resolveBoundaryX(localEnd);
+            int startX = toScreenX(viewportContentLeft + lineMetrics.resolveBoundaryX(localStart));
+            int endX = toScreenX(viewportContentLeft + lineMetrics.resolveBoundaryX(localEnd));
             if (startX == endX && lineMetrics.text.isEmpty()) {
                 endX = startX + CLICK_EMPTY_LINE_HIGHLIGHT_WIDTH;
             }
             if (endX <= startX) {
                 continue;
             }
-            context.fillRect(startX, viewportContentTop + lineMetrics.visualTop, endX,
-                    viewportContentTop + lineMetrics.visualTop + DEFAULT_LINE_HEIGHT, selectionColor);
+            int selectionTop = toScreenY(viewportContentTop + lineMetrics.visualTop);
+            context.fillRect(startX, selectionTop, endX, selectionTop + DEFAULT_LINE_HEIGHT, selectionColor);
         }
     }
 
@@ -892,10 +901,18 @@ public final class DocumentTextAreaControl {
             return;
         }
         int localOffset = Math.max(0, Math.min(lineMetrics.text.length(), caretIndex - lineMetrics.visualStartIndex));
-        int cursorX = viewportContentLeft + lineMetrics.resolveBoundaryX(localOffset);
-        int cursorTop = viewportContentTop + lineMetrics.visualTop;
+        int cursorX = toScreenX(viewportContentLeft + lineMetrics.resolveBoundaryX(localOffset));
+        int cursorTop = toScreenY(viewportContentTop + lineMetrics.visualTop);
         context.fillRect(cursorX, cursorTop, cursorX + DEFAULT_CARET_WIDTH, cursorTop + DEFAULT_LINE_HEIGHT,
                 enabled ? caretColor : disabledTextColor);
+    }
+
+    private int toScreenX(int documentX) {
+        return documentX + viewportScreenOffsetX;
+    }
+
+    private int toScreenY(int documentY) {
+        return documentY + viewportScreenOffsetY;
     }
 
     private VisualLineMetrics resolveVisualLineMetricsForCaret(int targetCaretIndex) {

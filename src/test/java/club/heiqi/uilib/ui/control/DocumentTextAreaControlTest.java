@@ -270,6 +270,39 @@ public class DocumentTextAreaControlTest {
     }
 
     /**
+     * 验证 widget 位于非零屏幕坐标时，textarea 光标仍使用屏幕坐标与文本对齐。
+     */
+    @Test
+    public void shouldRenderCaretAtScreenOffsetWhenWidgetOffsetIsNonZero() {
+        UiDocument document = UiDocument.create();
+        ElementNode root = document.getRootElement();
+        DocumentTextAreaControl textAreaControl = new DocumentTextAreaControl(document);
+        textAreaControl.setText("Offset");
+        root.style()
+                .setWidth(UiStyleLength.px(180))
+                .setHeight(UiStyleLength.px(90));
+        textAreaControl.getElement().style()
+                .setWidth(UiStyleLength.px(140))
+                .setHeight(UiStyleLength.px(54));
+        root.append(textAreaControl.getElement());
+        HtmlLikeDocumentWidget widget = new HtmlLikeDocumentWidget(document, 180, 90,
+                new DeterministicTextMeasureService());
+        widget.applyLayoutBounds(30, 20, 180, 90);
+
+        widget.onFocusTraversalEntered(false);
+        ControlTestRenderContext renderContext = new ControlTestRenderContext(240, 160);
+        widget.render(renderContext);
+
+        ControlTestRenderContext.TextCall text = findTextCall(renderContext, "Offset");
+        ControlTestRenderContext.FillRectCall caret = findCaretFillRect(renderContext);
+
+        Assert.assertNotNull(text);
+        Assert.assertNotNull(caret);
+        Assert.assertEquals(text.x + renderContext.measureTextWidth("Offset", TextContentMode.UILIB_RAW), caret.left);
+        Assert.assertEquals(text.y, caret.top);
+    }
+
+    /**
      * 验证超长逻辑行会按内容宽度软换行，而不是继续生成横向滚动。
      */
     @Test

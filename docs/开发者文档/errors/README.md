@@ -57,6 +57,7 @@ Flex、block、positioned 定位与尺寸计算。
 - [`ERROR-20260427-custom-paint-content-box.md`](ERROR-20260427-custom-paint-content-box.md) — CustomRenderer 参数传入 padding box 而非 content box
 - [`ERROR-20260518-browser-semantics-audit.md`](ERROR-20260518-browser-semantics-audit.md) — 全面审查发现 28 处不符合浏览器语义的实现
 - [`ERROR-20260523-form-control-browser-semantics.md`](ERROR-20260523-form-control-browser-semantics.md) — 表单控件渲染缺少 flex 匿名文本与 textarea 内容盒语义
+- [`ERROR-20260602-form-control-input-textarea-caret.md`](ERROR-20260602-form-control-input-textarea-caret.md) — input 空值缺少原生编辑高度且 textarea 光标混用文档/屏幕坐标
 
 **共性教训**：flex column 的交叉轴 auto 尺寸必须走固有内容宽度测量；盒模型 API 必须明确传递 content box 还是 padding box；控件渲染异常优先补齐通用 HTML-like/CSS 语义。
 

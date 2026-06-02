@@ -9,6 +9,7 @@ import org.junit.Test;
 import org.lwjglx.input.Keyboard;
 
 import club.heiqi.uilib.ui.document.HtmlLikeDocumentWidget;
+import club.heiqi.uilib.ui.dom.DocumentElementBounds;
 import club.heiqi.uilib.ui.dom.DocumentElementKeyEvent;
 import club.heiqi.uilib.ui.dom.DocumentElementKeyHandler;
 import club.heiqi.uilib.ui.dom.ElementNode;
@@ -309,6 +310,35 @@ public class DocumentTextInputControlTest {
         RecordingUiRenderContext filledRenderContext = new RecordingUiRenderContext();
         widget.render(filledRenderContext);
         Assert.assertTrue(containsTextCall(filledRenderContext.textCalls, "Hi"));
+    }
+
+    /**
+     * 验证空值 input 仍保留浏览器原生文本框的一行编辑高度。
+     */
+    @Test
+    public void shouldKeepIntrinsicLineHeightWhenEmpty() {
+        UiDocument document = UiDocument.create();
+        ElementNode root = document.getRootElement();
+        DocumentTextInputControl emptyInputControl = new DocumentTextInputControl(document);
+        DocumentTextInputControl filledInputControl = new DocumentTextInputControl(document).setText("A");
+        root.style()
+                .setWidth(UiStyleLength.px(220))
+                .setHeight(UiStyleLength.px(100));
+        emptyInputControl.getElement().style().setWidth(UiStyleLength.px(160));
+        filledInputControl.getElement().style().setWidth(UiStyleLength.px(160));
+        root.append(emptyInputControl.getElement());
+        root.append(filledInputControl.getElement());
+        HtmlLikeDocumentWidget widget = new HtmlLikeDocumentWidget(document, 220, 100,
+                new DeterministicTextMeasureService());
+        widget.applyLayoutBounds(0, 0, 220, 100);
+
+        DocumentElementBounds emptyBounds = emptyInputControl.getElement().getDocumentBounds();
+        DocumentElementBounds filledBounds = filledInputControl.getElement().getDocumentBounds();
+
+        Assert.assertTrue(emptyBounds.isAvailable());
+        Assert.assertTrue(filledBounds.isAvailable());
+        Assert.assertEquals(filledBounds.getHeight(), emptyBounds.getHeight());
+        Assert.assertEquals(18, emptyBounds.getContentHeight());
     }
 
     /**
