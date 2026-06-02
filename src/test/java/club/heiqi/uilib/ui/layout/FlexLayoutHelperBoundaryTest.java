@@ -9,11 +9,14 @@ import org.junit.Test;
 
 import club.heiqi.uilib.ui.dom.ElementNode;
 import club.heiqi.uilib.ui.dom.UiDocument;
+import club.heiqi.uilib.ui.style.props.UiAlignContent;
 import club.heiqi.uilib.ui.style.props.UiAlignItems;
 import club.heiqi.uilib.ui.style.props.UiBoxSizing;
 import club.heiqi.uilib.ui.style.props.UiDisplay;
 import club.heiqi.uilib.ui.style.props.UiFlexDirection;
+import club.heiqi.uilib.ui.style.props.UiFlexWrap;
 import club.heiqi.uilib.ui.style.props.UiWhiteSpace;
+import club.heiqi.uilib.ui.style.values.UiStyleInsets;
 import club.heiqi.uilib.ui.style.values.UiStyleLength;
 import club.heiqi.uilib.ui.text.TextMeasureService;
 
@@ -154,6 +157,65 @@ public class FlexLayoutHelperBoundaryTest {
 
         Assert.assertEquals(60, itemBox.getWidth());
         Assert.assertEquals(42, itemBox.getContentWidth());
+    }
+
+    /**
+     * 多行 row flex 应按 align-content 分配交叉轴剩余空间。
+     */
+    @Test
+    public void shouldApplyAlignContentToWrappedRowFlexLines() {
+        UiDocument document = UiDocument.create();
+        ElementNode root = document.getRootElement();
+        ElementNode first = document.div();
+        ElementNode second = document.div();
+        ElementNode third = document.div();
+
+        root.style()
+                .setDisplay(UiDisplay.FLEX)
+                .setFlexDirection(UiFlexDirection.ROW)
+                .setFlexWrap(UiFlexWrap.WRAP)
+                .setAlignContent(UiAlignContent.CENTER)
+                .setWidth(UiStyleLength.px(100))
+                .setHeight(UiStyleLength.px(80));
+        first.style().setWidth(UiStyleLength.px(60)).setHeight(UiStyleLength.px(10));
+        second.style().setWidth(UiStyleLength.px(60)).setHeight(UiStyleLength.px(10));
+        third.style().setWidth(UiStyleLength.px(60)).setHeight(UiStyleLength.px(10));
+        root.append(first).append(second).append(third);
+
+        DocumentLayoutBox rootBox = DocumentLayoutEngine.layout(root, 120, 0, new DeterministicMeasure());
+
+        Assert.assertEquals(25, rootBox.getChildren().get(0).getTop());
+        Assert.assertEquals(35, rootBox.getChildren().get(1).getTop());
+        Assert.assertEquals(45, rootBox.getChildren().get(2).getTop());
+    }
+
+    /**
+     * 交叉轴 auto margin 应吸收剩余空间，并禁用 align-items:stretch。
+     */
+    @Test
+    public void shouldLetCrossAxisAutoMarginOverrideStretch() {
+        UiDocument document = UiDocument.create();
+        ElementNode root = document.getRootElement();
+        ElementNode item = document.div();
+
+        root.style()
+                .setDisplay(UiDisplay.FLEX)
+                .setFlexDirection(UiFlexDirection.ROW)
+                .setAlignItems(UiAlignItems.STRETCH)
+                .setWidth(UiStyleLength.px(100))
+                .setHeight(UiStyleLength.px(50));
+        item.style()
+                .setWidth(UiStyleLength.px(20))
+                .setHeight(UiStyleLength.px(10))
+                .setMargin(UiStyleInsets.of(UiStyleLength.auto(), UiStyleLength.px(0), UiStyleLength.auto(),
+                        UiStyleLength.px(0)));
+        root.append(item);
+
+        DocumentLayoutBox itemBox = DocumentLayoutEngine.layout(root, 120, 0, new DeterministicMeasure())
+                .getChildren().get(0);
+
+        Assert.assertEquals(10, itemBox.getHeight());
+        Assert.assertEquals(20, itemBox.getTop());
     }
 
     private static final class DeterministicMeasure implements TextMeasureService {

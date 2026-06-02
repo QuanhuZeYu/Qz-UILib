@@ -598,6 +598,26 @@ abstract class ElementInteractionNode extends DocumentNode {
     }
 
     /**
+     * 设置元素捕获阶段文本输入处理器。
+     *
+     * @param captureTextInputHandler 捕获阶段文本输入处理器；为 null 时清除
+     * @return 当前元素
+     */
+    public ElementNode setCaptureTextInputHandler(DocumentElementTextInputHandler captureTextInputHandler) {
+        handlers.captureTextInputHandler = captureTextInputHandler;
+        return self();
+    }
+
+    /**
+     * 返回元素捕获阶段文本输入处理器。
+     *
+     * @return 捕获阶段文本输入处理器；不存在时返回 null
+     */
+    public DocumentElementTextInputHandler getCaptureTextInputHandler() {
+        return handlers.captureTextInputHandler;
+    }
+
+    /**
      * 设置元素捕获阶段键盘处理器。
      *
      * @param captureKeyHandler 捕获阶段键盘处理器；为 null 时清除

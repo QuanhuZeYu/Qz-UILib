@@ -9,6 +9,7 @@ import club.heiqi.uilib.ui.style.values.UiBackgroundImage;
 import club.heiqi.uilib.ui.style.props.UiOverflowWrap;
 import club.heiqi.uilib.ui.style.props.UiOverflow;
 import club.heiqi.uilib.ui.style.values.UiBorderRadius;
+import club.heiqi.uilib.ui.style.props.UiAlignContent;
 import club.heiqi.uilib.ui.style.props.UiAlignItems;
 import club.heiqi.uilib.ui.style.props.UiTextTransform;
 import club.heiqi.uilib.ui.style.props.UiBorderStyle;
@@ -88,6 +89,7 @@ public final class UiStyleDeclaration {
     private UiOverflow overflowY;
     private UiFlexDirection flexDirection;
     private UiAlignItems alignItems;
+    private UiAlignContent alignContent;
     private UiJustifyContent justifyContent;
     private UiVerticalAlign verticalAlign;
     private UiStyleLength rowGap;
@@ -586,6 +588,18 @@ public final class UiStyleDeclaration {
 
     public UiStyleDeclaration clearAlignItems() {
         return updateAlignItems(null);
+    }
+
+    public UiAlignContent getAlignContent() {
+        return alignContent;
+    }
+
+    public UiStyleDeclaration setAlignContent(UiAlignContent alignContent) {
+        return updateAlignContent(Objects.requireNonNull(alignContent, "alignContent"));
+    }
+
+    public UiStyleDeclaration clearAlignContent() {
+        return updateAlignContent(null);
     }
 
     public UiJustifyContent getJustifyContent() {
@@ -1880,6 +1894,12 @@ public final class UiStyleDeclaration {
         return updateProperty(UiStyleProperty.ALIGN_ITEMS, previousValue, value, UiStyleChangeImpact.LAYOUT);
     }
 
+    private UiStyleDeclaration updateAlignContent(UiAlignContent value) {
+        UiAlignContent previousValue = alignContent;
+        alignContent = value;
+        return updateProperty(UiStyleProperty.ALIGN_CONTENT, previousValue, value, UiStyleChangeImpact.LAYOUT);
+    }
+
     private UiStyleDeclaration updateJustifyContent(UiJustifyContent value) {
         UiJustifyContent previousValue = justifyContent;
         justifyContent = value;
@@ -2284,6 +2304,7 @@ public final class UiStyleDeclaration {
             case OVERFLOW_Y: overflowY = null; break;
             case FLEX_DIRECTION: flexDirection = null; break;
             case ALIGN_ITEMS: alignItems = null; break;
+            case ALIGN_CONTENT: alignContent = null; break;
             case JUSTIFY_CONTENT: justifyContent = null; break;
             case VERTICAL_ALIGN: verticalAlign = null; break;
             case ROW_GAP: rowGap = null; break;
@@ -2375,6 +2396,7 @@ public final class UiStyleDeclaration {
         overflowY = resolvedSource.overflowY;
         flexDirection = resolvedSource.flexDirection;
         alignItems = resolvedSource.alignItems;
+        alignContent = resolvedSource.alignContent;
         justifyContent = resolvedSource.justifyContent;
         verticalAlign = resolvedSource.verticalAlign;
         rowGap = resolvedSource.rowGap;

@@ -86,6 +86,40 @@ public class TableLayoutHelperBoundaryTest {
         Assert.assertEquals(20, secondBox.getHeight());
     }
 
+    /**
+     * auto 列宽应先考虑单元格内容固有宽度，再分配剩余空间。
+     */
+    @Test
+    public void shouldUseCellContentWhenResolvingAutoColumnWidths() {
+        UiDocument document = UiDocument.create();
+        ElementNode root = document.getRootElement();
+        ElementNode table = document.table();
+        ElementNode row = document.div();
+        ElementNode shortCell = document.div();
+        ElementNode longCell = document.div();
+
+        root.style().setWidth(UiStyleLength.px(160));
+        table.style()
+                .setDisplay(UiDisplay.TABLE)
+                .setWidth(UiStyleLength.px(160));
+        row.style().setDisplay(UiDisplay.TABLE_ROW);
+        shortCell.style().setDisplay(UiDisplay.TABLE_CELL);
+        longCell.style().setDisplay(UiDisplay.TABLE_CELL);
+        shortCell.appendText("A");
+        longCell.appendText("ABCDEFGHIJ");
+        row.append(shortCell).append(longCell);
+        table.append(row);
+        root.append(table);
+
+        DocumentLayoutBox rowBox = DocumentLayoutEngine.layout(root, 200, 0, new DeterministicMeasure())
+                .getChildren().get(0).getChildren().get(0);
+        DocumentLayoutBox shortBox = rowBox.getChildren().get(0);
+        DocumentLayoutBox longBox = rowBox.getChildren().get(1);
+
+        Assert.assertTrue("long content column should be wider than short content column",
+                longBox.getWidth() > shortBox.getWidth());
+    }
+
     private static final class DeterministicMeasure implements TextMeasureService {
 
         @Override

@@ -12,6 +12,7 @@ import club.heiqi.uilib.MyMod;
 import club.heiqi.uilib.ui.style.UiStyleProperty;
 import club.heiqi.uilib.ui.style.cascade.UiStyleDeclaration;
 import club.heiqi.uilib.ui.style.cascade.UiStyleSheet;
+import club.heiqi.uilib.ui.style.props.UiAlignContent;
 import club.heiqi.uilib.ui.style.props.UiAlignItems;
 import club.heiqi.uilib.ui.style.props.UiAlignSelf;
 import club.heiqi.uilib.ui.style.props.UiBorderCollapse;
@@ -260,6 +261,9 @@ final class RemoteCssParser {
             case "align-items":
                 declaration.setAlignItems(parseAlignItems(value));
                 return UiStyleProperty.ALIGN_ITEMS;
+            case "align-content":
+                declaration.setAlignContent(parseAlignContent(value));
+                return UiStyleProperty.ALIGN_CONTENT;
             case "align-self":
                 declaration.setAlignSelf(parseAlignSelf(value));
                 return UiStyleProperty.ALIGN_SELF;
@@ -364,6 +368,17 @@ final class RemoteCssParser {
             return UiAlignItems.END;
         }
         return parseEnum(normalized, UiAlignItems.class);
+    }
+
+    private static UiAlignContent parseAlignContent(String value) {
+        String normalized = normalizeIdentifier(value);
+        if ("flex-start".equals(normalized)) {
+            return UiAlignContent.START;
+        }
+        if ("flex-end".equals(normalized)) {
+            return UiAlignContent.END;
+        }
+        return parseEnum(normalized, UiAlignContent.class);
     }
 
     private static UiAlignSelf parseAlignSelf(String value) {

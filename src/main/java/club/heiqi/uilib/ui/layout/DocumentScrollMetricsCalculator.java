@@ -22,7 +22,7 @@ final class DocumentScrollMetricsCalculator {
         ComputedStyle style = box.getComputedStyle();
         int viewportWidth = box.getContentWidth();
         int viewportHeight = box.getContentHeight();
-        ContentBounds contentBounds = measureContentBounds(box, 0, 0);
+        ContentBounds contentBounds = measureContentBounds(box, 0, 0, false);
         int contentRight = Math.max(box.getContentLeft() + viewportWidth, contentBounds.right);
         int contentBottom = Math.max(box.getContentTop() + viewportHeight, contentBounds.bottom);
 
@@ -38,9 +38,10 @@ final class DocumentScrollMetricsCalculator {
                 maxVerticalOffset);
     }
 
-    private static ContentBounds measureContentBounds(DocumentLayoutBox box, int offsetX, int offsetY) {
-        int baseOffsetX = box.isFixedPositioned() ? 0 : offsetX;
-        int baseOffsetY = box.isFixedPositioned() ? 0 : offsetY;
+    private static ContentBounds measureContentBounds(DocumentLayoutBox box, int offsetX, int offsetY,
+            boolean fixedContainingBlockActive) {
+        int baseOffsetX = box.isFixedPositioned() && !fixedContainingBlockActive ? 0 : offsetX;
+        int baseOffsetY = box.isFixedPositioned() && !fixedContainingBlockActive ? 0 : offsetY;
         int boxOffsetX = baseOffsetX + box.getPositionOffsetX();
         int boxOffsetY = baseOffsetY + box.getPositionOffsetY();
         int right = box.getContentLeft() + boxOffsetX + box.getContentWidth();
@@ -53,13 +54,16 @@ final class DocumentScrollMetricsCalculator {
 
         int childOffsetX = boxOffsetX;
         int childOffsetY = boxOffsetY;
+        boolean childFixedContainingBlockActive = fixedContainingBlockActive
+                || DocumentEffectChain.resolve(box).createsFixedContainingBlock();
         for (DocumentLayoutBox child : box.getChildren()) {
-            if (child.isFixedPositioned()) {
+            if (child.isFixedPositioned() && !childFixedContainingBlockActive) {
                 continue;
             }
             right = Math.max(right, child.getMarginBoxRight() + childOffsetX);
             bottom = Math.max(bottom, child.getMarginBoxBottom() + childOffsetY);
-            ContentBounds childBounds = measureContentBounds(child, childOffsetX, childOffsetY);
+            ContentBounds childBounds = measureContentBounds(child, childOffsetX, childOffsetY,
+                    childFixedContainingBlockActive);
             right = Math.max(right, childBounds.right);
             bottom = Math.max(bottom, childBounds.bottom);
         }

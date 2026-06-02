@@ -14,6 +14,7 @@ import club.heiqi.uilib.ui.layout.DocumentLayoutEngine.LayoutContext;
 import club.heiqi.uilib.ui.layout.DocumentLayoutEngine.LayoutChildrenResult;
 import club.heiqi.uilib.ui.style.cascade.ComputedStyle;
 import club.heiqi.uilib.ui.style.cascade.UiStyleResolver;
+import club.heiqi.uilib.ui.style.props.UiAlignContent;
 import club.heiqi.uilib.ui.style.props.UiAlignItems;
 import club.heiqi.uilib.ui.style.props.UiAlignSelf;
 import club.heiqi.uilib.ui.style.props.UiDisplay;
@@ -118,44 +119,36 @@ final class FlexLayoutHelper {
             lines.add(currentLine);
         }
 
-        // 第二步：对每行独立进行主轴空间分配与布局
-        List<DocumentLayoutBox> childBoxes = new ArrayList<DocumentLayoutBox>();
-        int crossCursor = contentTop;
-        int totalContentHeight = 0;
-
-        for (int lineIndex = 0; lineIndex < lines.size(); lineIndex++) {
-            List<FlexItem> lineItems = lines.get(lineIndex);
-            if (lineIndex > 0) {
-                crossCursor += rowGap;
-            }
-
+        List<FlexLine> plannedLines = new ArrayList<FlexLine>();
+        int naturalCrossSize = Math.max(0, lines.size() - 1) * rowGap;
+        for (List<FlexItem> lineItems : lines) {
             distributeMainSpace(lineItems, contentWidth, gap, true);
-
-            // 测量每行各 item 的 cross size
-            int lineCrossSize = 0;
+            int naturalLineCrossSize = 0;
             for (FlexItem item : lineItems) {
                 item.box = layoutFlexItem(item, 0, 0, contentWidth,
                         specifiedContentHeight, item.contentMainSize, DocumentLayoutEngine.AUTO_SIZE,
                         absoluteContainingBlock, fixedContainingBlock, layoutContext);
-                lineCrossSize = Math.max(lineCrossSize, item.getOuterCrossSize(true));
+                naturalLineCrossSize = Math.max(naturalLineCrossSize, item.getOuterCrossSize(true));
             }
+            plannedLines.add(new FlexLine(lineItems, naturalLineCrossSize));
+            naturalCrossSize += naturalLineCrossSize;
+        }
 
-            // stretch 处理
-            int lineAvailableCrossSize = specifiedContentHeight >= 0 && lines.size() == 1
-                    ? specifiedContentHeight : lineCrossSize;
+        int targetCrossSize = specifiedContentHeight >= 0 ? specifiedContentHeight : naturalCrossSize;
+        applyAlignContent(plannedLines, parentStyle.getAlignContent(), targetCrossSize, naturalCrossSize, rowGap);
+
+        List<DocumentLayoutBox> childBoxes = new ArrayList<DocumentLayoutBox>();
+        int measuredContentBottom = contentTop;
+        for (FlexLine line : plannedLines) {
+            List<FlexItem> lineItems = line.items;
+            int lineCrossSize = line.crossSize;
             for (FlexItem item : lineItems) {
-                if (isItemCrossStretch(item.style.getAlignSelf(), parentStyle.getAlignItems())
-                        && DocumentLayoutEngine.isAuto(item.style.getHeight())) {
-                    item.forcedCrossSize = Math.max(0, lineAvailableCrossSize
+                if (shouldStretchRowItem(item, parentStyle.getAlignItems())) {
+                    item.forcedCrossSize = Math.max(0, lineCrossSize
                             - item.margin.getVertical() - item.border.getVertical() - item.padding.getVertical());
-                    item.box = layoutFlexItem(item, 0, 0, contentWidth,
-                            lineAvailableCrossSize, item.contentMainSize, item.forcedCrossSize,
-                            absoluteContainingBlock, fixedContainingBlock, layoutContext);
-                    lineCrossSize = Math.max(lineCrossSize, item.getOuterCrossSize(true));
+                    item.box = layoutFlexItem(item, 0, 0, contentWidth, lineCrossSize, item.contentMainSize,
+                            item.forcedCrossSize, absoluteContainingBlock, fixedContainingBlock, layoutContext);
                 }
-            }
-            if (specifiedContentHeight >= 0 && lines.size() == 1) {
-                lineCrossSize = Math.max(lineCrossSize, lineAvailableCrossSize);
             }
 
             int occupiedMain = getOccupiedMainSize(lineItems, gap, true);
@@ -193,25 +186,24 @@ final class FlexLayoutHelper {
                     int autoMarginCross = autoCount > 0 ? crossRemaining / autoCount : 0;
                     marginTop = item.hasAutoMarginCrossStart ? autoMarginCross : item.margin.getTop();
                     marginBottom = item.hasAutoMarginCrossEnd ? autoMarginCross : item.margin.getBottom();
-                    crossOffset = marginTop;
+                    crossOffset = 0;
                 }
                 int borderLeft = contentLeft + cursor + marginLeft;
-                int borderTop = crossCursor + crossOffset + marginTop;
-                DocumentLayoutBox childBox = layoutFlexItem(item, borderLeft - marginLeft,
-                        borderTop - marginTop, contentWidth, lineAvailableCrossSize, item.contentMainSize,
+                int borderTop = contentTop + line.crossOffset + crossOffset + marginTop;
+                DocumentLayoutBox childBox = layoutFlexItem(item, borderLeft - item.margin.getLeft(),
+                        borderTop - item.margin.getTop(), contentWidth, lineCrossSize, item.contentMainSize,
                         item.forcedCrossSize, absoluteContainingBlock, fixedContainingBlock, layoutContext);
                 childBoxes.add(childBox);
                 cursor += marginLeft + childBox.getWidth() + marginRight + dynamicGap;
+                measuredContentBottom = Math.max(measuredContentBottom, childBox.getBottom() + marginBottom);
             }
-            crossCursor += lineCrossSize;
-            totalContentHeight = crossCursor - contentTop;
         }
 
         int contentHeight;
         if (specifiedContentHeight >= 0) {
             contentHeight = specifiedContentHeight;
         } else {
-            contentHeight = Math.max(0, totalContentHeight);
+            contentHeight = Math.max(0, measuredContentBottom - contentTop);
         }
         return new LayoutChildrenResult(childBoxes, new ArrayList<DocumentLayoutTextRun>(),
                 new ArrayList<DocumentLayoutInlineFragment>(), contentHeight);
@@ -280,15 +272,15 @@ final class FlexLayoutHelper {
                 int autoMarginCross = autoCount > 0 ? crossRemaining / autoCount : 0;
                 marginLeft = item.hasAutoMarginCrossStart ? autoMarginCross : item.margin.getLeft();
                 marginRight = item.hasAutoMarginCrossEnd ? autoMarginCross : item.margin.getRight();
-                crossOffset = marginLeft;
+                crossOffset = 0;
             }
             int borderLeft = contentLeft + crossOffset + marginLeft;
             int borderTop = contentTop + cursor + marginTop;
             int forcedMainSize = shouldKeepAutoHeightInFinalColumnLayout(item, specifiedContentHeight)
                     ? DocumentLayoutEngine.AUTO_SIZE
                     : item.contentMainSize;
-            DocumentLayoutBox childBox = layoutFlexItem(item, borderLeft - marginLeft,
-                    borderTop - marginTop, contentWidth, contentHeight, item.forcedCrossSize,
+            DocumentLayoutBox childBox = layoutFlexItem(item, borderLeft - item.margin.getLeft(),
+                    borderTop - item.margin.getTop(), contentWidth, contentHeight, item.forcedCrossSize,
                     forcedMainSize, absoluteContainingBlock, fixedContainingBlock, layoutContext);
             childBoxes.add(childBox);
             measuredContentBottom = Math.max(measuredContentBottom, childBox.getBottom() + marginBottom);
@@ -308,6 +300,65 @@ final class FlexLayoutHelper {
             return true;
         }
         return item.contentMainSize == item.naturalContentMainSize;
+    }
+
+    private static void applyAlignContent(List<FlexLine> lines, UiAlignContent alignContent,
+            int targetCrossSize, int naturalCrossSize, int baseGap) {
+        if (lines.isEmpty()) {
+            return;
+        }
+        int remaining = Math.max(0, targetCrossSize - naturalCrossSize);
+        UiAlignContent resolvedAlignContent = alignContent == null ? UiAlignContent.STRETCH : alignContent;
+        if (resolvedAlignContent == UiAlignContent.STRETCH && remaining > 0) {
+            int applied = 0;
+            for (int index = 0; index < lines.size(); index++) {
+                int addition = index == lines.size() - 1 ? remaining - applied : remaining / lines.size();
+                lines.get(index).crossSize += Math.max(0, addition);
+                applied += Math.max(0, addition);
+            }
+            remaining = 0;
+        }
+        int dynamicGap = resolveAlignContentGap(resolvedAlignContent, baseGap, remaining, lines.size());
+        int cursor = resolveAlignContentLeadingOffset(resolvedAlignContent, remaining, lines.size());
+        for (FlexLine line : lines) {
+            line.crossOffset = cursor;
+            cursor += line.crossSize + dynamicGap;
+        }
+    }
+
+    private static int resolveAlignContentGap(UiAlignContent alignContent, int baseGap, int remaining, int lineCount) {
+        if (remaining <= 0) {
+            return baseGap;
+        }
+        if (alignContent == UiAlignContent.SPACE_BETWEEN && lineCount > 1) {
+            return baseGap + remaining / (lineCount - 1);
+        }
+        if (alignContent == UiAlignContent.SPACE_AROUND && lineCount > 0) {
+            return baseGap + remaining / lineCount;
+        }
+        if (alignContent == UiAlignContent.SPACE_EVENLY && lineCount > 0) {
+            return baseGap + remaining / (lineCount + 1);
+        }
+        return baseGap;
+    }
+
+    private static int resolveAlignContentLeadingOffset(UiAlignContent alignContent, int remaining, int lineCount) {
+        if (remaining <= 0) {
+            return 0;
+        }
+        if (alignContent == UiAlignContent.CENTER) {
+            return remaining / 2;
+        }
+        if (alignContent == UiAlignContent.END) {
+            return remaining;
+        }
+        if (alignContent == UiAlignContent.SPACE_AROUND && lineCount > 0) {
+            return (remaining / lineCount) / 2;
+        }
+        if (alignContent == UiAlignContent.SPACE_EVENLY && lineCount > 0) {
+            return remaining / (lineCount + 1);
+        }
+        return 0;
     }
 
     private static int resolveColumnFlexItemMinMainSize(FlexItem item) {
@@ -556,7 +607,7 @@ final class FlexLayoutHelper {
                     item.padding);
         }
         // align-self 覆盖 align-items
-        boolean stretch = isItemCrossStretch(item.style.getAlignSelf(), alignItems);
+        boolean stretch = shouldStretchColumnItem(item, alignItems);
         if (stretch) {
             return Math.max(0, contentWidth - item.margin.getHorizontal() - item.border.getHorizontal()
                     - item.padding.getHorizontal());
@@ -666,6 +717,17 @@ final class FlexLayoutHelper {
             return parentAlignItems == UiAlignItems.STRETCH;
         }
         return alignSelf == UiAlignSelf.STRETCH;
+    }
+
+    private static boolean shouldStretchRowItem(FlexItem item, UiAlignItems parentAlignItems) {
+        return !item.hasAutoMarginCrossStart && !item.hasAutoMarginCrossEnd
+                && isItemCrossStretch(item.style.getAlignSelf(), parentAlignItems)
+                && DocumentLayoutEngine.isAuto(item.style.getHeight());
+    }
+
+    private static boolean shouldStretchColumnItem(FlexItem item, UiAlignItems parentAlignItems) {
+        return !item.hasAutoMarginCrossStart && !item.hasAutoMarginCrossEnd
+                && isItemCrossStretch(item.style.getAlignSelf(), parentAlignItems);
     }
 
     private static FlexChildren collectFlexChildren(ElementNode element, ComputedStyle parentStyle,
@@ -914,6 +976,21 @@ final class FlexLayoutHelper {
         private FlexBoxOrder(int order, int documentOrder) {
             this.order = order;
             this.documentOrder = documentOrder;
+        }
+    }
+
+    /**
+     * row flex 多行布局计划。
+     */
+    private static final class FlexLine {
+
+        private final List<FlexItem> items;
+        private int crossSize;
+        private int crossOffset;
+
+        private FlexLine(List<FlexItem> items, int crossSize) {
+            this.items = items;
+            this.crossSize = Math.max(0, crossSize);
         }
     }
 

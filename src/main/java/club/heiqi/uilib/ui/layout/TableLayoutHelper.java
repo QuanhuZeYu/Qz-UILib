@@ -225,10 +225,12 @@ final class TableLayoutHelper {
                 int preferredWidth = resolveSpecifiedTableCellOuterWidth(row.cells.get(columnIndex), availableWidth,
                         layoutContext);
                 if (preferredWidth < 0) {
-                    continue;
+                    preferredWidth = resolveAutoTableCellOuterWidth(row.cells.get(columnIndex), availableWidth,
+                            layoutContext);
+                } else {
+                    explicitColumns[columnIndex] = true;
                 }
                 widths[columnIndex] = Math.max(widths[columnIndex], preferredWidth);
-                explicitColumns[columnIndex] = true;
             }
         }
         fitTableColumnWidths(widths, explicitColumns, availableWidth);
@@ -251,6 +253,12 @@ final class TableLayoutHelper {
                 DocumentAnimationProperty.WIDTH, baseWidth));
         resolvedWidth = DocumentLayoutEngine.resolveBoxSizingContentWidth(style, resolvedWidth, border, padding);
         return resolvedWidth + margin.getHorizontal() + border.getHorizontal() + padding.getHorizontal();
+    }
+
+    private static int resolveAutoTableCellOuterWidth(ElementNode cellElement, int availableWidth,
+            LayoutContext layoutContext) {
+        ComputedStyle style = layoutContext.computeStyle(cellElement);
+        return DocumentLayoutEngine.measureIntrinsicOuterWidth(cellElement, style, availableWidth, layoutContext);
     }
 
     private static void fitTableColumnWidths(int[] widths, boolean[] explicitColumns, int availableWidth) {

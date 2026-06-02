@@ -26,6 +26,7 @@ public enum UiStyleProperty {
     OVERFLOW_Y(false, UiStyleChangeImpact.LAYOUT),
     FLEX_DIRECTION(false, UiStyleChangeImpact.LAYOUT),
     ALIGN_ITEMS(false, UiStyleChangeImpact.LAYOUT),
+    ALIGN_CONTENT(false, UiStyleChangeImpact.LAYOUT),
     JUSTIFY_CONTENT(false, UiStyleChangeImpact.LAYOUT),
     VERTICAL_ALIGN(false, UiStyleChangeImpact.LAYOUT),
     ROW_GAP(false, UiStyleChangeImpact.LAYOUT),

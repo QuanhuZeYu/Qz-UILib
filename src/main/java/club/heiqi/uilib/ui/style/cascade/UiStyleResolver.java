@@ -7,6 +7,7 @@ import club.heiqi.uilib.ui.style.values.UiBackgroundImage;
 import club.heiqi.uilib.ui.style.props.UiOverflowWrap;
 import club.heiqi.uilib.ui.style.props.UiOverflow;
 import club.heiqi.uilib.ui.style.values.UiBorderRadius;
+import club.heiqi.uilib.ui.style.props.UiAlignContent;
 import club.heiqi.uilib.ui.style.props.UiAlignItems;
 import club.heiqi.uilib.ui.style.props.UiTextTransform;
 import club.heiqi.uilib.ui.style.props.UiBorderStyle;
@@ -226,6 +227,8 @@ public final class UiStyleResolver {
                 UiFlexDirection.ROW, parentStyle == null ? UiFlexDirection.ROW : parentStyle.getFlexDirection());
         UiAlignItems alignItems = cascade(inlineStyle, matchingRules, UiStyleProperty.ALIGN_ITEMS,
                 UiAlignItems.STRETCH, parentStyle == null ? UiAlignItems.STRETCH : parentStyle.getAlignItems());
+        UiAlignContent alignContent = cascade(inlineStyle, matchingRules, UiStyleProperty.ALIGN_CONTENT,
+                UiAlignContent.STRETCH, parentStyle == null ? UiAlignContent.STRETCH : parentStyle.getAlignContent());
         UiJustifyContent justifyContent = cascade(inlineStyle, matchingRules, UiStyleProperty.JUSTIFY_CONTENT,
                 UiJustifyContent.START, parentStyle == null ? UiJustifyContent.START : parentStyle.getJustifyContent());
         UiVerticalAlign verticalAlign = cascade(inlineStyle, matchingRules, UiStyleProperty.VERTICAL_ALIGN,
@@ -398,7 +401,8 @@ public final class UiStyleResolver {
         }
 
         return new ComputedStyle(display, width, height, boxSizing, position, top, right, bottom, left, zIndex, margin,
-                padding, borderWidth, borderRadius, overflowX, overflowY, flexDirection, alignItems, justifyContent,
+                padding, borderWidth, borderRadius, overflowX, overflowY, flexDirection, alignItems, alignContent,
+                justifyContent,
                 verticalAlign, rowGap, columnGap, flexGrowValue.floatValue(), flexShrinkValue.floatValue(),
                 orderValue.intValue(), opacityValue.floatValue(), backgroundColorValue.intValue(),
                 borderColorValue.intValue(), textColorValue.intValue(), transitionProperties,

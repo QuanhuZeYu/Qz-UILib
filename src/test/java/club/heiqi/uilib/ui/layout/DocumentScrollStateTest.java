@@ -9,6 +9,7 @@ import club.heiqi.uilib.ui.style.props.UiOverflow;
 import club.heiqi.uilib.ui.style.props.UiPosition;
 import club.heiqi.uilib.ui.style.props.UiScrollbarWidth;
 import club.heiqi.uilib.ui.style.values.UiStyleLength;
+import club.heiqi.uilib.ui.style.values.UiTransform;
 
 /**
  * `DocumentScrollState` 的 HTML-like 滚动命中契约。
@@ -165,6 +166,41 @@ public class DocumentScrollStateTest {
         Assert.assertTrue(scrollState.handleWheel(rootBox, 10, 10, -120, 1L));
         Assert.assertEquals(36, scrollState.getScrollTop(root));
         Assert.assertTrue(scrollState.getScrollTop(fixedScroller) > 0);
+    }
+
+    /**
+     * transform 祖先内的 fixed 后代应参与该祖先滚动范围计算。
+     */
+    @Test
+    public void shouldIncludeFixedDescendantInsideTransformContainingBlockInScrollMetrics() {
+        UiDocument document = UiDocument.create();
+        ElementNode root = document.getRootElement();
+        ElementNode scroller = document.div();
+        ElementNode transformed = document.div();
+        ElementNode fixedInside = document.div();
+
+        root.style().setWidth(UiStyleLength.px(100)).setHeight(UiStyleLength.px(60));
+        scroller.style()
+                .setWidth(UiStyleLength.px(100))
+                .setHeight(UiStyleLength.px(40))
+                .setOverflowY(UiOverflow.AUTO);
+        transformed.style()
+                .setHeight(UiStyleLength.px(20))
+                .setTransform(UiTransform.translate(1, 0));
+        fixedInside.style()
+                .setPosition(UiPosition.FIXED)
+                .setTop(UiStyleLength.px(80))
+                .setWidth(UiStyleLength.px(20))
+                .setHeight(UiStyleLength.px(30));
+        transformed.append(fixedInside);
+        scroller.append(transformed);
+        root.append(scroller);
+
+        DocumentLayoutBox rootBox = DocumentLayoutEngine.layout(root, 100, 60);
+        DocumentScrollState scrollState = new DocumentScrollState();
+        scrollState.updateFromLayout(rootBox);
+
+        Assert.assertTrue(scrollState.getMaxScrollTop(scroller) > 0);
     }
 
     /**

@@ -279,6 +279,10 @@ public final class DocumentLayoutEngine {
         int autoContentHeight = childrenResult.contentHeight;
         int contentHeight = resolveContentHeight(element, computedStyle, forcedContentHeight, autoContentHeight,
                 contentWidth, containingHeight, layoutContext.layoutValueResolver);
+        if (isEmptyBlockWithCollapsibleOwnMargins(element, computedStyle, forcedContentHeight, autoContentHeight,
+                border, padding, layoutContext)) {
+            contentHeight = 0;
+        }
         int borderBoxHeight = contentHeight + border.getVertical() + padding.getVertical();
         int resolvedTopInset = resolvePositionInsetValue(element, computedStyle.getTop(),
                 DocumentAnimationProperty.TOP, containingHeight, layoutContext.layoutValueResolver);
@@ -391,11 +395,20 @@ public final class DocumentLayoutEngine {
             }
             int childMarginTop = resolveMarginInsets(childElement, childStyle, contentWidth,
                     layoutContext.layoutValueResolver).getTop();
+            int childMarginBottom = resolveMarginInsets(childElement, childStyle, contentWidth,
+                    layoutContext.layoutValueResolver).getBottom();
+            boolean childEmptyBlockCollapsesOwnMargins = isEmptyBlockWithCollapsibleOwnMargins(childElement, childStyle,
+                    AUTO_SIZE, AUTO_SIZE,
+                    resolveBorderInsets(childStyle, contentWidth), resolvePaddingInsets(childElement, childStyle,
+                            contentWidth, layoutContext.layoutValueResolver), layoutContext);
+            if (childEmptyBlockCollapsesOwnMargins) {
+                childMarginTop = collapseVerticalMargins(childMarginTop, childMarginBottom);
+            }
             boolean childAllowsSiblingMarginCollapse = allowsSiblingMarginCollapse(childStyle);
             int marginCollapseAdjustment = 0;
             if (childBoxes.isEmpty()) {
                 if (parentAllowsFirstChildMarginCollapse && childAllowsSiblingMarginCollapse) {
-                    marginCollapseAdjustment = Math.max(firstChildTopMarginAdjustment, childMarginTop);
+                    marginCollapseAdjustment = collapseVerticalMargins(firstChildTopMarginAdjustment, childMarginTop);
                 }
             } else if (previousAllowsSiblingMarginCollapse && childAllowsSiblingMarginCollapse) {
                 marginCollapseAdjustment = resolveSiblingMarginCollapseAdjustment(previousMarginBottom, childMarginTop);
@@ -405,7 +418,8 @@ public final class DocumentLayoutEngine {
                     specifiedContentHeight, AUTO_SIZE, AUTO_SIZE, absoluteContainingBlock, fixedContainingBlock,
                     layoutContext);
             childBoxes.add(childBox);
-            childFlowTop = childBox.getMarginBoxBottom();
+            childFlowTop = childEmptyBlockCollapsesOwnMargins ? adjustedFlowTop + childMarginTop
+                    : childBox.getMarginBoxBottom();
             if (usesInlineFormatting) {
                 inlineLayoutContext.reset(childFlowTop);
             }
@@ -974,10 +988,49 @@ public final class DocumentLayoutEngine {
             if (!allowsSiblingMarginCollapse(childStyle)) {
                 return 0;
             }
-            return resolveMarginInsets(childElement, childStyle, contentWidth, layoutContext.layoutValueResolver)
-                    .getTop();
+            int childTopMargin = resolveMarginInsets(childElement, childStyle, contentWidth,
+                    layoutContext.layoutValueResolver).getTop();
+            int childBottomMargin = resolveMarginInsets(childElement, childStyle, contentWidth,
+                    layoutContext.layoutValueResolver).getBottom();
+            int descendantTopMargin = resolveCollapsibleFirstChildTopMargin(childElement, childStyle, contentWidth,
+                    layoutContext);
+            int collapsedTopMargin = collapseVerticalMargins(childTopMargin, descendantTopMargin);
+            if (isEmptyBlockWithCollapsibleOwnMargins(childElement, childStyle, AUTO_SIZE, AUTO_SIZE,
+                    resolveBorderInsets(childStyle, contentWidth), resolvePaddingInsets(childElement, childStyle,
+                            contentWidth, layoutContext.layoutValueResolver), layoutContext)) {
+                collapsedTopMargin = collapseVerticalMargins(collapsedTopMargin, childBottomMargin);
+            }
+            return collapsedTopMargin;
         }
         return 0;
+    }
+
+    private static boolean isEmptyBlockWithCollapsibleOwnMargins(ElementNode element, ComputedStyle style,
+            int forcedContentHeight, int autoContentHeight, DocumentLayoutEdges border, DocumentLayoutEdges padding,
+            LayoutContext layoutContext) {
+        if (!allowsSiblingMarginCollapse(style) || forcedContentHeight >= 0 || autoContentHeight > 0) {
+            return false;
+        }
+        if (!isAuto(style.getHeight()) || hasAspectRatio(style) || border.getVertical() != 0
+                || padding.getVertical() != 0) {
+            return false;
+        }
+        for (DocumentNode child : getGeneratedChildNodes(element, layoutContext)) {
+            if (child instanceof TextNode) {
+                String text = ((TextNode) child).getText();
+                if (text != null && !text.trim().isEmpty()) {
+                    return false;
+                }
+                continue;
+            }
+            if (child instanceof ElementNode) {
+                ComputedStyle childStyle = layoutContext.computeStyle((ElementNode) child);
+                if (childStyle.getDisplay() != UiDisplay.NONE && !isOutOfFlowPositioned(childStyle)) {
+                    return false;
+                }
+            }
+        }
+        return true;
     }
 
     private static boolean createsBlockFormattingContext(ComputedStyle style) {
