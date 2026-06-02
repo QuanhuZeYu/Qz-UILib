@@ -10,7 +10,7 @@ import club.heiqi.uilib.ui.screen.page.DocumentUiScope;
 /**
  * `/qzuilib test` 内部页面注册表。
  *
- * <p>当前 test 页面集合进入系统性重构期，注册表暂时只保留规划页入口。</p>
+ * <p>当前 test 页面集合进入系统性重构期，注册表保留 P0 语义首页入口。</p>
  *
  * @apiNote 内部类型，LTS 不承诺其稳定性。业务代码不应直接引用页面 id 或 definition。
  */
@@ -29,14 +29,14 @@ public final class InternalDiagnosticScreenRegistry {
                         DocumentPageRuntimeView runtimeView,
                         String pageId,
                         Void provision) {
-                    return new UiTestDocumentPageController(documentUi, documentPage);
+                    return new UiTestDocumentPageController(documentUi, documentPage, runtimeView);
                 }
             });
 
     private InternalDiagnosticScreenRegistry() {}
 
     /**
-     * 返回 test 规划页稳定 id。
+     * 返回 test 首页稳定 id。
      *
      * @return 页面 id
      */
