@@ -8,6 +8,7 @@ import org.junit.Assert;
 import org.junit.Test;
 
 import club.heiqi.uilib.ui.document.HtmlLikeDocumentWidget;
+import club.heiqi.uilib.ui.dom.DocumentElementClickEvent;
 import club.heiqi.uilib.ui.dom.DocumentNode;
 import club.heiqi.uilib.ui.dom.DocumentNodeType;
 import club.heiqi.uilib.ui.dom.ElementNode;
@@ -121,6 +122,48 @@ public class UiTestDocumentPageControllerTest {
         Assert.assertTrue(containsText(texts, "网络传输模式=vanilla"));
     }
 
+    /**
+     * 验证首页运行时按钮会执行首批自动断言并刷新结果文本。
+     */
+    @Test
+    public void shouldExecuteRuntimeCaseButtonsAndRefreshResultTexts() {
+        TestFixture fixture = new TestFixture();
+
+        fixture.controller.configureDocumentPage();
+        fixture.controller.buildDocument();
+        clickButtonByLabel(fixture.controller.getHtmlLikeDocumentWidget(), "执行自动测试", 0);
+        clickButtonByLabel(fixture.controller.getHtmlLikeDocumentWidget(), "执行自动测试", 1);
+        clickButtonByLabel(fixture.controller.getHtmlLikeDocumentWidget(), "执行自动测试", 2);
+        clickButtonByLabel(fixture.controller.getHtmlLikeDocumentWidget(), "执行自动测试", 3);
+
+        List<String> texts = collectDocumentTexts(fixture.controller.getHtmlLikeDocumentWidget());
+        Assert.assertTrue(containsText(texts, "当前顺序：B, A；返回节点：A"));
+        Assert.assertTrue(containsText(texts, "computed textColor=#FF69F0AE"));
+        Assert.assertTrue(containsText(texts, "布局顺序：top="));
+        Assert.assertTrue(containsText(texts, "等待人工确认层级"));
+        Assert.assertEquals(4, countTextsContaining(texts, "通过：观察结果与预期一致"));
+        Assert.assertEquals(2, countTextsContaining(texts, "执行中"));
+    }
+
+    /**
+     * 验证人工确认按钮会覆盖状态并刷新最近失败摘要。
+     */
+    @Test
+    public void shouldRecordManualRuntimeConfirmationResults() {
+        TestFixture fixture = new TestFixture();
+
+        fixture.controller.configureDocumentPage();
+        fixture.controller.buildDocument();
+        clickButtonByLabel(fixture.controller.getHtmlLikeDocumentWidget(), "人工通过", 0);
+        clickButtonByLabel(fixture.controller.getHtmlLikeDocumentWidget(), "人工失败", 1);
+
+        List<String> texts = collectDocumentTexts(fixture.controller.getHtmlLikeDocumentWidget());
+        Assert.assertTrue(containsText(texts, "人工确认：观察结果与预期一致。"));
+        Assert.assertTrue(containsText(texts, "人工确认：观察结果与预期不一致，请截图补充差异。"));
+        Assert.assertTrue(containsText(texts, "最近失败：CSS-001"));
+        Assert.assertTrue(containsText(texts, "失败：观察结果与预期不一致 - 人工确认不一致"));
+    }
+
     private static List<String> collectDocumentTexts(HtmlLikeDocumentWidget widget) {
         List<String> texts = new ArrayList<String>();
         if (widget == null || widget.getDocument() == null) {
@@ -152,6 +195,44 @@ public class UiTestDocumentPageControllerTest {
             }
         }
         return false;
+    }
+
+    private static int countTextsContaining(List<String> texts, String expectedSnippet) {
+        int count = 0;
+        for (String text : texts) {
+            if (text != null && text.contains(expectedSnippet)) {
+                count++;
+            }
+        }
+        return count;
+    }
+
+    private static void clickButtonByLabel(HtmlLikeDocumentWidget widget, String label, int occurrence) {
+        List<ElementNode> buttons = new ArrayList<ElementNode>();
+        collectButtonsByLabel(widget.getDocument().getRootElement(), label, buttons);
+        Assert.assertTrue("找不到按钮：" + label + " #" + occurrence, buttons.size() > occurrence);
+        ElementNode button = buttons.get(occurrence);
+        Assert.assertNotNull(button.getClickHandler());
+        button.getClickHandler().onClick(new DocumentElementClickEvent(button, button, 0, 0, 0, 0L));
+    }
+
+    private static void collectButtonsByLabel(DocumentNode node, String label, List<ElementNode> buttons) {
+        if (node.getNodeType() != DocumentNodeType.ELEMENT) {
+            return;
+        }
+        ElementNode element = (ElementNode) node;
+        if ("button".equals(element.getTagName()) && containsText(collectElementTexts(element), label)) {
+            buttons.add(element);
+        }
+        for (DocumentNode child : element.getChildren()) {
+            collectButtonsByLabel(child, label, buttons);
+        }
+    }
+
+    private static List<String> collectElementTexts(ElementNode element) {
+        List<String> texts = new ArrayList<String>();
+        collectTextsFromNode(element, texts);
+        return texts;
     }
 
     private static final class TestFixture {
