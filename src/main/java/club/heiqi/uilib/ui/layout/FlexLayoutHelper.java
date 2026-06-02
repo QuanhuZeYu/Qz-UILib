@@ -471,14 +471,14 @@ final class FlexLayoutHelper {
             return 0;
         }
         if (!DocumentLayoutEngine.isAuto(item.style.getWidth())) {
-            return Math.min(item.contentMainSize, DocumentLayoutEngine.measureIntrinsicContentWidth(item.element,
+            return Math.min(item.contentMainSize, DocumentLayoutEngine.measureMinContentWidth(item.element,
                     containingWidth, layoutContext));
         }
         if (item.anonymousText) {
-            return TextLayoutHelper.measureIntrinsicTextWidth(item.textNode, item.style,
+            return TextLayoutHelper.measureMinContentTextWidth(item.textNode, item.style,
                     layoutContext.textMeasureService);
         }
-        return DocumentLayoutEngine.measureIntrinsicContentWidth(item.element, containingWidth, layoutContext);
+        return DocumentLayoutEngine.measureMinContentWidth(item.element, containingWidth, layoutContext);
     }
 
     /**
@@ -501,6 +501,38 @@ final class FlexLayoutHelper {
                     ? measureAnonymousTextIntrinsicWidth(child, style, layoutContext)
                     : DocumentLayoutEngine.measureIntrinsicOuterWidth(child.element,
                             layoutContext.computeStyle(child.element), containingWidth, layoutContext);
+            if (style.getFlexDirection() == UiFlexDirection.COLUMN) {
+                measuredWidth = Math.max(measuredWidth, childWidth);
+            } else {
+                if (itemIndex > 0) {
+                    measuredWidth += gap;
+                }
+                measuredWidth += childWidth;
+            }
+            itemIndex++;
+        }
+        return measuredWidth;
+    }
+
+    /**
+     * 测量 flex 容器的 min-content 宽度，供 flex item auto 最小宽度使用。
+     */
+    static int measureMinContentFlexWidth(ElementNode element, ComputedStyle style,
+            int containingWidth, LayoutContext layoutContext) {
+        List<FlexChild> children = sortFlexChildrenByOrder(collectFlexChildren(element, style,
+                layoutContext).inFlowChildren);
+        if (children.isEmpty()) {
+            return 0;
+        }
+        int gap = Math.max(0, (style.getFlexDirection() == UiFlexDirection.COLUMN
+                ? style.getRowGap()
+                : style.getColumnGap()).resolve(containingWidth, 0));
+        int measuredWidth = 0;
+        int itemIndex = 0;
+        for (FlexChild child : children) {
+            int childWidth = child.anonymousText
+                    ? measureAnonymousTextMinContentWidth(child, style, layoutContext)
+                    : DocumentLayoutEngine.measureMinContentWidth(child.element, containingWidth, layoutContext);
             if (style.getFlexDirection() == UiFlexDirection.COLUMN) {
                 measuredWidth = Math.max(measuredWidth, childWidth);
             } else {
@@ -738,6 +770,13 @@ final class FlexLayoutHelper {
             LayoutContext layoutContext) {
         ComputedStyle anonymousStyle = UiStyleResolver.computeAnonymousFlexItemStyle(child.element, parentStyle);
         return TextLayoutHelper.measureIntrinsicTextWidth(child.textNode, anonymousStyle,
+                layoutContext.textMeasureService);
+    }
+
+    private static int measureAnonymousTextMinContentWidth(FlexChild child, ComputedStyle parentStyle,
+            LayoutContext layoutContext) {
+        ComputedStyle anonymousStyle = UiStyleResolver.computeAnonymousFlexItemStyle(child.element, parentStyle);
+        return TextLayoutHelper.measureMinContentTextWidth(child.textNode, anonymousStyle,
                 layoutContext.textMeasureService);
     }
 

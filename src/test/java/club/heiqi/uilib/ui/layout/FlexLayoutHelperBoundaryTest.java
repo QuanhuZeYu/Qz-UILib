@@ -13,6 +13,7 @@ import club.heiqi.uilib.ui.style.props.UiAlignItems;
 import club.heiqi.uilib.ui.style.props.UiBoxSizing;
 import club.heiqi.uilib.ui.style.props.UiDisplay;
 import club.heiqi.uilib.ui.style.props.UiFlexDirection;
+import club.heiqi.uilib.ui.style.props.UiWhiteSpace;
 import club.heiqi.uilib.ui.style.values.UiStyleLength;
 import club.heiqi.uilib.ui.text.TextMeasureService;
 
@@ -84,10 +85,32 @@ public class FlexLayoutHelperBoundaryTest {
     }
 
     /**
-     * 验证 row flex item 默认 min-width:auto，不会被 flex-shrink 缩小到内容宽以下。
+     * 验证 row flex item 默认 min-width:auto 使用 min-content，而不是整段 max-content 宽度。
      */
     @Test
-    public void shouldKeepRowFlexItemAtAutoMinContentWidthByDefault() {
+    public void shouldUseMinContentWidthForRowFlexItemAutoMinWidth() {
+        UiDocument document = UiDocument.create();
+        ElementNode root = document.getRootElement();
+        ElementNode item = document.div();
+
+        root.style()
+                .setDisplay(UiDisplay.FLEX)
+                .setFlexDirection(UiFlexDirection.ROW)
+                .setWidth(UiStyleLength.px(24));
+        item.appendText("abcd efghij");
+        root.append(item);
+
+        DocumentLayoutBox itemBox = DocumentLayoutEngine.layout(root, 80, 0, new DeterministicMeasure())
+                .getChildren().get(0);
+
+        Assert.assertEquals(48, itemBox.getContentWidth());
+    }
+
+    /**
+     * nowrap 文本没有软换行机会，auto 最小宽度应保持整段文本宽度。
+     */
+    @Test
+    public void shouldKeepNoWrapRowFlexItemAtMaxContentAutoMinWidth() {
         UiDocument document = UiDocument.create();
         ElementNode root = document.getRootElement();
         ElementNode item = document.div();
@@ -96,13 +119,14 @@ public class FlexLayoutHelperBoundaryTest {
                 .setDisplay(UiDisplay.FLEX)
                 .setFlexDirection(UiFlexDirection.ROW)
                 .setWidth(UiStyleLength.px(20));
-        item.appendText("abcdefghij");
+        item.style().setWhiteSpace(UiWhiteSpace.NOWRAP);
+        item.appendText("abcd efghij");
         root.append(item);
 
         DocumentLayoutBox itemBox = DocumentLayoutEngine.layout(root, 80, 0, new DeterministicMeasure())
                 .getChildren().get(0);
 
-        Assert.assertEquals(80, itemBox.getContentWidth());
+        Assert.assertEquals(88, itemBox.getContentWidth());
     }
 
     /**

@@ -337,6 +337,7 @@ final class FontSortOrderControl {
         ElementNode status = document.div();
         status.style()
                 .setFlexGrow(1.0F)
+                .setMinWidth(UiStyleLength.px(0))
                 .setTextColor(0xFFBAE6FD)
                 .setOverflowX(UiOverflow.HIDDEN)
                 .setOverflowY(UiOverflow.HIDDEN);
@@ -627,6 +628,7 @@ final class FontSortOrderControl {
         ElementNode label = document.div();
         label.style()
                 .setFlexGrow(1.0F)
+                .setMinWidth(UiStyleLength.px(0))
                 .setTextColor(0xFFEAF1FF)
                 .setOverflowX(UiOverflow.HIDDEN)
                 .setOverflowY(UiOverflow.HIDDEN);

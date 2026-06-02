@@ -478,6 +478,47 @@ public final class DocumentLayoutEngine {
         return measuredWidth;
     }
 
+    /**
+     * 测量元素的 CSS-like min-content 内容宽度，用于 flex item 自动最小尺寸。
+     */
+    static int measureMinContentWidth(ElementNode element, int containingWidth, LayoutContext layoutContext) {
+        ComputedStyle style = layoutContext.computeStyle(element);
+        if (DocumentImageElementSupport.isImageTag(element.getTagName())) {
+            return DocumentImageElementSupport.resolveIntrinsicWidth(element);
+        }
+        if (style.getDisplay() == UiDisplay.FLEX) {
+            return FlexLayoutHelper.measureMinContentFlexWidth(element, style, containingWidth, layoutContext);
+        }
+
+        int maxWidth = 0;
+        int inlineWidth = 0;
+        for (DocumentNode child : getGeneratedChildNodes(element, layoutContext)) {
+            if (child instanceof TextNode) {
+                TextNode textNode = (TextNode) child;
+                inlineWidth += TextLayoutHelper.measureMinContentTextWidth(textNode, style,
+                        layoutContext.textMeasureService);
+                continue;
+            }
+            if (!(child instanceof ElementNode)) {
+                continue;
+            }
+            ElementNode childElement = (ElementNode) child;
+            ComputedStyle childStyle = layoutContext.computeStyle(childElement);
+            if (childStyle.getDisplay() == UiDisplay.NONE || isOutOfFlowPositioned(childStyle)) {
+                continue;
+            }
+            if (isInlineFormattingDisplay(childStyle.getDisplay())) {
+                inlineWidth += measureMinContentOuterWidth(childElement, childStyle, containingWidth, layoutContext);
+                continue;
+            }
+            maxWidth = Math.max(maxWidth, inlineWidth);
+            inlineWidth = 0;
+            maxWidth = Math.max(maxWidth, measureMinContentOuterWidth(childElement, childStyle, containingWidth,
+                    layoutContext));
+        }
+        return Math.max(maxWidth, inlineWidth);
+    }
+
     private static int computeIntrinsicContentWidth(ElementNode element, int containingWidth,
             LayoutContext layoutContext) {
         ComputedStyle style = layoutContext.computeStyle(element);
@@ -538,6 +579,25 @@ public final class DocumentLayoutEngine {
         int contentWidth;
         if (isAuto(style.getWidth())) {
             contentWidth = measureIntrinsicContentWidth(element, containingWidth, layoutContext);
+        } else {
+            int baseWidth = Math.max(0, style.getWidth().resolve(containingWidth, 0));
+            contentWidth = Math.max(0, layoutContext.layoutValueResolver.resolve(element,
+                    DocumentAnimationProperty.WIDTH, baseWidth));
+            contentWidth = resolveBoxSizingContentWidth(style, contentWidth, border, padding);
+        }
+        return margin.getHorizontal() + border.getHorizontal() + padding.getHorizontal() + contentWidth;
+    }
+
+    private static int measureMinContentOuterWidth(ElementNode element, ComputedStyle style, int containingWidth,
+            LayoutContext layoutContext) {
+        DocumentLayoutEdges margin = resolveMarginInsets(element, style, containingWidth,
+                layoutContext.layoutValueResolver);
+        DocumentLayoutEdges border = resolveBorderInsets(style, containingWidth);
+        DocumentLayoutEdges padding = resolvePaddingInsets(element, style, containingWidth,
+                layoutContext.layoutValueResolver);
+        int contentWidth;
+        if (isAuto(style.getWidth())) {
+            contentWidth = measureMinContentWidth(element, containingWidth, layoutContext);
         } else {
             int baseWidth = Math.max(0, style.getWidth().resolve(containingWidth, 0));
             contentWidth = Math.max(0, layoutContext.layoutValueResolver.resolve(element,

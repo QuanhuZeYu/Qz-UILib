@@ -159,7 +159,9 @@ final class ConfigTemplateDocumentBuilder {
     }
 
     private void appendToolbarButton(ElementNode toolbar, DocumentButtonControl button) {
-        button.getElement().style().setFlexGrow(1.0F);
+        button.getElement().style()
+                .setFlexGrow(1.0F)
+                .setMinWidth(UiStyleLength.px(0));
         toolbar.append(button.getElement());
     }
 
