@@ -79,7 +79,13 @@ final class PositionedLayoutHelper {
      * 仅 right 单边锚定时需要先测量 margin box 宽度来反推 left。
      */
     private static boolean requiresMeasuredMarginBoxWidth(ComputedStyle style) {
-        return DocumentLayoutEngine.isAuto(style.getLeft()) && !DocumentLayoutEngine.isAuto(style.getRight());
+        if (DocumentLayoutEngine.isAuto(style.getLeft()) && !DocumentLayoutEngine.isAuto(style.getRight())) {
+            return true;
+        }
+        return !DocumentLayoutEngine.isAuto(style.getLeft()) && !DocumentLayoutEngine.isAuto(style.getRight())
+                && !DocumentLayoutEngine.isAuto(style.getWidth())
+                && (DocumentLayoutEngine.isAuto(style.getMargin().getLeft())
+                        || DocumentLayoutEngine.isAuto(style.getMargin().getRight()));
     }
 
     /**
@@ -130,6 +136,22 @@ final class PositionedLayoutHelper {
 
     private static int resolveAbsoluteMarginBoxLeft(ElementNode element, ComputedStyle style,
             AbsoluteContainingBlock absoluteContainingBlock, int marginBoxWidth, LayoutContext layoutContext) {
+        if (!DocumentLayoutEngine.isAuto(style.getLeft()) && !DocumentLayoutEngine.isAuto(style.getRight())
+                && !DocumentLayoutEngine.isAuto(style.getWidth())) {
+            DocumentLayoutEdges margin = DocumentLayoutEngine.resolveMarginInsets(element, style,
+                    absoluteContainingBlock.width, layoutContext.layoutValueResolver);
+            boolean autoLeft = DocumentLayoutEngine.isAuto(style.getMargin().getLeft());
+            boolean autoRight = DocumentLayoutEngine.isAuto(style.getMargin().getRight());
+            if (autoLeft || autoRight) {
+                int leftInset = DocumentLayoutEngine.resolvePositionInsetValue(element, style.getLeft(),
+                        DocumentAnimationProperty.LEFT, absoluteContainingBlock.width, layoutContext.layoutValueResolver);
+                int rightInset = DocumentLayoutEngine.resolvePositionInsetValue(element, style.getRight(),
+                        DocumentAnimationProperty.RIGHT, absoluteContainingBlock.width, layoutContext.layoutValueResolver);
+                int remaining = Math.max(0, absoluteContainingBlock.width - leftInset - rightInset - marginBoxWidth);
+                int resolvedLeftMargin = autoLeft && autoRight ? remaining / 2 : autoLeft ? remaining : margin.getLeft();
+                return absoluteContainingBlock.left + leftInset + resolvedLeftMargin;
+            }
+        }
         if (!DocumentLayoutEngine.isAuto(style.getLeft())) {
             return absoluteContainingBlock.left + DocumentLayoutEngine.resolvePositionInsetValue(element,
                     style.getLeft(), DocumentAnimationProperty.LEFT, absoluteContainingBlock.width,

@@ -6,6 +6,7 @@ import club.heiqi.uilib.ui.style.props.UiAnimationDirection;
 import club.heiqi.uilib.ui.style.props.UiOverflowWrap;
 import club.heiqi.uilib.ui.style.props.UiOverflow;
 import club.heiqi.uilib.ui.style.values.UiBorderRadius;
+import club.heiqi.uilib.ui.style.props.UiAlignContent;
 import club.heiqi.uilib.ui.style.props.UiAlignItems;
 import club.heiqi.uilib.ui.style.props.UiTextTransform;
 import club.heiqi.uilib.ui.style.props.UiBorderStyle;
@@ -73,6 +74,7 @@ public final class ComputedStyle {
     private final UiOverflow overflowY;
     private final UiFlexDirection flexDirection;
     private final UiAlignItems alignItems;
+    private final UiAlignContent alignContent;
     private final UiJustifyContent justifyContent;
     private final UiVerticalAlign verticalAlign;
     private final UiStyleLength rowGap;
@@ -143,7 +145,7 @@ public final class ComputedStyle {
             UiStyleLength top, UiStyleLength right, UiStyleLength bottom, UiStyleLength left, Integer zIndex,
             UiStyleInsets margin, UiStyleInsets padding, UiStyleLength borderWidth, UiStyleLength borderRadius,
             UiOverflow overflowX, UiOverflow overflowY, UiFlexDirection flexDirection, UiAlignItems alignItems,
-            UiJustifyContent justifyContent, UiVerticalAlign verticalAlign, UiStyleLength rowGap,
+            UiAlignContent alignContent, UiJustifyContent justifyContent, UiVerticalAlign verticalAlign, UiStyleLength rowGap,
             UiStyleLength columnGap, float flexGrow, float flexShrink, int order, float opacity,
             int backgroundColor, int borderColor, int textColor,
             List<DocumentAnimationProperty> transitionProperties, long transitionDurationNanos,
@@ -184,6 +186,7 @@ public final class ComputedStyle {
         this.overflowY = Objects.requireNonNull(overflowY, "overflowY");
         this.flexDirection = Objects.requireNonNull(flexDirection, "flexDirection");
         this.alignItems = Objects.requireNonNull(alignItems, "alignItems");
+        this.alignContent = Objects.requireNonNull(alignContent, "alignContent");
         this.justifyContent = Objects.requireNonNull(justifyContent, "justifyContent");
         this.verticalAlign = Objects.requireNonNull(verticalAlign, "verticalAlign");
         this.rowGap = Objects.requireNonNull(rowGap, "rowGap");
@@ -321,6 +324,10 @@ public final class ComputedStyle {
 
     public UiAlignItems getAlignItems() {
         return alignItems;
+    }
+
+    public UiAlignContent getAlignContent() {
+        return alignContent;
     }
 
     public UiJustifyContent getJustifyContent() {

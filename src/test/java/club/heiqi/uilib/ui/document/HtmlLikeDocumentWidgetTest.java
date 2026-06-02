@@ -3504,6 +3504,57 @@ public class HtmlLikeDocumentWidgetTest {
     }
 
     /**
+     * 文本输入事件应按 capture -> target -> bubble 顺序分发。
+     */
+    @Test
+    public void shouldDispatchTextInputInDomOrder() {
+        UiDocument document = UiDocument.create();
+        ElementNode root = document.getRootElement();
+        ElementNode child = document.div();
+        final List<String> events = new ArrayList<String>();
+        root.style().setWidth(UiStyleLength.px(80)).setHeight(UiStyleLength.px(40));
+        child.style().setWidth(UiStyleLength.px(40)).setHeight(UiStyleLength.px(20));
+        root.setCaptureTextInputHandler(new DocumentElementTextInputHandler() {
+            @Override
+            public boolean onTextInput(DocumentElementTextInputEvent event) {
+                events.add("root-capture:" + event.getEventPhase());
+                return false;
+            }
+        }).setTextInputHandler(new DocumentElementTextInputHandler() {
+            @Override
+            public boolean onTextInput(DocumentElementTextInputEvent event) {
+                events.add("root-bubble:" + event.getEventPhase());
+                return false;
+            }
+        });
+        child.setFocusable(true)
+                .setCaptureTextInputHandler(new DocumentElementTextInputHandler() {
+                    @Override
+                    public boolean onTextInput(DocumentElementTextInputEvent event) {
+                        events.add("child-capture:" + event.getEventPhase());
+                        return false;
+                    }
+                })
+                .setTextInputHandler(new DocumentElementTextInputHandler() {
+                    @Override
+                    public boolean onTextInput(DocumentElementTextInputEvent event) {
+                        events.add("child:" + event.getEventPhase() + ":" + event.getText());
+                        return false;
+                    }
+                });
+        root.append(child);
+        HtmlLikeDocumentWidget widget = new HtmlLikeDocumentWidget(document, 80, 40,
+                new DeterministicTextMeasureService());
+        widget.applyLayoutBounds(0, 0, 80, 40);
+
+        widget.onMouseDown(new UiMouseEvent(UiMouseEvent.Action.BUTTON_DOWN, 10, 10, 0, 0, 0, 0, 1L));
+        widget.onTextInput(new UiTextInputEvent("x", 2L));
+
+        Assert.assertEquals("[root-capture:CAPTURING, child-capture:AT_TARGET, child:AT_TARGET:x, "
+                + "root-bubble:BUBBLING]", events.toString());
+    }
+
+    /**
      * 验证 HTML-like 组件失去 widget 焦点时会清空内部元素焦点。
      */
     @Test

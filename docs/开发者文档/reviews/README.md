@@ -21,6 +21,7 @@
 - 首批 P0/P1 修复复核（2026-06-01，提交 `2d1bffa`）：逐项对照 DOM / CSS 2.1 / Flexbox / Positioned Layout 规范确认 8 项修复方向均向浏览器语义靠拢，离线复跑相关测试集全绿。明确三项后续未尽边界（非缺陷）：负 margin collapse 仅相邻兄弟完整、父子折叠路径仍为 max 近似（属 1.6 P3）；圆角 clip 为圆形近似且仅双向 overflow 都裁剪时生效；fixed 仍无条件清空祖先 clip chain（属 2.3 P2/P3），均划入后续批次。
 - 第二批 P2/低风险语义修复（2026-06-01）：按工程化分组收口 DOM、事件、样式、绘制四类作者可见契约：`removeChild` 返回/异常语义、`querySelector*` 排除内部根节点、`focusout` 独立冒泡与焦点切换顺序、hover/active 状态通知不中断祖先、`border-collapse` 继承、`font-style` 布局失效、inset box-shadow 绘制层级。复核时确认报告中 `text-shadow` "非继承"结论与 CSS 标准不符，已作为审查误报保留继承语义。
 - 第三批 P2 事件语义修复（2026-06-01）：补齐 `wheel` DOM-like 事件分发，滚轮输入先按 capture → target → bubble 触发 `DocumentElementWheelEvent`，再执行默认滚动；handler 返回 `true` 只停止传播，不取消默认滚动，`preventDefault()` 会阻止默认滚动。仍未收口项包括 fixed clip chain、父子 margin collapse 递归等影响面更大的布局/视觉语义。
+- 剩余语义工程化修复（2026-06-02）：详情见 [REVIEW-20260602-phase2-remaining-semantics.md](REVIEW-20260602-phase2-remaining-semantics.md)。已收口空块/递归 margin collapse、row flex `align-content`、flex 交叉轴 auto margin、absolute auto margin 居中、table auto 内容列宽、textInput capture 阶段、transform fixed containing block 下滚动范围一致性；复核确认 sticky stacking context 为审查误报。遗留：`inline-block baseline` 需要行内布局盒延迟落位，单独处理。
 
 ## 2026-06-01-browser-semantics-phase2-followup
 - 类型：浏览器语义修复代码审查（Phase 2 后续批次）

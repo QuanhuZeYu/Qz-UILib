@@ -10,6 +10,7 @@ import org.junit.Test;
 import club.heiqi.uilib.ui.dom.ElementNode;
 import club.heiqi.uilib.ui.dom.UiDocument;
 import club.heiqi.uilib.ui.style.props.UiPosition;
+import club.heiqi.uilib.ui.style.values.UiStyleInsets;
 import club.heiqi.uilib.ui.style.values.UiStyleLength;
 import club.heiqi.uilib.ui.text.TextMeasureService;
 
@@ -93,6 +94,35 @@ public class PositionedLayoutHelperBoundaryTest {
                 positionedBox.getLeft() + 20 + 10, globalAbsoluteLeft);
         Assert.assertEquals("absolute global top should hit positioned ancestor padding+inset",
                 positionedBox.getTop() + 20 + 10, globalAbsoluteTop);
+    }
+
+    /**
+     * absolute 元素在 left/right/width 同时确定且左右 margin:auto 时应居中。
+     */
+    @Test
+    public void shouldCenterAbsoluteElementWithHorizontalAutoMargins() {
+        UiDocument document = UiDocument.create();
+        ElementNode root = document.getRootElement();
+        ElementNode absolute = document.div();
+
+        root.style()
+                .setWidth(UiStyleLength.px(200))
+                .setHeight(UiStyleLength.px(80))
+                .setPosition(UiPosition.RELATIVE);
+        absolute.style()
+                .setPosition(UiPosition.ABSOLUTE)
+                .setLeft(UiStyleLength.px(20))
+                .setRight(UiStyleLength.px(20))
+                .setTop(UiStyleLength.px(0))
+                .setWidth(UiStyleLength.px(60))
+                .setHeight(UiStyleLength.px(20))
+                .setMargin(UiStyleInsets.horizontal(UiStyleLength.auto()));
+        root.append(absolute);
+
+        DocumentLayoutBox absoluteBox = DocumentLayoutEngine.layout(root, 240, 0, new DeterministicMeasure())
+                .getChildren().get(0);
+
+        Assert.assertEquals(70, absoluteBox.getLeft());
     }
 
     private static final class DeterministicMeasure implements TextMeasureService {

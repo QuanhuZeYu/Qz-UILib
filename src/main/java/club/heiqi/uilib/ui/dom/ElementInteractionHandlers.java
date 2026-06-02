@@ -44,6 +44,7 @@ final class ElementInteractionHandlers {
     DocumentElementMouseUpHandler captureMouseUpHandler;
     DocumentElementWheelHandler captureWheelHandler;
     DocumentElementKeyHandler captureKeyHandler;
+    DocumentElementTextInputHandler captureTextInputHandler;
     DocumentElementDoubleClickHandler captureDoubleClickHandler;
     DocumentElementContextMenuHandler captureContextMenuHandler;
 

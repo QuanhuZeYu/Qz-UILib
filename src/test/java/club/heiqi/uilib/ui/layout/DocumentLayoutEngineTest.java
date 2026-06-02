@@ -511,6 +511,61 @@ public class DocumentLayoutEngineTest {
     }
 
     /**
+     * 空块自身上下 margin 应先折叠，再与后续兄弟 margin 折叠。
+     */
+    @Test
+    public void shouldCollapseEmptyBlockOwnVerticalMargins() {
+        UiDocument document = UiDocument.create();
+        ElementNode root = document.getRootElement();
+        ElementNode empty = document.div();
+        ElementNode next = document.div();
+
+        root.style().setWidth(UiStyleLength.px(160));
+        empty.style().setMargin(UiStyleInsets.of(UiStyleLength.px(20), UiStyleLength.px(0), UiStyleLength.px(30),
+                UiStyleLength.px(0)));
+        next.style()
+                .setHeight(UiStyleLength.px(10))
+                .setMargin(UiStyleInsets.of(UiStyleLength.px(10), UiStyleLength.px(0), UiStyleLength.px(0),
+                        UiStyleLength.px(0)));
+        root.append(empty).append(next);
+
+        DocumentLayoutBox rootBox = DocumentLayoutEngine.layout(root, 200, 0);
+        DocumentLayoutBox nextBox = rootBox.getChildren().get(1);
+
+        Assert.assertEquals(30, nextBox.getTop());
+    }
+
+    /**
+     * 父子顶部 margin collapse 应递归穿透可折叠的第一个子块。
+     */
+    @Test
+    public void shouldCollapseFirstChildMarginsRecursively() {
+        UiDocument document = UiDocument.create();
+        ElementNode root = document.getRootElement();
+        ElementNode outer = document.div();
+        ElementNode middle = document.div();
+        ElementNode inner = document.div();
+
+        root.style().setWidth(UiStyleLength.px(160));
+        outer.style().setMargin(UiStyleInsets.top(UiStyleLength.px(10)));
+        middle.style().setMargin(UiStyleInsets.top(UiStyleLength.px(20)));
+        inner.style()
+                .setHeight(UiStyleLength.px(10))
+                .setMargin(UiStyleInsets.top(UiStyleLength.px(30)));
+        middle.append(inner);
+        outer.append(middle);
+        root.append(outer);
+
+        DocumentLayoutBox outerBox = DocumentLayoutEngine.layout(root, 200, 0).getChildren().get(0);
+        DocumentLayoutBox middleBox = outerBox.getChildren().get(0);
+        DocumentLayoutBox innerBox = middleBox.getChildren().get(0);
+
+        Assert.assertEquals(30, outerBox.getTop());
+        Assert.assertEquals(30, middleBox.getTop());
+        Assert.assertEquals(30, innerBox.getTop());
+    }
+
+    /**
      * 验证 min-width 大于 max-width 时 min-width 胜出。
      */
     @Test

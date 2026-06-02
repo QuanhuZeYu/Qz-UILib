@@ -66,17 +66,52 @@ final class DocumentKeyboardEventDispatcher {
         if (target.isDisabled()) {
             return true;
         }
-        for (DocumentNode current = target; current instanceof ElementNode; current = current.getParent()) {
-            ElementNode currentElement = (ElementNode) current;
-            DocumentElementTextInputHandler textInputHandler = currentElement.getTextInputHandler();
-            if (textInputHandler == null) {
-                continue;
+        DocumentEventControl eventControl = new DocumentEventControl();
+        List<ElementNode> path = buildAncestorPath(target);
+        eventControl.setEventPhase(DocumentEventPhase.CAPTURING);
+        for (int index = path.size() - 1; index > 0; index--) {
+            if (eventControl.isPropagationStopped()) {
+                break;
             }
-            if (textInputHandler.onTextInput(new DocumentElementTextInputEvent(target, currentElement, event))) {
-                return true;
+            ElementNode currentElement = path.get(index);
+            DocumentElementTextInputHandler captureHandler = currentElement.getCaptureTextInputHandler();
+            if (captureHandler != null && captureHandler.onTextInput(new DocumentElementTextInputEvent(target,
+                    currentElement, event, eventControl))) {
+                eventControl.stopPropagation();
             }
         }
-        return false;
+
+        if (!eventControl.isPropagationStopped()) {
+            eventControl.setEventPhase(DocumentEventPhase.AT_TARGET);
+            DocumentElementTextInputHandler targetCaptureHandler = target.getCaptureTextInputHandler();
+            if (targetCaptureHandler != null && targetCaptureHandler.onTextInput(new DocumentElementTextInputEvent(
+                    target, target, event, eventControl))) {
+                eventControl.stopPropagation();
+            }
+            if (!eventControl.isImmediatePropagationStopped()) {
+                DocumentElementTextInputHandler targetHandler = target.getTextInputHandler();
+                if (targetHandler != null && targetHandler.onTextInput(new DocumentElementTextInputEvent(target,
+                        target, event, eventControl))) {
+                    eventControl.stopPropagation();
+                }
+            }
+        }
+
+        if (!eventControl.isPropagationStopped()) {
+            eventControl.setEventPhase(DocumentEventPhase.BUBBLING);
+            for (int index = 1; index < path.size(); index++) {
+                if (eventControl.isPropagationStopped()) {
+                    break;
+                }
+                ElementNode currentElement = path.get(index);
+                DocumentElementTextInputHandler textInputHandler = currentElement.getTextInputHandler();
+                if (textInputHandler != null && textInputHandler.onTextInput(new DocumentElementTextInputEvent(target,
+                        currentElement, event, eventControl))) {
+                    eventControl.stopPropagation();
+                }
+            }
+        }
+        return eventControl.isPropagationStopped();
     }
 
     /**
