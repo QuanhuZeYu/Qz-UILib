@@ -134,7 +134,7 @@ Toolchain、依赖版本、构建配置与运行时类路径。
 
 ---
 
-## 配置/业务页面类（合并，8 条）
+## 配置/业务页面类（合并，9 条）
 
 配置模板、inventory、tooltip 与业务页面。
 
@@ -147,6 +147,7 @@ Toolchain、依赖版本、构建配置与运行时类路径。
 - [`ERROR-20260522-browser-semantics-outline-null-crash.md`](ERROR-20260522-browser-semantics-outline-null-crash.md) — 语义展示页 focus 回写向非空 setter 传 null 导致崩溃
 - [`ERROR-20260525-config-sync-headless-static-init.md`](ERROR-20260525-config-sync-headless-static-init.md) — 配置同步模型误借 GuiScreen 类上的静态工具，导致纯 JVM 测试触发 Minecraft 客户端静态初始化
 - [`ERROR-20260525-config-sync-category-alias-smoke.md`](ERROR-20260525-config-sync-category-alias-smoke.md) — 配置同步分类解析隐式小写兼容与 smoke 部分草稿导致单独运行失败
+- [`ERROR-20260602-runtime-test-card-visual-output.md`](ERROR-20260602-runtime-test-card-visual-output.md) — 运行时测试卡片样例自身覆盖被测 CSS，且结果摘要暴露值对象地址
 
 **共性教训**：配置保存必须先验证再写入，失败时回滚内存值；渲染上下文必须完整传递所有运行时适配器；Forge 配置分类查询不能用会隐式创建分类的 API 代替存在性检查，历史分类兼容必须显式声明 alias。
 

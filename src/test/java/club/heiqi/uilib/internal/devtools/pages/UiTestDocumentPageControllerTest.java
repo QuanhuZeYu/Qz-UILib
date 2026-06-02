@@ -169,7 +169,10 @@ public class UiTestDocumentPageControllerTest {
         }
         List<String> cssTexts = collectDocumentTexts(fixture.controller.getHtmlLikeDocumentWidget());
         Assert.assertTrue(containsText(cssTexts, "computed textColor=#FF69F0AE"));
-        Assert.assertTrue(containsText(cssTexts, "specificity colors="));
+        Assert.assertTrue(containsText(cssTexts,
+                "specificity colors=#FF60A5FA,#FF34D399,#FFFBBF24,#FFC084FC"));
+        Assert.assertFalse(containsText(cssTexts,
+                "specificity colors=#FFEAF1FF,#FFEAF1FF,#FFEAF1FF,#FFEAF1FF"));
         Assert.assertTrue(containsText(cssTexts, "display=NONE,BLOCK,INLINE,INLINE_BLOCK,FLEX"));
         Assert.assertTrue(containsText(cssTexts, "box-sizing"));
 
@@ -192,7 +195,11 @@ public class UiTestDocumentPageControllerTest {
         Assert.assertTrue(containsText(paintTexts, "等待人工确认层级"));
         Assert.assertTrue(containsText(paintTexts, "stacking order last=z=2"));
         Assert.assertTrue(containsText(paintTexts, "opacity=0.55"));
+        Assert.assertTrue(containsText(paintTexts, "inner z=99"));
         Assert.assertTrue(containsText(paintTexts, "等待人工确认裁剪命中"));
+        Assert.assertTrue(containsText(paintTexts,
+                "transform=translate(18.0,6.0) scale(1.20,1.20) rotate(8.0deg)"));
+        Assert.assertFalse(containsText(paintTexts, "UiStyleLength@"));
         Assert.assertTrue(containsText(paintTexts, "等待人工确认变换后命中"));
     }
 
