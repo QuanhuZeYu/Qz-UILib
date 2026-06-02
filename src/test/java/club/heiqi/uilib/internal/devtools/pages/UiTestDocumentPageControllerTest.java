@@ -22,7 +22,7 @@ import club.heiqi.uilib.ui.text.TextMeasureService;
 import club.heiqi.uilib.ui.widget.Widget;
 
 /**
- * `UiTestDocumentPageController` test P0 首页的黑盒测试。
+ * `UiTestDocumentPageController` test 首页与二级页的黑盒测试。
  */
 public class UiTestDocumentPageControllerTest {
 
@@ -44,27 +44,33 @@ public class UiTestDocumentPageControllerTest {
 
         List<String> texts = collectDocumentTexts(fixture.controller.getHtmlLikeDocumentWidget());
         Assert.assertTrue(containsText(texts, "Qz UILib Test 首页"));
-        Assert.assertTrue(containsText(texts, "P0 语义首页"));
+        Assert.assertTrue(containsText(texts, "二级页数量"));
         Assert.assertTrue(containsText(texts, "DOM 与选择器语义"));
         Assert.assertTrue(containsText(texts, "CSS 级联与样式语义"));
         Assert.assertTrue(containsText(texts, "Layout 布局与尺寸语义"));
         Assert.assertTrue(containsText(texts, "Paint 绘制、命中与视觉语义"));
-        Assert.assertTrue(containsText(texts, "Input、Controls、TextFont、Animation、RuntimeHost、RemoteNet 按规格后续接入"));
+        Assert.assertTrue(containsText(texts, "Input 输入与事件语义"));
+        Assert.assertTrue(containsText(texts, "RuntimeHost 宿主运行时语义"));
+        Assert.assertTrue(containsText(texts, "RemoteNet 远程、配置与网络语义"));
+        Assert.assertTrue(containsText(texts, "打开 DOM 二级页"));
+        Assert.assertFalse(containsText(texts, "DOM-001"));
         Assert.assertFalse(containsText(texts, "HTML-like Smoke"));
         Assert.assertFalse(containsText(texts, "Glass Lab"));
     }
 
     /**
-     * 验证 P0 首页直接展示统一运行时用例卡片字段。
+     * 验证运行时用例卡片迁移到类型二级页中展示。
      */
     @Test
-    public void shouldExposeRuntimeCaseCardContract() {
+    public void shouldExposeRuntimeCaseCardContractOnGroupSubPage() {
         TestFixture fixture = new TestFixture();
 
         fixture.controller.configureDocumentPage();
         fixture.controller.buildDocument();
+        clickButtonByLabel(fixture.controller.getHtmlLikeDocumentWidget(), "打开 DOM 二级页", 0);
 
         List<String> texts = collectDocumentTexts(fixture.controller.getHtmlLikeDocumentWidget());
+        Assert.assertTrue(containsText(texts, "Qz UILib Test / DOM 二级页"));
         Assert.assertTrue(containsText(texts, "用例编号"));
         Assert.assertTrue(containsText(texts, "覆盖语义"));
         Assert.assertTrue(containsText(texts, "自动断言"));
@@ -73,13 +79,16 @@ public class UiTestDocumentPageControllerTest {
         Assert.assertTrue(containsText(texts, "实际结果"));
         Assert.assertTrue(containsText(texts, "状态"));
         Assert.assertTrue(containsText(texts, "DOM-001"));
-        Assert.assertTrue(containsText(texts, "CSS-001"));
-        Assert.assertTrue(containsText(texts, "LAYOUT-001"));
-        Assert.assertTrue(containsText(texts, "PAINT-001"));
+        Assert.assertTrue(containsText(texts, "DOM-002"));
+        Assert.assertTrue(containsText(texts, "DOM-003"));
+        Assert.assertTrue(containsText(texts, "DOM-004"));
+        Assert.assertTrue(containsText(texts, "DOM-005"));
+        Assert.assertFalse(containsText(texts, "CSS-001"));
+        Assert.assertFalse(containsText(texts, "LAYOUT-001"));
+        Assert.assertFalse(containsText(texts, "PAINT-001"));
         Assert.assertTrue(containsText(texts, "预期结果：点击执行后 A 节点移动到 B 节点后方"));
-        Assert.assertTrue(containsText(texts, "预期结果：同一元素最终显示为 inline 指定颜色"));
-        Assert.assertTrue(containsText(texts, "预期结果：三块内容从上到下排列"));
-        Assert.assertTrue(containsText(texts, "预期结果：背景在最底层"));
+        Assert.assertTrue(containsText(texts, "预期结果：点击执行后节点顺序变为 `C, A, B`"));
+        Assert.assertTrue(containsText(texts, "预期结果：点击执行后 fragment 内三个元素出现在目标容器"));
     }
 
     /**
@@ -123,7 +132,7 @@ public class UiTestDocumentPageControllerTest {
     }
 
     /**
-     * 验证首页运行时按钮会执行首批自动断言并刷新结果文本。
+     * 验证 DOM 二级页运行时按钮会执行首批自动断言并刷新结果文本。
      */
     @Test
     public void shouldExecuteRuntimeCaseButtonsAndRefreshResultTexts() {
@@ -131,18 +140,60 @@ public class UiTestDocumentPageControllerTest {
 
         fixture.controller.configureDocumentPage();
         fixture.controller.buildDocument();
-        clickButtonByLabel(fixture.controller.getHtmlLikeDocumentWidget(), "执行自动测试", 0);
-        clickButtonByLabel(fixture.controller.getHtmlLikeDocumentWidget(), "执行自动测试", 1);
-        clickButtonByLabel(fixture.controller.getHtmlLikeDocumentWidget(), "执行自动测试", 2);
-        clickButtonByLabel(fixture.controller.getHtmlLikeDocumentWidget(), "执行自动测试", 3);
+        clickButtonByLabel(fixture.controller.getHtmlLikeDocumentWidget(), "打开 DOM 二级页", 0);
+        for (int index = 0; index < 5; index++) {
+            clickButtonByLabel(fixture.controller.getHtmlLikeDocumentWidget(), "执行自动测试", index);
+        }
 
         List<String> texts = collectDocumentTexts(fixture.controller.getHtmlLikeDocumentWidget());
         Assert.assertTrue(containsText(texts, "当前顺序：B, A；返回节点：A"));
-        Assert.assertTrue(containsText(texts, "computed textColor=#FF69F0AE"));
-        Assert.assertTrue(containsText(texts, "布局顺序：top="));
-        Assert.assertTrue(containsText(texts, "等待人工确认层级"));
-        Assert.assertEquals(4, countTextsContaining(texts, "通过：观察结果与预期一致"));
-        Assert.assertEquals(2, countTextsContaining(texts, "执行中"));
+        Assert.assertTrue(containsText(texts, "当前顺序：C, A, B；重复节点：无"));
+        Assert.assertTrue(containsText(texts, "被替换：old"));
+        Assert.assertTrue(containsText(texts, "非直接子节点被拒绝=true"));
+        Assert.assertTrue(containsText(texts, "目标容器计数=3；fragment 计数=0"));
+        Assert.assertEquals(6, countTextsContaining(texts, "通过：观察结果与预期一致"));
+    }
+
+    /**
+     * 验证不同类型二级页按分组分批展示并执行运行时卡片。
+     */
+    @Test
+    public void shouldExecuteRuntimeCasesOnTypedSubPages() {
+        TestFixture fixture = new TestFixture();
+
+        fixture.controller.configureDocumentPage();
+        fixture.controller.buildDocument();
+        clickButtonByLabel(fixture.controller.getHtmlLikeDocumentWidget(), "打开 CSS 二级页", 0);
+        for (int index = 0; index < 5; index++) {
+            clickButtonByLabel(fixture.controller.getHtmlLikeDocumentWidget(), "执行自动测试", index);
+        }
+        List<String> cssTexts = collectDocumentTexts(fixture.controller.getHtmlLikeDocumentWidget());
+        Assert.assertTrue(containsText(cssTexts, "computed textColor=#FF69F0AE"));
+        Assert.assertTrue(containsText(cssTexts, "specificity colors="));
+        Assert.assertTrue(containsText(cssTexts, "display=NONE,BLOCK,INLINE,INLINE_BLOCK,FLEX"));
+        Assert.assertTrue(containsText(cssTexts, "box-sizing"));
+
+        clickButtonByLabel(fixture.controller.getHtmlLikeDocumentWidget(), "LAYOUT", 0);
+        for (int index = 0; index < 5; index++) {
+            clickButtonByLabel(fixture.controller.getHtmlLikeDocumentWidget(), "执行自动测试", index);
+        }
+        List<String> layoutTexts = collectDocumentTexts(fixture.controller.getHtmlLikeDocumentWidget());
+        Assert.assertTrue(containsText(layoutTexts, "布局顺序：top="));
+        Assert.assertTrue(containsText(layoutTexts, "相邻 margin gap="));
+        Assert.assertTrue(containsText(layoutTexts, "空块 height=0"));
+        Assert.assertTrue(containsText(layoutTexts, "inline fragments="));
+        Assert.assertTrue(containsText(layoutTexts, "已知缺口：inline-block baseline"));
+
+        clickButtonByLabel(fixture.controller.getHtmlLikeDocumentWidget(), "PAINT", 0);
+        for (int index = 0; index < 5; index++) {
+            clickButtonByLabel(fixture.controller.getHtmlLikeDocumentWidget(), "执行自动测试", index);
+        }
+        List<String> paintTexts = collectDocumentTexts(fixture.controller.getHtmlLikeDocumentWidget());
+        Assert.assertTrue(containsText(paintTexts, "等待人工确认层级"));
+        Assert.assertTrue(containsText(paintTexts, "stacking order last=z=2"));
+        Assert.assertTrue(containsText(paintTexts, "opacity=0.55"));
+        Assert.assertTrue(containsText(paintTexts, "等待人工确认裁剪命中"));
+        Assert.assertTrue(containsText(paintTexts, "等待人工确认变换后命中"));
     }
 
     /**
@@ -154,13 +205,14 @@ public class UiTestDocumentPageControllerTest {
 
         fixture.controller.configureDocumentPage();
         fixture.controller.buildDocument();
+        clickButtonByLabel(fixture.controller.getHtmlLikeDocumentWidget(), "打开 CSS 二级页", 0);
         clickButtonByLabel(fixture.controller.getHtmlLikeDocumentWidget(), "人工通过", 0);
         clickButtonByLabel(fixture.controller.getHtmlLikeDocumentWidget(), "人工失败", 1);
 
         List<String> texts = collectDocumentTexts(fixture.controller.getHtmlLikeDocumentWidget());
         Assert.assertTrue(containsText(texts, "人工确认：观察结果与预期一致。"));
         Assert.assertTrue(containsText(texts, "人工确认：观察结果与预期不一致，请截图补充差异。"));
-        Assert.assertTrue(containsText(texts, "最近失败：CSS-001"));
+        Assert.assertTrue(containsText(texts, "最近失败：CSS-002"));
         Assert.assertTrue(containsText(texts, "失败：观察结果与预期不一致 - 人工确认不一致"));
     }
 
