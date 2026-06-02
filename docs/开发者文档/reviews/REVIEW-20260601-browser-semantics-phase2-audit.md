@@ -210,6 +210,8 @@ boolean positionedStackingContext = style.getPosition() == UiPosition.STICKY
 
 **浏览器标准**: sticky 本身不创建 stacking context（除非有其他触发条件）。
 
+**后续复核（2026-06-02）**: 本条为规范口径误报。现代 CSS Positioned Layout 明确 `position: sticky` 总是创建 stacking context，当前实现保留 sticky 无条件创建 stacking context。不要按本条再发起修复。
+
 ---
 
 ## 三、事件系统
@@ -281,6 +283,8 @@ boolean positionedStackingContext = style.getPosition() == UiPosition.STICKY
 **当前实现**: `TEXT_SHADOW(true, UiStyleChangeImpact.PAINT)` — 标记为继承。
 
 **浏览器标准**: `text-shadow` 不是继承属性，初始值为 `none`。
+
+**后续复核（2026-06-01）**: 本条为规范口径误报。CSS Text Decoration 中 `text-shadow` 是继承属性，当前实现保留 `TEXT_SHADOW(true, ...)`。不要按本条再发起修复。
 
 ---
 
