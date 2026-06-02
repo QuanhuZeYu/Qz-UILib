@@ -8,9 +8,16 @@ import java.util.Objects;
 
 import club.heiqi.uilib.Config;
 import club.heiqi.uilib.net.transport.NetTransportFactory;
+import club.heiqi.uilib.ui.animation.DocumentAnimationFillMode;
+import club.heiqi.uilib.ui.animation.DocumentAnimationProperty;
+import club.heiqi.uilib.ui.animation.DocumentAnimationTimingFunction;
+import club.heiqi.uilib.ui.animation.DocumentTransitionSpec;
 import club.heiqi.uilib.ui.control.DocumentButtonActionEvent;
 import club.heiqi.uilib.ui.control.DocumentButtonActionHandler;
 import club.heiqi.uilib.ui.control.DocumentButtonControl;
+import club.heiqi.uilib.ui.control.DocumentInputType;
+import club.heiqi.uilib.ui.control.DocumentTextAreaControl;
+import club.heiqi.uilib.ui.control.DocumentTextInputControl;
 import club.heiqi.uilib.ui.diagnostic.UiRuntimeStats;
 import club.heiqi.uilib.ui.document.HtmlLikeDocumentWidget;
 import club.heiqi.uilib.ui.dom.DocumentElementClickEvent;
@@ -39,6 +46,7 @@ import club.heiqi.uilib.ui.screen.page.DocumentPageAuthoringSurface;
 import club.heiqi.uilib.ui.screen.page.DocumentPageController;
 import club.heiqi.uilib.ui.screen.page.DocumentPageRuntimeView;
 import club.heiqi.uilib.ui.screen.page.DocumentUiScope;
+import club.heiqi.uilib.ui.style.props.UiAnimationDirection;
 import club.heiqi.uilib.ui.style.cascade.ComputedStyle;
 import club.heiqi.uilib.ui.style.cascade.UiStyleDeclaration;
 import club.heiqi.uilib.ui.style.cascade.UiStyleResolver;
@@ -55,6 +63,7 @@ import club.heiqi.uilib.ui.style.props.UiOverflow;
 import club.heiqi.uilib.ui.style.props.UiPosition;
 import club.heiqi.uilib.ui.style.values.UiStyleLength;
 import club.heiqi.uilib.ui.style.values.UiTransform;
+import club.heiqi.uilib.ui.text.TextContentMode;
 import club.heiqi.uilib.ui.text.TextMeasureService;
 
 /**
@@ -105,31 +114,31 @@ public final class UiTestDocumentPageController extends DocumentPageController {
             "Controls 控件与表单语义",
             "按钮、输入框、选择器、槽位、tooltip 与 overlay 控件。",
             15,
-            0);
+            5);
     private static final TestGroup TEXT_FONT_GROUP = new TestGroup(
             "TEXT",
             "TextFont 文本、字体与国际化语义",
             "文本模式、格式码、字符测量、fallback、reload 与 wrap。",
             7,
-            0);
+            5);
     private static final TestGroup ANIMATION_GROUP = new TestGroup(
             "ANIM",
             "Animation 动画与 Transition 语义",
             "transition、keyframes、timing、fill-mode 与布局/绘制影响。",
             8,
-            0);
+            5);
     private static final TestGroup RUNTIME_HOST_GROUP = new TestGroup(
             "HOST",
             "RuntimeHost 宿主运行时语义",
             "开屏时序、resize、runtime stats、GL 上下文、HUD 与异常面板。",
             7,
-            0);
+            5);
     private static final TestGroup REMOTE_NET_GROUP = new TestGroup(
             "NET",
             "RemoteNet 远程、配置与网络语义",
             "Channel、Fetch、Stream、Store、远程页面、远程 HUD 与配置同步。",
             10,
-            0);
+            5);
     private static final List<TestGroup> TEST_GROUPS = Collections.unmodifiableList(Arrays.asList(
             DOM_GROUP,
             CSS_GROUP,
@@ -483,7 +492,182 @@ public final class UiTestDocumentPageController extends DocumentPageController {
                         "mousedown、mouseup、click、doubleclick",
                         "运行时按钮会模拟两次主键点击，校验 down/up/click 和第二次 dblclick 顺序。",
                         "进入 Input 二级页后点击 `执行自动测试`；观察 pointer 日志；需要时点击人工通过或人工失败。",
-                        "预期结果：单击日志为 down/up/click，双击额外记录 doubleclick。")));
+                        "预期结果：单击日志为 down/up/click，双击额外记录 doubleclick。"),
+                new RuntimeTestCase(
+                        "CTRL-001",
+                        CONTROLS_GROUP,
+                        "button enabled/disabled/action",
+                        "运行时按钮会触发可用与禁用按钮，校验 action 计数只由可用按钮增加。",
+                        "进入 Controls 二级页后点击 `执行自动测试`；观察可用按钮计数与禁用按钮状态；需要时点击人工通过或人工失败。",
+                        "预期结果：可用按钮点击计数加 1，disabled 按钮点击无变化。"),
+                new RuntimeTestCase(
+                        "CTRL-002",
+                        CONTROLS_GROUP,
+                        "text input value、selection、caret",
+                        "运行时按钮会校验文本输入控件 value；selection 与 caret 留给人工观察。",
+                        "进入 Controls 二级页后点击 `执行自动测试`；观察输入值和光标区域；需要时点击人工通过或人工失败。",
+                        "预期结果：输入、删除、选择替换后 value 与光标位置文本一致。"),
+                new RuntimeTestCase(
+                        "CTRL-003",
+                        CONTROLS_GROUP,
+                        "password input 掩码",
+                        "运行时按钮会校验 password 类型真实 value 与页面显示掩码分离。",
+                        "进入 Controls 二级页后点击 `执行自动测试`；观察密码样例只显示掩码；需要时点击人工通过或人工失败。",
+                        "预期结果：页面只显示掩码字符，结果区保存真实 value 长度。"),
+                new RuntimeTestCase(
+                        "CTRL-004",
+                        CONTROLS_GROUP,
+                        "number input 解析、非法值、step",
+                        "运行时按钮会校验 number 类型过滤非法字符；step 调整需人工或后续控件扩展确认。",
+                        "进入 Controls 二级页后点击 `执行自动测试`；观察数字输入与错误状态说明；需要时点击人工通过或人工失败。",
+                        "预期结果：有效数字按 step 调整，非法输入显示错误状态且不提交。"),
+                new RuntimeTestCase(
+                        "CTRL-005",
+                        CONTROLS_GROUP,
+                        "textarea 逻辑行与视觉软换行",
+                        "运行时按钮会校验 textarea 真实 value 保留逻辑换行，视觉软换行等待人工确认。",
+                        "进入 Controls 二级页后点击 `执行自动测试`；观察长文本在窄容器内软换行；需要时点击人工通过或人工失败。",
+                        "预期结果：长文本自动软换行，value 中只保留真实换行。"),
+                new RuntimeTestCase(
+                        "TEXT-001",
+                        TEXT_FONT_GROUP,
+                        "TextContentMode.UILIB_RAW",
+                        "运行时按钮会创建 raw 文本节点，校验 `§a` 保留为普通字符。",
+                        "进入 TextFont 二级页后点击 `执行自动测试`；观察 `§a` 没有变成颜色码；需要时点击人工通过或人工失败。",
+                        "预期结果：`§a` 等字符按普通文本显示，不触发 Minecraft 格式化。"),
+                new RuntimeTestCase(
+                        "TEXT-002",
+                        TEXT_FONT_GROUP,
+                        "TextContentMode.MINECRAFT_FORMATTED",
+                        "运行时按钮会创建 Minecraft 格式文本节点，校验文本模式与原始长度记录。",
+                        "进入 TextFont 二级页后点击 `执行自动测试`；观察绿色格式文本；需要时点击人工通过或人工失败。",
+                        "预期结果：`§a绿色` 显示为绿色，结果区仍能显示原始文本长度。"),
+                new RuntimeTestCase(
+                        "TEXT-003",
+                        TEXT_FONT_GROUP,
+                        "字符宽度、line-height、baseline",
+                        "运行时按钮会调用文本测量服务校验宽度与 line-height，baseline 位置等待人工观察。",
+                        "进入 TextFont 二级页后点击 `执行自动测试`；观察中英文标尺线；需要时点击人工通过或人工失败。",
+                        "预期结果：中英文混排行高稳定，标尺线与文本基线位置一致。"),
+                new RuntimeTestCase(
+                        "TEXT-004",
+                        TEXT_FONT_GROUP,
+                        "字体 fallback",
+                        "运行时按钮会校验 fallback 样例结构和测量结果，真实缺字 fallback 需游戏内字体确认。",
+                        "进入 TextFont 二级页后点击 `执行自动测试`；观察缺字样例是否有 fallback；需要时点击人工通过或人工失败。",
+                        "预期结果：缺字字符使用 fallback 字体显示，不出现空白方块。"),
+                new RuntimeTestCase(
+                        "TEXT-005",
+                        TEXT_FONT_GROUP,
+                        "font reload debounce",
+                        "运行时按钮会记录当前 font epoch；连续 reload debounce 需游戏内操作确认。",
+                        "进入 TextFont 二级页后点击 `执行自动测试`；连续触发字体 reload 后观察 epoch；需要时点击人工通过或人工失败。",
+                        "预期结果：连续 reload 后只显示最终 epoch，页面不崩溃。"),
+                new RuntimeTestCase(
+                        "ANIM-001",
+                        ANIMATION_GROUP,
+                        "transition start/end/cancel",
+                        "运行时按钮会校验 transition 声明存在；start/end/cancel 事件需动画时钟和人工观察。",
+                        "进入 Animation 二级页后点击 `执行自动测试`；触发样例动画并观察日志；需要时点击人工通过或人工失败。",
+                        "预期结果：触发动画后日志出现 start/end，中途反向触发 cancel。"),
+                new RuntimeTestCase(
+                        "ANIM-002",
+                        ANIMATION_GROUP,
+                        "per-property transition",
+                        "运行时按钮会校验 opacity 与 transform 的 per-property transition 时长不同。",
+                        "进入 Animation 二级页后点击 `执行自动测试`；观察属性完成时间不同；需要时点击人工通过或人工失败。",
+                        "预期结果：颜色和 transform 按不同 duration 结束，日志分属性记录。"),
+                new RuntimeTestCase(
+                        "ANIM-003",
+                        ANIMATION_GROUP,
+                        "keyframes from/to 与百分比帧",
+                        "运行时按钮会校验 animation 名称、持续时间与 transform 终点结构。",
+                        "进入 Animation 二级页后点击 `执行自动测试`；观察盒子沿标注路径移动；需要时点击人工通过或人工失败。",
+                        "预期结果：盒子按关键帧路径移动，最终停在标注终点。"),
+                new RuntimeTestCase(
+                        "ANIM-004",
+                        ANIMATION_GROUP,
+                        "delay、duration、iteration-count",
+                        "运行时按钮会校验 delay、duration 与 iteration-count 计算样式。",
+                        "进入 Animation 二级页后点击 `执行自动测试`；观察延迟和循环次数；需要时点击人工通过或人工失败。",
+                        "预期结果：延迟期不移动，循环次数与日志 iteration 数一致。"),
+                new RuntimeTestCase(
+                        "ANIM-005",
+                        ANIMATION_GROUP,
+                        "direction normal/reverse/alternate",
+                        "运行时按钮会校验 normal、reverse、alternate 三种方向声明。",
+                        "进入 Animation 二级页后点击 `执行自动测试`；观察三个样例起点与方向；需要时点击人工通过或人工失败。",
+                        "预期结果：reverse 从终点开始，alternate 每轮方向翻转。"),
+                new RuntimeTestCase(
+                        "HOST-001",
+                        RUNTIME_HOST_GROUP,
+                        "`/qzuilib test` 延后开屏时序",
+                        "运行时按钮会确认当前 test 控制器已稳定构建；聊天命令延后开屏需游戏内人工确认。",
+                        "进入 RuntimeHost 二级页后点击 `执行自动测试`；从聊天命令再次打开页面；需要时点击人工通过或人工失败。",
+                        "预期结果：从聊天框执行命令后页面稳定打开，不被聊天关闭流程吞掉。"),
+                new RuntimeTestCase(
+                        "HOST-002",
+                        RUNTIME_HOST_GROUP,
+                        "resize 与 viewport fill",
+                        "运行时按钮会读取宿主窗口尺寸和 root 滚动配置，resize 视觉稳定性需人工确认。",
+                        "进入 RuntimeHost 二级页后点击 `执行自动测试`；调整窗口大小并观察重排；需要时点击人工通过或人工失败。",
+                        "预期结果：调整窗口后卡片重新排布，滚动位置不异常跳变。"),
+                new RuntimeTestCase(
+                        "HOST-003",
+                        RUNTIME_HOST_GROUP,
+                        "runtime stats 与帧耗时",
+                        "运行时按钮会读取 runtime stats，校验 frame/render 指标可展示。",
+                        "进入 RuntimeHost 二级页后点击 `执行自动测试`；观察帧耗时刷新；需要时点击人工通过或人工失败。",
+                        "预期结果：页面显示 host 尺寸、鼠标坐标、draw/update 指标且数值持续刷新。"),
+                new RuntimeTestCase(
+                        "HOST-004",
+                        RUNTIME_HOST_GROUP,
+                        "GL-backed render context",
+                        "运行时按钮会校验标准背景、边框、文本和图片占位结构；GL 状态污染需游戏内人工确认。",
+                        "进入 RuntimeHost 二级页后点击 `执行自动测试`；观察标准绘制和自定义绘制；需要时点击人工通过或人工失败。",
+                        "预期结果：标准背景、边框、文本、图片和自定义绘制都可见，无 GL 状态污染。"),
+                new RuntimeTestCase(
+                        "HOST-005",
+                        RUNTIME_HOST_GROUP,
+                        "HUD 纯显示层与交互层",
+                        "运行时按钮会校验 HUD 样例说明结构，真实 HUD 层级需要游戏内人工确认。",
+                        "进入 RuntimeHost 二级页后点击 `执行自动测试`；打开容器界面观察 HUD 显隐和交互；需要时点击人工通过或人工失败。",
+                        "预期结果：纯 HUD 在容器界面中隐藏，交互 HUD 可接收点击和键盘焦点。"),
+                new RuntimeTestCase(
+                        "NET-001",
+                        REMOTE_NET_GROUP,
+                        "Channel C2S/S2C 往返",
+                        "运行时按钮会读取当前传输模式并保留往返人工入口，不伪造服务端响应。",
+                        "进入 RemoteNet 二级页后点击 `执行自动测试`；在联机或内置服务端环境执行往返；需要时点击人工通过或人工失败。",
+                        "预期结果：点击执行后显示 `通过：Channel 往返完成`。"),
+                new RuntimeTestCase(
+                        "NET-002",
+                        REMOTE_NET_GROUP,
+                        "C2S 分片与重组",
+                        "运行时按钮会展示 32KB 以上分片边界，真实重组需服务端链路确认。",
+                        "进入 RemoteNet 二级页后点击 `执行自动测试`；发送大消息并观察长度；需要时点击人工通过或人工失败。",
+                        "预期结果：超过 32KB 的消息成功分片重组，结果显示原始长度一致。"),
+                new RuntimeTestCase(
+                        "NET-003",
+                        REMOTE_NET_GROUP,
+                        "Fetch 成功、错误、超时、取消、限流",
+                        "运行时按钮会展示 Fetch 五态操作入口，真实状态码需服务端 endpoint 确认。",
+                        "进入 RemoteNet 二级页后点击 `执行自动测试`；依次触发五个 Fetch 按钮；需要时点击人工通过或人工失败。",
+                        "预期结果：五个按钮分别显示 200、500、timeout、cancelled、429。"),
+                new RuntimeTestCase(
+                        "NET-004",
+                        REMOTE_NET_GROUP,
+                        "Stream 大内容下载",
+                        "运行时按钮会展示下载进度结构，真实大内容校验需服务端 stream 确认。",
+                        "进入 RemoteNet 二级页后点击 `执行自动测试`；观察下载进度递增；需要时点击人工通过或人工失败。",
+                        "预期结果：下载进度递增到 100%，最终校验大小通过。"),
+                new RuntimeTestCase(
+                        "NET-005",
+                        REMOTE_NET_GROUP,
+                        "Store snapshot/delta/player store",
+                        "运行时按钮会展示 Store 视图结构，真实 snapshot/delta 需服务端推送确认。",
+                        "进入 RemoteNet 二级页后点击 `执行自动测试`；观察 Store 视图更新；需要时点击人工通过或人工失败。",
+                        "预期结果：Store 视图按服务端推送更新，玩家定向 Store 只影响当前玩家。")));
     }
 
     /**
@@ -610,7 +794,7 @@ public final class UiTestDocumentPageController extends DocumentPageController {
         appendMetricCard(document, grid, "二级页数量", String.valueOf(TEST_GROUPS.size()));
         section.append(grid);
         appendPlanItem(document, section, "运行时卡片不再直接放在首页；首页只显示 DOM、CSS、Layout、Paint、Input、Controls、TextFont、Animation、RuntimeHost、RemoteNet 二级入口。");
-        appendPlanItem(document, section, "DOM / CSS / Layout / Paint / Input 二级页各已接入 5 张运行时卡片；后续类型页按同一契约分批恢复。");
+        appendPlanItem(document, section, "DOM / CSS / Layout / Paint / Input / Controls / TextFont / Animation / RuntimeHost / RemoteNet 二级页均已接入 5 张运行时卡片。");
         root.append(section);
     }
 
@@ -1002,6 +1186,12 @@ public final class UiTestDocumentPageController extends DocumentPageController {
         }
         if (testCase.getGroup() == INPUT_GROUP) {
             appendInputGroupRuntimeDemo(document, parent, testCase);
+            return;
+        }
+        if (testCase.getGroup() == CONTROLS_GROUP || testCase.getGroup() == TEXT_FONT_GROUP
+                || testCase.getGroup() == ANIMATION_GROUP || testCase.getGroup() == RUNTIME_HOST_GROUP
+                || testCase.getGroup() == REMOTE_NET_GROUP) {
+            appendRemainingGroupRuntimeDemo(document, parent, testCase);
         }
     }
 
@@ -1482,6 +1672,159 @@ public final class UiTestDocumentPageController extends DocumentPageController {
     }
 
     /**
+     * 追加后续运行时分组的通用演示区域。
+     *
+     * @param document 文档实例
+     * @param parent 父元素
+     * @param testCase 用例模型
+     */
+    private void appendRemainingGroupRuntimeDemo(UiDocument document, ElementNode parent, RuntimeTestCase testCase) {
+        ElementNode demo = createRuntimeDemoContainer(document);
+        ElementNode row = createRuntimeDemoRow(document);
+        if ("CTRL-001".equals(testCase.getId())) {
+            DocumentButtonControl enabled = new DocumentButtonControl(document, "enabled +1");
+            DocumentButtonControl disabled = new DocumentButtonControl(document, "disabled no-op")
+                    .setEnabled(false);
+            row.append(enabled.getElement()).append(disabled.getElement());
+            demo.append(row);
+            TextNode summary = appendDemoSummary(document, demo, "button action：未执行");
+            testCase.setElementDemo(row, summary, enabled.getElement(), disabled.getElement());
+        } else if ("CTRL-002".equals(testCase.getId())) {
+            DocumentTextInputControl input = new DocumentTextInputControl(document)
+                    .setPlaceholder("输入 value")
+                    .setText("alpha");
+            input.getElement().style().setWidth(UiStyleLength.px(170));
+            row.append(input.getElement()).append(createDemoPanel(document, "selection/caret 人工观察", 0xFF334155));
+            demo.append(row);
+            TextNode summary = appendDemoSummary(document, demo, "text input value：未执行");
+            testCase.setElementDemo(row, summary, input.getElement());
+        } else if ("CTRL-003".equals(testCase.getId())) {
+            DocumentTextInputControl password = new DocumentTextInputControl(document)
+                    .setPasswordMaskCharacter('*')
+                    .setType(DocumentInputType.PASSWORD)
+                    .setText("secret");
+            password.getElement().style().setWidth(UiStyleLength.px(150));
+            row.append(password.getElement()).append(createDemoPanel(document, "真实 value 长度=6", 0xFF334155));
+            demo.append(row);
+            TextNode summary = appendDemoSummary(document, demo, "password：未执行");
+            testCase.setElementDemo(row, summary, password.getElement());
+        } else if ("CTRL-004".equals(testCase.getId())) {
+            DocumentTextInputControl number = new DocumentTextInputControl(document)
+                    .setType(DocumentInputType.NUMBER)
+                    .setText("12bad.5e+2");
+            number.getElement().style().setWidth(UiStyleLength.px(150));
+            row.append(number.getElement()).append(createDemoPanel(document, "step=0.5 人工调整", 0xFF334155));
+            demo.append(row);
+            TextNode summary = appendDemoSummary(document, demo, "number input：未执行");
+            testCase.setElementDemo(row, summary, number.getElement());
+        } else if ("CTRL-005".equals(testCase.getId())) {
+            DocumentTextAreaControl textArea = new DocumentTextAreaControl(document)
+                    .setText("逻辑行一\n很长的逻辑行需要在窄容器内软换行");
+            textArea.getElement().style()
+                    .setWidth(UiStyleLength.px(210))
+                    .setHeight(UiStyleLength.px(64));
+            row.append(textArea.getElement()).append(createDemoPanel(document, "value 只含真实换行", 0xFF334155));
+            demo.append(row);
+            TextNode summary = appendDemoSummary(document, demo, "textarea：未执行");
+            testCase.setElementDemo(row, summary, textArea.getElement());
+        } else if ("TEXT-001".equals(testCase.getId())) {
+            ElementNode raw = createDemoPanel(document, "UILIB_RAW ", 0xFF1E3A8A);
+            raw.appendText("§a原始字符", TextContentMode.UILIB_RAW);
+            row.append(raw);
+            demo.append(row);
+            TextNode summary = appendDemoSummary(document, demo, "raw text mode：未执行");
+            testCase.setElementDemo(row, summary, raw);
+        } else if ("TEXT-002".equals(testCase.getId())) {
+            ElementNode formatted = createDemoPanel(document, "MC_FORMATTED ", 0xFF065F46);
+            formatted.appendText("§a绿色", TextContentMode.MINECRAFT_FORMATTED);
+            row.append(formatted);
+            demo.append(row);
+            TextNode summary = appendDemoSummary(document, demo, "formatted text mode：未执行");
+            testCase.setElementDemo(row, summary, formatted);
+        } else if ("TEXT-003".equals(testCase.getId())) {
+            row.append(createDemoPanel(document, "中文 mixed baseline", 0xFF7C3AED))
+                    .append(createDemoPanel(document, "line-height 标尺", 0xFF334155));
+            demo.append(row);
+            TextNode summary = appendDemoSummary(document, demo, "文本测量：未执行");
+            testCase.setElementDemo(row, summary);
+        } else if ("TEXT-004".equals(testCase.getId())) {
+            row.append(createDemoPanel(document, "fallback 样例：汉字与缺字", 0xFFB45309));
+            demo.append(row);
+            TextNode summary = appendDemoSummary(document, demo, "字体 fallback：未执行");
+            testCase.setElementDemo(row, summary);
+        } else if ("TEXT-005".equals(testCase.getId())) {
+            row.append(createDemoPanel(document, "font epoch=" + fontEpoch, 0xFF334155))
+                    .append(createDemoPanel(document, "reload debounce", 0xFF1E3A8A));
+            demo.append(row);
+            TextNode summary = appendDemoSummary(document, demo, "font reload：未执行");
+            testCase.setElementDemo(row, summary);
+        } else if ("ANIM-001".equals(testCase.getId())) {
+            ElementNode sample = createDemoPanel(document, "opacity transition", 0xFF2563EB);
+            sample.style()
+                    .setOpacity(0.65F)
+                    .setTransition(DocumentAnimationProperty.OPACITY, 120);
+            row.append(sample);
+            demo.append(row);
+            TextNode summary = appendDemoSummary(document, demo, "transition：未执行");
+            testCase.setElementDemo(row, summary, sample);
+        } else if ("ANIM-002".equals(testCase.getId())) {
+            ElementNode sample = createDemoPanel(document, "per-property", 0xFF7C3AED);
+            sample.style().setTransitions(
+                    DocumentTransitionSpec.ofMillis(DocumentAnimationProperty.TEXT_COLOR, 80),
+                    DocumentTransitionSpec.ofMillis(DocumentAnimationProperty.TRANSLATE_X, 160, 20,
+                            DocumentAnimationTimingFunction.EASE_OUT));
+            row.append(sample);
+            demo.append(row);
+            TextNode summary = appendDemoSummary(document, demo, "per-property transition：未执行");
+            testCase.setElementDemo(row, summary, sample);
+        } else if ("ANIM-003".equals(testCase.getId())) {
+            ElementNode sample = createDemoPanel(document, "keyframes path", 0xFF059669);
+            sample.style()
+                    .setAnimationName("runtime-path")
+                    .setAnimationDurationMillis(300)
+                    .setAnimationFillMode(DocumentAnimationFillMode.FORWARDS)
+                    .setTransform(UiTransform.of(40.0F, 0.0F, 1.0F, 1.0F, 0.0F));
+            row.append(sample);
+            demo.append(row);
+            TextNode summary = appendDemoSummary(document, demo, "keyframes：未执行");
+            testCase.setElementDemo(row, summary, sample);
+        } else if ("ANIM-004".equals(testCase.getId())) {
+            ElementNode sample = createDemoPanel(document, "delay/duration/iteration", 0xFFB45309);
+            sample.style()
+                    .setAnimationName("runtime-loop")
+                    .setAnimationDelayMillis(100)
+                    .setAnimationDurationMillis(200)
+                    .setAnimationIterationCount(3);
+            row.append(sample);
+            demo.append(row);
+            TextNode summary = appendDemoSummary(document, demo, "animation timing：未执行");
+            testCase.setElementDemo(row, summary, sample);
+        } else if ("ANIM-005".equals(testCase.getId())) {
+            ElementNode normal = createAnimationDirectionSample(document, "normal", UiAnimationDirection.NORMAL);
+            ElementNode reverse = createAnimationDirectionSample(document, "reverse", UiAnimationDirection.REVERSE);
+            ElementNode alternate = createAnimationDirectionSample(document, "alternate", UiAnimationDirection.ALTERNATE);
+            row.append(normal).append(reverse).append(alternate);
+            demo.append(row);
+            TextNode summary = appendDemoSummary(document, demo, "animation direction：未执行");
+            testCase.setElementDemo(row, summary, normal, reverse, alternate);
+        } else if (testCase.getGroup() == RUNTIME_HOST_GROUP) {
+            row.append(createDemoPanel(document, testCase.getId() + " 宿主状态", 0xFF1E3A8A))
+                    .append(createDemoPanel(document, "人工确认运行时", 0xFF334155));
+            demo.append(row);
+            TextNode summary = appendDemoSummary(document, demo, testCase.getId() + "：未执行");
+            testCase.setElementDemo(row, summary);
+        } else if (testCase.getGroup() == REMOTE_NET_GROUP) {
+            row.append(createDemoPanel(document, testCase.getId() + " 网络入口", 0xFF065F46))
+                    .append(createDemoPanel(document, "transport="
+                            + NetTransportFactory.resolveName(Config.netTransport), 0xFF334155));
+            demo.append(row);
+            TextNode summary = appendDemoSummary(document, demo, testCase.getId() + "：未执行");
+            testCase.setElementDemo(row, summary);
+        }
+        parent.append(demo);
+    }
+
+    /**
      * 追加运行时操作按钮。
      *
      * @param document 文档实例
@@ -1747,6 +2090,25 @@ public final class UiTestDocumentPageController extends DocumentPageController {
     }
 
     /**
+     * 创建动画方向演示块。
+     *
+     * @param document 文档实例
+     * @param label 文本
+     * @param direction 动画方向
+     * @return 演示块
+     */
+    private ElementNode createAnimationDirectionSample(UiDocument document, String label,
+            UiAnimationDirection direction) {
+        ElementNode sample = createDemoPanel(document, label, 0xFF1F2937);
+        sample.style()
+                .setAnimationName("runtime-direction")
+                .setAnimationDurationMillis(240)
+                .setAnimationIterationCount(2)
+                .setAnimationDirection(direction);
+        return sample;
+    }
+
+    /**
      * 追加演示摘要。
      *
      * @param document 文档实例
@@ -1850,6 +2212,26 @@ public final class UiTestDocumentPageController extends DocumentPageController {
             }
             if (testCase.getGroup() == INPUT_GROUP) {
                 applyRuntimeTestResult(testCase, executeInputGroupRuntimeTest(testCase));
+                return;
+            }
+            if (testCase.getGroup() == CONTROLS_GROUP) {
+                applyRuntimeTestResult(testCase, executeControlsGroupRuntimeTest(testCase));
+                return;
+            }
+            if (testCase.getGroup() == TEXT_FONT_GROUP) {
+                applyRuntimeTestResult(testCase, executeTextFontGroupRuntimeTest(testCase));
+                return;
+            }
+            if (testCase.getGroup() == ANIMATION_GROUP) {
+                applyRuntimeTestResult(testCase, executeAnimationGroupRuntimeTest(testCase));
+                return;
+            }
+            if (testCase.getGroup() == RUNTIME_HOST_GROUP) {
+                applyRuntimeTestResult(testCase, executeRuntimeHostGroupRuntimeTest(testCase));
+                return;
+            }
+            if (testCase.getGroup() == REMOTE_NET_GROUP) {
+                applyRuntimeTestResult(testCase, executeRemoteNetGroupRuntimeTest(testCase));
                 return;
             }
             applyRuntimeTestResult(testCase, RuntimeTestResult.failed("未知用例，未执行。", "没有匹配的执行器"));
@@ -2461,6 +2843,288 @@ public final class UiTestDocumentPageController extends DocumentPageController {
     }
 
     /**
+     * 执行 Controls 分组运行时断言。
+     *
+     * @param testCase 用例模型
+     * @return 运行时结果
+     */
+    private RuntimeTestResult executeControlsGroupRuntimeTest(RuntimeTestCase testCase) {
+        if ("CTRL-001".equals(testCase.getId())) {
+            final int[] actionCount = new int[] {0};
+            DocumentButtonControl enabled = new DocumentButtonControl(document, "enabled");
+            enabled.setActionHandler(new DocumentButtonActionHandler() {
+                @Override
+                public void onAction(DocumentButtonActionEvent event) {
+                    actionCount[0]++;
+                }
+            });
+            DocumentButtonControl disabled = new DocumentButtonControl(document, "disabled")
+                    .setEnabled(false)
+                    .setActionHandler(new DocumentButtonActionHandler() {
+                        @Override
+                        public void onAction(DocumentButtonActionEvent event) {
+                            actionCount[0]++;
+                        }
+                    });
+            enabled.getElement().getClickHandler().onClick(new DocumentElementClickEvent(enabled.getElement(),
+                    enabled.getElement(), 0, 0, 0, 1L));
+            disabled.getElement().getClickHandler().onClick(new DocumentElementClickEvent(disabled.getElement(),
+                    disabled.getElement(), 0, 0, 0, 2L));
+            boolean passed = actionCount[0] == 1 && enabled.isEnabled() && !disabled.isEnabled();
+            String summary = "button action count=" + actionCount[0] + "；disabledEnabled=" + disabled.isEnabled();
+            testCase.updateDemoSummary(summary);
+            return passed ? RuntimeTestResult.passed(summary)
+                    : RuntimeTestResult.failed(summary, "button enabled/disabled 动作计数异常");
+        }
+        if ("CTRL-002".equals(testCase.getId())) {
+            DocumentTextInputControl input = new DocumentTextInputControl(document)
+                    .setText("alpha-beta");
+            boolean valuePassed = "alpha-beta".equals(input.getText()) && input.getType() == DocumentInputType.TEXT;
+            String summary = "text input value=" + input.getText() + "；type=" + input.getType()
+                    + "；selection/caret=人工确认";
+            testCase.updateDemoSummary(summary);
+            return valuePassed ? RuntimeTestResult.running(summary)
+                    : RuntimeTestResult.failed(summary, "文本输入 value 或类型异常");
+        }
+        if ("CTRL-003".equals(testCase.getId())) {
+            DocumentTextInputControl password = new DocumentTextInputControl(document)
+                    .setPasswordMaskCharacter('*')
+                    .setType(DocumentInputType.PASSWORD)
+                    .setText("secret");
+            String visibleText = password.getElement().getTextContent();
+            boolean passed = password.getType() == DocumentInputType.PASSWORD
+                    && "secret".equals(password.getText()) && "******".equals(visibleText);
+            String summary = "password valueLength=" + password.getText().length() + "；visible=" + visibleText
+                    + "；type=" + password.getType();
+            testCase.updateDemoSummary(summary);
+            return passed ? RuntimeTestResult.passed(summary)
+                    : RuntimeTestResult.failed(summary, "password 掩码显示或真实值异常");
+        }
+        if ("CTRL-004".equals(testCase.getId())) {
+            DocumentTextInputControl number = new DocumentTextInputControl(document)
+                    .setType(DocumentInputType.NUMBER)
+                    .setText("12bad.5e+2");
+            boolean valueFiltered = "12.5e+2".equals(number.getText()) && number.getType() == DocumentInputType.NUMBER;
+            String summary = "number value=" + number.getText() + "；type=" + number.getType()
+                    + "；step=人工确认";
+            testCase.updateDemoSummary(summary);
+            return valueFiltered ? RuntimeTestResult.running(summary)
+                    : RuntimeTestResult.failed(summary, "number 输入未过滤非法字符");
+        }
+        if ("CTRL-005".equals(testCase.getId())) {
+            DocumentTextAreaControl textArea = new DocumentTextAreaControl(document)
+                    .setText("逻辑行一\n视觉软换行长文本");
+            boolean hasRealNewline = textArea.getText().indexOf('\n') >= 0;
+            String summary = "textarea realNewline=" + hasRealNewline + "；value="
+                    + textArea.getText().replace('\n', '|') + "；softWrap=人工确认";
+            testCase.updateDemoSummary(summary);
+            return hasRealNewline ? RuntimeTestResult.running(summary)
+                    : RuntimeTestResult.failed(summary, "textarea 真实换行丢失");
+        }
+        return RuntimeTestResult.failed("未知 Controls 用例。", "没有匹配的 Controls 执行器");
+    }
+
+    /**
+     * 执行 TextFont 分组运行时断言。
+     *
+     * @param testCase 用例模型
+     * @return 运行时结果
+     */
+    private RuntimeTestResult executeTextFontGroupRuntimeTest(RuntimeTestCase testCase) {
+        if ("TEXT-001".equals(testCase.getId())) {
+            TextNode rawText = document.rawText("§a原始字符");
+            boolean passed = rawText.getTextContentMode() == TextContentMode.UILIB_RAW
+                    && rawText.getText().contains("§a");
+            String summary = "raw mode=" + rawText.getTextContentMode() + "；text=" + rawText.getText();
+            testCase.updateDemoSummary(summary);
+            return passed ? RuntimeTestResult.passed(summary)
+                    : RuntimeTestResult.failed(summary, "raw 文本模式或文本内容异常");
+        }
+        if ("TEXT-002".equals(testCase.getId())) {
+            TextNode formattedText = document.minecraftText("§a绿色");
+            boolean passed = formattedText.getTextContentMode() == TextContentMode.MINECRAFT_FORMATTED
+                    && formattedText.getText().length() == 4;
+            String summary = "formatted mode=" + formattedText.getTextContentMode()
+                    + "；rawLength=" + formattedText.getText().length();
+            testCase.updateDemoSummary(summary);
+            return passed ? RuntimeTestResult.passed(summary)
+                    : RuntimeTestResult.failed(summary, "Minecraft 格式文本模式异常");
+        }
+        if ("TEXT-003".equals(testCase.getId())) {
+            int width = textMeasureService.getStringWidth("中英 mixed");
+            int lineHeight = textMeasureService.getLineHeight();
+            boolean passed = width > 0 && lineHeight > 0;
+            String summary = "text width=" + width + "；lineHeight=" + lineHeight + "；baseline=人工确认";
+            testCase.updateDemoSummary(summary);
+            return passed ? RuntimeTestResult.passed(summary)
+                    : RuntimeTestResult.failed(summary, "文本测量宽度或行高异常");
+        }
+        if ("TEXT-004".equals(testCase.getId())) {
+            int width = textMeasureService.getStringWidth("汉字 fallback");
+            boolean structurePassed = width > 0;
+            String summary = "fallback sampleWidth=" + width + "；字体 fallback=游戏内人工确认";
+            testCase.updateDemoSummary(summary);
+            return structurePassed ? RuntimeTestResult.running(summary)
+                    : RuntimeTestResult.failed(summary, "fallback 样例测量异常");
+        }
+        if ("TEXT-005".equals(testCase.getId())) {
+            String summary = "font epoch=" + fontEpoch + "；reload debounce=游戏内人工确认";
+            testCase.updateDemoSummary(summary);
+            return fontEpoch >= 0 ? RuntimeTestResult.running(summary)
+                    : RuntimeTestResult.failed(summary, "font epoch 异常");
+        }
+        return RuntimeTestResult.failed("未知 TextFont 用例。", "没有匹配的 TextFont 执行器");
+    }
+
+    /**
+     * 执行 Animation 分组运行时断言。
+     *
+     * @param testCase 用例模型
+     * @return 运行时结果
+     */
+    private RuntimeTestResult executeAnimationGroupRuntimeTest(RuntimeTestCase testCase) {
+        if ("ANIM-001".equals(testCase.getId())) {
+            ElementNode sample = testCase.getDemoElement(0);
+            ComputedStyle style = UiStyleResolver.compute(sample);
+            boolean declared = style.getTransitionProperties().contains(DocumentAnimationProperty.OPACITY)
+                    && style.getTransitionDurationNanos(DocumentAnimationProperty.OPACITY) == 120_000_000L;
+            String summary = "transition properties=" + style.getTransitionProperties()
+                    + "；duration=" + formatDurationMillis(style.getTransitionDurationNanos(
+                            DocumentAnimationProperty.OPACITY))
+                    + "；事件日志=人工确认";
+            testCase.updateDemoSummary(summary);
+            return declared ? RuntimeTestResult.running(summary)
+                    : RuntimeTestResult.failed(summary, "transition 声明未生效");
+        }
+        if ("ANIM-002".equals(testCase.getId())) {
+            ElementNode sample = testCase.getDemoElement(0);
+            ComputedStyle style = UiStyleResolver.compute(sample);
+            List<DocumentTransitionSpec> specs = style.getTransitionSpecs();
+            boolean passed = specs.size() == 2
+                    && style.getTransitionDurationNanos(DocumentAnimationProperty.TEXT_COLOR) == 80_000_000L
+                    && style.getTransitionDurationNanos(DocumentAnimationProperty.TRANSLATE_X) == 160_000_000L;
+            String summary = "per-property specs=" + specs.size()
+                    + "；textColor=" + formatDurationMillis(style.getTransitionDurationNanos(
+                            DocumentAnimationProperty.TEXT_COLOR))
+                    + "；translateX=" + formatDurationMillis(style.getTransitionDurationNanos(
+                            DocumentAnimationProperty.TRANSLATE_X));
+            testCase.updateDemoSummary(summary);
+            return passed ? RuntimeTestResult.passed(summary)
+                    : RuntimeTestResult.failed(summary, "per-property transition 时长异常");
+        }
+        if ("ANIM-003".equals(testCase.getId())) {
+            ElementNode sample = testCase.getDemoElement(0);
+            ComputedStyle style = UiStyleResolver.compute(sample);
+            boolean declared = "runtime-path".equals(style.getAnimationName())
+                    && style.getAnimationDurationNanos() == 300_000_000L
+                    && !style.getTransform().isIdentity();
+            String summary = "animationName=" + style.getAnimationName()
+                    + "；duration=" + formatDurationMillis(style.getAnimationDurationNanos())
+                    + "；" + formatTransformSummary(style.getTransform()) + "；路径=人工确认";
+            testCase.updateDemoSummary(summary);
+            return declared ? RuntimeTestResult.running(summary)
+                    : RuntimeTestResult.failed(summary, "keyframes 结构声明异常");
+        }
+        if ("ANIM-004".equals(testCase.getId())) {
+            ElementNode sample = testCase.getDemoElement(0);
+            ComputedStyle style = UiStyleResolver.compute(sample);
+            boolean passed = style.getAnimationDelayNanos() == 100_000_000L
+                    && style.getAnimationDurationNanos() == 200_000_000L
+                    && style.getAnimationIterationCount() == 3;
+            String summary = "delay=" + formatDurationMillis(style.getAnimationDelayNanos())
+                    + "；duration=" + formatDurationMillis(style.getAnimationDurationNanos())
+                    + "；iteration=" + style.getAnimationIterationCount();
+            testCase.updateDemoSummary(summary);
+            return passed ? RuntimeTestResult.passed(summary)
+                    : RuntimeTestResult.failed(summary, "animation delay/duration/iteration 计算异常");
+        }
+        if ("ANIM-005".equals(testCase.getId())) {
+            UiAnimationDirection normal = UiStyleResolver.compute(testCase.getDemoElement(0)).getAnimationDirection();
+            UiAnimationDirection reverse = UiStyleResolver.compute(testCase.getDemoElement(1)).getAnimationDirection();
+            UiAnimationDirection alternate = UiStyleResolver.compute(testCase.getDemoElement(2)).getAnimationDirection();
+            boolean declared = normal == UiAnimationDirection.NORMAL && reverse == UiAnimationDirection.REVERSE
+                    && alternate == UiAnimationDirection.ALTERNATE;
+            String summary = "directions=" + normal + "," + reverse + "," + alternate
+                    + "；方向视觉=人工确认";
+            testCase.updateDemoSummary(summary);
+            return declared ? RuntimeTestResult.running(summary)
+                    : RuntimeTestResult.failed(summary, "animation direction 声明异常");
+        }
+        return RuntimeTestResult.failed("未知 Animation 用例。", "没有匹配的 Animation 执行器");
+    }
+
+    /**
+     * 执行 RuntimeHost 分组运行时断言。
+     *
+     * @param testCase 用例模型
+     * @return 运行时结果
+     */
+    private RuntimeTestResult executeRuntimeHostGroupRuntimeTest(RuntimeTestCase testCase) {
+        if ("HOST-001".equals(testCase.getId())) {
+            String summary = "controller=ready；rootScroll=" + htmlLikeDocumentWidget.isViewportRootScrollingEnabled()
+                    + "；聊天命令延后开屏=人工确认";
+            testCase.updateDemoSummary(summary);
+            return RuntimeTestResult.running(summary);
+        }
+        if ("HOST-002".equals(testCase.getId())) {
+            boolean rootScroll = htmlLikeDocumentWidget.isViewportRootScrollingEnabled();
+            String summary = "viewport=" + runtimeView.getHostWidth() + "x" + runtimeView.getHostHeight()
+                    + "；rootScroll=" + rootScroll + "；resize=人工确认";
+            testCase.updateDemoSummary(summary);
+            return rootScroll ? RuntimeTestResult.running(summary)
+                    : RuntimeTestResult.failed(summary, "root 滚动配置异常");
+        }
+        if ("HOST-003".equals(testCase.getId())) {
+            UiRuntimeStats stats = runtimeView.getUiRuntimeStats();
+            String summary = stats == null ? "runtime stats=none"
+                    : "runtime stats frame=" + formatMs(stats.getFrameTimeMs()) + "ms；render="
+                            + formatMs(stats.getRenderTimeMs()) + "ms";
+            testCase.updateDemoSummary(summary);
+            return stats != null ? RuntimeTestResult.passed(summary)
+                    : RuntimeTestResult.failed(summary, "runtime stats 缺失");
+        }
+        if ("HOST-004".equals(testCase.getId())) {
+            String summary = "GL-backed render context 结构已展示；adapter=" + runtimeAdapterSummary
+                    + "；GL 状态=游戏内人工确认";
+            testCase.updateDemoSummary(summary);
+            return RuntimeTestResult.running(summary);
+        }
+        if ("HOST-005".equals(testCase.getId())) {
+            String summary = "HUD layer sample=ready；纯显示层/交互层=游戏内人工确认";
+            testCase.updateDemoSummary(summary);
+            return RuntimeTestResult.running(summary);
+        }
+        return RuntimeTestResult.failed("未知 RuntimeHost 用例。", "没有匹配的 RuntimeHost 执行器");
+    }
+
+    /**
+     * 执行 RemoteNet 分组运行时入口检查。
+     *
+     * @param testCase 用例模型
+     * @return 运行时结果
+     */
+    private RuntimeTestResult executeRemoteNetGroupRuntimeTest(RuntimeTestCase testCase) {
+        String transport = NetTransportFactory.resolveName(Config.netTransport);
+        String summary;
+        if ("NET-001".equals(testCase.getId())) {
+            summary = "Channel 往返入口已展示；transport=" + transport + "；服务端响应=人工确认";
+        } else if ("NET-002".equals(testCase.getId())) {
+            summary = "chunk payloadBytes=32769；transport=" + transport + "；分片重组=人工确认";
+        } else if ("NET-003".equals(testCase.getId())) {
+            summary = "fetch states=[200,500,timeout,cancelled,429]；transport=" + transport
+                    + "；endpoint=人工确认";
+        } else if ("NET-004".equals(testCase.getId())) {
+            summary = "stream progress=0..100；transport=" + transport + "；大内容下载=人工确认";
+        } else if ("NET-005".equals(testCase.getId())) {
+            summary = "store modes=[snapshot,delta,player]；transport=" + transport + "；服务端推送=人工确认";
+        } else {
+            return RuntimeTestResult.failed("未知 RemoteNet 用例。", "没有匹配的 RemoteNet 执行器");
+        }
+        testCase.updateDemoSummary(summary);
+        return RuntimeTestResult.running(summary);
+    }
+
+    /**
      * 创建 Input 自动断言用的独立 HTML-like widget。
      *
      * @param inputDocument 独立测试文档
@@ -2850,6 +3514,16 @@ public final class UiTestDocumentPageController extends DocumentPageController {
      */
     private String formatMs(double value) {
         return String.format(java.util.Locale.ROOT, "%.2f", Double.valueOf(value));
+    }
+
+    /**
+     * 格式化纳秒时长为毫秒摘要。
+     *
+     * @param nanos 纳秒时长
+     * @return 毫秒摘要
+     */
+    private String formatDurationMillis(long nanos) {
+        return String.format(java.util.Locale.ROOT, "%.0fms", Double.valueOf(nanos / 1_000_000.0D));
     }
 
     /**

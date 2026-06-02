@@ -62,7 +62,7 @@ Flex、block、positioned 定位与尺寸计算。
 
 ---
 
-## 滚动/交互类（合并，5 条）
+## 滚动/交互类（合并，6 条）
 
 滚动条、hover 状态、焦点与拖拽。
 
@@ -71,6 +71,7 @@ Flex、block、positioned 定位与尺寸计算。
 - [`ERROR-20260427-html-scrollbar-missing.md`](ERROR-20260427-html-scrollbar-missing.md) — 根视口滚动后缺少可见滚动条
 - [`ERROR-20260509-html-hover-stale-after-scroll.md`](ERROR-20260509-html-hover-stale-after-scroll.md) — 滚动后 hover 状态未同步更新
 - [`ERROR-20260518-html-drag-right-bottom-anchor-jump.md`](ERROR-20260518-html-drag-right-bottom-anchor-jump.md) — 浮窗首次拖拽时因 right/bottom 锚点跳位
+- [`ERROR-20260602-textarea-stale-visual-line-cache.md`](ERROR-20260602-textarea-stale-visual-line-cache.md) — textarea 删除换行后复用过期视觉行缓存导致运行时崩溃
 
 **共性教训**：滚动偏移变化后必须重新命中测试更新 hover；拖拽起始必须先将锚点归一化为 left/top。
 

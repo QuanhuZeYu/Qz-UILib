@@ -792,6 +792,9 @@ public final class DocumentTextAreaControl {
         if (visualLine == null) {
             return false;
         }
+        if (visualLine.logicalLineIndex < 0 || visualLine.logicalLineIndex >= logicalLines.size()) {
+            return false;
+        }
         LogicalLine logicalLine = logicalLines.get(visualLine.logicalLineIndex);
         return visualLine.visualStartIndex > logicalLine.startIndex || visualLine.visualEndIndex < logicalLine.endIndex;
     }

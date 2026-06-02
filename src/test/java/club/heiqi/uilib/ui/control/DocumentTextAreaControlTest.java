@@ -85,6 +85,36 @@ public class DocumentTextAreaControlTest {
     }
 
     /**
+     * 验证删除换行后会丢弃旧视觉行缓存，避免光标滚动复用过期逻辑行索引。
+     */
+    @Test
+    public void shouldDropStaleVisualLinesWhenDeletingLineBreak() {
+        UiDocument document = UiDocument.create();
+        ElementNode root = document.getRootElement();
+        DocumentTextAreaControl textAreaControl = new DocumentTextAreaControl(document);
+        textAreaControl.setText("A\nB");
+        root.style()
+                .setWidth(UiStyleLength.px(160))
+                .setHeight(UiStyleLength.px(80));
+        textAreaControl.getElement().style()
+                .setWidth(UiStyleLength.px(120))
+                .setHeight(UiStyleLength.px(54));
+        root.append(textAreaControl.getElement());
+        HtmlLikeDocumentWidget widget = new HtmlLikeDocumentWidget(document, 160, 80,
+                new DeterministicTextMeasureService());
+        widget.applyLayoutBounds(0, 0, 160, 80);
+
+        widget.onFocusTraversalEntered(false);
+        widget.render(new ControlTestRenderContext(160, 80));
+        widget.onKeyEvent(new UiKeyEvent(Keyboard.KEY_LEFT, 0, 0, UiKeyEvent.Action.PRESSED, false, false, false,
+                false, 1L));
+        widget.onKeyEvent(new UiKeyEvent(Keyboard.KEY_BACK, 0, 0, UiKeyEvent.Action.PRESSED, false, false, false,
+                false, 2L));
+
+        Assert.assertEquals("AB", textAreaControl.getText());
+    }
+
+    /**
      * 验证多行内容在聚焦时会滚动到当前光标行附近。
      */
     @Test

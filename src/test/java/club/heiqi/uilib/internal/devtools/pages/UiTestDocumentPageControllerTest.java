@@ -50,6 +50,9 @@ public class UiTestDocumentPageControllerTest {
         Assert.assertTrue(containsText(texts, "Layout 布局与尺寸语义"));
         Assert.assertTrue(containsText(texts, "Paint 绘制、命中与视觉语义"));
         Assert.assertTrue(containsText(texts, "Input 输入与事件语义"));
+        Assert.assertTrue(containsText(texts, "Controls 控件与表单语义"));
+        Assert.assertTrue(containsText(texts, "TextFont 文本、字体与国际化语义"));
+        Assert.assertTrue(containsText(texts, "Animation 动画与 Transition 语义"));
         Assert.assertTrue(containsText(texts, "RuntimeHost 宿主运行时语义"));
         Assert.assertTrue(containsText(texts, "RemoteNet 远程、配置与网络语义"));
         Assert.assertTrue(containsText(texts, "打开 DOM 二级页"));
@@ -217,6 +220,71 @@ public class UiTestDocumentPageControllerTest {
                 "wheel 返回 true 日志=[child:AT_TARGET:120]；scrollTop=36；consumed=true"));
         Assert.assertTrue(containsText(inputTexts,
                 "pointer 日志=[down:AT_TARGET, up:AT_TARGET, click:AT_TARGET"));
+    }
+
+    /**
+     * 验证后续恢复的所有运行时二级页都能展示卡片并执行入口断言。
+     */
+    @Test
+    public void shouldExecuteRemainingRuntimeCaseSubPages() {
+        TestFixture fixture = new TestFixture();
+
+        fixture.controller.configureDocumentPage();
+        fixture.controller.buildDocument();
+        clickButtonByLabel(fixture.controller.getHtmlLikeDocumentWidget(), "打开 CTRL 二级页", 0);
+        for (int index = 0; index < 5; index++) {
+            clickButtonByLabel(fixture.controller.getHtmlLikeDocumentWidget(), "执行自动测试", index);
+        }
+        List<String> controlTexts = collectDocumentTexts(fixture.controller.getHtmlLikeDocumentWidget());
+        Assert.assertTrue(containsText(controlTexts, "CTRL-001"));
+        Assert.assertTrue(containsText(controlTexts, "CTRL-005"));
+        Assert.assertTrue(containsText(controlTexts, "button action count=1"));
+        Assert.assertTrue(containsText(controlTexts, "password valueLength=6"));
+        Assert.assertTrue(containsText(controlTexts, "textarea realNewline=true"));
+
+        clickButtonByLabel(fixture.controller.getHtmlLikeDocumentWidget(), "TEXT", 0);
+        for (int index = 0; index < 5; index++) {
+            clickButtonByLabel(fixture.controller.getHtmlLikeDocumentWidget(), "执行自动测试", index);
+        }
+        List<String> textFontTexts = collectDocumentTexts(fixture.controller.getHtmlLikeDocumentWidget());
+        Assert.assertTrue(containsText(textFontTexts, "TEXT-001"));
+        Assert.assertTrue(containsText(textFontTexts, "TEXT-005"));
+        Assert.assertTrue(containsText(textFontTexts, "raw mode=UILIB_RAW"));
+        Assert.assertTrue(containsText(textFontTexts, "formatted mode=MINECRAFT_FORMATTED"));
+        Assert.assertTrue(containsText(textFontTexts, "font epoch=1"));
+
+        clickButtonByLabel(fixture.controller.getHtmlLikeDocumentWidget(), "ANIM", 0);
+        for (int index = 0; index < 5; index++) {
+            clickButtonByLabel(fixture.controller.getHtmlLikeDocumentWidget(), "执行自动测试", index);
+        }
+        List<String> animationTexts = collectDocumentTexts(fixture.controller.getHtmlLikeDocumentWidget());
+        Assert.assertTrue(containsText(animationTexts, "ANIM-001"));
+        Assert.assertTrue(containsText(animationTexts, "ANIM-005"));
+        Assert.assertTrue(containsText(animationTexts, "transition properties=[OPACITY]"));
+        Assert.assertTrue(containsText(animationTexts, "per-property specs=2"));
+        Assert.assertTrue(containsText(animationTexts, "directions=NORMAL,REVERSE,ALTERNATE"));
+
+        clickButtonByLabel(fixture.controller.getHtmlLikeDocumentWidget(), "HOST", 0);
+        for (int index = 0; index < 5; index++) {
+            clickButtonByLabel(fixture.controller.getHtmlLikeDocumentWidget(), "执行自动测试", index);
+        }
+        List<String> hostTexts = collectDocumentTexts(fixture.controller.getHtmlLikeDocumentWidget());
+        Assert.assertTrue(containsText(hostTexts, "HOST-001"));
+        Assert.assertTrue(containsText(hostTexts, "HOST-005"));
+        Assert.assertTrue(containsText(hostTexts, "controller=ready"));
+        Assert.assertTrue(containsText(hostTexts, "runtime stats frame=0.00ms"));
+        Assert.assertTrue(containsText(hostTexts, "HUD layer sample=ready"));
+
+        clickButtonByLabel(fixture.controller.getHtmlLikeDocumentWidget(), "NET", 0);
+        for (int index = 0; index < 5; index++) {
+            clickButtonByLabel(fixture.controller.getHtmlLikeDocumentWidget(), "执行自动测试", index);
+        }
+        List<String> netTexts = collectDocumentTexts(fixture.controller.getHtmlLikeDocumentWidget());
+        Assert.assertTrue(containsText(netTexts, "NET-001"));
+        Assert.assertTrue(containsText(netTexts, "NET-005"));
+        Assert.assertTrue(containsText(netTexts, "transport=vanilla"));
+        Assert.assertTrue(containsText(netTexts, "chunk payloadBytes=32769"));
+        Assert.assertTrue(containsText(netTexts, "fetch states=[200,500,timeout,cancelled,429]"));
     }
 
     /**
