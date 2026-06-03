@@ -59,6 +59,10 @@ public class UiTestDocumentPageControllerTest {
         Assert.assertFalse(containsText(texts, "DOM-001"));
         Assert.assertFalse(containsText(texts, "HTML-like Smoke"));
         Assert.assertFalse(containsText(texts, "Glass Lab"));
+        Assert.assertTrue(containsText(texts, "已接入 13 张运行时卡片"));
+        Assert.assertTrue(containsText(texts, "已接入 15 张运行时卡片"));
+        Assert.assertTrue(containsText(texts, "已接入 16 张运行时卡片"));
+        Assert.assertTrue(containsText(texts, "已接入 10 张运行时卡片"));
     }
 
     /**
@@ -86,12 +90,14 @@ public class UiTestDocumentPageControllerTest {
         Assert.assertTrue(containsText(texts, "DOM-003"));
         Assert.assertTrue(containsText(texts, "DOM-004"));
         Assert.assertTrue(containsText(texts, "DOM-005"));
+        Assert.assertTrue(containsText(texts, "DOM-013"));
         Assert.assertFalse(containsText(texts, "CSS-001"));
         Assert.assertFalse(containsText(texts, "LAYOUT-001"));
         Assert.assertFalse(containsText(texts, "PAINT-001"));
         Assert.assertTrue(containsText(texts, "预期结果：点击执行后 A 节点移动到 B 节点后方"));
         Assert.assertTrue(containsText(texts, "预期结果：点击执行后节点顺序变为 `C, A, B`"));
         Assert.assertTrue(containsText(texts, "预期结果：点击执行后 fragment 内三个元素出现在目标容器"));
+        Assert.assertTrue(containsText(texts, "预期结果：普通链接触发导航记录"));
     }
 
     /**
@@ -294,6 +300,115 @@ public class UiTestDocumentPageControllerTest {
         Assert.assertTrue(containsText(netTexts, "transport=vanilla"));
         Assert.assertTrue(containsText(netTexts, "chunk payloadBytes=32769"));
         Assert.assertTrue(containsText(netTexts, "fetch states=[200,500,timeout,cancelled,429]"));
+    }
+
+    /**
+     * 验证完整运行时矩阵的剩余卡片都能展示并执行到明确状态。
+     */
+    @Test
+    public void shouldExposeAndExecuteFullRuntimeMatrix() {
+        TestFixture fixture = new TestFixture();
+
+        fixture.controller.configureDocumentPage();
+        fixture.controller.buildDocument();
+        clickButtonByLabel(fixture.controller.getHtmlLikeDocumentWidget(), "打开 DOM 二级页", 0);
+        for (int index = 0; index < 13; index++) {
+            clickButtonByLabel(fixture.controller.getHtmlLikeDocumentWidget(), "执行自动测试", index);
+        }
+        List<String> domTexts = collectDocumentTexts(fixture.controller.getHtmlLikeDocumentWidget());
+        Assert.assertTrue(containsText(domTexts, "DOM-013"));
+        Assert.assertTrue(containsText(domTexts, "textContent=textContent 已替换"));
+        Assert.assertTrue(containsText(domTexts, "布尔属性禁用生效=true"));
+        Assert.assertTrue(containsText(domTexts, "待实现缺口：属性选择器"));
+        Assert.assertTrue(containsText(domTexts, "link activations=[https://example.test/dom-013-normal]"));
+
+        clickButtonByLabel(fixture.controller.getHtmlLikeDocumentWidget(), "CSS", 0);
+        for (int index = 0; index < 15; index++) {
+            clickButtonByLabel(fixture.controller.getHtmlLikeDocumentWidget(), "执行自动测试", index);
+        }
+        List<String> cssTexts = collectDocumentTexts(fixture.controller.getHtmlLikeDocumentWidget());
+        Assert.assertTrue(containsText(cssTexts, "CSS-015"));
+        Assert.assertTrue(containsText(cssTexts, "sides marginTop=3.0px"));
+        Assert.assertTrue(containsText(cssTexts, "backgroundImage=true"));
+        Assert.assertTrue(containsText(cssTexts, "cursor=POINTER"));
+
+        clickButtonByLabel(fixture.controller.getHtmlLikeDocumentWidget(), "LAYOUT", 0);
+        for (int index = 0; index < 16; index++) {
+            clickButtonByLabel(fixture.controller.getHtmlLikeDocumentWidget(), "执行自动测试", index);
+        }
+        List<String> layoutTexts = collectDocumentTexts(fixture.controller.getHtmlLikeDocumentWidget());
+        Assert.assertTrue(containsText(layoutTexts, "LAYOUT-016"));
+        Assert.assertTrue(containsText(layoutTexts, "flex row fixed="));
+        Assert.assertTrue(containsText(layoutTexts, "ancestor transform=translate"));
+        Assert.assertTrue(containsText(layoutTexts, "nested scroll overflow=AUTO"));
+
+        clickButtonByLabel(fixture.controller.getHtmlLikeDocumentWidget(), "PAINT", 0);
+        for (int index = 0; index < 9; index++) {
+            clickButtonByLabel(fixture.controller.getHtmlLikeDocumentWidget(), "执行自动测试", index);
+        }
+        List<String> paintTexts = collectDocumentTexts(fixture.controller.getHtmlLikeDocumentWidget());
+        Assert.assertTrue(containsText(paintTexts, "PAINT-009"));
+        Assert.assertTrue(containsText(paintTexts, "top-layer sample position=FIXED"));
+        Assert.assertTrue(containsText(paintTexts, "custom renderer boundary textPresent=true"));
+        Assert.assertTrue(containsText(paintTexts, "hostImage=true"));
+
+        clickButtonByLabel(fixture.controller.getHtmlLikeDocumentWidget(), "INPUT", 0);
+        for (int index = 0; index < 13; index++) {
+            clickButtonByLabel(fixture.controller.getHtmlLikeDocumentWidget(), "执行自动测试", index);
+        }
+        List<String> inputTexts = collectDocumentTexts(fixture.controller.getHtmlLikeDocumentWidget());
+        Assert.assertTrue(containsText(inputTexts, "INPUT-013"));
+        Assert.assertTrue(containsText(inputTexts, "hover/active 日志="));
+        Assert.assertTrue(containsText(inputTexts, "focus 日志=[focusout, focusin, blur, focus]"));
+        Assert.assertTrue(containsText(inputTexts, "keyboard 日志="));
+        Assert.assertTrue(containsText(inputTexts, "drag/drop 事件链"));
+
+        clickButtonByLabel(fixture.controller.getHtmlLikeDocumentWidget(), "CTRL", 0);
+        for (int index = 0; index < 15; index++) {
+            clickButtonByLabel(fixture.controller.getHtmlLikeDocumentWidget(), "执行自动测试", index);
+        }
+        List<String> controlTexts = collectDocumentTexts(fixture.controller.getHtmlLikeDocumentWidget());
+        Assert.assertTrue(containsText(controlTexts, "CTRL-015"));
+        Assert.assertTrue(containsText(controlTexts, "checkbox checked=true"));
+        Assert.assertTrue(containsText(controlTexts, "toggle before=false；after=true"));
+        Assert.assertTrue(containsText(controlTexts, "table rows=2"));
+
+        clickButtonByLabel(fixture.controller.getHtmlLikeDocumentWidget(), "TEXT", 0);
+        for (int index = 0; index < 7; index++) {
+            clickButtonByLabel(fixture.controller.getHtmlLikeDocumentWidget(), "执行自动测试", index);
+        }
+        List<String> textFontTexts = collectDocumentTexts(fixture.controller.getHtmlLikeDocumentWidget());
+        Assert.assertTrue(containsText(textFontTexts, "TEXT-007"));
+        Assert.assertTrue(containsText(textFontTexts, "obfuscated plainWidth="));
+        Assert.assertTrue(containsText(textFontTexts, "trimLength="));
+
+        clickButtonByLabel(fixture.controller.getHtmlLikeDocumentWidget(), "ANIM", 0);
+        for (int index = 0; index < 8; index++) {
+            clickButtonByLabel(fixture.controller.getHtmlLikeDocumentWidget(), "执行自动测试", index);
+        }
+        List<String> animationTexts = collectDocumentTexts(fixture.controller.getHtmlLikeDocumentWidget());
+        Assert.assertTrue(containsText(animationTexts, "ANIM-008"));
+        Assert.assertTrue(containsText(animationTexts, "fillModes=NONE,FORWARDS,BACKWARDS,BOTH"));
+        Assert.assertTrue(containsText(animationTexts, "timing running=true,true"));
+        Assert.assertTrue(containsText(animationTexts, "layoutAnimation=true"));
+
+        clickButtonByLabel(fixture.controller.getHtmlLikeDocumentWidget(), "HOST", 0);
+        for (int index = 0; index < 7; index++) {
+            clickButtonByLabel(fixture.controller.getHtmlLikeDocumentWidget(), "执行自动测试", index);
+        }
+        List<String> hostTexts = collectDocumentTexts(fixture.controller.getHtmlLikeDocumentWidget());
+        Assert.assertTrue(containsText(hostTexts, "HOST-007"));
+        Assert.assertTrue(containsText(hostTexts, "container input bridge sample=ready"));
+        Assert.assertTrue(containsText(hostTexts, "exception panel sample=ready"));
+
+        clickButtonByLabel(fixture.controller.getHtmlLikeDocumentWidget(), "NET", 0);
+        for (int index = 0; index < 10; index++) {
+            clickButtonByLabel(fixture.controller.getHtmlLikeDocumentWidget(), "执行自动测试", index);
+        }
+        List<String> netTexts = collectDocumentTexts(fixture.controller.getHtmlLikeDocumentWidget());
+        Assert.assertTrue(containsText(netTexts, "NET-010"));
+        Assert.assertTrue(containsText(netTexts, "remote document open entry=ready"));
+        Assert.assertTrue(containsText(netTexts, "transport fallback current=vanilla"));
     }
 
     /**

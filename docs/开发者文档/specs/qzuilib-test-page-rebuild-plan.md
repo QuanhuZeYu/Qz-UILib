@@ -26,16 +26,16 @@
 
 | 二级页 | 当前状态 | 验收要点 |
 |---|---|---|
-| DOM | 已接入 DOM-001 到 DOM-005 | 节点移动、替换、移除、fragment 插入均可通过按钮断言 |
-| CSS | 已接入 CSS-001 到 CSS-005 | 级联、继承、display、box-sizing 均可通过按钮断言 |
-| Layout | 已接入 LAYOUT-001 到 LAYOUT-005 | block、margin collapse、空块、inline/inline-block 可断言；baseline 标记已知缺口并等待人工确认 |
-| Paint | 已接入 PAINT-001 到 PAINT-005 | 结构和 stacking 可断言；绘制层级、opacity、clip、transform 命中等待人工确认 |
-| Input | 已接入 INPUT-001 到 INPUT-005 | 点击传播、默认行为分离、滚轮默认滚动和 doubleclick 均可通过按钮断言 |
-| Controls | 已接入 CTRL-001 到 CTRL-005 | button、text/password/number input、textarea 均有运行时卡片；selection/caret、step、软换行保留人工确认 |
-| TextFont | 已接入 TEXT-001 到 TEXT-005 | raw/formatted 文本、测量、fallback、font reload epoch 均有运行时卡片；fallback/reload 保留人工确认 |
-| Animation | 已接入 ANIM-001 到 ANIM-005 | transition、per-property、keyframes、delay/duration/iteration、direction 均有运行时卡片；动态事件/视觉保留人工确认 |
-| RuntimeHost | 已接入 HOST-001 到 HOST-005 | 开屏时序、resize、runtime stats、GL render context、HUD 层级均有运行时卡片；宿主行为保留人工确认 |
-| RemoteNet | 已接入 NET-001 到 NET-005 | Channel、分片、Fetch、Stream、Store 均有运行时卡片；服务端链路保留人工确认 |
+| DOM | 已接入 DOM-001 到 DOM-013 | 核心 DOM 操作、textContent、属性、classList、选择器与链接默认行为均有运行时卡片；属性选择器和分组选择器缺口明确标记，不伪造通过 |
+| CSS | 已接入 CSS-001 到 CSS-015 | 级联、继承、display、box-sizing、四边值、尺寸、背景、outline、阴影、可见性、overflow、文本样式、wrap、cursor 均有运行时卡片 |
+| Layout | 已接入 LAYOUT-001 到 LAYOUT-016 | block、inline、flex、table、position、fixed/sticky 与嵌套滚动均有运行时卡片；baseline 和部分滚动视觉保留人工确认 |
+| Paint | 已接入 PAINT-001 到 PAINT-009 | 绘制层级、stacking、opacity、clip、transform、top-layer、scrollbar、custom renderer 与 host image 均有运行时卡片；视觉/命中类保留人工确认 |
+| Input | 已接入 INPUT-001 到 INPUT-013 | 点击传播、默认行为、滚轮、指针序列、hover/active、焦点、Tab、键盘均可通过按钮断言；contextmenu 与 drag/drop 缺口明确标记 |
+| Controls | 已接入 CTRL-001 到 CTRL-015 | button、input、textarea、checkbox、radio、select、slider、toggle、segmented、tab、table、slot/overlay 均有运行时卡片；overlay/slot 交互保留人工确认 |
+| TextFont | 已接入 TEXT-001 到 TEXT-007 | raw/formatted 文本、测量、fallback、font reload、obfuscated、trim/wrap 均有运行时卡片；fallback/reload/动态视觉保留人工确认 |
+| Animation | 已接入 ANIM-001 到 ANIM-008 | transition、per-property、keyframes、delay/duration/iteration、direction、fill-mode、timing、layout/paint impact 均有运行时卡片；视觉过程保留人工确认 |
+| RuntimeHost | 已接入 HOST-001 到 HOST-007 | 开屏、resize、runtime stats、GL render context、HUD、容器态输入桥接、异常面板均有运行时卡片；宿主行为保留人工确认 |
+| RemoteNet | 已接入 NET-001 到 NET-010 | Channel、分片、Fetch、Stream、Store、远程页面/HUD、安全集、配置同步、传输回退均有运行时卡片；服务端链路保留人工确认 |
 
 ## 运行时用例卡片规范
 
@@ -51,64 +51,24 @@
 | 实际结果 | 执行后由按钮或人工填写，失败时保留差异说明 |
 | 状态 | `未执行`、`执行中`、`通过：观察结果与预期一致`、`失败：观察结果与预期不一致 - <差异说明>` |
 
-## P1/P2 二级页接入范围
+## 运行时矩阵接入范围
 
-P0 已建立分组索引、运行时测试结果模型和统一用例卡片契约。P1 将运行时卡片迁移到类型二级页，首页不再直接展示卡片；DOM / CSS / Layout / Paint 每页先恢复 5 张运行时卡片。P2 已完成 Input / Controls / TextFont / Animation 二级页前 5 张运行时卡片恢复。P3 已完成 RuntimeHost / RemoteNet 二级页前 5 张运行时卡片恢复，其中宿主与网络链路类用例明确保留人工确认状态，不伪造服务端或游戏内结果。
+P0 已建立分组索引、运行时测试结果模型和统一用例卡片契约。P1/P2/P3 已将规格矩阵中的 DOM-001 到 DOM-013、CSS-001 到 CSS-015、LAYOUT-001 到 LAYOUT-016、PAINT-001 到 PAINT-009、INPUT-001 到 INPUT-013、CTRL-001 到 CTRL-015、TEXT-001 到 TEXT-007、ANIM-001 到 ANIM-008、HOST-001 到 HOST-007、NET-001 到 NET-010 全部接入二级页运行时卡片。可由当前模型判断的用例接入自动断言；视觉、宿主、服务端链路和明确未实现能力保持执行中/人工确认或待实现缺口状态，不伪造通过。
 
-| 二级页卡片 | 覆盖语义 | 运行时预期文本 | 当前状态 |
-|---|---|---|---|
-| DOM-001 | `appendChild` 返回插入节点并移动已有节点 | 预期结果：点击执行后 A 节点移动到 B 节点后方，页面显示 `返回节点：A`。 | 已接入自动执行与人工确认 |
-| DOM-002 | `insertBefore` 同父移动先移除再计算参考索引 | 预期结果：点击执行后节点顺序变为 `C, A, B`，没有重复 A 节点。 | 已接入自动执行与人工确认 |
-| DOM-003 | `replaceChild` 返回被替换节点并保持新节点唯一归属 | 预期结果：点击执行后旧节点离开文档，新节点显示在原位置，结果文本为 `被替换：old`。 | 已接入自动执行与人工确认 |
-| DOM-004 | `removeChild` 只允许直接子节点并返回被移除节点 | 预期结果：点击执行后目标节点消失，错误按钮显示 `非直接子节点被拒绝`。 | 已接入自动执行与人工确认 |
-| DOM-005 | `DocumentFragment` 插入后自身清空 | 预期结果：点击执行后 fragment 内三个元素出现在目标容器，fragment 计数显示 0。 | 已接入自动执行与人工确认 |
-| CSS-001 | inline style 高于样式表规则 | 预期结果：同一元素最终显示为 inline 指定颜色。 | 已接入自动执行与人工确认 |
-| CSS-002 | specificity 顺序：id、class、type、声明顺序 | 预期结果：四个样例最终颜色依次符合页面旁边标注。 | 已接入自动执行与人工确认 |
-| CSS-003 | 可继承属性和不可继承属性 | 预期结果：子元素继承文本颜色，不继承父元素 border。 | 已接入自动执行与人工确认 |
-| CSS-004 | `display:none/block/inline/inline-block/flex/table` | 预期结果：none 项不占位，其余项按标注布局形态显示。 | 已接入自动执行与人工确认 |
-| CSS-005 | `box-sizing:content-box/border-box` | 预期结果：两张卡片外框宽度相同，但内容区宽度按盒模型不同。 | 已接入自动执行与人工确认 |
-| LAYOUT-001 | block normal flow 垂直布局 | 预期结果：三块内容从上到下排列，垂直间距与标尺一致。 | 已接入自动执行与人工确认 |
-| LAYOUT-002 | 相邻 margin collapse | 预期结果：相邻块之间间距等于较大 margin，不是两者相加。 | 已接入自动执行与人工确认 |
-| LAYOUT-003 | 空块与递归 margin collapse | 预期结果：空块不产生额外高度，父子 margin collapse 后标尺吻合。 | 已接入自动执行与人工确认 |
-| LAYOUT-004 | inline 文本、inline 元素、inline-block | 预期结果：文本和 inline 元素同一行排列，inline-block 保持自身盒宽高。 | 已接入自动执行与人工确认 |
-| LAYOUT-005 | inline-block baseline | 预期结果：inline-block 底部基线与相邻文本基线对齐，若未完成则标记 `已知缺口`。 | 已接入自动执行，自动结果保持执行中并等待人工确认 |
-| PAINT-001 | background、border、text 绘制顺序 | 预期结果：背景在最底层，边框压住背景边缘，文本位于最上层。 | 已接入结构校验与人工确认 |
-| PAINT-002 | stacking context 顺序 | 预期结果：z-index 高的 stacking context 覆盖低层，子元素不能越出父 stacking context。 | 已接入自动执行与人工确认 |
-| PAINT-003 | opacity stacking context | 预期结果：半透明组整体混合，组内高 z-index 不越过外部兄弟。 | 已接入结构校验，自动结果保持执行中并等待人工确认 |
-| PAINT-004 | overflow clip 与圆角 clip | 预期结果：子元素超出圆角容器部分被裁剪，命中也不可达。 | 已接入结构校验，自动结果保持执行中并等待人工确认 |
-| PAINT-005 | transform 平移、缩放、旋转命中 | 预期结果：视觉位置与点击命中位置一致，未变换原位置点击无效。 | 已接入结构校验，自动结果保持执行中并等待人工确认 |
-| INPUT-001 | capture、target、bubble 顺序 | 预期结果：点击子节点后事件日志顺序为 `root capture -> parent capture -> target -> parent bubble -> root bubble`。 | 已接入自动执行与人工确认 |
-| INPUT-002 | `stopPropagation` 只停止后续传播 | 预期结果：目标处理后祖先 bubble 不再记录，但默认动作仍执行。 | 已接入自动执行与人工确认 |
-| INPUT-003 | `preventDefault` 阻止默认行为 | 预期结果：链接或滚动默认动作不执行，事件日志仍完整显示。 | 已接入自动执行与人工确认 |
-| INPUT-004 | handler 返回 true 与默认行为分离 | 预期结果：返回 true 后传播停止，但未 preventDefault 的默认滚动仍执行。 | 已接入自动执行与人工确认 |
-| INPUT-005 | mousedown、mouseup、click、doubleclick | 预期结果：单击日志为 down/up/click，双击额外记录 doubleclick。 | 已接入自动执行与人工确认 |
-| CTRL-001 | button enabled/disabled/action | 预期结果：可用按钮点击计数加 1，disabled 按钮点击无变化。 | 已接入自动执行与人工确认 |
-| CTRL-002 | text input value、selection、caret | 预期结果：输入、删除、选择替换后 value 与光标位置文本一致。 | 已接入 value 自动检查；selection/caret 等待人工确认 |
-| CTRL-003 | password input 掩码 | 预期结果：页面只显示掩码字符，结果区保存真实 value 长度。 | 已接入自动执行与人工确认 |
-| CTRL-004 | number input 解析、非法值、step | 预期结果：有效数字按 step 调整，非法输入显示错误状态且不提交。 | 已接入非法字符过滤自动检查；step 等待人工确认 |
-| CTRL-005 | textarea 逻辑行与视觉软换行 | 预期结果：长文本自动软换行，value 中只保留真实换行。 | 已接入真实换行自动检查；软换行等待人工确认 |
-| TEXT-001 | `TextContentMode.UILIB_RAW` | 预期结果：`§a` 等字符按普通文本显示，不触发 Minecraft 格式化。 | 已接入自动执行与人工确认 |
-| TEXT-002 | `TextContentMode.MINECRAFT_FORMATTED` | 预期结果：`§a绿色` 显示为绿色，结果区仍能显示原始文本长度。 | 已接入自动执行与人工确认 |
-| TEXT-003 | 字符宽度、line-height、baseline | 预期结果：中英文混排行高稳定，标尺线与文本基线位置一致。 | 已接入文本测量自动检查；baseline 等待人工确认 |
-| TEXT-004 | 字体 fallback | 预期结果：缺字字符使用 fallback 字体显示，不出现空白方块。 | 已接入结构检查；fallback 等待游戏内人工确认 |
-| TEXT-005 | font reload debounce | 预期结果：连续 reload 后只显示最终 epoch，页面不崩溃。 | 已接入 epoch 记录；reload debounce 等待游戏内人工确认 |
-| ANIM-001 | transition start/end/cancel | 预期结果：触发动画后日志出现 start/end，中途反向触发 cancel。 | 已接入 transition 声明检查；事件日志等待人工确认 |
-| ANIM-002 | per-property transition | 预期结果：颜色和 transform 按不同 duration 结束，日志分属性记录。 | 已接入自动执行与人工确认 |
-| ANIM-003 | keyframes from/to 与百分比帧 | 预期结果：盒子按关键帧路径移动，最终停在标注终点。 | 已接入结构检查；路径视觉等待人工确认 |
-| ANIM-004 | delay、duration、iteration-count | 预期结果：延迟期不移动，循环次数与日志 iteration 数一致。 | 已接入自动执行与人工确认 |
-| ANIM-005 | direction normal/reverse/alternate | 预期结果：reverse 从终点开始，alternate 每轮方向翻转。 | 已接入方向声明检查；方向视觉等待人工确认 |
-| HOST-001 | `/qzuilib test` 延后开屏时序 | 预期结果：从聊天框执行命令后页面稳定打开，不被聊天关闭流程吞掉。 | 已接入入口检查；聊天命令时序等待游戏内人工确认 |
-| HOST-002 | resize 与 viewport fill | 预期结果：调整窗口后卡片重新排布，滚动位置不异常跳变。 | 已接入窗口状态读取；resize 等待人工确认 |
-| HOST-003 | runtime stats 与帧耗时 | 预期结果：页面显示 host 尺寸、鼠标坐标、draw/update 指标且数值持续刷新。 | 已接入自动执行与人工确认 |
-| HOST-004 | GL-backed render context | 预期结果：标准背景、边框、文本、图片和自定义绘制都可见，无 GL 状态污染。 | 已接入结构检查；GL 状态等待游戏内人工确认 |
-| HOST-005 | HUD 纯显示层与交互层 | 预期结果：纯 HUD 在容器界面中隐藏，交互 HUD 可接收点击和键盘焦点。 | 已接入结构检查；HUD 层级等待游戏内人工确认 |
-| NET-001 | Channel C2S/S2C 往返 | 预期结果：点击执行后显示 `通过：Channel 往返完成`。 | 已接入运行时入口；服务端往返等待人工确认 |
-| NET-002 | C2S 分片与重组 | 预期结果：超过 32KB 的消息成功分片重组，结果显示原始长度一致。 | 已接入运行时入口；服务端重组等待人工确认 |
-| NET-003 | Fetch 成功、错误、超时、取消、限流 | 预期结果：五个按钮分别显示 200、500、timeout、cancelled、429。 | 已接入运行时入口；服务端 endpoint 等待人工确认 |
-| NET-004 | Stream 大内容下载 | 预期结果：下载进度递增到 100%，最终校验大小通过。 | 已接入运行时入口；服务端 stream 等待人工确认 |
-| NET-005 | Store snapshot/delta/player store | 预期结果：Store 视图按服务端推送更新，玩家定向 Store 只影响当前玩家。 | 已接入运行时入口；服务端推送等待人工确认 |
+| 二级页 | 已接入卡片 | 自动执行边界 | 人工确认 / 缺口边界 |
+|---|---:|---|---|
+| DOM | 13 | DOM 变更、布尔属性、classList、基础选择器和链接默认行为 | 属性选择器 `[attr]` / `[attr=value]` 与分组选择器完整支持标记为待实现缺口 |
+| CSS | 15 | 级联、继承、display、盒模型、尺寸、背景值、可见性、overflow、文本样式和 cursor 声明 | 阴影真实层级、滚动条视觉和宿主光标切换保留人工确认 |
+| Layout | 16 | block、margin collapse、inline、flex、table、relative/absolute/fixed 结构与嵌套滚动样例 | inline-block baseline、fixed/sticky 滚动视觉保留人工确认或已知缺口 |
+| Paint | 9 | 绘制样例结构、stacking、opacity、clip、transform、top-layer、scrollbar、custom renderer 与 host image 入口 | 真实层级、命中、宿主图片和滚动条交互保留人工确认 |
+| Input | 13 | click 传播、stopPropagation、preventDefault、wheel、pointer、hover/active、focus、Tab、keyboard/textInput | contextmenu 与 drag/drop 事件链标记为待实现缺口 |
+| Controls | 15 | button、input、password、number、textarea、checkbox、radio、select、slider、toggle、segmented、tab、table 结构 | slot/inventory、tooltip、cursor overlay 和部分控件视觉交互保留人工确认 |
+| TextFont | 7 | raw/formatted 文本、测量、font epoch、obfuscated 和 trim/wrap 摘要 | fallback、reload debounce 和动态视觉保留游戏内人工确认 |
+| Animation | 8 | transition 声明、per-property、keyframes、delay/duration/iteration、direction、fill-mode、timing 与布局影响入口 | 事件日志和视觉过程保留人工确认 |
+| RuntimeHost | 7 | 开屏状态、窗口信息、runtime stats、GL/HUD/容器输入/异常面板入口 | 聊天命令时序、resize、GL 状态、HUD 层级和容器桥接保留人工确认 |
+| RemoteNet | 10 | 网络/远程能力入口、传输模式、分片、fetch 状态、stream/store/remote/config 摘要 | 服务端往返、远程页面/HUD、配置保存和传输回退保留人工确认 |
 
-二级页卡片必须完整显示 `用例编号`、`覆盖语义`、`自动断言`、`操作步骤`、`预期结果`、`实际结果`、`状态` 七个字段，并提供 `执行自动测试`、`人工通过`、`人工失败` 操作。后续每个分组页恢复运行时按钮前，仍必须先在本文对应分组表补齐编号、语义和 `预期结果：...` 文本。
+二级页卡片必须完整显示 `用例编号`、`覆盖语义`、`自动断言`、`操作步骤`、`预期结果`、`实际结果`、`状态` 七个字段，并提供 `执行自动测试`、`人工通过`、`人工失败` 操作。新增或调整卡片时，仍必须先在本文对应分组表补齐编号、语义和 `预期结果：...` 文本。
 
 ## DOM 与选择器语义
 
