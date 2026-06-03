@@ -34,7 +34,7 @@ Stencil、clip、圆角相关的渲染问题。
 
 ---
 
-## 字体系统类（合并，4 条）
+## 字体系统类（合并，5 条）
 
 字体加载、渲染、重载与 GL 资源管理。
 
@@ -42,8 +42,9 @@ Stencil、clip、圆角相关的渲染问题。
 - [`ERROR-20260515-splash-font-shader-reload-race.md`](ERROR-20260515-splash-font-shader-reload-race.md) — Splash 线程与主线程字体 shader 重载竞态崩溃
 - [`ERROR-20260519-font-style-drawtext-recursion.md`](ERROR-20260519-font-style-drawtext-recursion.md) — 字体样式 drawText 两个重载互相调用导致 StackOverflow
 - [`ERROR-20260602-transform-text-deferred-batch.md`](ERROR-20260602-transform-text-deferred-batch.md) — Transform 内文本延迟批处理绕过父元素矩阵
+- [`ERROR-20260603-font-shutdown-hook-gl-dispose.md`](ERROR-20260603-font-shutdown-hook-gl-dispose.md) — JVM shutdown hook 非渲染线程释放字体 GL 资源导致 native 崩溃
 
-**共性教训**：字体异步管线必须以 runtimeVersion 隔离代际；多线程字体入口必须在运行时锁下串行化；方法重载链必须有明确终止点；跨命令字体批处理必须继承或显式携带当前视觉上下文。
+**共性教训**：字体异步管线必须以 runtimeVersion 隔离代际；多线程字体入口必须在运行时锁下串行化；方法重载链必须有明确终止点；跨命令字体批处理必须继承或显式携带当前视觉上下文；字体 GL 资源创建、重载和释放都必须受渲染线程边界保护。
 
 ---
 

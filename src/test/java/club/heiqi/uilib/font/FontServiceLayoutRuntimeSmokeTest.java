@@ -1,7 +1,13 @@
 package club.heiqi.uilib.font;
 
+import java.lang.reflect.Constructor;
+import java.lang.reflect.Field;
+import java.util.concurrent.atomic.AtomicBoolean;
+
 import org.junit.Assert;
 import org.junit.Test;
+
+import club.heiqi.uilib.font.shader.FontShaderProgram;
 
 /**
  * `FontService` 轻量布局期入口冒烟。
@@ -49,5 +55,57 @@ public class FontServiceLayoutRuntimeSmokeTest {
         Assert.assertTrue("runtime version 应在 warmup 后非递减",
                 versionAfterWarmup >= versionBeforeWarmup);
         Assert.assertTrue("runtime version 一定不为负", versionAfterWarmup >= 0);
+    }
+
+    /**
+     * JVM 退出钩子等非渲染线程不应直接释放 GL 资源，避免关闭游戏时触发 native 崩溃。
+     */
+    @Test
+    public void shouldSkipGlResourceReleaseFromNonRenderThreadShutdown() throws Exception {
+        FontService service = newFontService();
+        AtomicBoolean initialized = getAtomicBooleanField(service, "initialized");
+        TrackingFontShaderProgram shaderProgram = new TrackingFontShaderProgram();
+
+        initialized.set(true);
+        setField(service, "shaderProgram", shaderProgram);
+        setField(service, "renderThread", new Thread("Client thread"));
+
+        service.shutdown();
+
+        Assert.assertFalse("非渲染线程不应释放 shader", shaderProgram.closed.get());
+        Assert.assertFalse("shutdown 后字体系统应标记为未初始化", initialized.get());
+    }
+
+    private FontService newFontService() throws Exception {
+        Constructor<FontService> constructor = FontService.class.getDeclaredConstructor();
+        constructor.setAccessible(true);
+        return constructor.newInstance();
+    }
+
+    private AtomicBoolean getAtomicBooleanField(FontService service, String fieldName) throws Exception {
+        return (AtomicBoolean) getField(service, fieldName);
+    }
+
+    private Object getField(FontService service, String fieldName) throws Exception {
+        Field field = FontService.class.getDeclaredField(fieldName);
+        field.setAccessible(true);
+        return field.get(service);
+    }
+
+    private void setField(FontService service, String fieldName, Object value) throws Exception {
+        Field field = FontService.class.getDeclaredField(fieldName);
+        field.setAccessible(true);
+        field.set(service, value);
+    }
+
+    private static class TrackingFontShaderProgram extends FontShaderProgram {
+
+        private final AtomicBoolean closed = new AtomicBoolean(false);
+
+        @Override
+        public void close() {
+            closed.set(true);
+            throw new AssertionError("close 不应在 shutdown hook 线程执行");
+        }
     }
 }

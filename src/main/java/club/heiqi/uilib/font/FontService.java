@@ -53,6 +53,7 @@ public class FontService {
     private final FontReloadDebouncer reloadDebouncer = new FontReloadDebouncer(150L, 750L);
     private final AtomicReference<ReloadState> reloadState = new AtomicReference<ReloadState>(ReloadState.RUNNING);
     private static final AtomicBoolean NON_RENDER_THREAD_RELOAD_LOGGED = new AtomicBoolean(false);
+    private static final AtomicBoolean NON_RENDER_THREAD_SHUTDOWN_GL_LOGGED = new AtomicBoolean(false);
 
     private long lastDrawStageUploadAt = 0L;
     private volatile int runtimeVersion;
@@ -335,10 +336,10 @@ public class FontService {
     }
 
     /**
-     * 关停字体系统，释放调度器线程池、批渲染器与着色器。
+     * 关停字体系统，释放调度器线程池，并在安全线程上释放批渲染器与着色器。
      *
-     * <p>用于客户端断连或 JVM 退出阶段。LTS 期间统一在 {@link club.heiqi.uilib.ClientProxy} 中
-     * 通过 Forge 客户端断连事件触发，避免线程池在 JVM 退出后仍持有运行时引用。</p>
+     * <p>JVM shutdown hook 不持有有效 OpenGL context，不能在该线程直接删除 VAO / VBO / shader 等
+     * GL 资源。非渲染线程关停时只停止字体生成线程池，GL 资源交给客户端退出流程销毁底层 context。</p>
      */
     public void shutdown() {
         synchronized (this) {
@@ -351,10 +352,14 @@ public class FontService {
             } catch (RuntimeException exception) {
                 MyMod.LOG.warn("字体调度器关停异常", exception);
             }
-            try {
-                clearRenderResources();
-            } catch (RuntimeException exception) {
-                MyMod.LOG.warn("字体渲染资源关停异常", exception);
+            if (isCurrentThreadAllowedToReleaseGlResources()) {
+                try {
+                    clearRenderResources();
+                } catch (RuntimeException exception) {
+                    MyMod.LOG.warn("字体渲染资源关停异常", exception);
+                }
+            } else {
+                logNonRenderThreadShutdownGlSkippedOnce();
             }
             initialized.set(false);
             layoutRuntimeReady.set(false);
@@ -456,6 +461,16 @@ public class FontService {
         return current == captured;
     }
 
+    private boolean isCurrentThreadAllowedToReleaseGlResources() {
+        Thread current = Thread.currentThread();
+        Thread captured = renderThread;
+        if (captured == null) {
+            String name = current.getName();
+            return name != null && name.startsWith("Client thread");
+        }
+        return current == captured;
+    }
+
     private void captureRenderThreadIfAbsent() {
         if (renderThread == null) {
             renderThread = Thread.currentThread();
@@ -470,6 +485,17 @@ public class FontService {
                     Thread.currentThread().getName(),
                     request == null ? "<null>" : request.getReason());
         }
+    }
+
+    private void logNonRenderThreadShutdownGlSkippedOnce() {
+        if ((batchRenderer == null && shaderProgram == null)
+                || !NON_RENDER_THREAD_SHUTDOWN_GL_LOGGED.compareAndSet(false, true)) {
+            return;
+        }
+        MyMod.LOG.warn(
+                "FontService.shutdown 已跳过非渲染线程上的 GL 资源释放，避免 JVM 退出阶段触发 native 崩溃。"
+                        + " thread={}",
+                Thread.currentThread().getName());
     }
 
     private void resubmitRecoverableGlyphs(long[] recoverableGlyphs, int targetRuntimeVersion) {
