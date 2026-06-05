@@ -12,4 +12,5 @@
 - `net-codec-wire-format.md`：网络层内容 envelope、可选 POJO codec 与分片格式。
 - `net-vanilla-mixin-strategy.md`：vanilla custom payload early mixin 注入点与传输策略。
 - `net-self-check.md`：网络层诊断页自检场景规格。
-- `qzuilib-test-page-rebuild-plan.md`：`/qzuilib test` 页面系统性重构规划、语义覆盖矩阵和人工预期文本规范。
+- `qzuilib-test-page-rebuild-plan.md`：`/qzuilib test` 页面系统性重构历史规划、语义覆盖矩阵和人工预期文本规范。
+- `qzuilib-test-page-visual-matrix-plan.md`：`/qzuilib test` 新一轮视觉优先测试矩阵规划，作为后续运行时矩阵重建设计入口。
