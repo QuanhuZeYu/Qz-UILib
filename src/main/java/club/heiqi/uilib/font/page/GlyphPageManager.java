@@ -422,7 +422,9 @@ public class GlyphPageManager {
         GlyphPage page = new GlyphPage(runtimeVersion, nextPageIndex, textureSize, glyphSize,
                 runtimeTables.slotXByIndex, runtimeTables.slotYByIndex);
         runtimeTables.setPage(fontType, nextPageIndex, page);
-        MyMod.LOG.debug("字符页容量扩展，type={} pageIndex={}", fontType, Integer.valueOf(page.getPageIndex()));
+        if (club.heiqi.uilib.Config.fontRuntimeDebug) {
+            MyMod.LOG.info("字符页容量扩展，type={} pageIndex={}", fontType, Integer.valueOf(page.getPageIndex()));
+        }
         ensureCapacity(fontType);
         return page;
     }

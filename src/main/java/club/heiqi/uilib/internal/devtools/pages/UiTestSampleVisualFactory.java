@@ -37,6 +37,7 @@ final class UiTestSampleVisualFactory {
     void appendCaseDemo(UiDocument document, ElementNode parent, UiTestCaseSpec testCase) {
         ensureStyleSheet(document);
         ElementNode stage = createStage(document, "视觉样例：" + testCase.getVisualSample());
+        stage.setAttribute("data-ui-test-case", testCase.getId());
         String id = testCase.getId();
         if ("VIS-CSS-001".equals(id)) {
             appendCssSpecificityDemo(document, stage);

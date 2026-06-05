@@ -158,8 +158,15 @@ public class UiTestDocumentPageControllerTest {
         Assert.assertTrue(containsText(texts, "VIS-CSS-001"));
         Assert.assertTrue(containsText(texts, "Specificity 三阶色块"));
         Assert.assertTrue(containsText(texts, "sample 标签"));
+        Assert.assertTrue(containsText(texts, "第 1 张 / 共 3 张"));
+        clickButtonByLabel(fixture.controller.getHtmlLikeDocumentWidget(), "下一张", 0);
+        texts = collectDocumentTexts(fixture.controller.getHtmlLikeDocumentWidget());
         Assert.assertTrue(containsText(texts, "VIS-CSS-002"));
+        Assert.assertTrue(containsText(texts, "box-sizing 盒模型对比"));
+        clickButtonByLabel(fixture.controller.getHtmlLikeDocumentWidget(), "下一张", 0);
+        texts = collectDocumentTexts(fixture.controller.getHtmlLikeDocumentWidget());
         Assert.assertTrue(containsText(texts, "VIS-CSS-003"));
+        Assert.assertTrue(containsText(texts, "visibility 与 pointer-events 状态牌"));
         Assert.assertFalse(containsText(texts, "执行自动测试"));
     }
 
@@ -177,8 +184,12 @@ public class UiTestDocumentPageControllerTest {
         List<String> layoutTexts = collectDocumentTexts(fixture.controller.getHtmlLikeDocumentWidget());
         Assert.assertTrue(containsText(layoutTexts, "VIS-LAYOUT-001"));
         Assert.assertTrue(containsText(layoutTexts, "block flow 与 margin collapse 标尺"));
+        clickButtonByLabel(fixture.controller.getHtmlLikeDocumentWidget(), "下一张", 0);
+        layoutTexts = collectDocumentTexts(fixture.controller.getHtmlLikeDocumentWidget());
         Assert.assertTrue(containsText(layoutTexts, "VIS-LAYOUT-002"));
         Assert.assertTrue(containsText(layoutTexts, "flex min-content 收缩轨道"));
+        clickButtonByLabel(fixture.controller.getHtmlLikeDocumentWidget(), "下一张", 0);
+        layoutTexts = collectDocumentTexts(fixture.controller.getHtmlLikeDocumentWidget());
         Assert.assertTrue(containsText(layoutTexts, "VIS-LAYOUT-003"));
         Assert.assertTrue(containsText(layoutTexts, "table auto 内容列宽"));
 
@@ -186,11 +197,34 @@ public class UiTestDocumentPageControllerTest {
         List<String> paintTexts = collectDocumentTexts(fixture.controller.getHtmlLikeDocumentWidget());
         Assert.assertTrue(containsText(paintTexts, "VIS-PAINT-001"));
         Assert.assertTrue(containsText(paintTexts, "stacking 与 opacity 重叠舞台"));
+        clickButtonByLabel(fixture.controller.getHtmlLikeDocumentWidget(), "下一张", 0);
+        paintTexts = collectDocumentTexts(fixture.controller.getHtmlLikeDocumentWidget());
         Assert.assertTrue(containsText(paintTexts, "VIS-PAINT-002"));
         Assert.assertTrue(containsText(paintTexts, "overflow clip 裁剪窗口"));
+        clickButtonByLabel(fixture.controller.getHtmlLikeDocumentWidget(), "下一张", 0);
+        paintTexts = collectDocumentTexts(fixture.controller.getHtmlLikeDocumentWidget());
         Assert.assertTrue(containsText(paintTexts, "VIS-PAINT-003"));
         Assert.assertTrue(containsText(paintTexts, "transform 视觉命中舞台"));
         Assert.assertTrue(containsText(paintTexts, "语义状态=人工待确认"));
+    }
+
+    /**
+     * 验证运行当前样例断言后会回写状态与日志尾部。
+     */
+    @Test
+    public void shouldRunCurrentCaseAssertionAndExposeAssertionLogs() {
+        TestFixture fixture = new TestFixture();
+
+        fixture.controller.configureDocumentPage();
+        fixture.controller.buildDocument();
+        clickButtonByLabel(fixture.controller.getHtmlLikeDocumentWidget(), "打开 CSS 二级页", 0);
+        clickButtonByLabel(fixture.controller.getHtmlLikeDocumentWidget(), "运行当前样例断言", 0);
+
+        List<String> texts = collectDocumentTexts(fixture.controller.getHtmlLikeDocumentWidget());
+        Assert.assertTrue(containsText(texts, "语义状态=自动通过"));
+        Assert.assertTrue(containsText(texts, "当前样例日志 tail"));
+        Assert.assertTrue(containsText(texts, "pass | 自动断言通过"));
+        Assert.assertTrue(containsText(texts, "sampleBg=0xFF334155"));
     }
 
     /**

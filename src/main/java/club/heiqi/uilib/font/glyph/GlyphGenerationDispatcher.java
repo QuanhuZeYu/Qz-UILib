@@ -146,11 +146,13 @@ public class GlyphGenerationDispatcher {
                         resultHandler.handle(result);
                     }
 
-                    MyMod.LOG.debug("已接收字符生成任务 codepoint={} size={} priority={} awtCharSize={}",
-                            generationTask.getCodepoint(),
-                            generationTask.getGlyphSize(),
-                            generationTask.getPriority(),
-                            FontConfig.awtCharSize);
+                    if (club.heiqi.uilib.Config.fontRuntimeDebug) {
+                        MyMod.LOG.info("已接收字符生成任务 codepoint={} size={} priority={} awtCharSize={}",
+                                generationTask.getCodepoint(),
+                                generationTask.getGlyphSize(),
+                                generationTask.getPriority(),
+                                FontConfig.awtCharSize);
+                    }
                 } finally {
                     inFlightTasks.remove(requestKey);
                 }
