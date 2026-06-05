@@ -14,6 +14,7 @@ final class UiTestAssertionLogEntry {
     private final String expected;
     private final String actual;
     private final String difference;
+    private final String context;
     private final long timestampMillis;
 
     /**
@@ -30,6 +31,24 @@ final class UiTestAssertionLogEntry {
      */
     UiTestAssertionLogEntry(String caseId, String groupCode, String phase, String message, String expected,
             String actual, String difference, long timestampMillis) {
+        this(caseId, groupCode, phase, message, expected, actual, difference, timestampMillis, "");
+    }
+
+    /**
+     * 创建带运行上下文的断言日志条目。
+     *
+     * @param caseId 样例编号
+     * @param groupCode 分组代码
+     * @param phase 断言阶段
+     * @param message 日志说明
+     * @param expected 期望摘要
+     * @param actual 实际摘要
+     * @param difference 差异摘要
+     * @param timestampMillis 时间戳
+     * @param context 运行上下文摘要
+     */
+    UiTestAssertionLogEntry(String caseId, String groupCode, String phase, String message, String expected,
+            String actual, String difference, long timestampMillis, String context) {
         this.caseId = requireText(caseId, "caseId");
         this.groupCode = requireText(groupCode, "groupCode");
         this.phase = requireText(phase, "phase");
@@ -37,6 +56,7 @@ final class UiTestAssertionLogEntry {
         this.expected = normalize(expected);
         this.actual = normalize(actual);
         this.difference = normalize(difference);
+        this.context = normalize(context);
         this.timestampMillis = Math.max(0L, timestampMillis);
     }
 
@@ -68,6 +88,10 @@ final class UiTestAssertionLogEntry {
         return difference;
     }
 
+    String getContext() {
+        return context;
+    }
+
     long getTimestampMillis() {
         return timestampMillis;
     }
@@ -78,8 +102,10 @@ final class UiTestAssertionLogEntry {
      * @return 页面展示摘要
      */
     String toDisplayLine() {
-        return phase + " | " + message + " | expected=" + expected + " | actual=" + actual
-                + (difference.length() == 0 ? "" : " | diff=" + difference);
+        return groupCode + "/" + caseId + " | " + phase + " | " + message
+                + ("-".equals(context) ? "" : " | context=" + context)
+                + " | expected=" + expected + " | actual=" + actual
+                + ("-".equals(difference) ? "" : " | diff=" + difference);
     }
 
     private static String requireText(String value, String name) {

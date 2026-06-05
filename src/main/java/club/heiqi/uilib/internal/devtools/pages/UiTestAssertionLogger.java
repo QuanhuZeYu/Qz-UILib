@@ -27,9 +27,9 @@ final class UiTestAssertionLogger {
         synchronized (entries) {
             entries.add(resolved);
         }
-        LOG.info("[{}][{}][{}] {} | expected={} | actual={} | diff={}", resolved.getGroupCode(),
+        LOG.info("[{}][{}][{}] {} | expected={} | actual={} | diff={} | context={}", resolved.getGroupCode(),
                 resolved.getCaseId(), resolved.getPhase(), resolved.getMessage(), resolved.getExpected(),
-                resolved.getActual(), resolved.getDifference());
+                resolved.getActual(), resolved.getDifference(), resolved.getContext());
     }
 
     /**

@@ -223,8 +223,36 @@ public class UiTestDocumentPageControllerTest {
         List<String> texts = collectDocumentTexts(fixture.controller.getHtmlLikeDocumentWidget());
         Assert.assertTrue(containsText(texts, "语义状态=自动通过"));
         Assert.assertTrue(containsText(texts, "当前样例日志 tail"));
+        Assert.assertTrue(containsText(texts, "CSS/VIS-CSS-001 | start | 开始运行样例断言"));
+        Assert.assertTrue(containsText(texts, "context=group=CSS；case=VIS-CSS-001；page=1/3；env=Minecraft=1.7.10"));
         Assert.assertTrue(containsText(texts, "pass | 自动断言通过"));
+        Assert.assertTrue(containsText(texts, "stageBox=border("));
+        Assert.assertTrue(containsText(texts, "stageStyle=display=FLEX"));
+        Assert.assertTrue(containsText(texts, "sampleStyle=display="));
         Assert.assertTrue(containsText(texts, "sampleBg=0xFF334155"));
+    }
+
+    /**
+     * 验证 transform 人工确认样例运行后仍保留人工状态，并输出明确 transform 诊断。
+     */
+    @Test
+    public void shouldExposeManualTransformDiagnosticsWithoutAutoPassing() {
+        TestFixture fixture = new TestFixture();
+
+        fixture.controller.configureDocumentPage();
+        fixture.controller.buildDocument();
+        clickButtonByLabel(fixture.controller.getHtmlLikeDocumentWidget(), "打开 PAINT 二级页", 0);
+        clickButtonByLabel(fixture.controller.getHtmlLikeDocumentWidget(), "下一张", 0);
+        clickButtonByLabel(fixture.controller.getHtmlLikeDocumentWidget(), "下一张", 0);
+        clickButtonByLabel(fixture.controller.getHtmlLikeDocumentWidget(), "运行当前样例断言", 0);
+
+        List<String> texts = collectDocumentTexts(fixture.controller.getHtmlLikeDocumentWidget());
+        Assert.assertTrue(containsText(texts, "语义状态=人工待确认"));
+        Assert.assertTrue(containsText(texts, "PAINT/VIS-PAINT-003 | skip | 当前样例未接入自动断言"));
+        Assert.assertTrue(containsText(texts, "context=group=PAINT；case=VIS-PAINT-003；page=3/3"));
+        Assert.assertTrue(containsText(texts, "transformDiff=layoutLeftDelta=0, layoutTopDelta=0"));
+        Assert.assertTrue(containsText(texts,
+                "visualTransform=translate(28.00,8.00) scale(1.00,1.00) rotate(12.00deg)"));
     }
 
     /**
