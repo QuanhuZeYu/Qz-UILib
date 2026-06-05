@@ -19,6 +19,7 @@ import club.heiqi.uilib.ui.style.props.UiVisibility;
 import club.heiqi.uilib.ui.style.props.UiWhiteSpace;
 import club.heiqi.uilib.ui.style.values.UiStyleLength;
 import club.heiqi.uilib.ui.style.values.UiTransform;
+import club.heiqi.uilib.ui.style.values.UiBackgroundImage;
 
 /**
  * `/qzuilib test` 单张样例的真实视觉舞台工厂。
@@ -45,18 +46,38 @@ final class UiTestSampleVisualFactory {
             appendCssBoxSizingDemo(document, stage);
         } else if ("VIS-CSS-003".equals(id)) {
             appendCssVisibilityDemo(document, stage);
+        } else if ("VIS-CSS-004".equals(id)) {
+            appendCssInheritanceDemo(document, stage);
+        } else if ("VIS-CSS-005".equals(id)) {
+            appendCssBackgroundDemo(document, stage);
+        } else if ("VIS-CSS-006".equals(id)) {
+            appendCssOverflowDemo(document, stage);
         } else if ("VIS-LAYOUT-001".equals(id)) {
             appendLayoutBlockFlowDemo(document, stage);
         } else if ("VIS-LAYOUT-002".equals(id)) {
             appendLayoutFlexDemo(document, stage);
         } else if ("VIS-LAYOUT-003".equals(id)) {
             appendLayoutTableDemo(document, stage);
+        } else if ("VIS-LAYOUT-004".equals(id)) {
+            appendLayoutInlineDemo(document, stage);
+        } else if ("VIS-LAYOUT-005".equals(id)) {
+            appendLayoutInlineBlockBaselineDemo(document, stage);
+        } else if ("VIS-LAYOUT-006".equals(id)) {
+            appendLayoutFixedStickyDemo(document, stage);
         } else if ("VIS-PAINT-001".equals(id)) {
             appendPaintStackingDemo(document, stage);
         } else if ("VIS-PAINT-002".equals(id)) {
             appendPaintClipDemo(document, stage);
         } else if ("VIS-PAINT-003".equals(id)) {
             appendPaintTransformDemo(document, stage);
+        } else if ("VIS-PAINT-004".equals(id)) {
+            appendPaintTransformHitDemo(document, stage);
+        } else if ("VIS-PAINT-005".equals(id)) {
+            appendPaintTopLayerDemo(document, stage);
+        } else if ("VIS-PAINT-006".equals(id)) {
+            appendPaintScrollbarDemo(document, stage);
+        } else if ("VIS-PAINT-007".equals(id)) {
+            appendPaintHostImageDemo(document, stage);
         } else {
             appendMutedText(document, stage, "该样例暂无视觉舞台。");
         }
@@ -486,6 +507,273 @@ final class UiTestSampleVisualFactory {
                 .setTextColor(0xFFEAF1FF);
         ruler.appendText(label);
         return ruler;
+    }
+
+    /**
+     * 追加 CSS 继承演示。
+     *
+     * @param document 文档实例
+     * @param stage 演示舞台
+     */
+    private void appendCssInheritanceDemo(UiDocument document, ElementNode stage) {
+        ElementNode parent = document.div();
+        parent.style()
+                .setPadding(UiStyleLength.px(8))
+                .setBackgroundColor(0xFF1E293B)
+                .setTextColor(0xFF38BDF8)
+                .setBorderWidth(UiStyleLength.px(1))
+                .setBorderStyle(UiBorderStyle.SOLID)
+                .setBorderColor(0xFF475569);
+        ElementNode inherited = createDemoPanel(document, "继承 color (应为蓝色)", 0xFF334155);
+        ElementNode sized = createDemoPanel(document, "width=80px (非继承)", 0xFF059669);
+        sized.style().setWidth(UiStyleLength.px(80));
+        parent.append(inherited).append(sized);
+        stage.append(parent);
+        appendMutedText(document, stage, "子元素颜色继承父，宽度不继承。");
+    }
+
+    /**
+     * 追加 CSS background/url/none 演示。
+     *
+     * @param document 文档实例
+     * @param stage 演示舞台
+     */
+    private void appendCssBackgroundDemo(UiDocument document, ElementNode stage) {
+        ElementNode row = createDemoRow(document);
+        ElementNode colorOnly = createDemoPanel(document, "纯 background-color", 0xFFDC2626);
+        ElementNode withUrl = createDemoPanel(document, "background + url", 0xFF1E40AF);
+        withUrl.style().setBackgroundImage(UiBackgroundImage.texture("qz_uilib:textures/test/sample.png", 32, 32));
+        ElementNode noneLike = createDemoPanel(document, "background:none 效果", 0xFF059669);
+        row.append(colorOnly).append(withUrl).append(noneLike);
+        stage.append(row);
+        appendMutedText(document, stage, "url 面板尝试加载贴图，none 仅留底色。");
+    }
+
+    /**
+     * 追加 CSS overflow 行为演示。
+     *
+     * @param document 文档实例
+     * @param stage 演示舞台
+     */
+    private void appendCssOverflowDemo(UiDocument document, ElementNode stage) {
+        ElementNode row = createDemoRow(document);
+        ElementNode hidden = document.div();
+        hidden.style()
+                .setWidth(UiStyleLength.px(80))
+                .setHeight(UiStyleLength.px(40))
+                .setOverflowX(UiOverflow.HIDDEN)
+                .setOverflowY(UiOverflow.HIDDEN)
+                .setBackgroundColor(0xFF334155)
+                .setBorderWidth(UiStyleLength.px(1))
+                .setBorderStyle(UiBorderStyle.SOLID)
+                .setBorderColor(0xFFF59E0B);
+        hidden.appendText("hidden 裁剪");
+        ElementNode autoBox = document.div();
+        autoBox.style()
+                .setWidth(UiStyleLength.px(80))
+                .setHeight(UiStyleLength.px(40))
+                .setOverflowX(UiOverflow.AUTO)
+                .setOverflowY(UiOverflow.AUTO)
+                .setBackgroundColor(0xFF1E293B)
+                .setBorderWidth(UiStyleLength.px(1))
+                .setBorderStyle(UiBorderStyle.SOLID)
+                .setBorderColor(0xFF38BDF8);
+        ElementNode wide = createDemoPanel(document, "宽内容触发滚动", 0xFF22C55E);
+        wide.style().setWidth(UiStyleLength.px(140)).setHeight(UiStyleLength.px(20));
+        autoBox.append(wide);
+        ElementNode visible = document.div();
+        visible.style()
+                .setWidth(UiStyleLength.px(80))
+                .setHeight(UiStyleLength.px(40))
+                .setOverflowX(UiOverflow.VISIBLE)
+                .setOverflowY(UiOverflow.VISIBLE)
+                .setBackgroundColor(0xFF0F172A)
+                .setBorderWidth(UiStyleLength.px(1))
+                .setBorderStyle(UiBorderStyle.SOLID)
+                .setBorderColor(0xFF64748B);
+        visible.appendText("visible 越界可见");
+        row.append(hidden).append(autoBox).append(visible);
+        stage.append(row);
+        appendMutedText(document, stage, "hidden 裁剪；auto 滚动；visible 溢出可见。");
+    }
+
+    /**
+     * 追加 inline/inline-block 排列演示。
+     *
+     * @param document 文档实例
+     * @param stage 演示舞台
+     */
+    private void appendLayoutInlineDemo(UiDocument document, ElementNode stage) {
+        ElementNode container = document.div();
+        container.style()
+                .setWidth(UiStyleLength.px(260))
+                .setPadding(UiStyleLength.px(8))
+                .setBackgroundColor(0xFF0F172A)
+                .setBorderWidth(UiStyleLength.px(1))
+                .setBorderStyle(UiBorderStyle.SOLID)
+                .setBorderColor(0xFF475569);
+        container.appendText("文本前 ");
+        ElementNode inline = document.div();
+        inline.style()
+                .setDisplay(UiDisplay.INLINE)
+                .setBackgroundColor(0xFF38BDF8)
+                .setPadding(UiStyleLength.px(2));
+        inline.appendText("inline");
+        container.append(inline);
+        container.appendText(" 文本中 ");
+        ElementNode ib = createDemoPanel(document, "inline-block", 0xFF059669);
+        ib.style()
+                .setDisplay(UiDisplay.INLINE_BLOCK)
+                .setWidth(UiStyleLength.px(72))
+                .setHeight(UiStyleLength.px(28));
+        container.append(ib);
+        container.appendText(" 文本后");
+        stage.append(container);
+        appendMutedText(document, stage, "inline 流式，inline-block 独立盒仍同行。");
+    }
+
+    /**
+     * 追加 inline-block baseline 演示（人工）。
+     *
+     * @param document 文档实例
+     * @param stage 演示舞台
+     */
+    private void appendLayoutInlineBlockBaselineDemo(UiDocument document, ElementNode stage) {
+        ElementNode container = document.div();
+        container.style()
+                .setWidth(UiStyleLength.px(280))
+                .setPadding(UiStyleLength.px(8))
+                .setBackgroundColor(0xFF0F172A)
+                .setBorderWidth(UiStyleLength.px(1))
+                .setBorderStyle(UiBorderStyle.SOLID)
+                .setBorderColor(0xFF475569);
+        container.appendText("基线对齐前 ");
+        ElementNode ib = document.div();
+        ib.style()
+                .setDisplay(UiDisplay.INLINE_BLOCK)
+                .setBackgroundColor(0xFF7C3AED)
+                .setPadding(UiStyleLength.px(4))
+                .setWidth(UiStyleLength.px(90))
+                .setHeight(UiStyleLength.px(36));
+        ib.appendText("ib baseline tall");
+        container.append(ib);
+        container.appendText(" 相邻文本基线");
+        stage.append(container);
+        appendMutedText(document, stage, "观察 inline-block 底部与文本基线是否对齐（人工确认）。");
+    }
+
+    /**
+     * 追加 fixed/sticky 参考框与滚动演示。
+     *
+     * @param document 文档实例
+     * @param stage 演示舞台
+     */
+    private void appendLayoutFixedStickyDemo(UiDocument document, ElementNode stage) {
+        ElementNode scroller = document.div();
+        scroller.style()
+                .setPosition(UiPosition.RELATIVE)
+                .setWidth(UiStyleLength.px(240))
+                .setHeight(UiStyleLength.px(90))
+                .setOverflowY(UiOverflow.AUTO)
+                .setBackgroundColor(0xFF020617)
+                .setBorderWidth(UiStyleLength.px(1))
+                .setBorderStyle(UiBorderStyle.SOLID)
+                .setBorderColor(0xFF475569);
+        ElementNode sticky = createDemoPanel(document, "sticky 头", 0xFFF59E0B);
+        sticky.style()
+                .setPosition(UiPosition.STICKY)
+                .setTop(UiStyleLength.px(0))
+                .setWidth(UiStyleLength.px(200));
+        scroller.append(sticky);
+        for (int i = 0; i < 3; i++) {
+            ElementNode block = createDemoPanel(document, "内容块 " + i, 0xFF334155);
+            block.style().setMarginBottom(UiStyleLength.px(12));
+            scroller.append(block);
+        }
+        ElementNode fixed = createDemoPanel(document, "fixed 按钮", 0xFF22C55E);
+        fixed.style()
+                .setPosition(UiPosition.FIXED)
+                .setLeft(UiStyleLength.px(10))
+                .setTop(UiStyleLength.px(10))
+                .setWidth(UiStyleLength.px(60))
+                .setHeight(UiStyleLength.px(20));
+        stage.append(scroller).append(fixed);
+        appendMutedText(document, stage, "sticky 吸附，fixed 相对视口固定（滚动容器内观察）。");
+    }
+
+    /**
+     * 追加 transform 命中演示。
+     *
+     * @param document 文档实例
+     * @param stage 演示舞台
+     */
+    private void appendPaintTransformHitDemo(UiDocument document, ElementNode stage) {
+        ElementNode canvas = createPaintCanvas(document);
+        ElementNode placeholder = createPaintLayer(document, "layout占位", 30, 30, 0x554F46E5, 1, 1.0F);
+        placeholder.style().setBorderColor(0xFF8B5CF6);
+        ElementNode hit = createPaintLayer(document, "transform 命中区", 30, 30, 0xFFEC4899, 2, 1.0F);
+        hit.style().setTransform(UiTransform.of(20.0F, 12.0F, 1.0F, 1.0F, -15.0F));
+        canvas.append(placeholder).append(hit);
+        stage.append(canvas);
+        appendMutedText(document, stage, "点击变换后视觉位置应命中（人工+诊断）。");
+    }
+
+    /**
+     * 追加 top-layer 绘制演示。
+     *
+     * @param document 文档实例
+     * @param stage 演示舞台
+     */
+    private void appendPaintTopLayerDemo(UiDocument document, ElementNode stage) {
+        ElementNode canvas = createPaintCanvas(document);
+        canvas.append(createPaintLayer(document, "底层内容 z=1", 20, 20, 0xFFDC2626, 1, 1.0F));
+        ElementNode top = createPaintLayer(document, "top-layer 弹层 z=100", 50, 35, 0xFF7C3AED, 100, 0.95F);
+        top.style().setWidth(UiStyleLength.px(140)).setHeight(UiStyleLength.px(50));
+        canvas.append(top);
+        stage.append(canvas);
+        appendMutedText(document, stage, "top-layer 覆盖普通层，优先命中。");
+    }
+
+    /**
+     * 追加 scrollbar 几何演示。
+     *
+     * @param document 文档实例
+     * @param stage 演示舞台
+     */
+    private void appendPaintScrollbarDemo(UiDocument document, ElementNode stage) {
+        ElementNode scroller = document.div();
+        scroller.style()
+                .setWidth(UiStyleLength.px(180))
+                .setHeight(UiStyleLength.px(70))
+                .setOverflowY(UiOverflow.AUTO)
+                .setBackgroundColor(0xFF0F172A)
+                .setBorderWidth(UiStyleLength.px(1))
+                .setBorderStyle(UiBorderStyle.SOLID)
+                .setBorderColor(0xFF64748B);
+        for (int i = 0; i < 4; i++) {
+            ElementNode item = createDemoPanel(document, "scroll item " + i, 0xFF334155);
+            item.style().setMarginBottom(UiStyleLength.px(6));
+            scroller.append(item);
+        }
+        stage.append(scroller);
+        appendMutedText(document, stage, "auto 溢出时显示 scrollbar track/thumb。");
+    }
+
+    /**
+     * 追加 host image fallback 演示。
+     *
+     * @param document 文档实例
+     * @param stage 演示舞台
+     */
+    private void appendPaintHostImageDemo(UiDocument document, ElementNode stage) {
+        ElementNode row = createDemoRow(document);
+        ElementNode ok = createDemoPanel(document, "有效 host image", 0xFF1E40AF);
+        ok.style().setBackgroundImage(UiBackgroundImage.texture("qz_uilib:textures/gui/demo.png", 48, 48));
+        ElementNode fb = createDemoPanel(document, "缺失 fallback", 0xFF7F1D1D);
+        fb.style().setBackgroundImage(UiBackgroundImage.texture("missing:nonexistent.png", 16, 16));
+        row.append(ok).append(fb);
+        stage.append(row);
+        appendMutedText(document, stage, "有效显示图片，缺失显示底色或占位不崩溃。");
     }
 
     /**

@@ -49,9 +49,9 @@ public class UiTestDocumentPageControllerTest {
         Assert.assertTrue(containsText(texts, "功能画廊"));
         Assert.assertTrue(containsText(texts, "语义覆盖热力图"));
         Assert.assertTrue(containsText(texts, "快速筛选"));
-        Assert.assertTrue(containsText(texts, "计划用例：59；已接入：9；缺口：50"));
+        Assert.assertTrue(containsText(texts, "计划用例：59；已接入：19；缺口：40"));
         Assert.assertTrue(containsText(texts, "视觉状态=未观察；语义状态=未断言；汇总状态=缺口"));
-        Assert.assertTrue(containsText(texts, "视觉状态=展示中；语义状态=未断言；汇总状态=缺口"));
+        Assert.assertTrue(containsText(texts, "视觉状态=展示中；语义状态=未断言；汇总状态=待确认"));
         Assert.assertTrue(containsText(texts, "二级页数量"));
         Assert.assertTrue(containsText(texts, "DOM 与选择器语义"));
         Assert.assertTrue(containsText(texts, "CSS 级联与样式语义"));
@@ -65,8 +65,8 @@ public class UiTestDocumentPageControllerTest {
         Assert.assertTrue(containsText(texts, "RemoteNet 远程、配置与网络语义"));
         Assert.assertTrue(containsText(texts, "打开 DOM 二级页"));
         Assert.assertTrue(containsText(texts, "DOM：计划 7；自动 7；人工 0；缺口 7"));
-        Assert.assertTrue(containsText(texts, "CSS：计划 6；自动 6；人工 0；缺口 3"));
-        Assert.assertTrue(containsText(texts, "PAINT：计划 7；自动 5；人工 2；缺口 4"));
+        Assert.assertTrue(containsText(texts, "CSS：计划 6；自动 6；人工 0；缺口 0"));
+        Assert.assertTrue(containsText(texts, "PAINT：计划 7；自动 5；人工 2；缺口 0"));
         Assert.assertTrue(containsText(texts, "旧运行时测试内容已清空"));
         Assert.assertTrue(containsText(texts, "视觉状态：未观察 / 展示中 / 人工通过 / 视觉失败 / 已知视觉缺口"));
         Assert.assertFalse(containsText(texts, "DOM-001"));
@@ -86,12 +86,12 @@ public class UiTestDocumentPageControllerTest {
         UiTestMatrixState state = fixture.controller.getMatrixState();
 
         Assert.assertEquals(10, registry.getGroups().size());
-        Assert.assertEquals(9, registry.getCases().size());
+        Assert.assertEquals(19, registry.getCases().size());
         Assert.assertEquals(59, state.getTotalPlannedCaseCount());
-        Assert.assertEquals(9, state.getTotalImplementedCaseCount());
-        Assert.assertEquals(50, state.getTotalGapCount());
-        Assert.assertEquals(43, state.getTotalPlannedAutomaticCount());
-        Assert.assertEquals(16, state.getTotalPlannedManualCount());
+        Assert.assertEquals(19, state.getTotalImplementedCaseCount());
+        Assert.assertEquals(40, state.getTotalGapCount());
+        Assert.assertEquals(42, state.getTotalPlannedAutomaticCount());
+        Assert.assertEquals(17, state.getTotalPlannedManualCount());
 
         UiTestGroupState domState = state.getGroupState("DOM");
         Assert.assertEquals(7, domState.getGroup().getPlannedCaseCount());
@@ -100,12 +100,18 @@ public class UiTestDocumentPageControllerTest {
         Assert.assertEquals(UiTestSummaryStatus.GAP, domState.getSummaryStatus());
 
         UiTestGroupState cssState = state.getGroupState("CSS");
-        Assert.assertEquals(3, cssState.getImplementedCaseCount());
-        Assert.assertEquals(3, cssState.getGapCount());
+        Assert.assertEquals(6, cssState.getImplementedCaseCount());
+        Assert.assertEquals(0, cssState.getGapCount());
         Assert.assertEquals(UiTestVisualStatus.DISPLAYING, cssState.getVisualStatus());
         Assert.assertEquals(UiTestSemanticStatus.NOT_ASSERTED, cssState.getSemanticStatus());
 
+        UiTestGroupState layoutState = state.getGroupState("LAYOUT");
+        Assert.assertEquals(6, layoutState.getImplementedCaseCount());
+        Assert.assertEquals(0, layoutState.getGapCount());
+
         UiTestGroupState paintState = state.getGroupState("PAINT");
+        Assert.assertEquals(7, paintState.getImplementedCaseCount());
+        Assert.assertEquals(0, paintState.getGapCount());
         Assert.assertEquals(UiTestSemanticStatus.MANUAL_PENDING, paintState.getSemanticStatus());
     }
 
@@ -158,7 +164,7 @@ public class UiTestDocumentPageControllerTest {
         Assert.assertTrue(containsText(texts, "VIS-CSS-001"));
         Assert.assertTrue(containsText(texts, "Specificity 三阶色块"));
         Assert.assertTrue(containsText(texts, "sample 标签"));
-        Assert.assertTrue(containsText(texts, "第 1 张 / 共 3 张"));
+        Assert.assertTrue(containsText(texts, "第 1 张 / 共 6 张"));
         clickButtonByLabel(fixture.controller.getHtmlLikeDocumentWidget(), "下一张", 0);
         texts = collectDocumentTexts(fixture.controller.getHtmlLikeDocumentWidget());
         Assert.assertTrue(containsText(texts, "VIS-CSS-002"));
@@ -167,6 +173,10 @@ public class UiTestDocumentPageControllerTest {
         texts = collectDocumentTexts(fixture.controller.getHtmlLikeDocumentWidget());
         Assert.assertTrue(containsText(texts, "VIS-CSS-003"));
         Assert.assertTrue(containsText(texts, "visibility 与 pointer-events 状态牌"));
+        clickButtonByLabel(fixture.controller.getHtmlLikeDocumentWidget(), "下一张", 0);
+        texts = collectDocumentTexts(fixture.controller.getHtmlLikeDocumentWidget());
+        Assert.assertTrue(containsText(texts, "VIS-CSS-004"));
+        Assert.assertTrue(containsText(texts, "继承与级联优先级"));
         Assert.assertFalse(containsText(texts, "执行自动测试"));
     }
 
@@ -192,6 +202,10 @@ public class UiTestDocumentPageControllerTest {
         layoutTexts = collectDocumentTexts(fixture.controller.getHtmlLikeDocumentWidget());
         Assert.assertTrue(containsText(layoutTexts, "VIS-LAYOUT-003"));
         Assert.assertTrue(containsText(layoutTexts, "table auto 内容列宽"));
+        clickButtonByLabel(fixture.controller.getHtmlLikeDocumentWidget(), "下一张", 0);
+        layoutTexts = collectDocumentTexts(fixture.controller.getHtmlLikeDocumentWidget());
+        Assert.assertTrue(containsText(layoutTexts, "VIS-LAYOUT-004"));
+        Assert.assertTrue(containsText(layoutTexts, "inline 与 inline-block 排列"));
 
         clickButtonByLabel(fixture.controller.getHtmlLikeDocumentWidget(), "PAINT", 0);
         List<String> paintTexts = collectDocumentTexts(fixture.controller.getHtmlLikeDocumentWidget());
@@ -205,6 +219,10 @@ public class UiTestDocumentPageControllerTest {
         paintTexts = collectDocumentTexts(fixture.controller.getHtmlLikeDocumentWidget());
         Assert.assertTrue(containsText(paintTexts, "VIS-PAINT-003"));
         Assert.assertTrue(containsText(paintTexts, "transform 视觉命中舞台"));
+        clickButtonByLabel(fixture.controller.getHtmlLikeDocumentWidget(), "下一张", 0);
+        paintTexts = collectDocumentTexts(fixture.controller.getHtmlLikeDocumentWidget());
+        Assert.assertTrue(containsText(paintTexts, "VIS-PAINT-004"));
+        Assert.assertTrue(containsText(paintTexts, "transform 命中舞台"));
         Assert.assertTrue(containsText(paintTexts, "语义状态=人工待确认"));
     }
 
@@ -224,7 +242,7 @@ public class UiTestDocumentPageControllerTest {
         Assert.assertTrue(containsText(texts, "语义状态=自动通过"));
         Assert.assertTrue(containsText(texts, "当前样例日志 tail"));
         Assert.assertTrue(containsText(texts, "CSS/VIS-CSS-001 | start | 开始运行样例断言"));
-        Assert.assertTrue(containsText(texts, "context=group=CSS；case=VIS-CSS-001；page=1/3；env=Minecraft=1.7.10"));
+        Assert.assertTrue(containsText(texts, "context=group=CSS；case=VIS-CSS-001；page=1/6；env=Minecraft=1.7.10"));
         Assert.assertTrue(containsText(texts, "pass | 自动断言通过"));
         Assert.assertTrue(containsText(texts, "stageBox=border("));
         Assert.assertTrue(containsText(texts, "stageStyle=display=FLEX"));
@@ -249,7 +267,7 @@ public class UiTestDocumentPageControllerTest {
         List<String> texts = collectDocumentTexts(fixture.controller.getHtmlLikeDocumentWidget());
         Assert.assertTrue(containsText(texts, "语义状态=人工待确认"));
         Assert.assertTrue(containsText(texts, "PAINT/VIS-PAINT-003 | skip | 当前样例未接入自动断言"));
-        Assert.assertTrue(containsText(texts, "context=group=PAINT；case=VIS-PAINT-003；page=3/3"));
+        Assert.assertTrue(containsText(texts, "context=group=PAINT；case=VIS-PAINT-003；page=3/7"));
         Assert.assertTrue(containsText(texts, "transformDiff=layoutLeftDelta=0, layoutTopDelta=0"));
         Assert.assertTrue(containsText(texts,
                 "visualTransform=translate(28.00,8.00) scale(1.00,1.00) rotate(12.00deg)"));
