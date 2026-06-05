@@ -120,7 +120,7 @@ final class UiTestMatrixRegistry {
                 "block flow、margin collapse、inline/inline-block、flex min-content、table auto 与 fixed/sticky。",
                 "布局结果以标尺、边界框和尺寸标签展示，截图即可比对。",
                 "布局盒尺寸、位置、margin collapse、flex/table 分配、scroll 范围。",
-                "预期结果：后续样例应直接画出布局盒、标尺、滚动范围和定位参考框。", 6, 6, 0));
+                "预期结果：后续样例应直接画出布局盒、标尺、滚动范围和定位参考框。", 6, 5, 1));
         groups.add(new UiTestGroupSpec("PAINT", "Paint 绘制、命中与视觉语义",
                 "stacking、opacity、clip、transform、top-layer、scrollbar 与 host image fallback。",
                 "绘制层级、裁剪、变换和滚动条以重叠舞台展示。",
@@ -167,14 +167,14 @@ final class UiTestMatrixRegistry {
     private static List<UiTestGalleryItem> createDefaultGalleryItems() {
         List<UiTestGalleryItem> items = new ArrayList<UiTestGalleryItem>();
         items.add(new UiTestGalleryItem("布局能力画廊",
-                "block flow / flex min-content / table auto 已以首批可截图样例展示。",
-                "视觉展示：已接入 3 张布局样例", 0xFF38BDF8));
+                "block flow / flex min-content / table auto / inline / fixed/sticky 已以视觉样例展示。",
+                "视觉展示：已接入 6 张布局样例", 0xFF38BDF8));
         items.add(new UiTestGalleryItem("控件能力画廊",
                 "button / input / textarea / select / slider / tab 将以真实控件状态展示。",
                 "视觉展示：待接入真实控件样例", 0xFF34D399));
         items.add(new UiTestGalleryItem("绘制能力画廊",
-                "stacking / opacity / clip / transform 已以首批分层舞台展示。",
-                "视觉展示：已接入 3 张绘制样例", 0xFFF59E0B));
+                "stacking / opacity / clip / transform / top-layer / scrollbar / host image 已以分层舞台展示。",
+                "视觉展示：已接入 7 张绘制样例", 0xFFF59E0B));
         items.add(new UiTestGalleryItem("远程能力画廊",
                 "channel / fetch / stream / store / remote page / HUD 将以链路状态展示。",
                 "视觉展示：待接入远程 smoke 样例", 0xFFA78BFA));
@@ -233,6 +233,59 @@ final class UiTestMatrixRegistry {
                 "原始占位框与旋转后的亮色卡片同时展示，旁边标注 transform 参数。",
                 "预期结果：半透明占位框保持原位，旋转卡片偏移显示，transform 参数以文本标注。",
                 "自动断言：后续接 transform 命中与布局盒摘要；当前需截图确认旋转视觉。", "需要人眼确认旋转卡片与原始占位框的相对位置。"));
+        // CSS 004-006
+        cases.add(new UiTestCaseSpec("VIS-CSS-004", "CSS", "继承与级联优先级",
+                "可继承属性从祖先继承，非继承属性不继承；specificity 仍优先于继承值。",
+                "祖先声明 color，子不声明则继承；子声明 width（非继承）使用自身值。",
+                "预期结果：子文本颜色继承祖先，子宽度为独立声明值而非父内容宽。",
+                "自动断言：接 computed color 继承与 width 非继承结果；当前展示继承视觉。", ""));
+        cases.add(new UiTestCaseSpec("VIS-CSS-005", "CSS", "background 与 url/none",
+                "background-color 提供底色；background-image:url(...) 显示资源；none 仅底色。",
+                "三个面板分别使用纯色、url 背景、显式 none 覆盖。",
+                "预期结果：url 面板显示贴图，none 面板只留底色不显示图片。",
+                "自动断言：接 computed background-color 与 background-image；提供可截图对比。", ""));
+        cases.add(new UiTestCaseSpec("VIS-CSS-006", "CSS", "overflow 行为对比",
+                "hidden 裁剪无滚动条；auto 溢出显示滚动；visible 允许内容越界可见。",
+                "三个容器内放宽子元素，分别设 hidden/auto/visible 。",
+                "预期结果：hidden 子不可见；auto 出现可操作滚动条；visible 子越界可见。",
+                "自动断言：接 overflow 样式、clip 范围与滚动能力；当前展示行为差异。", ""));
+        // LAYOUT 004-006
+        cases.add(new UiTestCaseSpec("VIS-LAYOUT-004", "LAYOUT", "inline 与 inline-block 排列",
+                "inline 参与行内流式，inline-block 拥有盒模型但仍按基线参与行布局。",
+                "文本中混排 inline 标签与带固定宽高的 inline-block 卡片。",
+                "预期结果：inline 与文本同基线连续，inline-block 作为独立盒占据空间。",
+                "自动断言：接 inline 布局盒与 inline-block 宽高；当前展示混排视觉。", ""));
+        cases.add(new UiTestCaseSpec("VIS-LAYOUT-005", "LAYOUT", "inline-block baseline 对齐",
+                "inline-block 基线应对齐其最后行文本基线，与相邻 inline 文本基线一致。",
+                "多行 inline-block 与相邻纯文本同行，观察底部对齐。",
+                "预期结果：inline-block 底部基线与相邻文本对齐，高度由内容决定。",
+                "自动断言：inline-block baseline 需行内布局落位模型；当前人工截图确认。", "inline-block baseline 涉及 IFC 基线计算，当前引擎为近似，待重构后自动。"));
+        cases.add(new UiTestCaseSpec("VIS-LAYOUT-006", "LAYOUT", "fixed/sticky 参考框与滚动",
+                "fixed 相对视口或 transform containing block 定位，不随滚动移动；sticky 保留占位并在阈值吸附。",
+                "可滚动容器内置 sticky 头部 + 内容块 + fixed 定位按钮，滚动观察。",
+                "预期结果：sticky 滚动到阈值后吸附固定，fixed 始终相对视口不随容器内容滚。",
+                "自动断言：接 fixed/sticky 布局盒位置、scroll 范围与 containing block；展示定位。", ""));
+        // PAINT 004-007
+        cases.add(new UiTestCaseSpec("VIS-PAINT-004", "PAINT", "transform 命中舞台",
+                "transform 改变绘制与命中 quad，不改变布局占位；点击应命中视觉变换后区域。",
+                "可点击的旋转/平移卡片，旁注 transform 值与命中提示。",
+                "预期结果：视觉变换后点击新位置命中，点击原布局位不命中。",
+                "自动断言：接 transform 命中摘要与布局盒不变；复杂矩阵保留人工。", "transform 命中需完整 visual quad 与 hit-test 联动，当前保留人工交互确认。"));
+        cases.add(new UiTestCaseSpec("VIS-PAINT-005", "PAINT", "top-layer 绘制与命中",
+                "top-layer 元素（如弹层）绘制在普通 stacking 之后，优先接收命中与焦点。",
+                "普通内容 + 模拟 tooltip/select 弹层，弹层覆盖并可点击。",
+                "预期结果：弹层覆盖下方内容，点击弹层区域命中弹层而非下层。",
+                "自动断言：接 stacking phase 与 top-layer 命中；当前提供可截图层级。", ""));
+        cases.add(new UiTestCaseSpec("VIS-PAINT-006", "PAINT", "scrollbar 几何与命中",
+                "overflow:auto/scroll 时生成 scrollbar track/thumb，thumb 拖动影响 scroll offset。",
+                "带 overflow:auto 的高容器 + 长内容，展示 track 与 thumb 位置。",
+                "预期结果：thumb 尺寸与内容比例一致，位于 track 内；点击 thumb 区域可交互。",
+                "自动断言：接 overflow、scroll 范围与 scrollbar 相关布局盒；当前展示几何。", ""));
+        cases.add(new UiTestCaseSpec("VIS-PAINT-007", "PAINT", "host image fallback",
+                "background-image:url(有效) 显示资源图；无效或 none 时 fallback 占位或底色。",
+                "两个面板：有效资源 url 与 缺失资源 url，分别展示图片与 fallback。",
+                "预期结果：有效显示贴图，缺失显示占位或纯底色不崩溃。",
+                "自动断言：接 background-image 计算与绘制命令；当前提供资源/回退对比。", ""));
         return cases;
     }
 }

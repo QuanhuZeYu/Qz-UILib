@@ -33,7 +33,7 @@ final class UiTestSemanticChecker {
             return "自动边界：computed style、继承结果、specificity 结果、可见性与 pointer-events 状态；人工边界：暂无计划人工项。";
         }
         if ("LAYOUT".equals(code)) {
-            return "自动边界：布局盒尺寸、位置、margin collapse、flex/table 分配、scroll 范围；人工边界：暂无计划人工项。";
+            return "自动边界：布局盒尺寸、位置、margin collapse、flex/table 分配、scroll 范围；人工边界：inline-block baseline 需单独重构后自动。";
         }
         if ("PAINT".equals(code)) {
             return "自动边界：绘制命令顺序、stacking phase、clip/transform/top-layer 命中；人工边界：重叠层级、host image fallback 和滚动条视觉需截图确认。";

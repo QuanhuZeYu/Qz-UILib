@@ -9,6 +9,10 @@ import club.heiqi.uilib.ui.dom.ElementNode;
 import club.heiqi.uilib.ui.layout.DocumentLayoutEdges;
 import club.heiqi.uilib.ui.layout.DocumentLayoutBox;
 import club.heiqi.uilib.ui.style.cascade.ComputedStyle;
+import club.heiqi.uilib.ui.style.props.UiDisplay;
+import club.heiqi.uilib.ui.style.props.UiOverflow;
+import club.heiqi.uilib.ui.style.props.UiPosition;
+import club.heiqi.uilib.ui.style.values.UiBackgroundImage;
 import club.heiqi.uilib.ui.style.values.UiStyleLength;
 import club.heiqi.uilib.ui.style.values.UiTransform;
 
@@ -61,19 +65,39 @@ final class UiTestAssertionRunner {
                 passed = assertCssBoxSizing(documentWidget, scope, diagnostics);
             } else if ("VIS-CSS-003".equals(testCase.getId())) {
                 passed = assertCssVisibility(documentWidget, scope, diagnostics);
+            } else if ("VIS-CSS-004".equals(testCase.getId())) {
+                passed = assertCssInheritance(documentWidget, scope, diagnostics);
+            } else if ("VIS-CSS-005".equals(testCase.getId())) {
+                passed = assertCssBackground(documentWidget, scope, diagnostics);
+            } else if ("VIS-CSS-006".equals(testCase.getId())) {
+                passed = assertCssOverflow(documentWidget, scope, diagnostics);
             } else if ("VIS-LAYOUT-001".equals(testCase.getId())) {
                 passed = assertLayoutBlockFlow(documentWidget, scope, diagnostics);
             } else if ("VIS-LAYOUT-002".equals(testCase.getId())) {
                 passed = assertLayoutFlex(documentWidget, scope, diagnostics);
             } else if ("VIS-LAYOUT-003".equals(testCase.getId())) {
                 passed = assertLayoutTable(documentWidget, scope, diagnostics);
+            } else if ("VIS-LAYOUT-004".equals(testCase.getId())) {
+                passed = assertLayoutInline(documentWidget, scope, diagnostics);
+            } else if ("VIS-LAYOUT-006".equals(testCase.getId())) {
+                passed = assertLayoutFixedSticky(documentWidget, scope, diagnostics);
             } else if ("VIS-PAINT-001".equals(testCase.getId())) {
                 passed = assertPaintStacking(documentWidget, scope, diagnostics);
             } else if ("VIS-PAINT-002".equals(testCase.getId())) {
                 passed = assertPaintClip(documentWidget, scope, diagnostics);
+            } else if ("VIS-PAINT-005".equals(testCase.getId())) {
+                passed = assertPaintTopLayer(documentWidget, scope, diagnostics);
+            } else if ("VIS-PAINT-006".equals(testCase.getId())) {
+                passed = assertPaintScrollbar(documentWidget, scope, diagnostics);
+            } else if ("VIS-PAINT-007".equals(testCase.getId())) {
+                passed = assertPaintHostImage(documentWidget, scope, diagnostics);
             } else {
                 if ("VIS-PAINT-003".equals(testCase.getId())) {
                     diagnosePaintTransform(documentWidget, scope, diagnostics);
+                } else if ("VIS-LAYOUT-005".equals(testCase.getId())) {
+                    diagnoseLayoutInlineBlockBaseline(documentWidget, scope, diagnostics);
+                } else if ("VIS-PAINT-004".equals(testCase.getId())) {
+                    diagnosePaintTransformHit(documentWidget, scope, diagnostics);
                 } else {
                     diagnostics.add("当前样例未接入自动断言，保持人工待确认。");
                 }
@@ -282,6 +306,152 @@ final class UiTestAssertionRunner {
         return barBox.getWidth() > clipBox.getWidth();
     }
 
+    private boolean assertCssInheritance(HtmlLikeDocumentWidget widget, ElementNode scope, List<String> diagnostics) {
+        ElementNode parent = findByText(scope, "继承 color (应为蓝色)");
+        if (parent == null) {
+            parent = scope; // fallback search parent container
+        }
+        ElementNode childColor = findByText(scope, "继承 color (应为蓝色)");
+        ElementNode childWidth = findByText(scope, "width=80px (非继承)");
+        if (childColor == null || childWidth == null) {
+            diagnostics.add("inheritance 节点缺失");
+            return false;
+        }
+        DocumentLayoutBox colorBox = resolveBox(widget, childColor);
+        DocumentLayoutBox widthBox = resolveBox(widget, childWidth);
+        ComputedStyle colorStyle = colorBox.getComputedStyle();
+        diagnostics.add("inheritedColor=" + toHex(colorStyle.getTextColor()));
+        diagnostics.add("childWidth=" + widthBox.getWidth());
+        appendElementDiagnostics(diagnostics, "colorChild", colorBox);
+        appendElementDiagnostics(diagnostics, "widthChild", widthBox);
+        diagnostics.add("inheritanceDiff=expected color inherit 0xFF38BDF8, width independent ~80; actual color="
+                + toHex(colorStyle.getTextColor()) + ", width=" + widthBox.getWidth());
+        return colorStyle.getTextColor() == 0xFF38BDF8 && widthBox.getWidth() <= 90;
+    }
+
+    private boolean assertCssBackground(HtmlLikeDocumentWidget widget, ElementNode scope, List<String> diagnostics) {
+        ElementNode urlPanel = findByText(scope, "background + url");
+        ElementNode nonePanel = findByText(scope, "background:none 效果");
+        if (urlPanel == null || nonePanel == null) {
+            diagnostics.add("background 节点缺失");
+            return false;
+        }
+        DocumentLayoutBox urlBox = resolveBox(widget, urlPanel);
+        DocumentLayoutBox noneBox = resolveBox(widget, nonePanel);
+        ComputedStyle urlStyle = urlBox.getComputedStyle();
+        ComputedStyle noneStyle = noneBox.getComputedStyle();
+        UiBackgroundImage urlImg = urlStyle.getBackgroundImage();
+        UiBackgroundImage noneImg = noneStyle.getBackgroundImage();
+        diagnostics.add("urlBg=" + toHex(urlStyle.getBackgroundColor()) + ", hasImage=" + (urlImg != null));
+        diagnostics.add("noneBg=" + toHex(noneStyle.getBackgroundColor()) + ", hasImage=" + (noneImg != null));
+        appendElementDiagnostics(diagnostics, "urlPanel", urlBox);
+        appendElementDiagnostics(diagnostics, "nonePanel", noneBox);
+        diagnostics.add("backgroundDiff=expected url hasImage, none has no image; actual urlImg=" + (urlImg != null)
+                + ", noneImg=" + (noneImg != null));
+        return urlImg != null && noneImg == null;
+    }
+
+    private boolean assertCssOverflow(HtmlLikeDocumentWidget widget, ElementNode scope, List<String> diagnostics) {
+        ElementNode hidden = findByText(scope, "hidden 裁剪");
+        ElementNode autoBox = findByText(scope, "宽内容触发滚动");
+        if (hidden == null || autoBox == null) {
+            diagnostics.add("overflow 节点缺失");
+            return false;
+        }
+        DocumentLayoutBox hiddenBox = resolveBox(widget, hidden.getParent() instanceof ElementNode
+                ? (ElementNode) hidden.getParent() : hidden);
+        DocumentLayoutBox autoChildBox = resolveBox(widget, autoBox);
+        ComputedStyle hiddenStyle = hiddenBox.getComputedStyle();
+        diagnostics.add("hiddenOverflow=" + hiddenStyle.getOverflowX() + "/" + hiddenStyle.getOverflowY());
+        diagnostics.add("autoChildWidth=" + autoChildBox.getWidth());
+        appendElementDiagnostics(diagnostics, "hiddenContainer", hiddenBox);
+        appendElementDiagnostics(diagnostics, "autoChild", autoChildBox);
+        diagnostics.add("overflowDiff=expected hidden clip, auto scrollable; actual hiddenW=" + hiddenBox.getWidth()
+                + ", childW=" + autoChildBox.getWidth());
+        return hiddenStyle.getOverflowX() == UiOverflow.HIDDEN && autoChildBox.getWidth() > hiddenBox.getWidth();
+    }
+
+    private boolean assertLayoutInline(HtmlLikeDocumentWidget widget, ElementNode scope, List<String> diagnostics) {
+        ElementNode ib = findByText(scope, "inline-block");
+        if (ib == null) {
+            diagnostics.add("inline 节点缺失");
+            return false;
+        }
+        DocumentLayoutBox ibBox = resolveBox(widget, ib);
+        ComputedStyle ibStyle = ibBox.getComputedStyle();
+        diagnostics.add("inlineBlockDisplay=" + ibStyle.getDisplay());
+        diagnostics.add("inlineBlockWidth=" + ibBox.getWidth());
+        appendElementDiagnostics(diagnostics, "inlineBlock", ibBox);
+        diagnostics.add("inlineDiff=expected display=INLINE_BLOCK, width~72; actual=" + ibStyle.getDisplay());
+        return ibStyle.getDisplay() == UiDisplay.INLINE_BLOCK && ibBox.getWidth() >= 60;
+    }
+
+    private boolean assertLayoutFixedSticky(HtmlLikeDocumentWidget widget, ElementNode scope, List<String> diagnostics) {
+        ElementNode sticky = findByText(scope, "sticky 头");
+        ElementNode fixed = findByText(scope, "fixed 按钮");
+        if (sticky == null || fixed == null) {
+            diagnostics.add("fixed/sticky 节点缺失");
+            return false;
+        }
+        DocumentLayoutBox stickyBox = resolveBox(widget, sticky);
+        DocumentLayoutBox fixedBox = resolveBox(widget, fixed);
+        ComputedStyle stickyStyle = stickyBox.getComputedStyle();
+        ComputedStyle fixedStyle = fixedBox.getComputedStyle();
+        diagnostics.add("stickyPos=" + stickyStyle.getPosition() + ", top=" + formatLength(stickyStyle.getTop()));
+        diagnostics.add("fixedPos=" + fixedStyle.getPosition());
+        appendElementDiagnostics(diagnostics, "sticky", stickyBox);
+        appendElementDiagnostics(diagnostics, "fixed", fixedBox);
+        diagnostics.add("fixedStickyDiff=expected sticky=STICKY, fixed=FIXED; actual sticky=" + stickyStyle.getPosition()
+                + ", fixed=" + fixedStyle.getPosition());
+        return stickyStyle.getPosition() == UiPosition.STICKY && fixedStyle.getPosition() == UiPosition.FIXED;
+    }
+
+    private boolean assertPaintTopLayer(HtmlLikeDocumentWidget widget, ElementNode scope, List<String> diagnostics) {
+        ElementNode top = findByText(scope, "top-layer 弹层 z=100");
+        if (top == null) {
+            diagnostics.add("top-layer 节点缺失");
+            return false;
+        }
+        DocumentLayoutBox topBox = resolveBox(widget, top);
+        Integer z = topBox.getComputedStyle().getZIndex();
+        diagnostics.add("topZ=" + (z == null ? "auto" : z.toString()));
+        appendElementDiagnostics(diagnostics, "topLayer", topBox);
+        diagnostics.add("topLayerDiff=expected high z or phase; actual z=" + z + ", phase=" + topBox.getStackingPhase());
+        return z != null && z.intValue() >= 10;
+    }
+
+    private boolean assertPaintScrollbar(HtmlLikeDocumentWidget widget, ElementNode scope, List<String> diagnostics) {
+        ElementNode scroller = findByText(scope, "scroll item 0");
+        if (scroller == null) {
+            scroller = scope;
+        }
+        DocumentLayoutBox scrollBox = resolveBox(widget, scroller.getParent() instanceof ElementNode
+                ? (ElementNode) scroller.getParent() : scroller);
+        ComputedStyle s = scrollBox.getComputedStyle();
+        diagnostics.add("scrollOverflow=" + s.getOverflowY());
+        appendElementDiagnostics(diagnostics, "scrollContainer", scrollBox);
+        diagnostics.add("scrollbarDiff=expected overflow auto/scroll; actual=" + s.getOverflowY());
+        return s.getOverflowY() == UiOverflow.AUTO || s.getOverflowY() == UiOverflow.SCROLL;
+    }
+
+    private boolean assertPaintHostImage(HtmlLikeDocumentWidget widget, ElementNode scope, List<String> diagnostics) {
+        ElementNode ok = findByText(scope, "有效 host image");
+        ElementNode fb = findByText(scope, "缺失 fallback");
+        if (ok == null || fb == null) {
+            diagnostics.add("host image 节点缺失");
+            return false;
+        }
+        DocumentLayoutBox okBox = resolveBox(widget, ok);
+        DocumentLayoutBox fbBox = resolveBox(widget, fb);
+        UiBackgroundImage okImg = okBox.getComputedStyle().getBackgroundImage();
+        UiBackgroundImage fbImg = fbBox.getComputedStyle().getBackgroundImage();
+        diagnostics.add("okHasImage=" + (okImg != null) + ", fbHasImage=" + (fbImg != null));
+        appendElementDiagnostics(diagnostics, "okImage", okBox);
+        appendElementDiagnostics(diagnostics, "fbImage", fbBox);
+        diagnostics.add("hostImageDiff=expected both have image declaration (fallback at paint); actual ok=" + (okImg != null));
+        return okImg != null && fbImg != null;
+    }
+
     /**
      * 为人工确认的 transform 样例补充布局盒与 transform 摘要。
      *
@@ -306,6 +476,55 @@ final class UiTestAssertionRunner {
                 + "; visualTransform=" + formatTransform(transform)
                 + "; expected layout box unchanged, paint/hit uses transformed visual quad");
         diagnostics.add("当前样例仍需人工确认旋转卡片与原始占位框的视觉相对位置。");
+    }
+
+    /**
+     * 为 inline-block baseline 人工样例补充布局摘要。
+     *
+     * @param widget 文档组件
+     * @param scope 样例舞台
+     * @param diagnostics 诊断摘要列表
+     */
+    private void diagnoseLayoutInlineBlockBaseline(HtmlLikeDocumentWidget widget, ElementNode scope, List<String> diagnostics) {
+        ElementNode ib = findByText(scope, "ib baseline tall");
+        if (ib == null) {
+            ib = findByText(scope, "inline-block");
+        }
+        if (ib == null) {
+            diagnostics.add("inline-block baseline 节点缺失，保持人工待确认。");
+            return;
+        }
+        DocumentLayoutBox ibBox = resolveBox(widget, ib);
+        appendElementDiagnostics(diagnostics, "inlineBlockBaseline", ibBox);
+        diagnostics.add("baselineDiff=ibHeight=" + ibBox.getHeight()
+                + "; expected baseline alignment with sibling text (manual visual confirm)");
+        diagnostics.add("当前样例需人工确认 inline-block 基线与相邻文本对齐。");
+    }
+
+    /**
+     * 为 transform 命中人工样例补充诊断。
+     *
+     * @param widget 文档组件
+     * @param scope 样例舞台
+     * @param diagnostics 诊断摘要列表
+     */
+    private void diagnosePaintTransformHit(HtmlLikeDocumentWidget widget, ElementNode scope, List<String> diagnostics) {
+        ElementNode placeholder = findByText(scope, "layout占位");
+        ElementNode hit = findByText(scope, "transform 命中区");
+        if (placeholder == null || hit == null) {
+            diagnostics.add("transform hit 节点缺失，保持人工待确认。");
+            return;
+        }
+        DocumentLayoutBox phBox = resolveBox(widget, placeholder);
+        DocumentLayoutBox hitBox = resolveBox(widget, hit);
+        UiTransform tr = hitBox.getComputedStyle().getTransform();
+        appendElementDiagnostics(diagnostics, "transformHitPlaceholder", phBox);
+        appendElementDiagnostics(diagnostics, "transformHitLayer", hitBox);
+        diagnostics.add("transformHitDiff=layoutLeftDelta=" + (hitBox.getLeft() - phBox.getLeft())
+                + ", layoutTopDelta=" + (hitBox.getTop() - phBox.getTop())
+                + "; visualTransform=" + formatTransform(tr)
+                + "; expected layout unchanged, hit uses transformed area");
+        diagnostics.add("当前样例仍需人工确认点击变换后区域是否命中。");
     }
 
     /**
