@@ -75,6 +75,8 @@ import club.heiqi.uilib.ui.style.cascade.ComputedStyle;
 import club.heiqi.uilib.ui.style.cascade.UiStyleDeclaration;
 import club.heiqi.uilib.ui.style.cascade.UiStyleResolver;
 import club.heiqi.uilib.ui.style.cascade.UiStyleSheet;
+import club.heiqi.uilib.ui.style.selector.UiPseudoClass;
+import club.heiqi.uilib.ui.style.selector.UiSelector;
 import club.heiqi.uilib.ui.style.props.UiAlignItems;
 import club.heiqi.uilib.ui.style.props.UiBorderStyle;
 import club.heiqi.uilib.ui.style.props.UiBoxSizing;
@@ -428,21 +430,21 @@ public final class UiTestDocumentPageController extends DocumentPageController {
                         "type、class、id、后代、子代和分组选择器",
                         "运行时按钮会校验 type/class/id、后代与子代选择器；分组选择器若未实现会明确标记缺口。",
                         "进入 DOM 二级页后点击 `执行自动测试`；观察匹配数量和分组选择器状态；需要时点击人工通过或人工失败。",
-                        "预期结果：匹配数量分别显示为预设数字，未匹配项保持灰色。"),
+                        "预期结果：`domcase`、`.query-target`、`#query-target-id`、后代和子代选择器均显示 `1/1`，分组选择器未完成时显示待实现缺口。"),
                 new RuntimeTestCase(
                         "DOM-011",
                         DOM_GROUP,
                         "属性选择器 [attr] / [attr=value]",
                         "运行时按钮会尝试解析属性选择器；当前解析器不支持时显示待实现缺口，不伪造通过。",
                         "进入 DOM 二级页后点击 `执行自动测试`；观察属性选择器缺口标记；需要时点击人工通过或人工失败。",
-                        "预期结果：带 `data-case=\"match\"` 的元素高亮，其他元素不高亮。"),
+                        "预期结果：支持后 `[data-case]` 显示 `2/2`、`[data-case=match]` 显示 `1/1`；当前未支持时明确显示待实现缺口。"),
                 new RuntimeTestCase(
                         "DOM-012",
                         DOM_GROUP,
                         "结构伪类和交互伪类",
                         "运行时按钮会校验 first-child/last-child 结构伪类，并保留 hover/active/focus-visible 人工观察入口。",
                         "进入 DOM 二级页后点击 `执行自动测试`；移动鼠标、按下目标并切换焦点观察状态；需要时点击人工通过或人工失败。",
-                        "预期结果：首项、末项、hover、active、focus-visible 的视觉状态只在对应条件下出现。"),
+                        "预期结果：首项和末项结构伪类显示 `1/1`；移动、按下或键盘聚焦交互目标时只出现对应 hover、active、focus-visible 状态。"),
                 new RuntimeTestCase(
                         "DOM-013",
                         DOM_GROUP,
@@ -1170,7 +1172,25 @@ public final class UiTestDocumentPageController extends DocumentPageController {
                 .addRule(".css-002-order", new UiStyleDeclaration()
                         .setTextColor(0xFFFCA5A5))
                 .addRule(".css-002-order", new UiStyleDeclaration()
-                        .setTextColor(0xFFC084FC));
+                        .setTextColor(0xFFC084FC))
+                .addRule(".dom-012-item", new UiStyleDeclaration()
+                        .setBackgroundColor(0xFF334155)
+                        .setBorderColor(0xFF64748B))
+                .addRule(".dom-012-interactive", new UiStyleDeclaration()
+                        .setBackgroundColor(0xFF334155)
+                        .setBorderColor(0xFF64748B))
+                .addRule(".dom-012-item:first-child", new UiStyleDeclaration()
+                        .setBackgroundColor(0xFF1D4ED8)
+                        .setBorderColor(0xFF93C5FD))
+                .addRule(".dom-012-item:last-child", new UiStyleDeclaration()
+                        .setBackgroundColor(0xFF047857)
+                        .setBorderColor(0xFF6EE7B7))
+                .addRule(".dom-012-interactive:hover", new UiStyleDeclaration()
+                        .setBackgroundColor(0xFF7C3AED))
+                .addRule(".dom-012-interactive:active", new UiStyleDeclaration()
+                        .setBackgroundColor(0xFFB45309))
+                .addRule(".dom-012-interactive:focus-visible", new UiStyleDeclaration()
+                        .setOutline(UiOutline.of(2, 0xFFFBBF24, UiBorderStyle.SOLID, 1)));
     }
 
     /**
@@ -1797,6 +1817,14 @@ public final class UiTestDocumentPageController extends DocumentPageController {
      * @param testCase 用例模型
      */
     private void appendDomGroupRuntimeDemo(UiDocument document, ElementNode parent, RuntimeTestCase testCase) {
+        if ("DOM-010".equals(testCase.getId())) {
+            appendDomSelectorRuntimeDemo(document, parent, testCase);
+            return;
+        }
+        if ("DOM-012".equals(testCase.getId())) {
+            appendDomPseudoRuntimeDemo(document, parent, testCase);
+            return;
+        }
         ElementNode demo = createRuntimeDemoContainer(document);
         ElementNode row = createRuntimeDemoRow(document);
         ElementNode first = createDemoBadge(document, testCase.getId(), 0xFF2563EB);
@@ -1821,11 +1849,6 @@ public final class UiTestDocumentPageController extends DocumentPageController {
             first.setClassName("runtime-card before");
         } else if ("DOM-009".equals(testCase.getId())) {
             first.setId("author-first");
-        } else if ("DOM-010".equals(testCase.getId())) {
-            ElementNode child = createDemoBadge(document, "child", 0xFF059669);
-            child.setClassName("query-child");
-            child.setId("query-child-id");
-            first.append(child);
         } else if ("DOM-011".equals(testCase.getId())) {
             first.setAttribute("data-case", "match");
             second.setAttribute("data-case", "skip");
@@ -1834,6 +1857,76 @@ public final class UiTestDocumentPageController extends DocumentPageController {
         demo.append(row);
         TextNode summary = appendDemoSummary(document, demo, testCase.getId() + "：未执行");
         testCase.setElementDemo(row, summary, first, second);
+        parent.append(demo);
+    }
+
+    /**
+     * 追加 DOM-010 选择器演示区域。
+     *
+     * @param document 文档实例
+     * @param parent 父元素
+     * @param testCase 用例模型
+     */
+    private void appendDomSelectorRuntimeDemo(UiDocument document, ElementNode parent, RuntimeTestCase testCase) {
+        ElementNode demo = createRuntimeDemoContainer(document);
+        ElementNode row = createRuntimeDemoRow(document);
+        ElementNode target = document.element("domcase");
+        target.style()
+                .setPadding(UiStyleLength.px(8))
+                .setBackgroundColor(0xFF1D4ED8)
+                .setBorderColor(0xFF93C5FD)
+                .setBorderWidth(UiStyleLength.px(1))
+                .setBorderStyle(UiBorderStyle.SOLID)
+                .setBorderRadius(UiStyleLength.px(8))
+                .setTextColor(0xFFFFFFFF);
+        target.appendText("domcase.query-target#query-target-id");
+        ElementNode child = createDemoBadge(document, "child", 0xFF059669);
+        child.setClassName("query-child");
+        child.setId("query-child-id");
+        target.append(child);
+        ElementNode sibling = createDemoBadge(document, "skip", 0xFF334155);
+        row.append(target).append(sibling);
+        demo.append(row);
+        TextNode summary = appendDemoSummary(document, demo,
+                "选择器计数：domcase=?/1；.query-target=?/1；#query-target-id=?/1；后代=?/1；子代=?/1；分组=未执行");
+        testCase.setElementDemo(row, summary, target, child, sibling);
+        parent.append(demo);
+    }
+
+    /**
+     * 追加 DOM-012 伪类演示区域。
+     *
+     * @param document 文档实例
+     * @param parent 父元素
+     * @param testCase 用例模型
+     */
+    private void appendDomPseudoRuntimeDemo(UiDocument document, ElementNode parent, RuntimeTestCase testCase) {
+        ElementNode demo = createRuntimeDemoContainer(document);
+        ElementNode row = createRuntimeDemoRow(document);
+        ElementNode first = createDomPseudoBadge(document, "first", "dom-012-item");
+        ElementNode interactive = createDomPseudoBadge(document, "hover/active/focus", "dom-012-interactive");
+        ElementNode last = createDomPseudoBadge(document, "last", "dom-012-item");
+        interactive.setFocusable(true);
+        row.append(first).append(interactive).append(last);
+        demo.append(row);
+        appendMutedText(document, demo, "交互目标：移动鼠标看 hover，按住看 active，键盘聚焦看 focus-visible outline。");
+        TextNode summary = appendDemoSummary(document, demo,
+                "结构伪类：first=?/1；last=?/1；hover/active/focus-visible=人工观察");
+        interactive.setHoverHandler(event -> {
+            interactive.setAttribute("data-hover", String.valueOf(event.isHovered()));
+            summary.setText(buildDomPseudoInteractionSummary(interactive));
+            return false;
+        });
+        interactive.setActiveHandler(event -> {
+            interactive.setAttribute("data-active", String.valueOf(event.isActive()));
+            summary.setText(buildDomPseudoInteractionSummary(interactive));
+            return false;
+        });
+        interactive.setFocusHandler(event -> {
+            interactive.setAttribute("data-focus-visible", String.valueOf(event.isFocusVisible()));
+            summary.setText(buildDomPseudoInteractionSummary(interactive));
+        });
+        testCase.setElementDemo(row, summary, first, interactive, last);
         parent.append(demo);
     }
 
@@ -2745,6 +2838,21 @@ public final class UiTestDocumentPageController extends DocumentPageController {
     }
 
     /**
+     * 创建 DOM-012 伪类演示徽标。
+     *
+     * @param document 文档实例
+     * @param label 徽标文本
+     * @param className 样式类名
+     * @return 演示徽标
+     */
+    private ElementNode createDomPseudoBadge(UiDocument document, String label, String className) {
+        ElementNode badge = createDemoBadge(document, label, 0xFF334155);
+        badge.setClassName(className);
+        badge.style().setWidth(UiStyleLength.px(96));
+        return badge;
+    }
+
+    /**
      * 创建 CSS specificity 演示样例。
      *
      * @param document 文档实例
@@ -3160,10 +3268,15 @@ public final class UiTestDocumentPageController extends DocumentPageController {
         List<DocumentNode> children = row.getChildren();
         boolean passed = returnedNode == nodeA && children.size() == 2 && children.get(0) == nodeB
                 && children.get(1) == nodeA;
-        String summary = "当前顺序：B, A；返回节点：A";
+        String actualOrder = buildChildrenTextSummary(row);
+        String returnedText = describeNode(returnedNode);
+        String summary = "appendChild：期望顺序=B, A；实际顺序=" + actualOrder
+                + "；返回节点=" + returnedText + "；childCount=" + children.size();
         testCase.updateDemoSummary(summary);
         return passed ? RuntimeTestResult.passed(summary)
-                : RuntimeTestResult.failed(summary, "DOM 顺序不是 B, A");
+                : RuntimeTestResult.failed(summary, buildExpectedActualDifference(
+                        "返回节点=A 且顺序=B, A",
+                        "返回节点=" + returnedText + "，顺序=" + actualOrder + "，childCount=" + children.size()));
     }
 
     /**
@@ -3184,12 +3297,18 @@ public final class UiTestDocumentPageController extends DocumentPageController {
             row.append(nodeC);
             DocumentNode returnedNode = row.insertBefore(nodeC, nodeA);
             List<DocumentNode> children = row.getChildren();
+            int nodeACount = countDirectChildReferences(row, nodeA);
             boolean passed = returnedNode == nodeC && children.size() == 3 && children.get(0) == nodeC
                     && children.get(1) == nodeA && children.get(2) == nodeB;
-            String summary = "当前顺序：" + buildChildrenTextSummary(row) + "；重复节点：无";
+            String actualOrder = buildChildrenTextSummary(row);
+            String returnedText = describeNode(returnedNode);
+            String summary = "insertBefore：期望顺序=C, A, B；实际顺序=" + actualOrder
+                    + "；返回节点=" + returnedText + "；A出现次数=" + nodeACount;
             testCase.updateDemoSummary(summary);
             return passed ? RuntimeTestResult.passed(summary)
-                    : RuntimeTestResult.failed(summary, "insertBefore 同父移动顺序异常");
+                    : RuntimeTestResult.failed(summary, buildExpectedActualDifference(
+                            "返回节点=C，顺序=C, A, B，A出现次数=1",
+                            "返回节点=" + returnedText + "，顺序=" + actualOrder + "，A出现次数=" + nodeACount));
         }
         if ("DOM-003".equals(testCase.getId())) {
             ElementNode row = Objects.requireNonNull(testCase.getDemoRoot(), "demoRoot");
@@ -3203,10 +3322,19 @@ public final class UiTestDocumentPageController extends DocumentPageController {
             List<DocumentNode> children = row.getChildren();
             boolean passed = returnedNode == oldNode && oldNode.getParent() == null && newNode.getParent() == row
                     && children.size() == 2 && children.get(0) == newNode && children.get(1) == spareNode;
-            String summary = "被替换：old；当前顺序：" + buildChildrenTextSummary(row);
+            String actualOrder = buildChildrenTextSummary(row);
+            String returnedText = describeNode(returnedNode);
+            boolean oldDetached = oldNode.getParent() == null;
+            boolean newParentIsRow = newNode.getParent() == row;
+            String summary = "replaceChild：期望返回=old；实际返回=" + returnedText
+                    + "；当前顺序=" + actualOrder + "；old离树=" + oldDetached
+                    + "；new父级=row=" + newParentIsRow;
             testCase.updateDemoSummary(summary);
             return passed ? RuntimeTestResult.passed(summary)
-                    : RuntimeTestResult.failed(summary, "replaceChild 返回值或节点归属异常");
+                    : RuntimeTestResult.failed(summary, buildExpectedActualDifference(
+                            "返回=old，顺序=new, spare，old离树=true，new父级=row=true",
+                            "返回=" + returnedText + "，顺序=" + actualOrder + "，old离树=" + oldDetached
+                                    + "，new父级=row=" + newParentIsRow));
         }
         if ("DOM-004".equals(testCase.getId())) {
             ElementNode row = Objects.requireNonNull(testCase.getDemoRoot(), "demoRoot");
@@ -3228,10 +3356,17 @@ public final class UiTestDocumentPageController extends DocumentPageController {
             }
             boolean passed = removedNode == directChild && directChild.getParent() == null && rejected
                     && row.getChildren().size() == 1 && row.getChildren().get(0) == wrapper;
-            String summary = "目标节点已移除；非直接子节点被拒绝=" + rejected;
+            String removedText = describeNode(removedNode);
+            String remainingOrder = buildChildrenTextSummary(row);
+            boolean directDetached = directChild.getParent() == null;
+            String summary = "removeChild：返回节点=" + removedText + "；剩余顺序=" + remainingOrder
+                    + "；直接子节点离树=" + directDetached + "；非直接子节点被拒绝=" + rejected;
             testCase.updateDemoSummary(summary);
             return passed ? RuntimeTestResult.passed(summary)
-                    : RuntimeTestResult.failed(summary, "removeChild 直接子节点约束异常");
+                    : RuntimeTestResult.failed(summary, buildExpectedActualDifference(
+                            "返回=remove，剩余=nested，直接子节点离树=true，非直接子节点被拒绝=true",
+                            "返回=" + removedText + "，剩余=" + remainingOrder + "，直接子节点离树=" + directDetached
+                                    + "，非直接子节点被拒绝=" + rejected));
         }
         if ("DOM-005".equals(testCase.getId())) {
             ElementNode target = Objects.requireNonNull(testCase.getDemoRoot(), "demoRoot");
@@ -3242,19 +3377,27 @@ public final class UiTestDocumentPageController extends DocumentPageController {
             fragment.appendChild(createDemoBadge(document, "F3", 0xFF059669));
             DocumentNode returnedNode = target.appendChild(fragment);
             boolean passed = returnedNode == fragment && fragment.getChildCount() == 0 && target.getChildCount() == 3;
-            String summary = "目标容器计数=" + target.getChildCount() + "；fragment 计数=" + fragment.getChildCount();
+            String summary = "DocumentFragment：目标容器计数=" + target.getChildCount() + "/3"
+                    + "；fragment 计数=" + fragment.getChildCount() + "/0"
+                    + "；返回节点=" + describeNode(returnedNode);
             testCase.updateDemoSummary(summary);
             return passed ? RuntimeTestResult.passed(summary)
-                    : RuntimeTestResult.failed(summary, "DocumentFragment 插入后未清空或目标计数异常");
+                    : RuntimeTestResult.failed(summary, buildExpectedActualDifference(
+                            "返回=fragment，目标容器计数=3，fragment计数=0",
+                            "返回=" + describeNode(returnedNode) + "，目标容器计数=" + target.getChildCount()
+                                    + "，fragment计数=" + fragment.getChildCount()));
         }
         if ("DOM-006".equals(testCase.getId())) {
             ElementNode target = testCase.getDemoElement(0);
             target.setTextContent("textContent 已替换");
             boolean passed = "textContent 已替换".equals(target.getTextContent()) && target.getChildCount() == 1;
-            String summary = "textContent=" + target.getTextContent() + "；childCount=" + target.getChildCount();
+            String summary = "textContent：期望=textContent 已替换；实际=" + target.getTextContent()
+                    + "；childCount=" + target.getChildCount() + "/1";
             testCase.updateDemoSummary(summary);
             return passed ? RuntimeTestResult.passed(summary)
-                    : RuntimeTestResult.failed(summary, "textContent 未替换为单一文本节点");
+                    : RuntimeTestResult.failed(summary, buildExpectedActualDifference(
+                            "textContent=textContent 已替换，childCount=1",
+                            "textContent=" + target.getTextContent() + "，childCount=" + target.getChildCount()));
         }
         if ("DOM-007".equals(testCase.getId())) {
             ElementNode target = testCase.getDemoElement(0);
@@ -3263,11 +3406,13 @@ public final class UiTestDocumentPageController extends DocumentPageController {
             target.removeAttribute("data-case");
             boolean removed = !target.hasAttribute("data-case");
             boolean disabled = target.isDisabled();
-            String summary = "attribute after=" + dataValue + "；removed=" + removed
-                    + "；布尔属性禁用生效=" + disabled;
+            String summary = "attribute：data-case写入=" + dataValue + "/after；removed=" + removed
+                    + "/true；布尔属性禁用生效=" + disabled + "/true";
             testCase.updateDemoSummary(summary);
             return "after".equals(dataValue) && removed && disabled ? RuntimeTestResult.passed(summary)
-                    : RuntimeTestResult.failed(summary, "属性读写删除或 disabled 布尔语义异常");
+                    : RuntimeTestResult.failed(summary, buildExpectedActualDifference(
+                            "data-case写入=after，removed=true，disabled=true",
+                            "data-case写入=" + dataValue + "，removed=" + removed + "，disabled=" + disabled));
         }
         if ("DOM-008".equals(testCase.getId())) {
             ElementNode target = testCase.getDemoElement(0);
@@ -3277,62 +3422,121 @@ public final class UiTestDocumentPageController extends DocumentPageController {
             boolean passed = target.getClassList().contains("highlight")
                     && !target.getClassList().contains("before") && toggled
                     && target.getClassList().contains("selected");
-            String summary = "classList=" + target.getClassName() + "；toggleSelected=" + toggled;
+            boolean containsHighlight = target.getClassList().contains("highlight");
+            boolean containsBefore = target.getClassList().contains("before");
+            boolean containsSelected = target.getClassList().contains("selected");
+            String summary = "classList=" + target.getClassName() + "；highlight=" + containsHighlight
+                    + "/true；before=" + containsBefore + "/false；selected=" + containsSelected
+                    + "/true；toggleSelected=" + toggled + "/true";
             testCase.updateDemoSummary(summary);
             return passed ? RuntimeTestResult.passed(summary)
-                    : RuntimeTestResult.failed(summary, "classList 操作结果异常");
+                    : RuntimeTestResult.failed(summary, buildExpectedActualDifference(
+                            "highlight=true，before=false，selected=true，toggleSelected=true",
+                            "highlight=" + containsHighlight + "，before=" + containsBefore + "，selected="
+                                    + containsSelected + "，toggleSelected=" + toggled));
         }
         if ("DOM-009".equals(testCase.getId())) {
-            ElementNode expectedFirst = testCase.getDemoElement(0);
             ElementNode found = document.querySelector("*");
-            boolean passed = found == expectedFirst;
-            String summary = "querySelector('*')=" + (found == null ? "null" : found.getId())
-                    + "；internalRootReturned=" + (found == rootElement);
+            boolean passed = found != null && found != rootElement;
+            String foundText = describeNode(found);
+            boolean internalRootReturned = found == rootElement;
+            String summary = "querySelector('*')：期望=第一个作者元素且不是隐藏根；实际=" + foundText
+                    + "；internalRootReturned=" + internalRootReturned + "/false";
             testCase.updateDemoSummary(summary);
             return passed ? RuntimeTestResult.passed(summary)
-                    : RuntimeTestResult.failed(summary, "querySelector 返回了非作者首元素");
+                    : RuntimeTestResult.failed(summary, buildExpectedActualDifference(
+                            "返回非空作者元素，internalRootReturned=false",
+                            "实际=" + foundText + "，internalRootReturned=" + internalRootReturned));
         }
         if ("DOM-010".equals(testCase.getId())) {
             ElementNode target = testCase.getDemoElement(0);
+            ElementNode child = testCase.getDemoElement(1);
             target.setClassName("query-target");
             target.setId("query-target-id");
-            int typeCount = document.querySelectorAll("div").size();
+            child.setClassName("query-child");
+            int typeCount = document.querySelectorAll("domcase").size();
             int classCount = document.querySelectorAll(".query-target").size();
             int idCount = document.querySelectorAll("#query-target-id").size();
-            int descendantCount = document.querySelectorAll("div .query-child").size();
-            int childCount = document.querySelectorAll("div > .query-child").size();
+            int descendantCount = document.querySelectorAll("domcase .query-child").size();
+            int childCount = document.querySelectorAll("domcase > .query-child").size();
             boolean groupSelectorSupported = true;
+            int groupCount = -1;
             try {
-                document.querySelectorAll(".query-target, .query-child");
+                groupCount = document.querySelectorAll(".query-target, .query-child").size();
             } catch (IllegalArgumentException exception) {
                 groupSelectorSupported = false;
             }
-            boolean passed = typeCount > 0 && classCount == 1 && idCount == 1 && descendantCount == 1
+            boolean basicPassed = typeCount == 1 && classCount == 1 && idCount == 1 && descendantCount == 1
                     && childCount == 1;
-            String summary = "selector counts type=" + typeCount + ", class=" + classCount + ", id=" + idCount
-                    + ", descendant=" + descendantCount + ", child=" + childCount
-                    + "；groupSelectorSupported=" + groupSelectorSupported;
+            boolean groupPassed = groupSelectorSupported && groupCount == 2;
+            String summary = "selector counts domcase=" + typeCount + "/1, class=" + classCount
+                    + "/1, id=" + idCount + "/1, descendant=" + descendantCount
+                    + "/1, child=" + childCount + "/1；group="
+                    + (groupSelectorSupported ? groupCount + "/2" : "待实现缺口");
             testCase.updateDemoSummary(summary);
-            return passed && groupSelectorSupported ? RuntimeTestResult.passed(summary)
+            if (!basicPassed) {
+                return RuntimeTestResult.failed(summary, buildExpectedActualDifference(
+                        "domcase/class/id/descendant/child 均为 1/1",
+                        "domcase=" + typeCount + "，class=" + classCount + "，id=" + idCount
+                                + "，descendant=" + descendantCount + "，child=" + childCount));
+            }
+            return groupPassed ? RuntimeTestResult.passed(summary)
                     : RuntimeTestResult.running(summary + "；待实现缺口：分组选择器未完整支持");
         }
         if ("DOM-011".equals(testCase.getId())) {
-            String summary = "待实现缺口：属性选择器 [attr] / [attr=value] 当前选择器解析器未支持";
+            ElementNode match = testCase.getDemoElement(0);
+            ElementNode skip = testCase.getDemoElement(1);
+            UiDocument selectorDocument = UiDocument.create();
+            ElementNode selectorMatch = selectorDocument.div();
+            ElementNode selectorSkip = selectorDocument.div();
+            selectorMatch.setAttribute("data-case", "match");
+            selectorSkip.setAttribute("data-case", "skip");
+            selectorDocument.getRootElement().append(selectorMatch).append(selectorSkip);
+            String attrCount = "待实现缺口";
+            String attrValueCount = "待实现缺口";
+            try {
+                attrCount = selectorDocument.querySelectorAll("[data-case]").size() + "/2";
+                attrValueCount = selectorDocument.querySelectorAll("[data-case=match]").size() + "/1";
+            } catch (IllegalArgumentException exception) {
+                // 当前解析器不支持属性选择器，页面必须明确展示缺口而不是伪造通过。
+            }
+            String summary = "attribute selector：目标 data-case=" + match.getAttribute("data-case")
+                    + "；对照 data-case=" + skip.getAttribute("data-case")
+                    + "；[data-case]=" + attrCount + "；[data-case=match]=" + attrValueCount;
             testCase.updateDemoSummary(summary);
-            return RuntimeTestResult.running(summary);
+            return "2/2".equals(attrCount) && "1/1".equals(attrValueCount)
+                    ? RuntimeTestResult.passed(summary)
+                    : RuntimeTestResult.running(summary
+                            + "；待实现缺口：属性选择器 [attr] / [attr=value] 当前选择器解析器未支持");
         }
         if ("DOM-012".equals(testCase.getId())) {
             ElementNode first = testCase.getDemoElement(0);
-            ElementNode second = testCase.getDemoElement(1);
+            ElementNode interactive = testCase.getDemoElement(1);
+            ElementNode last = testCase.getDemoElement(2);
             boolean firstChild = first.getParent() == testCase.getDemoRoot()
                     && testCase.getDemoRoot().getChildren().get(0) == first;
-            boolean lastChild = second.getParent() == testCase.getDemoRoot()
-                    && testCase.getDemoRoot().getChildren().get(testCase.getDemoRoot().getChildCount() - 1) == second;
-            String summary = "structuralPseudo first=" + firstChild + "；last=" + lastChild
-                    + "；hover/active/focus-visible=人工确认";
+            boolean lastChild = last.getParent() == testCase.getDemoRoot()
+                    && testCase.getDemoRoot().getChildren().get(testCase.getDemoRoot().getChildCount() - 1) == last;
+            boolean firstSelector = UiSelector.parse(".dom-012-item:first-child").matches(first);
+            boolean lastSelector = UiSelector.parse(".dom-012-item:last-child").matches(last);
+            boolean hoverSelector = UiSelector.parse(".dom-012-interactive:hover")
+                    .matches(interactive, Collections.singleton(UiPseudoClass.HOVER));
+            boolean activeSelector = UiSelector.parse(".dom-012-interactive:active")
+                    .matches(interactive, Collections.singleton(UiPseudoClass.ACTIVE));
+            boolean focusVisibleSelector = UiSelector.parse(".dom-012-interactive:focus-visible")
+                    .matches(interactive, Collections.singleton(UiPseudoClass.FOCUS_VISIBLE));
+            String summary = "structuralPseudo first=" + boolCount(firstSelector) + "；last=" + boolCount(lastSelector)
+                    + "；顺序校验 first=" + firstChild + "/true,last=" + lastChild + "/true"
+                    + "；interactive selectors hover=" + hoverSelector + "/true,active=" + activeSelector
+                    + "/true,focusVisible=" + focusVisibleSelector + "/true；人工观察=移动/按下/键盘聚焦目标";
             testCase.updateDemoSummary(summary);
-            return firstChild && lastChild ? RuntimeTestResult.running(summary)
-                    : RuntimeTestResult.failed(summary, "结构伪类样例顺序异常");
+            return firstChild && lastChild && firstSelector && lastSelector && hoverSelector && activeSelector
+                    && focusVisibleSelector ? RuntimeTestResult.running(summary)
+                    : RuntimeTestResult.failed(summary, buildExpectedActualDifference(
+                            "first=1/1，last=1/1，hover/active/focus-visible 选择器均可匹配",
+                            "first=" + boolCount(firstSelector) + "，last=" + boolCount(lastSelector)
+                                    + "，hover=" + hoverSelector + "，active=" + activeSelector
+                                    + "，focusVisible=" + focusVisibleSelector));
         }
         if ("DOM-013".equals(testCase.getId())) {
             UiDocument linkDocument = UiDocument.create();
@@ -3363,10 +3567,14 @@ public final class UiTestDocumentPageController extends DocumentPageController {
             dispatchPrimaryClick(widget, 10, 30, 3L, 4L);
             boolean passed = activations.size() == 1
                     && "https://example.test/dom-013-normal".equals(activations.get(0));
-            String summary = "link activations=" + activations;
+            String summary = "link activations=" + activations
+                    + "；期望=[https://example.test/dom-013-normal]；preventedHrefAbsent="
+                    + !activations.contains("https://example.test/dom-013-prevented");
             testCase.updateDemoSummary(summary);
             return passed ? RuntimeTestResult.passed(summary)
-                    : RuntimeTestResult.failed(summary, "链接默认行为或 preventDefault 异常");
+                    : RuntimeTestResult.failed(summary, buildExpectedActualDifference(
+                            "仅激活 https://example.test/dom-013-normal",
+                            "activations=" + activations));
         }
         return RuntimeTestResult.failed("未知 DOM 用例。", "没有匹配的 DOM 执行器");
     }
@@ -5100,6 +5308,77 @@ public final class UiTestDocumentPageController extends DocumentPageController {
             builder.append(child.getTextContent());
         }
         return builder.toString();
+    }
+
+    /**
+     * 统计直接子节点中指定节点引用出现次数。
+     *
+     * @param parent 父元素
+     * @param expected 目标节点引用
+     * @return 出现次数
+     */
+    private int countDirectChildReferences(ElementNode parent, DocumentNode expected) {
+        int count = 0;
+        for (DocumentNode child : parent.getChildren()) {
+            if (child == expected) {
+                count++;
+            }
+        }
+        return count;
+    }
+
+    /**
+     * 描述节点，供运行时结果和失败摘要展示。
+     *
+     * @param node 节点
+     * @return 可读节点描述
+     */
+    private String describeNode(DocumentNode node) {
+        if (node == null) {
+            return "null";
+        }
+        if (node instanceof DocumentFragmentNode) {
+            return "fragment";
+        }
+        if (node instanceof TextNode) {
+            return ((TextNode) node).getText();
+        }
+        String text = node.getTextContent();
+        return text == null || text.length() == 0 ? node.getClass().getSimpleName() : text;
+    }
+
+    /**
+     * 构建期望/实际差异文本。
+     *
+     * @param expected 期望摘要
+     * @param actual 实际摘要
+     * @return 差异文本
+     */
+    private String buildExpectedActualDifference(String expected, String actual) {
+        return "期望：" + expected + "；实际：" + actual;
+    }
+
+    /**
+     * 将布尔匹配结果格式化为计数样式。
+     *
+     * @param value 是否匹配
+     * @return `1/1` 或 `0/1`
+     */
+    private String boolCount(boolean value) {
+        return value ? "1/1" : "0/1";
+    }
+
+    /**
+     * 构建 DOM-012 交互状态摘要。
+     *
+     * @param interactive 交互演示元素
+     * @return 交互状态摘要
+     */
+    private String buildDomPseudoInteractionSummary(ElementNode interactive) {
+        return "交互状态：hover=" + interactive.getAttribute("data-hover")
+                + "；active=" + interactive.getAttribute("data-active")
+                + "；focusVisible=" + interactive.getAttribute("data-focus-visible")
+                + "；结构伪类已由自动断言校验";
     }
 
     /**

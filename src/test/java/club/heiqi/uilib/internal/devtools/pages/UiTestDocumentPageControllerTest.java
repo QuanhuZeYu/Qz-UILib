@@ -97,6 +97,11 @@ public class UiTestDocumentPageControllerTest {
         Assert.assertTrue(containsText(texts, "预期结果：点击执行后 A 节点移动到 B 节点后方"));
         Assert.assertTrue(containsText(texts, "预期结果：点击执行后节点顺序变为 `C, A, B`"));
         Assert.assertTrue(containsText(texts, "预期结果：点击执行后 fragment 内三个元素出现在目标容器"));
+        Assert.assertTrue(containsText(texts,
+                "预期结果：`domcase`、`.query-target`、`#query-target-id`、后代和子代选择器均显示 `1/1`"));
+        Assert.assertTrue(containsText(texts,
+                "预期结果：支持后 `[data-case]` 显示 `2/2`、`[data-case=match]` 显示 `1/1`"));
+        Assert.assertTrue(containsText(texts, "交互目标：移动鼠标看 hover"));
         Assert.assertTrue(containsText(texts, "预期结果：普通链接触发导航记录"));
     }
 
@@ -155,11 +160,11 @@ public class UiTestDocumentPageControllerTest {
         }
 
         List<String> texts = collectDocumentTexts(fixture.controller.getHtmlLikeDocumentWidget());
-        Assert.assertTrue(containsText(texts, "当前顺序：B, A；返回节点：A"));
-        Assert.assertTrue(containsText(texts, "当前顺序：C, A, B；重复节点：无"));
-        Assert.assertTrue(containsText(texts, "被替换：old"));
+        Assert.assertTrue(containsText(texts, "appendChild：期望顺序=B, A；实际顺序=B, A"));
+        Assert.assertTrue(containsText(texts, "insertBefore：期望顺序=C, A, B；实际顺序=C, A, B"));
+        Assert.assertTrue(containsText(texts, "replaceChild：期望返回=old；实际返回=old"));
         Assert.assertTrue(containsText(texts, "非直接子节点被拒绝=true"));
-        Assert.assertTrue(containsText(texts, "目标容器计数=3；fragment 计数=0"));
+        Assert.assertTrue(containsText(texts, "DocumentFragment：目标容器计数=3/3；fragment 计数=0/0"));
         Assert.assertEquals(6, countTextsContaining(texts, "通过：观察结果与预期一致"));
     }
 
@@ -317,10 +322,14 @@ public class UiTestDocumentPageControllerTest {
         }
         List<String> domTexts = collectDocumentTexts(fixture.controller.getHtmlLikeDocumentWidget());
         Assert.assertTrue(containsText(domTexts, "DOM-013"));
-        Assert.assertTrue(containsText(domTexts, "textContent=textContent 已替换"));
-        Assert.assertTrue(containsText(domTexts, "布尔属性禁用生效=true"));
+        Assert.assertTrue(containsText(domTexts, "textContent：期望=textContent 已替换；实际=textContent 已替换"));
+        Assert.assertTrue(containsText(domTexts, "布尔属性禁用生效=true/true"));
+        Assert.assertTrue(containsText(domTexts,
+                "selector counts domcase=1/1, class=1/1, id=1/1, descendant=1/1, child=1/1"));
         Assert.assertTrue(containsText(domTexts, "待实现缺口：属性选择器"));
-        Assert.assertTrue(containsText(domTexts, "link activations=[https://example.test/dom-013-normal]"));
+        Assert.assertTrue(containsText(domTexts, "structuralPseudo first=1/1；last=1/1"));
+        Assert.assertTrue(containsText(domTexts,
+                "link activations=[https://example.test/dom-013-normal]；期望=[https://example.test/dom-013-normal]"));
 
         clickButtonByLabel(fixture.controller.getHtmlLikeDocumentWidget(), "CSS", 0);
         for (int index = 0; index < 15; index++) {
