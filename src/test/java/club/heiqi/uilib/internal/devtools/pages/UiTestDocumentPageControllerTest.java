@@ -27,10 +27,10 @@ import club.heiqi.uilib.ui.widget.Widget;
 public class UiTestDocumentPageControllerTest {
 
     /**
-     * 验证 `/qzuilib test` 首页保留分组入口，但不再展示旧运行时测试内容。
+     * 验证 `/qzuilib test` 首页进入视觉优先矩阵框架。
      */
     @Test
-    public void shouldBuildClearedRuntimeTestHomeDocumentTree() {
+    public void shouldBuildVisualPriorityMatrixHomeDocumentTree() {
         TestFixture fixture = new TestFixture();
 
         fixture.controller.configureDocumentPage();
@@ -43,8 +43,14 @@ public class UiTestDocumentPageControllerTest {
         Assert.assertTrue(fixture.controller.getHtmlLikeDocumentWidget().isViewportRootScrollingEnabled());
 
         List<String> texts = collectDocumentTexts(fixture.controller.getHtmlLikeDocumentWidget());
-        Assert.assertTrue(containsText(texts, "Qz UILib Test 首页"));
-        Assert.assertTrue(containsText(texts, "当前运行时测试内容已清空"));
+        Assert.assertTrue(containsText(texts, "Qz UILib Test 视觉矩阵"));
+        Assert.assertTrue(containsText(texts, "视觉化展示功能优先，浏览器语义验证为重要目标"));
+        Assert.assertTrue(containsText(texts, "qzuilib-test-page-visual-matrix-plan.md"));
+        Assert.assertTrue(containsText(texts, "功能画廊"));
+        Assert.assertTrue(containsText(texts, "语义覆盖热力图"));
+        Assert.assertTrue(containsText(texts, "快速筛选"));
+        Assert.assertTrue(containsText(texts, "计划用例：59；已接入：0；缺口：59"));
+        Assert.assertTrue(containsText(texts, "视觉状态=未观察；语义状态=未断言；汇总状态=缺口"));
         Assert.assertTrue(containsText(texts, "二级页数量"));
         Assert.assertTrue(containsText(texts, "DOM 与选择器语义"));
         Assert.assertTrue(containsText(texts, "CSS 级联与样式语义"));
@@ -57,20 +63,46 @@ public class UiTestDocumentPageControllerTest {
         Assert.assertTrue(containsText(texts, "RuntimeHost 宿主运行时语义"));
         Assert.assertTrue(containsText(texts, "RemoteNet 远程、配置与网络语义"));
         Assert.assertTrue(containsText(texts, "打开 DOM 二级页"));
-        Assert.assertTrue(containsText(texts, "覆盖用例：0；P0 已接入：0；缺口：0"));
-        Assert.assertTrue(containsText(texts, "入口状态：运行时卡片已清空，等待重新规划。"));
+        Assert.assertTrue(containsText(texts, "DOM：计划 7；自动 7；人工 0；缺口 7"));
+        Assert.assertTrue(containsText(texts, "CSS：计划 6；自动 6；人工 0；缺口 6"));
+        Assert.assertTrue(containsText(texts, "当前运行时测试内容已清空"));
+        Assert.assertTrue(containsText(texts, "视觉状态：未观察 / 展示中 / 人工通过 / 视觉失败 / 已知视觉缺口"));
         Assert.assertFalse(containsText(texts, "DOM-001"));
         Assert.assertFalse(containsText(texts, "执行自动测试"));
-        Assert.assertFalse(containsText(texts, "人工通过"));
         Assert.assertFalse(containsText(texts, "人工失败"));
         Assert.assertFalse(containsText(texts, "已接入 13 张运行时卡片"));
     }
 
     /**
-     * 验证分组二级页只显示空态，不再展示旧用例卡片契约。
+     * 验证 P0 registry 与 state 使用视觉/语义双状态模型。
      */
     @Test
-    public void shouldExposeEmptyGroupSubPageAfterRuntimeCasesCleared() {
+    public void shouldExposeVisualAndSemanticMatrixModels() {
+        TestFixture fixture = new TestFixture();
+
+        UiTestMatrixRegistry registry = fixture.controller.getRegistry();
+        UiTestMatrixState state = fixture.controller.getMatrixState();
+
+        Assert.assertEquals(10, registry.getGroups().size());
+        Assert.assertEquals(0, registry.getCases().size());
+        Assert.assertEquals(59, state.getTotalPlannedCaseCount());
+        Assert.assertEquals(0, state.getTotalImplementedCaseCount());
+        Assert.assertEquals(59, state.getTotalGapCount());
+        Assert.assertEquals(43, state.getTotalPlannedAutomaticCount());
+        Assert.assertEquals(16, state.getTotalPlannedManualCount());
+
+        UiTestGroupState domState = state.getGroupState("DOM");
+        Assert.assertEquals(7, domState.getGroup().getPlannedCaseCount());
+        Assert.assertEquals(UiTestVisualStatus.UNOBSERVED, domState.getVisualStatus());
+        Assert.assertEquals(UiTestSemanticStatus.NOT_ASSERTED, domState.getSemanticStatus());
+        Assert.assertEquals(UiTestSummaryStatus.GAP, domState.getSummaryStatus());
+    }
+
+    /**
+     * 验证分组二级页显示视觉样例框架，不再展示旧用例卡片契约。
+     */
+    @Test
+    public void shouldExposeGroupVisualSampleFrameworkAfterRuntimeCasesCleared() {
         TestFixture fixture = new TestFixture();
 
         fixture.controller.configureDocumentPage();
@@ -78,16 +110,21 @@ public class UiTestDocumentPageControllerTest {
         clickButtonByLabel(fixture.controller.getHtmlLikeDocumentWidget(), "打开 DOM 二级页", 0);
 
         List<String> texts = collectDocumentTexts(fixture.controller.getHtmlLikeDocumentWidget());
-        Assert.assertTrue(containsText(texts, "Qz UILib Test / DOM 二级页"));
-        Assert.assertTrue(containsText(texts, "本类型运行时测试内容已清空"));
-        Assert.assertTrue(containsText(texts, "本类型暂无运行时卡片，暂不需要人工确认。"));
-        Assert.assertTrue(containsText(texts, "当前运行时测试卡片规则已清空"));
+        Assert.assertTrue(containsText(texts, "Qz UILib Test / DOM 视觉样例页"));
+        Assert.assertTrue(containsText(texts, "分组说明"));
+        Assert.assertTrue(containsText(texts, "视觉样例区"));
+        Assert.assertTrue(containsText(texts, "语义检查区"));
+        Assert.assertTrue(containsText(texts, "操作区"));
+        Assert.assertTrue(containsText(texts, "诊断区"));
+        Assert.assertTrue(containsText(texts, "当前 P0 仅接入数据模型和首页框架"));
+        Assert.assertTrue(containsText(texts, "预期结果：后续样例应直接画出 DOM 结构"));
+        Assert.assertTrue(containsText(texts, "自动边界：节点归属、返回值、子节点顺序"));
+        Assert.assertTrue(containsText(texts, "P0 不提供旧执行按钮"));
         Assert.assertFalse(containsText(texts, "用例编号"));
         Assert.assertFalse(containsText(texts, "DOM-001"));
         Assert.assertFalse(containsText(texts, "CSS-001"));
         Assert.assertFalse(containsText(texts, "LAYOUT-001"));
         Assert.assertFalse(containsText(texts, "执行自动测试"));
-        Assert.assertFalse(containsText(texts, "人工通过"));
         Assert.assertFalse(containsText(texts, "人工失败"));
     }
 
@@ -104,8 +141,9 @@ public class UiTestDocumentPageControllerTest {
         clickButtonByLabel(fixture.controller.getHtmlLikeDocumentWidget(), "CSS", 0);
 
         List<String> texts = collectDocumentTexts(fixture.controller.getHtmlLikeDocumentWidget());
-        Assert.assertTrue(containsText(texts, "Qz UILib Test / CSS 二级页"));
-        Assert.assertTrue(containsText(texts, "本类型运行时测试内容已清空"));
+        Assert.assertTrue(containsText(texts, "Qz UILib Test / CSS 视觉样例页"));
+        Assert.assertTrue(containsText(texts, "CSS 级联与样式语义"));
+        Assert.assertTrue(containsText(texts, "computed style、继承结果、specificity 结果"));
         Assert.assertFalse(containsText(texts, "CSS-001"));
     }
 
