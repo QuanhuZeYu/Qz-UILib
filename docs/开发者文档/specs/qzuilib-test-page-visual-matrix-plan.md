@@ -76,7 +76,7 @@
 | RuntimeHost | open timing、resize、runtime stats、HUD/container input、exception panel | 5 |
 | RemoteNet | channel、fetch、stream、store、remote page/HUD、config sync、transport mode | 6 |
 
-首轮总量约 56 张，实际实现应分批推进，每批 8 到 12 张，优先 CSS / Layout / Paint / Controls 这类视觉收益最高的分组。
+首轮总量按上表合计约 59 张，实际实现应分批推进，每批 8 到 12 张，优先 CSS / Layout / Paint / Controls 这类视觉收益最高的分组。
 
 ## 自动断言边界
 
