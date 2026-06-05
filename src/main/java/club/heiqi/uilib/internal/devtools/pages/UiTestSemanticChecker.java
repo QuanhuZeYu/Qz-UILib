@@ -14,8 +14,8 @@ final class UiTestSemanticChecker {
     UiTestCaseResult createInitialResult(UiTestCaseSpec testCase) {
         UiTestSemanticStatus semanticStatus = testCase.requiresManualConfirmation()
                 ? UiTestSemanticStatus.MANUAL_PENDING : UiTestSemanticStatus.NOT_ASSERTED;
-        return new UiTestCaseResult(UiTestVisualStatus.UNOBSERVED, semanticStatus, UiTestSummaryStatus.PENDING,
-                "尚未运行语义检查。", "");
+        return new UiTestCaseResult(UiTestVisualStatus.DISPLAYING, semanticStatus, UiTestSummaryStatus.PENDING,
+                "视觉样例已展示，尚未运行语义检查。", "");
     }
 
     /**

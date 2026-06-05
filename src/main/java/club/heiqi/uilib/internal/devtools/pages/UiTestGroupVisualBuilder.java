@@ -27,6 +27,7 @@ final class UiTestGroupVisualBuilder {
     private final UiTestMatrixRegistry registry;
     private final UiTestMatrixState matrixState;
     private final UiTestSemanticChecker semanticChecker;
+    private final UiTestSampleVisualFactory sampleVisualFactory = new UiTestSampleVisualFactory();
 
     /**
      * 创建分组视觉页面构建器。
@@ -157,7 +158,7 @@ final class UiTestGroupVisualBuilder {
     private void appendOverview(UiDocument document, ElementNode root) {
         ElementNode section = createSection(document, "总览");
         ElementNode grid = createGrid(document);
-        appendMetricCard(document, grid, "test 系统版本", "P0 视觉矩阵首页");
+        appendMetricCard(document, grid, "test 系统版本", "P2 核心视觉样例批次");
         appendMetricCard(document, grid, "计划用例数", String.valueOf(matrixState.getTotalPlannedCaseCount()));
         appendMetricCard(document, grid, "已接入用例数", String.valueOf(matrixState.getTotalImplementedCaseCount()));
         appendMetricCard(document, grid, "剩余缺口数", String.valueOf(matrixState.getTotalGapCount()));
@@ -168,7 +169,7 @@ final class UiTestGroupVisualBuilder {
         appendPlanItem(document, section, "计划用例：" + matrixState.getTotalPlannedCaseCount()
                 + "；已接入：" + matrixState.getTotalImplementedCaseCount()
                 + "；缺口：" + matrixState.getTotalGapCount() + "；视觉状态/语义状态分离统计。");
-        appendPlanItem(document, section, "当前运行时测试内容已清空；本批只接入 registry、分组视觉 builder、语义 checker 和结果 state。");
+        appendPlanItem(document, section, "旧运行时测试内容已清空；当前已接入 CSS / Layout / Paint 首批真实视觉样例。");
         root.append(section);
     }
 
@@ -284,7 +285,17 @@ final class UiTestGroupVisualBuilder {
      */
     private void appendHomeManualSection(UiDocument document, ElementNode root) {
         ElementNode section = createSection(document, "人工任务");
-        appendPlanItem(document, section, "当前没有已接入样例需要人工处理；以下为首轮规划中的人工确认来源。");
+        boolean hasManualCase = false;
+        for (UiTestCaseSpec testCase : registry.getCases()) {
+            if (testCase.requiresManualConfirmation()) {
+                hasManualCase = true;
+                appendPlanItem(document, section, testCase.getId() + "：" + testCase.getManualReason()
+                        + "；" + testCase.getObservationPoint());
+            }
+        }
+        if (!hasManualCase) {
+            appendPlanItem(document, section, "当前没有已接入样例需要人工处理；以下为首轮规划中的人工确认来源。");
+        }
         for (UiTestGroupSpec group : registry.getGroups()) {
             if (group.getPlannedManualCount() > 0) {
                 appendPlanItem(document, section, group.getCode() + "：计划人工确认 "
@@ -330,8 +341,7 @@ final class UiTestGroupVisualBuilder {
             appendPlanItem(document, section, group.getExpectedVisualObservation());
         }
         for (UiTestCaseSpec testCase : cases) {
-            appendPlanItem(document, section, testCase.getId() + "：" + testCase.getVisualSample()
-                    + "；" + testCase.getObservationPoint());
+            appendVisualCaseCard(document, section, testCase);
         }
         root.append(section);
     }
@@ -349,6 +359,14 @@ final class UiTestGroupVisualBuilder {
         ElementNode section = createSection(document, "语义检查区");
         appendPlanItem(document, section, semanticChecker.describeGroupBoundary(group));
         appendPlanItem(document, section, buildStateLine(groupState));
+        List<UiTestCaseSpec> cases = registry.getCases(group.getCode());
+        if (!cases.isEmpty()) {
+            appendPlanItem(document, section, "本分组已接入 " + cases.size() + " 张新视觉样例；当前语义状态先按样例初始结果展示。");
+            for (UiTestCaseSpec testCase : cases) {
+                appendPlanItem(document, section, testCase.getId() + "：" + testCase.getSemanticAssertion()
+                        + "；" + buildCaseStateLine(getCaseResult(testCase)));
+            }
+        }
         root.append(section);
     }
 
@@ -360,7 +378,7 @@ final class UiTestGroupVisualBuilder {
      */
     private void appendGroupActions(UiDocument document, ElementNode root) {
         ElementNode section = createSection(document, "操作区");
-        appendPlanItem(document, section, "运行语义检查、重置样例、人工确认和复制结果会在真实样例接入后启用；P0 不提供旧执行按钮。");
+        appendPlanItem(document, section, "运行语义检查、重置样例、人工确认和复制结果会在自动断言接入后启用；本批不恢复旧执行按钮。");
         root.append(section);
     }
 
@@ -604,6 +622,64 @@ final class UiTestGroupVisualBuilder {
     }
 
     /**
+     * 追加统一视觉样例卡片。
+     *
+     * @param document 文档实例
+     * @param parent 父元素
+     * @param testCase 样例规格
+     */
+    private void appendVisualCaseCard(UiDocument document, ElementNode parent, UiTestCaseSpec testCase) {
+        ElementNode card = createCard(document, 1, 1.0F, 1.0F);
+        card.style().setBorderColor(0xFF537DD6);
+        appendHeading(document, card, testCase.getId() + " / " + testCase.getDisplayTarget());
+        appendCaseField(document, card, "用例编号", testCase.getId());
+        appendCaseField(document, card, "展示目标", testCase.getDisplayTarget());
+        appendCaseField(document, card, "浏览器语义", testCase.getBrowserSemantic());
+        appendCaseField(document, card, "视觉样例", testCase.getVisualSample());
+        sampleVisualFactory.appendCaseDemo(document, card, testCase);
+        appendCaseField(document, card, "观察要点", testCase.getObservationPoint());
+        appendCaseField(document, card, "语义断言", testCase.getSemanticAssertion());
+        if (testCase.requiresManualConfirmation()) {
+            appendCaseField(document, card, "人工原因", testCase.getManualReason());
+        }
+        appendCaseField(document, card, "状态", buildCaseStateLine(getCaseResult(testCase)));
+        parent.append(card);
+    }
+
+    /**
+     * 追加样例字段行。
+     *
+     * @param document 文档实例
+     * @param parent 父元素
+     * @param label 字段名
+     * @param value 字段值
+     */
+    private void appendCaseField(UiDocument document, ElementNode parent, String label, String value) {
+        ElementNode row = document.div();
+        row.style()
+                .setDisplay(UiDisplay.FLEX)
+                .setFlexDirection(UiFlexDirection.ROW)
+                .setAlignItems(UiAlignItems.START)
+                .setColumnGap(UiStyleLength.px(8));
+        ElementNode labelNode = document.div();
+        labelNode.style()
+                .setWidth(UiStyleLength.px(82))
+                .setFlexShrink(0.0F)
+                .setFontWeight(UiFontWeight.BOLD)
+                .setTextColor(0xFF9FC0FF);
+        labelNode.appendText(label);
+        row.append(labelNode);
+        ElementNode valueNode = document.div();
+        valueNode.style()
+                .setFlexGrow(1.0F)
+                .setMinWidth(UiStyleLength.px(0))
+                .setTextColor(0xFFEAF1FF);
+        valueNode.appendText(value);
+        row.append(valueNode);
+        parent.append(row);
+    }
+
+    /**
      * 创建说明条目并追加文本。
      *
      * @param document 文档实例
@@ -669,6 +745,30 @@ final class UiTestGroupVisualBuilder {
         return "视觉状态=" + state.getVisualStatus().getDisplayText()
                 + "；语义状态=" + state.getSemanticStatus().getDisplayText()
                 + "；汇总状态=" + state.getSummaryStatus().getDisplayText();
+    }
+
+    /**
+     * 构建单张样例状态摘要行。
+     *
+     * @param result 样例结果
+     * @return 样例状态摘要行
+     */
+    private String buildCaseStateLine(UiTestCaseResult result) {
+        return "视觉状态=" + result.getVisualStatus().getDisplayText()
+                + "；语义状态=" + result.getSemanticStatus().getDisplayText()
+                + "；汇总状态=" + result.getSummaryStatus().getDisplayText()
+                + "；实际结果=" + result.getActualResult();
+    }
+
+    /**
+     * 返回样例当前结果。
+     *
+     * @param testCase 样例规格
+     * @return 样例结果
+     */
+    private UiTestCaseResult getCaseResult(UiTestCaseSpec testCase) {
+        UiTestCaseResult result = matrixState.getCaseResultById().get(testCase.getId());
+        return result == null ? semanticChecker.createInitialResult(testCase) : result;
     }
 
     /**
