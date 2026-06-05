@@ -1,6 +1,8 @@
 package club.heiqi.uilib.internal.devtools.pages;
 
 import java.util.Objects;
+import java.util.LinkedHashMap;
+import java.util.Map;
 
 import club.heiqi.uilib.Config;
 import club.heiqi.uilib.net.transport.NetTransportFactory;
@@ -26,6 +28,8 @@ public final class UiTestDocumentPageController extends DocumentPageController {
     private final UiTestMatrixRegistry registry;
     private final UiTestSemanticChecker semanticChecker;
     private final UiTestMatrixState matrixState;
+    private final UiTestAssertionLogger assertionLogger;
+    private final UiTestAssertionRunner assertionRunner;
     private final UiTestGroupVisualBuilder visualBuilder;
     private final UiDocument document;
     private final ElementNode rootElement;
@@ -33,6 +37,7 @@ public final class UiTestDocumentPageController extends DocumentPageController {
     private final int fontEpoch;
     private final String defaultTextMode;
     private final String runtimeAdapterSummary;
+    private final Map<String, UiTestGroupPageState> groupPageStates = new LinkedHashMap<String, UiTestGroupPageState>();
     private UiTestPageBindings pageBindings = UiTestPageBindings.empty();
 
     /**
@@ -54,7 +59,9 @@ public final class UiTestDocumentPageController extends DocumentPageController {
         this.registry = UiTestMatrixRegistry.createDefault();
         this.semanticChecker = new UiTestSemanticChecker();
         this.matrixState = UiTestMatrixState.create(registry, semanticChecker);
-        this.visualBuilder = new UiTestGroupVisualBuilder(registry, matrixState, semanticChecker);
+        this.assertionLogger = new UiTestAssertionLogger();
+        this.assertionRunner = new UiTestAssertionRunner();
+        this.visualBuilder = new UiTestGroupVisualBuilder(registry, matrixState, semanticChecker, assertionLogger);
 
         this.document = UiDocument.create();
         document.setDefaultTextContentMode(resolvedDocumentUi.getDefaultTextContentMode());
@@ -138,8 +145,62 @@ public final class UiTestDocumentPageController extends DocumentPageController {
      */
     private void showGroupPage(UiTestGroupSpec group) {
         rootElement.clearChildren();
+        UiTestGroupPageState pageState = resolveGroupPageState(group);
         pageBindings = visualBuilder.buildGroupPage(document, rootElement, group, buildEnvironmentText(),
-                createNavigation());
+                createNavigation(), pageState, createGroupInteraction(group, pageState));
+    }
+
+    /**
+     * 返回指定分组的页内状态。
+     *
+     * @param group 分组规格
+     * @return 分组页状态
+     */
+    private UiTestGroupPageState resolveGroupPageState(UiTestGroupSpec group) {
+        UiTestGroupPageState state = groupPageStates.get(group.getCode());
+        if (state == null) {
+            state = new UiTestGroupPageState(group.getCode());
+            groupPageStates.put(group.getCode(), state);
+        }
+        state.clampToCaseCount(registry.getCases(group.getCode()).size());
+        return state;
+    }
+
+    /**
+     * 创建分组页交互回调。
+     *
+     * @param group 当前分组
+     * @param pageState 当前分组页状态
+     * @return 分组页交互回调
+     */
+    private UiTestGroupVisualBuilder.GroupInteractionHandler createGroupInteraction(final UiTestGroupSpec group,
+            final UiTestGroupPageState pageState) {
+        return new UiTestGroupVisualBuilder.GroupInteractionHandler() {
+            @Override
+            public void previousCase() {
+                pageState.previous(registry.getCases(group.getCode()).size());
+                showGroupPage(group);
+            }
+
+            @Override
+            public void nextCase() {
+                pageState.next(registry.getCases(group.getCode()).size());
+                showGroupPage(group);
+            }
+
+            @Override
+            public void runCurrentCaseAssertion() {
+                java.util.List<UiTestCaseSpec> cases = registry.getCases(group.getCode());
+                if (cases.isEmpty()) {
+                    return;
+                }
+                pageState.clampToCaseCount(cases.size());
+                UiTestCaseSpec testCase = cases.get(pageState.getCaseIndex());
+                UiTestCaseResult result = assertionRunner.run(htmlLikeDocumentWidget, testCase, assertionLogger);
+                matrixState.updateCaseResult(testCase, result);
+                showGroupPage(group);
+            }
+        };
     }
 
     /**

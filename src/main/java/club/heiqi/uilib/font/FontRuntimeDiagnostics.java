@@ -31,7 +31,7 @@ public final class FontRuntimeDiagnostics {
      * @param glyphInfo 字形度量
      */
     public static void logGeneratedGlyph(GlyphGenerationTask task, BufferedImage image, GlyphInfo glyphInfo) {
-        if (!Config.useDebug) {
+        if (!Config.fontRuntimeDebug) {
             return;
         }
         int index = generatedLogCount.getAndIncrement();
@@ -68,7 +68,7 @@ public final class FontRuntimeDiagnostics {
      */
     public static void logGlyphUpload(int runtimeVersion, int codepoint, FontType fontType, int textureId,
             boolean textureValid, int glError, BufferedImage image) {
-        if (!Config.useDebug) {
+        if (!Config.fontRuntimeDebug) {
             return;
         }
         int index = uploadLogCount.getAndIncrement();
@@ -104,7 +104,7 @@ public final class FontRuntimeDiagnostics {
      */
     public static void logFlushState(int shaderProgramId, int currentProgram, int textureId, int boundTexture, int vao,
             int glError, int quadCount) {
-        if (!Config.useDebug) {
+        if (!Config.fontRuntimeDebug) {
             return;
         }
         int index = flushLogCount.getAndIncrement();
@@ -130,7 +130,7 @@ public final class FontRuntimeDiagnostics {
      * @return 是否需要查询并记录 GL 状态
      */
     public static boolean shouldLogFlushState() {
-        return Config.useDebug && flushLogCount.get() < MAX_FLUSH_LOGS;
+        return Config.fontRuntimeDebug && flushLogCount.get() < MAX_FLUSH_LOGS;
     }
 
     /**
@@ -139,7 +139,7 @@ public final class FontRuntimeDiagnostics {
      * @return 是否需要查询并记录 GL 状态
      */
     public static boolean shouldLogGlyphUpload() {
-        return Config.useDebug && uploadLogCount.get() < MAX_UPLOAD_LOGS;
+        return Config.fontRuntimeDebug && uploadLogCount.get() < MAX_UPLOAD_LOGS;
     }
 
     private static AlphaStats collectAlphaStats(BufferedImage image) {

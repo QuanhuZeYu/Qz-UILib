@@ -12,6 +12,7 @@ import java.util.Objects;
  */
 final class UiTestMatrixState {
 
+    private final UiTestMatrixRegistry registry;
     private final List<UiTestGroupState> groupStates;
     private final Map<String, UiTestGroupState> groupStateByCode;
     private final Map<String, UiTestCaseResult> caseResultById;
@@ -34,7 +35,7 @@ final class UiTestMatrixState {
         for (UiTestGroupSpec group : registry.getGroups()) {
             states.add(createGroupState(group, registry.getCases(group.getCode()), results));
         }
-        return new UiTestMatrixState(states, results);
+        return new UiTestMatrixState(registry, states, results);
     }
 
     /**
@@ -43,14 +44,15 @@ final class UiTestMatrixState {
      * @param groupStates 分组状态列表
      * @param caseResultById 样例结果映射
      */
-    private UiTestMatrixState(List<UiTestGroupState> groupStates, Map<String, UiTestCaseResult> caseResultById) {
-        this.groupStates = Collections.unmodifiableList(new ArrayList<UiTestGroupState>(groupStates));
-        this.caseResultById = Collections.unmodifiableMap(new LinkedHashMap<String, UiTestCaseResult>(caseResultById));
-        Map<String, UiTestGroupState> byCode = new LinkedHashMap<String, UiTestGroupState>();
+    private UiTestMatrixState(UiTestMatrixRegistry registry, List<UiTestGroupState> groupStates,
+            Map<String, UiTestCaseResult> caseResultById) {
+        this.registry = Objects.requireNonNull(registry, "registry");
+        this.groupStates = new ArrayList<UiTestGroupState>(groupStates);
+        this.caseResultById = new LinkedHashMap<String, UiTestCaseResult>(caseResultById);
+        this.groupStateByCode = new LinkedHashMap<String, UiTestGroupState>();
         for (UiTestGroupState state : this.groupStates) {
-            byCode.put(state.getGroup().getCode(), state);
+            this.groupStateByCode.put(state.getGroup().getCode(), state);
         }
-        this.groupStateByCode = Collections.unmodifiableMap(byCode);
     }
 
     /**
@@ -59,7 +61,7 @@ final class UiTestMatrixState {
      * @return 分组状态列表
      */
     List<UiTestGroupState> getGroupStates() {
-        return groupStates;
+        return Collections.unmodifiableList(new ArrayList<UiTestGroupState>(groupStates));
     }
 
     /**
@@ -82,7 +84,30 @@ final class UiTestMatrixState {
      * @return 样例结果映射
      */
     Map<String, UiTestCaseResult> getCaseResultById() {
-        return caseResultById;
+        return Collections.unmodifiableMap(new LinkedHashMap<String, UiTestCaseResult>(caseResultById));
+    }
+
+    /**
+     * 返回指定样例结果。
+     *
+     * @param caseId 样例编号
+     * @return 样例结果；不存在时返回 null
+     */
+    UiTestCaseResult getCaseResult(String caseId) {
+        return caseResultById.get(caseId);
+    }
+
+    /**
+     * 回写指定样例结果，并刷新所在分组统计。
+     *
+     * @param testCase 样例规格
+     * @param result 样例结果
+     */
+    void updateCaseResult(UiTestCaseSpec testCase, UiTestCaseResult result) {
+        Objects.requireNonNull(testCase, "testCase");
+        Objects.requireNonNull(result, "result");
+        caseResultById.put(testCase.getId(), result);
+        refreshGroupState(testCase.getGroupCode());
     }
 
     /**
@@ -148,6 +173,24 @@ final class UiTestMatrixState {
             count += state.getGroup().getPlannedManualCount();
         }
         return count;
+    }
+
+    /**
+     * 刷新指定分组统计状态。
+     *
+     * @param groupCode 分组代码
+     */
+    private void refreshGroupState(String groupCode) {
+        UiTestGroupSpec group = registry.getGroup(groupCode);
+        UiTestGroupState nextState = createGroupState(group, registry.getCases(groupCode), caseResultById);
+        groupStateByCode.put(groupCode, nextState);
+        for (int index = 0; index < groupStates.size(); index++) {
+            if (groupStates.get(index).getGroup().getCode().equals(groupCode)) {
+                groupStates.set(index, nextState);
+                return;
+            }
+        }
+        groupStates.add(nextState);
     }
 
     /**

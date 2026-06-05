@@ -154,8 +154,10 @@ public class FontService {
             }
             FontReloadRequest immediateRequest = reloadDebouncer.request(request, System.currentTimeMillis());
             if (immediateRequest == null) {
-                MyMod.LOG.debug("字体系统重载请求已合并，原因：{}，待合并数量：{}", request.getReason(),
-                        Integer.valueOf(reloadDebouncer.getPendingCount()));
+                if (club.heiqi.uilib.Config.fontRuntimeDebug) {
+                    MyMod.LOG.info("字体系统重载请求已合并，原因：{}，待合并数量：{}", request.getReason(),
+                            Integer.valueOf(reloadDebouncer.getPendingCount()));
+                }
                 return;
             }
 
@@ -521,11 +523,13 @@ public class FontService {
                     glyphSize, GlyphGenerationPriority.HIGH));
             submittedCount++;
         }
-        MyMod.LOG.debug("字体系统重载后已恢复字形生成请求：{}", Integer.valueOf(submittedCount));
+        if (club.heiqi.uilib.Config.fontRuntimeDebug) {
+            MyMod.LOG.info("字体系统重载后已恢复字形生成请求：{}", Integer.valueOf(submittedCount));
+        }
     }
 
     private void debugLogStats(String source) {
-        if (!club.heiqi.uilib.Config.useDebug) {
+        if (!club.heiqi.uilib.Config.fontRuntimeDebug) {
             return;
         }
         MyMod.LOG.info("字体运行统计[{}]: {}", source, getRuntimeStats());
