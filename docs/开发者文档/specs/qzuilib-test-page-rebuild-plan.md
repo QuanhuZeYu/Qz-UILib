@@ -83,9 +83,9 @@ P0 已建立分组索引、运行时测试结果模型和统一用例卡片契�
 | DOM-007 | 属性读写、删除和 HTML 布尔属性 | 预期结果：`disabled="false"` 的按钮仍不可点击，状态显示 `布尔属性禁用生效`。 |
 | DOM-008 | `classList` add/remove/toggle/contains | 预期结果：点击 toggle 后卡片颜色和 class 状态同步切换。 |
 | DOM-009 | `querySelector` 不返回内部 document root | 预期结果：执行 `querySelector('*')` 后结果为第一个作者元素，不是隐藏根节点。 |
-| DOM-010 | type、class、id、后代、子代和分组选择器 | 预期结果：匹配数量分别显示为预设数字，未匹配项保持灰色。 |
-| DOM-011 | 属性选择器 `[attr]` / `[attr=value]` | 预期结果：带 `data-case="match"` 的元素高亮，其他元素不高亮。 |
-| DOM-012 | 结构伪类和交互伪类 | 预期结果：首项、末项、hover、active、focus-visible 的视觉状态只在对应条件下出现。 |
+| DOM-010 | type、class、id、后代、子代和分组选择器 | 预期结果：`domcase`、`.query-target`、`#query-target-id`、后代和子代选择器均显示 `1/1`，分组选择器未完成时显示待实现缺口。 |
+| DOM-011 | 属性选择器 `[attr]` / `[attr=value]` | 预期结果：支持后 `[data-case]` 显示 `2/2`、`[data-case=match]` 显示 `1/1`；当前未支持时明确显示待实现缺口。 |
+| DOM-012 | 结构伪类和交互伪类 | 预期结果：首项和末项结构伪类显示 `1/1`；移动、按下或键盘聚焦交互目标时只出现对应 hover、active、focus-visible 状态。 |
 | DOM-013 | 链接默认行为和 `preventDefault` | 预期结果：普通链接触发导航记录，preventDefault 链接只记录事件不执行默认动作。 |
 
 ## CSS 级联与样式语义
