@@ -447,7 +447,7 @@ final class UiTestGroupVisualBuilder {
                 }
             }
         }
-        appendPlanItem(document, section, "诊断目标：先回写 expected / actual / difference，再逐步补 DOM 摘要、computed style、布局盒与命中信息。 ");
+        appendPlanItem(document, section, "诊断目标：日志按 group/case/phase/context 展示，并持续补 computed style、布局盒、clip、transform 与 stacking 摘要。 ");
         root.append(section);
     }
 

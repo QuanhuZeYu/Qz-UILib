@@ -2,11 +2,15 @@ package club.heiqi.uilib.internal.devtools.pages;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Locale;
 
 import club.heiqi.uilib.ui.document.HtmlLikeDocumentWidget;
 import club.heiqi.uilib.ui.dom.ElementNode;
+import club.heiqi.uilib.ui.layout.DocumentLayoutEdges;
 import club.heiqi.uilib.ui.layout.DocumentLayoutBox;
 import club.heiqi.uilib.ui.style.cascade.ComputedStyle;
+import club.heiqi.uilib.ui.style.values.UiStyleLength;
+import club.heiqi.uilib.ui.style.values.UiTransform;
 
 /**
  * `/qzuilib test` 首批运行时断言执行器。
@@ -19,12 +23,15 @@ final class UiTestAssertionRunner {
      * @param documentWidget 文档组件
      * @param testCase 样例规格
      * @param logger 断言日志记录器
+     * @param assertionContext 断言运行上下文
      * @return 断言结果
      */
-    UiTestCaseResult run(HtmlLikeDocumentWidget documentWidget, UiTestCaseSpec testCase, UiTestAssertionLogger logger) {
+    UiTestCaseResult run(HtmlLikeDocumentWidget documentWidget, UiTestCaseSpec testCase, UiTestAssertionLogger logger,
+            String assertionContext) {
         long now = System.currentTimeMillis();
         logger.log(new UiTestAssertionLogEntry(testCase.getId(), testCase.getGroupCode(), "start",
-                "开始运行样例断言", testCase.getSemanticAssertion(), "准备解析舞台", "", now));
+                "开始运行样例断言", testCase.getSemanticAssertion(), "准备解析舞台", "", now,
+                assertionContext));
         try {
             if (documentWidget == null || documentWidget.getDocument() == null) {
                 return buildFailure(testCase, logger, "document", "文档未初始化", "文档已构建", "document=null");
@@ -44,6 +51,9 @@ final class UiTestAssertionRunner {
             }
 
             List<String> diagnostics = new ArrayList<String>();
+            diagnostics.add("caseContext=" + testCase.getGroupCode() + "/" + testCase.getId());
+            diagnostics.add("stageBox=" + summarizeLayoutBox(scopeBox));
+            diagnostics.add("stageStyle=" + summarizeComputedStyle(scopeBox.getComputedStyle()));
             boolean passed;
             if ("VIS-CSS-001".equals(testCase.getId())) {
                 passed = assertCssSpecificity(documentWidget, scope, diagnostics);
@@ -62,9 +72,13 @@ final class UiTestAssertionRunner {
             } else if ("VIS-PAINT-002".equals(testCase.getId())) {
                 passed = assertPaintClip(documentWidget, scope, diagnostics);
             } else {
-                diagnostics.add("当前样例未接入自动断言，保持人工待确认。");
+                if ("VIS-PAINT-003".equals(testCase.getId())) {
+                    diagnosePaintTransform(documentWidget, scope, diagnostics);
+                } else {
+                    diagnostics.add("当前样例未接入自动断言，保持人工待确认。");
+                }
                 logger.log(new UiTestAssertionLogEntry(testCase.getId(), testCase.getGroupCode(), "skip",
-                        "当前样例未接入自动断言", testCase.getSemanticAssertion(), diagnostics.get(0), "", now));
+                        "当前样例未接入自动断言", testCase.getSemanticAssertion(), join(diagnostics), "", now));
                 return new UiTestCaseResult(UiTestVisualStatus.DISPLAYING, UiTestSemanticStatus.MANUAL_PENDING,
                         UiTestSummaryStatus.PENDING, join(diagnostics), "");
             }
@@ -106,12 +120,21 @@ final class UiTestAssertionRunner {
             diagnostics.add("specificity 节点缺失");
             return false;
         }
-        ComputedStyle sampleStyle = resolveBox(widget, sample).getComputedStyle();
-        ComputedStyle classStyle = resolveBox(widget, classNode).getComputedStyle();
-        ComputedStyle idStyle = resolveBox(widget, idNode).getComputedStyle();
+        DocumentLayoutBox sampleBox = resolveBox(widget, sample);
+        DocumentLayoutBox classBox = resolveBox(widget, classNode);
+        DocumentLayoutBox idBox = resolveBox(widget, idNode);
+        ComputedStyle sampleStyle = sampleBox.getComputedStyle();
+        ComputedStyle classStyle = classBox.getComputedStyle();
+        ComputedStyle idStyle = idBox.getComputedStyle();
         diagnostics.add("sampleBg=" + toHex(sampleStyle.getBackgroundColor()));
         diagnostics.add("classBg=" + toHex(classStyle.getBackgroundColor()));
         diagnostics.add("idBg=" + toHex(idStyle.getBackgroundColor()));
+        appendElementDiagnostics(diagnostics, "sample", sampleBox);
+        appendElementDiagnostics(diagnostics, "class", classBox);
+        appendElementDiagnostics(diagnostics, "id", idBox);
+        diagnostics.add("specificityDiff=expected sample=0xFF334155,class=0xFF2563EB,id=0xFF059669; actual sample="
+                + toHex(sampleStyle.getBackgroundColor()) + ",class=" + toHex(classStyle.getBackgroundColor())
+                + ",id=" + toHex(idStyle.getBackgroundColor()));
         return sampleStyle.getBackgroundColor() == 0xFF334155
                 && classStyle.getBackgroundColor() == 0xFF2563EB
                 && idStyle.getBackgroundColor() == 0xFF059669;
@@ -128,6 +151,11 @@ final class UiTestAssertionRunner {
         DocumentLayoutBox borderBoxLayout = resolveBox(widget, borderBox);
         diagnostics.add("contentBoxWidth=" + contentBoxLayout.getWidth());
         diagnostics.add("borderBoxWidth=" + borderBoxLayout.getWidth());
+        appendElementDiagnostics(diagnostics, "contentBox", contentBoxLayout);
+        appendElementDiagnostics(diagnostics, "borderBox", borderBoxLayout);
+        diagnostics.add("boxSizingDiff=contentBoxWidth-borderBoxWidth="
+                + (contentBoxLayout.getWidth() - borderBoxLayout.getWidth())
+                + "; expected content-box visual width > border-box visual width");
         return contentBoxLayout.getWidth() > borderBoxLayout.getWidth();
     }
 
@@ -138,10 +166,16 @@ final class UiTestAssertionRunner {
             diagnostics.add("visibility 节点缺失");
             return false;
         }
-        ComputedStyle hiddenStyle = resolveBox(widget, hidden).getComputedStyle();
-        ComputedStyle pointerStyle = resolveBox(widget, pointerNone).getComputedStyle();
+        DocumentLayoutBox hiddenBox = resolveBox(widget, hidden);
+        DocumentLayoutBox pointerBox = resolveBox(widget, pointerNone);
+        ComputedStyle hiddenStyle = hiddenBox.getComputedStyle();
+        ComputedStyle pointerStyle = pointerBox.getComputedStyle();
         diagnostics.add("hiddenVisibility=" + hiddenStyle.getVisibility());
         diagnostics.add("pointerEvents=" + pointerStyle.getPointerEvents());
+        appendElementDiagnostics(diagnostics, "hidden", hiddenBox);
+        appendElementDiagnostics(diagnostics, "pointerNone", pointerBox);
+        diagnostics.add("visibilityDiff=expected hidden=HIDDEN,pointerEvents=NONE; actual hidden="
+                + hiddenStyle.getVisibility() + ",pointerEvents=" + pointerStyle.getPointerEvents());
         return hiddenStyle.getVisibility().name().equals("HIDDEN")
                 && pointerStyle.getPointerEvents().name().equals("NONE");
     }
@@ -157,6 +191,10 @@ final class UiTestAssertionRunner {
         DocumentLayoutBox secondBox = resolveBox(widget, second);
         diagnostics.add("firstTop=" + firstBox.getTop());
         diagnostics.add("secondTop=" + secondBox.getTop());
+        appendElementDiagnostics(diagnostics, "firstBlock", firstBox);
+        appendElementDiagnostics(diagnostics, "secondBlock", secondBox);
+        diagnostics.add("blockFlowDiff=secondTop-firstTop=" + (secondBox.getTop() - firstBox.getTop())
+                + "; expected second block below first block");
         return secondBox.getTop() > firstBox.getTop();
     }
 
@@ -171,6 +209,11 @@ final class UiTestAssertionRunner {
         DocumentLayoutBox minWidthZeroBox = resolveBox(widget, minWidthZero);
         diagnostics.add("minContentWidth=" + minContentBox.getWidth());
         diagnostics.add("minWidthZeroWidth=" + minWidthZeroBox.getWidth());
+        appendElementDiagnostics(diagnostics, "minContent", minContentBox);
+        appendElementDiagnostics(diagnostics, "minWidthZero", minWidthZeroBox);
+        diagnostics.add("flexDiff=minContentWidth-minWidthZeroWidth="
+                + (minContentBox.getWidth() - minWidthZeroBox.getWidth())
+                + "; expected min-content item >= min-width:0 item");
         return minContentBox.getWidth() >= minWidthZeroBox.getWidth();
     }
 
@@ -185,6 +228,10 @@ final class UiTestAssertionRunner {
         DocumentLayoutBox longBox = resolveBox(widget, longCell);
         diagnostics.add("shortCellWidth=" + shortBox.getWidth());
         diagnostics.add("longCellWidth=" + longBox.getWidth());
+        appendElementDiagnostics(diagnostics, "shortCell", shortBox);
+        appendElementDiagnostics(diagnostics, "longCell", longBox);
+        diagnostics.add("tableDiff=longCellWidth-shortCellWidth=" + (longBox.getWidth() - shortBox.getWidth())
+                + "; expected content-driven column >= short column");
         return longBox.getWidth() >= shortBox.getWidth();
     }
 
@@ -196,11 +243,21 @@ final class UiTestAssertionRunner {
             diagnostics.add("stacking 节点缺失");
             return false;
         }
-        diagnostics.add("redZ=" + resolveBox(widget, red).getComputedStyle().getZIndex());
-        diagnostics.add("blueOpacity=" + resolveBox(widget, blue).getComputedStyle().getOpacity());
-        diagnostics.add("greenZ=" + resolveBox(widget, green).getComputedStyle().getZIndex());
-        Integer redZ = resolveBox(widget, red).getComputedStyle().getZIndex();
-        Integer greenZ = resolveBox(widget, green).getComputedStyle().getZIndex();
+        DocumentLayoutBox redBox = resolveBox(widget, red);
+        DocumentLayoutBox blueBox = resolveBox(widget, blue);
+        DocumentLayoutBox greenBox = resolveBox(widget, green);
+        diagnostics.add("redZ=" + redBox.getComputedStyle().getZIndex());
+        diagnostics.add("blueOpacity=" + blueBox.getComputedStyle().getOpacity());
+        diagnostics.add("greenZ=" + greenBox.getComputedStyle().getZIndex());
+        appendElementDiagnostics(diagnostics, "redLayer", redBox);
+        appendElementDiagnostics(diagnostics, "blueLayer", blueBox);
+        appendElementDiagnostics(diagnostics, "greenLayer", greenBox);
+        diagnostics.add("stackingDiff=red phase=" + redBox.getStackingPhase() + "/zSort="
+                + redBox.getStackingZIndex() + ", blue phase=" + blueBox.getStackingPhase() + "/zSort="
+                + blueBox.getStackingZIndex() + ", green phase=" + greenBox.getStackingPhase() + "/zSort="
+                + greenBox.getStackingZIndex() + "; expected green z-index above red");
+        Integer redZ = redBox.getComputedStyle().getZIndex();
+        Integer greenZ = greenBox.getComputedStyle().getZIndex();
         return redZ != null && greenZ != null && greenZ.intValue() > redZ.intValue();
     }
 
@@ -216,7 +273,206 @@ final class UiTestAssertionRunner {
         DocumentLayoutBox barBox = resolveBox(widget, bar);
         diagnostics.add("clipWidth=" + clipBox.getWidth());
         diagnostics.add("barWidth=" + barBox.getWidth());
+        appendElementDiagnostics(diagnostics, "clipBoundary", clipBox);
+        appendElementDiagnostics(diagnostics, "clipChild", barBox);
+        diagnostics.add("clipDiff=childRight-parentRight=" + (barBox.getRight() - clipBox.getRight())
+                + "; parentOverflow=" + clipBox.getComputedStyle().getOverflowX() + "/"
+                + clipBox.getComputedStyle().getOverflowY()
+                + "; expected child overflows but is clipped by parent padding box");
         return barBox.getWidth() > clipBox.getWidth();
+    }
+
+    /**
+     * 为人工确认的 transform 样例补充布局盒与 transform 摘要。
+     *
+     * @param widget 文档组件
+     * @param scope 样例舞台
+     * @param diagnostics 诊断摘要列表
+     */
+    private void diagnosePaintTransform(HtmlLikeDocumentWidget widget, ElementNode scope, List<String> diagnostics) {
+        ElementNode placeholder = findByText(scope, "layout box");
+        ElementNode transformed = findByText(scope, "rotate(12deg) translate(28,8)");
+        if (placeholder == null || transformed == null) {
+            diagnostics.add("transform 节点缺失，保持人工待确认。");
+            return;
+        }
+        DocumentLayoutBox placeholderBox = resolveBox(widget, placeholder);
+        DocumentLayoutBox transformedBox = resolveBox(widget, transformed);
+        UiTransform transform = transformedBox.getComputedStyle().getTransform();
+        appendElementDiagnostics(diagnostics, "layoutPlaceholder", placeholderBox);
+        appendElementDiagnostics(diagnostics, "transformedLayer", transformedBox);
+        diagnostics.add("transformDiff=layoutLeftDelta=" + (transformedBox.getLeft() - placeholderBox.getLeft())
+                + ", layoutTopDelta=" + (transformedBox.getTop() - placeholderBox.getTop())
+                + "; visualTransform=" + formatTransform(transform)
+                + "; expected layout box unchanged, paint/hit uses transformed visual quad");
+        diagnostics.add("当前样例仍需人工确认旋转卡片与原始占位框的视觉相对位置。");
+    }
+
+    /**
+     * 追加单个元素的稳定诊断摘要。
+     *
+     * @param diagnostics 诊断摘要列表
+     * @param label 摘要标签
+     * @param box 布局盒
+     */
+    private void appendElementDiagnostics(List<String> diagnostics, String label, DocumentLayoutBox box) {
+        diagnostics.add(label + "Element=" + describeElement(box.getElement()));
+        diagnostics.add(label + "Box=" + summarizeLayoutBox(box));
+        diagnostics.add(label + "Style=" + summarizeComputedStyle(box.getComputedStyle()));
+    }
+
+    /**
+     * 构建布局盒位置、尺寸和 stacking 摘要。
+     *
+     * @param box 布局盒
+     * @return 布局盒摘要
+     */
+    private String summarizeLayoutBox(DocumentLayoutBox box) {
+        return "border(" + formatRect(box.getLeft(), box.getTop(), box.getWidth(), box.getHeight()) + ")"
+                + ", content(" + formatRect(box.getContentLeft(), box.getContentTop(), box.getContentWidth(),
+                        box.getContentHeight()) + ")"
+                + ", margin(" + formatEdges(box.getMargin()) + ")"
+                + ", borderEdges(" + formatEdges(box.getBorder()) + ")"
+                + ", padding(" + formatEdges(box.getPadding()) + ")"
+                + ", phase=" + box.getStackingPhase()
+                + ", zSort=" + box.getStackingZIndex()
+                + ", stackingContext=" + box.createsStackingContext();
+    }
+
+    /**
+     * 构建 computed style 的排障摘要。
+     *
+     * @param style computed style
+     * @return 样式摘要
+     */
+    private String summarizeComputedStyle(ComputedStyle style) {
+        return "display=" + style.getDisplay()
+                + ", position=" + style.getPosition()
+                + ", boxSizing=" + style.getBoxSizing()
+                + ", width=" + formatLength(style.getWidth())
+                + ", height=" + formatLength(style.getHeight())
+                + ", minWidth=" + formatLength(style.getMinWidth())
+                + ", flexShrink=" + formatFloat(style.getFlexShrink())
+                + ", overflow=" + style.getOverflowX() + "/" + style.getOverflowY()
+                + ", visibility=" + style.getVisibility()
+                + ", pointer=" + style.getPointerEvents()
+                + ", bg=" + toHex(style.getBackgroundColor())
+                + ", border=" + toHex(style.getBorderColor())
+                + ", text=" + toHex(style.getTextColor())
+                + ", opacity=" + formatFloat(style.getOpacity())
+                + ", zIndex=" + (style.getZIndex() == null ? "auto" : style.getZIndex().toString())
+                + ", transform=" + formatTransform(style.getTransform());
+    }
+
+    /**
+     * 构建元素身份摘要。
+     *
+     * @param element 元素节点
+     * @return 元素身份摘要
+     */
+    private String describeElement(ElementNode element) {
+        StringBuilder builder = new StringBuilder(element.getTagName());
+        if (element.getId() != null && element.getId().length() > 0) {
+            builder.append('#').append(element.getId());
+        }
+        if (element.getClassName() != null && element.getClassName().length() > 0) {
+            builder.append('.').append(element.getClassName().replace(' ', '.'));
+        }
+        String text = element.getTextContent();
+        if (text != null && text.trim().length() > 0) {
+            builder.append(" text=\"").append(truncate(text.trim(), 48)).append('"');
+        }
+        return builder.toString();
+    }
+
+    /**
+     * 格式化矩形摘要。
+     *
+     * @param left 左坐标
+     * @param top 上坐标
+     * @param width 宽度
+     * @param height 高度
+     * @return 矩形摘要
+     */
+    private String formatRect(int left, int top, int width, int height) {
+        return "x=" + left + ",y=" + top + ",w=" + width + ",h=" + height;
+    }
+
+    /**
+     * 格式化盒模型四边摘要。
+     *
+     * @param edges 四边值
+     * @return 四边摘要
+     */
+    private String formatEdges(DocumentLayoutEdges edges) {
+        return "t=" + edges.getTop() + ",r=" + edges.getRight() + ",b=" + edges.getBottom()
+                + ",l=" + edges.getLeft();
+    }
+
+    /**
+     * 格式化样式长度。
+     *
+     * @param length 样式长度
+     * @return 长度摘要
+     */
+    private String formatLength(UiStyleLength length) {
+        if (length == null) {
+            return "null";
+        }
+        switch (length.getType()) {
+            case AUTO:
+                return "auto";
+            case PIXEL:
+                return formatFloat(length.getValue()) + "px";
+            case PERCENT:
+                return formatFloat(length.getValue() * 100.0F) + "%";
+            case CALC:
+                return "calc(" + formatFloat(length.getValue() * 100.0F) + "%"
+                        + (length.getPixelOffset() >= 0.0F ? "+" : "")
+                        + formatFloat(length.getPixelOffset()) + "px)";
+            default:
+                return length.getType().name();
+        }
+    }
+
+    /**
+     * 格式化 transform 摘要。
+     *
+     * @param transform transform 值
+     * @return transform 摘要
+     */
+    private String formatTransform(UiTransform transform) {
+        if (transform == null || transform.isIdentity()) {
+            return "none";
+        }
+        return "translate(" + formatFloat(transform.getTranslateX()) + "," + formatFloat(transform.getTranslateY())
+                + ") scale(" + formatFloat(transform.getScaleX()) + "," + formatFloat(transform.getScaleY())
+                + ") rotate(" + formatFloat(transform.getRotateDegrees()) + "deg) origin("
+                + formatLength(transform.getOriginX()) + "," + formatLength(transform.getOriginY()) + ")";
+    }
+
+    /**
+     * 格式化浮点数，避免平台本地化影响日志。
+     *
+     * @param value 浮点值
+     * @return 浮点摘要
+     */
+    private String formatFloat(float value) {
+        return String.format(Locale.ROOT, "%.2f", Float.valueOf(value));
+    }
+
+    /**
+     * 截断过长文本，保持日志单行可读。
+     *
+     * @param text 原文本
+     * @param maxLength 最大长度
+     * @return 截断后文本
+     */
+    private String truncate(String text, int maxLength) {
+        if (text.length() <= maxLength) {
+            return text;
+        }
+        return text.substring(0, Math.max(0, maxLength - 3)) + "...";
     }
 
     private DocumentLayoutBox resolveBox(HtmlLikeDocumentWidget widget, ElementNode element) {

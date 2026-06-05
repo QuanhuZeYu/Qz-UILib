@@ -196,7 +196,8 @@ public final class UiTestDocumentPageController extends DocumentPageController {
                 }
                 pageState.clampToCaseCount(cases.size());
                 UiTestCaseSpec testCase = cases.get(pageState.getCaseIndex());
-                UiTestCaseResult result = assertionRunner.run(htmlLikeDocumentWidget, testCase, assertionLogger);
+                UiTestCaseResult result = assertionRunner.run(htmlLikeDocumentWidget, testCase, assertionLogger,
+                        buildAssertionContext(testCase, pageState, cases.size()));
                 matrixState.updateCaseResult(testCase, result);
                 showGroupPage(group);
             }
@@ -238,6 +239,23 @@ public final class UiTestDocumentPageController extends DocumentPageController {
                 + "；网络传输模式=" + NetTransportFactory.resolveName(Config.netTransport)
                 + "；运行时适配器=" + runtimeAdapterSummary
                 + "；运行时统计=" + statsSummary;
+    }
+
+    /**
+     * 构建单次样例断言的运行上下文。
+     *
+     * @param testCase 当前样例
+     * @param pageState 当前分组页状态
+     * @param caseCount 当前分组样例总数
+     * @return 断言运行上下文
+     */
+    private String buildAssertionContext(UiTestCaseSpec testCase, UiTestGroupPageState pageState, int caseCount) {
+        return "group=" + testCase.getGroupCode() + "；case=" + testCase.getId()
+                + "；page=" + (pageState.getCaseIndex() + 1) + "/" + caseCount
+                + "；env=Minecraft=1.7.10,window=" + runtimeView.getHostWidth() + "x" + runtimeView.getHostHeight()
+                + ",mouse=" + runtimeView.getMouseX() + "," + runtimeView.getMouseY()
+                + ",fontEpoch=" + fontEpoch
+                + ",net=" + NetTransportFactory.resolveName(Config.netTransport);
     }
 
     /**
