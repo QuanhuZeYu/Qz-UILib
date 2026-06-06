@@ -288,6 +288,33 @@ final class UiTestMatrixRegistry {
                 "预期结果：有效显示贴图，缺失显示纯底色，不出现 Minecraft 默认紫黑 missing texture。",
                 "自动诊断：输出 background-image 声明与宿主资源；真实绘制和缺失 fallback 保留人工确认。",
                 "host image 真实绘制与缺失资源 fallback 发生在宿主渲染阶段，需要截图确认，不能仅凭声明对象自动通过。"));
+        // INPUT 001-005
+        cases.add(new UiTestCaseSpec("VIS-INPUT-001", "INPUT", "capture/bubble 事件轨道",
+                "click 事件按 capture -> target -> bubble 顺序传播，target capture 与 target handler 都处于 AT_TARGET。",
+                "嵌套 root/target 事件面板，点击 target 后日志轨道展示四段传播顺序。",
+                "预期结果：日志依次显示 root-capture、target-capture、target、root-bubble。",
+                "自动断言：触发真实 click 分发，检查事件日志顺序与事件阶段。", ""));
+        cases.add(new UiTestCaseSpec("VIS-INPUT-002", "INPUT", "preventDefault 默认行为",
+                "preventDefault 阻止元素默认行为，但不等同于 stopPropagation。",
+                "两个原生 button 对比：一个按 Enter 触发默认 click，另一个 key handler 调用 preventDefault。",
+                "预期结果：默认按钮记录 click；preventDefault 按钮只记录阻止默认，不触发 click。",
+                "自动断言：聚焦两个 button 并发送 Enter，检查默认 click 与被阻止 click 的差异。", ""));
+        cases.add(new UiTestCaseSpec("VIS-INPUT-003", "INPUT", "wheel 事件与默认滚动",
+                "wheel 事件先按 DOM-like 顺序分发，未 preventDefault 时再执行默认滚动。",
+                "可滚动面板内放置 wheel target，日志显示 capture/target/bubble，滚动偏移展示默认滚动结果。",
+                "预期结果：wheel 日志先出现，随后 scrollTop 从 0 增大。",
+                "自动断言：发送真实 wheel 输入，检查事件顺序、deltaY 和 scrollTop 变化。", ""));
+        cases.add(new UiTestCaseSpec("VIS-INPUT-004", "INPUT", "focus-visible 焦点提示",
+                "鼠标/程序化焦点不显示键盘焦点提示，键盘遍历焦点应显示 focus-visible。",
+                "两个可聚焦按钮展示 focus 事件日志和可见焦点提示说明。",
+                "预期结果：鼠标/程序化聚焦日志为 focusVisible=false，Tab/键盘遍历聚焦日志为 focusVisible=true。",
+                "自动诊断：输出 focus handler 与焦点遍历日志；真实焦点边框观感保留人工确认。",
+                "focus-visible 的真实边框观感、键鼠切换手感和游戏内 Tab 链路需要截图与交互确认。"));
+        cases.add(new UiTestCaseSpec("VIS-INPUT-005", "INPUT", "keyboard/textInput 日志",
+                "key 与 textInput 事件分别按 capture -> target -> bubble 传播，文本输入只发给当前焦点链路。",
+                "可聚焦 target 面板同时注册 key 与 textInput 日志，展示按键码、输入文本和传播阶段。",
+                "预期结果：key 日志先按 DOM 顺序出现，随后 textInput 日志记录输入文本。",
+                "自动断言：聚焦 target，发送 key 与 textInput，检查两类事件传播顺序。", ""));
         return cases;
     }
 }
