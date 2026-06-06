@@ -76,6 +76,7 @@ import club.heiqi.uilib.ui.style.props.UiOverflow;
 import club.heiqi.uilib.ui.style.props.UiOverflowWrap;
 import club.heiqi.uilib.ui.style.props.UiPosition;
 import club.heiqi.uilib.ui.style.values.UiStyleInsets;
+import club.heiqi.uilib.ui.style.values.UiTransform;
 import club.heiqi.uilib.ui.style.props.UiFontStyle;
 import club.heiqi.uilib.ui.style.props.UiFontWeight;
 import club.heiqi.uilib.ui.style.values.UiStyleLength;
@@ -371,6 +372,293 @@ public class HtmlLikeDocumentWidgetTest {
         assertTextCall(secondContext.textCalls.get(0), "first", 0, 0, 0xFFFFFFFF, false);
         assertTextCall(secondContext.textCalls.get(1), "center", 0, 18, 0xFFFFFFFF, false);
         assertTextCall(secondContext.textCalls.get(2), "last", 0, 36, 0xFFFFFFFF, false);
+    }
+
+    /**
+     * 验证上方兄弟高度变化后，未脏 block 子树可以通过纵向平移复用。
+     */
+    @Test
+    public void shouldTranslateCleanBlockSubtreeWhenFlowTopChanges() {
+        UiDocument document = UiDocument.create();
+        ElementNode root = document.getRootElement();
+        ElementNode changed = document.div();
+        ElementNode clean = document.div();
+        changed.style().setHeight(UiStyleLength.px(18));
+        clean.appendText("clean");
+        root.append(changed).append(clean);
+        CountingTextMeasureService textMeasureService = new CountingTextMeasureService();
+        HtmlLikeDocumentWidget widget = new HtmlLikeDocumentWidget(document, 120, 80, textMeasureService);
+        widget.applyLayoutBounds(0, 0, 120, 80);
+
+        widget.render(new RecordingUiRenderContext());
+        int measureCountAfterInitialRender = textMeasureService.getMeasureCount();
+        changed.style().setHeight(UiStyleLength.px(36));
+        RecordingUiRenderContext changedContext = new RecordingUiRenderContext();
+        widget.render(changedContext);
+        HtmlLikeDocumentWidget.PerformanceDiagnosticsSnapshot snapshot = widget.getPerformanceDiagnosticsSnapshot();
+
+        Assert.assertTrue(snapshot.getLastLayoutReusedSubtreeCount() >= 1);
+        Assert.assertEquals(measureCountAfterInitialRender, textMeasureService.getMeasureCount());
+        Assert.assertEquals(1, changedContext.textCalls.size());
+        assertTextCall(changedContext.textCalls.get(0), "clean", 0, 36, 0xFFFFFFFF, false);
+    }
+
+    /**
+     * 验证可平移复用仍保留子树内首子级 margin collapse 的相对几何。
+     */
+    @Test
+    public void shouldTranslateCleanBlockSubtreeWithCollapsedMargins() {
+        UiDocument document = UiDocument.create();
+        ElementNode root = document.getRootElement();
+        ElementNode changed = document.div();
+        ElementNode clean = document.div();
+        ElementNode collapsedChild = document.div();
+        changed.style().setHeight(UiStyleLength.px(10));
+        collapsedChild.style().setMarginTop(UiStyleLength.px(20));
+        collapsedChild.appendText("collapsed");
+        clean.append(collapsedChild);
+        root.append(changed).append(clean);
+        CountingTextMeasureService textMeasureService = new CountingTextMeasureService();
+        HtmlLikeDocumentWidget widget = new HtmlLikeDocumentWidget(document, 120, 100, textMeasureService);
+        widget.applyLayoutBounds(0, 0, 120, 100);
+
+        widget.render(new RecordingUiRenderContext());
+        int measureCountAfterInitialRender = textMeasureService.getMeasureCount();
+        changed.style().setHeight(UiStyleLength.px(25));
+        RecordingUiRenderContext changedContext = new RecordingUiRenderContext();
+        widget.render(changedContext);
+        HtmlLikeDocumentWidget.PerformanceDiagnosticsSnapshot snapshot = widget.getPerformanceDiagnosticsSnapshot();
+
+        Assert.assertTrue(snapshot.getLastLayoutReusedSubtreeCount() >= 1);
+        Assert.assertEquals(measureCountAfterInitialRender, textMeasureService.getMeasureCount());
+        Assert.assertEquals(1, changedContext.textCalls.size());
+        assertTextCall(changedContext.textCalls.get(0), "collapsed", 0, 45, 0xFFFFFFFF, false);
+    }
+
+    /**
+     * 验证可平移复用不会破坏横向 auto margin 求解结果。
+     */
+    @Test
+    public void shouldTranslateCleanBlockSubtreeWithAutoMargin() {
+        UiDocument document = UiDocument.create();
+        ElementNode root = document.getRootElement();
+        ElementNode changed = document.div();
+        ElementNode centered = document.div();
+        root.style().setWidth(UiStyleLength.px(120));
+        changed.style().setHeight(UiStyleLength.px(18));
+        centered.style()
+                .setWidth(UiStyleLength.px(40))
+                .setMargin(UiStyleInsets.horizontal(UiStyleLength.auto()));
+        centered.appendText("center");
+        root.append(changed).append(centered);
+        CountingTextMeasureService textMeasureService = new CountingTextMeasureService();
+        HtmlLikeDocumentWidget widget = new HtmlLikeDocumentWidget(document, 120, 100, textMeasureService);
+        widget.applyLayoutBounds(0, 0, 120, 100);
+
+        widget.render(new RecordingUiRenderContext());
+        int measureCountAfterInitialRender = textMeasureService.getMeasureCount();
+        changed.style().setHeight(UiStyleLength.px(36));
+        RecordingUiRenderContext changedContext = new RecordingUiRenderContext();
+        widget.render(changedContext);
+        HtmlLikeDocumentWidget.PerformanceDiagnosticsSnapshot snapshot = widget.getPerformanceDiagnosticsSnapshot();
+
+        Assert.assertTrue(snapshot.getLastLayoutReusedSubtreeCount() >= 1);
+        Assert.assertEquals(measureCountAfterInitialRender, textMeasureService.getMeasureCount());
+        Assert.assertEquals(1, changedContext.textCalls.size());
+        assertTextCall(changedContext.textCalls.get(0), "center", 40, 36, 0xFFFFFFFF, false);
+    }
+
+    /**
+     * 验证可平移复用保留 relative 视觉偏移。
+     */
+    @Test
+    public void shouldTranslateCleanRelativeBlockSubtree() {
+        UiDocument document = UiDocument.create();
+        ElementNode root = document.getRootElement();
+        ElementNode changed = document.div();
+        ElementNode relative = document.div();
+        changed.style().setHeight(UiStyleLength.px(10));
+        relative.style()
+                .setPosition(UiPosition.RELATIVE)
+                .setTop(UiStyleLength.px(5));
+        relative.appendText("relative");
+        root.append(changed).append(relative);
+        CountingTextMeasureService textMeasureService = new CountingTextMeasureService();
+        HtmlLikeDocumentWidget widget = new HtmlLikeDocumentWidget(document, 120, 100, textMeasureService);
+        widget.applyLayoutBounds(0, 0, 120, 100);
+
+        widget.render(new RecordingUiRenderContext());
+        int measureCountAfterInitialRender = textMeasureService.getMeasureCount();
+        changed.style().setHeight(UiStyleLength.px(20));
+        RecordingUiRenderContext changedContext = new RecordingUiRenderContext();
+        widget.render(changedContext);
+        HtmlLikeDocumentWidget.PerformanceDiagnosticsSnapshot snapshot = widget.getPerformanceDiagnosticsSnapshot();
+
+        Assert.assertTrue(snapshot.getLastLayoutReusedSubtreeCount() >= 1);
+        Assert.assertEquals(measureCountAfterInitialRender, textMeasureService.getMeasureCount());
+        Assert.assertEquals(1, changedContext.textCalls.size());
+        assertTextCall(changedContext.textCalls.get(0), "relative", 0, 25, 0xFFFFFFFF, false);
+    }
+
+    /**
+     * 验证可平移复用保留 sticky 在滚动视口中的视觉偏移。
+     */
+    @Test
+    public void shouldTranslateCleanStickyBlockSubtree() {
+        UiDocument document = UiDocument.create();
+        ElementNode root = document.getRootElement();
+        ElementNode changed = document.div();
+        ElementNode sticky = document.div();
+        ElementNode tail = document.div();
+        root.style()
+                .setWidth(UiStyleLength.px(100))
+                .setHeight(UiStyleLength.px(60))
+                .setOverflowY(UiOverflow.AUTO);
+        changed.style().setHeight(UiStyleLength.px(30));
+        sticky.style()
+                .setPosition(UiPosition.STICKY)
+                .setTop(UiStyleLength.px(0))
+                .setHeight(UiStyleLength.px(10))
+                .setBackgroundColor(0xFF224466);
+        tail.style().setHeight(UiStyleLength.px(120));
+        root.append(changed).append(sticky).append(tail);
+        HtmlLikeDocumentWidget widget = new HtmlLikeDocumentWidget(document, 100, 60,
+                new DeterministicTextMeasureService());
+        widget.applyLayoutBounds(0, 0, 100, 60);
+
+        widget.render(new RecordingUiRenderContext());
+        Assert.assertTrue(widget.requestScrollTo(root, 0, 40));
+        changed.style().setHeight(UiStyleLength.px(50));
+        RecordingUiRenderContext changedContext = new RecordingUiRenderContext();
+        widget.render(changedContext);
+        HtmlLikeDocumentWidget.PerformanceDiagnosticsSnapshot snapshot = widget.getPerformanceDiagnosticsSnapshot();
+
+        Assert.assertTrue(snapshot.getLastLayoutReusedSubtreeCount() >= 1);
+        assertContainsDrawCall(changedContext, 0, 10, 100, 20, 0xFF224466, 0, 0);
+    }
+
+    /**
+     * 验证包含 absolute 后代的子树仍保守重排，避免外部 containing block 坐标误平移。
+     */
+    @Test
+    public void shouldNotTranslateSubtreeContainingAbsolutePositionedBox() {
+        UiDocument document = UiDocument.create();
+        ElementNode root = document.getRootElement();
+        ElementNode changed = document.div();
+        ElementNode container = document.div();
+        ElementNode absolute = document.div();
+        changed.style().setHeight(UiStyleLength.px(10));
+        container.style()
+                .setPosition(UiPosition.RELATIVE)
+                .setHeight(UiStyleLength.px(40));
+        absolute.style()
+                .setPosition(UiPosition.ABSOLUTE)
+                .setLeft(UiStyleLength.px(7))
+                .setTop(UiStyleLength.px(4))
+                .setWidth(UiStyleLength.px(12))
+                .setHeight(UiStyleLength.px(8));
+        container.append(absolute);
+        root.append(changed).append(container);
+        HtmlLikeDocumentWidget widget = new HtmlLikeDocumentWidget(document, 120, 100,
+                new DeterministicTextMeasureService());
+        widget.applyLayoutBounds(0, 0, 120, 100);
+
+        widget.resolveLayoutBoxForTest();
+        changed.style().setHeight(UiStyleLength.px(30));
+        widget.resolveLayoutBoxForTest();
+        HtmlLikeDocumentWidget.PerformanceDiagnosticsSnapshot snapshot = widget.getPerformanceDiagnosticsSnapshot();
+        DocumentLayoutBox rootBox = widget.resolveLayoutBoxForTest();
+        DocumentLayoutBox containerBox = findLayoutBox(rootBox, container);
+        DocumentLayoutBox absoluteBox = findLayoutBox(rootBox, absolute);
+
+        Assert.assertEquals(0, snapshot.getLastLayoutReusedSubtreeCount());
+        Assert.assertNotNull(containerBox);
+        Assert.assertNotNull(absoluteBox);
+        Assert.assertEquals(30, containerBox.getTop());
+        Assert.assertEquals(7, absoluteBox.getLeft());
+        Assert.assertEquals(34, absoluteBox.getTop());
+    }
+
+    /**
+     * 验证包含 viewport fixed 后代的子树仍保守重排，fixed 坐标不随父级普通流位置平移。
+     */
+    @Test
+    public void shouldNotTranslateSubtreeContainingViewportFixedBox() {
+        UiDocument document = UiDocument.create();
+        ElementNode root = document.getRootElement();
+        ElementNode changed = document.div();
+        ElementNode container = document.div();
+        ElementNode fixed = document.div();
+        changed.style().setHeight(UiStyleLength.px(10));
+        container.style().setHeight(UiStyleLength.px(40));
+        fixed.style()
+                .setPosition(UiPosition.FIXED)
+                .setLeft(UiStyleLength.px(7))
+                .setTop(UiStyleLength.px(4))
+                .setWidth(UiStyleLength.px(12))
+                .setHeight(UiStyleLength.px(8));
+        container.append(fixed);
+        root.append(changed).append(container);
+        HtmlLikeDocumentWidget widget = new HtmlLikeDocumentWidget(document, 120, 100,
+                new DeterministicTextMeasureService());
+        widget.applyLayoutBounds(0, 0, 120, 100);
+
+        widget.resolveLayoutBoxForTest();
+        changed.style().setHeight(UiStyleLength.px(30));
+        widget.resolveLayoutBoxForTest();
+        HtmlLikeDocumentWidget.PerformanceDiagnosticsSnapshot snapshot = widget.getPerformanceDiagnosticsSnapshot();
+        DocumentLayoutBox rootBox = widget.resolveLayoutBoxForTest();
+        DocumentLayoutBox containerBox = findLayoutBox(rootBox, container);
+        DocumentLayoutBox fixedBox = findLayoutBox(rootBox, fixed);
+
+        Assert.assertEquals(0, snapshot.getLastLayoutReusedSubtreeCount());
+        Assert.assertNotNull(containerBox);
+        Assert.assertNotNull(fixedBox);
+        Assert.assertEquals(30, containerBox.getTop());
+        Assert.assertEquals(7, fixedBox.getLeft());
+        Assert.assertEquals(4, fixedBox.getTop());
+    }
+
+    /**
+     * 验证 transform fixed containing block 子树仍保守重排，fixed 后代继续相对 transform 祖先定位。
+     */
+    @Test
+    public void shouldNotTranslateTransformFixedContainingBlockSubtree() {
+        UiDocument document = UiDocument.create();
+        ElementNode root = document.getRootElement();
+        ElementNode changed = document.div();
+        ElementNode transformed = document.div();
+        ElementNode fixed = document.div();
+        changed.style().setHeight(UiStyleLength.px(10));
+        transformed.style()
+                .setHeight(UiStyleLength.px(40))
+                .setTransform(UiTransform.translate(1.0F, 0.0F));
+        fixed.style()
+                .setPosition(UiPosition.FIXED)
+                .setLeft(UiStyleLength.px(7))
+                .setTop(UiStyleLength.px(4))
+                .setWidth(UiStyleLength.px(12))
+                .setHeight(UiStyleLength.px(8));
+        transformed.append(fixed);
+        root.append(changed).append(transformed);
+        HtmlLikeDocumentWidget widget = new HtmlLikeDocumentWidget(document, 120, 100,
+                new DeterministicTextMeasureService());
+        widget.applyLayoutBounds(0, 0, 120, 100);
+
+        widget.resolveLayoutBoxForTest();
+        changed.style().setHeight(UiStyleLength.px(30));
+        widget.resolveLayoutBoxForTest();
+        HtmlLikeDocumentWidget.PerformanceDiagnosticsSnapshot snapshot = widget.getPerformanceDiagnosticsSnapshot();
+        DocumentLayoutBox rootBox = widget.resolveLayoutBoxForTest();
+        DocumentLayoutBox transformedBox = findLayoutBox(rootBox, transformed);
+        DocumentLayoutBox fixedBox = findLayoutBox(rootBox, fixed);
+
+        Assert.assertEquals(0, snapshot.getLastLayoutReusedSubtreeCount());
+        Assert.assertNotNull(transformedBox);
+        Assert.assertNotNull(fixedBox);
+        Assert.assertEquals(30, transformedBox.getTop());
+        Assert.assertEquals(7, fixedBox.getLeft());
+        Assert.assertEquals(34, fixedBox.getTop());
     }
 
     /**
@@ -4727,6 +5015,19 @@ public class HtmlLikeDocumentWidgetTest {
         Assert.assertEquals(fillColor, drawCall.surfaceStyle.fillColor);
         Assert.assertEquals(borderColor, drawCall.surfaceStyle.borderColor);
         Assert.assertEquals(cornerRadius, drawCall.surfaceStyle.cornerRadius);
+    }
+
+    private static void assertContainsDrawCall(RecordingUiRenderContext renderContext, int left, int top, int right,
+            int bottom, int fillColor, int borderColor, int cornerRadius) {
+        for (DrawCall drawCall : renderContext.drawCalls) {
+            if (drawCall.left == left && drawCall.top == top && drawCall.right == right && drawCall.bottom == bottom
+                    && drawCall.surfaceStyle.fillColor == fillColor
+                    && drawCall.surfaceStyle.borderColor == borderColor
+                    && drawCall.surfaceStyle.cornerRadius == cornerRadius) {
+                return;
+            }
+        }
+        Assert.fail("未找到预期绘制调用");
     }
 
     private static void assertTextCall(TextCall textCall, String text, int x, int y, int color, boolean shadow) {

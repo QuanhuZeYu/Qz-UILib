@@ -1,4 +1,4 @@
-# 决策：HTML-like 脏子树布局缓存第一阶段
+# 决策：HTML-like 脏子树布局缓存与可平移复用
 
 ## 背景
 
@@ -16,6 +16,8 @@ HTML-like 文档此前主要依赖全局 `layoutVersion` / `paintVersion`。任�
 
 采用方案 3：新增 `DocumentNode` 的节点自身与子树布局变更版本，`DocumentLayoutBox` 记录布局输入参数、节点版本与文本测量 epoch，`DocumentLayoutEngine` 在静态布局 pass 中以上一轮根布局盒为候选缓存，先复用满足条件的未脏 block 子树。
 
+在可平移复用补测后，进一步放宽 `containingLeft` / `flowTop` 完全一致限制：当节点版本、子树版本、文本测量 epoch、containing 宽高和 forced size 保持一致时，允许静态 block 子树在普通流位置变化后整体平移复用。
+
 ## 选择原因
 
 - 可以在不改变现有 DOM/CSS/绘制语义的前提下，让局部文本或 DOM 变更避免重排未脏兄弟 block 子树。
@@ -29,11 +31,12 @@ HTML-like 文档此前主要依赖全局 `layoutVersion` / `paintVersion`。任�
 - `ElementNode` 的 layout-affecting 属性、class 和样式变更改为标记元素整棵子树。
 - `UiDocument` 的样式表、样式变量和 top-layer 变化作为全局布局脏树处理。
 - `DocumentLayoutBox` 保存布局缓存元数据，并提供递归平移能力与布局复用诊断计数。
+- `DocumentLayoutBox` 平移时同步更新布局输入坐标元数据，避免连续平移复用使用旧输入坐标计算差值。
 - `HtmlLikeDocumentWidget` 只在静态布局重建时把上一轮 `cachedLayoutBox` 传给布局引擎；运行态 layout 动画不复用。
 
 ## 后续注意事项
 
-- 第一阶段复用条件保守：只覆盖静态 `display:block` / `display:none` 子树，不覆盖 flex、table、inline-block、inline formatting、含 absolute/fixed 盒的子树和 transform fixed containing block 子树。
-- 当前复用要求 layout 输入中的 `containingLeft` 与 `flowTop` 完全一致；后续若要跨位置复用，需要继续完善 margin collapse、auto margin、relative/sticky 偏移和 containing block 平移验证。
+- 当前复用条件仍保守：只覆盖静态 `display:block` / `display:none` 子树，不覆盖 flex、table、inline-block、inline formatting、含 absolute/fixed 盒的子树和 transform fixed containing block 子树。
+- `containingLeft` / `flowTop` 已允许变化并通过整体平移复用；该能力已覆盖 margin collapse、auto margin、relative/sticky 偏移、absolute/fixed containing block 与 transform fixed containing block 边界测试。
 - 后续扩展 flex/table 时必须分别补充主轴分配、列宽、行高和脱流定位回归测试，不能只依赖通用版本判断。
 - 文档级样式规则支持后代/子代选择器，任何可能影响匹配关系的结构或属性变更都必须保守标记相关子树，不能只标记单个节点。
