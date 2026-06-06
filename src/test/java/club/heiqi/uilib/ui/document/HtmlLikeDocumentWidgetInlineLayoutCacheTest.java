@@ -11,10 +11,16 @@ import club.heiqi.uilib.ui.dom.ElementNode;
 import club.heiqi.uilib.ui.dom.TextNode;
 import club.heiqi.uilib.ui.dom.UiDocument;
 import club.heiqi.uilib.ui.layout.DocumentLayoutBox;
+import club.heiqi.uilib.ui.layout.DocumentLayoutInlineFragment;
 import club.heiqi.uilib.ui.layout.DocumentLayoutTextRun;
 import club.heiqi.uilib.ui.style.props.UiDisplay;
+import club.heiqi.uilib.ui.style.props.UiFontStyle;
+import club.heiqi.uilib.ui.style.props.UiFontWeight;
 import club.heiqi.uilib.ui.style.props.UiPosition;
+import club.heiqi.uilib.ui.style.props.UiTextAlign;
+import club.heiqi.uilib.ui.style.props.UiWordBreak;
 import club.heiqi.uilib.ui.style.values.UiStyleLength;
+import club.heiqi.uilib.ui.text.TextContentMode;
 import club.heiqi.uilib.ui.text.TextMeasureService;
 
 /**
@@ -172,6 +178,221 @@ public class HtmlLikeDocumentWidgetInlineLayoutCacheTest {
         Assert.assertEquals(4, absoluteBox.getTop());
     }
 
+    /**
+     * 验证多行 display:inline fragment 变更会重算 inline formatting，当前不做 fragment 级复用。
+     */
+    @Test
+    public void shouldRecomputeMultiLineInlineFragmentsWithoutDisplayInlineReuse() {
+        UiDocument document = UiDocument.create();
+        ElementNode root = document.getRootElement();
+        ElementNode span = document.span();
+        TextNode text = document.text("aabbcc");
+        root.style().setWidth(UiStyleLength.px(32));
+        span.style().setWordBreak(UiWordBreak.BREAK_ALL);
+        span.appendChild(text);
+        root.append(span);
+        CountingTextMeasureService textMeasureService = new CountingTextMeasureService();
+        HtmlLikeDocumentWidget widget = new HtmlLikeDocumentWidget(document, 32, 80, textMeasureService);
+        widget.applyLayoutBounds(0, 0, 32, 80);
+
+        widget.resolveLayoutBoxForTest();
+        int measureCountAfterInitialLayout = textMeasureService.getMeasureCount();
+        text.setText("aabbccdd");
+        DocumentLayoutBox rootBox = widget.resolveLayoutBoxForTest();
+        HtmlLikeDocumentWidget.PerformanceDiagnosticsSnapshot snapshot =
+                widget.getPerformanceDiagnosticsSnapshot();
+
+        Assert.assertEquals(0, snapshot.getLastLayoutReusedSubtreeCount());
+        Assert.assertTrue(textMeasureService.getMeasureCount() > measureCountAfterInitialLayout);
+        Assert.assertEquals(2, rootBox.getInlineFragments().size());
+        assertInlineFragment(rootBox.getInlineFragments().get(0), span, 0, 0, 32, 18, true, false);
+        assertInlineFragment(rootBox.getInlineFragments().get(1), span, 0, 18, 32, 18, false, true);
+        Assert.assertEquals(2, rootBox.getTextRuns().size());
+        assertTextRun(rootBox.getTextRuns().get(0), "aabb", 0, 0, 32, 18);
+        assertTextRun(rootBox.getTextRuns().get(1), "ccdd", 0, 18, 32, 18);
+    }
+
+    /**
+     * 验证嵌套 display:inline 的父子 fragment 会随内部文本变化整体重算。
+     */
+    @Test
+    public void shouldRecomputeNestedInlineFragmentsWithoutDisplayInlineReuse() {
+        UiDocument document = UiDocument.create();
+        ElementNode root = document.getRootElement();
+        ElementNode outerSpan = document.span();
+        ElementNode innerSpan = document.span();
+        TextNode innerText = document.text("bb");
+        root.style().setWidth(UiStyleLength.px(80));
+        outerSpan.appendText("aa");
+        innerSpan.appendChild(innerText);
+        outerSpan.append(innerSpan);
+        outerSpan.appendText("cc");
+        root.append(outerSpan);
+        HtmlLikeDocumentWidget widget = new HtmlLikeDocumentWidget(document, 80, 80,
+                new CountingTextMeasureService());
+        widget.applyLayoutBounds(0, 0, 80, 80);
+
+        widget.resolveLayoutBoxForTest();
+        innerText.setText("bbbb");
+        DocumentLayoutBox rootBox = widget.resolveLayoutBoxForTest();
+        HtmlLikeDocumentWidget.PerformanceDiagnosticsSnapshot snapshot =
+                widget.getPerformanceDiagnosticsSnapshot();
+
+        Assert.assertEquals(0, snapshot.getLastLayoutReusedSubtreeCount());
+        Assert.assertEquals(2, rootBox.getInlineFragments().size());
+        assertInlineFragment(rootBox.getInlineFragments().get(0), outerSpan, 0, 0, 64, 18, true, true);
+        assertInlineFragment(rootBox.getInlineFragments().get(1), innerSpan, 16, 0, 32, 18, true, true);
+        Assert.assertEquals(3, rootBox.getTextRuns().size());
+        assertTextRun(rootBox.getTextRuns().get(0), "aa", 0, 0, 16, 18);
+        assertTextRun(rootBox.getTextRuns().get(1), "bbbb", 16, 0, 32, 18);
+        assertTextRun(rootBox.getTextRuns().get(2), "cc", 48, 0, 16, 18);
+    }
+
+    /**
+     * 验证 text-indent 会作为 inline formatting 输入参与重算，而不是复用旧首行位置。
+     */
+    @Test
+    public void shouldRecomputeIndentedInlineTextRunsWithoutDisplayInlineReuse() {
+        UiDocument document = UiDocument.create();
+        ElementNode root = document.getRootElement();
+        ElementNode span = document.span();
+        span.style().setWordBreak(UiWordBreak.BREAK_ALL);
+        span.appendText("aabbccdd");
+        root.style().setWidth(UiStyleLength.px(56));
+        root.append(span);
+        HtmlLikeDocumentWidget widget = new HtmlLikeDocumentWidget(document, 56, 80,
+                new CountingTextMeasureService());
+        widget.applyLayoutBounds(0, 0, 56, 80);
+
+        widget.resolveLayoutBoxForTest();
+        root.style().setTextIndent(UiStyleLength.px(16));
+        DocumentLayoutBox rootBox = widget.resolveLayoutBoxForTest();
+        HtmlLikeDocumentWidget.PerformanceDiagnosticsSnapshot snapshot =
+                widget.getPerformanceDiagnosticsSnapshot();
+
+        Assert.assertEquals(0, snapshot.getLastLayoutReusedSubtreeCount());
+        Assert.assertEquals(2, rootBox.getTextRuns().size());
+        assertTextRun(rootBox.getTextRuns().get(0), "aabbc", 16, 0, 40, 18);
+        assertTextRun(rootBox.getTextRuns().get(1), "cdd", 0, 18, 24, 18);
+    }
+
+    /**
+     * 验证 text-align 会让文本 run 位置重算，避免未来 run 级缓存漏掉对齐输入。
+     */
+    @Test
+    public void shouldRecomputeAlignedTextRunsWithoutTextRunReuse() {
+        UiDocument document = UiDocument.create();
+        ElementNode root = document.getRootElement();
+        root.style().setWidth(UiStyleLength.px(80));
+        root.appendText("aa");
+        HtmlLikeDocumentWidget widget = new HtmlLikeDocumentWidget(document, 80, 80,
+                new CountingTextMeasureService());
+        widget.applyLayoutBounds(0, 0, 80, 80);
+
+        widget.resolveLayoutBoxForTest();
+        root.style().setTextAlign(UiTextAlign.END);
+        DocumentLayoutBox rootBox = widget.resolveLayoutBoxForTest();
+        HtmlLikeDocumentWidget.PerformanceDiagnosticsSnapshot snapshot =
+                widget.getPerformanceDiagnosticsSnapshot();
+
+        Assert.assertEquals(0, snapshot.getLastLayoutReusedSubtreeCount());
+        Assert.assertEquals(1, rootBox.getTextRuns().size());
+        assertTextRun(rootBox.getTextRuns().get(0), "aa", 64, 0, 16, 18);
+    }
+
+    /**
+     * 验证文本测量 epoch 变化会让 display:inline 文本与 fragment 重算。
+     */
+    @Test
+    public void shouldInvalidateDisplayInlineFormattingWhenTextMeasureEpochChanges() {
+        UiDocument document = UiDocument.create();
+        ElementNode root = document.getRootElement();
+        ElementNode span = document.span();
+        span.appendText("epoch");
+        root.style().setWidth(UiStyleLength.px(80));
+        root.append(span);
+        CountingTextMeasureService textMeasureService = new CountingTextMeasureService();
+        HtmlLikeDocumentWidget widget = new HtmlLikeDocumentWidget(document, 80, 80, textMeasureService);
+        widget.applyLayoutBounds(0, 0, 80, 80);
+
+        widget.resolveLayoutBoxForTest();
+        int measureCountAfterInitialLayout = textMeasureService.getMeasureCount();
+        textMeasureService.advanceEpoch();
+        DocumentLayoutBox rootBox = widget.resolveLayoutBoxForTest();
+        HtmlLikeDocumentWidget.PerformanceDiagnosticsSnapshot snapshot =
+                widget.getPerformanceDiagnosticsSnapshot();
+
+        Assert.assertEquals(0, snapshot.getLastLayoutReusedSubtreeCount());
+        Assert.assertTrue(textMeasureService.getMeasureCount() > measureCountAfterInitialLayout);
+        Assert.assertEquals(1, rootBox.getInlineFragments().size());
+        assertInlineFragment(rootBox.getInlineFragments().get(0), span, 0, 0, 40, 18, true, true);
+        assertTextRun(rootBox.getTextRuns().get(0), "epoch", 0, 0, 40, 18);
+    }
+
+    /**
+     * 验证继承样式变化会影响 display:inline 文本测量，当前必须整段重算。
+     */
+    @Test
+    public void shouldRecomputeInheritedInlineStyleChangesWithoutDisplayInlineReuse() {
+        UiDocument document = UiDocument.create();
+        ElementNode root = document.getRootElement();
+        ElementNode span = document.span();
+        span.appendText("aaaa");
+        root.style().setWidth(UiStyleLength.px(80));
+        root.append(span);
+        HtmlLikeDocumentWidget widget = new HtmlLikeDocumentWidget(document, 80, 80,
+                new CountingTextMeasureService());
+        widget.applyLayoutBounds(0, 0, 80, 80);
+
+        widget.resolveLayoutBoxForTest();
+        root.style().setFontWeight(UiFontWeight.BOLD);
+        DocumentLayoutBox rootBox = widget.resolveLayoutBoxForTest();
+        HtmlLikeDocumentWidget.PerformanceDiagnosticsSnapshot snapshot =
+                widget.getPerformanceDiagnosticsSnapshot();
+
+        Assert.assertEquals(0, snapshot.getLastLayoutReusedSubtreeCount());
+        Assert.assertEquals(1, rootBox.getInlineFragments().size());
+        assertInlineFragment(rootBox.getInlineFragments().get(0), span, 0, 0, 40, 18, true, true);
+        assertTextRun(rootBox.getTextRuns().get(0), "aaaa", 0, 0, 40, 18);
+    }
+
+    /**
+     * 验证 inline formatting 容器内存在脱流定位盒时，仍不会产生 display:inline 复用命中。
+     */
+    @Test
+    public void shouldKeepOutOfFlowPositionedBoundaryOutsideDisplayInlineReuse() {
+        UiDocument document = UiDocument.create();
+        ElementNode root = document.getRootElement();
+        ElementNode span = document.span();
+        TextNode text = document.text("aa");
+        ElementNode absolute = document.div();
+        root.style().setWidth(UiStyleLength.px(80));
+        span.appendChild(text);
+        absolute.style()
+                .setPosition(UiPosition.ABSOLUTE)
+                .setLeft(UiStyleLength.px(12))
+                .setTop(UiStyleLength.px(5))
+                .setWidth(UiStyleLength.px(10))
+                .setHeight(UiStyleLength.px(6));
+        root.append(span).append(absolute);
+        HtmlLikeDocumentWidget widget = new HtmlLikeDocumentWidget(document, 80, 80,
+                new CountingTextMeasureService());
+        widget.applyLayoutBounds(0, 0, 80, 80);
+
+        widget.resolveLayoutBoxForTest();
+        text.setText("aaaa");
+        DocumentLayoutBox rootBox = widget.resolveLayoutBoxForTest();
+        HtmlLikeDocumentWidget.PerformanceDiagnosticsSnapshot snapshot =
+                widget.getPerformanceDiagnosticsSnapshot();
+        DocumentLayoutBox absoluteBox = findLayoutBox(rootBox, absolute);
+
+        Assert.assertEquals(0, snapshot.getLastLayoutReusedSubtreeCount());
+        Assert.assertNotNull(absoluteBox);
+        Assert.assertEquals(12, absoluteBox.getLeft());
+        Assert.assertEquals(5, absoluteBox.getTop());
+        assertTextRun(rootBox.getTextRuns().get(0), "aaaa", 0, 0, 32, 18);
+    }
+
     private static DocumentLayoutBox findLayoutBox(DocumentLayoutBox box, ElementNode element) {
         if (box == null) {
             return null;
@@ -197,6 +418,17 @@ public class HtmlLikeDocumentWidgetInlineLayoutCacheTest {
         Assert.assertEquals(height, run.getHeight());
     }
 
+    private static void assertInlineFragment(DocumentLayoutInlineFragment fragment, ElementNode ownerElement, int left,
+            int top, int width, int height, boolean firstForElement, boolean lastForElement) {
+        Assert.assertSame(ownerElement, fragment.getOwnerElement());
+        Assert.assertEquals(left, fragment.getLeft());
+        Assert.assertEquals(top, fragment.getTop());
+        Assert.assertEquals(width, fragment.getWidth());
+        Assert.assertEquals(height, fragment.getHeight());
+        Assert.assertEquals(firstForElement, fragment.isFirstForElement());
+        Assert.assertEquals(lastForElement, fragment.isLastForElement());
+    }
+
     /**
      * 记录测量次数的确定性文本测量服务。
      */
@@ -220,8 +452,13 @@ public class HtmlLikeDocumentWidgetInlineLayoutCacheTest {
 
         @Override
         public int getStringWidth(String text) {
-            measureCount++;
-            return text == null ? 0 : text.length() * 4;
+            return measureTextWidth(text, UiFontWeight.NORMAL);
+        }
+
+        @Override
+        public int getStringWidth(String text, TextContentMode textContentMode, UiFontWeight fontWeight,
+                UiFontStyle fontStyle) {
+            return measureTextWidth(text, fontWeight);
         }
 
         @Override
@@ -231,12 +468,31 @@ public class HtmlLikeDocumentWidgetInlineLayoutCacheTest {
 
         @Override
         public String trimStringToWidth(String text, int targetWidth) {
+            return trimTextToWidth(text, targetWidth, UiFontWeight.NORMAL);
+        }
+
+        @Override
+        public String trimStringToWidth(String text, int targetWidth, TextContentMode textContentMode,
+                UiFontWeight fontWeight, UiFontStyle fontStyle) {
+            return trimTextToWidth(text, targetWidth, fontWeight);
+        }
+
+        private int measureTextWidth(String text, UiFontWeight fontWeight) {
+            measureCount++;
+            return text == null ? 0 : text.length() * resolveCharacterWidth(fontWeight);
+        }
+
+        private String trimTextToWidth(String text, int targetWidth, UiFontWeight fontWeight) {
             measureCount++;
             if (text == null || text.isEmpty() || targetWidth <= 0) {
                 return "";
             }
-            int maxLength = Math.max(0, targetWidth / 4);
+            int maxLength = Math.max(0, targetWidth / resolveCharacterWidth(fontWeight));
             return text.substring(0, Math.min(text.length(), maxLength));
+        }
+
+        private int resolveCharacterWidth(UiFontWeight fontWeight) {
+            return fontWeight == UiFontWeight.BOLD ? 5 : 4;
         }
 
         @Override
