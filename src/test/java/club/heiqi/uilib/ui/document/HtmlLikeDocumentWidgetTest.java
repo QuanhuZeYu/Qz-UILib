@@ -335,6 +335,43 @@ public class HtmlLikeDocumentWidgetTest {
     }
 
     /**
+     * 验证局部文本变更后的静态重排会复用未脏 block 子树。
+     */
+    @Test
+    public void shouldReuseCleanBlockSubtreesDuringDirtyRelayout() {
+        UiDocument document = UiDocument.create();
+        ElementNode root = document.getRootElement();
+        ElementNode first = document.div();
+        ElementNode changed = document.div();
+        ElementNode last = document.div();
+        first.style().setHeight(UiStyleLength.px(18));
+        changed.style().setHeight(UiStyleLength.px(18));
+        last.style().setHeight(UiStyleLength.px(18));
+        first.appendText("first");
+        TextNode changedText = document.text("middle");
+        changed.appendChild(changedText);
+        last.appendText("last");
+        root.append(first).append(changed).append(last);
+        CountingTextMeasureService textMeasureService = new CountingTextMeasureService();
+        HtmlLikeDocumentWidget widget = new HtmlLikeDocumentWidget(document, 120, 80, textMeasureService);
+        widget.applyLayoutBounds(0, 0, 120, 80);
+
+        widget.render(new RecordingUiRenderContext());
+        int firstMeasureCount = textMeasureService.getMeasureCount();
+        changedText.setText("center");
+        RecordingUiRenderContext secondContext = new RecordingUiRenderContext();
+        widget.render(secondContext);
+        HtmlLikeDocumentWidget.PerformanceDiagnosticsSnapshot secondSnapshot =
+                widget.getPerformanceDiagnosticsSnapshot();
+
+        Assert.assertTrue(secondSnapshot.getLastLayoutReusedSubtreeCount() >= 2);
+        Assert.assertTrue(textMeasureService.getMeasureCount() - firstMeasureCount <= 2);
+        assertTextCall(secondContext.textCalls.get(0), "first", 0, 0, 0xFFFFFFFF, false);
+        assertTextCall(secondContext.textCalls.get(1), "center", 0, 18, 0xFFFFFFFF, false);
+        assertTextCall(secondContext.textCalls.get(2), "last", 0, 36, 0xFFFFFFFF, false);
+    }
+
+    /**
      * 验证 effect-affecting 动画运行期间不会触发重新文本测量布局。
      */
     @Test

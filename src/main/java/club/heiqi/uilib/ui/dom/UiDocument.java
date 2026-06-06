@@ -77,7 +77,7 @@ public final class UiDocument {
             return;
         }
         topLayerElements.add(resolvedElement);
-        recordLayoutMutation();
+        recordGlobalLayoutMutation();
     }
 
     /**
@@ -91,7 +91,7 @@ public final class UiDocument {
             return;
         }
         if (topLayerElements.remove(element)) {
-            recordLayoutMutation();
+            recordGlobalLayoutMutation();
         }
     }
 
@@ -613,11 +613,11 @@ public final class UiDocument {
             styleVariables.setChangeCallback(new Runnable() {
                 @Override
                 public void run() {
-                    recordLayoutMutation();
+                    recordGlobalLayoutMutation();
                 }
             });
         }
-        recordLayoutMutation();
+        recordGlobalLayoutMutation();
         return this;
     }
 
@@ -643,7 +643,7 @@ public final class UiDocument {
         Objects.requireNonNull(styleSheet, "styleSheet");
         if (!styleSheets.contains(styleSheet)) {
             styleSheets.add(styleSheet);
-            recordLayoutMutation();
+            recordGlobalLayoutMutation();
         }
         return this;
     }
@@ -656,7 +656,7 @@ public final class UiDocument {
      */
     public UiDocument removeStyleSheet(UiStyleSheet styleSheet) {
         if (styleSheets.remove(styleSheet)) {
-            recordLayoutMutation();
+            recordGlobalLayoutMutation();
         }
         return this;
     }
@@ -935,19 +935,26 @@ public final class UiDocument {
         return paintVersion;
     }
 
-    void recordMutation() {
-        recordLayoutMutation();
+    int recordMutation() {
+        return recordLayoutMutation();
     }
 
-    void recordLayoutMutation() {
+    int recordLayoutMutation() {
         mutationVersion++;
         layoutVersion++;
         paintVersion++;
+        return layoutVersion;
     }
 
-    void recordPaintMutation() {
+    int recordPaintMutation() {
         mutationVersion++;
         paintVersion++;
+        return paintVersion;
+    }
+
+    private void recordGlobalLayoutMutation() {
+        int version = recordLayoutMutation();
+        rootElement.__markSubtreeLayoutDirty(version);
     }
 
     /**

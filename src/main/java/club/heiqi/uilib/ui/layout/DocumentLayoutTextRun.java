@@ -96,4 +96,12 @@ public final class DocumentLayoutTextRun {
     public int getBottom() {
         return top + height;
     }
+
+    DocumentLayoutTextRun translated(int deltaX, int deltaY) {
+        if (deltaX == 0 && deltaY == 0) {
+            return this;
+        }
+        return new DocumentLayoutTextRun(textNode, ownerElement, text, textContentMode, left + deltaX, top + deltaY,
+                width, height);
+    }
 }
