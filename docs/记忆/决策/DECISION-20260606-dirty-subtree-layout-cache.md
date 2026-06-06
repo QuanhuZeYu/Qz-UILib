@@ -18,6 +18,8 @@ HTML-like 文档此前主要依赖全局 `layoutVersion` / `paintVersion`。任�
 
 在可平移复用补测后，进一步放宽 `containingLeft` / `flowTop` 完全一致限制：当节点版本、子树版本、文本测量 epoch、containing 宽高和 forced size 保持一致时，允许静态 block 子树在普通流位置变化后整体平移复用。
 
+在 flex 主轴/交叉轴分配、flex item 尺寸、auto margin 与脱流定位边界补测后，进一步将静态 `display:flex` 子树纳入同一复用协议。flex 复用不新增单独缓存模型，仍要求版本、文本测量 epoch、containing 宽高和 forced size 不变，且仍排除含 absolute/fixed 盒的子树与 transform fixed containing block 子树。
+
 ## 选择原因
 
 - 可以在不改变现有 DOM/CSS/绘制语义的前提下，让局部文本或 DOM 变更避免重排未脏兄弟 block 子树。
@@ -36,7 +38,7 @@ HTML-like 文档此前主要依赖全局 `layoutVersion` / `paintVersion`。任�
 
 ## 后续注意事项
 
-- 当前复用条件仍保守：只覆盖静态 `display:block` / `display:none` 子树，不覆盖 flex、table、inline-block、inline formatting、含 absolute/fixed 盒的子树和 transform fixed containing block 子树。
-- `containingLeft` / `flowTop` 已允许变化并通过整体平移复用；该能力已覆盖 margin collapse、auto margin、relative/sticky 偏移、absolute/fixed containing block 与 transform fixed containing block 边界测试。
-- 后续扩展 flex/table 时必须分别补充主轴分配、列宽、行高和脱流定位回归测试，不能只依赖通用版本判断。
+- 当前复用条件仍保守：只覆盖静态 `display:block` / `display:flex` / `display:none` 子树，不覆盖 table、inline-block、inline formatting、含 absolute/fixed 盒的子树和 transform fixed containing block 子树。
+- `containingLeft` / `flowTop` 已允许变化并通过整体平移复用；该能力已覆盖 margin collapse、auto margin、relative/sticky 偏移、absolute/fixed containing block、transform fixed containing block、flex 主轴/交叉轴分配、flex item 尺寸与 flex auto margin 边界测试。
+- 后续扩展 table/inline 时必须分别补充列宽、行高、单元格内容变化、换行、baseline、inline-block 落位、文本测量 epoch 和脱流定位回归测试，不能只依赖通用版本判断。
 - 文档级样式规则支持后代/子代选择器，任何可能影响匹配关系的结构或属性变更都必须保守标记相关子树，不能只标记单个节点。

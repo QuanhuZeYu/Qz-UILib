@@ -68,8 +68,10 @@ import club.heiqi.uilib.ui.render.UiRenderContext;
 import club.heiqi.uilib.ui.style.cascade.UiBorderRadiusResolver;
 import club.heiqi.uilib.ui.style.cascade.UiStyleDeclaration;
 import club.heiqi.uilib.ui.style.cascade.UiStyleSheet;
+import club.heiqi.uilib.ui.style.props.UiAlignItems;
 import club.heiqi.uilib.ui.style.props.UiBorderStyle;
 import club.heiqi.uilib.ui.style.props.UiDisplay;
+import club.heiqi.uilib.ui.style.props.UiFlexDirection;
 import club.heiqi.uilib.ui.style.props.UiFontStyle;
 import club.heiqi.uilib.ui.style.props.UiFontWeight;
 import club.heiqi.uilib.ui.style.props.UiOverflow;
@@ -462,7 +464,7 @@ public class HtmlLikeDocumentWidgetTest {
         widget.render(changedContext);
         HtmlLikeDocumentWidget.PerformanceDiagnosticsSnapshot snapshot = widget.getPerformanceDiagnosticsSnapshot();
 
-        Assert.assertTrue(snapshot.getLastLayoutReusedSubtreeCount() >= 1);
+        Assert.assertEquals(1, snapshot.getLastLayoutReusedSubtreeCount());
         Assert.assertEquals(measureCountAfterInitialRender, textMeasureService.getMeasureCount());
         Assert.assertEquals(1, changedContext.textCalls.size());
         assertTextCall(changedContext.textCalls.get(0), "center", 40, 36, 0xFFFFFFFF, false);
@@ -494,7 +496,7 @@ public class HtmlLikeDocumentWidgetTest {
         widget.render(changedContext);
         HtmlLikeDocumentWidget.PerformanceDiagnosticsSnapshot snapshot = widget.getPerformanceDiagnosticsSnapshot();
 
-        Assert.assertTrue(snapshot.getLastLayoutReusedSubtreeCount() >= 1);
+        Assert.assertEquals(1, snapshot.getLastLayoutReusedSubtreeCount());
         Assert.assertEquals(measureCountAfterInitialRender, textMeasureService.getMeasureCount());
         Assert.assertEquals(1, changedContext.textCalls.size());
         assertTextCall(changedContext.textCalls.get(0), "relative", 0, 25, 0xFFFFFFFF, false);
@@ -659,6 +661,213 @@ public class HtmlLikeDocumentWidgetTest {
         Assert.assertEquals(30, transformedBox.getTop());
         Assert.assertEquals(7, fixedBox.getLeft());
         Assert.assertEquals(34, fixedBox.getTop());
+    }
+
+    /**
+     * 验证可平移复用保留 row flex 主轴 grow 分配与交叉轴居中几何。
+     */
+    @Test
+    public void shouldTranslateCleanRowFlexSubtreeWithMainAndCrossAxisDistribution() {
+        UiDocument document = UiDocument.create();
+        ElementNode root = document.getRootElement();
+        ElementNode changed = document.div();
+        ElementNode row = document.div();
+        ElementNode grow = document.div();
+        ElementNode largerGrow = document.div();
+        root.style().setWidth(UiStyleLength.px(100));
+        changed.style().setHeight(UiStyleLength.px(10));
+        row.style()
+                .setDisplay(UiDisplay.FLEX)
+                .setFlexDirection(UiFlexDirection.ROW)
+                .setAlignItems(UiAlignItems.CENTER)
+                .setWidth(UiStyleLength.px(100))
+                .setHeight(UiStyleLength.px(40));
+        grow.style()
+                .setFlexGrow(1.0F)
+                .setFlexBasis(UiStyleLength.px(20))
+                .setHeight(UiStyleLength.px(10));
+        largerGrow.style()
+                .setFlexGrow(2.0F)
+                .setFlexBasis(UiStyleLength.px(20))
+                .setHeight(UiStyleLength.px(20));
+        row.append(grow).append(largerGrow).appendText("note");
+        root.append(changed).append(row);
+        CountingTextMeasureService textMeasureService = new CountingTextMeasureService();
+        HtmlLikeDocumentWidget widget = new HtmlLikeDocumentWidget(document, 100, 100, textMeasureService);
+        widget.applyLayoutBounds(0, 0, 100, 100);
+
+        widget.resolveLayoutBoxForTest();
+        int measureCountAfterInitialLayout = textMeasureService.getMeasureCount();
+        changed.style().setHeight(UiStyleLength.px(26));
+        DocumentLayoutBox rootBox = widget.resolveLayoutBoxForTest();
+        HtmlLikeDocumentWidget.PerformanceDiagnosticsSnapshot snapshot = widget.getPerformanceDiagnosticsSnapshot();
+        DocumentLayoutBox rowBox = findLayoutBox(rootBox, row);
+        DocumentLayoutBox growBox = findLayoutBox(rootBox, grow);
+        DocumentLayoutBox largerGrowBox = findLayoutBox(rootBox, largerGrow);
+
+        Assert.assertTrue(snapshot.getLastLayoutReusedSubtreeCount() >= 1);
+        Assert.assertNotNull(rowBox);
+        Assert.assertNotNull(growBox);
+        Assert.assertNotNull(largerGrowBox);
+        Assert.assertEquals(measureCountAfterInitialLayout, textMeasureService.getMeasureCount());
+        Assert.assertEquals(26, rowBox.getTop());
+        Assert.assertEquals(29, growBox.getWidth());
+        Assert.assertEquals(10, growBox.getHeight());
+        Assert.assertEquals(0, growBox.getLeft());
+        Assert.assertEquals(41, growBox.getTop());
+        Assert.assertEquals(39, largerGrowBox.getWidth());
+        Assert.assertEquals(20, largerGrowBox.getHeight());
+        Assert.assertEquals(29, largerGrowBox.getLeft());
+        Assert.assertEquals(36, largerGrowBox.getTop());
+    }
+
+    /**
+     * 验证可平移复用保留 column flex item 主轴尺寸分配。
+     */
+    @Test
+    public void shouldTranslateCleanColumnFlexSubtreeWithFlexItemSizeDistribution() {
+        UiDocument document = UiDocument.create();
+        ElementNode root = document.getRootElement();
+        ElementNode changed = document.div();
+        ElementNode column = document.div();
+        ElementNode head = document.div();
+        ElementNode grow = document.div();
+        ElementNode tail = document.div();
+        root.style().setWidth(UiStyleLength.px(80));
+        changed.style().setHeight(UiStyleLength.px(12));
+        column.style()
+                .setDisplay(UiDisplay.FLEX)
+                .setFlexDirection(UiFlexDirection.COLUMN)
+                .setAlignItems(UiAlignItems.STRETCH)
+                .setWidth(UiStyleLength.px(80))
+                .setHeight(UiStyleLength.px(60));
+        head.style().setHeight(UiStyleLength.px(10));
+        grow.style().setFlexGrow(1.0F);
+        tail.style().setHeight(UiStyleLength.px(20));
+        column.append(head).append(grow).append(tail);
+        root.append(changed).append(column);
+        HtmlLikeDocumentWidget widget = new HtmlLikeDocumentWidget(document, 80, 100,
+                new DeterministicTextMeasureService());
+        widget.applyLayoutBounds(0, 0, 80, 100);
+
+        widget.resolveLayoutBoxForTest();
+        changed.style().setHeight(UiStyleLength.px(22));
+        DocumentLayoutBox rootBox = widget.resolveLayoutBoxForTest();
+        HtmlLikeDocumentWidget.PerformanceDiagnosticsSnapshot snapshot = widget.getPerformanceDiagnosticsSnapshot();
+        DocumentLayoutBox columnBox = findLayoutBox(rootBox, column);
+        DocumentLayoutBox headBox = findLayoutBox(rootBox, head);
+        DocumentLayoutBox growBox = findLayoutBox(rootBox, grow);
+        DocumentLayoutBox tailBox = findLayoutBox(rootBox, tail);
+
+        Assert.assertTrue(snapshot.getLastLayoutReusedSubtreeCount() >= 1);
+        Assert.assertNotNull(columnBox);
+        Assert.assertNotNull(headBox);
+        Assert.assertNotNull(growBox);
+        Assert.assertNotNull(tailBox);
+        Assert.assertEquals(22, columnBox.getTop());
+        Assert.assertEquals(60, columnBox.getHeight());
+        Assert.assertEquals(22, headBox.getTop());
+        Assert.assertEquals(10, headBox.getHeight());
+        Assert.assertEquals(32, growBox.getTop());
+        Assert.assertEquals(30, growBox.getHeight());
+        Assert.assertEquals(62, tailBox.getTop());
+        Assert.assertEquals(20, tailBox.getHeight());
+    }
+
+    /**
+     * 验证可平移复用不会破坏 flex item 主轴与交叉轴 auto margin 求解结果。
+     */
+    @Test
+    public void shouldTranslateCleanFlexSubtreeWithMainAndCrossAxisAutoMargin() {
+        UiDocument document = UiDocument.create();
+        ElementNode root = document.getRootElement();
+        ElementNode changed = document.div();
+        ElementNode row = document.div();
+        ElementNode centered = document.div();
+        root.style().setWidth(UiStyleLength.px(100));
+        changed.style().setHeight(UiStyleLength.px(8));
+        row.style()
+                .setDisplay(UiDisplay.FLEX)
+                .setFlexDirection(UiFlexDirection.ROW)
+                .setWidth(UiStyleLength.px(100))
+                .setHeight(UiStyleLength.px(40));
+        centered.style()
+                .setWidth(UiStyleLength.px(20))
+                .setHeight(UiStyleLength.px(10))
+                .setMargin(UiStyleInsets.of(UiStyleLength.auto(), UiStyleLength.auto(), UiStyleLength.auto(),
+                        UiStyleLength.auto()));
+        row.append(centered);
+        root.append(changed).append(row);
+        HtmlLikeDocumentWidget widget = new HtmlLikeDocumentWidget(document, 100, 80,
+                new DeterministicTextMeasureService());
+        widget.applyLayoutBounds(0, 0, 100, 80);
+
+        widget.resolveLayoutBoxForTest();
+        changed.style().setHeight(UiStyleLength.px(18));
+        DocumentLayoutBox rootBox = widget.resolveLayoutBoxForTest();
+        HtmlLikeDocumentWidget.PerformanceDiagnosticsSnapshot snapshot = widget.getPerformanceDiagnosticsSnapshot();
+        DocumentLayoutBox centeredBox = findLayoutBox(rootBox, centered);
+
+        Assert.assertEquals(1, snapshot.getLastLayoutReusedSubtreeCount());
+        Assert.assertNotNull(centeredBox);
+        Assert.assertEquals(40, centeredBox.getLeft());
+        Assert.assertEquals(33, centeredBox.getTop());
+        Assert.assertEquals(20, centeredBox.getWidth());
+    }
+
+    /**
+     * 验证包含 absolute/fixed 后代的 flex 子树仍保守重排。
+     */
+    @Test
+    public void shouldNotTranslateFlexSubtreeContainingOutOfFlowPositionedDescendants() {
+        UiDocument document = UiDocument.create();
+        ElementNode root = document.getRootElement();
+        ElementNode changed = document.div();
+        ElementNode row = document.div();
+        ElementNode absolute = document.div();
+        ElementNode fixed = document.div();
+        root.style().setWidth(UiStyleLength.px(120));
+        changed.style().setHeight(UiStyleLength.px(10));
+        row.style()
+                .setDisplay(UiDisplay.FLEX)
+                .setPosition(UiPosition.RELATIVE)
+                .setWidth(UiStyleLength.px(100))
+                .setHeight(UiStyleLength.px(40));
+        absolute.style()
+                .setPosition(UiPosition.ABSOLUTE)
+                .setLeft(UiStyleLength.px(7))
+                .setTop(UiStyleLength.px(4))
+                .setWidth(UiStyleLength.px(12))
+                .setHeight(UiStyleLength.px(8));
+        fixed.style()
+                .setPosition(UiPosition.FIXED)
+                .setLeft(UiStyleLength.px(9))
+                .setTop(UiStyleLength.px(6))
+                .setWidth(UiStyleLength.px(10))
+                .setHeight(UiStyleLength.px(6));
+        row.append(absolute).append(fixed);
+        root.append(changed).append(row);
+        HtmlLikeDocumentWidget widget = new HtmlLikeDocumentWidget(document, 120, 100,
+                new DeterministicTextMeasureService());
+        widget.applyLayoutBounds(0, 0, 120, 100);
+
+        widget.resolveLayoutBoxForTest();
+        changed.style().setHeight(UiStyleLength.px(30));
+        DocumentLayoutBox rootBox = widget.resolveLayoutBoxForTest();
+        HtmlLikeDocumentWidget.PerformanceDiagnosticsSnapshot snapshot = widget.getPerformanceDiagnosticsSnapshot();
+        DocumentLayoutBox rowBox = findLayoutBox(rootBox, row);
+        DocumentLayoutBox absoluteBox = findLayoutBox(rootBox, absolute);
+        DocumentLayoutBox fixedBox = findLayoutBox(rootBox, fixed);
+
+        Assert.assertEquals(0, snapshot.getLastLayoutReusedSubtreeCount());
+        Assert.assertNotNull(rowBox);
+        Assert.assertNotNull(absoluteBox);
+        Assert.assertNotNull(fixedBox);
+        Assert.assertEquals(30, rowBox.getTop());
+        Assert.assertEquals(7, absoluteBox.getLeft());
+        Assert.assertEquals(34, absoluteBox.getTop());
+        Assert.assertEquals(9, fixedBox.getLeft());
+        Assert.assertEquals(6, fixedBox.getTop());
     }
 
     /**
