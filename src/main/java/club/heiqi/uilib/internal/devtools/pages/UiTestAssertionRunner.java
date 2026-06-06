@@ -87,10 +87,6 @@ final class UiTestAssertionRunner {
                 passed = assertPaintClip(documentWidget, scope, diagnostics);
             } else if ("VIS-PAINT-005".equals(testCase.getId())) {
                 passed = assertPaintTopLayer(documentWidget, scope, diagnostics);
-            } else if ("VIS-PAINT-006".equals(testCase.getId())) {
-                passed = assertPaintScrollbar(documentWidget, scope, diagnostics);
-            } else if ("VIS-PAINT-007".equals(testCase.getId())) {
-                passed = assertPaintHostImage(documentWidget, scope, diagnostics);
             } else {
                 if ("VIS-PAINT-003".equals(testCase.getId())) {
                     diagnosePaintTransform(documentWidget, scope, diagnostics);
@@ -98,6 +94,10 @@ final class UiTestAssertionRunner {
                     diagnoseLayoutInlineBlockBaseline(documentWidget, scope, diagnostics);
                 } else if ("VIS-PAINT-004".equals(testCase.getId())) {
                     diagnosePaintTransformHit(documentWidget, scope, diagnostics);
+                } else if ("VIS-PAINT-006".equals(testCase.getId())) {
+                    diagnosePaintScrollbar(documentWidget, scope, diagnostics);
+                } else if ("VIS-PAINT-007".equals(testCase.getId())) {
+                    diagnosePaintHostImage(documentWidget, scope, diagnostics);
                 } else {
                     diagnostics.add("当前样例未接入自动断言，保持人工待确认。");
                 }
@@ -213,13 +213,17 @@ final class UiTestAssertionRunner {
         }
         DocumentLayoutBox firstBox = resolveBox(widget, first);
         DocumentLayoutBox secondBox = resolveBox(widget, second);
+        int collapsedGap = secondBox.getTop() - firstBox.getBottom();
+        int rawGap = firstBox.getMargin().getBottom() + secondBox.getMargin().getTop();
         diagnostics.add("firstTop=" + firstBox.getTop());
         diagnostics.add("secondTop=" + secondBox.getTop());
+        diagnostics.add("collapsedGap=" + collapsedGap + ", rawMarginSum=" + rawGap);
         appendElementDiagnostics(diagnostics, "firstBlock", firstBox);
         appendElementDiagnostics(diagnostics, "secondBlock", secondBox);
-        diagnostics.add("blockFlowDiff=secondTop-firstTop=" + (secondBox.getTop() - firstBox.getTop())
-                + "; expected second block below first block");
-        return secondBox.getTop() > firstBox.getTop();
+        diagnostics.add("blockFlowDiff=secondTop-firstBottom=" + collapsedGap
+                + "; expected adjacent vertical margins collapse to max(18,24)=24, not raw sum 42");
+        return secondBox.getTop() > firstBox.getTop()
+                && collapsedGap >= 20 && collapsedGap <= 28 && collapsedGap < rawGap;
     }
 
     private boolean assertLayoutFlex(HtmlLikeDocumentWidget widget, ElementNode scope, List<String> diagnostics) {
@@ -321,12 +325,12 @@ final class UiTestAssertionRunner {
         DocumentLayoutBox widthBox = resolveBox(widget, childWidth);
         ComputedStyle colorStyle = colorBox.getComputedStyle();
         diagnostics.add("inheritedColor=" + toHex(colorStyle.getTextColor()));
-        diagnostics.add("childWidth=" + widthBox.getWidth());
+        diagnostics.add("childWidth=" + widthBox.getWidth() + ", childContentWidth=" + widthBox.getContentWidth());
         appendElementDiagnostics(diagnostics, "colorChild", colorBox);
         appendElementDiagnostics(diagnostics, "widthChild", widthBox);
         diagnostics.add("inheritanceDiff=expected color inherit 0xFF38BDF8, width independent ~80; actual color="
-                + toHex(colorStyle.getTextColor()) + ", width=" + widthBox.getWidth());
-        return colorStyle.getTextColor() == 0xFF38BDF8 && widthBox.getWidth() <= 90;
+                + toHex(colorStyle.getTextColor()) + ", contentWidth=" + widthBox.getContentWidth());
+        return colorStyle.getTextColor() == 0xFF38BDF8 && widthBox.getContentWidth() <= 90;
     }
 
     private boolean assertCssBackground(HtmlLikeDocumentWidget widget, ElementNode scope, List<String> diagnostics) {
@@ -344,31 +348,61 @@ final class UiTestAssertionRunner {
         UiBackgroundImage noneImg = noneStyle.getBackgroundImage();
         diagnostics.add("urlBg=" + toHex(urlStyle.getBackgroundColor()) + ", hasImage=" + (urlImg != null));
         diagnostics.add("noneBg=" + toHex(noneStyle.getBackgroundColor()) + ", hasImage=" + (noneImg != null));
+        diagnostics.add("urlSource=" + formatBackgroundSource(urlImg));
         appendElementDiagnostics(diagnostics, "urlPanel", urlBox);
         appendElementDiagnostics(diagnostics, "nonePanel", noneBox);
         diagnostics.add("backgroundDiff=expected url hasImage, none has no image; actual urlImg=" + (urlImg != null)
                 + ", noneImg=" + (noneImg != null));
-        return urlImg != null && noneImg == null;
+        return urlImg != null && urlImg.getSource().getTexture() != null
+                && "minecraft:textures/gui/options_background.png".equals(urlImg.getSource().getTexture().toString())
+                && noneImg == null;
     }
 
     private boolean assertCssOverflow(HtmlLikeDocumentWidget widget, ElementNode scope, List<String> diagnostics) {
         ElementNode hidden = findByText(scope, "hidden 裁剪");
         ElementNode autoBox = findByText(scope, "宽内容触发滚动");
-        if (hidden == null || autoBox == null) {
+        ElementNode visible = findByText(scope, "visible 越界可见");
+        if (hidden == null || autoBox == null || visible == null) {
             diagnostics.add("overflow 节点缺失");
             return false;
         }
-        DocumentLayoutBox hiddenBox = resolveBox(widget, hidden.getParent() instanceof ElementNode
-                ? (ElementNode) hidden.getParent() : hidden);
+        ElementNode hiddenContainer = hidden.getParent() instanceof ElementNode ? (ElementNode) hidden.getParent()
+                : hidden;
+        ElementNode autoContainer = autoBox.getParent() instanceof ElementNode ? (ElementNode) autoBox.getParent()
+                : autoBox;
+        ElementNode visibleContainer = visible.getParent() instanceof ElementNode ? (ElementNode) visible.getParent()
+                : visible;
+        DocumentLayoutBox hiddenBox = resolveBox(widget, hiddenContainer);
+        DocumentLayoutBox hiddenChildBox = resolveBox(widget, hidden);
+        DocumentLayoutBox autoContainerBox = resolveBox(widget, autoContainer);
         DocumentLayoutBox autoChildBox = resolveBox(widget, autoBox);
+        DocumentLayoutBox visibleBox = resolveBox(widget, visibleContainer);
+        DocumentLayoutBox visibleChildBox = resolveBox(widget, visible);
         ComputedStyle hiddenStyle = hiddenBox.getComputedStyle();
+        ComputedStyle autoStyle = autoContainerBox.getComputedStyle();
+        ComputedStyle visibleStyle = visibleBox.getComputedStyle();
         diagnostics.add("hiddenOverflow=" + hiddenStyle.getOverflowX() + "/" + hiddenStyle.getOverflowY());
-        diagnostics.add("autoChildWidth=" + autoChildBox.getWidth());
+        diagnostics.add("autoOverflow=" + autoStyle.getOverflowX() + "/" + autoStyle.getOverflowY());
+        diagnostics.add("visibleOverflow=" + visibleStyle.getOverflowX() + "/" + visibleStyle.getOverflowY());
+        diagnostics.add("hiddenChildWidth=" + hiddenChildBox.getWidth() + ", hiddenWidth=" + hiddenBox.getWidth());
+        diagnostics.add("autoChildWidth=" + autoChildBox.getWidth() + ", autoWidth=" + autoContainerBox.getWidth());
+        diagnostics.add("visibleChildWidth=" + visibleChildBox.getWidth() + ", visibleWidth=" + visibleBox.getWidth());
         appendElementDiagnostics(diagnostics, "hiddenContainer", hiddenBox);
+        appendElementDiagnostics(diagnostics, "hiddenChild", hiddenChildBox);
+        appendElementDiagnostics(diagnostics, "autoContainer", autoContainerBox);
         appendElementDiagnostics(diagnostics, "autoChild", autoChildBox);
-        diagnostics.add("overflowDiff=expected hidden clip, auto scrollable; actual hiddenW=" + hiddenBox.getWidth()
-                + ", childW=" + autoChildBox.getWidth());
-        return hiddenStyle.getOverflowX() == UiOverflow.HIDDEN && autoChildBox.getWidth() > hiddenBox.getWidth();
+        appendElementDiagnostics(diagnostics, "visibleContainer", visibleBox);
+        appendElementDiagnostics(diagnostics, "visibleChild", visibleChildBox);
+        diagnostics.add("overflowDiff=expected hidden clip, auto scrollable, visible overflow; actual hiddenChild>hidden="
+                + (hiddenChildBox.getWidth() > hiddenBox.getWidth()) + ", autoChild>auto="
+                + (autoChildBox.getWidth() > autoContainerBox.getWidth()) + ", visibleChild>visible="
+                + (visibleChildBox.getWidth() > visibleBox.getWidth()));
+        return hiddenStyle.getOverflowX() == UiOverflow.HIDDEN
+                && autoStyle.getOverflowX() == UiOverflow.AUTO
+                && visibleStyle.getOverflowX() == UiOverflow.VISIBLE
+                && hiddenChildBox.getWidth() > hiddenBox.getWidth()
+                && autoChildBox.getWidth() > autoContainerBox.getWidth()
+                && visibleChildBox.getWidth() > visibleBox.getWidth();
     }
 
     private boolean assertLayoutInline(HtmlLikeDocumentWidget widget, ElementNode scope, List<String> diagnostics) {
@@ -407,49 +441,51 @@ final class UiTestAssertionRunner {
     }
 
     private boolean assertPaintTopLayer(HtmlLikeDocumentWidget widget, ElementNode scope, List<String> diagnostics) {
-        ElementNode top = findByText(scope, "top-layer 弹层 z=100");
+        ElementNode top = findByText(scope, "top-layer 弹层");
         if (top == null) {
             diagnostics.add("top-layer 节点缺失");
             return false;
         }
-        DocumentLayoutBox topBox = resolveBox(widget, top);
-        Integer z = topBox.getComputedStyle().getZIndex();
-        diagnostics.add("topZ=" + (z == null ? "auto" : z.toString()));
-        appendElementDiagnostics(diagnostics, "topLayer", topBox);
-        diagnostics.add("topLayerDiff=expected high z or phase; actual z=" + z + ", phase=" + topBox.getStackingPhase());
-        return z != null && z.intValue() >= 10;
+        boolean registered = widget.getDocument().__isTopLayerElement(top);
+        diagnostics.add("topLayerElement=" + describeElement(top));
+        diagnostics.add("topLayerRegistered=" + registered);
+        diagnostics.add("topLayerDiff=expected document top-layer registration true; actual=" + registered);
+        return registered;
     }
 
-    private boolean assertPaintScrollbar(HtmlLikeDocumentWidget widget, ElementNode scope, List<String> diagnostics) {
+    private void diagnosePaintScrollbar(HtmlLikeDocumentWidget widget, ElementNode scope, List<String> diagnostics) {
         ElementNode scroller = findByText(scope, "scroll item 0");
         if (scroller == null) {
-            scroller = scope;
+            diagnostics.add("scrollbar 节点缺失，保持人工待确认。");
+            return;
         }
-        DocumentLayoutBox scrollBox = resolveBox(widget, scroller.getParent() instanceof ElementNode
-                ? (ElementNode) scroller.getParent() : scroller);
+        ElementNode scrollContainer = scroller.getParent() instanceof ElementNode ? (ElementNode) scroller.getParent()
+                : scroller;
+        DocumentLayoutBox scrollBox = resolveBox(widget, scrollContainer);
         ComputedStyle s = scrollBox.getComputedStyle();
         diagnostics.add("scrollOverflow=" + s.getOverflowY());
+        diagnostics.add("scrollTop=" + widget.getScrollTop(scrollContainer)
+                + ", maxScrollTop=" + widget.getMaxScrollTop(scrollContainer));
         appendElementDiagnostics(diagnostics, "scrollContainer", scrollBox);
-        diagnostics.add("scrollbarDiff=expected overflow auto/scroll; actual=" + s.getOverflowY());
-        return s.getOverflowY() == UiOverflow.AUTO || s.getOverflowY() == UiOverflow.SCROLL;
+        diagnostics.add("scrollbarDiff=overflow 与 scroll range 可机器诊断；track/thumb 几何、拖拽和命中需截图人工确认。");
     }
 
-    private boolean assertPaintHostImage(HtmlLikeDocumentWidget widget, ElementNode scope, List<String> diagnostics) {
+    private void diagnosePaintHostImage(HtmlLikeDocumentWidget widget, ElementNode scope, List<String> diagnostics) {
         ElementNode ok = findByText(scope, "有效 host image");
         ElementNode fb = findByText(scope, "缺失 fallback");
         if (ok == null || fb == null) {
             diagnostics.add("host image 节点缺失");
-            return false;
+            return;
         }
         DocumentLayoutBox okBox = resolveBox(widget, ok);
         DocumentLayoutBox fbBox = resolveBox(widget, fb);
         UiBackgroundImage okImg = okBox.getComputedStyle().getBackgroundImage();
         UiBackgroundImage fbImg = fbBox.getComputedStyle().getBackgroundImage();
         diagnostics.add("okHasImage=" + (okImg != null) + ", fbHasImage=" + (fbImg != null));
+        diagnostics.add("okSource=" + formatBackgroundSource(okImg) + ", fbSource=" + formatBackgroundSource(fbImg));
         appendElementDiagnostics(diagnostics, "okImage", okBox);
         appendElementDiagnostics(diagnostics, "fbImage", fbBox);
-        diagnostics.add("hostImageDiff=expected both have image declaration (fallback at paint); actual ok=" + (okImg != null));
-        return okImg != null && fbImg != null;
+        diagnostics.add("hostImageDiff=背景图声明可机器诊断；有效纹理绘制与缺失资源 fallback 需截图人工确认。");
     }
 
     /**
@@ -668,6 +704,25 @@ final class UiTestAssertionRunner {
                 + ") scale(" + formatFloat(transform.getScaleX()) + "," + formatFloat(transform.getScaleY())
                 + ") rotate(" + formatFloat(transform.getRotateDegrees()) + "deg) origin("
                 + formatLength(transform.getOriginX()) + "," + formatLength(transform.getOriginY()) + ")";
+    }
+
+    /**
+     * 格式化背景图宿主资源摘要。
+     *
+     * @param image 背景图值
+     * @return 背景图资源摘要
+     */
+    private String formatBackgroundSource(UiBackgroundImage image) {
+        if (image == null) {
+            return "none";
+        }
+        if (image.getSource().getTexture() != null) {
+            return image.getSource().getKind() + ":" + image.getSource().getTexture();
+        }
+        if (image.getSource().getImageKey() != null) {
+            return image.getSource().getKind() + ":" + image.getSource().getImageKey();
+        }
+        return image.getSource().getKind().name();
     }
 
     /**

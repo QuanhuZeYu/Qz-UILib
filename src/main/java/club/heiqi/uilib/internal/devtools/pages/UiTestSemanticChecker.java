@@ -36,7 +36,7 @@ final class UiTestSemanticChecker {
             return "自动边界：布局盒尺寸、位置、margin collapse、flex/table 分配、scroll 范围；人工边界：inline-block baseline 需单独重构后自动。";
         }
         if ("PAINT".equals(code)) {
-            return "自动边界：绘制命令顺序、stacking phase、clip/transform/top-layer 命中；人工边界：重叠层级、host image fallback 和滚动条视觉需截图确认。";
+            return "自动边界：stacking phase、clip 与 top-layer 注册；人工边界：transform 命中、scrollbar 几何/拖拽和 host image fallback 需截图确认。";
         }
         if ("INPUT".equals(code)) {
             return "自动边界：事件日志、传播顺序、默认行为、focus/focus-visible、wheel 滚动结果；人工边界：游戏内键鼠输入手感需人工确认。";

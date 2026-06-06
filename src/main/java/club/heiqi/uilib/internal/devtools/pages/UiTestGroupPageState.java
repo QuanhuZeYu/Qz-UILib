@@ -25,6 +25,17 @@ final class UiTestGroupPageState {
         return caseIndex;
     }
 
+    /**
+     * 设置当前样例索引，并限制在样例总数范围内。
+     *
+     * @param nextCaseIndex 目标样例索引
+     * @param caseCount 样例总数
+     */
+    void setCaseIndex(int nextCaseIndex, int caseCount) {
+        caseIndex = Math.max(0, nextCaseIndex);
+        clampToCaseCount(caseCount);
+    }
+
     void clampToCaseCount(int caseCount) {
         if (caseCount <= 0) {
             caseIndex = 0;

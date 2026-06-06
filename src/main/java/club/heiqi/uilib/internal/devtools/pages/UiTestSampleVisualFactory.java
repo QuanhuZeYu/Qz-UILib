@@ -37,7 +37,7 @@ final class UiTestSampleVisualFactory {
      */
     void appendCaseDemo(UiDocument document, ElementNode parent, UiTestCaseSpec testCase) {
         ensureStyleSheet(document);
-        ElementNode stage = createStage(document, "视觉样例：" + testCase.getVisualSample());
+        ElementNode stage = createStage(document, "样例");
         stage.setAttribute("data-ui-test-case", testCase.getId());
         String id = testCase.getId();
         if ("VIS-CSS-001".equals(id)) {
@@ -212,8 +212,6 @@ final class UiTestSampleVisualFactory {
     private void appendLayoutBlockFlowDemo(UiDocument document, ElementNode stage) {
         ElementNode stack = document.div();
         stack.style()
-                .setDisplay(UiDisplay.FLEX)
-                .setFlexDirection(UiFlexDirection.COLUMN)
                 .setWidth(UiStyleLength.px(260))
                 .setPadding(UiStyleLength.px(8))
                 .setBackgroundColor(0xFF0F172A)
@@ -224,10 +222,10 @@ final class UiTestSampleVisualFactory {
         ElementNode first = createDemoPanel(document, "Block A margin-bottom=18", 0xFF2563EB);
         first.style().setMarginBottom(UiStyleLength.px(18));
         stack.append(first);
-        stack.append(createRuler(document, "collapse 标尺：相邻 margin 以最大值呈现"));
         ElementNode second = createDemoPanel(document, "Block B margin-top=24", 0xFF7C3AED);
         second.style().setMarginTop(UiStyleLength.px(24));
         stack.append(second);
+        stack.append(createRuler(document, "collapse 标尺：A/B 相邻 gap 应接近 24px，而不是 42px"));
         stage.append(stack);
     }
 
@@ -526,7 +524,8 @@ final class UiTestSampleVisualFactory {
                 .setBorderColor(0xFF475569);
         ElementNode inherited = createDemoPanel(document, "继承 color (应为蓝色)", 0xFF334155);
         ElementNode sized = createDemoPanel(document, "width=80px (非继承)", 0xFF059669);
-        sized.style().setWidth(UiStyleLength.px(80));
+        inherited.style().clearTextColor();
+        sized.style().setWidth(UiStyleLength.px(80)).clearTextColor();
         parent.append(inherited).append(sized);
         stage.append(parent);
         appendMutedText(document, stage, "子元素颜色继承父，宽度不继承。");
@@ -542,7 +541,8 @@ final class UiTestSampleVisualFactory {
         ElementNode row = createDemoRow(document);
         ElementNode colorOnly = createDemoPanel(document, "纯 background-color", 0xFFDC2626);
         ElementNode withUrl = createDemoPanel(document, "background + url", 0xFF1E40AF);
-        withUrl.style().setBackgroundImage(UiBackgroundImage.texture("qz_uilib:textures/test/sample.png", 32, 32));
+        withUrl.style().setBackgroundImage(UiBackgroundImage.texture(
+                "minecraft:textures/gui/options_background.png", 16, 16));
         ElementNode noneLike = createDemoPanel(document, "background:none 效果", 0xFF059669);
         row.append(colorOnly).append(withUrl).append(noneLike);
         stage.append(row);
@@ -567,7 +567,9 @@ final class UiTestSampleVisualFactory {
                 .setBorderWidth(UiStyleLength.px(1))
                 .setBorderStyle(UiBorderStyle.SOLID)
                 .setBorderColor(0xFFF59E0B);
-        hidden.appendText("hidden 裁剪");
+        ElementNode hiddenWide = createDemoPanel(document, "hidden 裁剪", 0xFFDC2626);
+        hiddenWide.style().setWidth(UiStyleLength.px(140)).setHeight(UiStyleLength.px(20));
+        hidden.append(hiddenWide);
         ElementNode autoBox = document.div();
         autoBox.style()
                 .setWidth(UiStyleLength.px(80))
@@ -591,7 +593,9 @@ final class UiTestSampleVisualFactory {
                 .setBorderWidth(UiStyleLength.px(1))
                 .setBorderStyle(UiBorderStyle.SOLID)
                 .setBorderColor(0xFF64748B);
-        visible.appendText("visible 越界可见");
+        ElementNode visibleWide = createDemoPanel(document, "visible 越界可见", 0xFF7C3AED);
+        visibleWide.style().setWidth(UiStyleLength.px(140)).setHeight(UiStyleLength.px(20));
+        visible.append(visibleWide);
         row.append(hidden).append(autoBox).append(visible);
         stage.append(row);
         appendMutedText(document, stage, "hidden 裁剪；auto 滚动；visible 溢出可见。");
@@ -726,12 +730,19 @@ final class UiTestSampleVisualFactory {
      */
     private void appendPaintTopLayerDemo(UiDocument document, ElementNode stage) {
         ElementNode canvas = createPaintCanvas(document);
-        canvas.append(createPaintLayer(document, "底层内容 z=1", 20, 20, 0xFFDC2626, 1, 1.0F));
-        ElementNode top = createPaintLayer(document, "top-layer 弹层 z=100", 50, 35, 0xFF7C3AED, 100, 0.95F);
-        top.style().setWidth(UiStyleLength.px(140)).setHeight(UiStyleLength.px(50));
+        canvas.append(createPaintLayer(document, "普通层 z=999", 20, 20, 0xFFDC2626, 999, 1.0F));
+        ElementNode top = createDemoPanel(document, "top-layer 弹层", 0xFF7C3AED);
+        top.style()
+                .setPosition(UiPosition.ABSOLUTE)
+                .setLeft(UiStyleLength.px(50))
+                .setTop(UiStyleLength.px(35))
+                .setWidth(UiStyleLength.px(140))
+                .setHeight(UiStyleLength.px(50))
+                .setOpacity(0.95F);
         canvas.append(top);
+        document.__showTopLayerElement(top);
         stage.append(canvas);
-        appendMutedText(document, stage, "top-layer 覆盖普通层，优先命中。");
+        appendMutedText(document, stage, "紫色弹层已注册到文档 top-layer，应覆盖普通高 z-index 层。");
     }
 
     /**
@@ -768,7 +779,8 @@ final class UiTestSampleVisualFactory {
     private void appendPaintHostImageDemo(UiDocument document, ElementNode stage) {
         ElementNode row = createDemoRow(document);
         ElementNode ok = createDemoPanel(document, "有效 host image", 0xFF1E40AF);
-        ok.style().setBackgroundImage(UiBackgroundImage.texture("qz_uilib:textures/gui/demo.png", 48, 48));
+        ok.style().setBackgroundImage(UiBackgroundImage.texture(
+                "minecraft:textures/gui/options_background.png", 16, 16));
         ElementNode fb = createDemoPanel(document, "缺失 fallback", 0xFF7F1D1D);
         fb.style().setBackgroundImage(UiBackgroundImage.texture("missing:nonexistent.png", 16, 16));
         row.append(ok).append(fb);

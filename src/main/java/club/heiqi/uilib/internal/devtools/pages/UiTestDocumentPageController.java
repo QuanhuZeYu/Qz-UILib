@@ -2,6 +2,7 @@ package club.heiqi.uilib.internal.devtools.pages;
 
 import java.util.Objects;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 
 import club.heiqi.uilib.Config;
@@ -39,6 +40,7 @@ public final class UiTestDocumentPageController extends DocumentPageController {
     private final String runtimeAdapterSummary;
     private final Map<String, UiTestGroupPageState> groupPageStates = new LinkedHashMap<String, UiTestGroupPageState>();
     private UiTestPageBindings pageBindings = UiTestPageBindings.empty();
+    private String lastRunSummary = "尚未运行。";
 
     /**
      * 创建 test 视觉矩阵首页控制器。
@@ -134,8 +136,10 @@ public final class UiTestDocumentPageController extends DocumentPageController {
      * 显示视觉矩阵首页。
      */
     private void showHomePage() {
+        clearTopLayerElements();
         rootElement.clearChildren();
-        pageBindings = visualBuilder.buildHomePage(document, rootElement, buildEnvironmentText(), createNavigation());
+        pageBindings = visualBuilder.buildHomePage(document, rootElement, buildEnvironmentText(), lastRunSummary,
+                createNavigation());
     }
 
     /**
@@ -144,10 +148,20 @@ public final class UiTestDocumentPageController extends DocumentPageController {
      * @param group 测试分组规格
      */
     private void showGroupPage(UiTestGroupSpec group) {
+        clearTopLayerElements();
         rootElement.clearChildren();
         UiTestGroupPageState pageState = resolveGroupPageState(group);
         pageBindings = visualBuilder.buildGroupPage(document, rootElement, group, buildEnvironmentText(),
-                createNavigation(), pageState, createGroupInteraction(group, pageState));
+                lastRunSummary, createNavigation(), pageState, createGroupInteraction(group, pageState));
+    }
+
+    /**
+     * 清理上一张样例可能注册的运行时顶层元素，避免页面切换后残留弹层。
+     */
+    private void clearTopLayerElements() {
+        for (ElementNode element : new java.util.ArrayList<ElementNode>(document.__getTopLayerElements())) {
+            document.__hideTopLayerElement(element);
+        }
     }
 
     /**
@@ -190,7 +204,7 @@ public final class UiTestDocumentPageController extends DocumentPageController {
 
             @Override
             public void runCurrentCaseAssertion() {
-                java.util.List<UiTestCaseSpec> cases = registry.getCases(group.getCode());
+                List<UiTestCaseSpec> cases = registry.getCases(group.getCode());
                 if (cases.isEmpty()) {
                     return;
                 }
@@ -199,6 +213,14 @@ public final class UiTestDocumentPageController extends DocumentPageController {
                 UiTestCaseResult result = assertionRunner.run(htmlLikeDocumentWidget, testCase, assertionLogger,
                         buildAssertionContext(testCase, pageState, cases.size()));
                 matrixState.updateCaseResult(testCase, result);
+                lastRunSummary = "当前样例：" + testCase.getId() + " "
+                        + result.getSemanticStatus().getDisplayText() + "。";
+                showGroupPage(group);
+            }
+
+            @Override
+            public void runAllCaseAssertions() {
+                runAllAssertions();
                 showGroupPage(group);
             }
         };
@@ -220,7 +242,45 @@ public final class UiTestDocumentPageController extends DocumentPageController {
             public void openGroup(UiTestGroupSpec group) {
                 showGroupPage(group);
             }
+
+            @Override
+            public void runAllCaseAssertions() {
+                runAllAssertions();
+                showHomePage();
+            }
         };
+    }
+
+    /**
+     * 依次渲染并运行全部已接入样例，人工样例只生成诊断并保持待确认。
+     */
+    private void runAllAssertions() {
+        int executed = 0;
+        int automaticPassed = 0;
+        int automaticFailed = 0;
+        int manualPending = 0;
+        for (UiTestGroupSpec group : registry.getGroups()) {
+            List<UiTestCaseSpec> cases = registry.getCases(group.getCode());
+            UiTestGroupPageState pageState = resolveGroupPageState(group);
+            for (int index = 0; index < cases.size(); index++) {
+                pageState.setCaseIndex(index, cases.size());
+                showGroupPage(group);
+                UiTestCaseSpec testCase = cases.get(index);
+                UiTestCaseResult result = assertionRunner.run(htmlLikeDocumentWidget, testCase, assertionLogger,
+                        buildAssertionContext(testCase, pageState, cases.size()));
+                matrixState.updateCaseResult(testCase, result);
+                executed++;
+                if (result.getSemanticStatus() == UiTestSemanticStatus.AUTO_PASSED) {
+                    automaticPassed++;
+                } else if (result.getSemanticStatus() == UiTestSemanticStatus.AUTO_FAILED) {
+                    automaticFailed++;
+                } else if (result.getSemanticStatus() == UiTestSemanticStatus.MANUAL_PENDING) {
+                    manualPending++;
+                }
+            }
+        }
+        lastRunSummary = "全量完成：" + executed + " 个；通过 " + automaticPassed
+                + "；失败 " + automaticFailed + "；人工 " + manualPending + "。";
     }
 
     /**
@@ -232,13 +292,12 @@ public final class UiTestDocumentPageController extends DocumentPageController {
         UiRuntimeStats stats = runtimeView.getUiRuntimeStats();
         String statsSummary = stats == null ? "无统计" : "frame=" + formatMs(stats.getFrameTimeMs())
                 + "ms, render=" + formatMs(stats.getRenderTimeMs()) + "ms";
-        return "Minecraft=1.7.10；Forge=GTNH/Forge 运行时；LWJGL3ify=org.lwjglx 输入桥；字体 epoch="
-                + fontEpoch + "；默认文本模式=" + defaultTextMode
-                + "；窗口尺寸=" + runtimeView.getHostWidth() + "x" + runtimeView.getHostHeight()
+        return "MC 1.7.10；窗口=" + runtimeView.getHostWidth() + "x" + runtimeView.getHostHeight()
                 + "；鼠标=" + runtimeView.getMouseX() + "," + runtimeView.getMouseY()
-                + "；网络传输模式=" + NetTransportFactory.resolveName(Config.netTransport)
-                + "；运行时适配器=" + runtimeAdapterSummary
-                + "；运行时统计=" + statsSummary;
+                + "；字体=" + fontEpoch + "；文本=" + defaultTextMode
+                + "；网络=" + NetTransportFactory.resolveName(Config.netTransport)
+                + "；适配=" + runtimeAdapterSummary
+                + "；" + statsSummary;
     }
 
     /**
