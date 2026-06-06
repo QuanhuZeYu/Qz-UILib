@@ -423,7 +423,8 @@ public final class DocumentLayoutEngine {
 
     private static boolean isReusableLayoutDisplay(ComputedStyle computedStyle) {
         return computedStyle.getDisplay() == UiDisplay.BLOCK || computedStyle.getDisplay() == UiDisplay.FLEX
-                || computedStyle.getDisplay() == UiDisplay.TABLE || computedStyle.getDisplay() == UiDisplay.NONE;
+                || computedStyle.getDisplay() == UiDisplay.TABLE || computedStyle.getDisplay() == UiDisplay.INLINE_BLOCK
+                || computedStyle.getDisplay() == UiDisplay.NONE;
     }
 
     private static LayoutChildrenResult layoutBlockChildren(ElementNode element, int contentLeft, int contentTop,
