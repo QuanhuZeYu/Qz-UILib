@@ -461,6 +461,17 @@ public class UiTestDocumentPageControllerTest {
         texts = collectDocumentTexts(fixture.controller.getHtmlLikeDocumentWidget());
         Assert.assertTrue(containsText(texts, "VIS-CTRL-005"));
         Assert.assertTrue(containsText(texts, "select 弹层与 table 状态表"));
+        ElementNode select = findElementByAttribute(fixture.controller.getHtmlLikeDocumentWidget().getDocument()
+                .getRootElement(), UiTestControlsVisualFactory.ROLE_ATTRIBUTE, "select-main");
+        ElementNode table = findElementByAttribute(fixture.controller.getHtmlLikeDocumentWidget().getDocument()
+                .getRootElement(), UiTestControlsVisualFactory.ROLE_ATTRIBUTE, "select-table");
+        Assert.assertNotNull(select);
+        Assert.assertNotNull(table);
+        Assert.assertTrue(containsText(collectElementTexts(table), "石头"));
+        clickElement(select, 171L);
+        clickOptionByLabel(select, "红石", 172L);
+        Assert.assertTrue(containsText(collectElementTexts(table), "红石"));
+        Assert.assertFalse(containsText(collectElementTexts(table), "石头"));
         clickButtonByLabel(fixture.controller.getHtmlLikeDocumentWidget(), "运行当前样例断言", 0);
         Assert.assertEquals(UiTestSemanticStatus.MANUAL_PENDING,
                 getCaseResult(fixture, "VIS-CTRL-005").getSemanticStatus());
@@ -591,7 +602,18 @@ public class UiTestDocumentPageControllerTest {
         Assert.assertTrue("找不到按钮：" + label + " #" + occurrence, buttons.size() > occurrence);
         ElementNode button = buttons.get(occurrence);
         Assert.assertNotNull(button.getClickHandler());
-        button.getClickHandler().onClick(new DocumentElementClickEvent(button, button, 0, 0, 0, 0L));
+        clickElement(button, 0L);
+    }
+
+    private static void clickOptionByLabel(ElementNode select, String label, long timeNanos) {
+        ElementNode option = findElementByTextAndTag(select, "option", label);
+        Assert.assertNotNull("找不到选项：" + label, option);
+        clickElement(option, timeNanos);
+    }
+
+    private static void clickElement(ElementNode element, long timeNanos) {
+        Assert.assertNotNull(element.getClickHandler());
+        element.getClickHandler().onClick(new DocumentElementClickEvent(element, element, 0, 0, 0, timeNanos));
     }
 
     private static void collectButtonsByLabel(DocumentNode node, String label, List<ElementNode> buttons) {
@@ -611,6 +633,40 @@ public class UiTestDocumentPageControllerTest {
         List<String> texts = new ArrayList<String>();
         collectTextsFromNode(element, texts);
         return texts;
+    }
+
+    private static ElementNode findElementByAttribute(DocumentNode node, String attributeName, String attributeValue) {
+        if (node.getNodeType() != DocumentNodeType.ELEMENT) {
+            return null;
+        }
+        ElementNode element = (ElementNode) node;
+        if (attributeValue.equals(element.getAttribute(attributeName))) {
+            return element;
+        }
+        for (DocumentNode child : element.getChildren()) {
+            ElementNode found = findElementByAttribute(child, attributeName, attributeValue);
+            if (found != null) {
+                return found;
+            }
+        }
+        return null;
+    }
+
+    private static ElementNode findElementByTextAndTag(DocumentNode node, String tagName, String text) {
+        if (node.getNodeType() != DocumentNodeType.ELEMENT) {
+            return null;
+        }
+        ElementNode element = (ElementNode) node;
+        if (tagName.equals(element.getTagName()) && containsText(collectElementTexts(element), text)) {
+            return element;
+        }
+        for (DocumentNode child : element.getChildren()) {
+            ElementNode found = findElementByTextAndTag(child, tagName, text);
+            if (found != null) {
+                return found;
+            }
+        }
+        return null;
     }
 
     private static final class TestFixture {

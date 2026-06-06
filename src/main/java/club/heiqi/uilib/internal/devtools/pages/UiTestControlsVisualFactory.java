@@ -231,19 +231,22 @@ final class UiTestControlsVisualFactory {
         DocumentSelectControl select = new DocumentSelectControl(document, "木材", "石头", "红石")
                 .setSelectedIndex(1);
         select.getElement().setAttribute(ROLE_ATTRIBUTE, "select-main");
+        DocumentTableControl table = new DocumentTableControl(document)
+                .setHeader("字段", "当前值");
+        List<ElementNode> selectedValueRow = table.addEmptyRow(2);
+        selectedValueRow.get(0).appendText("select value");
+        final TextNode selectedValueText = selectedValueRow.get(1).appendText(select.getSelectedOption());
+        table.addRow("popup", "点击后进入 top-layer")
+                .addRow("table", "控件表格对齐");
+        table.getElement().setAttribute(ROLE_ATTRIBUTE, "select-table");
         select.setChangeHandler(new DocumentSelectChangeHandler() {
             @Override
             public void onSelectionChanged(DocumentSelectChangeEvent event) {
+                selectedValueText.setText(event.getSelectedOption());
                 events.add("select=" + event.getSelectedOption() + ":" + event.getSelectedIndex());
                 updateLog(log, "log=", events);
             }
         });
-        DocumentTableControl table = new DocumentTableControl(document)
-                .setHeader("字段", "当前值")
-                .addRow("select value", "石头")
-                .addRow("popup", "点击后进入 top-layer")
-                .addRow("table", "控件表格对齐");
-        table.getElement().setAttribute(ROLE_ATTRIBUTE, "select-table");
         row.append(createLabeledControl(document, "select", select.getElement()))
                 .append(createLabeledControl(document, "table", table.getElement()));
         stage.append(row);
