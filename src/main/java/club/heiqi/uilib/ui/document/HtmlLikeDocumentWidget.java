@@ -838,7 +838,7 @@ public final class HtmlLikeDocumentWidget extends Widget implements UiDocument.D
         List<DocumentLayoutBox> topLayerBoxes = resolveTopLayerLayoutBoxes(rootBox, layoutRuntimeValueActive
                 ? createAnimationLayoutValueResolver(currentTimeNanos) : null);
         cachedPaintCommands = DocumentPaintEngine.buildPaintCommands(rootBox, topLayerBoxes, scrollState,
-                currentTimeNanos, animationTimeline);
+                currentTimeNanos, animationTimeline, textMeasureService);
         paintCacheGeneration++;
         cachedPaintScrollVersion = scrollVersion;
         cachedPaintTransientScrollbarActive = transientScrollbarActive;

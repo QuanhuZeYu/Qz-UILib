@@ -43,6 +43,7 @@ import club.heiqi.uilib.ui.style.props.UiVisibility;
 import club.heiqi.uilib.ui.style.values.UiSurfaceStyle;
 import club.heiqi.uilib.ui.style.values.UiTransform;
 import club.heiqi.uilib.ui.text.TextContentMode;
+import club.heiqi.uilib.ui.text.TextMeasureService;
 
 /**
  * HTML-like 绘制命令生成器。
@@ -119,13 +120,34 @@ public final class DocumentPaintEngine {
     public static List<DocumentPaintCommand> buildPaintCommands(DocumentLayoutBox rootBox,
             List<DocumentLayoutBox> topLayerBoxes, DocumentScrollState scrollState, long currentTimeNanos,
             DocumentAnimationTimeline animationTimeline) {
+        return buildPaintCommands(rootBox, topLayerBoxes, scrollState, currentTimeNanos, animationTimeline, null);
+    }
+
+    /**
+     * 从普通布局盒树、top-layer 根盒、滚动状态、动画时间线和文本测量服务生成绘制命令。
+     *
+     * <p>传入文本测量服务后，绘制阶段可对被 overflow clip 横向裁掉的长单行文本生成可见片段，
+     * 避免每帧把完整长字符串提交给字体后端。</p>
+     *
+     * @param rootBox 普通文档根盒
+     * @param topLayerBoxes top-layer 根盒；后面的盒位于更上层
+     * @param scrollState 滚动状态；为 null 时按无滚动处理
+     * @param currentTimeNanos 当前时间戳
+     * @param animationTimeline 动画时间线；为 null 时不应用动画覆盖
+     * @param textMeasureService 文本测量服务；为 null 时只做不依赖测量的可见性裁剪
+     * @return 绘制命令列表
+     */
+    public static List<DocumentPaintCommand> buildPaintCommands(DocumentLayoutBox rootBox,
+            List<DocumentLayoutBox> topLayerBoxes, DocumentScrollState scrollState, long currentTimeNanos,
+            DocumentAnimationTimeline animationTimeline, TextMeasureService textMeasureService) {
         Objects.requireNonNull(rootBox, "rootBox");
         List<DocumentPaintCommand> commands = new ArrayList<DocumentPaintCommand>();
         StackingContextResolver resolver = createPaintStackingContextResolver(currentTimeNanos, animationTimeline);
         VisualScene scene = DocumentVisualTraversal.resolveVisualScene(rootBox, topLayerBoxes, scrollState);
         for (RootEntry rootEntry : scene.getRootEntries()) {
             appendBoxCommands(rootEntry.getRootBox(), rootEntry.getRootContext(), commands, scrollState,
-                    animationTimeline, currentTimeNanos, 1.0F, true, Collections.<ClipContext>emptyList(), resolver);
+                    animationTimeline, currentTimeNanos, 1.0F, true, Collections.<ClipContext>emptyList(), resolver,
+                    false, textMeasureService);
         }
         return commands;
     }
@@ -133,7 +155,8 @@ public final class DocumentPaintEngine {
     private static void appendBoxCommands(DocumentLayoutBox rootBox, BoxContext boxContext,
             List<DocumentPaintCommand> commands, DocumentScrollState scrollState,
             DocumentAnimationTimeline animationTimeline, long currentTimeNanos, float inheritedOpacity,
-            boolean paintStackingContext, List<ClipContext> activeClipChain, StackingContextResolver resolver) {
+            boolean paintStackingContext, List<ClipContext> activeClipChain, StackingContextResolver resolver,
+            boolean transformActive, TextMeasureService textMeasureService) {
         DocumentLayoutBox box = boxContext.getBox();
         // visibility:hidden 只隐藏当前元素自身，允许显式 visibility:visible 的后代恢复绘制。
         boolean visibilityHidden = isVisibilityHidden(box);
@@ -141,6 +164,7 @@ public final class DocumentPaintEngine {
         int boxOffsetY = boxContext.getBoxOffsetY();
         UiTransform transform = resolveAnimatedTransform(animationTimeline, box, currentTimeNanos);
         boolean transformed = transform != null && !transform.isIdentity();
+        boolean currentTransformActive = transformActive || transformed;
         if (transformed) {
             appendTransformStartCommand(box, commands, transform, boxOffsetX, boxOffsetY);
         }
@@ -172,7 +196,7 @@ public final class DocumentPaintEngine {
         if (resolvedPaintStackingContext) {
             appendStackingPhaseItems(rootBox, boxContext, commands, scrollState, animationTimeline,
                     currentTimeNanos, boxOpacity, DocumentStackingPhase.NEGATIVE_POSITIONED, currentClipChain,
-                    resolver);
+                    resolver, currentTransformActive, textMeasureService);
             if (hasFlowContent(box, visibilityHidden)) {
                 currentClipChain = transitionClipChain(commands, currentClipChain, boxContext.getChildClipChain(),
                         animationTimeline, currentTimeNanos);
@@ -184,19 +208,20 @@ public final class DocumentPaintEngine {
                     childOffsetX, childOffsetY);
             appendListMarkerCommand(box, commands, boxOpacity, childOffsetX, childOffsetY);
             appendTextCommands(box, commands, animationTimeline, currentTimeNanos, boxOpacity, childOffsetX,
-                    childOffsetY);
+                    childOffsetY, currentClipChain, currentTransformActive, textMeasureService);
             appendNormalFlowChildren(rootBox, boxContext, commands, scrollState, animationTimeline,
-                    currentTimeNanos, boxOpacity, currentClipChain, resolver);
+                    currentTimeNanos, boxOpacity, currentClipChain, resolver, currentTransformActive,
+                    textMeasureService);
             if (hasFlowContent(box, visibilityHidden)) {
                 currentClipChain = transitionClipChain(commands, currentClipChain, boxContext.getClipChain(),
                         animationTimeline, currentTimeNanos);
             }
             appendStackingPhaseItems(rootBox, boxContext, commands, scrollState, animationTimeline,
                     currentTimeNanos, boxOpacity, DocumentStackingPhase.POSITIONED_AUTO_OR_ZERO, currentClipChain,
-                    resolver);
+                    resolver, currentTransformActive, textMeasureService);
             appendStackingPhaseItems(rootBox, boxContext, commands, scrollState, animationTimeline,
                     currentTimeNanos, boxOpacity, DocumentStackingPhase.POSITIVE_POSITIONED, currentClipChain,
-                    resolver);
+                    resolver, currentTransformActive, textMeasureService);
         } else {
             if (hasFlowContent(box, visibilityHidden)) {
                 currentClipChain = transitionClipChain(commands, currentClipChain, boxContext.getChildClipChain(),
@@ -209,9 +234,10 @@ public final class DocumentPaintEngine {
                     childOffsetX, childOffsetY);
             appendListMarkerCommand(box, commands, boxOpacity, childOffsetX, childOffsetY);
             appendTextCommands(box, commands, animationTimeline, currentTimeNanos, boxOpacity, childOffsetX,
-                    childOffsetY);
+                    childOffsetY, currentClipChain, currentTransformActive, textMeasureService);
             appendNormalFlowChildren(rootBox, boxContext, commands, scrollState, animationTimeline,
-                    currentTimeNanos, boxOpacity, currentClipChain, resolver);
+                    currentTimeNanos, boxOpacity, currentClipChain, resolver, currentTransformActive,
+                    textMeasureService);
             if (hasFlowContent(box, visibilityHidden)) {
                 currentClipChain = transitionClipChain(commands, currentClipChain, boxContext.getClipChain(),
                         animationTimeline, currentTimeNanos);
@@ -267,24 +293,28 @@ public final class DocumentPaintEngine {
     private static void appendNormalFlowChildren(DocumentLayoutBox rootBox, BoxContext contextRootContext,
             List<DocumentPaintCommand> commands, DocumentScrollState scrollState,
             DocumentAnimationTimeline animationTimeline, long currentTimeNanos, float inheritedOpacity,
-            List<ClipContext> activeClipChain, StackingContextResolver resolver) {
+            List<ClipContext> activeClipChain, StackingContextResolver resolver, boolean transformActive,
+            TextMeasureService textMeasureService) {
         List<TraversalEntry> children = DocumentVisualTraversal.getNormalFlowEntries(contextRootContext.getBox(),
                 contextRootContext, scrollState, resolver, false);
         for (TraversalEntry child : children) {
             appendBoxCommands(rootBox, child.getBoxContext(), commands, scrollState, animationTimeline,
-                    currentTimeNanos, inheritedOpacity, child.isStackingContext(), activeClipChain, resolver);
+                    currentTimeNanos, inheritedOpacity, child.isStackingContext(), activeClipChain, resolver,
+                    transformActive, textMeasureService);
         }
     }
 
     private static void appendStackingPhaseItems(DocumentLayoutBox rootBox, BoxContext contextRootContext,
             List<DocumentPaintCommand> commands, DocumentScrollState scrollState,
             DocumentAnimationTimeline animationTimeline, long currentTimeNanos, float inheritedOpacity,
-            DocumentStackingPhase phase, List<ClipContext> activeClipChain, StackingContextResolver resolver) {
+            DocumentStackingPhase phase, List<ClipContext> activeClipChain, StackingContextResolver resolver,
+            boolean transformActive, TextMeasureService textMeasureService) {
         List<TraversalEntry> items = DocumentVisualTraversal.collectStackingPhaseEntries(contextRootContext.getBox(),
                 contextRootContext, scrollState, resolver, phase);
         for (TraversalEntry item : items) {
             appendBoxCommands(rootBox, item.getBoxContext(), commands, scrollState, animationTimeline,
-                    currentTimeNanos, inheritedOpacity, item.isStackingContext(), activeClipChain, resolver);
+                    currentTimeNanos, inheritedOpacity, item.isStackingContext(), activeClipChain, resolver,
+                    transformActive, textMeasureService);
         }
     }
 
@@ -444,7 +474,10 @@ public final class DocumentPaintEngine {
 
     private static void appendTextCommands(DocumentLayoutBox box, List<DocumentPaintCommand> commands,
             DocumentAnimationTimeline animationTimeline, long currentTimeNanos, float opacity, int offsetX,
-            int offsetY) {
+            int offsetY, List<ClipContext> activeClipChain, boolean transformActive,
+            TextMeasureService textMeasureService) {
+        DocumentTextPaintClipper.ClipBounds clipBounds = transformActive ? null
+                : DocumentTextPaintClipper.resolveClipBounds(activeClipChain);
         for (DocumentLayoutTextRun textRun : box.getTextRuns()) {
             if (textRun.getText().isEmpty() || textRun.getWidth() <= 0 || textRun.getHeight() <= 0) {
                 continue;
@@ -457,10 +490,30 @@ public final class DocumentPaintEngine {
                 continue;
             }
             ComputedStyle ownerStyle = UiStyleResolver.compute(textRun.getOwnerElement());
-            appendTextDecorationCommand(textRun, commands, color, offsetX, offsetY);
+            DocumentTextPaintClipper.PaintBounds paintBounds = DocumentTextPaintClipper.resolvePaintBounds(textRun,
+                    ownerStyle, textMeasureService, offsetX, offsetY, clipBounds != null, false);
+            int expansion = DocumentTextPaintClipper.resolveVisualExpansion(ownerStyle);
+            if (clipBounds != null && !DocumentTextPaintClipper.intersectsExpanded(paintBounds, clipBounds,
+                    expansion)) {
+                continue;
+            }
+            if (clipBounds != null) {
+                paintBounds = DocumentTextPaintClipper.resolvePaintBounds(textRun, ownerStyle, textMeasureService,
+                        offsetX, offsetY, true, true);
+                if (!DocumentTextPaintClipper.intersectsExpanded(paintBounds, clipBounds, expansion)) {
+                    continue;
+                }
+            }
+            DocumentTextPaintClipper.PaintSlice paintSlice = DocumentTextPaintClipper.resolveVisibleSlice(textRun,
+                    paintBounds, ownerStyle, textMeasureService, clipBounds, expansion);
+            if (paintSlice.getText().isEmpty() || paintSlice.getRight() <= paintSlice.getLeft()) {
+                continue;
+            }
+            appendTextDecorationCommand(textRun, commands, color, paintSlice.getLeft(), paintSlice.getRight(),
+                    offsetY);
             commands.add(new DocumentPaintCommand(DocumentPaintCommandType.TEXT, textRun.getOwnerElement(),
-                    textRun.getLeft() + offsetX, textRun.getTop() + offsetY, textRun.getRight() + offsetX,
-                    textRun.getBottom() + offsetY, color, 0, 0, textRun.getText(), textRun.getTextContentMode(),
+                    paintSlice.getLeft(), textRun.getTop() + offsetY, paintSlice.getRight(),
+                    textRun.getBottom() + offsetY, color, 0, 0, paintSlice.getText(), textRun.getTextContentMode(),
                     ownerStyle == null ? UiFontWeight.NORMAL : ownerStyle.getFontWeight(),
                     ownerStyle == null ? UiFontStyle.NORMAL : ownerStyle.getFontStyle(), null, 0, 1.0F, 1.0F));
         }
@@ -550,14 +603,14 @@ public final class DocumentPaintEngine {
     }
 
     private static void appendTextDecorationCommand(DocumentLayoutTextRun textRun, List<DocumentPaintCommand> commands,
-            int color, int offsetX, int offsetY) {
+            int color, int commandLeft, int commandRight, int offsetY) {
         UiTextDecoration textDecoration = UiStyleResolver.compute(textRun.getOwnerElement()).getTextDecoration();
         if (textDecoration == UiTextDecoration.NONE || textRun.getWidth() <= 0 || textRun.getHeight() <= 0) {
             return;
         }
         int lineTop = resolveTextDecorationTop(textRun, textDecoration);
         commands.add(new DocumentPaintCommand(DocumentPaintCommandType.TEXT_DECORATION, textRun.getOwnerElement(),
-                textRun.getLeft() + offsetX, lineTop + offsetY, textRun.getRight() + offsetX,
+                commandLeft, lineTop + offsetY, commandRight,
                 lineTop + 1 + offsetY, color, 0, 0));
     }
 

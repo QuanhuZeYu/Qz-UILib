@@ -24,6 +24,8 @@ import club.heiqi.uilib.ui.text.TextMeasureService;
  */
 public final class UiTestDocumentPageController extends DocumentPageController {
 
+    private static final int ENVIRONMENT_STATS_REFRESH_FRAMES = 20;
+
     private final DocumentPageAuthoringSurface diagnosticPage;
     private final DocumentPageRuntimeView runtimeView;
     private final UiTestMatrixRegistry registry;
@@ -41,6 +43,8 @@ public final class UiTestDocumentPageController extends DocumentPageController {
     private final Map<String, UiTestGroupPageState> groupPageStates = new LinkedHashMap<String, UiTestGroupPageState>();
     private UiTestPageBindings pageBindings = UiTestPageBindings.empty();
     private String lastRunSummary = "尚未运行。";
+    private String cachedRuntimeStatsSummary;
+    private int framesUntilEnvironmentStatsRefresh;
 
     /**
      * 创建 test 视觉矩阵首页控制器。
@@ -101,7 +105,8 @@ public final class UiTestDocumentPageController extends DocumentPageController {
     @Override
     public void beforeDocumentFrame() {
         if (pageBindings.getEnvironmentText() != null) {
-            pageBindings.getEnvironmentText().setText(buildEnvironmentText());
+            framesUntilEnvironmentStatsRefresh--;
+            pageBindings.getEnvironmentText().setText(buildEnvironmentText(false));
         }
     }
 
@@ -138,7 +143,7 @@ public final class UiTestDocumentPageController extends DocumentPageController {
     private void showHomePage() {
         clearTopLayerElements();
         rootElement.clearChildren();
-        pageBindings = visualBuilder.buildHomePage(document, rootElement, buildEnvironmentText(), lastRunSummary,
+        pageBindings = visualBuilder.buildHomePage(document, rootElement, buildEnvironmentText(true), lastRunSummary,
                 createNavigation());
     }
 
@@ -151,7 +156,7 @@ public final class UiTestDocumentPageController extends DocumentPageController {
         clearTopLayerElements();
         rootElement.clearChildren();
         UiTestGroupPageState pageState = resolveGroupPageState(group);
-        pageBindings = visualBuilder.buildGroupPage(document, rootElement, group, buildEnvironmentText(),
+        pageBindings = visualBuilder.buildGroupPage(document, rootElement, group, buildEnvironmentText(true),
                 lastRunSummary, createNavigation(), pageState, createGroupInteraction(group, pageState));
     }
 
@@ -288,16 +293,34 @@ public final class UiTestDocumentPageController extends DocumentPageController {
      *
      * @return 环境信息文本
      */
-    private String buildEnvironmentText() {
-        UiRuntimeStats stats = runtimeView.getUiRuntimeStats();
-        String statsSummary = stats == null ? "无统计" : "frame=" + formatMs(stats.getFrameTimeMs())
-                + "ms, render=" + formatMs(stats.getRenderTimeMs()) + "ms";
+    private String buildEnvironmentText(boolean forceStatsRefresh) {
+        String statsSummary = resolveRuntimeStatsSummary(forceStatsRefresh);
         return "MC 1.7.10；窗口=" + runtimeView.getHostWidth() + "x" + runtimeView.getHostHeight()
                 + "；鼠标=" + runtimeView.getMouseX() + "," + runtimeView.getMouseY()
                 + "；字体=" + fontEpoch + "；文本=" + defaultTextMode
                 + "；网络=" + NetTransportFactory.resolveName(Config.netTransport)
                 + "；适配=" + runtimeAdapterSummary
                 + "；" + statsSummary;
+    }
+
+    /**
+     * 节流刷新高频运行时统计，避免测试页普通 DOM 文本每帧打脏整棵 HTML-like 文档。
+     *
+     * @param forceRefresh 是否强制刷新
+     * @return 运行时统计摘要
+     */
+    private String resolveRuntimeStatsSummary(boolean forceRefresh) {
+        if (cachedRuntimeStatsSummary == null || forceRefresh || framesUntilEnvironmentStatsRefresh <= 0) {
+            cachedRuntimeStatsSummary = buildRuntimeStatsSummary();
+            framesUntilEnvironmentStatsRefresh = ENVIRONMENT_STATS_REFRESH_FRAMES;
+        }
+        return cachedRuntimeStatsSummary;
+    }
+
+    private String buildRuntimeStatsSummary() {
+        UiRuntimeStats stats = runtimeView.getUiRuntimeStats();
+        return stats == null ? "无统计" : "frame=" + formatMs(stats.getFrameTimeMs())
+                + "ms, render=" + formatMs(stats.getRenderTimeMs()) + "ms";
     }
 
     /**

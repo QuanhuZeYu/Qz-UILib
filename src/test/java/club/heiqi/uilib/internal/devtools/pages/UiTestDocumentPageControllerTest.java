@@ -461,6 +461,29 @@ public class UiTestDocumentPageControllerTest {
         Assert.assertTrue(containsText(texts, "网络=vanilla"));
     }
 
+    /**
+     * 验证高频 frame/render 统计不会让 test 页环境文本每帧触发布局失效。
+     */
+    @Test
+    public void shouldThrottleRuntimeStatsEnvironmentTextDirtying() {
+        TestFixture fixture = new TestFixture(true);
+
+        fixture.controller.configureDocumentPage();
+        fixture.controller.buildDocument();
+        HtmlLikeDocumentWidget widget = fixture.controller.getHtmlLikeDocumentWidget();
+        widget.applyLayoutBounds(0, 0, 760, 520);
+        widget.resolveLayoutBoxForTest();
+        int initialStaticLayoutGeneration = widget.getPerformanceDiagnosticsSnapshot().getStaticLayoutGeneration();
+
+        for (int index = 0; index < 5; index++) {
+            fixture.controller.beforeDocumentFrame();
+            widget.resolveLayoutBoxForTest();
+        }
+
+        Assert.assertEquals(initialStaticLayoutGeneration,
+                widget.getPerformanceDiagnosticsSnapshot().getStaticLayoutGeneration());
+    }
+
     private static List<String> collectDocumentTexts(HtmlLikeDocumentWidget widget) {
         List<String> texts = new ArrayList<String>();
         if (widget == null || widget.getDocument() == null) {
@@ -530,12 +553,24 @@ public class UiTestDocumentPageControllerTest {
 
     private static final class TestFixture {
 
-        private final TextMeasureService textMeasureService = new DeterministicTextMeasureService();
-        private final DocumentUiScope documentUi = new DocumentUiScope(textMeasureService, UiRuntimeAdapters.empty());
-        private final DirectDocumentPageAuthoringSurface pageSurface = new DirectDocumentPageAuthoringSurface();
-        private final MutableRuntimeView runtimeView = new MutableRuntimeView();
-        private final UiTestDocumentPageController controller = new UiTestDocumentPageController(documentUi,
-                pageSurface, runtimeView);
+        private final TextMeasureService textMeasureService;
+        private final DocumentUiScope documentUi;
+        private final DirectDocumentPageAuthoringSurface pageSurface;
+        private final MutableRuntimeView runtimeView;
+        private final UiTestDocumentPageController controller;
+
+        private TestFixture() {
+            this(false);
+        }
+
+        private TestFixture(boolean incrementingRuntimeStats) {
+            this.textMeasureService = new DeterministicTextMeasureService();
+            this.documentUi = new DocumentUiScope(textMeasureService, UiRuntimeAdapters.empty());
+            this.pageSurface = new DirectDocumentPageAuthoringSurface();
+            this.runtimeView = new MutableRuntimeView();
+            this.runtimeView.incrementingRuntimeStats = incrementingRuntimeStats;
+            this.controller = new UiTestDocumentPageController(documentUi, pageSurface, runtimeView);
+        }
     }
 
     private static final class MutableRuntimeView implements DocumentPageRuntimeView {
@@ -544,6 +579,8 @@ public class UiTestDocumentPageControllerTest {
         private int hostHeight;
         private int mouseX;
         private int mouseY;
+        private boolean incrementingRuntimeStats;
+        private int runtimeStatsCallCount;
 
         @Override
         public int getHostWidth() {
@@ -567,7 +604,15 @@ public class UiTestDocumentPageControllerTest {
 
         @Override
         public UiRuntimeStats getUiRuntimeStats() {
-            return UiRuntimeStats.empty();
+            if (!incrementingRuntimeStats) {
+                return UiRuntimeStats.empty();
+            }
+            runtimeStatsCallCount++;
+            long frameTimeNanos = runtimeStatsCallCount * 1_000_000L;
+            long renderTimeNanos = runtimeStatsCallCount * 500_000L;
+            return new UiRuntimeStats("test", 0, 0, 0, 0, frameTimeNanos, frameTimeNanos,
+                    frameTimeNanos, 60.0D, renderTimeNanos, renderTimeNanos, 0L, 0, 0, 0, 0L, 0L,
+                    0, 0, "", 0L, "", 0L, "", 0, 0);
         }
     }
 
