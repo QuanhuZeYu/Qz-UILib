@@ -44,17 +44,17 @@ public class UiTestDocumentPageControllerTest {
 
         List<String> texts = collectDocumentTexts(fixture.controller.getHtmlLikeDocumentWidget());
         Assert.assertTrue(containsText(texts, "Qz UILib Test"));
-        Assert.assertTrue(containsText(texts, "视觉样例 + 自动断言。已接入 19 个，自动 14 个，人工 5 个。"));
+        Assert.assertTrue(containsText(texts, "视觉样例 + 自动断言。已接入 24 个，自动 18 个，人工 6 个。"));
         Assert.assertTrue(containsText(texts, "一键测试全部"));
         Assert.assertTrue(containsText(texts, "总览"));
         Assert.assertTrue(containsText(texts, "计划"));
         Assert.assertTrue(containsText(texts, "59"));
         Assert.assertTrue(containsText(texts, "已接入"));
-        Assert.assertTrue(containsText(texts, "19"));
+        Assert.assertTrue(containsText(texts, "24"));
         Assert.assertTrue(containsText(texts, "缺口"));
-        Assert.assertTrue(containsText(texts, "40"));
+        Assert.assertTrue(containsText(texts, "35"));
         Assert.assertTrue(containsText(texts, "自动/人工"));
-        Assert.assertTrue(containsText(texts, "14/5"));
+        Assert.assertTrue(containsText(texts, "18/6"));
         Assert.assertTrue(containsText(texts, "最近：尚未运行。"));
         Assert.assertTrue(containsText(texts, "视觉=未观察；语义=未断言；汇总=缺口"));
         Assert.assertTrue(containsText(texts, "视觉=展示中；语义=未断言；汇总=待确认"));
@@ -72,6 +72,7 @@ public class UiTestDocumentPageControllerTest {
         Assert.assertTrue(containsText(texts, "计划 7 · 接入 0 · 缺口 7"));
         Assert.assertTrue(containsText(texts, "计划 6 · 接入 6 · 缺口 0"));
         Assert.assertTrue(containsText(texts, "计划 7 · 接入 7 · 缺口 0"));
+        Assert.assertTrue(containsText(texts, "计划 5 · 接入 5 · 缺口 0"));
         Assert.assertTrue(containsText(texts, "人工确认"));
         Assert.assertTrue(containsText(texts, "需截图/交互确认：VIS-PAINT-003"));
         Assert.assertFalse(containsText(texts, "功能画廊"));
@@ -95,10 +96,10 @@ public class UiTestDocumentPageControllerTest {
         UiTestMatrixState state = fixture.controller.getMatrixState();
 
         Assert.assertEquals(10, registry.getGroups().size());
-        Assert.assertEquals(19, registry.getCases().size());
+        Assert.assertEquals(24, registry.getCases().size());
         Assert.assertEquals(59, state.getTotalPlannedCaseCount());
-        Assert.assertEquals(19, state.getTotalImplementedCaseCount());
-        Assert.assertEquals(40, state.getTotalGapCount());
+        Assert.assertEquals(24, state.getTotalImplementedCaseCount());
+        Assert.assertEquals(35, state.getTotalGapCount());
         Assert.assertEquals(40, state.getTotalPlannedAutomaticCount());
         Assert.assertEquals(19, state.getTotalPlannedManualCount());
 
@@ -122,6 +123,11 @@ public class UiTestDocumentPageControllerTest {
         Assert.assertEquals(7, paintState.getImplementedCaseCount());
         Assert.assertEquals(0, paintState.getGapCount());
         Assert.assertEquals(UiTestSemanticStatus.MANUAL_PENDING, paintState.getSemanticStatus());
+
+        UiTestGroupState inputState = state.getGroupState("INPUT");
+        Assert.assertEquals(5, inputState.getImplementedCaseCount());
+        Assert.assertEquals(0, inputState.getGapCount());
+        Assert.assertEquals(UiTestSemanticStatus.MANUAL_PENDING, inputState.getSemanticStatus());
     }
 
     /**
@@ -269,7 +275,7 @@ public class UiTestDocumentPageControllerTest {
         clickButtonByLabel(fixture.controller.getHtmlLikeDocumentWidget(), "一键测试全部", 0);
 
         List<String> texts = collectDocumentTexts(fixture.controller.getHtmlLikeDocumentWidget());
-        Assert.assertTrue(containsText(texts, "全量完成：19 个；通过 14；失败 0；人工 5。"));
+        Assert.assertTrue(containsText(texts, "全量完成：24 个；通过 18；失败 0；人工 6。"));
         Assert.assertTrue(containsText(texts, "视觉=展示中；语义=自动通过；汇总=待确认"));
         Assert.assertTrue(containsText(texts, "视觉=展示中；语义=人工待确认；汇总=待确认"));
         Assert.assertFalse(containsText(texts, "stageStyle=display=FLEX"));
@@ -363,6 +369,52 @@ public class UiTestDocumentPageControllerTest {
         Assert.assertTrue(containsText(texts, "语义=人工待确认"));
         Assert.assertTrue(getCaseResult(fixture, "VIS-PAINT-007").getActualResult()
                 .contains("hostImageDiff=背景图声明可机器诊断"));
+    }
+
+    /**
+     * 验证 Input 分组接入五张视觉样例，并运行四张自动断言和一张人工诊断。
+     */
+    @Test
+    public void shouldRenderInputSamplesAndRunInputAssertions() {
+        TestFixture fixture = new TestFixture();
+
+        fixture.controller.configureDocumentPage();
+        fixture.controller.buildDocument();
+        clickButtonByLabel(fixture.controller.getHtmlLikeDocumentWidget(), "打开 INPUT", 0);
+
+        List<String> texts = collectDocumentTexts(fixture.controller.getHtmlLikeDocumentWidget());
+        Assert.assertTrue(containsText(texts, "VIS-INPUT-001"));
+        Assert.assertTrue(containsText(texts, "capture/bubble 事件轨道"));
+        clickButtonByLabel(fixture.controller.getHtmlLikeDocumentWidget(), "运行当前样例断言", 0);
+        Assert.assertTrue(getCaseResult(fixture, "VIS-INPUT-001").getActualResult()
+                .contains("propagationDiff=expected root-capture"));
+
+        clickButtonByLabel(fixture.controller.getHtmlLikeDocumentWidget(), "下一张", 0);
+        clickButtonByLabel(fixture.controller.getHtmlLikeDocumentWidget(), "运行当前样例断言", 0);
+        Assert.assertTrue(getCaseResult(fixture, "VIS-INPUT-002").getActualResult()
+                .contains("preventDefaultDiff=expected default-click present"));
+
+        clickButtonByLabel(fixture.controller.getHtmlLikeDocumentWidget(), "下一张", 0);
+        clickButtonByLabel(fixture.controller.getHtmlLikeDocumentWidget(), "运行当前样例断言", 0);
+        Assert.assertTrue(getCaseResult(fixture, "VIS-INPUT-003").getActualResult()
+                .contains("wheelDiff=expected wheel log before default scroll"));
+
+        clickButtonByLabel(fixture.controller.getHtmlLikeDocumentWidget(), "下一张", 0);
+        clickButtonByLabel(fixture.controller.getHtmlLikeDocumentWidget(), "运行当前样例断言", 0);
+        Assert.assertEquals(UiTestSemanticStatus.MANUAL_PENDING,
+                getCaseResult(fixture, "VIS-INPUT-004").getSemanticStatus());
+        Assert.assertTrue(getCaseResult(fixture, "VIS-INPUT-004").getActualResult()
+                .contains("focusVisibleDiff=事件日志可机器诊断"));
+
+        clickButtonByLabel(fixture.controller.getHtmlLikeDocumentWidget(), "下一张", 0);
+        texts = collectDocumentTexts(fixture.controller.getHtmlLikeDocumentWidget());
+        Assert.assertTrue(containsText(texts, "VIS-INPUT-005"));
+        Assert.assertTrue(containsText(texts, "keyboard/textInput 日志"));
+        clickButtonByLabel(fixture.controller.getHtmlLikeDocumentWidget(), "运行当前样例断言", 0);
+        Assert.assertTrue(getCaseResult(fixture, "VIS-INPUT-005").getActualResult()
+                .contains("keyboardTextDiff=expected key capture/target/bubble"));
+        Assert.assertEquals(UiTestSemanticStatus.AUTO_PASSED,
+                getCaseResult(fixture, "VIS-INPUT-005").getSemanticStatus());
     }
 
     /**

@@ -27,6 +27,7 @@ import club.heiqi.uilib.ui.style.values.UiBackgroundImage;
 final class UiTestSampleVisualFactory {
 
     private boolean styleSheetAttached;
+    private final UiTestInputVisualFactory inputVisualFactory = new UiTestInputVisualFactory();
 
     /**
      * 追加指定样例的视觉舞台。
@@ -78,6 +79,8 @@ final class UiTestSampleVisualFactory {
             appendPaintScrollbarDemo(document, stage);
         } else if ("VIS-PAINT-007".equals(id)) {
             appendPaintHostImageDemo(document, stage);
+        } else if (inputVisualFactory.supports(id)) {
+            inputVisualFactory.appendCaseDemo(document, stage, testCase);
         } else {
             appendMutedText(document, stage, "该样例暂无视觉舞台。");
         }
