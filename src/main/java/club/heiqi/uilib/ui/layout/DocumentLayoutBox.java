@@ -152,7 +152,7 @@ public final class DocumentLayoutBox {
                 translatedInlineFragments, margin, border, padding, left + deltaX, top + deltaY, width, height,
                 positionOffsetX, positionOffsetY, resolvedTopInset, resolvedRightInset, resolvedBottomInset,
                 resolvedLeftInset, layoutMutationVersion, subtreeLayoutMutationVersion, layoutTextMeasureEpoch,
-                layoutContainingLeft, layoutFlowTop, layoutContainingWidth, layoutContainingHeight,
+                layoutContainingLeft + deltaX, layoutFlowTop + deltaY, layoutContainingWidth, layoutContainingHeight,
                 layoutForcedContentWidth, layoutForcedContentHeight);
     }
 

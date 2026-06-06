@@ -410,16 +410,15 @@ public final class DocumentLayoutEngine {
         if (previousBox.getLayoutMutationVersion() != element.__getLayoutMutationVersion()
                 || previousBox.getSubtreeLayoutMutationVersion() != element.__getSubtreeLayoutMutationVersion()
                 || previousBox.getLayoutTextMeasureEpoch() != layoutContext.textMeasureService.getEpoch()
-                || previousBox.getLayoutContainingLeft() != containingLeft
-                || previousBox.getLayoutFlowTop() != flowTop
                 || previousBox.getLayoutContainingWidth() != containingWidth
                 || previousBox.getLayoutContainingHeight() != containingHeight
                 || previousBox.getLayoutForcedContentWidth() != forcedContentWidth
                 || previousBox.getLayoutForcedContentHeight() != forcedContentHeight) {
             return null;
         }
-        return previousBox.translatedTo(containingLeft + previousBox.getMargin().getLeft(),
-                flowTop + previousBox.getMargin().getTop());
+        int deltaX = containingLeft - previousBox.getLayoutContainingLeft();
+        int deltaY = flowTop - previousBox.getLayoutFlowTop();
+        return previousBox.translatedTo(previousBox.getLeft() + deltaX, previousBox.getTop() + deltaY);
     }
 
     private static boolean isReusableLayoutDisplay(ComputedStyle computedStyle) {
