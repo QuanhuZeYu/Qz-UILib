@@ -4,10 +4,11 @@
 
 ## 当前接入方式
 
-- CodeGraph 已作为 opencode 全局 MCP 服务接入，服务名为 `codegraph`
-- MCP 启动命令使用全局安装的 `codegraph-mcp`，并显式传入 `--mcp`
-- 当前全局配置排除 `.git`、`.gradle`、`build`、`run`、`node_modules` 等目录，避免索引构建产物、运行目录和依赖缓存
-- 当前全局配置设置 `CODEGRAPH_TELEMETRY=off`，不发送 CodeGraph 匿名遥测
+- 仓库已提供项目级 opencode 配置：`.opencode/opencode.json`
+- 项目级配置显式注册 `codegraph` MCP，启动命令使用 `npx -y @astudioplus/codegraph-mcp --mcp`
+- 协作者只要从仓库内启动 opencode，即可按项目配置加载 CodeGraph；个人全局安装只作为本机加速，不是协作前提
+- 项目级配置排除 `.git`、`.gradle`、`build`、`run`、`node_modules` 等目录，避免索引构建产物、运行目录和依赖缓存
+- 项目级配置设置 `CODEGRAPH_TELEMETRY=off`，不发送 CodeGraph 匿名遥测
 - opencode 配置变更后需要退出并重启 opencode 才会加载新的 MCP
 
 ## 使用定位
