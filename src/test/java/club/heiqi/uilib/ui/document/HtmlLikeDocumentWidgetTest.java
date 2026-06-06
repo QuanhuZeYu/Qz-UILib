@@ -66,6 +66,8 @@ import club.heiqi.uilib.ui.input.UiInputRouter;
 import club.heiqi.uilib.ui.layout.DocumentLayoutBox;
 import club.heiqi.uilib.ui.render.UiRenderContext;
 import club.heiqi.uilib.ui.style.cascade.UiBorderRadiusResolver;
+import club.heiqi.uilib.ui.style.cascade.UiStyleDeclaration;
+import club.heiqi.uilib.ui.style.cascade.UiStyleSheet;
 import club.heiqi.uilib.ui.style.props.UiBorderStyle;
 import club.heiqi.uilib.ui.style.props.UiDisplay;
 import club.heiqi.uilib.ui.style.props.UiFontStyle;
@@ -369,6 +371,162 @@ public class HtmlLikeDocumentWidgetTest {
         assertTextCall(secondContext.textCalls.get(0), "first", 0, 0, 0xFFFFFFFF, false);
         assertTextCall(secondContext.textCalls.get(1), "center", 0, 18, 0xFFFFFFFF, false);
         assertTextCall(secondContext.textCalls.get(2), "last", 0, 36, 0xFFFFFFFF, false);
+    }
+
+    /**
+     * 验证同一父级内移动 DOM 子节点会让布局顺序重新计算。
+     */
+    @Test
+    public void shouldRelayoutWhenChildMovesWithinSameParent() {
+        UiDocument document = UiDocument.create();
+        ElementNode root = document.getRootElement();
+        ElementNode first = document.div();
+        ElementNode moved = document.div();
+        ElementNode last = document.div();
+        first.style().setHeight(UiStyleLength.px(18));
+        moved.style().setHeight(UiStyleLength.px(18));
+        last.style().setHeight(UiStyleLength.px(18));
+        first.appendText("first");
+        moved.appendText("moved");
+        last.appendText("last");
+        root.append(first).append(moved).append(last);
+        HtmlLikeDocumentWidget widget = new HtmlLikeDocumentWidget(document, 120, 80,
+                new CountingTextMeasureService());
+        widget.applyLayoutBounds(0, 0, 120, 80);
+
+        widget.render(new RecordingUiRenderContext());
+        root.insertBefore(last, first);
+        RecordingUiRenderContext movedContext = new RecordingUiRenderContext();
+        widget.render(movedContext);
+
+        Assert.assertEquals(3, movedContext.textCalls.size());
+        assertTextCall(movedContext.textCalls.get(0), "last", 0, 0, 0xFFFFFFFF, false);
+        assertTextCall(movedContext.textCalls.get(1), "first", 0, 18, 0xFFFFFFFF, false);
+        assertTextCall(movedContext.textCalls.get(2), "moved", 0, 36, 0xFFFFFFFF, false);
+    }
+
+    /**
+     * 验证跨父级移动 DOM 子节点时旧父级也会标脏并收缩布局高度。
+     */
+    @Test
+    public void shouldInvalidatePreviousParentWhenChildMovesAcrossParents() {
+        UiDocument document = UiDocument.create();
+        ElementNode root = document.getRootElement();
+        ElementNode source = document.div();
+        ElementNode target = document.div();
+        ElementNode moved = document.div();
+        ElementNode sourceTail = document.div();
+        ElementNode targetHead = document.div();
+        moved.style().setHeight(UiStyleLength.px(18));
+        sourceTail.style().setHeight(UiStyleLength.px(18));
+        targetHead.style().setHeight(UiStyleLength.px(18));
+        moved.appendText("moved");
+        sourceTail.appendText("source-tail");
+        targetHead.appendText("target-head");
+        source.append(moved).append(sourceTail);
+        target.append(targetHead);
+        root.append(source).append(target);
+        HtmlLikeDocumentWidget widget = new HtmlLikeDocumentWidget(document, 120, 100,
+                new CountingTextMeasureService());
+        widget.applyLayoutBounds(0, 0, 120, 100);
+
+        widget.render(new RecordingUiRenderContext());
+        target.append(moved);
+        RecordingUiRenderContext movedContext = new RecordingUiRenderContext();
+        widget.render(movedContext);
+
+        Assert.assertEquals(3, movedContext.textCalls.size());
+        assertTextCall(movedContext.textCalls.get(0), "source-tail", 0, 0, 0xFFFFFFFF, false);
+        assertTextCall(movedContext.textCalls.get(1), "target-head", 0, 18, 0xFFFFFFFF, false);
+        assertTextCall(movedContext.textCalls.get(2), "moved", 0, 36, 0xFFFFFFFF, false);
+    }
+
+    /**
+     * 验证继承性 layout 样式变化会让后代子树重新布局，而不是复用旧行高。
+     */
+    @Test
+    public void shouldInvalidateDescendantsWhenInheritedLayoutStyleChanges() {
+        UiDocument document = UiDocument.create();
+        ElementNode root = document.getRootElement();
+        ElementNode container = document.div();
+        ElementNode inherited = document.div();
+        ElementNode after = document.div();
+        inherited.appendText("inherited");
+        after.appendText("after");
+        container.append(inherited).append(after);
+        root.append(container);
+        HtmlLikeDocumentWidget widget = new HtmlLikeDocumentWidget(document, 120, 100,
+                new CountingTextMeasureService());
+        widget.applyLayoutBounds(0, 0, 120, 100);
+
+        widget.render(new RecordingUiRenderContext());
+        container.style().setLineHeight(UiStyleLength.px(30));
+        RecordingUiRenderContext changedContext = new RecordingUiRenderContext();
+        widget.render(changedContext);
+
+        Assert.assertEquals(2, changedContext.textCalls.size());
+        assertTextCall(changedContext.textCalls.get(0), "inherited", 0, 0, 0xFFFFFFFF, false);
+        assertTextCall(changedContext.textCalls.get(1), "after", 0, 30, 0xFFFFFFFF, false);
+    }
+
+    /**
+     * 验证文档级样式表变化会全局失效布局缓存并应用新规则。
+     */
+    @Test
+    public void shouldInvalidateLayoutCacheWhenStyleSheetChanges() {
+        UiDocument document = UiDocument.create();
+        ElementNode root = document.getRootElement();
+        ElementNode target = document.div();
+        ElementNode after = document.div();
+        target.setClassName("sheet-target");
+        target.appendText("sheet");
+        after.appendText("after");
+        root.append(target).append(after);
+        HtmlLikeDocumentWidget widget = new HtmlLikeDocumentWidget(document, 120, 100,
+                new CountingTextMeasureService());
+        widget.applyLayoutBounds(0, 0, 120, 100);
+
+        widget.render(new RecordingUiRenderContext());
+        document.addStyleSheet(UiStyleSheet.create().addRule(".sheet-target",
+                new UiStyleDeclaration().setLineHeight(UiStyleLength.px(30))));
+        RecordingUiRenderContext changedContext = new RecordingUiRenderContext();
+        widget.render(changedContext);
+        HtmlLikeDocumentWidget.PerformanceDiagnosticsSnapshot snapshot = widget.getPerformanceDiagnosticsSnapshot();
+
+        Assert.assertEquals(0, snapshot.getLastLayoutReusedSubtreeCount());
+        Assert.assertEquals(2, changedContext.textCalls.size());
+        assertTextCall(changedContext.textCalls.get(0), "sheet", 0, 0, 0xFFFFFFFF, false);
+        assertTextCall(changedContext.textCalls.get(1), "after", 0, 30, 0xFFFFFFFF, false);
+    }
+
+    /**
+     * 验证文本测量 epoch 推进后不会复用旧文本布局盒。
+     */
+    @Test
+    public void shouldInvalidateLayoutReuseWhenTextMeasureEpochChanges() {
+        UiDocument document = UiDocument.create();
+        ElementNode root = document.getRootElement();
+        ElementNode first = document.div();
+        ElementNode second = document.div();
+        first.appendText("first");
+        second.appendText("second");
+        root.append(first).append(second);
+        CountingTextMeasureService textMeasureService = new CountingTextMeasureService();
+        HtmlLikeDocumentWidget widget = new HtmlLikeDocumentWidget(document, 120, 80, textMeasureService);
+        widget.applyLayoutBounds(0, 0, 120, 80);
+
+        widget.render(new RecordingUiRenderContext());
+        int measureCountAfterInitialRender = textMeasureService.getMeasureCount();
+        textMeasureService.advanceEpoch();
+        RecordingUiRenderContext changedContext = new RecordingUiRenderContext();
+        widget.render(changedContext);
+        HtmlLikeDocumentWidget.PerformanceDiagnosticsSnapshot snapshot = widget.getPerformanceDiagnosticsSnapshot();
+
+        Assert.assertEquals(0, snapshot.getLastLayoutReusedSubtreeCount());
+        Assert.assertTrue(textMeasureService.getMeasureCount() > measureCountAfterInitialRender);
+        Assert.assertEquals(2, changedContext.textCalls.size());
+        assertTextCall(changedContext.textCalls.get(0), "first", 0, 0, 0xFFFFFFFF, false);
+        assertTextCall(changedContext.textCalls.get(1), "second", 0, 18, 0xFFFFFFFF, false);
     }
 
     /**
@@ -4915,14 +5073,19 @@ public class HtmlLikeDocumentWidgetTest {
     private static final class CountingTextMeasureService implements TextMeasureService {
 
         private int measureCount;
+        private int epoch = 1;
 
         private int getMeasureCount() {
             return measureCount;
         }
 
+        private void advanceEpoch() {
+            epoch++;
+        }
+
         @Override
         public int getEpoch() {
-            return 1;
+            return epoch;
         }
 
         @Override
