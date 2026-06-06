@@ -84,7 +84,6 @@ public final class UiStyleDeclaration {
     private UiStyleInsets margin;
     private UiStyleInsets padding;
     private UiStyleLength borderWidth;
-    private UiStyleLength borderRadius;
     private UiOverflow overflowX;
     private UiOverflow overflowY;
     private UiFlexDirection flexDirection;
@@ -109,13 +108,10 @@ public final class UiStyleDeclaration {
     private DocumentAnimationFillMode animationFillMode;
     private DocumentAnimationTimingFunction animationTimingFunction;
     private UiAnimationDirection animationDirection;
-    private UiStyleLength backdropBlurRadius;
-    private Float backdropSaturation;
     private UiStyleLength lineHeight;
     private UiTextAlign textAlign;
     private UiWhiteSpace whiteSpace;
     private UiTextOverflow textOverflow;
-    private UiVisibility visibility;
     private UiStyleLength minWidth;
     private UiStyleLength maxWidth;
     private UiStyleLength minHeight;
@@ -123,32 +119,22 @@ public final class UiStyleDeclaration {
     private UiStyleLength flexBasis;
     private UiAlignSelf alignSelf;
     private UiFlexWrap flexWrap;
-    private UiBoxShadow boxShadow;
-    private UiBorderStyle borderStyle;
     private UiBorderCollapse borderCollapse;
-    private UiCursor cursor;
-    private UiBorderRadius borderRadiusCorners;
-    private UiBackgroundImage backgroundImage;
-    private UiTextDecoration textDecoration;
-    private UiTextShadow textShadow;
     private UiTextTransform textTransform;
     private UiStyleLength textIndent;
     private UiFontWeight fontWeight;
     private UiFontStyle fontStyle;
-    private UiPointerEvents pointerEvents;
-    private UiOutline outline;
     private UiStyleInsets borderWidthSides;
-    private UiBorderColors borderColors;
     private UiStyleLength letterSpacing;
     private UiWordBreak wordBreak;
     private UiOverflowWrap overflowWrap;
     private Float aspectRatio;
     private UiObjectFit objectFit;
     private UiPseudoElementContent content;
-    private UiScrollbarColor scrollbarColor;
     private UiScrollbarWidth scrollbarWidth;
     private UiListStyleType listStyleType;
-    private UiTransform transform;
+    private final StyleDeclarationSlot<UiStyleLength> borderRadiusSlot =
+            new StyleDeclarationSlot<UiStyleLength>(UiStyleProperty.BORDER_RADIUS, UiStyleChangeImpact.PAINT);
     private final StyleDeclarationSlot<Float> opacitySlot =
             new StyleDeclarationSlot<Float>(UiStyleProperty.OPACITY, UiStyleChangeImpact.PAINT);
     private final StyleDeclarationSlot<Integer> backgroundColorSlot =
@@ -157,6 +143,39 @@ public final class UiStyleDeclaration {
             new StyleDeclarationSlot<Integer>(UiStyleProperty.BORDER_COLOR, UiStyleChangeImpact.PAINT);
     private final StyleDeclarationSlot<Integer> textColorSlot =
             new StyleDeclarationSlot<Integer>(UiStyleProperty.TEXT_COLOR, UiStyleChangeImpact.PAINT);
+    private final StyleDeclarationSlot<UiStyleLength> backdropBlurRadiusSlot =
+            new StyleDeclarationSlot<UiStyleLength>(UiStyleProperty.BACKDROP_BLUR_RADIUS,
+                    UiStyleChangeImpact.PAINT);
+    private final StyleDeclarationSlot<Float> backdropSaturationSlot =
+            new StyleDeclarationSlot<Float>(UiStyleProperty.BACKDROP_SATURATION, UiStyleChangeImpact.PAINT);
+    private final StyleDeclarationSlot<UiVisibility> visibilitySlot =
+            new StyleDeclarationSlot<UiVisibility>(UiStyleProperty.VISIBILITY, UiStyleChangeImpact.PAINT);
+    private final StyleDeclarationSlot<UiBoxShadow> boxShadowSlot =
+            new StyleDeclarationSlot<UiBoxShadow>(UiStyleProperty.BOX_SHADOW, UiStyleChangeImpact.PAINT);
+    private final StyleDeclarationSlot<UiBorderStyle> borderStyleSlot =
+            new StyleDeclarationSlot<UiBorderStyle>(UiStyleProperty.BORDER_STYLE, UiStyleChangeImpact.PAINT);
+    private final StyleDeclarationSlot<UiCursor> cursorSlot =
+            new StyleDeclarationSlot<UiCursor>(UiStyleProperty.CURSOR, UiStyleChangeImpact.PAINT);
+    private final StyleDeclarationSlot<UiBorderRadius> borderRadiusCornersSlot =
+            new StyleDeclarationSlot<UiBorderRadius>(UiStyleProperty.BORDER_RADIUS_CORNERS,
+                    UiStyleChangeImpact.PAINT);
+    private final StyleDeclarationSlot<UiBackgroundImage> backgroundImageSlot =
+            new StyleDeclarationSlot<UiBackgroundImage>(UiStyleProperty.BACKGROUND_IMAGE,
+                    UiStyleChangeImpact.PAINT);
+    private final StyleDeclarationSlot<UiTextDecoration> textDecorationSlot =
+            new StyleDeclarationSlot<UiTextDecoration>(UiStyleProperty.TEXT_DECORATION, UiStyleChangeImpact.PAINT);
+    private final StyleDeclarationSlot<UiTextShadow> textShadowSlot =
+            new StyleDeclarationSlot<UiTextShadow>(UiStyleProperty.TEXT_SHADOW, UiStyleChangeImpact.PAINT);
+    private final StyleDeclarationSlot<UiPointerEvents> pointerEventsSlot =
+            new StyleDeclarationSlot<UiPointerEvents>(UiStyleProperty.POINTER_EVENTS, UiStyleChangeImpact.PAINT);
+    private final StyleDeclarationSlot<UiOutline> outlineSlot =
+            new StyleDeclarationSlot<UiOutline>(UiStyleProperty.OUTLINE, UiStyleChangeImpact.PAINT);
+    private final StyleDeclarationSlot<UiBorderColors> borderColorsSlot =
+            new StyleDeclarationSlot<UiBorderColors>(UiStyleProperty.BORDER_COLORS, UiStyleChangeImpact.PAINT);
+    private final StyleDeclarationSlot<UiScrollbarColor> scrollbarColorSlot =
+            new StyleDeclarationSlot<UiScrollbarColor>(UiStyleProperty.SCROLLBAR_COLOR, UiStyleChangeImpact.PAINT);
+    private final StyleDeclarationSlot<UiTransform> transformSlot =
+            new StyleDeclarationSlot<UiTransform>(UiStyleProperty.TRANSFORM, UiStyleChangeImpact.PAINT);
     private final EnumMap<UiStyleProperty, Object> declaredValues =
             new EnumMap<UiStyleProperty, Object>(UiStyleProperty.class);
     private final EnumMap<UiStyleProperty, UiStyleKeyword> keywords =
@@ -531,7 +550,7 @@ public final class UiStyleDeclaration {
     }
 
     public UiStyleLength getBorderRadius() {
-        return borderRadius;
+        return borderRadiusSlot.get();
     }
 
     public UiStyleDeclaration setBorderRadius(UiStyleLength borderRadius) {
@@ -995,7 +1014,7 @@ public final class UiStyleDeclaration {
     }
 
     public UiStyleLength getBackdropBlurRadius() {
-        return backdropBlurRadius;
+        return backdropBlurRadiusSlot.get();
     }
 
     public UiStyleDeclaration setBackdropBlurRadius(UiStyleLength backdropBlurRadius) {
@@ -1007,7 +1026,7 @@ public final class UiStyleDeclaration {
     }
 
     public Float getBackdropSaturation() {
-        return backdropSaturation;
+        return backdropSaturationSlot.get();
     }
 
     public UiStyleDeclaration setBackdropSaturation(float backdropSaturation) {
@@ -1091,7 +1110,7 @@ public final class UiStyleDeclaration {
     }
 
     public UiVisibility getVisibility() {
-        return visibility;
+        return visibilitySlot.get();
     }
 
     /**
@@ -1235,7 +1254,7 @@ public final class UiStyleDeclaration {
     }
 
     public UiBoxShadow getBoxShadow() {
-        return boxShadow;
+        return boxShadowSlot.get();
     }
 
     /**
@@ -1253,7 +1272,7 @@ public final class UiStyleDeclaration {
     }
 
     public UiBorderStyle getBorderStyle() {
-        return borderStyle;
+        return borderStyleSlot.get();
     }
 
     /**
@@ -1294,7 +1313,7 @@ public final class UiStyleDeclaration {
     }
 
     public UiCursor getCursor() {
-        return cursor;
+        return cursorSlot.get();
     }
 
     /**
@@ -1319,7 +1338,7 @@ public final class UiStyleDeclaration {
      * @return 分角圆角值；未设置时返回 null
      */
     public UiBorderRadius getBorderRadiusCorners() {
-        return borderRadiusCorners;
+        return borderRadiusCornersSlot.get();
     }
 
     /**
@@ -1339,7 +1358,7 @@ public final class UiStyleDeclaration {
     }
 
     public UiBackgroundImage getBackgroundImage() {
-        return backgroundImage;
+        return backgroundImageSlot.get();
     }
 
     /**
@@ -1359,7 +1378,7 @@ public final class UiStyleDeclaration {
     }
 
     public UiTextDecoration getTextDecoration() {
-        return textDecoration;
+        return textDecorationSlot.get();
     }
 
     /**
@@ -1377,7 +1396,7 @@ public final class UiStyleDeclaration {
     }
 
     public UiTextShadow getTextShadow() {
-        return textShadow;
+        return textShadowSlot.get();
     }
 
     /**
@@ -1480,7 +1499,7 @@ public final class UiStyleDeclaration {
     }
 
     public UiPointerEvents getPointerEvents() {
-        return pointerEvents;
+        return pointerEventsSlot.get();
     }
 
     /**
@@ -1500,7 +1519,7 @@ public final class UiStyleDeclaration {
     }
 
     public UiOutline getOutline() {
-        return outline;
+        return outlineSlot.get();
     }
 
     /**
@@ -1554,7 +1573,7 @@ public final class UiStyleDeclaration {
      * @return 分边 border-color；未设置时返回 null
      */
     public UiBorderColors getBorderColors() {
-        return borderColors;
+        return borderColorsSlot.get();
     }
 
     /**
@@ -1685,7 +1704,7 @@ public final class UiStyleDeclaration {
     }
 
     public UiScrollbarColor getScrollbarColor() {
-        return scrollbarColor;
+        return scrollbarColorSlot.get();
     }
 
     /**
@@ -1750,7 +1769,7 @@ public final class UiStyleDeclaration {
     }
 
     public UiTransform getTransform() {
-        return transform;
+        return transformSlot.get();
     }
 
     /**
@@ -1865,9 +1884,7 @@ public final class UiStyleDeclaration {
     }
 
     private UiStyleDeclaration updateBorderRadius(UiStyleLength value) {
-        UiStyleLength previousValue = borderRadius;
-        borderRadius = value;
-        return updateProperty(UiStyleProperty.BORDER_RADIUS, previousValue, value, UiStyleChangeImpact.PAINT);
+        return borderRadiusSlot.update(value);
     }
 
     private UiStyleDeclaration updateOverflowX(UiOverflow value) {
@@ -2038,15 +2055,11 @@ public final class UiStyleDeclaration {
     }
 
     private UiStyleDeclaration updateBackdropBlurRadius(UiStyleLength value) {
-        UiStyleLength previousValue = backdropBlurRadius;
-        backdropBlurRadius = value;
-        return updateProperty(UiStyleProperty.BACKDROP_BLUR_RADIUS, previousValue, value, UiStyleChangeImpact.PAINT);
+        return backdropBlurRadiusSlot.update(value);
     }
 
     private UiStyleDeclaration updateBackdropSaturation(Float value) {
-        Float previousValue = backdropSaturation;
-        backdropSaturation = value;
-        return updateProperty(UiStyleProperty.BACKDROP_SATURATION, previousValue, value, UiStyleChangeImpact.PAINT);
+        return backdropSaturationSlot.update(value);
     }
 
     private UiStyleDeclaration updateLineHeight(UiStyleLength value) {
@@ -2074,10 +2087,7 @@ public final class UiStyleDeclaration {
     }
 
     private UiStyleDeclaration updateVisibility(UiVisibility value) {
-        UiVisibility previousValue = visibility;
-        visibility = value;
-        // visibility 变化不影响布局，只影响绘制和命中测试
-        return updateProperty(UiStyleProperty.VISIBILITY, previousValue, value, UiStyleChangeImpact.PAINT);
+        return visibilitySlot.update(value);
     }
 
     private UiStyleDeclaration updateMinWidth(UiStyleLength value) {
@@ -2123,15 +2133,11 @@ public final class UiStyleDeclaration {
     }
 
     private UiStyleDeclaration updateBoxShadow(UiBoxShadow value) {
-        UiBoxShadow previousValue = boxShadow;
-        boxShadow = value;
-        return updateProperty(UiStyleProperty.BOX_SHADOW, previousValue, value, UiStyleChangeImpact.PAINT);
+        return boxShadowSlot.update(value);
     }
 
     private UiStyleDeclaration updateBorderStyle(UiBorderStyle value) {
-        UiBorderStyle previousValue = borderStyle;
-        borderStyle = value;
-        return updateProperty(UiStyleProperty.BORDER_STYLE, previousValue, value, UiStyleChangeImpact.PAINT);
+        return borderStyleSlot.update(value);
     }
 
     private UiStyleDeclaration updateBorderCollapse(UiBorderCollapse value) {
@@ -2141,34 +2147,23 @@ public final class UiStyleDeclaration {
     }
 
     private UiStyleDeclaration updateCursor(UiCursor value) {
-        UiCursor previousValue = cursor;
-        cursor = value;
-        return updateProperty(UiStyleProperty.CURSOR, previousValue, value, UiStyleChangeImpact.PAINT);
+        return cursorSlot.update(value);
     }
 
     private UiStyleDeclaration updateBorderRadiusCorners(UiBorderRadius value) {
-        UiBorderRadius previousValue = borderRadiusCorners;
-        borderRadiusCorners = value;
-        return updateProperty(UiStyleProperty.BORDER_RADIUS_CORNERS, previousValue, value,
-                UiStyleChangeImpact.PAINT);
+        return borderRadiusCornersSlot.update(value);
     }
 
     private UiStyleDeclaration updateBackgroundImage(UiBackgroundImage value) {
-        UiBackgroundImage previousValue = backgroundImage;
-        backgroundImage = value;
-        return updateProperty(UiStyleProperty.BACKGROUND_IMAGE, previousValue, value, UiStyleChangeImpact.PAINT);
+        return backgroundImageSlot.update(value);
     }
 
     private UiStyleDeclaration updateTextDecoration(UiTextDecoration value) {
-        UiTextDecoration previousValue = textDecoration;
-        textDecoration = value;
-        return updateProperty(UiStyleProperty.TEXT_DECORATION, previousValue, value, UiStyleChangeImpact.PAINT);
+        return textDecorationSlot.update(value);
     }
 
     private UiStyleDeclaration updateTextShadow(UiTextShadow value) {
-        UiTextShadow previousValue = textShadow;
-        textShadow = value;
-        return updateProperty(UiStyleProperty.TEXT_SHADOW, previousValue, value, UiStyleChangeImpact.PAINT);
+        return textShadowSlot.update(value);
     }
 
     private UiStyleDeclaration updateTextTransform(UiTextTransform value) {
@@ -2196,15 +2191,11 @@ public final class UiStyleDeclaration {
     }
 
     private UiStyleDeclaration updatePointerEvents(UiPointerEvents value) {
-        UiPointerEvents previousValue = pointerEvents;
-        pointerEvents = value;
-        return updateProperty(UiStyleProperty.POINTER_EVENTS, previousValue, value, UiStyleChangeImpact.PAINT);
+        return pointerEventsSlot.update(value);
     }
 
     private UiStyleDeclaration updateOutline(UiOutline value) {
-        UiOutline previousValue = outline;
-        outline = value;
-        return updateProperty(UiStyleProperty.OUTLINE, previousValue, value, UiStyleChangeImpact.PAINT);
+        return outlineSlot.update(value);
     }
 
     private UiStyleDeclaration updateBorderWidthSides(UiStyleInsets value) {
@@ -2214,9 +2205,7 @@ public final class UiStyleDeclaration {
     }
 
     private UiStyleDeclaration updateBorderColors(UiBorderColors value) {
-        UiBorderColors previousValue = borderColors;
-        borderColors = value;
-        return updateProperty(UiStyleProperty.BORDER_COLORS, previousValue, value, UiStyleChangeImpact.PAINT);
+        return borderColorsSlot.update(value);
     }
 
     private UiStyleDeclaration updateLetterSpacing(UiStyleLength value) {
@@ -2256,9 +2245,7 @@ public final class UiStyleDeclaration {
     }
 
     private UiStyleDeclaration updateScrollbarColor(UiScrollbarColor value) {
-        UiScrollbarColor previousValue = scrollbarColor;
-        scrollbarColor = value;
-        return updateProperty(UiStyleProperty.SCROLLBAR_COLOR, previousValue, value, UiStyleChangeImpact.PAINT);
+        return scrollbarColorSlot.update(value);
     }
 
     private UiStyleDeclaration updateScrollbarWidth(UiScrollbarWidth value) {
@@ -2274,9 +2261,7 @@ public final class UiStyleDeclaration {
     }
 
     private UiStyleDeclaration updateTransform(UiTransform value) {
-        UiTransform previousValue = transform;
-        transform = value;
-        return updateProperty(UiStyleProperty.TRANSFORM, previousValue, value, UiStyleChangeImpact.PAINT);
+        return transformSlot.update(value);
     }
 
     private boolean hasConcreteProperty(UiStyleProperty property) {
@@ -2299,7 +2284,6 @@ public final class UiStyleDeclaration {
             case MARGIN: margin = null; break;
             case PADDING: padding = null; break;
             case BORDER_WIDTH: borderWidth = null; break;
-            case BORDER_RADIUS: borderRadius = null; break;
             case OVERFLOW_X: overflowX = null; break;
             case OVERFLOW_Y: overflowY = null; break;
             case FLEX_DIRECTION: flexDirection = null; break;
@@ -2324,13 +2308,10 @@ public final class UiStyleDeclaration {
             case ANIMATION_FILL_MODE: animationFillMode = null; break;
             case ANIMATION_TIMING: animationTimingFunction = null; break;
             case ANIMATION_DIRECTION: animationDirection = null; break;
-            case BACKDROP_BLUR_RADIUS: backdropBlurRadius = null; break;
-            case BACKDROP_SATURATION: backdropSaturation = null; break;
             case LINE_HEIGHT: lineHeight = null; break;
             case TEXT_ALIGN: textAlign = null; break;
             case WHITE_SPACE: whiteSpace = null; break;
             case TEXT_OVERFLOW: textOverflow = null; break;
-            case VISIBILITY: visibility = null; break;
             case MIN_WIDTH: minWidth = null; break;
             case MAX_WIDTH: maxWidth = null; break;
             case MIN_HEIGHT: minHeight = null; break;
@@ -2338,32 +2319,32 @@ public final class UiStyleDeclaration {
             case FLEX_BASIS: flexBasis = null; break;
             case ALIGN_SELF: alignSelf = null; break;
             case FLEX_WRAP: flexWrap = null; break;
-            case BOX_SHADOW: boxShadow = null; break;
-            case BORDER_STYLE: borderStyle = null; break;
+            case BOX_SHADOW: break;
+            case BORDER_STYLE: break;
             case BORDER_COLLAPSE: borderCollapse = null; break;
-            case CURSOR: cursor = null; break;
-            case BORDER_RADIUS_CORNERS: borderRadiusCorners = null; break;
-            case BACKGROUND_IMAGE: backgroundImage = null; break;
-            case TEXT_DECORATION: textDecoration = null; break;
-            case TEXT_SHADOW: textShadow = null; break;
+            case CURSOR: break;
+            case BORDER_RADIUS_CORNERS: break;
+            case BACKGROUND_IMAGE: break;
+            case TEXT_DECORATION: break;
+            case TEXT_SHADOW: break;
             case TEXT_TRANSFORM: textTransform = null; break;
             case TEXT_INDENT: textIndent = null; break;
             case FONT_WEIGHT: fontWeight = null; break;
             case FONT_STYLE: fontStyle = null; break;
-            case POINTER_EVENTS: pointerEvents = null; break;
-            case OUTLINE: outline = null; break;
+            case POINTER_EVENTS: break;
+            case OUTLINE: break;
             case BORDER_WIDTH_SIDES: borderWidthSides = null; break;
-            case BORDER_COLORS: borderColors = null; break;
+            case BORDER_COLORS: break;
             case LETTER_SPACING: letterSpacing = null; break;
             case WORD_BREAK: wordBreak = null; break;
             case OVERFLOW_WRAP: overflowWrap = null; break;
             case ASPECT_RATIO: aspectRatio = null; break;
             case OBJECT_FIT: objectFit = null; break;
             case CONTENT: content = null; break;
-            case SCROLLBAR_COLOR: scrollbarColor = null; break;
+            case SCROLLBAR_COLOR: break;
             case SCROLLBAR_WIDTH: scrollbarWidth = null; break;
             case LIST_STYLE_TYPE: listStyleType = null; break;
-            case TRANSFORM: transform = null; break;
+            case TRANSFORM: break;
             default: break;
         }
     }
@@ -2391,7 +2372,6 @@ public final class UiStyleDeclaration {
         margin = resolvedSource.margin;
         padding = resolvedSource.padding;
         borderWidth = resolvedSource.borderWidth;
-        borderRadius = resolvedSource.borderRadius;
         overflowX = resolvedSource.overflowX;
         overflowY = resolvedSource.overflowY;
         flexDirection = resolvedSource.flexDirection;
@@ -2416,13 +2396,10 @@ public final class UiStyleDeclaration {
         animationFillMode = resolvedSource.animationFillMode;
         animationTimingFunction = resolvedSource.animationTimingFunction;
         animationDirection = resolvedSource.animationDirection;
-        backdropBlurRadius = resolvedSource.backdropBlurRadius;
-        backdropSaturation = resolvedSource.backdropSaturation;
         lineHeight = resolvedSource.lineHeight;
         textAlign = resolvedSource.textAlign;
         whiteSpace = resolvedSource.whiteSpace;
         textOverflow = resolvedSource.textOverflow;
-        visibility = resolvedSource.visibility;
         minWidth = resolvedSource.minWidth;
         maxWidth = resolvedSource.maxWidth;
         minHeight = resolvedSource.minHeight;
@@ -2430,32 +2407,20 @@ public final class UiStyleDeclaration {
         flexBasis = resolvedSource.flexBasis;
         alignSelf = resolvedSource.alignSelf;
         flexWrap = resolvedSource.flexWrap;
-        boxShadow = resolvedSource.boxShadow;
-        borderStyle = resolvedSource.borderStyle;
         borderCollapse = resolvedSource.borderCollapse;
-        cursor = resolvedSource.cursor;
-        borderRadiusCorners = resolvedSource.borderRadiusCorners;
-        backgroundImage = resolvedSource.backgroundImage;
-        textDecoration = resolvedSource.textDecoration;
-        textShadow = resolvedSource.textShadow;
         textTransform = resolvedSource.textTransform;
         textIndent = resolvedSource.textIndent;
         fontWeight = resolvedSource.fontWeight;
         fontStyle = resolvedSource.fontStyle;
-        pointerEvents = resolvedSource.pointerEvents;
-        outline = resolvedSource.outline;
         borderWidthSides = resolvedSource.borderWidthSides;
-        borderColors = resolvedSource.borderColors;
         letterSpacing = resolvedSource.letterSpacing;
         wordBreak = resolvedSource.wordBreak;
         overflowWrap = resolvedSource.overflowWrap;
         aspectRatio = resolvedSource.aspectRatio;
         objectFit = resolvedSource.objectFit;
         content = resolvedSource.content;
-        scrollbarColor = resolvedSource.scrollbarColor;
         scrollbarWidth = resolvedSource.scrollbarWidth;
         listStyleType = resolvedSource.listStyleType;
-        transform = resolvedSource.transform;
         declaredValues.clear();
         declaredValues.putAll(resolvedSource.declaredValues);
         keywords.clear();
