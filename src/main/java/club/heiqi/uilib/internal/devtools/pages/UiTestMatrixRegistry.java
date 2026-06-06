@@ -170,8 +170,8 @@ final class UiTestMatrixRegistry {
                 "block flow / flex min-content / table auto / inline / fixed/sticky 已以视觉样例展示。",
                 "视觉展示：已接入 6 张布局样例", 0xFF38BDF8));
         items.add(new UiTestGalleryItem("控件能力画廊",
-                "button / input / textarea / select / slider / tab 将以真实控件状态展示。",
-                "视觉展示：待接入真实控件样例", 0xFF34D399));
+                "button / input / textarea / select / slider / tab 已以真实控件状态展示。",
+                "视觉展示：已接入 7 张控件样例", 0xFF34D399));
         items.add(new UiTestGalleryItem("绘制能力画廊",
                 "stacking / opacity / clip / transform / top-layer / scrollbar / host image 已以分层舞台展示。",
                 "视觉展示：已接入 7 张绘制样例", 0xFFF59E0B));
@@ -315,6 +315,44 @@ final class UiTestMatrixRegistry {
                 "可聚焦 target 面板同时注册 key 与 textInput 日志，展示按键码、输入文本和传播阶段。",
                 "预期结果：key 日志先按 DOM 顺序出现，随后 textInput 日志记录输入文本。",
                 "自动断言：聚焦 target，发送 key 与 textInput，检查两类事件传播顺序。", ""));
+        // CTRL 001-007
+        cases.add(new UiTestCaseSpec("VIS-CTRL-001", "CTRL", "button 默认/focus/disabled 状态",
+                "button 控件应在默认、键盘焦点、悬停、按下和 disabled 状态间同步视觉与 action 语义。",
+                "三枚真实 DocumentButtonControl 横排展示主按钮、focus/hover 观察按钮和禁用按钮，日志记录 action。",
+                "预期结果：主按钮可点击并更新日志，禁用按钮保持灰态且不触发 action，focus/hover 按钮可用于截图观察。",
+                "自动断言：点击主按钮和禁用按钮，检查 action 日志、disabled 布尔属性和禁用按钮无事件。", ""));
+        cases.add(new UiTestCaseSpec("VIS-CTRL-002", "CTRL", "input text/password/number 值语义",
+                "input type=text 保留文本，password 显示掩码但真实 change 值保留，number 过滤非数值语法字符。",
+                "三枚 DocumentTextInputControl 分别展示 text/password/number，日志输出 change 值。",
+                "预期结果：text 显示 Alpha，password 显示掩码但日志记录 Secret，number 只保留 -12.5E3。",
+                "自动断言：聚焦三个输入框并发送文本，检查 value 属性、password 掩码与 change 日志。", ""));
+        cases.add(new UiTestCaseSpec("VIS-CTRL-003", "CTRL", "textarea caret/selection 多行状态",
+                "textarea 支持多行 value、selection 替换、caret 渲染、滚动和 disabled/readOnly 边界。",
+                "真实 DocumentTextAreaControl 展示多行文本、黄色 caret 与蓝色 selection 色，日志记录替换后的值。",
+                "预期结果：多行内容可见，聚焦后黄色 caret 与蓝色 selection 清晰，不随控件偏移错位。",
+                "自动诊断：执行 Ctrl+A 替换并输出 value、布局盒和滚动摘要；caret/selection 绘制需截图确认。",
+                "textarea caret 与 selection 的真实绘制发生在 custom renderer 中，需要游戏内截图确认颜色、位置和滚动观感。"));
+        cases.add(new UiTestCaseSpec("VIS-CTRL-004", "CTRL", "checkbox/radio checked 与 change",
+                "checkbox 支持 checked/mixed/disabled，radio group 保持单选互斥并触发 change。",
+                "复选框列展示未选、已选、半选、禁用；旁侧单选组展示三项互斥选择。",
+                "预期结果：点击 checkbox 后变为 checked，radio 只选中专家项，mixed 与 disabled 状态标签稳定。",
+                "自动断言：点击 checkbox 与 radio 第三项，检查 aria-checked、aria-disabled 与 change 日志。", ""));
+        cases.add(new UiTestCaseSpec("VIS-CTRL-005", "CTRL", "select 弹层与 table 状态表",
+                "select 当前值写入 value/aria-selected，展开面板使用 top-layer 语义；table 控件保持行列对齐。",
+                "DocumentSelectControl 与 DocumentTableControl 并排展示，表格记录 select value、popup 和布局状态。",
+                "预期结果：select 当前值为石头，展开后 popup 覆盖在控件下方，表格行列边框对齐。",
+                "自动诊断：打开 select 并输出 value、aria-expanded、popup top-layer 与 table 布局摘要；弹层位置需截图确认。",
+                "select popup 的 top-layer 位置、遮挡、选项命中和 table 视觉对齐需要游戏内截图人工确认。"));
+        cases.add(new UiTestCaseSpec("VIS-CTRL-006", "CTRL", "slider/toggle 值与开关状态",
+                "slider 通过键盘和拖拽更新 aria-valuenow，toggle 通过点击/键盘更新 aria-checked 并触发 change。",
+                "水平 DocumentSliderControl 与 DocumentToggleSwitchControl 并排展示，日志记录数值和开关变化。",
+                "预期结果：slider 初始 40，键盘右箭头后为 50；toggle 初始关闭，Enter 后开启。",
+                "自动断言：聚焦 slider 发送右箭头，聚焦 toggle 发送 Enter，检查 aria 和 change 日志。", ""));
+        cases.add(new UiTestCaseSpec("VIS-CTRL-007", "CTRL", "tab/focus/disabled 组合状态",
+                "tablist 使用 roving focus 与 aria-selected，disabled input/button 保留视觉但拒绝焦点和交互。",
+                "DocumentTabControl 展示三页内容，下方放置禁用 input 与禁用 button，用日志记录 tab change。",
+                "预期结果：点击事件标签后面板切换，禁用 input/button 保持灰态且不能获得焦点。",
+                "自动断言：点击第二个 tab，尝试聚焦禁用 input/button，检查 aria-selected、disabled 和日志。", ""));
         return cases;
     }
 }
