@@ -22,6 +22,7 @@ import club.heiqi.uilib.ui.style.values.UiTransform;
 final class UiTestAssertionRunner {
 
     private final UiTestInputAssertionRunner inputAssertionRunner = new UiTestInputAssertionRunner();
+    private final UiTestControlsAssertionRunner controlsAssertionRunner = new UiTestControlsAssertionRunner();
 
     /**
      * 运行指定样例的首批断言。
@@ -91,6 +92,8 @@ final class UiTestAssertionRunner {
                 passed = assertPaintTopLayer(documentWidget, scope, diagnostics);
             } else if (inputAssertionRunner.isAutomatic(testCase.getId())) {
                 passed = inputAssertionRunner.runAutomatic(documentWidget, scope, testCase, diagnostics);
+            } else if (controlsAssertionRunner.isAutomatic(testCase.getId())) {
+                passed = controlsAssertionRunner.runAutomatic(documentWidget, scope, testCase, diagnostics);
             } else {
                 if ("VIS-PAINT-003".equals(testCase.getId())) {
                     diagnosePaintTransform(documentWidget, scope, diagnostics);
@@ -104,6 +107,8 @@ final class UiTestAssertionRunner {
                     diagnosePaintHostImage(documentWidget, scope, diagnostics);
                 } else if (inputAssertionRunner.isManual(testCase.getId())) {
                     inputAssertionRunner.diagnoseManual(documentWidget, scope, testCase, diagnostics);
+                } else if (controlsAssertionRunner.isManual(testCase.getId())) {
+                    controlsAssertionRunner.diagnoseManual(documentWidget, scope, testCase, diagnostics);
                 } else {
                     diagnostics.add("当前样例未接入自动断言，保持人工待确认。");
                 }
