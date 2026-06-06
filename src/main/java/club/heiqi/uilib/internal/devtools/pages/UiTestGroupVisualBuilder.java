@@ -73,17 +73,13 @@ final class UiTestGroupVisualBuilder {
      * @return 页面动态绑定
      */
     UiTestPageBindings buildHomePage(UiDocument document, ElementNode root, String environmentText,
-            NavigationHandler navigation) {
-        appendHomeHero(document, root);
-        appendOverview(document, root);
-        appendGallery(document, root);
-        appendHeatmap(document, root);
-        appendQuickFilters(document, root);
+            String runSummary, NavigationHandler navigation) {
+        appendHomeHero(document, root, navigation);
+        appendOverview(document, root, runSummary);
         appendGroupIndex(document, root, navigation);
         appendFailureSection(document, root);
         appendHomeManualSection(document, root);
         TextNode environmentNode = appendEnvironmentSection(document, root, environmentText);
-        appendStateContractSection(document, root);
         return new UiTestPageBindings(environmentNode);
     }
 
@@ -98,18 +94,15 @@ final class UiTestGroupVisualBuilder {
      * @return 页面动态绑定
      */
     UiTestPageBindings buildGroupPage(UiDocument document, ElementNode root, UiTestGroupSpec group,
-            String environmentText, NavigationHandler navigation, UiTestGroupPageState pageState,
+            String environmentText, String runSummary, NavigationHandler navigation, UiTestGroupPageState pageState,
             GroupInteractionHandler interactionHandler) {
         UiTestGroupState groupState = matrixState.getGroupState(group.getCode());
-        appendGroupHero(document, root, group, navigation, pageState);
-        appendGroupDescription(document, root, group, groupState);
+        appendGroupHero(document, root, group, navigation, pageState, runSummary);
         appendGroupVisualSamples(document, root, group, pageState, interactionHandler);
-        appendGroupSemanticChecks(document, root, group, groupState, pageState);
         appendGroupActions(document, root, group, pageState, interactionHandler);
         appendGroupDiagnostics(document, root, group, groupState, pageState);
         appendSiblingGroupNavigation(document, root, group, navigation);
         TextNode environmentNode = appendEnvironmentSection(document, root, environmentText);
-        appendStateContractSection(document, root);
         return new UiTestPageBindings(environmentNode);
     }
 
@@ -119,11 +112,19 @@ final class UiTestGroupVisualBuilder {
      * @param document 文档实例
      * @param root 根元素
      */
-    private void appendHomeHero(UiDocument document, ElementNode root) {
+    private void appendHomeHero(UiDocument document, ElementNode root, final NavigationHandler navigation) {
         ElementNode hero = createHero(document);
-        appendHeading(document, hero, "Qz UILib Test 视觉矩阵");
-        appendMutedText(document, hero, "视觉化展示功能优先，浏览器语义验证为重要目标；旧运行时卡片矩阵保持清空，不恢复旧页面名结构。");
-        appendMutedText(document, hero, "规格来源：" + UiTestMatrixRegistry.SPEC_PATH);
+        appendHeading(document, hero, "Qz UILib Test");
+        appendMutedText(document, hero, "视觉样例 + 自动断言。已接入 " + matrixState.getTotalImplementedCaseCount()
+                + " 个，自动 " + countAutomaticCases() + " 个，人工 " + countManualCases() + " 个。");
+        ElementNode actions = createGrid(document);
+        actions.append(createActionButton(document, "一键测试全部", 0xFF059669, new DocumentButtonActionHandler() {
+            @Override
+            public void onAction(DocumentButtonActionEvent event) {
+                navigation.runAllCaseAssertions();
+            }
+        }));
+        hero.append(actions);
         root.append(hero);
     }
 
@@ -136,19 +137,24 @@ final class UiTestGroupVisualBuilder {
      * @param navigation 页面导航回调
      */
     private void appendGroupHero(UiDocument document, ElementNode root, final UiTestGroupSpec group,
-            final NavigationHandler navigation, UiTestGroupPageState pageState) {
+            final NavigationHandler navigation, UiTestGroupPageState pageState, String runSummary) {
         ElementNode hero = createHero(document);
         List<UiTestCaseSpec> cases = registry.getCases(group.getCode());
         int currentIndex = cases.isEmpty() ? 0 : Math.min(pageState.getCaseIndex(), cases.size() - 1) + 1;
-        appendHeading(document, hero, "Qz UILib Test / " + group.getCode() + " 视觉样例页");
-        appendMutedText(document, hero, group.getTitle() + "：" + group.getCoverage());
-        appendMutedText(document, hero, "当前采用低密度单样例翻页视图：第 " + currentIndex + " 张 / 共 "
-                + cases.size() + " 张。 ");
+        appendHeading(document, hero, "Test / " + group.getCode());
+        appendMutedText(document, hero, group.getTitle() + " · " + currentIndex + "/" + cases.size()
+                + " · 最近：" + runSummary);
         ElementNode actions = createGrid(document);
         actions.append(createActionButton(document, "返回首页", 0xFF475569, new DocumentButtonActionHandler() {
             @Override
             public void onAction(DocumentButtonActionEvent event) {
                 navigation.openHome();
+            }
+        }));
+        actions.append(createActionButton(document, "一键测试全部", 0xFF059669, new DocumentButtonActionHandler() {
+            @Override
+            public void onAction(DocumentButtonActionEvent event) {
+                navigation.runAllCaseAssertions();
             }
         }));
         hero.append(actions);
@@ -161,21 +167,15 @@ final class UiTestGroupVisualBuilder {
      * @param document 文档实例
      * @param root 根元素
      */
-    private void appendOverview(UiDocument document, ElementNode root) {
+    private void appendOverview(UiDocument document, ElementNode root, String runSummary) {
         ElementNode section = createSection(document, "总览");
         ElementNode grid = createGrid(document);
-        appendMetricCard(document, grid, "test 系统版本", "P2 核心视觉样例批次");
-        appendMetricCard(document, grid, "计划用例数", String.valueOf(matrixState.getTotalPlannedCaseCount()));
-        appendMetricCard(document, grid, "已接入用例数", String.valueOf(matrixState.getTotalImplementedCaseCount()));
-        appendMetricCard(document, grid, "剩余缺口数", String.valueOf(matrixState.getTotalGapCount()));
-        appendMetricCard(document, grid, "计划自动语义", String.valueOf(matrixState.getTotalPlannedAutomaticCount()));
-        appendMetricCard(document, grid, "计划人工确认", String.valueOf(matrixState.getTotalPlannedManualCount()));
-        appendMetricCard(document, grid, "二级页数量", String.valueOf(registry.getGroups().size()));
+        appendMetricCard(document, grid, "计划", String.valueOf(matrixState.getTotalPlannedCaseCount()));
+        appendMetricCard(document, grid, "已接入", String.valueOf(matrixState.getTotalImplementedCaseCount()));
+        appendMetricCard(document, grid, "缺口", String.valueOf(matrixState.getTotalGapCount()));
+        appendMetricCard(document, grid, "自动/人工", countAutomaticCases() + "/" + countManualCases());
         section.append(grid);
-        appendPlanItem(document, section, "计划用例：" + matrixState.getTotalPlannedCaseCount()
-                + "；已接入：" + matrixState.getTotalImplementedCaseCount()
-                + "；缺口：" + matrixState.getTotalGapCount() + "；视觉状态/语义状态分离统计。");
-        appendPlanItem(document, section, "旧运行时测试内容已清空；当前已接入 CSS / Layout / Paint 首批真实视觉样例。");
+        appendPlanItem(document, section, "最近：" + runSummary);
         root.append(section);
     }
 
@@ -250,15 +250,13 @@ final class UiTestGroupVisualBuilder {
         ElementNode grid = createGrid(document);
         for (final UiTestGroupSpec group : registry.getGroups()) {
             UiTestGroupState groupState = matrixState.getGroupState(group.getCode());
-            ElementNode card = createCard(document, 230, 1.0F, 1.0F);
+            ElementNode card = createCard(document, 180, 1.0F, 1.0F);
             appendHeading(document, card, group.getCode() + " / " + group.getTitle());
-            appendMutedText(document, card, group.getCoverage());
-            appendMutedText(document, card, "视觉目标：" + group.getVisualFocus());
-            appendMutedText(document, card, "计划用例：" + group.getPlannedCaseCount()
-                    + "；已接入：" + groupState.getImplementedCaseCount()
-                    + "；缺口：" + groupState.getGapCount());
+            appendMutedText(document, card, "计划 " + group.getPlannedCaseCount()
+                    + " · 接入 " + groupState.getImplementedCaseCount()
+                    + " · 缺口 " + groupState.getGapCount());
             appendMutedText(document, card, buildStateLine(groupState));
-            card.append(createActionButton(document, "打开 " + group.getCode() + " 二级页", 0xFF2563EB,
+            card.append(createActionButton(document, "打开 " + group.getCode(), 0xFF2563EB,
                     new DocumentButtonActionHandler() {
                         @Override
                         public void onAction(DocumentButtonActionEvent event) {
@@ -279,7 +277,7 @@ final class UiTestGroupVisualBuilder {
      */
     private void appendFailureSection(UiDocument document, ElementNode root) {
         ElementNode section = createSection(document, "最近失败");
-        appendPlanItem(document, section, "暂无失败样例；P0 当前只建立数据模型和首页框架，后续失败摘要由结果 state 回写。");
+        appendPlanItem(document, section, buildFailureSummary());
         root.append(section);
     }
 
@@ -290,24 +288,18 @@ final class UiTestGroupVisualBuilder {
      * @param root 根元素
      */
     private void appendHomeManualSection(UiDocument document, ElementNode root) {
-        ElementNode section = createSection(document, "人工任务");
-        boolean hasManualCase = false;
+        ElementNode section = createSection(document, "人工确认");
+        StringBuilder manualCases = new StringBuilder();
         for (UiTestCaseSpec testCase : registry.getCases()) {
             if (testCase.requiresManualConfirmation()) {
-                hasManualCase = true;
-                appendPlanItem(document, section, testCase.getId() + "：" + testCase.getManualReason()
-                        + "；" + testCase.getObservationPoint());
+                if (manualCases.length() > 0) {
+                    manualCases.append("、");
+                }
+                manualCases.append(testCase.getId());
             }
         }
-        if (!hasManualCase) {
-            appendPlanItem(document, section, "当前没有已接入样例需要人工处理；以下为首轮规划中的人工确认来源。");
-        }
-        for (UiTestGroupSpec group : registry.getGroups()) {
-            if (group.getPlannedManualCount() > 0) {
-                appendPlanItem(document, section, group.getCode() + "：计划人工确认 "
-                        + group.getPlannedManualCount() + " 项；" + group.getExpectedVisualObservation());
-            }
-        }
+        appendPlanItem(document, section, manualCases.length() == 0 ? "无。"
+                : "需截图/交互确认：" + manualCases.toString() + "。");
         root.append(section);
     }
 
@@ -344,8 +336,7 @@ final class UiTestGroupVisualBuilder {
         ElementNode section = createSection(document, "视觉样例区");
         List<UiTestCaseSpec> cases = registry.getCases(group.getCode());
         if (cases.isEmpty()) {
-            appendPlanItem(document, section, "当前 P0 仅接入数据模型和首页框架；本分组暂无真实视觉样例，不恢复旧卡片矩阵。");
-            appendPlanItem(document, section, group.getExpectedVisualObservation());
+            appendPlanItem(document, section, "暂无样例。" + compactExpected(group.getExpectedVisualObservation()));
         }
         if (!cases.isEmpty()) {
             pageState.clampToCaseCount(cases.size());
@@ -391,7 +382,7 @@ final class UiTestGroupVisualBuilder {
         ElementNode section = createSection(document, "操作区");
         List<UiTestCaseSpec> cases = registry.getCases(group.getCode());
         if (cases.isEmpty()) {
-            appendPlanItem(document, section, "当前没有样例可执行；本批不恢复旧执行按钮。");
+            appendPlanItem(document, section, "暂无可执行样例。");
             root.append(section);
             return;
         }
@@ -414,9 +405,14 @@ final class UiTestGroupVisualBuilder {
                 interactionHandler.nextCase();
             }
         }));
+        actions.append(createActionButton(document, "一键测试全部", 0xFF059669, new DocumentButtonActionHandler() {
+            @Override
+            public void onAction(DocumentButtonActionEvent event) {
+                interactionHandler.runAllCaseAssertions();
+            }
+        }));
         section.append(actions);
         pageState.clampToCaseCount(cases.size());
-        appendPlanItem(document, section, "当前页只展示 1 张样例；优先先用结构化断言日志排查问题，再补更多自动语义覆盖。 ");
         root.append(section);
     }
 
@@ -431,23 +427,21 @@ final class UiTestGroupVisualBuilder {
     private void appendGroupDiagnostics(UiDocument document, ElementNode root, UiTestGroupSpec group,
             UiTestGroupState groupState, UiTestGroupPageState pageState) {
         ElementNode section = createSection(document, "诊断区");
-        appendPlanItem(document, section, semanticChecker.buildGroupDiagnosticSummary(group, groupState));
+        appendPlanItem(document, section, buildStateLine(groupState) + "；" + compactText(
+                semanticChecker.describeGroupBoundary(group), 120));
         List<UiTestCaseSpec> cases = registry.getCases(group.getCode());
         if (!cases.isEmpty()) {
             pageState.clampToCaseCount(cases.size());
             UiTestCaseSpec currentCase = cases.get(pageState.getCaseIndex());
-            appendPlanItem(document, section, "当前样例日志 tail：");
-            List<UiTestAssertionLogEntry> tail = assertionLogger.getCaseTail(currentCase.getId(),
-                    assertionLogger.getDefaultTailLimit());
+            List<UiTestAssertionLogEntry> tail = assertionLogger.getCaseTail(currentCase.getId(), 3);
             if (tail.isEmpty()) {
-                appendPlanItem(document, section, currentCase.getId() + "：尚未产生日志；先执行“运行当前样例断言”。");
+                appendPlanItem(document, section, currentCase.getId() + "：未运行。");
             } else {
                 for (UiTestAssertionLogEntry entry : tail) {
-                    appendPlanItem(document, section, entry.toDisplayLine());
+                    appendPlanItem(document, section, compactLogLine(entry));
                 }
             }
         }
-        appendPlanItem(document, section, "诊断目标：日志按 group/case/phase/context 展示，并持续补 computed style、布局盒、clip、transform 与 stacking 摘要。 ");
         root.append(section);
     }
 
@@ -713,15 +707,10 @@ final class UiTestGroupVisualBuilder {
         ElementNode card = createCard(document, 1, 1.0F, 1.0F);
         card.style().setBorderColor(0xFF537DD6);
         appendHeading(document, card, testCase.getId() + " / " + testCase.getDisplayTarget());
-        appendCaseField(document, card, "用例编号", testCase.getId());
-        appendCaseField(document, card, "展示目标", testCase.getDisplayTarget());
-        appendCaseField(document, card, "浏览器语义", testCase.getBrowserSemantic());
-        appendCaseField(document, card, "视觉样例", testCase.getVisualSample());
         sampleVisualFactory.appendCaseDemo(document, card, testCase);
-        appendCaseField(document, card, "观察要点", testCase.getObservationPoint());
-        appendCaseField(document, card, "语义断言", testCase.getSemanticAssertion());
+        appendCaseField(document, card, "预期", compactExpected(testCase.getObservationPoint()));
         if (testCase.requiresManualConfirmation()) {
-            appendCaseField(document, card, "人工原因", testCase.getManualReason());
+            appendCaseField(document, card, "人工", compactText(testCase.getManualReason(), 96));
         }
         appendCaseField(document, card, "状态", buildCaseStateLine(getCaseResult(testCase)));
         parent.append(card);
@@ -823,9 +812,9 @@ final class UiTestGroupVisualBuilder {
      * @return 分组状态摘要行
      */
     private String buildStateLine(UiTestGroupState state) {
-        return "视觉状态=" + state.getVisualStatus().getDisplayText()
-                + "；语义状态=" + state.getSemanticStatus().getDisplayText()
-                + "；汇总状态=" + state.getSummaryStatus().getDisplayText();
+        return "视觉=" + state.getVisualStatus().getDisplayText()
+                + "；语义=" + state.getSemanticStatus().getDisplayText()
+                + "；汇总=" + state.getSummaryStatus().getDisplayText();
     }
 
     /**
@@ -835,10 +824,121 @@ final class UiTestGroupVisualBuilder {
      * @return 样例状态摘要行
      */
     private String buildCaseStateLine(UiTestCaseResult result) {
-        return "视觉状态=" + result.getVisualStatus().getDisplayText()
-                + "；语义状态=" + result.getSemanticStatus().getDisplayText()
-                + "；汇总状态=" + result.getSummaryStatus().getDisplayText()
-                + "；实际结果=" + result.getActualResult();
+        return "视觉=" + result.getVisualStatus().getDisplayText()
+                + "；语义=" + result.getSemanticStatus().getDisplayText()
+                + "；汇总=" + result.getSummaryStatus().getDisplayText()
+                + "；结果=" + compactResult(result);
+    }
+
+    /**
+     * 统计已接入自动样例数。
+     *
+     * @return 已接入自动样例数
+     */
+    private int countAutomaticCases() {
+        int count = 0;
+        for (UiTestCaseSpec testCase : registry.getCases()) {
+            if (!testCase.requiresManualConfirmation()) {
+                count++;
+            }
+        }
+        return count;
+    }
+
+    /**
+     * 统计已接入人工样例数。
+     *
+     * @return 已接入人工样例数
+     */
+    private int countManualCases() {
+        int count = 0;
+        for (UiTestCaseSpec testCase : registry.getCases()) {
+            if (testCase.requiresManualConfirmation()) {
+                count++;
+            }
+        }
+        return count;
+    }
+
+    /**
+     * 构建失败摘要。
+     *
+     * @return 失败摘要
+     */
+    private String buildFailureSummary() {
+        StringBuilder ids = new StringBuilder();
+        int count = 0;
+        for (UiTestCaseSpec testCase : registry.getCases()) {
+            UiTestCaseResult result = getCaseResult(testCase);
+            if (result.getSummaryStatus() == UiTestSummaryStatus.FAILED) {
+                if (ids.length() > 0) {
+                    ids.append("、");
+                }
+                ids.append(testCase.getId());
+                count++;
+            }
+        }
+        return count == 0 ? "暂无。" : count + " 个：" + ids.toString() + "。";
+    }
+
+    /**
+     * 构建页面级短结果，完整诊断仍保留在日志中。
+     *
+     * @param result 样例结果
+     * @return 短结果
+     */
+    private String compactResult(UiTestCaseResult result) {
+        if (result.getDifference().length() > 0) {
+            return compactText(result.getDifference(), 96);
+        }
+        if (result.getSemanticStatus() == UiTestSemanticStatus.AUTO_PASSED) {
+            return "通过。";
+        }
+        if (result.getSemanticStatus() == UiTestSemanticStatus.MANUAL_PENDING) {
+            return "待人工确认。";
+        }
+        return compactText(result.getActualResult(), 96);
+    }
+
+    /**
+     * 构建短日志行。
+     *
+     * @param entry 日志条目
+     * @return 短日志行
+     */
+    private String compactLogLine(UiTestAssertionLogEntry entry) {
+        String detail = entry.getDifference().length() > 0 && !"-".equals(entry.getDifference())
+                ? entry.getDifference() : entry.getActual();
+        return entry.getGroupCode() + "/" + entry.getCaseId() + " | " + entry.getPhase()
+                + " | " + entry.getMessage() + " | " + compactText(detail, 120);
+    }
+
+    /**
+     * 去掉“预期结果：”前缀并截断。
+     *
+     * @param text 原始预期文本
+     * @return 页面短预期
+     */
+    private String compactExpected(String text) {
+        String value = text == null ? "" : text;
+        if (value.startsWith("预期结果：")) {
+            value = value.substring("预期结果：".length());
+        }
+        return compactText(value, 110);
+    }
+
+    /**
+     * 截断页面说明文本。
+     *
+     * @param text 原文本
+     * @param maxLength 最大长度
+     * @return 截断后的文本
+     */
+    private String compactText(String text, int maxLength) {
+        if (text == null || text.length() <= maxLength) {
+            return text == null ? "" : text;
+        }
+        return text.substring(0, Math.max(0, maxLength - 3)) + "...";
     }
 
     /**
@@ -868,6 +968,11 @@ final class UiTestGroupVisualBuilder {
          * @param group 分组规格
          */
         void openGroup(UiTestGroupSpec group);
+
+        /**
+         * 运行全部已接入样例断言。
+         */
+        void runAllCaseAssertions();
     }
 
     /**
@@ -889,5 +994,10 @@ final class UiTestGroupVisualBuilder {
          * 运行当前样例断言。
          */
         void runCurrentCaseAssertion();
+
+        /**
+         * 运行全部已接入样例断言。
+         */
+        void runAllCaseAssertions();
     }
 }

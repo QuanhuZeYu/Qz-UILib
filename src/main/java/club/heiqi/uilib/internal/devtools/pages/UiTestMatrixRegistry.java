@@ -125,7 +125,7 @@ final class UiTestMatrixRegistry {
                 "stacking、opacity、clip、transform、top-layer、scrollbar 与 host image fallback。",
                 "绘制层级、裁剪、变换和滚动条以重叠舞台展示。",
                 "绘制命令顺序、stacking phase、clip/transform/top-layer 命中。",
-                "预期结果：后续样例应直接画出重叠顺序、裁剪边界、transform 命中和 top-layer 层级。", 7, 5, 2));
+                "预期结果：后续样例应直接画出重叠顺序、裁剪边界、transform 命中和 top-layer 层级。", 7, 3, 4));
         groups.add(new UiTestGroupSpec("INPUT", "Input 输入与事件语义",
                 "capture/bubble、preventDefault、wheel、focus-visible、keyboard/textInput。",
                 "事件传播和默认行为以日志轨道、焦点框和滚动状态展示。",
@@ -273,19 +273,21 @@ final class UiTestMatrixRegistry {
                 "自动断言：接 transform 命中摘要与布局盒不变；复杂矩阵保留人工。", "transform 命中需完整 visual quad 与 hit-test 联动，当前保留人工交互确认。"));
         cases.add(new UiTestCaseSpec("VIS-PAINT-005", "PAINT", "top-layer 绘制与命中",
                 "top-layer 元素（如弹层）绘制在普通 stacking 之后，优先接收命中与焦点。",
-                "普通内容 + 模拟 tooltip/select 弹层，弹层覆盖并可点击。",
-                "预期结果：弹层覆盖下方内容，点击弹层区域命中弹层而非下层。",
-                "自动断言：接 stacking phase 与 top-layer 命中；当前提供可截图层级。", ""));
+                "普通内容 + 真实注册到文档 top-layer 的弹层，弹层覆盖普通高 z-index 内容。",
+                "预期结果：弹层处于文档 top-layer，覆盖下方内容；命中与焦点仍需后续交互验证。",
+                "自动断言：验证元素已注册为文档 top-layer；当前提供可截图层级。", ""));
         cases.add(new UiTestCaseSpec("VIS-PAINT-006", "PAINT", "scrollbar 几何与命中",
                 "overflow:auto/scroll 时生成 scrollbar track/thumb，thumb 拖动影响 scroll offset。",
                 "带 overflow:auto 的高容器 + 长内容，展示 track 与 thumb 位置。",
                 "预期结果：thumb 尺寸与内容比例一致，位于 track 内；点击 thumb 区域可交互。",
-                "自动断言：接 overflow、scroll 范围与 scrollbar 相关布局盒；当前展示几何。", ""));
+                "自动诊断：输出 overflow 与 scroll range；scrollbar 几何、拖拽和命中保留人工确认。",
+                "scrollbar track/thumb 几何与拖拽命中需要游戏内截图和交互确认，不能仅凭 overflow 声明自动通过。"));
         cases.add(new UiTestCaseSpec("VIS-PAINT-007", "PAINT", "host image fallback",
                 "background-image:url(有效) 显示资源图；无效或 none 时 fallback 占位或底色。",
                 "两个面板：有效资源 url 与 缺失资源 url，分别展示图片与 fallback。",
                 "预期结果：有效显示贴图，缺失显示占位或纯底色不崩溃。",
-                "自动断言：接 background-image 计算与绘制命令；当前提供资源/回退对比。", ""));
+                "自动诊断：输出 background-image 声明与宿主资源；真实绘制和缺失 fallback 保留人工确认。",
+                "host image 真实绘制与缺失资源 fallback 发生在宿主渲染阶段，需要截图确认，不能仅凭声明对象自动通过。"));
         return cases;
     }
 }
