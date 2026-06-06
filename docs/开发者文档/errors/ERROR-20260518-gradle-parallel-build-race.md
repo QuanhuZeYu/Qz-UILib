@@ -13,6 +13,7 @@
 
 - 使用并行工具同时执行多个 `./gradlew.bat test --tests ...` 命令。
 - 使用并行工具同时执行 `./gradlew.bat compileJava` 与 `./gradlew.bat test --tests ...`。
+- 2026-06-06 脏子树优化开发中，再次并行执行 `DocumentPaintEngineTest` 与 `compileJava`，触发 `ChildProcess.kill (...)`；顺序复跑 `compileJava` 后通过，确认仍属验证方式错误。
 - 多个 Gradle 进程共享同一个工作区、同一个 `build` 目录和同一个 Gradle 用户缓存。
 - 某个进程正在写入或清理 `build/classes/java/main`，另一个进程同时开始编译或测试。
 

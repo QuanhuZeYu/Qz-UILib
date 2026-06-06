@@ -15,6 +15,8 @@ public abstract class DocumentNode {
     private final UiDocument ownerDocument;
     final List<DocumentNode> children = new ArrayList<DocumentNode>();
     private DocumentNode parent;
+    private int layoutMutationVersion;
+    private int subtreeLayoutMutationVersion;
 
     protected DocumentNode(UiDocument ownerDocument) {
         this.ownerDocument = Objects.requireNonNull(ownerDocument, "ownerDocument");
@@ -69,6 +71,26 @@ public abstract class DocumentNode {
      */
     public final List<DocumentNode> getChildren() {
         return Collections.unmodifiableList(children);
+    }
+
+    /**
+     * 返回当前节点自身最近一次 layout-affecting 变更版本。
+     *
+     * @return 节点自身布局变更版本
+     * @apiNote 框架内部 API，仅供布局缓存失效判断使用。
+     */
+    public final int __getLayoutMutationVersion() {
+        return layoutMutationVersion;
+    }
+
+    /**
+     * 返回当前节点子树最近一次 layout-affecting 变更版本。
+     *
+     * @return 子树布局变更版本
+     * @apiNote 框架内部 API，仅供布局缓存失效判断使用。
+     */
+    public final int __getSubtreeLayoutMutationVersion() {
+        return subtreeLayoutMutationVersion;
     }
 
     /**
@@ -146,12 +168,13 @@ public abstract class DocumentNode {
         if (resolvedChild.parent == this && children.get(children.size() - 1) == resolvedChild) {
             return resolvedChild;
         }
-        if (resolvedChild.parent != null) {
-            resolvedChild.parent.children.remove(resolvedChild);
+        DocumentNode previousParent = resolvedChild.parent;
+        if (previousParent != null) {
+            previousParent.children.remove(resolvedChild);
         }
         resolvedChild.parent = this;
         children.add(resolvedChild);
-        ownerDocument.recordMutation();
+        recordStructuralMutation(previousParent, resolvedChild);
         return resolvedChild;
     }
 
@@ -169,7 +192,7 @@ public abstract class DocumentNode {
         boolean removed = children.remove(resolvedChild);
         if (removed) {
             resolvedChild.parent = null;
-            ownerDocument.recordMutation();
+            recordStructuralMutation((DocumentNode) null, resolvedChild);
         }
         return resolvedChild;
     }
@@ -205,13 +228,14 @@ public abstract class DocumentNode {
             return resolvedChild;
         }
 
-        if (resolvedChild.parent != null) {
-            resolvedChild.parent.children.remove(resolvedChild);
+        DocumentNode previousParent = resolvedChild.parent;
+        if (previousParent != null) {
+            previousParent.children.remove(resolvedChild);
         }
         int index = children.indexOf(referenceChild);
         resolvedChild.parent = this;
         children.add(index, resolvedChild);
-        ownerDocument.recordMutation();
+        recordStructuralMutation(previousParent, resolvedChild);
         return resolvedChild;
     }
 
@@ -242,14 +266,16 @@ public abstract class DocumentNode {
             return resolvedOld;
         }
 
-        if (resolvedNew.parent != null) {
-            resolvedNew.parent.children.remove(resolvedNew);
+        DocumentNode previousParent = resolvedNew.parent;
+        if (previousParent != null) {
+            previousParent.children.remove(resolvedNew);
         }
         int index = children.indexOf(resolvedOld);
         resolvedOld.parent = null;
         resolvedNew.parent = this;
         children.set(index, resolvedNew);
-        ownerDocument.recordMutation();
+        recordStructuralMutation(previousParent, resolvedNew);
+        resolvedOld.markSubtreeLayoutMutation(ownerDocument.getLayoutVersion());
         return resolvedOld;
     }
 
@@ -264,7 +290,7 @@ public abstract class DocumentNode {
             child.parent = null;
         }
         children.clear();
-        ownerDocument.recordMutation();
+        markSubtreeMutated();
     }
 
     /**
@@ -323,7 +349,17 @@ public abstract class DocumentNode {
      * 通知所属文档当前节点自身状态已变化。
      */
     protected final void markMutated() {
-        ownerDocument.recordLayoutMutation();
+        int version = ownerDocument.recordLayoutMutation();
+        markLayoutMutation(version);
+    }
+
+    /**
+     * 通知所属文档当前节点及后代布局相关状态已变化。
+     */
+    protected final void markSubtreeMutated() {
+        int version = ownerDocument.recordLayoutMutation();
+        markSubtreeLayoutMutation(version);
+        propagateSubtreeLayoutMutationToAncestors(version);
     }
 
     /**
@@ -331,6 +367,26 @@ public abstract class DocumentNode {
      */
     protected final void markPaintMutated() {
         ownerDocument.recordPaintMutation();
+    }
+
+    /**
+     * 标记当前节点整棵子树布局缓存失效。
+     *
+     * @apiNote 框架内部 API，仅供文档级样式表、变量等全局失效入口使用。
+     */
+    public final void __markSubtreeLayoutDirty() {
+        markSubtreeMutated();
+    }
+
+    /**
+     * 使用指定布局版本标记当前节点整棵子树布局缓存失效。
+     *
+     * @param version 文档布局版本
+     * @apiNote 框架内部 API，仅供文档级全局失效入口使用。
+     */
+    public final void __markSubtreeLayoutDirty(int version) {
+        markSubtreeLayoutMutation(version);
+        propagateSubtreeLayoutMutationToAncestors(version);
     }
 
     /**
@@ -360,15 +416,20 @@ public abstract class DocumentNode {
         for (DocumentNode movedChild : movedChildren) {
             validateAppendChild(movedChild);
         }
+        List<DocumentNode> previousParents = new ArrayList<DocumentNode>();
         for (DocumentNode movedChild : movedChildren) {
-            if (movedChild.parent != null) {
-                movedChild.parent.children.remove(movedChild);
+            DocumentNode previousParent = movedChild.parent;
+            if (previousParent != null) {
+                previousParent.children.remove(movedChild);
+                if (previousParent != this && !previousParents.contains(previousParent)) {
+                    previousParents.add(previousParent);
+                }
             }
             movedChild.parent = this;
             children.add(movedChild);
         }
         fragment.children.clear();
-        ownerDocument.recordMutation();
+        recordStructuralMutation(previousParents, fragment);
     }
 
     private void insertDocumentFragmentBefore(DocumentFragmentNode fragment, DocumentNode referenceChild) {
@@ -389,16 +450,21 @@ public abstract class DocumentNode {
         for (DocumentNode movedChild : movedChildren) {
             validateAppendChild(movedChild);
         }
+        List<DocumentNode> previousParents = new ArrayList<DocumentNode>();
         int index = children.indexOf(referenceChild);
         for (DocumentNode movedChild : movedChildren) {
-            if (movedChild.parent != null) {
-                movedChild.parent.children.remove(movedChild);
+            DocumentNode previousParent = movedChild.parent;
+            if (previousParent != null) {
+                previousParent.children.remove(movedChild);
+                if (previousParent != this && !previousParents.contains(previousParent)) {
+                    previousParents.add(previousParent);
+                }
             }
             movedChild.parent = this;
             children.add(index++, movedChild);
         }
         fragment.children.clear();
-        ownerDocument.recordMutation();
+        recordStructuralMutation(previousParents, fragment);
     }
 
     private void replaceChildWithDocumentFragment(DocumentFragmentNode fragment, DocumentNode oldChild) {
@@ -427,6 +493,50 @@ public abstract class DocumentNode {
             if (current == child) {
                 throw new IllegalArgumentException("Cannot append an ancestor as a child");
             }
+        }
+    }
+
+    private void recordStructuralMutation(DocumentNode previousParent, DocumentNode changedSubtree) {
+        List<DocumentNode> previousParents = new ArrayList<DocumentNode>();
+        if (previousParent != null) {
+            previousParents.add(previousParent);
+        }
+        recordStructuralMutation(previousParents, changedSubtree);
+    }
+
+    private void recordStructuralMutation(List<DocumentNode> previousParents, DocumentNode changedSubtree) {
+        int version = ownerDocument.recordMutation();
+        markSubtreeLayoutMutation(version);
+        propagateSubtreeLayoutMutationToAncestors(version);
+        for (DocumentNode previousParent : previousParents) {
+            if (previousParent == null || previousParent == this) {
+                continue;
+            }
+            previousParent.markSubtreeLayoutMutation(version);
+            previousParent.propagateSubtreeLayoutMutationToAncestors(version);
+        }
+        if (changedSubtree != null) {
+            changedSubtree.markSubtreeLayoutMutation(version);
+        }
+    }
+
+    private void markLayoutMutation(int version) {
+        layoutMutationVersion = version;
+        subtreeLayoutMutationVersion = version;
+        propagateSubtreeLayoutMutationToAncestors(version);
+    }
+
+    private void markSubtreeLayoutMutation(int version) {
+        layoutMutationVersion = version;
+        subtreeLayoutMutationVersion = version;
+        for (DocumentNode child : children) {
+            child.markSubtreeLayoutMutation(version);
+        }
+    }
+
+    private void propagateSubtreeLayoutMutationToAncestors(int version) {
+        for (DocumentNode current = parent; current != null; current = current.parent) {
+            current.subtreeLayoutMutationVersion = version;
         }
     }
 }

@@ -69,6 +69,7 @@ public final class HtmlLikeDocumentWidget extends Widget implements UiDocument.D
     private int paintCacheGeneration;
     private int staticLayoutGeneration;
     private int runtimeLayoutGeneration;
+    private int lastLayoutReusedSubtreeCount;
     private boolean cachedPaintTransientScrollbarActive;
     private DocumentLayoutBox cachedLayoutBox;
     private DocumentLayoutBox cachedRuntimeLayoutBox;
@@ -324,7 +325,7 @@ public final class HtmlLikeDocumentWidget extends Widget implements UiDocument.D
      */
     public PerformanceDiagnosticsSnapshot getPerformanceDiagnosticsSnapshot() {
         return new PerformanceDiagnosticsSnapshot(paintCacheGeneration, staticLayoutGeneration,
-                runtimeLayoutGeneration, textMeasureService.getEpoch());
+                runtimeLayoutGeneration, textMeasureService.getEpoch(), lastLayoutReusedSubtreeCount);
     }
 
     /**
@@ -916,11 +917,15 @@ public final class HtmlLikeDocumentWidget extends Widget implements UiDocument.D
     }
 
     private DocumentLayoutBox layoutDocument(DocumentLayoutEngine.LayoutRuntimeValueResolver layoutValueResolver) {
-        return viewportRootScrollingEnabled
+        boolean staticLayout = layoutValueResolver == null;
+        DocumentLayoutBox previousLayoutBox = staticLayout ? cachedLayoutBox : null;
+        DocumentLayoutBox rootBox = viewportRootScrollingEnabled
                 ? DocumentLayoutEngine.layoutViewportRoot(document.getRootElement(), getWidth(), getHeight(),
-                        textMeasureService, layoutValueResolver)
+                        textMeasureService, layoutValueResolver, previousLayoutBox)
                 : DocumentLayoutEngine.layout(document.getRootElement(), getWidth(), getHeight(), textMeasureService,
-                        layoutValueResolver);
+                        layoutValueResolver, previousLayoutBox);
+        lastLayoutReusedSubtreeCount = staticLayout ? rootBox.getLayoutPassReusedSubtreeCountForDiagnostics() : 0;
+        return rootBox;
     }
 
     private void releasePressedElement(UiMouseEvent event) {
@@ -1164,19 +1169,21 @@ public final class HtmlLikeDocumentWidget extends Widget implements UiDocument.D
      */
     public static final class PerformanceDiagnosticsSnapshot {
 
-        private static final PerformanceDiagnosticsSnapshot EMPTY = new PerformanceDiagnosticsSnapshot(0, 0, 0, 0);
+        private static final PerformanceDiagnosticsSnapshot EMPTY = new PerformanceDiagnosticsSnapshot(0, 0, 0, 0, 0);
 
         private final int paintCacheGeneration;
         private final int staticLayoutGeneration;
         private final int runtimeLayoutGeneration;
         private final int textMeasureEpoch;
+        private final int lastLayoutReusedSubtreeCount;
 
         private PerformanceDiagnosticsSnapshot(int paintCacheGeneration, int staticLayoutGeneration,
-                int runtimeLayoutGeneration, int textMeasureEpoch) {
+                int runtimeLayoutGeneration, int textMeasureEpoch, int lastLayoutReusedSubtreeCount) {
             this.paintCacheGeneration = paintCacheGeneration;
             this.staticLayoutGeneration = staticLayoutGeneration;
             this.runtimeLayoutGeneration = runtimeLayoutGeneration;
             this.textMeasureEpoch = textMeasureEpoch;
+            this.lastLayoutReusedSubtreeCount = lastLayoutReusedSubtreeCount;
         }
 
         /**
@@ -1222,6 +1229,15 @@ public final class HtmlLikeDocumentWidget extends Widget implements UiDocument.D
          */
         public int getTextMeasureEpoch() {
             return textMeasureEpoch;
+        }
+
+        /**
+         * 返回最近一次静态布局 pass 复用的布局子树数量。
+         *
+         * @return 复用布局子树数量
+         */
+        public int getLastLayoutReusedSubtreeCount() {
+            return lastLayoutReusedSubtreeCount;
         }
     }
 }

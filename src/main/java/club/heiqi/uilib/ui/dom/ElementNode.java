@@ -43,7 +43,7 @@ public final class ElementNode extends ElementInteractionNode {
     private final DomTokenList classList = new DomTokenList(new Runnable() {
         @Override
         public void run() {
-            ElementNode.this.markMutated();
+            ElementNode.this.markSubtreeMutated();
         }
     });
     private final UiStyleDeclaration style = new UiStyleDeclaration(new UiStyleChangeListener() {
@@ -53,7 +53,7 @@ public final class ElementNode extends ElementInteractionNode {
                 ElementNode.this.markPaintMutated();
                 return;
             }
-            ElementNode.this.markMutated();
+            ElementNode.this.markSubtreeMutated();
         }
     });
 
@@ -249,7 +249,7 @@ public final class ElementNode extends ElementInteractionNode {
             changed |= updateAnchorFocusableFromHref();
         }
         if (changed) {
-            markMutated();
+            markSubtreeMutated();
         }
         return this;
     }
@@ -287,7 +287,7 @@ public final class ElementNode extends ElementInteractionNode {
             if (ElementSemantics.isAnchorElement(tagName) && "href".equals(resolvedName)) {
                 updateAnchorFocusableFromHref();
             }
-            markMutated();
+            markSubtreeMutated();
         }
         return this;
     }
@@ -415,7 +415,7 @@ public final class ElementNode extends ElementInteractionNode {
         this.focusable = focusable;
         boolean nextEffectiveFocusable = this.focusable;
         if (previousEffectiveFocusable != nextEffectiveFocusable) {
-            markMutated();
+            markSubtreeMutated();
         }
         return this;
     }

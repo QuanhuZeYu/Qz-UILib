@@ -82,4 +82,12 @@ public final class DocumentLayoutInlineFragment {
     public boolean isLastForElement() {
         return lastForElement;
     }
+
+    DocumentLayoutInlineFragment translated(int deltaX, int deltaY) {
+        if (deltaX == 0 && deltaY == 0) {
+            return this;
+        }
+        return new DocumentLayoutInlineFragment(ownerElement, left + deltaX, top + deltaY, width, height,
+                firstForElement, lastForElement);
+    }
 }

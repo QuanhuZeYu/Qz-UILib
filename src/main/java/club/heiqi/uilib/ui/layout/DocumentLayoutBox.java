@@ -37,12 +37,37 @@ public final class DocumentLayoutBox {
     private final int resolvedRightInset;
     private final int resolvedBottomInset;
     private final int resolvedLeftInset;
+    private final int layoutMutationVersion;
+    private final int subtreeLayoutMutationVersion;
+    private final int layoutTextMeasureEpoch;
+    private final int layoutContainingLeft;
+    private final int layoutFlowTop;
+    private final int layoutContainingWidth;
+    private final int layoutContainingHeight;
+    private final int layoutForcedContentWidth;
+    private final int layoutForcedContentHeight;
+    private int layoutPassReusedSubtreeCount;
 
     DocumentLayoutBox(ElementNode element, ComputedStyle computedStyle, List<DocumentLayoutBox> children,
             List<DocumentLayoutTextRun> textRuns, List<DocumentLayoutInlineFragment> inlineFragments,
             DocumentLayoutEdges margin, DocumentLayoutEdges border, DocumentLayoutEdges padding, int left, int top,
             int width, int height, int positionOffsetX, int positionOffsetY, int resolvedTopInset,
             int resolvedRightInset, int resolvedBottomInset, int resolvedLeftInset) {
+        this(element, computedStyle, children, textRuns, inlineFragments, margin, border, padding, left, top, width,
+                height, positionOffsetX, positionOffsetY, resolvedTopInset, resolvedRightInset, resolvedBottomInset,
+                resolvedLeftInset, element.__getLayoutMutationVersion(), element.__getSubtreeLayoutMutationVersion(),
+                -1, DocumentLayoutEngine.AUTO_SIZE, DocumentLayoutEngine.AUTO_SIZE, DocumentLayoutEngine.AUTO_SIZE,
+                DocumentLayoutEngine.AUTO_SIZE, DocumentLayoutEngine.AUTO_SIZE, DocumentLayoutEngine.AUTO_SIZE);
+    }
+
+    DocumentLayoutBox(ElementNode element, ComputedStyle computedStyle, List<DocumentLayoutBox> children,
+            List<DocumentLayoutTextRun> textRuns, List<DocumentLayoutInlineFragment> inlineFragments,
+            DocumentLayoutEdges margin, DocumentLayoutEdges border, DocumentLayoutEdges padding, int left, int top,
+            int width, int height, int positionOffsetX, int positionOffsetY, int resolvedTopInset,
+            int resolvedRightInset, int resolvedBottomInset, int resolvedLeftInset, int layoutMutationVersion,
+            int subtreeLayoutMutationVersion, int layoutTextMeasureEpoch, int layoutContainingLeft, int layoutFlowTop,
+            int layoutContainingWidth, int layoutContainingHeight, int layoutForcedContentWidth,
+            int layoutForcedContentHeight) {
         this.element = Objects.requireNonNull(element, "element");
         this.computedStyle = Objects.requireNonNull(computedStyle, "computedStyle");
         this.children = Collections.unmodifiableList(Objects.requireNonNull(children, "children"));
@@ -62,6 +87,15 @@ public final class DocumentLayoutBox {
         this.resolvedRightInset = resolvedRightInset;
         this.resolvedBottomInset = resolvedBottomInset;
         this.resolvedLeftInset = resolvedLeftInset;
+        this.layoutMutationVersion = layoutMutationVersion;
+        this.subtreeLayoutMutationVersion = subtreeLayoutMutationVersion;
+        this.layoutTextMeasureEpoch = layoutTextMeasureEpoch;
+        this.layoutContainingLeft = layoutContainingLeft;
+        this.layoutFlowTop = layoutFlowTop;
+        this.layoutContainingWidth = layoutContainingWidth;
+        this.layoutContainingHeight = layoutContainingHeight;
+        this.layoutForcedContentWidth = layoutForcedContentWidth;
+        this.layoutForcedContentHeight = layoutForcedContentHeight;
     }
 
     public ElementNode getElement() {
@@ -88,7 +122,63 @@ public final class DocumentLayoutBox {
                 ? computedStyle : UiStyleResolver.compute(element);
         return new DocumentLayoutBox(element, refreshedStyle, refreshedChildren, textRuns, inlineFragments, margin,
                 border, padding, left, top, width, height, positionOffsetX, positionOffsetY, resolvedTopInset,
-                resolvedRightInset, resolvedBottomInset, resolvedLeftInset);
+                resolvedRightInset, resolvedBottomInset, resolvedLeftInset, layoutMutationVersion,
+                subtreeLayoutMutationVersion, layoutTextMeasureEpoch, layoutContainingLeft, layoutFlowTop,
+                layoutContainingWidth, layoutContainingHeight, layoutForcedContentWidth, layoutForcedContentHeight);
+    }
+
+    DocumentLayoutBox translatedTo(int nextLeft, int nextTop) {
+        return translated(nextLeft - left, nextTop - top);
+    }
+
+    private DocumentLayoutBox translated(int deltaX, int deltaY) {
+        if (deltaX == 0 && deltaY == 0) {
+            return this;
+        }
+        List<DocumentLayoutBox> translatedChildren = new ArrayList<DocumentLayoutBox>(children.size());
+        for (DocumentLayoutBox child : children) {
+            translatedChildren.add(child.translated(deltaX, deltaY));
+        }
+        List<DocumentLayoutTextRun> translatedTextRuns = new ArrayList<DocumentLayoutTextRun>(textRuns.size());
+        for (DocumentLayoutTextRun textRun : textRuns) {
+            translatedTextRuns.add(textRun.translated(deltaX, deltaY));
+        }
+        List<DocumentLayoutInlineFragment> translatedInlineFragments =
+                new ArrayList<DocumentLayoutInlineFragment>(inlineFragments.size());
+        for (DocumentLayoutInlineFragment inlineFragment : inlineFragments) {
+            translatedInlineFragments.add(inlineFragment.translated(deltaX, deltaY));
+        }
+        return new DocumentLayoutBox(element, computedStyle, translatedChildren, translatedTextRuns,
+                translatedInlineFragments, margin, border, padding, left + deltaX, top + deltaY, width, height,
+                positionOffsetX, positionOffsetY, resolvedTopInset, resolvedRightInset, resolvedBottomInset,
+                resolvedLeftInset, layoutMutationVersion, subtreeLayoutMutationVersion, layoutTextMeasureEpoch,
+                layoutContainingLeft, layoutFlowTop, layoutContainingWidth, layoutContainingHeight,
+                layoutForcedContentWidth, layoutForcedContentHeight);
+    }
+
+    boolean containsOutOfFlowPositionedBox() {
+        if (computedStyle.getPosition() == UiPosition.ABSOLUTE || computedStyle.getPosition() == UiPosition.FIXED) {
+            return true;
+        }
+        for (DocumentLayoutBox child : children) {
+            if (child.containsOutOfFlowPositionedBox()) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    void setLayoutPassReusedSubtreeCountForDiagnostics(int reusedSubtreeCount) {
+        this.layoutPassReusedSubtreeCount = Math.max(0, reusedSubtreeCount);
+    }
+
+    /**
+     * 返回生成当前根布局盒的布局 pass 中复用的子树数量。
+     *
+     * @return 复用子树数量
+     */
+    public int getLayoutPassReusedSubtreeCountForDiagnostics() {
+        return layoutPassReusedSubtreeCount;
     }
 
     public List<DocumentLayoutBox> getChildren() {
@@ -270,6 +360,42 @@ public final class DocumentLayoutBox {
      */
     public int getResolvedLeftInset() {
         return resolvedLeftInset;
+    }
+
+    int getLayoutMutationVersion() {
+        return layoutMutationVersion;
+    }
+
+    int getSubtreeLayoutMutationVersion() {
+        return subtreeLayoutMutationVersion;
+    }
+
+    int getLayoutTextMeasureEpoch() {
+        return layoutTextMeasureEpoch;
+    }
+
+    int getLayoutContainingLeft() {
+        return layoutContainingLeft;
+    }
+
+    int getLayoutFlowTop() {
+        return layoutFlowTop;
+    }
+
+    int getLayoutContainingWidth() {
+        return layoutContainingWidth;
+    }
+
+    int getLayoutContainingHeight() {
+        return layoutContainingHeight;
+    }
+
+    int getLayoutForcedContentWidth() {
+        return layoutForcedContentWidth;
+    }
+
+    int getLayoutForcedContentHeight() {
+        return layoutForcedContentHeight;
     }
 
     /**

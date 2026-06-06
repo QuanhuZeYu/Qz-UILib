@@ -104,11 +104,28 @@ public final class DocumentLayoutEngine {
      */
     public static DocumentLayoutBox layout(ElementNode rootElement, int viewportWidth, int viewportHeight,
             TextMeasureService textMeasureService, LayoutRuntimeValueResolver layoutValueResolver) {
+        return layout(rootElement, viewportWidth, viewportHeight, textMeasureService, layoutValueResolver, null);
+    }
+
+    /**
+     * 使用上一轮布局盒作为候选缓存对根元素执行布局。
+     *
+     * @param rootElement 根元素
+     * @param viewportWidth 视口宽度
+     * @param viewportHeight 视口高度
+     * @param textMeasureService 文本测量服务
+     * @param layoutValueResolver 运行态布局值解析器
+     * @param previousRootBox 上一轮根布局盒；为 null 时不启用子树复用
+     * @return 根布局盒
+     */
+    public static DocumentLayoutBox layout(ElementNode rootElement, int viewportWidth, int viewportHeight,
+            TextMeasureService textMeasureService, LayoutRuntimeValueResolver layoutValueResolver,
+            DocumentLayoutBox previousRootBox) {
         Objects.requireNonNull(rootElement, "rootElement");
         int safeViewportWidth = Math.max(0, viewportWidth);
         int safeViewportHeight = Math.max(0, viewportHeight);
         LayoutContext layoutContext = new LayoutContext(Objects.requireNonNull(textMeasureService,
-                "textMeasureService"), resolveLayoutValueResolver(layoutValueResolver));
+                "textMeasureService"), resolveLayoutValueResolver(layoutValueResolver), previousRootBox);
         AbsoluteContainingBlock fixedContainingBlock = new AbsoluteContainingBlock(0, 0, safeViewportWidth,
                 safeViewportHeight);
         return layoutElement(rootElement, 0, 0, safeViewportWidth, safeViewportHeight, AUTO_SIZE, AUTO_SIZE,
@@ -171,11 +188,30 @@ public final class DocumentLayoutEngine {
      */
     public static DocumentLayoutBox layoutViewportRoot(ElementNode rootElement, int viewportWidth, int viewportHeight,
             TextMeasureService textMeasureService, LayoutRuntimeValueResolver layoutValueResolver) {
+        return layoutViewportRoot(rootElement, viewportWidth, viewportHeight, textMeasureService, layoutValueResolver,
+                null);
+    }
+
+    /**
+     * 使用上一轮布局盒作为候选缓存对视口根元素执行布局。
+     *
+     * @param rootElement 根元素
+     * @param viewportWidth 视口宽度
+     * @param viewportHeight 视口高度
+     * @param textMeasureService 文本测量服务
+     * @param layoutValueResolver 运行态布局值解析器
+     * @param previousRootBox 上一轮根布局盒；为 null 时不启用子树复用
+     * @return 根布局盒
+     */
+    public static DocumentLayoutBox layoutViewportRoot(ElementNode rootElement, int viewportWidth, int viewportHeight,
+            TextMeasureService textMeasureService, LayoutRuntimeValueResolver layoutValueResolver,
+            DocumentLayoutBox previousRootBox) {
         Objects.requireNonNull(rootElement, "rootElement");
         TextMeasureService resolvedTextMeasureService = Objects.requireNonNull(textMeasureService,
                 "textMeasureService");
         LayoutRuntimeValueResolver resolvedLayoutValueResolver = resolveLayoutValueResolver(layoutValueResolver);
-        LayoutContext layoutContext = new LayoutContext(resolvedTextMeasureService, resolvedLayoutValueResolver);
+        LayoutContext layoutContext = new LayoutContext(resolvedTextMeasureService, resolvedLayoutValueResolver,
+                previousRootBox);
         int safeViewportWidth = Math.max(0, viewportWidth);
         int safeViewportHeight = Math.max(0, viewportHeight);
         ComputedStyle rootStyle = layoutContext.computeStyle(rootElement);
@@ -199,11 +235,19 @@ public final class DocumentLayoutEngine {
             AbsoluteContainingBlock absoluteContainingBlock, AbsoluteContainingBlock fixedContainingBlock,
             LayoutContext layoutContext) {
         ComputedStyle computedStyle = layoutContext.computeStyle(element);
+        DocumentLayoutBox reusableBox = resolveReusableLayoutBox(element, containingLeft, flowTop, containingWidth,
+                containingHeight, forcedContentWidth, forcedContentHeight, computedStyle, absoluteContainingBlock,
+                fixedContainingBlock, layoutContext);
+        if (reusableBox != null) {
+            layoutContext.recordReusedLayoutSubtree();
+            return reusableBox;
+        }
         if (computedStyle.getDisplay() == UiDisplay.NONE) {
-            return new DocumentLayoutBox(element, computedStyle, Collections.<DocumentLayoutBox>emptyList(),
+            return createLayoutBox(element, computedStyle, Collections.<DocumentLayoutBox>emptyList(),
                     Collections.<DocumentLayoutTextRun>emptyList(), Collections.<DocumentLayoutInlineFragment>emptyList(),
                     DocumentLayoutEdges.zero(), DocumentLayoutEdges.zero(), DocumentLayoutEdges.zero(), containingLeft,
-                    flowTop, 0, 0, 0, 0, 0, 0, 0, 0);
+                    flowTop, 0, 0, 0, 0, 0, 0, 0, 0, layoutContext, containingLeft, flowTop, containingWidth,
+                    containingHeight, forcedContentWidth, forcedContentHeight);
         }
 
         DocumentLayoutEdges margin = resolveMarginInsets(element, computedStyle, containingWidth,
@@ -295,10 +339,11 @@ public final class DocumentLayoutEngine {
                 DocumentAnimationProperty.LEFT, containingWidth, layoutContext.layoutValueResolver);
         int positionOffsetX = resolveRelativeOffsetX(computedStyle, resolvedLeftInset, resolvedRightInset);
         int positionOffsetY = resolveRelativeOffsetY(computedStyle, resolvedTopInset, resolvedBottomInset);
-        return new DocumentLayoutBox(element, computedStyle, childrenResult.children, childrenResult.textRuns,
+        return createLayoutBox(element, computedStyle, childrenResult.children, childrenResult.textRuns,
                 childrenResult.inlineFragments, margin, border, padding, borderBoxLeft, borderBoxTop, borderBoxWidth,
                 borderBoxHeight, positionOffsetX, positionOffsetY, resolvedTopInset, resolvedRightInset,
-                resolvedBottomInset, resolvedLeftInset);
+                resolvedBottomInset, resolvedLeftInset, layoutContext, containingLeft, flowTop, containingWidth,
+                containingHeight, forcedContentWidth, forcedContentHeight);
     }
 
     /**
@@ -311,6 +356,74 @@ public final class DocumentLayoutEngine {
         }
         int textLineHeight = TextLayoutHelper.resolveTextLineHeight(layoutContext.textMeasureService, computedStyle);
         return Math.max(autoContentHeight, textLineHeight);
+    }
+
+    private static DocumentLayoutBox createLayoutBox(ElementNode element, ComputedStyle computedStyle,
+            List<DocumentLayoutBox> children, List<DocumentLayoutTextRun> textRuns,
+            List<DocumentLayoutInlineFragment> inlineFragments, DocumentLayoutEdges margin, DocumentLayoutEdges border,
+            DocumentLayoutEdges padding, int left, int top, int width, int height, int positionOffsetX,
+            int positionOffsetY, int resolvedTopInset, int resolvedRightInset, int resolvedBottomInset,
+            int resolvedLeftInset) {
+        return createLayoutBox(element, computedStyle, children, textRuns, inlineFragments, margin, border, padding,
+                left, top, width, height, positionOffsetX, positionOffsetY, resolvedTopInset, resolvedRightInset,
+                resolvedBottomInset, resolvedLeftInset, null, AUTO_SIZE, AUTO_SIZE, AUTO_SIZE, AUTO_SIZE,
+                AUTO_SIZE, AUTO_SIZE);
+    }
+
+    static DocumentLayoutBox createLayoutBox(ElementNode element, ComputedStyle computedStyle,
+            List<DocumentLayoutBox> children, List<DocumentLayoutTextRun> textRuns,
+            List<DocumentLayoutInlineFragment> inlineFragments, DocumentLayoutEdges margin, DocumentLayoutEdges border,
+            DocumentLayoutEdges padding, int left, int top, int width, int height, int positionOffsetX,
+            int positionOffsetY, int resolvedTopInset, int resolvedRightInset, int resolvedBottomInset,
+            int resolvedLeftInset, LayoutContext layoutContext, int containingLeft, int flowTop, int containingWidth,
+            int containingHeight, int forcedContentWidth, int forcedContentHeight) {
+        int textMeasureEpoch = layoutContext == null ? -1 : layoutContext.textMeasureService.getEpoch();
+        DocumentLayoutBox box = new DocumentLayoutBox(element, computedStyle, children, textRuns, inlineFragments,
+                margin, border, padding, left, top, width, height, positionOffsetX, positionOffsetY, resolvedTopInset,
+                resolvedRightInset, resolvedBottomInset, resolvedLeftInset, element.__getLayoutMutationVersion(),
+                element.__getSubtreeLayoutMutationVersion(), textMeasureEpoch, containingLeft, flowTop, containingWidth,
+                containingHeight, forcedContentWidth, forcedContentHeight);
+        if (layoutContext != null && element.getParent() == null) {
+            box.setLayoutPassReusedSubtreeCountForDiagnostics(layoutContext.getReusedLayoutSubtreeCount());
+        }
+        return box;
+    }
+
+    private static DocumentLayoutBox resolveReusableLayoutBox(ElementNode element, int containingLeft, int flowTop,
+            int containingWidth, int containingHeight, int forcedContentWidth, int forcedContentHeight,
+            ComputedStyle computedStyle, AbsoluteContainingBlock absoluteContainingBlock,
+            AbsoluteContainingBlock fixedContainingBlock, LayoutContext layoutContext) {
+        if (!layoutContext.canReuseLayoutSubtrees()) {
+            return null;
+        }
+        if (element.getParent() == null) {
+            return null;
+        }
+        if (!isReusableLayoutDisplay(computedStyle) || isOutOfFlowPositioned(computedStyle)
+                || DocumentEffectChain.createsFixedContainingBlock(computedStyle)) {
+            return null;
+        }
+        DocumentLayoutBox previousBox = layoutContext.getPreviousLayoutBox(element);
+        if (previousBox == null || previousBox.getElement() != element || previousBox.containsOutOfFlowPositionedBox()) {
+            return null;
+        }
+        if (previousBox.getLayoutMutationVersion() != element.__getLayoutMutationVersion()
+                || previousBox.getSubtreeLayoutMutationVersion() != element.__getSubtreeLayoutMutationVersion()
+                || previousBox.getLayoutTextMeasureEpoch() != layoutContext.textMeasureService.getEpoch()
+                || previousBox.getLayoutContainingLeft() != containingLeft
+                || previousBox.getLayoutFlowTop() != flowTop
+                || previousBox.getLayoutContainingWidth() != containingWidth
+                || previousBox.getLayoutContainingHeight() != containingHeight
+                || previousBox.getLayoutForcedContentWidth() != forcedContentWidth
+                || previousBox.getLayoutForcedContentHeight() != forcedContentHeight) {
+            return null;
+        }
+        return previousBox.translatedTo(containingLeft + previousBox.getMargin().getLeft(),
+                flowTop + previousBox.getMargin().getTop());
+    }
+
+    private static boolean isReusableLayoutDisplay(ComputedStyle computedStyle) {
+        return computedStyle.getDisplay() == UiDisplay.BLOCK || computedStyle.getDisplay() == UiDisplay.NONE;
     }
 
     private static LayoutChildrenResult layoutBlockChildren(ElementNode element, int contentLeft, int contentTop,
@@ -1180,6 +1293,8 @@ public final class DocumentLayoutEngine {
 
         final TextMeasureService textMeasureService;
         final LayoutRuntimeValueResolver layoutValueResolver;
+        private final Map<ElementNode, DocumentLayoutBox> previousLayoutBoxCache =
+                new IdentityHashMap<ElementNode, DocumentLayoutBox>();
         private final Map<ElementNode, ComputedStyle> styleCache = new IdentityHashMap<ElementNode, ComputedStyle>();
         private final Map<ElementNode, List<DocumentNode>> generatedChildNodesCache =
                 new IdentityHashMap<ElementNode, List<DocumentNode>>();
@@ -1189,10 +1304,33 @@ public final class DocumentLayoutEngine {
                 new IdentityHashMap<ElementNode, Map<Integer, Integer>>();
         private final Map<ElementNode, Map<Integer, Integer>> intrinsicOuterWidthCache =
                 new IdentityHashMap<ElementNode, Map<Integer, Integer>>();
+        private int reusedLayoutSubtreeCount;
 
         LayoutContext(TextMeasureService textMeasureService, LayoutRuntimeValueResolver layoutValueResolver) {
+            this(textMeasureService, layoutValueResolver, null);
+        }
+
+        LayoutContext(TextMeasureService textMeasureService, LayoutRuntimeValueResolver layoutValueResolver,
+                DocumentLayoutBox previousRootBox) {
             this.textMeasureService = Objects.requireNonNull(textMeasureService, "textMeasureService");
             this.layoutValueResolver = Objects.requireNonNull(layoutValueResolver, "layoutValueResolver");
+            indexPreviousLayoutBox(previousRootBox);
+        }
+
+        boolean canReuseLayoutSubtrees() {
+            return !previousLayoutBoxCache.isEmpty() && layoutValueResolver == STATIC_LAYOUT_VALUE_RESOLVER;
+        }
+
+        DocumentLayoutBox getPreviousLayoutBox(ElementNode element) {
+            return previousLayoutBoxCache.get(element);
+        }
+
+        void recordReusedLayoutSubtree() {
+            reusedLayoutSubtreeCount++;
+        }
+
+        int getReusedLayoutSubtreeCount() {
+            return reusedLayoutSubtreeCount;
         }
 
         ComputedStyle computeStyle(ElementNode element) {
@@ -1252,6 +1390,16 @@ public final class DocumentLayoutEngine {
             }
             DocumentNode parent = element.getParent();
             return parent instanceof ElementNode ? computeStyle((ElementNode) parent) : null;
+        }
+
+        private void indexPreviousLayoutBox(DocumentLayoutBox box) {
+            if (box == null) {
+                return;
+            }
+            previousLayoutBoxCache.put(box.getElement(), box);
+            for (DocumentLayoutBox child : box.getChildren()) {
+                indexPreviousLayoutBox(child);
+            }
         }
 
         private static Integer getCachedIntrinsicWidth(Map<ElementNode, Map<Integer, Integer>> cache,
