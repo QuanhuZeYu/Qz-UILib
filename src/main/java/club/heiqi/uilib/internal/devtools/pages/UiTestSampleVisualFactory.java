@@ -785,7 +785,7 @@ final class UiTestSampleVisualFactory {
         fb.style().setBackgroundImage(UiBackgroundImage.texture("missing:nonexistent.png", 16, 16));
         row.append(ok).append(fb);
         stage.append(row);
-        appendMutedText(document, stage, "有效显示图片，缺失显示底色或占位不崩溃。");
+        appendMutedText(document, stage, "有效显示图片，缺失保留底色，不使用 Minecraft 默认紫黑 missing texture。");
     }
 
     /**

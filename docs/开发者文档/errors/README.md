@@ -6,7 +6,7 @@
 
 ---
 
-## GL/渲染状态泄漏类（合并，6 条）
+## GL/渲染状态泄漏类（合并，7 条）
 
 OpenGL 状态未正确保存/恢复，导致后续绘制异常。
 
@@ -16,8 +16,9 @@ OpenGL 状态未正确保存/恢复，导致后续绘制异常。
 - [`ERROR-20260513-font-decoration-gl-state-leak.md`](ERROR-20260513-font-decoration-gl-state-leak.md) — 文本装饰后 GL 状态泄漏导致后续贴图透明区域发白
 - [`ERROR-20260515-font-icon-alpha-state-leak.md`](ERROR-20260515-font-icon-alpha-state-leak.md) — 字体接管后图标透明状态污染（blend/alpha 通道不一致）
 - [`ERROR-20260517-font-post-render-hardcoded-state.md`](ERROR-20260517-font-post-render-hardcoded-state.md) — 字体渲染后硬编码 GL 状态破坏调用方自定义状态
+- [`ERROR-20260606-host-image-missing-texture-fallback.md`](ERROR-20260606-host-image-missing-texture-fallback.md) — 宿主图片缺失纹理未预检导致 Minecraft 默认紫黑 missing texture 泄漏到 UILib fallback
 
-**共性教训**：任何跨越渲染边界的绘制入口必须用真实 GL 状态保存/恢复包裹完整生命周期，不能用硬编码 `glEnable`/`glDisable` 模拟结束状态。
+**共性教训**：任何跨越渲染边界的绘制入口必须用真实 GL 状态保存/恢复包裹完整生命周期，不能用硬编码 `glEnable`/`glDisable` 模拟结束状态；需要 UILib 自定义 fallback 的宿主资源必须在绑定前完成可用性预检。
 
 ---
 
