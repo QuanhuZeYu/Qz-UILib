@@ -20,10 +20,12 @@ import club.heiqi.uilib.ui.style.props.UiPosition;
 import club.heiqi.uilib.ui.style.props.UiFontWeight;
 import club.heiqi.uilib.ui.style.props.UiPointerEvents;
 import club.heiqi.uilib.ui.style.values.UiStyleKeyword;
+import club.heiqi.uilib.ui.style.values.UiBoxShadow;
 import club.heiqi.uilib.ui.style.props.UiBorderCollapse;
 import club.heiqi.uilib.ui.style.props.UiCursor;
 import club.heiqi.uilib.ui.style.props.UiTextDecoration;
 import club.heiqi.uilib.ui.style.values.UiTextShadow;
+import club.heiqi.uilib.ui.style.values.UiTransform;
 
 import org.junit.Assert;
 import org.junit.Test;
@@ -386,6 +388,38 @@ public class UiStyleResolverTest {
         Assert.assertEquals(0xFF654321, UiStyleResolver.compute(child).getBackgroundColor());
         Assert.assertTrue(child.style().isImportant(UiStyleProperty.BACKGROUND_COLOR));
         Assert.assertNull(child.style().getKeyword(UiStyleProperty.BACKGROUND_COLOR));
+    }
+
+    /**
+     * 验证 slot 化的 paint-only 属性仍能复制，并能被关键字覆盖清除。
+     */
+    @Test
+    public void slotBackedPaintPropertiesCopyAndClearWithKeyword() {
+        UiStyleDeclaration source = new UiStyleDeclaration()
+                .setBorderRadius(UiStyleLength.px(9))
+                .setBackdropBlurRadius(UiStyleLength.px(4))
+                .setBackdropSaturation(1.25F)
+                .setBoxShadow(UiBoxShadow.of(1, 2, 3, 0xAA000000))
+                .setCursor(UiCursor.POINTER)
+                .setTextShadow(UiTextShadow.of(2, 1, 0xAA112233))
+                .setTransform(UiTransform.translate(6.0F, 7.0F));
+        UiStyleDeclaration copy = new UiStyleDeclaration().copyFrom(source);
+
+        Assert.assertEquals(source.getBorderRadius(), copy.getBorderRadius());
+        Assert.assertEquals(source.getBackdropBlurRadius(), copy.getBackdropBlurRadius());
+        Assert.assertEquals(source.getBackdropSaturation(), copy.getBackdropSaturation());
+        Assert.assertEquals(source.getBoxShadow(), copy.getBoxShadow());
+        Assert.assertEquals(source.getCursor(), copy.getCursor());
+        Assert.assertEquals(source.getTextShadow(), copy.getTextShadow());
+        Assert.assertEquals(source.getTransform(), copy.getTransform());
+
+        copy.setKeyword(UiStyleProperty.TEXT_SHADOW, UiStyleKeyword.INITIAL)
+                .setKeyword(UiStyleProperty.TRANSFORM, UiStyleKeyword.INITIAL);
+
+        Assert.assertNull(copy.getTextShadow());
+        Assert.assertNull(copy.getTransform());
+        Assert.assertEquals(UiStyleKeyword.INITIAL, copy.getKeyword(UiStyleProperty.TEXT_SHADOW));
+        Assert.assertEquals(UiStyleKeyword.INITIAL, copy.getKeyword(UiStyleProperty.TRANSFORM));
     }
 
     /**
