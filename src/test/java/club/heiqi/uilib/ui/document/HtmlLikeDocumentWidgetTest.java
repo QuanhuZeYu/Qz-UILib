@@ -871,6 +871,223 @@ public class HtmlLikeDocumentWidgetTest {
     }
 
     /**
+     * 验证可平移复用保留 table auto 列宽分配结果。
+     */
+    @Test
+    public void shouldTranslateCleanTableSubtreeWithColumnWidths() {
+        UiDocument document = UiDocument.create();
+        ElementNode root = document.getRootElement();
+        ElementNode changed = document.div();
+        ElementNode table = document.table();
+        ElementNode row = document.div();
+        ElementNode shortCell = document.div();
+        ElementNode longCell = document.div();
+        root.style().setWidth(UiStyleLength.px(160));
+        changed.style().setHeight(UiStyleLength.px(10));
+        table.style()
+                .setDisplay(UiDisplay.TABLE)
+                .setWidth(UiStyleLength.px(160));
+        row.style().setDisplay(UiDisplay.TABLE_ROW);
+        shortCell.style().setDisplay(UiDisplay.TABLE_CELL);
+        longCell.style().setDisplay(UiDisplay.TABLE_CELL);
+        shortCell.appendText("A");
+        longCell.appendText("ABCDEFGHIJ");
+        row.append(shortCell).append(longCell);
+        table.append(row);
+        root.append(changed).append(table);
+        CountingTextMeasureService textMeasureService = new CountingTextMeasureService();
+        HtmlLikeDocumentWidget widget = new HtmlLikeDocumentWidget(document, 160, 100, textMeasureService);
+        widget.applyLayoutBounds(0, 0, 160, 100);
+
+        widget.resolveLayoutBoxForTest();
+        int measureCountAfterInitialLayout = textMeasureService.getMeasureCount();
+        changed.style().setHeight(UiStyleLength.px(26));
+        DocumentLayoutBox rootBox = widget.resolveLayoutBoxForTest();
+        HtmlLikeDocumentWidget.PerformanceDiagnosticsSnapshot snapshot = widget.getPerformanceDiagnosticsSnapshot();
+        DocumentLayoutBox tableBox = findLayoutBox(rootBox, table);
+        DocumentLayoutBox rowBox = findLayoutBox(rootBox, row);
+        DocumentLayoutBox shortBox = findLayoutBox(rootBox, shortCell);
+        DocumentLayoutBox longBox = findLayoutBox(rootBox, longCell);
+
+        Assert.assertTrue(snapshot.getLastLayoutReusedSubtreeCount() >= 1);
+        Assert.assertEquals(measureCountAfterInitialLayout, textMeasureService.getMeasureCount());
+        Assert.assertNotNull(tableBox);
+        Assert.assertNotNull(rowBox);
+        Assert.assertNotNull(shortBox);
+        Assert.assertNotNull(longBox);
+        Assert.assertEquals(26, tableBox.getTop());
+        Assert.assertEquals(26, rowBox.getTop());
+        Assert.assertEquals(26, shortBox.getTop());
+        Assert.assertEquals(shortBox.getLeft() + shortBox.getWidth(), longBox.getLeft());
+        Assert.assertEquals(160, shortBox.getWidth() + longBox.getWidth());
+        Assert.assertTrue(longBox.getWidth() > shortBox.getWidth());
+    }
+
+    /**
+     * 验证可平移复用保留 table 行高测量与行落位结果。
+     */
+    @Test
+    public void shouldTranslateCleanTableSubtreeWithRowHeights() {
+        UiDocument document = UiDocument.create();
+        ElementNode root = document.getRootElement();
+        ElementNode changed = document.div();
+        ElementNode table = document.table();
+        ElementNode firstRow = document.div();
+        ElementNode secondRow = document.div();
+        ElementNode tallCell = document.div();
+        ElementNode shortCell = document.div();
+        root.style().setWidth(UiStyleLength.px(100));
+        changed.style().setHeight(UiStyleLength.px(8));
+        table.style()
+                .setDisplay(UiDisplay.TABLE)
+                .setWidth(UiStyleLength.px(100));
+        firstRow.style().setDisplay(UiDisplay.TABLE_ROW);
+        secondRow.style().setDisplay(UiDisplay.TABLE_ROW);
+        tallCell.style()
+                .setDisplay(UiDisplay.TABLE_CELL)
+                .setHeight(UiStyleLength.px(24));
+        shortCell.style()
+                .setDisplay(UiDisplay.TABLE_CELL)
+                .setHeight(UiStyleLength.px(12));
+        firstRow.append(tallCell);
+        secondRow.append(shortCell);
+        table.append(firstRow).append(secondRow);
+        root.append(changed).append(table);
+        HtmlLikeDocumentWidget widget = new HtmlLikeDocumentWidget(document, 100, 100,
+                new DeterministicTextMeasureService());
+        widget.applyLayoutBounds(0, 0, 100, 100);
+
+        widget.resolveLayoutBoxForTest();
+        changed.style().setHeight(UiStyleLength.px(18));
+        DocumentLayoutBox rootBox = widget.resolveLayoutBoxForTest();
+        HtmlLikeDocumentWidget.PerformanceDiagnosticsSnapshot snapshot = widget.getPerformanceDiagnosticsSnapshot();
+        DocumentLayoutBox tableBox = findLayoutBox(rootBox, table);
+        DocumentLayoutBox firstRowBox = findLayoutBox(rootBox, firstRow);
+        DocumentLayoutBox secondRowBox = findLayoutBox(rootBox, secondRow);
+        DocumentLayoutBox tallBox = findLayoutBox(rootBox, tallCell);
+        DocumentLayoutBox shortBox = findLayoutBox(rootBox, shortCell);
+
+        Assert.assertTrue(snapshot.getLastLayoutReusedSubtreeCount() >= 1);
+        Assert.assertNotNull(tableBox);
+        Assert.assertNotNull(firstRowBox);
+        Assert.assertNotNull(secondRowBox);
+        Assert.assertNotNull(tallBox);
+        Assert.assertNotNull(shortBox);
+        Assert.assertEquals(18, tableBox.getTop());
+        Assert.assertEquals(36, tableBox.getHeight());
+        Assert.assertEquals(18, firstRowBox.getTop());
+        Assert.assertEquals(24, firstRowBox.getHeight());
+        Assert.assertEquals(42, secondRowBox.getTop());
+        Assert.assertEquals(12, secondRowBox.getHeight());
+        Assert.assertEquals(24, tallBox.getHeight());
+        Assert.assertEquals(12, shortBox.getHeight());
+    }
+
+    /**
+     * 验证 table 单元格内容变化会让 table 子树重新布局，而不是复用旧列宽。
+     */
+    @Test
+    public void shouldInvalidateTableSubtreeReuseWhenCellContentChanges() {
+        UiDocument document = UiDocument.create();
+        ElementNode root = document.getRootElement();
+        ElementNode table = document.table();
+        ElementNode row = document.div();
+        ElementNode stableCell = document.div();
+        ElementNode changedCell = document.div();
+        root.style().setWidth(UiStyleLength.px(120));
+        table.style()
+                .setDisplay(UiDisplay.TABLE)
+                .setWidth(UiStyleLength.px(120));
+        row.style().setDisplay(UiDisplay.TABLE_ROW);
+        stableCell.style().setDisplay(UiDisplay.TABLE_CELL);
+        changedCell.style().setDisplay(UiDisplay.TABLE_CELL);
+        stableCell.appendText("A");
+        TextNode changedText = changedCell.appendText("BB");
+        row.append(stableCell).append(changedCell);
+        table.append(row);
+        root.append(table);
+        CountingTextMeasureService textMeasureService = new CountingTextMeasureService();
+        HtmlLikeDocumentWidget widget = new HtmlLikeDocumentWidget(document, 120, 80, textMeasureService);
+        widget.applyLayoutBounds(0, 0, 120, 80);
+
+        widget.resolveLayoutBoxForTest();
+        int measureCountAfterInitialLayout = textMeasureService.getMeasureCount();
+        changedText.setText("BBBBBBBBBBBB");
+        DocumentLayoutBox rootBox = widget.resolveLayoutBoxForTest();
+        HtmlLikeDocumentWidget.PerformanceDiagnosticsSnapshot snapshot = widget.getPerformanceDiagnosticsSnapshot();
+        DocumentLayoutBox stableBox = findLayoutBox(rootBox, stableCell);
+        DocumentLayoutBox changedBox = findLayoutBox(rootBox, changedCell);
+
+        Assert.assertEquals(0, snapshot.getLastLayoutReusedSubtreeCount());
+        Assert.assertTrue(textMeasureService.getMeasureCount() > measureCountAfterInitialLayout);
+        Assert.assertNotNull(stableBox);
+        Assert.assertNotNull(changedBox);
+        Assert.assertTrue(changedBox.getWidth() > stableBox.getWidth());
+    }
+
+    /**
+     * 验证包含 absolute/fixed 后代的 table 子树仍保守重排。
+     */
+    @Test
+    public void shouldNotTranslateTableSubtreeContainingOutOfFlowPositionedDescendants() {
+        UiDocument document = UiDocument.create();
+        ElementNode root = document.getRootElement();
+        ElementNode changed = document.div();
+        ElementNode table = document.table();
+        ElementNode row = document.div();
+        ElementNode cell = document.div();
+        ElementNode absolute = document.div();
+        ElementNode fixed = document.div();
+        root.style().setWidth(UiStyleLength.px(120));
+        changed.style().setHeight(UiStyleLength.px(10));
+        table.style()
+                .setDisplay(UiDisplay.TABLE)
+                .setPosition(UiPosition.RELATIVE)
+                .setWidth(UiStyleLength.px(120));
+        row.style().setDisplay(UiDisplay.TABLE_ROW);
+        cell.style()
+                .setDisplay(UiDisplay.TABLE_CELL)
+                .setHeight(UiStyleLength.px(40));
+        absolute.style()
+                .setPosition(UiPosition.ABSOLUTE)
+                .setLeft(UiStyleLength.px(7))
+                .setTop(UiStyleLength.px(4))
+                .setWidth(UiStyleLength.px(12))
+                .setHeight(UiStyleLength.px(8));
+        fixed.style()
+                .setPosition(UiPosition.FIXED)
+                .setLeft(UiStyleLength.px(9))
+                .setTop(UiStyleLength.px(6))
+                .setWidth(UiStyleLength.px(10))
+                .setHeight(UiStyleLength.px(6));
+        cell.append(absolute).append(fixed);
+        row.append(cell);
+        table.append(row);
+        root.append(changed).append(table);
+        HtmlLikeDocumentWidget widget = new HtmlLikeDocumentWidget(document, 120, 100,
+                new DeterministicTextMeasureService());
+        widget.applyLayoutBounds(0, 0, 120, 100);
+
+        widget.resolveLayoutBoxForTest();
+        changed.style().setHeight(UiStyleLength.px(30));
+        DocumentLayoutBox rootBox = widget.resolveLayoutBoxForTest();
+        HtmlLikeDocumentWidget.PerformanceDiagnosticsSnapshot snapshot = widget.getPerformanceDiagnosticsSnapshot();
+        DocumentLayoutBox tableBox = findLayoutBox(rootBox, table);
+        DocumentLayoutBox absoluteBox = findLayoutBox(rootBox, absolute);
+        DocumentLayoutBox fixedBox = findLayoutBox(rootBox, fixed);
+
+        Assert.assertEquals(0, snapshot.getLastLayoutReusedSubtreeCount());
+        Assert.assertNotNull(tableBox);
+        Assert.assertNotNull(absoluteBox);
+        Assert.assertNotNull(fixedBox);
+        Assert.assertEquals(30, tableBox.getTop());
+        Assert.assertEquals(7, absoluteBox.getLeft());
+        Assert.assertEquals(34, absoluteBox.getTop());
+        Assert.assertEquals(9, fixedBox.getLeft());
+        Assert.assertEquals(6, fixedBox.getTop());
+    }
+
+    /**
      * 验证同一父级内移动 DOM 子节点会让布局顺序重新计算。
      */
     @Test
