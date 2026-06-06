@@ -5,7 +5,8 @@
 ## 当前接入方式
 
 - 仓库已提供项目级 opencode 配置：`.opencode/opencode.json`
-- 项目级配置显式注册 `codegraph` MCP，启动命令使用 `npx -y @astudioplus/codegraph-mcp --mcp`
+- 项目级配置显式注册 `codegraph` MCP，Windows 下通过 `cmd.exe /d /s /c` 启动 `npx -y @astudioplus/codegraph-mcp --graph-only`
+- `@astudioplus/codegraph-mcp` 的 npm 启动器会自行进入 MCP 模式，配置中不要额外传 `--mcp`，否则底层会收到重复参数并启动失败
 - 协作者只要从仓库内启动 opencode，即可按项目配置加载 CodeGraph；个人全局安装只作为本机加速，不是协作前提
 - 项目级配置排除 `.git`、`.gradle`、`build`、`run`、`node_modules` 等目录，避免索引构建产物、运行目录和依赖缓存
 - 项目级配置设置 `CODEGRAPH_TELEMETRY=off`，不发送 CodeGraph 匿名遥测
@@ -15,6 +16,7 @@
 
 - `docs/记忆/` 继续承载稳定协作记忆：当前态、长期事实、决策和交接
 - CodeGraph 负责动态代码关系：符号搜索、调用链、依赖图、影响面、相关测试和 PR 上下文
+- 当前项目配置使用 `--graph-only`，优先保证符号、调用链、依赖图和影响分析稳定启动；语义 embedding 类能力不作为默认协作前提
 - 源码、Gradle 配置和测试结果仍是最终事实来源，CodeGraph 查询结果不能替代 `Read`、定向测试和编译验证
 - 不把 CodeGraph 的大段查询输出写入记忆文档；只把对后续协作仍有价值的稳定结论写回对应层级
 

@@ -4,22 +4,11 @@
     "codegraph": {
       "type": "local",
       "command": [
-        "npx",
-        "-y",
-        "@astudioplus/codegraph-mcp",
-        "--mcp",
-        "--exclude",
-        ".git",
-        "--exclude",
-        ".gradle",
-        "--exclude",
-        "build",
-        "--exclude",
-        "run",
-        "--exclude",
-        "node_modules",
-        "--max-files",
-        "10000"
+        "cmd.exe",
+        "/d",
+        "/s",
+        "/c",
+        "npx -y @astudioplus/codegraph-mcp --graph-only --exclude .git --exclude .gradle --exclude build --exclude run --exclude node_modules --max-files 10000"
       ],
       "environment": {
         "CODEGRAPH_TELEMETRY": "off"
