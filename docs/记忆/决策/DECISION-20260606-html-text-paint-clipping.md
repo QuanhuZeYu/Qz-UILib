@@ -28,9 +28,10 @@ HTML-like 文档当前使用全局 `layoutVersion` / `paintVersion` 缓存。任
 
 - `HtmlLikeDocumentWidget` 现在调用带 `TextMeasureService` 的 paint command 构建入口，以支持横向可见片段计算。
 - 旧的 `DocumentPaintEngine.buildPaintCommands(...)` 入口仍保留；未传入文本测量服务时只做不依赖测量的保守可见性裁剪。
-- `/qzuilib test` 的 frame/render 统计文本改为按帧数节流，避免页面静止时每帧打脏普通 DOM 文本。
+- `/qzuilib test` 不对 frame/render 统计做页面级节流，保持普通使用方每帧写入 DOM 文本时的真实压力场景；本决策只承担框架绘制层优化。
 
 ## 后续注意事项
 
 - 该方案不是跨帧布局缓存，不能解决文本内容真实变动导致的全局 layoutVersion 失效问题。
+- `/qzuilib test` 的环境统计若每帧变化，仍会按普通 DOM 文本变更触发布局版本递增；这是刻意保留的测试压力，不应在测试页侧隐藏。
 - 后续可继续做 TextNode 级换行缓存或 VirtualTextBlock / LogView，但它们应是进一步优化和便利组件，不应成为长文本性能正确性的唯一手段。

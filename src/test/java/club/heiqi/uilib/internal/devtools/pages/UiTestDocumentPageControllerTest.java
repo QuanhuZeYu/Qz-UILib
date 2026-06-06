@@ -462,26 +462,22 @@ public class UiTestDocumentPageControllerTest {
     }
 
     /**
-     * 验证高频 frame/render 统计不会让 test 页环境文本每帧触发布局失效。
+     * 验证 test 页不替使用方节流运行时统计，普通环境文本每帧反映最新 frame/render。
      */
     @Test
-    public void shouldThrottleRuntimeStatsEnvironmentTextDirtying() {
+    public void shouldRefreshRuntimeStatsEnvironmentTextEveryFrame() {
         TestFixture fixture = new TestFixture(true);
 
         fixture.controller.configureDocumentPage();
         fixture.controller.buildDocument();
-        HtmlLikeDocumentWidget widget = fixture.controller.getHtmlLikeDocumentWidget();
-        widget.applyLayoutBounds(0, 0, 760, 520);
-        widget.resolveLayoutBoxForTest();
-        int initialStaticLayoutGeneration = widget.getPerformanceDiagnosticsSnapshot().getStaticLayoutGeneration();
 
-        for (int index = 0; index < 5; index++) {
-            fixture.controller.beforeDocumentFrame();
-            widget.resolveLayoutBoxForTest();
-        }
+        fixture.controller.beforeDocumentFrame();
+        List<String> texts = collectDocumentTexts(fixture.controller.getHtmlLikeDocumentWidget());
+        Assert.assertTrue(containsText(texts, "frame=2.00ms, render=1.00ms"));
 
-        Assert.assertEquals(initialStaticLayoutGeneration,
-                widget.getPerformanceDiagnosticsSnapshot().getStaticLayoutGeneration());
+        fixture.controller.beforeDocumentFrame();
+        texts = collectDocumentTexts(fixture.controller.getHtmlLikeDocumentWidget());
+        Assert.assertTrue(containsText(texts, "frame=3.00ms, render=1.50ms"));
     }
 
     private static List<String> collectDocumentTexts(HtmlLikeDocumentWidget widget) {
