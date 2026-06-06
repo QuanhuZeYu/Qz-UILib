@@ -178,8 +178,9 @@ Toolchain、依赖版本、构建配置与运行时类路径。
 
 ---
 
-## 其他（1 条）
+## 其他（2 条）
 
 - [`ERROR-20260426-powershell-git-commit-quoting.md`](ERROR-20260426-powershell-git-commit-quoting.md) — PowerShell git commit 消息转义错误导致提交失败
+- [`ERROR-20260607-codegraph-mcp-startup.md`](ERROR-20260607-codegraph-mcp-startup.md) — Windows 下 opencode 直接启动 npm `.cmd` shim 且重复传 `--mcp` 导致 CodeGraph MCP 启动失败
 
-**教训**：PowerShell 中 git commit 消息含特殊字符时必须用单引号包裹或正确转义。
+**教训**：PowerShell 中 git commit 消息含特殊字符时必须用单引号包裹或正确转义；Windows 下 opencode MCP 启动 npm 包应优先经 `cmd.exe /d /s /c` 包装，并确认包本身是否已经进入 MCP 模式。
