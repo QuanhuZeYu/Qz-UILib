@@ -30,6 +30,7 @@ import club.heiqi.uilib.ui.style.values.UiStyleInsets;
 import club.heiqi.uilib.ui.style.values.UiStyleLength;
 import club.heiqi.uilib.ui.style.values.UiTransform;
 import club.heiqi.uilib.ui.style.values.UiBoxShadow;
+import club.heiqi.uilib.ui.style.props.UiWhiteSpace;
 import club.heiqi.uilib.ui.style.props.UiWordBreak;
 import club.heiqi.uilib.ui.text.TextMeasureService;
 import club.heiqi.uilib.ui.text.DefaultTextMeasureService;
@@ -1546,6 +1547,113 @@ public class DocumentPaintEngineTest {
     }
 
     /**
+     * 验证滚动容器中被 clip 完全裁掉的长文本行不会生成 TEXT 命令。
+     */
+    @Test
+    public void shouldSkipTextRunsOutsideOverflowClip() {
+        UiDocument document = UiDocument.create();
+        ElementNode root = document.getRootElement();
+        StringBuilder text = new StringBuilder();
+        for (int index = 0; index < 1000; index++) {
+            if (index > 0) {
+                text.append('\n');
+            }
+            text.append(String.format(java.util.Locale.ROOT, "line-%03d", Integer.valueOf(index)));
+        }
+
+        root.style()
+                .setWidth(UiStyleLength.px(120))
+                .setHeight(UiStyleLength.px(54))
+                .setOverflowX(UiOverflow.HIDDEN)
+                .setOverflowY(UiOverflow.AUTO)
+                .setWhiteSpace(UiWhiteSpace.PRE)
+                .setTextColor(0xFFEFF6FF);
+        root.appendText(text.toString());
+        DeterministicTextMeasureService textMeasureService = new DeterministicTextMeasureService();
+
+        DocumentLayoutBox rootBox = DocumentLayoutEngine.layout(root, 120, 54, textMeasureService);
+        DocumentScrollState scrollState = new DocumentScrollState();
+        scrollState.updateFromLayout(rootBox);
+        List<DocumentPaintCommand> commands = DocumentPaintEngine.buildPaintCommands(rootBox,
+                Collections.<DocumentLayoutBox>emptyList(), scrollState, 1L, null, textMeasureService);
+
+        Assert.assertTrue(countCommands(commands, DocumentPaintCommandType.TEXT) <= 5);
+        Assert.assertTrue(containsTextCommand(commands, root, "line-000"));
+        Assert.assertFalse(containsTextCommand(commands, root, "line-999"));
+    }
+
+    /**
+     * 验证滚动后文本裁剪会跟随新的可见行范围更新。
+     */
+    @Test
+    public void shouldPaintNewVisibleTextRunsAfterScroll() {
+        UiDocument document = UiDocument.create();
+        ElementNode root = document.getRootElement();
+        StringBuilder text = new StringBuilder();
+        for (int index = 0; index < 1000; index++) {
+            if (index > 0) {
+                text.append('\n');
+            }
+            text.append(String.format(java.util.Locale.ROOT, "line-%03d", Integer.valueOf(index)));
+        }
+
+        root.style()
+                .setWidth(UiStyleLength.px(120))
+                .setHeight(UiStyleLength.px(54))
+                .setOverflowX(UiOverflow.HIDDEN)
+                .setOverflowY(UiOverflow.AUTO)
+                .setWhiteSpace(UiWhiteSpace.PRE)
+                .setTextColor(0xFFEFF6FF);
+        root.appendText(text.toString());
+        DeterministicTextMeasureService textMeasureService = new DeterministicTextMeasureService();
+
+        DocumentLayoutBox rootBox = DocumentLayoutEngine.layout(root, 120, 54, textMeasureService);
+        DocumentScrollState scrollState = new DocumentScrollState();
+        scrollState.updateFromLayout(rootBox);
+        Assert.assertTrue(scrollState.setScrollOffset(root, 0, 180));
+        List<DocumentPaintCommand> commands = DocumentPaintEngine.buildPaintCommands(rootBox,
+                Collections.<DocumentLayoutBox>emptyList(), scrollState, 1L, null, textMeasureService);
+
+        Assert.assertTrue(countCommands(commands, DocumentPaintCommandType.TEXT) <= 6);
+        Assert.assertTrue(containsTextCommand(commands, root, "line-010"));
+        Assert.assertFalse(containsTextCommand(commands, root, "line-000"));
+    }
+
+    /**
+     * 验证横向超长单行文本只生成保守可见片段，避免每帧提交完整字符串。
+     */
+    @Test
+    public void shouldClipLongSingleLineTextToVisibleSlice() {
+        UiDocument document = UiDocument.create();
+        ElementNode root = document.getRootElement();
+        StringBuilder text = new StringBuilder();
+        for (int index = 0; index < 1000; index++) {
+            text.append((char) ('a' + index % 26));
+        }
+
+        root.style()
+                .setWidth(UiStyleLength.px(80))
+                .setHeight(UiStyleLength.px(18))
+                .setOverflowX(UiOverflow.HIDDEN)
+                .setOverflowY(UiOverflow.HIDDEN)
+                .setWhiteSpace(UiWhiteSpace.NOWRAP)
+                .setTextColor(0xFFEFF6FF);
+        root.appendText(text.toString());
+        DeterministicTextMeasureService textMeasureService = new DeterministicTextMeasureService();
+
+        List<DocumentPaintCommand> commands = DocumentPaintEngine.buildPaintCommands(
+                DocumentLayoutEngine.layout(root, 80, 18, textMeasureService),
+                Collections.<DocumentLayoutBox>emptyList(), null, 1L, null, textMeasureService);
+
+        Assert.assertEquals(1, countCommands(commands, DocumentPaintCommandType.TEXT));
+        DocumentPaintCommand textCommand = findFirstCommand(commands, DocumentPaintCommandType.TEXT);
+        Assert.assertNotNull(textCommand);
+        Assert.assertTrue(textCommand.getText().length() < text.length());
+        Assert.assertTrue(textCommand.getText().length() <= 20);
+        Assert.assertTrue(text.toString().startsWith(textCommand.getText()));
+    }
+
+    /**
      * 验证 CUSTOM 绘制命令作为内容命令，会随元素自身滚动偏移。
      */
     @Test
@@ -1726,6 +1834,16 @@ public class DocumentPaintEngineTest {
             }
         }
         return count;
+    }
+
+    private static DocumentPaintCommand findFirstCommand(List<DocumentPaintCommand> commands,
+            DocumentPaintCommandType type) {
+        for (DocumentPaintCommand command : commands) {
+            if (command.getType() == type) {
+                return command;
+            }
+        }
+        return null;
     }
 
     private static boolean containsTextCommand(List<DocumentPaintCommand> commands, ElementNode element, String text) {

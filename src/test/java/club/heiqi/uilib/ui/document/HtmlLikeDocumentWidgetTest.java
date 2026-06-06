@@ -78,6 +78,7 @@ import club.heiqi.uilib.ui.style.props.UiFontStyle;
 import club.heiqi.uilib.ui.style.props.UiFontWeight;
 import club.heiqi.uilib.ui.style.values.UiStyleLength;
 import club.heiqi.uilib.ui.style.props.UiVisibility;
+import club.heiqi.uilib.ui.style.props.UiWhiteSpace;
 import club.heiqi.uilib.ui.text.DefaultTextMeasureService;
 import club.heiqi.uilib.ui.text.TextContentMode;
 import club.heiqi.uilib.ui.text.TextMeasureService;
@@ -291,6 +292,46 @@ public class HtmlLikeDocumentWidgetTest {
         widget.render(new RecordingUiRenderContext());
         Assert.assertEquals(finishedGeneration, widget.getPaintCacheGenerationForDiagnostics());
         Assert.assertEquals(initialMeasureCount, textMeasureService.getMeasureCount());
+    }
+
+    /**
+     * 验证静态长文本二次渲染复用布局缓存，不因绘制裁剪触发重排。
+     */
+    @Test
+    public void shouldReuseStaticLayoutForLongTextAcrossRenders() {
+        UiDocument document = UiDocument.create();
+        ElementNode root = document.getRootElement();
+        StringBuilder text = new StringBuilder();
+        for (int index = 0; index < 400; index++) {
+            if (index > 0) {
+                text.append('\n');
+            }
+            text.append("line-").append(index);
+        }
+        root.style()
+                .setWidth(UiStyleLength.px(120))
+                .setHeight(UiStyleLength.px(54))
+                .setOverflowX(UiOverflow.HIDDEN)
+                .setOverflowY(UiOverflow.AUTO)
+                .setWhiteSpace(UiWhiteSpace.PRE);
+        root.appendText(text.toString());
+        HtmlLikeDocumentWidget widget = new HtmlLikeDocumentWidget(document, 120, 54,
+                new DeterministicTextMeasureService());
+        widget.applyLayoutBounds(0, 0, 120, 54);
+
+        RecordingUiRenderContext firstContext = new RecordingUiRenderContext();
+        widget.render(firstContext);
+        HtmlLikeDocumentWidget.PerformanceDiagnosticsSnapshot firstSnapshot =
+                widget.getPerformanceDiagnosticsSnapshot();
+        RecordingUiRenderContext secondContext = new RecordingUiRenderContext();
+        widget.render(secondContext);
+        HtmlLikeDocumentWidget.PerformanceDiagnosticsSnapshot secondSnapshot =
+                widget.getPerformanceDiagnosticsSnapshot();
+
+        Assert.assertTrue(firstContext.textCalls.size() <= 5);
+        Assert.assertEquals(firstSnapshot.getStaticLayoutGeneration(), secondSnapshot.getStaticLayoutGeneration());
+        Assert.assertEquals(firstSnapshot.getRuntimeLayoutGeneration(), secondSnapshot.getRuntimeLayoutGeneration());
+        Assert.assertEquals(firstSnapshot.getPaintCacheGeneration(), secondSnapshot.getPaintCacheGeneration());
     }
 
     /**
