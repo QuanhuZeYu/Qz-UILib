@@ -485,7 +485,7 @@ final class UiTestAssertionRunner {
         diagnostics.add("okSource=" + formatBackgroundSource(okImg) + ", fbSource=" + formatBackgroundSource(fbImg));
         appendElementDiagnostics(diagnostics, "okImage", okBox);
         appendElementDiagnostics(diagnostics, "fbImage", fbBox);
-        diagnostics.add("hostImageDiff=背景图声明可机器诊断；有效纹理绘制与缺失资源 fallback 需截图人工确认。");
+        diagnostics.add("hostImageDiff=背景图声明可机器诊断；缺失资源应保留底色，不使用 Minecraft 默认紫黑 missing texture。");
     }
 
     /**

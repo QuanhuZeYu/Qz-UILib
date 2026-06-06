@@ -283,9 +283,9 @@ final class UiTestMatrixRegistry {
                 "自动诊断：输出 overflow 与 scroll range；scrollbar 几何、拖拽和命中保留人工确认。",
                 "scrollbar track/thumb 几何与拖拽命中需要游戏内截图和交互确认，不能仅凭 overflow 声明自动通过。"));
         cases.add(new UiTestCaseSpec("VIS-PAINT-007", "PAINT", "host image fallback",
-                "background-image:url(有效) 显示资源图；无效或 none 时 fallback 占位或底色。",
-                "两个面板：有效资源 url 与 缺失资源 url，分别展示图片与 fallback。",
-                "预期结果：有效显示贴图，缺失显示占位或纯底色不崩溃。",
+                "background-image:url(有效) 显示资源图；无效资源保留元素底色。",
+                "两个面板：有效资源 url 与 缺失资源 url，分别展示图片与底色 fallback。",
+                "预期结果：有效显示贴图，缺失显示纯底色，不出现 Minecraft 默认紫黑 missing texture。",
                 "自动诊断：输出 background-image 声明与宿主资源；真实绘制和缺失 fallback 保留人工确认。",
                 "host image 真实绘制与缺失资源 fallback 发生在宿主渲染阶段，需要截图确认，不能仅凭声明对象自动通过。"));
         return cases;
