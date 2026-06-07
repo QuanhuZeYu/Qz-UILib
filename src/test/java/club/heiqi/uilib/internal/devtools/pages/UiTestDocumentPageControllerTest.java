@@ -44,17 +44,17 @@ public class UiTestDocumentPageControllerTest {
 
         List<String> texts = collectDocumentTexts(fixture.controller.getHtmlLikeDocumentWidget());
         Assert.assertTrue(containsText(texts, "Qz UILib Test"));
-        Assert.assertTrue(containsText(texts, "视觉样例 + 自动断言。已接入 41 个，自动 31 个，人工 10 个。"));
+        Assert.assertTrue(containsText(texts, "视觉样例 + 自动断言。已接入 48 个，自动 38 个，人工 10 个。"));
         Assert.assertTrue(containsText(texts, "一键测试全部"));
         Assert.assertTrue(containsText(texts, "总览"));
         Assert.assertTrue(containsText(texts, "计划"));
         Assert.assertTrue(containsText(texts, "59"));
         Assert.assertTrue(containsText(texts, "已接入"));
-        Assert.assertTrue(containsText(texts, "41"));
+        Assert.assertTrue(containsText(texts, "48"));
         Assert.assertTrue(containsText(texts, "缺口"));
-        Assert.assertTrue(containsText(texts, "18"));
+        Assert.assertTrue(containsText(texts, "11"));
         Assert.assertTrue(containsText(texts, "自动/人工"));
-        Assert.assertTrue(containsText(texts, "31/10"));
+        Assert.assertTrue(containsText(texts, "38/10"));
         Assert.assertTrue(containsText(texts, "最近：尚未运行。"));
         Assert.assertTrue(containsText(texts, "视觉=未观察；语义=未断言；汇总=缺口"));
         Assert.assertTrue(containsText(texts, "视觉=展示中；语义=未断言；汇总=待确认"));
@@ -69,7 +69,7 @@ public class UiTestDocumentPageControllerTest {
         Assert.assertTrue(containsText(texts, "RuntimeHost 宿主运行时语义"));
         Assert.assertTrue(containsText(texts, "RemoteNet 远程、配置与网络语义"));
         Assert.assertTrue(containsText(texts, "打开 DOM"));
-        Assert.assertTrue(containsText(texts, "计划 7 · 接入 0 · 缺口 7"));
+        Assert.assertTrue(containsText(texts, "计划 7 · 接入 7 · 缺口 0"));
         Assert.assertTrue(containsText(texts, "计划 6 · 接入 6 · 缺口 0"));
         Assert.assertTrue(containsText(texts, "计划 7 · 接入 7 · 缺口 0"));
         Assert.assertTrue(containsText(texts, "计划 5 · 接入 5 · 缺口 0"));
@@ -81,7 +81,6 @@ public class UiTestDocumentPageControllerTest {
         Assert.assertFalse(containsText(texts, "语义覆盖热力图"));
         Assert.assertFalse(containsText(texts, "快速筛选"));
         Assert.assertFalse(containsText(texts, "状态模型"));
-        Assert.assertFalse(containsText(texts, "DOM-001"));
         Assert.assertFalse(containsText(texts, "执行自动测试"));
         Assert.assertFalse(containsText(texts, "人工失败"));
         Assert.assertFalse(containsText(texts, "已接入 13 张运行时卡片"));
@@ -98,18 +97,20 @@ public class UiTestDocumentPageControllerTest {
         UiTestMatrixState state = fixture.controller.getMatrixState();
 
         Assert.assertEquals(10, registry.getGroups().size());
-        Assert.assertEquals(41, registry.getCases().size());
+        Assert.assertEquals(48, registry.getCases().size());
         Assert.assertEquals(59, state.getTotalPlannedCaseCount());
-        Assert.assertEquals(41, state.getTotalImplementedCaseCount());
-        Assert.assertEquals(18, state.getTotalGapCount());
+        Assert.assertEquals(48, state.getTotalImplementedCaseCount());
+        Assert.assertEquals(11, state.getTotalGapCount());
         Assert.assertEquals(40, state.getTotalPlannedAutomaticCount());
         Assert.assertEquals(19, state.getTotalPlannedManualCount());
 
         UiTestGroupState domState = state.getGroupState("DOM");
         Assert.assertEquals(7, domState.getGroup().getPlannedCaseCount());
-        Assert.assertEquals(UiTestVisualStatus.UNOBSERVED, domState.getVisualStatus());
+        Assert.assertEquals(7, domState.getImplementedCaseCount());
+        Assert.assertEquals(0, domState.getGapCount());
+        Assert.assertEquals(UiTestVisualStatus.DISPLAYING, domState.getVisualStatus());
         Assert.assertEquals(UiTestSemanticStatus.NOT_ASSERTED, domState.getSemanticStatus());
-        Assert.assertEquals(UiTestSummaryStatus.GAP, domState.getSummaryStatus());
+        Assert.assertEquals(UiTestSummaryStatus.PENDING, domState.getSummaryStatus());
 
         UiTestGroupState cssState = state.getGroupState("CSS");
         Assert.assertEquals(6, cssState.getImplementedCaseCount());
@@ -148,7 +149,7 @@ public class UiTestDocumentPageControllerTest {
     }
 
     /**
-     * 验证分组二级页显示视觉样例框架，不再展示旧用例卡片契约。
+     * 验证 DOM 分组二级页显示视觉样例框架，不再展示旧用例卡片契约。
      */
     @Test
     public void shouldExposeGroupVisualSampleFrameworkAfterRuntimeCasesCleared() {
@@ -163,13 +164,16 @@ public class UiTestDocumentPageControllerTest {
         Assert.assertTrue(containsText(texts, "视觉样例区"));
         Assert.assertTrue(containsText(texts, "操作区"));
         Assert.assertTrue(containsText(texts, "诊断区"));
-        Assert.assertTrue(containsText(texts, "暂无样例。后续样例应直接画出 DOM 结构"));
+        Assert.assertTrue(containsText(texts, "VIS-DOM-001"));
+        Assert.assertTrue(containsText(texts, "append/insert 移动与返回值"));
+        Assert.assertTrue(containsText(texts, "B"));
+        Assert.assertTrue(containsText(texts, "A"));
+        Assert.assertTrue(containsText(texts, "C"));
         Assert.assertTrue(containsText(texts, "自动边界：节点归属、返回值、子节点顺序"));
-        Assert.assertTrue(containsText(texts, "暂无可执行样例。"));
         Assert.assertFalse(containsText(texts, "用例编号"));
         Assert.assertFalse(containsText(texts, "分组说明"));
         Assert.assertFalse(containsText(texts, "语义检查区"));
-        Assert.assertFalse(containsText(texts, "DOM-001"));
+        Assert.assertFalse(containsText(texts, "DOM-001 |"));
         Assert.assertFalse(containsText(texts, "CSS-001"));
         Assert.assertFalse(containsText(texts, "LAYOUT-001"));
         Assert.assertFalse(containsText(texts, "执行自动测试"));
@@ -292,10 +296,65 @@ public class UiTestDocumentPageControllerTest {
         clickButtonByLabel(fixture.controller.getHtmlLikeDocumentWidget(), "一键测试全部", 0);
 
         List<String> texts = collectDocumentTexts(fixture.controller.getHtmlLikeDocumentWidget());
-        Assert.assertTrue(containsText(texts, "全量完成：41 个；通过 31；失败 0；人工 10。"));
+        Assert.assertTrue(containsText(texts, "全量完成：48 个；通过 38；失败 0；人工 10。"));
         Assert.assertTrue(containsText(texts, "视觉=展示中；语义=自动通过；汇总=待确认"));
         Assert.assertTrue(containsText(texts, "视觉=展示中；语义=人工待确认；汇总=待确认"));
         Assert.assertFalse(containsText(texts, "stageStyle=display=FLEX"));
+    }
+
+    /**
+     * 验证 DOM 分组接入七张视觉样例，并运行自动断言覆盖核心 DOM 语义。
+     */
+    @Test
+    public void shouldRenderDomSamplesAndRunDomAssertions() {
+        TestFixture fixture = new TestFixture();
+
+        fixture.controller.configureDocumentPage();
+        fixture.controller.buildDocument();
+        clickButtonByLabel(fixture.controller.getHtmlLikeDocumentWidget(), "打开 DOM", 0);
+
+        List<String> texts = collectDocumentTexts(fixture.controller.getHtmlLikeDocumentWidget());
+        Assert.assertTrue(containsText(texts, "VIS-DOM-001"));
+        Assert.assertTrue(containsText(texts, "append/insert 移动与返回值"));
+        Assert.assertTrue(containsText(texts, "appendReturn=A"));
+        clickButtonByLabel(fixture.controller.getHtmlLikeDocumentWidget(), "运行当前样例断言", 0);
+        Assert.assertTrue(getCaseResult(fixture, "VIS-DOM-001").getActualResult()
+                .contains("appendInsertDiff=expected appendReturn=A"));
+
+        clickButtonByLabel(fixture.controller.getHtmlLikeDocumentWidget(), "下一张", 0);
+        clickButtonByLabel(fixture.controller.getHtmlLikeDocumentWidget(), "运行当前样例断言", 0);
+        Assert.assertTrue(getCaseResult(fixture, "VIS-DOM-002").getActualResult()
+                .contains("replaceRemoveDiff=expected replaceReturn=old"));
+
+        clickButtonByLabel(fixture.controller.getHtmlLikeDocumentWidget(), "下一张", 0);
+        clickButtonByLabel(fixture.controller.getHtmlLikeDocumentWidget(), "运行当前样例断言", 0);
+        Assert.assertTrue(getCaseResult(fixture, "VIS-DOM-003").getActualResult()
+                .contains("fragmentDiff=expected fragmentCount=0"));
+
+        clickButtonByLabel(fixture.controller.getHtmlLikeDocumentWidget(), "下一张", 0);
+        clickButtonByLabel(fixture.controller.getHtmlLikeDocumentWidget(), "运行当前样例断言", 0);
+        Assert.assertTrue(getCaseResult(fixture, "VIS-DOM-004").getActualResult()
+                .contains("textContentDiff=expected single text node"));
+
+        clickButtonByLabel(fixture.controller.getHtmlLikeDocumentWidget(), "下一张", 0);
+        clickButtonByLabel(fixture.controller.getHtmlLikeDocumentWidget(), "运行当前样例断言", 0);
+        Assert.assertTrue(getCaseResult(fixture, "VIS-DOM-005").getActualResult()
+                .contains("classListDiff=expected active removed"));
+
+        clickButtonByLabel(fixture.controller.getHtmlLikeDocumentWidget(), "下一张", 0);
+        clickButtonByLabel(fixture.controller.getHtmlLikeDocumentWidget(), "运行当前样例断言", 0);
+        Assert.assertTrue(getCaseResult(fixture, "VIS-DOM-006").getActualResult()
+                .contains("selectorDiff=expected target id vis-dom-selector-target"));
+
+        clickButtonByLabel(fixture.controller.getHtmlLikeDocumentWidget(), "下一张", 0);
+        texts = collectDocumentTexts(fixture.controller.getHtmlLikeDocumentWidget());
+        Assert.assertTrue(containsText(texts, "VIS-DOM-007"));
+        Assert.assertTrue(containsText(texts, "a[href] 链接默认激活"));
+        clickButtonByLabel(fixture.controller.getHtmlLikeDocumentWidget(), "运行当前样例断言", 0);
+        Assert.assertTrue(getCaseResult(fixture, "VIS-DOM-007").getActualResult()
+                .contains("linkDefaultDiff=expected a[href] click dispatches document link activation"));
+        Assert.assertEquals(UiTestSemanticStatus.AUTO_PASSED,
+                getCaseResult(fixture, "VIS-DOM-007").getSemanticStatus());
     }
 
     /**

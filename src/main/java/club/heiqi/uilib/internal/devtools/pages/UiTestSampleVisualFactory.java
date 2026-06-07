@@ -27,6 +27,7 @@ import club.heiqi.uilib.ui.style.values.UiBackgroundImage;
 final class UiTestSampleVisualFactory {
 
     private boolean styleSheetAttached;
+    private final UiTestDomVisualFactory domVisualFactory = new UiTestDomVisualFactory();
     private final UiTestInputVisualFactory inputVisualFactory = new UiTestInputVisualFactory();
     private final UiTestControlsVisualFactory controlsVisualFactory = new UiTestControlsVisualFactory();
     private final UiTestTextVisualFactory textVisualFactory = new UiTestTextVisualFactory();
@@ -44,7 +45,9 @@ final class UiTestSampleVisualFactory {
         ElementNode stage = createStage(document, "样例");
         stage.setAttribute("data-ui-test-case", testCase.getId());
         String id = testCase.getId();
-        if ("VIS-CSS-001".equals(id)) {
+        if (domVisualFactory.supports(id)) {
+            domVisualFactory.appendCaseDemo(document, stage, testCase);
+        } else if ("VIS-CSS-001".equals(id)) {
             appendCssSpecificityDemo(document, stage);
         } else if ("VIS-CSS-002".equals(id)) {
             appendCssBoxSizingDemo(document, stage);
