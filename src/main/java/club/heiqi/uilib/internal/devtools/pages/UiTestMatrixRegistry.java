@@ -194,6 +194,41 @@ final class UiTestMatrixRegistry {
      */
     private static List<UiTestCaseSpec> createDefaultCases() {
         List<UiTestCaseSpec> cases = new ArrayList<UiTestCaseSpec>();
+        cases.add(new UiTestCaseSpec("VIS-DOM-001", "DOM", "append/insert 移动与返回值",
+                "appendChild 移动已有节点并返回被追加节点；insertBefore 同父移动时先移除再按参考节点重排。",
+                "A/B/C token 列表先 append A 到末尾，再 insertBefore(A,C)，日志显示两个返回值。",
+                "预期结果：最终顺序为 B,A,C，appendReturn 与 insertReturn 均为 A，A 只保留一个父节点归属。",
+                "自动断言：检查子节点顺序、A 父节点、C 前兄弟和返回值日志。", ""));
+        cases.add(new UiTestCaseSpec("VIS-DOM-002", "DOM", "replace/remove 返回与脱离",
+                "replaceChild 返回被替换旧节点；removeChild 返回被移除节点，两个旧节点都应脱离父节点。",
+                "old/keep/remove 列表执行 replace old->new 与 remove remove，结构牌显示剩余 new/keep。",
+                "预期结果：最终顺序为 new,keep，replaceReturn=old，removeReturn=remove，old 与 remove 的 parent 均为空。",
+                "自动断言：检查返回值日志、最终顺序、替换节点归属和被移除节点 parent。", ""));
+        cases.add(new UiTestCaseSpec("VIS-DOM-003", "DOM", "DocumentFragment 展开插入",
+                "DocumentFragment 插入时展开其子节点，fragment 自身不进入最终 DOM，插入后自身清空。",
+                "fragment 内 F1/F2/F3 三个 token 插入目标列表，旁侧日志显示 fragment childCount。",
+                "预期结果：目标列表显示 F1,F2,F3，fragmentCount=0，fragment 本身不出现在目标列表中。",
+                "自动断言：检查目标子节点数量、顺序和 fragmentCount 日志。", ""));
+        cases.add(new UiTestCaseSpec("VIS-DOM-004", "DOM", "textContent 替换子树",
+                "setTextContent 应移除元素现有子树，并用单一文本节点承载新纯文本内容。",
+                "复杂旧子树被设置为 `textContent 已替换`，日志显示 childCount 与 textContent。",
+                "预期结果：目标面板只显示 textContent 已替换，childCount=1，首个子节点是文本节点。",
+                "自动断言：检查 childCount、首子节点类型、textContent 值和日志摘要。", ""));
+        cases.add(new UiTestCaseSpec("VIS-DOM-005", "DOM", "classList token 同步",
+                "classList add/remove/toggle/contains 维护有序去重 token，并同步 className 与样式失效。",
+                "token card 先 add active，再 remove active 并 toggle vis-dom-selected，日志展示 className。",
+                "预期结果：最终 className 包含 vis-dom-token 与 vis-dom-selected，不再包含 active，contains(selected)=true。",
+                "自动断言：检查 classList contains、className、toggle 返回值和日志属性。", ""));
+        cases.add(new UiTestCaseSpec("VIS-DOM-006", "DOM", "selector 深度优先命中",
+                "querySelector 返回第一个匹配元素，querySelectorAll 按文档深度优先顺序返回所有匹配元素。",
+                "三个 selector item 中第二个带 target class，日志显示查询表达式和命中数量。",
+                "预期结果：querySelector 命中 S2 target，querySelectorAll(.item) 顺序为 first,target,third。",
+                "自动断言：在样例挂载后检查 document.querySelector、querySelectorAll 数量与顺序。", ""));
+        cases.add(new UiTestCaseSpec("VIS-DOM-007", "DOM", "a[href] 链接默认激活",
+                "a[href] 具备链接语义和默认焦点能力，未 preventDefault 的 click 应触发文档级 link activation。",
+                "真实 a[href] 链接按钮点击后，文档级 linkActivationHandler 把 href 写入日志。",
+                "预期结果：点击链接后日志显示 activated:https://example.test/qz-dom，链接保持 focusable=true。",
+                "自动断言：点击 a[href]，检查 href、focusable 和文档级激活日志。", ""));
         cases.add(new UiTestCaseSpec("VIS-CSS-001", "CSS", "Specificity 三阶色块",
                 "样式表 specificity 按 id > class > tag 决定最终背景，不用 inline 样式覆盖被测背景。",
                 "sample 标签、.specificity-class 与 #specificity-id 三个色块直接展示级联结果。",

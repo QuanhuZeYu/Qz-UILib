@@ -21,6 +21,7 @@ import club.heiqi.uilib.ui.style.values.UiTransform;
  */
 final class UiTestAssertionRunner {
 
+    private final UiTestDomAssertionRunner domAssertionRunner = new UiTestDomAssertionRunner();
     private final UiTestInputAssertionRunner inputAssertionRunner = new UiTestInputAssertionRunner();
     private final UiTestControlsAssertionRunner controlsAssertionRunner = new UiTestControlsAssertionRunner();
     private final UiTestTextAssertionRunner textAssertionRunner = new UiTestTextAssertionRunner();
@@ -64,7 +65,9 @@ final class UiTestAssertionRunner {
             diagnostics.add("stageBox=" + summarizeLayoutBox(scopeBox));
             diagnostics.add("stageStyle=" + summarizeComputedStyle(scopeBox.getComputedStyle()));
             boolean passed;
-            if ("VIS-CSS-001".equals(testCase.getId())) {
+            if (domAssertionRunner.isAutomatic(testCase.getId())) {
+                passed = domAssertionRunner.runAutomatic(documentWidget, scope, testCase, diagnostics);
+            } else if ("VIS-CSS-001".equals(testCase.getId())) {
                 passed = assertCssSpecificity(documentWidget, scope, diagnostics);
             } else if ("VIS-CSS-002".equals(testCase.getId())) {
                 passed = assertCssBoxSizing(documentWidget, scope, diagnostics);
