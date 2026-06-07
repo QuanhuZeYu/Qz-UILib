@@ -178,6 +178,9 @@ final class UiTestMatrixRegistry {
         items.add(new UiTestGalleryItem("文本能力画廊",
                 "raw/formatted / baseline / fallback / wrap/trim / obfuscated 已以文本舞台展示。",
                 "视觉展示：已接入 5 张文本样例", 0xFFF472B6));
+        items.add(new UiTestGalleryItem("动画能力画廊",
+                "transition / keyframes / timing / fill-mode / layout-vs-paint 已以时间轴舞台展示。",
+                "视觉展示：已接入 5 张动画样例", 0xFFFB7185));
         items.add(new UiTestGalleryItem("远程能力画廊",
                 "channel / fetch / stream / store / remote page / HUD 将以链路状态展示。",
                 "视觉展示：待接入远程 smoke 样例", 0xFFA78BFA));
@@ -383,6 +386,33 @@ final class UiTestMatrixRegistry {
                 "固定宽度面板内展示 §k obfuscated 文本，旁侧显示字体 epoch 诊断标签。",
                 "预期结果：obfuscated 面板宽度保持稳定，动态字符只影响可见字形，不挤压 epoch 标签。",
                 "自动断言：检查 formatted 文本模式、§k 原始内容、固定宽度布局盒和字体 epoch。", ""));
+        // ANIM 001-005
+        cases.add(new UiTestCaseSpec("VIS-ANIM-001", "ANIM", "transition 状态时间轴",
+                "transition 应在被测属性变化时创建运行态插值，并分发 transitionstart / transitionend 生命周期事件。",
+                "背景色 transition 色块与 0/50/100 时间轴同屏展示，日志记录 start/end。",
+                "预期结果：transition target 从蓝色过渡到绿色，时间轴标签清楚标注 0ms、450ms、900ms。",
+                "自动断言：切换 background-color，检查 timeline paint transition、transitionstart/end 日志和最终样式。", ""));
+        cases.add(new UiTestCaseSpec("VIS-ANIM-002", "ANIM", "keyframes 三段 stop 轨道",
+                "命名 keyframes 应注册到 document，declared animation 使用 stop 轨道驱动运行态样式并分发生命周期事件。",
+                "qzAnimPulse 展示 0% 蓝、50% 黄、100% 绿的三段 keyframes 舞台。",
+                "预期结果：keyframes pulse 色块按蓝、黄、绿三段轨道变化，右侧 stop 图例可截图识别。",
+                "自动断言：检查 qzAnimPulse 注册、三段 stop、animationstart/end 日志和 forwards fill。", ""));
+        cases.add(new UiTestCaseSpec("VIS-ANIM-003", "ANIM", "timing function 对比轨道",
+                "linear 与 steps timing function 应分别改变动画进度曲线，且不改变 keyframes 注册语义。",
+                "两个 paint-only translate 轨道并排展示 linear 与 steps(4,end) 的节奏差异。",
+                "预期结果：linear 轨道连续移动，steps 轨道按 4 阶离散跳变，标签分别标明 timing function。",
+                "自动断言：检查 computed animation timing function、半程进度和 paint keyframe 活跃计数。", ""));
+        cases.add(new UiTestCaseSpec("VIS-ANIM-004", "ANIM", "fill-mode 最终样式保持",
+                "forwards fill-mode 应在动画结束后保留末帧运行态，none 则回到作者侧 computed style 基准值。",
+                "forwards 与 none 两个宽度动画面板并排展示结束后的宽度差异。",
+                "预期结果：forwards 面板结束后保持更宽，none 面板回到基础宽度，两者标签清晰。",
+                "自动断言：推进动画到结束后，检查 forwards 运行态布局宽度、none 基准宽度和 fill 计数。", ""));
+        cases.add(new UiTestCaseSpec("VIS-ANIM-005", "ANIM", "layout-vs-paint 动画影响范围",
+                "layout-affecting width 动画会驱动重排，paint-only translate 动画只改变绘制/命中视觉 quad。",
+                "两个轨道分别展示 width 推动 sibling 位置变化，以及 translate 保持布局槽位不变。",
+                "预期结果：layout 轨道中 sibling 随宽度增长右移；paint 轨道中元素视觉平移但 layout slot 保持原位。",
+                "自动诊断：输出 layout/paint keyframe 计数、运行态布局盒与 transform 摘要；视觉节奏保留人工确认。",
+                "layout-vs-paint 的真实运动节奏和截图观感需要游戏内确认，不能仅用布局盒数字自动通过。"));
         return cases;
     }
 }

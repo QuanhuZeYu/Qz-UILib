@@ -30,6 +30,7 @@ final class UiTestSampleVisualFactory {
     private final UiTestInputVisualFactory inputVisualFactory = new UiTestInputVisualFactory();
     private final UiTestControlsVisualFactory controlsVisualFactory = new UiTestControlsVisualFactory();
     private final UiTestTextVisualFactory textVisualFactory = new UiTestTextVisualFactory();
+    private final UiTestAnimationVisualFactory animationVisualFactory = new UiTestAnimationVisualFactory();
 
     /**
      * 追加指定样例的视觉舞台。
@@ -87,6 +88,8 @@ final class UiTestSampleVisualFactory {
             controlsVisualFactory.appendCaseDemo(document, stage, testCase);
         } else if (textVisualFactory.supports(id)) {
             textVisualFactory.appendCaseDemo(document, stage, testCase);
+        } else if (animationVisualFactory.supports(id)) {
+            animationVisualFactory.appendCaseDemo(document, stage, testCase);
         } else {
             appendMutedText(document, stage, "该样例暂无视觉舞台。");
         }
