@@ -175,6 +175,9 @@ final class UiTestMatrixRegistry {
         items.add(new UiTestGalleryItem("绘制能力画廊",
                 "stacking / opacity / clip / transform / top-layer / scrollbar / host image 已以分层舞台展示。",
                 "视觉展示：已接入 7 张绘制样例", 0xFFF59E0B));
+        items.add(new UiTestGalleryItem("文本能力画廊",
+                "raw/formatted / baseline / fallback / wrap/trim / obfuscated 已以文本舞台展示。",
+                "视觉展示：已接入 5 张文本样例", 0xFFF472B6));
         items.add(new UiTestGalleryItem("远程能力画廊",
                 "channel / fetch / stream / store / remote page / HUD 将以链路状态展示。",
                 "视觉展示：待接入远程 smoke 样例", 0xFFA78BFA));
@@ -353,6 +356,33 @@ final class UiTestMatrixRegistry {
                 "DocumentTabControl 展示三页内容，下方放置禁用 input 与禁用 button，用日志记录 tab change。",
                 "预期结果：点击事件标签后面板切换，禁用 input/button 保持灰态且不能获得焦点。",
                 "自动断言：点击第二个 tab，尝试聚焦禁用 input/button，检查 aria-selected、disabled 和日志。", ""));
+        // TEXT 001-005
+        cases.add(new UiTestCaseSpec("VIS-TEXT-001", "TEXT", "raw/formatted 文本模式对比",
+                "UILib raw 文本不解析 `§` 格式码，Minecraft formatted 文本解析颜色与样式码。",
+                "两行文本并排展示相同 `§a` 内容，一行 raw 一行 Minecraft formatted。",
+                "预期结果：raw 行能看到原始 §a 字符，formatted 行显示为 Minecraft 格式文本，两者标签清晰。",
+                "自动断言：检查 TextNode 内容模式、原始文本和 formatted 文本测量摘要。", ""));
+        cases.add(new UiTestCaseSpec("VIS-TEXT-002", "TEXT", "字符宽度、line-height 与 baseline 标尺",
+                "文本测量服务提供字符宽度与 line-height，布局阶段使用稳定行框作为 baseline 观察基础。",
+                "中英文与粗斜体文本排列在同一标尺舞台，旁侧显示 line-height 标签。",
+                "预期结果：中英文文本位于同一行框内，baseline 标尺与文字下沿关系稳定，line-height 标签可见。",
+                "自动断言：检查测量宽度、line-height、字体样式和样例布局盒。", ""));
+        cases.add(new UiTestCaseSpec("VIS-TEXT-003", "TEXT", "字体 fallback 缺字展示",
+                "缺字字符应走字体 fallback，而不是留下空白或破坏相邻文本布局。",
+                "同一行展示 ASCII、汉字、希腊字母和符号，配合 fallback 说明标签。",
+                "预期结果：fallback 行中 ASCII、汉字、Ω 和雪花符号都应可见，不出现异常空白块或布局跳动。",
+                "自动诊断：输出文本内容、测量宽度和布局盒；真实 fallback 字形观感保留人工截图确认。",
+                "字体 fallback 的真实字形来自宿主字体运行时，需要游戏内截图确认缺字字符是否可见。"));
+        cases.add(new UiTestCaseSpec("VIS-TEXT-004", "TEXT", "trim 与 wrap 文本溢出",
+                "nowrap + text-overflow 应裁剪长文本，normal white-space 应按容器宽度换行。",
+                "同一长文本分别放入 trim 行和 wrap 盒，宽度固定并用边框标出容器。",
+                "预期结果：trim 行保持单行裁剪，wrap 盒产生多行文本，不遮挡相邻控件。",
+                "自动断言：检查 white-space、text-overflow、容器宽度和 wrap/trim 测量摘要。", ""));
+        cases.add(new UiTestCaseSpec("VIS-TEXT-005", "TEXT", "obfuscated 动态文本与字体 epoch",
+                "Minecraft obfuscated 格式码应走 formatted 文本路径，动态字形不应改变布局宽度，字体 epoch 用于缓存失效。",
+                "固定宽度面板内展示 §k obfuscated 文本，旁侧显示字体 epoch 诊断标签。",
+                "预期结果：obfuscated 面板宽度保持稳定，动态字符只影响可见字形，不挤压 epoch 标签。",
+                "自动断言：检查 formatted 文本模式、§k 原始内容、固定宽度布局盒和字体 epoch。", ""));
         return cases;
     }
 }
