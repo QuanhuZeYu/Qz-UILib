@@ -448,6 +448,36 @@ final class UiTestMatrixRegistry {
                 "预期结果：layout 轨道中 sibling 随宽度增长右移；paint 轨道中元素视觉平移但 layout slot 保持原位。",
                 "自动诊断：输出 layout/paint keyframe 计数、运行态布局盒与 transform 摘要；视觉节奏保留人工确认。",
                 "layout-vs-paint 的真实运动节奏和截图观感需要游戏内确认，不能仅用布局盒数字自动通过。"));
+        // HOST 001-005
+        cases.add(new UiTestCaseSpec("VIS-HOST-001", "HOST", "open timing 开屏时序",
+                "`/qzuilib test` 从聊天命令进入页面时，应避开聊天关闭流程并在下一帧稳定挂载。",
+                "命令、延后一帧、页面挂载三段状态牌展示开屏链路。",
+                "预期结果：从聊天框执行命令后页面稳定打开，状态牌显示 command -> deferred -> mounted。",
+                "自动诊断：输出开屏链路状态牌和布局盒；真实聊天关闭流程需游戏内人工确认。",
+                "开屏时序依赖 Minecraft Screen 生命周期和聊天关闭流程，需要 runClient21 人工确认。"));
+        cases.add(new UiTestCaseSpec("VIS-HOST-002", "HOST", "resize 与 viewport fill",
+                "宿主窗口尺寸变化后，DocumentPage 应重新计算内容区域并保持 viewport fill 约束。",
+                "两张不同尺寸的 viewport 预览卡与 fill 比例状态牌展示 resize 目标。",
+                "预期结果：调整窗口后卡片重新排布，滚动位置不异常跳变，页面仍按 94% x 92% 填充。",
+                "自动诊断：输出 resize 预览盒与 fill 摘要；真实窗口调整和滚动稳定性需人工确认。",
+                "窗口 resize、滚动位置和真实宿主填充行为需要游戏内截图与交互确认。"));
+        cases.add(new UiTestCaseSpec("VIS-HOST-003", "HOST", "runtime stats 状态摘要",
+                "页面环境区应逐帧读取 DocumentPageRuntimeView 的窗口、鼠标和 UiRuntimeStats 摘要。",
+                "frame、render、input 三张状态牌与 stats-source 卡展示运行时统计来源。",
+                "预期结果：环境信息持续显示窗口、鼠标、frame 和 render，样例卡标明 DocumentPageRuntimeView 来源。",
+                "自动断言：检查 runtime stats 状态牌、DocumentPageRuntimeView 来源摘要和布局盒可见。", ""));
+        cases.add(new UiTestCaseSpec("VIS-HOST-004", "HOST", "HUD/container input 链路",
+                "HUD 文档层在容器态按命中接管输入，未命中或外部点击应放回宿主原生界面。",
+                "HUD display、HUD input、native fallback 三张状态牌展示输入仲裁路径。",
+                "预期结果：纯 HUD 在容器界面中隐藏，交互 HUD 可接收点击和键盘焦点，外部点击归还原生焦点。",
+                "自动诊断：输出 HUD/container 输入链路状态牌；真实点击、键盘焦点和原生回退需人工确认。",
+                "HUD 显隐、容器态输入桥接和焦点回退依赖真实游戏界面，需要 runClient21 人工确认。"));
+        cases.add(new UiTestCaseSpec("VIS-HOST-005", "HOST", "exception panel 故障展示",
+                "运行时样例故障应显示可读异常摘要，而不是让客户端无提示退出。",
+                "故意失败、异常面板、客户端保活三张状态牌与堆栈摘要展示故障面板形态。",
+                "预期结果：故意失败用例显示可读错误，不导致客户端无提示退出。",
+                "自动诊断：输出异常面板结构；真实故障保活和可读错误展示需游戏内确认。",
+                "真实异常面板涉及宿主运行时错误边界，不能在 JVM 页面断言中故意抛错验证。"));
         return cases;
     }
 }
