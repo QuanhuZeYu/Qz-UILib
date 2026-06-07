@@ -26,6 +26,7 @@ final class UiTestAssertionRunner {
     private final UiTestControlsAssertionRunner controlsAssertionRunner = new UiTestControlsAssertionRunner();
     private final UiTestTextAssertionRunner textAssertionRunner = new UiTestTextAssertionRunner();
     private final UiTestAnimationAssertionRunner animationAssertionRunner = new UiTestAnimationAssertionRunner();
+    private final UiTestRuntimeHostAssertionRunner runtimeHostAssertionRunner = new UiTestRuntimeHostAssertionRunner();
 
     /**
      * 运行指定样例的首批断言。
@@ -103,6 +104,8 @@ final class UiTestAssertionRunner {
                 passed = textAssertionRunner.runAutomatic(documentWidget, scope, testCase, diagnostics);
             } else if (animationAssertionRunner.isAutomatic(testCase.getId())) {
                 passed = animationAssertionRunner.runAutomatic(documentWidget, scope, testCase, diagnostics);
+            } else if (runtimeHostAssertionRunner.isAutomatic(testCase.getId())) {
+                passed = runtimeHostAssertionRunner.runAutomatic(documentWidget, scope, testCase, diagnostics);
             } else {
                 if ("VIS-PAINT-003".equals(testCase.getId())) {
                     diagnosePaintTransform(documentWidget, scope, diagnostics);
@@ -122,6 +125,8 @@ final class UiTestAssertionRunner {
                     textAssertionRunner.diagnoseManual(documentWidget, scope, testCase, diagnostics);
                 } else if (animationAssertionRunner.isManual(testCase.getId())) {
                     animationAssertionRunner.diagnoseManual(documentWidget, scope, testCase, diagnostics);
+                } else if (runtimeHostAssertionRunner.isManual(testCase.getId())) {
+                    runtimeHostAssertionRunner.diagnoseManual(documentWidget, scope, testCase, diagnostics);
                 } else {
                     diagnostics.add("当前样例未接入自动断言，保持人工待确认。");
                 }

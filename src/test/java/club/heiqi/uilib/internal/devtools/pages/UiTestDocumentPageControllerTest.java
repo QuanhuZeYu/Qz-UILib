@@ -44,17 +44,17 @@ public class UiTestDocumentPageControllerTest {
 
         List<String> texts = collectDocumentTexts(fixture.controller.getHtmlLikeDocumentWidget());
         Assert.assertTrue(containsText(texts, "Qz UILib Test"));
-        Assert.assertTrue(containsText(texts, "视觉样例 + 自动断言。已接入 48 个，自动 38 个，人工 10 个。"));
+        Assert.assertTrue(containsText(texts, "视觉样例 + 自动断言。已接入 53 个，自动 39 个，人工 14 个。"));
         Assert.assertTrue(containsText(texts, "一键测试全部"));
         Assert.assertTrue(containsText(texts, "总览"));
         Assert.assertTrue(containsText(texts, "计划"));
         Assert.assertTrue(containsText(texts, "59"));
         Assert.assertTrue(containsText(texts, "已接入"));
-        Assert.assertTrue(containsText(texts, "48"));
+        Assert.assertTrue(containsText(texts, "53"));
         Assert.assertTrue(containsText(texts, "缺口"));
-        Assert.assertTrue(containsText(texts, "11"));
+        Assert.assertTrue(containsText(texts, "6"));
         Assert.assertTrue(containsText(texts, "自动/人工"));
-        Assert.assertTrue(containsText(texts, "38/10"));
+        Assert.assertTrue(containsText(texts, "39/14"));
         Assert.assertTrue(containsText(texts, "最近：尚未运行。"));
         Assert.assertTrue(containsText(texts, "视觉=未观察；语义=未断言；汇总=缺口"));
         Assert.assertTrue(containsText(texts, "视觉=展示中；语义=未断言；汇总=待确认"));
@@ -97,10 +97,10 @@ public class UiTestDocumentPageControllerTest {
         UiTestMatrixState state = fixture.controller.getMatrixState();
 
         Assert.assertEquals(10, registry.getGroups().size());
-        Assert.assertEquals(48, registry.getCases().size());
+        Assert.assertEquals(53, registry.getCases().size());
         Assert.assertEquals(59, state.getTotalPlannedCaseCount());
-        Assert.assertEquals(48, state.getTotalImplementedCaseCount());
-        Assert.assertEquals(11, state.getTotalGapCount());
+        Assert.assertEquals(53, state.getTotalImplementedCaseCount());
+        Assert.assertEquals(6, state.getTotalGapCount());
         Assert.assertEquals(40, state.getTotalPlannedAutomaticCount());
         Assert.assertEquals(19, state.getTotalPlannedManualCount());
 
@@ -296,7 +296,7 @@ public class UiTestDocumentPageControllerTest {
         clickButtonByLabel(fixture.controller.getHtmlLikeDocumentWidget(), "一键测试全部", 0);
 
         List<String> texts = collectDocumentTexts(fixture.controller.getHtmlLikeDocumentWidget());
-        Assert.assertTrue(containsText(texts, "全量完成：48 个；通过 38；失败 0；人工 10。"));
+        Assert.assertTrue(containsText(texts, "全量完成：53 个；通过 39；失败 0；人工 14。"));
         Assert.assertTrue(containsText(texts, "视觉=展示中；语义=自动通过；汇总=待确认"));
         Assert.assertTrue(containsText(texts, "视觉=展示中；语义=人工待确认；汇总=待确认"));
         Assert.assertFalse(containsText(texts, "stageStyle=display=FLEX"));
