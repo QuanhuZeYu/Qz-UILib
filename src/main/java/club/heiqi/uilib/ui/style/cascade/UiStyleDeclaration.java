@@ -71,6 +71,7 @@ public final class UiStyleDeclaration {
     };
 
     private final UiStyleChangeListener changeListener;
+    private final List<UiStyleChangeListener> additionalChangeListeners = new ArrayList<UiStyleChangeListener>();
     private UiDisplay display;
     private UiStyleLength width;
     private UiStyleLength height;
@@ -192,6 +193,27 @@ public final class UiStyleDeclaration {
 
     public UiStyleDeclaration(UiStyleChangeListener changeListener) {
         this.changeListener = changeListener == null ? NO_OP_CHANGE_LISTENER : changeListener;
+    }
+
+    /**
+     * 增加样式声明变更监听器。
+     *
+     * @param listener 监听器
+     */
+    void addChangeListener(UiStyleChangeListener listener) {
+        UiStyleChangeListener resolvedListener = Objects.requireNonNull(listener, "listener");
+        if (!additionalChangeListeners.contains(resolvedListener)) {
+            additionalChangeListeners.add(resolvedListener);
+        }
+    }
+
+    /**
+     * 移除样式声明变更监听器。
+     *
+     * @param listener 监听器
+     */
+    void removeChangeListener(UiStyleChangeListener listener) {
+        additionalChangeListeners.remove(listener);
     }
 
     /**
@@ -2444,6 +2466,9 @@ public final class UiStyleDeclaration {
 
     private void recordChange(UiStyleChangeImpact impact) {
         changeListener.onStyleChanged(impact);
+        for (UiStyleChangeListener listener : new ArrayList<UiStyleChangeListener>(additionalChangeListeners)) {
+            listener.onStyleChanged(impact);
+        }
     }
 
     /**

@@ -427,9 +427,8 @@ public final class HtmlLikeDocumentWidget extends Widget implements UiDocument.D
         if (subtreeLocation == null) {
             return null;
         }
-        ElementNode hit = DocumentHitTestEngine.hitTest(subtreeLocation.getBoxContext().getBox(), scrollState,
-                documentX, documentY, subtreeLocation.getBoxContext().getBoxOffsetX(),
-                subtreeLocation.getBoxContext().getBoxOffsetY(), currentTimeNanos, animationTimeline);
+        ElementNode hit = DocumentHitTestEngine.hitTest(rootBox, topLayerBoxes, scrollState, documentX, documentY,
+                currentTimeNanos, animationTimeline);
         return isElementWithinSubtree(hit, subtreeRoot) ? hit : null;
     }
 

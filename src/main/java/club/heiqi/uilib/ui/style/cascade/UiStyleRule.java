@@ -1,6 +1,7 @@
 package club.heiqi.uilib.ui.style.cascade;
 
 import club.heiqi.uilib.ui.style.selector.UiSelector;
+import club.heiqi.uilib.ui.style.UiStyleChangeListener;
 
 import java.util.Objects;
 
@@ -47,6 +48,24 @@ public final class UiStyleRule {
      */
     public UiStyleDeclaration getDeclaration() {
         return declaration;
+    }
+
+    /**
+     * 增加声明块变更监听器。
+     *
+     * @param listener 监听器
+     */
+    void addDeclarationChangeListener(UiStyleChangeListener listener) {
+        declaration.addChangeListener(listener);
+    }
+
+    /**
+     * 移除声明块变更监听器。
+     *
+     * @param listener 监听器
+     */
+    void removeDeclarationChangeListener(UiStyleChangeListener listener) {
+        declaration.removeChangeListener(listener);
     }
 
     /**

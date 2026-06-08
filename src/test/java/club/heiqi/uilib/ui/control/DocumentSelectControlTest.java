@@ -364,6 +364,37 @@ public class DocumentSelectControlTest {
         Assert.assertTrue(popup.getScrollTop() > 0);
     }
 
+    /**
+     * 验证移除包含展开 select 的子树时，会同步清理 popup 的 top-layer 注册。
+     */
+    @Test
+    public void shouldDetachTopLayerPopupWhenOpenSelectAncestorIsRemoved() {
+        UiDocument document = UiDocument.create();
+        ElementNode root = document.getRootElement();
+        ElementNode shell = document.div();
+        DocumentSelectControl selectControl = new DocumentSelectControl(document, "A", "B", "C");
+        root.style()
+                .setWidth(UiStyleLength.px(240))
+                .setHeight(UiStyleLength.px(160));
+        selectControl.getElement().style().setWidth(UiStyleLength.px(180));
+        shell.append(selectControl.getElement());
+        root.append(shell);
+        HtmlLikeDocumentWidget widget = new HtmlLikeDocumentWidget(document, 240, 160,
+                new DeterministicTextMeasureService());
+        widget.applyLayoutBounds(0, 0, 240, 160);
+
+        click(widget, 20, 12, 1L);
+        ElementNode popup = findListboxElement(root);
+        Assert.assertTrue(document.__isTopLayerElement(popup));
+
+        root.removeChild(shell);
+        Assert.assertFalse(document.__getTopLayerElements().contains(popup));
+        Assert.assertFalse(document.__isTopLayerElement(popup));
+
+        root.append(shell);
+        Assert.assertFalse(document.__isTopLayerElement(popup));
+    }
+
     private static boolean containsTextCall(ControlTestRenderContext renderContext, String text) {
         return countTextCalls(renderContext, text) > 0;
     }

@@ -1,6 +1,8 @@
 package club.heiqi.uilib.ui.style.cascade;
 
 import club.heiqi.uilib.ui.style.selector.UiSelector;
+import club.heiqi.uilib.ui.style.UiStyleChangeImpact;
+import club.heiqi.uilib.ui.style.UiStyleChangeListener;
 import club.heiqi.uilib.ui.style.values.UiStyleLength;
 import club.heiqi.uilib.ui.style.selector.UiPseudoElement;
 import club.heiqi.uilib.ui.style.selector.UiPseudoClass;
@@ -31,6 +33,13 @@ import club.heiqi.uilib.ui.dom.ElementNode;
 public final class UiStyleSheet {
 
     private final List<UiStyleRule> rules = new ArrayList<UiStyleRule>();
+    private final List<UiStyleChangeListener> changeListeners = new ArrayList<UiStyleChangeListener>();
+    private final UiStyleChangeListener ruleDeclarationChangeListener = new UiStyleChangeListener() {
+        @Override
+        public void onStyleChanged(UiStyleChangeImpact impact) {
+            notifyChange(impact);
+        }
+    };
     private int nextSourceOrder = 0;
 
     private UiStyleSheet() {}
@@ -54,8 +63,34 @@ public final class UiStyleSheet {
     public UiStyleSheet addRule(UiSelector selector, UiStyleDeclaration declaration) {
         Objects.requireNonNull(selector, "selector");
         Objects.requireNonNull(declaration, "declaration");
-        rules.add(new UiStyleRule(selector, declaration, nextSourceOrder++));
+        UiStyleRule rule = new UiStyleRule(selector, declaration, nextSourceOrder++);
+        rule.addDeclarationChangeListener(ruleDeclarationChangeListener);
+        rules.add(rule);
+        notifyChange(UiStyleChangeImpact.LAYOUT);
         return this;
+    }
+
+    /**
+     * 增加样式表变更监听器。
+     *
+     * @param listener 监听器
+     * @apiNote 框架内部 API，供文档挂载样式表后监听增量变更。
+     */
+    public void __addChangeListener(UiStyleChangeListener listener) {
+        UiStyleChangeListener resolvedListener = Objects.requireNonNull(listener, "listener");
+        if (!changeListeners.contains(resolvedListener)) {
+            changeListeners.add(resolvedListener);
+        }
+    }
+
+    /**
+     * 移除样式表变更监听器。
+     *
+     * @param listener 监听器
+     * @apiNote 框架内部 API，供文档移除样式表时解除监听。
+     */
+    public void __removeChangeListener(UiStyleChangeListener listener) {
+        changeListeners.remove(listener);
     }
 
     /**
@@ -141,9 +176,22 @@ public final class UiStyleSheet {
      * @return 当前样式表（链式调用）
      */
     public UiStyleSheet clear() {
+        boolean changed = !rules.isEmpty();
+        for (UiStyleRule rule : rules) {
+            rule.removeDeclarationChangeListener(ruleDeclarationChangeListener);
+        }
         rules.clear();
         nextSourceOrder = 0;
+        if (changed) {
+            notifyChange(UiStyleChangeImpact.LAYOUT);
+        }
         return this;
+    }
+
+    private void notifyChange(UiStyleChangeImpact impact) {
+        for (UiStyleChangeListener listener : new ArrayList<UiStyleChangeListener>(changeListeners)) {
+            listener.onStyleChanged(impact);
+        }
     }
 
     @Override

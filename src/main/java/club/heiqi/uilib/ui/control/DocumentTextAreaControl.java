@@ -420,6 +420,9 @@ public final class DocumentTextAreaControl {
         }).setTextInputHandler(new DocumentElementTextInputHandler() {
             @Override
             public boolean onTextInput(DocumentElementTextInputEvent event) {
+                if (event.isDefaultPrevented()) {
+                    return false;
+                }
                 if (!focused || !enabled) {
                     return false;
                 }

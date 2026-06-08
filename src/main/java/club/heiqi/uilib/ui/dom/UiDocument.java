@@ -12,6 +12,8 @@ import java.util.concurrent.atomic.AtomicLong;
 import club.heiqi.uilib.ui.animation.DocumentAnimation;
 import club.heiqi.uilib.ui.animation.DocumentAnimationOptions;
 import club.heiqi.uilib.ui.animation.DocumentKeyframes;
+import club.heiqi.uilib.ui.style.UiStyleChangeImpact;
+import club.heiqi.uilib.ui.style.UiStyleChangeListener;
 import club.heiqi.uilib.ui.style.selector.UiPseudoElement;
 import club.heiqi.uilib.ui.style.cascade.UiStyleRule;
 import club.heiqi.uilib.ui.style.cascade.UiStyleSheet;
@@ -29,6 +31,12 @@ public final class UiDocument {
     private final Map<String, DocumentKeyframes> keyframes = new LinkedHashMap<String, DocumentKeyframes>();
     private final List<UiStyleSheet> styleSheets = new ArrayList<UiStyleSheet>();
     private final List<ElementNode> topLayerElements = new ArrayList<ElementNode>();
+    private final UiStyleChangeListener styleSheetMutationListener = new UiStyleChangeListener() {
+        @Override
+        public void onStyleChanged(UiStyleChangeImpact impact) {
+            recordStyleSheetMutation(impact);
+        }
+    };
     private DocumentLinkActivationHandler linkActivationHandler;
     private UiStyleVariables styleVariables;
     private TextContentMode defaultTextContentMode = TextContentMode.UILIB_RAW;
@@ -103,6 +111,49 @@ public final class UiDocument {
      */
     public List<ElementNode> __getTopLayerElements() {
         return Collections.unmodifiableList(new ArrayList<ElementNode>(topLayerElements));
+    }
+
+    /**
+     * 剪除指定 DOM 子树中的运行时顶层元素注册。
+     *
+     * @param subtreeRoot 被移除或即将失去文档归属的子树根
+     * @apiNote 框架内部 API，供 DOM detach 生命周期清理使用。LTS 不承诺兼容性。
+     */
+    public void __detachTopLayerDescendants(DocumentNode subtreeRoot) {
+        if (subtreeRoot == null || topLayerElements.isEmpty()) {
+            return;
+        }
+        boolean changed = false;
+        for (ElementNode topLayerElement : new ArrayList<ElementNode>(topLayerElements)) {
+            if (isNodeWithinSubtree(topLayerElement, subtreeRoot)) {
+                topLayerElements.remove(topLayerElement);
+                changed = true;
+            }
+        }
+        if (changed) {
+            recordGlobalLayoutMutation();
+        }
+    }
+
+    /**
+     * 清理已经脱离文档树的运行时顶层元素注册。
+     *
+     * @apiNote 框架内部兜底清理入口，普通业务代码不应调用。
+     */
+    public void __pruneDetachedTopLayerElements() {
+        if (topLayerElements.isEmpty()) {
+            return;
+        }
+        boolean changed = false;
+        for (ElementNode topLayerElement : new ArrayList<ElementNode>(topLayerElements)) {
+            if (!isElementAttachedToDocument(topLayerElement)) {
+                topLayerElements.remove(topLayerElement);
+                changed = true;
+            }
+        }
+        if (changed) {
+            recordGlobalLayoutMutation();
+        }
     }
 
     /**
@@ -643,6 +694,7 @@ public final class UiDocument {
         Objects.requireNonNull(styleSheet, "styleSheet");
         if (!styleSheets.contains(styleSheet)) {
             styleSheets.add(styleSheet);
+            styleSheet.__addChangeListener(styleSheetMutationListener);
             recordGlobalLayoutMutation();
         }
         return this;
@@ -656,6 +708,7 @@ public final class UiDocument {
      */
     public UiDocument removeStyleSheet(UiStyleSheet styleSheet) {
         if (styleSheets.remove(styleSheet)) {
+            styleSheet.__removeChangeListener(styleSheetMutationListener);
             recordGlobalLayoutMutation();
         }
         return this;
@@ -955,6 +1008,38 @@ public final class UiDocument {
     private void recordGlobalLayoutMutation() {
         int version = recordLayoutMutation();
         rootElement.__markSubtreeLayoutDirty(version);
+    }
+
+    private void recordStyleSheetMutation(UiStyleChangeImpact impact) {
+        if (impact == UiStyleChangeImpact.PAINT) {
+            recordPaintMutation();
+            return;
+        }
+        recordGlobalLayoutMutation();
+    }
+
+    private boolean isElementAttachedToDocument(ElementNode element) {
+        if (element == null || element.getOwnerDocument() != this) {
+            return false;
+        }
+        for (DocumentNode current = element; current != null; current = current.getParent()) {
+            if (current == rootElement) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private static boolean isNodeWithinSubtree(DocumentNode node, DocumentNode subtreeRoot) {
+        if (node == null || subtreeRoot == null) {
+            return false;
+        }
+        for (DocumentNode current = node; current != null; current = current.getParent()) {
+            if (current == subtreeRoot) {
+                return true;
+            }
+        }
+        return false;
     }
 
     /**

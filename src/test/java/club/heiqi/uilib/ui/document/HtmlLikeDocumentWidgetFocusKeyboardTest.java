@@ -12,6 +12,8 @@ import org.lwjglx.input.Keyboard;
 import club.heiqi.uilib.ui.control.DocumentButtonActionEvent;
 import club.heiqi.uilib.ui.control.DocumentButtonActionHandler;
 import club.heiqi.uilib.ui.control.DocumentButtonControl;
+import club.heiqi.uilib.ui.control.DocumentTextAreaControl;
+import club.heiqi.uilib.ui.control.DocumentTextInputControl;
 import club.heiqi.uilib.ui.document.HtmlLikeDocumentWidgetTestSupport.DeterministicTextMeasureService;
 import club.heiqi.uilib.ui.dom.DocumentElementClickEvent;
 import club.heiqi.uilib.ui.dom.DocumentElementClickHandler;
@@ -151,6 +153,79 @@ public class HtmlLikeDocumentWidgetFocusKeyboardTest {
 
         Assert.assertEquals("[root-capture:CAPTURING, child-capture:AT_TARGET, child:AT_TARGET:x, "
                 + "root-bubble:BUBBLING]", events.toString());
+    }
+
+    /**
+     * 验证祖先 capture 阶段 preventDefault 后，内置 input 默认改值不会执行。
+     */
+    @Test
+    public void shouldPreventDefaultTextInputValueChangeFromAncestorCapture() {
+        UiDocument document = UiDocument.create();
+        ElementNode root = document.getRootElement();
+        DocumentTextInputControl inputControl = new DocumentTextInputControl(document);
+        final List<String> events = new ArrayList<String>();
+        root.style()
+                .setWidth(UiStyleLength.px(160))
+                .setHeight(UiStyleLength.px(40));
+        root.setCaptureTextInputHandler(new DocumentElementTextInputHandler() {
+            @Override
+            public boolean onTextInput(DocumentElementTextInputEvent event) {
+                events.add("capture");
+                event.preventDefault();
+                return false;
+            }
+        }).setTextInputHandler(new DocumentElementTextInputHandler() {
+            @Override
+            public boolean onTextInput(DocumentElementTextInputEvent event) {
+                events.add("bubble");
+                return false;
+            }
+        });
+        inputControl.getElement().style()
+                .setWidth(UiStyleLength.px(120))
+                .setHeight(UiStyleLength.px(24));
+        root.append(inputControl.getElement());
+        HtmlLikeDocumentWidget widget = new HtmlLikeDocumentWidget(document, 160, 40,
+                new DeterministicTextMeasureService());
+        widget.applyLayoutBounds(0, 0, 160, 40);
+
+        widget.onFocusTraversalEntered(false);
+        widget.onTextInput(new UiTextInputEvent("x", 1L));
+
+        Assert.assertEquals("", inputControl.getText());
+        Assert.assertEquals("[capture, bubble]", events.toString());
+    }
+
+    /**
+     * 验证祖先 capture 阶段 preventDefault 后，内置 textarea 默认改值不会执行。
+     */
+    @Test
+    public void shouldPreventDefaultTextAreaValueChangeFromAncestorCapture() {
+        UiDocument document = UiDocument.create();
+        ElementNode root = document.getRootElement();
+        DocumentTextAreaControl textAreaControl = new DocumentTextAreaControl(document);
+        root.style()
+                .setWidth(UiStyleLength.px(180))
+                .setHeight(UiStyleLength.px(80));
+        root.setCaptureTextInputHandler(new DocumentElementTextInputHandler() {
+            @Override
+            public boolean onTextInput(DocumentElementTextInputEvent event) {
+                event.preventDefault();
+                return false;
+            }
+        });
+        textAreaControl.getElement().style()
+                .setWidth(UiStyleLength.px(140))
+                .setHeight(UiStyleLength.px(54));
+        root.append(textAreaControl.getElement());
+        HtmlLikeDocumentWidget widget = new HtmlLikeDocumentWidget(document, 180, 80,
+                new DeterministicTextMeasureService());
+        widget.applyLayoutBounds(0, 0, 180, 80);
+
+        widget.onFocusTraversalEntered(false);
+        widget.onTextInput(new UiTextInputEvent("blocked", 1L));
+
+        Assert.assertEquals("", textAreaControl.getText());
     }
 
     /**
