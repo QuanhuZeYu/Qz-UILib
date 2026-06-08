@@ -9,11 +9,13 @@ import org.junit.Test;
 
 import club.heiqi.uilib.ui.diagnostic.UiRuntimeStats;
 import club.heiqi.uilib.ui.document.HtmlLikeDocumentWidget;
+import club.heiqi.uilib.ui.dom.DocumentElementBounds;
 import club.heiqi.uilib.ui.dom.DocumentElementClickEvent;
 import club.heiqi.uilib.ui.dom.DocumentNode;
 import club.heiqi.uilib.ui.dom.DocumentNodeType;
 import club.heiqi.uilib.ui.dom.ElementNode;
 import club.heiqi.uilib.ui.dom.TextNode;
+import club.heiqi.uilib.ui.event.UiMouseEvent;
 import club.heiqi.uilib.ui.runtime.UiRuntimeAdapters;
 import club.heiqi.uilib.ui.screen.page.DirectDocumentPageAuthoringSurface;
 import club.heiqi.uilib.ui.screen.page.DocumentPageRuntimeView;
@@ -541,8 +543,8 @@ public class UiTestDocumentPageControllerTest {
         Assert.assertNotNull(select);
         Assert.assertNotNull(table);
         Assert.assertTrue(containsText(collectElementTexts(table), "石头"));
-        clickElement(select, 171L);
-        clickOptionByLabel(select, "红石", 172L);
+        clickElementByMouse(fixture.controller.getHtmlLikeDocumentWidget(), select, 171L);
+        clickOptionByLabel(fixture.controller.getHtmlLikeDocumentWidget(), select, "红石", 172L);
         Assert.assertTrue(containsText(collectElementTexts(table), "红石"));
         Assert.assertFalse(containsText(collectElementTexts(table), "石头"));
         clickButtonByLabel(fixture.controller.getHtmlLikeDocumentWidget(), "运行当前样例断言", 0);
@@ -550,6 +552,8 @@ public class UiTestDocumentPageControllerTest {
                 getCaseResult(fixture, "VIS-CTRL-005").getSemanticStatus());
         Assert.assertTrue(getCaseResult(fixture, "VIS-CTRL-005").getActualResult()
                 .contains("selectTableDiff=expected top-layer popup"));
+        Assert.assertTrue(getCaseResult(fixture, "VIS-CTRL-005").getActualResult()
+                .contains("selectOptionHit=true"));
 
         clickButtonByLabel(fixture.controller.getHtmlLikeDocumentWidget(), "下一张", 0);
         clickButtonByLabel(fixture.controller.getHtmlLikeDocumentWidget(), "运行当前样例断言", 0);
@@ -563,6 +567,8 @@ public class UiTestDocumentPageControllerTest {
         clickButtonByLabel(fixture.controller.getHtmlLikeDocumentWidget(), "运行当前样例断言", 0);
         Assert.assertTrue(getCaseResult(fixture, "VIS-CTRL-007").getActualResult()
                 .contains("tabFocusDisabledDiff=expected tab event selects index 1"));
+        Assert.assertTrue(getCaseResult(fixture, "VIS-CTRL-007").getActualResult()
+                .contains("tabRoving=0:-1,1:0"));
         Assert.assertEquals(UiTestSemanticStatus.AUTO_PASSED,
                 getCaseResult(fixture, "VIS-CTRL-007").getSemanticStatus());
     }
@@ -631,22 +637,32 @@ public class UiTestDocumentPageControllerTest {
         Assert.assertTrue(containsText(texts, "transition target"));
         clickButtonByLabel(fixture.controller.getHtmlLikeDocumentWidget(), "运行当前样例断言", 0);
         Assert.assertTrue(getCaseResult(fixture, "VIS-ANIM-001").getActualResult()
-                .contains("transitionDiff=expected transition start/end"));
+                .contains("transitionDiff=expected transition start/end lifecycle"));
+        Assert.assertTrue(getCaseResult(fixture, "VIS-ANIM-001").getActualResult()
+                .contains("transitionStartEvents=1, transitionEndEvents=1"));
 
         clickButtonByLabel(fixture.controller.getHtmlLikeDocumentWidget(), "下一张", 0);
         clickButtonByLabel(fixture.controller.getHtmlLikeDocumentWidget(), "运行当前样例断言", 0);
         Assert.assertTrue(getCaseResult(fixture, "VIS-ANIM-002").getActualResult()
                 .contains("keyframesDiff=expected qzAnimPulse start/end events"));
+        Assert.assertTrue(getCaseResult(fixture, "VIS-ANIM-002").getActualResult()
+                .contains("keyframeStartEvents=1, keyframeEndEvents=1"));
 
         clickButtonByLabel(fixture.controller.getHtmlLikeDocumentWidget(), "下一张", 0);
         clickButtonByLabel(fixture.controller.getHtmlLikeDocumentWidget(), "运行当前样例断言", 0);
         Assert.assertTrue(getCaseResult(fixture, "VIS-ANIM-003").getActualResult()
                 .contains("timingDiff=expected linear and steps(4,end) timing functions"));
+        Assert.assertTrue(getCaseResult(fixture, "VIS-ANIM-003").getActualResult()
+                .contains("timingProgressSample=linear:0.38,steps:0.25"));
 
         clickButtonByLabel(fixture.controller.getHtmlLikeDocumentWidget(), "下一张", 0);
         clickButtonByLabel(fixture.controller.getHtmlLikeDocumentWidget(), "运行当前样例断言", 0);
         Assert.assertTrue(getCaseResult(fixture, "VIS-ANIM-004").getActualResult()
                 .contains("fillModeDiff=expected forwards keeps wider runtime layout"));
+        Assert.assertTrue(getCaseResult(fixture, "VIS-ANIM-004").getActualResult()
+                .contains("fillTrack=from:52.00,to:124.00"));
+        Assert.assertTrue(getCaseResult(fixture, "VIS-ANIM-004").getActualResult()
+                .contains("fillWidths=forwards:138,none:66"));
 
         clickButtonByLabel(fixture.controller.getHtmlLikeDocumentWidget(), "下一张", 0);
         texts = collectDocumentTexts(fixture.controller.getHtmlLikeDocumentWidget());
@@ -770,15 +786,86 @@ public class UiTestDocumentPageControllerTest {
         clickElement(button, 0L);
     }
 
-    private static void clickOptionByLabel(ElementNode select, String label, long timeNanos) {
-        ElementNode option = findElementByTextAndTag(select, "option", label);
-        Assert.assertNotNull("找不到选项：" + label, option);
-        clickElement(option, timeNanos);
+    private static void clickOptionByLabel(HtmlLikeDocumentWidget widget, ElementNode select, String label,
+            long timeNanos) {
+        ElementNode hit = clickOptionByMouseHit(widget, select, label, timeNanos);
+        Assert.assertNotNull("未通过 top-layer 命中选项：" + label, hit);
     }
 
     private static void clickElement(ElementNode element, long timeNanos) {
         Assert.assertNotNull(element.getClickHandler());
         element.getClickHandler().onClick(new DocumentElementClickEvent(element, element, 0, 0, 0, timeNanos));
+    }
+
+    private static ElementNode clickElementByMouse(HtmlLikeDocumentWidget widget, ElementNode element,
+            long timeNanos) {
+        ensureWidgetBounds(widget);
+        widget.resolveLayoutBoxForTest();
+        DocumentElementBounds bounds = element.getDocumentBounds();
+        Assert.assertTrue("元素没有可用布局边界：" + element.getTagName(), bounds.isAvailable());
+        int x = widget.getAbsoluteX() + bounds.getLeft() + Math.max(1, bounds.getWidth() / 2);
+        int y = widget.getAbsoluteY() + bounds.getTop() + Math.max(1, bounds.getHeight() / 2);
+        ElementNode hit = widget.findElementAt(x, y);
+        widget.onMouseDown(new UiMouseEvent(UiMouseEvent.Action.BUTTON_DOWN, x, y, 0, 0, 0, 0, timeNanos));
+        widget.onMouseUp(new UiMouseEvent(UiMouseEvent.Action.BUTTON_UP, x, y, 0, 0, 0, 0, timeNanos + 1L));
+        return hit;
+    }
+
+    private static ElementNode clickOptionByMouseHit(HtmlLikeDocumentWidget widget, ElementNode select, String label,
+            long timeNanos) {
+        ensureWidgetBounds(widget);
+        widget.resolveLayoutBoxForTest();
+        ElementNode listbox = findTopLayerListbox(widget, select);
+        Assert.assertNotNull("select 未打开 top-layer listbox", listbox);
+        DocumentElementBounds bounds = listbox.getDocumentBounds();
+        Assert.assertTrue("listbox 没有可用布局边界：" + describeBounds(bounds), bounds.isAvailable());
+        int x = widget.getAbsoluteX() + bounds.getLeft() + Math.max(1, bounds.getWidth() / 2);
+        int top = widget.getAbsoluteY() + bounds.getTop() + 1;
+        int bottom = widget.getAbsoluteY() + bounds.getTop() + bounds.getHeight();
+        for (int y = top; y < bottom; y++) {
+            ElementNode hit = widget.findElementAt(x, y);
+            ElementNode option = findAncestorOptionWithin(hit, listbox);
+            if (option == null || !containsText(collectElementTexts(option), label)) {
+                continue;
+            }
+            widget.onMouseDown(new UiMouseEvent(UiMouseEvent.Action.BUTTON_DOWN, x, y, 0, 0, 0, 0, timeNanos));
+            widget.onMouseUp(new UiMouseEvent(UiMouseEvent.Action.BUTTON_UP, x, y, 0, 0, 0, 0, timeNanos + 1L));
+            return option;
+        }
+        return null;
+    }
+
+    private static void ensureWidgetBounds(HtmlLikeDocumentWidget widget) {
+        if (widget.getWidth() <= 0 || widget.getHeight() <= 0) {
+            widget.applyLayoutBounds(0, 0, 760, 520);
+        }
+    }
+
+    private static ElementNode findTopLayerListbox(HtmlLikeDocumentWidget widget, ElementNode select) {
+        for (ElementNode element : widget.getDocument().__getTopLayerElements()) {
+            if ("listbox".equals(element.getAttribute("role")) && element.getParent() == select) {
+                return element;
+            }
+        }
+        return null;
+    }
+
+    private static ElementNode findAncestorOptionWithin(ElementNode hit, ElementNode root) {
+        for (DocumentNode current = hit; current instanceof ElementNode; current = current.getParent()) {
+            ElementNode element = (ElementNode) current;
+            if ("option".equals(element.getTagName())) {
+                return element;
+            }
+            if (element == root) {
+                return null;
+            }
+        }
+        return null;
+    }
+
+    private static String describeBounds(DocumentElementBounds bounds) {
+        return bounds.isAvailable() ? bounds.getLeft() + "," + bounds.getTop() + ","
+                + bounds.getWidth() + "x" + bounds.getHeight() : "unavailable";
     }
 
     private static void collectButtonsByLabel(DocumentNode node, String label, List<ElementNode> buttons) {

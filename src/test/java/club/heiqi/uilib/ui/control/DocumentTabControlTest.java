@@ -100,6 +100,29 @@ public class DocumentTabControlTest {
     }
 
     /**
+     * 验证 tablist 只让当前 roving tab 进入顺序焦点遍历。
+     */
+    @Test
+    public void shouldExposeRovingTabIndex() {
+        UiDocument document = UiDocument.create();
+        DocumentTabControl tabs = new DocumentTabControl(document)
+                .addTab("常规", builder("常规内容", new int[] { 0 }))
+                .addTab("高级", builder("高级内容", new int[] { 0 }))
+                .addTab("审查", builder("审查内容", new int[] { 0 }))
+                .setActiveIndex(0);
+
+        Assert.assertEquals("0", tabAt(tabs, 0).getAttribute("tabindex"));
+        Assert.assertEquals("-1", tabAt(tabs, 1).getAttribute("tabindex"));
+        Assert.assertEquals("-1", tabAt(tabs, 2).getAttribute("tabindex"));
+
+        tabs.setActiveIndex(2);
+
+        Assert.assertEquals("-1", tabAt(tabs, 0).getAttribute("tabindex"));
+        Assert.assertEquals("-1", tabAt(tabs, 1).getAttribute("tabindex"));
+        Assert.assertEquals("0", tabAt(tabs, 2).getAttribute("tabindex"));
+    }
+
+    /**
      * 验证 rebuildTab 会清除缓存并重建活动页内容。
      */
     @Test

@@ -56,6 +56,9 @@ final class DocumentClickEventDispatcher {
         if (target == null || event == null) {
             return false;
         }
+        if (isWithinDisabledNativeFormControl(target)) {
+            return false;
+        }
         return dispatchClick(target, event.getMouseX() - absoluteX, event.getMouseY() - absoluteY,
                 event.getButton(), event.getTimeNanos());
     }
@@ -65,6 +68,9 @@ final class DocumentClickEventDispatcher {
      */
     boolean dispatchSyntheticClick(ElementNode target, long timeNanos) {
         if (target == null) {
+            return false;
+        }
+        if (isWithinDisabledNativeFormControl(target)) {
             return false;
         }
         return dispatchClick(target, -1, -1, PRIMARY_BUTTON, timeNanos);
@@ -78,6 +84,9 @@ final class DocumentClickEventDispatcher {
     }
 
     private boolean dispatchClick(ElementNode target, int documentX, int documentY, int button, long timeNanos) {
+        if (isWithinDisabledNativeFormControl(target)) {
+            return false;
+        }
         DocumentEventControl eventControl = new DocumentEventControl();
         List<ElementNode> path = buildAncestorPath(target);
 
@@ -141,6 +150,15 @@ final class DocumentClickEventDispatcher {
         return eventControl.isPropagationStopped();
     }
 
+    private static boolean isWithinDisabledNativeFormControl(ElementNode target) {
+        for (DocumentNode current = target; current instanceof ElementNode; current = current.getParent()) {
+            if (((ElementNode) current).isDisabled()) {
+                return true;
+            }
+        }
+        return false;
+    }
+
     /**
      * 分发 click 后置事件，包括 dblclick 识别与 contextmenu 回退。
      *
@@ -151,6 +169,10 @@ final class DocumentClickEventDispatcher {
      */
     void dispatchPostClickEvents(ElementNode target, UiMouseEvent event, int absoluteX, int absoluteY) {
         if (target == null || event == null) {
+            return;
+        }
+        if (isWithinDisabledNativeFormControl(target)) {
+            clearLastClickState();
             return;
         }
         int documentX = event.getMouseX() - absoluteX;

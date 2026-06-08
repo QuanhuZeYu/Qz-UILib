@@ -105,7 +105,6 @@ public final class DocumentTabControl {
         String tabId = "qz-tab-" + controlInstanceId + "-" + tabs.size();
         tabElement.setId(tabId);
         tabElement.setAttribute("role", "tab")
-                .setAttribute("tabindex", "0")
                 .setAttribute("aria-controls", panelId);
         tabElement.setFocusable(enabled);
         tabElement.style()
@@ -505,6 +504,7 @@ public final class DocumentTabControl {
         for (int index = 0; index < tabs.size(); index++) {
             TabEntry entry = tabs.get(index);
             boolean active = index == activeIndex;
+            boolean roving = enabled && index == resolveRovingFocusIndex();
             int backgroundColor;
             if (!enabled) {
                 backgroundColor = disabledTabBackgroundColor;
@@ -516,6 +516,8 @@ public final class DocumentTabControl {
                 backgroundColor = inactiveTabBackgroundColor;
             }
             entry.tabElement.setAttribute("aria-selected", String.valueOf(active));
+            entry.tabElement.setAttribute("tabindex", roving ? "0" : "-1");
+            entry.tabElement.setFocusable(enabled);
             entry.tabElement.style()
                     .setBackgroundColor(backgroundColor)
                     .setBorderColor(index == focusVisibleIndex ? focusBorderColor
@@ -525,6 +527,19 @@ public final class DocumentTabControl {
             entry.labelElement.style().setTextColor(enabled ? (active ? activeTextColor : textColor)
                     : disabledTextColor);
         }
+    }
+
+    private int resolveRovingFocusIndex() {
+        if (tabs.isEmpty()) {
+            return -1;
+        }
+        if (focusedIndex >= 0 && focusedIndex < tabs.size()) {
+            return focusedIndex;
+        }
+        if (activeIndex >= 0 && activeIndex < tabs.size()) {
+            return activeIndex;
+        }
+        return 0;
     }
 
     private static String normalizeLabel(String label) {

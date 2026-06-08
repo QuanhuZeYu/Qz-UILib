@@ -112,39 +112,98 @@ final class UiTestAnimationAssertionRunner {
             diagnostics.add("transition 节点缺失");
             return false;
         }
+        final int[] startEvents = new int[] { 0 };
+        final int[] endEvents = new int[] { 0 };
+        target.setTransitionStartHandler(new DocumentElementTransitionStartHandler() {
+            @Override
+            public boolean onTransitionStart(DocumentElementTransitionStartEvent event) {
+                if (event.getProperty() == DocumentAnimationProperty.BACKGROUND_COLOR) {
+                    startEvents[0]++;
+                }
+                return false;
+            }
+        });
+        target.setTransitionEndHandler(new DocumentElementTransitionEndHandler() {
+            @Override
+            public boolean onTransitionEnd(DocumentElementTransitionEndEvent event) {
+                if (event.getProperty() == DocumentAnimationProperty.BACKGROUND_COLOR) {
+                    endEvents[0]++;
+                }
+                return false;
+            }
+        });
+        ManualAnimationClock clock = new ManualAnimationClock();
+        widget.setAnimationClock(clock);
+        target.style()
+                .clearTransitionProperties()
+                .setBackgroundColor(0xFF1D4ED8);
+        DocumentLayoutBox initialBox = resolveBox(widget, target);
+        int initialBg = initialBox.getComputedStyle().getBackgroundColor();
+        target.style()
+                .setTransition(DocumentAnimationProperty.BACKGROUND_COLOR, 900L)
+                .setTransitionTimingFunction(DocumentAnimationTimingFunction.EASE_OUT)
+                .setBackgroundColor(0xFF059669);
+        DocumentLayoutBox startBox = resolveBox(widget, target);
+        ComputedStyle style = startBox.getComputedStyle();
+        DocumentAnimationTimeline.DiagnosticsSnapshot startSnapshot = widget.getAnimationDiagnosticsSnapshot();
+        clock.setCurrentTimeNanos(450_000_000L);
         widget.resolveLayoutBoxForTest();
-        DocumentLayoutBox box = resolveBox(widget, target);
-        ComputedStyle style = box.getComputedStyle();
+        DocumentAnimationTimeline.DiagnosticsSnapshot running = widget.getAnimationDiagnosticsSnapshot();
+        clock.setCurrentTimeNanos(950_000_000L);
+        DocumentLayoutBox finishedBox = resolveBox(widget, target);
+        DocumentAnimationTimeline.DiagnosticsSnapshot finished = widget.getAnimationDiagnosticsSnapshot();
         diagnostics.add("transitionProperty=BACKGROUND_COLOR");
         diagnostics.add("transitionDurationNanos=" + style.getTransitionDurationNanos(DocumentAnimationProperty.BACKGROUND_COLOR));
         diagnostics.add("transitionTiming=" + style.getTransitionTimingFunction(DocumentAnimationProperty.BACKGROUND_COLOR));
-        diagnostics.add("transitionFinalBg=" + toHex(box.getComputedStyle().getBackgroundColor()));
-        diagnostics.add("transitionDiff=expected transition start/end declaration for BACKGROUND_COLOR and final green style");
+        diagnostics.add("transitionInitialBg=" + toHex(initialBg));
+        diagnostics.add("transitionFinalBg=" + toHex(finishedBox.getComputedStyle().getBackgroundColor()));
+        diagnostics.add("transitionStartEvents=" + startEvents[0] + ", transitionEndEvents=" + endEvents[0]);
+        diagnostics.add("transitionActive=start:" + startSnapshot.getTransitionCount(DocumentAnimationImpact.PAINT)
+                + ",mid:" + running.getTransitionCount(DocumentAnimationImpact.PAINT) + ",end:"
+                + finished.getTransitionCount(DocumentAnimationImpact.PAINT));
+        diagnostics.add("transitionDiff=expected transition start/end lifecycle, active paint transition and final green style");
         return style.canTransition(DocumentAnimationProperty.BACKGROUND_COLOR)
                 && style.getTransitionDurationNanos(DocumentAnimationProperty.BACKGROUND_COLOR) == 900_000_000L
-                && box.getComputedStyle().getBackgroundColor() == 0xFF059669;
+                && initialBg == 0xFF1D4ED8
+                && startEvents[0] > 0
+                && endEvents[0] > 0
+                && startSnapshot.getTransitionCount(DocumentAnimationImpact.PAINT) > 0
+                && running.getTransitionCount(DocumentAnimationImpact.PAINT) > 0
+                && finished.getTransitionCount(DocumentAnimationImpact.PAINT) == 0
+                && finishedBox.getComputedStyle().getBackgroundColor() == 0xFF059669;
     }
 
     private boolean assertKeyframes(HtmlLikeDocumentWidget widget, ElementNode scope, List<String> diagnostics) {
         ElementNode target = findByRole(scope, "keyframe-target");
-        DocumentKeyframes keyframes = DocumentKeyframes.named("qzAnimPulseAssert")
-                .setColorStop(DocumentAnimationProperty.BACKGROUND_COLOR, 0.0F, 0xFF1D4ED8)
-                .setColorStop(DocumentAnimationProperty.BACKGROUND_COLOR, 0.5F, 0xFFF59E0B)
-                .setColorStop(DocumentAnimationProperty.BACKGROUND_COLOR, 1.0F, 0xFF059669)
-                .build();
-        widget.getDocument().registerKeyframes(keyframes);
+        DocumentKeyframes keyframes = widget.getDocument().getKeyframes("qzAnimPulse");
         if (target == null || keyframes == null) {
             diagnostics.add("keyframes 节点或定义缺失");
             return false;
         }
+        final int[] startEvents = new int[] { 0 };
+        final int[] endEvents = new int[] { 0 };
+        target.setAnimationStartHandler(new DocumentElementAnimationStartHandler() {
+            @Override
+            public boolean onAnimationStart(DocumentElementAnimationStartEvent event) {
+                if ("qzAnimPulse".equals(event.getAnimationName())) {
+                    startEvents[0]++;
+                }
+                return false;
+            }
+        });
+        target.setAnimationEndHandler(new DocumentElementAnimationEndHandler() {
+            @Override
+            public boolean onAnimationEnd(DocumentElementAnimationEndEvent event) {
+                if ("qzAnimPulse".equals(event.getAnimationName())) {
+                    endEvents[0]++;
+                }
+                return false;
+            }
+        });
         ManualAnimationClock clock = new ManualAnimationClock();
         widget.setAnimationClock(clock);
-        target.style()
-                .setAnimationName("qzAnimPulseAssert")
-                .setAnimationDurationMillis(1000L)
-                .setAnimationFillMode(DocumentAnimationFillMode.FORWARDS)
-                .setAnimationTimingFunction(DocumentAnimationTimingFunction.LINEAR);
-        widget.resolveLayoutBoxForTest();
+        ComputedStyle declaredStyle = resolveBox(widget, target).getComputedStyle();
+        restartDeclaredAnimation(widget, target, declaredStyle.getAnimationName());
         clock.setCurrentTimeNanos(500_000_000L);
         widget.resolveLayoutBoxForTest();
         DocumentAnimationTimeline.DiagnosticsSnapshot running = widget.getAnimationDiagnosticsSnapshot();
@@ -155,12 +214,17 @@ final class UiTestAnimationAssertionRunner {
         ComputedStyle style = resolveBox(widget, target).getComputedStyle();
         diagnostics.add("keyframeName=" + style.getAnimationName());
         diagnostics.add("keyframeStopCount=" + stopCount);
+        diagnostics.add("keyframeStartEvents=" + startEvents[0] + ", keyframeEndEvents=" + endEvents[0]);
         diagnostics.add("keyframeActiveHalf=" + running.getKeyframeCount(DocumentAnimationImpact.PAINT));
         diagnostics.add("keyframeFillEnd=" + finished.getForwardsFillCount(DocumentAnimationImpact.PAINT));
         diagnostics.add("keyframesDiff=expected qzAnimPulse start/end events and forwards fill after three stops");
-        return style.getAnimationName() != null && style.getAnimationName().startsWith("qzAnimPulse")
+        return "qzAnimPulse".equals(declaredStyle.getAnimationName())
+                && "qzAnimPulse".equals(style.getAnimationName())
                 && stopCount == 3
+                && startEvents[0] > 0
+                && endEvents[0] > 0
                 && running.getKeyframeCount(DocumentAnimationImpact.PAINT) > 0
+                && finished.getForwardsFillCount(DocumentAnimationImpact.PAINT) > 0
                 && style.getAnimationFillMode() == DocumentAnimationFillMode.FORWARDS;
     }
 
@@ -173,30 +237,33 @@ final class UiTestAnimationAssertionRunner {
         }
         ManualAnimationClock clock = new ManualAnimationClock();
         widget.setAnimationClock(clock);
-        widget.getDocument().registerKeyframes(DocumentKeyframes.named("qzAnimTimingAssert")
-                .setFloat(DocumentAnimationProperty.TRANSLATE_X, 0.0F, 58.0F)
-                .build());
-        linear.style().setAnimationName("qzAnimTimingAssert").setAnimationDurationMillis(1000L);
-        steps.style().setAnimationName("qzAnimTimingAssert").setAnimationDurationMillis(1000L);
-        widget.resolveLayoutBoxForTest();
-        clock.setCurrentTimeNanos(500_000_000L);
+        ComputedStyle declaredLinearStyle = resolveBox(widget, linear).getComputedStyle();
+        ComputedStyle declaredStepsStyle = resolveBox(widget, steps).getComputedStyle();
+        restartDeclaredAnimation(widget, linear, declaredLinearStyle.getAnimationName());
+        restartDeclaredAnimation(widget, steps, declaredStepsStyle.getAnimationName());
+        clock.setCurrentTimeNanos(375_000_000L);
         widget.resolveLayoutBoxForTest();
         DocumentLayoutBox linearBox = resolveBox(widget, linear);
         DocumentLayoutBox stepsBox = resolveBox(widget, steps);
         ComputedStyle linearStyle = linearBox.getComputedStyle();
         ComputedStyle stepsStyle = stepsBox.getComputedStyle();
-        float linearHalf = linearStyle.getAnimationTimingFunction().apply(0.5F);
-        float stepsHalf = stepsStyle.getAnimationTimingFunction().apply(0.5F);
+        float sampleProgress = 0.375F;
+        float linearSample = linearStyle.getAnimationTimingFunction().apply(sampleProgress);
+        float stepsSample = stepsStyle.getAnimationTimingFunction().apply(sampleProgress);
         DocumentAnimationTimeline.DiagnosticsSnapshot running = widget.getAnimationDiagnosticsSnapshot();
         diagnostics.add("timingLinear=" + linearStyle.getAnimationTimingFunction());
         diagnostics.add("timingSteps=" + stepsStyle.getAnimationTimingFunction());
-        diagnostics.add("timingProgressHalf=linear:" + formatFloat(linearHalf) + ",steps:" + formatFloat(stepsHalf));
+        diagnostics.add("timingAnimationNames=linear:" + linearStyle.getAnimationName() + ",steps:"
+                + stepsStyle.getAnimationName());
+        diagnostics.add("timingProgressSample=linear:" + formatFloat(linearSample) + ",steps:"
+                + formatFloat(stepsSample));
         diagnostics.add("timingActivePaintKeyframes=" + running.getKeyframeCount(DocumentAnimationImpact.PAINT));
         diagnostics.add("timingDiff=expected linear and steps(4,end) timing functions both drive paint keyframes");
         return "linear".equals(linearStyle.getAnimationTimingFunction().toString())
                 && stepsStyle.getAnimationTimingFunction().toString().contains("steps(4")
-                && linearHalf == 0.5F
-                && stepsHalf == 0.5F
+                && "qzAnimPaintMove".equals(linearStyle.getAnimationName())
+                && "qzAnimPaintMove".equals(stepsStyle.getAnimationName())
+                && linearSample > stepsSample
                 && running.getKeyframeCount(DocumentAnimationImpact.PAINT) >= 2;
     }
 
@@ -207,23 +274,62 @@ final class UiTestAnimationAssertionRunner {
             diagnostics.add("fill-mode 节点缺失");
             return false;
         }
-        widget.getDocument().registerKeyframes(DocumentKeyframes.named("qzAnimFillAssert")
-                .setFloat(DocumentAnimationProperty.WIDTH, 52.0F, 124.0F)
-                .build());
-        forwards.style().setAnimationName("qzAnimFillAssert").setAnimationDurationMillis(1000L);
-        none.style().setAnimationName("qzAnimFillAssert").setAnimationDurationMillis(1000L);
+        DocumentKeyframes keyframes = widget.getDocument().getKeyframes("qzAnimFill");
+        if (keyframes == null) {
+            diagnostics.add("fill keyframes 定义缺失");
+            return false;
+        }
+        ManualAnimationClock clock = new ManualAnimationClock();
+        long baseTimeNanos = System.nanoTime();
+        clock.setCurrentTimeNanos(baseTimeNanos);
+        widget.setAnimationClock(clock);
+        ComputedStyle declaredForwardsStyle = resolveBox(widget, forwards).getComputedStyle();
+        ComputedStyle declaredNoneStyle = resolveBox(widget, none).getComputedStyle();
+        restartDeclaredAnimation(widget, forwards, declaredForwardsStyle.getAnimationName());
+        restartDeclaredAnimation(widget, none, declaredNoneStyle.getAnimationName());
+        clock.setCurrentTimeNanos(baseTimeNanos + 500_000_000L);
         widget.resolveLayoutBoxForTest();
-        DocumentLayoutBox forwardsBox = resolveBox(widget, forwards);
-        DocumentLayoutBox noneBox = resolveBox(widget, none);
-        DocumentKeyframes keyframes = widget.getDocument().getKeyframes("qzAnimFillAssert");
+        DocumentAnimationTimeline.DiagnosticsSnapshot running = widget.getAnimationDiagnosticsSnapshot();
+        long endTimeNanos = Math.max(declaredForwardsStyle.getAnimationDurationNanos(),
+                declaredNoneStyle.getAnimationDurationNanos()) + baseTimeNanos + 50_000_000L;
+        clock.setCurrentTimeNanos(endTimeNanos);
+        DocumentLayoutBox finishedRoot = widget.resolveLayoutBoxForTest();
+        DocumentAnimationTimeline.DiagnosticsSnapshot finished = widget.getAnimationDiagnosticsSnapshot();
+        DocumentLayoutBox forwardsBox = findLayoutBox(finishedRoot, forwards);
+        DocumentLayoutBox noneBox = findLayoutBox(finishedRoot, none);
+        if (forwardsBox == null || noneBox == null) {
+            diagnostics.add("fill-mode 结束帧布局盒缺失");
+            return false;
+        }
         DocumentKeyframes.FloatTrack track = keyframes.getFloatTracks().get(DocumentAnimationProperty.WIDTH);
         diagnostics.add("fillForwardsMode=" + forwardsBox.getComputedStyle().getAnimationFillMode());
         diagnostics.add("fillNoneMode=" + noneBox.getComputedStyle().getAnimationFillMode());
         diagnostics.add("fillTrack=from:" + formatFloat(track.getFirstValue()) + ",to:" + formatFloat(track.getLastValue()));
+        diagnostics.add("fillWidths=forwards:" + forwardsBox.getWidth() + ",none:" + noneBox.getWidth());
+        diagnostics.add("fillActiveHalf=" + running.getKeyframeCount(DocumentAnimationImpact.LAYOUT));
+        diagnostics.add("fillActiveEnd=" + finished.getKeyframeCount(DocumentAnimationImpact.LAYOUT));
+        diagnostics.add("fillForwardsEnd=" + finished.getForwardsFillCount(DocumentAnimationImpact.LAYOUT));
+        diagnostics.add("fillRuntimeEnd=" + widget.hasLayoutRuntimeValueForDiagnostics() + ",activeTotal="
+                + widget.getActiveAnimationCount() + ",endNanos=" + endTimeNanos);
         diagnostics.add("fillModeDiff=expected forwards keeps wider runtime layout and none returns base width");
         return forwardsBox.getComputedStyle().getAnimationFillMode() == DocumentAnimationFillMode.FORWARDS
                 && noneBox.getComputedStyle().getAnimationFillMode() == DocumentAnimationFillMode.NONE
-                && track.getLastValue() > track.getFirstValue();
+                && "qzAnimFill".equals(declaredForwardsStyle.getAnimationName())
+                && "qzAnimFill".equals(declaredNoneStyle.getAnimationName())
+                && track.getLastValue() > track.getFirstValue()
+                && running.getKeyframeCount(DocumentAnimationImpact.LAYOUT) >= 2
+                && finished.getForwardsFillCount(DocumentAnimationImpact.LAYOUT) > 0
+                && forwardsBox.getWidth() > noneBox.getWidth();
+    }
+
+    private void restartDeclaredAnimation(HtmlLikeDocumentWidget widget, ElementNode target, String animationName) {
+        if (target == null || animationName == null) {
+            return;
+        }
+        target.style().clearAnimationName();
+        widget.resolveLayoutBoxForTest();
+        target.style().setAnimationName(animationName);
+        widget.resolveLayoutBoxForTest();
     }
 
     private void diagnoseLayoutVsPaint(HtmlLikeDocumentWidget widget, ElementNode scope, List<String> diagnostics) {

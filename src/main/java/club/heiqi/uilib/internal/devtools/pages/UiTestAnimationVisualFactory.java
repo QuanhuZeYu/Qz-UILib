@@ -85,8 +85,7 @@ final class UiTestAnimationVisualFactory {
         box.style()
                 .setWidth(UiStyleLength.px(96))
                 .setTransition(DocumentAnimationProperty.BACKGROUND_COLOR, 900L)
-                .setTransitionTimingFunction(DocumentAnimationTimingFunction.EASE_OUT)
-                .setBackgroundColor(0xFF059669);
+                .setTransitionTimingFunction(DocumentAnimationTimingFunction.EASE_OUT);
         panel.append(box).append(createTimeline(document, "0ms", "450ms", "900ms"));
         stage.append(panel);
         appendMutedText(document, stage, "transition：background-color 从蓝到绿，时间轴诊断 start/end。 ");

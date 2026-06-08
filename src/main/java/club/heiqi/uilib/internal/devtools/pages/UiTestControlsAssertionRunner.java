@@ -6,7 +6,7 @@ import java.util.List;
 import org.lwjglx.input.Keyboard;
 
 import club.heiqi.uilib.ui.document.HtmlLikeDocumentWidget;
-import club.heiqi.uilib.ui.dom.DocumentElementClickEvent;
+import club.heiqi.uilib.ui.dom.DocumentElementBounds;
 import club.heiqi.uilib.ui.dom.DocumentNode;
 import club.heiqi.uilib.ui.dom.ElementNode;
 import club.heiqi.uilib.ui.event.UiKeyEvent;
@@ -218,24 +218,29 @@ final class UiTestControlsAssertionRunner {
             diagnostics.add("select option 节点缺失");
             return false;
         }
-        clickElementDirect(targetOption, 142L);
+        ElementNode hitOption = clickElement(widget, targetOption, 142L);
+        String log = logNode.getTextContent();
+        boolean optionHit = isOptionHit(hitOption, "红石")
+                || ("红石".equals(select.getAttribute("value")) && log.contains("select=红石:2"));
         DocumentLayoutBox selectBox = resolveBox(widget, select);
         DocumentLayoutBox tableBox = resolveBox(widget, table);
         diagnostics.add("selectValue=" + select.getAttribute("value") + ", expanded="
                 + select.getAttribute("aria-expanded"));
         diagnostics.add("selectExpandedWhenOpen=" + expandedWhenOpen);
         diagnostics.add("selectPopupTopLayer=" + popupTopLayer);
-        diagnostics.add("selectLog=" + logNode.getTextContent());
+        diagnostics.add("selectOptionHit=" + optionHit);
+        diagnostics.add("selectLog=" + log);
         diagnostics.add("selectTableText=" + table.getTextContent());
         diagnostics.add("selectBox=w=" + selectBox.getWidth() + ",h=" + selectBox.getHeight()
                 + "; tableBox=w=" + tableBox.getWidth() + ",h=" + tableBox.getHeight());
         diagnostics.add("selectTableDiff=expected top-layer popup, redstone option selection, table value sync and positive layout boxes; popup placement still needs screenshot confirmation.");
         return popupTopLayer
                 && "true".equals(expandedWhenOpen)
+                && optionHit
                 && "红石".equals(select.getAttribute("value"))
                 && "false".equals(select.getAttribute("aria-expanded"))
                 && table.getTextContent().contains("红石")
-                && logNode.getTextContent().contains("select=红石:2")
+                && log.contains("select=红石:2")
                 && selectBox.getWidth() > 0
                 && tableBox.getWidth() > 0
                 && tableBox.getHeight() > 0;
@@ -284,31 +289,30 @@ final class UiTestControlsAssertionRunner {
         String log = logNode.getTextContent();
         diagnostics.add("tabLog=" + log);
         diagnostics.add("tabSelected=" + tabOptions.get(1).getAttribute("aria-selected"));
+        diagnostics.add("tabRoving=0:" + tabOptions.get(0).getAttribute("tabindex") + ",1:"
+                + tabOptions.get(1).getAttribute("tabindex"));
         diagnostics.add("disabledInputFocus=" + disabledInputFocused + ", disabledButtonFocus="
                 + disabledButtonFocused + ", inputDisabled=" + disabledInput.isDisabled()
                 + ", buttonDisabled=" + disabledButton.isDisabled());
         diagnostics.add("tabFocusDisabledDiff=expected tab event selects index 1 and disabled controls reject focus");
         return log.contains("tab=事件:1")
                 && "true".equals(tabOptions.get(1).getAttribute("aria-selected"))
+                && "-1".equals(tabOptions.get(0).getAttribute("tabindex"))
+                && "0".equals(tabOptions.get(1).getAttribute("tabindex"))
                 && disabledInput.isDisabled()
                 && disabledButton.isDisabled()
                 && !disabledInputFocused
                 && !disabledButtonFocused;
     }
 
-    private void clickElement(HtmlLikeDocumentWidget widget, ElementNode element, long timeNanos) {
+    private ElementNode clickElement(HtmlLikeDocumentWidget widget, ElementNode element, long timeNanos) {
         int[] center = resolveElementCenter(widget, element);
+        ElementNode hit = widget.findElementAt(center[0], center[1]);
         widget.onMouseDown(new UiMouseEvent(UiMouseEvent.Action.BUTTON_DOWN, center[0], center[1], 0, 0, 0, 0,
                 timeNanos));
         widget.onMouseUp(new UiMouseEvent(UiMouseEvent.Action.BUTTON_UP, center[0], center[1], 0, 0, 0, 0,
                 timeNanos + 1L));
-    }
-
-    private void clickElementDirect(ElementNode element, long timeNanos) {
-        if (element.getClickHandler() == null) {
-            throw new IllegalStateException("元素缺少 click handler: " + element.getTagName());
-        }
-        element.getClickHandler().onClick(new DocumentElementClickEvent(element, element, 0, 0, 0, timeNanos));
+        return hit;
     }
 
     private boolean attemptProgrammaticFocus(HtmlLikeDocumentWidget widget, ElementNode element) {
@@ -316,10 +320,17 @@ final class UiTestControlsAssertionRunner {
     }
 
     private int[] resolveElementCenter(HtmlLikeDocumentWidget widget, ElementNode element) {
-        DocumentLayoutBox box = resolveBox(widget, element);
-        int x = widget.getAbsoluteX() + box.getLeft() + Math.max(1, box.getWidth() / 2);
-        int y = widget.getAbsoluteY() + box.getTop() + Math.max(1, box.getHeight() / 2);
+        DocumentElementBounds bounds = element.getDocumentBounds();
+        if (!bounds.isAvailable()) {
+            throw new IllegalStateException("未找到 Controls 样例布局边界: " + element.getTagName());
+        }
+        int x = widget.getAbsoluteX() + bounds.getLeft() + Math.max(1, bounds.getWidth() / 2);
+        int y = widget.getAbsoluteY() + bounds.getTop() + Math.max(1, bounds.getHeight() / 2);
         return new int[] { x, y };
+    }
+
+    private boolean isOptionHit(ElementNode hit, String text) {
+        return hit != null && "option".equals(hit.getTagName()) && text.equals(hit.getTextContent());
     }
 
     private DocumentLayoutBox resolveBox(HtmlLikeDocumentWidget widget, ElementNode element) {
