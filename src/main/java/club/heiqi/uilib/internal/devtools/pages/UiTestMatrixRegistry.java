@@ -124,8 +124,8 @@ final class UiTestMatrixRegistry {
         groups.add(new UiTestGroupSpec("PAINT", "Paint 绘制、命中与视觉语义",
                 "stacking、opacity、clip、transform、top-layer、scrollbar 与 host image fallback。",
                 "绘制层级、裁剪、变换和滚动条以重叠舞台展示。",
-                "绘制命令顺序、stacking phase、clip/transform/top-layer 命中。",
-                "预期结果：后续样例应直接画出重叠顺序、裁剪边界、transform 命中和 top-layer 层级。", 7, 3, 4));
+                "绘制命令顺序、stacking phase、clip/transform/top-layer 与 scroll range。",
+                "预期结果：后续样例应直接画出重叠顺序、裁剪边界、transform 命中和 top-layer 层级。", 7, 4, 3));
         groups.add(new UiTestGroupSpec("INPUT", "Input 输入与事件语义",
                 "capture/bubble、preventDefault、wheel、focus-visible、keyboard/textInput。",
                 "事件传播和默认行为以日志轨道、焦点框和滚动状态展示。",
@@ -134,8 +134,8 @@ final class UiTestMatrixRegistry {
         groups.add(new UiTestGroupSpec("CTRL", "Controls 控件与表单语义",
                 "button、input、textarea、checkbox/radio、select、slider/toggle/tab。",
                 "表单控件以真实控件排列、值标签、选择态和 caret/selection 展示。",
-                "value、checked、selection、caret、disabled、change 日志。",
-                "预期结果：后续样例应直接画出控件值、选择状态、禁用状态、caret/selection 和 change 日志。", 7, 5, 2));
+                "value、checked、selection 替换、top-layer 展开、disabled、change 日志。",
+                "预期结果：后续样例应直接画出控件值、选择状态、禁用状态、caret/selection 和 change 日志。", 7, 7, 0));
         groups.add(new UiTestGroupSpec("TEXT", "TextFont 文本、字体与国际化语义",
                 "raw/formatted、baseline、fallback、wrap/trim 与 obfuscated。",
                 "文本测量、换行、baseline 和字体 fallback 以行框标尺展示。",
@@ -321,8 +321,8 @@ final class UiTestMatrixRegistry {
                 "overflow:auto/scroll 时生成 scrollbar track/thumb，thumb 拖动影响 scroll offset。",
                 "带 overflow:auto 的高容器 + 长内容，展示 track 与 thumb 位置。",
                 "预期结果：thumb 尺寸与内容比例一致，位于 track 内；点击 thumb 区域可交互。",
-                "自动诊断：输出 overflow 与 scroll range；scrollbar 几何、拖拽和命中保留人工确认。",
-                "scrollbar track/thumb 几何与拖拽命中需要游戏内截图和交互确认，不能仅凭 overflow 声明自动通过。"));
+                "自动断言：检查 overflow:auto、正向 scroll range 和 scrollTo 运行态偏移变化；track/thumb 几何仍需截图确认。",
+                ""));
         cases.add(new UiTestCaseSpec("VIS-PAINT-007", "PAINT", "host image fallback",
                 "background-image:url(有效) 显示资源图；无效资源保留元素底色。",
                 "两个面板：有效资源 url 与 缺失资源 url，分别展示图片与底色 fallback。",
@@ -371,8 +371,8 @@ final class UiTestMatrixRegistry {
                 "textarea 支持多行 value、selection 替换、caret 渲染、滚动和 disabled/readOnly 边界。",
                 "真实 DocumentTextAreaControl 展示多行文本、黄色 caret 与蓝色 selection 色，日志记录替换后的值。",
                 "预期结果：多行内容可见，聚焦后黄色 caret 与蓝色 selection 清晰，不随控件偏移错位。",
-                "自动诊断：执行 Ctrl+A 替换并输出 value、布局盒和滚动摘要；caret/selection 绘制需截图确认。",
-                "textarea caret 与 selection 的真实绘制发生在 custom renderer 中，需要游戏内截图确认颜色、位置和滚动观感。"));
+                "自动断言：执行 Ctrl+A 替换，检查 value、change 日志和布局盒；caret/selection 绘制仍需截图确认。",
+                ""));
         cases.add(new UiTestCaseSpec("VIS-CTRL-004", "CTRL", "checkbox/radio checked 与 change",
                 "checkbox 支持 checked/mixed/disabled，radio group 保持单选互斥并触发 change。",
                 "复选框列展示未选、已选、半选、禁用；旁侧单选组展示三项互斥选择。",
@@ -382,8 +382,8 @@ final class UiTestMatrixRegistry {
                 "select 当前值写入 value/aria-selected，展开面板使用 top-layer 语义；table 控件保持行列对齐。",
                 "DocumentSelectControl 与 DocumentTableControl 并排展示，表格记录 select value、popup 和布局状态。",
                 "预期结果：select 当前值为石头，展开后 popup 覆盖在控件下方，表格行列边框对齐。",
-                "自动诊断：打开 select 并输出 value、aria-expanded、popup top-layer 与 table 布局摘要；弹层位置需截图确认。",
-                "select popup 的 top-layer 位置、遮挡、选项命中和 table 视觉对齐需要游戏内截图人工确认。"));
+                "自动断言：打开 select，检查 popup top-layer、选项选择、value、change 日志和 table 同步；弹层位置仍需截图确认。",
+                ""));
         cases.add(new UiTestCaseSpec("VIS-CTRL-006", "CTRL", "slider/toggle 值与开关状态",
                 "slider 通过键盘和拖拽更新 aria-valuenow，toggle 通过点击/键盘更新 aria-checked 并触发 change。",
                 "水平 DocumentSliderControl 与 DocumentToggleSwitchControl 并排展示，日志记录数值和开关变化。",
