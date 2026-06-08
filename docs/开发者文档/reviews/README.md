@@ -11,6 +11,11 @@
 - 原始报告正文使用 `后续复核（YYYY-MM-DD）` 批注标记，不删除历史判断；批注需说明当前正确口径和是否还需要修复。
 - 只在本索引写摘要，不把完整修复过程或阶段流水账堆积到索引页。
 
+## 2026-06-09-production-code-round7
+- 类型：全项目生产代码第七轮审查
+- 详情文档：[REVIEW-20260609-production-code-round7.md](REVIEW-20260609-production-code-round7.md)
+- 结论摘要：只读审查第六轮修复后的剩余高风险边界，发现 2 个待修问题：运行态 transform 已参与 paint / hit-test，但 fixed containing block、clip chain 和 scroll metrics 仍只看静态 computed transform；默认滚动和滚动条拖拽未复用 hit-test suppression / `pointer-events:none` 口径，passthrough scrollable overlay 仍可能吃掉 wheel 或 scrollbar drag。remote UI session 本轮未形成新 finding，固定 TTL 与不隐式续期仍按现有决策处理。
+
 ## 2026-06-09-production-code-round6
 - 类型：全项目生产代码第六轮审查修复
 - 详情文档：[REVIEW-20260609-production-code-round6.md](REVIEW-20260609-production-code-round6.md)
