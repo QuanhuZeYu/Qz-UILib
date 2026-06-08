@@ -11,6 +11,7 @@ import club.heiqi.uilib.ui.dom.DocumentElementHoverEvent;
 import club.heiqi.uilib.ui.dom.DocumentElementHoverHandler;
 import club.heiqi.uilib.ui.dom.DocumentElementKeyEvent;
 import club.heiqi.uilib.ui.dom.DocumentElementKeyHandler;
+import club.heiqi.uilib.ui.dom.DocumentTopLayerDetachHandler;
 import club.heiqi.uilib.ui.dom.ElementNode;
 import club.heiqi.uilib.ui.dom.TextNode;
 import club.heiqi.uilib.ui.dom.UiDocument;
@@ -221,6 +222,12 @@ public final class DocumentSelectControl {
                 .setPadding(UiStyleLength.px(8));
         popupElement.setAttribute("role", "listbox");
         popupElement.setAttribute(PRESERVE_FOCUS_ON_MOUSE_DOWN_ATTRIBUTE, "true");
+        popupElement.__setTopLayerDetachHandler(new DocumentTopLayerDetachHandler() {
+            @Override
+            public void onTopLayerDetached(ElementNode topLayerElement) {
+                closeFromTopLayerDetach();
+            }
+        });
         popupElement.style()
                 .setDisplay(UiDisplay.NONE)
                 .setPosition(UiPosition.ABSOLUTE)
@@ -373,6 +380,13 @@ public final class DocumentSelectControl {
         }
     }
 
+    private void closeFromTopLayerDetach() {
+        open = false;
+        highlightedIndex = selectedIndex;
+        restorePopupInlinePlacement();
+        updateVisualState();
+    }
+
     private void selectIndex(int nextIndex, boolean notify, boolean keyboardTriggered, int keyCode, int button,
             long timeNanos) {
         int resolvedIndex = Math.max(0, Math.min(nextIndex, options.length - 1));
@@ -464,7 +478,7 @@ public final class DocumentSelectControl {
         if (!open) {
             return false;
         }
-        DocumentElementBounds bounds = element.getDocumentBounds();
+        DocumentElementBounds bounds = element.__getVisualDocumentBounds();
         if (!bounds.isAvailable() || bounds.getWidth() <= 0) {
             restorePopupInlinePlacement();
             return false;

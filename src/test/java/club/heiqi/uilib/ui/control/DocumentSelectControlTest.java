@@ -16,6 +16,7 @@ import club.heiqi.uilib.ui.style.props.UiDisplay;
 import club.heiqi.uilib.ui.style.props.UiOverflow;
 import club.heiqi.uilib.ui.style.props.UiPosition;
 import club.heiqi.uilib.ui.style.values.UiStyleLength;
+import club.heiqi.uilib.ui.style.values.UiTransform;
 import club.heiqi.uilib.ui.text.TextMeasureService;
 
 /**
@@ -215,6 +216,40 @@ public class DocumentSelectControlTest {
     }
 
     /**
+     * 验证 transform 祖先下的 select popup 会按视觉坐标锚定。
+     */
+    @Test
+    public void shouldAnchorPopupToTransformedSelectVisualBounds() {
+        UiDocument document = UiDocument.create();
+        ElementNode root = document.getRootElement();
+        ElementNode transformed = document.div();
+        DocumentSelectControl selectControl = new DocumentSelectControl(document, "A", "B", "C");
+        root.style()
+                .setWidth(UiStyleLength.px(320))
+                .setHeight(UiStyleLength.px(240));
+        transformed.style()
+                .setWidth(UiStyleLength.px(180))
+                .setTransform(UiTransform.translate(80.0F, 40.0F));
+        selectControl.getElement().style().setWidth(UiStyleLength.px(180));
+        transformed.append(selectControl.getElement());
+        root.append(transformed);
+        HtmlLikeDocumentWidget widget = new HtmlLikeDocumentWidget(document, 320, 240,
+                new DeterministicTextMeasureService());
+        widget.applyLayoutBounds(0, 0, 320, 240);
+
+        click(widget, 90, 52, 1L);
+        ElementNode popup = findListboxElement(root);
+
+        Assert.assertTrue(document.__isTopLayerElement(popup));
+        Assert.assertEquals(UiStyleLength.px(80), popup.style().getLeft());
+        Assert.assertEquals(UiStyleLength.px(74), popup.style().getTop());
+
+        click(widget, 90, 112, 3L);
+
+        Assert.assertEquals("B", selectControl.getSelectedOption());
+    }
+
+    /**
      * 验证 top-layer 命中顺序高于普通 fixed 内容，且后注册的顶层元素在更上层。
      */
     @Test
@@ -390,9 +425,47 @@ public class DocumentSelectControlTest {
         root.removeChild(shell);
         Assert.assertFalse(document.__getTopLayerElements().contains(popup));
         Assert.assertFalse(document.__isTopLayerElement(popup));
+        Assert.assertEquals("false", selectControl.getElement().getAttribute("aria-expanded"));
+        Assert.assertEquals(UiDisplay.NONE, popup.style().getDisplay());
+        Assert.assertEquals(UiPosition.ABSOLUTE, popup.style().getPosition());
+        Assert.assertEquals(UiStyleLength.percent(1.0F), popup.style().getTop());
 
         root.append(shell);
         Assert.assertFalse(document.__isTopLayerElement(popup));
+        Assert.assertEquals("false", selectControl.getElement().getAttribute("aria-expanded"));
+        Assert.assertEquals(UiDisplay.NONE, popup.style().getDisplay());
+    }
+
+    /**
+     * 验证选择 popup 关闭后会立即刷新当前鼠标位置的 hover 状态。
+     */
+    @Test
+    public void shouldRefreshHoverWhenPopupClosesAfterOptionClick() {
+        UiDocument document = UiDocument.create();
+        ElementNode root = document.getRootElement();
+        final List<String> hoverEvents = new ArrayList<String>();
+        DocumentSelectControl selectControl = new DocumentSelectControl(document, "A", "B", "C");
+        root.style()
+                .setWidth(UiStyleLength.px(240))
+                .setHeight(UiStyleLength.px(160));
+        selectControl.getElement().style().setWidth(UiStyleLength.px(180));
+        root.append(selectControl.getElement());
+        ElementNode popup = findListboxElement(root);
+        ElementNode secondOption = findOptionElement(popup, 1);
+        secondOption.setHoverHandler(event -> {
+            hoverEvents.add("option:" + event.isHovered());
+            return false;
+        });
+        HtmlLikeDocumentWidget widget = new HtmlLikeDocumentWidget(document, 240, 160,
+                new DeterministicTextMeasureService());
+        widget.applyLayoutBounds(0, 0, 240, 160);
+
+        click(widget, 20, 12, 1L);
+        widget.onMouseMove(new UiMouseEvent(UiMouseEvent.Action.MOVE, 20, 72, -1, 0, 0, 0, 3L));
+        click(widget, 20, 72, 4L);
+
+        Assert.assertEquals("B", selectControl.getSelectedOption());
+        Assert.assertEquals("[option:true, option:false]", hoverEvents.toString());
     }
 
     private static boolean containsTextCall(ControlTestRenderContext renderContext, String text) {
@@ -419,6 +492,19 @@ public class DocumentSelectControlTest {
                 if (found != null) {
                     return found;
                 }
+            }
+        }
+        return null;
+    }
+
+    private static ElementNode findOptionElement(ElementNode popup, int optionIndex) {
+        int index = 0;
+        for (club.heiqi.uilib.ui.dom.DocumentNode child : popup.getChildren()) {
+            if (child instanceof ElementNode && "option".equals(((ElementNode) child).getTagName())) {
+                if (index == optionIndex) {
+                    return (ElementNode) child;
+                }
+                index++;
             }
         }
         return null;

@@ -2374,13 +2374,38 @@ public final class UiStyleDeclaration {
     /**
      * 用另一个声明覆盖当前声明的显式值。
      *
-     * <p>该方法主要供 `cloneNode` 等内部复制场景使用，不触发变更回调。</p>
+     * <p>公开批量复制与逐项 setter 一样会触发变更回调，确保已挂载元素的 layout / paint 缓存立即失效。</p>
      *
      * @param source 来源声明
      * @return 当前声明
      */
     public UiStyleDeclaration copyFrom(UiStyleDeclaration source) {
+        EnumMap<UiStyleProperty, Object> previousDeclaredValues = new EnumMap<UiStyleProperty, Object>(declaredValues);
+        EnumMap<UiStyleProperty, UiStyleKeyword> previousKeywords =
+                new EnumMap<UiStyleProperty, UiStyleKeyword>(keywords);
+        EnumSet<UiStyleProperty> previousImportantProperties = EnumSet.copyOf(importantProperties);
+
+        __copyFromSilently(source);
+        if (!previousDeclaredValues.equals(declaredValues)
+                || !previousKeywords.equals(keywords)
+                || !previousImportantProperties.equals(importantProperties)) {
+            recordChange(resolveCopyImpact(previousDeclaredValues, previousKeywords, previousImportantProperties));
+        }
+        return this;
+    }
+
+    /**
+     * 静默复制另一个声明的显式值。
+     *
+     * @param source 来源声明
+     * @return 当前声明
+     * @apiNote 框架内部 API，仅供 clone 等未挂载复制路径使用。业务代码应使用 {@link #copyFrom(UiStyleDeclaration)}。
+     */
+    public UiStyleDeclaration __copyFromSilently(UiStyleDeclaration source) {
         UiStyleDeclaration resolvedSource = Objects.requireNonNull(source, "source");
+        if (resolvedSource == this) {
+            return this;
+        }
         display = resolvedSource.display;
         width = resolvedSource.width;
         height = resolvedSource.height;
@@ -2450,6 +2475,49 @@ public final class UiStyleDeclaration {
         importantProperties.clear();
         importantProperties.addAll(resolvedSource.importantProperties);
         return this;
+    }
+
+    private UiStyleChangeImpact resolveCopyImpact(EnumMap<UiStyleProperty, Object> previousDeclaredValues,
+            EnumMap<UiStyleProperty, UiStyleKeyword> previousKeywords,
+            EnumSet<UiStyleProperty> previousImportantProperties) {
+        EnumSet<UiStyleProperty> changedProperties = EnumSet.noneOf(UiStyleProperty.class);
+        collectChangedProperties(changedProperties, previousDeclaredValues, declaredValues);
+        collectChangedProperties(changedProperties, previousKeywords, keywords);
+        collectChangedImportantProperties(changedProperties, previousImportantProperties, importantProperties);
+        for (UiStyleProperty property : changedProperties) {
+            if (property.getChangeImpact() == UiStyleChangeImpact.LAYOUT) {
+                return UiStyleChangeImpact.LAYOUT;
+            }
+        }
+        return UiStyleChangeImpact.PAINT;
+    }
+
+    private static <T> void collectChangedProperties(EnumSet<UiStyleProperty> changedProperties,
+            EnumMap<UiStyleProperty, T> previousValues, EnumMap<UiStyleProperty, T> nextValues) {
+        for (UiStyleProperty property : previousValues.keySet()) {
+            if (!Objects.equals(previousValues.get(property), nextValues.get(property))) {
+                changedProperties.add(property);
+            }
+        }
+        for (UiStyleProperty property : nextValues.keySet()) {
+            if (!previousValues.containsKey(property)) {
+                changedProperties.add(property);
+            }
+        }
+    }
+
+    private static void collectChangedImportantProperties(EnumSet<UiStyleProperty> changedProperties,
+            EnumSet<UiStyleProperty> previousProperties, EnumSet<UiStyleProperty> nextProperties) {
+        for (UiStyleProperty property : previousProperties) {
+            if (!nextProperties.contains(property)) {
+                changedProperties.add(property);
+            }
+        }
+        for (UiStyleProperty property : nextProperties) {
+            if (!previousProperties.contains(property)) {
+                changedProperties.add(property);
+            }
+        }
     }
 
     private void recordPropertyChange(UiStyleProperty property) {

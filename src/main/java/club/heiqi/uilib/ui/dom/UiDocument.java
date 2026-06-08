@@ -127,6 +127,7 @@ public final class UiDocument {
         for (ElementNode topLayerElement : new ArrayList<ElementNode>(topLayerElements)) {
             if (isNodeWithinSubtree(topLayerElement, subtreeRoot)) {
                 topLayerElements.remove(topLayerElement);
+                notifyTopLayerDetached(topLayerElement);
                 changed = true;
             }
         }
@@ -148,6 +149,7 @@ public final class UiDocument {
         for (ElementNode topLayerElement : new ArrayList<ElementNode>(topLayerElements)) {
             if (!isElementAttachedToDocument(topLayerElement)) {
                 topLayerElements.remove(topLayerElement);
+                notifyTopLayerDetached(topLayerElement);
                 changed = true;
             }
         }
@@ -557,6 +559,12 @@ public final class UiDocument {
     DocumentElementBounds __getElementBounds(ElementNode element) {
         DocumentInteractionRuntime runtime = getInteractionRuntime();
         return runtime != null && ownsElement(element) ? runtime.requestElementBounds(element)
+                : DocumentElementBounds.unavailable();
+    }
+
+    DocumentElementBounds __getElementVisualBounds(ElementNode element) {
+        DocumentInteractionRuntime runtime = getInteractionRuntime();
+        return runtime != null && ownsElement(element) ? runtime.requestVisualElementBounds(element)
                 : DocumentElementBounds.unavailable();
     }
 
@@ -1030,6 +1038,13 @@ public final class UiDocument {
         return false;
     }
 
+    private void notifyTopLayerDetached(ElementNode topLayerElement) {
+        DocumentTopLayerDetachHandler detachHandler = topLayerElement.__getTopLayerDetachHandler();
+        if (detachHandler != null) {
+            detachHandler.onTopLayerDetached(topLayerElement);
+        }
+    }
+
     private static boolean isNodeWithinSubtree(DocumentNode node, DocumentNode subtreeRoot) {
         if (node == null || subtreeRoot == null) {
             return false;
@@ -1154,6 +1169,16 @@ public final class UiDocument {
          */
         default DocumentElementBounds requestElementBounds(ElementNode element) {
             return DocumentElementBounds.unavailable();
+        }
+
+        /**
+         * 请求读取指定元素当前视觉边界，包含 paint-only transform 与动画运行态。
+         *
+         * @param element 目标元素
+         * @return 元素视觉边界；不可用时返回不可用边界
+         */
+        default DocumentElementBounds requestVisualElementBounds(ElementNode element) {
+            return requestElementBounds(element);
         }
 
         /**
