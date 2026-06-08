@@ -946,6 +946,65 @@ public class HtmlLikeDocumentWidgetLayoutCacheTest {
     }
 
     /**
+     * 验证已挂载样式表新增布局规则后，下一次布局会立即应用。
+     */
+    @Test
+    public void shouldApplyMountedStyleSheetAddedLayoutRule() {
+        UiDocument document = UiDocument.create();
+        ElementNode root = document.getRootElement();
+        ElementNode target = document.div();
+        ElementNode after = document.div();
+        UiStyleSheet sheet = UiStyleSheet.create();
+        target.setClassName("mounted-sheet-target");
+        target.appendText("sheet");
+        after.appendText("after");
+        root.append(target).append(after);
+        document.addStyleSheet(sheet);
+        HtmlLikeDocumentWidget widget = new HtmlLikeDocumentWidget(document, 120, 100,
+                new CountingTextMeasureService());
+        widget.applyLayoutBounds(0, 0, 120, 100);
+
+        widget.render(new RecordingUiRenderContext());
+        sheet.addRule(".mounted-sheet-target", new UiStyleDeclaration().setLineHeight(UiStyleLength.px(30)));
+        RecordingUiRenderContext changedContext = new RecordingUiRenderContext();
+        widget.render(changedContext);
+
+        Assert.assertEquals(2, changedContext.textCalls.size());
+        assertTextCall(changedContext.textCalls.get(0), "sheet", 0, 0, 0xFFFFFFFF, false);
+        assertTextCall(changedContext.textCalls.get(1), "after", 0, 30, 0xFFFFFFFF, false);
+    }
+
+    /**
+     * 验证已挂载样式表规则声明变更 paint-only 属性后，下一次绘制会立即应用。
+     */
+    @Test
+    public void shouldApplyMountedStyleSheetPaintOnlyDeclarationChange() {
+        UiDocument document = UiDocument.create();
+        ElementNode root = document.getRootElement();
+        ElementNode target = document.div();
+        UiStyleDeclaration declaration = new UiStyleDeclaration().setTextColor(0xFFFF0000);
+        UiStyleSheet sheet = UiStyleSheet.create().addRule(".paint-sheet-target", declaration);
+        target.setClassName("paint-sheet-target");
+        target.appendText("paint");
+        root.append(target);
+        document.addStyleSheet(sheet);
+        HtmlLikeDocumentWidget widget = new HtmlLikeDocumentWidget(document, 120, 40,
+                new CountingTextMeasureService());
+        widget.applyLayoutBounds(0, 0, 120, 40);
+
+        widget.render(new RecordingUiRenderContext());
+        int layoutGeneration = widget.getPerformanceDiagnosticsSnapshot().getStaticLayoutGeneration();
+        declaration.setTextColor(0xFF00FF00);
+        RecordingUiRenderContext changedContext = new RecordingUiRenderContext();
+        widget.render(changedContext);
+
+        Assert.assertEquals(layoutGeneration,
+                widget.getPerformanceDiagnosticsSnapshot().getStaticLayoutGeneration());
+        Assert.assertEquals(1, changedContext.textCalls.size());
+        assertTextCall(changedContext.textCalls.get(0), "paint", 0, 0, 0xFF00FF00, false);
+    }
+
+    /**
      * 验证文本测量 epoch 推进后不会复用旧文本布局盒。
      */
     @Test

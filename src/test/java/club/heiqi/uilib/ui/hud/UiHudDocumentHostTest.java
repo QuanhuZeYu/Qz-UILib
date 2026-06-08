@@ -1057,6 +1057,50 @@ public class UiHudDocumentHostTest {
         }
     }
 
+    /**
+     * 验证没有普通下层控件兜底时，HUD 预过滤仍能通过 select top-layer option 捕获鼠标帧。
+     */
+    @Test
+    public void shouldCaptureSelectTopLayerOptionWithoutUnderlyingHudElement() {
+        UiHudDocumentHost host = UiHudDocumentHost.getInstance();
+        UiKeyboardCaptureState.getInstance().clear();
+        final DocumentSelectControl[] selectHolder = new DocumentSelectControl[1];
+        UiHudDocumentRegistration registration = host.register(UiHudLayerType.INTERACTIVE,
+                new UiHudDocumentHost.UiHudDocumentContentBuilder() {
+                    @Override
+                    public void build(UiHudDocumentHost.UiHudMountContext context) {
+                        UiDocument document = context.getDocument();
+                        ElementNode root = context.getMountRoot();
+                        DocumentSelectControl selectControl = new DocumentSelectControl(document, "错误", "HUD 通过");
+                        selectHolder[0] = selectControl;
+                        root.style()
+                                .setWidth(UiStyleLength.px(320))
+                                .setHeight(UiStyleLength.px(180));
+                        selectControl.getElement().style().setWidth(UiStyleLength.px(180));
+                        root.append(selectControl.getElement());
+                    }
+                }, new DeterministicTextMeasureService(), UiRuntimeAdapters.empty());
+        try {
+            host.handleInputFrameForTest(mouseFrame(UiMouseEvent.Action.MOVE, 12, 12, 0L),
+                    UiHudScreenCategory.CONTAINER, 320, 180);
+            Assert.assertTrue(host.handleImmediateMouseInputForTest(
+                    mouseFrame(UiMouseEvent.Action.BUTTON_DOWN, 12, 12, 1L), UiHudScreenCategory.CONTAINER));
+            Assert.assertTrue(host.handleImmediateMouseInputForTest(
+                    mouseFrame(UiMouseEvent.Action.BUTTON_UP, 12, 12, 2L), UiHudScreenCategory.CONTAINER));
+            Assert.assertEquals("true", selectHolder[0].getElement().getAttribute("aria-expanded"));
+
+            Assert.assertTrue(host.handleImmediateMouseInputForTest(
+                    mouseFrame(UiMouseEvent.Action.BUTTON_DOWN, 12, 72, 3L), UiHudScreenCategory.CONTAINER));
+            Assert.assertTrue(host.handleImmediateMouseInputForTest(
+                    mouseFrame(UiMouseEvent.Action.BUTTON_UP, 12, 72, 4L), UiHudScreenCategory.CONTAINER));
+
+            Assert.assertEquals("HUD 通过", selectHolder[0].getSelectedOption());
+        } finally {
+            registration.unregister();
+            UiKeyboardCaptureState.getInstance().clear();
+        }
+    }
+
     @Test
     public void shouldShareSingleDocumentAcrossMultipleHudRegistrations() {
         UiHudDocumentHost host = UiHudDocumentHost.getInstance();

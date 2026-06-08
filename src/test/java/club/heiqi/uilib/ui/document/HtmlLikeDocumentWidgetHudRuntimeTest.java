@@ -8,6 +8,8 @@ import static club.heiqi.uilib.ui.document.HtmlLikeDocumentWidgetTestSupport.cre
 import org.junit.Assert;
 import org.junit.Test;
 
+import club.heiqi.uilib.ui.control.DocumentSelectControl;
+import club.heiqi.uilib.ui.event.UiMouseEvent;
 import club.heiqi.uilib.ui.document.HtmlLikeDocumentWidgetTestSupport.RecordingUiRenderContext;
 import club.heiqi.uilib.ui.dom.ElementNode;
 import club.heiqi.uilib.ui.dom.TextNode;
@@ -232,5 +234,41 @@ public class HtmlLikeDocumentWidgetHudRuntimeTest {
 
         Assert.assertTrue(constrainedHeroCardBox.getHeight() >= shrinkEnabledHeroCardBox.getHeight());
         Assert.assertTrue(constrainedControlCardBox.getHeight() >= shrinkEnabledControlCardBox.getHeight());
+    }
+
+    /**
+     * 验证 HUD 子树命中会包含逻辑归属在该子树内的 select top-layer 下拉项。
+     */
+    @Test
+    public void shouldHitHudSubtreeSelectTopLayerOptionWithinMountRoot() {
+        UiDocument document = UiDocument.create();
+        ElementNode root = document.getRootElement();
+        ElementNode mountRoot = document.div();
+        DocumentSelectControl selectControl = new DocumentSelectControl(document, "A", "B", "C");
+        root.style()
+                .setWidth(UiStyleLength.px(320))
+                .setHeight(UiStyleLength.px(180));
+        mountRoot.style()
+                .setWidth(UiStyleLength.px(320))
+                .setHeight(UiStyleLength.px(180));
+        selectControl.getElement().style().setWidth(UiStyleLength.px(180));
+        mountRoot.append(selectControl.getElement());
+        root.append(mountRoot);
+        HtmlLikeDocumentWidget widget = new HtmlLikeDocumentWidget(document, 320, 180,
+                DefaultTextMeasureService.getInstance());
+        widget.applyLayoutBounds(0, 0, 320, 180);
+
+        click(widget, 12, 12, 1L);
+        ElementNode hit = widget.findElementAtWithin(mountRoot, 12, 72);
+        click(widget, 12, 72, 3L);
+
+        Assert.assertNotNull(hit);
+        Assert.assertEquals("option", hit.getTagName());
+        Assert.assertEquals("B", selectControl.getSelectedOption());
+    }
+
+    private static void click(HtmlLikeDocumentWidget widget, int x, int y, long timeNanos) {
+        widget.onMouseDown(new UiMouseEvent(UiMouseEvent.Action.BUTTON_DOWN, x, y, 0, 0, 0, 0, timeNanos));
+        widget.onMouseUp(new UiMouseEvent(UiMouseEvent.Action.BUTTON_UP, x, y, 0, 0, 0, 0, timeNanos + 1L));
     }
 }

@@ -192,6 +192,7 @@ public abstract class DocumentNode {
         boolean removed = children.remove(resolvedChild);
         if (removed) {
             resolvedChild.parent = null;
+            ownerDocument.__detachTopLayerDescendants(resolvedChild);
             recordStructuralMutation((DocumentNode) null, resolvedChild);
         }
         return resolvedChild;
@@ -274,6 +275,7 @@ public abstract class DocumentNode {
         resolvedOld.parent = null;
         resolvedNew.parent = this;
         children.set(index, resolvedNew);
+        ownerDocument.__detachTopLayerDescendants(resolvedOld);
         recordStructuralMutation(previousParent, resolvedNew);
         resolvedOld.markSubtreeLayoutMutation(ownerDocument.getLayoutVersion());
         return resolvedOld;
@@ -288,6 +290,7 @@ public abstract class DocumentNode {
         }
         for (DocumentNode child : children) {
             child.parent = null;
+            ownerDocument.__detachTopLayerDescendants(child);
         }
         children.clear();
         markSubtreeMutated();
@@ -518,6 +521,7 @@ public abstract class DocumentNode {
         if (changedSubtree != null) {
             changedSubtree.markSubtreeLayoutMutation(version);
         }
+        ownerDocument.__pruneDetachedTopLayerElements();
     }
 
     private void markLayoutMutation(int version) {
