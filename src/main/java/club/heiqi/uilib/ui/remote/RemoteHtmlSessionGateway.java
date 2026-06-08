@@ -7,6 +7,7 @@ import java.time.Duration;
 import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.function.LongSupplier;
 
 import club.heiqi.uilib.net.api.NetBody;
 import club.heiqi.uilib.net.api.NetContentType;
@@ -27,12 +28,20 @@ final class RemoteHtmlSessionGateway<T> {
 
     static final NetContentType REMOTE_HTML_CONTENT_TYPE =
             NetContentType.of("text/vnd.qzuilib.remote-html; charset=utf-8");
+    /** HTML 拉取与后续表单提交共享同一服务端 session TTL。 */
     static final long DEFAULT_SESSION_TTL_MILLIS = Duration.ofMinutes(10L).toMillis();
     static final long DEFAULT_STREAM_MAX_BYTES = 256L * 1024L * 1024L;
+    private static final LongSupplier SYSTEM_CLOCK = new LongSupplier() {
+        @Override
+        public long getAsLong() {
+            return System.currentTimeMillis();
+        }
+    };
 
     private final String featureName;
     private final Map<String, RemoteHtmlSession<T>> sessions =
             new ConcurrentHashMap<String, RemoteHtmlSession<T>>();
+    private volatile LongSupplier clock = SYSTEM_CLOCK;
 
     RemoteHtmlSessionGateway(String featureName) {
         this.featureName = featureName == null ? "远程 HTML" : featureName;
@@ -46,7 +55,7 @@ final class RemoteHtmlSessionGateway<T> {
         String sessionId = UUID.randomUUID().toString();
         byte[] htmlBytes = (html == null ? "" : html).getBytes(StandardCharsets.UTF_8);
         RemoteHtmlSession<T> session = new RemoteHtmlSession<T>(sessionId, player, payload, htmlBytes,
-                sha256Hex(htmlBytes), System.currentTimeMillis() + DEFAULT_SESSION_TTL_MILLIS);
+                sha256Hex(htmlBytes), nowMillis() + DEFAULT_SESSION_TTL_MILLIS);
         sessions.put(sessionId, session);
         return session;
     }
@@ -65,6 +74,14 @@ final class RemoteHtmlSessionGateway<T> {
      */
     void handleStreamRequest(NetRequest request, NetStreamEndpoint.NetStreamRequestContext context,
             HeaderContributor<T> headerContributor) {
+        handleStreamRequest(request, context, headerContributor, null);
+    }
+
+    /**
+     * 处理服务端 HTML Stream 请求，并在请求触发过期移除时通知调用方。
+     */
+    void handleStreamRequest(NetRequest request, NetStreamEndpoint.NetStreamRequestContext context,
+            HeaderContributor<T> headerContributor, SessionRemovalListener<T> removalListener) {
         if (context.getReceiveContext().getSide() != NetSide.SERVER) {
             context.reply(NetResponse.error(400, featureName + " Stream 仅接受客户端请求"));
             return;
@@ -77,10 +94,11 @@ final class RemoteHtmlSessionGateway<T> {
             return;
         }
         RemoteHtmlSession<T> session = streamRequest == null ? null : sessions.get(streamRequest.sessionId);
-        long now = System.currentTimeMillis();
+        long now = nowMillis();
         if (session == null || session.isExpired(now)) {
-            if (session != null) {
-                sessions.remove(session.getSessionId(), session);
+            if (session != null && sessions.remove(session.getSessionId(), session)
+                    && removalListener != null) {
+                removalListener.onSessionRemoved(session);
             }
             context.reply(NetResponse.error(404, featureName + " session 已失效"));
             return;
@@ -117,13 +135,24 @@ final class RemoteHtmlSessionGateway<T> {
      * 清理过期 session。
      */
     void cleanupExpiredSessions(SessionRemovalListener<T> listener) {
-        long now = System.currentTimeMillis();
+        long now = nowMillis();
         for (RemoteHtmlSession<T> session : sessions.values()) {
             if (session.isExpired(now) && sessions.remove(session.getSessionId(), session)
                     && listener != null) {
                 listener.onSessionRemoved(session);
             }
         }
+    }
+
+    /**
+     * 设置测试时钟。
+     */
+    void setClockForTests(LongSupplier testClock) {
+        clock = testClock == null ? SYSTEM_CLOCK : testClock;
+    }
+
+    private long nowMillis() {
+        return clock.getAsLong();
     }
 
     /**

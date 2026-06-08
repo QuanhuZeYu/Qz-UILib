@@ -2,6 +2,7 @@ package club.heiqi.uilib.ui.remote;
 
 import java.util.Collections;
 import java.util.List;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 import org.junit.Assert;
 import org.junit.Test;
@@ -13,6 +14,7 @@ import club.heiqi.uilib.ui.dom.TextNode;
 import club.heiqi.uilib.ui.dom.UiDocument;
 import club.heiqi.uilib.ui.document.HtmlLikeDocumentWidget;
 import club.heiqi.uilib.ui.event.UiMouseEvent;
+import club.heiqi.uilib.ui.hud.UiHudDocumentRegistration;
 import club.heiqi.uilib.ui.layout.DocumentLayoutBox;
 import club.heiqi.uilib.ui.layout.DocumentLayoutEngine;
 import club.heiqi.uilib.ui.paint.DocumentPaintCommand;
@@ -269,6 +271,44 @@ public class RemoteHudOverlayClientBridgeTest {
         Assert.assertTrue(containsTextCommand(commands, "HUD 弹幕文字"));
         Assert.assertFalse("弹幕移动应使用布局坐标，避免 deferred text batch 脱离 transform",
                 containsCommand(commands, DocumentPaintCommandType.TRANSFORM_START));
+    }
+
+    @Test
+    public void shouldIgnoreSessionScopedDismissFromOlderHudOverlay() {
+        RemoteHudOverlayClientBridge bridge = RemoteHudOverlayClientBridge.getInstance();
+        bridge.clearAll();
+        final AtomicBoolean unregistered = new AtomicBoolean(false);
+        RemoteHudOverlays.OpenOffer currentOffer = new RemoteHudOverlays.OpenOffer();
+        currentOffer.sessionId = "S2";
+        currentOffer.overlayId = "shared-overlay";
+        currentOffer.pageId = "page";
+        currentOffer.mode = RemoteHudOverlayMode.DIALOG.name();
+        bridge.addActiveOverlayForTest(currentOffer, new UiHudDocumentRegistration() {
+            @Override
+            public void unregister() {
+                unregistered.set(true);
+            }
+        });
+
+        RemoteHudOverlays.DismissPayload oldDismiss = new RemoteHudOverlays.DismissPayload();
+        oldDismiss.sessionId = "S1";
+        oldDismiss.overlayId = "shared-overlay";
+        oldDismiss.reason = "server-dismiss";
+        RemoteHudOverlayClientBridge.receiveDismiss(RemoteJson.toJson(oldDismiss));
+
+        Assert.assertTrue("旧 session 的 dismiss 不应关闭同 overlayId 的新 HUD",
+                bridge.hasActiveOverlayForTest("shared-overlay", "S2"));
+        Assert.assertFalse(unregistered.get());
+
+        RemoteHudOverlays.DismissPayload forcedDismiss = new RemoteHudOverlays.DismissPayload();
+        forcedDismiss.sessionId = "";
+        forcedDismiss.overlayId = "shared-overlay";
+        forcedDismiss.reason = "server-force-dismiss";
+        RemoteHudOverlayClientBridge.receiveDismiss(RemoteJson.toJson(forcedDismiss));
+
+        Assert.assertFalse(bridge.hasActiveOverlayForTest("shared-overlay", "S2"));
+        Assert.assertTrue("无 session 的强制关闭仍应按 overlayId 回退", unregistered.get());
+        bridge.clearAll();
     }
 
     private static String collectText(DocumentNode node) {
