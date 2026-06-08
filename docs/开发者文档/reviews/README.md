@@ -11,6 +11,11 @@
 - 原始报告正文使用 `后续复核（YYYY-MM-DD）` 批注标记，不删除历史判断；批注需说明当前正确口径和是否还需要修复。
 - 只在本索引写摘要，不把完整修复过程或阶段流水账堆积到索引页。
 
+## 2026-06-08-production-code-round4
+- 类型：全项目生产代码第四轮审查
+- 详情文档：[REVIEW-20260608-production-code-round4.md](REVIEW-20260608-production-code-round4.md)
+- 结论摘要：接续第三轮修复后继续审查 `src/main/java` 生产代码，发现 5 个问题：移除展开 select 子树后只清 top-layer 注册但未关闭控件状态；`UiStyleDeclaration.copyFrom(...)` 公开样式复制绕过 layout/paint 失效版本；transform 下 select top-layer popup 使用未变换布局坐标锚定；HUD 用 `visibility:hidden` 隐藏注册项可被显式 visible 后代在 shared scene 渲染时绕过；select popup 关闭后 hover/cursor 不立即刷新。
+
 ## 2026-06-08-production-code-round3
 - 类型：全项目生产代码第三轮审查
 - 详情文档：[REVIEW-20260608-production-code-round3.md](REVIEW-20260608-production-code-round3.md)
