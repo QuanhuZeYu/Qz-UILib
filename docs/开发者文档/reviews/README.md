@@ -11,6 +11,11 @@
 - 原始报告正文使用 `后续复核（YYYY-MM-DD）` 批注标记，不删除历史判断；批注需说明当前正确口径和是否还需要修复。
 - 只在本索引写摘要，不把完整修复过程或阶段流水账堆积到索引页。
 
+## 2026-06-08-production-code-round3
+- 类型：全项目生产代码第三轮审查
+- 详情文档：[REVIEW-20260608-production-code-round3.md](REVIEW-20260608-production-code-round3.md)
+- 结论摘要：本轮避开 `/qzuilib test` 与测试文件主线，聚焦 `src/main/java` 生产代码。发现 4 个问题：`textInput.preventDefault()` 不能阻止内置 input/textarea 改值；HUD 交互预过滤漏掉 top-layer 后代导致 select popup option 点击不可可靠进入真实路由；挂载后的 `UiStyleSheet` 再变更不会触发布局/绘制缓存失效；移除已展开 select 子树后 top-layer 注册残留，造成状态泄漏和重挂载异常。
+
 ## 2026-06-08-ui-test-matrix-round2
 - 类型：`/qzuilib test` 视觉/语义矩阵第二轮审查
 - 详情文档：[REVIEW-20260608-ui-test-matrix-round2.md](REVIEW-20260608-ui-test-matrix-round2.md)
