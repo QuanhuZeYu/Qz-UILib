@@ -50,4 +50,7 @@ final class ElementInteractionHandlers {
 
     // 自定义渲染
     DocumentCustomRenderer customRenderer;
+
+    // 运行时顶层生命周期
+    DocumentTopLayerDetachHandler topLayerDetachHandler;
 }

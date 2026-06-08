@@ -7,6 +7,7 @@ import java.util.List;
 import org.junit.Assert;
 import org.junit.Test;
 
+import club.heiqi.uilib.ui.control.DocumentSelectControl;
 import club.heiqi.uilib.ui.dom.ElementNode;
 import club.heiqi.uilib.ui.dom.UiDocument;
 import club.heiqi.uilib.ui.event.UiMouseEvent;
@@ -214,6 +215,39 @@ public class HtmlLikeDocumentWidgetCursorTest {
         Assert.assertEquals(UiCursor.POINTER, cursorHost.appliedCursors.get(1));
         Assert.assertEquals(UiCursor.MOVE, cursorHost.appliedCursors.get(2));
         Assert.assertEquals(UiCursor.POINTER, cursorHost.getLatestCursor());
+    }
+
+    /**
+     * 验证 select popup 关闭后会按当前鼠标位置立即刷新光标。
+     */
+    @Test
+    public void shouldRefreshCursorWhenSelectPopupClosesUnderPointer() {
+        UiDocument document = UiDocument.create();
+        ElementNode root = document.getRootElement();
+        DocumentSelectControl selectControl = new DocumentSelectControl(document, "A", "B", "C");
+        root.style()
+                .setWidth(UiStyleLength.px(240))
+                .setHeight(UiStyleLength.px(160));
+        selectControl.getElement().style().setWidth(UiStyleLength.px(180));
+        root.append(selectControl.getElement());
+        RecordingCursorHost cursorHost = new RecordingCursorHost();
+        HtmlLikeDocumentWidget widget = new HtmlLikeDocumentWidget(document, 240, 160,
+                new DeterministicTextMeasureService()).setCursorHost(cursorHost);
+        widget.applyLayoutBounds(0, 0, 240, 160);
+
+        click(widget, 20, 12, 1L);
+        widget.onMouseMove(new UiMouseEvent(UiMouseEvent.Action.MOVE, 20, 72, -1, 0, 0, 0, 3L));
+        Assert.assertEquals(UiCursor.POINTER, cursorHost.getLatestCursor());
+
+        click(widget, 20, 72, 4L);
+
+        Assert.assertEquals("B", selectControl.getSelectedOption());
+        Assert.assertEquals(UiCursor.DEFAULT, cursorHost.getLatestCursor());
+    }
+
+    private static void click(HtmlLikeDocumentWidget widget, int x, int y, long timeNanos) {
+        widget.onMouseDown(new UiMouseEvent(UiMouseEvent.Action.BUTTON_DOWN, x, y, 0, 0, 0, 0, timeNanos));
+        widget.onMouseUp(new UiMouseEvent(UiMouseEvent.Action.BUTTON_UP, x, y, 0, 0, 0, 0, timeNanos + 1L));
     }
 
     /**

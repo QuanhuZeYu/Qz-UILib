@@ -1,5 +1,6 @@
 package club.heiqi.uilib.ui.hud;
 
+import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 
@@ -28,10 +29,15 @@ import club.heiqi.uilib.ui.render.UiRenderContext;
 import club.heiqi.uilib.ui.runtime.UiRuntimeAdapters;
 import club.heiqi.uilib.ui.style.props.UiBoxSizing;
 import club.heiqi.uilib.ui.style.props.UiDisplay;
+import club.heiqi.uilib.ui.style.props.UiFontStyle;
+import club.heiqi.uilib.ui.style.props.UiFontWeight;
 import club.heiqi.uilib.ui.style.props.UiOverflow;
 import club.heiqi.uilib.ui.style.props.UiPosition;
+import club.heiqi.uilib.ui.style.props.UiVisibility;
 import club.heiqi.uilib.ui.style.values.UiStyleLength;
+import club.heiqi.uilib.ui.style.values.UiSurfaceStyle;
 import club.heiqi.uilib.ui.text.DefaultTextMeasureService;
+import club.heiqi.uilib.ui.text.TextContentMode;
 import club.heiqi.uilib.ui.text.TextMeasureService;
 
 /**
@@ -179,6 +185,54 @@ public class UiHudDocumentHostTest {
             Assert.assertFalse(host.hasVisibleLayerForTest(null, "club.heiqi.uilib.config.ForgeConfigTemplateScreen"));
         } finally {
             registration.unregister();
+        }
+    }
+
+    /**
+     * 验证宿主级隐藏使用 display 抑制整棵 HUD 子树，不会被 visible 后代恢复绘制。
+     */
+    @Test
+    public void shouldSuppressPassiveHudSubtreeWhenHiddenByHostVisibility() {
+        UiHudDocumentHost host = UiHudDocumentHost.getInstance();
+        UiHudDocumentRegistration passiveRegistration = host.register(UiHudLayerType.PASSIVE,
+                new UiHudDocumentHost.UiHudDocumentContentBuilder() {
+                    @Override
+                    public void build(UiHudDocumentHost.UiHudMountContext context) {
+                        ElementNode child = context.getDocument().div();
+                        child.style()
+                                .setWidth(UiStyleLength.px(80))
+                                .setHeight(UiStyleLength.px(20))
+                                .setVisibility(UiVisibility.VISIBLE)
+                                .setBackgroundColor(0xFFAA5500);
+                        child.appendText("PASSIVE");
+                        context.getMountRoot().append(child);
+                    }
+                }, new DeterministicTextMeasureService(), UiRuntimeAdapters.empty());
+        UiHudDocumentRegistration interactiveRegistration = host.register(UiHudLayerType.INTERACTIVE,
+                new UiHudDocumentHost.UiHudDocumentContentBuilder() {
+                    @Override
+                    public void build(UiHudDocumentHost.UiHudMountContext context) {
+                        ElementNode child = context.getDocument().div();
+                        child.style()
+                                .setWidth(UiStyleLength.px(80))
+                                .setHeight(UiStyleLength.px(20))
+                                .setBackgroundColor(0xFF335577);
+                        child.appendText("INTERACTIVE");
+                        context.getMountRoot().append(child);
+                    }
+                }, new DeterministicTextMeasureService(), UiRuntimeAdapters.empty());
+        try {
+            host.handleInputFrameForTest(mouseFrame(UiMouseEvent.Action.MOVE, 4, 4, 1L),
+                    UiHudScreenCategory.CONTAINER, 160, 80);
+            RecordingRenderContext renderContext = new RecordingRenderContext();
+
+            host.getFirstInteractiveWidgetForDiagnostics().render(renderContext);
+
+            Assert.assertFalse(renderContext.textCalls.contains("PASSIVE"));
+            Assert.assertTrue(renderContext.textCalls.contains("INTERACTIVE"));
+        } finally {
+            interactiveRegistration.unregister();
+            passiveRegistration.unregister();
         }
     }
 
@@ -1158,6 +1212,45 @@ public class UiHudDocumentHostTest {
                 .setWidth(UiStyleLength.auto());
         line.appendText(text);
         return line;
+    }
+
+    private static final class RecordingRenderContext extends UiRenderContext {
+
+        private final List<String> textCalls = new ArrayList<String>();
+
+        private RecordingRenderContext() {
+            super(320, 240, 0, 0, 0.0F);
+        }
+
+        @Override
+        public void drawSurface(int left, int top, int right, int bottom, UiSurfaceStyle surfaceStyle) {}
+
+        @Override
+        public void drawText(String text, int x, int y, int color, boolean shadow) {
+            textCalls.add(text);
+        }
+
+        @Override
+        public void drawText(String text, int x, int y, int color, boolean shadow, TextContentMode textContentMode) {
+            textCalls.add(text);
+        }
+
+        @Override
+        public void drawText(String text, int x, int y, int color, boolean shadow, TextContentMode textContentMode,
+                UiFontWeight fontWeight, UiFontStyle fontStyle) {
+            textCalls.add(text);
+        }
+
+        @Override
+        protected void drawTextResolved(String text, int x, int y, int color, boolean shadow,
+                TextContentMode textContentMode, UiFontWeight resolvedFontWeight, UiFontStyle resolvedFontStyle) {
+            textCalls.add(text);
+        }
+
+        @Override
+        public boolean supportsDeferredTextBatching() {
+            return false;
+        }
     }
 
     private static final class DeterministicTextMeasureService implements TextMeasureService {

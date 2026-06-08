@@ -705,6 +705,22 @@ abstract class ElementInteractionNode extends DocumentNode {
         return handlers.customRenderer;
     }
 
+    /**
+     * 设置运行时顶层元素被 DOM detach 强制清理时的内部回调。
+     *
+     * @param topLayerDetachHandler detach 回调；为 null 时清除
+     * @return 当前元素
+     * @apiNote 框架内部 API，仅供内置控件同步自身弹层生命周期。LTS 不承诺兼容性。
+     */
+    public ElementNode __setTopLayerDetachHandler(DocumentTopLayerDetachHandler topLayerDetachHandler) {
+        handlers.topLayerDetachHandler = topLayerDetachHandler;
+        return self();
+    }
+
+    DocumentTopLayerDetachHandler __getTopLayerDetachHandler() {
+        return handlers.topLayerDetachHandler;
+    }
+
     private ElementNode self() {
         return (ElementNode) this;
     }

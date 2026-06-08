@@ -37,6 +37,7 @@ import club.heiqi.uilib.ui.style.props.UiPointerEvents;
 import club.heiqi.uilib.ui.style.props.UiPosition;
 import club.heiqi.uilib.ui.style.cascade.UiStyleResolver;
 import club.heiqi.uilib.ui.style.values.UiStyleLength;
+import club.heiqi.uilib.ui.style.values.UiTransform;
 import club.heiqi.uilib.ui.text.DefaultTextMeasureService;
 import club.heiqi.uilib.ui.text.TextMeasureService;
 import club.heiqi.uilib.ui.widget.Widget;
@@ -103,6 +104,9 @@ public final class HtmlLikeDocumentWidget extends Widget implements UiDocument.D
         }
     });
     private int pressedButton = -1;
+    private int latestPointerScreenX = Integer.MIN_VALUE;
+    private int latestPointerScreenY = Integer.MIN_VALUE;
+    private long latestPointerTimeNanos;
     private int scrollEventCount;
     private int lastScrollWheelDelta;
     private boolean lastScrollConsumed;
@@ -516,6 +520,16 @@ public final class HtmlLikeDocumentWidget extends Widget implements UiDocument.D
     }
 
     @Override
+    public DocumentElementBounds requestVisualElementBounds(ElementNode element) {
+        if (element == null || !isElementAttachedToDocument(element)) {
+            return DocumentElementBounds.unavailable();
+        }
+        DocumentLayoutBox rootBox = resolveInteractiveLayoutBox();
+        VisualBounds bounds = resolveVisualBounds(rootBox, element, animationClock.getCurrentTimeNanos());
+        return bounds == null ? DocumentElementBounds.unavailable() : bounds.toElementBounds();
+    }
+
+    @Override
     public DocumentAnimation requestAnimation(ElementNode element, DocumentKeyframes keyframes,
             DocumentAnimationOptions options) {
         ElementNode resolvedElement = Objects.requireNonNull(element, "element");
@@ -632,6 +646,7 @@ public final class HtmlLikeDocumentWidget extends Widget implements UiDocument.D
         if (getWidth() <= 0 || getHeight() <= 0 || event == null) {
             return false;
         }
+        recordLatestPointer(event);
         scrollEventCount++;
         lastScrollWheelDelta = event.getWheelDelta();
         lastScrollEventTimeNanos = event.getTimeNanos();
@@ -661,6 +676,7 @@ public final class HtmlLikeDocumentWidget extends Widget implements UiDocument.D
             dragController.clearDragState();
             return;
         }
+        recordLatestPointer(event);
         DocumentLayoutBox rootBox = resolveInteractiveLayoutBox();
         if (event.getButton() == 0 && scrollState.beginScrollbarDrag(rootBox, resolveTopLayerLayoutBoxes(rootBox,
                 null),
@@ -687,6 +703,7 @@ public final class HtmlLikeDocumentWidget extends Widget implements UiDocument.D
         if (event == null) {
             return;
         }
+        recordLatestPointer(event);
         if (scrollState.isDraggingScrollbar()) {
             DocumentLayoutBox rootBox = resolveInteractiveLayoutBox();
             scrollState.updateScrollbarDrag(rootBox, resolveTopLayerLayoutBoxes(rootBox, null),
@@ -703,44 +720,52 @@ public final class HtmlLikeDocumentWidget extends Widget implements UiDocument.D
             dragController.clearDragState();
             return;
         }
-        if (event.getButton() == 0 && scrollState.endScrollbarDrag()) {
+        recordLatestPointer(event);
+        try {
+            if (event.getButton() == 0 && scrollState.endScrollbarDrag()) {
+                pressedElement = null;
+                pressedButton = -1;
+                dragController.clearDragState();
+                return;
+            }
+            ElementNode releasedElement = findElementAt(event.getMouseX(), event.getMouseY());
+            updateHoveredElement(releasedElement, event);
+            ElementNode previousPressedElement = pressedElement;
+            boolean dragHandled = dragController.dispatchDragEnd(event);
+            DocumentMouseEventDispatcher.dispatchMouseUp(releasedElement, event, getAbsoluteX(), getAbsoluteY());
+            DocumentMouseEventDispatcher.dispatchActive(previousPressedElement, false, event);
             pressedElement = null;
             pressedButton = -1;
-            dragController.clearDragState();
-            return;
-        }
-        ElementNode releasedElement = findElementAt(event.getMouseX(), event.getMouseY());
-        updateHoveredElement(releasedElement, event);
-        ElementNode previousPressedElement = pressedElement;
-        boolean dragHandled = dragController.dispatchDragEnd(event);
-        DocumentMouseEventDispatcher.dispatchMouseUp(releasedElement, event, getAbsoluteX(), getAbsoluteY());
-        DocumentMouseEventDispatcher.dispatchActive(previousPressedElement, false, event);
-        pressedElement = null;
-        pressedButton = -1;
-        syncCursorFromHoveredElement();
-        if (dragHandled) {
-            clickEventDispatcher.clearLastClickState();
-            return;
-        }
-        if (event.getButton() == DocumentClickEventDispatcher.PRIMARY_BUTTON) {
-            ElementNode target = clickEventDispatcher.resolveClickTarget(previousPressedElement, releasedElement);
-            if (target == null) {
+            syncCursorFromHoveredElement();
+            if (dragHandled) {
                 clickEventDispatcher.clearLastClickState();
                 return;
             }
-            clickEventDispatcher.dispatchClick(target, event, getAbsoluteX(), getAbsoluteY());
-            clickEventDispatcher.dispatchPostClickEvents(target, event, getAbsoluteX(), getAbsoluteY());
-        } else if (event.getButton() == DocumentClickEventDispatcher.CONTEXT_MENU_BUTTON) {
-            clickEventDispatcher.dispatchContextMenu(releasedElement, event, getAbsoluteX(), getAbsoluteY());
-            clickEventDispatcher.clearLastClickState();
-        } else {
-            clickEventDispatcher.clearLastClickState();
+            if (event.getButton() == DocumentClickEventDispatcher.PRIMARY_BUTTON) {
+                ElementNode target = clickEventDispatcher.resolveClickTarget(previousPressedElement, releasedElement);
+                if (target == null) {
+                    clickEventDispatcher.clearLastClickState();
+                    return;
+                }
+                clickEventDispatcher.dispatchClick(target, event, getAbsoluteX(), getAbsoluteY());
+                clickEventDispatcher.dispatchPostClickEvents(target, event, getAbsoluteX(), getAbsoluteY());
+            } else if (event.getButton() == DocumentClickEventDispatcher.CONTEXT_MENU_BUTTON) {
+                clickEventDispatcher.dispatchContextMenu(releasedElement, event, getAbsoluteX(), getAbsoluteY());
+                clickEventDispatcher.clearLastClickState();
+            } else {
+                clickEventDispatcher.clearLastClickState();
+            }
+        } finally {
+            refreshHoverAtLatestPointer(event.getTimeNanos());
         }
     }
 
     @Override
     public void onKeyEvent(UiKeyEvent event) {
         keyboardEventDispatcher.dispatchKeyAndDefault(focusManager.getFocusedElement(), event);
+        if (event != null && event.getAction() == UiKeyEvent.Action.PRESSED) {
+            refreshHoverAtLatestPointer(event.getTimeNanos());
+        }
     }
 
     @Override
@@ -1018,20 +1043,72 @@ public final class HtmlLikeDocumentWidget extends Widget implements UiDocument.D
         if (!"select".equals(anchor.getTagName())) {
             return;
         }
-        BoxLocation anchorLocation = DocumentVisualTraversal.findBoxLocation(rootBox,
-                Collections.<DocumentLayoutBox>emptyList(), scrollState, anchor);
-        if (anchorLocation == null || anchorLocation.getBoxContext().getBox().getWidth() <= 0) {
+        VisualBounds anchorBounds = resolveVisualBounds(rootBox, anchor, animationClock.getCurrentTimeNanos());
+        if (anchorBounds == null || anchorBounds.getWidth() <= 0) {
             return;
         }
-        DocumentLayoutBox anchorBox = anchorLocation.getBoxContext().getBox();
-        int anchorOffsetX = anchorLocation.getBoxContext().getBoxOffsetX();
-        int anchorOffsetY = anchorLocation.getBoxContext().getBoxOffsetY();
         topLayerElement.style()
                 .setPosition(UiPosition.FIXED)
-                .setLeft(UiStyleLength.px(anchorBox.getLeft() + anchorOffsetX))
-                .setTop(UiStyleLength.px(anchorBox.getTop() + anchorOffsetY + anchorBox.getHeight()))
-                .setWidth(UiStyleLength.px(anchorBox.getWidth()))
+                .setLeft(UiStyleLength.px(anchorBounds.getLeft()))
+                .setTop(UiStyleLength.px(anchorBounds.getTop() + anchorBounds.getHeight()))
+                .setWidth(UiStyleLength.px(anchorBounds.getWidth()))
                 .clearZIndex();
+    }
+
+    private VisualBounds resolveVisualBounds(DocumentLayoutBox rootBox, ElementNode element, long currentTimeNanos) {
+        if (rootBox == null || element == null) {
+            return null;
+        }
+        return findVisualBounds(DocumentVisualTraversal.resolveRootBoxContext(rootBox, scrollState), element,
+                currentTimeNanos, VisualTransform.identity());
+    }
+
+    private VisualBounds findVisualBounds(DocumentVisualTraversal.BoxContext boxContext, ElementNode element,
+            long currentTimeNanos, VisualTransform transform) {
+        DocumentLayoutBox box = boxContext.getBox();
+        VisualTransform nextTransform = transform.multiply(resolveBoxTransform(box, boxContext, currentTimeNanos));
+        if (box.getElement() == element) {
+            return nextTransform.mapBounds(box.getLeft() + boxContext.getBoxOffsetX(),
+                    box.getTop() + boxContext.getBoxOffsetY(), box.getWidth(), box.getHeight());
+        }
+        for (DocumentLayoutBox child : box.getChildren()) {
+            VisualBounds bounds = findVisualBounds(DocumentVisualTraversal.resolveChildBoxContext(boxContext, child,
+                    scrollState), element, currentTimeNanos, nextTransform);
+            if (bounds != null) {
+                return bounds;
+            }
+        }
+        return null;
+    }
+
+    private VisualTransform resolveBoxTransform(DocumentLayoutBox box, DocumentVisualTraversal.BoxContext boxContext,
+            long currentTimeNanos) {
+        UiTransform transform = resolveAnimatedTransform(box, currentTimeNanos);
+        if (transform == null || transform.isIdentity()) {
+            return VisualTransform.identity();
+        }
+        int left = box.getLeft() + boxContext.getBoxOffsetX();
+        int top = box.getTop() + boxContext.getBoxOffsetY();
+        return VisualTransform.from(transform, left, top, box.getWidth(), box.getHeight());
+    }
+
+    private UiTransform resolveAnimatedTransform(DocumentLayoutBox box, long currentTimeNanos) {
+        UiTransform baseTransform = box.getComputedStyle().getTransform();
+        if (baseTransform == null) {
+            baseTransform = UiTransform.identity();
+        }
+        float translateX = animationTimeline.resolveFloat(box.getElement(), DocumentAnimationProperty.TRANSLATE_X,
+                baseTransform.getTranslateX(), currentTimeNanos);
+        float translateY = animationTimeline.resolveFloat(box.getElement(), DocumentAnimationProperty.TRANSLATE_Y,
+                baseTransform.getTranslateY(), currentTimeNanos);
+        float scaleX = animationTimeline.resolveFloat(box.getElement(), DocumentAnimationProperty.SCALE_X,
+                baseTransform.getScaleX(), currentTimeNanos);
+        float scaleY = animationTimeline.resolveFloat(box.getElement(), DocumentAnimationProperty.SCALE_Y,
+                baseTransform.getScaleY(), currentTimeNanos);
+        float rotate = animationTimeline.resolveFloat(box.getElement(), DocumentAnimationProperty.ROTATE,
+                baseTransform.getRotateDegrees(), currentTimeNanos);
+        return UiTransform.of(translateX, translateY, scaleX, scaleY, rotate, baseTransform.getOriginX(),
+                baseTransform.getOriginY());
     }
 
     private final class DocumentAnimationTimelineLayoutResolver
@@ -1090,6 +1167,22 @@ public final class HtmlLikeDocumentWidget extends Widget implements UiDocument.D
     private void invalidateAnimationRuntimeCaches() {
         cachedPaintScrollVersion = -1;
         invalidateRuntimeLayoutCache();
+    }
+
+    private void recordLatestPointer(UiMouseEvent event) {
+        latestPointerScreenX = event.getMouseX();
+        latestPointerScreenY = event.getMouseY();
+        latestPointerTimeNanos = event.getTimeNanos();
+    }
+
+    private void refreshHoverAtLatestPointer(long fallbackTimeNanos) {
+        if (latestPointerScreenX == Integer.MIN_VALUE) {
+            return;
+        }
+        long timeNanos = latestPointerTimeNanos == 0L ? fallbackTimeNanos : latestPointerTimeNanos;
+        UiMouseEvent syntheticEvent = new UiMouseEvent(UiMouseEvent.Action.MOVE, latestPointerScreenX,
+                latestPointerScreenY, -1, 0, 0, 0, timeNanos);
+        updateHoveredElement(findElementAt(latestPointerScreenX, latestPointerScreenY), syntheticEvent);
     }
 
     private void dispatchScroll(ElementNode target, long timeNanos) {
@@ -1237,6 +1330,113 @@ public final class HtmlLikeDocumentWidget extends Widget implements UiDocument.D
          */
         public int getLastLayoutReusedSubtreeCount() {
             return lastLayoutReusedSubtreeCount;
+        }
+    }
+
+    private static final class VisualTransform {
+
+        private static final VisualTransform IDENTITY = new VisualTransform(1.0F, 0.0F, 0.0F, 1.0F, 0.0F, 0.0F);
+
+        private final float a;
+        private final float b;
+        private final float c;
+        private final float d;
+        private final float e;
+        private final float f;
+
+        private VisualTransform(float a, float b, float c, float d, float e, float f) {
+            this.a = a;
+            this.b = b;
+            this.c = c;
+            this.d = d;
+            this.e = e;
+            this.f = f;
+        }
+
+        private static VisualTransform identity() {
+            return IDENTITY;
+        }
+
+        private static VisualTransform from(UiTransform transform, int left, int top, int width, int height) {
+            float originX = left + transform.resolveOriginX(width);
+            float originY = top + transform.resolveOriginY(height);
+            double radians = Math.toRadians(transform.getRotateDegrees());
+            float cos = (float) Math.cos(radians);
+            float sin = (float) Math.sin(radians);
+            float a = cos * transform.getScaleX();
+            float b = sin * transform.getScaleX();
+            float c = -sin * transform.getScaleY();
+            float d = cos * transform.getScaleY();
+            float e = originX + transform.getTranslateX() - a * originX - c * originY;
+            float f = originY + transform.getTranslateY() - b * originX - d * originY;
+            return new VisualTransform(a, b, c, d, e, f);
+        }
+
+        private VisualTransform multiply(VisualTransform next) {
+            if (next == IDENTITY) {
+                return this;
+            }
+            if (this == IDENTITY) {
+                return next;
+            }
+            return new VisualTransform(
+                    a * next.a + c * next.b,
+                    b * next.a + d * next.b,
+                    a * next.c + c * next.d,
+                    b * next.c + d * next.d,
+                    a * next.e + c * next.f + e,
+                    b * next.e + d * next.f + f);
+        }
+
+        private VisualBounds mapBounds(int left, int top, int width, int height) {
+            UiTransform.Point first = mapPoint(left, top);
+            UiTransform.Point second = mapPoint(left + width, top);
+            UiTransform.Point third = mapPoint(left + width, top + height);
+            UiTransform.Point fourth = mapPoint(left, top + height);
+            float minX = Math.min(Math.min(first.getX(), second.getX()), Math.min(third.getX(), fourth.getX()));
+            float maxX = Math.max(Math.max(first.getX(), second.getX()), Math.max(third.getX(), fourth.getX()));
+            float minY = Math.min(Math.min(first.getY(), second.getY()), Math.min(third.getY(), fourth.getY()));
+            float maxY = Math.max(Math.max(first.getY(), second.getY()), Math.max(third.getY(), fourth.getY()));
+            return new VisualBounds(minX, minY, maxX, maxY);
+        }
+
+        private UiTransform.Point mapPoint(float x, float y) {
+            return new UiTransform.Point(a * x + c * y + e, b * x + d * y + f);
+        }
+    }
+
+    private static final class VisualBounds {
+
+        private final float left;
+        private final float top;
+        private final float right;
+        private final float bottom;
+
+        private VisualBounds(float left, float top, float right, float bottom) {
+            this.left = left;
+            this.top = top;
+            this.right = right;
+            this.bottom = bottom;
+        }
+
+        private int getLeft() {
+            return Math.round(left);
+        }
+
+        private int getTop() {
+            return Math.round(top);
+        }
+
+        private int getWidth() {
+            return Math.max(0, Math.round(right - left));
+        }
+
+        private int getHeight() {
+            return Math.max(0, Math.round(bottom - top));
+        }
+
+        private DocumentElementBounds toElementBounds() {
+            return DocumentElementBounds.of(getLeft(), getTop(), getWidth(), getHeight());
         }
     }
 }

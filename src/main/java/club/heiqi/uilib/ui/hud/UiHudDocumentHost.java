@@ -34,7 +34,6 @@ import club.heiqi.uilib.ui.style.props.UiDisplay;
 import club.heiqi.uilib.ui.style.props.UiOverflow;
 import club.heiqi.uilib.ui.style.props.UiPointerEvents;
 import club.heiqi.uilib.ui.style.props.UiPosition;
-import club.heiqi.uilib.ui.style.props.UiVisibility;
 import club.heiqi.uilib.ui.style.values.UiStyleLength;
 import club.heiqi.uilib.ui.text.DefaultTextMeasureService;
 import club.heiqi.uilib.ui.text.TextContentMode;
@@ -955,7 +954,6 @@ public final class UiHudDocumentHost implements UiHostInputCaptureParticipant {
                 .setHeight(UiStyleLength.percent(1.0F))
                 .setOverflowX(UiOverflow.VISIBLE)
                 .setOverflowY(UiOverflow.VISIBLE)
-                .setVisibility(UiVisibility.VISIBLE)
                 .setPointerEvents(UiPointerEvents.NONE);
         hostShell.setAttribute(REGISTRATION_ID_ATTRIBUTE, registrationId);
         hostShell.setAttribute(HOST_SHELL_ATTRIBUTE, "true");
@@ -1230,7 +1228,7 @@ public final class UiHudDocumentHost implements UiHostInputCaptureParticipant {
                 return;
             }
             hostVisible = visible;
-            hostShell.style().setVisibility(visible ? UiVisibility.VISIBLE : UiVisibility.HIDDEN);
+            hostShell.style().setDisplay(visible ? UiDisplay.BLOCK : UiDisplay.NONE);
         }
 
         String getRuntimeName() {

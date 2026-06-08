@@ -94,7 +94,7 @@ public final class ElementNode extends ElementInteractionNode {
             clone.attributes.put(entry.getKey(), entry.getValue());
         }
         clone.classList.copyFrom(classList);
-        clone.style().copyFrom(style);
+        clone.style().__copyFromSilently(style);
         clone.focusable = focusable;
         clone.focusableExplicitlySet = focusableExplicitlySet;
         clone.focusInvalidationVersion = 0;
@@ -599,6 +599,16 @@ public final class ElementNode extends ElementInteractionNode {
      */
     public DocumentElementBounds getDocumentBounds() {
         return getOwnerDocument().__getElementBounds(this);
+    }
+
+    /**
+     * 返回元素当前视觉边界，包含 paint-only transform 与动画运行态。
+     *
+     * @return 当前视觉边界
+     * @apiNote 框架内部 API，供内置弹层按视觉位置锚定。业务代码优先使用 {@link #getDocumentBounds()}。
+     */
+    public DocumentElementBounds __getVisualDocumentBounds() {
+        return getOwnerDocument().__getElementVisualBounds(this);
     }
 
     /**

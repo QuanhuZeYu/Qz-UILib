@@ -17,6 +17,7 @@ import club.heiqi.uilib.ui.layout.DocumentLayoutBox;
 import club.heiqi.uilib.ui.style.cascade.UiStyleDeclaration;
 import club.heiqi.uilib.ui.style.cascade.UiStyleSheet;
 import club.heiqi.uilib.ui.style.props.UiAlignItems;
+import club.heiqi.uilib.ui.style.props.UiCursor;
 import club.heiqi.uilib.ui.style.props.UiDisplay;
 import club.heiqi.uilib.ui.style.props.UiFlexDirection;
 import club.heiqi.uilib.ui.style.props.UiOverflow;
@@ -393,6 +394,72 @@ public class HtmlLikeDocumentWidgetLayoutCacheTest {
         Assert.assertEquals(30, transformedBox.getTop());
         Assert.assertEquals(7, fixedBox.getLeft());
         Assert.assertEquals(34, fixedBox.getTop());
+    }
+
+    /**
+     * 验证公开 copyFrom 会触发布局缓存失效。
+     */
+    @Test
+    public void shouldInvalidateLayoutCacheWhenInlineStyleCopiesLayoutDeclaration() {
+        UiDocument document = UiDocument.create();
+        ElementNode root = document.getRootElement();
+        ElementNode target = document.div();
+        root.style().setWidth(UiStyleLength.px(240));
+        target.style()
+                .setWidth(UiStyleLength.px(20))
+                .setHeight(UiStyleLength.px(10));
+        root.append(target);
+        HtmlLikeDocumentWidget widget = new HtmlLikeDocumentWidget(document, 240, 80,
+                new DeterministicTextMeasureService());
+        widget.applyLayoutBounds(0, 0, 240, 80);
+        DocumentLayoutBox firstBox = findLayoutBox(widget.resolveLayoutBoxForTest(), target);
+        int firstLayoutGeneration = widget.getPerformanceDiagnosticsSnapshot().getStaticLayoutGeneration();
+
+        target.style().copyFrom(new UiStyleDeclaration()
+                .setWidth(UiStyleLength.px(120))
+                .setHeight(UiStyleLength.px(10)));
+        DocumentLayoutBox secondBox = findLayoutBox(widget.resolveLayoutBoxForTest(), target);
+
+        Assert.assertNotNull(firstBox);
+        Assert.assertNotNull(secondBox);
+        Assert.assertEquals(20, firstBox.getWidth());
+        Assert.assertEquals(120, secondBox.getWidth());
+        Assert.assertTrue(widget.getPerformanceDiagnosticsSnapshot().getStaticLayoutGeneration()
+                > firstLayoutGeneration);
+    }
+
+    /**
+     * 验证公开 copyFrom 对 paint-only 声明也会重建绘制缓存。
+     */
+    @Test
+    public void shouldInvalidatePaintCacheWhenInlineStyleCopiesPaintDeclaration() {
+        UiDocument document = UiDocument.create();
+        ElementNode root = document.getRootElement();
+        ElementNode target = document.div();
+        root.style().setWidth(UiStyleLength.px(80));
+        target.style()
+                .setWidth(UiStyleLength.px(20))
+                .setHeight(UiStyleLength.px(10))
+                .setBackgroundColor(0xFF112233);
+        root.append(target);
+        HtmlLikeDocumentWidget widget = new HtmlLikeDocumentWidget(document, 80, 40,
+                new DeterministicTextMeasureService());
+        widget.applyLayoutBounds(0, 0, 80, 40);
+        RecordingUiRenderContext firstContext = new RecordingUiRenderContext();
+        widget.render(firstContext);
+        int firstPaintGeneration = widget.getPerformanceDiagnosticsSnapshot().getPaintCacheGeneration();
+
+        target.style().copyFrom(new UiStyleDeclaration()
+                .setWidth(UiStyleLength.px(20))
+                .setHeight(UiStyleLength.px(10))
+                .setBackgroundColor(0xFF445566)
+                .setCursor(UiCursor.POINTER));
+        RecordingUiRenderContext secondContext = new RecordingUiRenderContext();
+        widget.render(secondContext);
+
+        assertContainsDrawCall(firstContext, 0, 0, 20, 10, 0xFF112233, 0, 0);
+        assertContainsDrawCall(secondContext, 0, 0, 20, 10, 0xFF445566, 0, 0);
+        Assert.assertTrue(widget.getPerformanceDiagnosticsSnapshot().getPaintCacheGeneration() > firstPaintGeneration);
     }
 
     /**
