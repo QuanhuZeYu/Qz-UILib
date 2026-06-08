@@ -11,6 +11,11 @@
 - 原始报告正文使用 `后续复核（YYYY-MM-DD）` 批注标记，不删除历史判断；批注需说明当前正确口径和是否还需要修复。
 - 只在本索引写摘要，不把完整修复过程或阶段流水账堆积到索引页。
 
+## 2026-06-08-ui-test-matrix-round1
+- 类型：`/qzuilib test` 视觉/语义矩阵第一轮审查
+- 详情文档：[REVIEW-20260608-ui-test-matrix-round1.md](REVIEW-20260608-ui-test-matrix-round1.md)
+- 结论摘要：审查 registry、状态回写、批量运行、断言 runner 和测试覆盖一致性，发现 2 个中等优先级问题：`runAllAssertions()` 会污染各分组当前页索引，导致一键测试后打开分组默认停在最后一张样例；视觉状态模型已有人工通过/失败/已知缺口枚举和聚合逻辑，但页面没有人工结果回写入口，人工确认样例无法沉淀状态。
+
 ## 2026-06-06-ui-test-visual-assertions
 - 类型：`/qzuilib test` 视觉样例断言代码审查与修复复核
 - 详情文档：[REVIEW-20260606-ui-test-visual-assertions.md](REVIEW-20260606-ui-test-visual-assertions.md)
