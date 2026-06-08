@@ -75,6 +75,42 @@ public class HtmlLikeDocumentWidgetEventDispatchTest {
     }
 
     /**
+     * 验证 raw disabled 表单控件不会通过鼠标路径派发 click。
+     */
+    @Test
+    public void shouldNotDispatchMouseClickForRawDisabledButton() {
+        UiDocument document = UiDocument.create();
+        ElementNode root = document.getRootElement();
+        ElementNode button = document.button();
+        final int[] clickCount = new int[] { 0 };
+        root.style()
+                .setWidth(UiStyleLength.px(80))
+                .setHeight(UiStyleLength.px(40));
+        button.setAttribute("disabled", "true");
+        button.style()
+                .setWidth(UiStyleLength.px(40))
+                .setHeight(UiStyleLength.px(20));
+        button.setClickHandler(new DocumentElementClickHandler() {
+            @Override
+            public boolean onClick(DocumentElementClickEvent event) {
+                clickCount[0]++;
+                return true;
+            }
+        });
+        root.append(button);
+        HtmlLikeDocumentWidget widget = new HtmlLikeDocumentWidget(document, 80, 40,
+                new DeterministicTextMeasureService());
+        widget.applyLayoutBounds(0, 0, 80, 40);
+
+        widget.onMouseDown(new UiMouseEvent(UiMouseEvent.Action.BUTTON_DOWN, 10, 10, 0, 0, 0, 0, 1L));
+        widget.onMouseUp(new UiMouseEvent(UiMouseEvent.Action.BUTTON_UP, 10, 10, 0, 0, 0, 0, 2L));
+        widget.onMouseDown(new UiMouseEvent(UiMouseEvent.Action.BUTTON_DOWN, 10, 10, 0, 0, 0, 0, 3L));
+        widget.onMouseUp(new UiMouseEvent(UiMouseEvent.Action.BUTTON_UP, 10, 10, 0, 0, 0, 0, 4L));
+
+        Assert.assertEquals(0, clickCount[0]);
+    }
+
+    /**
      * 验证 click 在 AT_TARGET 阶段会先执行 target capture，再执行 target handler；
      * target capture 返回 true 只会阻止祖先冒泡，不会跳过当前 target handler。
      */

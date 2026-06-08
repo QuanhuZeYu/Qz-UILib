@@ -11,6 +11,11 @@
 - 原始报告正文使用 `后续复核（YYYY-MM-DD）` 批注标记，不删除历史判断；批注需说明当前正确口径和是否还需要修复。
 - 只在本索引写摘要，不把完整修复过程或阶段流水账堆积到索引页。
 
+## 2026-06-08-ui-test-matrix-round2
+- 类型：`/qzuilib test` 视觉/语义矩阵第二轮审查
+- 详情文档：[REVIEW-20260608-ui-test-matrix-round2.md](REVIEW-20260608-ui-test-matrix-round2.md)
+- 结论摘要：第二轮避开第一轮低优先级问题，转向断言强度和真实浏览器语义。发现 4 个问题：原生 `disabled` 表单元素仍可通过鼠标路径派发 `click`；Animation 自动断言可在未验证真实 transition/keyframe 生命周期和渲染样例时通过；`VIS-CTRL-007` 宣称 roving focus 但所有 tab 仍为 `tabindex="0"`；`VIS-CTRL-005` 选择 option 时直接调用 handler，绕过真实 top-layer 命中测试。
+
 ## 2026-06-08-ui-test-matrix-round1
 - 类型：`/qzuilib test` 视觉/语义矩阵第一轮审查
 - 详情文档：[REVIEW-20260608-ui-test-matrix-round1.md](REVIEW-20260608-ui-test-matrix-round1.md)
