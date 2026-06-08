@@ -11,6 +11,11 @@
 - 原始报告正文使用 `后续复核（YYYY-MM-DD）` 批注标记，不删除历史判断；批注需说明当前正确口径和是否还需要修复。
 - 只在本索引写摘要，不把完整修复过程或阶段流水账堆积到索引页。
 
+## 2026-06-08-production-code-round5
+- 类型：全项目生产代码第五轮审查修复
+- 详情文档：[REVIEW-20260608-production-code-round5.md](REVIEW-20260608-production-code-round5.md)
+- 结论摘要：修复远程页面与远程 HUD session 生命周期 3 个问题：带 `sessionId` 的 HUD dismiss 不再按 `overlayId` 误关新 HUD；远程页面客户端用当前 session/generation 丢弃旧 stream 成功/失败回调；服务端远程 HTML session TTL 过期时向页面发送可见错误通知、向 HUD 发送 session-scoped dismiss，避免过期后提交静默丢弃或 sticky dialog 静默停留。
+
 ## 2026-06-08-production-code-round4
 - 类型：全项目生产代码第四轮审查
 - 详情文档：[REVIEW-20260608-production-code-round4.md](REVIEW-20260608-production-code-round4.md)

@@ -8,6 +8,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.function.LongSupplier;
 
 import club.heiqi.uilib.MyMod;
 import club.heiqi.uilib.net.api.NetChannel;
@@ -319,12 +320,17 @@ public final class RemoteHudOverlays {
 
     static void resetForTests() {
         SERVER_SESSIONS.clear();
+        SERVER_SESSIONS.setClockForTests(null);
         ACTIVE_SESSION_IDS_BY_OVERLAY_KEY.clear();
         registered = false;
         openChannel = null;
         dismissChannel = null;
         submitChannel = null;
         streamEndpoint = null;
+    }
+
+    static void setSessionClockForTests(LongSupplier clock) {
+        SERVER_SESSIONS.setClockForTests(clock);
     }
 
     private static void handleStreamRequest(NetRequest request,
@@ -344,6 +350,14 @@ public final class RemoteHudOverlays {
                                 .withHeader("x-qz-overlay-close-button",
                                         Boolean.toString(overlay.isDefaultCloseButtonVisible()))
                                 .withHeader("x-qz-overlay-close-label", overlay.getCloseButtonLabel());
+                    }
+                }, new RemoteHtmlSessionGateway.SessionRemovalListener<HudSession>() {
+                    @Override
+                    public void onSessionRemoved(RemoteHtmlSessionGateway.RemoteHtmlSession<HudSession> session) {
+                        HudSession hudSession = session.getPayload();
+                        ACTIVE_SESSION_IDS_BY_OVERLAY_KEY.remove(OverlayKey.of(session.getPlayer(),
+                                hudSession.overlay.getOverlayId()), session.getSessionId());
+                        sendExpiredDismiss(session, hudSession);
                     }
                 });
     }
@@ -401,8 +415,9 @@ public final class RemoteHudOverlays {
                     SERVER_SESSIONS.getSession(sessionId);
             if (session != null && session.matchesPlayer(senderPlayer)) {
                 removeSession(session.getSessionId());
-                return;
             }
+            ACTIVE_SESSION_IDS_BY_OVERLAY_KEY.remove(OverlayKey.of(senderPlayer, payload.overlayId), sessionId);
+            return;
         }
         OverlayKey overlayKey = OverlayKey.of(senderPlayer, payload.overlayId);
         String mappedSessionId = ACTIVE_SESSION_IDS_BY_OVERLAY_KEY.remove(overlayKey);
@@ -473,8 +488,21 @@ public final class RemoteHudOverlays {
                 HudSession hudSession = session.getPayload();
                 ACTIVE_SESSION_IDS_BY_OVERLAY_KEY.remove(OverlayKey.of(session.getPlayer(),
                         hudSession.overlay.getOverlayId()), session.getSessionId());
+                sendExpiredDismiss(session, hudSession);
             }
         });
+    }
+
+    private static void sendExpiredDismiss(RemoteHtmlSessionGateway.RemoteHtmlSession<HudSession> session,
+            HudSession hudSession) {
+        if (session == null || hudSession == null || dismissChannel == null) {
+            return;
+        }
+        DismissPayload payload = new DismissPayload();
+        payload.sessionId = session.getSessionId();
+        payload.overlayId = hudSession.overlay.getOverlayId();
+        payload.reason = "server-session-expired";
+        contextSendDismissToClient(session.getPlayer(), payload);
     }
 
     private static RemoteHudOverlay requireOverlay(RemoteHudOverlay overlay) {

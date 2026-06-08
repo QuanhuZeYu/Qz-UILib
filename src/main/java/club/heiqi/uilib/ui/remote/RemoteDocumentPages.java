@@ -7,6 +7,7 @@ import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.function.LongSupplier;
 
 import club.heiqi.uilib.MyMod;
 import club.heiqi.uilib.net.api.NetChannel;
@@ -40,6 +41,7 @@ public final class RemoteDocumentPages {
 
     private static volatile boolean registered;
     private static NetChannel openChannel;
+    private static NetChannel expiredChannel;
     private static NetChannel submitChannel;
     private static NetStreamEndpoint streamEndpoint;
 
@@ -66,6 +68,22 @@ public final class RemoteDocumentPages {
                             @Override
                             public void run() {
                                 dispatchClientOpenOffer(message.getBody().asUtf8String());
+                            }
+                        });
+                    }
+                })
+                .register();
+        expiredChannel = service.channel(NetChannelId.of(MyMod.MODID, "remote_page_expired"))
+                .onReceive(new NetChannel.NetChannelHandler() {
+                    @Override
+                    public void onReceive(final NetMessage message, final NetReceiveContext context) {
+                        if (context.getSide() != NetSide.CLIENT) {
+                            return;
+                        }
+                        context.runOnMainThread(new Runnable() {
+                            @Override
+                            public void run() {
+                                dispatchClientExpired(message.getBody().asUtf8String());
                             }
                         });
                     }
@@ -115,6 +133,7 @@ public final class RemoteDocumentPages {
             throw new IllegalArgumentException("player must not be null");
         }
         RemoteDocumentPage resolvedPage = requirePage(page);
+        cleanupExpiredSessions();
         RemoteHtmlSessionGateway.RemoteHtmlSession<PageSession> session = SERVER_SESSIONS.createSession(player,
                 new PageSession(resolvedPage, handler), resolvedPage.getHtml());
         openChannel.toPlayer(player).send(NetMessage.json(RemoteJson.toJson(OpenOffer.from(session.getSessionId(),
@@ -162,16 +181,32 @@ public final class RemoteDocumentPages {
         return payload;
     }
 
+    static ExpiredPayload decodeExpiredPayload(String json) {
+        ExpiredPayload payload = RemoteJson.fromJson(json, ExpiredPayload.class);
+        if (payload == null || RemoteHtmlSessionGateway.isBlank(payload.sessionId)) {
+            throw new IllegalArgumentException("远程页面失效通知缺少 sessionId");
+        }
+        payload.pageId = payload.pageId == null ? "" : payload.pageId;
+        payload.reason = payload.reason == null ? "" : payload.reason;
+        return payload;
+    }
+
     static String sha256Hex(byte[] bytes) {
         return RemoteHtmlSessionGateway.sha256Hex(bytes);
     }
 
     static void resetForTests() {
         SERVER_SESSIONS.clear();
+        SERVER_SESSIONS.setClockForTests(null);
         registered = false;
         openChannel = null;
+        expiredChannel = null;
         submitChannel = null;
         streamEndpoint = null;
+    }
+
+    static void setSessionClockForTests(LongSupplier clock) {
+        SERVER_SESSIONS.setClockForTests(clock);
     }
 
     private static void handleStreamRequest(NetRequest request,
@@ -186,6 +221,11 @@ public final class RemoteDocumentPages {
                                 .withHeader("x-qz-page-id", page.getPageId())
                                 .withHeader("x-qz-resource-policy", page.getResourcePolicy().name());
                     }
+                }, new RemoteHtmlSessionGateway.SessionRemovalListener<PageSession>() {
+                    @Override
+                    public void onSessionRemoved(RemoteHtmlSessionGateway.RemoteHtmlSession<PageSession> session) {
+                        sendExpiredToClient(session);
+                    }
                 });
     }
 
@@ -197,7 +237,7 @@ public final class RemoteDocumentPages {
             MyMod.LOG.warn("远程页面提交协议无效", exception);
             return;
         }
-        SERVER_SESSIONS.cleanupExpiredSessions(null);
+        cleanupExpiredSessions();
         RemoteHtmlSessionGateway.RemoteHtmlSession<PageSession> session =
                 SERVER_SESSIONS.getSession(payload.sessionId);
         if (session == null) {
@@ -240,6 +280,43 @@ public final class RemoteDocumentPages {
         }
     }
 
+    private static void dispatchClientExpired(String json) {
+        try {
+            Class<?> bridgeClass = Class.forName(CLIENT_BRIDGE_CLASS);
+            Method method = bridgeClass.getDeclaredMethod("receiveSessionExpired", String.class);
+            method.setAccessible(true);
+            method.invoke(null, json);
+        } catch (ClassNotFoundException exception) {
+            MyMod.LOG.warn("远程页面客户端桥缺失", exception);
+        } catch (NoSuchMethodException exception) {
+            MyMod.LOG.warn("远程页面客户端桥失效通知入口缺失", exception);
+        } catch (IllegalAccessException exception) {
+            MyMod.LOG.warn("远程页面客户端桥失效通知不可访问", exception);
+        } catch (InvocationTargetException exception) {
+            MyMod.LOG.warn("远程页面客户端桥失效通知执行失败", exception.getCause());
+        }
+    }
+
+    private static void cleanupExpiredSessions() {
+        SERVER_SESSIONS.cleanupExpiredSessions(new RemoteHtmlSessionGateway.SessionRemovalListener<PageSession>() {
+            @Override
+            public void onSessionRemoved(RemoteHtmlSessionGateway.RemoteHtmlSession<PageSession> session) {
+                sendExpiredToClient(session);
+            }
+        });
+    }
+
+    private static void sendExpiredToClient(RemoteHtmlSessionGateway.RemoteHtmlSession<PageSession> session) {
+        if (session == null || expiredChannel == null) {
+            return;
+        }
+        ExpiredPayload payload = new ExpiredPayload();
+        payload.sessionId = session.getSessionId();
+        payload.pageId = session.getPayload().page.getPageId();
+        payload.reason = "server-session-expired";
+        expiredChannel.toPlayer(session.getPlayer()).send(NetMessage.json(RemoteJson.toJson(payload)));
+    }
+
     private static RemoteDocumentPage requirePage(RemoteDocumentPage page) {
         if (page == null) {
             throw new IllegalArgumentException("page must not be null");
@@ -248,7 +325,8 @@ public final class RemoteDocumentPages {
     }
 
     private static void ensureRegistered() {
-        if (!registered || openChannel == null || submitChannel == null || streamEndpoint == null) {
+        if (!registered || openChannel == null || expiredChannel == null || submitChannel == null
+                || streamEndpoint == null) {
             throw new IllegalStateException("远程页面网络端点尚未注册，请确认 Qz UILib preInit 已完成");
         }
     }
@@ -282,6 +360,12 @@ public final class RemoteDocumentPages {
         String action;
         String formId;
         Map<String, List<String>> values = Collections.emptyMap();
+    }
+
+    static final class ExpiredPayload {
+        String sessionId;
+        String pageId;
+        String reason;
     }
 
     private static final class PageSession {

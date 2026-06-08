@@ -25,6 +25,23 @@ import net.minecraft.client.gui.GuiScreen;
  */
 public final class RemoteDocumentClientBridge {
 
+    private static final Object STATE_LOCK = new Object();
+    private static final DocumentScreenOpener MINECRAFT_SCREEN_OPENER = new DocumentScreenOpener() {
+        @Override
+        public void open(UiDocumentScreens.DocumentScreenContentBuilder builder) {
+            Minecraft minecraft = Minecraft.getMinecraft();
+            if (minecraft == null) {
+                return;
+            }
+            GuiScreen screen = UiDocumentScreens.createDocumentScreen(builder);
+            minecraft.displayGuiScreen(screen);
+        }
+    };
+
+    private static String currentSessionId = "";
+    private static long currentGeneration;
+    private static DocumentScreenOpener screenOpener = MINECRAFT_SCREEN_OPENER;
+
     private RemoteDocumentClientBridge() {}
 
     /**
@@ -40,12 +57,15 @@ public final class RemoteDocumentClientBridge {
             openErrorScreen("远程页面协议无效", exception.getMessage());
             return;
         }
+        final long generation = markCurrentOffer(offer.sessionId);
         openLoadingScreen(offer);
         NetStreamCall call;
         try {
             call = RemoteDocumentPages.callPageStream(offer.sessionId);
         } catch (RuntimeException exception) {
-            openErrorScreen("远程页面请求失败", exception.getMessage());
+            if (isCurrentOffer(offer.sessionId, generation)) {
+                openErrorScreen("远程页面请求失败", exception.getMessage());
+            }
             return;
         }
         call.future().whenComplete(new BiConsumer<NetResponse, Throwable>() {
@@ -54,6 +74,9 @@ public final class RemoteDocumentClientBridge {
                 UiScreenManager.getInstance().enqueue(new Runnable() {
                     @Override
                     public void run() {
+                        if (!isCurrentOffer(offer.sessionId, generation)) {
+                            return;
+                        }
                         if (throwable != null) {
                             openErrorScreen("远程页面下载失败", readableError(throwable));
                             return;
@@ -68,6 +91,25 @@ public final class RemoteDocumentClientBridge {
                 });
             }
         });
+    }
+
+    /**
+     * 接收服务端下发的远程页面 session 失效通知。
+     *
+     * @param json 失效通知 JSON
+     */
+    public static void receiveSessionExpired(String json) {
+        RemoteDocumentPages.ExpiredPayload payload;
+        try {
+            payload = RemoteDocumentPages.decodeExpiredPayload(json);
+        } catch (IllegalArgumentException exception) {
+            openErrorScreen("远程页面失效通知无效", exception.getMessage());
+            return;
+        }
+        if (!expireCurrentOffer(payload.sessionId)) {
+            return;
+        }
+        openErrorScreen("远程页面已失效", "当前远程页面 session 已过期，请重新打开页面后再操作。");
     }
 
     private static String validateAndDecode(RemoteDocumentPages.OpenOffer offer, NetResponse response) {
@@ -150,12 +192,44 @@ public final class RemoteDocumentClientBridge {
     }
 
     private static void openDocumentScreen(UiDocumentScreens.DocumentScreenContentBuilder builder) {
-        Minecraft minecraft = Minecraft.getMinecraft();
-        if (minecraft == null) {
-            return;
+        screenOpener.open(builder);
+    }
+
+    static void resetForTests() {
+        synchronized (STATE_LOCK) {
+            currentSessionId = "";
+            currentGeneration = 0L;
         }
-        GuiScreen screen = UiDocumentScreens.createDocumentScreen(builder);
-        minecraft.displayGuiScreen(screen);
+        screenOpener = MINECRAFT_SCREEN_OPENER;
+    }
+
+    static void setDocumentScreenOpenerForTests(DocumentScreenOpener opener) {
+        screenOpener = opener == null ? MINECRAFT_SCREEN_OPENER : opener;
+    }
+
+    private static long markCurrentOffer(String sessionId) {
+        synchronized (STATE_LOCK) {
+            currentSessionId = sessionId == null ? "" : sessionId;
+            currentGeneration++;
+            return currentGeneration;
+        }
+    }
+
+    private static boolean isCurrentOffer(String sessionId, long generation) {
+        synchronized (STATE_LOCK) {
+            return currentGeneration == generation && currentSessionId.equals(sessionId == null ? "" : sessionId);
+        }
+    }
+
+    private static boolean expireCurrentOffer(String sessionId) {
+        synchronized (STATE_LOCK) {
+            if (!currentSessionId.equals(sessionId == null ? "" : sessionId)) {
+                return false;
+            }
+            currentSessionId = "";
+            currentGeneration++;
+            return true;
+        }
     }
 
     private static void installRemoteLinkHandler(UiDocument document, final RemoteDocumentResourcePolicy policy) {
@@ -209,6 +283,10 @@ public final class RemoteDocumentClientBridge {
         }
         String message = current.getMessage();
         return message == null || message.trim().isEmpty() ? current.getClass().getName() : message;
+    }
+
+    interface DocumentScreenOpener {
+        void open(UiDocumentScreens.DocumentScreenContentBuilder builder);
     }
 
 }

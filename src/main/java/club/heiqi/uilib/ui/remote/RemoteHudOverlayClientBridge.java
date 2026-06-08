@@ -98,7 +98,7 @@ public final class RemoteHudOverlayClientBridge {
         List<ActiveOverlay> snapshot = new ArrayList<ActiveOverlay>(activeOverlays.values());
         for (ActiveOverlay overlay : snapshot) {
             if (overlay.isExpired(nowMillis)) {
-                dismissOverlay(overlay.offer.overlayId, true, "client-expired");
+                dismissOverlaySession(overlay.offer.overlayId, overlay.offer.sessionId, true, "client-expired");
                 continue;
             }
             if (overlay.mode == RemoteHudOverlayMode.DANMAKU) {
@@ -175,10 +175,12 @@ public final class RemoteHudOverlayClientBridge {
             return;
         }
         if (!payload.sessionId.isEmpty()) {
-            PendingOpen pendingOpen = pendingOpens.get(payload.sessionId);
+            PendingOpen pendingOpen = pendingOpens.remove(payload.sessionId);
             if (pendingOpen != null) {
                 pendingOpen.dismiss();
             }
+            dismissOverlaySession(payload.overlayId, payload.sessionId, false, payload.reason);
+            return;
         }
         dismissPendingOpensByOverlayId(payload.overlayId);
         dismissOverlay(payload.overlayId, false, payload.reason);
@@ -291,6 +293,41 @@ public final class RemoteHudOverlayClientBridge {
         } catch (RuntimeException exception) {
             MyMod.LOG.debug("远程 HUD 客户端关闭回传失败：{}", overlay.offer.overlayId, exception);
         }
+    }
+
+    private void dismissOverlaySession(String overlayId, String sessionId, boolean notifyServer, String reason) {
+        if (overlayId == null || overlayId.trim().isEmpty() || sessionId == null || sessionId.trim().isEmpty()) {
+            return;
+        }
+        ActiveOverlay overlay = activeOverlays.get(overlayId);
+        if (overlay == null || overlay.offer == null || !sessionId.equals(overlay.offer.sessionId)) {
+            return;
+        }
+        if (activeOverlays.remove(overlayId, overlay)) {
+            unregisterQuietly(overlay.registration);
+            if (notifyServer) {
+                RemoteHudOverlays.DismissPayload payload = new RemoteHudOverlays.DismissPayload();
+                payload.sessionId = overlay.offer.sessionId;
+                payload.overlayId = overlay.offer.overlayId;
+                payload.reason = reason == null ? "client-dismiss" : reason;
+                try {
+                    RemoteHudOverlays.dismissFromClient(payload);
+                } catch (RuntimeException exception) {
+                    MyMod.LOG.debug("远程 HUD 客户端关闭回传失败：{}", overlay.offer.overlayId, exception);
+                }
+            }
+        }
+    }
+
+    void addActiveOverlayForTest(RemoteHudOverlays.OpenOffer offer, UiHudDocumentRegistration registration) {
+        RemoteHudOverlays.OpenOffer resolvedOffer = offer == null ? new RemoteHudOverlays.OpenOffer() : offer;
+        activeOverlays.put(resolvedOffer.overlayId, new ActiveOverlay(resolvedOffer, registration, null,
+                System.currentTimeMillis(), resolveMode(resolvedOffer.mode)));
+    }
+
+    boolean hasActiveOverlayForTest(String overlayId, String sessionId) {
+        ActiveOverlay overlay = activeOverlays.get(overlayId);
+        return overlay != null && overlay.offer != null && sessionId != null && sessionId.equals(overlay.offer.sessionId);
     }
 
     private void updateDanmakuPosition(ActiveOverlay overlay, long nowMillis) {
@@ -526,7 +563,8 @@ public final class RemoteHudOverlayClientBridge {
         closeButton.setActionHandler(new DocumentButtonActionHandler() {
             @Override
             public void onAction(DocumentButtonActionEvent event) {
-                RemoteHudOverlayClientBridge.getInstance().dismissOverlay(offer.overlayId, true, "client-close");
+                RemoteHudOverlayClientBridge.getInstance().dismissOverlaySession(offer.overlayId, offer.sessionId,
+                        true, "client-close");
             }
         });
         return closeButton.getElement();

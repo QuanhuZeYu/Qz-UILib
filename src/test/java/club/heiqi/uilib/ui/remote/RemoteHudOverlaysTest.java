@@ -6,7 +6,9 @@ import java.util.Arrays;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.function.LongSupplier;
 
 import org.junit.After;
 import org.junit.Assert;
@@ -141,6 +143,98 @@ public class RemoteHudOverlaysTest {
         Assert.assertEquals(RemoteHudOverlayMode.DANMAKU.name(), danmakuOffer.mode);
     }
 
+    @Test
+    public void shouldKeepNewSessionWhenOldClientDismissArrivesForSameOverlayId() throws Exception {
+        FakePlayer player = new FakePlayer("hudPlayer", 3);
+        RemoteDocumentPage firstPage = RemoteDocumentPage.of("hud-page-1", "HUD 1", "<p>one</p>");
+        RemoteDocumentPage secondPage = RemoteDocumentPage.of("hud-page-2", "HUD 2", "<p>two</p>");
+
+        String firstSessionId = RemoteHudOverlays.open(player,
+                RemoteHudOverlay.dialog("same-overlay", firstPage).build(), null);
+        String secondSessionId = RemoteHudOverlays.open(player,
+                RemoteHudOverlay.dialog("same-overlay", secondPage).build(), null);
+
+        RemoteHudOverlays.DismissPayload oldDismiss = new RemoteHudOverlays.DismissPayload();
+        oldDismiss.sessionId = firstSessionId;
+        oldDismiss.overlayId = "same-overlay";
+        oldDismiss.reason = "client-close";
+        invokeHandleClientDismiss(RemoteJson.toJson(oldDismiss), player);
+
+        RemoteHudOverlays.SubmitPayload newSubmit = new RemoteHudOverlays.SubmitPayload();
+        newSubmit.sessionId = secondSessionId;
+        newSubmit.overlayId = "same-overlay";
+        newSubmit.pageId = "hud-page-2";
+        newSubmit.values = java.util.Collections.emptyMap();
+        invokeHandleSubmit(RemoteJson.toJson(newSubmit), player);
+
+        Assert.assertTrue("旧 session dismiss 不应移除同 overlayId 的新 session",
+                RemoteHudOverlays.dismiss(player, "same-overlay"));
+        NetEnvelope dismissEnvelope = NetEnvelope.decode(transport.playerPayloads.get(transport.playerPayloads.size() - 1)
+                .payload);
+        RemoteHudOverlays.DismissPayload dismissPayload =
+                RemoteJson.fromJson(dismissEnvelope.toBody().asUtf8String(), RemoteHudOverlays.DismissPayload.class);
+        Assert.assertEquals(secondSessionId, dismissPayload.sessionId);
+    }
+
+    @Test
+    public void shouldNotifyClientWhenHudSubmitFindsExpiredSession() throws Exception {
+        final AtomicLong nowMillis = new AtomicLong(1_000L);
+        RemoteHudOverlays.setSessionClockForTests(new LongSupplier() {
+            @Override
+            public long getAsLong() {
+                return nowMillis.get();
+            }
+        });
+        FakePlayer player = new FakePlayer("hudPlayer", 4);
+        RemoteDocumentPage page = RemoteDocumentPage.of("hud-page", "HUD", "<form id=\"f\"></form>");
+        String sessionId = RemoteHudOverlays.open(player, RemoteHudOverlay.dialog("hud-overlay", page).build(), null);
+        transport.playerPayloads.clear();
+
+        nowMillis.addAndGet(RemoteHtmlSessionGateway.DEFAULT_SESSION_TTL_MILLIS + 1L);
+        RemoteHudOverlays.SubmitPayload submitPayload = new RemoteHudOverlays.SubmitPayload();
+        submitPayload.sessionId = sessionId;
+        submitPayload.overlayId = "hud-overlay";
+        submitPayload.pageId = "hud-page";
+        submitPayload.values = java.util.Collections.emptyMap();
+        invokeHandleSubmit(RemoteJson.toJson(submitPayload), player);
+
+        Assert.assertEquals(1, transport.playerPayloads.size());
+        NetEnvelope dismissEnvelope = NetEnvelope.decode(transport.playerPayloads.get(0).payload);
+        Assert.assertEquals(MyMod.MODID + ":remote_hud_dismiss", dismissEnvelope.getKey());
+        RemoteHudOverlays.DismissPayload dismissPayload =
+                RemoteJson.fromJson(dismissEnvelope.toBody().asUtf8String(), RemoteHudOverlays.DismissPayload.class);
+        Assert.assertEquals(sessionId, dismissPayload.sessionId);
+        Assert.assertEquals("hud-overlay", dismissPayload.overlayId);
+        Assert.assertEquals("server-session-expired", dismissPayload.reason);
+    }
+
+    @Test
+    public void shouldNotifyClientWhenHudStreamFindsExpiredSession() {
+        final AtomicLong nowMillis = new AtomicLong(2_000L);
+        RemoteHudOverlays.setSessionClockForTests(new LongSupplier() {
+            @Override
+            public long getAsLong() {
+                return nowMillis.get();
+            }
+        });
+        FakePlayer player = new FakePlayer("hudPlayer", 5);
+        RemoteDocumentPage page = RemoteDocumentPage.of("hud-page", "HUD", "<p>late</p>");
+        String sessionId = RemoteHudOverlays.open(player, RemoteHudOverlay.dialog("hud-overlay", page).build(), null);
+        RemoteHudOverlays.callOverlayStream(sessionId);
+        int requestIndex = transport.clientToServerPayloads.size() - 1;
+        transport.playerPayloads.clear();
+
+        nowMillis.addAndGet(RemoteHtmlSessionGateway.DEFAULT_SESSION_TTL_MILLIS + 1L);
+        transport.deliverToServer(transport.clientToServerPayloads.get(requestIndex), player);
+
+        Assert.assertTrue("HUD stream 过期应给客户端发送 dismiss，避免 sticky dialog 停留",
+                containsEnvelopeKey(MyMod.MODID + ":remote_hud_dismiss"));
+        RemoteHudOverlays.DismissPayload dismissPayload = findDismissPayload();
+        Assert.assertEquals(sessionId, dismissPayload.sessionId);
+        Assert.assertEquals("hud-overlay", dismissPayload.overlayId);
+        Assert.assertEquals("server-session-expired", dismissPayload.reason);
+    }
+
     private static void resetNetService() {
         try {
             Method method = NetService.class.getDeclaredMethod("resetForTests");
@@ -159,6 +253,36 @@ public class RemoteHudOverlaysTest {
         } catch (ReflectiveOperationException exception) {
             throw new IllegalStateException("无法触发远程 HUD 提交处理", exception);
         }
+    }
+
+    private static void invokeHandleClientDismiss(String json, Object senderPlayer) {
+        try {
+            Method method = RemoteHudOverlays.class.getDeclaredMethod("handleClientDismiss", String.class, Object.class);
+            method.setAccessible(true);
+            method.invoke(null, json, senderPlayer);
+        } catch (ReflectiveOperationException exception) {
+            throw new IllegalStateException("无法触发远程 HUD 客户端关闭处理", exception);
+        }
+    }
+
+    private boolean containsEnvelopeKey(String key) {
+        for (PlayerPayload payload : transport.playerPayloads) {
+            if (key.equals(NetEnvelope.decode(payload.payload).getKey())) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private RemoteHudOverlays.DismissPayload findDismissPayload() {
+        for (PlayerPayload payload : transport.playerPayloads) {
+            NetEnvelope envelope = NetEnvelope.decode(payload.payload);
+            if ((MyMod.MODID + ":remote_hud_dismiss").equals(envelope.getKey())) {
+                return RemoteJson.fromJson(envelope.toBody().asUtf8String(),
+                        RemoteHudOverlays.DismissPayload.class);
+            }
+        }
+        throw new AssertionError("未找到 HUD dismiss payload");
     }
 
     private static final class RecordingTransport implements ITransport {
