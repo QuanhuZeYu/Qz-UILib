@@ -85,9 +85,9 @@
 | DOM | 节点归属、返回值、子节点顺序、textContent、classList、selector 结果 |
 | CSS | computed style、继承结果、specificity 结果、可见性与 pointer-events 状态 |
 | Layout | 布局盒尺寸、位置、margin collapse、flex/table 分配、scroll 范围 |
-| Paint | 绘制命令顺序、stacking phase、clip/transform/top-layer 命中 |
+| Paint | 绘制命令顺序、stacking phase、clip/transform/top-layer 命中、scroll range |
 | Input | 事件日志、传播顺序、默认行为、focus/focus-visible、wheel 滚动结果 |
-| Controls | value、checked、selection、caret、disabled、change 日志 |
+| Controls | value、checked、selection 替换、select top-layer、disabled、change 日志 |
 | TextFont | 测量宽度、line-height、wrap/trim 摘要、字体 epoch |
 | Animation | timeline 状态、start/end/cancel 日志、最终样式 |
 | RuntimeHost | 多数需要游戏内人工确认，自动只检查入口和状态摘要 |

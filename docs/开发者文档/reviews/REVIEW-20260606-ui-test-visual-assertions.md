@@ -21,6 +21,12 @@
 - PAINT 分组首轮计划边界调整为自动 3 张、人工 4 张；当前已接入 19 张样例中自动断言 14 张、人工待确认 5 张。
 - 新增目标测试覆盖 `VIS-CSS-004`、`VIS-CSS-006`、`VIS-LAYOUT-001`、`VIS-PAINT-005`、`VIS-PAINT-006`、`VIS-PAINT-007`。
 
+## 后续复核（2026-06-08）
+
+- `VIS-PAINT-006` 已补强为自动断言：检查 `overflow:auto`、正向 scroll range 和 `scrollTo` 运行态偏移变化。
+- 当前正确口径：scrollbar track/thumb 的真实几何、拖拽命中和截图观感仍保留人工观察边界，但该样例不再占用矩阵人工待确认状态。
+- PAINT 分组首轮计划边界随之调整为自动 4 张、人工 3 张。
+
 ## 验证
 
 - `./gradlew.bat --no-configuration-cache test --tests "club.heiqi.uilib.internal.devtools.pages.UiTestDocumentPageControllerTest" --rerun-tasks`

@@ -252,7 +252,7 @@ public final class UiTestDocumentPageController extends DocumentPageController {
     }
 
     /**
-     * 依次渲染并运行全部已接入样例，人工样例只生成诊断并保持待确认。
+     * 依次渲染并运行全部已接入样例，未自动接入的样例只生成诊断并保持待确认。
      */
     private void runAllAssertions() {
         int executed = 0;

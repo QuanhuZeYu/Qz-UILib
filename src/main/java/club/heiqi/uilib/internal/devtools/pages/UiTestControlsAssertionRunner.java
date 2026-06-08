@@ -6,6 +6,7 @@ import java.util.List;
 import org.lwjglx.input.Keyboard;
 
 import club.heiqi.uilib.ui.document.HtmlLikeDocumentWidget;
+import club.heiqi.uilib.ui.dom.DocumentElementClickEvent;
 import club.heiqi.uilib.ui.dom.DocumentNode;
 import club.heiqi.uilib.ui.dom.ElementNode;
 import club.heiqi.uilib.ui.event.UiKeyEvent;
@@ -27,7 +28,9 @@ final class UiTestControlsAssertionRunner {
     boolean isAutomatic(String caseId) {
         return "VIS-CTRL-001".equals(caseId)
                 || "VIS-CTRL-002".equals(caseId)
+                || "VIS-CTRL-003".equals(caseId)
                 || "VIS-CTRL-004".equals(caseId)
+                || "VIS-CTRL-005".equals(caseId)
                 || "VIS-CTRL-006".equals(caseId)
                 || "VIS-CTRL-007".equals(caseId);
     }
@@ -39,7 +42,7 @@ final class UiTestControlsAssertionRunner {
      * @return 是否人工诊断样例
      */
     boolean isManual(String caseId) {
-        return "VIS-CTRL-003".equals(caseId) || "VIS-CTRL-005".equals(caseId);
+        return false;
     }
 
     /**
@@ -61,8 +64,14 @@ final class UiTestControlsAssertionRunner {
         if ("VIS-CTRL-002".equals(id)) {
             return assertInputValues(widget, scope, diagnostics);
         }
+        if ("VIS-CTRL-003".equals(id)) {
+            return assertTextareaCaret(widget, scope, diagnostics);
+        }
         if ("VIS-CTRL-004".equals(id)) {
             return assertChoiceControls(widget, scope, diagnostics);
+        }
+        if ("VIS-CTRL-005".equals(id)) {
+            return assertSelectTable(widget, scope, diagnostics);
         }
         if ("VIS-CTRL-006".equals(id)) {
             return assertSliderToggle(widget, scope, diagnostics);
@@ -85,16 +94,7 @@ final class UiTestControlsAssertionRunner {
     void diagnoseManual(HtmlLikeDocumentWidget widget, ElementNode scope, UiTestCaseSpec testCase,
             List<String> diagnostics) {
         ensureWidgetBounds(widget);
-        String id = testCase.getId();
-        if ("VIS-CTRL-003".equals(id)) {
-            diagnoseTextareaCaret(widget, scope, diagnostics);
-            return;
-        }
-        if ("VIS-CTRL-005".equals(id)) {
-            diagnoseSelectTable(widget, scope, diagnostics);
-            return;
-        }
-        diagnostics.add("未知 Controls 人工样例：" + id);
+        diagnostics.add("未知 Controls 人工样例：" + testCase.getId());
     }
 
     private boolean assertButtonStates(HtmlLikeDocumentWidget widget, ElementNode scope, List<String> diagnostics) {
@@ -146,23 +146,29 @@ final class UiTestControlsAssertionRunner {
                 && log.contains("number=-12.5E3");
     }
 
-    private void diagnoseTextareaCaret(HtmlLikeDocumentWidget widget, ElementNode scope, List<String> diagnostics) {
+    private boolean assertTextareaCaret(HtmlLikeDocumentWidget widget, ElementNode scope, List<String> diagnostics) {
         ElementNode textarea = findByRole(scope, "textarea-main");
         ElementNode logNode = findByRole(scope, "textarea-log");
         if (textarea == null || logNode == null) {
-            diagnostics.add("textarea 节点缺失，保持人工待确认。 ");
-            return;
+            diagnostics.add("textarea 节点缺失");
+            return false;
         }
         textarea.focus();
         widget.onKeyEvent(new UiKeyEvent(Keyboard.KEY_A, 0, 0, UiKeyEvent.Action.PRESSED, true, false, false,
                 false, 121L));
         widget.onTextInput(new UiTextInputEvent("Done\nNext", 122L));
         DocumentLayoutBox textareaBox = resolveBox(widget, textarea);
-        diagnostics.add("textareaLog=" + logNode.getTextContent());
-        diagnostics.add("textareaValue=" + textarea.getAttribute("value").replace('\n', '/'));
+        String value = textarea.getAttribute("value");
+        String log = logNode.getTextContent();
+        diagnostics.add("textareaLog=" + log);
+        diagnostics.add("textareaValue=" + value.replace('\n', '/'));
         diagnostics.add("textareaBox=w=" + textareaBox.getWidth() + ",h=" + textareaBox.getHeight()
                 + ",scrollTop=" + widget.getScrollTop(textarea) + ",maxScrollTop=" + widget.getMaxScrollTop(textarea));
-        diagnostics.add("textareaCaretDiff=selection/value 可机器诊断；黄色 caret、蓝色 selection 与滚动后的视觉位置需截图确认。 ");
+        diagnostics.add("textareaCaretDiff=expected Ctrl+A replacement value/log and stable textarea layout; visual caret/selection still needs screenshot confirmation.");
+        return "Done\nNext".equals(value)
+                && log.contains("textarea=Done/Next")
+                && textareaBox.getWidth() >= 260
+                && textareaBox.getHeight() >= 80;
     }
 
     private boolean assertChoiceControls(HtmlLikeDocumentWidget widget, ElementNode scope, List<String> diagnostics) {
@@ -195,26 +201,44 @@ final class UiTestControlsAssertionRunner {
                 && "true".equals(radioOptions.get(2).getAttribute("aria-checked"));
     }
 
-    private void diagnoseSelectTable(HtmlLikeDocumentWidget widget, ElementNode scope, List<String> diagnostics) {
+    private boolean assertSelectTable(HtmlLikeDocumentWidget widget, ElementNode scope, List<String> diagnostics) {
         ElementNode select = findByRole(scope, "select-main");
         ElementNode table = findByRole(scope, "select-table");
         ElementNode logNode = findByRole(scope, "select-log");
         if (select == null || table == null || logNode == null) {
-            diagnostics.add("select/table 节点缺失，保持人工待确认。 ");
-            return;
+            diagnostics.add("select/table 节点缺失");
+            return false;
         }
         clickElement(widget, select, 141L);
         ElementNode popup = findByAttribute(select, "role", "listbox");
         boolean popupTopLayer = popup != null && widget.getDocument().__isTopLayerElement(popup);
+        String expandedWhenOpen = select.getAttribute("aria-expanded");
+        ElementNode targetOption = findOptionByText(popup, "红石");
+        if (targetOption == null) {
+            diagnostics.add("select option 节点缺失");
+            return false;
+        }
+        clickElementDirect(targetOption, 142L);
         DocumentLayoutBox selectBox = resolveBox(widget, select);
         DocumentLayoutBox tableBox = resolveBox(widget, table);
         diagnostics.add("selectValue=" + select.getAttribute("value") + ", expanded="
                 + select.getAttribute("aria-expanded"));
+        diagnostics.add("selectExpandedWhenOpen=" + expandedWhenOpen);
         diagnostics.add("selectPopupTopLayer=" + popupTopLayer);
         diagnostics.add("selectLog=" + logNode.getTextContent());
+        diagnostics.add("selectTableText=" + table.getTextContent());
         diagnostics.add("selectBox=w=" + selectBox.getWidth() + ",h=" + selectBox.getHeight()
                 + "; tableBox=w=" + tableBox.getWidth() + ",h=" + tableBox.getHeight());
-        diagnostics.add("selectTableDiff=select value 与 table 布局可机器诊断；popup top-layer 位置、遮挡与选项命中需截图确认。 ");
+        diagnostics.add("selectTableDiff=expected top-layer popup, redstone option selection, table value sync and positive layout boxes; popup placement still needs screenshot confirmation.");
+        return popupTopLayer
+                && "true".equals(expandedWhenOpen)
+                && "红石".equals(select.getAttribute("value"))
+                && "false".equals(select.getAttribute("aria-expanded"))
+                && table.getTextContent().contains("红石")
+                && logNode.getTextContent().contains("select=红石:2")
+                && selectBox.getWidth() > 0
+                && tableBox.getWidth() > 0
+                && tableBox.getHeight() > 0;
     }
 
     private boolean assertSliderToggle(HtmlLikeDocumentWidget widget, ElementNode scope, List<String> diagnostics) {
@@ -280,6 +304,13 @@ final class UiTestControlsAssertionRunner {
                 timeNanos + 1L));
     }
 
+    private void clickElementDirect(ElementNode element, long timeNanos) {
+        if (element.getClickHandler() == null) {
+            throw new IllegalStateException("元素缺少 click handler: " + element.getTagName());
+        }
+        element.getClickHandler().onClick(new DocumentElementClickEvent(element, element, 0, 0, 0, timeNanos));
+    }
+
     private boolean attemptProgrammaticFocus(HtmlLikeDocumentWidget widget, ElementNode element) {
         return element.focus() && widget.getFocusedElement() == element;
     }
@@ -343,6 +374,24 @@ final class UiTestControlsAssertionRunner {
         for (DocumentNode child : current.getChildren()) {
             if (child instanceof ElementNode) {
                 ElementNode found = findByAttribute((ElementNode) child, name, value);
+                if (found != null) {
+                    return found;
+                }
+            }
+        }
+        return null;
+    }
+
+    private ElementNode findOptionByText(ElementNode current, String text) {
+        if (current == null || text == null) {
+            return null;
+        }
+        if ("option".equals(current.getTagName()) && text.equals(current.getTextContent())) {
+            return current;
+        }
+        for (DocumentNode child : current.getChildren()) {
+            if (child instanceof ElementNode) {
+                ElementNode found = findOptionByText((ElementNode) child, text);
                 if (found != null) {
                     return found;
                 }

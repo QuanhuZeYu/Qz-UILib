@@ -36,13 +36,13 @@ final class UiTestSemanticChecker {
             return "自动边界：布局盒尺寸、位置、margin collapse、flex/table 分配、scroll 范围；人工边界：inline-block baseline 需单独重构后自动。";
         }
         if ("PAINT".equals(code)) {
-            return "自动边界：stacking phase、clip 与 top-layer 注册；人工边界：transform 命中、scrollbar 几何/拖拽和 host image fallback 需截图确认。";
+            return "自动边界：stacking phase、clip、top-layer 注册与 scrollbar scroll range；人工边界：transform 命中、scrollbar track/thumb 几何/拖拽和 host image fallback 需截图确认。";
         }
         if ("INPUT".equals(code)) {
             return "自动边界：事件日志、传播顺序、默认行为、focus/focus-visible、wheel 滚动结果；人工边界：游戏内键鼠输入手感需人工确认。";
         }
         if ("CTRL".equals(code)) {
-            return "自动边界：value、checked、selection、caret、disabled、change 日志；人工边界：caret 可见性、overlay 位置和交互手感需人工确认。";
+            return "自动边界：value、checked、selection 替换、select top-layer、disabled、change 日志；人工边界：caret 可见性、overlay 位置和交互手感需人工确认。";
         }
         if ("TEXT".equals(code)) {
             return "自动边界：测量宽度、line-height、wrap/trim 摘要、字体 epoch；人工边界：fallback 观感和 obfuscated 可读性需截图确认。";

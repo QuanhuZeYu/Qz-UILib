@@ -96,6 +96,8 @@ final class UiTestAssertionRunner {
                 passed = assertPaintClip(documentWidget, scope, diagnostics);
             } else if ("VIS-PAINT-005".equals(testCase.getId())) {
                 passed = assertPaintTopLayer(documentWidget, scope, diagnostics);
+            } else if ("VIS-PAINT-006".equals(testCase.getId())) {
+                passed = assertPaintScrollbar(documentWidget, scope, diagnostics);
             } else if (inputAssertionRunner.isAutomatic(testCase.getId())) {
                 passed = inputAssertionRunner.runAutomatic(documentWidget, scope, testCase, diagnostics);
             } else if (controlsAssertionRunner.isAutomatic(testCase.getId())) {
@@ -113,8 +115,6 @@ final class UiTestAssertionRunner {
                     diagnoseLayoutInlineBlockBaseline(documentWidget, scope, diagnostics);
                 } else if ("VIS-PAINT-004".equals(testCase.getId())) {
                     diagnosePaintTransformHit(documentWidget, scope, diagnostics);
-                } else if ("VIS-PAINT-006".equals(testCase.getId())) {
-                    diagnosePaintScrollbar(documentWidget, scope, diagnostics);
                 } else if ("VIS-PAINT-007".equals(testCase.getId())) {
                     diagnosePaintHostImage(documentWidget, scope, diagnostics);
                 } else if (inputAssertionRunner.isManual(testCase.getId())) {
@@ -482,21 +482,30 @@ final class UiTestAssertionRunner {
         return registered;
     }
 
-    private void diagnosePaintScrollbar(HtmlLikeDocumentWidget widget, ElementNode scope, List<String> diagnostics) {
+    private boolean assertPaintScrollbar(HtmlLikeDocumentWidget widget, ElementNode scope, List<String> diagnostics) {
         ElementNode scroller = findByText(scope, "scroll item 0");
         if (scroller == null) {
-            diagnostics.add("scrollbar 节点缺失，保持人工待确认。");
-            return;
+            diagnostics.add("scrollbar 节点缺失");
+            return false;
         }
         ElementNode scrollContainer = scroller.getParent() instanceof ElementNode ? (ElementNode) scroller.getParent()
                 : scroller;
         DocumentLayoutBox scrollBox = resolveBox(widget, scrollContainer);
         ComputedStyle s = scrollBox.getComputedStyle();
+        int maxScrollTop = widget.getMaxScrollTop(scrollContainer);
+        int beforeScrollTop = widget.getScrollTop(scrollContainer);
+        int targetScrollTop = Math.min(maxScrollTop, 24);
+        boolean scrolled = targetScrollTop > 0 && scrollContainer.scrollTo(0, targetScrollTop);
+        int afterScrollTop = widget.getScrollTop(scrollContainer);
         diagnostics.add("scrollOverflow=" + s.getOverflowY());
-        diagnostics.add("scrollTop=" + widget.getScrollTop(scrollContainer)
-                + ", maxScrollTop=" + widget.getMaxScrollTop(scrollContainer));
+        diagnostics.add("scrollTopBefore=" + beforeScrollTop + ", scrollTopAfter=" + afterScrollTop
+                + ", maxScrollTop=" + maxScrollTop + ", scrolled=" + scrolled);
         appendElementDiagnostics(diagnostics, "scrollContainer", scrollBox);
-        diagnostics.add("scrollbarDiff=overflow 与 scroll range 可机器诊断；track/thumb 几何、拖拽和命中需截图人工确认。");
+        diagnostics.add("scrollbarDiff=expected overflow auto with positive scroll range and scrollTo changes offset; track/thumb geometry and drag hit still need screenshot confirmation.");
+        return s.getOverflowY() == UiOverflow.AUTO
+                && maxScrollTop > 0
+                && scrolled
+                && afterScrollTop > beforeScrollTop;
     }
 
     private void diagnosePaintHostImage(HtmlLikeDocumentWidget widget, ElementNode scope, List<String> diagnostics) {

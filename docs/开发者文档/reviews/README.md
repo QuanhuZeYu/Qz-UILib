@@ -14,7 +14,7 @@
 ## 2026-06-06-ui-test-visual-assertions
 - 类型：`/qzuilib test` 视觉样例断言代码审查与修复复核
 - 详情文档：[REVIEW-20260606-ui-test-visual-assertions.md](REVIEW-20260606-ui-test-visual-assertions.md)
-- 结论摘要：审查最新 CSS / Layout / Paint 视觉样例批次，发现 CSS 继承、overflow、block flow margin collapse、top-layer、scrollbar 与 host image fallback 多处样例/断言边界不一致。已修复可机器验证项，并将 scrollbar 几何/拖拽与 host image fallback 调整为人工待确认诊断，避免仅凭声明误报自动通过；新增目标测试覆盖关键断言路径。
+- 结论摘要：审查最新 CSS / Layout / Paint 视觉样例批次，发现 CSS 继承、overflow、block flow margin collapse、top-layer、scrollbar 与 host image fallback 多处样例/断言边界不一致。已修复可机器验证项；后续已将 scrollbar 的 overflow、scroll range 与 scrollTo 偏移升级为自动断言，track/thumb 几何与拖拽仍保留人工观察边界；host image fallback 仍为人工待确认诊断。
 
 ## 2026-06-01-capability-gap-recheck
 - 类型：浏览器能力缺口复核（取代 2026-05-18 结论）
