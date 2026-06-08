@@ -3,7 +3,6 @@ package club.heiqi.uilib.ui.layout;
 import java.util.List;
 import java.util.Objects;
 
-import club.heiqi.uilib.ui.animation.DocumentAnimationProperty;
 import club.heiqi.uilib.ui.animation.DocumentAnimationTimeline;
 import club.heiqi.uilib.ui.dom.ElementNode;
 import club.heiqi.uilib.ui.layout.DocumentVisualTraversal.BoxContext;
@@ -125,8 +124,8 @@ public final class DocumentHitTestEngine {
         }
         int boxOffsetX = boxContext.getBoxOffsetX();
         int boxOffsetY = boxContext.getBoxOffsetY();
-        UiTransform.Point inversePoint = inverseTransformPoint(box, boxOffsetX, boxOffsetY, documentX, documentY,
-                currentTimeNanos, animationTimeline);
+        UiTransform.Point inversePoint = DocumentVisualHitTransforms.inverseTransformPoint(box, boxOffsetX,
+                boxOffsetY, documentX, documentY, currentTimeNanos, animationTimeline);
         if (inversePoint == null) {
             return null;
         }
@@ -366,40 +365,6 @@ public final class DocumentHitTestEngine {
         double dx = x - cx;
         double dy = y - cy;
         return dx * dx + dy * dy < (double) r * r;
-    }
-
-    private static UiTransform.Point inverseTransformPoint(DocumentLayoutBox box, int boxOffsetX, int boxOffsetY,
-            float documentX, float documentY, long currentTimeNanos, DocumentAnimationTimeline animationTimeline) {
-        UiTransform transform = resolveTransform(box, currentTimeNanos, animationTimeline);
-        if (transform == null || transform.isIdentity()) {
-            return new UiTransform.Point(documentX, documentY);
-        }
-        return transform.inverseTransformPoint(documentX, documentY, box.getLeft() + boxOffsetX,
-                box.getTop() + boxOffsetY, box.getWidth(), box.getHeight());
-    }
-
-    private static UiTransform resolveTransform(DocumentLayoutBox box, long currentTimeNanos,
-            DocumentAnimationTimeline animationTimeline) {
-        UiTransform baseTransform = box.getComputedStyle().getTransform();
-        if (baseTransform == null) {
-            baseTransform = UiTransform.identity();
-        }
-        if (animationTimeline == null) {
-            return baseTransform;
-        }
-        ElementNode element = box.getElement();
-        float translateX = animationTimeline.resolveFloat(element, DocumentAnimationProperty.TRANSLATE_X,
-                baseTransform.getTranslateX(), currentTimeNanos);
-        float translateY = animationTimeline.resolveFloat(element, DocumentAnimationProperty.TRANSLATE_Y,
-                baseTransform.getTranslateY(), currentTimeNanos);
-        float scaleX = animationTimeline.resolveFloat(element, DocumentAnimationProperty.SCALE_X,
-                baseTransform.getScaleX(), currentTimeNanos);
-        float scaleY = animationTimeline.resolveFloat(element, DocumentAnimationProperty.SCALE_Y,
-                baseTransform.getScaleY(), currentTimeNanos);
-        float rotate = animationTimeline.resolveFloat(element, DocumentAnimationProperty.ROTATE,
-                baseTransform.getRotateDegrees(), currentTimeNanos);
-        return UiTransform.of(translateX, translateY, scaleX, scaleY, rotate,
-                baseTransform.getOriginX(), baseTransform.getOriginY());
     }
 
     /**

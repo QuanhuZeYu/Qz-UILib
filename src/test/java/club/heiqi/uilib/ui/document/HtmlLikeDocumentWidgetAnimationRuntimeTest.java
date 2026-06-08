@@ -26,6 +26,8 @@ import club.heiqi.uilib.ui.dom.DocumentElementClickEvent;
 import club.heiqi.uilib.ui.dom.DocumentElementClickHandler;
 import club.heiqi.uilib.ui.dom.DocumentElementTransitionEndEvent;
 import club.heiqi.uilib.ui.dom.DocumentElementTransitionEndHandler;
+import club.heiqi.uilib.ui.dom.DocumentElementTransitionCancelEvent;
+import club.heiqi.uilib.ui.dom.DocumentElementTransitionCancelHandler;
 import club.heiqi.uilib.ui.dom.DocumentNode;
 import club.heiqi.uilib.ui.dom.ElementNode;
 import club.heiqi.uilib.ui.dom.TextNode;
@@ -136,6 +138,49 @@ public class HtmlLikeDocumentWidgetAnimationRuntimeTest {
         widget.render(new RecordingUiRenderContext());
         Assert.assertEquals(finishedGeneration, widget.getPaintCacheGenerationForDiagnostics());
         Assert.assertEquals(initialMeasureCount, textMeasureService.getMeasureCount());
+    }
+
+    /**
+     * 验证 display:none 中断运行中 transition 时会派发 transitioncancel。
+     */
+    @Test
+    public void shouldDispatchTransitionCancelWhenDisplayNoneInterruptsRunningTransition() {
+        UiDocument document = UiDocument.create();
+        ElementNode root = document.getRootElement();
+        ElementNode animated = document.div();
+        final List<DocumentAnimationProperty> cancelledProperties = new ArrayList<DocumentAnimationProperty>();
+        root.style().setWidth(UiStyleLength.px(80));
+        animated.style()
+                .setWidth(UiStyleLength.px(40))
+                .setHeight(UiStyleLength.px(20))
+                .setOpacity(1.0F)
+                .setTransition(DocumentAnimationProperty.OPACITY, 1000L);
+        animated.setTransitionCancelHandler(new DocumentElementTransitionCancelHandler() {
+            @Override
+            public boolean onTransitionCancel(DocumentElementTransitionCancelEvent event) {
+                cancelledProperties.add(event.getProperty());
+                return false;
+            }
+        });
+        root.append(animated);
+        ManualAnimationClock animationClock = new ManualAnimationClock();
+        HtmlLikeDocumentWidget widget = new HtmlLikeDocumentWidget(document, 80, 40,
+                new DeterministicTextMeasureService());
+        widget.setAnimationClock(animationClock);
+        widget.applyLayoutBounds(0, 0, 80, 40);
+
+        widget.render(new RecordingUiRenderContext());
+        animated.style().setOpacity(0.0F);
+        widget.render(new RecordingUiRenderContext());
+        Assert.assertEquals(1, widget.getActiveAnimationCount());
+
+        animationClock.setCurrentTimeNanos(500_000_000L);
+        animated.style().setDisplay(UiDisplay.NONE);
+        widget.render(new RecordingUiRenderContext());
+
+        Assert.assertEquals(0, widget.getActiveAnimationCount());
+        Assert.assertEquals(1, cancelledProperties.size());
+        Assert.assertEquals(DocumentAnimationProperty.OPACITY, cancelledProperties.get(0));
     }
 
     /**

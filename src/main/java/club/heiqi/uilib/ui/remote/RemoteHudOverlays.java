@@ -268,6 +268,38 @@ public final class RemoteHudOverlays {
         return false;
     }
 
+    /**
+     * 精确关闭指定 session 所属 HUD 浮层。
+     *
+     * <p>仅当当前 overlayId 仍映射到该 session 时才会关闭，适合提交事件等延迟对象使用。</p>
+     *
+     * @param player 目标玩家
+     * @param overlayId 浮层业务标识
+     * @param sessionId 待关闭 session
+     * @return 是否找到并关闭了当前活动会话
+     */
+    public static boolean dismissSession(Object player, String overlayId, String sessionId) {
+        ensureRegistered();
+        if (player == null || RemoteHtmlSessionGateway.isBlank(overlayId)
+                || RemoteHtmlSessionGateway.isBlank(sessionId)) {
+            return false;
+        }
+        OverlayKey key = OverlayKey.of(player, overlayId);
+        if (!ACTIVE_SESSION_IDS_BY_OVERLAY_KEY.remove(key, sessionId)) {
+            return false;
+        }
+        RemoteHtmlSessionGateway.RemoteHtmlSession<HudSession> session = SERVER_SESSIONS.removeSession(sessionId);
+        if (session == null) {
+            return false;
+        }
+        DismissPayload payload = new DismissPayload();
+        payload.sessionId = sessionId;
+        payload.overlayId = overlayId;
+        payload.reason = "server-dismiss";
+        contextSendDismissToClient(player, payload);
+        return true;
+    }
+
     static NetStreamCall callOverlayStream(String sessionId) {
         ensureRegistered();
         return SERVER_SESSIONS.callStream(streamEndpoint, sessionId);

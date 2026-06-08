@@ -123,6 +123,45 @@ public final class UiDocumentScreens {
     }
 
     /**
+     * 文档页面宿主生命周期回调。
+     */
+    public interface DocumentScreenLifecycle {
+
+        /**
+         * 文档页面关闭时调用。
+         */
+        void onClosed();
+    }
+
+    /**
+     * 带可选生命周期回调的文档页面 provision。
+     */
+    public static final class DocumentScreenProvision {
+
+        private final DocumentScreenContentBuilder contentBuilder;
+        private final DocumentScreenLifecycle lifecycle;
+
+        private DocumentScreenProvision(DocumentScreenContentBuilder contentBuilder,
+                DocumentScreenLifecycle lifecycle) {
+            this.contentBuilder = Objects.requireNonNull(contentBuilder, "contentBuilder");
+            this.lifecycle = lifecycle;
+        }
+
+        public static DocumentScreenProvision of(DocumentScreenContentBuilder contentBuilder,
+                DocumentScreenLifecycle lifecycle) {
+            return new DocumentScreenProvision(contentBuilder, lifecycle);
+        }
+
+        public DocumentScreenContentBuilder getContentBuilder() {
+            return contentBuilder;
+        }
+
+        public DocumentScreenLifecycle getLifecycle() {
+            return lifecycle;
+        }
+    }
+
+    /**
      * 创建由调用方填充 `UiDocument` 的业务文档界面。
      *
      * <p>该入口用于 Minecraft 宿主层快速打开 HTML-like UI，调用方无需接触内部页面控制器、
@@ -145,8 +184,20 @@ public final class UiDocumentScreens {
      */
     public static GuiScreen createDocumentScreen(DocumentScreenEnvironment environment,
             DocumentScreenContentBuilder contentBuilder) {
+        return createDocumentScreen(environment, DocumentScreenProvision.of(contentBuilder, null));
+    }
+
+    /**
+     * 基于显式文档环境和生命周期 provision 创建业务文档界面。
+     *
+     * @param environment 文档页面创建环境
+     * @param provision 页面内容与生命周期 provision
+     * @return 文档型界面
+     */
+    public static GuiScreen createDocumentScreen(DocumentScreenEnvironment environment,
+            DocumentScreenProvision provision) {
         return InternalHostedScreenFactory.createScreen(InternalHostedScreenFactory.DOCUMENT_SCREEN_DEFINITION,
                 Objects.requireNonNull(environment, "environment"),
-                Objects.requireNonNull(contentBuilder, "contentBuilder"));
+                Objects.requireNonNull(provision, "provision"));
     }
 }

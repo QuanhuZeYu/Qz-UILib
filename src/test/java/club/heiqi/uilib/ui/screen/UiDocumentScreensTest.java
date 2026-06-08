@@ -154,7 +154,7 @@ public class UiDocumentScreensTest {
         DocumentPageController controller = InternalHostedScreenFactory.DOCUMENT_SCREEN_DEFINITION.createController(
                 documentUiScope, surface, EmptyRuntimeView.INSTANCE,
                 InternalHostedScreenFactory.DOCUMENT_SCREEN.getPageId(),
-                new UiDocumentScreens.DocumentScreenContentBuilder() {
+                UiDocumentScreens.DocumentScreenProvision.of(new UiDocumentScreens.DocumentScreenContentBuilder() {
             @Override
             public void build(UiDocument document) {
                 called[0] = true;
@@ -166,7 +166,7 @@ public class UiDocumentScreensTest {
                 title.appendText("业务页面");
                 root.append(title);
             }
-        });
+        }, null));
 
         controller.configureDocumentPage();
         controller.buildDocument();
@@ -190,7 +190,7 @@ public class UiDocumentScreensTest {
         DocumentPageController controller = InternalHostedScreenFactory.DOCUMENT_SCREEN_DEFINITION.createController(
                 documentUiScope, surface, EmptyRuntimeView.INSTANCE,
                 InternalHostedScreenFactory.DOCUMENT_SCREEN.getPageId(),
-                new UiDocumentScreens.DocumentScreenContentBuilder() {
+                UiDocumentScreens.DocumentScreenProvision.of(new UiDocumentScreens.DocumentScreenContentBuilder() {
                     @Override
                     public void build(UiDocument document) {
                         builtDocument[0] = document;
@@ -198,7 +198,7 @@ public class UiDocumentScreensTest {
                         title.appendText("业务页面");
                         document.getRootElement().append(title);
                     }
-                });
+                }, null));
 
         controller.buildDocument();
 
@@ -221,7 +221,7 @@ public class UiDocumentScreensTest {
         DocumentPageController controller = InternalHostedScreenFactory.DOCUMENT_SCREEN_DEFINITION.createController(
                 documentUiScope, surface, EmptyRuntimeView.INSTANCE,
                 InternalHostedScreenFactory.DOCUMENT_SCREEN.getPageId(),
-                new UiDocumentScreens.DocumentScreenContentBuilder() {
+                UiDocumentScreens.DocumentScreenProvision.of(new UiDocumentScreens.DocumentScreenContentBuilder() {
                     @Override
                     public void build(UiDocument document) {
                         builtDocument[0] = document;
@@ -231,7 +231,7 @@ public class UiDocumentScreensTest {
                                 .setHeight(UiStyleLength.px(360))
                                 .setOverflowY(UiOverflow.HIDDEN);
                     }
-                });
+                }, null));
 
         controller.buildDocument();
 

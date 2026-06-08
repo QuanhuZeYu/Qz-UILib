@@ -660,7 +660,7 @@ public final class HtmlLikeDocumentWidget extends Widget implements UiDocument.D
         int previousScrollVersion = scrollState.getVersion();
         boolean scrolled = scrollState.handleWheel(rootBox, resolveTopLayerLayoutBoxes(rootBox, null),
                 event.getMouseX() - getAbsoluteX(), event.getMouseY() - getAbsoluteY(), event.getWheelDelta(),
-                event.getTimeNanos());
+                event.getTimeNanos(), animationClock.getCurrentTimeNanos(), animationTimeline);
         boolean consumed = scrolled || dispatchResult.isPropagationStopped();
         lastScrollConsumed = consumed;
         if (scrollState.getVersion() != previousScrollVersion) {
@@ -679,8 +679,8 @@ public final class HtmlLikeDocumentWidget extends Widget implements UiDocument.D
         recordLatestPointer(event);
         DocumentLayoutBox rootBox = resolveInteractiveLayoutBox();
         if (event.getButton() == 0 && scrollState.beginScrollbarDrag(rootBox, resolveTopLayerLayoutBoxes(rootBox,
-                null),
-                event.getMouseX() - getAbsoluteX(), event.getMouseY() - getAbsoluteY(), event.getTimeNanos())) {
+                null), event.getMouseX() - getAbsoluteX(), event.getMouseY() - getAbsoluteY(), event.getTimeNanos(),
+                animationClock.getCurrentTimeNanos(), animationTimeline)) {
             pressedElement = null;
             pressedButton = -1;
             dragController.clearDragState();
@@ -707,7 +707,8 @@ public final class HtmlLikeDocumentWidget extends Widget implements UiDocument.D
         if (scrollState.isDraggingScrollbar()) {
             DocumentLayoutBox rootBox = resolveInteractiveLayoutBox();
             scrollState.updateScrollbarDrag(rootBox, resolveTopLayerLayoutBoxes(rootBox, null),
-                    event.getMouseX() - getAbsoluteX(), event.getMouseY() - getAbsoluteY(), event.getTimeNanos());
+                    event.getMouseX() - getAbsoluteX(), event.getMouseY() - getAbsoluteY(), event.getTimeNanos(),
+                    animationClock.getCurrentTimeNanos(), animationTimeline);
         }
         dragController.dispatchDragMove(event);
         updateHoveredElement(findElementAt(event.getMouseX(), event.getMouseY()), event);

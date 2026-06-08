@@ -73,13 +73,14 @@ RemoteHudOverlays.open(player, RemoteHudOverlay.dialog("rename-hud", page).build
 ```
 
 `RemoteHudSubmitEvent` 会提供 `player`、`sessionId`、`overlayId`、`pageId`、`action`、`formId`
-和 `Map<String, List<String>> values`。`reply(...)` 可继续打开 HUD 浮层，`dismiss()` 会关闭当前浮层。
+和 `Map<String, List<String>> values`。`reply(...)` 可继续打开 HUD 浮层，`dismiss()` 会按事件自身 `sessionId` 精确关闭当前浮层。
 
 ## Session 生命周期
 
 远程 HUD 复用远程页面的服务端 HTML session，默认有效期为 10 分钟，并同时覆盖 HTML 拉取和后续表单提交。
 session 过期后服务端会向客户端发送带 `sessionId` 的关闭通知，只关闭对应 session 的 HUD；只有无 session 的强制关闭才按 `overlayId` 回退。
 如果同一个 `overlayId` 被重新打开，旧 session 迟到的关闭或过期通知不会关闭新的 HUD。
+服务端回调或其他持有 session 的延迟对象应使用 `RemoteHudOverlays.dismissSession(player, overlayId, sessionId)` 或 `RemoteHudSubmitEvent.dismiss()`；显式管理入口 `RemoteHudOverlays.dismiss(player, overlayId)` 仍表示强制关闭当前 `overlayId` 对应浮层。
 
 ## 资源与安全边界
 

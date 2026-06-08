@@ -35,6 +35,7 @@ import club.heiqi.uilib.ui.style.props.UiOverflow;
 import club.heiqi.uilib.ui.style.props.UiPosition;
 import club.heiqi.uilib.ui.style.props.UiVisibility;
 import club.heiqi.uilib.ui.style.values.UiStyleLength;
+import club.heiqi.uilib.ui.style.values.UiTransform;
 
 /**
  * `HtmlLikeDocumentWidget` 的滚动语义回归测试。
@@ -77,6 +78,40 @@ public class HtmlLikeDocumentWidgetScrollTest {
         assertDrawCall(scrolledRenderContext.drawCalls.get(0), 5, -29, 85, 51, 0xFFAA5500, 0, 0);
         assertDrawCall(scrolledRenderContext.drawCalls.get(1), 77, 9, 83, 25, 0x663B4A66, 0, 3);
         assertDrawCall(scrolledRenderContext.drawCalls.get(2), 77, 9, 83, 25, 0xDDBCD7FF, 0, 3);
+    }
+
+    /**
+     * 验证 transform 后的滚动容器只在视觉位置响应滚轮。
+     */
+    @Test
+    public void shouldScrollTransformedOverflowAutoContentAtVisualPosition() {
+        UiDocument document = UiDocument.create();
+        ElementNode root = document.getRootElement();
+        ElementNode scroller = document.div();
+        ElementNode child = document.div();
+        root.style()
+                .setWidth(UiStyleLength.px(140))
+                .setHeight(UiStyleLength.px(40));
+        scroller.style()
+                .setWidth(UiStyleLength.px(80))
+                .setHeight(UiStyleLength.px(20))
+                .setOverflowX(UiOverflow.HIDDEN)
+                .setOverflowY(UiOverflow.AUTO)
+                .setTransform(UiTransform.translate(40, 0));
+        child.style().setHeight(UiStyleLength.px(80));
+        scroller.append(child);
+        root.append(scroller);
+        HtmlLikeDocumentWidget widget = new HtmlLikeDocumentWidget(document, 140, 40,
+                new DeterministicTextMeasureService());
+        widget.applyLayoutBounds(0, 0, 140, 40);
+        Assert.assertTrue(widget.getMaxScrollTop(scroller) > 0);
+
+        Assert.assertFalse(widget.onMouseScroll(new UiMouseEvent(UiMouseEvent.Action.SCROLL, 10, 10, -1, -120, 0,
+                0, 1L)));
+        Assert.assertEquals(0, widget.getScrollTop(scroller));
+        Assert.assertTrue(widget.onMouseScroll(new UiMouseEvent(UiMouseEvent.Action.SCROLL, 50, 10, -1, -120, 0,
+                0, 2L)));
+        Assert.assertTrue(widget.getScrollTop(scroller) > 0);
     }
 
     /**

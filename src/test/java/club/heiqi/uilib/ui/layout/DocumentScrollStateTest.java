@@ -204,6 +204,75 @@ public class DocumentScrollStateTest {
     }
 
     /**
+     * 验证 transform 后滚动容器按视觉位置响应滚轮，旧布局位置不会误滚。
+     */
+    @Test
+    public void shouldScrollTransformedScrollerAtVisualPositionOnly() {
+        UiDocument document = UiDocument.create();
+        ElementNode root = document.getRootElement();
+        ElementNode scroller = document.div();
+        ElementNode content = document.div();
+
+        root.style().setWidth(UiStyleLength.px(160)).setHeight(UiStyleLength.px(120));
+        scroller.style()
+                .setWidth(UiStyleLength.px(70))
+                .setHeight(UiStyleLength.px(60))
+                .setOverflowX(UiOverflow.HIDDEN)
+                .setOverflowY(UiOverflow.AUTO);
+        scroller.style().setTransform(UiTransform.translate(40, 0));
+        content.style().setHeight(UiStyleLength.px(240));
+        scroller.append(content);
+        root.append(scroller);
+
+        DocumentLayoutBox rootBox = DocumentLayoutEngine.layout(root, 160, 120);
+        DocumentScrollState scrollState = new DocumentScrollState();
+
+        Assert.assertFalse(scrollState.handleWheel(rootBox, 10, 10, -120, 1L));
+        Assert.assertEquals(0, scrollState.getScrollTop(scroller));
+        Assert.assertTrue(scrollState.handleWheel(rootBox, 50, 10, -120, 2L));
+        Assert.assertTrue(scrollState.getScrollTop(scroller) > 0);
+    }
+
+    /**
+     * 验证 transform 后滚动条轨道按视觉位置命中。
+     */
+    @Test
+    public void shouldHitTransformedScrollbarTrackAtVisualPositionOnly() {
+        UiDocument document = UiDocument.create();
+        ElementNode root = document.getRootElement();
+        ElementNode scroller = document.div();
+        ElementNode content = document.div();
+
+        root.style().setWidth(UiStyleLength.px(160)).setHeight(UiStyleLength.px(120));
+        scroller.style()
+                .setWidth(UiStyleLength.px(70))
+                .setHeight(UiStyleLength.px(60))
+                .setOverflowX(UiOverflow.HIDDEN)
+                .setOverflowY(UiOverflow.AUTO);
+        scroller.style().setTransform(UiTransform.translate(40, 0));
+        content.style().setHeight(UiStyleLength.px(240));
+        scroller.append(content);
+        root.append(scroller);
+
+        DocumentLayoutBox rootBox = DocumentLayoutEngine.layout(root, 160, 120);
+        DocumentLayoutBox scrollerBox = rootBox.getChildren().get(0);
+        DocumentScrollState scrollState = new DocumentScrollState();
+        scrollState.updateFromLayout(rootBox);
+        DocumentScrollState.ScrollbarMetrics metrics = scrollState.getVerticalScrollbarMetrics(scrollerBox, 0, 0,
+                false);
+        Assert.assertNotNull(metrics);
+
+        Assert.assertTrue(scrollState.handleWheel(rootBox, metrics.getTrackLeft() + 41, 10, -120, 1L));
+        Assert.assertTrue(scrollState.setScrollOffset(scroller, 0, 0));
+        Assert.assertFalse(scrollState.beginScrollbarDrag(rootBox, metrics.getTrackLeft() + 1,
+                metrics.getTrackBottom() - 2, 2L));
+        Assert.assertEquals(0, scrollState.getScrollTop(scroller));
+        Assert.assertTrue(scrollState.beginScrollbarDrag(rootBox, metrics.getTrackLeft() + 41,
+                metrics.getTrackBottom() - 2, 3L));
+        Assert.assertTrue(scrollState.getScrollTop(scroller) > 0);
+    }
+
+    /**
      * 验证共享场景滚轮命中会优先命中后注册的 top-layer 滚动容器。
      */
     @Test

@@ -39,4 +39,10 @@ public abstract class DocumentPageController {
      */
     public void beforeDocumentFrame() {
     }
+
+    /**
+     * 在文档宿主界面关闭时释放页面状态。
+     */
+    public void onDocumentClosed() {
+    }
 }

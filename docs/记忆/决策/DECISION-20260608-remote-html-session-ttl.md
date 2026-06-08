@@ -25,8 +25,11 @@
 - `RemoteDocumentPages` 新增客户端失效通知通道 `remote_page_expired`。
 - `RemoteHudOverlays` 在过期清理时发送 session-scoped dismiss。
 - `RemoteHudOverlayClientBridge` 与服务端 dismiss 路径均要求非空 `sessionId` 只作用于同 session，只有空 session 才允许按 `overlayId` 强制回退。
+- `RemoteHudSubmitEvent.dismiss()` 属于延迟事件对象，必须走 session 精确关闭；`RemoteHudOverlays.dismiss(player, overlayId)` 保留强制关闭当前 overlay 的管理语义，新增 `dismissSession(player, overlayId, sessionId)` 供持有 session 的延迟逻辑使用。
+- 远程页面客户端 screen 必须绑定 session/generation close lifecycle：用户手动关闭当前远程页面后，旧 session 失效通知不再重新打开错误页；服务端刷新页面期间的旧 screen 关闭回调不得误清新 session。
 
 ## 后续注意事项
 
 - 若未来需要长驻远程 UI，应新增明确的 keepalive/renew 或交互 session 协议，而不是隐式延长 HTML stream session。
 - 任何新增远程关闭/失效协议都应保持“非空 session 精确匹配，空 session 才允许强制 overlay/page 回退”的边界。
+- 新增远程页面 screen seam 时优先保持 `UiDocumentScreens.createDocumentScreen(builder)` 入口可用，只在需要 close lifecycle 的链路使用 provision overload，避免把远程 session 细节扩散到普通业务页面作者侧。
