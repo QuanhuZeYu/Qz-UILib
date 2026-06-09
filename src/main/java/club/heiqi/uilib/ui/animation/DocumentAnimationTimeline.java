@@ -470,6 +470,22 @@ public final class DocumentAnimationTimeline {
     }
 
     /**
+     * 返回当前是否有指定属性的动画工作。
+     *
+     * @param property 动画属性
+     * @return 是否存在对应动画
+     */
+    public boolean hasAnimationWork(DocumentAnimationProperty property) {
+        Objects.requireNonNull(property, "property");
+        for (DocumentAnimationRuntimeState state : states.values()) {
+            if (state.hasAnimationWork(property)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
      * 返回当前是否有指定影响范围的运行态覆盖值。
      *
      * <p>与 `hasAnimationWork(...)` 不同，forwards fill 这类已完成但仍覆盖 computed style 的运行值也会返回 true。</p>
@@ -481,6 +497,24 @@ public final class DocumentAnimationTimeline {
         Objects.requireNonNull(impact, "impact");
         for (DocumentAnimationRuntimeState state : states.values()) {
             if (state.hasRuntimeValue(impact)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * 返回当前是否有指定属性的运行态覆盖值。
+     *
+     * <p>与 `hasAnimationWork(...)` 不同，forwards fill 这类已完成但仍覆盖 computed style 的运行值也会返回 true。</p>
+     *
+     * @param property 动画属性
+     * @return 是否存在对应运行态覆盖值
+     */
+    public boolean hasRuntimeValue(DocumentAnimationProperty property) {
+        Objects.requireNonNull(property, "property");
+        for (DocumentAnimationRuntimeState state : states.values()) {
+            if (state.hasRuntimeValue(property)) {
                 return true;
             }
         }

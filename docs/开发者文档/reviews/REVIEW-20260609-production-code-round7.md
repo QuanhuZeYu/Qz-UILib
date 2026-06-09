@@ -12,6 +12,7 @@
 - P1：运行态 transform 已参与 paint / hit-test，但 layout、fixed containing block、clip chain 与 scroll metrics 仍只看静态 computed transform，导致 transform 动画中 fixed 后代位置、裁剪和命中可能分叉。
 - P2：默认滚动和滚动条命中路径未复用 hit-test suppression / `pointer-events:none` 口径，passthrough 或 pointer-events none 的 scrollable overlay 仍可能吃掉 wheel 或滚动条拖拽。
 - remote UI session 本轮未形成新 finding：固定 10 分钟 TTL、不做隐式续期已是当前文档与决策口径；未来长驻 UI 需要单独 keepalive/renew 协议。
+- 后续复核（2026-06-09）：2 个 findings 已完成修复。运行态 transform 现在统一参与 fixed containing block、clip、hit-test、paint 与 scroll metrics 口径；默认滚动和滚动条拖拽已复用 hit-test suppression / `pointer-events:none` 命中语义。
 
 ## Findings
 
@@ -28,6 +29,7 @@
 - 可复现路径：创建 `overflow:hidden` 容器，内含 `position:fixed` 子元素；容器初始 `transform:translateX(40px)` 并声明 `transition: translate-x 1000ms`；首帧后把 transform 改为 identity；在 500ms 渲染或命中。预期 fixed 子元素仍相对运行态 transform 祖先并受容器 clip 约束；当前风险是它按 viewport fixed 参与 layout / visual traversal。
 - 建议修复方向：不要只把 runtime transform 作为 paint-only 几何。至少在视觉遍历、命中、滚动范围和含 fixed 后代的 layout runtime 路径中统一使用“运行态 transform 是否建立 fixed containing block”的判定；同时评估含 fixed 后代的 transform 动画是否需要 runtime layout cache 失效或专门的 runtime visual context。
 - 建议测试：补 `DocumentVisualTraversalTest`、`DocumentHitTestEngineTest`、`DocumentScrollStateTest` 或 `HtmlLikeDocumentWidgetAnimationRuntimeTest`，覆盖 runtime transform ancestor + fixed descendant + overflow hidden 的中间帧位置、clip、命中和 scroll range。
+- 后续复核（2026-06-09）：已修复。新增 `DocumentRuntimeTransforms` 统一解析运行态 transform，`DocumentLayoutEngine` 支持按运行态 transform 判定 fixed containing block，`DocumentVisualTraversal` / `DocumentPaintEngine` / `DocumentHitTestEngine` / `DocumentScrollMetricsCalculator` / `DocumentScrollState` 使用同一运行态 visual scene 与 scroll metrics 口径；`HtmlLikeDocumentWidget` 在存在 transform runtime value 时走 runtime layout，避免 fixed 后代布局与 paint-only transform 分叉。
 
 ### P2：默认滚动和滚动条拖拽未尊重 hit-test passthrough / pointer-events:none
 
@@ -42,6 +44,7 @@
 - 可复现路径：在同一文档或 HUD mountRoot 内放置底层 scroller；其上叠一个高 z-index、`overflow:auto` 且有内容溢出的 overlay，并设置 `data-hit-test-passthrough="true"` 或 `pointer-events:none`；鼠标位于 overlay 视觉区域滚轮或点滚动条。预期滚动底层或不消费；当前风险是滚动 / 拖拽 overlay。
 - 建议修复方向：`DocumentScrollState` 的 wheel / scrollbar hit 路径应复用 `DocumentHitTestEngine` 的 suppression / pointer-events 口径，或抽公共可见命中策略，确保默认滚动目标与作者可交互命中目标一致。
 - 建议测试：补 `DocumentScrollStateTest` 与 `HtmlLikeDocumentWidgetScrollTest`，覆盖 passthrough、hidden、pointer-events none overlay 不应成为默认滚动目标，也不应被 `beginScrollbarDrag()` 捕获。
+- 后续复核（2026-06-09）：已修复。`DocumentScrollState` 的默认 wheel 目标选择和 scrollbar hit-drag 会跳过 `data-hit-test-hidden`、`data-hit-test-passthrough` 与 `pointer-events:none` 节点，widget 级 wheel / scrollbar 行为与 `DocumentHitTestEngine` 的作者命中语义保持一致。
 
 ## 补查未形成 finding 的范围
 
@@ -50,5 +53,11 @@
 
 ## 验证
 
-- 本轮为只读审查，未修改生产代码，未运行 Gradle 测试。
-- 建议修复后至少执行：`DocumentVisualTraversalTest`、`DocumentHitTestEngineTest`、`DocumentScrollStateTest`、`HtmlLikeDocumentWidgetScrollTest`、`HtmlLikeDocumentWidgetAnimationRuntimeTest`、`compileJava`。
+- 原审查阶段为只读审查，未修改生产代码，未运行 Gradle 测试。
+- 后续修复验证（2026-06-09）已通过：`./gradlew.bat --no-configuration-cache test --tests "club.heiqi.uilib.ui.layout.DocumentVisualTraversalTest"`。
+- 后续修复验证（2026-06-09）已通过：`./gradlew.bat --no-configuration-cache test --tests "club.heiqi.uilib.ui.layout.DocumentHitTestEngineTest"`。
+- 后续修复验证（2026-06-09）已通过：`./gradlew.bat --no-configuration-cache test --tests "club.heiqi.uilib.ui.layout.DocumentScrollStateTest"`。
+- 后续修复验证（2026-06-09）已通过：`./gradlew.bat --no-configuration-cache test --tests "club.heiqi.uilib.ui.document.HtmlLikeDocumentWidgetScrollTest"`。
+- 后续修复验证（2026-06-09）已通过：`./gradlew.bat --no-configuration-cache test --tests "club.heiqi.uilib.ui.document.HtmlLikeDocumentWidgetAnimationRuntimeTest"`。
+- 后续修复验证（2026-06-09）已通过：`./gradlew.bat --no-configuration-cache compileJava`。
+- 后续修复验证（2026-06-09）已通过：`git diff --check`。

@@ -143,7 +143,8 @@ public final class DocumentPaintEngine {
         Objects.requireNonNull(rootBox, "rootBox");
         List<DocumentPaintCommand> commands = new ArrayList<DocumentPaintCommand>();
         StackingContextResolver resolver = createPaintStackingContextResolver(currentTimeNanos, animationTimeline);
-        VisualScene scene = DocumentVisualTraversal.resolveVisualScene(rootBox, topLayerBoxes, scrollState);
+        VisualScene scene = DocumentVisualTraversal.resolveVisualScene(rootBox, topLayerBoxes, scrollState,
+                currentTimeNanos, animationTimeline);
         for (RootEntry rootEntry : scene.getRootEntries()) {
             appendBoxCommands(rootEntry.getRootBox(), rootEntry.getRootContext(), commands, scrollState,
                     animationTimeline, currentTimeNanos, 1.0F, true, Collections.<ClipContext>emptyList(), resolver,

@@ -150,13 +150,26 @@ public final class DocumentScrollState {
      * @param topLayerBoxes 顶层布局盒；后面的盒位于更上层
      */
     public void updateFromLayout(DocumentLayoutBox rootBox, List<DocumentLayoutBox> topLayerBoxes) {
+        updateFromLayout(rootBox, topLayerBoxes, 0L, null);
+    }
+
+    /**
+     * 根据最新普通布局盒树、顶层盒树和动画运行态刷新可滚范围，并移除已不存在元素的滚动状态。
+     *
+     * @param rootBox 根布局盒
+     * @param topLayerBoxes 顶层布局盒；后面的盒位于更上层
+     * @param currentTimeNanos 当前动画时间
+     * @param animationTimeline 动画时间线；为 null 时只使用 computed style
+     */
+    public void updateFromLayout(DocumentLayoutBox rootBox, List<DocumentLayoutBox> topLayerBoxes,
+            long currentTimeNanos, DocumentAnimationTimeline animationTimeline) {
         Objects.requireNonNull(rootBox, "rootBox");
         Set<ElementNode> activeElements = new HashSet<ElementNode>();
-        collectScrollableMetrics(rootBox, activeElements);
+        collectScrollableMetrics(rootBox, activeElements, currentTimeNanos, animationTimeline);
         if (topLayerBoxes != null) {
             for (DocumentLayoutBox topLayerBox : topLayerBoxes) {
                 if (topLayerBox != null) {
-                    collectScrollableMetrics(topLayerBox, activeElements);
+                    collectScrollableMetrics(topLayerBox, activeElements, currentTimeNanos, animationTimeline);
                 }
             }
         }
@@ -265,9 +278,9 @@ public final class DocumentScrollState {
         if (wheelDelta == 0) {
             return false;
         }
-        updateFromLayout(rootBox, topLayerBoxes);
-        BoxContext target = findScrollableBoxAt(DocumentVisualTraversal.resolveVisualScene(rootBox, topLayerBoxes, this),
-                mouseX, mouseY, currentTimeNanos, animationTimeline);
+        updateFromLayout(rootBox, topLayerBoxes, currentTimeNanos, animationTimeline);
+        BoxContext target = findScrollableBoxAt(DocumentVisualTraversal.resolveVisualScene(rootBox, topLayerBoxes, this,
+                currentTimeNanos, animationTimeline), mouseX, mouseY, currentTimeNanos, animationTimeline);
         if (target == null) {
             return false;
         }
@@ -348,9 +361,10 @@ public final class DocumentScrollState {
     public boolean beginScrollbarDrag(DocumentLayoutBox rootBox, List<DocumentLayoutBox> topLayerBoxes, int mouseX,
             int mouseY, long eventTimeNanos, long currentTimeNanos, DocumentAnimationTimeline animationTimeline) {
         Objects.requireNonNull(rootBox, "rootBox");
-        updateFromLayout(rootBox, topLayerBoxes);
-        ScrollbarHit hit = findScrollbarHit(DocumentVisualTraversal.resolveVisualScene(rootBox, topLayerBoxes, this),
-                mouseX, mouseY, eventTimeNanos, currentTimeNanos, animationTimeline);
+        updateFromLayout(rootBox, topLayerBoxes, currentTimeNanos, animationTimeline);
+        ScrollbarHit hit = findScrollbarHit(DocumentVisualTraversal.resolveVisualScene(rootBox, topLayerBoxes, this,
+                currentTimeNanos, animationTimeline), mouseX, mouseY, eventTimeNanos, currentTimeNanos,
+                animationTimeline);
         if (hit == null) {
             return false;
         }
@@ -431,9 +445,10 @@ public final class DocumentScrollState {
         if (activeScrollbarDrag == null) {
             return false;
         }
-        updateFromLayout(rootBox, topLayerBoxes);
-        ScrollbarHit hit = findActiveScrollbar(DocumentVisualTraversal.resolveVisualScene(rootBox, topLayerBoxes, this),
-                mouseX, mouseY, eventTimeNanos, currentTimeNanos, animationTimeline);
+        updateFromLayout(rootBox, topLayerBoxes, currentTimeNanos, animationTimeline);
+        ScrollbarHit hit = findActiveScrollbar(DocumentVisualTraversal.resolveVisualScene(rootBox, topLayerBoxes, this,
+                currentTimeNanos, animationTimeline), mouseX, mouseY, eventTimeNanos, currentTimeNanos,
+                animationTimeline);
         if (hit == null) {
             activeScrollbarDrag = null;
             return false;
@@ -559,10 +574,12 @@ public final class DocumentScrollState {
                 entry.maxHorizontalOffset, entry.horizontalOffset);
     }
 
-    private void collectScrollableMetrics(DocumentLayoutBox box, Set<ElementNode> activeElements) {
+    private void collectScrollableMetrics(DocumentLayoutBox box, Set<ElementNode> activeElements,
+            long currentTimeNanos, DocumentAnimationTimeline animationTimeline) {
         ElementNode element = box.getElement();
         activeElements.add(element);
-        DocumentScrollMetricsCalculator.Metrics metrics = DocumentScrollMetricsCalculator.compute(box);
+        DocumentScrollMetricsCalculator.Metrics metrics = DocumentScrollMetricsCalculator.compute(box,
+                currentTimeNanos, animationTimeline);
         ScrollEntry entry = entries.get(element);
         if (entry == null) {
             entry = new ScrollEntry();
@@ -575,7 +592,7 @@ public final class DocumentScrollState {
         updateOffsets(entry, entry.horizontalOffset, entry.verticalOffset);
 
         for (DocumentLayoutBox child : box.getChildren()) {
-            collectScrollableMetrics(child, activeElements);
+            collectScrollableMetrics(child, activeElements, currentTimeNanos, animationTimeline);
         }
     }
 
@@ -595,6 +612,9 @@ public final class DocumentScrollState {
             boolean searchStackingContext, long currentTimeNanos, DocumentAnimationTimeline animationTimeline,
             StackingContextResolver resolver) {
         DocumentLayoutBox box = boxContext.getBox();
+        if (DocumentHitTestEngine.isHitTestSubtreeSuppressed(box.getElement())) {
+            return null;
+        }
         UiTransform.Point inversePoint = DocumentVisualHitTransforms.inverseTransformPoint(box,
                 boxContext.getBoxOffsetX(), boxContext.getBoxOffsetY(), mouseX, mouseY, currentTimeNanos,
                 animationTimeline);
@@ -627,7 +647,9 @@ public final class DocumentScrollState {
             }
         }
 
-        if (pointerInViewport && isScrollable(box.getElement())) {
+        if (pointerInViewport && isScrollable(box.getElement())
+                && DocumentHitTestEngine.isSelfHitTestVisible(box.getElement())
+                && DocumentHitTestEngine.isPointerEventsEnabled(box.getElement())) {
             return boxContext;
         }
         return null;
@@ -745,6 +767,9 @@ public final class DocumentScrollState {
             float mouseY, long eventTimeNanos, boolean searchStackingContext, long currentTimeNanos,
             DocumentAnimationTimeline animationTimeline, StackingContextResolver resolver) {
         DocumentLayoutBox box = boxContext.getBox();
+        if (DocumentHitTestEngine.isHitTestSubtreeSuppressed(box.getElement())) {
+            return null;
+        }
         UiTransform.Point inversePoint = DocumentVisualHitTransforms.inverseTransformPoint(box,
                 boxContext.getBoxOffsetX(), boxContext.getBoxOffsetY(), mouseX, mouseY, currentTimeNanos,
                 animationTimeline);
@@ -828,6 +853,10 @@ public final class DocumentScrollState {
     private ScrollbarHit findCurrentScrollbarHit(DocumentLayoutBox rootBox, BoxContext boxContext, float mouseX,
             float mouseY, long eventTimeNanos) {
         DocumentLayoutBox box = boxContext.getBox();
+        if (!DocumentHitTestEngine.isSelfHitTestVisible(box.getElement())
+                || !DocumentHitTestEngine.isPointerEventsEnabled(box.getElement())) {
+            return null;
+        }
         if (box != rootBox && !shouldShowTransientScrollbar(box.getElement(), eventTimeNanos)) {
             return null;
         }

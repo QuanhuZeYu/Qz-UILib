@@ -73,7 +73,8 @@ public final class DocumentHitTestEngine {
             DocumentAnimationTimeline animationTimeline) {
         Objects.requireNonNull(rootBox, "rootBox");
         StackingContextResolver resolver = createStackingContextResolver(currentTimeNanos, animationTimeline);
-        VisualScene scene = DocumentVisualTraversal.resolveVisualScene(rootBox, topLayerBoxes, scrollState);
+        VisualScene scene = DocumentVisualTraversal.resolveVisualScene(rootBox, topLayerBoxes, scrollState,
+                currentTimeNanos, animationTimeline);
         List<RootEntry> rootEntries = scene.getRootEntries();
         for (int index = rootEntries.size() - 1; index >= 0; index--) {
             ElementNode hit = hitTestBox(rootEntries.get(index).getRootContext(), scrollState, documentX, documentY,
@@ -104,7 +105,7 @@ public final class DocumentHitTestEngine {
         Objects.requireNonNull(rootBox, "rootBox");
         StackingContextResolver resolver = createStackingContextResolver(currentTimeNanos, animationTimeline);
         return hitTestBox(DocumentVisualTraversal.resolveBoxContext(rootBox, scrollState, offsetX, offsetY,
-                DocumentStickyPositioning.rootContext()), scrollState, documentX, documentY, true,
+                DocumentStickyPositioning.rootContext(), currentTimeNanos, animationTimeline), scrollState, documentX, documentY, true,
                 currentTimeNanos, animationTimeline, resolver);
     }
 
@@ -263,7 +264,13 @@ public final class DocumentHitTestEngine {
         };
     }
 
-    private static boolean isHitTestSubtreeSuppressed(ElementNode element) {
+    /**
+     * 判断元素整棵命中子树是否被显式抑制。
+     *
+     * @param element 元素
+     * @return 是否抑制整棵子树命中
+     */
+    public static boolean isHitTestSubtreeSuppressed(ElementNode element) {
         if (element == null) {
             return false;
         }
@@ -277,11 +284,23 @@ public final class DocumentHitTestEngine {
         return false;
     }
 
-    private static boolean isSelfHitTestSuppressed(ElementNode element) {
+    /**
+     * 判断元素自身是否不应成为命中目标。
+     *
+     * @param element 元素
+     * @return 元素自身是否被抑制
+     */
+    public static boolean isSelfHitTestSuppressed(ElementNode element) {
         return isHitTestSubtreeSuppressed(element) || isVisibilityHidden(element);
     }
 
-    private static boolean isSelfHitTestVisible(ElementNode element) {
+    /**
+     * 判断元素自身是否可成为命中目标。
+     *
+     * @param element 元素
+     * @return 元素自身是否可命中
+     */
+    public static boolean isSelfHitTestVisible(ElementNode element) {
         return !isSelfHitTestSuppressed(element);
     }
 
@@ -293,7 +312,13 @@ public final class DocumentHitTestEngine {
         return style.getVisibility() == UiVisibility.HIDDEN;
     }
 
-    private static boolean isPointerEventsEnabled(ElementNode element) {
+    /**
+     * 判断元素当前 computed pointer-events 是否允许命中。
+     *
+     * @param element 元素
+     * @return 是否允许命中
+     */
+    public static boolean isPointerEventsEnabled(ElementNode element) {
         if (element == null) {
             return true;
         }

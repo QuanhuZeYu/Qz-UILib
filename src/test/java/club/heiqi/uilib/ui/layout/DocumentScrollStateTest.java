@@ -3,11 +3,15 @@ package club.heiqi.uilib.ui.layout;
 import org.junit.Assert;
 import org.junit.Test;
 
+import club.heiqi.uilib.ui.animation.DocumentAnimationProperty;
+import club.heiqi.uilib.ui.animation.DocumentAnimationTimeline;
 import club.heiqi.uilib.ui.dom.ElementNode;
 import club.heiqi.uilib.ui.dom.UiDocument;
 import club.heiqi.uilib.ui.style.props.UiOverflow;
+import club.heiqi.uilib.ui.style.props.UiPointerEvents;
 import club.heiqi.uilib.ui.style.props.UiPosition;
 import club.heiqi.uilib.ui.style.props.UiScrollbarWidth;
+import club.heiqi.uilib.ui.style.cascade.ComputedStyle;
 import club.heiqi.uilib.ui.style.values.UiStyleLength;
 import club.heiqi.uilib.ui.style.values.UiTransform;
 
@@ -201,6 +205,116 @@ public class DocumentScrollStateTest {
         scrollState.updateFromLayout(rootBox);
 
         Assert.assertTrue(scrollState.getMaxScrollTop(scroller) > 0);
+    }
+
+    /**
+     * 运行态 transform 祖先内的 fixed 后代应参与该祖先滚动范围计算。
+     */
+    @Test
+    public void shouldIncludeFixedDescendantInsideRuntimeTransformContainingBlockInScrollMetrics() {
+        UiDocument document = UiDocument.create();
+        ElementNode root = document.getRootElement();
+        ElementNode scroller = document.div();
+        ElementNode runtimeTransformed = document.div();
+        ElementNode fixedInside = document.div();
+
+        root.style().setWidth(UiStyleLength.px(100)).setHeight(UiStyleLength.px(60));
+        scroller.style()
+                .setWidth(UiStyleLength.px(100))
+                .setHeight(UiStyleLength.px(40))
+                .setOverflowY(UiOverflow.AUTO);
+        runtimeTransformed.style().setHeight(UiStyleLength.px(20));
+        fixedInside.style()
+                .setPosition(UiPosition.FIXED)
+                .setTop(UiStyleLength.px(80))
+                .setWidth(UiStyleLength.px(20))
+                .setHeight(UiStyleLength.px(30));
+        runtimeTransformed.append(fixedInside);
+        scroller.append(runtimeTransformed);
+        root.append(scroller);
+        DocumentAnimationTimeline timeline = new DocumentAnimationTimeline();
+        timeline.setFloatKeyframeAnimation(runtimeTransformed, DocumentAnimationProperty.TRANSLATE_X, 0.0F, 10.0F,
+                0L, 1_000_000_000L);
+        long halfTimeNanos = 500_000_000L;
+        DocumentLayoutBox rootBox = DocumentLayoutEngine.layout(root, 100, 60,
+                club.heiqi.uilib.ui.text.DefaultTextMeasureService.getInstance(),
+                runtimeTransformResolver(timeline, halfTimeNanos));
+        DocumentScrollState scrollState = new DocumentScrollState();
+
+        scrollState.updateFromLayout(rootBox, java.util.Collections.<DocumentLayoutBox>emptyList(),
+                halfTimeNanos, timeline);
+
+        Assert.assertTrue(scrollState.getMaxScrollTop(scroller) > 0);
+    }
+
+    /**
+     * 验证默认滚动会跳过显式 passthrough 的上层滚动容器。
+     */
+    @Test
+    public void shouldSkipPassthroughOverlayAsWheelTarget() {
+        UiDocument document = UiDocument.create();
+        ElementNode root = document.getRootElement();
+        ElementNode bottomScroller = document.div();
+        ElementNode bottomContent = document.div();
+        ElementNode overlayScroller = document.div();
+        ElementNode overlayContent = document.div();
+
+        root.style().setWidth(UiStyleLength.px(120)).setHeight(UiStyleLength.px(80));
+        configureScroller(bottomScroller);
+        bottomContent.style().setHeight(UiStyleLength.px(100));
+        configureOverlayScroller(overlayScroller);
+        overlayScroller.setAttribute("data-hit-test-passthrough", "true");
+        overlayContent.style().setHeight(UiStyleLength.px(100));
+        bottomScroller.append(bottomContent);
+        overlayScroller.append(overlayContent);
+        root.append(bottomScroller).append(overlayScroller);
+        DocumentLayoutBox rootBox = DocumentLayoutEngine.layout(root, 120, 80);
+        DocumentScrollState scrollState = new DocumentScrollState();
+
+        Assert.assertTrue(scrollState.handleWheel(rootBox, 10, 10, -120, 1L));
+
+        Assert.assertTrue(scrollState.getScrollTop(bottomScroller) > 0);
+        Assert.assertEquals(0, scrollState.getScrollTop(overlayScroller));
+    }
+
+    /**
+     * 验证默认滚动会跳过 pointer-events:none 的上层滚动容器。
+     */
+    @Test
+    public void shouldSkipPointerEventsNoneOverlayAsWheelTarget() {
+        UiDocument document = UiDocument.create();
+        ElementNode root = document.getRootElement();
+        ElementNode bottomScroller = document.div();
+        ElementNode bottomContent = document.div();
+        ElementNode overlayScroller = document.div();
+        ElementNode overlayContent = document.div();
+
+        root.style().setWidth(UiStyleLength.px(120)).setHeight(UiStyleLength.px(80));
+        configureScroller(bottomScroller);
+        bottomContent.style().setHeight(UiStyleLength.px(100));
+        configureOverlayScroller(overlayScroller);
+        overlayScroller.style().setPointerEvents(UiPointerEvents.NONE);
+        overlayContent.style().setHeight(UiStyleLength.px(100));
+        bottomScroller.append(bottomContent);
+        overlayScroller.append(overlayContent);
+        root.append(bottomScroller).append(overlayScroller);
+        DocumentLayoutBox rootBox = DocumentLayoutEngine.layout(root, 120, 80);
+        DocumentScrollState scrollState = new DocumentScrollState();
+
+        Assert.assertTrue(scrollState.handleWheel(rootBox, 10, 10, -120, 1L));
+
+        Assert.assertTrue(scrollState.getScrollTop(bottomScroller) > 0);
+        Assert.assertEquals(0, scrollState.getScrollTop(overlayScroller));
+    }
+
+    /**
+     * 验证滚动条拖拽会跳过 hit-test hidden / passthrough / pointer-events:none overlay。
+     */
+    @Test
+    public void shouldSkipSuppressedOverlayScrollbarDrag() {
+        assertSuppressedOverlayScrollbarIsSkipped("data-hit-test-hidden", true, false);
+        assertSuppressedOverlayScrollbarIsSkipped("data-hit-test-passthrough", true, false);
+        assertSuppressedOverlayScrollbarIsSkipped(null, false, true);
     }
 
     /**
@@ -642,5 +756,68 @@ public class DocumentScrollStateTest {
                 .setHeight(UiStyleLength.px(20))
                 .setOverflowX(UiOverflow.HIDDEN)
                 .setOverflowY(UiOverflow.AUTO);
+    }
+
+    private static void configureOverlayScroller(ElementNode scroller) {
+        configureScroller(scroller);
+        scroller.style()
+                .setPosition(UiPosition.FIXED)
+                .setTop(UiStyleLength.px(0))
+                .setLeft(UiStyleLength.px(0))
+                .setZIndex(10);
+    }
+
+    private static void assertSuppressedOverlayScrollbarIsSkipped(String attributeName, boolean setAttribute,
+            boolean pointerEventsNone) {
+        UiDocument document = UiDocument.create();
+        ElementNode root = document.getRootElement();
+        ElementNode bottomScroller = document.div();
+        ElementNode bottomContent = document.div();
+        ElementNode overlayScroller = document.div();
+        ElementNode overlayContent = document.div();
+
+        root.style().setWidth(UiStyleLength.px(120)).setHeight(UiStyleLength.px(80));
+        configureScroller(bottomScroller);
+        bottomContent.style().setHeight(UiStyleLength.px(100));
+        configureOverlayScroller(overlayScroller);
+        overlayContent.style().setHeight(UiStyleLength.px(100));
+        if (setAttribute) {
+            overlayScroller.setAttribute(attributeName, "true");
+        }
+        if (pointerEventsNone) {
+            overlayScroller.style().setPointerEvents(UiPointerEvents.NONE);
+        }
+        bottomScroller.append(bottomContent);
+        overlayScroller.append(overlayContent);
+        root.append(bottomScroller).append(overlayScroller);
+        DocumentLayoutBox rootBox = DocumentLayoutEngine.layout(root, 120, 80);
+        DocumentScrollState scrollState = new DocumentScrollState();
+        scrollState.updateFromLayout(rootBox);
+        DocumentLayoutBox overlayBox = rootBox.getChildren().get(1);
+        DocumentScrollState.ScrollbarMetrics overlayMetrics = scrollState.getVerticalScrollbarMetrics(overlayBox,
+                0, 0, false);
+        Assert.assertNotNull(overlayMetrics);
+
+        boolean captured = scrollState.beginScrollbarDrag(rootBox, overlayMetrics.getTrackLeft() + 1,
+                overlayMetrics.getTrackBottom() - 2, 1L);
+
+        Assert.assertFalse(captured);
+        Assert.assertEquals(0, scrollState.getScrollTop(overlayScroller));
+    }
+
+    private static DocumentLayoutEngine.LayoutRuntimeValueResolver runtimeTransformResolver(
+            final DocumentAnimationTimeline timeline, final long currentTimeNanos) {
+        return new DocumentLayoutEngine.LayoutRuntimeValueResolver() {
+            @Override
+            public int resolve(ElementNode element, DocumentAnimationProperty property, int baseValue) {
+                return baseValue;
+            }
+
+            @Override
+            public boolean createsFixedContainingBlock(ElementNode element, ComputedStyle computedStyle) {
+                return DocumentRuntimeTransforms.createsFixedContainingBlock(element, computedStyle,
+                        currentTimeNanos, timeline);
+            }
+        };
     }
 }

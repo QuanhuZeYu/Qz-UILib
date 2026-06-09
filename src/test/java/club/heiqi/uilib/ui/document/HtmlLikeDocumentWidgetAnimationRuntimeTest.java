@@ -22,6 +22,7 @@ import club.heiqi.uilib.ui.document.HtmlLikeDocumentWidgetTestSupport.ManualAnim
 import club.heiqi.uilib.ui.document.HtmlLikeDocumentWidgetTestSupport.RecordingUiRenderContext;
 import club.heiqi.uilib.ui.dom.DocumentElementAnimationEndEvent;
 import club.heiqi.uilib.ui.dom.DocumentElementAnimationEndHandler;
+import club.heiqi.uilib.ui.dom.DocumentElementBounds;
 import club.heiqi.uilib.ui.dom.DocumentElementClickEvent;
 import club.heiqi.uilib.ui.dom.DocumentElementClickHandler;
 import club.heiqi.uilib.ui.dom.DocumentElementTransitionEndEvent;
@@ -39,6 +40,7 @@ import club.heiqi.uilib.ui.style.props.UiOverflowWrap;
 import club.heiqi.uilib.ui.style.props.UiPosition;
 import club.heiqi.uilib.ui.style.values.UiStyleInsets;
 import club.heiqi.uilib.ui.style.values.UiStyleLength;
+import club.heiqi.uilib.ui.style.values.UiTransform;
 
 /**
  * `HtmlLikeDocumentWidget` 的动画运行时契约测试。
@@ -906,6 +908,60 @@ public class HtmlLikeDocumentWidgetAnimationRuntimeTest {
         animationClock.setCurrentTimeNanos(1_000_000_000L);
         widget.render(new RecordingUiRenderContext());
         Assert.assertEquals(50, widget.getMaxScrollTop(root));
+    }
+
+    /**
+     * 验证 transform transition 中间帧会统一 fixed containing block、clip、命中与滚动范围语义。
+     */
+    @Test
+    public void shouldUseRuntimeTransformForFixedDescendantClipHitAndScrollRange() {
+        UiDocument document = UiDocument.create();
+        ElementNode root = document.getRootElement();
+        ElementNode scroller = document.div();
+        ElementNode transformedClip = document.div();
+        ElementNode fixed = document.div();
+        root.style().setWidth(UiStyleLength.px(140)).setHeight(UiStyleLength.px(80));
+        scroller.style()
+                .setWidth(UiStyleLength.px(120))
+                .setHeight(UiStyleLength.px(40))
+                .setOverflowY(UiOverflow.AUTO);
+        transformedClip.style()
+                .setWidth(UiStyleLength.px(50))
+                .setHeight(UiStyleLength.px(40))
+                .setMarginLeft(UiStyleLength.px(20))
+                .setOverflowX(UiOverflow.HIDDEN)
+                .setOverflowY(UiOverflow.HIDDEN)
+                .setTransform(UiTransform.translate(40.0F, 0.0F))
+                .setTransition(DocumentAnimationProperty.TRANSLATE_X, 1000L);
+        fixed.style()
+                .setWidth(UiStyleLength.px(20))
+                .setHeight(UiStyleLength.px(60))
+                .setPosition(UiPosition.FIXED)
+                .setTop(UiStyleLength.px(5))
+                .setLeft(UiStyleLength.px(40))
+                .setBackgroundColor(0xFF445566);
+        transformedClip.append(fixed);
+        scroller.append(transformedClip);
+        root.append(scroller);
+        ManualAnimationClock animationClock = new ManualAnimationClock();
+        HtmlLikeDocumentWidget widget = new HtmlLikeDocumentWidget(document, 140, 80,
+                new DeterministicTextMeasureService());
+        widget.setAnimationClock(animationClock);
+        widget.applyLayoutBounds(0, 0, 140, 80);
+
+        widget.resolveLayoutBoxForTest();
+        transformedClip.style().setTransform(UiTransform.identity());
+        widget.resolveLayoutBoxForTest();
+        animationClock.setCurrentTimeNanos(500_000_000L);
+        widget.resolveLayoutBoxForTest();
+        DocumentElementBounds fixedBounds = fixed.__getVisualDocumentBounds();
+
+        Assert.assertTrue(widget.hasLayoutRuntimeValueForDiagnostics());
+        Assert.assertEquals(80, fixedBounds.getLeft());
+        Assert.assertEquals(5, fixedBounds.getTop());
+        Assert.assertTrue(widget.getMaxScrollTop(scroller) > 0);
+        assertElementUid(fixed, widget.findElementAt(82, 8));
+        assertElementUid(scroller, widget.findElementAt(92, 8));
     }
 
     /**

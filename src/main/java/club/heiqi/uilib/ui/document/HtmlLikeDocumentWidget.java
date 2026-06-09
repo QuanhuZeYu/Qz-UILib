@@ -26,6 +26,7 @@ import club.heiqi.uilib.ui.host.DocumentCursorHost;
 import club.heiqi.uilib.ui.layout.DocumentHitTestEngine;
 import club.heiqi.uilib.ui.layout.DocumentLayoutBox;
 import club.heiqi.uilib.ui.layout.DocumentLayoutEngine;
+import club.heiqi.uilib.ui.layout.DocumentRuntimeTransforms;
 import club.heiqi.uilib.ui.layout.DocumentScrollState;
 import club.heiqi.uilib.ui.layout.DocumentVisualTraversal;
 import club.heiqi.uilib.ui.layout.DocumentVisualTraversal.BoxLocation;
@@ -35,6 +36,7 @@ import club.heiqi.uilib.ui.paint.DocumentPaintRenderer;
 import club.heiqi.uilib.ui.render.UiRenderContext;
 import club.heiqi.uilib.ui.style.props.UiPointerEvents;
 import club.heiqi.uilib.ui.style.props.UiPosition;
+import club.heiqi.uilib.ui.style.cascade.ComputedStyle;
 import club.heiqi.uilib.ui.style.cascade.UiStyleResolver;
 import club.heiqi.uilib.ui.style.values.UiStyleLength;
 import club.heiqi.uilib.ui.style.values.UiTransform;
@@ -299,7 +301,7 @@ public final class HtmlLikeDocumentWidget extends Widget implements UiDocument.D
      * @return 是否存在 layout 运行态覆盖值
      */
     public boolean hasLayoutRuntimeValueForDiagnostics() {
-        return animationTimeline.hasRuntimeValue(DocumentAnimationImpact.LAYOUT);
+        return hasLayoutRuntimeValue();
     }
 
     /**
@@ -427,7 +429,7 @@ public final class HtmlLikeDocumentWidget extends Widget implements UiDocument.D
 
         List<DocumentLayoutBox> topLayerBoxes = resolveTopLayerLayoutBoxes(rootBox, null);
         BoxLocation subtreeLocation = DocumentVisualTraversal.findBoxLocation(rootBox, topLayerBoxes, scrollState,
-                subtreeRoot);
+                subtreeRoot, currentTimeNanos, animationTimeline);
         if (subtreeLocation == null) {
             return null;
         }
@@ -457,9 +459,10 @@ public final class HtmlLikeDocumentWidget extends Widget implements UiDocument.D
 
     @Override
     public boolean requestScrollTo(ElementNode element, int scrollLeft, int scrollTop) {
+        long currentTimeNanos = animationClock.getCurrentTimeNanos();
         DocumentLayoutBox rootBox = resolveInteractiveLayoutBox();
         if (DocumentVisualTraversal.findBoxLocation(rootBox, resolveTopLayerLayoutBoxes(rootBox, null), scrollState,
-                element) == null) {
+                element, currentTimeNanos, animationTimeline) == null) {
             return false;
         }
         if (scrollState.getMaxScrollLeft(element) <= 0 && scrollState.getMaxScrollTop(element) <= 0) {
@@ -506,8 +509,9 @@ public final class HtmlLikeDocumentWidget extends Widget implements UiDocument.D
             return DocumentElementBounds.unavailable();
         }
         DocumentLayoutBox rootBox = resolveInteractiveLayoutBox();
+        long currentTimeNanos = animationClock.getCurrentTimeNanos();
         BoxLocation location = DocumentVisualTraversal.findBoxLocation(rootBox, resolveTopLayerLayoutBoxes(rootBox, null),
-                scrollState, element);
+                scrollState, element, currentTimeNanos, animationTimeline);
         if (location == null) {
             return DocumentElementBounds.unavailable();
         }
@@ -540,7 +544,8 @@ public final class HtmlLikeDocumentWidget extends Widget implements UiDocument.D
         long currentTimeNanos = animationClock.getCurrentTimeNanos();
         DocumentLayoutBox rootBox = resolveInteractiveLayoutBox();
         BoxLocation location = DocumentVisualTraversal.findBoxLocation(rootBox,
-                resolveTopLayerLayoutBoxes(rootBox, null), scrollState, resolvedElement);
+                resolveTopLayerLayoutBoxes(rootBox, null), scrollState, resolvedElement, currentTimeNanos,
+                animationTimeline);
         if (location == null) {
             return DocumentAnimation.inactive(resolvedElement, resolvedKeyframes.getName(), options);
         }
@@ -845,10 +850,10 @@ public final class HtmlLikeDocumentWidget extends Widget implements UiDocument.D
         boolean animationStateChanged = animationTimeline.updateFromLayout(
                 resolveAnimationLayoutRoots(rootBox, null), currentTimeNanos);
         animationStateChanged |= flushCompletedAnimationEvents(currentTimeNanos);
-        boolean layoutRuntimeValueActive = animationTimeline.hasRuntimeValue(DocumentAnimationImpact.LAYOUT);
+        boolean layoutRuntimeValueActive = hasLayoutRuntimeValue();
         if (layoutRuntimeValueActive) {
             rootBox = resolveRuntimeLayoutBox(currentTimeNanos,
-                    animationTimeline.hasAnimationWork(DocumentAnimationImpact.LAYOUT));
+                    hasLayoutAnimationWork());
         } else {
             invalidateRuntimeLayoutCache();
             updateScrollStateFromCachedLayoutIfNeeded();
@@ -874,7 +879,7 @@ public final class HtmlLikeDocumentWidget extends Widget implements UiDocument.D
     private DocumentLayoutBox resolveRuntimeLayoutBox(final long currentTimeNanos, boolean layoutAnimationWork) {
         if (!layoutAnimationWork && isRuntimeLayoutCacheReusable()) {
             scrollState.updateFromLayout(cachedRuntimeLayoutBox, resolveTopLayerLayoutBoxes(cachedRuntimeLayoutBox,
-                    null));
+                    createAnimationLayoutValueResolver(currentTimeNanos)), currentTimeNanos, animationTimeline);
             return cachedRuntimeLayoutBox;
         }
 
@@ -887,7 +892,8 @@ public final class HtmlLikeDocumentWidget extends Widget implements UiDocument.D
         } else {
             cacheRuntimeLayoutBox(rootBox);
         }
-        scrollState.updateFromLayout(rootBox, resolveTopLayerLayoutBoxes(rootBox, layoutValueResolver));
+        scrollState.updateFromLayout(rootBox, resolveTopLayerLayoutBoxes(rootBox, layoutValueResolver),
+                currentTimeNanos, animationTimeline);
         return rootBox;
     }
 
@@ -933,8 +939,7 @@ public final class HtmlLikeDocumentWidget extends Widget implements UiDocument.D
     }
 
     private void updateScrollStateFromCachedLayoutIfNeeded() {
-        if (cachedLayoutScrollStateUpdated || cachedLayoutBox == null
-                || animationTimeline.hasRuntimeValue(DocumentAnimationImpact.LAYOUT)) {
+        if (cachedLayoutScrollStateUpdated || cachedLayoutBox == null || hasLayoutRuntimeValue()) {
             return;
         }
         scrollState.updateFromLayout(cachedLayoutBox, resolveTopLayerLayoutBoxes(cachedLayoutBox, null));
@@ -988,9 +993,9 @@ public final class HtmlLikeDocumentWidget extends Widget implements UiDocument.D
         long currentTimeNanos = animationClock.getCurrentTimeNanos();
         animationTimeline.updateFromLayout(resolveAnimationLayoutRoots(rootBox, null), currentTimeNanos);
         flushCompletedAnimationEvents(currentTimeNanos);
-        if (animationTimeline.hasRuntimeValue(DocumentAnimationImpact.LAYOUT)) {
+        if (hasLayoutRuntimeValue()) {
             rootBox = resolveRuntimeLayoutBox(currentTimeNanos,
-                    animationTimeline.hasAnimationWork(DocumentAnimationImpact.LAYOUT));
+                    hasLayoutAnimationWork());
             return rootBox;
         }
         invalidateRuntimeLayoutCache();
@@ -1000,6 +1005,32 @@ public final class HtmlLikeDocumentWidget extends Widget implements UiDocument.D
 
     private DocumentAnimationTimelineLayoutResolver createAnimationLayoutValueResolver(final long currentTimeNanos) {
         return new DocumentAnimationTimelineLayoutResolver(currentTimeNanos);
+    }
+
+    private boolean hasLayoutRuntimeValue() {
+        return animationTimeline.hasRuntimeValue(DocumentAnimationImpact.LAYOUT)
+                || hasTransformRuntimeValue();
+    }
+
+    private boolean hasLayoutAnimationWork() {
+        return animationTimeline.hasAnimationWork(DocumentAnimationImpact.LAYOUT)
+                || hasTransformAnimationWork();
+    }
+
+    private boolean hasTransformRuntimeValue() {
+        return animationTimeline.hasRuntimeValue(DocumentAnimationProperty.TRANSLATE_X)
+                || animationTimeline.hasRuntimeValue(DocumentAnimationProperty.TRANSLATE_Y)
+                || animationTimeline.hasRuntimeValue(DocumentAnimationProperty.SCALE_X)
+                || animationTimeline.hasRuntimeValue(DocumentAnimationProperty.SCALE_Y)
+                || animationTimeline.hasRuntimeValue(DocumentAnimationProperty.ROTATE);
+    }
+
+    private boolean hasTransformAnimationWork() {
+        return animationTimeline.hasAnimationWork(DocumentAnimationProperty.TRANSLATE_X)
+                || animationTimeline.hasAnimationWork(DocumentAnimationProperty.TRANSLATE_Y)
+                || animationTimeline.hasAnimationWork(DocumentAnimationProperty.SCALE_X)
+                || animationTimeline.hasAnimationWork(DocumentAnimationProperty.SCALE_Y)
+                || animationTimeline.hasAnimationWork(DocumentAnimationProperty.ROTATE);
     }
 
     private List<DocumentLayoutBox> resolveTopLayerLayoutBoxes(DocumentLayoutBox rootBox,
@@ -1060,8 +1091,8 @@ public final class HtmlLikeDocumentWidget extends Widget implements UiDocument.D
         if (rootBox == null || element == null) {
             return null;
         }
-        return findVisualBounds(DocumentVisualTraversal.resolveRootBoxContext(rootBox, scrollState), element,
-                currentTimeNanos, VisualTransform.identity());
+        return findVisualBounds(DocumentVisualTraversal.resolveRootBoxContext(rootBox, scrollState,
+                currentTimeNanos, animationTimeline), element, currentTimeNanos, VisualTransform.identity());
     }
 
     private VisualBounds findVisualBounds(DocumentVisualTraversal.BoxContext boxContext, ElementNode element,
@@ -1124,6 +1155,12 @@ public final class HtmlLikeDocumentWidget extends Widget implements UiDocument.D
         @Override
         public int resolve(ElementNode element, DocumentAnimationProperty property, int baseValue) {
             return Math.round(animationTimeline.resolveFloat(element, property, baseValue, currentTimeNanos));
+        }
+
+        @Override
+        public boolean createsFixedContainingBlock(ElementNode element, ComputedStyle computedStyle) {
+            return DocumentRuntimeTransforms.createsFixedContainingBlock(element, computedStyle, currentTimeNanos,
+                    animationTimeline);
         }
     }
 

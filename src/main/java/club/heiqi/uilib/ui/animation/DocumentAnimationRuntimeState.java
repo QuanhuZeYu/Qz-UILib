@@ -259,9 +259,20 @@ final class DocumentAnimationRuntimeState {
                 || containsPropertyWithImpact(floatKeyframeAnimations, impact);
     }
 
+    boolean hasAnimationWork(DocumentAnimationProperty property) {
+        return colorTransitions.containsKey(property)
+                || floatTransitions.containsKey(property)
+                || colorKeyframeAnimations.containsKey(property)
+                || floatKeyframeAnimations.containsKey(property);
+    }
+
     boolean hasRuntimeValue(DocumentAnimationImpact impact) {
         return hasAnimationWork(impact) || containsPropertyWithImpact(filledColors, impact)
                 || containsPropertyWithImpact(filledFloats, impact);
+    }
+
+    boolean hasRuntimeValue(DocumentAnimationProperty property) {
+        return hasAnimationWork(property) || filledColors.containsKey(property) || filledFloats.containsKey(property);
     }
 
     boolean hasRunningTransition(DocumentAnimationProperty property) {
