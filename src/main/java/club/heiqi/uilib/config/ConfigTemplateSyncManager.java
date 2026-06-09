@@ -31,6 +31,8 @@ public final class ConfigTemplateSyncManager {
             NetEndpointId.of(NAMESPACE, "config_template_sync_open");
     private static final NetEndpointId SAVE_SESSION_ID =
             NetEndpointId.of(NAMESPACE, "config_template_sync_save");
+    private static final NetEndpointId CLOSE_SESSION_ID =
+            NetEndpointId.of(NAMESPACE, "config_template_sync_close");
     private static final NetChannelId FIELD_CHANGE_ID =
             NetChannelId.of(NAMESPACE, "config_template_sync_change");
     private static final NetStoreId SESSION_STATE_STORE_ID =
@@ -47,6 +49,7 @@ public final class ConfigTemplateSyncManager {
     private volatile String latestClientScreenId = "";
     private NetFetchEndpoint openEndpoint;
     private NetFetchEndpoint saveEndpoint;
+    private NetFetchEndpoint closeEndpoint;
     private NetChannel fieldChangeChannel;
     private NetStore stateStore;
 
@@ -89,6 +92,15 @@ public final class ConfigTemplateSyncManager {
                     @Override
                     public void onRequest(NetRequest request, NetFetchEndpoint.NetFetchRequestContext context) {
                         handleSaveRequest(request, context);
+                    }
+                })
+                .register();
+        closeEndpoint = service.fetch(CLOSE_SESSION_ID)
+                .timeout(Duration.ofSeconds(10L))
+                .onRequest(new NetFetchEndpoint.NetFetchHandler() {
+                    @Override
+                    public void onRequest(NetRequest request, NetFetchEndpoint.NetFetchRequestContext context) {
+                        handleCloseRequest(request, context);
                     }
                 })
                 .register();
@@ -268,6 +280,38 @@ public final class ConfigTemplateSyncManager {
                 });
     }
 
+    CompletableFuture<ConfigSyncModels.ConfigSessionCloseResponse> closeClientSessionAsync() {
+        return closeClientSessionAsync(latestClientSessionId);
+    }
+
+    CompletableFuture<ConfigSyncModels.ConfigSessionCloseResponse> closeClientSessionAsync(String sessionId) {
+        ensureRegistered();
+        final String closingSessionId = sessionId == null ? "" : sessionId.trim();
+        if (closingSessionId.isEmpty()) {
+            ConfigSyncModels.ConfigSessionCloseResponse response = new ConfigSyncModels.ConfigSessionCloseResponse();
+            response.closed = false;
+            response.message = "当前没有配置同步会话。";
+            return CompletableFuture.completedFuture(response);
+        }
+        if (closingSessionId.equals(latestClientSessionId)) {
+            latestClientSessionId = "";
+            latestClientScreenId = "";
+        }
+        ConfigSyncModels.ConfigSessionCloseRequest request = new ConfigSyncModels.ConfigSessionCloseRequest();
+        request.sessionId = closingSessionId;
+        return closeEndpoint.callJson(ConfigSyncJson.toJson(request))
+                .thenApply(new java.util.function.Function<NetResponse, ConfigSyncModels.ConfigSessionCloseResponse>() {
+                    @Override
+                    public ConfigSyncModels.ConfigSessionCloseResponse apply(NetResponse response) {
+                        if (!response.isOk()) {
+                            throw new IllegalStateException(response.getBody().asUtf8String());
+                        }
+                        return ConfigSyncJson.fromJson(response.getBody().asUtf8String(),
+                                ConfigSyncModels.ConfigSessionCloseResponse.class);
+                    }
+                });
+    }
+
     /**
      * 返回客户端会话状态视图。
      *
@@ -290,6 +334,7 @@ public final class ConfigTemplateSyncManager {
         latestClientScreenId = "";
         openEndpoint = null;
         saveEndpoint = null;
+        closeEndpoint = null;
         fieldChangeChannel = null;
         stateStore = null;
     }
@@ -473,6 +518,21 @@ public final class ConfigTemplateSyncManager {
         }
     }
 
+    private void handleCloseRequest(NetRequest request, NetFetchEndpoint.NetFetchRequestContext context) {
+        if (context.getReceiveContext().getSide() != NetSide.SERVER) {
+            context.reply(NetResponse.error(400, "配置同步 close 仅接受客户端请求"));
+            return;
+        }
+        ConfigSyncModels.ConfigSessionCloseRequest closeRequest = ConfigSyncJson.fromJson(
+                request.getBody().asUtf8String(), ConfigSyncModels.ConfigSessionCloseRequest.class);
+        String sessionId = closeRequest == null ? "" : closeRequest.sessionId;
+        ConfigSyncModels.ConfigSessionCloseResponse response = new ConfigSyncModels.ConfigSessionCloseResponse();
+        response.sessionId = sessionId == null ? "" : sessionId.trim();
+        response.closed = closeServerSession(response.sessionId, context.getReceiveContext().getSenderPlayer());
+        response.message = response.closed ? "配置同步会话已关闭。" : "配置同步会话不存在或已关闭。";
+        context.replyJson(ConfigSyncJson.toJson(response));
+    }
+
     private void handleFieldChange(String json, Object senderPlayer, NetSide side) {
         if (side != NetSide.SERVER) {
             return;
@@ -583,7 +643,8 @@ public final class ConfigTemplateSyncManager {
     }
 
     private void ensureRegistered() {
-        if (!registered || openEndpoint == null || saveEndpoint == null || fieldChangeChannel == null
+        if (!registered || openEndpoint == null || saveEndpoint == null || closeEndpoint == null
+                || fieldChangeChannel == null
                 || stateStore == null) {
             throw new IllegalStateException("配置同步网络端点尚未注册");
         }

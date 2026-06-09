@@ -11,6 +11,7 @@ import org.junit.Test;
 
 import club.heiqi.uilib.net.api.NetService;
 import club.heiqi.uilib.net.core.NetPayloadLimits;
+import club.heiqi.uilib.net.transport.NetReceiveOrigin;
 import club.heiqi.uilib.net.transport.FrameHandler;
 import club.heiqi.uilib.net.transport.ITransport;
 import club.heiqi.uilib.net.transport.NetSide;
@@ -72,6 +73,50 @@ public class ConfigTemplateSyncManagerLifecycleTest {
         Assert.assertEquals(2, transport.playerPayloads.size());
     }
 
+    @Test
+    public void shouldRegisterTemplateTargetFromSpec() {
+        Configuration configuration = new Configuration();
+        configuration.get("general", "mode", "normal", "运行模式");
+        ForgeConfigTemplateScreen.Spec spec = new ForgeConfigTemplateScreen.Spec("example_mod", "示例配置",
+                configuration)
+                        .setSubtitle("Server Config")
+                        .setDescription("通过模板注册同步目标")
+                        .enableQzNetworkSync("example-config")
+                        .addCategory(new ForgeConfigTemplateScreen.CategorySpec("general")
+                                .setTitle("General")
+                                .setDescription("基础配置"));
+
+        manager.registerTarget(spec.createQzNetworkSyncTarget());
+        ConfigSyncTarget target = manager.getTarget("example-config");
+
+        Assert.assertNotNull(target);
+        Assert.assertEquals("example_mod", target.getModId());
+        Assert.assertEquals("示例配置", target.getTitle());
+        Assert.assertEquals("Server Config", target.getSubtitle());
+        Assert.assertEquals("通过模板注册同步目标", target.getDescription());
+        Assert.assertEquals(1, target.getCategories().size());
+        Assert.assertEquals("general", target.getCategories().get(0).getCategoryName());
+    }
+
+    @Test
+    public void shouldCloseServerSessionWhenClientClosesSession() throws Exception {
+        FakePlayer player = new FakePlayer("remote-close", 3);
+        ConfigTemplateRemoteSession session = manager.openServerSession("test-config", player);
+        manager.setClientRemoteAvailable(true);
+        transport.playerPayloads.clear();
+
+        manager.closeClientSessionAsync(session.getSessionId());
+        Assert.assertEquals(1, transport.clientToServerPayloads.size());
+        transport.deliverToServer(transport.clientToServerPayloads.get(0), player);
+        Assert.assertTrue(transport.playerPayloads.size() >= 2);
+        for (PlayerPayload payload : new ArrayList<PlayerPayload>(transport.playerPayloads)) {
+            transport.deliverToClient(payload.payload);
+        }
+
+        Assert.assertEquals(0, manager.getServerSessionCountForTests());
+        Assert.assertEquals("", manager.getPublishedServerStateForTests(player).sessionId);
+    }
+
     private static ConfigSyncTarget sampleTarget() {
         Configuration configuration = new Configuration();
         Property mode = configuration.get("general", "mode", "normal", "运行模式");
@@ -94,6 +139,8 @@ public class ConfigTemplateSyncManagerLifecycleTest {
     private static final class RecordingTransport implements ITransport {
 
         final java.util.List<PlayerPayload> playerPayloads = new ArrayList<PlayerPayload>();
+        final java.util.List<byte[]> clientToServerPayloads = new ArrayList<byte[]>();
+        FrameHandler frameHandler;
 
         @Override
         public String getName() {
@@ -102,6 +149,7 @@ public class ConfigTemplateSyncManagerLifecycleTest {
 
         @Override
         public void bootstrap(FrameHandler frameHandler) {
+            this.frameHandler = frameHandler;
         }
 
         @Override
@@ -110,6 +158,7 @@ public class ConfigTemplateSyncManagerLifecycleTest {
 
         @Override
         public void sendToServer(String channelName, byte[] payload) {
+            clientToServerPayloads.add(payload);
         }
 
         @Override
@@ -138,6 +187,14 @@ public class ConfigTemplateSyncManagerLifecycleTest {
         @Override
         public int getPhysicalFrameLimit(NetSide targetSide) {
             return NetPayloadLimits.GTNH_DEFAULT_PHYSICAL_LIMIT;
+        }
+
+        void deliverToServer(byte[] payload, FakePlayer sender) {
+            frameHandler.handleFrame(NetService.PHYSICAL_CHANNEL, payload, NetReceiveOrigin.server(sender));
+        }
+
+        void deliverToClient(byte[] payload) {
+            frameHandler.handleFrame(NetService.PHYSICAL_CHANNEL, payload, NetReceiveOrigin.client());
         }
     }
 
