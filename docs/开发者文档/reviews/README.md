@@ -11,6 +11,11 @@
 - 原始报告正文使用 `后续复核（YYYY-MM-DD）` 批注标记，不删除历史判断；批注需说明当前正确口径和是否还需要修复。
 - 只在本索引写摘要，不把完整修复过程或阶段流水账堆积到索引页。
 
+## 2026-06-09-production-code-round9
+- 类型：全项目生产代码第九轮审查
+- 详情文档：[REVIEW-20260609-production-code-round9.md](REVIEW-20260609-production-code-round9.md)
+- 结论摘要：接续第八轮远程 UI Runtime + Lease Protocol 修复后继续只读审查 `src/main/java`，避开 remote UI runtime 主线，发现 2 个 P2 问题：配置同步服务端 session 与 per-player Store 状态没有跟随玩家离线、远程配置页关闭或 remote page TTL 清理；Forge/FML 回退传输没有发送 `META` capability handshake，切换 `netTransport=forge` 后 capability-gated 的配置模板远程同步会保持不可用。额外抽查 `ui/input`、`ui/host`、`internal/devtools` 未形成第三个可坐实 finding。
+
 ## 2026-06-09-production-code-round8-remote-ui-runtime-lease
 - 类型：全项目生产代码第八轮审查（远程 UI Runtime + Lease Protocol）
 - 详情文档：[REVIEW-20260609-production-code-round8-remote-ui-runtime-lease.md](REVIEW-20260609-production-code-round8-remote-ui-runtime-lease.md)
