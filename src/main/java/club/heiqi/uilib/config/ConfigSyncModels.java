@@ -490,6 +490,22 @@ final class ConfigSyncModels {
     }
 
     /**
+     * 关闭会话请求。
+     */
+    static final class ConfigSessionCloseRequest {
+        String sessionId = "";
+    }
+
+    /**
+     * 关闭会话响应。
+     */
+    static final class ConfigSessionCloseResponse {
+        boolean closed;
+        String sessionId = "";
+        String message = "";
+    }
+
+    /**
      * 保存结果。
      */
     static final class ConfigSaveResult {

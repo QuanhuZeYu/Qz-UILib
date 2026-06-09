@@ -74,7 +74,8 @@ public Class<? extends GuiScreen> mainConfigGuiClass() {
 - `Spec.addPropertyEditorFactory(...)`：注册自定义属性编辑器工厂。
 - `Spec.setTheme(...)`：覆盖模板颜色主题。
 - `Spec.setTextSet(...)`：覆盖按钮、状态、错误提示等文案。
-- `Spec.setRemoteSyncController(...)` + `Spec.setRemoteSyncScreenId(...)`：为模板页接入服务端权威配置会话。
+- `Spec.enableQzNetworkSync(...)`：为模板页一键接入 Qz 网络服务端权威配置会话。
+- `Spec.setRemoteSyncController(...)` + `Spec.setRemoteSyncScreenId(...)`：底层扩展入口，保留给需要替换同步控制器的高级场景。
 
 ## 服务端权威同步
 
@@ -92,12 +93,18 @@ return new Spec("example_mod", "Example Mod 配置", ExampleConfig.configuration
                 ExampleConfig.saveAndReload();
             }
         })
-        .setRemoteSyncScreenId("example-mod-config")
-        .setRemoteSyncController(new ConfigTemplateRemoteSyncController())
+        .enableQzNetworkSync("example-mod-config")
         .addCategory(new CategorySpec("general").setTitle("General"));
 ```
 
-服务端在 `preInit` 前后注册目标：
+服务端在 `preInit` 前后注册同一个目标。若模板 `Spec` 不依赖客户端专属类，推荐直接复用它生成同步目标：
+
+```java
+ForgeConfigTemplateScreen.Spec spec = createSpec();
+ConfigTemplateSyncManager.getInstance().registerTarget(spec.createQzNetworkSyncTarget());
+```
+
+也可以手动注册 `ConfigSyncTarget`，用于服务端与客户端模板规格需要分开维护的场景：
 
 ```java
 ConfigTemplateSyncManager.getInstance().registerTarget(
@@ -126,6 +133,7 @@ ConfigTemplateSyncManager.getInstance().registerTarget(
 - 字段编辑优先修改客户端控件草稿；模板页会把变化通过 Qz `Channel` 异步同步给服务端草稿。
 - 点击保存后，客户端通过 Fetch 触发显式保存；服务端完成校验、持久化和业务重载后，再把最终快照回推回来。
 - 会话状态和最终保存结果通过 `Store` 回推；当服务端未启用该能力时，模板自动回退到旧的本地保存模式。
+- 本地模板页关闭时会通过 Qz Fetch 通知服务端释放配置会话，玩家离线时服务端也会清理该玩家的会话与 per-player Store 状态。
 
 这套模式当前优先面向“共享服务端配置”。如果你需要客户端私有配置优先级，请在业务层自行叠加，不要直接改写服务端权威会话语义。
 

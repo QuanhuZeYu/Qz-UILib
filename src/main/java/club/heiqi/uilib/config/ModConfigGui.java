@@ -29,8 +29,7 @@ public class ModConfigGui extends ForgeConfigTemplateScreen {
                     }
                 })
                 .addPropertyEditorFactory(new FontSortPropertyEditorFactory())
-                .setRemoteSyncScreenId(ConfigTemplateSyncManager.QZ_UI_LIB_SCREEN_ID)
-                .setRemoteSyncController(new ConfigTemplateRemoteSyncController());
+                .enableQzNetworkSync(ConfigTemplateSyncManager.QZ_UI_LIB_SCREEN_ID);
     }
 
     private static Spec createBaseSpec(net.minecraftforge.common.config.Configuration configuration) {

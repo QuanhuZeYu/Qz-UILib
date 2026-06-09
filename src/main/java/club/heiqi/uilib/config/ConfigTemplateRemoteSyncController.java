@@ -70,7 +70,11 @@ public final class ConfigTemplateRemoteSyncController implements ForgeConfigTemp
 
         @Override
         public void onScreenClosed() {
+            boolean shouldCloseRemote = remoteModeActive;
             closed = true;
+            if (shouldCloseRemote) {
+                ConfigTemplateSyncManager.getInstance().closeClientSessionAsync();
+            }
             lastSentDrafts.clear();
             latestState = null;
             remoteModeActive = false;
@@ -193,6 +197,7 @@ public final class ConfigTemplateRemoteSyncController implements ForgeConfigTemp
 
         private void handleOpenResponse(ConfigSyncModels.ConfigSessionOpenResponse response, Throwable throwable) {
             if (closed) {
+                closeOpenedRemoteSession(response);
                 return;
             }
             if (throwable != null) {
@@ -219,6 +224,14 @@ public final class ConfigTemplateRemoteSyncController implements ForgeConfigTemp
             owner.showStatusMessage(response.message == null || response.message.isEmpty()
                     ? "已连接服务端配置会话。" : response.message);
             owner.requestStatusRefresh();
+        }
+
+        private void closeOpenedRemoteSession(ConfigSyncModels.ConfigSessionOpenResponse response) {
+            if (response == null || !response.remoteAvailable || response.sessionId == null
+                    || response.sessionId.trim().isEmpty()) {
+                return;
+            }
+            ConfigTemplateSyncManager.getInstance().closeClientSessionAsync(response.sessionId);
         }
 
         private void handleSaveResponse(ConfigSyncModels.ConfigSaveResult result, Throwable throwable) {

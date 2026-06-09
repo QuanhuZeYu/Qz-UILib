@@ -604,6 +604,61 @@ public class ForgeConfigTemplateScreen extends BaseScreen {
         }
 
         /**
+         * 启用 Qz 网络配置同步。
+         *
+         * <p>该方法会绑定默认的 Qz 服务端权威同步控制器。服务端仍需要使用同一个
+         * screenId 注册 {@link ConfigSyncTarget}，否则页面会自动回退到本地配置模式。</p>
+         *
+         * @param remoteSyncScreenId 配置目标标识
+         * @return 当前规格
+         */
+        public Spec enableQzNetworkSync(String remoteSyncScreenId) {
+            return setRemoteSyncScreenId(requireRemoteSyncScreenId(remoteSyncScreenId))
+                    .setRemoteSyncController(new ConfigTemplateRemoteSyncController());
+        }
+
+        /**
+         * 根据当前模板规格创建 Qz 网络配置同步目标。
+         *
+         * <p>该目标复用模板页的标题、描述、分类、配置路径和保存回调。调用方仍需要将返回值
+         * 传给 {@link ConfigTemplateSyncManager#registerTarget(ConfigSyncTarget)} 完成服务端注册。</p>
+         *
+         * @return 配置同步目标
+         */
+        public ConfigSyncTarget createQzNetworkSyncTarget() {
+            return createQzNetworkSyncTarget(remoteSyncScreenId);
+        }
+
+        /**
+         * 根据当前模板规格创建指定标识的 Qz 网络配置同步目标。
+         *
+         * @param remoteSyncScreenId 配置目标标识
+         * @return 配置同步目标
+         */
+        public ConfigSyncTarget createQzNetworkSyncTarget(String remoteSyncScreenId) {
+            final SaveHandler targetSaveHandler = saveHandler;
+            final String targetScreenId = requireRemoteSyncScreenId(remoteSyncScreenId);
+            return ConfigSyncTarget.builder(targetScreenId, configuration)
+                    .modId(modId)
+                    .title(title)
+                    .subtitle(subtitle)
+                    .description(description)
+                    .configPath(configPath)
+                    .categories(toSyncCategories(getResolvedCategories()))
+                    .saveAction(new ConfigSyncTarget.SaveAction() {
+                        @Override
+                        public void save(Configuration configuration) {
+                            if (targetSaveHandler != null) {
+                                targetSaveHandler.onSave(configuration);
+                            } else if (configuration != null && configuration.hasChanged()) {
+                                configuration.save();
+                            }
+                        }
+                    })
+                    .build();
+        }
+
+        /**
          * 追加属性编辑器工厂。
          *
          * @param propertyEditorFactory 编辑器工厂
@@ -744,6 +799,30 @@ public class ForgeConfigTemplateScreen extends BaseScreen {
                 return null;
             }
             return remoteSyncController.create(owner, this);
+        }
+
+        private static List<ConfigSyncCategorySpec> toSyncCategories(List<CategorySpec> categories) {
+            List<ConfigSyncCategorySpec> converted = new ArrayList<ConfigSyncCategorySpec>();
+            if (categories == null) {
+                return converted;
+            }
+            for (CategorySpec categorySpec : categories) {
+                if (categorySpec == null) {
+                    continue;
+                }
+                converted.add(new ConfigSyncCategorySpec(categorySpec.getCategoryName(),
+                        categorySpec.getDisplayTitle(), categorySpec.getDescription())
+                                .addAliases(categorySpec.getAliases()));
+            }
+            return converted;
+        }
+
+        private static String requireRemoteSyncScreenId(String remoteSyncScreenId) {
+            String normalized = remoteSyncScreenId == null ? "" : remoteSyncScreenId.trim();
+            if (normalized.isEmpty()) {
+                throw new IllegalArgumentException("配置同步目标标识不能为空");
+            }
+            return normalized;
         }
     }
 
