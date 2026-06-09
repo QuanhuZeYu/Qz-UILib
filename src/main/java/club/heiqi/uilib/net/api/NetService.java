@@ -316,6 +316,16 @@ public final class NetService {
     }
 
     /**
+     * 推进通用网络请求超时。
+     *
+     * <p>该 tick 只处理 Fetch 与 Stream 的 deadline，不处理任何业务层生命周期。</p>
+     */
+    public void tickTimeouts() {
+        requestRegistry.expireTimedOut();
+        streamDownloads.expireTimedOut();
+    }
+
+    /**
      * 关闭网络层。
      */
     public synchronized void shutdown() {

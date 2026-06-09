@@ -169,8 +169,10 @@ public final class RemoteDocumentPages {
     }
 
     static OpenOffer decodeOpenOffer(String json) {
+        RemoteUiProtocol.requireExplicitFields(json, "远程页面 open offer", "protocolVersion", "messageType",
+                "feature", "sessionId", "surfaceType", "surfaceId", "contentRevision", "assetId", "sha256",
+                "htmlBytes", "leaseExpiresAtMillis", "pageId");
         OpenOffer offer = RemoteJson.fromJson(json, OpenOffer.class);
-        normalizeOpenOffer(offer);
         if (offer == null || RemoteUiProtocol.isBlank(offer.sessionId)) {
             throw new IllegalArgumentException("远程页面 open offer 缺少 sessionId");
         }
@@ -179,8 +181,9 @@ public final class RemoteDocumentPages {
     }
 
     static SubmitPayload decodeSubmitPayload(String json) {
+        RemoteUiProtocol.requireExplicitFields(json, "远程页面提交", "protocolVersion", "messageType", "feature",
+                "sessionId", "surfaceType", "surfaceId", "contentRevision", "pageId");
         SubmitPayload payload = RemoteJson.fromJson(json, SubmitPayload.class);
-        normalizeSubmitPayload(payload);
         if (payload == null || RemoteUiProtocol.isBlank(payload.sessionId)) {
             throw new IllegalArgumentException("远程页面提交缺少 sessionId");
         }
@@ -192,8 +195,9 @@ public final class RemoteDocumentPages {
     }
 
     static ExpiredPayload decodeExpiredPayload(String json) {
+        RemoteUiProtocol.requireExplicitFields(json, "远程页面失效通知", "protocolVersion", "messageType", "feature",
+                "sessionId", "surfaceType", "surfaceId", "contentRevision", "closeScope", "pageId");
         ExpiredPayload payload = RemoteJson.fromJson(json, ExpiredPayload.class);
-        normalizeExpiredPayload(payload);
         if (payload == null || RemoteUiProtocol.isBlank(payload.sessionId)) {
             throw new IllegalArgumentException("远程页面失效通知缺少 sessionId");
         }
@@ -219,6 +223,15 @@ public final class RemoteDocumentPages {
 
     static void setSessionClockForTests(LongSupplier clock) {
         SERVER_RUNTIME.setClockForTests(clock);
+    }
+
+    /**
+     * 由远程 UI lease 调度器主动推进页面 session 清扫。
+     */
+    static void tickLeaseCleanup() {
+        if (registered) {
+            cleanupExpiredSessions();
+        }
     }
 
     private static void handleStreamRequest(NetRequest request,
@@ -334,72 +347,6 @@ public final class RemoteDocumentPages {
         payload.pageId = session.getPayload().page.getPageId();
         payload.reason = "server-session-expired";
         expiredChannel.toPlayer(session.getPlayer()).send(NetMessage.json(RemoteUiProtocol.toJson(payload)));
-    }
-
-    private static void normalizeOpenOffer(OpenOffer offer) {
-        if (offer == null) {
-            return;
-        }
-        if (RemoteUiProtocol.isBlank(offer.messageType)) {
-            offer.messageType = RemoteUiProtocol.MessageType.OPEN_SURFACE.name();
-        }
-        if (RemoteUiProtocol.isBlank(offer.feature)) {
-            offer.feature = RemoteUiProtocol.FEATURE_LEASE_V1;
-        }
-        if (RemoteUiProtocol.isBlank(offer.surfaceType)) {
-            offer.surfaceType = RemoteUiProtocol.SurfaceType.PAGE.name();
-        }
-        if (RemoteUiProtocol.isBlank(offer.surfaceId)) {
-            offer.surfaceId = RemoteUiProtocol.PAGE_PRIMARY_SURFACE_ID;
-        }
-        if (offer.contentRevision <= 0L) {
-            offer.contentRevision = 1L;
-        }
-        if (RemoteUiProtocol.isBlank(offer.leasePolicy)) {
-            offer.leasePolicy = RemoteUiProtocol.LeasePolicy.FIXED.name();
-        }
-    }
-
-    private static void normalizeSubmitPayload(SubmitPayload payload) {
-        if (payload == null) {
-            return;
-        }
-        if (RemoteUiProtocol.isBlank(payload.messageType)) {
-            payload.messageType = RemoteUiProtocol.MessageType.SUBMIT.name();
-        }
-        if (RemoteUiProtocol.isBlank(payload.feature)) {
-            payload.feature = RemoteUiProtocol.FEATURE_LEASE_V1;
-        }
-        if (RemoteUiProtocol.isBlank(payload.surfaceType)) {
-            payload.surfaceType = RemoteUiProtocol.SurfaceType.PAGE.name();
-        }
-        if (RemoteUiProtocol.isBlank(payload.surfaceId)) {
-            payload.surfaceId = RemoteUiProtocol.PAGE_PRIMARY_SURFACE_ID;
-        }
-        if (payload.contentRevision <= 0L) {
-            payload.contentRevision = 1L;
-        }
-    }
-
-    private static void normalizeExpiredPayload(ExpiredPayload payload) {
-        if (payload == null) {
-            return;
-        }
-        if (RemoteUiProtocol.isBlank(payload.messageType)) {
-            payload.messageType = RemoteUiProtocol.MessageType.SESSION_EXPIRED.name();
-        }
-        if (RemoteUiProtocol.isBlank(payload.feature)) {
-            payload.feature = RemoteUiProtocol.FEATURE_LEASE_V1;
-        }
-        if (RemoteUiProtocol.isBlank(payload.surfaceType)) {
-            payload.surfaceType = RemoteUiProtocol.SurfaceType.PAGE.name();
-        }
-        if (RemoteUiProtocol.isBlank(payload.surfaceId)) {
-            payload.surfaceId = RemoteUiProtocol.PAGE_PRIMARY_SURFACE_ID;
-        }
-        if (payload.contentRevision <= 0L) {
-            payload.contentRevision = 1L;
-        }
     }
 
     private static RemoteDocumentPage requirePage(RemoteDocumentPage page) {

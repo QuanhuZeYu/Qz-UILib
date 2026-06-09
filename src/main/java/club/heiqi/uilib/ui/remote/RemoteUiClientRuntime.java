@@ -21,7 +21,12 @@ final class RemoteUiClientRuntime {
         SurfaceMount mount = new SurfaceMount(surfaceType, surfaceId, sessionId, contentRevision,
                 tokenCounter.incrementAndGet(), RemoteUiProtocol.ClientSurfaceState.FETCHING);
         pendingBySession.put(mount.sessionId, mount);
-        currentBySurface.put(mount.surfaceKey(), mount);
+        SurfaceMount previous = currentBySurface.put(mount.surfaceKey(), mount);
+        if (previous != null && !previous.matches(surfaceType, surfaceId, sessionId, contentRevision,
+                mount.localMountToken)) {
+            previous.state = RemoteUiProtocol.ClientSurfaceState.STALE;
+            pendingBySession.remove(previous.sessionId, previous);
+        }
         return new PendingMount(mount);
     }
 
@@ -40,7 +45,7 @@ final class RemoteUiClientRuntime {
      */
     boolean completePending(RemoteUiProtocol.SurfaceType surfaceType, String surfaceId, String sessionId,
             long contentRevision, long localMountToken) {
-        SurfaceMount pending = pendingBySession.remove(sessionId == null ? "" : sessionId);
+        SurfaceMount pending = pendingBySession.get(sessionId == null ? "" : sessionId);
         if (pending == null || !pending.matches(surfaceType, surfaceId, sessionId, contentRevision,
                 localMountToken) || !isCurrent(surfaceType, surfaceId, sessionId, contentRevision, localMountToken)) {
             if (pending != null) {
@@ -48,9 +53,28 @@ final class RemoteUiClientRuntime {
             }
             return false;
         }
+        pendingBySession.remove(pending.sessionId, pending);
         pending.state = RemoteUiProtocol.ClientSurfaceState.ACTIVE;
         currentBySurface.put(pending.surfaceKey(), pending);
         return true;
+    }
+
+    /**
+     * 丢弃已经变旧的 pending mount。
+     */
+    boolean discard(RemoteUiProtocol.SurfaceType surfaceType, String surfaceId, String sessionId,
+            long contentRevision, long localMountToken) {
+        return terminalize(surfaceType, surfaceId, sessionId, contentRevision, localMountToken,
+                RemoteUiProtocol.ClientSurfaceState.STALE);
+    }
+
+    /**
+     * 将失败的 pending/current mount 置为终态错误并移除。
+     */
+    boolean terminalizeError(RemoteUiProtocol.SurfaceType surfaceType, String surfaceId, String sessionId,
+            long contentRevision, long localMountToken) {
+        return terminalize(surfaceType, surfaceId, sessionId, contentRevision, localMountToken,
+                RemoteUiProtocol.ClientSurfaceState.ERROR);
     }
 
     /**
@@ -118,6 +142,41 @@ final class RemoteUiClientRuntime {
         currentBySurface.clear();
         pendingBySession.clear();
         tokenCounter.set(0L);
+    }
+
+    /**
+     * 返回测试可见的 pending 数量。
+     */
+    int pendingSizeForTests() {
+        return pendingBySession.size();
+    }
+
+    /**
+     * 返回测试可见的 current 数量。
+     */
+    int currentSizeForTests() {
+        return currentBySurface.size();
+    }
+
+    private boolean terminalize(RemoteUiProtocol.SurfaceType surfaceType, String surfaceId, String sessionId,
+            long contentRevision, long localMountToken, RemoteUiProtocol.ClientSurfaceState terminalState) {
+        boolean changed = false;
+        String sessionKey = sessionId == null ? "" : sessionId;
+        SurfaceMount pending = pendingBySession.get(sessionKey);
+        if (pending != null && pending.matches(surfaceType, surfaceId, sessionId, contentRevision, localMountToken)
+                && pendingBySession.remove(sessionKey, pending)) {
+            pending.state = terminalState;
+            changed = true;
+        }
+        String surfaceKey = surfaceKey(surfaceType, surfaceId);
+        SurfaceMount current = currentBySurface.get(surfaceKey);
+        if (current != null && current.matches(surfaceType, surfaceId, sessionId, contentRevision, localMountToken)
+                && currentBySurface.remove(surfaceKey, current)) {
+            current.state = terminalState;
+            pendingBySession.remove(current.sessionId, current);
+            changed = true;
+        }
+        return changed;
     }
 
     private static String surfaceKey(RemoteUiProtocol.SurfaceType surfaceType, String surfaceId) {

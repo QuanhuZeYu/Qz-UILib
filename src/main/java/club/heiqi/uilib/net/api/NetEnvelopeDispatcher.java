@@ -42,8 +42,7 @@ final class NetEnvelopeDispatcher {
      * @param origin 接收来源
      */
     void dispatch(NetEnvelope envelope, NetReceiveOrigin origin) {
-        requestRegistry.expireTimedOut();
-        streamDownloads.expireTimedOut();
+        service.tickTimeouts();
         if (envelope.getKind() == NetEnvelope.Kind.META) {
             MyMod.LOG.debug("收到 Qz 网络能力握手：side={} body={}", origin.getSide(),
                     new String(envelope.getPayload(), StandardCharsets.UTF_8));

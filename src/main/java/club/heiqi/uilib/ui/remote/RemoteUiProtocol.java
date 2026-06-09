@@ -4,6 +4,9 @@ import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 
+import com.google.gson.JsonElement;
+import com.google.gson.JsonObject;
+
 /**
  * 远程 UI 内部协议 DTO 与字段校验。
  */
@@ -223,6 +226,19 @@ final class RemoteUiProtocol {
      */
     static <T> T fromJson(String json, Class<T> type) {
         return RemoteJson.fromJson(json, type);
+    }
+
+    /**
+     * 校验新 lease 协议字段在 wire payload 中显式存在。
+     */
+    static void requireExplicitFields(String json, String payloadName, String... fieldNames) {
+        JsonObject object = RemoteJson.parseObject(json);
+        for (String fieldName : fieldNames) {
+            JsonElement element = object.get(fieldName);
+            if (element == null || element.isJsonNull()) {
+                throw new IllegalArgumentException(payloadName + " 缺少显式字段 " + fieldName);
+            }
+        }
     }
 
     /**

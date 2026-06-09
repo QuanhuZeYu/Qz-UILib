@@ -141,9 +141,7 @@ public final class RemoteHudOverlayClientBridge {
         try {
             call = RemoteHudOverlays.callOverlayStream(offer);
         } catch (RuntimeException exception) {
-            pendingOpens.remove(offer.sessionId);
-            clientRuntime.closeSession(RemoteUiProtocol.SurfaceType.HUD, offer.surfaceId, offer.sessionId,
-                    offer.contentRevision, pendingOpen.localMountToken);
+            terminalizePendingOpenError(pendingOpen);
             showErrorOverlay(offer.overlayId, "远程 HUD 请求失败", exception.getMessage());
             return;
         }
@@ -153,15 +151,23 @@ public final class RemoteHudOverlayClientBridge {
                 UiScreenManager.getInstance().enqueue(new Runnable() {
                     @Override
                     public void run() {
-                        PendingOpen currentPending = pendingOpens.remove(offer.sessionId);
-                        if (currentPending == null || currentPending.isDismissed()) {
+                        PendingOpen currentPending = pendingOpens.get(offer.sessionId);
+                        if (currentPending == null) {
+                            clientRuntime.discard(RemoteUiProtocol.SurfaceType.HUD, offer.surfaceId,
+                                    offer.sessionId, offer.contentRevision, pendingOpen.localMountToken);
+                            return;
+                        }
+                        if (currentPending.isDismissed()) {
+                            discardPendingOpen(currentPending);
                             return;
                         }
                         if (!clientRuntime.isCurrent(RemoteUiProtocol.SurfaceType.HUD, offer.surfaceId,
                                 offer.sessionId, offer.contentRevision, currentPending.localMountToken)) {
+                            discardPendingOpen(currentPending);
                             return;
                         }
                         if (throwable != null) {
+                            terminalizePendingOpenError(currentPending);
                             showErrorOverlay(offer.overlayId, "远程 HUD 下载失败", readableError(throwable));
                             return;
                         }
@@ -169,10 +175,13 @@ public final class RemoteHudOverlayClientBridge {
                             String html = validateAndDecode(offer, response);
                             if (!clientRuntime.completePending(RemoteUiProtocol.SurfaceType.HUD, offer.surfaceId,
                                     offer.sessionId, offer.contentRevision, currentPending.localMountToken)) {
+                                discardPendingOpen(currentPending);
                                 return;
                             }
+                            pendingOpens.remove(offer.sessionId, currentPending);
                             openHudOverlay(offer, html, currentPending.localMountToken);
                         } catch (RuntimeException exception) {
+                            terminalizePendingOpenError(currentPending);
                             showErrorOverlay(offer.overlayId, "远程 HUD 校验失败", exception.getMessage());
                         }
                     }
@@ -212,12 +221,28 @@ public final class RemoteHudOverlayClientBridge {
         }
         for (PendingOpen pendingOpen : pendingOpens.values()) {
             if (pendingOpen != null && pendingOpen.matchesOverlayId(overlayId)) {
-                pendingOpen.dismiss();
-                clientRuntime.closeSession(RemoteUiProtocol.SurfaceType.HUD, pendingOpen.offer.surfaceId,
-                        pendingOpen.offer.sessionId, pendingOpen.offer.contentRevision,
-                        pendingOpen.localMountToken);
+                discardPendingOpen(pendingOpen);
             }
         }
+    }
+
+    private void discardPendingOpen(PendingOpen pendingOpen) {
+        if (pendingOpen == null || pendingOpen.offer == null) {
+            return;
+        }
+        pendingOpen.dismiss();
+        pendingOpens.remove(pendingOpen.offer.sessionId, pendingOpen);
+        clientRuntime.discard(RemoteUiProtocol.SurfaceType.HUD, pendingOpen.offer.surfaceId,
+                pendingOpen.offer.sessionId, pendingOpen.offer.contentRevision, pendingOpen.localMountToken);
+    }
+
+    private void terminalizePendingOpenError(PendingOpen pendingOpen) {
+        if (pendingOpen == null || pendingOpen.offer == null) {
+            return;
+        }
+        pendingOpens.remove(pendingOpen.offer.sessionId, pendingOpen);
+        clientRuntime.terminalizeError(RemoteUiProtocol.SurfaceType.HUD, pendingOpen.offer.surfaceId,
+                pendingOpen.offer.sessionId, pendingOpen.offer.contentRevision, pendingOpen.localMountToken);
     }
 
     private String validateAndDecode(RemoteHudOverlays.OpenOffer offer, NetResponse response) {

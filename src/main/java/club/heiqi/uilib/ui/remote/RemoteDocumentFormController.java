@@ -137,6 +137,7 @@ final class RemoteDocumentFormController {
                         Map<String, List<String>> values) {
                     RemoteDocumentPages.SubmitPayload payload = new RemoteDocumentPages.SubmitPayload();
                     payload.sessionId = sessionId;
+                    payload.surfaceType = RemoteUiProtocol.SurfaceType.PAGE.name();
                     payload.surfaceId = RemoteUiProtocol.PAGE_PRIMARY_SURFACE_ID;
                     payload.contentRevision = 1L;
                     payload.pageId = pageId;
@@ -151,6 +152,7 @@ final class RemoteDocumentFormController {
                         String action, String formId, Map<String, List<String>> values) {
                     RemoteDocumentPages.SubmitPayload payload = new RemoteDocumentPages.SubmitPayload();
                     payload.sessionId = sessionId;
+                    payload.surfaceType = RemoteUiProtocol.SurfaceType.PAGE.name();
                     payload.surfaceId = surfaceId;
                     payload.contentRevision = contentRevision;
                     payload.pageId = pageId;

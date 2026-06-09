@@ -15,6 +15,7 @@
 - 类型：全项目生产代码第八轮审查（远程 UI Runtime + Lease Protocol）
 - 详情文档：[REVIEW-20260609-production-code-round8-remote-ui-runtime-lease.md](REVIEW-20260609-production-code-round8-remote-ui-runtime-lease.md)
 - 结论摘要：只读审查当前远程 UI Runtime + Lease Protocol 第一阶段实现与高风险网络生命周期边界，发现 4 个问题：Net Stream/Fetch 超时只在下一次入站包到来时触发；远程 UI 固定 TTL 没有主动 lease 清扫，过期可见关闭只在后续操作时触发；客户端异步失败/旧回调路径没有完整终止本地 mount；新 lease 协议字段在 decode 阶段被补默认值，削弱显式 `surfaceId` / `contentRevision` / `closeScope` 校验。未发现 `NetService` 混入 keepalive / renew / remote UI 业务语义。
+- 后续复核：2026-06-09 已修复 4 个 findings：Net 通用 timeout tick、`ui.remote` 主动 lease cleanup、客户端 mount discard / terminalize、协议 decode 显式字段校验均已落地并通过定向测试与 `compileJava`。
 
 ## 2026-06-09-production-code-round7
 - 类型：全项目生产代码第七轮审查
