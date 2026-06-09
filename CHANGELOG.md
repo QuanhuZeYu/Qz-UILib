@@ -67,8 +67,9 @@
   网络实时帧、Forge 生命周期、浏览器语义和视觉矩阵相关测试。
 - 补充 DocumentVisualTraversal、DocumentHitTestEngine、DocumentScrollState、DocumentPaintEngine、
   DocumentAnimationTimeline 与 HtmlLikeDocumentWidget 各主题回归测试。
-- 发布前已验证：`git diff --check`、`compileJava`、`UiTestDocumentPageControllerTest` 与
-  `VIS-PAINT-005` 定向断言。完整发布前测试仍建议在最终 tag 前运行 `./gradlew test`。
+- 发布前已验证：`git diff --check`、`./gradlew.bat --no-configuration-cache test`、
+  `./gradlew.bat --no-configuration-cache --no-daemon -x test publishToMavenLocal`、
+  `UiTestDocumentPageControllerTest` 与 `VIS-PAINT-005` 定向断言。
 
 ### 构建与发布
 
