@@ -1,5 +1,9 @@
 package club.heiqi.uilib.internal.devtools.pages;
 
+import java.util.List;
+
+import club.heiqi.uilib.ui.dom.DocumentElementBounds;
+import club.heiqi.uilib.ui.dom.DocumentNode;
 import club.heiqi.uilib.ui.dom.ElementNode;
 import club.heiqi.uilib.ui.dom.UiDocument;
 import club.heiqi.uilib.ui.style.cascade.UiStyleDeclaration;
@@ -25,6 +29,8 @@ import club.heiqi.uilib.ui.style.values.UiBackgroundImage;
  * `/qzuilib test` 单张样例的真实视觉舞台工厂。
  */
 final class UiTestSampleVisualFactory {
+
+    private static final String DEFERRED_TOP_LAYER_ATTRIBUTE = "data-ui-test-deferred-top-layer";
 
     private boolean styleSheetAttached;
     private final UiTestDomVisualFactory domVisualFactory = new UiTestDomVisualFactory();
@@ -100,6 +106,48 @@ final class UiTestSampleVisualFactory {
             appendMutedText(document, stage, "该样例暂无视觉舞台。");
         }
         parent.append(stage);
+    }
+
+    /**
+     * 激活已挂载样例中的延迟 top-layer 元素。
+     *
+     * @param document 文档实例
+     * @param root 查找根节点
+     */
+    void activateDeferredTopLayerDemos(UiDocument document, ElementNode root) {
+        List<ElementNode> elements = new java.util.ArrayList<ElementNode>();
+        collectDeferredTopLayerElements(root, elements);
+        for (ElementNode element : elements) {
+            if (document.__isTopLayerElement(element)) {
+                continue;
+            }
+            DocumentElementBounds bounds = element.getDocumentBounds();
+            if (!bounds.isAvailable()) {
+                continue;
+            }
+            element.style()
+                    .setPosition(UiPosition.FIXED)
+                    .setLeft(UiStyleLength.px(bounds.getLeft()))
+                    .setTop(UiStyleLength.px(bounds.getTop()))
+                    .setWidth(UiStyleLength.px(bounds.getWidth()))
+                    .setHeight(UiStyleLength.px(bounds.getHeight()))
+                    .clearZIndex();
+            document.__showTopLayerElement(element);
+        }
+    }
+
+    private void collectDeferredTopLayerElements(ElementNode current, List<ElementNode> elements) {
+        if (current == null) {
+            return;
+        }
+        if ("true".equals(current.getAttribute(DEFERRED_TOP_LAYER_ATTRIBUTE))) {
+            elements.add(current);
+        }
+        for (DocumentNode child : current.getChildren()) {
+            if (child instanceof ElementNode) {
+                collectDeferredTopLayerElements((ElementNode) child, elements);
+            }
+        }
     }
 
     /**
@@ -757,8 +805,8 @@ final class UiTestSampleVisualFactory {
                 .setWidth(UiStyleLength.px(140))
                 .setHeight(UiStyleLength.px(50))
                 .setOpacity(0.95F);
+        top.setAttribute(DEFERRED_TOP_LAYER_ATTRIBUTE, "true");
         canvas.append(top);
-        document.__showTopLayerElement(top);
         stage.append(canvas);
         appendMutedText(document, stage, "紫色弹层已注册到文档 top-layer，应覆盖普通高 z-index 层。");
     }
