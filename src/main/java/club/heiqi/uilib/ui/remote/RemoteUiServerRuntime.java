@@ -29,6 +29,14 @@ final class RemoteUiServerRuntime<T> {
     }
 
     /**
+     * 创建新的远程 UI session，并在替换旧 session 时通知监听器。
+     */
+    RemoteUiSessionManager.RemoteUiSession<T> createSession(Object player, String surfaceId, T payload, String html,
+            SessionRemovalListener<T> removalListener) {
+        return sessionManager.createSession(player, surfaceType, surfaceId, payload, html, adapt(removalListener));
+    }
+
+    /**
      * 构造 HTML Stream 调用。
      */
     NetStreamCall callStream(NetStreamEndpoint endpoint, RemoteUiProtocol.OpenSurfacePayload offer) {

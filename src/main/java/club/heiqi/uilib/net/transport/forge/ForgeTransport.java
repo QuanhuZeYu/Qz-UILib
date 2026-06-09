@@ -41,10 +41,12 @@ public final class ForgeTransport implements ITransport {
     @Override
     public void bootstrap(FrameHandler frameHandler) {
         channels = NetworkRegistry.INSTANCE.newChannel(NetService.PHYSICAL_CHANNEL, new InboundHandler(frameHandler));
+        ForgeConnectionLifecycle.getInstance().register();
     }
 
     @Override
     public void shutdown() {
+        ForgeConnectionLifecycle.getInstance().unregister();
         channels = null;
     }
 

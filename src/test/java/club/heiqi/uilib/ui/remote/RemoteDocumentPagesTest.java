@@ -270,6 +270,38 @@ public class RemoteDocumentPagesTest {
         Assert.assertFalse(screenOpener.lastText().contains("远程页面已失效"));
     }
 
+    @Test
+    public void shouldNotifyServerWhenRemotePageScreenCloses() {
+        FakePlayer player = new FakePlayer("pagePlayer", 8);
+        final AtomicReference<String> closedSessionId = new AtomicReference<String>();
+        int openIndex = transport.playerPayloads.size();
+        String sessionId = RemoteDocumentPages.open(player,
+                RemoteDocumentPage.of("page-server-close", "关闭通知页", "<p>close-ok</p>"), null,
+                new RemoteDocumentSessionCloseHandler() {
+                    @Override
+                    public void onClosed(Object closedPlayer, String closedRemoteSessionId) {
+                        closedSessionId.set(closedRemoteSessionId);
+                    }
+                });
+        Assert.assertEquals(openIndex + 1, transport.playerPayloads.size());
+        RemoteDocumentClientBridge.receiveOpenOffer(openJsonAt(openIndex));
+        int requestIndex = transport.clientToServerPayloads.size() - 1;
+        deliverStreamRequestAndFlush(requestIndex, player);
+        int closeIndex = transport.clientToServerPayloads.size();
+
+        screenOpener.closeLastScreen();
+
+        Assert.assertEquals(closeIndex + 1, transport.clientToServerPayloads.size());
+        NetEnvelope closeEnvelope = NetEnvelope.decode(transport.clientToServerPayloads.get(closeIndex));
+        Assert.assertEquals(MyMod.MODID + ":remote_page_close", closeEnvelope.getKey());
+        Assert.assertNull(closedSessionId.get());
+
+        transport.deliverToServer(transport.clientToServerPayloads.get(closeIndex), player);
+        service.drainServerMainThreadTasks();
+
+        Assert.assertEquals(sessionId, closedSessionId.get());
+    }
+
     private int openPage(FakePlayer player, RemoteDocumentPage page) {
         int index = transport.playerPayloads.size();
         RemoteDocumentPages.open(player, page, null);

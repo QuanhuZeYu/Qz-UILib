@@ -41,6 +41,14 @@ final class RemoteUiSessionManager<T> {
      */
     RemoteUiSession<T> createSession(Object player, RemoteUiProtocol.SurfaceType surfaceType, String surfaceId,
             T payload, String html) {
+        return createSession(player, surfaceType, surfaceId, payload, html, null);
+    }
+
+    /**
+     * 创建新的固定 TTL session，并在替换旧 session 时通知移除监听器。
+     */
+    RemoteUiSession<T> createSession(Object player, RemoteUiProtocol.SurfaceType surfaceType, String surfaceId,
+            T payload, String html, SessionRemovalListener<T> removalListener) {
         cleanupExpiredSessions(null);
         RemoteUiProtocol.SurfaceType resolvedType = requireSurfaceType(surfaceType);
         String resolvedSurfaceId = requireSurfaceId(surfaceId);
@@ -51,7 +59,8 @@ final class RemoteUiSessionManager<T> {
         SurfaceKey surfaceKey = SurfaceKey.of(player, resolvedType, resolvedSurfaceId);
         String previousSessionId = activeSessionIdsBySurface.put(surfaceKey, sessionId);
         if (previousSessionId != null) {
-            removeSession(previousSessionId, RemoteUiProtocol.SessionState.CLOSED);
+            RemoteUiSession<T> removed = removeSession(previousSessionId, RemoteUiProtocol.SessionState.CLOSED);
+            notifyRemoved(removed, removalListener);
         }
         RemoteUiSession<T> session = new RemoteUiSession<T>(sessionId, player, resolvedType, resolvedSurfaceId,
                 payload, asset.getAssetId(), asset.getSha256(), asset.getByteCount(), 1L, expiresAtMillis,

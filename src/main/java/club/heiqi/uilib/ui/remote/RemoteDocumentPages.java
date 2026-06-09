@@ -42,6 +42,7 @@ public final class RemoteDocumentPages {
     private static volatile boolean registered;
     private static NetChannel openChannel;
     private static NetChannel expiredChannel;
+    private static NetChannel closeChannel;
     private static NetChannel submitChannel;
     private static NetStreamEndpoint streamEndpoint;
 
@@ -89,6 +90,22 @@ public final class RemoteDocumentPages {
                     }
                 })
                 .register();
+        closeChannel = service.channel(NetChannelId.of(MyMod.MODID, "remote_page_close"))
+                .onReceive(new NetChannel.NetChannelHandler() {
+                    @Override
+                    public void onReceive(final NetMessage message, final NetReceiveContext context) {
+                        if (context.getSide() != NetSide.SERVER) {
+                            return;
+                        }
+                        context.runOnMainThread(new Runnable() {
+                            @Override
+                            public void run() {
+                                handleClientClose(message.getBody().asUtf8String(), context.getSenderPlayer());
+                            }
+                        });
+                    }
+                })
+                .register();
         submitChannel = service.channel(NetChannelId.of(MyMod.MODID, "remote_page_submit"))
                 .onReceive(new NetChannel.NetChannelHandler() {
                     @Override
@@ -128,6 +145,20 @@ public final class RemoteDocumentPages {
      * @return 创建的远程页面 sessionId
      */
     public static String open(Object player, RemoteDocumentPage page, RemoteDocumentSubmitHandler handler) {
+        return open(player, page, handler, null);
+    }
+
+    /**
+     * 向玩家打开远程页面，并在服务端 session 移除时回调。
+     *
+     * @param player 目标玩家，服务端通常是 EntityPlayerMP
+     * @param page 页面内容
+     * @param handler 表单提交处理器；可为 null
+     * @param closeHandler session 移除回调；可为 null
+     * @return 创建的远程页面 sessionId
+     */
+    public static String open(Object player, RemoteDocumentPage page, RemoteDocumentSubmitHandler handler,
+            RemoteDocumentSessionCloseHandler closeHandler) {
         ensureRegistered();
         if (player == null) {
             throw new IllegalArgumentException("player must not be null");
@@ -135,8 +166,13 @@ public final class RemoteDocumentPages {
         RemoteDocumentPage resolvedPage = requirePage(page);
         cleanupExpiredSessions();
         RemoteUiSessionManager.RemoteUiSession<PageSession> session = SERVER_RUNTIME.createSession(player,
-                RemoteUiProtocol.PAGE_PRIMARY_SURFACE_ID, new PageSession(resolvedPage, handler),
-                resolvedPage.getHtml());
+                RemoteUiProtocol.PAGE_PRIMARY_SURFACE_ID, new PageSession(resolvedPage, handler, closeHandler),
+                resolvedPage.getHtml(), new RemoteUiServerRuntime.SessionRemovalListener<PageSession>() {
+                    @Override
+                    public void onSessionRemoved(RemoteUiSessionManager.RemoteUiSession<PageSession> removedSession) {
+                        onServerSessionRemoved(removedSession, false);
+                    }
+                });
         openChannel.toPlayer(player).send(NetMessage.json(RemoteUiProtocol.toJson(OpenOffer.from(session,
                 resolvedPage))));
         return session.getSessionId();
@@ -153,6 +189,29 @@ public final class RemoteDocumentPages {
         return open(player, page, null);
     }
 
+    /**
+     * 服务端精确关闭指定远程页面 session，不向客户端发送过期错误页。
+     *
+     * @param player session 所属玩家
+     * @param sessionId 远程页面 session 标识
+     * @return true 表示找到并关闭了 session
+     */
+    public static boolean closeSession(Object player, String sessionId) {
+        if (!registered || player == null || RemoteUiProtocol.isBlank(sessionId)) {
+            return false;
+        }
+        RemoteUiSessionManager.RemoteUiSession<PageSession> session = SERVER_RUNTIME.getSession(sessionId);
+        if (session == null) {
+            return false;
+        }
+        RemoteUiSessionManager.CloseResult<PageSession> closeResult = SERVER_RUNTIME.closeSession(player,
+                session.getSurfaceId(), sessionId, session.getContentRevision());
+        if (closeResult.isClosed()) {
+            onServerSessionRemoved(closeResult.getSession(), false);
+        }
+        return closeResult.isClosed();
+    }
+
     static NetStreamCall callPageStream(String sessionId) {
         ensureRegistered();
         return SERVER_RUNTIME.callStream(streamEndpoint, sessionId);
@@ -166,6 +225,11 @@ public final class RemoteDocumentPages {
     static void submitFromClient(SubmitPayload payload) {
         ensureRegistered();
         submitChannel.toServer().send(NetMessage.json(RemoteJson.toJson(payload)));
+    }
+
+    static void closeFromClient(ExpiredPayload payload) {
+        ensureRegistered();
+        closeChannel.toServer().send(NetMessage.json(RemoteJson.toJson(payload)));
     }
 
     static OpenOffer decodeOpenOffer(String json) {
@@ -195,11 +259,19 @@ public final class RemoteDocumentPages {
     }
 
     static ExpiredPayload decodeExpiredPayload(String json) {
-        RemoteUiProtocol.requireExplicitFields(json, "远程页面失效通知", "protocolVersion", "messageType", "feature",
+        return decodeClosePayload(json, "远程页面失效通知");
+    }
+
+    static ExpiredPayload decodeClosePayload(String json) {
+        return decodeClosePayload(json, "远程页面关闭");
+    }
+
+    private static ExpiredPayload decodeClosePayload(String json, String payloadName) {
+        RemoteUiProtocol.requireExplicitFields(json, payloadName, "protocolVersion", "messageType", "feature",
                 "sessionId", "surfaceType", "surfaceId", "contentRevision", "closeScope", "pageId");
         ExpiredPayload payload = RemoteJson.fromJson(json, ExpiredPayload.class);
         if (payload == null || RemoteUiProtocol.isBlank(payload.sessionId)) {
-            throw new IllegalArgumentException("远程页面失效通知缺少 sessionId");
+            throw new IllegalArgumentException(payloadName + "缺少 sessionId");
         }
         RemoteUiProtocol.validateClose(payload);
         payload.pageId = payload.pageId == null ? "" : payload.pageId;
@@ -217,6 +289,7 @@ public final class RemoteDocumentPages {
         registered = false;
         openChannel = null;
         expiredChannel = null;
+        closeChannel = null;
         submitChannel = null;
         streamEndpoint = null;
     }
@@ -249,7 +322,7 @@ public final class RemoteDocumentPages {
                 }, new RemoteUiServerRuntime.SessionRemovalListener<PageSession>() {
                     @Override
                     public void onSessionRemoved(RemoteUiSessionManager.RemoteUiSession<PageSession> session) {
-                        sendExpiredToClient(session);
+                        onServerSessionRemoved(session, true);
                     }
                 });
     }
@@ -267,7 +340,7 @@ public final class RemoteDocumentPages {
                 senderPlayer, new RemoteUiServerRuntime.SessionRemovalListener<PageSession>() {
                     @Override
                     public void onSessionRemoved(RemoteUiSessionManager.RemoteUiSession<PageSession> session) {
-                        sendExpiredToClient(session);
+                        onServerSessionRemoved(session, true);
                     }
                 });
         if (!validation.isOk()) {
@@ -288,6 +361,29 @@ public final class RemoteDocumentPages {
         }
         pageSession.handler.onSubmit(new RemoteDocumentSubmitEvent(senderPlayer, payload.sessionId, payload.pageId,
                 payload.action, payload.formId, payload.values, pageSession.handler));
+    }
+
+    private static void handleClientClose(String json, Object senderPlayer) {
+        ExpiredPayload payload;
+        try {
+            payload = decodeClosePayload(json);
+        } catch (IllegalArgumentException exception) {
+            MyMod.LOG.warn("远程页面关闭协议无效", exception);
+            return;
+        }
+        RemoteUiProtocol.CloseScope closeScope = RemoteUiProtocol.parseCloseScope(payload.closeScope);
+        RemoteUiSessionManager.CloseResult<PageSession> closeResult;
+        if (closeScope == RemoteUiProtocol.CloseScope.SESSION) {
+            closeResult = SERVER_RUNTIME.closeSession(senderPlayer, payload.surfaceId, payload.sessionId,
+                    payload.contentRevision);
+        } else if (closeScope == RemoteUiProtocol.CloseScope.SURFACE) {
+            closeResult = SERVER_RUNTIME.closeSurface(senderPlayer, payload.surfaceId);
+        } else {
+            return;
+        }
+        if (closeResult.isClosed()) {
+            onServerSessionRemoved(closeResult.getSession(), false);
+        }
     }
 
     private static void dispatchClientOpenOffer(String json) {
@@ -328,9 +424,23 @@ public final class RemoteDocumentPages {
         SERVER_RUNTIME.cleanupExpiredSessions(new RemoteUiServerRuntime.SessionRemovalListener<PageSession>() {
             @Override
             public void onSessionRemoved(RemoteUiSessionManager.RemoteUiSession<PageSession> session) {
-                sendExpiredToClient(session);
+                onServerSessionRemoved(session, true);
             }
         });
+    }
+
+    private static void onServerSessionRemoved(RemoteUiSessionManager.RemoteUiSession<PageSession> session,
+            boolean notifyClient) {
+        if (session == null) {
+            return;
+        }
+        PageSession pageSession = session.getPayload();
+        if (pageSession != null && pageSession.closeHandler != null) {
+            pageSession.closeHandler.onClosed(session.getPlayer(), session.getSessionId());
+        }
+        if (notifyClient) {
+            sendExpiredToClient(session);
+        }
     }
 
     private static void sendExpiredToClient(RemoteUiSessionManager.RemoteUiSession<PageSession> session) {
@@ -358,7 +468,7 @@ public final class RemoteDocumentPages {
 
     private static void ensureRegistered() {
         if (!registered || openChannel == null || expiredChannel == null || submitChannel == null
-                || streamEndpoint == null) {
+                || closeChannel == null || streamEndpoint == null) {
             throw new IllegalStateException("远程页面网络端点尚未注册，请确认 Qz UILib preInit 已完成");
         }
     }
@@ -398,10 +508,13 @@ public final class RemoteDocumentPages {
 
         private final RemoteDocumentPage page;
         private final RemoteDocumentSubmitHandler handler;
+        private final RemoteDocumentSessionCloseHandler closeHandler;
 
-        private PageSession(RemoteDocumentPage page, RemoteDocumentSubmitHandler handler) {
+        private PageSession(RemoteDocumentPage page, RemoteDocumentSubmitHandler handler,
+                RemoteDocumentSessionCloseHandler closeHandler) {
             this.page = page;
             this.handler = handler;
+            this.closeHandler = closeHandler;
         }
     }
 }
