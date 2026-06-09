@@ -32,12 +32,12 @@ import club.heiqi.uilib.net.transport.NetSide;
 public final class RemoteDocumentPages {
 
     public static final NetContentType REMOTE_HTML_CONTENT_TYPE =
-            RemoteHtmlSessionGateway.REMOTE_HTML_CONTENT_TYPE;
+            RemoteUiAssetStore.REMOTE_HTML_CONTENT_TYPE;
     private static final String CLIENT_BRIDGE_CLASS =
             "club.heiqi.uilib.ui.remote.RemoteDocumentClientBridge";
     private static final long STREAM_MAX_BYTES = RemoteHtmlSessionGateway.DEFAULT_STREAM_MAX_BYTES;
-    private static final RemoteHtmlSessionGateway<PageSession> SERVER_SESSIONS =
-            new RemoteHtmlSessionGateway<PageSession>("远程页面");
+    private static final RemoteUiServerRuntime<PageSession> SERVER_RUNTIME =
+            new RemoteUiServerRuntime<PageSession>("远程页面", RemoteUiProtocol.SurfaceType.PAGE);
 
     private static volatile boolean registered;
     private static NetChannel openChannel;
@@ -134,10 +134,11 @@ public final class RemoteDocumentPages {
         }
         RemoteDocumentPage resolvedPage = requirePage(page);
         cleanupExpiredSessions();
-        RemoteHtmlSessionGateway.RemoteHtmlSession<PageSession> session = SERVER_SESSIONS.createSession(player,
-                new PageSession(resolvedPage, handler), resolvedPage.getHtml());
-        openChannel.toPlayer(player).send(NetMessage.json(RemoteJson.toJson(OpenOffer.from(session.getSessionId(),
-                resolvedPage, session.getHtmlByteCount(), session.getSha256()))));
+        RemoteUiSessionManager.RemoteUiSession<PageSession> session = SERVER_RUNTIME.createSession(player,
+                RemoteUiProtocol.PAGE_PRIMARY_SURFACE_ID, new PageSession(resolvedPage, handler),
+                resolvedPage.getHtml());
+        openChannel.toPlayer(player).send(NetMessage.json(RemoteUiProtocol.toJson(OpenOffer.from(session,
+                resolvedPage))));
         return session.getSessionId();
     }
 
@@ -154,7 +155,12 @@ public final class RemoteDocumentPages {
 
     static NetStreamCall callPageStream(String sessionId) {
         ensureRegistered();
-        return SERVER_SESSIONS.callStream(streamEndpoint, sessionId);
+        return SERVER_RUNTIME.callStream(streamEndpoint, sessionId);
+    }
+
+    static NetStreamCall callPageStream(OpenOffer offer) {
+        ensureRegistered();
+        return SERVER_RUNTIME.callStream(streamEndpoint, offer);
     }
 
     static void submitFromClient(SubmitPayload payload) {
@@ -164,17 +170,21 @@ public final class RemoteDocumentPages {
 
     static OpenOffer decodeOpenOffer(String json) {
         OpenOffer offer = RemoteJson.fromJson(json, OpenOffer.class);
-        if (offer == null || RemoteHtmlSessionGateway.isBlank(offer.sessionId)) {
+        normalizeOpenOffer(offer);
+        if (offer == null || RemoteUiProtocol.isBlank(offer.sessionId)) {
             throw new IllegalArgumentException("远程页面 open offer 缺少 sessionId");
         }
+        RemoteUiProtocol.validateOpenSurface(offer);
         return offer;
     }
 
     static SubmitPayload decodeSubmitPayload(String json) {
         SubmitPayload payload = RemoteJson.fromJson(json, SubmitPayload.class);
-        if (payload == null || RemoteHtmlSessionGateway.isBlank(payload.sessionId)) {
+        normalizeSubmitPayload(payload);
+        if (payload == null || RemoteUiProtocol.isBlank(payload.sessionId)) {
             throw new IllegalArgumentException("远程页面提交缺少 sessionId");
         }
+        RemoteUiProtocol.validateSubmit(payload);
         if (payload.values == null) {
             payload.values = Collections.emptyMap();
         }
@@ -183,9 +193,11 @@ public final class RemoteDocumentPages {
 
     static ExpiredPayload decodeExpiredPayload(String json) {
         ExpiredPayload payload = RemoteJson.fromJson(json, ExpiredPayload.class);
-        if (payload == null || RemoteHtmlSessionGateway.isBlank(payload.sessionId)) {
+        normalizeExpiredPayload(payload);
+        if (payload == null || RemoteUiProtocol.isBlank(payload.sessionId)) {
             throw new IllegalArgumentException("远程页面失效通知缺少 sessionId");
         }
+        RemoteUiProtocol.validateClose(payload);
         payload.pageId = payload.pageId == null ? "" : payload.pageId;
         payload.reason = payload.reason == null ? "" : payload.reason;
         return payload;
@@ -196,8 +208,8 @@ public final class RemoteDocumentPages {
     }
 
     static void resetForTests() {
-        SERVER_SESSIONS.clear();
-        SERVER_SESSIONS.setClockForTests(null);
+        SERVER_RUNTIME.clear();
+        SERVER_RUNTIME.setClockForTests(null);
         registered = false;
         openChannel = null;
         expiredChannel = null;
@@ -206,24 +218,24 @@ public final class RemoteDocumentPages {
     }
 
     static void setSessionClockForTests(LongSupplier clock) {
-        SERVER_SESSIONS.setClockForTests(clock);
+        SERVER_RUNTIME.setClockForTests(clock);
     }
 
     private static void handleStreamRequest(NetRequest request,
             NetStreamEndpoint.NetStreamRequestContext context) {
-        SERVER_SESSIONS.handleStreamRequest(request, context,
-                new RemoteHtmlSessionGateway.HeaderContributor<PageSession>() {
+        SERVER_RUNTIME.handleStreamRequest(request, context,
+                new RemoteUiServerRuntime.HeaderContributor<PageSession>() {
                     @Override
                     public NetResponse addHeaders(NetResponse response,
-                            RemoteHtmlSessionGateway.RemoteHtmlSession<PageSession> session) {
+                            RemoteUiSessionManager.RemoteUiSession<PageSession> session) {
                         RemoteDocumentPage page = session.getPayload().page;
                         return response
                                 .withHeader("x-qz-page-id", page.getPageId())
                                 .withHeader("x-qz-resource-policy", page.getResourcePolicy().name());
                     }
-                }, new RemoteHtmlSessionGateway.SessionRemovalListener<PageSession>() {
+                }, new RemoteUiServerRuntime.SessionRemovalListener<PageSession>() {
                     @Override
-                    public void onSessionRemoved(RemoteHtmlSessionGateway.RemoteHtmlSession<PageSession> session) {
+                    public void onSessionRemoved(RemoteUiSessionManager.RemoteUiSession<PageSession> session) {
                         sendExpiredToClient(session);
                     }
                 });
@@ -238,17 +250,19 @@ public final class RemoteDocumentPages {
             return;
         }
         cleanupExpiredSessions();
-        RemoteHtmlSessionGateway.RemoteHtmlSession<PageSession> session =
-                SERVER_SESSIONS.getSession(payload.sessionId);
-        if (session == null) {
-            MyMod.LOG.warn("远程页面提交 session 不存在：{}", payload.sessionId);
+        RemoteUiSessionManager.ValidationResult<PageSession> validation = SERVER_RUNTIME.validateSubmit(payload,
+                senderPlayer, new RemoteUiServerRuntime.SessionRemovalListener<PageSession>() {
+                    @Override
+                    public void onSessionRemoved(RemoteUiSessionManager.RemoteUiSession<PageSession> session) {
+                        sendExpiredToClient(session);
+                    }
+                });
+        if (!validation.isOk()) {
+            MyMod.LOG.warn("远程页面提交被拒绝：session={} status={} message={}", payload.sessionId,
+                    Integer.valueOf(validation.getStatusCode()), validation.getMessage());
             return;
         }
-        if (!session.matchesPlayer(senderPlayer)) {
-            MyMod.LOG.warn("远程页面提交玩家不匹配：session={} sender={}", payload.sessionId,
-                    String.valueOf(senderPlayer));
-            return;
-        }
+        RemoteUiSessionManager.RemoteUiSession<PageSession> session = validation.getSession();
         PageSession pageSession = session.getPayload();
         if (!pageSession.page.getPageId().equals(payload.pageId)) {
             MyMod.LOG.warn("远程页面提交 pageId 不匹配：session={} expected={} actual={}",
@@ -298,23 +312,94 @@ public final class RemoteDocumentPages {
     }
 
     private static void cleanupExpiredSessions() {
-        SERVER_SESSIONS.cleanupExpiredSessions(new RemoteHtmlSessionGateway.SessionRemovalListener<PageSession>() {
+        SERVER_RUNTIME.cleanupExpiredSessions(new RemoteUiServerRuntime.SessionRemovalListener<PageSession>() {
             @Override
-            public void onSessionRemoved(RemoteHtmlSessionGateway.RemoteHtmlSession<PageSession> session) {
+            public void onSessionRemoved(RemoteUiSessionManager.RemoteUiSession<PageSession> session) {
                 sendExpiredToClient(session);
             }
         });
     }
 
-    private static void sendExpiredToClient(RemoteHtmlSessionGateway.RemoteHtmlSession<PageSession> session) {
+    private static void sendExpiredToClient(RemoteUiSessionManager.RemoteUiSession<PageSession> session) {
         if (session == null || expiredChannel == null) {
             return;
         }
         ExpiredPayload payload = new ExpiredPayload();
+        payload.messageType = RemoteUiProtocol.MessageType.SESSION_EXPIRED.name();
         payload.sessionId = session.getSessionId();
+        payload.surfaceType = session.getSurfaceType().name();
+        payload.surfaceId = session.getSurfaceId();
+        payload.contentRevision = session.getContentRevision();
+        payload.closeScope = RemoteUiProtocol.CloseScope.SESSION.name();
         payload.pageId = session.getPayload().page.getPageId();
         payload.reason = "server-session-expired";
-        expiredChannel.toPlayer(session.getPlayer()).send(NetMessage.json(RemoteJson.toJson(payload)));
+        expiredChannel.toPlayer(session.getPlayer()).send(NetMessage.json(RemoteUiProtocol.toJson(payload)));
+    }
+
+    private static void normalizeOpenOffer(OpenOffer offer) {
+        if (offer == null) {
+            return;
+        }
+        if (RemoteUiProtocol.isBlank(offer.messageType)) {
+            offer.messageType = RemoteUiProtocol.MessageType.OPEN_SURFACE.name();
+        }
+        if (RemoteUiProtocol.isBlank(offer.feature)) {
+            offer.feature = RemoteUiProtocol.FEATURE_LEASE_V1;
+        }
+        if (RemoteUiProtocol.isBlank(offer.surfaceType)) {
+            offer.surfaceType = RemoteUiProtocol.SurfaceType.PAGE.name();
+        }
+        if (RemoteUiProtocol.isBlank(offer.surfaceId)) {
+            offer.surfaceId = RemoteUiProtocol.PAGE_PRIMARY_SURFACE_ID;
+        }
+        if (offer.contentRevision <= 0L) {
+            offer.contentRevision = 1L;
+        }
+        if (RemoteUiProtocol.isBlank(offer.leasePolicy)) {
+            offer.leasePolicy = RemoteUiProtocol.LeasePolicy.FIXED.name();
+        }
+    }
+
+    private static void normalizeSubmitPayload(SubmitPayload payload) {
+        if (payload == null) {
+            return;
+        }
+        if (RemoteUiProtocol.isBlank(payload.messageType)) {
+            payload.messageType = RemoteUiProtocol.MessageType.SUBMIT.name();
+        }
+        if (RemoteUiProtocol.isBlank(payload.feature)) {
+            payload.feature = RemoteUiProtocol.FEATURE_LEASE_V1;
+        }
+        if (RemoteUiProtocol.isBlank(payload.surfaceType)) {
+            payload.surfaceType = RemoteUiProtocol.SurfaceType.PAGE.name();
+        }
+        if (RemoteUiProtocol.isBlank(payload.surfaceId)) {
+            payload.surfaceId = RemoteUiProtocol.PAGE_PRIMARY_SURFACE_ID;
+        }
+        if (payload.contentRevision <= 0L) {
+            payload.contentRevision = 1L;
+        }
+    }
+
+    private static void normalizeExpiredPayload(ExpiredPayload payload) {
+        if (payload == null) {
+            return;
+        }
+        if (RemoteUiProtocol.isBlank(payload.messageType)) {
+            payload.messageType = RemoteUiProtocol.MessageType.SESSION_EXPIRED.name();
+        }
+        if (RemoteUiProtocol.isBlank(payload.feature)) {
+            payload.feature = RemoteUiProtocol.FEATURE_LEASE_V1;
+        }
+        if (RemoteUiProtocol.isBlank(payload.surfaceType)) {
+            payload.surfaceType = RemoteUiProtocol.SurfaceType.PAGE.name();
+        }
+        if (RemoteUiProtocol.isBlank(payload.surfaceId)) {
+            payload.surfaceId = RemoteUiProtocol.PAGE_PRIMARY_SURFACE_ID;
+        }
+        if (payload.contentRevision <= 0L) {
+            payload.contentRevision = 1L;
+        }
     }
 
     private static RemoteDocumentPage requirePage(RemoteDocumentPage page) {
@@ -331,41 +416,35 @@ public final class RemoteDocumentPages {
         }
     }
 
-    static final class OpenOffer {
+    static final class OpenOffer extends RemoteUiProtocol.OpenSurfacePayload {
 
-        String sessionId;
         String pageId;
         String title;
         String resourcePolicy;
-        String sha256;
-        int htmlBytes;
-        Map<String, String> metadata;
 
-        static OpenOffer from(String sessionId, RemoteDocumentPage page, int htmlBytes, String sha256) {
+        static OpenOffer from(RemoteUiSessionManager.RemoteUiSession<PageSession> session, RemoteDocumentPage page) {
             OpenOffer offer = new OpenOffer();
-            offer.sessionId = sessionId;
+            offer.sessionId = session.getSessionId();
+            offer.surfaceType = session.getSurfaceType().name();
+            offer.surfaceId = session.getSurfaceId();
+            offer.contentRevision = session.getContentRevision();
+            offer.assetId = session.getAssetId();
             offer.pageId = page.getPageId();
             offer.title = page.getTitle();
             offer.resourcePolicy = page.getResourcePolicy().name();
-            offer.sha256 = sha256;
-            offer.htmlBytes = htmlBytes;
+            offer.sha256 = session.getSha256();
+            offer.htmlBytes = session.getHtmlByteCount();
+            offer.leaseExpiresAtMillis = session.getLeaseExpiresAtMillis();
+            offer.leasePolicy = session.getLeasePolicy().name();
             offer.metadata = new LinkedHashMap<String, String>(page.getMetadata());
             return offer;
         }
     }
 
-    static final class SubmitPayload {
-        String sessionId;
-        String pageId;
-        String action;
-        String formId;
-        Map<String, List<String>> values = Collections.emptyMap();
-    }
+    static final class SubmitPayload extends RemoteUiProtocol.SubmitPayload {}
 
-    static final class ExpiredPayload {
-        String sessionId;
+    static final class ExpiredPayload extends RemoteUiProtocol.ClosePayload {
         String pageId;
-        String reason;
     }
 
     private static final class PageSession {

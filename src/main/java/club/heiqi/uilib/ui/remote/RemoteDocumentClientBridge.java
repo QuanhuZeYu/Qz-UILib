@@ -26,6 +26,7 @@ import net.minecraft.client.gui.GuiScreen;
 public final class RemoteDocumentClientBridge {
 
     private static final Object STATE_LOCK = new Object();
+    private static final RemoteUiClientRuntime CLIENT_RUNTIME = new RemoteUiClientRuntime();
     private static final DocumentScreenOpener MINECRAFT_SCREEN_OPENER = new DocumentScreenOpener() {
         @Override
         public void open(UiDocumentScreens.DocumentScreenProvision provision) {
@@ -40,9 +41,13 @@ public final class RemoteDocumentClientBridge {
     };
 
     private static String currentSessionId = "";
-    private static long currentGeneration;
+    private static String currentSurfaceId = RemoteUiProtocol.PAGE_PRIMARY_SURFACE_ID;
+    private static long currentContentRevision;
+    private static long currentLocalMountToken;
     private static String replacingSessionId = "";
-    private static long replacingGeneration;
+    private static String replacingSurfaceId = RemoteUiProtocol.PAGE_PRIMARY_SURFACE_ID;
+    private static long replacingContentRevision;
+    private static long replacingLocalMountToken;
     private static DocumentScreenOpener screenOpener = MINECRAFT_SCREEN_OPENER;
 
     private RemoteDocumentClientBridge() {}
@@ -60,15 +65,15 @@ public final class RemoteDocumentClientBridge {
             openErrorScreen("远程页面协议无效", exception.getMessage());
             return;
         }
-        final long generation = markCurrentOffer(offer.sessionId);
-        openLoadingScreen(offer, generation);
+        final long localMountToken = markCurrentOffer(offer);
+        openLoadingScreen(offer, localMountToken);
         NetStreamCall call;
         try {
-            call = RemoteDocumentPages.callPageStream(offer.sessionId);
+            call = RemoteDocumentPages.callPageStream(offer);
         } catch (RuntimeException exception) {
-            if (isCurrentOffer(offer.sessionId, generation)) {
-                openErrorScreen("远程页面请求失败", exception.getMessage());
-            }
+                if (isCurrentOffer(offer, localMountToken)) {
+                    openErrorScreen("远程页面请求失败", exception.getMessage());
+                }
             return;
         }
         call.future().whenComplete(new BiConsumer<NetResponse, Throwable>() {
@@ -77,7 +82,7 @@ public final class RemoteDocumentClientBridge {
                 UiScreenManager.getInstance().enqueue(new Runnable() {
                     @Override
                     public void run() {
-                        if (!isCurrentOffer(offer.sessionId, generation)) {
+                        if (!isCurrentOffer(offer, localMountToken)) {
                             return;
                         }
                         if (throwable != null) {
@@ -86,7 +91,11 @@ public final class RemoteDocumentClientBridge {
                         }
                         try {
                             String html = validateAndDecode(offer, response);
-                            openRemoteDocumentScreen(offer, html, generation);
+                            if (!CLIENT_RUNTIME.completePending(RemoteUiProtocol.SurfaceType.PAGE, offer.surfaceId,
+                                    offer.sessionId, offer.contentRevision, localMountToken)) {
+                                return;
+                            }
+                            openRemoteDocumentScreen(offer, html, localMountToken);
                         } catch (RuntimeException exception) {
                             openErrorScreen("远程页面校验失败", exception.getMessage());
                         }
@@ -109,7 +118,7 @@ public final class RemoteDocumentClientBridge {
             openErrorScreen("远程页面失效通知无效", exception.getMessage());
             return;
         }
-        if (!expireCurrentOffer(payload.sessionId)) {
+        if (!expireCurrentOffer(payload.sessionId, payload.surfaceId, payload.contentRevision)) {
             return;
         }
         openErrorScreen("远程页面已失效", "当前远程页面 session 已过期，请重新打开页面后再操作。");
@@ -129,6 +138,14 @@ public final class RemoteDocumentClientBridge {
         if (!offer.sessionId.equals(response.getHeader("x-qz-session-id"))) {
             throw new IllegalStateException("远程页面 session 响应不匹配");
         }
+        if (!offer.surfaceType.equals(response.getHeader("x-qz-surface-type"))
+                || !offer.surfaceId.equals(response.getHeader("x-qz-surface-id"))) {
+            throw new IllegalStateException("远程页面 surface 响应不匹配");
+        }
+        if (!Long.toString(offer.contentRevision).equals(response.getHeader("x-qz-content-revision"))
+                || !offer.assetId.equals(response.getHeader("x-qz-asset-id"))) {
+            throw new IllegalStateException("远程页面内容版本响应不匹配");
+        }
         if (!offer.pageId.equals(response.getHeader("x-qz-page-id"))) {
             throw new IllegalStateException("远程页面 pageId 响应不匹配");
         }
@@ -145,20 +162,21 @@ public final class RemoteDocumentClientBridge {
     }
 
     private static void openRemoteDocumentScreen(final RemoteDocumentPages.OpenOffer offer, final String html,
-            long generation) {
+            long localMountToken) {
         final RemoteDocumentResourcePolicy policy = resolvePolicy(offer.resourcePolicy);
-        openDocumentScreen(offer.sessionId, generation, new UiDocumentScreens.DocumentScreenContentBuilder() {
+        openDocumentScreen(offer, localMountToken, new UiDocumentScreens.DocumentScreenContentBuilder() {
             @Override
             public void build(UiDocument document) {
                 RemoteHtmlDocumentParser.parseInto(document, html,
-                        RemoteHtmlDocumentParser.Options.of(offer.sessionId, offer.pageId, policy));
+                        RemoteHtmlDocumentParser.Options.of(offer.sessionId, offer.surfaceId,
+                                offer.contentRevision, offer.pageId, policy, null, true));
                 installRemoteLinkHandler(document, policy);
             }
         });
     }
 
-    private static void openLoadingScreen(final RemoteDocumentPages.OpenOffer offer, long generation) {
-        openDocumentScreen(offer.sessionId, generation, new UiDocumentScreens.DocumentScreenContentBuilder() {
+    private static void openLoadingScreen(final RemoteDocumentPages.OpenOffer offer, long localMountToken) {
+        openDocumentScreen(offer, localMountToken, new UiDocumentScreens.DocumentScreenContentBuilder() {
             @Override
             public void build(UiDocument document) {
                 ElementNode root = document.getRootElement();
@@ -195,30 +213,38 @@ public final class RemoteDocumentClientBridge {
         });
     }
 
-    private static void openDocumentScreen(final String sessionId, final long generation,
+    private static void openDocumentScreen(final RemoteDocumentPages.OpenOffer offer, final long localMountToken,
             UiDocumentScreens.DocumentScreenContentBuilder builder) {
-        UiDocumentScreens.DocumentScreenLifecycle lifecycle = RemoteHtmlSessionGateway.isBlank(sessionId) ? null
+        final String sessionId = offer == null ? "" : offer.sessionId;
+        final String surfaceId = offer == null ? RemoteUiProtocol.PAGE_PRIMARY_SURFACE_ID : offer.surfaceId;
+        final long contentRevision = offer == null ? 0L : offer.contentRevision;
+        UiDocumentScreens.DocumentScreenLifecycle lifecycle = RemoteUiProtocol.isBlank(sessionId) ? null
                 : new UiDocumentScreens.DocumentScreenLifecycle() {
                     @Override
                     public void onClosed() {
-                        clearCurrentOfferFromScreen(sessionId, generation);
+                        clearCurrentOfferFromScreen(sessionId, surfaceId, contentRevision, localMountToken);
                     }
                 };
-        beginScreenReplacement(sessionId, generation);
+        beginScreenReplacement(sessionId, surfaceId, contentRevision, localMountToken);
         try {
             screenOpener.open(UiDocumentScreens.DocumentScreenProvision.of(builder, lifecycle));
         } finally {
-            endScreenReplacement(sessionId, generation);
+            endScreenReplacement(sessionId, surfaceId, contentRevision, localMountToken);
         }
     }
 
     static void resetForTests() {
         synchronized (STATE_LOCK) {
             currentSessionId = "";
-            currentGeneration = 0L;
+            currentSurfaceId = RemoteUiProtocol.PAGE_PRIMARY_SURFACE_ID;
+            currentContentRevision = 0L;
+            currentLocalMountToken = 0L;
             replacingSessionId = "";
-            replacingGeneration = 0L;
+            replacingSurfaceId = RemoteUiProtocol.PAGE_PRIMARY_SURFACE_ID;
+            replacingContentRevision = 0L;
+            replacingLocalMountToken = 0L;
         }
+        CLIENT_RUNTIME.clear();
         screenOpener = MINECRAFT_SCREEN_OPENER;
     }
 
@@ -226,55 +252,89 @@ public final class RemoteDocumentClientBridge {
         screenOpener = opener == null ? MINECRAFT_SCREEN_OPENER : opener;
     }
 
-    private static long markCurrentOffer(String sessionId) {
+    private static long markCurrentOffer(RemoteDocumentPages.OpenOffer offer) {
+        RemoteUiClientRuntime.PendingMount mount = CLIENT_RUNTIME.beginOpen(RemoteUiProtocol.SurfaceType.PAGE,
+                offer.surfaceId, offer.sessionId, offer.contentRevision);
         synchronized (STATE_LOCK) {
-            currentSessionId = sessionId == null ? "" : sessionId;
-            currentGeneration++;
-            return currentGeneration;
+            currentSessionId = offer.sessionId == null ? "" : offer.sessionId;
+            currentSurfaceId = offer.surfaceId == null ? "" : offer.surfaceId;
+            currentContentRevision = offer.contentRevision;
+            currentLocalMountToken = mount.getLocalMountToken();
+            return currentLocalMountToken;
         }
     }
 
-    private static boolean isCurrentOffer(String sessionId, long generation) {
+    private static boolean isCurrentOffer(RemoteDocumentPages.OpenOffer offer, long localMountToken) {
         synchronized (STATE_LOCK) {
-            return currentGeneration == generation && currentSessionId.equals(sessionId == null ? "" : sessionId);
+            return currentLocalMountToken == localMountToken
+                    && currentContentRevision == offer.contentRevision
+                    && currentSessionId.equals(offer.sessionId == null ? "" : offer.sessionId)
+                    && currentSurfaceId.equals(offer.surfaceId == null ? "" : offer.surfaceId)
+                    && CLIENT_RUNTIME.isCurrent(RemoteUiProtocol.SurfaceType.PAGE, offer.surfaceId, offer.sessionId,
+                            offer.contentRevision, localMountToken);
         }
     }
 
-    private static boolean expireCurrentOffer(String sessionId) {
+    private static boolean expireCurrentOffer(String sessionId, String surfaceId, long contentRevision) {
         synchronized (STATE_LOCK) {
             if (!currentSessionId.equals(sessionId == null ? "" : sessionId)) {
                 return false;
             }
+            if (!currentSurfaceId.equals(surfaceId == null ? "" : surfaceId)
+                    || currentContentRevision != contentRevision) {
+                return false;
+            }
+            CLIENT_RUNTIME.closeSession(RemoteUiProtocol.SurfaceType.PAGE, surfaceId, sessionId,
+                    contentRevision, currentLocalMountToken);
             currentSessionId = "";
-            currentGeneration++;
+            currentSurfaceId = RemoteUiProtocol.PAGE_PRIMARY_SURFACE_ID;
+            currentContentRevision = 0L;
+            currentLocalMountToken = 0L;
             return true;
         }
     }
 
-    private static void beginScreenReplacement(String sessionId, long generation) {
+    private static void beginScreenReplacement(String sessionId, String surfaceId, long contentRevision,
+            long localMountToken) {
         synchronized (STATE_LOCK) {
             replacingSessionId = sessionId == null ? "" : sessionId;
-            replacingGeneration = generation;
+            replacingSurfaceId = surfaceId == null ? "" : surfaceId;
+            replacingContentRevision = contentRevision;
+            replacingLocalMountToken = localMountToken;
         }
     }
 
-    private static void endScreenReplacement(String sessionId, long generation) {
+    private static void endScreenReplacement(String sessionId, String surfaceId, long contentRevision,
+            long localMountToken) {
         synchronized (STATE_LOCK) {
-            if (replacingGeneration == generation && replacingSessionId.equals(sessionId == null ? "" : sessionId)) {
+            if (replacingLocalMountToken == localMountToken && replacingContentRevision == contentRevision
+                    && replacingSessionId.equals(sessionId == null ? "" : sessionId)
+                    && replacingSurfaceId.equals(surfaceId == null ? "" : surfaceId)) {
                 replacingSessionId = "";
-                replacingGeneration = 0L;
+                replacingSurfaceId = RemoteUiProtocol.PAGE_PRIMARY_SURFACE_ID;
+                replacingContentRevision = 0L;
+                replacingLocalMountToken = 0L;
             }
         }
     }
 
-    private static void clearCurrentOfferFromScreen(String sessionId, long generation) {
+    private static void clearCurrentOfferFromScreen(String sessionId, String surfaceId, long contentRevision,
+            long localMountToken) {
         synchronized (STATE_LOCK) {
-            if (replacingGeneration == generation && replacingSessionId.equals(sessionId == null ? "" : sessionId)) {
+            if (replacingLocalMountToken == localMountToken && replacingContentRevision == contentRevision
+                    && replacingSessionId.equals(sessionId == null ? "" : sessionId)
+                    && replacingSurfaceId.equals(surfaceId == null ? "" : surfaceId)) {
                 return;
             }
-            if (currentGeneration == generation && currentSessionId.equals(sessionId == null ? "" : sessionId)) {
+            if (currentLocalMountToken == localMountToken && currentContentRevision == contentRevision
+                    && currentSessionId.equals(sessionId == null ? "" : sessionId)
+                    && currentSurfaceId.equals(surfaceId == null ? "" : surfaceId)) {
+                CLIENT_RUNTIME.closeSession(RemoteUiProtocol.SurfaceType.PAGE, surfaceId, sessionId,
+                        contentRevision, localMountToken);
                 currentSessionId = "";
-                currentGeneration++;
+                currentSurfaceId = RemoteUiProtocol.PAGE_PRIMARY_SURFACE_ID;
+                currentContentRevision = 0L;
+                currentLocalMountToken = 0L;
             }
         }
     }

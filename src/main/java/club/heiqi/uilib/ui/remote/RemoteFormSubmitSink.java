@@ -22,4 +22,20 @@ interface RemoteFormSubmitSink {
      */
     void submit(String sessionId, String pageId, String action, String formId,
             Map<String, List<String>> values);
+
+    /**
+     * 提交携带远程 UI surface 与 revision 的表单字段。
+     *
+     * @param sessionId 远程会话标识
+     * @param surfaceId surface 标识
+     * @param contentRevision 内容版本
+     * @param pageId 页面业务标识
+     * @param action 表单 action
+     * @param formId 表单 id
+     * @param values successful controls 字段值
+     */
+    default void submit(String sessionId, String surfaceId, long contentRevision, String pageId,
+            String action, String formId, Map<String, List<String>> values) {
+        submit(sessionId, pageId, action, formId, values);
+    }
 }

@@ -7,7 +7,6 @@ import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.LongSupplier;
 
 import club.heiqi.uilib.MyMod;
@@ -33,14 +32,12 @@ import club.heiqi.uilib.net.transport.NetSide;
 public final class RemoteHudOverlays {
 
     public static final NetContentType REMOTE_HTML_CONTENT_TYPE =
-            RemoteHtmlSessionGateway.REMOTE_HTML_CONTENT_TYPE;
+            RemoteUiAssetStore.REMOTE_HTML_CONTENT_TYPE;
     private static final String CLIENT_BRIDGE_CLASS =
             "club.heiqi.uilib.ui.remote.RemoteHudOverlayClientBridge";
     private static final long STREAM_MAX_BYTES = RemoteHtmlSessionGateway.DEFAULT_STREAM_MAX_BYTES;
-    private static final RemoteHtmlSessionGateway<HudSession> SERVER_SESSIONS =
-            new RemoteHtmlSessionGateway<HudSession>("远程 HUD");
-    private static final Map<OverlayKey, String> ACTIVE_SESSION_IDS_BY_OVERLAY_KEY =
-            new ConcurrentHashMap<OverlayKey, String>();
+    private static final RemoteUiServerRuntime<HudSession> SERVER_RUNTIME =
+            new RemoteUiServerRuntime<HudSession>("远程 HUD", RemoteUiProtocol.SurfaceType.HUD);
 
     private static volatile boolean registered;
     private static NetChannel openChannel;
@@ -142,15 +139,11 @@ public final class RemoteHudOverlays {
         }
         RemoteHudOverlay resolvedOverlay = requireOverlay(overlay);
         cleanupExpiredSessions();
-        RemoteHtmlSessionGateway.RemoteHtmlSession<HudSession> session = SERVER_SESSIONS.createSession(player,
-                new HudSession(resolvedOverlay, handler), resolvedOverlay.getPage().getHtml());
-        OverlayKey overlayKey = OverlayKey.of(player, resolvedOverlay.getOverlayId());
-        String previousSessionId = ACTIVE_SESSION_IDS_BY_OVERLAY_KEY.put(overlayKey, session.getSessionId());
-        if (previousSessionId != null) {
-            SERVER_SESSIONS.removeSession(previousSessionId);
-        }
-        openChannel.toPlayer(player).send(NetMessage.json(RemoteJson.toJson(OpenOffer.from(session.getSessionId(),
-                resolvedOverlay, session.getHtmlByteCount(), session.getSha256()))));
+        RemoteUiSessionManager.RemoteUiSession<HudSession> session = SERVER_RUNTIME.createSession(player,
+                resolvedOverlay.getOverlayId(), new HudSession(resolvedOverlay, handler),
+                resolvedOverlay.getPage().getHtml());
+        openChannel.toPlayer(player).send(NetMessage.json(RemoteUiProtocol.toJson(OpenOffer.from(session,
+                resolvedOverlay))));
         return session.getSessionId();
     }
 
@@ -247,25 +240,25 @@ public final class RemoteHudOverlays {
      */
     public static boolean dismiss(Object player, String overlayId) {
         ensureRegistered();
-        if (player == null || RemoteHtmlSessionGateway.isBlank(overlayId)) {
+        if (player == null || RemoteUiProtocol.isBlank(overlayId)) {
             return false;
         }
-        OverlayKey key = OverlayKey.of(player, overlayId);
-        String sessionId = ACTIVE_SESSION_IDS_BY_OVERLAY_KEY.remove(key);
+        RemoteUiSessionManager.CloseResult<HudSession> closeResult = SERVER_RUNTIME.closeSurface(player, overlayId);
         DismissPayload payload = new DismissPayload();
-        payload.sessionId = sessionId == null ? "" : sessionId;
+        payload.closeScope = RemoteUiProtocol.CloseScope.SURFACE.name();
+        if (closeResult.getSession() != null) {
+            payload.sessionId = closeResult.getSession().getSessionId();
+            payload.contentRevision = closeResult.getSession().getContentRevision();
+        } else {
+            payload.sessionId = "";
+            payload.contentRevision = 0L;
+        }
+        payload.surfaceType = RemoteUiProtocol.SurfaceType.HUD.name();
+        payload.surfaceId = overlayId;
         payload.overlayId = overlayId;
         payload.reason = "server-dismiss";
-        if (sessionId != null) {
-            RemoteHtmlSessionGateway.RemoteHtmlSession<HudSession> session =
-                    SERVER_SESSIONS.removeSession(sessionId);
-            if (session != null) {
-                contextSendDismissToClient(player, payload);
-                return true;
-            }
-        }
         contextSendDismissToClient(player, payload);
-        return false;
+        return closeResult.isClosed();
     }
 
     /**
@@ -280,20 +273,25 @@ public final class RemoteHudOverlays {
      */
     public static boolean dismissSession(Object player, String overlayId, String sessionId) {
         ensureRegistered();
-        if (player == null || RemoteHtmlSessionGateway.isBlank(overlayId)
-                || RemoteHtmlSessionGateway.isBlank(sessionId)) {
+        if (player == null || RemoteUiProtocol.isBlank(overlayId)
+                || RemoteUiProtocol.isBlank(sessionId)) {
             return false;
         }
-        OverlayKey key = OverlayKey.of(player, overlayId);
-        if (!ACTIVE_SESSION_IDS_BY_OVERLAY_KEY.remove(key, sessionId)) {
+        RemoteUiSessionManager.RemoteUiSession<HudSession> currentSession = SERVER_RUNTIME.getSession(sessionId);
+        if (currentSession == null) {
             return false;
         }
-        RemoteHtmlSessionGateway.RemoteHtmlSession<HudSession> session = SERVER_SESSIONS.removeSession(sessionId);
-        if (session == null) {
+        RemoteUiSessionManager.CloseResult<HudSession> closeResult = SERVER_RUNTIME.closeSession(player, overlayId,
+                sessionId, currentSession.getContentRevision());
+        if (!closeResult.isClosed()) {
             return false;
         }
         DismissPayload payload = new DismissPayload();
         payload.sessionId = sessionId;
+        payload.surfaceType = RemoteUiProtocol.SurfaceType.HUD.name();
+        payload.surfaceId = overlayId;
+        payload.contentRevision = currentSession.getContentRevision();
+        payload.closeScope = RemoteUiProtocol.CloseScope.SESSION.name();
         payload.overlayId = overlayId;
         payload.reason = "server-dismiss";
         contextSendDismissToClient(player, payload);
@@ -302,7 +300,12 @@ public final class RemoteHudOverlays {
 
     static NetStreamCall callOverlayStream(String sessionId) {
         ensureRegistered();
-        return SERVER_SESSIONS.callStream(streamEndpoint, sessionId);
+        return SERVER_RUNTIME.callStream(streamEndpoint, sessionId);
+    }
+
+    static NetStreamCall callOverlayStream(OpenOffer offer) {
+        ensureRegistered();
+        return SERVER_RUNTIME.callStream(streamEndpoint, offer);
     }
 
     static void submitFromClient(SubmitPayload payload) {
@@ -317,19 +320,23 @@ public final class RemoteHudOverlays {
 
     static OpenOffer decodeOpenOffer(String json) {
         OpenOffer offer = RemoteJson.fromJson(json, OpenOffer.class);
-        if (offer == null || RemoteHtmlSessionGateway.isBlank(offer.sessionId)
-                || RemoteHtmlSessionGateway.isBlank(offer.overlayId)) {
+        normalizeOpenOffer(offer);
+        if (offer == null || RemoteUiProtocol.isBlank(offer.sessionId)
+                || RemoteUiProtocol.isBlank(offer.overlayId)) {
             throw new IllegalArgumentException("远程 HUD open offer 缺少 sessionId 或 overlayId");
         }
+        RemoteUiProtocol.validateOpenSurface(offer);
         return offer;
     }
 
     static SubmitPayload decodeSubmitPayload(String json) {
         SubmitPayload payload = RemoteJson.fromJson(json, SubmitPayload.class);
-        if (payload == null || RemoteHtmlSessionGateway.isBlank(payload.sessionId)
-                || RemoteHtmlSessionGateway.isBlank(payload.overlayId)) {
+        normalizeSubmitPayload(payload);
+        if (payload == null || RemoteUiProtocol.isBlank(payload.sessionId)
+                || RemoteUiProtocol.isBlank(payload.overlayId)) {
             throw new IllegalArgumentException("远程 HUD 提交缺少 sessionId 或 overlayId");
         }
+        RemoteUiProtocol.validateSubmit(payload);
         if (payload.values == null) {
             payload.values = Collections.emptyMap();
         }
@@ -338,9 +345,11 @@ public final class RemoteHudOverlays {
 
     static DismissPayload decodeDismissPayload(String json) {
         DismissPayload payload = RemoteJson.fromJson(json, DismissPayload.class);
-        if (payload == null || RemoteHtmlSessionGateway.isBlank(payload.overlayId)) {
+        normalizeDismissPayload(payload);
+        if (payload == null || RemoteUiProtocol.isBlank(payload.overlayId)) {
             throw new IllegalArgumentException("远程 HUD dismiss 缺少 overlayId");
         }
+        RemoteUiProtocol.validateClose(payload);
         payload.sessionId = payload.sessionId == null ? "" : payload.sessionId;
         payload.reason = payload.reason == null ? "" : payload.reason;
         return payload;
@@ -351,9 +360,8 @@ public final class RemoteHudOverlays {
     }
 
     static void resetForTests() {
-        SERVER_SESSIONS.clear();
-        SERVER_SESSIONS.setClockForTests(null);
-        ACTIVE_SESSION_IDS_BY_OVERLAY_KEY.clear();
+        SERVER_RUNTIME.clear();
+        SERVER_RUNTIME.setClockForTests(null);
         registered = false;
         openChannel = null;
         dismissChannel = null;
@@ -362,16 +370,16 @@ public final class RemoteHudOverlays {
     }
 
     static void setSessionClockForTests(LongSupplier clock) {
-        SERVER_SESSIONS.setClockForTests(clock);
+        SERVER_RUNTIME.setClockForTests(clock);
     }
 
     private static void handleStreamRequest(NetRequest request,
             NetStreamEndpoint.NetStreamRequestContext context) {
-        SERVER_SESSIONS.handleStreamRequest(request, context,
-                new RemoteHtmlSessionGateway.HeaderContributor<HudSession>() {
+        SERVER_RUNTIME.handleStreamRequest(request, context,
+                new RemoteUiServerRuntime.HeaderContributor<HudSession>() {
                     @Override
                     public NetResponse addHeaders(NetResponse response,
-                            RemoteHtmlSessionGateway.RemoteHtmlSession<HudSession> session) {
+                            RemoteUiSessionManager.RemoteUiSession<HudSession> session) {
                         RemoteHudOverlay overlay = session.getPayload().overlay;
                         return response
                                 .withHeader("x-qz-overlay-id", overlay.getOverlayId())
@@ -383,13 +391,10 @@ public final class RemoteHudOverlays {
                                         Boolean.toString(overlay.isDefaultCloseButtonVisible()))
                                 .withHeader("x-qz-overlay-close-label", overlay.getCloseButtonLabel());
                     }
-                }, new RemoteHtmlSessionGateway.SessionRemovalListener<HudSession>() {
+                }, new RemoteUiServerRuntime.SessionRemovalListener<HudSession>() {
                     @Override
-                    public void onSessionRemoved(RemoteHtmlSessionGateway.RemoteHtmlSession<HudSession> session) {
-                        HudSession hudSession = session.getPayload();
-                        ACTIVE_SESSION_IDS_BY_OVERLAY_KEY.remove(OverlayKey.of(session.getPlayer(),
-                                hudSession.overlay.getOverlayId()), session.getSessionId());
-                        sendExpiredDismiss(session, hudSession);
+                    public void onSessionRemoved(RemoteUiSessionManager.RemoteUiSession<HudSession> session) {
+                        sendExpiredDismiss(session);
                     }
                 });
     }
@@ -403,17 +408,19 @@ public final class RemoteHudOverlays {
             return;
         }
         cleanupExpiredSessions();
-        RemoteHtmlSessionGateway.RemoteHtmlSession<HudSession> session =
-                SERVER_SESSIONS.getSession(payload.sessionId);
-        if (session == null) {
-            MyMod.LOG.warn("远程 HUD 提交 session 不存在：{}", payload.sessionId);
+        RemoteUiSessionManager.ValidationResult<HudSession> validation = SERVER_RUNTIME.validateSubmit(payload,
+                senderPlayer, new RemoteUiServerRuntime.SessionRemovalListener<HudSession>() {
+                    @Override
+                    public void onSessionRemoved(RemoteUiSessionManager.RemoteUiSession<HudSession> session) {
+                        sendExpiredDismiss(session);
+                    }
+                });
+        if (!validation.isOk()) {
+            MyMod.LOG.warn("远程 HUD 提交被拒绝：session={} status={} message={}", payload.sessionId,
+                    Integer.valueOf(validation.getStatusCode()), validation.getMessage());
             return;
         }
-        if (!session.matchesPlayer(senderPlayer)) {
-            MyMod.LOG.warn("远程 HUD 提交玩家不匹配：session={} sender={}", payload.sessionId,
-                    String.valueOf(senderPlayer));
-            return;
-        }
+        RemoteUiSessionManager.RemoteUiSession<HudSession> session = validation.getSession();
         HudSession hudSession = session.getPayload();
         if (!hudSession.overlay.getOverlayId().equals(payload.overlayId)) {
             MyMod.LOG.warn("远程 HUD 提交 overlayId 不匹配：session={} expected={} actual={}",
@@ -442,34 +449,14 @@ public final class RemoteHudOverlays {
             return;
         }
         String sessionId = payload.sessionId;
-        if (!RemoteHtmlSessionGateway.isBlank(sessionId)) {
-            RemoteHtmlSessionGateway.RemoteHtmlSession<HudSession> session =
-                    SERVER_SESSIONS.getSession(sessionId);
-            if (session != null && session.matchesPlayer(senderPlayer)) {
-                removeSession(session.getSessionId());
-            }
-            ACTIVE_SESSION_IDS_BY_OVERLAY_KEY.remove(OverlayKey.of(senderPlayer, payload.overlayId), sessionId);
+        RemoteUiProtocol.CloseScope closeScope = RemoteUiProtocol.parseCloseScope(payload.closeScope);
+        if (closeScope == RemoteUiProtocol.CloseScope.SESSION) {
+            SERVER_RUNTIME.closeSession(senderPlayer, payload.overlayId, sessionId, payload.contentRevision);
             return;
         }
-        OverlayKey overlayKey = OverlayKey.of(senderPlayer, payload.overlayId);
-        String mappedSessionId = ACTIVE_SESSION_IDS_BY_OVERLAY_KEY.remove(overlayKey);
-        if (mappedSessionId != null) {
-            removeSession(mappedSessionId);
+        if (closeScope == RemoteUiProtocol.CloseScope.SURFACE) {
+            SERVER_RUNTIME.closeSurface(senderPlayer, payload.overlayId);
         }
-    }
-
-    private static void removeSession(String sessionId) {
-        if (RemoteHtmlSessionGateway.isBlank(sessionId)) {
-            return;
-        }
-        RemoteHtmlSessionGateway.RemoteHtmlSession<HudSession> session =
-                SERVER_SESSIONS.removeSession(sessionId);
-        if (session == null) {
-            return;
-        }
-        HudSession hudSession = session.getPayload();
-        ACTIVE_SESSION_IDS_BY_OVERLAY_KEY.remove(OverlayKey.of(session.getPlayer(), hudSession.overlay.getOverlayId()),
-                sessionId);
     }
 
     private static void dispatchClientOpenOffer(String json) {
@@ -510,28 +497,30 @@ public final class RemoteHudOverlays {
         if (player == null) {
             return;
         }
-        dismissChannel.toPlayer(player).send(NetMessage.json(RemoteJson.toJson(payload)));
+        dismissChannel.toPlayer(player).send(NetMessage.json(RemoteUiProtocol.toJson(payload)));
     }
 
     private static void cleanupExpiredSessions() {
-        SERVER_SESSIONS.cleanupExpiredSessions(new RemoteHtmlSessionGateway.SessionRemovalListener<HudSession>() {
+        SERVER_RUNTIME.cleanupExpiredSessions(new RemoteUiServerRuntime.SessionRemovalListener<HudSession>() {
             @Override
-            public void onSessionRemoved(RemoteHtmlSessionGateway.RemoteHtmlSession<HudSession> session) {
-                HudSession hudSession = session.getPayload();
-                ACTIVE_SESSION_IDS_BY_OVERLAY_KEY.remove(OverlayKey.of(session.getPlayer(),
-                        hudSession.overlay.getOverlayId()), session.getSessionId());
-                sendExpiredDismiss(session, hudSession);
+            public void onSessionRemoved(RemoteUiSessionManager.RemoteUiSession<HudSession> session) {
+                sendExpiredDismiss(session);
             }
         });
     }
 
-    private static void sendExpiredDismiss(RemoteHtmlSessionGateway.RemoteHtmlSession<HudSession> session,
-            HudSession hudSession) {
-        if (session == null || hudSession == null || dismissChannel == null) {
+    private static void sendExpiredDismiss(RemoteUiSessionManager.RemoteUiSession<HudSession> session) {
+        if (session == null || session.getPayload() == null || dismissChannel == null) {
             return;
         }
+        HudSession hudSession = session.getPayload();
         DismissPayload payload = new DismissPayload();
+        payload.messageType = RemoteUiProtocol.MessageType.CLOSE_SURFACE.name();
         payload.sessionId = session.getSessionId();
+        payload.surfaceType = session.getSurfaceType().name();
+        payload.surfaceId = session.getSurfaceId();
+        payload.contentRevision = session.getContentRevision();
+        payload.closeScope = RemoteUiProtocol.CloseScope.SESSION.name();
         payload.overlayId = hudSession.overlay.getOverlayId();
         payload.reason = "server-session-expired";
         contextSendDismissToClient(session.getPlayer(), payload);
@@ -551,32 +540,100 @@ public final class RemoteHudOverlays {
         }
     }
 
-    static final class OpenOffer {
+    private static void normalizeOpenOffer(OpenOffer offer) {
+        if (offer == null) {
+            return;
+        }
+        if (RemoteUiProtocol.isBlank(offer.messageType)) {
+            offer.messageType = RemoteUiProtocol.MessageType.OPEN_SURFACE.name();
+        }
+        if (RemoteUiProtocol.isBlank(offer.feature)) {
+            offer.feature = RemoteUiProtocol.FEATURE_LEASE_V1;
+        }
+        if (RemoteUiProtocol.isBlank(offer.surfaceType)) {
+            offer.surfaceType = RemoteUiProtocol.SurfaceType.HUD.name();
+        }
+        if (RemoteUiProtocol.isBlank(offer.surfaceId)) {
+            offer.surfaceId = offer.overlayId;
+        }
+        if (offer.contentRevision <= 0L) {
+            offer.contentRevision = 1L;
+        }
+        if (RemoteUiProtocol.isBlank(offer.leasePolicy)) {
+            offer.leasePolicy = RemoteUiProtocol.LeasePolicy.FIXED.name();
+        }
+    }
 
-        String sessionId;
+    private static void normalizeSubmitPayload(SubmitPayload payload) {
+        if (payload == null) {
+            return;
+        }
+        if (RemoteUiProtocol.isBlank(payload.messageType)) {
+            payload.messageType = RemoteUiProtocol.MessageType.SUBMIT.name();
+        }
+        if (RemoteUiProtocol.isBlank(payload.feature)) {
+            payload.feature = RemoteUiProtocol.FEATURE_LEASE_V1;
+        }
+        if (RemoteUiProtocol.isBlank(payload.surfaceType)) {
+            payload.surfaceType = RemoteUiProtocol.SurfaceType.HUD.name();
+        }
+        if (RemoteUiProtocol.isBlank(payload.surfaceId)) {
+            payload.surfaceId = payload.overlayId;
+        }
+        if (payload.contentRevision <= 0L) {
+            payload.contentRevision = 1L;
+        }
+    }
+
+    private static void normalizeDismissPayload(DismissPayload payload) {
+        if (payload == null) {
+            return;
+        }
+        if (RemoteUiProtocol.isBlank(payload.messageType)) {
+            payload.messageType = RemoteUiProtocol.MessageType.CLOSE_SURFACE.name();
+        }
+        if (RemoteUiProtocol.isBlank(payload.feature)) {
+            payload.feature = RemoteUiProtocol.FEATURE_LEASE_V1;
+        }
+        if (RemoteUiProtocol.isBlank(payload.surfaceType)) {
+            payload.surfaceType = RemoteUiProtocol.SurfaceType.HUD.name();
+        }
+        if (RemoteUiProtocol.isBlank(payload.surfaceId)) {
+            payload.surfaceId = payload.overlayId;
+        }
+        if (payload.contentRevision <= 0L && !RemoteUiProtocol.isBlank(payload.sessionId)) {
+            payload.contentRevision = 1L;
+        }
+    }
+
+    static final class OpenOffer extends RemoteUiProtocol.OpenSurfacePayload {
+
         String overlayId;
         String pageId;
         String title;
         String mode;
         String resourcePolicy;
-        String sha256;
-        int htmlBytes;
         long durationMillis;
         boolean defaultCloseButtonVisible;
         String closeButtonLabel;
-        Map<String, String> metadata;
         Map<String, String> pageMetadata;
 
-        static OpenOffer from(String sessionId, RemoteHudOverlay overlay, int htmlBytes, String sha256) {
+        static OpenOffer from(RemoteUiSessionManager.RemoteUiSession<HudSession> session, RemoteHudOverlay overlay) {
             OpenOffer offer = new OpenOffer();
-            offer.sessionId = sessionId;
+            offer.sessionId = session.getSessionId();
+            offer.surfaceType = session.getSurfaceType().name();
+            offer.surfaceId = session.getSurfaceId();
+            offer.contentRevision = session.getContentRevision();
+            offer.assetId = session.getAssetId();
             offer.overlayId = overlay.getOverlayId();
             offer.pageId = overlay.getPage().getPageId();
             offer.title = overlay.getPage().getTitle();
             offer.mode = overlay.getMode().name();
             offer.resourcePolicy = overlay.getPage().getResourcePolicy().name();
-            offer.sha256 = sha256;
-            offer.htmlBytes = htmlBytes;
+            offer.sha256 = session.getSha256();
+            offer.htmlBytes = session.getHtmlByteCount();
+            offer.leaseExpiresAtMillis = session.getLeaseExpiresAtMillis();
+            offer.leasePolicy = session.getLeasePolicy().name();
             offer.durationMillis = overlay.getDurationMillis();
             offer.defaultCloseButtonVisible = overlay.isDefaultCloseButtonVisible();
             offer.closeButtonLabel = overlay.getCloseButtonLabel();
@@ -586,19 +643,12 @@ public final class RemoteHudOverlays {
         }
     }
 
-    static final class SubmitPayload {
-        String sessionId;
+    static final class SubmitPayload extends RemoteUiProtocol.SubmitPayload {
         String overlayId;
-        String pageId;
-        String action;
-        String formId;
-        Map<String, List<String>> values = Collections.emptyMap();
     }
 
-    static final class DismissPayload {
-        String sessionId;
+    static final class DismissPayload extends RemoteUiProtocol.ClosePayload {
         String overlayId;
-        String reason;
     }
 
     private static final class HudSession {
@@ -612,36 +662,4 @@ public final class RemoteHudOverlays {
         }
     }
 
-    private static final class OverlayKey {
-
-        private final Object player;
-        private final String overlayId;
-
-        private OverlayKey(Object player, String overlayId) {
-            this.player = player;
-            this.overlayId = overlayId == null ? "" : overlayId;
-        }
-
-        static OverlayKey of(Object player, String overlayId) {
-            return new OverlayKey(player, overlayId);
-        }
-
-        @Override
-        public boolean equals(Object obj) {
-            if (this == obj) {
-                return true;
-            }
-            if (!(obj instanceof OverlayKey)) {
-                return false;
-            }
-            OverlayKey other = (OverlayKey) obj;
-            return java.util.Objects.equals(player, other.player)
-                    && overlayId.equals(other.overlayId);
-        }
-
-        @Override
-        public int hashCode() {
-            return java.util.Objects.hash(player, overlayId);
-        }
-    }
 }

@@ -84,9 +84,16 @@ public class RemoteDocumentPagesTest {
         FakePlayer player = new FakePlayer("pagePlayer", 2);
         RemoteDocumentPages.OpenOffer staleOffer = new RemoteDocumentPages.OpenOffer();
         staleOffer.sessionId = "missing-session";
+        staleOffer.surfaceType = RemoteUiProtocol.SurfaceType.PAGE.name();
+        staleOffer.surfaceId = RemoteUiProtocol.PAGE_PRIMARY_SURFACE_ID;
+        staleOffer.contentRevision = 1L;
+        staleOffer.assetId = "missing-asset";
         staleOffer.pageId = "missing-page";
         staleOffer.title = "旧错误页";
         staleOffer.resourcePolicy = RemoteDocumentResourcePolicy.LOCAL_RESOURCES_ONLY.name();
+        staleOffer.sha256 = RemoteDocumentPages.sha256Hex(new byte[0]);
+        staleOffer.htmlBytes = 0;
+        staleOffer.leaseExpiresAtMillis = 1_000L;
         RemoteDocumentClientBridge.receiveOpenOffer(RemoteJson.toJson(staleOffer));
         int staleRequestIndex = transport.clientToServerPayloads.size() - 1;
 
@@ -182,6 +189,10 @@ public class RemoteDocumentPagesTest {
         screenOpener.closeLastScreen();
         RemoteDocumentPages.ExpiredPayload expiredPayload = new RemoteDocumentPages.ExpiredPayload();
         expiredPayload.sessionId = offer.sessionId;
+        expiredPayload.surfaceType = RemoteUiProtocol.SurfaceType.PAGE.name();
+        expiredPayload.surfaceId = offer.surfaceId;
+        expiredPayload.contentRevision = offer.contentRevision;
+        expiredPayload.closeScope = RemoteUiProtocol.CloseScope.SESSION.name();
         expiredPayload.pageId = offer.pageId;
         expiredPayload.reason = "server-session-expired";
         RemoteDocumentClientBridge.receiveSessionExpired(RemoteJson.toJson(expiredPayload));

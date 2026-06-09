@@ -142,6 +142,14 @@ PENDING_OPEN -> FETCHING -> MOUNTING -> ACTIVE -> CLOSING -> CLOSED
 - 不要让 submit、stream 成功或任意用户交互自动续期；续期必须是显式协议。
 - 跨服同步不属于当前 custom payload 连接能力，必须依赖上层服务端集群状态或外部后端；Qz 当前网络层只负责当前连接内通信。
 
+## 首阶段落地状态
+
+- 已新增内部 `RemoteUiProtocol`，包含 `protocolVersion`、`surfaceType/surfaceId`、`contentRevision`、`assetId`、`leasePolicy`、`closeScope` 以及 open / fetch / submit / close / renew / resume DTO 校验。
+- 已新增 `RemoteUiAssetStore`，负责 HTML bytes、`assetId`、SHA-256 和 Stream 响应数据；HTML Stream 请求已从仅 `sessionId` 升级为携带 `sessionId + surfaceId + contentRevision + assetId`。
+- 已新增 `RemoteUiSessionManager` 和 `RemoteUiServerRuntime`，统一创建固定 TTL session、surface 当前映射、过期清理、stale stream / stale submit 校验与 session/surface close。
+- 已新增 `RemoteUiClientRuntime`，客户端异步落地 guard 使用 `sessionId + surfaceId + contentRevision + localMountToken`；页面/HUD bridge 仍负责具体 screen / overlay 挂载。
+- `RemoteDocumentPages.open(...)`、`RemoteHudOverlays.open(...)`、`dismiss(...)`、`dismissSession(...)` 等公开 API 默认语义保持不变：默认 10 分钟 TTL、不隐式续期，公开 HUD `dismiss(player, overlayId)` 仍为 surface-scoped 管理关闭，事件对象/`dismissSession` 仍为 session-scoped 精确关闭。
+
 ## 后续重构提示词
 
 ```text
