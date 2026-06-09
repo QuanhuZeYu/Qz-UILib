@@ -177,6 +177,39 @@ public class RemoteHudOverlaysTest {
     }
 
     @Test
+    public void shouldKeepNewSessionWhenOldSubmitEventDismissesSameOverlayId() throws Exception {
+        FakePlayer player = new FakePlayer("hudPlayer", 4);
+        RemoteDocumentPage firstPage = RemoteDocumentPage.of("hud-page-1", "HUD 1", "<form id=\"f\"></form>");
+        RemoteDocumentPage secondPage = RemoteDocumentPage.of("hud-page-2", "HUD 2", "<p>two</p>");
+        final AtomicReference<RemoteHudSubmitEvent> captured = new AtomicReference<RemoteHudSubmitEvent>();
+
+        String firstSessionId = RemoteHudOverlays.open(player,
+                RemoteHudOverlay.dialog("same-overlay", firstPage).build(), new RemoteHudSubmitHandler() {
+                    @Override
+                    public void onSubmit(RemoteHudSubmitEvent event) {
+                        captured.set(event);
+                    }
+                });
+        RemoteHudOverlays.SubmitPayload firstSubmit = new RemoteHudOverlays.SubmitPayload();
+        firstSubmit.sessionId = firstSessionId;
+        firstSubmit.overlayId = "same-overlay";
+        firstSubmit.pageId = "hud-page-1";
+        firstSubmit.values = java.util.Collections.emptyMap();
+        invokeHandleSubmit(RemoteJson.toJson(firstSubmit), player);
+        Assert.assertNotNull(captured.get());
+
+        String secondSessionId = RemoteHudOverlays.open(player,
+                RemoteHudOverlay.dialog("same-overlay", secondPage).build(), null);
+        transport.playerPayloads.clear();
+        captured.get().dismiss();
+
+        Assert.assertTrue("旧 submit event dismiss 不应关闭同 overlayId 的新 session",
+                RemoteHudOverlays.dismiss(player, "same-overlay"));
+        RemoteHudOverlays.DismissPayload dismissPayload = findDismissPayload();
+        Assert.assertEquals(secondSessionId, dismissPayload.sessionId);
+    }
+
+    @Test
     public void shouldNotifyClientWhenHudSubmitFindsExpiredSession() throws Exception {
         final AtomicLong nowMillis = new AtomicLong(1_000L);
         RemoteHudOverlays.setSessionClockForTests(new LongSupplier() {

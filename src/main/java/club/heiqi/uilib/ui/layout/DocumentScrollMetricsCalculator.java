@@ -1,5 +1,6 @@
 package club.heiqi.uilib.ui.layout;
 
+import club.heiqi.uilib.ui.animation.DocumentAnimationTimeline;
 import club.heiqi.uilib.ui.style.cascade.ComputedStyle;
 import club.heiqi.uilib.ui.style.props.UiOverflow;
 
@@ -19,10 +20,23 @@ final class DocumentScrollMetricsCalculator {
      * @return 可滚范围信息
      */
     static Metrics compute(DocumentLayoutBox box) {
+        return compute(box, 0L, null);
+    }
+
+    /**
+     * 根据布局盒和动画运行态计算可滚范围。
+     *
+     * @param box 布局盒
+     * @param currentTimeNanos 当前动画时间
+     * @param animationTimeline 动画时间线；为 null 时只使用 computed style
+     * @return 可滚范围信息
+     */
+    static Metrics compute(DocumentLayoutBox box, long currentTimeNanos,
+            DocumentAnimationTimeline animationTimeline) {
         ComputedStyle style = box.getComputedStyle();
         int viewportWidth = box.getContentWidth();
         int viewportHeight = box.getContentHeight();
-        ContentBounds contentBounds = measureContentBounds(box, 0, 0, false);
+        ContentBounds contentBounds = measureContentBounds(box, 0, 0, false, currentTimeNanos, animationTimeline);
         int contentRight = Math.max(box.getContentLeft() + viewportWidth, contentBounds.right);
         int contentBottom = Math.max(box.getContentTop() + viewportHeight, contentBounds.bottom);
 
@@ -39,7 +53,7 @@ final class DocumentScrollMetricsCalculator {
     }
 
     private static ContentBounds measureContentBounds(DocumentLayoutBox box, int offsetX, int offsetY,
-            boolean fixedContainingBlockActive) {
+            boolean fixedContainingBlockActive, long currentTimeNanos, DocumentAnimationTimeline animationTimeline) {
         int baseOffsetX = box.isFixedPositioned() && !fixedContainingBlockActive ? 0 : offsetX;
         int baseOffsetY = box.isFixedPositioned() && !fixedContainingBlockActive ? 0 : offsetY;
         int boxOffsetX = baseOffsetX + box.getPositionOffsetX();
@@ -55,7 +69,7 @@ final class DocumentScrollMetricsCalculator {
         int childOffsetX = boxOffsetX;
         int childOffsetY = boxOffsetY;
         boolean childFixedContainingBlockActive = fixedContainingBlockActive
-                || DocumentEffectChain.resolve(box).createsFixedContainingBlock();
+                || createsFixedContainingBlock(box, currentTimeNanos, animationTimeline);
         for (DocumentLayoutBox child : box.getChildren()) {
             if (child.isFixedPositioned() && !childFixedContainingBlockActive) {
                 continue;
@@ -63,7 +77,7 @@ final class DocumentScrollMetricsCalculator {
             right = Math.max(right, child.getMarginBoxRight() + childOffsetX);
             bottom = Math.max(bottom, child.getMarginBoxBottom() + childOffsetY);
             ContentBounds childBounds = measureContentBounds(child, childOffsetX, childOffsetY,
-                    childFixedContainingBlockActive);
+                    childFixedContainingBlockActive, currentTimeNanos, animationTimeline);
             right = Math.max(right, childBounds.right);
             bottom = Math.max(bottom, childBounds.bottom);
         }
@@ -72,6 +86,15 @@ final class DocumentScrollMetricsCalculator {
 
     private static boolean isScrollableOverflow(UiOverflow overflow) {
         return overflow == UiOverflow.AUTO || overflow == UiOverflow.SCROLL;
+    }
+
+    private static boolean createsFixedContainingBlock(DocumentLayoutBox box, long currentTimeNanos,
+            DocumentAnimationTimeline animationTimeline) {
+        if (animationTimeline == null) {
+            return DocumentEffectChain.resolve(box).createsFixedContainingBlock();
+        }
+        return DocumentRuntimeTransforms.createsFixedContainingBlock(box.getElement(), box.getComputedStyle(),
+                currentTimeNanos, animationTimeline);
     }
 
     /**

@@ -11,6 +11,16 @@
 - 原始报告正文使用 `后续复核（YYYY-MM-DD）` 批注标记，不删除历史判断；批注需说明当前正确口径和是否还需要修复。
 - 只在本索引写摘要，不把完整修复过程或阶段流水账堆积到索引页。
 
+## 2026-06-09-production-code-round7
+- 类型：全项目生产代码第七轮审查
+- 详情文档：[REVIEW-20260609-production-code-round7.md](REVIEW-20260609-production-code-round7.md)
+- 结论摘要：只读审查第六轮修复后的剩余高风险边界，发现并已修复 2 个问题：运行态 transform 统一参与 fixed containing block、clip chain、paint、hit-test 和 scroll metrics 口径；默认滚动和滚动条拖拽复用 hit-test suppression / `pointer-events:none` 口径，passthrough scrollable overlay 不再吃掉 wheel 或 scrollbar drag。remote UI session 本轮未形成新 finding，固定 TTL 与不隐式续期仍按现有决策处理。
+
+## 2026-06-09-production-code-round6
+- 类型：全项目生产代码第六轮审查修复
+- 详情文档：[REVIEW-20260609-production-code-round6.md](REVIEW-20260609-production-code-round6.md)
+- 结论摘要：修复 animation/scroll/remote/session/transition 生命周期 5 个问题：keyframe forwards fill 按 `animation-direction` 和最终迭代奇偶写入终值；transform 后滚轮与滚动条命中复用 hit-test 的 inverse transform 口径；`RemoteHudSubmitEvent.dismiss()` 改为 session 精确关闭；远程页面 screen 绑定 session/generation，手动关闭后旧 expired 不再弹错误页；`display:none` 中断运行中 transition 会派发 `transitioncancel`。
+
 ## 2026-06-08-production-code-round5
 - 类型：全项目生产代码第五轮审查修复
 - 详情文档：[REVIEW-20260608-production-code-round5.md](REVIEW-20260608-production-code-round5.md)

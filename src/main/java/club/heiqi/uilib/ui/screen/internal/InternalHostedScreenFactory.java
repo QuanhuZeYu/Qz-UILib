@@ -29,17 +29,17 @@ public final class InternalHostedScreenFactory {
 
     public static final InternalScreenIdentity.PageDescriptor DOCUMENT_SCREEN =
             new InternalScreenIdentity.PageDescriptor("document_screen");
-    public static final InternalHostedScreenDefinition<UiDocumentScreens.DocumentScreenContentBuilder> DOCUMENT_SCREEN_DEFINITION =
-            new InternalHostedScreenDefinition<UiDocumentScreens.DocumentScreenContentBuilder>(
+    public static final InternalHostedScreenDefinition<UiDocumentScreens.DocumentScreenProvision> DOCUMENT_SCREEN_DEFINITION =
+            new InternalHostedScreenDefinition<UiDocumentScreens.DocumentScreenProvision>(
                     DOCUMENT_SCREEN,
                     DocumentScreenChrome::fillViewport,
-                    new InternalDocumentPageControllerFactory<UiDocumentScreens.DocumentScreenContentBuilder>() {
+                    new InternalDocumentPageControllerFactory<UiDocumentScreens.DocumentScreenProvision>() {
                         @Override
                         public DocumentPageController create(DocumentUiScope documentUi,
                                 DocumentPageAuthoringSurface documentPage,
                                 DocumentPageRuntimeView runtimeView,
                                 String pageId,
-                                UiDocumentScreens.DocumentScreenContentBuilder provision) {
+                                UiDocumentScreens.DocumentScreenProvision provision) {
                             return new InternalInlineDocumentPageController(documentUi, documentPage, provision);
                         }
                     });
@@ -243,6 +243,12 @@ public final class InternalHostedScreenFactory {
         public void drawScreen(int mouseX, int mouseY, float partialTicks) {
             controller.beforeDocumentFrame();
             super.drawScreen(mouseX, mouseY, partialTicks);
+        }
+
+        @Override
+        public void onGuiClosed() {
+            controller.onDocumentClosed();
+            super.onGuiClosed();
         }
     }
 }

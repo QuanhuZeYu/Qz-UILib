@@ -20,6 +20,14 @@ import club.heiqi.uilib.ui.style.values.UiTransform;
  */
 public final class DocumentVisualTraversal {
 
+    private static final FixedContainingBlockResolver STATIC_FIXED_CONTAINING_BLOCK_RESOLVER =
+            new FixedContainingBlockResolver() {
+                @Override
+                public boolean createsFixedContainingBlock(DocumentLayoutBox box) {
+                    return DocumentEffectChain.resolve(box).createsFixedContainingBlock();
+                }
+            };
+
     private DocumentVisualTraversal() {}
 
     /**
@@ -37,6 +45,14 @@ public final class DocumentVisualTraversal {
     }
 
     /**
+     * 判断当前盒在当前视觉时刻是否为 fixed 后代建立 containing block。
+     */
+    private interface FixedContainingBlockResolver {
+
+        boolean createsFixedContainingBlock(DocumentLayoutBox box);
+    }
+
+    /**
      * 构建根布局盒的视觉上下文。
      *
      * @param rootBox 根布局盒
@@ -49,6 +65,22 @@ public final class DocumentVisualTraversal {
     }
 
     /**
+     * 构建根布局盒的运行态视觉上下文。
+     *
+     * @param rootBox 根布局盒
+     * @param scrollState 滚动状态
+     * @param currentTimeNanos 当前动画时间
+     * @param animationTimeline 动画时间线；为 null 时只使用 computed style
+     * @return 根视觉上下文
+     */
+    public static BoxContext resolveRootBoxContext(DocumentLayoutBox rootBox, DocumentScrollState scrollState,
+            long currentTimeNanos, DocumentAnimationTimeline animationTimeline) {
+        return resolveBoxContext(rootBox, scrollState, 0, 0, DocumentStickyPositioning.rootContext(),
+                Collections.<ClipContext>emptyList(), createFixedContainingBlockResolver(currentTimeNanos,
+                        animationTimeline));
+    }
+
+    /**
      * 构建“普通文档树 + top-layer 根盒”的统一视觉场景。
      *
      * @param rootBox 普通文档根盒
@@ -58,15 +90,36 @@ public final class DocumentVisualTraversal {
      */
     public static VisualScene resolveVisualScene(DocumentLayoutBox rootBox, List<DocumentLayoutBox> topLayerBoxes,
             DocumentScrollState scrollState) {
+        return resolveVisualScene(rootBox, topLayerBoxes, scrollState, 0L, null);
+    }
+
+    /**
+     * 构建“普通文档树 + top-layer 根盒”的运行态视觉场景。
+     *
+     * @param rootBox 普通文档根盒
+     * @param topLayerBoxes top-layer 根盒列表；后面的盒位于更上层
+     * @param scrollState 滚动状态
+     * @param currentTimeNanos 当前动画时间
+     * @param animationTimeline 动画时间线；为 null 时只使用 computed style
+     * @return 统一视觉场景
+     */
+    public static VisualScene resolveVisualScene(DocumentLayoutBox rootBox, List<DocumentLayoutBox> topLayerBoxes,
+            DocumentScrollState scrollState, long currentTimeNanos, DocumentAnimationTimeline animationTimeline) {
         Objects.requireNonNull(rootBox, "rootBox");
+        FixedContainingBlockResolver fixedContainingBlockResolver = createFixedContainingBlockResolver(
+                currentTimeNanos, animationTimeline);
         List<RootEntry> rootEntries = new ArrayList<RootEntry>();
-        rootEntries.add(new RootEntry(rootBox, resolveRootBoxContext(rootBox, scrollState), false));
+        rootEntries.add(new RootEntry(rootBox, resolveBoxContext(rootBox, scrollState, 0, 0,
+                DocumentStickyPositioning.rootContext(), Collections.<ClipContext>emptyList(),
+                fixedContainingBlockResolver), false));
         if (topLayerBoxes != null) {
             for (DocumentLayoutBox topLayerBox : topLayerBoxes) {
                 if (topLayerBox == null) {
                     continue;
                 }
-                rootEntries.add(new RootEntry(topLayerBox, resolveRootBoxContext(topLayerBox, scrollState), true));
+                rootEntries.add(new RootEntry(topLayerBox, resolveBoxContext(topLayerBox, scrollState, 0, 0,
+                        DocumentStickyPositioning.rootContext(), Collections.<ClipContext>emptyList(),
+                        fixedContainingBlockResolver), true));
             }
         }
         return new VisualScene(rootEntries, scrollState);
@@ -83,10 +136,28 @@ public final class DocumentVisualTraversal {
      */
     public static BoxLocation findBoxLocation(DocumentLayoutBox rootBox, List<DocumentLayoutBox> topLayerBoxes,
             DocumentScrollState scrollState, ElementNode element) {
+        return findBoxLocation(rootBox, topLayerBoxes, scrollState, element, 0L, null);
+    }
+
+    /**
+     * 在统一运行态视觉场景中定位指定元素对应的布局盒与视觉上下文。
+     *
+     * @param rootBox 普通文档根盒
+     * @param topLayerBoxes top-layer 根盒列表
+     * @param scrollState 滚动状态
+     * @param element 待定位元素
+     * @param currentTimeNanos 当前动画时间
+     * @param animationTimeline 动画时间线；为 null 时只使用 computed style
+     * @return 定位结果；未参与当前视觉场景时返回 null
+     */
+    public static BoxLocation findBoxLocation(DocumentLayoutBox rootBox, List<DocumentLayoutBox> topLayerBoxes,
+            DocumentScrollState scrollState, ElementNode element, long currentTimeNanos,
+            DocumentAnimationTimeline animationTimeline) {
         if (element == null) {
             return null;
         }
-        return findBoxLocation(resolveVisualScene(rootBox, topLayerBoxes, scrollState), element);
+        return findBoxLocation(resolveVisualScene(rootBox, topLayerBoxes, scrollState, currentTimeNanos,
+                animationTimeline), element);
     }
 
     /**
@@ -125,14 +196,43 @@ public final class DocumentVisualTraversal {
                 Collections.<ClipContext>emptyList());
     }
 
+    /**
+     * 基于父偏移和 sticky 上下文解析当前布局盒的运行态视觉上下文。
+     *
+     * @param box 当前布局盒
+     * @param scrollState 滚动状态
+     * @param offsetX 父内容相对文档的 X 偏移
+     * @param offsetY 父内容相对文档的 Y 偏移
+     * @param stickyContext 父 sticky 上下文
+     * @param currentTimeNanos 当前动画时间
+     * @param animationTimeline 动画时间线；为 null 时只使用 computed style
+     * @return 当前盒的视觉上下文
+     */
+    public static BoxContext resolveBoxContext(DocumentLayoutBox box, DocumentScrollState scrollState, int offsetX,
+            int offsetY, StickyContext stickyContext, long currentTimeNanos,
+            DocumentAnimationTimeline animationTimeline) {
+        return resolveBoxContext(box, scrollState, offsetX, offsetY, stickyContext,
+                Collections.<ClipContext>emptyList(), createFixedContainingBlockResolver(currentTimeNanos,
+                        animationTimeline));
+    }
+
     private static BoxContext resolveBoxContext(DocumentLayoutBox box, DocumentScrollState scrollState, int offsetX,
             int offsetY, StickyContext stickyContext, List<ClipContext> clipChain) {
-        return resolveBoxContext(box, scrollState, offsetX, offsetY, stickyContext, clipChain, false, 0, 0);
+        return resolveBoxContext(box, scrollState, offsetX, offsetY, stickyContext, clipChain,
+                STATIC_FIXED_CONTAINING_BLOCK_RESOLVER);
     }
 
     private static BoxContext resolveBoxContext(DocumentLayoutBox box, DocumentScrollState scrollState, int offsetX,
             int offsetY, StickyContext stickyContext, List<ClipContext> clipChain,
-            boolean fixedContainingBlockActive, int fixedContainingBlockOffsetX, int fixedContainingBlockOffsetY) {
+            FixedContainingBlockResolver fixedContainingBlockResolver) {
+        return resolveBoxContext(box, scrollState, offsetX, offsetY, stickyContext, clipChain, false, 0, 0,
+                fixedContainingBlockResolver);
+    }
+
+    private static BoxContext resolveBoxContext(DocumentLayoutBox box, DocumentScrollState scrollState, int offsetX,
+            int offsetY, StickyContext stickyContext, List<ClipContext> clipChain,
+            boolean fixedContainingBlockActive, int fixedContainingBlockOffsetX, int fixedContainingBlockOffsetY,
+            FixedContainingBlockResolver fixedContainingBlockResolver) {
         boolean fixedInViewport = box.isFixedPositioned() && !fixedContainingBlockActive;
         StickyContext resolvedStickyContext = fixedInViewport
                 ? DocumentStickyPositioning.rootContext()
@@ -154,7 +254,7 @@ public final class DocumentVisualTraversal {
                 : resolvedClipChain;
         int childOffsetX = boxOffsetX - getScrollLeft(scrollState, box);
         int childOffsetY = boxOffsetY - getScrollTop(scrollState, box);
-        boolean createsFixedContainingBlock = effectChain.createsFixedContainingBlock();
+        boolean createsFixedContainingBlock = fixedContainingBlockResolver.createsFixedContainingBlock(box);
         boolean childFixedContainingBlockActive = createsFixedContainingBlock
                 || !fixedInViewport && fixedContainingBlockActive;
         int childFixedContainingBlockOffsetX = createsFixedContainingBlock ? childOffsetX
@@ -163,7 +263,7 @@ public final class DocumentVisualTraversal {
                 : fixedContainingBlockOffsetY;
         return new BoxContext(box, boxOffsetX, boxOffsetY, childOffsetX, childOffsetY, resolvedStickyContext,
                 childStickyContext, effectChain, resolvedClipChain, childClipChain, childFixedContainingBlockActive,
-                childFixedContainingBlockOffsetX, childFixedContainingBlockOffsetY);
+                childFixedContainingBlockOffsetX, childFixedContainingBlockOffsetY, fixedContainingBlockResolver);
     }
 
     /**
@@ -263,7 +363,7 @@ public final class DocumentVisualTraversal {
         return resolveBoxContext(child, scrollState, parentContext.childOffsetX, parentContext.childOffsetY,
                 parentContext.childStickyContext, parentContext.childClipChain,
                 parentContext.childFixedContainingBlockActive, parentContext.childFixedContainingBlockOffsetX,
-                parentContext.childFixedContainingBlockOffsetY);
+                parentContext.childFixedContainingBlockOffsetY, parentContext.fixedContainingBlockResolver);
     }
 
     /**
@@ -346,7 +446,7 @@ public final class DocumentVisualTraversal {
         BoxContext childContext = resolveBoxContext(child, scrollState, parentContext.childOffsetX,
                 parentContext.childOffsetY, parentContext.childStickyContext, parentContext.childClipChain,
                 parentContext.childFixedContainingBlockActive, parentContext.childFixedContainingBlockOffsetX,
-                parentContext.childFixedContainingBlockOffsetY);
+                parentContext.childFixedContainingBlockOffsetY, parentContext.fixedContainingBlockResolver);
         boolean stackingContext = resolver != null && resolver.createsStackingContext(child);
         return new TraversalEntry(childContext, stackingContext);
     }
@@ -361,25 +461,21 @@ public final class DocumentVisualTraversal {
 
     private static UiTransform resolveAnimatedTransform(DocumentLayoutBox box, long currentTimeNanos,
             DocumentAnimationTimeline animationTimeline) {
-        UiTransform baseTransform = box.getComputedStyle().getTransform();
-        if (baseTransform == null) {
-            baseTransform = UiTransform.identity();
-        }
+        return DocumentRuntimeTransforms.resolveTransform(box, currentTimeNanos, animationTimeline);
+    }
+
+    private static FixedContainingBlockResolver createFixedContainingBlockResolver(final long currentTimeNanos,
+            final DocumentAnimationTimeline animationTimeline) {
         if (animationTimeline == null) {
-            return baseTransform;
+            return STATIC_FIXED_CONTAINING_BLOCK_RESOLVER;
         }
-        float translateX = animationTimeline.resolveFloat(box.getElement(), DocumentAnimationProperty.TRANSLATE_X,
-                baseTransform.getTranslateX(), currentTimeNanos);
-        float translateY = animationTimeline.resolveFloat(box.getElement(), DocumentAnimationProperty.TRANSLATE_Y,
-                baseTransform.getTranslateY(), currentTimeNanos);
-        float scaleX = animationTimeline.resolveFloat(box.getElement(), DocumentAnimationProperty.SCALE_X,
-                baseTransform.getScaleX(), currentTimeNanos);
-        float scaleY = animationTimeline.resolveFloat(box.getElement(), DocumentAnimationProperty.SCALE_Y,
-                baseTransform.getScaleY(), currentTimeNanos);
-        float rotate = animationTimeline.resolveFloat(box.getElement(), DocumentAnimationProperty.ROTATE,
-                baseTransform.getRotateDegrees(), currentTimeNanos);
-        return UiTransform.of(translateX, translateY, scaleX, scaleY, rotate, baseTransform.getOriginX(),
-                baseTransform.getOriginY());
+        return new FixedContainingBlockResolver() {
+            @Override
+            public boolean createsFixedContainingBlock(DocumentLayoutBox box) {
+                return DocumentRuntimeTransforms.createsFixedContainingBlock(box.getElement(),
+                        box.getComputedStyle(), currentTimeNanos, animationTimeline);
+            }
+        };
     }
 
     private static BoxLocation findBoxLocation(RootEntry rootEntry, BoxContext currentContext, ElementNode element,
@@ -487,12 +583,13 @@ public final class DocumentVisualTraversal {
         private final boolean childFixedContainingBlockActive;
         private final int childFixedContainingBlockOffsetX;
         private final int childFixedContainingBlockOffsetY;
+        private final FixedContainingBlockResolver fixedContainingBlockResolver;
 
         private BoxContext(DocumentLayoutBox box, int boxOffsetX, int boxOffsetY, int childOffsetX, int childOffsetY,
                 StickyContext stickyContext, StickyContext childStickyContext, DocumentEffectChain effectChain,
                 List<ClipContext> clipChain, List<ClipContext> childClipChain,
                 boolean childFixedContainingBlockActive, int childFixedContainingBlockOffsetX,
-                int childFixedContainingBlockOffsetY) {
+                int childFixedContainingBlockOffsetY, FixedContainingBlockResolver fixedContainingBlockResolver) {
             this.box = box;
             this.boxOffsetX = boxOffsetX;
             this.boxOffsetY = boxOffsetY;
@@ -506,6 +603,8 @@ public final class DocumentVisualTraversal {
             this.childFixedContainingBlockActive = childFixedContainingBlockActive;
             this.childFixedContainingBlockOffsetX = childFixedContainingBlockOffsetX;
             this.childFixedContainingBlockOffsetY = childFixedContainingBlockOffsetY;
+            this.fixedContainingBlockResolver = fixedContainingBlockResolver == null
+                    ? STATIC_FIXED_CONTAINING_BLOCK_RESOLVER : fixedContainingBlockResolver;
         }
 
         public DocumentLayoutBox getBox() {

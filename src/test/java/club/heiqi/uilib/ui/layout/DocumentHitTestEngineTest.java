@@ -12,6 +12,7 @@ import club.heiqi.uilib.ui.style.props.UiOverflow;
 import club.heiqi.uilib.ui.style.props.UiPointerEvents;
 import club.heiqi.uilib.ui.style.props.UiPosition;
 import club.heiqi.uilib.ui.style.props.UiVisibility;
+import club.heiqi.uilib.ui.style.cascade.ComputedStyle;
 import club.heiqi.uilib.ui.style.values.UiStyleInsets;
 import club.heiqi.uilib.ui.style.values.UiStyleLength;
 import club.heiqi.uilib.ui.style.values.UiTransform;
@@ -648,6 +649,47 @@ public class DocumentHitTestEngineTest {
         Assert.assertEquals(target.__getElementUid(), actualElement.__getElementUid());
     }
 
+    /**
+     * 验证运行态 transform fixed containing block 下 fixed 后代仍受祖先 overflow clip 约束。
+     */
+    @Test
+    public void shouldClipFixedDescendantInsideRuntimeTransformedAncestor() {
+        UiDocument document = UiDocument.create();
+        ElementNode root = document.getRootElement();
+        ElementNode runtimeClip = document.div();
+        ElementNode fixed = document.div();
+
+        root.style().setWidth(UiStyleLength.px(120)).setHeight(UiStyleLength.px(80));
+        runtimeClip.style()
+                .setWidth(UiStyleLength.px(50))
+                .setHeight(UiStyleLength.px(40))
+                .setMarginLeft(UiStyleLength.px(20))
+                .setOverflowX(UiOverflow.HIDDEN)
+                .setOverflowY(UiOverflow.HIDDEN);
+        fixed.style()
+                .setWidth(UiStyleLength.px(20))
+                .setHeight(UiStyleLength.px(10))
+                .setPosition(UiPosition.FIXED)
+                .setTop(UiStyleLength.px(5))
+                .setLeft(UiStyleLength.px(40));
+        runtimeClip.append(fixed);
+        root.append(runtimeClip);
+        DocumentAnimationTimeline timeline = new DocumentAnimationTimeline();
+        timeline.setFloatKeyframeAnimation(runtimeClip, DocumentAnimationProperty.TRANSLATE_X, 0.0F, 40.0F,
+                0L, 1_000_000_000L);
+        long halfTimeNanos = 500_000_000L;
+        DocumentLayoutBox rootBox = DocumentLayoutEngine.layout(root, 120, 80,
+                new DeterministicTextMeasureService(), runtimeTransformResolver(timeline, halfTimeNanos));
+
+        ElementNode insideClip = DocumentHitTestEngine.hitTest(rootBox, null, 82, 8, halfTimeNanos, timeline);
+        ElementNode outsideClip = DocumentHitTestEngine.hitTest(rootBox, null, 92, 8, halfTimeNanos, timeline);
+
+        Assert.assertNotNull(insideClip);
+        Assert.assertEquals(fixed.__getElementUid(), insideClip.__getElementUid());
+        Assert.assertNotNull(outsideClip);
+        Assert.assertEquals(root.__getElementUid(), outsideClip.__getElementUid());
+    }
+
     private static void assertHitElement(ElementNode expectedElement, DocumentLayoutBox rootBox, int x, int y) {
         ElementNode actualElement = DocumentHitTestEngine.hitTest(rootBox, null, x, y);
         Assert.assertNotNull(actualElement);
@@ -659,6 +701,22 @@ public class DocumentHitTestEngineTest {
         ElementNode actualElement = DocumentHitTestEngine.hitTest(rootBox, scrollState, x, y);
         Assert.assertNotNull(actualElement);
         Assert.assertEquals(expectedElement.__getElementUid(), actualElement.__getElementUid());
+    }
+
+    private static DocumentLayoutEngine.LayoutRuntimeValueResolver runtimeTransformResolver(
+            final DocumentAnimationTimeline timeline, final long currentTimeNanos) {
+        return new DocumentLayoutEngine.LayoutRuntimeValueResolver() {
+            @Override
+            public int resolve(ElementNode element, DocumentAnimationProperty property, int baseValue) {
+                return baseValue;
+            }
+
+            @Override
+            public boolean createsFixedContainingBlock(ElementNode element, ComputedStyle computedStyle) {
+                return DocumentRuntimeTransforms.createsFixedContainingBlock(element, computedStyle,
+                        currentTimeNanos, timeline);
+            }
+        };
     }
 
     private static final class DeterministicTextMeasureService implements TextMeasureService {

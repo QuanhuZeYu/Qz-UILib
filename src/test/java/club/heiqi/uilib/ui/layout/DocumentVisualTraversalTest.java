@@ -5,6 +5,8 @@ import java.util.List;
 import org.junit.Assert;
 import org.junit.Test;
 
+import club.heiqi.uilib.ui.animation.DocumentAnimationProperty;
+import club.heiqi.uilib.ui.animation.DocumentAnimationTimeline;
 import club.heiqi.uilib.ui.dom.ElementNode;
 import club.heiqi.uilib.ui.dom.UiDocument;
 import club.heiqi.uilib.ui.layout.DocumentVisualTraversal.BoxContext;
@@ -15,6 +17,7 @@ import club.heiqi.uilib.ui.layout.DocumentVisualTraversal.TraversalEntry;
 import club.heiqi.uilib.ui.layout.DocumentVisualTraversal.VisualScene;
 import club.heiqi.uilib.ui.style.props.UiOverflow;
 import club.heiqi.uilib.ui.style.props.UiPosition;
+import club.heiqi.uilib.ui.style.cascade.ComputedStyle;
 import club.heiqi.uilib.ui.style.values.UiStyleLength;
 import club.heiqi.uilib.ui.style.values.UiTransform;
 
@@ -158,6 +161,60 @@ public class DocumentVisualTraversalTest {
     }
 
     /**
+     * 验证运行态 transform 祖先也会成为 fixed containing block 并保留 overflow clip 链。
+     */
+    @Test
+    public void shouldKeepFixedDescendantInRuntimeTransformedAncestorClipChain() {
+        UiDocument document = UiDocument.create();
+        ElementNode root = document.getRootElement();
+        ElementNode runtimeClip = document.div();
+        ElementNode staticWrapper = document.div();
+        ElementNode fixed = document.div();
+
+        root.style().setWidth(UiStyleLength.px(120)).setHeight(UiStyleLength.px(80));
+        runtimeClip.style()
+                .setWidth(UiStyleLength.px(50))
+                .setHeight(UiStyleLength.px(40))
+                .setMarginLeft(UiStyleLength.px(20))
+                .setOverflowX(UiOverflow.HIDDEN)
+                .setOverflowY(UiOverflow.HIDDEN);
+        staticWrapper.style()
+                .setWidth(UiStyleLength.px(40))
+                .setHeight(UiStyleLength.px(20));
+        fixed.style()
+                .setWidth(UiStyleLength.px(20))
+                .setHeight(UiStyleLength.px(10))
+                .setPosition(UiPosition.FIXED)
+                .setTop(UiStyleLength.px(5))
+                .setLeft(UiStyleLength.px(40));
+        staticWrapper.append(fixed);
+        runtimeClip.append(staticWrapper);
+        root.append(runtimeClip);
+        DocumentAnimationTimeline timeline = new DocumentAnimationTimeline();
+        timeline.setFloatKeyframeAnimation(runtimeClip, DocumentAnimationProperty.TRANSLATE_X, 0.0F, 40.0F,
+                0L, 1_000_000_000L);
+        long halfTimeNanos = 500_000_000L;
+
+        DocumentLayoutBox rootBox = DocumentLayoutEngine.layout(root, 120, 80,
+                club.heiqi.uilib.ui.text.DefaultTextMeasureService.getInstance(),
+                runtimeTransformResolver(timeline, halfTimeNanos));
+        BoxContext rootContext = DocumentVisualTraversal.resolveRootBoxContext(rootBox, null, halfTimeNanos,
+                timeline);
+        BoxContext runtimeClipContext = DocumentVisualTraversal.resolveChildBoxContext(rootContext,
+                rootBox.getChildren().get(0), null);
+        BoxContext wrapperContext = DocumentVisualTraversal.resolveChildBoxContext(runtimeClipContext,
+                runtimeClipContext.getBox().getChildren().get(0), null);
+        BoxContext fixedContext = DocumentVisualTraversal.resolveChildBoxContext(wrapperContext,
+                wrapperContext.getBox().getChildren().get(0), null);
+
+        Assert.assertEquals(1, fixedContext.getClipChain().size());
+        Assert.assertSame(runtimeClip, fixedContext.getClipChain().get(0).getBox().getElement());
+        Assert.assertEquals(60, fixedContext.getBox().getLeft() + fixedContext.getBoxOffsetX());
+        Assert.assertTrue(DocumentVisualTraversal.isPointInsideClipChain(fixedContext, 62.0F, 8.0F));
+        Assert.assertFalse(DocumentVisualTraversal.isPointInsideClipChain(fixedContext, 72.0F, 8.0F));
+    }
+
+    /**
      * 验证共享视觉场景会把普通树放在底部，把后注册 top-layer 放在更上层。
      */
     @Test
@@ -246,6 +303,22 @@ public class DocumentVisualTraversalTest {
             @Override
             public boolean createsStackingContext(DocumentLayoutBox box) {
                 return DocumentEffectChain.resolve(box).createsStackingContext();
+            }
+        };
+    }
+
+    private static DocumentLayoutEngine.LayoutRuntimeValueResolver runtimeTransformResolver(
+            final DocumentAnimationTimeline timeline, final long currentTimeNanos) {
+        return new DocumentLayoutEngine.LayoutRuntimeValueResolver() {
+            @Override
+            public int resolve(ElementNode element, DocumentAnimationProperty property, int baseValue) {
+                return baseValue;
+            }
+
+            @Override
+            public boolean createsFixedContainingBlock(ElementNode element, ComputedStyle computedStyle) {
+                return DocumentRuntimeTransforms.createsFixedContainingBlock(element, computedStyle,
+                        currentTimeNanos, timeline);
             }
         };
     }

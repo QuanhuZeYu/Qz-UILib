@@ -28,6 +28,8 @@ public final class DocumentAnimationTimeline {
 
     private final Map<ElementNode, DocumentAnimationRuntimeState> states =
             new HashMap<ElementNode, DocumentAnimationRuntimeState>();
+    private final List<TransitionCancelRecord> pendingInactiveElementTransitionCancelRecords =
+            new ArrayList<TransitionCancelRecord>();
     private long nextImperativeAnimationId = 1L;
     private Runnable runtimeChangeCallback;
 
@@ -286,6 +288,7 @@ public final class DocumentAnimationTimeline {
         Objects.requireNonNull(rootBoxes, "rootBoxes");
         if (rootBoxes.isEmpty()) {
             boolean changed = !states.isEmpty();
+            collectInactiveElementTransitionCancelRecords(states, currentTimeNanos);
             states.clear();
             return changed;
         }
@@ -303,6 +306,8 @@ public final class DocumentAnimationTimeline {
             if (activeElements.contains(entry.getKey())) {
                 continue;
             }
+            entry.getValue().collectRunningTransitionCancelRecords(entry.getKey(), currentTimeNanos,
+                    pendingInactiveElementTransitionCancelRecords);
             iterator.remove();
             changed = true;
         }
@@ -465,6 +470,22 @@ public final class DocumentAnimationTimeline {
     }
 
     /**
+     * 返回当前是否有指定属性的动画工作。
+     *
+     * @param property 动画属性
+     * @return 是否存在对应动画
+     */
+    public boolean hasAnimationWork(DocumentAnimationProperty property) {
+        Objects.requireNonNull(property, "property");
+        for (DocumentAnimationRuntimeState state : states.values()) {
+            if (state.hasAnimationWork(property)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
      * 返回当前是否有指定影响范围的运行态覆盖值。
      *
      * <p>与 `hasAnimationWork(...)` 不同，forwards fill 这类已完成但仍覆盖 computed style 的运行值也会返回 true。</p>
@@ -476,6 +497,24 @@ public final class DocumentAnimationTimeline {
         Objects.requireNonNull(impact, "impact");
         for (DocumentAnimationRuntimeState state : states.values()) {
             if (state.hasRuntimeValue(impact)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * 返回当前是否有指定属性的运行态覆盖值。
+     *
+     * <p>与 `hasAnimationWork(...)` 不同，forwards fill 这类已完成但仍覆盖 computed style 的运行值也会返回 true。</p>
+     *
+     * @param property 动画属性
+     * @return 是否存在对应运行态覆盖值
+     */
+    public boolean hasRuntimeValue(DocumentAnimationProperty property) {
+        Objects.requireNonNull(property, "property");
+        for (DocumentAnimationRuntimeState state : states.values()) {
+            if (state.hasRuntimeValue(property)) {
                 return true;
             }
         }
@@ -547,6 +586,11 @@ public final class DocumentAnimationTimeline {
      */
     public PruneResult pruneFinishedAnimationsWithResult(long currentTimeNanos) {
         PruneResult result = new PruneResult();
+        if (!pendingInactiveElementTransitionCancelRecords.isEmpty()) {
+            result.getTransitionCancelRecords().addAll(pendingInactiveElementTransitionCancelRecords);
+            pendingInactiveElementTransitionCancelRecords.clear();
+            result.markChanged();
+        }
         for (Map.Entry<ElementNode, DocumentAnimationRuntimeState> entry : states.entrySet()) {
             entry.getValue().pruneFinishedAnimations(entry.getKey(), currentTimeNanos, result);
         }
@@ -782,6 +826,14 @@ public final class DocumentAnimationTimeline {
             states.put(element, state);
         }
         return state;
+    }
+
+    private void collectInactiveElementTransitionCancelRecords(
+            Map<ElementNode, DocumentAnimationRuntimeState> inactiveStates, long currentTimeNanos) {
+        for (Map.Entry<ElementNode, DocumentAnimationRuntimeState> entry : inactiveStates.entrySet()) {
+            entry.getValue().collectRunningTransitionCancelRecords(entry.getKey(), currentTimeNanos,
+                    pendingInactiveElementTransitionCancelRecords);
+        }
     }
 
     private static boolean canTransition(ComputedStyle style, DocumentAnimationProperty property) {

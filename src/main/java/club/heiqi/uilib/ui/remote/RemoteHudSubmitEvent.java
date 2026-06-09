@@ -108,7 +108,7 @@ public final class RemoteHudSubmitEvent {
      * 关闭当前 HUD 浮层。
      */
     public void dismiss() {
-        RemoteHudOverlays.dismiss(player, overlayId);
+        RemoteHudOverlays.dismissSession(player, overlayId, sessionId);
     }
 
     private static Map<String, List<String>> deepCopy(Map<String, List<String>> source) {

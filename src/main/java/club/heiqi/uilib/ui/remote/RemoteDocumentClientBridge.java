@@ -28,18 +28,21 @@ public final class RemoteDocumentClientBridge {
     private static final Object STATE_LOCK = new Object();
     private static final DocumentScreenOpener MINECRAFT_SCREEN_OPENER = new DocumentScreenOpener() {
         @Override
-        public void open(UiDocumentScreens.DocumentScreenContentBuilder builder) {
+        public void open(UiDocumentScreens.DocumentScreenProvision provision) {
             Minecraft minecraft = Minecraft.getMinecraft();
             if (minecraft == null) {
                 return;
             }
-            GuiScreen screen = UiDocumentScreens.createDocumentScreen(builder);
+            GuiScreen screen = UiDocumentScreens.createDocumentScreen(UiDocumentScreens.DocumentScreenEnvironment
+                    .minecraftDefaults(), provision);
             minecraft.displayGuiScreen(screen);
         }
     };
 
     private static String currentSessionId = "";
     private static long currentGeneration;
+    private static String replacingSessionId = "";
+    private static long replacingGeneration;
     private static DocumentScreenOpener screenOpener = MINECRAFT_SCREEN_OPENER;
 
     private RemoteDocumentClientBridge() {}
@@ -58,7 +61,7 @@ public final class RemoteDocumentClientBridge {
             return;
         }
         final long generation = markCurrentOffer(offer.sessionId);
-        openLoadingScreen(offer);
+        openLoadingScreen(offer, generation);
         NetStreamCall call;
         try {
             call = RemoteDocumentPages.callPageStream(offer.sessionId);
@@ -83,7 +86,7 @@ public final class RemoteDocumentClientBridge {
                         }
                         try {
                             String html = validateAndDecode(offer, response);
-                            openRemoteDocumentScreen(offer, html);
+                            openRemoteDocumentScreen(offer, html, generation);
                         } catch (RuntimeException exception) {
                             openErrorScreen("远程页面校验失败", exception.getMessage());
                         }
@@ -141,9 +144,10 @@ public final class RemoteDocumentClientBridge {
         return new String(bytes, StandardCharsets.UTF_8);
     }
 
-    private static void openRemoteDocumentScreen(final RemoteDocumentPages.OpenOffer offer, final String html) {
+    private static void openRemoteDocumentScreen(final RemoteDocumentPages.OpenOffer offer, final String html,
+            long generation) {
         final RemoteDocumentResourcePolicy policy = resolvePolicy(offer.resourcePolicy);
-        openDocumentScreen(new UiDocumentScreens.DocumentScreenContentBuilder() {
+        openDocumentScreen(offer.sessionId, generation, new UiDocumentScreens.DocumentScreenContentBuilder() {
             @Override
             public void build(UiDocument document) {
                 RemoteHtmlDocumentParser.parseInto(document, html,
@@ -153,8 +157,8 @@ public final class RemoteDocumentClientBridge {
         });
     }
 
-    private static void openLoadingScreen(final RemoteDocumentPages.OpenOffer offer) {
-        openDocumentScreen(new UiDocumentScreens.DocumentScreenContentBuilder() {
+    private static void openLoadingScreen(final RemoteDocumentPages.OpenOffer offer, long generation) {
+        openDocumentScreen(offer.sessionId, generation, new UiDocumentScreens.DocumentScreenContentBuilder() {
             @Override
             public void build(UiDocument document) {
                 ElementNode root = document.getRootElement();
@@ -173,7 +177,7 @@ public final class RemoteDocumentClientBridge {
     }
 
     private static void openErrorScreen(final String title, final String detail) {
-        openDocumentScreen(new UiDocumentScreens.DocumentScreenContentBuilder() {
+        openDocumentScreen(null, 0L, new UiDocumentScreens.DocumentScreenContentBuilder() {
             @Override
             public void build(UiDocument document) {
                 ElementNode root = document.getRootElement();
@@ -191,14 +195,29 @@ public final class RemoteDocumentClientBridge {
         });
     }
 
-    private static void openDocumentScreen(UiDocumentScreens.DocumentScreenContentBuilder builder) {
-        screenOpener.open(builder);
+    private static void openDocumentScreen(final String sessionId, final long generation,
+            UiDocumentScreens.DocumentScreenContentBuilder builder) {
+        UiDocumentScreens.DocumentScreenLifecycle lifecycle = RemoteHtmlSessionGateway.isBlank(sessionId) ? null
+                : new UiDocumentScreens.DocumentScreenLifecycle() {
+                    @Override
+                    public void onClosed() {
+                        clearCurrentOfferFromScreen(sessionId, generation);
+                    }
+                };
+        beginScreenReplacement(sessionId, generation);
+        try {
+            screenOpener.open(UiDocumentScreens.DocumentScreenProvision.of(builder, lifecycle));
+        } finally {
+            endScreenReplacement(sessionId, generation);
+        }
     }
 
     static void resetForTests() {
         synchronized (STATE_LOCK) {
             currentSessionId = "";
             currentGeneration = 0L;
+            replacingSessionId = "";
+            replacingGeneration = 0L;
         }
         screenOpener = MINECRAFT_SCREEN_OPENER;
     }
@@ -229,6 +248,34 @@ public final class RemoteDocumentClientBridge {
             currentSessionId = "";
             currentGeneration++;
             return true;
+        }
+    }
+
+    private static void beginScreenReplacement(String sessionId, long generation) {
+        synchronized (STATE_LOCK) {
+            replacingSessionId = sessionId == null ? "" : sessionId;
+            replacingGeneration = generation;
+        }
+    }
+
+    private static void endScreenReplacement(String sessionId, long generation) {
+        synchronized (STATE_LOCK) {
+            if (replacingGeneration == generation && replacingSessionId.equals(sessionId == null ? "" : sessionId)) {
+                replacingSessionId = "";
+                replacingGeneration = 0L;
+            }
+        }
+    }
+
+    private static void clearCurrentOfferFromScreen(String sessionId, long generation) {
+        synchronized (STATE_LOCK) {
+            if (replacingGeneration == generation && replacingSessionId.equals(sessionId == null ? "" : sessionId)) {
+                return;
+            }
+            if (currentGeneration == generation && currentSessionId.equals(sessionId == null ? "" : sessionId)) {
+                currentSessionId = "";
+                currentGeneration++;
+            }
         }
     }
 
@@ -286,7 +333,7 @@ public final class RemoteDocumentClientBridge {
     }
 
     interface DocumentScreenOpener {
-        void open(UiDocumentScreens.DocumentScreenContentBuilder builder);
+        void open(UiDocumentScreens.DocumentScreenProvision provision);
     }
 
 }

@@ -245,6 +245,42 @@ public class DocumentAnimationTimelineTest {
     }
 
     /**
+     * 验证 reverse forwards fill 会写回方向感知终值，而不是固定写回尾帧。
+     */
+    @Test
+    public void shouldFillReverseDirectionWithFirstKeyframeValue() {
+        UiDocument document = UiDocument.create();
+        document.registerKeyframes(DocumentKeyframes.named("reverseGrow")
+                .setFloat(DocumentAnimationProperty.WIDTH, 40.0F, 80.0F)
+                .build());
+        ElementNode root = document.getRootElement();
+        root.style()
+                .setWidth(UiStyleLength.px(40))
+                .setHeight(UiStyleLength.px(20))
+                .setAnimation("reverseGrow", 1000L)
+                .setAnimationDirection(UiAnimationDirection.REVERSE)
+                .setAnimationFillMode(DocumentAnimationFillMode.FORWARDS);
+        DocumentAnimationTimeline timeline = new DocumentAnimationTimeline();
+
+        timeline.updateFromLayout(DocumentLayoutEngine.layout(root, 120, 0), 0L);
+        Assert.assertTrue(timeline.pruneFinishedAnimations(1_000_000_000L));
+
+        Assert.assertEquals(40.0F, timeline.resolveFloat(root, DocumentAnimationProperty.WIDTH, 40.0F,
+                1_000_000_000L), 0.0F);
+    }
+
+    /**
+     * 验证 alternate / alternate-reverse forwards fill 会按最终迭代奇偶解析终值。
+     */
+    @Test
+    public void shouldFillAlternateDirectionsFromFinalIterationBoundary() {
+        Assert.assertEquals(40.0F, resolveFilledWidth(UiAnimationDirection.ALTERNATE, 2), 0.0F);
+        Assert.assertEquals(80.0F, resolveFilledWidth(UiAnimationDirection.ALTERNATE, 3), 0.0F);
+        Assert.assertEquals(80.0F, resolveFilledWidth(UiAnimationDirection.ALTERNATE_REVERSE, 2), 0.0F);
+        Assert.assertEquals(40.0F, resolveFilledWidth(UiAnimationDirection.ALTERNATE_REVERSE, 3), 0.0F);
+    }
+
+    /**
      * 验证 0 次迭代会被视为无限迭代，并且不会结束。
      */
     @Test
@@ -1617,6 +1653,26 @@ public class DocumentAnimationTimelineTest {
                 0xFF123456, 1_000_000_000L));
         Assert.assertEquals(0.25F, timeline.resolveFloat(root, DocumentAnimationProperty.OPACITY, 1.0F,
                 1_000_000_000L), 0.0F);
+    }
+
+    private static float resolveFilledWidth(UiAnimationDirection direction, int iterationCount) {
+        UiDocument document = UiDocument.create();
+        document.registerKeyframes(DocumentKeyframes.named("directionalGrow")
+                .setFloat(DocumentAnimationProperty.WIDTH, 40.0F, 80.0F)
+                .build());
+        ElementNode root = document.getRootElement();
+        root.style()
+                .setWidth(UiStyleLength.px(40))
+                .setHeight(UiStyleLength.px(20))
+                .setAnimation("directionalGrow", 1000L)
+                .setAnimationIterationCount(iterationCount)
+                .setAnimationDirection(direction)
+                .setAnimationFillMode(DocumentAnimationFillMode.FORWARDS);
+        DocumentAnimationTimeline timeline = new DocumentAnimationTimeline();
+        timeline.updateFromLayout(DocumentLayoutEngine.layout(root, 120, 0), 0L);
+        long endTimeNanos = 1_000_000_000L * iterationCount;
+        timeline.pruneFinishedAnimations(endTimeNanos);
+        return timeline.resolveFloat(root, DocumentAnimationProperty.WIDTH, 40.0F, endTimeNanos);
     }
 
     /**

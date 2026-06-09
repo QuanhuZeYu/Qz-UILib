@@ -62,6 +62,17 @@ public final class DocumentLayoutEngine {
          * @return 运行态布局值
          */
         int resolve(ElementNode element, DocumentAnimationProperty property, int baseValue);
+
+        /**
+         * 判断当前运行态样式是否为 fixed 后代建立 containing block。
+         *
+         * @param element 元素
+         * @param computedStyle computed style 基准值
+         * @return 是否建立 fixed containing block
+         */
+        default boolean createsFixedContainingBlock(ElementNode element, ComputedStyle computedStyle) {
+            return DocumentEffectChain.createsFixedContainingBlock(computedStyle);
+        }
     }
 
     /**
@@ -300,7 +311,8 @@ public final class DocumentLayoutEngine {
                 contentWidth + padding.getHorizontal(), resolveInitialAbsoluteContainingBlockHeight(
                         specifiedContentHeight), padding.getVertical());
         boolean createsAbsoluteContainingBlock = absoluteContainingBlock == null || isPositioned(computedStyle);
-        boolean createsFixedContainingBlock = DocumentEffectChain.createsFixedContainingBlock(computedStyle);
+        boolean createsFixedContainingBlock = layoutContext.layoutValueResolver.createsFixedContainingBlock(element,
+                computedStyle);
         AbsoluteContainingBlock childrenAbsoluteContainingBlock = createsAbsoluteContainingBlock
                 ? directContainingBlock : absoluteContainingBlock;
         AbsoluteContainingBlock childrenFixedContainingBlock = createsFixedContainingBlock

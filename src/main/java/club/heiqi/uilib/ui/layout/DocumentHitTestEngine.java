@@ -3,7 +3,6 @@ package club.heiqi.uilib.ui.layout;
 import java.util.List;
 import java.util.Objects;
 
-import club.heiqi.uilib.ui.animation.DocumentAnimationProperty;
 import club.heiqi.uilib.ui.animation.DocumentAnimationTimeline;
 import club.heiqi.uilib.ui.dom.ElementNode;
 import club.heiqi.uilib.ui.layout.DocumentVisualTraversal.BoxContext;
@@ -74,7 +73,8 @@ public final class DocumentHitTestEngine {
             DocumentAnimationTimeline animationTimeline) {
         Objects.requireNonNull(rootBox, "rootBox");
         StackingContextResolver resolver = createStackingContextResolver(currentTimeNanos, animationTimeline);
-        VisualScene scene = DocumentVisualTraversal.resolveVisualScene(rootBox, topLayerBoxes, scrollState);
+        VisualScene scene = DocumentVisualTraversal.resolveVisualScene(rootBox, topLayerBoxes, scrollState,
+                currentTimeNanos, animationTimeline);
         List<RootEntry> rootEntries = scene.getRootEntries();
         for (int index = rootEntries.size() - 1; index >= 0; index--) {
             ElementNode hit = hitTestBox(rootEntries.get(index).getRootContext(), scrollState, documentX, documentY,
@@ -105,7 +105,7 @@ public final class DocumentHitTestEngine {
         Objects.requireNonNull(rootBox, "rootBox");
         StackingContextResolver resolver = createStackingContextResolver(currentTimeNanos, animationTimeline);
         return hitTestBox(DocumentVisualTraversal.resolveBoxContext(rootBox, scrollState, offsetX, offsetY,
-                DocumentStickyPositioning.rootContext()), scrollState, documentX, documentY, true,
+                DocumentStickyPositioning.rootContext(), currentTimeNanos, animationTimeline), scrollState, documentX, documentY, true,
                 currentTimeNanos, animationTimeline, resolver);
     }
 
@@ -125,8 +125,8 @@ public final class DocumentHitTestEngine {
         }
         int boxOffsetX = boxContext.getBoxOffsetX();
         int boxOffsetY = boxContext.getBoxOffsetY();
-        UiTransform.Point inversePoint = inverseTransformPoint(box, boxOffsetX, boxOffsetY, documentX, documentY,
-                currentTimeNanos, animationTimeline);
+        UiTransform.Point inversePoint = DocumentVisualHitTransforms.inverseTransformPoint(box, boxOffsetX,
+                boxOffsetY, documentX, documentY, currentTimeNanos, animationTimeline);
         if (inversePoint == null) {
             return null;
         }
@@ -264,7 +264,13 @@ public final class DocumentHitTestEngine {
         };
     }
 
-    private static boolean isHitTestSubtreeSuppressed(ElementNode element) {
+    /**
+     * 判断元素整棵命中子树是否被显式抑制。
+     *
+     * @param element 元素
+     * @return 是否抑制整棵子树命中
+     */
+    public static boolean isHitTestSubtreeSuppressed(ElementNode element) {
         if (element == null) {
             return false;
         }
@@ -278,11 +284,23 @@ public final class DocumentHitTestEngine {
         return false;
     }
 
-    private static boolean isSelfHitTestSuppressed(ElementNode element) {
+    /**
+     * 判断元素自身是否不应成为命中目标。
+     *
+     * @param element 元素
+     * @return 元素自身是否被抑制
+     */
+    public static boolean isSelfHitTestSuppressed(ElementNode element) {
         return isHitTestSubtreeSuppressed(element) || isVisibilityHidden(element);
     }
 
-    private static boolean isSelfHitTestVisible(ElementNode element) {
+    /**
+     * 判断元素自身是否可成为命中目标。
+     *
+     * @param element 元素
+     * @return 元素自身是否可命中
+     */
+    public static boolean isSelfHitTestVisible(ElementNode element) {
         return !isSelfHitTestSuppressed(element);
     }
 
@@ -294,7 +312,13 @@ public final class DocumentHitTestEngine {
         return style.getVisibility() == UiVisibility.HIDDEN;
     }
 
-    private static boolean isPointerEventsEnabled(ElementNode element) {
+    /**
+     * 判断元素当前 computed pointer-events 是否允许命中。
+     *
+     * @param element 元素
+     * @return 是否允许命中
+     */
+    public static boolean isPointerEventsEnabled(ElementNode element) {
         if (element == null) {
             return true;
         }
@@ -366,40 +390,6 @@ public final class DocumentHitTestEngine {
         double dx = x - cx;
         double dy = y - cy;
         return dx * dx + dy * dy < (double) r * r;
-    }
-
-    private static UiTransform.Point inverseTransformPoint(DocumentLayoutBox box, int boxOffsetX, int boxOffsetY,
-            float documentX, float documentY, long currentTimeNanos, DocumentAnimationTimeline animationTimeline) {
-        UiTransform transform = resolveTransform(box, currentTimeNanos, animationTimeline);
-        if (transform == null || transform.isIdentity()) {
-            return new UiTransform.Point(documentX, documentY);
-        }
-        return transform.inverseTransformPoint(documentX, documentY, box.getLeft() + boxOffsetX,
-                box.getTop() + boxOffsetY, box.getWidth(), box.getHeight());
-    }
-
-    private static UiTransform resolveTransform(DocumentLayoutBox box, long currentTimeNanos,
-            DocumentAnimationTimeline animationTimeline) {
-        UiTransform baseTransform = box.getComputedStyle().getTransform();
-        if (baseTransform == null) {
-            baseTransform = UiTransform.identity();
-        }
-        if (animationTimeline == null) {
-            return baseTransform;
-        }
-        ElementNode element = box.getElement();
-        float translateX = animationTimeline.resolveFloat(element, DocumentAnimationProperty.TRANSLATE_X,
-                baseTransform.getTranslateX(), currentTimeNanos);
-        float translateY = animationTimeline.resolveFloat(element, DocumentAnimationProperty.TRANSLATE_Y,
-                baseTransform.getTranslateY(), currentTimeNanos);
-        float scaleX = animationTimeline.resolveFloat(element, DocumentAnimationProperty.SCALE_X,
-                baseTransform.getScaleX(), currentTimeNanos);
-        float scaleY = animationTimeline.resolveFloat(element, DocumentAnimationProperty.SCALE_Y,
-                baseTransform.getScaleY(), currentTimeNanos);
-        float rotate = animationTimeline.resolveFloat(element, DocumentAnimationProperty.ROTATE,
-                baseTransform.getRotateDegrees(), currentTimeNanos);
-        return UiTransform.of(translateX, translateY, scaleX, scaleY, rotate,
-                baseTransform.getOriginX(), baseTransform.getOriginY());
     }
 
     /**

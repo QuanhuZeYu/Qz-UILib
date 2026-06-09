@@ -169,6 +169,28 @@ public class RemoteDocumentPagesTest {
                 containsEnvelopeKey(MyMod.MODID + ":remote_page_expired"));
     }
 
+    @Test
+    public void shouldIgnoreExpiredNotificationAfterRemotePageWasClosed() {
+        FakePlayer player = new FakePlayer("pagePlayer", 5);
+        int openIndex = openPage(player, RemoteDocumentPage.of("page-close", "关闭页", "<p>closed-ok</p>"));
+        RemoteDocumentPages.OpenOffer offer = RemoteDocumentPages.decodeOpenOffer(openJsonAt(openIndex));
+        RemoteDocumentClientBridge.receiveOpenOffer(openJsonAt(openIndex));
+        int requestIndex = transport.clientToServerPayloads.size() - 1;
+        deliverStreamRequestAndFlush(requestIndex, player);
+        Assert.assertTrue(screenOpener.lastText().contains("closed-ok"));
+
+        screenOpener.closeLastScreen();
+        RemoteDocumentPages.ExpiredPayload expiredPayload = new RemoteDocumentPages.ExpiredPayload();
+        expiredPayload.sessionId = offer.sessionId;
+        expiredPayload.pageId = offer.pageId;
+        expiredPayload.reason = "server-session-expired";
+        RemoteDocumentClientBridge.receiveSessionExpired(RemoteJson.toJson(expiredPayload));
+
+        Assert.assertTrue("关闭后的旧 expired 不应重新打开错误页",
+                screenOpener.lastText().contains("closed-ok"));
+        Assert.assertFalse(screenOpener.lastText().contains("远程页面已失效"));
+    }
+
     private int openPage(FakePlayer player, RemoteDocumentPage page) {
         int index = transport.playerPayloads.size();
         RemoteDocumentPages.open(player, page, null);
@@ -245,16 +267,26 @@ public class RemoteDocumentPagesTest {
     private static final class RecordingDocumentScreenOpener implements RemoteDocumentClientBridge.DocumentScreenOpener {
 
         private final List<String> openedTexts = new ArrayList<String>();
+        private UiDocumentScreens.DocumentScreenProvision lastProvision;
 
         @Override
-        public void open(UiDocumentScreens.DocumentScreenContentBuilder builder) {
+        public void open(UiDocumentScreens.DocumentScreenProvision provision) {
             UiDocument document = UiDocument.create();
-            builder.build(document);
+            this.lastProvision = provision;
+            provision.getContentBuilder().build(document);
             openedTexts.add(collectText(document.getRootElement()));
         }
 
         private String lastText() {
             return openedTexts.isEmpty() ? "" : openedTexts.get(openedTexts.size() - 1);
+        }
+
+        private void closeLastScreen() {
+            UiDocumentScreens.DocumentScreenLifecycle lifecycle = lastProvision == null ? null
+                    : lastProvision.getLifecycle();
+            if (lifecycle != null) {
+                lifecycle.onClosed();
+            }
         }
     }
 

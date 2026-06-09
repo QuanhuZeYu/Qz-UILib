@@ -25,6 +25,7 @@ public final class InternalInlineDocumentPageController extends DocumentPageCont
 
     private final DocumentPageAuthoringSurface documentPage;
     private final HtmlLikeDocumentWidget htmlLikeDocumentWidget;
+    private final UiDocumentScreens.DocumentScreenLifecycle lifecycle;
 
     /**
      * 创建调用方内容驱动的文档页面控制器。
@@ -35,12 +36,14 @@ public final class InternalInlineDocumentPageController extends DocumentPageCont
      */
     public InternalInlineDocumentPageController(DocumentUiScope documentUi,
             DocumentPageAuthoringSurface documentPage,
-            UiDocumentScreens.DocumentScreenContentBuilder contentBuilder) {
+            UiDocumentScreens.DocumentScreenProvision provision) {
         DocumentUiScope resolvedDocumentUi = Objects.requireNonNull(documentUi, "documentUi");
         this.documentPage = Objects.requireNonNull(documentPage, "documentPage");
+        UiDocumentScreens.DocumentScreenProvision resolvedProvision = Objects.requireNonNull(provision, "provision");
+        this.lifecycle = resolvedProvision.getLifecycle();
         UiDocument document = UiDocument.create();
         document.setDefaultTextContentMode(resolvedDocumentUi.getDefaultTextContentMode());
-        Objects.requireNonNull(contentBuilder, "contentBuilder").build(document);
+        resolvedProvision.getContentBuilder().build(document);
         applyDefaultRootContract(document.getRootElement());
         this.htmlLikeDocumentWidget = DocumentHostWidgetFactory.createViewportDocumentWidget(document, 320, 180,
                 resolvedDocumentUi.getTextMeasureService(), true);
@@ -56,6 +59,13 @@ public final class InternalInlineDocumentPageController extends DocumentPageCont
     @Override
     public void buildDocument() {
         documentPage.addBlock(htmlLikeDocumentWidget);
+    }
+
+    @Override
+    public void onDocumentClosed() {
+        if (lifecycle != null) {
+            lifecycle.onClosed();
+        }
     }
 
     /**

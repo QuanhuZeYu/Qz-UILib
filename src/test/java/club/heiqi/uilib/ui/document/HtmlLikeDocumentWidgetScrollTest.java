@@ -32,9 +32,11 @@ import club.heiqi.uilib.ui.event.UiMouseEvent;
 import club.heiqi.uilib.ui.input.UiInputRouter;
 import club.heiqi.uilib.ui.style.props.UiDisplay;
 import club.heiqi.uilib.ui.style.props.UiOverflow;
+import club.heiqi.uilib.ui.style.props.UiPointerEvents;
 import club.heiqi.uilib.ui.style.props.UiPosition;
 import club.heiqi.uilib.ui.style.props.UiVisibility;
 import club.heiqi.uilib.ui.style.values.UiStyleLength;
+import club.heiqi.uilib.ui.style.values.UiTransform;
 
 /**
  * `HtmlLikeDocumentWidget` 的滚动语义回归测试。
@@ -77,6 +79,102 @@ public class HtmlLikeDocumentWidgetScrollTest {
         assertDrawCall(scrolledRenderContext.drawCalls.get(0), 5, -29, 85, 51, 0xFFAA5500, 0, 0);
         assertDrawCall(scrolledRenderContext.drawCalls.get(1), 77, 9, 83, 25, 0x663B4A66, 0, 3);
         assertDrawCall(scrolledRenderContext.drawCalls.get(2), 77, 9, 83, 25, 0xDDBCD7FF, 0, 3);
+    }
+
+    /**
+     * 验证 transform 后的滚动容器只在视觉位置响应滚轮。
+     */
+    @Test
+    public void shouldScrollTransformedOverflowAutoContentAtVisualPosition() {
+        UiDocument document = UiDocument.create();
+        ElementNode root = document.getRootElement();
+        ElementNode scroller = document.div();
+        ElementNode child = document.div();
+        root.style()
+                .setWidth(UiStyleLength.px(140))
+                .setHeight(UiStyleLength.px(40));
+        scroller.style()
+                .setWidth(UiStyleLength.px(80))
+                .setHeight(UiStyleLength.px(20))
+                .setOverflowX(UiOverflow.HIDDEN)
+                .setOverflowY(UiOverflow.AUTO)
+                .setTransform(UiTransform.translate(40, 0));
+        child.style().setHeight(UiStyleLength.px(80));
+        scroller.append(child);
+        root.append(scroller);
+        HtmlLikeDocumentWidget widget = new HtmlLikeDocumentWidget(document, 140, 40,
+                new DeterministicTextMeasureService());
+        widget.applyLayoutBounds(0, 0, 140, 40);
+        Assert.assertTrue(widget.getMaxScrollTop(scroller) > 0);
+
+        Assert.assertFalse(widget.onMouseScroll(new UiMouseEvent(UiMouseEvent.Action.SCROLL, 10, 10, -1, -120, 0,
+                0, 1L)));
+        Assert.assertEquals(0, widget.getScrollTop(scroller));
+        Assert.assertTrue(widget.onMouseScroll(new UiMouseEvent(UiMouseEvent.Action.SCROLL, 50, 10, -1, -120, 0,
+                0, 2L)));
+        Assert.assertTrue(widget.getScrollTop(scroller) > 0);
+    }
+
+    /**
+     * 验证默认滚轮滚动会跳过 passthrough overlay 并滚动底层容器。
+     */
+    @Test
+    public void shouldSkipPassthroughOverlayForDefaultWheelScroll() {
+        UiDocument document = UiDocument.create();
+        ElementNode root = document.getRootElement();
+        ElementNode bottomScroller = document.div();
+        ElementNode bottomContent = document.div();
+        ElementNode overlayScroller = document.div();
+        ElementNode overlayContent = document.div();
+        root.style().setWidth(UiStyleLength.px(120)).setHeight(UiStyleLength.px(80));
+        configureSmallScroller(bottomScroller);
+        bottomContent.style().setHeight(UiStyleLength.px(100));
+        configureOverlayScroller(overlayScroller);
+        overlayScroller.setAttribute("data-hit-test-passthrough", "true");
+        overlayContent.style().setHeight(UiStyleLength.px(100));
+        bottomScroller.append(bottomContent);
+        overlayScroller.append(overlayContent);
+        root.append(bottomScroller).append(overlayScroller);
+        HtmlLikeDocumentWidget widget = new HtmlLikeDocumentWidget(document, 120, 80,
+                new DeterministicTextMeasureService());
+        widget.applyLayoutBounds(0, 0, 120, 80);
+
+        Assert.assertTrue(widget.onMouseScroll(new UiMouseEvent(UiMouseEvent.Action.SCROLL, 10, 10, -1, -120, 0,
+                0, 1L)));
+
+        Assert.assertTrue(widget.getScrollTop(bottomScroller) > 0);
+        Assert.assertEquals(0, widget.getScrollTop(overlayScroller));
+    }
+
+    /**
+     * 验证默认滚轮滚动会跳过 pointer-events:none overlay 并滚动底层容器。
+     */
+    @Test
+    public void shouldSkipPointerEventsNoneOverlayForDefaultWheelScroll() {
+        UiDocument document = UiDocument.create();
+        ElementNode root = document.getRootElement();
+        ElementNode bottomScroller = document.div();
+        ElementNode bottomContent = document.div();
+        ElementNode overlayScroller = document.div();
+        ElementNode overlayContent = document.div();
+        root.style().setWidth(UiStyleLength.px(120)).setHeight(UiStyleLength.px(80));
+        configureSmallScroller(bottomScroller);
+        bottomContent.style().setHeight(UiStyleLength.px(100));
+        configureOverlayScroller(overlayScroller);
+        overlayScroller.style().setPointerEvents(UiPointerEvents.NONE);
+        overlayContent.style().setHeight(UiStyleLength.px(100));
+        bottomScroller.append(bottomContent);
+        overlayScroller.append(overlayContent);
+        root.append(bottomScroller).append(overlayScroller);
+        HtmlLikeDocumentWidget widget = new HtmlLikeDocumentWidget(document, 120, 80,
+                new DeterministicTextMeasureService());
+        widget.applyLayoutBounds(0, 0, 120, 80);
+
+        Assert.assertTrue(widget.onMouseScroll(new UiMouseEvent(UiMouseEvent.Action.SCROLL, 10, 10, -1, -120, 0,
+                0, 1L)));
+
+        Assert.assertTrue(widget.getScrollTop(bottomScroller) > 0);
+        Assert.assertEquals(0, widget.getScrollTop(overlayScroller));
     }
 
     /**
@@ -632,6 +730,16 @@ public class HtmlLikeDocumentWidgetScrollTest {
     }
 
     /**
+     * 验证 scrollbar mousedown 不会被 suppressed overlay 捕获。
+     */
+    @Test
+    public void shouldSkipSuppressedOverlayScrollbarOnMouseDown() {
+        assertSuppressedOverlayScrollbarMouseDownIsSkipped("data-hit-test-hidden", true, false);
+        assertSuppressedOverlayScrollbarMouseDownIsSkipped("data-hit-test-passthrough", true, false);
+        assertSuppressedOverlayScrollbarMouseDownIsSkipped(null, false, true);
+    }
+
+    /**
      * 验证当前可见的内部滚动块滚动条也可以拖拽。
      */
     @Test
@@ -844,5 +952,56 @@ public class HtmlLikeDocumentWidgetScrollTest {
         Assert.assertTrue(target.scrollIntoView());
         Assert.assertEquals(48, widget.getScrollTop(root));
         Assert.assertFalse(hidden.scrollIntoView());
+    }
+
+    private static void configureSmallScroller(ElementNode scroller) {
+        scroller.style()
+                .setWidth(UiStyleLength.px(70))
+                .setHeight(UiStyleLength.px(20))
+                .setOverflowX(UiOverflow.HIDDEN)
+                .setOverflowY(UiOverflow.AUTO);
+    }
+
+    private static void configureOverlayScroller(ElementNode scroller) {
+        configureSmallScroller(scroller);
+        scroller.style()
+                .setPosition(UiPosition.FIXED)
+                .setTop(UiStyleLength.px(0))
+                .setLeft(UiStyleLength.px(0))
+                .setZIndex(10);
+    }
+
+    private static void assertSuppressedOverlayScrollbarMouseDownIsSkipped(String attributeName, boolean setAttribute,
+            boolean pointerEventsNone) {
+        UiDocument document = UiDocument.create();
+        ElementNode root = document.getRootElement();
+        ElementNode bottomScroller = document.div();
+        ElementNode bottomContent = document.div();
+        ElementNode overlayScroller = document.div();
+        ElementNode overlayContent = document.div();
+        root.style().setWidth(UiStyleLength.px(120)).setHeight(UiStyleLength.px(80));
+        configureSmallScroller(bottomScroller);
+        bottomContent.style().setHeight(UiStyleLength.px(100));
+        configureOverlayScroller(overlayScroller);
+        overlayContent.style().setHeight(UiStyleLength.px(100));
+        if (setAttribute) {
+            overlayScroller.setAttribute(attributeName, "true");
+        }
+        if (pointerEventsNone) {
+            overlayScroller.style().setPointerEvents(UiPointerEvents.NONE);
+        }
+        bottomScroller.append(bottomContent);
+        overlayScroller.append(overlayContent);
+        root.append(bottomScroller).append(overlayScroller);
+        HtmlLikeDocumentWidget widget = new HtmlLikeDocumentWidget(document, 120, 80,
+                new DeterministicTextMeasureService());
+        widget.applyLayoutBounds(0, 0, 120, 80);
+        widget.render(new RecordingUiRenderContext());
+
+        widget.onMouseDown(new UiMouseEvent(UiMouseEvent.Action.BUTTON_DOWN, 65, 18, 0, 0, 0, 0, 1L));
+        widget.onMouseMove(new UiMouseEvent(UiMouseEvent.Action.MOVE, 65, 19, -1, 0, 0, 1, 2L));
+        widget.onMouseUp(new UiMouseEvent(UiMouseEvent.Action.BUTTON_UP, 65, 19, 0, 0, 0, 0, 3L));
+
+        Assert.assertEquals(0, widget.getScrollTop(overlayScroller));
     }
 }
