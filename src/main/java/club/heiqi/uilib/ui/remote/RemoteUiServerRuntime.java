@@ -70,6 +70,9 @@ final class RemoteUiServerRuntime<T> {
         }
         RemoteUiProtocol.FetchHtmlRequest fetchRequest;
         try {
+            RemoteUiProtocol.requireExplicitFields(request.getBody().asUtf8String(), featureName + " HTML 拉取",
+                    "protocolVersion", "messageType", "feature", "sessionId", "surfaceType", "surfaceId",
+                    "contentRevision", "assetId");
             fetchRequest = RemoteUiProtocol.fromJson(request.getBody().asUtf8String(),
                     RemoteUiProtocol.FetchHtmlRequest.class);
         } catch (IllegalArgumentException exception) {

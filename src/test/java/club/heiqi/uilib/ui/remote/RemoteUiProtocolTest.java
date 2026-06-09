@@ -52,6 +52,29 @@ public class RemoteUiProtocolTest {
         RemoteUiProtocol.validateClose(payload);
     }
 
+    @Test(expected = IllegalArgumentException.class)
+    public void shouldRejectPageSubmitJsonMissingExplicitSurfaceId() {
+        RemoteDocumentPages.decodeSubmitPayload("{\"protocolVersion\":1,\"messageType\":\"SUBMIT\","
+                + "\"feature\":\"remote-ui-lease-v1\",\"sessionId\":\"session\","
+                + "\"surfaceType\":\"PAGE\",\"contentRevision\":1,\"pageId\":\"page\"}");
+    }
+
+    @Test(expected = IllegalArgumentException.class)
+    public void shouldRejectHudSessionDismissJsonMissingExplicitContentRevision() {
+        RemoteHudOverlays.decodeDismissPayload("{\"protocolVersion\":1,\"messageType\":\"CLOSE_SURFACE\","
+                + "\"feature\":\"remote-ui-lease-v1\",\"sessionId\":\"session\","
+                + "\"surfaceType\":\"HUD\",\"surfaceId\":\"overlay\","
+                + "\"closeScope\":\"SESSION\",\"overlayId\":\"overlay\"}");
+    }
+
+    @Test(expected = IllegalArgumentException.class)
+    public void shouldRejectPageExpiredJsonMissingExplicitSurfaceId() {
+        RemoteDocumentPages.decodeExpiredPayload("{\"protocolVersion\":1,\"messageType\":\"SESSION_EXPIRED\","
+                + "\"feature\":\"remote-ui-lease-v1\",\"sessionId\":\"session\","
+                + "\"surfaceType\":\"PAGE\",\"contentRevision\":1,\"closeScope\":\"SESSION\","
+                + "\"pageId\":\"page\"}");
+    }
+
     @Test
     public void shouldAllowSurfaceScopedCloseWithoutSessionId() {
         RemoteUiProtocol.ClosePayload payload = new RemoteUiProtocol.ClosePayload();

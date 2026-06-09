@@ -112,6 +112,43 @@ public class RemoteDocumentPagesTest {
     }
 
     @Test
+    public void shouldTerminalizeCurrentPageAfterFailedStreamBeforeExpiredArrives() {
+        FakePlayer player = new FakePlayer("pagePlayer", 7);
+        RemoteDocumentPages.OpenOffer failedOffer = new RemoteDocumentPages.OpenOffer();
+        failedOffer.sessionId = "missing-session";
+        failedOffer.surfaceType = RemoteUiProtocol.SurfaceType.PAGE.name();
+        failedOffer.surfaceId = RemoteUiProtocol.PAGE_PRIMARY_SURFACE_ID;
+        failedOffer.contentRevision = 1L;
+        failedOffer.assetId = "missing-asset";
+        failedOffer.pageId = "missing-page";
+        failedOffer.title = "失败页";
+        failedOffer.resourcePolicy = RemoteDocumentResourcePolicy.LOCAL_RESOURCES_ONLY.name();
+        failedOffer.sha256 = RemoteDocumentPages.sha256Hex(new byte[0]);
+        failedOffer.htmlBytes = 0;
+        failedOffer.leaseExpiresAtMillis = 1_000L;
+        RemoteDocumentClientBridge.receiveOpenOffer(RemoteJson.toJson(failedOffer));
+        int requestIndex = transport.clientToServerPayloads.size() - 1;
+
+        deliverStreamRequestAndFlush(requestIndex, player);
+        String failedText = screenOpener.lastText();
+        Assert.assertTrue(failedText.contains("远程页面校验失败"));
+
+        RemoteDocumentPages.ExpiredPayload expiredPayload = new RemoteDocumentPages.ExpiredPayload();
+        expiredPayload.messageType = RemoteUiProtocol.MessageType.SESSION_EXPIRED.name();
+        expiredPayload.sessionId = failedOffer.sessionId;
+        expiredPayload.surfaceType = RemoteUiProtocol.SurfaceType.PAGE.name();
+        expiredPayload.surfaceId = failedOffer.surfaceId;
+        expiredPayload.contentRevision = failedOffer.contentRevision;
+        expiredPayload.closeScope = RemoteUiProtocol.CloseScope.SESSION.name();
+        expiredPayload.pageId = failedOffer.pageId;
+        expiredPayload.reason = "server-session-expired";
+        RemoteDocumentClientBridge.receiveSessionExpired(RemoteJson.toJson(expiredPayload));
+
+        Assert.assertEquals("失败后的旧 expired 不应再次打开失效错误页", failedText,
+                screenOpener.lastText());
+    }
+
+    @Test
     public void shouldNotifyClientWhenPageSubmitFindsExpiredSession() {
         final AtomicLong nowMillis = new AtomicLong(2_000L);
         RemoteDocumentPages.setSessionClockForTests(new LongSupplier() {
@@ -136,6 +173,9 @@ public class RemoteDocumentPagesTest {
         nowMillis.addAndGet(RemoteHtmlSessionGateway.DEFAULT_SESSION_TTL_MILLIS + 1L);
         RemoteDocumentPages.SubmitPayload submitPayload = new RemoteDocumentPages.SubmitPayload();
         submitPayload.sessionId = sessionId;
+        submitPayload.surfaceType = RemoteUiProtocol.SurfaceType.PAGE.name();
+        submitPayload.surfaceId = RemoteUiProtocol.PAGE_PRIMARY_SURFACE_ID;
+        submitPayload.contentRevision = 1L;
         submitPayload.pageId = "page-expired";
         submitPayload.values = Collections.emptyMap();
         invokeHandleSubmit(RemoteJson.toJson(submitPayload), player);
@@ -177,6 +217,33 @@ public class RemoteDocumentPagesTest {
     }
 
     @Test
+    public void shouldNotifyClientWhenPageLeaseCleanupTicksWithoutInboundFrame() {
+        final AtomicLong nowMillis = new AtomicLong(4_000L);
+        RemoteDocumentPages.setSessionClockForTests(new LongSupplier() {
+            @Override
+            public long getAsLong() {
+                return nowMillis.get();
+            }
+        });
+        FakePlayer player = new FakePlayer("pagePlayer", 6);
+        String sessionId = RemoteDocumentPages.open(player,
+                RemoteDocumentPage.of("page-cleanup-expired", "主动过期页", "<p>cleanup</p>"));
+        transport.playerPayloads.clear();
+
+        nowMillis.addAndGet(RemoteHtmlSessionGateway.DEFAULT_SESSION_TTL_MILLIS + 1L);
+        RemoteUiLeaseCleanupScheduler.tickLeaseCleanup();
+
+        Assert.assertEquals(1, transport.playerPayloads.size());
+        NetEnvelope expiredEnvelope = NetEnvelope.decode(transport.playerPayloads.get(0).payload);
+        Assert.assertEquals(MyMod.MODID + ":remote_page_expired", expiredEnvelope.getKey());
+        RemoteDocumentPages.ExpiredPayload expiredPayload =
+                RemoteDocumentPages.decodeExpiredPayload(expiredEnvelope.toBody().asUtf8String());
+        Assert.assertEquals(sessionId, expiredPayload.sessionId);
+        Assert.assertEquals("page-cleanup-expired", expiredPayload.pageId);
+        Assert.assertEquals("server-session-expired", expiredPayload.reason);
+    }
+
+    @Test
     public void shouldIgnoreExpiredNotificationAfterRemotePageWasClosed() {
         FakePlayer player = new FakePlayer("pagePlayer", 5);
         int openIndex = openPage(player, RemoteDocumentPage.of("page-close", "关闭页", "<p>closed-ok</p>"));
@@ -188,6 +255,7 @@ public class RemoteDocumentPagesTest {
 
         screenOpener.closeLastScreen();
         RemoteDocumentPages.ExpiredPayload expiredPayload = new RemoteDocumentPages.ExpiredPayload();
+        expiredPayload.messageType = RemoteUiProtocol.MessageType.SESSION_EXPIRED.name();
         expiredPayload.sessionId = offer.sessionId;
         expiredPayload.surfaceType = RemoteUiProtocol.SurfaceType.PAGE.name();
         expiredPayload.surfaceId = offer.surfaceId;

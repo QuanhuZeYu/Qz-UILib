@@ -20,6 +20,36 @@ public class RemoteUiClientRuntimeTest {
                 RemoteUiProtocol.PAGE_PRIMARY_SURFACE_ID, "S1", 1L, first.getLocalMountToken()));
         Assert.assertTrue(runtime.completePending(RemoteUiProtocol.SurfaceType.PAGE,
                 RemoteUiProtocol.PAGE_PRIMARY_SURFACE_ID, "S2", 1L, second.getLocalMountToken()));
+        Assert.assertEquals(0, runtime.pendingSizeForTests());
+    }
+
+    @Test
+    public void shouldRemoveReplacedPendingMountWhenNewOfferBecomesCurrent() {
+        RemoteUiClientRuntime runtime = new RemoteUiClientRuntime();
+        RemoteUiClientRuntime.PendingMount first = runtime.beginOpen(RemoteUiProtocol.SurfaceType.PAGE,
+                RemoteUiProtocol.PAGE_PRIMARY_SURFACE_ID, "S1", 1L);
+
+        runtime.beginOpen(RemoteUiProtocol.SurfaceType.PAGE, RemoteUiProtocol.PAGE_PRIMARY_SURFACE_ID, "S2", 1L);
+
+        Assert.assertFalse(runtime.discard(RemoteUiProtocol.SurfaceType.PAGE,
+                RemoteUiProtocol.PAGE_PRIMARY_SURFACE_ID, "S1", 1L, first.getLocalMountToken()));
+        Assert.assertEquals("新 offer 替换当前 surface 时应立即移除旧 pending", 1,
+                runtime.pendingSizeForTests());
+    }
+
+    @Test
+    public void shouldTerminalizeFailedCurrentMount() {
+        RemoteUiClientRuntime runtime = new RemoteUiClientRuntime();
+        RemoteUiClientRuntime.PendingMount mount = runtime.beginOpen(RemoteUiProtocol.SurfaceType.PAGE,
+                RemoteUiProtocol.PAGE_PRIMARY_SURFACE_ID, "S1", 1L);
+
+        Assert.assertTrue(runtime.terminalizeError(RemoteUiProtocol.SurfaceType.PAGE,
+                RemoteUiProtocol.PAGE_PRIMARY_SURFACE_ID, "S1", 1L, mount.getLocalMountToken()));
+
+        Assert.assertEquals(0, runtime.pendingSizeForTests());
+        Assert.assertEquals(0, runtime.currentSizeForTests());
+        Assert.assertFalse(runtime.isCurrent(RemoteUiProtocol.SurfaceType.PAGE,
+                RemoteUiProtocol.PAGE_PRIMARY_SURFACE_ID, "S1", 1L, mount.getLocalMountToken()));
     }
 
     @Test

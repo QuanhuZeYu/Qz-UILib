@@ -89,3 +89,12 @@
 
 - 本轮为只读审查，未修改生产代码，未运行 Gradle 测试。
 - 审查依据：源码读取、最近第六/第七轮审查记录、当前记忆文档与远程 UI lease protocol 边界要求。
+
+## 后续复核（2026-06-09）
+
+- 状态：4 个 findings 已在修复分支 `fix/remote-ui-runtime-lease-round8` 完成结构化修复，并按仓库规范合回 `4.0`。
+- P1 Net 超时：新增 `NetService.tickTimeouts()`，由 `ForgeMainThreadDispatcherBridge` 在客户端/服务端 tick 主动推进 Fetch 与 Stream deadline；`NetEnvelopeDispatcher` 复用该通用入口。`NetService` 仍只承载通用网络基础设施能力，未加入远程 UI、keepalive 或 renew 业务语义。
+- P1 远程 UI TTL：新增 `RemoteUiLeaseCleanupScheduler`，在 `ui.remote` 内部通过服务端 tick 调用页面/HUD 现有 `cleanupExpiredSessions(...)`，复用 page expired 与 HUD session-scoped dismiss 通知；默认仍固定 10 分钟 TTL，不做隐式续期。
+- P2 客户端异步 lifecycle：`RemoteUiClientRuntime` 增加 stale discard 与 error terminalize 能力；页面/HUD 的请求失败、下载失败、校验失败和旧回调路径都会按 `sessionId + surfaceId + contentRevision + localMountToken` 收口本地 mount，失败错误页前先清理匹配的当前 offer。
+- P2 协议 decode：submit、dismiss、expired、open 与 fetch 在 DTO decode 前显式检查新 lease 字段；缺少 `surfaceId`、`contentRevision`、`closeScope` 等字段会直接拒绝，不再通过默认补值进入新协议校验主路径。
+- 验证：`git diff --check`；`./gradlew.bat --no-configuration-cache test --tests "club.heiqi.uilib.ui.remote.*"`；`./gradlew.bat --no-configuration-cache test --tests "club.heiqi.uilib.net.api.NetServiceRegistrationTest" --tests "club.heiqi.uilib.net.core.NetRequestRegistryTest"`；`./gradlew.bat --no-configuration-cache compileJava`。

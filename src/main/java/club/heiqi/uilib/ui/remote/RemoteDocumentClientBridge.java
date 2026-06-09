@@ -71,9 +71,9 @@ public final class RemoteDocumentClientBridge {
         try {
             call = RemoteDocumentPages.callPageStream(offer);
         } catch (RuntimeException exception) {
-                if (isCurrentOffer(offer, localMountToken)) {
-                    openErrorScreen("远程页面请求失败", exception.getMessage());
-                }
+            if (terminalizeCurrentOffer(offer, localMountToken)) {
+                openErrorScreen("远程页面请求失败", exception.getMessage());
+            }
             return;
         }
         call.future().whenComplete(new BiConsumer<NetResponse, Throwable>() {
@@ -83,21 +83,27 @@ public final class RemoteDocumentClientBridge {
                     @Override
                     public void run() {
                         if (!isCurrentOffer(offer, localMountToken)) {
+                            discardOffer(offer, localMountToken);
                             return;
                         }
                         if (throwable != null) {
-                            openErrorScreen("远程页面下载失败", readableError(throwable));
+                            if (terminalizeCurrentOffer(offer, localMountToken)) {
+                                openErrorScreen("远程页面下载失败", readableError(throwable));
+                            }
                             return;
                         }
                         try {
                             String html = validateAndDecode(offer, response);
                             if (!CLIENT_RUNTIME.completePending(RemoteUiProtocol.SurfaceType.PAGE, offer.surfaceId,
                                     offer.sessionId, offer.contentRevision, localMountToken)) {
+                                discardOffer(offer, localMountToken);
                                 return;
                             }
                             openRemoteDocumentScreen(offer, html, localMountToken);
                         } catch (RuntimeException exception) {
-                            openErrorScreen("远程页面校验失败", exception.getMessage());
+                            if (terminalizeCurrentOffer(offer, localMountToken)) {
+                                openErrorScreen("远程页面校验失败", exception.getMessage());
+                            }
                         }
                     }
                 });
@@ -272,6 +278,30 @@ public final class RemoteDocumentClientBridge {
                     && currentSurfaceId.equals(offer.surfaceId == null ? "" : offer.surfaceId)
                     && CLIENT_RUNTIME.isCurrent(RemoteUiProtocol.SurfaceType.PAGE, offer.surfaceId, offer.sessionId,
                             offer.contentRevision, localMountToken);
+        }
+    }
+
+    private static void discardOffer(RemoteDocumentPages.OpenOffer offer, long localMountToken) {
+        CLIENT_RUNTIME.discard(RemoteUiProtocol.SurfaceType.PAGE, offer.surfaceId, offer.sessionId,
+                offer.contentRevision, localMountToken);
+    }
+
+    private static boolean terminalizeCurrentOffer(RemoteDocumentPages.OpenOffer offer, long localMountToken) {
+        synchronized (STATE_LOCK) {
+            if (currentLocalMountToken != localMountToken || currentContentRevision != offer.contentRevision
+                    || !currentSessionId.equals(offer.sessionId == null ? "" : offer.sessionId)
+                    || !currentSurfaceId.equals(offer.surfaceId == null ? "" : offer.surfaceId)) {
+                CLIENT_RUNTIME.discard(RemoteUiProtocol.SurfaceType.PAGE, offer.surfaceId, offer.sessionId,
+                        offer.contentRevision, localMountToken);
+                return false;
+            }
+            CLIENT_RUNTIME.terminalizeError(RemoteUiProtocol.SurfaceType.PAGE, offer.surfaceId, offer.sessionId,
+                    offer.contentRevision, localMountToken);
+            currentSessionId = "";
+            currentSurfaceId = RemoteUiProtocol.PAGE_PRIMARY_SURFACE_ID;
+            currentContentRevision = 0L;
+            currentLocalMountToken = 0L;
+            return true;
         }
     }
 

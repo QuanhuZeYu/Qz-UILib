@@ -30,6 +30,7 @@ public final class ForgeMainThreadDispatcherBridge {
     @SubscribeEvent
     public void onClientTick(TickEvent.ClientTickEvent event) {
         if (event.phase == TickEvent.Phase.END) {
+            NetService.getInstance().tickTimeouts();
             NetService.getInstance().drainClientMainThreadTasks();
         }
     }
@@ -42,6 +43,7 @@ public final class ForgeMainThreadDispatcherBridge {
     @SubscribeEvent
     public void onServerTick(TickEvent.ServerTickEvent event) {
         if (event.phase == TickEvent.Phase.END) {
+            NetService.getInstance().tickTimeouts();
             NetService.getInstance().drainServerMainThreadTasks();
         }
     }

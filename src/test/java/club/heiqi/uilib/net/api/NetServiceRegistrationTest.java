@@ -1,6 +1,7 @@
 package club.heiqi.uilib.net.api;
 
 import java.nio.charset.StandardCharsets;
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.TimeUnit;
@@ -203,6 +204,48 @@ public class NetServiceRegistrationTest {
 
         transport.deliverToServer(transport.clientToServerPayloads.get(1), new FakePlayer("streamPlayer", 0));
         Assert.assertTrue(service.isStreamCancelled(cancelEnvelope.getRequestId()));
+    }
+
+    @Test
+    public void shouldTimeoutFetchWithoutInboundFrame() {
+        NetFetchEndpoint endpoint = service.fetch(NetEndpointId.of("test", "idleFetchTimeout"))
+                .timeout(Duration.ZERO)
+                .register();
+        service.freeze();
+
+        java.util.concurrent.CompletableFuture<NetResponse> future = endpoint.call(NetRequest.text("idle"));
+        Assert.assertFalse(future.isDone());
+
+        service.tickTimeouts();
+
+        Assert.assertTrue("Fetch timeout 必须由 tick 主动触发", future.isCompletedExceptionally());
+        try {
+            future.join();
+            Assert.fail("超时 Fetch 应异常完成");
+        } catch (RuntimeException expected) {
+            Assert.assertTrue(expected.getCause() instanceof NetTimeoutException);
+        }
+    }
+
+    @Test
+    public void shouldTimeoutStreamWithoutInboundFrame() {
+        NetStreamEndpoint endpoint = service.stream(NetEndpointId.of("test", "idleStreamTimeout"))
+                .timeout(Duration.ZERO)
+                .register();
+        service.freeze();
+
+        NetStreamCall call = endpoint.call(NetRequest.text("idle"));
+        Assert.assertFalse(call.future().isDone());
+
+        service.tickTimeouts();
+
+        Assert.assertTrue("Stream timeout 必须由 tick 主动触发", call.future().isCompletedExceptionally());
+        try {
+            call.future().join();
+            Assert.fail("超时 Stream 应异常完成");
+        } catch (RuntimeException expected) {
+            Assert.assertTrue(expected.getCause() instanceof NetTimeoutException);
+        }
     }
 
     @Test

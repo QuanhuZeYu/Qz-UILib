@@ -319,8 +319,10 @@ public final class RemoteHudOverlays {
     }
 
     static OpenOffer decodeOpenOffer(String json) {
+        RemoteUiProtocol.requireExplicitFields(json, "远程 HUD open offer", "protocolVersion", "messageType",
+                "feature", "sessionId", "surfaceType", "surfaceId", "contentRevision", "assetId", "sha256",
+                "htmlBytes", "leaseExpiresAtMillis", "overlayId", "pageId");
         OpenOffer offer = RemoteJson.fromJson(json, OpenOffer.class);
-        normalizeOpenOffer(offer);
         if (offer == null || RemoteUiProtocol.isBlank(offer.sessionId)
                 || RemoteUiProtocol.isBlank(offer.overlayId)) {
             throw new IllegalArgumentException("远程 HUD open offer 缺少 sessionId 或 overlayId");
@@ -330,8 +332,9 @@ public final class RemoteHudOverlays {
     }
 
     static SubmitPayload decodeSubmitPayload(String json) {
+        RemoteUiProtocol.requireExplicitFields(json, "远程 HUD 提交", "protocolVersion", "messageType", "feature",
+                "sessionId", "surfaceType", "surfaceId", "contentRevision", "overlayId", "pageId");
         SubmitPayload payload = RemoteJson.fromJson(json, SubmitPayload.class);
-        normalizeSubmitPayload(payload);
         if (payload == null || RemoteUiProtocol.isBlank(payload.sessionId)
                 || RemoteUiProtocol.isBlank(payload.overlayId)) {
             throw new IllegalArgumentException("远程 HUD 提交缺少 sessionId 或 overlayId");
@@ -344,8 +347,9 @@ public final class RemoteHudOverlays {
     }
 
     static DismissPayload decodeDismissPayload(String json) {
+        RemoteUiProtocol.requireExplicitFields(json, "远程 HUD dismiss", "protocolVersion", "messageType", "feature",
+                "surfaceType", "surfaceId", "contentRevision", "closeScope", "overlayId");
         DismissPayload payload = RemoteJson.fromJson(json, DismissPayload.class);
-        normalizeDismissPayload(payload);
         if (payload == null || RemoteUiProtocol.isBlank(payload.overlayId)) {
             throw new IllegalArgumentException("远程 HUD dismiss 缺少 overlayId");
         }
@@ -371,6 +375,15 @@ public final class RemoteHudOverlays {
 
     static void setSessionClockForTests(LongSupplier clock) {
         SERVER_RUNTIME.setClockForTests(clock);
+    }
+
+    /**
+     * 由远程 UI lease 调度器主动推进 HUD session 清扫。
+     */
+    static void tickLeaseCleanup() {
+        if (registered) {
+            cleanupExpiredSessions();
+        }
     }
 
     private static void handleStreamRequest(NetRequest request,
@@ -537,72 +550,6 @@ public final class RemoteHudOverlays {
         if (!registered || openChannel == null || dismissChannel == null || submitChannel == null
                 || streamEndpoint == null) {
             throw new IllegalStateException("远程 HUD 网络端点尚未注册，请确认 Qz UILib preInit 已完成");
-        }
-    }
-
-    private static void normalizeOpenOffer(OpenOffer offer) {
-        if (offer == null) {
-            return;
-        }
-        if (RemoteUiProtocol.isBlank(offer.messageType)) {
-            offer.messageType = RemoteUiProtocol.MessageType.OPEN_SURFACE.name();
-        }
-        if (RemoteUiProtocol.isBlank(offer.feature)) {
-            offer.feature = RemoteUiProtocol.FEATURE_LEASE_V1;
-        }
-        if (RemoteUiProtocol.isBlank(offer.surfaceType)) {
-            offer.surfaceType = RemoteUiProtocol.SurfaceType.HUD.name();
-        }
-        if (RemoteUiProtocol.isBlank(offer.surfaceId)) {
-            offer.surfaceId = offer.overlayId;
-        }
-        if (offer.contentRevision <= 0L) {
-            offer.contentRevision = 1L;
-        }
-        if (RemoteUiProtocol.isBlank(offer.leasePolicy)) {
-            offer.leasePolicy = RemoteUiProtocol.LeasePolicy.FIXED.name();
-        }
-    }
-
-    private static void normalizeSubmitPayload(SubmitPayload payload) {
-        if (payload == null) {
-            return;
-        }
-        if (RemoteUiProtocol.isBlank(payload.messageType)) {
-            payload.messageType = RemoteUiProtocol.MessageType.SUBMIT.name();
-        }
-        if (RemoteUiProtocol.isBlank(payload.feature)) {
-            payload.feature = RemoteUiProtocol.FEATURE_LEASE_V1;
-        }
-        if (RemoteUiProtocol.isBlank(payload.surfaceType)) {
-            payload.surfaceType = RemoteUiProtocol.SurfaceType.HUD.name();
-        }
-        if (RemoteUiProtocol.isBlank(payload.surfaceId)) {
-            payload.surfaceId = payload.overlayId;
-        }
-        if (payload.contentRevision <= 0L) {
-            payload.contentRevision = 1L;
-        }
-    }
-
-    private static void normalizeDismissPayload(DismissPayload payload) {
-        if (payload == null) {
-            return;
-        }
-        if (RemoteUiProtocol.isBlank(payload.messageType)) {
-            payload.messageType = RemoteUiProtocol.MessageType.CLOSE_SURFACE.name();
-        }
-        if (RemoteUiProtocol.isBlank(payload.feature)) {
-            payload.feature = RemoteUiProtocol.FEATURE_LEASE_V1;
-        }
-        if (RemoteUiProtocol.isBlank(payload.surfaceType)) {
-            payload.surfaceType = RemoteUiProtocol.SurfaceType.HUD.name();
-        }
-        if (RemoteUiProtocol.isBlank(payload.surfaceId)) {
-            payload.surfaceId = payload.overlayId;
-        }
-        if (payload.contentRevision <= 0L && !RemoteUiProtocol.isBlank(payload.sessionId)) {
-            payload.contentRevision = 1L;
         }
     }
 

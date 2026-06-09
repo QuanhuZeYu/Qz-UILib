@@ -93,6 +93,9 @@ public class RemoteHudOverlaysTest {
 
         RemoteHudOverlays.SubmitPayload submitPayload = new RemoteHudOverlays.SubmitPayload();
         submitPayload.sessionId = sessionId;
+        submitPayload.surfaceType = RemoteUiProtocol.SurfaceType.HUD.name();
+        submitPayload.surfaceId = "hud-overlay";
+        submitPayload.contentRevision = openOffer.contentRevision;
         submitPayload.overlayId = "hud-overlay";
         submitPayload.pageId = "hud-page";
         submitPayload.action = "hud-submit";
@@ -166,6 +169,9 @@ public class RemoteHudOverlaysTest {
 
         RemoteHudOverlays.SubmitPayload newSubmit = new RemoteHudOverlays.SubmitPayload();
         newSubmit.sessionId = secondSessionId;
+        newSubmit.surfaceType = RemoteUiProtocol.SurfaceType.HUD.name();
+        newSubmit.surfaceId = "same-overlay";
+        newSubmit.contentRevision = 1L;
         newSubmit.overlayId = "same-overlay";
         newSubmit.pageId = "hud-page-2";
         newSubmit.values = java.util.Collections.emptyMap();
@@ -196,6 +202,9 @@ public class RemoteHudOverlaysTest {
                 });
         RemoteHudOverlays.SubmitPayload firstSubmit = new RemoteHudOverlays.SubmitPayload();
         firstSubmit.sessionId = firstSessionId;
+        firstSubmit.surfaceType = RemoteUiProtocol.SurfaceType.HUD.name();
+        firstSubmit.surfaceId = "same-overlay";
+        firstSubmit.contentRevision = 1L;
         firstSubmit.overlayId = "same-overlay";
         firstSubmit.pageId = "hud-page-1";
         firstSubmit.values = java.util.Collections.emptyMap();
@@ -230,6 +239,9 @@ public class RemoteHudOverlaysTest {
         nowMillis.addAndGet(RemoteHtmlSessionGateway.DEFAULT_SESSION_TTL_MILLIS + 1L);
         RemoteHudOverlays.SubmitPayload submitPayload = new RemoteHudOverlays.SubmitPayload();
         submitPayload.sessionId = sessionId;
+        submitPayload.surfaceType = RemoteUiProtocol.SurfaceType.HUD.name();
+        submitPayload.surfaceId = "hud-overlay";
+        submitPayload.contentRevision = 1L;
         submitPayload.overlayId = "hud-overlay";
         submitPayload.pageId = "hud-page";
         submitPayload.values = java.util.Collections.emptyMap();
@@ -269,6 +281,34 @@ public class RemoteHudOverlaysTest {
         RemoteHudOverlays.DismissPayload dismissPayload = findDismissPayload();
         Assert.assertEquals(sessionId, dismissPayload.sessionId);
         Assert.assertEquals("hud-overlay", dismissPayload.overlayId);
+        Assert.assertEquals("server-session-expired", dismissPayload.reason);
+    }
+
+    @Test
+    public void shouldNotifyClientWhenHudLeaseCleanupTicksWithoutInboundFrame() {
+        final AtomicLong nowMillis = new AtomicLong(3_000L);
+        RemoteHudOverlays.setSessionClockForTests(new LongSupplier() {
+            @Override
+            public long getAsLong() {
+                return nowMillis.get();
+            }
+        });
+        FakePlayer player = new FakePlayer("hudPlayer", 6);
+        RemoteDocumentPage page = RemoteDocumentPage.of("hud-cleanup-page", "HUD", "<p>cleanup</p>");
+        String sessionId = RemoteHudOverlays.open(player,
+                RemoteHudOverlay.dialog("hud-cleanup-overlay", page).build(), null);
+        transport.playerPayloads.clear();
+
+        nowMillis.addAndGet(RemoteHtmlSessionGateway.DEFAULT_SESSION_TTL_MILLIS + 1L);
+        RemoteUiLeaseCleanupScheduler.tickLeaseCleanup();
+
+        Assert.assertEquals(1, transport.playerPayloads.size());
+        NetEnvelope dismissEnvelope = NetEnvelope.decode(transport.playerPayloads.get(0).payload);
+        Assert.assertEquals(MyMod.MODID + ":remote_hud_dismiss", dismissEnvelope.getKey());
+        RemoteHudOverlays.DismissPayload dismissPayload = RemoteJson.fromJson(dismissEnvelope.toBody().asUtf8String(),
+                RemoteHudOverlays.DismissPayload.class);
+        Assert.assertEquals(sessionId, dismissPayload.sessionId);
+        Assert.assertEquals("hud-cleanup-overlay", dismissPayload.overlayId);
         Assert.assertEquals("server-session-expired", dismissPayload.reason);
     }
 
