@@ -33,6 +33,8 @@ final class RemoteDocumentFormController {
     static final class FormState {
 
         private final String sessionId;
+        private final String surfaceId;
+        private final long contentRevision;
         private final String pageId;
         private final String action;
         private final String formId;
@@ -40,12 +42,20 @@ final class RemoteDocumentFormController {
         private final List<FieldBinding> fields = new ArrayList<FieldBinding>();
 
         FormState(String sessionId, String pageId, String action, String formId) {
-            this(sessionId, pageId, action, formId, defaultSubmitSink());
+            this(sessionId, RemoteUiProtocol.PAGE_PRIMARY_SURFACE_ID, 1L, pageId, action, formId,
+                    defaultSubmitSink());
         }
 
         FormState(String sessionId, String pageId, String action, String formId,
                 RemoteFormSubmitSink submitSink) {
+            this(sessionId, RemoteUiProtocol.PAGE_PRIMARY_SURFACE_ID, 1L, pageId, action, formId, submitSink);
+        }
+
+        FormState(String sessionId, String surfaceId, long contentRevision, String pageId, String action,
+                String formId, RemoteFormSubmitSink submitSink) {
             this.sessionId = safe(sessionId);
+            this.surfaceId = safe(surfaceId);
+            this.contentRevision = contentRevision <= 0L ? 1L : contentRevision;
             this.pageId = safe(pageId);
             this.action = safe(action);
             this.formId = safe(formId);
@@ -110,7 +120,8 @@ final class RemoteDocumentFormController {
         }
 
         void submit(Submitter submitter) {
-            submitSink.submit(sessionId, pageId, action, formId, collectValues(submitter));
+            submitSink.submit(sessionId, surfaceId, contentRevision, pageId, action, formId,
+                    collectValues(submitter));
         }
 
         private void addField(FieldBinding field) {
@@ -126,6 +137,22 @@ final class RemoteDocumentFormController {
                         Map<String, List<String>> values) {
                     RemoteDocumentPages.SubmitPayload payload = new RemoteDocumentPages.SubmitPayload();
                     payload.sessionId = sessionId;
+                    payload.surfaceId = RemoteUiProtocol.PAGE_PRIMARY_SURFACE_ID;
+                    payload.contentRevision = 1L;
+                    payload.pageId = pageId;
+                    payload.action = action;
+                    payload.formId = formId;
+                    payload.values = values;
+                    RemoteDocumentPages.submitFromClient(payload);
+                }
+
+                @Override
+                public void submit(String sessionId, String surfaceId, long contentRevision, String pageId,
+                        String action, String formId, Map<String, List<String>> values) {
+                    RemoteDocumentPages.SubmitPayload payload = new RemoteDocumentPages.SubmitPayload();
+                    payload.sessionId = sessionId;
+                    payload.surfaceId = surfaceId;
+                    payload.contentRevision = contentRevision;
                     payload.pageId = pageId;
                     payload.action = action;
                     payload.formId = formId;

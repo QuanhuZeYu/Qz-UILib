@@ -156,6 +156,10 @@ public class RemoteHudOverlaysTest {
 
         RemoteHudOverlays.DismissPayload oldDismiss = new RemoteHudOverlays.DismissPayload();
         oldDismiss.sessionId = firstSessionId;
+        oldDismiss.surfaceType = RemoteUiProtocol.SurfaceType.HUD.name();
+        oldDismiss.surfaceId = "same-overlay";
+        oldDismiss.contentRevision = 1L;
+        oldDismiss.closeScope = RemoteUiProtocol.CloseScope.SESSION.name();
         oldDismiss.overlayId = "same-overlay";
         oldDismiss.reason = "client-close";
         invokeHandleClientDismiss(RemoteJson.toJson(oldDismiss), player);

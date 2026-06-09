@@ -292,6 +292,10 @@ public class RemoteHudOverlayClientBridgeTest {
 
         RemoteHudOverlays.DismissPayload oldDismiss = new RemoteHudOverlays.DismissPayload();
         oldDismiss.sessionId = "S1";
+        oldDismiss.surfaceType = RemoteUiProtocol.SurfaceType.HUD.name();
+        oldDismiss.surfaceId = "shared-overlay";
+        oldDismiss.contentRevision = 1L;
+        oldDismiss.closeScope = RemoteUiProtocol.CloseScope.SESSION.name();
         oldDismiss.overlayId = "shared-overlay";
         oldDismiss.reason = "server-dismiss";
         RemoteHudOverlayClientBridge.receiveDismiss(RemoteJson.toJson(oldDismiss));
@@ -302,6 +306,9 @@ public class RemoteHudOverlayClientBridgeTest {
 
         RemoteHudOverlays.DismissPayload forcedDismiss = new RemoteHudOverlays.DismissPayload();
         forcedDismiss.sessionId = "";
+        forcedDismiss.surfaceType = RemoteUiProtocol.SurfaceType.HUD.name();
+        forcedDismiss.surfaceId = "shared-overlay";
+        forcedDismiss.closeScope = RemoteUiProtocol.CloseScope.SURFACE.name();
         forcedDismiss.overlayId = "shared-overlay";
         forcedDismiss.reason = "server-force-dismiss";
         RemoteHudOverlayClientBridge.receiveDismiss(RemoteJson.toJson(forcedDismiss));

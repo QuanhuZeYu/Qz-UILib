@@ -60,6 +60,7 @@ public final class RemoteHudOverlayClientBridge {
             new java.util.concurrent.ConcurrentHashMap<String, ActiveOverlay>();
     private final Map<String, PendingOpen> pendingOpens =
             new java.util.concurrent.ConcurrentHashMap<String, PendingOpen>();
+    private final RemoteUiClientRuntime clientRuntime = new RemoteUiClientRuntime();
 
     private RemoteHudOverlayClientBridge() {}
 
@@ -98,7 +99,8 @@ public final class RemoteHudOverlayClientBridge {
         List<ActiveOverlay> snapshot = new ArrayList<ActiveOverlay>(activeOverlays.values());
         for (ActiveOverlay overlay : snapshot) {
             if (overlay.isExpired(nowMillis)) {
-                dismissOverlaySession(overlay.offer.overlayId, overlay.offer.sessionId, true, "client-expired");
+                dismissOverlaySession(overlay.offer.overlayId, overlay.offer.sessionId,
+                        overlay.offer.contentRevision, true, "client-expired");
                 continue;
             }
             if (overlay.mode == RemoteHudOverlayMode.DANMAKU) {
@@ -114,6 +116,7 @@ public final class RemoteHudOverlayClientBridge {
      */
     public void clearAll() {
         pendingOpens.clear();
+        clientRuntime.clear();
         List<ActiveOverlay> snapshot = new ArrayList<ActiveOverlay>(activeOverlays.values());
         activeOverlays.clear();
         for (ActiveOverlay overlay : snapshot) {
@@ -130,13 +133,17 @@ public final class RemoteHudOverlayClientBridge {
             return;
         }
         dismissPendingOpensByOverlayId(offer.overlayId);
-        PendingOpen pendingOpen = new PendingOpen(offer);
+        RemoteUiClientRuntime.PendingMount mount = clientRuntime.beginOpen(RemoteUiProtocol.SurfaceType.HUD,
+                offer.surfaceId, offer.sessionId, offer.contentRevision);
+        PendingOpen pendingOpen = new PendingOpen(offer, mount.getLocalMountToken());
         pendingOpens.put(offer.sessionId, pendingOpen);
         NetStreamCall call;
         try {
-            call = RemoteHudOverlays.callOverlayStream(offer.sessionId);
+            call = RemoteHudOverlays.callOverlayStream(offer);
         } catch (RuntimeException exception) {
             pendingOpens.remove(offer.sessionId);
+            clientRuntime.closeSession(RemoteUiProtocol.SurfaceType.HUD, offer.surfaceId, offer.sessionId,
+                    offer.contentRevision, pendingOpen.localMountToken);
             showErrorOverlay(offer.overlayId, "远程 HUD 请求失败", exception.getMessage());
             return;
         }
@@ -150,13 +157,21 @@ public final class RemoteHudOverlayClientBridge {
                         if (currentPending == null || currentPending.isDismissed()) {
                             return;
                         }
+                        if (!clientRuntime.isCurrent(RemoteUiProtocol.SurfaceType.HUD, offer.surfaceId,
+                                offer.sessionId, offer.contentRevision, currentPending.localMountToken)) {
+                            return;
+                        }
                         if (throwable != null) {
                             showErrorOverlay(offer.overlayId, "远程 HUD 下载失败", readableError(throwable));
                             return;
                         }
                         try {
                             String html = validateAndDecode(offer, response);
-                            openHudOverlay(offer, html);
+                            if (!clientRuntime.completePending(RemoteUiProtocol.SurfaceType.HUD, offer.surfaceId,
+                                    offer.sessionId, offer.contentRevision, currentPending.localMountToken)) {
+                                return;
+                            }
+                            openHudOverlay(offer, html, currentPending.localMountToken);
                         } catch (RuntimeException exception) {
                             showErrorOverlay(offer.overlayId, "远程 HUD 校验失败", exception.getMessage());
                         }
@@ -174,15 +189,20 @@ public final class RemoteHudOverlayClientBridge {
             MyMod.LOG.warn("远程 HUD dismiss 协议无效", exception);
             return;
         }
-        if (!payload.sessionId.isEmpty()) {
+        RemoteUiProtocol.CloseScope closeScope = RemoteUiProtocol.parseCloseScope(payload.closeScope);
+        if (closeScope == RemoteUiProtocol.CloseScope.SESSION) {
             PendingOpen pendingOpen = pendingOpens.remove(payload.sessionId);
             if (pendingOpen != null) {
                 pendingOpen.dismiss();
+                clientRuntime.closeSession(RemoteUiProtocol.SurfaceType.HUD, payload.surfaceId, payload.sessionId,
+                        payload.contentRevision, pendingOpen.localMountToken);
             }
-            dismissOverlaySession(payload.overlayId, payload.sessionId, false, payload.reason);
+            dismissOverlaySession(payload.overlayId, payload.sessionId, payload.contentRevision, false,
+                    payload.reason);
             return;
         }
         dismissPendingOpensByOverlayId(payload.overlayId);
+        clientRuntime.closeSurface(RemoteUiProtocol.SurfaceType.HUD, payload.surfaceId);
         dismissOverlay(payload.overlayId, false, payload.reason);
     }
 
@@ -193,6 +213,9 @@ public final class RemoteHudOverlayClientBridge {
         for (PendingOpen pendingOpen : pendingOpens.values()) {
             if (pendingOpen != null && pendingOpen.matchesOverlayId(overlayId)) {
                 pendingOpen.dismiss();
+                clientRuntime.closeSession(RemoteUiProtocol.SurfaceType.HUD, pendingOpen.offer.surfaceId,
+                        pendingOpen.offer.sessionId, pendingOpen.offer.contentRevision,
+                        pendingOpen.localMountToken);
             }
         }
     }
@@ -210,6 +233,14 @@ public final class RemoteHudOverlayClientBridge {
         }
         if (!offer.sessionId.equals(response.getHeader("x-qz-session-id"))) {
             throw new IllegalStateException("远程 HUD session 响应不匹配");
+        }
+        if (!offer.surfaceType.equals(response.getHeader("x-qz-surface-type"))
+                || !offer.surfaceId.equals(response.getHeader("x-qz-surface-id"))) {
+            throw new IllegalStateException("远程 HUD surface 响应不匹配");
+        }
+        if (!Long.toString(offer.contentRevision).equals(response.getHeader("x-qz-content-revision"))
+                || !offer.assetId.equals(response.getHeader("x-qz-asset-id"))) {
+            throw new IllegalStateException("远程 HUD 内容版本响应不匹配");
         }
         if (!offer.overlayId.equals(response.getHeader("x-qz-overlay-id"))) {
             throw new IllegalStateException("远程 HUD overlayId 响应不匹配");
@@ -231,10 +262,17 @@ public final class RemoteHudOverlayClientBridge {
     }
 
     private void openHudOverlay(final RemoteHudOverlays.OpenOffer offer, final String html) {
+        openHudOverlay(offer, html, 0L);
+    }
+
+    private void openHudOverlay(final RemoteHudOverlays.OpenOffer offer, final String html, long localMountToken) {
+        ensureOfferDefaults(offer);
         PendingOpen pendingOpen = pendingOpens.remove(offer.sessionId);
         if (pendingOpen != null && pendingOpen.isDismissed()) {
             return;
         }
+        long resolvedLocalMountToken = localMountToken > 0L ? localMountToken
+                : pendingOpen == null ? 0L : pendingOpen.localMountToken;
         dismissOverlay(offer.overlayId, false, "client-replace");
         final OverlayDocumentParts[] partsRef = new OverlayDocumentParts[1];
         UiHudDocumentRegistration registration = UiHudDocumentHost.getInstance().register(UiHudLayerType.INTERACTIVE,
@@ -245,7 +283,7 @@ public final class RemoteHudOverlayClientBridge {
                     }
                 });
         ActiveOverlay activeOverlay = new ActiveOverlay(offer, registration, partsRef[0],
-                System.currentTimeMillis(), resolveMode(offer.mode));
+                System.currentTimeMillis(), resolveMode(offer.mode), resolvedLocalMountToken);
         activeOverlays.put(offer.overlayId, activeOverlay);
         if (activeOverlay.mode == RemoteHudOverlayMode.DANMAKU) {
             updateDanmakuPosition(activeOverlay, activeOverlay.openedAtMillis);
@@ -281,11 +319,17 @@ public final class RemoteHudOverlayClientBridge {
             return;
         }
         unregisterQuietly(overlay.registration);
+        clientRuntime.closeSession(RemoteUiProtocol.SurfaceType.HUD, overlay.offer.surfaceId, overlay.offer.sessionId,
+                overlay.offer.contentRevision, overlay.localMountToken);
         if (!notifyServer || "local-error".equals(overlay.offer.sessionId)) {
             return;
         }
         RemoteHudOverlays.DismissPayload payload = new RemoteHudOverlays.DismissPayload();
+        payload.closeScope = RemoteUiProtocol.CloseScope.SESSION.name();
         payload.sessionId = overlay.offer.sessionId;
+        payload.surfaceType = RemoteUiProtocol.SurfaceType.HUD.name();
+        payload.surfaceId = overlay.offer.surfaceId;
+        payload.contentRevision = overlay.offer.contentRevision;
         payload.overlayId = overlay.offer.overlayId;
         payload.reason = reason == null ? "client-dismiss" : reason;
         try {
@@ -295,7 +339,8 @@ public final class RemoteHudOverlayClientBridge {
         }
     }
 
-    private void dismissOverlaySession(String overlayId, String sessionId, boolean notifyServer, String reason) {
+    private void dismissOverlaySession(String overlayId, String sessionId, long contentRevision, boolean notifyServer,
+            String reason) {
         if (overlayId == null || overlayId.trim().isEmpty() || sessionId == null || sessionId.trim().isEmpty()) {
             return;
         }
@@ -303,11 +348,20 @@ public final class RemoteHudOverlayClientBridge {
         if (overlay == null || overlay.offer == null || !sessionId.equals(overlay.offer.sessionId)) {
             return;
         }
+        if (contentRevision > 0L && overlay.offer.contentRevision != contentRevision) {
+            return;
+        }
         if (activeOverlays.remove(overlayId, overlay)) {
             unregisterQuietly(overlay.registration);
+            clientRuntime.closeSession(RemoteUiProtocol.SurfaceType.HUD, overlay.offer.surfaceId,
+                    overlay.offer.sessionId, overlay.offer.contentRevision, overlay.localMountToken);
             if (notifyServer) {
                 RemoteHudOverlays.DismissPayload payload = new RemoteHudOverlays.DismissPayload();
+                payload.closeScope = RemoteUiProtocol.CloseScope.SESSION.name();
                 payload.sessionId = overlay.offer.sessionId;
+                payload.surfaceType = RemoteUiProtocol.SurfaceType.HUD.name();
+                payload.surfaceId = overlay.offer.surfaceId;
+                payload.contentRevision = overlay.offer.contentRevision;
                 payload.overlayId = overlay.offer.overlayId;
                 payload.reason = reason == null ? "client-dismiss" : reason;
                 try {
@@ -321,8 +375,13 @@ public final class RemoteHudOverlayClientBridge {
 
     void addActiveOverlayForTest(RemoteHudOverlays.OpenOffer offer, UiHudDocumentRegistration registration) {
         RemoteHudOverlays.OpenOffer resolvedOffer = offer == null ? new RemoteHudOverlays.OpenOffer() : offer;
+        ensureOfferDefaults(resolvedOffer);
+        RemoteUiClientRuntime.PendingMount mount = clientRuntime.beginOpen(RemoteUiProtocol.SurfaceType.HUD,
+                resolvedOffer.surfaceId, resolvedOffer.sessionId, resolvedOffer.contentRevision);
+        clientRuntime.completePending(RemoteUiProtocol.SurfaceType.HUD, resolvedOffer.surfaceId,
+                resolvedOffer.sessionId, resolvedOffer.contentRevision, mount.getLocalMountToken());
         activeOverlays.put(resolvedOffer.overlayId, new ActiveOverlay(resolvedOffer, registration, null,
-                System.currentTimeMillis(), resolveMode(resolvedOffer.mode)));
+                System.currentTimeMillis(), resolveMode(resolvedOffer.mode), mount.getLocalMountToken()));
     }
 
     boolean hasActiveOverlayForTest(String overlayId, String sessionId) {
@@ -357,6 +416,7 @@ public final class RemoteHudOverlayClientBridge {
 
     static OverlayDocumentParts buildOverlayDocument(UiDocument document, ElementNode root,
             final RemoteHudOverlays.OpenOffer offer, String html) {
+        ensureOfferDefaults(offer);
         RemoteHudOverlayMode mode = resolveMode(offer.mode);
         RemoteDocumentResourcePolicy policy = resolvePolicy(offer.resourcePolicy);
         applyRootContract(root, mode);
@@ -374,6 +434,9 @@ public final class RemoteHudOverlayClientBridge {
                     Map<String, List<String>> values) {
                 RemoteHudOverlays.SubmitPayload payload = new RemoteHudOverlays.SubmitPayload();
                 payload.sessionId = sessionId;
+                payload.surfaceType = RemoteUiProtocol.SurfaceType.HUD.name();
+                payload.surfaceId = offer.surfaceId;
+                payload.contentRevision = offer.contentRevision;
                 payload.overlayId = offer.overlayId;
                 payload.pageId = pageId;
                 payload.action = action;
@@ -383,7 +446,8 @@ public final class RemoteHudOverlayClientBridge {
             }
         };
         RemoteHtmlDocumentParser.parseInto(document, content, html,
-                RemoteHtmlDocumentParser.Options.of(offer.sessionId, offer.pageId, policy, submitSink, false));
+                RemoteHtmlDocumentParser.Options.of(offer.sessionId, offer.surfaceId, offer.contentRevision,
+                        offer.pageId, policy, submitSink, false));
         if (mode == RemoteHudOverlayMode.DIALOG) {
             installDialogDrag(shell, content, dialogPlacement);
             if (offer.defaultCloseButtonVisible) {
@@ -564,7 +628,7 @@ public final class RemoteHudOverlayClientBridge {
             @Override
             public void onAction(DocumentButtonActionEvent event) {
                 RemoteHudOverlayClientBridge.getInstance().dismissOverlaySession(offer.overlayId, offer.sessionId,
-                        true, "client-close");
+                        offer.contentRevision, true, "client-close");
             }
         });
         return closeButton.getElement();
@@ -642,6 +706,21 @@ public final class RemoteHudOverlayClientBridge {
         }
         String value = metadata.get(name);
         return value == null || value.trim().isEmpty() ? fallback : value.trim();
+    }
+
+    private static void ensureOfferDefaults(RemoteHudOverlays.OpenOffer offer) {
+        if (offer == null) {
+            return;
+        }
+        if (RemoteUiProtocol.isBlank(offer.surfaceType)) {
+            offer.surfaceType = RemoteUiProtocol.SurfaceType.HUD.name();
+        }
+        if (RemoteUiProtocol.isBlank(offer.surfaceId)) {
+            offer.surfaceId = offer.overlayId == null ? "" : offer.overlayId;
+        }
+        if (offer.contentRevision <= 0L) {
+            offer.contentRevision = 1L;
+        }
     }
 
     /**
@@ -888,14 +967,16 @@ public final class RemoteHudOverlayClientBridge {
         private final OverlayDocumentParts parts;
         private final long openedAtMillis;
         private final long expiresAtMillis;
+        private final long localMountToken;
         private final RemoteHudOverlayMode mode;
 
         private ActiveOverlay(RemoteHudOverlays.OpenOffer offer, UiHudDocumentRegistration registration,
-                OverlayDocumentParts parts, long openedAtMillis, RemoteHudOverlayMode mode) {
+                OverlayDocumentParts parts, long openedAtMillis, RemoteHudOverlayMode mode, long localMountToken) {
             this.offer = offer;
             this.registration = registration;
             this.parts = parts;
             this.openedAtMillis = openedAtMillis;
+            this.localMountToken = localMountToken;
             this.expiresAtMillis = offer.durationMillis <= 0L ? Long.MAX_VALUE : openedAtMillis
                     + offer.durationMillis;
             this.mode = mode == null ? RemoteHudOverlayMode.DIALOG : mode;
@@ -909,10 +990,12 @@ public final class RemoteHudOverlayClientBridge {
     private static final class PendingOpen {
 
         private final RemoteHudOverlays.OpenOffer offer;
+        private final long localMountToken;
         private volatile boolean dismissed;
 
-        private PendingOpen(RemoteHudOverlays.OpenOffer offer) {
+        private PendingOpen(RemoteHudOverlays.OpenOffer offer, long localMountToken) {
             this.offer = offer;
+            this.localMountToken = localMountToken;
         }
 
         private void dismiss() {

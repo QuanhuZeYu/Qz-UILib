@@ -385,8 +385,8 @@ final class RemoteHtmlDocumentParser {
         }
         String formId = normalizeAttribute(element.getId(), tag.attributes.get("name"));
         String action = normalizeAttribute(tag.attributes.get("data-action"), tag.attributes.get("action"));
-        return new RemoteDocumentFormController.FormState(options.sessionId, options.pageId, action, formId,
-                options.submitSink);
+        return new RemoteDocumentFormController.FormState(options.sessionId, options.surfaceId,
+                options.contentRevision, options.pageId, action, formId, options.submitSink);
     }
 
     private void applyAttributes(ElementNode element, Map<String, String> attributes) {
@@ -990,18 +990,29 @@ final class RemoteHtmlDocumentParser {
     static final class Options {
 
         private final String sessionId;
+        private final String surfaceId;
+        private final long contentRevision;
         private final String pageId;
         private final RemoteDocumentResourcePolicy resourcePolicy;
         private final RemoteFormSubmitSink submitSink;
         private final boolean applyDocumentDefaults;
 
         private Options(String sessionId, String pageId, RemoteDocumentResourcePolicy resourcePolicy) {
-            this(sessionId, pageId, resourcePolicy, null, true);
+            this(sessionId, RemoteUiProtocol.PAGE_PRIMARY_SURFACE_ID, 1L, pageId, resourcePolicy, null, true);
         }
 
         private Options(String sessionId, String pageId, RemoteDocumentResourcePolicy resourcePolicy,
                 RemoteFormSubmitSink submitSink, boolean applyDocumentDefaults) {
+            this(sessionId, RemoteUiProtocol.PAGE_PRIMARY_SURFACE_ID, 1L, pageId, resourcePolicy, submitSink,
+                    applyDocumentDefaults);
+        }
+
+        private Options(String sessionId, String surfaceId, long contentRevision, String pageId,
+                RemoteDocumentResourcePolicy resourcePolicy, RemoteFormSubmitSink submitSink,
+                boolean applyDocumentDefaults) {
             this.sessionId = sessionId == null ? "" : sessionId;
+            this.surfaceId = surfaceId == null ? "" : surfaceId;
+            this.contentRevision = contentRevision <= 0L ? 1L : contentRevision;
             this.pageId = pageId == null ? "" : pageId;
             this.resourcePolicy = resourcePolicy == null
                     ? RemoteDocumentResourcePolicy.FULL_EXTERNAL_LINKS : resourcePolicy;
@@ -1018,16 +1029,25 @@ final class RemoteHtmlDocumentParser {
             return new Options(sessionId, pageId, resourcePolicy, submitSink, applyDocumentDefaults);
         }
 
+        static Options of(String sessionId, String surfaceId, long contentRevision, String pageId,
+                RemoteDocumentResourcePolicy resourcePolicy, RemoteFormSubmitSink submitSink,
+                boolean applyDocumentDefaults) {
+            return new Options(sessionId, surfaceId, contentRevision, pageId, resourcePolicy, submitSink,
+                    applyDocumentDefaults);
+        }
+
         static Options defaults() {
             return new Options("", "", RemoteDocumentResourcePolicy.FULL_EXTERNAL_LINKS);
         }
 
         Options withSubmitSink(RemoteFormSubmitSink nextSubmitSink) {
-            return new Options(sessionId, pageId, resourcePolicy, nextSubmitSink, applyDocumentDefaults);
+            return new Options(sessionId, surfaceId, contentRevision, pageId, resourcePolicy, nextSubmitSink,
+                    applyDocumentDefaults);
         }
 
         Options withDocumentDefaults(boolean nextApplyDocumentDefaults) {
-            return new Options(sessionId, pageId, resourcePolicy, submitSink, nextApplyDocumentDefaults);
+            return new Options(sessionId, surfaceId, contentRevision, pageId, resourcePolicy, submitSink,
+                    nextApplyDocumentDefaults);
         }
 
         private static RemoteFormSubmitSink defaultSubmitSink() {
@@ -1037,6 +1057,22 @@ final class RemoteHtmlDocumentParser {
                         Map<String, List<String>> values) {
                     RemoteDocumentPages.SubmitPayload payload = new RemoteDocumentPages.SubmitPayload();
                     payload.sessionId = sessionId;
+                    payload.surfaceId = RemoteUiProtocol.PAGE_PRIMARY_SURFACE_ID;
+                    payload.contentRevision = 1L;
+                    payload.pageId = pageId;
+                    payload.action = action;
+                    payload.formId = formId;
+                    payload.values = values;
+                    RemoteDocumentPages.submitFromClient(payload);
+                }
+
+                @Override
+                public void submit(String sessionId, String surfaceId, long contentRevision, String pageId,
+                        String action, String formId, Map<String, List<String>> values) {
+                    RemoteDocumentPages.SubmitPayload payload = new RemoteDocumentPages.SubmitPayload();
+                    payload.sessionId = sessionId;
+                    payload.surfaceId = surfaceId;
+                    payload.contentRevision = contentRevision;
                     payload.pageId = pageId;
                     payload.action = action;
                     payload.formId = formId;
