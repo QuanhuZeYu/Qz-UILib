@@ -344,6 +344,7 @@ final class UiTestGroupVisualBuilder {
             appendVisualCaseCard(document, section, cases.get(pageState.getCaseIndex()));
         }
         root.append(section);
+        sampleVisualFactory.activateDeferredTopLayerDemos(document, section);
     }
 
     /**

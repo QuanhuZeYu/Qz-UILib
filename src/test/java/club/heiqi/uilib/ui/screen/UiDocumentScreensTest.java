@@ -41,9 +41,11 @@ public class UiDocumentScreensTest {
     public void shouldKeepUiDocumentScreensAsBusinessFacadeOnly() {
         List<Class<?>> publicMemberClasses = Arrays.asList(UiDocumentScreens.class.getClasses());
 
-        Assert.assertEquals(2, publicMemberClasses.size());
+        Assert.assertEquals(4, publicMemberClasses.size());
         Assert.assertTrue(publicMemberClasses.contains(UiDocumentScreens.DocumentScreenEnvironment.class));
         Assert.assertTrue(publicMemberClasses.contains(UiDocumentScreens.DocumentScreenContentBuilder.class));
+        Assert.assertTrue(publicMemberClasses.contains(UiDocumentScreens.DocumentScreenLifecycle.class));
+        Assert.assertTrue(publicMemberClasses.contains(UiDocumentScreens.DocumentScreenProvision.class));
 
         int publicStaticMethodCount = 0;
         for (Method method : UiDocumentScreens.class.getDeclaredMethods()) {
@@ -53,7 +55,7 @@ public class UiDocumentScreensTest {
             publicStaticMethodCount++;
             Assert.assertTrue("createDocumentScreen".equals(method.getName()));
         }
-        Assert.assertEquals(2, publicStaticMethodCount);
+        Assert.assertEquals(3, publicStaticMethodCount);
         Assert.assertEquals("club.heiqi.uilib.ui.screen.internal",
                 UiDiagnosticsScreens.class.getPackage().getName());
     }

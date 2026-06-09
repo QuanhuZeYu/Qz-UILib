@@ -109,7 +109,7 @@ Keyframe、transition 与 opacity 效果。
 
 ---
 
-## Gradle/构建环境类（合并，9 条）
+## Gradle/构建环境类（合并，10 条）
 
 Toolchain、依赖版本、构建配置与运行时类路径。
 
@@ -122,6 +122,7 @@ Toolchain、依赖版本、构建配置与运行时类路径。
 - [`ERROR-20260519-lwjgl3ify-runtime-compile-classpath-gap.md`](ERROR-20260519-lwjgl3ify-runtime-compile-classpath-gap.md) — lwjgl3ify 运行时类路径与编译类路径不一致
 - [`ERROR-20260523-runserver-lwjgl3ify-relauncher.md`](ERROR-20260523-runserver-lwjgl3ify-relauncher.md) — runServer 被 LWJGL3ify relauncher 中止，未进入完整 dedicated server smoke
 - [`ERROR-20260608-runclient21-codechicken-mapping-dir.md`](ERROR-20260608-runclient21-codechicken-mapping-dir.md) — CodeChickenLib 映射目录配置指向旧 Gradle 缓存导致 runClient21 弹出 MCP 目录选择窗口
+- [`ERROR-20260609-runclient21-gtnh290-modern-java-chain.md`](ERROR-20260609-runclient21-gtnh290-modern-java-chain.md) — GTNH 2.9 beta 下 runClient21 modern Java 链路与第三方 mixin 冲突
 
 **共性教训**：`GRADLE_USER_HOME` 必须显式设置避免中文路径；依赖版本必须锁定一致；并行构建需避免共享 build 目录；被忽略的运行目录配置需要由启动任务按当前环境生成。
 

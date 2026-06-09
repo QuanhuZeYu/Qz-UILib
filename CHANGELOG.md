@@ -4,7 +4,83 @@
 `主.次.修订[-标签]` 格式：主版本号变更代表破坏性 API 调整，次版本号代表能力扩展，
 修订号代表行为修复或文档调整。
 
-## [4.1.0-LTS] 待发布
+## [4.2.0] - 2026-06-09
+
+第二个 4.x 稳定发布版本。保持 4.1.x 稳定 API 向后兼容，重点扩展浏览器语义、远程 UI、
+远程配置同步、网络实时子层和 `/qzuilib test` 视觉矩阵，并切换到 GTNH 2.9 beta 开发依赖基线。
+
+### 新增
+
+- 远程 UI 会话运行时：新增内部 `RemoteUiProtocol`、`RemoteUiAssetStore`、
+  `RemoteUiSessionManager`、`RemoteUiServerRuntime`、`RemoteUiClientRuntime` 与租约清理链路，
+  远程页面 / 远程 HUD 的 stream、submit、close、expired 均携带并校验
+  `sessionId + surfaceId + contentRevision`。
+- 服务端权威远程配置页：新增 `ConfigSyncTarget`、`ConfigSyncCategorySpec`、
+  `RemoteConfigDocumentPages`、`ConfigTemplateRemoteSyncController` 与服务端配置会话管理，支持
+  Forge 配置模板通过远程页面同步和提交。
+- 网络实时子层：`NetService.realtime(...)`、`NetRealtimeChannel`、`NetRealtimeMessage`、
+  `NetRealtimeDropPolicy` 与传输层实时帧，为高频小二进制帧提供实验性通道。
+- `/qzuilib test` 视觉优先矩阵：重建 DOM / CSS / Layout / Paint / Input / Controls /
+  TextFont / Animation / RuntimeHost 等分组，接入 53 张核心视觉样例，并提供当前样例断言与
+  一键全量断言。
+- HTML-like 能力扩展：`DocumentNode.textContent` 读写、`input type=password/number`、
+  textarea 软换行两级行模型、远程 CSS `background-image: url(...)` 单图解析。
+- 脏子树布局缓存：支持静态 block / flex / table / inline-block / display:none 子树复用，
+  并允许普通流位置变化后的整体平移复用。
+- 运行时与视觉自动断言：补齐 DOM、CSS、Layout、Paint、Input、Controls、TextFont、Animation、
+  RuntimeHost 多分组的机器诊断与短日志回写。
+
+### 修改
+
+- 远程页面和远程 HUD 对外 facade 保持不变，内部改为 session / surface / content revision 绑定，
+  避免旧 stream、旧 submit、手动关闭后的 expired 回调污染当前页面。
+- HTML-like 视觉遍历统一为普通树 + top-layer 根盒共享场景，paint、hit-test、scroll metrics、
+  fixed containing block、clip chain 和 transform 运行态使用同一口径。
+- `HtmlLikeDocumentWidgetTest` 按主题拆分为 Scroll、Drag、FocusKeyboard、LayoutCache、
+  AnimationRuntime、Rendering、HitTest、HudRuntime、EventDispatch、InlineLayoutCache 等测试类。
+- 长文本绘制裁剪新增 `DocumentTextPaintClipper`，减少被 overflow clip 裁掉的长单行文本提交量。
+- 字体运行时高频诊断日志默认受 `Config.fontRuntimeDebug` 控制，避免淹没游戏内断言日志。
+- 开发依赖基线同步到 GTNH `2.9.0-beta-1`，`gtnhsettingsconvention` 升级到 `2.0.25`，
+  非平台硬依赖的整合包兼容依赖改为 non-publishable 配置。
+
+### 修复
+
+- 浏览器语义修复：DOM 同父移动、`removeChild` 返回值、`querySelector*` 文档根排除、
+  `focusout` 事件、hover / active 状态传播、wheel 事件默认滚动前分发、布尔 `disabled`、
+  margin collapse、flex min-content、table auto 列宽、absolute auto margin、fixed clip chain。
+- top-layer / HUD / select 修复：select 弹层 detach 生命周期、transform 后弹层锚点、HUD top-layer
+  后代预过滤、popup 关闭后 hover / cursor 刷新、运行态 transform 后滚轮和滚动条命中。
+- 动画运行态修复：keyframe forwards fill 按 direction 与最终迭代奇偶写入终值，`display:none`
+  中断运行中 transition 时派发 `transitioncancel`。
+- 文本与控件修复：`textInput.preventDefault()` 阻止内置 input / textarea 改值，textarea stale
+  visual line cache 越界保护，输入框 auto 高度和 caret / selection 绘制坐标修正。
+- 绘制修复：transform 栈内禁用延迟文本批处理，避免文本 batch 使用屏幕坐标绕过父矩阵；
+  host image 缺失资源保留 UILib 底色，不泄漏 Minecraft 紫黑 missing texture。
+- 动态样式修复：挂载后的 `UiStyleSheet` 变更触发缓存失效，`UiStyleDeclaration.copyFrom(...)`
+  对已挂载元素触发布局 / 绘制失效。
+- `/qzuilib test` 的 `VIS-PAINT-005` top-layer 样例改为挂根后延迟注册，避免未挂载样例提前
+  调用内部 top-layer API 后被 detached top-layer 剪枝清理。
+
+### 测试
+
+- 新增远程 UI runtime / protocol / asset / session、远程页面、远程 HUD、远程配置同步、
+  网络实时帧、Forge 生命周期、浏览器语义和视觉矩阵相关测试。
+- 补充 DocumentVisualTraversal、DocumentHitTestEngine、DocumentScrollState、DocumentPaintEngine、
+  DocumentAnimationTimeline 与 HtmlLikeDocumentWidget 各主题回归测试。
+- 发布前已验证：`git diff --check`、`compileJava`、`UiTestDocumentPageControllerTest` 与
+  `VIS-PAINT-005` 定向断言。完整发布前测试仍建议在最终 tag 前运行 `./gradlew test`。
+
+### 构建与发布
+
+- `runClient21` 的 CodeChickenLib MCP mapping 目录改为启动前自动写入运行目录配置。
+- 当前 `runClient21` 已解除 `BytePatternMatcher` 缺类；本地 GTNH 2.9 beta smoke 仍可能受
+  `ServerUtilities 2.3.0` 与 `Et-Futurum-Requiem 2.6.40-GTNH` 第三方 mixin 冲突阻塞。
+- 当前发布渠道仍为 JitPack + GTNH Maven。源码版本号由 Git tag / GTNH Gradle 推导，发布
+  `4.2.0` 时应在最终提交上创建并推送 `4.2.0` tag。
+
+---
+
+## [4.1.0-LTS] - 2026-05-23
 
 第一版长期支持版本。覆盖发布前 P0 / P1 / P2 阶段的全量审查与修补，公共 API 边界
 确定，文档与实现完成对齐。后续 4.1.x 仅做兼容性修复，不引入破坏性变更。
@@ -115,3 +191,4 @@
 LTS 稳定性。本仓库自 `4.1.0-LTS` 起开始按 LTS 标准维护。
 
 [4.1.0-LTS]: https://github.com/QuanHu1995/Qz-UILib/releases/tag/4.1.0-LTS
+[4.2.0]: https://github.com/QuanHu1995/Qz-UILib/releases/tag/4.2.0
