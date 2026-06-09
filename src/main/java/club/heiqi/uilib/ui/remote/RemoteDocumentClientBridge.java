@@ -4,6 +4,7 @@ import java.nio.charset.StandardCharsets;
 import java.util.concurrent.CompletionException;
 import java.util.function.BiConsumer;
 
+import club.heiqi.uilib.MyMod;
 import club.heiqi.uilib.net.api.NetResponse;
 import club.heiqi.uilib.net.api.NetStreamCall;
 import club.heiqi.uilib.ui.dom.ElementNode;
@@ -361,11 +362,29 @@ public final class RemoteDocumentClientBridge {
                     && currentSurfaceId.equals(surfaceId == null ? "" : surfaceId)) {
                 CLIENT_RUNTIME.closeSession(RemoteUiProtocol.SurfaceType.PAGE, surfaceId, sessionId,
                         contentRevision, localMountToken);
+                sendCloseToServer(sessionId, surfaceId, contentRevision);
                 currentSessionId = "";
                 currentSurfaceId = RemoteUiProtocol.PAGE_PRIMARY_SURFACE_ID;
                 currentContentRevision = 0L;
                 currentLocalMountToken = 0L;
             }
+        }
+    }
+
+    private static void sendCloseToServer(String sessionId, String surfaceId, long contentRevision) {
+        RemoteDocumentPages.ExpiredPayload payload = new RemoteDocumentPages.ExpiredPayload();
+        payload.messageType = RemoteUiProtocol.MessageType.CLOSE_SURFACE.name();
+        payload.sessionId = sessionId == null ? "" : sessionId;
+        payload.surfaceType = RemoteUiProtocol.SurfaceType.PAGE.name();
+        payload.surfaceId = surfaceId == null ? RemoteUiProtocol.PAGE_PRIMARY_SURFACE_ID : surfaceId;
+        payload.contentRevision = contentRevision;
+        payload.closeScope = RemoteUiProtocol.CloseScope.SESSION.name();
+        payload.pageId = "";
+        payload.reason = "client-screen-closed";
+        try {
+            RemoteDocumentPages.closeFromClient(payload);
+        } catch (RuntimeException exception) {
+            MyMod.LOG.warn("远程页面关闭通知发送失败：session={}", payload.sessionId, exception);
         }
     }
 

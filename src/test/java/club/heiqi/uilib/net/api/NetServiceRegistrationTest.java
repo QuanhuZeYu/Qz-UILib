@@ -356,6 +356,27 @@ public class NetServiceRegistrationTest {
     }
 
     @Test
+    public void shouldResetPerPlayerStoreSnapshotToInitialState() {
+        FakePlayer player = new FakePlayer("reset", 4);
+        NetStore store = service.store(NetStoreId.of("test", "playerReset"))
+                .scope(NetStoreScope.PER_PLAYER)
+                .initialJson("{\"value\":0}")
+                .register();
+        service.freeze();
+        store.setForPlayer(player, NetBody.json("{\"value\":9}"));
+        transport.playerPayloads.clear();
+
+        Assert.assertTrue(store.resetForPlayer(player));
+
+        Assert.assertEquals("{\"value\":0}", store.getForPlayer(player).asUtf8String());
+        Assert.assertEquals(1, transport.playerPayloads.size());
+        Assert.assertSame(player, transport.playerPayloads.get(0).player);
+        NetEnvelope envelope = NetEnvelope.decode(transport.playerPayloads.get(0).payload);
+        Assert.assertEquals(NetEnvelope.Kind.STORE_SNAPSHOT, envelope.getKind());
+        Assert.assertEquals("{\"value\":0}", envelope.toBody().asUtf8String());
+    }
+
+    @Test
     public void shouldFilterDimensionStoreSnapshotsWithAccessControl() {
         final FakePlayer allowed = new FakePlayer("allowed", 7);
         final FakePlayer denied = new FakePlayer("denied", 7);

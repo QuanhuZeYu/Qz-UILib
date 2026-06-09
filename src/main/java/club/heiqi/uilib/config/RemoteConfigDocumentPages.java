@@ -1,12 +1,16 @@
 package club.heiqi.uilib.config;
 
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 
 import club.heiqi.uilib.ui.remote.RemoteDocumentPage;
 import club.heiqi.uilib.ui.remote.RemoteDocumentPages;
 import club.heiqi.uilib.ui.remote.RemoteDocumentResourcePolicy;
+import club.heiqi.uilib.ui.remote.RemoteDocumentSessionCloseHandler;
 import club.heiqi.uilib.ui.remote.RemoteDocumentSubmitEvent;
 import club.heiqi.uilib.ui.remote.RemoteDocumentSubmitHandler;
 
@@ -22,6 +26,14 @@ public final class RemoteConfigDocumentPages {
     private static final String ACTION_SAVE = "config-save";
     private static final String ACTION_REFRESH = "config-refresh";
     private static final String ACTION_RESTORE = "config-restore";
+    private static final Map<String, String> configSessionIdsByRemotePageSession =
+            new ConcurrentHashMap<String, String>();
+    private static final Map<String, String> remotePageSessionIdsByConfigSession =
+            new ConcurrentHashMap<String, String>();
+    private static final Map<String, Object> playersByConfigSession =
+            new ConcurrentHashMap<String, Object>();
+    private static final Set<String> replacingConfigSessionIds =
+            Collections.newSetFromMap(new ConcurrentHashMap<String, Boolean>());
 
     private RemoteConfigDocumentPages() {}
 
@@ -33,7 +45,8 @@ public final class RemoteConfigDocumentPages {
      * @return 远程页面会话标识
      */
     public static String open(Object player, String screenId) {
-        ConfigTemplateRemoteSession session = ConfigTemplateSyncManager.getInstance().openServerSession(screenId, player);
+        ConfigTemplateRemoteSession session = ConfigTemplateSyncManager.getInstance()
+                .openServerSession(screenId, player);
         return openSession(player, session, null);
     }
 
@@ -45,12 +58,53 @@ public final class RemoteConfigDocumentPages {
         }
         ConfigSyncModels.ConfigSessionState state = session.snapshotState();
         RemoteDocumentPage page = buildPage(target, state, statusOverride);
-        return RemoteDocumentPages.open(player, page, new RemoteDocumentSubmitHandler() {
-            @Override
-            public void onSubmit(RemoteDocumentSubmitEvent event) {
-                handleSubmit(player, session, event);
+        final String configSessionId = session.getSessionId();
+        final boolean replacing = remotePageSessionIdsByConfigSession.containsKey(configSessionId);
+        if (replacing) {
+            replacingConfigSessionIds.add(configSessionId);
+        }
+        String remotePageSessionId;
+        try {
+            remotePageSessionId = RemoteDocumentPages.open(player, page, new RemoteDocumentSubmitHandler() {
+                @Override
+                public void onSubmit(RemoteDocumentSubmitEvent event) {
+                    handleSubmit(player, session, event);
+                }
+            }, new RemoteDocumentSessionCloseHandler() {
+                @Override
+                public void onClosed(Object closedPlayer, String remotePageSessionId) {
+                    handleRemotePageClosed(session, closedPlayer, remotePageSessionId);
+                }
+            });
+        } finally {
+            if (replacing) {
+                replacingConfigSessionIds.remove(configSessionId);
             }
-        });
+        }
+        remotePageSessionIdsByConfigSession.put(configSessionId, remotePageSessionId);
+        configSessionIdsByRemotePageSession.put(remotePageSessionId, configSessionId);
+        playersByConfigSession.put(configSessionId, player);
+        return remotePageSessionId;
+    }
+
+    /**
+     * 玩家离线时清理远程配置页绑定索引。
+     *
+     * @param player 离线玩家
+     */
+    public static void onServerPlayerLeft(Object player) {
+        if (player == null) {
+            return;
+        }
+        for (Map.Entry<String, Object> entry : playersByConfigSession.entrySet()) {
+            if (matchesPlayer(entry.getValue(), player)) {
+                String remotePageSessionId = remotePageSessionIdsByConfigSession.get(entry.getKey());
+                if (remotePageSessionId != null) {
+                    RemoteDocumentPages.closeSession(player, remotePageSessionId);
+                }
+                removeBinding(entry.getKey());
+            }
+        }
     }
 
     private static void handleSubmit(Object player, ConfigTemplateRemoteSession session, RemoteDocumentSubmitEvent event) {
@@ -61,21 +115,49 @@ public final class RemoteConfigDocumentPages {
         if ("refresh".equals(submitter) || ACTION_REFRESH.equals(event.getAction())
                 || "restore".equals(submitter) || ACTION_RESTORE.equals(event.getAction())) {
             session.refreshFromAuthoritative();
-            event.reply(buildPage(ConfigTemplateSyncManager.getInstance().getTarget(session.getScreenId()),
-                    session.snapshotState(), "已从服务端权威配置刷新。"), null);
+            openSession(player, session, "已从服务端权威配置刷新。");
             return;
         }
 
         ConfigSyncModels.ConfigDraftSnapshot draft = extractDraftFromSubmit(session.snapshotState(), event.getValues());
         ConfigSyncModels.ConfigSaveResult saveResult =
                 ConfigTemplateSyncManager.getInstance().saveServerSession(session.getSessionId(), player, draft);
-        ConfigSyncModels.ConfigSessionState latest = ConfigTemplateSyncManager.getInstance()
-                .getServerSessionState(session.getSessionId(), player);
         String status = saveResult.message == null || saveResult.message.isEmpty()
                 ? (saveResult.success ? "服务端配置已保存。" : "服务端保存失败。")
                 : saveResult.message;
-        event.reply(buildPage(ConfigTemplateSyncManager.getInstance().getTarget(session.getScreenId()),
-                latest, status), null);
+        openSession(player, session, status);
+    }
+
+    static void resetForTests() {
+        configSessionIdsByRemotePageSession.clear();
+        remotePageSessionIdsByConfigSession.clear();
+        playersByConfigSession.clear();
+        replacingConfigSessionIds.clear();
+    }
+
+    private static void handleRemotePageClosed(ConfigTemplateRemoteSession session, Object player,
+            String remotePageSessionId) {
+        if (session == null || remotePageSessionId == null) {
+            return;
+        }
+        String configSessionId = session.getSessionId();
+        configSessionIdsByRemotePageSession.remove(remotePageSessionId, configSessionId);
+        remotePageSessionIdsByConfigSession.remove(configSessionId, remotePageSessionId);
+        if (replacingConfigSessionIds.contains(configSessionId)) {
+            return;
+        }
+        playersByConfigSession.remove(configSessionId);
+        ConfigTemplateSyncManager.getInstance().closeServerSession(configSessionId,
+                player == null ? session.getOwnerPlayer() : player);
+    }
+
+    private static void removeBinding(String configSessionId) {
+        String remotePageSessionId = remotePageSessionIdsByConfigSession.remove(configSessionId);
+        if (remotePageSessionId != null) {
+            configSessionIdsByRemotePageSession.remove(remotePageSessionId, configSessionId);
+        }
+        playersByConfigSession.remove(configSessionId);
+        replacingConfigSessionIds.remove(configSessionId);
     }
 
     private static ConfigSyncModels.ConfigDraftSnapshot extractDraftFromSubmit(
@@ -352,6 +434,10 @@ public final class RemoteConfigDocumentPages {
 
     private static String normalize(String value) {
         return value == null ? "" : value.trim();
+    }
+
+    private static boolean matchesPlayer(Object expected, Object actual) {
+        return expected == actual || (expected != null && expected.equals(actual));
     }
 
     private static String escapeHtml(String value) {

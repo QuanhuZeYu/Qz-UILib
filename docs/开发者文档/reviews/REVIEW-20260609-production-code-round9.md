@@ -66,3 +66,10 @@
 - 本轮为只读审查，未修改生产代码，未运行 Gradle 测试。
 - 文档变更已执行 `git diff --check`，未发现空白错误。
 - 审查依据：CodeGraph 符号定位与调用关系、Grep 全局调用点搜索、源码读取、现有测试覆盖搜索、最近第三至第八轮审查报告。
+
+## 后续复核（2026-06-09）
+
+- 配置同步生命周期 finding 已修复：`ConfigTemplateSyncManager` 新增 `closeServerSession(...)` 与 `onServerPlayerLeft(...)`，关闭时清理 `sessions` 并按在线/离线场景 reset/remove 对应 `NetStore` per-player 状态；`NetStore` 新增 `removeForPlayer(...)` 与 `resetForPlayer(...)`；`RemoteDocumentPages` 新增客户端关闭通知和服务端 session removal 回调；`RemoteConfigDocumentPages` 将配置 session 绑定到 remote page session 的关闭、替换与 TTL 过期生命周期；`VanillaMixinTransport.onServerPlayerLeft(...)` 接入配置同步和远程配置页绑定清理。
+- Forge META handshake finding 已修复：新增 `ForgeConnectionLifecycle`，`ForgeTransport.bootstrap(...)` 注册该 lifecycle，客户端 FML 连接建立发送 client-to-server `META`，服务端连接建立后按服务端主线程发送 server-to-client `META`，断连和 shutdown 清理一次性握手标记，语义与 vanilla lifecycle 对齐。
+- 补充测试：`ConfigTemplateSyncManagerLifecycleTest` 覆盖玩家离线和显式关闭清理；`RemoteConfigDocumentPagesLifecycleTest` 覆盖远程配置页关闭和 TTL 过期关闭配置 session；`ForgeConnectionLifecycleTest` 覆盖 Forge client/server META 发送和断连去重；`NetServiceRegistrationTest` 覆盖 per-player Store reset；`RemoteDocumentPagesTest` 覆盖客户端页面关闭通知服务端。
+- 验证通过：`git diff --check`、`./gradlew.bat --no-configuration-cache test --tests "club.heiqi.uilib.config.ConfigTemplateSyncManagerLifecycleTest" --tests "club.heiqi.uilib.config.RemoteConfigDocumentPagesLifecycleTest"`、`./gradlew.bat --no-configuration-cache test --tests "club.heiqi.uilib.net.transport.forge.ForgeConnectionLifecycleTest" --tests "club.heiqi.uilib.net.api.NetServiceRegistrationTest" --tests "club.heiqi.uilib.ui.remote.RemoteDocumentPagesTest"`、`./gradlew.bat --no-configuration-cache test --tests "club.heiqi.uilib.net.transport.vanilla.VanillaConnectionLifecycleTest" --tests "club.heiqi.uilib.net.transport.NetTransportFactoryTest"`、`./gradlew.bat --no-configuration-cache compileJava`。

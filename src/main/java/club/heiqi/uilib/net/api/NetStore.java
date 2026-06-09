@@ -95,6 +95,31 @@ public final class NetStore {
     }
 
     /**
+     * 移除指定玩家的独立状态，后续读取回落到默认状态。
+     *
+     * @param player 玩家对象
+     * @return true 表示曾存在玩家独立状态
+     */
+    public synchronized boolean removeForPlayer(Object player) {
+        Objects.requireNonNull(player, "player");
+        return playerStates.remove(player) != null;
+    }
+
+    /**
+     * 移除指定玩家的独立状态，并向该玩家发送默认快照。
+     *
+     * @param player 玩家对象
+     * @return true 表示曾存在玩家独立状态
+     */
+    public synchronized boolean resetForPlayer(Object player) {
+        boolean removed = removeForPlayer(player);
+        if (removed) {
+            service.sendStoreSnapshot(this, NetTarget.player(player), state);
+        }
+        return removed;
+    }
+
+    /**
      * 返回指定维度状态。
      *
      * @param dimensionId 维度 id

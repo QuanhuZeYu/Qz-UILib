@@ -359,6 +359,46 @@ public final class ConfigTemplateSyncManager {
         return session;
     }
 
+    /**
+     * 关闭指定服务端配置会话，并清理或回退对应玩家的 Store 快照。
+     *
+     * @param sessionId 会话标识
+     * @param player 会话所属玩家
+     * @return true 表示找到并关闭了会话
+     */
+    public boolean closeServerSession(String sessionId, Object player) {
+        if (sessionId == null || sessionId.trim().isEmpty() || player == null) {
+            return false;
+        }
+        ConfigTemplateRemoteSession session = sessions.get(sessionId);
+        if (session == null || !matchesPlayer(session.getOwnerPlayer(), player)) {
+            return false;
+        }
+        if (sessions.remove(sessionId, session)) {
+            refreshPublishedStateAfterRemoval(player);
+            return true;
+        }
+        return false;
+    }
+
+    /**
+     * 玩家离线时清理该玩家所有服务端配置会话与 per-player Store 快照。
+     *
+     * @param player 离线玩家
+     */
+    public void onServerPlayerLeft(Object player) {
+        if (player == null) {
+            return;
+        }
+        for (Map.Entry<String, ConfigTemplateRemoteSession> entry : sessions.entrySet()) {
+            ConfigTemplateRemoteSession session = entry.getValue();
+            if (session != null && matchesPlayer(session.getOwnerPlayer(), player)) {
+                sessions.remove(entry.getKey(), session);
+            }
+        }
+        removePublishedState(player);
+    }
+
     ConfigSyncModels.ConfigSaveResult saveServerSession(String sessionId, Object player,
             ConfigSyncModels.ConfigDraftSnapshot draft) {
         ConfigTemplateRemoteSession session = requireSession(sessionId, player);
@@ -375,6 +415,18 @@ public final class ConfigTemplateSyncManager {
 
     ConfigSyncTarget getTarget(String screenId) {
         return resolveTarget(screenId);
+    }
+
+    int getServerSessionCountForTests() {
+        return sessions.size();
+    }
+
+    ConfigSyncModels.ConfigSessionState getPublishedServerStateForTests(Object player) {
+        if (stateStore == null || player == null) {
+            return new ConfigSyncModels.ConfigSessionState();
+        }
+        return ConfigSyncJson.fromJson(stateStore.getForPlayer(player).asUtf8String(),
+                ConfigSyncModels.ConfigSessionState.class);
     }
 
     private void handleOpenRequest(NetRequest request, NetFetchEndpoint.NetFetchRequestContext context) {
@@ -501,6 +553,33 @@ public final class ConfigTemplateSyncManager {
             return;
         }
         stateStore.setForPlayer(player, NetBody.json(ConfigSyncJson.toJson(state)));
+    }
+
+    private void refreshPublishedStateAfterRemoval(Object player) {
+        if (stateStore == null || player == null) {
+            return;
+        }
+        for (ConfigTemplateRemoteSession session : sessions.values()) {
+            if (session != null && matchesPlayer(session.getOwnerPlayer(), player)) {
+                publishState(player, session.snapshotState());
+                return;
+            }
+        }
+        resetPublishedState(player);
+    }
+
+    private void removePublishedState(Object player) {
+        if (stateStore == null || player == null) {
+            return;
+        }
+        stateStore.removeForPlayer(player);
+    }
+
+    private void resetPublishedState(Object player) {
+        if (stateStore == null || player == null) {
+            return;
+        }
+        stateStore.resetForPlayer(player);
     }
 
     private void ensureRegistered() {
