@@ -47,3 +47,4 @@
 - [`DECISION-20260609-remote-ui-runtime-lease-protocol.md`](DECISION-20260609-remote-ui-runtime-lease-protocol.md) - 后续远程 UI 重构采用内部 Runtime + 显式 Lease 协议，区分 session、surface、revision、asset 与 closeScope，保持 NetService 通用边界
 - [`DECISION-20260610-character-font-rules.md`](DECISION-20260610-character-font-rules.md) - 字符级字体覆盖采用 `FontMatcher` 规则优先表，不接入 CSS `font-family` 样式维度
 - [`DECISION-20260610-select-large-list-virtualization.md`](DECISION-20260610-select-large-list-virtualization.md) - `DocumentSelectControl` 大列表采用控件级虚拟化，保留完整数据语义但只渲染可视窗口 DOM
+- [`DECISION-20260611-font-size-before-latex-math.md`](DECISION-20260611-font-size-before-latex-math.md) - 先扩展字体引擎字号能力，再实现 LaTeX 风格数学公式排版，避免公式渲染绕开项目字体系统
