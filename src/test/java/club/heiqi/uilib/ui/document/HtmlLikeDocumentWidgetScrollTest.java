@@ -24,6 +24,8 @@ import club.heiqi.uilib.ui.dom.DocumentElementClickEvent;
 import club.heiqi.uilib.ui.dom.DocumentElementClickHandler;
 import club.heiqi.uilib.ui.dom.DocumentElementHoverEvent;
 import club.heiqi.uilib.ui.dom.DocumentElementHoverHandler;
+import club.heiqi.uilib.ui.dom.DocumentElementScrollEvent;
+import club.heiqi.uilib.ui.dom.DocumentElementScrollHandler;
 import club.heiqi.uilib.ui.dom.DocumentElementWheelEvent;
 import club.heiqi.uilib.ui.dom.DocumentElementWheelHandler;
 import club.heiqi.uilib.ui.dom.ElementNode;
@@ -79,6 +81,73 @@ public class HtmlLikeDocumentWidgetScrollTest {
         assertDrawCall(scrolledRenderContext.drawCalls.get(0), 5, -29, 85, 51, 0xFFAA5500, 0, 0);
         assertDrawCall(scrolledRenderContext.drawCalls.get(1), 77, 9, 83, 25, 0x663B4A66, 0, 3);
         assertDrawCall(scrolledRenderContext.drawCalls.get(2), 77, 9, 83, 25, 0xDDBCD7FF, 0, 3);
+    }
+
+    /**
+     * 验证默认滚轮滚动会分发元素 scroll 事件。
+     */
+    @Test
+    public void shouldDispatchScrollEventAfterMouseWheelDefaultScroll() {
+        UiDocument document = UiDocument.create();
+        ElementNode root = document.getRootElement();
+        ElementNode child = document.div();
+        final List<String> events = new ArrayList<String>();
+        root.style()
+                .setWidth(UiStyleLength.px(80))
+                .setHeight(UiStyleLength.px(20))
+                .setOverflowX(UiOverflow.HIDDEN)
+                .setOverflowY(UiOverflow.AUTO);
+        child.style().setHeight(UiStyleLength.px(80));
+        root.setScrollHandler(new DocumentElementScrollHandler() {
+            @Override
+            public void onScroll(DocumentElementScrollEvent event) {
+                events.add(event.getScrollTop() + ":" + event.getScrollHeight());
+            }
+        });
+        root.append(child);
+        HtmlLikeDocumentWidget widget = new HtmlLikeDocumentWidget(document, 80, 20,
+                new DeterministicTextMeasureService());
+        widget.applyLayoutBounds(0, 0, 80, 20);
+
+        Assert.assertTrue(widget.onMouseScroll(new UiMouseEvent(UiMouseEvent.Action.SCROLL, 10, 10, -1, -120, 0,
+                0, 1L)));
+
+        Assert.assertEquals("[36:80]", events.toString());
+    }
+
+    /**
+     * 验证滚动条拖拽改变偏移时会分发元素 scroll 事件。
+     */
+    @Test
+    public void shouldDispatchScrollEventWhenScrollbarDragScrolls() {
+        UiDocument document = UiDocument.create();
+        ElementNode root = document.getRootElement();
+        ElementNode child = document.div();
+        final List<Integer> scrollTops = new ArrayList<Integer>();
+        root.style()
+                .setWidth(UiStyleLength.px(80))
+                .setHeight(UiStyleLength.px(40))
+                .setOverflowX(UiOverflow.HIDDEN)
+                .setOverflowY(UiOverflow.AUTO);
+        child.style().setHeight(UiStyleLength.px(200));
+        root.setScrollHandler(new DocumentElementScrollHandler() {
+            @Override
+            public void onScroll(DocumentElementScrollEvent event) {
+                scrollTops.add(Integer.valueOf(event.getScrollTop()));
+            }
+        });
+        root.append(child);
+        HtmlLikeDocumentWidget widget = new HtmlLikeDocumentWidget(document, 80, 40,
+                new DeterministicTextMeasureService());
+        widget.applyLayoutBounds(0, 0, 80, 40);
+        Assert.assertTrue(widget.getMaxScrollTop(root) > 0);
+
+        widget.onMouseDown(new UiMouseEvent(UiMouseEvent.Action.BUTTON_DOWN, 75, 5, 0, 0, 0, 0, 1L));
+        widget.onMouseMove(new UiMouseEvent(UiMouseEvent.Action.MOVE, 75, 30, -1, 0, 0, 0, 2L));
+        widget.onMouseUp(new UiMouseEvent(UiMouseEvent.Action.BUTTON_UP, 75, 30, 0, 0, 0, 0, 3L));
+
+        Assert.assertFalse(scrollTops.isEmpty());
+        Assert.assertTrue(scrollTops.get(scrollTops.size() - 1).intValue() > 0);
     }
 
     /**

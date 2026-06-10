@@ -11,6 +11,8 @@ import club.heiqi.uilib.ui.dom.DocumentElementHoverEvent;
 import club.heiqi.uilib.ui.dom.DocumentElementHoverHandler;
 import club.heiqi.uilib.ui.dom.DocumentElementKeyEvent;
 import club.heiqi.uilib.ui.dom.DocumentElementKeyHandler;
+import club.heiqi.uilib.ui.dom.DocumentElementScrollEvent;
+import club.heiqi.uilib.ui.dom.DocumentElementScrollHandler;
 import club.heiqi.uilib.ui.dom.DocumentTopLayerDetachHandler;
 import club.heiqi.uilib.ui.dom.ElementNode;
 import club.heiqi.uilib.ui.dom.TextNode;
@@ -34,6 +36,9 @@ public final class DocumentSelectControl {
 
     private static final int DEFAULT_TRIGGER_HEIGHT = 32;
     private static final int DEFAULT_OPTION_HEIGHT = 28;
+    private static final int DEFAULT_MAX_VISIBLE_OPTIONS = 5;
+    private static final int DEFAULT_OVERSCAN_OPTIONS = 3;
+    private static final int OPTION_VIEW_CAPACITY = DEFAULT_MAX_VISIBLE_OPTIONS + DEFAULT_OVERSCAN_OPTIONS * 2 + 1;
     private static final String PRESERVE_FOCUS_ON_MOUSE_DOWN_ATTRIBUTE = "data-qz-preserve-focus-on-mousedown";
     private static final String ANCHORED_TOP_LAYER_LISTBOX_ATTRIBUTE = "data-qz-anchored-listbox";
 
@@ -44,7 +49,9 @@ public final class DocumentSelectControl {
     private final ElementNode arrowElement;
     private final TextNode arrowText;
     private final ElementNode popupElement;
-    private final ElementNode[] optionElements;
+    private final ElementNode topSpacerElement;
+    private final ElementNode bottomSpacerElement;
+    private final OptionView[] optionViews;
     private final String[] options;
     private DocumentSelectChangeHandler changeHandler;
     private boolean enabled = true;
@@ -53,6 +60,8 @@ public final class DocumentSelectControl {
     private boolean hovered;
     private int selectedIndex;
     private int highlightedIndex;
+    private int firstRenderedIndex;
+    private int renderedOptionCount;
     private int triggerBackgroundColor = 0xFF222233;
     private int triggerBorderColor = 0xFF555577;
     private int hoverBorderColor = 0xFF7777AA;
@@ -80,7 +89,9 @@ public final class DocumentSelectControl {
         this.arrowElement = document.span();
         this.arrowText = arrowElement.appendText("v");
         this.popupElement = document.div();
-        this.optionElements = new ElementNode[this.options.length];
+        this.topSpacerElement = document.div();
+        this.bottomSpacerElement = document.div();
+        this.optionViews = new OptionView[Math.min(this.options.length, OPTION_VIEW_CAPACITY)];
         triggerElement.append(labelElement);
         triggerElement.append(arrowElement);
         element.append(triggerElement);
@@ -236,7 +247,7 @@ public final class DocumentSelectControl {
                 .setLeft(UiStyleLength.px(0))
                 .setTop(UiStyleLength.percent(1.0F))
                 .setWidth(UiStyleLength.percent(1.0F))
-                .setMaxHeight(UiStyleLength.px(DEFAULT_OPTION_HEIGHT * 5))
+                .setMaxHeight(UiStyleLength.px(DEFAULT_OPTION_HEIGHT * DEFAULT_MAX_VISIBLE_OPTIONS))
                 .setOverflowX(UiOverflow.HIDDEN)
                 .setOverflowY(UiOverflow.AUTO)
                 .setBackgroundColor(popupBackgroundColor)
@@ -247,10 +258,13 @@ public final class DocumentSelectControl {
     }
 
     private void createOptions(UiDocument document) {
-        for (int index = 0; index < options.length; index++) {
-            final int optionIndex = index;
+        configureSpacer(topSpacerElement);
+        configureSpacer(bottomSpacerElement);
+        popupElement.append(topSpacerElement);
+        for (int index = 0; index < optionViews.length; index++) {
             ElementNode option = document.option();
-            option.appendText(options[index]);
+            TextNode optionText = option.appendText("");
+            final OptionView optionView = new OptionView(option, optionText);
             option.setAttribute("role", "option");
             option.style()
                     .setDisplay(UiDisplay.FLEX)
@@ -265,17 +279,32 @@ public final class DocumentSelectControl {
             option.setClickHandler(new DocumentElementClickHandler() {
                 @Override
                 public boolean onClick(DocumentElementClickEvent event) {
-                    if (!enabled || event.getButton() != 0) {
+                    if (!enabled || event.getButton() != 0 || optionView.optionIndex < 0) {
                         return false;
                     }
-                    selectIndex(optionIndex, true, false, 0, event.getButton(), event.getTimeNanos());
+                    selectIndex(optionView.optionIndex, true, false, 0, event.getButton(), event.getTimeNanos());
                     setOpen(false);
                     return true;
                 }
             });
-            optionElements[index] = option;
+            optionViews[index] = optionView;
             popupElement.append(option);
         }
+        popupElement.append(bottomSpacerElement);
+    }
+
+    private void configureSpacer(ElementNode spacerElement) {
+        spacerElement.setAttribute("aria-hidden", "true");
+        spacerElement.setClickHandler(new DocumentElementClickHandler() {
+            @Override
+            public boolean onClick(DocumentElementClickEvent event) {
+                return true;
+            }
+        });
+        spacerElement.style()
+                .setDisplay(UiDisplay.BLOCK)
+                .setWidth(UiStyleLength.percent(1.0F))
+                .setHeight(UiStyleLength.px(0));
     }
 
     private void installHandlers() {
@@ -312,6 +341,12 @@ public final class DocumentSelectControl {
                 hovered = event.isHovered() && enabled;
                 updateVisualState();
                 return false;
+            }
+        });
+        popupElement.setScrollHandler(new DocumentElementScrollHandler() {
+            @Override
+            public void onScroll(DocumentElementScrollEvent event) {
+                updateRenderedOptionsForScroll(event.getScrollTop());
             }
         });
     }
@@ -406,11 +441,11 @@ public final class DocumentSelectControl {
     }
 
     private void revealSelectedOption() {
-        if (selectedIndex < 0 || selectedIndex >= optionElements.length) {
+        if (selectedIndex < 0 || selectedIndex >= options.length) {
             return;
         }
         int currentScrollTop = popupElement.getScrollTop();
-        int viewportHeight = DEFAULT_OPTION_HEIGHT * 5;
+        int viewportHeight = DEFAULT_OPTION_HEIGHT * DEFAULT_MAX_VISIBLE_OPTIONS;
         int optionTop = selectedIndex * DEFAULT_OPTION_HEIGHT;
         int optionBottom = optionTop + DEFAULT_OPTION_HEIGHT;
         int targetScrollTop = currentScrollTop;
@@ -419,6 +454,7 @@ public final class DocumentSelectControl {
         } else if (optionBottom > currentScrollTop + viewportHeight) {
             targetScrollTop = optionBottom - viewportHeight;
         }
+        updateRenderedOptionsForScroll(Math.max(0, targetScrollTop));
         popupElement.scrollTo(popupElement.getScrollLeft(), Math.max(0, targetScrollTop));
     }
 
@@ -452,20 +488,71 @@ public final class DocumentSelectControl {
                 .setBackgroundColor(enabled ? popupBackgroundColor : disabledBackgroundColor);
         element.setAttribute("aria-expanded", String.valueOf(this.open));
         element.setAttribute("value", options[selectedIndex]);
-        for (int index = 0; index < optionElements.length; index++) {
-            boolean selected = index == selectedIndex;
-            optionElements[index].setAttribute("aria-selected", String.valueOf(selected));
-            if (selected) {
-                optionElements[index].setAttribute("selected", "true");
-            } else {
-                optionElements[index].removeAttribute("selected");
+        updateRenderedOptionsForScroll(popupElement.getScrollTop());
+    }
+
+    private void updateRenderedOptionsForScroll(int scrollTop) {
+        if (optionViews.length == 0) {
+            return;
+        }
+        int firstVisibleIndex = Math.max(0, scrollTop / DEFAULT_OPTION_HEIGHT);
+        int nextFirstIndex = Math.max(0, firstVisibleIndex - DEFAULT_OVERSCAN_OPTIONS);
+        int maxFirstIndex = Math.max(0, options.length - optionViews.length);
+        nextFirstIndex = Math.min(nextFirstIndex, maxFirstIndex);
+        int nextRenderedCount = Math.min(optionViews.length, options.length - nextFirstIndex);
+        if (firstRenderedIndex != nextFirstIndex || renderedOptionCount != nextRenderedCount) {
+            firstRenderedIndex = nextFirstIndex;
+            renderedOptionCount = nextRenderedCount;
+            topSpacerElement.style().setHeight(UiStyleLength.px(resolveSpacerHeight(firstRenderedIndex)));
+            bottomSpacerElement.style().setHeight(UiStyleLength.px(resolveSpacerHeight(
+                    options.length - firstRenderedIndex - renderedOptionCount)));
+            for (int viewIndex = 0; viewIndex < optionViews.length; viewIndex++) {
+                OptionView optionView = optionViews[viewIndex];
+                if (viewIndex < renderedOptionCount) {
+                    int optionIndex = firstRenderedIndex + viewIndex;
+                    optionView.optionIndex = optionIndex;
+                    optionView.text.setText(options[optionIndex]);
+                    optionView.element.setAttribute("aria-posinset", String.valueOf(optionIndex + 1));
+                    optionView.element.setAttribute("aria-setsize", String.valueOf(options.length));
+                    optionView.element.style().setDisplay(UiDisplay.FLEX);
+                } else {
+                    optionView.optionIndex = -1;
+                    optionView.text.setText("");
+                    optionView.element.removeAttribute("aria-posinset");
+                    optionView.element.removeAttribute("aria-setsize");
+                    optionView.element.style().setDisplay(UiDisplay.NONE);
+                }
             }
-            optionElements[index].style()
+        }
+        updateRenderedOptionVisualState();
+    }
+
+    private void updateRenderedOptionVisualState() {
+        for (int viewIndex = 0; viewIndex < optionViews.length; viewIndex++) {
+            OptionView optionView = optionViews[viewIndex];
+            if (optionView.optionIndex < 0) {
+                optionView.element.setAttribute("aria-selected", "false");
+                optionView.element.removeAttribute("selected");
+                continue;
+            }
+            boolean selected = optionView.optionIndex == selectedIndex;
+            optionView.element.setAttribute("aria-selected", String.valueOf(selected));
+            if (selected) {
+                optionView.element.setAttribute("selected", "true");
+            } else {
+                optionView.element.removeAttribute("selected");
+            }
+            optionView.element.style()
                     .setBackgroundColor(enabled ? (selected ? selectedOptionBackgroundColor : optionBackgroundColor)
                             : disabledBackgroundColor)
                     .setCursor(enabled ? UiCursor.POINTER : UiCursor.NOT_ALLOWED)
                     .setTextColor(enabled ? (selected ? textColor : mutedTextColor) : disabledTextColor);
         }
+    }
+
+    private static int resolveSpacerHeight(int optionCount) {
+        long height = (long) Math.max(0, optionCount) * DEFAULT_OPTION_HEIGHT;
+        return height > Integer.MAX_VALUE ? Integer.MAX_VALUE : (int) height;
     }
 
     /**
@@ -519,5 +606,17 @@ public final class DocumentSelectControl {
             }
         }
         return normalized;
+    }
+
+    private static final class OptionView {
+
+        private final ElementNode element;
+        private final TextNode text;
+        private int optionIndex = -1;
+
+        private OptionView(ElementNode element, TextNode text) {
+            this.element = element;
+            this.text = text;
+        }
     }
 }

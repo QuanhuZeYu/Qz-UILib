@@ -669,7 +669,7 @@ public final class HtmlLikeDocumentWidget extends Widget implements UiDocument.D
                 event.getTimeNanos(), animationClock.getCurrentTimeNanos(), animationTimeline);
         boolean consumed = scrolled || dispatchResult.isPropagationStopped();
         lastScrollConsumed = consumed;
-        if (scrollState.getVersion() != previousScrollVersion) {
+        if (dispatchLatestScrollIfChanged(previousScrollVersion, event.getTimeNanos())) {
             updateHoveredElement(findElementAt(event.getMouseX(), event.getMouseY()), event);
         }
         return consumed;
@@ -684,9 +684,11 @@ public final class HtmlLikeDocumentWidget extends Widget implements UiDocument.D
         }
         recordLatestPointer(event);
         DocumentLayoutBox rootBox = resolveInteractiveLayoutBox();
+        int previousScrollVersion = scrollState.getVersion();
         if (event.getButton() == 0 && scrollState.beginScrollbarDrag(rootBox, resolveTopLayerLayoutBoxes(rootBox,
                 null), event.getMouseX() - getAbsoluteX(), event.getMouseY() - getAbsoluteY(), event.getTimeNanos(),
                 animationClock.getCurrentTimeNanos(), animationTimeline)) {
+            dispatchLatestScrollIfChanged(previousScrollVersion, event.getTimeNanos());
             pressedElement = null;
             pressedButton = -1;
             dragController.clearDragState();
@@ -712,9 +714,11 @@ public final class HtmlLikeDocumentWidget extends Widget implements UiDocument.D
         recordLatestPointer(event);
         if (scrollState.isDraggingScrollbar()) {
             DocumentLayoutBox rootBox = resolveInteractiveLayoutBox();
+            int previousScrollVersion = scrollState.getVersion();
             scrollState.updateScrollbarDrag(rootBox, resolveTopLayerLayoutBoxes(rootBox, null),
                     event.getMouseX() - getAbsoluteX(), event.getMouseY() - getAbsoluteY(), event.getTimeNanos(),
                     animationClock.getCurrentTimeNanos(), animationTimeline);
+            dispatchLatestScrollIfChanged(previousScrollVersion, event.getTimeNanos());
         }
         dragController.dispatchDragMove(event);
         updateHoveredElement(findElementAt(event.getMouseX(), event.getMouseY()), event);
@@ -1236,6 +1240,15 @@ public final class HtmlLikeDocumentWidget extends Widget implements UiDocument.D
         scrollHandler.onScroll(new DocumentElementScrollEvent(target, scrollState.getScrollTop(target),
                 scrollState.getScrollLeft(target), scrollState.getScrollHeight(target),
                 scrollState.getScrollWidth(target), timeNanos));
+    }
+
+    private boolean dispatchLatestScrollIfChanged(int previousScrollVersion, long timeNanos) {
+        ElementNode target = scrollState.consumeLastScrolledElement();
+        if (scrollState.getVersion() == previousScrollVersion) {
+            return false;
+        }
+        dispatchScroll(target, timeNanos);
+        return true;
     }
 
     private void updateHoveredElement(ElementNode nextHoveredElement, UiMouseEvent event) {

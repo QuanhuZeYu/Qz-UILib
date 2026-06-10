@@ -400,6 +400,92 @@ public class DocumentSelectControlTest {
     }
 
     /**
+     * 验证超长 select 只保留可视窗口内的少量 option 节点。
+     */
+    @Test
+    public void shouldVirtualizeLargeOptionListInsideScrollablePopup() {
+        UiDocument document = UiDocument.create();
+        ElementNode root = document.getRootElement();
+        DocumentSelectControl selectControl = new DocumentSelectControl(document, createOptions(10000));
+        root.style()
+                .setWidth(UiStyleLength.px(240))
+                .setHeight(UiStyleLength.px(220));
+        selectControl.getElement().style().setWidth(UiStyleLength.px(180));
+        root.append(selectControl.getElement());
+        HtmlLikeDocumentWidget widget = new HtmlLikeDocumentWidget(document, 240, 220,
+                new DeterministicTextMeasureService());
+        widget.applyLayoutBounds(0, 0, 240, 220);
+
+        click(widget, 20, 12, 1L);
+        ElementNode popup = findListboxElement(root);
+        widget.resolveLayoutBoxForTest();
+
+        Assert.assertEquals(10000, selectControl.getOptionCount());
+        Assert.assertTrue(countOptionElements(popup) <= 12);
+        Assert.assertTrue(popup.getMaxScrollTop() > 200000);
+        Assert.assertNotNull(findOptionElementByText(popup, "Item 0"));
+    }
+
+    /**
+     * 验证虚拟化 select 滚动到远端窗口后仍能命中并选择真实选项。
+     */
+    @Test
+    public void shouldSelectVirtualizedOptionAfterProgrammaticScroll() {
+        UiDocument document = UiDocument.create();
+        ElementNode root = document.getRootElement();
+        DocumentSelectControl selectControl = new DocumentSelectControl(document, createOptions(10000));
+        root.style()
+                .setWidth(UiStyleLength.px(240))
+                .setHeight(UiStyleLength.px(220));
+        selectControl.getElement().style().setWidth(UiStyleLength.px(180));
+        root.append(selectControl.getElement());
+        HtmlLikeDocumentWidget widget = new HtmlLikeDocumentWidget(document, 240, 220,
+                new DeterministicTextMeasureService());
+        widget.applyLayoutBounds(0, 0, 240, 220);
+
+        click(widget, 20, 12, 1L);
+        ElementNode popup = findListboxElement(root);
+        popup.scrollTo(0, 9000 * 28);
+        widget.resolveLayoutBoxForTest();
+        ElementNode targetOption = findOptionElementByText(popup, "Item 9000");
+        Assert.assertNotNull(targetOption);
+        club.heiqi.uilib.ui.dom.DocumentElementBounds bounds = targetOption.getDocumentBounds();
+        click(widget, bounds.getLeft() + 8, bounds.getTop() + 8, 3L);
+
+        Assert.assertEquals(9000, selectControl.getSelectedIndex());
+        Assert.assertEquals("Item 9000", selectControl.getSelectedOption());
+    }
+
+    /**
+     * 验证键盘跳到末项时，虚拟窗口会同步切到末尾选项附近。
+     */
+    @Test
+    public void shouldRevealVirtualizedEndOptionWhenKeyboardNavigatesLargeList() {
+        UiDocument document = UiDocument.create();
+        ElementNode root = document.getRootElement();
+        DocumentSelectControl selectControl = new DocumentSelectControl(document, createOptions(10000));
+        root.style()
+                .setWidth(UiStyleLength.px(240))
+                .setHeight(UiStyleLength.px(220));
+        selectControl.getElement().style().setWidth(UiStyleLength.px(180));
+        root.append(selectControl.getElement());
+        HtmlLikeDocumentWidget widget = new HtmlLikeDocumentWidget(document, 240, 220,
+                new DeterministicTextMeasureService());
+        widget.applyLayoutBounds(0, 0, 240, 220);
+
+        widget.onFocusTraversalEntered(false);
+        widget.onKeyEvent(new UiKeyEvent(Keyboard.KEY_RETURN, 0, 0, UiKeyEvent.Action.PRESSED, false, false, false,
+                false, 1L));
+        widget.onKeyEvent(new UiKeyEvent(Keyboard.KEY_END, 0, 0, UiKeyEvent.Action.PRESSED, false, false, false,
+                false, 2L));
+        ElementNode popup = findListboxElement(root);
+
+        Assert.assertEquals(9999, selectControl.getSelectedIndex());
+        Assert.assertTrue(popup.getScrollTop() > 200000);
+        Assert.assertNotNull(findOptionElementByText(popup, "Item 9999"));
+    }
+
+    /**
      * 验证移除包含展开 select 的子树时，会同步清理 popup 的 top-layer 注册。
      */
     @Test
@@ -480,6 +566,36 @@ public class DocumentSelectControlTest {
             }
         }
         return count;
+    }
+
+    private static int countOptionElements(ElementNode element) {
+        int count = "option".equals(element.getTagName()) ? 1 : 0;
+        for (club.heiqi.uilib.ui.dom.DocumentNode child : element.getChildren()) {
+            if (child instanceof ElementNode) {
+                count += countOptionElements((ElementNode) child);
+            }
+        }
+        return count;
+    }
+
+    private static ElementNode findOptionElementByText(ElementNode popup, String text) {
+        for (club.heiqi.uilib.ui.dom.DocumentNode child : popup.getChildren()) {
+            if (child instanceof ElementNode) {
+                ElementNode childElement = (ElementNode) child;
+                if ("option".equals(childElement.getTagName()) && text.equals(childElement.getTextContent())) {
+                    return childElement;
+                }
+            }
+        }
+        return null;
+    }
+
+    private static String[] createOptions(int count) {
+        String[] options = new String[count];
+        for (int index = 0; index < count; index++) {
+            options[index] = "Item " + index;
+        }
+        return options;
     }
 
     private static ElementNode findListboxElement(ElementNode element) {
