@@ -98,6 +98,37 @@ public class ConfigTemplateRemoteSessionTest {
     }
 
     /**
+     * 验证字符字体规则远程同步会使用字段级校验器拦截无效规则。
+     */
+    @Test
+    public void shouldRejectInvalidCharacterFontRulesWithTargetValidator() {
+        Configuration configuration = new Configuration();
+        configuration.get("fontsystem", "characterFontRules", new String[] { "A=Alpha" },
+                "字符字体覆盖规则");
+        configuration.getCategory("fontsystem").setPropertyOrder(java.util.Collections.singletonList(
+                "characterFontRules"));
+        ConfigSyncTarget target = ConfigSyncTarget.builder("test-config", configuration)
+                .categories(java.util.Collections.singletonList(new ConfigSyncCategorySpec(FontConfig.CATEGORY,
+                        "Font System", "字体配置").addAlias("fontsystem")))
+                .draftValidator(FontConfig.CATEGORY, "characterFontRules", new ConfigSyncTarget.DraftValidator() {
+                    @Override
+                    public String validateDraft(Property property, String draftValue) {
+                        return FontCharacterRuleDrafts.validateRemoteDraft(property, draftValue);
+                    }
+                })
+                .build();
+        ConfigTemplateRemoteSession session = new ConfigTemplateRemoteSession(target, "playerA");
+        ConfigSyncModels.ConfigFieldChange change = new ConfigSyncModels.ConfigFieldChange();
+        change.fieldKey = ConfigSyncModels.buildFieldKey(FontConfig.CATEGORY, "characterFontRules");
+        change.draftValue = "ABC=Alpha";
+
+        ConfigSyncModels.ConfigFieldValidationResult result = session.applyChange(change);
+
+        Assert.assertFalse(result.accepted);
+        Assert.assertTrue(result.message, result.message.contains("第 1 条规则无效"));
+    }
+
+    /**
      * 验证部分草稿保存不会丢失会话已有完整草稿。
      */
     @Test

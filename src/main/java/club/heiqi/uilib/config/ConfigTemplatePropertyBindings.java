@@ -92,6 +92,21 @@ final class ConfigTemplatePropertyBindings {
         return new FontSortPropertyBinding(owner, document, categorySpec, property);
     }
 
+    /**
+     * 创建字符字体覆盖规则配置项的专用绑定。
+     *
+     * @param owner 宿主配置页面
+     * @param document 目标文档
+     * @param categorySpec 分类规格
+     * @param property Forge 配置属性
+     * @return 字符字体覆盖规则属性绑定
+     */
+    static ForgeConfigTemplateScreen.PropertyBinding createCharacterFontRules(ForgeConfigTemplateScreen owner,
+            UiDocument document, ForgeConfigTemplateScreen.CategorySpec categorySpec, Property property) {
+        Objects.requireNonNull(owner, "owner");
+        return new CharacterFontRulePropertyBinding(owner, document, categorySpec, property);
+    }
+
     static double parsePropertyMinValue(Property property, boolean integerType) {
         if (property == null) {
             return integerType ? Integer.MIN_VALUE : -Double.MAX_VALUE;
@@ -426,6 +441,115 @@ final class FontSortPropertyBinding extends ForgeConfigTemplateScreen.PropertyBi
 
     private String[] toDraftArray() {
         return draftOrder.toArray(new String[draftOrder.size()]);
+    }
+}
+
+/**
+ * 字符字体覆盖规则配置项绑定。
+ */
+final class CharacterFontRulePropertyBinding extends ForgeConfigTemplateScreen.PropertyBinding {
+
+    private final List<String> draftRules = new ArrayList<String>();
+    private final FontCharacterRuleControl ruleControl;
+
+    CharacterFontRulePropertyBinding(ForgeConfigTemplateScreen owner, UiDocument document,
+            ForgeConfigTemplateScreen.CategorySpec categorySpec, Property property) {
+        owner.super(document, categorySpec, property);
+
+        final CharacterFontRulePropertyBinding binding = this;
+        this.ruleControl = new FontCharacterRuleControl(document,
+                FontCharacterRuleControl.toRuleList(property.getStringList()),
+                new FontCharacterRuleControl.FontCharacterRuleChangeListener() {
+                    @Override
+                    public void onRulesChanged(List<String> rules) {
+                        binding.applyDraftRules(rules);
+                        getOwnerScreen().requestStatusRefresh();
+                    }
+                });
+        restoreCurrentValue();
+        initializeCard(document, ruleControl.getElement());
+    }
+
+    ElementNode getRuleElementForTesting() {
+        return ruleControl.getElement();
+    }
+
+    @Override
+    protected String buildHelperText() {
+        String inherited = super.buildHelperText();
+        String suffix = "首个启用且命中的字符字体规则会优先于全局字体排序。";
+        return inherited.isEmpty() ? suffix : inherited + " " + suffix;
+    }
+
+    @Override
+    public boolean isDirty() {
+        return !Arrays.equals(getProperty().getStringList(), toDraftArray());
+    }
+
+    @Override
+    public void restoreCurrentValue() {
+        applyToControl(FontCharacterRuleControl.toRuleList(getProperty().getStringList()));
+    }
+
+    @Override
+    public void restoreDefaultValue() {
+        applyToControl(FontCharacterRuleControl.toRuleList(getProperty().getDefaults()));
+    }
+
+    @Override
+    public String validateDraft() {
+        return ruleControl.validateDraft();
+    }
+
+    @Override
+    public void applyDraft() {
+        getProperty().set(toDraftArray());
+    }
+
+    @Override
+    public String exportDraftValue() {
+        StringBuilder builder = new StringBuilder();
+        for (String value : draftRules) {
+            if (value == null || value.trim().isEmpty()) {
+                continue;
+            }
+            if (builder.length() > 0) {
+                builder.append('\n');
+            }
+            builder.append(value.trim());
+        }
+        return builder.toString();
+    }
+
+    @Override
+    public void applyRemoteDraftValue(String draftValue) {
+        applyDraftRules(java.util.Arrays.asList(FontCharacterRuleDrafts.splitDraftValue(draftValue)));
+        if (ruleControl != null) {
+            ruleControl.setRules(new ArrayList<String>(draftRules));
+        }
+    }
+
+    private void applyToControl(List<String> updatedRules) {
+        applyDraftRules(updatedRules);
+        if (ruleControl != null) {
+            ruleControl.setRules(new ArrayList<String>(draftRules));
+        }
+    }
+
+    private void applyDraftRules(List<String> updatedRules) {
+        draftRules.clear();
+        if (updatedRules != null) {
+            for (String rule : updatedRules) {
+                String normalized = rule == null ? "" : rule.trim();
+                if (!normalized.isEmpty()) {
+                    draftRules.add(normalized);
+                }
+            }
+        }
+    }
+
+    private String[] toDraftArray() {
+        return draftRules.toArray(new String[draftRules.size()]);
     }
 }
 

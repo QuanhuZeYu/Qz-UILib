@@ -45,3 +45,4 @@
 - [`DECISION-20260607-codegraph-memory-mode.md`](DECISION-20260607-codegraph-memory-mode.md) - 将 CodeGraph MCP 作为动态代码关系查询层，仓库记忆继续只保存稳定事实、决策和交接
 - [`DECISION-20260608-remote-html-session-ttl.md`](DECISION-20260608-remote-html-session-ttl.md) - 远程 HTML session TTL 同时覆盖 HTML 拉取与交互提交，过期必须通知客户端错误或关闭对应 HUD
 - [`DECISION-20260609-remote-ui-runtime-lease-protocol.md`](DECISION-20260609-remote-ui-runtime-lease-protocol.md) - 后续远程 UI 重构采用内部 Runtime + 显式 Lease 协议，区分 session、surface、revision、asset 与 closeScope，保持 NetService 通用边界
+- [`DECISION-20260610-character-font-rules.md`](DECISION-20260610-character-font-rules.md) - 字符级字体覆盖采用 `FontMatcher` 规则优先表，不接入 CSS `font-family` 样式维度

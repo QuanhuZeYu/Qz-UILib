@@ -3,10 +3,14 @@ package club.heiqi.uilib.config;
 import java.io.File;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
+import java.util.Map;
 import java.util.Objects;
 
 import net.minecraftforge.common.config.Configuration;
+import net.minecraftforge.common.config.Property;
 
 /**
  * 可由 UILib 配置同步服务管理的服务端权威配置目标。
@@ -24,6 +28,7 @@ public final class ConfigSyncTarget {
     private final String configPath;
     private final Configuration configuration;
     private final List<ConfigSyncCategorySpec> categories;
+    private final Map<String, DraftValidator> draftValidators;
     private final SaveAction saveAction;
 
     private ConfigSyncTarget(Builder builder) {
@@ -35,6 +40,8 @@ public final class ConfigSyncTarget {
         this.configuration = Objects.requireNonNull(builder.configuration, "configuration");
         this.configPath = resolveConfigPath(builder.configPath, configuration);
         this.categories = Collections.unmodifiableList(new ArrayList<ConfigSyncCategorySpec>(builder.categories));
+        this.draftValidators = Collections.unmodifiableMap(new LinkedHashMap<String, DraftValidator>(
+                builder.draftValidators));
         this.saveAction = builder.saveAction == null ? defaultSaveAction() : builder.saveAction;
     }
 
@@ -128,6 +135,10 @@ public final class ConfigSyncTarget {
         saveAction.save(configuration);
     }
 
+    DraftValidator getDraftValidator(String categoryName, String propertyName) {
+        return draftValidators.get(buildFieldKey(categoryName, propertyName));
+    }
+
     private static SaveAction defaultSaveAction() {
         return new SaveAction() {
             @Override
@@ -160,6 +171,14 @@ public final class ConfigSyncTarget {
         return value == null ? "" : value.trim();
     }
 
+    private static String buildFieldKey(String categoryName, String propertyName) {
+        return normalizeKeyPart(categoryName) + ":" + normalizeKeyPart(propertyName);
+    }
+
+    private static String normalizeKeyPart(String value) {
+        return normalize(value).toLowerCase(Locale.ENGLISH);
+    }
+
     /**
      * 服务端保存动作。
      */
@@ -171,6 +190,21 @@ public final class ConfigSyncTarget {
          * @param configuration 当前权威配置对象
          */
         void save(Configuration configuration);
+    }
+
+    /**
+     * 字段级草稿校验器。
+     */
+    public interface DraftValidator {
+
+        /**
+         * 校验字段草稿。
+         *
+         * @param property Forge 配置属性
+         * @param draftValue 草稿文本
+         * @return 错误文本，合法时返回 null
+         */
+        String validateDraft(Property property, String draftValue);
     }
 
     /**
@@ -186,6 +220,7 @@ public final class ConfigSyncTarget {
         private String description = "";
         private String configPath = "";
         private final List<ConfigSyncCategorySpec> categories = new ArrayList<ConfigSyncCategorySpec>();
+        private final Map<String, DraftValidator> draftValidators = new LinkedHashMap<String, DraftValidator>();
         private SaveAction saveAction;
 
         private Builder(String screenId, Configuration configuration) {
@@ -283,6 +318,27 @@ public final class ConfigSyncTarget {
          */
         public Builder saveAction(SaveAction saveAction) {
             this.saveAction = saveAction;
+            return this;
+        }
+
+        /**
+         * 设置字段级草稿校验器。
+         *
+         * @param categoryName 分类名
+         * @param propertyName 属性名
+         * @param validator 校验器；为 null 时移除
+         * @return 当前构造器
+         */
+        public Builder draftValidator(String categoryName, String propertyName, DraftValidator validator) {
+            String key = buildFieldKey(categoryName, propertyName);
+            if (key.equals(":")) {
+                return this;
+            }
+            if (validator == null) {
+                draftValidators.remove(key);
+            } else {
+                draftValidators.put(key, validator);
+            }
             return this;
         }
 

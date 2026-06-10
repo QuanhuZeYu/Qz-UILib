@@ -6,10 +6,12 @@ import java.awt.font.GlyphVector;
 import java.awt.geom.AffineTransform;
 import java.util.Arrays;
 import java.util.List;
+import java.util.Locale;
 import java.util.concurrent.atomic.AtomicLong;
 
 import club.heiqi.uilib.font.FontType;
 import club.heiqi.uilib.font.config.FontConfig;
+import club.heiqi.uilib.font.config.FontCharacterRuleSet;
 import club.heiqi.uilib.font.page.GlyphRuntimeTables;
 
 /**
@@ -139,6 +141,12 @@ public class FontMatcher {
             return GlyphRuntimeTables.FONT_INDEX_NONE;
         }
 
+        int configuredFontIndex = resolveConfiguredFontIndex(snapshot, codepoint, fontType);
+        if (configuredFontIndex >= 0) {
+            rememberMatch(runtimeVersion, binding, codepoint, fontType, configuredFontIndex);
+            return configuredFontIndex;
+        }
+
         String text = CodepointTextCache.getText(codepoint);
         int blockHint = resolveBlockHint(runtimeVersion, binding, codepoint, fontType);
         int lastHint = resolveLastHint(runtimeVersion, binding, fontType);
@@ -170,6 +178,42 @@ public class FontMatcher {
         int fallbackIndex = firstStrictDisplayIndex >= 0 ? firstStrictDisplayIndex : firstCanDisplayIndex;
         rememberMatch(runtimeVersion, binding, codepoint, fontType, fallbackIndex);
         return fallbackIndex;
+    }
+
+    private int resolveConfiguredFontIndex(FontCatalog.Snapshot snapshot, int codepoint, FontType fontType) {
+        FontCharacterRuleSet ruleSet = FontConfig.getCharacterRuleSet();
+        if (ruleSet.isEmpty()) {
+            return GlyphRuntimeTables.FONT_INDEX_UNRESOLVED;
+        }
+        String configuredFontName = ruleSet.resolveFontName(codepoint);
+        if (configuredFontName == null || configuredFontName.trim().isEmpty()) {
+            return GlyphRuntimeTables.FONT_INDEX_UNRESOLVED;
+        }
+
+        List<Font> fonts = snapshot.getFonts();
+        String text = CodepointTextCache.getText(codepoint);
+        String lookupKey = normalizeFontName(configuredFontName);
+        int firstStrictDisplayIndex = GlyphRuntimeTables.FONT_INDEX_NONE;
+        int firstCanDisplayIndex = GlyphRuntimeTables.FONT_INDEX_NONE;
+        for (int index = 0; index < fonts.size(); index++) {
+            Font font = fonts.get(index);
+            if (!matchesConfiguredFontName(font, lookupKey) || !font.canDisplay(codepoint)) {
+                continue;
+            }
+            if (firstCanDisplayIndex == GlyphRuntimeTables.FONT_INDEX_NONE) {
+                firstCanDisplayIndex = index;
+            }
+            if (!canDisplay(index, font, codepoint, fontType, text)) {
+                continue;
+            }
+            if (matchesWeight(font, fontType)) {
+                return index;
+            }
+            if (firstStrictDisplayIndex == GlyphRuntimeTables.FONT_INDEX_NONE) {
+                firstStrictDisplayIndex = index;
+            }
+        }
+        return firstStrictDisplayIndex >= 0 ? firstStrictDisplayIndex : firstCanDisplayIndex;
     }
 
     /**
@@ -213,6 +257,17 @@ public class FontMatcher {
             return isBoldFont;
         }
         return !isBoldFont;
+    }
+
+    private boolean matchesConfiguredFontName(Font font, String lookupKey) {
+        if (font == null || lookupKey == null || lookupKey.isEmpty()) {
+            return false;
+        }
+        return normalizeFontName(font.getName()).equals(lookupKey);
+    }
+
+    private String normalizeFontName(String value) {
+        return value == null ? "" : value.trim().toLowerCase(Locale.ENGLISH);
     }
 
     private int resolveBlockHint(int runtimeVersion, RuntimeTableBinding binding, int codepoint, FontType fontType) {

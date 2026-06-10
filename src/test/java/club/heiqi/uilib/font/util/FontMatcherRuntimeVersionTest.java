@@ -16,7 +16,9 @@ import org.junit.Assert;
 import org.junit.Test;
 
 import club.heiqi.uilib.font.FontType;
+import club.heiqi.uilib.font.config.FontConfig;
 import club.heiqi.uilib.font.page.GlyphRuntimeTables;
+import net.minecraftforge.common.config.Configuration;
 
 /**
  * {@link FontMatcher} 的运行时版本隔离测试。
@@ -110,6 +112,58 @@ public class FontMatcherRuntimeVersionTest {
         Font newDerivedFont = cache.getDerivedFont(0, FontType.NORMAL, 16);
 
         Assert.assertEquals("New", newDerivedFont.getName());
+    }
+
+    /**
+     * 验证字符字体覆盖规则优先于全局字体排序。
+     */
+    @Test
+    public void shouldPreferConfiguredCharacterFontRule() {
+        loadCharacterFontRules("B=Second");
+        try {
+            FontCatalog catalog = new FontCatalog();
+            Font firstFont = new TestFont("First", Font.PLAIN, 'B');
+            Font secondFont = new TestFont("Second", Font.PLAIN, 'B');
+            DerivedFontCache derivedFontCache = new DerivedFontCache(catalog);
+            FontMatcher matcher = new FontMatcher(catalog, derivedFontCache);
+            GlyphRuntimeTables tables = new GlyphRuntimeTables();
+
+            catalog.replaceAll(Arrays.asList(firstFont, secondFont));
+            matcher.setRuntimeTables(1, tables);
+
+            Assert.assertEquals(1, matcher.matchFontIndex(1, 'B', FontType.NORMAL));
+        } finally {
+            loadCharacterFontRules();
+        }
+    }
+
+    /**
+     * 验证配置字体不存在或不可用时仍回退到自动匹配。
+     */
+    @Test
+    public void shouldFallbackWhenConfiguredCharacterFontCannotDisplayCodepoint() {
+        loadCharacterFontRules("B=Second");
+        try {
+            FontCatalog catalog = new FontCatalog();
+            Font firstFont = new TestFont("First", Font.PLAIN, 'B');
+            Font secondFont = new TestFont("Second", Font.PLAIN, 'A');
+            DerivedFontCache derivedFontCache = new DerivedFontCache(catalog);
+            FontMatcher matcher = new FontMatcher(catalog, derivedFontCache);
+            GlyphRuntimeTables tables = new GlyphRuntimeTables();
+
+            catalog.replaceAll(Arrays.asList(firstFont, secondFont));
+            matcher.setRuntimeTables(1, tables);
+
+            Assert.assertEquals(0, matcher.matchFontIndex(1, 'B', FontType.NORMAL));
+        } finally {
+            loadCharacterFontRules();
+        }
+    }
+
+    private static void loadCharacterFontRules(String... rules) {
+        Configuration configuration = new Configuration();
+        configuration.get(FontConfig.CATEGORY, "characterFontRules", rules, "字符字体覆盖规则");
+        FontConfig.load(configuration);
     }
 
     private static final class SwitchOnFirstReadFontCatalog extends FontCatalog {
