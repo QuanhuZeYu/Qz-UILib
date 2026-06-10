@@ -575,10 +575,23 @@ public final class UiHudDocumentHost implements UiHostInputCaptureParticipant {
 
     private HudInputContext createInputContext(GuiScreen currentScreen) {
         UiHudScreenCategory screenCategory = classifyScreen(currentScreen);
-        boolean nativeTextInputFocused = UiNativeTextInputInspector.hasFocusedTextInput(currentScreen);
+        boolean interactiveInputEnabled = isInteractiveInputEnabled(currentScreen);
+        boolean nativeTextInputFocused = shouldInspectNativeTextInput(screenCategory, interactiveInputEnabled)
+                && UiNativeTextInputInspector.hasFocusedTextInput(currentScreen);
         return new HudInputContext(currentScreen, currentScreen == null ? null : currentScreen.getClass().getName(),
-                screenCategory, isInteractiveInputEnabled(currentScreen), new ArrayList<HudEntry>(entries), true,
+                screenCategory, interactiveInputEnabled, new ArrayList<HudEntry>(entries), true,
                 nativeTextInputFocused);
+    }
+
+    /**
+     * 判断当前 HUD 输入上下文是否需要探测宿主原生文本框焦点。
+     *
+     * @param screenCategory 当前屏幕分类
+     * @param interactiveInputEnabled HUD 交互输入是否接通
+     * @return 是否需要执行原生文本框焦点探测
+     */
+    static boolean shouldInspectNativeTextInput(UiHudScreenCategory screenCategory, boolean interactiveInputEnabled) {
+        return screenCategory == UiHudScreenCategory.CONTAINER && interactiveInputEnabled;
     }
 
     private HudInputContext createInputContextForTest(UiHudScreenCategory screenCategory) {
