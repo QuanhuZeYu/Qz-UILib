@@ -51,6 +51,7 @@ public final class HtmlLikeDocumentWidget extends Widget implements UiDocument.D
 
     private static final String HIT_TEST_PASSTHROUGH_ATTRIBUTE = "data-hit-test-passthrough";
     private static final String PRESERVE_FOCUS_ON_MOUSE_DOWN_ATTRIBUTE = "data-qz-preserve-focus-on-mousedown";
+    private static final String ANCHORED_TOP_LAYER_LISTBOX_ATTRIBUTE = "data-qz-anchored-listbox";
 
     private final UiDocument document;
     private final TextMeasureService textMeasureService;
@@ -1044,7 +1045,7 @@ public final class HtmlLikeDocumentWidget extends Widget implements UiDocument.D
             if (!isElementAttachedToDocument(topLayerElement)) {
                 continue;
             }
-            syncSelectTopLayerPlacement(rootBox, topLayerElement);
+            syncAnchoredListboxTopLayerPlacement(rootBox, topLayerElement);
             boxes.add(DocumentLayoutEngine.layoutTopLayerElement(topLayerElement, getWidth(), getHeight(),
                     textMeasureService, layoutValueResolver));
         }
@@ -1063,8 +1064,9 @@ public final class HtmlLikeDocumentWidget extends Widget implements UiDocument.D
         return roots;
     }
 
-    private void syncSelectTopLayerPlacement(DocumentLayoutBox rootBox, ElementNode topLayerElement) {
-        if (rootBox == null || topLayerElement == null || !"listbox".equals(topLayerElement.getAttribute("role"))) {
+    private void syncAnchoredListboxTopLayerPlacement(DocumentLayoutBox rootBox, ElementNode topLayerElement) {
+        if (rootBox == null || topLayerElement == null || !"listbox".equals(topLayerElement.getAttribute("role"))
+                || !"true".equals(topLayerElement.getAttribute(ANCHORED_TOP_LAYER_LISTBOX_ATTRIBUTE))) {
             return;
         }
         DocumentNode parent = topLayerElement.getParent();
@@ -1072,7 +1074,7 @@ public final class HtmlLikeDocumentWidget extends Widget implements UiDocument.D
             return;
         }
         ElementNode anchor = (ElementNode) parent;
-        if (!"select".equals(anchor.getTagName())) {
+        if (!"select".equals(anchor.getTagName()) && !"input".equals(anchor.getTagName())) {
             return;
         }
         VisualBounds anchorBounds = resolveVisualBounds(rootBox, anchor, animationClock.getCurrentTimeNanos());
