@@ -118,6 +118,12 @@ ConfigTemplateSyncManager.getInstance().registerTarget(
                         new ConfigSyncCategorySpec("general", "General", "基础配置"),
                         new ConfigSyncCategorySpec("fontSystem", "Font System", "字体配置")
                                 .addAlias("fontsystem")))
+                .draftValidator("fontSystem", "customList", new ConfigSyncTarget.DraftValidator() {
+                    @Override
+                    public String validateDraft(Property property, String draftValue) {
+                        return validateCustomListDraft(draftValue);
+                    }
+                })
                 .saveAction(new ConfigSyncTarget.SaveAction() {
                     @Override
                     public void save(Configuration configuration) {
@@ -132,6 +138,7 @@ ConfigTemplateSyncManager.getInstance().registerTarget(
 - 页面打开时，客户端通过 `NetService` 下的 Fetch 打开一个配置会话，并拿到服务端当前快照。
 - 字段编辑优先修改客户端控件草稿；模板页会把变化通过 Qz `Channel` 异步同步给服务端草稿。
 - 点击保存后，客户端通过 Fetch 触发显式保存；服务端完成校验、持久化和业务重载后，再把最终快照回推回来。
+- 如果某个字段在本地页面使用了专用 `PropertyBinding.validateDraft()`，远程目标也应通过 `ConfigSyncTarget.Builder.draftValidator(...)` 注册同等字段级校验，避免服务端只执行通用类型校验。
 - 会话状态和最终保存结果通过 `Store` 回推；当服务端未启用该能力时，模板自动回退到旧的本地保存模式。
 - 本地模板页关闭时会通过 Qz Fetch 通知服务端释放配置会话，玩家离线时服务端也会清理该玩家的会话与 per-player Store 状态。
 
@@ -177,6 +184,7 @@ spec.addPropertyEditorFactory(new ForgeConfigTemplateScreen.PropertyEditorFactor
 - `ModConfigGui` 现已作为 `ConfigTemplateSyncManager` 的首个接入方，默认绑定 `screenId=mod-config` 的服务端权威配置目标。
 - 当前模板已经把 `validValues` 视为一等语义；但当当前值已不在候选集时，会自动回退为文本输入保留遗留值。
 - 当前 `fontSystem.fontSort` 使用专用二级排序页；页面面向 300+ 字体列表提供分页、搜索、全局序号跳转、目标序号移动、当前页内拖拽微调与“保存并应用”按钮。启动时仍会根据已发现字体自动补全有效顺序，并在配置数据中保留未发现的历史字体记录。
+- 当前 `fontSystem.characterFontRules` 使用专用字符字体规则编辑器；规则格式为 `字符或范围=字体名`，支持单字符、`U+XXXX`、`U+XXXX-U+YYYY` 与 `A-Z` 这类范围写法，禁用规则会保存为 `disabled:` 前缀。字体名输入复用 `DocumentAutocompleteInputControl`，会按当前字体排序快照弹出可滚动候选下拉；规则格式错误会阻断保存，重叠启用范围只提示并按顺序优先级处理；本地与远程配置同步都会执行字符规则字段级校验。运行时首个启用且命中的规则优先于 `fontSort` 自动匹配，若目标字体不存在或不能显示该字符，则继续回退到原有自动匹配链路。
 - 首次启动且尚无 `fontSystem.fontSort` 配置时，字体系统会按当前平台常见多语种字体提示优先整理已发现字体，再追加其他字体，减少自然排序先选中 CAD 等窄用途字体的概率。
 
 ## 验证建议

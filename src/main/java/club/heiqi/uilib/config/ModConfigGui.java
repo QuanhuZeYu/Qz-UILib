@@ -29,6 +29,7 @@ public class ModConfigGui extends ForgeConfigTemplateScreen {
                     }
                 })
                 .addPropertyEditorFactory(new FontSortPropertyEditorFactory())
+                .addPropertyEditorFactory(new FontCharacterRulePropertyEditorFactory())
                 .enableQzNetworkSync(ConfigTemplateSyncManager.QZ_UI_LIB_SCREEN_ID);
     }
 

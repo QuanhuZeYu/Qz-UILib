@@ -43,4 +43,23 @@ public class FontSortPropertyEditorFactoryTest {
         Assert.assertTrue(factory.matchesForTesting(new ForgeConfigTemplateScreen.CategorySpec(FontConfig.CATEGORY)
                 .addAlias("fontsystem"), fontSort));
     }
+
+    /**
+     * 验证字符字体规则工厂仅匹配字符字体覆盖规则列表属性。
+     */
+    @Test
+    public void shouldMatchOnlyCharacterFontRuleListProperty() {
+        Configuration configuration = new Configuration();
+        Property characterFontRules = configuration.get(FontConfig.CATEGORY, "characterFontRules",
+                new String[] { "字=Alpha" }, "字符字体覆盖规则");
+        Property fontSort = configuration.get(FontConfig.CATEGORY, "fontSort", new String[] { "Alpha" }, "字体排序");
+        FontCharacterRulePropertyEditorFactory factory = new FontCharacterRulePropertyEditorFactory();
+
+        Assert.assertTrue(factory.matchesForTesting(new ForgeConfigTemplateScreen.CategorySpec(FontConfig.CATEGORY),
+                characterFontRules));
+        Assert.assertFalse(factory.matchesForTesting(new ForgeConfigTemplateScreen.CategorySpec(FontConfig.CATEGORY),
+                fontSort));
+        Assert.assertFalse(factory.matchesForTesting(new ForgeConfigTemplateScreen.CategorySpec("general"),
+                characterFontRules));
+    }
 }

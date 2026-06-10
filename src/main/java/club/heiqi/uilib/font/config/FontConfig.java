@@ -38,7 +38,9 @@ public final class FontConfig {
     public static boolean customInvCountFont = false;
     public static String[] fontSort = new String[0];
     public static String[] missingFontSort = new String[0];
+    public static String[] characterFontRules = new String[0];
     public static boolean fontSortConfigured;
+    private static volatile FontCharacterRuleSet characterRuleSet = FontCharacterRuleSet.empty();
 
     private static int lastLerpMode = lerpMode;
     private static double lastAwtCharSize = awtCharSize;
@@ -50,6 +52,7 @@ public final class FontConfig {
     private static boolean lastReplaceOrigin = replaceOrigin;
     private static boolean lastCustomInvCountFont = customInvCountFont;
     private static String[] lastFontSort = fontSort;
+    private static String[] lastCharacterFontRules = characterFontRules;
     private static Configuration activeConfiguration;
     private static String activeFontCategory = CATEGORY;
 
@@ -101,6 +104,12 @@ public final class FontConfig {
         if (fontSort == null) {
             fontSort = new String[0];
         }
+        characterFontRules = configuration.get(fontCategory, "characterFontRules", characterFontRules,
+                "字符字体覆盖规则，格式为 字符或范围=字体名；禁用规则使用 disabled: 前缀").getStringList();
+        if (characterFontRules == null) {
+            characterFontRules = new String[0];
+        }
+        characterRuleSet = FontCharacterRuleSet.parse(characterFontRules);
 
         awtCharSize = configuration.get(FONT_SIZE_CATEGORY, "awtCharSize", awtCharSize, "字符生成分辨率", 8.0D,
                 Double.MAX_VALUE).getDouble();
@@ -124,7 +133,8 @@ public final class FontConfig {
                 || Double.compare(lastLineSpacing, lineSpacing) != 0
                 || lastReplaceOrigin != replaceOrigin
                 || lastCustomInvCountFont != customInvCountFont
-                || !Arrays.equals(lastFontSort, fontSort);
+                || !Arrays.equals(lastFontSort, fontSort)
+                || !Arrays.equals(lastCharacterFontRules, characterFontRules);
     }
 
     /**
@@ -141,6 +151,8 @@ public final class FontConfig {
         lastReplaceOrigin = replaceOrigin;
         lastCustomInvCountFont = customInvCountFont;
         lastFontSort = fontSort == null ? new String[0] : Arrays.copyOf(fontSort, fontSort.length);
+        lastCharacterFontRules = characterFontRules == null ? new String[0]
+                : Arrays.copyOf(characterFontRules, characterFontRules.length);
     }
 
     /**
@@ -187,6 +199,25 @@ public final class FontConfig {
     }
 
     /**
+     * 获取当前字符字体覆盖规则快照。
+     *
+     * @return 字符字体覆盖规则快照
+     */
+    public static String[] getCharacterFontRuleSnapshot() {
+        return characterFontRules == null ? new String[0] : Arrays.copyOf(characterFontRules,
+                characterFontRules.length);
+    }
+
+    /**
+     * 获取当前字符字体覆盖规则集合。
+     *
+     * @return 字符字体覆盖规则集合
+     */
+    public static FontCharacterRuleSet getCharacterRuleSet() {
+        return characterRuleSet;
+    }
+
+    /**
      * 获取当前缺失字体名称快照。
      *
      * @return 缺失字体名称快照
@@ -206,7 +237,8 @@ public final class FontConfig {
                 + ", replaceOrigin=" + replaceOrigin
                 + ", customInvCountFont=" + customInvCountFont
                 + ", fontSort=" + Arrays.toString(fontSort)
-                + ", missingFontSort=" + Arrays.toString(missingFontSort);
+                + ", missingFontSort=" + Arrays.toString(missingFontSort)
+                + ", characterFontRules=" + Arrays.toString(characterFontRules);
     }
 
     private static void persistFontSortToConfiguration() {

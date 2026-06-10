@@ -7,6 +7,7 @@ import java.util.concurrent.ConcurrentHashMap;
 
 import club.heiqi.uilib.Config;
 import club.heiqi.uilib.MyMod;
+import club.heiqi.uilib.font.config.FontConfig;
 import club.heiqi.uilib.net.api.NetBody;
 import club.heiqi.uilib.net.api.NetChannel;
 import club.heiqi.uilib.net.api.NetChannelId;
@@ -583,6 +584,12 @@ public final class ConfigTemplateSyncManager {
                 .description(QzUiLibConfigSchema.description())
                 .configPath(Config.getConfigPath())
                 .categories(QzUiLibConfigSchema.categories())
+                .draftValidator(FontConfig.CATEGORY, "characterFontRules", new ConfigSyncTarget.DraftValidator() {
+                    @Override
+                    public String validateDraft(net.minecraftforge.common.config.Property property, String draftValue) {
+                        return FontCharacterRuleDrafts.validateRemoteDraft(property, draftValue);
+                    }
+                })
                 .saveAction(new ConfigSyncTarget.SaveAction() {
                     @Override
                     public void save(net.minecraftforge.common.config.Configuration configuration) {

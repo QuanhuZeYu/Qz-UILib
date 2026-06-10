@@ -21,10 +21,12 @@ public class FontConfigCategoryTest {
     public void shouldLoadFontSortFromLowercaseCategory() {
         Configuration configuration = new Configuration();
         configuration.get("fontsystem", "fontSort", new String[] { "Bravo", "Alpha" }, "字体排序");
+        configuration.get("fontsystem", "characterFontRules", new String[] { "字=Alpha" }, "字符字体覆盖规则");
 
         FontConfig.load(configuration);
 
         Assert.assertArrayEquals(new String[] { "Bravo", "Alpha" }, FontConfig.getFontSortSnapshot());
+        Assert.assertArrayEquals(new String[] { "字=Alpha" }, FontConfig.getCharacterFontRuleSnapshot());
         Assert.assertTrue(FontConfig.fontSortConfigured);
     }
 

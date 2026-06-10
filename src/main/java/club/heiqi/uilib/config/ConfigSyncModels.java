@@ -180,6 +180,20 @@ final class ConfigSyncModels {
      */
     static ConfigFieldValidationResult validateChange(Configuration configuration,
             ConfigDefinitionSnapshot definition, ConfigFieldChange change) {
+        return validateChange(configuration, definition, change, null);
+    }
+
+    /**
+     * 校验字段草稿。
+     *
+     * @param configuration 配置副本
+     * @param definition 定义快照
+     * @param change 变更
+     * @param target 配置同步目标，可为空
+     * @return 校验结果
+     */
+    static ConfigFieldValidationResult validateChange(Configuration configuration,
+            ConfigDefinitionSnapshot definition, ConfigFieldChange change, ConfigSyncTarget target) {
         ConfigFieldValidationResult result = new ConfigFieldValidationResult();
         result.fieldKey = change == null ? "" : change.fieldKey;
         result.accepted = false;
@@ -197,7 +211,8 @@ final class ConfigSyncModels {
             result.message = "配置同步字段不存在。";
             return result;
         }
-        String validationError = ForgeConfigTemplatePropertyDrafts.validateDraft(property, change.draftValue);
+        String validationError = validateDraft(target, fieldRef.category.categoryName, fieldRef.propertyName,
+                property, change.draftValue);
         if (validationError != null && !validationError.isEmpty()) {
             result.message = validationError;
             return result;
@@ -205,6 +220,20 @@ final class ConfigSyncModels {
         result.accepted = true;
         result.message = "";
         return result;
+    }
+
+    static String validateDraft(ConfigSyncTarget target, String categoryName, String propertyName, Property property,
+            String draftValue) {
+        String validationError = ForgeConfigTemplatePropertyDrafts.validateDraft(property, draftValue);
+        if (validationError != null && !validationError.isEmpty()) {
+            return validationError;
+        }
+        ConfigSyncTarget.DraftValidator validator = target == null ? null
+                : target.getDraftValidator(categoryName, propertyName);
+        if (validator == null) {
+            return null;
+        }
+        return validator.validateDraft(property, draftValue);
     }
 
     /**

@@ -56,7 +56,7 @@ final class ConfigTemplateRemoteSession {
     synchronized ConfigSyncModels.ConfigFieldValidationResult applyChange(
             ConfigSyncModels.ConfigFieldChange change) {
         ConfigSyncModels.ConfigFieldValidationResult result =
-                ConfigSyncModels.validateChange(draftConfiguration, definition, change);
+                ConfigSyncModels.validateChange(draftConfiguration, definition, change, target);
         if (!result.accepted) {
             state.fieldErrors.put(result.fieldKey, result.message == null ? "" : result.message);
             state.statusMessage = "字段校验未通过。";
@@ -127,8 +127,8 @@ final class ConfigTemplateRemoteSession {
                         result.committedDraft = snapshotDraft();
                         return result;
                     }
-                    String validationError = ForgeConfigTemplatePropertyDrafts.validateDraft(authoritativeProperty,
-                            draftValue);
+                    String validationError = ConfigSyncModels.validateDraft(target, category.categoryName,
+                            field.propertyName, authoritativeProperty, draftValue);
                     if (validationError != null && !validationError.isEmpty()) {
                         state.fieldErrors.put(fieldKey, validationError);
                         state.statusMessage = "保存前校验失败。";

@@ -306,7 +306,7 @@ final class ForgeConfigTemplatePropertyDrafts {
     }
 
     private static String validateListDraft(Property property, String draft) {
-        String[] values = splitList(draft);
+        String[] values = splitListDraft(draft);
         int maxListLength = property.getMaxListLength();
         if (property.isListLengthFixed()) {
             int expectedLength = maxListLength > 0 ? maxListLength : property.getDefaults().length;
@@ -379,7 +379,7 @@ final class ForgeConfigTemplatePropertyDrafts {
     }
 
     private static void applyListDraft(Property property, String draft) {
-        String[] values = splitList(draft);
+        String[] values = splitListDraft(draft);
         if (property.getType() == Property.Type.INTEGER) {
             int[] parsedValues = new int[values.length];
             for (int index = 0; index < values.length; index++) {
@@ -407,7 +407,7 @@ final class ForgeConfigTemplatePropertyDrafts {
         property.set(values);
     }
 
-    private static String[] splitList(String draft) {
+    static String[] splitListDraft(String draft) {
         if (draft == null || draft.trim().isEmpty()) {
             return new String[0];
         }
