@@ -40,6 +40,7 @@ public final class DocumentScrollState {
     private int scrollStep = DEFAULT_SCROLL_STEP;
     private int version;
     private ScrollbarDrag activeScrollbarDrag;
+    private ElementNode lastScrolledElement;
 
     /**
      * 设置滚轮每步滚动距离。
@@ -66,6 +67,17 @@ public final class DocumentScrollState {
      */
     public int getVersion() {
         return version;
+    }
+
+    /**
+     * 取出最近一次由默认滚动链路改变偏移的元素。
+     *
+     * @return 最近滚动的元素；没有待分发滚动事件时返回 null
+     */
+    public ElementNode consumeLastScrolledElement() {
+        ElementNode element = lastScrolledElement;
+        lastScrolledElement = null;
+        return element;
     }
 
     /**
@@ -300,6 +312,7 @@ public final class DocumentScrollState {
         }
         boolean changed = updateOffsets(entry, nextHorizontalOffset, nextVerticalOffset);
         if (changed) {
+            lastScrolledElement = target.getBox().getElement();
             markScrollbarInteraction(entry, eventTimeNanos);
         }
         return changed;
@@ -381,7 +394,9 @@ public final class DocumentScrollState {
         activeScrollbarDrag = new ScrollbarDrag(hit.box.getElement(), hit.vertical, pointerOffset);
         markScrollbarInteraction(entry, eventTimeNanos);
         if (!hit.metrics.containsThumb(hit.pointerX, hit.pointerY)) {
-            updateOffsetFromScrollbarPointer(entry, hit.metrics, pointerPosition, pointerOffset, eventTimeNanos);
+            if (updateOffsetFromScrollbarPointer(entry, hit.metrics, pointerPosition, pointerOffset, eventTimeNanos)) {
+                lastScrolledElement = hit.box.getElement();
+            }
         }
         return true;
     }
@@ -460,8 +475,10 @@ public final class DocumentScrollState {
             return false;
         }
         int pointerPosition = Math.round(activeScrollbarDrag.vertical ? hit.pointerY : hit.pointerX);
-        updateOffsetFromScrollbarPointer(entry, hit.metrics, pointerPosition,
-                activeScrollbarDrag.pointerOffset, eventTimeNanos);
+        if (updateOffsetFromScrollbarPointer(entry, hit.metrics, pointerPosition,
+                activeScrollbarDrag.pointerOffset, eventTimeNanos)) {
+            lastScrolledElement = activeScrollbarDrag.element;
+        }
         return true;
     }
 
