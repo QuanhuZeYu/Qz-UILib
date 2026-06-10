@@ -160,6 +160,19 @@ public class UiHudDocumentHostTest {
     }
 
     /**
+     * 验证菜单页不会触发原生文本框焦点反射探测，避免多人游戏等菜单对象图被深扫。
+     */
+    @Test
+    public void shouldInspectNativeTextInputOnlyWhenHudInputIsInteractive() {
+        Assert.assertTrue(UiHudDocumentHost.shouldInspectNativeTextInput(UiHudScreenCategory.CONTAINER, true));
+        Assert.assertFalse(UiHudDocumentHost.shouldInspectNativeTextInput(UiHudScreenCategory.CONTAINER, false));
+        Assert.assertFalse(UiHudDocumentHost.shouldInspectNativeTextInput(UiHudScreenCategory.MENU, true));
+        Assert.assertFalse(UiHudDocumentHost.shouldInspectNativeTextInput(UiHudScreenCategory.MENU, false));
+        Assert.assertFalse(UiHudDocumentHost.shouldInspectNativeTextInput(UiHudScreenCategory.INGAME, true));
+        Assert.assertFalse(UiHudDocumentHost.shouldInspectNativeTextInput(UiHudScreenCategory.INGAME, false));
+    }
+
+    /**
      * 验证 HUD 浮窗不会在黑名单菜单页和配置页上方显示。
      */
     @Test
