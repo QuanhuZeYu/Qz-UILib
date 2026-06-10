@@ -35,6 +35,7 @@ public final class DocumentSelectControl {
     private static final int DEFAULT_TRIGGER_HEIGHT = 32;
     private static final int DEFAULT_OPTION_HEIGHT = 28;
     private static final String PRESERVE_FOCUS_ON_MOUSE_DOWN_ATTRIBUTE = "data-qz-preserve-focus-on-mousedown";
+    private static final String ANCHORED_TOP_LAYER_LISTBOX_ATTRIBUTE = "data-qz-anchored-listbox";
 
     private final ElementNode element;
     private final ElementNode triggerElement;
@@ -222,6 +223,7 @@ public final class DocumentSelectControl {
                 .setPadding(UiStyleLength.px(8));
         popupElement.setAttribute("role", "listbox");
         popupElement.setAttribute(PRESERVE_FOCUS_ON_MOUSE_DOWN_ATTRIBUTE, "true");
+        popupElement.setAttribute(ANCHORED_TOP_LAYER_LISTBOX_ATTRIBUTE, "true");
         popupElement.__setTopLayerDetachHandler(new DocumentTopLayerDetachHandler() {
             @Override
             public void onTopLayerDetached(ElementNode topLayerElement) {
