@@ -151,16 +151,13 @@ public class FontBatchRenderer {
             int color,
             boolean italic,
             byte glyphFlags) {
-        if (pageIndex < 0 || textureId <= 0 || textureSize <= 0) {
+        if (pageIndex < 0 || textureId <= 0 || textureSize <= 0 || slotWidth <= 0 || slotHeight <= 0) {
             return;
         }
         initialize();
 
-        float resolvedTextureSize = (float) textureSize;
-        float u0 = (slotX + 1.0F) / resolvedTextureSize;
-        float u1 = (slotX + slotWidth - 1.0F) / resolvedTextureSize;
-        float v0 = (slotY + 1.0F) / resolvedTextureSize;
-        float v1 = (slotY + slotHeight - 1.0F) / resolvedTextureSize;
+        GlyphQuadMetrics metrics = resolveGlyphQuadMetrics(textureSize, slotX, slotY, slotWidth, slotHeight,
+                atlasBaselineX, atlasBaselineY, lineBaselineY, defaultGlyphSize, x, y, charSize);
 
         float alpha = (float) (color >> 24 & 255) / 255.0F;
         float red = (float) (color >> 16 & 255) / 255.0F;
@@ -171,17 +168,48 @@ public class FontBatchRenderer {
         float renderType = (glyphFlags & GlyphRuntimeTables.GLYPH_FLAG_COLORED) != 0
                 ? GlyphRenderBatch.RENDER_TYPE_COLORED_GLYPH
                 : GlyphRenderBatch.RENDER_TYPE_MONOCHROME_GLYPH;
+        GlyphRenderBatch batch = obtainPageBatch(fontType, pageIndex, textureId);
+        batch.addQuad(metrics.quadX, metrics.quadY, z, metrics.renderWidth, metrics.renderHeight, italic, metrics.u0,
+                metrics.u1, metrics.v0, metrics.v1, red, green, blue, alpha, renderType);
+        quadCount++;
+    }
+
+    /**
+     * 按 atlas 基线契约计算单个字形的屏幕 quad 与 UV。
+     *
+     * @param textureSize 字符页纹理边长
+     * @param slotX 槽位 X
+     * @param slotY 槽位 Y
+     * @param slotWidth 槽位宽度
+     * @param slotHeight 槽位高度
+     * @param atlasBaselineX 槽位内基线 X
+     * @param atlasBaselineY 槽位内基线 Y
+     * @param lineBaselineY 默认字符格内文本基线 Y
+     * @param defaultGlyphSize 默认字符格大小
+     * @param x 绘制起点 X
+     * @param y 绘制起点 Y
+     * @param charSize 字体显示尺寸
+     * @return 字形 quad 几何
+     */
+    static GlyphQuadMetrics resolveGlyphQuadMetrics(int textureSize, int slotX, int slotY, int slotWidth,
+            int slotHeight, int atlasBaselineX, int atlasBaselineY, int lineBaselineY, int defaultGlyphSize, float x,
+            float y, float charSize) {
+        float resolvedTextureSize = (float) textureSize;
         float glyphScale = charSize / Math.max(1.0F, (float) defaultGlyphSize);
         float baselineY = y + ((float) lineBaselineY * glyphScale);
         float quadX = x - ((float) atlasBaselineX * glyphScale);
         float quadY = baselineY - ((float) atlasBaselineY * glyphScale);
         float renderWidth = (float) slotWidth * glyphScale;
         float renderHeight = (float) slotHeight * glyphScale;
-
-        GlyphRenderBatch batch = obtainPageBatch(fontType, pageIndex, textureId);
-        batch.addQuad(quadX, quadY, z, renderWidth, renderHeight, italic, u0, u1, v0, v1, red, green, blue, alpha,
-                renderType);
-        quadCount++;
+        return new GlyphQuadMetrics(
+                (float) slotX / resolvedTextureSize,
+                (float) (slotX + slotWidth) / resolvedTextureSize,
+                (float) slotY / resolvedTextureSize,
+                (float) (slotY + slotHeight) / resolvedTextureSize,
+                quadX,
+                quadY,
+                renderWidth,
+                renderHeight);
     }
 
     /**
@@ -564,5 +592,32 @@ public class FontBatchRenderer {
         buffer.put(0.0F).put(0.0F).put(-0.001F).put(0.0F);
         buffer.put(-1.0F).put(1.0F).put(0.0F).put(1.0F);
         buffer.flip();
+    }
+
+    /**
+     * 字形屏幕 quad 与 UV 几何。
+     */
+    static final class GlyphQuadMetrics {
+
+        final float u0;
+        final float u1;
+        final float v0;
+        final float v1;
+        final float quadX;
+        final float quadY;
+        final float renderWidth;
+        final float renderHeight;
+
+        private GlyphQuadMetrics(float u0, float u1, float v0, float v1, float quadX, float quadY, float renderWidth,
+                float renderHeight) {
+            this.u0 = u0;
+            this.u1 = u1;
+            this.v0 = v0;
+            this.v1 = v1;
+            this.quadX = quadX;
+            this.quadY = quadY;
+            this.renderWidth = renderWidth;
+            this.renderHeight = renderHeight;
+        }
     }
 }

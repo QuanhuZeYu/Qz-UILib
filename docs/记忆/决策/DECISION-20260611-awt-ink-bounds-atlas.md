@@ -27,7 +27,7 @@
 - `GlyphGenerator` 不再执行“缩小直到塞进 glyphSize”的循环，改为 actual pixel bounds 生成 slot bitmap。
 - `GlyphPage` 改为 shelf packing，可上传不同宽高的 glyph 图像。
 - `GlyphRuntimeTables` 增加 slotX/Y/W/H、atlasBaselineX/Y、lineBaselineY 等按 codepoint 直索引数组。
-- `DefaultFontRendererAdapter` / `FontBatchRenderer` 根据 atlas baseline 计算屏幕 quad，空白 glyph 只推进不提交 quad。
+- `DefaultFontRendererAdapter` / `FontBatchRenderer` 根据 atlas baseline 计算屏幕 quad，UV 按完整可变 slot 采样，空白 glyph 只推进不提交 quad。
 - `TextLayoutService` 宽度测量改用同一派生字体下的 AWT `TextLayout.getAdvance()`。
 
 ## 后续注意事项
@@ -35,3 +35,4 @@
 - 本次仍只有默认字号维度；后续扩展多字号时需要把字号纳入 glyph cache key 或 runtime table 分层。
 - 游戏内视觉仍需用真实 `fontSort`、目标 OS 和 `runClient21` 观察 CJK、emoji、下划线、删除线和文本基线。
 - `FontMatcher` 对空白字符允许匹配字体，以便生成 advance-only glyph；不要再用 outline 是否为空判断空白不可显示。
+- 新 atlas slot 已包含生成阶段的安全 padding；渲染 UV 不再沿用旧固定格时代的 1px 内缩，否则小 slot 会反转 UV 或裁掉边缘像素。
