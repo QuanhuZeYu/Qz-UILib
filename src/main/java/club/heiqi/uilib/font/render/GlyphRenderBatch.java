@@ -58,7 +58,8 @@ public final class GlyphRenderBatch {
      * @param x 绘制 X
      * @param y 绘制 Y
      * @param z 绘制 Z
-     * @param charSize 字体大小
+     * @param width 字形屏幕宽度
+     * @param height 字形屏幕高度
      * @param italic 是否斜体
      * @param u0 起始 U
      * @param u1 结束 U
@@ -70,7 +71,7 @@ public final class GlyphRenderBatch {
      * @param alpha 透明度
      * @param renderType 渲染类型，0 为单色字形，1 为彩色字形，2 为纯色装饰线
      */
-    public void addQuad(float x, float y, float z, float charSize, boolean italic, float u0, float u1, float v0,
+    public void addQuad(float x, float y, float z, float width, float height, boolean italic, float u0, float u1, float v0,
             float v1, float red, float green, float blue, float alpha, float renderType) {
         ensureCapacity(quadCount + 1);
 
@@ -78,15 +79,15 @@ public final class GlyphRenderBatch {
         int vertexFloatBase = vertexBase * VERTEX_STRIDE_FLOATS;
         int indexBase = quadCount * INDICES_PER_QUAD;
 
-        float italicOffset = italic ? resolveItalicOffset(charSize) : 0.0F;
+        float italicOffset = italic ? resolveItalicOffset(height) : 0.0F;
         float leftX = x + italicOffset;
-        float rightX = x + charSize + italicOffset;
+        float rightX = x + width + italicOffset;
 
         writeVertex(vertexFloatBase, leftX, y, z, u0, v0, red, green, blue, alpha, u0, v0, u1, v1,
                 renderType);
-        writeVertex(vertexFloatBase + VERTEX_STRIDE_FLOATS, x, y + charSize, z, u0, v1, red, green, blue, alpha,
+        writeVertex(vertexFloatBase + VERTEX_STRIDE_FLOATS, x, y + height, z, u0, v1, red, green, blue, alpha,
                 u0, v0, u1, v1, renderType);
-        writeVertex(vertexFloatBase + (VERTEX_STRIDE_FLOATS * 2), x + charSize, y + charSize, z, u1, v1, red,
+        writeVertex(vertexFloatBase + (VERTEX_STRIDE_FLOATS * 2), x + width, y + height, z, u1, v1, red,
                 green, blue, alpha, u0, v0, u1, v1, renderType);
         writeVertex(vertexFloatBase + (VERTEX_STRIDE_FLOATS * 3), rightX, y, z, u1, v0, red, green, blue, alpha,
                 u0, v0, u1, v1, renderType);

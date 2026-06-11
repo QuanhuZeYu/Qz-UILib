@@ -16,6 +16,7 @@ public final class GlyphRuntimeTables {
     public static final int FONT_INDEX_UNRESOLVED = -1;
     public static final int FONT_INDEX_NONE = -2;
     public static final int LOCATION_NOT_READY = -1;
+    public static final int LOCATION_NO_BITMAP = -2;
 
     public static final byte STATE_NEW = 0;
     public static final byte STATE_GENERATING = 1;
@@ -24,6 +25,7 @@ public final class GlyphRuntimeTables {
     public static final byte STATE_FAILED = 4;
 
     public static final byte GLYPH_FLAG_COLORED = 1;
+    public static final byte GLYPH_FLAG_HAS_BITMAP = 2;
 
     public final float[] widthNormal = createWidthArray();
     public final float[] widthBold = createWidthArray();
@@ -37,13 +39,25 @@ public final class GlyphRuntimeTables {
     public final int[] locationBold = createLocationArray();
     public final byte[] flagsNormal = new byte[CODEPOINT_COUNT];
     public final byte[] flagsBold = new byte[CODEPOINT_COUNT];
+    public final int[] slotXNormal = new int[CODEPOINT_COUNT];
+    public final int[] slotXBold = new int[CODEPOINT_COUNT];
+    public final int[] slotYNormal = new int[CODEPOINT_COUNT];
+    public final int[] slotYBold = new int[CODEPOINT_COUNT];
+    public final int[] slotWidthNormal = new int[CODEPOINT_COUNT];
+    public final int[] slotWidthBold = new int[CODEPOINT_COUNT];
+    public final int[] slotHeightNormal = new int[CODEPOINT_COUNT];
+    public final int[] slotHeightBold = new int[CODEPOINT_COUNT];
+    public final int[] atlasBaselineXNormal = new int[CODEPOINT_COUNT];
+    public final int[] atlasBaselineXBold = new int[CODEPOINT_COUNT];
+    public final int[] atlasBaselineYNormal = new int[CODEPOINT_COUNT];
+    public final int[] atlasBaselineYBold = new int[CODEPOINT_COUNT];
+    public final int[] lineBaselineYNormal = new int[CODEPOINT_COUNT];
+    public final int[] lineBaselineYBold = new int[CODEPOINT_COUNT];
 
     public GlyphPage[] normalPages = new GlyphPage[4];
     public GlyphPage[] boldPages = new GlyphPage[4];
     public int normalPageCount;
     public int boldPageCount;
-    public short[] slotXByIndex = new short[0];
-    public short[] slotYByIndex = new short[0];
     public int slotsPerPage;
 
     /**
@@ -99,6 +113,34 @@ public final class GlyphRuntimeTables {
         return fontType == FontType.BOLD ? flagsBold : flagsNormal;
     }
 
+    public int[] slotXArray(FontType fontType) {
+        return fontType == FontType.BOLD ? slotXBold : slotXNormal;
+    }
+
+    public int[] slotYArray(FontType fontType) {
+        return fontType == FontType.BOLD ? slotYBold : slotYNormal;
+    }
+
+    public int[] slotWidthArray(FontType fontType) {
+        return fontType == FontType.BOLD ? slotWidthBold : slotWidthNormal;
+    }
+
+    public int[] slotHeightArray(FontType fontType) {
+        return fontType == FontType.BOLD ? slotHeightBold : slotHeightNormal;
+    }
+
+    public int[] atlasBaselineXArray(FontType fontType) {
+        return fontType == FontType.BOLD ? atlasBaselineXBold : atlasBaselineXNormal;
+    }
+
+    public int[] atlasBaselineYArray(FontType fontType) {
+        return fontType == FontType.BOLD ? atlasBaselineYBold : atlasBaselineYNormal;
+    }
+
+    public int[] lineBaselineYArray(FontType fontType) {
+        return fontType == FontType.BOLD ? lineBaselineYBold : lineBaselineYNormal;
+    }
+
     public GlyphPage[] pages(FontType fontType) {
         return fontType == FontType.BOLD ? boldPages : normalPages;
     }
@@ -135,6 +177,7 @@ public final class GlyphRuntimeTables {
         Arrays.fill(locationBold, LOCATION_NOT_READY);
         Arrays.fill(flagsNormal, (byte) 0);
         Arrays.fill(flagsBold, (byte) 0);
+        clearGlyphGeometry();
         clearPageReferences();
     }
 
@@ -148,16 +191,7 @@ public final class GlyphRuntimeTables {
     public void configureSlotCoordinates(int columnCount, int rowCount, int glyphSize) {
         int safeColumnCount = Math.max(1, columnCount);
         int safeRowCount = Math.max(1, rowCount);
-        int slotCount = safeColumnCount * safeRowCount;
-        if (slotXByIndex.length != slotCount) {
-            slotXByIndex = new short[slotCount];
-            slotYByIndex = new short[slotCount];
-        }
-        for (int slotIndex = 0; slotIndex < slotCount; slotIndex++) {
-            slotXByIndex[slotIndex] = (short) ((slotIndex % safeColumnCount) * glyphSize);
-            slotYByIndex[slotIndex] = (short) ((slotIndex / safeColumnCount) * glyphSize);
-        }
-        slotsPerPage = slotCount;
+        slotsPerPage = safeColumnCount * safeRowCount;
     }
 
     /**
@@ -183,6 +217,23 @@ public final class GlyphRuntimeTables {
         }
         normalPages[index] = page;
         normalPageCount = Math.max(normalPageCount, index + 1);
+    }
+
+    private void clearGlyphGeometry() {
+        Arrays.fill(slotXNormal, 0);
+        Arrays.fill(slotXBold, 0);
+        Arrays.fill(slotYNormal, 0);
+        Arrays.fill(slotYBold, 0);
+        Arrays.fill(slotWidthNormal, 0);
+        Arrays.fill(slotWidthBold, 0);
+        Arrays.fill(slotHeightNormal, 0);
+        Arrays.fill(slotHeightBold, 0);
+        Arrays.fill(atlasBaselineXNormal, 0);
+        Arrays.fill(atlasBaselineXBold, 0);
+        Arrays.fill(atlasBaselineYNormal, 0);
+        Arrays.fill(atlasBaselineYBold, 0);
+        Arrays.fill(lineBaselineYNormal, 0);
+        Arrays.fill(lineBaselineYBold, 0);
     }
 
     private void clearPageReferences() {

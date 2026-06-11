@@ -296,6 +296,9 @@ public class FontMatcher {
         if (!font.canDisplay(codepoint)) {
             return false;
         }
+        if (Character.isWhitespace(codepoint) || Character.isSpaceChar(codepoint)) {
+            return true;
+        }
 
         Font derivedFont = derivedFontCache.getDerivedFont(fontIndex, fontType, currentGlyphSize());
         if (derivedFont == null) {

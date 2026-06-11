@@ -121,6 +121,10 @@ public class FontBatchRenderer {
      * @param slotY 槽位 Y
      * @param slotWidth 槽位宽度
      * @param slotHeight 槽位高度
+     * @param atlasBaselineX 槽位内基线 X
+     * @param atlasBaselineY 槽位内基线 Y
+     * @param lineBaselineY 默认字符格内文本基线 Y
+     * @param defaultGlyphSize 默认字符格大小
      * @param x 绘制起点 X
      * @param y 绘制起点 Y
      * @param charSize 字体显示尺寸
@@ -137,6 +141,10 @@ public class FontBatchRenderer {
             int slotY,
             int slotWidth,
             int slotHeight,
+            int atlasBaselineX,
+            int atlasBaselineY,
+            int lineBaselineY,
+            int defaultGlyphSize,
             float x,
             float y,
             float charSize,
@@ -163,9 +171,16 @@ public class FontBatchRenderer {
         float renderType = (glyphFlags & GlyphRuntimeTables.GLYPH_FLAG_COLORED) != 0
                 ? GlyphRenderBatch.RENDER_TYPE_COLORED_GLYPH
                 : GlyphRenderBatch.RENDER_TYPE_MONOCHROME_GLYPH;
+        float glyphScale = charSize / Math.max(1.0F, (float) defaultGlyphSize);
+        float baselineY = y + ((float) lineBaselineY * glyphScale);
+        float quadX = x - ((float) atlasBaselineX * glyphScale);
+        float quadY = baselineY - ((float) atlasBaselineY * glyphScale);
+        float renderWidth = (float) slotWidth * glyphScale;
+        float renderHeight = (float) slotHeight * glyphScale;
 
         GlyphRenderBatch batch = obtainPageBatch(fontType, pageIndex, textureId);
-        batch.addQuad(x, y, z, charSize, italic, u0, u1, v0, v1, red, green, blue, alpha, renderType);
+        batch.addQuad(quadX, quadY, z, renderWidth, renderHeight, italic, u0, u1, v0, v1, red, green, blue, alpha,
+                renderType);
         quadCount++;
     }
 

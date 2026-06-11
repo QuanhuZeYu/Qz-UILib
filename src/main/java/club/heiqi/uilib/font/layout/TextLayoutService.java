@@ -2,11 +2,8 @@ package club.heiqi.uilib.font.layout;
 
 import java.awt.Font;
 import java.awt.font.FontRenderContext;
-import java.awt.font.GlyphMetrics;
-import java.awt.font.GlyphVector;
-import java.awt.font.LineMetrics;
+import java.awt.font.TextLayout;
 import java.awt.geom.AffineTransform;
-import java.awt.geom.Rectangle2D;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
@@ -580,39 +577,8 @@ public class TextLayoutService {
             return FontConfig.spaceWidth;
         }
 
-        GlyphMetrics glyphMetrics;
-        Rectangle2D visualBounds;
-        LineMetrics lineMetrics;
         String text = CodepointTextCache.getText(codepoint);
-
-        while (true) {
-            GlyphVector glyphVector = font.createGlyphVector(FONT_RENDER_CONTEXT, text);
-            visualBounds = glyphVector.getVisualBounds();
-            glyphMetrics = glyphVector.getGlyphMetrics(0);
-            lineMetrics = font.getLineMetrics(text, FONT_RENDER_CONTEXT);
-
-            float baselineY = (float) (-lineMetrics.getDescent() + glyphSize);
-            double top = baselineY + visualBounds.getY();
-            double bottom = baselineY + visualBounds.getMaxY();
-            boolean retry = visualBounds.getWidth() > glyphSize
-                    || visualBounds.getHeight() > glyphSize
-                    || top < 0.0D
-                    || bottom > glyphSize;
-            if (!retry) {
-                break;
-            }
-
-            float nextSize = Math.max(6.0F, font.getSize2D() - 0.5F);
-            if (nextSize >= font.getSize2D() - 0.001F) {
-                break;
-            }
-            font = font.deriveFont(nextSize);
-        }
-
-        double advance = glyphMetrics.getAdvance();
-        if (visualBounds.getWidth() > glyphSize / 2.0D) {
-            advance = advance - visualBounds.getX() + 2.0D;
-        }
+        double advance = new TextLayout(text, font, FONT_RENDER_CONTEXT).getAdvance();
         if (advance <= 0.0D) {
             return FontConfig.spaceWidth;
         }
