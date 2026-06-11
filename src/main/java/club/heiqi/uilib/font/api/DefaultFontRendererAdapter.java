@@ -174,7 +174,22 @@ public class DefaultFontRendererAdapter implements FontRendererAdapter {
 
     @Override
     public int drawString(String text, int x, int y, int color, boolean dropShadow) {
-        return drawString(text, x, y, color, dropShadow, TextContentMode.MINECRAFT_FORMATTED);
+        return drawBaselineAlignedString(text, x, y, color, dropShadow);
+    }
+
+    /**
+     * 按字体 atlas 基线对齐契约绘制字符串。
+     *
+     * @param text 文本
+     * @param x 横坐标
+     * @param y 纵坐标
+     * @param color 颜色
+     * @param dropShadow 是否启用阴影
+     * @return 绘制结束后的光标位置
+     */
+    @Override
+    public int drawBaselineAlignedString(String text, int x, int y, int color, boolean dropShadow) {
+        return drawBaselineAlignedString(text, x, y, color, dropShadow, TextContentMode.MINECRAFT_FORMATTED);
     }
 
     /**
@@ -189,7 +204,24 @@ public class DefaultFontRendererAdapter implements FontRendererAdapter {
      * @return 绘制结束后的光标位置
      */
     public int drawString(String text, int x, int y, int color, boolean dropShadow, TextContentMode textContentMode) {
-        return drawString(text, x, y, color, dropShadow, textContentMode, UiFontWeight.NORMAL, UiFontStyle.NORMAL);
+        return drawBaselineAlignedString(text, x, y, color, dropShadow, textContentMode);
+    }
+
+    /**
+     * 使用指定文本模式按字体 atlas 基线对齐契约绘制字符串。
+     *
+     * @param text 文本
+     * @param x 横坐标
+     * @param y 纵坐标
+     * @param color 颜色
+     * @param dropShadow 是否启用阴影
+     * @param textContentMode 文本内容解析模式
+     * @return 绘制结束后的光标位置
+     */
+    public int drawBaselineAlignedString(String text, int x, int y, int color, boolean dropShadow,
+            TextContentMode textContentMode) {
+        return drawBaselineAlignedString(text, x, y, color, dropShadow, textContentMode, UiFontWeight.NORMAL,
+                UiFontStyle.NORMAL);
     }
 
     /**
@@ -207,6 +239,24 @@ public class DefaultFontRendererAdapter implements FontRendererAdapter {
      */
     public int drawString(String text, int x, int y, int color, boolean dropShadow, TextContentMode textContentMode,
             UiFontWeight fontWeight, UiFontStyle fontStyle) {
+        return drawBaselineAlignedString(text, x, y, color, dropShadow, textContentMode, fontWeight, fontStyle);
+    }
+
+    /**
+     * 使用指定文本模式和基础字体样式按字体 atlas 基线对齐契约绘制字符串。
+     *
+     * @param text 文本
+     * @param x 横坐标
+     * @param y 纵坐标
+     * @param color 颜色
+     * @param dropShadow 是否启用阴影
+     * @param textContentMode 文本内容解析模式
+     * @param fontWeight 字体粗细
+     * @param fontStyle 字体样式
+     * @return 绘制结束后的光标位置
+     */
+    public int drawBaselineAlignedString(String text, int x, int y, int color, boolean dropShadow,
+            TextContentMode textContentMode, UiFontWeight fontWeight, UiFontStyle fontStyle) {
         if (text == null || text.isEmpty()) {
             return x;
         }
@@ -218,8 +268,8 @@ public class DefaultFontRendererAdapter implements FontRendererAdapter {
                 public int run() {
                     fontService.initialize();
                     fontService.tickDrawStage(FontConfig.drawStageUploadBatchSize);
-                    return drawInternal(fontService, text, x, y, normalizeColor(color), dropShadow, textContentMode,
-                            fontWeight, fontStyle, 1.0F);
+                    return drawBaselineAlignedStringInternal(fontService, text, x, y, normalizeColor(color), dropShadow,
+                            textContentMode, fontWeight, fontStyle, 1.0F);
                 }
             });
         }
@@ -242,7 +292,24 @@ public class DefaultFontRendererAdapter implements FontRendererAdapter {
      */
     public int drawStringScaled(String text, float x, float y, int color, boolean dropShadow,
             TextContentMode textContentMode, float renderScale) {
-        return drawStringScaled(text, x, y, color, dropShadow, textContentMode, UiFontWeight.NORMAL,
+        return drawBaselineAlignedStringScaled(text, x, y, color, dropShadow, textContentMode, renderScale);
+    }
+
+    /**
+     * 以指定 UI 缩放按字体 atlas 基线对齐契约收集字符串绘制数据。
+     *
+     * @param text 文本
+     * @param x 屏幕坐标 X
+     * @param y 屏幕坐标 Y
+     * @param color 颜色
+     * @param dropShadow 是否启用阴影
+     * @param textContentMode 文本内容解析模式
+     * @param renderScale UI 渲染缩放
+     * @return 绘制结束后的光标位置
+     */
+    public int drawBaselineAlignedStringScaled(String text, float x, float y, int color, boolean dropShadow,
+            TextContentMode textContentMode, float renderScale) {
+        return drawBaselineAlignedStringScaled(text, x, y, color, dropShadow, textContentMode, UiFontWeight.NORMAL,
                 UiFontStyle.NORMAL, renderScale);
     }
 
@@ -262,6 +329,26 @@ public class DefaultFontRendererAdapter implements FontRendererAdapter {
      */
     public int drawStringScaled(String text, float x, float y, int color, boolean dropShadow,
             TextContentMode textContentMode, UiFontWeight fontWeight, UiFontStyle fontStyle, float renderScale) {
+        return drawBaselineAlignedStringScaled(text, x, y, color, dropShadow, textContentMode, fontWeight, fontStyle,
+                renderScale);
+    }
+
+    /**
+     * 以指定 UI 缩放和基础字体样式按字体 atlas 基线对齐契约收集字符串绘制数据。
+     *
+     * @param text 文本
+     * @param x 屏幕坐标 X
+     * @param y 屏幕坐标 Y
+     * @param color 颜色
+     * @param dropShadow 是否启用阴影
+     * @param textContentMode 文本内容解析模式
+     * @param fontWeight 字体粗细
+     * @param fontStyle 字体样式
+     * @param renderScale UI 渲染缩放
+     * @return 绘制结束后的光标位置
+     */
+    public int drawBaselineAlignedStringScaled(String text, float x, float y, int color, boolean dropShadow,
+            TextContentMode textContentMode, UiFontWeight fontWeight, UiFontStyle fontStyle, float renderScale) {
         if (text == null || text.isEmpty()) {
             return (int) Math.ceil(x);
         }
@@ -273,8 +360,8 @@ public class DefaultFontRendererAdapter implements FontRendererAdapter {
                 public int run() {
                     fontService.initialize();
                     fontService.tickDrawStage(FontConfig.drawStageUploadBatchSize);
-                    return drawInternal(fontService, text, x, y, normalizeColor(color), dropShadow, textContentMode,
-                            fontWeight, fontStyle, Math.max(0.01F, renderScale));
+                    return drawBaselineAlignedStringInternal(fontService, text, x, y, normalizeColor(color), dropShadow,
+                            textContentMode, fontWeight, fontStyle, Math.max(0.01F, renderScale));
                 }
             });
         }
@@ -442,13 +529,14 @@ public class DefaultFontRendererAdapter implements FontRendererAdapter {
         List<String> lines = listFormattedStringToWidth(text, wrapWidth, textContentMode);
         int lineHeight = getLineHeight();
         for (String line : lines) {
-            drawString(line, x, y, color, false, textContentMode);
+            drawBaselineAlignedString(line, x, y, color, false, textContentMode);
             y += lineHeight;
         }
     }
 
-    private int drawInternal(FontService fontService, String text, float x, float y, int color, boolean dropShadow,
-            TextContentMode textContentMode, UiFontWeight fontWeight, UiFontStyle fontStyle, float renderScale) {
+    private int drawBaselineAlignedStringInternal(FontService fontService, String text, float x, float y, int color,
+            boolean dropShadow, TextContentMode textContentMode, UiFontWeight fontWeight, UiFontStyle fontStyle,
+            float renderScale) {
         TextLayoutService textLayoutService = fontService.getTextLayoutService();
         GlyphPageManager glyphPageManager = fontService.getGlyphPageManager();
         List<TextSegment> segments = textLayoutService.layoutSegments(text, color, textContentMode, fontWeight,
@@ -594,9 +682,9 @@ public class DefaultFontRendererAdapter implements FontRendererAdapter {
             markDeferredFlushDirtyIfNeeded();
         }
         if (hasGlyphQuad) {
-            fontService.getBatchRenderer().collect(fontType, pageIndex, textureId, textureSize, slotX, slotY,
-                    slotWidth, slotHeight, atlasBaselineX, atlasBaselineY, lineBaselineY, glyphSize, currentX, drawY,
-                    charSize, renderColor, style.isItalic(), glyphFlags);
+            fontService.getBatchRenderer().collectBaselineAlignedGlyph(fontType, pageIndex, textureId, textureSize,
+                    slotX, slotY, slotWidth, slotHeight, atlasBaselineX, atlasBaselineY, lineBaselineY, glyphSize,
+                    currentX, drawY, charSize, renderColor, style.isItalic(), glyphFlags);
         }
         collectDecorations(fontService, currentX, drawY, measuredWidth, charSize, renderScale, style, renderColor);
     }
