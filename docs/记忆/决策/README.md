@@ -48,3 +48,4 @@
 - [`DECISION-20260610-character-font-rules.md`](DECISION-20260610-character-font-rules.md) - 字符级字体覆盖采用 `FontMatcher` 规则优先表，不接入 CSS `font-family` 样式维度
 - [`DECISION-20260610-select-large-list-virtualization.md`](DECISION-20260610-select-large-list-virtualization.md) - `DocumentSelectControl` 大列表采用控件级虚拟化，保留完整数据语义但只渲染可视窗口 DOM
 - [`DECISION-20260611-font-size-before-latex-math.md`](DECISION-20260611-font-size-before-latex-math.md) - 先扩展字体引擎字号能力，再实现 LaTeX 风格数学公式排版，避免公式渲染绕开项目字体系统
+- [`DECISION-20260611-awt-ink-bounds-atlas.md`](DECISION-20260611-awt-ink-bounds-atlas.md) - 字体 atlas 引入 AWT baseline + actual pixel bounds 与可变 slot 契约，替代旧缩字号塞固定方格策略

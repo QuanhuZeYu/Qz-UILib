@@ -237,15 +237,21 @@ public class GlyphPageManager {
                 continue;
             }
 
-            GlyphPage glyphPage = allocatePage(fontType);
-            int slotIndex = glyphPage.allocateSlot();
-            glyphPage.upload(slotIndex, codepoint, fontType, result.getImage());
+            GlyphInfo glyphInfo = result.getGlyphInfo();
             int[] locations = runtimeTables.locationArray(fontType);
             byte[] flags = runtimeTables.flagsArray(fontType);
             float[] widths = runtimeTables.widthArray(fontType);
-            locations[codepoint] = GlyphRuntimeTables.packLocation(glyphPage.getPageIndex(), slotIndex);
-            flags[codepoint] = buildGlyphFlags(result.getGlyphInfo());
-            cacheGeneratedWidth(widths, codepoint, result.getGlyphInfo());
+            flags[codepoint] = buildGlyphFlags(glyphInfo);
+            cacheGeneratedWidth(widths, codepoint, glyphInfo);
+            if (glyphInfo == null || !glyphInfo.hasBitmap()) {
+                locations[codepoint] = GlyphRuntimeTables.LOCATION_NO_BITMAP;
+            } else {
+                GlyphPage glyphPage = allocatePage(fontType, glyphInfo);
+                GlyphPage.GlyphSlot slot = glyphPage.allocateSlot(glyphInfo.getSlotWidth(), glyphInfo.getSlotHeight());
+                glyphPage.upload(slot, codepoint, fontType, result.getImage());
+                locations[codepoint] = GlyphRuntimeTables.packLocation(glyphPage.getPageIndex(), slot.getSlotIndex());
+                cacheGlyphGeometry(fontType, codepoint, slot, glyphInfo);
+            }
             states[codepoint] = GlyphRuntimeTables.STATE_READY;
             runtimeTables.generationArray(fontType)[codepoint] = 0L;
             readyGlyphCount++;
@@ -398,14 +404,13 @@ public class GlyphPageManager {
 
         while (availableCount < maintainPageCount) {
             int nextPageIndex = runtimeTables.pageCount(fontType);
-            GlyphPage page = new GlyphPage(runtimeVersion, nextPageIndex, textureSize, glyphSize,
-                    runtimeTables.slotXByIndex, runtimeTables.slotYByIndex);
+            GlyphPage page = new GlyphPage(runtimeVersion, nextPageIndex, textureSize, glyphSize);
             runtimeTables.setPage(fontType, nextPageIndex, page);
             availableCount++;
         }
     }
 
-    private GlyphPage allocatePage(FontType fontType) {
+    private GlyphPage allocatePage(FontType fontType, GlyphInfo glyphInfo) {
         GlyphPage[] pages = runtimeTables.pages(fontType);
         int pageCount = runtimeTables.pageCount(fontType);
         for (int index = 0; index < pageCount; index++) {
@@ -413,14 +418,13 @@ public class GlyphPageManager {
             if (page == null || page.getRuntimeVersion() != runtimeVersion) {
                 continue;
             }
-            if (page.canAllocate()) {
+            if (page.canAllocate(glyphInfo.getSlotWidth(), glyphInfo.getSlotHeight())) {
                 return page;
             }
         }
 
         int nextPageIndex = pageCount;
-        GlyphPage page = new GlyphPage(runtimeVersion, nextPageIndex, textureSize, glyphSize,
-                runtimeTables.slotXByIndex, runtimeTables.slotYByIndex);
+        GlyphPage page = new GlyphPage(runtimeVersion, nextPageIndex, textureSize, glyphSize);
         runtimeTables.setPage(fontType, nextPageIndex, page);
         if (club.heiqi.uilib.Config.fontRuntimeDebug) {
             MyMod.LOG.info("字符页容量扩展，type={} pageIndex={}", fontType, Integer.valueOf(page.getPageIndex()));
@@ -441,11 +445,25 @@ public class GlyphPageManager {
                 + FontConfig.characterSpacing);
     }
 
+    private void cacheGlyphGeometry(FontType fontType, int codepoint, GlyphPage.GlyphSlot slot, GlyphInfo glyphInfo) {
+        runtimeTables.slotXArray(fontType)[codepoint] = slot.getX();
+        runtimeTables.slotYArray(fontType)[codepoint] = slot.getY();
+        runtimeTables.slotWidthArray(fontType)[codepoint] = glyphInfo.getSlotWidth();
+        runtimeTables.slotHeightArray(fontType)[codepoint] = glyphInfo.getSlotHeight();
+        runtimeTables.atlasBaselineXArray(fontType)[codepoint] = glyphInfo.getAtlasBaselineX();
+        runtimeTables.atlasBaselineYArray(fontType)[codepoint] = glyphInfo.getAtlasBaselineY();
+        runtimeTables.lineBaselineYArray(fontType)[codepoint] = glyphInfo.getLineBaselineY();
+    }
+
     private byte buildGlyphFlags(GlyphInfo glyphInfo) {
+        byte flags = 0;
         if (glyphInfo != null && glyphInfo.isColoredGlyph()) {
-            return GlyphRuntimeTables.GLYPH_FLAG_COLORED;
+            flags |= GlyphRuntimeTables.GLYPH_FLAG_COLORED;
         }
-        return 0;
+        if (glyphInfo != null && glyphInfo.hasBitmap()) {
+            flags |= GlyphRuntimeTables.GLYPH_FLAG_HAS_BITMAP;
+        }
+        return flags;
     }
 
     private int countRecoverableRequests(byte[] states) {

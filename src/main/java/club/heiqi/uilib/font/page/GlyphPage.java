@@ -28,14 +28,13 @@ public class GlyphPage {
     private final int pageIndex;
     private final int textureSize;
     private final int glyphSize;
-    private final int columnCount;
-    private final int rowCount;
-    private final short[] slotXByIndex;
-    private final short[] slotYByIndex;
-    private final int slotCount;
+    private final int slotGap;
     private ByteBuffer uploadBuffer;
     private int textureId;
     private int nextSlotIndex = 0;
+    private int cursorX;
+    private int cursorY;
+    private int shelfHeight;
 
     /**
      * 创建字符页。
@@ -44,19 +43,14 @@ public class GlyphPage {
      * @param textureSize 纹理边长
      * @param glyphSize 字符格大小
      */
-    public GlyphPage(int runtimeVersion, int pageIndex, int textureSize, int glyphSize,
-            short[] slotXByIndex, short[] slotYByIndex) {
+    public GlyphPage(int runtimeVersion, int pageIndex, int textureSize, int glyphSize) {
         this.runtimeVersion = runtimeVersion;
         this.pageIndex = pageIndex;
         this.textureSize = textureSize;
         this.glyphSize = glyphSize;
-        this.columnCount = Math.max(1, textureSize / glyphSize);
-        this.rowCount = Math.max(1, textureSize / glyphSize);
-        this.slotXByIndex = slotXByIndex;
-        this.slotYByIndex = slotYByIndex;
-        this.slotCount = Math.min(columnCount * rowCount, Math.min(slotXByIndex.length, slotYByIndex.length));
+        this.slotGap = 1;
 
-        uploadBuffer = BufferUtils.createByteBuffer(glyphSize * glyphSize * 4);
+        uploadBuffer = null;
         textureId = 0;
     }
 
@@ -66,19 +60,35 @@ public class GlyphPage {
      * @return 是否还能分配
      */
     public boolean canAllocate() {
-        return nextSlotIndex < slotCount;
+        return canAllocate(1, 1);
+    }
+
+    /**
+     * 判断当前页是否能容纳指定大小的槽位。
+     *
+     * @param slotWidth 槽位宽度
+     * @param slotHeight 槽位高度
+     * @return 是否能容纳
+     */
+    public boolean canAllocate(int slotWidth, int slotHeight) {
+        return probeSlot(slotWidth, slotHeight).fits;
     }
 
     /**
      * 分配下一个可用槽位。
      *
-     * @return 槽位索引
+     * @return 槽位信息
      */
-    public int allocateSlot() {
-        if (!canAllocate()) {
+    public GlyphSlot allocateSlot(int slotWidth, int slotHeight) {
+        SlotProbe probe = probeSlot(slotWidth, slotHeight);
+        if (!probe.fits) {
             throw new IllegalStateException("字符页容量不足");
         }
-        return nextSlotIndex++;
+        GlyphSlot slot = new GlyphSlot(nextSlotIndex++, probe.x, probe.y, probe.width, probe.height);
+        cursorX = probe.x + probe.width + slotGap;
+        cursorY = probe.y;
+        shelfHeight = Math.max(probe.shelfHeight, probe.height);
+        return slot;
     }
 
     /**
@@ -89,12 +99,13 @@ public class GlyphPage {
      * @param fontType 字重类型
      * @param image 字符图像
      */
-    public void upload(int slotIndex, int codepoint, club.heiqi.uilib.font.FontType fontType, BufferedImage image) {
-        if (slotIndex < 0 || slotIndex >= slotCount) {
+    public void upload(GlyphSlot slot, int codepoint, club.heiqi.uilib.font.FontType fontType, BufferedImage image) {
+        if (slot == null || slot.getSlotIndex() < 0) {
             throw new IllegalStateException("字符未分配页槽位");
         }
-        int slotX = slotXByIndex[slotIndex] & 0xFFFF;
-        int slotY = slotYByIndex[slotIndex] & 0xFFFF;
+        if (image == null || image.getWidth() != slot.getWidth() || image.getHeight() != slot.getHeight()) {
+            throw new IllegalArgumentException("字符图像尺寸与页槽位不一致");
+        }
         boolean logUploadDiagnostics = FontRuntimeDiagnostics.shouldLogGlyphUpload();
 
         GL11.glPushAttrib(GL11.GL_ALL_ATTRIB_BITS);
@@ -106,10 +117,10 @@ public class GlyphPage {
             GL11.glTexSubImage2D(
                     GL11.GL_TEXTURE_2D,
                     0,
-                    slotX,
-                    slotY,
-                    glyphSize,
-                    glyphSize,
+                    slot.getX(),
+                    slot.getY(),
+                    slot.getWidth(),
+                    slot.getHeight(),
                     GL11.GL_RGBA,
                     GL11.GL_UNSIGNED_BYTE,
                     toByteBuffer(image));
@@ -205,6 +216,25 @@ public class GlyphPage {
         }
     }
 
+    private SlotProbe probeSlot(int slotWidth, int slotHeight) {
+        int safeWidth = Math.max(1, slotWidth);
+        int safeHeight = Math.max(1, slotHeight);
+        if (safeWidth > textureSize || safeHeight > textureSize) {
+            return new SlotProbe(false, 0, 0, safeWidth, safeHeight, shelfHeight);
+        }
+
+        int nextX = cursorX;
+        int nextY = cursorY;
+        int nextShelfHeight = shelfHeight;
+        if (nextX > 0 && nextX + safeWidth > textureSize) {
+            nextX = 0;
+            nextY += nextShelfHeight + slotGap;
+            nextShelfHeight = 0;
+        }
+        boolean fits = nextY + safeHeight <= textureSize;
+        return new SlotProbe(fits, nextX, nextY, safeWidth, safeHeight, nextShelfHeight);
+    }
+
     private ByteBuffer toByteBuffer(BufferedImage image) {
         if (image.getType() != BufferedImage.TYPE_INT_ARGB) {
             BufferedImage converted = new BufferedImage(image.getWidth(), image.getHeight(), BufferedImage.TYPE_INT_ARGB);
@@ -248,5 +278,64 @@ public class GlyphPage {
         }
         buffer.flip();
         return buffer;
+    }
+
+    /**
+     * 字符页内已分配槽位。
+     */
+    public static final class GlyphSlot {
+
+        private final int slotIndex;
+        private final int x;
+        private final int y;
+        private final int width;
+        private final int height;
+
+        private GlyphSlot(int slotIndex, int x, int y, int width, int height) {
+            this.slotIndex = slotIndex;
+            this.x = x;
+            this.y = y;
+            this.width = width;
+            this.height = height;
+        }
+
+        public int getSlotIndex() {
+            return slotIndex;
+        }
+
+        public int getX() {
+            return x;
+        }
+
+        public int getY() {
+            return y;
+        }
+
+        public int getWidth() {
+            return width;
+        }
+
+        public int getHeight() {
+            return height;
+        }
+    }
+
+    private static final class SlotProbe {
+
+        private final boolean fits;
+        private final int x;
+        private final int y;
+        private final int width;
+        private final int height;
+        private final int shelfHeight;
+
+        private SlotProbe(boolean fits, int x, int y, int width, int height, int shelfHeight) {
+            this.fits = fits;
+            this.x = x;
+            this.y = y;
+            this.width = width;
+            this.height = height;
+            this.shelfHeight = shelfHeight;
+        }
     }
 }
