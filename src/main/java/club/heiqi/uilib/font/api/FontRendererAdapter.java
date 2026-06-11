@@ -20,6 +20,22 @@ public interface FontRendererAdapter {
     int drawString(String text, int x, int y, int color, boolean dropShadow);
 
     /**
+     * 按字体 atlas 基线对齐契约绘制字符串。
+     *
+     * <p>默认兼容实现仍转回旧入口，具体字体适配器可覆盖该方法暴露更精确的渲染语义。</p>
+     *
+     * @param text 文本
+     * @param x 横坐标
+     * @param y 纵坐标
+     * @param color 颜色
+     * @param dropShadow 是否启用阴影
+     * @return 绘制结束后的光标位置
+     */
+    default int drawBaselineAlignedString(String text, int x, int y, int color, boolean dropShadow) {
+        return drawString(text, x, y, color, dropShadow);
+    }
+
+    /**
      * 测量字符串宽度。
      *
      * @param text 文本

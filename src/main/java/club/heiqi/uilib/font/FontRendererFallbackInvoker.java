@@ -76,7 +76,8 @@ public final class FontRendererFallbackInvoker {
             return InvocationResult.unhandled();
         }
         try {
-            int width = DefaultFontRendererAdapter.getInstance().drawString(text, x, y, color, dropShadow);
+            int width = DefaultFontRendererAdapter.getInstance().drawBaselineAlignedString(text, x, y, color,
+                    dropShadow);
             applyVanillaDrawStringAlphaSideEffect();
             return InvocationResult.handled(Integer.valueOf(width));
         } catch (RuntimeException exception) {

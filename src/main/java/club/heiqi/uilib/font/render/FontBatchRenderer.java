@@ -151,6 +151,52 @@ public class FontBatchRenderer {
             int color,
             boolean italic,
             byte glyphFlags) {
+        collectBaselineAlignedGlyph(fontType, pageIndex, textureId, textureSize, slotX, slotY, slotWidth, slotHeight,
+                atlasBaselineX, atlasBaselineY, lineBaselineY, defaultGlyphSize, x, y, charSize, color, italic,
+                glyphFlags);
+    }
+
+    /**
+     * 按 atlas 基线契约收集一个 direct-index 定位的字符四边形到当前帧。
+     *
+     * @param fontType 字重类型
+     * @param pageIndex 字符页索引
+     * @param textureId 字符页纹理 ID
+     * @param textureSize 字符页纹理边长
+     * @param slotX 槽位 X
+     * @param slotY 槽位 Y
+     * @param slotWidth 槽位宽度
+     * @param slotHeight 槽位高度
+     * @param atlasBaselineX 槽位内基线 X
+     * @param atlasBaselineY 槽位内基线 Y
+     * @param lineBaselineY 默认字符格内文本基线 Y
+     * @param defaultGlyphSize 默认字符格大小
+     * @param x 绘制起点 X
+     * @param y 绘制起点 Y
+     * @param charSize 字体显示尺寸
+     * @param color 文本颜色
+     * @param italic 是否斜体
+     * @param glyphFlags 字形标记
+     */
+    public void collectBaselineAlignedGlyph(
+            FontType fontType,
+            int pageIndex,
+            int textureId,
+            int textureSize,
+            int slotX,
+            int slotY,
+            int slotWidth,
+            int slotHeight,
+            int atlasBaselineX,
+            int atlasBaselineY,
+            int lineBaselineY,
+            int defaultGlyphSize,
+            float x,
+            float y,
+            float charSize,
+            int color,
+            boolean italic,
+            byte glyphFlags) {
         if (pageIndex < 0 || textureId <= 0 || textureSize <= 0 || slotWidth <= 0 || slotHeight <= 0) {
             return;
         }

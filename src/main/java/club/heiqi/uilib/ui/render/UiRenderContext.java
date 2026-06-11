@@ -453,8 +453,8 @@ public class UiRenderContext {
         if (fontRenderer instanceof DefaultFontRendererAdapter) {
             DefaultFontRendererAdapter defaultFontRenderer = (DefaultFontRendererAdapter) fontRenderer;
             if (defaultFontRenderer.isDeferredFlushScopeActive()) {
-                defaultFontRenderer.drawStringScaled(text, x, y, color, shadow, textContentMode, resolvedFontWeight,
-                        resolvedFontStyle, UI_TEXT_SCALE);
+                defaultFontRenderer.drawBaselineAlignedStringScaled(text, x, y, color, shadow, textContentMode,
+                        resolvedFontWeight, resolvedFontStyle, UI_TEXT_SCALE);
                 notifyMainLayerContentChanged();
                 return;
             }
@@ -464,10 +464,10 @@ public class UiRenderContext {
         GL11.glTranslatef((float) x, (float) y, 0.0F);
         GL11.glScalef(UI_TEXT_SCALE, UI_TEXT_SCALE, 1.0F);
         if (fontRenderer instanceof DefaultFontRendererAdapter) {
-            ((DefaultFontRendererAdapter) fontRenderer).drawString(text, 0, 0, color, shadow, textContentMode,
-                    resolvedFontWeight, resolvedFontStyle);
+            ((DefaultFontRendererAdapter) fontRenderer).drawBaselineAlignedString(text, 0, 0, color, shadow,
+                    textContentMode, resolvedFontWeight, resolvedFontStyle);
         } else {
-            fontRenderer.drawString(text, 0, 0, color, shadow);
+            fontRenderer.drawBaselineAlignedString(text, 0, 0, color, shadow);
         }
         GL11.glPopMatrix();
         notifyMainLayerContentChanged();
