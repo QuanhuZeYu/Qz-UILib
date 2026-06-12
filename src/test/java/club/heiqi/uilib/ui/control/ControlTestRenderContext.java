@@ -8,6 +8,7 @@ import club.heiqi.uilib.ui.style.cascade.UiBorderRadiusResolver;
 import club.heiqi.uilib.ui.style.props.UiFontStyle;
 import club.heiqi.uilib.ui.style.props.UiFontWeight;
 import club.heiqi.uilib.ui.text.TextContentMode;
+import club.heiqi.uilib.ui.text.TextMeasureStyle;
 import club.heiqi.uilib.ui.style.values.UiSurfaceStyle;
 
 /**
@@ -34,6 +35,14 @@ final class ControlTestRenderContext extends UiRenderContext {
     public void drawText(String text, int x, int y, int color, boolean shadow, TextContentMode textContentMode,
             UiFontWeight fontWeight, UiFontStyle fontStyle) {
         textCalls.add(new TextCall(text, x, y, color, shadow, textContentMode, fontWeight, fontStyle));
+    }
+
+    @Override
+    protected void drawTextResolved(String text, int x, int y, int color, boolean shadow,
+            TextMeasureStyle resolvedStyle) {
+        TextMeasureStyle safeStyle = resolvedStyle == null ? TextMeasureStyle.DEFAULT : resolvedStyle;
+        textCalls.add(new TextCall(text, x, y, color, shadow, safeStyle.getTextContentMode(),
+                safeStyle.getFontWeight(), safeStyle.getFontStyle()));
     }
 
     @Override

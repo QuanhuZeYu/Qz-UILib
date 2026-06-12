@@ -20,6 +20,7 @@ import club.heiqi.uilib.ui.dom.ElementNode;
 import club.heiqi.uilib.ui.dom.UiDocument;
 import club.heiqi.uilib.ui.event.UiKeyEvent;
 import club.heiqi.uilib.ui.style.props.UiAlignItems;
+import club.heiqi.uilib.ui.style.props.UiBoxSizing;
 import club.heiqi.uilib.ui.style.props.UiBorderStyle;
 import club.heiqi.uilib.ui.style.props.UiCursor;
 import club.heiqi.uilib.ui.style.props.UiDisplay;
@@ -39,17 +40,18 @@ public final class DocumentAutocompleteInputControl {
 
     private static final int DEFAULT_OPTION_HEIGHT = 28;
     private static final int DEFAULT_MAX_VISIBLE_OPTIONS = 6;
+    private static final int DEFAULT_OVERSCAN_OPTIONS = 3;
     private static final int DEFAULT_MAX_SUGGESTION_COUNT = 128;
     private static final String PRESERVE_FOCUS_ON_MOUSE_DOWN_ATTRIBUTE = "data-qz-preserve-focus-on-mousedown";
     private static final String ANCHORED_TOP_LAYER_LISTBOX_ATTRIBUTE = "data-qz-anchored-listbox";
+    private static final String SUGGESTION_INDEX_ATTRIBUTE = "data-qz-suggestion-index";
 
-    private final UiDocument document;
     private final DocumentTextInputControl textInputControl;
     private final ElementNode element;
     private final ElementNode popupElement;
+    private final DocumentVirtualizedOptionList virtualizedOptions;
     private final List<String> options = new ArrayList<String>();
     private final List<String> suggestions = new ArrayList<String>();
-    private final List<ElementNode> suggestionElements = new ArrayList<ElementNode>();
     private final DocumentElementFocusHandler baseFocusHandler;
     private final DocumentAutocompleteSuggestionProvider optionsSuggestionProvider;
     private DocumentAutocompleteSuggestionProvider suggestionProvider;
@@ -88,10 +90,22 @@ public final class DocumentAutocompleteInputControl {
      * @param options 固定候选项
      */
     public DocumentAutocompleteInputControl(UiDocument document, String... options) {
-        this.document = document;
         this.textInputControl = new DocumentTextInputControl(document);
         this.element = textInputControl.getElement();
         this.popupElement = document.div();
+        this.virtualizedOptions = new DocumentVirtualizedOptionList(document, popupElement, DEFAULT_OPTION_HEIGHT,
+                maxVisibleOptions, DEFAULT_OVERSCAN_OPTIONS,
+                new DocumentVirtualizedOptionList.OptionViewInitializer() {
+                    @Override
+                    public void initialize(final DocumentVirtualizedOptionList.OptionView optionView) {
+                        configureSuggestionView(optionView);
+                    }
+                }, new DocumentVirtualizedOptionList.OptionViewBinder() {
+                    @Override
+                    public void bind(DocumentVirtualizedOptionList.OptionView optionView, int itemIndex) {
+                        bindSuggestionView(optionView, itemIndex);
+                    }
+                });
         this.baseFocusHandler = element.getFocusHandler();
         this.optionsSuggestionProvider = new DocumentAutocompleteSuggestionProvider() {
             @Override
@@ -288,6 +302,7 @@ public final class DocumentAutocompleteInputControl {
     public DocumentAutocompleteInputControl setMaxVisibleOptions(int maxVisibleOptions) {
         this.maxVisibleOptions = Math.max(1, maxVisibleOptions);
         popupElement.style().setMaxHeight(UiStyleLength.px(DEFAULT_OPTION_HEIGHT * this.maxVisibleOptions));
+        virtualizedOptions.setMaxVisibleOptions(this.maxVisibleOptions);
         revealHighlightedOption();
         return this;
     }
@@ -429,6 +444,40 @@ public final class DocumentAutocompleteInputControl {
                 .setBorderRadius(UiStyleLength.px(4))
                 .setZIndex(20);
         element.append(popupElement);
+    }
+
+    private void configureSuggestionView(final DocumentVirtualizedOptionList.OptionView optionView) {
+        ElementNode option = optionView.getElement();
+        option.setAttribute("role", "option");
+        option.style()
+                .setDisplay(UiDisplay.FLEX)
+                .setBoxSizing(UiBoxSizing.BORDER_BOX)
+                .setFlexDirection(UiFlexDirection.ROW)
+                .setAlignItems(UiAlignItems.CENTER)
+                .setJustifyContent(UiJustifyContent.START)
+                .setWidth(UiStyleLength.percent(1.0F))
+                .setHeight(UiStyleLength.px(DEFAULT_OPTION_HEIGHT))
+                .setCursor(UiCursor.POINTER)
+                .setPadding(UiStyleLength.px(8));
+        option.setClickHandler(new DocumentElementClickHandler() {
+            @Override
+            public boolean onClick(DocumentElementClickEvent event) {
+                int suggestionIndex = optionView.getItemIndex();
+                if (!enabled || event.getButton() != 0 || suggestionIndex < 0) {
+                    return false;
+                }
+                selectSuggestion(suggestionIndex, false, 0, event.getButton(), event.getTimeNanos());
+                return true;
+            }
+        });
+    }
+
+    private void bindSuggestionView(DocumentVirtualizedOptionList.OptionView optionView, int suggestionIndex) {
+        optionView.getText().setText(suggestions.get(suggestionIndex));
+        optionView.getElement().setAttribute(SUGGESTION_INDEX_ATTRIBUTE, String.valueOf(suggestionIndex));
+        optionView.getElement().setAttribute("aria-posinset", String.valueOf(suggestionIndex + 1));
+        optionView.getElement().setAttribute("aria-setsize", String.valueOf(suggestions.size()));
+        updateSuggestionViewVisualState(optionView);
     }
 
     private void installHandlers() {
@@ -587,40 +636,13 @@ public final class DocumentAutocompleteInputControl {
     }
 
     private void rebuildSuggestionElements() {
-        popupElement.clearChildren();
-        suggestionElements.clear();
-        for (int index = 0; index < suggestions.size(); index++) {
-            final int suggestionIndex = index;
-            ElementNode option = document.option();
-            option.appendText(suggestions.get(index));
-            option.setAttribute("role", "option");
-            option.style()
-                    .setDisplay(UiDisplay.FLEX)
-                    .setFlexDirection(UiFlexDirection.ROW)
-                    .setAlignItems(UiAlignItems.CENTER)
-                    .setJustifyContent(UiJustifyContent.START)
-                    .setWidth(UiStyleLength.percent(1.0F))
-                    .setHeight(UiStyleLength.px(DEFAULT_OPTION_HEIGHT))
-                    .setCursor(UiCursor.POINTER)
-                    .setPadding(UiStyleLength.px(8));
-            option.setClickHandler(new DocumentElementClickHandler() {
-                @Override
-                public boolean onClick(DocumentElementClickEvent event) {
-                    if (!enabled || event.getButton() != 0) {
-                        return false;
-                    }
-                    selectSuggestion(suggestionIndex, false, 0, event.getButton(), event.getTimeNanos());
-                    return true;
-                }
-            });
-            suggestionElements.add(option);
-            popupElement.append(option);
-        }
+        virtualizedOptions.setItemCount(suggestions.size(), true);
         if (suggestions.isEmpty()) {
             highlightedIndex = -1;
         } else if (highlightedIndex < 0 || highlightedIndex >= suggestions.size()) {
             highlightedIndex = 0;
         }
+        updateRenderedSuggestionVisualState();
     }
 
     private void moveHighlight(int delta) {
@@ -698,17 +720,25 @@ public final class DocumentAutocompleteInputControl {
                 .setBackgroundColor(enabled ? popupBackgroundColor : disabledBackgroundColor)
                 .setBorderColor(popupBorderColor);
         element.setAttribute("aria-expanded", String.valueOf(open));
-        for (int index = 0; index < suggestionElements.size(); index++) {
-            ElementNode option = suggestionElements.get(index);
-            boolean highlighted = index == highlightedIndex;
-            option.setAttribute("aria-selected", String.valueOf(highlighted));
-            option.style()
-                    .setBackgroundColor(enabled ? (highlighted ? highlightedOptionBackgroundColor
-                            : optionBackgroundColor) : disabledBackgroundColor)
-                    .setCursor(enabled ? UiCursor.POINTER : UiCursor.NOT_ALLOWED)
-                    .setTextColor(enabled ? (highlighted ? highlightedOptionTextColor : optionTextColor)
-                            : disabledTextColor);
+        virtualizedOptions.refreshForCurrentScroll();
+        updateRenderedSuggestionVisualState();
+    }
+
+    private void updateRenderedSuggestionVisualState() {
+        for (int viewIndex = 0; viewIndex < virtualizedOptions.getOptionViewCount(); viewIndex++) {
+            updateSuggestionViewVisualState(virtualizedOptions.getOptionView(viewIndex));
         }
+    }
+
+    private void updateSuggestionViewVisualState(DocumentVirtualizedOptionList.OptionView optionView) {
+        boolean highlighted = optionView.getItemIndex() == highlightedIndex;
+        optionView.getElement().setAttribute("aria-selected", String.valueOf(highlighted));
+        optionView.getElement().style()
+                .setBackgroundColor(enabled ? (highlighted ? highlightedOptionBackgroundColor
+                        : optionBackgroundColor) : disabledBackgroundColor)
+                .setCursor(enabled ? UiCursor.POINTER : UiCursor.NOT_ALLOWED)
+                .setTextColor(enabled ? (highlighted ? highlightedOptionTextColor : optionTextColor)
+                        : disabledTextColor);
     }
 
     /**
@@ -749,20 +779,10 @@ public final class DocumentAutocompleteInputControl {
     }
 
     private void revealHighlightedOption() {
-        if (highlightedIndex < 0 || highlightedIndex >= suggestionElements.size()) {
+        if (highlightedIndex < 0 || highlightedIndex >= suggestions.size()) {
             return;
         }
-        int currentScrollTop = popupElement.getScrollTop();
-        int viewportHeight = DEFAULT_OPTION_HEIGHT * maxVisibleOptions;
-        int optionTop = highlightedIndex * DEFAULT_OPTION_HEIGHT;
-        int optionBottom = optionTop + DEFAULT_OPTION_HEIGHT;
-        int targetScrollTop = currentScrollTop;
-        if (optionTop < currentScrollTop) {
-            targetScrollTop = optionTop;
-        } else if (optionBottom > currentScrollTop + viewportHeight) {
-            targetScrollTop = optionBottom - viewportHeight;
-        }
-        popupElement.scrollTo(popupElement.getScrollLeft(), Math.max(0, targetScrollTop));
+        virtualizedOptions.scrollToIndex(highlightedIndex);
     }
 
     private void fireChange() {
