@@ -30,7 +30,7 @@ final class LwjglxPollingInputBackend implements UiInputBackend {
     private static final int MOUSE_BUTTON_COUNT = 8;
 
     private final UiInputService inputService;
-    private final boolean collectKeyboardState;
+    private volatile boolean collectKeyboardState;
     private final boolean[] previousKeyStates = new boolean[KEYBOARD_SIZE];
     private final boolean[] previousMouseButtonStates = new boolean[MOUSE_BUTTON_COUNT];
     private final MouseTotalScrollReader totalScrollReader = MouseTotalScrollReader.create();
@@ -46,6 +46,13 @@ final class LwjglxPollingInputBackend implements UiInputBackend {
     LwjglxPollingInputBackend(UiInputService inputService, boolean collectKeyboardState) {
         this.inputService = inputService;
         this.collectKeyboardState = collectKeyboardState;
+    }
+
+    /**
+     * 启用键盘状态差分收集，供增强输入后端注册失败时兜底。
+     */
+    void enableKeyboardStateCollection() {
+        collectKeyboardState = true;
     }
 
     @Override

@@ -23,6 +23,7 @@ final class Lwjgl3ifyInputBackend implements UiInputBackend {
     private static final AtomicBoolean UNAVAILABLE_LOGGED = new AtomicBoolean(false);
     private static final AtomicBoolean INPUT_FIELD_REFLECTION_LOGGED = new AtomicBoolean(false);
     private static final AtomicBoolean INPUT_EVENTS_METHOD_LOGGED = new AtomicBoolean(false);
+    private static final AtomicBoolean KEYBOARD_POLLING_FALLBACK_LOGGED = new AtomicBoolean(false);
     private static final String INPUT_EVENTS_CLASS_NAME = "me.eigenraven.lwjgl3ify.api.InputEvents";
     private static final String KEYBOARD_LISTENER_CLASS_NAME =
             "me.eigenraven.lwjgl3ify.api.InputEvents$KeyboardListener";
@@ -36,15 +37,33 @@ final class Lwjgl3ifyInputBackend implements UiInputBackend {
     private static final short SDL_KMOD_RGUI = 0x0800;
 
     private final UiInputService inputService;
-    private final LwjglxPollingInputBackend pollingBackend;
+    private final UiInputBackend pollingBackend;
+    private final Runnable keyboardPollingFallback;
     private final Class<?> inputEventsClass;
     private final Method addKeyboardListenerMethod;
     private final Object keyboardListener;
 
     private Lwjgl3ifyInputBackend(UiInputService inputService, Class<?> inputEventsClass,
             Method addKeyboardListenerMethod, Object keyboardListener) {
+        this(inputService, inputEventsClass, addKeyboardListenerMethod, keyboardListener,
+                new LwjglxPollingInputBackend(inputService, false));
+    }
+
+    private Lwjgl3ifyInputBackend(UiInputService inputService, Class<?> inputEventsClass,
+            Method addKeyboardListenerMethod, Object keyboardListener, LwjglxPollingInputBackend pollingBackend) {
+        this(inputService, inputEventsClass, addKeyboardListenerMethod, keyboardListener, pollingBackend,
+                new KeyboardPollingFallback(pollingBackend));
+    }
+
+    /**
+     * 创建指定轮询后端的适配器实例，供包内测试替身验证降级路径。
+     */
+    Lwjgl3ifyInputBackend(UiInputService inputService, Class<?> inputEventsClass,
+            Method addKeyboardListenerMethod, Object keyboardListener, UiInputBackend pollingBackend,
+            Runnable keyboardPollingFallback) {
         this.inputService = inputService;
-        this.pollingBackend = new LwjglxPollingInputBackend(inputService, false);
+        this.pollingBackend = pollingBackend;
+        this.keyboardPollingFallback = keyboardPollingFallback;
         this.inputEventsClass = inputEventsClass;
         this.addKeyboardListenerMethod = addKeyboardListenerMethod;
         this.keyboardListener = keyboardListener;
@@ -89,11 +108,15 @@ final class Lwjgl3ifyInputBackend implements UiInputBackend {
         try {
             addKeyboardListenerMethod.invoke(null, keyboardListener);
         } catch (IllegalAccessException exception) {
-            logInputEventsMethodFailureOnce("addKeyboardListener", exception);
+            enableKeyboardPollingFallback(exception);
         } catch (InvocationTargetException exception) {
-            logInputEventsMethodFailureOnce("addKeyboardListener", exception);
+            enableKeyboardPollingFallback(exception);
         } catch (IllegalArgumentException exception) {
-            logInputEventsMethodFailureOnce("addKeyboardListener", exception);
+            enableKeyboardPollingFallback(exception);
+        } catch (SecurityException exception) {
+            enableKeyboardPollingFallback(exception);
+        } catch (LinkageError error) {
+            enableKeyboardPollingFallback(error);
         }
     }
 
@@ -139,22 +162,39 @@ final class Lwjgl3ifyInputBackend implements UiInputBackend {
         }
     }
 
+    private void enableKeyboardPollingFallback(Throwable throwable) {
+        keyboardPollingFallback.run();
+        if (KEYBOARD_POLLING_FALLBACK_LOGGED.compareAndSet(false, true)) {
+            LOG.warn("UILib 注册 lwjgl3ify InputEvents 键盘监听失败，已启用 LWJGLX 键盘轮询兜底；文本输入与 IME 将降级",
+                    throwable);
+        }
+    }
+
     private static void handleKeyEvent(UiInputService inputService, Object event) {
-        int keyCode = readIntField(event, "lwjgl2KeyCode", 0);
-        UiKeyEvent.Action action = mapAction(readObjectField(event, "action", null));
-        if (inputService.isSuppressedCollectedKeyEvent(keyCode, action)) {
+        handleKeyEvent(inputService, event, Sys.getNanoTime());
+    }
+
+    static void handleKeyEvent(UiInputService inputService, Object event, long timeNanos) {
+        UiKeyEvent keyEvent = createKeyEvent(event, timeNanos);
+        if (inputService.isSuppressedCollectedKeyEvent(keyEvent.getKeyCode(), keyEvent.getAction())) {
             return;
         }
+        inputService.addKeyEvent(keyEvent);
+    }
+
+    private static UiKeyEvent createKeyEvent(Object event, long timeNanos) {
+        int keyCode = readIntField(event, "lwjgl2KeyCode", 0);
+        UiKeyEvent.Action action = mapAction(readObjectField(event, "action", null));
         int glfwKeyCode = readFirstIntField(event, "glfwKeyCode", "sdlKeyCode", 0);
         int glfwScanCode = readFirstIntField(event, "glfwScanCode", "sdlScanCode", 0);
         short modifierMask = readShortField(event, "sdlKeyModifiers", (short) 0);
 
-        inputService.addKeyEvent(new UiKeyEvent(keyCode, glfwKeyCode, glfwScanCode, action,
+        return new UiKeyEvent(keyCode, glfwKeyCode, glfwScanCode, action,
                 readBooleanField(event, "controlPressed", hasAnyFlag(modifierMask, SDL_KMOD_LCTRL, SDL_KMOD_RCTRL)),
                 readBooleanField(event, "shiftPressed", hasAnyFlag(modifierMask, SDL_KMOD_LSHIFT, SDL_KMOD_RSHIFT)),
                 readBooleanField(event, "altPressed", hasAnyFlag(modifierMask, SDL_KMOD_LALT, SDL_KMOD_RALT)),
                 readBooleanField(event, "superPressed", hasAnyFlag(modifierMask, SDL_KMOD_LGUI, SDL_KMOD_RGUI)),
-                Sys.getNanoTime()));
+                timeNanos);
     }
 
     private static void handleTextEvent(UiInputService inputService, Object event) {
@@ -330,6 +370,20 @@ final class Lwjgl3ifyInputBackend implements UiInputBackend {
                 return Boolean.valueOf(args != null && args.length == 1 && proxy == args[0]);
             }
             return null;
+        }
+    }
+
+    private static final class KeyboardPollingFallback implements Runnable {
+
+        private final LwjglxPollingInputBackend pollingBackend;
+
+        private KeyboardPollingFallback(LwjglxPollingInputBackend pollingBackend) {
+            this.pollingBackend = pollingBackend;
+        }
+
+        @Override
+        public void run() {
+            pollingBackend.enableKeyboardStateCollection();
         }
     }
 }

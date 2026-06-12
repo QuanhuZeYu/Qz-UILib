@@ -38,6 +38,15 @@ public class UiInputService {
     }
 
     /**
+     * 创建使用指定输入后端的服务实例，供包内测试替身使用。
+     *
+     * @param backend 输入后端
+     */
+    UiInputService(UiInputBackend backend) {
+        this.backend = backend;
+    }
+
+    /**
      * 获取 UI 输入服务单例。
      *
      * @return 输入服务

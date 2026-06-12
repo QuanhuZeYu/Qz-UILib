@@ -12,7 +12,7 @@
 
 ## 最终选择
 
-采用方案 3：`UiInputService` 保持 facade 与调用点不变，内部抽 `UiInputBackend`；优先创建 `Lwjgl3ifyInputBackend` 反射订阅 `InputEvents`，缺失时回退 `LwjglxPollingInputBackend`。
+采用方案 3：`UiInputService` 保持 facade 与调用点不变，内部抽 `UiInputBackend`；优先创建 `Lwjgl3ifyInputBackend` 反射订阅 `InputEvents`，缺失时回退 `LwjglxPollingInputBackend`。若 `InputEvents` 类存在但键盘监听注册失败，继续使用同一轮询后端启用键盘状态差分兜底，避免 collected 键盘输入静默丢失。
 
 ## 选择原因
 
@@ -26,10 +26,11 @@
 - `dependencies.gradle` 中 `lwjgl3ify` 改为 `devOnlyNonPublishable`。
 - 测试源码通过 `testCompileOnly` 读取 `Keyboard.KEY_*` 常量，不把 `lwjgl3ify` 加回发布依赖；纯 JVM 渲染测试不应依赖真实 OpenGL 状态调用。
 - `src/main/java/club/heiqi/uilib/ui/input/` 新增内部输入后端协作者。
-- `LwjglxPollingInputBackend` fallback 只承诺基础按键、鼠标与滚轮；复杂文本输入和 IME 明确降级。
+- `LwjglxPollingInputBackend` fallback 只承诺基础按键、鼠标与滚轮；复杂文本输入和 IME 明确降级。`InputEvents` 注册失败时键盘可兜底到轮询，文本事件仍不会由轮询后端合成。
 
 ## 后续注意事项
 
 - HUD immediate 与 collected 输入去重仍依赖 `UiInputService.suppressNextCollectedKeyboardEvent(...)`，后续改输入链路时必须保留同帧去重窗口。
 - 滚轮优先读取 `Mouse.totalScrollAmount`；无该扩展字段时再降级到事件滚轮。
+- 输入后端测试应使用包内替身或纯映射 helper，避免纯 JVM 测试为了类加载真实 `org.lwjgl.sdl` / OpenGL 运行态而新增 legacy LWJGL 运行依赖。
 - 后续若继续拆解渲染或字体依赖，应单独立项，不与 `lwjgl3ify` Mod API 解耦混在一起。
