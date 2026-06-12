@@ -114,6 +114,8 @@ Minecraft.getMinecraft().displayGuiScreen(UiDocumentScreens.createDocumentScreen
 
 `UiInputTickListener` 负责每帧刷新 `UiInputService` 与 `UiScreenManager`，正式 UI 仍需要这条输入路径。
 
+`UiInputService` 对外仍是稳定 facade：运行时优先通过内部 `Lwjgl3ifyInputBackend` 反射订阅 `InputEvents`，缺少该 API 时回退 `LwjglxPollingInputBackend`。回退后端只覆盖基础按键、鼠标和滚轮；现代文本输入与 IME 事件仍需要 LWJGL3ify `InputEvents`。
+
 保留建议：
 
 - 保留 `UiInputService.getInstance().initialize()`。

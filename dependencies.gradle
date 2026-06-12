@@ -40,7 +40,8 @@ dependencies {
 
     devOnlyNonPublishable(project.elytraModpackVersion.gtnhdev("GT5-Unofficial"))
     devOnlyNonPublishable(project.elytraModpackVersion.gtnhdev("LootGames"))
-    implementation(project.elytraModpackVersion.gtnhdev("lwjgl3ify"))
+    devOnlyNonPublishable(project.elytraModpackVersion.gtnhdev("lwjgl3ify"))
+    testCompileOnly(project.elytraModpackVersion.gtnhdev("lwjgl3ify"))
     devOnlyNonPublishable("ganymedes01.etfuturum:Et-Futurum-Requiem:${elytraModpackVersion["Et-Futurum-Requiem"]}")
     devOnlyNonPublishable(project.elytraModpackVersion.gtnhdev("GTNHLib"))
     devOnlyNonPublishable(project.elytraModpackVersion.gtnhdev("NewHorizonsCoreMod"))

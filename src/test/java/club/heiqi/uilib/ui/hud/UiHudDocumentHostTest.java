@@ -39,6 +39,7 @@ import club.heiqi.uilib.ui.style.values.UiSurfaceStyle;
 import club.heiqi.uilib.ui.text.DefaultTextMeasureService;
 import club.heiqi.uilib.ui.text.TextContentMode;
 import club.heiqi.uilib.ui.text.TextMeasureService;
+import club.heiqi.uilib.ui.text.TextMeasureStyle;
 
 /**
  * `UiHudDocumentHost` 的稳定契约测试。
@@ -1255,8 +1256,19 @@ public class UiHudDocumentHostTest {
         }
 
         @Override
+        public void drawText(String text, int x, int y, int color, boolean shadow, TextMeasureStyle textStyle) {
+            textCalls.add(text);
+        }
+
+        @Override
         protected void drawTextResolved(String text, int x, int y, int color, boolean shadow,
                 TextContentMode textContentMode, UiFontWeight resolvedFontWeight, UiFontStyle resolvedFontStyle) {
+            textCalls.add(text);
+        }
+
+        @Override
+        protected void drawTextResolved(String text, int x, int y, int color, boolean shadow,
+                TextMeasureStyle resolvedStyle) {
             textCalls.add(text);
         }
 

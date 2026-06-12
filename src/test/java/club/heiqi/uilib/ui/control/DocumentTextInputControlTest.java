@@ -21,6 +21,7 @@ import club.heiqi.uilib.ui.style.cascade.UiBorderRadiusResolver;
 import club.heiqi.uilib.ui.style.props.UiBorderStyle;
 import club.heiqi.uilib.ui.style.values.UiStyleLength;
 import club.heiqi.uilib.ui.text.TextMeasureService;
+import club.heiqi.uilib.ui.text.TextMeasureStyle;
 import club.heiqi.uilib.ui.style.values.UiSurfaceStyle;
 
 /**
@@ -582,6 +583,17 @@ public class DocumentTextInputControlTest {
         @Override
         public void drawText(String text, int x, int y, int color, boolean shadow,
                 club.heiqi.uilib.ui.text.TextContentMode textContentMode) {
+            textCalls.add(new TextCall(text));
+        }
+
+        @Override
+        public void drawText(String text, int x, int y, int color, boolean shadow, TextMeasureStyle textStyle) {
+            textCalls.add(new TextCall(text));
+        }
+
+        @Override
+        protected void drawTextResolved(String text, int x, int y, int color, boolean shadow,
+                TextMeasureStyle resolvedStyle) {
             textCalls.add(new TextCall(text));
         }
 
