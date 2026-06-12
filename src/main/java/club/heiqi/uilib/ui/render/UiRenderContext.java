@@ -20,6 +20,7 @@ import club.heiqi.uilib.ui.style.cascade.UiBorderRadiusResolver;
 import club.heiqi.uilib.ui.style.values.UiSurfaceStyle;
 import club.heiqi.uilib.ui.style.values.UiTransform;
 import club.heiqi.uilib.ui.text.TextContentMode;
+import club.heiqi.uilib.ui.text.TextMeasureStyle;
 
 /**
  * UI 渲染上下文。
@@ -437,6 +438,21 @@ public class UiRenderContext {
     }
 
     /**
+     * 使用语义化文本样式绘制文本。
+     *
+     * @param text 文本
+     * @param x 绘制 X
+     * @param y 绘制 Y
+     * @param color ARGB 颜色
+     * @param shadow 是否带阴影
+     * @param textStyle 文本样式快照
+     */
+    public void drawText(String text, int x, int y, int color, boolean shadow, TextMeasureStyle textStyle) {
+        TextMeasureStyle resolvedStyle = textStyle == null ? TextMeasureStyle.DEFAULT : textStyle;
+        drawTextResolved(text, x, y, color, shadow, resolvedStyle);
+    }
+
+    /**
      * 使用已归一化的字体样式执行实际文本绘制。
      *
      * @param text 文本
@@ -469,6 +485,35 @@ public class UiRenderContext {
         } else {
             fontRenderer.drawBaselineAlignedString(text, 0, 0, color, shadow);
         }
+        GL11.glPopMatrix();
+        notifyMainLayerContentChanged();
+    }
+
+    /**
+     * 使用已归一化的语义化文本样式执行实际文本绘制。
+     *
+     * @param text 文本
+     * @param x 绘制 X
+     * @param y 绘制 Y
+     * @param color ARGB 颜色
+     * @param shadow 是否带阴影
+     * @param resolvedStyle 文本样式快照
+     */
+    protected void drawTextResolved(String text, int x, int y, int color, boolean shadow,
+            TextMeasureStyle resolvedStyle) {
+        TextMeasureStyle safeStyle = resolvedStyle == null ? TextMeasureStyle.DEFAULT : resolvedStyle;
+        if (fontRenderer instanceof DefaultFontRendererAdapter) {
+            DefaultFontRendererAdapter defaultFontRenderer = (DefaultFontRendererAdapter) fontRenderer;
+            defaultFontRenderer.drawBaselineAlignedStringPx(text, x, y, color, shadow, safeStyle);
+            notifyMainLayerContentChanged();
+            return;
+        }
+
+        float renderScale = safeStyle.getFontSizePx() / (float) Math.max(1, fontRenderer.getLineHeight());
+        GL11.glPushMatrix();
+        GL11.glTranslatef((float) x, (float) y, 0.0F);
+        GL11.glScalef(renderScale, renderScale, 1.0F);
+        fontRenderer.drawBaselineAlignedString(text, 0, 0, color, shadow);
         GL11.glPopMatrix();
         notifyMainLayerContentChanged();
     }
@@ -577,6 +622,23 @@ public class UiRenderContext {
                     * UI_TEXT_SCALE);
         }
         return Math.round(fontRenderer.getStringWidth(text) * UI_TEXT_SCALE);
+    }
+
+    /**
+     * 使用语义化文本样式测量文本宽度。
+     *
+     * @param text 文本
+     * @param textStyle 文本样式快照
+     * @return UI 坐标系下的文本宽度
+     */
+    public int measureTextWidth(String text, TextMeasureStyle textStyle) {
+        TextMeasureStyle resolvedStyle = textStyle == null ? TextMeasureStyle.DEFAULT : textStyle;
+        if (fontRenderer instanceof DefaultFontRendererAdapter) {
+            DefaultFontRendererAdapter defaultFontRenderer = (DefaultFontRendererAdapter) fontRenderer;
+            return defaultFontRenderer.getStringWidth(text, resolvedStyle);
+        }
+        int rawWidth = fontRenderer.getStringWidth(text);
+        return Math.round(rawWidth * resolvedStyle.getFontSizePx() / (float) Math.max(1, fontRenderer.getLineHeight()));
     }
 
     public int getTextLineHeight() {

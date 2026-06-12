@@ -343,6 +343,8 @@ public final class UiStyleResolver {
                 UiTextTransform.NONE, parentStyle == null ? UiTextTransform.NONE : parentStyle.getTextTransform());
         UiStyleLength textIndent = cascade(inlineStyle, matchingRules, UiStyleProperty.TEXT_INDENT, UiStyleLength.px(0),
                 parentStyle == null ? UiStyleLength.px(0) : parentStyle.getTextIndent());
+        UiStyleLength fontSize = cascade(inlineStyle, matchingRules, UiStyleProperty.FONT_SIZE, UiStyleLength.px(18),
+                parentStyle == null ? UiStyleLength.px(18) : parentStyle.getFontSize());
         UiFontWeight fontWeight = cascade(inlineStyle, matchingRules, UiStyleProperty.FONT_WEIGHT, UiFontWeight.NORMAL,
                 parentStyle == null ? UiFontWeight.NORMAL : parentStyle.getFontWeight());
         UiFontStyle fontStyle = cascade(inlineStyle, matchingRules, UiStyleProperty.FONT_STYLE, UiFontStyle.NORMAL,
@@ -414,7 +416,7 @@ public final class UiStyleResolver {
                 lineHeight, textAlign, whiteSpace, textOverflow, visibility,
                 minWidth, maxWidth, minHeight, maxHeight, flexBasis, alignSelf, flexWrap,
                 boxShadow, borderStyle, borderCollapse, cursor, borderRadiusCorners, backgroundImage, textDecoration,
-                textShadow, textTransform, textIndent, fontWeight, fontStyle,
+                textShadow, textTransform, textIndent, fontSize, fontWeight, fontStyle,
                 pointerEvents, outline, borderWidthSides, borderColors, letterSpacing, wordBreak, overflowWrap,
                 aspectRatio, objectFit, content, scrollbarColor, scrollbarWidth, listStyleType, transform);
     }

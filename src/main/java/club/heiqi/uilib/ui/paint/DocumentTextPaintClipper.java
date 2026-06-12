@@ -6,18 +6,16 @@ import club.heiqi.uilib.ui.layout.DocumentEffectChain;
 import club.heiqi.uilib.ui.layout.DocumentLayoutTextRun;
 import club.heiqi.uilib.ui.layout.DocumentVisualTraversal.ClipContext;
 import club.heiqi.uilib.ui.style.cascade.ComputedStyle;
-import club.heiqi.uilib.ui.style.props.UiFontStyle;
-import club.heiqi.uilib.ui.style.props.UiFontWeight;
 import club.heiqi.uilib.ui.style.values.UiTextShadow;
 import club.heiqi.uilib.ui.text.TextContentMode;
 import club.heiqi.uilib.ui.text.TextMeasureService;
+import club.heiqi.uilib.ui.text.TextMeasureStyle;
 
 /**
  * 文本绘制阶段的保守可见性裁剪器。
  */
 final class DocumentTextPaintClipper {
 
-    private static final float UI_TEXT_SCALE = 2.0F;
     private static final int TEXT_VISIBILITY_PADDING = 8;
     private static final int TEXT_HORIZONTAL_OVERDRAW = 16;
     private static final int LONG_TEXT_CLIP_THRESHOLD = 64;
@@ -71,7 +69,7 @@ final class DocumentTextPaintClipper {
         boolean needsMeasuredWidth = clipActive && measureLongText && textMeasureService != null
                 && textRun.getText().length() >= LONG_TEXT_CLIP_THRESHOLD;
         int measuredWidth = needsMeasuredWidth ? measureUiTextWidth(textMeasureService, textRun.getText(),
-                textRun.getTextContentMode(), ownerStyle) : 0;
+                textRun.getTextMeasureStyle()) : 0;
         int paintRight;
         if (clipActive && textMeasureService == null && textRun.getText().length() >= LONG_TEXT_CLIP_THRESHOLD) {
             paintRight = UNBOUNDED_TEXT_RIGHT;
@@ -128,9 +126,9 @@ final class DocumentTextPaintClipper {
 
         int[] boundaries = collectRawTextBoundaries(text);
         int startIndex = findPrefixBoundaryForWidth(text, boundaries, visibleStartOffset, false, textMeasureService,
-                textRun.getTextContentMode(), ownerStyle);
+                textRun.getTextMeasureStyle());
         int endIndex = findPrefixBoundaryForWidth(text, boundaries, visibleEndOffset, true, textMeasureService,
-                textRun.getTextContentMode(), ownerStyle);
+                textRun.getTextMeasureStyle());
         if (endIndex <= startIndex) {
             endIndex = nextRawTextBoundary(boundaries, startIndex);
         }
@@ -138,9 +136,8 @@ final class DocumentTextPaintClipper {
         endIndex = Math.max(startIndex, Math.min(endIndex, text.length()));
         String clippedText = text.substring(startIndex, endIndex);
         int prefixWidth = measureUiTextWidth(textMeasureService, text.substring(0, startIndex),
-                textRun.getTextContentMode(), ownerStyle);
-        int clippedWidth = measureUiTextWidth(textMeasureService, clippedText, textRun.getTextContentMode(),
-                ownerStyle);
+                textRun.getTextMeasureStyle());
+        int clippedWidth = measureUiTextWidth(textMeasureService, clippedText, textRun.getTextMeasureStyle());
         int left = textLeft + prefixWidth;
         return new PaintSlice(clippedText, left, left + clippedWidth);
     }
@@ -194,15 +191,14 @@ final class DocumentTextPaintClipper {
     }
 
     private static int findPrefixBoundaryForWidth(String text, int[] boundaries, int targetWidth, boolean ceiling,
-            TextMeasureService textMeasureService, TextContentMode textContentMode, ComputedStyle ownerStyle) {
+            TextMeasureService textMeasureService, TextMeasureStyle textMeasureStyle) {
         int low = 0;
         int high = boundaries.length - 1;
         int result = ceiling ? boundaries[boundaries.length - 1] : 0;
         while (low <= high) {
             int middle = (low + high) >>> 1;
             int boundary = boundaries[middle];
-            int width = measureUiTextWidth(textMeasureService, text.substring(0, boundary), textContentMode,
-                    ownerStyle);
+            int width = measureUiTextWidth(textMeasureService, text.substring(0, boundary), textMeasureStyle);
             if (width < targetWidth || !ceiling && width == targetWidth) {
                 result = boundary;
                 low = middle + 1;
@@ -226,14 +222,11 @@ final class DocumentTextPaintClipper {
     }
 
     private static int measureUiTextWidth(TextMeasureService textMeasureService, String text,
-            TextContentMode textContentMode, ComputedStyle ownerStyle) {
+            TextMeasureStyle textMeasureStyle) {
         if (textMeasureService == null || text == null || text.isEmpty()) {
             return 0;
         }
-        UiFontWeight fontWeight = ownerStyle == null ? UiFontWeight.NORMAL : ownerStyle.getFontWeight();
-        UiFontStyle fontStyle = ownerStyle == null ? UiFontStyle.NORMAL : ownerStyle.getFontStyle();
-        return Math.round(textMeasureService.getStringWidth(text, textContentMode, fontWeight, fontStyle)
-                * UI_TEXT_SCALE);
+        return textMeasureService.getStringWidth(text, textMeasureStyle);
     }
 
     /**

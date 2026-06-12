@@ -44,6 +44,7 @@ import club.heiqi.uilib.ui.style.values.UiSurfaceStyle;
 import club.heiqi.uilib.ui.style.values.UiTransform;
 import club.heiqi.uilib.ui.text.TextContentMode;
 import club.heiqi.uilib.ui.text.TextMeasureService;
+import club.heiqi.uilib.ui.text.TextMeasureStyle;
 
 /**
  * HTML-like 绘制命令生成器。
@@ -516,7 +517,8 @@ public final class DocumentPaintEngine {
                     paintSlice.getLeft(), textRun.getTop() + offsetY, paintSlice.getRight(),
                     textRun.getBottom() + offsetY, color, 0, 0, paintSlice.getText(), textRun.getTextContentMode(),
                     ownerStyle == null ? UiFontWeight.NORMAL : ownerStyle.getFontWeight(),
-                    ownerStyle == null ? UiFontStyle.NORMAL : ownerStyle.getFontStyle(), null, 0, 1.0F, 1.0F));
+                    ownerStyle == null ? UiFontStyle.NORMAL : ownerStyle.getFontStyle(),
+                    textRun.getTextMeasureStyle(), null, 0, 1.0F, 1.0F));
         }
     }
 
@@ -571,7 +573,18 @@ public final class DocumentPaintEngine {
         }
         commands.add(new DocumentPaintCommand(DocumentPaintCommandType.TEXT, element, markerLeft, markerTop,
                 markerRight, markerBottom, textColor, 0, 0, markerText, TextContentMode.UILIB_RAW,
-                style.getFontWeight(), style.getFontStyle(), null, 0, 1.0F, 1.0F));
+                style.getFontWeight(), style.getFontStyle(),
+                resolveTextMeasureStyle(style, TextContentMode.UILIB_RAW), null, 0, 1.0F, 1.0F));
+    }
+
+    private static TextMeasureStyle resolveTextMeasureStyle(ComputedStyle style, TextContentMode textContentMode) {
+        int fontSizePx = style == null || style.getFontSize() == null
+                ? TextMeasureStyle.DEFAULT_FONT_SIZE_PX
+                : Math.max(1, style.getFontSize().resolve(TextMeasureStyle.DEFAULT_FONT_SIZE_PX,
+                        TextMeasureStyle.DEFAULT_FONT_SIZE_PX));
+        UiFontWeight fontWeight = style == null ? UiFontWeight.NORMAL : style.getFontWeight();
+        UiFontStyle fontStyle = style == null ? UiFontStyle.NORMAL : style.getFontStyle();
+        return new TextMeasureStyle(fontSizePx, textContentMode, fontWeight, fontStyle);
     }
 
     private static ElementNode resolveParentElement(ElementNode element) {

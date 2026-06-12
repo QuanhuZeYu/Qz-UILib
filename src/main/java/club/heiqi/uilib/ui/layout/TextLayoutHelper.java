@@ -16,6 +16,7 @@ import club.heiqi.uilib.ui.style.props.UiWhiteSpace;
 import club.heiqi.uilib.ui.style.props.UiWordBreak;
 import club.heiqi.uilib.ui.text.TextContentMode;
 import club.heiqi.uilib.ui.text.TextMeasureService;
+import club.heiqi.uilib.ui.text.TextMeasureStyle;
 
 /**
  * 文本布局辅助类。
@@ -33,7 +34,7 @@ import club.heiqi.uilib.ui.text.TextMeasureService;
  */
 final class TextLayoutHelper {
 
-    /** 字体原始像素到 UI 像素的固定缩放系数。 */
+    /** 字体原始像素到 UI 像素的旧固定缩放系数，仅供兼容入口使用。 */
     static final float UI_TEXT_SCALE = 2.0F;
 
     private TextLayoutHelper() {}
@@ -79,7 +80,8 @@ final class TextLayoutHelper {
      * 否则用字体默认行高作为 containingSize 解析（支持 px 和百分比）。</p>
      */
     static int resolveTextLineHeight(TextMeasureService textMeasureService, ComputedStyle ownerStyle) {
-        int fontLineHeight = Math.max(1, toUiTextSize(textMeasureService.getLineHeight()));
+        TextMeasureStyle textStyle = resolveTextMeasureStyle(ownerStyle, TextContentMode.UILIB_RAW);
+        int fontLineHeight = Math.max(1, textMeasureService.getLineHeight(textStyle));
         if (ownerStyle == null || DocumentLayoutEngine.isAuto(ownerStyle.getLineHeight())) {
             return fontLineHeight;
         }
@@ -102,8 +104,7 @@ final class TextLayoutHelper {
      */
     static int measureTextWidth(TextMeasureService textMeasureService, String text,
             TextContentMode textContentMode, ComputedStyle ownerStyle) {
-        return textMeasureService.getStringWidth(text, textContentMode, resolveFontWeight(ownerStyle),
-                resolveFontStyle(ownerStyle));
+        return textMeasureService.getStringWidth(text, resolveTextMeasureStyle(ownerStyle, textContentMode));
     }
 
     /**
@@ -111,8 +112,21 @@ final class TextLayoutHelper {
      */
     static String trimTextToWidth(TextMeasureService textMeasureService, String text, int targetWidth,
             TextContentMode textContentMode, ComputedStyle ownerStyle) {
-        return textMeasureService.trimStringToWidth(text, targetWidth, textContentMode, resolveFontWeight(ownerStyle),
+        return textMeasureService.trimStringToWidth(text, targetWidth,
+                resolveTextMeasureStyle(ownerStyle, textContentMode));
+    }
+
+    static TextMeasureStyle resolveTextMeasureStyle(ComputedStyle ownerStyle, TextContentMode textContentMode) {
+        return new TextMeasureStyle(resolveFontSizePx(ownerStyle), textContentMode, resolveFontWeight(ownerStyle),
                 resolveFontStyle(ownerStyle));
+    }
+
+    static int resolveFontSizePx(ComputedStyle ownerStyle) {
+        if (ownerStyle == null || ownerStyle.getFontSize() == null) {
+            return TextMeasureStyle.DEFAULT_FONT_SIZE_PX;
+        }
+        return Math.max(1, ownerStyle.getFontSize().resolve(TextMeasureStyle.DEFAULT_FONT_SIZE_PX,
+                TextMeasureStyle.DEFAULT_FONT_SIZE_PX));
     }
 
     static UiFontWeight resolveFontWeight(ComputedStyle ownerStyle) {
@@ -412,8 +426,7 @@ final class TextLayoutHelper {
 
     private static int resolveMaxFittingTextEnd(String text, int availableWidth, ComputedStyle ownerStyle,
             TextContentMode textContentMode, TextMeasureService textMeasureService) {
-        String trimmed = trimTextToWidth(textMeasureService, text, toRawTextSize(availableWidth), textContentMode,
-                ownerStyle);
+        String trimmed = trimTextToWidth(textMeasureService, text, availableWidth, textContentMode, ownerStyle);
         int trimmedEnd = trimmed == null ? 0 : trimmed.length();
         int maxFitEnd = normalizeTextUnitBoundary(text, trimmedEnd, textContentMode);
         if (maxFitEnd <= 0) {
@@ -606,8 +619,7 @@ final class TextLayoutHelper {
         if (start < 0 || end <= start) {
             return 0;
         }
-        return toUiTextSize(measureTextWidth(textMeasureService, text.substring(start, end), textContentMode,
-                ownerStyle));
+        return measureTextWidth(textMeasureService, text.substring(start, end), textContentMode, ownerStyle);
     }
 
     private static int measureMaxTextLineWidth(String text, TextContentMode textContentMode,
@@ -617,8 +629,8 @@ final class TextLayoutHelper {
         while (lineStart <= text.length()) {
             int lineBreakStart = findHardLineBreakStart(text.substring(lineStart));
             int lineEnd = lineStart + lineBreakStart;
-            maxWidth = Math.max(maxWidth, toUiTextSize(measureTextWidth(textMeasureService,
-                    text.substring(lineStart, lineEnd), textContentMode, ownerStyle)));
+            maxWidth = Math.max(maxWidth, measureTextWidth(textMeasureService, text.substring(lineStart, lineEnd),
+                    textContentMode, ownerStyle));
             if (lineEnd >= text.length()) {
                 break;
             }
@@ -635,8 +647,8 @@ final class TextLayoutHelper {
             if (unit.formattingCode || unit.codePoint == '\r' || unit.codePoint == '\n') {
                 continue;
             }
-            maxWidth = Math.max(maxWidth, toUiTextSize(measureTextWidth(textMeasureService,
-                    text.substring(unit.start, unit.end), textContentMode, ownerStyle)));
+            maxWidth = Math.max(maxWidth, measureTextWidth(textMeasureService, text.substring(unit.start, unit.end),
+                    textContentMode, ownerStyle));
         }
         return maxWidth;
     }

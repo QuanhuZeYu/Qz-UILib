@@ -19,6 +19,7 @@ import club.heiqi.uilib.font.util.FontMatcher;
 import club.heiqi.uilib.ui.style.props.UiFontStyle;
 import club.heiqi.uilib.ui.style.props.UiFontWeight;
 import club.heiqi.uilib.ui.text.TextContentMode;
+import club.heiqi.uilib.ui.text.TextMeasureStyle;
 
 /**
  * 文本布局与测量服务。
@@ -175,6 +176,27 @@ public class TextLayoutService {
     }
 
     /**
+     * 计算指定语义化文本样式下的字符串 UI 像素宽度。
+     *
+     * @param text 文本
+     * @param style 文本样式快照
+     * @return UI 像素宽度
+     */
+    public int getStringWidth(String text, TextMeasureStyle style) {
+        TextMeasureStyle resolvedStyle = resolveTextMeasureStyle(style);
+        if (text == null || text.isEmpty()) {
+            return 0;
+        }
+
+        double width = 0.0D;
+        TextStyle baseStyle = createBaseStyle(0xFFFFFFFF, resolvedStyle.getFontWeight(), resolvedStyle.getFontStyle());
+        for (TextSegment segment : parseSegments(text, 0xFFFFFFFF, resolvedStyle.getTextContentMode(), baseStyle)) {
+            width += getSegmentWidth(segment, resolvedStyle.getFontSizePx());
+        }
+        return (int) Math.ceil(width);
+    }
+
+    /**
      * 按宽度裁剪字符串。
      *
      * @param text 原始文本
@@ -234,6 +256,54 @@ public class TextLayoutService {
             }
 
             double charWidth = measureCodepointWidth(codepoint, currentStyle.getFontType());
+            if (width + charWidth > targetWidth) {
+                break;
+            }
+            width += charWidth;
+            builder.appendCodePoint(codepoint);
+            i += Character.charCount(codepoint);
+        }
+        return builder.toString();
+    }
+
+    /**
+     * 按指定语义化文本样式和 UI 像素宽度裁剪字符串。
+     *
+     * @param text 原始文本
+     * @param targetWidth 目标 UI 像素宽度
+     * @param style 文本样式快照
+     * @return 裁剪结果
+     */
+    public String trimStringToWidth(String text, int targetWidth, TextMeasureStyle style) {
+        TextMeasureStyle resolvedStyle = resolveTextMeasureStyle(style);
+        if (text == null || text.isEmpty() || targetWidth <= 0) {
+            return "";
+        }
+
+        if (resolveTextContentMode(resolvedStyle.getTextContentMode()) == TextContentMode.UILIB_RAW) {
+            return trimRawStringToWidth(text, targetWidth, createBaseStyle(0xFFFFFFFF,
+                    resolvedStyle.getFontWeight(), resolvedStyle.getFontStyle()), resolvedStyle.getFontSizePx());
+        }
+
+        StringBuilder builder = new StringBuilder();
+        TextStyle currentStyle = createBaseStyle(0xFFFFFFFF, resolvedStyle.getFontWeight(),
+                resolvedStyle.getFontStyle());
+        double width = 0.0D;
+
+        for (int i = 0; i < text.length();) {
+            int codepoint = text.codePointAt(i);
+            if (codepoint == '§' && i < text.length() - 1) {
+                builder.appendCodePoint(codepoint);
+                i += Character.charCount(codepoint);
+                char formatCode = text.charAt(i);
+                builder.append(formatCode);
+                currentStyle.applyFormat(Character.toLowerCase(formatCode), 0xFFFFFFFF);
+                i++;
+                continue;
+            }
+
+            double charWidth = measureCodepointWidth(codepoint, currentStyle.getFontType(),
+                    resolvedStyle.getFontSizePx());
             if (width + charWidth > targetWidth) {
                 break;
             }
@@ -520,6 +590,24 @@ public class TextLayoutService {
     }
 
     /**
+     * 计算单个文本片段在指定 UI 像素字号下的宽度。
+     *
+     * @param segment 文本片段
+     * @param fontSizePx UI 像素字号
+     * @return UI 像素宽度
+     */
+    public double getSegmentWidth(TextSegment segment, int fontSizePx) {
+        double width = 0.0D;
+        String text = segment.getText();
+        for (int i = 0; i < text.length();) {
+            int codepoint = text.codePointAt(i);
+            width += getCodepointWidth(codepoint, segment.getStyle(), fontSizePx);
+            i += Character.charCount(codepoint);
+        }
+        return width;
+    }
+
+    /**
      * 获取指定字符在当前样式下的推进宽度。
      *
      * @param codepoint 字符码点
@@ -528,6 +616,18 @@ public class TextLayoutService {
      */
     public double getCodepointWidth(int codepoint, TextStyle style) {
         return measureCodepointWidth(codepoint, style.getFontType());
+    }
+
+    /**
+     * 获取指定字符在指定 UI 像素字号下的推进宽度。
+     *
+     * @param codepoint 字符码点
+     * @param style 文本样式
+     * @param fontSizePx UI 像素字号
+     * @return UI 像素推进宽度
+     */
+    public double getCodepointWidth(int codepoint, TextStyle style, int fontSizePx) {
+        return measureCodepointWidth(codepoint, style.getFontType(), fontSizePx);
     }
 
     private double measureCodepointWidth(int codepoint, FontType fontType) {
@@ -554,6 +654,11 @@ public class TextLayoutService {
         return measuredWidth;
     }
 
+    private double measureCodepointWidth(int codepoint, FontType fontType, int fontSizePx) {
+        double defaultWidth = measureCodepointWidth(codepoint, fontType);
+        return defaultWidth * Math.max(1, fontSizePx) / Math.max(1.0D, FontConfig.charSize);
+    }
+
     /**
      * 获取当前布局层的基准行高。
      *
@@ -563,6 +668,19 @@ public class TextLayoutService {
         double lineSpacingRatio = Math.max(FontConfig.lineSpacing, -0.9D);
         double rawLineHeight = Math.max(FontConfig.charSize * (1.0D + lineSpacingRatio), 1.0D);
         return (int) Math.ceil(rawLineHeight);
+    }
+
+    /**
+     * 获取指定语义化文本样式下的 UI 像素行高。
+     *
+     * @param style 文本样式快照
+     * @return UI 像素行高
+     */
+    public int getLineHeight(TextMeasureStyle style) {
+        TextMeasureStyle resolvedStyle = resolveTextMeasureStyle(style);
+        double lineSpacingRatio = Math.max(FontConfig.lineSpacing, -0.9D);
+        double lineHeight = Math.max(resolvedStyle.getFontSizePx() * (1.0D + lineSpacingRatio), 1.0D);
+        return (int) Math.ceil(lineHeight);
     }
 
     private double measureAwtWidth(int codepoint, FontType fontType) {
@@ -619,12 +737,23 @@ public class TextLayoutService {
         return textContentMode == null ? TextContentMode.MINECRAFT_FORMATTED : textContentMode;
     }
 
+    private TextMeasureStyle resolveTextMeasureStyle(TextMeasureStyle style) {
+        TextMeasureStyle resolvedStyle = style == null ? TextMeasureStyle.DEFAULT : style;
+        return new TextMeasureStyle(resolvedStyle.getFontSizePx(),
+                resolveTextContentMode(resolvedStyle.getTextContentMode()), resolvedStyle.getFontWeight(),
+                resolvedStyle.getFontStyle());
+    }
+
     private String trimRawStringToWidth(String text, int targetWidth, TextStyle style) {
+        return trimRawStringToWidth(text, targetWidth, style, TextMeasureStyle.DEFAULT_FONT_SIZE_PX);
+    }
+
+    private String trimRawStringToWidth(String text, int targetWidth, TextStyle style, int fontSizePx) {
         StringBuilder builder = new StringBuilder();
         double width = 0.0D;
         for (int i = 0; i < text.length();) {
             int codepoint = text.codePointAt(i);
-            double charWidth = getCodepointWidth(codepoint, style);
+            double charWidth = getCodepointWidth(codepoint, style, fontSizePx);
             if (width + charWidth > targetWidth) {
                 break;
             }
