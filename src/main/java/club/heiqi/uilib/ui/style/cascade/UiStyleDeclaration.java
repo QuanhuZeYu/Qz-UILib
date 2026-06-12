@@ -123,6 +123,7 @@ public final class UiStyleDeclaration {
     private UiBorderCollapse borderCollapse;
     private UiTextTransform textTransform;
     private UiStyleLength textIndent;
+    private UiStyleLength fontSize;
     private UiFontWeight fontWeight;
     private UiFontStyle fontStyle;
     private UiStyleInsets borderWidthSides;
@@ -1484,6 +1485,24 @@ public final class UiStyleDeclaration {
         return updateTextIndent(null);
     }
 
+    public UiStyleLength getFontSize() {
+        return fontSize;
+    }
+
+    /**
+     * 设置字体大小，单位为 UI 像素语义。
+     *
+     * @param fontSize 字体大小
+     * @return 当前声明
+     */
+    public UiStyleDeclaration setFontSize(UiStyleLength fontSize) {
+        return updateFontSize(Objects.requireNonNull(fontSize, "fontSize"));
+    }
+
+    public UiStyleDeclaration clearFontSize() {
+        return updateFontSize(null);
+    }
+
     public UiFontWeight getFontWeight() {
         return fontWeight;
     }
@@ -2200,6 +2219,12 @@ public final class UiStyleDeclaration {
         return updateProperty(UiStyleProperty.TEXT_INDENT, previousValue, value, UiStyleChangeImpact.LAYOUT);
     }
 
+    private UiStyleDeclaration updateFontSize(UiStyleLength value) {
+        UiStyleLength previousValue = fontSize;
+        fontSize = value;
+        return updateProperty(UiStyleProperty.FONT_SIZE, previousValue, value, UiStyleChangeImpact.LAYOUT);
+    }
+
     private UiStyleDeclaration updateFontWeight(UiFontWeight value) {
         UiFontWeight previousValue = fontWeight;
         fontWeight = value;
@@ -2351,6 +2376,7 @@ public final class UiStyleDeclaration {
             case TEXT_SHADOW: break;
             case TEXT_TRANSFORM: textTransform = null; break;
             case TEXT_INDENT: textIndent = null; break;
+            case FONT_SIZE: fontSize = null; break;
             case FONT_WEIGHT: fontWeight = null; break;
             case FONT_STYLE: fontStyle = null; break;
             case POINTER_EVENTS: break;
@@ -2457,6 +2483,7 @@ public final class UiStyleDeclaration {
         borderCollapse = resolvedSource.borderCollapse;
         textTransform = resolvedSource.textTransform;
         textIndent = resolvedSource.textIndent;
+        fontSize = resolvedSource.fontSize;
         fontWeight = resolvedSource.fontWeight;
         fontStyle = resolvedSource.fontStyle;
         borderWidthSides = resolvedSource.borderWidthSides;

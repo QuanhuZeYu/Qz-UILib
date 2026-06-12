@@ -66,8 +66,19 @@ public final class DefaultTextMeasureService implements TextMeasureService {
     }
 
     @Override
+    public int getStringWidth(String text, TextMeasureStyle style) {
+        TextMeasureStyle resolvedStyle = resolveTextMeasureStyle(style);
+        return getTextLayoutService().getStringWidth(text, resolvedStyle);
+    }
+
+    @Override
     public int getLineHeight() {
         return getTextLayoutService().getLineHeight();
+    }
+
+    @Override
+    public int getLineHeight(TextMeasureStyle style) {
+        return getTextLayoutService().getLineHeight(resolveTextMeasureStyle(style));
     }
 
     @Override
@@ -85,6 +96,11 @@ public final class DefaultTextMeasureService implements TextMeasureService {
             UiFontWeight fontWeight, UiFontStyle fontStyle) {
         return getTextLayoutService().trimStringToWidth(text, targetWidth, resolveTextContentMode(textContentMode),
                 fontWeight, fontStyle);
+    }
+
+    @Override
+    public String trimStringToWidth(String text, int targetWidth, TextMeasureStyle style) {
+        return getTextLayoutService().trimStringToWidth(text, targetWidth, resolveTextMeasureStyle(style));
     }
 
     @Override
@@ -113,5 +129,14 @@ public final class DefaultTextMeasureService implements TextMeasureService {
 
     private TextContentMode resolveTextContentMode(TextContentMode textContentMode) {
         return textContentMode == null ? defaultTextContentMode : textContentMode;
+    }
+
+    private TextMeasureStyle resolveTextMeasureStyle(TextMeasureStyle style) {
+        TextMeasureStyle resolvedStyle = style == null
+                ? TextMeasureStyle.DEFAULT.withTextContentMode(defaultTextContentMode)
+                : style;
+        TextContentMode resolvedMode = resolveTextContentMode(resolvedStyle.getTextContentMode());
+        return new TextMeasureStyle(resolvedStyle.getFontSizePx(), resolvedMode, resolvedStyle.getFontWeight(),
+                resolvedStyle.getFontStyle());
     }
 }

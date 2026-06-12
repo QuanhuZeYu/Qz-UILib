@@ -30,6 +30,7 @@ import club.heiqi.uilib.ui.style.values.UiStyleLength;
 import club.heiqi.uilib.ui.style.values.UiSurfaceStyle;
 import club.heiqi.uilib.ui.text.TextContentMode;
 import club.heiqi.uilib.ui.text.TextMeasureService;
+import club.heiqi.uilib.ui.text.TextMeasureStyle;
 
 /**
  * `HtmlLikeDocumentWidget` 测试共享 fixture 和断言工具。
@@ -276,7 +277,15 @@ final class HtmlLikeDocumentWidgetTestSupport {
         @Override
         public void drawText(String text, int x, int y, int color, boolean shadow, TextContentMode textContentMode,
                 UiFontWeight fontWeight, UiFontStyle fontStyle) {
-            textCalls.add(new TextCall(text, x, y, color, shadow, textContentMode, fontWeight, fontStyle));
+            textCalls.add(new TextCall(text, x, y, color, shadow, textContentMode, fontWeight, fontStyle,
+                    TextMeasureStyle.DEFAULT_FONT_SIZE_PX));
+        }
+
+        @Override
+        public void drawText(String text, int x, int y, int color, boolean shadow, TextMeasureStyle textStyle) {
+            TextMeasureStyle resolvedStyle = textStyle == null ? TextMeasureStyle.DEFAULT : textStyle;
+            textCalls.add(new TextCall(text, x, y, color, shadow, resolvedStyle.getTextContentMode(),
+                    resolvedStyle.getFontWeight(), resolvedStyle.getFontStyle(), resolvedStyle.getFontSizePx()));
         }
 
         @Override
@@ -351,9 +360,10 @@ final class HtmlLikeDocumentWidgetTestSupport {
         final TextContentMode textContentMode;
         final UiFontWeight fontWeight;
         final UiFontStyle fontStyle;
+        final int fontSizePx;
 
         TextCall(String text, int x, int y, int color, boolean shadow, TextContentMode textContentMode,
-                UiFontWeight fontWeight, UiFontStyle fontStyle) {
+                UiFontWeight fontWeight, UiFontStyle fontStyle, int fontSizePx) {
             this.text = text;
             this.x = x;
             this.y = y;
@@ -362,6 +372,7 @@ final class HtmlLikeDocumentWidgetTestSupport {
             this.textContentMode = textContentMode;
             this.fontWeight = fontWeight;
             this.fontStyle = fontStyle;
+            this.fontSizePx = fontSizePx;
         }
     }
 

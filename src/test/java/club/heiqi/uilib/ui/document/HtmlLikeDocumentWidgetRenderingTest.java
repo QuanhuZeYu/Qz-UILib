@@ -141,4 +141,30 @@ public class HtmlLikeDocumentWidgetRenderingTest {
             Assert.assertEquals(UiFontStyle.ITALIC, textCall.fontStyle);
         }
     }
+
+    /**
+     * 验证 CSS font-size 会同时影响布局尺寸和文本绘制快照。
+     */
+    @Test
+    public void shouldRenderTextWithFontSizeSnapshot() {
+        UiDocument document = UiDocument.create();
+        ElementNode root = document.getRootElement();
+        root.style()
+                .setWidth(UiStyleLength.px(160))
+                .setFontSize(UiStyleLength.px(12));
+        root.appendText("size");
+        HtmlLikeDocumentWidget widget = new HtmlLikeDocumentWidget(document, 160, 40,
+                new DeterministicTextMeasureService());
+        widget.applyLayoutBounds(0, 0, 160, 40);
+
+        RecordingUiRenderContext renderContext = new RecordingUiRenderContext();
+        widget.render(renderContext);
+
+        Assert.assertEquals(1, renderContext.textCalls.size());
+        TextCall textCall = renderContext.textCalls.get(0);
+        Assert.assertEquals("size", textCall.text);
+        Assert.assertEquals(12, textCall.fontSizePx);
+        Assert.assertEquals(21, widget.resolveLayoutBoxForTest().getTextRuns().get(0).getWidth());
+        Assert.assertEquals(12, widget.resolveLayoutBoxForTest().getTextRuns().get(0).getHeight());
+    }
 }

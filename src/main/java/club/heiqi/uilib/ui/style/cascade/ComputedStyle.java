@@ -123,6 +123,7 @@ public final class ComputedStyle {
     private final UiTextShadow textShadow;
     private final UiTextTransform textTransform;
     private final UiStyleLength textIndent;
+    private final UiStyleLength fontSize;
     private final UiFontWeight fontWeight;
     private final UiFontStyle fontStyle;
     private final UiPointerEvents pointerEvents;
@@ -162,7 +163,8 @@ public final class ComputedStyle {
             UiBoxShadow boxShadow, UiBorderStyle borderStyle, UiBorderCollapse borderCollapse, UiCursor cursor,
             UiBorderRadius borderRadiusCorners, UiBackgroundImage backgroundImage,
             UiTextDecoration textDecoration, UiTextShadow textShadow, UiTextTransform textTransform,
-            UiStyleLength textIndent, UiFontWeight fontWeight, UiFontStyle fontStyle, UiPointerEvents pointerEvents,
+            UiStyleLength textIndent, UiStyleLength fontSize, UiFontWeight fontWeight, UiFontStyle fontStyle,
+            UiPointerEvents pointerEvents,
             UiOutline outline, UiStyleInsets borderWidthSides, UiBorderColors borderColors,
             UiStyleLength letterSpacing, UiWordBreak wordBreak, UiOverflowWrap overflowWrap,
             Float aspectRatio, UiObjectFit objectFit, UiPseudoElementContent content,
@@ -236,6 +238,7 @@ public final class ComputedStyle {
         this.textShadow = textShadow; // 可为 null（无文本阴影）
         this.textTransform = textTransform == null ? UiTextTransform.NONE : textTransform;
         this.textIndent = textIndent == null ? UiStyleLength.px(0) : textIndent;
+        this.fontSize = fontSize == null ? UiStyleLength.px(18) : fontSize;
         this.fontWeight = fontWeight == null ? UiFontWeight.NORMAL : fontWeight;
         this.fontStyle = fontStyle == null ? UiFontStyle.NORMAL : fontStyle;
         this.pointerEvents = pointerEvents == null ? UiPointerEvents.AUTO : pointerEvents;
@@ -698,6 +701,15 @@ public final class ComputedStyle {
      */
     public UiStyleLength getTextIndent() {
         return textIndent;
+    }
+
+    /**
+     * 返回字体大小，单位为 UI 像素语义。
+     *
+     * @return 字体大小
+     */
+    public UiStyleLength getFontSize() {
+        return fontSize;
     }
 
     /**

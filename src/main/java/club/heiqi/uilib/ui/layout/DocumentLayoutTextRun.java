@@ -5,6 +5,7 @@ import java.util.Objects;
 import club.heiqi.uilib.ui.dom.ElementNode;
 import club.heiqi.uilib.ui.dom.TextNode;
 import club.heiqi.uilib.ui.text.TextContentMode;
+import club.heiqi.uilib.ui.text.TextMeasureStyle;
 
 /**
  * HTML-like 直接文本子节点的布局结果。
@@ -15,6 +16,7 @@ public final class DocumentLayoutTextRun {
     private final ElementNode ownerElement;
     private final String text;
     private final TextContentMode textContentMode;
+    private final TextMeasureStyle textMeasureStyle;
     private final int left;
     private final int top;
     private final int width;
@@ -22,15 +24,25 @@ public final class DocumentLayoutTextRun {
 
     DocumentLayoutTextRun(TextNode textNode, ElementNode ownerElement, String text, int left, int top, int width,
             int height) {
-        this(textNode, ownerElement, text, textNode.getTextContentMode(), left, top, width, height);
+        this(textNode, ownerElement, text, textNode.getTextContentMode(), TextMeasureStyle.DEFAULT, left, top, width,
+                height);
     }
 
     DocumentLayoutTextRun(TextNode textNode, ElementNode ownerElement, String text, TextContentMode textContentMode,
             int left, int top, int width, int height) {
+        this(textNode, ownerElement, text, textContentMode,
+                TextMeasureStyle.DEFAULT.withTextContentMode(textContentMode), left, top, width, height);
+    }
+
+    DocumentLayoutTextRun(TextNode textNode, ElementNode ownerElement, String text, TextContentMode textContentMode,
+            TextMeasureStyle textMeasureStyle, int left, int top, int width, int height) {
         this.textNode = Objects.requireNonNull(textNode, "textNode");
         this.ownerElement = Objects.requireNonNull(ownerElement, "ownerElement");
         this.text = text == null ? "" : text;
         this.textContentMode = textContentMode == null ? TextContentMode.UILIB_RAW : textContentMode;
+        this.textMeasureStyle = textMeasureStyle == null
+                ? TextMeasureStyle.DEFAULT.withTextContentMode(this.textContentMode)
+                : textMeasureStyle.withTextContentMode(this.textContentMode);
         this.left = left;
         this.top = top;
         this.width = Math.max(0, width);
@@ -73,6 +85,15 @@ public final class DocumentLayoutTextRun {
         return textContentMode;
     }
 
+    /**
+     * 返回布局时使用的文本测量样式快照。
+     *
+     * @return 文本测量样式
+     */
+    public TextMeasureStyle getTextMeasureStyle() {
+        return textMeasureStyle;
+    }
+
     public int getLeft() {
         return left;
     }
@@ -101,7 +122,7 @@ public final class DocumentLayoutTextRun {
         if (deltaX == 0 && deltaY == 0) {
             return this;
         }
-        return new DocumentLayoutTextRun(textNode, ownerElement, text, textContentMode, left + deltaX, top + deltaY,
-                width, height);
+        return new DocumentLayoutTextRun(textNode, ownerElement, text, textContentMode, textMeasureStyle,
+                left + deltaX, top + deltaY, width, height);
     }
 }

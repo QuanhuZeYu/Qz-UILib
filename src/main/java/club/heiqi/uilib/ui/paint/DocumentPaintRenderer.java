@@ -269,8 +269,7 @@ public final class DocumentPaintRenderer {
             int offsetY, RenderReplayState replayState) {
         renderTextShadow(context, command, offsetX, offsetY, replayState.fallbackOpacity);
         context.drawText(command.getText(), command.getLeft() + offsetX, command.getTop() + offsetY,
-                applyOpacity(command.getColor(), replayState.fallbackOpacity), false,
-                command.getTextContentMode(), command.getFontWeight(), command.getFontStyle());
+                applyOpacity(command.getColor(), replayState.fallbackOpacity), false, command.getTextMeasureStyle());
     }
 
     private static void renderBackgroundImage(UiRenderContext context, DocumentPaintCommand command, int offsetX,
@@ -305,23 +304,17 @@ public final class DocumentPaintRenderer {
         int y = command.getTop() + offsetY + textShadow.getOffsetY();
         int blurRadius = Math.min(Math.max(0, textShadow.getBlurRadius()), 3);
         if (blurRadius <= 0) {
-            context.drawText(command.getText(), x, y, color, false, command.getTextContentMode(),
-                    command.getFontWeight(), command.getFontStyle());
+            context.drawText(command.getText(), x, y, color, false, command.getTextMeasureStyle());
             return;
         }
         int haloColor = fadeColor(color, 1, blurRadius + 2);
         for (int radius = blurRadius; radius >= 1; radius--) {
-            context.drawText(command.getText(), x - radius, y, haloColor, false, command.getTextContentMode(),
-                    command.getFontWeight(), command.getFontStyle());
-            context.drawText(command.getText(), x + radius, y, haloColor, false, command.getTextContentMode(),
-                    command.getFontWeight(), command.getFontStyle());
-            context.drawText(command.getText(), x, y - radius, haloColor, false, command.getTextContentMode(),
-                    command.getFontWeight(), command.getFontStyle());
-            context.drawText(command.getText(), x, y + radius, haloColor, false, command.getTextContentMode(),
-                    command.getFontWeight(), command.getFontStyle());
+            context.drawText(command.getText(), x - radius, y, haloColor, false, command.getTextMeasureStyle());
+            context.drawText(command.getText(), x + radius, y, haloColor, false, command.getTextMeasureStyle());
+            context.drawText(command.getText(), x, y - radius, haloColor, false, command.getTextMeasureStyle());
+            context.drawText(command.getText(), x, y + radius, haloColor, false, command.getTextMeasureStyle());
         }
-        context.drawText(command.getText(), x, y, color, false, command.getTextContentMode(),
-                command.getFontWeight(), command.getFontStyle());
+        context.drawText(command.getText(), x, y, color, false, command.getTextMeasureStyle());
     }
 
     private static boolean isBatchableTextCommand(DocumentPaintCommand command, RenderReplayState replayState) {

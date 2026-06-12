@@ -59,6 +59,20 @@ public interface TextMeasureService {
     }
 
     /**
+     * 获取指定语义化文本样式下的字符串宽度，返回 UI 像素。
+     *
+     * @param text 文本内容
+     * @param style 文本样式快照
+     * @return UI 像素宽度
+     */
+    default int getStringWidth(String text, TextMeasureStyle style) {
+        TextMeasureStyle resolvedStyle = style == null ? TextMeasureStyle.DEFAULT : style;
+        int rawWidth = getStringWidth(text, resolvedStyle.getTextContentMode(), resolvedStyle.getFontWeight(),
+                resolvedStyle.getFontStyle());
+        return Math.round(rawWidth * resolvedStyle.getFontSizePx() / (float) Math.max(1, getLineHeight()));
+    }
+
+    /**
      * 获取原始文本坐标系下的逻辑行高。
      *
      * <p>该值不包含 UI 层缩放，供布局阶段作为统一的单行高度来源。</p>
@@ -66,6 +80,19 @@ public interface TextMeasureService {
      * @return 原始文本行高
      */
     int getLineHeight();
+
+    /**
+     * 获取指定语义化文本样式下的逻辑行高，返回 UI 像素。
+     *
+     * @param style 文本样式快照
+     * @return UI 像素行高
+     */
+    default int getLineHeight(TextMeasureStyle style) {
+        TextMeasureStyle resolvedStyle = style == null ? TextMeasureStyle.DEFAULT : style;
+        int rawLineHeight = getLineHeight();
+        return Math.max(1, Math.round(rawLineHeight * resolvedStyle.getFontSizePx()
+                / (float) Math.max(1, rawLineHeight)));
+    }
 
     /**
      * 按目标宽度裁剪字符串。
@@ -105,6 +132,22 @@ public interface TextMeasureService {
     default String trimStringToWidth(String text, int targetWidth, TextContentMode textContentMode,
             UiFontWeight fontWeight, UiFontStyle fontStyle) {
         return trimStringToWidth(text, targetWidth, textContentMode);
+    }
+
+    /**
+     * 按指定语义化文本样式和 UI 像素宽度裁剪字符串。
+     *
+     * @param text 文本内容
+     * @param targetWidth 目标 UI 像素宽度
+     * @param style 文本样式快照
+     * @return 裁剪后的字符串
+     */
+    default String trimStringToWidth(String text, int targetWidth, TextMeasureStyle style) {
+        TextMeasureStyle resolvedStyle = style == null ? TextMeasureStyle.DEFAULT : style;
+        int rawTargetWidth = Math.max(1, Math.round(targetWidth * Math.max(1, getLineHeight())
+                / (float) resolvedStyle.getFontSizePx()));
+        return trimStringToWidth(text, rawTargetWidth, resolvedStyle.getTextContentMode(),
+                resolvedStyle.getFontWeight(), resolvedStyle.getFontStyle());
     }
 
     /**

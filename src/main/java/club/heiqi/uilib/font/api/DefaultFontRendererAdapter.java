@@ -18,6 +18,7 @@ import club.heiqi.uilib.font.render.FontRenderStateGuard;
 import club.heiqi.uilib.ui.style.props.UiFontStyle;
 import club.heiqi.uilib.ui.style.props.UiFontWeight;
 import club.heiqi.uilib.ui.text.TextContentMode;
+import club.heiqi.uilib.ui.text.TextMeasureStyle;
 
 /**
  * 默认字体适配器。
@@ -367,6 +368,56 @@ public class DefaultFontRendererAdapter implements FontRendererAdapter {
         }
     }
 
+    /**
+     * 按目标 UI 像素字号和字体 atlas 基线契约收集字符串绘制数据。
+     *
+     * @param text 文本
+     * @param x 屏幕坐标 X
+     * @param y 屏幕坐标 Y
+     * @param color 颜色
+     * @param dropShadow 是否启用阴影
+     * @param style 文本样式快照
+     * @return 绘制结束后的光标位置
+     */
+    public int drawBaselineAlignedStringPx(String text, float x, float y, int color, boolean dropShadow,
+            TextMeasureStyle style) {
+        if (text == null || text.isEmpty()) {
+            return (int) Math.ceil(x);
+        }
+        final TextMeasureStyle resolvedStyle = style == null ? TextMeasureStyle.DEFAULT : style;
+
+        FontService fontService = FontService.getInstance();
+        synchronized (fontService) {
+            return drawWithRenderStateGuardIfNeeded(fontService, new DrawStringTask() {
+                @Override
+                public int run() {
+                    fontService.initialize();
+                    fontService.tickDrawStage(FontConfig.drawStageUploadBatchSize);
+                    return drawBaselineAlignedStringInternal(fontService, text, x, y, normalizeColor(color), dropShadow,
+                            resolvedStyle.getTextContentMode(), resolvedStyle.getFontWeight(),
+                            resolvedStyle.getFontStyle(), Math.max(1.0F, (float) resolvedStyle.getFontSizePx()),
+                            Math.max(0.01F, resolvedStyle.getFontSizePx()
+                                    / Math.max(1.0F, (float) FontConfig.charSize)));
+                }
+            });
+        }
+    }
+
+    /**
+     * 使用语义化文本样式测量字符串 UI 像素宽度。
+     *
+     * @param text 文本
+     * @param style 文本样式快照
+     * @return UI 像素宽度
+     */
+    public int getStringWidth(String text, TextMeasureStyle style) {
+        FontService fontService = FontService.getInstance();
+        synchronized (fontService) {
+            fontService.initialize();
+            return fontService.getTextLayoutService().getStringWidth(text, style);
+        }
+    }
+
     @Override
     public int getStringWidth(String text) {
         return getStringWidth(text, TextContentMode.MINECRAFT_FORMATTED);
@@ -537,6 +588,13 @@ public class DefaultFontRendererAdapter implements FontRendererAdapter {
     private int drawBaselineAlignedStringInternal(FontService fontService, String text, float x, float y, int color,
             boolean dropShadow, TextContentMode textContentMode, UiFontWeight fontWeight, UiFontStyle fontStyle,
             float renderScale) {
+        return drawBaselineAlignedStringInternal(fontService, text, x, y, color, dropShadow, textContentMode,
+                fontWeight, fontStyle, (float) FontConfig.charSize * renderScale, renderScale);
+    }
+
+    private int drawBaselineAlignedStringInternal(FontService fontService, String text, float x, float y, int color,
+            boolean dropShadow, TextContentMode textContentMode, UiFontWeight fontWeight, UiFontStyle fontStyle,
+            float charSize, float renderScale) {
         TextLayoutService textLayoutService = fontService.getTextLayoutService();
         GlyphPageManager glyphPageManager = fontService.getGlyphPageManager();
         List<TextSegment> segments = textLayoutService.layoutSegments(text, color, textContentMode, fontWeight,
@@ -547,7 +605,6 @@ public class DefaultFontRendererAdapter implements FontRendererAdapter {
 
         float currentX = x;
         float drawY = y;
-        float charSize = (float) FontConfig.charSize * renderScale;
         int runtimeVersion = fontService.getRuntimeVersion();
         int glyphSize = Math.max(8, (int) Math.ceil(FontConfig.awtCharSize));
         GlyphRuntimeTables tables = glyphPageManager.getRuntimeTables();

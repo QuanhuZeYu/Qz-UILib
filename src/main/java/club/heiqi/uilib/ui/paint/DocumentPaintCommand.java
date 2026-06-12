@@ -12,6 +12,7 @@ import club.heiqi.uilib.ui.style.cascade.UiBorderRadiusResolver;
 import club.heiqi.uilib.ui.style.values.UiSurfaceStyle;
 import club.heiqi.uilib.ui.style.values.UiTransform;
 import club.heiqi.uilib.ui.text.TextContentMode;
+import club.heiqi.uilib.ui.text.TextMeasureStyle;
 
 /**
  * HTML-like 中立绘制命令。
@@ -36,6 +37,7 @@ public final class DocumentPaintCommand {
     private final TextContentMode textContentMode;
     private final UiFontWeight fontWeight;
     private final UiFontStyle fontStyle;
+    private final TextMeasureStyle textMeasureStyle;
     private UiBoxShadow boxShadow;
     private UiBackgroundImage backgroundImage;
     private final DocumentCustomRenderer customRenderer;
@@ -107,7 +109,7 @@ public final class DocumentPaintCommand {
             DocumentEffectType effectType) {
         this(type, element, left, top, right, bottom, color, borderWidth, borderRadius,
                 UiBorderRadiusResolver.ResolvedCornerRadii.uniform(Math.max(0, borderRadius)), UiSurfaceStyle.CORNER_ALL,
-                text, textContentMode, fontWeight, fontStyle, customRenderer, backdropBlurRadius,
+                text, textContentMode, fontWeight, fontStyle, null, customRenderer, backdropBlurRadius,
                 backdropSaturation, paintContextOpacity, effectType);
     }
 
@@ -117,7 +119,7 @@ public final class DocumentPaintCommand {
             float paintContextOpacity, DocumentEffectType effectType) {
         this(type, element, left, top, right, bottom, color, borderWidth, borderRadius,
                 UiBorderRadiusResolver.ResolvedCornerRadii.uniform(Math.max(0, borderRadius)), cornerMask, text,
-                textContentMode, UiFontWeight.NORMAL, UiFontStyle.NORMAL, customRenderer, backdropBlurRadius,
+                textContentMode, UiFontWeight.NORMAL, UiFontStyle.NORMAL, null, customRenderer, backdropBlurRadius,
                 backdropSaturation, paintContextOpacity, effectType);
     }
 
@@ -128,8 +130,19 @@ public final class DocumentPaintCommand {
             DocumentEffectType effectType) {
         this(type, element, left, top, right, bottom, color, borderWidth, borderRadius,
                 UiBorderRadiusResolver.ResolvedCornerRadii.uniform(Math.max(0, borderRadius)), cornerMask, text,
-                textContentMode, fontWeight, fontStyle, customRenderer, backdropBlurRadius, backdropSaturation,
+                textContentMode, fontWeight, fontStyle, null, customRenderer, backdropBlurRadius, backdropSaturation,
                 paintContextOpacity, effectType);
+    }
+
+    DocumentPaintCommand(DocumentPaintCommandType type, ElementNode element, int left, int top, int right, int bottom,
+            int color, int borderWidth, int borderRadius, String text, TextContentMode textContentMode,
+            UiFontWeight fontWeight, UiFontStyle fontStyle, TextMeasureStyle textMeasureStyle,
+            DocumentCustomRenderer customRenderer, int backdropBlurRadius, float backdropSaturation,
+            float paintContextOpacity) {
+        this(type, element, left, top, right, bottom, color, borderWidth, borderRadius,
+                UiBorderRadiusResolver.ResolvedCornerRadii.uniform(Math.max(0, borderRadius)), UiSurfaceStyle.CORNER_ALL,
+                text, textContentMode, fontWeight, fontStyle, textMeasureStyle, customRenderer, backdropBlurRadius,
+                backdropSaturation, paintContextOpacity, null);
     }
 
     DocumentPaintCommand(DocumentPaintCommandType type, ElementNode element, int left, int top, int right, int bottom,
@@ -145,7 +158,8 @@ public final class DocumentPaintCommand {
             int color, int borderWidth, UiBorderRadiusResolver.ResolvedCornerRadii cornerRadii) {
         this(type, element, left, top, right, bottom, color, borderWidth,
                 resolveLegacyBorderRadius(cornerRadii), cornerRadii, UiSurfaceStyle.CORNER_ALL, null,
-                TextContentMode.UILIB_RAW, UiFontWeight.NORMAL, UiFontStyle.NORMAL, null, 0, 1.0F, 1.0F, null);
+                TextContentMode.UILIB_RAW, UiFontWeight.NORMAL, UiFontStyle.NORMAL, null, null, 0, 1.0F, 1.0F,
+                null);
     }
 
     DocumentPaintCommand(DocumentPaintCommandType type, ElementNode element, int left, int top, int right, int bottom,
@@ -162,7 +176,8 @@ public final class DocumentPaintCommand {
             UiBoxShadow boxShadow) {
         this(type, element, left, top, right, bottom, color, borderWidth,
                 resolveLegacyBorderRadius(cornerRadii), cornerRadii, UiSurfaceStyle.CORNER_ALL, null,
-                TextContentMode.UILIB_RAW, UiFontWeight.NORMAL, UiFontStyle.NORMAL, null, 0, 1.0F, 1.0F, null);
+                TextContentMode.UILIB_RAW, UiFontWeight.NORMAL, UiFontStyle.NORMAL, null, null, 0, 1.0F, 1.0F,
+                null);
         if (type != DocumentPaintCommandType.BOX_SHADOW && type != DocumentPaintCommandType.BOX_SHADOW_INSET) {
             throw new IllegalArgumentException("boxShadow command type expected");
         }
@@ -184,14 +199,14 @@ public final class DocumentPaintCommand {
             float paintContextOpacity, DocumentEffectType effectType) {
         this(type, element, left, top, right, bottom, color, borderWidth,
                 resolveLegacyBorderRadius(cornerRadii), cornerRadii, cornerMask, text, TextContentMode.UILIB_RAW,
-                UiFontWeight.NORMAL, UiFontStyle.NORMAL, customRenderer, backdropBlurRadius, backdropSaturation,
+                UiFontWeight.NORMAL, UiFontStyle.NORMAL, null, customRenderer, backdropBlurRadius, backdropSaturation,
                 paintContextOpacity, effectType);
     }
 
     DocumentPaintCommand(DocumentPaintCommandType type, ElementNode element, int left, int top, int right, int bottom,
             int color, int borderWidth, int borderRadius, UiBorderRadiusResolver.ResolvedCornerRadii cornerRadii,
             int cornerMask, String text, TextContentMode textContentMode, UiFontWeight fontWeight,
-            UiFontStyle fontStyle, DocumentCustomRenderer customRenderer,
+            UiFontStyle fontStyle, TextMeasureStyle textMeasureStyle, DocumentCustomRenderer customRenderer,
             int backdropBlurRadius, float backdropSaturation, float paintContextOpacity,
             DocumentEffectType effectType) {
         this.type = Objects.requireNonNull(type, "type");
@@ -211,6 +226,11 @@ public final class DocumentPaintCommand {
         this.textContentMode = textContentMode == null ? TextContentMode.UILIB_RAW : textContentMode;
         this.fontWeight = fontWeight == null ? UiFontWeight.NORMAL : fontWeight;
         this.fontStyle = fontStyle == null ? UiFontStyle.NORMAL : fontStyle;
+        this.textMeasureStyle = textMeasureStyle == null
+                ? TextMeasureStyle.DEFAULT.withTextContentMode(this.textContentMode).withFontStyle(this.fontWeight,
+                        this.fontStyle)
+                : textMeasureStyle.withTextContentMode(this.textContentMode).withFontStyle(this.fontWeight,
+                        this.fontStyle);
         this.customRenderer = customRenderer;
         this.backdropBlurRadius = Math.max(0, backdropBlurRadius);
         this.backdropSaturation = Math.max(0.0F, backdropSaturation);
@@ -309,6 +329,15 @@ public final class DocumentPaintCommand {
 
     public UiFontStyle getFontStyle() {
         return fontStyle;
+    }
+
+    /**
+     * 返回文本绘制使用的布局期样式快照。
+     *
+     * @return 文本样式快照
+     */
+    public TextMeasureStyle getTextMeasureStyle() {
+        return textMeasureStyle;
     }
 
     /**

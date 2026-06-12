@@ -298,6 +298,9 @@ final class RemoteCssParser {
             case "line-height":
                 declaration.setLineHeight(parseLength(value, true));
                 return UiStyleProperty.LINE_HEIGHT;
+            case "font-size":
+                declaration.setFontSize(parseLength(value, false));
+                return UiStyleProperty.FONT_SIZE;
             case "text-align":
                 declaration.setTextAlign(parseTextAlign(value));
                 return UiStyleProperty.TEXT_ALIGN;

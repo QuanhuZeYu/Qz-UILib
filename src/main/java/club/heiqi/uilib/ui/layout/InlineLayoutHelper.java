@@ -16,6 +16,7 @@ import club.heiqi.uilib.ui.style.props.UiVerticalAlign;
 import club.heiqi.uilib.ui.style.props.UiWhiteSpace;
 import club.heiqi.uilib.ui.text.TextContentMode;
 import club.heiqi.uilib.ui.text.TextMeasureService;
+import club.heiqi.uilib.ui.text.TextMeasureStyle;
 
 /**
  * block 容器内的 inline formatting 辅助布局器。
@@ -51,6 +52,7 @@ final class InlineLayoutHelper {
         UiWhiteSpace whiteSpace = ownerStyle != null ? ownerStyle.getWhiteSpace() : UiWhiteSpace.NORMAL;
         UiTextOverflow textOverflow = ownerStyle != null ? ownerStyle.getTextOverflow() : UiTextOverflow.CLIP;
         UiTextAlign textAlign = ownerStyle != null ? ownerStyle.getTextAlign() : UiTextAlign.START;
+        TextMeasureStyle textMeasureStyle = TextLayoutHelper.resolveTextMeasureStyle(ownerStyle, textContentMode);
 
         String remainingText = text;
         int lineTop = top;
@@ -67,29 +69,29 @@ final class InlineLayoutHelper {
                 break;
             }
             String resolvedLine = segment.text == null ? "" : segment.text;
-            int rawWidth = TextLayoutHelper.toUiTextSize(TextLayoutHelper.measureTextWidth(textMeasureService,
-                    resolvedLine, textContentMode, ownerStyle));
+            int rawWidth = TextLayoutHelper.measureTextWidth(textMeasureService, resolvedLine, textContentMode,
+                    ownerStyle);
             if (whiteSpace == UiWhiteSpace.NOWRAP && textOverflow == UiTextOverflow.ELLIPSIS
                     && rawWidth > availableWidth && availableWidth > 0) {
                 String ellipsis = "\u2026";
-                int ellipsisWidth = TextLayoutHelper.toUiTextSize(TextLayoutHelper.measureTextWidth(textMeasureService,
-                        ellipsis, textContentMode, ownerStyle));
+                int ellipsisWidth = TextLayoutHelper.measureTextWidth(textMeasureService, ellipsis, textContentMode,
+                        ownerStyle);
                 int targetWidth = Math.max(0, availableWidth - ellipsisWidth);
                 String trimmed = TextLayoutHelper.trimTextToWidth(textMeasureService, resolvedLine,
-                        TextLayoutHelper.toRawTextSize(targetWidth), textContentMode, ownerStyle);
+                        targetWidth, textContentMode, ownerStyle);
                 if (trimmed == null) {
                     trimmed = "";
                 }
                 resolvedLine = trimmed + ellipsis;
                 rawWidth = Math.min(availableWidth,
-                        TextLayoutHelper.toUiTextSize(TextLayoutHelper.measureTextWidth(textMeasureService,
-                                resolvedLine, textContentMode, ownerStyle)));
+                        TextLayoutHelper.measureTextWidth(textMeasureService, resolvedLine, textContentMode,
+                                ownerStyle));
             }
             int width = Math.max(0, Math.min(lineAvailableWidth, rawWidth));
             int lineLeft = TextLayoutHelper.resolveTextAlignOffset(textAlign, lineAvailableWidth, width)
                     + left + lineIndent;
-            textRuns.add(new DocumentLayoutTextRun(textNode, ownerElement, resolvedLine, textContentMode, lineLeft,
-                    lineTop, width, lineHeight));
+            textRuns.add(new DocumentLayoutTextRun(textNode, ownerElement, resolvedLine, textContentMode,
+                    textMeasureStyle, lineLeft, lineTop, width, lineHeight));
             lineTop += lineHeight;
             lineIndex++;
             remainingText = remainingText.substring(Math.min(segment.consumedLength, remainingText.length()));
@@ -215,8 +217,8 @@ final class InlineLayoutHelper {
                 }
                 continue;
             }
-            int width = Math.max(0, TextLayoutHelper.toUiTextSize(TextLayoutHelper.measureTextWidth(textMeasureService,
-                    segment, textContentMode, ownerStyle)));
+            int width = Math.max(0, TextLayoutHelper.measureTextWidth(textMeasureService, segment, textContentMode,
+                    ownerStyle));
             if (TextLayoutHelper.allowsSoftWrapping(whiteSpace)
                     && width > remainingWidth && inlineLayoutContext.hasLineContent()) {
                 inlineLayoutContext.nextLine();
@@ -225,8 +227,9 @@ final class InlineLayoutHelper {
             if (TextLayoutHelper.allowsSoftWrapping(whiteSpace)) {
                 width = Math.min(width, inlineLayoutContext.getRemainingWidth());
             }
-            inlineLayoutContext.appendTextRun(textNode, ownerElement, segment, inlineLayoutContext.getCursorLeft(),
-                    width, fragmentOwners);
+            inlineLayoutContext.appendTextRun(textNode, ownerElement, segment,
+                    TextLayoutHelper.resolveTextMeasureStyle(ownerStyle, textContentMode),
+                    inlineLayoutContext.getCursorLeft(), width, fragmentOwners);
             appendInlineFragments(fragmentOwners, inlineLayoutContext.getCursorLeft(), width, inlineLayoutContext);
             inlineLayoutContext.advance(width);
             remainingText = remainingText.substring(Math.min(segmentResult.consumedLength, remainingText.length()));
@@ -368,14 +371,15 @@ final class InlineLayoutHelper {
             return lineContentPresent;
         }
 
-        private void appendTextRun(TextNode textNode, ElementNode ownerElement, String text, int left, int width,
-                List<InlineFragmentOwner> fragmentOwners) {
+        private void appendTextRun(TextNode textNode, ElementNode ownerElement, String text,
+                TextMeasureStyle textMeasureStyle, int left, int width, List<InlineFragmentOwner> fragmentOwners) {
             if (width <= 0) {
                 return;
             }
             InlineFragmentOwner innermostOwner = fragmentOwners.isEmpty() ? null
                     : fragmentOwners.get(fragmentOwners.size() - 1);
-            pendingTextRuns.add(new PendingInlineTextRun(textNode, ownerElement, text, left, width, innermostOwner));
+            pendingTextRuns.add(new PendingInlineTextRun(textNode, ownerElement, text, textMeasureStyle, left, width,
+                    innermostOwner));
         }
 
         private void appendInlineFragment(InlineFragmentOwner owner, int left, int width) {
@@ -455,7 +459,9 @@ final class InlineLayoutHelper {
             for (PendingInlineTextRun pendingTextRun : pendingTextRuns) {
                 int textTop = resolveInlineTextTop(lineHeight, pendingTextRun);
                 textRuns.add(new DocumentLayoutTextRun(pendingTextRun.textNode, pendingTextRun.ownerElement,
-                        pendingTextRun.text, pendingTextRun.left, textTop, pendingTextRun.width, baseLineHeight));
+                        pendingTextRun.text, pendingTextRun.textNode.getTextContentMode(),
+                        pendingTextRun.textMeasureStyle, pendingTextRun.left, textTop, pendingTextRun.width,
+                        baseLineHeight));
             }
         }
 
@@ -525,17 +531,21 @@ final class InlineLayoutHelper {
         private final TextNode textNode;
         private final ElementNode ownerElement;
         private final String text;
+        private final TextMeasureStyle textMeasureStyle;
         private final int left;
         private final int width;
         private final int topEdge;
         private final int bottomEdge;
         private final UiVerticalAlign verticalAlign;
 
-        private PendingInlineTextRun(TextNode textNode, ElementNode ownerElement, String text, int left, int width,
-                InlineFragmentOwner innermostOwner) {
+        private PendingInlineTextRun(TextNode textNode, ElementNode ownerElement, String text,
+                TextMeasureStyle textMeasureStyle, int left, int width, InlineFragmentOwner innermostOwner) {
             this.textNode = textNode;
             this.ownerElement = ownerElement;
             this.text = text;
+            this.textMeasureStyle = textMeasureStyle == null
+                    ? TextMeasureStyle.DEFAULT.withTextContentMode(textNode.getTextContentMode())
+                    : textMeasureStyle.withTextContentMode(textNode.getTextContentMode());
             this.left = left;
             this.width = width;
             this.topEdge = innermostOwner == null ? 0 : innermostOwner.topEdge;
