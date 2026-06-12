@@ -258,10 +258,10 @@ public class DocumentAutocompleteInputControlTest {
     }
 
     /**
-     * 验证大量候选保留全部 option 节点，并通过滚动面板承载。
+     * 验证大量候选保留完整数据，但面板只渲染少量虚拟 option 节点。
      */
     @Test
-    public void shouldKeepAllSuggestionNodesInsideScrollablePopup() {
+    public void shouldVirtualizeLargeSuggestionListInsideScrollablePopup() {
         UiDocument document = UiDocument.create();
         DocumentAutocompleteInputControl autocompleteControl = new DocumentAutocompleteInputControl(document,
                 createOptions(20))
@@ -274,10 +274,75 @@ public class DocumentAutocompleteInputControlTest {
 
         Assert.assertTrue(autocompleteControl.isOpen());
         Assert.assertEquals(20, autocompleteControl.getSuggestionCount());
-        Assert.assertEquals(20, countOptionElements(popup));
+        Assert.assertTrue(countOptionElements(popup) <= 11);
+        Assert.assertNotNull(findOptionElementByText(popup, "Option 0"));
         Assert.assertEquals(UiOverflow.AUTO, popup.style().getOverflowY());
         Assert.assertEquals(UiStyleLength.px(112), popup.style().getMaxHeight());
         Assert.assertTrue(popup.getMaxScrollTop() > 0);
+    }
+
+    /**
+     * 验证虚拟化 autocomplete 滚动到远端窗口后仍能点击真实候选。
+     */
+    @Test
+    public void shouldSelectVirtualizedSuggestionAfterProgrammaticScroll() {
+        UiDocument document = UiDocument.create();
+        final List<DocumentAutocompleteSelectionEvent> selectionEvents =
+                new ArrayList<DocumentAutocompleteSelectionEvent>();
+        DocumentAutocompleteInputControl autocompleteControl = new DocumentAutocompleteInputControl(document,
+                createOptions(100))
+                .setMaxVisibleOptions(4)
+                .setSelectionHandler(new DocumentAutocompleteSelectionHandler() {
+                    @Override
+                    public void onSuggestionSelected(DocumentAutocompleteSelectionEvent event) {
+                        selectionEvents.add(event);
+                    }
+                });
+        HtmlLikeDocumentWidget widget = mount(document, autocompleteControl, 240, 220);
+
+        widget.onFocusTraversalEntered(false);
+        ElementNode popup = findListboxElement(document.getRootElement());
+        popup.scrollTo(0, 80 * 28);
+        widget.resolveLayoutBoxForTest();
+        ElementNode targetOption = findOptionElementByText(popup, "Option 80");
+        Assert.assertNotNull(targetOption);
+        DocumentElementBounds bounds = targetOption.getDocumentBounds();
+        click(widget, bounds.getLeft() + 8, bounds.getTop() + 8, 3L);
+
+        Assert.assertEquals("Option 80", autocompleteControl.getText());
+        Assert.assertFalse(autocompleteControl.isOpen());
+        Assert.assertEquals(1, selectionEvents.size());
+        Assert.assertEquals(80, selectionEvents.get(0).getSelectedIndex());
+        Assert.assertEquals("Option 80", selectionEvents.get(0).getSelectedSuggestion());
+    }
+
+    /**
+     * 验证 query 变化后会重置虚拟窗口到新候选列表开头。
+     */
+    @Test
+    public void shouldResetVirtualizedSuggestionWindowWhenQueryChanges() {
+        UiDocument document = UiDocument.create();
+        DocumentAutocompleteInputControl autocompleteControl = new DocumentAutocompleteInputControl(document,
+                createOptions(100))
+                .setMaxVisibleOptions(4);
+        HtmlLikeDocumentWidget widget = mount(document, autocompleteControl, 240, 220);
+
+        widget.onFocusTraversalEntered(false);
+        ElementNode popup = findListboxElement(document.getRootElement());
+        popup.scrollTo(0, 80 * 28);
+        widget.resolveLayoutBoxForTest();
+        Assert.assertTrue(popup.getScrollTop() > 0);
+        Assert.assertNotNull(findOptionElementByText(popup, "Option 80"));
+
+        widget.onTextInput(new UiTextInputEvent("9", 2L));
+        widget.resolveLayoutBoxForTest();
+
+        Assert.assertEquals("9", autocompleteControl.getText());
+        Assert.assertEquals(19, autocompleteControl.getSuggestionCount());
+        Assert.assertEquals(0, popup.getScrollTop());
+        Assert.assertTrue(countOptionElements(popup) <= 11);
+        Assert.assertNotNull(findOptionElementByText(popup, "Option 9"));
+        Assert.assertNull(findOptionElementByText(popup, "Option 80"));
     }
 
     /**
@@ -305,18 +370,20 @@ public class DocumentAutocompleteInputControlTest {
     public void shouldRevealHighlightedOptionWhenKeyboardNavigatesLongList() {
         UiDocument document = UiDocument.create();
         DocumentAutocompleteInputControl autocompleteControl = new DocumentAutocompleteInputControl(document,
-                createOptions(20))
+                createOptions(100))
                 .setMaxVisibleOptions(4);
         HtmlLikeDocumentWidget widget = mount(document, autocompleteControl, 240, 220);
 
         widget.onFocusTraversalEntered(false);
-        for (int index = 0; index < 8; index++) {
+        for (int index = 0; index < 50; index++) {
             key(widget, Keyboard.KEY_DOWN, index + 1L);
         }
         ElementNode popup = findListboxElement(document.getRootElement());
 
-        Assert.assertTrue(autocompleteControl.getHighlightedIndex() > 0);
+        Assert.assertEquals(50, autocompleteControl.getHighlightedIndex());
         Assert.assertTrue(popup.getScrollTop() > 0);
+        Assert.assertTrue(countOptionElements(popup) <= 11);
+        Assert.assertNotNull(findOptionElementByText(popup, "Option 50"));
     }
 
     /**
@@ -444,6 +511,18 @@ public class DocumentAutocompleteInputControlTest {
                     return (ElementNode) child;
                 }
                 index++;
+            }
+        }
+        return null;
+    }
+
+    private static ElementNode findOptionElementByText(ElementNode popup, String text) {
+        for (DocumentNode child : popup.getChildren()) {
+            if (child instanceof ElementNode) {
+                ElementNode childElement = (ElementNode) child;
+                if ("option".equals(childElement.getTagName()) && text.equals(childElement.getTextContent())) {
+                    return childElement;
+                }
             }
         }
         return null;
