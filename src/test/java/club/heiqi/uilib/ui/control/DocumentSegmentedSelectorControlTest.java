@@ -6,8 +6,7 @@ import java.util.List;
 
 import org.junit.Assert;
 import org.junit.Test;
-import org.lwjglx.input.Keyboard;
-
+import club.heiqi.uilib.ui.event.UiKeyCodes;
 import club.heiqi.uilib.ui.document.HtmlLikeDocumentWidget;
 import club.heiqi.uilib.ui.dom.ElementNode;
 import club.heiqi.uilib.ui.dom.UiDocument;
@@ -17,6 +16,7 @@ import club.heiqi.uilib.ui.render.UiRenderContext;
 import club.heiqi.uilib.ui.style.cascade.UiBorderRadiusResolver;
 import club.heiqi.uilib.ui.style.values.UiStyleLength;
 import club.heiqi.uilib.ui.text.TextContentMode;
+import club.heiqi.uilib.ui.text.TextMeasureStyle;
 import club.heiqi.uilib.ui.text.TextMeasureService;
 import club.heiqi.uilib.ui.style.values.UiSurfaceStyle;
 
@@ -97,14 +97,14 @@ public class DocumentSegmentedSelectorControlTest {
         widget.applyLayoutBounds(0, 0, 180, 40);
 
         widget.onFocusTraversalEntered(false);
-        widget.onKeyEvent(new UiKeyEvent(Keyboard.KEY_RIGHT, 0, 0, UiKeyEvent.Action.PRESSED, false, false,
+        widget.onKeyEvent(new UiKeyEvent(UiKeyCodes.KEY_RIGHT, 0, 0, UiKeyEvent.Action.PRESSED, false, false,
                 false, false, 3L));
-        widget.onKeyEvent(new UiKeyEvent(Keyboard.KEY_LEFT, 0, 0, UiKeyEvent.Action.PRESSED, false, false,
+        widget.onKeyEvent(new UiKeyEvent(UiKeyCodes.KEY_LEFT, 0, 0, UiKeyEvent.Action.PRESSED, false, false,
                 false, false, 4L));
 
         Assert.assertEquals(0, selector.getSelectedIndex());
         Assert.assertEquals(2, events.size());
-        Assert.assertEquals(Keyboard.KEY_RIGHT, events.get(0).getKeyCode());
+        Assert.assertEquals(UiKeyCodes.KEY_RIGHT, events.get(0).getKeyCode());
         Assert.assertEquals("true", ((ElementNode) selector.getElement().getChildren().get(0))
                 .getAttribute("aria-checked"));
     }
@@ -137,16 +137,16 @@ public class DocumentSegmentedSelectorControlTest {
 
         widget.onFocusTraversalEntered(false);
         Assert.assertTrue(widget.onFocusTraversal(false));
-        widget.onKeyEvent(new UiKeyEvent(Keyboard.KEY_SPACE, 0, 0, UiKeyEvent.Action.PRESSED, false, false, false,
+        widget.onKeyEvent(new UiKeyEvent(UiKeyCodes.KEY_SPACE, 0, 0, UiKeyEvent.Action.PRESSED, false, false, false,
                 false, 3L));
         Assert.assertEquals(0, selector.getSelectedIndex());
-        widget.onKeyEvent(new UiKeyEvent(Keyboard.KEY_SPACE, 0, 0, UiKeyEvent.Action.RELEASED, false, false, false,
+        widget.onKeyEvent(new UiKeyEvent(UiKeyCodes.KEY_SPACE, 0, 0, UiKeyEvent.Action.RELEASED, false, false, false,
                 false, 4L));
 
         Assert.assertEquals(1, selector.getSelectedIndex());
         Assert.assertEquals(1, events.size());
         Assert.assertTrue(events.get(0).isKeyboardTriggered());
-        Assert.assertEquals(Keyboard.KEY_SPACE, events.get(0).getKeyCode());
+        Assert.assertEquals(UiKeyCodes.KEY_SPACE, events.get(0).getKeyCode());
     }
 
     /**
@@ -269,7 +269,7 @@ public class DocumentSegmentedSelectorControlTest {
         assertElementUid(firstButton, widget.getFocusedElement());
 
         // 按 Right，selectedIndex == 1，焦点移到第二个选项
-        widget.onKeyEvent(new UiKeyEvent(Keyboard.KEY_RIGHT, 0, 0, UiKeyEvent.Action.PRESSED, false, false,
+        widget.onKeyEvent(new UiKeyEvent(UiKeyCodes.KEY_RIGHT, 0, 0, UiKeyEvent.Action.PRESSED, false, false,
                 false, false, 1L));
         Assert.assertEquals(1, selector.getSelectedIndex());
         assertElementUid(secondButton, widget.getFocusedElement());
@@ -277,9 +277,9 @@ public class DocumentSegmentedSelectorControlTest {
         Assert.assertEquals("false", firstButton.getAttribute("aria-checked"));
 
         // 按 Space，不会切回第一个（Space 触发的是 DocumentButtonControl 的 action，但当前焦点选项已是第二个）
-        widget.onKeyEvent(new UiKeyEvent(Keyboard.KEY_SPACE, 0, 0, UiKeyEvent.Action.PRESSED, false, false,
+        widget.onKeyEvent(new UiKeyEvent(UiKeyCodes.KEY_SPACE, 0, 0, UiKeyEvent.Action.PRESSED, false, false,
                 false, false, 2L));
-        widget.onKeyEvent(new UiKeyEvent(Keyboard.KEY_SPACE, 0, 0, UiKeyEvent.Action.RELEASED, false, false,
+        widget.onKeyEvent(new UiKeyEvent(UiKeyCodes.KEY_SPACE, 0, 0, UiKeyEvent.Action.RELEASED, false, false,
                 false, false, 3L));
         // Space 触发 DocumentButtonControl 的 action → selectIndex(1, ...)，selectedIndex 不变
         Assert.assertEquals(1, selector.getSelectedIndex());
@@ -317,7 +317,7 @@ public class DocumentSegmentedSelectorControlTest {
         Assert.assertNull(widget.getFocusedElement());
 
         // 模拟键盘事件（即使发到容器也不改变选中项）
-        widget.onKeyEvent(new UiKeyEvent(Keyboard.KEY_RIGHT, 0, 0, UiKeyEvent.Action.PRESSED, false, false,
+        widget.onKeyEvent(new UiKeyEvent(UiKeyCodes.KEY_RIGHT, 0, 0, UiKeyEvent.Action.PRESSED, false, false,
                 false, false, 1L));
         Assert.assertEquals(0, selector.getSelectedIndex());
         Assert.assertTrue(events.isEmpty());
@@ -350,6 +350,10 @@ public class DocumentSegmentedSelectorControlTest {
         @Override
         public void drawText(String text, int x, int y, int color, boolean shadow,
                 TextContentMode textContentMode) {}
+
+        @Override
+        protected void drawTextResolved(String text, int x, int y, int color, boolean shadow,
+                TextMeasureStyle resolvedStyle) {}
 
         @Override
         public boolean supportsDeferredTextBatching() {

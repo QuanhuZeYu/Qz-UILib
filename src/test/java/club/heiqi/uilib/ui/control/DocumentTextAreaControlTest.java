@@ -6,8 +6,7 @@ import java.util.List;
 
 import org.junit.Assert;
 import org.junit.Test;
-import org.lwjglx.input.Keyboard;
-
+import club.heiqi.uilib.ui.event.UiKeyCodes;
 import club.heiqi.uilib.ui.document.HtmlLikeDocumentWidget;
 import club.heiqi.uilib.ui.dom.DocumentElementBounds;
 import club.heiqi.uilib.ui.dom.ElementNode;
@@ -62,23 +61,23 @@ public class DocumentTextAreaControlTest {
         Assert.assertTrue(textAreaControl.isFocused());
 
         widget.onTextInput(new UiTextInputEvent("Hello", 3L));
-        widget.onKeyEvent(new UiKeyEvent(Keyboard.KEY_RETURN, 0, 0, UiKeyEvent.Action.PRESSED, false, false, false,
+        widget.onKeyEvent(new UiKeyEvent(UiKeyCodes.KEY_RETURN, 0, 0, UiKeyEvent.Action.PRESSED, false, false, false,
                 false, 4L));
         widget.onTextInput(new UiTextInputEvent("World", 5L));
-        widget.onKeyEvent(new UiKeyEvent(Keyboard.KEY_UP, 0, 0, UiKeyEvent.Action.PRESSED, false, false, false,
+        widget.onKeyEvent(new UiKeyEvent(UiKeyCodes.KEY_UP, 0, 0, UiKeyEvent.Action.PRESSED, false, false, false,
                 false, 6L));
-        widget.onKeyEvent(new UiKeyEvent(Keyboard.KEY_END, 0, 0, UiKeyEvent.Action.PRESSED, false, false, false,
+        widget.onKeyEvent(new UiKeyEvent(UiKeyCodes.KEY_END, 0, 0, UiKeyEvent.Action.PRESSED, false, false, false,
                 false, 7L));
         widget.onTextInput(new UiTextInputEvent("!", 8L));
         Assert.assertEquals("Hello!\nWorld", textAreaControl.getText());
 
-        widget.onKeyEvent(new UiKeyEvent(Keyboard.KEY_LEFT, 0, 0, UiKeyEvent.Action.PRESSED, false, true, false,
+        widget.onKeyEvent(new UiKeyEvent(UiKeyCodes.KEY_LEFT, 0, 0, UiKeyEvent.Action.PRESSED, false, true, false,
                 false, 9L));
-        widget.onKeyEvent(new UiKeyEvent(Keyboard.KEY_BACK, 0, 0, UiKeyEvent.Action.PRESSED, false, false, false,
+        widget.onKeyEvent(new UiKeyEvent(UiKeyCodes.KEY_BACK, 0, 0, UiKeyEvent.Action.PRESSED, false, false, false,
                 false, 10L));
         Assert.assertEquals("Hello\nWorld", textAreaControl.getText());
 
-        widget.onKeyEvent(new UiKeyEvent(Keyboard.KEY_A, 0, 0, UiKeyEvent.Action.PRESSED, true, false, false,
+        widget.onKeyEvent(new UiKeyEvent(UiKeyCodes.KEY_A, 0, 0, UiKeyEvent.Action.PRESSED, true, false, false,
                 false, 11L));
         widget.onTextInput(new UiTextInputEvent("Done", 12L));
         Assert.assertEquals("Done", textAreaControl.getText());
@@ -106,9 +105,9 @@ public class DocumentTextAreaControlTest {
 
         widget.onFocusTraversalEntered(false);
         widget.render(new ControlTestRenderContext(160, 80));
-        widget.onKeyEvent(new UiKeyEvent(Keyboard.KEY_LEFT, 0, 0, UiKeyEvent.Action.PRESSED, false, false, false,
+        widget.onKeyEvent(new UiKeyEvent(UiKeyCodes.KEY_LEFT, 0, 0, UiKeyEvent.Action.PRESSED, false, false, false,
                 false, 1L));
-        widget.onKeyEvent(new UiKeyEvent(Keyboard.KEY_BACK, 0, 0, UiKeyEvent.Action.PRESSED, false, false, false,
+        widget.onKeyEvent(new UiKeyEvent(UiKeyCodes.KEY_BACK, 0, 0, UiKeyEvent.Action.PRESSED, false, false, false,
                 false, 2L));
 
         Assert.assertEquals("AB", textAreaControl.getText());
@@ -386,7 +385,7 @@ public class DocumentTextAreaControlTest {
 
         widget.onFocusTraversalEntered(false);
         widget.render(new ControlTestRenderContext(200, 120));
-        widget.onKeyEvent(new UiKeyEvent(Keyboard.KEY_UP, 0, 0, UiKeyEvent.Action.PRESSED, false, false, false,
+        widget.onKeyEvent(new UiKeyEvent(UiKeyCodes.KEY_UP, 0, 0, UiKeyEvent.Action.PRESSED, false, false, false,
                 false, 1L));
         widget.onTextInput(new UiTextInputEvent("X", 2L));
 

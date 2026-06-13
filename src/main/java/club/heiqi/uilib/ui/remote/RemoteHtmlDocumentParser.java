@@ -8,8 +8,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 
-import org.lwjglx.input.Keyboard;
-
+import club.heiqi.uilib.ui.event.UiKeyCodes;
 import club.heiqi.uilib.MyMod;
 import club.heiqi.uilib.ui.control.DocumentButtonControl;
 import club.heiqi.uilib.ui.control.DocumentCheckboxControl;
@@ -468,8 +467,8 @@ final class RemoteHtmlDocumentParser {
                 if (disabled || event.getAction() != UiKeyEvent.Action.PRESSED) {
                     return false;
                 }
-                if (event.getKeyCode() == Keyboard.KEY_RETURN || event.getKeyCode() == Keyboard.KEY_NUMPADENTER
-                        || event.getKeyCode() == Keyboard.KEY_SPACE) {
+                if (event.getKeyCode() == UiKeyCodes.KEY_RETURN || event.getKeyCode() == UiKeyCodes.KEY_NUMPADENTER
+                        || event.getKeyCode() == UiKeyCodes.KEY_SPACE) {
                     selectRadio(group, control);
                     return true;
                 }

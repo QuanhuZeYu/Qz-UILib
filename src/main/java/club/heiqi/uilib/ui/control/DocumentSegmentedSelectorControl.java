@@ -1,7 +1,6 @@
 package club.heiqi.uilib.ui.control;
 
-import org.lwjglx.input.Keyboard;
-
+import club.heiqi.uilib.ui.event.UiKeyCodes;
 import club.heiqi.uilib.ui.dom.DocumentElementKeyEvent;
 import club.heiqi.uilib.ui.dom.DocumentElementKeyHandler;
 import club.heiqi.uilib.ui.dom.ElementNode;
@@ -241,13 +240,13 @@ public final class DocumentSegmentedSelectorControl {
                 if (event.getAction() != UiKeyEvent.Action.PRESSED) {
                     return false;
                 }
-                if (event.getKeyCode() == Keyboard.KEY_LEFT) {
+                if (event.getKeyCode() == UiKeyCodes.KEY_LEFT) {
                     int nextIndex = Math.max(0, selectedIndex - 1);
                     selectIndex(nextIndex, true, true, event.getKeyCode(), -1, event.getTimeNanos());
                     event.requestFocus(buttons[selectedIndex].getElement(), true);
                     return true;
                 }
-                if (event.getKeyCode() == Keyboard.KEY_RIGHT) {
+                if (event.getKeyCode() == UiKeyCodes.KEY_RIGHT) {
                     int nextIndex = Math.min(options.length - 1, selectedIndex + 1);
                     selectIndex(nextIndex, true, true, event.getKeyCode(), -1, event.getTimeNanos());
                     event.requestFocus(buttons[selectedIndex].getElement(), true);

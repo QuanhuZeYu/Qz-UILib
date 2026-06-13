@@ -11,6 +11,11 @@
 - 原始报告正文使用 `后续复核（YYYY-MM-DD）` 批注标记，不删除历史判断；批注需说明当前正确口径和是否还需要修复。
 - 只在本索引写摘要，不把完整修复过程或阶段流水账堆积到索引页。
 
+## 2026-06-13-lwjgl3ify-decouple
+- 类型：`lwjgl3ify` 输入解耦质量审查与修复归档
+- 详情文档：[REVIEW-20260613-lwjgl3ify-decouple.md](REVIEW-20260613-lwjgl3ify-decouple.md)
+- 结论摘要：审查确认输入后端解耦方向成立，并完成两批次修复：反射失败日志按方法/字段去重、系统光标区分初始化与运行时失败、fallback `REPEATED` 语义写入决策、InputEvents 时间戳优先读取、`UiKeyCodes` 补齐键码覆盖、`LwjglInputRuntime` 新增包内运行时可用性检查。执行计划中提到的测试编译基础设施问题在收尾复核时未复现，`compileTestJava` 当前通过。
+
 ## 2026-06-09-production-code-round9
 - 类型：全项目生产代码第九轮审查
 - 详情文档：[REVIEW-20260609-production-code-round9.md](REVIEW-20260609-production-code-round9.md)

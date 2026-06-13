@@ -4,8 +4,7 @@ import java.util.Collections;
 
 import org.junit.Assert;
 import org.junit.Test;
-import org.lwjglx.input.Keyboard;
-
+import club.heiqi.uilib.ui.event.UiKeyCodes;
 import club.heiqi.uilib.ui.document.HtmlLikeDocumentWidget;
 import club.heiqi.uilib.ui.control.DocumentTextInputControl;
 import club.heiqi.uilib.ui.dom.UiDocument;
@@ -36,7 +35,7 @@ public class UiInputRouterTest {
         UiInputRouter router = new UiInputRouter();
 
         router.route(root, mouseFrame(new UiMouseEvent(UiMouseEvent.Action.BUTTON_DOWN, 5, 5, 0, 0, 0, 0, 1L)));
-        router.route(root, keyFrame(new UiKeyEvent(Keyboard.KEY_TAB, 0, 0, UiKeyEvent.Action.PRESSED, false, false,
+        router.route(root, keyFrame(new UiKeyEvent(UiKeyCodes.KEY_TAB, 0, 0, UiKeyEvent.Action.PRESSED, false, false,
                 false, false, 2L)));
 
         Assert.assertTrue(firstWidget.focused);
@@ -44,7 +43,7 @@ public class UiInputRouterTest {
         Assert.assertEquals(1, firstWidget.traversalCount);
 
         firstWidget.consumeTraversal = false;
-        router.route(root, keyFrame(new UiKeyEvent(Keyboard.KEY_TAB, 0, 0, UiKeyEvent.Action.PRESSED, false, false,
+        router.route(root, keyFrame(new UiKeyEvent(UiKeyCodes.KEY_TAB, 0, 0, UiKeyEvent.Action.PRESSED, false, false,
                 false, false, 3L)));
 
         Assert.assertFalse(firstWidget.focused);

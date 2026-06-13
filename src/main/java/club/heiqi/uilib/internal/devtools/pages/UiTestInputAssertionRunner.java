@@ -2,8 +2,7 @@ package club.heiqi.uilib.internal.devtools.pages;
 
 import java.util.List;
 
-import org.lwjglx.input.Keyboard;
-
+import club.heiqi.uilib.ui.event.UiKeyCodes;
 import club.heiqi.uilib.ui.document.HtmlLikeDocumentWidget;
 import club.heiqi.uilib.ui.dom.DocumentNode;
 import club.heiqi.uilib.ui.dom.ElementNode;
@@ -116,10 +115,10 @@ final class UiTestInputAssertionRunner {
             return false;
         }
         normal.focus();
-        widget.onKeyEvent(new UiKeyEvent(Keyboard.KEY_RETURN, Keyboard.KEY_RETURN, 0, UiKeyEvent.Action.PRESSED,
+        widget.onKeyEvent(new UiKeyEvent(UiKeyCodes.KEY_RETURN, UiKeyCodes.KEY_RETURN, 0, UiKeyEvent.Action.PRESSED,
                 false, false, false, false, 21L));
         blocked.focus();
-        widget.onKeyEvent(new UiKeyEvent(Keyboard.KEY_RETURN, Keyboard.KEY_RETURN, 0, UiKeyEvent.Action.PRESSED,
+        widget.onKeyEvent(new UiKeyEvent(UiKeyCodes.KEY_RETURN, UiKeyCodes.KEY_RETURN, 0, UiKeyEvent.Action.PRESSED,
                 false, false, false, false, 22L));
         String log = logNode.getTextContent();
         diagnostics.add("preventDefaultLog=" + log);
@@ -165,7 +164,7 @@ final class UiTestInputAssertionRunner {
             return false;
         }
         target.focus();
-        widget.onKeyEvent(new UiKeyEvent(Keyboard.KEY_A, Keyboard.KEY_A, 0, UiKeyEvent.Action.PRESSED,
+        widget.onKeyEvent(new UiKeyEvent(UiKeyCodes.KEY_A, UiKeyCodes.KEY_A, 0, UiKeyEvent.Action.PRESSED,
                 false, false, false, false, 41L));
         widget.onTextInput(new UiTextInputEvent("A字", 42L));
         String log = logNode.getTextContent();
@@ -173,7 +172,7 @@ final class UiTestInputAssertionRunner {
         diagnostics.add("keyboardTextDiff=expected key capture/target/bubble before textInput capture/target/bubble");
         return log.contains("key-root-capture:CAPTURING")
                 && log.contains("key-target-capture:AT_TARGET")
-                && log.contains("key-target:AT_TARGET:code=" + Keyboard.KEY_A)
+                && log.contains("key-target:AT_TARGET:code=" + UiKeyCodes.KEY_A)
                 && log.contains("key-root-bubble:BUBBLING")
                 && log.contains("text-root-capture:CAPTURING")
                 && log.contains("text-target-capture:AT_TARGET")

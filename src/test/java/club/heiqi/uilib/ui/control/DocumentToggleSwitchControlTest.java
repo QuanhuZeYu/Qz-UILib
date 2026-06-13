@@ -6,8 +6,7 @@ import java.util.List;
 
 import org.junit.Assert;
 import org.junit.Test;
-import org.lwjglx.input.Keyboard;
-
+import club.heiqi.uilib.ui.event.UiKeyCodes;
 import club.heiqi.uilib.ui.document.HtmlLikeDocumentWidget;
 import club.heiqi.uilib.ui.dom.ElementNode;
 import club.heiqi.uilib.ui.dom.UiDocument;
@@ -101,11 +100,11 @@ public class DocumentToggleSwitchControlTest {
         widget.applyLayoutBounds(0, 0, 120, 40);
 
         widget.onFocusTraversalEntered(true);
-        widget.onKeyEvent(new UiKeyEvent(Keyboard.KEY_RETURN, 0, 0, UiKeyEvent.Action.PRESSED, false, false, false,
+        widget.onKeyEvent(new UiKeyEvent(UiKeyCodes.KEY_RETURN, 0, 0, UiKeyEvent.Action.PRESSED, false, false, false,
                 false, 1L));
-        widget.onKeyEvent(new UiKeyEvent(Keyboard.KEY_SPACE, 0, 0, UiKeyEvent.Action.PRESSED, false, false, false,
+        widget.onKeyEvent(new UiKeyEvent(UiKeyCodes.KEY_SPACE, 0, 0, UiKeyEvent.Action.PRESSED, false, false, false,
                 false, 2L));
-        widget.onKeyEvent(new UiKeyEvent(Keyboard.KEY_SPACE, 0, 0, UiKeyEvent.Action.RELEASED, false, false, false,
+        widget.onKeyEvent(new UiKeyEvent(UiKeyCodes.KEY_SPACE, 0, 0, UiKeyEvent.Action.RELEASED, false, false, false,
                 false, 3L));
 
         Assert.assertFalse(toggleControl.isToggled());
@@ -144,7 +143,7 @@ public class DocumentToggleSwitchControlTest {
         widget.onMouseDown(new UiMouseEvent(UiMouseEvent.Action.BUTTON_DOWN, 8, 8, 0, 0, 0, 0, 1L));
         widget.onMouseUp(new UiMouseEvent(UiMouseEvent.Action.BUTTON_UP, 8, 8, 0, 0, 0, 0, 2L));
         widget.onFocusTraversalEntered(true);
-        widget.onKeyEvent(new UiKeyEvent(Keyboard.KEY_RETURN, 0, 0, UiKeyEvent.Action.PRESSED, false, false, false,
+        widget.onKeyEvent(new UiKeyEvent(UiKeyCodes.KEY_RETURN, 0, 0, UiKeyEvent.Action.PRESSED, false, false, false,
                 false, 3L));
 
         Assert.assertFalse(toggleControl.isToggled());
@@ -243,13 +242,13 @@ public class DocumentToggleSwitchControlTest {
         widget.onFocusTraversalEntered(true);
 
         // Space pressed：isToggled() 不变，handler 不触发
-        widget.onKeyEvent(new UiKeyEvent(Keyboard.KEY_SPACE, 0, 0, UiKeyEvent.Action.PRESSED, false, false,
+        widget.onKeyEvent(new UiKeyEvent(UiKeyCodes.KEY_SPACE, 0, 0, UiKeyEvent.Action.PRESSED, false, false,
                 false, false, 1L));
         Assert.assertFalse(toggleControl.isToggled());
         Assert.assertTrue(toggleStates.isEmpty());
 
         // Space released：isToggled() 改变，handler 触发一次
-        widget.onKeyEvent(new UiKeyEvent(Keyboard.KEY_SPACE, 0, 0, UiKeyEvent.Action.RELEASED, false, false,
+        widget.onKeyEvent(new UiKeyEvent(UiKeyCodes.KEY_SPACE, 0, 0, UiKeyEvent.Action.RELEASED, false, false,
                 false, false, 2L));
         Assert.assertTrue(toggleControl.isToggled());
         Assert.assertEquals(1, toggleStates.size());
@@ -286,7 +285,7 @@ public class DocumentToggleSwitchControlTest {
         widget.onFocusTraversalEntered(true);
 
         // Space pressed
-        widget.onKeyEvent(new UiKeyEvent(Keyboard.KEY_SPACE, 0, 0, UiKeyEvent.Action.PRESSED, false, false,
+        widget.onKeyEvent(new UiKeyEvent(UiKeyCodes.KEY_SPACE, 0, 0, UiKeyEvent.Action.PRESSED, false, false,
                 false, false, 1L));
         Assert.assertFalse(toggleControl.isToggled());
 
@@ -294,7 +293,7 @@ public class DocumentToggleSwitchControlTest {
         toggleControl.setEnabled(false);
 
         // Space released 不触发
-        widget.onKeyEvent(new UiKeyEvent(Keyboard.KEY_SPACE, 0, 0, UiKeyEvent.Action.RELEASED, false, false,
+        widget.onKeyEvent(new UiKeyEvent(UiKeyCodes.KEY_SPACE, 0, 0, UiKeyEvent.Action.RELEASED, false, false,
                 false, false, 2L));
         Assert.assertFalse(toggleControl.isToggled());
         Assert.assertTrue(toggleStates.isEmpty());
@@ -330,7 +329,7 @@ public class DocumentToggleSwitchControlTest {
         widget.onFocusTraversalEntered(true);
 
         // Space pressed
-        widget.onKeyEvent(new UiKeyEvent(Keyboard.KEY_SPACE, 0, 0, UiKeyEvent.Action.PRESSED, false, false,
+        widget.onKeyEvent(new UiKeyEvent(UiKeyCodes.KEY_SPACE, 0, 0, UiKeyEvent.Action.PRESSED, false, false,
                 false, false, 1L));
         Assert.assertFalse(toggleControl.isToggled());
 
@@ -338,7 +337,7 @@ public class DocumentToggleSwitchControlTest {
         widget.onFocusChanged(false);
 
         // Space released 不触发
-        widget.onKeyEvent(new UiKeyEvent(Keyboard.KEY_SPACE, 0, 0, UiKeyEvent.Action.RELEASED, false, false,
+        widget.onKeyEvent(new UiKeyEvent(UiKeyCodes.KEY_SPACE, 0, 0, UiKeyEvent.Action.RELEASED, false, false,
                 false, false, 2L));
         Assert.assertFalse(toggleControl.isToggled());
         Assert.assertTrue(toggleStates.isEmpty());

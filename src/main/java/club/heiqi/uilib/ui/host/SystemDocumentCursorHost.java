@@ -9,8 +9,6 @@ import java.lang.reflect.Field;
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
 
-import org.lwjglx.opengl.Display;
-
 import club.heiqi.uilib.MyMod;
 import club.heiqi.uilib.ui.style.props.UiCursor;
 
@@ -46,13 +44,7 @@ public final class SystemDocumentCursorHost implements DocumentCursorHost {
         if (runtimeCursorSynchronized && appliedCursor == resolvedCursor) {
             return;
         }
-        try {
-            applyResolvedCursor(resolvedCursor);
-        } catch (RuntimeException exception) {
-            disableRuntimeCursor(resolvedCursor, exception);
-        } catch (LinkageError error) {
-            disableRuntimeCursor(resolvedCursor, error);
-        }
+        applyResolvedCursor(resolvedCursor);
     }
 
     private boolean isRuntimeAvailable(ResolvedCursorKind resolvedCursor) {
@@ -70,18 +62,28 @@ public final class SystemDocumentCursorHost implements DocumentCursorHost {
     private void applyResolvedCursor(ResolvedCursorKind resolvedCursor) {
         appliedCursor = resolvedCursor;
         if (resolvedCursor == ResolvedCursorKind.HIDDEN) {
-            backend.hideCursor();
-            runtimeCursorSynchronized = true;
+            try {
+                backend.hideCursor();
+                runtimeCursorSynchronized = true;
+            } catch (IllegalStateException exception) {
+                MyMod.LOG.debug("UILib 系统光标隐藏失败，本次操作跳过。", exception);
+                runtimeCursorSynchronized = false;
+            }
             return;
         }
-        backend.showCursor();
-        if (resolvedCursor == ResolvedCursorKind.DEFAULT) {
-            backend.applyDefaultCursor();
+        try {
+            backend.showCursor();
+            if (resolvedCursor == ResolvedCursorKind.DEFAULT) {
+                backend.applyDefaultCursor();
+                runtimeCursorSynchronized = true;
+                return;
+            }
+            backend.applySystemCursor(resolvedCursor);
             runtimeCursorSynchronized = true;
-            return;
+        } catch (IllegalStateException exception) {
+            MyMod.LOG.debug("UILib 系统光标应用失败，本次操作跳过：cursor={}", resolvedCursor, exception);
+            runtimeCursorSynchronized = false;
         }
-        backend.applySystemCursor(resolvedCursor);
-        runtimeCursorSynchronized = true;
     }
 
     private void disableRuntimeCursor(ResolvedCursorKind resolvedCursor, Throwable cause) {
@@ -167,7 +169,7 @@ public final class SystemDocumentCursorHost implements DocumentCursorHost {
                 return false;
             }
             try {
-                return Display.isCreated();
+                return reflectionBridge.isDisplayCreated();
             } catch (LinkageError error) {
                 logDisplayProbeFailureOnce(error);
                 return false;
@@ -253,9 +255,14 @@ public final class SystemDocumentCursorHost implements DocumentCursorHost {
 
         private static final String SDL_MOUSE_CLASS_NAME = "org.lwjgl.sdl.SDLMouse";
         private static final String MAIN_THREAD_EXEC_CLASS_NAME = "me.eigenraven.lwjgl3ify.client.MainThreadExec";
+        private static final String LWJGLX_DISPLAY_CLASS_NAME = "org.lwjglx.opengl.Display";
+        private static final String LWJGL2_DISPLAY_CLASS_NAME = "org.lwjgl.opengl.Display";
+        private static final String LWJGLX_MOUSE_CLASS_NAME = "org.lwjglx.input.Mouse";
+        private static final String LWJGLX_CURSOR_CLASS_NAME = "org.lwjglx.input.Cursor";
         private static final AtomicBoolean BRIDGE_RESOLUTION_FAILURE_LOGGED = new AtomicBoolean(false);
         private static final SdlReflectionBridge INSTANCE = new SdlReflectionBridge();
 
+        private final Method displayIsCreatedMethod;
         private final Method showCursorMethod;
         private final Method hideCursorMethod;
         private final Method setCursorMethod;
@@ -272,14 +279,17 @@ public final class SystemDocumentCursorHost implements DocumentCursorHost {
             Method resolvedCreateSystemCursorMethod = null;
             Method resolvedSetNativeCursorMethod = null;
             Method resolvedRunOnMainThreadMethod = null;
+            Method resolvedDisplayIsCreatedMethod = null;
             Map<ResolvedCursorKind, Integer> resolvedSystemCursorConstants =
                     new EnumMap<ResolvedCursorKind, Integer>(ResolvedCursorKind.class);
             boolean resolvedAvailable = false;
             try {
                 Class<?> sdlMouseClass = Class.forName(SDL_MOUSE_CLASS_NAME);
                 Class<?> mainThreadExecClass = Class.forName(MAIN_THREAD_EXEC_CLASS_NAME);
-                Class<?> lwjglMouseClass = Class.forName("org.lwjglx.input.Mouse");
-                Class<?> lwjglCursorClass = Class.forName("org.lwjglx.input.Cursor");
+                Class<?> displayClass = resolveFirstClass(LWJGLX_DISPLAY_CLASS_NAME, LWJGL2_DISPLAY_CLASS_NAME);
+                Class<?> lwjglMouseClass = Class.forName(LWJGLX_MOUSE_CLASS_NAME);
+                Class<?> lwjglCursorClass = Class.forName(LWJGLX_CURSOR_CLASS_NAME);
+                resolvedDisplayIsCreatedMethod = displayClass.getMethod("isCreated");
                 resolvedShowCursorMethod = sdlMouseClass.getMethod("SDL_ShowCursor");
                 resolvedHideCursorMethod = sdlMouseClass.getMethod("SDL_HideCursor");
                 resolvedSetCursorMethod = sdlMouseClass.getMethod("SDL_SetCursor", Long.TYPE);
@@ -307,10 +317,15 @@ public final class SystemDocumentCursorHost implements DocumentCursorHost {
                 resolvedAvailable = true;
             } catch (ReflectiveOperationException exception) {
                 resolvedSystemCursorConstants.clear();
-                if (BRIDGE_RESOLUTION_FAILURE_LOGGED.compareAndSet(false, true)) {
-                    MyMod.LOG.debug("UILib 系统光标桥接反射解析失败，已在本次运行中降级为 no-op。", exception);
-                }
+                logBridgeResolutionFailureOnce(exception);
+            } catch (SecurityException exception) {
+                resolvedSystemCursorConstants.clear();
+                logBridgeResolutionFailureOnce(exception);
+            } catch (LinkageError error) {
+                resolvedSystemCursorConstants.clear();
+                logBridgeResolutionFailureOnce(error);
             }
+            this.displayIsCreatedMethod = resolvedDisplayIsCreatedMethod;
             this.showCursorMethod = resolvedShowCursorMethod;
             this.hideCursorMethod = resolvedHideCursorMethod;
             this.setCursorMethod = resolvedSetCursorMethod;
@@ -327,6 +342,10 @@ public final class SystemDocumentCursorHost implements DocumentCursorHost {
 
         boolean isAvailable() {
             return available;
+        }
+
+        boolean isDisplayCreated() {
+            return ((Boolean) invoke(displayIsCreatedMethod, null)).booleanValue();
         }
 
         void runOnMainThread(Runnable runnable) {
@@ -370,6 +389,21 @@ public final class SystemDocumentCursorHost implements DocumentCursorHost {
         private static int readStaticInt(Class<?> ownerClass, String fieldName) throws ReflectiveOperationException {
             Field field = ownerClass.getField(fieldName);
             return field.getInt(null);
+        }
+
+        private static Class<?> resolveFirstClass(String firstClassName, String secondClassName)
+                throws ClassNotFoundException {
+            try {
+                return Class.forName(firstClassName);
+            } catch (ClassNotFoundException exception) {
+                return Class.forName(secondClassName);
+            }
+        }
+
+        private static void logBridgeResolutionFailureOnce(Throwable throwable) {
+            if (BRIDGE_RESOLUTION_FAILURE_LOGGED.compareAndSet(false, true)) {
+                MyMod.LOG.debug("UILib 系统光标桥接反射解析失败，已在本次运行中降级为 no-op。", throwable);
+            }
         }
 
         private static Object invoke(Method method, Object target, Object... args) {

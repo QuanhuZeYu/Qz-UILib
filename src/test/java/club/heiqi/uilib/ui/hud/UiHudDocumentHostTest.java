@@ -6,8 +6,7 @@ import java.util.List;
 
 import org.junit.Assert;
 import org.junit.Test;
-import org.lwjglx.input.Keyboard;
-
+import club.heiqi.uilib.ui.event.UiKeyCodes;
 import club.heiqi.uilib.ui.document.HtmlLikeDocumentWidget;
 import club.heiqi.uilib.ui.dom.ElementNode;
 import club.heiqi.uilib.ui.dom.UiDocument;
@@ -39,6 +38,7 @@ import club.heiqi.uilib.ui.style.values.UiSurfaceStyle;
 import club.heiqi.uilib.ui.text.DefaultTextMeasureService;
 import club.heiqi.uilib.ui.text.TextContentMode;
 import club.heiqi.uilib.ui.text.TextMeasureService;
+import club.heiqi.uilib.ui.text.TextMeasureStyle;
 
 /**
  * `UiHudDocumentHost` 的稳定契约测试。
@@ -311,7 +311,7 @@ public class UiHudDocumentHostTest {
     public void shouldStripKeyboardEventsWhenNativeTextInputOwnsKeyboard() {
         UiInputFrame frame = new UiInputFrame(12, 18,
                 Collections.singletonList(new UiMouseEvent(UiMouseEvent.Action.MOVE, 12, 18, -1, 0, 0, 0, 1L)),
-                Collections.singletonList(new UiKeyEvent(Keyboard.KEY_TAB, 0, 0, UiKeyEvent.Action.PRESSED, false,
+                Collections.singletonList(new UiKeyEvent(UiKeyCodes.KEY_TAB, 0, 0, UiKeyEvent.Action.PRESSED, false,
                         false, false, false, 2L)),
                 Collections.singletonList(new UiTextInputEvent("a", 3L)));
 
@@ -328,7 +328,7 @@ public class UiHudDocumentHostTest {
     @Test
     public void shouldKeepKeyboardEventsWhenUiLibAlreadyCapturedKeyboard() {
         UiInputFrame frame = new UiInputFrame(12, 18, Collections.<UiMouseEvent>emptyList(),
-                Collections.singletonList(new UiKeyEvent(Keyboard.KEY_TAB, 0, 0, UiKeyEvent.Action.PRESSED, false,
+                Collections.singletonList(new UiKeyEvent(UiKeyCodes.KEY_TAB, 0, 0, UiKeyEvent.Action.PRESSED, false,
                         false, false, false, 2L)),
                 Collections.singletonList(new UiTextInputEvent("a", 3L)));
 
@@ -367,7 +367,7 @@ public class UiHudDocumentHostTest {
 
             boolean captured = host.handleImmediateKeyboardInputForTest(
                     new UiInputFrame(8, 8, Collections.<UiMouseEvent>emptyList(),
-                            Collections.singletonList(new UiKeyEvent(Keyboard.KEY_TAB, 0, 0,
+                            Collections.singletonList(new UiKeyEvent(UiKeyCodes.KEY_TAB, 0, 0,
                                     UiKeyEvent.Action.PRESSED, false, false, false, false, 2L)),
                             Collections.<UiTextInputEvent>emptyList()),
                     UiHudScreenCategory.CONTAINER);
@@ -411,7 +411,7 @@ public class UiHudDocumentHostTest {
 
             boolean captured = host.handleImmediateKeyboardInputForTest(
                     new UiInputFrame(8, 8, Collections.<UiMouseEvent>emptyList(),
-                            Collections.singletonList(new UiKeyEvent(Keyboard.KEY_1, 0, 0,
+                            Collections.singletonList(new UiKeyEvent(UiKeyCodes.KEY_1, 0, 0,
                                     UiKeyEvent.Action.PRESSED, false, false, false, false, 2L)),
                             Collections.<UiTextInputEvent>emptyList()),
                     UiHudScreenCategory.CONTAINER);
@@ -458,7 +458,7 @@ public class UiHudDocumentHostTest {
         try {
             boolean captured = host.handleImmediateKeyboardInputForTest(
                     new UiInputFrame(8, 8, Collections.<UiMouseEvent>emptyList(),
-                            Collections.singletonList(new UiKeyEvent(Keyboard.KEY_TAB, 0, 0,
+                            Collections.singletonList(new UiKeyEvent(UiKeyCodes.KEY_TAB, 0, 0,
                                     UiKeyEvent.Action.PRESSED, false, false, false, false, 2L)),
                             Collections.<UiTextInputEvent>emptyList()),
                     UiHudScreenCategory.CONTAINER);
@@ -500,7 +500,7 @@ public class UiHudDocumentHostTest {
 
             boolean captured = host.handleImmediateKeyboardInputForTest(
                     new UiInputFrame(8, 8, Collections.<UiMouseEvent>emptyList(),
-                            Collections.singletonList(new UiKeyEvent(Keyboard.KEY_TAB, 0, 0,
+                            Collections.singletonList(new UiKeyEvent(UiKeyCodes.KEY_TAB, 0, 0,
                                     UiKeyEvent.Action.PRESSED, false, false, false, false, 2L)),
                             Collections.<UiTextInputEvent>emptyList()),
                     UiHudScreenCategory.CONTAINER);
@@ -989,7 +989,7 @@ public class UiHudDocumentHostTest {
 
             Assert.assertFalse(UiKeyboardCaptureState.getInstance().isHudKeyboardCaptured());
             Assert.assertFalse(host.handleImmediateKeyboardInputForTest(new UiInputFrame(8, 8,
-                    Collections.<UiMouseEvent>emptyList(), Collections.singletonList(new UiKeyEvent(Keyboard.KEY_TAB,
+                    Collections.<UiMouseEvent>emptyList(), Collections.singletonList(new UiKeyEvent(UiKeyCodes.KEY_TAB,
                             0, 0, UiKeyEvent.Action.PRESSED, false, false, false, false, 3L)),
                     Collections.<UiTextInputEvent>emptyList()), UiHudScreenCategory.MENU));
         } finally {
@@ -1255,8 +1255,19 @@ public class UiHudDocumentHostTest {
         }
 
         @Override
+        public void drawText(String text, int x, int y, int color, boolean shadow, TextMeasureStyle textStyle) {
+            textCalls.add(text);
+        }
+
+        @Override
         protected void drawTextResolved(String text, int x, int y, int color, boolean shadow,
                 TextContentMode textContentMode, UiFontWeight resolvedFontWeight, UiFontStyle resolvedFontStyle) {
+            textCalls.add(text);
+        }
+
+        @Override
+        protected void drawTextResolved(String text, int x, int y, int color, boolean shadow,
+                TextMeasureStyle resolvedStyle) {
             textCalls.add(text);
         }
 

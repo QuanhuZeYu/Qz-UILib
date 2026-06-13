@@ -6,8 +6,7 @@ import java.util.List;
 
 import org.junit.Assert;
 import org.junit.Test;
-import org.lwjglx.input.Keyboard;
-
+import club.heiqi.uilib.ui.event.UiKeyCodes;
 import club.heiqi.uilib.ui.document.HtmlLikeDocumentWidget;
 import club.heiqi.uilib.ui.dom.DocumentElementClickEvent;
 import club.heiqi.uilib.ui.dom.DocumentElementDragEvent;
@@ -111,7 +110,7 @@ public class DocumentSliderControlTest {
                 });
         ElementNode element = slider.getElement();
 
-        Assert.assertTrue(element.getKeyHandler().onKey(keyEvent(element, Keyboard.KEY_RIGHT, 1L)));
+        Assert.assertTrue(element.getKeyHandler().onKey(keyEvent(element, UiKeyCodes.KEY_RIGHT, 1L)));
 
         Assert.assertEquals(5.0D, slider.getValue(), 0.0001D);
         Assert.assertEquals(1, events.size());
@@ -211,7 +210,7 @@ public class DocumentSliderControlTest {
                 });
         ElementNode element = slider.getElement();
 
-        Assert.assertFalse(element.getKeyHandler().onKey(keyEvent(element, Keyboard.KEY_RIGHT, 1L)));
+        Assert.assertFalse(element.getKeyHandler().onKey(keyEvent(element, UiKeyCodes.KEY_RIGHT, 1L)));
         Assert.assertEquals(0.0D, slider.getValue(), 0.0001D);
         Assert.assertTrue(events.isEmpty());
     }

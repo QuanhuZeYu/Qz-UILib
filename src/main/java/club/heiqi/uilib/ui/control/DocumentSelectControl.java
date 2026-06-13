@@ -1,7 +1,6 @@
 package club.heiqi.uilib.ui.control;
 
-import org.lwjglx.input.Keyboard;
-
+import club.heiqi.uilib.ui.event.UiKeyCodes;
 import club.heiqi.uilib.ui.dom.DocumentElementBounds;
 import club.heiqi.uilib.ui.dom.DocumentElementClickEvent;
 import club.heiqi.uilib.ui.dom.DocumentElementClickHandler;
@@ -340,11 +339,11 @@ public final class DocumentSelectControl {
         int keyCode = event.getKeyCode();
         UiKeyEvent.Action action = event.getAction();
         boolean repeatable = action == UiKeyEvent.Action.PRESSED || action == UiKeyEvent.Action.REPEATED;
-        if (keyCode == Keyboard.KEY_ESCAPE && action == UiKeyEvent.Action.PRESSED && open) {
+        if (keyCode == UiKeyCodes.KEY_ESCAPE && action == UiKeyEvent.Action.PRESSED && open) {
             setOpen(false);
             return true;
         }
-        if ((keyCode == Keyboard.KEY_RETURN || keyCode == Keyboard.KEY_NUMPADENTER || keyCode == Keyboard.KEY_SPACE)
+        if ((keyCode == UiKeyCodes.KEY_RETURN || keyCode == UiKeyCodes.KEY_NUMPADENTER || keyCode == UiKeyCodes.KEY_SPACE)
                 && action == UiKeyEvent.Action.PRESSED) {
             setOpen(!open);
             return true;
@@ -352,19 +351,19 @@ public final class DocumentSelectControl {
         if (!repeatable) {
             return false;
         }
-        if (keyCode == Keyboard.KEY_DOWN) {
+        if (keyCode == UiKeyCodes.KEY_DOWN) {
             moveSelection(1, event.getTimeNanos(), keyCode);
             return true;
         }
-        if (keyCode == Keyboard.KEY_UP) {
+        if (keyCode == UiKeyCodes.KEY_UP) {
             moveSelection(-1, event.getTimeNanos(), keyCode);
             return true;
         }
-        if (keyCode == Keyboard.KEY_HOME) {
+        if (keyCode == UiKeyCodes.KEY_HOME) {
             selectIndex(0, true, true, keyCode, -1, event.getTimeNanos());
             return true;
         }
-        if (keyCode == Keyboard.KEY_END) {
+        if (keyCode == UiKeyCodes.KEY_END) {
             selectIndex(options.length - 1, true, true, keyCode, -1, event.getTimeNanos());
             return true;
         }

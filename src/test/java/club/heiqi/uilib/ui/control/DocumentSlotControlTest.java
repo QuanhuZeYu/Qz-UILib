@@ -6,8 +6,7 @@ import java.util.List;
 
 import org.junit.Assert;
 import org.junit.Test;
-import org.lwjglx.input.Keyboard;
-
+import club.heiqi.uilib.ui.event.UiKeyCodes;
 import club.heiqi.uilib.ui.dom.DocumentElementActiveEvent;
 import club.heiqi.uilib.ui.dom.DocumentElementClickEvent;
 import club.heiqi.uilib.ui.dom.DocumentElementHoverEvent;
@@ -145,11 +144,11 @@ public class DocumentSlotControlTest {
         ElementNode slot = slotControl.getElement();
         Assert.assertTrue(slot.getClickHandler().onClick(new DocumentElementClickEvent(slot, slot, 1, 1, 1, 2L)));
         Assert.assertTrue(slot.getKeyHandler().onKey(new DocumentElementKeyEvent(slot, slot,
-                new UiKeyEvent(Keyboard.KEY_SPACE, 0, 0, UiKeyEvent.Action.PRESSED, false, false, false,
+                new UiKeyEvent(UiKeyCodes.KEY_SPACE, 0, 0, UiKeyEvent.Action.PRESSED, false, false, false,
                         false, 4L))));
         Assert.assertEquals(1, clickedButtons.size());
         Assert.assertTrue(slot.getKeyHandler().onKey(new DocumentElementKeyEvent(slot, slot,
-                new UiKeyEvent(Keyboard.KEY_SPACE, 0, 0, UiKeyEvent.Action.RELEASED, false, false, false,
+                new UiKeyEvent(UiKeyCodes.KEY_SPACE, 0, 0, UiKeyEvent.Action.RELEASED, false, false, false,
                         false, 5L))));
 
         Assert.assertEquals(Integer.valueOf(1), clickedButtons.get(0));

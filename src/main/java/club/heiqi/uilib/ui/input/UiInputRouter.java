@@ -3,8 +3,7 @@ package club.heiqi.uilib.ui.input;
 import java.util.ArrayList;
 import java.util.List;
 
-import org.lwjglx.input.Keyboard;
-
+import club.heiqi.uilib.ui.event.UiKeyCodes;
 import club.heiqi.uilib.ui.document.HtmlLikeDocumentWidget;
 import club.heiqi.uilib.ui.event.UiKeyEvent;
 import club.heiqi.uilib.ui.event.UiMouseEvent;
@@ -111,7 +110,7 @@ public class UiInputRouter {
     }
 
     private void routeKeyEvent(Widget root, UiKeyEvent event) {
-        if (event.getAction() == UiKeyEvent.Action.PRESSED && event.getKeyCode() == Keyboard.KEY_TAB) {
+        if (event.getAction() == UiKeyEvent.Action.PRESSED && event.getKeyCode() == UiKeyCodes.KEY_TAB) {
             Widget target = getActiveFocusedWidget(root);
             if (target != null && target.onFocusTraversal(event.isShiftPressed())) {
                 return;

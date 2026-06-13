@@ -1,7 +1,6 @@
 package club.heiqi.uilib.ui.control;
 
-import org.lwjglx.input.Keyboard;
-
+import club.heiqi.uilib.ui.event.UiKeyCodes;
 import club.heiqi.uilib.ui.dom.DocumentElementClickEvent;
 import club.heiqi.uilib.ui.dom.DocumentElementClickHandler;
 import club.heiqi.uilib.ui.dom.DocumentElementFocusEvent;
@@ -376,11 +375,11 @@ public final class DocumentCheckboxControl {
                     }
                     return true;
                 }
-                if (event.getKeyCode() == Keyboard.KEY_SPACE && event.getAction() == UiKeyEvent.Action.PRESSED) {
+                if (event.getKeyCode() == UiKeyCodes.KEY_SPACE && event.getAction() == UiKeyEvent.Action.PRESSED) {
                     spacePressed = enabled;
                     return true;
                 }
-                if (event.getKeyCode() == Keyboard.KEY_SPACE && event.getAction() == UiKeyEvent.Action.RELEASED) {
+                if (event.getKeyCode() == UiKeyCodes.KEY_SPACE && event.getAction() == UiKeyEvent.Action.RELEASED) {
                     boolean shouldToggle = spacePressed && enabled;
                     spacePressed = false;
                     if (shouldToggle) {
@@ -437,11 +436,11 @@ public final class DocumentCheckboxControl {
     }
 
     private static boolean isActivationKey(int keyCode) {
-        return isEnterKey(keyCode) || keyCode == Keyboard.KEY_SPACE;
+        return isEnterKey(keyCode) || keyCode == UiKeyCodes.KEY_SPACE;
     }
 
     private static boolean isEnterKey(int keyCode) {
-        return keyCode == Keyboard.KEY_RETURN || keyCode == Keyboard.KEY_NUMPADENTER;
+        return keyCode == UiKeyCodes.KEY_RETURN || keyCode == UiKeyCodes.KEY_NUMPADENTER;
     }
 
     private static String normalizeLabel(String label) {

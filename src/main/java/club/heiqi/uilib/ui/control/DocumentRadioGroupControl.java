@@ -1,7 +1,6 @@
 package club.heiqi.uilib.ui.control;
 
-import org.lwjglx.input.Keyboard;
-
+import club.heiqi.uilib.ui.event.UiKeyCodes;
 import club.heiqi.uilib.ui.dom.DocumentElementClickEvent;
 import club.heiqi.uilib.ui.dom.DocumentElementClickHandler;
 import club.heiqi.uilib.ui.dom.DocumentElementFocusEvent;
@@ -410,20 +409,20 @@ public final class DocumentRadioGroupControl {
 
     private boolean isPreviousKey(int keyCode) {
         if (orientation == UiRadioOrientation.HORIZONTAL) {
-            return keyCode == Keyboard.KEY_LEFT;
+            return keyCode == UiKeyCodes.KEY_LEFT;
         }
-        return keyCode == Keyboard.KEY_UP;
+        return keyCode == UiKeyCodes.KEY_UP;
     }
 
     private boolean isNextKey(int keyCode) {
         if (orientation == UiRadioOrientation.HORIZONTAL) {
-            return keyCode == Keyboard.KEY_RIGHT;
+            return keyCode == UiKeyCodes.KEY_RIGHT;
         }
-        return keyCode == Keyboard.KEY_DOWN;
+        return keyCode == UiKeyCodes.KEY_DOWN;
     }
 
     private static boolean isActivationKey(int keyCode) {
-        return keyCode == Keyboard.KEY_SPACE || keyCode == Keyboard.KEY_RETURN || keyCode == Keyboard.KEY_NUMPADENTER;
+        return keyCode == UiKeyCodes.KEY_SPACE || keyCode == UiKeyCodes.KEY_RETURN || keyCode == UiKeyCodes.KEY_NUMPADENTER;
     }
 
     private static String[] normalizeOptions(String[] options) {
