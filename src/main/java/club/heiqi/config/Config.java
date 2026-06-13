@@ -96,4 +96,66 @@ public final class Config {
     public static ConfigLoader getLoader(ConfigFormat format) {
         return loaders.get(format);
     }
+
+    /**
+     * 创建可变配置（从文件加载）
+     * 
+     * @param file 配置文件
+     * @return 可变配置对象
+     * @throws ConfigException 如果加载失败
+     */
+    public static MutableConfig loadMutable(File file) throws ConfigException {
+        if (file == null) {
+            throw new IllegalArgumentException("File cannot be null");
+        }
+
+        ConfigFormat format = ConfigFormat.fromFilename(file.getName());
+        if (format == null) {
+            throw new ConfigException("Cannot determine config format from filename: " + file.getName());
+        }
+
+        ConfigSource source = ConfigSource.fromFile(file);
+        
+        // 如果文件不存在，创建空配置
+        if (!file.exists()) {
+            return new DefaultMutableConfig(format, source);
+        }
+
+        ConfigNode node = load(source, format);
+        return new DefaultMutableConfig(node, format, source);
+    }
+
+    /**
+     * 创建可变配置（从配置源加载）
+     * 
+     * @param source 配置源
+     * @param format 配置格式
+     * @return 可变配置对象
+     * @throws ConfigException 如果加载失败
+     */
+    public static MutableConfig loadMutable(ConfigSource source, ConfigFormat format) throws ConfigException {
+        ConfigNode node = load(source, format);
+        return new DefaultMutableConfig(node, format, source);
+    }
+
+    /**
+     * 创建空的可变配置
+     * 
+     * @param format 配置格式
+     * @return 可变配置对象
+     */
+    public static MutableConfig createMutable(ConfigFormat format) {
+        return new DefaultMutableConfig(format, null);
+    }
+
+    /**
+     * 创建空的可变配置（关联到文件）
+     * 
+     * @param file 配置文件
+     * @param format 配置格式
+     * @return 可变配置对象
+     */
+    public static MutableConfig createMutable(File file, ConfigFormat format) {
+        return new DefaultMutableConfig(format, ConfigSource.fromFile(file));
+    }
 }
