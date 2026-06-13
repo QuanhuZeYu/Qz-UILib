@@ -13,5 +13,6 @@
 - `net-vanilla-mixin-strategy.md`：vanilla custom payload early mixin 注入点与传输策略。
 - `net-self-check.md`：网络层诊断页自检场景规格。
 - `backdrop-blur-developer-api-plan.md`：UI 背景模糊开发者快捷配置 API、分级覆盖和运行时可调规划。
+- `modern-config-template-screen-plan.md`：基于可选 `club.heiqi.config` 模块的现代配置模板页分阶段施工规划。
 - `qzuilib-test-page-rebuild-plan.md`：`/qzuilib test` 页面系统性重构历史规划、语义覆盖矩阵和人工预期文本规范。
 - `qzuilib-test-page-visual-matrix-plan.md`：`/qzuilib test` 新一轮视觉优先测试矩阵规划，作为后续运行时矩阵重建设计入口。

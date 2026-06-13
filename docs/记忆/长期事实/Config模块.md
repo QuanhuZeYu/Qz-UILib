@@ -119,3 +119,10 @@ Config.registerLoader(new TomlConfigLoader());
 - 保持模块独立性，避免依赖 uilib 模块
 - 新增格式支持时，必须同时添加测试用例
 - 核心接口变更需评估向后兼容性
+
+## Modern Config 模板页规划
+
+- 现代配置模板页按可选模块能力接入：UILib 入口运行时检测 `club.heiqi.config.Config` / `MutableConfig` 是否存在，存在时使用现代配置页，不存在时回退现有 Forge 配置页。
+- 现代配置页不做 Forge 到 config 模块的迁移工具，复杂结构的 Forge 回退兼容由接入方自行设计。
+- 推荐需要回退兼容复杂结构的接入方，将复杂配置序列化为 JSON 字符串并存入 Forge cfg 的字符串属性。
+- 分阶段施工规划见 `docs/开发者文档/specs/modern-config-template-screen-plan.md`，关键取舍见 `docs/记忆/决策/DECISION-20260613-modern-config-template-optional-module.md`。
