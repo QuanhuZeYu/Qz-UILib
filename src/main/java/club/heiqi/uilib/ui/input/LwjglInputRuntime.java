@@ -55,6 +55,28 @@ final class LwjglInputRuntime {
         return MOUSE;
     }
 
+    /**
+     * 检查键盘运行时是否在初始化时成功解析。
+     *
+     * <p>该方法只检查反射解析是否成功，不调用原生方法。可用于诊断或条件逻辑。</p>
+     *
+     * @return true 如果至少有一个键盘类（org.lwjglx 或 org.lwjgl）成功加载
+     */
+    static boolean isKeyboardRuntimeAvailable() {
+        return KEYBOARD.isCreatedMethod != null;
+    }
+
+    /**
+     * 检查鼠标运行时是否在初始化时成功解析。
+     *
+     * <p>该方法只检查反射解析是否成功，不调用原生方法。可用于诊断或条件逻辑。</p>
+     *
+     * @return true 如果至少有一个鼠标类（org.lwjglx 或 org.lwjgl）成功加载
+     */
+    static boolean isMouseRuntimeAvailable() {
+        return MOUSE.isCreatedMethod != null;
+    }
+
     private static Class<?> resolveRuntimeClass(String runtimeName, AtomicBoolean logFlag, String... classNames) {
         for (String className : classNames) {
             try {
