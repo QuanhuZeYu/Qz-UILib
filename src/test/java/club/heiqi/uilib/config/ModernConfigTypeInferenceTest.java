@@ -113,6 +113,24 @@ public class ModernConfigTypeInferenceTest {
                 infer(config, "mixed", null).getTemplateType());
     }
 
+    @Test
+    public void infersExplicitDynamicMapAndPresetSelector() {
+        MutableConfig config = Config.createMutable(ConfigFormat.JSON)
+                .set("labels", row("alpha", "A", "beta", "B"))
+                .set("profile", row("mode", "fast", "_presets",
+                        row("fast", row("mode", "fast"), "safe", row("mode", "safe"))));
+
+        ModernConfigTemplateScreen.FieldSpec dynamicMapSpec = new ModernConfigTemplateScreen.FieldSpec("labels")
+                .setTemplateHint("dynamic-map");
+
+        assertEquals(ModernConfigTypeInference.TemplateType.KEY_VALUE_MAP,
+                infer(config, "labels", dynamicMapSpec).getTemplateType());
+        assertEquals(ModernConfigTypeInference.TemplateType.OBJECT,
+                infer(config, "labels", null).getTemplateType());
+        assertEquals(ModernConfigTypeInference.TemplateType.PRESET_SELECTOR,
+                infer(config, "profile", null).getTemplateType());
+    }
+
     private static ModernConfigTypeInference.Result infer(MutableConfig config, String path,
             ModernConfigTemplateScreen.FieldSpec fieldSpec) {
         return ModernConfigTypeInference.infer(path, config.get(path), fieldSpec);

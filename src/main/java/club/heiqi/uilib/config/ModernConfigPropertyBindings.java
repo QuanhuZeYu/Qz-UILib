@@ -68,6 +68,12 @@ final class ModernConfigPropertyBindings {
     static ConfigPropertyBinding createBinding(MutableConfig config, String path, ConfigNode node,
             ModernConfigTemplateScreen.FieldSpec fieldSpec, ModernConfigTypeInference.Result inference,
             ChangeListener changeListener) {
+        if (inference.getTemplateType() == ModernConfigTypeInference.TemplateType.PRESET_SELECTOR) {
+            return new ModernPresetSelectorPropertyBinding(config, path, node, fieldSpec, inference, changeListener);
+        }
+        if (inference.getTemplateType() == ModernConfigTypeInference.TemplateType.KEY_VALUE_MAP) {
+            return new ModernKeyValueMapPropertyBinding(config, path, node, fieldSpec, inference, changeListener);
+        }
         if (inference.getTemplateType() == ModernConfigTypeInference.TemplateType.OBJECT) {
             return new ModernObjectPropertyBinding(config, path, node, fieldSpec, inference, changeListener);
         }
@@ -252,6 +258,12 @@ final class ModernConfigPropertyBindings {
         }
         if (inference.getTemplateType() == ModernConfigTypeInference.TemplateType.TABLE) {
             return "表格";
+        }
+        if (inference.getTemplateType() == ModernConfigTypeInference.TemplateType.KEY_VALUE_MAP) {
+            return "动态 Map";
+        }
+        if (inference.getTemplateType() == ModernConfigTypeInference.TemplateType.PRESET_SELECTOR) {
+            return "预设";
         }
         if (inference.getTemplateType() == ModernConfigTypeInference.TemplateType.OBJECT) {
             return "对象";

@@ -29,6 +29,9 @@ final class ModernConfigTypeInference {
      * @return 推断结果
      */
     static Result infer(String path, ConfigNode node, ModernConfigTemplateScreen.FieldSpec fieldSpec) {
+        if (isDynamicMapHint(normalizeHint(fieldSpec == null ? "" : fieldSpec.getTemplateHint()))) {
+            return createResult(path, TemplateType.KEY_VALUE_MAP, false, Collections.<String>emptyList());
+        }
         List<String> validValues = fieldSpec == null ? Collections.<String>emptyList() : fieldSpec.getValidValues();
         if (!validValues.isEmpty()) {
             return createResult(path, TemplateType.CHOICE, false, validValues);
@@ -53,6 +56,9 @@ final class ModernConfigTypeInference {
             return inferListNode(path, node);
         }
         if (nodeType == ConfigNode.NodeType.MAP) {
+            if (hasPresetDefinitions(node)) {
+                return createResult(path, TemplateType.PRESET_SELECTOR, false, Collections.<String>emptyList());
+            }
             return createResult(path, TemplateType.OBJECT, false, Collections.<String>emptyList());
         }
         return createResult(path, TemplateType.READ_ONLY, false, Collections.<String>emptyList());
@@ -143,6 +149,33 @@ final class ModernConfigTypeInference {
                 || "textarea".equals(hint) || "text-area".equals(hint);
     }
 
+    private static boolean isDynamicMapHint(String hint) {
+        return "dynamic-map".equals(hint) || "dynamic_map".equals(hint) || "map-dynamic".equals(hint)
+                || "key-value".equals(hint) || "key_value".equals(hint) || "keyvalue".equals(hint)
+                || "key-value-map".equals(hint) || "key_value_map".equals(hint) || "kv-map".equals(hint);
+    }
+
+    private static boolean hasPresetDefinitions(ConfigNode node) {
+        if (node == null || node.getType() != ConfigNode.NodeType.MAP || node.asMap() == null) {
+            return false;
+        }
+        Map<String, ConfigNode> map = node.asMap();
+        return isPresetStorage(map.get("_presets")) || isPresetStorage(map.get("presets"));
+    }
+
+    private static boolean isPresetStorage(ConfigNode node) {
+        if (node == null || node.isNull()) {
+            return false;
+        }
+        if (node.getType() == ConfigNode.NodeType.MAP) {
+            return node.asMap() != null && !node.asMap().isEmpty();
+        }
+        if (node.getType() == ConfigNode.NodeType.LIST) {
+            return node.asList() != null && !node.asList().isEmpty();
+        }
+        return false;
+    }
+
     private static String normalizeHint(String hint) {
         return hint == null ? "" : hint.trim().toLowerCase(Locale.ENGLISH);
     }
@@ -159,6 +192,8 @@ final class ModernConfigTypeInference {
         LONG_TEXT,
         SIMPLE_LIST,
         TABLE,
+        KEY_VALUE_MAP,
+        PRESET_SELECTOR,
         OBJECT,
         READ_ONLY
     }

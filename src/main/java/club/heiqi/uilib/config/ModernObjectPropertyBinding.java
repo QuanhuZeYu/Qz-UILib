@@ -310,7 +310,8 @@ final class ModernObjectPropertyBinding extends ModernConfigPropertyBindings.Con
             if (node == null) {
                 return;
             }
-            if (node.getType() == ConfigNode.NodeType.MAP && node.asMap() != null) {
+            if (node.getType() == ConfigNode.NodeType.MAP && node.asMap() != null
+                    && !shouldUseLeafMapBinding(path, node)) {
                 List<String> keys = new ArrayList<String>(node.asMap().keySet());
                 Collections.sort(keys);
                 for (String key : keys) {
@@ -321,6 +322,14 @@ final class ModernObjectPropertyBinding extends ModernConfigPropertyBindings.Con
             ModernConfigTypeInference.Result inference = ModernConfigTypeInference.infer(path, node, null);
             bindingsByPath.put(path, ModernConfigPropertyBindings.createBinding(config, path, node, null, inference,
                     changeListener));
+        }
+
+        private static boolean shouldUseLeafMapBinding(String path, ConfigNode node) {
+            if (normalizePath(path).isEmpty()) {
+                return false;
+            }
+            ModernConfigTypeInference.Result inference = ModernConfigTypeInference.infer(path, node, null);
+            return inference.getTemplateType() == ModernConfigTypeInference.TemplateType.PRESET_SELECTOR;
         }
     }
 

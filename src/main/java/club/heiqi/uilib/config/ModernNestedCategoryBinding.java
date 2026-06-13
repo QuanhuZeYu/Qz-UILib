@@ -357,6 +357,9 @@ final class ModernNestedCategoryBinding extends ModernConfigPropertyBindings.Con
         if (node == null || node.getType() != ConfigNode.NodeType.MAP || node.asMap() == null) {
             return;
         }
+        if (!normalizePath(path).isEmpty() && shouldUseLeafMapBinding(path, node)) {
+            return;
+        }
         mapPaths.add(normalizePath(path));
         List<String> keys = new ArrayList<String>(node.asMap().keySet());
         Collections.sort(keys);
@@ -369,7 +372,8 @@ final class ModernNestedCategoryBinding extends ModernConfigPropertyBindings.Con
         if (node == null) {
             return;
         }
-        if (node.getType() == ConfigNode.NodeType.MAP && node.asMap() != null) {
+        if (node.getType() == ConfigNode.NodeType.MAP && node.asMap() != null
+                && !shouldUseLeafMapBinding(path, node)) {
             List<String> keys = new ArrayList<String>(node.asMap().keySet());
             Collections.sort(keys);
             for (String key : keys) {
@@ -407,6 +411,17 @@ final class ModernNestedCategoryBinding extends ModernConfigPropertyBindings.Con
         }
         bindingsByPath.put(normalizedPath, ModernConfigPropertyBindings.createBinding(getConfig(), normalizedPath, node,
                 fieldSpec, inference, changeListener));
+    }
+
+    private boolean shouldUseLeafMapBinding(String path, ConfigNode node) {
+        String normalizedPath = normalizePath(path);
+        if (normalizedPath.isEmpty()) {
+            return false;
+        }
+        ModernConfigTemplateScreen.FieldSpec fieldSpec = fieldsByPath.get(normalizedPath);
+        ModernConfigTypeInference.Result inference = ModernConfigTypeInference.infer(normalizedPath, node, fieldSpec);
+        return inference.getTemplateType() == ModernConfigTypeInference.TemplateType.KEY_VALUE_MAP
+                || inference.getTemplateType() == ModernConfigTypeInference.TemplateType.PRESET_SELECTOR;
     }
 
     private List<DocumentTreeViewControl.TreeNode> buildTreeNodes() {

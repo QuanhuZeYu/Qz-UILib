@@ -30,7 +30,7 @@ import net.minecraft.client.gui.GuiScreen;
 /**
  * 基于现代 config 模块的配置模板页骨架。
  *
- * <p>当前实现支持基础类型、列表模板和普通 map 嵌套结构模板。</p>
+ * <p>当前实现支持基础类型、列表、普通 map 嵌套结构、动态 map 和预设模板。</p>
  */
 public class ModernConfigTemplateScreen extends BaseScreen {
 
