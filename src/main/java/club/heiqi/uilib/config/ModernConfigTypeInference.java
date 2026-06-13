@@ -2,8 +2,10 @@ package club.heiqi.uilib.config;
 
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 
 import club.heiqi.config.ConfigNode;
 
@@ -29,48 +31,78 @@ final class ModernConfigTypeInference {
     static Result infer(String path, ConfigNode node, ModernConfigTemplateScreen.FieldSpec fieldSpec) {
         List<String> validValues = fieldSpec == null ? Collections.<String>emptyList() : fieldSpec.getValidValues();
         if (!validValues.isEmpty()) {
-            return new Result(path, TemplateType.CHOICE, false, validValues);
+            return createResult(path, TemplateType.CHOICE, false, validValues);
         }
 
         ConfigNode.NodeType nodeType = node == null ? ConfigNode.NodeType.NULL : node.getType();
         if (nodeType == ConfigNode.NodeType.STRING) {
             String value = node.asString("");
             TemplateType type = shouldUseLongText(value, fieldSpec) ? TemplateType.LONG_TEXT : TemplateType.STRING;
-            return new Result(path, type, false, Collections.<String>emptyList());
+            return createResult(path, type, false, Collections.<String>emptyList());
         }
         if (nodeType == ConfigNode.NodeType.NUMBER) {
-            return new Result(path, TemplateType.NUMBER, isIntegerNumber(node), Collections.<String>emptyList());
+            return createResult(path, TemplateType.NUMBER, isIntegerNumber(node), Collections.<String>emptyList());
         }
         if (nodeType == ConfigNode.NodeType.BOOLEAN) {
-            return new Result(path, TemplateType.BOOLEAN, false, Collections.<String>emptyList());
+            return createResult(path, TemplateType.BOOLEAN, false, Collections.<String>emptyList());
         }
         if (nodeType == ConfigNode.NodeType.NULL) {
             return inferNullNode(path, fieldSpec);
         }
-        return new Result(path, TemplateType.READ_ONLY, false, Collections.<String>emptyList());
+        if (nodeType == ConfigNode.NodeType.LIST) {
+            return inferListNode(path, node);
+        }
+        return createResult(path, TemplateType.READ_ONLY, false, Collections.<String>emptyList());
     }
 
     private static Result inferNullNode(String path, ModernConfigTemplateScreen.FieldSpec fieldSpec) {
         Object defaultValue = fieldSpec == null || !fieldSpec.hasDefaultValue() ? null : fieldSpec.getDefaultValue();
         String hint = normalizeHint(fieldSpec == null ? "" : fieldSpec.getTemplateHint());
         if (defaultValue instanceof Boolean || "boolean".equals(hint) || "bool".equals(hint)) {
-            return new Result(path, TemplateType.BOOLEAN, false, Collections.<String>emptyList());
+            return createResult(path, TemplateType.BOOLEAN, false, Collections.<String>emptyList());
         }
         if (defaultValue instanceof Number || "number".equals(hint) || "numeric".equals(hint)) {
-            return new Result(path, TemplateType.NUMBER, isIntegerDefault(defaultValue), Collections.<String>emptyList());
+            return createResult(path, TemplateType.NUMBER, isIntegerDefault(defaultValue),
+                    Collections.<String>emptyList());
         }
         if (defaultValue instanceof String) {
             String value = (String) defaultValue;
             TemplateType type = shouldUseLongText(value, fieldSpec) ? TemplateType.LONG_TEXT : TemplateType.STRING;
-            return new Result(path, type, false, Collections.<String>emptyList());
+            return createResult(path, type, false, Collections.<String>emptyList());
+        }
+        if (defaultValue instanceof List) {
+            return new Result(path, TemplateType.SIMPLE_LIST, false, Collections.<String>emptyList(),
+                    ModernConfigListModels.ValueKind.STRING, Collections.<String>emptyList(),
+                    Collections.<String, ModernConfigListModels.ValueKind>emptyMap());
         }
         if (isLongTextHint(hint)) {
-            return new Result(path, TemplateType.LONG_TEXT, false, Collections.<String>emptyList());
+            return createResult(path, TemplateType.LONG_TEXT, false, Collections.<String>emptyList());
         }
         if ("string".equals(hint) || "text".equals(hint)) {
-            return new Result(path, TemplateType.STRING, false, Collections.<String>emptyList());
+            return createResult(path, TemplateType.STRING, false, Collections.<String>emptyList());
         }
-        return new Result(path, TemplateType.NULL, false, Collections.<String>emptyList());
+        return createResult(path, TemplateType.NULL, false, Collections.<String>emptyList());
+    }
+
+    private static Result inferListNode(String path, ConfigNode node) {
+        ModernConfigListModels.ListAnalysis analysis = ModernConfigListModels.analyze(node);
+        if (analysis.getTemplateKind() == ModernConfigListModels.TemplateKind.SIMPLE) {
+            return new Result(path, TemplateType.SIMPLE_LIST, false, Collections.<String>emptyList(),
+                    analysis.getPrimitiveKind(), Collections.<String>emptyList(),
+                    Collections.<String, ModernConfigListModels.ValueKind>emptyMap());
+        }
+        if (analysis.getTemplateKind() == ModernConfigListModels.TemplateKind.TABLE) {
+            return new Result(path, TemplateType.TABLE, false, Collections.<String>emptyList(),
+                    ModernConfigListModels.ValueKind.STRING, analysis.getTableColumns(),
+                    analysis.getTableColumnKinds());
+        }
+        return createResult(path, TemplateType.READ_ONLY, false, Collections.<String>emptyList());
+    }
+
+    private static Result createResult(String path, TemplateType templateType, boolean integerNumber,
+            List<String> choiceOptions) {
+        return new Result(path, templateType, integerNumber, choiceOptions, ModernConfigListModels.ValueKind.STRING,
+                Collections.<String>emptyList(), Collections.<String, ModernConfigListModels.ValueKind>emptyMap());
     }
 
     private static boolean shouldUseLongText(String value, ModernConfigTemplateScreen.FieldSpec fieldSpec) {
@@ -122,6 +154,8 @@ final class ModernConfigTypeInference {
         NULL,
         CHOICE,
         LONG_TEXT,
+        SIMPLE_LIST,
+        TABLE,
         READ_ONLY
     }
 
@@ -134,12 +168,21 @@ final class ModernConfigTypeInference {
         private final TemplateType templateType;
         private final boolean integerNumber;
         private final List<String> choiceOptions;
+        private final ModernConfigListModels.ValueKind listValueKind;
+        private final List<String> tableColumns;
+        private final Map<String, ModernConfigListModels.ValueKind> tableColumnKinds;
 
-        private Result(String path, TemplateType templateType, boolean integerNumber, List<String> choiceOptions) {
+        private Result(String path, TemplateType templateType, boolean integerNumber, List<String> choiceOptions,
+                ModernConfigListModels.ValueKind listValueKind, List<String> tableColumns,
+                Map<String, ModernConfigListModels.ValueKind> tableColumnKinds) {
             this.path = path == null ? "" : path;
             this.templateType = templateType == null ? TemplateType.READ_ONLY : templateType;
             this.integerNumber = integerNumber;
             this.choiceOptions = Collections.unmodifiableList(new ArrayList<String>(choiceOptions));
+            this.listValueKind = listValueKind == null ? ModernConfigListModels.ValueKind.STRING : listValueKind;
+            this.tableColumns = Collections.unmodifiableList(new ArrayList<String>(tableColumns));
+            this.tableColumnKinds = Collections.unmodifiableMap(
+                    new LinkedHashMap<String, ModernConfigListModels.ValueKind>(tableColumnKinds));
         }
 
         String getPath() {
@@ -164,6 +207,18 @@ final class ModernConfigTypeInference {
 
         List<String> getChoiceOptions() {
             return choiceOptions;
+        }
+
+        ModernConfigListModels.ValueKind getListValueKind() {
+            return listValueKind;
+        }
+
+        List<String> getTableColumns() {
+            return tableColumns;
+        }
+
+        Map<String, ModernConfigListModels.ValueKind> getTableColumnKinds() {
+            return tableColumnKinds;
         }
     }
 }

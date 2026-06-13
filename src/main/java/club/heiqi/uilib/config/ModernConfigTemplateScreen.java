@@ -30,7 +30,7 @@ import net.minecraft.client.gui.GuiScreen;
 /**
  * 基于现代 config 模块的配置模板页骨架。
  *
- * <p>当前实现支持基础类型字段编辑，复杂结构仅做摘要展示。</p>
+ * <p>当前实现支持基础类型与 Batch 2 列表模板，其他复杂结构仅做摘要展示。</p>
  */
 public class ModernConfigTemplateScreen extends BaseScreen {
 

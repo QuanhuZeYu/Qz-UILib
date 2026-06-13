@@ -18,7 +18,7 @@ final class ModernReadOnlyPathBinding extends ModernConfigPropertyBindings.Confi
             ModernConfigTemplateScreen.FieldSpec fieldSpec, ModernConfigTypeInference.Result inference,
             ModernConfigPropertyBindings.ChangeListener changeListener) {
         super(config, path, node, fieldSpec, inference, changeListener);
-        this.summary = ModernConfigPropertyBindings.formatSummary(node);
+        this.summary = formatReadOnlySummary(node);
     }
 
     @Override
@@ -52,5 +52,17 @@ final class ModernReadOnlyPathBinding extends ModernConfigPropertyBindings.Confi
 
     @Override
     void applyDraft() {
+    }
+
+    private static String formatReadOnlySummary(ConfigNode node) {
+        String baseSummary = ModernConfigPropertyBindings.formatSummary(node);
+        if (node != null && node.getType() == ConfigNode.NodeType.LIST) {
+            ModernConfigListModels.ListAnalysis analysis = ModernConfigListModels.analyze(node);
+            if (analysis.getTemplateKind() == ModernConfigListModels.TemplateKind.UNSUPPORTED
+                    && !analysis.getUnsupportedReason().isEmpty()) {
+                return baseSummary + "；" + analysis.getUnsupportedReason();
+            }
+        }
+        return baseSummary;
     }
 }

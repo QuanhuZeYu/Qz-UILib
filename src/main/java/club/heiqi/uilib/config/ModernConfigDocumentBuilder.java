@@ -167,7 +167,7 @@ final class ModernConfigDocumentBuilder {
         ElementNode description = document.div();
         description.style().setMargin(UiStyleLength.px(6))
                 .setTextColor(spec.getTheme().categoryDescriptionTextColor);
-        description.appendText("当前批次支持文本、数值、开关、空值、离散选项和长文本；复杂结构暂以摘要展示。");
+        description.appendText("当前批次支持文本、数值、开关、空值、离散选项、长文本、primitive list 和稳定列对象列表；其他复杂结构暂以摘要展示。");
         header.append(description);
         card.append(header);
 

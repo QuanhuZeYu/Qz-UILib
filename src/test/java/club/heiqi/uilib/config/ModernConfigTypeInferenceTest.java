@@ -4,6 +4,10 @@ import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.assertEquals;
 
+import java.util.Arrays;
+import java.util.LinkedHashMap;
+import java.util.Map;
+
 import org.junit.Test;
 
 import club.heiqi.config.Config;
@@ -92,8 +96,38 @@ public class ModernConfigTypeInferenceTest {
                         .setDefaultValue("Qz")).getTemplateType());
     }
 
+    @Test
+    public void infersSimpleAndTableLists() {
+        MutableConfig config = Config.createMutable(ConfigFormat.JSON)
+                .set("names", Arrays.asList("alpha", "beta"))
+                .set("servers", Arrays.asList(row("host", "a.local", "port", 25565),
+                        row("host", "b.local", "port", 25566)))
+                .set("mixed", Arrays.asList(row("host", "a.local"), "plain"));
+
+        assertEquals(ModernConfigTypeInference.TemplateType.SIMPLE_LIST,
+                infer(config, "names", null).getTemplateType());
+        assertEquals(ModernConfigTypeInference.TemplateType.TABLE,
+                infer(config, "servers", null).getTemplateType());
+        assertEquals(Arrays.asList("host", "port"), infer(config, "servers", null).getTableColumns());
+        assertEquals(ModernConfigTypeInference.TemplateType.READ_ONLY,
+                infer(config, "mixed", null).getTemplateType());
+    }
+
     private static ModernConfigTypeInference.Result infer(MutableConfig config, String path,
             ModernConfigTemplateScreen.FieldSpec fieldSpec) {
         return ModernConfigTypeInference.infer(path, config.get(path), fieldSpec);
+    }
+
+    private static Map<String, Object> row(String firstKey, Object firstValue, String secondKey, Object secondValue) {
+        Map<String, Object> row = new LinkedHashMap<String, Object>();
+        row.put(firstKey, firstValue);
+        row.put(secondKey, secondValue);
+        return row;
+    }
+
+    private static Map<String, Object> row(String key, Object value) {
+        Map<String, Object> row = new LinkedHashMap<String, Object>();
+        row.put(key, value);
+        return row;
     }
 }

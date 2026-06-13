@@ -59,6 +59,12 @@ final class ModernConfigPropertyBindings {
     private static ConfigPropertyBinding createBinding(MutableConfig config, String path, ConfigNode node,
             ModernConfigTemplateScreen.FieldSpec fieldSpec, ModernConfigTypeInference.Result inference,
             ChangeListener changeListener) {
+        if (inference.getTemplateType() == ModernConfigTypeInference.TemplateType.TABLE) {
+            return new ModernTablePropertyBinding(config, path, node, fieldSpec, inference, changeListener);
+        }
+        if (inference.getTemplateType() == ModernConfigTypeInference.TemplateType.SIMPLE_LIST) {
+            return new ModernSimpleListPropertyBinding(config, path, node, fieldSpec, inference, changeListener);
+        }
         if (inference.getTemplateType() == ModernConfigTypeInference.TemplateType.CHOICE) {
             return new ModernChoicePropertyBinding(config, path, node, fieldSpec, inference, changeListener);
         }
@@ -228,6 +234,12 @@ final class ModernConfigPropertyBindings {
         }
         if (inference.getTemplateType() == ModernConfigTypeInference.TemplateType.LONG_TEXT) {
             return "长文本";
+        }
+        if (inference.getTemplateType() == ModernConfigTypeInference.TemplateType.SIMPLE_LIST) {
+            return "列表";
+        }
+        if (inference.getTemplateType() == ModernConfigTypeInference.TemplateType.TABLE) {
+            return "表格";
         }
         if (inference.getTemplateType() == ModernConfigTypeInference.TemplateType.NULL) {
             return "空值";
