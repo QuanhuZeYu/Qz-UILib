@@ -21,7 +21,10 @@ public final class DocumentEffectChain {
 
     /**
      * 元素级 backdrop blur 半径上限。
+     *
+     * @deprecated 使用 {@link club.heiqi.uilib.ui.render.BackdropBlurConfig#getMaxBlurRadius()} 代替
      */
+    @Deprecated
     public static final int MAX_BACKDROP_BLUR_RADIUS = 48;
     private static final int UNBOUNDED_MIN = Integer.MIN_VALUE / 4;
     private static final int UNBOUNDED_MAX = Integer.MAX_VALUE / 4;
@@ -269,7 +272,8 @@ public final class DocumentEffectChain {
     private static int resolveBackdropBlurRadius(DocumentLayoutBox box, ComputedStyle style) {
         int availableSpace = Math.max(box.getWidth(), box.getHeight());
         int radius = style.getBackdropBlurRadius().resolve(availableSpace, 0);
-        return Math.max(0, Math.min(radius, MAX_BACKDROP_BLUR_RADIUS));
+        int maxRadius = club.heiqi.uilib.ui.render.BackdropBlurConfig.getInstance().getMaxBlurRadius();
+        return Math.max(0, Math.min(radius, maxRadius));
     }
 
     private static boolean hasBackdropFilter(int blurRadius, float saturation) {

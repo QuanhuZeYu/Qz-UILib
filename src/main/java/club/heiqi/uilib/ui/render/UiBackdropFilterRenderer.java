@@ -124,6 +124,11 @@ final class UiBackdropFilterRenderer {
                 drewBackdrop = true;
                 return null;
             }
+            
+            BackdropBlurConfig config = BackdropBlurConfig.getInstance();
+            if (!config.getFixedPipelineEnabled()) {
+                return "fixed-pipeline-disabled";
+            }
             if (blurRadius <= 0) {
                 return "shader-and-blur-unavailable";
             }
@@ -134,14 +139,16 @@ final class UiBackdropFilterRenderer {
             GL14.glBlendFuncSeparate(GL11.GL_SRC_ALPHA, GL11.GL_ONE_MINUS_SRC_ALPHA,
                     GL11.GL_ONE, GL11.GL_ONE_MINUS_SRC_ALPHA);
             float sampleStep = (float) resolveBackdropSampleStep(blurRadius);
-            for (float[] sample : UI_BACKDROP_BLUR_SAMPLES) {
+            int sampleCount = Math.min(config.getFixedPipelineSampleCount(), UI_BACKDROP_BLUR_SAMPLES.length);
+            for (int i = 0; i < sampleCount; i++) {
+                float[] sample = UI_BACKDROP_BLUR_SAMPLES[i];
                 GL11.glColor4f(1.0F, 1.0F, 1.0F, sample[2]);
                 drawBackdropTextureQuad(left, top, right, bottom, snapshot.getSampleLeft(), snapshot.getSampleTop(),
                         snapshot.getWidth(), snapshot.getHeight(), sample[0] * sampleStep, sample[1] * sampleStep);
             }
             GL11.glColor4f(1.0F, 1.0F, 1.0F, 1.0F);
             recordPath(BackdropFilterRenderPath.FIXED_PIPELINE,
-                    "shader-unavailable, snapshot=" + formatSnapshotState(snapshot));
+                    "shader-unavailable, samples=" + sampleCount + ", snapshot=" + formatSnapshotState(snapshot));
             drewBackdrop = true;
             return null;
         } finally {
@@ -160,6 +167,11 @@ final class UiBackdropFilterRenderer {
     private static boolean drawBackdropTextureWithShader(int left, int top, int right, int bottom, int sampleLeft,
             int sampleTop, int sampleWidth, int sampleHeight, int textureWidth, int textureHeight,
             int downsampleFactor, int blurRadius, float saturation, MainLayerSnapshot snapshot) {
+        BackdropBlurConfig config = BackdropBlurConfig.getInstance();
+        if (!config.getShaderEnabled()) {
+            recordPath(BackdropFilterRenderPath.FIXED_PIPELINE, "shader disabled by config");
+            return false;
+        }
         if (!BACKDROP_SHADER_PROGRAM.ensureInitialized()) {
             recordPath(BackdropFilterRenderPath.FIXED_PIPELINE,
                     "shader unavailable: " + BACKDROP_SHADER_PROGRAM.getLastFailureMessage());
@@ -200,6 +212,11 @@ final class UiBackdropFilterRenderer {
     private static void drawTintFallback(UiRenderContext context, int left, int top, int right, int bottom,
             int blurRadius, float saturation, UiBorderRadiusResolver.ResolvedCornerRadii cornerRadii,
             String fallbackDetail) {
+        BackdropBlurConfig config = BackdropBlurConfig.getInstance();
+        if (!config.getTintFallbackEnabled()) {
+            recordPath(BackdropFilterRenderPath.NONE, "tint-fallback-disabled: " + fallbackDetail);
+            return;
+        }
         recordPath(BackdropFilterRenderPath.TINT_FALLBACK, fallbackDetail);
         int tintAlpha = clampInt(18 + Math.max(0, blurRadius) * 2 + Math.round(Math.max(0.0F,
                 saturation - 1.0F) * 16.0F), 18, 72);
@@ -222,7 +239,9 @@ final class UiBackdropFilterRenderer {
         if (blurRadius <= 0) {
             return 0.0F;
         }
-        return Math.max(1.0F, Math.min(32.0F, (float) blurRadius * 0.75F
+        BackdropBlurConfig config = BackdropBlurConfig.getInstance();
+        float maxShaderRadius = config.getShaderBlurRadiusLimit();
+        return Math.max(1.0F, Math.min(maxShaderRadius, (float) blurRadius * 0.75F
                 / (float) Math.max(1, downsampleFactor)));
     }
 

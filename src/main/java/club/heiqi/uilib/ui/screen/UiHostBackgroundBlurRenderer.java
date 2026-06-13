@@ -52,7 +52,9 @@ final class UiHostBackgroundBlurRenderer {
      * @param nativeHeight 原生高度
      */
     void drawBlurredBackground(int nativeWidth, int nativeHeight) {
-        if (capturedBackgroundTextureId == 0 || nativeWidth <= 0 || nativeHeight <= 0) {
+        club.heiqi.uilib.ui.render.BackdropBlurConfig config = club.heiqi.uilib.ui.render.BackdropBlurConfig.getInstance();
+        if (!config.getHostBackgroundBlurEnabled() || capturedBackgroundTextureId == 0 
+                || nativeWidth <= 0 || nativeHeight <= 0) {
             return;
         }
 
@@ -74,10 +76,13 @@ final class UiHostBackgroundBlurRenderer {
             GL11.glBlendFunc(GL11.GL_ONE, GL11.GL_ONE);
             GL11.glBindTexture(GL11.GL_TEXTURE_2D, capturedBackgroundTextureId);
 
+            float strength = config.getHostBackgroundBlurStrength();
             for (float[] sample : BLUR_SAMPLES) {
                 float weight = sample[2] / totalWeight;
                 GL11.glColor4f(weight, weight, weight, weight);
-                drawFullscreenQuad(nativeWidth, nativeHeight, sample[0] / nativeWidth, sample[1] / nativeHeight);
+                float offsetX = sample[0] * strength / nativeWidth;
+                float offsetY = sample[1] * strength / nativeHeight;
+                drawFullscreenQuad(nativeWidth, nativeHeight, offsetX, offsetY);
             }
 
             GL11.glBindTexture(GL11.GL_TEXTURE_2D, 0);
