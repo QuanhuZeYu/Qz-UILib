@@ -1,9 +1,13 @@
 package club.heiqi.uilib.config;
 
+import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 
 import club.heiqi.config.ConfigException;
+import club.heiqi.config.ConfigNode;
 import club.heiqi.config.MutableConfig;
 import club.heiqi.uilib.ui.control.DocumentButtonActionEvent;
 import club.heiqi.uilib.ui.control.DocumentButtonActionHandler;
@@ -26,14 +30,14 @@ import net.minecraft.client.gui.GuiScreen;
 /**
  * 基于现代 config 模块的配置模板页骨架。
  *
- * <p>Batch 0 仅建立生命周期、状态栏、按钮和只读路径预览，不实现具体字段编辑模板。</p>
+ * <p>当前实现支持基础类型字段编辑，复杂结构仅做摘要展示。</p>
  */
 public class ModernConfigTemplateScreen extends BaseScreen {
 
     private final GuiScreen parentScreen;
     private final Spec spec;
     private final HtmlLikeDocumentWidget documentWidget;
-    private final List<ModernConfigPropertyBindings.ReadOnlyPathBinding> pathBindings;
+    private final List<ModernConfigPropertyBindings.ConfigPropertyBinding> bindings;
     private final DocumentButtonControl saveButton;
     private final DocumentButtonControl restoreCurrentButton;
     private final DocumentButtonControl restoreDefaultsButton;
@@ -59,7 +63,13 @@ public class ModernConfigTemplateScreen extends BaseScreen {
                 .setWidth(UiLength.percent(1.0F))
                 .setHeight(UiLength.percent(1.0F)));
 
-        this.pathBindings = ModernConfigPropertyBindings.createReadOnlyPathBindings(spec.getConfig());
+        this.bindings = ModernConfigPropertyBindings.createBindings(spec.getConfig(), spec.getFields(),
+                new ModernConfigPropertyBindings.ChangeListener() {
+                    @Override
+                    public void onDraftChanged() {
+                        refreshStatusText(null);
+                    }
+                });
         this.saveButton = createActionButton(document, spec.getTextSet().saveButtonLabel,
                 spec.getTheme().primaryButtonColor, spec.getTheme().primaryButtonActiveColor,
                 spec.getTheme().disabledButtonColor);
@@ -68,13 +78,13 @@ public class ModernConfigTemplateScreen extends BaseScreen {
                 spec.getTheme().disabledButtonColor);
         this.restoreDefaultsButton = createActionButton(document, spec.getTextSet().restoreDefaultsButtonLabel,
                 spec.getTheme().warningButtonColor, spec.getTheme().warningButtonActiveColor,
-                spec.getTheme().warningButtonDisabledColor).setEnabled(false);
+                spec.getTheme().warningButtonDisabledColor).setEnabled(hasRestorableDefault());
         this.backButton = createActionButton(document, spec.getTextSet().backButtonLabel,
                 spec.getTheme().neutralButtonColor, spec.getTheme().neutralButtonActiveColor,
                 spec.getTheme().disabledButtonColor);
 
         configureActionButtons();
-        ModernConfigDocumentBuilder.Result buildResult = new ModernConfigDocumentBuilder(spec, pathBindings,
+        ModernConfigDocumentBuilder.Result buildResult = new ModernConfigDocumentBuilder(spec, bindings,
                 saveButton, restoreCurrentButton, restoreDefaultsButton, backButton).build(document);
         this.statusText = buildResult.getStatusText();
         this.visibleSectionCount = buildResult.getVisibleSectionCount();
@@ -114,6 +124,12 @@ public class ModernConfigTemplateScreen extends BaseScreen {
                 restoreCurrentValues();
             }
         });
+        restoreDefaultsButton.setActionHandler(new DocumentButtonActionHandler() {
+            @Override
+            public void onAction(DocumentButtonActionEvent event) {
+                restoreDefaultValues();
+            }
+        });
         backButton.setActionHandler(new DocumentButtonActionHandler() {
             @Override
             public void onAction(DocumentButtonActionEvent event) {
@@ -123,36 +139,70 @@ public class ModernConfigTemplateScreen extends BaseScreen {
     }
 
     private void saveDraft() {
+        if (bindings.isEmpty()) {
+            refreshStatusText("当前模板没有可保存的配置项。");
+            return;
+        }
         int dirtyCount = countDirtyBindings();
         if (dirtyCount <= 0) {
             refreshStatusText(spec.getTextSet().idleNoChangesText);
             return;
         }
+        for (ModernConfigPropertyBindings.ConfigPropertyBinding binding : bindings) {
+            String validationError = binding.validateDraft();
+            binding.setValidationError(validationError);
+            if (validationError != null && !validationError.isEmpty()) {
+                refreshStatusText(spec.getTextSet().formatValidationFailed(binding.getDisplayName(), validationError));
+                return;
+            }
+        }
+        ConfigNode previousSnapshot = spec.getConfig().asImmutable();
+        boolean wasDirty = spec.getConfig().isDirty();
         try {
+            for (ModernConfigPropertyBindings.ConfigPropertyBinding binding : bindings) {
+                if (binding.isDirty()) {
+                    binding.applyDraft();
+                }
+            }
             spec.getSaveHandler().onSave(spec.getConfig());
             spec.getConfig().markClean();
         } catch (ConfigException exception) {
+            restoreConfigSnapshot(previousSnapshot, wasDirty);
+            restoreCurrentValuesFromConfig();
             refreshStatusText(formatSaveFailed(exception));
             return;
         } catch (RuntimeException exception) {
+            restoreConfigSnapshot(previousSnapshot, wasDirty);
+            restoreCurrentValuesFromConfig();
             refreshStatusText(formatSaveFailed(exception));
             return;
         }
+        restoreCurrentValuesFromConfig();
         refreshStatusText(spec.getTextSet().formatSaveSucceeded(dirtyCount));
     }
 
     private void restoreCurrentValues() {
-        if (spec.getConfig().getSource() == null) {
-            refreshStatusText("当前现代配置没有绑定文件，暂无可恢复的配置项。");
-            return;
+        if (spec.getConfig().getSource() != null) {
+            try {
+                spec.getConfig().reload();
+            } catch (ConfigException exception) {
+                refreshStatusText("恢复失败：" + resolveExceptionMessage(exception));
+                return;
+            }
         }
-        try {
-            spec.getConfig().reload();
-        } catch (ConfigException exception) {
-            refreshStatusText("恢复失败：" + resolveExceptionMessage(exception));
-            return;
-        }
+        restoreCurrentValuesFromConfig();
         refreshStatusText(spec.getTextSet().restoredCurrentValuesText);
+    }
+
+    private void restoreDefaultValues() {
+        boolean restored = false;
+        for (ModernConfigPropertyBindings.ConfigPropertyBinding binding : bindings) {
+            if (binding.canRestoreDefaultValue()) {
+                binding.restoreDefaultValue();
+                restored = true;
+            }
+        }
+        refreshStatusText(restored ? spec.getTextSet().restoredDefaultValuesText : "当前现代配置没有声明默认值。");
     }
 
     private boolean handleGlobalShortcuts(UiInputFrame frame) {
@@ -189,7 +239,87 @@ public class ModernConfigTemplateScreen extends BaseScreen {
     }
 
     private int countDirtyBindings() {
-        return spec.getConfig().isDirty() ? 1 : 0;
+        int dirtyCount = 0;
+        for (ModernConfigPropertyBindings.ConfigPropertyBinding binding : bindings) {
+            if (binding.isDirty()) {
+                dirtyCount++;
+            }
+        }
+        return dirtyCount;
+    }
+
+    private boolean hasRestorableDefault() {
+        for (ModernConfigPropertyBindings.ConfigPropertyBinding binding : bindings) {
+            if (binding.canRestoreDefaultValue()) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private void restoreCurrentValuesFromConfig() {
+        for (ModernConfigPropertyBindings.ConfigPropertyBinding binding : bindings) {
+            binding.restoreCurrentValue();
+            binding.setValidationError("");
+        }
+    }
+
+    private void restoreConfigSnapshot(ConfigNode snapshot, boolean wasDirty) {
+        spec.getConfig().clear();
+        if (snapshot != null && snapshot.getType() == ConfigNode.NodeType.MAP) {
+            Map<String, ConfigNode> rootMap = snapshot.asMap();
+            if (rootMap != null) {
+                for (Map.Entry<String, ConfigNode> entry : rootMap.entrySet()) {
+                    spec.getConfig().set(entry.getKey(), convertSnapshotValue(entry.getValue()));
+                }
+            }
+        }
+        if (!wasDirty) {
+            spec.getConfig().markClean();
+        }
+    }
+
+    private Object convertSnapshotValue(ConfigNode node) {
+        if (node == null || node.isNull()) {
+            return null;
+        }
+        if (node.getType() == ConfigNode.NodeType.STRING) {
+            return node.asString("");
+        }
+        if (node.getType() == ConfigNode.NodeType.BOOLEAN) {
+            return Boolean.valueOf(node.asBoolean(false));
+        }
+        if (node.getType() == ConfigNode.NodeType.NUMBER) {
+            String numberText = node.asString("").trim().toLowerCase();
+            if (!numberText.contains(".") && !numberText.contains("e")) {
+                try {
+                    return Long.valueOf(node.asLong());
+                } catch (ConfigException ignored) {
+                }
+            }
+            return Double.valueOf(node.asDouble(0.0D));
+        }
+        if (node.getType() == ConfigNode.NodeType.LIST) {
+            List<Object> values = new ArrayList<Object>();
+            List<ConfigNode> children = node.asList();
+            if (children != null) {
+                for (ConfigNode child : children) {
+                    values.add(convertSnapshotValue(child));
+                }
+            }
+            return values;
+        }
+        if (node.getType() == ConfigNode.NodeType.MAP) {
+            java.util.LinkedHashMap<String, Object> values = new java.util.LinkedHashMap<String, Object>();
+            Map<String, ConfigNode> children = node.asMap();
+            if (children != null) {
+                for (Map.Entry<String, ConfigNode> entry : children.entrySet()) {
+                    values.put(entry.getKey(), convertSnapshotValue(entry.getValue()));
+                }
+            }
+            return values;
+        }
+        return node.asString("");
     }
 
     private void refreshStatusText(String overrideMessage) {
@@ -205,7 +335,7 @@ public class ModernConfigTemplateScreen extends BaseScreen {
             statusText.setText(spec.getTextSet().formatDirtyState(dirtyCount));
             return;
         }
-        statusText.setText(spec.getTextSet().formatReadyState(visibleSectionCount, pathBindings.size()));
+        statusText.setText(spec.getTextSet().formatReadyState(visibleSectionCount, bindings.size()));
     }
 
     private DocumentButtonControl createActionButton(UiDocument document, String label, int normalColor,
@@ -251,6 +381,7 @@ public class ModernConfigTemplateScreen extends BaseScreen {
         private ForgeConfigTemplateScreen.Theme theme = ForgeConfigTemplateScreen.Theme.defaultTheme();
         private ForgeConfigTemplateScreen.TextSet textSet = ForgeConfigTemplateScreen.TextSet.defaultTextSet();
         private SaveHandler saveHandler = DEFAULT_SAVE_HANDLER;
+        private final List<FieldSpec> fields = new ArrayList<FieldSpec>();
 
         /**
          * 创建现代配置模板规格。
@@ -331,6 +462,35 @@ public class ModernConfigTemplateScreen extends BaseScreen {
             return this;
         }
 
+        /**
+         * 追加现代配置字段规格。
+         *
+         * @param field 字段规格
+         * @return 当前规格
+         */
+        public Spec addField(FieldSpec field) {
+            if (field != null && !field.getPath().isEmpty()) {
+                fields.add(field);
+            }
+            return this;
+        }
+
+        /**
+         * 批量替换现代配置字段规格。
+         *
+         * @param fields 字段规格列表
+         * @return 当前规格
+         */
+        public Spec setFields(List<FieldSpec> fields) {
+            this.fields.clear();
+            if (fields != null) {
+                for (FieldSpec field : fields) {
+                    addField(field);
+                }
+            }
+            return this;
+        }
+
         public String getModId() {
             return modId;
         }
@@ -365,6 +525,207 @@ public class ModernConfigTemplateScreen extends BaseScreen {
 
         public SaveHandler getSaveHandler() {
             return saveHandler;
+        }
+
+        public List<FieldSpec> getFields() {
+            return Collections.unmodifiableList(fields);
+        }
+    }
+
+    /**
+     * 现代配置字段的轻量 UI 规格。
+     */
+    public static final class FieldSpec {
+
+        private final String path;
+        private String label = "";
+        private String description = "";
+        private String templateHint = "";
+        private String placeholder = "";
+        private Integer maxLength;
+        private Number minValue;
+        private Number maxValue;
+        private Number step;
+        private Object defaultValue;
+        private boolean hasDefaultValue;
+        private final List<String> validValues = new ArrayList<String>();
+
+        /**
+         * 创建字段规格。
+         *
+         * @param path 配置路径
+         */
+        public FieldSpec(String path) {
+            this.path = path == null ? "" : path.trim();
+        }
+
+        /**
+         * 设置展示标签。
+         *
+         * @param label 展示标签
+         * @return 当前字段规格
+         */
+        public FieldSpec setLabel(String label) {
+            this.label = label == null ? "" : label.trim();
+            return this;
+        }
+
+        /**
+         * 设置说明文本。
+         *
+         * @param description 说明文本
+         * @return 当前字段规格
+         */
+        public FieldSpec setDescription(String description) {
+            this.description = description == null ? "" : description.trim();
+            return this;
+        }
+
+        /**
+         * 设置模板提示。
+         *
+         * @param templateHint 模板提示
+         * @return 当前字段规格
+         */
+        public FieldSpec setTemplateHint(String templateHint) {
+            this.templateHint = templateHint == null ? "" : templateHint.trim();
+            return this;
+        }
+
+        /**
+         * 设置占位文本。
+         *
+         * @param placeholder 占位文本
+         * @return 当前字段规格
+         */
+        public FieldSpec setPlaceholder(String placeholder) {
+            this.placeholder = placeholder == null ? "" : placeholder;
+            return this;
+        }
+
+        /**
+         * 设置最大文本长度。
+         *
+         * @param maxLength 最大文本长度
+         * @return 当前字段规格
+         */
+        public FieldSpec setMaxLength(Integer maxLength) {
+            this.maxLength = maxLength == null ? null : Integer.valueOf(Math.max(1, maxLength.intValue()));
+            return this;
+        }
+
+        /**
+         * 设置数值范围。
+         *
+         * @param minValue 最小值
+         * @param maxValue 最大值
+         * @return 当前字段规格
+         */
+        public FieldSpec setRange(Number minValue, Number maxValue) {
+            this.minValue = minValue;
+            this.maxValue = maxValue;
+            return this;
+        }
+
+        /**
+         * 设置数值步进。
+         *
+         * @param step 步进值
+         * @return 当前字段规格
+         */
+        public FieldSpec setStep(Number step) {
+            this.step = step;
+            return this;
+        }
+
+        /**
+         * 设置默认值。
+         *
+         * @param defaultValue 默认值
+         * @return 当前字段规格
+         */
+        public FieldSpec setDefaultValue(Object defaultValue) {
+            this.defaultValue = defaultValue;
+            this.hasDefaultValue = true;
+            return this;
+        }
+
+        /**
+         * 批量设置离散可选值。
+         *
+         * @param values 可选值数组
+         * @return 当前字段规格
+         */
+        public FieldSpec setValidValues(String... values) {
+            this.validValues.clear();
+            if (values != null) {
+                for (String value : values) {
+                    addValidValue(value);
+                }
+            }
+            return this;
+        }
+
+        /**
+         * 追加离散可选值。
+         *
+         * @param value 可选值
+         * @return 当前字段规格
+         */
+        public FieldSpec addValidValue(String value) {
+            String normalized = value == null ? "" : value.trim();
+            if (!normalized.isEmpty() && !validValues.contains(normalized)) {
+                validValues.add(normalized);
+            }
+            return this;
+        }
+
+        public String getPath() {
+            return path;
+        }
+
+        public String getLabel() {
+            return label;
+        }
+
+        public String getDescription() {
+            return description;
+        }
+
+        public String getTemplateHint() {
+            return templateHint;
+        }
+
+        public String getPlaceholder() {
+            return placeholder;
+        }
+
+        public Integer getMaxLength() {
+            return maxLength;
+        }
+
+        public Number getMinValue() {
+            return minValue;
+        }
+
+        public Number getMaxValue() {
+            return maxValue;
+        }
+
+        public Number getStep() {
+            return step;
+        }
+
+        public Object getDefaultValue() {
+            return defaultValue;
+        }
+
+        public boolean hasDefaultValue() {
+            return hasDefaultValue;
+        }
+
+        public List<String> getValidValues() {
+            return Collections.unmodifiableList(validValues);
         }
     }
 

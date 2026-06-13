@@ -46,6 +46,6 @@ final class ModernConfigBridge {
                 textSet.restoredCurrentValuesText,
                 textSet.restoredDefaultValuesText,
                 "当前现代配置节点没有可展示的子项。",
-                "已检测到 club.heiqi.config 模块；Batch 0 仅提供现代配置页骨架，暂未挂载可编辑模板。");
+                "已检测到 club.heiqi.config 模块；当前现代配置页支持基础类型字段编辑，复杂结构暂以摘要展示。");
     }
 }

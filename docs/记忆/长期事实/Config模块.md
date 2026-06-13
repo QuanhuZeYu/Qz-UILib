@@ -124,5 +124,7 @@ Config.registerLoader(new TomlConfigLoader());
 
 - 现代配置模板页按可选模块能力接入：UILib 入口运行时检测 `club.heiqi.config.Config` / `MutableConfig` 是否存在，存在时使用现代配置页，不存在时回退现有 Forge 配置页。
 - 现代配置页不做 Forge 到 config 模块的迁移工具，复杂结构的 Forge 回退兼容由接入方自行设计。
+- 现代配置页 Batch 1 已支持基础叶子节点编辑：文本、数值、开关、空值、离散选项和长文本；离散选项、默认值、数值范围、占位符等 UI 语义依赖 `ModernConfigTemplateScreen.FieldSpec` 补充。
+- 列表、表格、嵌套结构、动态 map、预设、源码编辑、增强选择器和搜索过滤仍按 `modern-config-template-screen-plan.md` 后续批次施工，当前复杂结构仅显示摘要。
 - 推荐需要回退兼容复杂结构的接入方，将复杂配置序列化为 JSON 字符串并存入 Forge cfg 的字符串属性。
 - 分阶段施工规划见 `docs/开发者文档/specs/modern-config-template-screen-plan.md`，关键取舍见 `docs/记忆/决策/DECISION-20260613-modern-config-template-optional-module.md`。

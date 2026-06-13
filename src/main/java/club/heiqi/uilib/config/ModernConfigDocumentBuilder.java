@@ -18,7 +18,7 @@ import club.heiqi.uilib.ui.style.values.UiStyleLength;
 final class ModernConfigDocumentBuilder {
 
     private final ModernConfigTemplateScreen.Spec spec;
-    private final List<ModernConfigPropertyBindings.ReadOnlyPathBinding> pathBindings;
+    private final List<ModernConfigPropertyBindings.ConfigPropertyBinding> bindings;
     private final DocumentButtonControl saveButton;
     private final DocumentButtonControl restoreCurrentButton;
     private final DocumentButtonControl restoreDefaultsButton;
@@ -26,11 +26,11 @@ final class ModernConfigDocumentBuilder {
     private int visibleSectionCount;
 
     ModernConfigDocumentBuilder(ModernConfigTemplateScreen.Spec spec,
-            List<ModernConfigPropertyBindings.ReadOnlyPathBinding> pathBindings, DocumentButtonControl saveButton,
+            List<ModernConfigPropertyBindings.ConfigPropertyBinding> bindings, DocumentButtonControl saveButton,
             DocumentButtonControl restoreCurrentButton, DocumentButtonControl restoreDefaultsButton,
             DocumentButtonControl backButton) {
         this.spec = spec;
-        this.pathBindings = pathBindings;
+        this.bindings = bindings;
         this.saveButton = saveButton;
         this.restoreCurrentButton = restoreCurrentButton;
         this.restoreDefaultsButton = restoreDefaultsButton;
@@ -65,8 +65,8 @@ final class ModernConfigDocumentBuilder {
         appendHero(document, main);
         TextNode status = appendStatusCard(document, main);
         appendToolbar(document, main);
-        appendReadOnlyPathCards(document, main);
-        if (pathBindings.isEmpty()) {
+        appendBasicFieldCards(document, main);
+        if (bindings.isEmpty()) {
             appendEmptyState(document, main);
         }
         return new Result(status, visibleSectionCount);
@@ -149,8 +149,8 @@ final class ModernConfigDocumentBuilder {
         toolbar.append(button.getElement());
     }
 
-    private void appendReadOnlyPathCards(UiDocument document, ElementNode parent) {
-        if (pathBindings.isEmpty()) {
+    private void appendBasicFieldCards(UiDocument document, ElementNode parent) {
+        if (bindings.isEmpty()) {
             return;
         }
         ElementNode card = document.element("section");
@@ -163,11 +163,11 @@ final class ModernConfigDocumentBuilder {
 
         ElementNode header = document.div();
         header.style().setMargin(UiStyleLength.px(4));
-        header.appendText("只读路径预览");
+        header.appendText("基础配置项");
         ElementNode description = document.div();
         description.style().setMargin(UiStyleLength.px(6))
                 .setTextColor(spec.getTheme().categoryDescriptionTextColor);
-        description.appendText("Batch 0 仅列出现代配置树路径，后续批次再接入可编辑模板。");
+        description.appendText("当前批次支持文本、数值、开关、空值、离散选项和长文本；复杂结构暂以摘要展示。");
         header.append(description);
         card.append(header);
 
@@ -177,7 +177,7 @@ final class ModernConfigDocumentBuilder {
                 .setFlexDirection(UiFlexDirection.COLUMN)
                 .setRowGap(UiStyleLength.px(10))
                 .setMargin(UiStyleLength.px(8));
-        for (ModernConfigPropertyBindings.ReadOnlyPathBinding binding : pathBindings) {
+        for (ModernConfigPropertyBindings.ConfigPropertyBinding binding : bindings) {
             fields.append(binding.createCard(document, spec.getTheme()));
         }
         card.append(fields);
