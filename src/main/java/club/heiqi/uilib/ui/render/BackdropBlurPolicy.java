@@ -10,6 +10,9 @@ import java.util.Objects;
  */
 public final class BackdropBlurPolicy {
 
+    /** 元素级 backdrop blur 页面策略半径上限。 */
+    public static final int MAX_BLUR_RADIUS = 128;
+
     private final Boolean enabled;
     private final Boolean hostBackgroundBlurEnabled;
     private final Float hostBackgroundBlurStrength;
@@ -45,12 +48,7 @@ public final class BackdropBlurPolicy {
      * @return 禁用策略
      */
     public static BackdropBlurPolicy disabled() {
-        return inheritGlobal()
-                .withEnabled(false)
-                .withHostBackgroundBlurEnabled(false)
-                .withShaderEnabled(false)
-                .withFixedPipelineEnabled(false)
-                .withTintFallbackEnabled(false);
+        return inheritGlobal().withEnabled(false);
     }
 
     /**
@@ -163,12 +161,12 @@ public final class BackdropBlurPolicy {
     /**
      * 返回元素级最大模糊半径覆盖后的新策略。
      *
-     * @param radius 最大半径，范围会被限制到 [0, 128]
+     * @param radius 最大半径，范围会被限制到 [0, MAX_BLUR_RADIUS]
      * @return 新策略
      */
     public BackdropBlurPolicy withMaxBlurRadius(int radius) {
         return new BackdropBlurPolicy(enabled, hostBackgroundBlurEnabled, hostBackgroundBlurStrength,
-                Integer.valueOf(clampInt(radius, 0, 128)), shaderEnabled, fixedPipelineEnabled,
+                Integer.valueOf(clampInt(radius, 0, MAX_BLUR_RADIUS)), shaderEnabled, fixedPipelineEnabled,
                 tintFallbackEnabled);
     }
 
@@ -229,10 +227,13 @@ public final class BackdropBlurPolicy {
     }
 
     /**
-     * 解析当前页面背景模糊是否启用。
+     * 解析当前页面背景模糊总开关是否启用。
      *
-     * @param config 全局默认配置
-     * @return 是否启用
+     * <p>{@link BackdropBlurConfig} 没有元素级与宿主级共享的全局总开关；该字段仅作为页面级强制开关。
+     * 未声明时表示页面不额外禁用背景模糊，具体宿主、shader 与 fallback 开关仍继承全局配置。</p>
+     *
+     * @param config 全局默认配置，保留参数以便与其它解析方法保持一致
+     * @return 页面级总开关是否启用
      */
     public boolean resolveEnabled(BackdropBlurConfig config) {
         return enabled == null || enabled.booleanValue();

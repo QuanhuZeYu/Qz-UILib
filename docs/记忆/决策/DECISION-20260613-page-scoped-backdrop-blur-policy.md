@@ -14,7 +14,7 @@
 
 采用页面级 `BackdropBlurPolicy` + `BackdropBlurPreset` + `UiDocument.getBackdropBlurController()`。
 
-策略按 `BackdropBlurConfig` 全局默认 -> `DocumentScreenEnvironment` 页面策略 -> 页面运行时覆盖 -> 元素样式解析。`BackdropBlurPolicy.disabled()` 强禁用当前页面宿主级背景模糊和元素级 `backdrop-filter`。
+策略按 `BackdropBlurConfig` 具体字段全局默认 -> `DocumentScreenEnvironment` 页面策略 -> 页面运行时覆盖 -> 元素样式解析。`BackdropBlurPolicy.disabled()` 只设置页面级总开关，会强禁用当前页面宿主级背景模糊和元素级 `backdrop-filter`，但不把底层 shader/fallback 字段写成页面覆盖值。
 
 ## 选择原因
 
@@ -22,6 +22,7 @@
 - 不暴露 OpenGL、FBO、shader 或 Minecraft `GuiScreen` 生命周期。
 - 运行时控制器挂在 `UiDocument`，页面构建与事件回调都能访问，且只影响所属文档。
 - 渲染链路从页面当前有效策略读取开关和半径上限，不再把全局配置作为唯一入口。
+- `BackdropBlurConfig` 没有元素级与宿主级共享的全局总开关；`BackdropBlurPolicy.enabled` 只表示页面级强制开关，未声明时具体字段仍继承全局配置。
 
 ## 影响范围
 
