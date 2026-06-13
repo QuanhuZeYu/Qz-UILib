@@ -115,7 +115,7 @@ public class UiInputService {
      * 提交宿主界面已翻译出的字符，供无增强输入事件的后端合成文本输入。
      *
      * @param typedChar 已翻译字符
-     * @param keyCode 原始键码
+     * @param keyCode 原始键码；当前实现暂未使用，保留用于后续区分小键盘、宿主键语义或 IME 等扩展场景
      */
     public void submitHostTypedCharacter(char typedChar, int keyCode) {
         if (!initialized.get()) {
@@ -130,6 +130,9 @@ public class UiInputService {
      * @param enabled true 表示开启重复事件
      */
     public void setHostKeyboardRepeatEnabled(boolean enabled) {
+        if (!initialized.get()) {
+            return;
+        }
         backend.setHostKeyboardRepeatEnabled(enabled);
     }
 

@@ -29,7 +29,7 @@ interface UiInputBackend {
      * 处理宿主 `GuiScreen.keyTyped(...)` 已翻译出的字符。
      *
      * @param typedChar 已翻译字符
-     * @param keyCode 原始键码
+     * @param keyCode 原始键码；当前实现暂未使用，保留用于后续区分小键盘、宿主键语义或 IME 等扩展场景
      */
     void handleHostTypedCharacter(char typedChar, int keyCode);
 

@@ -96,6 +96,25 @@ public class Lwjgl3ifyInputBackendTest {
     }
 
     /**
+     * 验证宿主键盘重复事件开关会原样透传到轮询后端。
+     */
+    @Test
+    public void shouldDelegateHostKeyboardRepeatToPollingBackend() throws Exception {
+        UiInputService inputService = createInputService();
+        RecordingInputBackend pollingBackend = new RecordingInputBackend();
+        Lwjgl3ifyInputBackend backend = createBackend(inputService, SuccessfulInputEvents.class,
+                SuccessfulInputEvents.class.getMethod("addKeyboardListener", Object.class), new Object(), pollingBackend,
+                new RecordingFallback());
+
+        backend.setHostKeyboardRepeatEnabled(true);
+        backend.setHostKeyboardRepeatEnabled(false);
+
+        Assert.assertEquals(2, pollingBackend.keyboardRepeatChangeCount);
+        Assert.assertTrue(pollingBackend.firstKeyboardRepeatEnabled);
+        Assert.assertFalse(pollingBackend.currentKeyboardRepeatEnabled);
+    }
+
+    /**
      * 验证当前 `lwjgl3ify` 的 sdl 键码字段可以通过反射 fallback 写入 UI 键盘事件。
      */
     @Test
@@ -211,6 +230,8 @@ public class Lwjgl3ifyInputBackendTest {
         private int initializeCount;
         private int hostTypedCharacterCount;
         private int keyboardRepeatChangeCount;
+        private boolean firstKeyboardRepeatEnabled;
+        private boolean currentKeyboardRepeatEnabled;
 
         @Override
         public void initialize() {
@@ -233,6 +254,10 @@ public class Lwjgl3ifyInputBackendTest {
 
         @Override
         public void setHostKeyboardRepeatEnabled(boolean enabled) {
+            if (keyboardRepeatChangeCount == 0) {
+                firstKeyboardRepeatEnabled = enabled;
+            }
+            currentKeyboardRepeatEnabled = enabled;
             keyboardRepeatChangeCount++;
         }
 

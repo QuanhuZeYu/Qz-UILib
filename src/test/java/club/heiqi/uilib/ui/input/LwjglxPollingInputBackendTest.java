@@ -39,12 +39,29 @@ public class LwjglxPollingInputBackendTest {
         LwjglxPollingInputBackend backend = new LwjglxPollingInputBackend(inputService, false);
 
         backend.handleHostTypedCharacter((char) 0, UiKeyCodes.KEY_ESCAPE);
+        backend.handleHostTypedCharacter((char) 31, UiKeyCodes.KEY_S);
         backend.handleHostTypedCharacter('\b', UiKeyCodes.KEY_BACK);
         backend.handleHostTypedCharacter('\r', UiKeyCodes.KEY_RETURN);
         backend.handleHostTypedCharacter((char) 127, UiKeyCodes.KEY_DELETE);
 
         UiInputFrame frame = inputService.collectFrame();
         Assert.assertTrue(frame.getTextEvents().isEmpty());
+        Assert.assertTrue(frame.getKeyEvents().isEmpty());
+    }
+
+    /**
+     * 验证空格字符会按可打印字符进入文本输入事件。
+     */
+    @Test
+    public void shouldCreateTextEventForSpaceHostTypedCharacter() {
+        UiInputService inputService = createInputService();
+        LwjglxPollingInputBackend backend = new LwjglxPollingInputBackend(inputService, false);
+
+        backend.handleHostTypedCharacter(' ', UiKeyCodes.KEY_SPACE);
+
+        UiInputFrame frame = inputService.collectFrame();
+        Assert.assertEquals(1, frame.getTextEvents().size());
+        Assert.assertEquals(" ", frame.getTextEvents().get(0).getText());
         Assert.assertTrue(frame.getKeyEvents().isEmpty());
     }
 
