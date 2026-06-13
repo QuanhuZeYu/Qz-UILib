@@ -1,5 +1,7 @@
 package club.heiqi.uilib.ui.screen.page;
 
+import club.heiqi.uilib.ui.render.BackdropBlurPolicy;
+
 /**
  * 文档页面控制器基类。
  *
@@ -38,6 +40,15 @@ public abstract class DocumentPageController {
      * 每帧在宿主绘制前刷新页面状态。
      */
     public void beforeDocumentFrame() {
+    }
+
+    /**
+     * 返回当前页面有效背景模糊策略。
+     *
+     * @return 背景模糊策略
+     */
+    public BackdropBlurPolicy getBackdropBlurPolicy() {
+        return BackdropBlurPolicy.inheritGlobal();
     }
 
     /**

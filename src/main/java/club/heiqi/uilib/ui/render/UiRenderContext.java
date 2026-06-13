@@ -46,6 +46,7 @@ public class UiRenderContext {
     private final PaintContextCompositor paintContextCompositor;
     private final UiMainLayerSnapshotService mainLayerSnapshotService;
     private final UiRuntimeAdapters runtimeAdapters;
+    private final BackdropBlurPolicy backdropBlurPolicy;
     private final ClipStack clipStack = new ClipStack();
     private final List<DeferredPostMainPass> deferredPostMainPasses = new ArrayList<DeferredPostMainPass>();
     private final List<DeferredPostMainPass> deferredPostMainOverlayPasses = new ArrayList<DeferredPostMainPass>();
@@ -113,6 +114,26 @@ public class UiRenderContext {
     public UiRenderContext(int screenWidth, int screenHeight, int mouseX, int mouseY, float partialTicks,
             PaintContextCompositor paintContextCompositor, UiMainLayerSnapshotService mainLayerSnapshotService,
             UiRuntimeAdapters runtimeAdapters) {
+        this(screenWidth, screenHeight, mouseX, mouseY, partialTicks, paintContextCompositor,
+                mainLayerSnapshotService, runtimeAdapters, BackdropBlurPolicy.inheritGlobal());
+    }
+
+    /**
+     * 创建渲染上下文。
+     *
+     * @param screenWidth 屏幕宽度
+     * @param screenHeight 屏幕高度
+     * @param mouseX 鼠标 X
+     * @param mouseY 鼠标 Y
+     * @param partialTicks 插值帧参数
+     * @param paintContextCompositor paint context 离屏合成器
+     * @param mainLayerSnapshotService UI 主层快照服务
+     * @param runtimeAdapters 运行时适配器集合
+     * @param backdropBlurPolicy 页面级背景模糊策略
+     */
+    public UiRenderContext(int screenWidth, int screenHeight, int mouseX, int mouseY, float partialTicks,
+            PaintContextCompositor paintContextCompositor, UiMainLayerSnapshotService mainLayerSnapshotService,
+            UiRuntimeAdapters runtimeAdapters, BackdropBlurPolicy backdropBlurPolicy) {
         this.screenWidth = screenWidth;
         this.screenHeight = screenHeight;
         this.mouseX = mouseX;
@@ -123,6 +144,8 @@ public class UiRenderContext {
         this.mainLayerSnapshotService = Objects.requireNonNull(mainLayerSnapshotService,
                 "mainLayerSnapshotService");
         this.runtimeAdapters = Objects.requireNonNull(runtimeAdapters, "runtimeAdapters");
+        this.backdropBlurPolicy = backdropBlurPolicy == null ? BackdropBlurPolicy.inheritGlobal()
+                : backdropBlurPolicy;
     }
 
     public int getScreenWidth() {
@@ -197,6 +220,15 @@ public class UiRenderContext {
      */
     public UiRuntimeAdapters getRuntimeAdapters() {
         return runtimeAdapters;
+    }
+
+    /**
+     * 返回当前渲染帧使用的页面级背景模糊策略。
+     *
+     * @return 背景模糊策略
+     */
+    public BackdropBlurPolicy getBackdropBlurPolicy() {
+        return backdropBlurPolicy;
     }
 
     /**

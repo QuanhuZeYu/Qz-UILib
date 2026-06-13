@@ -22,6 +22,8 @@ import org.junit.Test;
 import club.heiqi.uilib.ui.document.HtmlLikeDocumentWidget;
 import club.heiqi.uilib.ui.dom.ElementNode;
 import club.heiqi.uilib.ui.dom.UiDocument;
+import club.heiqi.uilib.ui.render.BackdropBlurPolicy;
+import club.heiqi.uilib.ui.render.BackdropBlurPreset;
 import club.heiqi.uilib.ui.runtime.UiRuntimeAdapters;
 import club.heiqi.uilib.ui.style.props.UiOverflow;
 import club.heiqi.uilib.ui.style.values.UiStyleLength;
@@ -55,7 +57,7 @@ public class UiDocumentScreensTest {
             publicStaticMethodCount++;
             Assert.assertTrue("createDocumentScreen".equals(method.getName()));
         }
-        Assert.assertEquals(3, publicStaticMethodCount);
+        Assert.assertEquals(6, publicStaticMethodCount);
         Assert.assertEquals("club.heiqi.uilib.ui.screen.internal",
                 UiDiagnosticsScreens.class.getPackage().getName());
     }
@@ -126,6 +128,40 @@ public class UiDocumentScreensTest {
         Assert.assertSame(textMeasureService, environment.getTextMeasureService());
         Assert.assertSame(runtimeAdapters, environment.getRuntimeAdapters());
         Assert.assertEquals(TextContentMode.UILIB_RAW, environment.getDefaultTextContentMode());
+        Assert.assertEquals(BackdropBlurPolicy.inheritGlobal(), environment.getBackdropBlurPolicy());
+    }
+
+    /**
+     * 验证文档环境可携带不可变的页面级背景模糊策略。
+     */
+    @Test
+    public void shouldKeepBackdropBlurPolicyInDocumentScreenEnvironment() {
+        UiDocumentScreens.DocumentScreenEnvironment baseEnvironment = new UiDocumentScreens.DocumentScreenEnvironment(
+                new NoOpTextMeasureService(), UiRuntimeAdapters.empty(), TextContentMode.MINECRAFT_FORMATTED);
+        BackdropBlurPolicy policy = BackdropBlurPolicy.quality().withMaxBlurRadius(72);
+
+        UiDocumentScreens.DocumentScreenEnvironment nextEnvironment = baseEnvironment.withBackdropBlurPolicy(policy);
+
+        Assert.assertEquals(BackdropBlurPolicy.inheritGlobal(), baseEnvironment.getBackdropBlurPolicy());
+        Assert.assertEquals(policy, nextEnvironment.getBackdropBlurPolicy());
+        Assert.assertEquals(TextContentMode.MINECRAFT_FORMATTED, nextEnvironment.getDefaultTextContentMode());
+
+        UiDocumentScreens.DocumentScreenEnvironment disabledEnvironment = baseEnvironment.withBackdropBlurPolicy(
+                BackdropBlurPolicy.fromPreset(BackdropBlurPreset.DISABLED));
+
+        Assert.assertEquals(BackdropBlurPolicy.disabled(), disabledEnvironment.getBackdropBlurPolicy());
+    }
+
+    /**
+     * 验证背景模糊预设可映射到页面级策略。
+     */
+    @Test
+    public void shouldResolveMinecraftDefaultsWithBackdropPreset() {
+        UiDocumentScreens.DocumentScreenEnvironment environment = new UiDocumentScreens.DocumentScreenEnvironment(
+                new NoOpTextMeasureService(), UiRuntimeAdapters.empty())
+                        .withBackdropBlurPolicy(BackdropBlurPolicy.fromPreset(BackdropBlurPreset.DISABLED));
+
+        Assert.assertEquals(BackdropBlurPolicy.disabled(), environment.getBackdropBlurPolicy());
     }
 
     /**

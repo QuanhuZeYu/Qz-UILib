@@ -3,8 +3,9 @@ package club.heiqi.uilib.ui.animation;
 import java.util.EnumMap;
 import java.util.Objects;
 
-import club.heiqi.uilib.ui.layout.DocumentEffectChain;
 import club.heiqi.uilib.ui.layout.DocumentLayoutBox;
+import club.heiqi.uilib.ui.render.BackdropBlurConfig;
+import club.heiqi.uilib.ui.render.BackdropBlurPolicy;
 import club.heiqi.uilib.ui.style.cascade.ComputedStyle;
 import club.heiqi.uilib.ui.style.values.UiBoxShadow;
 import club.heiqi.uilib.ui.style.values.UiStyleLength;
@@ -131,7 +132,8 @@ enum PropertyRuntimeSemantics {
 
         @Override
         float normalizeDeclaredKeyframeFloat(DocumentLayoutBox box, float value) {
-            return Math.max(0.0F, Math.min(value, DocumentEffectChain.MAX_BACKDROP_BLUR_RADIUS));
+            return Math.max(0.0F, Math.min(value, resolveBackdropBlurPolicy(box)
+                    .resolveMaxBlurRadius(BackdropBlurConfig.getInstance())));
         }
     },
     WIDTH(DocumentAnimationProperty.WIDTH) {
@@ -281,7 +283,15 @@ enum PropertyRuntimeSemantics {
     private static int resolveBackdropBlurRadius(DocumentLayoutBox box) {
         int availableSpace = Math.max(box.getWidth(), box.getHeight());
         int radius = box.getComputedStyle().getBackdropBlurRadius().resolve(availableSpace, 0);
-        return Math.max(0, Math.min(radius, DocumentEffectChain.MAX_BACKDROP_BLUR_RADIUS));
+        int maxRadius = resolveBackdropBlurPolicy(box).resolveMaxBlurRadius(BackdropBlurConfig.getInstance());
+        return Math.max(0, Math.min(radius, maxRadius));
+    }
+
+    private static BackdropBlurPolicy resolveBackdropBlurPolicy(DocumentLayoutBox box) {
+        if (box == null || box.getElement() == null || box.getElement().getOwnerDocument() == null) {
+            return BackdropBlurPolicy.inheritGlobal();
+        }
+        return box.getElement().getOwnerDocument().getBackdropBlurController().getPolicy();
     }
 
     private static UiTransform resolveTransform(DocumentLayoutBox box) {

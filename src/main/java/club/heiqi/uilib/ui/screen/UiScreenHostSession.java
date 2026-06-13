@@ -12,6 +12,7 @@ import club.heiqi.uilib.ui.host.DocumentHostRenderSupport;
 import club.heiqi.uilib.ui.input.UiKeyboardCaptureState;
 import club.heiqi.uilib.ui.input.UiInputFrame;
 import club.heiqi.uilib.ui.input.UiInputService;
+import club.heiqi.uilib.ui.render.BackdropBlurPolicy;
 import club.heiqi.uilib.ui.render.PaintContextCompositor;
 import club.heiqi.uilib.ui.render.UiMainLayerSnapshotService;
 import club.heiqi.uilib.ui.render.UiRenderContext;
@@ -111,6 +112,7 @@ final class UiScreenHostSession {
             long renderStartNanos = System.nanoTime();
             try {
                 backgroundBlurRenderer.captureCurrentFramebuffer(nativeWidth, nativeHeight);
+                BackdropBlurPolicy backdropBlurPolicy = screen.getBackdropBlurPolicy();
                 renderTarget.begin();
                 try {
                     GL11.glMatrixMode(GL11.GL_PROJECTION);
@@ -122,14 +124,15 @@ final class UiScreenHostSession {
                         GL11.glPushMatrix();
                         try {
                             GL11.glLoadIdentity();
-                            backgroundBlurRenderer.drawBlurredBackground(nativeWidth, nativeHeight);
+                            backgroundBlurRenderer.drawBlurredBackground(nativeWidth, nativeHeight, backdropBlurPolicy);
                             DocumentHostRenderSupport.prepareMainUiRenderState();
                             paintContextCompositor.beginFrame();
                             mainLayerSnapshotService.beginFrame();
                             UiRenderContext context = DocumentHostRenderSupport.createRenderContext(nativeWidth,
                                     nativeHeight, interactionSession.getLatestMouseX(),
                                     interactionSession.getLatestMouseY(), partialTicks,
-                                    paintContextCompositor, mainLayerSnapshotService, screen.getRuntimeAdapters());
+                                    paintContextCompositor, mainLayerSnapshotService, screen.getRuntimeAdapters(),
+                                    backdropBlurPolicy);
                             try {
                                 rootWidget.render(context);
                                 DocumentHostRenderSupport.DeferredPostMainReplayBatch replayBatch = DocumentHostRenderSupport

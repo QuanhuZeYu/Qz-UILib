@@ -14,7 +14,7 @@ vec3 applySaturation(vec3 color, float amount) {
 }
 
 void main(void) {
-    vec2 radiusStep = texelSize * clamp(blurRadius, 1.0, 56.0);
+    vec2 radiusStep = texelSize * clamp(blurRadius, 1.0, 128.0);
     vec4 blurred = texture2D(mainTex, texCoord) * 0.24;
 
     blurred += texture2D(mainTex, texCoord + vec2(-0.65, 0.0) * radiusStep) * 0.10;

@@ -6,6 +6,7 @@ import club.heiqi.uilib.ui.diagnostic.UiRuntimeStats;
 import club.heiqi.uilib.ui.input.UiInputFrame;
 import club.heiqi.uilib.ui.input.UiManagedInputScreen;
 import club.heiqi.uilib.ui.diagnostic.UiPerformanceMonitor;
+import club.heiqi.uilib.ui.render.BackdropBlurPolicy;
 import club.heiqi.uilib.ui.runtime.UiRuntimeAdapters;
 import club.heiqi.uilib.ui.widget.Widget;
 
@@ -116,6 +117,15 @@ public abstract class BaseScreen extends GuiScreen implements UiManagedInputScre
      */
     protected UiRuntimeAdapters getRuntimeAdapters() {
         return DEFAULT_RUNTIME_ADAPTERS;
+    }
+
+    /**
+     * 返回当前界面使用的页面级背景模糊策略。
+     *
+     * @return 背景模糊策略
+     */
+    protected BackdropBlurPolicy getBackdropBlurPolicy() {
+        return BackdropBlurPolicy.inheritGlobal();
     }
 
     /**

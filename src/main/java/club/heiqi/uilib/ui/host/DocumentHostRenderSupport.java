@@ -8,6 +8,7 @@ import org.lwjgl.opengl.GL14;
 
 import club.heiqi.uilib.ui.render.DeferredPostMainPass;
 import club.heiqi.uilib.ui.render.PaintContextCompositor;
+import club.heiqi.uilib.ui.render.BackdropBlurPolicy;
 import club.heiqi.uilib.ui.render.UiMainLayerSnapshotService;
 import club.heiqi.uilib.ui.render.UiRenderContext;
 import club.heiqi.uilib.ui.render.UiRenderTarget;
@@ -78,8 +79,31 @@ public final class DocumentHostRenderSupport {
     public static UiRenderContext createRenderContext(int screenWidth, int screenHeight, int mouseX, int mouseY,
             float partialTicks, PaintContextCompositor paintContextCompositor,
             UiMainLayerSnapshotService mainLayerSnapshotService, UiRuntimeAdapters runtimeAdapters) {
+        return createRenderContext(screenWidth, screenHeight, mouseX, mouseY, partialTicks,
+                paintContextCompositor, mainLayerSnapshotService, runtimeAdapters,
+                BackdropBlurPolicy.inheritGlobal());
+    }
+
+    /**
+     * 创建宿主渲染帧使用的上下文。
+     *
+     * @param screenWidth 屏幕宽度
+     * @param screenHeight 屏幕高度
+     * @param mouseX 鼠标 X
+     * @param mouseY 鼠标 Y
+     * @param partialTicks 插值帧参数
+     * @param paintContextCompositor paint context 合成器
+     * @param mainLayerSnapshotService 主层快照服务
+     * @param runtimeAdapters 运行时适配器
+     * @param backdropBlurPolicy 页面级背景模糊策略
+     * @return 渲染上下文
+     */
+    public static UiRenderContext createRenderContext(int screenWidth, int screenHeight, int mouseX, int mouseY,
+            float partialTicks, PaintContextCompositor paintContextCompositor,
+            UiMainLayerSnapshotService mainLayerSnapshotService, UiRuntimeAdapters runtimeAdapters,
+            BackdropBlurPolicy backdropBlurPolicy) {
         return new UiRenderContext(screenWidth, screenHeight, mouseX, mouseY, partialTicks,
-                paintContextCompositor, mainLayerSnapshotService, runtimeAdapters);
+                paintContextCompositor, mainLayerSnapshotService, runtimeAdapters, backdropBlurPolicy);
     }
 
     /**

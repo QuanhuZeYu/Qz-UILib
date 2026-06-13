@@ -11,6 +11,18 @@
 - 原始报告正文使用 `后续复核（YYYY-MM-DD）` 批注标记，不删除历史判断；批注需说明当前正确口径和是否还需要修复。
 - 只在本索引写摘要，不把完整修复过程或阶段流水账堆积到索引页。
 
+## 审查记录索引
+
+| 日期 | 简述 | 文档 |
+|------|------|------|
+| 2026-06-13 | 背景模糊系统配置化改造审查 | [REVIEW-20260613-backdrop-blur-config.md](REVIEW-20260613-backdrop-blur-config.md) |
+| 2026-04-21 | lwjgl3ify 解耦输入后端审查 | [REVIEW-20260421-lwjgl3ify-decouple.md](REVIEW-20260421-lwjgl3ify-decouple.md) |
+
+## 2026-06-13-backdrop-blur-config
+- 类型：背景模糊系统配置化改造与解耦性审查
+- 详情文档：[REVIEW-20260613-backdrop-blur-config.md](REVIEW-20260613-backdrop-blur-config.md)
+- 结论摘要：审查确认背景模糊设计解耦性良好（★★★★☆），使用标准 OpenGL API，MC 版本无关抽象设计完善，仅 Tessellator 和 LWJGL2 为轻微耦合点。新增 `BackdropBlurConfig` 统一配置类，提供 3 类常用参数（模糊上限、宿主级开关、宿主级强度）和 13 类高级参数（渲染路径控制、性能优化、调试诊断），内置三种预设（性能/质量/兼容性优先）。解耦原硬编码参数：`DocumentEffectChain` 模糊半径上限改为配置驱动、`UiBackdropFilterRenderer` Shader/固定管线/Tint 降级可独立开关、`UiHostBackgroundBlurRenderer` 支持强度调节、shader 代码模糊上限从 56 提升到 128。编译测试通过，向后兼容（原常量保留为 `@Deprecated`）。
+
 ## 2026-06-13-lwjgl3ify-decouple
 - 类型：`lwjgl3ify` 输入解耦质量审查与修复归档
 - 详情文档：[REVIEW-20260613-lwjgl3ify-decouple.md](REVIEW-20260613-lwjgl3ify-decouple.md)

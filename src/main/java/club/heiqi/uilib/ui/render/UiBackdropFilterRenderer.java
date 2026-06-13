@@ -66,6 +66,13 @@ final class UiBackdropFilterRenderer {
      */
     static void render(UiRenderContext context, int left, int top, int right, int bottom, int blurRadius,
             float saturation, UiBorderRadiusResolver.ResolvedCornerRadii cornerRadii) {
+        BackdropBlurPolicy policy = context == null ? BackdropBlurPolicy.inheritGlobal()
+                : context.getBackdropBlurPolicy();
+        BackdropBlurConfig config = BackdropBlurConfig.getInstance();
+        if (!policy.resolveEnabled(config)) {
+            recordPath(BackdropFilterRenderPath.NONE, "disabled by page policy");
+            return;
+        }
         if (right <= left || bottom <= top || (blurRadius <= 0 && Float.compare(saturation, 1.0F) == 0)) {
             recordPath(BackdropFilterRenderPath.NONE, "skipped");
             return;
@@ -120,9 +127,16 @@ final class UiBackdropFilterRenderer {
 
             if (drawBackdropTextureWithShader(left, top, right, bottom, snapshot.getSampleLeft(),
                     snapshot.getSampleTop(), snapshot.getWidth(), snapshot.getHeight(), snapshot.getTextureWidth(),
-                    snapshot.getTextureHeight(), snapshot.getDownsampleFactor(), blurRadius, saturation, snapshot)) {
+                    snapshot.getTextureHeight(), snapshot.getDownsampleFactor(), blurRadius, saturation,
+                    context.getBackdropBlurPolicy(), snapshot)) {
                 drewBackdrop = true;
                 return null;
+            }
+
+            BackdropBlurPolicy policy = context.getBackdropBlurPolicy();
+            BackdropBlurConfig config = BackdropBlurConfig.getInstance();
+            if (!policy.resolveFixedPipelineEnabled(config)) {
+                return "fixed-pipeline-disabled";
             }
             if (blurRadius <= 0) {
                 return "shader-and-blur-unavailable";
@@ -134,14 +148,16 @@ final class UiBackdropFilterRenderer {
             GL14.glBlendFuncSeparate(GL11.GL_SRC_ALPHA, GL11.GL_ONE_MINUS_SRC_ALPHA,
                     GL11.GL_ONE, GL11.GL_ONE_MINUS_SRC_ALPHA);
             float sampleStep = (float) resolveBackdropSampleStep(blurRadius);
-            for (float[] sample : UI_BACKDROP_BLUR_SAMPLES) {
+            int sampleCount = Math.min(config.getFixedPipelineSampleCount(), UI_BACKDROP_BLUR_SAMPLES.length);
+            for (int i = 0; i < sampleCount; i++) {
+                float[] sample = UI_BACKDROP_BLUR_SAMPLES[i];
                 GL11.glColor4f(1.0F, 1.0F, 1.0F, sample[2]);
                 drawBackdropTextureQuad(left, top, right, bottom, snapshot.getSampleLeft(), snapshot.getSampleTop(),
                         snapshot.getWidth(), snapshot.getHeight(), sample[0] * sampleStep, sample[1] * sampleStep);
             }
             GL11.glColor4f(1.0F, 1.0F, 1.0F, 1.0F);
             recordPath(BackdropFilterRenderPath.FIXED_PIPELINE,
-                    "shader-unavailable, snapshot=" + formatSnapshotState(snapshot));
+                    "shader-unavailable, samples=" + sampleCount + ", snapshot=" + formatSnapshotState(snapshot));
             drewBackdrop = true;
             return null;
         } finally {
@@ -159,7 +175,15 @@ final class UiBackdropFilterRenderer {
 
     private static boolean drawBackdropTextureWithShader(int left, int top, int right, int bottom, int sampleLeft,
             int sampleTop, int sampleWidth, int sampleHeight, int textureWidth, int textureHeight,
-            int downsampleFactor, int blurRadius, float saturation, MainLayerSnapshot snapshot) {
+            int downsampleFactor, int blurRadius, float saturation, BackdropBlurPolicy backdropBlurPolicy,
+            MainLayerSnapshot snapshot) {
+        BackdropBlurConfig config = BackdropBlurConfig.getInstance();
+        BackdropBlurPolicy policy = backdropBlurPolicy == null ? BackdropBlurPolicy.inheritGlobal()
+                : backdropBlurPolicy;
+        if (!policy.resolveShaderEnabled(config)) {
+            recordPath(BackdropFilterRenderPath.FIXED_PIPELINE, "shader disabled by config");
+            return false;
+        }
         if (!BACKDROP_SHADER_PROGRAM.ensureInitialized()) {
             recordPath(BackdropFilterRenderPath.FIXED_PIPELINE,
                     "shader unavailable: " + BACKDROP_SHADER_PROGRAM.getLastFailureMessage());
@@ -169,7 +193,7 @@ final class UiBackdropFilterRenderer {
         BACKDROP_SHADER_PROGRAM.setUniformI("mainTex", 0);
         BACKDROP_SHADER_PROGRAM.setUniform2f("texelSize", 1.0F / (float) textureWidth, 1.0F / (float) textureHeight);
         BACKDROP_SHADER_PROGRAM.setUniformF("blurRadius", resolveBackdropShaderRadius(blurRadius,
-                downsampleFactor));
+                downsampleFactor, policy));
         BACKDROP_SHADER_PROGRAM.setUniformF("saturation", Math.max(0.0F, saturation));
         drawBackdropTextureQuad(left, top, right, bottom, sampleLeft, sampleTop, sampleWidth, sampleHeight,
                 0.0F, 0.0F);
@@ -200,6 +224,12 @@ final class UiBackdropFilterRenderer {
     private static void drawTintFallback(UiRenderContext context, int left, int top, int right, int bottom,
             int blurRadius, float saturation, UiBorderRadiusResolver.ResolvedCornerRadii cornerRadii,
             String fallbackDetail) {
+        BackdropBlurConfig config = BackdropBlurConfig.getInstance();
+        BackdropBlurPolicy policy = context.getBackdropBlurPolicy();
+        if (!policy.resolveTintFallbackEnabled(config)) {
+            recordPath(BackdropFilterRenderPath.NONE, "tint-fallback-disabled: " + fallbackDetail);
+            return;
+        }
         recordPath(BackdropFilterRenderPath.TINT_FALLBACK, fallbackDetail);
         int tintAlpha = clampInt(18 + Math.max(0, blurRadius) * 2 + Math.round(Math.max(0.0F,
                 saturation - 1.0F) * 16.0F), 18, 72);
@@ -218,11 +248,16 @@ final class UiBackdropFilterRenderer {
         return Math.max(1, Math.min(12, Math.round(Math.max(1, blurRadius) / 2.5F)));
     }
 
-    private static float resolveBackdropShaderRadius(int blurRadius, int downsampleFactor) {
+    private static float resolveBackdropShaderRadius(int blurRadius, int downsampleFactor,
+            BackdropBlurPolicy backdropBlurPolicy) {
         if (blurRadius <= 0) {
             return 0.0F;
         }
-        return Math.max(1.0F, Math.min(32.0F, (float) blurRadius * 0.75F
+        BackdropBlurConfig config = BackdropBlurConfig.getInstance();
+        BackdropBlurPolicy policy = backdropBlurPolicy == null ? BackdropBlurPolicy.inheritGlobal()
+                : backdropBlurPolicy;
+        float maxShaderRadius = Math.min(config.getShaderBlurRadiusLimit(), policy.resolveMaxBlurRadius(config));
+        return Math.max(1.0F, Math.min(maxShaderRadius, (float) blurRadius * 0.75F
                 / (float) Math.max(1, downsampleFactor)));
     }
 
