@@ -161,14 +161,15 @@ Toolchain、依赖版本、构建配置与运行时类路径。
 
 ---
 
-## 事件系统类（合并，2 条）
+## 事件系统类（合并，3 条）
 
 事件传播、默认行为与生命周期时序。
 
 - [`ERROR-20260521-key-prevent-default-default-action.md`](ERROR-20260521-key-prevent-default-default-action.md) — 键盘事件 preventDefault 后默认 click 行为仍触发
 - [`ERROR-20260506-client-command-gui-open-timing.md`](ERROR-20260506-client-command-gui-open-timing.md) — 客户端命令直接开屏被聊天关闭覆盖（生命周期时序）
+- [`ERROR-20260613-lwjgl2-config-text-input.md`](ERROR-20260613-lwjgl2-config-text-input.md) — 非 lwjgl3ify 环境配置页文本框缺少文本输入事件
 
-**共性教训**：默认行为必须在事件传播完成后检查 `isDefaultPrevented()` 再执行；GUI 打开必须延迟到当前帧结束后。
+**共性教训**：默认行为必须在事件传播完成后检查 `isDefaultPrevented()` 再执行；GUI 打开必须延迟到当前帧结束后；输入层回归不能只检查键事件，还必须覆盖文本事件来源。
 
 ---
 

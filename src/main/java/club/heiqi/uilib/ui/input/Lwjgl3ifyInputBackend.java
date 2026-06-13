@@ -41,6 +41,7 @@ final class Lwjgl3ifyInputBackend implements UiInputBackend {
     private final Class<?> inputEventsClass;
     private final Method addKeyboardListenerMethod;
     private final Object keyboardListener;
+    private volatile boolean keyboardListenerRegistered;
 
     private Lwjgl3ifyInputBackend(UiInputService inputService, Class<?> inputEventsClass,
             Method addKeyboardListenerMethod, Object keyboardListener) {
@@ -106,6 +107,7 @@ final class Lwjgl3ifyInputBackend implements UiInputBackend {
         pollingBackend.initialize();
         try {
             addKeyboardListenerMethod.invoke(null, keyboardListener);
+            keyboardListenerRegistered = true;
         } catch (IllegalAccessException exception) {
             enableKeyboardPollingFallback(exception);
         } catch (InvocationTargetException exception) {
@@ -132,6 +134,19 @@ final class Lwjgl3ifyInputBackend implements UiInputBackend {
     @Override
     public void endTextInput() {
         invokeInputEventsMethod("endTextInput");
+    }
+
+    @Override
+    public void handleHostTypedCharacter(char typedChar, int keyCode) {
+        if (keyboardListenerRegistered) {
+            return;
+        }
+        pollingBackend.handleHostTypedCharacter(typedChar, keyCode);
+    }
+
+    @Override
+    public void setHostKeyboardRepeatEnabled(boolean enabled) {
+        pollingBackend.setHostKeyboardRepeatEnabled(enabled);
     }
 
     @Override
