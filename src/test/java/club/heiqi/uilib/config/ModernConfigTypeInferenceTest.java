@@ -131,6 +131,101 @@ public class ModernConfigTypeInferenceTest {
                 infer(config, "profile", null).getTemplateType());
     }
 
+    @Test
+    public void infersRawEditorFromHint() {
+        MutableConfig config = Config.createMutable(ConfigFormat.JSON)
+                .set("payload", "{}")
+                .set("data", "x: 1");
+
+        ModernConfigTemplateScreen.FieldSpec rawSpec =
+                new ModernConfigTemplateScreen.FieldSpec("payload").setTemplateHint("raw");
+        ModernConfigTemplateScreen.FieldSpec jsonSpec =
+                new ModernConfigTemplateScreen.FieldSpec("payload").setTemplateHint("json");
+        ModernConfigTemplateScreen.FieldSpec yamlSpec =
+                new ModernConfigTemplateScreen.FieldSpec("data").setTemplateHint("yaml-editor");
+
+        ModernConfigTypeInference.Result rawResult = infer(config, "payload", rawSpec);
+        assertEquals(ModernConfigTypeInference.TemplateType.RAW_EDITOR, rawResult.getTemplateType());
+        assertEquals(ConfigFormat.JSON, rawResult.getRawFormat());
+
+        ModernConfigTypeInference.Result jsonResult = infer(config, "payload", jsonSpec);
+        assertEquals(ModernConfigTypeInference.TemplateType.RAW_EDITOR, jsonResult.getTemplateType());
+        assertEquals(ConfigFormat.JSON, jsonResult.getRawFormat());
+
+        ModernConfigTypeInference.Result yamlResult = infer(config, "data", yamlSpec);
+        assertEquals(ModernConfigTypeInference.TemplateType.RAW_EDITOR, yamlResult.getTemplateType());
+        assertEquals(ConfigFormat.YAML, yamlResult.getRawFormat());
+    }
+
+    @Test
+    public void infersRawEditorUsesFallbackForGenericHint() {
+        MutableConfig config = Config.createMutable(ConfigFormat.JSON).set("payload", "{}");
+        ModernConfigTemplateScreen.FieldSpec rawSpec =
+                new ModernConfigTemplateScreen.FieldSpec("payload").setTemplateHint("raw");
+
+        ModernConfigTypeInference.Result defaultResult =
+                ModernConfigTypeInference.infer("payload", config.get("payload"), rawSpec, null);
+        assertEquals(ConfigFormat.JSON, defaultResult.getRawFormat());
+
+        ModernConfigTypeInference.Result yamlFallback =
+                ModernConfigTypeInference.infer("payload", config.get("payload"), rawSpec, ConfigFormat.YAML);
+        assertEquals(ConfigFormat.YAML, yamlFallback.getRawFormat());
+
+        ModernConfigTypeInference.Result explicitJsonOverridesFallback =
+                ModernConfigTypeInference.infer("payload", config.get("payload"),
+                        new ModernConfigTemplateScreen.FieldSpec("payload").setTemplateHint("json"),
+                        ConfigFormat.YAML);
+        assertEquals(ConfigFormat.JSON, explicitJsonOverridesFallback.getRawFormat());
+    }
+
+    @Test
+    public void infersEnhancedPickerFromHint() {
+        MutableConfig config = Config.createMutable(ConfigFormat.JSON)
+                .set("primary", "#FF8800")
+                .set("texture", "minecraft:block/stone")
+                .set("click", "minecraft:block.stone.click");
+
+        ModernConfigTemplateScreen.FieldSpec colorSpec =
+                new ModernConfigTemplateScreen.FieldSpec("primary").setTemplateHint("color");
+        ModernConfigTemplateScreen.FieldSpec resourceSpec =
+                new ModernConfigTemplateScreen.FieldSpec("texture").setTemplateHint("resource");
+        ModernConfigTemplateScreen.FieldSpec soundSpec =
+                new ModernConfigTemplateScreen.FieldSpec("click").setTemplateHint("sound");
+
+        ModernConfigTypeInference.Result colorResult = infer(config, "primary", colorSpec);
+        assertEquals(ModernConfigTypeInference.TemplateType.ENHANCED_PICKER, colorResult.getTemplateType());
+        assertEquals(ModernConfigTypeInference.PickerKind.COLOR, colorResult.getPickerKind());
+
+        ModernConfigTypeInference.Result resourceResult = infer(config, "texture", resourceSpec);
+        assertEquals(ModernConfigTypeInference.TemplateType.ENHANCED_PICKER, resourceResult.getTemplateType());
+        assertEquals(ModernConfigTypeInference.PickerKind.RESOURCE, resourceResult.getPickerKind());
+
+        ModernConfigTypeInference.Result soundResult = infer(config, "click", soundSpec);
+        assertEquals(ModernConfigTypeInference.TemplateType.ENHANCED_PICKER, soundResult.getTemplateType());
+        assertEquals(ModernConfigTypeInference.PickerKind.SOUND, soundResult.getPickerKind());
+    }
+
+    @Test
+    public void enhancedPickerSupportsVariantHints() {
+        MutableConfig config = Config.createMutable(ConfigFormat.JSON)
+                .set("a", "#000")
+                .set("b", "asset:x")
+                .set("c", "audio:y");
+
+        assertEquals(ModernConfigTypeInference.PickerKind.COLOR,
+                infer(config, "a", new ModernConfigTemplateScreen.FieldSpec("a").setTemplateHint("colour"))
+                        .getPickerKind());
+        assertEquals(ModernConfigTypeInference.PickerKind.COLOR,
+                infer(config, "a", new ModernConfigTemplateScreen.FieldSpec("a").setTemplateHint("hex"))
+                        .getPickerKind());
+        assertEquals(ModernConfigTypeInference.PickerKind.RESOURCE,
+                infer(config, "b", new ModernConfigTemplateScreen.FieldSpec("b").setTemplateHint("asset"))
+                        .getPickerKind());
+        assertEquals(ModernConfigTypeInference.PickerKind.SOUND,
+                infer(config, "c", new ModernConfigTemplateScreen.FieldSpec("c").setTemplateHint("audio"))
+                        .getPickerKind());
+    }
+
     private static ModernConfigTypeInference.Result infer(MutableConfig config, String path,
             ModernConfigTemplateScreen.FieldSpec fieldSpec) {
         return ModernConfigTypeInference.infer(path, config.get(path), fieldSpec);

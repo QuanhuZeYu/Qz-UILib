@@ -7,6 +7,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 
+import club.heiqi.config.ConfigFormat;
 import club.heiqi.config.ConfigNode;
 
 /**
@@ -23,14 +24,49 @@ final class ModernConfigTypeInference {
     /**
      * 推断指定配置节点应使用的基础模板。
      *
+     * <p>等价于 {@link #infer(String, ConfigNode, ModernConfigTemplateScreen.FieldSpec, ConfigFormat)}
+     * 传入 {@code null} 作为 fallback 格式；raw hint 时 rawFormat 默认 JSON。</p>
+     *
      * @param path 配置路径
      * @param node 当前配置节点
      * @param fieldSpec 字段规格
      * @return 推断结果
      */
     static Result infer(String path, ConfigNode node, ModernConfigTemplateScreen.FieldSpec fieldSpec) {
-        if (isDynamicMapHint(normalizeHint(fieldSpec == null ? "" : fieldSpec.getTemplateHint()))) {
+        return infer(path, node, fieldSpec, null);
+    }
+
+    /**
+     * 推断指定配置节点应使用的基础模板，并允许调用方传入格式回退值。
+     *
+     * <p>对于 raw/code/source 等未明确格式的源码 hint，rawFormat 取 fallbackFormat；
+     * fallbackFormat 为 null 时回退到 JSON。json/yaml 类 hint 始终按 hint 决定格式。</p>
+     *
+     * @param path 配置路径
+     * @param node 当前配置节点
+     * @param fieldSpec 字段规格
+     * @param fallbackFormat raw hint 时的回退格式；可为 null
+     * @return 推断结果
+     */
+    static Result infer(String path, ConfigNode node, ModernConfigTemplateScreen.FieldSpec fieldSpec,
+            ConfigFormat fallbackFormat) {
+        String hint = normalizeHint(fieldSpec == null ? "" : fieldSpec.getTemplateHint());
+        if (isDynamicMapHint(hint)) {
             return createResult(path, TemplateType.KEY_VALUE_MAP, false, Collections.<String>emptyList());
+        }
+        // 高级编辑 hint 早返回：先匹配明确格式，再匹配通用 raw hint
+        ConfigFormat specificRawFormat = matchSpecificRawFormat(hint);
+        if (specificRawFormat != null) {
+            return createRawEditorResult(path, specificRawFormat);
+        }
+        if (isGenericRawHint(hint)) {
+            ConfigFormat effectiveFormat = fallbackFormat == null ? ConfigFormat.JSON : fallbackFormat;
+            return createRawEditorResult(path, effectiveFormat);
+        }
+        // 增强选择器 hint 早返回
+        PickerKind pickerKind = matchEnhancedPickerHint(hint);
+        if (pickerKind != null) {
+            return createEnhancedPickerResult(path, pickerKind);
         }
         List<String> validValues = fieldSpec == null ? Collections.<String>emptyList() : fieldSpec.getValidValues();
         if (!validValues.isEmpty()) {
@@ -82,7 +118,7 @@ final class ModernConfigTypeInference {
         if (defaultValue instanceof List) {
             return new Result(path, TemplateType.SIMPLE_LIST, false, Collections.<String>emptyList(),
                     ModernConfigListModels.ValueKind.STRING, Collections.<String>emptyList(),
-                    Collections.<String, ModernConfigListModels.ValueKind>emptyMap());
+                    Collections.<String, ModernConfigListModels.ValueKind>emptyMap(), null, null);
         }
         if (isLongTextHint(hint)) {
             return createResult(path, TemplateType.LONG_TEXT, false, Collections.<String>emptyList());
@@ -98,12 +134,12 @@ final class ModernConfigTypeInference {
         if (analysis.getTemplateKind() == ModernConfigListModels.TemplateKind.SIMPLE) {
             return new Result(path, TemplateType.SIMPLE_LIST, false, Collections.<String>emptyList(),
                     analysis.getPrimitiveKind(), Collections.<String>emptyList(),
-                    Collections.<String, ModernConfigListModels.ValueKind>emptyMap());
+                    Collections.<String, ModernConfigListModels.ValueKind>emptyMap(), null, null);
         }
         if (analysis.getTemplateKind() == ModernConfigListModels.TemplateKind.TABLE) {
             return new Result(path, TemplateType.TABLE, false, Collections.<String>emptyList(),
                     ModernConfigListModels.ValueKind.STRING, analysis.getTableColumns(),
-                    analysis.getTableColumnKinds());
+                    analysis.getTableColumnKinds(), null, null);
         }
         return createResult(path, TemplateType.READ_ONLY, false, Collections.<String>emptyList());
     }
@@ -111,7 +147,79 @@ final class ModernConfigTypeInference {
     private static Result createResult(String path, TemplateType templateType, boolean integerNumber,
             List<String> choiceOptions) {
         return new Result(path, templateType, integerNumber, choiceOptions, ModernConfigListModels.ValueKind.STRING,
-                Collections.<String>emptyList(), Collections.<String, ModernConfigListModels.ValueKind>emptyMap());
+                Collections.<String>emptyList(), Collections.<String, ModernConfigListModels.ValueKind>emptyMap(),
+                null, null);
+    }
+
+    /**
+     * 创建源码编辑器推断结果。
+     *
+     * @param path 配置路径
+     * @param rawFormat 源码格式
+     * @return RAW_EDITOR 推断结果
+     */
+    private static Result createRawEditorResult(String path, ConfigFormat rawFormat) {
+        return new Result(path, TemplateType.RAW_EDITOR, false, Collections.<String>emptyList(),
+                ModernConfigListModels.ValueKind.STRING, Collections.<String>emptyList(),
+                Collections.<String, ModernConfigListModels.ValueKind>emptyMap(), rawFormat, null);
+    }
+
+    /**
+     * 创建增强选择器推断结果。
+     *
+     * @param path 配置路径
+     * @param pickerKind 选择器子类
+     * @return ENHANCED_PICKER 推断结果
+     */
+    private static Result createEnhancedPickerResult(String path, PickerKind pickerKind) {
+        return new Result(path, TemplateType.ENHANCED_PICKER, false, Collections.<String>emptyList(),
+                ModernConfigListModels.ValueKind.STRING, Collections.<String>emptyList(),
+                Collections.<String, ModernConfigListModels.ValueKind>emptyMap(), null, pickerKind);
+    }
+
+    /**
+     * 匹配明确指定格式的源码编辑 hint。
+     *
+     * @param hint 已 normalize 的 hint
+     * @return 匹配到的 JSON/YAML 格式；未匹配返回 null
+     */
+    private static ConfigFormat matchSpecificRawFormat(String hint) {
+        if ("json".equals(hint) || "json-editor".equals(hint)) {
+            return ConfigFormat.JSON;
+        }
+        if ("yaml".equals(hint) || "yaml-editor".equals(hint)) {
+            return ConfigFormat.YAML;
+        }
+        return null;
+    }
+
+    /**
+     * 判断 hint 是否为通用源码编辑 hint（不指定格式）。
+     *
+     * @param hint 已 normalize 的 hint
+     * @return 命中 raw/raw-editor/code/source 时返回 true
+     */
+    private static boolean isGenericRawHint(String hint) {
+        return "raw".equals(hint) || "raw-editor".equals(hint) || "code".equals(hint) || "source".equals(hint);
+    }
+
+    /**
+     * 匹配增强选择器 hint。
+     *
+     * @param hint 已 normalize 的 hint
+     * @return 命中 color/resource/sound 系列 hint 时返回对应 PickerKind；未命中返回 null
+     */
+    private static PickerKind matchEnhancedPickerHint(String hint) {
+        if ("color".equals(hint) || "colour".equals(hint) || "hex".equals(hint)) {
+            return PickerKind.COLOR;
+        }
+        if ("resource".equals(hint) || "asset".equals(hint)) {
+            return PickerKind.RESOURCE;
+        }
+        if ("sound".equals(hint) || "audio".equals(hint)) {
+            return PickerKind.SOUND;
+        }
+        return null;
     }
 
     private static boolean shouldUseLongText(String value, ModernConfigTemplateScreen.FieldSpec fieldSpec) {
@@ -195,7 +303,23 @@ final class ModernConfigTypeInference {
         KEY_VALUE_MAP,
         PRESET_SELECTOR,
         OBJECT,
+        /** 源码编辑器模板（JSON/YAML 子树文本编辑） */
+        RAW_EDITOR,
+        /** 增强选择器模板（颜色/资源/声音） */
+        ENHANCED_PICKER,
         READ_ONLY
+    }
+
+    /**
+     * 增强选择器子类。
+     */
+    enum PickerKind {
+        /** 颜色选择器 */
+        COLOR,
+        /** 资源选择器 */
+        RESOURCE,
+        /** 声音选择器 */
+        SOUND
     }
 
     /**
@@ -210,10 +334,13 @@ final class ModernConfigTypeInference {
         private final ModernConfigListModels.ValueKind listValueKind;
         private final List<String> tableColumns;
         private final Map<String, ModernConfigListModels.ValueKind> tableColumnKinds;
+        private final ConfigFormat rawFormat;
+        private final PickerKind pickerKind;
 
         private Result(String path, TemplateType templateType, boolean integerNumber, List<String> choiceOptions,
                 ModernConfigListModels.ValueKind listValueKind, List<String> tableColumns,
-                Map<String, ModernConfigListModels.ValueKind> tableColumnKinds) {
+                Map<String, ModernConfigListModels.ValueKind> tableColumnKinds, ConfigFormat rawFormat,
+                PickerKind pickerKind) {
             this.path = path == null ? "" : path;
             this.templateType = templateType == null ? TemplateType.READ_ONLY : templateType;
             this.integerNumber = integerNumber;
@@ -222,6 +349,8 @@ final class ModernConfigTypeInference {
             this.tableColumns = Collections.unmodifiableList(new ArrayList<String>(tableColumns));
             this.tableColumnKinds = Collections.unmodifiableMap(
                     new LinkedHashMap<String, ModernConfigListModels.ValueKind>(tableColumnKinds));
+            this.rawFormat = rawFormat == null ? ConfigFormat.JSON : rawFormat;
+            this.pickerKind = pickerKind;
         }
 
         String getPath() {
@@ -258,6 +387,28 @@ final class ModernConfigTypeInference {
 
         Map<String, ModernConfigListModels.ValueKind> getTableColumnKinds() {
             return tableColumnKinds;
+        }
+
+        /**
+         * 获取源码编辑器的目标格式。
+         *
+         * <p>仅在 {@link TemplateType#RAW_EDITOR} 时有意义；其他类型默认返回 JSON。</p>
+         *
+         * @return 源码格式
+         */
+        ConfigFormat getRawFormat() {
+            return rawFormat;
+        }
+
+        /**
+         * 获取增强选择器的子类。
+         *
+         * <p>仅在 {@link TemplateType#ENHANCED_PICKER} 时有意义；其他类型返回 null。</p>
+         *
+         * @return 选择器子类；未指定时为 null
+         */
+        PickerKind getPickerKind() {
+            return pickerKind;
         }
     }
 }

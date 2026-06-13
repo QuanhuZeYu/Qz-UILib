@@ -268,6 +268,12 @@ final class ModernConfigPropertyBindings {
         if (inference.getTemplateType() == ModernConfigTypeInference.TemplateType.OBJECT) {
             return "对象";
         }
+        if (inference.getTemplateType() == ModernConfigTypeInference.TemplateType.RAW_EDITOR) {
+            return "源码";
+        }
+        if (inference.getTemplateType() == ModernConfigTypeInference.TemplateType.ENHANCED_PICKER) {
+            return "颜色/资源/声音";
+        }
         if (inference.getTemplateType() == ModernConfigTypeInference.TemplateType.NULL) {
             return "空值";
         }

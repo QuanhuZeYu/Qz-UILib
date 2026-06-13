@@ -45,6 +45,24 @@ class YamlConfigWriter implements ConfigWriter {
     }
 
     /**
+     * 将配置节点序列化为 YAML 文本。
+     *
+     * <p>仅复用本写入器内部的 2 空格缩进策略，输出与 {@link #write} 一致。
+     * 节点为 null 或 {@link ConfigNode#isNull()} 时返回空串（YAML 中空文档视为 null）。</p>
+     *
+     * @param node 配置节点
+     * @return YAML 文本
+     */
+    String writeToString(ConfigNode node) {
+        if (node == null || node.isNull()) {
+            return "";
+        }
+        StringBuilder builder = new StringBuilder();
+        writeNode(node, builder, 0);
+        return builder.toString();
+    }
+
+    /**
      * 写入节点
      * 
      * @param node 配置节点

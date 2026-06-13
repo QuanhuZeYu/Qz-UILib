@@ -28,6 +28,8 @@ class JsonConfigWriter implements ConfigWriter {
         String json = gson.toJson(element);
 
         // 写入文件
+
+        // 写入文件
         if (target instanceof FileConfigSource) {
             File file = ((FileConfigSource) target).getFile();
             try {
@@ -51,6 +53,22 @@ class JsonConfigWriter implements ConfigWriter {
     @Override
     public ConfigFormat getFormat() {
         return ConfigFormat.JSON;
+    }
+
+    /**
+     * 将配置节点序列化为 JSON 文本。
+     *
+     * <p>仅复用本写入器内部的 Gson + 缩进打印策略，输出与 {@link #write} 一致。
+     * 节点为 null 或 {@link ConfigNode#isNull()} 时返回 {@code "null"}。</p>
+     *
+     * @param node 配置节点
+     * @return JSON 文本
+     */
+    String writeToString(ConfigNode node) {
+        if (node == null || node.isNull()) {
+            return "null";
+        }
+        return gson.toJson(convertToJsonElement(node));
     }
 
     /**
