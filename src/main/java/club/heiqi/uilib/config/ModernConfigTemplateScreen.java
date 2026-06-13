@@ -30,7 +30,7 @@ import net.minecraft.client.gui.GuiScreen;
 /**
  * 基于现代 config 模块的配置模板页骨架。
  *
- * <p>当前实现支持基础类型与 Batch 2 列表模板，其他复杂结构仅做摘要展示。</p>
+ * <p>当前实现支持基础类型、列表模板和普通 map 嵌套结构模板。</p>
  */
 public class ModernConfigTemplateScreen extends BaseScreen {
 
@@ -241,9 +241,7 @@ public class ModernConfigTemplateScreen extends BaseScreen {
     private int countDirtyBindings() {
         int dirtyCount = 0;
         for (ModernConfigPropertyBindings.ConfigPropertyBinding binding : bindings) {
-            if (binding.isDirty()) {
-                dirtyCount++;
-            }
+            dirtyCount += binding.getDirtyCount();
         }
         return dirtyCount;
     }

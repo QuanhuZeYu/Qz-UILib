@@ -17,11 +17,13 @@ import club.heiqi.uilib.ui.style.values.UiStyleLength;
 final class ModernMultilineTextPropertyBinding extends ModernConfigPropertyBindings.ConfigPropertyBinding {
 
     private DocumentTextAreaControl control;
+    private String draftText;
 
     ModernMultilineTextPropertyBinding(MutableConfig config, String path, ConfigNode node,
             ModernConfigTemplateScreen.FieldSpec fieldSpec, ModernConfigTypeInference.Result inference,
             ModernConfigPropertyBindings.ChangeListener changeListener) {
         super(config, path, node, fieldSpec, inference, changeListener);
+        this.draftText = readCurrentValue();
     }
 
     @Override
@@ -34,34 +36,40 @@ final class ModernMultilineTextPropertyBinding extends ModernConfigPropertyBindi
                 .setChangeHandler(new DocumentTextAreaChangeHandler() {
                     @Override
                     public void onTextChanged(DocumentTextAreaChangeEvent event) {
+                        draftText = control.getText();
                         notifyDraftChanged();
                     }
                 });
         control.getElement().setAttribute("data-modern-config-control", "long-text");
         control.getElement().style().setWidth(UiStyleLength.percent(1.0F));
-        restoreCurrentValue();
+        control.setText(draftText);
         return control.getElement();
     }
 
     @Override
     boolean isDirty() {
-        return !Objects.equals(readCurrentValue(), control.getText());
+        if (control != null) {
+            draftText = control.getText();
+        }
+        return !Objects.equals(readCurrentValue(), draftText);
     }
 
     @Override
     void restoreCurrentValue() {
+        draftText = readCurrentValue();
         if (control != null) {
-            control.setText(readCurrentValue());
+            control.setText(draftText);
         }
     }
 
     @Override
     void restoreDefaultValue() {
+        Object defaultValue = getDefaultValue();
+        draftText = defaultValue == null ? "" : String.valueOf(defaultValue);
         if (control != null) {
-            Object defaultValue = getDefaultValue();
-            control.setText(defaultValue == null ? "" : String.valueOf(defaultValue));
-            notifyDraftChanged();
+            control.setText(draftText);
         }
+        notifyDraftChanged();
     }
 
     @Override
@@ -71,7 +79,7 @@ final class ModernMultilineTextPropertyBinding extends ModernConfigPropertyBindi
 
     @Override
     void applyDraft() {
-        getConfig().set(getPath(), control.getText());
+        getConfig().set(getPath(), draftText);
     }
 
     private String readCurrentValue() {

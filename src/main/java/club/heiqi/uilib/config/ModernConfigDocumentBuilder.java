@@ -163,11 +163,11 @@ final class ModernConfigDocumentBuilder {
 
         ElementNode header = document.div();
         header.style().setMargin(UiStyleLength.px(4));
-        header.appendText("基础配置项");
+        header.appendText("现代配置项");
         ElementNode description = document.div();
         description.style().setMargin(UiStyleLength.px(6))
                 .setTextColor(spec.getTheme().categoryDescriptionTextColor);
-        description.appendText("当前批次支持文本、数值、开关、空值、离散选项、长文本、primitive list 和稳定列对象列表；其他复杂结构暂以摘要展示。");
+        description.appendText("当前批次支持文本、数值、开关、空值、离散选项、长文本、primitive list、稳定列对象列表和普通 map 嵌套结构。");
         header.append(description);
         card.append(header);
 
@@ -178,7 +178,11 @@ final class ModernConfigDocumentBuilder {
                 .setRowGap(UiStyleLength.px(10))
                 .setMargin(UiStyleLength.px(8));
         for (ModernConfigPropertyBindings.ConfigPropertyBinding binding : bindings) {
-            fields.append(binding.createCard(document, spec.getTheme()));
+            if (binding instanceof ModernNestedCategoryBinding) {
+                fields.append(((ModernNestedCategoryBinding) binding).createSection(document, spec.getTheme()));
+            } else {
+                fields.append(binding.createCard(document, spec.getTheme()));
+            }
         }
         card.append(fields);
         visibleSectionCount++;

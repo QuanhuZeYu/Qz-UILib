@@ -25,6 +25,7 @@ final class ModernConfigPropertyBindings {
 
     static final int DEFAULT_TEXT_MAX_LENGTH = 512;
     static final int DEFAULT_LONG_TEXT_MAX_LENGTH = 4096;
+    static final int DEFAULT_OBJECT_INLINE_DEPTH = 5;
     static final double NUMERIC_EPSILON = 1.0E-9D;
     private static final int SUMMARY_MAX_LENGTH = 120;
 
@@ -46,7 +47,15 @@ final class ModernConfigPropertyBindings {
             return bindings;
         }
         Map<String, ModernConfigTemplateScreen.FieldSpec> fieldsByPath = indexFields(fields);
-        List<String> paths = collectPaths(config.asImmutable(), fieldsByPath);
+        ConfigNode root = config.asImmutable();
+        List<String> paths = collectPaths(root, fieldsByPath);
+        if (paths.isEmpty()) {
+            return bindings;
+        }
+        if (root != null && root.getType() == ConfigNode.NodeType.MAP) {
+            bindings.add(new ModernNestedCategoryBinding(config, root, fieldsByPath, changeListener));
+            return bindings;
+        }
         for (String path : paths) {
             ConfigNode node = config.get(path);
             ModernConfigTemplateScreen.FieldSpec fieldSpec = fieldsByPath.get(path);
@@ -56,9 +65,12 @@ final class ModernConfigPropertyBindings {
         return bindings;
     }
 
-    private static ConfigPropertyBinding createBinding(MutableConfig config, String path, ConfigNode node,
+    static ConfigPropertyBinding createBinding(MutableConfig config, String path, ConfigNode node,
             ModernConfigTemplateScreen.FieldSpec fieldSpec, ModernConfigTypeInference.Result inference,
             ChangeListener changeListener) {
+        if (inference.getTemplateType() == ModernConfigTypeInference.TemplateType.OBJECT) {
+            return new ModernObjectPropertyBinding(config, path, node, fieldSpec, inference, changeListener);
+        }
         if (inference.getTemplateType() == ModernConfigTypeInference.TemplateType.TABLE) {
             return new ModernTablePropertyBinding(config, path, node, fieldSpec, inference, changeListener);
         }
@@ -80,7 +92,7 @@ final class ModernConfigPropertyBindings {
         return new ModernReadOnlyPathBinding(config, path, node, fieldSpec, inference, changeListener);
     }
 
-    private static Map<String, ModernConfigTemplateScreen.FieldSpec> indexFields(
+    static Map<String, ModernConfigTemplateScreen.FieldSpec> indexFields(
             List<ModernConfigTemplateScreen.FieldSpec> fields) {
         Map<String, ModernConfigTemplateScreen.FieldSpec> fieldsByPath =
                 new LinkedHashMap<String, ModernConfigTemplateScreen.FieldSpec>();
@@ -178,7 +190,7 @@ final class ModernConfigPropertyBindings {
         return Double.toString(value);
     }
 
-    private static String formatDisplayLabel(String raw) {
+    static String formatDisplayLabel(String raw) {
         if (raw == null) {
             return "";
         }
@@ -241,6 +253,9 @@ final class ModernConfigPropertyBindings {
         if (inference.getTemplateType() == ModernConfigTypeInference.TemplateType.TABLE) {
             return "表格";
         }
+        if (inference.getTemplateType() == ModernConfigTypeInference.TemplateType.OBJECT) {
+            return "对象";
+        }
         if (inference.getTemplateType() == ModernConfigTypeInference.TemplateType.NULL) {
             return "空值";
         }
@@ -269,7 +284,7 @@ final class ModernConfigPropertyBindings {
         if (value == null) {
             return "";
         }
-        String normalized = ForgeConfigTemplateScreen.normalizeInlineText(value);
+        String normalized = normalizeInlineText(value);
         if (normalized.length() <= SUMMARY_MAX_LENGTH) {
             return normalized;
         }
@@ -328,6 +343,10 @@ final class ModernConfigPropertyBindings {
 
         abstract void applyDraft();
 
+        int getDirtyCount() {
+            return isDirty() ? 1 : 0;
+        }
+
         boolean canRestoreDefaultValue() {
             return fieldSpec != null && fieldSpec.hasDefaultValue();
         }
@@ -375,7 +394,7 @@ final class ModernConfigPropertyBindings {
 
         protected String buildMetadataText() {
             StringBuilder builder = new StringBuilder();
-            builder.append("路径：").append(path);
+            builder.append("路径：").append(path.isEmpty() ? "根配置" : path);
             builder.append(" | 类型：").append(formatType(getCurrentNode(), inference));
             if (canRestoreDefaultValue()) {
                 builder.append(" | 默认：").append(String.valueOf(getDefaultValue()));
@@ -389,7 +408,7 @@ final class ModernConfigPropertyBindings {
 
         protected String buildHelperText() {
             String description = fieldSpec == null ? "" : fieldSpec.getDescription();
-            return ForgeConfigTemplateScreen.normalizeInlineText(description);
+            return normalizeInlineText(description);
         }
 
         private ElementNode createCardElement(UiDocument document, ForgeConfigTemplateScreen.Theme theme,
@@ -435,5 +454,12 @@ final class ModernConfigPropertyBindings {
             card.append(editorShell);
             return card;
         }
+    }
+
+    private static String normalizeInlineText(String text) {
+        if (text == null) {
+            return "";
+        }
+        return text.replace('\r', ' ').replace('\n', ' ').trim().replaceAll("\\s+", " ");
     }
 }

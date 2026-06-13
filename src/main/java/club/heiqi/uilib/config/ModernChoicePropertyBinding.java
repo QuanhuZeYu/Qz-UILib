@@ -22,11 +22,13 @@ final class ModernChoicePropertyBinding extends ModernConfigPropertyBindings.Con
 
     private DocumentSegmentedSelectorControl segmentedControl;
     private DocumentSelectControl selectControl;
+    private String draftValue;
 
     ModernChoicePropertyBinding(MutableConfig config, String path, ConfigNode node,
             ModernConfigTemplateScreen.FieldSpec fieldSpec, ModernConfigTypeInference.Result inference,
             ModernConfigPropertyBindings.ChangeListener changeListener) {
         super(config, path, node, fieldSpec, inference, changeListener);
+        this.draftValue = readCurrentValue();
     }
 
     @Override
@@ -44,25 +46,27 @@ final class ModernChoicePropertyBinding extends ModernConfigPropertyBindings.Con
                             theme.disabledOptionTextColor)
                     .setFocusBorderColor(theme.focusBorderColor)
                     .setSelectionHandler(new DocumentSegmentedSelectionHandler() {
-                        @Override
-                        public void onSelectionChanged(DocumentSegmentedSelectionEvent event) {
-                            notifyDraftChanged();
-                        }
-                    });
+                    @Override
+                    public void onSelectionChanged(DocumentSegmentedSelectionEvent event) {
+                        draftValue = event.getSelectedOption();
+                        notifyDraftChanged();
+                    }
+            });
             segmentedControl.getElement().setAttribute("data-modern-config-control", "choice-segmented");
-            restoreCurrentValue();
+            applySelectedValue(draftValue);
             return segmentedControl.getElement();
         }
         selectControl = new DocumentSelectControl(document, options)
                 .setChangeHandler(new DocumentSelectChangeHandler() {
                     @Override
                     public void onSelectionChanged(DocumentSelectChangeEvent event) {
+                        draftValue = event.getSelectedOption();
                         notifyDraftChanged();
                     }
-                });
+        });
         selectControl.getElement().setAttribute("data-modern-config-control", "choice-select");
         selectControl.getElement().style().setWidth(UiStyleLength.percent(1.0F));
-        restoreCurrentValue();
+        applySelectedValue(draftValue);
         return selectControl.getElement();
     }
 
@@ -80,12 +84,14 @@ final class ModernChoicePropertyBinding extends ModernConfigPropertyBindings.Con
 
     @Override
     void restoreCurrentValue() {
-        applySelectedValue(readCurrentValue());
+        draftValue = readCurrentValue();
+        applySelectedValue(draftValue);
     }
 
     @Override
     void restoreDefaultValue() {
-        applySelectedValue(String.valueOf(getDefaultValue()));
+        draftValue = String.valueOf(getDefaultValue());
+        applySelectedValue(draftValue);
         notifyDraftChanged();
     }
 
@@ -109,13 +115,7 @@ final class ModernChoicePropertyBinding extends ModernConfigPropertyBindings.Con
     }
 
     private String readDraftValue() {
-        if (segmentedControl != null) {
-            return segmentedControl.getSelectedOption();
-        }
-        if (selectControl != null) {
-            return selectControl.getSelectedOption();
-        }
-        return firstOption();
+        return draftValue == null ? firstOption() : draftValue;
     }
 
     private void applySelectedValue(String value) {

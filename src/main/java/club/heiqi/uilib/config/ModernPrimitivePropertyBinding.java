@@ -33,6 +33,9 @@ final class ModernPrimitivePropertyBinding extends ModernConfigPropertyBindings.
     private DocumentSliderControl sliderControl;
     private DocumentTextInputControl inlineNumberControl;
     private TextNode sliderValueLabel;
+    private String draftText;
+    private String draftNumberText;
+    private boolean draftBoolean;
     private boolean suppressTextSync;
     private boolean suppressSliderSync;
 
@@ -40,6 +43,9 @@ final class ModernPrimitivePropertyBinding extends ModernConfigPropertyBindings.
             ModernConfigTemplateScreen.FieldSpec fieldSpec, ModernConfigTypeInference.Result inference,
             ModernConfigPropertyBindings.ChangeListener changeListener) {
         super(config, path, node, fieldSpec, inference, changeListener);
+        this.draftText = readCurrentString();
+        this.draftNumberText = ModernConfigPropertyBindings.formatNumber(readCurrentNumber(), inference.isIntegerNumber());
+        this.draftBoolean = readCurrentBoolean();
     }
 
     @Override
@@ -56,30 +62,40 @@ final class ModernPrimitivePropertyBinding extends ModernConfigPropertyBindings.
     @Override
     boolean isDirty() {
         if (toggleControl != null) {
-            return toggleControl.isToggled() != readCurrentBoolean();
+            draftBoolean = toggleControl.isToggled();
+            return draftBoolean != readCurrentBoolean();
         }
-        if (sliderControl != null) {
-            Double draft = parseNumberDraft(inlineNumberControl.getText());
-            if (draft == null) {
-                return true;
+        if (sliderControl != null || getInference().getTemplateType() == ModernConfigTypeInference.TemplateType.NUMBER) {
+            if (textControl != null) {
+                draftNumberText = textControl.getText();
+            } else if (inlineNumberControl != null) {
+                draftNumberText = inlineNumberControl.getText();
             }
-            return Math.abs(readCurrentNumber() - draft.doubleValue()) > ModernConfigPropertyBindings.NUMERIC_EPSILON;
+            Double draft = parseNumberDraft(draftNumberText);
+            return draft == null || Math.abs(readCurrentNumber() - draft.doubleValue())
+                    > ModernConfigPropertyBindings.NUMERIC_EPSILON;
         }
-        return !Objects.equals(readCurrentString(), textControl.getText());
+        if (textControl != null) {
+            draftText = textControl.getText();
+        }
+        return !Objects.equals(readCurrentString(), draftText);
     }
 
     @Override
     void restoreCurrentValue() {
         if (toggleControl != null) {
-            toggleControl.setToggled(readCurrentBoolean());
-            return;
+            draftBoolean = readCurrentBoolean();
+            toggleControl.setToggled(draftBoolean);
         }
-        if (sliderControl != null) {
-            applyNumberValue(readCurrentNumber());
+        if (sliderControl != null || getInference().getTemplateType() == ModernConfigTypeInference.TemplateType.NUMBER) {
+            draftNumberText = ModernConfigPropertyBindings.formatNumber(readCurrentNumber(),
+                    getInference().isIntegerNumber());
+            renderNumberDraft();
             return;
         }
         if (textControl != null) {
-            textControl.setText(readCurrentString());
+            draftText = readCurrentString();
+            textControl.setText(draftText);
         }
     }
 
@@ -87,29 +103,33 @@ final class ModernPrimitivePropertyBinding extends ModernConfigPropertyBindings.
     void restoreDefaultValue() {
         Object defaultValue = getDefaultValue();
         if (toggleControl != null) {
-            toggleControl.setToggled(Boolean.parseBoolean(String.valueOf(defaultValue)));
+            draftBoolean = Boolean.parseBoolean(String.valueOf(defaultValue));
+            toggleControl.setToggled(draftBoolean);
             notifyDraftChanged();
             return;
         }
-        if (sliderControl != null) {
+        if (sliderControl != null || getInference().getTemplateType() == ModernConfigTypeInference.TemplateType.NUMBER) {
             Double parsed = parseNumberDraft(String.valueOf(defaultValue));
-            applyNumberValue(parsed == null ? 0.0D : parsed.doubleValue());
+            draftNumberText = ModernConfigPropertyBindings.formatNumber(parsed == null ? 0.0D : parsed.doubleValue(),
+                    getInference().isIntegerNumber());
+            renderNumberDraft();
             notifyDraftChanged();
             return;
         }
+        draftText = defaultValue == null ? "" : String.valueOf(defaultValue);
         if (textControl != null) {
-            textControl.setText(defaultValue == null ? "" : String.valueOf(defaultValue));
-            notifyDraftChanged();
+            textControl.setText(draftText);
         }
+        notifyDraftChanged();
     }
 
     @Override
     String validateDraft() {
         if (sliderControl != null) {
-            return validateNumberDraft(inlineNumberControl.getText());
+            return validateNumberDraft(inlineNumberControl == null ? draftNumberText : inlineNumberControl.getText());
         }
         if (getInference().getTemplateType() == ModernConfigTypeInference.TemplateType.NUMBER) {
-            return validateNumberDraft(textControl.getText());
+            return validateNumberDraft(textControl == null ? draftNumberText : textControl.getText());
         }
         return null;
     }
@@ -117,23 +137,23 @@ final class ModernPrimitivePropertyBinding extends ModernConfigPropertyBindings.
     @Override
     void applyDraft() {
         if (toggleControl != null) {
-            getConfig().set(getPath(), Boolean.valueOf(toggleControl.isToggled()));
+            getConfig().set(getPath(), Boolean.valueOf(draftBoolean));
             return;
         }
         if (sliderControl != null) {
-            applyNumberDraft(inlineNumberControl.getText());
+            applyNumberDraft(draftNumberText);
             return;
         }
         if (getInference().getTemplateType() == ModernConfigTypeInference.TemplateType.NUMBER) {
-            applyNumberDraft(textControl.getText());
+            applyNumberDraft(draftNumberText);
             return;
         }
         if (getInference().getTemplateType() == ModernConfigTypeInference.TemplateType.NULL
-                && textControl.getText().trim().isEmpty()) {
+                && draftText.trim().isEmpty()) {
             getConfig().set(getPath(), null);
             return;
         }
-        getConfig().set(getPath(), textControl.getText());
+        getConfig().set(getPath(), draftText);
     }
 
     private ElementNode createBooleanEditor(UiDocument document) {
@@ -143,11 +163,12 @@ final class ModernPrimitivePropertyBinding extends ModernConfigPropertyBindings.
                 .setChangeHandler(new DocumentToggleChangeHandler() {
                     @Override
                     public void onToggleChanged(DocumentToggleChangeEvent event) {
+                        draftBoolean = toggleControl.isToggled();
                         notifyDraftChanged();
                     }
                 });
         toggleControl.getElement().setAttribute("data-modern-config-control", "toggle");
-        toggleControl.setToggled(readCurrentBoolean());
+        toggleControl.setToggled(draftBoolean);
         return toggleControl.getElement();
     }
 
@@ -159,12 +180,13 @@ final class ModernPrimitivePropertyBinding extends ModernConfigPropertyBindings.
                 .setChangeHandler(new DocumentTextInputChangeHandler() {
                     @Override
                     public void onTextChanged(DocumentTextInputChangeEvent event) {
+                        draftText = textControl.getText();
                         notifyDraftChanged();
                     }
                 });
         textControl.getElement().setAttribute("data-modern-config-control", "text");
         textControl.getElement().style().setWidth(UiStyleLength.percent(1.0F));
-        textControl.setText(readCurrentString());
+        textControl.setText(draftText);
         return textControl.getElement();
     }
 
@@ -176,13 +198,13 @@ final class ModernPrimitivePropertyBinding extends ModernConfigPropertyBindings.
                     .setChangeHandler(new DocumentTextInputChangeHandler() {
                         @Override
                         public void onTextChanged(DocumentTextInputChangeEvent event) {
+                            draftNumberText = textControl.getText();
                             notifyDraftChanged();
                         }
                     });
             textControl.getElement().setAttribute("data-modern-config-control", "numeric-text");
             textControl.getElement().style().setWidth(UiStyleLength.percent(1.0F));
-            textControl.setText(ModernConfigPropertyBindings.formatNumber(readCurrentNumber(),
-                    getInference().isIntegerNumber()));
+            textControl.setText(draftNumberText);
             return textControl.getElement();
         }
 
@@ -206,6 +228,7 @@ final class ModernPrimitivePropertyBinding extends ModernConfigPropertyBindings.
                         }
                         syncInlineNumberFromSlider();
                         updateSliderValueLabel();
+                        draftNumberText = inlineNumberControl.getText();
                         notifyDraftChanged();
                     }
                 });
@@ -223,7 +246,7 @@ final class ModernPrimitivePropertyBinding extends ModernConfigPropertyBindings.
         editor.append(sliderShell);
         appendSliderValueLabel(document, editor);
         appendInlineNumberControl(document, editor);
-        applyNumberValue(readCurrentNumber());
+        renderNumberDraft();
         return editor;
     }
 
@@ -254,6 +277,7 @@ final class ModernPrimitivePropertyBinding extends ModernConfigPropertyBindings.
                             return;
                         }
                         syncSliderFromInlineNumber();
+                        draftNumberText = inlineNumberControl.getText();
                         notifyDraftChanged();
                     }
                 });
@@ -304,6 +328,21 @@ final class ModernPrimitivePropertyBinding extends ModernConfigPropertyBindings.
         }
         if (textControl != null) {
             textControl.setText(ModernConfigPropertyBindings.formatNumber(value, getInference().isIntegerNumber()));
+        }
+    }
+
+    private void renderNumberDraft() {
+        Double parsed = parseNumberDraft(draftNumberText);
+        if (sliderControl != null) {
+            if (parsed != null) {
+                applyNumberValue(parsed.doubleValue());
+            } else if (inlineNumberControl != null) {
+                inlineNumberControl.setText(draftNumberText);
+            }
+            return;
+        }
+        if (textControl != null) {
+            textControl.setText(draftNumberText);
         }
     }
 

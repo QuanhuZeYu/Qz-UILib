@@ -22,6 +22,7 @@ final class ModernTablePropertyBinding extends ModernConfigPropertyBindings.Conf
 
     private final List<String> columns;
     private final Map<String, ModernConfigListModels.ValueKind> columnKinds;
+    private final List<Map<String, String>> draftRows = new ArrayList<Map<String, String>>();
     private DocumentDataTableControl tableControl;
 
     ModernTablePropertyBinding(MutableConfig config, String path, ConfigNode node,
@@ -30,15 +31,17 @@ final class ModernTablePropertyBinding extends ModernConfigPropertyBindings.Conf
         super(config, path, node, fieldSpec, inference, changeListener);
         this.columns = new ArrayList<String>(inference.getTableColumns());
         this.columnKinds = new LinkedHashMap<String, ModernConfigListModels.ValueKind>(inference.getTableColumnKinds());
+        replaceDraftRows(readCurrentTableRows());
     }
 
     @Override
     protected ElementNode createEditorElement(UiDocument document, ForgeConfigTemplateScreen.Theme theme) {
         tableControl = new DocumentDataTableControl(document, columns)
-                .setRows(readCurrentTableRows())
+                .setRows(draftRows)
                 .setChangeHandler(new DocumentDataTableChangeHandler() {
                     @Override
                     public void onTableChanged(DocumentDataTableChangeEvent event) {
+                        replaceDraftRows(event.getRows());
                         notifyDraftChanged();
                     }
                 });
@@ -61,24 +64,26 @@ final class ModernTablePropertyBinding extends ModernConfigPropertyBindings.Conf
 
     @Override
     void restoreCurrentValue() {
+        replaceDraftRows(readCurrentTableRows());
         if (tableControl != null) {
-            tableControl.setRows(readCurrentTableRows());
+            tableControl.setRows(draftRows);
         }
     }
 
     @Override
     void restoreDefaultValue() {
+        replaceDraftRows(readDefaultTableRows());
         if (tableControl != null) {
-            tableControl.setRows(readDefaultTableRows());
-            notifyDraftChanged();
+            tableControl.setRows(draftRows);
         }
+        notifyDraftChanged();
     }
 
     @Override
     String validateDraft() {
-        List<Map<String, String>> rows = tableControl == null ? readCurrentTableRows() : tableControl.getRowsSnapshot();
-        for (int rowIndex = 0; rowIndex < rows.size(); rowIndex++) {
-            Map<String, String> row = rows.get(rowIndex);
+        syncDraftRowsFromControl();
+        for (int rowIndex = 0; rowIndex < draftRows.size(); rowIndex++) {
+            Map<String, String> row = draftRows.get(rowIndex);
             for (String column : columns) {
                 ModernConfigListModels.ParsedValue parsed = ModernConfigListModels.parseDraftValue(
                         columnKinds.get(column), row.get(column));
@@ -162,9 +167,9 @@ final class ModernTablePropertyBinding extends ModernConfigPropertyBindings.Conf
     }
 
     private List<Map<String, Object>> readDraftTableValues() {
+        syncDraftRowsFromControl();
         List<Map<String, Object>> values = new ArrayList<Map<String, Object>>();
-        List<Map<String, String>> rows = tableControl == null ? readCurrentTableRows() : tableControl.getRowsSnapshot();
-        for (Map<String, String> rowDraft : rows) {
+        for (Map<String, String> rowDraft : draftRows) {
             Map<String, Object> row = new LinkedHashMap<String, Object>();
             for (String column : columns) {
                 ModernConfigListModels.ParsedValue parsed = ModernConfigListModels.parseDraftValue(
@@ -174,6 +179,22 @@ final class ModernTablePropertyBinding extends ModernConfigPropertyBindings.Conf
             values.add(row);
         }
         return values;
+    }
+
+    private void replaceDraftRows(List<Map<String, String>> rows) {
+        draftRows.clear();
+        if (rows == null) {
+            return;
+        }
+        for (Map<String, String> row : rows) {
+            draftRows.add(new LinkedHashMap<String, String>(row));
+        }
+    }
+
+    private void syncDraftRowsFromControl() {
+        if (tableControl != null) {
+            replaceDraftRows(tableControl.getRowsSnapshot());
+        }
     }
 
     private Map<String, String> createEmptyRow() {

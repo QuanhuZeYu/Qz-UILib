@@ -52,6 +52,9 @@ final class ModernConfigTypeInference {
         if (nodeType == ConfigNode.NodeType.LIST) {
             return inferListNode(path, node);
         }
+        if (nodeType == ConfigNode.NodeType.MAP) {
+            return createResult(path, TemplateType.OBJECT, false, Collections.<String>emptyList());
+        }
         return createResult(path, TemplateType.READ_ONLY, false, Collections.<String>emptyList());
     }
 
@@ -156,6 +159,7 @@ final class ModernConfigTypeInference {
         LONG_TEXT,
         SIMPLE_LIST,
         TABLE,
+        OBJECT,
         READ_ONLY
     }
 
