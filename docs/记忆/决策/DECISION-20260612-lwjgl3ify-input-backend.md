@@ -35,6 +35,7 @@
 - `src/main/java/club/heiqi/uilib/ui/event/UiKeyCodes.java` 记录业务层使用的 LWJGL2/MC 键码常量；控件、HTML-like 文档默认行为、remote 表单、配置页、devtools 断言和纯 JVM 测试不再直接 import `org.lwjglx.input.Keyboard`。
 - `src/main/java/club/heiqi/uilib/ui/input/LwjglInputRuntime.java` 集中封装 `Keyboard` / `Mouse` 反射访问，不新增 legacy `org.lwjgl.lwjgl:lwjgl` 显式运行依赖。
 - `LwjglxPollingInputBackend` fallback 只承诺基础按键、鼠标与滚轮；复杂文本输入和 IME 明确降级。`InputEvents` 注册失败时键盘可兜底到轮询，文本事件仍不会由轮询后端合成。
+- **键盘事件语义降级**：fallback 模式不支持 `UiKeyEvent.Action.REPEATED`；`LwjglxPollingInputBackend` 只能检测按键状态变化（`PRESSED` / `RELEASED`），无法识别操作系统级别的按键重复事件。需要长按重复输入的控件（如文本框光标移动、数值调节）应在应用层自行实现定时器逻辑，或明确依赖 `InputEvents` 可用环境。
 - `SystemDocumentCursorHost` 移除 `Display` 静态 import；SDL 系统光标仍依赖 lwjgl3ify / LWJGLX 光标桥，缺失时降级为 no-op。
 
 ## 后续注意事项

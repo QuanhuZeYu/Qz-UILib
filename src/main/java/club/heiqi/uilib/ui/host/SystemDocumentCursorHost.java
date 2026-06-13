@@ -44,13 +44,7 @@ public final class SystemDocumentCursorHost implements DocumentCursorHost {
         if (runtimeCursorSynchronized && appliedCursor == resolvedCursor) {
             return;
         }
-        try {
-            applyResolvedCursor(resolvedCursor);
-        } catch (RuntimeException exception) {
-            disableRuntimeCursor(resolvedCursor, exception);
-        } catch (LinkageError error) {
-            disableRuntimeCursor(resolvedCursor, error);
-        }
+        applyResolvedCursor(resolvedCursor);
     }
 
     private boolean isRuntimeAvailable(ResolvedCursorKind resolvedCursor) {
@@ -68,18 +62,28 @@ public final class SystemDocumentCursorHost implements DocumentCursorHost {
     private void applyResolvedCursor(ResolvedCursorKind resolvedCursor) {
         appliedCursor = resolvedCursor;
         if (resolvedCursor == ResolvedCursorKind.HIDDEN) {
-            backend.hideCursor();
-            runtimeCursorSynchronized = true;
+            try {
+                backend.hideCursor();
+                runtimeCursorSynchronized = true;
+            } catch (IllegalStateException exception) {
+                MyMod.LOG.debug("UILib 系统光标隐藏失败，本次操作跳过。", exception);
+                runtimeCursorSynchronized = false;
+            }
             return;
         }
-        backend.showCursor();
-        if (resolvedCursor == ResolvedCursorKind.DEFAULT) {
-            backend.applyDefaultCursor();
+        try {
+            backend.showCursor();
+            if (resolvedCursor == ResolvedCursorKind.DEFAULT) {
+                backend.applyDefaultCursor();
+                runtimeCursorSynchronized = true;
+                return;
+            }
+            backend.applySystemCursor(resolvedCursor);
             runtimeCursorSynchronized = true;
-            return;
+        } catch (IllegalStateException exception) {
+            MyMod.LOG.debug("UILib 系统光标应用失败，本次操作跳过：cursor={}", resolvedCursor, exception);
+            runtimeCursorSynchronized = false;
         }
-        backend.applySystemCursor(resolvedCursor);
-        runtimeCursorSynchronized = true;
     }
 
     private void disableRuntimeCursor(ResolvedCursorKind resolvedCursor, Throwable cause) {

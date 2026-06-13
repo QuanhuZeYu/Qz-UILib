@@ -3,6 +3,7 @@ package club.heiqi.uilib.ui.input;
 import java.lang.reflect.Field;
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 import org.apache.logging.log4j.LogManager;
@@ -20,8 +21,8 @@ final class LwjglInputRuntime {
     private static final String LWJGL2_MOUSE_CLASS_NAME = "org.lwjgl.input.Mouse";
     private static final AtomicBoolean KEYBOARD_RESOLUTION_LOGGED = new AtomicBoolean(false);
     private static final AtomicBoolean MOUSE_RESOLUTION_LOGGED = new AtomicBoolean(false);
-    private static final AtomicBoolean METHOD_INVOCATION_LOGGED = new AtomicBoolean(false);
-    private static final AtomicBoolean FIELD_INVOCATION_LOGGED = new AtomicBoolean(false);
+    private static final ConcurrentHashMap<String, Boolean> METHOD_LOG_REGISTRY = new ConcurrentHashMap<String, Boolean>();
+    private static final ConcurrentHashMap<String, Boolean> FIELD_LOG_REGISTRY = new ConcurrentHashMap<String, Boolean>();
     private static final KeyboardRuntime KEYBOARD = KeyboardRuntime.create();
     private static final MouseRuntime MOUSE = MouseRuntime.create();
 
@@ -147,13 +148,13 @@ final class LwjglInputRuntime {
     }
 
     private static void logMethodInvocationFailureOnce(String methodName, Throwable throwable) {
-        if (METHOD_INVOCATION_LOGGED.compareAndSet(false, true)) {
+        if (METHOD_LOG_REGISTRY.putIfAbsent(methodName, Boolean.TRUE) == null) {
             LOG.debug("UILib 原生输入方法反射调用失败，已按无事件处理：methodName={}", methodName, throwable);
         }
     }
 
     private static void logFieldInvocationFailureOnce(String fieldName, Throwable throwable) {
-        if (FIELD_INVOCATION_LOGGED.compareAndSet(false, true)) {
+        if (FIELD_LOG_REGISTRY.putIfAbsent(fieldName, Boolean.TRUE) == null) {
             LOG.debug("UILib 原生输入字段反射读取失败，已按无扩展字段处理：fieldName={}", fieldName, throwable);
         }
     }

@@ -170,7 +170,32 @@ final class Lwjgl3ifyInputBackend implements UiInputBackend {
     }
 
     private static void handleKeyEvent(UiInputService inputService, Object event) {
-        handleKeyEvent(inputService, event, LwjglInputRuntime.getNanoTime());
+        long timeNanos = readEventTimestampNanos(event);
+        handleKeyEvent(inputService, event, timeNanos);
+    }
+
+    private static long readEventTimestampNanos(Object event) {
+        Long timestamp = readLongField(event, "timestampNanos");
+        if (timestamp != null) {
+            return timestamp.longValue();
+        }
+        return LwjglInputRuntime.getNanoTime();
+    }
+
+    private static Long readLongField(Object instance, String fieldName) {
+        Field field = findField(instance, fieldName);
+        if (field == null) {
+            return null;
+        }
+        try {
+            return Long.valueOf(field.getLong(instance));
+        } catch (IllegalAccessException exception) {
+            logInputFieldReflectionFailureOnce(fieldName, exception);
+            return null;
+        } catch (IllegalArgumentException exception) {
+            logInputFieldReflectionFailureOnce(fieldName, exception);
+            return null;
+        }
     }
 
     static void handleKeyEvent(UiInputService inputService, Object event, long timeNanos) {
