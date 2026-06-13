@@ -6,6 +6,7 @@ import club.heiqi.uilib.ui.document.HtmlLikeDocumentWidget;
 import club.heiqi.uilib.ui.dom.ElementNode;
 import club.heiqi.uilib.ui.dom.UiDocument;
 import club.heiqi.uilib.ui.host.DocumentHostWidgetFactory;
+import club.heiqi.uilib.ui.render.BackdropBlurPolicy;
 import club.heiqi.uilib.ui.screen.UiDocumentScreens;
 import club.heiqi.uilib.ui.screen.page.DocumentPageAuthoringSurface;
 import club.heiqi.uilib.ui.screen.page.DocumentPageController;
@@ -43,6 +44,7 @@ public final class InternalInlineDocumentPageController extends DocumentPageCont
         this.lifecycle = resolvedProvision.getLifecycle();
         UiDocument document = UiDocument.create();
         document.setDefaultTextContentMode(resolvedDocumentUi.getDefaultTextContentMode());
+        document.__setBackdropBlurPolicy(resolvedDocumentUi.getBackdropBlurPolicy());
         resolvedProvision.getContentBuilder().build(document);
         applyDefaultRootContract(document.getRootElement());
         this.htmlLikeDocumentWidget = DocumentHostWidgetFactory.createViewportDocumentWidget(document, 320, 180,
@@ -59,6 +61,11 @@ public final class InternalInlineDocumentPageController extends DocumentPageCont
     @Override
     public void buildDocument() {
         documentPage.addBlock(htmlLikeDocumentWidget);
+    }
+
+    @Override
+    public BackdropBlurPolicy getBackdropBlurPolicy() {
+        return htmlLikeDocumentWidget.getDocument().getBackdropBlurController().getPolicy();
     }
 
     @Override

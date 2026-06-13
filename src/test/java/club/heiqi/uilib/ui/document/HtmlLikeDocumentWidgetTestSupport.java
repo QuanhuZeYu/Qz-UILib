@@ -254,6 +254,7 @@ final class HtmlLikeDocumentWidgetTestSupport {
         final List<DrawCall> drawCalls = new ArrayList<DrawCall>();
         final List<TextCall> textCalls = new ArrayList<TextCall>();
         final List<HostImageCall> hostImageCalls = new ArrayList<HostImageCall>();
+        final List<BackdropFilterCall> backdropFilterCalls = new ArrayList<BackdropFilterCall>();
 
         RecordingUiRenderContext() {
             super(320, 240, 0, 0, 0.0F);
@@ -310,11 +311,15 @@ final class HtmlLikeDocumentWidgetTestSupport {
 
         @Override
         public void drawBackdropFilter(int left, int top, int right, int bottom, int blurRadius, float saturation,
-                int cornerRadius) {}
+                int cornerRadius) {
+            backdropFilterCalls.add(new BackdropFilterCall(left, top, right, bottom, blurRadius, saturation));
+        }
 
         @Override
         public void drawBackdropFilter(int left, int top, int right, int bottom, int blurRadius, float saturation,
-                UiBorderRadiusResolver.ResolvedCornerRadii cornerRadii) {}
+                UiBorderRadiusResolver.ResolvedCornerRadii cornerRadii) {
+            backdropFilterCalls.add(new BackdropFilterCall(left, top, right, bottom, blurRadius, saturation));
+        }
 
         @Override
         public void pushClip(int left, int top, int right, int bottom, int cornerRadius) {}
@@ -388,6 +393,25 @@ final class HtmlLikeDocumentWidgetTestSupport {
             this.top = top;
             this.right = right;
             this.bottom = bottom;
+        }
+    }
+
+    static final class BackdropFilterCall {
+
+        final int left;
+        final int top;
+        final int right;
+        final int bottom;
+        final int blurRadius;
+        final float saturation;
+
+        BackdropFilterCall(int left, int top, int right, int bottom, int blurRadius, float saturation) {
+            this.left = left;
+            this.top = top;
+            this.right = right;
+            this.bottom = bottom;
+            this.blurRadius = blurRadius;
+            this.saturation = saturation;
         }
     }
 

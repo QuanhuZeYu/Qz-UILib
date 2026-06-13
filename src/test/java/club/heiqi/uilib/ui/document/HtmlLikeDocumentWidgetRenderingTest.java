@@ -6,11 +6,13 @@ import org.junit.Assert;
 import org.junit.Test;
 
 import club.heiqi.uilib.ui.document.HtmlLikeDocumentWidgetTestSupport.DeterministicTextMeasureService;
+import club.heiqi.uilib.ui.document.HtmlLikeDocumentWidgetTestSupport.BackdropFilterCall;
 import club.heiqi.uilib.ui.document.HtmlLikeDocumentWidgetTestSupport.RecordingUiRenderContext;
 import club.heiqi.uilib.ui.document.HtmlLikeDocumentWidgetTestSupport.TextCall;
 import club.heiqi.uilib.ui.dom.ElementNode;
 import club.heiqi.uilib.ui.dom.UiDocument;
 import club.heiqi.uilib.ui.image.DocumentRemoteImageCache;
+import club.heiqi.uilib.ui.render.BackdropBlurPolicy;
 import club.heiqi.uilib.ui.style.props.UiFontStyle;
 import club.heiqi.uilib.ui.style.props.UiFontWeight;
 import club.heiqi.uilib.ui.style.props.UiOverflowWrap;
@@ -166,5 +168,94 @@ public class HtmlLikeDocumentWidgetRenderingTest {
         Assert.assertEquals(12, textCall.fontSizePx);
         Assert.assertEquals(21, widget.resolveLayoutBoxForTest().getTextRuns().get(0).getWidth());
         Assert.assertEquals(12, widget.resolveLayoutBoxForTest().getTextRuns().get(0).getHeight());
+    }
+
+    /**
+     * 验证页面级背景模糊策略会限制元素级 backdrop-filter 半径。
+     */
+    @Test
+    public void shouldClampBackdropFilterByPagePolicy() {
+        UiDocument document = UiDocument.create();
+        document.__setBackdropBlurPolicy(BackdropBlurPolicy.inheritGlobal().withMaxBlurRadius(6));
+        ElementNode root = document.getRootElement();
+        root.style()
+                .setWidth(UiStyleLength.px(80))
+                .setHeight(UiStyleLength.px(32))
+                .setBackdropBlurRadius(UiStyleLength.px(20));
+        HtmlLikeDocumentWidget widget = new HtmlLikeDocumentWidget(document, 80, 32,
+                new DeterministicTextMeasureService());
+        widget.applyLayoutBounds(0, 0, 80, 32);
+
+        RecordingUiRenderContext renderContext = new RecordingUiRenderContext();
+        widget.render(renderContext);
+
+        Assert.assertEquals(1, renderContext.backdropFilterCalls.size());
+        BackdropFilterCall call = renderContext.backdropFilterCalls.get(0);
+        Assert.assertEquals(6, call.blurRadius);
+    }
+
+    /**
+     * 验证页面禁用策略会阻止元素级 backdrop-filter。
+     */
+    @Test
+    public void shouldDisableElementBackdropFilterByPagePolicy() {
+        UiDocument document = UiDocument.create();
+        document.__setBackdropBlurPolicy(BackdropBlurPolicy.disabled());
+        ElementNode root = document.getRootElement();
+        root.style()
+                .setWidth(UiStyleLength.px(80))
+                .setHeight(UiStyleLength.px(32))
+                .setBackdropBlurRadius(UiStyleLength.px(20))
+                .setBackdropSaturation(1.4F);
+        HtmlLikeDocumentWidget widget = new HtmlLikeDocumentWidget(document, 80, 32,
+                new DeterministicTextMeasureService());
+        widget.applyLayoutBounds(0, 0, 80, 32);
+
+        RecordingUiRenderContext renderContext = new RecordingUiRenderContext();
+        widget.render(renderContext);
+
+        Assert.assertTrue(renderContext.backdropFilterCalls.isEmpty());
+    }
+
+    /**
+     * 验证运行时策略调整只影响当前文档并让下一帧重建绘制命令。
+     */
+    @Test
+    public void shouldApplyRuntimeBackdropPolicyToCurrentDocumentOnly() {
+        UiDocument firstDocument = createBackdropDocument();
+        UiDocument secondDocument = createBackdropDocument();
+        firstDocument.__setBackdropBlurPolicy(BackdropBlurPolicy.inheritGlobal().withMaxBlurRadius(12));
+        secondDocument.__setBackdropBlurPolicy(BackdropBlurPolicy.inheritGlobal().withMaxBlurRadius(12));
+        HtmlLikeDocumentWidget firstWidget = new HtmlLikeDocumentWidget(firstDocument, 80, 32,
+                new DeterministicTextMeasureService());
+        HtmlLikeDocumentWidget secondWidget = new HtmlLikeDocumentWidget(secondDocument, 80, 32,
+                new DeterministicTextMeasureService());
+        firstWidget.applyLayoutBounds(0, 0, 80, 32);
+        secondWidget.applyLayoutBounds(0, 0, 80, 32);
+
+        firstWidget.render(new RecordingUiRenderContext());
+        int firstPaintGeneration = firstWidget.getPaintCacheGenerationForDiagnostics();
+        secondWidget.render(new RecordingUiRenderContext());
+        int secondPaintGeneration = secondWidget.getPaintCacheGenerationForDiagnostics();
+
+        firstDocument.getBackdropBlurController().setPolicy(BackdropBlurPolicy.inheritGlobal().withMaxBlurRadius(4));
+        RecordingUiRenderContext firstRenderContext = new RecordingUiRenderContext();
+        RecordingUiRenderContext secondRenderContext = new RecordingUiRenderContext();
+        firstWidget.render(firstRenderContext);
+        secondWidget.render(secondRenderContext);
+
+        Assert.assertEquals(4, firstRenderContext.backdropFilterCalls.get(0).blurRadius);
+        Assert.assertEquals(12, secondRenderContext.backdropFilterCalls.get(0).blurRadius);
+        Assert.assertTrue(firstWidget.getPaintCacheGenerationForDiagnostics() > firstPaintGeneration);
+        Assert.assertEquals(secondPaintGeneration, secondWidget.getPaintCacheGenerationForDiagnostics());
+    }
+
+    private static UiDocument createBackdropDocument() {
+        UiDocument document = UiDocument.create();
+        document.getRootElement().style()
+                .setWidth(UiStyleLength.px(80))
+                .setHeight(UiStyleLength.px(32))
+                .setBackdropBlurRadius(UiStyleLength.px(20));
+        return document;
     }
 }

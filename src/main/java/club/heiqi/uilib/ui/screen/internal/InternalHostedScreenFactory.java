@@ -3,6 +3,7 @@ package club.heiqi.uilib.ui.screen.internal;
 import java.util.Objects;
 
 import club.heiqi.uilib.ui.diagnostic.UiRuntimeStats;
+import club.heiqi.uilib.ui.render.BackdropBlurPolicy;
 import club.heiqi.uilib.ui.runtime.UiRuntimeAdapters;
 import club.heiqi.uilib.ui.screen.BaseScreen;
 import club.heiqi.uilib.ui.screen.UiDocumentScreens;
@@ -208,7 +209,8 @@ public final class InternalHostedScreenFactory {
             this.definition = Objects.requireNonNull(definition, "definition");
             this.pageDescriptor = this.definition.getPageDescriptor();
             this.documentUiScope = new DocumentUiScope(resolvedEnvironment.getTextMeasureService(),
-                    resolvedEnvironment.getRuntimeAdapters(), resolvedEnvironment.getDefaultTextContentMode());
+                    resolvedEnvironment.getRuntimeAdapters(), resolvedEnvironment.getDefaultTextContentMode(),
+                    resolvedEnvironment.getBackdropBlurPolicy());
             this.controller = this.definition.createController(documentUiScope, documentPage, runtimeView,
                     pageDescriptor.getPageId(), provision);
         }
@@ -221,6 +223,11 @@ public final class InternalHostedScreenFactory {
         @Override
         protected UiRuntimeAdapters getRuntimeAdapters() {
             return documentUiScope.getRuntimeAdapters();
+        }
+
+        @Override
+        protected BackdropBlurPolicy getBackdropBlurPolicy() {
+            return controller.getBackdropBlurPolicy();
         }
 
         @Override

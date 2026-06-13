@@ -3,6 +3,8 @@ package club.heiqi.uilib.ui.screen;
 import java.util.Objects;
 
 import club.heiqi.uilib.ui.dom.UiDocument;
+import club.heiqi.uilib.ui.render.BackdropBlurPolicy;
+import club.heiqi.uilib.ui.render.BackdropBlurPreset;
 import club.heiqi.uilib.ui.runtime.UiRuntimeAdapters;
 import club.heiqi.uilib.ui.screen.internal.InternalHostedScreenFactory;
 import club.heiqi.uilib.ui.text.DefaultTextMeasureService;
@@ -31,6 +33,7 @@ public final class UiDocumentScreens {
         private final TextMeasureService textMeasureService;
         private final UiRuntimeAdapters runtimeAdapters;
         private final TextContentMode defaultTextContentMode;
+        private final BackdropBlurPolicy backdropBlurPolicy;
 
         /**
          * 创建文档页面环境。
@@ -40,7 +43,7 @@ public final class UiDocumentScreens {
          */
         public DocumentScreenEnvironment(TextMeasureService textMeasureService,
                 UiRuntimeAdapters runtimeAdapters) {
-            this(textMeasureService, runtimeAdapters, TextContentMode.UILIB_RAW);
+            this(textMeasureService, runtimeAdapters, TextContentMode.UILIB_RAW, BackdropBlurPolicy.inheritGlobal());
         }
 
         /**
@@ -52,10 +55,18 @@ public final class UiDocumentScreens {
          */
         public DocumentScreenEnvironment(TextMeasureService textMeasureService,
                 UiRuntimeAdapters runtimeAdapters, TextContentMode defaultTextContentMode) {
+            this(textMeasureService, runtimeAdapters, defaultTextContentMode, BackdropBlurPolicy.inheritGlobal());
+        }
+
+        private DocumentScreenEnvironment(TextMeasureService textMeasureService,
+                UiRuntimeAdapters runtimeAdapters, TextContentMode defaultTextContentMode,
+                BackdropBlurPolicy backdropBlurPolicy) {
             this.textMeasureService = Objects.requireNonNull(textMeasureService, "textMeasureService");
             this.runtimeAdapters = Objects.requireNonNull(runtimeAdapters, "runtimeAdapters");
             this.defaultTextContentMode = defaultTextContentMode == null
                     ? TextContentMode.UILIB_RAW : defaultTextContentMode;
+            this.backdropBlurPolicy = backdropBlurPolicy == null ? BackdropBlurPolicy.inheritGlobal()
+                    : backdropBlurPolicy;
         }
 
         /**
@@ -66,6 +77,25 @@ public final class UiDocumentScreens {
         public static DocumentScreenEnvironment minecraftDefaults() {
             return new DocumentScreenEnvironment(DefaultTextMeasureService.getInstance(),
                     UiRuntimeAdapters.minecraftDefaults(), TextContentMode.UILIB_RAW);
+        }
+
+        /**
+         * 创建带背景模糊预设的 Minecraft 默认业务文档环境。
+         *
+         * @param preset 背景模糊预设；为 null 时继承全局配置
+         * @return 文档页面环境
+         */
+        public static DocumentScreenEnvironment minecraftDefaults(BackdropBlurPreset preset) {
+            return minecraftDefaults().withBackdropBlurPolicy(BackdropBlurPolicy.fromPreset(preset));
+        }
+
+        /**
+         * 创建关闭当前页面背景模糊的 Minecraft 默认业务文档环境。
+         *
+         * @return 文档页面环境
+         */
+        public static DocumentScreenEnvironment withoutBackgroundBlur() {
+            return minecraftDefaults(BackdropBlurPreset.DISABLED);
         }
 
         /**
@@ -103,6 +133,26 @@ public final class UiDocumentScreens {
          */
         public TextContentMode getDefaultTextContentMode() {
             return defaultTextContentMode;
+        }
+
+        /**
+         * 返回页面级背景模糊策略。
+         *
+         * @return 背景模糊策略
+         */
+        public BackdropBlurPolicy getBackdropBlurPolicy() {
+            return backdropBlurPolicy;
+        }
+
+        /**
+         * 返回替换页面级背景模糊策略后的新环境。
+         *
+         * @param policy 页面级背景模糊策略；为 null 时继承全局配置
+         * @return 新文档页面环境
+         */
+        public DocumentScreenEnvironment withBackdropBlurPolicy(BackdropBlurPolicy policy) {
+            return new DocumentScreenEnvironment(textMeasureService, runtimeAdapters, defaultTextContentMode,
+                    policy == null ? BackdropBlurPolicy.inheritGlobal() : policy);
         }
     }
 
@@ -176,6 +226,31 @@ public final class UiDocumentScreens {
     }
 
     /**
+     * 使用背景模糊预设创建业务文档界面。
+     *
+     * @param contentBuilder 文档内容构建器
+     * @param preset 背景模糊预设
+     * @return 文档型界面
+     */
+    public static GuiScreen createDocumentScreen(DocumentScreenContentBuilder contentBuilder,
+            BackdropBlurPreset preset) {
+        return createDocumentScreen(DocumentScreenEnvironment.minecraftDefaults(preset), contentBuilder);
+    }
+
+    /**
+     * 使用页面级背景模糊策略创建业务文档界面。
+     *
+     * @param contentBuilder 文档内容构建器
+     * @param policy 背景模糊策略
+     * @return 文档型界面
+     */
+    public static GuiScreen createDocumentScreen(DocumentScreenContentBuilder contentBuilder,
+            BackdropBlurPolicy policy) {
+        return createDocumentScreen(DocumentScreenEnvironment.minecraftDefaults().withBackdropBlurPolicy(policy),
+                contentBuilder);
+    }
+
+    /**
      * 基于显式文档环境创建由调用方填充 `UiDocument` 的业务文档界面。
      *
      * @param environment 文档页面创建环境
@@ -185,6 +260,20 @@ public final class UiDocumentScreens {
     public static GuiScreen createDocumentScreen(DocumentScreenEnvironment environment,
             DocumentScreenContentBuilder contentBuilder) {
         return createDocumentScreen(environment, DocumentScreenProvision.of(contentBuilder, null));
+    }
+
+    /**
+     * 基于显式文档环境和页面级背景模糊策略创建业务文档界面。
+     *
+     * @param environment 文档页面创建环境
+     * @param policy 背景模糊策略
+     * @param contentBuilder 文档内容构建器
+     * @return 文档型界面
+     */
+    public static GuiScreen createDocumentScreen(DocumentScreenEnvironment environment,
+            BackdropBlurPolicy policy, DocumentScreenContentBuilder contentBuilder) {
+        return createDocumentScreen(Objects.requireNonNull(environment, "environment")
+                .withBackdropBlurPolicy(policy), contentBuilder);
     }
 
     /**

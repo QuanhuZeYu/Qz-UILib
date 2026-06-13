@@ -5,6 +5,8 @@ import java.util.Collections;
 import java.util.List;
 import java.util.Objects;
 
+import club.heiqi.uilib.ui.render.BackdropBlurConfig;
+import club.heiqi.uilib.ui.render.BackdropBlurPolicy;
 import club.heiqi.uilib.ui.style.cascade.ComputedStyle;
 import club.heiqi.uilib.ui.style.cascade.UiBorderRadiusResolver;
 import club.heiqi.uilib.ui.style.props.UiOverflow;
@@ -63,6 +65,17 @@ public final class DocumentEffectChain {
      * @return 效果链
      */
     public static DocumentEffectChain resolve(DocumentLayoutBox box) {
+        return resolve(box, resolveBackdropBlurPolicy(box));
+    }
+
+    /**
+     * 基于布局盒的当前 computed style 和页面背景模糊策略解析效果链。
+     *
+     * @param box 布局盒
+     * @param backdropBlurPolicy 页面级背景模糊策略
+     * @return 效果链
+     */
+    public static DocumentEffectChain resolve(DocumentLayoutBox box, BackdropBlurPolicy backdropBlurPolicy) {
         Objects.requireNonNull(box, "box");
         ComputedStyle style = box.getComputedStyle();
         boolean overflowClipsX = style.getOverflowX() != UiOverflow.VISIBLE;
@@ -75,8 +88,13 @@ public final class DocumentEffectChain {
         boolean opacityStackingContext = style.getOpacity() < 0.999F;
         UiTransform transform = style.getTransform();
         boolean transformStackingContext = transform != null && !transform.isIdentity();
-        int backdropBlurRadius = resolveBackdropBlurRadius(box, style);
-        float backdropSaturation = style.getBackdropSaturation();
+        BackdropBlurConfig config = BackdropBlurConfig.getInstance();
+        BackdropBlurPolicy policy = backdropBlurPolicy == null ? BackdropBlurPolicy.inheritGlobal()
+                : backdropBlurPolicy;
+        boolean backdropFilterEnabled = policy.resolveEnabled(config);
+        int backdropBlurRadius = backdropFilterEnabled
+                ? resolveBackdropBlurRadius(box, style, policy) : 0;
+        float backdropSaturation = backdropFilterEnabled ? style.getBackdropSaturation() : 1.0F;
 
         List<DocumentEffectType> staticEffects = new ArrayList<DocumentEffectType>();
         if (hasBackdropFilter(backdropBlurRadius, backdropSaturation)) {
@@ -269,11 +287,19 @@ public final class DocumentEffectChain {
                 || box.getElement().getCustomRenderer() != null;
     }
 
-    private static int resolveBackdropBlurRadius(DocumentLayoutBox box, ComputedStyle style) {
+    private static int resolveBackdropBlurRadius(DocumentLayoutBox box, ComputedStyle style,
+            BackdropBlurPolicy backdropBlurPolicy) {
         int availableSpace = Math.max(box.getWidth(), box.getHeight());
         int radius = style.getBackdropBlurRadius().resolve(availableSpace, 0);
-        int maxRadius = club.heiqi.uilib.ui.render.BackdropBlurConfig.getInstance().getMaxBlurRadius();
+        int maxRadius = backdropBlurPolicy.resolveMaxBlurRadius(BackdropBlurConfig.getInstance());
         return Math.max(0, Math.min(radius, maxRadius));
+    }
+
+    private static BackdropBlurPolicy resolveBackdropBlurPolicy(DocumentLayoutBox box) {
+        if (box == null || box.getElement() == null || box.getElement().getOwnerDocument() == null) {
+            return BackdropBlurPolicy.inheritGlobal();
+        }
+        return box.getElement().getOwnerDocument().getBackdropBlurController().getPolicy();
     }
 
     private static boolean hasBackdropFilter(int blurRadius, float saturation) {

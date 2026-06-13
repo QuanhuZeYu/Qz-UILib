@@ -2,6 +2,7 @@ package club.heiqi.uilib.ui.screen.page;
 
 import java.util.Objects;
 
+import club.heiqi.uilib.ui.render.BackdropBlurPolicy;
 import club.heiqi.uilib.ui.runtime.UiRuntimeAdapters;
 import club.heiqi.uilib.ui.text.TextContentMode;
 import club.heiqi.uilib.ui.text.TextMeasureService;
@@ -17,6 +18,7 @@ public final class DocumentUiScope {
     private final TextMeasureService textMeasureService;
     private final UiRuntimeAdapters runtimeAdapters;
     private final TextContentMode defaultTextContentMode;
+    private final BackdropBlurPolicy backdropBlurPolicy;
 
     /**
      * 创建 HTML-like 页面运行时上下文。
@@ -37,10 +39,25 @@ public final class DocumentUiScope {
      */
     public DocumentUiScope(TextMeasureService textMeasureService, UiRuntimeAdapters runtimeAdapters,
             TextContentMode defaultTextContentMode) {
+        this(textMeasureService, runtimeAdapters, defaultTextContentMode, BackdropBlurPolicy.inheritGlobal());
+    }
+
+    /**
+     * 创建 HTML-like 页面运行时上下文。
+     *
+     * @param textMeasureService 文本测量服务
+     * @param runtimeAdapters 运行时适配器集合
+     * @param defaultTextContentMode 新建文本节点默认解析模式
+     * @param backdropBlurPolicy 页面级背景模糊策略
+     */
+    public DocumentUiScope(TextMeasureService textMeasureService, UiRuntimeAdapters runtimeAdapters,
+            TextContentMode defaultTextContentMode, BackdropBlurPolicy backdropBlurPolicy) {
         this.textMeasureService = Objects.requireNonNull(textMeasureService, "textMeasureService");
         this.runtimeAdapters = Objects.requireNonNull(runtimeAdapters, "runtimeAdapters");
         this.defaultTextContentMode = defaultTextContentMode == null
                 ? TextContentMode.UILIB_RAW : defaultTextContentMode;
+        this.backdropBlurPolicy = backdropBlurPolicy == null ? BackdropBlurPolicy.inheritGlobal()
+                : backdropBlurPolicy;
     }
 
     /**
@@ -68,5 +85,14 @@ public final class DocumentUiScope {
      */
     public TextContentMode getDefaultTextContentMode() {
         return defaultTextContentMode;
+    }
+
+    /**
+     * 获取当前作用域页面级背景模糊策略。
+     *
+     * @return 背景模糊策略
+     */
+    public BackdropBlurPolicy getBackdropBlurPolicy() {
+        return backdropBlurPolicy;
     }
 }

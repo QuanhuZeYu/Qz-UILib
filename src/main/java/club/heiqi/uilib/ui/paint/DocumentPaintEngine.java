@@ -24,6 +24,8 @@ import club.heiqi.uilib.ui.layout.DocumentVisualTraversal.RootEntry;
 import club.heiqi.uilib.ui.layout.DocumentVisualTraversal.StackingContextResolver;
 import club.heiqi.uilib.ui.layout.DocumentVisualTraversal.TraversalEntry;
 import club.heiqi.uilib.ui.layout.DocumentVisualTraversal.VisualScene;
+import club.heiqi.uilib.ui.render.BackdropBlurConfig;
+import club.heiqi.uilib.ui.render.BackdropBlurPolicy;
 import club.heiqi.uilib.ui.style.cascade.ComputedStyle;
 import club.heiqi.uilib.ui.style.values.UiBackgroundImage;
 import club.heiqi.uilib.ui.style.cascade.UiBorderRadiusResolver;
@@ -384,8 +386,12 @@ public final class DocumentPaintEngine {
     private static void appendBackdropFilterCommand(DocumentLayoutBox box, List<DocumentPaintCommand> commands,
             DocumentAnimationTimeline animationTimeline, long currentTimeNanos, DocumentEffectChain effectChain,
             int offsetX, int offsetY) {
+        BackdropBlurPolicy backdropBlurPolicy = resolveBackdropBlurPolicy(box);
+        if (!backdropBlurPolicy.resolveEnabled(BackdropBlurConfig.getInstance())) {
+            return;
+        }
         int blurRadius = resolveAnimatedBackdropBlurRadius(animationTimeline, box, effectChain.getBackdropBlurRadius(),
-                currentTimeNanos);
+                currentTimeNanos, backdropBlurPolicy);
         float saturation = effectChain.getBackdropSaturation();
         boolean runningBlurTransition = hasRunningTransition(animationTimeline, box,
                 DocumentAnimationProperty.BACKDROP_BLUR_RADIUS);
@@ -785,13 +791,21 @@ public final class DocumentPaintEngine {
     }
 
     private static int resolveAnimatedBackdropBlurRadius(DocumentAnimationTimeline animationTimeline,
-            DocumentLayoutBox box, int baseRadius, long currentTimeNanos) {
+            DocumentLayoutBox box, int baseRadius, long currentTimeNanos, BackdropBlurPolicy backdropBlurPolicy) {
         if (animationTimeline == null) {
             return baseRadius;
         }
         float animatedRadius = animationTimeline.resolveFloat(box.getElement(),
                 DocumentAnimationProperty.BACKDROP_BLUR_RADIUS, baseRadius, currentTimeNanos);
-        return Math.max(0, Math.min(Math.round(animatedRadius), DocumentEffectChain.MAX_BACKDROP_BLUR_RADIUS));
+        int maxRadius = backdropBlurPolicy.resolveMaxBlurRadius(BackdropBlurConfig.getInstance());
+        return Math.max(0, Math.min(Math.round(animatedRadius), maxRadius));
+    }
+
+    private static BackdropBlurPolicy resolveBackdropBlurPolicy(DocumentLayoutBox box) {
+        if (box == null || box.getElement() == null || box.getElement().getOwnerDocument() == null) {
+            return BackdropBlurPolicy.inheritGlobal();
+        }
+        return box.getElement().getOwnerDocument().getBackdropBlurController().getPolicy();
     }
 
     private static boolean hasRunningTransition(DocumentAnimationTimeline animationTimeline, DocumentLayoutBox box,

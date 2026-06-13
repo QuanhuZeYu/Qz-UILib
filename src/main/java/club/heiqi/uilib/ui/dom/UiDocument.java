@@ -12,6 +12,8 @@ import java.util.concurrent.atomic.AtomicLong;
 import club.heiqi.uilib.ui.animation.DocumentAnimation;
 import club.heiqi.uilib.ui.animation.DocumentAnimationOptions;
 import club.heiqi.uilib.ui.animation.DocumentKeyframes;
+import club.heiqi.uilib.ui.render.BackdropBlurController;
+import club.heiqi.uilib.ui.render.BackdropBlurPolicy;
 import club.heiqi.uilib.ui.style.UiStyleChangeImpact;
 import club.heiqi.uilib.ui.style.UiStyleChangeListener;
 import club.heiqi.uilib.ui.style.selector.UiPseudoElement;
@@ -38,6 +40,7 @@ public final class UiDocument {
         }
     };
     private DocumentLinkActivationHandler linkActivationHandler;
+    private BackdropBlurController backdropBlurController;
     private UiStyleVariables styleVariables;
     private TextContentMode defaultTextContentMode = TextContentMode.UILIB_RAW;
     private WeakReference<DocumentInteractionRuntime> interactionRuntimeReference;
@@ -47,6 +50,7 @@ public final class UiDocument {
 
     private UiDocument() {
         rootElement = new ElementNode(this, "document");
+        backdropBlurController = createBackdropBlurController(BackdropBlurPolicy.inheritGlobal());
     }
 
     /**
@@ -500,6 +504,29 @@ public final class UiDocument {
     public UiDocument setDefaultTextContentMode(TextContentMode defaultTextContentMode) {
         this.defaultTextContentMode = defaultTextContentMode == null ? TextContentMode.UILIB_RAW : defaultTextContentMode;
         return this;
+    }
+
+    /**
+     * 返回当前文档的页面级背景模糊控制器。
+     *
+     * <p>该控制器只影响当前文档页面，不会修改全局 {@link club.heiqi.uilib.ui.render.BackdropBlurConfig}。</p>
+     *
+     * @return 背景模糊控制器
+     */
+    public BackdropBlurController getBackdropBlurController() {
+        return backdropBlurController;
+    }
+
+    /**
+     * 设置文档页面基础背景模糊策略。
+     *
+     * @param policy 页面基础策略
+     * @apiNote 框架内部 API，仅供文档宿主在页面构建前注入环境策略。
+     */
+    public void __setBackdropBlurPolicy(BackdropBlurPolicy policy) {
+        backdropBlurController = createBackdropBlurController(policy == null ? BackdropBlurPolicy.inheritGlobal()
+                : policy);
+        recordBackdropBlurPolicyMutation();
     }
 
     /**
@@ -1011,6 +1038,19 @@ public final class UiDocument {
         mutationVersion++;
         paintVersion++;
         return paintVersion;
+    }
+
+    private BackdropBlurController createBackdropBlurController(BackdropBlurPolicy policy) {
+        return BackdropBlurController.create(policy, new Runnable() {
+            @Override
+            public void run() {
+                recordBackdropBlurPolicyMutation();
+            }
+        });
+    }
+
+    private void recordBackdropBlurPolicyMutation() {
+        recordPaintMutation();
     }
 
     private void recordGlobalLayoutMutation() {

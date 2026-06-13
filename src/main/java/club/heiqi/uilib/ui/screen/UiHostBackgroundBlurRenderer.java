@@ -5,6 +5,9 @@ import net.minecraft.client.renderer.Tessellator;
 import org.lwjgl.opengl.GL11;
 import org.lwjgl.opengl.GL12;
 
+import club.heiqi.uilib.ui.render.BackdropBlurConfig;
+import club.heiqi.uilib.ui.render.BackdropBlurPolicy;
+
 /**
  * 宿主级背景模糊渲染器。
  *
@@ -51,9 +54,11 @@ final class UiHostBackgroundBlurRenderer {
      * @param nativeWidth 原生宽度
      * @param nativeHeight 原生高度
      */
-    void drawBlurredBackground(int nativeWidth, int nativeHeight) {
-        club.heiqi.uilib.ui.render.BackdropBlurConfig config = club.heiqi.uilib.ui.render.BackdropBlurConfig.getInstance();
-        if (!config.getHostBackgroundBlurEnabled() || capturedBackgroundTextureId == 0 
+    void drawBlurredBackground(int nativeWidth, int nativeHeight, BackdropBlurPolicy backdropBlurPolicy) {
+        BackdropBlurConfig config = BackdropBlurConfig.getInstance();
+        BackdropBlurPolicy policy = backdropBlurPolicy == null ? BackdropBlurPolicy.inheritGlobal()
+                : backdropBlurPolicy;
+        if (!policy.resolveHostBackgroundBlurEnabled(config) || capturedBackgroundTextureId == 0
                 || nativeWidth <= 0 || nativeHeight <= 0) {
             return;
         }
@@ -76,7 +81,7 @@ final class UiHostBackgroundBlurRenderer {
             GL11.glBlendFunc(GL11.GL_ONE, GL11.GL_ONE);
             GL11.glBindTexture(GL11.GL_TEXTURE_2D, capturedBackgroundTextureId);
 
-            float strength = config.getHostBackgroundBlurStrength();
+            float strength = policy.resolveHostBackgroundBlurStrength(config);
             for (float[] sample : BLUR_SAMPLES) {
                 float weight = sample[2] / totalWeight;
                 GL11.glColor4f(weight, weight, weight, weight);
