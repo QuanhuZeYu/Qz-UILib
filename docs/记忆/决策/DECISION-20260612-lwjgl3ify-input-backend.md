@@ -34,7 +34,7 @@
 - `src/main/java/club/heiqi/uilib/ui/input/` 新增内部输入后端协作者。
 - `src/main/java/club/heiqi/uilib/ui/event/UiKeyCodes.java` 记录业务层使用的 LWJGL2/MC 键码常量；控件、HTML-like 文档默认行为、remote 表单、配置页、devtools 断言和纯 JVM 测试不再直接 import `org.lwjglx.input.Keyboard`。
 - `src/main/java/club/heiqi/uilib/ui/input/LwjglInputRuntime.java` 集中封装 `Keyboard` / `Mouse` 反射访问，不新增 legacy `org.lwjgl.lwjgl:lwjgl` 显式运行依赖。
-- `LwjglxPollingInputBackend` fallback 只承诺基础按键、鼠标与滚轮；复杂文本输入和 IME 明确降级。`InputEvents` 注册失败时键盘可兜底到轮询，文本事件仍不会由轮询后端合成。
+- `LwjglxPollingInputBackend` fallback 承诺基础按键、鼠标、滚轮与 BMP 可打印字符输入；字符输入不读取 LWJGL 事件队列，而是复用 `BaseScreen.keyTyped(...)` 已翻译出的 `typedChar` 合成 `UiTextInputEvent`。IME、组合输入和补充平面字符仍依赖 `lwjgl3ify` `InputEvents`。
 - **键盘事件语义降级**：fallback 模式不支持 `UiKeyEvent.Action.REPEATED`；`LwjglxPollingInputBackend` 只能检测按键状态变化（`PRESSED` / `RELEASED`），无法识别操作系统级别的按键重复事件。需要长按重复输入的控件（如文本框光标移动、数值调节）应在应用层自行实现定时器逻辑，或明确依赖 `InputEvents` 可用环境。
 - `SystemDocumentCursorHost` 移除 `Display` 静态 import；SDL 系统光标仍依赖 lwjgl3ify / LWJGLX 光标桥，缺失时降级为 no-op。
 
@@ -43,5 +43,6 @@
 - HUD immediate 与 collected 输入去重仍依赖 `UiInputService.suppressNextCollectedKeyboardEvent(...)`，后续改输入链路时必须保留同帧去重窗口。
 - 滚轮优先通过 `LwjglInputRuntime` 读取 `Mouse.totalScrollAmount`；无该扩展字段时再降级到事件滚轮。
 - `LwjglxPollingInputBackend` 与 `UiHostInputCoordinator` 仍是客户端宿主输入事件源边界，但应通过 `LwjglInputRuntime` 访问键鼠运行时；不要在普通控件、remote、config、devtools 或输入源实现中重新引入 `org.lwjglx.input.*` 静态 import。
+- 不要把 `LwjglxPollingInputBackend` 改成 `Keyboard.next()` / `getEventCharacter()` 事件迭代来获取文本字符；该队列同样由原版 `GuiScreen.handleKeyboardInput()` 消费，抢读会破坏宿主事件流。基础字符应继续走 `BaseScreen.keyTyped(...)` 宿主桥接。
 - 输入后端测试应使用包内替身或纯映射 helper，避免纯 JVM 测试为了类加载真实 `org.lwjgl.sdl` / OpenGL 运行态而新增 legacy LWJGL 运行依赖。
 - 后续若继续拆解渲染或字体依赖，应单独立项，不与 `lwjgl3ify` Mod API 解耦混在一起。

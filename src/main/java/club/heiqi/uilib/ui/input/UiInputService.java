@@ -111,6 +111,28 @@ public class UiInputService {
         backend.endTextInput();
     }
 
+    /**
+     * 提交宿主界面已翻译出的字符，供无增强输入事件的后端合成文本输入。
+     *
+     * @param typedChar 已翻译字符
+     * @param keyCode 原始键码
+     */
+    public void submitHostTypedCharacter(char typedChar, int keyCode) {
+        if (!initialized.get()) {
+            return;
+        }
+        backend.handleHostTypedCharacter(typedChar, keyCode);
+    }
+
+    /**
+     * 设置宿主键盘重复事件开关。
+     *
+     * @param enabled true 表示开启重复事件
+     */
+    public void setHostKeyboardRepeatEnabled(boolean enabled) {
+        backend.setHostKeyboardRepeatEnabled(enabled);
+    }
+
     public int getMouseX() {
         return mouseX;
     }

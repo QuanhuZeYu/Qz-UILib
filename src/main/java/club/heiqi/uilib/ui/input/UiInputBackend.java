@@ -26,6 +26,21 @@ interface UiInputBackend {
     void endTextInput();
 
     /**
+     * 处理宿主 `GuiScreen.keyTyped(...)` 已翻译出的字符。
+     *
+     * @param typedChar 已翻译字符
+     * @param keyCode 原始键码
+     */
+    void handleHostTypedCharacter(char typedChar, int keyCode);
+
+    /**
+     * 设置宿主键盘重复事件开关。
+     *
+     * @param enabled true 表示开启重复事件
+     */
+    void setHostKeyboardRepeatEnabled(boolean enabled);
+
+    /**
      * 基于当前原生键盘事件构造即时输入快照。
      *
      * @return 即时输入快照；当前事件无效时返回 null

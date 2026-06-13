@@ -14,6 +14,7 @@ import java.util.stream.Stream;
 import org.junit.Assert;
 import org.junit.Test;
 
+import club.heiqi.uilib.ui.event.UiKeyCodes;
 import club.heiqi.uilib.ui.event.UiKeyEvent;
 
 /**
@@ -55,6 +56,43 @@ public class Lwjgl3ifyInputBackendTest {
 
         Assert.assertEquals(1, pollingBackend.initializeCount);
         Assert.assertEquals(0, fallback.runCount);
+    }
+
+    /**
+     * 验证监听注册成功后宿主 `keyTyped` 字符不会再次写入文本队列。
+     */
+    @Test
+    public void shouldIgnoreHostTypedCharacterWhenListenerRegistrationSucceeds() throws Exception {
+        UiInputService inputService = createInputService();
+        RecordingInputBackend pollingBackend = new RecordingInputBackend();
+        Lwjgl3ifyInputBackend backend = createBackend(inputService, SuccessfulInputEvents.class,
+                SuccessfulInputEvents.class.getMethod("addKeyboardListener", Object.class), new Object(), pollingBackend,
+                new RecordingFallback());
+
+        backend.initialize();
+        backend.handleHostTypedCharacter('A', UiKeyCodes.KEY_A);
+
+        Assert.assertEquals(0, pollingBackend.hostTypedCharacterCount);
+        Assert.assertTrue(inputService.collectFrame().getTextEvents().isEmpty());
+    }
+
+    /**
+     * 验证监听注册失败后宿主 `keyTyped` 字符会转交轮询后端并进入文本队列。
+     */
+    @Test
+    public void shouldDelegateHostTypedCharacterToPollingFallbackWhenRegistrationFails() throws Exception {
+        UiInputService inputService = createInputService();
+        LwjglxPollingInputBackend pollingBackend = new LwjglxPollingInputBackend(inputService, false);
+        Lwjgl3ifyInputBackend backend = createBackend(inputService, FailingInputEvents.class,
+                FailingInputEvents.class.getMethod("addKeyboardListener", Object.class), new Object(), pollingBackend,
+                new RecordingFallback());
+
+        backend.initialize();
+        backend.handleHostTypedCharacter('9', UiKeyCodes.KEY_9);
+
+        UiInputFrame frame = inputService.collectFrame();
+        Assert.assertEquals(1, frame.getTextEvents().size());
+        Assert.assertEquals("9", frame.getTextEvents().get(0).getText());
     }
 
     /**
@@ -171,6 +209,8 @@ public class Lwjgl3ifyInputBackendTest {
     private static final class RecordingInputBackend implements UiInputBackend {
 
         private int initializeCount;
+        private int hostTypedCharacterCount;
+        private int keyboardRepeatChangeCount;
 
         @Override
         public void initialize() {
@@ -185,6 +225,16 @@ public class Lwjgl3ifyInputBackendTest {
 
         @Override
         public void endTextInput() {}
+
+        @Override
+        public void handleHostTypedCharacter(char typedChar, int keyCode) {
+            hostTypedCharacterCount++;
+        }
+
+        @Override
+        public void setHostKeyboardRepeatEnabled(boolean enabled) {
+            keyboardRepeatChangeCount++;
+        }
 
         @Override
         public UiInputFrame createImmediateKeyboardFrame() {
