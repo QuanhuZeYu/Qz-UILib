@@ -4,7 +4,13 @@
 
 Config 模块是一个独立的配置管理库，支持 JSON 和 YAML 格式，提供比 Forge Configuration 更强大的嵌套结构支持。
 
-### 基本使用
+**核心特性**：
+- 支持只读配置（`ConfigNode`）和可变配置（`MutableConfig`）
+- 内存数据与文件自动同步
+- 配置变更监听和通知
+- 链式调用 API
+
+### 只读配置（基本使用）
 
 ```java
 import club.heiqi.config.Config;
@@ -155,6 +161,202 @@ try {
 }
 ```
 
+## 可变配置（推荐）
+
+### 创建和修改配置
+
+```java
+import club.heiqi.config.Config;
+import club.heiqi.config.MutableConfig;
+import club.heiqi.config.ConfigFormat;
+import java.io.File;
+
+// 创建新的配置文件
+File configFile = new File("config/mymod.json");
+MutableConfig config = Config.createMutable(configFile, ConfigFormat.JSON);
+
+// 设置配置值（支持链式调用）
+config.set("server.host", "localhost")
+      .set("server.port", 8080)
+      .set("database.credentials.username", "admin")
+      .set("database.credentials.password", "secret")
+      .set("debug", true);
+
+// 保存到文件
+config.save();
+```
+
+### 加载和修改现有配置
+
+```java
+// 从文件加载
+MutableConfig config = Config.loadMutable(new File("config/mymod.json"));
+
+// 读取值
+String host = config.get("server.host").asString("localhost");
+int port = config.get("server.port").asInt(8080);
+
+// 修改值
+config.set("server.port", 9090);
+config.set("features.newFeature", true);
+
+// 移除配置项
+config.remove("debug");
+
+// 检查是否有未保存的修改
+if (config.isDirty()) {
+    config.save();
+}
+```
+
+### 配置自动同步
+
+```java
+// 场景：游戏运行时修改配置
+
+MutableConfig config = Config.loadMutable(new File("config/settings.json"));
+
+// 1. 玩家修改配置
+config.set("graphics.quality", "high");
+config.set("audio.volume", 80);
+
+// 2. 自动保存（脏标记跟踪）
+if (config.isDirty()) {
+    config.save();
+    System.out.println("配置已保存");
+}
+
+// 3. 重新加载（撤销未保存的修改）
+config.set("graphics.quality", "low");  // 临时修改
+config.reload();  // 从文件重新加载，放弃未保存的修改
+```
+
+### 配置变更监听
+
+```java
+MutableConfig config = Config.loadMutable(new File("config/settings.json"));
+
+// 添加监听器
+config.addChangeListener(new ConfigChangeListener() {
+    @Override
+    public void onConfigChanged(ConfigChangeEvent event) {
+        System.out.println("配置项 " + event.getPath() + " 已变更");
+        System.out.println("  旧值: " + event.getOldValue());
+        System.out.println("  新值: " + event.getNewValue());
+        System.out.println("  类型: " + event.getType());
+        
+        // 根据变更类型执行操作
+        switch (event.getType()) {
+            case SET:
+                // 配置项被设置
+                applyConfigChange(event.getPath(), event.getNewValue());
+                break;
+            case REMOVE:
+                // 配置项被移除
+                revertToDefault(event.getPath());
+                break;
+            case RELOAD:
+                // 配置被重新加载
+                reloadAllSettings();
+                break;
+        }
+    }
+});
+
+// 修改配置会触发监听器
+config.set("volume", 80);  // 触发 onConfigChanged
+```
+
+### 实用模式
+
+#### 模式 1：配置管理器
+
+```java
+public class ModConfig {
+    private static MutableConfig config;
+    
+    public static void init(File configFile) throws ConfigException {
+        // 加载或创建配置
+        config = Config.loadMutable(configFile);
+        
+        // 设置默认值（如果不存在）
+        if (!config.has("version")) {
+            config.set("version", 1);
+        }
+        if (!config.has("server.host")) {
+            config.set("server.host", "localhost");
+        }
+        
+        // 保存默认值
+        if (config.isDirty()) {
+            config.save();
+        }
+        
+        // 添加监听器
+        config.addChangeListener(new ConfigChangeListener() {
+            @Override
+            public void onConfigChanged(ConfigChangeEvent event) {
+                // 实时应用配置变更
+                applyConfig();
+            }
+        });
+    }
+    
+    public static String getServerHost() {
+        return config.get("server.host").asString("localhost");
+    }
+    
+    public static void setServerHost(String host) throws ConfigException {
+        config.set("server.host", host);
+        config.save();
+    }
+    
+    public static void save() throws ConfigException {
+        config.save();
+    }
+}
+```
+
+#### 模式 2：定期自动保存
+
+```java
+public class AutoSaveConfig {
+    private final MutableConfig config;
+    private final Timer saveTimer;
+    
+    public AutoSaveConfig(File file) throws ConfigException {
+        this.config = Config.loadMutable(file);
+        
+        // 每 5 分钟自动保存
+        this.saveTimer = new Timer(true);
+        saveTimer.scheduleAtFixedRate(new TimerTask() {
+            @Override
+            public void run() {
+                if (config.isDirty()) {
+                    try {
+                        config.save();
+                        System.out.println("配置已自动保存");
+                    } catch (ConfigException e) {
+                        e.printStackTrace();
+                    }
+                }
+            }
+        }, 5 * 60 * 1000, 5 * 60 * 1000);
+    }
+    
+    public MutableConfig getConfig() {
+        return config;
+    }
+    
+    public void shutdown() throws ConfigException {
+        saveTimer.cancel();
+        if (config.isDirty()) {
+            config.save();
+        }
+    }
+}
+```
+
 ### 高级用法
 
 #### 遍历配置映射
@@ -206,12 +408,35 @@ ConfigNode config = Config.load(
 | LIST | 列表/数组 | `[1, 2, 3]`, YAML 列表 |
 | MAP | 映射表/对象 | `{"key": "value"}`, YAML 映射 |
 
+## API 对比
+
+### ConfigNode vs MutableConfig
+
+| 特性 | ConfigNode（只读） | MutableConfig（可变） |
+|------|-------------------|---------------------|
+| 读取配置 | ✓ | ✓ |
+| 修改配置 | ✗ | ✓ (set/remove/clear) |
+| 保存到文件 | ✗ | ✓ (save/saveTo) |
+| 重新加载 | ✗ | ✓ (reload) |
+| 变更监听 | ✗ | ✓ (addChangeListener) |
+| 脏标记 | ✗ | ✓ (isDirty) |
+| 线程安全 | ✓（不可变） | ✗（需外部同步） |
+| 使用场景 | 临时读取、传递配置 | 配置管理、实时修改 |
+
+**选择建议**：
+- 只需要读取配置 → 使用 `ConfigNode`
+- 需要修改并保存配置 → 使用 `MutableConfig`
+- 需要配置热更新 → 使用 `MutableConfig` + 监听器
+
 ## 注意事项
 
 1. **YAML 限制**：当前 YAML 实现为简化版本，不支持锚点、别名、多行字符串等高级特性
 2. **路径分隔符**：使用点号 `.` 分隔嵌套路径，如 `"database.credentials.username"`
 3. **类型安全**：建议使用带默认值的方法（如 `asInt(defaultValue)`）避免异常
-4. **线程安全**：ConfigNode 是不可变的，可以安全地在多线程环境中共享
+4. **线程安全**：
+   - `ConfigNode` 是不可变的，可以安全地在多线程环境中共享
+   - `MutableConfig` 不是线程安全的，需要外部同步
+5. **内存占用**：`MutableConfig` 会在内存中保持完整的配置树，大型配置文件请注意内存使用
 
 ## 与 Forge Configuration 对比
 
