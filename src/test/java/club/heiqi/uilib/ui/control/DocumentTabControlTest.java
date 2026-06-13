@@ -5,8 +5,7 @@ import java.util.List;
 
 import org.junit.Assert;
 import org.junit.Test;
-import org.lwjglx.input.Keyboard;
-
+import club.heiqi.uilib.ui.event.UiKeyCodes;
 import club.heiqi.uilib.ui.dom.DocumentElementClickEvent;
 import club.heiqi.uilib.ui.dom.DocumentElementKeyEvent;
 import club.heiqi.uilib.ui.dom.ElementNode;
@@ -89,7 +88,7 @@ public class DocumentTabControlTest {
                     }
                 });
         ElementNode tabBar = (ElementNode) tabs.getElement().getChildren().get(0);
-        DocumentElementKeyEvent keyEvent = keyEvent(tabAt(tabs, 0), tabBar, Keyboard.KEY_RIGHT, 1L);
+        DocumentElementKeyEvent keyEvent = keyEvent(tabAt(tabs, 0), tabBar, UiKeyCodes.KEY_RIGHT, 1L);
 
         Assert.assertTrue(tabBar.getKeyHandler().onKey(keyEvent));
 
@@ -201,7 +200,7 @@ public class DocumentTabControlTest {
                 });
         ElementNode tabBar = (ElementNode) tabs.getElement().getChildren().get(0);
 
-        Assert.assertFalse(tabBar.getKeyHandler().onKey(keyEvent(tabAt(tabs, 0), tabBar, Keyboard.KEY_RIGHT, 1L)));
+        Assert.assertFalse(tabBar.getKeyHandler().onKey(keyEvent(tabAt(tabs, 0), tabBar, UiKeyCodes.KEY_RIGHT, 1L)));
 
         Assert.assertEquals(0, tabs.getActiveIndex());
         Assert.assertTrue(events.isEmpty());

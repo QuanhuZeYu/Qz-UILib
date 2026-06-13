@@ -5,8 +5,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
-import org.lwjglx.input.Keyboard;
-
+import club.heiqi.uilib.ui.event.UiKeyCodes;
 import club.heiqi.uilib.ui.dom.DocumentElementKeyEvent;
 import club.heiqi.uilib.ui.dom.DocumentElementKeyHandler;
 import club.heiqi.uilib.ui.dom.DocumentElementTextInputEvent;
@@ -204,8 +203,8 @@ final class DocumentKeyboardEventDispatcher {
             return;
         }
         int keyCode = event.getKeyCode();
-        boolean isEnter = keyCode == Keyboard.KEY_RETURN || keyCode == Keyboard.KEY_NUMPADENTER;
-        boolean isSpace = keyCode == Keyboard.KEY_SPACE;
+        boolean isEnter = keyCode == UiKeyCodes.KEY_RETURN || keyCode == UiKeyCodes.KEY_NUMPADENTER;
+        boolean isSpace = keyCode == UiKeyCodes.KEY_SPACE;
         if (!isEnter && !isSpace) {
             return;
         }
@@ -230,7 +229,7 @@ final class DocumentKeyboardEventDispatcher {
         if (target == null || event == null || !"button".equals(target.getTagName())) {
             return;
         }
-        if (event.getKeyCode() == Keyboard.KEY_SPACE) {
+        if (event.getKeyCode() == UiKeyCodes.KEY_SPACE) {
             rawButtonSpacePressed.remove(target.__getElementUid());
         }
     }

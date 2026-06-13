@@ -10,8 +10,7 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
 
-import org.lwjglx.input.Keyboard;
-
+import club.heiqi.uilib.ui.event.UiKeyCodes;
 import club.heiqi.uilib.ui.document.HtmlLikeDocumentWidget;
 import club.heiqi.uilib.ui.dom.ElementNode;
 import club.heiqi.uilib.ui.dom.TextNode;
@@ -310,11 +309,11 @@ public class ForgeConfigTemplateScreen extends BaseScreen {
             if (keyEvent == null || keyEvent.getAction() != UiKeyEvent.Action.PRESSED) {
                 continue;
             }
-            if (keyEvent.getKeyCode() == Keyboard.KEY_ESCAPE) {
+            if (keyEvent.getKeyCode() == UiKeyCodes.KEY_ESCAPE) {
                 requestClose();
                 return true;
             }
-            if (keyEvent.getKeyCode() == Keyboard.KEY_S && keyEvent.isControlPressed()) {
+            if (keyEvent.getKeyCode() == UiKeyCodes.KEY_S && keyEvent.isControlPressed()) {
                 saveDraft();
                 return true;
             }

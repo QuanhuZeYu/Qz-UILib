@@ -6,8 +6,7 @@ import java.util.List;
 
 import org.junit.Assert;
 import org.junit.Test;
-import org.lwjglx.input.Keyboard;
-
+import club.heiqi.uilib.ui.event.UiKeyCodes;
 import club.heiqi.uilib.ui.document.HtmlLikeDocumentWidget;
 import club.heiqi.uilib.ui.dom.ElementNode;
 import club.heiqi.uilib.ui.dom.UiDocument;
@@ -18,6 +17,7 @@ import club.heiqi.uilib.ui.style.cascade.UiBorderRadiusResolver;
 import club.heiqi.uilib.ui.style.props.UiBorderStyle;
 import club.heiqi.uilib.ui.style.values.UiStyleLength;
 import club.heiqi.uilib.ui.text.TextContentMode;
+import club.heiqi.uilib.ui.text.TextMeasureStyle;
 import club.heiqi.uilib.ui.text.TextMeasureService;
 import club.heiqi.uilib.ui.style.values.UiSurfaceStyle;
 
@@ -54,12 +54,12 @@ public class DocumentButtonControlTest {
 
         widget.onMouseDown(new UiMouseEvent(UiMouseEvent.Action.BUTTON_DOWN, 8, 8, 0, 0, 0, 0, 1L));
         widget.onMouseUp(new UiMouseEvent(UiMouseEvent.Action.BUTTON_UP, 8, 8, 0, 0, 0, 0, 2L));
-        widget.onKeyEvent(new UiKeyEvent(Keyboard.KEY_SPACE, 0, 0, UiKeyEvent.Action.PRESSED, false, false, false,
+        widget.onKeyEvent(new UiKeyEvent(UiKeyCodes.KEY_SPACE, 0, 0, UiKeyEvent.Action.PRESSED, false, false, false,
                 false, 3L));
         Assert.assertEquals(1, events.size());
-        widget.onKeyEvent(new UiKeyEvent(Keyboard.KEY_SPACE, 0, 0, UiKeyEvent.Action.RELEASED, false, false, false,
+        widget.onKeyEvent(new UiKeyEvent(UiKeyCodes.KEY_SPACE, 0, 0, UiKeyEvent.Action.RELEASED, false, false, false,
                 false, 4L));
-        widget.onKeyEvent(new UiKeyEvent(Keyboard.KEY_RETURN, 0, 0, UiKeyEvent.Action.PRESSED, false, false, false,
+        widget.onKeyEvent(new UiKeyEvent(UiKeyCodes.KEY_RETURN, 0, 0, UiKeyEvent.Action.PRESSED, false, false, false,
                 false, 5L));
 
         Assert.assertEquals(3, events.size());
@@ -71,8 +71,8 @@ public class DocumentButtonControlTest {
         Assert.assertFalse(events.get(0).isKeyboardTriggered());
         Assert.assertEquals(0, events.get(0).getButton());
         Assert.assertTrue(events.get(1).isKeyboardTriggered());
-        Assert.assertEquals(Keyboard.KEY_SPACE, events.get(1).getKeyCode());
-        Assert.assertEquals(Keyboard.KEY_RETURN, events.get(2).getKeyCode());
+        Assert.assertEquals(UiKeyCodes.KEY_SPACE, events.get(1).getKeyCode());
+        Assert.assertEquals(UiKeyCodes.KEY_RETURN, events.get(2).getKeyCode());
     }
 
     /**
@@ -104,7 +104,7 @@ public class DocumentButtonControlTest {
         widget.onFocusTraversalEntered(false);
         widget.onMouseDown(new UiMouseEvent(UiMouseEvent.Action.BUTTON_DOWN, 8, 8, 0, 0, 0, 0, 1L));
         widget.onMouseUp(new UiMouseEvent(UiMouseEvent.Action.BUTTON_UP, 8, 8, 0, 0, 0, 0, 2L));
-        widget.onKeyEvent(new UiKeyEvent(Keyboard.KEY_RETURN, 0, 0, UiKeyEvent.Action.PRESSED, false, false, false,
+        widget.onKeyEvent(new UiKeyEvent(UiKeyCodes.KEY_RETURN, 0, 0, UiKeyEvent.Action.PRESSED, false, false, false,
                 false, 3L));
 
         Assert.assertNull(widget.getFocusedElement());
@@ -191,6 +191,10 @@ public class DocumentButtonControlTest {
         @Override
         public void drawText(String text, int x, int y, int color, boolean shadow,
                 TextContentMode textContentMode) {}
+
+        @Override
+        protected void drawTextResolved(String text, int x, int y, int color, boolean shadow,
+                TextMeasureStyle resolvedStyle) {}
 
         @Override
         public boolean supportsDeferredTextBatching() {

@@ -6,8 +6,7 @@ import java.util.List;
 
 import org.junit.Assert;
 import org.junit.Test;
-import org.lwjglx.input.Keyboard;
-
+import club.heiqi.uilib.ui.event.UiKeyCodes;
 import club.heiqi.uilib.ui.document.HtmlLikeDocumentWidget;
 import club.heiqi.uilib.ui.dom.DocumentElementBounds;
 import club.heiqi.uilib.ui.dom.DocumentElementKeyEvent;
@@ -116,11 +115,11 @@ public class DocumentTextInputControlTest {
         widget.applyLayoutBounds(0, 0, 200, 40);
 
         widget.onFocusTraversalEntered(true);
-        widget.onKeyEvent(new UiKeyEvent(Keyboard.KEY_BACK, 0, 0, UiKeyEvent.Action.PRESSED, false, false, false,
+        widget.onKeyEvent(new UiKeyEvent(UiKeyCodes.KEY_BACK, 0, 0, UiKeyEvent.Action.PRESSED, false, false, false,
                 false, 1L));
-        widget.onKeyEvent(new UiKeyEvent(Keyboard.KEY_BACK, 0, 0, UiKeyEvent.Action.PRESSED, false, false, false,
+        widget.onKeyEvent(new UiKeyEvent(UiKeyCodes.KEY_BACK, 0, 0, UiKeyEvent.Action.PRESSED, false, false, false,
                 false, 2L));
-        widget.onKeyEvent(new UiKeyEvent(Keyboard.KEY_BACK, 0, 0, UiKeyEvent.Action.PRESSED, false, false, false,
+        widget.onKeyEvent(new UiKeyEvent(UiKeyCodes.KEY_BACK, 0, 0, UiKeyEvent.Action.PRESSED, false, false, false,
                 false, 3L));
 
         Assert.assertEquals("abc", textInputControl.getText());
@@ -148,11 +147,11 @@ public class DocumentTextInputControlTest {
         widget.onFocusTraversalEntered(true);
         widget.onTextInput(new UiTextInputEvent("A\ud83d\ude00B", 1L));
 
-        widget.onKeyEvent(new UiKeyEvent(Keyboard.KEY_BACK, 0, 0, UiKeyEvent.Action.PRESSED, false, false, false,
+        widget.onKeyEvent(new UiKeyEvent(UiKeyCodes.KEY_BACK, 0, 0, UiKeyEvent.Action.PRESSED, false, false, false,
                 false, 2L));
-        widget.onKeyEvent(new UiKeyEvent(Keyboard.KEY_BACK, 0, 0, UiKeyEvent.Action.PRESSED, false, false, false,
+        widget.onKeyEvent(new UiKeyEvent(UiKeyCodes.KEY_BACK, 0, 0, UiKeyEvent.Action.PRESSED, false, false, false,
                 false, 3L));
-        widget.onKeyEvent(new UiKeyEvent(Keyboard.KEY_BACK, 0, 0, UiKeyEvent.Action.PRESSED, false, false, false,
+        widget.onKeyEvent(new UiKeyEvent(UiKeyCodes.KEY_BACK, 0, 0, UiKeyEvent.Action.PRESSED, false, false, false,
                 false, 4L));
 
         Assert.assertEquals("", textInputControl.getText());
@@ -372,7 +371,7 @@ public class DocumentTextInputControlTest {
         widget.onTextInput(new UiTextInputEvent("A", 1L));
         widget.onTextInput(new UiTextInputEvent("B", 2L));
         widget.onTextInput(new UiTextInputEvent("C", 3L));
-        widget.onKeyEvent(new UiKeyEvent(Keyboard.KEY_BACK, 0, 0, UiKeyEvent.Action.PRESSED, false, false, false,
+        widget.onKeyEvent(new UiKeyEvent(UiKeyCodes.KEY_BACK, 0, 0, UiKeyEvent.Action.PRESSED, false, false, false,
                 false, 1L));
 
         Assert.assertEquals(4, changeTexts.size());
@@ -397,7 +396,7 @@ public class DocumentTextInputControlTest {
                 if (event.getAction() != UiKeyEvent.Action.PRESSED) {
                     return false;
                 }
-                if (event.getKeyCode() != Keyboard.KEY_RETURN) {
+                if (event.getKeyCode() != UiKeyCodes.KEY_RETURN) {
                     return false;
                 }
                 enterKeys.add(Integer.valueOf(event.getKeyCode()));
@@ -417,14 +416,14 @@ public class DocumentTextInputControlTest {
 
         widget.onFocusTraversalEntered(true);
         widget.onTextInput(new UiTextInputEvent("AB", 1L));
-        widget.onKeyEvent(new UiKeyEvent(Keyboard.KEY_BACK, 0, 0, UiKeyEvent.Action.PRESSED, false, false, false,
+        widget.onKeyEvent(new UiKeyEvent(UiKeyCodes.KEY_BACK, 0, 0, UiKeyEvent.Action.PRESSED, false, false, false,
                 false, 2L));
-        widget.onKeyEvent(new UiKeyEvent(Keyboard.KEY_RETURN, 0, 0, UiKeyEvent.Action.PRESSED, false, false, false,
+        widget.onKeyEvent(new UiKeyEvent(UiKeyCodes.KEY_RETURN, 0, 0, UiKeyEvent.Action.PRESSED, false, false, false,
                 false, 3L));
 
         Assert.assertEquals("A", textInputControl.getText());
         Assert.assertEquals(1, enterKeys.size());
-        Assert.assertEquals(Integer.valueOf(Keyboard.KEY_RETURN), enterKeys.get(0));
+        Assert.assertEquals(Integer.valueOf(UiKeyCodes.KEY_RETURN), enterKeys.get(0));
     }
 
     /**

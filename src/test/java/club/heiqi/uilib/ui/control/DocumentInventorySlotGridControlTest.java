@@ -6,8 +6,7 @@ import java.util.List;
 
 import org.junit.Assert;
 import org.junit.Test;
-import org.lwjglx.input.Keyboard;
-
+import club.heiqi.uilib.ui.event.UiKeyCodes;
 import club.heiqi.uilib.ui.document.HtmlLikeDocumentWidget;
 import club.heiqi.uilib.ui.dom.DocumentElementActiveEvent;
 import club.heiqi.uilib.ui.dom.DocumentElementClickEvent;
@@ -401,11 +400,11 @@ public class DocumentInventorySlotGridControlTest {
 
         Assert.assertTrue(firstSlot.isFocusable());
         Assert.assertTrue(firstSlot.getKeyHandler().onKey(new DocumentElementKeyEvent(firstSlot, firstSlot,
-                new UiKeyEvent(Keyboard.KEY_SPACE, 0, 0, UiKeyEvent.Action.PRESSED, false, false, false,
+                new UiKeyEvent(UiKeyCodes.KEY_SPACE, 0, 0, UiKeyEvent.Action.PRESSED, false, false, false,
                         false, 4L))));
         Assert.assertTrue(clickedSlots.isEmpty());
         Assert.assertTrue(firstSlot.getKeyHandler().onKey(new DocumentElementKeyEvent(firstSlot, firstSlot,
-                new UiKeyEvent(Keyboard.KEY_SPACE, 0, 0, UiKeyEvent.Action.RELEASED, false, false, false,
+                new UiKeyEvent(UiKeyCodes.KEY_SPACE, 0, 0, UiKeyEvent.Action.RELEASED, false, false, false,
                         false, 5L))));
 
         Assert.assertEquals(Collections.singletonList(Integer.valueOf(0)), clickedSlots);

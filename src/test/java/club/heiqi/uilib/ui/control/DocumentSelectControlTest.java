@@ -5,8 +5,7 @@ import java.util.List;
 
 import org.junit.Assert;
 import org.junit.Test;
-import org.lwjglx.input.Keyboard;
-
+import club.heiqi.uilib.ui.event.UiKeyCodes;
 import club.heiqi.uilib.ui.document.HtmlLikeDocumentWidget;
 import club.heiqi.uilib.ui.dom.ElementNode;
 import club.heiqi.uilib.ui.dom.UiDocument;
@@ -354,11 +353,11 @@ public class DocumentSelectControlTest {
         widget.applyLayoutBounds(0, 0, 240, 120);
 
         widget.onFocusTraversalEntered(false);
-        widget.onKeyEvent(new UiKeyEvent(Keyboard.KEY_DOWN, 0, 0, UiKeyEvent.Action.PRESSED, false, false, false,
+        widget.onKeyEvent(new UiKeyEvent(UiKeyCodes.KEY_DOWN, 0, 0, UiKeyEvent.Action.PRESSED, false, false, false,
                 false, 1L));
-        widget.onKeyEvent(new UiKeyEvent(Keyboard.KEY_RETURN, 0, 0, UiKeyEvent.Action.PRESSED, false, false, false,
+        widget.onKeyEvent(new UiKeyEvent(UiKeyCodes.KEY_RETURN, 0, 0, UiKeyEvent.Action.PRESSED, false, false, false,
                 false, 2L));
-        widget.onKeyEvent(new UiKeyEvent(Keyboard.KEY_ESCAPE, 0, 0, UiKeyEvent.Action.PRESSED, false, false, false,
+        widget.onKeyEvent(new UiKeyEvent(UiKeyCodes.KEY_ESCAPE, 0, 0, UiKeyEvent.Action.PRESSED, false, false, false,
                 false, 3L));
 
         Assert.assertEquals(1, selectControl.getSelectedIndex());
@@ -366,7 +365,7 @@ public class DocumentSelectControlTest {
         Assert.assertEquals("false", selectControl.getElement().getAttribute("aria-expanded"));
         Assert.assertEquals(1, events.size());
         Assert.assertTrue(events.get(0).isKeyboardTriggered());
-        Assert.assertEquals(Keyboard.KEY_DOWN, events.get(0).getKeyCode());
+        Assert.assertEquals(UiKeyCodes.KEY_DOWN, events.get(0).getKeyCode());
     }
 
     /**
@@ -388,9 +387,9 @@ public class DocumentSelectControlTest {
         widget.applyLayoutBounds(0, 0, 240, 260);
 
         widget.onFocusTraversalEntered(false);
-        widget.onKeyEvent(new UiKeyEvent(Keyboard.KEY_RETURN, 0, 0, UiKeyEvent.Action.PRESSED, false, false, false,
+        widget.onKeyEvent(new UiKeyEvent(UiKeyCodes.KEY_RETURN, 0, 0, UiKeyEvent.Action.PRESSED, false, false, false,
                 false, 1L));
-        widget.onKeyEvent(new UiKeyEvent(Keyboard.KEY_END, 0, 0, UiKeyEvent.Action.PRESSED, false, false, false,
+        widget.onKeyEvent(new UiKeyEvent(UiKeyCodes.KEY_END, 0, 0, UiKeyEvent.Action.PRESSED, false, false, false,
                 false, 2L));
 
         ElementNode popup = findListboxElement(root);
@@ -474,9 +473,9 @@ public class DocumentSelectControlTest {
         widget.applyLayoutBounds(0, 0, 240, 220);
 
         widget.onFocusTraversalEntered(false);
-        widget.onKeyEvent(new UiKeyEvent(Keyboard.KEY_RETURN, 0, 0, UiKeyEvent.Action.PRESSED, false, false, false,
+        widget.onKeyEvent(new UiKeyEvent(UiKeyCodes.KEY_RETURN, 0, 0, UiKeyEvent.Action.PRESSED, false, false, false,
                 false, 1L));
-        widget.onKeyEvent(new UiKeyEvent(Keyboard.KEY_END, 0, 0, UiKeyEvent.Action.PRESSED, false, false, false,
+        widget.onKeyEvent(new UiKeyEvent(UiKeyCodes.KEY_END, 0, 0, UiKeyEvent.Action.PRESSED, false, false, false,
                 false, 2L));
         ElementNode popup = findListboxElement(root);
 

@@ -3,8 +3,7 @@ package club.heiqi.uilib.ui.control;
 import java.util.ArrayList;
 import java.util.List;
 
-import org.lwjglx.input.Keyboard;
-
+import club.heiqi.uilib.ui.event.UiKeyCodes;
 import club.heiqi.uilib.ui.dom.DocumentElementClickEvent;
 import club.heiqi.uilib.ui.dom.DocumentElementClickHandler;
 import club.heiqi.uilib.ui.dom.DocumentElementFocusEvent;
@@ -416,24 +415,24 @@ public final class DocumentTabControl {
                     return false;
                 }
                 int keyCode = event.getKeyCode();
-                if (keyCode == Keyboard.KEY_LEFT) {
+                if (keyCode == UiKeyCodes.KEY_LEFT) {
                     moveFocus(-1, event);
                     return true;
                 }
-                if (keyCode == Keyboard.KEY_RIGHT) {
+                if (keyCode == UiKeyCodes.KEY_RIGHT) {
                     moveFocus(1, event);
                     return true;
                 }
-                if (keyCode == Keyboard.KEY_HOME) {
+                if (keyCode == UiKeyCodes.KEY_HOME) {
                     focusAndActivate(0, event);
                     return true;
                 }
-                if (keyCode == Keyboard.KEY_END) {
+                if (keyCode == UiKeyCodes.KEY_END) {
                     focusAndActivate(tabs.size() - 1, event);
                     return true;
                 }
-                if (keyCode == Keyboard.KEY_SPACE || keyCode == Keyboard.KEY_RETURN
-                        || keyCode == Keyboard.KEY_NUMPADENTER) {
+                if (keyCode == UiKeyCodes.KEY_SPACE || keyCode == UiKeyCodes.KEY_RETURN
+                        || keyCode == UiKeyCodes.KEY_NUMPADENTER) {
                     selectIndex(focusedIndex < 0 ? 0 : focusedIndex, true, true);
                     return true;
                 }

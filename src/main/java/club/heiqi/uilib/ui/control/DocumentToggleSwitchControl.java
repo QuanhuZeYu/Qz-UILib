@@ -1,7 +1,6 @@
 package club.heiqi.uilib.ui.control;
 
-import org.lwjglx.input.Keyboard;
-
+import club.heiqi.uilib.ui.event.UiKeyCodes;
 import club.heiqi.uilib.ui.dom.DocumentElementClickEvent;
 import club.heiqi.uilib.ui.dom.DocumentElementClickHandler;
 import club.heiqi.uilib.ui.dom.DocumentElementFocusEvent;
@@ -258,9 +257,9 @@ public final class DocumentToggleSwitchControl {
                 if (!isActivationKey(event.getKeyCode())) {
                     return false;
                 }
-                boolean isEnter = event.getKeyCode() == Keyboard.KEY_RETURN
-                        || event.getKeyCode() == Keyboard.KEY_NUMPADENTER;
-                boolean isSpace = event.getKeyCode() == Keyboard.KEY_SPACE;
+                boolean isEnter = event.getKeyCode() == UiKeyCodes.KEY_RETURN
+                        || event.getKeyCode() == UiKeyCodes.KEY_NUMPADENTER;
+                boolean isSpace = event.getKeyCode() == UiKeyCodes.KEY_SPACE;
                 if (isEnter && event.getAction() == UiKeyEvent.Action.PRESSED) {
                     if (enabled) {
                         toggle(true);
@@ -334,6 +333,6 @@ public final class DocumentToggleSwitchControl {
     }
 
     private static boolean isActivationKey(int keyCode) {
-        return keyCode == Keyboard.KEY_RETURN || keyCode == Keyboard.KEY_NUMPADENTER || keyCode == Keyboard.KEY_SPACE;
+        return keyCode == UiKeyCodes.KEY_RETURN || keyCode == UiKeyCodes.KEY_NUMPADENTER || keyCode == UiKeyCodes.KEY_SPACE;
     }
 }

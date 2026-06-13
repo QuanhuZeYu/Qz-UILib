@@ -1,7 +1,6 @@
 package club.heiqi.uilib.ui.control;
 
-import org.lwjglx.input.Keyboard;
-
+import club.heiqi.uilib.ui.event.UiKeyCodes;
 import club.heiqi.uilib.ui.dom.DocumentElementClickEvent;
 import club.heiqi.uilib.ui.dom.DocumentElementClickHandler;
 import club.heiqi.uilib.ui.dom.DocumentElementBounds;
@@ -390,27 +389,27 @@ public final class DocumentSliderControl {
 
     private boolean handleKey(int keyCode) {
         double delta = resolveKeyboardStep();
-        if (keyCode == Keyboard.KEY_LEFT || keyCode == Keyboard.KEY_DOWN) {
+        if (keyCode == UiKeyCodes.KEY_LEFT || keyCode == UiKeyCodes.KEY_DOWN) {
             setValueInternal(value - delta, true, true, true);
             return true;
         }
-        if (keyCode == Keyboard.KEY_RIGHT || keyCode == Keyboard.KEY_UP) {
+        if (keyCode == UiKeyCodes.KEY_RIGHT || keyCode == UiKeyCodes.KEY_UP) {
             setValueInternal(value + delta, true, true, true);
             return true;
         }
-        if (keyCode == Keyboard.KEY_PRIOR) {
+        if (keyCode == UiKeyCodes.KEY_PRIOR) {
             setValueInternal(value + delta * 10.0D, true, true, true);
             return true;
         }
-        if (keyCode == Keyboard.KEY_NEXT) {
+        if (keyCode == UiKeyCodes.KEY_NEXT) {
             setValueInternal(value - delta * 10.0D, true, true, true);
             return true;
         }
-        if (keyCode == Keyboard.KEY_HOME) {
+        if (keyCode == UiKeyCodes.KEY_HOME) {
             setValueInternal(min, true, true, true);
             return true;
         }
-        if (keyCode == Keyboard.KEY_END) {
+        if (keyCode == UiKeyCodes.KEY_END) {
             setValueInternal(max, true, true, true);
             return true;
         }

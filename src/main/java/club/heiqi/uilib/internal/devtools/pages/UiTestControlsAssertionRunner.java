@@ -3,8 +3,7 @@ package club.heiqi.uilib.internal.devtools.pages;
 import java.util.ArrayList;
 import java.util.List;
 
-import org.lwjglx.input.Keyboard;
-
+import club.heiqi.uilib.ui.event.UiKeyCodes;
 import club.heiqi.uilib.ui.document.HtmlLikeDocumentWidget;
 import club.heiqi.uilib.ui.dom.DocumentElementBounds;
 import club.heiqi.uilib.ui.dom.DocumentNode;
@@ -154,7 +153,7 @@ final class UiTestControlsAssertionRunner {
             return false;
         }
         textarea.focus();
-        widget.onKeyEvent(new UiKeyEvent(Keyboard.KEY_A, 0, 0, UiKeyEvent.Action.PRESSED, true, false, false,
+        widget.onKeyEvent(new UiKeyEvent(UiKeyCodes.KEY_A, 0, 0, UiKeyEvent.Action.PRESSED, true, false, false,
                 false, 121L));
         widget.onTextInput(new UiTextInputEvent("Done\nNext", 122L));
         DocumentLayoutBox textareaBox = resolveBox(widget, textarea);
@@ -184,7 +183,7 @@ final class UiTestControlsAssertionRunner {
             return false;
         }
         checkbox.focus();
-        widget.onKeyEvent(new UiKeyEvent(Keyboard.KEY_RETURN, 0, 0, UiKeyEvent.Action.PRESSED, false, false, false,
+        widget.onKeyEvent(new UiKeyEvent(UiKeyCodes.KEY_RETURN, 0, 0, UiKeyEvent.Action.PRESSED, false, false, false,
                 false, 131L));
         clickElement(widget, radioOptions.get(2), 133L);
         String log = logNode.getTextContent();
@@ -255,10 +254,10 @@ final class UiTestControlsAssertionRunner {
             return false;
         }
         slider.focus();
-        widget.onKeyEvent(new UiKeyEvent(Keyboard.KEY_RIGHT, 0, 0, UiKeyEvent.Action.PRESSED, false, false, false,
+        widget.onKeyEvent(new UiKeyEvent(UiKeyCodes.KEY_RIGHT, 0, 0, UiKeyEvent.Action.PRESSED, false, false, false,
                 false, 151L));
         toggle.focus();
-        widget.onKeyEvent(new UiKeyEvent(Keyboard.KEY_RETURN, 0, 0, UiKeyEvent.Action.PRESSED, false, false, false,
+        widget.onKeyEvent(new UiKeyEvent(UiKeyCodes.KEY_RETURN, 0, 0, UiKeyEvent.Action.PRESSED, false, false, false,
                 false, 152L));
         String log = logNode.getTextContent();
         diagnostics.add("sliderToggleLog=" + log);

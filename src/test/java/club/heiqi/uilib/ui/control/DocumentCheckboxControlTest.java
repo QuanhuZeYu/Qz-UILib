@@ -5,8 +5,7 @@ import java.util.List;
 
 import org.junit.Assert;
 import org.junit.Test;
-import org.lwjglx.input.Keyboard;
-
+import club.heiqi.uilib.ui.event.UiKeyCodes;
 import club.heiqi.uilib.ui.dom.DocumentElementClickEvent;
 import club.heiqi.uilib.ui.dom.DocumentElementKeyEvent;
 import club.heiqi.uilib.ui.dom.ElementNode;
@@ -78,9 +77,9 @@ public class DocumentCheckboxControlTest {
                 });
         ElementNode element = checkbox.getElement();
 
-        element.getKeyHandler().onKey(keyEvent(element, Keyboard.KEY_SPACE, UiKeyEvent.Action.PRESSED, 1L));
+        element.getKeyHandler().onKey(keyEvent(element, UiKeyCodes.KEY_SPACE, UiKeyEvent.Action.PRESSED, 1L));
         Assert.assertFalse(checkbox.isChecked());
-        element.getKeyHandler().onKey(keyEvent(element, Keyboard.KEY_SPACE, UiKeyEvent.Action.RELEASED, 2L));
+        element.getKeyHandler().onKey(keyEvent(element, UiKeyCodes.KEY_SPACE, UiKeyEvent.Action.RELEASED, 2L));
 
         Assert.assertTrue(checkbox.isChecked());
         Assert.assertEquals(1, states.size());

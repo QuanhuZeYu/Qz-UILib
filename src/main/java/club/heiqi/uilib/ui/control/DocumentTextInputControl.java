@@ -1,7 +1,6 @@
 package club.heiqi.uilib.ui.control;
 
-import org.lwjglx.input.Keyboard;
-
+import club.heiqi.uilib.ui.event.UiKeyCodes;
 import club.heiqi.uilib.ui.animation.SystemDocumentAnimationClock;
 import club.heiqi.uilib.ui.dom.DocumentElementFocusEvent;
 import club.heiqi.uilib.ui.dom.DocumentElementFocusHandler;
@@ -448,7 +447,7 @@ public final class DocumentTextInputControl {
                 if (!focused || !enabled) {
                     return false;
                 }
-                if (event.getKeyCode() == Keyboard.KEY_BACK
+                if (event.getKeyCode() == UiKeyCodes.KEY_BACK
                         && (event.getAction() == UiKeyEvent.Action.PRESSED
                                 || event.getAction() == UiKeyEvent.Action.REPEATED)) {
                     if (!readOnly && textBuilder.length() > 0) {

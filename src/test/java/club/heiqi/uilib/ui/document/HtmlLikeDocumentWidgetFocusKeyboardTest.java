@@ -7,8 +7,7 @@ import java.util.List;
 
 import org.junit.Assert;
 import org.junit.Test;
-import org.lwjglx.input.Keyboard;
-
+import club.heiqi.uilib.ui.event.UiKeyCodes;
 import club.heiqi.uilib.ui.control.DocumentButtonActionEvent;
 import club.heiqi.uilib.ui.control.DocumentButtonActionHandler;
 import club.heiqi.uilib.ui.control.DocumentButtonControl;
@@ -87,7 +86,7 @@ public class HtmlLikeDocumentWidgetFocusKeyboardTest {
         Assert.assertTrue(widget.isFocusable());
         widget.onMouseDown(new UiMouseEvent(UiMouseEvent.Action.BUTTON_DOWN, 10, 12, 0, 0, 0, 0, 1L));
         widget.onTextInput(new UiTextInputEvent("abc", 2L));
-        widget.onKeyEvent(new UiKeyEvent(Keyboard.KEY_BACK, 0, 0, UiKeyEvent.Action.PRESSED, false, false, false,
+        widget.onKeyEvent(new UiKeyEvent(UiKeyCodes.KEY_BACK, 0, 0, UiKeyEvent.Action.PRESSED, false, false, false,
                 false, 3L));
 
         assertElementUid(input, widget.getFocusedElement());
@@ -101,7 +100,7 @@ public class HtmlLikeDocumentWidgetFocusKeyboardTest {
         Assert.assertEquals(1, keyEvents.size());
         assertElementUid(input, keyEvents.get(0).getTarget());
         assertElementUid(input, keyEvents.get(0).getCurrentTarget());
-        Assert.assertEquals(Keyboard.KEY_BACK, keyEvents.get(0).getKeyCode());
+        Assert.assertEquals(UiKeyCodes.KEY_BACK, keyEvents.get(0).getKeyCode());
     }
 
     /**
@@ -645,17 +644,17 @@ public class HtmlLikeDocumentWidgetFocusKeyboardTest {
         assertElementUid(rawButton, widget.getFocusedElement());
 
         // Enter 触发 click
-        widget.onKeyEvent(new UiKeyEvent(Keyboard.KEY_RETURN, 0, 0, UiKeyEvent.Action.PRESSED, false, false,
+        widget.onKeyEvent(new UiKeyEvent(UiKeyCodes.KEY_RETURN, 0, 0, UiKeyEvent.Action.PRESSED, false, false,
                 false, false, 1L));
         Assert.assertEquals(1, clicks.size());
 
         // Space pressed 不触发
-        widget.onKeyEvent(new UiKeyEvent(Keyboard.KEY_SPACE, 0, 0, UiKeyEvent.Action.PRESSED, false, false,
+        widget.onKeyEvent(new UiKeyEvent(UiKeyCodes.KEY_SPACE, 0, 0, UiKeyEvent.Action.PRESSED, false, false,
                 false, false, 2L));
         Assert.assertEquals(1, clicks.size());
 
         // Space released 触发
-        widget.onKeyEvent(new UiKeyEvent(Keyboard.KEY_SPACE, 0, 0, UiKeyEvent.Action.RELEASED, false, false,
+        widget.onKeyEvent(new UiKeyEvent(UiKeyCodes.KEY_SPACE, 0, 0, UiKeyEvent.Action.RELEASED, false, false,
                 false, false, 3L));
         Assert.assertEquals(2, clicks.size());
     }
@@ -696,15 +695,15 @@ public class HtmlLikeDocumentWidgetFocusKeyboardTest {
         widget.onFocusTraversalEntered(false);
         assertElementUid(rawButton, widget.getFocusedElement());
 
-        widget.onKeyEvent(new UiKeyEvent(Keyboard.KEY_RETURN, 0, 0, UiKeyEvent.Action.PRESSED, false, false,
+        widget.onKeyEvent(new UiKeyEvent(UiKeyCodes.KEY_RETURN, 0, 0, UiKeyEvent.Action.PRESSED, false, false,
                 false, false, 1L));
         Assert.assertEquals(1, clicks.size());
 
-        widget.onKeyEvent(new UiKeyEvent(Keyboard.KEY_SPACE, 0, 0, UiKeyEvent.Action.PRESSED, false, false,
+        widget.onKeyEvent(new UiKeyEvent(UiKeyCodes.KEY_SPACE, 0, 0, UiKeyEvent.Action.PRESSED, false, false,
                 false, false, 2L));
         Assert.assertEquals(1, clicks.size());
 
-        widget.onKeyEvent(new UiKeyEvent(Keyboard.KEY_SPACE, 0, 0, UiKeyEvent.Action.RELEASED, false, false,
+        widget.onKeyEvent(new UiKeyEvent(UiKeyCodes.KEY_SPACE, 0, 0, UiKeyEvent.Action.RELEASED, false, false,
                 false, false, 3L));
         Assert.assertEquals(2, clicks.size());
     }
@@ -742,7 +741,7 @@ public class HtmlLikeDocumentWidgetFocusKeyboardTest {
         widget.onFocusTraversalEntered(false);
         assertElementUid(rawButton, widget.getFocusedElement());
 
-        widget.onKeyEvent(new UiKeyEvent(Keyboard.KEY_RETURN, 0, 0, UiKeyEvent.Action.PRESSED, false, false,
+        widget.onKeyEvent(new UiKeyEvent(UiKeyCodes.KEY_RETURN, 0, 0, UiKeyEvent.Action.PRESSED, false, false,
                 false, false, 1L));
 
         Assert.assertEquals(2, clickEvents.size());
@@ -796,20 +795,20 @@ public class HtmlLikeDocumentWidgetFocusKeyboardTest {
         assertElementUid(rawButton, widget.getFocusedElement());
 
         rawButton.setKeyHandler(preventDefaultKeyHandler);
-        widget.onKeyEvent(new UiKeyEvent(Keyboard.KEY_RETURN, 0, 0, UiKeyEvent.Action.PRESSED, false, false,
+        widget.onKeyEvent(new UiKeyEvent(UiKeyCodes.KEY_RETURN, 0, 0, UiKeyEvent.Action.PRESSED, false, false,
                 false, false, 1L));
         Assert.assertEquals(0, clicks.size());
 
         rawButton.setKeyHandler(null);
-        widget.onKeyEvent(new UiKeyEvent(Keyboard.KEY_SPACE, 0, 0, UiKeyEvent.Action.PRESSED, false, false,
+        widget.onKeyEvent(new UiKeyEvent(UiKeyCodes.KEY_SPACE, 0, 0, UiKeyEvent.Action.PRESSED, false, false,
                 false, false, 2L));
         rawButton.setKeyHandler(preventDefaultKeyHandler);
-        widget.onKeyEvent(new UiKeyEvent(Keyboard.KEY_SPACE, 0, 0, UiKeyEvent.Action.RELEASED, false, false,
+        widget.onKeyEvent(new UiKeyEvent(UiKeyCodes.KEY_SPACE, 0, 0, UiKeyEvent.Action.RELEASED, false, false,
                 false, false, 3L));
         Assert.assertEquals(0, clicks.size());
 
         rawButton.setKeyHandler(null);
-        widget.onKeyEvent(new UiKeyEvent(Keyboard.KEY_SPACE, 0, 0, UiKeyEvent.Action.RELEASED, false, false,
+        widget.onKeyEvent(new UiKeyEvent(UiKeyCodes.KEY_SPACE, 0, 0, UiKeyEvent.Action.RELEASED, false, false,
                 false, false, 4L));
         Assert.assertEquals(0, clicks.size());
     }
@@ -845,7 +844,7 @@ public class HtmlLikeDocumentWidgetFocusKeyboardTest {
         assertElementUid(rawButton, widget.getFocusedElement());
 
         // Space pressed
-        widget.onKeyEvent(new UiKeyEvent(Keyboard.KEY_SPACE, 0, 0, UiKeyEvent.Action.PRESSED, false, false,
+        widget.onKeyEvent(new UiKeyEvent(UiKeyCodes.KEY_SPACE, 0, 0, UiKeyEvent.Action.PRESSED, false, false,
                 false, false, 1L));
         Assert.assertEquals(0, clicks.size());
 
@@ -854,7 +853,7 @@ public class HtmlLikeDocumentWidgetFocusKeyboardTest {
         Assert.assertNull(widget.getFocusedElement());
 
         // Space released 不触发（焦点已丢失，spacePressed 已清理）
-        widget.onKeyEvent(new UiKeyEvent(Keyboard.KEY_SPACE, 0, 0, UiKeyEvent.Action.RELEASED, false, false,
+        widget.onKeyEvent(new UiKeyEvent(UiKeyCodes.KEY_SPACE, 0, 0, UiKeyEvent.Action.RELEASED, false, false,
                 false, false, 2L));
         Assert.assertEquals(0, clicks.size());
     }
@@ -889,14 +888,14 @@ public class HtmlLikeDocumentWidgetFocusKeyboardTest {
         assertElementUid(buttonControl.getElement(), widget.getFocusedElement());
 
         // Enter 触发一次（由 DocumentButtonControl 的 key handler 消费，不走默认行为）
-        widget.onKeyEvent(new UiKeyEvent(Keyboard.KEY_RETURN, 0, 0, UiKeyEvent.Action.PRESSED, false, false,
+        widget.onKeyEvent(new UiKeyEvent(UiKeyCodes.KEY_RETURN, 0, 0, UiKeyEvent.Action.PRESSED, false, false,
                 false, false, 1L));
         Assert.assertEquals(1, actions.size());
 
         // Space pressed + released 触发一次
-        widget.onKeyEvent(new UiKeyEvent(Keyboard.KEY_SPACE, 0, 0, UiKeyEvent.Action.PRESSED, false, false,
+        widget.onKeyEvent(new UiKeyEvent(UiKeyCodes.KEY_SPACE, 0, 0, UiKeyEvent.Action.PRESSED, false, false,
                 false, false, 2L));
-        widget.onKeyEvent(new UiKeyEvent(Keyboard.KEY_SPACE, 0, 0, UiKeyEvent.Action.RELEASED, false, false,
+        widget.onKeyEvent(new UiKeyEvent(UiKeyCodes.KEY_SPACE, 0, 0, UiKeyEvent.Action.RELEASED, false, false,
                 false, false, 3L));
         Assert.assertEquals(2, actions.size());
     }

@@ -6,8 +6,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
-import org.lwjglx.input.Keyboard;
-
+import club.heiqi.uilib.ui.event.UiKeyCodes;
 import club.heiqi.uilib.ui.control.DocumentButtonActionEvent;
 import club.heiqi.uilib.ui.control.DocumentButtonActionHandler;
 import club.heiqi.uilib.ui.control.DocumentButtonControl;
@@ -366,7 +365,7 @@ final class RemoteDocumentFormController {
 
         @Override
         public boolean onKey(DocumentElementKeyEvent event) {
-            if ((event.getKeyCode() == Keyboard.KEY_RETURN || event.getKeyCode() == Keyboard.KEY_NUMPADENTER)
+            if ((event.getKeyCode() == UiKeyCodes.KEY_RETURN || event.getKeyCode() == UiKeyCodes.KEY_NUMPADENTER)
                     && event.getAction() == UiKeyEvent.Action.PRESSED) {
                 form.submit(submitter);
                 return true;

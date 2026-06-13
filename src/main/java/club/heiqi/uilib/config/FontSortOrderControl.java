@@ -8,8 +8,7 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
 
-import org.lwjglx.input.Keyboard;
-
+import club.heiqi.uilib.ui.event.UiKeyCodes;
 import club.heiqi.uilib.ui.document.HtmlLikeDocumentWidget;
 import club.heiqi.uilib.ui.dom.DocumentElementDragEndHandler;
 import club.heiqi.uilib.ui.dom.DocumentElementDragEvent;
@@ -929,7 +928,7 @@ final class FontSortOrderControl {
     }
 
     private static boolean isEnterKey(int keyCode) {
-        return keyCode == Keyboard.KEY_RETURN || keyCode == Keyboard.KEY_NUMPADENTER;
+        return keyCode == UiKeyCodes.KEY_RETURN || keyCode == UiKeyCodes.KEY_NUMPADENTER;
     }
 
     static List<String> toItemList(String[] values) {

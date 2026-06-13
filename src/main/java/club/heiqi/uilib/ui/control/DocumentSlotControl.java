@@ -5,8 +5,7 @@ import java.util.Collections;
 import java.util.List;
 import java.util.Objects;
 
-import org.lwjglx.input.Keyboard;
-
+import club.heiqi.uilib.ui.event.UiKeyCodes;
 import club.heiqi.uilib.ui.dom.DocumentElementActiveEvent;
 import club.heiqi.uilib.ui.dom.DocumentElementActiveHandler;
 import club.heiqi.uilib.ui.dom.DocumentElementClickEvent;
@@ -375,13 +374,13 @@ public final class DocumentSlotControl {
             applyVisualState();
             return consumed;
         }
-        if (event.getKeyCode() == Keyboard.KEY_SPACE && event.getAction() == UiKeyEvent.Action.PRESSED) {
+        if (event.getKeyCode() == UiKeyCodes.KEY_SPACE && event.getAction() == UiKeyEvent.Action.PRESSED) {
             active = true;
             spacePressed = true;
             applyVisualState();
             return true;
         }
-        if (event.getKeyCode() == Keyboard.KEY_SPACE && event.getAction() == UiKeyEvent.Action.RELEASED) {
+        if (event.getKeyCode() == UiKeyCodes.KEY_SPACE && event.getAction() == UiKeyEvent.Action.RELEASED) {
             boolean shouldActivate = spacePressed;
             spacePressed = false;
             active = false;
@@ -477,10 +476,10 @@ public final class DocumentSlotControl {
     }
 
     private static boolean isActivationKey(int keyCode) {
-        return isEnterKey(keyCode) || keyCode == Keyboard.KEY_SPACE;
+        return isEnterKey(keyCode) || keyCode == UiKeyCodes.KEY_SPACE;
     }
 
     private static boolean isEnterKey(int keyCode) {
-        return keyCode == Keyboard.KEY_RETURN || keyCode == Keyboard.KEY_NUMPADENTER;
+        return keyCode == UiKeyCodes.KEY_RETURN || keyCode == UiKeyCodes.KEY_NUMPADENTER;
     }
 }

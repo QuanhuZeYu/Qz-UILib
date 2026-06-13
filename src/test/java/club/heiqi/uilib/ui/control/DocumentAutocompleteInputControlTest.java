@@ -7,8 +7,7 @@ import java.util.Locale;
 
 import org.junit.Assert;
 import org.junit.Test;
-import org.lwjglx.input.Keyboard;
-
+import club.heiqi.uilib.ui.event.UiKeyCodes;
 import club.heiqi.uilib.ui.document.HtmlLikeDocumentWidget;
 import club.heiqi.uilib.ui.dom.DocumentElementBounds;
 import club.heiqi.uilib.ui.dom.DocumentNode;
@@ -158,16 +157,16 @@ public class DocumentAutocompleteInputControlTest {
         HtmlLikeDocumentWidget widget = mount(document, autocompleteControl, 240, 180);
 
         widget.onFocusTraversalEntered(false);
-        key(widget, Keyboard.KEY_DOWN, 1L);
-        key(widget, Keyboard.KEY_DOWN, 2L);
-        key(widget, Keyboard.KEY_UP, 3L);
-        key(widget, Keyboard.KEY_RETURN, 4L);
+        key(widget, UiKeyCodes.KEY_DOWN, 1L);
+        key(widget, UiKeyCodes.KEY_DOWN, 2L);
+        key(widget, UiKeyCodes.KEY_UP, 3L);
+        key(widget, UiKeyCodes.KEY_RETURN, 4L);
 
         Assert.assertEquals("Beta", autocompleteControl.getText());
         Assert.assertFalse(autocompleteControl.isOpen());
         Assert.assertEquals(1, selectionEvents.size());
         Assert.assertTrue(selectionEvents.get(0).isKeyboardTriggered());
-        Assert.assertEquals(Keyboard.KEY_RETURN, selectionEvents.get(0).getKeyCode());
+        Assert.assertEquals(UiKeyCodes.KEY_RETURN, selectionEvents.get(0).getKeyCode());
         Assert.assertEquals(-1, selectionEvents.get(0).getButton());
     }
 
@@ -193,7 +192,7 @@ public class DocumentAutocompleteInputControlTest {
         widget.onTextInput(new UiTextInputEvent("Al", 1L));
         Assert.assertTrue(autocompleteControl.isOpen());
 
-        key(widget, Keyboard.KEY_ESCAPE, 2L);
+        key(widget, UiKeyCodes.KEY_ESCAPE, 2L);
 
         Assert.assertFalse(autocompleteControl.isOpen());
         Assert.assertEquals("Al", autocompleteControl.getText());
@@ -376,7 +375,7 @@ public class DocumentAutocompleteInputControlTest {
 
         widget.onFocusTraversalEntered(false);
         for (int index = 0; index < 50; index++) {
-            key(widget, Keyboard.KEY_DOWN, index + 1L);
+            key(widget, UiKeyCodes.KEY_DOWN, index + 1L);
         }
         ElementNode popup = findListboxElement(document.getRootElement());
 

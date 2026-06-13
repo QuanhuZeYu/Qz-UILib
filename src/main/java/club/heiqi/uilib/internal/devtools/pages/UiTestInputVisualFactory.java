@@ -3,8 +3,7 @@ package club.heiqi.uilib.internal.devtools.pages;
 import java.util.ArrayList;
 import java.util.List;
 
-import org.lwjglx.input.Keyboard;
-
+import club.heiqi.uilib.ui.event.UiKeyCodes;
 import club.heiqi.uilib.ui.dom.DocumentElementClickEvent;
 import club.heiqi.uilib.ui.dom.DocumentElementClickHandler;
 import club.heiqi.uilib.ui.dom.DocumentElementFocusEvent;
@@ -134,7 +133,7 @@ final class UiTestInputVisualFactory {
         preventedButton.setKeyHandler(new DocumentElementKeyHandler() {
             @Override
             public boolean onKey(DocumentElementKeyEvent event) {
-                if (event.getKeyCode() == Keyboard.KEY_RETURN && event.getAction().name().equals("PRESSED")) {
+                if (event.getKeyCode() == UiKeyCodes.KEY_RETURN && event.getAction().name().equals("PRESSED")) {
                     event.preventDefault();
                     events.add("prevent-default:" + event.getEventPhase());
                     updateLog(log, "log=", events);

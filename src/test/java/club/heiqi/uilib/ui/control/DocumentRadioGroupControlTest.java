@@ -5,8 +5,7 @@ import java.util.List;
 
 import org.junit.Assert;
 import org.junit.Test;
-import org.lwjglx.input.Keyboard;
-
+import club.heiqi.uilib.ui.event.UiKeyCodes;
 import club.heiqi.uilib.ui.dom.DocumentElementClickEvent;
 import club.heiqi.uilib.ui.dom.DocumentElementKeyEvent;
 import club.heiqi.uilib.ui.dom.ElementNode;
@@ -79,7 +78,7 @@ public class DocumentRadioGroupControlTest {
                 });
         ElementNode element = radioGroup.getElement();
 
-        DocumentElementKeyEvent keyEvent = keyEvent(optionAt(radioGroup, 0), element, Keyboard.KEY_DOWN, 1L);
+        DocumentElementKeyEvent keyEvent = keyEvent(optionAt(radioGroup, 0), element, UiKeyCodes.KEY_DOWN, 1L);
         Assert.assertTrue(element.getKeyHandler().onKey(keyEvent));
 
         Assert.assertEquals(1, radioGroup.getSelectedIndex());
@@ -99,7 +98,7 @@ public class DocumentRadioGroupControlTest {
         ElementNode element = radioGroup.getElement();
 
         Assert.assertTrue(element.getKeyHandler().onKey(keyEvent(optionAt(radioGroup, 0), element,
-                Keyboard.KEY_RIGHT, 1L)));
+                UiKeyCodes.KEY_RIGHT, 1L)));
 
         Assert.assertEquals(1, radioGroup.getSelectedIndex());
     }

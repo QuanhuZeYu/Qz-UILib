@@ -4,8 +4,7 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 
-import org.lwjglx.input.Keyboard;
-
+import club.heiqi.uilib.ui.event.UiKeyCodes;
 import club.heiqi.uilib.ui.animation.SystemDocumentAnimationClock;
 import club.heiqi.uilib.ui.dom.DocumentElementBounds;
 import club.heiqi.uilib.ui.dom.DocumentElementClickEvent;
@@ -463,7 +462,7 @@ public final class DocumentTextAreaControl {
         int keyCode = event.getKeyCode();
         UiKeyEvent.Action action = event.getAction();
         boolean repeatable = action == UiKeyEvent.Action.PRESSED || action == UiKeyEvent.Action.REPEATED;
-        if (event.isControlPressed() && keyCode == Keyboard.KEY_A && action == UiKeyEvent.Action.PRESSED) {
+        if (event.isControlPressed() && keyCode == UiKeyCodes.KEY_A && action == UiKeyEvent.Action.PRESSED) {
             selectionAnchorIndex = 0;
             caretIndex = textBuilder.length();
             preferredColumnCodePoints = -1;
@@ -471,38 +470,38 @@ public final class DocumentTextAreaControl {
             requestCaretReveal();
             return true;
         }
-        if ((keyCode == Keyboard.KEY_RETURN || keyCode == Keyboard.KEY_NUMPADENTER) && repeatable) {
+        if ((keyCode == UiKeyCodes.KEY_RETURN || keyCode == UiKeyCodes.KEY_NUMPADENTER) && repeatable) {
             return replaceSelection("\n", true);
         }
-        if (keyCode == Keyboard.KEY_BACK && repeatable) {
+        if (keyCode == UiKeyCodes.KEY_BACK && repeatable) {
             preferredColumnCodePoints = -1;
             return deleteBackward();
         }
-        if (keyCode == Keyboard.KEY_DELETE && repeatable) {
+        if (keyCode == UiKeyCodes.KEY_DELETE && repeatable) {
             preferredColumnCodePoints = -1;
             return deleteForward();
         }
-        if (keyCode == Keyboard.KEY_LEFT && repeatable) {
+        if (keyCode == UiKeyCodes.KEY_LEFT && repeatable) {
             moveCaretHorizontally(-1, event.isShiftPressed());
             return true;
         }
-        if (keyCode == Keyboard.KEY_RIGHT && repeatable) {
+        if (keyCode == UiKeyCodes.KEY_RIGHT && repeatable) {
             moveCaretHorizontally(1, event.isShiftPressed());
             return true;
         }
-        if (keyCode == Keyboard.KEY_HOME && repeatable) {
+        if (keyCode == UiKeyCodes.KEY_HOME && repeatable) {
             moveCaretToLineBoundary(true, event.isShiftPressed());
             return true;
         }
-        if (keyCode == Keyboard.KEY_END && repeatable) {
+        if (keyCode == UiKeyCodes.KEY_END && repeatable) {
             moveCaretToLineBoundary(false, event.isShiftPressed());
             return true;
         }
-        if (keyCode == Keyboard.KEY_UP && repeatable) {
+        if (keyCode == UiKeyCodes.KEY_UP && repeatable) {
             moveCaretVertically(-1, event.isShiftPressed());
             return true;
         }
-        if (keyCode == Keyboard.KEY_DOWN && repeatable) {
+        if (keyCode == UiKeyCodes.KEY_DOWN && repeatable) {
             moveCaretVertically(1, event.isShiftPressed());
             return true;
         }
