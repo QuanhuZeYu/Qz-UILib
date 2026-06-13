@@ -106,6 +106,7 @@ public class Lwjgl3ifyInputBackendTest {
         assertNoMainSourceMatch(Pattern.compile("\\bimport\\s+me\\.eigenraven\\.lwjgl3ify"));
         assertNoMainSourceMatch(Pattern.compile("\\bimplements\\s+InputEvents"));
         assertNoMainSourceMatch(Pattern.compile("\\bInputEvents\\s*\\."));
+        assertNoMainSourceMatch(Pattern.compile("\\bimport\\s+org\\.lwjglx\\."));
     }
 
     private static UiInputService createInputService() throws Exception {

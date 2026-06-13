@@ -9,7 +9,6 @@ import java.util.concurrent.atomic.AtomicBoolean;
 
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
-import org.lwjglx.Sys;
 
 import club.heiqi.uilib.ui.event.UiKeyEvent;
 import club.heiqi.uilib.ui.event.UiTextInputEvent;
@@ -165,13 +164,13 @@ final class Lwjgl3ifyInputBackend implements UiInputBackend {
     private void enableKeyboardPollingFallback(Throwable throwable) {
         keyboardPollingFallback.run();
         if (KEYBOARD_POLLING_FALLBACK_LOGGED.compareAndSet(false, true)) {
-            LOG.warn("UILib 注册 lwjgl3ify InputEvents 键盘监听失败，已启用 LWJGLX 键盘轮询兜底；文本输入与 IME 将降级",
+            LOG.warn("UILib 注册 lwjgl3ify InputEvents 键盘监听失败，已启用 LWJGL 键盘轮询兜底；文本输入与 IME 将降级",
                     throwable);
         }
     }
 
     private static void handleKeyEvent(UiInputService inputService, Object event) {
-        handleKeyEvent(inputService, event, Sys.getNanoTime());
+        handleKeyEvent(inputService, event, LwjglInputRuntime.getNanoTime());
     }
 
     static void handleKeyEvent(UiInputService inputService, Object event, long timeNanos) {
@@ -203,7 +202,7 @@ final class Lwjgl3ifyInputBackend implements UiInputBackend {
         if (text == null || text.isEmpty() || inputService.isSuppressedCollectedText(text)) {
             return;
         }
-        inputService.addTextEvent(new UiTextInputEvent(text, Sys.getNanoTime()));
+        inputService.addTextEvent(new UiTextInputEvent(text, LwjglInputRuntime.getNanoTime()));
     }
 
     private static UiKeyEvent.Action mapAction(Object action) {
@@ -315,7 +314,7 @@ final class Lwjgl3ifyInputBackend implements UiInputBackend {
 
     private static void logUnavailableOnce(Throwable throwable) {
         if (UNAVAILABLE_LOGGED.compareAndSet(false, true)) {
-            LOG.debug("UILib 未检测到可用的 lwjgl3ify InputEvents，切换到 LWJGLX 轮询输入后端", throwable);
+            LOG.debug("UILib 未检测到可用的 lwjgl3ify InputEvents，切换到 LWJGL 轮询输入后端", throwable);
         }
     }
 

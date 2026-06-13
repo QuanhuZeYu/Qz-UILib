@@ -14,8 +14,6 @@ import net.minecraft.client.gui.GuiScreen;
 import net.minecraft.client.gui.GuiSelectWorld;
 import net.minecraft.client.gui.inventory.GuiContainer;
 
-import org.lwjglx.input.Mouse;
-
 import club.heiqi.uilib.ui.document.HtmlLikeDocumentWidget;
 import club.heiqi.uilib.ui.dom.DocumentNode;
 import club.heiqi.uilib.ui.dom.ElementNode;
@@ -23,6 +21,7 @@ import club.heiqi.uilib.ui.dom.UiDocument;
 import club.heiqi.uilib.ui.host.DocumentHostInteractionSession;
 import club.heiqi.uilib.ui.host.DocumentHostRenderSupport;
 import club.heiqi.uilib.ui.host.DocumentHostWidgetFactory;
+import club.heiqi.uilib.ui.input.UiHostInputCoordinator;
 import club.heiqi.uilib.ui.input.UiHostInputCaptureParticipant;
 import club.heiqi.uilib.ui.input.UiInputFrame;
 import club.heiqi.uilib.ui.input.UiInputService;
@@ -1021,7 +1020,8 @@ public final class UiHudDocumentHost implements UiHostInputCaptureParticipant {
 
     private static boolean isInteractiveInputEnabled(GuiScreen currentScreen) {
         return isInteractiveInputEnabled((Object) currentScreen,
-                currentScreen == null ? null : currentScreen.getClass().getName(), Mouse.isGrabbed());
+                currentScreen == null ? null : currentScreen.getClass().getName(),
+                UiHostInputCoordinator.isNativeMouseGrabbed());
     }
 
     @Override

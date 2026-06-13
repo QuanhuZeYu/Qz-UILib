@@ -2,9 +2,6 @@ package club.heiqi.uilib.ui.input;
 
 import net.minecraft.client.gui.GuiScreen;
 
-import org.lwjglx.input.Keyboard;
-import org.lwjglx.input.Mouse;
-
 import club.heiqi.uilib.ui.event.UiKeyEvent;
 
 /**
@@ -14,6 +11,8 @@ public final class UiHostInputCoordinator {
 
     private static final UiHostInputCoordinator INSTANCE = new UiHostInputCoordinator();
 
+    private final LwjglInputRuntime.KeyboardRuntime keyboardRuntime = LwjglInputRuntime.keyboard();
+    private final LwjglInputRuntime.MouseRuntime mouseRuntime = LwjglInputRuntime.mouse();
     private volatile UiHostInputCaptureParticipant captureParticipant;
 
     private UiHostInputCoordinator() {}
@@ -25,6 +24,15 @@ public final class UiHostInputCoordinator {
      */
     public static UiHostInputCoordinator getInstance() {
         return INSTANCE;
+    }
+
+    /**
+     * 返回当前原生鼠标是否被宿主抓取。
+     *
+     * @return 鼠标是否被抓取
+     */
+    public static boolean isNativeMouseGrabbed() {
+        return LwjglInputRuntime.mouse().isGrabbed();
     }
 
     /**
@@ -80,9 +88,9 @@ public final class UiHostInputCoordinator {
     public boolean advanceKeyboardEventForHudPriority(GuiScreen currentScreen) {
         UiHostInputCaptureParticipant participant = captureParticipant;
         if (!isInteractiveInputEnabled(participant, currentScreen)) {
-            return Keyboard.next();
+            return keyboardRuntime.next();
         }
-        while (Keyboard.next()) {
+        while (keyboardRuntime.next()) {
             UiInputFrame immediateFrame = UiInputService.getInstance().createImmediateKeyboardFrame();
             if (!handleImmediateKeyboardFrame(participant, currentScreen, immediateFrame)) {
                 return true;
@@ -100,9 +108,9 @@ public final class UiHostInputCoordinator {
     public boolean advanceMouseEventForHudPriority(GuiScreen currentScreen) {
         UiHostInputCaptureParticipant participant = captureParticipant;
         if (!isInteractiveInputEnabled(participant, currentScreen)) {
-            return Mouse.next();
+            return mouseRuntime.next();
         }
-        while (Mouse.next()) {
+        while (mouseRuntime.next()) {
             UiInputFrame immediateFrame = UiInputService.getInstance().createImmediateMouseFrame();
             if (!handleImmediateMouseFrame(participant, currentScreen, immediateFrame)) {
                 return true;
@@ -113,7 +121,7 @@ public final class UiHostInputCoordinator {
 
     private boolean isInteractiveInputEnabled(UiHostInputCaptureParticipant participant, GuiScreen currentScreen) {
         return participant != null && participant.isHostInputCaptureEnabled(currentScreen,
-                currentScreen == null ? null : currentScreen.getClass().getName(), Mouse.isGrabbed());
+                currentScreen == null ? null : currentScreen.getClass().getName(), mouseRuntime.isGrabbed());
     }
 
     private boolean handleImmediateKeyboardFrame(UiHostInputCaptureParticipant participant, GuiScreen currentScreen,
