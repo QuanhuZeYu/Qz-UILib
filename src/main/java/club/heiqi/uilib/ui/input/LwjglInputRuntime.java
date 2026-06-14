@@ -193,6 +193,7 @@ final class LwjglInputRuntime {
         private final Method getEventKeyStateMethod;
         private final Method getEventKeyMethod;
         private final Method isRepeatEventMethod;
+        private final Method enableRepeatEventsMethod;
 
         private KeyboardRuntime(Class<?> keyboardClass) {
             this.isCreatedMethod = findMethod(keyboardClass, "isCreated");
@@ -202,6 +203,7 @@ final class LwjglInputRuntime {
             this.getEventKeyStateMethod = findMethod(keyboardClass, "getEventKeyState");
             this.getEventKeyMethod = findMethod(keyboardClass, "getEventKey");
             this.isRepeatEventMethod = findMethod(keyboardClass, "isRepeatEvent");
+            this.enableRepeatEventsMethod = findMethod(keyboardClass, "enableRepeatEvents", Boolean.TYPE);
         }
 
         private static KeyboardRuntime create() {
@@ -235,6 +237,10 @@ final class LwjglInputRuntime {
 
         boolean isRepeatEvent() {
             return invokeBoolean(isRepeatEventMethod, false);
+        }
+
+        void enableRepeatEvents(boolean enabled) {
+            invokeVoid(enableRepeatEventsMethod, Boolean.valueOf(enabled));
         }
     }
 

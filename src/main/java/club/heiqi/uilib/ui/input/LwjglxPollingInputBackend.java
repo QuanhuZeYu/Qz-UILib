@@ -81,6 +81,23 @@ final class LwjglxPollingInputBackend implements UiInputBackend {
     }
 
     @Override
+    public void handleHostTypedCharacter(char typedChar, int keyCode) {
+        if (typedChar < 32 || typedChar == 127) {
+            return;
+        }
+        String text = String.valueOf(typedChar);
+        if (inputService.isSuppressedCollectedText(text)) {
+            return;
+        }
+        inputService.addTextEvent(new UiTextInputEvent(text, LwjglInputRuntime.getNanoTime()));
+    }
+
+    @Override
+    public void setHostKeyboardRepeatEnabled(boolean enabled) {
+        keyboardRuntime.enableRepeatEvents(enabled);
+    }
+
+    @Override
     public UiInputFrame createImmediateKeyboardFrame() {
         if (!keyboardRuntime.isCreated() || !keyboardRuntime.getEventKeyState()) {
             return null;
@@ -239,7 +256,7 @@ final class LwjglxPollingInputBackend implements UiInputBackend {
 
     private static void logTextInputDegradedOnce() {
         if (TEXT_INPUT_DEGRADED_LOGGED.compareAndSet(false, true)) {
-            LOG.debug("UILib 当前使用 LWJGL 轮询输入后端，文本输入与 IME 事件需要 lwjgl3ify InputEvents 支持");
+            LOG.debug("UILib 当前使用 LWJGL 轮询输入后端，基础字符输入将通过宿主 keyTyped 支持；IME、组合输入和补充平面字符仍需要 lwjgl3ify InputEvents 支持");
         }
     }
 

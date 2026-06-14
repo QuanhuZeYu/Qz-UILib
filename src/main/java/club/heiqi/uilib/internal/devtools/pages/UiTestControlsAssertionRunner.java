@@ -217,7 +217,7 @@ final class UiTestControlsAssertionRunner {
             diagnostics.add("select option 节点缺失");
             return false;
         }
-        ElementNode hitOption = clickElement(widget, targetOption, 142L);
+        ElementNode hitOption = clickOptionByMouseHit(widget, popup, "红石", 142L);
         String log = logNode.getTextContent();
         boolean optionHit = isOptionHit(hitOption, "红石")
                 || ("红石".equals(select.getAttribute("value")) && log.contains("select=红石:2"));
@@ -312,6 +312,57 @@ final class UiTestControlsAssertionRunner {
         widget.onMouseUp(new UiMouseEvent(UiMouseEvent.Action.BUTTON_UP, center[0], center[1], 0, 0, 0, 0,
                 timeNanos + 1L));
         return hit;
+    }
+
+    /**
+     * 通过 top-layer 命中测试扫描点击指定选项。
+     *
+     * @param widget 文档组件
+     * @param listbox select 顶层列表
+     * @param text 选项文本
+     * @param timeNanos 输入时间
+     * @return 实际命中的 option；未命中时返回 null
+     */
+    private ElementNode clickOptionByMouseHit(HtmlLikeDocumentWidget widget, ElementNode listbox, String text,
+            long timeNanos) {
+        DocumentElementBounds bounds = listbox.getDocumentBounds();
+        if (!bounds.isAvailable()) {
+            return null;
+        }
+        int x = widget.getAbsoluteX() + bounds.getLeft() + Math.max(1, bounds.getWidth() / 2);
+        int top = widget.getAbsoluteY() + bounds.getTop() + 1;
+        int bottom = widget.getAbsoluteY() + bounds.getTop() + bounds.getHeight();
+        for (int y = top; y < bottom; y++) {
+            ElementNode hit = widget.findElementAt(x, y);
+            ElementNode option = findAncestorOptionWithin(hit, listbox);
+            if (option == null || !text.equals(option.getTextContent())) {
+                continue;
+            }
+            widget.onMouseDown(new UiMouseEvent(UiMouseEvent.Action.BUTTON_DOWN, x, y, 0, 0, 0, 0, timeNanos));
+            widget.onMouseUp(new UiMouseEvent(UiMouseEvent.Action.BUTTON_UP, x, y, 0, 0, 0, 0, timeNanos + 1L));
+            return option;
+        }
+        return null;
+    }
+
+    /**
+     * 从命中节点向上查找指定 listbox 内的 option。
+     *
+     * @param hit 命中节点
+     * @param root listbox 根节点
+     * @return option 节点；未找到时返回 null
+     */
+    private ElementNode findAncestorOptionWithin(ElementNode hit, ElementNode root) {
+        for (DocumentNode current = hit; current instanceof ElementNode; current = current.getParent()) {
+            ElementNode element = (ElementNode) current;
+            if ("option".equals(element.getTagName())) {
+                return element;
+            }
+            if (element == root) {
+                return null;
+            }
+        }
+        return null;
     }
 
     private boolean attemptProgrammaticFocus(HtmlLikeDocumentWidget widget, ElementNode element) {

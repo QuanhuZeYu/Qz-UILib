@@ -4,6 +4,7 @@ import net.minecraft.client.gui.GuiScreen;
 
 import club.heiqi.uilib.ui.diagnostic.UiRuntimeStats;
 import club.heiqi.uilib.ui.input.UiInputFrame;
+import club.heiqi.uilib.ui.input.UiInputService;
 import club.heiqi.uilib.ui.input.UiManagedInputScreen;
 import club.heiqi.uilib.ui.diagnostic.UiPerformanceMonitor;
 import club.heiqi.uilib.ui.render.BackdropBlurPolicy;
@@ -21,7 +22,16 @@ public abstract class BaseScreen extends GuiScreen implements UiManagedInputScre
 
     @Override
     public void initGui() {
-        hostSession.open();
+        UiInputService.getInstance().setHostKeyboardRepeatEnabled(true);
+        try {
+            hostSession.open();
+        } catch (RuntimeException exception) {
+            UiInputService.getInstance().setHostKeyboardRepeatEnabled(false);
+            throw exception;
+        } catch (Error error) {
+            UiInputService.getInstance().setHostKeyboardRepeatEnabled(false);
+            throw error;
+        }
     }
 
     @Override
@@ -32,8 +42,18 @@ public abstract class BaseScreen extends GuiScreen implements UiManagedInputScre
 
     @Override
     public void onGuiClosed() {
-        hostSession.close();
-        super.onGuiClosed();
+        try {
+            hostSession.close();
+        } finally {
+            UiInputService.getInstance().setHostKeyboardRepeatEnabled(false);
+            super.onGuiClosed();
+        }
+    }
+
+    @Override
+    protected void keyTyped(char typedChar, int keyCode) {
+        super.keyTyped(typedChar, keyCode);
+        UiInputService.getInstance().submitHostTypedCharacter(typedChar, keyCode);
     }
 
     @Override

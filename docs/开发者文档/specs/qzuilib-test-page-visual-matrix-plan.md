@@ -4,11 +4,11 @@
 
 ## 当前结论
 
-- 当前源码中的 `/qzuilib test` 只保留 DOM / CSS / Layout / Paint / Input / Controls / TextFont / Animation / RuntimeHost / RemoteNet 分组壳，运行时矩阵已清空。
+- 当前源码中的 `/qzuilib test` 已保留 DOM / CSS / Layout / Paint / Input / Controls / TextFont / Animation / RuntimeHost / RemoteNet / ModernConfig 分组壳。
 - 后续不直接恢复旧矩阵和旧七字段卡片；旧编号和语义可作为素材，但展示模型、状态模型和自动/人工边界需要按本文重新设计。
 - 首页应从“测试用例列表”改成“能力画廊 + 语义覆盖热力图 + 最近失败 + 人工任务”。
 - 二级页应以真实视觉样例为主体，语义断言作为样例附属能力，而不是让测试按钮成为页面核心。
-- 继续保留现有 10 个分组导航，降低入口、文档和现有测试调整成本。
+- 在原 10 个分组导航基础上新增 `MODCFG` 分组，用于承载完整 `ModernConfigTemplateScreen` demo 入口。
 
 ## 文件规模约束
 
@@ -22,7 +22,7 @@
 |---|---|---|
 | 顶部说明 | test 版本、窗口尺寸、字体 epoch、网络模式、运行时统计 | 截图即可定位环境 |
 | 功能画廊 | 代表性 UI 能力样例：布局、控件、文本、动画、overlay、远程能力 | 页面打开后先看到能力展示 |
-| 语义覆盖热力图 | 10 个分组的视觉状态、语义状态、自动/人工数量、缺口数量 | 一屏内看清覆盖和风险 |
+| 语义覆盖热力图 | 11 个分组的视觉状态、语义状态、自动/人工数量、缺口数量 | 一屏内看清覆盖和风险 |
 | 快速筛选 | 全部、视觉展示、自动语义、人工确认、已知缺口、失败 | 便于定位待处理项 |
 | 最近失败 | 最近失败编号、实际结果、差异说明、复现入口 | 可直接交接 |
 | 人工任务 | 只列需要人眼或游戏内确认的样例 | 每项必须有 `预期结果：...` |
@@ -75,8 +75,9 @@
 | DOM | append/insert/replace/remove、fragment、textContent、classList、selector、link default | 7 |
 | RuntimeHost | open timing、resize、runtime stats、HUD/container input、exception panel | 5 |
 | RemoteNet | channel、fetch、stream、store、remote page/HUD、config sync、transport mode | 6 |
+| ModernConfig | 现代配置模板完整 demo、12 入口预览、屏幕跳转与返回 | 1 |
 
-首轮总量按上表合计约 59 张，实际实现应分批推进，每批 8 到 12 张，优先 CSS / Layout / Paint / Controls 这类视觉收益最高的分组。
+首轮总量按上表合计约 60 张，实际实现应分批推进，每批 8 到 12 张，优先 CSS / Layout / Paint / Controls 这类视觉收益最高的分组。
 
 ## 自动断言边界
 
@@ -92,6 +93,7 @@
 | Animation | timeline 状态、start/end/cancel 日志、最终样式 |
 | RuntimeHost | 多数需要游戏内人工确认，自动只检查入口和状态摘要 |
 | RemoteNet | 服务端往返、远程页面、HUD、配置保存需要游戏内确认 |
+| ModernConfig | 现代配置模板为独立 BaseScreen，自动只检查入口与模块状态，屏幕跳转、12 入口可见性和返回链路需游戏内确认 |
 
 ## 实施顺序
 
@@ -101,7 +103,7 @@
 | P1 | 首页视觉框架 | 首页展示能力画廊、热力图、筛选、环境信息 |
 | P2 | CSS / Layout / Paint 核心样例 | 最能体现浏览器语义的视觉样例先落地 |
 | P3 | Input / Controls / TextFont | 补齐交互、表单、文本字体类可观察样例 |
-| P4 | Animation / RuntimeHost / RemoteNet | 补齐动画、宿主、远程和网络链路 |
+| P4 | Animation / RuntimeHost / RemoteNet / ModernConfig | 补齐动画、宿主、远程、网络链路和完整配置模板 demo |
 | P5 | 结果交接 | 失败摘要、复制结果、最近失败、人工任务稳定可用 |
 
 ## 验证要求

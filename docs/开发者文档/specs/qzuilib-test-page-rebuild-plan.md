@@ -17,7 +17,7 @@
 | 区域 | 内容 | 验收要点 |
 |---|---|---|
 | 总览 | 当前 test 系统版本、已实现用例数、通过数、失败数、人工待确认数 | 页面打开后不依赖旧子页跳转 |
-| 分组导航 | DOM、CSS、Layout、Paint、Input、Controls、TextFont、Animation、RuntimeHost、RemoteNet | 每组显示覆盖范围和缺口数 |
+| 分组导航 | DOM、CSS、Layout、Paint、Input、Controls、TextFont、Animation、RuntimeHost、RemoteNet、MODCFG | 每组显示覆盖范围和缺口数 |
 | 最近失败 | 最近失败用例、失败文本、复现入口 | 失败信息可直接交接 |
 | 人工任务 | 需要人工确认的用例列表 | 每项显示 `预期结果：...` |
 | 环境信息 | Minecraft、Forge、LWJGL3ify、字体 epoch、窗口尺寸、网络传输模式 | 便于截图和日志关联 |
@@ -38,6 +38,7 @@
 | Animation | 已接入 ANIM-001 到 ANIM-008 | transition、per-property、keyframes、delay/duration/iteration、direction、fill-mode、timing、layout/paint impact 均有运行时卡片；视觉过程保留人工确认 |
 | RuntimeHost | 已接入 HOST-001 到 HOST-007 | 开屏、resize、runtime stats、GL render context、HUD、容器态输入桥接、异常面板均有运行时卡片；宿主行为保留人工确认 |
 | RemoteNet | 已接入 NET-001 到 NET-010 | Channel、分片、Fetch、Stream、Store、远程页面/HUD、安全集、配置同步、传输回退均有运行时卡片；服务端链路保留人工确认 |
+| ModernConfig | 已接入 VIS-MODCFG-001 | 现代配置模板完整 demo 入口、12 入口预览、模块状态牌与独立屏幕跳转；屏幕内部交互保留游戏内人工确认 |
 
 ## 运行时用例卡片规范
 
@@ -55,7 +56,7 @@
 
 ## 运行时矩阵接入范围
 
-P0 已建立分组索引、运行时测试结果模型和统一用例卡片契约。P1/P2/P3 已将规格矩阵中的 DOM-001 到 DOM-013、CSS-001 到 CSS-015、LAYOUT-001 到 LAYOUT-016、PAINT-001 到 PAINT-009、INPUT-001 到 INPUT-013、CTRL-001 到 CTRL-015、TEXT-001 到 TEXT-007、ANIM-001 到 ANIM-008、HOST-001 到 HOST-007、NET-001 到 NET-010 全部接入二级页运行时卡片。可由当前模型判断的用例接入自动断言；视觉、宿主、服务端链路和明确未实现能力保持执行中/人工确认或待实现缺口状态，不伪造通过。
+P0 已建立分组索引、运行时测试结果模型和统一用例卡片契约。P1/P2/P3 已将规格矩阵中的 DOM-001 到 DOM-013、CSS-001 到 CSS-015、LAYOUT-001 到 LAYOUT-016、PAINT-001 到 PAINT-009、INPUT-001 到 INPUT-013、CTRL-001 到 CTRL-015、TEXT-001 到 TEXT-007、ANIM-001 到 ANIM-008、HOST-001 到 HOST-007、NET-001 到 NET-010 全部接入二级页运行时卡片；后续新增 MODCFG/VIS-MODCFG-001 作为完整现代配置模板 demo 入口。可由当前模型判断的用例接入自动断言；视觉、宿主、服务端链路、独立屏幕跳转和明确未实现能力保持执行中/人工确认或待实现缺口状态，不伪造通过。
 
 | 二级页 | 已接入卡片 | 自动执行边界 | 人工确认 / 缺口边界 |
 |---|---:|---|---|
@@ -69,6 +70,7 @@ P0 已建立分组索引、运行时测试结果模型和统一用例卡片契�
 | Animation | 8 | transition 声明、per-property、keyframes、delay/duration/iteration、direction、fill-mode、timing 与布局影响入口 | 事件日志和视觉过程保留人工确认 |
 | RuntimeHost | 7 | 开屏状态、窗口信息、runtime stats、GL/HUD/容器输入/异常面板入口 | 聊天命令时序、resize、GL 状态、HUD 层级和容器桥接保留人工确认 |
 | RemoteNet | 10 | 网络/远程能力入口、传输模式、分片、fetch 状态、stream/store/remote/config 摘要 | 服务端往返、远程页面/HUD、配置保存和传输回退保留人工确认 |
+| ModernConfig | 1 | 现代配置模板 demo 入口、config 模块可用性状态牌与 12 入口预览 | `ModernConfigTemplateScreen` 独立屏幕、12 入口可见性、搜索/草稿/保存/返回链路保留 runClient21 人工确认 |
 
 二级页卡片必须完整显示 `用例编号`、`覆盖语义`、`自动断言`、`操作步骤`、`预期结果`、`实际结果`、`状态` 七个字段，并提供 `执行自动测试`、`人工通过`、`人工失败` 操作。新增或调整卡片时，仍必须先在本文对应分组表补齐编号、语义和 `预期结果：...` 文本。
 

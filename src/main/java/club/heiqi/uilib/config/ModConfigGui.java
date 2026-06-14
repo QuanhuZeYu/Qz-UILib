@@ -3,12 +3,20 @@ package club.heiqi.uilib.config;
 import club.heiqi.uilib.Config;
 import club.heiqi.uilib.MyMod;
 import club.heiqi.uilib.font.config.FontConfig;
+import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiScreen;
 
 /**
- * Qz UILib 的 HTML-like 游戏内配置页。
+ * Qz UILib 的游戏内配置页入口。
+ *
+ * <p>入口只负责检测现代 config 模块能力并选择页面实现，避免在 config 模块缺失时提前加载现代页。</p>
  */
-public class ModConfigGui extends ForgeConfigTemplateScreen {
+public class ModConfigGui extends GuiScreen {
+
+    private static final String CONFIG_CLASS_NAME = "club.heiqi.config.Config";
+    private static final String MUTABLE_CONFIG_CLASS_NAME = "club.heiqi.config.MutableConfig";
+
+    private final GuiScreen parentScreen;
 
     /**
      * 创建配置界面。
@@ -16,13 +24,34 @@ public class ModConfigGui extends ForgeConfigTemplateScreen {
      * @param parentScreen 父界面
      */
     public ModConfigGui(GuiScreen parentScreen) {
-        super(parentScreen, createSpec());
+        this.parentScreen = parentScreen;
     }
 
-    private static Spec createSpec() {
+    @Override
+    public void initGui() {
+        Minecraft minecraft = Minecraft.getMinecraft();
+        if (minecraft != null) {
+            minecraft.displayGuiScreen(createTargetScreen(parentScreen));
+        }
+    }
+
+    @Override
+    public boolean doesGuiPauseGame() {
+        return false;
+    }
+
+    static GuiScreen createTargetScreen(GuiScreen parentScreen) {
+        ForgeConfigTemplateScreen.Spec spec = createForgeSpec();
+        if (isModernConfigModuleAvailable()) {
+            return ModernConfigBridge.createScreen(parentScreen, spec);
+        }
+        return new ForgeConfigTemplateScreen(parentScreen, spec);
+    }
+
+    private static ForgeConfigTemplateScreen.Spec createForgeSpec() {
         return createBaseSpec(Config.configuration)
                 .setConfigPath(Config.getConfigPath())
-                .setSaveHandler(new SaveHandler() {
+                .setSaveHandler(new ForgeConfigTemplateScreen.SaveHandler() {
                     @Override
                     public void onSave(net.minecraftforge.common.config.Configuration configuration) {
                         Config.saveAndReload();
@@ -33,16 +62,33 @@ public class ModConfigGui extends ForgeConfigTemplateScreen {
                 .enableQzNetworkSync(ConfigTemplateSyncManager.QZ_UI_LIB_SCREEN_ID);
     }
 
-    private static Spec createBaseSpec(net.minecraftforge.common.config.Configuration configuration) {
-        Spec spec = new Spec(MyMod.MODID, QzUiLibConfigSchema.title(), configuration)
+    private static ForgeConfigTemplateScreen.Spec createBaseSpec(
+            net.minecraftforge.common.config.Configuration configuration) {
+        ForgeConfigTemplateScreen.Spec spec = new ForgeConfigTemplateScreen.Spec(MyMod.MODID,
+                QzUiLibConfigSchema.title(), configuration)
                 .setSubtitle(QzUiLibConfigSchema.subtitle())
                 .setDescription(QzUiLibConfigSchema.description());
         for (ConfigSyncCategorySpec category : QzUiLibConfigSchema.categories()) {
-            spec.addCategory(new CategorySpec(category.getCategoryName())
+            spec.addCategory(new ForgeConfigTemplateScreen.CategorySpec(category.getCategoryName())
                     .addAliases(category.getAliases())
                     .setTitle(category.getDisplayTitle())
                     .setDescription(category.getDescription()));
         }
         return spec;
+    }
+
+    private static boolean isModernConfigModuleAvailable() {
+        return isClassAvailable(CONFIG_CLASS_NAME) && isClassAvailable(MUTABLE_CONFIG_CLASS_NAME);
+    }
+
+    private static boolean isClassAvailable(String className) {
+        try {
+            Class.forName(className, false, ModConfigGui.class.getClassLoader());
+            return true;
+        } catch (ClassNotFoundException exception) {
+            return false;
+        } catch (LinkageError error) {
+            return false;
+        }
     }
 }
