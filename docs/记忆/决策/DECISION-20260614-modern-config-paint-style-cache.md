@@ -44,3 +44,16 @@
 - 诊断计数 `replayStyleComputes` 统计的是 1 参 `compute()` 入口；本修复主路径走 `computeWithParentStyle`（未计数），故修复后该计数会降到接近 0（仅伪元素回退计入），属预期。真正的收益基线看 `replay` 毫秒数与 fps，而非该计数。
 - 诊断埋点（`UiStyleResolver.DIAG_COMPUTE_CALLS`、`文档绘制诊断` 日志）仅存在于 `perf/modern-config-paint-diagnostics` 分支，未并入 `4.0`。如需复测 compute 调用次数对比，把含本修复的 `4.0` 合并进该诊断分支再跑。
 - 若后续要让命令重放完全不再 `compute()`，推进方案 2（命令构建期把样式量写进 `DocumentPaintCommand`）。
+
+
+## 2026-06-15 追加：本决策的根因判断已被实测证伪（修复保留，归因更正）
+
+用户本机带修复编译运行（IntelliJ JBR Java21）。铁证：该次运行的 `build/classes/.../DocumentPaintRenderer.class`（mtime 16:20，在修复合入 16:12 之后）经 `strings` 确认字节码含 `resolveStyle`/`computeWithParentStyle`/`IdentityHashMap`，游戏 16:22 启动 ⇒ 修复确已编译进该次运行。
+
+**结果：`render` 仍 312–366ms、`fps` 仍 2.7，与修复前（fml-client-2/3.log：render 326–388ms、fps 2.7）逐数值一致，零改善。**
+
+⇒ 本决策「背景」一节把 `replay` 的 ~300ms 归因为「逐命令递归到根的无缓存 `compute()` 级联」**被证伪**。那个归因来自「replay总时长 ÷ replayStyleComputes ≈ 0.08ms/次」的反推，属循环论证；消除该级联后 replay 未降，证明 compute 级联不是 replay 主成本。
+
+**本修复仍予保留**：它在语义等价前提下消除了绘制期递归级联，是正确的微优化（对样式复杂/层级深的页面仍有意义），只是不是 ModernConfig ~3FPS 的瓶颈。**不回滚。**
+
+**真正瓶颈方向**（详见自动记忆 modern-config-fps-bottleneck，本轮已逐项排除 box-shadow/圆角三角函数/stencil/文本测量/表格遍历/FBO）：replay 的大头在「即时模式 GL 全量绘制 + 无视口裁切」。727 命令每帧全量重放，无合批、native 2560×1369 分辨率 overdraw、且整个 paint 包无任何视口剔除（屏幕外命令照样构建+重放）。下一步先用诊断分支按命令类型分段计时 + glFinish 前后计时区分 CPU/GPU，再决定走视口裁切 / 合批 / 离屏缓存，不再静态推断当结论。若推进彻底版（命令构建期写入样式值，即原候选方案 2），需在确认 CPU-bound 后再评估。
