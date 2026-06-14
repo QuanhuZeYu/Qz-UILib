@@ -248,7 +248,7 @@ public class ModernConfigTemplateScreen extends BaseScreen {
             try {
                 spec.getConfig().reload();
             } catch (ConfigException exception) {
-                refreshStatusText("恢复失败：" + resolveExceptionMessage(exception));
+                refreshStatusText(formatRestoreFailed(exception));
                 return;
             }
         }
@@ -510,7 +510,17 @@ public class ModernConfigTemplateScreen extends BaseScreen {
     }
 
     private static String formatSaveFailed(Throwable exception) {
-        return "保存失败：" + resolveExceptionMessage(exception);
+        StringBuilder sb = new StringBuilder(64);
+        sb.append("保存失败：");
+        sb.append(resolveExceptionMessage(exception));
+        return sb.toString();
+    }
+
+    private static String formatRestoreFailed(Throwable exception) {
+        StringBuilder sb = new StringBuilder(64);
+        sb.append("恢复失败：");
+        sb.append(resolveExceptionMessage(exception));
+        return sb.toString();
     }
 
     private static String resolveExceptionMessage(Throwable exception) {

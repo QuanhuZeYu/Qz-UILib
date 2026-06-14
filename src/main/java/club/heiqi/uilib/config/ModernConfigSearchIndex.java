@@ -130,13 +130,13 @@ public final class ModernConfigSearchIndex {
      */
     public void rebuild(ConfigNode newRoot) {
         Map<String, Boolean> dirtyByPath = collectDirtyByPath();
-        List<SearchEntry> built = new ArrayList<SearchEntry>();
+        List<SearchEntry> built = new ArrayList<SearchEntry>(128);
         collectEntries("", newRoot, "", built, dirtyByPath);
         this.entries = built;
     }
 
     /**
-     * 获取当前所有索引条目（不可变副本）。
+     * 获取当前所有索引条目（不可变视图）。
      *
      * @return 索引条目列表
      */
