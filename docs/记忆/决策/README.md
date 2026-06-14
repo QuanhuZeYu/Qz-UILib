@@ -56,3 +56,4 @@
 - [`DECISION-20260614-modern-config-template-screen-no-split.md`](DECISION-20260614-modern-config-template-screen-no-split.md) - ModernConfigTemplateScreen（846 行）不拆分 Spec/FieldSpec 为独立文件：未达硬门槛，拆分将大面积改动已定稿的 binding/TypeInference/SearchIndex 引用，违反批次边界
 - [`DECISION-20260614-modern-config-performance-optimization.md`](DECISION-20260614-modern-config-performance-optimization.md) - ModernConfig 配置页面系统性性能优化：P0 防抖+增量索引+差量列表、P1 分批构建+延迟加载、P2 虚拟化+Binding 复用
 - [`DECISION-20260614-host-background-blur-default-off.md`](DECISION-20260614-host-background-blur-default-off.md) - 宿主级背景模糊全局默认关闭并修复 capture 无条件全屏快照；性能优先基线，需要模糊的页面用页面级 BackdropBlurPolicy 显式开启
+- [`DECISION-20260614-modern-config-paint-style-cache.md`](DECISION-20260614-modern-config-paint-style-cache.md) - ModernConfig 绘制重放对每条命令递归到根的 `compute()` 改为单趟 ComputedStyle 备忘（经 computeWithParentStyle 复用祖先链），消除 ~3 FPS 重放瓶颈

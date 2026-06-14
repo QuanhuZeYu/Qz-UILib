@@ -2,7 +2,9 @@ package club.heiqi.uilib.ui.paint;
 
 import java.util.ArrayDeque;
 import java.util.Deque;
+import java.util.IdentityHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 
 import club.heiqi.uilib.font.FontService;
@@ -101,6 +103,38 @@ public final class DocumentPaintRenderer {
     private DocumentPaintRenderer() {}
 
     /**
+     * 解析元素的计算样式，并在单趟绘制重放内按元素实例备忘，避免逐命令递归到文档根重复级联。
+     *
+     * <p>绘制重放统一走 1 参样式入口（无 activeStates，交互伪类不参与），单趟内元素样式不变，
+     * 因此按元素实例缓存是确定性的、安全的。普通元素经 {@link UiStyleResolver#computeWithParentStyle}
+     * 自顶向下复用父级缓存，使每个元素每趟仅做一次单层级联；伪元素级联语义特殊，回退到原始
+     * {@link UiStyleResolver#compute(ElementNode)} 入口，结果同样写入备忘表。</p>
+     *
+     * @param element 目标元素
+     * @param styleMemo 单趟绘制的元素样式备忘表（每趟绘制新建，单趟内不失效）
+     * @return 元素计算样式
+     */
+    private static ComputedStyle resolveStyle(ElementNode element, Map<ElementNode, ComputedStyle> styleMemo) {
+        ComputedStyle cached = styleMemo.get(element);
+        if (cached != null) {
+            return cached;
+        }
+        ComputedStyle style;
+        if (element.isPseudoElement()) {
+            // 伪元素 origin/runtime 级联语义特殊，保持原始入口，避免破坏匹配结果
+            style = UiStyleResolver.compute(element);
+        } else {
+            club.heiqi.uilib.ui.dom.DocumentNode parent = element.getParent();
+            ComputedStyle parentStyle = parent instanceof ElementNode
+                    ? resolveStyle((ElementNode) parent, styleMemo)
+                    : null;
+            style = UiStyleResolver.computeWithParentStyle(element, parentStyle);
+        }
+        styleMemo.put(element, style);
+        return style;
+    }
+
+    /**
      * 渲染一组绘制命令。
      *
      * @param context 渲染上下文
@@ -124,6 +158,7 @@ public final class DocumentPaintRenderer {
             return;
         }
         RenderReplayState replayState = new RenderReplayState();
+        Map<ElementNode, ComputedStyle> styleMemo = new IdentityHashMap<ElementNode, ComputedStyle>();
         try {
             int commandIndex = 0;
             while (commandIndex < commands.size()) {
@@ -131,14 +166,14 @@ public final class DocumentPaintRenderer {
                 if (isRenderableTextCommand(command, replayState)) {
                     if (isBatchableTextCommand(command, replayState)) {
                         commandIndex = renderTextBatch(context, commands, commandIndex, offsetX, offsetY,
-                                replayState);
+                                replayState, styleMemo);
                     } else {
-                        renderTextCommand(context, command, offsetX, offsetY, replayState);
+                        renderTextCommand(context, command, offsetX, offsetY, replayState, styleMemo);
                         commandIndex++;
                     }
                     continue;
                 }
-                renderCommand(context, command, offsetX, offsetY, replayState);
+                renderCommand(context, command, offsetX, offsetY, replayState, styleMemo);
                 commandIndex++;
             }
         } finally {
@@ -149,7 +184,7 @@ public final class DocumentPaintRenderer {
     }
 
     private static int renderTextBatch(UiRenderContext context, List<DocumentPaintCommand> commands, int startIndex,
-            int offsetX, int offsetY, RenderReplayState replayState) {
+            int offsetX, int offsetY, RenderReplayState replayState, Map<ElementNode, ComputedStyle> styleMemo) {
         if (!context.supportsDeferredTextBatching()) {
             int commandIndex = startIndex;
             while (commandIndex < commands.size()) {
@@ -157,7 +192,7 @@ public final class DocumentPaintRenderer {
                 if (!isBatchableTextCommand(command, replayState)) {
                     break;
                 }
-                renderTextCommand(context, command, offsetX, offsetY, replayState);
+                renderTextCommand(context, command, offsetX, offsetY, replayState, styleMemo);
                 commandIndex++;
             }
             return commandIndex;
@@ -172,7 +207,7 @@ public final class DocumentPaintRenderer {
                     if (!isBatchableTextCommand(command, replayState)) {
                         break;
                     }
-                    renderTextCommand(context, command, offsetX, offsetY, replayState);
+                    renderTextCommand(context, command, offsetX, offsetY, replayState, styleMemo);
                     commandIndex++;
                 }
                 return commandIndex;
@@ -187,7 +222,7 @@ public final class DocumentPaintRenderer {
     }
 
     private static void renderCommand(UiRenderContext context, DocumentPaintCommand command, int offsetX, int offsetY,
-            RenderReplayState replayState) {
+            RenderReplayState replayState, Map<ElementNode, ComputedStyle> styleMemo) {
         if (command == null) {
             return;
         }
@@ -204,7 +239,7 @@ public final class DocumentPaintRenderer {
             return;
         }
         if (isEffectStartCommand(command)) {
-            pushEffectState(context, command, offsetX, offsetY, replayState);
+            pushEffectState(context, command, offsetX, offsetY, replayState, styleMemo);
             return;
         }
         if (command.getWidth() <= 0 || command.getHeight() <= 0) {
@@ -213,18 +248,18 @@ public final class DocumentPaintRenderer {
         if (replayState.fallbackOpacity <= 0.001F) {
             return;
         }
-        if (renderStatelessEffect(context, command, offsetX, offsetY)) {
+        if (renderStatelessEffect(context, command, offsetX, offsetY, styleMemo)) {
             return;
         }
         if (command.getType() == DocumentPaintCommandType.BACKGROUND) {
             context.drawSurface(command.getLeft() + offsetX, command.getTop() + offsetY,
                     command.getRight() + offsetX, command.getBottom() + offsetY,
                     new UiSurfaceStyle(applyOpacity(command.getColor(), replayState.fallbackOpacity), 0,
-                            resolveCommandCornerRadii(command, true), command.getCornerMask()));
+                            resolveCommandCornerRadii(command, true, styleMemo), command.getCornerMask()));
             return;
         }
         if (command.getType() == DocumentPaintCommandType.BACKGROUND_IMAGE) {
-            renderBackgroundImage(context, command, offsetX, offsetY);
+            renderBackgroundImage(context, command, offsetX, offsetY, styleMemo);
             return;
         }
         if (command.getType() == DocumentPaintCommandType.SCROLLBAR_TRACK
@@ -232,20 +267,20 @@ public final class DocumentPaintRenderer {
             context.drawSurface(command.getLeft() + offsetX, command.getTop() + offsetY,
                     command.getRight() + offsetX, command.getBottom() + offsetY,
                     new UiSurfaceStyle(applyOpacity(command.getColor(), replayState.fallbackOpacity), 0,
-                            resolveCommandCornerRadii(command, false), command.getCornerMask()));
+                            resolveCommandCornerRadii(command, false, styleMemo), command.getCornerMask()));
             return;
         }
         if (command.getType() == DocumentPaintCommandType.BOX_SHADOW
                 || command.getType() == DocumentPaintCommandType.BOX_SHADOW_INSET) {
-            renderBoxShadow(context, command, offsetX, offsetY, replayState.fallbackOpacity);
+            renderBoxShadow(context, command, offsetX, offsetY, replayState.fallbackOpacity, styleMemo);
             return;
         }
         if (command.getType() == DocumentPaintCommandType.BORDER) {
-            renderBorder(context, command, offsetX, offsetY, replayState.fallbackOpacity);
+            renderBorder(context, command, offsetX, offsetY, replayState.fallbackOpacity, styleMemo);
             return;
         }
         if (command.getType() == DocumentPaintCommandType.OUTLINE) {
-            renderOutline(context, command, offsetX, offsetY, replayState.fallbackOpacity);
+            renderOutline(context, command, offsetX, offsetY, replayState.fallbackOpacity, styleMemo);
             return;
         }
         if (command.getType() == DocumentPaintCommandType.TEXT_DECORATION) {
@@ -266,14 +301,14 @@ public final class DocumentPaintRenderer {
     }
 
     private static void renderTextCommand(UiRenderContext context, DocumentPaintCommand command, int offsetX,
-            int offsetY, RenderReplayState replayState) {
-        renderTextShadow(context, command, offsetX, offsetY, replayState.fallbackOpacity);
+            int offsetY, RenderReplayState replayState, Map<ElementNode, ComputedStyle> styleMemo) {
+        renderTextShadow(context, command, offsetX, offsetY, replayState.fallbackOpacity, styleMemo);
         context.drawText(command.getText(), command.getLeft() + offsetX, command.getTop() + offsetY,
                 applyOpacity(command.getColor(), replayState.fallbackOpacity), false, command.getTextMeasureStyle());
     }
 
     private static void renderBackgroundImage(UiRenderContext context, DocumentPaintCommand command, int offsetX,
-            int offsetY) {
+            int offsetY, Map<ElementNode, ComputedStyle> styleMemo) {
         UiBackgroundImage backgroundImage = command.getBackgroundImage();
         if (backgroundImage == null) {
             return;
@@ -282,7 +317,7 @@ public final class DocumentPaintRenderer {
         int top = command.getTop() + offsetY;
         int right = command.getRight() + offsetX;
         int bottom = command.getBottom() + offsetY;
-        context.pushClip(left, top, right, bottom, resolveCommandCornerRadii(command, true));
+        context.pushClip(left, top, right, bottom, resolveCommandCornerRadii(command, true, styleMemo));
         try {
             context.drawHostImage(backgroundImage.getSource(), left, top, right, bottom);
         } finally {
@@ -291,8 +326,8 @@ public final class DocumentPaintRenderer {
     }
 
     private static void renderTextShadow(UiRenderContext context, DocumentPaintCommand command, int offsetX,
-            int offsetY, float fallbackOpacity) {
-        UiTextShadow textShadow = UiStyleResolver.compute(command.getElement()).getTextShadow();
+            int offsetY, float fallbackOpacity, Map<ElementNode, ComputedStyle> styleMemo) {
+        UiTextShadow textShadow = resolveStyle(command.getElement(), styleMemo).getTextShadow();
         if (textShadow == null) {
             return;
         }
@@ -366,7 +401,7 @@ public final class DocumentPaintRenderer {
     }
 
     private static void pushEffectState(UiRenderContext context, DocumentPaintCommand command, int offsetX,
-            int offsetY, RenderReplayState replayState) {
+            int offsetY, RenderReplayState replayState, Map<ElementNode, ComputedStyle> styleMemo) {
         if (command.getEffectType() == DocumentEffectType.PAINT_CONTEXT) {
             replayState.pushPaintContext(context, command, offsetX, offsetY);
             return;
@@ -374,44 +409,44 @@ public final class DocumentPaintRenderer {
         if (command.getEffectType() == DocumentEffectType.OVERFLOW_CLIP) {
             context.pushClip(command.getLeft() + offsetX, command.getTop() + offsetY,
                     command.getRight() + offsetX, command.getBottom() + offsetY,
-                    resolveCommandCornerRadii(command, true));
+                    resolveCommandCornerRadii(command, true, styleMemo));
             replayState.pushClip();
         }
     }
 
     private static boolean renderStatelessEffect(UiRenderContext context, DocumentPaintCommand command, int offsetX,
-            int offsetY) {
+            int offsetY, Map<ElementNode, ComputedStyle> styleMemo) {
         if (command.getEffectType() != DocumentEffectType.BACKDROP_FILTER) {
             return false;
         }
         context.drawBackdropFilter(command.getLeft() + offsetX, command.getTop() + offsetY,
                 command.getRight() + offsetX, command.getBottom() + offsetY,
                 command.getBackdropBlurRadius(), command.getBackdropSaturation(),
-                resolveCommandCornerRadii(command, true));
+                resolveCommandCornerRadii(command, true, styleMemo));
         return true;
     }
 
     private static void renderBorder(UiRenderContext context, DocumentPaintCommand command, int offsetX, int offsetY,
-            float fallbackOpacity) {
-        ComputedStyle style = UiStyleResolver.compute(command.getElement());
+            float fallbackOpacity, Map<ElementNode, ComputedStyle> styleMemo) {
+        ComputedStyle style = resolveStyle(command.getElement(), styleMemo);
         UiBorderStyle borderStyle = style.getBorderStyle();
         if (borderStyle == UiBorderStyle.HIDDEN || borderStyle == UiBorderStyle.NONE) {
             return;
         }
-        DocumentLayoutEdges widths = resolveBorderWidths(command, style);
+        DocumentLayoutEdges widths = resolveBorderWidths(command, style, styleMemo);
         int topColor = resolveBorderColor(style.getBorderColors(), command.getColor(), fallbackOpacity, 0);
         int rightColor = resolveBorderColor(style.getBorderColors(), command.getColor(), fallbackOpacity, 1);
         int bottomColor = resolveBorderColor(style.getBorderColors(), command.getColor(), fallbackOpacity, 2);
         int leftColor = resolveBorderColor(style.getBorderColors(), command.getColor(), fallbackOpacity, 3);
-        UiBorderRadiusResolver.ResolvedCornerRadii cornerRadii = resolveCommandCornerRadii(command, true);
+        UiBorderRadiusResolver.ResolvedCornerRadii cornerRadii = resolveCommandCornerRadii(command, true, styleMemo);
         renderRing(context, command.getLeft() + offsetX, command.getTop() + offsetY, command.getRight() + offsetX,
                 command.getBottom() + offsetY, widths, topColor, rightColor, bottomColor, leftColor, borderStyle,
                 cornerRadii, command.getCornerMask());
     }
 
     private static void renderOutline(UiRenderContext context, DocumentPaintCommand command, int offsetX, int offsetY,
-            float fallbackOpacity) {
-        ComputedStyle style = UiStyleResolver.compute(command.getElement());
+            float fallbackOpacity, Map<ElementNode, ComputedStyle> styleMemo) {
+        ComputedStyle style = resolveStyle(command.getElement(), styleMemo);
         UiOutline outline = style.getOutline();
         if (outline == null || outline.isNone()) {
             return;
@@ -426,7 +461,7 @@ public final class DocumentPaintRenderer {
         }
         int offset = Math.max(0, outline.getOffset());
         DocumentLayoutEdges widths = DocumentLayoutEdges.of(width, width, width, width);
-        UiBorderRadiusResolver.ResolvedCornerRadii cornerRadii = resolveCommandCornerRadii(command, true)
+        UiBorderRadiusResolver.ResolvedCornerRadii cornerRadii = resolveCommandCornerRadii(command, true, styleMemo)
                 .outset(width + offset);
         int left = command.getLeft() + offsetX - width - offset;
         int top = command.getTop() + offsetY - width - offset;
@@ -438,10 +473,10 @@ public final class DocumentPaintRenderer {
     }
 
     private static void renderBoxShadow(UiRenderContext context, DocumentPaintCommand command, int offsetX, int offsetY,
-            float fallbackOpacity) {
+            float fallbackOpacity, Map<ElementNode, ComputedStyle> styleMemo) {
         UiBoxShadow boxShadow = command.getBoxShadow();
         if (boxShadow == null) {
-            ComputedStyle style = UiStyleResolver.compute(command.getElement());
+            ComputedStyle style = resolveStyle(command.getElement(), styleMemo);
             boxShadow = style.getBoxShadow();
         }
         if (boxShadow == null) {
@@ -449,7 +484,7 @@ public final class DocumentPaintRenderer {
         }
         int color = applyOpacity(command.getColor(), fallbackOpacity);
         int steps = Math.max(1, boxShadow.getBlurRadius());
-        UiBorderRadiusResolver.ResolvedCornerRadii baseRadii = resolveCommandCornerRadii(command, true);
+        UiBorderRadiusResolver.ResolvedCornerRadii baseRadii = resolveCommandCornerRadii(command, true, styleMemo);
         if (!boxShadow.isInset()) {
             for (int index = steps; index >= 0; index--) {
                 int expand = Math.max(0, boxShadow.getSpreadRadius()) + index;
@@ -610,7 +645,8 @@ public final class DocumentPaintRenderer {
         }
     }
 
-    private static DocumentLayoutEdges resolveBorderWidths(DocumentPaintCommand command, ComputedStyle style) {
+    private static DocumentLayoutEdges resolveBorderWidths(DocumentPaintCommand command, ComputedStyle style,
+            Map<ElementNode, ComputedStyle> styleMemo) {
         UiStyleInsets borderWidthSides = style.getBorderWidthSides();
         DocumentLayoutEdges resolvedWidths;
         if (borderWidthSides != null) {
@@ -622,25 +658,25 @@ public final class DocumentPaintRenderer {
             int width = Math.max(0, command.getBorderWidth());
             resolvedWidths = DocumentLayoutEdges.of(width, width, width, width);
         }
-        return applyCollapsedTableBorderOverride(command, style, resolvedWidths);
+        return applyCollapsedTableBorderOverride(command, style, resolvedWidths, styleMemo);
     }
 
     private static DocumentLayoutEdges applyCollapsedTableBorderOverride(DocumentPaintCommand command, ComputedStyle style,
-            DocumentLayoutEdges widths) {
+            DocumentLayoutEdges widths, Map<ElementNode, ComputedStyle> styleMemo) {
         if (command == null || style == null || widths == null || style.getDisplay() != club.heiqi.uilib.ui.style.props.UiDisplay.TABLE_CELL) {
             return widths;
         }
         ElementNode element = command.getElement();
-        if (element == null || !isCollapsedTableCell(element)) {
+        if (element == null || !isCollapsedTableCell(element, styleMemo)) {
             return widths;
         }
         boolean lastColumn = isLastTableColumn(element);
-        boolean lastRow = isLastTableRow(element);
+        boolean lastRow = isLastTableRow(element, styleMemo);
         return DocumentLayoutEdges.of(widths.getTop(), lastColumn ? widths.getRight() : 0,
                 lastRow ? widths.getBottom() : 0, widths.getLeft());
     }
 
-    private static boolean isCollapsedTableCell(ElementNode cell) {
+    private static boolean isCollapsedTableCell(ElementNode cell, Map<ElementNode, ComputedStyle> styleMemo) {
         if (cell == null || !(cell.getParent() instanceof ElementNode)) {
             return false;
         }
@@ -656,7 +692,7 @@ public final class DocumentPaintRenderer {
                 || "tfoot".equals(parent.getTagName())) && parent.getParent() instanceof ElementNode) {
             table = (ElementNode) parent.getParent();
         }
-        return table != null && UiStyleResolver.compute(table).getBorderCollapse() == UiBorderCollapse.COLLAPSE;
+        return table != null && resolveStyle(table, styleMemo).getBorderCollapse() == UiBorderCollapse.COLLAPSE;
     }
 
     private static boolean isLastTableColumn(ElementNode cell) {
@@ -677,7 +713,7 @@ public final class DocumentPaintRenderer {
         return lastCell == null || lastCell == cell;
     }
 
-    private static boolean isLastTableRow(ElementNode cell) {
+    private static boolean isLastTableRow(ElementNode cell, Map<ElementNode, ComputedStyle> styleMemo) {
         if (cell == null || !(cell.getParent() instanceof ElementNode)) {
             return true;
         }
@@ -686,7 +722,7 @@ public final class DocumentPaintRenderer {
         if (table == null) {
             return true;
         }
-        ElementNode lastRow = findLastVisibleRowInTable(table);
+        ElementNode lastRow = findLastVisibleRowInTable(table, styleMemo);
         return lastRow == null || lastRow == row;
     }
 
@@ -701,33 +737,33 @@ public final class DocumentPaintRenderer {
         return null;
     }
 
-    private static ElementNode findLastVisibleRowInSection(ElementNode section) {
+    private static ElementNode findLastVisibleRowInSection(ElementNode section, Map<ElementNode, ComputedStyle> styleMemo) {
         ElementNode lastRow = null;
         for (club.heiqi.uilib.ui.dom.DocumentNode child : section.getChildren()) {
             if (!(child instanceof ElementNode)) {
                 continue;
             }
             ElementNode childElement = (ElementNode) child;
-            if (isVisibleTableRow(childElement)) {
+            if (isVisibleTableRow(childElement, styleMemo)) {
                 lastRow = childElement;
             }
         }
         return lastRow;
     }
 
-    private static ElementNode findLastVisibleRowInTable(ElementNode table) {
+    private static ElementNode findLastVisibleRowInTable(ElementNode table, Map<ElementNode, ComputedStyle> styleMemo) {
         ElementNode lastRow = null;
         for (club.heiqi.uilib.ui.dom.DocumentNode child : table.getChildren()) {
             if (!(child instanceof ElementNode)) {
                 continue;
             }
             ElementNode childElement = (ElementNode) child;
-            if (isVisibleTableRow(childElement)) {
+            if (isVisibleTableRow(childElement, styleMemo)) {
                 lastRow = childElement;
                 continue;
             }
-            if (isTableRowGroup(childElement)) {
-                ElementNode sectionLastRow = findLastVisibleRowInSection(childElement);
+            if (isTableRowGroup(childElement, styleMemo)) {
+                ElementNode sectionLastRow = findLastVisibleRowInSection(childElement, styleMemo);
                 if (sectionLastRow != null) {
                     lastRow = sectionLastRow;
                 }
@@ -736,22 +772,22 @@ public final class DocumentPaintRenderer {
         return lastRow;
     }
 
-    private static boolean isVisibleTableRow(ElementNode element) {
+    private static boolean isVisibleTableRow(ElementNode element, Map<ElementNode, ComputedStyle> styleMemo) {
         if (element == null) {
             return false;
         }
-        ComputedStyle style = UiStyleResolver.compute(element);
+        ComputedStyle style = resolveStyle(element, styleMemo);
         return "tr".equals(element.getTagName()) && style.getDisplay() == UiDisplay.TABLE_ROW
                 && style.getVisibility() != UiVisibility.HIDDEN
                 && style.getPosition() != UiPosition.ABSOLUTE
                 && style.getPosition() != UiPosition.FIXED;
     }
 
-    private static boolean isTableRowGroup(ElementNode element) {
+    private static boolean isTableRowGroup(ElementNode element, Map<ElementNode, ComputedStyle> styleMemo) {
         if (element == null) {
             return false;
         }
-        ComputedStyle style = UiStyleResolver.compute(element);
+        ComputedStyle style = resolveStyle(element, styleMemo);
         if (style.getVisibility() == UiVisibility.HIDDEN) {
             return false;
         }
@@ -824,12 +860,12 @@ public final class DocumentPaintRenderer {
     }
 
     private static UiBorderRadiusResolver.ResolvedCornerRadii resolveCommandCornerRadii(DocumentPaintCommand command,
-            boolean useElementStyle) {
+            boolean useElementStyle, Map<ElementNode, ComputedStyle> styleMemo) {
         if (command.getCornerRadii() != null) {
             return command.getCornerRadii();
         }
         if (useElementStyle && command.getElement() != null) {
-            return UiBorderRadiusResolver.resolve(UiStyleResolver.compute(command.getElement()), command.getWidth(),
+            return UiBorderRadiusResolver.resolve(resolveStyle(command.getElement(), styleMemo), command.getWidth(),
                     command.getHeight());
         }
         return UiBorderRadiusResolver.ResolvedCornerRadii.uniform(command.getBorderRadius());
