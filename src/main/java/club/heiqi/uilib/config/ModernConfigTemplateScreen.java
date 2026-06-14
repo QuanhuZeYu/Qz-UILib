@@ -75,12 +75,7 @@ public class ModernConfigTemplateScreen extends BaseScreen {
                 .setHeight(UiLength.percent(1.0F)));
 
         this.bindings = ModernConfigPropertyBindings.createBindings(spec.getConfig(), spec.getFields(),
-                new ModernConfigPropertyBindings.ChangeListener() {
-                    @Override
-                    public void onDraftChanged() {
-                        onDraftChangedInternal();
-                    }
-                });
+                new DraftChangeListener(this));
         this.saveButton = createActionButton(document, spec.getTextSet().saveButtonLabel,
                 spec.getTheme().primaryButtonColor, spec.getTheme().primaryButtonActiveColor,
                 spec.getTheme().disabledButtonColor);
@@ -95,19 +90,9 @@ public class ModernConfigTemplateScreen extends BaseScreen {
                 spec.getTheme().disabledButtonColor);
 
         configureActionButtons();
-        this.searchIndex = new ModernConfigSearchIndex(new ModernConfigSearchIndex.DirtyStateProvider() {
-            @Override
-            public Map<String, Boolean> collectDirtyByPath() {
-                return collectDirtyMarkers();
-            }
-        }, indexFieldsByPath(), spec.getConfig().asImmutable());
-        this.searchFilter = new ModernConfigSearchFilter(document, searchIndex,
-                new Consumer<String>() {
-                    @Override
-                    public void accept(String path) {
-                        onJumpToPath(path);
-                    }
-                });
+        this.searchIndex = new ModernConfigSearchIndex(new ScreenDirtyStateProvider(this),
+                indexFieldsByPath(), spec.getConfig().asImmutable());
+        this.searchFilter = new ModernConfigSearchFilter(document, searchIndex, new PathJumpConsumer(this));
         ModernConfigDocumentBuilder.Result buildResult = new ModernConfigDocumentBuilder(spec, bindings,
                 saveButton, restoreCurrentButton, restoreDefaultsButton, backButton, searchFilter).build(document);
         this.statusText = buildResult.getStatusText();
@@ -157,30 +142,62 @@ public class ModernConfigTemplateScreen extends BaseScreen {
     }
 
     private void configureActionButtons() {
-        saveButton.setActionHandler(new DocumentButtonActionHandler() {
-            @Override
-            public void onAction(DocumentButtonActionEvent event) {
-                saveDraft();
-            }
-        });
-        restoreCurrentButton.setActionHandler(new DocumentButtonActionHandler() {
-            @Override
-            public void onAction(DocumentButtonActionEvent event) {
-                restoreCurrentValues();
-            }
-        });
-        restoreDefaultsButton.setActionHandler(new DocumentButtonActionHandler() {
-            @Override
-            public void onAction(DocumentButtonActionEvent event) {
-                restoreDefaultValues();
-            }
-        });
-        backButton.setActionHandler(new DocumentButtonActionHandler() {
-            @Override
-            public void onAction(DocumentButtonActionEvent event) {
-                requestClose();
-            }
-        });
+        saveButton.setActionHandler(new SaveActionHandler(this));
+        restoreCurrentButton.setActionHandler(new RestoreCurrentActionHandler(this));
+        restoreDefaultsButton.setActionHandler(new RestoreDefaultsActionHandler(this));
+        backButton.setActionHandler(new BackActionHandler(this));
+    }
+
+    private static final class SaveActionHandler implements DocumentButtonActionHandler {
+        private final ModernConfigTemplateScreen screen;
+
+        SaveActionHandler(ModernConfigTemplateScreen screen) {
+            this.screen = screen;
+        }
+
+        @Override
+        public void onAction(DocumentButtonActionEvent event) {
+            screen.saveDraft();
+        }
+    }
+
+    private static final class RestoreCurrentActionHandler implements DocumentButtonActionHandler {
+        private final ModernConfigTemplateScreen screen;
+
+        RestoreCurrentActionHandler(ModernConfigTemplateScreen screen) {
+            this.screen = screen;
+        }
+
+        @Override
+        public void onAction(DocumentButtonActionEvent event) {
+            screen.restoreCurrentValues();
+        }
+    }
+
+    private static final class RestoreDefaultsActionHandler implements DocumentButtonActionHandler {
+        private final ModernConfigTemplateScreen screen;
+
+        RestoreDefaultsActionHandler(ModernConfigTemplateScreen screen) {
+            this.screen = screen;
+        }
+
+        @Override
+        public void onAction(DocumentButtonActionEvent event) {
+            screen.restoreDefaultValues();
+        }
+    }
+
+    private static final class BackActionHandler implements DocumentButtonActionHandler {
+        private final ModernConfigTemplateScreen screen;
+
+        BackActionHandler(ModernConfigTemplateScreen screen) {
+            this.screen = screen;
+        }
+
+        @Override
+        public void onAction(DocumentButtonActionEvent event) {
+            screen.requestClose();
+        }
     }
 
     private void saveDraft() {
@@ -887,5 +904,44 @@ public class ModernConfigTemplateScreen extends BaseScreen {
          * @throws ConfigException 保存失败
          */
         void onSave(MutableConfig config) throws ConfigException;
+    }
+
+    private static final class DraftChangeListener implements ModernConfigPropertyBindings.ChangeListener {
+        private final ModernConfigTemplateScreen screen;
+
+        DraftChangeListener(ModernConfigTemplateScreen screen) {
+            this.screen = screen;
+        }
+
+        @Override
+        public void onDraftChanged() {
+            screen.onDraftChangedInternal();
+        }
+    }
+
+    private static final class ScreenDirtyStateProvider implements ModernConfigSearchIndex.DirtyStateProvider {
+        private final ModernConfigTemplateScreen screen;
+
+        ScreenDirtyStateProvider(ModernConfigTemplateScreen screen) {
+            this.screen = screen;
+        }
+
+        @Override
+        public Map<String, Boolean> collectDirtyByPath() {
+            return screen.collectDirtyMarkers();
+        }
+    }
+
+    private static final class PathJumpConsumer implements Consumer<String> {
+        private final ModernConfigTemplateScreen screen;
+
+        PathJumpConsumer(ModernConfigTemplateScreen screen) {
+            this.screen = screen;
+        }
+
+        @Override
+        public void accept(String path) {
+            screen.onJumpToPath(path);
+        }
     }
 }
